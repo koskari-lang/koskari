@@ -1,0 +1,303 @@
+# Valgrind suppression file for Python
+#
+# Python's memory allocator and internal structures often trigger
+# false positives in Valgrind. These suppressions filter out known
+# benign issues to help focus on real problems in our code.
+#
+# Note: Python allocates many long-lived objects (type objects, interned
+# strings, module dicts) that appear as "leaks" but are expected to
+# persist for the lifetime of the interpreter.
+#
+# Usage:
+#   valgrind --suppressions=valgrind-python.supp ./test_harness
+
+
+# === Python internal allocator (all leak kinds) ===
+#
+# Python uses its own memory allocator (pymalloc) which pools small
+# allocations. Suppress all leak kinds from Python's allocator.
+
+{
+   python-pymalloc-definite
+   Memcheck:Leak
+   match-leak-kinds: definite
+   ...
+   obj:*/libpython*.so*
+}
+
+{
+   python-pymalloc-indirect
+   Memcheck:Leak
+   match-leak-kinds: indirect
+   ...
+   obj:*/libpython*.so*
+}
+
+{
+   python-pymalloc-possibly-lost
+   Memcheck:Leak
+   match-leak-kinds: possible
+   ...
+   obj:*/libpython*.so*
+}
+
+{
+   python-pymalloc-reachable
+   Memcheck:Leak
+   match-leak-kinds: reachable
+   ...
+   obj:*/libpython*.so*
+}
+
+{
+   python-pymalloc-possibly-lost-2
+   Memcheck:Leak
+   match-leak-kinds: possible
+   ...
+   fun:PyObject_Malloc
+}
+
+{
+   python-pymalloc-possibly-lost-3
+   Memcheck:Leak
+   match-leak-kinds: possible
+   ...
+   fun:_PyObject_Malloc
+}
+
+
+# === Python initialization ===
+#
+# Memory allocated during Py_Initialize that persists until Py_Finalize.
+
+{
+   python-init-reachable
+   Memcheck:Leak
+   match-leak-kinds: reachable
+   ...
+   fun:Py_Initialize*
+}
+
+{
+   python-init-possible
+   Memcheck:Leak
+   match-leak-kinds: possible
+   ...
+   fun:Py_Initialize*
+}
+
+
+# === Python type system ===
+#
+# Type objects and related structures that persist for the interpreter lifetime.
+
+{
+   python-type-ready
+   Memcheck:Leak
+   match-leak-kinds: reachable
+   ...
+   fun:PyType_Ready
+}
+
+{
+   python-type-ready-possible
+   Memcheck:Leak
+   match-leak-kinds: possible
+   ...
+   fun:PyType_Ready
+}
+
+
+# === Python import system ===
+#
+# Module import machinery allocations.
+
+{
+   python-import-reachable
+   Memcheck:Leak
+   match-leak-kinds: reachable
+   ...
+   fun:PyImport_*
+}
+
+{
+   python-import-possible
+   Memcheck:Leak
+   match-leak-kinds: possible
+   ...
+   fun:PyImport_*
+}
+
+
+# === Python string interning ===
+#
+# Interned strings persist for interpreter lifetime.
+
+{
+   python-unicode-intern
+   Memcheck:Leak
+   match-leak-kinds: reachable
+   ...
+   fun:PyUnicode_InternInPlace
+}
+
+{
+   python-unicode-intern-possible
+   Memcheck:Leak
+   match-leak-kinds: possible
+   ...
+   fun:PyUnicode_InternInPlace
+}
+
+
+# === Python GC ===
+#
+# Garbage collector data structures.
+
+{
+   python-gc-reachable
+   Memcheck:Leak
+   match-leak-kinds: reachable
+   ...
+   fun:_PyObject_GC_*
+}
+
+
+# === Python dictionary ===
+#
+# Dictionary internal allocations, especially for module dicts.
+
+{
+   python-dict-reachable
+   Memcheck:Leak
+   match-leak-kinds: reachable
+   ...
+   fun:PyDict_*
+}
+
+
+# === Python list/tuple ===
+#
+# Small object allocator for sequences.
+
+{
+   python-list-reachable
+   Memcheck:Leak
+   match-leak-kinds: reachable
+   ...
+   fun:PyList_*
+}
+
+{
+   python-tuple-reachable
+   Memcheck:Leak
+   match-leak-kinds: reachable
+   ...
+   fun:PyTuple_*
+}
+
+
+# === dlopen/dlsym ===
+#
+# Dynamic loading of shared libraries (extension modules).
+
+{
+   dlopen-leak
+   Memcheck:Leak
+   ...
+   fun:dlopen*
+}
+
+{
+   dlsym-leak
+   Memcheck:Leak
+   ...
+   fun:dlsym*
+}
+
+
+# === glibc ===
+#
+# Standard library allocations that persist.
+
+{
+   glibc-ld-reachable
+   Memcheck:Leak
+   match-leak-kinds: reachable
+   ...
+   obj:*/ld-*.so*
+}
+
+{
+   glibc-libc-reachable
+   Memcheck:Leak
+   match-leak-kinds: reachable
+   ...
+   obj:*/libc*.so*
+}
+
+
+# === Conditional jump on uninitialized (common false positives) ===
+#
+# Some Python internal operations trigger these warnings benignly.
+
+{
+   python-cond-uninit
+   Memcheck:Cond
+   ...
+   obj:*/libpython*.so*
+}
+
+{
+   python-value-uninit
+   Memcheck:Value8
+   ...
+   obj:*/libpython*.so*
+}
+
+
+# === Python Unicode ===
+#
+# Unicode object caching and interning.
+
+{
+   python-unicode-new
+   Memcheck:Leak
+   match-leak-kinds: reachable
+   ...
+   fun:PyUnicode_New
+}
+
+{
+   python-unicode-decode
+   Memcheck:Leak
+   match-leak-kinds: reachable
+   ...
+   fun:PyUnicode_Decode*
+}
+
+
+# === Python long integers ===
+#
+# Small integer caching.
+
+{
+   python-long-cache
+   Memcheck:Leak
+   match-leak-kinds: reachable
+   ...
+   fun:PyLong_FromLong
+}
+
+
+# === Python finalization ===
+#
+# Some memory is intentionally not freed during Py_Finalize.
+
+{
+   python-finalize-reachable
+   Memcheck:Leak
+   match-leak-kinds: reachable
+   ...
+   fun:Py_Finalize*
+}

@@ -1,0 +1,482 @@
+"""
+Unit tests for reference types
+
+author: Christopher O'Brien <obriencj@gmail.com>
+license: GPL v.3
+"""
+
+
+import unittest
+from itertools import count
+from unittest.mock import Mock
+
+from koskari.lib import (
+    Ref, AttributeRef, ItemRef, DynamicRef, ConstantRef, MemoizedRef,
+)
+
+
+class TestSymbolicRef(unittest.TestCase):
+    """Tests for the base Ref type"""
+
+    def test_create(self):
+        """Ref can be created with no arguments"""
+        r = Ref()
+        self.assertIsInstance(r, Ref)
+
+    def test_default_name(self):
+        """Ref without name argument gets default name"""
+        r = Ref()
+        self.assertEqual(r.name, "<Ref>")
+
+    def test_custom_name(self):
+        """Ref with name argument uses that name"""
+        r = Ref("foo")
+        self.assertEqual(r.name, "foo")
+
+    def test_empty_initially(self):
+        """Ref without value is empty"""
+        r = Ref()
+        self.assertTrue(r.empty)
+
+    def test_deref_empty_raises(self):
+        """deref() on empty Ref raises NameError"""
+        r = Ref()
+        with self.assertRaises(NameError):
+            r.deref()
+
+    def test_store_and_deref(self):
+        """store() sets value, deref() retrieves it"""
+        r = Ref()
+        r.store(123)
+        self.assertEqual(r.deref(), 123)
+
+    def test_store_overwrites(self):
+        """store() overwrites previous value"""
+        r = Ref()
+        r.store(123)
+        r.store(456)
+        self.assertEqual(r.deref(), 456)
+
+    def test_clear(self):
+        """clear() makes Ref empty again"""
+        r = Ref()
+        r.store(123)
+        self.assertFalse(r.empty)
+        r.clear()
+        self.assertTrue(r.empty)
+        with self.assertRaises(NameError):
+            r.deref()
+
+    def test_store_after_clear(self):
+        """store() works after clear()"""
+        r = Ref()
+        r.store(123)
+        r.clear()
+        r.store(456)
+        self.assertEqual(r.deref(), 456)
+
+    def test_initial_value(self):
+        """Ref can be created with initial value"""
+        r = Ref("myref", 999)
+        self.assertEqual(r.name, "myref")
+        self.assertFalse(r.empty)
+        self.assertEqual(r.deref(), 999)
+
+    def test_no_named_args(self):
+        """Ref rejects keyword arguments"""
+        with self.assertRaises(TypeError):
+            Ref(name="foo")
+
+
+class Obj:
+    """Simple test object for attribute tests"""
+    pass
+
+
+class TestAttributeRef(unittest.TestCase):
+    """Tests for AttributeRef type"""
+
+    def test_create(self):
+        """AttributeRef can be created"""
+        o = Obj()
+        o.foo = "bar"
+        r = AttributeRef(None, o, "foo")
+        self.assertIsInstance(r, AttributeRef)
+        self.assertIsInstance(r, Ref)
+
+    def test_default_name(self):
+        """AttributeRef without name gets default name"""
+        o = Obj()
+        o.foo = "bar"
+        r = AttributeRef(None, o, "foo")
+        self.assertEqual(r.name, "<AttributeRef>")
+
+    def test_deref(self):
+        """deref() returns the attribute value"""
+        o = Obj()
+        o.tacos = "yes, please"
+        r = AttributeRef(None, o, "tacos")
+        self.assertEqual(r.deref(), "yes, please")
+
+    def test_empty_false_when_attr_exists(self):
+        """empty is False when attribute exists"""
+        o = Obj()
+        o.tacos = "yes"
+        r = AttributeRef(None, o, "tacos")
+        self.assertFalse(r.empty)
+
+    def test_store(self):
+        """store() sets the attribute"""
+        o = Obj()
+        o.tacos = "yes"
+        r = AttributeRef(None, o, "tacos")
+        r.store("wonderful")
+        self.assertEqual(o.tacos, "wonderful")
+        self.assertEqual(r.deref(), "wonderful")
+
+    def test_clear(self):
+        """clear() deletes the attribute"""
+        o = Obj()
+        o.tacos = "yes"
+        r = AttributeRef(None, o, "tacos")
+        r.clear()
+        self.assertTrue(r.empty)
+        self.assertFalse(hasattr(o, "tacos"))
+
+    def test_deref_missing_attr_raises(self):
+        """deref() on missing attribute raises AttributeError"""
+        o = Obj()
+        r = AttributeRef(None, o, "missing")
+        with self.assertRaises(AttributeError):
+            r.deref()
+
+    def test_attr_must_be_string(self):
+        """AttributeRef requires string for attr argument"""
+        o = Obj()
+        with self.assertRaises(TypeError):
+            AttributeRef(None, o, 123)
+
+    def test_obj_property(self):
+        """obj property returns the referenced object"""
+        o = Obj()
+        o.x = 1
+        r = AttributeRef(None, o, "x")
+        self.assertIs(r.obj, o)
+
+    def test_attr_property(self):
+        """attr property returns the attribute name"""
+        o = Obj()
+        o.x = 1
+        r = AttributeRef(None, o, "x")
+        self.assertEqual(r.attr, "x")
+
+
+class TestItemRef(unittest.TestCase):
+    """Tests for ItemRef type"""
+
+    def test_create(self):
+        """ItemRef can be created"""
+        d = {"key": "value"}
+        r = ItemRef(None, d, "key")
+        self.assertIsInstance(r, ItemRef)
+        self.assertIsInstance(r, Ref)
+
+    def test_default_name(self):
+        """ItemRef without name gets default name"""
+        d = {"key": "value"}
+        r = ItemRef(None, d, "key")
+        self.assertEqual(r.name, "<ItemRef>")
+
+    def test_deref_dict(self):
+        """deref() works with dict"""
+        d = {"key": "value"}
+        r = ItemRef(None, d, "key")
+        self.assertEqual(r.deref(), "value")
+
+    def test_deref_list(self):
+        """deref() works with list"""
+        l = ["foo", "bar", "baz"]
+        r = ItemRef(None, l, -1)
+        self.assertEqual(r.deref(), "baz")
+
+    def test_empty_false_when_key_exists(self):
+        """empty is False when key exists"""
+        d = {"key": "value"}
+        r = ItemRef(None, d, "key")
+        self.assertFalse(r.empty)
+
+    def test_empty_true_when_key_missing(self):
+        """empty is True when key is missing"""
+        d = {}
+        r = ItemRef(None, d, "missing")
+        self.assertTrue(r.empty)
+
+    def test_store(self):
+        """store() sets the item"""
+        d = {"key": "old"}
+        r = ItemRef(None, d, "key")
+        r.store("new")
+        self.assertEqual(d["key"], "new")
+
+    def test_clear(self):
+        """clear() deletes the item"""
+        d = {"key": "value"}
+        r = ItemRef(None, d, "key")
+        r.clear()
+        self.assertNotIn("key", d)
+
+    def test_clear_list(self):
+        """clear() on list removes item at index"""
+        l = ["foo", "bar", "baz"]
+        r = ItemRef(None, l, -1)
+        self.assertEqual(r.deref(), "baz")
+        r.clear()
+        self.assertEqual(r.deref(), "bar")
+        r.clear()
+        self.assertEqual(r.deref(), "foo")
+        r.clear()
+        self.assertTrue(r.empty)
+
+    def test_deref_missing_raises(self):
+        """deref() on missing key raises KeyError"""
+        d = {}
+        r = ItemRef(None, d, "missing")
+        with self.assertRaises(KeyError):
+            r.deref()
+
+    def test_obj_property(self):
+        """obj property returns the referenced object"""
+        d = {"key": "value"}
+        r = ItemRef(None, d, "key")
+        self.assertIs(r.obj, d)
+
+    def test_key_property(self):
+        """key property returns the key"""
+        d = {"key": "value"}
+        r = ItemRef(None, d, "key")
+        self.assertEqual(r.key, "key")
+
+
+class TestDynamicRef(unittest.TestCase):
+    """Tests for DynamicRef type"""
+
+    def test_create(self):
+        """DynamicRef can be created"""
+        def getfn():
+            return 42
+        r = DynamicRef(None, getfn)
+        self.assertIsInstance(r, DynamicRef)
+        self.assertIsInstance(r, Ref)
+
+    def test_default_name(self):
+        """DynamicRef without name gets default name"""
+        r = DynamicRef(None, lambda: 1)
+        self.assertEqual(r.name, "<DynamicRef>")
+
+    def test_deref_calls_getfn(self):
+        """deref() calls the getter function"""
+        c = count()
+        def getfn():
+            return next(c)
+        r = DynamicRef(None, getfn)
+        self.assertEqual(r.deref(), 0)
+        self.assertEqual(r.deref(), 1)
+        self.assertEqual(r.deref(), 2)
+
+    def test_store_without_setfn_raises(self):
+        """store() without setfn raises AttributeError"""
+        r = DynamicRef(None, lambda: 1)
+        with self.assertRaises(AttributeError):
+            r.store(100)
+
+    def test_clear_without_delfn_raises(self):
+        """clear() without delfn raises AttributeError"""
+        r = DynamicRef(None, lambda: 1)
+        with self.assertRaises(AttributeError):
+            r.clear()
+
+    def test_store_with_setfn(self):
+        """store() calls the setter function"""
+        value = [0]
+        def getfn():
+            return value[0]
+        def setfn(v):
+            value[0] = v
+        r = DynamicRef(None, getfn, setfn)
+        r.store(100)
+        self.assertEqual(r.deref(), 100)
+
+    def test_clear_with_delfn(self):
+        """clear() calls the deleter function"""
+        value = [42]
+        def getfn():
+            return value[0]
+        def delfn():
+            value[0] = 0
+        r = DynamicRef(None, getfn, None, delfn)
+        self.assertEqual(r.deref(), 42)
+        r.clear()
+        self.assertEqual(r.deref(), 0)
+
+    def test_empty_default_false(self):
+        """empty is False by default"""
+        r = DynamicRef(None, lambda: 1)
+        self.assertFalse(r.empty)
+
+    def test_empty_with_emptyfn(self):
+        """empty calls emptyfn when provided"""
+        is_empty = [False]
+        def emptyfn():
+            return is_empty[0]
+        r = DynamicRef(None, lambda: 1, None, None, emptyfn)
+        self.assertFalse(r.empty)
+        is_empty[0] = True
+        self.assertTrue(r.empty)
+
+
+class TestConstantRef(unittest.TestCase):
+    """Tests for ConstantRef type"""
+
+    def test_create(self):
+        """ConstantRef can be created"""
+        r = ConstantRef(None, 101)
+        self.assertIsInstance(r, ConstantRef)
+        self.assertIsInstance(r, Ref)
+
+    def test_default_name(self):
+        """ConstantRef without name gets default name"""
+        r = ConstantRef(None, 101)
+        self.assertEqual(r.name, "<ConstantRef>")
+
+    def test_deref(self):
+        """deref() returns the constant value"""
+        r = ConstantRef(None, 101)
+        self.assertEqual(r.deref(), 101)
+
+    def test_never_empty(self):
+        """ConstantRef is never empty"""
+        r = ConstantRef(None, 101)
+        self.assertFalse(r.empty)
+
+    def test_store_raises(self):
+        """store() raises ValueError"""
+        r = ConstantRef(None, 101)
+        with self.assertRaises(ValueError):
+            r.store(999)
+
+    def test_clear_raises(self):
+        """clear() raises ValueError"""
+        r = ConstantRef(None, 101)
+        with self.assertRaises(ValueError):
+            r.clear()
+
+    def test_value_unchanged_after_store_attempt(self):
+        """Value remains unchanged after failed store()"""
+        r = ConstantRef(None, 101)
+        try:
+            r.store(999)
+        except ValueError:
+            pass
+        self.assertEqual(r.deref(), 101)
+
+
+class TestMemoizedRef(unittest.TestCase):
+    """Tests for MemoizedRef type"""
+
+    def test_create(self):
+        """MemoizedRef can be created"""
+        r = MemoizedRef(None, lambda: 42)
+        self.assertIsInstance(r, MemoizedRef)
+        self.assertIsInstance(r, Ref)
+
+    def test_default_name(self):
+        """MemoizedRef without name gets default name"""
+        r = MemoizedRef(None, lambda: 42)
+        self.assertEqual(r.name, "<MemoizedRef>")
+
+    def test_initially_empty(self):
+        """MemoizedRef is empty before first deref"""
+        r = MemoizedRef(None, lambda: 42)
+        self.assertTrue(r.empty)
+
+    def test_deref_calls_getfn_once(self):
+        """deref() calls getfn only once and caches result"""
+        lazy = Mock(side_effect=range(15, 20))
+        r = MemoizedRef(None, lazy)
+
+        self.assertEqual(r.deref(), 15)
+        self.assertEqual(r.deref(), 15)
+        lazy.assert_called_once()
+
+    def test_not_empty_after_deref(self):
+        """MemoizedRef is not empty after first deref"""
+        r = MemoizedRef(None, lambda: 42)
+        r.deref()
+        self.assertFalse(r.empty)
+
+    def test_clear_resets_memoization(self):
+        """clear() resets the cached value"""
+        lazy = Mock(side_effect=[10, 20, 30])
+        r = MemoizedRef(None, lazy)
+
+        self.assertEqual(r.deref(), 10)
+        lazy.assert_called_once()
+
+        r.clear()
+        self.assertTrue(r.empty)
+
+        lazy.reset_mock()
+        self.assertEqual(r.deref(), 20)
+        lazy.assert_called_once()
+
+    def test_store_raises(self):
+        """store() raises ValueError"""
+        r = MemoizedRef(None, lambda: 42)
+        with self.assertRaises(ValueError):
+            r.store(999)
+
+    def test_store_raises_after_clear(self):
+        """store() raises ValueError even after clear"""
+        r = MemoizedRef(None, lambda: 42)
+        r.deref()
+        r.clear()
+        with self.assertRaises(ValueError):
+            r.store(999)
+
+    def test_getfn_error_propagates(self):
+        """Errors from getfn propagate through deref()"""
+        def bad():
+            raise ValueError("bleep bloop")
+        r = MemoizedRef(None, bad)
+        with self.assertRaises(ValueError):
+            r.deref()
+
+    def test_requires_callable(self):
+        """MemoizedRef requires a callable getfn"""
+        with self.assertRaises(ValueError):
+            MemoizedRef(None, None)
+
+
+class TestRefTypeHierarchy(unittest.TestCase):
+    """Tests for ref type relationships"""
+
+    def test_all_inherit_from_ref(self):
+        """All ref types inherit from Ref"""
+        o = Obj()
+        o.x = 1
+        d = {"k": "v"}
+
+        refs = [
+            Ref(),
+            AttributeRef(None, o, "x"),
+            ItemRef(None, d, "k"),
+            DynamicRef(None, lambda: 1),
+            ConstantRef(None, 42),
+            MemoizedRef(None, lambda: 42),
+        ]
+
+        for r in refs:
+            self.assertIsInstance(r, Ref)
+
+
+# The end.
