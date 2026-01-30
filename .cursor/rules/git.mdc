@@ -1,0 +1,13 @@
+---
+alwaysApply: true
+---
+# Git Operations Rules
+
+- Do not run `git reset`, `git revert`, `git checkout`, `git merge`, or create/delete branches; only the user performs those actions.
+- `git add` and `git commit` are allowed only when the user explicitly requests them.
+- Before committing, inspect the full repo diff; compose a brief summary commit message via `git commit -F - <<'EOF' ... EOF`.
+- Prefer absolute paths when invoking commands.
+- Run `git --no-pager status` and `git --no-pager log` to avoid pager issues.
+- When renaming or deleting tracked files, use `git mv` or `git rm` so history remains coherent.
+- Never modify `.plan` files or user-maintained artifacts unless told to do so.
+- Surface any unexpected repo changes immediately instead of altering or discarding them.

@@ -1,0 +1,40 @@
+---
+alwaysApply: true
+---
+
+# Tox Usage Rule
+
+This repository uses tox to manage Python virtual environments and dependencies. The `tox.ini` file is always present in the repository root.
+
+## Rule: Always Use Tox
+
+**NEVER invoke `python` or `python3` directly for execution.**
+
+Instead, always use `tox -e <envname>` to run commands. Tox creates isolated virtual environments, installs dependencies automatically, and ensures consistent execution.
+
+## Common Patterns
+
+- Running scripts (e.g., `tools/regen.py`): Use the appropriate tox environment (e.g., `tox -e regen-common`)
+- Running tests: Use tox test environments (e.g., `tox -e py312`)
+- Any Python execution: Find or use the relevant tox environment from `tox.ini`
+
+## Before Running Python Commands
+
+1. Check `tox.ini` for available environments
+2. Use the appropriate `tox -e <envname>` command
+3. If no suitable environment exists, suggest creating one rather than using Python directly
+
+## Examples
+
+❌ **Wrong**: `python tools/regen.py ...`
+✅ **Correct**: `tox -e regen-common`
+
+❌ **Wrong**: `python -m pytest ...`
+✅ **Correct**: `tox -e py312` (or the appropriate test environment)
+
+❌ **Wrong**: `pip install jinja2 && python script.py`
+✅ **Correct**: Create/use a tox environment that includes jinja2
+
+## Exception
+
+The only acceptable use of `python` or `python3` is for checking the system Python version (e.g., `python3 --version`) when determining compatibility, not for execution.

@@ -1,0 +1,13 @@
+---
+description: unit testing
+alwaysApply: false
+---
+# Testing Rules
+
+- Place all automated tests under the `tests/` directory.
+- Do not use typing annotations when writing unit tests.
+- Author tests to reveal defects; a failing test is useful evidence and must not be muted or hidden.
+- When a test fails, diagnose and summarize the issue for the user without modifying production code unless explicitly instructed.
+- Never manipulate fixtures, mocks, or assertions to mask genuine failures; do not "fake green" results.
+- Document observed failures clearly, including reproduction steps and suspected root cause.
+- Use `tox` as the canonical entry point for running test suites and related checks.

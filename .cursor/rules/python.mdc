@@ -1,0 +1,23 @@
+---
+alwaysApply: true
+---
+
+# Python Authoring Rules
+
+- Favor pure functions for stateless transformations; introduce classes only for objects with mutable behavior or identity.
+- Never create classes solely as namespaces for static helpers.
+- Use `setup.py` only as a minimal `setup()` invocation; place package configuration, `tox`, `flake8`, and `pytest` settings inside `setup.cfg`.
+- Do not add `pyproject.toml`, Poetry files, or Black configuration; these tools are disallowed.
+- Adopt `tox` as the orchestration entry point for linting and tests.
+- New Python modules must begin with the GPLv3 short-form comment, followed by a blank line and a module docstring that includes:
+  - Module name and a short description
+  - RestructuredText fields: `:author: Christopher O'Brien <obriencj@preoccupied.net>`, `:license: GNU General Public License v3`, `:ai-assistant: $Model $Version via Cursor`.
+- Keep default encoding ASCII; only introduce non-ASCII when a file already relies on it or requirements dictate.
+- Namespace packages must be empty (no `__init__.py` file)
+- Prefer `typing.Union` (and related aliases) over the Python 3.10 `|` syntax; avoid `from __future__ import annotations` unless strictly required.
+- Write triple-double-quoted docstrings in plain prose without backtick emphasis and leave a blank line between the docstring and implementation body.
+- When quoting a string, use a single-quote strings for keyword values. Use double-quote strings for english text.
+- For multi-line method signatures, indent parameters two levels (8 spaces) beneath the definition and close the parenthesis on the same line as the return annotation or colon.
+- For all other multi-line collections, only indent one level (4 spaces)
+- Maintain a blank line between class or function definitions and terminate modules with `# The end.` followed by a single newline to match house style.
+- docstrings for methods and functions must use sphinx RestructuredText format when documenting the arguments, return, and any expected raises
