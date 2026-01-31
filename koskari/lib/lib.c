@@ -70,6 +70,9 @@ static int koskari_lib_init(PyObject *mod) {
   if (koskari_values_init(mod))
     return -1;
 
+  if (koskari_operator_init(mod))
+    return -1;
+
   return 0;
 }
 
@@ -83,6 +86,9 @@ static int koskari_lib_clear(PyObject *mod) {
     return -1;
 
   /* clear implementation units */
+  if (koskari_operator_clear(mod))
+    return -1;
+
   if (koskari_values_clear(mod))
     return -1;
 

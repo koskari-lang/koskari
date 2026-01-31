@@ -29,6 +29,7 @@
 #include "namespace.h"
 #include "formals.h"
 #include "values.h"
+#include "operator.h"
 
 
 /* === unit initializers === */
