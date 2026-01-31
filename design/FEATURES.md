@@ -65,11 +65,11 @@ This document provides a high-level summary of all features identified from both
 - **Module**: Module object
 
 ### Builtins
-- **Pair Ops**: cons, car, cdr, setcar, setcdr, build-proper
+- **Pair Ops**: cons, car, cdr, setcar, setcdr, build_unpack_pair
 - **Collections**: build_tuple, build_list, build_set, build_dict
-- **Values**: values, getderef, setderef, clearderef
-- **Utilities**: reapply, repeatedly, last, take
-- **TCO**: trampoline, tailcall, tailcall_full
+- **Values**: values
+- **Utilities**: reapply, apply, identity, constantly, _pass
+- **Operators**: +, -, *, /, //, @, &, |, ^, in, not-in, build-str
 
 ## Interpreter Features
 
@@ -122,9 +122,20 @@ This document provides a high-level summary of all features identified from both
 - Formals types: `Formals`, `FormalsSpec`
 - Values type: `values`
 
+**Native Operators** (C extension):
+- Reducing arithmetic: `+`, `-`, `*`, `/`, `//`, `@`
+- Reducing bitwise: `&`, `|`, `^`
+- Membership: `in`, `not-in`
+- String builder: `build-str`
+
+**Native Utilities** (C extension):
+- Function application: `apply`, `reapply`
+- Functional primitives: `identity`, `constantly`, `_pass`
+- Collection builders: `build_tuple`, `build_list`, `build_set`, `build_dict`
+
 ### Ready to Migrate
 - Most special forms from python-sibilant
-- All operators
+- Remaining operators (%, **, ~, <<, >>, comparisons)
 - Macro system
 - Control flow constructs
 - Function system

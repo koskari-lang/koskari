@@ -156,14 +156,14 @@ with C extension support and comprehensive test coverage:
 **Values Type** (from python-sibilant):
 - `values`: Multi-value return object with positional and keyword support
 
-### To Reconsider
+### Not Migrating
+
+- TCO types (`tailcall`, `Trampoline`) - will be handled directly in native evaluator
+- PyCell wrappers - replaced by Ref types
+
+### To Consider
 
 - Lazy gensym semantics (not yet migrated)
-- Additional type predicates (`is_symbol`, `is_pair`, etc.)
-
-### To Design
-
-- Type system integration (if desired)
-- Type annotations
+- Additional type predicates (`is_symbol`, `is_pair`, etc.) - may be Python-side
+- Type system integration
 - Pattern matching on types
-- Integration with `call/cc` (type of continuations)
