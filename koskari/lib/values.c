@@ -53,9 +53,12 @@ static PyObject *kos_quoted(PyObject *u) {
 /* === values type methods === */
 
 
-static PyObject *values_new(PyTypeObject *type,
-                            PyObject *args, PyObject *kwds) {
-    (void)type;
+static PyObject *values_new(
+        PyTypeObject *type,
+        PyObject *args,
+        PyObject *kwds) {
+
+    (void)type;  // to let the compiler know we're not using it
     return KosValues_New(args, kwds);
 }
 
@@ -107,7 +110,10 @@ static Py_ssize_t values_kwds_length(PyObject *self) {
 }
 
 
-static PyObject *values_kwds_getitem(PyObject *self, PyObject *key) {
+static PyObject *values_kwds_getitem(
+        PyObject *self,
+        PyObject *key) {
+
     if (PyLong_CheckExact(key)) {
         return PySequence_GetItem(((KosValues *) self)->args,
                                   PyLong_AsSsize_t(key));
@@ -134,8 +140,11 @@ static PyObject *values_kwds_getitem(PyObject *self, PyObject *key) {
 }
 
 
-static PyObject *values_call(PyObject *self,
-                             PyObject *args, PyObject *kwds) {
+static PyObject *values_call(
+        PyObject *self,
+        PyObject *args,
+        PyObject *kwds) {
+
     KosValues *s = (KosValues *) self;
     PyObject *call_args, *call_kwds;
     PyObject *work = NULL, *tmp = NULL;

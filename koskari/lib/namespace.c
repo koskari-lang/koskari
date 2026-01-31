@@ -957,8 +957,10 @@ int KosNamespace_Contains(PyObject *namespace, PyObject *key) {
 }
 
 
-int KosNamespace_Store(PyObject *namespace,
-                       PyObject *key, PyObject *val) {
+int KosNamespace_Store(
+    PyObject *namespace,
+    PyObject *key,
+    PyObject *val) {
 
   return ns_store_symbol(namespace, key, val);
 }
@@ -970,7 +972,11 @@ int KosNamespace_Clear(PyObject *namespace, PyObject *key) {
 }
 
 
-int KosNamespace_Bind(PyObject *namespace, PyObject *key, PyObject *ref) {
+int KosNamespace_Bind(
+    PyObject *namespace,
+    PyObject *key,
+    PyObject *ref) {
+
   if (! KosNamespace_Check(namespace)) {
     PyErr_Format(PyExc_TypeError, "expected Namespace instance,"
                  " found %R", namespace);
@@ -1042,8 +1048,11 @@ PyObject *KosNamespace_FastRef(PyObject *namespace, size_t index) {
 }
 
 
-int KosNamespace_FastStore(PyObject *namespace, size_t index,
-                           PyObject *value) {
+int KosNamespace_FastStore(
+    PyObject *namespace,
+    size_t index,
+    PyObject *value) {
+
   if (index >= KosNamespace_FAST_COUNT(namespace)) {
     PyErr_Format(PyExc_NameError, "Namespace fast index out of bounds, %i",
                  index);
@@ -1081,8 +1090,11 @@ int KosNamespace_FastClear(PyObject *namespace, size_t index) {
 }
 
 
-int KosNamespace_FastBind(PyObject *namespace, size_t index,
-                          PyObject *ref) {
+int KosNamespace_FastBind(
+    PyObject *namespace,
+    size_t index,
+    PyObject *ref) {
+
   if (index >= KosNamespace_FAST_COUNT(namespace)) {
     PyErr_Format(PyExc_NameError, "Namespace fast index out of bounds, %i",
                  index);
@@ -1123,8 +1135,9 @@ PyTypeObject KosCollectorNamespaceType = {
 
 
 
-PyObject *KosCollectorNamespace_New(PyObject *parent,
-                                    PyObject *spec) {
+PyObject *KosCollectorNamespace_New(
+    PyObject *parent,
+    PyObject *spec) {
 
   return KosCollectorNamespace_NewFull(KosNamespaceSpec_NAME(spec),
                                        parent,
@@ -1133,10 +1146,11 @@ PyObject *KosCollectorNamespace_New(PyObject *parent,
 }
 
 
-PyObject *KosCollectorNamespace_NewFull(PyObject *name,
-                                        PyObject *parent,
-                                        PyObject *local_syms,
-                                        PyObject *closure_syms) {
+PyObject *KosCollectorNamespace_NewFull(
+    PyObject *name,
+    PyObject *parent,
+    PyObject *local_syms,
+    PyObject *closure_syms) {
 
   return ns_newfull_type(&KosCollectorNamespaceType,
                          name, parent,
@@ -1169,8 +1183,10 @@ static PyObject *mdl_ns_borrow_ref(PyObject *self, PyObject *name) {
 }
 
 
-static PyObject *mdl_ns_new(PyTypeObject *type,
-                            PyObject *args, PyObject *kwds) {
+static PyObject *mdl_ns_new(
+    PyTypeObject *type,
+    PyObject *args,
+    PyObject *kwds) {
 
   PyObject *name = NULL;
   PyObject *builtins = NULL;

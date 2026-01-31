@@ -44,11 +44,12 @@ static PyObject *_str__empty = NULL;
 #endif
 
 
-static inline PyObject *reduce_method(const char *name,
-                                      binaryfunc func,
-                                      unaryfunc solofunc,
-                                      PyObject *const *args,
-                                      size_t count) {
+static inline PyObject *reduce_method(
+    const char *name,
+    binaryfunc func,
+    unaryfunc solofunc,
+    PyObject *const *args,
+    size_t count) {
 
   if (count == 0) {
     if (solofunc) {

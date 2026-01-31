@@ -83,14 +83,16 @@ typedef struct KosNamespace {
 } KosNamespace;
 
 
-PyObject *KosNamespace_New(PyObject *parent,
-                           PyObject *spec);
+PyObject *KosNamespace_New(
+    PyObject *parent,
+    PyObject *spec);
 
 
-PyObject *KosNamespace_NewFull(PyObject *name,
-                               PyObject *parent,
-                               PyObject *local_syms,
-                               PyObject *closure_syms);
+PyObject *KosNamespace_NewFull(
+    PyObject *name,
+    PyObject *parent,
+    PyObject *local_syms,
+    PyObject *closure_syms);
 
 
 /**
@@ -196,8 +198,10 @@ PyObject *KosNamespace_FastDeref(PyObject *ns, size_t index);
 
    returns 0 for success, or -1 and sets err if index is out of bounds
  */
-int KosNamespace_FastStore(PyObject *ns, size_t index,
-                           PyObject *value);
+int KosNamespace_FastStore(
+    PyObject *ns,
+    size_t index,
+    PyObject *value);
 
 
 /**
@@ -213,8 +217,10 @@ int KosNamespace_FastClear(PyObject *ns, size_t index);
 
    returns 0 for success, or -1 and sets err if index is out of bounds
  */
-int KosNamespace_FastBind(PyObject *ns, size_t index,
-                          PyObject *ref);
+int KosNamespace_FastBind(
+    PyObject *ns,
+    size_t index,
+    PyObject *ref);
 
 
 #define KosNamespace_NAME(ns)               \
@@ -252,22 +258,24 @@ typedef struct KosCollectorNamespace {
 
 
 /**
-   A KosCollectorNamespace acts just like a Namespace except that it
-   will not give up its refs via KosNamespace_FindRef, preventing
-   child namespaces from taking closures over its references. The most
-   common use case is in the collection of members for a class
-   definition, where we do not want the class members to have closures
-   over each other, as that behavior conflicts heavily with the Python
-   class model of members.
- */
-PyObject *KosCollectorNamespace_New(PyObject *parent,
-                                    PyObject *spec);
+  A KosCollectorNamespace acts just like a Namespace except that it
+  will not give up its refs via KosNamespace_FindRef, preventing
+  child namespaces from taking closures over its references. The most
+  common use case is in the collection of members for a class
+  definition, where we do not want the class members to have closures
+  over each other, as that behavior conflicts heavily with the Python
+  class model of members.
+*/
+PyObject *KosCollectorNamespace_New(
+    PyObject *parent,
+    PyObject *spec);
 
 
-PyObject *KosCollectorNamespace_NewFull(PyObject *name,
-                                        PyObject *parent,
-                                        PyObject *local_syms,
-                                        PyObject *closure_syms);
+PyObject *KosCollectorNamespace_NewFull(
+    PyObject *name,
+    PyObject *parent,
+    PyObject *local_syms,
+    PyObject *closure_syms);
 
 
 #define KosCollectorNamespace_Check(obj)                                \
@@ -289,8 +297,9 @@ typedef struct KosModuleNamespace {
 } KosModuleNamespace;
 
 
-PyObject *KosModuleNamespace_New(PyObject *name,
-                                 PyObject *builtins);
+PyObject *KosModuleNamespace_New(
+    PyObject *name,
+    PyObject *builtins);
 
 
 #define KosModuleNamespace_BUILTINS(mdl)        \

@@ -30,6 +30,7 @@
 #include "formals.h"
 #include "values.h"
 #include "operator.h"
+#include "utils.h"
 
 
 /* === unit initializers === */

@@ -71,6 +71,7 @@ def extension(platform=None, debug=False):
             "koskari/lib/formals.c",
             "koskari/lib/values.c",
             "koskari/lib/operator.c",
+            "koskari/lib/utils.c",
             # Module initialization
             "koskari/lib/lib.c",
             # TODO: add source files as units are implemented
@@ -90,6 +91,7 @@ def extension(platform=None, debug=False):
             "koskari/lib/formals.h",
             "koskari/lib/values.h",
             "koskari/lib/operator.h",
+            "koskari/lib/utils.h",
             # Compatibility headers
             "koskari/lib/compat_36.h",
             "koskari/lib/compat_37.h",
