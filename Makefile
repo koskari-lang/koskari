@@ -34,7 +34,7 @@ report-python:  ## Report Python version and executable
 build: clean-built report-python  ## Build wheel package using uv via tox
 	@$(call checkfor,tox)
 	@echo "Building $(PROJECT) $(VERSION)..."
-	@tox -e build
+	@tox -qe build
 	@echo "Build complete: $(DIST_DIR)/$(PROJECT)-$(VERSION)-*.whl"
 
 build-ext: report-python  ## Build native extensions only
@@ -61,17 +61,17 @@ uninstall:  ## Uninstall package
 test:  ## Run tests on current Python version via tox
 	@$(call checkfor,tox)
 	@echo "Running tests..."
-	@tox -e py
+	@tox -qe py
 
 test-all:  ## Run tests on all supported Python versions via tox
 	@$(call checkfor,tox)
 	@echo "Running tests on all Python versions..."
-	@tox -e py39,py310,py311,py312
+	@tox -qe py39,py310,py311,py312
 
 tox:  ## Run full tox suite (tests + lint + typecheck)
 	@$(call checkfor,tox)
 	@echo "Running full tox suite..."
-	@tox
+	@tox -q
 
 ##@ Native Memory Testing
 
@@ -116,12 +116,12 @@ container-test-valgrind: container-build  ## Run Valgrind tests in container
 lint:  ## Run linting (flake8) via tox
 	@$(call checkfor,tox)
 	@echo "Running flake8..."
-	@tox -e flake8
+	@tox -qe flake8
 
 typecheck:  ## Run type checking (mypy) via tox
 	@$(call checkfor,tox)
 	@echo "Running mypy..."
-	@tox -e mypy
+	@tox -qe mypy
 
 
 ##@ Cleanup
