@@ -94,3 +94,9 @@
 - Async with multiple awaitables (like `asyncio.gather`)
 - Integration with `call/cc` (async continuations?)
 - Structured concurrency primitives
+
+## Related Documentation
+
+- [../interpreter/execution-invariants.md](../interpreter/execution-invariants.md) —
+  Execution model invariants including AWAIT semantics, flattened async, and
+  Python interop

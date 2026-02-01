@@ -99,3 +99,8 @@
 - Profiling and optimization
 - Debugging support
 - Integration with `call/cc`
+
+## Related Documentation
+
+- [execution-invariants.md](execution-invariants.md) — Koskari execution model
+  invariants and design commitments (target semantics)

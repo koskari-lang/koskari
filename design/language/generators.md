@@ -69,3 +69,8 @@ Generators are created when a function contains `yield` or `yield-from`:
 - Generator expressions (if desired)
 - Generator composition utilities
 - Integration with `call/cc` (generator continuations?)
+
+## Related Documentation
+
+- [../interpreter/execution-invariants.md](../interpreter/execution-invariants.md) —
+  Execution model invariants including generator/async generator separation
