@@ -156,6 +156,23 @@ with C extension support and comprehensive test coverage:
 **Values Type** (from python-sibilant):
 - `values`: Multi-value return object with positional and keyword support
 
+**Parser Types** (from python-sibilant):
+- `BaseSourceStream`: Native C base class for efficient character-level I/O
+  - `read(count)`: Read characters with position tracking
+  - `peek(count)`: Peek without consuming
+  - `position()`: Get (line, col) tuple
+  - `read_until(testf)`: Read until callable returns true
+  - `read_until_chars(terminators)`: Read until terminator character
+  - `skip_whitespace()`: Skip and return whitespace
+  - `readline()`: Read line including newline
+- `SourceStream`: Python subclass with error handling and iteration
+- `Reader`: Extensible s-expression reader with macro support
+  - Reader macros for custom syntax
+  - Atom patterns for numeric literals
+  - Quote/quasiquote/unquote handling
+  - Format string interpolation
+  - Position tracking for error messages
+
 ### Not Migrating
 
 - TCO types (`tailcall`, `Trampoline`) - will be handled directly in native evaluator

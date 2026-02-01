@@ -16,3 +16,22 @@ This design documentation catalogs:
 3. Planned features and architectural decisions for `koskari`
 
 Each feature is marked with its origin and migration status to help guide implementation.
+
+## Migration Progress
+
+The following components have been fully migrated with native C extensions:
+
+| Component | Origin | Status |
+|-----------|--------|--------|
+| symbol, keyword | python-sibilant | Complete |
+| pair, nil, cons | python-sibilant | Complete |
+| values | python-sibilant | Complete |
+| gensym | python-sibilant | Complete |
+| Namespace, ModuleNamespace | sibilant-ceval | Complete |
+| Ref types (6 variants) | sibilant-ceval | Complete |
+| Formals, FormalsSpec | sibilant-ceval | Complete |
+| Parser (Reader, SourceStream) | python-sibilant | Complete |
+| Compiler | python-sibilant | Not started |
+| Evaluator | sibilant-ceval | Not started |
+
+See [api/types.md](api/types.md) for detailed type documentation.

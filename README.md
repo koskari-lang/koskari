@@ -21,6 +21,32 @@ This version aims to be a "perfect playground" - a language with all the useful 
 - **Generators**: Lazy evaluation
 - **And more**: See [design documentation](design/) for complete feature catalog
 
+## Implementation Status
+
+### Completed (with native C extensions)
+
+**Core Types:**
+- `symbol`, `keyword`: Interned atom types
+- `pair`, `nil`: Cons cells and empty list
+- `values`: Multi-value return objects
+- `gensym()`: Unique symbol generation
+
+**Runtime Infrastructure:**
+- `Namespace`, `ModuleNamespace`, `CollectorNamespace`: Lexical scopes
+- `Ref`, `AttributeRef`, `ItemRef`, `DynamicRef`, `ConstantRef`, `MemoizedRef`: Reference cells
+- `Formals`, `FormalsSpec`: Function parameter handling
+
+**Parser:**
+- `BaseSourceStream`: Native C base for efficient character I/O with Unicode position tracking
+- `SourceStream`: Python stream wrapper with error handling
+- `Reader`: Extensible s-expression reader with macro support
+
+### In Progress
+
+- Compiler and bytecode generation
+- Custom evaluator (ceval)
+- REPL and CLI
+
 ## Quick Start
 
 ### Building
@@ -47,8 +73,11 @@ make install-dev
 # Build native extensions
 make build-ext
 
-# Run tests (when implemented)
+# Run tests
 make test
+
+# Run all Python version tests
+make test-all
 
 # Lint code
 make lint
@@ -63,12 +92,22 @@ make clean
 koskari/
 ├── design/              # Design documentation
 ├── koskari/             # Main package
-│   ├── lib/             # C extension sources
-│   ├── compiler/        # Compiler implementation
-│   ├── parser/          # Parser implementation
-│   ├── evaluator/       # Evaluator/ceval implementation
-│   └── runtime/         # Runtime system
-├── tests/               # Test suite
+│   ├── __init__.py      # Package exports
+│   ├── types.py         # Type definitions and predicates
+│   ├── parse.py         # S-expression parser
+│   └── lib/             # C extension sources
+│       ├── atom.c       # Symbol/keyword implementation
+│       ├── pair.c       # Cons cell implementation
+│       ├── namespace.c  # Namespace implementation
+│       ├── formals.c    # Parameter binding
+│       ├── ref.c        # Reference cells
+│       ├── values.c     # Multi-value returns
+│       ├── operator.c   # Operator helpers
+│       ├── parse.c      # Native stream I/O
+│       └── ...
+├── tests/               # Test suite (570+ tests)
+│   ├── types/           # Type unit tests
+│   └── native/          # Native memory tests (ASan, Valgrind)
 └── examples/            # Example koskari code (.ki files)
 ```
 
@@ -80,9 +119,20 @@ Comprehensive design documentation is available in the [design/](design/) direct
 - Interpreter architecture (bytecode, compiler, evaluator)
 - Call/CC design considerations
 
-## Status
+## Testing
 
-**Early Development** - This is a fresh start. Core components are being designed and implemented.
+```bash
+# Run Python tests
+make test
+
+# Run native memory tests (requires container or local tools)
+make test-native           # Basic native tests
+make test-native-asan      # AddressSanitizer
+make test-native-valgrind  # Valgrind memcheck
+
+# Container-based testing
+make container-test        # All native tests in container
+```
 
 ## License
 
