@@ -30,8 +30,10 @@
 #include "formals.h"
 #include "values.h"
 #include "operator.h"
+#include "stack.h"
 #include "utils.h"
 #include "parse.h"
+#include "eval.h"
 
 
 /* === unit initializers === */

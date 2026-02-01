@@ -71,15 +71,17 @@ def extension(platform=None, debug=False):
             "koskari/lib/formals.c",
             "koskari/lib/values.c",
             "koskari/lib/operator.c",
+            "koskari/lib/stack.c",
             "koskari/lib/utils.c",
             "koskari/lib/parse.c",
+            "koskari/lib/eval.c",
             # Module initialization
             "koskari/lib/lib.c",
             # TODO: add source files as units are implemented
             # From python-sibilant:
             #   tco.c
             # From sibilant-ceval:
-            #   bytecode.c, ceval.c, formals.c, frame.c, func.c, stack.c
+            #   bytecode.c, ceval.c, frame.c, func.c
         ],
         depends=[
             # Headers
@@ -92,8 +94,10 @@ def extension(platform=None, debug=False):
             "koskari/lib/formals.h",
             "koskari/lib/values.h",
             "koskari/lib/operator.h",
+            "koskari/lib/stack.h",
             "koskari/lib/utils.h",
             "koskari/lib/parse.h",
+            "koskari/lib/eval.h",
             # Compatibility headers
             "koskari/lib/compat_36.h",
             "koskari/lib/compat_37.h",
