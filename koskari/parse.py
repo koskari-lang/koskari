@@ -1083,28 +1083,6 @@ class SourceStream(BaseSourceStream):
         if self.peek(2) == "#!":
             self.readline()
 
-    def read_until(self, testf):
-        """
-        Read characters until a test function returns True
-
-        The character that causes the test to return True is not consumed
-
-        :param testf: function(char) -> bool
-        :return: the characters read
-        """
-
-        s = self.stream
-        pos = s.tell()
-
-        i = 0
-        for i, char in enumerate(iter(partial(s.read, 1), ''), 1):
-            if testf(char):
-                i -= 1
-                break
-
-        s.seek(pos, 0)
-        return self.read(i) if i else ""
-
 
 default_reader = Reader()
 

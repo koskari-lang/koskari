@@ -40,7 +40,7 @@ def extra_compile_args(platform=None, debug=False):
         "-Wall",
         "-Werror",
         "-O2",
-        "-flto",
+        "-flto=auto",
     ]
 
     if debug:

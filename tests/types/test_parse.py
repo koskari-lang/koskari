@@ -570,6 +570,20 @@ class TestBaseSourceStreamRead(TestCase):
         data = s.read(1)
         self.assertEqual(data, "")
 
+    def test_read_unicode_position(self):
+        # Multi-byte UTF-8 characters should count as 1 column each
+        s = BaseSourceStream(StringIO("日本語"), "test.txt")
+        s.read(3)
+        # 3 characters = column 3, not 9 (which would be UTF-8 bytes)
+        self.assertEqual(s.position(), (1, 3))
+
+    def test_read_mixed_unicode_position(self):
+        # Mix of ASCII and multi-byte characters
+        s = BaseSourceStream(StringIO("héllo"), "test.txt")
+        s.read(5)
+        # 5 characters = column 5, not 6 (é is 2 UTF-8 bytes)
+        self.assertEqual(s.position(), (1, 5))
+
 
 class TestBaseSourceStreamPeek(TestCase):
 
@@ -627,6 +641,51 @@ class TestBaseSourceStreamReadUntilChars(TestCase):
         s.read_until_chars(" ")
         ch = s.read(1)
         self.assertEqual(ch, " ")
+
+
+class TestBaseSourceStreamReadUntil(TestCase):
+
+    def test_read_until_basic(self):
+        s = BaseSourceStream(StringIO("hello world"), "test.txt")
+        data = s.read_until(lambda c: c == ' ')
+        self.assertEqual(data, "hello")
+
+    def test_read_until_no_match(self):
+        s = BaseSourceStream(StringIO("hello"), "test.txt")
+        data = s.read_until(lambda c: c == 'x')
+        self.assertEqual(data, "hello")
+
+    def test_read_until_immediate(self):
+        s = BaseSourceStream(StringIO("hello"), "test.txt")
+        data = s.read_until(lambda c: c == 'h')
+        self.assertEqual(data, "")
+
+    def test_read_until_lambda(self):
+        s = BaseSourceStream(StringIO("abc123def"), "test.txt")
+        data = s.read_until(lambda c: c.isdigit())
+        self.assertEqual(data, "abc")
+
+    def test_read_until_method(self):
+        s = BaseSourceStream(StringIO("hello world"), "test.txt")
+        terminators = " \t\n"
+        data = s.read_until(terminators.__contains__)
+        self.assertEqual(data, "hello")
+
+    def test_read_until_updates_position(self):
+        s = BaseSourceStream(StringIO("hello world"), "test.txt")
+        s.read_until(lambda c: c == ' ')
+        self.assertEqual(s.position(), (1, 5))
+
+    def test_read_until_terminator_not_consumed(self):
+        s = BaseSourceStream(StringIO("hello world"), "test.txt")
+        s.read_until(lambda c: c == ' ')
+        ch = s.read(1)
+        self.assertEqual(ch, " ")
+
+    def test_read_until_requires_callable(self):
+        s = BaseSourceStream(StringIO("hello"), "test.txt")
+        with self.assertRaises(TypeError):
+            s.read_until("not callable")
 
 
 class TestBaseSourceStreamSkipWhitespace(TestCase):

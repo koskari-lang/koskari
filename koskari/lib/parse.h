@@ -50,6 +50,18 @@ extern PyTypeObject KosBaseSourceStreamType;
   ((obj) && ((obj)->ob_type == &KosBaseSourceStreamType))
 
 
+/* === character predicate === */
+
+
+/**
+   Predicate function type for read_until operations.
+
+   Returns non-zero if the character is a terminator (stop reading).
+   The context pointer allows passing additional state to the predicate.
+*/
+typedef int (*KosCharPredicate)(Py_UCS4 ch, void *context);
+
+
 /* === public API === */
 
 
@@ -64,6 +76,15 @@ PyObject *KosBaseSourceStream_Read(PyObject *self, Py_ssize_t count);
 PyObject *KosBaseSourceStream_Peek(PyObject *self, Py_ssize_t count);
 
 PyObject *KosBaseSourceStream_Position(PyObject *self);
+
+PyObject *KosBaseSourceStream_ReadUntilPred(
+        PyObject *self,
+        KosCharPredicate pred,
+        void *context);
+
+PyObject *KosBaseSourceStream_ReadUntil(
+        PyObject *self,
+        PyObject *testf);
 
 PyObject *KosBaseSourceStream_ReadUntilChars(
         PyObject *self,

@@ -50,25 +50,28 @@ static PyObject *_str_tell = NULL;
 
 static void update_position(
     KosBaseSourceStream *self,
-    const char *data,
-    Py_ssize_t len) {
+    PyObject *data) {
   /**
-     Update line and column based on characters read
+     Update line and column based on Unicode characters read
+
+     Iterates over Unicode code points (not UTF-8 bytes) to correctly
+     handle multi-byte characters.
 
      Newline (\n) increments line and resets column.
      Carriage return (\r) resets column only.
      Other characters increment column.
   */
 
+  Py_ssize_t len = PyUnicode_GET_LENGTH(data);
   Py_ssize_t line = self->line;
   Py_ssize_t col = self->col;
 
   for (Py_ssize_t i = 0; i < len; i++) {
-    char c = data[i];
-    if (c == '\n') {
+    Py_UCS4 ch = PyUnicode_READ_CHAR(data, i);
+    if (ch == '\n') {
       line++;
       col = 0;
-    } else if (c == '\r') {
+    } else if (ch == '\r') {
       col = 0;
     } else {
       col++;
@@ -273,14 +276,7 @@ PyObject *KosBaseSourceStream_Read(PyObject *self, Py_ssize_t count) {
     return NULL;
   }
 
-  Py_ssize_t len;
-  const char *chars = PyUnicode_AsUTF8AndSize(data, &len);
-  if (! chars) {
-    Py_DECREF(data);
-    return NULL;
-  }
-
-  update_position(s, chars, len);
+  update_position(s, data);
 
   return data;
 }
@@ -345,26 +341,19 @@ static PyObject *m_bss_position(PyObject *self, PyObject *_noargs) {
 }
 
 
-PyObject *KosBaseSourceStream_ReadUntilChars(
+PyObject *KosBaseSourceStream_ReadUntilPred(
         PyObject *self,
-        PyObject *terminators) {
+        KosCharPredicate pred,
+        void *context) {
   /**
-     Read characters until a terminating character is found.
+     Read characters until predicate returns non-zero.
 
      The terminating character is not consumed.
+     This is the core implementation used by read_until_chars,
+     skip_whitespace, and read_until.
   */
 
   KosBaseSourceStream *s = (KosBaseSourceStream *) self;
-
-  if (! PyUnicode_Check(terminators)) {
-    PyErr_SetString(PyExc_TypeError, "terminators must be str");
-    return NULL;
-  }
-
-  Py_ssize_t term_len;
-  const char *term_chars = PyUnicode_AsUTF8AndSize(terminators, &term_len);
-  if (! term_chars)
-    return NULL;
 
   /* save starting position */
   Py_ssize_t start_pos = stream_tell(s->stream);
@@ -390,25 +379,17 @@ PyObject *KosBaseSourceStream_ReadUntilChars(
       break;
     }
 
-    const char *ch_str = PyUnicode_AsUTF8(ch);
-    if (! ch_str) {
-      Py_DECREF(ch);
+    /* get the Unicode code point */
+    Py_UCS4 codepoint = PyUnicode_ReadChar(ch, 0);
+    Py_DECREF(ch);
+
+    if (codepoint == (Py_UCS4) -1 && PyErr_Occurred()) {
       Py_DECREF(one);
       return NULL;
     }
 
-    /* check if this character is a terminator */
-    int is_term = 0;
-    for (Py_ssize_t i = 0; i < term_len; i++) {
-      if (ch_str[0] == term_chars[i]) {
-        is_term = 1;
-        break;
-      }
-    }
-
-    Py_DECREF(ch);
-
-    if (is_term)
+    /* check predicate */
+    if (pred(codepoint, context))
       break;
 
     scan_count++;
@@ -429,29 +410,30 @@ PyObject *KosBaseSourceStream_ReadUntilChars(
 }
 
 
-static PyObject *m_bss_read_until_chars(PyObject *self, PyObject *args) {
-  PyObject *terminators = NULL;
-
-  if (! PyArg_ParseTuple(args, "O:read_until_chars", &terminators))
-    return NULL;
-
-  return KosBaseSourceStream_ReadUntilChars(self, terminators);
-}
-
-
-PyObject *KosBaseSourceStream_SkipWhitespace(PyObject *self) {
+PyObject *KosBaseSourceStream_ReadUntil(
+        PyObject *self,
+        PyObject *testf) {
   /**
-     Skip whitespace characters, returning the skipped text.
+     Read characters until a Python callable returns truthy.
+
+     For each character read, calls testf(char) where char is a
+     single-character string. Stops when the callable returns truthy.
+     The terminating character is not consumed.
   */
 
   KosBaseSourceStream *s = (KosBaseSourceStream *) self;
+
+  if (! PyCallable_Check(testf)) {
+    PyErr_SetString(PyExc_TypeError, "testf must be callable");
+    return NULL;
+  }
 
   /* save starting position */
   Py_ssize_t start_pos = stream_tell(s->stream);
   if (start_pos < 0)
     return NULL;
 
-  /* scan whitespace */
+  /* scan character by character */
   Py_ssize_t scan_count = 0;
   PyObject *one = PyLong_FromLong(1);
   if (! one)
@@ -470,19 +452,25 @@ PyObject *KosBaseSourceStream_SkipWhitespace(PyObject *self) {
       break;
     }
 
-    Py_ssize_t ch_len;
-    const char *ch_str = PyUnicode_AsUTF8AndSize(ch, &ch_len);
-    if (! ch_str || ch_len == 0) {
-      Py_DECREF(ch);
-      break;
-    }
-
-    /* check if whitespace */
-    char c = ch_str[0];
-    int is_ws = (c == ' ' || c == '\t' || c == '\n' || c == '\r');
+    /* call the test function with the character */
+    PyObject *result = PyObject_CallFunctionObjArgs(testf, ch, NULL);
     Py_DECREF(ch);
 
-    if (! is_ws)
+    if (! result) {
+      Py_DECREF(one);
+      return NULL;
+    }
+
+    int is_truthy = PyObject_IsTrue(result);
+    Py_DECREF(result);
+
+    if (is_truthy < 0) {
+      /* error in PyObject_IsTrue */
+      Py_DECREF(one);
+      return NULL;
+    }
+
+    if (is_truthy)
       break;
 
     scan_count++;
@@ -500,6 +488,86 @@ PyObject *KosBaseSourceStream_SkipWhitespace(PyObject *self) {
   }
 
   return KosBaseSourceStream_Read(self, scan_count);
+}
+
+
+static PyObject *m_bss_read_until(PyObject *self, PyObject *testf) {
+  return KosBaseSourceStream_ReadUntil(self, testf);
+}
+
+
+/* === read_until_chars predicate === */
+
+
+typedef struct {
+  PyObject *terminators;      /* the terminator string object */
+  Py_ssize_t length;          /* cached length */
+} CharsPredicateContext;
+
+
+static int chars_predicate(Py_UCS4 ch, void *ctx) {
+  /**
+     Predicate that returns non-zero if ch is in the terminator string.
+  */
+
+  CharsPredicateContext *context = (CharsPredicateContext *) ctx;
+  return PyUnicode_FindChar(context->terminators, ch, 0,
+                            context->length, 1) >= 0;
+}
+
+
+PyObject *KosBaseSourceStream_ReadUntilChars(
+        PyObject *self,
+        PyObject *terminators) {
+  /**
+     Read characters until a terminating character is found.
+
+     The terminating character is not consumed.
+  */
+
+  if (! PyUnicode_Check(terminators)) {
+    PyErr_SetString(PyExc_TypeError, "terminators must be str");
+    return NULL;
+  }
+
+  CharsPredicateContext ctx;
+  ctx.terminators = terminators;
+  ctx.length = PyUnicode_GET_LENGTH(terminators);
+
+  return KosBaseSourceStream_ReadUntilPred(self, chars_predicate, &ctx);
+}
+
+
+static PyObject *m_bss_read_until_chars(PyObject *self, PyObject *args) {
+  PyObject *terminators = NULL;
+
+  if (! PyArg_ParseTuple(args, "O:read_until_chars", &terminators))
+    return NULL;
+
+  return KosBaseSourceStream_ReadUntilChars(self, terminators);
+}
+
+
+/* === skip_whitespace predicate === */
+
+
+static int not_whitespace_predicate(Py_UCS4 ch, void *ctx) {
+  /**
+     Predicate that returns non-zero if ch is NOT whitespace.
+     This stops reading when we hit a non-whitespace character.
+  */
+
+  (void) ctx;  /* unused */
+  return ! (ch == ' ' || ch == '\t' || ch == '\n' || ch == '\r');
+}
+
+
+PyObject *KosBaseSourceStream_SkipWhitespace(PyObject *self) {
+  /**
+     Skip whitespace characters, returning the skipped text.
+  */
+
+  return KosBaseSourceStream_ReadUntilPred(self, not_whitespace_predicate, NULL);
 }
 
 
@@ -633,6 +701,11 @@ static PyMethodDef bss_methods[] = {
   { "position", (PyCFunction) m_bss_position, METH_NOARGS,
     "position() -> (line, col)\n"
     "Get the current position in the stream." },
+
+  { "read_until", (PyCFunction) m_bss_read_until, METH_O,
+    "read_until(testf) -> str\n"
+    "Read until testf(char) returns True.\n"
+    "The terminating character is not consumed." },
 
   { "read_until_chars", (PyCFunction) m_bss_read_until_chars, METH_VARARGS,
     "read_until_chars(terminators) -> str\n"
