@@ -31,6 +31,7 @@
 #include "values.h"
 #include "operator.h"
 #include "utils.h"
+#include "parse.h"
 
 
 /* === unit initializers === */

@@ -37,6 +37,7 @@ from .types import (
     nil,
     is_pair,
     setcdr,
+    BaseSourceStream,
     KoskariSyntaxError,
 )
 
@@ -94,7 +95,7 @@ _as_hex = partial(int, base=16)
 
 def _as_float(s):
     """
-    Convert a string to a float, stripping any trailing 'f' suffix.
+    Convert a string to a float, stripping any trailing 'f' suffix
     """
 
     if s[-1] == "f":
@@ -104,7 +105,7 @@ def _as_float(s):
 
 def _as_fraction(s):
     """
-    Convert a string to a fraction source form.
+    Convert a string to a fraction source form
 
     The fraction type cannot be stored in a const pool, so we convert
     it into a source form of (fraction NUMERATOR DENOMINATOR) instead.
@@ -121,7 +122,7 @@ def _as_fraction(s):
 
 def _as_decimal(s):
     """
-    Convert a string to a decimal source form.
+    Convert a string to a decimal source form
 
     The decimal type cannot be stored in a const pool, so we convert
     it into a source form of (decimal TUPLE) instead.
@@ -137,7 +138,7 @@ def _as_decimal(s):
 
 def _as_complex(s):
     """
-    Convert a string to a complex number.
+    Convert a string to a complex number
 
     Supports both 'i' and 'j' suffixes for the imaginary part.
 
@@ -163,7 +164,7 @@ ESCAPE_SEQUENCE_RE = regex(r'''
 
 def _decode_sub(match):
     """
-    Decode a matched escape sequence.
+    Decode a matched escape sequence
     """
 
     return decode(match.group(0), 'unicode-escape')
@@ -171,7 +172,7 @@ def _decode_sub(match):
 
 def _as_unicode(s, pattern=ESCAPE_SEQUENCE_RE):
     """
-    Process escape sequences in a string.
+    Process escape sequences in a string
 
     :param s: the string containing escape sequences
     :param pattern: the regex pattern for escape sequences
@@ -183,7 +184,7 @@ def _as_unicode(s, pattern=ESCAPE_SEQUENCE_RE):
 
 class ReaderSyntaxError(KoskariSyntaxError):
     """
-    An error in Koskari syntax during read time.
+    An error in Koskari syntax during read time
     """
 
     pass
@@ -191,7 +192,7 @@ class ReaderSyntaxError(KoskariSyntaxError):
 
 class FormatStringSyntaxError(ReaderSyntaxError):
     """
-    A read-time error from inside an f-string.
+    A read-time error from inside an f-string
     """
 
     pass
@@ -199,7 +200,7 @@ class FormatStringSyntaxError(ReaderSyntaxError):
 
 class Atom(str):
     """
-    A raw atom string that has not yet been processed.
+    A raw atom string that has not yet been processed
     """
 
     pass
@@ -207,7 +208,7 @@ class Atom(str):
 
 class Reader(object):
     """
-    S-expression reader with configurable reader macros and atom patterns.
+    S-expression reader with configurable reader macros and atom patterns
 
     The reader parses textual input into Koskari data structures. It
     supports reader macros for special character handling and atom
@@ -216,7 +217,7 @@ class Reader(object):
 
     def __init__(self, nodefaults=False):
         """
-        Initialize a new reader.
+        Initialize a new reader
 
         :param nodefaults: if True, do not add default macros and patterns
         """
@@ -232,7 +233,7 @@ class Reader(object):
 
     def read(self, reader_stream):
         """
-        Read a single s-expression from the stream.
+        Read a single s-expression from the stream
 
         Returns a cons cell, symbol, or numeric value. Returns None if
         no data remains in the stream.
@@ -253,9 +254,9 @@ class Reader(object):
 
     def read_atom(self, reader_stream):
         """
-        Read a single s-expression, returning atoms as unprocessed strings.
+        Read a single s-expression, returning atoms as unprocessed strings
 
-        Returns a cons cell, or an unprocessed atomic value.
+        Returns a cons cell, or an unprocessed atomic value
 
         :param reader_stream: the source stream to read from
         :return: the parsed value, or None at EOF
@@ -275,7 +276,7 @@ class Reader(object):
 
     def read_and_position(self, reader_stream):
         """
-        Read a single s-expression and return its position.
+        Read a single s-expression and return its position
 
         :param reader_stream: the source stream to read from
         :return: a tuple of (value, position) where position is (line, col)
@@ -293,7 +294,7 @@ class Reader(object):
 
     def _read(self, stream, raw=False):
         """
-        Internal read implementation.
+        Internal read implementation
 
         :param stream: the source stream
         :param raw: if True, return atoms without processing
@@ -331,7 +332,7 @@ class Reader(object):
 
     def set_event_macro(self, char, macro_fn, terminating=False):
         """
-        Add a character event macro to the reader.
+        Add a character event macro to the reader
 
         :param char: the character(s) to trigger on
         :param macro_fn: function(stream, char) -> (event, value)
@@ -348,7 +349,7 @@ class Reader(object):
 
     def get_event_macro(self, char):
         """
-        Get a character event macro from the reader.
+        Get a character event macro from the reader
 
         :param char: the character to look up
         :return: tuple of (macro_fn, terminating) or None
@@ -361,7 +362,7 @@ class Reader(object):
 
     def clear_event_macro(self, char):
         """
-        Remove a character event macro from the reader.
+        Remove a character event macro from the reader
 
         :param char: the character to remove
         """
@@ -374,7 +375,7 @@ class Reader(object):
     @contextmanager
     def temporary_event_macro(self, char, macro_fn, terminating=False):
         """
-        Context manager to temporarily apply a character event macro.
+        Context manager to temporarily apply a character event macro
 
         :param char: the character to trigger on
         :param macro_fn: function(stream, char) -> (event, value)
@@ -394,7 +395,7 @@ class Reader(object):
 
     def set_macro_character(self, char, macro_fn, terminating=False):
         """
-        Add a reader macro to the parser.
+        Add a reader macro to the parser
 
         Unlike set_event_macro, this wraps the macro function to always
         return a VALUE event.
@@ -411,7 +412,7 @@ class Reader(object):
 
     def temporary_macro_character(self, char, macro_fn, terminating=False):
         """
-        Context manager to temporarily apply a reader macro.
+        Context manager to temporarily apply a reader macro
 
         :param char: the character to trigger on
         :param macro_fn: function(stream, char) -> value
@@ -426,7 +427,7 @@ class Reader(object):
 
     def _add_default_macros(self):
         """
-        Add the default reader macros for standard syntax.
+        Add the default reader macros for standard syntax
         """
 
         sm = self.set_event_macro
@@ -452,7 +453,7 @@ class Reader(object):
 
     def set_atom_pattern(self, namesym, match_fn, conversion_fn):
         """
-        Add or update an atom pattern.
+        Add or update an atom pattern
 
         :param namesym: symbol name for this pattern
         :param match_fn: function(string) -> bool
@@ -469,7 +470,7 @@ class Reader(object):
 
     def get_atom_pattern(self, namesym):
         """
-        Get an atom pattern by name.
+        Get an atom pattern by name
 
         :param namesym: symbol name to look up
         :return: the pattern list [name, match, conv] or None
@@ -483,7 +484,7 @@ class Reader(object):
 
     def clear_atom_pattern(self, namesym):
         """
-        Remove an atom pattern by name.
+        Remove an atom pattern by name
 
         :param namesym: symbol name to remove
         """
@@ -495,7 +496,7 @@ class Reader(object):
 
     def set_atom_regex(self, namesym, regexstr, conversion_fn):
         """
-        Add an atom pattern using a regex string.
+        Add an atom pattern using a regex string
 
         :param namesym: symbol name for this pattern
         :param regexstr: regex pattern string
@@ -507,7 +508,7 @@ class Reader(object):
 
     def _add_default_atoms(self):
         """
-        Add the default atom patterns for standard literals.
+        Add the default atom patterns for standard literals
         """
 
         ap = self.set_atom_pattern
@@ -524,7 +525,7 @@ class Reader(object):
 
     def _read_default(self, stream, c):
         """
-        Default character macro handler for unrecognized characters.
+        Default character macro handler for unrecognized characters
 
         Reads characters until a terminating character is found.
 
@@ -533,7 +534,7 @@ class Reader(object):
         :return: tuple of (event, value)
         """
 
-        atom = c + stream.read_until(self._terms.__contains__)
+        atom = c + stream.read_until_chars(self._terms)
 
         if atom == ".":
             return DOT, None
@@ -542,7 +543,7 @@ class Reader(object):
 
     def process_atom(self, atom):
         """
-        Process a raw atom string into a typed value.
+        Process a raw atom string into a typed value
 
         Tries each atom pattern in order. If none match, returns a symbol.
 
@@ -558,7 +559,7 @@ class Reader(object):
 
     def read_pair(self, stream, openchar=None, closechar=None):
         """
-        Read a pair (list) from the stream.
+        Read a pair (list) from the stream
 
         :param stream: the source stream
         :param openchar: the opening character (read if None)
@@ -579,7 +580,7 @@ class Reader(object):
 
     def _read_pair(self, closer, stream, char):
         """
-        Internal pair reading implementation.
+        Internal pair reading implementation
 
         :param closer: the expected closing character
         :param stream: the source stream
@@ -637,7 +638,7 @@ class Reader(object):
 
     def _read_begin(self, closer, stream, char):
         """
-        Read a begin block (curly braces).
+        Read a begin block (curly braces)
 
         :param closer: the expected closing character
         :param stream: the source stream
@@ -656,7 +657,7 @@ class Reader(object):
 
     def _close_pair(self, stream, char):
         """
-        Handle a closing parenthesis/bracket/brace.
+        Handle a closing parenthesis/bracket/brace
 
         :param stream: the source stream
         :param char: the closing character
@@ -667,7 +668,7 @@ class Reader(object):
 
     def _read_collection(self, stream, fchar):
         """
-        Read a collection literal (#(...), #[...], #{...}).
+        Read a collection literal (#(...), #[...], #{...})
 
         :param stream: the source stream
         :param fchar: the '#' character
@@ -698,7 +699,7 @@ class Reader(object):
 
     def _read_fstring(self, stream, fchar):
         """
-        Read a format string (f"...").
+        Read a format string (f"...")
 
         :param stream: the source stream
         :param fchar: the 'f' character
@@ -728,7 +729,7 @@ class Reader(object):
 
     def _read_rstring(self, stream, char):
         """
-        Read a raw string (r"...").
+        Read a raw string (r"...")
 
         :param stream: the source stream
         :param char: the 'r' character
@@ -742,7 +743,7 @@ class Reader(object):
 
     def _read_string(self, stream, char, with_escapes=True):
         """
-        Read a string literal.
+        Read a string literal
 
         :param stream: the source stream
         :param char: the quote character
@@ -777,7 +778,7 @@ class Reader(object):
 
     def _read_3string(self, stream, char, with_escapes=True):
         """
-        Read a triple-quoted string.
+        Read a triple-quoted string
 
         :param stream: the source stream
         :param char: the quote character
@@ -817,7 +818,7 @@ class Reader(object):
 
     def _read_quote(self, stream, char):
         """
-        Read a quoted expression ('expr).
+        Read a quoted expression ('expr)
 
         :param stream: the source stream
         :param char: the quote character
@@ -834,7 +835,7 @@ class Reader(object):
 
     def _read_quasiquote(self, stream, char):
         """
-        Read a quasiquoted expression (`expr).
+        Read a quasiquoted expression (`expr)
 
         :param stream: the source stream
         :param char: the backquote character
@@ -852,7 +853,7 @@ class Reader(object):
 
     def _read_unquote(self, stream, char):
         """
-        Read an unquoted expression (,expr).
+        Read an unquoted expression (,expr)
 
         :param stream: the source stream
         :param char: the comma character
@@ -875,7 +876,7 @@ class Reader(object):
 
     def _read_splice(self, stream, char):
         """
-        Read a splice expression (@expr inside unquote).
+        Read a splice expression (@expr inside unquote)
 
         :param stream: the source stream
         :param char: the '@' character
@@ -892,7 +893,7 @@ class Reader(object):
 
     def _read_comment(self, stream, char):
         """
-        Read and skip a comment.
+        Read and skip a comment
 
         :param stream: the source stream
         :param char: the semicolon character
@@ -909,7 +910,7 @@ class FormatStringReader(object):
 
     def __init__(self, normal_reader=None):
         """
-        Initialize a format string reader.
+        Initialize a format string reader
 
         :param normal_reader: the reader to use for embedded expressions
         """
@@ -921,7 +922,7 @@ class FormatStringReader(object):
 
     def split(self, stream):
         """
-        Split a format string into literal and expression parts.
+        Split a format string into literal and expression parts
 
         :param stream: the source stream containing the format string
         :return: list of string literals and expression forms
@@ -930,7 +931,6 @@ class FormatStringReader(object):
         result = []
 
         norm = self.normal
-        check = "{}".__contains__
 
         try:
             peek = stream.peek(2)
@@ -957,7 +957,7 @@ class FormatStringReader(object):
                     result.append(new_child)
 
                 else:
-                    result.append(stream.read_until(check))
+                    result.append(stream.read_until_chars("{}"))
 
                 peek = stream.peek(2)
 
@@ -972,7 +972,7 @@ class FormatStringReader(object):
 @contextmanager
 def source_open(filename, auto_skip_exec=True):
     """
-    Context manager to open a file as a SourceStream.
+    Context manager to open a file as a SourceStream
 
     :param filename: path to the file to open
     :param auto_skip_exec: if True, skip any #! line at the start
@@ -988,7 +988,7 @@ def source_open(filename, auto_skip_exec=True):
 def source_str(source_str, filename, auto_skip_exec=True,
                line_no=1, col_no=0):
     """
-    Create a SourceStream from a string.
+    Create a SourceStream from a string
 
     :param source_str: the source string
     :param filename: the filename to report in errors
@@ -1004,7 +1004,7 @@ def source_str(source_str, filename, auto_skip_exec=True,
 
 def source_stream(source_stream, filename, auto_skip_exec=True):
     """
-    Create a SourceStream from an existing stream.
+    Create a SourceStream from an existing stream
 
     :param source_stream: the stream to wrap
     :param filename: the filename to report in errors
@@ -1016,15 +1016,19 @@ def source_stream(source_stream, filename, auto_skip_exec=True):
                         auto_skip_exec=auto_skip_exec)
 
 
-class SourceStream(object):
+class SourceStream(BaseSourceStream):
     """
-    A wrapper for a text stream that tracks line and column position.
+    A wrapper for a text stream that tracks line and column position
+
+    Inherits from the native BaseSourceStream for efficient character-level
+    I/O with position tracking. Adds error reporting and callback-based
+    read_until for extensibility.
     """
 
-    def __init__(self, stream, filename, auto_skip_exec=True,
+    def __init__(self, stream, filename=None, auto_skip_exec=True,
                  line_no=1, col_no=0):
         """
-        Initialize a source stream.
+        Initialize a source stream
 
         :param stream: the underlying seekable stream
         :param filename: the filename for error reporting
@@ -1037,29 +1041,14 @@ class SourceStream(object):
         if not stream.seekable():
             raise TypeError("SourceStream's stream argument must be seekable")
 
-        self.filename = filename
-        self.stream = stream
-
-        self.lin = line_no
-        self.col = col_no
+        super().__init__(stream, filename, line=line_no, col=col_no)
 
         if auto_skip_exec:
             self.skip_exec()
 
-    def position(self):
-        """
-        Get the current position in the stream.
-
-        Line numbers start from 1, columns start from 0.
-
-        :return: tuple of (line, column)
-        """
-
-        return self.lin, self.col
-
     def error(self, message, position=None):
         """
-        Create a ReaderSyntaxError for the current position.
+        Create a ReaderSyntaxError for the current position
 
         :param message: the error message
         :param position: optional (line, col) tuple; uses current if None
@@ -1079,67 +1068,9 @@ class SourceStream(object):
         return ReaderSyntaxError(message, position,
                                  text=text, filename=self.filename)
 
-    def read(self, count=1):
-        """
-        Read characters from the stream, tracking position.
-
-        :param count: number of characters to read
-        :return: the characters read
-        """
-
-        assert count >= 1, "nonsense read value"
-
-        data = self.stream.read(count)
-
-        lin = self.lin
-        col = self.col
-
-        for c in data:
-            if c == "\n":
-                lin += 1
-                col = 0
-                continue
-            elif c == "\r":
-                col = 0
-                continue
-            else:
-                col += 1
-                continue
-
-        self.lin = lin
-        self.col = col
-
-        return data
-
-    def readline(self):
-        """
-        Read a line from the stream.
-
-        :return: the line including the newline character
-        """
-
-        data = self.stream.readline()
-        self.lin += 1
-        self.col = 0
-        return data
-
-    def peek(self, count=1):
-        """
-        Peek at characters without consuming them.
-
-        :param count: number of characters to peek
-        :return: the peeked characters
-        """
-
-        s = self.stream
-        pos = s.tell()
-        data = s.read(count)
-        s.seek(pos, 0)
-        return data
-
     def __iter__(self):
         """
-        Iterate over characters in the stream.
+        Iterate over characters in the stream
         """
 
         return iter(partial(self.read, 1), '')
@@ -1152,20 +1083,11 @@ class SourceStream(object):
         if self.peek(2) == "#!":
             self.readline()
 
-    def skip_whitespace(self):
-        """
-        Skip whitespace characters.
-
-        :return: the skipped whitespace
-        """
-
-        return self.read_until(lambda c: not c.isspace())
-
     def read_until(self, testf):
         """
-        Read characters until a test function returns True.
+        Read characters until a test function returns True
 
-        The character that causes the test to return True is not consumed.
+        The character that causes the test to return True is not consumed
 
         :param testf: function(char) -> bool
         :return: the characters read

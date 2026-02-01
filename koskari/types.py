@@ -50,6 +50,9 @@ from .lib import (
     # values type
     values,
 
+    # parse types
+    BaseSourceStream,
+
     # atom functions
     gensym,
 
@@ -85,6 +88,9 @@ __all__ = (
 
     # values type
     "values",
+
+    # parse types
+    "BaseSourceStream",
 
     # atom functions
     "gensym",

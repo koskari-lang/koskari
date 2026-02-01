@@ -21,9 +21,10 @@ Unit tests for koskari.parse
 :ai-assistant: Claude Opus 4.5 via Cursor
 """
 
+from io import StringIO
 from unittest import TestCase
 
-from koskari.types import cons, symbol, keyword, nil, car, cdr
+from koskari.types import cons, symbol, keyword, nil, car, cdr, BaseSourceStream
 from koskari.parse import default_reader, source_str
 
 
@@ -515,6 +516,245 @@ class TestReader(TestCase):
         value, pos = reader.read_and_position(stream)
         self.assertIs(value, symbol("hello"))
         self.assertEqual(pos, (1, 2))
+
+
+class TestBaseSourceStreamCreate(TestCase):
+
+    def test_create_with_stream_only(self):
+        s = BaseSourceStream(StringIO("test"))
+        self.assertIsNotNone(s)
+
+    def test_create_with_filename(self):
+        s = BaseSourceStream(StringIO("test"), "test.txt")
+        self.assertEqual(s.filename, "test.txt")
+
+    def test_create_with_position(self):
+        s = BaseSourceStream(StringIO("test"), "test.txt", line=5, col=10)
+        self.assertEqual(s.position(), (5, 10))
+
+    def test_default_position(self):
+        s = BaseSourceStream(StringIO("test"), "test.txt")
+        self.assertEqual(s.position(), (1, 0))
+
+
+class TestBaseSourceStreamRead(TestCase):
+
+    def test_read_single(self):
+        s = BaseSourceStream(StringIO("hello"), "test.txt")
+        ch = s.read(1)
+        self.assertEqual(ch, "h")
+
+    def test_read_multiple(self):
+        s = BaseSourceStream(StringIO("hello"), "test.txt")
+        data = s.read(3)
+        self.assertEqual(data, "hel")
+
+    def test_read_updates_column(self):
+        s = BaseSourceStream(StringIO("hello"), "test.txt")
+        s.read(3)
+        self.assertEqual(s.position(), (1, 3))
+
+    def test_read_newline_updates_line(self):
+        s = BaseSourceStream(StringIO("ab\ncd"), "test.txt")
+        s.read(3)
+        self.assertEqual(s.position(), (2, 0))
+
+    def test_read_past_newline(self):
+        s = BaseSourceStream(StringIO("ab\ncd"), "test.txt")
+        s.read(4)
+        self.assertEqual(s.position(), (2, 1))
+
+    def test_read_at_eof(self):
+        s = BaseSourceStream(StringIO("hi"), "test.txt")
+        s.read(2)
+        data = s.read(1)
+        self.assertEqual(data, "")
+
+
+class TestBaseSourceStreamPeek(TestCase):
+
+    def test_peek_single(self):
+        s = BaseSourceStream(StringIO("hello"), "test.txt")
+        ch = s.peek(1)
+        self.assertEqual(ch, "h")
+
+    def test_peek_multiple(self):
+        s = BaseSourceStream(StringIO("hello"), "test.txt")
+        data = s.peek(3)
+        self.assertEqual(data, "hel")
+
+    def test_peek_does_not_advance(self):
+        s = BaseSourceStream(StringIO("hello"), "test.txt")
+        s.peek(3)
+        self.assertEqual(s.position(), (1, 0))
+
+    def test_peek_then_read(self):
+        s = BaseSourceStream(StringIO("hello"), "test.txt")
+        peeked = s.peek(2)
+        read = s.read(2)
+        self.assertEqual(peeked, read)
+
+
+class TestBaseSourceStreamReadUntilChars(TestCase):
+
+    def test_read_until_space(self):
+        s = BaseSourceStream(StringIO("hello world"), "test.txt")
+        data = s.read_until_chars(" ")
+        self.assertEqual(data, "hello")
+
+    def test_read_until_newline(self):
+        s = BaseSourceStream(StringIO("hello\nworld"), "test.txt")
+        data = s.read_until_chars("\n")
+        self.assertEqual(data, "hello")
+
+    def test_read_until_multiple_terminators(self):
+        s = BaseSourceStream(StringIO("hello world"), "test.txt")
+        data = s.read_until_chars(" \n\t")
+        self.assertEqual(data, "hello")
+
+    def test_read_until_no_match(self):
+        s = BaseSourceStream(StringIO("hello"), "test.txt")
+        data = s.read_until_chars("x")
+        self.assertEqual(data, "hello")
+
+    def test_read_until_updates_position(self):
+        s = BaseSourceStream(StringIO("hello world"), "test.txt")
+        s.read_until_chars(" ")
+        self.assertEqual(s.position(), (1, 5))
+
+    def test_terminator_not_consumed(self):
+        s = BaseSourceStream(StringIO("hello world"), "test.txt")
+        s.read_until_chars(" ")
+        ch = s.read(1)
+        self.assertEqual(ch, " ")
+
+
+class TestBaseSourceStreamSkipWhitespace(TestCase):
+
+    def test_skip_spaces(self):
+        s = BaseSourceStream(StringIO("   hello"), "test.txt")
+        ws = s.skip_whitespace()
+        self.assertEqual(ws, "   ")
+
+    def test_skip_tabs(self):
+        s = BaseSourceStream(StringIO("\t\thello"), "test.txt")
+        ws = s.skip_whitespace()
+        self.assertEqual(ws, "\t\t")
+
+    def test_skip_newlines(self):
+        s = BaseSourceStream(StringIO("\n\nhello"), "test.txt")
+        ws = s.skip_whitespace()
+        self.assertEqual(ws, "\n\n")
+
+    def test_skip_mixed_whitespace(self):
+        s = BaseSourceStream(StringIO(" \t\n hello"), "test.txt")
+        ws = s.skip_whitespace()
+        self.assertEqual(ws, " \t\n ")
+
+    def test_skip_no_whitespace(self):
+        s = BaseSourceStream(StringIO("hello"), "test.txt")
+        ws = s.skip_whitespace()
+        self.assertEqual(ws, "")
+
+    def test_skip_updates_position(self):
+        s = BaseSourceStream(StringIO("\n  hello"), "test.txt")
+        s.skip_whitespace()
+        self.assertEqual(s.position(), (2, 2))
+
+
+class TestBaseSourceStreamReadline(TestCase):
+
+    def test_readline_simple(self):
+        s = BaseSourceStream(StringIO("hello\nworld"), "test.txt")
+        line = s.readline()
+        self.assertEqual(line, "hello\n")
+
+    def test_readline_updates_position(self):
+        s = BaseSourceStream(StringIO("hello\nworld"), "test.txt")
+        s.readline()
+        self.assertEqual(s.position(), (2, 0))
+
+    def test_readline_at_eof(self):
+        s = BaseSourceStream(StringIO("hello"), "test.txt")
+        line = s.readline()
+        self.assertEqual(line, "hello")
+
+    def test_readline_empty_line(self):
+        s = BaseSourceStream(StringIO("\nhello"), "test.txt")
+        line = s.readline()
+        self.assertEqual(line, "\n")
+
+
+class TestBaseSourceStreamProperties(TestCase):
+
+    def test_stream_property(self):
+        stream = StringIO("test")
+        s = BaseSourceStream(stream, "test.txt")
+        self.assertIs(s.stream, stream)
+
+    def test_filename_property(self):
+        s = BaseSourceStream(StringIO("test"), "myfile.txt")
+        self.assertEqual(s.filename, "myfile.txt")
+
+    def test_lin_property(self):
+        s = BaseSourceStream(StringIO("test"), "test.txt", line=5)
+        self.assertEqual(s.lin, 5)
+
+    def test_col_property(self):
+        s = BaseSourceStream(StringIO("test"), "test.txt", col=10)
+        self.assertEqual(s.col, 10)
+
+
+class TestBaseSourceStreamSubclass(TestCase):
+
+    def test_can_subclass(self):
+        class MyStream(BaseSourceStream):
+            pass
+
+        s = MyStream(StringIO("test"), "test.txt")
+        self.assertIsInstance(s, BaseSourceStream)
+
+
+class TestSourceStreamInheritance(TestCase):
+
+    def test_inherits_from_base(self):
+        s = source_str("test", "<unittest>")
+        self.assertIsInstance(s, BaseSourceStream)
+
+    def test_type_is_source_stream(self):
+        from koskari.parse import SourceStream
+        s = source_str("test", "<unittest>")
+        self.assertIsInstance(s, SourceStream)
+
+    def test_read_method_from_native(self):
+        s = source_str("hello", "<unittest>")
+        data = s.read(3)
+        self.assertEqual(data, "hel")
+
+    def test_peek_method_from_native(self):
+        s = source_str("hello", "<unittest>")
+        data = s.peek(3)
+        self.assertEqual(data, "hel")
+        # peek should not advance
+        self.assertEqual(s.position(), (1, 0))
+
+    def test_position_tracking(self):
+        s = source_str("ab\ncd", "<unittest>")
+        s.read(3)  # reads "ab\n"
+        self.assertEqual(s.position(), (2, 0))
+
+    def test_read_until_method(self):
+        s = source_str("hello world", "<unittest>")
+        data = s.read_until(lambda c: c == ' ')
+        self.assertEqual(data, "hello")
+
+    def test_skip_whitespace_native(self):
+        from koskari.parse import SourceStream
+        s = SourceStream(StringIO("  hello"), "test.txt", auto_skip_exec=False)
+        # SourceStream uses native skip_whitespace from BaseSourceStream
+        ws = s.skip_whitespace()
+        self.assertEqual(ws, "  ")
+        self.assertEqual(s.position(), (1, 2))
 
 
 # The end.
