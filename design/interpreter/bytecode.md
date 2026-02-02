@@ -1,123 +1,290 @@
 # Bytecode Format
 
-## From python-sibilant
+## Koskari Bytecode (KosCode)
 
-### CPython Bytecode Target
+Koskari uses a custom bytecode format optimized for:
+- Compact instruction representation (4 bytes per instruction)
+- Delta-encoded position tracking for efficient source mapping
+- Read-only memory protection after initialization
+- Async-first design (all code is async by default)
 
-- Compiles to CPython bytecode (`.pyc` files)
-- Version-specific targets (3.5, 3.6, 3.7)
-- Uses Python's `dis` module for bytecode generation
-- Line number table support for tracebacks
+### Instruction Format
 
-### Pseudops (Pseudo Operations)
+Each instruction is 4 bytes:
 
-Intermediate representation before bytecode generation:
-- `pseudop_const(value)`: Load constant
-- `pseudop_get_var(sym)`: Load variable
-- `pseudop_set_var(sym)`: Store variable
-- `pseudop_get_attr(sym)`: Get attribute
-- `pseudop_call(nargs)`: Function call
-- `pseudop_return()`: Return
-- `pseudop_yield()`: Yield
-- `pseudop_position(line, col)`: Set position
-- And many more...
+```c
+typedef struct KosOp {
+    uint16_t op;    /* opcode (0-65535) */
+    uint16_t arg;   /* argument (0-65535) */
+} KosOp;
+```
 
-## From sibilant-ceval
+This compact format supports:
+- Up to 65,536 unique opcodes
+- Constants pool indices up to 65,535
+- Jump targets up to 65,535 instructions
+- Stack counts and other arguments up to 65,535
 
-### Custom Bytecode Format
+### Position Table
 
-**OpCode Enum**: Custom opcodes for koskari operations
-- `OP_CONST`: Load constant
-- `OP_VAR` / `OP_FAST`: Load variable (slow/fast path)
-- `OP_VAR_STORE` / `OP_FAST_STORE`: Store variable
-- `OP_ATTR`: Get attribute
-- `OP_ATTR_STORE`: Set attribute
-- `OP_ATTR_REF`: Get attribute reference
-- `OP_ITEM`: Get item
-- `OP_ITEM_STORE`: Set item
-- `OP_ITEM_REF`: Get item reference
-- `OP_CALL`: Function call
-- `OP_CALL_NAMES`: Call with keyword names
-- `OP_CALL_STAR`: Call with *args/**kwargs
-- `OP_TAIL_CALL`: Tail call
-- `OP_RECUR`: Recursive tail call
-- `OP_RETURN`: Return
-- `OP_YIELD`: Yield
-- `OP_YIELD_FROM`: Yield from
-- `OP_AWAIT`: Await
-- `OP_AWAIT_NEXT`: Await next (async iteration)
-- `OP_BUILD_FUNCTION`: Build function object
-- `OP_BUILD_ARGS`: Build argument tuple
-- `OP_BUILD_KWDS_NAMES`: Build keyword dict
-- `OP_PUSH_NS`: Push namespace
-- `OP_POP_NS`: Pop namespace
-- `OP_PUSH_TRY`: Push try block
-- `OP_POP_TRY`: Pop try block
-- `OP_PUSH_FOREACH`: Push foreach loop
-- `OP_POP_LOOP`: Pop loop
-- `OP_PUSH_WITH`: Push with block
-- `OP_POP_WITH`: Pop with block
-- `OP_PUSH_AWAIT_FOREACH`: Push async foreach
-- `OP_PUSH_AWAIT_WITH`: Push async with
-- `OP_POP_AWAIT_WITH`: Pop async with
-- `OP_JUMP`: Unconditional jump
-- `OP_JUMP_TRUE`: Jump if true
-- `OP_JUMP_FALSE`: Jump if false
-- `OP_LABEL`: Label target
-- `OP_POSITION`: Set source position
-- `OP_RAISE`: Raise exception
-- `OP_EXCEPTION`: Load exception
-- `OP_EXCEPTION_MATCH`: Match exception type
-- `OP_EXCEPTION_CLEAR`: Clear exception
-- `OP_OBJECT_*`: Object method calls (add, sub, etc.)
-- And many more...
+Source positions are stored in a separate delta-encoded table. Only position changes are recorded:
 
-### Bytecode Structure
+```c
+typedef struct KosPosition {
+    uint16_t index;   /* instruction index where position changes */
+    uint16_t line;    /* source line number */
+    uint16_t col;     /* source column number */
+} KosPosition;
+```
 
-**ByteCode**:
-- `NamespaceSpec`: Namespace specification
-- Instructions: List of `(OpCode, argument)` pairs
-- Name: Function/expression name
-- Filename: Source filename
+Position lookup uses binary search to find the applicable entry for any instruction index.
 
-**NamespaceSpec**:
-- Name: Namespace name
-- Local symbols: Tuple of local variable names
-- Closure symbols: Tuple of closure variable names
+### Code Object Structure
 
-**FunctionSpec**:
-- Name: Function name
-- FormalsSpec: Parameter specification
-- ByteCode: Compiled bytecode
+```c
+struct KosCode {
+    PyObject_HEAD
 
-### Wide Bytecode (Proposed)
+    PyObject *name;       /* function/expression name */
+    PyObject *filename;   /* source filename */
+    PyObject *nspec;      /* namespace specification */
 
-From `todo.md` ideas:
-- Opcode with argument, line, col
-- Block type, jumpA, jumpB per opcode
-- Namespace as fast index offset
-- Stack index per opcode
-- Discard flag per opcode
+    uint32_t flags;       /* KosCodeFlag bitfield */
+    size_t allocation;    /* total memory allocation size */
 
-## Migration Notes
+    uint32_t code_len;    /* instruction count */
+    KosOp *code;          /* instruction array (read-only) */
 
-### To Migrate
+    uint32_t pos_len;     /* position entry count */
+    KosPosition *pos;     /* positions table (read-only) */
 
-- Opcode definitions (from sibilant-ceval)
-- Bytecode structure (NamespaceSpec, FunctionSpec)
-- Position tracking
-- Fast/slow variable access paths
+    uint32_t cpool_len;   /* constant pool size */
+    PyObject **cpool;     /* constant pool (read-only) */
 
-### To Reconsider
+    PyCodeObject *faux;   /* faux code object for tracebacks */
+    PyObject *extras;     /* extra metadata dict */
+};
+```
 
-- CPython bytecode target (abandoned due to version churn)
-- Wide bytecode format (performance vs. complexity)
-- Opcode compression/optimization
-- Bytecode validation
+### Memory Protection
 
-### To Design
+After initialization, the bytecode storage (instructions, positions, constant pool) is marked read-only via `mprotect()`. This:
+- Prevents heap overflow attacks from modifying instructions
+- Ensures bytecode immutability during execution
+- Provides defense-in-depth security
 
-- Stable bytecode format (version-independent)
-- Bytecode serialization format
-- JIT compilation strategy
-- Integration with `call/cc` (continuation representation in bytecode)
+### Code Flags
+
+```c
+typedef enum KosCodeFlag {
+    KOS_CODE_YIELDS = 0x01,  /* code contains yield -> async generator */
+} KosCodeFlag;
+```
+
+Since all Koskari code is async by default:
+- No separate `CODE_AWAITS` flag is needed
+- The `KOS_CODE_YIELDS` flag distinguishes:
+  - Regular code -> returns `Coroutine`
+  - Generator code -> returns `AsyncGenerator`
+
+### Opcode Styles
+
+Opcodes are categorized by their argument interpretation:
+
+```c
+typedef enum KosOpStyle {
+    KOSTYLE_COMPILE,     /* compile-time only (LABEL, POSITION) */
+    KOSTYLE_LABEL,       /* argument is jump target */
+    KOSTYLE_NOARG,       /* argument unused */
+    KOSTYLE_COUNT,       /* argument is stack element count */
+    KOSTYLE_PAIR_COUNT,  /* argument is paired element count */
+    KOSTYLE_STAR,        /* argument is star call bitflags */
+    KOSTYLE_CONST,       /* argument is constant pool index */
+    KOSTYLE_VAR,         /* argument is variable name (in cpool) */
+    KOSTYLE_FASTVAR,     /* argument is fast local index */
+} KosOpStyle;
+```
+
+## Opcode Categories
+
+### Stack Operations
+- `KOS_OP_NOOP`: No operation
+- `KOS_OP_DUP`: Duplicate top N elements
+- `KOS_OP_POP`: Pop N elements
+- `KOS_OP_CONST`: Load constant from pool
+
+### Control Flow
+- `KOS_OP_AWAIT`: Await expression
+- `KOS_OP_BREAK`: Break from loop
+- `KOS_OP_CONTINUE`: Continue loop
+- `KOS_OP_RAISE`: Raise exception
+- `KOS_OP_RETURN`: Return value
+- `KOS_OP_YIELD`: Yield value (sets YIELDS flag)
+- `KOS_OP_YIELD_FROM`: Yield from iterable (sets YIELDS flag)
+
+### Jumps
+- `KOS_OP_JUMP`: Unconditional jump
+- `KOS_OP_JUMP_TRUE`: Jump if true
+- `KOS_OP_JUMP_FALSE`: Jump if false
+- `KOS_OP_JUMP_AND`: Short-circuit AND
+- `KOS_OP_JUMP_OR`: Short-circuit OR
+
+### Check Jumps (Pattern Matching)
+- `KOS_OP_CHECK_EQ`, `KOS_OP_CHECK_NE`: Equality checks
+- `KOS_OP_CHECK_LT`, `KOS_OP_CHECK_LE`, `KOS_OP_CHECK_GT`, `KOS_OP_CHECK_GE`: Comparisons
+- `KOS_OP_CHECK_IN`, `KOS_OP_CHECK_NOT_IN`: Membership
+- `KOS_OP_CHECK_IS`, `KOS_OP_CHECK_IS_NOT`: Identity
+- `KOS_OP_CHECK_IS_INSTANCE`, `KOS_OP_CHECK_IS_SUBCLASS`: Type checks
+- `KOS_OP_CHECK_EXCEPTION`: Exception matching
+
+### Variables
+- `KOS_OP_VAR`: Load variable by name
+- `KOS_OP_VAR_BIND`: Bind reference
+- `KOS_OP_VAR_CLEAR`: Clear variable
+- `KOS_OP_VAR_REF`: Get variable reference
+- `KOS_OP_VAR_STORE`: Store to variable
+
+### Fast Variables (Index-Based)
+- `KOS_OP_FAST`: Load fast local
+- `KOS_OP_FAST_BIND`: Bind fast local reference
+- `KOS_OP_FAST_CLEAR`: Clear fast local
+- `KOS_OP_FAST_REF`: Get fast local reference
+- `KOS_OP_FAST_STORE`: Store to fast local
+
+### Attributes
+- `KOS_OP_ATTR`: Get attribute
+- `KOS_OP_ATTR_CLEAR`: Delete attribute
+- `KOS_OP_ATTR_REF`: Get attribute reference
+- `KOS_OP_ATTR_STORE`: Set attribute
+
+### Items
+- `KOS_OP_ITEM`: Get item (computed key)
+- `KOS_OP_ITEM_CLEAR`: Delete item
+- `KOS_OP_ITEM_REF`: Get item reference
+- `KOS_OP_ITEM_STORE`: Set item
+- `KOS_OP_CONST_ITEM`: Get item (constant key)
+- `KOS_OP_CONST_ITEM_CLEAR`, `KOS_OP_CONST_ITEM_REF`, `KOS_OP_CONST_ITEM_STORE`
+
+### Calls
+- `KOS_OP_CALL`: Simple call
+- `KOS_OP_CALL_NAMES`: Call with keyword names
+- `KOS_OP_CALL_STAR`: Call with *args/**kwargs
+- `KOS_OP_CALL_ATTR`: Method call
+- `KOS_OP_CALL_ATTR_NAMES`, `KOS_OP_CALL_ATTR_STAR`
+- `KOS_OP_RECUR`: Explicit recursion
+- `KOS_OP_RECUR_NAMES`, `KOS_OP_RECUR_STAR`
+- `KOS_OP_TAIL_CALL`: Tail call (replaces frame)
+- `KOS_OP_TAIL_CALL_NAMES`, `KOS_OP_TAIL_CALL_STAR`
+- `KOS_OP_TAIL_RECUR`: Tail recursion
+- `KOS_OP_TAIL_RECUR_NAMES`, `KOS_OP_TAIL_RECUR_STAR`
+
+### Block Control
+- `KOS_OP_PUSH_FOREACH`: Push for-each loop
+- `KOS_OP_PUSH_WITH`: Push with context
+- `KOS_OP_PUSH_BEGIN`: Push begin block
+- `KOS_OP_PUSH_CLASS`: Push class definition
+- `KOS_OP_PUSH_FINALLY`: Push finally block
+- `KOS_OP_PUSH_LOOP`: Push while loop
+- `KOS_OP_PUSH_NS`: Push namespace
+- `KOS_OP_PUSH_TRY`: Push try block
+- `KOS_OP_CLEAR_FINALLY`, `KOS_OP_CLEAR_LOOP`, `KOS_OP_CLEAR_TRY`
+- `KOS_OP_POP_WITH`, `KOS_OP_POP_BEGIN`, `KOS_OP_POP_FINALLY`, etc.
+
+### Object Protocol
+- Comparisons: `KOS_OP_OBJECT_EQ`, `KOS_OP_OBJECT_NE`, `KOS_OP_OBJECT_LT`, etc.
+- Predicates: `KOS_OP_OBJECT_IN`, `KOS_OP_OBJECT_IS`, `KOS_OP_OBJECT_IS_INSTANCE`, etc.
+- Arithmetic: `KOS_OP_OBJECT_ADD`, `KOS_OP_OBJECT_SUBTRACT`, `KOS_OP_OBJECT_MULTIPLY`, etc.
+- General: `KOS_OP_OBJECT_ITER`, `KOS_OP_OBJECT_AITER`, `KOS_OP_OBJECT_LEN`, etc.
+
+### Iteration
+- `KOS_OP_ITER_NEXT`: Get next from iterator
+- `KOS_OP_AWAIT_NEXT`: Get next from async iterator
+
+### Introspection
+- `KOS_OP_GLOBALS`: Get globals dict
+- `KOS_OP_LOCALS`: Get locals dict
+
+### Exceptions
+- `KOS_OP_EXCEPTION`: Load current exception
+- `KOS_OP_EXCEPTION_CLEAR`: Clear exception
+- `KOS_OP_EXCEPTION_MATCH`: Match exception type
+
+### Compile-Time Only
+- `KOS_OP_LABEL`: Jump target (not emitted)
+- `KOS_OP_POSITION`: Source position (not emitted, stored in positions table)
+
+## Comparison with Previous Implementations
+
+### From python-sibilant
+
+python-sibilant compiled to CPython bytecode (`.pyc` files) with version-specific targets (3.5, 3.6, 3.7). This approach was abandoned due to:
+- Version churn in CPython bytecode format
+- Maintenance burden of multiple targets
+- Limited ability to implement call/cc
+
+### From sibilant-ceval
+
+sibilant-ceval used a similar custom bytecode format but with wider instructions:
+- Each instruction stored line/col inline (32 bytes per instruction)
+- No memory protection
+- Separate async/await flags
+
+Koskari's improvements:
+- 8x more compact instructions (4 bytes vs ~32 bytes)
+- Delta-encoded position table saves memory
+- Read-only memory protection for security
+- Simplified async model (all code is async)
+
+## API
+
+### Python Interface
+
+```python
+# Create bytecode
+code = Code(namespace_spec, instructions, name="func", filename="test.ki")
+
+# Properties
+code.name          # function name
+code.filename      # source filename
+code.namespace_spec  # NamespaceSpec
+code.yields        # bool: contains yield?
+code.constants_pool  # tuple of constants
+
+# Methods
+code.length()      # instruction count
+code.oparg(i)      # (opcode, arg) at index i
+code.position(i)   # (line, col) at index i
+code.constant(i)   # constant at index i
+```
+
+### C Interface
+
+```c
+/* Constructor */
+PyObject *KosCode_New(PyObject *nspec, PyObject *instr,
+                      PyObject *name, PyObject *filename);
+
+/* Accessors */
+PyObject *KosCode_GetConstant(PyObject *self, uint32_t index);
+PyObject *KosCode_GetInstruction(PyObject *self, uint32_t index);
+int KosCode_GetPosition(PyObject *self, uint32_t index,
+                        uint16_t *out_line, uint16_t *out_col);
+PyCodeObject *KosCode_Faux(PyObject *self);
+KosOpStyle kos_opcode_style(KosOpCode op);
+
+/* Macros */
+KosCode_FLAGS(code)
+KosCode_YIELDS(code)
+KosCode_CODE_LEN(code)
+KosCode_GET_OP(code, i)
+KosCode_GET_ARG(code, i)
+KosCode_CPOOL_LEN(code)
+KosCode_GET_CONST(code, i)
+```
+
+## Files
+
+- `koskari/lib/bytecode.h`: Type definitions, enums, macros, function declarations
+- `koskari/lib/bytecode.c`: Full implementation
+- `koskari/lib/opcodes.incl`: Opcode definitions (included multiple times with different macros)
+- `tests/native/test_bytecode.c`: Native unit tests

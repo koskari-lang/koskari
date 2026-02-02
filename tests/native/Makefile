@@ -11,13 +11,13 @@ PYTHON_CONFIG ?= $(PYTHON)-config
 CC ?= gcc
 
 # Test source files - add new test files here
-TEST_SRCS := test_harness.c test_atom.c test_pair.c test_namespace.c test_formals.c test_values.c test_stack.c
+TEST_SRCS := test_harness.c test_atom.c test_pair.c test_namespace.c test_bytecode.c test_formals.c test_values.c test_stack.c
 # Future units: test_tco.c
 
 # Library source files - compiled into the test binary
 # These must match the sources in setup.py
 LIB_DIR := ../../koskari/lib
-LIB_SRCS := $(LIB_DIR)/compat.c $(LIB_DIR)/atom.c $(LIB_DIR)/pair.c $(LIB_DIR)/ref.c $(LIB_DIR)/namespace.c $(LIB_DIR)/formals.c $(LIB_DIR)/values.c $(LIB_DIR)/operator.c $(LIB_DIR)/stack.c $(LIB_DIR)/utils.c $(LIB_DIR)/parse.c $(LIB_DIR)/eval.c $(LIB_DIR)/lib.c
+LIB_SRCS := $(LIB_DIR)/compat.c $(LIB_DIR)/atom.c $(LIB_DIR)/pair.c $(LIB_DIR)/ref.c $(LIB_DIR)/namespace.c $(LIB_DIR)/bytecode.c $(LIB_DIR)/formals.c $(LIB_DIR)/values.c $(LIB_DIR)/operator.c $(LIB_DIR)/stack.c $(LIB_DIR)/utils.c $(LIB_DIR)/parse.c $(LIB_DIR)/eval.c $(LIB_DIR)/lib.c
 
 # All sources
 SRCS := $(TEST_SRCS) $(LIB_SRCS)

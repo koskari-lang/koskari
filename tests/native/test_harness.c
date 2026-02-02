@@ -106,6 +106,12 @@ static int initialize_types(void) {
         return -1;
     }
 
+    /* Initialize bytecode types */
+    if (koskari_bytecode_init(kos_lib_module)) {
+        fprintf(stderr, "Failed to initialize bytecode types\n");
+        return -1;
+    }
+
     /* Initialize formals types */
     if (koskari_formals_init(kos_lib_module)) {
         fprintf(stderr, "Failed to initialize formals types\n");
@@ -181,6 +187,7 @@ int main(int argc, char *argv[]) {
     run_atom_tests();
     run_pair_tests();
     run_namespace_tests();
+    run_bytecode_tests();
     run_formals_tests();
     run_values_tests();
     run_stack_tests();

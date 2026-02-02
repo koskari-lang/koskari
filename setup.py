@@ -68,6 +68,7 @@ def extension(platform=None, debug=False):
             "koskari/lib/pair.c",
             "koskari/lib/ref.c",
             "koskari/lib/namespace.c",
+            "koskari/lib/bytecode.c",
             "koskari/lib/formals.c",
             "koskari/lib/values.c",
             "koskari/lib/operator.c",
@@ -91,6 +92,7 @@ def extension(platform=None, debug=False):
             "koskari/lib/pair.h",
             "koskari/lib/ref.h",
             "koskari/lib/namespace.h",
+            "koskari/lib/bytecode.h",
             "koskari/lib/formals.h",
             "koskari/lib/values.h",
             "koskari/lib/operator.h",
@@ -104,6 +106,8 @@ def extension(platform=None, debug=False):
             "koskari/lib/compat_38.h",
             "koskari/lib/compat_39.h",
             "koskari/lib/compat_311.h",
+            # Include files
+            "koskari/lib/opcodes.incl",
             # TODO: add headers as units are implemented
         ],
         extra_compile_args=extra_compile_args(platform, debug),

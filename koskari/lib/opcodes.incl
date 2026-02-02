@@ -1,0 +1,230 @@
+/*
+  This library is free software; you can redistribute it and/or modify
+  it under the terms of the GNU General Public License as published by
+  the Free Software Foundation; either version 3 of the License, or
+  (at your option) any later version.
+
+  This library is distributed in the hope that it will be useful, but
+  WITHOUT ANY WARRANTY; without even the implied warranty of
+  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
+  General Public License for more details.
+
+  You should have received a copy of the GNU General Public License
+  along with this library; if not, see <http://www.gnu.org/licenses/>.
+*/
+
+
+/**
+   koskari/lib/opcodes.incl
+
+   Opcode definitions for Koskari bytecode. This file is included
+   multiple times with different definitions of the OP macro to
+   generate both the enum and the styles table.
+
+   Format: OP(name, style)
+
+   All Koskari code is async by default. Generators are distinguished
+   by the presence of YIELD/YIELD_FROM opcodes which set the
+   KOS_CODE_YIELDS flag.
+
+   :author: Christopher O'Brien <obriencj@preoccupied.net>
+   :license: GNU General Public License v3
+   :ai-assistant: Claude Opus 4.5 via Cursor
+*/
+
+
+// NOOP must always be first
+OP(NOOP, NOARG)
+
+// compile-time pseudo-ops (not emitted to final bytecode)
+OP(LABEL, COMPILE)
+OP(POSITION, COMPILE)
+
+// stack manipulation
+OP(DUP, COUNT)
+OP(POP, COUNT)
+
+// constant loading
+OP(CONST, CONST)
+
+// mode control - all code is async, yields flag async generators
+OP(AWAIT, NOARG)
+OP(BREAK, COUNT)
+OP(CONTINUE, COUNT)
+OP(RAISE, COUNT)
+OP(RETURN, COUNT)
+OP(YIELD, COUNT)
+OP(YIELD_FROM, NOARG)
+
+// iteration
+OP(ITER_NEXT, LABEL)
+OP(AWAIT_NEXT, LABEL)
+
+// unconditional and conditional jumps
+OP(JUMP, LABEL)
+OP(JUMP_FALSE, LABEL)
+OP(JUMP_TRUE, LABEL)
+OP(JUMP_AND, LABEL)
+OP(JUMP_OR, LABEL)
+
+// check jumps - jump to label if predicate does not match
+OP(CHECK_EQ, LABEL)
+OP(CHECK_GE, LABEL)
+OP(CHECK_GT, LABEL)
+OP(CHECK_LE, LABEL)
+OP(CHECK_LT, LABEL)
+OP(CHECK_NE, LABEL)
+
+OP(CHECK_IN, LABEL)
+OP(CHECK_NOT_IN, LABEL)
+OP(CHECK_IS, LABEL)
+OP(CHECK_IS_NOT, LABEL)
+OP(CHECK_IS_INSTANCE, LABEL)
+OP(CHECK_IS_SUBCLASS, LABEL)
+OP(CHECK_EXCEPTION, LABEL)
+
+// introspection
+OP(GLOBALS, NOARG)
+OP(LOCALS, NOARG)
+
+// exception handling
+OP(EXCEPTION, NOARG)
+OP(EXCEPTION_CLEAR, NOARG)
+OP(EXCEPTION_MATCH, COUNT)
+
+// variables by name reference
+OP(VAR, VAR)
+OP(VAR_BIND, VAR)
+OP(VAR_CLEAR, VAR)
+OP(VAR_REF, VAR)
+OP(VAR_STORE, VAR)
+
+// variables by index reference (fast locals)
+OP(FAST, FASTVAR)
+OP(FAST_BIND, FASTVAR)
+OP(FAST_CLEAR, FASTVAR)
+OP(FAST_REF, FASTVAR)
+OP(FAST_STORE, FASTVAR)
+
+// object attribute access
+OP(ATTR, CONST)
+OP(ATTR_CLEAR, CONST)
+OP(ATTR_REF, CONST)
+OP(ATTR_STORE, CONST)
+
+// object item indexing (computed key)
+OP(ITEM, NOARG)
+OP(ITEM_CLEAR, NOARG)
+OP(ITEM_REF, NOARG)
+OP(ITEM_STORE, NOARG)
+
+// object item indexing (constant key)
+OP(CONST_ITEM, CONST)
+OP(CONST_ITEM_CLEAR, CONST)
+OP(CONST_ITEM_REF, CONST)
+OP(CONST_ITEM_STORE, CONST)
+
+// argument production
+OP(BUILD_ARGS, COUNT)
+OP(BUILD_FUNCTION, COUNT)
+OP(BUILD_KWDS, PAIR_COUNT)
+OP(BUILD_KWDS_NAMES, CONST)
+OP(COMBINE_ARGS, COUNT)
+OP(COMBINE_KWDS, COUNT)
+
+// simple call
+OP(CALL, COUNT)
+OP(CALL_NAMES, COUNT)
+OP(CALL_STAR, STAR)
+
+// method call
+OP(CALL_ATTR, COUNT)
+OP(CALL_ATTR_NAMES, COUNT)
+OP(CALL_ATTR_STAR, STAR)
+
+// explicit recursion
+OP(RECUR, COUNT)
+OP(RECUR_NAMES, COUNT)
+OP(RECUR_STAR, STAR)
+
+// tail call (replaces current frame)
+OP(TAIL_CALL, COUNT)
+OP(TAIL_CALL_NAMES, COUNT)
+OP(TAIL_CALL_STAR, STAR)
+
+// tail recursion (replaces current frame with self-call)
+OP(TAIL_RECUR, COUNT)
+OP(TAIL_RECUR_NAMES, COUNT)
+OP(TAIL_RECUR_STAR, STAR)
+
+// block control - all foreach/with are async in Koskari
+OP(PUSH_FOREACH, LABEL)
+OP(PUSH_WITH, LABEL)
+OP(PUSH_BEGIN, NOARG)
+OP(PUSH_CLASS, COUNT)
+OP(PUSH_FINALLY, LABEL)
+OP(PUSH_LOOP, LABEL)
+OP(PUSH_NS, COUNT)
+OP(PUSH_TRY, LABEL)
+
+OP(CLEAR_FINALLY, NOARG)
+OP(CLEAR_LOOP, NOARG)
+OP(CLEAR_TRY, NOARG)
+
+OP(POP_WITH, COUNT)
+OP(POP_BEGIN, COUNT)
+OP(POP_FINALLY, COUNT)
+OP(POP_LOOP, COUNT)
+OP(POP_NS, COUNT)
+OP(POP_TRY, COUNT)
+
+// comparison interface
+OP(OBJECT_EQ, NOARG)
+OP(OBJECT_GE, NOARG)
+OP(OBJECT_GT, NOARG)
+OP(OBJECT_LE, NOARG)
+OP(OBJECT_LT, NOARG)
+OP(OBJECT_NE, NOARG)
+
+// predicates
+OP(OBJECT_IN, NOARG)
+OP(OBJECT_NOT_IN, NOARG)
+OP(OBJECT_IS, NOARG)
+OP(OBJECT_IS_NOT, NOARG)
+OP(OBJECT_IS_INSTANCE, COUNT)
+OP(OBJECT_IS_SUBCLASS, COUNT)
+
+// numeric interface
+OP(OBJECT_ADD, COUNT)
+OP(OBJECT_BIT_AND, COUNT)
+OP(OBJECT_BIT_INVERT, NOARG)
+OP(OBJECT_BIT_LEFT, NOARG)
+OP(OBJECT_BIT_OR, COUNT)
+OP(OBJECT_BIT_RIGHT, NOARG)
+OP(OBJECT_BIT_XOR, COUNT)
+OP(OBJECT_FLOOR_DIVIDE, COUNT)
+OP(OBJECT_MATRIX_MULTIPLY, COUNT)
+OP(OBJECT_MODULO, NOARG)
+OP(OBJECT_MULTIPLY, COUNT)
+OP(OBJECT_POWER, COUNT)
+OP(OBJECT_SUBTRACT, COUNT)
+OP(OBJECT_TRUE_DIVIDE, NOARG)
+
+// general object interface
+OP(OBJECT_AITER, NOARG)
+OP(OBJECT_DIR, NOARG)
+OP(OBJECT_DIVMOD, NOARG)
+OP(OBJECT_ITER, NOARG)
+OP(OBJECT_LEN, NOARG)
+OP(OBJECT_NOT, NOARG)
+OP(OBJECT_REPR, NOARG)
+OP(OBJECT_STR, NOARG)
+OP(OBJECT_TRUTH, NOARG)
+OP(OBJECT_TYPE, NOARG)
+OP(OBJECT_VARS, NOARG)
+
+// THEEND must always be last
+OP(THEEND, NOARG)
+
+
+// The end.

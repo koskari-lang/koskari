@@ -27,6 +27,7 @@
 #include "pair.h"
 #include "ref.h"
 #include "namespace.h"
+#include "bytecode.h"
 #include "formals.h"
 #include "values.h"
 #include "operator.h"

@@ -64,6 +64,9 @@ static int koskari_lib_init(PyObject *mod) {
   if (koskari_namespace_init(mod))
     return -1;
 
+  if (koskari_bytecode_init(mod))
+    return -1;
+
   if (koskari_formals_init(mod))
     return -1;
 
@@ -117,6 +120,9 @@ static int koskari_lib_clear(PyObject *mod) {
     return -1;
 
   if (koskari_formals_clear(mod))
+    return -1;
+
+  if (koskari_bytecode_clear(mod))
     return -1;
 
   if (koskari_namespace_clear(mod))

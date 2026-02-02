@@ -62,7 +62,12 @@ tests/native/
 ├── test_harness.h         # Common macros and unit declarations
 ├── test_harness.c         # Main entry point
 ├── test_atom.c            # Tests for symbol/keyword types
-└── test_pair.c            # Tests for pair/nil types
+├── test_pair.c            # Tests for pair/nil types
+├── test_namespace.c       # Tests for namespace types
+├── test_bytecode.c        # Tests for bytecode/Code type
+├── test_formals.c         # Tests for formals types
+├── test_values.c          # Tests for values type
+└── test_stack.c           # Tests for stack types
 ```
 
 ## Writing Tests

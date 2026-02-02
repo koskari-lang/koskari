@@ -158,6 +158,7 @@ extern TestContext test_ctx;
 int run_atom_tests(void);
 int run_pair_tests(void);
 int run_namespace_tests(void);
+int run_bytecode_tests(void);
 int run_formals_tests(void);
 int run_values_tests(void);
 int run_stack_tests(void);

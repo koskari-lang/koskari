@@ -207,6 +207,22 @@ with C extension support and comprehensive test coverage:
   - `KOS_BLOCK_AWAIT_FOREACH`: Async for-each
   - `KOS_BLOCK_AWAIT_WITH`: Async with context
 
+**Bytecode Types** (from sibilant-ceval, redesigned):
+- `Code`: Compiled bytecode storage object
+  - Compact 4-byte instructions (uint16_t opcode + uint16_t arg)
+  - Delta-encoded position table (only records changes)
+  - Read-only memory protection via `mprotect()` after init
+  - Constant pool with deduplication
+  - `KOS_CODE_YIELDS` flag for generators
+  - `length()`: Instruction count
+  - `oparg(i)`: Get (opcode, arg) tuple at index
+  - `position(i)`: Get (line, col) for instruction
+  - `constant(i)`: Get constant from pool
+- `OpCode`: Enum of all bytecode opcodes
+  - Attached `style` attribute for argument interpretation
+- `OpStyle`: Enum of opcode argument styles
+  - COMPILE, LABEL, NOARG, COUNT, PAIR_COUNT, STAR, CONST, VAR, FASTVAR
+
 **Evaluator Types** (new for Koskari VM):
 - `Continuation`: Captured continuation (multi-shot, undelimited)
   - Callable: returns `Coroutine` that resumes at captured point

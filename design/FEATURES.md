@@ -74,10 +74,11 @@ This document provides a high-level summary of all features identified from both
 ## Interpreter Features
 
 ### Bytecode
-- **Format**: Custom bytecode (sibilant-ceval) or CPython bytecode (python-sibilant)
+- **Format**: Custom compact bytecode (4 bytes per instruction)
 - **Opcodes**: Comprehensive opcode set for all operations
-- **Structure**: NamespaceSpec, FunctionSpec, ByteCode
-- **Position**: Line/column tracking
+- **Structure**: Code (with NamespaceSpec), position table, constant pool
+- **Position**: Delta-encoded line/column tracking
+- **Security**: Read-only memory protection after initialization
 
 ### Compiler
 - **Phases**: Parse → Expand → Compile → Optimize → Generate
@@ -149,15 +150,25 @@ This document provides a high-level summary of all features identified from both
 - Flattened async execution
 - Eager-step awaitable optimization
 
+**Bytecode System** (C extension, bytecode.c/bytecode.h):
+- `Code`: Compiled bytecode storage with read-only protection
+  - Compact 4-byte instructions (uint16_t op + uint16_t arg)
+  - Delta-encoded position table (only records changes)
+  - Memory protection via `mprotect()` after initialization
+  - Constant pool with deduplication
+  - `KOS_CODE_YIELDS` flag for async generators
+- `OpCode`: Enum of all bytecode opcodes (from opcodes.incl)
+- `OpStyle`: Enum for opcode argument interpretation
+- Full opcode set for: stack ops, control flow, jumps, variables, attributes, items, calls, blocks, object protocol, iteration, exceptions
+
 ### Ready to Migrate
 - Most special forms from python-sibilant
 - Remaining operators (%, **, ~, <<, >>, comparisons)
 - Macro system
 - Control flow constructs
 - Function system
-- Bytecode format from sibilant-ceval
 - Compiler architecture from sibilant-ceval
-- Opcode dispatch loop (evaluator structure in place)
+- Opcode dispatch loop (evaluator structure in place, bytecode format ready)
 
 ### Needs Reconsideration
 - CPython bytecode target (abandoned)
