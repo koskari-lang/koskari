@@ -232,7 +232,10 @@ static void kos_frame_chain_free(KosFrame *frame) {
 }
 
 
-int kos_frame_traverse(KosFrame *frame, visitproc visit, void *arg) {
+int kos_frame_traverse(
+    KosFrame *frame,
+    visitproc visit,
+    void *arg) {
 
   while (frame) {
     Py_VISIT(frame->ns);
@@ -292,7 +295,10 @@ void kos_context_free(KosContext *ctx) {
 }
 
 
-int kos_context_traverse(KosContext *ctx, visitproc visit, void *arg) {
+int kos_context_traverse(
+    KosContext *ctx,
+    visitproc visit,
+    void *arg) {
 
   if (! ctx)
     return 0;
@@ -312,7 +318,10 @@ int kos_context_traverse(KosContext *ctx, visitproc visit, void *arg) {
 /* === GC helper for stack blocks === */
 
 
-int kos_stackblock_traverse(KosStackBlock *b, visitproc visit, void *arg) {
+int kos_stackblock_traverse(
+    KosStackBlock *b,
+    visitproc visit,
+    void *arg) {
 
   size_t i;
   while (b) {
@@ -329,7 +338,10 @@ int kos_stackblock_traverse(KosStackBlock *b, visitproc visit, void *arg) {
 /* === Wind chain management === */
 
 
-int kos_push_wind(KosContext *ctx, PyObject *before, PyObject *after) {
+int kos_push_wind(
+    KosContext *ctx,
+    PyObject *before,
+    PyObject *after) {
 
   if (! ctx || ! ctx->top) {
     PyErr_SetString(PyExc_RuntimeError, "no active frame for push_wind");
@@ -392,7 +404,9 @@ int kos_pop_wind(KosContext *ctx) {
    This walks both chains simultaneously to find where they diverge.
    Returns the LCA frame, or NULL if chains don't share a common ancestor.
 */
-static KosFrame *compute_frame_lca(KosFrame *current, KosFrame *target) {
+static KosFrame *compute_frame_lca(
+    KosFrame *current,
+    KosFrame *target) {
 
   /* Count depths */
   size_t current_depth = 0;
@@ -437,8 +451,10 @@ static KosFrame *compute_frame_lca(KosFrame *current, KosFrame *target) {
 
    Hooks are collected inner-to-outer (from current towards lca).
 */
-static PyObject **collect_unwind_hooks(KosFrame *current, KosFrame *lca,
-        size_t *out_count) {
+static PyObject **collect_unwind_hooks(
+    KosFrame *current,
+    KosFrame *lca,
+    size_t *out_count) {
 
   size_t capacity = 8;
   size_t count = 0;
@@ -483,8 +499,10 @@ static PyObject **collect_unwind_hooks(KosFrame *current, KosFrame *lca,
    We need to reverse the natural traversal order since we walk from
    target backwards.
 */
-static PyObject **collect_wind_hooks(KosFrame *target, KosFrame *lca,
-        size_t *out_count) {
+static PyObject **collect_wind_hooks(
+    KosFrame *target,
+    KosFrame *lca,
+    size_t *out_count) {
 
   /* First, collect in reverse order (target to lca) */
   size_t capacity = 8;
@@ -527,9 +545,12 @@ static PyObject **collect_wind_hooks(KosFrame *target, KosFrame *lca,
 }
 
 
-int kos_apply_continuation(KosContext *ctx,
-        KosFrame *target_top, KosHandler *target_handlers,
-        int is_throw, PyObject *value_or_exc) {
+int kos_apply_continuation(
+    KosContext *ctx,
+    KosFrame *target_top,
+    KosHandler *target_handlers,
+    int is_throw,
+    PyObject *value_or_exc) {
 
   if (! ctx) {
     PyErr_SetString(PyExc_RuntimeError, "NULL context");
@@ -616,7 +637,10 @@ int kos_apply_continuation(KosContext *ctx,
 /* === Koskari call operations === */
 
 
-int kos_koscall(KosContext *ctx, KosCode *code, PyObject *ns) {
+int kos_koscall(
+    KosContext *ctx,
+    KosCode *code,
+    PyObject *ns) {
 
   if (! ctx) {
     PyErr_SetString(PyExc_RuntimeError, "NULL context for koscall");
@@ -636,7 +660,10 @@ int kos_koscall(KosContext *ctx, KosCode *code, PyObject *ns) {
 }
 
 
-int kos_tail_koscall(KosContext *ctx, KosCode *code, PyObject *ns) {
+int kos_tail_koscall(
+    KosContext *ctx,
+    KosCode *code,
+    PyObject *ns) {
 
   if (! ctx || ! ctx->top) {
     PyErr_SetString(PyExc_RuntimeError, "no frame for tail_koscall");
@@ -690,8 +717,11 @@ int kos_tail_koscall(KosContext *ctx, KosCode *code, PyObject *ns) {
 
    :return: completed value on immediate completion, NULL on suspend or error
 */
-static PyObject *eager_step_awaitable(PyObject *awaitable, KosContext *ctx,
-        int *suspended, PyObject **yielded) {
+static PyObject *eager_step_awaitable(
+    PyObject *awaitable,
+    KosContext *ctx,
+    int *suspended,
+    PyObject **yielded) {
 
   *suspended = 0;
   *yielded = NULL;
@@ -845,7 +875,10 @@ static void continuation_dealloc(PyObject *self) {
 }
 
 
-static int continuation_traverse(PyObject *self, visitproc visit, void *arg) {
+static int continuation_traverse(
+    PyObject *self,
+    visitproc visit,
+    void *arg) {
 
   KosPyContinuation *cont = (KosPyContinuation *) self;
 
@@ -943,7 +976,9 @@ PyTypeObject KosPyContinuationType = {
 };
 
 
-PyObject *KosPyContinuation_New(KosFrame *top, KosHandler *handlers) {
+PyObject *KosPyContinuation_New(
+    KosFrame *top,
+    KosHandler *handlers) {
 
   KosPyContinuation *cont = PyObject_GC_New(KosPyContinuation,
                                             &KosPyContinuationType);
@@ -976,7 +1011,10 @@ static void coroutine_dealloc(PyObject *self) {
 }
 
 
-static int coroutine_traverse(PyObject *self, visitproc visit, void *arg) {
+static int coroutine_traverse(
+    PyObject *self,
+    visitproc visit,
+    void *arg) {
 
   KosPyCoroutine *coro = (KosPyCoroutine *) self;
 
@@ -1445,7 +1483,10 @@ static void asyncgenasend_dealloc(PyObject *self) {
 }
 
 
-static int asyncgenasend_traverse(PyObject *self, visitproc visit, void *arg) {
+static int asyncgenasend_traverse(
+    PyObject *self,
+    visitproc visit,
+    void *arg) {
 
   KosPyAsyncGenASend *asend = (KosPyAsyncGenASend *) self;
 
@@ -1630,7 +1671,9 @@ PyTypeObject KosPyAsyncGenASendType = {
 };
 
 
-PyObject *KosPyAsyncGenASend_New(KosPyAsyncGen *agen, PyObject *send_value) {
+PyObject *KosPyAsyncGenASend_New(
+    KosPyAsyncGen *agen,
+    PyObject *send_value) {
 
   KosPyAsyncGenASend *asend = PyObject_GC_New(KosPyAsyncGenASend,
                                               &KosPyAsyncGenASendType);

@@ -121,8 +121,9 @@ static KosStackBlock *KosStackBlock_New(KosStackBlock *parent) {
 }
 
 
-static KosStackBlock *KosStackBlock_NewSized(KosStackBlock *parent,
-                                             size_t max) {
+static KosStackBlock *KosStackBlock_NewSized(
+    KosStackBlock *parent,
+    size_t max) {
 
   SAY("KosStackBlock_NewSized()");
 
@@ -295,7 +296,9 @@ KosStackBlock *KosStackBlock_COW(KosStackBlock *block) {
 }
 
 
-static int KosStackBlock_Push(KosStackBlock **self, PyObject *val) {
+static int KosStackBlock_Push(
+    KosStackBlock **self,
+    PyObject *val) {
 
   if (KosStackBlock_CopyForWrite(self))
     return -1;
@@ -317,7 +320,9 @@ static int KosStackBlock_Push(KosStackBlock **self, PyObject *val) {
 }
 
 
-static int KosStackBlock_PUSH(KosStackBlock **self, PyObject *val) {
+static int KosStackBlock_PUSH(
+    KosStackBlock **self,
+    PyObject *val) {
 
   if (KosStackBlock_CopyForWrite(self))
     return -1;
@@ -339,10 +344,12 @@ static int KosStackBlock_PUSH(KosStackBlock **self, PyObject *val) {
 }
 
 
-static int KosStackBlock_ExtendPtr(KosStackBlock **self,
-                                   PyObject *const *elms,
-                                   size_t count,
-                                   int reverse) {
+static int KosStackBlock_ExtendPtr(
+    KosStackBlock **self,
+    PyObject *const *elms,
+    size_t count,
+    int reverse) {
+
   if (! count)
     return 0;
 
@@ -381,10 +388,12 @@ static int KosStackBlock_ExtendPtr(KosStackBlock **self,
 }
 
 
-static int KosStackBlock_EXTENDPTR(KosStackBlock **self,
-                                   PyObject *const *elms,
-                                   size_t count,
-                                   int reverse) {
+static int KosStackBlock_EXTENDPTR(
+    KosStackBlock **self,
+    PyObject *const *elms,
+    size_t count,
+    int reverse) {
+
   if (! count)
     return 0;
 
@@ -435,7 +444,9 @@ static PyObject *KosStackBlock_Peek(KosStackBlock *self) {
 }
 
 
-static PyObject *KosStackBlock_PeekAt(KosStackBlock *self, Py_ssize_t index) {
+static PyObject *KosStackBlock_PeekAt(
+    KosStackBlock *self,
+    Py_ssize_t index) {
 
   size_t len = self->len;
 
@@ -596,8 +607,10 @@ static int KosStackBlock_Duplicate(KosStackBlock **self, size_t count) {
 }
 
 
-static int KosStackBlock_Replace(KosStackBlock **self,
-                                 size_t index, PyObject *value) {
+static int KosStackBlock_Replace(
+    KosStackBlock **self,
+    size_t index,
+    PyObject *value) {
 
   if (! value) {
     PyErr_SetString(PyExc_RuntimeError, "stack replace cannot assign NULL");
@@ -623,7 +636,9 @@ static int KosStackBlock_Replace(KosStackBlock **self,
 }
 
 
-static PyObject *KosStackBlock_PopTail(KosStackBlock **self, size_t count) {
+static PyObject *KosStackBlock_PopTail(
+    KosStackBlock **self,
+    size_t count) {
 
   if (! count)
     return PyTuple_New(0);
@@ -658,8 +673,10 @@ static PyObject *KosStackBlock_PopTail(KosStackBlock **self, size_t count) {
 }
 
 
-static PyObject *const *KosStackBlock_TailPtr(KosStackBlock *self,
-                                              size_t count) {
+static PyObject *const *KosStackBlock_TailPtr(
+    KosStackBlock *self,
+    size_t count) {
+
   if (! count) {
     return NULL;
   }
@@ -675,8 +692,10 @@ static PyObject *const *KosStackBlock_TailPtr(KosStackBlock *self,
 }
 
 
-static int KosStackBlock_PopTailPtr(KosStackBlock **self,
-                                    size_t count, PyObject **dest) {
+static int KosStackBlock_PopTailPtr(
+    KosStackBlock **self,
+    size_t count,
+    PyObject **dest) {
 
   if (! count)
     return 0;
@@ -704,7 +723,9 @@ static int KosStackBlock_PopTailPtr(KosStackBlock **self,
 }
 
 
-static PyObject *KosStackBlock_PopTailDict(KosStackBlock **self, size_t count) {
+static PyObject *KosStackBlock_PopTailDict(
+    KosStackBlock **self,
+    size_t count) {
 
   if (! count)
     return PyDict_New();
@@ -745,8 +766,9 @@ static PyObject *KosStackBlock_PopTailDict(KosStackBlock **self, size_t count) {
 }
 
 
-static PyObject *KosStackBlock_PopTailDictNames(KosStackBlock **self,
-                                                size_t count) {
+static PyObject *KosStackBlock_PopTailDictNames(
+    KosStackBlock **self,
+    size_t count) {
 
   PyObject *ret = NULL;
 
@@ -1150,8 +1172,10 @@ static PyMethodDef stack_methods[] = {
 /* === Stack type === */
 
 
-static PyObject *stack_new(PyTypeObject *type,
-                           PyObject *args, PyObject *kwds) {
+static PyObject *stack_new(
+    PyTypeObject *type,
+    PyObject *args,
+    PyObject *kwds) {
 
   if (PyTuple_GET_SIZE(args) || (kwds && PyDict_Size(kwds))) {
     PyErr_SetString(PyExc_TypeError, "Stack takes no arguments");
@@ -1174,7 +1198,11 @@ static void stack_dealloc(PyObject *self) {
 }
 
 
-static int stack_traverse(PyObject *self, visitproc visit, void *arg) {
+static int stack_traverse(
+    PyObject *self,
+    visitproc visit,
+    void *arg) {
+
   KosStackBlock *b = KosStack_BLOCK(self);
   size_t i;
   while (b) {
@@ -1313,9 +1341,11 @@ int KosStack_Extend(PyObject *self, PyObject *seq, int reverse) {
 }
 
 
-int KosStack_ExtendPtr(PyObject *self,
-                       PyObject *const *elms, size_t count,
-                       int reverse) {
+int KosStack_ExtendPtr(
+    PyObject *self,
+    PyObject *const *elms,
+    size_t count,
+    int reverse) {
 
   if (! count)
     return 0;
@@ -1335,9 +1365,11 @@ int KosStack_ExtendPtr(PyObject *self,
 }
 
 
-int KosStack_EXTENDPTR(PyObject *self,
-                       PyObject *const *elms, size_t count,
-                       int reverse) {
+int KosStack_EXTENDPTR(
+    PyObject *self,
+    PyObject *const *elms,
+    size_t count,
+    int reverse) {
 
   if (! count)
     return 0;
@@ -1520,8 +1552,11 @@ int KosStack_PushBlock(PyObject *self) {
 }
 
 
-int KosStack_PushBlockFull(PyObject *self, KosBlockStyle style,
-                           Py_ssize_t label_a, Py_ssize_t label_b) {
+int KosStack_PushBlockFull(
+    PyObject *self,
+    KosBlockStyle style,
+    Py_ssize_t label_a,
+    Py_ssize_t label_b) {
 
   int res = KosStack_PushBlock(self);
   if (res)

@@ -48,9 +48,10 @@ static PyObject *intern_kwds = NULL;
 #define ATOM_NAME(o) (((KosInternedAtom *)(o))->name)
 
 
-static PyObject *atom_new(PyObject *name,
-                          PyObject *intern,
-                          PyTypeObject *type) {
+static PyObject *atom_new(
+    PyObject *name,
+    PyObject *intern,
+    PyTypeObject *type) {
 
   if (! name) {
     PyErr_SetString(PyExc_TypeError, "interned atom requires a name");
@@ -157,8 +158,10 @@ static void symbol_dealloc(PyObject *self) {
 }
 
 
-static PyObject *symbol_new(PyTypeObject *type,
-                            PyObject *args, PyObject *kwds) {
+static PyObject *symbol_new(
+    PyTypeObject *type,
+    PyObject *args,
+    PyObject *kwds) {
 
   PyObject *name = NULL;
 
@@ -174,8 +177,10 @@ static PyObject *symbol_new(PyTypeObject *type,
 }
 
 
-static PyObject *symbol_split(PyObject *self,
-                              PyObject *args, PyObject *kwds) {
+static PyObject *symbol_split(
+    PyObject *self,
+    PyObject *args,
+    PyObject *kwds) {
 
   PyObject *name = ATOM_NAME(self);
   PyObject *method = NULL;
@@ -198,8 +203,10 @@ static PyObject *symbol_split(PyObject *self,
 }
 
 
-static PyObject *symbol_rsplit(PyObject *self,
-                               PyObject *args, PyObject *kwds) {
+static PyObject *symbol_rsplit(
+    PyObject *self,
+    PyObject *args,
+    PyObject *kwds) {
 
   PyObject *name = ATOM_NAME(self);
   PyObject *method = NULL;
@@ -257,7 +264,9 @@ PyTypeObject KosSymbolType = {
 static Py_uhash_t gen_counter = 97531UL;
 
 
-PyObject *KosGensym_FromString(PyObject *name, PyObject *predicate) {
+PyObject *KosGensym_FromString(
+    PyObject *name,
+    PyObject *predicate) {
 
   while (1) {
 
@@ -362,8 +371,10 @@ PyObject *KosKeyword_FromString(PyObject *name) {
 }
 
 
-static PyObject *keyword_new(PyTypeObject *type,
-                             PyObject *args, PyObject *kwds) {
+static PyObject *keyword_new(
+    PyTypeObject *type,
+    PyObject *args,
+    PyObject *kwds) {
 
   PyObject *name = NULL;
 
@@ -390,8 +401,10 @@ static void keyword_dealloc(PyObject *self) {
 }
 
 
-static PyObject *keyword_split(PyObject *self,
-                               PyObject *args, PyObject *kwds) {
+static PyObject *keyword_split(
+    PyObject *self,
+    PyObject *args,
+    PyObject *kwds) {
 
   PyObject *name = ATOM_NAME(self);
   PyObject *method = NULL;
@@ -414,8 +427,10 @@ static PyObject *keyword_split(PyObject *self,
 }
 
 
-static PyObject *keyword_rsplit(PyObject *self,
-                                PyObject *args, PyObject *kwds) {
+static PyObject *keyword_rsplit(
+    PyObject *self,
+    PyObject *args,
+    PyObject *kwds) {
 
   PyObject *name = ATOM_NAME(self);
   PyObject *method = NULL;
