@@ -3,8 +3,9 @@
 PYTHON ?= $(shell which python3 python 2>/dev/null | head -n1)
 PYTHON := $(PYTHON)
 
-PROJECT := $(shell $(PYTHON) -c "import tomllib; print(tomllib.load(open('pyproject.toml', 'rb'))['project']['name'])" 2>/dev/null || $(PYTHON) -c "import tomli; print(tomli.load(open('pyproject.toml', 'rb'))['project']['name'])" 2>/dev/null || echo "koskari")
-VERSION := $(shell $(PYTHON) -c "import tomllib; print(tomllib.load(open('pyproject.toml', 'rb'))['project']['version'])" 2>/dev/null || $(PYTHON) -c "import tomli; print(tomli.load(open('pyproject.toml', 'rb'))['project']['version'])" 2>/dev/null || echo "0.1.0")
+PROJECT := $(shell $(PYTHON) -B setup.py --name)
+VERSION := $(shell $(PYTHON) -B setup.py --version)
+
 
 # Build configuration
 DEBUG ?= 0
@@ -18,6 +19,7 @@ define checkfor
 	fi
 endef
 
+
 ##@ Basic Targets
 
 .DEFAULT_GOAL := help
@@ -28,6 +30,7 @@ help:  ## Display this help
 report-python:  ## Report Python version and executable
 	@echo "Using python: $(PYTHON)"
 	@$(PYTHON) -VV
+
 
 ##@ Build and Install
 
@@ -56,6 +59,7 @@ uninstall:  ## Uninstall package
 	@$(PYTHON) -m pip uninstall -y $(PROJECT) || true
 	@echo "Uninstallation complete"
 
+
 ##@ Development
 
 test:  ## Run tests on current Python version via tox
@@ -73,43 +77,28 @@ tox:  ## Run full tox suite (tests + lint + typecheck)
 	@echo "Running full tox suite..."
 	@tox -q
 
-##@ Native Memory Testing
-
-test-native: build-ext  ## Run native memory tests
-	@echo "Running native memory tests..."
-	@$(MAKE) -C tests/native test PYTHON=$(PYTHON)
-
-test-native-asan: build-ext  ## Run native tests with AddressSanitizer
-	@echo "Running native memory tests with AddressSanitizer..."
-	@$(MAKE) -C tests/native test-asan PYTHON=$(PYTHON)
-
-test-native-valgrind: build-ext  ## Run native tests under Valgrind
-	@echo "Running native memory tests under Valgrind..."
-	@$(MAKE) -C tests/native test-valgrind PYTHON=$(PYTHON)
-
-clean-native:  ## Clean native test build artifacts
-	@$(MAKE) -C tests/native clean
 
 ##@ Container-based Memory Testing
 
 CONTAINER_IMAGE := koskari-native-tests
 CONTAINER_ENGINE := $(shell which podman 2>/dev/null || which docker 2>/dev/null || echo "podman")
 
-container-build:  ## Build the native test container
+test-container-build:  ## Build the native test container
 	@echo "Building container image $(CONTAINER_IMAGE)..."
 	$(CONTAINER_ENGINE) build -t $(CONTAINER_IMAGE) -f tests/native/Containerfile tests/native/
 
-container-test: container-build  ## Run all native tests in container
+test-native: test-container-build  ## Run all native tests in container
 	@echo "Running all native memory tests in container..."
 	$(CONTAINER_ENGINE) run --rm -v $(PWD):/src:Z $(CONTAINER_IMAGE) all
 
-container-test-asan: container-build  ## Run ASan tests in container
+test-asan: test-container-build  ## Run ASan tests in container
 	@echo "Running ASan tests in container..."
 	$(CONTAINER_ENGINE) run --rm -v $(PWD):/src:Z $(CONTAINER_IMAGE) asan
 
-container-test-valgrind: container-build  ## Run Valgrind tests in container
+test-valgrind: test-container-build  ## Run Valgrind tests in container
 	@echo "Running Valgrind tests in container..."
 	$(CONTAINER_ENGINE) run --rm -v $(PWD):/src:Z $(CONTAINER_IMAGE) valgrind
+
 
 ##@ Code Quality
 
@@ -150,6 +139,7 @@ purge: clean  ## Deep clean (includes .tox, .eggs, etc.)
 	@rm -rf .coverage htmlcov/
 	@echo "Purge complete"
 
+
 ##@ Information
 
 project:  ## Show project name
@@ -162,3 +152,6 @@ python:  ## Show Python executable
 	@echo $(PYTHON)
 
 .PHONY: help report-python build build-ext install install-dev uninstall test test-all tox test-native test-native-asan test-native-valgrind clean-native container-build container-test container-test-asan container-test-valgrind lint typecheck format clean-built clean-ext clean-pyc clean purge project version python
+
+
+# The end.

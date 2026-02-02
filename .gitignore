@@ -41,6 +41,7 @@ coverage.xml
 *.log
 .pytest_cache/
 .hypothesis/
+tests/native/test_harness
 
 # Virtual environments
 venv/
@@ -71,4 +72,6 @@ venv.bak/
 .mypy_cache/
 .dmypy.json
 dmypy.json
-tests/native/test_harness
+
+
+# The end.
