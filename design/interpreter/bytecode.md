@@ -190,6 +190,23 @@ typedef enum KosOpStyle {
 - `KOS_OP_CLEAR_FINALLY`, `KOS_OP_CLEAR_LOOP`, `KOS_OP_CLEAR_TRY`
 - `KOS_OP_POP_WITH`, `KOS_OP_POP_BEGIN`, `KOS_OP_POP_FINALLY`, etc.
 
+### Delimited Continuations
+- `KOS_OP_PUSH_PROMPT`: Push prompt delimiter (arg = prompt_id constant index)
+- `KOS_OP_POP_PROMPT`: Pop prompt from dynamic chain
+- `KOS_OP_SHIFT`: Capture continuation, abort to prompt (arg = prompt_id constant index)
+
+### Dynamic Wind
+- `KOS_OP_PUSH_WIND`: Push wind extent (arg = after_block label)
+- `KOS_OP_POP_WIND`: Pop wind from dynamic chain
+- `KOS_OP_END_WIND`: Sentinel that terminates hook block execution
+
+### Continuation Invocation
+- `KOS_OP_INVOKE_K`: Invoke continuation from TOS
+
+### Region Control
+- `KOS_OP_PUSH_REGION`: Push region for block-local control (arg = handler label)
+- `KOS_OP_POP_REGION`: Pop region from dynamic chain
+
 ### Object Protocol
 - Comparisons: `KOS_OP_OBJECT_EQ`, `KOS_OP_OBJECT_NE`, `KOS_OP_OBJECT_LT`, etc.
 - Predicates: `KOS_OP_OBJECT_IN`, `KOS_OP_OBJECT_IS`, `KOS_OP_OBJECT_IS_INSTANCE`, etc.

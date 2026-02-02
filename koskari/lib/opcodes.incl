@@ -223,6 +223,23 @@ OP(OBJECT_TRUTH, NOARG)
 OP(OBJECT_TYPE, NOARG)
 OP(OBJECT_VARS, NOARG)
 
+// delimited continuation control
+OP(PUSH_PROMPT, CONST)         // arg = prompt_id constant pool index
+OP(POP_PROMPT, NOARG)          // pop prompt from dynamic chain
+OP(SHIFT, CONST)               // capture continuation, abort to prompt
+
+// dynamic wind control
+OP(PUSH_WIND, LABEL)           // arg = after_block label
+OP(POP_WIND, NOARG)            // pop wind from dynamic chain
+OP(END_WIND, NOARG)            // sentinel: terminates hook block
+
+// continuation invocation
+OP(INVOKE_K, NOARG)            // invoke continuation from TOS
+
+// region control (replaces old block style)
+OP(PUSH_REGION, LABEL)         // arg = handler label
+OP(POP_REGION, NOARG)          // pop region from dynamic chain
+
 // THEEND must always be last
 OP(THEEND, NOARG)
 

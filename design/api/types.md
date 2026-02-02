@@ -173,8 +173,8 @@ with C extension support and comprehensive test coverage:
   - Format string interpolation
   - Position tracking for error messages
 
-**Stack Types** (from sibilant-ceval):
-- `Stack`: Block-structured value stack for the evaluator
+**Stack Types** (from sibilant-ceval, refactored):
+- `Stack`: Block-structured value stack for the evaluator (storage-only)
   - `push(val)`: Append value to current block
   - `pop()`: Remove and return top value
   - `peek()`: Borrow reference to top value
@@ -194,18 +194,10 @@ with C extension support and comprehensive test coverage:
   - `total()`: Sum of all block lengths
   - `view()`: Tuple of current block contents
   - `clear()`: Pop all blocks except root, empty it
-  - `disable()`: Disable handler in current block
-  - `status()`: Get (block_style, enabled, label_a, label_b)
-- `BlockStyle`: Enum for block types
-  - `KOS_BLOCK_BEGIN`: Default block
-  - `KOS_BLOCK_FINALLY`: Finally block
-  - `KOS_BLOCK_FOREACH`: For-each loop
-  - `KOS_BLOCK_LOOP`: While loop
-  - `KOS_BLOCK_NS`: Namespace block
-  - `KOS_BLOCK_TRY`: Try block
-  - `KOS_BLOCK_WITH`: With context
-  - `KOS_BLOCK_AWAIT_FOREACH`: Async for-each
-  - `KOS_BLOCK_AWAIT_WITH`: Async with context
+  - `copy()`: Create COW clone of stack
+
+NOTE: Control flow metadata (block_style, enabled, labels) has been moved to
+`KosDynRegion` nodes in the dynamic chain. See evaluator.md for details.
 
 **Bytecode Types** (from sibilant-ceval, redesigned):
 - `Code`: Compiled bytecode storage object
@@ -224,10 +216,12 @@ with C extension support and comprehensive test coverage:
   - COMPILE, LABEL, NOARG, COUNT, PAIR_COUNT, STAR, CONST, VAR, FASTVAR
 
 **Evaluator Types** (new for Koskari VM):
-- `Continuation`: Captured continuation (multi-shot, undelimited)
+- `Continuation`: Captured delimited continuation (multi-shot)
   - Callable: returns `Coroutine` that resumes at captured point
   - Multi-shot: each call clones captured state
+  - Delimited: captures up to prompt delimiter, not entire stack
   - Supports resume value or exception injection
+  - Cannot span Python/C call boundaries
 - `Coroutine`: Koskari coroutine wrapper
   - Implements Python awaitable protocol (`__await__`)
   - `send(value)`: Resume with value
@@ -238,6 +232,17 @@ with C extension support and comprehensive test coverage:
   - Implements async iterator protocol (`__aiter__`, `__anext__`)
   - Yields values via StopIteration
   - Supports close on exhaustion
+
+**Dynamic Chain Types** (internal, for evaluator infrastructure):
+- `KosDynNode`: Base structure for dynamic chain nodes
+  - Types: FRAME, PROMPT, WIND, REGION, PYCALL
+- `KosDynFrame`: Function activation record (code, pc, stack, namespace)
+- `KosDynPrompt`: Delimiter for delimited continuations (prompt_id, handler)
+- `KosDynWind`: Dynamic-wind extent (before/after hook bytecode blocks)
+- `KosDynRegion`: Block-local control (try/finally/loop/with)
+  - Styles: TRY, FINALLY, LOOP, WITH, FOREACH, AWAIT_WITH, AWAIT_FOREACH, NS, BEGIN
+- `KosHookRunner`: Isolated execution context for wind/unwind hooks
+- `KosTransferPlan`: Action list for continuation transfer with hook execution
 
 ### Not Migrating
 

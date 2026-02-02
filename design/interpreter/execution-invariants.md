@@ -169,11 +169,90 @@ Yielding and awaiting are disjoint control paths internally and at the surface.
 
 ---
 
-## 14. Non-Goals / Explicit Exclusions
+## 14. Python Boundary Constraint (Invariant)
+
+* Captured continuations **MUST NOT include Python/C call stack segments**.
+* The dynamic chain tracks Python boundaries via `KOS_DYN_PYCALL` nodes.
+* `shift` capture is **rejected** if any `PYCALL` boundary exists between the
+  current position and the target prompt.
+
+**Rationale**: Python call frames cannot be cloned or resumed. Including them
+would create non-resumable continuations.
+
+**Implementation**: `kos_validate_capture()` walks from `dyn_top` to the prompt,
+checking for `PYCALL` nodes.
+
+---
+
+## 15. Unified Dynamic Chain (Invariant)
+
+* All execution context (frames, prompts, winds, regions) is tracked in a
+  **single unified dynamic chain**.
+* The chain is a linked list of `KosDynNode` structures with typed payloads.
+* Walking the chain provides complete dynamic extent information.
+
+**Node types**:
+* `KOS_DYN_FRAME` — function activation
+* `KOS_DYN_PROMPT` — reset delimiter
+* `KOS_DYN_WIND` — dynamic-wind extent
+* `KOS_DYN_REGION` — block-local control (try, with, loop)
+* `KOS_DYN_PYCALL` — Python/C boundary marker
+
+---
+
+## 16. VM-Native Wind/Unwind Hooks (Invariant)
+
+* Wind/unwind hooks are **bytecode blocks**, not Python callables.
+* Hooks execute within the VM via `KosHookRunner` with isolated operand stacks.
+* Hooks terminate with `END_WIND` sentinel opcode.
+* Hooks cannot observe or modify the enclosing frame's stack.
+
+**Rationale**: This allows hooks to participate in continuation capture and
+avoids Python/C boundary crossings during wind/unwind.
+
+---
+
+## 17. Delimited Continuation Semantics (Invariant)
+
+* Koskari implements **delimited continuations** (reset/shift), not undelimited
+  `call/cc`.
+* Continuations capture from the current point up to (but not including) the
+  nearest matching prompt.
+* Captured continuations are **multi-shot** by default.
+* Continuation invocation executes proper wind/unwind hooks in correct order.
+
+---
+
+## 18. Transfer Plan Atomicity (Invariant)
+
+* Continuation application is orchestrated via a **transfer plan**.
+* The plan executes atomically with respect to normal VM execution.
+* The VM does not interleave opcode dispatch with mid-transfer state.
+
+**Exception**: Hooks may suspend on AWAIT, in which case the transfer plan is
+suspended along with the context.
+
+---
+
+## 19. Chain Version Tracking (Invariant)
+
+* The context maintains a `chain_version` counter.
+* The counter increments on every chain modification (push/pop any node).
+* Transfer plans record the version at creation time.
+* Nested transfers that modify the chain are detectable via version mismatch.
+
+**Use**: Enables safe resumption of suspended transfer plans after nested
+continuation invocations.
+
+---
+
+## 20. Non-Goals / Explicit Exclusions
 
 * No implicit event loop creation on normal calls.
 * No reliance on CPython frame recursion for Koskari semantics.
 * No unification of `yield` and `await` signals.
+* No undelimited `call/cc` (only delimited reset/shift).
+* No Python-callable wind/unwind hooks.
 
 ---
 
@@ -182,16 +261,20 @@ Yielding and awaiting are disjoint control paths internally and at the surface.
 **Koskari owns control flow.**
 Python observes execution only through explicit, protocol-correct projections
 (value, generator, async generator, awaitable), while Koskari internally
-executes with a single flattened evaluator and explicit suspension semantics.
+executes with a single flattened evaluator, a unified dynamic chain, and
+delimited continuation semantics.
 
 ---
 
 ## Related Documentation
 
-* [evaluator.md](evaluator.md) — Legacy evaluation model from python-sibilant
-  and sibilant-ceval
-* [callcc.md](callcc.md) — Call/cc implementation design
+* [evaluator.md](evaluator.md) — Evaluation model and VM structures
+* [callcc.md](callcc.md) — Delimited continuation implementation
+* [evaluator-restructure.md](evaluator-restructure.md) — Design document for
+  the DynNode chain restructure
 * [../language/async.md](../language/async.md) — Async and coroutine language
   features
 * [../language/generators.md](../language/generators.md) — Generator language
   features
+* [../language/control-flow.md](../language/control-flow.md) — Control flow
+  including reset/shift and dynamic-wind

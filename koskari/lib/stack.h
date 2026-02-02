@@ -21,42 +21,32 @@
 #include <Python.h>
 
 
-/* === BlockStyle enum === */
-
-
-typedef enum KosBlockStyle {
-  KOS_BLOCK_BEGIN = 0,
-  KOS_BLOCK_FINALLY,
-  KOS_BLOCK_FOREACH,
-  KOS_BLOCK_LOOP,
-  KOS_BLOCK_NS,
-  KOS_BLOCK_TRY,
-  KOS_BLOCK_WITH,
-  KOS_BLOCK_AWAIT_FOREACH,
-  KOS_BLOCK_AWAIT_WITH,
-} KosBlockStyle;
-
-
 /* === StackBlock structure === */
 
+
+/**
+   KosStackBlock is a storage-only operand stack segment.
+
+   Control flow metadata (block style, labels, enabled flag) has been
+   moved to KosDynRegion nodes in the dynamic chain. See dynchain.h.
+
+   The stack is organized as a linked list of blocks. Each block holds
+   a flexible array of PyObject pointers. Blocks support copy-on-write
+   via the refcount field.
+*/
 
 typedef struct KosStackBlock KosStackBlock;
 
 
 struct KosStackBlock {
-  KosStackBlock *back;           /* previous block */
+  KosStackBlock *back;    /* previous block (toward bottom) */
 
-  size_t refcount;               /* for copy-on-write */
+  size_t refcount;        /* for copy-on-write */
 
-  KosBlockStyle block_style;     /* determines signal handling */
-  int enabled;                   /* 0/1 if handler should trigger */
-  Py_ssize_t a_label;            /* behavior jump label */
-  Py_ssize_t b_label;            /* optional second label */
+  size_t max;             /* allocated count of objs */
+  size_t len;             /* used objs */
 
-  size_t max;                    /* allocated count of objs */
-  size_t len;                    /* used objs */
-
-  PyObject *objs[0];             /* flexible array member */
+  PyObject *objs[0];      /* flexible array member */
 };
 
 
@@ -100,18 +90,6 @@ typedef struct KosStack {
 
 #define KosStackBlock_LEN(sb)                   \
   (((KosStackBlock *) sb)->len)
-
-#define KosStackBlock_BLOCK_STYLE(sb)           \
-  (((KosStackBlock *) sb)->block_style)
-
-#define KosStackBlock_ENABLED(sb)               \
-  (((KosStackBlock *) sb)->enabled)
-
-#define KosStackBlock_LABEL_A(sb)               \
-  (((KosStackBlock *) sb)->a_label)
-
-#define KosStackBlock_LABEL_B(sb)               \
-  (((KosStackBlock *) sb)->b_label)
 
 
 /* === public API === */
@@ -325,10 +303,6 @@ int KosStack_Replace(PyObject *stack, size_t index, PyObject *value);
    Allocates a new block and makes it the current block
  */
 int KosStack_PushBlock(PyObject *stack);
-
-
-int KosStack_PushBlockFull(PyObject *stack, KosBlockStyle style,
-                           Py_ssize_t label_a, Py_ssize_t label_b);
 
 
 /**

@@ -1,77 +1,147 @@
 # Evaluation Model
 
-This document describes both the legacy evaluation approaches and the current
-Koskari implementation in `eval.c`/`eval.h`.
+This document describes the Koskari evaluator implementation in `eval.c`/`eval.h`
+and the supporting DynNode chain infrastructure in `dynchain.c`/`dynchain.h`.
 
-## Legacy Approaches
+## Design Philosophy
 
-### From python-sibilant
-
-**CPython Evaluation**:
-- Uses CPython's evaluation loop
-- Koskari bytecode executed by Python interpreter
-- Full Python interoperability
-- Python tracebacks and debugging
-
-**Trampoline TCO**:
-- Functions marked with `@trampoline`
-- Tail calls bounce out of frame
-- Evaluated in trampoline loop
-- Stack doesn't grow
-- Side effect: collapsed call stack
-
-### From sibilant-ceval
-
-**Custom Ceval Loop**:
-- Custom frame type (SibFrame)
-- Custom stack type (SibStack)
-- Custom namespace type (Namespace)
-- Opcode dispatch loop
-
-## Current Implementation (eval.c / eval.h)
-
-The Koskari evaluator core implements:
-- **Undelimited multi-shot continuations**
-- **Dynamic wind/unwind hooks**
+Koskari's evaluator implements:
+- **Delimited multi-shot continuations** (reset/shift)
+- **VM-native dynamic wind/unwind hooks** (bytecode blocks, not Python callables)
 - **Flattened async execution**
+- **Unified dynamic chain** for all control flow concerns
 
-### Core VM Structures (C-only, not PyObjects)
+## Core VM Structures
 
-**KosHandler** — Dynamic wind/unwind chain node:
+### Dynamic Chain (DynNode)
+
+The evaluator uses a unified **dynamic chain** that links all execution context:
+frames, prompts, wind extents, and control regions. This replaces the previous
+separate frame chain and handler chain.
+
+**KosDynNode** — Base structure for all chain nodes:
+
 ```c
-struct KosHandler {
-  KosHandler *parent;   /* enclosing handler (outer scope) */
-  PyObject *before;     /* callable or NULL; invoked on wind-in */
-  PyObject *after;      /* callable or NULL; invoked on unwind-out */
+typedef enum KosDynKind {
+  KOS_DYN_FRAME,   /* function activation */
+  KOS_DYN_PROMPT,  /* reset delimiter */
+  KOS_DYN_WIND,    /* dynamic-wind extent */
+  KOS_DYN_REGION,  /* block-local control (try, with, loop) */
+  KOS_DYN_PYCALL,  /* Python/C boundary marker */
+} KosDynKind;
+
+struct KosDynNode {
+  KosDynNode *parent;   /* enclosing node (toward root) */
+  KosDynKind kind;      /* discriminator for node type */
+  uint32_t flags;       /* KosDynFlags bitfield */
 };
 ```
 
-**KosFrame** — Execution activation record:
+**KosDynFrame** — Function activation record:
+
 ```c
-struct KosFrame {
-  KosFrame *parent;        /* caller frame */
-  KosCode *code;           /* bytecode object (borrowed) */
-  uint32_t pc;             /* program counter */
-  KosStackBlock *stack;    /* operand stack (owned) */
-  PyObject *ns;            /* namespace PyObject (owned ref) */
-  KosHandler *handlers;    /* dynamic wind/unwind chain */
-  uint32_t flags;          /* frame-specific flags */
+struct KosDynFrame {
+  KosDynNode base;        /* must be first */
+  KosCode *code;          /* bytecode object (borrowed) */
+  uint32_t pc;            /* program counter */
+  KosStackBlock *stack;   /* operand stack (owned) */
+  PyObject *ns;           /* namespace PyObject (owned ref) */
+  uint32_t frame_flags;   /* frame-specific flags */
 };
 ```
 
-**KosContext** — Top-level VM execution state:
+**KosDynPrompt** — Delimiter for delimited continuations (reset):
+
+```c
+struct KosDynPrompt {
+  KosDynNode base;        /* must be first */
+  uint32_t prompt_id;     /* tag for matching (0 = default) */
+  KosCode *handler_code;  /* handler body code (borrowed, or NULL) */
+  uint32_t handler_pc;    /* handler entry point */
+};
+```
+
+**KosDynWind** — Dynamic-wind extent with hook blocks:
+
+```c
+struct KosDynWind {
+  KosDynNode base;        /* must be first */
+  KosCode *before_code;   /* before hook code (borrowed, or NULL) */
+  uint32_t before_pc;     /* before hook entry point */
+  KosCode *after_code;    /* after hook code (borrowed, or NULL) */
+  uint32_t after_pc;      /* after hook entry point */
+  uint8_t entered;        /* nonzero if before hook has run */
+};
+```
+
+**KosDynRegion** — Block-local control (try/finally/loop/with):
+
+```c
+typedef enum KosRegionStyle {
+  KOS_REGION_TRY,
+  KOS_REGION_FINALLY,
+  KOS_REGION_LOOP,
+  KOS_REGION_WITH,
+  KOS_REGION_FOREACH,
+  KOS_REGION_AWAIT_WITH,
+  KOS_REGION_AWAIT_FOREACH,
+  KOS_REGION_NS,
+  KOS_REGION_BEGIN,
+} KosRegionStyle;
+
+struct KosDynRegion {
+  KosDynNode base;        /* must be first */
+  KosRegionStyle style;   /* region type */
+  uint32_t a_label;       /* primary jump target */
+  uint32_t b_label;       /* secondary jump target (or 0) */
+  uint8_t enabled;        /* handler active flag */
+};
+```
+
+### KosContext — Top-level VM Execution State
+
 ```c
 struct KosContext {
-  KosFrame *top;            /* current frame */
-  PyObject *py_await_iter;  /* await-iterator from __await__() */
-  PyObject *py_last_yielded; /* last yielded (debug) */
-  int pending_throw;        /* next resume throws */
-  PyObject *pending_exc;    /* exception to raise */
-  uint32_t flags;           /* RUNNING/FROZEN/DEAD */
+  KosDynNode *dyn_top;       /* top of dynamic chain */
+  KosDynFrame *frame_top;    /* cached topmost frame (for fast access) */
+
+  /* Hook execution state */
+  KosHookRunner hook_runner;
+
+  /* Transfer plan state */
+  KosTransferPlan *plan;        /* active transfer plan (or NULL) */
+  KosTransferPlan *plan_stack;  /* suspended plans stack */
+  uint32_t chain_version;       /* incremented on chain modifications */
+
+  /* Python await bridging state */
+  PyObject *py_await_iter;   /* await-iterator from __await__() */
+  PyObject *py_last_yielded; /* last yielded object (debug/optional) */
+
+  /* Exception injection for resume */
+  int pending_throw;
+  PyObject *pending_exc;
+
+  uint32_t flags;            /* KosContextFlags */
 };
 ```
 
-**KosEvent** — Boundary event from kos_drive:
+### KosStackBlock — Storage-Only Operand Stack
+
+Control flow metadata (block style, labels, enabled flag) has been moved to
+`KosDynRegion` nodes. `KosStackBlock` is now purely storage:
+
+```c
+struct KosStackBlock {
+  KosStackBlock *back;    /* previous block */
+  size_t refcount;        /* for copy-on-write */
+  size_t max;             /* allocated capacity */
+  size_t len;             /* used count */
+  PyObject *objs[0];      /* flexible array of values */
+};
+```
+
+### KosEvent — Boundary Event from kos_drive
+
 ```c
 typedef enum KosEventKind {
   KOS_EV_RETURN,  /* normal completion */
@@ -86,154 +156,231 @@ typedef struct KosEvent {
 } KosEvent;
 ```
 
-### Python-Facing Wrapper Types (GC-tracked PyObjects)
+## Continuation Infrastructure
+
+### KosContinuation — Captured Delimited Continuation
+
+```c
+struct KosContinuation {
+  KosDynNode *captured_chain;   /* cloned chain segment */
+  KosDynFrame *resume_frame;    /* frame to resume into */
+  uint32_t resume_pc;           /* pc to resume at */
+  KosStackBlock *resume_stack;  /* stack state (COW reference) */
+  uint32_t prompt_id;           /* target prompt tag */
+  uint8_t one_shot;             /* 0 = multi-shot, 1 = one-shot */
+};
+```
+
+### KosTransferPlan — Continuation Transfer Execution
+
+When a continuation is invoked, a transfer plan orchestrates the execution:
+
+```c
+typedef enum KosTransferStep {
+  KOS_XFER_RUN_HOOK,  /* execute a wind/unwind hook block */
+  KOS_XFER_INSTALL,   /* splice target chain segment */
+  KOS_XFER_INJECT,    /* push resume value onto stack */
+} KosTransferStep;
+
+struct KosTransferPlan {
+  KosTransferPlan *suspended;   /* outer plan if nested */
+  KosTransferAction *actions;   /* action array */
+  size_t action_count;          /* total actions */
+  size_t action_index;          /* next action index */
+  KosDynNode *original_target;  /* for chain-change detection */
+  uint32_t chain_version;       /* version at plan creation */
+};
+```
+
+### KosHookRunner — Hook Execution State
+
+Hooks are bytecode blocks (not Python callables) executed with isolated stacks:
+
+```c
+struct KosHookRunner {
+  KosCode *code;          /* hook bytecode (borrowed) */
+  uint32_t pc;            /* hook program counter */
+  KosStackBlock *scratch; /* scratch operand stack (owned) */
+  int active;             /* nonzero if hook is running */
+};
+```
+
+## Python-Facing Wrapper Types
 
 **KosPyContinuation**:
-- Captures frame chain and handler state
-- Callable: returns KosPyCoroutine
-- Multi-shot: clones state on each invocation
+- Wraps `KosContinuation`
+- Callable: returns `KosPyCoroutine` that resumes with the passed value
+- Multi-shot: clones captured state on each invocation
+- GC-tracked: traverses captured chain
 
 **KosPyCoroutine**:
-- Wraps KosContext for Python coroutine protocol
+- Wraps `KosContext` for Python coroutine protocol
 - Implements `__await__`, `send`, `throw`, `close`
 - State machine: NEW → RUNNING → WAITING_PY → DONE
 
 **KosPyAsyncGen** / **KosPyAsyncGenASend**:
-- Wraps KosContext for async generator protocol
+- Wraps `KosContext` for async generator protocol
 - `__aiter__` returns self
-- `__anext__` returns KosPyAsyncGenASend awaitable
+- `__anext__` returns `KosPyAsyncGenASend` awaitable
 
-### Public C API
+## Public C API
 
-**Lifecycle**:
+### DynNode Chain Management
+
 ```c
-KosContext *kos_context_new(KosFrame *top);
+/* Push/pop frames */
+KosDynFrame *kos_dyn_push_frame(KosContext *ctx, KosCode *code, PyObject *ns);
+int kos_dyn_pop_frame(KosContext *ctx);
+
+/* Push/pop prompts */
+KosDynPrompt *kos_dyn_push_prompt(KosContext *ctx, uint32_t prompt_id);
+void kos_dyn_pop_prompt(KosContext *ctx, KosDynPrompt *prompt);
+
+/* Push/pop wind extents */
+KosDynWind *kos_dyn_push_wind(KosContext *ctx,
+        KosCode *before_code, uint32_t before_pc,
+        KosCode *after_code, uint32_t after_pc);
+int kos_dyn_pop_wind(KosContext *ctx, KosDynWind *wind);
+
+/* Push/pop regions */
+KosDynRegion *kos_dyn_push_region(KosContext *ctx,
+        KosRegionStyle style, uint32_t label_a, uint32_t label_b);
+void kos_dyn_pop_region(KosContext *ctx, KosDynRegion *region);
+
+/* Python boundary markers */
+KosDynNode *kos_dyn_push_pycall(KosContext *ctx);
+void kos_dyn_pop_pycall(KosContext *ctx, KosDynNode *marker);
+```
+
+### Continuation Capture and Invocation
+
+```c
+/* Find prompt by tag */
+KosDynPrompt *kos_find_prompt(KosContext *ctx, uint32_t prompt_id);
+
+/* Validate capture (checks for Python boundaries) */
+int kos_validate_capture(KosContext *ctx, KosDynPrompt *prompt);
+
+/* Capture continuation (shift) */
+int kos_shift_capture(KosContext *ctx, uint32_t prompt_id,
+        KosContinuation **out_k);
+
+/* Invoke continuation */
+int kos_invoke_continuation(KosContext *ctx,
+        KosContinuation *k, PyObject *value, int is_throw);
+```
+
+### Transfer Planning
+
+```c
+/* Compute LCA between two chain positions */
+KosDynNode *kos_compute_lca(KosDynNode *a, KosDynNode *b);
+
+/* Build transfer plan */
+int kos_build_transfer_plan(KosContext *ctx,
+        KosDynNode *target, PyObject *value, int is_throw,
+        KosTransferPlan **out_plan);
+
+/* Execute next step of transfer plan */
+int kos_run_transfer_step(KosContext *ctx);
+
+/* Suspend/resume for nested transfers */
+void kos_suspend_transfer_plan(KosContext *ctx);
+int kos_resume_transfer_plan(KosContext *ctx);
+```
+
+### Hook Execution
+
+```c
+int kos_begin_hook(KosContext *ctx, KosCode *code, uint32_t pc);
+int kos_hook_active(KosContext *ctx);
+int kos_end_hook(KosContext *ctx);
+```
+
+### Context and Frame Lifecycle
+
+```c
+KosContext *kos_context_new(KosDynFrame *top);
 void kos_context_free(KosContext *ctx);
+
 KosFrame *kos_frame_new(KosCode *code, PyObject *ns,
-        KosStackBlock *stack, KosFrame *parent, KosHandler *handlers);
+        KosStackBlock *stack, KosDynNode *parent);
 KosFrame *kos_frame_clone(KosFrame *frame);
 void kos_frame_free(KosFrame *frame);
 ```
 
-**Wind Chain Management**:
-```c
-int kos_push_wind(KosContext *ctx, PyObject *before, PyObject *after);
-int kos_push_before_wind(KosContext *ctx, PyObject *before);
-int kos_push_after_wind(KosContext *ctx, PyObject *after);
-int kos_pop_wind(KosContext *ctx);
-```
+### Call Operations
 
-**Continuation Application**:
-```c
-int kos_apply_continuation(KosContext *ctx,
-        KosFrame *target_top, KosHandler *target_handlers,
-        int is_throw, PyObject *value_or_exc);
-```
-
-This function:
-1. Computes LCA between current and target frames
-2. Collects unwind-after hooks (inner→outer)
-3. Collects wind-before hooks (outer→inner)
-4. Executes unwind hooks
-5. Installs target top/handlers into context
-6. Executes wind hooks
-7. Injects resume value onto target stack (or raises exception)
-
-**Call Operations**:
 ```c
 int kos_koscall(KosContext *ctx, KosCode *code, PyObject *ns);
 int kos_tail_koscall(KosContext *ctx, KosCode *code, PyObject *ns);
 ```
 
-**Drive Loop**:
+### Drive Loop
+
 ```c
 int kos_drive(KosContext *ctx, KosEvent *out_ev);
 ```
 
 Main entry point: runs opcodes until boundary (RETURN/RAISE/YIELD/AWAIT).
 
-**GC Helpers**:
+### GC Helpers
+
 ```c
+int kos_dynnode_traverse(KosDynNode *node, visitproc visit, void *arg);
+int kos_dynchain_traverse(KosDynNode *node, KosDynNode *stop,
+        visitproc visit, void *arg);
+int kos_continuation_traverse(KosContinuation *k, visitproc visit, void *arg);
 int kos_stackblock_traverse(KosStackBlock *block, visitproc visit, void *arg);
-int kos_handler_traverse(KosHandler *handler, visitproc visit, void *arg);
 int kos_frame_traverse(KosFrame *frame, visitproc visit, void *arg);
 int kos_context_traverse(KosContext *ctx, visitproc visit, void *arg);
 ```
 
-### Stack Management (stack.c / stack.h)
+## Ownership and Invariants
 
-**KosStackBlock** — Block-structured operand stack:
-```c
-struct KosStackBlock {
-  KosStackBlock *back;       /* previous block */
-  KosBlockStyle block_style; /* determines signal handling */
-  int enabled;               /* handler active flag */
-  Py_ssize_t a_label;        /* primary jump label */
-  Py_ssize_t b_label;        /* secondary label */
-  size_t max;                /* allocated capacity */
-  size_t len;                /* used count */
-  PyObject *objs[0];         /* flexible array of values */
-};
-```
+1. **Context ownership**: A `KosContext` is owned by exactly one Python
+   wrapper (`KosPyCoroutine` or `KosPyAsyncGen`) during its lifetime.
 
-**KosStack** — Python wrapper for block chain:
-- Provides Python-accessible stack operations
-- Block push/pop for control flow
-- Value push/pop/peek operations
-- Supports block metadata (style, labels, enabled)
+2. **Chain ownership**: The dynamic chain is owned by the context. On
+   continuation capture, chains are cloned for multi-shot semantics.
 
-**Block Styles**:
-- `KOS_BLOCK_BEGIN`: Default block
-- `KOS_BLOCK_FINALLY`: Finally cleanup
-- `KOS_BLOCK_FOREACH`: For-each iteration
-- `KOS_BLOCK_LOOP`: While loop
-- `KOS_BLOCK_NS`: Namespace scope
-- `KOS_BLOCK_TRY`: Exception handler
-- `KOS_BLOCK_WITH`: Context manager
-- `KOS_BLOCK_AWAIT_FOREACH`: Async for-each
-- `KOS_BLOCK_AWAIT_WITH`: Async context manager
+3. **Suspension**: When `kos_drive` returns `KOS_EV_AWAIT`, the context's
+   `py_await_iter` holds the iterator. Resumption injects result onto stack.
 
-### Ownership and Invariants
-
-1. **Context ownership**: A KosContext is owned by exactly one Python
-   wrapper (KosPyCoroutine or KosPyAsyncGen) during its lifetime.
-
-2. **Frame ownership**: Frames are owned by the context. On continuation
-   capture, frames are cloned for multi-shot semantics.
-
-3. **Handler chain**: Each frame has its own handler chain. Handlers
-   are allocated/freed with the frame or via push/pop_wind.
-
-4. **Suspension**: When kos_drive returns KOS_EV_AWAIT, the context's
-   py_await_iter holds the iterator. Resumption injects result onto stack.
-
-5. **Multi-shot**: Continuations clone all state on invocation, allowing
+4. **Multi-shot**: Continuations clone all state on invocation, allowing
    multiple independent resumptions.
 
-6. **GC safety**: Only Python-visible wrapper objects are GC-tracked.
-   Internal C structs (KosFrame, KosHandler, KosContext) are not.
+5. **GC safety**: Only Python-visible wrapper objects are GC-tracked.
+   Internal C structs are traversed via wrapper `tp_traverse`.
 
-### Eager-Step Awaitable Optimization
+6. **Python boundary**: Continuation capture rejects if any `KOS_DYN_PYCALL`
+   boundary nodes exist between current position and the target prompt.
 
-When the VM encounters `AWAIT(py_awaitable)`:
+7. **Hook isolation**: Wind/unwind hooks execute with isolated operand stacks
+   and cannot observe or modify the enclosing frame's stack.
 
-1. Obtain await-iterator via `__await__()`
-2. Perform speculative step via `send(None)`
-3. If immediate completion (StopIteration): inject value, continue VM
-4. If yields: suspend, return yielded object to event loop
+## Wind/Unwind Ordering
 
-This avoids unnecessary event-loop hops for already-resolved awaitables.
+On continuation transfer from `src` chain to `dst` chain:
 
-### Future Optimizations (TODO)
+1. **Unwind phase**: Execute `after` hooks from `src` toward LCA.
+   - Order: innermost (top) to outermost (toward LCA).
+   - Only WIND nodes with `entered = 1`.
 
-- **Lazy frame COW**: Make pc mutation trigger copy-on-write so captured
-  frame chains can share unchanged tail segments
-- **Stack block cloning**: Deep-copy stack blocks for continuation capture
-- **Frame pooling**: Reuse frame allocations
+2. **Install phase**: Splice `dst` chain segment onto current chain.
+
+3. **Wind phase**: Execute `before` hooks from LCA toward `dst`.
+   - Order: outermost (from LCA) to innermost (toward dst top).
+   - Mark each WIND as `entered = 1` after its before hook completes.
+
+This matches Scheme's `dynamic-wind` semantics.
 
 ## Related Documentation
 
-- [execution-invariants.md](execution-invariants.md) — Koskari execution model
-  invariants and design commitments (target semantics)
-- [callcc.md](callcc.md) — Continuation implementation details
-- [../language/async.md](../language/async.md) — Async language features
+- [evaluator-restructure.md](evaluator-restructure.md) — Design document for
+  the DynNode chain restructure
+- [callcc.md](callcc.md) — Delimited continuation implementation details
+- [execution-invariants.md](execution-invariants.md) — Execution model invariants
+- [bytecode.md](bytecode.md) — Bytecode format and opcodes
+- [../language/control-flow.md](../language/control-flow.md) — Language-level
+  control flow including reset/shift

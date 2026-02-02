@@ -1,0 +1,1224 @@
+/*
+  This library is free software; you can redistribute it and/or modify
+  it under the terms of the GNU General Public License as published by
+  the Free Software Foundation; either version 3 of the License, or
+  (at your option) any later version.
+
+  This library is distributed in the hope that it will be useful, but
+  WITHOUT ANY WARRANTY; without even the implied warranty of
+  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
+  General Public License for more details.
+
+  You should have received a copy of the GNU General Public License
+  along with this library; if not, see <http://www.gnu.org/licenses/>.
+*/
+
+
+/**
+   koskari/lib/dynchain.c
+
+   Dynamic chain infrastructure implementation. Provides DynNode
+   allocation, freeing, cloning, and chain management operations.
+
+   :author: Christopher O'Brien <obriencj@preoccupied.net>
+   :license: GNU General Public License v3
+   :ai-assistant: Claude Opus 4.5 via Cursor
+*/
+
+
+#include "lib.h"
+
+
+/* === DynNode base operations === */
+
+
+static void kos_dynnode_init(
+        KosDynNode *node,
+        KosDynKind kind,
+        KosDynNode *parent) {
+
+  node->parent = parent;
+  node->kind = kind;
+  node->flags = KOS_DYNF_NONE;
+}
+
+
+/* === KosDynFrame implementation === */
+
+
+KosDynFrame *kos_dynframe_new(
+        KosDynNode *parent,
+        KosCode *code,
+        PyObject *ns,
+        KosStackBlock *stack) {
+
+  KosDynFrame *frame = PyMem_Malloc(sizeof(KosDynFrame));
+  if (! frame) {
+    PyErr_NoMemory();
+    Py_XDECREF(ns);
+    return NULL;
+  }
+
+  kos_dynnode_init(&frame->base, KOS_DYN_FRAME, parent);
+
+  frame->code = code;  /* borrowed */
+  frame->pc = 0;
+  frame->stack = stack;  /* ownership transferred */
+  frame->ns = ns;  /* ownership transferred (already stole ref) */
+  frame->frame_flags = 0;
+
+  return frame;
+}
+
+
+KosDynFrame *kos_dynframe_clone(KosDynFrame *frame) {
+  if (! frame)
+    return NULL;
+
+  /* Use COW for stack - just increment refcount on all blocks */
+  KosStackBlock *cloned_stack = KosStackBlock_COW(frame->stack);
+
+  KosDynFrame *clone = PyMem_Malloc(sizeof(KosDynFrame));
+  if (! clone) {
+    PyErr_NoMemory();
+    /* Release the COW'd stack */
+    if (cloned_stack) {
+      KosStackBlock *b = cloned_stack;
+      while (b) {
+        KosStackBlock *p = KosStackBlock_PARENT(b);
+        KosStackBlock_Release(b);
+        b = p;
+      }
+    }
+    return NULL;
+  }
+
+  kos_dynnode_init(&clone->base, KOS_DYN_FRAME, NULL);
+  clone->base.flags = frame->base.flags | KOS_DYNF_CLONED;
+
+  clone->code = frame->code;  /* borrowed */
+  clone->pc = frame->pc;
+  clone->stack = cloned_stack;
+  clone->ns = frame->ns;
+  Py_XINCREF(clone->ns);
+  clone->frame_flags = frame->frame_flags;
+
+  return clone;
+}
+
+
+void kos_dynframe_free(KosDynFrame *frame) {
+  if (! frame)
+    return;
+
+  /* Release the stack block chain */
+  KosStackBlock *block = frame->stack;
+  while (block) {
+    KosStackBlock *p = KosStackBlock_PARENT(block);
+    KosStackBlock_Release(block);
+    block = p;
+  }
+
+  Py_XDECREF(frame->ns);
+  /* code is borrowed, don't decref */
+
+  PyMem_Free(frame);
+}
+
+
+/* === KosDynPrompt implementation === */
+
+
+KosDynPrompt *kos_dynprompt_new(KosDynNode *parent, uint32_t prompt_id) {
+
+  KosDynPrompt *prompt = PyMem_Malloc(sizeof(KosDynPrompt));
+  if (! prompt) {
+    PyErr_NoMemory();
+    return NULL;
+  }
+
+  kos_dynnode_init(&prompt->base, KOS_DYN_PROMPT, parent);
+
+  prompt->prompt_id = prompt_id;
+  prompt->handler_code = NULL;
+  prompt->handler_pc = 0;
+
+  return prompt;
+}
+
+
+static KosDynPrompt *kos_dynprompt_clone(KosDynPrompt *prompt) {
+  if (! prompt)
+    return NULL;
+
+  KosDynPrompt *clone = PyMem_Malloc(sizeof(KosDynPrompt));
+  if (! clone) {
+    PyErr_NoMemory();
+    return NULL;
+  }
+
+  kos_dynnode_init(&clone->base, KOS_DYN_PROMPT, NULL);
+  clone->base.flags = prompt->base.flags | KOS_DYNF_CLONED;
+
+  clone->prompt_id = prompt->prompt_id;
+  clone->handler_code = prompt->handler_code;  /* borrowed */
+  clone->handler_pc = prompt->handler_pc;
+
+  return clone;
+}
+
+
+void kos_dynprompt_free(KosDynPrompt *prompt) {
+  if (! prompt)
+    return;
+
+  /* handler_code is borrowed */
+  PyMem_Free(prompt);
+}
+
+
+/* === KosDynWind implementation === */
+
+
+KosDynWind *kos_dynwind_new(
+        KosDynNode *parent,
+        KosCode *before_code,
+        uint32_t before_pc,
+        KosCode *after_code,
+        uint32_t after_pc) {
+
+  KosDynWind *wind = PyMem_Malloc(sizeof(KosDynWind));
+  if (! wind) {
+    PyErr_NoMemory();
+    return NULL;
+  }
+
+  kos_dynnode_init(&wind->base, KOS_DYN_WIND, parent);
+
+  wind->before_code = before_code;  /* borrowed */
+  wind->before_pc = before_pc;
+  wind->after_code = after_code;  /* borrowed */
+  wind->after_pc = after_pc;
+  wind->entered = 0;
+
+  return wind;
+}
+
+
+KosDynWind *kos_dynwind_clone(KosDynWind *wind) {
+  if (! wind)
+    return NULL;
+
+  KosDynWind *clone = PyMem_Malloc(sizeof(KosDynWind));
+  if (! clone) {
+    PyErr_NoMemory();
+    return NULL;
+  }
+
+  kos_dynnode_init(&clone->base, KOS_DYN_WIND, NULL);
+  clone->base.flags = wind->base.flags | KOS_DYNF_CLONED;
+
+  clone->before_code = wind->before_code;  /* borrowed */
+  clone->before_pc = wind->before_pc;
+  clone->after_code = wind->after_code;  /* borrowed */
+  clone->after_pc = wind->after_pc;
+  clone->entered = wind->entered;
+
+  return clone;
+}
+
+
+void kos_dynwind_free(KosDynWind *wind) {
+  if (! wind)
+    return;
+
+  /* code pointers are borrowed */
+  PyMem_Free(wind);
+}
+
+
+/* === KosDynRegion implementation === */
+
+
+KosDynRegion *kos_dynregion_new(
+        KosDynNode *parent,
+        KosRegionStyle style,
+        uint32_t a_label,
+        uint32_t b_label) {
+
+  KosDynRegion *region = PyMem_Malloc(sizeof(KosDynRegion));
+  if (! region) {
+    PyErr_NoMemory();
+    return NULL;
+  }
+
+  kos_dynnode_init(&region->base, KOS_DYN_REGION, parent);
+
+  region->style = style;
+  region->a_label = a_label;
+  region->b_label = b_label;
+  region->enabled = 1;
+
+  return region;
+}
+
+
+KosDynRegion *kos_dynregion_clone(KosDynRegion *region) {
+  if (! region)
+    return NULL;
+
+  KosDynRegion *clone = PyMem_Malloc(sizeof(KosDynRegion));
+  if (! clone) {
+    PyErr_NoMemory();
+    return NULL;
+  }
+
+  kos_dynnode_init(&clone->base, KOS_DYN_REGION, NULL);
+  clone->base.flags = region->base.flags | KOS_DYNF_CLONED;
+
+  clone->style = region->style;
+  clone->a_label = region->a_label;
+  clone->b_label = region->b_label;
+  clone->enabled = region->enabled;
+
+  return clone;
+}
+
+
+void kos_dynregion_free(KosDynRegion *region) {
+  if (! region)
+    return;
+
+  PyMem_Free(region);
+}
+
+
+/* === KosDynPycall (boundary marker) implementation === */
+
+
+KosDynNode *kos_dynpycall_new(KosDynNode *parent) {
+
+  KosDynNode *node = PyMem_Malloc(sizeof(KosDynNode));
+  if (! node) {
+    PyErr_NoMemory();
+    return NULL;
+  }
+
+  kos_dynnode_init(node, KOS_DYN_PYCALL, parent);
+  node->flags |= KOS_DYNF_BOUNDARY;
+
+  return node;
+}
+
+
+void kos_dynpycall_free(KosDynNode *node) {
+  if (! node)
+    return;
+
+  PyMem_Free(node);
+}
+
+
+/* === Generic DynNode operations === */
+
+
+void kos_dynnode_free(KosDynNode *node) {
+  if (! node)
+    return;
+
+  switch (node->kind) {
+    case KOS_DYN_FRAME:
+      kos_dynframe_free((KosDynFrame *) node);
+      break;
+    case KOS_DYN_PROMPT:
+      kos_dynprompt_free((KosDynPrompt *) node);
+      break;
+    case KOS_DYN_WIND:
+      kos_dynwind_free((KosDynWind *) node);
+      break;
+    case KOS_DYN_REGION:
+      kos_dynregion_free((KosDynRegion *) node);
+      break;
+    case KOS_DYN_PYCALL:
+      kos_dynpycall_free(node);
+      break;
+  }
+}
+
+
+KosDynNode *kos_dynnode_clone(KosDynNode *node) {
+  if (! node)
+    return NULL;
+
+  switch (node->kind) {
+    case KOS_DYN_FRAME:
+      return (KosDynNode *) kos_dynframe_clone((KosDynFrame *) node);
+    case KOS_DYN_PROMPT:
+      return (KosDynNode *) kos_dynprompt_clone((KosDynPrompt *) node);
+    case KOS_DYN_WIND:
+      return (KosDynNode *) kos_dynwind_clone((KosDynWind *) node);
+    case KOS_DYN_REGION:
+      return (KosDynNode *) kos_dynregion_clone((KosDynRegion *) node);
+    case KOS_DYN_PYCALL:
+      return kos_dynpycall_new(NULL);
+  }
+
+  return NULL;
+}
+
+
+void kos_dynchain_free(KosDynNode *node, KosDynNode *stop) {
+
+  while (node && node != stop) {
+    KosDynNode *parent = node->parent;
+    kos_dynnode_free(node);
+    node = parent;
+  }
+}
+
+
+KosDynNode *kos_clone_chain_segment(KosDynNode *top, KosDynNode *stop) {
+  if (! top || top == stop)
+    return NULL;
+
+  /* Clone nodes from top to stop, linking them together */
+  KosDynNode *cloned_top = NULL;
+  KosDynNode *cloned_prev = NULL;
+
+  KosDynNode *node = top;
+  while (node && node != stop) {
+    KosDynNode *cloned = kos_dynnode_clone(node);
+    if (! cloned) {
+      /* Clone failed, free what we've built so far */
+      kos_dynchain_free(cloned_top, NULL);
+      return NULL;
+    }
+
+    if (cloned_prev) {
+      cloned_prev->parent = cloned;
+    } else {
+      cloned_top = cloned;
+    }
+
+    cloned_prev = cloned;
+    node = node->parent;
+  }
+
+  /* Set the bottom's parent to stop (or NULL if stop is NULL) */
+  if (cloned_prev) {
+    cloned_prev->parent = stop;
+  }
+
+  return cloned_top;
+}
+
+
+/* === Context operations === */
+
+
+/**
+   Update the frame_top cache after chain modifications.
+   Walks from dyn_top to find the topmost FRAME node.
+*/
+static void kos_update_frame_top(KosContext *ctx) {
+  KosDynNode *node = ctx->dyn_top;
+  while (node) {
+    if (KosDynNode_IS_FRAME(node)) {
+      ctx->frame_top = (KosDynFrame *) node;
+      return;
+    }
+    node = node->parent;
+  }
+  ctx->frame_top = NULL;
+}
+
+
+KosDynFrame *kos_dyn_push_frame(
+        KosContext *ctx,
+        KosCode *code,
+        PyObject *ns) {
+
+  KosDynFrame *frame = kos_dynframe_new(ctx->dyn_top, code, ns, NULL);
+  if (! frame)
+    return NULL;
+
+  ctx->dyn_top = (KosDynNode *) frame;
+  ctx->frame_top = frame;
+  ctx->chain_version++;
+
+  return frame;
+}
+
+
+int kos_dyn_pop_frame(KosContext *ctx) {
+  if (! ctx->dyn_top) {
+    PyErr_SetString(PyExc_RuntimeError, "no node to pop");
+    return -1;
+  }
+
+  if (! KosDynNode_IS_FRAME(ctx->dyn_top)) {
+    PyErr_SetString(PyExc_RuntimeError, "top node is not a frame");
+    return -1;
+  }
+
+  KosDynNode *old_top = ctx->dyn_top;
+  ctx->dyn_top = old_top->parent;
+  ctx->chain_version++;
+
+  kos_dynnode_free(old_top);
+  kos_update_frame_top(ctx);
+
+  return 0;
+}
+
+
+KosDynPrompt *kos_dyn_push_prompt(KosContext *ctx, uint32_t prompt_id) {
+
+  KosDynPrompt *prompt = kos_dynprompt_new(ctx->dyn_top, prompt_id);
+  if (! prompt)
+    return NULL;
+
+  ctx->dyn_top = (KosDynNode *) prompt;
+  ctx->chain_version++;
+
+  return prompt;
+}
+
+
+void kos_dyn_pop_prompt(KosContext *ctx, KosDynPrompt *prompt) {
+  if (! ctx->dyn_top || ctx->dyn_top != (KosDynNode *) prompt) {
+    /* Prompt is not at top - this is an error but we handle gracefully */
+    return;
+  }
+
+  ctx->dyn_top = prompt->base.parent;
+  ctx->chain_version++;
+  kos_dynprompt_free(prompt);
+}
+
+
+KosDynWind *kos_dyn_push_wind(
+        KosContext *ctx,
+        KosCode *before_code,
+        uint32_t before_pc,
+        KosCode *after_code,
+        uint32_t after_pc) {
+
+  KosDynWind *wind = kos_dynwind_new(ctx->dyn_top,
+                                     before_code, before_pc,
+                                     after_code, after_pc);
+  if (! wind)
+    return NULL;
+
+  ctx->dyn_top = (KosDynNode *) wind;
+  ctx->chain_version++;
+
+  return wind;
+}
+
+
+int kos_dyn_pop_wind(KosContext *ctx, KosDynWind *wind) {
+  if (! ctx->dyn_top || ctx->dyn_top != (KosDynNode *) wind) {
+    PyErr_SetString(PyExc_RuntimeError, "wind node is not at top of chain");
+    return -1;
+  }
+
+  ctx->dyn_top = wind->base.parent;
+  ctx->chain_version++;
+  kos_dynwind_free(wind);
+
+  return 0;
+}
+
+
+KosDynRegion *kos_dyn_push_region(
+        KosContext *ctx,
+        KosRegionStyle style,
+        uint32_t label_a,
+        uint32_t label_b) {
+
+  KosDynRegion *region = kos_dynregion_new(ctx->dyn_top,
+                                           style, label_a, label_b);
+  if (! region)
+    return NULL;
+
+  ctx->dyn_top = (KosDynNode *) region;
+  ctx->chain_version++;
+
+  return region;
+}
+
+
+void kos_dyn_pop_region(KosContext *ctx, KosDynRegion *region) {
+  if (! ctx->dyn_top || ctx->dyn_top != (KosDynNode *) region) {
+    return;
+  }
+
+  ctx->dyn_top = region->base.parent;
+  ctx->chain_version++;
+  kos_dynregion_free(region);
+}
+
+
+KosDynNode *kos_dyn_push_pycall(KosContext *ctx) {
+
+  KosDynNode *marker = kos_dynpycall_new(ctx->dyn_top);
+  if (! marker)
+    return NULL;
+
+  ctx->dyn_top = marker;
+  ctx->chain_version++;
+
+  return marker;
+}
+
+
+void kos_dyn_pop_pycall(KosContext *ctx, KosDynNode *marker) {
+  if (! ctx->dyn_top || ctx->dyn_top != marker) {
+    return;
+  }
+
+  ctx->dyn_top = marker->parent;
+  ctx->chain_version++;
+  kos_dynpycall_free(marker);
+}
+
+
+/* === Prompt lookup and validation === */
+
+
+KosDynPrompt *kos_find_prompt(KosContext *ctx, uint32_t prompt_id) {
+  KosDynNode *node = ctx->dyn_top;
+
+  while (node) {
+    if (KosDynNode_IS_PROMPT(node)) {
+      KosDynPrompt *prompt = (KosDynPrompt *) node;
+      if (prompt->prompt_id == prompt_id) {
+        return prompt;
+      }
+    }
+    node = node->parent;
+  }
+
+  return NULL;
+}
+
+
+int kos_validate_capture(KosContext *ctx, KosDynPrompt *prompt) {
+  KosDynNode *node = ctx->dyn_top;
+
+  while (node && node != (KosDynNode *) prompt) {
+    if (KosDynNode_IS_PYCALL(node)) {
+      PyErr_SetString(PyExc_RuntimeError,
+                      "cannot capture continuation across Python boundary");
+      return -1;
+    }
+    node = node->parent;
+  }
+
+  if (! node) {
+    PyErr_SetString(PyExc_RuntimeError, "prompt not found in chain");
+    return -1;
+  }
+
+  return 0;
+}
+
+
+/* === Continuation capture and free === */
+
+
+int kos_shift_capture(
+        KosContext *ctx,
+        uint32_t prompt_id,
+        KosContinuation **out_k) {
+
+  /* Find the prompt */
+  KosDynPrompt *prompt = kos_find_prompt(ctx, prompt_id);
+  if (! prompt) {
+    PyErr_SetString(PyExc_RuntimeError, "prompt not found");
+    return -1;
+  }
+
+  /* Validate no Python boundaries in the way */
+  if (kos_validate_capture(ctx, prompt) < 0)
+    return -1;
+
+  /* Clone the chain segment from dyn_top to prompt (exclusive) */
+  KosDynNode *captured_chain = kos_clone_chain_segment(ctx->dyn_top,
+                                                       (KosDynNode *) prompt);
+  if (! captured_chain && ctx->dyn_top != (KosDynNode *) prompt) {
+    /* Clone failed */
+    return -1;
+  }
+
+  /* Find the topmost frame in the captured chain */
+  KosDynFrame *resume_frame = NULL;
+  KosDynNode *node = captured_chain;
+  while (node) {
+    if (KosDynNode_IS_FRAME(node)) {
+      resume_frame = (KosDynFrame *) node;
+      break;
+    }
+    node = node->parent;
+  }
+
+  /* Allocate continuation struct */
+  KosContinuation *k = PyMem_Malloc(sizeof(KosContinuation));
+  if (! k) {
+    PyErr_NoMemory();
+    kos_dynchain_free(captured_chain, NULL);
+    return -1;
+  }
+
+  k->captured_chain = captured_chain;
+  k->resume_frame = resume_frame;
+  k->resume_pc = resume_frame ? resume_frame->pc : 0;
+  k->resume_stack = resume_frame ? KosStackBlock_COW(resume_frame->stack) : NULL;
+  k->prompt_id = prompt_id;
+  k->one_shot = 0;  /* multi-shot by default */
+
+  *out_k = k;
+  return 0;
+}
+
+
+void kos_continuation_free(KosContinuation *k) {
+  if (! k)
+    return;
+
+  /* Free the captured chain */
+  kos_dynchain_free(k->captured_chain, NULL);
+
+  /* Release the stack reference */
+  if (k->resume_stack) {
+    KosStackBlock *b = k->resume_stack;
+    while (b) {
+      KosStackBlock *p = KosStackBlock_PARENT(b);
+      KosStackBlock_Release(b);
+      b = p;
+    }
+  }
+
+  PyMem_Free(k);
+}
+
+
+KosContinuation *kos_continuation_clone(KosContinuation *k) {
+  if (! k)
+    return NULL;
+
+  /* Clone the chain */
+  KosDynNode *cloned_chain = kos_clone_chain_segment(k->captured_chain, NULL);
+  if (! cloned_chain && k->captured_chain) {
+    return NULL;
+  }
+
+  /* Find the resume frame in the cloned chain */
+  KosDynFrame *resume_frame = NULL;
+  KosDynNode *node = cloned_chain;
+  while (node) {
+    if (KosDynNode_IS_FRAME(node)) {
+      resume_frame = (KosDynFrame *) node;
+      break;
+    }
+    node = node->parent;
+  }
+
+  /* Allocate new continuation */
+  KosContinuation *clone = PyMem_Malloc(sizeof(KosContinuation));
+  if (! clone) {
+    PyErr_NoMemory();
+    kos_dynchain_free(cloned_chain, NULL);
+    return NULL;
+  }
+
+  clone->captured_chain = cloned_chain;
+  clone->resume_frame = resume_frame;
+  clone->resume_pc = k->resume_pc;
+  clone->resume_stack = KosStackBlock_COW(k->resume_stack);
+  clone->prompt_id = k->prompt_id;
+  clone->one_shot = k->one_shot;
+
+  return clone;
+}
+
+
+/* === LCA computation === */
+
+
+static size_t kos_chain_depth(KosDynNode *node) {
+  size_t depth = 0;
+  while (node) {
+    depth++;
+    node = node->parent;
+  }
+  return depth;
+}
+
+
+KosDynNode *kos_compute_lca(KosDynNode *a, KosDynNode *b) {
+  if (! a || ! b)
+    return NULL;
+
+  size_t depth_a = kos_chain_depth(a);
+  size_t depth_b = kos_chain_depth(b);
+
+  /* Align to same depth */
+  while (depth_a > depth_b) {
+    a = a->parent;
+    depth_a--;
+  }
+  while (depth_b > depth_a) {
+    b = b->parent;
+    depth_b--;
+  }
+
+  /* Walk together until we find LCA */
+  while (a != b) {
+    a = a->parent;
+    b = b->parent;
+  }
+
+  return a;
+}
+
+
+/* === Transfer plan building === */
+
+
+int kos_build_transfer_plan(
+        KosContext *ctx,
+        KosDynNode *target,
+        PyObject *value,
+        int is_throw,
+        KosTransferPlan **out_plan) {
+
+  KosDynNode *current = ctx->dyn_top;
+  KosDynNode *lca = kos_compute_lca(current, target);
+
+  /* Count actions needed */
+  size_t action_count = 0;
+
+  /* Count unwind (after) hooks from current to LCA */
+  KosDynNode *node = current;
+  while (node && node != lca) {
+    if (KosDynNode_IS_WIND(node)) {
+      KosDynWind *wind = (KosDynWind *) node;
+      if (wind->entered && wind->after_code) {
+        action_count++;
+      }
+    }
+    node = node->parent;
+  }
+
+  /* Add INSTALL action */
+  action_count++;
+
+  /* Count wind (before) hooks from LCA to target */
+  /* We need to collect these in reverse order, so we'll do two passes */
+  size_t wind_count = 0;
+  node = target;
+  while (node && node != lca) {
+    if (KosDynNode_IS_WIND(node)) {
+      KosDynWind *wind = (KosDynWind *) node;
+      if (! wind->entered && wind->before_code) {
+        wind_count++;
+      }
+    }
+    node = node->parent;
+  }
+  action_count += wind_count;
+
+  /* Add INJECT action */
+  action_count++;
+
+  /* Allocate plan */
+  KosTransferPlan *plan = PyMem_Malloc(sizeof(KosTransferPlan));
+  if (! plan) {
+    PyErr_NoMemory();
+    return -1;
+  }
+
+  plan->actions = PyMem_Malloc(sizeof(KosTransferAction) * action_count);
+  if (! plan->actions) {
+    PyMem_Free(plan);
+    PyErr_NoMemory();
+    return -1;
+  }
+
+  plan->suspended = NULL;
+  plan->action_count = action_count;
+  plan->action_index = 0;
+  plan->original_target = target;
+  plan->chain_version = ctx->chain_version;
+
+  /* Build actions */
+  size_t idx = 0;
+
+  /* Unwind hooks (inner to outer: current toward LCA) */
+  node = current;
+  while (node && node != lca) {
+    if (KosDynNode_IS_WIND(node)) {
+      KosDynWind *wind = (KosDynWind *) node;
+      if (wind->entered && wind->after_code) {
+        plan->actions[idx].step = KOS_XFER_RUN_HOOK;
+        plan->actions[idx].data.hook.code = wind->after_code;
+        plan->actions[idx].data.hook.pc = wind->after_pc;
+        idx++;
+      }
+    }
+    node = node->parent;
+  }
+
+  /* INSTALL action */
+  plan->actions[idx].step = KOS_XFER_INSTALL;
+  plan->actions[idx].data.install.segment = target;
+  idx++;
+
+  /* Wind hooks (outer to inner: LCA toward target) */
+  /* We need to reverse the order, so collect into temporary array */
+  if (wind_count > 0) {
+    KosDynWind **wind_nodes = PyMem_Malloc(sizeof(KosDynWind *) * wind_count);
+    if (! wind_nodes) {
+      PyMem_Free(plan->actions);
+      PyMem_Free(plan);
+      PyErr_NoMemory();
+      return -1;
+    }
+
+    size_t wi = 0;
+    node = target;
+    while (node && node != lca) {
+      if (KosDynNode_IS_WIND(node)) {
+        KosDynWind *wind = (KosDynWind *) node;
+        if (! wind->entered && wind->before_code) {
+          wind_nodes[wi++] = wind;
+        }
+      }
+      node = node->parent;
+    }
+
+    /* Add in reverse order (outer to inner) */
+    while (wi--) {
+      KosDynWind *wind = wind_nodes[wi];
+      plan->actions[idx].step = KOS_XFER_RUN_HOOK;
+      plan->actions[idx].data.hook.code = wind->before_code;
+      plan->actions[idx].data.hook.pc = wind->before_pc;
+      idx++;
+    }
+
+    PyMem_Free(wind_nodes);
+  }
+
+  /* INJECT action */
+  plan->actions[idx].step = KOS_XFER_INJECT;
+  plan->actions[idx].data.inject.value = value;
+  plan->actions[idx].data.inject.is_throw = is_throw;
+  Py_XINCREF(value);
+  idx++;
+
+  *out_plan = plan;
+  return 0;
+}
+
+
+void kos_free_transfer_plan(KosTransferPlan *plan) {
+  if (! plan)
+    return;
+
+  /* DECREF any inject values we still hold */
+  for (size_t i = plan->action_index; i < plan->action_count; i++) {
+    if (plan->actions[i].step == KOS_XFER_INJECT) {
+      Py_XDECREF(plan->actions[i].data.inject.value);
+    }
+  }
+
+  PyMem_Free(plan->actions);
+  PyMem_Free(plan);
+}
+
+
+int kos_run_transfer_step(KosContext *ctx) {
+  if (! ctx->plan)
+    return 1;  /* no plan, complete */
+
+  if (ctx->plan->action_index >= ctx->plan->action_count)
+    return 1;  /* plan complete */
+
+  KosTransferAction *action = &ctx->plan->actions[ctx->plan->action_index];
+  ctx->plan->action_index++;
+
+  switch (action->step) {
+    case KOS_XFER_RUN_HOOK:
+      /* Start hook execution - return 0 to indicate more work */
+      return kos_begin_hook(ctx, action->data.hook.code, action->data.hook.pc);
+
+    case KOS_XFER_INSTALL:
+      /* Install target chain segment */
+      ctx->dyn_top = action->data.install.segment;
+      kos_update_frame_top(ctx);
+      ctx->chain_version++;
+      break;
+
+    case KOS_XFER_INJECT:
+      if (action->data.inject.is_throw) {
+        ctx->pending_throw = 1;
+        Py_XINCREF(action->data.inject.value);
+        Py_XDECREF(ctx->pending_exc);
+        ctx->pending_exc = action->data.inject.value;
+      } else {
+        /* Push value onto frame's stack */
+        if (ctx->frame_top && ctx->frame_top->stack) {
+          /* TODO: properly push onto stack */
+        }
+      }
+      Py_XDECREF(action->data.inject.value);
+      action->data.inject.value = NULL;
+      break;
+  }
+
+  /* Check if plan is complete */
+  if (ctx->plan->action_index >= ctx->plan->action_count)
+    return 1;
+
+  return 0;  /* more steps remain */
+}
+
+
+void kos_suspend_transfer_plan(KosContext *ctx) {
+  if (! ctx->plan)
+    return;
+
+  ctx->plan->suspended = ctx->plan_stack;
+  ctx->plan_stack = ctx->plan;
+  ctx->plan = NULL;
+}
+
+
+int kos_resume_transfer_plan(KosContext *ctx) {
+  if (! ctx->plan_stack)
+    return 0;  /* nothing to resume */
+
+  ctx->plan = ctx->plan_stack;
+  ctx->plan_stack = ctx->plan->suspended;
+  ctx->plan->suspended = NULL;
+
+  /* Check if chain has changed */
+  if (ctx->chain_version != ctx->plan->chain_version) {
+    /* Chain changed during nested transfer - would need to replan */
+    /* For now, just continue with existing plan */
+    /* TODO: implement replanning */
+  }
+
+  return 0;
+}
+
+
+/* === Hook execution === */
+
+
+int kos_begin_hook(KosContext *ctx, KosCode *code, uint32_t pc) {
+  if (ctx->hook_runner.active) {
+    PyErr_SetString(PyExc_RuntimeError, "hook already active");
+    return -1;
+  }
+
+  ctx->hook_runner.code = code;
+  ctx->hook_runner.pc = pc;
+  ctx->hook_runner.scratch = NULL;  /* TODO: allocate scratch stack */
+  ctx->hook_runner.active = 1;
+
+  ctx->flags |= KOS_CTX_IN_HOOK;
+
+  return 0;
+}
+
+
+int kos_hook_active(KosContext *ctx) {
+  return ctx->hook_runner.active;
+}
+
+
+int kos_end_hook(KosContext *ctx) {
+  if (! ctx->hook_runner.active) {
+    PyErr_SetString(PyExc_RuntimeError, "no hook active");
+    return -1;
+  }
+
+  /* Clean up scratch stack */
+  if (ctx->hook_runner.scratch) {
+    KosStackBlock *b = ctx->hook_runner.scratch;
+    while (b) {
+      KosStackBlock *p = KosStackBlock_PARENT(b);
+      KosStackBlock_Release(b);
+      b = p;
+    }
+  }
+
+  ctx->hook_runner.code = NULL;
+  ctx->hook_runner.pc = 0;
+  ctx->hook_runner.scratch = NULL;
+  ctx->hook_runner.active = 0;
+
+  ctx->flags &= ~KOS_CTX_IN_HOOK;
+
+  return 0;
+}
+
+
+/* === Continuation invocation === */
+
+
+int kos_invoke_continuation(
+        KosContext *ctx,
+        KosContinuation *k,
+        PyObject *value,
+        int is_throw) {
+
+  if (! k) {
+    PyErr_SetString(PyExc_RuntimeError, "NULL continuation");
+    return -1;
+  }
+
+  /* For multi-shot, clone the continuation */
+  KosContinuation *to_use = k;
+  if (! k->one_shot) {
+    to_use = kos_continuation_clone(k);
+    if (! to_use)
+      return -1;
+  }
+
+  /* Build transfer plan from current to captured chain */
+  KosTransferPlan *plan = NULL;
+  int res = kos_build_transfer_plan(ctx, to_use->captured_chain,
+                                    value, is_throw, &plan);
+  if (res < 0) {
+    if (to_use != k)
+      kos_continuation_free(to_use);
+    return -1;
+  }
+
+  /* Install the plan */
+  ctx->plan = plan;
+  ctx->flags |= KOS_CTX_IN_TRANSFER;
+
+  /* If we cloned, mark the original as one-shot since we used the clone */
+  if (to_use != k) {
+    /* The cloned continuation's chain is now the target, don't free it */
+    to_use->captured_chain = NULL;
+    kos_continuation_free(to_use);
+  } else {
+    /* One-shot: we consumed the continuation's chain */
+    k->captured_chain = NULL;
+  }
+
+  return 0;
+}
+
+
+/* === GC traversal === */
+
+
+int kos_dynnode_traverse(KosDynNode *node, visitproc visit, void *arg) {
+  if (! node)
+    return 0;
+
+  switch (node->kind) {
+    case KOS_DYN_FRAME: {
+      KosDynFrame *frame = (KosDynFrame *) node;
+      Py_VISIT(frame->ns);
+      /* Traverse stack */
+      KosStackBlock *b = frame->stack;
+      while (b) {
+        for (size_t i = b->len; i--; ) {
+          Py_VISIT(b->objs[i]);
+        }
+        b = KosStackBlock_PARENT(b);
+      }
+      break;
+    }
+    case KOS_DYN_PROMPT:
+    case KOS_DYN_WIND:
+    case KOS_DYN_REGION:
+    case KOS_DYN_PYCALL:
+      /* No PyObjects to visit */
+      break;
+  }
+
+  return 0;
+}
+
+
+int kos_dynchain_traverse(
+        KosDynNode *node,
+        KosDynNode *stop,
+        visitproc visit,
+        void *arg) {
+
+  while (node && node != stop) {
+    int res = kos_dynnode_traverse(node, visit, arg);
+    if (res)
+      return res;
+    node = node->parent;
+  }
+
+  return 0;
+}
+
+
+int kos_continuation_traverse(KosContinuation *k, visitproc visit, void *arg) {
+  if (! k)
+    return 0;
+
+  return kos_dynchain_traverse(k->captured_chain, NULL, visit, arg);
+}
+
+
+int kos_transferplan_traverse(KosTransferPlan *plan, visitproc visit, void *arg) {
+  if (! plan)
+    return 0;
+
+  for (size_t i = plan->action_index; i < plan->action_count; i++) {
+    if (plan->actions[i].step == KOS_XFER_INJECT) {
+      Py_VISIT(plan->actions[i].data.inject.value);
+    }
+  }
+
+  return 0;
+}
+
+
+int kos_hookrunner_traverse(KosHookRunner *runner, visitproc visit, void *arg) {
+  if (! runner || ! runner->active)
+    return 0;
+
+  /* Traverse scratch stack */
+  KosStackBlock *b = runner->scratch;
+  while (b) {
+    for (size_t i = b->len; i--; ) {
+      Py_VISIT(b->objs[i]);
+    }
+    b = KosStackBlock_PARENT(b);
+  }
+
+  return 0;
+}
+
+
+/* === Unit lifecycle === */
+
+
+int koskari_dynchain_init(PyObject *mod) {
+  /* No Python types to register for dynchain */
+  return 0;
+}
+
+
+int koskari_dynchain_clear(PyObject *mod) {
+  /* Nothing to clean up */
+  return 0;
+}
+
+
+// The end.

@@ -17,24 +17,24 @@
 /**
    koskari/lib/eval.c
 
-   Evaluator core implementation: undelimited multi-shot continuations,
+   Evaluator core implementation: delimited multi-shot continuations,
    dynamic wind/unwind, and flattened async execution.
+
+   This version uses the DynNode chain infrastructure from dynchain.h
+   for unified dynamic extent tracking.
 
    Invariants:
 
    1. Context ownership: A KosContext is owned by exactly one Python
       wrapper (KosPyCoroutine or KosPyAsyncGen) during its lifetime.
 
-   2. Frame ownership: Frames are owned by the context. On continuation
-      capture, frames are cloned for multi-shot semantics.
+   2. Chain ownership: The dynamic chain is owned by the context.
+      On continuation capture, chains are cloned for multi-shot semantics.
 
-   3. Handler chain: Each frame has its own handler chain. Handlers
-      are allocated/freed with the frame or via push/pop_wind.
-
-   4. Suspension: When the VM suspends (AWAIT), the context's py_await_iter
+   3. Suspension: When the VM suspends (AWAIT), the context's py_await_iter
       holds the iterator. Resumption injects the result onto the stack.
 
-   5. Multi-shot: Continuations clone all state on invocation, allowing
+   4. Multi-shot: Continuations clone all state on invocation, allowing
       multiple independent resumptions.
 
    :author: Christopher O'Brien <obriencj@preoccupied.net>
@@ -45,7 +45,7 @@
 
 #include "lib.h"
 #include "eval.h"
-#include "stack.h"
+#include "bytecode.h"
 
 
 /* === Static string constants === */
@@ -56,203 +56,47 @@ static PyObject *str_throw = NULL;
 static PyObject *str_close = NULL;
 
 
-/* === KosHandler implementation === */
+/* === KosFrame implementation (wrapper around KosDynFrame) === */
 
 
-KosHandler *kos_handler_new(KosHandler *parent,
-        PyObject *before, PyObject *after) {
+KosFrame *kos_frame_new(
+        KosCode *code,
+        PyObject *ns,
+        KosStackBlock *stack,
+        KosDynNode *parent) {
 
-  KosHandler *h = PyMem_Malloc(sizeof(KosHandler));
-  if (! h) {
-    PyErr_NoMemory();
-    return NULL;
-  }
-
-  h->parent = parent;
-  h->before = before;
-  h->after = after;
-
-  Py_XINCREF(before);
-  Py_XINCREF(after);
-
-  return h;
-}
-
-
-void kos_handler_free(KosHandler *handler) {
-
-  if (! handler)
-    return;
-
-  Py_XDECREF(handler->before);
-  Py_XDECREF(handler->after);
-  PyMem_Free(handler);
-}
-
-
-static void kos_handler_chain_free(KosHandler *handler) {
-
-  KosHandler *next;
-  while (handler) {
-    next = handler->parent;
-    kos_handler_free(handler);
-    handler = next;
-  }
-}
-
-
-static KosHandler *kos_handler_clone(KosHandler *handler) {
-
-  if (! handler)
-    return NULL;
-
-  KosHandler *cloned_parent = kos_handler_clone(handler->parent);
-
-  KosHandler *clone = kos_handler_new(cloned_parent,
-                                      handler->before, handler->after);
-  if (! clone) {
-    kos_handler_chain_free(cloned_parent);
-    return NULL;
-  }
-
-  return clone;
-}
-
-
-int kos_handler_traverse(KosHandler *handler, visitproc visit, void *arg) {
-
-  while (handler) {
-    Py_VISIT(handler->before);
-    Py_VISIT(handler->after);
-    handler = handler->parent;
-  }
-
-  return 0;
-}
-
-
-/* === KosFrame implementation === */
-
-
-KosFrame *kos_frame_new(KosCode *code, PyObject *ns,
-        KosStackBlock *stack, KosFrame *parent,
-        KosHandler *handlers) {
-
-  KosFrame *frame = PyMem_Malloc(sizeof(KosFrame));
-  if (! frame) {
-    PyErr_NoMemory();
-    return NULL;
-  }
-
-  frame->parent = parent;
-  frame->code = code;
-  frame->pc = 0;
-  frame->stack = stack;
-  frame->ns = ns;
-  frame->handlers = handlers;
-  frame->flags = 0;
-
-  Py_XINCREF(ns);
-  /* Note: code is borrowed, stack is owned */
-
-  return frame;
+  return kos_dynframe_new(parent, code, ns, stack);
 }
 
 
 KosFrame *kos_frame_clone(KosFrame *frame) {
-
-  if (! frame)
-    return NULL;
-
-  /* Clone parent chain recursively */
-  KosFrame *cloned_parent = kos_frame_clone(frame->parent);
-
-  /* Clone handler chain */
-  KosHandler *cloned_handlers = kos_handler_clone(frame->handlers);
-
-  /* Use COW for stack - just increment refcount on all blocks */
-  KosStackBlock *cloned_stack = KosStackBlock_COW(frame->stack);
-
-  KosFrame *clone = kos_frame_new(frame->code, frame->ns,
-                                  cloned_stack, cloned_parent,
-                                  cloned_handlers);
-  if (! clone) {
-    kos_handler_chain_free(cloned_handlers);
-    /* Release the COW'd stack blocks */
-    while (cloned_stack) {
-      KosStackBlock *p = KosStackBlock_PARENT(cloned_stack);
-      KosStackBlock_Release(cloned_stack);
-      cloned_stack = p;
-    }
-    /* Free cloned parent chain */
-    while (cloned_parent) {
-      KosFrame *next = cloned_parent->parent;
-      kos_frame_free(cloned_parent);
-      cloned_parent = next;
-    }
-    return NULL;
-  }
-
-  clone->pc = frame->pc;
-  clone->flags = frame->flags;
-
-  return clone;
+  return kos_dynframe_clone(frame);
 }
 
 
 void kos_frame_free(KosFrame *frame) {
-
-  if (! frame)
-    return;
-
-  Py_XDECREF(frame->ns);
-  /* code is borrowed, don't decref */
-
-  /* Release the stack block chain */
-  KosStackBlock *block = frame->stack;
-  while (block) {
-    KosStackBlock *p = KosStackBlock_PARENT(block);
-    KosStackBlock_Release(block);
-    block = p;
-  }
-
-  kos_handler_chain_free(frame->handlers);
-  PyMem_Free(frame);
-}
-
-
-static void kos_frame_chain_free(KosFrame *frame) {
-
-  KosFrame *next;
-  while (frame) {
-    next = frame->parent;
-    kos_frame_free(frame);
-    frame = next;
-  }
+  kos_dynframe_free(frame);
 }
 
 
 int kos_frame_traverse(
-    KosFrame *frame,
-    visitproc visit,
-    void *arg) {
+        KosFrame *frame,
+        visitproc visit,
+        void *arg) {
 
-  while (frame) {
-    Py_VISIT(frame->ns);
+  if (! frame)
+    return 0;
 
-    if (frame->stack) {
-      int res = kos_stackblock_traverse(frame->stack, visit, arg);
-      if (res)
-        return res;
+  Py_VISIT(frame->ns);
+
+  if (frame->stack) {
+    KosStackBlock *b = frame->stack;
+    while (b) {
+      for (size_t i = b->len; i--; ) {
+        Py_VISIT(b->objs[i]);
+      }
+      b = KosStackBlock_PARENT(b);
     }
-
-    if (frame->handlers) {
-      int res = kos_handler_traverse(frame->handlers, visit, arg);
-      if (res)
-        return res;
-    }
-
-    frame = frame->parent;
   }
 
   return 0;
@@ -262,7 +106,7 @@ int kos_frame_traverse(
 /* === KosContext implementation === */
 
 
-KosContext *kos_context_new(KosFrame *top) {
+KosContext *kos_context_new(KosDynFrame *top) {
 
   KosContext *ctx = PyMem_Malloc(sizeof(KosContext));
   if (! ctx) {
@@ -270,11 +114,28 @@ KosContext *kos_context_new(KosFrame *top) {
     return NULL;
   }
 
-  ctx->top = top;
+  ctx->dyn_top = (KosDynNode *) top;
+  ctx->frame_top = top;
+
+  /* Initialize hook runner */
+  ctx->hook_runner.code = NULL;
+  ctx->hook_runner.pc = 0;
+  ctx->hook_runner.scratch = NULL;
+  ctx->hook_runner.active = 0;
+
+  /* Initialize transfer plan state */
+  ctx->plan = NULL;
+  ctx->plan_stack = NULL;
+  ctx->chain_version = 0;
+
+  /* Initialize Python await bridging */
   ctx->py_await_iter = NULL;
   ctx->py_last_yielded = NULL;
+
+  /* Initialize exception injection */
   ctx->pending_throw = 0;
   ctx->pending_exc = NULL;
+
   ctx->flags = 0;
 
   return ctx;
@@ -286,7 +147,27 @@ void kos_context_free(KosContext *ctx) {
   if (! ctx)
     return;
 
-  kos_frame_chain_free(ctx->top);
+  /* Free the dynamic chain */
+  kos_dynchain_free(ctx->dyn_top, NULL);
+
+  /* Free any active transfer plan */
+  kos_free_transfer_plan(ctx->plan);
+  while (ctx->plan_stack) {
+    KosTransferPlan *p = ctx->plan_stack;
+    ctx->plan_stack = p->suspended;
+    kos_free_transfer_plan(p);
+  }
+
+  /* Free hook runner scratch stack */
+  if (ctx->hook_runner.scratch) {
+    KosStackBlock *b = ctx->hook_runner.scratch;
+    while (b) {
+      KosStackBlock *p = KosStackBlock_PARENT(b);
+      KosStackBlock_Release(b);
+      b = p;
+    }
+  }
+
   Py_XDECREF(ctx->py_await_iter);
   Py_XDECREF(ctx->py_last_yielded);
   Py_XDECREF(ctx->pending_exc);
@@ -296,9 +177,9 @@ void kos_context_free(KosContext *ctx) {
 
 
 int kos_context_traverse(
-    KosContext *ctx,
-    visitproc visit,
-    void *arg) {
+        KosContext *ctx,
+        visitproc visit,
+        void *arg) {
 
   if (! ctx)
     return 0;
@@ -307,9 +188,20 @@ int kos_context_traverse(
   Py_VISIT(ctx->py_last_yielded);
   Py_VISIT(ctx->pending_exc);
 
-  if (ctx->top) {
-    return kos_frame_traverse(ctx->top, visit, arg);
-  }
+  /* Traverse the dynamic chain */
+  int res = kos_dynchain_traverse(ctx->dyn_top, NULL, visit, arg);
+  if (res)
+    return res;
+
+  /* Traverse transfer plan */
+  res = kos_transferplan_traverse(ctx->plan, visit, arg);
+  if (res)
+    return res;
+
+  /* Traverse hook runner */
+  res = kos_hookrunner_traverse(&ctx->hook_runner, visit, arg);
+  if (res)
+    return res;
 
   return 0;
 }
@@ -319,9 +211,9 @@ int kos_context_traverse(
 
 
 int kos_stackblock_traverse(
-    KosStackBlock *b,
-    visitproc visit,
-    void *arg) {
+        KosStackBlock *b,
+        visitproc visit,
+        void *arg) {
 
   size_t i;
   while (b) {
@@ -335,366 +227,59 @@ int kos_stackblock_traverse(
 }
 
 
-/* === Wind chain management === */
-
-
-int kos_push_wind(
-    KosContext *ctx,
-    PyObject *before,
-    PyObject *after) {
-
-  if (! ctx || ! ctx->top) {
-    PyErr_SetString(PyExc_RuntimeError, "no active frame for push_wind");
-    return -1;
-  }
-
-  if (! before && ! after) {
-    PyErr_SetString(PyExc_ValueError,
-                    "push_wind requires at least one of before or after");
-    return -1;
-  }
-
-  KosHandler *handler = kos_handler_new(ctx->top->handlers, before, after);
-  if (! handler)
-    return -1;
-
-  ctx->top->handlers = handler;
-  return 0;
-}
-
-
-int kos_push_before_wind(KosContext *ctx, PyObject *before) {
-
-  return kos_push_wind(ctx, before, NULL);
-}
-
-
-int kos_push_after_wind(KosContext *ctx, PyObject *after) {
-
-  return kos_push_wind(ctx, NULL, after);
-}
-
-
-int kos_pop_wind(KosContext *ctx) {
-
-  if (! ctx || ! ctx->top) {
-    PyErr_SetString(PyExc_RuntimeError, "no active frame for pop_wind");
-    return -1;
-  }
-
-  KosHandler *handler = ctx->top->handlers;
-  if (! handler) {
-    PyErr_SetString(PyExc_RuntimeError, "no handler to pop");
-    return -1;
-  }
-
-  ctx->top->handlers = handler->parent;
-  kos_handler_free(handler);
-
-  return 0;
-}
-
-
-/* === Continuation application === */
-
-
-/**
-   Compute the lowest common ancestor frame between two frame chains.
-
-   This walks both chains simultaneously to find where they diverge.
-   Returns the LCA frame, or NULL if chains don't share a common ancestor.
-*/
-static KosFrame *compute_frame_lca(
-    KosFrame *current,
-    KosFrame *target) {
-
-  /* Count depths */
-  size_t current_depth = 0;
-  size_t target_depth = 0;
-
-  for (KosFrame *f = current; f; f = f->parent)
-    current_depth++;
-
-  for (KosFrame *f = target; f; f = f->parent)
-    target_depth++;
-
-  /* Align to same depth */
-  KosFrame *c = current;
-  KosFrame *t = target;
-
-  while (current_depth > target_depth) {
-    c = c->parent;
-    current_depth--;
-  }
-
-  while (target_depth > current_depth) {
-    t = t->parent;
-    target_depth--;
-  }
-
-  /* Walk together until we find LCA */
-  while (c != t) {
-    c = c->parent;
-    t = t->parent;
-  }
-
-  return c;
-}
-
-
-/**
-   Collect unwind (after) hooks from current frame chain down to (but not
-   including) the lca frame.
-
-   Returns a malloc'd array of PyObject* (borrowed refs) with count stored
-   in out_count. Caller must free the array.
-
-   Hooks are collected inner-to-outer (from current towards lca).
-*/
-static PyObject **collect_unwind_hooks(
-    KosFrame *current,
-    KosFrame *lca,
-    size_t *out_count) {
-
-  size_t capacity = 8;
-  size_t count = 0;
-  PyObject **hooks = PyMem_Malloc(sizeof(PyObject *) * capacity);
-
-  if (! hooks) {
-    PyErr_NoMemory();
-    return NULL;
-  }
-
-  for (KosFrame *f = current; f && f != lca; f = f->parent) {
-    for (KosHandler *h = f->handlers; h; h = h->parent) {
-      if (h->after) {
-        if (count >= capacity) {
-          capacity *= 2;
-          PyObject **new_hooks = PyMem_Realloc(hooks,
-                                               sizeof(PyObject *) * capacity);
-          if (! new_hooks) {
-            PyMem_Free(hooks);
-            PyErr_NoMemory();
-            return NULL;
-          }
-          hooks = new_hooks;
-        }
-        hooks[count++] = h->after;
-      }
-    }
-  }
-
-  *out_count = count;
-  return hooks;
-}
-
-
-/**
-   Collect wind (before) hooks from lca down to target frame.
-
-   Returns a malloc'd array of PyObject* (borrowed refs) with count stored
-   in out_count. Caller must free the array.
-
-   Hooks are collected outer-to-inner (from lca towards target).
-   We need to reverse the natural traversal order since we walk from
-   target backwards.
-*/
-static PyObject **collect_wind_hooks(
-    KosFrame *target,
-    KosFrame *lca,
-    size_t *out_count) {
-
-  /* First, collect in reverse order (target to lca) */
-  size_t capacity = 8;
-  size_t count = 0;
-  PyObject **hooks = PyMem_Malloc(sizeof(PyObject *) * capacity);
-
-  if (! hooks) {
-    PyErr_NoMemory();
-    return NULL;
-  }
-
-  for (KosFrame *f = target; f && f != lca; f = f->parent) {
-    for (KosHandler *h = f->handlers; h; h = h->parent) {
-      if (h->before) {
-        if (count >= capacity) {
-          capacity *= 2;
-          PyObject **new_hooks = PyMem_Realloc(hooks,
-                                               sizeof(PyObject *) * capacity);
-          if (! new_hooks) {
-            PyMem_Free(hooks);
-            PyErr_NoMemory();
-            return NULL;
-          }
-          hooks = new_hooks;
-        }
-        hooks[count++] = h->before;
-      }
-    }
-  }
-
-  /* Reverse the array to get outer-to-inner order */
-  for (size_t i = 0; i < count / 2; i++) {
-    PyObject *tmp = hooks[i];
-    hooks[i] = hooks[count - 1 - i];
-    hooks[count - 1 - i] = tmp;
-  }
-
-  *out_count = count;
-  return hooks;
-}
-
-
-int kos_apply_continuation(
-    KosContext *ctx,
-    KosFrame *target_top,
-    KosHandler *target_handlers,
-    int is_throw,
-    PyObject *value_or_exc) {
-
-  if (! ctx) {
-    PyErr_SetString(PyExc_RuntimeError, "NULL context");
-    return -1;
-  }
-
-  if (! target_top) {
-    PyErr_SetString(PyExc_RuntimeError, "NULL target frame");
-    return -1;
-  }
-
-  KosFrame *current = ctx->top;
-  KosFrame *lca = compute_frame_lca(current, target_top);
-
-  /* Collect hooks */
-  size_t unwind_count = 0;
-  size_t wind_count = 0;
-
-  PyObject **unwind_hooks = collect_unwind_hooks(current, lca, &unwind_count);
-  if (! unwind_hooks && PyErr_Occurred())
-    return -1;
-
-  PyObject **wind_hooks = collect_wind_hooks(target_top, lca, &wind_count);
-  if (! wind_hooks && PyErr_Occurred()) {
-    PyMem_Free(unwind_hooks);
-    return -1;
-  }
-
-  /* Execute unwind hooks (inner to outer) */
-  for (size_t i = 0; i < unwind_count; i++) {
-    PyObject *result = PyObject_CallNoArgs(unwind_hooks[i]);
-    if (! result) {
-      /* Exception during unwind - this is bad but we continue */
-      PyErr_Clear();
-    } else {
-      Py_DECREF(result);
-    }
-  }
-
-  PyMem_Free(unwind_hooks);
-
-  /* Install target state */
-  ctx->top = target_top;
-  /* Note: target_handlers would be on target_top->handlers already */
-
-  /* Execute wind hooks (outer to inner) */
-  for (size_t i = 0; i < wind_count; i++) {
-    PyObject *result = PyObject_CallNoArgs(wind_hooks[i]);
-    if (! result) {
-      /* Exception during wind - this is problematic */
-      PyMem_Free(wind_hooks);
-      return -1;
-    }
-    Py_DECREF(result);
-  }
-
-  PyMem_Free(wind_hooks);
-
-  /* Inject resume value or exception */
-  if (is_throw) {
-    ctx->pending_throw = 1;
-    Py_XINCREF(value_or_exc);
-    Py_XDECREF(ctx->pending_exc);
-    ctx->pending_exc = value_or_exc;
-
-  } else {
-    /*
-      Push value onto target stack.
-      This requires access to a PyObject* stack wrapper.
-      For now, we store it in a temporary location.
-    */
-    /* TODO: properly push onto target frame's stack */
-    if (target_top->stack) {
-      PyErr_SetString(PyExc_NotImplementedError,
-                      "stack value injection not yet implemented");
-      return -1;
-    }
-  }
-
-  return 0;
-}
-
-
 /* === Koskari call operations === */
 
 
 int kos_koscall(
-    KosContext *ctx,
-    KosCode *code,
-    PyObject *ns) {
+        KosContext *ctx,
+        KosCode *code,
+        PyObject *ns) {
 
   if (! ctx) {
     PyErr_SetString(PyExc_RuntimeError, "NULL context for koscall");
     return -1;
   }
 
-  /*
-    TODO: Create a new stack for the frame.
-    For now, pass NULL.
-  */
-  KosFrame *frame = kos_frame_new(code, ns, NULL, ctx->top, NULL);
+  KosDynFrame *frame = kos_dyn_push_frame(ctx, code, ns);
   if (! frame)
     return -1;
 
-  ctx->top = frame;
   return 0;
 }
 
 
 int kos_tail_koscall(
-    KosContext *ctx,
-    KosCode *code,
-    PyObject *ns) {
+        KosContext *ctx,
+        KosCode *code,
+        PyObject *ns) {
 
-  if (! ctx || ! ctx->top) {
+  if (! ctx || ! ctx->frame_top) {
     PyErr_SetString(PyExc_RuntimeError, "no frame for tail_koscall");
     return -1;
   }
 
-  KosFrame *old = ctx->top;
-  KosFrame *parent = old->parent;
+  KosDynFrame *old = ctx->frame_top;
+  KosDynNode *parent = old->base.parent;
 
-  /* Unwind handlers on the old frame */
-  for (KosHandler *h = old->handlers; h; h = h->parent) {
-    if (h->after) {
-      PyObject *result = PyObject_CallNoArgs(h->after);
-      if (result) {
-        Py_DECREF(result);
-      } else {
-        PyErr_Clear();  /* Swallow exception during unwind */
-      }
-    }
-  }
+  /* Pop the old frame */
+  ctx->dyn_top = parent;
 
   /* Create new frame with same parent */
-  KosFrame *frame = kos_frame_new(code, ns, NULL, parent, NULL);
-  if (! frame)
+  KosDynFrame *frame = kos_dynframe_new(parent, code, ns, NULL);
+  if (! frame) {
+    /* Restore old frame on failure */
+    ctx->dyn_top = (KosDynNode *) old;
     return -1;
+  }
 
   /* Free old frame */
-  old->parent = NULL;  /* Don't free the parent chain */
-  kos_frame_free(old);
+  kos_dynframe_free(old);
 
-  ctx->top = frame;
+  /* Install new frame */
+  ctx->dyn_top = (KosDynNode *) frame;
+  ctx->frame_top = frame;
+  ctx->chain_version++;
+
   return 0;
 }
 
@@ -718,10 +303,10 @@ int kos_tail_koscall(
    :return: completed value on immediate completion, NULL on suspend or error
 */
 static PyObject *eager_step_awaitable(
-    PyObject *awaitable,
-    KosContext *ctx,
-    int *suspended,
-    PyObject **yielded) {
+        PyObject *awaitable,
+        KosContext *ctx,
+        int *suspended,
+        PyObject **yielded) {
 
   *suspended = 0;
   *yielded = NULL;
@@ -822,19 +407,49 @@ int kos_drive(KosContext *ctx, KosEvent *out_ev) {
     return 0;
   }
 
+  /* Check for active transfer plan */
+  if (ctx->plan) {
+    int plan_res = kos_run_transfer_step(ctx);
+    if (plan_res < 0) {
+      out_ev->kind = KOS_EV_RAISE;
+      out_ev->payload = NULL;
+      PyErr_Fetch(&out_ev->payload, NULL, NULL);
+      ctx->flags &= ~KOS_CTX_RUNNING;
+      ctx->flags |= KOS_CTX_DEAD;
+      return 0;
+    }
+    if (plan_res == 0) {
+      /* More plan steps - check if hook is now active */
+      if (kos_hook_active(ctx)) {
+        /* Hook execution - would continue in hook mode */
+        /* For now, just return RETURN with None */
+      }
+    } else {
+      /* Plan complete - free it */
+      kos_free_transfer_plan(ctx->plan);
+      ctx->plan = NULL;
+      ctx->flags &= ~KOS_CTX_IN_TRANSFER;
+
+      /* Check for suspended plans to resume */
+      if (ctx->plan_stack) {
+        kos_resume_transfer_plan(ctx);
+      }
+    }
+  }
+
   /*
     TODO: Implement actual opcode execution loop here.
     For now, this is a stub that demonstrates the event mechanism.
 
     The full implementation would:
-    1. Fetch opcode from ctx->top->code at ctx->top->pc
-    2. Dispatch and execute
-    3. Handle boundaries (RETURN, RAISE, YIELD, AWAIT)
-
-    For the initial slice, we just return RETURN with None.
+    1. Check if hook_runner is active, if so execute from hook code/pc
+    2. Otherwise fetch opcode from ctx->frame_top->code at ctx->frame_top->pc
+    3. Dispatch and execute
+    4. Handle boundaries (RETURN, RAISE, YIELD, AWAIT)
+    5. Handle new opcodes (PUSH_PROMPT, POP_PROMPT, SHIFT, etc.)
   */
 
-  if (! ctx->top) {
+  if (! ctx->frame_top) {
     /* No frame - return None */
     out_ev->kind = KOS_EV_RETURN;
     out_ev->payload = Py_None;
@@ -868,28 +483,21 @@ static void continuation_dealloc(PyObject *self) {
 
   KosPyContinuation *cont = (KosPyContinuation *) self;
 
-  kos_frame_chain_free(cont->captured_top);
-  kos_handler_chain_free(cont->captured_handlers);
+  kos_continuation_free(cont->captured);
 
   Py_TYPE(self)->tp_free(self);
 }
 
 
 static int continuation_traverse(
-    PyObject *self,
-    visitproc visit,
-    void *arg) {
+        PyObject *self,
+        visitproc visit,
+        void *arg) {
 
   KosPyContinuation *cont = (KosPyContinuation *) self;
 
-  if (cont->captured_top) {
-    int res = kos_frame_traverse(cont->captured_top, visit, arg);
-    if (res)
-      return res;
-  }
-
-  if (cont->captured_handlers) {
-    return kos_handler_traverse(cont->captured_handlers, visit, arg);
+  if (cont->captured) {
+    return kos_continuation_traverse(cont->captured, visit, arg);
   }
 
   return 0;
@@ -900,18 +508,17 @@ static int continuation_clear(PyObject *self) {
 
   KosPyContinuation *cont = (KosPyContinuation *) self;
 
-  kos_frame_chain_free(cont->captured_top);
-  cont->captured_top = NULL;
-
-  kos_handler_chain_free(cont->captured_handlers);
-  cont->captured_handlers = NULL;
+  kos_continuation_free(cont->captured);
+  cont->captured = NULL;
 
   return 0;
 }
 
 
-static PyObject *continuation_call(PyObject *self,
-        PyObject *args, PyObject *kwds) {
+static PyObject *continuation_call(
+        PyObject *self,
+        PyObject *args,
+        PyObject *kwds) {
 
   KosPyContinuation *cont = (KosPyContinuation *) self;
 
@@ -926,28 +533,30 @@ static PyObject *continuation_call(PyObject *self,
     return NULL;
   }
 
+  if (! cont->captured) {
+    PyErr_SetString(PyExc_RuntimeError, "continuation has no captured state");
+    return NULL;
+  }
+
   /* Clone captured state for multi-shot semantics */
-  KosFrame *cloned_top = kos_frame_clone(cont->captured_top);
-  if (! cloned_top && cont->captured_top) {
-    /* Clone failed */
+  KosContinuation *cloned = kos_continuation_clone(cont->captured);
+  if (! cloned)
     return NULL;
-  }
 
-  KosHandler *cloned_handlers = kos_handler_clone(cont->captured_handlers);
-  if (! cloned_handlers && cont->captured_handlers) {
-    kos_frame_chain_free(cloned_top);
-    return NULL;
-  }
+  /* Create new context with the cloned chain */
+  KosDynFrame *top_frame = cloned->resume_frame;
+  cloned->captured_chain = NULL;  /* context takes ownership */
 
-  /* Create new context */
-  KosContext *ctx = kos_context_new(cloned_top);
+  KosContext *ctx = kos_context_new(top_frame);
   if (! ctx) {
-    kos_frame_chain_free(cloned_top);
-    kos_handler_chain_free(cloned_handlers);
+    kos_continuation_free(cloned);
     return NULL;
   }
 
-  /* TODO: inject resume_value onto the stack */
+  /* Set up the context's dynamic chain */
+  /* TODO: properly restore the full chain */
+
+  kos_continuation_free(cloned);
 
   /* Create and return a coroutine wrapper */
   return KosPyCoroutine_New(ctx);
@@ -970,23 +579,20 @@ PyTypeObject KosPyContinuationType = {
   .tp_repr = continuation_repr,
   .tp_call = continuation_call,
   .tp_flags = Py_TPFLAGS_DEFAULT | Py_TPFLAGS_HAVE_GC,
-  .tp_doc = "Captured continuation (multi-shot, undelimited)",
+  .tp_doc = "Captured continuation (multi-shot, delimited)",
   .tp_traverse = continuation_traverse,
   .tp_clear = continuation_clear,
 };
 
 
-PyObject *KosPyContinuation_New(
-    KosFrame *top,
-    KosHandler *handlers) {
+PyObject *KosPyContinuation_New(KosContinuation *captured) {
 
   KosPyContinuation *cont = PyObject_GC_New(KosPyContinuation,
                                             &KosPyContinuationType);
   if (! cont)
     return NULL;
 
-  cont->captured_top = top;
-  cont->captured_handlers = handlers;
+  cont->captured = captured;
 
   PyObject_GC_Track((PyObject *) cont);
   return (PyObject *) cont;
@@ -1012,9 +618,9 @@ static void coroutine_dealloc(PyObject *self) {
 
 
 static int coroutine_traverse(
-    PyObject *self,
-    visitproc visit,
-    void *arg) {
+        PyObject *self,
+        visitproc visit,
+        void *arg) {
 
   KosPyCoroutine *coro = (KosPyCoroutine *) self;
 
@@ -1484,9 +1090,9 @@ static void asyncgenasend_dealloc(PyObject *self) {
 
 
 static int asyncgenasend_traverse(
-    PyObject *self,
-    visitproc visit,
-    void *arg) {
+        PyObject *self,
+        visitproc visit,
+        void *arg) {
 
   KosPyAsyncGenASend *asend = (KosPyAsyncGenASend *) self;
 
@@ -1672,8 +1278,8 @@ PyTypeObject KosPyAsyncGenASendType = {
 
 
 PyObject *KosPyAsyncGenASend_New(
-    KosPyAsyncGen *agen,
-    PyObject *send_value) {
+        KosPyAsyncGen *agen,
+        PyObject *send_value) {
 
   KosPyAsyncGenASend *asend = PyObject_GC_New(KosPyAsyncGenASend,
                                               &KosPyAsyncGenASendType);
@@ -1708,6 +1314,10 @@ int koskari_eval_init(PyObject *mod) {
   STR_CONST(str_send, "send");
   STR_CONST(str_throw, "throw");
   STR_CONST(str_close, "close");
+
+  /* Initialize dynchain module */
+  if (koskari_dynchain_init(mod))
+    return -1;
 
   /* Register types */
   if (PyType_Ready(&KosPyContinuationType))
@@ -1744,6 +1354,8 @@ int koskari_eval_clear(PyObject *mod) {
   Py_CLEAR(str_send);
   Py_CLEAR(str_throw);
   Py_CLEAR(str_close);
+
+  koskari_dynchain_clear(mod);
 
   return 0;
 }

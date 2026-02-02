@@ -32,6 +32,7 @@
 #include "values.h"
 #include "operator.h"
 #include "stack.h"
+#include "dynchain.h"
 #include "utils.h"
 #include "parse.h"
 #include "eval.h"

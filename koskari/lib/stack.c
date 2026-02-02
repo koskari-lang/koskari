@@ -15,63 +15,22 @@
 
 
 /**
-   Stack and StackBlock types
+   koskari/lib/stack.c
+
+   Stack and StackBlock types for operand storage.
 
    The Stack type provides a block-structured value stack for the
-   evaluator. Each block can hold values and has associated metadata
-   for control flow handling.
+   evaluator. This is storage-only; control flow metadata (block style,
+   labels, enabled flag) has been moved to KosDynRegion nodes in the
+   dynamic chain. See dynchain.h.
 
-   author: Christopher O'Brien <obriencj@gmail.com>
-   license: GPL v.3
+   :author: Christopher O'Brien <obriencj@preoccupied.net>
+   :license: GNU General Public License v3
+   :ai-assistant: Claude Opus 4.5 via Cursor
 */
 
 
 #include "lib.h"
-
-
-/* === BlockStyle enum === */
-
-
-#define int_enum(enum_dict, ek)                     \
-  do {                                              \
-    PyObject *_v = PyLong_FromLong(ek);             \
-    PyDict_SetItemString(enum_dict, #ek, _v);       \
-    Py_DECREF(_v);                                  \
-  } while(0)
-
-
-static PyObject *create_block_style_enum(void) {
-  PyObject *enum_module = NULL;
-  PyObject *enum_dict = NULL;
-
-  enum_module = PyImport_ImportModule("enum");
-  if (! enum_module)
-    return NULL;
-
-  enum_dict = PyDict_New();
-  if (! enum_dict) {
-    Py_DECREF(enum_module);
-    return NULL;
-  }
-
-  int_enum(enum_dict, KOS_BLOCK_BEGIN);
-  int_enum(enum_dict, KOS_BLOCK_FINALLY);
-  int_enum(enum_dict, KOS_BLOCK_FOREACH);
-  int_enum(enum_dict, KOS_BLOCK_LOOP);
-  int_enum(enum_dict, KOS_BLOCK_NS);
-  int_enum(enum_dict, KOS_BLOCK_TRY);
-  int_enum(enum_dict, KOS_BLOCK_WITH);
-  int_enum(enum_dict, KOS_BLOCK_AWAIT_FOREACH);
-  int_enum(enum_dict, KOS_BLOCK_AWAIT_WITH);
-
-  PyObject *res = PyObject_CallMethod(enum_module, "IntEnum", "sO",
-                                      "BlockStyle", enum_dict);
-
-  Py_DECREF(enum_dict);
-  Py_DECREF(enum_module);
-
-  return res;
-}
 
 
 /* === StackBlock === */
@@ -110,10 +69,6 @@ static KosStackBlock *KosStackBlock_New(KosStackBlock *parent) {
 
   KosStackBlock_PARENT(self) = parent;
   KosStackBlock_REFCOUNT(self) = 1;
-  KosStackBlock_BLOCK_STYLE(self) = KOS_BLOCK_BEGIN;
-  KosStackBlock_ENABLED(self) = 1;
-  KosStackBlock_LABEL_A(self) = 0;
-  KosStackBlock_LABEL_B(self) = 0;
   KosStackBlock_LEN(self) = 0;
 
   SAYF("KosStackBlock_New() -> %p", (void *) self);
@@ -122,8 +77,8 @@ static KosStackBlock *KosStackBlock_New(KosStackBlock *parent) {
 
 
 static KosStackBlock *KosStackBlock_NewSized(
-    KosStackBlock *parent,
-    size_t max) {
+        KosStackBlock *parent,
+        size_t max) {
 
   SAY("KosStackBlock_NewSized()");
 
@@ -153,10 +108,6 @@ static KosStackBlock *KosStackBlock_NewSized(
 
   KosStackBlock_PARENT(self) = parent;
   KosStackBlock_REFCOUNT(self) = 1;
-  KosStackBlock_BLOCK_STYLE(self) = KOS_BLOCK_BEGIN;
-  KosStackBlock_ENABLED(self) = 1;
-  KosStackBlock_LABEL_A(self) = 0;
-  KosStackBlock_LABEL_B(self) = 0;
   KosStackBlock_LEN(self) = 0;
 
   SAYF("KosStackBlock_NewSized() -> %p", (void *) self);
@@ -203,11 +154,6 @@ static int KosStackBlock_CopyForWrite(KosStackBlock **block) {
     if (! new)
       return -1;
 
-    KosStackBlock_BLOCK_STYLE(new) = KosStackBlock_BLOCK_STYLE(b);
-    KosStackBlock_ENABLED(new) = KosStackBlock_ENABLED(b);
-    KosStackBlock_LABEL_A(new) = KosStackBlock_LABEL_A(b);
-    KosStackBlock_LABEL_B(new) = KosStackBlock_LABEL_B(b);
-
     for (size_t i = KosStackBlock_LEN(b); i--; ) {
       PyObject *v = b->objs[i];
       Py_INCREF(v);
@@ -239,7 +185,6 @@ static int KosStackBlock_Clear(KosStackBlock **self) {
   }
 
   KosStackBlock_LEN(s) = 0;
-  KosStackBlock_ENABLED(s) = 1;
 
   return 0;
 }
@@ -260,7 +205,6 @@ void KosStackBlock_Release(KosStackBlock *self) {
     if (block_freecount < BLOCK_MAX_FREE) {
       KosStackBlock_REFCOUNT(self) = 0;
       KosStackBlock_LEN(self) = 0;
-      KosStackBlock_ENABLED(self) = 1;
 
       block_freecount += 1;
       KosStackBlock_PARENT(self) = block_freelist;
@@ -297,8 +241,8 @@ KosStackBlock *KosStackBlock_COW(KosStackBlock *block) {
 
 
 static int KosStackBlock_Push(
-    KosStackBlock **self,
-    PyObject *val) {
+        KosStackBlock **self,
+        PyObject *val) {
 
   if (KosStackBlock_CopyForWrite(self))
     return -1;
@@ -321,8 +265,8 @@ static int KosStackBlock_Push(
 
 
 static int KosStackBlock_PUSH(
-    KosStackBlock **self,
-    PyObject *val) {
+        KosStackBlock **self,
+        PyObject *val) {
 
   if (KosStackBlock_CopyForWrite(self))
     return -1;
@@ -345,10 +289,10 @@ static int KosStackBlock_PUSH(
 
 
 static int KosStackBlock_ExtendPtr(
-    KosStackBlock **self,
-    PyObject *const *elms,
-    size_t count,
-    int reverse) {
+        KosStackBlock **self,
+        PyObject *const *elms,
+        size_t count,
+        int reverse) {
 
   if (! count)
     return 0;
@@ -389,10 +333,10 @@ static int KosStackBlock_ExtendPtr(
 
 
 static int KosStackBlock_EXTENDPTR(
-    KosStackBlock **self,
-    PyObject *const *elms,
-    size_t count,
-    int reverse) {
+        KosStackBlock **self,
+        PyObject *const *elms,
+        size_t count,
+        int reverse) {
 
   if (! count)
     return 0;
@@ -445,8 +389,8 @@ static PyObject *KosStackBlock_Peek(KosStackBlock *self) {
 
 
 static PyObject *KosStackBlock_PeekAt(
-    KosStackBlock *self,
-    Py_ssize_t index) {
+        KosStackBlock *self,
+        Py_ssize_t index) {
 
   size_t len = self->len;
 
@@ -608,9 +552,9 @@ static int KosStackBlock_Duplicate(KosStackBlock **self, size_t count) {
 
 
 static int KosStackBlock_Replace(
-    KosStackBlock **self,
-    size_t index,
-    PyObject *value) {
+        KosStackBlock **self,
+        size_t index,
+        PyObject *value) {
 
   if (! value) {
     PyErr_SetString(PyExc_RuntimeError, "stack replace cannot assign NULL");
@@ -637,8 +581,8 @@ static int KosStackBlock_Replace(
 
 
 static PyObject *KosStackBlock_PopTail(
-    KosStackBlock **self,
-    size_t count) {
+        KosStackBlock **self,
+        size_t count) {
 
   if (! count)
     return PyTuple_New(0);
@@ -674,8 +618,8 @@ static PyObject *KosStackBlock_PopTail(
 
 
 static PyObject *const *KosStackBlock_TailPtr(
-    KosStackBlock *self,
-    size_t count) {
+        KosStackBlock *self,
+        size_t count) {
 
   if (! count) {
     return NULL;
@@ -693,9 +637,9 @@ static PyObject *const *KosStackBlock_TailPtr(
 
 
 static int KosStackBlock_PopTailPtr(
-    KosStackBlock **self,
-    size_t count,
-    PyObject **dest) {
+        KosStackBlock **self,
+        size_t count,
+        PyObject **dest) {
 
   if (! count)
     return 0;
@@ -724,8 +668,8 @@ static int KosStackBlock_PopTailPtr(
 
 
 static PyObject *KosStackBlock_PopTailDict(
-    KosStackBlock **self,
-    size_t count) {
+        KosStackBlock **self,
+        size_t count) {
 
   if (! count)
     return PyDict_New();
@@ -767,8 +711,8 @@ static PyObject *KosStackBlock_PopTailDict(
 
 
 static PyObject *KosStackBlock_PopTailDictNames(
-    KosStackBlock **self,
-    size_t count) {
+        KosStackBlock **self,
+        size_t count) {
 
   PyObject *ret = NULL;
 
@@ -955,17 +899,8 @@ static PyObject *stack_m_pop_tail_dict(PyObject *self, PyObject *count) {
 }
 
 
-static PyObject *stack_m_push_block(PyObject *self, PyObject *args) {
-  KosBlockStyle style = KOS_BLOCK_BEGIN;
-  Py_ssize_t style_v = (Py_ssize_t) style, label_a = 0, label_b = 0;
-
-  if (! PyArg_ParseTuple(args, "|nnn:Stack.push_block",
-                         &style_v, &label_a, &label_b))
-    return NULL;
-
-  style = (KosBlockStyle) style_v;
-
-  if (KosStack_PushBlockFull(self, style, label_a, label_b)) {
+static PyObject *stack_m_push_block(PyObject *self) {
+  if (KosStack_PushBlock(self)) {
     return NULL;
   } else {
     Py_RETURN_NONE;
@@ -1000,26 +935,6 @@ static PyObject *stack_m_drop_block(PyObject *self) {
 static PyObject *stack_m_block_len(PyObject *self) {
   KosStackBlock *block = KosStack_BLOCK(self);
   return PyLong_FromSize_t(block->len);
-}
-
-
-static PyObject *stack_m_block_disable(PyObject *self) {
-  KosStackBlock *block = KosStack_BLOCK(self);
-  KosStackBlock_ENABLED(block) = 0;
-  Py_RETURN_NONE;
-}
-
-
-static PyObject *stack_m_block_status(PyObject *self) {
-  KosStackBlock *bl = KosStack_BLOCK(self);
-  PyObject *res = PyTuple_New(4);
-
-  PyTuple_SET_ITEM(res, 0, PyLong_FromLong(KosStackBlock_BLOCK_STYLE(bl)));
-  PyTuple_SET_ITEM(res, 1, PyBool_FromLong(KosStackBlock_ENABLED(bl)));
-  PyTuple_SET_ITEM(res, 2, PyLong_FromSsize_t(KosStackBlock_LABEL_A(bl)));
-  PyTuple_SET_ITEM(res, 3, PyLong_FromSsize_t(KosStackBlock_LABEL_B(bl)));
-
-  return res;
 }
 
 
@@ -1122,7 +1037,8 @@ static PyMethodDef stack_methods[] = {
   { "pop_tail_dict",  (PyCFunction) stack_m_pop_tail_dict, METH_O,
     "S.pop_tail_dict(count) => {K: V, ...}" },
 
-  { "push_block", (PyCFunction) stack_m_push_block, METH_VARARGS,
+  { "push_block", (PyCFunction) stack_m_push_block, METH_NOARGS,
+    "Allocates a new block and makes it the current block\n"
     "S.push_block() => None" },
 
   { "pop_block", (PyCFunction) stack_m_pop_block, METH_O,
@@ -1136,14 +1052,6 @@ static PyMethodDef stack_methods[] = {
   { "length", (PyCFunction) stack_m_block_len, METH_NOARGS,
     "The used size of the current block's stack\n"
     "S.length() => i" },
-
-  { "disable", (PyCFunction) stack_m_block_disable, METH_NOARGS,
-    "Disable the handler in the current block\n"
-    "S.disable() => None" },
-
-  { "status", (PyCFunction) stack_m_block_status, METH_NOARGS,
-    "The handler status of the current block\n"
-    "S.status() => (block_style, enabled, label_a, label_b)" },
 
   { "view", (PyCFunction) stack_m_block_view, METH_NOARGS,
     "Tuple showing the current block's stack\n"
@@ -1173,9 +1081,9 @@ static PyMethodDef stack_methods[] = {
 
 
 static PyObject *stack_new(
-    PyTypeObject *type,
-    PyObject *args,
-    PyObject *kwds) {
+        PyTypeObject *type,
+        PyObject *args,
+        PyObject *kwds) {
 
   if (PyTuple_GET_SIZE(args) || (kwds && PyDict_Size(kwds))) {
     PyErr_SetString(PyExc_TypeError, "Stack takes no arguments");
@@ -1199,9 +1107,9 @@ static void stack_dealloc(PyObject *self) {
 
 
 static int stack_traverse(
-    PyObject *self,
-    visitproc visit,
-    void *arg) {
+        PyObject *self,
+        visitproc visit,
+        void *arg) {
 
   KosStackBlock *b = KosStack_BLOCK(self);
   size_t i;
@@ -1342,10 +1250,10 @@ int KosStack_Extend(PyObject *self, PyObject *seq, int reverse) {
 
 
 int KosStack_ExtendPtr(
-    PyObject *self,
-    PyObject *const *elms,
-    size_t count,
-    int reverse) {
+        PyObject *self,
+        PyObject *const *elms,
+        size_t count,
+        int reverse) {
 
   if (! count)
     return 0;
@@ -1366,10 +1274,10 @@ int KosStack_ExtendPtr(
 
 
 int KosStack_EXTENDPTR(
-    PyObject *self,
-    PyObject *const *elms,
-    size_t count,
-    int reverse) {
+        PyObject *self,
+        PyObject *const *elms,
+        size_t count,
+        int reverse) {
 
   if (! count)
     return 0;
@@ -1552,25 +1460,6 @@ int KosStack_PushBlock(PyObject *self) {
 }
 
 
-int KosStack_PushBlockFull(
-    PyObject *self,
-    KosBlockStyle style,
-    Py_ssize_t label_a,
-    Py_ssize_t label_b) {
-
-  int res = KosStack_PushBlock(self);
-  if (res)
-    return res;
-
-  KosStackBlock *bl = KosStack_BLOCK(self);
-  KosStackBlock_BLOCK_STYLE(bl) = style;
-  KosStackBlock_LABEL_A(bl) = label_a;
-  KosStackBlock_LABEL_B(bl) = label_b;
-
-  return 0;
-}
-
-
 int KosStack_PopBlock(PyObject *self, size_t count) {
   KosStackBlock *block = KosStack_BLOCK(self);
 
@@ -1678,18 +1567,8 @@ int koskari_stack_init(PyObject *mod) {
   if (PyType_Ready(&KosStackType))
     return -1;
 
-  PyObject *block_style_enum = create_block_style_enum();
-  if (! block_style_enum)
-    return -1;
-
   if (PyDict_SetItemString(dict, "Stack", (PyObject *) &KosStackType))
     return -1;
-
-  if (PyDict_SetItemString(dict, "BlockStyle", block_style_enum)) {
-    Py_DECREF(block_style_enum);
-    return -1;
-  }
-  Py_DECREF(block_style_enum);
 
   return 0;
 }

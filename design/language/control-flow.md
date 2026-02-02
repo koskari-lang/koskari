@@ -102,6 +102,101 @@
 - Jumps to next iteration of innermost loop
 - Stores VALUE as potential loop result
 
+## Delimited Continuations (Implemented)
+
+### reset (Prompt Delimiter)
+
+**`reset`**: Establish continuation delimiter
+- Syntax: `(reset EXPR)` or `(reset TAG EXPR)`
+- Pushes a prompt marker onto the dynamic chain
+- Evaluates EXPR
+- On normal completion, pops prompt and returns value
+- TAG is an optional prompt tag for matching (default: 0)
+
+**Semantics**:
+- A prompt does NOT create a new frame; it is a lightweight marker
+- Multiple prompts with different tags can be active simultaneously
+- Prompts are matched by tag identity (numeric equality)
+
+### shift (Continuation Capture)
+
+**`shift`**: Capture delimited continuation
+- Syntax: `(shift K EXPR)` or `(shift TAG K EXPR)`
+- Locates nearest prompt with matching tag
+- Captures continuation from current point to prompt
+- Binds captured continuation to K
+- Aborts to prompt and evaluates EXPR in that context
+
+**Semantics**:
+- Captured continuation K is a callable object
+- Calling `(K VALUE)` resumes at the capture point with VALUE
+- Continuations are multi-shot: can be called multiple times
+- Each call clones the captured state
+- Capture fails if Python/C boundary exists between current and prompt
+
+**Example**:
+```scheme
+;; Simple reset/shift
+(reset (+ 1 (shift k (k 10))))  ; => 11
+
+;; Multiple resumptions
+(reset
+  (let ((x (shift k (list (k 1) (k 2) (k 3)))))
+    (* x 10)))
+; => (10 20 30)
+
+;; Tagged prompts
+(reset 'outer
+  (reset 'inner
+    (+ 1 (shift 'outer k (k 10)))))
+; => 11 (captured to outer prompt)
+```
+
+## Dynamic Wind (Implemented)
+
+### dynamic-wind
+
+**`dynamic-wind`**: Protected dynamic extent
+- Syntax: `(dynamic-wind BEFORE THUNK AFTER)`
+- BEFORE: bytecode block executed on entry
+- THUNK: main body to execute
+- AFTER: bytecode block executed on exit
+
+**Semantics**:
+- BEFORE executes when entering the dynamic extent (normally or via continuation)
+- AFTER executes when leaving the dynamic extent (normally, via exception, or via continuation)
+- Hooks are bytecode blocks, NOT Python callables
+- Hooks execute with isolated operand stacks
+- Hooks terminate with `END_WIND` opcode
+
+**Ordering during continuation transfer**:
+1. Unwind: AFTER hooks from current toward LCA (inner-to-outer)
+2. Install: Splice target chain
+3. Wind: BEFORE hooks from LCA toward target (outer-to-inner)
+
+**Example**:
+```scheme
+;; Resource protection
+(let ((resource (acquire-resource)))
+  (dynamic-wind
+    (lambda () (lock resource))
+    (lambda () (use resource))
+    (lambda () (unlock resource))))
+
+;; Even with continuations
+(let ((log '()))
+  (reset
+    (dynamic-wind
+      (lambda () (set! log (cons 'before log)))
+      (lambda ()
+        (shift k
+          (k 'first)
+          (k 'second)))
+      (lambda () (set! log (cons 'after log)))))
+  log)
+; => (after before after before)
+```
+
 ## Migration Notes
 
 ### To Migrate
@@ -119,9 +214,15 @@
 - Exception chaining and `from` clause
 - Multiple exception types in single handler
 
-### To Design
+### Implemented
+
+- **Delimited continuations**: `reset` and `shift` with tagged prompts
+- **Dynamic wind**: `dynamic-wind` with VM-native hook blocks
+- **Python boundary constraint**: continuations cannot span Python/C calls
+
+### Future Considerations
 
 - Pattern matching (if desired)
 - Comprehensions (list/dict/set comprehensions)
 - `match`/`case` style pattern matching
-- Control flow with `call/cc`
+- One-shot continuation optimization

@@ -17,8 +17,11 @@
 /**
    koskari/lib/eval.h
 
-   Evaluator core for Koskari: undelimited multi-shot continuations,
+   Evaluator core for Koskari: delimited multi-shot continuations,
    dynamic wind/unwind, and flattened async execution.
+
+   This version uses the DynNode chain infrastructure from dynchain.h
+   for unified dynamic extent tracking.
 
    :author: Christopher O'Brien <obriencj@preoccupied.net>
    :license: GNU General Public License v3
@@ -32,101 +35,44 @@
 
 #include <Python.h>
 
+#include "dynchain.h"
+
 
 /* === Forward declarations === */
 
 struct KosCode;
 typedef struct KosCode KosCode;
 
-struct KosHandler;
-typedef struct KosHandler KosHandler;
-
-struct KosFrame;
-typedef struct KosFrame KosFrame;
-
-struct KosContext;
-typedef struct KosContext KosContext;
-
 
 /* === Context flags === */
 
 
 typedef enum KosContextFlags {
-  KOS_CTX_RUNNING = 0x01,
-  KOS_CTX_FROZEN  = 0x02,
-  KOS_CTX_DEAD    = 0x04,
+  KOS_CTX_RUNNING      = 0x01,
+  KOS_CTX_FROZEN       = 0x02,
+  KOS_CTX_DEAD         = 0x04,
+  KOS_CTX_IN_HOOK      = 0x08,  /* executing a hook block */
+  KOS_CTX_IN_TRANSFER  = 0x10,  /* executing a transfer plan */
 } KosContextFlags;
 
 
-/* === KosHandler: dynamic wind/unwind chain === */
+/* === KosFrame: alias for KosDynFrame === */
+
 
 /**
-   KosHandler represents a node in the dynamic wind/unwind chain.
+   KosFrame is an alias for KosDynFrame for backward compatibility.
+   See dynchain.h for the actual structure definition.
 
-   Each handler may have a 'before' callable (invoked when entering
-   the dynamic extent) and/or an 'after' callable (invoked when leaving
-   the dynamic extent). Either may be NULL.
-
-   The parent pointer links handlers from inner to outer scope.
-   This chain is traversed during continuation application to determine
-   which unwind (after) and wind (before) hooks to execute.
+   The frame represents a function activation in the dynamic chain.
+   It holds the bytecode, program counter, operand stack, and namespace.
 */
 
-struct KosHandler {
-  KosHandler *parent;   /* enclosing handler (outer scope) */
-  PyObject *before;     /* callable or NULL; invoked on wind-in */
-  PyObject *after;      /* callable or NULL; invoked on unwind-out */
-};
+typedef KosDynFrame KosFrame;
 
-
-KosHandler *kos_handler_new(KosHandler *parent,
-        PyObject *before, PyObject *after);
-
-void kos_handler_free(KosHandler *handler);
-
-
-/* === KosFrame: execution frame === */
-
-/**
-   KosFrame represents a single activation record in the Koskari VM.
-
-   Invariants:
-   - A frame is owned by exactly one context while RUNNING.
-   - On capture (continuation creation), frames may be cloned to allow
-     multi-shot resumption.
-   - The pc field is mutated during execution; on freeze, frames should
-     be considered immutable or cloned.
-
-   The stack field points to a KosStackBlock chain (from stack.h),
-   which holds the operand stack for this frame. The ns field holds
-   the namespace (locals/closures) for this frame.
-
-   Future optimization (TODO): implement lazy frame COW so that
-   captured frame chains can share unchanged tail segments.
-*/
-
-struct KosFrame {
-  KosFrame *parent;        /* caller frame */
-
-  KosCode *code;           /* bytecode object (borrowed) */
-  uint32_t pc;             /* program counter */
-
-  struct KosStackBlock *stack;  /* operand stack (owned) */
-  PyObject *ns;            /* namespace PyObject (owned ref) */
-
-  KosHandler *handlers;    /* dynamic wind/unwind chain for this frame */
-
-  uint32_t flags;          /* frame-specific flags */
-};
-
-
-KosFrame *kos_frame_new(KosCode *code, PyObject *ns,
-        struct KosStackBlock *stack, KosFrame *parent,
-        KosHandler *handlers);
-
-KosFrame *kos_frame_clone(KosFrame *frame);
-
-void kos_frame_free(KosFrame *frame);
+#define KosFrame_CODE(f)   KosDynFrame_CODE(f)
+#define KosFrame_PC(f)     KosDynFrame_PC(f)
+#define KosFrame_STACK(f)  KosDynFrame_STACK(f)
+#define KosFrame_NS(f)     KosDynFrame_NS(f)
 
 
 /* === KosEvent: boundary events === */
@@ -168,105 +114,115 @@ typedef struct KosEvent {
 /**
    KosContext is the top-level execution state for the Koskari VM.
 
+   This version uses the DynNode chain for dynamic extent tracking.
+   The dyn_top field points to the top of the chain, which may be
+   any node type (FRAME, PROMPT, WIND, REGION, PYCALL).
+
+   The frame_top field is a cached pointer to the topmost FRAME node
+   for fast access during normal execution.
+
+   Hook execution state is tracked via the hook_runner field.
+   Transfer plan execution is tracked via the plan/plan_stack fields.
+
    Ownership and lifecycle:
    - A context is created via kos_context_new and freed via kos_context_free.
-   - The context owns its frame chain and associated state.
+   - The context owns its dynamic chain and associated state.
    - While RUNNING, exactly one Python wrapper (KosPyCoroutine) may own it.
 
    Suspension and resumption:
    - When kos_drive returns KOS_EV_AWAIT, the context is suspended.
    - py_await_iter holds the iterator from __await__() on the Python awaitable.
    - Resumption injects the result back into the VM via the stack.
-
-   Exception injection:
-   - pending_throw indicates whether the next resume should throw.
-   - pending_exc holds the exception to raise.
 */
 
 struct KosContext {
-  KosFrame *top;            /* current frame (top of call stack) */
+  KosDynNode *dyn_top;       /* top of dynamic chain */
+  KosDynFrame *frame_top;    /* cached topmost frame (for fast access) */
+
+  /* Hook execution state */
+  KosHookRunner hook_runner;
+
+  /* Transfer plan state */
+  KosTransferPlan *plan;        /* active transfer plan (or NULL) */
+  KosTransferPlan *plan_stack;  /* suspended plans stack */
+  uint32_t chain_version;       /* incremented on chain modifications */
 
   /* Python await bridging state */
-  PyObject *py_await_iter;  /* await-iterator from __await__() */
+  PyObject *py_await_iter;   /* await-iterator from __await__() */
   PyObject *py_last_yielded; /* last yielded object (debug/optional) */
 
   /* exception injection for resume */
   int pending_throw;
   PyObject *pending_exc;
 
-  uint32_t flags;           /* KosContextFlags */
+  uint32_t flags;            /* KosContextFlags */
 };
 
 
-KosContext *kos_context_new(KosFrame *top);
+/* === Context lifecycle === */
 
+
+/**
+   Create a new execution context with the given initial frame.
+
+   :param top: initial frame (ownership transferred to context)
+
+   :return: new context, or NULL on error
+*/
+KosContext *kos_context_new(KosDynFrame *top);
+
+
+/**
+   Free an execution context and all its resources.
+
+   Frees the entire dynamic chain, any active transfer plan, and
+   the hook runner scratch stack.
+
+   :param ctx: context to free (may be NULL)
+*/
 void kos_context_free(KosContext *ctx);
 
 
-/* === Wind chain management === */
-
-/**
-   Push a wind handler onto the current frame's handler chain.
-
-   Either before or after may be NULL, but not both.
-
-   :return: 0 on success, -1 on error (sets exception)
-*/
-int kos_push_wind(KosContext *ctx, PyObject *before, PyObject *after);
+/* === Frame management === */
 
 
 /**
-   Convenience: push a handler with only a before hook.
+   Create a new frame.
 
-   :return: 0 on success, -1 on error
+   This is a convenience wrapper around kos_dynframe_new.
+
+   :param code: bytecode object (borrowed)
+   :param ns: namespace (reference is stolen)
+   :param stack: operand stack (ownership transferred), or NULL
+   :param parent: parent node in dynamic chain (or NULL)
+
+   :return: new frame, or NULL on error
 */
-int kos_push_before_wind(KosContext *ctx, PyObject *before);
+KosFrame *kos_frame_new(
+        KosCode *code,
+        PyObject *ns,
+        KosStackBlock *stack,
+        KosDynNode *parent);
 
 
 /**
-   Convenience: push a handler with only an after hook.
+   Clone a frame for continuation capture.
 
-   :return: 0 on success, -1 on error
+   Clones the frame's stack using COW semantics.
+
+   :param frame: frame to clone
+
+   :return: cloned frame, or NULL on error
 */
-int kos_push_after_wind(KosContext *ctx, PyObject *after);
+KosFrame *kos_frame_clone(KosFrame *frame);
 
 
 /**
-   Pop the topmost handler from the current frame's handler chain.
+   Free a frame and its resources.
 
-   Does not invoke any hooks.
-
-   :return: 0 on success, -1 on error
+   :param frame: frame to free (may be NULL)
 */
-int kos_pop_wind(KosContext *ctx);
-
-
-/* === Continuation application === */
-
-/**
-   Apply a captured continuation, switching from the current execution
-   state to the target state.
-
-   This function:
-   1. Computes the LCA (lowest common ancestor) between current and target frames.
-   2. Collects unwind-after hooks from current to LCA (inner to outer).
-   3. Collects wind-before hooks from LCA to target (outer to inner).
-   4. Executes unwind hooks.
-   5. Installs target_top and target_handlers into ctx.
-   6. Executes wind hooks.
-   7. Injects value_or_exc onto the target stack (or raises if is_throw).
-
-   :param ctx: the current context
-   :param target_top: the frame to resume into
-   :param target_handlers: the handler chain to restore
-   :param is_throw: if non-zero, value_or_exc is an exception to raise
-   :param value_or_exc: the resume value or exception (borrowed ref)
-
-   :return: 0 on success, -1 on error
-*/
-int kos_apply_continuation(KosContext *ctx,
-        KosFrame *target_top, KosHandler *target_handlers,
-        int is_throw, PyObject *value_or_exc);
+void kos_frame_free(KosFrame *frame);
 
 
 /* === Koskari call operations === */
@@ -299,7 +255,7 @@ int kos_tail_koscall(KosContext *ctx, KosCode *code, PyObject *ns);
    Execute the VM until a boundary event occurs.
 
    This is the main entry point for driving execution. The function
-   runs opcodes from ctx->top until:
+   runs opcodes from ctx->frame_top until:
    - RETURN: normal completion
    - RAISE: exception propagation
    - YIELD: generator yield
@@ -331,24 +287,18 @@ int kos_drive(KosContext *ctx, KosEvent *out_ev);
 
    :return: 0 on success, non-zero if visit returns non-zero
 */
-int kos_stackblock_traverse(struct KosStackBlock *block,
-        visitproc visit, void *arg);
+int kos_stackblock_traverse(
+        KosStackBlock *block,
+        visitproc visit,
+        void *arg);
 
 
 /**
-   Traverse a KosHandler chain for GC.
+   Traverse a KosFrame for GC.
 
-   Visits before and after callables in each handler.
-
-   :return: 0 on success, non-zero if visit returns non-zero
-*/
-int kos_handler_traverse(KosHandler *handler, visitproc visit, void *arg);
-
-
-/**
-   Traverse a KosFrame chain for GC.
-
-   Visits the namespace, stack, and handler chain for each frame.
+   :param frame: frame to traverse
+   :param visit: visitproc callback
+   :param arg: opaque arg for visit
 
    :return: 0 on success, non-zero if visit returns non-zero
 */
@@ -375,6 +325,8 @@ int kos_context_traverse(KosContext *ctx, visitproc visit, void *arg);
 
    Multi-shot: each call clones the captured state before resuming.
    Calling returns a KosPyCoroutine that executes the continuation.
+
+   This type wraps a KosContinuation (from dynchain.h).
 */
 
 extern PyTypeObject KosPyContinuationType;
@@ -382,8 +334,7 @@ extern PyTypeObject KosPyContinuationType;
 
 typedef struct {
   PyObject_HEAD
-  KosFrame *captured_top;
-  KosHandler *captured_handlers;
+  KosContinuation *captured;  /* captured continuation state */
 } KosPyContinuation;
 
 
@@ -394,7 +345,7 @@ typedef struct {
   ((obj) && ((obj)->ob_type == &KosPyContinuationType))
 
 
-PyObject *KosPyContinuation_New(KosFrame *top, KosHandler *handlers);
+PyObject *KosPyContinuation_New(KosContinuation *captured);
 
 
 /* --- KosPyCoroutine --- */

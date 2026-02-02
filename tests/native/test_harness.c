@@ -130,6 +130,18 @@ static int initialize_types(void) {
         return -1;
     }
 
+    /* Initialize dynchain types */
+    if (koskari_dynchain_init(kos_lib_module)) {
+        fprintf(stderr, "Failed to initialize dynchain types\n");
+        return -1;
+    }
+
+    /* Initialize eval types */
+    if (koskari_eval_init(kos_lib_module)) {
+        fprintf(stderr, "Failed to initialize eval types\n");
+        return -1;
+    }
+
     return 0;
 }
 
@@ -191,6 +203,7 @@ int main(int argc, char *argv[]) {
     run_formals_tests();
     run_values_tests();
     run_stack_tests();
+    run_dynchain_tests();
 
     /* Future units:
     run_tco_tests();
