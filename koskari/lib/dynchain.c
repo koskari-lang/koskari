@@ -33,9 +33,9 @@
 
 
 static void kos_dynnode_init(
-        KosDynNode *node,
-        KosDynKind kind,
-        KosDynNode *parent) {
+    KosDynNode *node,
+    KosDynKind kind,
+    KosDynNode *parent) {
 
   node->parent = parent;
   node->kind = kind;
@@ -47,10 +47,10 @@ static void kos_dynnode_init(
 
 
 KosDynFrame *kos_dynframe_new(
-        KosDynNode *parent,
-        KosCode *code,
-        PyObject *ns,
-        KosStackBlock *stack) {
+    KosDynNode *parent,
+    KosCode *code,
+    PyObject *ns,
+    KosStackBlock *stack) {
 
   KosDynFrame *frame = PyMem_Malloc(sizeof(KosDynFrame));
   if (! frame) {
@@ -181,11 +181,11 @@ void kos_dynprompt_free(KosDynPrompt *prompt) {
 
 
 KosDynWind *kos_dynwind_new(
-        KosDynNode *parent,
-        KosCode *before_code,
-        uint32_t before_pc,
-        KosCode *after_code,
-        uint32_t after_pc) {
+    KosDynNode *parent,
+    KosCode *before_code,
+    uint32_t before_pc,
+    KosCode *after_code,
+    uint32_t after_pc) {
 
   KosDynWind *wind = PyMem_Malloc(sizeof(KosDynWind));
   if (! wind) {
@@ -241,10 +241,10 @@ void kos_dynwind_free(KosDynWind *wind) {
 
 
 KosDynRegion *kos_dynregion_new(
-        KosDynNode *parent,
-        KosRegionStyle style,
-        uint32_t a_label,
-        uint32_t b_label) {
+    KosDynNode *parent,
+    KosRegionStyle style,
+    uint32_t a_label,
+    uint32_t b_label) {
 
   KosDynRegion *region = PyMem_Malloc(sizeof(KosDynRegion));
   if (! region) {
@@ -434,9 +434,9 @@ static void kos_update_frame_top(KosContext *ctx) {
 
 
 KosDynFrame *kos_dyn_push_frame(
-        KosContext *ctx,
-        KosCode *code,
-        PyObject *ns) {
+    KosContext *ctx,
+    KosCode *code,
+    PyObject *ns) {
 
   KosDynFrame *frame = kos_dynframe_new(ctx->dyn_top, code, ns, NULL);
   if (! frame)
@@ -498,11 +498,11 @@ void kos_dyn_pop_prompt(KosContext *ctx, KosDynPrompt *prompt) {
 
 
 KosDynWind *kos_dyn_push_wind(
-        KosContext *ctx,
-        KosCode *before_code,
-        uint32_t before_pc,
-        KosCode *after_code,
-        uint32_t after_pc) {
+    KosContext *ctx,
+    KosCode *before_code,
+    uint32_t before_pc,
+    KosCode *after_code,
+    uint32_t after_pc) {
 
   KosDynWind *wind = kos_dynwind_new(ctx->dyn_top,
                                      before_code, before_pc,
@@ -532,10 +532,10 @@ int kos_dyn_pop_wind(KosContext *ctx, KosDynWind *wind) {
 
 
 KosDynRegion *kos_dyn_push_region(
-        KosContext *ctx,
-        KosRegionStyle style,
-        uint32_t label_a,
-        uint32_t label_b) {
+    KosContext *ctx,
+    KosRegionStyle style,
+    uint32_t label_a,
+    uint32_t label_b) {
 
   KosDynRegion *region = kos_dynregion_new(ctx->dyn_top,
                                            style, label_a, label_b);
@@ -629,9 +629,9 @@ int kos_validate_capture(KosContext *ctx, KosDynPrompt *prompt) {
 
 
 int kos_shift_capture(
-        KosContext *ctx,
-        uint32_t prompt_id,
-        KosContinuation **out_k) {
+    KosContext *ctx,
+    uint32_t prompt_id,
+    KosContinuation **out_k) {
 
   /* Find the prompt */
   KosDynPrompt *prompt = kos_find_prompt(ctx, prompt_id);
@@ -788,11 +788,11 @@ KosDynNode *kos_compute_lca(KosDynNode *a, KosDynNode *b) {
 
 
 int kos_build_transfer_plan(
-        KosContext *ctx,
-        KosDynNode *target,
-        PyObject *value,
-        int is_throw,
-        KosTransferPlan **out_plan) {
+    KosContext *ctx,
+    KosDynNode *target,
+    PyObject *value,
+    int is_throw,
+    KosTransferPlan **out_plan) {
 
   KosDynNode *current = ctx->dyn_top;
   KosDynNode *lca = kos_compute_lca(current, target);
@@ -1071,10 +1071,10 @@ int kos_end_hook(KosContext *ctx) {
 
 
 int kos_invoke_continuation(
-        KosContext *ctx,
-        KosContinuation *k,
-        PyObject *value,
-        int is_throw) {
+    KosContext *ctx,
+    KosContinuation *k,
+    PyObject *value,
+    int is_throw) {
 
   if (! k) {
     PyErr_SetString(PyExc_RuntimeError, "NULL continuation");
@@ -1151,10 +1151,10 @@ int kos_dynnode_traverse(KosDynNode *node, visitproc visit, void *arg) {
 
 
 int kos_dynchain_traverse(
-        KosDynNode *node,
-        KosDynNode *stop,
-        visitproc visit,
-        void *arg) {
+    KosDynNode *node,
+    KosDynNode *stop,
+    visitproc visit,
+    void *arg) {
 
   while (node && node != stop) {
     int res = kos_dynnode_traverse(node, visit, arg);
@@ -1167,7 +1167,11 @@ int kos_dynchain_traverse(
 }
 
 
-int kos_continuation_traverse(KosContinuation *k, visitproc visit, void *arg) {
+int kos_continuation_traverse(
+    KosContinuation *k,
+    visitproc visit,
+    void *arg) {
+
   if (! k)
     return 0;
 
@@ -1175,7 +1179,11 @@ int kos_continuation_traverse(KosContinuation *k, visitproc visit, void *arg) {
 }
 
 
-int kos_transferplan_traverse(KosTransferPlan *plan, visitproc visit, void *arg) {
+int kos_transferplan_traverse(
+    KosTransferPlan *plan,
+    visitproc visit,
+    void *arg) {
+
   if (! plan)
     return 0;
 
@@ -1189,7 +1197,11 @@ int kos_transferplan_traverse(KosTransferPlan *plan, visitproc visit, void *arg)
 }
 
 
-int kos_hookrunner_traverse(KosHookRunner *runner, visitproc visit, void *arg) {
+int kos_hookrunner_traverse(
+    KosHookRunner *runner,
+    visitproc visit,
+    void *arg) {
+
   if (! runner || ! runner->active)
     return 0;
 

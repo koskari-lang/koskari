@@ -119,9 +119,12 @@ typedef struct KosDynamicRef {
   (((KosRef *) r)->obj)
 
 
-PyObject *KosDynamicRef_New(PyObject *name,
-                            PyObject *getfn, PyObject *setfn,
-                            PyObject *delfn, PyObject *emptyfn);
+PyObject *KosDynamicRef_New(
+    PyObject *name,
+    PyObject *getfn,
+    PyObject *setfn,
+    PyObject *delfn,
+    PyObject *emptyfn);
 
 
 /* === ConstantRef === */

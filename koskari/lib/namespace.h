@@ -36,9 +36,10 @@ typedef struct KosNamespaceSpec {
 } KosNamespaceSpec;
 
 
-PyObject *KosNamespaceSpec_New(PyObject *name,
-                               PyObject *local_syms,
-                               PyObject *closure_syms);
+PyObject *KosNamespaceSpec_New(
+    PyObject *name,
+    PyObject *local_syms,
+    PyObject *closure_syms);
 
 
 #define KosNamespaceSpec_NAME(nspec)            \

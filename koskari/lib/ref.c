@@ -596,9 +596,13 @@ PyObject *KosItemRef_New(PyObject *name, PyObject *obj, PyObject *key) {
 /* === DynamicRef === */
 
 
-static int dyn_ref_init(PyObject *self, PyObject *name,
-                        PyObject *getfn, PyObject *setfn,
-                        PyObject *delfn, PyObject *emptyfn) {
+static int dyn_ref_init(
+    PyObject *self,
+    PyObject *name,
+    PyObject *getfn,
+    PyObject *setfn,
+    PyObject *delfn,
+    PyObject *emptyfn) {
 
   KosSymbolicRef_VALUE(self) = NULL;
 
@@ -786,9 +790,12 @@ PyTypeObject KosDynamicRefType = {
 };
 
 
-PyObject *KosDynamicRef_New(PyObject *name,
-                            PyObject *getfn, PyObject *setfn,
-                            PyObject *delfn, PyObject *emptyfn) {
+PyObject *KosDynamicRef_New(
+    PyObject *name,
+    PyObject *getfn,
+    PyObject *setfn,
+    PyObject *delfn,
+    PyObject *emptyfn) {
 
   PyObject *self = PyObject_New(PyObject, &KosDynamicRefType);
   if (! self)

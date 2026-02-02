@@ -215,10 +215,10 @@ static int bss_init(
 
 
 PyObject *KosBaseSourceStream_New(
-        PyObject *stream,
-        PyObject *filename,
-        Py_ssize_t line,
-        Py_ssize_t col) {
+    PyObject *stream,
+    PyObject *filename,
+    Py_ssize_t line,
+    Py_ssize_t col) {
   /**
      Create a new BaseSourceStream. For direct C-level instantiation.
   */
@@ -342,9 +342,9 @@ static PyObject *m_bss_position(PyObject *self, PyObject *_noargs) {
 
 
 PyObject *KosBaseSourceStream_ReadUntilPred(
-        PyObject *self,
-        KosCharPredicate pred,
-        void *context) {
+    PyObject *self,
+    KosCharPredicate pred,
+    void *context) {
   /**
      Read characters until predicate returns non-zero.
 
@@ -411,8 +411,8 @@ PyObject *KosBaseSourceStream_ReadUntilPred(
 
 
 PyObject *KosBaseSourceStream_ReadUntil(
-        PyObject *self,
-        PyObject *testf) {
+    PyObject *self,
+    PyObject *testf) {
   /**
      Read characters until a Python callable returns truthy.
 
@@ -517,8 +517,8 @@ static int chars_predicate(Py_UCS4 ch, void *ctx) {
 
 
 PyObject *KosBaseSourceStream_ReadUntilChars(
-        PyObject *self,
-        PyObject *terminators) {
+    PyObject *self,
+    PyObject *terminators) {
   /**
      Read characters until a terminating character is found.
 

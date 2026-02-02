@@ -178,9 +178,13 @@ PyTypeObject KosFormalsSpecType = {
 };
 
 
-PyObject *KosFormalsSpec_New(PyObject *pos, PyObject *pos_only,
-                             PyObject *kwd, PyObject *kwd_only,
-                             PyObject *star, PyObject *starstar) {
+PyObject *KosFormalsSpec_New(
+    PyObject *pos,
+    PyObject *pos_only,
+    PyObject *kwd,
+    PyObject *kwd_only,
+    PyObject *star,
+    PyObject *starstar) {
 
   if (pos && (pos != Py_None) && (! PySequence_Check(pos))) {
     PyErr_Format(PyExc_TypeError, "pos must be a sequence,"
@@ -670,8 +674,11 @@ PyObject *KosFormals_NewFull(
 }
 
 
-int KosFormals_Apply(PyObject *formals, PyObject *namespace,
-                     PyObject *args, PyObject *kwargs) {
+int KosFormals_Apply(
+    PyObject *formals,
+    PyObject *namespace,
+    PyObject *args,
+    PyObject *kwargs) {
 
   SAYF("in KosFormals_Apply(%R, %R, %R, %R)",
        formals, namespace, args, kwargs);
@@ -897,9 +904,12 @@ int KosFormals_Apply(PyObject *formals, PyObject *namespace,
 }
 
 
-int KosFormals_VectorApply(PyObject *formals, PyObject *namespace,
-                           PyObject *const *args, size_t nargs,
-                           PyObject *names) {
+int KosFormals_VectorApply(
+    PyObject *formals,
+    PyObject *namespace,
+    PyObject *const *args,
+    size_t nargs,
+    PyObject *names) {
 
   SAYF("in KosFormals_VectorApply(%R, %R, %p, %i, %R)",
        formals, namespace, args, nargs, names);

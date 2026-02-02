@@ -151,9 +151,10 @@ PyTypeObject KosNamespaceSpecType = {
 };
 
 
-PyObject *KosNamespaceSpec_New(PyObject *name,
-                               PyObject *local_syms,
-                               PyObject *closure_syms) {
+PyObject *KosNamespaceSpec_New(
+    PyObject *name,
+    PyObject *local_syms,
+    PyObject *closure_syms) {
 
   // SAYF("KosNamespaceSpec_New(%R, %R, %R)",
   //      name, local_syms, closure_syms);
@@ -641,11 +642,12 @@ static PyMemberDef ns_members[] = {
 };
 
 
-static PyObject *ns_newfull_type(PyTypeObject *type,
-                                 PyObject *name,
-                                 PyObject *parent,
-                                 PyObject *local_syms,
-                                 PyObject *closure_syms) {
+static PyObject *ns_newfull_type(
+    PyTypeObject *type,
+    PyObject *name,
+    PyObject *parent,
+    PyObject *local_syms,
+    PyObject *closure_syms) {
 
   if (! name || name == Py_None)
     name = _namespace_str;
@@ -848,10 +850,11 @@ PyObject *KosNamespace_New(PyObject *parent, PyObject *spec) {
 }
 
 
-PyObject *KosNamespace_NewFull(PyObject *name,
-                               PyObject *parent,
-                               PyObject *local_syms,
-                               PyObject *closure_syms) {
+PyObject *KosNamespace_NewFull(
+    PyObject *name,
+    PyObject *parent,
+    PyObject *local_syms,
+    PyObject *closure_syms) {
 
   return ns_newfull_type(&KosNamespaceType,
                          name, parent,

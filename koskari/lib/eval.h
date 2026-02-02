@@ -199,10 +199,10 @@ void kos_context_free(KosContext *ctx);
    :return: new frame, or NULL on error
 */
 KosFrame *kos_frame_new(
-        KosCode *code,
-        PyObject *ns,
-        KosStackBlock *stack,
-        KosDynNode *parent);
+    KosCode *code,
+    PyObject *ns,
+    KosStackBlock *stack,
+    KosDynNode *parent);
 
 
 /**
@@ -288,9 +288,9 @@ int kos_drive(KosContext *ctx, KosEvent *out_ev);
    :return: 0 on success, non-zero if visit returns non-zero
 */
 int kos_stackblock_traverse(
-        KosStackBlock *block,
-        visitproc visit,
-        void *arg);
+    KosStackBlock *block,
+    visitproc visit,
+    void *arg);
 
 
 /**

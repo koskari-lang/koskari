@@ -172,10 +172,10 @@ typedef struct KosCode {
    :return: new KosCode reference, or NULL on error
 */
 PyObject *KosCode_New(
-        PyObject *nspec,
-        PyObject *instr,
-        PyObject *name,
-        PyObject *filename);
+    PyObject *nspec,
+    PyObject *instr,
+    PyObject *name,
+    PyObject *filename);
 
 
 /* === Accessors === */
@@ -214,10 +214,10 @@ PyObject *KosCode_GetInstruction(PyObject *self, uint32_t index);
    :return: 0 on success, -1 on error
 */
 int KosCode_GetPosition(
-        PyObject *self,
-        uint32_t index,
-        uint16_t *out_line,
-        uint16_t *out_col);
+    PyObject *self,
+    uint32_t index,
+    uint16_t *out_line,
+    uint16_t *out_col);
 
 
 /**

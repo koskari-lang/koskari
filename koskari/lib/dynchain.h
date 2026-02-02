@@ -394,10 +394,10 @@ struct KosHookRunner {
    :return: new frame node, or NULL on error
 */
 KosDynFrame *kos_dynframe_new(
-        KosDynNode *parent,
-        KosCode *code,
-        PyObject *ns,
-        KosStackBlock *stack);
+   KosDynNode *parent,
+   KosCode *code,
+   PyObject *ns,
+   KosStackBlock *stack);
 
 
 /**
@@ -455,11 +455,11 @@ void kos_dynprompt_free(KosDynPrompt *prompt);
    :return: new wind node, or NULL on error
 */
 KosDynWind *kos_dynwind_new(
-        KosDynNode *parent,
-        KosCode *before_code,
-        uint32_t before_pc,
-        KosCode *after_code,
-        uint32_t after_pc);
+   KosDynNode *parent,
+   KosCode *before_code,
+   uint32_t before_pc,
+   KosCode *after_code,
+   uint32_t after_pc);
 
 
 /**
@@ -491,10 +491,10 @@ void kos_dynwind_free(KosDynWind *wind);
    :return: new region node, or NULL on error
 */
 KosDynRegion *kos_dynregion_new(
-        KosDynNode *parent,
-        KosRegionStyle style,
-        uint32_t a_label,
-        uint32_t b_label);
+   KosDynNode *parent,
+   KosRegionStyle style,
+   uint32_t a_label,
+   uint32_t b_label);
 
 
 /**
@@ -578,7 +578,9 @@ void kos_dynchain_free(KosDynNode *node, KosDynNode *stop);
 
    :return: cloned chain top, or NULL on error
 */
-KosDynNode *kos_clone_chain_segment(KosDynNode *top, KosDynNode *stop);
+KosDynNode *kos_clone_chain_segment(
+   KosDynNode *top,
+   KosDynNode *stop);
 
 
 /* === Dynamic chain context operations === */
@@ -648,11 +650,11 @@ void kos_dyn_pop_prompt(KosContext *ctx, KosDynPrompt *prompt);
    :return: new wind node, or NULL on error
 */
 KosDynWind *kos_dyn_push_wind(
-        KosContext *ctx,
-        KosCode *before_code,
-        uint32_t before_pc,
-        KosCode *after_code,
-        uint32_t after_pc);
+   KosContext *ctx,
+   KosCode *before_code,
+   uint32_t before_pc,
+   KosCode *after_code,
+   uint32_t after_pc);
 
 
 /**
@@ -680,10 +682,10 @@ int kos_dyn_pop_wind(KosContext *ctx, KosDynWind *wind);
    :return: new region, or NULL on error
 */
 KosDynRegion *kos_dyn_push_region(
-        KosContext *ctx,
-        KosRegionStyle style,
-        uint32_t label_a,
-        uint32_t label_b);
+   KosContext *ctx,
+   KosRegionStyle style,
+   uint32_t label_a,
+   uint32_t label_b);
 
 
 /**
@@ -761,9 +763,9 @@ int kos_validate_capture(KosContext *ctx, KosDynPrompt *prompt);
    :return: 0 on success, -1 on error
 */
 int kos_shift_capture(
-        KosContext *ctx,
-        uint32_t prompt_id,
-        KosContinuation **out_k);
+   KosContext *ctx,
+   uint32_t prompt_id,
+   KosContinuation **out_k);
 
 
 /**
@@ -818,11 +820,11 @@ KosDynNode *kos_compute_lca(KosDynNode *a, KosDynNode *b);
    :return: 0 on success, -1 on error
 */
 int kos_build_transfer_plan(
-        KosContext *ctx,
-        KosDynNode *target,
-        PyObject *value,
-        int is_throw,
-        KosTransferPlan **out_plan);
+   KosContext *ctx,
+   KosDynNode *target,
+   PyObject *value,
+   int is_throw,
+   KosTransferPlan **out_plan);
 
 
 /**
@@ -928,10 +930,10 @@ int kos_end_hook(KosContext *ctx);
    :return: 0 on success, -1 on error
 */
 int kos_invoke_continuation(
-        KosContext *ctx,
-        KosContinuation *k,
-        PyObject *value,
-        int is_throw);
+   KosContext *ctx,
+   KosContinuation *k,
+   PyObject *value,
+   int is_throw);
 
 
 /* === GC traversal === */
@@ -964,10 +966,10 @@ int kos_dynnode_traverse(KosDynNode *node, visitproc visit, void *arg);
    :return: 0 on success, non-zero if visit returns non-zero
 */
 int kos_dynchain_traverse(
-        KosDynNode *node,
-        KosDynNode *stop,
-        visitproc visit,
-        void *arg);
+   KosDynNode *node,
+   KosDynNode *stop,
+   visitproc visit,
+   void *arg);
 
 
 /**
@@ -979,7 +981,10 @@ int kos_dynchain_traverse(
 
    :return: 0 on success, non-zero if visit returns non-zero
 */
-int kos_continuation_traverse(KosContinuation *k, visitproc visit, void *arg);
+int kos_continuation_traverse(
+   KosContinuation *k,
+   visitproc visit,
+   void *arg);
 
 
 /**
@@ -991,7 +996,10 @@ int kos_continuation_traverse(KosContinuation *k, visitproc visit, void *arg);
 
    :return: 0 on success, non-zero if visit returns non-zero
 */
-int kos_transferplan_traverse(KosTransferPlan *plan, visitproc visit, void *arg);
+int kos_transferplan_traverse(
+   KosTransferPlan *plan,
+   visitproc visit,
+   void *arg);
 
 
 /**
@@ -1003,7 +1011,10 @@ int kos_transferplan_traverse(KosTransferPlan *plan, visitproc visit, void *arg)
 
    :return: 0 on success, non-zero if visit returns non-zero
 */
-int kos_hookrunner_traverse(KosHookRunner *runner, visitproc visit, void *arg);
+int kos_hookrunner_traverse(
+   KosHookRunner *runner,
+   visitproc visit,
+   void *arg);
 
 
 /* === Utility macros === */

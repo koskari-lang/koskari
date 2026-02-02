@@ -155,9 +155,11 @@ int KosStack_Extend(PyObject *stack, PyObject *seq, int reverse);
 
    :return: 0 if successful, sets err and returns -1 if overrun
  */
-int KosStack_ExtendPtr(PyObject *stack,
-                       PyObject *const *elements, size_t count,
-                       int reverse);
+int KosStack_ExtendPtr(
+    PyObject *stack,
+    PyObject *const *elements,
+    size_t count,
+    int reverse);
 
 
 /**
@@ -170,9 +172,11 @@ int KosStack_ExtendPtr(PyObject *stack,
 
    :return: 0 if successful, sets err and returns -1 if overrun
  */
-int KosStack_EXTENDPTR(PyObject *stack,
-                       PyObject *const *elements, size_t count,
-                       int reverse);
+int KosStack_EXTENDPTR(
+    PyObject *stack,
+    PyObject *const *elements,
+    size_t count,
+    int reverse);
 
 
 /**

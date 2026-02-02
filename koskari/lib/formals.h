@@ -40,13 +40,18 @@ typedef struct KosFormalsSpec {
 } KosFormalsSpec;
 
 
-PyObject *KosFormalsSpec_New(PyObject *pos, PyObject *pos_only,
-                             PyObject *kwd, PyObject *kwd_only,
-                             PyObject *star, PyObject *starstar);
+PyObject *KosFormalsSpec_New(
+    PyObject *pos,
+    PyObject *pos_only,
+    PyObject *kwd,
+    PyObject *kwd_only,
+    PyObject *star,
+    PyObject *starstar);
 
 
-PyObject *KosFormalsSpec_NamespaceSpec(PyObject *fspec,
-                                       PyObject *base_nspec);
+PyObject *KosFormalsSpec_NamespaceSpec(
+    PyObject *fspec,
+    PyObject *base_nspec);
 
 
 #define KosFormalsSpec_POS(fmls)                \
@@ -100,13 +105,19 @@ PyObject *KosFormals_NewFull(PyObject *pos, PyObject *pos_only,
                              PyObject *defaults);
 
 
-int KosFormals_Apply(PyObject *self, PyObject *namespace,
-                     PyObject *args, PyObject *kwds);
+int KosFormals_Apply(
+    PyObject *self,
+    PyObject *namespace,
+    PyObject *args,
+    PyObject *kwds);
 
 
-int KosFormals_VectorApply(PyObject *self, PyObject *namespace,
-                           PyObject *const *args, size_t nargs,
-                           PyObject *names);
+int KosFormals_VectorApply(
+    PyObject *self,
+    PyObject *namespace,
+    PyObject *const *args,
+    size_t nargs,
+    PyObject *names);
 
 
 #define KosFormals_POS(fmls)                \

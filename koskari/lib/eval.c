@@ -60,10 +60,10 @@ static PyObject *str_close = NULL;
 
 
 KosFrame *kos_frame_new(
-        KosCode *code,
-        PyObject *ns,
-        KosStackBlock *stack,
-        KosDynNode *parent) {
+    KosCode *code,
+    PyObject *ns,
+    KosStackBlock *stack,
+    KosDynNode *parent) {
 
   return kos_dynframe_new(parent, code, ns, stack);
 }
@@ -80,9 +80,9 @@ void kos_frame_free(KosFrame *frame) {
 
 
 int kos_frame_traverse(
-        KosFrame *frame,
-        visitproc visit,
-        void *arg) {
+    KosFrame *frame,
+    visitproc visit,
+    void *arg) {
 
   if (! frame)
     return 0;
@@ -177,9 +177,9 @@ void kos_context_free(KosContext *ctx) {
 
 
 int kos_context_traverse(
-        KosContext *ctx,
-        visitproc visit,
-        void *arg) {
+    KosContext *ctx,
+    visitproc visit,
+    void *arg) {
 
   if (! ctx)
     return 0;
@@ -211,9 +211,9 @@ int kos_context_traverse(
 
 
 int kos_stackblock_traverse(
-        KosStackBlock *b,
-        visitproc visit,
-        void *arg) {
+    KosStackBlock *b,
+    visitproc visit,
+    void *arg) {
 
   size_t i;
   while (b) {
@@ -231,9 +231,9 @@ int kos_stackblock_traverse(
 
 
 int kos_koscall(
-        KosContext *ctx,
-        KosCode *code,
-        PyObject *ns) {
+    KosContext *ctx,
+    KosCode *code,
+    PyObject *ns) {
 
   if (! ctx) {
     PyErr_SetString(PyExc_RuntimeError, "NULL context for koscall");
@@ -249,9 +249,9 @@ int kos_koscall(
 
 
 int kos_tail_koscall(
-        KosContext *ctx,
-        KosCode *code,
-        PyObject *ns) {
+    KosContext *ctx,
+    KosCode *code,
+    PyObject *ns) {
 
   if (! ctx || ! ctx->frame_top) {
     PyErr_SetString(PyExc_RuntimeError, "no frame for tail_koscall");
@@ -303,10 +303,10 @@ int kos_tail_koscall(
    :return: completed value on immediate completion, NULL on suspend or error
 */
 static PyObject *eager_step_awaitable(
-        PyObject *awaitable,
-        KosContext *ctx,
-        int *suspended,
-        PyObject **yielded) {
+    PyObject *awaitable,
+    KosContext *ctx,
+    int *suspended,
+    PyObject **yielded) {
 
   *suspended = 0;
   *yielded = NULL;
@@ -490,9 +490,9 @@ static void continuation_dealloc(PyObject *self) {
 
 
 static int continuation_traverse(
-        PyObject *self,
-        visitproc visit,
-        void *arg) {
+    PyObject *self,
+    visitproc visit,
+    void *arg) {
 
   KosPyContinuation *cont = (KosPyContinuation *) self;
 
@@ -516,9 +516,9 @@ static int continuation_clear(PyObject *self) {
 
 
 static PyObject *continuation_call(
-        PyObject *self,
-        PyObject *args,
-        PyObject *kwds) {
+    PyObject *self,
+    PyObject *args,
+    PyObject *kwds) {
 
   KosPyContinuation *cont = (KosPyContinuation *) self;
 
@@ -618,9 +618,9 @@ static void coroutine_dealloc(PyObject *self) {
 
 
 static int coroutine_traverse(
-        PyObject *self,
-        visitproc visit,
-        void *arg) {
+    PyObject *self,
+    visitproc visit,
+    void *arg) {
 
   KosPyCoroutine *coro = (KosPyCoroutine *) self;
 
@@ -1090,9 +1090,9 @@ static void asyncgenasend_dealloc(PyObject *self) {
 
 
 static int asyncgenasend_traverse(
-        PyObject *self,
-        visitproc visit,
-        void *arg) {
+    PyObject *self,
+    visitproc visit,
+    void *arg) {
 
   KosPyAsyncGenASend *asend = (KosPyAsyncGenASend *) self;
 
@@ -1278,8 +1278,8 @@ PyTypeObject KosPyAsyncGenASendType = {
 
 
 PyObject *KosPyAsyncGenASend_New(
-        KosPyAsyncGen *agen,
-        PyObject *send_value) {
+    KosPyAsyncGen *agen,
+    PyObject *send_value) {
 
   KosPyAsyncGenASend *asend = PyObject_GC_New(KosPyAsyncGenASend,
                                               &KosPyAsyncGenASendType);

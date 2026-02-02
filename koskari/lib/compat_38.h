@@ -45,9 +45,11 @@ PyObject *PyObject_CallMethodOneArg(PyObject *obj, PyObject *name,
 #define PyObject_Vectorcall _PyObject_Vectorcall
 
 
-PyObject *PyObject_VectorcallMethod(PyObject *name,
-                                    PyObject *const *args, size_t nargsf,
-                                    PyObject *kwargs);
+PyObject *PyObject_VectorcallMethod(
+    PyObject *name,
+    PyObject *const *args,
+    size_t nargsf,
+    PyObject *kwargs);
 
 
 // The end.

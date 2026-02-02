@@ -65,9 +65,11 @@ typedef PyObject *(*vectorcallfunc)
                          nargsf, kwargs)
 
 
-PyObject *PyObject_VectorcallMethod(PyObject *name,
-                                    PyObject *const *args, size_t nargsf,
-                                    PyObject *kwargs);
+PyObject *PyObject_VectorcallMethod(
+    PyObject *name,
+    PyObject *const *args,
+    size_t nargsf,
+    PyObject *kwargs);
 
 
 // The end.
