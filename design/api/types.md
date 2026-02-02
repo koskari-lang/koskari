@@ -173,6 +173,56 @@ with C extension support and comprehensive test coverage:
   - Format string interpolation
   - Position tracking for error messages
 
+**Stack Types** (from sibilant-ceval):
+- `Stack`: Block-structured value stack for the evaluator
+  - `push(val)`: Append value to current block
+  - `pop()`: Remove and return top value
+  - `peek()`: Borrow reference to top value
+  - `peek_at(index)`: Access by index (negative for end-relative)
+  - `extend(seq)`: Add multiple elements from sequence
+  - `pull(count)`: Copy values from parent block to current
+  - `drop(count)`: Remove elements without returning
+  - `duplicate(count)`: Copy top elements onto stack
+  - `replace(index, value)`: Update element at index
+  - `pop_tail(count)`: Remove and return multiple as tuple
+  - `pop_tail_dict(count)`: Pop key/value pairs into dict
+  - `push_block()`: Create new block as current
+  - `pop_block(count)`: Transfer values to parent and remove block
+  - `drop_block()`: Remove block without transferring
+  - `length()`: Size of current block
+  - `depth()`: Count of blocks
+  - `total()`: Sum of all block lengths
+  - `view()`: Tuple of current block contents
+  - `clear()`: Pop all blocks except root, empty it
+  - `disable()`: Disable handler in current block
+  - `status()`: Get (block_style, enabled, label_a, label_b)
+- `BlockStyle`: Enum for block types
+  - `KOS_BLOCK_BEGIN`: Default block
+  - `KOS_BLOCK_FINALLY`: Finally block
+  - `KOS_BLOCK_FOREACH`: For-each loop
+  - `KOS_BLOCK_LOOP`: While loop
+  - `KOS_BLOCK_NS`: Namespace block
+  - `KOS_BLOCK_TRY`: Try block
+  - `KOS_BLOCK_WITH`: With context
+  - `KOS_BLOCK_AWAIT_FOREACH`: Async for-each
+  - `KOS_BLOCK_AWAIT_WITH`: Async with context
+
+**Evaluator Types** (new for Koskari VM):
+- `Continuation`: Captured continuation (multi-shot, undelimited)
+  - Callable: returns `Coroutine` that resumes at captured point
+  - Multi-shot: each call clones captured state
+  - Supports resume value or exception injection
+- `Coroutine`: Koskari coroutine wrapper
+  - Implements Python awaitable protocol (`__await__`)
+  - `send(value)`: Resume with value
+  - `throw(exc)`: Inject exception
+  - `close()`: Close coroutine
+  - States: NEW, RUNNING, WAITING_PY, DONE
+- `AsyncGenerator`: Koskari async generator wrapper
+  - Implements async iterator protocol (`__aiter__`, `__anext__`)
+  - Yields values via StopIteration
+  - Supports close on exhaustion
+
 ### Not Migrating
 
 - TCO types (`tailcall`, `Trampoline`) - will be handled directly in native evaluator

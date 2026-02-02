@@ -1,116 +1,179 @@
 # Call/CC Implementation Design
 
-## Problem Statement
+This document describes the continuation implementation in Koskari, as realized
+in `eval.c`/`eval.h`.
 
-The `call/cc` (call-with-current-continuation) feature was the blocking issue in sibilant-ceval. The challenge is supporting both:
-- **Bounded continuations**: Continuations that can only be invoked within their original execution context
-- **Unbounded continuations**: Continuations that can be invoked from anywhere, even after the original context has exited
+## Design Decisions (Implemented)
 
-## From sibilant-ceval Ideas
+### Undelimited Continuations Only
 
-### Context Boundaries
+For the initial implementation, Koskari supports **undelimited continuations**:
+- Continuations capture the entire call stack from root to current frame
+- No prompt/delimiter mechanism (shift/reset not yet supported)
+- Simpler semantics matching traditional Scheme `call/cc`
 
-**Ceval Context**: Thread-local stack of evaluation contexts
-- Each context holds current frame stack
-- Boundaries between separate ceval calls (koskari → native → koskari)
-- Contexts track their frame and stack state
+### Multi-Shot Only
+
+All continuations are **multi-shot** (reusable):
+- Each invocation clones the captured state
+- No single-shot/consumptive optimization
+- Enables multiple independent resumptions of the same continuation
+
+### Wind/Unwind Hooks
+
+Dynamic wind/unwind behavior via `KosHandler` chain:
+- `before` callable: invoked when entering dynamic extent
+- `after` callable: invoked when leaving dynamic extent
+- Either may be NULL; convenience APIs for single-hook cases
+
+## Implementation (eval.c)
+
+### KosPyContinuation Type
+
+Python-facing continuation wrapper:
+
+```c
+typedef struct {
+  PyObject_HEAD
+  KosFrame *captured_top;       /* cloned frame chain */
+  KosHandler *captured_handlers; /* cloned handler chain */
+} KosPyContinuation;
+```
+
+**Behavior**:
+- Callable from Python
+- `tp_call(value)` returns a `KosPyCoroutine` that resumes with `value`
+- Multi-shot: clones captured state on each call
+- GC-tracked: traverses frame and handler chains
 
 ### Continuation Capture
 
-**Capturing a continuation**:
-1. Make copy of all koskari ceval stacks and frames at that point
-2. Denote boundaries between separate ceval calls
-3. Store frame state, stack state, and context boundary
+To capture a continuation from within the VM:
 
-### Continuation Invocation
+1. Clone the current frame chain via `kos_frame_clone()`
+2. Clone the handler chain via `kos_handler_clone()`
+3. Create `KosPyContinuation` with cloned state
 
-**Rejoining a continuation**:
-1. **Same boundary**: Drop current frames/stacks, restore from continuation
-2. **Parent boundary**: Invalidate current boundary, raise special exception
-   - Propagates to owning boundary
-   - Resets state and restores from continuation
-
-### Continuation Invalidation
-
-**Continuation becomes invalid** when:
-- Its ceval boundary exits
-- Cannot re-return from CPython/native function calls
-- Boundary that invoked the ceval is gone
-
-## Proposed Architecture
-
-### CevalContext
-
-Thread-local stack of evaluation contexts:
-```python
-class CevalContext:
-    frames: List[Frame]
-    stack: Stack
-    boundary_id: int  # Unique identifier for this boundary
-    parent: Optional[CevalContext]
+```c
+PyObject *KosPyContinuation_New(KosFrame *top, KosHandler *handlers);
 ```
 
-### Continuation
+### Continuation Application
 
-```python
-class Continuation:
-    frames: List[Frame]  # Snapshot of frames
-    stack: Stack  # Snapshot of stack
-    boundary_id: int  # Context boundary where captured
-    valid: bool  # Whether still valid
+The `kos_apply_continuation()` function handles resumption:
+
+```c
+int kos_apply_continuation(KosContext *ctx,
+        KosFrame *target_top, KosHandler *target_handlers,
+        int is_throw, PyObject *value_or_exc);
 ```
 
-### Call/CC Operation
+**Algorithm**:
 
-1. **Capture**: Create Continuation with current context state
-2. **Invoke**: 
-   - Check if same boundary → restore directly
-   - Check if parent boundary → raise boundary exception
-   - Check if invalid → raise error
+1. **Compute LCA**: Find lowest common ancestor between current and target frames
+   ```c
+   static KosFrame *compute_frame_lca(KosFrame *current, KosFrame *target);
+   ```
 
-## Challenges
+2. **Collect unwind hooks**: Gather `after` handlers from current to LCA (inner→outer)
+   ```c
+   static PyObject **collect_unwind_hooks(KosFrame *current, KosFrame *lca,
+           size_t *out_count);
+   ```
 
-### JIT Compilation
+3. **Collect wind hooks**: Gather `before` handlers from LCA to target (outer→inner)
+   ```c
+   static PyObject **collect_wind_hooks(KosFrame *target, KosFrame *lca,
+           size_t *out_count);
+   ```
 
-- How do continuations work with JIT'd functions?
-- Must JIT keep using KosStack/KosNamespace model?
-- Or can we work with native stack frames?
+4. **Execute unwind hooks**: Call each `after` handler (exceptions swallowed)
 
-### Performance
+5. **Install target state**: Set `ctx->top` to target frame chain
 
-- Continuation capture is expensive (copying frames/stacks)
-- Need efficient representation
-- Consider lazy copying or copy-on-write
+6. **Execute wind hooks**: Call each `before` handler (exceptions propagate)
 
-### Integration
+7. **Inject resume value**: Push value onto target stack, or set pending exception
 
-- How do continuations interact with:
-  - Generators?
-  - Coroutines?
-  - Exception handling?
-  - Context managers?
+### Handler Chain Management
 
-## Migration Notes
+```c
+/* Push a wind handler with before and/or after hooks */
+int kos_push_wind(KosContext *ctx, PyObject *before, PyObject *after);
 
-### To Design
+/* Convenience: push with only before hook */
+int kos_push_before_wind(KosContext *ctx, PyObject *before);
 
-- CevalContext implementation
-- Continuation representation
-- Boundary tracking
-- Invocation mechanism
-- Invalidation strategy
-- Integration with existing features
+/* Convenience: push with only after hook */
+int kos_push_after_wind(KosContext *ctx, PyObject *after);
 
-### To Research
+/* Pop topmost handler (does not invoke hooks) */
+int kos_pop_wind(KosContext *ctx);
+```
 
-- Scheme implementations of call/cc
-- Delimited continuations (shift/reset)
-- Continuation-passing style (CPS) transformation
-- Performance characteristics
+### Wind/Unwind Semantics
 
-### Open Questions
+Wind hooks (`before`) are invoked when:
+- Entering a dynamic-wind protected region normally
+- Resuming into a region via continuation application
 
-- Should we support delimited continuations instead?
-- Can we implement efficiently without copying everything?
-- How to handle native/Python function boundaries?
-- Should continuations be first-class or special form?
+Unwind hooks (`after`) are invoked when:
+- Exiting a dynamic-wind protected region normally
+- Leaving a region via continuation application
+- Exception propagation crosses the region boundary
+- Return crosses the region boundary
+
+This matches Scheme's `dynamic-wind` semantics.
+
+## Interaction with Async
+
+Continuations interact with async execution:
+
+1. **Capture during await**: Continuation captures suspended await state
+2. **Resume during await**: Continuation can resume into awaiting context
+3. **Python awaitable bridging**: `py_await_iter` state preserved in context
+
+The `KosPyCoroutine` wrapper handles the async protocol while the underlying
+continuation machinery manages control flow.
+
+## GC Considerations
+
+**GC-tracked objects**:
+- `KosPyContinuation`: traverses captured frames and handlers
+- `KosPyCoroutine`: traverses context, pending await state
+
+**Not GC-tracked**:
+- `KosFrame`, `KosHandler`, `KosContext` (internal C structs)
+- Stack blocks (`KosStackBlock`)
+
+Wrapper `tp_traverse` implementations walk all reachable PyObjects:
+- Frame chain: namespace, stack values
+- Handler chain: before/after callables
+- Context: await iterator, pending exception
+
+## Future Work
+
+### Delimited Continuations
+
+Consider adding prompt-delimited continuations (shift/reset):
+- Require prompt markers in frame chain
+- Capture only up to prompt, not full stack
+- More composable than undelimited continuations
+
+### Lazy Frame COW
+
+Optimize continuation capture with copy-on-write:
+- Share unchanged frame tail segments
+- Clone only on mutation (pc update, stack modification)
+- Reduces capture cost for deep stacks
+
+### Stack Block Cloning
+
+Currently TODO: deep-copy stack blocks for continuation capture.
+Required for full continuation semantics.
+
+## Related Documentation
+
+- [evaluator.md](evaluator.md) — Overall evaluation model and API
+- [execution-invariants.md](execution-invariants.md) — Semantic commitments
+- [../language/control-flow.md](../language/control-flow.md) — Language-level control flow

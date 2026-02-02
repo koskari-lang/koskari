@@ -170,34 +170,21 @@ KosFrame *kos_frame_clone(KosFrame *frame) {
   /* Clone handler chain */
   KosHandler *cloned_handlers = kos_handler_clone(frame->handlers);
 
-  /*
-    TODO: Clone the stack block chain.
-    For now, we create a new empty stack. A proper implementation
-    would deep-copy the stack blocks.
-  */
-  KosStackBlock *cloned_stack = NULL;
-  if (frame->stack) {
-    /*
-      Future: implement KosStackBlock_Clone
-      For initial implementation, we'll need to copy block by block
-    */
-    PyErr_SetString(PyExc_NotImplementedError,
-                    "stack cloning not yet implemented");
-    kos_handler_chain_free(cloned_handlers);
-    /* Free cloned parent chain */
-    while (cloned_parent) {
-      KosFrame *next = cloned_parent->parent;
-      kos_frame_free(cloned_parent);
-      cloned_parent = next;
-    }
-    return NULL;
-  }
+  /* Use COW for stack - just increment refcount on all blocks */
+  KosStackBlock *cloned_stack = KosStackBlock_COW(frame->stack);
 
   KosFrame *clone = kos_frame_new(frame->code, frame->ns,
                                   cloned_stack, cloned_parent,
                                   cloned_handlers);
   if (! clone) {
     kos_handler_chain_free(cloned_handlers);
+    /* Release the COW'd stack blocks */
+    while (cloned_stack) {
+      KosStackBlock *p = KosStackBlock_PARENT(cloned_stack);
+      KosStackBlock_Release(cloned_stack);
+      cloned_stack = p;
+    }
+    /* Free cloned parent chain */
     while (cloned_parent) {
       KosFrame *next = cloned_parent->parent;
       kos_frame_free(cloned_parent);
@@ -221,10 +208,13 @@ void kos_frame_free(KosFrame *frame) {
   Py_XDECREF(frame->ns);
   /* code is borrowed, don't decref */
 
-  /*
-    TODO: Free the stack block chain properly.
-    For now we don't free it since we're not creating it in clone.
-  */
+  /* Release the stack block chain */
+  KosStackBlock *block = frame->stack;
+  while (block) {
+    KosStackBlock *p = KosStackBlock_PARENT(block);
+    KosStackBlock_Release(block);
+    block = p;
+  }
 
   kos_handler_chain_free(frame->handlers);
   PyMem_Free(frame);

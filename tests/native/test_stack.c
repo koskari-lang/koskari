@@ -581,6 +581,448 @@ static int test_stack_extend(void) {
 }
 
 
+/* === copy-on-write tests === */
+
+
+static int test_stack_copy_shares_blocks(void) {
+    /*
+      Test that KosStack_Copy creates a stack that shares the same blocks.
+      Both stacks should point to the same KosStackBlock.
+    */
+    PyObject *stack1 = KosStack_New();
+    TEST_ASSERT_NOT_NULL(stack1, "create Stack 1");
+
+    PyObject *v0 = PyLong_FromLong(TEST_VAL_1);
+    PyObject *v1 = PyLong_FromLong(TEST_VAL_2);
+
+    KosStack_Push(stack1, v0);
+    KosStack_Push(stack1, v1);
+
+    KosStackBlock *block1 = KosStack_BLOCK(stack1);
+    size_t refcount_before = KosStackBlock_REFCOUNT(block1);
+    TEST_ASSERT_EQ(refcount_before, 1, "initial refcount is 1");
+
+    /* Copy the stack */
+    PyObject *stack2 = KosStack_Copy(stack1);
+    TEST_ASSERT_NOT_NULL(stack2, "copy Stack succeeded");
+
+    /* Both should point to the same block */
+    KosStackBlock *block2 = KosStack_BLOCK(stack2);
+    TEST_ASSERT_SAME(block1, block2, "blocks are same (shared)");
+
+    /* Refcount should be incremented */
+    TEST_ASSERT_EQ(KosStackBlock_REFCOUNT(block1), 2, "refcount is 2 after copy");
+
+    /* Peek should return same values */
+    PyObject *p1 = KosStack_PeekAt(stack1, 0);
+    PyObject *p2 = KosStack_PeekAt(stack2, 0);
+    TEST_ASSERT_SAME(p1, p2, "peek returns same objects");
+
+    Py_DECREF(stack1);
+    Py_DECREF(stack2);
+    Py_DECREF(v0);
+    Py_DECREF(v1);
+    return 0;
+}
+
+
+static int test_stack_cow_on_push(void) {
+    /*
+      Test that pushing to a shared stack triggers copy-on-write.
+      After push, the modified stack should have a different block.
+    */
+    PyObject *stack1 = KosStack_New();
+    TEST_ASSERT_NOT_NULL(stack1, "create Stack 1");
+
+    PyObject *v0 = PyLong_FromLong(TEST_VAL_1);
+    KosStack_Push(stack1, v0);
+
+    KosStackBlock *orig_block = KosStack_BLOCK(stack1);
+    TEST_ASSERT_EQ(KosStackBlock_REFCOUNT(orig_block), 1, "initial refcount is 1");
+
+    /* Copy the stack - now sharing */
+    PyObject *stack2 = KosStack_Copy(stack1);
+    TEST_ASSERT_NOT_NULL(stack2, "copy Stack succeeded");
+
+    TEST_ASSERT_SAME(KosStack_BLOCK(stack1), KosStack_BLOCK(stack2),
+                     "blocks shared before modification");
+    TEST_ASSERT_EQ(KosStackBlock_REFCOUNT(orig_block), 2, "refcount is 2");
+
+    /* Push to stack1 - should trigger COW */
+    PyObject *v1 = PyLong_FromLong(TEST_VAL_2);
+    int result = KosStack_Push(stack1, v1);
+    TEST_ASSERT_EQ(result, 0, "push succeeded");
+
+    /* stack1 should have a new block */
+    KosStackBlock *new_block1 = KosStack_BLOCK(stack1);
+    TEST_ASSERT_NOT_SAME(new_block1, orig_block, "stack1 has new block after push");
+
+    /* stack2 still has the original block */
+    TEST_ASSERT_SAME(KosStack_BLOCK(stack2), orig_block, "stack2 still has original");
+
+    /* Refcounts should be back to 1 each */
+    TEST_ASSERT_EQ(KosStackBlock_REFCOUNT(new_block1), 1, "new block refcount is 1");
+    TEST_ASSERT_EQ(KosStackBlock_REFCOUNT(orig_block), 1, "original block refcount is 1");
+
+    /* Lengths should differ */
+    TEST_ASSERT_EQ(KosStackBlock_LEN(new_block1), 2, "stack1 has 2 elements");
+    TEST_ASSERT_EQ(KosStackBlock_LEN(orig_block), 1, "stack2 has 1 element");
+
+    Py_DECREF(stack1);
+    Py_DECREF(stack2);
+    Py_DECREF(v0);
+    Py_DECREF(v1);
+    return 0;
+}
+
+
+static int test_stack_cow_on_pop(void) {
+    /*
+      Test that popping from a shared stack triggers copy-on-write.
+    */
+    PyObject *stack1 = KosStack_New();
+    TEST_ASSERT_NOT_NULL(stack1, "create Stack 1");
+
+    PyObject *v0 = PyLong_FromLong(TEST_VAL_1);
+    PyObject *v1 = PyLong_FromLong(TEST_VAL_2);
+    KosStack_Push(stack1, v0);
+    KosStack_Push(stack1, v1);
+
+    KosStackBlock *orig_block = KosStack_BLOCK(stack1);
+
+    /* Copy the stack */
+    PyObject *stack2 = KosStack_Copy(stack1);
+    TEST_ASSERT_NOT_NULL(stack2, "copy Stack succeeded");
+    TEST_ASSERT_EQ(KosStackBlock_REFCOUNT(orig_block), 2, "refcount is 2");
+
+    /* Pop from stack1 - should trigger COW */
+    PyObject *popped = KosStack_Pop(stack1);
+    TEST_ASSERT_NOT_NULL(popped, "pop succeeded");
+    TEST_ASSERT_SAME(popped, v1, "popped correct value");
+
+    /* stack1 should have a new block */
+    KosStackBlock *new_block1 = KosStack_BLOCK(stack1);
+    TEST_ASSERT_NOT_SAME(new_block1, orig_block, "stack1 has new block after pop");
+
+    /* stack2 still has original */
+    TEST_ASSERT_SAME(KosStack_BLOCK(stack2), orig_block, "stack2 still has original");
+
+    /* Lengths should differ */
+    TEST_ASSERT_EQ(KosStackBlock_LEN(new_block1), 1, "stack1 has 1 element");
+    TEST_ASSERT_EQ(KosStackBlock_LEN(orig_block), 2, "stack2 has 2 elements");
+
+    Py_DECREF(popped);
+    Py_DECREF(stack1);
+    Py_DECREF(stack2);
+    Py_DECREF(v0);
+    Py_DECREF(v1);
+    return 0;
+}
+
+
+static int test_stack_cow_on_drop(void) {
+    /*
+      Test that drop on a shared stack triggers copy-on-write.
+    */
+    PyObject *stack1 = KosStack_New();
+    TEST_ASSERT_NOT_NULL(stack1, "create Stack 1");
+
+    PyObject *v0 = PyLong_FromLong(TEST_VAL_1);
+    PyObject *v1 = PyLong_FromLong(TEST_VAL_2);
+    KosStack_Push(stack1, v0);
+    KosStack_Push(stack1, v1);
+
+    KosStackBlock *orig_block = KosStack_BLOCK(stack1);
+
+    /* Copy the stack */
+    PyObject *stack2 = KosStack_Copy(stack1);
+    TEST_ASSERT_NOT_NULL(stack2, "copy Stack succeeded");
+
+    /* Drop from stack1 */
+    int result = KosStack_Drop(stack1, 1);
+    TEST_ASSERT_EQ(result, 0, "drop succeeded");
+
+    /* stack1 should have new block */
+    TEST_ASSERT_NOT_SAME(KosStack_BLOCK(stack1), orig_block,
+                         "stack1 has new block after drop");
+
+    /* stack2 unchanged */
+    TEST_ASSERT_SAME(KosStack_BLOCK(stack2), orig_block, "stack2 unchanged");
+    TEST_ASSERT_EQ(KosStackBlock_LEN(KosStack_BLOCK(stack2)), 2, "stack2 still has 2");
+
+    Py_DECREF(stack1);
+    Py_DECREF(stack2);
+    Py_DECREF(v0);
+    Py_DECREF(v1);
+    return 0;
+}
+
+
+static int test_stack_cow_on_replace(void) {
+    /*
+      Test that replace on a shared stack triggers copy-on-write.
+    */
+    PyObject *stack1 = KosStack_New();
+    TEST_ASSERT_NOT_NULL(stack1, "create Stack 1");
+
+    PyObject *v0 = PyLong_FromLong(TEST_VAL_1);
+    PyObject *new_val = PyLong_FromLong(TEST_VAL_3);
+    KosStack_Push(stack1, v0);
+
+    KosStackBlock *orig_block = KosStack_BLOCK(stack1);
+
+    /* Copy the stack */
+    PyObject *stack2 = KosStack_Copy(stack1);
+    TEST_ASSERT_NOT_NULL(stack2, "copy Stack succeeded");
+
+    /* Replace in stack1 */
+    int result = KosStack_Replace(stack1, 0, new_val);
+    TEST_ASSERT_EQ(result, 0, "replace succeeded");
+
+    /* stack1 should have new block */
+    KosStackBlock *new_block1 = KosStack_BLOCK(stack1);
+    TEST_ASSERT_NOT_SAME(new_block1, orig_block, "stack1 has new block");
+
+    /* Values should differ */
+    PyObject *p1 = KosStack_PeekAt(stack1, 0);
+    PyObject *p2 = KosStack_PeekAt(stack2, 0);
+    TEST_ASSERT_SAME(p1, new_val, "stack1 has new value");
+    TEST_ASSERT_SAME(p2, v0, "stack2 has original value");
+
+    Py_DECREF(stack1);
+    Py_DECREF(stack2);
+    Py_DECREF(v0);
+    Py_DECREF(new_val);
+    return 0;
+}
+
+
+static int test_stack_cow_no_copy_when_unique(void) {
+    /*
+      Test that operations on a stack with refcount=1 do NOT copy.
+    */
+    PyObject *stack = KosStack_New();
+    TEST_ASSERT_NOT_NULL(stack, "create Stack");
+
+    PyObject *v0 = PyLong_FromLong(TEST_VAL_1);
+    KosStack_Push(stack, v0);
+
+    KosStackBlock *block = KosStack_BLOCK(stack);
+    TEST_ASSERT_EQ(KosStackBlock_REFCOUNT(block), 1, "refcount is 1");
+
+    /* Push again - should NOT create new block since refcount=1 */
+    PyObject *v1 = PyLong_FromLong(TEST_VAL_2);
+    KosStack_Push(stack, v1);
+
+    /* Block may have been reallocated (grown), but if size allows,
+       should be same. Let's check refcount instead. */
+    KosStackBlock *new_block = KosStack_BLOCK(stack);
+    TEST_ASSERT_EQ(KosStackBlock_REFCOUNT(new_block), 1, "still refcount 1");
+    TEST_ASSERT_EQ(KosStackBlock_LEN(new_block), 2, "has 2 elements");
+
+    Py_DECREF(stack);
+    Py_DECREF(v0);
+    Py_DECREF(v1);
+    return 0;
+}
+
+
+static int test_stack_cow_block_chain(void) {
+    /*
+      Test COW with nested blocks - all blocks in chain get shared.
+    */
+    PyObject *stack1 = KosStack_New();
+    TEST_ASSERT_NOT_NULL(stack1, "create Stack 1");
+
+    PyObject *v0 = PyLong_FromLong(TEST_VAL_1);
+    PyObject *v1 = PyLong_FromLong(TEST_VAL_2);
+
+    /* Build stack with 2 blocks */
+    KosStack_Push(stack1, v0);
+    KosStack_PushBlock(stack1);
+    KosStack_Push(stack1, v1);
+
+    KosStackBlock *top_block = KosStack_BLOCK(stack1);
+    KosStackBlock *root_block = KosStackBlock_PARENT(top_block);
+    TEST_ASSERT_NOT_NULL(root_block, "has parent block");
+
+    TEST_ASSERT_EQ(KosStackBlock_REFCOUNT(top_block), 1, "top refcount=1");
+    TEST_ASSERT_EQ(KosStackBlock_REFCOUNT(root_block), 1, "root refcount=1");
+
+    /* Copy the stack */
+    PyObject *stack2 = KosStack_Copy(stack1);
+    TEST_ASSERT_NOT_NULL(stack2, "copy succeeded");
+
+    /* Both blocks should have refcount 2 */
+    TEST_ASSERT_EQ(KosStackBlock_REFCOUNT(top_block), 2, "top refcount=2");
+    TEST_ASSERT_EQ(KosStackBlock_REFCOUNT(root_block), 2, "root refcount=2");
+
+    /* Both stacks share both blocks */
+    TEST_ASSERT_SAME(KosStack_BLOCK(stack2), top_block, "stack2 top is same");
+    TEST_ASSERT_SAME(KosStackBlock_PARENT(KosStack_BLOCK(stack2)), root_block,
+                     "stack2 root is same");
+
+    Py_DECREF(stack1);
+    Py_DECREF(stack2);
+    Py_DECREF(v0);
+    Py_DECREF(v1);
+    return 0;
+}
+
+
+static int test_stack_cow_pop_block(void) {
+    /*
+      Test COW when popping block with values to push onto parent.
+      The parent block needs COW before modification.
+    */
+    PyObject *stack1 = KosStack_New();
+    TEST_ASSERT_NOT_NULL(stack1, "create Stack 1");
+
+    PyObject *v0 = PyLong_FromLong(TEST_VAL_1);
+    PyObject *v1 = PyLong_FromLong(TEST_VAL_2);
+
+    /* Build structure: root has v0, child has v1 */
+    KosStack_Push(stack1, v0);
+    KosStack_PushBlock(stack1);
+    KosStack_Push(stack1, v1);
+
+    /* Copy the stack */
+    PyObject *stack2 = KosStack_Copy(stack1);
+    TEST_ASSERT_NOT_NULL(stack2, "copy succeeded");
+
+    KosStackBlock *orig_root = KosStackBlock_PARENT(KosStack_BLOCK(stack1));
+    KosStackBlock *orig_top = KosStack_BLOCK(stack1);
+
+    /* Pop block on stack1, moving v1 to parent */
+    int result = KosStack_PopBlock(stack1, 1);
+    TEST_ASSERT_EQ(result, 0, "pop block succeeded");
+
+    /* stack1's root should be a new block (COW on parent) */
+    KosStackBlock *new_root1 = KosStack_BLOCK(stack1);
+    TEST_ASSERT_NOT_SAME(new_root1, orig_root, "stack1 has new root after pop_block");
+
+    /* stack2 still references original blocks */
+    TEST_ASSERT_SAME(KosStack_BLOCK(stack2), orig_top, "stack2 still has orig top");
+    TEST_ASSERT_SAME(KosStackBlock_PARENT(KosStack_BLOCK(stack2)), orig_root,
+                     "stack2 still has orig root");
+
+    /* stack1 now has 2 elements in single block */
+    TEST_ASSERT_EQ(KosStackBlock_LEN(new_root1), 2, "stack1 root has 2 elements");
+    TEST_ASSERT_NULL(KosStackBlock_PARENT(new_root1), "stack1 is now single block");
+
+    Py_DECREF(stack1);
+    Py_DECREF(stack2);
+    Py_DECREF(v0);
+    Py_DECREF(v1);
+    return 0;
+}
+
+
+static int test_stack_cow_multiple_copies(void) {
+    /*
+      Test COW with multiple copies.
+    */
+    PyObject *stack1 = KosStack_New();
+    TEST_ASSERT_NOT_NULL(stack1, "create Stack 1");
+
+    PyObject *v0 = PyLong_FromLong(TEST_VAL_1);
+    KosStack_Push(stack1, v0);
+
+    KosStackBlock *orig_block = KosStack_BLOCK(stack1);
+
+    /* Make 3 copies */
+    PyObject *stack2 = KosStack_Copy(stack1);
+    PyObject *stack3 = KosStack_Copy(stack1);
+    PyObject *stack4 = KosStack_Copy(stack1);
+
+    TEST_ASSERT_EQ(KosStackBlock_REFCOUNT(orig_block), 4, "refcount is 4");
+
+    /* All share the same block */
+    TEST_ASSERT_SAME(KosStack_BLOCK(stack2), orig_block, "stack2 shares");
+    TEST_ASSERT_SAME(KosStack_BLOCK(stack3), orig_block, "stack3 shares");
+    TEST_ASSERT_SAME(KosStack_BLOCK(stack4), orig_block, "stack4 shares");
+
+    /* Modify stack2 - only stack2 gets new block */
+    PyObject *v1 = PyLong_FromLong(TEST_VAL_2);
+    KosStack_Push(stack2, v1);
+
+    TEST_ASSERT_NOT_SAME(KosStack_BLOCK(stack2), orig_block, "stack2 has new block");
+    TEST_ASSERT_SAME(KosStack_BLOCK(stack1), orig_block, "stack1 still shares");
+    TEST_ASSERT_SAME(KosStack_BLOCK(stack3), orig_block, "stack3 still shares");
+    TEST_ASSERT_SAME(KosStack_BLOCK(stack4), orig_block, "stack4 still shares");
+    TEST_ASSERT_EQ(KosStackBlock_REFCOUNT(orig_block), 3, "refcount is 3");
+
+    Py_DECREF(stack1);
+    Py_DECREF(stack2);
+    Py_DECREF(stack3);
+    Py_DECREF(stack4);
+    Py_DECREF(v0);
+    Py_DECREF(v1);
+    return 0;
+}
+
+
+static int test_stack_cow_block_cow_direct(void) {
+    /*
+      Test KosStackBlock_COW directly.
+    */
+    PyObject *stack = KosStack_New();
+    TEST_ASSERT_NOT_NULL(stack, "create Stack");
+
+    PyObject *v0 = PyLong_FromLong(TEST_VAL_1);
+    KosStack_Push(stack, v0);
+
+    KosStackBlock *block = KosStack_BLOCK(stack);
+    TEST_ASSERT_EQ(KosStackBlock_REFCOUNT(block), 1, "initial refcount is 1");
+
+    /* Get COW reference */
+    KosStackBlock *cow_block = KosStackBlock_COW(block);
+    TEST_ASSERT_SAME(cow_block, block, "COW returns same block");
+    TEST_ASSERT_EQ(KosStackBlock_REFCOUNT(block), 2, "refcount is 2");
+
+    /* Release the COW reference */
+    KosStackBlock_Release(cow_block);
+    TEST_ASSERT_EQ(KosStackBlock_REFCOUNT(block), 1, "refcount back to 1");
+
+    Py_DECREF(stack);
+    Py_DECREF(v0);
+    return 0;
+}
+
+
+static int test_stack_cow_refcount_on_release(void) {
+    /*
+      Test that refcount properly decrements on stack destruction.
+    */
+    PyObject *stack1 = KosStack_New();
+    TEST_ASSERT_NOT_NULL(stack1, "create Stack 1");
+
+    PyObject *v0 = PyLong_FromLong(TEST_VAL_1);
+    Py_ssize_t v0_initial = Py_REFCNT(v0);
+
+    KosStack_Push(stack1, v0);
+
+    KosStackBlock *block = KosStack_BLOCK(stack1);
+
+    /* Copy */
+    PyObject *stack2 = KosStack_Copy(stack1);
+    TEST_ASSERT_EQ(KosStackBlock_REFCOUNT(block), 2, "refcount is 2");
+    TEST_ASSERT_EQ(Py_REFCNT(v0), v0_initial + 1, "v0 refcount incremented once");
+
+    /* Destroy stack1 - should decrement block refcount but not free */
+    Py_DECREF(stack1);
+    TEST_ASSERT_EQ(KosStackBlock_REFCOUNT(block), 1, "refcount is 1");
+    TEST_ASSERT_EQ(Py_REFCNT(v0), v0_initial + 1, "v0 refcount unchanged");
+
+    /* Destroy stack2 - should free block and decref v0 */
+    Py_DECREF(stack2);
+    TEST_ASSERT_EQ(Py_REFCNT(v0), v0_initial, "v0 refcount restored");
+
+    Py_DECREF(v0);
+    return 0;
+}
+
+
 /* === stress tests === */
 
 
@@ -698,6 +1140,19 @@ int run_stack_tests(void) {
     RUN_TEST(test_stack_block_style);
     RUN_TEST(test_stack_pop_tail);
     RUN_TEST(test_stack_extend);
+
+    /* Copy-on-write tests */
+    RUN_TEST(test_stack_copy_shares_blocks);
+    RUN_TEST(test_stack_cow_on_push);
+    RUN_TEST(test_stack_cow_on_pop);
+    RUN_TEST(test_stack_cow_on_drop);
+    RUN_TEST(test_stack_cow_on_replace);
+    RUN_TEST(test_stack_cow_no_copy_when_unique);
+    RUN_TEST(test_stack_cow_block_chain);
+    RUN_TEST(test_stack_cow_pop_block);
+    RUN_TEST(test_stack_cow_multiple_copies);
+    RUN_TEST(test_stack_cow_block_cow_direct);
+    RUN_TEST(test_stack_cow_refcount_on_release);
 
     /* Stress tests */
     RUN_TEST(test_stack_stress_push_pop);

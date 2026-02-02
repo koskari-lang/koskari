@@ -71,3 +71,4 @@ venv.bak/
 .mypy_cache/
 .dmypy.json
 dmypy.json
+tests/native/test_harness

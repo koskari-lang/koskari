@@ -100,11 +100,16 @@ static KosStackBlock *KosStackBlock_New(KosStackBlock *parent) {
 
   } else {
     self = PyMem_Malloc(KosStackBlock_NEEDED_SIZE(BLOCK_NEW_SIZE));
+    if (! self) {
+      PyErr_SetString(PyExc_RuntimeError, "block malloc failed");
+      return NULL;
+    }
     KosStackBlock_MAX(self) = BLOCK_NEW_SIZE;
     SAY(" no free, allocated new");
   }
 
   KosStackBlock_PARENT(self) = parent;
+  KosStackBlock_REFCOUNT(self) = 1;
   KosStackBlock_BLOCK_STYLE(self) = KOS_BLOCK_BEGIN;
   KosStackBlock_ENABLED(self) = 1;
   KosStackBlock_LABEL_A(self) = 0;
@@ -112,6 +117,48 @@ static KosStackBlock *KosStackBlock_New(KosStackBlock *parent) {
   KosStackBlock_LEN(self) = 0;
 
   SAYF("KosStackBlock_New() -> %p", (void *) self);
+  return self;
+}
+
+
+static KosStackBlock *KosStackBlock_NewSized(KosStackBlock *parent,
+                                             size_t max) {
+
+  SAY("KosStackBlock_NewSized()");
+
+  KosStackBlock *self = block_freelist;
+  if (self) {
+    block_freelist = KosStackBlock_PARENT(self);
+    block_freecount -= 1;
+    SAYF(" found free, new block_freecount: %zu", block_freecount);
+
+    if (self->max < max) {
+      self = PyMem_Realloc(self, KosStackBlock_NEEDED_SIZE(max));
+      if (! self) {
+        PyErr_SetString(PyExc_RuntimeError, "block realloc failed");
+        return NULL;
+      }
+      KosStackBlock_MAX(self) = max;
+    }
+
+  } else {
+    self = PyMem_Malloc(KosStackBlock_NEEDED_SIZE(max));
+    if (! self) {
+      PyErr_SetString(PyExc_RuntimeError, "block malloc failed");
+      return NULL;
+    }
+    KosStackBlock_MAX(self) = max;
+  }
+
+  KosStackBlock_PARENT(self) = parent;
+  KosStackBlock_REFCOUNT(self) = 1;
+  KosStackBlock_BLOCK_STYLE(self) = KOS_BLOCK_BEGIN;
+  KosStackBlock_ENABLED(self) = 1;
+  KosStackBlock_LABEL_A(self) = 0;
+  KosStackBlock_LABEL_B(self) = 0;
+  KosStackBlock_LEN(self) = 0;
+
+  SAYF("KosStackBlock_NewSized() -> %p", (void *) self);
   return self;
 }
 
@@ -138,137 +185,240 @@ static KosStackBlock *KosStackBlock_Grow(KosStackBlock *self) {
 }
 
 
-static void KosStackBlock_Clear(KosStackBlock *self) {
-  for (size_t i = self->len; i--; ) {
-    Py_DECREF(self->objs[i]);
-  }
-  self->len = 0;
-  self->enabled = 1;
-}
+static int KosStackBlock_CopyForWrite(KosStackBlock **block) {
+  KosStackBlock *b = *block;
 
+  SAYF("KosStackBlock_CopyForWrite(%p)", (void *) *block);
 
-static void KosStackBlock_Free(KosStackBlock *self) {
-  SAYF("KosStackBlock_Free(%p)", (void *) self);
-
-  KosStackBlock_Clear(self);
-
-  if (block_freecount < BLOCK_MAX_FREE) {
-    block_freecount += 1;
-    KosStackBlock_PARENT(self) = block_freelist;
-    block_freelist = self;
-    SAYF(" deposited into freelist, new block_freecount: %zu", block_freecount);
+  if (KosStackBlock_REFCOUNT(b) == 1) {
+    SAY("  only 1 ref, no copy needed");
+    return 0;
 
   } else {
-    PyMem_Free(self);
-    SAY(" at max freelist size, dealloced");
-  }
+    SAYF("  refcount %zu, making a copy", KosStackBlock_REFCOUNT(b));
 
-  SAY("KosStackBlock_Free -> void");
+    KosStackBlock *new = KosStackBlock_NewSized(KosStackBlock_PARENT(b),
+                                                KosStackBlock_MAX(b));
+    if (! new)
+      return -1;
+
+    KosStackBlock_BLOCK_STYLE(new) = KosStackBlock_BLOCK_STYLE(b);
+    KosStackBlock_ENABLED(new) = KosStackBlock_ENABLED(b);
+    KosStackBlock_LABEL_A(new) = KosStackBlock_LABEL_A(b);
+    KosStackBlock_LABEL_B(new) = KosStackBlock_LABEL_B(b);
+
+    for (size_t i = KosStackBlock_LEN(b); i--; ) {
+      PyObject *v = b->objs[i];
+      Py_INCREF(v);
+      new->objs[i] = v;
+    }
+    KosStackBlock_LEN(new) = KosStackBlock_LEN(b);
+
+    *block = new;
+    KosStackBlock_REFCOUNT(b)--;
+    SAYF("  new refcount of %p is %zu", (void *) b, KosStackBlock_REFCOUNT(b));
+    SAYF("  copy is %p with refcount %zu",
+         (void *) new, KosStackBlock_REFCOUNT(new));
+
+    SAY("KosStackBlock_CopyForWrite -> 0");
+    return 0;
+  }
 }
 
 
-static KosStackBlock *KosStackBlock_Push(KosStackBlock *self,
-                                         PyObject *val) {
+static int KosStackBlock_Clear(KosStackBlock **self) {
+
+  if (KosStackBlock_CopyForWrite(self))
+    return -1;
+
+  KosStackBlock *s = *self;
+
+  for (size_t i = s->len; i--; ) {
+    Py_DECREF(s->objs[i]);
+  }
+
+  KosStackBlock_LEN(s) = 0;
+  KosStackBlock_ENABLED(s) = 1;
+
+  return 0;
+}
+
+
+void KosStackBlock_Release(KosStackBlock *self) {
+  SAYF("KosStackBlock_Release(%p)", (void *) self);
+
+  if (self->refcount > 1) {
+    KosStackBlock_REFCOUNT(self)--;
+    SAYF(" refcount remaining: %zu", KosStackBlock_REFCOUNT(self));
+
+  } else {
+    for (size_t i = self->len; i--; ) {
+      Py_DECREF(self->objs[i]);
+    }
+
+    if (block_freecount < BLOCK_MAX_FREE) {
+      KosStackBlock_REFCOUNT(self) = 0;
+      KosStackBlock_LEN(self) = 0;
+      KosStackBlock_ENABLED(self) = 1;
+
+      block_freecount += 1;
+      KosStackBlock_PARENT(self) = block_freelist;
+      block_freelist = self;
+      SAYF(" deposited into freelist, new block_freecount: %zu",
+           block_freecount);
+
+    } else {
+      PyMem_Free(self);
+      SAY(" at max freelist size, dealloced");
+    }
+  }
+
+  SAY("KosStackBlock_Release -> void");
+}
+
+
+KosStackBlock *KosStackBlock_COW(KosStackBlock *block) {
+  SAYF("KosStackBlock_COW(%p)", (void *) block);
+
+  if (! block)
+    return NULL;
+
+  KosStackBlock *b = block;
+  while (b) {
+    KosStackBlock_REFCOUNT(b)++;
+    SAYF("  block %p refcount now %zu", (void *) b, KosStackBlock_REFCOUNT(b));
+    b = KosStackBlock_PARENT(b);
+  }
+
+  SAYF("KosStackBlock_COW() -> %p", (void *) block);
+  return block;
+}
+
+
+static int KosStackBlock_Push(KosStackBlock **self, PyObject *val) {
+
+  if (KosStackBlock_CopyForWrite(self))
+    return -1;
+
+  KosStackBlock *s = *self;
 
   /* grow if needed */
-  while (self->len >= self->max) {
-    self = KosStackBlock_Grow(self);
-    if (! self)
-      return NULL;
+  while (s->len >= s->max) {
+    s = KosStackBlock_Grow(s);
+    if (! s)
+      return -1;
   }
 
   Py_INCREF(val);
-  self->objs[self->len++] = val;
+  s->objs[s->len++] = val;
 
-  return self;
+  *self = s;
+  return 0;
 }
 
 
-static KosStackBlock *KosStackBlock_PUSH(KosStackBlock *self,
-                                         PyObject *val) {
+static int KosStackBlock_PUSH(KosStackBlock **self, PyObject *val) {
+
+  if (KosStackBlock_CopyForWrite(self))
+    return -1;
+
+  KosStackBlock *s = *self;
 
   /* grow if needed */
-  while (self->len >= self->max) {
-    self = KosStackBlock_Grow(self);
-    if (! self)
-      return NULL;
+  while (s->len >= s->max) {
+    s = KosStackBlock_Grow(s);
+    if (! s)
+      return -1;
   }
 
   /* stolen reference */
-  self->objs[self->len++] = val;
+  s->objs[s->len++] = val;
 
-  return self;
+  *self = s;
+  return 0;
 }
 
 
-static KosStackBlock *KosStackBlock_ExtendPtr(KosStackBlock *self,
-                                              PyObject *const *elms,
-                                              size_t count,
-                                              int reverse) {
+static int KosStackBlock_ExtendPtr(KosStackBlock **self,
+                                   PyObject *const *elms,
+                                   size_t count,
+                                   int reverse) {
   if (! count)
-    return self;
+    return 0;
 
-  size_t needed = self->len + count;
-  while (needed >= self->max) {
-    self = KosStackBlock_Grow(self);
-    if (! self)
-      return NULL;
+  if (KosStackBlock_CopyForWrite(self))
+    return -1;
+
+  KosStackBlock *s = *self;
+
+  size_t needed = s->len + count;
+  while (needed >= s->max) {
+    s = KosStackBlock_Grow(s);
+    if (! s)
+      return -1;
   }
 
-  size_t offset = self->len;
+  size_t offset = s->len;
   PyObject *val = NULL;
 
   if (reverse) {
     while (count--) {
       val = elms[count];
       Py_XINCREF(val);
-      self->objs[offset++] = val;
+      s->objs[offset++] = val;
     }
   } else {
     for (size_t i = 0; i < count; i++) {
       val = elms[i];
       Py_XINCREF(val);
-      self->objs[offset++] = val;
+      s->objs[offset++] = val;
     }
   }
-  self->len = offset;
+  s->len = offset;
 
-  return self;
+  *self = s;
+  return 0;
 }
 
 
-static KosStackBlock *KosStackBlock_EXTENDPTR(KosStackBlock *self,
-                                              PyObject *const *elms,
-                                              size_t count,
-                                              int reverse) {
+static int KosStackBlock_EXTENDPTR(KosStackBlock **self,
+                                   PyObject *const *elms,
+                                   size_t count,
+                                   int reverse) {
   if (! count)
-    return self;
+    return 0;
 
-  size_t needed = self->len + count;
-  while (needed >= self->max) {
-    self = KosStackBlock_Grow(self);
-    if (! self) {
+  if (KosStackBlock_CopyForWrite(self))
+    return -1;
+
+  KosStackBlock *s = *self;
+
+  size_t needed = s->len + count;
+  while (needed >= s->max) {
+    s = KosStackBlock_Grow(s);
+    if (! s) {
       while (count--) {
         Py_XDECREF(elms[count]);
       }
-      return NULL;
+      return -1;
     }
   }
 
-  size_t offset = self->len;
+  size_t offset = s->len;
 
   if (reverse) {
     while (count--) {
-      self->objs[offset++] = elms[count];
+      s->objs[offset++] = elms[count];
     }
   } else {
     for (size_t i = 0; i < count; i++) {
-      self->objs[offset++] = elms[i];
+      s->objs[offset++] = elms[i];
     }
   }
-  self->len = offset;
+  s->len = offset;
 
-  return self;
+  *self = s;
+  return 0;
 }
 
 
@@ -302,122 +452,151 @@ static PyObject *KosStackBlock_PeekAt(KosStackBlock *self, Py_ssize_t index) {
 }
 
 
-static KosStackBlock *KosStackBlock_Pull(KosStackBlock *self, size_t count) {
-  if (! count)
-    return self;
+static int KosStackBlock_Pull(KosStackBlock **self, size_t count) {
 
-  KosStackBlock *parent = KosStackBlock_PARENT(self);
+  if (! count)
+    return 0;
+
+  KosStackBlock *s = *self;
+
+  KosStackBlock *parent = KosStackBlock_PARENT(s);
   if (! parent) {
     PyErr_SetString(PyExc_RuntimeError, "stack pull failed; no parent block");
-    return NULL;
+    return -1;
   }
 
   if (parent->len < count) {
     PyErr_SetString(PyExc_RuntimeError, "stack pull failed; parent underrun");
-    return NULL;
+    return -1;
   }
 
-  while (self->len + count >= self->max) {
-    self = KosStackBlock_Grow(self);
-    if (! self)
-      return NULL;
+  if (KosStackBlock_CopyForWrite(&s))
+    return -1;
+
+  while (s->len + count >= s->max) {
+    s = KosStackBlock_Grow(s);
+    if (! s)
+      return -1;
   }
 
   for (size_t i = parent->len - count; count--; i++) {
     PyObject *val = parent->objs[i];
     Py_INCREF(val);
-    self->objs[self->len++] = val;
+    s->objs[s->len++] = val;
   }
 
-  return self;
+  *self = s;
+  return 0;
 }
 
 
-static PyObject *KosStackBlock_Pop(KosStackBlock *self) {
+static PyObject *KosStackBlock_Pop(KosStackBlock **self) {
 
-  size_t len = self->len;
+  KosStackBlock *s = *self;
+
+  size_t len = s->len;
   if (! len) {
     PyErr_SetString(PyExc_RuntimeError, "stack pop underrun");
     return NULL;
   }
 
-  self->len = --len;
+  if (KosStackBlock_CopyForWrite(&s))
+    return NULL;
+
+  s->len = --len;
+  *self = s;
 
   /* stolen reference */
-  return self->objs[len];
+  return s->objs[len];
 }
 
 
-static int KosStackBlock_Drop(KosStackBlock *self, size_t count) {
+static int KosStackBlock_Drop(KosStackBlock **self, size_t count) {
   if (! count)
     return 0;
 
-  size_t len = self->len;
+  KosStackBlock *s = *self;
+
+  size_t len = s->len;
   if (count > len) {
     PyErr_SetString(PyExc_RuntimeError, "stack drop underrun");
     return -1;
   }
 
-  while (count--) {
-    Py_DECREF(self->objs[--len]);
-  }
+  if (KosStackBlock_CopyForWrite(&s))
+    return -1;
 
-  self->len = len;
+  while (count--) {
+    Py_DECREF(s->objs[--len]);
+  }
+  s->len = len;
+
+  *self = s;
   return 0;
 }
 
 
-static int KosStackBlock_DropNoErr(KosStackBlock *self, size_t count) {
+static int KosStackBlock_DropNoErr(KosStackBlock **self, size_t count) {
   if (! count)
     return 0;
 
+  KosStackBlock *s = *self;
+
   int res = 0;
 
-  size_t len = self->len;
+  size_t len = s->len;
   if (count > len) {
     count = len;
     res = -1;
   }
 
-  while (count--) {
-    Py_DECREF(self->objs[--len]);
-  }
+  if (KosStackBlock_CopyForWrite(&s))
+    return -1;
 
-  self->len = len;
+  while (count--) {
+    Py_DECREF(s->objs[--len]);
+  }
+  s->len = len;
+
+  *self = s;
   return res;
 }
 
 
-static KosStackBlock *KosStackBlock_Duplicate(KosStackBlock *self,
-                                              size_t count) {
+static int KosStackBlock_Duplicate(KosStackBlock **self, size_t count) {
 
-  if (! count) {
-    return self;
-  }
+  if (! count)
+    return 0;
 
-  if (count > self->len) {
+  KosStackBlock *s = *self;
+
+  if (count > s->len) {
     PyErr_SetString(PyExc_RuntimeError, "stack dup underrun");
-    return NULL;
+    return -1;
   }
+
+  if (KosStackBlock_CopyForWrite(&s))
+    return -1;
 
   /* grow if needed */
-  while (self->len + count >= self->max) {
-    self = KosStackBlock_Grow(self);
-    if (! self)
-      return NULL;
+  while (s->len + count >= s->max) {
+    s = KosStackBlock_Grow(s);
+    if (! s)
+      return -1;
   }
 
   for (size_t i = count; i--; ) {
-    PyObject *val = self->objs[self->len - count];
+    PyObject *val = s->objs[s->len - count];
     Py_INCREF(val);
-    self->objs[self->len++] = val;
+    s->objs[s->len++] = val;
   }
 
-  return self;
+  *self = s;
+  return 0;
 }
 
 
-static int KosStackBlock_Replace(KosStackBlock *self,
+static int KosStackBlock_Replace(KosStackBlock **self,
                                  size_t index, PyObject *value) {
 
   if (! value) {
@@ -425,26 +604,33 @@ static int KosStackBlock_Replace(KosStackBlock *self,
     return -1;
   }
 
-  if (index >= self->len) {
+  KosStackBlock *s = *self;
+
+  if (index >= s->len) {
     PyErr_SetString(PyExc_RuntimeError, "stack replace underrun");
     return -1;
   }
 
-  Py_INCREF(value);
-  Py_DECREF(self->objs[index]);
-  self->objs[index] = value;
+  if (KosStackBlock_CopyForWrite(&s))
+    return -1;
 
+  Py_INCREF(value);
+  Py_DECREF(s->objs[index]);
+  s->objs[index] = value;
+
+  *self = s;
   return 0;
 }
 
 
-static PyObject *KosStackBlock_PopTail(KosStackBlock *self, size_t count) {
+static PyObject *KosStackBlock_PopTail(KosStackBlock **self, size_t count) {
 
-  if (! count) {
+  if (! count)
     return PyTuple_New(0);
-  }
 
-  size_t len = self->len;
+  KosStackBlock *s = *self;
+
+  size_t len = s->len;
 
   if (count > len) {
     PyErr_Format(PyExc_RuntimeError, "stack pop tail underrun."
@@ -456,11 +642,18 @@ static PyObject *KosStackBlock_PopTail(KosStackBlock *self, size_t count) {
   if (! ret)
     return NULL;
 
-  while (count--) {
-    PyTuple_SET_ITEM(ret, count, self->objs[--len]);
+  if (KosStackBlock_CopyForWrite(&s)) {
+    Py_DECREF(ret);
+    return NULL;
   }
 
-  self->len = len;
+  while (count--) {
+    PyTuple_SET_ITEM(ret, count, s->objs[--len]);
+  }
+
+  s->len = len;
+  *self = s;
+
   return ret;
 }
 
@@ -482,14 +675,15 @@ static PyObject *const *KosStackBlock_TailPtr(KosStackBlock *self,
 }
 
 
-static int KosStackBlock_PopTailPtr(KosStackBlock *self,
+static int KosStackBlock_PopTailPtr(KosStackBlock **self,
                                     size_t count, PyObject **dest) {
 
-  if (! count) {
+  if (! count)
     return 0;
-  }
 
-  size_t len = self->len;
+  KosStackBlock *s = *self;
+
+  size_t len = s->len;
   if (count > len) {
     PyErr_Format(PyExc_RuntimeError, "stack pop tail ptr underrun."
                  " requested: %zu, available: %zu", count, len);
@@ -497,23 +691,29 @@ static int KosStackBlock_PopTailPtr(KosStackBlock *self,
   }
 
   while (count--) {
-    dest[count] = self->objs[--len];
+    dest[count] = s->objs[--len];
   }
 
-  self->len = len;
+  if (KosStackBlock_CopyForWrite(&s))
+    return -1;
+
+  s->len = len;
+  *self = s;
+
   return 0;
 }
 
 
-static PyObject *KosStackBlock_PopTailDict(KosStackBlock *self, size_t count) {
+static PyObject *KosStackBlock_PopTailDict(KosStackBlock **self, size_t count) {
 
-  if (! count) {
+  if (! count)
     return PyDict_New();
-  }
+
+  KosStackBlock *s = *self;
 
   size_t tcount = count * 2;
 
-  if (tcount > self->len) {
+  if (tcount > s->len) {
     PyErr_SetString(PyExc_RuntimeError, "stack pop tail dict underrun");
     return NULL;
   }
@@ -522,12 +722,17 @@ static PyObject *KosStackBlock_PopTailDict(KosStackBlock *self, size_t count) {
   if (! ret)
     return NULL;
 
-  self->len -= tcount;
+  if (KosStackBlock_CopyForWrite(&s)) {
+    Py_DECREF(ret);
+    return NULL;
+  }
 
-  size_t i = self->len;
+  s->len -= tcount;
+
+  size_t i = s->len;
   while (count--) {
-    PyObject *key = self->objs[i++];
-    PyObject *val = self->objs[i++];
+    PyObject *key = s->objs[i++];
+    PyObject *val = s->objs[i++];
 
     PyDict_SetItem(ret, key, val);
 
@@ -535,19 +740,24 @@ static PyObject *KosStackBlock_PopTailDict(KosStackBlock *self, size_t count) {
     Py_DECREF(val);
   }
 
+  *self = s;
   return ret;
 }
 
 
-static PyObject *KosStackBlock_PopTailDictNames(KosStackBlock *self,
+static PyObject *KosStackBlock_PopTailDictNames(KosStackBlock **self,
                                                 size_t count) {
 
   PyObject *ret = NULL;
 
-  PyObject *names = KosStackBlock_Pop(self);
-  if (! names) {
+  KosStackBlock *s = *self;
+
+  PyObject *names = KosStackBlock_Pop(&s);
+  if (! names)
     return NULL;
-  }
+
+  /* might be a copy */
+  *self = s;
 
   if (! PyTuple_CheckExact(names)) {
     PyErr_Format(PyExc_RuntimeError, "stack pop tail dict expected names"
@@ -562,7 +772,7 @@ static PyObject *KosStackBlock_PopTailDictNames(KosStackBlock *self,
     goto failure;
   }
 
-  if (count > self->len) {
+  if (count > s->len) {
     PyErr_SetString(PyExc_RuntimeError, "stack pop tail dict underrun");
     goto failure;
   }
@@ -574,12 +784,12 @@ static PyObject *KosStackBlock_PopTailDictNames(KosStackBlock *self,
   /* set the stack height down ahead of time. We'll work our way back
      up in order from there, because we want to insert in the same
      order things arrived on the stack */
-  self->len -= count;
+  s->len -= count;
 
-  size_t i = self->len, j = 0;
+  size_t i = s->len, j = 0;
   while (count--) {
     PyObject *key = PyTuple_GET_ITEM(names, j++);
-    PyObject *val = self->objs[i++];
+    PyObject *val = s->objs[i++];
 
     PyDict_SetItem(ret, key, val);
 
@@ -841,6 +1051,11 @@ static PyObject *stack_m_clear(PyObject *self) {
 }
 
 
+static PyObject *stack_m_copy(PyObject *self) {
+  return KosStack_Copy(self);
+}
+
+
 static PyMethodDef stack_methods[] = {
   { "push", (PyCFunction) stack_m_push, METH_O,
     "Inserts value at the top of the current block's stack\n"
@@ -924,6 +1139,10 @@ static PyMethodDef stack_methods[] = {
     "Pops all blocks in the stack except the first, which is emptied\n"
     "S.clear() => None" },
 
+  { "copy", (PyCFunction) stack_m_copy, METH_NOARGS,
+    "Creates a copy-on-write clone of this stack\n"
+    "S.copy() => Stack" },
+
   { NULL, NULL, 0, NULL },
 };
 
@@ -944,11 +1163,12 @@ static PyObject *stack_new(PyTypeObject *type,
 
 
 static void stack_dealloc(PyObject *self) {
-  KosStack_Clear(self);
-
   KosStackBlock *block = KosStack_BLOCK(self);
-  if (block)
-    KosStackBlock_Free(block);
+  while (block) {
+    KosStackBlock *p = KosStackBlock_PARENT(block);
+    KosStackBlock_Release(block);
+    block = p;
+  }
 
   Py_TYPE(self)->tp_free(self);
 }
@@ -968,11 +1188,12 @@ static int stack_traverse(PyObject *self, visitproc visit, void *arg) {
 
 
 static int stack_clear(PyObject *self) {
-  KosStack_Clear(self);
-
   KosStackBlock *block = KosStack_BLOCK(self);
-  if (block)
-    KosStackBlock_Free(block);
+  while (block) {
+    KosStackBlock *p = KosStackBlock_PARENT(block);
+    KosStackBlock_Release(block);
+    block = p;
+  }
 
   return 0;
 }
@@ -998,79 +1219,77 @@ PyTypeObject KosStackType = {
 
 
 PyObject *KosStack_New(void) {
+  SAY("KosStack_New()");
+
   PyObject *self = PyObject_New(PyObject, &KosStackType);
   if (! self)
     return NULL;
 
   KosStack_BLOCK(self) = KosStackBlock_New(NULL);
+
+  SAYF("KosStack_New() -> %p", (void *) self);
+  return self;
+}
+
+
+PyObject *KosStack_Copy(PyObject *original) {
+  SAY("KosStack_Copy()");
+
+  PyObject *self = PyObject_New(PyObject, &KosStackType);
+  if (! self)
+    return NULL;
+
+  KosStackBlock *b = KosStack_BLOCK(original);
+  KosStack_BLOCK(self) = b;
+
+  while (b) {
+    KosStackBlock_REFCOUNT(b)++;
+    b = KosStackBlock_PARENT(b);
+  }
+
+  SAYF("KosStack_Copy() -> %p", (void *) self);
   return self;
 }
 
 
 int KosStack_Push(PyObject *self, PyObject *val) {
-  KosStackBlock *block = KosStack_BLOCK(self);
-  KosStackBlock *nb = NULL;
-
   if (! val) {
     PyErr_SetString(PyExc_RuntimeError, "stack push failed; NULL value");
     return -1;
   }
 
-  if (! block) {
+  if (! KosStack_BLOCK(self)) {
     PyErr_SetString(PyExc_RuntimeError, "stack push failed; no top block");
     return -1;
   }
 
-  nb = KosStackBlock_Push(block, val);
-  if (! nb) {
-    return -1;
-
-  } else if (nb != block) {
-    KosStack_BLOCK(self) = nb;
-  }
-
-  return 0;
+  return KosStackBlock_Push(&KosStack_BLOCK(self), val);
 }
 
 
 int KosStack_PUSH(PyObject *self, PyObject *val) {
-  KosStackBlock *block = KosStack_BLOCK(self);
-  KosStackBlock *nb = NULL;
-
   if (! val) {
     PyErr_SetString(PyExc_RuntimeError, "stack push failed; NULL value");
     return -1;
   }
 
-  if (! block) {
+  if (! KosStack_BLOCK(self)) {
     PyErr_SetString(PyExc_RuntimeError, "stack push failed; no top block");
     Py_DECREF(val);
     return -1;
   }
 
-  nb = KosStackBlock_PUSH(block, val);
-  if (! nb) {
-    Py_DECREF(val);
-    return -1;
-
-  } else if (nb != block) {
-    KosStack_BLOCK(self) = nb;
-  }
-
-  return 0;
+  return KosStackBlock_PUSH(&KosStack_BLOCK(self), val);
 }
 
 
 int KosStack_Extend(PyObject *self, PyObject *seq, int reverse) {
-  KosStackBlock *block = KosStack_BLOCK(self);
-  KosStackBlock *nb = NULL;
-
   if (! seq) {
     PyErr_SetString(PyExc_RuntimeError, "stack extend failed; NULL sequence");
     return -1;
   }
 
-  if (! block) {
+  if (! KosStack_BLOCK(self)) {
     PyErr_SetString(PyExc_RuntimeError, "stack extend failed; no top block");
     return -1;
   }
@@ -1087,17 +1306,10 @@ int KosStack_Extend(PyObject *self, PyObject *seq, int reverse) {
 
   PyObject **elms = PySequence_Fast_ITEMS(seq);
 
-  nb = KosStackBlock_ExtendPtr(block, elms, (size_t) count, reverse);
+  int ret = KosStackBlock_ExtendPtr(&KosStack_BLOCK(self), elms,
+                                    (size_t) count, reverse);
   Py_DECREF(seq);
-
-  if (! nb) {
-    return -1;
-
-  } else if (nb != block) {
-    KosStack_BLOCK(self) = nb;
-  }
-
-  return 0;
+  return ret;
 }
 
 
@@ -1105,9 +1317,6 @@ int KosStack_ExtendPtr(PyObject *self,
                        PyObject *const *elms, size_t count,
                        int reverse) {
 
-  KosStackBlock *block = KosStack_BLOCK(self);
-  KosStackBlock *nb = NULL;
-
   if (! count)
     return 0;
 
@@ -1116,20 +1325,13 @@ int KosStack_ExtendPtr(PyObject *self,
     return -1;
   }
 
-  if (! block) {
+  if (! KosStack_BLOCK(self)) {
     PyErr_SetString(PyExc_RuntimeError, "stack extend failed; no top block");
     return -1;
   }
 
-  nb = KosStackBlock_ExtendPtr(block, elms, count, reverse);
-  if (! nb) {
-    return -1;
-
-  } else if (nb != block) {
-    KosStack_BLOCK(self) = nb;
-  }
-
-  return 0;
+  return KosStackBlock_ExtendPtr(&KosStack_BLOCK(self), elms,
+                                 count, reverse);
 }
 
 
@@ -1137,9 +1339,6 @@ int KosStack_EXTENDPTR(PyObject *self,
                        PyObject *const *elms, size_t count,
                        int reverse) {
 
-  KosStackBlock *block = KosStack_BLOCK(self);
-  KosStackBlock *nb = NULL;
-
   if (! count)
     return 0;
 
@@ -1148,20 +1347,13 @@ int KosStack_EXTENDPTR(PyObject *self,
     return -1;
   }
 
-  if (! block) {
+  if (! KosStack_BLOCK(self)) {
     PyErr_SetString(PyExc_RuntimeError, "stack extend failed; no top block");
     return -1;
   }
 
-  nb = KosStackBlock_EXTENDPTR(block, elms, count, reverse);
-  if (! nb) {
-    return -1;
-
-  } else if (nb != block) {
-    KosStack_BLOCK(self) = nb;
-  }
-
-  return 0;
+  return KosStackBlock_EXTENDPTR(&KosStack_BLOCK(self), elms,
+                                 count, reverse);
 }
 
 
@@ -1193,48 +1385,33 @@ PyObject *KosStack_PeekAt(PyObject *self, Py_ssize_t index) {
 
 int KosStack_Pull(PyObject *self, size_t count) {
 
-  KosStackBlock *block = KosStack_BLOCK(self);
-  KosStackBlock *nb = NULL;
-
-  if (! block) {
+  if (! KosStack_BLOCK(self)) {
     PyErr_SetString(PyExc_RuntimeError, "stack pull failed; no top block");
     return -1;
   }
 
-  nb = KosStackBlock_Pull(block, count);
-  if (! nb) {
-    return -1;
-
-  } else if (nb != block) {
-    KosStack_BLOCK(self) = nb;
-  }
-
-  return 0;
+  return KosStackBlock_Pull(&KosStack_BLOCK(self), count);
 }
 
 
 PyObject *KosStack_Pop(PyObject *self) {
-  KosStackBlock *block = KosStack_BLOCK(self);
-
-  if (! block) {
+  if (! KosStack_BLOCK(self)) {
     PyErr_SetString(PyExc_RuntimeError, "stack pop failed; no top block");
     return NULL;
   }
 
-  return KosStackBlock_Pop(block);
+  return KosStackBlock_Pop(&KosStack_BLOCK(self));
 }
 
 
 PyObject *KosStack_PopTail(PyObject *self, size_t count) {
-  KosStackBlock *block = KosStack_BLOCK(self);
-
-  if (! block) {
+  if (! KosStack_BLOCK(self)) {
     PyErr_SetString(PyExc_RuntimeError, "stack pop tail failed;"
                     " no top block");
     return NULL;
   }
 
-  return KosStackBlock_PopTail(block, count);
+  return KosStackBlock_PopTail(&KosStack_BLOCK(self), count);
 }
 
 
@@ -1252,100 +1429,76 @@ PyObject *const *KosStack_TailPtr(PyObject *self, size_t count) {
 
 
 int KosStack_PopTailPtr(PyObject *self, size_t count, PyObject **dest) {
-  KosStackBlock *block = KosStack_BLOCK(self);
-
-  if (! block) {
+  if (! KosStack_BLOCK(self)) {
     PyErr_SetString(PyExc_RuntimeError, "stack pop tail ptr failed;"
                     " no top block");
     return -1;
   }
 
-  return KosStackBlock_PopTailPtr(block, count, dest);
+  return KosStackBlock_PopTailPtr(&KosStack_BLOCK(self), count, dest);
 }
 
 
 PyObject *KosStack_PopTailDict(PyObject *self, size_t count) {
-  KosStackBlock *block = KosStack_BLOCK(self);
-
-  if (! block) {
+  if (! KosStack_BLOCK(self)) {
     PyErr_SetString(PyExc_RuntimeError, "stack pop tail dict failed;"
                     " no top block");
     return NULL;
   }
 
-  return KosStackBlock_PopTailDict(block, count);
+  return KosStackBlock_PopTailDict(&KosStack_BLOCK(self), count);
 }
 
 
 PyObject *KosStack_PopTailDictNames(PyObject *self, size_t count) {
-  KosStackBlock *block = KosStack_BLOCK(self);
-
-  if (! block) {
+  if (! KosStack_BLOCK(self)) {
     PyErr_SetString(PyExc_RuntimeError, "stack pop tail dict failed;"
                     " no top block");
     return NULL;
   }
 
-  return KosStackBlock_PopTailDictNames(block, count);
+  return KosStackBlock_PopTailDictNames(&KosStack_BLOCK(self), count);
 }
 
 
 int KosStack_Drop(PyObject *self, size_t count) {
-  KosStackBlock *block = KosStack_BLOCK(self);
-
-  if (! block) {
+  if (! KosStack_BLOCK(self)) {
     PyErr_SetString(PyExc_RuntimeError, "stack drop failed;"
                     " no top block");
     return -1;
   }
 
-  return KosStackBlock_Drop(block, count);
+  return KosStackBlock_Drop(&KosStack_BLOCK(self), count);
 }
 
 
 int KosStack_DropNoErr(PyObject *self, size_t count) {
-  KosStackBlock *block = KosStack_BLOCK(self);
-
-  if (! block) {
+  if (! KosStack_BLOCK(self))
     return -1;
-  }
 
-  return KosStackBlock_DropNoErr(block, count);
+  return KosStackBlock_DropNoErr(&KosStack_BLOCK(self), count);
 }
 
 
 int KosStack_Replace(PyObject *self, size_t index, PyObject *value) {
-  KosStackBlock *block = KosStack_BLOCK(self);
-
-  if (! block) {
+  if (! KosStack_BLOCK(self)) {
     PyErr_SetString(PyExc_RuntimeError, "stack replace failed;"
                     " no top block");
     return -1;
   }
 
-  return KosStackBlock_Replace(block, index, value);
+  return KosStackBlock_Replace(&KosStack_BLOCK(self), index, value);
 }
 
 
 int KosStack_Duplicate(PyObject *self, size_t count) {
 
-  KosStackBlock *block = KosStack_BLOCK(self);
-  KosStackBlock *nb = NULL;
-
-  if (! block) {
+  if (! KosStack_BLOCK(self)) {
     PyErr_SetString(PyExc_RuntimeError, "stack dup failed; no top block");
     return -1;
   }
 
-  nb = KosStackBlock_Duplicate(block, count);
-  if (! nb) {
-    return -1;
-
-  } else if (nb != block) {
-    KosStack_BLOCK(self) = nb;
-  }
-
-  return 0;
+  return KosStackBlock_Duplicate(&KosStack_BLOCK(self), count);
 }
 
 
@@ -1404,6 +1557,9 @@ int KosStack_PopBlock(PyObject *self, size_t count) {
       return -1;
     }
 
+    if (KosStackBlock_CopyForWrite(&back))
+      return -1;
+
     size_t nlen = back->len + count;
     while (nlen > back->max) {
       back = KosStackBlock_Grow(back);
@@ -1413,13 +1569,14 @@ int KosStack_PopBlock(PyObject *self, size_t count) {
 
     back->len = nlen;
     while (count--) {
-      back->objs[--nlen] = block->objs[--len];
+      PyObject *v = block->objs[--len];
+      back->objs[--nlen] = v;
+      Py_INCREF(v);
     }
-    block->len = len;
   }
 
   KosStack_BLOCK(self) = back;
-  KosStackBlock_Free(block);
+  KosStackBlock_Release(block);
   return 0;
 }
 
@@ -1444,7 +1601,7 @@ int KosStack_DropBlock(PyObject *self) {
   }
 
   KosStack_BLOCK(self) = back;
-  KosStackBlock_Free(block);
+  KosStackBlock_Release(block);
   return 0;
 }
 
@@ -1457,13 +1614,16 @@ int KosStack_Clear(PyObject *self) {
     back = block->back;
 
     if (back) {
-      KosStackBlock_Free(block);
+      KosStackBlock_Release(block);
       block = back;
 
     } else {
-      /* the first block in the stack. We keep this one but empty it */
-      KosStackBlock_Clear(block);
+      /* the first block in the stack. We keep this one but empty it.
+         Update KosStack_BLOCK first since we may have released
+         intermediate blocks above. */
       KosStack_BLOCK(self) = block;
+      if (KosStackBlock_Clear(&KosStack_BLOCK(self)))
+        return -1;
       break;
     }
   }

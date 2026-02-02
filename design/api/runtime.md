@@ -54,7 +54,45 @@
 - References act like attributes
 - O(1) Ref lookups via opcodes
 
+## Current Implementation (eval.c)
+
+### Evaluator Core
+
+The Koskari evaluator provides the runtime execution engine:
+
+**Python-Facing Wrappers**:
+- `Coroutine`: Wraps `KosContext` for async function execution
+- `AsyncGenerator`: Wraps `KosContext` for async generator execution
+- `Continuation`: Captured continuation, callable, returns `Coroutine`
+
+**Execution Model**:
+- Single evaluator with heap-resident frame stack
+- Flattened async: one C call per drive/resume
+- Eager-step awaitables to avoid unnecessary suspension
+
+**Protocol Support**:
+- Awaitable protocol (`__await__`, `send`, `throw`, `close`)
+- Async iterator protocol (`__aiter__`, `__anext__`)
+- Callable protocol for continuations
+
+### Dynamic Wind/Unwind
+
+Runtime support for `dynamic-wind` semantics:
+- `kos_push_wind(ctx, before, after)`: Install wind handlers
+- Handlers invoked on:
+  - Normal entry/exit of protected region
+  - Continuation application crossing region boundary
+  - Exception propagation crossing region boundary
+
 ## Migration Notes
+
+### Completed
+
+- Evaluator core structure (KosContext, KosFrame, KosHandler)
+- Python wrapper types (Coroutine, AsyncGenerator, Continuation)
+- Wind/unwind hook infrastructure
+- Continuation capture and application
+- GC integration for wrapper types
 
 ### To Migrate
 
@@ -62,6 +100,7 @@
 - Import system integration
 - Line number support
 - Traceback integration
+- Opcode dispatch loop
 
 ### To Reconsider
 
@@ -75,3 +114,4 @@
 - Hot reload support
 - Module introspection
 - Plugin system
+- Traceback integration with Koskari frames

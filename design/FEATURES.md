@@ -121,6 +121,7 @@ This document provides a high-level summary of all features identified from both
 - Reference types: `Ref`, `AttributeRef`, `ItemRef`, `DynamicRef`, `ConstantRef`, `MemoizedRef`
 - Formals types: `Formals`, `FormalsSpec`
 - Values type: `values`
+- Stack types: `Stack`, `BlockStyle` (block-structured operand stack)
 
 **Native Operators** (C extension):
 - Reducing arithmetic: `+`, `-`, `*`, `/`, `//`, `@`
@@ -133,6 +134,21 @@ This document provides a high-level summary of all features identified from both
 - Functional primitives: `identity`, `constantly`, `_pass`
 - Collection builders: `build_tuple`, `build_list`, `build_set`, `build_dict`
 
+**Evaluator Core** (C extension, eval.c/eval.h):
+- VM structures: `KosFrame`, `KosContext`, `KosHandler`, `KosEvent`
+- Python wrappers: `Continuation`, `Coroutine`, `AsyncGenerator`
+- Wind/unwind: `kos_push_wind`, `kos_push_before_wind`, `kos_push_after_wind`, `kos_pop_wind`
+- Continuation application: `kos_apply_continuation` with LCA computation and hook execution
+- Call operations: `kos_koscall`, `kos_tail_koscall`
+- Drive loop: `kos_drive` (stub, ready for opcode implementation)
+- GC traversal: helpers for all VM structures
+
+**Continuation Support**:
+- Undelimited multi-shot continuations
+- Dynamic wind/unwind hooks (before/after)
+- Flattened async execution
+- Eager-step awaitable optimization
+
 ### Ready to Migrate
 - Most special forms from python-sibilant
 - Remaining operators (%, **, ~, <<, >>, comparisons)
@@ -141,17 +157,19 @@ This document provides a high-level summary of all features identified from both
 - Function system
 - Bytecode format from sibilant-ceval
 - Compiler architecture from sibilant-ceval
-- Evaluator from sibilant-ceval
+- Opcode dispatch loop (evaluator structure in place)
 
 ### Needs Reconsideration
 - CPython bytecode target (abandoned)
-- Trampoline TCO vs. direct tail calls
+- Trampoline TCO vs. direct tail calls (direct tail calls now possible)
 - Wide bytecode format
 - Module representation
 - Import system strategy
 
 ### To Design
-- Call/CC implementation
+- Delimited continuations (shift/reset)
 - JIT integration
 - Additional language features
 - Performance optimizations
+- Stack block cloning for full continuation semantics
+- Lazy frame COW optimization

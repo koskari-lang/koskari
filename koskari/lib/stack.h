@@ -46,6 +46,8 @@ typedef struct KosStackBlock KosStackBlock;
 struct KosStackBlock {
   KosStackBlock *back;           /* previous block */
 
+  size_t refcount;               /* for copy-on-write */
+
   KosBlockStyle block_style;     /* determines signal handling */
   int enabled;                   /* 0/1 if handler should trigger */
   Py_ssize_t a_label;            /* behavior jump label */
@@ -90,6 +92,9 @@ typedef struct KosStack {
 #define KosStackBlock_PARENT(sb)                \
   (((KosStackBlock *) sb)->back)
 
+#define KosStackBlock_REFCOUNT(sb)              \
+  (((KosStackBlock *) sb)->refcount)
+
 #define KosStackBlock_MAX(sb)                   \
   (((KosStackBlock *) sb)->max)
 
@@ -113,6 +118,26 @@ typedef struct KosStack {
 
 
 PyObject *KosStack_New(void);
+
+
+/**
+   Produces a new copy of stack. This is copy-on-write optimized to
+   point to the same stack blocks.
+ */
+PyObject *KosStack_Copy(PyObject *original);
+
+
+/**
+   Obtain a COW reference to a stack block chain. Increments refcount
+   on all blocks in the chain.
+ */
+KosStackBlock *KosStackBlock_COW(KosStackBlock *block);
+
+
+/**
+   Release a stack block (decrement refcount, free if zero).
+ */
+void KosStackBlock_Release(KosStackBlock *block);
 
 
 /**
