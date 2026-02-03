@@ -12,7 +12,8 @@ Koskari implements **delimited continuations** using the reset/shift paradigm:
 - `shift` captures the continuation from the current point up to the prompt
 - Captured continuations are composable and do not include the prompt itself
 
-This replaces the earlier undelimited `call/cc` design.
+This is provided alongside undelimited `call/cc`; both continuation styles
+are supported.
 
 ### Multi-Shot by Default
 

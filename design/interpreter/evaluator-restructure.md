@@ -35,21 +35,26 @@ continuations with Python-callable wind/unwind hooks. This is insufficient for:
 
 ---
 
+## Goals / Preserved Semantics
+
+- **call/cc preservation**: Undelimited `call/cc` is preserved. Delimited
+  shift/reset is supported in addition; both continuation styles are
+  supported going forward.
+
+---
+
 ## Non-Goals
 
-1. **call/cc preservation**: Undelimited `call/cc` is not preserved. Only
-   delimited shift/reset is supported going forward.
-
-2. **Python-callable hooks**: Wind/unwind hooks will NOT be arbitrary Python
+1. **Python-callable hooks**: Wind/unwind hooks will NOT be arbitrary Python
    callables. They are bytecode blocks executed within the VM.
 
-3. **Backward compatibility**: Existing `KosHandler` and `kos_apply_continuation`
+2. **Backward compatibility**: Existing `KosHandler` and `kos_apply_continuation`
    APIs will be replaced, not extended.
 
-4. **Escape continuations**: Single-shot escape-only continuations (like
+3. **Escape continuations**: Single-shot escape-only continuations (like
    exceptions) remain separate from multi-shot delimited continuations.
 
-5. **Cross-boundary capture**: Continuations cannot span Python/C call stack
+4. **Cross-boundary capture**: Continuations cannot span Python/C call stack
    segments. Capture rejects if a Python boundary frame is in scope.
 
 ---

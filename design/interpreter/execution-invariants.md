@@ -251,7 +251,7 @@ continuation invocations.
 * No implicit event loop creation on normal calls.
 * No reliance on CPython frame recursion for Koskari semantics.
 * No unification of `yield` and `await` signals.
-* No undelimited `call/cc` (only delimited reset/shift).
+* Undelimited `call/cc` is supported; delimited reset/shift is also supported.
 * No Python-callable wind/unwind hooks.
 
 ---
