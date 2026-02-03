@@ -158,7 +158,10 @@ PyObject *KosOperator_In(PyObject *const *values, size_t count) {
     return NULL;
   }
 
-  if (PySequence_Contains(values[1], values[0])) {
+  int res = PySequence_Contains(values[1], values[0]);
+  if (res < 0) {
+    return NULL;
+  } else if (res) {
     Py_RETURN_TRUE;
   } else {
     Py_RETURN_FALSE;
@@ -174,7 +177,10 @@ PyObject *KosOperator_NotIn(PyObject *const *values, size_t count) {
     return NULL;
   }
 
-  if (PySequence_Contains(values[1], values[0])) {
+  int res = PySequence_Contains(values[1], values[0]);
+  if (res < 0) {
+    return NULL;
+  } else if (res) {
     Py_RETURN_FALSE;
   } else {
     Py_RETURN_TRUE;

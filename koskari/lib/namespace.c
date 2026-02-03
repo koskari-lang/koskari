@@ -1013,7 +1013,7 @@ PyObject *KosNamespace_FastDeref(PyObject *namespace, size_t index) {
   if (nb->raw) {
     PyObject *value = nb->held;
     if (! value) {
-      PyErr_Format(PyExc_NameError, "Empty reference: %s", nb->name);
+      PyErr_Format(PyExc_NameError, "Empty reference: %S", nb->name);
     } else {
       Py_INCREF(value);
     }
@@ -1027,7 +1027,7 @@ PyObject *KosNamespace_FastDeref(PyObject *namespace, size_t index) {
 
 PyObject *KosNamespace_FastRef(PyObject *namespace, size_t index) {
   if (index >= KosNamespace_FAST_COUNT(namespace)) {
-    PyErr_Format(PyExc_NameError, "Namespace fast index out of bounds, %i",
+    PyErr_Format(PyExc_NameError, "Namespace fast index out of bounds, %zu",
                  index);
     return NULL;
   }
