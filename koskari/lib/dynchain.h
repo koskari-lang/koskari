@@ -702,6 +702,19 @@ void kos_dyn_pop_region(KosContext *ctx, KosDynRegion *region);
 
 
 /**
+   Find the first TRY or FINALLY region on the dynamic chain that is
+   enabled, walking from dyn_top toward root. Used for exception
+   handling: when an exception occurs, this returns the region whose
+   handler (a_label) should receive control.
+
+   :param ctx: execution context
+
+   :return: the topmost enabled TRY or FINALLY region, or NULL
+*/
+KosDynRegion *kos_find_region_for_raise(KosContext *ctx);
+
+
+/**
    Push a Python call boundary marker.
 
    This marks the point where Python code called into Koskari.

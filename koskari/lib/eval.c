@@ -50,13 +50,17 @@
 
 
 /* Set to 1 to trace opcode execution (for debugging) */
-#define KOS_EVAL_TRACE 1
+#define KOS_EVAL_TRACE 0
 
 /* Opcode handlers are always inlined so the eval loop stays fast. */
 #if defined(__GNUC__) || defined(__clang__)
 # define KOS_OP_INLINE static inline __attribute__((always_inline))
+# define likely(x)   __builtin_expect(!!(x), 1)
+# define unlikely(x) __builtin_expect(!!(x), 0)
 #else
 # define KOS_OP_INLINE static inline
+# define likely(x)   (x)
+# define unlikely(x) (x)
 #endif
 
 /**
@@ -205,6 +209,8 @@ KosContext *kos_context_new(KosDynFrame *top) {
 
   ctx->dyn_top = (KosDynNode *) top;
   ctx->frame_top = top;
+  ctx->globals_frame = top;
+  ctx->globals_cache_version = 0;
 
   /* Initialize hook runner */
   ctx->hook_runner.code = NULL;
@@ -225,6 +231,10 @@ KosContext *kos_context_new(KosDynFrame *top) {
   /* Initialize exception injection */
   ctx->pending_throw = 0;
   ctx->pending_exc = NULL;
+
+  /* Initialize finally-handler stash */
+  ctx->handling_raise = 0;
+  ctx->handling_result = NULL;
 
   ctx->flags = 0;
 
@@ -261,6 +271,7 @@ void kos_context_free(KosContext *ctx) {
   Py_XDECREF(ctx->py_await_iter);
   Py_XDECREF(ctx->py_last_yielded);
   Py_XDECREF(ctx->pending_exc);
+  Py_XDECREF(ctx->handling_result);
 
   PyMem_Free(ctx);
 }
@@ -277,6 +288,7 @@ int kos_context_traverse(
   Py_VISIT(ctx->py_await_iter);
   Py_VISIT(ctx->py_last_yielded);
   Py_VISIT(ctx->pending_exc);
+  Py_VISIT(ctx->handling_result);
 
   /* Traverse the dynamic chain */
   int res = kos_dynchain_traverse(ctx->dyn_top, NULL, visit, arg);
@@ -572,14 +584,18 @@ KOS_OP_INLINE int op_RETURN(KosContext *ctx, KosEvent *out_ev, KosOp *insn) {
 
 
 KOS_OP_INLINE int op_GLOBALS(KosContext *ctx, KosEvent *out_ev, KosOp *insn) {
-  KosDynNode *n = (KosDynNode *) ctx->frame_top;
-  KosDynFrame *outer = ctx->frame_top;
-  while (n && n->parent) {
-    n = n->parent;
-    if (KosDynNode_IS_FRAME(n))
-      outer = (KosDynFrame *) n;
+  if (ctx->chain_version != ctx->globals_cache_version) {
+    KosDynNode *n = (KosDynNode *) ctx->frame_top;
+    KosDynFrame *outer = ctx->frame_top;
+    while (n && n->parent) {
+      n = n->parent;
+      if (KosDynNode_IS_FRAME(n))
+        outer = (KosDynFrame *) n;
+    }
+    ctx->globals_frame = outer;
+    ctx->globals_cache_version = ctx->chain_version;
   }
-  PyObject *ns = outer->ns;
+  PyObject *ns = ctx->globals_frame->ns;
   Py_INCREF(ns);
   if (KosStackBlock_PushRef(&ctx->frame_top->stack, ns) < 0) {
     Py_DECREF(ns);
@@ -707,6 +723,80 @@ KOS_OP_INLINE int op_EXCEPTION_MATCH(KosContext *ctx, KosEvent *out_ev,
 }
 
 
+KOS_OP_INLINE int op_RAISE(KosContext *ctx, KosEvent *out_ev, KosOp *insn) {
+  unsigned n = insn->arg;
+  if (n == 0) {
+    PyObject *typ = NULL, *val = NULL, *tb = NULL;
+    PyErr_GetExcInfo(&typ, &val, &tb);
+    if (! typ || typ == Py_None) {
+      PyErr_SetString(PyExc_RuntimeError, "No active exception to reraise");
+      Py_XDECREF(typ);
+      Py_XDECREF(val);
+      Py_XDECREF(tb);
+      return -1;
+    }
+    PyErr_Restore(typ, val, tb);
+    PyErr_SetExcInfo(NULL, NULL, NULL);
+  } else if (n == 1) {
+    PyObject *exc = KosStackBlock_PopRef(&ctx->frame_top->stack);
+    if (! exc) {
+      return -1;
+    }
+    if (PyExceptionInstance_Check(exc)) {
+      PyObject *typ = (PyObject *) Py_TYPE(exc);
+      PyErr_SetObject(typ, exc);
+    } else if (PyExceptionClass_Check(exc)) {
+      PyObject *inst = PyObject_CallNoArgs(exc);
+      if (inst) {
+        PyErr_SetObject(exc, inst);
+        Py_DECREF(inst);
+      }
+      Py_DECREF(exc);
+      if (PyErr_Occurred())
+        return -1;
+    } else {
+      Py_DECREF(exc);
+      PyErr_SetString(PyExc_TypeError, "exceptions must derive from BaseException");
+      return -1;
+    }
+    Py_DECREF(exc);
+  } else {
+    PyErr_Format(PyExc_RuntimeError, "RAISE with unsupported arg count %u", n);
+    return -1;
+  }
+  (void) out_ev;
+  return 0;
+}
+
+
+KOS_OP_INLINE int op_CHECK_EXCEPTION(KosContext *ctx, KosEvent *out_ev,
+                                     KosOp *insn) {
+  PyObject *match = KosStackBlock_PopRef(&ctx->frame_top->stack);
+  if (! match)
+    return -1;
+
+  int ret = 0;
+  PyObject *typ = NULL, *val = NULL, *tb = NULL;
+  PyErr_GetExcInfo(&typ, &val, &tb);
+
+  if (typ)
+    ret = PyErr_GivenExceptionMatches(typ, match);
+
+  Py_XDECREF(typ);
+  Py_XDECREF(val);
+  Py_XDECREF(tb);
+  Py_DECREF(match);
+
+  if (ret) {
+    (void) out_ev;
+    return 0;
+  }
+  ctx->frame_top->pc = insn->arg;
+  (void) out_ev;
+  return 0;
+}
+
+
 KOS_OP_INLINE int op_PUSH_PROMPT(KosContext *ctx, KosEvent *out_ev,
                                  KosOp *insn) {
   uint32_t prompt_id;
@@ -759,6 +849,111 @@ KOS_OP_INLINE int op_POP_PROMPT(KosContext *ctx, KosEvent *out_ev,
     return -1;
   }
   kos_dyn_pop_prompt(ctx, (KosDynPrompt *) ctx->dyn_top);
+  (void) insn;
+  return 0;
+}
+
+
+KOS_OP_INLINE int op_PUSH_TRY(KosContext *ctx, KosEvent *out_ev,
+                               KosOp *insn) {
+  if (! kos_dyn_push_region(ctx, KOS_REGION_TRY, insn->arg, 0)) {
+    PyErr_NoMemory();
+    return -1;
+  }
+  (void) out_ev;
+  return 0;
+}
+
+
+KOS_OP_INLINE int op_PUSH_FINALLY(KosContext *ctx, KosEvent *out_ev,
+                                  KosOp *insn) {
+  if (! kos_dyn_push_region(ctx, KOS_REGION_FINALLY, insn->arg, 0)) {
+    PyErr_NoMemory();
+    return -1;
+  }
+  (void) out_ev;
+  return 0;
+}
+
+
+KOS_OP_INLINE int op_POP_TRY(KosContext *ctx, KosEvent *out_ev,
+                             KosOp *insn) {
+  if (! ctx->dyn_top || ! KosDynNode_IS_REGION(ctx->dyn_top)) {
+    PyErr_SetString(PyExc_RuntimeError, "POP_TRY: top is not a region");
+    return -1;
+  }
+  KosDynRegion *region = (KosDynRegion *) ctx->dyn_top;
+  if (region->style != KOS_REGION_TRY) {
+    PyErr_SetString(PyExc_RuntimeError, "POP_TRY: top is not a TRY region");
+    return -1;
+  }
+  PyErr_Clear();
+  PyErr_SetExcInfo(NULL, NULL, NULL);
+  kos_dyn_pop_region(ctx, region);
+  (void) out_ev;
+  (void) insn;
+  return 0;
+}
+
+
+KOS_OP_INLINE int op_POP_FINALLY(KosContext *ctx, KosEvent *out_ev,
+                                 KosOp *insn) {
+  if (! ctx->dyn_top || ! KosDynNode_IS_REGION(ctx->dyn_top)) {
+    PyErr_SetString(PyExc_RuntimeError, "POP_FINALLY: top is not a region");
+    return -1;
+  }
+  KosDynRegion *region = (KosDynRegion *) ctx->dyn_top;
+  if (region->style != KOS_REGION_FINALLY) {
+    PyErr_SetString(PyExc_RuntimeError,
+                    "POP_FINALLY: top is not a FINALLY region");
+    return -1;
+  }
+  if (ctx->handling_raise) {
+    PyObject *typ = NULL, *val = NULL, *tb = NULL;
+    PyErr_GetExcInfo(&typ, &val, &tb);
+    PyErr_Restore(typ, val, tb);
+    PyErr_SetExcInfo(NULL, NULL, NULL);
+    ctx->handling_raise = 0;
+  }
+  kos_dyn_pop_region(ctx, region);
+  (void) out_ev;
+  (void) insn;
+  return 0;
+}
+
+
+KOS_OP_INLINE int op_CLEAR_TRY(KosContext *ctx, KosEvent *out_ev,
+                               KosOp *insn) {
+  if (! ctx->dyn_top || ! KosDynNode_IS_REGION(ctx->dyn_top)) {
+    PyErr_SetString(PyExc_RuntimeError, "CLEAR_TRY: top is not a region");
+    return -1;
+  }
+  KosDynRegion *region = (KosDynRegion *) ctx->dyn_top;
+  if (region->style != KOS_REGION_TRY) {
+    PyErr_SetString(PyExc_RuntimeError, "CLEAR_TRY: top is not a TRY region");
+    return -1;
+  }
+  region->enabled = 0;
+  (void) out_ev;
+  (void) insn;
+  return 0;
+}
+
+
+KOS_OP_INLINE int op_CLEAR_FINALLY(KosContext *ctx, KosEvent *out_ev,
+                                   KosOp *insn) {
+  if (! ctx->dyn_top || ! KosDynNode_IS_REGION(ctx->dyn_top)) {
+    PyErr_SetString(PyExc_RuntimeError, "CLEAR_FINALLY: top is not a region");
+    return -1;
+  }
+  KosDynRegion *region = (KosDynRegion *) ctx->dyn_top;
+  if (region->style != KOS_REGION_FINALLY) {
+    PyErr_SetString(PyExc_RuntimeError,
+                    "CLEAR_FINALLY: top is not a FINALLY region");
+    return -1;
+  }
+  region->enabled = 0;
+  (void) out_ev;
   (void) insn;
   return 0;
 }
@@ -1506,7 +1701,6 @@ KOS_OP_INLINE int op_OBJECT_IS_SUBCLASS(KosContext *ctx, KosEvent *out_ev,
 #define op_AWAIT              op_unimplemented_stub
 #define op_BREAK              op_unimplemented_stub
 #define op_CONTINUE           op_unimplemented_stub
-#define op_RAISE              op_unimplemented_stub
 #define op_YIELD              op_unimplemented_stub
 #define op_YIELD_FROM         op_unimplemented_stub
 #define op_ITER_NEXT          op_unimplemented_stub
@@ -1528,7 +1722,6 @@ KOS_OP_INLINE int op_OBJECT_IS_SUBCLASS(KosContext *ctx, KosEvent *out_ev,
 #define op_CHECK_IS_NOT       op_unimplemented_stub
 #define op_CHECK_IS_INSTANCE  op_unimplemented_stub
 #define op_CHECK_IS_SUBCLASS  op_unimplemented_stub
-#define op_CHECK_EXCEPTION    op_unimplemented_stub
 #define op_VAR                op_unimplemented_stub
 #define op_VAR_BIND           op_unimplemented_stub
 #define op_VAR_CLEAR          op_unimplemented_stub
@@ -1576,19 +1769,13 @@ KOS_OP_INLINE int op_OBJECT_IS_SUBCLASS(KosContext *ctx, KosEvent *out_ev,
 #define op_PUSH_WITH          op_unimplemented_stub
 #define op_PUSH_BEGIN         op_unimplemented_stub
 #define op_PUSH_CLASS         op_unimplemented_stub
-#define op_PUSH_FINALLY       op_unimplemented_stub
 #define op_PUSH_LOOP          op_unimplemented_stub
 #define op_PUSH_NS            op_unimplemented_stub
-#define op_PUSH_TRY           op_unimplemented_stub
-#define op_CLEAR_FINALLY      op_unimplemented_stub
 #define op_CLEAR_LOOP         op_unimplemented_stub
-#define op_CLEAR_TRY          op_unimplemented_stub
 #define op_POP_WITH           op_unimplemented_stub
 #define op_POP_BEGIN          op_unimplemented_stub
-#define op_POP_FINALLY        op_unimplemented_stub
 #define op_POP_LOOP           op_unimplemented_stub
 #define op_POP_NS             op_unimplemented_stub
-#define op_POP_TRY            op_unimplemented_stub
 #define op_PUSH_WIND          op_unimplemented_stub
 #define op_POP_WIND           op_unimplemented_stub
 #define op_END_WIND           op_unimplemented_stub
@@ -1602,6 +1789,48 @@ static int (*const op_handlers[])(KosContext *, KosEvent *, KosOp *) = {
 #include "opcodes.incl"
 #undef OP
 };
+
+
+/**
+   Try to handle an exception locally by finding a TRY or FINALLY region
+   and jumping to its handler.  Call when PyErr_Occurred() is set.
+
+   :param ctx: execution context
+   :param out_ev: event to fill if no handler is found
+
+   :return: 1 if a handler was applied (caller should continue the loop),
+            0 if no handler (out_ev set to KOS_EV_RAISE, caller should return)
+*/
+static int try_local_exception_handler(KosContext *ctx, KosEvent *out_ev) {
+  KosDynRegion *region = kos_find_region_for_raise(ctx);
+  if (! region) {
+    PyObject *typ = NULL, *val = NULL, *tb = NULL;
+    PyErr_Fetch(&typ, &val, &tb);
+    out_ev->kind = KOS_EV_RAISE;
+    out_ev->payload = val;  /* exception instance (caller DECREFs) */
+    Py_XDECREF(typ);
+    Py_XDECREF(tb);
+    ctx->flags &= ~KOS_CTX_RUNNING;
+    ctx->flags |= KOS_CTX_DEAD;
+    return 0;
+  }
+
+  ctx->frame_top->pc = region->a_label;
+  region->enabled = 0;
+
+  /* Set aside exception in excinfo and clear so handler runs without PyErr set */
+  {
+    PyObject *typ = NULL, *val = NULL, *tb = NULL;
+    PyErr_Fetch(&typ, &val, &tb);
+    PyErr_SetExcInfo(typ, val, tb);
+    PyErr_Clear();
+  }
+
+  if (region->style == KOS_REGION_FINALLY)
+    ctx->handling_raise = 1;
+
+  return 1;
+}
 
 
 int kos_drive(KosContext *ctx, KosEvent *out_ev) {
@@ -1659,13 +1888,19 @@ int kos_drive(KosContext *ctx, KosEvent *out_ev) {
 
   /* Opcode dispatch loop */
   for (;;) {
-    if (run_transfer_plan_to_completion(ctx, out_ev) < 0)
+    if (ctx->plan && run_transfer_plan_to_completion(ctx, out_ev) < 0)
       return 0;
+
+    if (PyErr_Occurred()) {
+      if (try_local_exception_handler(ctx, out_ev))
+        continue;
+      return 0;
+    }
 
     KosCode *code = ctx->frame_top->code;
     uint32_t pc = ctx->frame_top->pc;
 
-    if (pc >= code->code_len) {
+    if (unlikely(pc >= code->code_len)) {
       if (KOS_EVAL_TRACE)
         fprintf(stderr, "[eval] pc=%u OUT OF RANGE (code_len=%u)\n",
                 (unsigned) pc, (unsigned) code->code_len);
@@ -1681,14 +1916,20 @@ int kos_drive(KosContext *ctx, KosEvent *out_ev) {
     }
     ctx->frame_top->pc = pc + 1;
 
-    if ((KosOpCode) insn->op > KOS_OP_THEEND) {
+    if (unlikely((KosOpCode) insn->op > KOS_OP_THEEND)) {
       PyErr_Format(PyExc_RuntimeError, "invalid opcode %u",
                    (unsigned) insn->op);
       return -1;
     }
     int op_res = op_handlers[insn->op](ctx, out_ev, insn);
-    if (op_res != 0)
+    if (unlikely(op_res != 0)) {
+      if (PyErr_Occurred()) {
+        if (try_local_exception_handler(ctx, out_ev))
+          continue;
+        return 0;
+      }
       return (op_res < 0) ? -1 : 0;
+    }
     if (KOS_EVAL_TRACE)
       trace_stack("  after ", ctx->frame_top->stack);
   }

@@ -122,6 +122,131 @@ static int test_eval_object_add_return(void) {
 }
 
 
+/* === Test: try/except - raise caught, handler result returned === */
+
+
+static int test_eval_try_except_catch(void) {
+    /*
+      Bytecode: PUSH_TRY 3, CONST (ValueError), RAISE 1, EXCEPTION, POP 1,
+      CONST 42, POP_TRY, RETURN. Handler at index 3. Expect KOS_EV_RETURN 42.
+    */
+    PyObject *nspec = create_test_nspec();
+    TEST_ASSERT_NOT_NULL(nspec, "create nspec");
+
+    PyObject *exc_inst = PyObject_CallFunction(
+        (PyObject *) PyExc_ValueError, "s", "test");
+    TEST_ASSERT_NOT_NULL(exc_inst, "create ValueError instance");
+    PyObject *forty_two = PyLong_FromLong(42);
+    TEST_ASSERT_NOT_NULL(forty_two, "create 42");
+    PyObject *label_3 = PyLong_FromLong(3);
+    TEST_ASSERT_NOT_NULL(label_3, "create label 3");
+
+    /* Handler at index 3; LABEL 3 defines it for bytecode label resolution */
+    PyObject *instr = PyList_New(9);
+    PyList_SET_ITEM(instr, 0, make_instr_int(KOS_OP_PUSH_TRY, 3));
+    PyList_SET_ITEM(instr, 1, make_instr(KOS_OP_CONST, exc_inst));
+    PyList_SET_ITEM(instr, 2, make_instr_int(KOS_OP_RAISE, 1));
+    PyList_SET_ITEM(instr, 3, make_instr(KOS_OP_LABEL, label_3));
+    PyList_SET_ITEM(instr, 4, make_instr_int(KOS_OP_EXCEPTION, 0));
+    PyList_SET_ITEM(instr, 5, make_instr_int(KOS_OP_POP, 1));
+    PyList_SET_ITEM(instr, 6, make_instr(KOS_OP_CONST, forty_two));
+    PyList_SET_ITEM(instr, 7, make_instr_int(KOS_OP_POP_TRY, 0));
+    PyList_SET_ITEM(instr, 8, make_instr_int(KOS_OP_RETURN, 1));
+
+    PyObject *code_obj = KosCode_New(nspec, instr, NULL, NULL);
+    TEST_ASSERT_NOT_NULL(code_obj, "create Code");
+
+    Py_DECREF(instr);
+    Py_DECREF(nspec);
+
+    PyObject *ns = PyDict_New();
+    TEST_ASSERT_NOT_NULL(ns, "create ns");
+
+    KosDynFrame *frame = kos_dynframe_new(NULL, (KosCode *) code_obj, ns, NULL);
+    TEST_ASSERT_NOT_NULL(frame, "create frame");
+
+    KosContext *ctx = kos_context_new(frame);
+    TEST_ASSERT_NOT_NULL(ctx, "create context");
+
+    KosEvent ev = {0};
+    int res = kos_drive(ctx, &ev);
+
+    TEST_ASSERT(res == 0, "kos_drive succeeded");
+    TEST_ASSERT(ev.kind == KOS_EV_RETURN, "event is RETURN");
+    TEST_ASSERT_NOT_NULL(ev.payload, "payload not NULL");
+    TEST_ASSERT(PyLong_Check(ev.payload), "payload is int");
+    TEST_ASSERT_EQ(PyLong_AsLong(ev.payload), 42, "result is 42");
+
+    Py_XDECREF(ev.payload);
+    kos_context_free(ctx);
+    Py_DECREF(code_obj);
+
+    return 0;
+}
+
+
+/* === Test: try/finally - raise causes finally to run, then re-raise === */
+
+
+static int test_eval_try_finally_rerase(void) {
+    /*
+      Bytecode: PUSH_FINALLY 3, CONST (ValueError), RAISE 1, (finally at 3:)
+      CONST 99, POP_FINALLY, RETURN. After POP_FINALLY we re-raise; no handler
+      left. Expect KOS_EV_RAISE.
+    */
+    PyObject *nspec = create_test_nspec();
+    TEST_ASSERT_NOT_NULL(nspec, "create nspec");
+
+    PyObject *exc_inst = PyObject_CallFunction(
+        (PyObject *) PyExc_ValueError, "s", "test");
+    TEST_ASSERT_NOT_NULL(exc_inst, "create ValueError instance");
+    PyObject *ninety_nine = PyLong_FromLong(99);
+    TEST_ASSERT_NOT_NULL(ninety_nine, "create 99");
+    PyObject *label_3 = PyLong_FromLong(3);
+    TEST_ASSERT_NOT_NULL(label_3, "create label 3");
+
+    /* Finally handler at index 3; LABEL 3 defines it for bytecode label resolution */
+    PyObject *instr = PyList_New(8);
+    PyList_SET_ITEM(instr, 0, make_instr_int(KOS_OP_PUSH_FINALLY, 3));
+    PyList_SET_ITEM(instr, 1, make_instr(KOS_OP_CONST, exc_inst));
+    PyList_SET_ITEM(instr, 2, make_instr_int(KOS_OP_RAISE, 1));
+    PyList_SET_ITEM(instr, 3, make_instr(KOS_OP_LABEL, label_3));
+    PyList_SET_ITEM(instr, 4, make_instr(KOS_OP_CONST, ninety_nine));
+    PyList_SET_ITEM(instr, 5, make_instr_int(KOS_OP_POP_FINALLY, 0));
+    PyList_SET_ITEM(instr, 6, make_instr_int(KOS_OP_RETURN, 1));
+    PyList_SET_ITEM(instr, 7, make_instr_int(KOS_OP_NOOP, 0));
+
+    PyObject *code_obj = KosCode_New(nspec, instr, NULL, NULL);
+    TEST_ASSERT_NOT_NULL(code_obj, "create Code");
+
+    Py_DECREF(instr);
+    Py_DECREF(nspec);
+
+    PyObject *ns = PyDict_New();
+    TEST_ASSERT_NOT_NULL(ns, "create ns");
+
+    KosDynFrame *frame = kos_dynframe_new(NULL, (KosCode *) code_obj, ns, NULL);
+    TEST_ASSERT_NOT_NULL(frame, "create frame");
+
+    KosContext *ctx = kos_context_new(frame);
+    TEST_ASSERT_NOT_NULL(ctx, "create context");
+
+    KosEvent ev = {0};
+    int res = kos_drive(ctx, &ev);
+
+    TEST_ASSERT(res == 0, "kos_drive succeeded");
+    TEST_ASSERT(ev.kind == KOS_EV_RAISE, "event is RAISE");
+    TEST_ASSERT_NOT_NULL(ev.payload, "payload not NULL");
+    TEST_ASSERT(PyExceptionInstance_Check(ev.payload), "payload is exception");
+
+    Py_XDECREF(ev.payload);
+    kos_context_free(ctx);
+    Py_DECREF(code_obj);
+
+    return 0;
+}
+
+
 /* === Test: reset (+ 1 (shift k (k 5))) => 6 === */
 
 
@@ -209,6 +334,8 @@ int run_eval_tests(void) {
     BEGIN_TEST_SUITE("Eval Tests");
 
     RUN_TEST(test_eval_object_add_return);
+    RUN_TEST(test_eval_try_except_catch);
+    RUN_TEST(test_eval_try_finally_rerase);
     RUN_TEST(test_eval_reset_shift_invoke);
 
     return 0;

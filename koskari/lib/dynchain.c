@@ -31,7 +31,7 @@
 #include <string.h>
 
 /* Set to 1 to trace transfer plan steps (for debugging) */
-#define KOS_XFER_TRACE 1
+#define KOS_XFER_TRACE 0
 
 
 /* === DynNode base operations === */
@@ -569,6 +569,25 @@ void kos_dyn_pop_region(KosContext *ctx, KosDynRegion *region) {
   ctx->dyn_top = region->base.parent;
   ctx->chain_version++;
   kos_dynregion_free(region);
+}
+
+
+KosDynRegion *kos_find_region_for_raise(KosContext *ctx) {
+  KosDynNode *node = ctx->dyn_top;
+
+  while (node) {
+    if (KosDynNode_IS_REGION(node)) {
+      KosDynRegion *region = (KosDynRegion *) node;
+      if (region->enabled &&
+          (region->style == KOS_REGION_TRY ||
+           region->style == KOS_REGION_FINALLY)) {
+        return region;
+      }
+    }
+    node = node->parent;
+  }
+
+  return NULL;
 }
 
 

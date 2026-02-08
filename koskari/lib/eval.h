@@ -138,6 +138,8 @@ typedef struct KosEvent {
 struct KosContext {
   KosDynNode *dyn_top;       /* top of dynamic chain */
   KosDynFrame *frame_top;    /* cached topmost frame (for fast access) */
+  KosDynFrame *globals_frame;     /* cached outermost frame (for op_GLOBALS) */
+  uint32_t globals_cache_version; /* chain_version when globals_frame was set */
 
   /* Hook execution state */
   KosHookRunner hook_runner;
@@ -157,6 +159,10 @@ struct KosContext {
   /* exception injection for resume */
   int pending_throw;
   PyObject *pending_exc;
+
+  /* finally handler state: we entered a finally due to raise/return */
+  int handling_raise;        /* 1 when in finally because of exception */
+  PyObject *handling_result;  /* stashed return value (future return-through-finally) */
 
   uint32_t flags;            /* KosContextFlags */
 };

@@ -35,7 +35,7 @@
 
 
 /* Set to 1 to trace Push/Pop with block id, length, and value repr */
-#define KOS_STACK_TRACE 1
+#define KOS_STACK_TRACE 0
 
 
 /* === StackBlock === */
