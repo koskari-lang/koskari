@@ -147,6 +147,9 @@ struct KosContext {
   KosTransferPlan *plan_stack;  /* suspended plans stack */
   uint32_t chain_version;       /* incremented on chain modifications */
 
+  /* Delimited continuation: top of installed segment when inside invoked k */
+  KosDynNode *invocation_segment_top;
+
   /* Python await bridging state */
   PyObject *py_await_iter;   /* await-iterator from __await__() */
   PyObject *py_last_yielded; /* last yielded object (debug/optional) */

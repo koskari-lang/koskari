@@ -46,6 +46,95 @@
 #include "lib.h"
 #include "eval.h"
 #include "bytecode.h"
+#include <stdio.h>
+
+
+/* Set to 1 to trace opcode execution (for debugging) */
+#define KOS_EVAL_TRACE 1
+
+/* Opcode handlers are always inlined so the eval loop stays fast. */
+#if defined(__GNUC__) || defined(__clang__)
+# define KOS_OP_INLINE static inline __attribute__((always_inline))
+#else
+# define KOS_OP_INLINE static inline
+#endif
+
+/**
+   Run the current transfer plan to completion.  Returns 0 on success (plan
+   cleared or was NULL).  Returns -1 if a step failed (out_ev set to RAISE,
+   caller should return 0 from kos_drive).
+*/
+static int run_transfer_plan_to_completion(KosContext *ctx, KosEvent *out_ev) {
+  while (ctx->plan) {
+    if (KOS_EVAL_TRACE)
+      fprintf(stderr, "[eval] transfer step %zu/%zu\n",
+              (size_t) ctx->plan->action_index,
+              (size_t) ctx->plan->action_count);
+    int plan_res = kos_run_transfer_step(ctx);
+    if (plan_res < 0) {
+      if (KOS_EVAL_TRACE)
+        fprintf(stderr, "[eval] transfer step failed -> KOS_EV_RAISE\n");
+      out_ev->kind = KOS_EV_RAISE;
+      out_ev->payload = NULL;
+      PyErr_Fetch(&out_ev->payload, NULL, NULL);
+      ctx->flags &= ~KOS_CTX_RUNNING;
+      ctx->flags |= KOS_CTX_DEAD;
+      return -1;
+    }
+    if (plan_res == 0)
+      continue;
+    if (KOS_EVAL_TRACE)
+      fprintf(stderr, "[eval] transfer complete inv_seg_top=%p\n",
+              (void *) ctx->dyn_top);
+    ctx->invocation_segment_top = ctx->dyn_top;
+    kos_free_transfer_plan(ctx->plan);
+    ctx->plan = NULL;
+    ctx->flags &= ~KOS_CTX_IN_TRANSFER;
+    if (ctx->plan_stack)
+      kos_resume_transfer_plan(ctx);
+  }
+  return 0;
+}
+
+
+/**
+   Resolve insn->arg as a prompt_id constant from code.  Returns -1 on error,
+   0 on success with *out_prompt_id set.
+*/
+static int get_prompt_id_from_insn(KosCode *code, KosOp *insn,
+                                   uint32_t *out_prompt_id) {
+  PyObject *cid = KosCode_GetConstant((PyObject *) code, insn->arg);
+  if (! cid)
+    return -1;
+  long pid = PyLong_AsLong(cid);
+  if (pid < 0 && PyErr_Occurred())
+    return -1;
+  *out_prompt_id = (uint32_t) pid;
+  return 0;
+}
+
+
+/**
+   Print current stack block address/id and length; if KOS_EVAL_TRACE,
+   also print top two slot values as integers when PyLong.
+*/
+static void trace_stack(const char *prefix, KosStackBlock *stack) {
+  if (! KOS_EVAL_TRACE)
+    return;
+  fprintf(stderr, "[eval] %s stack=%p",
+          prefix, (void *) stack);
+  if (stack) {
+    size_t n = KosStackBlock_LEN(stack);
+    fprintf(stderr, " len=%zu", n);
+    for (size_t i = (n >= 2 ? n - 2 : 0); i < n; i++) {
+      PyObject *o = stack->objs[i];
+      if (PyLong_Check(o))
+        fprintf(stderr, " [%zu]=%ld", i, PyLong_AsLong(o));
+    }
+  }
+  fprintf(stderr, "\n");
+  fflush(stderr);
+}
 
 
 /* === Static string constants === */
@@ -127,6 +216,7 @@ KosContext *kos_context_new(KosDynFrame *top) {
   ctx->plan = NULL;
   ctx->plan_stack = NULL;
   ctx->chain_version = 0;
+  ctx->invocation_segment_top = NULL;
 
   /* Initialize Python await bridging */
   ctx->py_await_iter = NULL;
@@ -376,6 +466,273 @@ static PyObject *eager_step_awaitable(
 }
 
 
+/* === Opcode handlers (always inlined; return 0=continue 1=stop -1=error) === */
+
+
+KOS_OP_INLINE int op_NOOP(KosContext *ctx, KosEvent *out_ev, KosOp *insn) {
+  (void) ctx;
+  (void) out_ev;
+  (void) insn;
+  return 0;  /* continue */
+}
+
+
+KOS_OP_INLINE int op_CONST(KosContext *ctx, KosEvent *out_ev, KosOp *insn) {
+  KosCode *code = ctx->frame_top->code;
+  PyObject *val = KosCode_GetConstant((PyObject *) code, insn->arg);
+  if (! val) {
+    if (KOS_EVAL_TRACE)
+      fprintf(stderr, "[eval] CONST GetConstant failed arg=%u\n",
+              (unsigned) insn->arg);
+    return -1;
+  }
+  if (KOS_EVAL_TRACE && PyLong_Check(val))
+    fprintf(stderr, "[eval] CONST pushed %ld\n", PyLong_AsLong(val));
+  if (KosStackBlock_PushRef(&ctx->frame_top->stack, val) < 0) {
+    Py_DECREF(val);
+    return -1;
+  }
+  Py_DECREF(val);
+  (void) out_ev;
+  return 0;
+}
+
+
+KOS_OP_INLINE int op_RETURN(KosContext *ctx, KosEvent *out_ev, KosOp *insn) {
+  PyObject *val = KosStackBlock_PopRef(&ctx->frame_top->stack);
+  if (! val) {
+    if (KOS_EVAL_TRACE)
+      fprintf(stderr, "[eval] RETURN pop underrun\n");
+    return -1;
+  }
+  if (KOS_EVAL_TRACE && PyLong_Check(val))
+    fprintf(stderr, "[eval] RETURN value=%ld -> KOS_EV_RETURN\n",
+            PyLong_AsLong(val));
+  out_ev->kind = KOS_EV_RETURN;
+  out_ev->payload = val;
+  ctx->flags &= ~KOS_CTX_RUNNING;
+  ctx->flags |= KOS_CTX_DEAD;
+  (void) insn;
+  return 1;
+}
+
+
+KOS_OP_INLINE int op_PUSH_PROMPT(KosContext *ctx, KosEvent *out_ev,
+                                 KosOp *insn) {
+  uint32_t prompt_id;
+  if (get_prompt_id_from_insn(ctx->frame_top->code, insn, &prompt_id) < 0)
+    return -1;
+  if (! kos_dyn_push_prompt(ctx, prompt_id))
+    return -1;
+  (void) out_ev;
+  return 0;
+}
+
+
+KOS_OP_INLINE int op_SET_PROMPT_HANDLER(KosContext *ctx, KosEvent *out_ev,
+                                        KosOp *insn) {
+  if (ctx->dyn_top && KosDynNode_IS_PROMPT(ctx->dyn_top)) {
+    KosDynPrompt *p = (KosDynPrompt *) ctx->dyn_top;
+    p->handler_code = ctx->frame_top->code;
+    p->handler_pc = insn->arg;
+  }
+  (void) out_ev;
+  return 0;
+}
+
+
+KOS_OP_INLINE int op_POP_PROMPT(KosContext *ctx, KosEvent *out_ev,
+                                KosOp *insn) {
+  if (KOS_EVAL_TRACE)
+    fprintf(stderr, "[eval] POP_PROMPT inv_seg=%p dyn_top=%p IS_PROMPT=%d\n",
+            (void *) ctx->invocation_segment_top, (void *) ctx->dyn_top,
+            (ctx->dyn_top && KosDynNode_IS_PROMPT(ctx->dyn_top)) ? 1 : 0);
+  if (ctx->invocation_segment_top != NULL) {
+    PyObject *val = KosStackBlock_PopRef(&ctx->frame_top->stack);
+    if (! val) {
+      if (KOS_EVAL_TRACE)
+        fprintf(stderr, "[eval] POP_PROMPT (invoke) pop underrun\n");
+      return -1;
+    }
+    if (KOS_EVAL_TRACE && PyLong_Check(val))
+      fprintf(stderr, "[eval] POP_PROMPT return to invoker value=%ld\n",
+              PyLong_AsLong(val));
+    out_ev->kind = KOS_EV_RETURN;
+    out_ev->payload = val;
+    ctx->invocation_segment_top = NULL;
+    ctx->flags &= ~KOS_CTX_RUNNING;
+    (void) insn;
+    return 1;
+  }
+  if (! ctx->dyn_top || ! KosDynNode_IS_PROMPT(ctx->dyn_top)) {
+    PyErr_SetString(PyExc_RuntimeError, "POP_PROMPT: top is not a prompt");
+    return -1;
+  }
+  kos_dyn_pop_prompt(ctx, (KosDynPrompt *) ctx->dyn_top);
+  (void) insn;
+  return 0;
+}
+
+
+KOS_OP_INLINE int op_SHIFT(KosContext *ctx, KosEvent *out_ev, KosOp *insn) {
+  uint32_t prompt_id;
+  KosContinuation *k = NULL;
+  if (get_prompt_id_from_insn(ctx->frame_top->code, insn, &prompt_id) < 0)
+    return -1;
+  if (KOS_EVAL_TRACE)
+    fprintf(stderr, "[eval] SHIFT prompt_id=%u\n", (unsigned) prompt_id);
+  if (kos_shift_capture(ctx, prompt_id, &k) < 0) {
+    if (KOS_EVAL_TRACE)
+      fprintf(stderr, "[eval] SHIFT capture failed\n");
+    return -1;
+  }
+  KosDynPrompt *prompt = kos_find_prompt(ctx, prompt_id);
+  if (! prompt) {
+    kos_continuation_free(k);
+    PyErr_SetString(PyExc_RuntimeError, "shift: prompt not found");
+    return -1;
+  }
+  if (KOS_EVAL_TRACE)
+    fprintf(stderr, "[eval] SHIFT unwinding to prompt, then handler_pc=%u\n",
+            (unsigned) prompt->handler_pc);
+  while (ctx->dyn_top != (KosDynNode *) prompt) {
+    if (KosDynNode_IS_FRAME(ctx->dyn_top)) {
+      if (kos_dyn_pop_frame(ctx) < 0) {
+        kos_continuation_free(k);
+        return -1;
+      }
+    } else if (KosDynNode_IS_WIND(ctx->dyn_top)) {
+      if (kos_dyn_pop_wind(ctx, (KosDynWind *) ctx->dyn_top) < 0) {
+        kos_continuation_free(k);
+        return -1;
+      }
+    } else if (KosDynNode_IS_REGION(ctx->dyn_top)) {
+      kos_dyn_pop_region(ctx, (KosDynRegion *) ctx->dyn_top);
+    } else {
+      kos_continuation_free(k);
+      PyErr_SetString(PyExc_RuntimeError,
+                      "shift: cannot unwind past non-frame/wind/region");
+      return -1;
+    }
+  }
+  PyObject *wrapper = KosPyContinuation_New(k);
+  if (! wrapper) {
+    kos_continuation_free(k);
+    return -1;
+  }
+  if (! prompt->handler_code) {
+    Py_DECREF(wrapper);
+    PyErr_SetString(PyExc_RuntimeError, "shift: prompt has no handler");
+    return -1;
+  }
+  PyObject *ns = PyDict_New();
+  if (! ns) {
+    Py_DECREF(wrapper);
+    return -1;
+  }
+  KosDynFrame *handler_frame = kos_dyn_push_frame(ctx, prompt->handler_code, ns);
+  Py_DECREF(ns);
+  if (! handler_frame) {
+    Py_DECREF(wrapper);
+    return -1;
+  }
+  ctx->frame_top->pc = prompt->handler_pc;
+  if (KosStackBlock_PushRef(&ctx->frame_top->stack, wrapper) < 0) {
+    Py_DECREF(wrapper);
+    return -1;
+  }
+  Py_DECREF(wrapper);
+  (void) out_ev;
+  (void) handler_frame;
+  return 0;
+}
+
+
+KOS_OP_INLINE int op_INVOKE_K(KosContext *ctx, KosEvent *out_ev, KosOp *insn) {
+  PyObject *value = KosStackBlock_PopRef(&ctx->frame_top->stack);
+  if (! value) {
+    if (KOS_EVAL_TRACE)
+      fprintf(stderr, "[eval] INVOKE_K pop value failed\n");
+    return -1;
+  }
+  PyObject *cont_obj = KosStackBlock_PopRef(&ctx->frame_top->stack);
+  if (! cont_obj) {
+    if (KOS_EVAL_TRACE)
+      fprintf(stderr, "[eval] INVOKE_K pop cont failed\n");
+    Py_DECREF(value);
+    return -1;
+  }
+  if (KOS_EVAL_TRACE && PyLong_Check(value))
+    fprintf(stderr, "[eval] INVOKE_K value=%ld k=%p\n",
+            PyLong_AsLong(value), (void *) cont_obj);
+  if (! PyObject_TypeCheck(cont_obj, &KosPyContinuationType)) {
+    PyErr_SetString(PyExc_TypeError, "INVOKE_K: TOS is not a continuation");
+    Py_DECREF(value);
+    Py_DECREF(cont_obj);
+    return -1;
+  }
+  KosContinuation *k = ((KosPyContinuation *) cont_obj)->captured;
+  if (! k) {
+    Py_DECREF(value);
+    Py_DECREF(cont_obj);
+    PyErr_SetString(PyExc_RuntimeError,
+                    "INVOKE_K: continuation has no captured state");
+    return -1;
+  }
+  if (KOS_EVAL_TRACE)
+    fprintf(stderr, "[eval] INVOKE_K calling kos_invoke_continuation captured_chain=%p\n",
+            (void *) k->captured_chain);
+  if (kos_invoke_continuation(ctx, k, value, 0, cont_obj) < 0) {
+    if (KOS_EVAL_TRACE)
+      fprintf(stderr, "[eval] INVOKE_K kos_invoke_continuation returned -1\n");
+    Py_DECREF(value);
+    Py_DECREF(cont_obj);
+    return -1;
+  }
+  Py_DECREF(value);
+  (void) out_ev;
+  (void) insn;
+  return 0;
+}
+
+
+KOS_OP_INLINE int op_OBJECT_ADD(KosContext *ctx, KosEvent *out_ev,
+                                KosOp *insn) {
+  if (insn->arg != 2) {
+    PyErr_SetString(PyExc_RuntimeError, "OBJECT_ADD: only arg 2 supported");
+    return -1;
+  }
+  PyObject *right = KosStackBlock_PopRef(&ctx->frame_top->stack);
+  if (! right) {
+    if (KOS_EVAL_TRACE)
+      fprintf(stderr, "[eval] OBJECT_ADD pop right failed\n");
+    return -1;
+  }
+  PyObject *left = KosStackBlock_PopRef(&ctx->frame_top->stack);
+  if (! left) {
+    if (KOS_EVAL_TRACE)
+      fprintf(stderr, "[eval] OBJECT_ADD pop left failed\n");
+    Py_DECREF(right);
+    return -1;
+  }
+  if (KOS_EVAL_TRACE && PyLong_Check(left) && PyLong_Check(right))
+    fprintf(stderr, "[eval] OBJECT_ADD %ld + %ld\n",
+            PyLong_AsLong(left), PyLong_AsLong(right));
+  PyObject *res = PyNumber_Add(left, right);
+  Py_DECREF(left);
+  Py_DECREF(right);
+  if (! res)
+    return -1;
+  if (KosStackBlock_PushRef(&ctx->frame_top->stack, res) < 0) {
+    Py_DECREF(res);
+    return -1;
+  }
+  Py_DECREF(res);
+  (void) out_ev;
+  return 0;
+}
+
+
 int kos_drive(KosContext *ctx, KosEvent *out_ev) {
 
   if (! ctx) {
@@ -407,72 +764,91 @@ int kos_drive(KosContext *ctx, KosEvent *out_ev) {
     return 0;
   }
 
-  /* Check for active transfer plan */
-  if (ctx->plan) {
-    int plan_res = kos_run_transfer_step(ctx);
-    if (plan_res < 0) {
-      out_ev->kind = KOS_EV_RAISE;
-      out_ev->payload = NULL;
-      PyErr_Fetch(&out_ev->payload, NULL, NULL);
-      ctx->flags &= ~KOS_CTX_RUNNING;
-      ctx->flags |= KOS_CTX_DEAD;
-      return 0;
-    }
-    if (plan_res == 0) {
-      /* More plan steps - check if hook is now active */
-      if (kos_hook_active(ctx)) {
-        /* Hook execution - would continue in hook mode */
-        /* For now, just return RETURN with None */
-      }
-    } else {
-      /* Plan complete - free it */
-      kos_free_transfer_plan(ctx->plan);
-      ctx->plan = NULL;
-      ctx->flags &= ~KOS_CTX_IN_TRANSFER;
+  if (run_transfer_plan_to_completion(ctx, out_ev) < 0)
+    return 0;
 
-      /* Check for suspended plans to resume */
-      if (ctx->plan_stack) {
-        kos_resume_transfer_plan(ctx);
-      }
-    }
-  }
-
-  /*
-    TODO: Implement actual opcode execution loop here.
-    For now, this is a stub that demonstrates the event mechanism.
-
-    The full implementation would:
-    1. Check if hook_runner is active, if so execute from hook code/pc
-    2. Otherwise fetch opcode from ctx->frame_top->code at ctx->frame_top->pc
-    3. Dispatch and execute
-    4. Handle boundaries (RETURN, RAISE, YIELD, AWAIT)
-    5. Handle new opcodes (PUSH_PROMPT, POP_PROMPT, SHIFT, etc.)
-  */
-
-  if (! ctx->frame_top) {
-    /* No frame - return None */
+  if (kos_hook_active(ctx)) {
+    /* Minimal: no hook execution; return */
     out_ev->kind = KOS_EV_RETURN;
     out_ev->payload = Py_None;
     Py_INCREF(Py_None);
-
     ctx->flags &= ~KOS_CTX_RUNNING;
     ctx->flags |= KOS_CTX_DEAD;
-
     return 0;
   }
 
-  /*
-    Stub: immediately return None.
-    Real implementation would run opcodes here.
-  */
-  out_ev->kind = KOS_EV_RETURN;
-  out_ev->payload = Py_None;
-  Py_INCREF(Py_None);
+  if (! ctx->frame_top) {
+    out_ev->kind = KOS_EV_RETURN;
+    out_ev->payload = Py_None;
+    Py_INCREF(Py_None);
+    ctx->flags &= ~KOS_CTX_RUNNING;
+    ctx->flags |= KOS_CTX_DEAD;
+    return 0;
+  }
 
-  ctx->flags &= ~KOS_CTX_RUNNING;
-  ctx->flags |= KOS_CTX_DEAD;
+  /* Opcode dispatch loop */
+  for (;;) {
+    if (run_transfer_plan_to_completion(ctx, out_ev) < 0)
+      return 0;
 
-  return 0;
+    KosCode *code = ctx->frame_top->code;
+    uint32_t pc = ctx->frame_top->pc;
+
+    if (pc >= code->code_len) {
+      if (KOS_EVAL_TRACE)
+        fprintf(stderr, "[eval] pc=%u OUT OF RANGE (code_len=%u)\n",
+                (unsigned) pc, (unsigned) code->code_len);
+      PyErr_SetString(PyExc_RuntimeError, "pc out of range");
+      return -1;
+    }
+
+    KosOp *insn = &code->code[pc];
+    if (KOS_EVAL_TRACE) {
+      fprintf(stderr, "[eval] pc=%u op=%u arg=%u\n",
+              (unsigned) pc, (unsigned) insn->op, (unsigned) insn->arg);
+      trace_stack("  before", ctx->frame_top->stack);
+    }
+    ctx->frame_top->pc = pc + 1;
+
+    int op_res;
+    switch ((KosOpCode) insn->op) {
+      case KOS_OP_NOOP:
+        op_res = op_NOOP(ctx, out_ev, insn);
+        break;
+      case KOS_OP_CONST:
+        op_res = op_CONST(ctx, out_ev, insn);
+        break;
+      case KOS_OP_RETURN:
+        op_res = op_RETURN(ctx, out_ev, insn);
+        break;
+      case KOS_OP_PUSH_PROMPT:
+        op_res = op_PUSH_PROMPT(ctx, out_ev, insn);
+        break;
+      case KOS_OP_SET_PROMPT_HANDLER:
+        op_res = op_SET_PROMPT_HANDLER(ctx, out_ev, insn);
+        break;
+      case KOS_OP_POP_PROMPT:
+        op_res = op_POP_PROMPT(ctx, out_ev, insn);
+        break;
+      case KOS_OP_SHIFT:
+        op_res = op_SHIFT(ctx, out_ev, insn);
+        break;
+      case KOS_OP_INVOKE_K:
+        op_res = op_INVOKE_K(ctx, out_ev, insn);
+        break;
+      case KOS_OP_OBJECT_ADD:
+        op_res = op_OBJECT_ADD(ctx, out_ev, insn);
+        break;
+      default:
+        PyErr_Format(PyExc_RuntimeError, "unimplemented opcode %u",
+                     (unsigned) insn->op);
+        return -1;
+    }
+    if (op_res != 0)
+      return (op_res < 0) ? -1 : 0;
+    if (KOS_EVAL_TRACE)
+      trace_stack("  after ", ctx->frame_top->stack);
+  }
 }
 
 

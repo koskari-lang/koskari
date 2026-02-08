@@ -1,6 +1,8 @@
 # Koskari Design Documentation
 
-This directory contains the design documentation for koskari, organized into three main areas:
+This directory contains the design documentation for koskari, organized into three main areas.
+
+**For teaching another system** (human or agent) about what has been done and what must hold, see **[INVARIANTS-AND-CLARIFICATIONS.md](INVARIANTS-AND-CLARIFICATIONS.md)**. It summarizes execution invariants, type and data invariants, C structures, implementation status, and clarifications in one place.
 
 ## Structure
 

@@ -11,7 +11,7 @@ PYTHON_CONFIG ?= $(PYTHON)-config
 CC ?= gcc
 
 # Test source files - add new test files here
-TEST_SRCS := test_harness.c test_atom.c test_pair.c test_namespace.c test_bytecode.c test_formals.c test_values.c test_stack.c test_dynchain.c
+TEST_SRCS := test_harness.c test_atom.c test_pair.c test_namespace.c test_bytecode.c test_formals.c test_values.c test_stack.c test_dynchain.c test_eval.c
 # Future units: test_tco.c
 
 # Library source files - compiled into the test binary

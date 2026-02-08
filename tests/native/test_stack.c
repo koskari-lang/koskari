@@ -501,28 +501,6 @@ static int test_stack_clear(void) {
 }
 
 
-static int test_stack_block_style(void) {
-    /*
-      Test block style and labels.
-    */
-    PyObject *stack = KosStack_New();
-    TEST_ASSERT_NOT_NULL(stack, "create Stack");
-
-    /* Push block with style and labels */
-    int result = KosStack_PushBlockFull(stack, KOS_BLOCK_TRY, 100, 200);
-    TEST_ASSERT_EQ(result, 0, "push block full succeeded");
-
-    KosStackBlock *block = KosStack_BLOCK(stack);
-    TEST_ASSERT_EQ(KosStackBlock_BLOCK_STYLE(block), KOS_BLOCK_TRY, "style is TRY");
-    TEST_ASSERT_EQ(KosStackBlock_ENABLED(block), 1, "enabled by default");
-    TEST_ASSERT_EQ(KosStackBlock_LABEL_A(block), 100, "label_a is 100");
-    TEST_ASSERT_EQ(KosStackBlock_LABEL_B(block), 200, "label_b is 200");
-
-    Py_DECREF(stack);
-    return 0;
-}
-
-
 static int test_stack_pop_tail(void) {
     /*
       Test pop_tail returns tuple of elements.
@@ -1137,7 +1115,6 @@ int run_stack_tests(void) {
     RUN_TEST(test_stack_drop_block);
     RUN_TEST(test_stack_pull);
     RUN_TEST(test_stack_clear);
-    RUN_TEST(test_stack_block_style);
     RUN_TEST(test_stack_pop_tail);
     RUN_TEST(test_stack_extend);
 

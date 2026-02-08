@@ -32,12 +32,30 @@ Wind/unwind hooks are **bytecode blocks**, not Python callables:
 
 ### Python Boundary Constraint
 
-Captured continuations **cannot span Python/C call boundaries**:
+**Delimited continuations** (shift):
+- Captured continuations **cannot span Python/C call boundaries**
 - `KOS_DYN_PYCALL` nodes mark Python boundaries in the chain
 - `shift` capture rejects if any boundary exists between current and prompt
+- Delimited capture may not cross the CPython C calling-convention boundary
 - This ensures all captured state is VM-resumable
 
+**Full continuations** (call/cc):
+- May cross the CPython boundary only in the *upwards* direction
+- Crossing is implemented by raising a specialized `BaseException`, forcing a
+  single return through intervening Python/C frames until the owning Koskari
+  evaluator loop is reached
+- Python and C frames are not embedded in the Koskari dynamic chain; only
+  Koskari frames are re-enterable
+
 ## Implementation
+
+### Context Lifecycle
+
+Each evaluator context records an explicit lifecycle state (at least: active,
+sleeping/await/yield, exited). Continuations capture a reference to their owning
+evaluator context. It is an error to apply a continuation whose owning context
+state does not permit invocation. Attempting to invoke an unusable continuation
+(delimited or full) raises an exception at the invocation site.
 
 ### KosContinuation Structure
 

@@ -19,12 +19,20 @@ runtimes.
 
 ---
 
-## 2. Single Evaluator, Stackful VM (Invariant)
+## 2. Single Evaluator, Heap-Resident Stack (Invariant)
 
+* Koskari is a bytecode-based evaluator implemented as a native C extension
+  running inside CPython.
 * Koskari owns its **entire execution stack** as heap-resident frame objects.
+* The evaluator is internally **flattening (stackless)**: nested Koskari calls
+  do not consume the C call stack; execution state is represented by
+  heap-allocated linked structures. Dynamic nodes and frames are interleaved
+  into a heap-allocated linked list representing execution history.
 * The evaluator runs inside **one C call** per drive/resume.
 * Koskari never relies on CPython's recursive `ceval` re-entry for its own
   control flow.
+* Entry into the evaluator occurs via the `tp_call` (call implementation) of
+  the Koskari function CPython type.
 
 This enables flattening of async suspension without C-stack growth.
 
@@ -159,6 +167,16 @@ Yielding and awaiting are disjoint control paths internally and at the surface.
 
 ---
 
+## 12a. Control Flow (Invariant)
+
+* Koskari supports **local-only jumps** restricted to the current block context.
+* Local-only jumps implement continue, break, conditional control flow, and
+  try/except/finally.
+* **Non-local jumps** across block or dynamic extents are not permitted except
+  via continuations.
+
+---
+
 ## 13. Error and Cancellation Propagation (Decision)
 
 * Python exceptions raised inside Koskari propagate outward normally.
@@ -171,10 +189,18 @@ Yielding and awaiting are disjoint control paths internally and at the surface.
 
 ## 14. Python Boundary Constraint (Invariant)
 
-* Captured continuations **MUST NOT include Python/C call stack segments**.
+* **Delimited continuations**: Captured continuations (shift) **MUST NOT include
+  Python/C call stack segments**. Delimited capture may not cross the CPython C
+  calling-convention boundary.
+* **Full continuations**: May cross the CPython boundary only in the *upwards*
+  direction (from callee toward caller). Crossing is implemented by raising a
+  specialized `BaseException`, forcing a single return through intervening
+  Python/C frames until the owning Koskari evaluator loop is reached.
 * The dynamic chain tracks Python boundaries via `KOS_DYN_PYCALL` nodes.
 * `shift` capture is **rejected** if any `PYCALL` boundary exists between the
   current position and the target prompt.
+* Python and C frames are **not** embedded in the Koskari dynamic chain; only
+  Koskari frames are re-enterable.
 
 **Rationale**: Python call frames cannot be cloned or resumed. Including them
 would create non-resumable continuations.
@@ -202,22 +228,33 @@ checking for `PYCALL` nodes.
 
 ## 16. VM-Native Wind/Unwind Hooks (Invariant)
 
-* Wind/unwind hooks are **bytecode blocks**, not Python callables.
+* Wind/unwind hooks are **bytecode blocks** (implemented as null-arity Koskari
+  callables that compile to bytecode), not Python callables.
 * Hooks execute within the VM via `KosHookRunner` with isolated operand stacks.
+* Hooks run in their own frames and capture lexical context via closure.
 * Hooks terminate with `END_WIND` sentinel opcode.
 * Hooks cannot observe or modify the enclosing frame's stack.
+* **Local jumps and wind/unwind are distinct**: local jumps do *not* invoke
+  wind/unwind handlers; continuation transfer *does* invoke them.
 
 **Rationale**: This allows hooks to participate in continuation capture and
 avoids Python/C boundary crossings during wind/unwind.
 
 ---
 
-## 17. Delimited Continuation Semantics (Invariant)
+## 17. Continuation Semantics (Invariant)
 
-* Koskari implements **delimited continuations** (reset/shift), not undelimited
-  `call/cc`.
-* Continuations capture from the current point up to (but not including) the
-  nearest matching prompt.
+* Koskari implements both **delimited continuations** (reset/shift) and
+  **reusable full continuations** (call/cc).
+* Delimited continuations are restricted to the same evaluator context.
+* Continuations capture a reference to their owning evaluator context.
+* Each evaluator context records an explicit lifecycle state (at least: active,
+  sleeping/await/yield, exited). It is an error to apply a continuation whose
+  owning context state does not permit invocation. Attempting to invoke an
+  unusable continuation (delimited or full) raises an exception at the
+  invocation site.
+* Delimited continuations capture from the current point up to (but not
+  including) the nearest matching prompt.
 * Captured continuations are **multi-shot** by default.
 * Continuation invocation executes proper wind/unwind hooks in correct order.
 
@@ -251,7 +288,6 @@ continuation invocations.
 * No implicit event loop creation on normal calls.
 * No reliance on CPython frame recursion for Koskari semantics.
 * No unification of `yield` and `await` signals.
-* Undelimited `call/cc` is supported; delimited reset/shift is also supported.
 * No Python-callable wind/unwind hooks.
 
 ---

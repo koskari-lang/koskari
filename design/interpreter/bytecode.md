@@ -1,5 +1,10 @@
 # Bytecode Format
 
+**OPEN (not settled)**: Full opcode set and per-opcode semantics; bytecode word
+size and encoding details beyond tentative (uint16 op, uint16 arg) format; full
+opcode inventory and formal operand conventions; precise opcode-level semantics
+for local-only jumps; exact taxonomy of continuation-related exceptions.
+
 ## Koskari Bytecode (KosCode)
 
 Koskari uses a custom bytecode format optimized for:

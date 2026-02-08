@@ -355,6 +355,10 @@ struct KosTransferPlan {
 
   KosDynNode *original_target;  /* target for chain-change detection */
   uint32_t chain_version;       /* version at plan creation */
+  uint32_t resume_pc;           /* UINT32_MAX = not set; set for invocation */
+  KosDynFrame *resume_frame;    /* frame to resume into (invocation only) */
+  KosStackBlock *resume_stack;  /* stack state at capture (invocation only) */
+  PyObject *continuation_ref;   /* keep continuation alive until plan is freed */
 };
 
 
@@ -933,7 +937,8 @@ int kos_invoke_continuation(
    KosContext *ctx,
    KosContinuation *k,
    PyObject *value,
-   int is_throw);
+   int is_throw,
+   PyObject *continuation_ref);
 
 
 /* === GC traversal === */

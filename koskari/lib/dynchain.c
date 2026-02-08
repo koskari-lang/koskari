@@ -27,6 +27,11 @@
 
 
 #include "lib.h"
+#include <stdio.h>
+#include <string.h>
+
+/* Set to 1 to trace transfer plan steps (for debugging) */
+#define KOS_XFER_TRACE 1
 
 
 /* === DynNode base operations === */
@@ -363,6 +368,8 @@ KosDynNode *kos_dynnode_clone(KosDynNode *node) {
       return kos_dynpycall_new(NULL);
   }
 
+  PyErr_Format(PyExc_RuntimeError, "cannot clone dynnode kind %u",
+               (unsigned) node->kind);
   return NULL;
 }
 
@@ -387,8 +394,13 @@ KosDynNode *kos_clone_chain_segment(KosDynNode *top, KosDynNode *stop) {
 
   KosDynNode *node = top;
   while (node && node != stop) {
+    if (KOS_XFER_TRACE)
+      fprintf(stderr, "[xfer] clone_segment cloning node %p kind=%u\n",
+              (void *) node, (unsigned) node->kind);
     KosDynNode *cloned = kos_dynnode_clone(node);
     if (! cloned) {
+      if (KOS_XFER_TRACE)
+        fprintf(stderr, "[xfer] clone_segment kos_dynnode_clone failed\n");
       /* Clone failed, free what we've built so far */
       kos_dynchain_free(cloned_top, NULL);
       return NULL;
@@ -644,18 +656,48 @@ int kos_shift_capture(
   if (kos_validate_capture(ctx, prompt) < 0)
     return -1;
 
-  /* Clone the chain segment from dyn_top to prompt (exclusive) */
-  KosDynNode *captured_chain = kos_clone_chain_segment(ctx->dyn_top,
-                                                       (KosDynNode *) prompt);
-  if (! captured_chain && ctx->dyn_top != (KosDynNode *) prompt) {
+  /* Clone the chain segment that will be restored on invoke: the prompt and
+   * the frame below it (the body we were running).  That way the resumed
+   * context has a prompt to POP_PROMPT and can return to the invoker. */
+  KosDynNode *frame_inside = (KosDynNode *) prompt->base.parent;
+  KosDynNode *segment_top = (KosDynNode *) prompt;
+  KosDynNode *stop = frame_inside ? frame_inside->parent : NULL;
+  if (KOS_XFER_TRACE && frame_inside) {
+    fprintf(stderr, "[xfer] shift_capture segment_top=%p (prompt) frame_inside=%p kind=%u",
+            (void *) segment_top, (void *) frame_inside,
+            (unsigned) KosDynNode_KIND(frame_inside));
+    if (KosDynNode_IS_FRAME(frame_inside)) {
+      KosDynFrame *f = (KosDynFrame *) frame_inside;
+      fprintf(stderr, " stack=%p len=%zu",
+              (void *) f->stack,
+              f->stack ? (size_t) KosStackBlock_LEN(f->stack) : 0);
+    }
+    fprintf(stderr, "\n");
+    fflush(stderr);
+  }
+  KosDynNode *captured_chain = kos_clone_chain_segment(segment_top, stop);
+  if (! captured_chain && segment_top != stop) {
     /* Clone failed */
     return -1;
+  }
+
+  /* Make the template self-contained: clear the bottom's parent so we do not
+   * retain a reference to the original chain (e.g. the prompt).  Otherwise
+   * INSTALL would follow parent into freed memory when cloning from template. */
+  if (captured_chain) {
+    KosDynNode *bottom = captured_chain;
+    while (bottom->parent)
+      bottom = bottom->parent;
+    bottom->parent = NULL;
   }
 
   /* Find the topmost frame in the captured chain */
   KosDynFrame *resume_frame = NULL;
   KosDynNode *node = captured_chain;
   while (node) {
+    if (KOS_XFER_TRACE)
+      fprintf(stderr, "[xfer] shift_capture walk node=%p kind=%u\n",
+              (void *) node, (unsigned) KosDynNode_KIND(node));
     if (KosDynNode_IS_FRAME(node)) {
       resume_frame = (KosDynFrame *) node;
       break;
@@ -674,9 +716,13 @@ int kos_shift_capture(
   k->captured_chain = captured_chain;
   k->resume_frame = resume_frame;
   k->resume_pc = resume_frame ? resume_frame->pc : 0;
-  k->resume_stack = resume_frame ? KosStackBlock_COW(resume_frame->stack) : NULL;
+  /* Store stack as a template (COW).  At invoke the plan takes a COW ref;
+   * INSTALL gives the frame a COW ref; the first push/pop copies on write so
+   * each application sees an unmutated logical state. */
+  k->resume_stack = resume_frame
+      ? KosStackBlock_COW(resume_frame->stack) : NULL;
   k->prompt_id = prompt_id;
-  k->one_shot = 0;  /* multi-shot by default */
+  k->one_shot = 1;  /* one-shot for now; multi-shot clone needs segment-only clone */
 
   *out_k = k;
   return 0;
@@ -708,8 +754,15 @@ KosContinuation *kos_continuation_clone(KosContinuation *k) {
   if (! k)
     return NULL;
 
-  /* Clone the chain */
-  KosDynNode *cloned_chain = kos_clone_chain_segment(k->captured_chain, NULL);
+  /* Clone only the continuation's segment (do not clone into context below
+   * the prompt). Find the bottom of the captured chain and use its parent
+   * as stop so we don't clone context nodes. */
+  KosDynNode *bottom = k->captured_chain;
+  while (bottom && bottom->parent)
+    bottom = bottom->parent;
+  KosDynNode *stop = bottom ? bottom->parent : NULL;
+
+  KosDynNode *cloned_chain = kos_clone_chain_segment(k->captured_chain, stop);
   if (! cloned_chain && k->captured_chain) {
     return NULL;
   }
@@ -796,6 +849,9 @@ int kos_build_transfer_plan(
 
   KosDynNode *current = ctx->dyn_top;
   KosDynNode *lca = kos_compute_lca(current, target);
+  if (KOS_XFER_TRACE)
+    fprintf(stderr, "[xfer] build_plan current=%p target=%p lca=%p\n",
+            (void *) current, (void *) target, (void *) lca);
 
   /* Count actions needed */
   size_t action_count = 0;
@@ -833,12 +889,14 @@ int kos_build_transfer_plan(
   /* Add INJECT action */
   action_count++;
 
-  /* Allocate plan */
+  /* Allocate plan and actions; zero so every action.step is 0 until set.
+   * This avoids garbage or padding making step read as RUN_HOOK. */
   KosTransferPlan *plan = PyMem_Malloc(sizeof(KosTransferPlan));
   if (! plan) {
     PyErr_NoMemory();
     return -1;
   }
+  memset(plan, 0, sizeof(KosTransferPlan));
 
   plan->actions = PyMem_Malloc(sizeof(KosTransferAction) * action_count);
   if (! plan->actions) {
@@ -846,12 +904,15 @@ int kos_build_transfer_plan(
     PyErr_NoMemory();
     return -1;
   }
+  memset(plan->actions, 0, sizeof(KosTransferAction) * action_count);
 
-  plan->suspended = NULL;
   plan->action_count = action_count;
   plan->action_index = 0;
   plan->original_target = target;
   plan->chain_version = ctx->chain_version;
+  plan->resume_pc = (uint32_t) -1;  /* not set; set by kos_invoke_continuation */
+  plan->resume_frame = NULL;       /* set by kos_invoke_continuation */
+  plan->resume_stack = NULL;      /* set by kos_invoke_continuation */
 
   /* Build actions */
   size_t idx = 0;
@@ -865,6 +926,9 @@ int kos_build_transfer_plan(
         plan->actions[idx].step = KOS_XFER_RUN_HOOK;
         plan->actions[idx].data.hook.code = wind->after_code;
         plan->actions[idx].data.hook.pc = wind->after_pc;
+        if (KOS_XFER_TRACE)
+          fprintf(stderr, "[xfer] plan action[%zu] = RUN_HOOK (unwind) node=%p\n",
+                  idx, (void *) node);
         idx++;
       }
     }
@@ -874,6 +938,9 @@ int kos_build_transfer_plan(
   /* INSTALL action */
   plan->actions[idx].step = KOS_XFER_INSTALL;
   plan->actions[idx].data.install.segment = target;
+  if (KOS_XFER_TRACE)
+    fprintf(stderr, "[xfer] plan action[%zu] = INSTALL segment=%p\n",
+            idx, (void *) target);
   idx++;
 
   /* Wind hooks (outer to inner: LCA toward target) */
@@ -934,6 +1001,19 @@ void kos_free_transfer_plan(KosTransferPlan *plan) {
     }
   }
 
+  /* Release the retained resume_stack reference */
+  if (plan->resume_stack) {
+    KosStackBlock *b = plan->resume_stack;
+    while (b) {
+      KosStackBlock *p = KosStackBlock_PARENT(b);
+      KosStackBlock_Release(b);
+      b = p;
+    }
+  }
+
+  Py_XDECREF(plan->continuation_ref);
+  plan->continuation_ref = NULL;
+
   PyMem_Free(plan->actions);
   PyMem_Free(plan);
 }
@@ -947,6 +1027,11 @@ int kos_run_transfer_step(KosContext *ctx) {
     return 1;  /* plan complete */
 
   KosTransferAction *action = &ctx->plan->actions[ctx->plan->action_index];
+  if (KOS_XFER_TRACE)
+    fprintf(stderr, "[xfer] step %zu: plan=%p actions=%p step_type=%d (INSTALL=%d)\n",
+            (size_t) (ctx->plan->action_index),
+            (void *) ctx->plan, (void *) ctx->plan->actions,
+            (int) action->step, (int) KOS_XFER_INSTALL);
   ctx->plan->action_index++;
 
   switch (action->step) {
@@ -954,23 +1039,77 @@ int kos_run_transfer_step(KosContext *ctx) {
       /* Start hook execution - return 0 to indicate more work */
       return kos_begin_hook(ctx, action->data.hook.code, action->data.hook.pc);
 
-    case KOS_XFER_INSTALL:
-      /* Install target chain segment */
-      ctx->dyn_top = action->data.install.segment;
+    case KOS_XFER_INSTALL: {
+      /* Instantiate from template: clone the segment so we evaluate a new
+       * copy (no mutated stack or broken back-links). */
+      KosDynNode *template_seg = action->data.install.segment;
+      KosDynNode *template_bottom = template_seg;
+      while (template_bottom && template_bottom->parent)
+        template_bottom = template_bottom->parent;
+      KosDynNode *stop = template_bottom ? template_bottom->parent : NULL;
+      KosDynNode *seg = kos_clone_chain_segment(template_seg, stop);
+      if (! seg && template_seg) {
+        if (KOS_XFER_TRACE)
+          fprintf(stderr, "[xfer] INSTALL clone segment failed\n");
+        ctx->plan->action_index--;  /* leave step for retry or caller */
+        return -1;
+      }
+      if (KOS_XFER_TRACE) {
+        fprintf(stderr, "[xfer] INSTALL segment=%p (fresh) resume_pc=%u (before: dyn_top=%p frame_top=%p)\n",
+                (void *) seg, (unsigned) ctx->plan->resume_pc,
+                (void *) ctx->dyn_top, (void *) ctx->frame_top);
+        fflush(stderr);
+      }
+      ctx->dyn_top = seg;
       kos_update_frame_top(ctx);
+      /* Restore stack from plan (fresh copy from template). */
+      if (ctx->frame_top && ctx->plan->resume_stack) {
+        KosStackBlock *new_stack = KosStackBlock_COW(ctx->plan->resume_stack);
+        KosStackBlock *old_stack = ctx->frame_top->stack;
+        ctx->frame_top->stack = new_stack;
+        if (old_stack && old_stack != new_stack) {
+          KosStackBlock *b = old_stack;
+          while (b) {
+            KosStackBlock *p = KosStackBlock_PARENT(b);
+            KosStackBlock_Release(b);
+            b = p;
+          }
+        }
+      }
+      if (ctx->plan->resume_pc != (uint32_t) -1 && ctx->frame_top) {
+        ctx->frame_top->pc = ctx->plan->resume_pc;
+      }
       ctx->chain_version++;
+      if (KOS_XFER_TRACE) {
+        fprintf(stderr, "[xfer] INSTALL after: dyn_top=%p frame_top=%p\n",
+                (void *) ctx->dyn_top, (void *) ctx->frame_top);
+        fflush(stderr);
+      }
       break;
+    }
 
     case KOS_XFER_INJECT:
+      if (KOS_XFER_TRACE)
+        fprintf(stderr, "[xfer] INJECT frame_top=%p stack=%p is_throw=%d\n",
+                (void *) ctx->frame_top,
+                ctx->frame_top ? (void *) ctx->frame_top->stack : NULL,
+                action->data.inject.is_throw);
       if (action->data.inject.is_throw) {
         ctx->pending_throw = 1;
         Py_XINCREF(action->data.inject.value);
         Py_XDECREF(ctx->pending_exc);
         ctx->pending_exc = action->data.inject.value;
       } else {
-        /* Push value onto frame's stack */
-        if (ctx->frame_top && ctx->frame_top->stack) {
-          /* TODO: properly push onto stack */
+        /* Push value onto frame's stack (PushRef allocates block if NULL) */
+        if (ctx->frame_top &&
+            KosStackBlock_PushRef(&ctx->frame_top->stack,
+                                  action->data.inject.value) < 0) {
+          if (KOS_XFER_TRACE)
+            fprintf(stderr, "[xfer] INJECT PushRef failed\n");
+          /* PushRef already set exception */
+          Py_XDECREF(action->data.inject.value);
+          action->data.inject.value = NULL;
+          return -1;
         }
       }
       Py_XDECREF(action->data.inject.value);
@@ -1074,7 +1213,8 @@ int kos_invoke_continuation(
     KosContext *ctx,
     KosContinuation *k,
     PyObject *value,
-    int is_throw) {
+    int is_throw,
+    PyObject *continuation_ref) {
 
   if (! k) {
     PyErr_SetString(PyExc_RuntimeError, "NULL continuation");
@@ -1083,34 +1223,57 @@ int kos_invoke_continuation(
 
   /* For multi-shot, clone the continuation */
   KosContinuation *to_use = k;
+  if (KOS_XFER_TRACE)
+    fprintf(stderr, "[xfer] kos_invoke_continuation k=%p one_shot=%d captured_chain=%p\n",
+            (void *) k, k->one_shot, (void *) k->captured_chain);
   if (! k->one_shot) {
     to_use = kos_continuation_clone(k);
-    if (! to_use)
+    if (KOS_XFER_TRACE)
+      fprintf(stderr, "[xfer] clone -> to_use=%p\n", (void *) to_use);
+    if (! to_use) {
+      if (KOS_XFER_TRACE)
+        fprintf(stderr, "[xfer] clone failed\n");
       return -1;
+    }
   }
 
-  /* Build transfer plan from current to captured chain */
+  /* Build plan from template; INSTALL will clone the segment so we evaluate
+   * a new copy each time (no mutated stack or broken back-links). */
   KosTransferPlan *plan = NULL;
+  if (KOS_XFER_TRACE)
+    fprintf(stderr, "[xfer] kos_build_transfer_plan current=%p target=%p (template)\n",
+            (void *) ctx->dyn_top, (void *) to_use->captured_chain);
   int res = kos_build_transfer_plan(ctx, to_use->captured_chain,
                                     value, is_throw, &plan);
+  if (KOS_XFER_TRACE)
+    fprintf(stderr, "[xfer] kos_build_transfer_plan -> res=%d plan=%p\n",
+            res, (void *) plan);
   if (res < 0) {
     if (to_use != k)
       kos_continuation_free(to_use);
     return -1;
   }
 
-  /* Install the plan */
+  plan->resume_pc = k->resume_pc;
+  plan->resume_frame = to_use->resume_frame;  /* template; INSTALL uses fresh */
+  /* COW ref to template stack for this invoke; released in kos_free_transfer_plan. */
+  plan->resume_stack = to_use->resume_stack
+      ? KosStackBlock_COW(to_use->resume_stack) : NULL;
+  if (KOS_XFER_TRACE)
+    fprintf(stderr, "[xfer] plan resume_frame=%p resume_stack=%p\n",
+            (void *) plan->resume_frame, (void *) plan->resume_stack);
+
   ctx->plan = plan;
   ctx->flags |= KOS_CTX_IN_TRANSFER;
+  plan->continuation_ref = NULL;
+  if (continuation_ref) {
+    Py_INCREF(continuation_ref);
+    plan->continuation_ref = continuation_ref;
+  }
 
-  /* If we cloned, mark the original as one-shot since we used the clone */
   if (to_use != k) {
-    /* The cloned continuation's chain is now the target, don't free it */
     to_use->captured_chain = NULL;
     kos_continuation_free(to_use);
-  } else {
-    /* One-shot: we consumed the continuation's chain */
-    k->captured_chain = NULL;
   }
 
   return 0;
@@ -1186,6 +1349,8 @@ int kos_transferplan_traverse(
 
   if (! plan)
     return 0;
+
+  Py_VISIT(plan->continuation_ref);
 
   for (size_t i = plan->action_index; i < plan->action_count; i++) {
     if (plan->actions[i].step == KOS_XFER_INJECT) {

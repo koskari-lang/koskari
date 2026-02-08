@@ -225,6 +225,7 @@ OP(OBJECT_VARS, NOARG)
 
 // delimited continuation control
 OP(PUSH_PROMPT, CONST)         // arg = prompt_id constant pool index
+OP(SET_PROMPT_HANDLER, LABEL)  // arg = handler pc (instruction index)
 OP(POP_PROMPT, NOARG)          // pop prompt from dynamic chain
 OP(SHIFT, CONST)               // capture continuation, abort to prompt
 

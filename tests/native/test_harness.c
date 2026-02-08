@@ -204,6 +204,7 @@ int main(int argc, char *argv[]) {
     run_values_tests();
     run_stack_tests();
     run_dynchain_tests();
+    run_eval_tests();
 
     /* Future units:
     run_tco_tests();

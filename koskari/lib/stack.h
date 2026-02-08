@@ -119,6 +119,30 @@ void KosStackBlock_Release(KosStackBlock *block);
 
 
 /**
+   Deep-copy a stack block chain: new blocks, same values (new refs).
+   Caller must Release the result. Returns NULL if block is NULL or on error.
+ */
+KosStackBlock *KosStackBlock_DeepCopy(KosStackBlock *block);
+
+
+/**
+   Push val onto the block chain (increments ref). For use by eval/dynchain
+   on frame stacks. Copy-on-write and grow as needed.
+
+   :return: 0 on success, -1 on error
+ */
+int KosStackBlock_PushRef(KosStackBlock **block, PyObject *val);
+
+
+/**
+   Pop one value from the block chain. Caller owns the returned reference.
+
+   :return: value or NULL on underrun (sets exception)
+ */
+PyObject *KosStackBlock_PopRef(KosStackBlock **block);
+
+
+/**
    Appends val to the current block's stack, incrementing the reference.
 
    :return: 0 if successful, sets err and returns -1 if overrun
