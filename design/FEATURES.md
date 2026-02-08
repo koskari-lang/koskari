@@ -141,7 +141,7 @@ This document provides a high-level summary of all features identified from both
 - Wind/unwind: `kos_push_wind`, `kos_push_before_wind`, `kos_push_after_wind`, `kos_pop_wind`
 - Continuation application: `kos_apply_continuation` with LCA computation and hook execution
 - Call operations: `kos_koscall`, `kos_tail_koscall`
-- Drive loop: `kos_drive` (stub, ready for opcode implementation)
+- Drive loop: `kos_drive` (opcode fetch and dispatch implemented; many opcodes still stubs)
 - GC traversal: helpers for all VM structures
 
 **Continuation Support**:
@@ -168,7 +168,7 @@ This document provides a high-level summary of all features identified from both
 - Control flow constructs
 - Function system
 - Compiler architecture from sibilant-ceval
-- Opcode dispatch loop (evaluator structure in place, bytecode format ready)
+- Remaining opcode handlers (dispatch loop in place; variables, calls, blocks, etc. still stubbed)
 
 ### Needs Reconsideration
 - CPython bytecode target (abandoned)

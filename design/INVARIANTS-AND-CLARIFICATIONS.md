@@ -119,13 +119,13 @@ These are **commitments**: they must hold for correct behavior. They are elabora
 
 - **KosDynRegion**: Block-local control; `KosRegionStyle` (TRY, FINALLY, LOOP, WITH, FOREACH, AWAIT_WITH, AWAIT_FOREACH, NS, BEGIN). `a_label`, `b_label` are jump targets; `enabled` for exception handling.
 
-- **KosContext**: Top-level VM state: `dyn_top`, `frame_top`, `hook_runner`, `plan` / `plan_stack`, `chain_version`, `py_await_iter`, `pending_throw`/`pending_exc`, `flags`.
+- **KosContext**: Top-level VM state: `dyn_top`, `frame_top`, `globals_frame`, `globals_cache_version`, `hook_runner`, `plan` / `plan_stack`, `chain_version`, `invocation_segment_top`, `py_await_iter`, `pending_throw`/`pending_exc`, `handling_raise`/`handling_result`, `flags`.
 
 - **KosEvent**: Boundary event from `kos_drive`: `KOS_EV_RETURN`, `KOS_EV_RAISE`, `KOS_EV_YIELD`, `KOS_EV_AWAIT`; `payload` is a new reference owned by the caller.
 
 - **KosContinuation**: Captured segment: `captured_chain`, `resume_frame`, `resume_pc`, `resume_stack`, `prompt_id`, `one_shot`. Multi-shot clones on each invoke.
 
-- **KosTransferPlan**: Ordered list of steps: `KOS_XFER_RUN_HOOK`, `KOS_XFER_INSTALL`, `KOS_XFER_INJECT`. Tracks `chain_version` and `original_target` for replanning after nested transfers.
+- **KosTransferPlan**: Ordered list of steps: `KOS_XFER_RUN_HOOK`, `KOS_XFER_INSTALL`, `KOS_XFER_INJECT`. Tracks `chain_version` and `original_target` for replanning after nested transfers. For invocation: `resume_pc`, `resume_frame`, `resume_stack`, `continuation_ref`.
 
 - **KosHookRunner**: Runs one hook block: `code`, `pc`, `scratch` stack, `active` flag.
 
@@ -147,7 +147,7 @@ These are **commitments**: they must hold for correct behavior. They are elabora
 
 - **Instruction**: 4 bytes = `KosOp { op, arg }` (both uint16_t). The exact bytecode encoding is not finalized; current aim is a fixed-width encoding of (uint16 op, uint16 arg).
 - **Position**: Stored in a separate delta-encoded table; only changes are recorded; lookup by instruction index is binary search.
-- **Opcodes**: Defined in `opcodes.incl` with `OP(name, style)`. Styles: COMPILE, LABEL, NOARG, COUNT, PAIR_COUNT, STAR, CONST, VAR, FASTVAR. Categories include stack, control flow, jumps, variables (VAR / FASTVAR), attributes, items, calls (including tail/recur), block control, delimited continuations (PUSH_PROMPT, POP_PROMPT, SHIFT), dynamic wind (PUSH_WIND, POP_WIND, END_WIND), continuation invocation (INVOKE_K), region control, object protocol, iteration, introspection, exceptions.
+- **Opcodes**: Defined in `opcodes.incl` with `OP(name, style)`. Styles: COMPILE, LABEL, NOARG, COUNT, PAIR_COUNT, STAR, CONST, VAR, FASTVAR. Categories include stack, control flow, jumps, variables (VAR / FASTVAR), attributes, items, calls (including tail/recur), block control, delimited continuations (PUSH_PROMPT, SET_PROMPT_HANDLER, POP_PROMPT, SHIFT), dynamic wind (PUSH_WIND, POP_WIND, END_WIND), continuation invocation (INVOKE_K), region control, object protocol, iteration, introspection, exceptions.
 
 **OPEN** (not settled): Full opcode set and per-opcode semantics; bytecode word size and encoding details beyond tentative format; full opcode inventory and formal operand conventions; precise opcode-level semantics for local-only jumps; exact taxonomy of continuation-related exceptions.
 
@@ -182,18 +182,18 @@ These are **commitments**: they must hold for correct behavior. They are elabora
 - Stack: block-structured storage (stack.c); region metadata in DynRegion.
 - Bytecode: Code, 4-byte instructions, position table, constant pool, read-only protection (bytecode.c).
 - Parser/reader: BaseSourceStream, SourceStream, Reader (parse.c, parse.py).
-- Dynamic chain: all DynNode types, push/pop, clone, free (dynchain.c).
+- Dynamic chain: all DynNode types, push/pop, clone, free, kos_find_region_for_raise (dynchain.c).
 - Continuation: capture, validate, clone, invoke, transfer plan, LCA (dynchain.c, eval.c).
 - Wind: push/pop wind, hook runner, begin/hook_active/end_hook (dynchain.c, eval.c).
 - Evaluator core: KosContext, KosFrame, kos_context_new/free, kos_frame_new/clone/free, kos_koscall, kos_tail_koscall (eval.c).
-- Drive loop **stub**: `kos_drive()` exists and handles transfer plans and pending exception injection, but **does not** yet dispatch opcodes; it returns `KOS_EV_RETURN` with `Py_None` after a short path. TODO in code: implement opcode fetch/dispatch and boundary handling (eval.c around line 439).
+- Drive loop: `kos_drive()` is implemented with opcode fetch, dispatch table, and boundary handling. Many opcodes are implemented (stack, constants, exceptions, try/finally, delimited continuations, object protocol); many others are still stubs that raise "unimplemented opcode" at runtime.
 - Python wrappers: KosPyContinuation, KosPyCoroutine, KosPyAsyncGen, KosPyAsyncGenASend; coroutine/async-gen drive logic and eager-step await (eval.c).
 - GC: traverse helpers for context, frame, stack block, chain, continuation, transfer plan, hook runner (eval.c, dynchain.c).
 - Operators: reducing arithmetic, bitwise, membership, build-str; apply, reapply, identity, constantly, _pass; build_tuple, build_list, build_set, build_dict (operator.c, lib.c).
 
 **Not yet implemented**:
 
-- Opcode dispatch loop inside `kos_drive` (actual execution of bytecode).
+- Remaining opcode handlers (variables, attributes, items, calls, blocks, loops, etc. — currently stubs).
 - Compiler (parse → expand → compile → bytecode).
 - Module creation/loading and import system integration.
 - Most special forms (only types, parsing, and runtime primitives exist).

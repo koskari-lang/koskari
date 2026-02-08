@@ -197,6 +197,7 @@ typedef enum KosOpStyle {
 
 ### Delimited Continuations
 - `KOS_OP_PUSH_PROMPT`: Push prompt delimiter (arg = prompt_id constant index)
+- `KOS_OP_SET_PROMPT_HANDLER`: Set handler for prompt (arg = handler pc label)
 - `KOS_OP_POP_PROMPT`: Pop prompt from dynamic chain
 - `KOS_OP_SHIFT`: Capture continuation, abort to prompt (arg = prompt_id constant index)
 

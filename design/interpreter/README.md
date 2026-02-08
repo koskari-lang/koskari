@@ -9,7 +9,6 @@ This directory documents the interpreter implementation, including bytecode form
 - **evaluator.md**: Evaluation model and ceval loop (implemented in `koskari/lib/eval.c`)
 - **execution-invariants.md**: Koskari execution model invariants and design commitments
 - **callcc.md**: Call/cc implementation design
-- **import-system.md**: Import system implementation
 
 ## Implementation Status
 
@@ -17,6 +16,7 @@ This directory documents the interpreter implementation, including bytecode form
 |-----------|--------|-------|
 | Bytecode storage | Implemented | `bytecode.c`, `bytecode.h`, `opcodes.incl` |
 | Opcode definitions | Implemented | `opcodes.incl` |
-| Evaluator core | Implemented (stub) | `eval.c`, `eval.h` |
-| Continuation support | Implemented | `eval.c` |
+| Evaluator core | Implemented | `eval.c`, `eval.h` |
+| Opcode dispatch | Implemented | `eval.c` (many opcodes implemented; many still stubs) |
+| Continuation support | Implemented | `eval.c`, `dynchain.c` |
 | Compiler | Not started | - |

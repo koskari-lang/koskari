@@ -34,6 +34,6 @@ The following components have been fully migrated with native C extensions:
 | Formals, FormalsSpec | sibilant-ceval | Complete |
 | Parser (Reader, SourceStream) | python-sibilant | Complete |
 | Compiler | python-sibilant | Not started |
-| Evaluator | sibilant-ceval | Not started |
+| Evaluator | sibilant-ceval | Complete |
 
 See [api/types.md](api/types.md) for detailed type documentation.

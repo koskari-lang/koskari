@@ -104,6 +104,8 @@ struct KosDynRegion {
 struct KosContext {
   KosDynNode *dyn_top;       /* top of dynamic chain */
   KosDynFrame *frame_top;    /* cached topmost frame (for fast access) */
+  KosDynFrame *globals_frame;     /* cached outermost frame (for op_GLOBALS) */
+  uint32_t globals_cache_version; /* chain_version when globals_frame was set */
 
   /* Hook execution state */
   KosHookRunner hook_runner;
@@ -113,6 +115,9 @@ struct KosContext {
   KosTransferPlan *plan_stack;  /* suspended plans stack */
   uint32_t chain_version;       /* incremented on chain modifications */
 
+  /* Delimited continuation: top of installed segment when inside invoked k */
+  KosDynNode *invocation_segment_top;
+
   /* Python await bridging state */
   PyObject *py_await_iter;   /* await-iterator from __await__() */
   PyObject *py_last_yielded; /* last yielded object (debug/optional) */
@@ -120,6 +125,10 @@ struct KosContext {
   /* Exception injection for resume */
   int pending_throw;
   PyObject *pending_exc;
+
+  /* Finally handler state: we entered a finally due to raise/return */
+  int handling_raise;        /* 1 when in finally because of exception */
+  PyObject *handling_result;  /* stashed return value (future return-through-finally) */
 
   uint32_t flags;            /* KosContextFlags */
 };
@@ -189,6 +198,10 @@ struct KosTransferPlan {
   size_t action_index;          /* next action index */
   KosDynNode *original_target;  /* for chain-change detection */
   uint32_t chain_version;       /* version at plan creation */
+  uint32_t resume_pc;           /* UINT32_MAX = not set; set for invocation */
+  KosDynFrame *resume_frame;    /* frame to resume into (invocation only) */
+  KosStackBlock *resume_stack; /* stack state at capture (invocation only) */
+  PyObject *continuation_ref;  /* keep continuation alive until plan is freed */
 };
 ```
 
@@ -247,6 +260,9 @@ KosDynRegion *kos_dyn_push_region(KosContext *ctx,
         KosRegionStyle style, uint32_t label_a, uint32_t label_b);
 void kos_dyn_pop_region(KosContext *ctx, KosDynRegion *region);
 
+/* Find topmost enabled TRY or FINALLY region (for exception handling) */
+KosDynRegion *kos_find_region_for_raise(KosContext *ctx);
+
 /* Python boundary markers */
 KosDynNode *kos_dyn_push_pycall(KosContext *ctx);
 void kos_dyn_pop_pycall(KosContext *ctx, KosDynNode *marker);
@@ -265,9 +281,14 @@ int kos_validate_capture(KosContext *ctx, KosDynPrompt *prompt);
 int kos_shift_capture(KosContext *ctx, uint32_t prompt_id,
         KosContinuation **out_k);
 
-/* Invoke continuation */
+/* Invoke continuation (continuation_ref keeps k alive until plan is freed) */
 int kos_invoke_continuation(KosContext *ctx,
-        KosContinuation *k, PyObject *value, int is_throw);
+        KosContinuation *k, PyObject *value, int is_throw,
+        PyObject *continuation_ref);
+
+/* Free or clone continuation */
+void kos_continuation_free(KosContinuation *k);
+KosContinuation *kos_continuation_clone(KosContinuation *k);
 ```
 
 ### Transfer Planning
@@ -283,6 +304,9 @@ int kos_build_transfer_plan(KosContext *ctx,
 
 /* Execute next step of transfer plan */
 int kos_run_transfer_step(KosContext *ctx);
+
+/* Free transfer plan */
+void kos_free_transfer_plan(KosTransferPlan *plan);
 
 /* Suspend/resume for nested transfers */
 void kos_suspend_transfer_plan(KosContext *ctx);
@@ -303,6 +327,7 @@ int kos_end_hook(KosContext *ctx);
 KosContext *kos_context_new(KosDynFrame *top);
 void kos_context_free(KosContext *ctx);
 
+/* Frame helpers (wrappers around kos_dynframe_new/clone/free) */
 KosFrame *kos_frame_new(KosCode *code, PyObject *ns,
         KosStackBlock *stack, KosDynNode *parent);
 KosFrame *kos_frame_clone(KosFrame *frame);
