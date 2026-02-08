@@ -43,6 +43,11 @@ from .types import (
     # values type
     values,
 
+    # bytecode types
+    Code,
+    OpCode,
+    OpStyle,
+
     # atom functions
     gensym,
 
@@ -122,6 +127,11 @@ __all__ = (
 
     # values type
     "values",
+
+    # bytecode types
+    "Code",
+    "OpCode",
+    "OpStyle",
 
     # atom functions
     "gensym",

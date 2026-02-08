@@ -53,6 +53,11 @@ from .lib import (
     # parse types
     BaseSourceStream,
 
+    # bytecode types
+    Code,
+    OpCode,
+    OpStyle,
+
     # atom functions
     gensym,
 
@@ -91,6 +96,11 @@ __all__ = (
 
     # parse types
     "BaseSourceStream",
+
+    # bytecode types
+    "Code",
+    "OpCode",
+    "OpStyle",
 
     # atom functions
     "gensym",
