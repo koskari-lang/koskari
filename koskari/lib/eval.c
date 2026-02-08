@@ -469,11 +469,36 @@ static PyObject *eager_step_awaitable(
 /* === Opcode handlers (always inlined; return 0=continue 1=stop -1=error) === */
 
 
+static int op_unimplemented_stub(KosContext *ctx, KosEvent *out_ev, KosOp *insn) {
+  (void) ctx;
+  (void) out_ev;
+  PyErr_Format(PyExc_RuntimeError, "unimplemented opcode %u",
+               (unsigned) insn->op);
+  return -1;
+}
+
+
 KOS_OP_INLINE int op_NOOP(KosContext *ctx, KosEvent *out_ev, KosOp *insn) {
   (void) ctx;
   (void) out_ev;
   (void) insn;
   return 0;  /* continue */
+}
+
+
+KOS_OP_INLINE int op_LABEL(KosContext *ctx, KosEvent *out_ev, KosOp *insn) {
+  (void) ctx;
+  (void) out_ev;
+  (void) insn;
+  return 0;
+}
+
+
+KOS_OP_INLINE int op_POSITION(KosContext *ctx, KosEvent *out_ev, KosOp *insn) {
+  (void) ctx;
+  (void) out_ev;
+  (void) insn;
+  return 0;
 }
 
 
@@ -498,6 +523,33 @@ KOS_OP_INLINE int op_CONST(KosContext *ctx, KosEvent *out_ev, KosOp *insn) {
 }
 
 
+KOS_OP_INLINE int op_DUP(KosContext *ctx, KosEvent *out_ev, KosOp *insn) {
+  int opa = (int) insn->arg;
+  if (opa < 0) {
+    PyErr_Format(PyExc_RuntimeError, "DUP invoked with negative"
+                 " argument count: %i", opa);
+    return -1;
+  }
+  if (KosStackBlock_Duplicate(&ctx->frame_top->stack, (size_t) opa) < 0)
+    return -1;
+  (void) out_ev;
+  return 0;
+}
+
+
+KOS_OP_INLINE int op_POP(KosContext *ctx, KosEvent *out_ev, KosOp *insn) {
+  unsigned n = insn->arg;
+  for (unsigned i = 0; i < n; i++) {
+    PyObject *val = KosStackBlock_PopRef(&ctx->frame_top->stack);
+    if (! val)
+      return -1;
+    Py_DECREF(val);
+  }
+  (void) out_ev;
+  return 0;
+}
+
+
 KOS_OP_INLINE int op_RETURN(KosContext *ctx, KosEvent *out_ev, KosOp *insn) {
   PyObject *val = KosStackBlock_PopRef(&ctx->frame_top->stack);
   if (! val) {
@@ -514,6 +566,144 @@ KOS_OP_INLINE int op_RETURN(KosContext *ctx, KosEvent *out_ev, KosOp *insn) {
   ctx->flags |= KOS_CTX_DEAD;
   (void) insn;
   return 1;
+}
+
+
+
+
+KOS_OP_INLINE int op_GLOBALS(KosContext *ctx, KosEvent *out_ev, KosOp *insn) {
+  KosDynNode *n = (KosDynNode *) ctx->frame_top;
+  KosDynFrame *outer = ctx->frame_top;
+  while (n && n->parent) {
+    n = n->parent;
+    if (KosDynNode_IS_FRAME(n))
+      outer = (KosDynFrame *) n;
+  }
+  PyObject *ns = outer->ns;
+  Py_INCREF(ns);
+  if (KosStackBlock_PushRef(&ctx->frame_top->stack, ns) < 0) {
+    Py_DECREF(ns);
+    return -1;
+  }
+  Py_DECREF(ns);
+  (void) out_ev;
+  (void) insn;
+  return 0;
+}
+
+
+KOS_OP_INLINE int op_LOCALS(KosContext *ctx, KosEvent *out_ev, KosOp *insn) {
+  PyObject *ns = ctx->frame_top->ns;
+  Py_INCREF(ns);
+  if (KosStackBlock_PushRef(&ctx->frame_top->stack, ns) < 0) {
+    Py_DECREF(ns);
+    return -1;
+  }
+  Py_DECREF(ns);
+  (void) out_ev;
+  (void) insn;
+  return 0;
+}
+
+
+KOS_OP_INLINE int op_EXCEPTION(KosContext *ctx, KosEvent *out_ev, KosOp *insn) {
+  PyObject *typ = NULL, *val = NULL, *tb = NULL;
+  PyErr_GetExcInfo(&typ, &val, &tb);
+
+  if (! typ) {
+    if (KosStackBlock_PushRef(&ctx->frame_top->stack, Py_None) < 0)
+      return -1;
+    (void) out_ev;
+    (void) insn;
+    return 0;
+  }
+
+  if (! val)
+    PyErr_NormalizeException(&typ, &val, &tb);
+
+  Py_DECREF(typ);
+  Py_XDECREF(tb);
+
+  if (KosStackBlock_PushRef(&ctx->frame_top->stack, val) < 0) {
+    Py_DECREF(val);
+    return -1;
+  }
+  Py_DECREF(val);
+  (void) out_ev;
+  (void) insn;
+  return 0;
+}
+
+
+KOS_OP_INLINE int op_EXCEPTION_CLEAR(KosContext *ctx, KosEvent *out_ev,
+                                      KosOp *insn) {
+  PyErr_Clear();
+  PyErr_SetExcInfo(NULL, NULL, NULL);
+  (void) ctx;
+  (void) out_ev;
+  (void) insn;
+  return 0;
+}
+
+
+KOS_OP_INLINE int op_EXCEPTION_MATCH(KosContext *ctx, KosEvent *out_ev,
+                                      KosOp *insn) {
+  int opa = (int) insn->arg;
+  if (opa < 1) {
+    PyErr_Format(PyExc_RuntimeError, "EXCEPTION_MATCH with non-positive"
+                 " count, %i", opa);
+    return -1;
+  }
+
+  PyObject *ret = Py_False;
+  PyObject *typ = NULL, *val = NULL, *tb = NULL;
+  PyErr_GetExcInfo(&typ, &val, &tb);
+
+  if (! typ) {
+    if (KosStackBlock_Drop(&ctx->frame_top->stack, (size_t) opa) < 0)
+      return -1;
+    Py_INCREF(ret);
+    if (KosStackBlock_PushRef(&ctx->frame_top->stack, ret) < 0) {
+      Py_DECREF(ret);
+      return -1;
+    }
+    Py_DECREF(ret);
+    (void) out_ev;
+    (void) insn;
+    return 0;
+  }
+
+  PyObject *const *checks = KosStackBlock_TailPtr(ctx->frame_top->stack,
+                                                  (size_t) opa);
+  if (! checks) {
+    Py_DECREF(typ);
+    Py_XDECREF(val);
+    Py_XDECREF(tb);
+    return -1;
+  }
+
+  for (int i = 0; i < opa; i++) {
+    if (PyErr_GivenExceptionMatches(typ, checks[i])) {
+      ret = Py_True;
+      break;
+    }
+  }
+
+  KosStackBlock_DropNoErr(&ctx->frame_top->stack, (size_t) opa);
+
+  Py_DECREF(typ);
+  Py_XDECREF(val);
+  Py_XDECREF(tb);
+
+  Py_INCREF(ret);
+  if (KosStackBlock_PushRef(&ctx->frame_top->stack, ret) < 0) {
+    Py_DECREF(ret);
+    return -1;
+  }
+  Py_DECREF(ret);
+  (void) out_ev;
+  (void) insn;
+  return 0;
 }
 
 
@@ -696,31 +886,32 @@ KOS_OP_INLINE int op_INVOKE_K(KosContext *ctx, KosEvent *out_ev, KosOp *insn) {
 }
 
 
-KOS_OP_INLINE int op_OBJECT_ADD(KosContext *ctx, KosEvent *out_ev,
-                                KosOp *insn) {
-  if (insn->arg != 2) {
-    PyErr_SetString(PyExc_RuntimeError, "OBJECT_ADD: only arg 2 supported");
+/**
+   Reducing operator: pop opa values (or use TailPtr for opa > 0), call fn,
+   drop opa, push result. Faithful to ceval _obj_op.
+ */
+static int obj_op_reducing(KosContext *ctx, KosEvent *out_ev, KosOp *insn,
+                           KosOperatorReducing *fn) {
+  int opa = (int) insn->arg;
+  PyObject *res;
+
+  if (opa < 0) {
+    PyErr_Format(PyExc_RuntimeError,
+                 "Negative count argument to reducing operator: %i", opa);
     return -1;
   }
-  PyObject *right = KosStackBlock_PopRef(&ctx->frame_top->stack);
-  if (! right) {
-    if (KOS_EVAL_TRACE)
-      fprintf(stderr, "[eval] OBJECT_ADD pop right failed\n");
-    return -1;
+
+  if (opa == 0) {
+    res = fn(NULL, 0);
+  } else {
+    PyObject *const *args = KosStackBlock_TailPtr(ctx->frame_top->stack,
+                                                  (size_t) opa);
+    if (! args)
+      return -1;
+    res = fn(args, (size_t) opa);
+    KosStackBlock_DropNoErr(&ctx->frame_top->stack, (size_t) opa);
   }
-  PyObject *left = KosStackBlock_PopRef(&ctx->frame_top->stack);
-  if (! left) {
-    if (KOS_EVAL_TRACE)
-      fprintf(stderr, "[eval] OBJECT_ADD pop left failed\n");
-    Py_DECREF(right);
-    return -1;
-  }
-  if (KOS_EVAL_TRACE && PyLong_Check(left) && PyLong_Check(right))
-    fprintf(stderr, "[eval] OBJECT_ADD %ld + %ld\n",
-            PyLong_AsLong(left), PyLong_AsLong(right));
-  PyObject *res = PyNumber_Add(left, right);
-  Py_DECREF(left);
-  Py_DECREF(right);
+
   if (! res)
     return -1;
   if (KosStackBlock_PushRef(&ctx->frame_top->stack, res) < 0) {
@@ -731,6 +922,686 @@ KOS_OP_INLINE int op_OBJECT_ADD(KosContext *ctx, KosEvent *out_ev,
   (void) out_ev;
   return 0;
 }
+
+
+KOS_OP_INLINE int op_OBJECT_ADD(KosContext *ctx, KosEvent *out_ev,
+                                KosOp *insn) {
+  return obj_op_reducing(ctx, out_ev, insn, KosOperator_Add);
+}
+
+
+#define OP_UNARY(name, func)                                            \
+  KOS_OP_INLINE int op_##name(KosContext *ctx, KosEvent *out_ev,        \
+                              KosOp *insn) {                            \
+    PyObject *val = KosStackBlock_PopRef(&ctx->frame_top->stack);       \
+    if (! val) return -1;                                              \
+    PyObject *res = func(val);                                          \
+    Py_DECREF(val);                                                    \
+    if (! res) return -1;                                              \
+    if (KosStackBlock_PushRef(&ctx->frame_top->stack, res) < 0) {       \
+      Py_DECREF(res);                                                  \
+      return -1;                                                        \
+    }                                                                   \
+    Py_DECREF(res);                                                    \
+    (void) out_ev;                                                     \
+    (void) insn;                                                       \
+    return 0;                                                          \
+  }
+
+KOS_OP_INLINE int op_OBJECT_STR(KosContext *ctx, KosEvent *out_ev,
+                                KosOp *insn) {
+  return obj_op_reducing(ctx, out_ev, insn, KosOperator_BuildStr);
+}
+
+OP_UNARY(OBJECT_REPR, PyObject_Repr)
+OP_UNARY(OBJECT_ITER, PyObject_GetIter)
+OP_UNARY(OBJECT_BIT_INVERT, PyNumber_Invert)
+OP_UNARY(OBJECT_DIR, PyObject_Dir)
+
+#undef OP_UNARY
+
+
+KOS_OP_INLINE int op_OBJECT_LEN(KosContext *ctx, KosEvent *out_ev,
+                                KosOp *insn) {
+  PyObject *val = KosStackBlock_PopRef(&ctx->frame_top->stack);
+  if (! val)
+    return -1;
+  Py_ssize_t n = PyObject_Length(val);
+  Py_DECREF(val);
+  if (n < 0)
+    return -1;
+  PyObject *res = PyLong_FromSsize_t(n);
+  if (! res)
+    return -1;
+  if (KosStackBlock_PushRef(&ctx->frame_top->stack, res) < 0) {
+    Py_DECREF(res);
+    return -1;
+  }
+  Py_DECREF(res);
+  (void) out_ev;
+  (void) insn;
+  return 0;
+}
+
+
+KOS_OP_INLINE int op_OBJECT_NOT(KosContext *ctx, KosEvent *out_ev,
+                                KosOp *insn) {
+  PyObject *val = KosStackBlock_PopRef(&ctx->frame_top->stack);
+  if (! val)
+    return -1;
+  int r = PyObject_Not(val);
+  Py_DECREF(val);
+  if (r < 0)
+    return -1;
+  PyObject *res = (r ? Py_True : Py_False);
+  Py_INCREF(res);
+  if (KosStackBlock_PushRef(&ctx->frame_top->stack, res) < 0) {
+    Py_DECREF(res);
+    return -1;
+  }
+  Py_DECREF(res);
+  (void) out_ev;
+  (void) insn;
+  return 0;
+}
+
+
+KOS_OP_INLINE int op_OBJECT_TRUTH(KosContext *ctx, KosEvent *out_ev,
+                                 KosOp *insn) {
+  PyObject *val = KosStackBlock_PopRef(&ctx->frame_top->stack);
+  if (! val)
+    return -1;
+  int r = PyObject_IsTrue(val);
+  Py_DECREF(val);
+  if (r < 0)
+    return -1;
+  PyObject *res = (r ? Py_True : Py_False);
+  Py_INCREF(res);
+  if (KosStackBlock_PushRef(&ctx->frame_top->stack, res) < 0) {
+    Py_DECREF(res);
+    return -1;
+  }
+  Py_DECREF(res);
+  (void) out_ev;
+  (void) insn;
+  return 0;
+}
+
+
+KOS_OP_INLINE int op_OBJECT_TYPE(KosContext *ctx, KosEvent *out_ev,
+                                 KosOp *insn) {
+  PyObject *val = KosStackBlock_PopRef(&ctx->frame_top->stack);
+  if (! val)
+    return -1;
+  PyObject *res = (PyObject *) Py_TYPE(val);
+  Py_INCREF(res);
+  Py_DECREF(val);
+  if (KosStackBlock_PushRef(&ctx->frame_top->stack, res) < 0) {
+    Py_DECREF(res);
+    return -1;
+  }
+  Py_DECREF(res);
+  (void) out_ev;
+  (void) insn;
+  return 0;
+}
+
+
+KOS_OP_INLINE int op_OBJECT_VARS(KosContext *ctx, KosEvent *out_ev,
+                                 KosOp *insn) {
+  PyObject *val = KosStackBlock_PopRef(&ctx->frame_top->stack);
+  if (! val)
+    return -1;
+  PyObject *d = PyObject_GetAttrString(val, "__dict__");
+  Py_DECREF(val);
+  if (! d) {
+    PyErr_Clear();
+    PyErr_SetString(PyExc_TypeError,
+                    "vars argument must have __dict__ attribute");
+    return -1;
+  }
+  if (KosStackBlock_PushRef(&ctx->frame_top->stack, d) < 0) {
+    Py_DECREF(d);
+    return -1;
+  }
+  Py_DECREF(d);
+  (void) out_ev;
+  (void) insn;
+  return 0;
+}
+
+
+KOS_OP_INLINE int op_OBJECT_AITER(KosContext *ctx, KosEvent *out_ev,
+                                  KosOp *insn) {
+  PyObject *val = KosStackBlock_PopRef(&ctx->frame_top->stack);
+  if (! val)
+    return -1;
+  PyObject *res = NULL;
+  PyTypeObject *type = Py_TYPE(val);
+  if (type->tp_as_async && type->tp_as_async->am_aiter)
+    res = type->tp_as_async->am_aiter(val);
+  if (! res) {
+    PyErr_Format(PyExc_RuntimeError, "cannot await for elements of %R", val);
+    Py_DECREF(val);
+    return -1;
+  }
+  Py_DECREF(val);
+  if (KosStackBlock_PushRef(&ctx->frame_top->stack, res) < 0) {
+    Py_DECREF(res);
+    return -1;
+  }
+  Py_DECREF(res);
+  (void) out_ev;
+  (void) insn;
+  return 0;
+}
+
+
+#define OP_BINARY_NUM(name, func)                                       \
+  KOS_OP_INLINE int op_##name(KosContext *ctx, KosEvent *out_ev,        \
+                              KosOp *insn) {                            \
+    if (insn->arg != 2) {                                              \
+      PyErr_SetString(PyExc_RuntimeError, #name ": only arg 2 supported"); \
+      return -1;                                                        \
+    }                                                                   \
+    PyObject *right = KosStackBlock_PopRef(&ctx->frame_top->stack);      \
+    if (! right) return -1;                                            \
+    PyObject *left = KosStackBlock_PopRef(&ctx->frame_top->stack);      \
+    if (! left) { Py_DECREF(right); return -1; }                       \
+    PyObject *res = func(left, right);                                 \
+    Py_DECREF(left);                                                  \
+    Py_DECREF(right);                                                 \
+    if (! res) return -1;                                             \
+    if (KosStackBlock_PushRef(&ctx->frame_top->stack, res) < 0) {       \
+      Py_DECREF(res);                                                  \
+      return -1;                                                       \
+    }                                                                   \
+    Py_DECREF(res);                                                    \
+    (void) out_ev;                                                     \
+    return 0;                                                          \
+  }
+
+KOS_OP_INLINE int op_OBJECT_SUBTRACT(KosContext *ctx, KosEvent *out_ev,
+                                      KosOp *insn) {
+  return obj_op_reducing(ctx, out_ev, insn, KosOperator_Subtract);
+}
+KOS_OP_INLINE int op_OBJECT_MULTIPLY(KosContext *ctx, KosEvent *out_ev,
+                                      KosOp *insn) {
+  return obj_op_reducing(ctx, out_ev, insn, KosOperator_Multiply);
+}
+KOS_OP_INLINE int op_OBJECT_FLOOR_DIVIDE(KosContext *ctx, KosEvent *out_ev,
+                                          KosOp *insn) {
+  return obj_op_reducing(ctx, out_ev, insn, KosOperator_FloorDivide);
+}
+KOS_OP_INLINE int op_OBJECT_TRUE_DIVIDE(KosContext *ctx, KosEvent *out_ev,
+                                         KosOp *insn) {
+  return obj_op_reducing(ctx, out_ev, insn, KosOperator_TrueDivide);
+}
+OP_BINARY_NUM(OBJECT_MODULO, PyNumber_Remainder)
+OP_BINARY_NUM(OBJECT_DIVMOD, PyNumber_Divmod)
+KOS_OP_INLINE int op_OBJECT_BIT_AND(KosContext *ctx, KosEvent *out_ev,
+                                    KosOp *insn) {
+  return obj_op_reducing(ctx, out_ev, insn, KosOperator_BitwiseAnd);
+}
+KOS_OP_INLINE int op_OBJECT_BIT_OR(KosContext *ctx, KosEvent *out_ev,
+                                   KosOp *insn) {
+  return obj_op_reducing(ctx, out_ev, insn, KosOperator_BitwiseOr);
+}
+KOS_OP_INLINE int op_OBJECT_BIT_XOR(KosContext *ctx, KosEvent *out_ev,
+                                    KosOp *insn) {
+  return obj_op_reducing(ctx, out_ev, insn, KosOperator_BitwiseXor);
+}
+KOS_OP_INLINE int op_OBJECT_MATRIX_MULTIPLY(KosContext *ctx, KosEvent *out_ev,
+                                             KosOp *insn) {
+  return obj_op_reducing(ctx, out_ev, insn, KosOperator_MatrixMultiply);
+}
+
+#undef OP_BINARY_NUM
+
+
+KOS_OP_INLINE int op_OBJECT_POWER(KosContext *ctx, KosEvent *out_ev,
+                                  KosOp *insn) {
+  int opa = (int) insn->arg;
+  if (opa < 2 || opa > 3) {
+    PyErr_Format(PyExc_RuntimeError,
+                 "OBJECT_POWER requires 2 or 3 arguments, got %i", opa);
+    return -1;
+  }
+
+  PyObject *base = NULL, *exp = NULL, *mod = Py_None;
+
+  if (opa == 3) {
+    mod = KosStackBlock_PopRef(&ctx->frame_top->stack);
+    if (! mod)
+      return -1;
+  }
+  exp = KosStackBlock_PopRef(&ctx->frame_top->stack);
+  if (! exp) {
+    if (opa == 3)
+      Py_DECREF(mod);
+    return -1;
+  }
+  base = KosStackBlock_PopRef(&ctx->frame_top->stack);
+  if (! base) {
+    Py_DECREF(exp);
+    if (opa == 3)
+      Py_DECREF(mod);
+    return -1;
+  }
+
+  PyObject *val = PyNumber_Power(base, exp, mod);
+  Py_DECREF(base);
+  Py_DECREF(exp);
+  if (opa == 3)
+    Py_DECREF(mod);
+  if (! val)
+    return -1;
+  if (KosStackBlock_PushRef(&ctx->frame_top->stack, val) < 0) {
+    Py_DECREF(val);
+    return -1;
+  }
+  Py_DECREF(val);
+  (void) out_ev;
+  return 0;
+}
+
+
+KOS_OP_INLINE int op_OBJECT_BIT_LEFT(KosContext *ctx, KosEvent *out_ev,
+                                     KosOp *insn) {
+  PyObject *right = KosStackBlock_PopRef(&ctx->frame_top->stack);
+  if (! right)
+    return -1;
+  PyObject *left = KosStackBlock_PopRef(&ctx->frame_top->stack);
+  if (! left) {
+    Py_DECREF(right);
+    return -1;
+  }
+  PyObject *res = PyNumber_Lshift(left, right);
+  Py_DECREF(left);
+  Py_DECREF(right);
+  if (! res)
+    return -1;
+  if (KosStackBlock_PushRef(&ctx->frame_top->stack, res) < 0) {
+    Py_DECREF(res);
+    return -1;
+  }
+  Py_DECREF(res);
+  (void) out_ev;
+  (void) insn;
+  return 0;
+}
+
+
+KOS_OP_INLINE int op_OBJECT_BIT_RIGHT(KosContext *ctx, KosEvent *out_ev,
+                                      KosOp *insn) {
+  PyObject *right = KosStackBlock_PopRef(&ctx->frame_top->stack);
+  if (! right)
+    return -1;
+  PyObject *left = KosStackBlock_PopRef(&ctx->frame_top->stack);
+  if (! left) {
+    Py_DECREF(right);
+    return -1;
+  }
+  PyObject *res = PyNumber_Rshift(left, right);
+  Py_DECREF(left);
+  Py_DECREF(right);
+  if (! res)
+    return -1;
+  if (KosStackBlock_PushRef(&ctx->frame_top->stack, res) < 0) {
+    Py_DECREF(res);
+    return -1;
+  }
+  Py_DECREF(res);
+  (void) out_ev;
+  (void) insn;
+  return 0;
+}
+
+
+static int op_OBJECT_EQ_impl(KosContext *ctx, KosEvent *out_ev, KosOp *insn,
+                             int op) {
+  PyObject *right = KosStackBlock_PopRef(&ctx->frame_top->stack);
+  if (! right)
+    return -1;
+  PyObject *left = KosStackBlock_PopRef(&ctx->frame_top->stack);
+  if (! left) {
+    Py_DECREF(right);
+    return -1;
+  }
+  int cmp = PyObject_RichCompareBool(left, right, op);
+  Py_DECREF(left);
+  Py_DECREF(right);
+  if (cmp < 0 && PyErr_Occurred())
+    return -1;
+  PyObject *res = (cmp ? Py_True : Py_False);
+  Py_INCREF(res);
+  if (KosStackBlock_PushRef(&ctx->frame_top->stack, res) < 0) {
+    Py_DECREF(res);
+    return -1;
+  }
+  Py_DECREF(res);
+  (void) out_ev;
+  (void) insn;
+  return 0;
+}
+
+KOS_OP_INLINE int op_OBJECT_EQ(KosContext *ctx, KosEvent *out_ev,
+                               KosOp *insn) {
+  return op_OBJECT_EQ_impl(ctx, out_ev, insn, Py_EQ);
+}
+KOS_OP_INLINE int op_OBJECT_NE(KosContext *ctx, KosEvent *out_ev,
+                               KosOp *insn) {
+  return op_OBJECT_EQ_impl(ctx, out_ev, insn, Py_NE);
+}
+KOS_OP_INLINE int op_OBJECT_LT(KosContext *ctx, KosEvent *out_ev,
+                               KosOp *insn) {
+  return op_OBJECT_EQ_impl(ctx, out_ev, insn, Py_LT);
+}
+KOS_OP_INLINE int op_OBJECT_LE(KosContext *ctx, KosEvent *out_ev,
+                               KosOp *insn) {
+  return op_OBJECT_EQ_impl(ctx, out_ev, insn, Py_LE);
+}
+KOS_OP_INLINE int op_OBJECT_GT(KosContext *ctx, KosEvent *out_ev,
+                               KosOp *insn) {
+  return op_OBJECT_EQ_impl(ctx, out_ev, insn, Py_GT);
+}
+KOS_OP_INLINE int op_OBJECT_GE(KosContext *ctx, KosEvent *out_ev,
+                               KosOp *insn) {
+  return op_OBJECT_EQ_impl(ctx, out_ev, insn, Py_GE);
+}
+
+
+KOS_OP_INLINE int op_OBJECT_IN(KosContext *ctx, KosEvent *out_ev,
+                               KosOp *insn) {
+  PyObject *right = KosStackBlock_PopRef(&ctx->frame_top->stack);
+  if (! right)
+    return -1;
+  PyObject *left = KosStackBlock_PopRef(&ctx->frame_top->stack);
+  if (! left) {
+    Py_DECREF(right);
+    return -1;
+  }
+  int r = PySequence_Contains(right, left);
+  Py_DECREF(left);
+  Py_DECREF(right);
+  if (r < 0)
+    return -1;
+  PyObject *res = (r ? Py_True : Py_False);
+  Py_INCREF(res);
+  if (KosStackBlock_PushRef(&ctx->frame_top->stack, res) < 0) {
+    Py_DECREF(res);
+    return -1;
+  }
+  Py_DECREF(res);
+  (void) out_ev;
+  (void) insn;
+  return 0;
+}
+
+
+KOS_OP_INLINE int op_OBJECT_NOT_IN(KosContext *ctx, KosEvent *out_ev,
+                                   KosOp *insn) {
+  PyObject *right = KosStackBlock_PopRef(&ctx->frame_top->stack);
+  if (! right)
+    return -1;
+  PyObject *left = KosStackBlock_PopRef(&ctx->frame_top->stack);
+  if (! left) {
+    Py_DECREF(right);
+    return -1;
+  }
+  int r = PySequence_Contains(right, left);
+  Py_DECREF(left);
+  Py_DECREF(right);
+  if (r < 0)
+    return -1;
+  PyObject *res = (r ? Py_False : Py_True);
+  Py_INCREF(res);
+  if (KosStackBlock_PushRef(&ctx->frame_top->stack, res) < 0) {
+    Py_DECREF(res);
+    return -1;
+  }
+  Py_DECREF(res);
+  (void) out_ev;
+  (void) insn;
+  return 0;
+}
+
+
+KOS_OP_INLINE int op_OBJECT_IS(KosContext *ctx, KosEvent *out_ev,
+                               KosOp *insn) {
+  PyObject *right = KosStackBlock_PopRef(&ctx->frame_top->stack);
+  if (! right)
+    return -1;
+  PyObject *left = KosStackBlock_PopRef(&ctx->frame_top->stack);
+  if (! left) {
+    Py_DECREF(right);
+    return -1;
+  }
+  PyObject *res = (left == right ? Py_True : Py_False);
+  Py_INCREF(res);
+  Py_DECREF(left);
+  Py_DECREF(right);
+  if (KosStackBlock_PushRef(&ctx->frame_top->stack, res) < 0) {
+    Py_DECREF(res);
+    return -1;
+  }
+  Py_DECREF(res);
+  (void) out_ev;
+  (void) insn;
+  return 0;
+}
+
+
+KOS_OP_INLINE int op_OBJECT_IS_NOT(KosContext *ctx, KosEvent *out_ev,
+                                   KosOp *insn) {
+  PyObject *right = KosStackBlock_PopRef(&ctx->frame_top->stack);
+  if (! right)
+    return -1;
+  PyObject *left = KosStackBlock_PopRef(&ctx->frame_top->stack);
+  if (! left) {
+    Py_DECREF(right);
+    return -1;
+  }
+  PyObject *res = (left != right ? Py_True : Py_False);
+  Py_INCREF(res);
+  Py_DECREF(left);
+  Py_DECREF(right);
+  if (KosStackBlock_PushRef(&ctx->frame_top->stack, res) < 0) {
+    Py_DECREF(res);
+    return -1;
+  }
+  Py_DECREF(res);
+  (void) out_ev;
+  (void) insn;
+  return 0;
+}
+
+
+KOS_OP_INLINE int op_OBJECT_IS_INSTANCE(KosContext *ctx, KosEvent *out_ev,
+                                        KosOp *insn) {
+  int opa = (int) insn->arg;
+  PyObject *value = NULL, *match = NULL;
+
+  if (opa < 2) {
+    match = KosStackBlock_PopRef(&ctx->frame_top->stack);
+    if (! match)
+      return -1;
+    value = KosStackBlock_PopRef(&ctx->frame_top->stack);
+    if (! value) {
+      Py_DECREF(match);
+      return -1;
+    }
+  } else {
+    match = KosStackBlock_PopTail(&ctx->frame_top->stack, (size_t) opa);
+    if (! match)
+      return -1;
+    value = KosStackBlock_PopRef(&ctx->frame_top->stack);
+    if (! value) {
+      Py_DECREF(match);
+      return -1;
+    }
+  }
+
+  int res = PyObject_IsInstance(value, match);
+  Py_DECREF(value);
+  Py_DECREF(match);
+  if (res < 0)
+    return -1;
+  PyObject *out = (res ? Py_True : Py_False);
+  Py_INCREF(out);
+  if (KosStackBlock_PushRef(&ctx->frame_top->stack, out) < 0) {
+    Py_DECREF(out);
+    return -1;
+  }
+  Py_DECREF(out);
+  (void) out_ev;
+  return 0;
+}
+
+
+KOS_OP_INLINE int op_OBJECT_IS_SUBCLASS(KosContext *ctx, KosEvent *out_ev,
+                                        KosOp *insn) {
+  int opa = (int) insn->arg;
+  PyObject *value = NULL, *match = NULL;
+
+  if (opa < 2) {
+    match = KosStackBlock_PopRef(&ctx->frame_top->stack);
+    if (! match)
+      return -1;
+    value = KosStackBlock_PopRef(&ctx->frame_top->stack);
+    if (! value) {
+      Py_DECREF(match);
+      return -1;
+    }
+  } else {
+    match = KosStackBlock_PopTail(&ctx->frame_top->stack, (size_t) opa);
+    if (! match)
+      return -1;
+    value = KosStackBlock_PopRef(&ctx->frame_top->stack);
+    if (! value) {
+      Py_DECREF(match);
+      return -1;
+    }
+  }
+
+  int res = PyObject_IsSubclass(value, match);
+  Py_DECREF(value);
+  Py_DECREF(match);
+  if (res < 0)
+    return -1;
+  PyObject *out = (res ? Py_True : Py_False);
+  Py_INCREF(out);
+  if (KosStackBlock_PushRef(&ctx->frame_top->stack, out) < 0) {
+    Py_DECREF(out);
+    return -1;
+  }
+  Py_DECREF(out);
+  (void) out_ev;
+  return 0;
+}
+
+
+/* Unimplemented opcodes: redirect to stub so op_handlers table compiles. */
+#define op_THEEND              op_unimplemented_stub
+#define op_AWAIT              op_unimplemented_stub
+#define op_BREAK              op_unimplemented_stub
+#define op_CONTINUE           op_unimplemented_stub
+#define op_RAISE              op_unimplemented_stub
+#define op_YIELD              op_unimplemented_stub
+#define op_YIELD_FROM         op_unimplemented_stub
+#define op_ITER_NEXT          op_unimplemented_stub
+#define op_AWAIT_NEXT         op_unimplemented_stub
+#define op_JUMP               op_unimplemented_stub
+#define op_JUMP_FALSE         op_unimplemented_stub
+#define op_JUMP_TRUE          op_unimplemented_stub
+#define op_JUMP_AND           op_unimplemented_stub
+#define op_JUMP_OR            op_unimplemented_stub
+#define op_CHECK_EQ           op_unimplemented_stub
+#define op_CHECK_GE           op_unimplemented_stub
+#define op_CHECK_GT           op_unimplemented_stub
+#define op_CHECK_LE           op_unimplemented_stub
+#define op_CHECK_LT           op_unimplemented_stub
+#define op_CHECK_NE           op_unimplemented_stub
+#define op_CHECK_IN           op_unimplemented_stub
+#define op_CHECK_NOT_IN       op_unimplemented_stub
+#define op_CHECK_IS           op_unimplemented_stub
+#define op_CHECK_IS_NOT       op_unimplemented_stub
+#define op_CHECK_IS_INSTANCE  op_unimplemented_stub
+#define op_CHECK_IS_SUBCLASS  op_unimplemented_stub
+#define op_CHECK_EXCEPTION    op_unimplemented_stub
+#define op_VAR                op_unimplemented_stub
+#define op_VAR_BIND           op_unimplemented_stub
+#define op_VAR_CLEAR          op_unimplemented_stub
+#define op_VAR_REF            op_unimplemented_stub
+#define op_VAR_STORE          op_unimplemented_stub
+#define op_FAST               op_unimplemented_stub
+#define op_FAST_BIND          op_unimplemented_stub
+#define op_FAST_CLEAR         op_unimplemented_stub
+#define op_FAST_REF           op_unimplemented_stub
+#define op_FAST_STORE         op_unimplemented_stub
+#define op_ATTR               op_unimplemented_stub
+#define op_ATTR_CLEAR         op_unimplemented_stub
+#define op_ATTR_REF           op_unimplemented_stub
+#define op_ATTR_STORE         op_unimplemented_stub
+#define op_ITEM               op_unimplemented_stub
+#define op_ITEM_CLEAR         op_unimplemented_stub
+#define op_ITEM_REF           op_unimplemented_stub
+#define op_ITEM_STORE         op_unimplemented_stub
+#define op_CONST_ITEM         op_unimplemented_stub
+#define op_CONST_ITEM_CLEAR   op_unimplemented_stub
+#define op_CONST_ITEM_REF     op_unimplemented_stub
+#define op_CONST_ITEM_STORE   op_unimplemented_stub
+#define op_BUILD_ARGS         op_unimplemented_stub
+#define op_BUILD_FUNCTION     op_unimplemented_stub
+#define op_BUILD_KWDS         op_unimplemented_stub
+#define op_BUILD_KWDS_NAMES   op_unimplemented_stub
+#define op_COMBINE_ARGS       op_unimplemented_stub
+#define op_COMBINE_KWDS       op_unimplemented_stub
+#define op_CALL               op_unimplemented_stub
+#define op_CALL_NAMES         op_unimplemented_stub
+#define op_CALL_STAR          op_unimplemented_stub
+#define op_CALL_ATTR          op_unimplemented_stub
+#define op_CALL_ATTR_NAMES    op_unimplemented_stub
+#define op_CALL_ATTR_STAR     op_unimplemented_stub
+#define op_RECUR              op_unimplemented_stub
+#define op_RECUR_NAMES        op_unimplemented_stub
+#define op_RECUR_STAR         op_unimplemented_stub
+#define op_TAIL_CALL          op_unimplemented_stub
+#define op_TAIL_CALL_NAMES    op_unimplemented_stub
+#define op_TAIL_CALL_STAR     op_unimplemented_stub
+#define op_TAIL_RECUR         op_unimplemented_stub
+#define op_TAIL_RECUR_NAMES   op_unimplemented_stub
+#define op_TAIL_RECUR_STAR    op_unimplemented_stub
+#define op_PUSH_FOREACH       op_unimplemented_stub
+#define op_PUSH_WITH          op_unimplemented_stub
+#define op_PUSH_BEGIN         op_unimplemented_stub
+#define op_PUSH_CLASS         op_unimplemented_stub
+#define op_PUSH_FINALLY       op_unimplemented_stub
+#define op_PUSH_LOOP          op_unimplemented_stub
+#define op_PUSH_NS            op_unimplemented_stub
+#define op_PUSH_TRY           op_unimplemented_stub
+#define op_CLEAR_FINALLY      op_unimplemented_stub
+#define op_CLEAR_LOOP         op_unimplemented_stub
+#define op_CLEAR_TRY          op_unimplemented_stub
+#define op_POP_WITH           op_unimplemented_stub
+#define op_POP_BEGIN          op_unimplemented_stub
+#define op_POP_FINALLY        op_unimplemented_stub
+#define op_POP_LOOP           op_unimplemented_stub
+#define op_POP_NS             op_unimplemented_stub
+#define op_POP_TRY            op_unimplemented_stub
+#define op_PUSH_WIND          op_unimplemented_stub
+#define op_POP_WIND           op_unimplemented_stub
+#define op_END_WIND           op_unimplemented_stub
+#define op_PUSH_REGION        op_unimplemented_stub
+#define op_POP_REGION         op_unimplemented_stub
+
+/* Dispatch table generated from opcodes.incl; every op_##name must be
+   defined (implemented or #define to op_unimplemented_stub). */
+static int (*const op_handlers[])(KosContext *, KosEvent *, KosOp *) = {
+#define OP(name, style) op_##name,
+#include "opcodes.incl"
+#undef OP
+};
 
 
 int kos_drive(KosContext *ctx, KosEvent *out_ev) {
@@ -810,40 +1681,12 @@ int kos_drive(KosContext *ctx, KosEvent *out_ev) {
     }
     ctx->frame_top->pc = pc + 1;
 
-    int op_res;
-    switch ((KosOpCode) insn->op) {
-      case KOS_OP_NOOP:
-        op_res = op_NOOP(ctx, out_ev, insn);
-        break;
-      case KOS_OP_CONST:
-        op_res = op_CONST(ctx, out_ev, insn);
-        break;
-      case KOS_OP_RETURN:
-        op_res = op_RETURN(ctx, out_ev, insn);
-        break;
-      case KOS_OP_PUSH_PROMPT:
-        op_res = op_PUSH_PROMPT(ctx, out_ev, insn);
-        break;
-      case KOS_OP_SET_PROMPT_HANDLER:
-        op_res = op_SET_PROMPT_HANDLER(ctx, out_ev, insn);
-        break;
-      case KOS_OP_POP_PROMPT:
-        op_res = op_POP_PROMPT(ctx, out_ev, insn);
-        break;
-      case KOS_OP_SHIFT:
-        op_res = op_SHIFT(ctx, out_ev, insn);
-        break;
-      case KOS_OP_INVOKE_K:
-        op_res = op_INVOKE_K(ctx, out_ev, insn);
-        break;
-      case KOS_OP_OBJECT_ADD:
-        op_res = op_OBJECT_ADD(ctx, out_ev, insn);
-        break;
-      default:
-        PyErr_Format(PyExc_RuntimeError, "unimplemented opcode %u",
-                     (unsigned) insn->op);
-        return -1;
+    if ((KosOpCode) insn->op > KOS_OP_THEEND) {
+      PyErr_Format(PyExc_RuntimeError, "invalid opcode %u",
+                   (unsigned) insn->op);
+      return -1;
     }
+    int op_res = op_handlers[insn->op](ctx, out_ev, insn);
     if (op_res != 0)
       return (op_res < 0) ? -1 : 0;
     if (KOS_EVAL_TRACE)

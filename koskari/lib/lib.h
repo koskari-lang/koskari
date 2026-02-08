@@ -53,6 +53,10 @@
   Units can get the module dict via PyModule_GetDict(mod).
 */
 
+/** Call all unit clear functions and clear the module dict. Use before
+    releasing the module (e.g. in test harness teardown). */
+int koskari_lib_clear(PyObject *mod);
+
 
 /* === macros === */
 

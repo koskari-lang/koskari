@@ -13,7 +13,11 @@
 # <http://www.gnu.org/licenses/>.
 
 """
-Unit tests for Stack and BlockStyle types
+Unit tests for Stack type
+
+Block style and handler state now live on the dynamic chain (dynchain);
+Stack is storage-only. Tests for the former BlockStyle enum and
+status/disable/push_block(style, ...) have been removed.
 
 :author: Christopher O'Brien <obriencj@preoccupied.net>
 :license: GNU General Public License v3
@@ -22,24 +26,7 @@ Unit tests for Stack and BlockStyle types
 
 import unittest
 
-from koskari.lib import BlockStyle, Stack
-
-
-class TestBlockStyle(unittest.TestCase):
-    """Tests for the BlockStyle enum"""
-
-    def test_block_styles_exist(self):
-        """BlockStyle enum has expected values"""
-
-        self.assertEqual(BlockStyle.KOS_BLOCK_BEGIN, 0)
-        self.assertEqual(BlockStyle.KOS_BLOCK_FINALLY, 1)
-        self.assertEqual(BlockStyle.KOS_BLOCK_FOREACH, 2)
-        self.assertEqual(BlockStyle.KOS_BLOCK_LOOP, 3)
-        self.assertEqual(BlockStyle.KOS_BLOCK_NS, 4)
-        self.assertEqual(BlockStyle.KOS_BLOCK_TRY, 5)
-        self.assertEqual(BlockStyle.KOS_BLOCK_WITH, 6)
-        self.assertEqual(BlockStyle.KOS_BLOCK_AWAIT_FOREACH, 7)
-        self.assertEqual(BlockStyle.KOS_BLOCK_AWAIT_WITH, 8)
+from koskari.lib import Stack
 
 
 class TestStack(unittest.TestCase):
@@ -222,6 +209,15 @@ class TestStack(unittest.TestCase):
         self.assertRaises(RuntimeError, s.pop)
         self.assertRaises(RuntimeError, s.pop_block, 0)
 
+    def test_push_block_no_args(self):
+        """push_block() takes no arguments (style/labels moved to dynchain)"""
+
+        s = Stack()
+        s.push_block()
+        self.assertEqual(s.depth(), 2)
+        s.pop_block(0)
+        self.assertEqual(s.depth(), 1)
+
     def test_push_overrun(self):
         """Stack block has a maximum size limit"""
 
@@ -376,40 +372,5 @@ class TestStack(unittest.TestCase):
         self.assertEqual(s.total(), 1)
         self.assertEqual(s.length(), 1)
         self.assertEqual(s.pop(), 1)
-
-    def test_status(self):
-        """status() returns block metadata"""
-
-        s = Stack()
-        status = s.status()
-        self.assertEqual(len(status), 4)
-        self.assertEqual(status[0], BlockStyle.KOS_BLOCK_BEGIN)
-        self.assertTrue(status[1])
-        self.assertEqual(status[2], 0)
-        self.assertEqual(status[3], 0)
-
-    def test_push_block_with_style(self):
-        """push_block() accepts style and labels"""
-
-        s = Stack()
-        s.push_block(BlockStyle.KOS_BLOCK_TRY, 100, 200)
-
-        status = s.status()
-        self.assertEqual(status[0], BlockStyle.KOS_BLOCK_TRY)
-        self.assertTrue(status[1])
-        self.assertEqual(status[2], 100)
-        self.assertEqual(status[3], 200)
-
-    def test_disable(self):
-        """disable() disables the current block's handler"""
-
-        s = Stack()
-        status = s.status()
-        self.assertTrue(status[1])
-
-        s.disable()
-        status = s.status()
-        self.assertFalse(status[1])
-
 
 # The end.

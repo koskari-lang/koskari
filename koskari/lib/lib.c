@@ -92,7 +92,7 @@ static int koskari_lib_init(PyObject *mod) {
 }
 
 
-static int koskari_lib_clear(PyObject *mod) {
+int koskari_lib_clear(PyObject *mod) {
   if (! mod)
     return -1;
 

@@ -147,8 +147,11 @@ static int initialize_types(void) {
 
 
 static void cleanup(void) {
-    Py_XDECREF(kos_lib_module);
-    kos_lib_module = NULL;
+    if (kos_lib_module) {
+        koskari_lib_clear(kos_lib_module);
+        Py_XDECREF(kos_lib_module);
+        kos_lib_module = NULL;
+    }
 
     if (Py_IsInitialized()) {
         Py_Finalize();

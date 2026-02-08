@@ -620,6 +620,13 @@ static int code_instr_init(PyObject *self, PyObject *instr) {
   }
   instr_l = (uint32_t) _instr_l;
 
+  if (instr_l == 0) {
+    PyErr_SetString(PyExc_ValueError,
+                    "Code must have at least one instruction"
+                    " (e.g. RETURN to return None)");
+    return -1;
+  }
+
   /* First pass: count constants and position changes (worst case) */
   for (uint32_t i = instr_l; i--; ) {
     PyObject *pair = PySequence_Fast_GET_ITEM(instr, i);
@@ -910,6 +917,8 @@ PyObject *KosCode_New(
 
   if (code_instr_init(self, instr)) {
     Py_CLEAR(self);
+    Py_DECREF(instr);
+    return NULL;
   }
 
   PyObject_GC_Track(self);

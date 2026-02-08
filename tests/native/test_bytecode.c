@@ -85,9 +85,10 @@ static PyObject *make_position(int line, int col) {
 /* === Code tests === */
 
 
-static int test_code_create_empty(void) {
+static int test_code_create_empty_rejected(void) {
     /*
-      Test that Code can be created with empty instructions.
+      Test that Code with empty instructions is rejected.
+      All code must have at least one instruction (e.g. RETURN to return None).
     */
     PyObject *nspec = create_test_nspec();
     TEST_ASSERT_NOT_NULL(nspec, "create nspec");
@@ -98,19 +99,41 @@ static int test_code_create_empty(void) {
     PyObject *name = PyUnicode_FromString("test_func");
     PyObject *filename = PyUnicode_FromString("test.ki");
 
+    PyErr_Clear();
     PyObject *code = KosCode_New(nspec, instr, name, filename);
-    TEST_ASSERT_NOT_NULL(code, "create Code");
-    TEST_ASSERT(KosCode_CheckExact(code), "code type check");
+    TEST_ASSERT_NULL(code, "empty Code is rejected");
+    TEST_ASSERT(PyErr_Occurred(), "exception set");
+    PyErr_Clear();
 
-    /* Verify initial state */
-    TEST_ASSERT_EQ(KosCode_CODE_LEN(code), 0, "code is empty");
-    TEST_ASSERT_EQ(KosCode_CPOOL_LEN(code), 0, "cpool is empty");
-    TEST_ASSERT_EQ(KosCode_POS_LEN(code), 0, "pos table is empty");
-    TEST_ASSERT_EQ(KosCode_FLAGS(code), 0, "no flags set");
-
-    Py_DECREF(code);
     Py_DECREF(filename);
     Py_DECREF(name);
+    Py_DECREF(instr);
+    Py_DECREF(nspec);
+    return 0;
+}
+
+
+static int test_code_create_minimal_return_none(void) {
+    /*
+      Test minimal valid Code: single RETURN 0 (return None).
+      Code must have at least one instruction.
+    */
+    PyObject *nspec = create_test_nspec();
+    TEST_ASSERT_NOT_NULL(nspec, "create nspec");
+
+    PyObject *instr = PyList_New(2);
+    PyList_SET_ITEM(instr, 0, make_instr(KOS_OP_CONST, Py_None));
+    PyList_SET_ITEM(instr, 1, make_instr_int(KOS_OP_RETURN, 1));
+
+    PyObject *code = KosCode_New(nspec, instr, NULL, NULL);
+    TEST_ASSERT_NOT_NULL(code, "create minimal Code");
+    TEST_ASSERT(KosCode_CheckExact(code), "code type check");
+    TEST_ASSERT_EQ(KosCode_CODE_LEN(code), 2, "two instructions");
+    TEST_ASSERT_EQ(KosCode_CPOOL_LEN(code), 1, "one constant (None)");
+    TEST_ASSERT_EQ(KosCode_GET_OP(code, 0), KOS_OP_CONST, "first op is CONST");
+    TEST_ASSERT_EQ(KosCode_GET_OP(code, 1), KOS_OP_RETURN, "second op is RETURN");
+
+    Py_DECREF(code);
     Py_DECREF(instr);
     Py_DECREF(nspec);
     return 0;
@@ -419,7 +442,8 @@ int run_bytecode_tests(void) {
 
     BEGIN_TEST_SUITE("Bytecode Tests");
 
-    RUN_TEST(test_code_create_empty);
+    RUN_TEST(test_code_create_empty_rejected);
+    RUN_TEST(test_code_create_minimal_return_none);
     RUN_TEST(test_code_with_const);
     RUN_TEST(test_code_const_dedup);
     RUN_TEST(test_code_position_delta);

@@ -575,7 +575,7 @@ PyObject *KosStackBlock_PopRef(KosStackBlock **block) {
 }
 
 
-static int KosStackBlock_Drop(KosStackBlock **self, size_t count) {
+int KosStackBlock_Drop(KosStackBlock **self, size_t count) {
   if (! count)
     return 0;
 
@@ -600,7 +600,7 @@ static int KosStackBlock_Drop(KosStackBlock **self, size_t count) {
 }
 
 
-static int KosStackBlock_DropNoErr(KosStackBlock **self, size_t count) {
+int KosStackBlock_DropNoErr(KosStackBlock **self, size_t count) {
   if (! count)
     return 0;
 
@@ -627,7 +627,7 @@ static int KosStackBlock_DropNoErr(KosStackBlock **self, size_t count) {
 }
 
 
-static int KosStackBlock_Duplicate(KosStackBlock **self, size_t count) {
+int KosStackBlock_Duplicate(KosStackBlock **self, size_t count) {
 
   if (! count)
     return 0;
@@ -689,7 +689,7 @@ static int KosStackBlock_Replace(
 }
 
 
-static PyObject *KosStackBlock_PopTail(
+PyObject *KosStackBlock_PopTail(
     KosStackBlock **self,
     size_t count) {
 
@@ -726,7 +726,7 @@ static PyObject *KosStackBlock_PopTail(
 }
 
 
-static PyObject *const *KosStackBlock_TailPtr(
+PyObject *const *KosStackBlock_TailPtr(
     KosStackBlock *self,
     size_t count) {
 

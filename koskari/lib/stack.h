@@ -328,6 +328,38 @@ int KosStack_Replace(PyObject *stack, size_t index, PyObject *value);
 
 
 /**
+   Block-level API for eval: duplicate the last count elements.
+   Same semantics as KosStack_Duplicate but operates on block chain.
+ */
+int KosStackBlock_Duplicate(KosStackBlock **self, size_t count);
+
+
+/**
+   Block-level API for eval: pointer to count elements back from top.
+   Same semantics as KosStack_TailPtr. Does not modify stack.
+ */
+PyObject *const *KosStackBlock_TailPtr(KosStackBlock *self, size_t count);
+
+
+/**
+   Block-level API for eval: remove last count elements. Sets err on underrun.
+ */
+int KosStackBlock_Drop(KosStackBlock **self, size_t count);
+
+
+/**
+   Block-level API for eval: remove last count elements. Does not set err.
+ */
+int KosStackBlock_DropNoErr(KosStackBlock **self, size_t count);
+
+
+/**
+   Block-level API for eval: steal last count elements into a new tuple.
+ */
+PyObject *KosStackBlock_PopTail(KosStackBlock **self, size_t count);
+
+
+/**
    Allocates a new block and makes it the current block
  */
 int KosStack_PushBlock(PyObject *stack);
