@@ -39,7 +39,9 @@ from tests import make_callable
 
 
 def _op(name):
-    """Map string opcode name to OpCode enum (e.g. 'CONST' -> KOS_OP_CONST)."""
+    """
+    Map string opcode name to OpCode enum (e.g. 'CONST' -> KOS_OP_CONST)
+    """
     return getattr(OpCode, "KOS_OP_" + name)
 
 
@@ -99,10 +101,14 @@ def run_to_completion(coro):
 
 
 class TestExpression(unittest.TestCase):
-    """Tests for Expression(code, ns) and make_callable(code, ns)."""
+    """
+    Tests for Expression(code, ns) and make_callable(code, ns)
+    """
 
     def test_expression_call_returns_coroutine(self):
-        """Calling an Expression returns an awaitable coroutine."""
+        """
+        Calling an Expression returns an awaitable coroutine
+        """
         code, ns = build_expr([["CONST", 42], ["RETURN", 1]])
         expr = make_callable(code, ns)
         coro = expr()
@@ -110,7 +116,9 @@ class TestExpression(unittest.TestCase):
         self.assertTrue(hasattr(coro, '__await__'))
 
     def test_expression_call_completes_with_value(self):
-        """Driving the coroutine from expr() yields StopIteration with value."""
+        """
+        Driving the coroutine from expr() yields StopIteration with value
+        """
         code, ns = build_expr([["CONST", 42], ["RETURN", 1]])
         expr = make_callable(code, ns)
         result = run_to_completion(expr())
@@ -118,27 +126,37 @@ class TestExpression(unittest.TestCase):
 
 
 class TestMakeCallableExpression(unittest.TestCase):
-    """make_callable(code, ns) with no formals returns an Expression."""
+    """
+    make_callable(code, ns) with no formals returns an Expression
+    """
 
     def test_make_callable_no_formals_returns_expression(self):
-        """make_callable(code, ns)() runs and returns value."""
+        """
+        make_callable(code, ns)() runs and returns value
+        """
         code, ns = build_expr([["CONST", 42], ["RETURN", 1]])
         result = run_to_completion(make_callable(code, ns)())
         self.assertEqual(result, 42)
 
 
 class TestFunction(unittest.TestCase):
-    """Tests for Function(code, ns, formals_spec) and make_callable with formals."""
+    """
+    Tests for Function(code, ns, formals_spec) and make_callable with formals
+    """
 
     def test_make_callable_no_formals_is_expression(self):
-        """make_callable(code, ns)() returns a coroutine."""
+        """
+        make_callable(code, ns)() returns a coroutine
+        """
         code, ns = build_expr([["CONST", 42], ["RETURN", 1]])
         fn = make_callable(code, ns)
         result = run_to_completion(fn())
         self.assertEqual(result, 42)
 
     def test_make_callable_with_formals_binds_and_runs(self):
-        """make_callable with formals_spec returns Function; call binds args and runs."""
+        """
+        make_callable with formals_spec returns Function; call binds args and runs
+        """
         code, base_ns = build_expr([["CONST", 42], ["RETURN", 1]])
         fspec = FormalsSpec(('x',), None, ('y',))
         fn = make_callable(code, base_ns, fspec)
@@ -156,13 +174,17 @@ class TestCodeAssembly(unittest.TestCase):
     """
 
     def test_code_expression_parent_returns_expression(self):
-        """Code.expression(parent_ns) returns an Expression."""
+        """
+        Code.expression(parent_ns) returns an Expression
+        """
         code, ns = build_expr([["CONST", 42], ["RETURN", 1]])
         expr = code.expression(ns)
         self.assertIsInstance(expr, Expression)
 
     def test_code_expression_call_returns_coroutine(self):
-        """Calling the result of Code.expression(ns) returns a coroutine."""
+        """
+        Calling the result of Code.expression(ns) returns a coroutine
+        """
         code, ns = build_expr([["CONST", 42], ["RETURN", 1]])
         expr = code.expression(ns)
         coro = expr()
@@ -170,14 +192,18 @@ class TestCodeAssembly(unittest.TestCase):
         self.assertTrue(hasattr(coro, '__await__'))
 
     def test_code_expression_run_to_completion(self):
-        """Code.expression(ns)(); drive coroutine to completion."""
+        """
+        Code.expression(ns)(); drive coroutine to completion
+        """
         code, ns = build_expr([["CONST", 42], ["RETURN", 1]])
         expr = code.expression(ns)
         result = run_to_completion(expr())
         self.assertEqual(result, 42)
 
     def test_code_function_formals_parent_returns_function(self):
-        """Code.function(formals, parent_ns) returns a Function."""
+        """
+        Code.function(formals, parent_ns) returns a Function
+        """
         code, base_ns = build_expr([["CONST", 42], ["RETURN", 1]])
         fspec = FormalsSpec(('x',), None, ('y',))
         formals = fspec()  # FormalsSpec() => Formals with no defaults
@@ -185,7 +211,9 @@ class TestCodeAssembly(unittest.TestCase):
         self.assertIsInstance(fn, Function)
 
     def test_code_function_call_returns_coroutine(self):
-        """Calling the result of Code.function(formals, parent_ns) returns a coroutine."""
+        """
+        Calling the result of Code.function(formals, parent_ns) returns a coroutine
+        """
         code, base_ns = build_expr([["CONST", 42], ["RETURN", 1]])
         fspec = FormalsSpec(('x',), None, ('y',))
         formals = fspec()
@@ -195,7 +223,9 @@ class TestCodeAssembly(unittest.TestCase):
         self.assertTrue(hasattr(coro, '__await__'))
 
     def test_code_function_run_to_completion(self):
-        """Code.function(formals, parent_ns)(*args, **kwargs); drive coroutine."""
+        """
+        Code.function(formals, parent_ns)(*args, **kwargs); drive coroutine
+        """
         code, base_ns = build_expr([["CONST", 42], ["RETURN", 1]])
         fspec = FormalsSpec(('x',), None, ('y',))
         formals = fspec()
@@ -204,7 +234,9 @@ class TestCodeAssembly(unittest.TestCase):
         self.assertEqual(result, 42)
 
     def test_return_two_values_sync(self):
-        """RETURN 2 with two values on stack returns a tuple (sync, no await)."""
+        """
+        RETURN 2 with two values on stack returns a tuple (sync, no await)
+        """
         code, ns = build_expr([
             ["CONST", 42],
             ["CONST", 52],

@@ -14,10 +14,9 @@
 """
 Unit tests for type predicates and helper functions
 
-author: Christopher O'Brien <obriencj@gmail.com>
-license: GPL v.3
+:author: Christopher O'Brien <obriencj@preoccupied.net>
+:license: GNU General Public License v3
 """
-
 
 import unittest
 
@@ -390,3 +389,5 @@ class TestFillPosition(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+# The end.

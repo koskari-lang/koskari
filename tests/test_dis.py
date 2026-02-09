@@ -26,7 +26,9 @@ from koskari.dis import dis, _get_code, _get_instruction_lines, _format_constant
 
 
 def _make_truthy_code():
-    """Code: VAR YUS, jump-if-true to 4, else CONST NO, JUMP 5, CONST YES, RETURN."""
+    """
+    Code: VAR YUS, jump-if-true to 4, else CONST NO, JUMP 5, CONST YES, RETURN
+    """
     instr = (
         [OpCode.KOS_OP_VAR, "YUS"],
         [OpCode.KOS_OP_JUMP_TRUE, "truthy"],
@@ -52,7 +54,9 @@ class TestGetCode(unittest.TestCase):
         self.assertIs(_get_code(type('NoCode', (), {})()), None)
 
     def test_object_with_code_attr_not_accepted(self):
-        """Only Code is accepted; .code attribute is not resolved."""
+        """
+        Only Code is accepted; .code attribute is not resolved
+        """
         code = _make_truthy_code()
         wrapper = type('Wrapper', (), {'code': code})()
         self.assertIs(_get_code(wrapper), None)

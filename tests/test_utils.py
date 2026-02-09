@@ -11,7 +11,6 @@
 # You should have received a copy of the GNU General Public License
 # along with this library; if not, see <http://www.gnu.org/licenses/>.
 
-
 """
 Unit tests for utility functions
 
@@ -20,41 +19,52 @@ Unit tests for utility functions
 :ai-assistant: Claude Opus 4 via Cursor
 """
 
-
 import unittest
 
 from koskari import lib
 
 
 class TestReapply(unittest.TestCase):
-    """Tests for the reapply function"""
+    """
+    Tests for the reapply function
+    """
 
     def test_reapply_zero_times(self):
-        """reapply with count 0 returns original data"""
+        """
+        reapply with count 0 returns original data
+        """
 
         result = lib.reapply(lambda x: x + 1, 5, 0)
         self.assertEqual(result, 5)
 
     def test_reapply_once(self):
-        """reapply with count 1 applies function once"""
+        """
+        reapply with count 1 applies function once
+        """
 
         result = lib.reapply(lambda x: x * 2, 5, 1)
         self.assertEqual(result, 10)
 
     def test_reapply_multiple(self):
-        """reapply applies function count times"""
+        """
+        reapply applies function count times
+        """
 
         result = lib.reapply(lambda x: x + 1, 0, 5)
         self.assertEqual(result, 5)
 
     def test_reapply_with_list(self):
-        """reapply works with list transformations"""
+        """
+        reapply works with list transformations
+        """
 
         result = lib.reapply(lambda x: x + [len(x)], [], 4)
         self.assertEqual(result, [0, 1, 2, 3])
 
     def test_reapply_exception_propagates(self):
-        """reapply propagates exceptions from function"""
+        """
+        reapply propagates exceptions from function
+        """
 
         def fail_on_3(x):
             if x >= 3:
@@ -66,28 +76,38 @@ class TestReapply(unittest.TestCase):
 
 
 class TestApply(unittest.TestCase):
-    """Tests for the apply function"""
+    """
+    Tests for the apply function
+    """
 
     def test_apply_no_args(self):
-        """apply with no args calls function"""
+        """
+        apply with no args calls function
+        """
 
         result = lib.apply(list)
         self.assertEqual(result, [])
 
     def test_apply_tuple_args(self):
-        """apply with tuple args unpacks them"""
+        """
+        apply with tuple args unpacks them
+        """
 
         result = lib.apply(max, (1, 5, 3))
         self.assertEqual(result, 5)
 
     def test_apply_list_args(self):
-        """apply with list args unpacks them"""
+        """
+        apply with list args unpacks them
+        """
 
         result = lib.apply(sum, [[1, 2, 3]])
         self.assertEqual(result, 6)
 
     def test_apply_with_kwargs(self):
-        """apply with kwargs passes them"""
+        """
+        apply with kwargs passes them
+        """
 
         def func(*args, **kwargs):
             return (args, kwargs)
@@ -96,20 +116,26 @@ class TestApply(unittest.TestCase):
         self.assertEqual(result, ((1, 2), {'x': 10}))
 
     def test_apply_pair_args(self):
-        """apply with pair args unpacks them"""
+        """
+        apply with pair args unpacks them
+        """
 
         pair = lib.cons(1, lib.cons(2, lib.cons(3, lib.nil)))
         result = lib.apply(max, pair)
         self.assertEqual(result, 3)
 
     def test_apply_none_args(self):
-        """apply with None args treats as empty"""
+        """
+        apply with None args treats as empty
+        """
 
         result = lib.apply(list, None)
         self.assertEqual(result, [])
 
     def test_apply_none_kwargs(self):
-        """apply with None kwargs ignores them"""
+        """
+        apply with None kwargs ignores them
+        """
 
         result = lib.apply(max, (1, 2, 3), None)
         self.assertEqual(result, 3)

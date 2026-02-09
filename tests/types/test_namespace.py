@@ -15,10 +15,9 @@
 """
 Unit tests for namespace types
 
-author: Christopher O'Brien <obriencj@gmail.com>
-license: GPL v.3
+:author: Christopher O'Brien <obriencj@preoccupied.net>
+:license: GNU General Public License v3
 """
-
 
 import unittest
 from operator import itemgetter

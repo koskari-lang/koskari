@@ -15,7 +15,7 @@
 """
 Unit tests for Formals and FormalsSpec types
 
-:author: Christopher O'Brien <obriencj@gmail.com>
+:author: Christopher O'Brien <obriencj@preoccupied.net>
 :license: GNU General Public License v3
 """
 

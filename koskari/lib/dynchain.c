@@ -690,6 +690,7 @@ int kos_shift_capture(
            (unsigned) KosDynNode_KIND(frame_inside),
            (void *) f->stack,
            f->stack ? (size_t) KosStackBlock_LEN(f->stack) : 0);
+      (void) f;
     } else {
       SAYF("[xfer] shift_capture segment_top=%p (prompt) frame_inside=%p kind=%u",
            (void *) segment_top, (void *) frame_inside,

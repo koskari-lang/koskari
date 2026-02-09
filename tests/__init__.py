@@ -44,3 +44,5 @@ def make_callable(code, ns, formals_spec=None):
             'expected FormalsSpec or None, got %s' % type(formals_spec).__name__
         )
     return Function(code, ns, formals_spec)
+
+# The end.

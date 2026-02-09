@@ -326,8 +326,143 @@ static int test_eval_reset_shift_invoke(void) {
 }
 
 
-/* === Test runner === */
+/* === Test: POP_PROMPT without prompt => RuntimeError === */
 
+static int test_eval_pop_prompt_without_prompt(void) {
+    PyObject *nspec = create_test_nspec();
+    TEST_ASSERT_NOT_NULL(nspec, "create nspec");
+
+    PyObject *instr = PyList_New(2);
+    PyList_SET_ITEM(instr, 0, make_instr_int(KOS_OP_POP_PROMPT, 0));
+    PyList_SET_ITEM(instr, 1, make_instr_int(KOS_OP_RETURN, 0));
+
+    PyObject *code_obj = KosCode_New(nspec, instr, NULL, NULL);
+    TEST_ASSERT_NOT_NULL(code_obj, "create Code");
+
+    Py_DECREF(instr);
+    Py_DECREF(nspec);
+
+    PyObject *ns = PyDict_New();
+    TEST_ASSERT_NOT_NULL(ns, "create ns");
+
+    KosDynFrame *frame = kos_dynframe_new(NULL, (KosCode *) code_obj, ns, NULL);
+    TEST_ASSERT_NOT_NULL(frame, "create frame");
+
+    KosContext *ctx = kos_context_new(frame);
+    TEST_ASSERT_NOT_NULL(ctx, "create context");
+
+    KosEvent ev = {0};
+    int res = koskari_eval(ctx, &ev);
+
+    TEST_ASSERT(res == 0, "koskari_eval succeeded");
+    TEST_ASSERT(ev.kind == KOS_EV_RAISE, "event is RAISE");
+    TEST_ASSERT_NOT_NULL(ev.payload, "payload not NULL");
+    TEST_ASSERT(PyExceptionInstance_Check(ev.payload), "payload is exception");
+    TEST_ASSERT(PyErr_GivenExceptionMatches((PyObject *) Py_TYPE(ev.payload),
+                                            PyExc_RuntimeError),
+                "exception is RuntimeError");
+
+    Py_XDECREF(ev.payload);
+    kos_context_free(ctx);
+    Py_DECREF(code_obj);
+
+    return 0;
+}
+
+
+/* === Test: INVOKE_K stack underrun === */
+
+static int test_eval_invoke_k_stack_underrun(void) {
+    PyObject *nspec = create_test_nspec();
+    TEST_ASSERT_NOT_NULL(nspec, "create nspec");
+
+    PyObject *instr = PyList_New(2);
+    PyList_SET_ITEM(instr, 0, make_instr_int(KOS_OP_INVOKE_K, 0));
+    PyList_SET_ITEM(instr, 1, make_instr_int(KOS_OP_RETURN, 0));
+
+    PyObject *code_obj = KosCode_New(nspec, instr, NULL, NULL);
+    TEST_ASSERT_NOT_NULL(code_obj, "create Code");
+
+    Py_DECREF(instr);
+    Py_DECREF(nspec);
+
+    PyObject *ns = PyDict_New();
+    TEST_ASSERT_NOT_NULL(ns, "create ns");
+
+    KosDynFrame *frame = kos_dynframe_new(NULL, (KosCode *) code_obj, ns, NULL);
+    TEST_ASSERT_NOT_NULL(frame, "create frame");
+
+    KosContext *ctx = kos_context_new(frame);
+    TEST_ASSERT_NOT_NULL(ctx, "create context");
+
+    KosEvent ev = {0};
+    int res = koskari_eval(ctx, &ev);
+
+    TEST_ASSERT(res == 0, "koskari_eval succeeded");
+    TEST_ASSERT(ev.kind == KOS_EV_RAISE, "event is RAISE");
+    TEST_ASSERT_NOT_NULL(ev.payload, "payload not NULL");
+    TEST_ASSERT(PyExceptionInstance_Check(ev.payload), "payload is exception");
+
+    Py_XDECREF(ev.payload);
+    kos_context_free(ctx);
+    Py_DECREF(code_obj);
+
+    return 0;
+}
+
+
+/* === Test: INVOKE_K wrong type => TypeError === */
+
+static int test_eval_invoke_k_wrong_type(void) {
+    PyObject *nspec = create_test_nspec();
+    TEST_ASSERT_NOT_NULL(nspec, "create nspec");
+
+    PyObject *five = PyLong_FromLong(5);
+    PyObject *one_twenty_three = PyLong_FromLong(123);
+
+    PyObject *instr = PyList_New(4);
+    PyList_SET_ITEM(instr, 0, make_instr(KOS_OP_CONST, five));
+    PyList_SET_ITEM(instr, 1, make_instr(KOS_OP_CONST, one_twenty_three));
+    PyList_SET_ITEM(instr, 2, make_instr_int(KOS_OP_INVOKE_K, 0));
+    PyList_SET_ITEM(instr, 3, make_instr_int(KOS_OP_RETURN, 0));
+
+    PyObject *code_obj = KosCode_New(nspec, instr, NULL, NULL);
+    TEST_ASSERT_NOT_NULL(code_obj, "create Code");
+
+    Py_DECREF(five);
+    Py_DECREF(one_twenty_three);
+    Py_DECREF(instr);
+    Py_DECREF(nspec);
+
+    PyObject *ns = PyDict_New();
+    TEST_ASSERT_NOT_NULL(ns, "create ns");
+
+    KosDynFrame *frame = kos_dynframe_new(NULL, (KosCode *) code_obj, ns, NULL);
+    TEST_ASSERT_NOT_NULL(frame, "create frame");
+
+    KosContext *ctx = kos_context_new(frame);
+    TEST_ASSERT_NOT_NULL(ctx, "create context");
+
+    KosEvent ev = {0};
+    int res = koskari_eval(ctx, &ev);
+
+    TEST_ASSERT(res == 0, "koskari_eval succeeded");
+    TEST_ASSERT(ev.kind == KOS_EV_RAISE, "event is RAISE");
+    TEST_ASSERT_NOT_NULL(ev.payload, "payload not NULL");
+    TEST_ASSERT(PyExceptionInstance_Check(ev.payload), "payload is exception");
+    TEST_ASSERT(PyErr_GivenExceptionMatches((PyObject *) Py_TYPE(ev.payload),
+                                            PyExc_TypeError),
+                "exception is TypeError");
+
+    Py_XDECREF(ev.payload);
+    kos_context_free(ctx);
+    Py_DECREF(code_obj);
+
+    return 0;
+}
+
+
+/* === Test runner === */
 
 int run_eval_tests(void) {
 
@@ -337,6 +472,9 @@ int run_eval_tests(void) {
     RUN_TEST(test_eval_try_except_catch);
     RUN_TEST(test_eval_try_finally_rerase);
     RUN_TEST(test_eval_reset_shift_invoke);
+    RUN_TEST(test_eval_pop_prompt_without_prompt);
+    RUN_TEST(test_eval_invoke_k_stack_underrun);
+    RUN_TEST(test_eval_invoke_k_wrong_type);
 
     return 0;
 }
