@@ -401,6 +401,102 @@ PyObject *KosFormalsSpec_NamespaceSpec(PyObject *fspec,
 }
 
 
+PyObject *KosFormals_NamespaceSpec(PyObject *formals,
+                                   PyObject *base_nspec) {
+
+  if (! KosFormals_Check(formals)) {
+    PyErr_Format(PyExc_TypeError, "Formals required, got %R", formals);
+    return NULL;
+  }
+
+  if (base_nspec == Py_None)
+    base_nspec = NULL;
+
+  if (base_nspec && ! KosNamespaceSpec_CheckExact(base_nspec)) {
+    PyErr_Format(PyExc_TypeError, "NamespaceSpec required, got %R",
+                 base_nspec);
+    return NULL;
+  }
+
+  size_t l = 0;
+  size_t c = 0;
+
+  l = SAFE_SIZE(KosFormals_POS(formals));
+  if (l < 0)
+    return NULL;
+  c += l;
+
+  l = SAFE_SIZE(KosFormals_POS_ONLY(formals));
+  if (l < 0)
+    return NULL;
+  c += l;
+
+  l = SAFE_SIZE(KosFormals_KWD(formals));
+  if (l < 0)
+    return NULL;
+  c += l;
+
+  l = SAFE_SIZE(KosFormals_KWD_ONLY(formals));
+  if (l < 0)
+    return NULL;
+  c += l;
+
+  if (KosFormals_STAR(formals))
+    c++;
+  if (KosFormals_STARSTAR(formals))
+    c++;
+
+  if (! c) {
+    if (base_nspec) {
+      Py_INCREF(base_nspec);
+      return base_nspec;
+    }
+    return KosNamespaceSpec_New(NULL, NULL, NULL);
+  }
+
+  PyObject *lcls = PyList_New(c);
+  if (! lcls)
+    return NULL;
+
+  size_t offset = 0;
+  COPY_OVER(lcls, KosFormals_POS(formals), offset);
+  COPY_OVER(lcls, KosFormals_POS_ONLY(formals), offset);
+  COPY_OVER(lcls, KosFormals_KWD(formals), offset);
+  COPY_OVER(lcls, KosFormals_KWD_ONLY(formals), offset);
+
+  PyObject *name = KosFormals_STAR(formals);
+  if (name) {
+    Py_INCREF(name);
+    PyList_SET_ITEM(lcls, offset++, name);
+  }
+  name = KosFormals_STARSTAR(formals);
+  if (name) {
+    Py_INCREF(name);
+    PyList_SET_ITEM(lcls, offset++, name);
+  }
+
+  if (c != offset) {
+    Py_DECREF(lcls);
+    PyErr_Format(PyExc_RuntimeError, "c (%i) != offset (%i)",
+                 (int) c, (int) offset);
+    return NULL;
+  }
+
+  name = NULL;
+  PyObject *clsr = NULL;
+
+  if (base_nspec) {
+    list_unique_extend(lcls, KosNamespaceSpec_LOCAL_SYMS(base_nspec));
+    name = KosNamespaceSpec_NAME(base_nspec);
+    clsr = KosNamespaceSpec_CLOSURE_SYMS(base_nspec);
+  }
+
+  PyObject *result = KosNamespaceSpec_New(name, lcls, clsr);
+  Py_DECREF(lcls);
+  return result;
+}
+
+
 #undef SAFE_SIZE
 #undef COPY_OVER
 

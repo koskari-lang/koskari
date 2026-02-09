@@ -15,3 +15,32 @@
 """
 Test suite for koskari.
 """
+
+from koskari import (
+    Expression,
+    FormalsSpec,
+    Function,
+)
+
+
+def make_callable(code, ns, formals_spec=None):
+    """
+    Build a callable from code, namespace, and optional formals spec.
+    Test helper only.
+
+    If formals_spec is None, returns Expression(code, ns). Otherwise
+    returns Function(code, ns, formals_spec). Calling the result
+    returns a Coroutine.
+
+    :param code: Code (bytecode)
+    :param ns: Namespace
+    :param formals_spec: Optional FormalsSpec
+    :return: Expression or Function
+    """
+    if formals_spec is None:
+        return Expression(code, ns)
+    if not isinstance(formals_spec, FormalsSpec):
+        raise TypeError(
+            'expected FormalsSpec or None, got %s' % type(formals_spec).__name__
+        )
+    return Function(code, ns, formals_spec)

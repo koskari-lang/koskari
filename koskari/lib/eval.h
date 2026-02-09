@@ -155,6 +155,7 @@ struct KosContext {
   /* Python await bridging state */
   PyObject *py_await_iter;   /* await-iterator from __await__() */
   PyObject *py_last_yielded; /* last yielded object (debug/optional) */
+  PyObject *py_await_inject; /* value to push on next kos_drive when resuming */
 
   /* exception injection for resume */
   int pending_throw;
@@ -256,6 +257,16 @@ int kos_koscall(KosContext *ctx, KosCode *code, PyObject *ns);
    :return: 0 on success, -1 on error
 */
 int kos_tail_koscall(KosContext *ctx, KosCode *code, PyObject *ns);
+
+
+/* === Run Code as coroutine === */
+
+/**
+   Create a coroutine that runs the given Code with the given namespace.
+
+   :return: new KosPyCoroutine, or NULL on error
+*/
+PyObject *kos_run_code_as_coroutine(PyObject *code, PyObject *ns);
 
 
 /* === Drive loop === */

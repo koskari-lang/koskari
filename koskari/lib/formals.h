@@ -120,6 +120,21 @@ int KosFormals_VectorApply(
     PyObject *names);
 
 
+/**
+   Build a NamespaceSpec that includes the parameter names from formals.
+
+   Same role as KosFormalsSpec_NamespaceSpec but for a KosFormals instance.
+   Used when assembling a Function from (code, formals, parent_ns).
+
+   :param formals: KosFormals instance
+   :param base_nspec: optional base NamespaceSpec (or None)
+   :return: new NamespaceSpec, or NULL on error
+*/
+PyObject *KosFormals_NamespaceSpec(
+    PyObject *formals,
+    PyObject *base_nspec);
+
+
 #define KosFormals_POS(fmls)                \
   (((KosFormals *) fmls)->pos)
 

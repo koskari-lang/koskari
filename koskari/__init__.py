@@ -104,6 +104,11 @@ from .parse import (
     default_reader,
 )
 
+from .lib import (
+    Expression,
+    Function,
+)
+
 
 __all__ = (
     # atom types
@@ -183,6 +188,10 @@ __all__ = (
     # reader
     "Reader",
     "default_reader",
+
+    # callables
+    "Expression",
+    "Function",
 )
 
 

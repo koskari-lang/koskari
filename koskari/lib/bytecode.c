@@ -225,6 +225,48 @@ static PyObject *code_m_position(PyObject *self, PyObject *index) {
 }
 
 
+static PyObject *code_m_expression(PyObject *self, PyObject *parent_ns) {
+
+  if (! parent_ns) {
+    PyErr_SetString(PyExc_TypeError, "Code.expression(parent_ns) requires"
+                    " a parent namespace");
+    return NULL;
+  }
+  if (! KosNamespace_Check(parent_ns)) {
+    PyErr_Format(PyExc_TypeError, "Code.expression parent must be Namespace,"
+                 " not %R", parent_ns);
+    return NULL;
+  }
+  return KosExpression_New(self, parent_ns);
+}
+
+
+static PyObject *code_m_function(PyObject *self, PyObject *args) {
+
+  PyObject *formals = NULL;
+  PyObject *parent_ns = NULL;
+
+  if (! PyArg_ParseTuple(args, "OO:Code.function", &formals, &parent_ns))
+    return NULL;
+  if (! KosFormals_Check(formals)) {
+    PyErr_Format(PyExc_TypeError, "Code.function formals must be Formals,"
+                 " not %R", formals);
+    return NULL;
+  }
+  if (! parent_ns) {
+    PyErr_SetString(PyExc_TypeError, "Code.function(parent_ns) requires"
+                    " a parent namespace");
+    return NULL;
+  }
+  if (! KosNamespace_Check(parent_ns)) {
+    PyErr_Format(PyExc_TypeError, "Code.function parent must be Namespace,"
+                 " not %R", parent_ns);
+    return NULL;
+  }
+  return KosFunction_NewFromFormals(self, formals, parent_ns);
+}
+
+
 static PyMethodDef code_methods[] = {
 
   { "constant", (PyCFunction) code_m_constant, METH_O,
@@ -238,6 +280,12 @@ static PyMethodDef code_methods[] = {
 
   { "position", (PyCFunction) code_m_position, METH_O,
     "C.position(index) => (line, col)" },
+
+  { "expression", (PyCFunction) code_m_expression, METH_O,
+    "C.expression(parent_ns) => Expression (callable that returns Coroutine)" },
+
+  { "function", (PyCFunction) code_m_function, METH_VARARGS,
+    "C.function(formals, parent_ns) => Function (callable that returns Coroutine)" },
 
   { NULL, },
 };

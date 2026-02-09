@@ -36,6 +36,7 @@
 #include "utils.h"
 #include "parse.h"
 #include "eval.h"
+#include "func.h"
 
 
 /* === unit initializers === */

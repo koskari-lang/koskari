@@ -49,8 +49,33 @@
 #include <stdio.h>
 
 
-/* Set to 1 to trace opcode execution (for debugging) */
-#define KOS_EVAL_TRACE 0
+/* Set to 1 to enable debug prints to stderr (opcode trace, CALL repr, etc.). */
+#define KOS_ENABLE_DEBUG 0
+
+#if KOS_ENABLE_DEBUG
+# define KOS_DEBUGF(...) \
+  do { fprintf(stderr, __VA_ARGS__); fflush(stderr); } while (0)
+static void _kos_debug_repr(const char *prefix, PyObject *obj) {
+  if (! obj) {
+    fprintf(stderr, "%sNULL\n", prefix);
+    return;
+  }
+  PyObject *repr = PyObject_Repr(obj);
+  if (repr) {
+    const char *s = PyUnicode_AsUTF8(repr);
+    fprintf(stderr, "%s%s\n", prefix, s ? s : "<repr failed>");
+    Py_DECREF(repr);
+  } else {
+    fprintf(stderr, "%s<repr error>\n", prefix);
+    PyErr_Clear();
+  }
+  fflush(stderr);
+}
+# define KOS_DEBUGF_REPR(prefix, obj) _kos_debug_repr(prefix, obj)
+#else
+# define KOS_DEBUGF(...) do { (void)0; } while (0)
+# define KOS_DEBUGF_REPR(prefix, obj) ((void)(prefix), (void)(obj))
+#endif
 
 /* Opcode handlers are always inlined so the eval loop stays fast. */
 #if defined(__GNUC__) || defined(__clang__)
@@ -70,14 +95,12 @@
 */
 static int run_transfer_plan_to_completion(KosContext *ctx, KosEvent *out_ev) {
   while (ctx->plan) {
-    if (KOS_EVAL_TRACE)
-      fprintf(stderr, "[eval] transfer step %zu/%zu\n",
-              (size_t) ctx->plan->action_index,
-              (size_t) ctx->plan->action_count);
+    KOS_DEBUGF("[eval] transfer step %zu/%zu\n",
+               (size_t) ctx->plan->action_index,
+               (size_t) ctx->plan->action_count);
     int plan_res = kos_run_transfer_step(ctx);
     if (plan_res < 0) {
-      if (KOS_EVAL_TRACE)
-        fprintf(stderr, "[eval] transfer step failed -> KOS_EV_RAISE\n");
+      KOS_DEBUGF("[eval] transfer step failed -> KOS_EV_RAISE\n");
       out_ev->kind = KOS_EV_RAISE;
       out_ev->payload = NULL;
       PyErr_Fetch(&out_ev->payload, NULL, NULL);
@@ -87,9 +110,8 @@ static int run_transfer_plan_to_completion(KosContext *ctx, KosEvent *out_ev) {
     }
     if (plan_res == 0)
       continue;
-    if (KOS_EVAL_TRACE)
-      fprintf(stderr, "[eval] transfer complete inv_seg_top=%p\n",
-              (void *) ctx->dyn_top);
+    KOS_DEBUGF("[eval] transfer complete inv_seg_top=%p\n",
+               (void *) ctx->dyn_top);
     ctx->invocation_segment_top = ctx->dyn_top;
     kos_free_transfer_plan(ctx->plan);
     ctx->plan = NULL;
@@ -119,14 +141,13 @@ static int get_prompt_id_from_insn(KosCode *code, KosOp *insn,
 
 
 /**
-   Print current stack block address/id and length; if KOS_EVAL_TRACE,
+   Print current stack block address/id and length when KOS_ENABLE_DEBUG;
    also print top two slot values as integers when PyLong.
 */
 static void trace_stack(const char *prefix, KosStackBlock *stack) {
-  if (! KOS_EVAL_TRACE)
+  if (! KOS_ENABLE_DEBUG)
     return;
-  fprintf(stderr, "[eval] %s stack=%p",
-          prefix, (void *) stack);
+  fprintf(stderr, "[eval] %s stack=%p", prefix, (void *) stack);
   if (stack) {
     size_t n = KosStackBlock_LEN(stack);
     fprintf(stderr, " len=%zu", n);
@@ -227,6 +248,7 @@ KosContext *kos_context_new(KosDynFrame *top) {
   /* Initialize Python await bridging */
   ctx->py_await_iter = NULL;
   ctx->py_last_yielded = NULL;
+  ctx->py_await_inject = NULL;
 
   /* Initialize exception injection */
   ctx->pending_throw = 0;
@@ -270,6 +292,7 @@ void kos_context_free(KosContext *ctx) {
 
   Py_XDECREF(ctx->py_await_iter);
   Py_XDECREF(ctx->py_last_yielded);
+  Py_XDECREF(ctx->py_await_inject);
   Py_XDECREF(ctx->pending_exc);
   Py_XDECREF(ctx->handling_result);
 
@@ -287,6 +310,7 @@ int kos_context_traverse(
 
   Py_VISIT(ctx->py_await_iter);
   Py_VISIT(ctx->py_last_yielded);
+  Py_VISIT(ctx->py_await_inject);
   Py_VISIT(ctx->pending_exc);
   Py_VISIT(ctx->handling_result);
 
@@ -326,6 +350,46 @@ int kos_stackblock_traverse(
   }
 
   return 0;
+}
+
+
+/* === Run Code as coroutine (Python entry point) === */
+
+
+/**
+   Create a coroutine that runs the given Code with the given namespace.
+
+   The coroutine is not started; the caller drives it via send(None) or
+   await. code must be a KosCode; ns is the initial frame namespace
+   (e.g. a KosNamespace or dict), reference is borrowed.
+
+   :return: new KosPyCoroutine, or NULL on error
+*/
+PyObject *kos_run_code_as_coroutine(PyObject *code, PyObject *ns) {
+
+  if (! KosCode_Check(code)) {
+    PyErr_Format(PyExc_TypeError, "expected Code, got %s",
+                 Py_TYPE(code)->tp_name);
+    return NULL;
+  }
+
+  if (! ns) {
+    PyErr_SetString(PyExc_TypeError, "namespace is required");
+    return NULL;
+  }
+
+  Py_INCREF(ns);
+  KosDynFrame *frame = kos_dynframe_new(NULL, (KosCode *) code, ns, NULL);
+  if (! frame)
+    return NULL;
+
+  KosContext *ctx = kos_context_new(frame);
+  if (! ctx) {
+    kos_dynframe_free(frame);
+    return NULL;
+  }
+
+  return KosPyCoroutine_New(ctx);
 }
 
 
@@ -413,6 +477,11 @@ static PyObject *eager_step_awaitable(
   *suspended = 0;
   *yielded = NULL;
 
+  if (! awaitable) {
+    PyErr_SetString(PyExc_TypeError, "eager_step_awaitable: awaitable is NULL");
+    return NULL;
+  }
+
   /* Get __await__ */
   PyObject *await_iter = NULL;
 
@@ -434,6 +503,15 @@ static PyObject *eager_step_awaitable(
     if (! await_iter)
       return NULL;
   }
+
+  if (! await_iter) {
+    PyErr_SetString(PyExc_TypeError,
+                    "eager_step_awaitable: __await__() returned NULL");
+    return NULL;
+  }
+
+  KOS_DEBUGF("[eval] eager_step_awaitable before send(None) (await_iter=%d)\n",
+             await_iter ? 1 : 0);
 
   /* Try first send(None) */
   if (! str_send) {
@@ -478,6 +556,54 @@ static PyObject *eager_step_awaitable(
 }
 
 
+/**
+   Push val onto the frame stack, or if val is awaitable run eager_step and
+   either push the result or suspend (set out_ev to KOS_EV_AWAIT and return 1).
+   val is consumed (new reference).
+
+   :return: 0 continue, 1 stop (AWAIT), -1 error
+*/
+static int push_or_await(KosContext *ctx, KosEvent *out_ev, PyObject *val) {
+
+  PyTypeObject *type = Py_TYPE(val);
+  KOS_DEBUGF("[eval] push_or_await entry is_awaitable=%d\n",
+             (type->tp_as_async && type->tp_as_async->am_await) ? 1 : 0);
+  if (! type->tp_as_async || ! type->tp_as_async->am_await) {
+    if (KosStackBlock_PushRef(&ctx->frame_top->stack, val) < 0) {
+      Py_DECREF(val);
+      return -1;
+    }
+    Py_DECREF(val);
+    return 0;
+  }
+
+  int suspended = 0;
+  PyObject *yielded = NULL;
+  PyObject *result = eager_step_awaitable(val, ctx, &suspended, &yielded);
+  Py_DECREF(val);
+
+  if (result) {
+    if (KosStackBlock_PushRef(&ctx->frame_top->stack, result) < 0) {
+      Py_DECREF(result);
+      return -1;
+    }
+    Py_DECREF(result);
+    return 0;
+  }
+
+  if (suspended && yielded) {
+    ctx->flags &= ~KOS_CTX_RUNNING;
+    out_ev->kind = KOS_EV_AWAIT;
+    out_ev->payload = yielded;
+    KOS_DEBUGF("[eval] push_or_await set KOS_EV_AWAIT (suspended=%d yielded=%d)\n",
+               suspended, yielded ? 1 : 0);
+    return 1;
+  }
+
+  return -1;
+}
+
+
 /* === Opcode handlers (always inlined; return 0=continue 1=stop -1=error) === */
 
 
@@ -518,13 +644,12 @@ KOS_OP_INLINE int op_CONST(KosContext *ctx, KosEvent *out_ev, KosOp *insn) {
   KosCode *code = ctx->frame_top->code;
   PyObject *val = KosCode_GetConstant((PyObject *) code, insn->arg);
   if (! val) {
-    if (KOS_EVAL_TRACE)
-      fprintf(stderr, "[eval] CONST GetConstant failed arg=%u\n",
-              (unsigned) insn->arg);
+    KOS_DEBUGF("[eval] CONST GetConstant failed arg=%u\n",
+               (unsigned) insn->arg);
     return -1;
   }
-  if (KOS_EVAL_TRACE && PyLong_Check(val))
-    fprintf(stderr, "[eval] CONST pushed %ld\n", PyLong_AsLong(val));
+  if (PyLong_Check(val))
+    KOS_DEBUGF("[eval] CONST pushed %ld\n", PyLong_AsLong(val));
   if (KosStackBlock_PushRef(&ctx->frame_top->stack, val) < 0) {
     Py_DECREF(val);
     return -1;
@@ -565,13 +690,12 @@ KOS_OP_INLINE int op_POP(KosContext *ctx, KosEvent *out_ev, KosOp *insn) {
 KOS_OP_INLINE int op_RETURN(KosContext *ctx, KosEvent *out_ev, KosOp *insn) {
   PyObject *val = KosStackBlock_PopRef(&ctx->frame_top->stack);
   if (! val) {
-    if (KOS_EVAL_TRACE)
-      fprintf(stderr, "[eval] RETURN pop underrun\n");
+    KOS_DEBUGF("[eval] RETURN pop underrun\n");
     return -1;
   }
-  if (KOS_EVAL_TRACE && PyLong_Check(val))
-    fprintf(stderr, "[eval] RETURN value=%ld -> KOS_EV_RETURN\n",
-            PyLong_AsLong(val));
+  if (PyLong_Check(val))
+    KOS_DEBUGF("[eval] RETURN value=%ld -> KOS_EV_RETURN\n",
+               PyLong_AsLong(val));
   out_ev->kind = KOS_EV_RETURN;
   out_ev->payload = val;
   ctx->flags &= ~KOS_CTX_RUNNING;
@@ -581,6 +705,56 @@ KOS_OP_INLINE int op_RETURN(KosContext *ctx, KosEvent *out_ev, KosOp *insn) {
 }
 
 
+KOS_OP_INLINE int op_AWAIT(KosContext *ctx, KosEvent *out_ev, KosOp *insn) {
+  (void) insn;
+  PyObject *val = KosStackBlock_PopRef(&ctx->frame_top->stack);
+  if (! val)
+    return -1;
+  return push_or_await(ctx, out_ev, val);
+}
+
+
+KOS_OP_INLINE int op_CALL(KosContext *ctx, KosEvent *out_ev, KosOp *insn) {
+  unsigned n = insn->arg;
+  PyObject *callable = KosStackBlock_PopRef(&ctx->frame_top->stack);
+  if (! callable)
+    return -1;
+  PyObject *tuple = NULL;
+  PyObject *result = NULL;
+  PyObject *const *args = KosStackBlock_TailPtr(ctx->frame_top->stack, n);
+  if (! args && n > 0) {
+    Py_DECREF(callable);
+    return -1;
+  }
+  tuple = PyTuple_New((Py_ssize_t) n);
+  if (! tuple) {
+    Py_DECREF(callable);
+    return -1;
+  }
+  for (unsigned i = 0; i < n; i++) {
+    Py_INCREF(args[i]);
+    if (PyTuple_SetItem(tuple, (Py_ssize_t) i, args[i]) < 0) {
+      Py_DECREF(tuple);
+      Py_DECREF(callable);
+      return -1;
+    }
+  }
+  KosStackBlock_DropNoErr(&ctx->frame_top->stack, n);
+  KOS_DEBUGF("[CALL] callable: ");
+  KOS_DEBUGF_REPR("", callable);
+  result = PyObject_Call(callable, tuple, NULL);
+  KOS_DEBUGF("[CALL] result: ");
+  KOS_DEBUGF_REPR("", result);
+  if (result && Py_TYPE(result)->tp_as_async)
+    KOS_DEBUGF("[CALL] result is awaitable, passing to push_or_await\n");
+  KOS_DEBUGF("[eval] op_CALL after PyObject_Call (result=%d awaitable=%d)\n",
+             result ? 1 : 0, result && Py_TYPE(result)->tp_as_async ? 1 : 0);
+  Py_DECREF(tuple);
+  Py_DECREF(callable);
+  if (! result)
+    return -1;
+  return push_or_await(ctx, out_ev, result);
+}
 
 
 KOS_OP_INLINE int op_GLOBALS(KosContext *ctx, KosEvent *out_ev, KosOp *insn) {
@@ -619,6 +793,32 @@ KOS_OP_INLINE int op_LOCALS(KosContext *ctx, KosEvent *out_ev, KosOp *insn) {
   (void) out_ev;
   (void) insn;
   return 0;
+}
+
+
+KOS_OP_INLINE int op_VAR(KosContext *ctx, KosEvent *out_ev, KosOp *insn) {
+  KosCode *code = ctx->frame_top->code;
+  PyObject *name = KosCode_GetConstant((PyObject *) code, insn->arg);
+  if (! name)
+    return -1;
+  PyObject *ns = ctx->frame_top->ns;
+  PyObject *val = NULL;
+  if (KosNamespace_Check(ns)) {
+    val = KosNamespace_Deref(ns, name);
+  } else if (PyDict_Check(ns)) {
+    val = PyDict_GetItemWithError(ns, name);
+    if (val)
+      Py_INCREF(val);
+    else if (! PyErr_Occurred())
+      PyErr_Format(PyExc_NameError, "name %R is not defined", name);
+  } else {
+    PyErr_Format(PyExc_TypeError, "frame namespace must be Namespace or dict,"
+                 " got %R", ns);
+    return -1;
+  }
+  if (! val)
+    return -1;
+  return push_or_await(ctx, out_ev, val);
 }
 
 
@@ -823,20 +1023,18 @@ KOS_OP_INLINE int op_SET_PROMPT_HANDLER(KosContext *ctx, KosEvent *out_ev,
 
 KOS_OP_INLINE int op_POP_PROMPT(KosContext *ctx, KosEvent *out_ev,
                                 KosOp *insn) {
-  if (KOS_EVAL_TRACE)
-    fprintf(stderr, "[eval] POP_PROMPT inv_seg=%p dyn_top=%p IS_PROMPT=%d\n",
-            (void *) ctx->invocation_segment_top, (void *) ctx->dyn_top,
-            (ctx->dyn_top && KosDynNode_IS_PROMPT(ctx->dyn_top)) ? 1 : 0);
+  KOS_DEBUGF("[eval] POP_PROMPT inv_seg=%p dyn_top=%p IS_PROMPT=%d\n",
+             (void *) ctx->invocation_segment_top, (void *) ctx->dyn_top,
+             (ctx->dyn_top && KosDynNode_IS_PROMPT(ctx->dyn_top)) ? 1 : 0);
   if (ctx->invocation_segment_top != NULL) {
     PyObject *val = KosStackBlock_PopRef(&ctx->frame_top->stack);
     if (! val) {
-      if (KOS_EVAL_TRACE)
-        fprintf(stderr, "[eval] POP_PROMPT (invoke) pop underrun\n");
+      KOS_DEBUGF("[eval] POP_PROMPT (invoke) pop underrun\n");
       return -1;
     }
-    if (KOS_EVAL_TRACE && PyLong_Check(val))
-      fprintf(stderr, "[eval] POP_PROMPT return to invoker value=%ld\n",
-              PyLong_AsLong(val));
+    if (PyLong_Check(val))
+      KOS_DEBUGF("[eval] POP_PROMPT return to invoker value=%ld\n",
+                 PyLong_AsLong(val));
     out_ev->kind = KOS_EV_RETURN;
     out_ev->payload = val;
     ctx->invocation_segment_top = NULL;
@@ -964,11 +1162,9 @@ KOS_OP_INLINE int op_SHIFT(KosContext *ctx, KosEvent *out_ev, KosOp *insn) {
   KosContinuation *k = NULL;
   if (get_prompt_id_from_insn(ctx->frame_top->code, insn, &prompt_id) < 0)
     return -1;
-  if (KOS_EVAL_TRACE)
-    fprintf(stderr, "[eval] SHIFT prompt_id=%u\n", (unsigned) prompt_id);
+  KOS_DEBUGF("[eval] SHIFT prompt_id=%u\n", (unsigned) prompt_id);
   if (kos_shift_capture(ctx, prompt_id, &k) < 0) {
-    if (KOS_EVAL_TRACE)
-      fprintf(stderr, "[eval] SHIFT capture failed\n");
+    KOS_DEBUGF("[eval] SHIFT capture failed\n");
     return -1;
   }
   KosDynPrompt *prompt = kos_find_prompt(ctx, prompt_id);
@@ -977,9 +1173,8 @@ KOS_OP_INLINE int op_SHIFT(KosContext *ctx, KosEvent *out_ev, KosOp *insn) {
     PyErr_SetString(PyExc_RuntimeError, "shift: prompt not found");
     return -1;
   }
-  if (KOS_EVAL_TRACE)
-    fprintf(stderr, "[eval] SHIFT unwinding to prompt, then handler_pc=%u\n",
-            (unsigned) prompt->handler_pc);
+  KOS_DEBUGF("[eval] SHIFT unwinding to prompt, then handler_pc=%u\n",
+             (unsigned) prompt->handler_pc);
   while (ctx->dyn_top != (KosDynNode *) prompt) {
     if (KosDynNode_IS_FRAME(ctx->dyn_top)) {
       if (kos_dyn_pop_frame(ctx) < 0) {
@@ -1036,20 +1231,18 @@ KOS_OP_INLINE int op_SHIFT(KosContext *ctx, KosEvent *out_ev, KosOp *insn) {
 KOS_OP_INLINE int op_INVOKE_K(KosContext *ctx, KosEvent *out_ev, KosOp *insn) {
   PyObject *value = KosStackBlock_PopRef(&ctx->frame_top->stack);
   if (! value) {
-    if (KOS_EVAL_TRACE)
-      fprintf(stderr, "[eval] INVOKE_K pop value failed\n");
+    KOS_DEBUGF("[eval] INVOKE_K pop value failed\n");
     return -1;
   }
   PyObject *cont_obj = KosStackBlock_PopRef(&ctx->frame_top->stack);
   if (! cont_obj) {
-    if (KOS_EVAL_TRACE)
-      fprintf(stderr, "[eval] INVOKE_K pop cont failed\n");
+    KOS_DEBUGF("[eval] INVOKE_K pop cont failed\n");
     Py_DECREF(value);
     return -1;
   }
-  if (KOS_EVAL_TRACE && PyLong_Check(value))
-    fprintf(stderr, "[eval] INVOKE_K value=%ld k=%p\n",
-            PyLong_AsLong(value), (void *) cont_obj);
+  if (PyLong_Check(value))
+    KOS_DEBUGF("[eval] INVOKE_K value=%ld k=%p\n",
+               PyLong_AsLong(value), (void *) cont_obj);
   if (! PyObject_TypeCheck(cont_obj, &KosPyContinuationType)) {
     PyErr_SetString(PyExc_TypeError, "INVOKE_K: TOS is not a continuation");
     Py_DECREF(value);
@@ -1064,12 +1257,10 @@ KOS_OP_INLINE int op_INVOKE_K(KosContext *ctx, KosEvent *out_ev, KosOp *insn) {
                     "INVOKE_K: continuation has no captured state");
     return -1;
   }
-  if (KOS_EVAL_TRACE)
-    fprintf(stderr, "[eval] INVOKE_K calling kos_invoke_continuation captured_chain=%p\n",
-            (void *) k->captured_chain);
+  KOS_DEBUGF("[eval] INVOKE_K calling kos_invoke_continuation captured_chain=%p\n",
+             (void *) k->captured_chain);
   if (kos_invoke_continuation(ctx, k, value, 0, cont_obj) < 0) {
-    if (KOS_EVAL_TRACE)
-      fprintf(stderr, "[eval] INVOKE_K kos_invoke_continuation returned -1\n");
+    KOS_DEBUGF("[eval] INVOKE_K kos_invoke_continuation returned -1\n");
     Py_DECREF(value);
     Py_DECREF(cont_obj);
     return -1;
@@ -1109,13 +1300,7 @@ static int obj_op_reducing(KosContext *ctx, KosEvent *out_ev, KosOp *insn,
 
   if (! res)
     return -1;
-  if (KosStackBlock_PushRef(&ctx->frame_top->stack, res) < 0) {
-    Py_DECREF(res);
-    return -1;
-  }
-  Py_DECREF(res);
-  (void) out_ev;
-  return 0;
+  return push_or_await(ctx, out_ev, res);
 }
 
 
@@ -1133,14 +1318,8 @@ KOS_OP_INLINE int op_OBJECT_ADD(KosContext *ctx, KosEvent *out_ev,
     PyObject *res = func(val);                                          \
     Py_DECREF(val);                                                    \
     if (! res) return -1;                                              \
-    if (KosStackBlock_PushRef(&ctx->frame_top->stack, res) < 0) {       \
-      Py_DECREF(res);                                                  \
-      return -1;                                                        \
-    }                                                                   \
-    Py_DECREF(res);                                                    \
-    (void) out_ev;                                                     \
     (void) insn;                                                       \
-    return 0;                                                          \
+    return push_or_await(ctx, out_ev, res);                             \
   }
 
 KOS_OP_INLINE int op_OBJECT_STR(KosContext *ctx, KosEvent *out_ev,
@@ -1168,14 +1347,8 @@ KOS_OP_INLINE int op_OBJECT_LEN(KosContext *ctx, KosEvent *out_ev,
   PyObject *res = PyLong_FromSsize_t(n);
   if (! res)
     return -1;
-  if (KosStackBlock_PushRef(&ctx->frame_top->stack, res) < 0) {
-    Py_DECREF(res);
-    return -1;
-  }
-  Py_DECREF(res);
-  (void) out_ev;
   (void) insn;
-  return 0;
+  return push_or_await(ctx, out_ev, res);
 }
 
 
@@ -1190,14 +1363,8 @@ KOS_OP_INLINE int op_OBJECT_NOT(KosContext *ctx, KosEvent *out_ev,
     return -1;
   PyObject *res = (r ? Py_True : Py_False);
   Py_INCREF(res);
-  if (KosStackBlock_PushRef(&ctx->frame_top->stack, res) < 0) {
-    Py_DECREF(res);
-    return -1;
-  }
-  Py_DECREF(res);
-  (void) out_ev;
   (void) insn;
-  return 0;
+  return push_or_await(ctx, out_ev, res);
 }
 
 
@@ -1212,14 +1379,8 @@ KOS_OP_INLINE int op_OBJECT_TRUTH(KosContext *ctx, KosEvent *out_ev,
     return -1;
   PyObject *res = (r ? Py_True : Py_False);
   Py_INCREF(res);
-  if (KosStackBlock_PushRef(&ctx->frame_top->stack, res) < 0) {
-    Py_DECREF(res);
-    return -1;
-  }
-  Py_DECREF(res);
-  (void) out_ev;
   (void) insn;
-  return 0;
+  return push_or_await(ctx, out_ev, res);
 }
 
 
@@ -1231,14 +1392,8 @@ KOS_OP_INLINE int op_OBJECT_TYPE(KosContext *ctx, KosEvent *out_ev,
   PyObject *res = (PyObject *) Py_TYPE(val);
   Py_INCREF(res);
   Py_DECREF(val);
-  if (KosStackBlock_PushRef(&ctx->frame_top->stack, res) < 0) {
-    Py_DECREF(res);
-    return -1;
-  }
-  Py_DECREF(res);
-  (void) out_ev;
   (void) insn;
-  return 0;
+  return push_or_await(ctx, out_ev, res);
 }
 
 
@@ -1255,14 +1410,8 @@ KOS_OP_INLINE int op_OBJECT_VARS(KosContext *ctx, KosEvent *out_ev,
                     "vars argument must have __dict__ attribute");
     return -1;
   }
-  if (KosStackBlock_PushRef(&ctx->frame_top->stack, d) < 0) {
-    Py_DECREF(d);
-    return -1;
-  }
-  Py_DECREF(d);
-  (void) out_ev;
   (void) insn;
-  return 0;
+  return push_or_await(ctx, out_ev, d);
 }
 
 
@@ -1281,14 +1430,8 @@ KOS_OP_INLINE int op_OBJECT_AITER(KosContext *ctx, KosEvent *out_ev,
     return -1;
   }
   Py_DECREF(val);
-  if (KosStackBlock_PushRef(&ctx->frame_top->stack, res) < 0) {
-    Py_DECREF(res);
-    return -1;
-  }
-  Py_DECREF(res);
-  (void) out_ev;
   (void) insn;
-  return 0;
+  return push_or_await(ctx, out_ev, res);
 }
 
 
@@ -1307,13 +1450,7 @@ KOS_OP_INLINE int op_OBJECT_AITER(KosContext *ctx, KosEvent *out_ev,
     Py_DECREF(left);                                                  \
     Py_DECREF(right);                                                 \
     if (! res) return -1;                                             \
-    if (KosStackBlock_PushRef(&ctx->frame_top->stack, res) < 0) {       \
-      Py_DECREF(res);                                                  \
-      return -1;                                                       \
-    }                                                                   \
-    Py_DECREF(res);                                                    \
-    (void) out_ev;                                                     \
-    return 0;                                                          \
+    return push_or_await(ctx, out_ev, res);                            \
   }
 
 KOS_OP_INLINE int op_OBJECT_SUBTRACT(KosContext *ctx, KosEvent *out_ev,
@@ -1391,13 +1528,7 @@ KOS_OP_INLINE int op_OBJECT_POWER(KosContext *ctx, KosEvent *out_ev,
     Py_DECREF(mod);
   if (! val)
     return -1;
-  if (KosStackBlock_PushRef(&ctx->frame_top->stack, val) < 0) {
-    Py_DECREF(val);
-    return -1;
-  }
-  Py_DECREF(val);
-  (void) out_ev;
-  return 0;
+  return push_or_await(ctx, out_ev, val);
 }
 
 
@@ -1416,14 +1547,8 @@ KOS_OP_INLINE int op_OBJECT_BIT_LEFT(KosContext *ctx, KosEvent *out_ev,
   Py_DECREF(right);
   if (! res)
     return -1;
-  if (KosStackBlock_PushRef(&ctx->frame_top->stack, res) < 0) {
-    Py_DECREF(res);
-    return -1;
-  }
-  Py_DECREF(res);
-  (void) out_ev;
   (void) insn;
-  return 0;
+  return push_or_await(ctx, out_ev, res);
 }
 
 
@@ -1442,14 +1567,8 @@ KOS_OP_INLINE int op_OBJECT_BIT_RIGHT(KosContext *ctx, KosEvent *out_ev,
   Py_DECREF(right);
   if (! res)
     return -1;
-  if (KosStackBlock_PushRef(&ctx->frame_top->stack, res) < 0) {
-    Py_DECREF(res);
-    return -1;
-  }
-  Py_DECREF(res);
-  (void) out_ev;
   (void) insn;
-  return 0;
+  return push_or_await(ctx, out_ev, res);
 }
 
 
@@ -1470,14 +1589,8 @@ static int op_OBJECT_EQ_impl(KosContext *ctx, KosEvent *out_ev, KosOp *insn,
     return -1;
   PyObject *res = (cmp ? Py_True : Py_False);
   Py_INCREF(res);
-  if (KosStackBlock_PushRef(&ctx->frame_top->stack, res) < 0) {
-    Py_DECREF(res);
-    return -1;
-  }
-  Py_DECREF(res);
-  (void) out_ev;
   (void) insn;
-  return 0;
+  return push_or_await(ctx, out_ev, res);
 }
 
 KOS_OP_INLINE int op_OBJECT_EQ(KosContext *ctx, KosEvent *out_ev,
@@ -1523,14 +1636,8 @@ KOS_OP_INLINE int op_OBJECT_IN(KosContext *ctx, KosEvent *out_ev,
     return -1;
   PyObject *res = (r ? Py_True : Py_False);
   Py_INCREF(res);
-  if (KosStackBlock_PushRef(&ctx->frame_top->stack, res) < 0) {
-    Py_DECREF(res);
-    return -1;
-  }
-  Py_DECREF(res);
-  (void) out_ev;
   (void) insn;
-  return 0;
+  return push_or_await(ctx, out_ev, res);
 }
 
 
@@ -1551,14 +1658,8 @@ KOS_OP_INLINE int op_OBJECT_NOT_IN(KosContext *ctx, KosEvent *out_ev,
     return -1;
   PyObject *res = (r ? Py_False : Py_True);
   Py_INCREF(res);
-  if (KosStackBlock_PushRef(&ctx->frame_top->stack, res) < 0) {
-    Py_DECREF(res);
-    return -1;
-  }
-  Py_DECREF(res);
-  (void) out_ev;
   (void) insn;
-  return 0;
+  return push_or_await(ctx, out_ev, res);
 }
 
 
@@ -1576,14 +1677,8 @@ KOS_OP_INLINE int op_OBJECT_IS(KosContext *ctx, KosEvent *out_ev,
   Py_INCREF(res);
   Py_DECREF(left);
   Py_DECREF(right);
-  if (KosStackBlock_PushRef(&ctx->frame_top->stack, res) < 0) {
-    Py_DECREF(res);
-    return -1;
-  }
-  Py_DECREF(res);
-  (void) out_ev;
   (void) insn;
-  return 0;
+  return push_or_await(ctx, out_ev, res);
 }
 
 
@@ -1601,14 +1696,8 @@ KOS_OP_INLINE int op_OBJECT_IS_NOT(KosContext *ctx, KosEvent *out_ev,
   Py_INCREF(res);
   Py_DECREF(left);
   Py_DECREF(right);
-  if (KosStackBlock_PushRef(&ctx->frame_top->stack, res) < 0) {
-    Py_DECREF(res);
-    return -1;
-  }
-  Py_DECREF(res);
-  (void) out_ev;
   (void) insn;
-  return 0;
+  return push_or_await(ctx, out_ev, res);
 }
 
 
@@ -1644,13 +1733,7 @@ KOS_OP_INLINE int op_OBJECT_IS_INSTANCE(KosContext *ctx, KosEvent *out_ev,
     return -1;
   PyObject *out = (res ? Py_True : Py_False);
   Py_INCREF(out);
-  if (KosStackBlock_PushRef(&ctx->frame_top->stack, out) < 0) {
-    Py_DECREF(out);
-    return -1;
-  }
-  Py_DECREF(out);
-  (void) out_ev;
-  return 0;
+  return push_or_await(ctx, out_ev, out);
 }
 
 
@@ -1686,19 +1769,13 @@ KOS_OP_INLINE int op_OBJECT_IS_SUBCLASS(KosContext *ctx, KosEvent *out_ev,
     return -1;
   PyObject *out = (res ? Py_True : Py_False);
   Py_INCREF(out);
-  if (KosStackBlock_PushRef(&ctx->frame_top->stack, out) < 0) {
-    Py_DECREF(out);
-    return -1;
-  }
-  Py_DECREF(out);
-  (void) out_ev;
-  return 0;
+  return push_or_await(ctx, out_ev, out);
 }
 
 
 /* Unimplemented opcodes: redirect to stub so op_handlers table compiles. */
 #define op_THEEND              op_unimplemented_stub
-#define op_AWAIT              op_unimplemented_stub
+/* op_AWAIT implemented above */
 #define op_BREAK              op_unimplemented_stub
 #define op_CONTINUE           op_unimplemented_stub
 #define op_YIELD              op_unimplemented_stub
@@ -1722,7 +1799,7 @@ KOS_OP_INLINE int op_OBJECT_IS_SUBCLASS(KosContext *ctx, KosEvent *out_ev,
 #define op_CHECK_IS_NOT       op_unimplemented_stub
 #define op_CHECK_IS_INSTANCE  op_unimplemented_stub
 #define op_CHECK_IS_SUBCLASS  op_unimplemented_stub
-#define op_VAR                op_unimplemented_stub
+/* op_VAR implemented in eval.c (see op_VAR) */
 #define op_VAR_BIND           op_unimplemented_stub
 #define op_VAR_CLEAR          op_unimplemented_stub
 #define op_VAR_REF            op_unimplemented_stub
@@ -1750,7 +1827,7 @@ KOS_OP_INLINE int op_OBJECT_IS_SUBCLASS(KosContext *ctx, KosEvent *out_ev,
 #define op_BUILD_KWDS_NAMES   op_unimplemented_stub
 #define op_COMBINE_ARGS       op_unimplemented_stub
 #define op_COMBINE_KWDS       op_unimplemented_stub
-#define op_CALL               op_unimplemented_stub
+/* op_CALL implemented above */
 #define op_CALL_NAMES         op_unimplemented_stub
 #define op_CALL_STAR          op_unimplemented_stub
 #define op_CALL_ATTR          op_unimplemented_stub
@@ -1886,6 +1963,16 @@ int kos_drive(KosContext *ctx, KosEvent *out_ev) {
     return 0;
   }
 
+  /* Re-entry: inject value from completed Python await */
+  if (ctx->py_await_inject) {
+    if (KosStackBlock_PushRef(&ctx->frame_top->stack, ctx->py_await_inject) < 0) {
+      Py_DECREF(ctx->py_await_inject);
+      ctx->py_await_inject = NULL;
+      return -1;
+    }
+    Py_CLEAR(ctx->py_await_inject);
+  }
+
   /* Opcode dispatch loop */
   for (;;) {
     if (ctx->plan && run_transfer_plan_to_completion(ctx, out_ev) < 0)
@@ -1901,19 +1988,16 @@ int kos_drive(KosContext *ctx, KosEvent *out_ev) {
     uint32_t pc = ctx->frame_top->pc;
 
     if (unlikely(pc >= code->code_len)) {
-      if (KOS_EVAL_TRACE)
-        fprintf(stderr, "[eval] pc=%u OUT OF RANGE (code_len=%u)\n",
-                (unsigned) pc, (unsigned) code->code_len);
+      KOS_DEBUGF("[eval] pc=%u OUT OF RANGE (code_len=%u)\n",
+                 (unsigned) pc, (unsigned) code->code_len);
       PyErr_SetString(PyExc_RuntimeError, "pc out of range");
       return -1;
     }
 
     KosOp *insn = &code->code[pc];
-    if (KOS_EVAL_TRACE) {
-      fprintf(stderr, "[eval] pc=%u op=%u arg=%u\n",
-              (unsigned) pc, (unsigned) insn->op, (unsigned) insn->arg);
-      trace_stack("  before", ctx->frame_top->stack);
-    }
+    KOS_DEBUGF("[eval] pc=%u op=%u arg=%u\n",
+               (unsigned) pc, (unsigned) insn->op, (unsigned) insn->arg);
+    trace_stack("  before", ctx->frame_top->stack);
     ctx->frame_top->pc = pc + 1;
 
     if (unlikely((KosOpCode) insn->op > KOS_OP_THEEND)) {
@@ -1930,8 +2014,7 @@ int kos_drive(KosContext *ctx, KosEvent *out_ev) {
       }
       return (op_res < 0) ? -1 : 0;
     }
-    if (KOS_EVAL_TRACE)
-      trace_stack("  after ", ctx->frame_top->stack);
+    trace_stack("  after ", ctx->frame_top->stack);
   }
 }
 
@@ -2155,16 +2238,17 @@ static PyObject *coroutine_send(PyObject *self, PyObject *value) {
     }
 
     if (PyErr_ExceptionMatches(PyExc_StopIteration)) {
-      /* Python awaitable completed */
+      /* Python awaitable completed - inject result and drive again */
       PyObject *await_result = NULL;
       PyGen_FetchStopIterationValue(&await_result);
+      if (! await_result)
+        await_result = Py_None;
 
       Py_CLEAR(coro->ctx->py_await_iter);
       coro->state = KOS_CORO_RUNNING;
-
-      /* TODO: inject await_result into VM and continue driving */
-      Py_XDECREF(await_result);
-
+      Py_XDECREF(coro->ctx->py_await_inject);
+      coro->ctx->py_await_inject = await_result;
+      /* fall through to drive and handle ev */
     } else {
       /* Exception from Python awaitable */
       Py_CLEAR(coro->ctx->py_await_iter);
@@ -2176,67 +2260,57 @@ static PyObject *coroutine_send(PyObject *self, PyObject *value) {
   coro->in_send = 1;
   coro->state = KOS_CORO_RUNNING;
 
-  /* Drive the VM */
-  KosEvent ev = {0};
-  int res = kos_drive(coro->ctx, &ev);
+  for (;;) {
+    KosEvent ev = {0};
+    int res = kos_drive(coro->ctx, &ev);
 
-  coro->in_send = 0;
+    coro->in_send = 0;
 
-  if (res < 0) {
-    coro->state = KOS_CORO_DONE;
-    return NULL;
-  }
-
-  switch (ev.kind) {
-    case KOS_EV_RETURN:
-      coro->state = KOS_CORO_DONE;
-      PyErr_SetObject(PyExc_StopIteration, ev.payload);
-      Py_XDECREF(ev.payload);
-      return NULL;
-
-    case KOS_EV_RAISE:
-      coro->state = KOS_CORO_DONE;
-      if (ev.payload) {
-        PyErr_SetObject((PyObject *) Py_TYPE(ev.payload), ev.payload);
-        Py_DECREF(ev.payload);
-      }
-      return NULL;
-
-    case KOS_EV_YIELD:
-      /* For coroutines, yield is like await - return the value */
-      return ev.payload;
-
-    case KOS_EV_AWAIT: {
-      /* Eager-step the awaitable */
-      int suspended = 0;
-      PyObject *yielded = NULL;
-      PyObject *immediate = eager_step_awaitable(ev.payload, coro->ctx,
-                                                 &suspended, &yielded);
-      Py_DECREF(ev.payload);
-
-      if (immediate) {
-        /* Awaitable completed immediately - inject result and continue */
-        /* TODO: inject immediate result and loop back to drive */
-        Py_DECREF(immediate);
-
-        /* For now, just return it as if yielded */
-        return immediate;
-      }
-
-      if (suspended) {
-        coro->state = KOS_CORO_WAITING_PY;
-        return yielded;
-      }
-
-      /* Error from awaitable */
+    if (res < 0) {
       coro->state = KOS_CORO_DONE;
       return NULL;
     }
-  }
 
-  /* Should not reach here */
-  PyErr_SetString(PyExc_RuntimeError, "unexpected event kind");
-  return NULL;
+    switch (ev.kind) {
+      case KOS_EV_RETURN:
+        coro->state = KOS_CORO_DONE;
+        PyErr_SetObject(PyExc_StopIteration, ev.payload);
+        Py_XDECREF(ev.payload);
+        return NULL;
+
+      case KOS_EV_RAISE:
+        coro->state = KOS_CORO_DONE;
+        if (ev.payload) {
+          PyErr_SetObject((PyObject *) Py_TYPE(ev.payload), ev.payload);
+          Py_DECREF(ev.payload);
+        }
+        return NULL;
+
+      case KOS_EV_YIELD:
+        /* For coroutines, yield is like await - return the value */
+        return ev.payload;
+
+      case KOS_EV_AWAIT: {
+        KOS_DEBUGF("[eval] coroutine_send KOS_EV_AWAIT branch (payload=%d)\n",
+                   ev.payload ? 1 : 0);
+        if (! ev.payload) {
+          PyErr_SetString(PyExc_RuntimeError,
+                          "KOS_EV_AWAIT event has NULL payload");
+          coro->state = KOS_CORO_DONE;
+          return NULL;
+        }
+        /* Driver already stepped the awaitable in push_or_await and set
+           ctx->py_await_iter. Do not call eager_step_awaitable again (would
+           send(None) twice and corrupt state). Just suspend and return the
+           yielded value to the event loop. */
+        coro->state = KOS_CORO_WAITING_PY;
+        return ev.payload;  /* transfer ownership to caller (asyncio) */
+      }
+    }
+
+    PyErr_SetString(PyExc_RuntimeError, "unexpected event kind");
+    return NULL;
+  }
 }
 
 
@@ -2272,10 +2346,13 @@ static PyObject *coroutine_throw(PyObject *self, PyObject *args) {
     if (PyErr_ExceptionMatches(PyExc_StopIteration)) {
       PyObject *await_result = NULL;
       PyGen_FetchStopIterationValue(&await_result);
+      if (! await_result)
+        await_result = Py_None;
       Py_CLEAR(coro->ctx->py_await_iter);
       coro->state = KOS_CORO_RUNNING;
-      /* TODO: inject and continue */
-      Py_XDECREF(await_result);
+      Py_XDECREF(coro->ctx->py_await_inject);
+      coro->ctx->py_await_inject = await_result;
+      return coroutine_send(self, Py_None);
     } else {
       Py_CLEAR(coro->ctx->py_await_iter);
       coro->state = KOS_CORO_DONE;
@@ -2760,6 +2837,11 @@ PyObject *KosPyAsyncGenASend_New(
 }
 
 
+static PyMethodDef eval_module_methods[] = {
+  { NULL, NULL, 0, NULL },
+};
+
+
 /* === Unit lifecycle === */
 
 
@@ -2767,6 +2849,9 @@ int koskari_eval_init(PyObject *mod) {
 
   PyObject *dict = PyModule_GetDict(mod);
   if (! dict)
+    return -1;
+
+  if (PyModule_AddFunctions(mod, eval_module_methods) < 0)
     return -1;
 
   /* Initialize string constants */
