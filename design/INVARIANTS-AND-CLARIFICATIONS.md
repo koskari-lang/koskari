@@ -121,7 +121,7 @@ These are **commitments**: they must hold for correct behavior. They are elabora
 
 - **KosContext**: Top-level VM state: `dyn_top`, `frame_top`, `globals_frame`, `globals_cache_version`, `hook_runner`, `plan` / `plan_stack`, `chain_version`, `invocation_segment_top`, `py_await_iter`, `pending_throw`/`pending_exc`, `handling_raise`/`handling_result`, `flags`.
 
-- **KosEvent**: Boundary event from `kos_drive`: `KOS_EV_RETURN`, `KOS_EV_RAISE`, `KOS_EV_YIELD`, `KOS_EV_AWAIT`; `payload` is a new reference owned by the caller.
+- **KosEvent**: Boundary event from `koskari_eval`: `KOS_EV_RETURN`, `KOS_EV_RAISE`, `KOS_EV_YIELD`, `KOS_EV_AWAIT`; `payload` is a new reference owned by the caller.
 
 - **KosContinuation**: Captured segment: `captured_chain`, `resume_frame`, `resume_pc`, `resume_stack`, `prompt_id`, `one_shot`. Multi-shot clones on each invoke.
 
@@ -135,9 +135,9 @@ These are **commitments**: they must hold for correct behavior. They are elabora
 
 ## 5. Python-Facing Wrappers
 
-- **KosPyContinuation**: Wraps `KosContinuation`. Callable: calling it returns a `KosPyCoroutine` that resumes with the argument. Multi-shot: each call clones captured state.
+- **KosPyContinuation**: Wraps `KosContinuation`. Callable: calling it returns a `KosCoroutine` that resumes with the argument. Multi-shot: each call clones captured state.
 
-- **KosPyCoroutine**: Wraps `KosContext` for the coroutine protocol (`__await__`, `send`, `throw`, `close`). States: NEW, RUNNING, WAITING_PY, DONE.
+- **KosCoroutine**: Wraps `KosContext` for the coroutine protocol (`__await__`, `send`, `throw`, `close`). States: NEW, RUNNING, WAITING_PY, DONE.
 
 - **KosPyAsyncGen** / **KosPyAsyncGenASend**: Async generator protocol; `__anext__` returns an awaitable that drives until yield or completion.
 
@@ -186,8 +186,8 @@ These are **commitments**: they must hold for correct behavior. They are elabora
 - Continuation: capture, validate, clone, invoke, transfer plan, LCA (dynchain.c, eval.c).
 - Wind: push/pop wind, hook runner, begin/hook_active/end_hook (dynchain.c, eval.c).
 - Evaluator core: KosContext, KosFrame, kos_context_new/free, kos_frame_new/clone/free, kos_koscall, kos_tail_koscall (eval.c).
-- Drive loop: `kos_drive()` is implemented with opcode fetch, dispatch table, and boundary handling. Many opcodes are implemented (stack, constants, exceptions, try/finally, delimited continuations, object protocol); many others are still stubs that raise "unimplemented opcode" at runtime.
-- Python wrappers: KosPyContinuation, KosPyCoroutine, KosPyAsyncGen, KosPyAsyncGenASend; coroutine/async-gen drive logic and eager-step await (eval.c).
+- Drive loop: `koskari_eval()` is implemented with opcode fetch, dispatch table, and boundary handling. Many opcodes are implemented (stack, constants, exceptions, try/finally, delimited continuations, object protocol); many others are still stubs that raise "unimplemented opcode" at runtime.
+- Python wrappers: KosPyContinuation, KosCoroutine, KosPyAsyncGen, KosPyAsyncGenASend; coroutine/async-gen drive logic and eager-step await (eval.c).
 - GC: traverse helpers for context, frame, stack block, chain, continuation, transfer plan, hook runner (eval.c, dynchain.c).
 - Operators: reducing arithmetic, bitwise, membership, build-str; apply, reapply, identity, constantly, _pass; build_tuple, build_list, build_set, build_dict (operator.c, lib.c).
 

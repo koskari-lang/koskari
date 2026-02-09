@@ -106,9 +106,9 @@ static int test_eval_object_add_return(void) {
     TEST_ASSERT_NOT_NULL(ctx, "create context");
 
     KosEvent ev = {0};
-    int res = kos_drive(ctx, &ev);
+    int res = koskari_eval(ctx, &ev);
 
-    TEST_ASSERT(res == 0, "kos_drive succeeded");
+    TEST_ASSERT(res == 0, "koskari_eval succeeded");
     TEST_ASSERT(ev.kind == KOS_EV_RETURN, "event is RETURN");
     TEST_ASSERT_NOT_NULL(ev.payload, "payload not NULL");
     TEST_ASSERT(PyLong_Check(ev.payload), "payload is int");
@@ -169,9 +169,9 @@ static int test_eval_try_except_catch(void) {
     TEST_ASSERT_NOT_NULL(ctx, "create context");
 
     KosEvent ev = {0};
-    int res = kos_drive(ctx, &ev);
+    int res = koskari_eval(ctx, &ev);
 
-    TEST_ASSERT(res == 0, "kos_drive succeeded");
+    TEST_ASSERT(res == 0, "koskari_eval succeeded");
     TEST_ASSERT(ev.kind == KOS_EV_RETURN, "event is RETURN");
     TEST_ASSERT_NOT_NULL(ev.payload, "payload not NULL");
     TEST_ASSERT(PyLong_Check(ev.payload), "payload is int");
@@ -232,9 +232,9 @@ static int test_eval_try_finally_rerase(void) {
     TEST_ASSERT_NOT_NULL(ctx, "create context");
 
     KosEvent ev = {0};
-    int res = kos_drive(ctx, &ev);
+    int res = koskari_eval(ctx, &ev);
 
-    TEST_ASSERT(res == 0, "kos_drive succeeded");
+    TEST_ASSERT(res == 0, "koskari_eval succeeded");
     TEST_ASSERT(ev.kind == KOS_EV_RAISE, "event is RAISE");
     TEST_ASSERT_NOT_NULL(ev.payload, "payload not NULL");
     TEST_ASSERT(PyExceptionInstance_Check(ev.payload), "payload is exception");
@@ -298,16 +298,16 @@ static int test_eval_reset_shift_invoke(void) {
     TEST_ASSERT_NOT_NULL(ctx, "create context");
 
     KosEvent ev = {0};
-    int res = kos_drive(ctx, &ev);
+    int res = koskari_eval(ctx, &ev);
 
     if (res != 0) {
       if (PyErr_Occurred())
         PyErr_Print();
       else
-        fprintf(stderr, "  kos_drive returned %d (no exception set)\n", res);
+        fprintf(stderr, "  koskari_eval returned %d (no exception set)\n", res);
       fflush(stderr);
     }
-    TEST_ASSERT(res == 0, "kos_drive succeeded");
+    TEST_ASSERT(res == 0, "koskari_eval succeeded");
     if (ev.kind != KOS_EV_RETURN) {
       fprintf(stderr, "  ev.kind=%d (expected KOS_EV_RETURN), payload=%p\n",
               (int) ev.kind, (void *) ev.payload);

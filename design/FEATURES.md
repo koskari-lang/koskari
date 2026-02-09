@@ -141,7 +141,7 @@ This document provides a high-level summary of all features identified from both
 - Wind/unwind: `kos_push_wind`, `kos_push_before_wind`, `kos_push_after_wind`, `kos_pop_wind`
 - Continuation application: `kos_apply_continuation` with LCA computation and hook execution
 - Call operations: `kos_koscall`, `kos_tail_koscall`
-- Drive loop: `kos_drive` (opcode fetch and dispatch implemented; many opcodes still stubs)
+- Drive loop: `koskari_eval` (opcode fetch and dispatch implemented; many opcodes still stubs)
 - GC traversal: helpers for all VM structures
 
 **Continuation Support**:

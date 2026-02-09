@@ -83,7 +83,7 @@ typedef struct {
 
 **Behavior**:
 - Callable from Python
-- `tp_call(value)` returns a `KosPyCoroutine` that resumes with `value`
+- `tp_call(value)` returns a `KosCoroutine` that resumes with `value`
 - Multi-shot: clones captured state on each call
 - GC-tracked: traverses captured chain
 
@@ -278,7 +278,7 @@ It does NOT contain:
 
 **GC-tracked objects**:
 - `KosPyContinuation`: traverses captured chain via `kos_continuation_traverse`
-- `KosPyCoroutine`: traverses context, pending await state
+- `KosCoroutine`: traverses context, pending await state
 
 **Not GC-tracked directly**:
 - `KosDynNode` chain nodes (traversed via wrappers)

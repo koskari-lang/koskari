@@ -79,7 +79,7 @@ typedef KosDynFrame KosFrame;
 
 /**
    KosEventKind enumerates the boundary conditions that can cause
-   kos_drive to suspend and return control to the caller.
+   koskari_eval to suspend and return control to the caller.
 
    KOS_EV_RETURN - normal completion with a value
    KOS_EV_RAISE  - exception propagation
@@ -96,7 +96,7 @@ typedef enum KosEventKind {
 
 
 /**
-   KosEvent carries the result of a kos_drive call.
+   KosEvent carries the result of a koskari_eval call.
 
    The kind field indicates what boundary was reached.
    The payload field holds the associated value (return value,
@@ -130,7 +130,7 @@ typedef struct KosEvent {
    - While RUNNING, exactly one Python wrapper (KosPyCoroutine) may own it.
 
    Suspension and resumption:
-   - When kos_drive returns KOS_EV_AWAIT, the context is suspended.
+   - When koskari_eval returns KOS_EV_AWAIT, the context is suspended.
    - py_await_iter holds the iterator from __await__() on the Python awaitable.
    - Resumption injects the result back into the VM via the stack.
 */
@@ -155,7 +155,7 @@ struct KosContext {
   /* Python await bridging state */
   PyObject *py_await_iter;   /* await-iterator from __await__() */
   PyObject *py_last_yielded; /* last yielded object (debug/optional) */
-  PyObject *py_await_inject; /* value to push on next kos_drive when resuming */
+  PyObject *py_await_inject; /* value to push on next koskari_eval when resuming */
 
   /* exception injection for resume */
   int pending_throw;
@@ -259,16 +259,6 @@ int kos_koscall(KosContext *ctx, KosCode *code, PyObject *ns);
 int kos_tail_koscall(KosContext *ctx, KosCode *code, PyObject *ns);
 
 
-/* === Run Code as coroutine === */
-
-/**
-   Create a coroutine that runs the given Code with the given namespace.
-
-   :return: new KosPyCoroutine, or NULL on error
-*/
-PyObject *kos_run_code_as_coroutine(PyObject *code, PyObject *ns);
-
-
 /* === Drive loop === */
 
 /**
@@ -289,7 +279,7 @@ PyObject *kos_run_code_as_coroutine(PyObject *code, PyObject *ns);
 
    :return: 0 on success, -1 on internal error
 */
-int kos_drive(KosContext *ctx, KosEvent *out_ev);
+int koskari_eval(KosContext *ctx, KosEvent *out_ev);
 
 
 /* === GC helpers for Python wrappers === */
@@ -297,7 +287,7 @@ int kos_drive(KosContext *ctx, KosEvent *out_ev);
 /**
    Traverse a KosStackBlock chain for GC.
 
-   This is used by Python wrapper types (KosPyCoroutine, etc.) to
+   This is used by Python wrapper types (KosCoroutine, etc.) to
    implement tp_traverse. It visits all PyObject* values held in
    the stack blocks.
 
@@ -344,7 +334,7 @@ int kos_context_traverse(KosContext *ctx, visitproc visit, void *arg);
    KosPyContinuation is a Python-callable that resumes at a captured point.
 
    Multi-shot: each call clones the captured state before resuming.
-   Calling returns a KosPyCoroutine that executes the continuation.
+   Calling returns a KosCoroutine that executes the continuation.
 
    This type wraps a KosContinuation (from dynchain.h).
 */
@@ -368,54 +358,12 @@ typedef struct {
 PyObject *KosPyContinuation_New(KosContinuation *captured);
 
 
-/* --- KosPyCoroutine --- */
-
-/**
-   KosPyCoroutine wraps a KosContext for Python's coroutine protocol.
-
-   States:
-   - KOS_CORO_NEW: created but not yet started
-   - KOS_CORO_RUNNING: currently executing
-   - KOS_CORO_WAITING_PY: suspended on Python awaitable
-   - KOS_CORO_DONE: completed (returned or raised)
-*/
-
-extern PyTypeObject KosPyCoroutineType;
-
-
-typedef enum {
-  KOS_CORO_NEW = 0,
-  KOS_CORO_RUNNING,
-  KOS_CORO_WAITING_PY,
-  KOS_CORO_DONE,
-} KosCoroState;
-
-
-typedef struct {
-  PyObject_HEAD
-  KosContext *ctx;
-  KosCoroState state;
-  PyObject *pending_await;  /* yielded object to bubble outward */
-  int in_send;              /* re-entrancy guard */
-} KosPyCoroutine;
-
-
-#define KosPyCoroutine_Check(obj)                                       \
-  ((obj) && PyType_IsSubtype((obj)->ob_type, &KosPyCoroutineType))
-
-#define KosPyCoroutine_CheckExact(obj)                  \
-  ((obj) && ((obj)->ob_type == &KosPyCoroutineType))
-
-
-PyObject *KosPyCoroutine_New(KosContext *ctx);
-
-
 /* --- KosPyAsyncGen --- */
 
 /**
    KosPyAsyncGen wraps a KosContext for Python's async generator protocol.
 
-   Similar to KosPyCoroutine but yields values via __anext__.
+   Similar to KosCoroutine but yields values via __anext__.
 */
 
 extern PyTypeObject KosPyAsyncGenType;

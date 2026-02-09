@@ -62,6 +62,61 @@ PyObject *KosFunction_NewFromFormals(PyObject *code,
                                      PyObject *parent_ns);
 
 
+/* === Run code as coroutine === */
+
+
+/**
+   Create a coroutine that runs the given Code with the given namespace.
+
+   The coroutine is not started; the caller drives it via send(None) or
+   await. code must be a KosCode; ns is the initial frame namespace
+   (e.g. a KosNamespace or dict), reference is borrowed.
+
+   :return: new KosCoroutine, or NULL on error
+*/
+PyObject *kos_run_code_as_coroutine(PyObject *code, PyObject *ns);
+
+
+/* === KosCoroutine === */
+
+
+/**
+   KosCoroutine wraps a KosContext for Python's coroutine protocol.
+
+   States: KOS_CORO_NEW, KOS_CORO_RUNNING, KOS_CORO_WAITING_PY,
+   KOS_CORO_DONE.
+*/
+
+extern PyTypeObject KosCoroutineType;
+
+
+typedef enum {
+  KOS_CORO_NEW = 0,
+  KOS_CORO_RUNNING,
+  KOS_CORO_WAITING_PY,
+  KOS_CORO_DONE,
+} KosCoroState;
+
+
+typedef struct {
+  PyObject_HEAD
+  KosContext *ctx;
+  KosCoroState state;
+  PyObject *pending_await;  /* yielded object to bubble outward */
+  int in_send;              /* re-entrancy guard */
+} KosCoroutine;
+
+
+#define KosCoroutine_Check(obj)                                         \
+  ((obj) && PyType_IsSubtype((obj)->ob_type, &KosCoroutineType))
+
+#define KosCoroutine_CheckExact(obj)                    \
+  ((obj) && ((obj)->ob_type == &KosCoroutineType))
+
+
+PyObject *KosCoroutine_New(KosContext *ctx);
+
+
 /* === Unit lifecycle === */
 
 

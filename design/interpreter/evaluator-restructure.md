@@ -376,8 +376,8 @@ would create non-resumable continuations.
 A `KosContext` has exactly one active driver at any time. Re-entrant resume
 attempts are errors.
 
-**Enforcement**: `in_send` guard in `KosPyCoroutine`, checked before
-`kos_drive`.
+**Enforcement**: `in_send` guard in `KosCoroutine`, checked before
+`koskari_eval`.
 
 ### INV-3: Hook Isolation
 

@@ -149,7 +149,7 @@ struct KosStackBlock {
 };
 ```
 
-### KosEvent — Boundary Event from kos_drive
+### KosEvent — Boundary Event from koskari_eval
 
 ```c
 typedef enum KosEventKind {
@@ -222,11 +222,11 @@ struct KosHookRunner {
 
 **KosPyContinuation**:
 - Wraps `KosContinuation`
-- Callable: returns `KosPyCoroutine` that resumes with the passed value
+- Callable: returns `KosCoroutine` that resumes with the passed value
 - Multi-shot: clones captured state on each invocation
 - GC-tracked: traverses captured chain
 
-**KosPyCoroutine**:
+**KosCoroutine**:
 - Wraps `KosContext` for Python coroutine protocol
 - Implements `__await__`, `send`, `throw`, `close`
 - State machine: NEW → RUNNING → WAITING_PY → DONE
@@ -344,7 +344,7 @@ int kos_tail_koscall(KosContext *ctx, KosCode *code, PyObject *ns);
 ### Drive Loop
 
 ```c
-int kos_drive(KosContext *ctx, KosEvent *out_ev);
+int koskari_eval(KosContext *ctx, KosEvent *out_ev);
 ```
 
 Main entry point: runs opcodes until boundary (RETURN/RAISE/YIELD/AWAIT).
@@ -364,12 +364,12 @@ int kos_context_traverse(KosContext *ctx, visitproc visit, void *arg);
 ## Ownership and Invariants
 
 1. **Context ownership**: A `KosContext` is owned by exactly one Python
-   wrapper (`KosPyCoroutine` or `KosPyAsyncGen`) during its lifetime.
+   wrapper (`KosCoroutine` or `KosPyAsyncGen`) during its lifetime.
 
 2. **Chain ownership**: The dynamic chain is owned by the context. On
    continuation capture, chains are cloned for multi-shot semantics.
 
-3. **Suspension**: When `kos_drive` returns `KOS_EV_AWAIT`, the context's
+3. **Suspension**: When `koskari_eval` returns `KOS_EV_AWAIT`, the context's
    `py_await_iter` holds the iterator. Resumption injects result onto stack.
 
 4. **Multi-shot**: Continuations clone all state on invocation, allowing
