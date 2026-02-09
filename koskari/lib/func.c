@@ -83,7 +83,7 @@ static PyObject *expression_call(PyObject *self, PyObject *args,
     PyErr_SetString(PyExc_TypeError, "Expression() takes no arguments");
     return NULL;
   }
-  return kos_run_code_as_coroutine(ex->code, ex->ns);
+  return KosCoroutine_NewFromCode(ex->code, ex->ns);
 }
 
 
@@ -215,7 +215,7 @@ static PyObject *function_call(PyObject *self, PyObject *args,
 
   Py_DECREF(kwargs);
   kwargs = NULL;
-  coro = kos_run_code_as_coroutine(fn->code, frame_ns);
+  coro = KosCoroutine_NewFromCode(fn->code, frame_ns);
   Py_DECREF(frame_ns);
   return coro;
 
@@ -324,7 +324,7 @@ PyObject *KosFunction_NewFromFormals(PyObject *code,
 /* === Run code as coroutine === */
 
 
-PyObject *kos_run_code_as_coroutine(PyObject *code, PyObject *ns) {
+PyObject *KosCoroutine_NewFromCode(PyObject *code, PyObject *ns) {
 
   if (! KosCode_Check(code)) {
     PyErr_Format(PyExc_TypeError, "expected Code, got %s",
@@ -482,10 +482,13 @@ static PyObject *coroutine_send(PyObject *self, PyObject *value) {
   coro->state = KOS_CORO_RUNNING;
 
   for (;;) {
-    KosEvent ev = {0};
+    KosEvent ev = {.kind = KOS_EV_RETURN, .payload = NULL};
     int res = koskari_eval(coro->ctx, &ev);
 
     coro->in_send = 0;
+
+    SAYF("[coroutine_send] koskari_eval -> res=%d ev.kind=%d, payload=%R\n",
+         res, ev.kind, ev.payload);
 
     if (res < 0) {
       coro->state = KOS_CORO_DONE;
@@ -495,7 +498,16 @@ static PyObject *coroutine_send(PyObject *self, PyObject *value) {
     switch (ev.kind) {
       case KOS_EV_RETURN:
         coro->state = KOS_CORO_DONE;
-        PyErr_SetObject(PyExc_StopIteration, ev.payload);
+
+        // we do this manually to bypass the problem with tuple payloads.
+        // There is an annoying extra behavior in Python where if you set an
+        // exception with a tuple payload, it unpacks it as the args for the
+        // exception. So we'll create the exception instance ourselves to
+        // avoid that.
+        PyObject *err = PyObject_CallOneArg(PyExc_StopIteration, ev.payload);
+        PyErr_SetObject(PyExc_StopIteration, err);
+        Py_DECREF(err);
+
         Py_XDECREF(ev.payload);
         return NULL;
 
@@ -724,6 +736,470 @@ PyObject *KosCoroutine_New(KosContext *ctx) {
 }
 
 
+/* === KosPyContinuation type === */
+
+
+static void continuation_dealloc(PyObject *self) {
+
+  KosPyContinuation *cont = (KosPyContinuation *) self;
+
+  kos_continuation_free(cont->captured);
+
+  Py_TYPE(self)->tp_free(self);
+}
+
+
+static int continuation_traverse(
+    PyObject *self,
+    visitproc visit,
+    void *arg) {
+
+  KosPyContinuation *cont = (KosPyContinuation *) self;
+
+  if (cont->captured) {
+    return kos_continuation_traverse(cont->captured, visit, arg);
+  }
+
+  return 0;
+}
+
+
+static int continuation_clear(PyObject *self) {
+
+  KosPyContinuation *cont = (KosPyContinuation *) self;
+
+  kos_continuation_free(cont->captured);
+  cont->captured = NULL;
+
+  return 0;
+}
+
+
+static PyObject *continuation_call(
+    PyObject *self,
+    PyObject *args,
+    PyObject *kwds) {
+
+  KosPyContinuation *cont = (KosPyContinuation *) self;
+
+  /* Parse arguments: single optional value */
+  PyObject *resume_value = Py_None;
+  if (! PyArg_ParseTuple(args, "|O:continuation", &resume_value))
+    return NULL;
+
+  if (kwds && PyDict_Size(kwds)) {
+    PyErr_SetString(PyExc_TypeError,
+                    "continuation does not accept keyword arguments");
+    return NULL;
+  }
+
+  if (! cont->captured) {
+    PyErr_SetString(PyExc_RuntimeError, "continuation has no captured state");
+    return NULL;
+  }
+
+  /* Clone captured state for multi-shot semantics */
+  KosContinuation *cloned = kos_continuation_clone(cont->captured);
+  if (! cloned)
+    return NULL;
+
+  /* Create new context with the cloned chain */
+  KosDynFrame *top_frame = cloned->resume_frame;
+  cloned->captured_chain = NULL;  /* context takes ownership */
+
+  KosContext *ctx = kos_context_new(top_frame);
+  if (! ctx) {
+    kos_continuation_free(cloned);
+    return NULL;
+  }
+
+  /* Set up the context's dynamic chain */
+  /* TODO: properly restore the full chain */
+
+  kos_continuation_free(cloned);
+
+  /* Create and return a coroutine wrapper */
+  return KosCoroutine_New(ctx);
+}
+
+
+static PyObject *continuation_repr(PyObject *self) {
+
+  return PyUnicode_FromFormat("<continuation at %p>", self);
+}
+
+
+PyTypeObject KosPyContinuationType = {
+  PyVarObject_HEAD_INIT(NULL, 0)
+
+  .tp_name = "koskari.lib.Continuation",
+  .tp_basicsize = sizeof(KosPyContinuation),
+  .tp_itemsize = 0,
+  .tp_dealloc = continuation_dealloc,
+  .tp_repr = continuation_repr,
+  .tp_call = continuation_call,
+  .tp_flags = Py_TPFLAGS_DEFAULT | Py_TPFLAGS_HAVE_GC,
+  .tp_doc = "Captured continuation (multi-shot, delimited)",
+  .tp_traverse = continuation_traverse,
+  .tp_clear = continuation_clear,
+};
+
+
+PyObject *KosPyContinuation_New(KosContinuation *captured) {
+
+  KosPyContinuation *cont = PyObject_GC_New(KosPyContinuation,
+                                            &KosPyContinuationType);
+  if (! cont)
+    return NULL;
+
+  cont->captured = captured;
+
+  PyObject_GC_Track((PyObject *) cont);
+  return (PyObject *) cont;
+}
+
+
+/* === KosPyAsyncGen type === */
+
+
+static void asyncgen_dealloc(PyObject *self) {
+
+  PyObject_GC_UnTrack(self);
+
+  KosPyAsyncGen *agen = (KosPyAsyncGen *) self;
+
+  if (agen->ctx)
+    kos_context_free(agen->ctx);
+
+  Py_TYPE(self)->tp_free(self);
+}
+
+
+static int asyncgen_traverse(PyObject *self, visitproc visit, void *arg) {
+
+  KosPyAsyncGen *agen = (KosPyAsyncGen *) self;
+
+  if (agen->ctx) {
+    return kos_context_traverse(agen->ctx, visit, arg);
+  }
+
+  return 0;
+}
+
+
+static int asyncgen_clear(PyObject *self) {
+
+  KosPyAsyncGen *agen = (KosPyAsyncGen *) self;
+
+  if (agen->ctx) {
+    kos_context_free(agen->ctx);
+    agen->ctx = NULL;
+  }
+
+  return 0;
+}
+
+
+static PyObject *asyncgen_aiter(PyObject *self) {
+
+  Py_INCREF(self);
+  return self;
+}
+
+
+static PyObject *asyncgen_anext(PyObject *self) {
+
+  KosPyAsyncGen *agen = (KosPyAsyncGen *) self;
+
+  if (agen->closed) {
+    PyErr_SetNone(PyExc_StopAsyncIteration);
+    return NULL;
+  }
+
+  return KosPyAsyncGenASend_New(agen, Py_None);
+}
+
+
+static PyObject *asyncgen_repr(PyObject *self) {
+
+  return PyUnicode_FromFormat("<async_generator at %p>", self);
+}
+
+
+static PyAsyncMethods asyncgen_async_methods = {
+  .am_aiter = asyncgen_aiter,
+  .am_anext = asyncgen_anext,
+};
+
+
+PyTypeObject KosPyAsyncGenType = {
+  PyVarObject_HEAD_INIT(NULL, 0)
+
+  .tp_name = "koskari.lib.AsyncGenerator",
+  .tp_basicsize = sizeof(KosPyAsyncGen),
+  .tp_itemsize = 0,
+  .tp_dealloc = asyncgen_dealloc,
+  .tp_repr = asyncgen_repr,
+  .tp_as_async = &asyncgen_async_methods,
+  .tp_flags = Py_TPFLAGS_DEFAULT | Py_TPFLAGS_HAVE_GC,
+  .tp_doc = "Koskari async generator wrapper",
+  .tp_traverse = asyncgen_traverse,
+  .tp_clear = asyncgen_clear,
+};
+
+
+PyObject *KosPyAsyncGen_New(KosContext *ctx) {
+
+  KosPyAsyncGen *agen = PyObject_GC_New(KosPyAsyncGen, &KosPyAsyncGenType);
+  if (! agen) {
+    kos_context_free(ctx);
+    return NULL;
+  }
+
+  agen->ctx = ctx;
+  agen->in_progress = 0;
+  agen->closed = 0;
+
+  PyObject_GC_Track((PyObject *) agen);
+  return (PyObject *) agen;
+}
+
+
+/* === KosPyAsyncGenASend type === */
+
+
+static void asyncgenasend_dealloc(PyObject *self) {
+
+  PyObject_GC_UnTrack(self);
+
+  KosPyAsyncGenASend *asend = (KosPyAsyncGenASend *) self;
+
+  Py_XDECREF(asend->agen);
+  Py_XDECREF(asend->send_value);
+  Py_XDECREF(asend->throw_exc);
+
+  Py_TYPE(self)->tp_free(self);
+}
+
+
+static int asyncgenasend_traverse(
+    PyObject *self,
+    visitproc visit,
+    void *arg) {
+
+  KosPyAsyncGenASend *asend = (KosPyAsyncGenASend *) self;
+
+  Py_VISIT(asend->agen);
+  Py_VISIT(asend->send_value);
+  Py_VISIT(asend->throw_exc);
+
+  return 0;
+}
+
+
+static int asyncgenasend_clear(PyObject *self) {
+
+  KosPyAsyncGenASend *asend = (KosPyAsyncGenASend *) self;
+
+  Py_CLEAR(asend->agen);
+  Py_CLEAR(asend->send_value);
+  Py_CLEAR(asend->throw_exc);
+
+  return 0;
+}
+
+
+static PyObject *asyncgenasend_await(PyObject *self) {
+
+  Py_INCREF(self);
+  return self;
+}
+
+
+static PyObject *asyncgenasend_iternext(PyObject *self) {
+
+  KosPyAsyncGenASend *asend = (KosPyAsyncGenASend *) self;
+  KosPyAsyncGen *agen = asend->agen;
+
+  if (! agen || ! agen->ctx) {
+    PyErr_SetNone(PyExc_StopAsyncIteration);
+    return NULL;
+  }
+
+  if (agen->closed) {
+    PyErr_SetNone(PyExc_StopAsyncIteration);
+    return NULL;
+  }
+
+  /* Re-entrancy guard */
+  if (agen->in_progress) {
+    PyErr_SetString(PyExc_RuntimeError,
+                    "async generator already being iterated");
+    return NULL;
+  }
+
+  agen->in_progress = 1;
+
+  /* Drive the context */
+  KosEvent ev = {0};
+  int res = koskari_eval(agen->ctx, &ev);
+
+  agen->in_progress = 0;
+
+  if (res < 0) {
+    agen->closed = 1;
+    PyErr_SetNone(PyExc_StopAsyncIteration);
+    return NULL;
+  }
+
+  switch (ev.kind) {
+    case KOS_EV_RETURN:
+      /* Generator completed */
+      agen->closed = 1;
+      Py_XDECREF(ev.payload);
+      PyErr_SetNone(PyExc_StopAsyncIteration);
+      return NULL;
+
+    case KOS_EV_RAISE:
+      agen->closed = 1;
+      if (ev.payload) {
+        PyErr_SetObject((PyObject *) Py_TYPE(ev.payload), ev.payload);
+        Py_DECREF(ev.payload);
+      } else {
+        PyErr_SetNone(PyExc_StopAsyncIteration);
+      }
+      return NULL;
+
+    case KOS_EV_YIELD: {
+      /* Yielded a value - wrap in StopIteration to signal completion
+         of this __anext__ awaitable.  Wrap in 1-tuple so PyErr_SetObject
+         does not unpack a tuple payload. */
+      PyObject *args = PyTuple_Pack(1, ev.payload);
+      Py_XDECREF(ev.payload);
+      if (! args) {
+        return NULL;
+      }
+      PyErr_SetObject(PyExc_StopIteration, args);
+      Py_DECREF(args);
+      return NULL;
+    }
+
+    case KOS_EV_AWAIT:
+      /* Need to suspend on Python awaitable */
+      /* Return the awaitable for the caller to await */
+      return ev.payload;
+  }
+
+  PyErr_SetString(PyExc_RuntimeError, "unexpected event kind");
+  return NULL;
+}
+
+
+static PyObject *asyncgenasend_send(PyObject *self, PyObject *value) {
+
+  /* For now, just delegate to iternext */
+  return asyncgenasend_iternext(self);
+}
+
+
+static PyObject *asyncgenasend_throw(PyObject *self, PyObject *args) {
+
+  KosPyAsyncGenASend *asend = (KosPyAsyncGenASend *) self;
+
+  /* Mark as throw and delegate */
+  asend->is_throw = 1;
+
+  PyObject *typ = NULL;
+  if (! PyArg_ParseTuple(args, "O:throw", &typ))
+    return NULL;
+
+  Py_XINCREF(typ);
+  Py_XDECREF(asend->throw_exc);
+  asend->throw_exc = typ;
+
+  return asyncgenasend_iternext(self);
+}
+
+
+static PyObject *asyncgenasend_close(PyObject *self) {
+
+  KosPyAsyncGenASend *asend = (KosPyAsyncGenASend *) self;
+
+  if (asend->agen) {
+    asend->agen->closed = 1;
+  }
+
+  Py_RETURN_NONE;
+}
+
+
+static PyMethodDef asyncgenasend_methods[] = {
+  { "send", (PyCFunction) asyncgenasend_send, METH_O,
+    "Send a value" },
+
+  { "throw", (PyCFunction) asyncgenasend_throw, METH_VARARGS,
+    "Throw an exception" },
+
+  { "close", (PyCFunction) asyncgenasend_close, METH_NOARGS,
+    "Close" },
+
+  { NULL, NULL, 0, NULL },
+};
+
+
+static PyAsyncMethods asyncgenasend_async_methods = {
+  .am_await = asyncgenasend_await,
+};
+
+
+static PyObject *asyncgenasend_repr(PyObject *self) {
+
+  return PyUnicode_FromFormat("<async_generator_asend at %p>", self);
+}
+
+
+PyTypeObject KosPyAsyncGenASendType = {
+  PyVarObject_HEAD_INIT(NULL, 0)
+
+  .tp_name = "koskari.lib.async_generator_asend",
+  .tp_basicsize = sizeof(KosPyAsyncGenASend),
+  .tp_itemsize = 0,
+  .tp_dealloc = asyncgenasend_dealloc,
+  .tp_repr = asyncgenasend_repr,
+  .tp_as_async = &asyncgenasend_async_methods,
+  .tp_flags = Py_TPFLAGS_DEFAULT | Py_TPFLAGS_HAVE_GC,
+  .tp_doc = "Koskari async generator asend awaitable",
+  .tp_traverse = asyncgenasend_traverse,
+  .tp_clear = asyncgenasend_clear,
+  .tp_iter = PyObject_SelfIter,
+  .tp_iternext = asyncgenasend_iternext,
+  .tp_methods = asyncgenasend_methods,
+};
+
+
+PyObject *KosPyAsyncGenASend_New(
+    KosPyAsyncGen *agen,
+    PyObject *send_value) {
+
+  KosPyAsyncGenASend *asend = PyObject_GC_New(KosPyAsyncGenASend,
+                                              &KosPyAsyncGenASendType);
+  if (! asend)
+    return NULL;
+
+  Py_INCREF(agen);
+  asend->agen = agen;
+
+  Py_XINCREF(send_value);
+  asend->send_value = send_value;
+
+  asend->is_throw = 0;
+  asend->throw_exc = NULL;
+
+  PyObject_GC_Track((PyObject *) asend);
+  return (PyObject *) asend;
+}
+
+
 /* === Unit lifecycle === */
 
 
@@ -742,6 +1218,15 @@ int koskari_func_init(PyObject *mod) {
   if (PyType_Ready(&KosCoroutineType))
     return -1;
 
+  if (PyType_Ready(&KosPyContinuationType))
+    return -1;
+
+  if (PyType_Ready(&KosPyAsyncGenType))
+    return -1;
+
+  if (PyType_Ready(&KosPyAsyncGenASendType))
+    return -1;
+
   if (PyDict_SetItemString(dict, "Expression",
                            (PyObject *) &KosExpressionType))
     return -1;
@@ -752,6 +1237,14 @@ int koskari_func_init(PyObject *mod) {
 
   if (PyDict_SetItemString(dict, "Coroutine",
                            (PyObject *) &KosCoroutineType))
+    return -1;
+
+  if (PyDict_SetItemString(dict, "Continuation",
+                           (PyObject *) &KosPyContinuationType))
+    return -1;
+
+  if (PyDict_SetItemString(dict, "AsyncGenerator",
+                           (PyObject *) &KosPyAsyncGenType))
     return -1;
 
   return 0;

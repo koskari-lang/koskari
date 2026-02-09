@@ -59,6 +59,11 @@
 #endif
 
 
+#define KOS_OP_HANDLER(name)                                            \
+  KOS_OP_INLINE int op_##name(KosContext *ctx, KosEvent *out_ev,        \
+                              KosOp *insn)
+
+
 /**
    Run the current transfer plan to completion.  Returns 0 on success (plan
    cleared or was NULL).  Returns -1 if a step failed (out_ev set to RAISE,
@@ -116,17 +121,17 @@ static int get_prompt_id_from_insn(KosCode *code, KosOp *insn,
    also print top two slot values as integers when PyLong.
 */
 static void trace_stack(const char *prefix, KosStackBlock *stack) {
-  PySys_FormatStderr("[eval] %s stack=%p", prefix, (void *) stack);
+  SAYF("[eval] %s stack=%p", prefix, (void *) stack);
   if (stack) {
     size_t n = KosStackBlock_LEN(stack);
-    PySys_FormatStderr(" len=%zu", n);
+    SAYF(" len=%zu", n);
     for (size_t i = (n >= 2 ? n - 2 : 0); i < n; i++) {
       PyObject *o = stack->objs[i];
       if (PyLong_Check(o))
-        PySys_FormatStderr(" [%zu]=%ld", i, PyLong_AsLong(o));
+        SAYF(" [%zu]=%ld", i, PyLong_AsLong(o));
     }
   }
-  PySys_WriteStderr("\n");
+  SAY("\n");
 }
 
 
@@ -544,7 +549,10 @@ static int op_unimplemented_stub(KosContext *ctx, KosEvent *out_ev, KosOp *insn)
 }
 
 
-KOS_OP_INLINE int op_NOOP(KosContext *ctx, KosEvent *out_ev, KosOp *insn) {
+/**
+   NOOP: arg unused. No operation; advance to next instruction.
+*/
+KOS_OP_HANDLER(NOOP) {
   (void) ctx;
   (void) out_ev;
   (void) insn;
@@ -552,7 +560,10 @@ KOS_OP_INLINE int op_NOOP(KosContext *ctx, KosEvent *out_ev, KosOp *insn) {
 }
 
 
-KOS_OP_INLINE int op_LABEL(KosContext *ctx, KosEvent *out_ev, KosOp *insn) {
+/**
+   LABEL: arg unused. Marks a branch target; no runtime effect.
+*/
+KOS_OP_HANDLER(LABEL) {
   (void) ctx;
   (void) out_ev;
   (void) insn;
@@ -560,7 +571,10 @@ KOS_OP_INLINE int op_LABEL(KosContext *ctx, KosEvent *out_ev, KosOp *insn) {
 }
 
 
-KOS_OP_INLINE int op_POSITION(KosContext *ctx, KosEvent *out_ev, KosOp *insn) {
+/**
+   POSITION: arg unused. Debug/source position marker; no runtime effect.
+*/
+KOS_OP_HANDLER(POSITION) {
   (void) ctx;
   (void) out_ev;
   (void) insn;
@@ -568,7 +582,11 @@ KOS_OP_INLINE int op_POSITION(KosContext *ctx, KosEvent *out_ev, KosOp *insn) {
 }
 
 
-KOS_OP_INLINE int op_CONST(KosContext *ctx, KosEvent *out_ev, KosOp *insn) {
+/**
+   CONST: arg = constant index. Push the code object constant at that index
+   onto the stack.
+*/
+KOS_OP_HANDLER(CONST) {
   KosCode *code = ctx->frame_top->code;
   PyObject *val = KosCode_GetConstant((PyObject *) code, insn->arg);
   if (! val) {
@@ -576,8 +594,10 @@ KOS_OP_INLINE int op_CONST(KosContext *ctx, KosEvent *out_ev, KosOp *insn) {
          (unsigned) insn->arg);
     return -1;
   }
+
   if (PyLong_Check(val))
     SAYF("[eval] CONST pushed %ld\n", PyLong_AsLong(val));
+
   if (KosStackBlock_PushRef(&ctx->frame_top->stack, val) < 0) {
     Py_DECREF(val);
     return -1;
@@ -588,13 +608,18 @@ KOS_OP_INLINE int op_CONST(KosContext *ctx, KosEvent *out_ev, KosOp *insn) {
 }
 
 
-KOS_OP_INLINE int op_DUP(KosContext *ctx, KosEvent *out_ev, KosOp *insn) {
+/**
+   DUP: arg = number of top stack slots to duplicate. Duplicate that many
+   top-of-stack values (pushed again in order).
+*/
+KOS_OP_HANDLER(DUP) {
   int opa = (int) insn->arg;
   if (opa < 0) {
     PyErr_Format(PyExc_RuntimeError, "DUP invoked with negative"
                  " argument count: %i", opa);
     return -1;
   }
+
   if (KosStackBlock_Duplicate(&ctx->frame_top->stack, (size_t) opa) < 0)
     return -1;
   (void) out_ev;
@@ -602,7 +627,11 @@ KOS_OP_INLINE int op_DUP(KosContext *ctx, KosEvent *out_ev, KosOp *insn) {
 }
 
 
-KOS_OP_INLINE int op_POP(KosContext *ctx, KosEvent *out_ev, KosOp *insn) {
+/**
+   POP: arg = number of stack slots to drop. Remove that many values from
+   the top of the stack.
+*/
+KOS_OP_HANDLER(POP) {
   unsigned n = insn->arg;
   if (KosStackBlock_Drop(&ctx->frame_top->stack, (size_t) n) < 0)
     return -1;
@@ -611,7 +640,12 @@ KOS_OP_INLINE int op_POP(KosContext *ctx, KosEvent *out_ev, KosOp *insn) {
 }
 
 
-KOS_OP_INLINE int op_RETURN(KosContext *ctx, KosEvent *out_ev, KosOp *insn) {
+/**
+   RETURN: arg = 0 (None), 1 (single value), or N (tuple of N values).
+   Pop the return value(s) from the stack and stop the context with
+   KOS_EV_RETURN.
+*/
+KOS_OP_HANDLER(RETURN) {
   unsigned opa = insn->arg;
   PyObject *val = NULL;
 
@@ -625,6 +659,7 @@ KOS_OP_INLINE int op_RETURN(KosContext *ctx, KosEvent *out_ev, KosOp *insn) {
       SAY("[eval] RETURN pop underrun\n");
       return -1;
     }
+
   } else {
     val = KosStackBlock_PopTail(&ctx->frame_top->stack, (size_t) opa);
     if (! val) {
@@ -634,6 +669,7 @@ KOS_OP_INLINE int op_RETURN(KosContext *ctx, KosEvent *out_ev, KosOp *insn) {
   }
 
   SAYF("[eval] RETURN count=%u -> KOS_EV_RETURN\n", opa);
+  SAYF("[eval] RETURN payload: %R\n", val);
   out_ev->kind = KOS_EV_RETURN;
   out_ev->payload = val;
   ctx->flags &= ~KOS_CTX_RUNNING;
@@ -642,7 +678,11 @@ KOS_OP_INLINE int op_RETURN(KosContext *ctx, KosEvent *out_ev, KosOp *insn) {
 }
 
 
-KOS_OP_INLINE int op_AWAIT(KosContext *ctx, KosEvent *out_ev, KosOp *insn) {
+/**
+   AWAIT: arg unused. Pop TOS (awaitable), start/resume awaiting it; may
+   suspend with KOS_EV_AWAIT or push the result.
+*/
+KOS_OP_HANDLER(AWAIT) {
   (void) insn;
   PyObject *val = KosStackBlock_PopRef(&ctx->frame_top->stack);
   if (! val)
@@ -651,7 +691,12 @@ KOS_OP_INLINE int op_AWAIT(KosContext *ctx, KosEvent *out_ev, KosOp *insn) {
 }
 
 
-KOS_OP_INLINE int op_CALL(KosContext *ctx, KosEvent *out_ev, KosOp *insn) {
+/**
+   CALL: arg = number of positional arguments N. Stack has [callable, arg_0,
+   ..., arg_{N-1}] (callable oldest). Call callable with those args, drop
+   them, then push result or await it.
+*/
+KOS_OP_HANDLER(CALL) {
   unsigned n = insn->arg;
   /* Top (n+1) elements are [callable, arg_0, ..., arg_{n-1}]; callable is oldest
      of that segment (same layout as sibilant-ceval). */
@@ -666,6 +711,7 @@ KOS_OP_INLINE int op_CALL(KosContext *ctx, KosEvent *out_ev, KosOp *insn) {
   } else {
     result = PyObject_Vectorcall(tail[0], &tail[1], n, NULL);
   }
+
   if (KosStackBlock_Drop(&ctx->frame_top->stack, n + 1) < 0) {
     Py_XDECREF(result);
     return -1;
@@ -673,16 +719,22 @@ KOS_OP_INLINE int op_CALL(KosContext *ctx, KosEvent *out_ev, KosOp *insn) {
 
   SAYF("[CALL] result: %R\n", result);
   if (result && Py_TYPE(result)->tp_as_async)
-    SAY("[CALL] result is awaitable, passing to push_or_await\n");
-    SAYF("[eval] op_CALL after PyObject_Call (result=%d awaitable=%d)\n",
-         result ? 1 : 0, result && Py_TYPE(result)->tp_as_async ? 1 : 0);
+  SAY("[CALL] result is awaitable, passing to push_or_await\n");
+
+  SAYF("[eval] op_CALL after PyObject_Call (result=%d awaitable=%d)\n",
+       result ? 1 : 0, result && Py_TYPE(result)->tp_as_async ? 1 : 0);
+
   if (! result)
     return -1;
   return push_or_await(ctx, out_ev, result);
 }
 
 
-KOS_OP_INLINE int op_GLOBALS(KosContext *ctx, KosEvent *out_ev, KosOp *insn) {
+/**
+   GLOBALS: arg unused. Push the namespace of the outermost frame in the
+   dynamic chain (globals) onto the stack.
+*/
+KOS_OP_HANDLER(GLOBALS) {
   if (ctx->chain_version != ctx->globals_cache_version) {
     KosDynNode *n = (KosDynNode *) ctx->frame_top;
     KosDynFrame *outer = ctx->frame_top;
@@ -694,6 +746,7 @@ KOS_OP_INLINE int op_GLOBALS(KosContext *ctx, KosEvent *out_ev, KosOp *insn) {
     ctx->globals_frame = outer;
     ctx->globals_cache_version = ctx->chain_version;
   }
+
   PyObject *ns = ctx->globals_frame->ns;
   Py_INCREF(ns);
   if (KosStackBlock_PushRef(&ctx->frame_top->stack, ns) < 0) {
@@ -707,7 +760,11 @@ KOS_OP_INLINE int op_GLOBALS(KosContext *ctx, KosEvent *out_ev, KosOp *insn) {
 }
 
 
-KOS_OP_INLINE int op_LOCALS(KosContext *ctx, KosEvent *out_ev, KosOp *insn) {
+/**
+   LOCALS: arg unused. Push the current frame's namespace (locals) onto
+   the stack.
+*/
+KOS_OP_HANDLER(LOCALS) {
   PyObject *ns = ctx->frame_top->ns;
   Py_INCREF(ns);
   if (KosStackBlock_PushRef(&ctx->frame_top->stack, ns) < 0) {
@@ -721,11 +778,16 @@ KOS_OP_INLINE int op_LOCALS(KosContext *ctx, KosEvent *out_ev, KosOp *insn) {
 }
 
 
-KOS_OP_INLINE int op_VAR(KosContext *ctx, KosEvent *out_ev, KosOp *insn) {
+/**
+   VAR: arg = constant index of a name. Look up that name in the current
+   frame's namespace and push the value (or await it if async).
+*/
+KOS_OP_HANDLER(VAR) {
   KosCode *code = ctx->frame_top->code;
   PyObject *name = KosCode_GetConstant((PyObject *) code, insn->arg);
   if (! name)
     return -1;
+
   PyObject *ns = ctx->frame_top->ns;
   PyObject *val = NULL;
   if (KosNamespace_Check(ns)) {
@@ -741,13 +803,18 @@ KOS_OP_INLINE int op_VAR(KosContext *ctx, KosEvent *out_ev, KosOp *insn) {
                  " got %R", ns);
     return -1;
   }
+
   if (! val)
     return -1;
   return push_or_await(ctx, out_ev, val);
 }
 
 
-KOS_OP_INLINE int op_EXCEPTION(KosContext *ctx, KosEvent *out_ev, KosOp *insn) {
+/**
+   EXCEPTION: arg unused. Push the current exception instance (from
+   PyErr_GetExcInfo) onto the stack, or Py_None if no exception is set.
+*/
+KOS_OP_HANDLER(EXCEPTION) {
   PyObject *typ = NULL, *val = NULL, *tb = NULL;
   PyErr_GetExcInfo(&typ, &val, &tb);
 
@@ -776,8 +843,10 @@ KOS_OP_INLINE int op_EXCEPTION(KosContext *ctx, KosEvent *out_ev, KosOp *insn) {
 }
 
 
-KOS_OP_INLINE int op_EXCEPTION_CLEAR(KosContext *ctx, KosEvent *out_ev,
-                                      KosOp *insn) {
+/**
+   EXCEPTION_CLEAR: arg unused. Clear the current exception and exc info.
+*/
+KOS_OP_HANDLER(EXCEPTION_CLEAR) {
   PyErr_Clear();
   PyErr_SetExcInfo(NULL, NULL, NULL);
   (void) ctx;
@@ -787,8 +856,11 @@ KOS_OP_INLINE int op_EXCEPTION_CLEAR(KosContext *ctx, KosEvent *out_ev,
 }
 
 
-KOS_OP_INLINE int op_EXCEPTION_MATCH(KosContext *ctx, KosEvent *out_ev,
-                                      KosOp *insn) {
+/**
+   EXCEPTION_MATCH: arg = number of exception types on stack. Pop that many
+   types; if the current exception matches any of them, push True, else False.
+*/
+KOS_OP_HANDLER(EXCEPTION_MATCH) {
   int opa = (int) insn->arg;
   if (opa < 1) {
     PyErr_Format(PyExc_RuntimeError, "EXCEPTION_MATCH with non-positive"
@@ -848,7 +920,11 @@ KOS_OP_INLINE int op_EXCEPTION_MATCH(KosContext *ctx, KosEvent *out_ev,
 }
 
 
-KOS_OP_INLINE int op_RAISE(KosContext *ctx, KosEvent *out_ev, KosOp *insn) {
+/**
+   RAISE: arg = 0 (reraise current exception), 1 (raise TOS: instance or class).
+   Set the current exception; control will transfer to a handler by the eval loop.
+*/
+KOS_OP_HANDLER(RAISE) {
   unsigned n = insn->arg;
   if (n == 0) {
     PyObject *typ = NULL, *val = NULL, *tb = NULL;
@@ -862,6 +938,7 @@ KOS_OP_INLINE int op_RAISE(KosContext *ctx, KosEvent *out_ev, KosOp *insn) {
     }
     PyErr_Restore(typ, val, tb);
     PyErr_SetExcInfo(NULL, NULL, NULL);
+
   } else if (n == 1) {
     PyObject *exc = KosStackBlock_PopRef(&ctx->frame_top->stack);
     if (! exc) {
@@ -885,17 +962,23 @@ KOS_OP_INLINE int op_RAISE(KosContext *ctx, KosEvent *out_ev, KosOp *insn) {
       return -1;
     }
     Py_DECREF(exc);
+
   } else {
     PyErr_Format(PyExc_RuntimeError, "RAISE with unsupported arg count %u", n);
     return -1;
   }
+
   (void) out_ev;
   return 0;
 }
 
 
-KOS_OP_INLINE int op_CHECK_EXCEPTION(KosContext *ctx, KosEvent *out_ev,
-                                     KosOp *insn) {
+/**
+   CHECK_EXCEPTION: arg = target PC (label index). Pop TOS (exception type).
+   If current exception matches that type, leave PC unchanged; else set PC to
+   arg and continue (branch to handler).
+*/
+KOS_OP_HANDLER(CHECK_EXCEPTION) {
   PyObject *match = KosStackBlock_PopRef(&ctx->frame_top->stack);
   if (! match)
     return -1;
@@ -922,8 +1005,11 @@ KOS_OP_INLINE int op_CHECK_EXCEPTION(KosContext *ctx, KosEvent *out_ev,
 }
 
 
-KOS_OP_INLINE int op_PUSH_PROMPT(KosContext *ctx, KosEvent *out_ev,
-                                 KosOp *insn) {
+/**
+   PUSH_PROMPT: arg = constant index of prompt_id. Push a delimited prompt
+   onto the dynamic chain for shift/reset.
+*/
+KOS_OP_HANDLER(PUSH_PROMPT) {
   uint32_t prompt_id;
   if (get_prompt_id_from_insn(ctx->frame_top->code, insn, &prompt_id) < 0)
     return -1;
@@ -934,8 +1020,11 @@ KOS_OP_INLINE int op_PUSH_PROMPT(KosContext *ctx, KosEvent *out_ev,
 }
 
 
-KOS_OP_INLINE int op_SET_PROMPT_HANDLER(KosContext *ctx, KosEvent *out_ev,
-                                        KosOp *insn) {
+/**
+   SET_PROMPT_HANDLER: arg = PC (label) of handler. If dyn_top is a prompt,
+   set its handler code and PC so SHIFT will jump there with the continuation.
+*/
+KOS_OP_HANDLER(SET_PROMPT_HANDLER) {
   if (ctx->dyn_top && KosDynNode_IS_PROMPT(ctx->dyn_top)) {
     KosDynPrompt *p = (KosDynPrompt *) ctx->dyn_top;
     p->handler_code = ctx->frame_top->code;
@@ -946,11 +1035,15 @@ KOS_OP_INLINE int op_SET_PROMPT_HANDLER(KosContext *ctx, KosEvent *out_ev,
 }
 
 
-KOS_OP_INLINE int op_POP_PROMPT(KosContext *ctx, KosEvent *out_ev,
-                                KosOp *insn) {
+/**
+   POP_PROMPT: arg unused. If returning to an invoker, pop value and emit
+   KOS_EV_RETURN; else pop the top prompt from the dynamic chain.
+*/
+KOS_OP_HANDLER(POP_PROMPT) {
   SAYF("[eval] POP_PROMPT inv_seg=%p dyn_top=%p IS_PROMPT=%d\n",
        (void *) ctx->invocation_segment_top, (void *) ctx->dyn_top,
        (ctx->dyn_top && KosDynNode_IS_PROMPT(ctx->dyn_top)) ? 1 : 0);
+
   if (ctx->invocation_segment_top != NULL) {
     PyObject *val = KosStackBlock_PopRef(&ctx->frame_top->stack);
     if (! val) {
@@ -967,6 +1060,7 @@ KOS_OP_INLINE int op_POP_PROMPT(KosContext *ctx, KosEvent *out_ev,
     (void) insn;
     return 1;
   }
+
   if (! ctx->dyn_top || ! KosDynNode_IS_PROMPT(ctx->dyn_top)) {
     PyErr_SetString(PyExc_RuntimeError, "POP_PROMPT: top is not a prompt");
     return -1;
@@ -977,8 +1071,11 @@ KOS_OP_INLINE int op_POP_PROMPT(KosContext *ctx, KosEvent *out_ev,
 }
 
 
-KOS_OP_INLINE int op_PUSH_TRY(KosContext *ctx, KosEvent *out_ev,
-                               KosOp *insn) {
+/**
+   PUSH_TRY: arg = target label for exception handler. Push a TRY region
+   onto the dynamic chain.
+*/
+KOS_OP_HANDLER(PUSH_TRY) {
   if (! kos_dyn_push_region(ctx, KOS_REGION_TRY, insn->arg, 0)) {
     PyErr_NoMemory();
     return -1;
@@ -988,8 +1085,11 @@ KOS_OP_INLINE int op_PUSH_TRY(KosContext *ctx, KosEvent *out_ev,
 }
 
 
-KOS_OP_INLINE int op_PUSH_FINALLY(KosContext *ctx, KosEvent *out_ev,
-                                  KosOp *insn) {
+/**
+   PUSH_FINALLY: arg = target label for finally block. Push a FINALLY region
+   onto the dynamic chain.
+*/
+KOS_OP_HANDLER(PUSH_FINALLY) {
   if (! kos_dyn_push_region(ctx, KOS_REGION_FINALLY, insn->arg, 0)) {
     PyErr_NoMemory();
     return -1;
@@ -999,8 +1099,11 @@ KOS_OP_INLINE int op_PUSH_FINALLY(KosContext *ctx, KosEvent *out_ev,
 }
 
 
-KOS_OP_INLINE int op_POP_TRY(KosContext *ctx, KosEvent *out_ev,
-                             KosOp *insn) {
+/**
+   POP_TRY: arg unused. Verify top of dynamic chain is a TRY region, clear
+   exception state, then pop the region.
+*/
+KOS_OP_HANDLER(POP_TRY) {
   if (! ctx->dyn_top || ! KosDynNode_IS_REGION(ctx->dyn_top)) {
     PyErr_SetString(PyExc_RuntimeError, "POP_TRY: top is not a region");
     return -1;
@@ -1010,6 +1113,7 @@ KOS_OP_INLINE int op_POP_TRY(KosContext *ctx, KosEvent *out_ev,
     PyErr_SetString(PyExc_RuntimeError, "POP_TRY: top is not a TRY region");
     return -1;
   }
+
   PyErr_Clear();
   PyErr_SetExcInfo(NULL, NULL, NULL);
   kos_dyn_pop_region(ctx, region);
@@ -1019,8 +1123,11 @@ KOS_OP_INLINE int op_POP_TRY(KosContext *ctx, KosEvent *out_ev,
 }
 
 
-KOS_OP_INLINE int op_POP_FINALLY(KosContext *ctx, KosEvent *out_ev,
-                                 KosOp *insn) {
+/**
+   POP_FINALLY: arg unused. Verify top is a FINALLY region; if we were
+   handling a raise, restore the exception. Then pop the region.
+*/
+KOS_OP_HANDLER(POP_FINALLY) {
   if (! ctx->dyn_top || ! KosDynNode_IS_REGION(ctx->dyn_top)) {
     PyErr_SetString(PyExc_RuntimeError, "POP_FINALLY: top is not a region");
     return -1;
@@ -1031,6 +1138,7 @@ KOS_OP_INLINE int op_POP_FINALLY(KosContext *ctx, KosEvent *out_ev,
                     "POP_FINALLY: top is not a FINALLY region");
     return -1;
   }
+
   if (ctx->handling_raise) {
     PyObject *typ = NULL, *val = NULL, *tb = NULL;
     PyErr_GetExcInfo(&typ, &val, &tb);
@@ -1045,8 +1153,10 @@ KOS_OP_INLINE int op_POP_FINALLY(KosContext *ctx, KosEvent *out_ev,
 }
 
 
-KOS_OP_INLINE int op_CLEAR_TRY(KosContext *ctx, KosEvent *out_ev,
-                               KosOp *insn) {
+/**
+   CLEAR_TRY: arg unused. Disable the top TRY region (so it will not catch).
+*/
+KOS_OP_HANDLER(CLEAR_TRY) {
   if (! ctx->dyn_top || ! KosDynNode_IS_REGION(ctx->dyn_top)) {
     PyErr_SetString(PyExc_RuntimeError, "CLEAR_TRY: top is not a region");
     return -1;
@@ -1063,8 +1173,10 @@ KOS_OP_INLINE int op_CLEAR_TRY(KosContext *ctx, KosEvent *out_ev,
 }
 
 
-KOS_OP_INLINE int op_CLEAR_FINALLY(KosContext *ctx, KosEvent *out_ev,
-                                   KosOp *insn) {
+/**
+   CLEAR_FINALLY: arg unused. Disable the top FINALLY region.
+*/
+KOS_OP_HANDLER(CLEAR_FINALLY) {
   if (! ctx->dyn_top || ! KosDynNode_IS_REGION(ctx->dyn_top)) {
     PyErr_SetString(PyExc_RuntimeError, "CLEAR_FINALLY: top is not a region");
     return -1;
@@ -1082,22 +1194,31 @@ KOS_OP_INLINE int op_CLEAR_FINALLY(KosContext *ctx, KosEvent *out_ev,
 }
 
 
-KOS_OP_INLINE int op_SHIFT(KosContext *ctx, KosEvent *out_ev, KosOp *insn) {
+/**
+   SHIFT: arg = constant index of prompt_id. Capture the continuation up to
+   that prompt, unwind the dynamic chain to the prompt, push a new frame for
+   the prompt's handler, and push the continuation (as a Python object) on
+   the stack; handler runs with continuation at TOS.
+*/
+KOS_OP_HANDLER(SHIFT) {
   uint32_t prompt_id;
   KosContinuation *k = NULL;
   if (get_prompt_id_from_insn(ctx->frame_top->code, insn, &prompt_id) < 0)
     return -1;
+
   SAYF("[eval] SHIFT prompt_id=%u\n", (unsigned) prompt_id);
   if (kos_shift_capture(ctx, prompt_id, &k) < 0) {
     SAY("[eval] SHIFT capture failed\n");
     return -1;
   }
+
   KosDynPrompt *prompt = kos_find_prompt(ctx, prompt_id);
   if (! prompt) {
     kos_continuation_free(k);
     PyErr_SetString(PyExc_RuntimeError, "shift: prompt not found");
     return -1;
   }
+
   SAYF("[eval] SHIFT unwinding to prompt, then handler_pc=%u\n",
        (unsigned) prompt->handler_pc);
   while (ctx->dyn_top != (KosDynNode *) prompt) {
@@ -1120,6 +1241,7 @@ KOS_OP_INLINE int op_SHIFT(KosContext *ctx, KosEvent *out_ev, KosOp *insn) {
       return -1;
     }
   }
+
   PyObject *wrapper = KosPyContinuation_New(k);
   if (! wrapper) {
     kos_continuation_free(k);
@@ -1130,6 +1252,7 @@ KOS_OP_INLINE int op_SHIFT(KosContext *ctx, KosEvent *out_ev, KosOp *insn) {
     PyErr_SetString(PyExc_RuntimeError, "shift: prompt has no handler");
     return -1;
   }
+
   PyObject *ns = PyDict_New();
   if (! ns) {
     Py_DECREF(wrapper);
@@ -1141,6 +1264,7 @@ KOS_OP_INLINE int op_SHIFT(KosContext *ctx, KosEvent *out_ev, KosOp *insn) {
     Py_DECREF(wrapper);
     return -1;
   }
+
   ctx->frame_top->pc = prompt->handler_pc;
   if (KosStackBlock_PushRef(&ctx->frame_top->stack, wrapper) < 0) {
     Py_DECREF(wrapper);
@@ -1153,27 +1277,35 @@ KOS_OP_INLINE int op_SHIFT(KosContext *ctx, KosEvent *out_ev, KosOp *insn) {
 }
 
 
-KOS_OP_INLINE int op_INVOKE_K(KosContext *ctx, KosEvent *out_ev, KosOp *insn) {
+/**
+   INVOKE_K: arg unused. Pop value then continuation (Python wrapper). Invoke
+   the continuation with that value, replacing current execution state.
+*/
+KOS_OP_HANDLER(INVOKE_K) {
   PyObject *value = KosStackBlock_PopRef(&ctx->frame_top->stack);
   if (! value) {
     SAY("[eval] INVOKE_K pop value failed\n");
     return -1;
   }
+
   PyObject *cont_obj = KosStackBlock_PopRef(&ctx->frame_top->stack);
   if (! cont_obj) {
     SAY("[eval] INVOKE_K pop cont failed\n");
     Py_DECREF(value);
     return -1;
   }
+
   if (PyLong_Check(value))
     SAYF("[eval] INVOKE_K value=%ld k=%p\n",
          PyLong_AsLong(value), (void *) cont_obj);
+
   if (! PyObject_TypeCheck(cont_obj, &KosPyContinuationType)) {
     PyErr_SetString(PyExc_TypeError, "INVOKE_K: TOS is not a continuation");
     Py_DECREF(value);
     Py_DECREF(cont_obj);
     return -1;
   }
+
   KosContinuation *k = ((KosPyContinuation *) cont_obj)->captured;
   if (! k) {
     Py_DECREF(value);
@@ -1182,6 +1314,7 @@ KOS_OP_INLINE int op_INVOKE_K(KosContext *ctx, KosEvent *out_ev, KosOp *insn) {
                     "INVOKE_K: continuation has no captured state");
     return -1;
   }
+
   SAYF("[eval] INVOKE_K calling kos_invoke_continuation captured_chain=%p\n",
        (void *) k->captured_chain);
   if (kos_invoke_continuation(ctx, k, value, 0, cont_obj) < 0) {
@@ -1229,15 +1362,17 @@ static int obj_op_reducing(KosContext *ctx, KosEvent *out_ev, KosOp *insn,
 }
 
 
-KOS_OP_INLINE int op_OBJECT_ADD(KosContext *ctx, KosEvent *out_ev,
-                                KosOp *insn) {
+/**
+   OBJECT_ADD: arg = number of operands (0 or N). Pop N values, add (binary
+   or reduce), push result or await it.
+*/
+KOS_OP_HANDLER(OBJECT_ADD) {
   return obj_op_reducing(ctx, out_ev, insn, KosOperator_Add);
 }
 
 
 #define OP_UNARY(name, func)                                            \
-  KOS_OP_INLINE int op_##name(KosContext *ctx, KosEvent *out_ev,        \
-                              KosOp *insn) {                            \
+  KOS_OP_HANDLER(name) {                                                \
     PyObject *val = KosStackBlock_PopRef(&ctx->frame_top->stack);       \
     if (! val) return -1;                                              \
     PyObject *res = func(val);                                          \
@@ -1247,8 +1382,12 @@ KOS_OP_INLINE int op_OBJECT_ADD(KosContext *ctx, KosEvent *out_ev,
     return push_or_await(ctx, out_ev, res);                             \
   }
 
-KOS_OP_INLINE int op_OBJECT_STR(KosContext *ctx, KosEvent *out_ev,
-                                KosOp *insn) {
+
+/**
+   OBJECT_STR: arg = number of operands. Build str from top N values (e.g. for
+   f-string), push result or await it.
+*/
+KOS_OP_HANDLER(OBJECT_STR) {
   return obj_op_reducing(ctx, out_ev, insn, KosOperator_BuildStr);
 }
 
@@ -1260,15 +1399,19 @@ OP_UNARY(OBJECT_DIR, PyObject_Dir)
 #undef OP_UNARY
 
 
-KOS_OP_INLINE int op_OBJECT_LEN(KosContext *ctx, KosEvent *out_ev,
-                                KosOp *insn) {
+/**
+   OBJECT_LEN: arg unused. Pop TOS, push len(TOS) as an integer.
+*/
+KOS_OP_HANDLER(OBJECT_LEN) {
   PyObject *val = KosStackBlock_PopRef(&ctx->frame_top->stack);
   if (! val)
     return -1;
+
   Py_ssize_t n = PyObject_Length(val);
   Py_DECREF(val);
   if (n < 0)
     return -1;
+
   PyObject *res = PyLong_FromSsize_t(n);
   if (! res)
     return -1;
@@ -1277,15 +1420,19 @@ KOS_OP_INLINE int op_OBJECT_LEN(KosContext *ctx, KosEvent *out_ev,
 }
 
 
-KOS_OP_INLINE int op_OBJECT_NOT(KosContext *ctx, KosEvent *out_ev,
-                                KosOp *insn) {
+/**
+   OBJECT_NOT: arg unused. Pop TOS, push bool(not TOS).
+*/
+KOS_OP_HANDLER(OBJECT_NOT) {
   PyObject *val = KosStackBlock_PopRef(&ctx->frame_top->stack);
   if (! val)
     return -1;
+
   int r = PyObject_Not(val);
   Py_DECREF(val);
   if (r < 0)
     return -1;
+
   PyObject *res = (r ? Py_True : Py_False);
   Py_INCREF(res);
   (void) insn;
@@ -1293,15 +1440,19 @@ KOS_OP_INLINE int op_OBJECT_NOT(KosContext *ctx, KosEvent *out_ev,
 }
 
 
-KOS_OP_INLINE int op_OBJECT_TRUTH(KosContext *ctx, KosEvent *out_ev,
-                                 KosOp *insn) {
+/**
+   OBJECT_TRUTH: arg unused. Pop TOS, push bool(TOS).
+*/
+KOS_OP_HANDLER(OBJECT_TRUTH) {
   PyObject *val = KosStackBlock_PopRef(&ctx->frame_top->stack);
   if (! val)
     return -1;
+
   int r = PyObject_IsTrue(val);
   Py_DECREF(val);
   if (r < 0)
     return -1;
+
   PyObject *res = (r ? Py_True : Py_False);
   Py_INCREF(res);
   (void) insn;
@@ -1309,11 +1460,14 @@ KOS_OP_INLINE int op_OBJECT_TRUTH(KosContext *ctx, KosEvent *out_ev,
 }
 
 
-KOS_OP_INLINE int op_OBJECT_TYPE(KosContext *ctx, KosEvent *out_ev,
-                                 KosOp *insn) {
+/**
+   OBJECT_TYPE: arg unused. Pop TOS, push type(TOS).
+*/
+KOS_OP_HANDLER(OBJECT_TYPE) {
   PyObject *val = KosStackBlock_PopRef(&ctx->frame_top->stack);
   if (! val)
     return -1;
+
   PyObject *res = (PyObject *) Py_TYPE(val);
   Py_INCREF(res);
   Py_DECREF(val);
@@ -1322,11 +1476,14 @@ KOS_OP_INLINE int op_OBJECT_TYPE(KosContext *ctx, KosEvent *out_ev,
 }
 
 
-KOS_OP_INLINE int op_OBJECT_VARS(KosContext *ctx, KosEvent *out_ev,
-                                 KosOp *insn) {
+/**
+   OBJECT_VARS: arg unused. Pop TOS, push getattr(TOS, "__dict__").
+*/
+KOS_OP_HANDLER(OBJECT_VARS) {
   PyObject *val = KosStackBlock_PopRef(&ctx->frame_top->stack);
   if (! val)
     return -1;
+
   PyObject *d = PyObject_GetAttrString(val, "__dict__");
   Py_DECREF(val);
   if (! d) {
@@ -1340,11 +1497,15 @@ KOS_OP_INLINE int op_OBJECT_VARS(KosContext *ctx, KosEvent *out_ev,
 }
 
 
-KOS_OP_INLINE int op_OBJECT_AITER(KosContext *ctx, KosEvent *out_ev,
-                                  KosOp *insn) {
+/**
+   OBJECT_AITER: arg unused. Pop TOS (async iterable), call __aiter__, push
+   the async iterator or await it.
+*/
+KOS_OP_HANDLER(OBJECT_AITER) {
   PyObject *val = KosStackBlock_PopRef(&ctx->frame_top->stack);
   if (! val)
     return -1;
+
   PyObject *res = NULL;
   PyTypeObject *type = Py_TYPE(val);
   if (type->tp_as_async && type->tp_as_async->am_aiter)
@@ -1361,8 +1522,7 @@ KOS_OP_INLINE int op_OBJECT_AITER(KosContext *ctx, KosEvent *out_ev,
 
 
 #define OP_BINARY_NUM(name, func)                                       \
-  KOS_OP_INLINE int op_##name(KosContext *ctx, KosEvent *out_ev,        \
-                              KosOp *insn) {                            \
+  KOS_OP_HANDLER(name) {                                                \
     if (insn->arg != 2) {                                              \
       PyErr_SetString(PyExc_RuntimeError, #name ": only arg 2 supported"); \
       return -1;                                                        \
@@ -1378,46 +1538,91 @@ KOS_OP_INLINE int op_OBJECT_AITER(KosContext *ctx, KosEvent *out_ev,
     return push_or_await(ctx, out_ev, res);                            \
   }
 
-KOS_OP_INLINE int op_OBJECT_SUBTRACT(KosContext *ctx, KosEvent *out_ev,
-                                      KosOp *insn) {
+
+/**
+   OBJECT_SUBTRACT: arg = number of operands. Pop N, subtract (binary/reduce),
+   push result or await it.
+*/
+KOS_OP_HANDLER(OBJECT_SUBTRACT) {
   return obj_op_reducing(ctx, out_ev, insn, KosOperator_Subtract);
 }
-KOS_OP_INLINE int op_OBJECT_MULTIPLY(KosContext *ctx, KosEvent *out_ev,
-                                      KosOp *insn) {
+
+
+/**
+   OBJECT_MULTIPLY: arg = number of operands. Pop N, multiply, push result
+   or await it.
+*/
+KOS_OP_HANDLER(OBJECT_MULTIPLY) {
   return obj_op_reducing(ctx, out_ev, insn, KosOperator_Multiply);
 }
-KOS_OP_INLINE int op_OBJECT_FLOOR_DIVIDE(KosContext *ctx, KosEvent *out_ev,
-                                          KosOp *insn) {
+
+
+/**
+   OBJECT_FLOOR_DIVIDE: arg = number of operands. Pop N, floor-divide,
+   push result or await it.
+*/
+KOS_OP_HANDLER(OBJECT_FLOOR_DIVIDE) {
   return obj_op_reducing(ctx, out_ev, insn, KosOperator_FloorDivide);
 }
-KOS_OP_INLINE int op_OBJECT_TRUE_DIVIDE(KosContext *ctx, KosEvent *out_ev,
-                                         KosOp *insn) {
+
+
+/**
+   OBJECT_TRUE_DIVIDE: arg = number of operands. Pop N, true-divide,
+   push result or await it.
+*/
+KOS_OP_HANDLER(OBJECT_TRUE_DIVIDE) {
   return obj_op_reducing(ctx, out_ev, insn, KosOperator_TrueDivide);
 }
+
+
 OP_BINARY_NUM(OBJECT_MODULO, PyNumber_Remainder)
+
 OP_BINARY_NUM(OBJECT_DIVMOD, PyNumber_Divmod)
-KOS_OP_INLINE int op_OBJECT_BIT_AND(KosContext *ctx, KosEvent *out_ev,
-                                    KosOp *insn) {
+
+
+/**
+   OBJECT_BIT_AND: arg = number of operands. Pop N, bitwise and, push
+   result or await it.
+*/
+KOS_OP_HANDLER(OBJECT_BIT_AND) {
   return obj_op_reducing(ctx, out_ev, insn, KosOperator_BitwiseAnd);
 }
-KOS_OP_INLINE int op_OBJECT_BIT_OR(KosContext *ctx, KosEvent *out_ev,
-                                   KosOp *insn) {
+
+
+/**
+   OBJECT_BIT_OR: arg = number of operands. Pop N, bitwise or, push result
+   or await it.
+*/
+KOS_OP_HANDLER(OBJECT_BIT_OR) {
   return obj_op_reducing(ctx, out_ev, insn, KosOperator_BitwiseOr);
 }
-KOS_OP_INLINE int op_OBJECT_BIT_XOR(KosContext *ctx, KosEvent *out_ev,
-                                    KosOp *insn) {
+
+
+/**
+   OBJECT_BIT_XOR: arg = number of operands. Pop N, bitwise xor, push
+   result or await it.
+*/
+KOS_OP_HANDLER(OBJECT_BIT_XOR) {
   return obj_op_reducing(ctx, out_ev, insn, KosOperator_BitwiseXor);
 }
-KOS_OP_INLINE int op_OBJECT_MATRIX_MULTIPLY(KosContext *ctx, KosEvent *out_ev,
-                                             KosOp *insn) {
+
+
+/**
+   OBJECT_MATRIX_MULTIPLY: arg = number of operands. Pop N, matrix multiply
+   (@), push result or await it.
+*/
+KOS_OP_HANDLER(OBJECT_MATRIX_MULTIPLY) {
   return obj_op_reducing(ctx, out_ev, insn, KosOperator_MatrixMultiply);
 }
 
 #undef OP_BINARY_NUM
 
 
-KOS_OP_INLINE int op_OBJECT_POWER(KosContext *ctx, KosEvent *out_ev,
-                                  KosOp *insn) {
+/**
+   OBJECT_POWER: arg = 2 (base, exp) or 3 (base, exp, mod). Pop operands,
+   compute pow(base, exp[, mod]), push result or await it.
+*/
+KOS_OP_HANDLER(OBJECT_POWER) {
   int opa = (int) insn->arg;
   if (opa < 2 || opa > 3) {
     PyErr_Format(PyExc_RuntimeError,
@@ -1432,12 +1637,14 @@ KOS_OP_INLINE int op_OBJECT_POWER(KosContext *ctx, KosEvent *out_ev,
     if (! mod)
       return -1;
   }
+
   exp = KosStackBlock_PopRef(&ctx->frame_top->stack);
   if (! exp) {
     if (opa == 3)
       Py_DECREF(mod);
     return -1;
   }
+
   base = KosStackBlock_PopRef(&ctx->frame_top->stack);
   if (! base) {
     Py_DECREF(exp);
@@ -1457,8 +1664,10 @@ KOS_OP_INLINE int op_OBJECT_POWER(KosContext *ctx, KosEvent *out_ev,
 }
 
 
-KOS_OP_INLINE int op_OBJECT_BIT_LEFT(KosContext *ctx, KosEvent *out_ev,
-                                     KosOp *insn) {
+/**
+   OBJECT_BIT_LEFT: arg unused. Pop right then left, push left << right.
+*/
+KOS_OP_HANDLER(OBJECT_BIT_LEFT) {
   PyObject *right = KosStackBlock_PopRef(&ctx->frame_top->stack);
   if (! right)
     return -1;
@@ -1467,6 +1676,7 @@ KOS_OP_INLINE int op_OBJECT_BIT_LEFT(KosContext *ctx, KosEvent *out_ev,
     Py_DECREF(right);
     return -1;
   }
+
   PyObject *res = PyNumber_Lshift(left, right);
   Py_DECREF(left);
   Py_DECREF(right);
@@ -1477,8 +1687,10 @@ KOS_OP_INLINE int op_OBJECT_BIT_LEFT(KosContext *ctx, KosEvent *out_ev,
 }
 
 
-KOS_OP_INLINE int op_OBJECT_BIT_RIGHT(KosContext *ctx, KosEvent *out_ev,
-                                      KosOp *insn) {
+/**
+   OBJECT_BIT_RIGHT: arg unused. Pop right then left, push left >> right.
+*/
+KOS_OP_HANDLER(OBJECT_BIT_RIGHT) {
   PyObject *right = KosStackBlock_PopRef(&ctx->frame_top->stack);
   if (! right)
     return -1;
@@ -1487,6 +1699,7 @@ KOS_OP_INLINE int op_OBJECT_BIT_RIGHT(KosContext *ctx, KosEvent *out_ev,
     Py_DECREF(right);
     return -1;
   }
+
   PyObject *res = PyNumber_Rshift(left, right);
   Py_DECREF(left);
   Py_DECREF(right);
@@ -1507,45 +1720,68 @@ static int op_OBJECT_EQ_impl(KosContext *ctx, KosEvent *out_ev, KosOp *insn,
     Py_DECREF(right);
     return -1;
   }
+
   int cmp = PyObject_RichCompareBool(left, right, op);
   Py_DECREF(left);
   Py_DECREF(right);
   if (cmp < 0 && PyErr_Occurred())
     return -1;
+
   PyObject *res = (cmp ? Py_True : Py_False);
   Py_INCREF(res);
   (void) insn;
   return push_or_await(ctx, out_ev, res);
 }
 
-KOS_OP_INLINE int op_OBJECT_EQ(KosContext *ctx, KosEvent *out_ev,
-                               KosOp *insn) {
+
+/**
+   OBJECT_EQ: arg unused. Pop right then left, push (left == right).
+*/
+KOS_OP_HANDLER(OBJECT_EQ) {
   return op_OBJECT_EQ_impl(ctx, out_ev, insn, Py_EQ);
 }
-KOS_OP_INLINE int op_OBJECT_NE(KosContext *ctx, KosEvent *out_ev,
-                               KosOp *insn) {
+
+/**
+   OBJECT_NE: arg unused. Pop right then left, push (left != right).
+*/
+KOS_OP_HANDLER(OBJECT_NE) {
   return op_OBJECT_EQ_impl(ctx, out_ev, insn, Py_NE);
 }
-KOS_OP_INLINE int op_OBJECT_LT(KosContext *ctx, KosEvent *out_ev,
-                               KosOp *insn) {
+
+/**
+   OBJECT_LT: arg unused. Pop right then left, push (left < right).
+*/
+KOS_OP_HANDLER(OBJECT_LT) {
   return op_OBJECT_EQ_impl(ctx, out_ev, insn, Py_LT);
 }
-KOS_OP_INLINE int op_OBJECT_LE(KosContext *ctx, KosEvent *out_ev,
-                               KosOp *insn) {
+
+/**
+   OBJECT_LE: arg unused. Pop right then left, push (left <= right).
+*/
+KOS_OP_HANDLER(OBJECT_LE) {
   return op_OBJECT_EQ_impl(ctx, out_ev, insn, Py_LE);
 }
-KOS_OP_INLINE int op_OBJECT_GT(KosContext *ctx, KosEvent *out_ev,
-                               KosOp *insn) {
+
+/**
+   OBJECT_GT: arg unused. Pop right then left, push (left > right).
+*/
+KOS_OP_HANDLER(OBJECT_GT) {
   return op_OBJECT_EQ_impl(ctx, out_ev, insn, Py_GT);
 }
-KOS_OP_INLINE int op_OBJECT_GE(KosContext *ctx, KosEvent *out_ev,
-                               KosOp *insn) {
+
+/**
+   OBJECT_GE: arg unused. Pop right then left, push (left >= right).
+*/
+KOS_OP_HANDLER(OBJECT_GE) {
   return op_OBJECT_EQ_impl(ctx, out_ev, insn, Py_GE);
 }
 
 
-KOS_OP_INLINE int op_OBJECT_IN(KosContext *ctx, KosEvent *out_ev,
-                               KosOp *insn) {
+/**
+   OBJECT_IN: arg unused. Pop right (container) then left (item), push
+   (left in right).
+*/
+KOS_OP_HANDLER(OBJECT_IN) {
   PyObject *right = KosStackBlock_PopRef(&ctx->frame_top->stack);
   if (! right)
     return -1;
@@ -1554,11 +1790,13 @@ KOS_OP_INLINE int op_OBJECT_IN(KosContext *ctx, KosEvent *out_ev,
     Py_DECREF(right);
     return -1;
   }
+
   int r = PySequence_Contains(right, left);
   Py_DECREF(left);
   Py_DECREF(right);
   if (r < 0)
     return -1;
+
   PyObject *res = (r ? Py_True : Py_False);
   Py_INCREF(res);
   (void) insn;
@@ -1566,8 +1804,10 @@ KOS_OP_INLINE int op_OBJECT_IN(KosContext *ctx, KosEvent *out_ev,
 }
 
 
-KOS_OP_INLINE int op_OBJECT_NOT_IN(KosContext *ctx, KosEvent *out_ev,
-                                   KosOp *insn) {
+/**
+   OBJECT_NOT_IN: arg unused. Pop right then left, push (left not in right).
+*/
+KOS_OP_HANDLER(OBJECT_NOT_IN) {
   PyObject *right = KosStackBlock_PopRef(&ctx->frame_top->stack);
   if (! right)
     return -1;
@@ -1576,11 +1816,13 @@ KOS_OP_INLINE int op_OBJECT_NOT_IN(KosContext *ctx, KosEvent *out_ev,
     Py_DECREF(right);
     return -1;
   }
+
   int r = PySequence_Contains(right, left);
   Py_DECREF(left);
   Py_DECREF(right);
   if (r < 0)
     return -1;
+
   PyObject *res = (r ? Py_False : Py_True);
   Py_INCREF(res);
   (void) insn;
@@ -1588,8 +1830,10 @@ KOS_OP_INLINE int op_OBJECT_NOT_IN(KosContext *ctx, KosEvent *out_ev,
 }
 
 
-KOS_OP_INLINE int op_OBJECT_IS(KosContext *ctx, KosEvent *out_ev,
-                               KosOp *insn) {
+/**
+   OBJECT_IS: arg unused. Pop right then left, push (left is right).
+*/
+KOS_OP_HANDLER(OBJECT_IS) {
   PyObject *right = KosStackBlock_PopRef(&ctx->frame_top->stack);
   if (! right)
     return -1;
@@ -1598,6 +1842,7 @@ KOS_OP_INLINE int op_OBJECT_IS(KosContext *ctx, KosEvent *out_ev,
     Py_DECREF(right);
     return -1;
   }
+
   PyObject *res = (left == right ? Py_True : Py_False);
   Py_INCREF(res);
   Py_DECREF(left);
@@ -1607,8 +1852,10 @@ KOS_OP_INLINE int op_OBJECT_IS(KosContext *ctx, KosEvent *out_ev,
 }
 
 
-KOS_OP_INLINE int op_OBJECT_IS_NOT(KosContext *ctx, KosEvent *out_ev,
-                                   KosOp *insn) {
+/**
+   OBJECT_IS_NOT: arg unused. Pop right then left, push (left is not right).
+*/
+KOS_OP_HANDLER(OBJECT_IS_NOT) {
   PyObject *right = KosStackBlock_PopRef(&ctx->frame_top->stack);
   if (! right)
     return -1;
@@ -1617,6 +1864,7 @@ KOS_OP_INLINE int op_OBJECT_IS_NOT(KosContext *ctx, KosEvent *out_ev,
     Py_DECREF(right);
     return -1;
   }
+
   PyObject *res = (left != right ? Py_True : Py_False);
   Py_INCREF(res);
   Py_DECREF(left);
@@ -1626,8 +1874,11 @@ KOS_OP_INLINE int op_OBJECT_IS_NOT(KosContext *ctx, KosEvent *out_ev,
 }
 
 
-KOS_OP_INLINE int op_OBJECT_IS_INSTANCE(KosContext *ctx, KosEvent *out_ev,
-                                        KosOp *insn) {
+/**
+   OBJECT_IS_INSTANCE: arg = 2 (value, class) or N (value, class, ... bases).
+   Pop value and class(es), push isinstance(value, class_or_tuple).
+*/
+KOS_OP_HANDLER(OBJECT_IS_INSTANCE) {
   int opa = (int) insn->arg;
   PyObject *value = NULL, *match = NULL;
 
@@ -1656,14 +1907,18 @@ KOS_OP_INLINE int op_OBJECT_IS_INSTANCE(KosContext *ctx, KosEvent *out_ev,
   Py_DECREF(match);
   if (res < 0)
     return -1;
+
   PyObject *out = (res ? Py_True : Py_False);
   Py_INCREF(out);
   return push_or_await(ctx, out_ev, out);
 }
 
 
-KOS_OP_INLINE int op_OBJECT_IS_SUBCLASS(KosContext *ctx, KosEvent *out_ev,
-                                        KosOp *insn) {
+/**
+   OBJECT_IS_SUBCLASS: arg = 2 (class, base) or N (class, base, ... bases).
+   Pop class and base(s), push issubclass(class, base_or_tuple).
+*/
+KOS_OP_HANDLER(OBJECT_IS_SUBCLASS) {
   int opa = (int) insn->arg;
   PyObject *value = NULL, *match = NULL;
 
@@ -1692,100 +1947,704 @@ KOS_OP_INLINE int op_OBJECT_IS_SUBCLASS(KosContext *ctx, KosEvent *out_ev,
   Py_DECREF(match);
   if (res < 0)
     return -1;
+
   PyObject *out = (res ? Py_True : Py_False);
   Py_INCREF(out);
   return push_or_await(ctx, out_ev, out);
 }
 
 
-/* Unimplemented opcodes: redirect to stub so op_handlers table compiles. */
-#define op_THEEND              op_unimplemented_stub
-/* op_AWAIT implemented above */
-#define op_BREAK              op_unimplemented_stub
-#define op_CONTINUE           op_unimplemented_stub
-#define op_YIELD              op_unimplemented_stub
-#define op_YIELD_FROM         op_unimplemented_stub
-#define op_ITER_NEXT          op_unimplemented_stub
-#define op_AWAIT_NEXT         op_unimplemented_stub
-#define op_JUMP               op_unimplemented_stub
-#define op_JUMP_FALSE         op_unimplemented_stub
-#define op_JUMP_TRUE          op_unimplemented_stub
-#define op_JUMP_AND           op_unimplemented_stub
-#define op_JUMP_OR            op_unimplemented_stub
-#define op_CHECK_EQ           op_unimplemented_stub
-#define op_CHECK_GE           op_unimplemented_stub
-#define op_CHECK_GT           op_unimplemented_stub
-#define op_CHECK_LE           op_unimplemented_stub
-#define op_CHECK_LT           op_unimplemented_stub
-#define op_CHECK_NE           op_unimplemented_stub
-#define op_CHECK_IN           op_unimplemented_stub
-#define op_CHECK_NOT_IN       op_unimplemented_stub
-#define op_CHECK_IS           op_unimplemented_stub
-#define op_CHECK_IS_NOT       op_unimplemented_stub
-#define op_CHECK_IS_INSTANCE  op_unimplemented_stub
-#define op_CHECK_IS_SUBCLASS  op_unimplemented_stub
-/* op_VAR implemented in eval.c (see op_VAR) */
-#define op_VAR_BIND           op_unimplemented_stub
-#define op_VAR_CLEAR          op_unimplemented_stub
-#define op_VAR_REF            op_unimplemented_stub
-#define op_VAR_STORE          op_unimplemented_stub
-#define op_FAST               op_unimplemented_stub
-#define op_FAST_BIND          op_unimplemented_stub
-#define op_FAST_CLEAR         op_unimplemented_stub
-#define op_FAST_REF           op_unimplemented_stub
-#define op_FAST_STORE         op_unimplemented_stub
-#define op_ATTR               op_unimplemented_stub
-#define op_ATTR_CLEAR         op_unimplemented_stub
-#define op_ATTR_REF           op_unimplemented_stub
-#define op_ATTR_STORE         op_unimplemented_stub
-#define op_ITEM               op_unimplemented_stub
-#define op_ITEM_CLEAR         op_unimplemented_stub
-#define op_ITEM_REF           op_unimplemented_stub
-#define op_ITEM_STORE         op_unimplemented_stub
-#define op_CONST_ITEM         op_unimplemented_stub
-#define op_CONST_ITEM_CLEAR   op_unimplemented_stub
-#define op_CONST_ITEM_REF     op_unimplemented_stub
-#define op_CONST_ITEM_STORE   op_unimplemented_stub
-#define op_BUILD_ARGS         op_unimplemented_stub
-#define op_BUILD_FUNCTION     op_unimplemented_stub
-#define op_BUILD_KWDS         op_unimplemented_stub
-#define op_BUILD_KWDS_NAMES   op_unimplemented_stub
-#define op_COMBINE_ARGS       op_unimplemented_stub
-#define op_COMBINE_KWDS       op_unimplemented_stub
-/* op_CALL implemented above */
-#define op_CALL_NAMES         op_unimplemented_stub
-#define op_CALL_STAR          op_unimplemented_stub
-#define op_CALL_ATTR          op_unimplemented_stub
-#define op_CALL_ATTR_NAMES    op_unimplemented_stub
-#define op_CALL_ATTR_STAR     op_unimplemented_stub
-#define op_RECUR              op_unimplemented_stub
-#define op_RECUR_NAMES        op_unimplemented_stub
-#define op_RECUR_STAR         op_unimplemented_stub
-#define op_TAIL_CALL          op_unimplemented_stub
-#define op_TAIL_CALL_NAMES    op_unimplemented_stub
-#define op_TAIL_CALL_STAR     op_unimplemented_stub
-#define op_TAIL_RECUR         op_unimplemented_stub
-#define op_TAIL_RECUR_NAMES   op_unimplemented_stub
-#define op_TAIL_RECUR_STAR    op_unimplemented_stub
-#define op_PUSH_FOREACH       op_unimplemented_stub
-#define op_PUSH_WITH          op_unimplemented_stub
-#define op_PUSH_BEGIN         op_unimplemented_stub
-#define op_PUSH_CLASS         op_unimplemented_stub
-#define op_PUSH_LOOP          op_unimplemented_stub
-#define op_PUSH_NS            op_unimplemented_stub
-#define op_CLEAR_LOOP         op_unimplemented_stub
-#define op_POP_WITH           op_unimplemented_stub
-#define op_POP_BEGIN          op_unimplemented_stub
-#define op_POP_LOOP           op_unimplemented_stub
-#define op_POP_NS             op_unimplemented_stub
-#define op_PUSH_WIND          op_unimplemented_stub
-#define op_POP_WIND           op_unimplemented_stub
-#define op_END_WIND           op_unimplemented_stub
-#define op_PUSH_REGION        op_unimplemented_stub
-#define op_POP_REGION         op_unimplemented_stub
+/* Unimplemented opcodes: documented handlers that delegate to op_unimplemented_stub. */
+
+/**
+   THEEND: arg unused. End of code; not yet implemented.
+*/
+KOS_OP_HANDLER(THEEND) {
+  return op_unimplemented_stub(ctx, out_ev, insn);
+}
+
+
+/**
+   BREAK: arg = target. Exit loop; not yet implemented.
+*/
+KOS_OP_HANDLER(BREAK) {
+  return op_unimplemented_stub(ctx, out_ev, insn);
+}
+
+
+/**
+   CONTINUE: arg = target. Next iteration of loop; not yet implemented.
+*/
+KOS_OP_HANDLER(CONTINUE) {
+  return op_unimplemented_stub(ctx, out_ev, insn);
+}
+
+
+/**
+   YIELD: arg unused. Suspend and yield value; not yet implemented.
+*/
+KOS_OP_HANDLER(YIELD) {
+  return op_unimplemented_stub(ctx, out_ev, insn);
+}
+
+
+/**
+   YIELD_FROM: arg unused. Delegate to subgenerator; not yet implemented.
+*/
+KOS_OP_HANDLER(YIELD_FROM) {
+  return op_unimplemented_stub(ctx, out_ev, insn);
+}
+
+
+/**
+   ITER_NEXT: arg unused. Advance iterator, push next or raise StopIteration;
+   not yet implemented.
+*/
+KOS_OP_HANDLER(ITER_NEXT) {
+  return op_unimplemented_stub(ctx, out_ev, insn);
+}
+
+
+/**
+   AWAIT_NEXT: arg unused. Advance async iterator; not yet implemented.
+*/
+KOS_OP_HANDLER(AWAIT_NEXT) {
+  return op_unimplemented_stub(ctx, out_ev, insn);
+}
+
+
+/**
+   JUMP: arg = target PC. Unconditional branch; not yet implemented.
+*/
+KOS_OP_HANDLER(JUMP) {
+  return op_unimplemented_stub(ctx, out_ev, insn);
+}
+
+
+/**
+   JUMP_FALSE: arg = target PC. Branch if TOS is false; not yet implemented.
+*/
+KOS_OP_HANDLER(JUMP_FALSE) {
+  return op_unimplemented_stub(ctx, out_ev, insn);
+}
+
+
+/**
+   JUMP_TRUE: arg = target PC. Branch if TOS is true; not yet implemented.
+*/
+KOS_OP_HANDLER(JUMP_TRUE) {
+  return op_unimplemented_stub(ctx, out_ev, insn);
+}
+
+
+/**
+   JUMP_AND: arg = target PC. Short-circuit and; not yet implemented.
+*/
+KOS_OP_HANDLER(JUMP_AND) {
+  return op_unimplemented_stub(ctx, out_ev, insn);
+}
+
+
+/**
+   JUMP_OR: arg = target PC. Short-circuit or; not yet implemented.
+*/
+KOS_OP_HANDLER(JUMP_OR) {
+  return op_unimplemented_stub(ctx, out_ev, insn);
+}
+
+
+/**
+   CHECK_EQ: arg = target PC. Branch if comparison fails (==); not yet implemented.
+*/
+KOS_OP_HANDLER(CHECK_EQ) {
+  return op_unimplemented_stub(ctx, out_ev, insn);
+}
+
+
+/**
+   CHECK_GE: arg = target PC. Branch if comparison fails (>=); not yet implemented.
+*/
+KOS_OP_HANDLER(CHECK_GE) {
+  return op_unimplemented_stub(ctx, out_ev, insn);
+}
+
+
+/**
+   CHECK_GT: arg = target PC. Branch if comparison fails (>); not yet implemented.
+*/
+KOS_OP_HANDLER(CHECK_GT) {
+  return op_unimplemented_stub(ctx, out_ev, insn);
+}
+
+
+/**
+   CHECK_LE: arg = target PC. Branch if comparison fails (<=); not yet implemented.
+*/
+KOS_OP_HANDLER(CHECK_LE) {
+  return op_unimplemented_stub(ctx, out_ev, insn);
+}
+
+
+/**
+   CHECK_LT: arg = target PC. Branch if comparison fails (<); not yet implemented.
+*/
+KOS_OP_HANDLER(CHECK_LT) {
+  return op_unimplemented_stub(ctx, out_ev, insn);
+}
+
+
+/**
+   CHECK_NE: arg = target PC. Branch if comparison fails (!=); not yet implemented.
+*/
+KOS_OP_HANDLER(CHECK_NE) {
+  return op_unimplemented_stub(ctx, out_ev, insn);
+}
+
+
+/**
+   CHECK_IN: arg = target PC. Branch if "in" check fails; not yet implemented.
+*/
+KOS_OP_HANDLER(CHECK_IN) {
+  return op_unimplemented_stub(ctx, out_ev, insn);
+}
+
+
+/**
+   CHECK_NOT_IN: arg = target PC. Branch if "not in" check fails; not yet implemented.
+*/
+KOS_OP_HANDLER(CHECK_NOT_IN) {
+  return op_unimplemented_stub(ctx, out_ev, insn);
+}
+
+
+/**
+   CHECK_IS: arg = target PC. Branch if "is" check fails; not yet implemented.
+*/
+KOS_OP_HANDLER(CHECK_IS) {
+  return op_unimplemented_stub(ctx, out_ev, insn);
+}
+
+
+/**
+   CHECK_IS_NOT: arg = target PC. Branch if "is not" check fails; not yet implemented.
+*/
+KOS_OP_HANDLER(CHECK_IS_NOT) {
+  return op_unimplemented_stub(ctx, out_ev, insn);
+}
+
+
+/**
+   CHECK_IS_INSTANCE: arg = target PC. Branch if isinstance check fails;
+   not yet implemented.
+*/
+KOS_OP_HANDLER(CHECK_IS_INSTANCE) {
+  return op_unimplemented_stub(ctx, out_ev, insn);
+}
+
+
+/**
+   CHECK_IS_SUBCLASS: arg = target PC. Branch if issubclass check fails;
+   not yet implemented.
+*/
+KOS_OP_HANDLER(CHECK_IS_SUBCLASS) {
+  return op_unimplemented_stub(ctx, out_ev, insn);
+}
+
+
+/**
+   VAR_BIND: arg = constant index (name). Bind name in current namespace to
+   the value at TOS (pop value, then bind).
+*/
+KOS_OP_HANDLER(VAR_BIND) {
+  KosCode *code = ctx->frame_top->code;
+  PyObject *name = KosCode_GetConstant((PyObject *) code, insn->arg);
+  if (! name)
+    return -1;
+  PyObject *val = KosStackBlock_PopRef(&ctx->frame_top->stack);
+  if (! val)
+    return -1;
+  PyObject *ns = ctx->frame_top->ns;
+  if (KosNamespace_Check(ns)) {
+    PyObject *ref = KosSymbolicRef_New(name, val);
+    Py_DECREF(val);
+    if (! ref)
+      return -1;
+    if (KosNamespace_Bind(ns, name, ref) < 0) {
+      Py_DECREF(ref);
+      return -1;
+    }
+  } else if (PyDict_Check(ns)) {
+    if (PyDict_SetItem(ns, name, val) < 0) {
+      Py_DECREF(val);
+      return -1;
+    }
+    Py_DECREF(val);
+  } else {
+    Py_DECREF(val);
+    PyErr_SetString(PyExc_TypeError,
+                    "frame namespace must be Namespace or dict");
+    return -1;
+  }
+  (void) out_ev;
+  return 0;
+}
+
+
+/**
+   VAR_CLEAR: arg = constant index (name). Delete name from namespace;
+   not yet implemented.
+*/
+KOS_OP_HANDLER(VAR_CLEAR) {
+  return op_unimplemented_stub(ctx, out_ev, insn);
+}
+
+
+/**
+   VAR_REF: arg = constant index (name). Push name reference (for closure);
+   not yet implemented.
+*/
+KOS_OP_HANDLER(VAR_REF) {
+  return op_unimplemented_stub(ctx, out_ev, insn);
+}
+
+
+/**
+   VAR_STORE: arg = constant index (name). Store TOS into name; not yet implemented.
+*/
+KOS_OP_HANDLER(VAR_STORE) {
+  return op_unimplemented_stub(ctx, out_ev, insn);
+}
+
+
+/**
+   FAST: arg = slot index. Push value from fast local slot; not yet implemented.
+*/
+KOS_OP_HANDLER(FAST) {
+  return op_unimplemented_stub(ctx, out_ev, insn);
+}
+
+
+/**
+   FAST_BIND: arg = slot index. Bind name to fast slot; not yet implemented.
+*/
+KOS_OP_HANDLER(FAST_BIND) {
+  return op_unimplemented_stub(ctx, out_ev, insn);
+}
+
+
+/**
+   FAST_CLEAR: arg = slot index. Clear fast slot; not yet implemented.
+*/
+KOS_OP_HANDLER(FAST_CLEAR) {
+  return op_unimplemented_stub(ctx, out_ev, insn);
+}
+
+
+/**
+   FAST_REF: arg = slot index. Push reference to fast slot; not yet implemented.
+*/
+KOS_OP_HANDLER(FAST_REF) {
+  return op_unimplemented_stub(ctx, out_ev, insn);
+}
+
+
+/**
+   FAST_STORE: arg = slot index. Store TOS into fast slot; not yet implemented.
+*/
+KOS_OP_HANDLER(FAST_STORE) {
+  return op_unimplemented_stub(ctx, out_ev, insn);
+}
+
+
+/**
+   ATTR: arg = constant index (name). Push getattr(TOS, name); not yet implemented.
+*/
+KOS_OP_HANDLER(ATTR) {
+  return op_unimplemented_stub(ctx, out_ev, insn);
+}
+
+
+/**
+   ATTR_CLEAR: arg = constant index (name). delattr(TOS, name); not yet implemented.
+*/
+KOS_OP_HANDLER(ATTR_CLEAR) {
+  return op_unimplemented_stub(ctx, out_ev, insn);
+}
+
+
+/**
+   ATTR_REF: arg = constant index (name). Push attribute reference; not yet implemented.
+*/
+KOS_OP_HANDLER(ATTR_REF) {
+  return op_unimplemented_stub(ctx, out_ev, insn);
+}
+
+
+/**
+   ATTR_STORE: arg = constant index (name). setattr(TOS, name, value); not yet implemented.
+*/
+KOS_OP_HANDLER(ATTR_STORE) {
+  return op_unimplemented_stub(ctx, out_ev, insn);
+}
+
+
+/**
+   ITEM: arg unused. Push TOS1[TOS] (subscript); not yet implemented.
+*/
+KOS_OP_HANDLER(ITEM) {
+  return op_unimplemented_stub(ctx, out_ev, insn);
+}
+
+
+/**
+   ITEM_CLEAR: arg unused. del TOS1[TOS]; not yet implemented.
+*/
+KOS_OP_HANDLER(ITEM_CLEAR) {
+  return op_unimplemented_stub(ctx, out_ev, insn);
+}
+
+
+/**
+   ITEM_REF: arg unused. Push item reference for subscription; not yet implemented.
+*/
+KOS_OP_HANDLER(ITEM_REF) {
+  return op_unimplemented_stub(ctx, out_ev, insn);
+}
+
+
+/**
+   ITEM_STORE: arg unused. TOS1[TOS] = value; not yet implemented.
+*/
+KOS_OP_HANDLER(ITEM_STORE) {
+  return op_unimplemented_stub(ctx, out_ev, insn);
+}
+
+
+/**
+   CONST_ITEM: arg = constant index (key). Push TOS[key]; not yet implemented.
+*/
+KOS_OP_HANDLER(CONST_ITEM) {
+  return op_unimplemented_stub(ctx, out_ev, insn);
+}
+
+
+/**
+   CONST_ITEM_CLEAR: arg = constant index (key). del TOS[key]; not yet implemented.
+*/
+KOS_OP_HANDLER(CONST_ITEM_CLEAR) {
+  return op_unimplemented_stub(ctx, out_ev, insn);
+}
+
+
+/**
+   CONST_ITEM_REF: arg = constant index (key). Push constant-key item reference;
+   not yet implemented.
+*/
+KOS_OP_HANDLER(CONST_ITEM_REF) {
+  return op_unimplemented_stub(ctx, out_ev, insn);
+}
+
+
+/**
+   CONST_ITEM_STORE: arg = constant index (key). TOS[key] = value; not yet implemented.
+*/
+KOS_OP_HANDLER(CONST_ITEM_STORE) {
+  return op_unimplemented_stub(ctx, out_ev, insn);
+}
+
+
+/**
+   BUILD_ARGS: arg unused. Build positional args tuple from stack; not yet implemented.
+*/
+KOS_OP_HANDLER(BUILD_ARGS) {
+  return op_unimplemented_stub(ctx, out_ev, insn);
+}
+
+
+/**
+   BUILD_FUNCTION: arg = constant index or similar. Build function/callable from stack;
+   not yet implemented.
+*/
+KOS_OP_HANDLER(BUILD_FUNCTION) {
+  return op_unimplemented_stub(ctx, out_ev, insn);
+}
+
+
+/**
+   BUILD_KWDS: arg unused. Build keyword dict from stack; not yet implemented.
+*/
+KOS_OP_HANDLER(BUILD_KWDS) {
+  return op_unimplemented_stub(ctx, out_ev, insn);
+}
+
+
+/**
+   BUILD_KWDS_NAMES: arg = constant (names). Build keyword dict from names and stack;
+   not yet implemented.
+*/
+KOS_OP_HANDLER(BUILD_KWDS_NAMES) {
+  return op_unimplemented_stub(ctx, out_ev, insn);
+}
+
+
+/**
+   COMBINE_ARGS: arg unused. Combine positional args for call; not yet implemented.
+*/
+KOS_OP_HANDLER(COMBINE_ARGS) {
+  return op_unimplemented_stub(ctx, out_ev, insn);
+}
+
+
+/**
+   COMBINE_KWDS: arg unused. Combine keyword args for call; not yet implemented.
+*/
+KOS_OP_HANDLER(COMBINE_KWDS) {
+  return op_unimplemented_stub(ctx, out_ev, insn);
+}
+
+
+/**
+   CALL_NAMES: arg = N. Call with keyword names on stack; not yet implemented.
+*/
+KOS_OP_HANDLER(CALL_NAMES) {
+  return op_unimplemented_stub(ctx, out_ev, insn);
+}
+
+
+/**
+   CALL_STAR: arg = N. Call with *args; not yet implemented.
+*/
+KOS_OP_HANDLER(CALL_STAR) {
+  return op_unimplemented_stub(ctx, out_ev, insn);
+}
+
+
+/**
+   CALL_ATTR: arg = constant (name). Call TOS1.name(*args); not yet implemented.
+*/
+KOS_OP_HANDLER(CALL_ATTR) {
+  return op_unimplemented_stub(ctx, out_ev, insn);
+}
+
+
+/**
+   CALL_ATTR_NAMES: arg = N. Call TOS.name(..., **kwds); not yet implemented.
+*/
+KOS_OP_HANDLER(CALL_ATTR_NAMES) {
+  return op_unimplemented_stub(ctx, out_ev, insn);
+}
+
+
+/**
+   CALL_ATTR_STAR: arg = N. Call TOS.name(*args, ...); not yet implemented.
+*/
+KOS_OP_HANDLER(CALL_ATTR_STAR) {
+  return op_unimplemented_stub(ctx, out_ev, insn);
+}
+
+
+/**
+   RECUR: arg = N. Recursive call (same function); not yet implemented.
+*/
+KOS_OP_HANDLER(RECUR) {
+  return op_unimplemented_stub(ctx, out_ev, insn);
+}
+
+
+/**
+   RECUR_NAMES: arg = N. Recursive call with keyword names; not yet implemented.
+*/
+KOS_OP_HANDLER(RECUR_NAMES) {
+  return op_unimplemented_stub(ctx, out_ev, insn);
+}
+
+
+/**
+   RECUR_STAR: arg = N. Recursive call with *args; not yet implemented.
+*/
+KOS_OP_HANDLER(RECUR_STAR) {
+  return op_unimplemented_stub(ctx, out_ev, insn);
+}
+
+
+/**
+   TAIL_CALL: arg = N. Tail call (replace frame); not yet implemented.
+*/
+KOS_OP_HANDLER(TAIL_CALL) {
+  return op_unimplemented_stub(ctx, out_ev, insn);
+}
+
+
+/**
+   TAIL_CALL_NAMES: arg = N. Tail call with keyword names; not yet implemented.
+*/
+KOS_OP_HANDLER(TAIL_CALL_NAMES) {
+  return op_unimplemented_stub(ctx, out_ev, insn);
+}
+
+
+/**
+   TAIL_CALL_STAR: arg = N. Tail call with *args; not yet implemented.
+*/
+KOS_OP_HANDLER(TAIL_CALL_STAR) {
+  return op_unimplemented_stub(ctx, out_ev, insn);
+}
+
+
+/**
+   TAIL_RECUR: arg = N. Tail recursive call; not yet implemented.
+*/
+KOS_OP_HANDLER(TAIL_RECUR) {
+  return op_unimplemented_stub(ctx, out_ev, insn);
+}
+
+
+/**
+   TAIL_RECUR_NAMES: arg = N. Tail recur with keyword names; not yet implemented.
+*/
+KOS_OP_HANDLER(TAIL_RECUR_NAMES) {
+  return op_unimplemented_stub(ctx, out_ev, insn);
+}
+
+
+/**
+   TAIL_RECUR_STAR: arg = N. Tail recur with *args; not yet implemented.
+*/
+KOS_OP_HANDLER(TAIL_RECUR_STAR) {
+  return op_unimplemented_stub(ctx, out_ev, insn);
+}
+
+
+/**
+   PUSH_FOREACH: arg = target. Push for-each/iteration context; not yet implemented.
+*/
+KOS_OP_HANDLER(PUSH_FOREACH) {
+  return op_unimplemented_stub(ctx, out_ev, insn);
+}
+
+
+/**
+   PUSH_WITH: arg = target. Push with/context-manager; not yet implemented.
+*/
+KOS_OP_HANDLER(PUSH_WITH) {
+  return op_unimplemented_stub(ctx, out_ev, insn);
+}
+
+
+/**
+   PUSH_BEGIN: arg = target. Push begin block; not yet implemented.
+*/
+KOS_OP_HANDLER(PUSH_BEGIN) {
+  return op_unimplemented_stub(ctx, out_ev, insn);
+}
+
+
+/**
+   PUSH_CLASS: arg unused. Push class-building context; not yet implemented.
+*/
+KOS_OP_HANDLER(PUSH_CLASS) {
+  return op_unimplemented_stub(ctx, out_ev, insn);
+}
+
+
+/**
+   PUSH_LOOP: arg = target. Push loop context (for break/continue); not yet implemented.
+*/
+KOS_OP_HANDLER(PUSH_LOOP) {
+  return op_unimplemented_stub(ctx, out_ev, insn);
+}
+
+
+/**
+   PUSH_NS: arg unused. Push new namespace onto chain; not yet implemented.
+*/
+KOS_OP_HANDLER(PUSH_NS) {
+  return op_unimplemented_stub(ctx, out_ev, insn);
+}
+
+
+/**
+   CLEAR_LOOP: arg unused. Mark loop as exited; not yet implemented.
+*/
+KOS_OP_HANDLER(CLEAR_LOOP) {
+  return op_unimplemented_stub(ctx, out_ev, insn);
+}
+
+
+/**
+   POP_WITH: arg unused. Pop with context; not yet implemented.
+*/
+KOS_OP_HANDLER(POP_WITH) {
+  return op_unimplemented_stub(ctx, out_ev, insn);
+}
+
+
+/**
+   POP_BEGIN: arg unused. Pop begin block; not yet implemented.
+*/
+KOS_OP_HANDLER(POP_BEGIN) {
+  return op_unimplemented_stub(ctx, out_ev, insn);
+}
+
+
+/**
+   POP_LOOP: arg unused. Pop loop context; not yet implemented.
+*/
+KOS_OP_HANDLER(POP_LOOP) {
+  return op_unimplemented_stub(ctx, out_ev, insn);
+}
+
+
+/**
+   POP_NS: arg unused. Pop namespace from chain; not yet implemented.
+*/
+KOS_OP_HANDLER(POP_NS) {
+  return op_unimplemented_stub(ctx, out_ev, insn);
+}
+
+
+/**
+   PUSH_WIND: arg unused. Push dynamic-wind before thunk; not yet implemented.
+*/
+KOS_OP_HANDLER(PUSH_WIND) {
+  return op_unimplemented_stub(ctx, out_ev, insn);
+}
+
+
+/**
+   POP_WIND: arg unused. Pop dynamic-wind; not yet implemented.
+*/
+KOS_OP_HANDLER(POP_WIND) {
+  return op_unimplemented_stub(ctx, out_ev, insn);
+}
+
+
+/**
+   END_WIND: arg unused. End wind scope; not yet implemented.
+*/
+KOS_OP_HANDLER(END_WIND) {
+  return op_unimplemented_stub(ctx, out_ev, insn);
+}
+
+
+/**
+   PUSH_REGION: arg = style/label. Push generic region; not yet implemented.
+*/
+KOS_OP_HANDLER(PUSH_REGION) {
+  return op_unimplemented_stub(ctx, out_ev, insn);
+}
+
+
+/**
+   POP_REGION: arg unused. Pop region; not yet implemented.
+*/
+KOS_OP_HANDLER(POP_REGION) {
+  return op_unimplemented_stub(ctx, out_ev, insn);
+}
+
 
 /* Dispatch table generated from opcodes.incl; every op_##name must be
-   defined (implemented or #define to op_unimplemented_stub). */
+   defined (implemented handler). */
 static int (*const op_handlers[])(KosContext *, KosEvent *, KosOp *) = {
 #define OP(name, style) op_##name,
 #include "opcodes.incl"
@@ -1944,468 +2803,6 @@ int koskari_eval(KosContext *ctx, KosEvent *out_ev) {
 }
 
 
-/* === KosPyContinuation type === */
-
-
-static void continuation_dealloc(PyObject *self) {
-
-  KosPyContinuation *cont = (KosPyContinuation *) self;
-
-  kos_continuation_free(cont->captured);
-
-  Py_TYPE(self)->tp_free(self);
-}
-
-
-static int continuation_traverse(
-    PyObject *self,
-    visitproc visit,
-    void *arg) {
-
-  KosPyContinuation *cont = (KosPyContinuation *) self;
-
-  if (cont->captured) {
-    return kos_continuation_traverse(cont->captured, visit, arg);
-  }
-
-  return 0;
-}
-
-
-static int continuation_clear(PyObject *self) {
-
-  KosPyContinuation *cont = (KosPyContinuation *) self;
-
-  kos_continuation_free(cont->captured);
-  cont->captured = NULL;
-
-  return 0;
-}
-
-
-static PyObject *continuation_call(
-    PyObject *self,
-    PyObject *args,
-    PyObject *kwds) {
-
-  KosPyContinuation *cont = (KosPyContinuation *) self;
-
-  /* Parse arguments: single optional value */
-  PyObject *resume_value = Py_None;
-  if (! PyArg_ParseTuple(args, "|O:continuation", &resume_value))
-    return NULL;
-
-  if (kwds && PyDict_Size(kwds)) {
-    PyErr_SetString(PyExc_TypeError,
-                    "continuation does not accept keyword arguments");
-    return NULL;
-  }
-
-  if (! cont->captured) {
-    PyErr_SetString(PyExc_RuntimeError, "continuation has no captured state");
-    return NULL;
-  }
-
-  /* Clone captured state for multi-shot semantics */
-  KosContinuation *cloned = kos_continuation_clone(cont->captured);
-  if (! cloned)
-    return NULL;
-
-  /* Create new context with the cloned chain */
-  KosDynFrame *top_frame = cloned->resume_frame;
-  cloned->captured_chain = NULL;  /* context takes ownership */
-
-  KosContext *ctx = kos_context_new(top_frame);
-  if (! ctx) {
-    kos_continuation_free(cloned);
-    return NULL;
-  }
-
-  /* Set up the context's dynamic chain */
-  /* TODO: properly restore the full chain */
-
-  kos_continuation_free(cloned);
-
-  /* Create and return a coroutine wrapper */
-  return KosCoroutine_New(ctx);
-}
-
-
-static PyObject *continuation_repr(PyObject *self) {
-
-  return PyUnicode_FromFormat("<continuation at %p>", self);
-}
-
-
-PyTypeObject KosPyContinuationType = {
-  PyVarObject_HEAD_INIT(NULL, 0)
-
-  .tp_name = "koskari.lib.Continuation",
-  .tp_basicsize = sizeof(KosPyContinuation),
-  .tp_itemsize = 0,
-  .tp_dealloc = continuation_dealloc,
-  .tp_repr = continuation_repr,
-  .tp_call = continuation_call,
-  .tp_flags = Py_TPFLAGS_DEFAULT | Py_TPFLAGS_HAVE_GC,
-  .tp_doc = "Captured continuation (multi-shot, delimited)",
-  .tp_traverse = continuation_traverse,
-  .tp_clear = continuation_clear,
-};
-
-
-PyObject *KosPyContinuation_New(KosContinuation *captured) {
-
-  KosPyContinuation *cont = PyObject_GC_New(KosPyContinuation,
-                                            &KosPyContinuationType);
-  if (! cont)
-    return NULL;
-
-  cont->captured = captured;
-
-  PyObject_GC_Track((PyObject *) cont);
-  return (PyObject *) cont;
-}
-
-
-/* === KosPyAsyncGen type === */
-
-
-static void asyncgen_dealloc(PyObject *self) {
-
-  PyObject_GC_UnTrack(self);
-
-  KosPyAsyncGen *agen = (KosPyAsyncGen *) self;
-
-  if (agen->ctx)
-    kos_context_free(agen->ctx);
-
-  Py_TYPE(self)->tp_free(self);
-}
-
-
-static int asyncgen_traverse(PyObject *self, visitproc visit, void *arg) {
-
-  KosPyAsyncGen *agen = (KosPyAsyncGen *) self;
-
-  if (agen->ctx) {
-    return kos_context_traverse(agen->ctx, visit, arg);
-  }
-
-  return 0;
-}
-
-
-static int asyncgen_clear(PyObject *self) {
-
-  KosPyAsyncGen *agen = (KosPyAsyncGen *) self;
-
-  if (agen->ctx) {
-    kos_context_free(agen->ctx);
-    agen->ctx = NULL;
-  }
-
-  return 0;
-}
-
-
-static PyObject *asyncgen_aiter(PyObject *self) {
-
-  Py_INCREF(self);
-  return self;
-}
-
-
-static PyObject *asyncgen_anext(PyObject *self) {
-
-  KosPyAsyncGen *agen = (KosPyAsyncGen *) self;
-
-  if (agen->closed) {
-    PyErr_SetNone(PyExc_StopAsyncIteration);
-    return NULL;
-  }
-
-  return KosPyAsyncGenASend_New(agen, Py_None);
-}
-
-
-static PyObject *asyncgen_repr(PyObject *self) {
-
-  return PyUnicode_FromFormat("<async_generator at %p>", self);
-}
-
-
-static PyAsyncMethods asyncgen_async_methods = {
-  .am_aiter = asyncgen_aiter,
-  .am_anext = asyncgen_anext,
-};
-
-
-PyTypeObject KosPyAsyncGenType = {
-  PyVarObject_HEAD_INIT(NULL, 0)
-
-  .tp_name = "koskari.lib.AsyncGenerator",
-  .tp_basicsize = sizeof(KosPyAsyncGen),
-  .tp_itemsize = 0,
-  .tp_dealloc = asyncgen_dealloc,
-  .tp_repr = asyncgen_repr,
-  .tp_as_async = &asyncgen_async_methods,
-  .tp_flags = Py_TPFLAGS_DEFAULT | Py_TPFLAGS_HAVE_GC,
-  .tp_doc = "Koskari async generator wrapper",
-  .tp_traverse = asyncgen_traverse,
-  .tp_clear = asyncgen_clear,
-};
-
-
-PyObject *KosPyAsyncGen_New(KosContext *ctx) {
-
-  KosPyAsyncGen *agen = PyObject_GC_New(KosPyAsyncGen, &KosPyAsyncGenType);
-  if (! agen) {
-    kos_context_free(ctx);
-    return NULL;
-  }
-
-  agen->ctx = ctx;
-  agen->in_progress = 0;
-  agen->closed = 0;
-
-  PyObject_GC_Track((PyObject *) agen);
-  return (PyObject *) agen;
-}
-
-
-/* === KosPyAsyncGenASend type === */
-
-
-static void asyncgenasend_dealloc(PyObject *self) {
-
-  PyObject_GC_UnTrack(self);
-
-  KosPyAsyncGenASend *asend = (KosPyAsyncGenASend *) self;
-
-  Py_XDECREF(asend->agen);
-  Py_XDECREF(asend->send_value);
-  Py_XDECREF(asend->throw_exc);
-
-  Py_TYPE(self)->tp_free(self);
-}
-
-
-static int asyncgenasend_traverse(
-    PyObject *self,
-    visitproc visit,
-    void *arg) {
-
-  KosPyAsyncGenASend *asend = (KosPyAsyncGenASend *) self;
-
-  Py_VISIT(asend->agen);
-  Py_VISIT(asend->send_value);
-  Py_VISIT(asend->throw_exc);
-
-  return 0;
-}
-
-
-static int asyncgenasend_clear(PyObject *self) {
-
-  KosPyAsyncGenASend *asend = (KosPyAsyncGenASend *) self;
-
-  Py_CLEAR(asend->agen);
-  Py_CLEAR(asend->send_value);
-  Py_CLEAR(asend->throw_exc);
-
-  return 0;
-}
-
-
-static PyObject *asyncgenasend_await(PyObject *self) {
-
-  Py_INCREF(self);
-  return self;
-}
-
-
-static PyObject *asyncgenasend_iternext(PyObject *self) {
-
-  KosPyAsyncGenASend *asend = (KosPyAsyncGenASend *) self;
-  KosPyAsyncGen *agen = asend->agen;
-
-  if (! agen || ! agen->ctx) {
-    PyErr_SetNone(PyExc_StopAsyncIteration);
-    return NULL;
-  }
-
-  if (agen->closed) {
-    PyErr_SetNone(PyExc_StopAsyncIteration);
-    return NULL;
-  }
-
-  /* Re-entrancy guard */
-  if (agen->in_progress) {
-    PyErr_SetString(PyExc_RuntimeError,
-                    "async generator already being iterated");
-    return NULL;
-  }
-
-  agen->in_progress = 1;
-
-  /* Drive the context */
-  KosEvent ev = {0};
-  int res = koskari_eval(agen->ctx, &ev);
-
-  agen->in_progress = 0;
-
-  if (res < 0) {
-    agen->closed = 1;
-    PyErr_SetNone(PyExc_StopAsyncIteration);
-    return NULL;
-  }
-
-  switch (ev.kind) {
-    case KOS_EV_RETURN:
-      /* Generator completed */
-      agen->closed = 1;
-      Py_XDECREF(ev.payload);
-      PyErr_SetNone(PyExc_StopAsyncIteration);
-      return NULL;
-
-    case KOS_EV_RAISE:
-      agen->closed = 1;
-      if (ev.payload) {
-        PyErr_SetObject((PyObject *) Py_TYPE(ev.payload), ev.payload);
-        Py_DECREF(ev.payload);
-      } else {
-        PyErr_SetNone(PyExc_StopAsyncIteration);
-      }
-      return NULL;
-
-    case KOS_EV_YIELD:
-      /* Yielded a value - wrap in StopIteration to signal completion
-         of this __anext__ awaitable */
-      PyErr_SetObject(PyExc_StopIteration, ev.payload);
-      Py_XDECREF(ev.payload);
-      return NULL;
-
-    case KOS_EV_AWAIT:
-      /* Need to suspend on Python awaitable */
-      /* Return the awaitable for the caller to await */
-      return ev.payload;
-  }
-
-  PyErr_SetString(PyExc_RuntimeError, "unexpected event kind");
-  return NULL;
-}
-
-
-static PyObject *asyncgenasend_send(PyObject *self, PyObject *value) {
-
-  /* For now, just delegate to iternext */
-  return asyncgenasend_iternext(self);
-}
-
-
-static PyObject *asyncgenasend_throw(PyObject *self, PyObject *args) {
-
-  KosPyAsyncGenASend *asend = (KosPyAsyncGenASend *) self;
-
-  /* Mark as throw and delegate */
-  asend->is_throw = 1;
-
-  PyObject *typ = NULL;
-  if (! PyArg_ParseTuple(args, "O:throw", &typ))
-    return NULL;
-
-  Py_XINCREF(typ);
-  Py_XDECREF(asend->throw_exc);
-  asend->throw_exc = typ;
-
-  return asyncgenasend_iternext(self);
-}
-
-
-static PyObject *asyncgenasend_close(PyObject *self) {
-
-  KosPyAsyncGenASend *asend = (KosPyAsyncGenASend *) self;
-
-  if (asend->agen) {
-    asend->agen->closed = 1;
-  }
-
-  Py_RETURN_NONE;
-}
-
-
-static PyMethodDef asyncgenasend_methods[] = {
-  { "send", (PyCFunction) asyncgenasend_send, METH_O,
-    "Send a value" },
-
-  { "throw", (PyCFunction) asyncgenasend_throw, METH_VARARGS,
-    "Throw an exception" },
-
-  { "close", (PyCFunction) asyncgenasend_close, METH_NOARGS,
-    "Close" },
-
-  { NULL, NULL, 0, NULL },
-};
-
-
-static PyAsyncMethods asyncgenasend_async_methods = {
-  .am_await = asyncgenasend_await,
-};
-
-
-static PyObject *asyncgenasend_repr(PyObject *self) {
-
-  return PyUnicode_FromFormat("<async_generator_asend at %p>", self);
-}
-
-
-PyTypeObject KosPyAsyncGenASendType = {
-  PyVarObject_HEAD_INIT(NULL, 0)
-
-  .tp_name = "koskari.lib.async_generator_asend",
-  .tp_basicsize = sizeof(KosPyAsyncGenASend),
-  .tp_itemsize = 0,
-  .tp_dealloc = asyncgenasend_dealloc,
-  .tp_repr = asyncgenasend_repr,
-  .tp_as_async = &asyncgenasend_async_methods,
-  .tp_flags = Py_TPFLAGS_DEFAULT | Py_TPFLAGS_HAVE_GC,
-  .tp_doc = "Koskari async generator asend awaitable",
-  .tp_traverse = asyncgenasend_traverse,
-  .tp_clear = asyncgenasend_clear,
-  .tp_iter = PyObject_SelfIter,
-  .tp_iternext = asyncgenasend_iternext,
-  .tp_methods = asyncgenasend_methods,
-};
-
-
-PyObject *KosPyAsyncGenASend_New(
-    KosPyAsyncGen *agen,
-    PyObject *send_value) {
-
-  KosPyAsyncGenASend *asend = PyObject_GC_New(KosPyAsyncGenASend,
-                                              &KosPyAsyncGenASendType);
-  if (! asend)
-    return NULL;
-
-  Py_INCREF(agen);
-  asend->agen = agen;
-
-  Py_XINCREF(send_value);
-  asend->send_value = send_value;
-
-  asend->is_throw = 0;
-  asend->throw_exc = NULL;
-
-  PyObject_GC_Track((PyObject *) asend);
-  return (PyObject *) asend;
-}
-
-
-static PyMethodDef eval_module_methods[] = {
-  { NULL, NULL, 0, NULL },
-};
-
-
 /* === Unit lifecycle === */
 
 
@@ -2413,9 +2810,6 @@ int koskari_eval_init(PyObject *mod) {
 
   PyObject *dict = PyModule_GetDict(mod);
   if (! dict)
-    return -1;
-
-  if (PyModule_AddFunctions(mod, eval_module_methods) < 0)
     return -1;
 
   /* Initialize string constants */
@@ -2426,24 +2820,6 @@ int koskari_eval_init(PyObject *mod) {
 
   /* Initialize dynchain module */
   if (koskari_dynchain_init(mod))
-    return -1;
-
-  /* Register types */
-  if (PyType_Ready(&KosPyContinuationType))
-    return -1;
-
-  if (PyType_Ready(&KosPyAsyncGenType))
-    return -1;
-
-  if (PyType_Ready(&KosPyAsyncGenASendType))
-    return -1;
-
-  if (PyDict_SetItemString(dict, "Continuation",
-                           (PyObject *) &KosPyContinuationType))
-    return -1;
-
-  if (PyDict_SetItemString(dict, "AsyncGenerator",
-                           (PyObject *) &KosPyAsyncGenType))
     return -1;
 
   return 0;

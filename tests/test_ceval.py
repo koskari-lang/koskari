@@ -203,6 +203,16 @@ class TestCodeAssembly(unittest.TestCase):
         result = run_to_completion(fn(1, y=2))
         self.assertEqual(result, 42)
 
+    def test_return_two_values_sync(self):
+        """RETURN 2 with two values on stack returns a tuple (sync, no await)."""
+        code, ns = build_expr([
+            ["CONST", 42],
+            ["CONST", 52],
+            ["RETURN", 2],
+        ])
+        result = run_to_completion(make_callable(code, ns)())
+        self.assertEqual(result, (42, 52))
+
 
 class TestAsyncAwait(unittest.TestCase):
     """

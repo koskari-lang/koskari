@@ -74,7 +74,7 @@ PyObject *KosFunction_NewFromFormals(PyObject *code,
 
    :return: new KosCoroutine, or NULL on error
 */
-PyObject *kos_run_code_as_coroutine(PyObject *code, PyObject *ns);
+PyObject *KosCoroutine_NewFromCode(PyObject *code, PyObject *ns);
 
 
 /* === KosCoroutine === */
@@ -115,6 +115,99 @@ typedef struct {
 
 
 PyObject *KosCoroutine_New(KosContext *ctx);
+
+
+/* === KosPyContinuation === */
+
+
+/**
+   KosPyContinuation is a Python-callable that resumes at a captured point.
+
+   Multi-shot: each call clones the captured state before resuming.
+   Calling returns a KosCoroutine that executes the continuation.
+
+   This type wraps a KosContinuation (from dynchain.h).
+*/
+
+extern PyTypeObject KosPyContinuationType;
+
+
+typedef struct {
+  PyObject_HEAD
+  KosContinuation *captured;  /* captured continuation state */
+} KosPyContinuation;
+
+
+#define KosPyContinuation_Check(obj)                                    \
+  ((obj) && PyType_IsSubtype((obj)->ob_type, &KosPyContinuationType))
+
+#define KosPyContinuation_CheckExact(obj)               \
+  ((obj) && ((obj)->ob_type == &KosPyContinuationType))
+
+
+PyObject *KosPyContinuation_New(KosContinuation *captured);
+
+
+/* === KosPyAsyncGen === */
+
+
+/**
+   KosPyAsyncGen wraps a KosContext for Python's async generator protocol.
+
+   Similar to KosCoroutine but yields values via __anext__.
+*/
+
+extern PyTypeObject KosPyAsyncGenType;
+
+
+typedef struct {
+  PyObject_HEAD
+  KosContext *ctx;
+  int in_progress;   /* anext in progress */
+  int closed;        /* generator closed */
+} KosPyAsyncGen;
+
+
+#define KosPyAsyncGen_Check(obj)                                        \
+  ((obj) && PyType_IsSubtype((obj)->ob_type, &KosPyAsyncGenType))
+
+#define KosPyAsyncGen_CheckExact(obj)                   \
+  ((obj) && ((obj)->ob_type == &KosPyAsyncGenType))
+
+
+PyObject *KosPyAsyncGen_New(KosContext *ctx);
+
+
+/* === KosPyAsyncGenASend === */
+
+
+/**
+   KosPyAsyncGenASend is the awaitable returned by __anext__ on an async gen.
+
+   Each __anext__ call creates one of these, which drives the generator
+   context until a yield or completion.
+*/
+
+extern PyTypeObject KosPyAsyncGenASendType;
+
+
+typedef struct {
+  PyObject_HEAD
+  KosPyAsyncGen *agen;
+  PyObject *send_value;   /* value to send into generator */
+  int is_throw;           /* if true, throw send_value as exception */
+  PyObject *throw_exc;    /* exception to throw (if is_throw) */
+} KosPyAsyncGenASend;
+
+
+#define KosPyAsyncGenASend_Check(obj)                                   \
+  ((obj) && PyType_IsSubtype((obj)->ob_type, &KosPyAsyncGenASendType))
+
+#define KosPyAsyncGenASend_CheckExact(obj)              \
+  ((obj) && ((obj)->ob_type == &KosPyAsyncGenASendType))
+
+
+PyObject *KosPyAsyncGenASend_New(KosPyAsyncGen *agen, PyObject *send_value);
 
 
 /* === Unit lifecycle === */
