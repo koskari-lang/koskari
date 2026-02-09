@@ -246,7 +246,7 @@ NOTE: Control flow metadata (block_style, enabled, labels) has been moved to
 
 ### Not Migrating
 
-- TCO types (`tailcall`, `Trampoline`) - will be handled directly in native evaluator
+- TCO types (`tailcall`) - will be handled directly in native evaluator
 - PyCell wrappers - replaced by Ref types
 
 ### To Consider

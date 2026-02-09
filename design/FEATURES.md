@@ -37,7 +37,6 @@ This document provides a high-level summary of all features identified from both
 ### Functions
 - **Definition**: function, lambda (named and anonymous)
 - **Calling**: Direct call, method call, recur
-- **TCO**: Trampoline-based or direct tail calls
 - **Formals**: Positional, defaults, keyword-only, *args, **kwargs
 
 ### Async/Coroutines
@@ -89,7 +88,6 @@ This document provides a high-level summary of all features identified from both
 - **Model**: Custom ceval loop (sibilant-ceval) or CPython (python-sibilant)
 - **Frame**: Custom frame type with stack and namespace
 - **Blocks**: try, loop, with, finally management
-- **TCO**: Trampoline or direct tail calls
 
 ### Runtime
 - **Modules**: Module creation and loading
@@ -172,7 +170,6 @@ This document provides a high-level summary of all features identified from both
 
 ### Needs Reconsideration
 - CPython bytecode target (abandoned)
-- Trampoline TCO vs. direct tail calls (direct tail calls now possible)
 - Wide bytecode format
 - Module representation
 - Import system strategy

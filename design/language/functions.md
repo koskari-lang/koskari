@@ -65,13 +65,6 @@
 
 ### From python-sibilant
 
-**Trampoline-based TCO**:
-- Functions can be marked with `@trampoline` decorator
-- Tail calls bounce out of frame
-- Evaluated in trampoline loop
-- Stack doesn't grow for tail calls
-- Side effect: call stack collapses (affects tracebacks)
-
 **TCO enabled by default** for:
 - `function` definitions
 - `lambda` expressions
@@ -86,7 +79,7 @@
 
 **`recur` opcode**: Direct tail-recursive call
 - Compiles to `OP_RECUR` or `OP_TAIL_RECUR` opcodes
-- More efficient than trampoline for self-recursion
+- Efficient direct tail call for self-recursion
 - Supports all argument patterns
 
 ## Function Features
@@ -121,7 +114,7 @@
 
 ### To Reconsider
 
-- Trampoline vs. direct tail-call opcodes
+- Direct tail-call opcodes
 - `recur` vs. general TCO
 - Method call optimization strategy
 - Function introspection capabilities

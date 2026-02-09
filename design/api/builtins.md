@@ -136,7 +136,7 @@ All the following have been migrated from python-sibilant and sibilant-ceval:
 
 The following are intentionally not being migrated:
 
-- TCO infrastructure (`tailcall`, `trampoline`, `tailcall_full`, `tcr_frame_vars`) - 
+- TCO infrastructure (`tailcall`, `tailcall_full`, `tcr_frame_vars`) - 
   will be handled directly in the native evaluator
 - PyCell operations (`getderef`, `setderef`, `clearderef`) - 
   replaced by Ref types
