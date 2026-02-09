@@ -205,10 +205,15 @@ class TestCodeAssembly(unittest.TestCase):
 
 
 class TestAsyncAwait(unittest.TestCase):
-    """Async tests: await make_callable(...)() with real koskari code."""
+    """
+    Async tests: await make_callable(...)() with real koskari code
+    """
 
     def test_await_expression_add(self):
-        """await make_callable(code, ns)() runs koskari addition and returns the result."""
+        """
+        await make_callable(code, ns)() runs koskari addition and returns the result
+        """
+
         code, ns = build_expr([
             ["CONST", 10],
             ["CONST", 32],
@@ -216,17 +221,16 @@ class TestAsyncAwait(unittest.TestCase):
             ["RETURN", 1],
         ])
         expr = make_callable(code, ns)
-
-        async def run_and_check():
-            coro = expr()
-            result = await coro
-            return result
-
-        result = asyncio.run(run_and_check())
+        coro = expr()
+        result = asyncio.run(coro)
         self.assertEqual(result, 42)
 
+
     def test_await_expression_add_other(self):
-        """make_callable(code, ns)(), await it; koskari code does addition."""
+        """
+        make_callable(code, ns)(), await it; koskari code does addition
+        """
+
         code, ns = build_expr([
             ["CONST", 7],
             ["CONST", 35],
@@ -234,14 +238,10 @@ class TestAsyncAwait(unittest.TestCase):
             ["RETURN", 1],
         ])
         expr = make_callable(code, ns)
-
-        async def call_and_check():
-            coro = expr()
-            result = await coro
-            return result
-
-        result = asyncio.run(call_and_check())
+        coro = expr()
+        result = asyncio.run(coro)
         self.assertEqual(result, 42)
+
 
     def test_koskari_awaits_python_awaitable_then_adds_one(self):
         """
@@ -252,33 +252,44 @@ class TestAsyncAwait(unittest.TestCase):
 
         capture = []
         async def get_value():
-            """Python awaitable that returns 41."""
+            """
+            Python awaitable that returns 41
+            """
             capture.append(1)
             await asyncio.sleep(0)
             capture.append(2)
             return 41
 
+        def get_value_sync():
+            capture.append(3)
+            return 51
+
+        values = {
+            "get_value": get_value,
+            "get_value_sync": get_value_sync,
+        }
         code, ns = build_expr([
             ["VAR", "get_value"],
             ["CALL", 0],
             ["CONST", 1],
             ["OBJECT_ADD", 2],
-            ["RETURN", 1],
-        ], values={"get_value": get_value})
+            ["VAR", "get_value_sync"],
+            ["CALL", 0],
+            ["CONST", 1],
+            ["OBJECT_ADD", 2],
+            ["RETURN", 2],
+        ], values=values)
 
         expr = make_callable(code, ns)
         self.assertEqual(capture, [])
 
         coro = expr()
+        self.assertEqual(capture, [])
         self.assertIsNotNone(coro)
 
-        # #region agent log
-        _run_coro = expr()
-        with open("/home/siege/sibilant/python-sibilant/.cursor/debug.log", "a") as _f:
-            _f.write('{"location":"test_ceval.py:asyncio.run","message":"expr() return",'
-                     '"hypothesisId":"H0","data":{"is_none":%s},"timestamp":0}\n' %
-                     ("true" if _run_coro is None else "false"))
-        # #endregion
-        result = asyncio.run(_run_coro)
-        self.assertEqual(result, 42)
-        self.assertEqual(capture, [1, 2])
+        result = asyncio.run(coro)
+        self.assertEqual(result, (42, 52))
+        self.assertEqual(capture, [1, 2, 3])
+
+
+# The end.

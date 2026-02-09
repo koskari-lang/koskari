@@ -19,24 +19,23 @@
 
 
 #include <Python.h>
-#include <frameobject.h>
 #include <structmember.h>
 
-#include "compat.h"
 #include "atom.h"
-#include "pair.h"
-#include "ref.h"
-#include "namespace.h"
 #include "bytecode.h"
-#include "formals.h"
-#include "values.h"
-#include "operator.h"
-#include "stack.h"
+#include "compat.h"
 #include "dynchain.h"
-#include "utils.h"
-#include "parse.h"
 #include "eval.h"
+#include "formals.h"
 #include "func.h"
+#include "namespace.h"
+#include "operator.h"
+#include "pair.h"
+#include "parse.h"
+#include "ref.h"
+#include "stack.h"
+#include "utils.h"
+#include "values.h"
 
 
 /* === unit initializers === */
@@ -71,24 +70,6 @@ int koskari_lib_clear(PyObject *mod);
     if (! (which))                              \
       (which) = PyUnicode_FromString(val);      \
   }
-
-
-#ifndef VERBOSE_DEBUG
-#define VERBOSE_DEBUG 0
-#endif
-
-
-#if VERBOSE_DEBUG
-#define SAY(m)                                  \
-  PySys_WriteStdout(m "\n")
-#define SAYF(m, a...)                           \
-  PySys_FormatStdout(m "\n", a);
-
-#else
-#define SAY(m) {}
-#define SAYF(m, a...) {}
-
-#endif
 
 
 #endif

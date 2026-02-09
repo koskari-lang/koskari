@@ -25,6 +25,7 @@
 
 
 #include "lib.h"
+#include "debug.h"
 
 
 /* === String constants === */

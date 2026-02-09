@@ -35,8 +35,7 @@
 #include <unistd.h>
 
 #include "lib.h"
-#include "bytecode.h"
-#include "namespace.h"
+#include "debug.h"
 
 
 /* === Static string constants === */

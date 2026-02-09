@@ -27,6 +27,7 @@
 
 
 #include "lib.h"
+#include "debug.h"
 
 
 #define TUPLE_OR_NULL(seq)                        \

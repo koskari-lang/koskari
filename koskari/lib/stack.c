@@ -31,11 +31,7 @@
 
 
 #include "lib.h"
-#include <stdio.h>
-
-
-/* Set to 1 to trace Push/Pop with block id, length, and value repr */
-#define KOS_STACK_TRACE 0
+#include "debug.h"
 
 
 /* === StackBlock === */
@@ -51,22 +47,6 @@
 #define BLOCK_MAX_FREE 256
 
 static size_t block_freecount = 0;
-
-
-static void stack_trace_repr(PyObject *obj, const char *prefix) {
-  if (! KOS_STACK_TRACE || ! obj)
-    return;
-  PyObject *repr = PyObject_Repr(obj);
-  if (repr) {
-    const char *s = PyUnicode_AsUTF8(repr);
-    fprintf(stderr, "%s%s\n", prefix, s ? s : "(utf8 failed)");
-    Py_DECREF(repr);
-  } else {
-    fprintf(stderr, "%s(repr failed)\n", prefix);
-    PyErr_Clear();
-  }
-  fflush(stderr);
-}
 
 
 static KosStackBlock *block_freelist = NULL;
@@ -329,10 +309,8 @@ static int KosStackBlock_Push(
     PyObject *val) {
 
   if (KOS_STACK_TRACE) {
-    KosStackBlock *b = *self;
-    fprintf(stderr, "[stack] Push block=%p len=%zu accepting ",
-            (void *) b, b ? KosStackBlock_LEN(b) : 0);
-    stack_trace_repr(val, "");
+    SAYF("[stack] Push block=%p len=%zu accepting %R",
+         (void *) *self, KosStackBlock_LEN(*self), val);
   }
 
   if (KosStackBlock_CopyForWrite(self))
@@ -547,11 +525,10 @@ static PyObject *KosStackBlock_Pop(KosStackBlock **self) {
 
   size_t len = s->len;
   if (KOS_STACK_TRACE)
-    fprintf(stderr, "[stack] Pop block=%p len=%zu -> ",
-            (void *) s, len);
+    SAYF("[stack] Pop block=%p len=%zu", (void *) s, len);
   if (! len) {
     if (KOS_STACK_TRACE)
-      fprintf(stderr, "underrun\n");
+      SAY("underrun");
     PyErr_SetString(PyExc_RuntimeError, "stack pop underrun");
     return NULL;
   }
@@ -565,7 +542,7 @@ static PyObject *KosStackBlock_Pop(KosStackBlock **self) {
   /* stolen reference */
   PyObject *ret = s->objs[len];
   if (KOS_STACK_TRACE)
-    stack_trace_repr(ret, "returning ");
+    SAYF("[stack] Pop block=%p len=%zu -> %R", (void *) s, len, ret);
   return ret;
 }
 
