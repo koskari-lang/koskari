@@ -46,7 +46,9 @@ def multi_segment_docstring(a, b):
 
 
 def single_line_no_period():
-    """One phrase only"""
+    """
+    One phrase only
+    """
 
     pass
 ```
@@ -72,13 +74,17 @@ def long_signature(
 
 ```python
 def one_method(self, x):
-    """Only one segment here"""
+    """
+    Only one segment here
+    """
 
     return x * 2
 
 
 def another_method(self, y):
-    """Also one segment"""
+    """
+    Also one segment
+    """
 
     return y + 1
 ```
