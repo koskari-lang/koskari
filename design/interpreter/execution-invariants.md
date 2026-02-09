@@ -31,8 +31,10 @@ runtimes.
 * The evaluator runs inside **one C call** per drive/resume.
 * Koskari never relies on CPython's recursive `ceval` re-entry for its own
   control flow.
-* Entry into the evaluator occurs via the `tp_call` (call implementation) of
-  the Koskari function CPython type.
+* The evaluator is driven by `koskari_eval()`, which is invoked when a
+  KosCoroutine or KosPyAsyncGen is driven (e.g. via Python `await` or `send`).
+  KosCoroutines are created by calling a KosExpression, KosFunction, or
+  KosPyContinuation (each returns a new KosCoroutine).
 
 This enables flattening of async suspension without C-stack growth.
 

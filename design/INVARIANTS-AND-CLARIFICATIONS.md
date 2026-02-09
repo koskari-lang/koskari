@@ -27,7 +27,7 @@ These are **commitments**: they must hold for correct behavior. They are elabora
 
 - **Flattening (stackless)**: The evaluator is internally flattening (stackless): nested Koskari calls do **not** consume the C call stack. Instead, execution state is represented by heap-allocated linked structures. Dynamic nodes and frames are interleaved into a heap-allocated linked list representing execution history. From CPython's perspective, the Koskari evaluator is opaque and invisible.
 
-- **Entry point**: Entry into the evaluator occurs via the `tp_call` (call implementation) of the Koskari function CPython type.
+- **Entry point**: The evaluator is driven by `koskari_eval()`, which is invoked when a Python caller drives a KosCoroutine (e.g. via `await` or `send`) or a KosPyAsyncGen. KosCoroutines are created by calling a KosExpression or KosFunction (their `tp_call` returns a new KosCoroutine) or by calling a KosPyContinuation (which also returns a KosCoroutine). There is no direct Python “run” that bypasses the coroutine wrapper.
 
 - **Dual perspectives**: Execution can be observed as (1) **Koskari view** (bytecode evaluating, calling Koskari functions) or (2) **Python view** (Python calling into a Koskari callable). Both are projections of a **single evaluator**, not two runtimes.
 
@@ -135,11 +135,11 @@ These are **commitments**: they must hold for correct behavior. They are elabora
 
 ## 5. Python-Facing Wrappers
 
-- **KosPyContinuation**: Wraps `KosContinuation`. Callable: calling it returns a `KosCoroutine` that resumes with the argument. Multi-shot: each call clones captured state.
+- **KosPyContinuation** (eval.c): Wraps `KosContinuation`. Callable: calling it returns a `KosCoroutine` that resumes with the argument. Multi-shot: each call clones captured state.
 
-- **KosCoroutine**: Wraps `KosContext` for the coroutine protocol (`__await__`, `send`, `throw`, `close`). States: NEW, RUNNING, WAITING_PY, DONE.
+- **KosCoroutine** (func.c): Wraps `KosContext` for the coroutine protocol (`__await__`, `send`, `throw`, `close`). States: NEW, RUNNING, WAITING_PY, DONE. Created by `kos_run_code_as_coroutine()` (Expression/Function call) or `KosCoroutine_New()` (Continuation call). Driving the coroutine (send/await) calls `koskari_eval()`.
 
-- **KosPyAsyncGen** / **KosPyAsyncGenASend**: Async generator protocol; `__anext__` returns an awaitable that drives until yield or completion.
+- **KosPyAsyncGen** / **KosPyAsyncGenASend** (eval.c): Async generator protocol; `__anext__` returns an awaitable that drives until yield or completion.
 
 ---
 
@@ -187,7 +187,7 @@ These are **commitments**: they must hold for correct behavior. They are elabora
 - Wind: push/pop wind, hook runner, begin/hook_active/end_hook (dynchain.c, eval.c).
 - Evaluator core: KosContext, KosFrame, kos_context_new/free, kos_frame_new/clone/free, kos_koscall, kos_tail_koscall (eval.c).
 - Drive loop: `koskari_eval()` is implemented with opcode fetch, dispatch table, and boundary handling. Many opcodes are implemented (stack, constants, exceptions, try/finally, delimited continuations, object protocol); many others are still stubs that raise "unimplemented opcode" at runtime.
-- Python wrappers: KosPyContinuation, KosCoroutine, KosPyAsyncGen, KosPyAsyncGenASend; coroutine/async-gen drive logic and eager-step await (eval.c).
+- Python wrappers: KosPyContinuation, KosPyAsyncGen, KosPyAsyncGenASend (eval.c); KosCoroutine and `kos_run_code_as_coroutine` (func.c). KosCoroutine drive (send/throw/close) in func.c; async-gen drive and eager-step await in eval.c.
 - GC: traverse helpers for context, frame, stack block, chain, continuation, transfer plan, hook runner (eval.c, dynchain.c).
 - Operators: reducing arithmetic, bitwise, membership, build-str; apply, reapply, identity, constantly, _pass; build_tuple, build_list, build_set, build_dict (operator.c, lib.c).
 
@@ -222,6 +222,7 @@ These are **commitments**: they must hold for correct behavior. They are elabora
 | Topic              | Design doc(s)                    | Implementation                          |
 |-------------------|-----------------------------------|-----------------------------------------|
 | Execution model   | interpreter/execution-invariants.md| koskari/lib/eval.c, eval.h              |
+| Coroutine / run-code | (this doc, evaluator.md)         | koskari/lib/func.c, func.h              |
 | Dynamic chain     | interpreter/evaluator.md          | koskari/lib/dynchain.c, dynchain.h      |
 | Continuations     | interpreter/callcc.md             | dynchain.c (capture/invoke), eval.c     |
 | Bytecode          | interpreter/bytecode.md           | koskari/lib/bytecode.c, bytecode.h, opcodes.incl |

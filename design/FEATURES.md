@@ -85,7 +85,7 @@ This document provides a high-level summary of all features identified from both
 - **Optimization**: Constant folding, dead code elimination, fast paths
 
 ### Evaluator
-- **Model**: Custom ceval loop (sibilant-ceval) or CPython (python-sibilant)
+- **Model**: Custom drive loop (`koskari_eval` in eval.c). Callable types Expression and Function (func.c) return a KosCoroutine; driving the coroutine (await/send) runs the evaluator. Continuation call returns a KosCoroutine that resumes the captured segment.
 - **Frame**: Custom frame type with stack and namespace
 - **Blocks**: try, loop, with, finally management
 

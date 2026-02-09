@@ -6,7 +6,7 @@ This directory documents the interpreter implementation, including bytecode form
 
 - **bytecode.md**: Bytecode format and opcodes (implemented in `koskari/lib/bytecode.c`)
 - **compiler.md**: Compiler architecture and phases
-- **evaluator.md**: Evaluation model and ceval loop (implemented in `koskari/lib/eval.c`)
+- **evaluator.md**: Evaluation model and drive loop (eval.c); KosCoroutine and run-code-as-coroutine (func.c)
 - **execution-invariants.md**: Koskari execution model invariants and design commitments
 - **callcc.md**: Call/cc implementation design
 
@@ -17,6 +17,7 @@ This directory documents the interpreter implementation, including bytecode form
 | Bytecode storage | Implemented | `bytecode.c`, `bytecode.h`, `opcodes.incl` |
 | Opcode definitions | Implemented | `opcodes.incl` |
 | Evaluator core | Implemented | `eval.c`, `eval.h` |
+| KosCoroutine / run-code-as-coroutine | Implemented | `func.c`, `func.h` |
 | Opcode dispatch | Implemented | `eval.c` (many opcodes implemented; many still stubs) |
 | Continuation support | Implemented | `eval.c`, `dynchain.c` |
 | Compiler | Not started | - |

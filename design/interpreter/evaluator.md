@@ -2,6 +2,9 @@
 
 This document describes the Koskari evaluator implementation in `eval.c`/`eval.h`
 and the supporting DynNode chain infrastructure in `dynchain.c`/`dynchain.h`.
+The KosCoroutine type and `kos_run_code_as_coroutine` (the Python-facing
+entry that creates a coroutine from code+namespace) live in `func.c`/`func.h`;
+driving a KosCoroutine (send/await) invokes `koskari_eval()` from func.c.
 
 ## Design Philosophy
 
@@ -220,18 +223,19 @@ struct KosHookRunner {
 
 ## Python-Facing Wrapper Types
 
-**KosPyContinuation**:
+**KosPyContinuation** (eval.c):
 - Wraps `KosContinuation`
 - Callable: returns `KosCoroutine` that resumes with the passed value
 - Multi-shot: clones captured state on each invocation
 - GC-tracked: traverses captured chain
 
-**KosCoroutine**:
+**KosCoroutine** (func.c):
 - Wraps `KosContext` for Python coroutine protocol
 - Implements `__await__`, `send`, `throw`, `close`
 - State machine: NEW → RUNNING → WAITING_PY → DONE
+- Created by Expression/Function call (via `kos_run_code_as_coroutine`) or Continuation call; drive calls `koskari_eval()`
 
-**KosPyAsyncGen** / **KosPyAsyncGenASend**:
+**KosPyAsyncGen** / **KosPyAsyncGenASend** (eval.c):
 - Wraps `KosContext` for async generator protocol
 - `__aiter__` returns self
 - `__anext__` returns `KosPyAsyncGenASend` awaitable
