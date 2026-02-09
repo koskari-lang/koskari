@@ -86,7 +86,7 @@ static int test_eval_object_add_return(void) {
     PyList_SET_ITEM(instr, 0, make_instr(KOS_OP_CONST, one));
     PyList_SET_ITEM(instr, 1, make_instr(KOS_OP_CONST, five));
     PyList_SET_ITEM(instr, 2, make_instr_int(KOS_OP_OBJECT_ADD, 2));
-    PyList_SET_ITEM(instr, 3, make_instr_int(KOS_OP_RETURN, 0));
+    PyList_SET_ITEM(instr, 3, make_instr_int(KOS_OP_RETURN, 1));
 
     PyObject *code_obj = KosCode_New(nspec, instr, NULL, NULL);
     TEST_ASSERT_NOT_NULL(code_obj, "create Code");

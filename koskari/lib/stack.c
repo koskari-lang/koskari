@@ -522,6 +522,10 @@ static int KosStackBlock_Pull(KosStackBlock **self, size_t count) {
 static PyObject *KosStackBlock_Pop(KosStackBlock **self) {
 
   KosStackBlock *s = *self;
+  if (! s) {
+    PyErr_SetString(PyExc_RuntimeError, "stack pop underrun");
+    return NULL;
+  }
 
   size_t len = s->len;
   if (KOS_STACK_TRACE)
@@ -557,6 +561,10 @@ int KosStackBlock_Drop(KosStackBlock **self, size_t count) {
     return 0;
 
   KosStackBlock *s = *self;
+  if (! s) {
+    PyErr_SetString(PyExc_RuntimeError, "stack drop underrun");
+    return -1;
+  }
 
   size_t len = s->len;
   if (count > len) {
@@ -582,6 +590,8 @@ int KosStackBlock_DropNoErr(KosStackBlock **self, size_t count) {
     return 0;
 
   KosStackBlock *s = *self;
+  if (! s)
+    return -1;
 
   int res = 0;
 
@@ -610,6 +620,10 @@ int KosStackBlock_Duplicate(KosStackBlock **self, size_t count) {
     return 0;
 
   KosStackBlock *s = *self;
+  if (! s) {
+    PyErr_SetString(PyExc_RuntimeError, "stack dup underrun");
+    return -1;
+  }
 
   if (count > s->len) {
     PyErr_SetString(PyExc_RuntimeError, "stack dup underrun");
@@ -674,6 +688,11 @@ PyObject *KosStackBlock_PopTail(
     return PyTuple_New(0);
 
   KosStackBlock *s = *self;
+  if (! s) {
+    PyErr_Format(PyExc_RuntimeError, "stack pop tail underrun."
+                 " requested: %zu, available: 0", count);
+    return NULL;
+  }
 
   size_t len = s->len;
 
@@ -707,7 +726,10 @@ PyObject *const *KosStackBlock_TailPtr(
     KosStackBlock *self,
     size_t count) {
 
-  if (! count) {
+  if (! count)
+    return NULL;
+  if (! self) {
+    PyErr_SetString(PyExc_RuntimeError, "stack tail ptr underrun");
     return NULL;
   }
 
@@ -731,6 +753,11 @@ static int KosStackBlock_PopTailPtr(
     return 0;
 
   KosStackBlock *s = *self;
+  if (! s) {
+    PyErr_Format(PyExc_RuntimeError, "stack pop tail ptr underrun."
+                 " requested: %zu, available: 0", count);
+    return -1;
+  }
 
   size_t len = s->len;
   if (count > len) {
@@ -761,6 +788,10 @@ static PyObject *KosStackBlock_PopTailDict(
     return PyDict_New();
 
   KosStackBlock *s = *self;
+  if (! s) {
+    PyErr_SetString(PyExc_RuntimeError, "stack pop tail dict underrun");
+    return NULL;
+  }
 
   size_t tcount = count * 2;
 
