@@ -16,8 +16,69 @@ alwaysApply: true
 - Namespace packages must be empty (no `__init__.py` file)
 - Prefer `typing.Union` (and related aliases) over the Python 3.10 `|` syntax; avoid `from __future__ import annotations` unless strictly required.
 - Write triple-double-quoted docstrings in plain prose without backtick emphasis and leave a blank line between the docstring and implementation body.
-- When quoting a string, use a single-quote strings for keyword values. Use double-quote strings for english text.
-- For multi-line method signatures, indent parameters two levels (8 spaces) beneath the definition and close the parenthesis on the same line as the return annotation or colon.
-- For all other multi-line collections, only indent one level (4 spaces)
-- Maintain a blank line between class or function definitions and terminate modules with `# The end.` followed by a single newline to match house style.
-- docstrings for methods and functions must use sphinx RestructuredText format when documenting the arguments, return, and any expected raises
+- **Docstring periods**: A docstring line may end with a period only when another text segment immediately follows in the same paragraph. Single-segment or single-line docstrings do not end with a period.
+- When quoting a string, use single-quote strings for keyword values. Use double-quote strings for english text.
+- For multi-line function or method signatures, double-indent continuation parameters (8 spaces) beneath the `def` line; close the parenthesis on the same line as the return annotation or colon.
+- For all other multi-line collections, only indent one level (4 spaces).
+- Use **two** blank lines between method definitions; use two blank lines between top-level function or class definitions as well.
+- Terminate modules with `# The end.` followed by a single newline to match house style.
+- Docstrings for methods and functions must use Sphinx RestructuredText format when documenting arguments, return, and any expected raises.
+
+## Style examples
+
+**Docstrings (period only when another segment follows in same paragraph):**
+
+```python
+def short_docstring(x):
+    """
+    Single segment, no period
+    """
+
+    return x + 1
+
+
+def multi_segment_docstring(a, b):
+    """
+    First sentence in the paragraph. Second sentence still in same paragraph.
+    """
+
+    return a + b
+
+
+def single_line_no_period():
+    """One phrase only"""
+
+    pass
+```
+
+**Multi-line signature (parameters double-indented):**
+
+```python
+def long_signature(
+        self,
+        first_arg,
+        second_arg,
+        third_arg,
+        optional_one=None,
+        optional_two=None):
+    """
+    Summary phrase, no period
+    """
+
+    return first_arg + second_arg + third_arg
+```
+
+**Two blank lines between methods:**
+
+```python
+def one_method(self, x):
+    """Only one segment here"""
+
+    return x * 2
+
+
+def another_method(self, y):
+    """Also one segment"""
+
+    return y + 1
+```
