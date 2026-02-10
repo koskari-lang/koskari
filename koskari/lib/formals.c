@@ -301,10 +301,70 @@ static void list_unique_extend(PyObject *dst, PyObject *seq) {
 }
 
 
+static PyObject *formals_nspec_impl(PyObject *pos, PyObject *pos_only,
+                                   PyObject *kwd, PyObject *kwd_only,
+                                   PyObject *star, PyObject *starstar,
+                                   PyObject *base_nspec) {
+
+  size_t c = SAFE_SIZE(pos) + SAFE_SIZE(pos_only)
+           + SAFE_SIZE(kwd) + SAFE_SIZE(kwd_only);
+
+  if (star)
+    c++;
+  if (starstar)
+    c++;
+
+  if (! c) {
+    if (base_nspec) {
+      Py_INCREF(base_nspec);
+      return base_nspec;
+    }
+    return KosNamespaceSpec_New(NULL, NULL, NULL);
+  }
+
+  PyObject *lcls = PyList_New(c);
+  if (! lcls)
+    return NULL;
+
+  size_t offset = 0;
+  COPY_OVER(lcls, pos, offset);
+  COPY_OVER(lcls, pos_only, offset);
+  COPY_OVER(lcls, kwd, offset);
+  COPY_OVER(lcls, kwd_only, offset);
+
+  if (star) {
+    Py_INCREF(star);
+    PyList_SET_ITEM(lcls, offset++, star);
+  }
+  if (starstar) {
+    Py_INCREF(starstar);
+    PyList_SET_ITEM(lcls, offset++, starstar);
+  }
+
+  if (c != offset) {
+    Py_DECREF(lcls);
+    PyErr_Format(PyExc_RuntimeError, "c (%i) != offset (%i)",
+                 (int) c, (int) offset);
+    return NULL;
+  }
+
+  PyObject *name = NULL;
+  PyObject *clsr = NULL;
+
+  if (base_nspec) {
+    list_unique_extend(lcls, KosNamespaceSpec_LOCAL_SYMS(base_nspec));
+    name = KosNamespaceSpec_NAME(base_nspec);
+    clsr = KosNamespaceSpec_CLOSURE_SYMS(base_nspec);
+  }
+
+  PyObject *result = KosNamespaceSpec_New(name, lcls, clsr);
+  Py_DECREF(lcls);
+  return result;
+}
+
+
 PyObject *KosFormalsSpec_NamespaceSpec(PyObject *fspec,
                                        PyObject *nspec) {
-  size_t l = 0;
-  size_t c = 0;
 
   if (! KosFormalsSpec_CheckExact(fspec)) {
     PyErr_Format(PyExc_TypeError, "FormalsSpec required, got %R", fspec);
@@ -319,86 +379,14 @@ PyObject *KosFormalsSpec_NamespaceSpec(PyObject *fspec,
     return NULL;
   }
 
-  l = SAFE_SIZE(KosFormalsSpec_POS(fspec));
-  if (l < 0)
-    return NULL;
-  c += l;
-
-  l = SAFE_SIZE(KosFormalsSpec_POS_ONLY(fspec));
-  if (l < 0)
-    return NULL;
-  c += l;
-
-  l = SAFE_SIZE(KosFormalsSpec_KWD(fspec));
-  if (l < 0)
-    return NULL;
-  c += l;
-
-  l = SAFE_SIZE(KosFormalsSpec_KWD_ONLY(fspec));
-  if (l < 0)
-    return NULL;
-  c += l;
-
-  if (KosFormalsSpec_STAR(fspec))
-    c++;
-  if (KosFormalsSpec_STARSTAR(fspec))
-    c++;
-
-  // c is the count of local bindings we would be creating from our
-  // formals. If there aren't any, return the namespace spec we've
-  // been handed. If we weren't handed one, return a new empty one.
-  if (! c) {
-    if (nspec) {
-      Py_INCREF(nspec);
-    } else {
-      nspec = KosNamespaceSpec_New(NULL, NULL, NULL);
-    }
-    return nspec;
-  }
-
-  // pre-allocate a list of the right length for our formals, then
-  // copy them in.
-
-  PyObject *lcls = PyList_New(c);
-  size_t offset = 0;
-
-  COPY_OVER(lcls, KosFormalsSpec_POS(fspec), offset);
-  COPY_OVER(lcls, KosFormalsSpec_POS_ONLY(fspec), offset);
-  COPY_OVER(lcls, KosFormalsSpec_KWD(fspec), offset);
-  COPY_OVER(lcls, KosFormalsSpec_KWD_ONLY(fspec), offset);
-
-  PyObject *name;
-
-  name = KosFormalsSpec_STAR(fspec);
-  if (name) {
-    Py_INCREF(name);
-    PyList_SET_ITEM(lcls, offset++, name);
-  }
-  name = KosFormalsSpec_STARSTAR(fspec);
-  if (name) {
-    Py_INCREF(name);
-    PyList_SET_ITEM(lcls, offset++, name);
-  }
-
-  if (c != offset) {
-    PyErr_Format(PyExc_RuntimeError, "c (%i) != offset (%i)", c, offset);
-    Py_DECREF(lcls);
-    return NULL;
-  }
-
-  name = NULL;
-  PyObject *clsr = NULL;
-
-  if (nspec) {
-    list_unique_extend(lcls, KosNamespaceSpec_LOCAL_SYMS(nspec));
-
-    name = KosNamespaceSpec_NAME(nspec);
-    clsr = KosNamespaceSpec_CLOSURE_SYMS(nspec);
-  }
-
-  PyObject *result = KosNamespaceSpec_New(name, lcls, clsr);
-  Py_DECREF(lcls);
-  return result;
+  return formals_nspec_impl(
+    KosFormalsSpec_POS(fspec),
+    KosFormalsSpec_POS_ONLY(fspec),
+    KosFormalsSpec_KWD(fspec),
+    KosFormalsSpec_KWD_ONLY(fspec),
+    KosFormalsSpec_STAR(fspec),
+    KosFormalsSpec_STARSTAR(fspec),
+    nspec);
 }
 
 
@@ -419,82 +407,14 @@ PyObject *KosFormals_NamespaceSpec(PyObject *formals,
     return NULL;
   }
 
-  size_t l = 0;
-  size_t c = 0;
-
-  l = SAFE_SIZE(KosFormals_POS(formals));
-  if (l < 0)
-    return NULL;
-  c += l;
-
-  l = SAFE_SIZE(KosFormals_POS_ONLY(formals));
-  if (l < 0)
-    return NULL;
-  c += l;
-
-  l = SAFE_SIZE(KosFormals_KWD(formals));
-  if (l < 0)
-    return NULL;
-  c += l;
-
-  l = SAFE_SIZE(KosFormals_KWD_ONLY(formals));
-  if (l < 0)
-    return NULL;
-  c += l;
-
-  if (KosFormals_STAR(formals))
-    c++;
-  if (KosFormals_STARSTAR(formals))
-    c++;
-
-  if (! c) {
-    if (base_nspec) {
-      Py_INCREF(base_nspec);
-      return base_nspec;
-    }
-    return KosNamespaceSpec_New(NULL, NULL, NULL);
-  }
-
-  PyObject *lcls = PyList_New(c);
-  if (! lcls)
-    return NULL;
-
-  size_t offset = 0;
-  COPY_OVER(lcls, KosFormals_POS(formals), offset);
-  COPY_OVER(lcls, KosFormals_POS_ONLY(formals), offset);
-  COPY_OVER(lcls, KosFormals_KWD(formals), offset);
-  COPY_OVER(lcls, KosFormals_KWD_ONLY(formals), offset);
-
-  PyObject *name = KosFormals_STAR(formals);
-  if (name) {
-    Py_INCREF(name);
-    PyList_SET_ITEM(lcls, offset++, name);
-  }
-  name = KosFormals_STARSTAR(formals);
-  if (name) {
-    Py_INCREF(name);
-    PyList_SET_ITEM(lcls, offset++, name);
-  }
-
-  if (c != offset) {
-    Py_DECREF(lcls);
-    PyErr_Format(PyExc_RuntimeError, "c (%i) != offset (%i)",
-                 (int) c, (int) offset);
-    return NULL;
-  }
-
-  name = NULL;
-  PyObject *clsr = NULL;
-
-  if (base_nspec) {
-    list_unique_extend(lcls, KosNamespaceSpec_LOCAL_SYMS(base_nspec));
-    name = KosNamespaceSpec_NAME(base_nspec);
-    clsr = KosNamespaceSpec_CLOSURE_SYMS(base_nspec);
-  }
-
-  PyObject *result = KosNamespaceSpec_New(name, lcls, clsr);
-  Py_DECREF(lcls);
-  return result;
+  return formals_nspec_impl(
+    KosFormals_POS(formals),
+    KosFormals_POS_ONLY(formals),
+    KosFormals_KWD(formals),
+    KosFormals_KWD_ONLY(formals),
+    KosFormals_STAR(formals),
+    KosFormals_STARSTAR(formals),
+    base_nspec);
 }
 
 

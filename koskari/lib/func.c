@@ -182,8 +182,7 @@ static PyObject *func_obtain_call_namespace(KosFunction *fn) {
   PyObject *nspec = KosFormals_NamespaceSpec(fn->formals, NULL);
   if (! nspec)
     return NULL;
-  PyObject *frame_ns = PyObject_CallMethod(nspec, "get_namespace", "O",
-                                          fn->base_ns);
+  PyObject *frame_ns = KosNamespace_FromSpec(nspec, fn->base_ns);
   Py_DECREF(nspec);
   return frame_ns;
 }

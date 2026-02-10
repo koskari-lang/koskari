@@ -97,6 +97,13 @@ PyObject *KosNamespace_NewFull(
 
 
 /**
+   Build a namespace from the given NamespaceSpec and parent.
+   Same as NSPEC.get_namespace(parent). New reference or NULL on error.
+*/
+PyObject *KosNamespace_FromSpec(PyObject *nspec, PyObject *parent);
+
+
+/**
    Looks up Ref matching key.
 
    Borrowed reference, or NULL with error set

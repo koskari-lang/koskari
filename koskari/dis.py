@@ -89,11 +89,13 @@ def _format_arg(code, op_style, arg, cpool, local_names, closure_names):
             val = cpool[arg]
             return '%d (%s)' % (arg, _format_constant(val))
         return str(arg)
+
     if op_style == OpStyle.KOSTYLE_VAR:
         if 0 <= arg < len(cpool):
             name = cpool[arg]
             return '%d (%s)' % (arg, repr(name))
         return str(arg)
+
     if op_style == OpStyle.KOSTYLE_FASTVAR:
         # Fast index: locals then closures in nspec order
         n_local = len(local_names) if local_names else 0
@@ -104,10 +106,13 @@ def _format_arg(code, op_style, arg, cpool, local_names, closure_names):
         if closure_names and 0 <= idx < len(closure_names):
             return '%d (closure %s)' % (arg, repr(closure_names[idx]))
         return str(arg)
+
     if op_style == OpStyle.KOSTYLE_LABEL:
         return '%d (-> %d)' % (arg, arg)
+
     if op_style in (OpStyle.KOSTYLE_COUNT, OpStyle.KOSTYLE_PAIR_COUNT, OpStyle.KOSTYLE_STAR):
         return str(arg)
+
     return str(arg)
 
 

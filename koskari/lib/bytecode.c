@@ -1103,24 +1103,36 @@ PyCodeObject *KosCode_Faux(PyObject *self) {
   } while(0)
 
 
+/**
+   Create an IntEnum from the given name and pre-filled dict.
+   Consumes enum_dict (caller must not DECREF it). Returns new ref or NULL.
+*/
+static PyObject *create_int_enum(const char *name, PyObject *enum_dict) {
+
+  PyObject *enum_module = PyImport_ImportModule("enum");
+  if (! enum_module) {
+    Py_DECREF(enum_dict);
+    return NULL;
+  }
+
+  PyObject *res = PyObject_CallMethod(enum_module, "IntEnum", "sO",
+                                      name, enum_dict);
+
+  Py_DECREF(enum_dict);
+  Py_DECREF(enum_module);
+
+  return res;
+}
+
+
 PyObject *KosOpStyleEnum = NULL;
 
 
 static PyObject *create_opstyle_enum(void) {
 
-  PyObject *enum_module = NULL;
-  PyObject *enum_dict = NULL;
-
-  enum_module = PyImport_ImportModule("enum");
-  if (! enum_module) {
+  PyObject *enum_dict = PyDict_New();
+  if (! enum_dict)
     return NULL;
-  }
-
-  enum_dict = PyDict_New();
-  if (! enum_dict) {
-    Py_DECREF(enum_module);
-    return NULL;
-  }
 
   int_enum(enum_dict, KOSTYLE_COMPILE);
   int_enum(enum_dict, KOSTYLE_LABEL);
@@ -1132,13 +1144,7 @@ static PyObject *create_opstyle_enum(void) {
   int_enum(enum_dict, KOSTYLE_VAR);
   int_enum(enum_dict, KOSTYLE_FASTVAR);
 
-  PyObject *res = PyObject_CallMethod(enum_module, "IntEnum", "sO",
-                                      "OpStyle", enum_dict);
-
-  Py_DECREF(enum_dict);
-  Py_DECREF(enum_module);
-
-  return res;
+  return create_int_enum("OpStyle", enum_dict);
 }
 
 
@@ -1147,19 +1153,9 @@ PyObject *KosOpCodeEnum = NULL;
 
 static PyObject *create_opcode_enum(void) {
 
-  PyObject *enum_module = NULL;
-  PyObject *enum_dict = NULL;
-
-  enum_module = PyImport_ImportModule("enum");
-  if (! enum_module) {
+  PyObject *enum_dict = PyDict_New();
+  if (! enum_dict)
     return NULL;
-  }
-
-  enum_dict = PyDict_New();
-  if (! enum_dict) {
-    Py_DECREF(enum_module);
-    return NULL;
-  }
 
 #define OP(name, style)                         \
   int_enum(enum_dict, KOS_OP_##name);
@@ -1167,15 +1163,9 @@ static PyObject *create_opcode_enum(void) {
 #include "opcodes.incl"
 #undef OP
 
-  PyObject *res = PyObject_CallMethod(enum_module, "IntEnum", "sO",
-                                      "OpCode", enum_dict);
-
-  Py_DECREF(enum_dict);
-  Py_DECREF(enum_module);
-
-  if (! res) {
+  PyObject *res = create_int_enum("OpCode", enum_dict);
+  if (! res)
     return NULL;
-  }
 
   /* Attach style attribute to each opcode */
 #define OP(name, style)                                           \

@@ -59,18 +59,23 @@ static PyMemberDef nspec_members[] = {
 };
 
 
-static PyObject *nspec_m_namespace(PyObject *self, PyObject *parent) {
-  PyObject *res;
+PyObject *KosNamespace_FromSpec(PyObject *nspec, PyObject *parent) {
 
-  res = KosNamespace_NewFull(KosNamespaceSpec_NAME(self),
-                             parent,
-                             KosNamespaceSpec_LOCAL_SYMS(self),
-                             KosNamespaceSpec_CLOSURE_SYMS(self));
+  PyObject *res = KosNamespace_NewFull(KosNamespaceSpec_NAME(nspec),
+                                        parent,
+                                        KosNamespaceSpec_LOCAL_SYMS(nspec),
+                                        KosNamespaceSpec_CLOSURE_SYMS(nspec));
 
   if (PyErr_Occurred())
     Py_CLEAR(res);
 
   return res;
+}
+
+
+static PyObject *nspec_m_namespace(PyObject *self, PyObject *parent) {
+
+  return KosNamespace_FromSpec(self, parent);
 }
 
 
