@@ -418,12 +418,6 @@ static PyObject *eager_step_awaitable(
   /* Get __await__ */
   PyObject *await_iter = NULL;
 
-  if (! str_await) {
-    str_await = PyUnicode_InternFromString("__await__");
-    if (! str_await)
-      return NULL;
-  }
-
   PyObject *await_method = PyObject_GetAttr(awaitable, str_await);
   if (! await_method) {
     /* Maybe it's already an iterator? */
@@ -447,14 +441,6 @@ static PyObject *eager_step_awaitable(
        await_iter ? 1 : 0);
 
   /* Try first send(None) */
-  if (! str_send) {
-    str_send = PyUnicode_InternFromString("send");
-    if (! str_send) {
-      Py_DECREF(await_iter);
-      return NULL;
-    }
-  }
-
   PyObject *result = PyObject_CallMethodObjArgs(await_iter, str_send,
                                                 Py_None, NULL);
 

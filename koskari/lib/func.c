@@ -440,12 +440,6 @@ static PyObject *coroutine_send(PyObject *self, PyObject *value) {
 
   /* If waiting on Python awaitable, forward to it */
   if (coro->state == KOS_CORO_WAITING_PY && coro->ctx->py_await_iter) {
-    if (! coro_str_send) {
-      coro_str_send = PyUnicode_InternFromString("send");
-      if (! coro_str_send)
-        return NULL;
-    }
-
     PyObject *result = PyObject_CallMethodObjArgs(coro->ctx->py_await_iter,
                                                   coro_str_send, value, NULL);
 
@@ -557,12 +551,6 @@ static PyObject *coroutine_throw(PyObject *self, PyObject *args) {
 
   /* If waiting on Python awaitable, forward throw */
   if (coro->state == KOS_CORO_WAITING_PY && coro->ctx->py_await_iter) {
-    if (! coro_str_throw) {
-      coro_str_throw = PyUnicode_InternFromString("throw");
-      if (! coro_str_throw)
-        return NULL;
-    }
-
     PyObject *result = PyObject_CallMethodObjArgs(coro->ctx->py_await_iter,
                                                   coro_str_throw, typ, val, tb,
                                                   NULL);
@@ -610,12 +598,6 @@ static PyObject *coroutine_close(PyObject *self) {
 
   /* Close any pending Python awaitable */
   if (coro->ctx->py_await_iter) {
-    if (! coro_str_close) {
-      coro_str_close = PyUnicode_InternFromString("close");
-      if (! coro_str_close)
-        return NULL;
-    }
-
     PyObject *result = PyObject_CallMethodObjArgs(coro->ctx->py_await_iter,
                                                   coro_str_close, NULL);
     Py_XDECREF(result);
@@ -1203,6 +1185,10 @@ int koskari_func_init(PyObject *mod) {
   PyObject *dict = PyModule_GetDict(mod);
   if (! dict)
     return -1;
+
+  STR_CONST(coro_str_send, "send");
+  STR_CONST(coro_str_throw, "throw");
+  STR_CONST(coro_str_close, "close");
 
   if (PyType_Ready(&KosExpressionType) ||
       PyType_Ready(&KosFunctionType) ||
