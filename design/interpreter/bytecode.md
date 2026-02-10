@@ -236,6 +236,21 @@ typedef enum KosOpStyle {
 - `KOS_OP_LABEL`: Jump target (not emitted)
 - `KOS_OP_POSITION`: Source position (not emitted, stored in positions table)
 
+## Opcode implementation status
+
+Handlers live in `koskari/lib/eval.c`. Each opcode has a handler; it is either **fully implemented** or a **stub** that calls `op_unimplemented_stub` (runtime error if executed). There are no partially implemented opcodes.
+
+- **Fully implemented**: Stack (NOOP, LABEL, POSITION, DUP, POP, CONST); RETURN, AWAIT; CALL (simple call); GLOBALS, LOCALS; VAR, VAR_BIND; exception ops (EXCEPTION, EXCEPTION_CLEAR, EXCEPTION_MATCH, RAISE, CHECK_EXCEPTION); try/finally (PUSH_TRY, PUSH_FINALLY, POP_TRY, POP_FINALLY, CLEAR_TRY, CLEAR_FINALLY); delimited continuations (PUSH_PROMPT, SET_PROMPT_HANDLER, POP_PROMPT, SHIFT); INVOKE_K; all OBJECT_* opcodes.
+- **Stubs (unimplemented)**: THEEND, BREAK, CONTINUE, YIELD, YIELD_FROM; ITER_NEXT, AWAIT_NEXT; all jumps (JUMP, JUMP_FALSE, JUMP_TRUE, JUMP_AND, JUMP_OR) and check-jumps except CHECK_EXCEPTION; VAR_CLEAR, VAR_REF, VAR_STORE; all FAST*; all ATTR*, ITEM*, CONST_ITEM*; argument-building (BUILD_*, COMBINE_*); CALL_NAMES, CALL_STAR, CALL_ATTR*, RECUR*, TAIL_*; block control (PUSH_*/POP_*/CLEAR_* for foreach/with/begin/class/loop/ns); PUSH_WIND, POP_WIND, END_WIND; PUSH_REGION, POP_REGION.
+
+For the full categorized list, see [FEATURES.md](../FEATURES.md) § "Opcodes: implementation status".
+
+## Creating and calling code (expressions and functions)
+
+- **Expression**: `Code.expression(parent_ns)` returns an **Expression** (code + namespace). Calling it with `()` creates a **Coroutine** that runs that code in that namespace (no arguments).
+- **Function**: `Code.function(formals, parent_ns)` returns a **Function** (code + formals + base namespace). Calling it with `(*args, **kwargs)` binds formals, builds a frame namespace, and creates a **Coroutine** that runs the code in that frame.
+- **Execution**: Driving the Coroutine (e.g. Python `await` or `send`) invokes `koskari_eval()`. A Koskari **CALL** with a KosExpression or KosFunction pushes a new frame via `kos_koscall` and continues in the same loop. See [evaluator.md](evaluator.md) and [FEATURES.md](../FEATURES.md) § "Creating and calling functions and expressions".
+
 ## Comparison with Previous Implementations
 
 ### From python-sibilant

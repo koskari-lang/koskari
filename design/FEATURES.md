@@ -74,10 +74,39 @@ This document provides a high-level summary of all features identified from both
 
 ### Bytecode
 - **Format**: Custom compact bytecode (4 bytes per instruction)
-- **Opcodes**: Comprehensive opcode set for all operations
+- **Opcodes**: Comprehensive opcode set for all operations; see "Opcodes: implementation status" below for which are implemented in the VM.
 - **Structure**: Code (with NamespaceSpec), position table, constant pool
 - **Position**: Delta-encoded line/column tracking
 - **Security**: Read-only memory protection after initialization
+
+### Opcodes: implementation status
+The VM in `eval.c` uses a jump table; every opcode has a handler. Handlers are either **fully implemented**, **partially implemented**, or **stubs** (delegate to `op_unimplemented_stub`, which raises at runtime). Status is as of the current koskari implementation.
+
+**Fully implemented** (handler does real work; no stub):
+- **Pseudo / stack**: NOOP, LABEL, POSITION, DUP, POP, CONST
+- **Control**: RETURN, AWAIT
+- **Calls**: CALL (simple positional call; KosExpression/KosFunction → new frame via `kos_koscall`)
+- **Introspection**: GLOBALS, LOCALS
+- **Variables**: VAR (load by name), VAR_BIND (bind by name)
+- **Exceptions**: EXCEPTION, EXCEPTION_CLEAR, EXCEPTION_MATCH, RAISE, CHECK_EXCEPTION
+- **Try/finally**: PUSH_TRY, PUSH_FINALLY, POP_TRY, POP_FINALLY, CLEAR_TRY, CLEAR_FINALLY
+- **Delimited continuations**: PUSH_PROMPT, SET_PROMPT_HANDLER, POP_PROMPT, SHIFT
+- **Continuation invocation**: INVOKE_K
+- **Object protocol**: All OBJECT_* opcodes (comparisons, arithmetic, predicates, len/type/iter/str/repr/vars/dir, bitwise, in/not in, is/is not, isinstance/issubclass, etc.)
+
+**Not implemented (stubs)** — hitting these at runtime raises "unimplemented opcode":
+- **Control / mode**: THEEND, BREAK, CONTINUE, YIELD, YIELD_FROM
+- **Iteration**: ITER_NEXT, AWAIT_NEXT
+- **Jumps**: JUMP, JUMP_FALSE, JUMP_TRUE, JUMP_AND, JUMP_OR
+- **Check jumps**: CHECK_EQ, CHECK_NE, CHECK_LT, CHECK_LE, CHECK_GT, CHECK_GE, CHECK_IN, CHECK_NOT_IN, CHECK_IS, CHECK_IS_NOT, CHECK_IS_INSTANCE, CHECK_IS_SUBCLASS
+- **Variables**: VAR_CLEAR, VAR_REF, VAR_STORE; all FAST* (FAST, FAST_BIND, FAST_CLEAR, FAST_REF, FAST_STORE)
+- **Attributes / items**: ATTR, ATTR_CLEAR, ATTR_REF, ATTR_STORE; ITEM, ITEM_CLEAR, ITEM_REF, ITEM_STORE; CONST_ITEM, CONST_ITEM_CLEAR, CONST_ITEM_REF, CONST_ITEM_STORE
+- **Argument building**: BUILD_ARGS, BUILD_FUNCTION, BUILD_KWDS, BUILD_KWDS_NAMES, COMBINE_ARGS, COMBINE_KWDS
+- **Calls**: CALL_NAMES, CALL_STAR; CALL_ATTR, CALL_ATTR_NAMES, CALL_ATTR_STAR; RECUR, RECUR_NAMES, RECUR_STAR; TAIL_CALL, TAIL_CALL_NAMES, TAIL_CALL_STAR; TAIL_RECUR, TAIL_RECUR_NAMES, TAIL_RECUR_STAR
+- **Block control**: PUSH_FOREACH, PUSH_WITH, PUSH_BEGIN, PUSH_CLASS, PUSH_LOOP, PUSH_NS; CLEAR_FINALLY, CLEAR_LOOP, CLEAR_TRY; POP_WITH, POP_BEGIN, POP_FINALLY, POP_LOOP, POP_NS
+- **Wind / region**: PUSH_WIND, POP_WIND, END_WIND; PUSH_REGION, POP_REGION
+
+There are no **partially** implemented opcodes; each handler is either full or stub. The authoritative list is the set of handlers in `koskari/lib/eval.c` that do not call `op_unimplemented_stub`.
 
 ### Compiler
 - **Phases**: Parse → Expand → Compile → Optimize → Generate
@@ -88,6 +117,12 @@ This document provides a high-level summary of all features identified from both
 - **Model**: Custom drive loop (`koskari_eval` in eval.c). Callable types Expression and Function (func.c) return a KosCoroutine; driving the coroutine (await/send) runs the evaluator. Continuation call returns a KosCoroutine that resumes the captured segment.
 - **Frame**: Custom frame type with stack and namespace
 - **Blocks**: try, loop, with, finally management
+
+### Creating and calling functions and expressions
+- **Code**: Compiled bytecode is stored in a `Code` object (namespace spec, instructions, constant pool, position table). Code is produced by the compiler (not yet implemented); tests and tools build it manually.
+- **Expressions**: `Code.expression(parent_ns)` builds an **Expression** from a `Code` and a parent **Namespace**. An Expression is nullary: calling it with `()` creates a **Coroutine** that runs that code in that namespace. No argument binding; used for thunks, modules, or single-shot code.
+- **Functions**: `Code.function(formals, parent_ns)` builds a **Function** from a `Code`, a **Formals** instance (parameter spec + defaults), and a parent namespace. Calling a Function with `(*args, **kwargs)` binds the formals to the arguments, builds a frame namespace (via the formals’ NamespaceSpec), applies the bindings, then creates a **Coroutine** that runs the code in that frame namespace.
+- **Call flow**: Calling an Expression or Function returns a **Coroutine**. Driving the coroutine (Python `await`, or `send(None)`/`send(value)`) invokes `koskari_eval()` until a boundary event (RETURN, RAISE, YIELD, AWAIT). For AWAIT, the VM suspends and the driver steps the Python awaitable; on completion the result is injected and evaluation resumes. Koskari-to-Koskari calls use `kos_koscall` / `kos_tail_koscall` (CALL opcode); the callee is a KosExpression or KosFunction, so the runtime creates a new frame and pushes it onto the dynamic chain and continues the same drive loop.
 
 ### Runtime
 - **Modules**: Module creation and loading

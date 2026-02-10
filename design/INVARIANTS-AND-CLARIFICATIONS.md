@@ -27,7 +27,7 @@ These are **commitments**: they must hold for correct behavior. They are elabora
 
 - **Flattening (stackless)**: The evaluator is internally flattening (stackless): nested Koskari calls do **not** consume the C call stack. Instead, execution state is represented by heap-allocated linked structures. Dynamic nodes and frames are interleaved into a heap-allocated linked list representing execution history. From CPython's perspective, the Koskari evaluator is opaque and invisible.
 
-- **Entry point**: The evaluator is driven by `koskari_eval()`, which is invoked when a Python caller drives a KosCoroutine (e.g. via `await` or `send`) or a KosPyAsyncGen. KosCoroutines are created by calling a KosExpression or KosFunction (their `tp_call` returns a new KosCoroutine) or by calling a KosPyContinuation (which also returns a KosCoroutine). There is no direct Python “run” that bypasses the coroutine wrapper.
+- **Entry point**: The evaluator is driven by `koskari_eval()`, which is invoked when a Python caller drives a KosCoroutine (e.g. via `await` or `send`) or a KosPyAsyncGen. KosCoroutines are created by calling a KosExpression or KosFunction (their `tp_call` returns a new KosCoroutine) or by calling a KosPyContinuation (which also returns a KosCoroutine). There is no direct Python “run” that bypasses the coroutine wrapper. Expressions are built with `Code.expression(parent_ns)`; functions with `Code.function(formals, parent_ns)`. For the full flow, see `design/FEATURES.md` § "Creating and calling functions and expressions" and `design/interpreter/bytecode.md` § "Creating and calling code".
 
 - **Dual perspectives**: Execution can be observed as (1) **Koskari view** (bytecode evaluating, calling Koskari functions) or (2) **Python view** (Python calling into a Koskari callable). Both are projections of a **single evaluator**, not two runtimes.
 
@@ -148,6 +148,7 @@ These are **commitments**: they must hold for correct behavior. They are elabora
 - **Instruction**: 4 bytes = `KosOp { op, arg }` (both uint16_t). The exact bytecode encoding is not finalized; current aim is a fixed-width encoding of (uint16 op, uint16 arg).
 - **Position**: Stored in a separate delta-encoded table; only changes are recorded; lookup by instruction index is binary search.
 - **Opcodes**: Defined in `opcodes.incl` with `OP(name, style)`. Styles: COMPILE, LABEL, NOARG, COUNT, PAIR_COUNT, STAR, CONST, VAR, FASTVAR. Categories include stack, control flow, jumps, variables (VAR / FASTVAR), attributes, items, calls (including tail/recur), block control, delimited continuations (PUSH_PROMPT, SET_PROMPT_HANDLER, POP_PROMPT, SHIFT), dynamic wind (PUSH_WIND, POP_WIND, END_WIND), continuation invocation (INVOKE_K), region control, object protocol, iteration, introspection, exceptions.
+- **Implementation status**: Each opcode has a handler in `eval.c`; handlers are either fully implemented or stubs (`op_unimplemented_stub`). The list of **fully implemented** vs **unimplemented (stub)** opcodes is documented in `design/FEATURES.md` (§ "Opcodes: implementation status") and summarized in `design/interpreter/bytecode.md` (§ "Opcode implementation status"). There are no partially implemented opcodes.
 
 **OPEN** (not settled): Full opcode set and per-opcode semantics; bytecode word size and encoding details beyond tentative format; full opcode inventory and formal operand conventions; precise opcode-level semantics for local-only jumps; exact taxonomy of continuation-related exceptions.
 
@@ -186,14 +187,14 @@ These are **commitments**: they must hold for correct behavior. They are elabora
 - Continuation: capture, validate, clone, invoke, transfer plan, LCA (dynchain.c, eval.c).
 - Wind: push/pop wind, hook runner, begin/hook_active/end_hook (dynchain.c, eval.c).
 - Evaluator core: KosContext, KosFrame, kos_context_new/free, kos_frame_new/clone/free, kos_koscall, kos_tail_koscall (eval.c).
-- Drive loop: `koskari_eval()` is implemented with opcode fetch, dispatch table, and boundary handling. Many opcodes are implemented (stack, constants, exceptions, try/finally, delimited continuations, object protocol); many others are still stubs that raise "unimplemented opcode" at runtime.
+- Drive loop: `koskari_eval()` is implemented with opcode fetch, dispatch table, and boundary handling. Fully implemented opcodes include stack, constants, RETURN/AWAIT, simple CALL, variables (VAR, VAR_BIND), exceptions and try/finally, delimited continuations (PUSH_PROMPT, SET_PROMPT_HANDLER, POP_PROMPT, SHIFT), INVOKE_K, and the full object-protocol set (OBJECT_*). All other opcodes are stubs that raise "unimplemented opcode" at runtime; see `design/FEATURES.md` § "Opcodes: implementation status".
 - Python wrappers: KosPyContinuation, KosPyAsyncGen, KosPyAsyncGenASend (eval.c); KosCoroutine and `kos_run_code_as_coroutine` (func.c). KosCoroutine drive (send/throw/close) in func.c; async-gen drive and eager-step await in eval.c.
 - GC: traverse helpers for context, frame, stack block, chain, continuation, transfer plan, hook runner (eval.c, dynchain.c).
 - Operators: reducing arithmetic, bitwise, membership, build-str; apply, reapply, identity, constantly, _pass; build_tuple, build_list, build_set, build_dict (operator.c, lib.c).
 
 **Not yet implemented**:
 
-- Remaining opcode handlers (variables, attributes, items, calls, blocks, loops, etc. — currently stubs).
+- Remaining opcode handlers: variables (VAR_CLEAR, VAR_REF, VAR_STORE; all FAST*), attributes, items, argument building, CALL_NAMES/CALL_STAR/CALL_ATTR*/RECUR*/TAIL_*, block control (foreach/with/begin/loop/ns, wind, region), jumps and check-jumps (except CHECK_EXCEPTION), THEEND/BREAK/CONTINUE/YIELD/YIELD_FROM, ITER_NEXT/AWAIT_NEXT. See `design/FEATURES.md` § "Opcodes: implementation status".
 - Compiler (parse → expand → compile → bytecode).
 - Module creation/loading and import system integration.
 - Most special forms (only types, parsing, and runtime primitives exist).
