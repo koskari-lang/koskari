@@ -74,16 +74,25 @@ static void expression_dealloc(PyObject *self) {
 }
 
 
+PyObject *KosExpression_Eval(PyObject *self) {
+
+  KosExpression *ex = (KosExpression *) self;
+  return KosCoroutine_NewFromCode(ex->code, ex->ns);
+}
+
+
 static PyObject *expression_call(PyObject *self, PyObject *args,
                                  PyObject *kwargs) {
-  KosExpression *ex = (KosExpression *) self;
 
-  (void) kwargs;
-  if (PyTuple_GET_SIZE(args) != 0) {
+  if (args && PyTuple_GET_SIZE(args) != 0) {
     PyErr_SetString(PyExc_TypeError, "Expression() takes no arguments");
     return NULL;
   }
-  return KosCoroutine_NewFromCode(ex->code, ex->ns);
+  if (kwargs && PyDict_Size(kwargs) != 0) {
+    PyErr_SetString(PyExc_TypeError, "Expression takes no named arguments");
+    return NULL;
+  }
+  return KosExpression_Eval(self);
 }
 
 
@@ -109,15 +118,14 @@ PyTypeObject KosExpressionType = {
 };
 
 
-/* === KosFunction: callable (code, base_ns, formals_spec) or (code, formals, base_ns) -> coroutine on __call__ === */
+/* === KosFunction: callable (code, formals, base_ns) -> coroutine on __call__ === */
 
 
 typedef struct {
   PyObject_HEAD
   PyObject *code;
   PyObject *base_ns;
-  PyObject *formals_spec;   /* set when created via Function(code, base_ns, formals_spec) */
-  PyObject *formals;        /* set when created via Code.function(formals, parent_ns) */
+  PyObject *formals;
 } KosFunction;
 
 
@@ -126,6 +134,7 @@ static int function_init(KosFunction *self, PyObject *args,
   PyObject *code = NULL;
   PyObject *base_ns = NULL;
   PyObject *formals_spec = NULL;
+  PyObject *formals = NULL;
 
   (void) kwargs;
   if (! PyArg_ParseTuple(args, "OOO:Function", &code, &base_ns, &formals_spec))
@@ -144,13 +153,14 @@ static int function_init(KosFunction *self, PyObject *args,
     PyErr_SetString(PyExc_TypeError, "base namespace is required");
     return -1;
   }
+  formals = KosFormals_New(formals_spec, NULL);
+  if (! formals)
+    return -1;
   Py_INCREF(code);
   Py_INCREF(base_ns);
-  Py_INCREF(formals_spec);
   self->code = code;
   self->base_ns = base_ns;
-  self->formals_spec = formals_spec;
-  self->formals = NULL;
+  self->formals = formals;
   return 0;
 }
 
@@ -159,79 +169,66 @@ static void function_dealloc(PyObject *self) {
   KosFunction *fn = (KosFunction *) self;
   Py_CLEAR(fn->code);
   Py_CLEAR(fn->base_ns);
-  Py_CLEAR(fn->formals_spec);
   Py_CLEAR(fn->formals);
   Py_TYPE(self)->tp_free(self);
 }
 
 
-static PyObject *function_call(PyObject *self, PyObject *args,
-                               PyObject *kwargs) {
+/**
+   Obtain the call namespace for a function: formals' namespace spec
+   applied to base_ns.  Returns new reference or NULL on error.
+*/
+static PyObject *func_obtain_call_namespace(KosFunction *fn) {
+  PyObject *nspec = KosFormals_NamespaceSpec(fn->formals, NULL);
+  if (! nspec)
+    return NULL;
+  PyObject *frame_ns = PyObject_CallMethod(nspec, "get_namespace", "O",
+                                          fn->base_ns);
+  Py_DECREF(nspec);
+  return frame_ns;
+}
+
+
+PyObject *KosFunction_Call(PyObject *self,
+                           PyObject *args, PyObject *kwds) {
+
   KosFunction *fn = (KosFunction *) self;
-  PyObject *formals = NULL;
-  PyObject *nspec = NULL;
   PyObject *frame_ns = NULL;
   PyObject *coro = NULL;
 
-  if (! kwargs)
-    kwargs = PyDict_New();
-  else
-    Py_INCREF(kwargs);
+  frame_ns = func_obtain_call_namespace(fn);
+  if (! frame_ns)
+    goto fail;
 
-  if (fn->formals) {
-    /* Assembled via Code.function(formals, parent_ns) */
-    formals = fn->formals;
-    Py_INCREF(formals);
-    nspec = KosFormals_NamespaceSpec(formals, NULL);
-    if (! nspec)
-      goto fail;
-    frame_ns = PyObject_CallMethod(nspec, "get_namespace", "O", fn->base_ns);
-    Py_DECREF(nspec);
-    nspec = NULL;
-    if (! frame_ns)
-      goto fail;
-    if (KosFormals_Apply(formals, frame_ns, args, kwargs) < 0)
-      goto fail;
-    Py_DECREF(formals);
-    formals = NULL;
-  } else {
-    /* Assembled via Function(code, base_ns, formals_spec) */
-    formals = PyObject_CallObject(fn->formals_spec, NULL);
-    if (! formals)
-      goto fail;
-    nspec = KosFormalsSpec_NamespaceSpec(fn->formals_spec, NULL);
-    if (! nspec)
-      goto fail;
-    frame_ns = PyObject_CallMethod(nspec, "get_namespace", "O", fn->base_ns);
-    Py_DECREF(nspec);
-    nspec = NULL;
-    if (! frame_ns)
-      goto fail;
-    if (KosFormals_Apply(formals, frame_ns, args, kwargs) < 0)
-      goto fail;
-    Py_DECREF(formals);
-    formals = NULL;
-  }
+  if (KosFormals_Apply(fn->formals, frame_ns, args, kwds) < 0)
+    goto fail;
 
-  Py_DECREF(kwargs);
-  kwargs = NULL;
   coro = KosCoroutine_NewFromCode(fn->code, frame_ns);
   Py_DECREF(frame_ns);
   return coro;
 
  fail:
-  Py_XDECREF(formals);
-  Py_XDECREF(nspec);
   Py_XDECREF(frame_ns);
-  Py_XDECREF(kwargs);
   return NULL;
+}
+
+
+PyObject *KosFunction_CallNoArgs(PyObject *self) {
+
+  return KosFunction_Call(self, NULL, NULL);
+}
+
+
+static PyObject *function_call(PyObject *self,
+                               PyObject *args, PyObject *kwargs) {
+
+  return KosFunction_Call(self, args, kwargs);
 }
 
 
 static PyMemberDef function_members[] = {
   { "code", T_OBJECT, offsetof(KosFunction, code), READONLY, NULL },
   { "base_ns", T_OBJECT, offsetof(KosFunction, base_ns), READONLY, NULL },
-  { "formals_spec", T_OBJECT, offsetof(KosFunction, formals_spec), READONLY, NULL },
   { "formals", T_OBJECT, offsetof(KosFunction, formals), READONLY, NULL },
   { NULL, 0, 0, 0, NULL },
 };
@@ -282,9 +279,10 @@ PyObject *KosExpression_New(PyObject *code, PyObject *ns) {
 }
 
 
-PyObject *KosFunction_NewFromFormals(PyObject *code,
-                                      PyObject *formals,
-                                      PyObject *parent_ns) {
+PyObject *KosFunction_NewFromFormals(
+    PyObject *code,
+    PyObject *formals,
+    PyObject *parent_ns) {
 
   if (! KosCode_Check(code)) {
     PyErr_Format(PyExc_TypeError, "Function code must be Code, not %R", code);
@@ -315,7 +313,6 @@ PyObject *KosFunction_NewFromFormals(PyObject *code,
   Py_INCREF(parent_ns);
   fn->code = code;
   fn->base_ns = parent_ns;
-  fn->formals_spec = NULL;
   fn->formals = formals;
   return self;
 }
@@ -481,68 +478,67 @@ static PyObject *coroutine_send(PyObject *self, PyObject *value) {
   coro->in_send = 1;
   coro->state = KOS_CORO_RUNNING;
 
-  for (;;) {
-    KosEvent ev = {.kind = KOS_EV_RETURN, .payload = NULL};
-    int res = koskari_eval(coro->ctx, &ev);
+  KosEvent ev = {.kind = KOS_EV_RETURN, .payload = NULL};
+  int res = koskari_eval(coro->ctx, &ev);
 
-    coro->in_send = 0;
+  coro->in_send = 0;
 
-    SAYF("[coroutine_send] koskari_eval -> res=%d ev.kind=%d, payload=%R\n",
-         res, ev.kind, ev.payload);
+  SAYF("[coroutine_send] koskari_eval -> res=%d ev.kind=%d, payload=%R\n",
+        res, ev.kind, ev.payload);
 
-    if (res < 0) {
-      coro->state = KOS_CORO_DONE;
-      return NULL;
-    }
-
-    switch (ev.kind) {
-      case KOS_EV_RETURN:
-        coro->state = KOS_CORO_DONE;
-
-        // we do this manually to bypass the problem with tuple payloads.
-        // There is an annoying extra behavior in Python where if you set an
-        // exception with a tuple payload, it unpacks it as the args for the
-        // exception. So we'll create the exception instance ourselves to
-        // avoid that.
-        PyObject *err = PyObject_CallOneArg(PyExc_StopIteration, ev.payload);
-        PyErr_SetObject(PyExc_StopIteration, err);
-        Py_DECREF(err);
-
-        Py_XDECREF(ev.payload);
-        return NULL;
-
-      case KOS_EV_RAISE:
-        coro->state = KOS_CORO_DONE;
-        if (ev.payload) {
-          PyErr_SetObject((PyObject *) Py_TYPE(ev.payload), ev.payload);
-          Py_DECREF(ev.payload);
-        }
-        return NULL;
-
-      case KOS_EV_YIELD:
-        /* For coroutines, yield is like await - return the value */
-        return ev.payload;
-
-      case KOS_EV_AWAIT: {
-        SAYF("[eval] coroutine_send KOS_EV_AWAIT branch (payload=%d)\n",
-             ev.payload ? 1 : 0);
-        if (! ev.payload) {
-          PyErr_SetString(PyExc_RuntimeError,
-                          "KOS_EV_AWAIT event has NULL payload");
-          coro->state = KOS_CORO_DONE;
-          return NULL;
-        }
-        /* Driver already stepped the awaitable in push_or_await and set
-           ctx->py_await_iter. Do not call eager_step_awaitable again (would
-           send(None) twice and corrupt state). Just suspend and return the
-           yielded value to the event loop. */
-        coro->state = KOS_CORO_WAITING_PY;
-        return ev.payload;  /* transfer ownership to caller (asyncio) */
-      }
-    }
-
-    PyErr_SetString(PyExc_RuntimeError, "unexpected event kind");
+  if (res < 0) {
+    coro->state = KOS_CORO_DONE;
     return NULL;
+  }
+
+  switch (ev.kind) {
+    case KOS_EV_RETURN:
+      coro->state = KOS_CORO_DONE;
+
+      // we do this manually to bypass the problem with tuple payloads.
+      // There is an annoying extra behavior in Python where if you set an
+      // exception with a tuple payload, it unpacks it as the args for the
+      // exception. So we'll create the exception instance ourselves to
+      // avoid that.
+      PyObject *err = PyObject_CallOneArg(PyExc_StopIteration, ev.payload);
+      PyErr_SetObject(PyExc_StopIteration, err);
+      Py_DECREF(err);
+
+      Py_XDECREF(ev.payload);
+      return NULL;
+
+    case KOS_EV_RAISE:
+      coro->state = KOS_CORO_DONE;
+      if (ev.payload) {
+        PyErr_SetObject((PyObject *) Py_TYPE(ev.payload), ev.payload);
+        Py_DECREF(ev.payload);
+      }
+      return NULL;
+
+    case KOS_EV_YIELD:
+      /* For coroutines, yield is like await - return the value */
+      return ev.payload;
+
+    case KOS_EV_AWAIT: {
+      SAYF("[eval] coroutine_send KOS_EV_AWAIT branch (payload=%d)\n",
+            ev.payload ? 1 : 0);
+      if (! ev.payload) {
+        PyErr_SetString(PyExc_RuntimeError,
+                        "KOS_EV_AWAIT event has NULL payload");
+        coro->state = KOS_CORO_DONE;
+        return NULL;
+      }
+      /* Driver already stepped the awaitable in push_or_await and set
+          ctx->py_await_iter. Do not call eager_step_awaitable again (would
+          send(None) twice and corrupt state). Just suspend and return the
+          yielded value to the event loop. */
+      coro->state = KOS_CORO_WAITING_PY;
+      return ev.payload;  /* transfer ownership to caller (asyncio) */
+    }
+
+    default:
+      PyErr_SetString(PyExc_RuntimeError, "unexpected event kind");
+      return NULL;
   }
 }
 
@@ -1209,22 +1205,12 @@ int koskari_func_init(PyObject *mod) {
   if (! dict)
     return -1;
 
-  if (PyType_Ready(&KosExpressionType))
-    return -1;
-
-  if (PyType_Ready(&KosFunctionType))
-    return -1;
-
-  if (PyType_Ready(&KosCoroutineType))
-    return -1;
-
-  if (PyType_Ready(&KosPyContinuationType))
-    return -1;
-
-  if (PyType_Ready(&KosPyAsyncGenType))
-    return -1;
-
-  if (PyType_Ready(&KosPyAsyncGenASendType))
+  if (PyType_Ready(&KosExpressionType) ||
+      PyType_Ready(&KosFunctionType) ||
+      PyType_Ready(&KosCoroutineType) ||
+      PyType_Ready(&KosPyContinuationType) ||
+      PyType_Ready(&KosPyAsyncGenType) ||
+      PyType_Ready(&KosPyAsyncGenASendType))
     return -1;
 
   if (PyDict_SetItemString(dict, "Expression",

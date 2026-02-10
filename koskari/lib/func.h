@@ -40,6 +40,15 @@ extern PyTypeObject KosExpressionType;
 PyObject *KosExpression_New(PyObject *code, PyObject *ns);
 
 
+/**
+   Run the expression's code in its namespace and return a new Coroutine.
+
+   :param expr: KosExpression instance
+   :return: new KosCoroutine, or NULL on error
+*/
+PyObject *KosExpression_Eval(PyObject *expr);
+
+
 /* === Function === */
 
 
@@ -60,6 +69,19 @@ extern PyTypeObject KosFunctionType;
 PyObject *KosFunction_NewFromFormals(PyObject *code,
                                      PyObject *formals,
                                      PyObject *parent_ns);
+
+
+/**
+   Call the function with no arguments.
+*/
+PyObject *KosFunction_CallNoArgs(PyObject *func);
+
+
+/**
+   Call the function with the given args and kwds.
+*/
+PyObject *KosFunction_Call(PyObject *func,
+                           PyObject *args, PyObject *kwds);
 
 
 /* === Run code as coroutine === */
