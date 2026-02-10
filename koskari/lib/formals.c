@@ -691,6 +691,121 @@ PyObject *KosFormals_NewFull(
 }
 
 
+/**
+   Shared kwargs phase: fill remaining pos/kwd/kwd_only from kwargs and
+   defaults, then store starstar or error on unexpected keywords.
+   Caller owns kwargs and must Py_XDECREF it on both success and failure.
+*/
+static int apply_formals_kwargs_phase(
+    PyObject *namespace,
+    PyObject *pos,
+    PyObject *pos_only,
+    PyObject *kwd,
+    PyObject *kwd_only,
+    PyObject *starstar,
+    PyObject *defaults,
+    PyObject *kwargs,
+    ssize_t ipos,
+    ssize_t ipos_only,
+    ssize_t ikwd,
+    ssize_t ikwd_only) {
+
+  ssize_t l;
+  PyObject *key = NULL;
+  PyObject *val = NULL;
+
+  (void) pos_only;
+
+  if (pos) {
+    l = PyTuple_GET_SIZE(pos);
+    for (; ipos < l; ipos++) {
+      key = PyTuple_GET_ITEM(pos, ipos);
+      val = kwargs ? PyDict_GetItem(kwargs, key) : NULL;
+
+      if (val)
+        PyDict_DelItem(kwargs, key);
+
+      if (! val) {
+        PyErr_Format(PyExc_TypeError, "missing positional argument %S", key);
+        return -1;
+      }
+
+      if (KosNamespace_Store(namespace, key, val))
+        return -1;
+    }
+  }
+
+  if (kwd) {
+    l = PyTuple_GET_SIZE(kwd);
+    for (; ikwd < l; ikwd++) {
+      key = PyTuple_GET_ITEM(kwd, ikwd);
+      val = kwargs ? PyDict_GetItem(kwargs, key) : NULL;
+
+      if (val) {
+        PyDict_DelItem(kwargs, key);
+      } else if (defaults) {
+        val = PyDict_GetItem(defaults, key);
+      }
+
+      if (! val) {
+        PyErr_Format(PyExc_TypeError, "missing keyword argument %S", key);
+        return -1;
+      }
+
+      if (KosNamespace_Store(namespace, key, val))
+        return -1;
+    }
+  }
+
+  if (kwd_only) {
+    l = PyTuple_GET_SIZE(kwd_only);
+    for (; ikwd_only < l; ikwd_only++) {
+      key = PyTuple_GET_ITEM(kwd_only, ikwd_only);
+      val = kwargs ? PyDict_GetItem(kwargs, key) : NULL;
+
+      if (val) {
+        PyDict_DelItem(kwargs, key);
+      } else if (defaults) {
+        val = PyDict_GetItem(defaults, key);
+      }
+
+      if (! val) {
+        PyErr_Format(PyExc_TypeError,
+                     "missing keyword-only argument %S", key);
+        return -1;
+      }
+
+      if (KosNamespace_Store(namespace, key, val))
+        return -1;
+    }
+  }
+
+  if (starstar) {
+    int kwargs_created = 0;
+    if (! kwargs) {
+      kwargs = PyDict_NewPresized(0);
+      if (! kwargs)
+        return -1;
+      kwargs_created = 1;
+    }
+
+    if (KosNamespace_Store(namespace, starstar, kwargs)) {
+      if (kwargs_created)
+        Py_DECREF(kwargs);
+      return -1;
+    }
+    if (kwargs_created)
+      Py_DECREF(kwargs);
+
+  } else if (kwargs && PyDict_Size(kwargs)) {
+    PyErr_Format(PyExc_TypeError, "unexpected keyword arguments %R", kwargs);
+    return -1;
+  }
+
+  return 0;
+}
+
+
 int KosFormals_Apply(
     PyObject *formals,
     PyObject *namespace,
@@ -811,113 +926,17 @@ int KosFormals_Apply(
       return -1;
   }
 
-  if (pos) {
-    // we're missing positional arguments, so let's see if we can dig
-    // them up from kwargs
-    PyObject *key = NULL;
-    PyObject *val = NULL;
-
-    l = PyTuple_GET_SIZE(pos);
-    for (; ipos < l; ipos++) {
-      key = PyTuple_GET_ITEM(pos, ipos);
-      val = kwargs? PyDict_GetItem(kwargs, key): NULL;
-
-      if (val)
-        PyDict_DelItem(kwargs, key);
-
-      if (! val) {
-        PyErr_Format(PyExc_TypeError, "missing positional argument %S", key);
-        goto fail_kwargs;
-      }
-
-      if (KosNamespace_Store(namespace, key, val)) {
-        goto fail_kwargs;
-      }
-    }
-
-    pos = NULL;
-  }
-
-  if (kwd) {
-    // we're missing keyword arguments, so let's see if we can find
-    // those in kwargs
-    PyObject *key = NULL;
-    PyObject *val = NULL;
-
-    l = PyTuple_GET_SIZE(kwd);
-    for (; ikwd < l; ikwd++) {
-      key = PyTuple_GET_ITEM(kwd, ikwd);
-      val = kwargs? PyDict_GetItem(kwargs, key): NULL;
-
-      if (val) {
-        PyDict_DelItem(kwargs, key);
-      } else if (defaults) {
-        val = PyDict_GetItem(defaults, key);
-      }
-
-      if (! val) {
-        PyErr_Format(PyExc_TypeError, "missing keyword argument %S", key);
-        goto fail_kwargs;
-      }
-
-      if (KosNamespace_Store(namespace, key, val)) {
-        goto fail_kwargs;
-      }
-    }
-
-    kwd = NULL;
-  }
-
-  if (kwd_only) {
-    // we're missing keyword-only arguments, so let's see if we can
-    // find those in kwargs
-    PyObject *key = NULL;
-    PyObject *val = NULL;
-
-    l = PyTuple_GET_SIZE(kwd_only);
-    for(; ikwd_only < l; ikwd_only++) {
-      key = PyTuple_GET_ITEM(kwd_only, ikwd_only);
-      val = kwargs? PyDict_GetItem(kwargs, key): NULL;
-
-      if (val) {
-        PyDict_DelItem(kwargs, key);
-      } else if (defaults) {
-        val = PyDict_GetItem(defaults, key);
-      }
-
-      if (! val) {
-        PyErr_Format(PyExc_TypeError, "missing keyword-only argument %S", key);
-        goto fail_kwargs;
-      }
-
-      if (KosNamespace_Store(namespace, key, val)) {
-        goto fail_kwargs;
-      }
-    }
-
-    kwd_only = NULL;
-  }
-
-  if (starstar) {
-    if (! kwargs)
-      kwargs = PyDict_NewPresized(0);
-
-    KosNamespace_Store(namespace, starstar, kwargs);
-    starstar = NULL;
-
-  } else if (kwargs && PyDict_Size(kwargs)) {
-    PyErr_Format(PyExc_TypeError, "unexpected keyword arguments %R", kwargs);
-    goto fail_kwargs;
+  if (apply_formals_kwargs_phase(namespace, pos, pos_only, kwd, kwd_only,
+                                 starstar, defaults, kwargs,
+                                 ipos, ipos_only, ikwd, ikwd_only) < 0) {
+    SAY("KosFormals_Apply -> fail_kwargs (-1)");
+    Py_XDECREF(kwargs);
+    return -1;
   }
 
   SAY("KosFormals_Apply -> 0");
   Py_XDECREF(kwargs);
   return 0;
-
- fail_kwargs:
-  SAY("KosFormals_Apply -> fail_kwargs (-1)");
-  Py_XDECREF(kwargs);
-  return -1;
 }
 
 
@@ -1060,110 +1079,17 @@ int KosFormals_VectorApply(
     }
   }
 
-  if (pos) {
-    // we're missing positional arguments, so let's see if we can dig
-    // them up from kwargs
-    PyObject *key = NULL;
-    PyObject *val = NULL;
-
-    l = PyTuple_GET_SIZE(pos);
-    for (; ipos < l; ipos++) {
-      key = PyTuple_GET_ITEM(pos, ipos);
-      val = kwargs? PyDict_GetItem(kwargs, key): NULL;
-
-      if (val)
-        PyDict_DelItem(kwargs, key);
-
-      if (! val) {
-        PyErr_Format(PyExc_TypeError, "missing positional argument %S", key);
-        goto fail_kwargs;
-      }
-
-      if (KosNamespace_Store(namespace, key, val))
-        goto fail_kwargs;
-    }
-
-    pos = NULL;
-  }
-
-  if (kwd) {
-    // we're missing keyword arguments, so let's see if we can find
-    // those in kwargs
-    PyObject *key = NULL;
-    PyObject *val = NULL;
-
-    l = PyTuple_GET_SIZE(kwd);
-    for (; ikwd < l; ikwd++) {
-      key = PyTuple_GET_ITEM(kwd, ikwd);
-      val = kwargs? PyDict_GetItem(kwargs, key): NULL;
-
-      if (val) {
-        PyDict_DelItem(kwargs, key);
-      } else if (defaults) {
-        val = PyDict_GetItem(defaults, key);
-      }
-
-      if (! val) {
-        PyErr_Format(PyExc_TypeError, "missing keyword argument %S", key);
-        goto fail_kwargs;
-      }
-
-      if (KosNamespace_Store(namespace, key, val))
-        goto fail_kwargs;
-    }
-
-    kwd = NULL;
-  }
-
-  if (kwd_only) {
-    // we're missing keyword-only arguments, so let's see if we can
-    // find those in kwargs
-    PyObject *key = NULL;
-    PyObject *val = NULL;
-
-    l = PyTuple_GET_SIZE(kwd_only);
-    for(; ikwd_only < l; ikwd_only++) {
-      key = PyTuple_GET_ITEM(kwd_only, ikwd_only);
-      val = kwargs? PyDict_GetItem(kwargs, key): NULL;
-
-      if (val) {
-        PyDict_DelItem(kwargs, key);
-      } else if (defaults) {
-        val = PyDict_GetItem(defaults, key);
-      }
-
-      if (! val) {
-        PyErr_Format(PyExc_TypeError, "missing keyword-only argument %S", key);
-        goto fail_kwargs;
-      }
-
-      if (KosNamespace_Store(namespace, key, val))
-        goto fail_kwargs;
-    }
-
-    kwd_only = NULL;
-  }
-
-  if (starstar) {
-    if (! kwargs)
-      kwargs = PyDict_NewPresized(0);
-
-    KosNamespace_Store(namespace, starstar, kwargs);
-    starstar = NULL;
-
-  } else if (kwargs && PyDict_Size(kwargs)) {
-    PyErr_Format(PyExc_TypeError, "unexpected keyword arguments %R", kwargs);
-    goto fail_kwargs;
+  if (apply_formals_kwargs_phase(namespace, pos, pos_only, kwd, kwd_only,
+                                 starstar, defaults, kwargs,
+                                 ipos, ipos_only, ikwd, ikwd_only) < 0) {
+    SAY(" -> -1");
+    Py_XDECREF(kwargs);
+    return -1;
   }
 
   SAY(" -> 0");
   Py_XDECREF(kwargs);
   return 0;
-
- fail_kwargs:
-  SAY(" -> -1");
-  Py_XDECREF(kwargs);
-  return -1;
 }
 
 
