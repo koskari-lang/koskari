@@ -2210,6 +2210,30 @@ KOS_OP_HANDLER(OBJECT_IS_SUBCLASS) {
 }
 
 
+/* Helper for CHECK_EQ/GE/GT/LE/LT/NE: pop right then left, RichCompareBool;
+   jump to insn->arg if comparison fails (res == 0). */
+static int kos_check_cmp(KosContext *ctx, KosEvent *out_ev, KosOp *insn,
+                         int cmp_op) {
+  PyObject *right = KosStackBlock_PopRef(&ctx->frame_top->stack);
+  if (! right)
+    return -1;
+  PyObject *left = KosStackBlock_PopRef(&ctx->frame_top->stack);
+  if (! left) {
+    Py_DECREF(right);
+    return -1;
+  }
+  int res = PyObject_RichCompareBool(left, right, cmp_op);
+  Py_DECREF(left);
+  Py_DECREF(right);
+  if (res < 0)
+    return -1;
+  if (res == 0)
+    ctx->frame_top->pc = insn->arg;
+  (void) out_ev;
+  return 0;
+}
+
+
 /* Unimplemented opcodes: documented handlers that delegate to op_unimplemented_stub. */
 
 /**
@@ -2270,140 +2294,294 @@ KOS_OP_HANDLER(AWAIT_NEXT) {
 
 
 /**
-   JUMP: arg = target PC. Unconditional branch; not yet implemented.
+   JUMP: arg = target PC. Unconditional branch.
 */
 KOS_OP_HANDLER(JUMP) {
-  return op_unimplemented_stub(ctx, out_ev, insn);
+  ctx->frame_top->pc = insn->arg;
+  (void) out_ev;
+  return 0;
 }
 
 
 /**
-   JUMP_FALSE: arg = target PC. Branch if TOS is false; not yet implemented.
+   JUMP_FALSE: arg = target PC. Branch if TOS is false.
 */
 KOS_OP_HANDLER(JUMP_FALSE) {
-  return op_unimplemented_stub(ctx, out_ev, insn);
+  PyObject *val = KosStackBlock_PopRef(&ctx->frame_top->stack);
+  if (! val)
+    return -1;
+  int res = PyObject_Not(val);
+  Py_DECREF(val);
+  if (res < 0)
+    return -1;
+  if (res)
+    ctx->frame_top->pc = insn->arg;
+  (void) out_ev;
+  return 0;
 }
 
 
 /**
-   JUMP_TRUE: arg = target PC. Branch if TOS is true; not yet implemented.
+   JUMP_TRUE: arg = target PC. Branch if TOS is true.
 */
 KOS_OP_HANDLER(JUMP_TRUE) {
-  return op_unimplemented_stub(ctx, out_ev, insn);
+  PyObject *val = KosStackBlock_PopRef(&ctx->frame_top->stack);
+  if (! val)
+    return -1;
+  int res = PyObject_IsTrue(val);
+  Py_DECREF(val);
+  if (res < 0)
+    return -1;
+  if (res)
+    ctx->frame_top->pc = insn->arg;
+  (void) out_ev;
+  return 0;
 }
 
 
 /**
-   JUMP_AND: arg = target PC. Short-circuit and; not yet implemented.
+   JUMP_AND: arg = target PC. Short-circuit and: if TOS is falsy, leave on
+   stack and jump; else pop and continue.
 */
 KOS_OP_HANDLER(JUMP_AND) {
-  return op_unimplemented_stub(ctx, out_ev, insn);
+  PyObject *val = KosStackBlock_PopRef(&ctx->frame_top->stack);
+  if (! val)
+    return -1;
+  int res = PyObject_Not(val);
+  if (res < 0) {
+    Py_DECREF(val);
+    return -1;
+  }
+  if (res) {
+    if (KosStackBlock_PushRef(&ctx->frame_top->stack, val) < 0) {
+      Py_DECREF(val);
+      return -1;
+    }
+    Py_DECREF(val);
+    ctx->frame_top->pc = insn->arg;
+  } else {
+    Py_DECREF(val);
+  }
+  (void) out_ev;
+  return 0;
 }
 
 
 /**
-   JUMP_OR: arg = target PC. Short-circuit or; not yet implemented.
+   JUMP_OR: arg = target PC. Short-circuit or: if TOS is truthy, leave on
+   stack and jump; else pop and continue.
 */
 KOS_OP_HANDLER(JUMP_OR) {
-  return op_unimplemented_stub(ctx, out_ev, insn);
+  PyObject *val = KosStackBlock_PopRef(&ctx->frame_top->stack);
+  if (! val)
+    return -1;
+  int res = PyObject_IsTrue(val);
+  if (res < 0) {
+    Py_DECREF(val);
+    return -1;
+  }
+  if (res) {
+    if (KosStackBlock_PushRef(&ctx->frame_top->stack, val) < 0) {
+      Py_DECREF(val);
+      return -1;
+    }
+    Py_DECREF(val);
+    ctx->frame_top->pc = insn->arg;
+  } else {
+    Py_DECREF(val);
+  }
+  (void) out_ev;
+  return 0;
 }
 
 
 /**
-   CHECK_EQ: arg = target PC. Branch if comparison fails (==); not yet implemented.
+   CHECK_EQ: arg = target PC. Branch if comparison fails (==).
 */
 KOS_OP_HANDLER(CHECK_EQ) {
-  return op_unimplemented_stub(ctx, out_ev, insn);
+  return kos_check_cmp(ctx, out_ev, insn, Py_EQ);
 }
 
 
 /**
-   CHECK_GE: arg = target PC. Branch if comparison fails (>=); not yet implemented.
+   CHECK_GE: arg = target PC. Branch if comparison fails (>=).
 */
 KOS_OP_HANDLER(CHECK_GE) {
-  return op_unimplemented_stub(ctx, out_ev, insn);
+  return kos_check_cmp(ctx, out_ev, insn, Py_GE);
 }
 
 
 /**
-   CHECK_GT: arg = target PC. Branch if comparison fails (>); not yet implemented.
+   CHECK_GT: arg = target PC. Branch if comparison fails (>).
 */
 KOS_OP_HANDLER(CHECK_GT) {
-  return op_unimplemented_stub(ctx, out_ev, insn);
+  return kos_check_cmp(ctx, out_ev, insn, Py_GT);
 }
 
 
 /**
-   CHECK_LE: arg = target PC. Branch if comparison fails (<=); not yet implemented.
+   CHECK_LE: arg = target PC. Branch if comparison fails (<=).
 */
 KOS_OP_HANDLER(CHECK_LE) {
-  return op_unimplemented_stub(ctx, out_ev, insn);
+  return kos_check_cmp(ctx, out_ev, insn, Py_LE);
 }
 
 
 /**
-   CHECK_LT: arg = target PC. Branch if comparison fails (<); not yet implemented.
+   CHECK_LT: arg = target PC. Branch if comparison fails (<).
 */
 KOS_OP_HANDLER(CHECK_LT) {
-  return op_unimplemented_stub(ctx, out_ev, insn);
+  return kos_check_cmp(ctx, out_ev, insn, Py_LT);
 }
 
 
 /**
-   CHECK_NE: arg = target PC. Branch if comparison fails (!=); not yet implemented.
+   CHECK_NE: arg = target PC. Branch if comparison fails (!=).
 */
 KOS_OP_HANDLER(CHECK_NE) {
-  return op_unimplemented_stub(ctx, out_ev, insn);
+  return kos_check_cmp(ctx, out_ev, insn, Py_NE);
 }
 
 
 /**
-   CHECK_IN: arg = target PC. Branch if "in" check fails; not yet implemented.
+   CHECK_IN: arg = target PC. Branch if "in" check fails. Stack: container, value (TOS).
 */
 KOS_OP_HANDLER(CHECK_IN) {
-  return op_unimplemented_stub(ctx, out_ev, insn);
+  PyObject *value = KosStackBlock_PopRef(&ctx->frame_top->stack);
+  if (! value)
+    return -1;
+  PyObject *container = KosStackBlock_PopRef(&ctx->frame_top->stack);
+  if (! container) {
+    Py_DECREF(value);
+    return -1;
+  }
+  int cmp = PySequence_Contains(container, value);
+  Py_DECREF(value);
+  Py_DECREF(container);
+  if (unlikely(cmp < 0))
+    return -1;
+  if (cmp == 0)
+    ctx->frame_top->pc = insn->arg;
+  (void) out_ev;
+  return 0;
 }
 
 
 /**
-   CHECK_NOT_IN: arg = target PC. Branch if "not in" check fails; not yet implemented.
+   CHECK_NOT_IN: arg = target PC. Branch if "not in" check fails. Stack: container, value (TOS).
 */
 KOS_OP_HANDLER(CHECK_NOT_IN) {
-  return op_unimplemented_stub(ctx, out_ev, insn);
+  PyObject *value = KosStackBlock_PopRef(&ctx->frame_top->stack);
+  if (! value)
+    return -1;
+  PyObject *container = KosStackBlock_PopRef(&ctx->frame_top->stack);
+  if (! container) {
+    Py_DECREF(value);
+    return -1;
+  }
+  int cmp = PySequence_Contains(container, value);
+  Py_DECREF(value);
+  Py_DECREF(container);
+  if (unlikely(cmp < 0))
+    return -1;
+  if (cmp == 1)
+    ctx->frame_top->pc = insn->arg;
+  (void) out_ev;
+  return 0;
 }
 
 
 /**
-   CHECK_IS: arg = target PC. Branch if "is" check fails; not yet implemented.
+   CHECK_IS: arg = target PC. Branch if "is" check fails. Stack: left, right.
 */
 KOS_OP_HANDLER(CHECK_IS) {
-  return op_unimplemented_stub(ctx, out_ev, insn);
+  PyObject *right = KosStackBlock_PopRef(&ctx->frame_top->stack);
+  if (! right)
+    return -1;
+  PyObject *left = KosStackBlock_PopRef(&ctx->frame_top->stack);
+  if (! left) {
+    Py_DECREF(right);
+    return -1;
+  }
+  int cmp = (left == right);
+  Py_DECREF(left);
+  Py_DECREF(right);
+  if (cmp == 0)
+    ctx->frame_top->pc = insn->arg;
+  (void) out_ev;
+  return 0;
 }
 
 
 /**
-   CHECK_IS_NOT: arg = target PC. Branch if "is not" check fails; not yet implemented.
+   CHECK_IS_NOT: arg = target PC. Branch if "is not" check fails. Stack: left, right.
 */
 KOS_OP_HANDLER(CHECK_IS_NOT) {
-  return op_unimplemented_stub(ctx, out_ev, insn);
+  PyObject *right = KosStackBlock_PopRef(&ctx->frame_top->stack);
+  if (! right)
+    return -1;
+  PyObject *left = KosStackBlock_PopRef(&ctx->frame_top->stack);
+  if (! left) {
+    Py_DECREF(right);
+    return -1;
+  }
+  int cmp = (left == right);
+  Py_DECREF(left);
+  Py_DECREF(right);
+  if (cmp == 1)
+    ctx->frame_top->pc = insn->arg;
+  (void) out_ev;
+  return 0;
 }
 
 
 /**
-   CHECK_IS_INSTANCE: arg = target PC. Branch if isinstance check fails;
-   not yet implemented.
+   CHECK_IS_INSTANCE: arg = target PC. Branch if isinstance check fails.
+   Stack: value, class_or_tuple.
 */
 KOS_OP_HANDLER(CHECK_IS_INSTANCE) {
-  return op_unimplemented_stub(ctx, out_ev, insn);
+  PyObject *class_or_tuple = KosStackBlock_PopRef(&ctx->frame_top->stack);
+  if (! class_or_tuple)
+    return -1;
+  PyObject *value = KosStackBlock_PopRef(&ctx->frame_top->stack);
+  if (! value) {
+    Py_DECREF(class_or_tuple);
+    return -1;
+  }
+  int res = PyObject_IsInstance(value, class_or_tuple);
+  Py_DECREF(value);
+  Py_DECREF(class_or_tuple);
+  if (unlikely(res < 0))
+    return -1;
+  if (res == 0)
+    ctx->frame_top->pc = insn->arg;
+  (void) out_ev;
+  return 0;
 }
 
 
 /**
-   CHECK_IS_SUBCLASS: arg = target PC. Branch if issubclass check fails;
-   not yet implemented.
+   CHECK_IS_SUBCLASS: arg = target PC. Branch if issubclass check fails.
+   Stack: class, class_or_tuple.
 */
 KOS_OP_HANDLER(CHECK_IS_SUBCLASS) {
-  return op_unimplemented_stub(ctx, out_ev, insn);
+  PyObject *class_or_tuple = KosStackBlock_PopRef(&ctx->frame_top->stack);
+  if (! class_or_tuple)
+    return -1;
+  PyObject *cls = KosStackBlock_PopRef(&ctx->frame_top->stack);
+  if (! cls) {
+    Py_DECREF(class_or_tuple);
+    return -1;
+  }
+  int res = PyObject_IsSubclass(cls, class_or_tuple);
+  Py_DECREF(cls);
+  Py_DECREF(class_or_tuple);
+  if (unlikely(res < 0))
+    return -1;
+  if (res == 0)
+    ctx->frame_top->pc = insn->arg;
+  (void) out_ev;
+  return 0;
 }
 
 
@@ -2525,10 +2703,18 @@ KOS_OP_HANDLER(FAST_BIND) {
 
 
 /**
-   FAST_CLEAR: arg = slot index. Clear fast slot; not yet implemented.
+   FAST_CLEAR: arg = slot index. Clear fast slot.
 */
 KOS_OP_HANDLER(FAST_CLEAR) {
-  return op_unimplemented_stub(ctx, out_ev, insn);
+  PyObject *ns = ctx->frame_top->ns;
+  if (! KosNamespace_SupportsFast(ns)) {
+    PyErr_Format(PyExc_RuntimeError, "FAST_CLEAR invoked on %R", ns);
+    return -1;
+  }
+  if (KosNamespace_FastClear(ns, (size_t) insn->arg) < 0)
+    return -1;
+  (void) out_ev;
+  return 0;
 }
 
 
@@ -2573,99 +2759,259 @@ KOS_OP_HANDLER(FAST_STORE) {
 
 
 /**
-   ATTR: arg = constant index (name). Push getattr(TOS, name); not yet implemented.
+   ATTR: arg = constant index (name). Push getattr(TOS, name).
 */
 KOS_OP_HANDLER(ATTR) {
-  return op_unimplemented_stub(ctx, out_ev, insn);
+  PyObject *name = get_name_from_insn(ctx->frame_top->code, insn);
+  if (! name)
+    return -1;
+  PyObject *obj = KosStackBlock_PopRef(&ctx->frame_top->stack);
+  if (! obj)
+    return -1;
+  PyObject *val = PyObject_GetAttr(obj, name);
+  Py_DECREF(obj);
+  if (! val)
+    return -1;
+  return push_result_or_await(ctx, out_ev, val);
 }
 
 
 /**
-   ATTR_CLEAR: arg = constant index (name). delattr(TOS, name); not yet implemented.
+   ATTR_CLEAR: arg = constant index (name). delattr(TOS, name).
 */
 KOS_OP_HANDLER(ATTR_CLEAR) {
-  return op_unimplemented_stub(ctx, out_ev, insn);
+  PyObject *name = get_name_from_insn(ctx->frame_top->code, insn);
+  if (! name)
+    return -1;
+  PyObject *obj = KosStackBlock_PopRef(&ctx->frame_top->stack);
+  if (! obj)
+    return -1;
+  int res = PyObject_DelAttr(obj, name);
+  Py_DECREF(obj);
+  if (res < 0)
+    return -1;
+  (void) out_ev;
+  return 0;
 }
 
 
 /**
-   ATTR_REF: arg = constant index (name). Push attribute reference; not yet implemented.
+   ATTR_REF: arg = constant index (name). Push attribute reference.
 */
 KOS_OP_HANDLER(ATTR_REF) {
-  return op_unimplemented_stub(ctx, out_ev, insn);
+  PyObject *name = get_name_from_insn(ctx->frame_top->code, insn);
+  if (! name)
+    return -1;
+  PyObject *obj = KosStackBlock_PopRef(&ctx->frame_top->stack);
+  if (! obj)
+    return -1;
+  PyObject *ref = KosAttributeRef_New(name, obj, name);
+  Py_DECREF(obj);
+  if (! ref)
+    return -1;
+  return push_result_or_await(ctx, out_ev, ref);
 }
 
 
 /**
-   ATTR_STORE: arg = constant index (name). setattr(TOS, name, value); not yet implemented.
+   ATTR_STORE: arg = constant index (name). setattr(TOS1, name, TOS); pop val then obj.
 */
 KOS_OP_HANDLER(ATTR_STORE) {
-  return op_unimplemented_stub(ctx, out_ev, insn);
+  PyObject *name = get_name_from_insn(ctx->frame_top->code, insn);
+  if (! name)
+    return -1;
+  PyObject *val = KosStackBlock_PopRef(&ctx->frame_top->stack);
+  if (! val)
+    return -1;
+  PyObject *obj = KosStackBlock_PopRef(&ctx->frame_top->stack);
+  if (! obj) {
+    Py_DECREF(val);
+    return -1;
+  }
+  int res = PyObject_SetAttr(obj, name, val);
+  Py_DECREF(obj);
+  Py_DECREF(val);
+  if (res < 0)
+    return -1;
+  (void) out_ev;
+  return 0;
 }
 
 
 /**
-   ITEM: arg unused. Push TOS1[TOS] (subscript); not yet implemented.
+   ITEM: arg unused. Push TOS1[TOS] (subscript). Stack: obj, key (TOS).
 */
 KOS_OP_HANDLER(ITEM) {
-  return op_unimplemented_stub(ctx, out_ev, insn);
+  PyObject *key = KosStackBlock_PopRef(&ctx->frame_top->stack);
+  if (! key)
+    return -1;
+  PyObject *obj = KosStackBlock_PopRef(&ctx->frame_top->stack);
+  if (! obj) {
+    Py_DECREF(key);
+    return -1;
+  }
+  PyObject *item = PyObject_GetItem(obj, key);
+  Py_DECREF(obj);
+  Py_DECREF(key);
+  if (! item)
+    return -1;
+  return push_result_or_await(ctx, out_ev, item);
 }
 
 
 /**
-   ITEM_CLEAR: arg unused. del TOS1[TOS]; not yet implemented.
+   ITEM_CLEAR: arg unused. del TOS1[TOS]. Stack: obj, key (TOS).
 */
 KOS_OP_HANDLER(ITEM_CLEAR) {
-  return op_unimplemented_stub(ctx, out_ev, insn);
+  PyObject *key = KosStackBlock_PopRef(&ctx->frame_top->stack);
+  if (! key)
+    return -1;
+  PyObject *obj = KosStackBlock_PopRef(&ctx->frame_top->stack);
+  if (! obj) {
+    Py_DECREF(key);
+    return -1;
+  }
+  int res = PyObject_DelItem(obj, key);
+  Py_DECREF(obj);
+  Py_DECREF(key);
+  if (res < 0)
+    return -1;
+  (void) out_ev;
+  return 0;
 }
 
 
 /**
-   ITEM_REF: arg unused. Push item reference for subscription; not yet implemented.
+   ITEM_REF: arg unused. Push item reference for subscription. Stack: obj, key (TOS).
 */
 KOS_OP_HANDLER(ITEM_REF) {
-  return op_unimplemented_stub(ctx, out_ev, insn);
+  PyObject *key = KosStackBlock_PopRef(&ctx->frame_top->stack);
+  if (! key)
+    return -1;
+  PyObject *obj = KosStackBlock_PopRef(&ctx->frame_top->stack);
+  if (! obj) {
+    Py_DECREF(key);
+    return -1;
+  }
+  PyObject *ref = KosItemRef_New(key, obj, key);
+  Py_DECREF(obj);
+  Py_DECREF(key);
+  if (! ref)
+    return -1;
+  return push_result_or_await(ctx, out_ev, ref);
 }
 
 
 /**
-   ITEM_STORE: arg unused. TOS1[TOS] = value; not yet implemented.
+   ITEM_STORE: arg unused. TOS2[TOS1] = TOS; pop val, key, obj.
 */
 KOS_OP_HANDLER(ITEM_STORE) {
-  return op_unimplemented_stub(ctx, out_ev, insn);
+  PyObject *val = KosStackBlock_PopRef(&ctx->frame_top->stack);
+  if (! val)
+    return -1;
+  PyObject *key = KosStackBlock_PopRef(&ctx->frame_top->stack);
+  if (! key) {
+    Py_DECREF(val);
+    return -1;
+  }
+  PyObject *obj = KosStackBlock_PopRef(&ctx->frame_top->stack);
+  if (! obj) {
+    Py_DECREF(key);
+    Py_DECREF(val);
+    return -1;
+  }
+  int res = PyObject_SetItem(obj, key, val);
+  Py_DECREF(obj);
+  Py_DECREF(key);
+  Py_DECREF(val);
+  if (res < 0)
+    return -1;
+  (void) out_ev;
+  return 0;
 }
 
 
 /**
-   CONST_ITEM: arg = constant index (key). Push TOS[key]; not yet implemented.
+   CONST_ITEM: arg = constant index (key). Push TOS[key].
 */
 KOS_OP_HANDLER(CONST_ITEM) {
-  return op_unimplemented_stub(ctx, out_ev, insn);
+  PyObject *key = KosCode_GetConstant((PyObject *) ctx->frame_top->code,
+                                      insn->arg);
+  if (! key)
+    return -1;
+  PyObject *obj = KosStackBlock_PopRef(&ctx->frame_top->stack);
+  if (! obj)
+    return -1;
+  PyObject *item = PyObject_GetItem(obj, key);
+  Py_DECREF(obj);
+  if (! item)
+    return -1;
+  return push_result_or_await(ctx, out_ev, item);
 }
 
 
 /**
-   CONST_ITEM_CLEAR: arg = constant index (key). del TOS[key]; not yet implemented.
+   CONST_ITEM_CLEAR: arg = constant index (key). del TOS[key].
 */
 KOS_OP_HANDLER(CONST_ITEM_CLEAR) {
-  return op_unimplemented_stub(ctx, out_ev, insn);
+  PyObject *key = KosCode_GetConstant((PyObject *) ctx->frame_top->code,
+                                      insn->arg);
+  if (! key)
+    return -1;
+  PyObject *obj = KosStackBlock_PopRef(&ctx->frame_top->stack);
+  if (! obj)
+    return -1;
+  int res = PyObject_DelItem(obj, key);
+  Py_DECREF(obj);
+  if (res < 0)
+    return -1;
+  (void) out_ev;
+  return 0;
 }
 
 
 /**
-   CONST_ITEM_REF: arg = constant index (key). Push constant-key item reference;
-   not yet implemented.
+   CONST_ITEM_REF: arg = constant index (key). Push constant-key item reference.
 */
 KOS_OP_HANDLER(CONST_ITEM_REF) {
-  return op_unimplemented_stub(ctx, out_ev, insn);
+  PyObject *key = KosCode_GetConstant((PyObject *) ctx->frame_top->code,
+                                      insn->arg);
+  if (! key)
+    return -1;
+  PyObject *obj = KosStackBlock_PopRef(&ctx->frame_top->stack);
+  if (! obj)
+    return -1;
+  PyObject *ref = KosItemRef_New(key, obj, key);
+  Py_DECREF(obj);
+  if (! ref)
+    return -1;
+  return push_result_or_await(ctx, out_ev, ref);
 }
 
 
 /**
-   CONST_ITEM_STORE: arg = constant index (key). TOS[key] = value; not yet implemented.
+   CONST_ITEM_STORE: arg = constant index (key). TOS1[key] = TOS; pop val then obj.
 */
 KOS_OP_HANDLER(CONST_ITEM_STORE) {
-  return op_unimplemented_stub(ctx, out_ev, insn);
+  PyObject *key = KosCode_GetConstant((PyObject *) ctx->frame_top->code,
+                                      insn->arg);
+  if (! key)
+    return -1;
+  PyObject *val = KosStackBlock_PopRef(&ctx->frame_top->stack);
+  if (! val)
+    return -1;
+  PyObject *obj = KosStackBlock_PopRef(&ctx->frame_top->stack);
+  if (! obj) {
+    Py_DECREF(val);
+    return -1;
+  }
+  int res = PyObject_SetItem(obj, key, val);
+  Py_DECREF(obj);
+  Py_DECREF(val);
+  if (res < 0)
+    return -1;
+  (void) out_ev;
+  return 0;
 }
 
 

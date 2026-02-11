@@ -330,159 +330,6 @@ class TestStubOpcodes(CevalTest):
             self._run_stub_opcode("AWAIT_NEXT", "target")
 
 
-    def test_jump_raises_not_implemented(self):
-        """
-        JUMP raises RuntimeError
-        """
-
-        with self.assertRaises(RuntimeError):
-            self._run_stub_opcode("JUMP", "target")
-
-
-    def test_jump_false_raises_not_implemented(self):
-        """
-        JUMP_FALSE raises RuntimeError
-        """
-
-        with self.assertRaises(RuntimeError):
-            self._run_stub_opcode("JUMP_FALSE", "target")
-
-
-    def test_jump_true_raises_not_implemented(self):
-        """
-        JUMP_TRUE raises RuntimeError
-        """
-
-        with self.assertRaises(RuntimeError):
-            self._run_stub_opcode("JUMP_TRUE", "target")
-
-
-    def test_jump_and_raises_not_implemented(self):
-        """
-        JUMP_AND raises RuntimeError
-        """
-
-        with self.assertRaises(RuntimeError):
-            self._run_stub_opcode("JUMP_AND", "target")
-
-
-    def test_jump_or_raises_not_implemented(self):
-        """
-        JUMP_OR raises RuntimeError
-        """
-
-        with self.assertRaises(RuntimeError):
-            self._run_stub_opcode("JUMP_OR", "target")
-
-
-    def test_check_eq_raises_not_implemented(self):
-        """
-        CHECK_EQ raises RuntimeError
-        """
-
-        with self.assertRaises(RuntimeError):
-            self._run_stub_opcode("CHECK_EQ", "target")
-
-
-    def test_check_ge_raises_not_implemented(self):
-        """
-        CHECK_GE raises RuntimeError
-        """
-
-        with self.assertRaises(RuntimeError):
-            self._run_stub_opcode("CHECK_GE", "target")
-
-
-    def test_check_gt_raises_not_implemented(self):
-        """
-        CHECK_GT raises RuntimeError
-        """
-
-        with self.assertRaises(RuntimeError):
-            self._run_stub_opcode("CHECK_GT", "target")
-
-
-    def test_check_le_raises_not_implemented(self):
-        """
-        CHECK_LE raises RuntimeError
-        """
-
-        with self.assertRaises(RuntimeError):
-            self._run_stub_opcode("CHECK_LE", "target")
-
-
-    def test_check_lt_raises_not_implemented(self):
-        """
-        CHECK_LT raises RuntimeError
-        """
-
-        with self.assertRaises(RuntimeError):
-            self._run_stub_opcode("CHECK_LT", "target")
-
-
-    def test_check_ne_raises_not_implemented(self):
-        """
-        CHECK_NE raises RuntimeError
-        """
-
-        with self.assertRaises(RuntimeError):
-            self._run_stub_opcode("CHECK_NE", "target")
-
-
-    def test_check_in_raises_not_implemented(self):
-        """
-        CHECK_IN raises RuntimeError
-        """
-
-        with self.assertRaises(RuntimeError):
-            self._run_stub_opcode("CHECK_IN", "target")
-
-
-    def test_check_not_in_raises_not_implemented(self):
-        """
-        CHECK_NOT_IN raises RuntimeError
-        """
-
-        with self.assertRaises(RuntimeError):
-            self._run_stub_opcode("CHECK_NOT_IN", "target")
-
-
-    def test_check_is_raises_not_implemented(self):
-        """
-        CHECK_IS raises RuntimeError
-        """
-
-        with self.assertRaises(RuntimeError):
-            self._run_stub_opcode("CHECK_IS", "target")
-
-
-    def test_check_is_not_raises_not_implemented(self):
-        """
-        CHECK_IS_NOT raises RuntimeError
-        """
-
-        with self.assertRaises(RuntimeError):
-            self._run_stub_opcode("CHECK_IS_NOT", "target")
-
-
-    def test_check_is_instance_raises_not_implemented(self):
-        """
-        CHECK_IS_INSTANCE raises RuntimeError
-        """
-
-        with self.assertRaises(RuntimeError):
-            self._run_stub_opcode("CHECK_IS_INSTANCE", "target")
-
-
-    def test_check_is_subclass_raises_not_implemented(self):
-        """
-        CHECK_IS_SUBCLASS raises RuntimeError
-        """
-
-        with self.assertRaises(RuntimeError):
-            self._run_stub_opcode("CHECK_IS_SUBCLASS", "target")
-
-
     def test_var_clear_raises_name_error_for_missing_name(self):
         """
         VAR_CLEAR raises NameError when name is not defined
@@ -508,165 +355,6 @@ class TestStubOpcodes(CevalTest):
 
         with self.assertRaises(RuntimeError):
             self._run_stub_opcode("VAR_STORE", "x")
-
-
-    def test_fast_raises_name_error_for_out_of_bounds_index(self):
-        """
-        FAST raises NameError when slot index is out of bounds
-        """
-
-        with self.assertRaises(NameError):
-            self._run_stub_opcode("FAST", 0)
-
-
-    def test_fast_bind_raises_name_error_for_out_of_bounds_index(self):
-        """
-        FAST_BIND raises NameError when slot index is out of bounds
-        """
-
-        with self.assertRaises(NameError):
-            self._run_stub_opcode("FAST_BIND", 0)
-
-
-    def test_fast_clear_raises_not_implemented(self):
-        """
-        FAST_CLEAR raises RuntimeError
-        """
-
-        with self.assertRaises(RuntimeError):
-            self._run_stub_opcode("FAST_CLEAR", 0)
-
-
-    def test_fast_ref_raises_name_error_for_out_of_bounds_index(self):
-        """
-        FAST_REF raises NameError when slot index is out of bounds
-        """
-
-        with self.assertRaises(NameError):
-            self._run_stub_opcode("FAST_REF", 0)
-
-
-    def test_fast_store_raises_name_error_for_out_of_bounds_index(self):
-        """
-        FAST_STORE raises NameError when slot index is out of bounds
-        """
-
-        code_obj, ns = build_expr([
-            ["CONST", 42],
-            ["FAST_STORE", 0],
-            ["RETURN", 1],
-        ])
-        expr = make_callable(code_obj, ns)
-        with self.assertRaises(NameError):
-            run_to_completion(expr())
-
-
-    def test_attr_raises_not_implemented(self):
-        """
-        ATTR raises RuntimeError
-        """
-
-        with self.assertRaises(RuntimeError):
-            self._run_stub_opcode("ATTR", "x")
-
-
-    def test_attr_clear_raises_not_implemented(self):
-        """
-        ATTR_CLEAR raises RuntimeError
-        """
-
-        with self.assertRaises(RuntimeError):
-            self._run_stub_opcode("ATTR_CLEAR", "x")
-
-
-    def test_attr_ref_raises_not_implemented(self):
-        """
-        ATTR_REF raises RuntimeError
-        """
-
-        with self.assertRaises(RuntimeError):
-            self._run_stub_opcode("ATTR_REF", "x")
-
-
-    def test_attr_store_raises_not_implemented(self):
-        """
-        ATTR_STORE raises RuntimeError
-        """
-
-        with self.assertRaises(RuntimeError):
-            self._run_stub_opcode("ATTR_STORE", "x")
-
-
-    def test_item_raises_not_implemented(self):
-        """
-        ITEM raises RuntimeError
-        """
-
-        with self.assertRaises(RuntimeError):
-            self._run_stub_opcode("ITEM", 0)
-
-
-    def test_item_clear_raises_not_implemented(self):
-        """
-        ITEM_CLEAR raises RuntimeError
-        """
-
-        with self.assertRaises(RuntimeError):
-            self._run_stub_opcode("ITEM_CLEAR", 0)
-
-
-    def test_item_ref_raises_not_implemented(self):
-        """
-        ITEM_REF raises RuntimeError
-        """
-
-        with self.assertRaises(RuntimeError):
-            self._run_stub_opcode("ITEM_REF", 0)
-
-
-    def test_item_store_raises_not_implemented(self):
-        """
-        ITEM_STORE raises RuntimeError
-        """
-
-        with self.assertRaises(RuntimeError):
-            self._run_stub_opcode("ITEM_STORE", 0)
-
-
-    def test_const_item_raises_not_implemented(self):
-        """
-        CONST_ITEM raises RuntimeError
-        """
-
-        with self.assertRaises(RuntimeError):
-            self._run_stub_opcode("CONST_ITEM", "key")
-
-
-    def test_const_item_clear_raises_not_implemented(self):
-        """
-        CONST_ITEM_CLEAR raises RuntimeError
-        """
-
-        with self.assertRaises(RuntimeError):
-            self._run_stub_opcode("CONST_ITEM_CLEAR", "key")
-
-
-    def test_const_item_ref_raises_not_implemented(self):
-        """
-        CONST_ITEM_REF raises RuntimeError
-        """
-
-        with self.assertRaises(RuntimeError):
-            self._run_stub_opcode("CONST_ITEM_REF", "key")
-
-
-    def test_const_item_store_raises_not_implemented(self):
-        """
-        CONST_ITEM_STORE raises RuntimeError
-        """
-
-        with self.assertRaises(RuntimeError):
-            self._run_stub_opcode("CONST_ITEM_STORE", "key")
 
 
     def test_build_args_raises_not_implemented(self):
@@ -1013,6 +701,573 @@ class TestStackOpcodes(CevalTest):
         ])
         result = run_to_completion(make_callable(code, ns)())
         self.assertEqual(result, 10)
+
+
+class TestJumpOpcodes(CevalTest):
+    """
+    Tests for JUMP, JUMP_FALSE, JUMP_TRUE, JUMP_AND, JUMP_OR
+    """
+
+    def test_jump_unconditional(self):
+        """
+        JUMP branches to label; skips instructions in between
+        """
+        code, ns = build_expr([
+            ["JUMP", "target"],
+            ["CONST", 0],
+            ["RETURN", 1],
+            ["LABEL", "target"],
+            ["CONST", 99],
+            ["RETURN", 1],
+        ])
+        result = run_to_completion(make_callable(code, ns)())
+        self.assertEqual(result, 99)
+
+
+    def test_jump_false_jumps_when_falsy(self):
+        """
+        JUMP_FALSE jumps to label when TOS is false
+        """
+        code, ns = build_expr([
+            ["CONST", False],
+            ["JUMP_FALSE", "yes"],
+            ["CONST", 0],
+            ["RETURN", 1],
+            ["LABEL", "yes"],
+            ["CONST", 1],
+            ["RETURN", 1],
+        ])
+        result = run_to_completion(make_callable(code, ns)())
+        self.assertEqual(result, 1)
+
+
+    def test_jump_false_continues_when_truthy(self):
+        """
+        JUMP_FALSE does not jump when TOS is true
+        """
+        code, ns = build_expr([
+            ["CONST", True],
+            ["JUMP_FALSE", "skip"],
+            ["CONST", 42],
+            ["RETURN", 1],
+            ["LABEL", "skip"],
+            ["CONST", 0],
+            ["RETURN", 1],
+        ])
+        result = run_to_completion(make_callable(code, ns)())
+        self.assertEqual(result, 42)
+
+
+    def test_jump_true_jumps_when_truthy(self):
+        """
+        JUMP_TRUE jumps to label when TOS is true
+        """
+        code, ns = build_expr([
+            ["CONST", 1],
+            ["JUMP_TRUE", "yes"],
+            ["CONST", 0],
+            ["RETURN", 1],
+            ["LABEL", "yes"],
+            ["CONST", 99],
+            ["RETURN", 1],
+        ])
+        result = run_to_completion(make_callable(code, ns)())
+        self.assertEqual(result, 99)
+
+
+    def test_jump_true_continues_when_falsy(self):
+        """
+        JUMP_TRUE does not jump when TOS is false
+        """
+        code, ns = build_expr([
+            ["CONST", None],
+            ["JUMP_TRUE", "skip"],
+            ["CONST", 7],
+            ["RETURN", 1],
+            ["LABEL", "skip"],
+            ["CONST", 0],
+            ["RETURN", 1],
+        ])
+        result = run_to_completion(make_callable(code, ns)())
+        self.assertEqual(result, 7)
+
+
+    def test_jump_and_short_circuit(self):
+        """
+        JUMP_AND leaves value and jumps when falsy; pops when truthy
+        """
+        code, ns = build_expr([
+            ["CONST", 0],
+            ["JUMP_AND", "end"],
+            ["CONST", 100],
+            ["JUMP_AND", "end"],
+            ["CONST", 5],
+            ["LABEL", "end"],
+            ["RETURN", 1],
+        ])
+        result = run_to_completion(make_callable(code, ns)())
+        self.assertEqual(result, 0)
+
+
+    def test_jump_or_short_circuit(self):
+        """
+        JUMP_OR leaves value and jumps when truthy; pops when falsy
+        """
+        code, ns = build_expr([
+            ["CONST", 0],
+            ["JUMP_OR", "next"],
+            ["CONST", 0],
+            ["JUMP_OR", "next"],
+            ["CONST", 42],
+            ["LABEL", "next"],
+            ["RETURN", 1],
+        ])
+        result = run_to_completion(make_callable(code, ns)())
+        self.assertEqual(result, 42)
+
+
+class TestCheckOpcodes(CevalTest):
+    """
+    Tests for CHECK_EQ, CHECK_NE, CHECK_IN, CHECK_NOT_IN, CHECK_IS,
+    CHECK_IS_NOT, CHECK_IS_INSTANCE, CHECK_IS_SUBCLASS
+    """
+
+    def test_check_eq_jumps_on_mismatch(self):
+        """
+        CHECK_EQ jumps when left != right
+        """
+        code, ns = build_expr([
+            ["CONST", 1],
+            ["CONST", 2],
+            ["CHECK_EQ", "fail"],
+            ["CONST", 99],
+            ["RETURN", 1],
+            ["LABEL", "fail"],
+            ["CONST", 0],
+            ["RETURN", 1],
+        ])
+        result = run_to_completion(make_callable(code, ns)())
+        self.assertEqual(result, 0)
+
+
+    def test_check_eq_continues_on_match(self):
+        """
+        CHECK_EQ does not jump when left == right
+        """
+        code, ns = build_expr([
+            ["CONST", 10],
+            ["CONST", 10],
+            ["CHECK_EQ", "fail"],
+            ["CONST", 42],
+            ["RETURN", 1],
+            ["LABEL", "fail"],
+            ["CONST", 0],
+            ["RETURN", 1],
+        ])
+        result = run_to_completion(make_callable(code, ns)())
+        self.assertEqual(result, 42)
+
+
+    def test_check_in_jumps_when_not_contained(self):
+        """
+        CHECK_IN jumps when value not in container
+        """
+        code, ns = build_expr([
+            ["CONST", [1, 2, 3]],
+            ["CONST", 99],
+            ["CHECK_IN", "miss"],
+            ["CONST", 1],
+            ["RETURN", 1],
+            ["LABEL", "miss"],
+            ["CONST", 0],
+            ["RETURN", 1],
+        ])
+        result = run_to_completion(make_callable(code, ns)())
+        self.assertEqual(result, 0)
+
+
+    def test_check_in_continues_when_contained(self):
+        """
+        CHECK_IN does not jump when value in container
+        """
+        code, ns = build_expr([
+            ["CONST", [1, 2, 3]],
+            ["CONST", 2],
+            ["CHECK_IN", "miss"],
+            ["CONST", 1],
+            ["RETURN", 1],
+            ["LABEL", "miss"],
+            ["CONST", 0],
+            ["RETURN", 1],
+        ])
+        result = run_to_completion(make_callable(code, ns)())
+        self.assertEqual(result, 1)
+
+
+    def test_check_is_jumps_when_different_identity(self):
+        """
+        CHECK_IS jumps when left is not right
+        """
+        code, ns = build_expr([
+            ["CONST", []],
+            ["CONST", []],
+            ["CHECK_IS", "diff"],
+            ["CONST", 1],
+            ["RETURN", 1],
+            ["LABEL", "diff"],
+            ["CONST", 0],
+            ["RETURN", 1],
+        ])
+        result = run_to_completion(make_callable(code, ns)())
+        self.assertEqual(result, 0)
+
+
+    def test_check_is_continues_when_same_identity(self):
+        """
+        CHECK_IS does not jump when left is right
+        """
+        code, ns = build_expr([
+            ["CONST", None],
+            ["CONST", None],
+            ["CHECK_IS", "diff"],
+            ["CONST", 42],
+            ["RETURN", 1],
+            ["LABEL", "diff"],
+            ["CONST", 0],
+            ["RETURN", 1],
+        ])
+        result = run_to_completion(make_callable(code, ns)())
+        self.assertEqual(result, 42)
+
+
+    def test_check_is_instance_jumps_when_false(self):
+        """
+        CHECK_IS_INSTANCE jumps when isinstance(value, cls) is False
+        """
+        code, ns = build_expr([
+            ["CONST", 42],
+            ["CONST", str],
+            ["CHECK_IS_INSTANCE", "no"],
+            ["CONST", 1],
+            ["RETURN", 1],
+            ["LABEL", "no"],
+            ["CONST", 0],
+            ["RETURN", 1],
+        ])
+        result = run_to_completion(make_callable(code, ns)())
+        self.assertEqual(result, 0)
+
+
+    def test_check_is_instance_continues_when_true(self):
+        """
+        CHECK_IS_INSTANCE does not jump when isinstance(value, cls) is True
+        """
+        code, ns = build_expr([
+            ["CONST", 42],
+            ["CONST", int],
+            ["CHECK_IS_INSTANCE", "no"],
+            ["CONST", 1],
+            ["RETURN", 1],
+            ["LABEL", "no"],
+            ["CONST", 0],
+            ["RETURN", 1],
+        ])
+        result = run_to_completion(make_callable(code, ns)())
+        self.assertEqual(result, 1)
+
+
+class TestFastOpcodes(CevalTest):
+    """
+    Tests for FAST, FAST_BIND, FAST_CLEAR, FAST_REF, FAST_STORE
+    """
+
+    def _run_fast_out_of_bounds(self, opname, arg=0):
+        """
+        Run bytecode that hits the given FAST opcode with no fast slots
+        """
+
+        if opname == "FAST_STORE":
+            code_list = [["CONST", 42], [opname, arg], ["RETURN", 1]]
+        else:
+            code_list = [[opname, arg], ["RETURN", 1]]
+        code_obj, ns = build_expr(code_list)
+        expr = make_callable(code_obj, ns)
+        return run_to_completion(expr())
+
+
+    def test_fast_raises_name_error_for_out_of_bounds_index(self):
+        """
+        FAST raises NameError when slot index is out of bounds
+        """
+
+        with self.assertRaises(NameError):
+            self._run_fast_out_of_bounds("FAST", 0)
+
+
+    def test_fast_bind_raises_name_error_for_out_of_bounds_index(self):
+        """
+        FAST_BIND raises NameError when slot index is out of bounds
+        """
+
+        with self.assertRaises(NameError):
+            self._run_fast_out_of_bounds("FAST_BIND", 0)
+
+
+    def test_fast_clear_raises_name_error_for_out_of_bounds_index(self):
+        """
+        FAST_CLEAR raises NameError when slot index is out of bounds
+        """
+
+        with self.assertRaises(NameError):
+            self._run_fast_out_of_bounds("FAST_CLEAR", 0)
+
+
+    def test_fast_ref_raises_name_error_for_out_of_bounds_index(self):
+        """
+        FAST_REF raises NameError when slot index is out of bounds
+        """
+
+        with self.assertRaises(NameError):
+            self._run_fast_out_of_bounds("FAST_REF", 0)
+
+
+    def test_fast_store_raises_name_error_for_out_of_bounds_index(self):
+        """
+        FAST_STORE raises NameError when slot index is out of bounds
+        """
+
+        with self.assertRaises(NameError):
+            self._run_fast_out_of_bounds("FAST_STORE", 0)
+
+
+    def test_fast_clear_clears_slot(self):
+        """
+        FAST_CLEAR clears fast slot; subsequent FAST yields empty/ref
+        """
+        code, ns = build_expr([
+            ["CONST", 100],
+            ["FAST_BIND", 0],
+            ["FAST_CLEAR", 0],
+            ["CONST", 42],
+            ["RETURN", 1],
+        ], local_syms=("x",))
+        result = run_to_completion(make_callable(code, ns)())
+        self.assertEqual(result, 42)
+
+
+class TestAttrOpcodes(CevalTest):
+    """
+    Tests for ATTR, ATTR_CLEAR, ATTR_REF, ATTR_STORE
+    """
+
+    def test_attr_getattr(self):
+        """
+        ATTR pushes getattr(TOS, name)
+        """
+        class Box(object):
+            value = 3
+        code, ns = build_expr([
+            ["CONST", Box],
+            ["ATTR", "value"],
+            ["RETURN", 1],
+        ])
+        result = run_to_completion(make_callable(code, ns)())
+        self.assertEqual(result, 3)
+
+
+    def test_attr_store_and_getattr(self):
+        """
+        ATTR_STORE sets attribute; ATTR loads it
+        """
+        class Box(object):
+            pass
+        obj = Box()
+        code, ns = build_expr([
+            ["CONST", obj],
+            ["CONST", 99],
+            ["ATTR_STORE", "value"],
+            ["CONST", obj],
+            ["ATTR", "value"],
+            ["RETURN", 1],
+        ])
+        result = run_to_completion(make_callable(code, ns)())
+        self.assertEqual(result, 99)
+        self.assertEqual(obj.value, 99)
+
+
+    def test_attr_clear_delattr(self):
+        """
+        ATTR_CLEAR deletes attribute
+        """
+        class Box(object):
+            pass
+        obj = Box()
+        obj.x = 1
+        code, ns = build_expr([
+            ["CONST", obj],
+            ["ATTR_CLEAR", "x"],
+            ["CONST", 42],
+            ["RETURN", 1],
+        ])
+        result = run_to_completion(make_callable(code, ns)())
+        self.assertEqual(result, 42)
+        self.assertFalse(hasattr(obj, "x"))
+
+
+    def test_attr_ref_pushes_attribute_ref(self):
+        """
+        ATTR_REF pushes AttributeRef for TOS.attr
+        """
+        from koskari.lib import AttributeRef
+        class Box(object):
+            pass
+        obj = Box()
+        obj.foo = "bar"
+        code, ns = build_expr([
+            ["CONST", obj],
+            ["ATTR_REF", "foo"],
+            ["RETURN", 1],
+        ])
+        result = run_to_completion(make_callable(code, ns)())
+        self.assertIsInstance(result, AttributeRef)
+        self.assertEqual(result.deref(), "bar")
+
+
+class TestItemOpcodes(CevalTest):
+    """
+    Tests for ITEM, ITEM_CLEAR, ITEM_REF, ITEM_STORE
+    """
+
+    def test_item_getitem(self):
+        """
+        ITEM pushes TOS1[TOS]
+        """
+        code, ns = build_expr([
+            ["CONST", {"a": 1, "b": 2}],
+            ["CONST", "b"],
+            ["ITEM", 0],
+            ["RETURN", 1],
+        ])
+        result = run_to_completion(make_callable(code, ns)())
+        self.assertEqual(result, 2)
+
+
+    def test_item_store_setitem(self):
+        """
+        ITEM_STORE does TOS2[TOS1] = TOS (val, key, obj popped)
+        """
+        code, ns = build_expr([
+            ["CONST", {}],
+            ["DUP", 1],
+            ["CONST", "k"],
+            ["CONST", "v"],
+            ["ITEM_STORE", 0],
+            ["CONST", "k"],
+            ["ITEM", 0],
+            ["RETURN", 1],
+        ])
+        result = run_to_completion(make_callable(code, ns)())
+        self.assertEqual(result, "v")
+
+
+    def test_item_clear_delitem(self):
+        """
+        ITEM_CLEAR deletes TOS1[TOS]
+        """
+        d = {"x": 1}
+        code, ns = build_expr([
+            ["CONST", d],
+            ["CONST", "x"],
+            ["ITEM_CLEAR", 0],
+            ["CONST", 42],
+            ["RETURN", 1],
+        ])
+        result = run_to_completion(make_callable(code, ns)())
+        self.assertEqual(result, 42)
+        self.assertNotIn("x", d)
+
+
+    def test_item_ref_pushes_item_ref(self):
+        """
+        ITEM_REF pushes ItemRef for TOS1[TOS]
+        """
+        from koskari.lib import ItemRef
+        d = {"k": "v"}
+        code, ns = build_expr([
+            ["CONST", d],
+            ["CONST", "k"],
+            ["ITEM_REF", 0],
+            ["RETURN", 1],
+        ])
+        result = run_to_completion(make_callable(code, ns)())
+        self.assertIsInstance(result, ItemRef)
+        self.assertEqual(result.deref(), "v")
+
+
+class TestConstItemOpcodes(CevalTest):
+    """
+    Tests for CONST_ITEM, CONST_ITEM_CLEAR, CONST_ITEM_REF, CONST_ITEM_STORE
+    """
+
+    def test_const_item_getitem(self):
+        """
+        CONST_ITEM pushes TOS[key] with key from constant pool
+        """
+        code, ns = build_expr([
+            ["CONST", {"a": 10, "b": 20}],
+            ["CONST_ITEM", "b"],
+            ["RETURN", 1],
+        ])
+        result = run_to_completion(make_callable(code, ns)())
+        self.assertEqual(result, 20)
+
+
+    def test_const_item_store_setitem(self):
+        """
+        CONST_ITEM_STORE does TOS1[key] = TOS; key from constant pool
+        """
+        code, ns = build_expr([
+            ["CONST", {}],
+            ["DUP", 1],
+            ["CONST", "x"],
+            ["CONST_ITEM_STORE", "key"],
+            ["CONST_ITEM", "key"],
+            ["RETURN", 1],
+        ])
+        result = run_to_completion(make_callable(code, ns)())
+        self.assertEqual(result, "x")
+
+
+    def test_const_item_clear_delitem(self):
+        """
+        CONST_ITEM_CLEAR deletes TOS[key]
+        """
+        d = {"z": 1}
+        code, ns = build_expr([
+            ["CONST", d],
+            ["CONST_ITEM_CLEAR", "z"],
+            ["CONST", 42],
+            ["RETURN", 1],
+        ])
+        result = run_to_completion(make_callable(code, ns)())
+        self.assertEqual(result, 42)
+        self.assertNotIn("z", d)
+
+
+    def test_const_item_ref_pushes_item_ref(self):
+        """
+        CONST_ITEM_REF pushes ItemRef for TOS[key]
+        """
+        from koskari.lib import ItemRef
+        d = {"k": "v"}
+        code, ns = build_expr([
+            ["CONST", d],
+            ["CONST_ITEM_REF", "k"],
+            ["RETURN", 1],
+        ])
+        result = run_to_completion(make_callable(code, ns)())
+        self.assertIsInstance(result, ItemRef)
+        self.assertEqual(result.deref(), "v")
 
 
 class TestConstAndReturn(CevalTest):
