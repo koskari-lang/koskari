@@ -99,10 +99,10 @@ The VM in `eval.c` uses a jump table; every opcode has a handler. Handlers are e
 - **Delimited continuations**: PUSH_PROMPT, SET_PROMPT_HANDLER, POP_PROMPT, SHIFT
 - **Continuation invocation**: INVOKE_K (stack-based: pop value, pop cont), INVOKE_K_VAR (name-based: pop value, lookup name in frame ns, invoke)
 - **Object protocol**: All OBJECT_* opcodes (comparisons, arithmetic, predicates, len/type/iter/str/repr/vars/dir, bitwise, in/not in, is/is not, isinstance/issubclass, etc.)
+- **Iteration**: ITER_NEXT, AWAIT_NEXT (single transparent-async implementation; behavior depends on TOS: sync iter, Python async iter, or Koskari async gen; Koskari async gens are run inline until yield/return/await)
 
 **Not implemented (stubs)** — hitting these at runtime raises "unimplemented opcode":
 - **Control / mode**: THEEND, BREAK, CONTINUE, YIELD, YIELD_FROM
-- **Iteration**: ITER_NEXT, AWAIT_NEXT
 - **Argument building**: BUILD_ARGS, BUILD_FUNCTION, BUILD_KWDS, BUILD_KWDS_NAMES, COMBINE_ARGS, COMBINE_KWDS
 - **Calls**: CALL_NAMES, CALL_STAR; CALL_ATTR, CALL_ATTR_NAMES, CALL_ATTR_STAR; RECUR, RECUR_NAMES, RECUR_STAR; TAIL_CALL, TAIL_CALL_NAMES, TAIL_CALL_STAR; TAIL_RECUR, TAIL_RECUR_NAMES, TAIL_RECUR_STAR
 - **Block control**: PUSH_FOREACH, PUSH_WITH, PUSH_BEGIN, PUSH_CLASS, PUSH_LOOP; CLEAR_FINALLY, CLEAR_LOOP, CLEAR_TRY; POP_WITH, POP_BEGIN, POP_FINALLY, POP_LOOP

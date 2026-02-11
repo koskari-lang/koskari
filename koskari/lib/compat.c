@@ -30,21 +30,24 @@
 
 
 static PyObject *_str_send = NULL;
+static PyObject *_str_await = NULL;
 
 
 /* === compatibility functions === */
 
 
-/*
-  TODO: As implementation units are ported over, add the necessary
-  compatibility functions here:
-
-  - PyObject_GetAwaitable (for coroutine support)
-  - PyIter_Send (for Python < 3.10)
-  - PyObject_CallMethodOneArg (for Python < 3.9)
-  - PyObject_VectorcallMethod (for Python < 3.9)
-  - _PyObject_LookupAttr (for Python < 3.7)
+/**
+   Return an awaitable (iterator) for o: if o has __await__, call it and
+   return the result; otherwise return NULL. Caller must Py_DECREF the result.
 */
+PyObject *PyObject_GetAwaitable(PyObject *o) {
+  PyObject *meth = PyObject_GetAttr(o, _str_await);
+  if (! meth)
+    return NULL;
+  PyObject *res = PyObject_CallNoArgs(meth);
+  Py_DECREF(meth);
+  return res;
+}
 
 
 /* === unit lifecycle === */
@@ -53,6 +56,7 @@ static PyObject *_str_send = NULL;
 int koskari_compat_init(PyObject *mod) {
 
   STR_CONST(_str_send, "send");
+  STR_CONST(_str_await, "__await__");
 
   return 0;
 }
@@ -61,6 +65,7 @@ int koskari_compat_init(PyObject *mod) {
 int koskari_compat_clear(PyObject *mod) {
 
   Py_CLEAR(_str_send);
+  Py_CLEAR(_str_await);
 
   return 0;
 }

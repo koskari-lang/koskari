@@ -312,24 +312,6 @@ class TestStubOpcodes(CevalTest):
             self._run_stub_opcode("YIELD_FROM", 0)
 
 
-    def test_iter_next_raises_not_implemented(self):
-        """
-        ITER_NEXT raises RuntimeError
-        """
-
-        with self.assertRaises(RuntimeError):
-            self._run_stub_opcode("ITER_NEXT", "target")
-
-
-    def test_await_next_raises_not_implemented(self):
-        """
-        AWAIT_NEXT raises RuntimeError
-        """
-
-        with self.assertRaises(RuntimeError):
-            self._run_stub_opcode("AWAIT_NEXT", "target")
-
-
     def test_var_clear_raises_name_error_for_missing_name(self):
         """
         VAR_CLEAR raises NameError when name is not defined
@@ -974,6 +956,60 @@ class TestCheckOpcodes(CevalTest):
         ])
         result = run_to_completion(make_callable(code, ns)())
         self.assertEqual(result, 1)
+
+
+class TestIterNextOpcodes(CevalTest):
+    """
+    Tests for ITER_NEXT (and AWAIT_NEXT alias): sync iter, exhausted else
+    """
+
+    def test_iter_next_sync_iter_pushes_value(self):
+        """
+        ITER_NEXT on a list pushes first value and falls through to body
+        """
+        code, ns = build_expr([
+            ["CONST", [10]],
+            ["ITER_NEXT", "else_lbl"],
+            ["RETURN", 1],
+            ["LABEL", "else_lbl"],
+            ["CONST", 0],
+            ["RETURN", 1],
+        ])
+        result = run_to_completion(make_callable(code, ns)())
+        self.assertEqual(result, 10)
+
+
+    def test_iter_next_exhausted_jumps_to_else(self):
+        """
+        ITER_NEXT on empty iterable jumps to else target
+        """
+        code, ns = build_expr([
+            ["CONST", []],
+            ["ITER_NEXT", "else_lbl"],
+            ["CONST", -1],
+            ["RETURN", 1],
+            ["LABEL", "else_lbl"],
+            ["CONST", 42],
+            ["RETURN", 1],
+        ])
+        result = run_to_completion(make_callable(code, ns)())
+        self.assertEqual(result, 42)
+
+
+    def test_await_next_same_behavior_as_iter_next(self):
+        """
+        AWAIT_NEXT uses same implementation; sync iter works the same
+        """
+        code, ns = build_expr([
+            ["CONST", [7]],
+            ["AWAIT_NEXT", "else_lbl"],
+            ["RETURN", 1],
+            ["LABEL", "else_lbl"],
+            ["CONST", 0],
+            ["RETURN", 1],
+        ])
+        result = run_to_completion(make_callable(code, ns)())
+        self.assertEqual(result, 7)
 
 
 class TestFastOpcodes(CevalTest):

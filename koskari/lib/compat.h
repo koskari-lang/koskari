@@ -52,12 +52,8 @@ int koskari_compat_init(PyObject *mod);
 int koskari_compat_clear(PyObject *mod);
 
 
-/*
-  TODO: As implementation units are ported over, add compatibility
-  function declarations here as needed:
-
-  PyObject *PyObject_GetAwaitable(PyObject *o);
-*/
+/* Our wrapper when the C API symbol is not exported (e.g. 3.12) */
+PyObject *PyObject_GetAwaitable(PyObject *o);
 
 
 #endif

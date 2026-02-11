@@ -248,7 +248,7 @@ typedef enum KosOpStyle {
 Handlers live in `koskari/lib/eval.c`. Each opcode has a handler; it is either **fully implemented** or a **stub** that calls `op_unimplemented_stub` (runtime error if executed). There are no partially implemented opcodes.
 
 - **Fully implemented**: Stack (NOOP, LABEL, POSITION, DUP, POP, CONST); RETURN, AWAIT; CALL (simple call); GLOBALS, LOCALS; variables (VAR, VAR_BIND, VAR_CLEAR, VAR_REF, VAR_STORE); fast locals (FAST, FAST_BIND, FAST_REF, FAST_STORE); namespace scope (PUSH_NS, POP_NS); exception ops (EXCEPTION, EXCEPTION_CLEAR, EXCEPTION_MATCH, RAISE, CHECK_EXCEPTION); try/finally (PUSH_TRY, PUSH_FINALLY, POP_TRY, POP_FINALLY, CLEAR_TRY, CLEAR_FINALLY); delimited continuations (PUSH_PROMPT, SET_PROMPT_HANDLER, POP_PROMPT, SHIFT); INVOKE_K, INVOKE_K_VAR; all OBJECT_* opcodes.
-- **Stubs (unimplemented)**: THEEND, BREAK, CONTINUE, YIELD, YIELD_FROM; ITER_NEXT, AWAIT_NEXT; all jumps and check-jumps except CHECK_EXCEPTION; FAST_CLEAR; all ATTR*, ITEM*, CONST_ITEM*; argument-building (BUILD_*, COMBINE_*); CALL_NAMES, CALL_STAR, CALL_ATTR*, RECUR*, TAIL_*; block control (PUSH_*/POP_*/CLEAR_* for foreach/with/begin/class/loop); PUSH_WIND, POP_WIND, END_WIND; PUSH_REGION, POP_REGION.
+- **Stubs (unimplemented)**: THEEND, BREAK, CONTINUE, YIELD, YIELD_FROM; argument-building (BUILD_*, COMBINE_*); CALL_NAMES, CALL_STAR, CALL_ATTR*, RECUR*, TAIL_*; block control (PUSH_*/POP_*/CLEAR_* for foreach/with/begin/class/loop); PUSH_WIND, POP_WIND, END_WIND; PUSH_REGION, POP_REGION.
 
 For the full categorized list, see [FEATURES.md](../FEATURES.md) § "Opcodes: implementation status".
 
