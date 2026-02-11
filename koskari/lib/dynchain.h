@@ -742,6 +742,17 @@ void kos_dyn_pop_ns(KosContext *ctx, KosDynNs *node);
 
 
 /**
+   Pop the top node of the dynamic chain. Dispatches on node kind.
+   For NS, restores frame_top->ns from the node's saved_ns before popping.
+
+   :param ctx: execution context
+
+   :return: 0 on success, -1 on error or if top is PROMPT/PYCALL
+*/
+int kos_dyn_pop_top(KosContext *ctx);
+
+
+/**
    Find the first TRY or FINALLY region on the dynamic chain that is
    enabled, walking from dyn_top toward root. Used for exception
    handling: when an exception occurs, this returns the region whose

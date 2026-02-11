@@ -32,6 +32,12 @@
    :ai-assistant: Claude Opus 4.5 via Cursor
 */
 
+/*
+   Opcode families (sections below): no-op/debug, stack, control, calls,
+   namespaces (GLOBALS/LOCALS), variable access (VAR_* and FAST_*),
+   exceptions, check/jump, object protocol (OBJECT_*), blocks (PUSH_* and
+   POP_*), continuations (prompt/SHIFT/INVOKE_K).
+*/
 
 // NOOP must always be first
 OP(NOOP, NOARG)

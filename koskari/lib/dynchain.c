@@ -640,6 +640,58 @@ void kos_dyn_pop_ns(KosContext *ctx, KosDynNs *node) {
 }
 
 
+/**
+   Pop the top node of the dynamic chain. Dispatches on node kind.
+   For NS, restores frame_top->ns from the node's saved_ns before popping.
+
+   :return: 0 on success, -1 on error or if top is PROMPT/PYCALL (cannot unwind)
+*/
+int kos_dyn_pop_top(KosContext *ctx) {
+  KosDynNode *top = ctx->dyn_top;
+  if (! top) {
+    PyErr_SetString(PyExc_RuntimeError, "cannot pop from empty dynamic chain");
+    return -1;
+  }
+
+  switch (top->kind) {
+  case KOS_DYN_FRAME:
+    return kos_dyn_pop_frame(ctx);
+
+  case KOS_DYN_WIND:
+    return kos_dyn_pop_wind(ctx, (KosDynWind *) top);
+
+  case KOS_DYN_REGION:
+    kos_dyn_pop_region(ctx, (KosDynRegion *) top);
+    return 0;
+
+  case KOS_DYN_NS: {
+    KosDynNs *ns_node = (KosDynNs *) top;
+    if (ctx->frame_top) {
+      PyObject *prior = ns_node->saved_ns;
+      Py_INCREF(prior);
+      Py_DECREF(ctx->frame_top->ns);
+      ctx->frame_top->ns = prior;
+    }
+    kos_dyn_pop_ns(ctx, ns_node);
+    return 0;
+  }
+
+  case KOS_DYN_PROMPT:
+    PyErr_SetString(PyExc_RuntimeError,
+                    "cannot unwind past prompt");
+    return -1;
+
+  case KOS_DYN_PYCALL:
+    PyErr_SetString(PyExc_RuntimeError,
+                    "cannot unwind past Python call boundary");
+    return -1;
+  }
+
+  PyErr_SetString(PyExc_RuntimeError, "unknown dynamic chain node kind");
+  return -1;
+}
+
+
 KosDynRegion *kos_find_region_for_raise(KosContext *ctx) {
   KosDynNode *node = ctx->dyn_top;
 

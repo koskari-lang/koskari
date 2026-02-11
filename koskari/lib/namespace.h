@@ -292,6 +292,9 @@ PyObject *KosCollectorNamespace_NewFull(
 #define KosCollectorNamespace_CheckExact(obj)                   \
   ((obj) && ((obj)->ob_type == &KosCollectorNamespaceType))
 
+#define KosNamespace_SupportsFast(ns)                                   \
+  (KosNamespace_CheckExact(ns) || KosCollectorNamespace_CheckExact(ns))
+
 
 /* === ModuleNamespace === */
 

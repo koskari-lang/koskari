@@ -609,6 +609,130 @@ static int push_or_await(KosContext *ctx, KosEvent *out_ev, PyObject *val) {
 }
 
 
+/**
+   Push a single result onto the frame stack and maybe await it if
+   awaitable. Caller passes a new reference in val; it is consumed.
+   Returns same as push_or_await: 0 continue, 1 stop (AWAIT), -1 error.
+*/
+static int push_result_or_await(KosContext *ctx, KosEvent *out_ev, PyObject *val) {
+  if (! val)
+    return -1;
+  return push_or_await(ctx, out_ev, val);
+}
+
+
+/* === Frame namespace helpers (for VAR_* opcodes) === */
+
+
+/**
+   Get the name constant for a VAR_* opcode. Borrowed reference.
+*/
+static PyObject *get_name_from_insn(KosCode *code, KosOp *insn) {
+  return KosCode_GetConstant((PyObject *) code, insn->arg);
+}
+
+
+/**
+   Deref name in the current frame namespace. New reference or NULL.
+*/
+static PyObject *frame_ns_deref(KosContext *ctx, PyObject *name) {
+  PyObject *ns = ctx->frame_top->ns;
+  if (KosNamespace_Check(ns))
+    return KosNamespace_Deref(ns, name);
+  if (PyDict_Check(ns)) {
+    PyObject *val = PyDict_GetItemWithError(ns, name);
+    if (val) {
+      Py_INCREF(val);
+      return val;
+    }
+    if (! PyErr_Occurred())
+      PyErr_Format(PyExc_NameError, "name %R is not defined", name);
+    return NULL;
+  }
+  PyErr_Format(PyExc_TypeError, "frame namespace must be Namespace or dict,"
+               " got %R", ns);
+  return NULL;
+}
+
+
+/**
+   Store value into name in the current frame namespace. Caller retains
+   ownership of val.
+*/
+static int frame_ns_store(KosContext *ctx, PyObject *name, PyObject *val) {
+  PyObject *ns = ctx->frame_top->ns;
+  if (KosNamespace_Check(ns))
+    return KosNamespace_Store(ns, name, val);
+  if (PyDict_Check(ns))
+    return PyDict_SetItem(ns, name, val);
+  PyErr_Format(PyExc_TypeError,
+               "frame namespace must be Namespace or dict, got %R", ns);
+  return -1;
+}
+
+
+/**
+   Bind name to value in the current frame namespace. Consumes val.
+*/
+static int frame_ns_bind(KosContext *ctx, PyObject *name, PyObject *val) {
+  PyObject *ns = ctx->frame_top->ns;
+  if (KosNamespace_Check(ns)) {
+    PyObject *ref = KosSymbolicRef_New(name, val);
+    Py_DECREF(val);
+    if (! ref)
+      return -1;
+    if (KosNamespace_Bind(ns, name, ref) < 0) {
+      Py_DECREF(ref);
+      return -1;
+    }
+    Py_DECREF(ref);
+    return 0;
+  }
+  if (PyDict_Check(ns)) {
+    if (PyDict_SetItem(ns, name, val) < 0) {
+      Py_DECREF(val);
+      return -1;
+    }
+    Py_DECREF(val);
+    return 0;
+  }
+  Py_DECREF(val);
+  PyErr_SetString(PyExc_TypeError,
+                  "frame namespace must be Namespace or dict");
+  return -1;
+}
+
+
+/**
+   Clear name from the current frame namespace.
+*/
+static int frame_ns_clear(KosContext *ctx, PyObject *name) {
+  PyObject *ns = ctx->frame_top->ns;
+  if (KosNamespace_Check(ns))
+    return KosNamespace_Clear(ns, name);
+  if (PyDict_Check(ns))
+    return PyDict_DelItem(ns, name);
+  PyErr_Format(PyExc_TypeError,
+               "frame namespace must be Namespace or dict, got %R", ns);
+  return -1;
+}
+
+
+/**
+   Get reference for name in the current frame namespace. Namespace only.
+   Borrowed reference; caller must INCREF if keeping.
+*/
+static PyObject *frame_ns_ref(KosContext *ctx, PyObject *name) {
+  PyObject *ns = ctx->frame_top->ns;
+  if (! KosNamespace_Check(ns)) {
+    PyErr_Format(PyExc_TypeError,
+                 "frame namespace must be Namespace for VAR_REF, got %R", ns);
+    return NULL;
+  }
+  return KosNamespace_Ref(ns, name);
+}
+
+
 /* === Opcode handlers (always inlined; return 0=continue 1=stop -1=error) === */
 
 
@@ -619,6 +743,22 @@ static int op_unimplemented_stub(KosContext *ctx, KosEvent *out_ev, KosOp *insn)
                (unsigned) insn->op);
   return -1;
 }
+
+
+/*
+   Opcode families (for quick navigation):
+   NOOP, LABEL, POSITION - no-op / debug
+   CONST, DUP, POP - stack
+   RETURN, AWAIT - control
+   CALL, CALL_*, RECUR, TAIL_* - calls
+   GLOBALS, LOCALS - namespaces
+   VAR_*, FAST_* - variable access
+   EXCEPTION_* - exceptions
+   CHECK_* - comparison / jump
+   OBJECT_* - object protocol
+   PUSH_*, POP_* - blocks, regions, NS
+   SHIFT, INVOKE_K, prompt - continuations
+*/
 
 
 /**
@@ -659,24 +799,17 @@ KOS_OP_HANDLER(POSITION) {
    onto the stack.
 */
 KOS_OP_HANDLER(CONST) {
-  KosCode *code = ctx->frame_top->code;
-  PyObject *val = KosCode_GetConstant((PyObject *) code, insn->arg);
+  PyObject *val = KosCode_GetConstant((PyObject *) ctx->frame_top->code,
+                                      insn->arg);
   if (! val) {
     SAYF("[eval] CONST GetConstant failed arg=%u\n",
          (unsigned) insn->arg);
     return -1;
   }
-
   if (PyLong_Check(val))
     SAYF("[eval] CONST pushed %ld\n", PyLong_AsLong(val));
-
-  if (KosStackBlock_PushRef(&ctx->frame_top->stack, val) < 0) {
-    Py_DECREF(val);
-    return -1;
-  }
-  Py_DECREF(val);
-  (void) out_ev;
-  return 0;
+  Py_INCREF(val);
+  return push_result_or_await(ctx, out_ev, val);
 }
 
 
@@ -874,14 +1007,7 @@ KOS_OP_HANDLER(GLOBALS) {
 
   PyObject *ns = ctx->globals_frame->ns;
   Py_INCREF(ns);
-  if (KosStackBlock_PushRef(&ctx->frame_top->stack, ns) < 0) {
-    Py_DECREF(ns);
-    return -1;
-  }
-  Py_DECREF(ns);
-  (void) out_ev;
-  (void) insn;
-  return 0;
+  return push_result_or_await(ctx, out_ev, ns);
 }
 
 
@@ -892,14 +1018,7 @@ KOS_OP_HANDLER(GLOBALS) {
 KOS_OP_HANDLER(LOCALS) {
   PyObject *ns = ctx->frame_top->ns;
   Py_INCREF(ns);
-  if (KosStackBlock_PushRef(&ctx->frame_top->stack, ns) < 0) {
-    Py_DECREF(ns);
-    return -1;
-  }
-  Py_DECREF(ns);
-  (void) out_ev;
-  (void) insn;
-  return 0;
+  return push_result_or_await(ctx, out_ev, ns);
 }
 
 
@@ -908,27 +1027,10 @@ KOS_OP_HANDLER(LOCALS) {
    frame's namespace and push the value (or await it if async).
 */
 KOS_OP_HANDLER(VAR) {
-  KosCode *code = ctx->frame_top->code;
-  PyObject *name = KosCode_GetConstant((PyObject *) code, insn->arg);
+  PyObject *name = get_name_from_insn(ctx->frame_top->code, insn);
   if (! name)
     return -1;
-
-  PyObject *ns = ctx->frame_top->ns;
-  PyObject *val = NULL;
-  if (KosNamespace_Check(ns)) {
-    val = KosNamespace_Deref(ns, name);
-  } else if (PyDict_Check(ns)) {
-    val = PyDict_GetItemWithError(ns, name);
-    if (val)
-      Py_INCREF(val);
-    else if (! PyErr_Occurred())
-      PyErr_Format(PyExc_NameError, "name %R is not defined", name);
-  } else {
-    PyErr_Format(PyExc_TypeError, "frame namespace must be Namespace or dict,"
-                 " got %R", ns);
-    return -1;
-  }
-
+  PyObject *val = frame_ns_deref(ctx, name);
   if (! val)
     return -1;
   return push_or_await(ctx, out_ev, val);
@@ -944,11 +1046,8 @@ KOS_OP_HANDLER(EXCEPTION) {
   PyErr_GetExcInfo(&typ, &val, &tb);
 
   if (! typ) {
-    if (KosStackBlock_PushRef(&ctx->frame_top->stack, Py_None) < 0)
-      return -1;
-    (void) out_ev;
-    (void) insn;
-    return 0;
+    Py_INCREF(Py_None);
+    return push_result_or_await(ctx, out_ev, Py_None);
   }
 
   if (! val)
@@ -957,14 +1056,7 @@ KOS_OP_HANDLER(EXCEPTION) {
   Py_DECREF(typ);
   Py_XDECREF(tb);
 
-  if (KosStackBlock_PushRef(&ctx->frame_top->stack, val) < 0) {
-    Py_DECREF(val);
-    return -1;
-  }
-  Py_DECREF(val);
-  (void) out_ev;
-  (void) insn;
-  return 0;
+  return push_result_or_await(ctx, out_ev, val);
 }
 
 
@@ -1001,14 +1093,7 @@ KOS_OP_HANDLER(EXCEPTION_MATCH) {
     if (KosStackBlock_Drop(&ctx->frame_top->stack, (size_t) opa) < 0)
       return -1;
     Py_INCREF(ret);
-    if (KosStackBlock_PushRef(&ctx->frame_top->stack, ret) < 0) {
-      Py_DECREF(ret);
-      return -1;
-    }
-    Py_DECREF(ret);
-    (void) out_ev;
-    (void) insn;
-    return 0;
+    return push_result_or_await(ctx, out_ev, ret);
   }
 
   PyObject *const *checks = KosStackBlock_TailPtr(ctx->frame_top->stack,
@@ -1034,14 +1119,7 @@ KOS_OP_HANDLER(EXCEPTION_MATCH) {
   Py_XDECREF(tb);
 
   Py_INCREF(ret);
-  if (KosStackBlock_PushRef(&ctx->frame_top->stack, ret) < 0) {
-    Py_DECREF(ret);
-    return -1;
-  }
-  Py_DECREF(ret);
-  (void) out_ev;
-  (void) insn;
-  return 0;
+  return push_result_or_await(ctx, out_ev, ret);
 }
 
 
@@ -1347,31 +1425,8 @@ KOS_OP_HANDLER(SHIFT) {
   SAYF("[eval] SHIFT unwinding to prompt, then handler_pc=%u\n",
        (unsigned) prompt->handler_pc);
   while (ctx->dyn_top != (KosDynNode *) prompt) {
-    if (KosDynNode_IS_FRAME(ctx->dyn_top)) {
-      if (kos_dyn_pop_frame(ctx) < 0) {
-        kos_continuation_free(k);
-        return -1;
-      }
-    } else if (KosDynNode_IS_WIND(ctx->dyn_top)) {
-      if (kos_dyn_pop_wind(ctx, (KosDynWind *) ctx->dyn_top) < 0) {
-        kos_continuation_free(k);
-        return -1;
-      }
-    } else if (KosDynNode_IS_REGION(ctx->dyn_top)) {
-      kos_dyn_pop_region(ctx, (KosDynRegion *) ctx->dyn_top);
-    } else if (KosDynNode_IS_NS(ctx->dyn_top)) {
-      KosDynNs *ns_node = (KosDynNs *) ctx->dyn_top;
-      if (ctx->frame_top) {
-        PyObject *prior = ns_node->saved_ns;
-        Py_INCREF(prior);
-        Py_DECREF(ctx->frame_top->ns);
-        ctx->frame_top->ns = prior;
-      }
-      kos_dyn_pop_ns(ctx, ns_node);
-    } else {
+    if (kos_dyn_pop_top(ctx) != 0) {
       kos_continuation_free(k);
-      PyErr_SetString(PyExc_RuntimeError,
-                      "shift: cannot unwind past non-frame/wind/region/ns");
       return -1;
     }
   }
@@ -1400,14 +1455,7 @@ KOS_OP_HANDLER(SHIFT) {
   }
 
   ctx->frame_top->pc = prompt->handler_pc;
-  if (KosStackBlock_PushRef(&ctx->frame_top->stack, wrapper) < 0) {
-    Py_DECREF(wrapper);
-    return -1;
-  }
-  Py_DECREF(wrapper);
-  (void) out_ev;
-  (void) handler_frame;
-  return 0;
+  return push_result_or_await(ctx, out_ev, wrapper);
 }
 
 
@@ -1898,9 +1946,11 @@ KOS_OP_HANDLER(OBJECT_POWER) {
 
 
 /**
-   OBJECT_BIT_LEFT: arg unused. Pop right then left, push left << right.
+   Binary op: pop right then left, call fn(left, right), push result or await.
+   fn returns a new reference or NULL.
 */
-KOS_OP_HANDLER(OBJECT_BIT_LEFT) {
+static int obj_op_binary(KosContext *ctx, KosEvent *out_ev, KosOp *insn,
+                         PyObject *(*fn)(PyObject *left, PyObject *right)) {
   PyObject *right = KosStackBlock_PopRef(&ctx->frame_top->stack);
   if (! right)
     return -1;
@@ -1909,14 +1959,55 @@ KOS_OP_HANDLER(OBJECT_BIT_LEFT) {
     Py_DECREF(right);
     return -1;
   }
-
-  PyObject *res = PyNumber_Lshift(left, right);
+  PyObject *res = fn(left, right);
   Py_DECREF(left);
   Py_DECREF(right);
   if (! res)
     return -1;
   (void) insn;
-  return push_or_await(ctx, out_ev, res);
+  return push_result_or_await(ctx, out_ev, res);
+}
+
+
+static PyObject *binary_in_result(PyObject *left, PyObject *right) {
+  int r = PySequence_Contains(right, left);
+  if (r < 0)
+    return NULL;
+  PyObject *res = (r ? Py_True : Py_False);
+  Py_INCREF(res);
+  return res;
+}
+
+
+static PyObject *binary_not_in_result(PyObject *left, PyObject *right) {
+  int r = PySequence_Contains(right, left);
+  if (r < 0)
+    return NULL;
+  PyObject *res = (r ? Py_False : Py_True);
+  Py_INCREF(res);
+  return res;
+}
+
+
+static PyObject *binary_is_result(PyObject *left, PyObject *right) {
+  PyObject *res = (left == right ? Py_True : Py_False);
+  Py_INCREF(res);
+  return res;
+}
+
+
+static PyObject *binary_is_not_result(PyObject *left, PyObject *right) {
+  PyObject *res = (left != right ? Py_True : Py_False);
+  Py_INCREF(res);
+  return res;
+}
+
+
+/**
+   OBJECT_BIT_LEFT: arg unused. Pop right then left, push left << right.
+*/
+KOS_OP_HANDLER(OBJECT_BIT_LEFT) {
+  return obj_op_binary(ctx, out_ev, insn, PyNumber_Lshift);
 }
 
 
@@ -1924,22 +2015,7 @@ KOS_OP_HANDLER(OBJECT_BIT_LEFT) {
    OBJECT_BIT_RIGHT: arg unused. Pop right then left, push left >> right.
 */
 KOS_OP_HANDLER(OBJECT_BIT_RIGHT) {
-  PyObject *right = KosStackBlock_PopRef(&ctx->frame_top->stack);
-  if (! right)
-    return -1;
-  PyObject *left = KosStackBlock_PopRef(&ctx->frame_top->stack);
-  if (! left) {
-    Py_DECREF(right);
-    return -1;
-  }
-
-  PyObject *res = PyNumber_Rshift(left, right);
-  Py_DECREF(left);
-  Py_DECREF(right);
-  if (! res)
-    return -1;
-  (void) insn;
-  return push_or_await(ctx, out_ev, res);
+  return obj_op_binary(ctx, out_ev, insn, PyNumber_Rshift);
 }
 
 
@@ -2015,25 +2091,7 @@ KOS_OP_HANDLER(OBJECT_GE) {
    (left in right).
 */
 KOS_OP_HANDLER(OBJECT_IN) {
-  PyObject *right = KosStackBlock_PopRef(&ctx->frame_top->stack);
-  if (! right)
-    return -1;
-  PyObject *left = KosStackBlock_PopRef(&ctx->frame_top->stack);
-  if (! left) {
-    Py_DECREF(right);
-    return -1;
-  }
-
-  int r = PySequence_Contains(right, left);
-  Py_DECREF(left);
-  Py_DECREF(right);
-  if (r < 0)
-    return -1;
-
-  PyObject *res = (r ? Py_True : Py_False);
-  Py_INCREF(res);
-  (void) insn;
-  return push_or_await(ctx, out_ev, res);
+  return obj_op_binary(ctx, out_ev, insn, binary_in_result);
 }
 
 
@@ -2041,25 +2099,7 @@ KOS_OP_HANDLER(OBJECT_IN) {
    OBJECT_NOT_IN: arg unused. Pop right then left, push (left not in right).
 */
 KOS_OP_HANDLER(OBJECT_NOT_IN) {
-  PyObject *right = KosStackBlock_PopRef(&ctx->frame_top->stack);
-  if (! right)
-    return -1;
-  PyObject *left = KosStackBlock_PopRef(&ctx->frame_top->stack);
-  if (! left) {
-    Py_DECREF(right);
-    return -1;
-  }
-
-  int r = PySequence_Contains(right, left);
-  Py_DECREF(left);
-  Py_DECREF(right);
-  if (r < 0)
-    return -1;
-
-  PyObject *res = (r ? Py_False : Py_True);
-  Py_INCREF(res);
-  (void) insn;
-  return push_or_await(ctx, out_ev, res);
+  return obj_op_binary(ctx, out_ev, insn, binary_not_in_result);
 }
 
 
@@ -2067,21 +2107,7 @@ KOS_OP_HANDLER(OBJECT_NOT_IN) {
    OBJECT_IS: arg unused. Pop right then left, push (left is right).
 */
 KOS_OP_HANDLER(OBJECT_IS) {
-  PyObject *right = KosStackBlock_PopRef(&ctx->frame_top->stack);
-  if (! right)
-    return -1;
-  PyObject *left = KosStackBlock_PopRef(&ctx->frame_top->stack);
-  if (! left) {
-    Py_DECREF(right);
-    return -1;
-  }
-
-  PyObject *res = (left == right ? Py_True : Py_False);
-  Py_INCREF(res);
-  Py_DECREF(left);
-  Py_DECREF(right);
-  (void) insn;
-  return push_or_await(ctx, out_ev, res);
+  return obj_op_binary(ctx, out_ev, insn, binary_is_result);
 }
 
 
@@ -2089,21 +2115,7 @@ KOS_OP_HANDLER(OBJECT_IS) {
    OBJECT_IS_NOT: arg unused. Pop right then left, push (left is not right).
 */
 KOS_OP_HANDLER(OBJECT_IS_NOT) {
-  PyObject *right = KosStackBlock_PopRef(&ctx->frame_top->stack);
-  if (! right)
-    return -1;
-  PyObject *left = KosStackBlock_PopRef(&ctx->frame_top->stack);
-  if (! left) {
-    Py_DECREF(right);
-    return -1;
-  }
-
-  PyObject *res = (left != right ? Py_True : Py_False);
-  Py_INCREF(res);
-  Py_DECREF(left);
-  Py_DECREF(right);
-  (void) insn;
-  return push_or_await(ctx, out_ev, res);
+  return obj_op_binary(ctx, out_ev, insn, binary_is_not_result);
 }
 
 
@@ -2389,35 +2401,14 @@ KOS_OP_HANDLER(CHECK_IS_SUBCLASS) {
    the value at TOS (pop value, then bind).
 */
 KOS_OP_HANDLER(VAR_BIND) {
-  KosCode *code = ctx->frame_top->code;
-  PyObject *name = KosCode_GetConstant((PyObject *) code, insn->arg);
+  PyObject *name = get_name_from_insn(ctx->frame_top->code, insn);
   if (! name)
     return -1;
   PyObject *val = KosStackBlock_PopRef(&ctx->frame_top->stack);
   if (! val)
     return -1;
-  PyObject *ns = ctx->frame_top->ns;
-  if (KosNamespace_Check(ns)) {
-    PyObject *ref = KosSymbolicRef_New(name, val);
-    Py_DECREF(val);
-    if (! ref)
-      return -1;
-    if (KosNamespace_Bind(ns, name, ref) < 0) {
-      Py_DECREF(ref);
-      return -1;
-    }
-  } else if (PyDict_Check(ns)) {
-    if (PyDict_SetItem(ns, name, val) < 0) {
-      Py_DECREF(val);
-      return -1;
-    }
-    Py_DECREF(val);
-  } else {
-    Py_DECREF(val);
-    PyErr_SetString(PyExc_TypeError,
-                    "frame namespace must be Namespace or dict");
+  if (frame_ns_bind(ctx, name, val) < 0)
     return -1;
-  }
   (void) out_ev;
   return 0;
 }
@@ -2427,22 +2418,11 @@ KOS_OP_HANDLER(VAR_BIND) {
    VAR_CLEAR: arg = constant index (name). Delete name from namespace.
 */
 KOS_OP_HANDLER(VAR_CLEAR) {
-  KosCode *code = ctx->frame_top->code;
-  PyObject *name = KosCode_GetConstant((PyObject *) code, insn->arg);
+  PyObject *name = get_name_from_insn(ctx->frame_top->code, insn);
   if (! name)
     return -1;
-  PyObject *ns = ctx->frame_top->ns;
-  if (KosNamespace_Check(ns)) {
-    if (KosNamespace_Clear(ns, name) < 0)
-      return -1;
-  } else if (PyDict_Check(ns)) {
-    if (PyDict_DelItem(ns, name) < 0)
-      return -1;
-  } else {
-    PyErr_Format(PyExc_TypeError,
-                 "frame namespace must be Namespace or dict, got %R", ns);
+  if (frame_ns_clear(ctx, name) < 0)
     return -1;
-  }
   (void) out_ev;
   return 0;
 }
@@ -2452,26 +2432,14 @@ KOS_OP_HANDLER(VAR_CLEAR) {
    VAR_REF: arg = constant index (name). Push name reference (for closure).
 */
 KOS_OP_HANDLER(VAR_REF) {
-  KosCode *code = ctx->frame_top->code;
-  PyObject *name = KosCode_GetConstant((PyObject *) code, insn->arg);
+  PyObject *name = get_name_from_insn(ctx->frame_top->code, insn);
   if (! name)
     return -1;
-  PyObject *ns = ctx->frame_top->ns;
-  if (! KosNamespace_Check(ns)) {
-    PyErr_Format(PyExc_TypeError,
-                 "frame namespace must be Namespace for VAR_REF, got %R", ns);
-    return -1;
-  }
-  PyObject *ref = KosNamespace_Ref(ns, name);
+  PyObject *ref = frame_ns_ref(ctx, name);
   if (! ref)
     return -1;
   Py_INCREF(ref);
-  if (KosStackBlock_PushRef(&ctx->frame_top->stack, ref) < 0) {
-    Py_DECREF(ref);
-    return -1;
-  }
-  (void) out_ev;
-  return 0;
+  return push_result_or_await(ctx, out_ev, ref);
 }
 
 
@@ -2480,30 +2448,14 @@ KOS_OP_HANDLER(VAR_REF) {
    the current frame namespace.
 */
 KOS_OP_HANDLER(VAR_STORE) {
-  KosCode *code = ctx->frame_top->code;
-  PyObject *name = KosCode_GetConstant((PyObject *) code, insn->arg);
+  PyObject *name = get_name_from_insn(ctx->frame_top->code, insn);
   if (! name)
     return -1;
-
   PyObject *val = KosStackBlock_PopRef(&ctx->frame_top->stack);
   if (! val)
     return -1;
-
-  PyObject *ns = ctx->frame_top->ns;
-  if (KosNamespace_Check(ns)) {
-    if (KosNamespace_Store(ns, name, val) < 0) {
-      Py_DECREF(val);
-      return -1;
-    }
-  } else if (PyDict_Check(ns)) {
-    if (PyDict_SetItem(ns, name, val) < 0) {
-      Py_DECREF(val);
-      return -1;
-    }
-  } else {
+  if (frame_ns_store(ctx, name, val) < 0) {
     Py_DECREF(val);
-    PyErr_Format(PyExc_TypeError,
-                 "frame namespace must be Namespace or dict, got %R", ns);
     return -1;
   }
   Py_DECREF(val);
@@ -2517,7 +2469,7 @@ KOS_OP_HANDLER(VAR_STORE) {
 */
 KOS_OP_HANDLER(FAST) {
   PyObject *ns = ctx->frame_top->ns;
-  if (! KosNamespace_CheckExact(ns) && ! KosCollectorNamespace_CheckExact(ns)) {
+  if (! KosNamespace_SupportsFast(ns)) {
     PyErr_Format(PyExc_RuntimeError, "FAST invoked on %R", ns);
     return -1;
   }
@@ -2534,7 +2486,7 @@ KOS_OP_HANDLER(FAST) {
 */
 KOS_OP_HANDLER(FAST_BIND) {
   PyObject *ns = ctx->frame_top->ns;
-  if (! KosNamespace_CheckExact(ns) && ! KosCollectorNamespace_CheckExact(ns)) {
+  if (! KosNamespace_SupportsFast(ns)) {
     PyErr_Format(PyExc_RuntimeError, "FAST_BIND invoked on %R", ns);
     return -1;
   }
@@ -2574,7 +2526,7 @@ KOS_OP_HANDLER(FAST_CLEAR) {
 */
 KOS_OP_HANDLER(FAST_REF) {
   PyObject *ns = ctx->frame_top->ns;
-  if (! KosNamespace_CheckExact(ns) && ! KosCollectorNamespace_CheckExact(ns)) {
+  if (! KosNamespace_SupportsFast(ns)) {
     PyErr_Format(PyExc_RuntimeError, "FAST_REF invoked on %R", ns);
     return -1;
   }
@@ -2583,12 +2535,7 @@ KOS_OP_HANDLER(FAST_REF) {
   if (! ref)
     return -1;
   Py_INCREF(ref);
-  if (KosStackBlock_PushRef(&ctx->frame_top->stack, ref) < 0) {
-    Py_DECREF(ref);
-    return -1;
-  }
-  (void) out_ev;
-  return 0;
+  return push_result_or_await(ctx, out_ev, ref);
 }
 
 
@@ -2597,7 +2544,7 @@ KOS_OP_HANDLER(FAST_REF) {
 */
 KOS_OP_HANDLER(FAST_STORE) {
   PyObject *ns = ctx->frame_top->ns;
-  if (! KosNamespace_CheckExact(ns) && ! KosCollectorNamespace_CheckExact(ns)) {
+  if (! KosNamespace_SupportsFast(ns)) {
     PyErr_Format(PyExc_RuntimeError, "FAST_STORE invoked on %R", ns);
     return -1;
   }
@@ -3374,6 +3321,25 @@ koskari_eval_cleanup:
 /* === Unit lifecycle === */
 
 
+/**
+   Create a Koskari exception type and add it to the module. On success,
+   the module owns the reference (PyModule_AddObject steals).
+*/
+static int register_koskari_exception(PyObject *mod,
+                                       const char *full_name,
+                                       const char *attr_name,
+                                       PyObject **out_exc) {
+  PyObject *base = PyTuple_Pack(1, PyExc_BaseException);
+  if (! base)
+    return -1;
+  *out_exc = PyErr_NewException(full_name, base, NULL);
+  Py_DECREF(base);
+  if (! *out_exc)
+    return -1;
+  return PyModule_AddObject(mod, attr_name, *out_exc);
+}
+
+
 int koskari_eval_init(PyObject *mod) {
 
   PyObject *dict = PyModule_GetDict(mod);
@@ -3397,44 +3363,20 @@ int koskari_eval_init(PyObject *mod) {
   }
 
   /* Initialize exception types (subclass BaseException) */
-  {
-    PyObject *base = PyTuple_Pack(1, PyExc_BaseException);
-    if (! base)
-      return -1;
-    KoskariContinuationDead = PyErr_NewException(
-        "koskari.lib.KoskariContinuationDead", base, NULL);
-    Py_DECREF(base);
-    if (! KoskariContinuationDead)
-      return -1;
-  }
-  {
-    PyObject *base = PyTuple_Pack(1, PyExc_BaseException);
-    if (! base)
-      return -1;
-    KoskariContinuationApply = PyErr_NewException(
-        "koskari.lib.KoskariContinuationApply", base, NULL);
-    Py_DECREF(base);
-    if (! KoskariContinuationApply)
-      return -1;
-  }
-  {
-    PyObject *base = PyTuple_Pack(1, PyExc_BaseException);
-    if (! base)
-      return -1;
-    KoskariContinuationError = PyErr_NewException(
-        "koskari.lib.KoskariContinuationError", base, NULL);
-    Py_DECREF(base);
-    if (! KoskariContinuationError)
-      return -1;
-  }
-  if (PyModule_AddObject(mod, "KoskariContinuationDead",
-                         KoskariContinuationDead) < 0)
+  if (register_koskari_exception(mod,
+                                 "koskari.lib.KoskariContinuationDead",
+                                 "KoskariContinuationDead",
+                                 &KoskariContinuationDead) < 0)
     return -1;
-  if (PyModule_AddObject(mod, "KoskariContinuationApply",
-                         KoskariContinuationApply) < 0)
+  if (register_koskari_exception(mod,
+                                 "koskari.lib.KoskariContinuationApply",
+                                 "KoskariContinuationApply",
+                                 &KoskariContinuationApply) < 0)
     return -1;
-  if (PyModule_AddObject(mod, "KoskariContinuationError",
-                         KoskariContinuationError) < 0)
+  if (register_koskari_exception(mod,
+                                 "koskari.lib.KoskariContinuationError",
+                                 "KoskariContinuationError",
+                                 &KoskariContinuationError) < 0)
     return -1;
 
   /* Initialize dynchain module */

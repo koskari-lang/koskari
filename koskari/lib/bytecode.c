@@ -922,31 +922,9 @@ static int derive_extents(
 */
 static int is_jump_op(KosOpCode op) {
 
-  switch (op) {
-  case KOS_OP_JUMP:
-  case KOS_OP_JUMP_FALSE:
-  case KOS_OP_JUMP_TRUE:
-  case KOS_OP_JUMP_AND:
-  case KOS_OP_JUMP_OR:
-  case KOS_OP_ITER_NEXT:
-  case KOS_OP_AWAIT_NEXT:
-  case KOS_OP_CHECK_EQ:
-  case KOS_OP_CHECK_GE:
-  case KOS_OP_CHECK_GT:
-  case KOS_OP_CHECK_LE:
-  case KOS_OP_CHECK_LT:
-  case KOS_OP_CHECK_NE:
-  case KOS_OP_CHECK_IN:
-  case KOS_OP_CHECK_NOT_IN:
-  case KOS_OP_CHECK_IS:
-  case KOS_OP_CHECK_IS_NOT:
-  case KOS_OP_CHECK_IS_INSTANCE:
-  case KOS_OP_CHECK_IS_SUBCLASS:
-  case KOS_OP_CHECK_EXCEPTION:
-    return 1;
-  default:
-    return 0;
-  }
+  return (kos_opcode_style(op) == KOSTYLE_LABEL
+          && op != KOS_OP_SET_PROMPT_HANDLER
+          && ! is_push_op(op));
 }
 
 
