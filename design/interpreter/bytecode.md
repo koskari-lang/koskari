@@ -158,7 +158,7 @@ typedef enum KosOpStyle {
 ### Fast Variables (index-based)
 - `KOS_OP_FAST`: Load fast local by slot index
 - `KOS_OP_FAST_BIND`: Bind fast local slot
-- `KOS_OP_FAST_CLEAR`: Clear fast slot (stub)
+- `KOS_OP_FAST_CLEAR`: Clear fast slot
 - `KOS_OP_FAST_REF`: Get fast local reference
 - `KOS_OP_FAST_STORE`: Store TOS to fast slot
 
