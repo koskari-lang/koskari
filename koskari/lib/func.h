@@ -106,6 +106,7 @@ PyObject *KosCoroutine_NewFromCode(PyObject *code, PyObject *ns);
    KosCoroutine wraps a KosContext for Python's coroutine protocol.
 
    States: KOS_CORO_NEW, KOS_CORO_RUNNING, KOS_CORO_WAITING_PY,
+   KOS_CORO_YIELDED (suspended due to yield, awaiting send()),
    KOS_CORO_DONE.
 */
 
@@ -116,6 +117,7 @@ typedef enum {
   KOS_CORO_NEW = 0,
   KOS_CORO_RUNNING,
   KOS_CORO_WAITING_PY,
+  KOS_CORO_YIELDED,
   KOS_CORO_DONE,
 } KosCoroState;
 

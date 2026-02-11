@@ -438,6 +438,15 @@ static PyObject *coroutine_send(PyObject *self, PyObject *value) {
     return NULL;
   }
 
+  /* If suspended on yield, set inject and run */
+  if (coro->state == KOS_CORO_YIELDED) {
+    PyObject *inject = (value != NULL) ? value : Py_None;
+    Py_INCREF(inject);
+    Py_XDECREF(coro->ctx->py_yield_inject);
+    coro->ctx->py_yield_inject = inject;
+    coro->state = KOS_CORO_RUNNING;
+  }
+
   /* If waiting on Python awaitable, forward to it */
   if (coro->state == KOS_CORO_WAITING_PY && coro->ctx->py_await_iter) {
     PyObject *result = PyObject_CallMethodObjArgs(coro->ctx->py_await_iter,
@@ -509,7 +518,7 @@ static PyObject *coroutine_send(PyObject *self, PyObject *value) {
       return NULL;
 
     case KOS_EV_YIELD:
-      /* For coroutines, yield is like await - return the value */
+      coro->state = KOS_CORO_YIELDED;
       return ev.payload;
 
     case KOS_EV_AWAIT: {
@@ -549,6 +558,7 @@ static PyObject *coroutine_throw(PyObject *self, PyObject *args) {
     return NULL;
   }
 
+  /* If yielded, throw will inject exception and run (no special case) */
   /* If waiting on Python awaitable, forward throw */
   if (coro->state == KOS_CORO_WAITING_PY && coro->ctx->py_await_iter) {
     PyObject *result = PyObject_CallMethodObjArgs(coro->ctx->py_await_iter,
@@ -664,6 +674,9 @@ static PyObject *coroutine_repr(PyObject *self) {
       break;
     case KOS_CORO_WAITING_PY:
       state_str = "waiting";
+      break;
+    case KOS_CORO_YIELDED:
+      state_str = "yielded";
       break;
     case KOS_CORO_DONE:
       state_str = "done";

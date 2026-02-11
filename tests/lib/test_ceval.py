@@ -294,13 +294,23 @@ class TestStubOpcodes(CevalTest):
             self._run_stub_opcode("CONTINUE", 0)
 
 
-    def test_yield_raises_not_implemented(self):
+    def test_yield_suspends_and_resumes(self):
         """
-        YIELD raises RuntimeError
+        YIELD pops value, suspends; send(None) resumes
         """
 
-        with self.assertRaises(RuntimeError):
-            self._run_stub_opcode("YIELD", 0)
+        code = [
+            ["CONST", 42],
+            ["YIELD", 1],
+            ["RETURN", 1],
+        ]
+        code_obj, ns = build_expr(code)
+        expr = make_callable(code_obj, ns)
+        coro = expr()
+        self.assertEqual(coro.send(None), 42)
+        with self.assertRaises(StopIteration) as ctx:
+            coro.send(None)
+        self.assertIs(ctx.exception.value, None)
 
 
     def test_yield_from_raises_not_implemented(self):

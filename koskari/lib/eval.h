@@ -184,6 +184,7 @@ struct KosContext {
   PyObject *py_await_iter;   /* await-iterator from __await__() */
   PyObject *py_last_yielded; /* last yielded object (debug/optional) */
   PyObject *py_await_inject; /* value to push on next koskari_eval when resuming */
+  PyObject *py_yield_inject; /* value to push on next koskari_eval when resuming from yield */
 
   /* exception injection for resume */
   int pending_throw;

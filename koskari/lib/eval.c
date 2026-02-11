@@ -315,6 +315,7 @@ KosContext *kos_context_new(KosDynFrame *top) {
   ctx->py_await_iter = NULL;
   ctx->py_last_yielded = NULL;
   ctx->py_await_inject = NULL;
+  ctx->py_yield_inject = NULL;
 
   /* Initialize exception injection */
   ctx->pending_throw = 0;
@@ -362,6 +363,7 @@ void kos_context_free(KosContext *ctx) {
   Py_XDECREF(ctx->py_await_iter);
   Py_XDECREF(ctx->py_last_yielded);
   Py_XDECREF(ctx->py_await_inject);
+  Py_XDECREF(ctx->py_yield_inject);
   Py_XDECREF(ctx->pending_exc);
   Py_XDECREF(ctx->handling_result);
 
@@ -381,6 +383,7 @@ int kos_context_traverse(
   Py_VISIT(ctx->py_await_iter);
   Py_VISIT(ctx->py_last_yielded);
   Py_VISIT(ctx->py_await_inject);
+  Py_VISIT(ctx->py_yield_inject);
   Py_VISIT(ctx->pending_exc);
   Py_VISIT(ctx->handling_result);
 
@@ -2284,10 +2287,38 @@ KOS_OP_HANDLER(CONTINUE) {
 
 
 /**
-   YIELD: arg unused. Suspend and yield value; not yet implemented.
+   YIELD: arg = 0 (None), 1 (single value), or N (tuple of N values).
+   Pop the value(s) from the stack and suspend with KOS_EV_YIELD.
+   Resumption (send value) is handled by py_yield_inject at re-entry.
 */
 KOS_OP_HANDLER(YIELD) {
-  return op_unimplemented_stub(ctx, out_ev, insn);
+  unsigned opa = insn->arg;
+  PyObject *val = NULL;
+
+  if (opa == 0) {
+    val = Py_None;
+    Py_INCREF(val);
+
+  } else if (opa == 1) {
+    val = KosStackBlock_PopRef(&ctx->frame_top->stack);
+    if (! val) {
+      SAY("[eval] YIELD pop underrun\n");
+      return -1;
+    }
+
+  } else {
+    val = KosStackBlock_PopTail(&ctx->frame_top->stack, (size_t) opa);
+    if (! val) {
+      SAY("[eval] YIELD PopTail underrun\n");
+      return -1;
+    }
+  }
+
+  out_ev->kind = KOS_EV_YIELD;
+  out_ev->payload = val;
+  ctx->flags &= ~KOS_CTX_RUNNING;
+  ctx->flags |= KOS_CTX_DEAD;
+  return 1;
 }
 
 
@@ -3776,6 +3807,17 @@ int koskari_eval(KosContext *ctx, KosEvent *out_ev) {
       goto koskari_eval_cleanup;
     }
     Py_CLEAR(ctx->py_await_inject);
+  }
+
+  /* Re-entry: inject value from send() when resuming from yield */
+  if (ctx->py_yield_inject) {
+    if (KosStackBlock_PushRef(&ctx->frame_top->stack, ctx->py_yield_inject) < 0) {
+      Py_DECREF(ctx->py_yield_inject);
+      ctx->py_yield_inject = NULL;
+      eval_ret = -1;
+      goto koskari_eval_cleanup;
+    }
+    Py_CLEAR(ctx->py_yield_inject);
   }
 
 #if KOS_USE_COMPUTED_GOTO
