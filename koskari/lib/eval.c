@@ -58,6 +58,17 @@
 # define unlikely(x) (x)
 #endif
 
+/* Labels-as-values (computed goto) for direct dispatch; omit op_handlers[]
+   when enabled so the compiler can inline handler bodies. Build may override
+   with -DKOS_USE_COMPUTED_GOTO=0 or =1. */
+#ifndef KOS_USE_COMPUTED_GOTO
+# if (defined(__GNUC__) || defined(__clang__)) && !defined(__STRICT_ANSI__)
+#  define KOS_USE_COMPUTED_GOTO 1
+# else
+#  define KOS_USE_COMPUTED_GOTO 0
+# endif
+#endif
+
 
 #define KOS_OP_HANDLER(name)                                            \
   KOS_OP_INLINE int op_##name(KosContext *ctx, KosEvent *out_ev,        \
@@ -3069,12 +3080,15 @@ KOS_OP_HANDLER(POP_REGION) {
 
 
 /* Dispatch table generated from opcodes.incl; every op_##name must be
-   defined (implemented handler). */
+   defined (implemented handler).  Omitted when KOS_USE_COMPUTED_GOTO so
+   the compiler can inline handler bodies at the jump targets. */
+#if !KOS_USE_COMPUTED_GOTO
 static int (*const op_handlers[])(KosContext *, KosEvent *, KosOp *) = {
 #define OP(name, style) op_##name,
 #include "opcodes.incl"
 #undef OP
 };
+#endif
 
 
 /**
@@ -3206,8 +3220,19 @@ int koskari_eval(KosContext *ctx, KosEvent *out_ev) {
     Py_CLEAR(ctx->py_await_inject);
   }
 
+#if KOS_USE_COMPUTED_GOTO
+  static const void *const optable[] = {
+#define OP(name, style) &&TARGET_##name,
+#include "opcodes.incl"
+#undef OP
+  };
+#endif
+
   /* Opcode dispatch loop */
   for (;;) {
+#if KOS_USE_COMPUTED_GOTO
+    next_insn:
+#endif
     if (ctx->plan && run_transfer_plan_to_completion(ctx, out_ev) < 0) {
       eval_ret = 0;
       goto koskari_eval_cleanup;
@@ -3296,7 +3321,16 @@ int koskari_eval(KosContext *ctx, KosEvent *out_ev) {
       goto koskari_eval_cleanup;
     }
     {
-      int op_res = op_handlers[insn->op](ctx, out_ev, insn);
+      int op_res;
+#if KOS_USE_COMPUTED_GOTO
+      goto *optable[insn->op];
+#define OP(name, style) TARGET_##name: op_res = op_##name(ctx, out_ev, insn); if (op_res != 0) goto handle_op_result; goto next_insn;
+#include "opcodes.incl"
+#undef OP
+      handle_op_result:
+#else
+      op_res = op_handlers[insn->op](ctx, out_ev, insn);
+#endif
       if (unlikely(op_res != 0)) {
         if (PyErr_Occurred()) {
           if (try_local_exception_handler(ctx, out_ev))

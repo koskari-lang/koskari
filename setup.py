@@ -65,54 +65,49 @@ def extension(platform=None, debug=False):
             "koskari/lib/compat.c",
             # Implementation units
             "koskari/lib/atom.c",
-            "koskari/lib/pair.c",
-            "koskari/lib/ref.c",
-            "koskari/lib/namespace.c",
             "koskari/lib/bytecode.c",
-            "koskari/lib/formals.c",
-            "koskari/lib/values.c",
-            "koskari/lib/operator.c",
-            "koskari/lib/stack.c",
             "koskari/lib/dynchain.c",
-            "koskari/lib/utils.c",
-            "koskari/lib/parse.c",
             "koskari/lib/eval.c",
+            "koskari/lib/formals.c",
             "koskari/lib/func.c",
+            "koskari/lib/namespace.c",
+            "koskari/lib/operator.c",
+            "koskari/lib/pair.c",
+            "koskari/lib/parse.c",
+            "koskari/lib/ref.c",
+            "koskari/lib/stack.c",
+            "koskari/lib/utils.c",
+            "koskari/lib/values.c",
             # Module initialization
             "koskari/lib/lib.c",
-            # TODO: add source files as units are implemented
-            # From python-sibilant:
-            #   tco.c
-            # From sibilant-ceval:
-            #   bytecode.c, ceval.c, frame.c, func.c
         ],
         depends=[
-            # Headers
-            "koskari/lib/lib.h",
-            "koskari/lib/compat.h",
-            "koskari/lib/atom.h",
-            "koskari/lib/pair.h",
-            "koskari/lib/ref.h",
-            "koskari/lib/namespace.h",
-            "koskari/lib/bytecode.h",
-            "koskari/lib/formals.h",
-            "koskari/lib/values.h",
-            "koskari/lib/operator.h",
-            "koskari/lib/stack.h",
-            "koskari/lib/dynchain.h",
-            "koskari/lib/utils.h",
-            "koskari/lib/parse.h",
-            "koskari/lib/eval.h",
-            "koskari/lib/func.h",
             # Compatibility headers
             "koskari/lib/compat_36.h",
             "koskari/lib/compat_37.h",
             "koskari/lib/compat_38.h",
             "koskari/lib/compat_39.h",
             "koskari/lib/compat_311.h",
+            "koskari/lib/compat.h",
+            # Implementation units
+            "koskari/lib/atom.h",
+            "koskari/lib/bytecode.h",
+            "koskari/lib/dynchain.h",
+            "koskari/lib/eval.h",
+            "koskari/lib/formals.h",
+            "koskari/lib/func.h",
+            "koskari/lib/namespace.h",
+            "koskari/lib/operator.h",
+            "koskari/lib/pair.h",
+            "koskari/lib/parse.h",
+            "koskari/lib/ref.h",
+            "koskari/lib/stack.h",
+            "koskari/lib/utils.h",
+            "koskari/lib/values.h",
+            # Library header
+            "koskari/lib/lib.h",
             # Include files
             "koskari/lib/opcodes.incl",
-            # TODO: add headers as units are implemented
         ],
         extra_compile_args=extra_compile_args(platform, debug),
     )
