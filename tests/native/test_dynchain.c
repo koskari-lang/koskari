@@ -142,8 +142,8 @@ static int test_dynregion_new_free(void) {
 
     TEST_ASSERT_EQ(region->base.kind, KOS_DYN_REGION, "region kind is REGION");
     TEST_ASSERT_EQ(region->style, KOS_REGION_TRY, "region style is TRY");
-    TEST_ASSERT_EQ(region->a_label, 100, "region a_label is set");
-    TEST_ASSERT_EQ(region->b_label, 200, "region b_label is set");
+    TEST_ASSERT_EQ(region->break_pc, 100, "region break_pc is set");
+    TEST_ASSERT_EQ(region->continue_pc, 200, "region continue_pc is set");
     TEST_ASSERT_EQ(region->enabled, 1, "region enabled by default");
 
     kos_dynregion_free(region);

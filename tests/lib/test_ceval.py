@@ -533,11 +533,13 @@ class TestStubOpcodes(CevalTest):
 
     def test_push_foreach_with_iter_next_completes(self):
         """
-        PUSH_FOREACH with ITER_NEXT on empty list exits to else
+        PUSH_FOREACH with ITER_NEXT on empty list exits to else.
+        POP_LOOP pushes the loop result (None in this case).
         """
 
         code, ns = build_expr([
-            ["CONST", []],
+            ["CONST", None],  # loop_result
+            ["CONST", []],    # iterable
             ["PUSH_FOREACH", "break_lbl"],
             ["ITER_NEXT", "else_lbl"],
             ["CONST", -1],
@@ -546,6 +548,8 @@ class TestStubOpcodes(CevalTest):
             ["CLEAR_LOOP", 0],
             ["LABEL", "break_lbl"],
             ["POP_LOOP", 0],
+            # POP_LOOP now pushes the loop result (None)
+            ["POP", 1],  # discard the loop result
             ["CONST", 42],
             ["RETURN", 1],
         ])
@@ -573,13 +577,16 @@ class TestStubOpcodes(CevalTest):
 
     def test_push_loop_with_pop_loop_completes(self):
         """
-        PUSH_LOOP with matching POP_LOOP completes normally
+        PUSH_LOOP with matching POP_LOOP completes normally.
+        POP_LOOP pushes the loop result (None) to the stack.
         """
 
         code, ns = build_expr([
             ["PUSH_LOOP", "break_lbl"],
             ["LABEL", "break_lbl"],
             ["POP_LOOP", 0],
+            # POP_LOOP pushed loop result (None)
+            ["POP", 1],
             ["CONST", 42],
             ["RETURN", 1],
         ])
@@ -992,66 +999,105 @@ class TestCheckOpcodes(CevalTest):
 
 class TestIterNextOpcodes(CevalTest):
     """
-    Tests for ITER_NEXT (and AWAIT_NEXT alias): sync iter, exhausted else
+    Tests for ITER_NEXT (region-only, inside PUSH_FOREACH) and NEXT (stack-based)
     """
 
-    def test_iter_next_sync_iter_pushes_value(self):
+    def test_iter_next_outside_foreach_fails(self):
         """
-        ITER_NEXT on a list pushes first value and falls through to body
+        ITER_NEXT outside PUSH_FOREACH fails at Code construction or runtime
+        """
+        try:
+            code, ns = build_expr([
+                ["CONST", [10]],
+                ["ITER_NEXT", "else_lbl"],
+                ["RETURN", 1],
+                ["LABEL", "else_lbl"],
+                ["CONST", 0],
+                ["RETURN", 1],
+            ])
+        except RuntimeError as e:
+            self.assertIn("ITER_NEXT", str(e))
+            self.assertIn("PUSH_FOREACH", str(e))
+            return
+        with self.assertRaises(RuntimeError) as cm:
+            run_to_completion(make_callable(code, ns)())
+        self.assertIn("ITER_NEXT", str(cm.exception))
+        self.assertIn("PUSH_FOREACH", str(cm.exception))
+
+
+    def test_next_1_arg_pushes_value(self):
+        """
+        NEXT 1 on iterator pushes first value
         """
         code, ns = build_expr([
             ["CONST", [10]],
-            ["ITER_NEXT", "else_lbl"],
-            ["RETURN", 1],
-            ["LABEL", "else_lbl"],
-            ["CONST", 0],
+            ["OBJECT_ITER", 0],
+            ["NEXT", 1],
             ["RETURN", 1],
         ])
         result = run_to_completion(make_callable(code, ns)())
         self.assertEqual(result, 10)
 
 
-    def test_iter_next_exhausted_jumps_to_else(self):
+    def test_next_1_arg_stopiteration_raises(self):
         """
-        ITER_NEXT on empty iterable jumps to else target
+        NEXT 1 on exhausted iterator raises StopIteration (or wraps it)
         """
         code, ns = build_expr([
             ["CONST", []],
-            ["ITER_NEXT", "else_lbl"],
-            ["CONST", -1],
-            ["RETURN", 1],
-            ["LABEL", "else_lbl"],
-            ["CONST", 42],
+            ["OBJECT_ITER", 0],
+            ["NEXT", 1],
             ["RETURN", 1],
         ])
-        result = run_to_completion(make_callable(code, ns)())
-        self.assertEqual(result, 42)
+        coro = make_callable(code, ns)()
+        with self.assertRaises((StopIteration, RuntimeError)):
+            while True:
+                coro.send(None)
 
 
-    def test_await_next_same_behavior_as_iter_next(self):
+    def test_next_2_arg_pushes_value(self):
         """
-        AWAIT_NEXT uses same implementation; sync iter works the same
+        NEXT 2 on iterator pushes value; stack is [iterator, default]
         """
         code, ns = build_expr([
             ["CONST", [7]],
-            ["AWAIT_NEXT", "else_lbl"],
-            ["RETURN", 1],
-            ["LABEL", "else_lbl"],
+            ["OBJECT_ITER", 0],
             ["CONST", 0],
+            ["NEXT", 2],
             ["RETURN", 1],
         ])
         result = run_to_completion(make_callable(code, ns)())
         self.assertEqual(result, 7)
 
 
+    def test_next_2_arg_exhausted_returns_default(self):
+        """
+        NEXT 2 on exhausted iterator pushes default
+        """
+        code, ns = build_expr([
+            ["CONST", []],
+            ["OBJECT_ITER", 0],
+            ["CONST", 42],
+            ["NEXT", 2],
+            ["RETURN", 1],
+        ])
+        result = run_to_completion(make_callable(code, ns)())
+        self.assertEqual(result, 42)
+
+
 class TestLoopOpcodes(CevalTest):
     """
-    Tests for PUSH_LOOP, POP_LOOP, CLEAR_LOOP, BREAK, CONTINUE
+    Tests for PUSH_LOOP, POP_LOOP, CLEAR_LOOP, BREAK, CONTINUE.
+
+    PUSH_LOOP initializes region->result to None.
+    BREAK/CONTINUE update region->result with their arg-derived value.
+    POP_LOOP pushes region->result to the stack as the loop expression value.
     """
 
     def test_simple_loop_break(self):
         """
-        PUSH_LOOP, body, BREAK, POP_LOOP returns value after loop
+        PUSH_LOOP, body, BREAK, POP_LOOP returns value after loop.
+        POP_LOOP pushes the loop result (None from BREAK 0).
         """
 
         code, ns = build_expr([
@@ -1061,6 +1107,8 @@ class TestLoopOpcodes(CevalTest):
             ["LABEL", "break_lbl"],
             ["POP_LOOP", 0],
             ["LABEL", "after_pop"],
+            # POP_LOOP pushed loop result (None)
+            ["POP", 1],
             ["CONST", 42],
             ["RETURN", 1],
         ])
@@ -1088,6 +1136,8 @@ class TestLoopOpcodes(CevalTest):
             ["CONTINUE", 0],
             ["LABEL", "break_lbl"],
             ["POP_LOOP", 0],
+            # POP_LOOP pushed loop result (None)
+            ["POP", 1],
             ["VAR", "n"],
             ["RETURN", 1],
         ], values={"n": 0})
@@ -1120,6 +1170,8 @@ class TestLoopOpcodes(CevalTest):
             ["CONTINUE", 0],
             ["LABEL", "inner_end"],
             ["POP_LOOP", 0],
+            # POP_LOOP pushed inner loop result
+            ["POP", 1],
             ["VAR", "outer"],
             ["CONST", 1],
             ["OBJECT_ADD", 2],
@@ -1131,6 +1183,8 @@ class TestLoopOpcodes(CevalTest):
             ["CONTINUE", 0],
             ["LABEL", "outer_end"],
             ["POP_LOOP", 0],
+            # POP_LOOP pushed outer loop result
+            ["POP", 1],
             ["VAR", "outer"],
             ["RETURN", 1],
         ], values={"outer": 0, "inner": 0})
@@ -1153,8 +1207,12 @@ class TestLoopOpcodes(CevalTest):
             ["BREAK", 0],
             ["LABEL", "inner_end"],
             ["POP_LOOP", 0],
+            # POP_LOOP pushed inner loop result
+            ["POP", 1],
             ["LABEL", "outer_end"],
             ["POP_LOOP", 0],
+            # POP_LOOP pushed outer loop result
+            ["POP", 1],
             ["VAR", "x"],
             ["RETURN", 1],
         ], values={"x": 0})
@@ -1164,7 +1222,12 @@ class TestLoopOpcodes(CevalTest):
 
 class TestForeachOpcodes(CevalTest):
     """
-    Tests for PUSH_FOREACH with ITER_NEXT
+    Tests for PUSH_FOREACH with ITER_NEXT.
+
+    PUSH_FOREACH expects stack: [loop_result, iterable].
+    It pops both, creates an iterator from the iterable, and stores
+    loop_result and iterator in the region. ITER_NEXT reads from region.
+    POP_LOOP pushes region->result to the stack as the loop expression value.
     """
 
     def test_foreach_iterates_list(self):
@@ -1173,7 +1236,8 @@ class TestForeachOpcodes(CevalTest):
         """
 
         code, ns = build_expr([
-            ["CONST", [10, 20, 30]],
+            ["CONST", None],  # loop_result
+            ["CONST", [10, 20, 30]],  # iterable
             ["PUSH_FOREACH", "after_pop"],
             ["ITER_NEXT", "else_lbl"],
             ["RETURN", 1],
@@ -1182,6 +1246,8 @@ class TestForeachOpcodes(CevalTest):
             ["LABEL", "break_lbl"],
             ["POP_LOOP", 0],
             ["LABEL", "after_pop"],
+            # POP_LOOP pushed the loop result; we want to return -1
+            ["POP", 1],
             ["CONST", -1],
             ["RETURN", 1],
         ])
@@ -1191,11 +1257,13 @@ class TestForeachOpcodes(CevalTest):
 
     def test_foreach_break_exits_early(self):
         """
-        FOREACH BREAK exits when value equals 2
+        FOREACH BREAK exits when value equals 2. BREAK with arg=0 uses None
+        as the result value.
         """
 
         code, ns = build_expr([
-            ["CONST", [1, 2, 3, 4]],
+            ["CONST", None],  # loop_result
+            ["CONST", [1, 2, 3, 4]],  # iterable
             ["PUSH_FOREACH", "after_pop"],
             ["LABEL", "loop_head"],
             ["ITER_NEXT", "else_lbl"],
@@ -1210,6 +1278,8 @@ class TestForeachOpcodes(CevalTest):
             ["LABEL", "break_lbl"],
             ["POP_LOOP", 0],
             ["LABEL", "after_pop"],
+            # POP_LOOP pushed the loop result (None from break)
+            ["POP", 1],
             ["CONST", 42],
             ["RETURN", 1],
         ])
@@ -1223,7 +1293,8 @@ class TestForeachOpcodes(CevalTest):
         """
 
         code, ns = build_expr([
-            ["CONST", []],
+            ["CONST", None],  # loop_result
+            ["CONST", []],    # iterable
             ["PUSH_FOREACH", "after_pop"],
             ["ITER_NEXT", "else_lbl"],
             ["CONST", -1],
@@ -1233,7 +1304,146 @@ class TestForeachOpcodes(CevalTest):
             ["LABEL", "break_lbl"],
             ["POP_LOOP", 0],
             ["LABEL", "after_pop"],
+            # POP_LOOP pushed the loop result (None)
+            ["POP", 1],
             ["CONST", 99],
+            ["RETURN", 1],
+        ])
+        result = run_to_completion(make_callable(code, ns)())
+        self.assertEqual(result, 99)
+
+
+class TestLoopResultOpcodes(CevalTest):
+    """
+    Tests for break/continue result values and loop result semantics.
+
+    BREAK N and CONTINUE N pop N values from the stack:
+    - N=0: result is None
+    - N=1: result is the single popped value
+    - N>1: result is a tuple of the N popped values
+
+    BREAK pushes the result and jumps to break target.
+    CONTINUE updates region->result and jumps to continue target.
+    POP_LOOP pushes region->result as the loop expression value.
+    """
+
+    def test_break_with_single_value(self):
+        """
+        BREAK 1 pops one value and uses it as the loop result
+        """
+
+        code, ns = build_expr([
+            ["PUSH_LOOP", "after_loop"],
+            ["CONST", 42],
+            ["BREAK", 1],
+            ["LABEL", "break_lbl"],
+            ["POP_LOOP", 0],
+            ["LABEL", "after_loop"],
+            # BREAK pushed the result (42)
+            ["RETURN", 1],
+        ])
+        result = run_to_completion(make_callable(code, ns)())
+        self.assertEqual(result, 42)
+
+
+    def test_break_with_multiple_values_creates_tuple(self):
+        """
+        BREAK 3 pops three values and creates a tuple result
+        """
+
+        code, ns = build_expr([
+            ["PUSH_LOOP", "after_loop"],
+            ["CONST", 1],
+            ["CONST", 2],
+            ["CONST", 3],
+            ["BREAK", 3],
+            ["LABEL", "break_lbl"],
+            ["POP_LOOP", 0],
+            ["LABEL", "after_loop"],
+            # BREAK pushed the result (1, 2, 3)
+            ["RETURN", 1],
+        ])
+        result = run_to_completion(make_callable(code, ns)())
+        self.assertEqual(result, (1, 2, 3))
+
+
+    def test_continue_with_single_value(self):
+        """
+        CONTINUE 1 pops one value and updates region->result
+        """
+
+        code, ns = build_expr([
+            ["CONST", 0],
+            ["VAR_BIND", "n"],
+            ["PUSH_LOOP", "break_lbl"],
+            ["VAR", "n"],
+            ["CONST", 1],
+            ["OBJECT_ADD", 2],
+            ["DUP", 1],
+            ["VAR_STORE", "n"],
+            # Stack now has n on top; use it as continue result
+            ["VAR", "n"],
+            ["CONST", 3],
+            ["OBJECT_GE", 2],
+            ["JUMP_TRUE", "break_lbl"],
+            ["CONTINUE", 1],  # continue with n as result
+            ["LABEL", "break_lbl"],
+            ["POP_LOOP", 0],
+            # POP_LOOP pushed the last continue result
+            ["RETURN", 1],
+        ], values={"n": 0})
+        result = run_to_completion(make_callable(code, ns)())
+        # Loop runs 3 times: n=1, n=2, n=3; last continue was with n=2
+        self.assertEqual(result, 2)
+
+
+    def test_pop_loop_returns_loop_result(self):
+        """
+        POP_LOOP pushes region->result (None when no break/continue)
+        """
+
+        code, ns = build_expr([
+            ["PUSH_LOOP", "break_lbl"],
+            ["LABEL", "break_lbl"],
+            ["POP_LOOP", 0],
+            # POP_LOOP pushed None (initial result)
+            ["RETURN", 1],
+        ])
+        result = run_to_completion(make_callable(code, ns)())
+        self.assertIsNone(result)
+
+
+    def test_foreach_break_with_value(self):
+        """
+        FOREACH BREAK 1 uses the value as the loop result
+        """
+
+        code, ns = build_expr([
+            ["CONST", None],  # loop_result
+            ["CONST", [10, 20, 30]],  # iterable
+            ["PUSH_FOREACH", "after_loop"],
+            ["LABEL", "loop_head"],
+            ["ITER_NEXT", "else_lbl"],
+            # Stack: [iter_value]
+            ["DUP", 1],
+            ["CONST", 20],
+            ["OBJECT_EQ", 2],
+            # Stack: [iter_value, is_20]
+            ["JUMP_FALSE", "loop_cont"],
+            # If iter_value == 20, break with 99
+            ["POP", 1],  # discard iter_value
+            ["CONST", 99],
+            ["BREAK", 1],  # break with value 99
+            ["LABEL", "loop_cont"],
+            # Stack: [iter_value]
+            ["POP", 1],  # discard the iteration value
+            ["CONTINUE", 0],  # continue to next iteration
+            ["LABEL", "else_lbl"],
+            ["CLEAR_LOOP", 0],
+            ["LABEL", "break_lbl"],
+            ["POP_LOOP", 0],
+            ["LABEL", "after_loop"],
+            # BREAK or POP_LOOP pushed the result
             ["RETURN", 1],
         ])
         result = run_to_completion(make_callable(code, ns)())

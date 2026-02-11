@@ -247,10 +247,10 @@ void kos_dynwind_free(KosDynWind *wind) {
 
 
 KosDynRegion *kos_dynregion_new(
-    KosDynNode *parent,
-    KosRegionStyle style,
-    uint32_t a_label,
-    uint32_t b_label) {
+        KosDynNode *parent,
+        KosRegionStyle style,
+        uint32_t break_pc,
+        uint32_t continue_pc) {
 
   KosDynRegion *region = PyMem_Malloc(sizeof(KosDynRegion));
   if (! region) {
@@ -261,9 +261,14 @@ KosDynRegion *kos_dynregion_new(
   kos_dynnode_init(&region->base, KOS_DYN_REGION, parent);
 
   region->style = style;
-  region->a_label = a_label;
-  region->b_label = b_label;
+  region->break_pc = break_pc;
+  region->continue_pc = continue_pc;
   region->enabled = 1;
+
+  /* Payload fields initialized to defaults; caller sets for LOOP/FOREACH */
+  region->result = NULL;
+  region->iter = NULL;
+  region->exhausted = 0;
 
   return region;
 }
@@ -283,9 +288,16 @@ KosDynRegion *kos_dynregion_clone(KosDynRegion *region) {
   clone->base.flags = region->base.flags | KOS_DYNF_CLONED;
 
   clone->style = region->style;
-  clone->a_label = region->a_label;
-  clone->b_label = region->b_label;
+  clone->break_pc = region->break_pc;
+  clone->continue_pc = region->continue_pc;
   clone->enabled = region->enabled;
+
+  /* Clone payload with INCREF for owned references */
+  clone->result = region->result;
+  Py_XINCREF(clone->result);
+  clone->iter = region->iter;
+  Py_XINCREF(clone->iter);
+  clone->exhausted = region->exhausted;
 
   return clone;
 }
@@ -294,6 +306,10 @@ KosDynRegion *kos_dynregion_clone(KosDynRegion *region) {
 void kos_dynregion_free(KosDynRegion *region) {
   if (! region)
     return;
+
+  /* DECREF payload owned references */
+  Py_XDECREF(region->result);
+  Py_XDECREF(region->iter);
 
   PyMem_Free(region);
 }
@@ -588,13 +604,13 @@ int kos_dyn_pop_wind(KosContext *ctx, KosDynWind *wind) {
 
 
 KosDynRegion *kos_dyn_push_region(
-    KosContext *ctx,
-    KosRegionStyle style,
-    uint32_t label_a,
-    uint32_t label_b) {
+        KosContext *ctx,
+        KosRegionStyle style,
+        uint32_t break_pc,
+        uint32_t continue_pc) {
 
   KosDynRegion *region = kos_dynregion_new(ctx->dyn_top,
-                                           style, label_a, label_b);
+                                           style, break_pc, continue_pc);
   if (! region)
     return NULL;
 
@@ -1472,10 +1488,15 @@ int kos_dynnode_traverse(KosDynNode *node, visitproc visit, void *arg) {
     }
     case KOS_DYN_PROMPT:
     case KOS_DYN_WIND:
-    case KOS_DYN_REGION:
     case KOS_DYN_PYCALL:
       /* No PyObjects to visit */
       break;
+    case KOS_DYN_REGION: {
+      KosDynRegion *region = (KosDynRegion *) node;
+      Py_VISIT(region->result);
+      Py_VISIT(region->iter);
+      break;
+    }
   }
 
   return 0;

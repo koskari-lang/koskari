@@ -236,25 +236,36 @@ typedef enum KosRegionStyle {
    KosDynRegion represents block-local control structures like
    try/finally, loops, and with statements.
 
-   The a_label and b_label are jump targets for control transfers:
-   - For TRY: a_label is exception handler, b_label unused
-   - For FINALLY: a_label is finally block
-   - For LOOP: a_label is break target, b_label is continue target
-   - For WITH: a_label is exit handler
-   - For FOREACH: a_label is iteration end, b_label is continue
+   The break_pc and continue_pc are jump targets for control transfers:
+   - For TRY: break_pc is exception handler, continue_pc unused
+   - For FINALLY: break_pc is finally block
+   - For LOOP: break_pc is break target, continue_pc is continue target
+   - For WITH: break_pc is exit handler
+   - For FOREACH: break_pc is break target, continue_pc is continue target
 
    The enabled flag controls whether the region is active for
    exception handling. It can be disabled during cleanup.
+
+   For LOOP and FOREACH regions, payload fields store region-lifetime
+   state that would otherwise require operand stack positioning tricks:
+   - result: accumulated loop result value (owned reference)
+   - iter: iterator object for FOREACH (owned reference, NULL for LOOP)
+   - exhausted: flag indicating iterator exhaustion for FOREACH
 */
 
 struct KosDynRegion {
   KosDynNode base;        /* must be first */
 
   KosRegionStyle style;   /* region type */
-  uint32_t a_label;       /* primary jump target */
-  uint32_t b_label;       /* secondary jump target (or 0) */
+  uint32_t break_pc;      /* break/exit jump target */
+  uint32_t continue_pc;   /* continue jump target (or 0) */
 
   uint8_t enabled;        /* handler active flag */
+
+  /* Payload fields for LOOP and FOREACH regions */
+  PyObject *result;       /* accumulated loop result (owned ref) */
+  PyObject *iter;         /* iterator for FOREACH (owned ref, NULL for LOOP) */
+  uint8_t exhausted;      /* FOREACH: iterator exhausted flag */
 };
 
 
@@ -506,16 +517,16 @@ void kos_dynwind_free(KosDynWind *wind);
 
    :param parent: parent node in dynamic chain
    :param style: region type
-   :param a_label: primary jump target
-   :param b_label: secondary jump target (or 0)
+   :param break_pc: break/exit jump target
+   :param continue_pc: continue jump target (or 0)
 
    :return: new region node, or NULL on error
 */
 KosDynRegion *kos_dynregion_new(
    KosDynNode *parent,
    KosRegionStyle style,
-   uint32_t a_label,
-   uint32_t b_label);
+   uint32_t break_pc,
+   uint32_t continue_pc);
 
 
 /**
@@ -697,16 +708,16 @@ int kos_dyn_pop_wind(KosContext *ctx, KosDynWind *wind);
 
    :param ctx: execution context
    :param style: region type
-   :param label_a: primary jump target
-   :param label_b: secondary jump target (or 0)
+   :param break_pc: break/exit jump target
+   :param continue_pc: continue jump target (or 0)
 
    :return: new region, or NULL on error
 */
 KosDynRegion *kos_dyn_push_region(
    KosContext *ctx,
    KosRegionStyle style,
-   uint32_t label_a,
-   uint32_t label_b);
+   uint32_t break_pc,
+   uint32_t continue_pc);
 
 
 /**
@@ -1124,10 +1135,13 @@ int kos_hookrunner_traverse(
 #define KosDynWind_AFTER_PC(w)     (((KosDynWind *)(w))->after_pc)
 #define KosDynWind_ENTERED(w)      (((KosDynWind *)(w))->entered)
 
-#define KosDynRegion_STYLE(r)    (((KosDynRegion *)(r))->style)
-#define KosDynRegion_LABEL_A(r)  (((KosDynRegion *)(r))->a_label)
-#define KosDynRegion_LABEL_B(r)  (((KosDynRegion *)(r))->b_label)
-#define KosDynRegion_ENABLED(r)  (((KosDynRegion *)(r))->enabled)
+#define KosDynRegion_STYLE(r)      (((KosDynRegion *)(r))->style)
+#define KosDynRegion_BREAK_PC(r)   (((KosDynRegion *)(r))->break_pc)
+#define KosDynRegion_CONTINUE_PC(r) (((KosDynRegion *)(r))->continue_pc)
+#define KosDynRegion_ENABLED(r)    (((KosDynRegion *)(r))->enabled)
+#define KosDynRegion_RESULT(r)     (((KosDynRegion *)(r))->result)
+#define KosDynRegion_ITER(r)       (((KosDynRegion *)(r))->iter)
+#define KosDynRegion_EXHAUSTED(r)  (((KosDynRegion *)(r))->exhausted)
 
 
 /* === Unit lifecycle === */

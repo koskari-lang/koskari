@@ -202,7 +202,7 @@ Any place the evaluator previously scanned forward to find a sentinel or a match
 
 ### Decision: JUMP is strictly local
 
-**Non-local jumps are forbidden** for control-flow jump opcodes. During Code construction we validate that JUMP, JUMP_FALSE, JUMP_TRUE, JUMP_AND, JUMP_OR, ITER_NEXT, AWAIT_NEXT, and all CHECK_* opcodes do **not** target a pc outside the current active block.
+**Non-local jumps are forbidden** for control-flow jump opcodes. During Code construction we validate that JUMP, JUMP_FALSE, JUMP_TRUE, JUMP_AND, JUMP_OR, ITER_NEXT, and all CHECK_* opcodes do **not** target a pc outside the current active block. ITER_NEXT must be inside a PUSH_FOREACH block.
 
 **Excluded from validation**: PUSH_TRY, PUSH_FINALLY, PUSH_LOOP, SET_PROMPT_HANDLER, PUSH_WITH, etc. Their args are handler/target labels that may legitimately point outside the block (e.g. exception handler after POP_TRY).
 
@@ -368,7 +368,7 @@ This makes continuations stable across multi-shot capture:
 **Completed**:
 
 1. ~~Introduce tables and wire location lookup first~~ — Done; `kos_loc_lookup` wraps `KosCode_GetPosition`.
-2. ~~Convert one construct (TRY or SHIFT) to table-driven targets~~ — Done; `try_local_exception_handler` uses `kos_try_handler_for` when extent table present, falls back to `region->a_label`.
+2. ~~Convert one construct (TRY or SHIFT) to table-driven targets~~ — Done; `try_local_exception_handler` uses `kos_try_handler_for` when extent table present, falls back to `region->break_pc`.
 3. Extent table is derived for all Code; no migration needed (empty code has no extents).
 4. Malformed bytecode (unmatched PUSH/POP) is rejected at Code construction.
 

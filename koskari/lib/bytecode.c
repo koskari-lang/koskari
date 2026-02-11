@@ -988,6 +988,46 @@ static int validate_jump_locality(
 }
 
 
+/**
+   Validate ITER_NEXT is only used inside a PUSH_FOREACH block extent.
+   Called after derive_extents.
+*/
+static int validate_iter_next_in_foreach(
+    KosOp *code,
+    uint32_t code_len,
+    KosExtentDesc *extents,
+    uint32_t extent_len,
+    uint16_t *top_extent_id) {
+
+  if (! top_extent_id) {
+    return 0;
+  }
+
+  for (uint32_t pc = 0; pc < code_len; pc++) {
+    if ((KosOpCode) code[pc].op != KOS_OP_ITER_NEXT) {
+      continue;
+    }
+    uint32_t eid = top_extent_id[pc];
+    int found = 0;
+    while (eid != KOS_EXTENT_NONE && eid < extent_len) {
+      if (extents[eid].kind == KOS_EXT_FOREACH) {
+        found = 1;
+        break;
+      }
+      eid = extents[eid].parent_extent_id;
+    }
+    if (! found) {
+      PyErr_Format(PyExc_RuntimeError,
+                   "ITER_NEXT at pc %u must be inside a PUSH_FOREACH block",
+                   pc);
+      return -1;
+    }
+  }
+
+  return 0;
+}
+
+
 /* === Code initialization === */
 
 
@@ -1096,6 +1136,15 @@ static int code_instr_init(PyObject *self, PyObject *instr) {
   if (extents && top_extent_id &&
       validate_jump_locality(code, instr_l, extents, extent_len,
                              top_extent_id)) {
+    if (extents) {
+      free(extents);
+    }
+    goto failure;
+  }
+
+  if (extents && top_extent_id &&
+      validate_iter_next_in_foreach(code, instr_l, extents, extent_len,
+                                    top_extent_id)) {
     if (extents) {
       free(extents);
     }

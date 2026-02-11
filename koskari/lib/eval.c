@@ -2271,66 +2271,136 @@ KOS_OP_HANDLER(THEEND) {
 
 
 /**
-   BREAK: arg unused. Exit innermost loop/foreach; jump to its break target.
-   Unwinds dynamic chain and stack blocks until the loop region is popped.
-   Raises RuntimeError if no LOOP/FOREACH region on the chain.
+   BREAK: arg = result count (0 = None, 1 = single value, N = tuple of N).
+   Exit innermost loop/foreach; jump to its break target. Pops the loop
+   region and pushes the result value to the parent stack as the loop
+   expression value. Raises RuntimeError if no LOOP/FOREACH region on chain.
 */
 KOS_OP_HANDLER(BREAK) {
+  unsigned opa = insn->arg;
+  PyObject *result = NULL;
+
+  /* Pop result value(s) from stack before any unwinding */
+  if (opa == 0) {
+    result = Py_None;
+    Py_INCREF(result);
+  } else if (opa == 1) {
+    result = KosStackBlock_PopRef(&ctx->frame_top->stack);
+    if (! result) {
+      PyErr_SetString(PyExc_RuntimeError, "BREAK pop underrun");
+      return -1;
+    }
+  } else {
+    result = KosStackBlock_PopTail(&ctx->frame_top->stack, (size_t) opa);
+    if (! result) {
+      PyErr_SetString(PyExc_RuntimeError, "BREAK PopTail underrun");
+      return -1;
+    }
+  }
+
   KosDynRegion *region = kos_find_region_for_loop(ctx);
   if (! region) {
+    Py_DECREF(result);
     PyErr_SetString(PyExc_RuntimeError, "break outside loop");
     return -1;
   }
-  uint32_t break_pc = region->a_label;
+
+  uint32_t break_pc = region->break_pc;
+
+  /* Unwind inner regions until we reach the target loop region */
   while (ctx->dyn_top != (KosDynNode *) region) {
     KosDynNode *top = ctx->dyn_top;
     if (KosDynNode_IS_REGION(top)) {
       KosDynRegion *r = (KosDynRegion *) top;
       if (r->style == KOS_REGION_LOOP || r->style == KOS_REGION_FOREACH) {
         kos_dyn_pop_region(ctx, r);
-        if (r->style == KOS_REGION_LOOP &&
-            KosStackBlock_DropBlock(&ctx->frame_top->stack) < 0)
+        if (KosStackBlock_DropBlock(&ctx->frame_top->stack) < 0) {
+          Py_DECREF(result);
           return -1;
+        }
       } else {
-        if (kos_dyn_pop_top(ctx) < 0)
+        if (kos_dyn_pop_top(ctx) < 0) {
+          Py_DECREF(result);
           return -1;
+        }
       }
     } else {
-      if (kos_dyn_pop_top(ctx) < 0)
+      if (kos_dyn_pop_top(ctx) < 0) {
+        Py_DECREF(result);
         return -1;
+      }
     }
   }
+
+  /* Pop the target loop region and its stack block */
   kos_dyn_pop_region(ctx, region);
-  if (region->style == KOS_REGION_LOOP &&
-      KosStackBlock_DropBlock(&ctx->frame_top->stack) < 0)
+  if (KosStackBlock_DropBlock(&ctx->frame_top->stack) < 0) {
+    Py_DECREF(result);
     return -1;
+  }
+
+  /* Push result to parent stack as the loop expression value */
+  if (KosStackBlock_PushRef(&ctx->frame_top->stack, result) < 0) {
+    Py_DECREF(result);
+    return -1;
+  }
+  Py_DECREF(result);
+
   ctx->frame_top->pc = break_pc;
   (void) out_ev;
-  (void) insn;
   return 0;
 }
 
 
 /**
-   CONTINUE: arg unused. Jump to innermost loop/foreach continue target.
-   Unwinds inner regions and stack blocks until the loop region is reached.
-   Raises RuntimeError if no LOOP/FOREACH region on the chain.
+   CONTINUE: arg = result count (0 = None, 1 = single value, N = tuple of N).
+   Jump to innermost loop/foreach continue target. Updates the region result
+   and clears the loop stack block before jumping. Raises RuntimeError if
+   no LOOP/FOREACH region on the chain.
 */
 KOS_OP_HANDLER(CONTINUE) {
+  unsigned opa = insn->arg;
+  PyObject *result = NULL;
+
+  /* Pop result value(s) from stack before any unwinding */
+  if (opa == 0) {
+    result = Py_None;
+    Py_INCREF(result);
+  } else if (opa == 1) {
+    result = KosStackBlock_PopRef(&ctx->frame_top->stack);
+    if (! result) {
+      PyErr_SetString(PyExc_RuntimeError, "CONTINUE pop underrun");
+      return -1;
+    }
+  } else {
+    result = KosStackBlock_PopTail(&ctx->frame_top->stack, (size_t) opa);
+    if (! result) {
+      PyErr_SetString(PyExc_RuntimeError, "CONTINUE PopTail underrun");
+      return -1;
+    }
+  }
+
   KosDynRegion *region = kos_find_region_for_loop(ctx);
   if (! region) {
+    Py_DECREF(result);
     PyErr_SetString(PyExc_RuntimeError, "continue outside loop");
     return -1;
   }
-  uint32_t continue_pc = region->b_label;
+
+  /* Update region result with continue value */
+  Py_XDECREF(region->result);
+  region->result = result;
+
+  uint32_t continue_pc = region->continue_pc;
+
+  /* Unwind inner regions until we reach the target loop region */
   while (ctx->dyn_top != (KosDynNode *) region) {
     KosDynNode *top = ctx->dyn_top;
     if (KosDynNode_IS_REGION(top)) {
       KosDynRegion *r = (KosDynRegion *) top;
       if (r->style == KOS_REGION_LOOP || r->style == KOS_REGION_FOREACH) {
         kos_dyn_pop_region(ctx, r);
-        if (r->style == KOS_REGION_LOOP &&
-            KosStackBlock_DropBlock(&ctx->frame_top->stack) < 0)
+        if (KosStackBlock_DropBlock(&ctx->frame_top->stack) < 0)
           return -1;
       } else {
         if (kos_dyn_pop_top(ctx) < 0)
@@ -2341,9 +2411,16 @@ KOS_OP_HANDLER(CONTINUE) {
         return -1;
     }
   }
+
+  /* Clear the loop stack block contents for next iteration:
+     drop the current block and push a fresh one */
+  if (KosStackBlock_DropBlock(&ctx->frame_top->stack) < 0)
+    return -1;
+  if (KosStackBlock_PushBlock(&ctx->frame_top->stack) < 0)
+    return -1;
+
   ctx->frame_top->pc = continue_pc;
   (void) out_ev;
-  (void) insn;
   return 0;
 }
 
@@ -2393,17 +2470,19 @@ KOS_OP_HANDLER(YIELD_FROM) {
 
 
 /**
-   Common implementation for ITER_NEXT and AWAIT_NEXT: advance iterator on TOS,
-   push next value or jump to else (insn->arg). Dispatches on TOS type: Koskari
-   async gen (flatten), Python async iterator (eager_step), sync iterator, or
-   GetIter then next. insn->arg is the else (exhausted) target PC.
+   Implementation for ITER_NEXT when inside a FOREACH region. Reads the
+   iterator from region->iter, advances it, and pushes next value or jumps
+   to else target if exhausted.
 
    :return: 0 continue, 1 stop (AWAIT/RAISE), -1 error
 */
-static int op_iter_next_impl(KosContext *ctx, KosEvent *out_ev, KosOp *insn) {
-  PyObject *iter = KosStackBlock_PopRef(&ctx->frame_top->stack);
-  if (! iter)
-    return -1;
+static int op_iter_next_region(
+        KosContext *ctx,
+        KosEvent *out_ev,
+        KosOp *insn,
+        KosDynRegion *region) {
+
+  PyObject *iter = region->iter;
 
   /* 1. Koskari async generator: run its context inline until yield/return/await */
   if (KosPyAsyncGen_Check(iter)) {
@@ -2411,11 +2490,10 @@ static int op_iter_next_impl(KosContext *ctx, KosEvent *out_ev, KosOp *insn) {
     if (agen->in_progress) {
       PyErr_SetString(PyExc_RuntimeError,
                       "async generator already being iterated");
-      Py_DECREF(iter);
       return -1;
     }
     if (agen->closed || ! agen->ctx) {
-      Py_DECREF(iter);
+      region->exhausted = 1;
       ctx->frame_top->pc = insn->arg;
       (void) out_ev;
       return 0;
@@ -2425,18 +2503,11 @@ static int op_iter_next_impl(KosContext *ctx, KosEvent *out_ev, KosOp *insn) {
     int res = koskari_eval(agen->ctx, &ev);
     agen->in_progress = 0;
 
-    if (res < 0) {
-      Py_DECREF(iter);
+    if (res < 0)
       return -1;
-    }
+
     switch (ev.kind) {
       case KOS_EV_YIELD:
-        if (KosStackBlock_PushRef(&ctx->frame_top->stack, iter) < 0) {
-          Py_DECREF(ev.payload);
-          Py_DECREF(iter);
-          return -1;
-        }
-        Py_DECREF(iter);
         if (KosStackBlock_PushRef(&ctx->frame_top->stack, ev.payload) < 0) {
           Py_DECREF(ev.payload);
           return -1;
@@ -2446,27 +2517,19 @@ static int op_iter_next_impl(KosContext *ctx, KosEvent *out_ev, KosOp *insn) {
         return 0;
       case KOS_EV_RETURN:
         Py_XDECREF(ev.payload);
-        Py_DECREF(iter);
+        region->exhausted = 1;
         ctx->frame_top->pc = insn->arg;
         (void) out_ev;
         return 0;
       case KOS_EV_RAISE:
-        Py_DECREF(iter);
         out_ev->kind = KOS_EV_RAISE;
         out_ev->payload = ev.payload;
         return 1;
       case KOS_EV_AWAIT:
-        if (KosStackBlock_PushRef(&ctx->frame_top->stack, iter) < 0) {
-          Py_DECREF(ev.payload);
-          Py_DECREF(iter);
-          return -1;
-        }
-        Py_DECREF(iter);
         out_ev->kind = KOS_EV_AWAIT;
         out_ev->payload = ev.payload;
         return 1;
     }
-    Py_DECREF(iter);
     PyErr_SetString(PyExc_RuntimeError, "unexpected event from async generator");
     return -1;
   }
@@ -2481,12 +2544,6 @@ static int op_iter_next_impl(KosContext *ctx, KosEvent *out_ev, KosOp *insn) {
                                               &yielded);
       Py_DECREF(awaitable);
       if (suspended && yielded) {
-        if (KosStackBlock_PushRef(&ctx->frame_top->stack, iter) < 0) {
-          Py_DECREF(yielded);
-          Py_DECREF(iter);
-          return -1;
-        }
-        Py_DECREF(iter);
         ctx->flags &= ~KOS_CTX_RUNNING;
         out_ev->kind = KOS_EV_AWAIT;
         out_ev->payload = yielded;
@@ -2494,18 +2551,12 @@ static int op_iter_next_impl(KosContext *ctx, KosEvent *out_ev, KosOp *insn) {
       }
       if (PyErr_ExceptionMatches(PyExc_StopAsyncIteration)) {
         PyErr_Clear();
-        Py_DECREF(iter);
+        region->exhausted = 1;
         ctx->frame_top->pc = insn->arg;
         (void) out_ev;
         return 0;
       }
       if (result) {
-        if (KosStackBlock_PushRef(&ctx->frame_top->stack, iter) < 0) {
-          Py_DECREF(result);
-          Py_DECREF(iter);
-          return -1;
-        }
-        Py_DECREF(iter);
         if (KosStackBlock_PushRef(&ctx->frame_top->stack, result) < 0) {
           Py_DECREF(result);
           return -1;
@@ -2514,21 +2565,14 @@ static int op_iter_next_impl(KosContext *ctx, KosEvent *out_ev, KosOp *insn) {
         (void) out_ev;
         return 0;
       }
-      Py_DECREF(iter);
       return -1;
     }
   }
 
-  /* 3. Sync iterator */
+  /* 3. Sync iterator: advance and push next value or mark exhausted */
   if (PyIter_Check(iter)) {
     PyObject *n = PyIter_Next(iter);
     if (n) {
-      if (KosStackBlock_PushRef(&ctx->frame_top->stack, iter) < 0) {
-        Py_DECREF(n);
-        Py_DECREF(iter);
-        return -1;
-      }
-      Py_DECREF(iter);
       if (KosStackBlock_PushRef(&ctx->frame_top->stack, n) < 0) {
         Py_DECREF(n);
         return -1;
@@ -2537,30 +2581,159 @@ static int op_iter_next_impl(KosContext *ctx, KosEvent *out_ev, KosOp *insn) {
       (void) out_ev;
       return 0;
     }
-    if (PyErr_Occurred()) {
-      Py_DECREF(iter);
+    if (PyErr_Occurred())
       return -1;
-    }
+
     /* Exhausted */
-    Py_DECREF(iter);
+    region->exhausted = 1;
     ctx->frame_top->pc = insn->arg;
     (void) out_ev;
     return 0;
   }
 
+  PyErr_SetString(PyExc_TypeError, "ITER_NEXT: region->iter is not an iterator");
+  return -1;
+}
+
+
+/**
+   Advance iterator (sync, Python async iter, Koskari async gen). Used by NEXT.
+   Does not push iterator back; caller restores stack on suspend.
+
+   :param iter: iterator to advance (caller holds ref)
+   :param default_val: if non-NULL, push on exhaustion instead of raising
+   :return: 0 pushed value or default, 1 suspend (AWAIT), -1 error or exhausted
+           with no default
+*/
+static int op_next_advance(
+        KosContext *ctx,
+        KosEvent *out_ev,
+        PyObject *iter,
+        PyObject *default_val) {
+
+  /* 1. Koskari async generator */
+  if (KosPyAsyncGen_Check(iter)) {
+    KosPyAsyncGen *agen = (KosPyAsyncGen *) iter;
+    if (agen->in_progress) {
+      PyErr_SetString(PyExc_RuntimeError,
+                      "async generator already being iterated");
+      return -1;
+    }
+    if (agen->closed || ! agen->ctx) {
+      if (default_val) {
+        if (KosStackBlock_PushRef(&ctx->frame_top->stack, default_val) < 0)
+          return -1;
+        return 0;
+      }
+      PyErr_SetNone(PyExc_StopIteration);
+      return -1;
+    }
+    agen->in_progress = 1;
+    KosEvent ev = {0};
+    int res = koskari_eval(agen->ctx, &ev);
+    agen->in_progress = 0;
+
+    if (res < 0)
+      return -1;
+    switch (ev.kind) {
+      case KOS_EV_YIELD:
+        if (KosStackBlock_PushRef(&ctx->frame_top->stack, ev.payload) < 0) {
+          Py_DECREF(ev.payload);
+          return -1;
+        }
+        Py_DECREF(ev.payload);
+        (void) out_ev;
+        return 0;
+      case KOS_EV_RETURN:
+        Py_XDECREF(ev.payload);
+        if (default_val) {
+          if (KosStackBlock_PushRef(&ctx->frame_top->stack, default_val) < 0)
+            return -1;
+          return 0;
+        }
+        PyErr_SetNone(PyExc_StopIteration);
+        return -1;
+      case KOS_EV_RAISE:
+        out_ev->kind = KOS_EV_RAISE;
+        out_ev->payload = ev.payload;
+        return 1;
+      case KOS_EV_AWAIT:
+        out_ev->kind = KOS_EV_AWAIT;
+        out_ev->payload = ev.payload;
+        return 1;
+    }
+    PyErr_SetString(PyExc_RuntimeError, "unexpected event from async generator");
+    return -1;
+  }
+
+  /* 2. Python async iterator: get __anext__ awaitable, eager_step */
+  {
+    PyObject *awaitable = get_await_next(iter);
+    if (awaitable) {
+      int suspended = 0;
+      PyObject *yielded = NULL;
+      PyObject *result = eager_step_awaitable(awaitable, ctx, &suspended,
+                                              &yielded);
+      Py_DECREF(awaitable);
+      if (suspended && yielded) {
+        ctx->flags &= ~KOS_CTX_RUNNING;
+        out_ev->kind = KOS_EV_AWAIT;
+        out_ev->payload = yielded;
+        return 1;
+      }
+      if (PyErr_ExceptionMatches(PyExc_StopAsyncIteration)) {
+        PyErr_Clear();
+        if (default_val) {
+          if (KosStackBlock_PushRef(&ctx->frame_top->stack, default_val) < 0)
+            return -1;
+          return 0;
+        }
+        PyErr_SetNone(PyExc_StopIteration);
+        return -1;
+      }
+      if (result) {
+        if (KosStackBlock_PushRef(&ctx->frame_top->stack, result) < 0) {
+          Py_DECREF(result);
+          return -1;
+        }
+        Py_DECREF(result);
+        (void) out_ev;
+        return 0;
+      }
+      return -1;
+    }
+  }
+
+  /* 3. Sync iterator */
+  if (PyIter_Check(iter)) {
+    PyObject *n = PyIter_Next(iter);
+    if (n) {
+      if (KosStackBlock_PushRef(&ctx->frame_top->stack, n) < 0) {
+        Py_DECREF(n);
+        return -1;
+      }
+      Py_DECREF(n);
+      (void) out_ev;
+      return 0;
+    }
+    if (PyErr_Occurred())
+      return -1;
+    if (default_val) {
+      if (KosStackBlock_PushRef(&ctx->frame_top->stack, default_val) < 0)
+        return -1;
+      return 0;
+    }
+    PyErr_SetNone(PyExc_StopIteration);
+    return -1;
+  }
+
   /* 4. Not an iterator: GetIter then one next */
   {
     PyObject *it = PyObject_GetIter(iter);
-    Py_DECREF(iter);
     if (! it)
       return -1;
     PyObject *n = PyIter_Next(it);
     if (n) {
-      if (KosStackBlock_PushRef(&ctx->frame_top->stack, it) < 0) {
-        Py_DECREF(n);
-        Py_DECREF(it);
-        return -1;
-      }
       Py_DECREF(it);
       if (KosStackBlock_PushRef(&ctx->frame_top->stack, n) < 0) {
         Py_DECREF(n);
@@ -2573,28 +2746,75 @@ static int op_iter_next_impl(KosContext *ctx, KosEvent *out_ev, KosOp *insn) {
     Py_DECREF(it);
     if (PyErr_Occurred())
       return -1;
-    ctx->frame_top->pc = insn->arg;
-    (void) out_ev;
-    return 0;
+    if (default_val) {
+      if (KosStackBlock_PushRef(&ctx->frame_top->stack, default_val) < 0)
+        return -1;
+      return 0;
+    }
+    PyErr_SetNone(PyExc_StopIteration);
+    return -1;
   }
 }
 
 
 /**
-   ITER_NEXT: arg = else PC. Advance iterator (sync or async), push next or
-   jump to else. Transparent: behavior depends on TOS (Koskari async gen,
-   Python async iter, sync iter, or getiter).
+   NEXT: arg = count (1 or 2). Pops iterator (and optionally default) from
+   stack, advances, pushes value or default on StopIteration. 1-arg: let
+   StopIteration raise. 2-arg: TOS = default, below = iterator. Auto-await.
 */
-KOS_OP_HANDLER(ITER_NEXT) {
-  return op_iter_next_impl(ctx, out_ev, insn);
+KOS_OP_HANDLER(NEXT) {
+  uint16_t n = insn->arg;
+  if (n != 1 && n != 2) {
+    PyErr_Format(PyExc_ValueError, "NEXT arg must be 1 or 2, got %u", n);
+    return -1;
+  }
+  PyObject *default_val = NULL;
+  PyObject *iter = NULL;
+  if (n == 2) {
+    default_val = KosStackBlock_PopRef(&ctx->frame_top->stack);
+    if (! default_val)
+      return -1;
+  }
+  iter = KosStackBlock_PopRef(&ctx->frame_top->stack);
+  if (! iter) {
+    Py_XDECREF(default_val);
+    return -1;
+  }
+  int res = op_next_advance(ctx, out_ev, iter, default_val);
+  if (res == 1) {
+    if (n == 2) {
+      if (KosStackBlock_PushRef(&ctx->frame_top->stack, default_val) < 0) {
+        Py_DECREF(default_val);
+        Py_DECREF(iter);
+        return -1;
+      }
+    }
+    if (KosStackBlock_PushRef(&ctx->frame_top->stack, iter) < 0) {
+      Py_DECREF(iter);
+      return -1;
+    }
+    Py_DECREF(iter);
+    Py_XDECREF(default_val);
+    return 1;
+  }
+  Py_DECREF(iter);
+  Py_XDECREF(default_val);
+  return res;
 }
 
 
 /**
-   AWAIT_NEXT: arg = else PC. Alias for ITER_NEXT; same TOS-based behavior.
+   ITER_NEXT: arg = else PC. Must be inside PUSH_FOREACH block. Uses
+   region->iter, advances, pushes next or jumps to else. Auto-await.
 */
-KOS_OP_HANDLER(AWAIT_NEXT) {
-  return op_iter_next_impl(ctx, out_ev, insn);
+KOS_OP_HANDLER(ITER_NEXT) {
+  KosDynRegion *region = kos_find_region_for_loop(ctx);
+  if (! region || region->style != KOS_REGION_FOREACH) {
+    PyErr_SetString(PyExc_RuntimeError,
+                    "ITER_NEXT must be used inside a PUSH_FOREACH block");
+    return -1;
+  }
+  return op_iter_next_region(ctx, out_ev, insn, region);
 }
 
 
@@ -3483,19 +3703,56 @@ KOS_OP_HANDLER(TAIL_RECUR_STAR) {
 
 
 /**
-   PUSH_FOREACH: arg = break target PC. TOS = iterable (for ITER_NEXT at
-   loop head). Push FOREACH region only (no stack block); iterable must stay
-   on TOS for ITER_NEXT. Continue target = next insn.
+   PUSH_FOREACH: arg = break target PC. Stack: [loop_result, iterable].
+   Pops iterable and loop_result, creates iterator, stores both in region,
+   pushes FOREACH region and stack block. Continue target = next insn.
 */
 KOS_OP_HANDLER(PUSH_FOREACH) {
   uint32_t break_pc = insn->arg;
   uint32_t continue_pc = ctx->frame_top->pc;  /* already advanced by drive loop */
+
+  /* Pop iterable (TOS) and loop_result from stack */
+  PyObject *iterable = KosStackBlock_PopRef(&ctx->frame_top->stack);
+  if (! iterable) {
+    PyErr_SetString(PyExc_RuntimeError, "PUSH_FOREACH: missing iterable");
+    return -1;
+  }
+  PyObject *loop_result = KosStackBlock_PopRef(&ctx->frame_top->stack);
+  if (! loop_result) {
+    Py_DECREF(iterable);
+    PyErr_SetString(PyExc_RuntimeError, "PUSH_FOREACH: missing loop_result");
+    return -1;
+  }
+
+  /* Create iterator from iterable */
+  PyObject *iter = PyObject_GetIter(iterable);
+  Py_DECREF(iterable);
+  if (! iter) {
+    Py_DECREF(loop_result);
+    return -1;
+  }
+
+  /* Push region */
   KosDynRegion *region = kos_dyn_push_region(ctx, KOS_REGION_FOREACH,
                                              break_pc, continue_pc);
   if (! region) {
+    Py_DECREF(iter);
+    Py_DECREF(loop_result);
     PyErr_NoMemory();
     return -1;
   }
+
+  /* Store result and iterator in region (takes ownership) */
+  region->result = loop_result;
+  region->iter = iter;
+  region->exhausted = 0;
+
+  /* Push stack block for iteration temporaries */
+  if (KosStackBlock_PushBlock(&ctx->frame_top->stack) < 0) {
+    kos_dyn_pop_region(ctx, region);
+    return -1;
+  }
+
   (void) out_ev;
   return 0;
 }
@@ -3527,7 +3784,7 @@ KOS_OP_HANDLER(PUSH_CLASS) {
 
 /**
    PUSH_LOOP: arg = break target PC. Push LOOP region and stack block;
-   continue target = next instruction.
+   continue target = next instruction. Initializes region result to None.
 */
 KOS_OP_HANDLER(PUSH_LOOP) {
   uint32_t break_pc = insn->arg;
@@ -3538,6 +3795,11 @@ KOS_OP_HANDLER(PUSH_LOOP) {
     PyErr_NoMemory();
     return -1;
   }
+
+  /* Initialize loop result to None */
+  Py_INCREF(Py_None);
+  region->result = Py_None;
+
   if (KosStackBlock_PushBlock(&ctx->frame_top->stack) < 0) {
     kos_dyn_pop_region(ctx, region);
     return -1;
@@ -3699,8 +3961,8 @@ KOS_OP_HANDLER(POP_BEGIN) {
 
 
 /**
-   POP_LOOP: arg unused. Pop LOOP/FOREACH region; drop stack block for LOOP
-   only (FOREACH does not push a block).
+   POP_LOOP: arg unused. Pop LOOP/FOREACH region, drop stack block,
+   and push region->result to the operand stack as the loop expression result.
 */
 KOS_OP_HANDLER(POP_LOOP) {
   if (! ctx->dyn_top || ! KosDynNode_IS_REGION(ctx->dyn_top)) {
@@ -3713,11 +3975,27 @@ KOS_OP_HANDLER(POP_LOOP) {
                     "POP_LOOP: top is not a LOOP or FOREACH region");
     return -1;
   }
-  kos_dyn_pop_region(ctx, region);
-  if (region->style == KOS_REGION_LOOP) {
-    if (KosStackBlock_DropBlock(&ctx->frame_top->stack) < 0)
-      return -1;
+
+  /* Get result before popping region (region owns the reference) */
+  PyObject *result = region->result;
+  Py_INCREF(result);
+
+  /* Drop the stack block (both LOOP and FOREACH now push blocks) */
+  if (KosStackBlock_DropBlock(&ctx->frame_top->stack) < 0) {
+    Py_DECREF(result);
+    return -1;
   }
+
+  /* Pop the region (this DECREFs region->result) */
+  kos_dyn_pop_region(ctx, region);
+
+  /* Push result to stack as loop expression value */
+  if (KosStackBlock_PushRef(&ctx->frame_top->stack, result) < 0) {
+    Py_DECREF(result);
+    return -1;
+  }
+  Py_DECREF(result);
+
   (void) out_ev;
   (void) insn;
   return 0;
@@ -3823,7 +4101,7 @@ static int try_local_exception_handler(KosContext *ctx, KosEvent *out_ev) {
     return 0;
   }
 
-  uint32_t handler_pc = region->a_label;
+  uint32_t handler_pc = region->break_pc;
   {
     KosTryHandler th;
     if (kos_try_handler_for((PyObject *) ctx->frame_top->code,

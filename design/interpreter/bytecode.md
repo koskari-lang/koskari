@@ -227,8 +227,8 @@ typedef enum KosOpStyle {
 - General: `KOS_OP_OBJECT_ITER`, `KOS_OP_OBJECT_AITER`, `KOS_OP_OBJECT_LEN`, etc.
 
 ### Iteration
-- `KOS_OP_ITER_NEXT`: Get next from iterator
-- `KOS_OP_AWAIT_NEXT`: Get next from async iterator
+- `KOS_OP_ITER_NEXT`: Get next from region iterator (must be inside PUSH_FOREACH); arg = else label; uses region->iter; auto-await
+- `KOS_OP_NEXT`: Stack-based next; arg = count (1 or 2); 1-arg: TOS = iterator, StopIteration raises; 2-arg: TOS = default, below = iterator, StopIteration pushes default; auto-await
 
 ### Introspection
 - `KOS_OP_GLOBALS`: Get globals dict
@@ -247,7 +247,7 @@ typedef enum KosOpStyle {
 
 Handlers live in `koskari/lib/eval.c`. Each opcode has a handler; it is either **fully implemented** or a **stub** that calls `op_unimplemented_stub` (runtime error if executed). There are no partially implemented opcodes.
 
-- **Fully implemented**: Stack (NOOP, LABEL, POSITION, DUP, POP, CONST); RETURN, AWAIT; CALL (simple call); GLOBALS, LOCALS; variables (VAR, VAR_BIND, VAR_CLEAR, VAR_REF, VAR_STORE); fast locals (FAST, FAST_BIND, FAST_REF, FAST_STORE); namespace scope (PUSH_NS, POP_NS); exception ops (EXCEPTION, EXCEPTION_CLEAR, EXCEPTION_MATCH, RAISE, CHECK_EXCEPTION); try/finally (PUSH_TRY, PUSH_FINALLY, POP_TRY, POP_FINALLY, CLEAR_TRY, CLEAR_FINALLY); loop control (PUSH_LOOP, PUSH_FOREACH, POP_LOOP, CLEAR_LOOP, BREAK, CONTINUE); delimited continuations (PUSH_PROMPT, SET_PROMPT_HANDLER, POP_PROMPT, SHIFT); INVOKE_K, INVOKE_K_VAR; all OBJECT_* opcodes; ITER_NEXT, AWAIT_NEXT.
+- **Fully implemented**: Stack (NOOP, LABEL, POSITION, DUP, POP, CONST); RETURN, AWAIT; CALL (simple call); GLOBALS, LOCALS; variables (VAR, VAR_BIND, VAR_CLEAR, VAR_REF, VAR_STORE); fast locals (FAST, FAST_BIND, FAST_REF, FAST_STORE); namespace scope (PUSH_NS, POP_NS); exception ops (EXCEPTION, EXCEPTION_CLEAR, EXCEPTION_MATCH, RAISE, CHECK_EXCEPTION); try/finally (PUSH_TRY, PUSH_FINALLY, POP_TRY, POP_FINALLY, CLEAR_TRY, CLEAR_FINALLY); loop control (PUSH_LOOP, PUSH_FOREACH, POP_LOOP, CLEAR_LOOP, BREAK, CONTINUE); delimited continuations (PUSH_PROMPT, SET_PROMPT_HANDLER, POP_PROMPT, SHIFT); INVOKE_K, INVOKE_K_VAR; all OBJECT_* opcodes; ITER_NEXT, NEXT.
 - **Stubs (unimplemented)**: THEEND, YIELD, YIELD_FROM; argument-building (BUILD_*, COMBINE_*); CALL_NAMES, CALL_STAR, CALL_ATTR*, RECUR*, TAIL_*; block control (PUSH_*/POP_*/CLEAR_* for with/begin/class); PUSH_WIND, POP_WIND, END_WIND; PUSH_REGION, POP_REGION.
 
 For the full categorized list, see [FEATURES.md](../FEATURES.md) § "Opcodes: implementation status".

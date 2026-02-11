@@ -64,7 +64,7 @@ OP(YIELD_FROM, NOARG)
 
 // iteration
 OP(ITER_NEXT, LABEL)
-OP(AWAIT_NEXT, LABEL)
+OP(NEXT, COUNT)
 
 // unconditional and conditional jumps
 OP(JUMP, LABEL)

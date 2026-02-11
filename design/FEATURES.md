@@ -99,7 +99,7 @@ The VM in `eval.c` uses a jump table; every opcode has a handler. Handlers are e
 - **Delimited continuations**: PUSH_PROMPT, SET_PROMPT_HANDLER, POP_PROMPT, SHIFT
 - **Continuation invocation**: INVOKE_K (stack-based: pop value, pop cont), INVOKE_K_VAR (name-based: pop value, lookup name in frame ns, invoke)
 - **Object protocol**: All OBJECT_* opcodes (comparisons, arithmetic, predicates, len/type/iter/str/repr/vars/dir, bitwise, in/not in, is/is not, isinstance/issubclass, etc.)
-- **Iteration**: ITER_NEXT, AWAIT_NEXT (single transparent-async implementation; behavior depends on TOS: sync iter, Python async iter, or Koskari async gen; Koskari async gens are run inline until yield/return/await)
+- **Iteration**: ITER_NEXT (region-only, must be inside PUSH_FOREACH; uses region->iter; arg = else label; auto-await), NEXT (stack-based; arg = 1 or 2; 1-arg: StopIteration raises; 2-arg: StopIteration pushes default; auto-await for sync iter, Python async iter, Koskari async gen)
 - **Loop control**: PUSH_LOOP, PUSH_FOREACH, POP_LOOP, CLEAR_LOOP, BREAK, CONTINUE (use KosDynRegion LOOP/FOREACH on dynamic chain; PUSH_LOOP pushes stack block; BREAK/CONTINUE unwind via kos_find_region_for_loop; ITER_NEXT at loop head for foreach)
 
 **Not implemented (stubs)** — hitting these at runtime raises "unimplemented opcode":
