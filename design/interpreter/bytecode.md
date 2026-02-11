@@ -321,6 +321,10 @@ KosCode_CPOOL_LEN(code)
 KosCode_GET_CONST(code, i)
 ```
 
+## Related design
+
+Planned static metadata tables (location table, extent table, pc→extent lookup, JUMP locality, no forward scans) are specified in **[bytecode-metadata-tables.md](bytecode-metadata-tables.md)**.
+
 ## Files
 
 - `koskari/lib/bytecode.h`: Type definitions, enums, macros, function declarations
