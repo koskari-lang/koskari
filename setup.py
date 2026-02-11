@@ -9,21 +9,6 @@ Koskari, a LISP dialect for Python
 
 from os import environ
 from setuptools import Extension, setup
-from setuptools.command.build_ext import build_ext
-
-
-class FixedBuildExt(build_ext):
-    """
-    Fix for sdist - base build_ext does not include depends lists,
-    which makes subsequent compilation fail.
-    """
-    def get_source_files(self):
-        self.check_extensions_list(self.extensions)
-        filenames = []
-        for ext in self.extensions:
-            filenames.extend(ext.sources)
-            filenames.extend(ext.depends)
-        return filenames
 
 
 def extra_compile_args(platform=None, debug=False):
@@ -34,6 +19,9 @@ def extra_compile_args(platform=None, debug=False):
     if platform is None:
         from sys import platform as sys_platform
         platform = sys_platform
+
+    if debug is None:
+        debug = environ.get("DEBUG") == "1"
 
     args = [
         "--std=c99",
@@ -53,75 +41,27 @@ def extra_compile_args(platform=None, debug=False):
     return args
 
 
-def extension(platform=None, debug=False):
+def extension(platform=None, debug=None):
     """
     Create Extension object for native module
     """
 
+    from pathlib import Path
+
+    libdir = Path("koskari/lib")
+    sources = sorted(map(str, libdir.glob("*.c")))
+    depends = sorted(map(str, libdir.glob("*.h")))
+    depends.append(str(libdir / "opcodes.incl"))
+
     return Extension(
         "koskari.lib",
-        sources=[
-            # Python version compatibility
-            "koskari/lib/compat.c",
-            # Implementation units
-            "koskari/lib/atom.c",
-            "koskari/lib/bytecode.c",
-            "koskari/lib/dynchain.c",
-            "koskari/lib/eval.c",
-            "koskari/lib/formals.c",
-            "koskari/lib/func.c",
-            "koskari/lib/namespace.c",
-            "koskari/lib/operator.c",
-            "koskari/lib/pair.c",
-            "koskari/lib/parse.c",
-            "koskari/lib/ref.c",
-            "koskari/lib/stack.c",
-            "koskari/lib/utils.c",
-            "koskari/lib/values.c",
-            # Module initialization
-            "koskari/lib/lib.c",
-        ],
-        depends=[
-            # Compatibility headers
-            "koskari/lib/compat_36.h",
-            "koskari/lib/compat_37.h",
-            "koskari/lib/compat_38.h",
-            "koskari/lib/compat_39.h",
-            "koskari/lib/compat_311.h",
-            "koskari/lib/compat.h",
-            # Implementation units
-            "koskari/lib/atom.h",
-            "koskari/lib/bytecode.h",
-            "koskari/lib/dynchain.h",
-            "koskari/lib/eval.h",
-            "koskari/lib/formals.h",
-            "koskari/lib/func.h",
-            "koskari/lib/namespace.h",
-            "koskari/lib/operator.h",
-            "koskari/lib/pair.h",
-            "koskari/lib/parse.h",
-            "koskari/lib/ref.h",
-            "koskari/lib/stack.h",
-            "koskari/lib/utils.h",
-            "koskari/lib/values.h",
-            # Library header
-            "koskari/lib/lib.h",
-            # Include files
-            "koskari/lib/opcodes.incl",
-        ],
+        sources=sources,
+        depends=depends,
         extra_compile_args=extra_compile_args(platform, debug),
     )
 
 
-def setup_extensions():
-    """Get list of extensions to build."""
-    debug = environ.get("DEBUG") == "1"
-    return [extension(debug=debug)]
-
-
-if __name__ == "__main__":
-    setup(ext_modules=setup_extensions(),
-          cmdclass={'build_ext': FixedBuildExt})
+setup(ext_modules=[extension()])
 
 
 # The end.
