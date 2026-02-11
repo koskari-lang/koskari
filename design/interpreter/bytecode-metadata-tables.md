@@ -1,6 +1,6 @@
 # Koskari — Static Bytecode Metadata Tables (Locations + Extents)
 
-This document records design decisions to move from **dynamic, opcode-driven block push/pop** patterns toward **statically compiled metadata tables** attached to a code object.
+This document records design decisions to move from **dynamic, opcode-driven block push/pop** patterns toward **statically compiled metadata tables** attached to a code object. **Status: Implemented** (extent table, location API, JUMP locality validation, evaluator integration for TRY).
 
 Primary goals:
 
@@ -43,16 +43,18 @@ Primary goals:
 
 ## 2. Code Object Layout
 
-The code object allocation (page-aligned and made read-only after construction) will include:
+The code object uses two read-only allocations (both page-aligned and mprotected):
 
-1. **Bytecode array**: fixed-width instructions (`op,arg`).
-2. **Location table**: mapping from pc to source `(line,col)` (or token span).
-3. **Extent table**:
+1. **Main block**: bytecode array, position table, constant pool (single contiguous allocation).
+2. **Extent block**: extent descriptors and `top_extent_id[pc]` array (separate allocation; omitted when no PUSH/POP blocks exist).
 
-   * extent descriptors (ranges + targets)
-   * pc→extent lookup structure (direct or sparse index)
+Contents:
 
-All are stored in the same read-only mapping.
+* **Bytecode array**: fixed-width instructions (`op,arg`).
+* **Location table** (KosPosition): mapping from pc to source `(line,col)`; fixed-width entries, binary-search lookup.
+* **Extent table**:
+  * `KosExtentDesc` array (ranges, kind, kind-specific targets)
+  * `top_extent_id[code_len]` per-pc lookup (Strategy B)
 
 ---
 
@@ -60,15 +62,15 @@ All are stored in the same read-only mapping.
 
 ### Decision
 
-Use a delta-coded location table keyed by pc:
+Use a location table keyed by pc:
 
-* Stores only the pcs where location changes.
-* Lookup by pc uses binary search, or optional cursor caching in the evaluator.
+* Stores only the pcs where position changes.
+* Lookup by pc uses binary search.
 
-### Shape
+### Implemented Shape
 
-* `LocEntry { pc_delta, line_delta, col_delta }` (varint-coded) OR
-* `LocEntry { pc, line, col }` (fixed width, simpler, larger)
+* `KosPosition { index, line, col }` (fixed width, 6 bytes per entry)
+* C API: `kos_loc_lookup(code, pc, line, col)` (wraps `KosCode_GetPosition`)
 
 ### Rationale
 
@@ -156,23 +158,11 @@ Kind-specific payload:
 
 ### pc→Extent Lookup
 
-We want fast answers for innermost extent queries without scanning instructions.
+**Implemented: Strategy B** (direct per-pc top-extent table):
 
-Acceptable strategies (choose one, or implement progressively):
-
-**A. Sparse checkpoints + event scan (recommended start)**
-
-* Store an ordered event list: `{pc, enter/leave, extent_id}`.
-* Store checkpoints every N pcs that reference the event index and active extent stack snapshot id.
-* Evaluator maintains a cached "current active stack" that updates as pc advances.
-* For jumps, evaluator resets from the nearest checkpoint.
-
-**B. Direct per-pc top-extent table (simplest runtime, more memory)**
-
-* `top_extent_id[pc]` gives the innermost extent id at each pc.
-* Optional: `depth[pc]` or `top_try_id[pc]`, etc.
-
-Given typical code sizes, (B) may be acceptable, but (A) scales better and keeps metadata compact.
+* `top_extent_id[pc]` gives the innermost extent id at each pc (or `KOS_EXTENT_NONE`).
+* Extents are derived during Code construction from PUSH/POP pairs; nesting is validated.
+* Code with no PUSH/POP blocks has `extent_len == 0`, `extents == NULL`, `top_extent_id == NULL`; lookups return NONE.
 
 ---
 
@@ -212,7 +202,9 @@ Any place the evaluator previously scanned forward to find a sentinel or a match
 
 ### Decision: JUMP is strictly local
 
-**Non-local jumps are forbidden.** During compilation/finalize we validate that any `JUMP` target does **not** leave the current active block.
+**Non-local jumps are forbidden** for control-flow jump opcodes. During Code construction we validate that JUMP, JUMP_FALSE, JUMP_TRUE, JUMP_AND, JUMP_OR, ITER_NEXT, AWAIT_NEXT, and all CHECK_* opcodes do **not** target a pc outside the current active block.
+
+**Excluded from validation**: PUSH_TRY, PUSH_FINALLY, PUSH_LOOP, SET_PROMPT_HANDLER, PUSH_WITH, etc. Their args are handler/target labels that may legitimately point outside the block (e.g. exception handler after POP_TRY).
 
 Definitions:
 
@@ -373,19 +365,21 @@ This makes continuations stable across multi-shot capture:
 
 ## 12. Backwards Compatibility / Transition Plan
 
-1. Introduce tables and wire location lookup first (low risk).
-2. Convert one construct (TRY or SHIFT) to table-driven targets.
-3. Keep old opcodes supported for previously compiled code during migration.
-4. When stable, stop emitting scan-dependent patterns in new bytecode.
+**Completed**:
+
+1. ~~Introduce tables and wire location lookup first~~ — Done; `kos_loc_lookup` wraps `KosCode_GetPosition`.
+2. ~~Convert one construct (TRY or SHIFT) to table-driven targets~~ — Done; `try_local_exception_handler` uses `kos_try_handler_for` when extent table present, falls back to `region->a_label`.
+3. Extent table is derived for all Code; no migration needed (empty code has no extents).
+4. Malformed bytecode (unmatched PUSH/POP) is rejected at Code construction.
 
 ---
 
-## 13. Open Decisions
+## 13. Resolved Decisions
 
-* Pick lookup strategy (A sparse checkpoints vs B per-pc table). Start with A unless profiling says B is simpler and sufficient.
-* Decide whether location changes live in a separate loc table or become just another annotation stream.
-* Decide how to represent extent ids in runtime nodes (16-bit if bounded; otherwise 32-bit).
-* Decide whether push/pop opcodes reference extents by **immediate id** (preferred) or by an indirection (e.g. "current extent at pc").
+* **Lookup strategy**: Strategy B (per-pc `top_extent_id`) implemented.
+* **Location table**: Separate `KosPosition` table; fixed-width entries.
+* **Extent id width**: 16-bit (`KOS_EXTENT_NONE = 0xFFFF`).
+* **Push/pop encoding**: PUSH/POP opcodes retain current encoding (arg = label or pool index); extent table is derived from instruction stream, not from opcode args.
 
 ---
 
@@ -433,19 +427,18 @@ These are not blockers, but they are common footguns in table-driven designs.
 
 ---
 
-## 15. Required API Surface (C)
+## 15. Required API Surface (C) — Implemented
 
-Minimum new APIs on the code object:
+APIs in `bytecode.h` / `bytecode.c`:
 
-* `kos_loc_lookup(code, pc) -> (line,col)`
-* `kos_extent_top(code, pc) -> extent_id`
-* `kos_extent_find(code, pc, kind) -> extent_id or NONE`
-* `kos_extent_desc(code, extent_id) -> pointer`
+* `kos_loc_lookup(code, pc, line, col)` — returns 0 on success, -1 on error
+* `kos_extent_top(code, pc)` — extent_id or KOS_EXTENT_NONE
+* `kos_extent_find(code, pc, kind)` — extent_id or KOS_EXTENT_NONE
+* `kos_extent_desc(code, extent_id)` — KosExtentDesc pointer or NULL
+* `kos_try_handler_for(code, pc, out)` — fills KosTryHandler; returns 0 if found, -1 otherwise
+* `kos_shift_ic_for(code, pc)` — ic_pc for SHIFT_BODY extent, or KOS_EXTENT_NONE
 
-Evaluator helpers:
-
-* `kos_try_handler_for(code, pc) -> {extent_id, except_pc, finally_pc, exit_pc, ...}`
-* `kos_shift_ic_for(code, pc) -> ic_pc`
+Extent kinds: TRY, LOOP, PROMPT, SHIFT_BODY, CALLCC_BIND, FINALLY, WIND, WITH, FOREACH, BEGIN, NS. PUSH/POP pairs: TRY, LOOP, FINALLY, PROMPT, WITH, BEGIN, NS, WIND, REGION, FOREACH (FOREACH→POP_LOOP).
 
 ---
 
@@ -454,3 +447,4 @@ Evaluator helpers:
 * Bytecode stays **read-only** after finalize.
 * Extent and location tables are **immutable** and stored with the bytecode.
 * No evaluator path relies on "scan forward through instruction stream" for structural targets.
+* Malformed bytecode (unmatched PUSH/POP) is rejected at Code construction; non-local control-flow jumps are rejected.

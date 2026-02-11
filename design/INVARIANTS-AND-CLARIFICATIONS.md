@@ -73,7 +73,7 @@ These are **commitments**: they must hold for correct behavior. They are elabora
 
 - **VM-native wind/unwind**: Wind/unwind hooks are **bytecode blocks** (implemented as null-arity Koskari callables that compile to bytecode). They run in the VM via `KosHookRunner` with **isolated** operand stacks and end with the `END_WIND` sentinel opcode. They execute in their own frames and capture lexical context via closure; they cannot see or change the enclosing frame’s stack.
 
-- **Control flow**: Koskari supports local-only jumps restricted to the current block context. Local-only jumps implement continue, break, conditional control flow, and try/except/finally. Non-local jumps across block or dynamic extents are not permitted except via continuations.
+- **Control flow**: Koskari supports local-only jumps restricted to the current block context. Local-only jumps implement continue, break, conditional control flow, and try/except/finally. Non-local jumps across block or dynamic extents are not permitted except via continuations. JUMP locality is validated at Code construction: JUMP, JUMP_FALSE, JUMP_TRUE, JUMP_AND, JUMP_OR, ITER_NEXT, AWAIT_NEXT, and CHECK_* opcodes must target a pc inside the current extent or at its pop_pc (leaving). PUSH_TRY, PUSH_FINALLY, SET_PROMPT_HANDLER, etc. are excluded (their handler targets may be outside the block).
 
 - **Local jumps vs wind/unwind**: Local jumps and wind/unwind are **distinct mechanisms**: local jumps do **not** invoke wind/unwind handlers; continuation transfer **does** invoke them.
 
@@ -103,7 +103,7 @@ These are **commitments**: they must hold for correct behavior. They are elabora
 
 - **Stack**: `Stack` (Python) is block-structured; the **storage** for the VM is `KosStackBlock` (C). Control-flow metadata (block style, labels, enabled) lives in **`KosDynRegion`** nodes on the dynamic chain, not on the stack. Implemented in `koskari/lib/stack.c` (storage only).
 
-- **Bytecode**: `Code` holds immutable instructions (4 bytes each: `uint16_t op`, `uint16_t arg`), delta-encoded position table, and constant pool. After init, code and pool are made read-only with `mprotect()`. `KOS_CODE_YIELDS` marks code that contains yield (→ async generator). Implemented in `koskari/lib/bytecode.c`; opcodes in `koskari/lib/opcodes.incl`.
+- **Bytecode**: `Code` holds immutable instructions (4 bytes each: `uint16_t op`, `uint16_t arg`), delta-encoded position table, constant pool, and extent table. After init, code, pool, and extent table are made read-only with `mprotect()`. `KOS_CODE_YIELDS` marks code that contains yield (→ async generator). The extent table (`KosExtentDesc` array, `top_extent_id[pc]`) is derived from PUSH/POP pairs during construction; it enables O(1) lookup of block membership and handler targets. Exception dispatch uses `kos_try_handler_for()` when the extent table is present. JUMP locality is validated: control-flow jumps (JUMP, JUMP_FALSE, etc.) may not target outside the current block; PUSH/SET_PROMPT_HANDLER handler targets may point outside. Malformed bytecode (unmatched PUSH/POP) is rejected at Code construction. Implemented in `koskari/lib/bytecode.c`; opcodes in `koskari/lib/opcodes.incl`. See `design/interpreter/bytecode-metadata-tables.md`.
 
 ---
 
@@ -228,7 +228,7 @@ These are **commitments**: they must hold for correct behavior. They are elabora
 | Coroutine / run-code | (this doc, evaluator.md)         | koskari/lib/func.c, func.h              |
 | Dynamic chain     | interpreter/evaluator.md          | koskari/lib/dynchain.c, dynchain.h      |
 | Continuations     | interpreter/callcc.md             | dynchain.c (capture/invoke), eval.c     |
-| Bytecode          | interpreter/bytecode.md           | koskari/lib/bytecode.c, bytecode.h, opcodes.incl |
+| Bytecode          | interpreter/bytecode.md, bytecode-metadata-tables.md | koskari/lib/bytecode.c, bytecode.h, opcodes.incl |
 | Types             | api/types.md                     | koskari/lib/*.c, koskari/types.py       |
 | Builtins/API      | api/builtins.md, api/runtime.md   | koskari/lib/lib.c, operator.c           |
 | Language          | language/*.md                    | koskari/parse.py, koskari/lib/parse.c   |

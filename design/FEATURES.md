@@ -75,8 +75,9 @@ This document provides a high-level summary of all features identified from both
 ### Bytecode
 - **Format**: Custom compact bytecode (4 bytes per instruction)
 - **Opcodes**: Comprehensive opcode set for all operations; see "Opcodes: implementation status" below for which are implemented in the VM.
-- **Structure**: Code (with NamespaceSpec), position table, constant pool
+- **Structure**: Code (with NamespaceSpec), position table, constant pool, extent table
 - **Position**: Delta-encoded line/column tracking
+- **Extent table**: Derived from PUSH/POP pairs; O(1) block membership and handler lookup; JUMP locality validation at construction
 - **Security**: Read-only memory protection after initialization
 
 ### Opcodes: implementation status

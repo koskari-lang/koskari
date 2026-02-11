@@ -30,6 +30,7 @@
 /* Feature test macros must come before any includes */
 #define _POSIX_C_SOURCE 200809L
 
+#include <string.h>
 #include <sys/mman.h>
 #include <stdlib.h>
 #include <unistd.h>
@@ -645,6 +646,370 @@ static int process_instr(
 }
 
 
+/* === Extent derivation === */
+
+
+#define DERIVE_EXTENT_STACK_MAX 64
+
+
+typedef struct {
+  KosOpCode push_op;
+  KosOpCode pop_op;
+  KosExtentKind kind;
+} ExtentOpPair;
+
+
+static const ExtentOpPair extent_pairs[] = {
+  { KOS_OP_PUSH_TRY,      KOS_OP_POP_TRY,      KOS_EXT_TRY },
+  { KOS_OP_PUSH_LOOP,     KOS_OP_POP_LOOP,     KOS_EXT_LOOP },
+  { KOS_OP_PUSH_FINALLY,  KOS_OP_POP_FINALLY,  KOS_EXT_FINALLY },
+  { KOS_OP_PUSH_PROMPT,   KOS_OP_POP_PROMPT,   KOS_EXT_PROMPT },
+  { KOS_OP_PUSH_WITH,     KOS_OP_POP_WITH,     KOS_EXT_WITH },
+  { KOS_OP_PUSH_BEGIN,    KOS_OP_POP_BEGIN,    KOS_EXT_BEGIN },
+  { KOS_OP_PUSH_NS,       KOS_OP_POP_NS,       KOS_EXT_NS },
+  { KOS_OP_PUSH_WIND,     KOS_OP_POP_WIND,     KOS_EXT_WIND },
+  { KOS_OP_PUSH_REGION,   KOS_OP_POP_REGION,   KOS_EXT_TRY },
+  { KOS_OP_PUSH_FOREACH,  KOS_OP_POP_LOOP,     KOS_EXT_FOREACH },
+};
+
+
+#define N_EXTENT_PAIRS \
+  (sizeof extent_pairs / sizeof extent_pairs[0])
+
+
+static KosOpCode push_to_pop(KosOpCode push_op) {
+
+  for (size_t i = 0; i < N_EXTENT_PAIRS; i++) {
+    if (extent_pairs[i].push_op == push_op) {
+      return extent_pairs[i].pop_op;
+    }
+  }
+  return KOS_OP_NOOP;
+}
+
+
+static KosExtentKind push_to_kind(KosOpCode push_op) {
+
+  for (size_t i = 0; i < N_EXTENT_PAIRS; i++) {
+    if (extent_pairs[i].push_op == push_op) {
+      return extent_pairs[i].kind;
+    }
+  }
+  return KOS_EXT_TRY;
+}
+
+
+static int is_push_op(KosOpCode op) {
+
+  return push_to_pop(op) != KOS_OP_NOOP;
+}
+
+
+static int is_pop_op(KosOpCode op) {
+
+  for (size_t i = 0; i < N_EXTENT_PAIRS; i++) {
+    if (extent_pairs[i].pop_op == op) {
+      return 1;
+    }
+  }
+  return 0;
+}
+
+
+typedef struct {
+  uint32_t push_pc;
+  uint32_t extent_id;
+  KosOpCode push_op;
+} ExtentStackEntry;
+
+
+/**
+   Derive extent table from finalized instruction stream.
+   Allocates extents and top_extent_id; caller stores in KosCode.
+*/
+static int derive_extents(
+    KosOp *code,
+    uint32_t code_len,
+    KosExtentDesc **out_extents,
+    uint32_t *out_extent_len,
+    uint16_t **out_top_extent_id,
+    size_t *out_allocation) {
+
+  ExtentStackEntry stack[DERIVE_EXTENT_STACK_MAX];
+  uint32_t stack_top = 0;
+
+  KosExtentDesc *extents = NULL;
+  uint32_t extent_count = 0;
+  uint32_t extent_cap = 32;
+
+  uint16_t *top_extent_id = NULL;
+
+  extents = PyMem_New(KosExtentDesc, extent_cap);
+  if (! extents) {
+    PyErr_NoMemory();
+    return -1;
+  }
+
+  top_extent_id = PyMem_New(uint16_t, code_len);
+  if (! top_extent_id) {
+    PyMem_Del(extents);
+    PyErr_NoMemory();
+    return -1;
+  }
+
+  for (uint32_t i = 0; i < code_len; i++) {
+    top_extent_id[i] = KOS_EXTENT_NONE;
+  }
+
+  for (uint32_t pc = 0; pc < code_len; pc++) {
+    KosOpCode op = (KosOpCode) code[pc].op;
+    uint16_t arg = code[pc].arg;
+
+    if (is_push_op(op)) {
+      if (stack_top >= DERIVE_EXTENT_STACK_MAX) {
+        PyErr_SetString(PyExc_RuntimeError,
+                        "extent nesting too deep");
+        goto failure;
+      }
+
+      if (extent_count >= extent_cap) {
+        KosExtentDesc *n = PyMem_Resize(extents, KosExtentDesc, extent_cap * 2);
+        if (! n) {
+          PyErr_NoMemory();
+          goto failure;
+        }
+        extents = n;
+        extent_cap *= 2;
+      }
+
+      uint32_t parent_id = KOS_EXTENT_NONE;
+      if (stack_top > 0) {
+        parent_id = stack[stack_top - 1].extent_id;
+      }
+
+      KosExtentDesc *e = &extents[extent_count];
+      e->kind = push_to_kind(op);
+      e->push_pc = pc;
+      e->pop_pc = 0;
+      e->parent_extent_id = parent_id;
+      e->flags = 0;
+      e->except_pc = KOS_EXTENT_NONE;
+      e->else_pc = KOS_EXTENT_NONE;
+      e->finally_pc = KOS_EXTENT_NONE;
+      e->exit_pc = KOS_EXTENT_NONE;
+      e->ic_pc = KOS_EXTENT_NONE;
+      e->break_pc = KOS_EXTENT_NONE;
+      e->continue_pc = KOS_EXTENT_NONE;
+
+      switch (e->kind) {
+      case KOS_EXT_TRY:
+      case KOS_EXT_FINALLY:
+        e->except_pc = arg;
+        e->finally_pc = (e->kind == KOS_EXT_FINALLY) ? arg : KOS_EXTENT_NONE;
+        break;
+      case KOS_EXT_LOOP:
+      case KOS_EXT_FOREACH:
+        e->break_pc = arg;
+        e->continue_pc = pc + 1;
+        break;
+      case KOS_EXT_WITH:
+        e->exit_pc = arg;
+        break;
+      case KOS_EXT_PROMPT:
+        break;
+      default:
+        break;
+      }
+
+      stack[stack_top].push_pc = pc;
+      stack[stack_top].extent_id = extent_count;
+      stack[stack_top].push_op = op;
+      stack_top++;
+      extent_count++;
+    }
+    else if (is_pop_op(op)) {
+      if (stack_top == 0) {
+        PyErr_Format(PyExc_RuntimeError,
+                     "POP at pc %u with no matching PUSH", pc);
+        goto failure;
+      }
+
+      KosOpCode expected_pop = push_to_pop(stack[stack_top - 1].push_op);
+      if (op != expected_pop) {
+        PyErr_Format(PyExc_RuntimeError,
+                     "extent mismatch at pc %u: expected %d, got %d",
+                     pc, (int) expected_pop, (int) op);
+        goto failure;
+      }
+
+      uint32_t eid = stack[stack_top - 1].extent_id;
+      extents[eid].pop_pc = pc;
+
+      if (extents[eid].push_pc >= extents[eid].pop_pc) {
+        PyErr_Format(PyExc_RuntimeError,
+                     "invalid extent range: push_pc %u >= pop_pc %u",
+                     extents[eid].push_pc, extents[eid].pop_pc);
+        goto failure;
+      }
+
+      uint32_t enter_pc = extents[eid].push_pc + 1;
+      for (uint32_t j = enter_pc; j < pc; j++) {
+        if (top_extent_id[j] == KOS_EXTENT_NONE) {
+          top_extent_id[j] = (uint16_t) eid;
+        }
+      }
+
+      stack_top--;
+    }
+  }
+
+  if (stack_top != 0) {
+    PyErr_Format(PyExc_RuntimeError,
+                 "unclosed extent at pc %u",
+                 stack[stack_top - 1].push_pc);
+    goto failure;
+  }
+
+  if (extent_count == 0) {
+    PyMem_Del(extents);
+    PyMem_Del(top_extent_id);
+    *out_extents = NULL;
+    *out_extent_len = 0;
+    *out_top_extent_id = NULL;
+    *out_allocation = 0;
+    return 0;
+  }
+
+  size_t extent_bytes = extent_count * sizeof(KosExtentDesc);
+  size_t top_bytes = code_len * sizeof(uint16_t);
+  size_t block_size = extent_bytes + top_bytes;
+  size_t page_size = (size_t) sysconf(_SC_PAGE_SIZE);
+  block_size = ((block_size + page_size - 1) / page_size) * page_size;
+
+  void *block = NULL;
+  if (posix_memalign(&block, page_size, block_size)) {
+    PyMem_Del(extents);
+    PyMem_Del(top_extent_id);
+    PyErr_SetString(PyExc_MemoryError,
+                    "Failed to allocate extent table storage");
+    return -1;
+  }
+
+  memcpy(block, extents, extent_bytes);
+  memcpy((char *) block + extent_bytes, top_extent_id, top_bytes);
+
+  PyMem_Del(extents);
+  PyMem_Del(top_extent_id);
+
+  *out_extents = block;
+  *out_extent_len = extent_count;
+  *out_top_extent_id = (uint16_t *) ((char *) block + extent_bytes);
+  *out_allocation = block_size;
+
+  return 0;
+
+ failure:
+  PyMem_Del(extents);
+  PyMem_Del(top_extent_id);
+  return -1;
+}
+
+
+/**
+   Opcodes that perform control-flow jumps (must stay local).
+   Excludes PUSH and SET_PROMPT_HANDLER whose args are handler targets
+   that may legitimately point outside the current block.
+*/
+static int is_jump_op(KosOpCode op) {
+
+  switch (op) {
+  case KOS_OP_JUMP:
+  case KOS_OP_JUMP_FALSE:
+  case KOS_OP_JUMP_TRUE:
+  case KOS_OP_JUMP_AND:
+  case KOS_OP_JUMP_OR:
+  case KOS_OP_ITER_NEXT:
+  case KOS_OP_AWAIT_NEXT:
+  case KOS_OP_CHECK_EQ:
+  case KOS_OP_CHECK_GE:
+  case KOS_OP_CHECK_GT:
+  case KOS_OP_CHECK_LE:
+  case KOS_OP_CHECK_LT:
+  case KOS_OP_CHECK_NE:
+  case KOS_OP_CHECK_IN:
+  case KOS_OP_CHECK_NOT_IN:
+  case KOS_OP_CHECK_IS:
+  case KOS_OP_CHECK_IS_NOT:
+  case KOS_OP_CHECK_IS_INSTANCE:
+  case KOS_OP_CHECK_IS_SUBCLASS:
+  case KOS_OP_CHECK_EXCEPTION:
+    return 1;
+  default:
+    return 0;
+  }
+}
+
+
+/**
+   Validate JUMP locality: all jump targets must be inside the source block
+   or at the block's pop_pc (leaving). Called after derive_extents.
+   Only applies to control-flow jump opcodes, not PUSH or SET_PROMPT_HANDLER.
+*/
+static int validate_jump_locality(
+    KosOp *code,
+    uint32_t code_len,
+    KosExtentDesc *extents,
+    uint32_t extent_len,
+    uint16_t *top_extent_id) {
+
+  if (! top_extent_id || extent_len == 0) {
+    return 0;
+  }
+
+  for (uint32_t src_pc = 0; src_pc < code_len; src_pc++) {
+    if (! is_jump_op((KosOpCode) code[src_pc].op)) {
+      continue;
+    }
+
+    uint32_t t = code[src_pc].arg;
+    if (t > code_len) {
+      PyErr_Format(PyExc_RuntimeError,
+                   "JUMP at pc %u targets out-of-range pc %u",
+                   src_pc, t);
+      return -1;
+    }
+
+    uint32_t eid = top_extent_id[src_pc];
+    if (eid == KOS_EXTENT_NONE) {
+      continue;
+    }
+
+    if (eid >= extent_len) {
+      continue;
+    }
+
+    KosExtentDesc *e = &extents[eid];
+    uint32_t enter_pc = e->push_pc + 1;
+    uint32_t pop_pc = e->pop_pc;
+
+    if (enter_pc <= t && t < pop_pc) {
+      continue;
+    }
+    if (t == pop_pc) {
+      continue;
+    }
+
+    PyErr_Format(PyExc_RuntimeError,
+                 "non-local JUMP at pc %u to pc %u: target outside block"
+                 " [%u, %u)",
+                 src_pc, t, enter_pc, pop_pc);
+    return -1;
+  }
+
+  return 0;
+}
+
+
 /* === Code initialization === */
 
 
@@ -739,10 +1104,43 @@ static int code_instr_init(PyObject *self, PyObject *instr) {
     goto failure;
   }
 
+  /* Derive extent table */
+  KosExtentDesc *extents = NULL;
+  uint32_t extent_len = 0;
+  uint16_t *top_extent_id = NULL;
+  size_t extent_alloc = 0;
+
+  if (derive_extents(code, instr_l, &extents, &extent_len,
+                     &top_extent_id, &extent_alloc)) {
+    goto failure;
+  }
+
+  if (extents && top_extent_id &&
+      validate_jump_locality(code, instr_l, extents, extent_len,
+                             top_extent_id)) {
+    if (extents) {
+      free(extents);
+    }
+    goto failure;
+  }
+
   /* Make storage read-only */
   if (mprotect(code, alloc_size, PROT_READ)) {
+    if (extents) {
+      mprotect(extents, extent_alloc, PROT_WRITE);
+      free(extents);
+    }
     PyErr_SetFromErrno(PyExc_OSError);
     goto failure;
+  }
+
+  if (extents && extent_alloc) {
+    if (mprotect(extents, extent_alloc, PROT_READ)) {
+      mprotect(extents, extent_alloc, PROT_WRITE);
+      free(extents);
+      PyErr_SetFromErrno(PyExc_OSError);
+      goto failure;
+    }
   }
 
   KosCode_CODE_LEN(self) = instr_l;
@@ -751,6 +1149,10 @@ static int code_instr_init(PyObject *self, PyObject *instr) {
   KosCode_POS(self) = pos;
   KosCode_CPOOL_LEN(self) = const_count;
   KosCode_CPOOL(self) = cpool;
+  KosCode_EXTENT_LEN(self) = extent_len;
+  KosCode_EXTENTS(self) = extents;
+  KosCode_TOP_EXTENT_ID(self) = top_extent_id;
+  ((KosCode *) self)->extent_allocation = extent_alloc;
 
   return 0;
 
@@ -821,6 +1223,13 @@ static int code_clear(PyObject *self) {
     free(data);
   }
 
+  KosExtentDesc *exts = KosCode_EXTENTS(self);
+  size_t ext_alloc = ((KosCode *) self)->extent_allocation;
+  if (exts && ext_alloc) {
+    mprotect(exts, ext_alloc, PROT_WRITE);
+    free(exts);
+  }
+
   KosCode_ALLOCATION(self) = 0;
   KosCode_CODE_LEN(self) = 0;
   KosCode_CODE(self) = NULL;
@@ -828,6 +1237,10 @@ static int code_clear(PyObject *self) {
   KosCode_POS(self) = NULL;
   KosCode_CPOOL_LEN(self) = 0;
   KosCode_CPOOL(self) = NULL;
+  KosCode_EXTENT_LEN(self) = 0;
+  KosCode_EXTENTS(self) = NULL;
+  KosCode_TOP_EXTENT_ID(self) = NULL;
+  ((KosCode *) self)->extent_allocation = 0;
 
   return 0;
 }
@@ -850,6 +1263,13 @@ static void code_dealloc(PyObject *self) {
     free(data);
   }
 
+  KosExtentDesc *exts = KosCode_EXTENTS(self);
+  size_t ext_alloc = ((KosCode *) self)->extent_allocation;
+  if (exts && ext_alloc) {
+    mprotect(exts, ext_alloc, PROT_WRITE);
+    free(exts);
+  }
+
   KosCode_ALLOCATION(self) = 0;
   KosCode_CODE_LEN(self) = 0;
   KosCode_CODE(self) = NULL;
@@ -857,6 +1277,10 @@ static void code_dealloc(PyObject *self) {
   KosCode_POS(self) = NULL;
   KosCode_CPOOL_LEN(self) = 0;
   KosCode_CPOOL(self) = NULL;
+  KosCode_EXTENT_LEN(self) = 0;
+  KosCode_EXTENTS(self) = NULL;
+  KosCode_TOP_EXTENT_ID(self) = NULL;
+  ((KosCode *) self)->extent_allocation = 0;
 
   Py_TYPE(self)->tp_free(self);
 }
@@ -959,6 +1383,11 @@ PyObject *KosCode_New(
   KosCode_CPOOL_LEN(self) = 0;
   KosCode_CPOOL(self) = NULL;
 
+  KosCode_EXTENT_LEN(self) = 0;
+  KosCode_EXTENTS(self) = NULL;
+  KosCode_TOP_EXTENT_ID(self) = NULL;
+  ((KosCode *) self)->extent_allocation = 0;
+
   KosCode_FAUX(self) = NULL;
   KosCode_EXTRAS(self) = PyDict_New();
 
@@ -1051,6 +1480,117 @@ int KosCode_GetPosition(
   }
 
   return 0;
+}
+
+
+int kos_loc_lookup(PyObject *code, uint32_t pc, uint16_t *line, uint16_t *col) {
+
+  if (! code || ! KosCode_Check(code) || ! line || ! col) {
+    if (line) {
+      *line = 0;
+    }
+    if (col) {
+      *col = 0;
+    }
+    return -1;
+  }
+
+  return KosCode_GetPosition(code, pc, line, col);
+}
+
+
+uint32_t kos_extent_top(PyObject *code, uint32_t pc) {
+
+  if (! code || ! KosCode_Check(code)) {
+    return KOS_EXTENT_NONE;
+  }
+
+  uint16_t *top = KosCode_TOP_EXTENT_ID(code);
+  if (! top || pc >= KosCode_CODE_LEN(code)) {
+    return KOS_EXTENT_NONE;
+  }
+
+  uint32_t eid = top[pc];
+  if (eid == KOS_EXTENT_NONE) {
+    return KOS_EXTENT_NONE;
+  }
+  return eid;
+}
+
+
+uint32_t kos_extent_find(PyObject *code, uint32_t pc, KosExtentKind kind) {
+
+  uint32_t eid = kos_extent_top(code, pc);
+  KosExtentDesc *extents = KosCode_EXTENTS(code);
+  uint32_t extent_len = KosCode_EXTENT_LEN(code);
+
+  while (eid != KOS_EXTENT_NONE && eid < extent_len) {
+    if (extents[eid].kind == kind) {
+      return eid;
+    }
+    eid = extents[eid].parent_extent_id;
+  }
+
+  return KOS_EXTENT_NONE;
+}
+
+
+KosExtentDesc *kos_extent_desc(PyObject *code, uint32_t extent_id) {
+
+  if (! code || ! KosCode_Check(code)) {
+    return NULL;
+  }
+
+  if (extent_id >= KosCode_EXTENT_LEN(code)) {
+    return NULL;
+  }
+
+  return &KosCode_EXTENTS(code)[extent_id];
+}
+
+
+int kos_try_handler_for(PyObject *code, uint32_t pc, KosTryHandler *out) {
+
+  if (! code || ! KosCode_Check(code) || ! out) {
+    return -1;
+  }
+
+  uint32_t eid = kos_extent_find(code, pc, KOS_EXT_TRY);
+  if (eid == KOS_EXTENT_NONE) {
+    eid = kos_extent_find(code, pc, KOS_EXT_FINALLY);
+  }
+
+  if (eid == KOS_EXTENT_NONE) {
+    return -1;
+  }
+
+  KosExtentDesc *e = kos_extent_desc(code, eid);
+  if (! e) {
+    return -1;
+  }
+
+  out->extent_id = eid;
+  out->except_pc = e->except_pc;
+  out->finally_pc = e->finally_pc;
+  out->exit_pc = e->exit_pc;
+
+  return 0;
+}
+
+
+uint32_t kos_shift_ic_for(PyObject *code, uint32_t pc) {
+
+  uint32_t eid = kos_extent_find(code, pc, KOS_EXT_SHIFT_BODY);
+  if (eid == KOS_EXTENT_NONE) {
+    return KOS_EXTENT_NONE;
+  }
+
+  KosExtentDesc *e = kos_extent_desc(code, eid);
+  if (! e) {
+    return KOS_EXTENT_NONE;
+  }
+
+  return e->ic_pc;
 }
 
 

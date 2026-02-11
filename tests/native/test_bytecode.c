@@ -435,6 +435,145 @@ static int test_code_instruction_method(void) {
 }
 
 
+static int test_code_extent_derivation(void) {
+    /*
+      Test that PUSH_TRY/POP_TRY produces extent and kos_extent_top returns it.
+    */
+    PyObject *nspec = create_test_nspec();
+    TEST_ASSERT_NOT_NULL(nspec, "create nspec");
+
+    PyObject *label_h = PyUnicode_FromString("handler");
+    PyObject *instr = PyList_New(6);
+    PyList_SET_ITEM(instr, 0, make_instr_int(KOS_OP_CONST, 0));
+    PyList_SET_ITEM(instr, 1, make_instr(KOS_OP_PUSH_TRY, label_h));
+    PyList_SET_ITEM(instr, 2, make_instr_int(KOS_OP_CONST, 1));
+    PyList_SET_ITEM(instr, 3, make_instr_int(KOS_OP_POP_TRY, 0));
+    PyList_SET_ITEM(instr, 4, make_instr_int(KOS_OP_RETURN, 1));
+    PyList_SET_ITEM(instr, 5, make_instr(KOS_OP_LABEL, label_h));
+
+    PyObject *code = KosCode_New(nspec, instr, NULL, NULL);
+    TEST_ASSERT_NOT_NULL(code, "create Code with TRY");
+
+    TEST_ASSERT_EQ(KosCode_EXTENT_LEN(code), 1, "one extent");
+    TEST_ASSERT_NOT_NULL(KosCode_EXTENTS(code), "extents table");
+    TEST_ASSERT_NOT_NULL(KosCode_TOP_EXTENT_ID(code), "top_extent_id table");
+
+    uint32_t top0 = kos_extent_top(code, 0);
+    TEST_ASSERT_EQ(top0, KOS_EXTENT_NONE, "pc 0 before TRY body");
+    uint32_t top1 = kos_extent_top(code, 1);
+    TEST_ASSERT_EQ(top1, KOS_EXTENT_NONE, "pc 1 at PUSH_TRY");
+    uint32_t top2 = kos_extent_top(code, 2);
+    TEST_ASSERT_EQ(top2, 0, "pc 2 inside TRY body");
+    uint32_t top3 = kos_extent_top(code, 3);
+    TEST_ASSERT_EQ(top3, KOS_EXTENT_NONE, "pc 3 at POP_TRY (outside block)");
+    uint32_t top4 = kos_extent_top(code, 4);
+    TEST_ASSERT_EQ(top4, KOS_EXTENT_NONE, "pc 4 after TRY");
+
+    KosExtentDesc *e = kos_extent_desc(code, 0);
+    TEST_ASSERT_NOT_NULL(e, "extent 0");
+    TEST_ASSERT_EQ(e->kind, KOS_EXT_TRY, "kind is TRY");
+    TEST_ASSERT_EQ(e->push_pc, 1, "push at 1");
+    TEST_ASSERT_EQ(e->pop_pc, 3, "pop at 3");
+
+    Py_DECREF(code);
+    Py_DECREF(label_h);
+    Py_DECREF(instr);
+    Py_DECREF(nspec);
+    return 0;
+}
+
+
+static int test_code_extent_find(void) {
+    /*
+      Test kos_extent_find finds TRY extent by kind.
+    */
+    PyObject *nspec = create_test_nspec();
+    TEST_ASSERT_NOT_NULL(nspec, "create nspec");
+
+    PyObject *label_h = PyUnicode_FromString("handler");
+    PyObject *instr = PyList_New(6);
+    PyList_SET_ITEM(instr, 0, make_instr_int(KOS_OP_CONST, 0));
+    PyList_SET_ITEM(instr, 1, make_instr(KOS_OP_PUSH_TRY, label_h));
+    PyList_SET_ITEM(instr, 2, make_instr_int(KOS_OP_CONST, 1));
+    PyList_SET_ITEM(instr, 3, make_instr_int(KOS_OP_POP_TRY, 0));
+    PyList_SET_ITEM(instr, 4, make_instr_int(KOS_OP_RETURN, 1));
+    PyList_SET_ITEM(instr, 5, make_instr(KOS_OP_LABEL, label_h));
+
+    PyObject *code = KosCode_New(nspec, instr, NULL, NULL);
+    TEST_ASSERT_NOT_NULL(code, "create Code");
+
+    uint32_t eid = kos_extent_find(code, 2, KOS_EXT_TRY);
+    TEST_ASSERT_EQ(eid, 0, "find TRY at pc 2");
+
+    eid = kos_extent_find(code, 4, KOS_EXT_TRY);
+    TEST_ASSERT_EQ(eid, KOS_EXTENT_NONE, "no TRY at pc 4");
+
+    Py_DECREF(code);
+    Py_DECREF(label_h);
+    Py_DECREF(instr);
+    Py_DECREF(nspec);
+    return 0;
+}
+
+
+static int test_code_loc_lookup(void) {
+    /*
+      Test kos_loc_lookup API.
+    */
+    PyObject *nspec = create_test_nspec();
+    TEST_ASSERT_NOT_NULL(nspec, "create nspec");
+
+    PyObject *pos = make_position(10, 5);
+    PyObject *instr = PyList_New(3);
+    PyList_SET_ITEM(instr, 0, make_instr(KOS_OP_POSITION, pos));
+    PyList_SET_ITEM(instr, 1, make_instr_int(KOS_OP_CONST, 0));
+    PyList_SET_ITEM(instr, 2, make_instr_int(KOS_OP_RETURN, 1));
+
+    PyObject *code = KosCode_New(nspec, instr, NULL, NULL);
+    TEST_ASSERT_NOT_NULL(code, "create Code");
+
+    uint16_t line = 0, col = 0;
+    int ret = kos_loc_lookup(code, 0, &line, &col);
+    TEST_ASSERT_EQ(ret, 0, "lookup succeeds");
+    TEST_ASSERT_EQ(line, 10, "line at pc 0");
+    TEST_ASSERT_EQ(col, 5, "col at pc 0");
+
+    Py_DECREF(code);
+    Py_DECREF(pos);
+    Py_DECREF(instr);
+    Py_DECREF(nspec);
+    return 0;
+}
+
+
+static int test_code_no_extent(void) {
+    /*
+      Code with no PUSH/POP blocks has no extents.
+    */
+    PyObject *nspec = create_test_nspec();
+    TEST_ASSERT_NOT_NULL(nspec, "create nspec");
+
+    PyObject *instr = PyList_New(2);
+    PyList_SET_ITEM(instr, 0, make_instr_int(KOS_OP_CONST, 0));
+    PyList_SET_ITEM(instr, 1, make_instr_int(KOS_OP_RETURN, 1));
+
+    PyObject *code = KosCode_New(nspec, instr, NULL, NULL);
+    TEST_ASSERT_NOT_NULL(code, "create Code");
+
+    TEST_ASSERT_EQ(KosCode_EXTENT_LEN(code), 0, "no extents");
+    TEST_ASSERT_NULL(KosCode_EXTENTS(code), "extents is NULL");
+    TEST_ASSERT_NULL(KosCode_TOP_EXTENT_ID(code), "top_extent_id is NULL");
+
+    uint32_t top = kos_extent_top(code, 0);
+    TEST_ASSERT_EQ(top, KOS_EXTENT_NONE, "no extent at pc 0");
+
+    Py_DECREF(code);
+    Py_DECREF(instr);
+    Py_DECREF(nspec);
+    return 0;
+}
+
+
 /* === Test runner === */
 
 
@@ -453,6 +592,10 @@ int run_bytecode_tests(void) {
     RUN_TEST(test_code_var_in_cpool);
     RUN_TEST(test_code_opcode_style);
     RUN_TEST(test_code_instruction_method);
+    RUN_TEST(test_code_extent_derivation);
+    RUN_TEST(test_code_extent_find);
+    RUN_TEST(test_code_loc_lookup);
+    RUN_TEST(test_code_no_extent);
 
     return 0;
 }

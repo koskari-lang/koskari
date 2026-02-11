@@ -3154,7 +3154,21 @@ static int try_local_exception_handler(KosContext *ctx, KosEvent *out_ev) {
     return 0;
   }
 
-  ctx->frame_top->pc = region->a_label;
+  uint32_t handler_pc = region->a_label;
+  {
+    KosTryHandler th;
+    if (kos_try_handler_for((PyObject *) ctx->frame_top->code,
+                            ctx->frame_top->pc, &th) == 0) {
+      if (region->style == KOS_REGION_FINALLY && th.finally_pc != KOS_EXTENT_NONE) {
+        handler_pc = th.finally_pc;
+      }
+      else if (th.except_pc != KOS_EXTENT_NONE) {
+        handler_pc = th.except_pc;
+      }
+    }
+  }
+
+  ctx->frame_top->pc = handler_pc;
   region->enabled = 0;
 
   /* Set aside exception in excinfo and clear so handler runs without PyErr set */

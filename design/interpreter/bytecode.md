@@ -66,10 +66,16 @@ struct KosCode {
     uint32_t cpool_len;   /* constant pool size */
     PyObject **cpool;     /* constant pool (read-only) */
 
+    uint32_t extent_len;  /* extent descriptor count */
+    KosExtentDesc *extents;     /* extent table (read-only; NULL if none) */
+    uint16_t *top_extent_id;    /* [code_len] innermost extent per pc (NULL if none) */
+
     PyCodeObject *faux;   /* faux code object for tracebacks */
     PyObject *extras;     /* extra metadata dict */
 };
 ```
+
+The extent table is derived during Code construction from PUSH/POP pairs (TRY, LOOP, FINALLY, PROMPT, etc.). It enables O(1) lookup of block membership and handler targets. See [bytecode-metadata-tables.md](bytecode-metadata-tables.md).
 
 ### Memory Protection
 
@@ -311,6 +317,14 @@ int KosCode_GetPosition(PyObject *self, uint32_t index,
 PyCodeObject *KosCode_Faux(PyObject *self);
 KosOpStyle kos_opcode_style(KosOpCode op);
 
+/* Location and extent lookup (metadata tables) */
+int kos_loc_lookup(PyObject *code, uint32_t pc, uint16_t *line, uint16_t *col);
+uint32_t kos_extent_top(PyObject *code, uint32_t pc);
+uint32_t kos_extent_find(PyObject *code, uint32_t pc, KosExtentKind kind);
+KosExtentDesc *kos_extent_desc(PyObject *code, uint32_t extent_id);
+int kos_try_handler_for(PyObject *code, uint32_t pc, KosTryHandler *out);
+uint32_t kos_shift_ic_for(PyObject *code, uint32_t pc);
+
 /* Macros */
 KosCode_FLAGS(code)
 KosCode_YIELDS(code)
@@ -319,11 +333,14 @@ KosCode_GET_OP(code, i)
 KosCode_GET_ARG(code, i)
 KosCode_CPOOL_LEN(code)
 KosCode_GET_CONST(code, i)
+KosCode_EXTENT_LEN(code)
+KosCode_EXTENTS(code)
+KosCode_TOP_EXTENT_ID(code)
 ```
 
-## Related design
+## Extent table and metadata
 
-Planned static metadata tables (location table, extent table, pc→extent lookup, JUMP locality, no forward scans) are specified in **[bytecode-metadata-tables.md](bytecode-metadata-tables.md)**.
+Static metadata tables (location table, extent table, pc→extent lookup, JUMP locality validation) are implemented per **[bytecode-metadata-tables.md](bytecode-metadata-tables.md)**. Extents are derived during Code construction; malformed bytecode (unmatched PUSH/POP or non-local control-flow jumps) is rejected.
 
 ## Files
 

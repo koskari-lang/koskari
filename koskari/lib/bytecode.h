@@ -128,6 +128,50 @@ typedef struct KosPosition {
 } KosPosition;
 
 
+/* === Extent kinds and descriptor === */
+
+
+#define KOS_EXTENT_NONE 0xFFFF
+
+
+typedef enum KosExtentKind {
+  KOS_EXT_TRY,
+  KOS_EXT_LOOP,
+  KOS_EXT_PROMPT,
+  KOS_EXT_SHIFT_BODY,
+  KOS_EXT_CALLCC_BIND,
+  KOS_EXT_FINALLY,
+  KOS_EXT_WIND,
+  KOS_EXT_WITH,
+  KOS_EXT_FOREACH,
+  KOS_EXT_BEGIN,
+  KOS_EXT_NS,
+} KosExtentKind;
+
+
+/**
+   Static extent descriptor. Describes a block extent with push_pc,
+   pop_pc, and kind-specific handler/control targets.
+*/
+typedef struct KosExtentDesc {
+  KosExtentKind kind;
+  uint32_t push_pc;
+  uint32_t pop_pc;
+  uint32_t parent_extent_id;
+
+  uint32_t flags;
+
+  /* Kind-specific targets; use KOS_EXTENT_NONE for N/A */
+  uint32_t except_pc;
+  uint32_t else_pc;
+  uint32_t finally_pc;
+  uint32_t exit_pc;
+  uint32_t ic_pc;
+  uint32_t break_pc;
+  uint32_t continue_pc;
+} KosExtentDesc;
+
+
 /* === KosCode: bytecode object === */
 
 
@@ -152,6 +196,11 @@ typedef struct KosCode {
 
   uint32_t cpool_len;   /* constant pool size */
   PyObject **cpool;     /* constant pool */
+
+  uint32_t extent_len;
+  KosExtentDesc *extents;
+  uint16_t *top_extent_id;
+  size_t extent_allocation;
 
   PyCodeObject *faux;   /* faux code object for tracebacks */
   PyObject *extras;     /* extra metadata (PyDict) */
@@ -221,6 +270,52 @@ int KosCode_GetPosition(
 
 
 /**
+   C API for location lookup. Wraps KosCode_GetPosition.
+
+   :param code: KosCode object (PyObject * or KosCode *)
+   :param pc: instruction index
+   :param line: output for line number
+   :param col: output for column number
+
+   :return: 0 on success, -1 on error
+*/
+int kos_loc_lookup(PyObject *code, uint32_t pc, uint16_t *line, uint16_t *col);
+
+
+/* === Extent lookup API === */
+
+
+uint32_t kos_extent_top(PyObject *code, uint32_t pc);
+uint32_t kos_extent_find(PyObject *code, uint32_t pc, KosExtentKind kind);
+KosExtentDesc *kos_extent_desc(PyObject *code, uint32_t extent_id);
+
+
+/**
+   TRY handler targets for a pc inside a TRY or FINALLY extent.
+*/
+typedef struct KosTryHandler {
+  uint32_t extent_id;
+  uint32_t except_pc;
+  uint32_t finally_pc;
+  uint32_t exit_pc;
+} KosTryHandler;
+
+
+/**
+   Get innermost TRY/FINALLY handler for pc. Returns 0 if found and filled,
+   -1 if no code or no extent table.
+*/
+int kos_try_handler_for(PyObject *code, uint32_t pc, KosTryHandler *out);
+
+
+/**
+   Get ic_pc for innermost SHIFT_BODY extent at pc. Returns KOS_EXTENT_NONE
+   if none.
+*/
+uint32_t kos_shift_ic_for(PyObject *code, uint32_t pc);
+
+
+/**
    Get or create the faux CPython code object for tracebacks.
 
    :param self: KosCode object
@@ -287,6 +382,15 @@ KosOpStyle kos_opcode_style(KosOpCode op);
 
 #define KosCode_GET_CONST(c, i)                 \
   (KosCode_CPOOL(c)[i])
+
+#define KosCode_EXTENT_LEN(c)                    \
+  (((KosCode *) c)->extent_len)
+
+#define KosCode_EXTENTS(c)                      \
+  (((KosCode *) c)->extents)
+
+#define KosCode_TOP_EXTENT_ID(c)                 \
+  (((KosCode *) c)->top_extent_id)
 
 #define KosCode_FAUX(c)                         \
   (((KosCode *) c)->faux)
