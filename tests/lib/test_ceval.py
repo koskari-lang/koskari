@@ -276,22 +276,24 @@ class TestStubOpcodes(CevalTest):
             self._run_stub_opcode("THEEND", 0)
 
 
-    def test_break_raises_not_implemented(self):
+    def test_break_outside_loop_raises(self):
         """
-        BREAK raises RuntimeError
+        BREAK without LOOP/FOREACH raises RuntimeError
         """
 
-        with self.assertRaises(RuntimeError):
+        with self.assertRaises(RuntimeError) as ctx:
             self._run_stub_opcode("BREAK", 0)
+        self.assertIn("break outside loop", str(ctx.exception))
 
 
-    def test_continue_raises_not_implemented(self):
+    def test_continue_outside_loop_raises(self):
         """
-        CONTINUE raises RuntimeError
+        CONTINUE without LOOP/FOREACH raises RuntimeError
         """
 
-        with self.assertRaises(RuntimeError):
+        with self.assertRaises(RuntimeError) as ctx:
             self._run_stub_opcode("CONTINUE", 0)
+        self.assertIn("continue outside loop", str(ctx.exception))
 
 
     def test_yield_suspends_and_resumes(self):
@@ -529,13 +531,26 @@ class TestStubOpcodes(CevalTest):
             self._run_stub_opcode("TAIL_RECUR_STAR", 0)
 
 
-    def test_push_foreach_raises_not_implemented(self):
+    def test_push_foreach_with_iter_next_completes(self):
         """
-        PUSH_FOREACH raises RuntimeError
+        PUSH_FOREACH with ITER_NEXT on empty list exits to else
         """
 
-        with self.assertRaises(RuntimeError):
-            self._run_stub_opcode("PUSH_FOREACH", "target")
+        code, ns = build_expr([
+            ["CONST", []],
+            ["PUSH_FOREACH", "break_lbl"],
+            ["ITER_NEXT", "else_lbl"],
+            ["CONST", -1],
+            ["RETURN", 1],
+            ["LABEL", "else_lbl"],
+            ["CLEAR_LOOP", 0],
+            ["LABEL", "break_lbl"],
+            ["POP_LOOP", 0],
+            ["CONST", 42],
+            ["RETURN", 1],
+        ])
+        result = run_to_completion(make_callable(code, ns)())
+        self.assertEqual(result, 42)
 
 
     def test_push_with_raises_not_implemented(self):
@@ -556,13 +571,20 @@ class TestStubOpcodes(CevalTest):
             self._run_stub_opcode("PUSH_BEGIN", 0)
 
 
-    def test_push_loop_raises_not_implemented(self):
+    def test_push_loop_with_pop_loop_completes(self):
         """
-        PUSH_LOOP raises RuntimeError
+        PUSH_LOOP with matching POP_LOOP completes normally
         """
 
-        with self.assertRaises(RuntimeError):
-            self._run_stub_opcode("PUSH_LOOP", "target")
+        code, ns = build_expr([
+            ["PUSH_LOOP", "break_lbl"],
+            ["LABEL", "break_lbl"],
+            ["POP_LOOP", 0],
+            ["CONST", 42],
+            ["RETURN", 1],
+        ])
+        result = run_to_completion(make_callable(code, ns)())
+        self.assertEqual(result, 42)
 
 
     def test_push_ns_raises_not_implemented(self):
@@ -576,7 +598,7 @@ class TestStubOpcodes(CevalTest):
 
     def test_clear_loop_raises_not_implemented(self):
         """
-        CLEAR_LOOP raises RuntimeError
+        CLEAR_LOOP without preceding PUSH_LOOP/PUSH_FOREACH raises RuntimeError
         """
 
         with self.assertRaises(RuntimeError):
@@ -603,7 +625,7 @@ class TestStubOpcodes(CevalTest):
 
     def test_pop_loop_raises_not_implemented(self):
         """
-        POP_LOOP raises RuntimeError
+        POP_LOOP without preceding PUSH_LOOP/PUSH_FOREACH raises RuntimeError
         """
 
         with self.assertRaises(RuntimeError):
@@ -1020,6 +1042,202 @@ class TestIterNextOpcodes(CevalTest):
         ])
         result = run_to_completion(make_callable(code, ns)())
         self.assertEqual(result, 7)
+
+
+class TestLoopOpcodes(CevalTest):
+    """
+    Tests for PUSH_LOOP, POP_LOOP, CLEAR_LOOP, BREAK, CONTINUE
+    """
+
+    def test_simple_loop_break(self):
+        """
+        PUSH_LOOP, body, BREAK, POP_LOOP returns value after loop
+        """
+
+        code, ns = build_expr([
+            ["PUSH_LOOP", "after_pop"],
+            ["CONST", 99],
+            ["BREAK", 0],
+            ["LABEL", "break_lbl"],
+            ["POP_LOOP", 0],
+            ["LABEL", "after_pop"],
+            ["CONST", 42],
+            ["RETURN", 1],
+        ])
+        result = run_to_completion(make_callable(code, ns)())
+        self.assertEqual(result, 42)
+
+
+    def test_loop_continue(self):
+        """
+        PUSH_LOOP with CONTINUE jumps back to loop head
+        """
+
+        code, ns = build_expr([
+            ["CONST", 0],
+            ["VAR_BIND", "n"],
+            ["PUSH_LOOP", "break_lbl"],
+            ["VAR", "n"],
+            ["CONST", 1],
+            ["OBJECT_ADD", 2],
+            ["VAR_STORE", "n"],
+            ["VAR", "n"],
+            ["CONST", 3],
+            ["OBJECT_GE", 2],
+            ["JUMP_TRUE", "break_lbl"],
+            ["CONTINUE", 0],
+            ["LABEL", "break_lbl"],
+            ["POP_LOOP", 0],
+            ["VAR", "n"],
+            ["RETURN", 1],
+        ], values={"n": 0})
+        result = run_to_completion(make_callable(code, ns)())
+        self.assertEqual(result, 3)
+
+
+    def test_nested_loops_break_inner(self):
+        """
+        Nested loops: inner BREAK exits inner loop only
+        """
+
+        code, ns = build_expr([
+            ["CONST", 0],
+            ["VAR_BIND", "outer"],
+            ["CONST", 0],
+            ["VAR_BIND", "inner"],
+            ["PUSH_LOOP", "outer_end"],
+            ["CONST", 0],
+            ["VAR_STORE", "inner"],
+            ["PUSH_LOOP", "inner_end"],
+            ["VAR", "inner"],
+            ["CONST", 2],
+            ["OBJECT_GE", 2],
+            ["JUMP_TRUE", "inner_end"],
+            ["VAR", "inner"],
+            ["CONST", 1],
+            ["OBJECT_ADD", 2],
+            ["VAR_STORE", "inner"],
+            ["CONTINUE", 0],
+            ["LABEL", "inner_end"],
+            ["POP_LOOP", 0],
+            ["VAR", "outer"],
+            ["CONST", 1],
+            ["OBJECT_ADD", 2],
+            ["VAR_STORE", "outer"],
+            ["VAR", "outer"],
+            ["CONST", 2],
+            ["OBJECT_GE", 2],
+            ["JUMP_TRUE", "outer_end"],
+            ["CONTINUE", 0],
+            ["LABEL", "outer_end"],
+            ["POP_LOOP", 0],
+            ["VAR", "outer"],
+            ["RETURN", 1],
+        ], values={"outer": 0, "inner": 0})
+        result = run_to_completion(make_callable(code, ns)())
+        self.assertEqual(result, 2)
+
+
+    def test_nested_loops_break_outer(self):
+        """
+        Nested loops: inner BREAK targets outer exit, exiting both loops
+        """
+
+        code, ns = build_expr([
+            ["CONST", 0],
+            ["VAR_BIND", "x"],
+            ["PUSH_LOOP", "outer_end"],
+            ["PUSH_LOOP", "outer_end"],
+            ["CONST", 1],
+            ["VAR_STORE", "x"],
+            ["BREAK", 0],
+            ["LABEL", "inner_end"],
+            ["POP_LOOP", 0],
+            ["LABEL", "outer_end"],
+            ["POP_LOOP", 0],
+            ["VAR", "x"],
+            ["RETURN", 1],
+        ], values={"x": 0})
+        result = run_to_completion(make_callable(code, ns)())
+        self.assertEqual(result, 1)
+
+
+class TestForeachOpcodes(CevalTest):
+    """
+    Tests for PUSH_FOREACH with ITER_NEXT
+    """
+
+    def test_foreach_iterates_list(self):
+        """
+        FOREACH over list returns first element
+        """
+
+        code, ns = build_expr([
+            ["CONST", [10, 20, 30]],
+            ["PUSH_FOREACH", "after_pop"],
+            ["ITER_NEXT", "else_lbl"],
+            ["RETURN", 1],
+            ["LABEL", "else_lbl"],
+            ["CLEAR_LOOP", 0],
+            ["LABEL", "break_lbl"],
+            ["POP_LOOP", 0],
+            ["LABEL", "after_pop"],
+            ["CONST", -1],
+            ["RETURN", 1],
+        ])
+        result = run_to_completion(make_callable(code, ns)())
+        self.assertEqual(result, 10)
+
+
+    def test_foreach_break_exits_early(self):
+        """
+        FOREACH BREAK exits when value equals 2
+        """
+
+        code, ns = build_expr([
+            ["CONST", [1, 2, 3, 4]],
+            ["PUSH_FOREACH", "after_pop"],
+            ["LABEL", "loop_head"],
+            ["ITER_NEXT", "else_lbl"],
+            ["CONST", 2],
+            ["OBJECT_EQ", 2],
+            ["JUMP_FALSE", "loop_cont"],
+            ["BREAK", 0],
+            ["LABEL", "loop_cont"],
+            ["JUMP", "loop_head"],
+            ["LABEL", "else_lbl"],
+            ["CLEAR_LOOP", 0],
+            ["LABEL", "break_lbl"],
+            ["POP_LOOP", 0],
+            ["LABEL", "after_pop"],
+            ["CONST", 42],
+            ["RETURN", 1],
+        ])
+        result = run_to_completion(make_callable(code, ns)())
+        self.assertEqual(result, 42)
+
+
+    def test_foreach_empty_exits_to_else(self):
+        """
+        FOREACH over empty list exits to else target
+        """
+
+        code, ns = build_expr([
+            ["CONST", []],
+            ["PUSH_FOREACH", "after_pop"],
+            ["ITER_NEXT", "else_lbl"],
+            ["CONST", -1],
+            ["RETURN", 1],
+            ["LABEL", "else_lbl"],
+            ["CLEAR_LOOP", 0],
+            ["LABEL", "break_lbl"],
+            ["POP_LOOP", 0],
+            ["LABEL", "after_pop"],
+            ["CONST", 99],
+            ["RETURN", 1],
+        ])
+        result = run_to_completion(make_callable(code, ns)())
+        self.assertEqual(result, 99)
 
 
 class TestFastOpcodes(CevalTest):

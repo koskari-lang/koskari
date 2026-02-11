@@ -744,6 +744,44 @@ PyObject *const *KosStackBlock_TailPtr(
 }
 
 
+int KosStackBlock_PushBlock(KosStackBlock **block) {
+  KosStackBlock *top = *block;
+  if (! top) {
+    top = KosStackBlock_New(NULL);
+    if (! top) {
+      PyErr_SetString(PyExc_RuntimeError,
+                      "could not push block; alloc failed");
+      return -1;
+    }
+    *block = top;
+  }
+  KosStackBlock *new_block = KosStackBlock_New(top);
+  if (! new_block) {
+    PyErr_SetString(PyExc_RuntimeError, "could not push block; alloc failed");
+    return -1;
+  }
+  *block = new_block;
+  return 0;
+}
+
+
+int KosStackBlock_DropBlock(KosStackBlock **block) {
+  KosStackBlock *top = *block;
+  if (! top) {
+    PyErr_SetString(PyExc_RuntimeError, "drop block failed; no top block");
+    return -1;
+  }
+  KosStackBlock *back = top->back;
+  if (! back) {
+    PyErr_SetString(PyExc_RuntimeError, "cannot drop root block");
+    return -1;
+  }
+  *block = back;
+  KosStackBlock_Release(top);
+  return 0;
+}
+
+
 static int KosStackBlock_PopTailPtr(
     KosStackBlock **self,
     size_t count,

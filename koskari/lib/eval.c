@@ -2271,18 +2271,80 @@ KOS_OP_HANDLER(THEEND) {
 
 
 /**
-   BREAK: arg = target. Exit loop; not yet implemented.
+   BREAK: arg unused. Exit innermost loop/foreach; jump to its break target.
+   Unwinds dynamic chain and stack blocks until the loop region is popped.
+   Raises RuntimeError if no LOOP/FOREACH region on the chain.
 */
 KOS_OP_HANDLER(BREAK) {
-  return op_unimplemented_stub(ctx, out_ev, insn);
+  KosDynRegion *region = kos_find_region_for_loop(ctx);
+  if (! region) {
+    PyErr_SetString(PyExc_RuntimeError, "break outside loop");
+    return -1;
+  }
+  uint32_t break_pc = region->a_label;
+  while (ctx->dyn_top != (KosDynNode *) region) {
+    KosDynNode *top = ctx->dyn_top;
+    if (KosDynNode_IS_REGION(top)) {
+      KosDynRegion *r = (KosDynRegion *) top;
+      if (r->style == KOS_REGION_LOOP || r->style == KOS_REGION_FOREACH) {
+        kos_dyn_pop_region(ctx, r);
+        if (r->style == KOS_REGION_LOOP &&
+            KosStackBlock_DropBlock(&ctx->frame_top->stack) < 0)
+          return -1;
+      } else {
+        if (kos_dyn_pop_top(ctx) < 0)
+          return -1;
+      }
+    } else {
+      if (kos_dyn_pop_top(ctx) < 0)
+        return -1;
+    }
+  }
+  kos_dyn_pop_region(ctx, region);
+  if (region->style == KOS_REGION_LOOP &&
+      KosStackBlock_DropBlock(&ctx->frame_top->stack) < 0)
+    return -1;
+  ctx->frame_top->pc = break_pc;
+  (void) out_ev;
+  (void) insn;
+  return 0;
 }
 
 
 /**
-   CONTINUE: arg = target. Next iteration of loop; not yet implemented.
+   CONTINUE: arg unused. Jump to innermost loop/foreach continue target.
+   Unwinds inner regions and stack blocks until the loop region is reached.
+   Raises RuntimeError if no LOOP/FOREACH region on the chain.
 */
 KOS_OP_HANDLER(CONTINUE) {
-  return op_unimplemented_stub(ctx, out_ev, insn);
+  KosDynRegion *region = kos_find_region_for_loop(ctx);
+  if (! region) {
+    PyErr_SetString(PyExc_RuntimeError, "continue outside loop");
+    return -1;
+  }
+  uint32_t continue_pc = region->b_label;
+  while (ctx->dyn_top != (KosDynNode *) region) {
+    KosDynNode *top = ctx->dyn_top;
+    if (KosDynNode_IS_REGION(top)) {
+      KosDynRegion *r = (KosDynRegion *) top;
+      if (r->style == KOS_REGION_LOOP || r->style == KOS_REGION_FOREACH) {
+        kos_dyn_pop_region(ctx, r);
+        if (r->style == KOS_REGION_LOOP &&
+            KosStackBlock_DropBlock(&ctx->frame_top->stack) < 0)
+          return -1;
+      } else {
+        if (kos_dyn_pop_top(ctx) < 0)
+          return -1;
+      }
+    } else {
+      if (kos_dyn_pop_top(ctx) < 0)
+        return -1;
+    }
+  }
+  ctx->frame_top->pc = continue_pc;
+  (void) out_ev;
+  (void) insn;
+  return 0;
 }
 
 
@@ -3421,10 +3483,21 @@ KOS_OP_HANDLER(TAIL_RECUR_STAR) {
 
 
 /**
-   PUSH_FOREACH: arg = target. Push for-each/iteration context; not yet implemented.
+   PUSH_FOREACH: arg = break target PC. TOS = iterable (for ITER_NEXT at
+   loop head). Push FOREACH region only (no stack block); iterable must stay
+   on TOS for ITER_NEXT. Continue target = next insn.
 */
 KOS_OP_HANDLER(PUSH_FOREACH) {
-  return op_unimplemented_stub(ctx, out_ev, insn);
+  uint32_t break_pc = insn->arg;
+  uint32_t continue_pc = ctx->frame_top->pc;  /* already advanced by drive loop */
+  KosDynRegion *region = kos_dyn_push_region(ctx, KOS_REGION_FOREACH,
+                                             break_pc, continue_pc);
+  if (! region) {
+    PyErr_NoMemory();
+    return -1;
+  }
+  (void) out_ev;
+  return 0;
 }
 
 
@@ -3453,10 +3526,24 @@ KOS_OP_HANDLER(PUSH_CLASS) {
 
 
 /**
-   PUSH_LOOP: arg = target. Push loop context (for break/continue); not yet implemented.
+   PUSH_LOOP: arg = break target PC. Push LOOP region and stack block;
+   continue target = next instruction.
 */
 KOS_OP_HANDLER(PUSH_LOOP) {
-  return op_unimplemented_stub(ctx, out_ev, insn);
+  uint32_t break_pc = insn->arg;
+  uint32_t continue_pc = ctx->frame_top->pc;  /* already advanced by drive loop */
+  KosDynRegion *region = kos_dyn_push_region(ctx, KOS_REGION_LOOP,
+                                             break_pc, continue_pc);
+  if (! region) {
+    PyErr_NoMemory();
+    return -1;
+  }
+  if (KosStackBlock_PushBlock(&ctx->frame_top->stack) < 0) {
+    kos_dyn_pop_region(ctx, region);
+    return -1;
+  }
+  (void) out_ev;
+  return 0;
 }
 
 
@@ -3574,10 +3661,24 @@ KOS_OP_HANDLER(PUSH_NS) {
 
 
 /**
-   CLEAR_LOOP: arg unused. Mark loop as exited; not yet implemented.
+   CLEAR_LOOP: arg unused. Disable the top LOOP/FOREACH region (used when
+   exiting normally before POP_LOOP).
 */
 KOS_OP_HANDLER(CLEAR_LOOP) {
-  return op_unimplemented_stub(ctx, out_ev, insn);
+  if (! ctx->dyn_top || ! KosDynNode_IS_REGION(ctx->dyn_top)) {
+    PyErr_SetString(PyExc_RuntimeError, "CLEAR_LOOP: top is not a region");
+    return -1;
+  }
+  KosDynRegion *region = (KosDynRegion *) ctx->dyn_top;
+  if (region->style != KOS_REGION_LOOP && region->style != KOS_REGION_FOREACH) {
+    PyErr_SetString(PyExc_RuntimeError,
+                    "CLEAR_LOOP: top is not a LOOP or FOREACH region");
+    return -1;
+  }
+  region->enabled = 0;
+  (void) out_ev;
+  (void) insn;
+  return 0;
 }
 
 
@@ -3598,10 +3699,28 @@ KOS_OP_HANDLER(POP_BEGIN) {
 
 
 /**
-   POP_LOOP: arg unused. Pop loop context; not yet implemented.
+   POP_LOOP: arg unused. Pop LOOP/FOREACH region; drop stack block for LOOP
+   only (FOREACH does not push a block).
 */
 KOS_OP_HANDLER(POP_LOOP) {
-  return op_unimplemented_stub(ctx, out_ev, insn);
+  if (! ctx->dyn_top || ! KosDynNode_IS_REGION(ctx->dyn_top)) {
+    PyErr_SetString(PyExc_RuntimeError, "POP_LOOP: top is not a region");
+    return -1;
+  }
+  KosDynRegion *region = (KosDynRegion *) ctx->dyn_top;
+  if (region->style != KOS_REGION_LOOP && region->style != KOS_REGION_FOREACH) {
+    PyErr_SetString(PyExc_RuntimeError,
+                    "POP_LOOP: top is not a LOOP or FOREACH region");
+    return -1;
+  }
+  kos_dyn_pop_region(ctx, region);
+  if (region->style == KOS_REGION_LOOP) {
+    if (KosStackBlock_DropBlock(&ctx->frame_top->stack) < 0)
+      return -1;
+  }
+  (void) out_ev;
+  (void) insn;
+  return 0;
 }
 
 

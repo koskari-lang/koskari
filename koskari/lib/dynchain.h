@@ -766,6 +766,17 @@ KosDynRegion *kos_find_region_for_raise(KosContext *ctx);
 
 
 /**
+   Find the innermost LOOP or FOREACH region on the dynamic chain,
+   walking from dyn_top toward root. Used for break/continue.
+
+   :param ctx: execution context
+
+   :return: the topmost LOOP or FOREACH region, or NULL if none found
+ */
+KosDynRegion *kos_find_region_for_loop(KosContext *ctx);
+
+
+/**
    Push a Python call boundary marker.
 
    This marks the point where Python code called into Koskari.

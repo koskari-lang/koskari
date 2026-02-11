@@ -360,6 +360,24 @@ PyObject *KosStackBlock_PopTail(KosStackBlock **self, size_t count);
 
 
 /**
+   Push a new empty block onto the block chain. *block is updated to the
+   new top. For use by eval when entering loop/foreach blocks.
+
+   :return: 0 on success, -1 on error
+ */
+int KosStackBlock_PushBlock(KosStackBlock **block);
+
+
+/**
+   Drop the top block without moving values to the parent. *block must
+   have a parent (cannot drop root block).
+
+   :return: 0 on success, -1 on error
+ */
+int KosStackBlock_DropBlock(KosStackBlock **block);
+
+
+/**
    Allocates a new block and makes it the current block
  */
 int KosStack_PushBlock(PyObject *stack);

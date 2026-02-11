@@ -711,6 +711,24 @@ KosDynRegion *kos_find_region_for_raise(KosContext *ctx) {
 }
 
 
+KosDynRegion *kos_find_region_for_loop(KosContext *ctx) {
+  KosDynNode *node = ctx->dyn_top;
+
+  while (node) {
+    if (KosDynNode_IS_REGION(node)) {
+      KosDynRegion *region = (KosDynRegion *) node;
+      if (region->style == KOS_REGION_LOOP ||
+          region->style == KOS_REGION_FOREACH) {
+        return region;
+      }
+    }
+    node = node->parent;
+  }
+
+  return NULL;
+}
+
+
 KosDynNode *kos_dyn_push_pycall(KosContext *ctx) {
 
   KosDynNode *marker = kos_dynpycall_new(ctx->dyn_top);
