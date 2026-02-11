@@ -69,7 +69,7 @@ These are **commitments**: they must hold for correct behavior. They are elabora
 
 - **Python boundary for continuations**: Captured continuations **must not** include Python/C call stack. The dynamic chain marks Python boundaries with `KOS_DYN_PYCALL`. `shift` capture is **rejected** if any such node exists between current position and the target prompt. Implementation: `kos_validate_capture()` walks from `dyn_top` to the prompt.
 
-- **Unified dynamic chain**: All execution context (frames, prompts, winds, regions) lives on a **single** chain of `KosDynNode` structures. Node kinds: `KOS_DYN_FRAME`, `KOS_DYN_PROMPT`, `KOS_DYN_WIND`, `KOS_DYN_REGION`, `KOS_DYN_PYCALL`. Walking the chain gives full dynamic extent.
+- **Unified dynamic chain**: All execution context (frames, prompts, winds, regions, namespace scopes) lives on a **single** chain of `KosDynNode` structures. Node kinds: `KOS_DYN_FRAME`, `KOS_DYN_PROMPT`, `KOS_DYN_WIND`, `KOS_DYN_REGION`, `KOS_DYN_NS`, `KOS_DYN_PYCALL`. Walking the chain gives full dynamic extent. `KOS_DYN_NS` (KosDynNs) marks namespace scopes from PUSH_NS; stores `saved_ns` for restore on POP_NS.
 
 - **VM-native wind/unwind**: Wind/unwind hooks are **bytecode blocks** (implemented as null-arity Koskari callables that compile to bytecode). They run in the VM via `KosHookRunner` with **isolated** operand stacks and end with the `END_WIND` sentinel opcode. They execute in their own frames and capture lexical context via closure; they cannot see or change the enclosing frame’s stack.
 
@@ -118,6 +118,8 @@ These are **commitments**: they must hold for correct behavior. They are elabora
 - **KosDynWind**: Dynamic-wind extent; `before_code`/`before_pc`, `after_code`/`after_pc`; `entered` marks whether before has run. Hooks are bytecode blocks, not Python.
 
 - **KosDynRegion**: Block-local control; `KosRegionStyle` (TRY, FINALLY, LOOP, WITH, FOREACH, AWAIT_WITH, AWAIT_FOREACH, NS, BEGIN). `a_label`, `b_label` are jump targets; `enabled` for exception handling.
+
+- **KosDynNs**: Namespace scope from PUSH_NS; holds `saved_ns` (prior frame namespace) for restore on POP_NS. Separate from KosDynRegion; uses its own node kind on the dynamic chain.
 
 - **KosContext**: Top-level VM state: `dyn_top`, `frame_top`, `globals_frame`, `globals_cache_version`, `hook_runner`, `plan` / `plan_stack`, `chain_version`, `invocation_segment_top`, `py_await_iter`, `pending_throw`/`pending_exc`, `handling_raise`/`handling_result`, `flags`.
 
@@ -187,14 +189,14 @@ These are **commitments**: they must hold for correct behavior. They are elabora
 - Continuation: capture, validate, clone, invoke, transfer plan, LCA (dynchain.c, eval.c).
 - Wind: push/pop wind, hook runner, begin/hook_active/end_hook (dynchain.c, eval.c).
 - Evaluator core: KosContext, KosFrame, kos_context_new/free, kos_frame_new/clone/free, kos_koscall, kos_tail_koscall (eval.c).
-- Drive loop: `koskari_eval()` is implemented with opcode fetch, dispatch table, and boundary handling. Fully implemented opcodes include stack, constants, RETURN/AWAIT, simple CALL, variables (VAR, VAR_BIND), exceptions and try/finally, delimited continuations (PUSH_PROMPT, SET_PROMPT_HANDLER, POP_PROMPT, SHIFT), INVOKE_K, and the full object-protocol set (OBJECT_*). All other opcodes are stubs that raise "unimplemented opcode" at runtime; see `design/FEATURES.md` § "Opcodes: implementation status".
+- Drive loop: `koskari_eval()` is implemented with opcode fetch, dispatch table, and boundary handling. Fully implemented opcodes include stack, constants, RETURN/AWAIT, simple CALL, variables (VAR, VAR_BIND, VAR_CLEAR, VAR_REF, VAR_STORE), fast locals (FAST, FAST_BIND, FAST_REF, FAST_STORE; FAST_CLEAR is stub), namespace scope (PUSH_NS, POP_NS), exceptions and try/finally, delimited continuations (PUSH_PROMPT, SET_PROMPT_HANDLER, POP_PROMPT, SHIFT), INVOKE_K and INVOKE_K_VAR, and the full object-protocol set (OBJECT_*). All other opcodes are stubs; see `design/FEATURES.md` § "Opcodes: implementation status".
 - Python wrappers: KosPyContinuation, KosPyAsyncGen, KosPyAsyncGenASend (eval.c); KosCoroutine and `kos_run_code_as_coroutine` (func.c). KosCoroutine drive (send/throw/close) in func.c; async-gen drive and eager-step await in eval.c.
 - GC: traverse helpers for context, frame, stack block, chain, continuation, transfer plan, hook runner (eval.c, dynchain.c).
 - Operators: reducing arithmetic, bitwise, membership, build-str; apply, reapply, identity, constantly, _pass; build_tuple, build_list, build_set, build_dict (operator.c, lib.c).
 
 **Not yet implemented**:
 
-- Remaining opcode handlers: variables (VAR_CLEAR, VAR_REF, VAR_STORE; all FAST*), attributes, items, argument building, CALL_NAMES/CALL_STAR/CALL_ATTR*/RECUR*/TAIL_*, block control (foreach/with/begin/loop/ns, wind, region), jumps and check-jumps (except CHECK_EXCEPTION), THEEND/BREAK/CONTINUE/YIELD/YIELD_FROM, ITER_NEXT/AWAIT_NEXT. See `design/FEATURES.md` § "Opcodes: implementation status".
+- Remaining opcode handlers: FAST_CLEAR; attributes, items, argument building, CALL_NAMES/CALL_STAR/CALL_ATTR*/RECUR*/TAIL_*, block control (foreach/with/begin/loop, wind, region), jumps and check-jumps (except CHECK_EXCEPTION), THEEND/BREAK/CONTINUE/YIELD/YIELD_FROM, ITER_NEXT/AWAIT_NEXT. See `design/FEATURES.md` § "Opcodes: implementation status".
 - Compiler (parse → expand → compile → bytecode).
 - Module creation/loading and import system integration.
 - Most special forms (only types, parsing, and runtime primitives exist).

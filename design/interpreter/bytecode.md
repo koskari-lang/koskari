@@ -142,19 +142,19 @@ typedef enum KosOpStyle {
 - `KOS_OP_CHECK_IS_INSTANCE`, `KOS_OP_CHECK_IS_SUBCLASS`: Type checks
 - `KOS_OP_CHECK_EXCEPTION`: Exception matching
 
-### Variables
-- `KOS_OP_VAR`: Load variable by name
-- `KOS_OP_VAR_BIND`: Bind reference
-- `KOS_OP_VAR_CLEAR`: Clear variable
-- `KOS_OP_VAR_REF`: Get variable reference
-- `KOS_OP_VAR_STORE`: Store to variable
+### Variables (by name)
+- `KOS_OP_VAR`: Load variable by name (constant index)
+- `KOS_OP_VAR_BIND`: Bind reference to name (pop value, bind)
+- `KOS_OP_VAR_CLEAR`: Delete name from namespace
+- `KOS_OP_VAR_REF`: Get variable reference (for closure)
+- `KOS_OP_VAR_STORE`: Pop TOS, store in frame namespace under name
 
-### Fast Variables (Index-Based)
-- `KOS_OP_FAST`: Load fast local
-- `KOS_OP_FAST_BIND`: Bind fast local reference
-- `KOS_OP_FAST_CLEAR`: Clear fast local
+### Fast Variables (index-based)
+- `KOS_OP_FAST`: Load fast local by slot index
+- `KOS_OP_FAST_BIND`: Bind fast local slot
+- `KOS_OP_FAST_CLEAR`: Clear fast slot (stub)
 - `KOS_OP_FAST_REF`: Get fast local reference
-- `KOS_OP_FAST_STORE`: Store to fast local
+- `KOS_OP_FAST_STORE`: Store TOS to fast slot
 
 ### Attributes
 - `KOS_OP_ATTR`: Get attribute
@@ -184,16 +184,16 @@ typedef enum KosOpStyle {
 - `KOS_OP_TAIL_RECUR_NAMES`, `KOS_OP_TAIL_RECUR_STAR`
 
 ### Block Control
-- `KOS_OP_PUSH_FOREACH`: Push for-each loop
-- `KOS_OP_PUSH_WITH`: Push with context
-- `KOS_OP_PUSH_BEGIN`: Push begin block
-- `KOS_OP_PUSH_CLASS`: Push class definition
-- `KOS_OP_PUSH_FINALLY`: Push finally block
-- `KOS_OP_PUSH_LOOP`: Push while loop
-- `KOS_OP_PUSH_NS`: Push namespace
-- `KOS_OP_PUSH_TRY`: Push try block
+- `KOS_OP_PUSH_FOREACH`: Push for-each loop (stub)
+- `KOS_OP_PUSH_WITH`: Push with context (stub)
+- `KOS_OP_PUSH_BEGIN`: Push begin block (stub)
+- `KOS_OP_PUSH_CLASS`: Push class definition (stub)
+- `KOS_OP_PUSH_FINALLY`: Push finally block (implemented)
+- `KOS_OP_PUSH_LOOP`: Push while loop (stub)
+- `KOS_OP_PUSH_NS`: Push namespace scope; arg = count of values to bind; opa=0: [NSPEC]; opa>0: [NSPEC, val0, ..., NAMES]; creates KosNamespace, pushes KosDynNs
+- `KOS_OP_PUSH_TRY`: Push try block (implemented)
 - `KOS_OP_CLEAR_FINALLY`, `KOS_OP_CLEAR_LOOP`, `KOS_OP_CLEAR_TRY`
-- `KOS_OP_POP_WITH`, `KOS_OP_POP_BEGIN`, `KOS_OP_POP_FINALLY`, etc.
+- `KOS_OP_POP_WITH`, `KOS_OP_POP_BEGIN`, `KOS_OP_POP_FINALLY`, `KOS_OP_POP_LOOP`, `KOS_OP_POP_NS` (POP_NS implemented), etc.
 
 ### Delimited Continuations
 - `KOS_OP_PUSH_PROMPT`: Push prompt delimiter (arg = prompt_id constant index)
@@ -207,7 +207,8 @@ typedef enum KosOpStyle {
 - `KOS_OP_END_WIND`: Sentinel that terminates hook block execution
 
 ### Continuation Invocation
-- `KOS_OP_INVOKE_K`: Invoke continuation from TOS
+- `KOS_OP_INVOKE_K`: Pop value then continuation from stack; invoke continuation with value
+- `KOS_OP_INVOKE_K_VAR`: Pop value; look up name (constant index) in frame namespace; invoke that continuation with value. Used when continuation is bound by name (e.g. shift handler with PUSH_NS + VAR_STORE)
 
 ### Region Control
 - `KOS_OP_PUSH_REGION`: Push region for block-local control (arg = handler label)
@@ -240,8 +241,8 @@ typedef enum KosOpStyle {
 
 Handlers live in `koskari/lib/eval.c`. Each opcode has a handler; it is either **fully implemented** or a **stub** that calls `op_unimplemented_stub` (runtime error if executed). There are no partially implemented opcodes.
 
-- **Fully implemented**: Stack (NOOP, LABEL, POSITION, DUP, POP, CONST); RETURN, AWAIT; CALL (simple call); GLOBALS, LOCALS; VAR, VAR_BIND; exception ops (EXCEPTION, EXCEPTION_CLEAR, EXCEPTION_MATCH, RAISE, CHECK_EXCEPTION); try/finally (PUSH_TRY, PUSH_FINALLY, POP_TRY, POP_FINALLY, CLEAR_TRY, CLEAR_FINALLY); delimited continuations (PUSH_PROMPT, SET_PROMPT_HANDLER, POP_PROMPT, SHIFT); INVOKE_K; all OBJECT_* opcodes.
-- **Stubs (unimplemented)**: THEEND, BREAK, CONTINUE, YIELD, YIELD_FROM; ITER_NEXT, AWAIT_NEXT; all jumps (JUMP, JUMP_FALSE, JUMP_TRUE, JUMP_AND, JUMP_OR) and check-jumps except CHECK_EXCEPTION; VAR_CLEAR, VAR_REF, VAR_STORE; all FAST*; all ATTR*, ITEM*, CONST_ITEM*; argument-building (BUILD_*, COMBINE_*); CALL_NAMES, CALL_STAR, CALL_ATTR*, RECUR*, TAIL_*; block control (PUSH_*/POP_*/CLEAR_* for foreach/with/begin/class/loop/ns); PUSH_WIND, POP_WIND, END_WIND; PUSH_REGION, POP_REGION.
+- **Fully implemented**: Stack (NOOP, LABEL, POSITION, DUP, POP, CONST); RETURN, AWAIT; CALL (simple call); GLOBALS, LOCALS; variables (VAR, VAR_BIND, VAR_CLEAR, VAR_REF, VAR_STORE); fast locals (FAST, FAST_BIND, FAST_REF, FAST_STORE); namespace scope (PUSH_NS, POP_NS); exception ops (EXCEPTION, EXCEPTION_CLEAR, EXCEPTION_MATCH, RAISE, CHECK_EXCEPTION); try/finally (PUSH_TRY, PUSH_FINALLY, POP_TRY, POP_FINALLY, CLEAR_TRY, CLEAR_FINALLY); delimited continuations (PUSH_PROMPT, SET_PROMPT_HANDLER, POP_PROMPT, SHIFT); INVOKE_K, INVOKE_K_VAR; all OBJECT_* opcodes.
+- **Stubs (unimplemented)**: THEEND, BREAK, CONTINUE, YIELD, YIELD_FROM; ITER_NEXT, AWAIT_NEXT; all jumps and check-jumps except CHECK_EXCEPTION; FAST_CLEAR; all ATTR*, ITEM*, CONST_ITEM*; argument-building (BUILD_*, COMBINE_*); CALL_NAMES, CALL_STAR, CALL_ATTR*, RECUR*, TAIL_*; block control (PUSH_*/POP_*/CLEAR_* for foreach/with/begin/class/loop); PUSH_WIND, POP_WIND, END_WIND; PUSH_REGION, POP_REGION.
 
 For the full categorized list, see [FEATURES.md](../FEATURES.md) § "Opcodes: implementation status".
 

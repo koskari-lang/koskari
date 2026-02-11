@@ -87,11 +87,13 @@ The VM in `eval.c` uses a jump table; every opcode has a handler. Handlers are e
 - **Control**: RETURN, AWAIT
 - **Calls**: CALL (simple positional call; KosExpression/KosFunction → new frame via `kos_koscall`)
 - **Introspection**: GLOBALS, LOCALS
-- **Variables**: VAR (load by name), VAR_BIND (bind by name)
+- **Variables by name**: VAR (load), VAR_BIND (bind), VAR_CLEAR (delete), VAR_REF (closure ref), VAR_STORE (store TOS to name)
+- **Variables by index (fast locals)**: FAST, FAST_BIND, FAST_REF, FAST_STORE (FAST_CLEAR is stub)
+- **Namespace scope**: PUSH_NS, POP_NS (creates child namespace from NamespaceSpec; supports value binding; uses KosDynNs on dynamic chain)
 - **Exceptions**: EXCEPTION, EXCEPTION_CLEAR, EXCEPTION_MATCH, RAISE, CHECK_EXCEPTION
 - **Try/finally**: PUSH_TRY, PUSH_FINALLY, POP_TRY, POP_FINALLY, CLEAR_TRY, CLEAR_FINALLY
 - **Delimited continuations**: PUSH_PROMPT, SET_PROMPT_HANDLER, POP_PROMPT, SHIFT
-- **Continuation invocation**: INVOKE_K
+- **Continuation invocation**: INVOKE_K (stack-based: pop value, pop cont), INVOKE_K_VAR (name-based: pop value, lookup name in frame ns, invoke)
 - **Object protocol**: All OBJECT_* opcodes (comparisons, arithmetic, predicates, len/type/iter/str/repr/vars/dir, bitwise, in/not in, is/is not, isinstance/issubclass, etc.)
 
 **Not implemented (stubs)** — hitting these at runtime raises "unimplemented opcode":
@@ -99,11 +101,11 @@ The VM in `eval.c` uses a jump table; every opcode has a handler. Handlers are e
 - **Iteration**: ITER_NEXT, AWAIT_NEXT
 - **Jumps**: JUMP, JUMP_FALSE, JUMP_TRUE, JUMP_AND, JUMP_OR
 - **Check jumps**: CHECK_EQ, CHECK_NE, CHECK_LT, CHECK_LE, CHECK_GT, CHECK_GE, CHECK_IN, CHECK_NOT_IN, CHECK_IS, CHECK_IS_NOT, CHECK_IS_INSTANCE, CHECK_IS_SUBCLASS
-- **Variables**: VAR_CLEAR, VAR_REF, VAR_STORE; all FAST* (FAST, FAST_BIND, FAST_CLEAR, FAST_REF, FAST_STORE)
+- **Variables**: FAST_CLEAR only
 - **Attributes / items**: ATTR, ATTR_CLEAR, ATTR_REF, ATTR_STORE; ITEM, ITEM_CLEAR, ITEM_REF, ITEM_STORE; CONST_ITEM, CONST_ITEM_CLEAR, CONST_ITEM_REF, CONST_ITEM_STORE
 - **Argument building**: BUILD_ARGS, BUILD_FUNCTION, BUILD_KWDS, BUILD_KWDS_NAMES, COMBINE_ARGS, COMBINE_KWDS
 - **Calls**: CALL_NAMES, CALL_STAR; CALL_ATTR, CALL_ATTR_NAMES, CALL_ATTR_STAR; RECUR, RECUR_NAMES, RECUR_STAR; TAIL_CALL, TAIL_CALL_NAMES, TAIL_CALL_STAR; TAIL_RECUR, TAIL_RECUR_NAMES, TAIL_RECUR_STAR
-- **Block control**: PUSH_FOREACH, PUSH_WITH, PUSH_BEGIN, PUSH_CLASS, PUSH_LOOP, PUSH_NS; CLEAR_FINALLY, CLEAR_LOOP, CLEAR_TRY; POP_WITH, POP_BEGIN, POP_FINALLY, POP_LOOP, POP_NS
+- **Block control**: PUSH_FOREACH, PUSH_WITH, PUSH_BEGIN, PUSH_CLASS, PUSH_LOOP; CLEAR_FINALLY, CLEAR_LOOP, CLEAR_TRY; POP_WITH, POP_BEGIN, POP_FINALLY, POP_LOOP
 - **Wind / region**: PUSH_WIND, POP_WIND, END_WIND; PUSH_REGION, POP_REGION
 
 There are no **partially** implemented opcodes; each handler is either full or stub. The authoritative list is the set of handlers in `koskari/lib/eval.c` that do not call `op_unimplemented_stub`.
@@ -209,8 +211,13 @@ There are no **partially** implemented opcodes; each handler is either full or s
 - Module representation
 - Import system strategy
 
+### Namespace and Continuation Binding
+- **PUSH_NS / POP_NS**: Create and pop namespace scopes. PUSH_NS arg = count of values to bind; opa=0 uses stack [NSPEC]; opa>0 uses [NSPEC, val0, ..., val(N-1), NAMES]. Uses KosDynNs node; SHIFT unwind restores namespaces correctly.
+- **VAR_STORE**: Pop TOS and store in frame namespace under name (supports KosNamespace and dict).
+- **INVOKE_K_VAR**: Pop value, look up name in frame namespace, invoke that continuation. Enables shift handlers to bind continuation by name (PUSH_NS + VAR_STORE + INVOKE_K_VAR).
+- **CAPTURE_CC**: Deferred until undelimited continuations exist.
+
 ### To Design
-- Delimited continuations (shift/reset)
 - JIT integration
 - Additional language features
 - Performance optimizations
