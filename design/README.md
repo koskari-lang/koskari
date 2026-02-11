@@ -8,7 +8,8 @@ This directory contains the design documentation for koskari, organized into thr
 
 - **language/**: Language features, syntax, special forms, operators, and built-in constructs
 - **api/**: Runtime API, types, functions, and interfaces
-- **interpreter/**: Interpreter architecture, bytecode format, compiler design, and evaluation model
+- **interpreter/**: Interpreter architecture, bytecode format, compiler design,
+  evaluation model, and continuation application (including evaluator-token model)
 
 ## Purpose
 

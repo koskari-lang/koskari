@@ -9,6 +9,7 @@ This directory documents the interpreter implementation, including bytecode form
 - **evaluator.md**: Evaluation model and drive loop (eval.c); KosCoroutine and run-code-as-coroutine (func.c)
 - **execution-invariants.md**: Koskari execution model invariants and design commitments
 - **callcc.md**: Call/cc implementation design
+- **evaluator-token-continuation.md**: Evaluator token + continuation application model (KosEvaluatorToken, KoskariContinuationApply)
 
 ## Implementation Status
 

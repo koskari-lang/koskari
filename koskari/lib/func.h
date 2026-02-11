@@ -139,16 +139,38 @@ typedef struct {
 PyObject *KosCoroutine_New(KosContext *ctx);
 
 
-/* === KosPyContinuation === */
+/* === KosPyDelimitedContinuation === */
 
 
 /**
-   KosPyContinuation is a Python-callable that resumes at a captured point.
+   KosPyDelimitedContinuation wraps a KosContinuation captured by shift.
 
-   Multi-shot: each call clones the captured state before resuming.
-   Calling returns a KosCoroutine that executes the continuation.
+   Cannot be called from Python; application only via CALL/INVOKE_K.
+*/
 
-   This type wraps a KosContinuation (from dynchain.h).
+extern PyTypeObject KosPyDelimitedContinuationType;
+
+
+typedef struct {
+  PyObject_HEAD
+  KosContinuation *captured;
+} KosPyDelimitedContinuation;
+
+
+#define KosPyDelimitedContinuation_Check(obj)                           \
+  ((obj) && PyType_IsSubtype((obj)->ob_type, &KosPyDelimitedContinuationType))
+
+
+PyObject *KosPyDelimitedContinuation_New(KosContinuation *captured);
+
+
+/* === KosPyContinuation (undelimited, for future call/cc) === */
+
+
+/**
+   KosPyContinuation wraps an undelimited KosContinuation from call/cc.
+
+   Python-callable: raises KoskariContinuationDead or KoskariContinuationApply.
 */
 
 extern PyTypeObject KosPyContinuationType;
@@ -156,7 +178,7 @@ extern PyTypeObject KosPyContinuationType;
 
 typedef struct {
   PyObject_HEAD
-  KosContinuation *captured;  /* captured continuation state */
+  KosContinuation *captured;
 } KosPyContinuation;
 
 

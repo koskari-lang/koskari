@@ -153,6 +153,47 @@ class TestDelimitedContinuations(CevalTest):
         result = asyncio.run(expr())
         self.assertEqual(result, 6)
 
+    def test_delimited_continuation_cannot_be_called_from_python(self):
+        """
+        (reset (shift k k)) returns k; calling k from Python raises TypeError
+        """
+        code = [
+            ["PUSH_PROMPT", 0],
+            ["SET_PROMPT_HANDLER", "handler"],
+            ["SHIFT", 0],
+            ["POP_PROMPT", 0],
+            ["RETURN", 1],
+            ["NOOP", 0],
+            ["LABEL", "handler"],
+            ["RETURN", 1],
+        ]
+        code_obj, ns = build_expr(code)
+        expr = make_callable(code_obj, ns)
+        cont = asyncio.run(expr())
+        self.assertIsNotNone(cont)
+        with self.assertRaises(TypeError) as ctx:
+            cont(42)
+        self.assertIn("cannot be called from Python", str(ctx.exception))
+
+
+class TestEvaluatorToken(CevalTest):
+    """
+    Tests for KosEvaluatorToken and exception types from evaluator-token model
+    """
+
+    def test_evaluator_token_and_exceptions_exist_on_module(self):
+        """
+        koskari.lib exposes EvaluatorToken, DelimitedContinuation,
+        Continuation, and exception types
+        """
+        import koskari.lib as lib
+        self.assertTrue(hasattr(lib, "EvaluatorToken"))
+        self.assertTrue(hasattr(lib, "DelimitedContinuation"))
+        self.assertTrue(hasattr(lib, "Continuation"))
+        self.assertTrue(hasattr(lib, "KoskariContinuationDead"))
+        self.assertTrue(hasattr(lib, "KoskariContinuationApply"))
+        self.assertTrue(hasattr(lib, "KoskariContinuationError"))
+
 
 class TestStubOpcodes(CevalTest):
     """
@@ -442,21 +483,21 @@ class TestStubOpcodes(CevalTest):
             self._run_stub_opcode("CHECK_IS_SUBCLASS", "target")
 
 
-    def test_var_clear_raises_not_implemented(self):
+    def test_var_clear_raises_name_error_for_missing_name(self):
         """
-        VAR_CLEAR raises RuntimeError
+        VAR_CLEAR raises NameError when name is not defined
         """
 
-        with self.assertRaises(RuntimeError):
+        with self.assertRaises(NameError):
             self._run_stub_opcode("VAR_CLEAR", "x")
 
 
-    def test_var_ref_raises_not_implemented(self):
+    def test_var_ref_raises_name_error_for_missing_name(self):
         """
-        VAR_REF raises RuntimeError
+        VAR_REF raises NameError when name is not defined
         """
 
-        with self.assertRaises(RuntimeError):
+        with self.assertRaises(NameError):
             self._run_stub_opcode("VAR_REF", "x")
 
 
@@ -469,21 +510,21 @@ class TestStubOpcodes(CevalTest):
             self._run_stub_opcode("VAR_STORE", "x")
 
 
-    def test_fast_raises_not_implemented(self):
+    def test_fast_raises_name_error_for_out_of_bounds_index(self):
         """
-        FAST raises RuntimeError
+        FAST raises NameError when slot index is out of bounds
         """
 
-        with self.assertRaises(RuntimeError):
+        with self.assertRaises(NameError):
             self._run_stub_opcode("FAST", 0)
 
 
-    def test_fast_bind_raises_not_implemented(self):
+    def test_fast_bind_raises_name_error_for_out_of_bounds_index(self):
         """
-        FAST_BIND raises RuntimeError
+        FAST_BIND raises NameError when slot index is out of bounds
         """
 
-        with self.assertRaises(RuntimeError):
+        with self.assertRaises(NameError):
             self._run_stub_opcode("FAST_BIND", 0)
 
 
@@ -496,22 +537,28 @@ class TestStubOpcodes(CevalTest):
             self._run_stub_opcode("FAST_CLEAR", 0)
 
 
-    def test_fast_ref_raises_not_implemented(self):
+    def test_fast_ref_raises_name_error_for_out_of_bounds_index(self):
         """
-        FAST_REF raises RuntimeError
+        FAST_REF raises NameError when slot index is out of bounds
         """
 
-        with self.assertRaises(RuntimeError):
+        with self.assertRaises(NameError):
             self._run_stub_opcode("FAST_REF", 0)
 
 
-    def test_fast_store_raises_not_implemented(self):
+    def test_fast_store_raises_name_error_for_out_of_bounds_index(self):
         """
-        FAST_STORE raises RuntimeError
+        FAST_STORE raises NameError when slot index is out of bounds
         """
 
-        with self.assertRaises(RuntimeError):
-            self._run_stub_opcode("FAST_STORE", 0)
+        code_obj, ns = build_expr([
+            ["CONST", 42],
+            ["FAST_STORE", 0],
+            ["RETURN", 1],
+        ])
+        expr = make_callable(code_obj, ns)
+        with self.assertRaises(NameError):
+            run_to_completion(expr())
 
 
     def test_attr_raises_not_implemented(self):

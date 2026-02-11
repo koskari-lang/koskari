@@ -34,6 +34,7 @@
 
 
 #include <Python.h>
+#include <stdint.h>
 
 #include "dynchain.h"
 
@@ -42,6 +43,31 @@
 
 struct KosCode;
 typedef struct KosCode KosCode;
+
+
+/* === KosEvaluatorToken === */
+
+
+/**
+   KosEvaluatorToken is a refcounted PyObject that identifies a koskari_eval
+   domain/instance.  It tracks whether the evaluator is currently active on
+   this thread (live_depth) and serves as an ownership marker for
+   Continuations and DelimitedContinuations.
+*/
+
+typedef struct KosEvaluatorToken KosEvaluatorToken;
+
+struct KosEvaluatorToken {
+  PyObject_HEAD
+  uint64_t cookie;      /* unique identity */
+  int live_depth;       /* incremented on koskari_eval entry, decremented on exit */
+};
+
+extern PyTypeObject KosEvaluatorTokenType;
+
+KosEvaluatorToken *KosEvaluatorToken_New(void);
+void KosEvaluatorToken_IncrementLiveDepth(KosEvaluatorToken *token);
+void KosEvaluatorToken_DecrementLiveDepth(KosEvaluatorToken *token);
 
 
 /* === Context flags === */
@@ -140,6 +166,8 @@ struct KosContext {
   KosDynFrame *frame_top;    /* cached topmost frame (for fast access) */
   KosDynFrame *globals_frame;     /* cached outermost frame (for op_GLOBALS) */
   uint32_t globals_cache_version; /* chain_version when globals_frame was set */
+
+  KosEvaluatorToken *token; /* evaluator identity; ownership marker for continuations */
 
   /* Hook execution state */
   KosHookRunner hook_runner;
@@ -323,6 +351,14 @@ int kos_frame_traverse(KosFrame *frame, visitproc visit, void *arg);
    :return: 0 on success, non-zero if visit returns non-zero
 */
 int kos_context_traverse(KosContext *ctx, visitproc visit, void *arg);
+
+
+/* === Exception types === */
+
+
+extern PyObject *KoskariContinuationDead;
+extern PyObject *KoskariContinuationApply;
+extern PyObject *KoskariContinuationError;
 
 
 /* === Unit lifecycle === */

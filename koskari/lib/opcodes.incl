@@ -235,7 +235,8 @@ OP(POP_WIND, NOARG)            // pop wind from dynamic chain
 OP(END_WIND, NOARG)            // sentinel: terminates hook block
 
 // continuation invocation
-OP(INVOKE_K, NOARG)            // invoke continuation from TOS
+OP(INVOKE_K, NOARG)            // invoke continuation from TOS (value, cont)
+OP(INVOKE_K_VAR, VAR)         // pop value, lookup name in ns, invoke
 
 // region control (replaces old block style)
 OP(PUSH_REGION, LABEL)         // arg = handler label

@@ -143,6 +143,82 @@ static PyObject *str_throw = NULL;
 static PyObject *str_close = NULL;
 
 
+/* === TLS stack for active evaluator tokens === */
+
+#define KOS_TLS_STACK_MAX 32
+
+/* File-scope static stack.  koskari_eval is single-threaded per process
+   for the current design; nested eval (e.g. hook calling back) pushes
+   tokens onto this stack. */
+static KosEvaluatorToken *active_token_stack[KOS_TLS_STACK_MAX];
+static size_t active_token_depth = 0;
+
+
+static void push_active_token(KosEvaluatorToken *token) {
+  if (active_token_depth < KOS_TLS_STACK_MAX) {
+    active_token_stack[active_token_depth++] = token;
+  }
+}
+
+
+static void pop_active_token(KosEvaluatorToken *token) {
+  (void) token;
+  if (active_token_depth > 0)
+    active_token_depth--;
+}
+
+
+/* === KosEvaluatorToken type === */
+
+static uint64_t token_cookie_counter = 0;
+
+static PyObject *token_repr(PyObject *self) {
+  KosEvaluatorToken *t = (KosEvaluatorToken *) self;
+  return PyUnicode_FromFormat("<KosEvaluatorToken cookie=%llu live_depth=%d>",
+                              (unsigned long long) t->cookie,
+                              t->live_depth);
+}
+
+PyTypeObject KosEvaluatorTokenType = {
+  PyVarObject_HEAD_INIT(NULL, 0)
+  .tp_name = "koskari.lib.EvaluatorToken",
+  .tp_basicsize = sizeof(KosEvaluatorToken),
+  .tp_itemsize = 0,
+  .tp_repr = token_repr,
+  .tp_flags = Py_TPFLAGS_DEFAULT,
+};
+
+
+KosEvaluatorToken *KosEvaluatorToken_New(void) {
+  KosEvaluatorToken *token = PyObject_New(KosEvaluatorToken,
+                                          &KosEvaluatorTokenType);
+  if (! token)
+    return NULL;
+  token->cookie = (uint64_t) __sync_add_and_fetch(&token_cookie_counter, 1);
+  token->live_depth = 0;
+  return token;
+}
+
+
+void KosEvaluatorToken_IncrementLiveDepth(KosEvaluatorToken *token) {
+  if (token)
+    token->live_depth++;
+}
+
+
+void KosEvaluatorToken_DecrementLiveDepth(KosEvaluatorToken *token) {
+  if (token && token->live_depth > 0)
+    token->live_depth--;
+}
+
+
+/* === Exception types === */
+
+PyObject *KoskariContinuationDead = NULL;
+PyObject *KoskariContinuationApply = NULL;
+PyObject *KoskariContinuationError = NULL;
+
+
 /* === KosFrame implementation (wrapper around KosDynFrame) === */
 
 
@@ -201,6 +277,12 @@ KosContext *kos_context_new(KosDynFrame *top) {
     return NULL;
   }
 
+  ctx->token = KosEvaluatorToken_New();
+  if (! ctx->token) {
+    PyMem_Free(ctx);
+    return NULL;
+  }
+
   ctx->dyn_top = (KosDynNode *) top;
   ctx->frame_top = top;
   ctx->globals_frame = top;
@@ -242,6 +324,9 @@ void kos_context_free(KosContext *ctx) {
   if (! ctx)
     return;
 
+  Py_XDECREF(ctx->token);
+  ctx->token = NULL;
+
   /* Free the dynamic chain */
   kos_dynchain_free(ctx->dyn_top, NULL);
 
@@ -281,6 +366,7 @@ int kos_context_traverse(
   if (! ctx)
     return 0;
 
+  Py_VISIT(ctx->token);
   Py_VISIT(ctx->py_await_iter);
   Py_VISIT(ctx->py_last_yielded);
   Py_VISIT(ctx->py_await_inject);
@@ -689,13 +775,66 @@ KOS_OP_HANDLER(CALL) {
   PyObject *const *tail = KosStackBlock_TailPtr(ctx->frame_top->stack, n + 1);
   if (! tail)
     return -1;
+  PyObject *callable = tail[0];
   PyObject *result = NULL;
 
-  SAYF("[CALL] callable: %R\n", tail[0]);
+  /* Special-case DelimitedContinuation and Continuation (undelimited) */
+  if (KosPyDelimitedContinuation_Check(callable)
+      || KosPyContinuation_Check(callable)) {
+    KosContinuation *k = KosPyDelimitedContinuation_Check(callable)
+        ? ((KosPyDelimitedContinuation *) callable)->captured
+        : ((KosPyContinuation *) callable)->captured;
+    PyObject *resume_val = (n > 0 && tail[1]) ? tail[1] : Py_None;
+    Py_INCREF(resume_val);
+
+    if (KosStackBlock_Drop(&ctx->frame_top->stack, n + 1) < 0) {
+      Py_DECREF(resume_val);
+      return -1;
+    }
+
+    if (! k) {
+      PyErr_SetString(PyExc_RuntimeError,
+                      "continuation has no captured state");
+      Py_DECREF(resume_val);
+      return -1;
+    }
+
+    if (k->token_ref == (PyObject *) ctx->token) {
+      /* Same evaluator: apply directly */
+      if (kos_invoke_continuation(ctx, k, resume_val, 0, callable) < 0) {
+        Py_DECREF(resume_val);
+        return -1;
+      }
+      Py_DECREF(resume_val);
+      (void) out_ev;
+      (void) insn;
+      return 0;
+    }
+
+    /* Token mismatch: raise KoskariContinuationApply for upwards propagation */
+    {
+      PyObject *exc = PyObject_CallNoArgs(KoskariContinuationApply);
+      if (exc) {
+        PyObject_SetAttrString(exc, "target", k->token_ref);
+        PyObject_SetAttrString(exc, "continuation", callable);
+        PyObject *args_tup = PyTuple_Pack(1, resume_val);
+        if (args_tup) {
+          PyObject_SetAttrString(exc, "args", args_tup);
+          Py_DECREF(args_tup);
+        }
+        PyErr_SetObject(KoskariContinuationApply, exc);
+        Py_DECREF(exc);
+      }
+    }
+    Py_DECREF(resume_val);
+    return -1;
+  }
+
+  SAYF("[CALL] callable: %R\n", callable);
   if (n == 0) {
-    result = PyObject_CallNoArgs(tail[0]);
+    result = PyObject_CallNoArgs(callable);
   } else {
-    result = PyObject_Vectorcall(tail[0], &tail[1], n, NULL);
+    result = PyObject_Vectorcall(callable, &tail[1], n, NULL);
   }
 
   if (KosStackBlock_Drop(&ctx->frame_top->stack, n + 1) < 0) {
@@ -1220,15 +1359,24 @@ KOS_OP_HANDLER(SHIFT) {
       }
     } else if (KosDynNode_IS_REGION(ctx->dyn_top)) {
       kos_dyn_pop_region(ctx, (KosDynRegion *) ctx->dyn_top);
+    } else if (KosDynNode_IS_NS(ctx->dyn_top)) {
+      KosDynNs *ns_node = (KosDynNs *) ctx->dyn_top;
+      if (ctx->frame_top) {
+        PyObject *prior = ns_node->saved_ns;
+        Py_INCREF(prior);
+        Py_DECREF(ctx->frame_top->ns);
+        ctx->frame_top->ns = prior;
+      }
+      kos_dyn_pop_ns(ctx, ns_node);
     } else {
       kos_continuation_free(k);
       PyErr_SetString(PyExc_RuntimeError,
-                      "shift: cannot unwind past non-frame/wind/region");
+                      "shift: cannot unwind past non-frame/wind/region/ns");
       return -1;
     }
   }
 
-  PyObject *wrapper = KosPyContinuation_New(k);
+  PyObject *wrapper = KosPyDelimitedContinuation_New(k);
   if (! wrapper) {
     kos_continuation_free(k);
     return -1;
@@ -1285,19 +1433,37 @@ KOS_OP_HANDLER(INVOKE_K) {
     SAYF("[eval] INVOKE_K value=%ld k=%p\n",
          PyLong_AsLong(value), (void *) cont_obj);
 
-  if (! PyObject_TypeCheck(cont_obj, &KosPyContinuationType)) {
-    PyErr_SetString(PyExc_TypeError, "INVOKE_K: TOS is not a continuation");
+  if (! KosPyDelimitedContinuation_Check(cont_obj)) {
+    PyErr_SetString(PyExc_TypeError, "INVOKE_K: TOS is not a DelimitedContinuation");
     Py_DECREF(value);
     Py_DECREF(cont_obj);
     return -1;
   }
 
-  KosContinuation *k = ((KosPyContinuation *) cont_obj)->captured;
+  KosContinuation *k = ((KosPyDelimitedContinuation *) cont_obj)->captured;
   if (! k) {
     Py_DECREF(value);
     Py_DECREF(cont_obj);
     PyErr_SetString(PyExc_RuntimeError,
                     "INVOKE_K: continuation has no captured state");
+    return -1;
+  }
+
+  /* Validate token ownership */
+  if (k->token_ref != (PyObject *) ctx->token) {
+    Py_DECREF(value);
+    Py_DECREF(cont_obj);
+    PyErr_SetString(KoskariContinuationError,
+                    "INVOKE_K: continuation does not belong to current evaluator");
+    return -1;
+  }
+
+  /* Validate prompt exists in current dynamic chain */
+  if (! kos_find_prompt(ctx, k->prompt_id)) {
+    Py_DECREF(value);
+    Py_DECREF(cont_obj);
+    PyErr_SetString(KoskariContinuationError,
+                    "INVOKE_K: prompt not found in dynamic chain");
     return -1;
   }
 
@@ -1312,6 +1478,87 @@ KOS_OP_HANDLER(INVOKE_K) {
   Py_DECREF(value);
   (void) out_ev;
   (void) insn;
+  return 0;
+}
+
+
+/**
+   INVOKE_K_VAR: arg = constant index (name). Pop value, look up name in
+   current namespace, invoke that continuation with value.
+*/
+KOS_OP_HANDLER(INVOKE_K_VAR) {
+  KosCode *code = ctx->frame_top->code;
+  PyObject *name = KosCode_GetConstant((PyObject *) code, insn->arg);
+  if (! name)
+    return -1;
+
+  PyObject *value = KosStackBlock_PopRef(&ctx->frame_top->stack);
+  if (! value)
+    return -1;
+
+  PyObject *ns = ctx->frame_top->ns;
+  PyObject *cont_obj = NULL;
+  if (KosNamespace_Check(ns)) {
+    cont_obj = KosNamespace_Deref(ns, name);
+  } else if (PyDict_Check(ns)) {
+    cont_obj = PyDict_GetItemWithError(ns, name);
+    if (cont_obj)
+      Py_INCREF(cont_obj);
+  } else {
+    Py_DECREF(value);
+    PyErr_Format(PyExc_TypeError,
+                 "frame namespace must be Namespace or dict, got %R", ns);
+    return -1;
+  }
+
+  if (! cont_obj) {
+    Py_DECREF(value);
+    return -1;
+  }
+
+  if (! KosPyDelimitedContinuation_Check(cont_obj)) {
+    Py_DECREF(value);
+    Py_DECREF(cont_obj);
+    PyErr_SetString(PyExc_TypeError,
+                    "INVOKE_K_VAR: name is not a DelimitedContinuation");
+    return -1;
+  }
+
+  KosContinuation *k = ((KosPyDelimitedContinuation *) cont_obj)->captured;
+
+  if (! k) {
+    Py_DECREF(value);
+    Py_DECREF(cont_obj);
+    PyErr_SetString(PyExc_RuntimeError,
+                    "INVOKE_K_VAR: continuation has no captured state");
+    return -1;
+  }
+
+  if (k->token_ref != (PyObject *) ctx->token) {
+    Py_DECREF(value);
+    Py_DECREF(cont_obj);
+    PyErr_SetString(KoskariContinuationError,
+                    "INVOKE_K_VAR: continuation does not belong to current"
+                    " evaluator");
+    return -1;
+  }
+
+  if (! kos_find_prompt(ctx, k->prompt_id)) {
+    Py_DECREF(value);
+    Py_DECREF(cont_obj);
+    PyErr_SetString(KoskariContinuationError,
+                    "INVOKE_K_VAR: prompt not found in dynamic chain");
+    return -1;
+  }
+
+  if (kos_invoke_continuation(ctx, k, value, 0, cont_obj) < 0) {
+    Py_DECREF(value);
+    Py_DECREF(cont_obj);
+    return -1;
+  }
+  Py_DECREF(value);
+  /* cont_obj not DECREF'd: invoke transfers control on success */
+  (void) out_ev;
   return 0;
 }
 
@@ -2177,44 +2424,140 @@ KOS_OP_HANDLER(VAR_BIND) {
 
 
 /**
-   VAR_CLEAR: arg = constant index (name). Delete name from namespace;
-   not yet implemented.
+   VAR_CLEAR: arg = constant index (name). Delete name from namespace.
 */
 KOS_OP_HANDLER(VAR_CLEAR) {
-  return op_unimplemented_stub(ctx, out_ev, insn);
+  KosCode *code = ctx->frame_top->code;
+  PyObject *name = KosCode_GetConstant((PyObject *) code, insn->arg);
+  if (! name)
+    return -1;
+  PyObject *ns = ctx->frame_top->ns;
+  if (KosNamespace_Check(ns)) {
+    if (KosNamespace_Clear(ns, name) < 0)
+      return -1;
+  } else if (PyDict_Check(ns)) {
+    if (PyDict_DelItem(ns, name) < 0)
+      return -1;
+  } else {
+    PyErr_Format(PyExc_TypeError,
+                 "frame namespace must be Namespace or dict, got %R", ns);
+    return -1;
+  }
+  (void) out_ev;
+  return 0;
 }
 
 
 /**
-   VAR_REF: arg = constant index (name). Push name reference (for closure);
-   not yet implemented.
+   VAR_REF: arg = constant index (name). Push name reference (for closure).
 */
 KOS_OP_HANDLER(VAR_REF) {
-  return op_unimplemented_stub(ctx, out_ev, insn);
+  KosCode *code = ctx->frame_top->code;
+  PyObject *name = KosCode_GetConstant((PyObject *) code, insn->arg);
+  if (! name)
+    return -1;
+  PyObject *ns = ctx->frame_top->ns;
+  if (! KosNamespace_Check(ns)) {
+    PyErr_Format(PyExc_TypeError,
+                 "frame namespace must be Namespace for VAR_REF, got %R", ns);
+    return -1;
+  }
+  PyObject *ref = KosNamespace_Ref(ns, name);
+  if (! ref)
+    return -1;
+  Py_INCREF(ref);
+  if (KosStackBlock_PushRef(&ctx->frame_top->stack, ref) < 0) {
+    Py_DECREF(ref);
+    return -1;
+  }
+  (void) out_ev;
+  return 0;
 }
 
 
 /**
-   VAR_STORE: arg = constant index (name). Store TOS into name; not yet implemented.
+   VAR_STORE: arg = constant index (name). Pop TOS and store into name in
+   the current frame namespace.
 */
 KOS_OP_HANDLER(VAR_STORE) {
-  return op_unimplemented_stub(ctx, out_ev, insn);
+  KosCode *code = ctx->frame_top->code;
+  PyObject *name = KosCode_GetConstant((PyObject *) code, insn->arg);
+  if (! name)
+    return -1;
+
+  PyObject *val = KosStackBlock_PopRef(&ctx->frame_top->stack);
+  if (! val)
+    return -1;
+
+  PyObject *ns = ctx->frame_top->ns;
+  if (KosNamespace_Check(ns)) {
+    if (KosNamespace_Store(ns, name, val) < 0) {
+      Py_DECREF(val);
+      return -1;
+    }
+  } else if (PyDict_Check(ns)) {
+    if (PyDict_SetItem(ns, name, val) < 0) {
+      Py_DECREF(val);
+      return -1;
+    }
+  } else {
+    Py_DECREF(val);
+    PyErr_Format(PyExc_TypeError,
+                 "frame namespace must be Namespace or dict, got %R", ns);
+    return -1;
+  }
+  Py_DECREF(val);
+  (void) out_ev;
+  return 0;
 }
 
 
 /**
-   FAST: arg = slot index. Push value from fast local slot; not yet implemented.
+   FAST: arg = slot index. Push value from fast local slot.
 */
 KOS_OP_HANDLER(FAST) {
-  return op_unimplemented_stub(ctx, out_ev, insn);
+  PyObject *ns = ctx->frame_top->ns;
+  if (! KosNamespace_CheckExact(ns) && ! KosCollectorNamespace_CheckExact(ns)) {
+    PyErr_Format(PyExc_RuntimeError, "FAST invoked on %R", ns);
+    return -1;
+  }
+  size_t idx = (size_t) insn->arg;
+  PyObject *val = KosNamespace_FastDeref(ns, idx);
+  if (! val)
+    return -1;
+  return push_or_await(ctx, out_ev, val);
 }
 
 
 /**
-   FAST_BIND: arg = slot index. Bind name to fast slot; not yet implemented.
+   FAST_BIND: arg = slot index. Bind name to fast slot.
 */
 KOS_OP_HANDLER(FAST_BIND) {
-  return op_unimplemented_stub(ctx, out_ev, insn);
+  PyObject *ns = ctx->frame_top->ns;
+  if (! KosNamespace_CheckExact(ns) && ! KosCollectorNamespace_CheckExact(ns)) {
+    PyErr_Format(PyExc_RuntimeError, "FAST_BIND invoked on %R", ns);
+    return -1;
+  }
+  size_t idx = (size_t) insn->arg;
+  if (idx >= KosNamespace_FAST_COUNT(ns)) {
+    PyErr_Format(PyExc_NameError, "Namespace fast index out of bounds, %zu",
+                 idx);
+    return -1;
+  }
+  PyObject *val = KosStackBlock_PopRef(&ctx->frame_top->stack);
+  if (! val)
+    return -1;
+  KosNameBind *nb = KosNamespace_GET_FAST(ns, idx);
+  PyObject *ref = KosSymbolicRef_New(nb->name, val);
+  Py_DECREF(val);
+  if (! ref)
+    return -1;
+  int res = KosNamespace_FastBind(ns, idx, ref);
+  Py_DECREF(ref);
+  if (res < 0)
+    return -1;
+  (void) out_ev;
+  return 0;
 }
 
 
@@ -2227,18 +2570,47 @@ KOS_OP_HANDLER(FAST_CLEAR) {
 
 
 /**
-   FAST_REF: arg = slot index. Push reference to fast slot; not yet implemented.
+   FAST_REF: arg = slot index. Push reference to fast slot.
 */
 KOS_OP_HANDLER(FAST_REF) {
-  return op_unimplemented_stub(ctx, out_ev, insn);
+  PyObject *ns = ctx->frame_top->ns;
+  if (! KosNamespace_CheckExact(ns) && ! KosCollectorNamespace_CheckExact(ns)) {
+    PyErr_Format(PyExc_RuntimeError, "FAST_REF invoked on %R", ns);
+    return -1;
+  }
+  size_t idx = (size_t) insn->arg;
+  PyObject *ref = KosNamespace_FastRef(ns, idx);
+  if (! ref)
+    return -1;
+  Py_INCREF(ref);
+  if (KosStackBlock_PushRef(&ctx->frame_top->stack, ref) < 0) {
+    Py_DECREF(ref);
+    return -1;
+  }
+  (void) out_ev;
+  return 0;
 }
 
 
 /**
-   FAST_STORE: arg = slot index. Store TOS into fast slot; not yet implemented.
+   FAST_STORE: arg = slot index. Store TOS into fast slot.
 */
 KOS_OP_HANDLER(FAST_STORE) {
-  return op_unimplemented_stub(ctx, out_ev, insn);
+  PyObject *ns = ctx->frame_top->ns;
+  if (! KosNamespace_CheckExact(ns) && ! KosCollectorNamespace_CheckExact(ns)) {
+    PyErr_Format(PyExc_RuntimeError, "FAST_STORE invoked on %R", ns);
+    return -1;
+  }
+  size_t idx = (size_t) insn->arg;
+  PyObject *val = KosStackBlock_PopRef(&ctx->frame_top->stack);
+  if (! val)
+    return -1;
+  int res = KosNamespace_FastStore(ns, idx, val);
+  Py_DECREF(val);
+  if (res < 0)
+    return -1;
+  (void) out_ev;
+  return 0;
 }
 
 
@@ -2542,10 +2914,115 @@ KOS_OP_HANDLER(PUSH_LOOP) {
 
 
 /**
-   PUSH_NS: arg unused. Push new namespace onto chain; not yet implemented.
+   PUSH_NS: arg = count (opa) of values to bind. Stack layout:
+   opa == 0: [NSPEC]
+   opa > 0:  [NSPEC, val0, val1, ..., val(N-1), NAMES]
+   NSPEC from constant pool; NAMES = tuple of names. Creates child namespace
+   from NSPEC, optionally binds values to names, pushes KOS_DYN_NS.
 */
 KOS_OP_HANDLER(PUSH_NS) {
-  return op_unimplemented_stub(ctx, out_ev, insn);
+  int opa = (int) insn->arg;
+  PyObject *nspec = NULL;
+  PyObject *names = NULL;
+  PyObject *const *args = NULL;
+  PyObject *parent = ctx->frame_top->ns;
+  PyObject *new_ns = NULL;
+  KosDynNs *ns_node = NULL;
+
+  if (opa < 0) {
+    PyErr_Format(PyExc_RuntimeError,
+                 "PUSH_NS called with negative count: %i", opa);
+    return -1;
+  }
+
+  if (opa == 0) {
+    nspec = KosStackBlock_PopRef(&ctx->frame_top->stack);
+    if (! nspec) {
+      PyErr_SetString(PyExc_RuntimeError, "PUSH_NS stack underrun");
+      return -1;
+    }
+  } else {
+    names = KosStackBlock_PopRef(&ctx->frame_top->stack);
+    if (! names) {
+      PyErr_SetString(PyExc_RuntimeError, "PUSH_NS stack underrun");
+      return -1;
+    }
+    if (! PyTuple_CheckExact(names)) {
+      Py_DECREF(names);
+      PyErr_Format(PyExc_RuntimeError,
+                   "PUSH_NS names must be tuple, not %R", names);
+      return -1;
+    }
+    args = KosStackBlock_TailPtr(ctx->frame_top->stack, (size_t) opa + 1);
+    if (! args) {
+      Py_DECREF(names);
+      PyErr_SetString(PyExc_RuntimeError, "PUSH_NS stack underrun");
+      return -1;
+    }
+    nspec = args[0];
+    Py_INCREF(nspec);
+  }
+
+  if (! KosNamespaceSpec_CheckExact(nspec)) {
+    Py_DECREF(nspec);
+    Py_XDECREF(names);
+    PyErr_Format(PyExc_RuntimeError,
+                 "PUSH_NS spec must be a NamespaceSpec, not %R", nspec);
+    return -1;
+  }
+
+  {
+    int i = names ? (int) PyTuple_GET_SIZE(names) : 0;
+    if (i != opa) {
+      Py_DECREF(nspec);
+      Py_XDECREF(names);
+      PyErr_Format(PyExc_RuntimeError,
+                   "PUSH_NS names length (%i) must match value count (%i)",
+                   i, opa);
+      return -1;
+    }
+  }
+
+  /*
+   * Use parent only if it is a KosNamespace (supports closure lookup).
+   * When frame has a dict (e.g. shift handler), use NULL so nspec
+   * must have empty closure_syms.
+   */
+  PyObject *spec_parent = KosNamespace_Check(parent) ? parent : NULL;
+  new_ns = KosNamespace_FromSpec(nspec, spec_parent);
+  Py_DECREF(nspec);
+  if (! new_ns) {
+    Py_XDECREF(names);
+    return -1;
+  }
+
+  if (opa > 0) {
+    for (int i = 0; i < opa; i++) {
+      PyObject *name = PyTuple_GET_ITEM(names, i);
+      PyObject *val = args[i + 1];
+      if (KosNamespace_Store(new_ns, name, val) < 0) {
+        Py_DECREF(names);
+        Py_DECREF(new_ns);
+        return -1;
+      }
+    }
+    KosStackBlock_DropNoErr(&ctx->frame_top->stack, (size_t) opa + 1);
+    Py_DECREF(names);
+  }
+
+  Py_INCREF(parent);
+  ns_node = kos_dyn_push_ns(ctx, parent);
+  if (! ns_node) {
+    Py_DECREF(parent);
+    Py_DECREF(new_ns);
+    return -1;
+  }
+
+  Py_DECREF(ctx->frame_top->ns);
+  ctx->frame_top->ns = new_ns;
+
+  (void) out_ev;
+  return 0;
 }
 
 
@@ -2582,10 +3059,25 @@ KOS_OP_HANDLER(POP_LOOP) {
 
 
 /**
-   POP_NS: arg unused. Pop namespace from chain; not yet implemented.
+   POP_NS: arg unused. Verify dyn_top is KOS_DYN_NS, restore frame ns from
+   saved_ns, pop the NS node.
 */
 KOS_OP_HANDLER(POP_NS) {
-  return op_unimplemented_stub(ctx, out_ev, insn);
+  if (! ctx->dyn_top || ! KosDynNode_IS_NS(ctx->dyn_top)) {
+    PyErr_SetString(PyExc_RuntimeError, "POP_NS: top is not a namespace scope");
+    return -1;
+  }
+
+  KosDynNs *ns_node = (KosDynNs *) ctx->dyn_top;
+  PyObject *prior = ns_node->saved_ns;
+  Py_INCREF(prior);
+  Py_DECREF(ctx->frame_top->ns);
+  ctx->frame_top->ns = prior;
+  kos_dyn_pop_ns(ctx, ns_node);
+
+  (void) out_ev;
+  (void) insn;
+  return 0;
 }
 
 
@@ -2681,6 +3173,7 @@ static int try_local_exception_handler(KosContext *ctx, KosEvent *out_ev) {
 
 
 int koskari_eval(KosContext *ctx, KosEvent *out_ev) {
+  int eval_ret = 0;
 
   if (! ctx) {
     PyErr_SetString(PyExc_RuntimeError, "NULL context for koskari_eval");
@@ -2695,6 +3188,10 @@ int koskari_eval(KosContext *ctx, KosEvent *out_ev) {
   /* Mark context as running */
   ctx->flags |= KOS_CTX_RUNNING;
 
+  /* Push token onto active stack and increment live_depth */
+  push_active_token(ctx->token);
+  KosEvaluatorToken_IncrementLiveDepth(ctx->token);
+
   /* Handle pending exception injection */
   if (ctx->pending_throw && ctx->pending_exc) {
     PyErr_SetObject((PyObject *) Py_TYPE(ctx->pending_exc), ctx->pending_exc);
@@ -2707,12 +3204,14 @@ int koskari_eval(KosContext *ctx, KosEvent *out_ev) {
 
     ctx->flags &= ~KOS_CTX_RUNNING;
     ctx->flags |= KOS_CTX_DEAD;
-
-    return 0;
+    eval_ret = 0;
+    goto koskari_eval_cleanup;
   }
 
-  if (run_transfer_plan_to_completion(ctx, out_ev) < 0)
-    return 0;
+  if (run_transfer_plan_to_completion(ctx, out_ev) < 0) {
+    eval_ret = 0;
+    goto koskari_eval_cleanup;
+  }
 
   if (kos_hook_active(ctx)) {
     /* Minimal: no hook execution; return */
@@ -2721,7 +3220,8 @@ int koskari_eval(KosContext *ctx, KosEvent *out_ev) {
     Py_INCREF(Py_None);
     ctx->flags &= ~KOS_CTX_RUNNING;
     ctx->flags |= KOS_CTX_DEAD;
-    return 0;
+    eval_ret = 0;
+    goto koskari_eval_cleanup;
   }
 
   if (! ctx->frame_top) {
@@ -2730,7 +3230,8 @@ int koskari_eval(KosContext *ctx, KosEvent *out_ev) {
     Py_INCREF(Py_None);
     ctx->flags &= ~KOS_CTX_RUNNING;
     ctx->flags |= KOS_CTX_DEAD;
-    return 0;
+    eval_ret = 0;
+    goto koskari_eval_cleanup;
   }
 
   /* Re-entry: inject value from completed Python await */
@@ -2738,20 +3239,76 @@ int koskari_eval(KosContext *ctx, KosEvent *out_ev) {
     if (KosStackBlock_PushRef(&ctx->frame_top->stack, ctx->py_await_inject) < 0) {
       Py_DECREF(ctx->py_await_inject);
       ctx->py_await_inject = NULL;
-      return -1;
+      eval_ret = -1;
+      goto koskari_eval_cleanup;
     }
     Py_CLEAR(ctx->py_await_inject);
   }
 
   /* Opcode dispatch loop */
   for (;;) {
-    if (ctx->plan && run_transfer_plan_to_completion(ctx, out_ev) < 0)
-      return 0;
+    if (ctx->plan && run_transfer_plan_to_completion(ctx, out_ev) < 0) {
+      eval_ret = 0;
+      goto koskari_eval_cleanup;
+    }
 
     if (PyErr_Occurred()) {
+      /* Check for KoskariContinuationApply before local exception handler */
+      if (KoskariContinuationApply
+          && PyErr_ExceptionMatches(KoskariContinuationApply)) {
+        PyObject *typ = NULL, *val = NULL, *tb = NULL;
+        PyErr_Fetch(&typ, &val, &tb);
+        PyObject *exc_target = val
+            ? PyObject_GetAttrString(val, "target") : NULL;
+        if (exc_target) {
+          int is_own = (exc_target == (PyObject *) ctx->token);
+          Py_DECREF(exc_target);
+          if (is_own) {
+            /* Apply continuation: extract from exception and invoke */
+            PyObject *cont_obj = val
+                ? PyObject_GetAttrString(val, "continuation") : NULL;
+            PyObject *args_obj = val
+                ? PyObject_GetAttrString(val, "args") : NULL;
+            Py_XDECREF(typ);
+            Py_XDECREF(tb);
+            if (cont_obj && PyObject_TypeCheck(cont_obj, &KosPyContinuationType)) {
+              KosContinuation *k = ((KosPyContinuation *) cont_obj)->captured;
+              PyObject *resume_val = Py_None;
+              if (args_obj && PyTuple_Check(args_obj)
+                  && PyTuple_GET_SIZE(args_obj) > 0) {
+                resume_val = PyTuple_GET_ITEM(args_obj, 0);
+                Py_INCREF(resume_val);
+              }
+              Py_XDECREF(args_obj);
+              args_obj = NULL;
+              PyErr_Clear();
+              if (k && kos_invoke_continuation(ctx, k, resume_val, 0,
+                                               cont_obj) == 0) {
+                Py_XDECREF(resume_val);
+                Py_DECREF(val);
+                continue;
+              }
+              Py_XDECREF(resume_val);
+              Py_DECREF(cont_obj);
+            } else {
+              Py_XDECREF(cont_obj);
+              Py_XDECREF(args_obj);
+            }
+            Py_DECREF(val);
+            PyErr_SetString(PyExc_RuntimeError,
+                            "KoskariContinuationApply: invalid continuation");
+            eval_ret = -1;
+            goto koskari_eval_cleanup;
+          }
+        }
+        PyErr_Restore(typ, val, tb);
+        eval_ret = 0;
+        goto koskari_eval_cleanup;
+      }
       if (try_local_exception_handler(ctx, out_ev))
         continue;
-      return 0;
+      eval_ret = 0;
+      goto koskari_eval_cleanup;
     }
 
     KosCode *code = ctx->frame_top->code;
@@ -2761,7 +3318,8 @@ int koskari_eval(KosContext *ctx, KosEvent *out_ev) {
       SAYF("[eval] pc=%u OUT OF RANGE (code_len=%u)\n",
            (unsigned) pc, (unsigned) code->code_len);
       PyErr_SetString(PyExc_RuntimeError, "pc out of range");
-      return -1;
+      eval_ret = -1;
+      goto koskari_eval_cleanup;
     }
 
     KosOp *insn = &code->code[pc];
@@ -2773,19 +3331,29 @@ int koskari_eval(KosContext *ctx, KosEvent *out_ev) {
     if (unlikely((KosOpCode) insn->op > KOS_OP_THEEND)) {
       PyErr_Format(PyExc_RuntimeError, "invalid opcode %u",
                    (unsigned) insn->op);
-      return -1;
+      eval_ret = -1;
+      goto koskari_eval_cleanup;
     }
-    int op_res = op_handlers[insn->op](ctx, out_ev, insn);
-    if (unlikely(op_res != 0)) {
-      if (PyErr_Occurred()) {
-        if (try_local_exception_handler(ctx, out_ev))
-          continue;
-        return 0;
+    {
+      int op_res = op_handlers[insn->op](ctx, out_ev, insn);
+      if (unlikely(op_res != 0)) {
+        if (PyErr_Occurred()) {
+          if (try_local_exception_handler(ctx, out_ev))
+            continue;
+          eval_ret = 0;
+          goto koskari_eval_cleanup;
+        }
+        eval_ret = (op_res < 0) ? -1 : 0;
+        goto koskari_eval_cleanup;
       }
-      return (op_res < 0) ? -1 : 0;
     }
     trace_stack("  after ", ctx->frame_top->stack);
   }
+
+koskari_eval_cleanup:
+  KosEvaluatorToken_DecrementLiveDepth(ctx->token);
+  pop_active_token(ctx->token);
+  return eval_ret;
 }
 
 
@@ -2804,6 +3372,57 @@ int koskari_eval_init(PyObject *mod) {
   STR_CONST(str_throw, "throw");
   STR_CONST(str_close, "close");
 
+  /* Initialize KosEvaluatorToken type */
+  if (PyType_Ready(&KosEvaluatorTokenType) < 0)
+    return -1;
+  Py_INCREF(&KosEvaluatorTokenType);
+  if (PyModule_AddObject(mod, "EvaluatorToken",
+                         (PyObject *) &KosEvaluatorTokenType) < 0) {
+    Py_DECREF(&KosEvaluatorTokenType);
+    return -1;
+  }
+
+  /* Initialize exception types (subclass BaseException) */
+  {
+    PyObject *base = PyTuple_Pack(1, PyExc_BaseException);
+    if (! base)
+      return -1;
+    KoskariContinuationDead = PyErr_NewException(
+        "koskari.lib.KoskariContinuationDead", base, NULL);
+    Py_DECREF(base);
+    if (! KoskariContinuationDead)
+      return -1;
+  }
+  {
+    PyObject *base = PyTuple_Pack(1, PyExc_BaseException);
+    if (! base)
+      return -1;
+    KoskariContinuationApply = PyErr_NewException(
+        "koskari.lib.KoskariContinuationApply", base, NULL);
+    Py_DECREF(base);
+    if (! KoskariContinuationApply)
+      return -1;
+  }
+  {
+    PyObject *base = PyTuple_Pack(1, PyExc_BaseException);
+    if (! base)
+      return -1;
+    KoskariContinuationError = PyErr_NewException(
+        "koskari.lib.KoskariContinuationError", base, NULL);
+    Py_DECREF(base);
+    if (! KoskariContinuationError)
+      return -1;
+  }
+  if (PyModule_AddObject(mod, "KoskariContinuationDead",
+                         KoskariContinuationDead) < 0)
+    return -1;
+  if (PyModule_AddObject(mod, "KoskariContinuationApply",
+                         KoskariContinuationApply) < 0)
+    return -1;
+  if (PyModule_AddObject(mod, "KoskariContinuationError",
+                         KoskariContinuationError) < 0)
+    return -1;
+
   /* Initialize dynchain module */
   if (koskari_dynchain_init(mod))
     return -1;
@@ -2818,6 +3437,11 @@ int koskari_eval_clear(PyObject *mod) {
   Py_CLEAR(str_send);
   Py_CLEAR(str_throw);
   Py_CLEAR(str_close);
+
+  /* Null out exception type pointers (module dict owns the refs) */
+  KoskariContinuationDead = NULL;
+  KoskariContinuationApply = NULL;
+  KoskariContinuationError = NULL;
 
   koskari_dynchain_clear(mod);
 

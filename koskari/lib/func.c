@@ -713,8 +713,112 @@ PyObject *KosCoroutine_New(KosContext *ctx) {
 }
 
 
-/* === KosPyContinuation type === */
+/* === KosPyDelimitedContinuation type === */
 
+
+/**
+   KosPyDelimitedContinuation wraps a KosContinuation captured by shift.
+
+   DelimitedContinuation cannot be called from Python; application is only
+   permitted via CALL or INVOKE_K inside koskari_eval.
+*/
+
+static void delimited_continuation_dealloc(PyObject *self) {
+
+  KosPyDelimitedContinuation *cont = (KosPyDelimitedContinuation *) self;
+
+  kos_continuation_free(cont->captured);
+
+  Py_TYPE(self)->tp_free(self);
+}
+
+
+static int delimited_continuation_traverse(
+    PyObject *self,
+    visitproc visit,
+    void *arg) {
+
+  KosPyDelimitedContinuation *cont = (KosPyDelimitedContinuation *) self;
+
+  if (cont->captured) {
+    return kos_continuation_traverse(cont->captured, visit, arg);
+  }
+
+  return 0;
+}
+
+
+static int delimited_continuation_clear(PyObject *self) {
+
+  KosPyDelimitedContinuation *cont = (KosPyDelimitedContinuation *) self;
+
+  kos_continuation_free(cont->captured);
+  cont->captured = NULL;
+
+  return 0;
+}
+
+
+static PyObject *delimited_continuation_call(
+    PyObject *self,
+    PyObject *args,
+    PyObject *kwds) {
+
+  (void) args;
+  (void) kwds;
+  (void) self;
+
+  PyErr_SetString(PyExc_TypeError,
+                  "DelimitedContinuation cannot be called from Python");
+  return NULL;
+}
+
+
+static PyObject *delimited_continuation_repr(PyObject *self) {
+
+  return PyUnicode_FromFormat("<DelimitedContinuation at %p>", self);
+}
+
+
+PyTypeObject KosPyDelimitedContinuationType = {
+  PyVarObject_HEAD_INIT(NULL, 0)
+
+  .tp_name = "koskari.lib.DelimitedContinuation",
+  .tp_basicsize = sizeof(KosPyDelimitedContinuation),
+  .tp_itemsize = 0,
+  .tp_dealloc = delimited_continuation_dealloc,
+  .tp_repr = delimited_continuation_repr,
+  .tp_call = delimited_continuation_call,
+  .tp_flags = Py_TPFLAGS_DEFAULT | Py_TPFLAGS_HAVE_GC,
+  .tp_doc = "Captured delimited continuation (multi-shot, from shift)",
+  .tp_traverse = delimited_continuation_traverse,
+  .tp_clear = delimited_continuation_clear,
+};
+
+
+PyObject *KosPyDelimitedContinuation_New(KosContinuation *captured) {
+
+  KosPyDelimitedContinuation *cont = PyObject_GC_New(KosPyDelimitedContinuation,
+                                            &KosPyDelimitedContinuationType);
+  if (! cont)
+    return NULL;
+
+  cont->captured = captured;
+
+  PyObject_GC_Track((PyObject *) cont);
+  return (PyObject *) cont;
+}
+
+
+/* === KosPyContinuation type (undelimited, for future call/cc) === */
+
+
+/**
+   KosPyContinuation wraps an undelimited KosContinuation (from call/cc).
+
+   Python-callable: raises KoskariContinuationDead or KoskariContinuationApply.
+   Not yet instantiated (call/cc capture not implemented).
+*/
 
 static void continuation_dealloc(PyObject *self) {
 
@@ -757,52 +861,19 @@ static PyObject *continuation_call(
     PyObject *args,
     PyObject *kwds) {
 
-  KosPyContinuation *cont = (KosPyContinuation *) self;
+  (void) args;
+  (void) kwds;
+  (void) self;
 
-  /* Parse arguments: single optional value */
-  PyObject *resume_value = Py_None;
-  if (! PyArg_ParseTuple(args, "|O:continuation", &resume_value))
-    return NULL;
-
-  if (kwds && PyDict_Size(kwds)) {
-    PyErr_SetString(PyExc_TypeError,
-                    "continuation does not accept keyword arguments");
-    return NULL;
-  }
-
-  if (! cont->captured) {
-    PyErr_SetString(PyExc_RuntimeError, "continuation has no captured state");
-    return NULL;
-  }
-
-  /* Clone captured state for multi-shot semantics */
-  KosContinuation *cloned = kos_continuation_clone(cont->captured);
-  if (! cloned)
-    return NULL;
-
-  /* Create new context with the cloned chain */
-  KosDynFrame *top_frame = cloned->resume_frame;
-  cloned->captured_chain = NULL;  /* context takes ownership */
-
-  KosContext *ctx = kos_context_new(top_frame);
-  if (! ctx) {
-    kos_continuation_free(cloned);
-    return NULL;
-  }
-
-  /* Set up the context's dynamic chain */
-  /* TODO: properly restore the full chain */
-
-  kos_continuation_free(cloned);
-
-  /* Create and return a coroutine wrapper */
-  return KosCoroutine_New(ctx);
+  PyErr_SetString(PyExc_NotImplementedError,
+                  "Continuation (undelimited) requires call/cc, not yet implemented");
+  return NULL;
 }
 
 
 static PyObject *continuation_repr(PyObject *self) {
 
-  return PyUnicode_FromFormat("<continuation at %p>", self);
+  return PyUnicode_FromFormat("<Continuation at %p>", self);
 }
 
 
@@ -816,7 +887,7 @@ PyTypeObject KosPyContinuationType = {
   .tp_repr = continuation_repr,
   .tp_call = continuation_call,
   .tp_flags = Py_TPFLAGS_DEFAULT | Py_TPFLAGS_HAVE_GC,
-  .tp_doc = "Captured continuation (multi-shot, delimited)",
+  .tp_doc = "Captured undelimited continuation (multi-shot, from call/cc)",
   .tp_traverse = continuation_traverse,
   .tp_clear = continuation_clear,
 };
@@ -1193,6 +1264,7 @@ int koskari_func_init(PyObject *mod) {
   if (PyType_Ready(&KosExpressionType) ||
       PyType_Ready(&KosFunctionType) ||
       PyType_Ready(&KosCoroutineType) ||
+      PyType_Ready(&KosPyDelimitedContinuationType) ||
       PyType_Ready(&KosPyContinuationType) ||
       PyType_Ready(&KosPyAsyncGenType) ||
       PyType_Ready(&KosPyAsyncGenASendType))
@@ -1208,6 +1280,10 @@ int koskari_func_init(PyObject *mod) {
 
   if (PyDict_SetItemString(dict, "Coroutine",
                            (PyObject *) &KosCoroutineType))
+    return -1;
+
+  if (PyDict_SetItemString(dict, "DelimitedContinuation",
+                           (PyObject *) &KosPyDelimitedContinuationType))
     return -1;
 
   if (PyDict_SetItemString(dict, "Continuation",

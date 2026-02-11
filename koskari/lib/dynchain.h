@@ -62,6 +62,9 @@ typedef struct KosDynWind KosDynWind;
 struct KosDynRegion;
 typedef struct KosDynRegion KosDynRegion;
 
+struct KosDynNs;
+typedef struct KosDynNs KosDynNs;
+
 struct KosContinuation;
 typedef struct KosContinuation KosContinuation;
 
@@ -83,6 +86,7 @@ typedef struct KosHookRunner KosHookRunner;
    KOS_DYN_WIND   - Dynamic-wind extent with before/after hooks
    KOS_DYN_REGION - Block-local control (try/finally/loop/with)
    KOS_DYN_PYCALL - Python/C boundary marker (non-resumable)
+   KOS_DYN_NS     - Namespace scope (PUSH_NS/POP_NS)
 */
 
 typedef enum KosDynKind {
@@ -91,6 +95,7 @@ typedef enum KosDynKind {
   KOS_DYN_WIND   = 2,
   KOS_DYN_REGION = 3,
   KOS_DYN_PYCALL = 4,
+  KOS_DYN_NS     = 5,
 } KosDynKind;
 
 
@@ -253,6 +258,17 @@ struct KosDynRegion {
 };
 
 
+/**
+   KosDynNs marks a namespace scope from PUSH_NS.  Stores the prior
+   frame namespace for restore on POP_NS.
+*/
+struct KosDynNs {
+  KosDynNode base;        /* must be first */
+
+  PyObject *saved_ns;     /* namespace to restore on pop (owned ref) */
+};
+
+
 /* === KosContinuation: captured delimited continuation === */
 
 
@@ -277,6 +293,7 @@ struct KosContinuation {
   KosStackBlock *resume_stack;  /* stack state (COW reference) */
   uint32_t prompt_id;           /* target prompt tag */
   uint8_t one_shot;             /* 0 = multi-shot, 1 = one-shot */
+  PyObject *token_ref;          /* KosEvaluatorToken (ownership marker) */
 };
 
 
@@ -702,6 +719,29 @@ void kos_dyn_pop_region(KosContext *ctx, KosDynRegion *region);
 
 
 /**
+   Push a namespace scope node (for PUSH_NS).  Does not modify frame ns;
+   caller must set frame->ns to the new namespace and later restore from
+   saved_ns on pop.
+
+   :param ctx: execution context
+   :param saved_ns: prior frame namespace to restore on POP_NS (new ref)
+
+   :return: new KosDynNs node, or NULL on error
+*/
+KosDynNs *kos_dyn_push_ns(KosContext *ctx, PyObject *saved_ns);
+
+
+/**
+   Pop a namespace scope node.  Caller must restore frame->ns from the
+   node's saved_ns before calling this.
+
+   :param ctx: execution context
+   :param node: NS node to pop (must be dyn_top)
+*/
+void kos_dyn_pop_ns(KosContext *ctx, KosDynNs *node);
+
+
+/**
    Find the first TRY or FINALLY region on the dynamic chain that is
    enabled, walking from dyn_top toward root. Used for exception
    handling: when an exception occurs, this returns the region whose
@@ -1046,6 +1086,7 @@ int kos_hookrunner_traverse(
 #define KosDynNode_IS_PROMPT(n)  (KosDynNode_KIND(n) == KOS_DYN_PROMPT)
 #define KosDynNode_IS_WIND(n)    (KosDynNode_KIND(n) == KOS_DYN_WIND)
 #define KosDynNode_IS_REGION(n)  (KosDynNode_KIND(n) == KOS_DYN_REGION)
+#define KosDynNode_IS_NS(n)      (KosDynNode_KIND(n) == KOS_DYN_NS)
 #define KosDynNode_IS_PYCALL(n)  (KosDynNode_KIND(n) == KOS_DYN_PYCALL)
 
 #define KosDynFrame_CODE(f)      (((KosDynFrame *)(f))->code)

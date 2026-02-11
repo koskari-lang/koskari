@@ -299,6 +299,44 @@ void kos_dynregion_free(KosDynRegion *region) {
 }
 
 
+/* === KosDynNs (namespace scope) implementation === */
+
+
+KosDynNs *kos_dynns_new(KosDynNode *parent, PyObject *saved_ns) {
+
+  KosDynNs *ns_node = PyMem_Malloc(sizeof(KosDynNs));
+  if (! ns_node) {
+    PyErr_NoMemory();
+    Py_DECREF(saved_ns);
+    return NULL;
+  }
+
+  kos_dynnode_init(&ns_node->base, KOS_DYN_NS, parent);
+  ns_node->saved_ns = saved_ns;  /* caller transferred ownership */
+
+  return ns_node;
+}
+
+
+KosDynNs *kos_dynns_clone(KosDynNs *ns_node) {
+  if (! ns_node)
+    return NULL;
+
+  PyObject *saved = ns_node->saved_ns;
+  Py_INCREF(saved);
+  return kos_dynns_new(NULL, saved);
+}
+
+
+void kos_dynns_free(KosDynNs *ns_node) {
+  if (! ns_node)
+    return;
+
+  Py_DECREF(ns_node->saved_ns);
+  PyMem_Free(ns_node);
+}
+
+
 /* === KosDynPycall (boundary marker) implementation === */
 
 
@@ -345,6 +383,9 @@ void kos_dynnode_free(KosDynNode *node) {
     case KOS_DYN_REGION:
       kos_dynregion_free((KosDynRegion *) node);
       break;
+    case KOS_DYN_NS:
+      kos_dynns_free((KosDynNs *) node);
+      break;
     case KOS_DYN_PYCALL:
       kos_dynpycall_free(node);
       break;
@@ -365,6 +406,8 @@ KosDynNode *kos_dynnode_clone(KosDynNode *node) {
       return (KosDynNode *) kos_dynwind_clone((KosDynWind *) node);
     case KOS_DYN_REGION:
       return (KosDynNode *) kos_dynregion_clone((KosDynRegion *) node);
+    case KOS_DYN_NS:
+      return (KosDynNode *) kos_dynns_clone((KosDynNs *) node);
     case KOS_DYN_PYCALL:
       return kos_dynpycall_new(NULL);
   }
@@ -573,6 +616,30 @@ void kos_dyn_pop_region(KosContext *ctx, KosDynRegion *region) {
 }
 
 
+KosDynNs *kos_dyn_push_ns(KosContext *ctx, PyObject *saved_ns) {
+
+  KosDynNs *ns_node = kos_dynns_new(ctx->dyn_top, saved_ns);
+  if (! ns_node)
+    return NULL;
+
+  ctx->dyn_top = (KosDynNode *) ns_node;
+  ctx->chain_version++;
+
+  return ns_node;
+}
+
+
+void kos_dyn_pop_ns(KosContext *ctx, KosDynNs *node) {
+  if (! ctx->dyn_top || ctx->dyn_top != (KosDynNode *) node) {
+    return;
+  }
+
+  ctx->dyn_top = node->base.parent;
+  ctx->chain_version++;
+  kos_dynns_free(node);
+}
+
+
 KosDynRegion *kos_find_region_for_raise(KosContext *ctx) {
   KosDynNode *node = ctx->dyn_top;
 
@@ -745,6 +812,9 @@ int kos_shift_capture(
       ? KosStackBlock_COW(resume_frame->stack) : NULL;
   k->prompt_id = prompt_id;
   k->one_shot = 1;  /* one-shot for now; multi-shot clone needs segment-only clone */
+  k->token_ref = ctx->token ? (PyObject *) ctx->token : NULL;
+  if (k->token_ref)
+    Py_INCREF(k->token_ref);
 
   *out_k = k;
   return 0;
@@ -754,6 +824,9 @@ int kos_shift_capture(
 void kos_continuation_free(KosContinuation *k) {
   if (! k)
     return;
+
+  Py_XDECREF(k->token_ref);
+  k->token_ref = NULL;
 
   /* Free the captured chain */
   kos_dynchain_free(k->captured_chain, NULL);
@@ -814,6 +887,9 @@ KosContinuation *kos_continuation_clone(KosContinuation *k) {
   clone->resume_stack = KosStackBlock_COW(k->resume_stack);
   clone->prompt_id = k->prompt_id;
   clone->one_shot = k->one_shot;
+  clone->token_ref = k->token_ref;
+  if (clone->token_ref)
+    Py_INCREF(clone->token_ref);
 
   return clone;
 }
@@ -1319,6 +1395,11 @@ int kos_dynnode_traverse(KosDynNode *node, visitproc visit, void *arg) {
       }
       break;
     }
+    case KOS_DYN_NS: {
+      KosDynNs *ns_node = (KosDynNs *) node;
+      Py_VISIT(ns_node->saved_ns);
+      break;
+    }
     case KOS_DYN_PROMPT:
     case KOS_DYN_WIND:
     case KOS_DYN_REGION:
@@ -1356,6 +1437,7 @@ int kos_continuation_traverse(
   if (! k)
     return 0;
 
+  Py_VISIT(k->token_ref);
   return kos_dynchain_traverse(k->captured_chain, NULL, visit, arg);
 }
 
