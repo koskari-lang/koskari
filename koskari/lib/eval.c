@@ -2743,6 +2743,66 @@ static KosGetNextResult op_get_next_from_iter(
 
 
 /**
+   Performs gen_frame validation, push Py_None, kos_dyn_attach_frame.
+   Caller must have already: checked in_progress, handled closed/ctx.
+   Caller must have set ctx->pending_agen and mode-specific fields before
+   calling. On error: clears pending_agen, resets in_progress; for NEXT
+   mode also DECREFs iter and default_val.
+*/
+static int op_attach_koskari_agen_frame(
+    KosContext *ctx,
+    KosPyAsyncGen *agen,
+    int for_next,
+    PyObject *iter,
+    PyObject *default_val) {
+
+  KosDynFrame *gen_frame = agen->ctx->frame_top;
+  if (! gen_frame) {
+    ctx->pending_agen = NULL;
+    if (for_next) {
+      Py_XDECREF(ctx->pending_agen_default);
+      ctx->pending_agen_default = NULL;
+      Py_DECREF(iter);
+      Py_XDECREF(default_val);
+    } else {
+      ctx->pending_agen_region = NULL;
+    }
+    agen->in_progress = 0;
+    PyErr_SetString(PyExc_RuntimeError, "async generator has no frame");
+    return -1;
+  }
+  if (KosStackBlock_PushRef(&gen_frame->stack, Py_None) < 0) {
+    ctx->pending_agen = NULL;
+    if (for_next) {
+      Py_XDECREF(ctx->pending_agen_default);
+      ctx->pending_agen_default = NULL;
+      Py_DECREF(iter);
+      Py_DECREF(default_val);
+    } else {
+      ctx->pending_agen_region = NULL;
+    }
+    agen->in_progress = 0;
+    return -1;
+  }
+  if (kos_dyn_attach_frame(ctx, gen_frame) < 0) {
+    (void) KosStackBlock_PopRef(&gen_frame->stack);
+    ctx->pending_agen = NULL;
+    if (for_next) {
+      Py_XDECREF(ctx->pending_agen_default);
+      ctx->pending_agen_default = NULL;
+      Py_DECREF(iter);
+      Py_DECREF(default_val);
+    } else {
+      ctx->pending_agen_region = NULL;
+    }
+    agen->in_progress = 0;
+    return -1;
+  }
+  return 0;
+}
+
+
+/**
    NEXT: arg = count (1 or 2). Pops iterator (and optionally default) from
    stack, advances, pushes value or default on StopIteration. 1-arg: let
    StopIteration raise. 2-arg: TOS = default, below = iterator. Auto-await.
@@ -2814,36 +2874,8 @@ KOS_OP_HANDLER(NEXT) {
       ctx->pending_agen_default = NULL;
     }
     ctx->pending_agen_n = (int) n;
-    KosDynFrame *gen_frame = agen->ctx->frame_top;
-    if (! gen_frame) {
-      ctx->pending_agen = NULL;
-      Py_XDECREF(ctx->pending_agen_default);
-      ctx->pending_agen_default = NULL;
-      agen->in_progress = 0;
-      Py_DECREF(iter);
-      Py_XDECREF(default_val);
-      PyErr_SetString(PyExc_RuntimeError, "async generator has no frame");
+    if (op_attach_koskari_agen_frame(ctx, agen, 1, iter, default_val) < 0)
       return -1;
-    }
-    if (KosStackBlock_PushRef(&gen_frame->stack, Py_None) < 0) {
-      ctx->pending_agen = NULL;
-      Py_XDECREF(ctx->pending_agen_default);
-      ctx->pending_agen_default = NULL;
-      agen->in_progress = 0;
-      Py_DECREF(iter);
-      Py_XDECREF(default_val);
-      return -1;
-    }
-    if (kos_dyn_attach_frame(ctx, gen_frame) < 0) {
-      (void) KosStackBlock_PopRef(&gen_frame->stack);
-      ctx->pending_agen = NULL;
-      Py_XDECREF(ctx->pending_agen_default);
-      ctx->pending_agen_default = NULL;
-      agen->in_progress = 0;
-      Py_DECREF(iter);
-      Py_XDECREF(default_val);
-      return -1;
-    }
     Py_DECREF(iter);
     Py_XDECREF(default_val);
     return 0;
@@ -2933,27 +2965,8 @@ KOS_OP_HANDLER(ITER_NEXT) {
     ctx->pending_agen_n = 0;
     ctx->pending_agen_region = (void *) region;
     ctx->pending_agen_else_pc = insn->arg;
-    KosDynFrame *gen_frame = agen->ctx->frame_top;
-    if (! gen_frame) {
-      ctx->pending_agen = NULL;
-      ctx->pending_agen_region = NULL;
-      agen->in_progress = 0;
-      PyErr_SetString(PyExc_RuntimeError, "async generator has no frame");
+    if (op_attach_koskari_agen_frame(ctx, agen, 0, NULL, NULL) < 0)
       return -1;
-    }
-    if (KosStackBlock_PushRef(&gen_frame->stack, Py_None) < 0) {
-      ctx->pending_agen = NULL;
-      ctx->pending_agen_region = NULL;
-      agen->in_progress = 0;
-      return -1;
-    }
-    if (kos_dyn_attach_frame(ctx, gen_frame) < 0) {
-      KosStackBlock_PopRef(&gen_frame->stack);
-      ctx->pending_agen = NULL;
-      ctx->pending_agen_region = NULL;
-      agen->in_progress = 0;
-      return -1;
-    }
     return 0;
   }
   PyObject *value = NULL;
