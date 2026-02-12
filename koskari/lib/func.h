@@ -171,7 +171,7 @@ PyObject *KosCoroutine_New(KosContext *ctx);
 /**
    KosPyDelimitedContinuation wraps a KosContinuation captured by shift.
 
-   Cannot be called from Python; application only via CALL/INVOKE_K.
+   Cannot be called from Python; application only via CALL inside koskari_eval.
 */
 
 extern PyTypeObject KosPyDelimitedContinuationType;

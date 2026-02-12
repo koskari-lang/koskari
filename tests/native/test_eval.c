@@ -254,7 +254,7 @@ static int test_eval_reset_shift_invoke(void) {
     /*
       Bytecode: PUSH_PROMPT 0, SET_PROMPT_HANDLER 8, CONST 1, SHIFT 0,
       OBJECT_ADD 2, POP_PROMPT, RETURN. Handler at 8: LABEL 8, CONST 5,
-      INVOKE_K, RETURN. Expect final KOS_EV_RETURN with value 6.
+      INVOKE_K (pop value 5, pop cont, invoke). Expect final KOS_EV_RETURN with value 6.
     */
     PyObject *nspec = create_test_nspec();
     TEST_ASSERT_NOT_NULL(nspec, "create nspec");
@@ -326,6 +326,60 @@ static int test_eval_reset_shift_invoke(void) {
 }
 
 
+/* === Test: PUSH_CC, CAPTURE_CC, POP_CC (undelimited continuation) === */
+
+
+static int test_eval_push_cc_capture_cc_pop_cc_returns_continuation(void) {
+    /*
+      Bytecode: PUSH_CC "resume", CAPTURE_CC, POP_CC, LABEL "resume", RETURN 1.
+      Result is the continuation on the stack (no invoke).
+    */
+    PyObject *nspec = create_test_nspec();
+    TEST_ASSERT_NOT_NULL(nspec, "create nspec");
+
+    PyObject *resume_label = PyUnicode_FromString("resume");
+    TEST_ASSERT_NOT_NULL(resume_label, "resume label");
+
+    PyObject *instr = PyList_New(5);
+    PyList_SET_ITEM(instr, 0, make_instr(KOS_OP_PUSH_CC, resume_label));
+    PyList_SET_ITEM(instr, 1, make_instr_int(KOS_OP_CAPTURE_CC, 0));
+    PyList_SET_ITEM(instr, 2, make_instr_int(KOS_OP_POP_CC, 0));
+    PyList_SET_ITEM(instr, 3, make_instr(KOS_OP_LABEL, PyUnicode_FromString("resume")));
+    PyList_SET_ITEM(instr, 4, make_instr_int(KOS_OP_RETURN, 1));
+
+    PyObject *code_obj = KosCode_New(nspec, instr, NULL, NULL);
+    TEST_ASSERT_NOT_NULL(code_obj, "create Code");
+
+    Py_DECREF(resume_label);
+    Py_DECREF(instr);
+    Py_DECREF(nspec);
+
+    PyObject *ns = PyDict_New();
+    TEST_ASSERT_NOT_NULL(ns, "create ns");
+
+    KosDynFrame *frame = kos_dynframe_new(NULL, (KosCode *) code_obj, ns, NULL);
+    TEST_ASSERT_NOT_NULL(frame, "create frame");
+
+    KosContext *ctx = kos_context_new(frame);
+    TEST_ASSERT_NOT_NULL(ctx, "create context");
+
+    KosEvent ev = {0};
+    int res = koskari_eval(ctx, &ev);
+
+    TEST_ASSERT(res == 0, "koskari_eval succeeded");
+    TEST_ASSERT(ev.kind == KOS_EV_RETURN, "event is RETURN");
+    TEST_ASSERT_NOT_NULL(ev.payload, "payload not NULL");
+    TEST_ASSERT(PyObject_TypeCheck(ev.payload, KosPyContinuation_Type()),
+                "result is Continuation");
+
+    Py_XDECREF(ev.payload);
+    kos_context_free(ctx);
+    Py_DECREF(code_obj);
+
+    return 0;
+}
+
+
 /* === Test: POP_PROMPT without prompt => rejected at Code construction === */
 
 static int test_eval_pop_prompt_without_prompt(void) {
@@ -355,19 +409,22 @@ static int test_eval_pop_prompt_without_prompt(void) {
 }
 
 
-/* === Test: INVOKE_K stack underrun === */
+/* === Test: CALL continuation stack underrun === */
 
-static int test_eval_invoke_k_stack_underrun(void) {
+static int test_eval_call_continuation_underrun(void) {
+    /* CALL 1 needs callable + 1 arg; we have only one value on stack */
     PyObject *nspec = create_test_nspec();
     TEST_ASSERT_NOT_NULL(nspec, "create nspec");
 
+    PyObject *one = PyLong_FromLong(1);
     PyObject *instr = PyList_New(2);
-    PyList_SET_ITEM(instr, 0, make_instr_int(KOS_OP_INVOKE_K, 0));
-    PyList_SET_ITEM(instr, 1, make_instr_int(KOS_OP_RETURN, 0));
+    PyList_SET_ITEM(instr, 0, make_instr(KOS_OP_CONST, one));
+    PyList_SET_ITEM(instr, 1, make_instr_int(KOS_OP_CALL, 1));
 
     PyObject *code_obj = KosCode_New(nspec, instr, NULL, NULL);
     TEST_ASSERT_NOT_NULL(code_obj, "create Code");
 
+    Py_DECREF(one);
     Py_DECREF(instr);
     Py_DECREF(nspec);
 
@@ -396,9 +453,10 @@ static int test_eval_invoke_k_stack_underrun(void) {
 }
 
 
-/* === Test: INVOKE_K wrong type => TypeError === */
+/* === Test: CALL wrong type (non-callable) => TypeError === */
 
-static int test_eval_invoke_k_wrong_type(void) {
+static int test_eval_call_wrong_type(void) {
+    /* CALL 1 with int as callable => TypeError */
     PyObject *nspec = create_test_nspec();
     TEST_ASSERT_NOT_NULL(nspec, "create nspec");
 
@@ -408,7 +466,7 @@ static int test_eval_invoke_k_wrong_type(void) {
     PyObject *instr = PyList_New(4);
     PyList_SET_ITEM(instr, 0, make_instr(KOS_OP_CONST, five));
     PyList_SET_ITEM(instr, 1, make_instr(KOS_OP_CONST, one_twenty_three));
-    PyList_SET_ITEM(instr, 2, make_instr_int(KOS_OP_INVOKE_K, 0));
+    PyList_SET_ITEM(instr, 2, make_instr_int(KOS_OP_CALL, 1));
     PyList_SET_ITEM(instr, 3, make_instr_int(KOS_OP_RETURN, 0));
 
     PyObject *code_obj = KosCode_New(nspec, instr, NULL, NULL);
@@ -458,8 +516,8 @@ int run_eval_tests(void) {
     RUN_TEST(test_eval_try_finally_rerase);
     RUN_TEST(test_eval_reset_shift_invoke);
     RUN_TEST(test_eval_pop_prompt_without_prompt);
-    RUN_TEST(test_eval_invoke_k_stack_underrun);
-    RUN_TEST(test_eval_invoke_k_wrong_type);
+    RUN_TEST(test_eval_call_continuation_underrun);
+    RUN_TEST(test_eval_call_wrong_type);
 
     return 0;
 }

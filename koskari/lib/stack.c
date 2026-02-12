@@ -203,6 +203,11 @@ int KosStackBlock_ClearBlock(KosStackBlock **block) {
 
 
 void KosStackBlock_Release(KosStackBlock *self) {
+  KosStackBlock_ReleaseExclude(self, NULL);
+}
+
+
+void KosStackBlock_ReleaseExclude(KosStackBlock *self, PyObject *exclude) {
   SAYF("KosStackBlock_Release(%p)", (void *) self);
 
   if (self->refcount > 1) {
@@ -211,7 +216,12 @@ void KosStackBlock_Release(KosStackBlock *self) {
 
   } else {
     for (size_t i = self->len; i--; ) {
-      Py_DECREF(self->objs[i]);
+      PyObject *o = self->objs[i];
+      if (exclude && o == exclude) {
+        self->objs[i] = NULL;
+        continue;
+      }
+      Py_DECREF(o);
     }
 
     if (block_freecount < BLOCK_MAX_FREE) {
@@ -231,6 +241,16 @@ void KosStackBlock_Release(KosStackBlock *self) {
   }
 
   SAY("KosStackBlock_Release -> void");
+}
+
+
+void KosStackBlock_ReleaseChainExclude(KosStackBlock *block, PyObject *exclude) {
+  KosStackBlock *b = block;
+  while (b) {
+    KosStackBlock *p = KosStackBlock_PARENT(b);
+    KosStackBlock_ReleaseExclude(b, exclude);
+    b = p;
+  }
 }
 
 

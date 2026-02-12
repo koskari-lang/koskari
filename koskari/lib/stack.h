@@ -119,6 +119,21 @@ void KosStackBlock_Release(KosStackBlock *block);
 
 
 /**
+   Release a stack block but do not DECREF any slot equal to exclude
+   (used when the block chain contains a reference to the object being
+   deallocated). exclude may be NULL for normal release.
+ */
+void KosStackBlock_ReleaseExclude(KosStackBlock *block, PyObject *exclude);
+
+
+/**
+   Release a full chain; exclude is passed to each block (see
+   KosStackBlock_ReleaseExclude).
+ */
+void KosStackBlock_ReleaseChainExclude(KosStackBlock *block, PyObject *exclude);
+
+
+/**
    Deep-copy a stack block chain: new blocks, same values (new refs).
    Caller must Release the result. Returns NULL if block is NULL or on error.
  */

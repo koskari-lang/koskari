@@ -36,7 +36,7 @@
    Opcode families (sections below): no-op/debug, stack, control, calls,
    namespaces (GLOBALS/LOCALS), variable access (VAR_* and FAST_*),
    exceptions, check/jump, object protocol (OBJECT_*), blocks (PUSH_* and
-   POP_*), continuations (prompt/SHIFT/INVOKE_K).
+   POP_*), continuations (prompt/SHIFT; call/cc PUSH_CC/POP_CC/CAPTURE_CC).
 */
 
 // NOOP must always be first
@@ -234,15 +234,18 @@ OP(PUSH_PROMPT, CONST)         // arg = prompt_id constant pool index
 OP(SET_PROMPT_HANDLER, LABEL)  // arg = handler pc (instruction index)
 OP(POP_PROMPT, NOARG)          // pop prompt from dynamic chain
 OP(SHIFT, CONST)               // capture continuation, abort to prompt
+OP(INVOKE_K, NOARG)            // pop value, pop continuation; invoke delimited continuation
+OP(INVOKE_K_VAR, CONST)        // pop value; lookup name (constant index), invoke that continuation
+
+// undelimited continuation (call/cc) block
+OP(PUSH_CC, LABEL)             // arg = instruction index after POP_CC (resume PC)
+OP(POP_CC, NOARG)              // pop CC block from dynamic chain
+OP(CAPTURE_CC, NOARG)          // capture undelimited continuation, push on stack
 
 // dynamic wind control
 OP(PUSH_WIND, LABEL)           // arg = after_block label
 OP(POP_WIND, NOARG)            // pop wind from dynamic chain
 OP(END_WIND, NOARG)            // sentinel: terminates hook block
-
-// continuation invocation
-OP(INVOKE_K, NOARG)            // invoke continuation from TOS (value, cont)
-OP(INVOKE_K_VAR, VAR)         // pop value, lookup name in ns, invoke
 
 // region control (replaces old block style)
 OP(PUSH_REGION, LABEL)         // arg = handler label

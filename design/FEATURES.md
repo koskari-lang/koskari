@@ -85,7 +85,7 @@ The VM in `eval.c` uses a jump table; every opcode has a handler. Handlers are e
 
 **Fully implemented** (handler does real work; no stub):
 - **Pseudo / stack**: NOOP, LABEL, POSITION, DUP, POP, CONST
-- **Control**: RETURN, AWAIT
+- **Control**: RETURN, AWAIT, YIELD (suspend with value; resumption via send; async gen support)
 - **Calls**: CALL (simple positional call; KosExpression/KosFunction → new frame via `kos_koscall`)
 - **Introspection**: GLOBALS, LOCALS
 - **Variables by name**: VAR (load), VAR_BIND (bind), VAR_CLEAR (delete), VAR_REF (closure ref), VAR_STORE (store TOS to name)
@@ -103,10 +103,10 @@ The VM in `eval.c` uses a jump table; every opcode has a handler. Handlers are e
 - **Loop control**: PUSH_LOOP, PUSH_FOREACH, POP_LOOP, CLEAR_LOOP, BREAK, CONTINUE (use KosDynRegion LOOP/FOREACH on dynamic chain; PUSH_LOOP pushes stack block; BREAK/CONTINUE unwind via kos_find_region_for_loop; ITER_NEXT at loop head for foreach)
 
 **Not implemented (stubs)** — hitting these at runtime raises "unimplemented opcode":
-- **Control / mode**: THEEND, YIELD, YIELD_FROM
+- **Control / mode**: THEEND, YIELD_FROM
 - **Argument building**: BUILD_ARGS, BUILD_FUNCTION, BUILD_KWDS, BUILD_KWDS_NAMES, COMBINE_ARGS, COMBINE_KWDS
 - **Calls**: CALL_NAMES, CALL_STAR; CALL_ATTR, CALL_ATTR_NAMES, CALL_ATTR_STAR; RECUR, RECUR_NAMES, RECUR_STAR; TAIL_CALL, TAIL_CALL_NAMES, TAIL_CALL_STAR; TAIL_RECUR, TAIL_RECUR_NAMES, TAIL_RECUR_STAR
-- **Block control**: PUSH_WITH, PUSH_BEGIN, PUSH_CLASS; CLEAR_FINALLY, CLEAR_TRY; POP_WITH, POP_BEGIN, POP_FINALLY
+- **Block control**: PUSH_WITH, PUSH_BEGIN, PUSH_CLASS; POP_WITH, POP_BEGIN
 - **Wind / region**: PUSH_WIND, POP_WIND, END_WIND; PUSH_REGION, POP_REGION
 
 There are no **partially** implemented opcodes; each handler is either full or stub. The authoritative list is the set of handlers in `koskari/lib/eval.c` that do not call `op_unimplemented_stub`.
@@ -134,10 +134,10 @@ There are no **partially** implemented opcodes; each handler is either full or s
 
 ## Missing/To Design
 
-### Call/CC
-- **Status**: Blocking issue in sibilant-ceval
-- **Requirements**: Bounded and unbounded continuations
-- **Design**: Context boundaries, continuation capture/invocation
+### Call/CC (undelimited)
+- **Delimited continuations (reset/shift)**: Implemented in koskari. PUSH_PROMPT, SET_PROMPT_HANDLER, POP_PROMPT, SHIFT capture the continuation up to a prompt; INVOKE_K and INVOKE_K_VAR invoke captured delimited continuations. Multi-shot; transfer plans and LCA-based wind/unwind run on invocation. See design/interpreter/callcc.md.
+- **Undelimited call/cc**: Capture is not implemented (no CAPTURE_CC opcode or VM path to create a full continuation). The Python type `KosPyContinuation` and invocation path exist (callable, KoskariContinuationApply) so that if an undelimited continuation were created (e.g. from outside the VM), it could be invoked. Deferred until undelimited capture is added.
+- **Status**: sibilant-ceval may still be blocked on undelimited call/cc if that evaluator requires it.
 
 ### Additional Features
 - **Comprehensions**: List/dict/set comprehensions
@@ -181,8 +181,8 @@ There are no **partially** implemented opcodes; each handler is either full or s
 - GC traversal: helpers for all VM structures
 
 **Continuation Support**:
-- Undelimited multi-shot continuations
-- Dynamic wind/unwind hooks (before/after)
+- Delimited multi-shot continuations (reset/shift) implemented in VM; undelimited (call/cc) capture deferred (invocation path exists)
+- Dynamic wind/unwind hooks (before/after) used by continuation transfer plans; PUSH_WIND/POP_WIND/END_WIND opcodes are stubbed
 - Flattened async execution
 - Eager-step awaitable optimization
 

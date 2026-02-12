@@ -810,7 +810,7 @@ static int op_unimplemented_stub(KosContext *ctx, KosEvent *out_ev, KosOp *insn)
    OBJECT_* - object protocol
    PUSH_*, POP_* - blocks, regions, NS
    SHIFT, INVOKE_K, prompt - continuations
-*/
+ */
 
 
 /**
@@ -1018,7 +1018,10 @@ KOS_OP_HANDLER(CALL) {
   PyObject *callable = tail[0];
   PyObject *result = NULL;
 
-  /* Special-case DelimitedContinuation and Continuation (undelimited) */
+  /* Special-case DelimitedContinuation and Continuation (undelimited).
+   * FIXME: The transfer path for delimited continuations invoked via CALL may
+   * still have bugs (LCA is now safe for severed chains). Prefer INVOKE_K for
+   * delimited continuation invocation. */
   if (KosPyDelimitedContinuation_Check(callable)
       || KosPyContinuation_Check(callable)) {
     KosContinuation *k = KosPyDelimitedContinuation_Check(callable)
@@ -1039,8 +1042,19 @@ KOS_OP_HANDLER(CALL) {
       return -1;
     }
 
-    if (k->token_ref == (PyObject *) ctx->token) {
-      /* Same evaluator: apply directly */
+    /* Delimited continuations require the prompt to be in the dynamic chain */
+    if (k->prompt_id != KOS_PROMPT_ID_UNDELIMITED
+        && ! kos_find_prompt(ctx, k->prompt_id)) {
+      Py_DECREF(resume_val);
+      PyErr_SetString(KoskariContinuationError,
+                      "continuation: prompt not found in dynamic chain");
+      return -1;
+    }
+
+    /* Same evaluator: token match, or undelimited with no token (captured
+     * in this run; token may not have been stored in some paths). */
+    if (k->token_ref == (PyObject *) ctx->token
+        || (k->prompt_id == KOS_PROMPT_ID_UNDELIMITED && ! k->token_ref)) {
       if (kos_invoke_continuation(ctx, k, resume_val, 0, callable) < 0) {
         Py_DECREF(resume_val);
         return -1;
@@ -1612,6 +1626,53 @@ KOS_OP_HANDLER(SHIFT) {
 
 
 /**
+   PUSH_CC: arg = label (instruction index after POP_CC). Push a CC block
+   onto the dynamic chain; the continuation will resume at that PC on invoke.
+*/
+KOS_OP_HANDLER(PUSH_CC) {
+  if (! kos_dyn_push_cc(ctx, insn->arg)) {
+    return -1;
+  }
+  (void) out_ev;
+  return 0;
+}
+
+
+/**
+   POP_CC: arg unused. Pop the CC block from the dynamic chain. The next
+   instruction is the continuation's resume point.
+*/
+KOS_OP_HANDLER(POP_CC) {
+  if (! ctx->dyn_top || ! KosDynNode_IS_CC(ctx->dyn_top)) {
+    PyErr_SetString(PyExc_RuntimeError, "POP_CC: top is not a CC block");
+    return -1;
+  }
+  kos_dyn_pop_cc(ctx, (KosDynCC *) ctx->dyn_top);
+  (void) out_ev;
+  (void) insn;
+  return 0;
+}
+
+
+/**
+   CAPTURE_CC: arg unused. Capture the undelimited continuation up to the
+   current CC block and push it (KosPyContinuation) on the stack.
+*/
+KOS_OP_HANDLER(CAPTURE_CC) {
+  KosContinuation *k = NULL;
+  if (kos_capture_cc(ctx, &k) < 0) {
+    return -1;
+  }
+  PyObject *wrapper = KosPyContinuation_New(k);
+  if (! wrapper) {
+    kos_continuation_free(k);
+    return -1;
+  }
+  return push_result_or_await(ctx, out_ev, wrapper);
+}
+
+
+/**
    INVOKE_K: arg unused. Pop value then continuation (Python wrapper). Invoke
    the continuation with that value, replacing current execution state.
 */
@@ -1676,6 +1737,7 @@ KOS_OP_HANDLER(INVOKE_K) {
     return -1;
   }
   Py_DECREF(value);
+  /* cont_obj not DECREF'd: invoke transfers control on success */
   (void) out_ev;
   (void) insn;
   return 0;
@@ -1759,6 +1821,7 @@ KOS_OP_HANDLER(INVOKE_K_VAR) {
   Py_DECREF(value);
   /* cont_obj not DECREF'd: invoke transfers control on success */
   (void) out_ev;
+  (void) insn;
   return 0;
 }
 

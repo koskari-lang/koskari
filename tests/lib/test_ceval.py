@@ -15,7 +15,7 @@
 Opcode-focused tests for Koskari evaluator.
 
 Validates individual bytecode operations and their impact on execution,
-including delimited continuations (PUSH_PROMPT, SHIFT, INVOKE_K, etc.)
+including delimited continuations (PUSH_PROMPT, SHIFT, CALL for invocation)
 and stub opcodes (RuntimeError).
 
 :author: Christopher O'Brien <obriencj@preoccupied.net>
@@ -126,13 +126,13 @@ class CevalTest(unittest.TestCase):
 
 class TestDelimitedContinuations(CevalTest):
     """
-    Tests for PUSH_PROMPT, SET_PROMPT_HANDLER, SHIFT, INVOKE_K, POP_PROMPT
+    Tests for PUSH_PROMPT, SET_PROMPT_HANDLER, SHIFT, CALL (continuation), POP_PROMPT
     """
 
     def test_reset_shift_invoke(self):
         """
         Program (+ 1 (shift k (k 5))) => 6. Validates PUSH_PROMPT,
-        SET_PROMPT_HANDLER, SHIFT, INVOKE_K, POP_PROMPT end-to-end
+        SET_PROMPT_HANDLER, SHIFT, INVOKE_K for continuation invocation, POP_PROMPT
         """
 
         code = [
@@ -175,6 +175,66 @@ class TestDelimitedContinuations(CevalTest):
         with self.assertRaises(TypeError) as ctx:
             cont(42)
         self.assertIn("cannot be called from Python", str(ctx.exception))
+
+
+class TestUndelimitedContinuations(CevalTest):
+    """
+    Tests for PUSH_CC, POP_CC, CAPTURE_CC (undelimited call/cc block).
+    Continuation is invoked via CALL (same evaluator).
+    """
+
+    def test_call_cc_capture_and_invoke(self):
+        """
+        (call/cc (lambda (k) (k 42))) => 42. PUSH_CC, CAPTURE_CC, POP_CC,
+        then invoke continuation with 42 via CALL 1; resume at label, RETURN 1.
+        """
+        code = [
+            ["PUSH_CC", "resume"],
+            ["CAPTURE_CC", 0],
+            ["POP_CC", 0],
+            ["CONST", 42],
+            ["CALL", 1],
+            ["LABEL", "resume"],
+            ["RETURN", 1],
+        ]
+        code_obj, ns = build_expr(code)
+        expr = make_callable(code_obj, ns)
+        result = asyncio.run(expr())
+        self.assertEqual(result, 42)
+
+    def test_call_cc_capture_returns_continuation(self):
+        """
+        PUSH_CC, CAPTURE_CC, POP_CC, return TOS. Result is the continuation
+        (without invoking it).
+        """
+        code = [
+            ["PUSH_CC", "resume"],
+            ["CAPTURE_CC", 0],
+            ["POP_CC", 0],
+            ["LABEL", "resume"],
+            ["RETURN", 1],
+        ]
+        code_obj, ns = build_expr(code)
+        expr = make_callable(code_obj, ns)
+        result = asyncio.run(expr())
+        self.assertIsNotNone(result)
+        import koskari.lib as lib
+        self.assertIsInstance(result, lib.Continuation)
+
+    def test_capture_cc_without_push_cc_raises(self):
+        """
+        CAPTURE_CC with no PUSH_CC on the dynamic chain raises RuntimeError.
+        """
+        code = [
+            ["CAPTURE_CC", 0],
+            ["RETURN", 1],
+        ]
+        code_obj, ns = build_expr(code)
+        expr = make_callable(code_obj, ns)
+        with self.assertRaises(RuntimeError) as ctx:
+            asyncio.run(expr())
+        self.assertIn("CAPTURE_CC", str(ctx.exception))
+        self.assertIn("no CC block", str(ctx.exception))
 
 
 class TestEvaluatorToken(CevalTest):

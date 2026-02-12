@@ -772,14 +772,14 @@ PyObject *KosCoroutine_New(KosContext *ctx) {
    KosPyDelimitedContinuation wraps a KosContinuation captured by shift.
 
    DelimitedContinuation cannot be called from Python; application is only
-   permitted via CALL or INVOKE_K inside koskari_eval.
+   permitted via CALL inside koskari_eval.
 */
 
 static void delimited_continuation_dealloc(PyObject *self) {
 
   KosPyDelimitedContinuation *cont = (KosPyDelimitedContinuation *) self;
 
-  kos_continuation_free(cont->captured);
+  kos_continuation_free_exclude(cont->captured, self);
 
   Py_TYPE(self)->tp_free(self);
 }
@@ -876,7 +876,7 @@ static void continuation_dealloc(PyObject *self) {
 
   KosPyContinuation *cont = (KosPyContinuation *) self;
 
-  kos_continuation_free(cont->captured);
+  kos_continuation_free_exclude(cont->captured, self);
 
   Py_TYPE(self)->tp_free(self);
 }
@@ -913,12 +913,43 @@ static PyObject *continuation_call(
     PyObject *args,
     PyObject *kwds) {
 
-  (void) args;
+  KosPyContinuation *cont = (KosPyContinuation *) self;
   (void) kwds;
-  (void) self;
 
-  PyErr_SetString(PyExc_NotImplementedError,
-                  "Continuation (undelimited) requires call/cc, not yet implemented");
+  if (! cont->captured) {
+    PyErr_SetString(PyExc_RuntimeError,
+                    "continuation has no captured state");
+    return NULL;
+  }
+
+  if (! KoskariContinuationApply) {
+    PyErr_SetString(PyExc_RuntimeError,
+                    "KoskariContinuationApply not initialized");
+    return NULL;
+  }
+
+  PyObject *resume_val = Py_None;
+  if (args && PyTuple_GET_SIZE(args) > 0)
+    resume_val = PyTuple_GET_ITEM(args, 0);
+  Py_INCREF(resume_val);
+
+  PyObject *exc = PyObject_CallNoArgs(KoskariContinuationApply);
+  if (! exc) {
+    Py_DECREF(resume_val);
+    return NULL;
+  }
+  PyObject_SetAttrString(exc, "target", cont->captured->token_ref);
+  PyObject_SetAttrString(exc, "continuation", self);
+  PyObject *args_tup = PyTuple_Pack(1, resume_val);
+  Py_DECREF(resume_val);
+  if (! args_tup) {
+    Py_DECREF(exc);
+    return NULL;
+  }
+  PyObject_SetAttrString(exc, "args", args_tup);
+  Py_DECREF(args_tup);
+  PyErr_SetObject(KoskariContinuationApply, exc);
+  Py_DECREF(exc);
   return NULL;
 }
 

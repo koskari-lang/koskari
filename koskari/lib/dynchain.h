@@ -65,6 +65,9 @@ typedef struct KosDynRegion KosDynRegion;
 struct KosDynNs;
 typedef struct KosDynNs KosDynNs;
 
+struct KosDynCC;
+typedef struct KosDynCC KosDynCC;
+
 struct KosContinuation;
 typedef struct KosContinuation KosContinuation;
 
@@ -87,6 +90,7 @@ typedef struct KosHookRunner KosHookRunner;
    KOS_DYN_REGION - Block-local control (try/finally/loop/with)
    KOS_DYN_PYCALL - Python/C boundary marker (non-resumable)
    KOS_DYN_NS     - Namespace scope (PUSH_NS/POP_NS)
+   KOS_DYN_CC     - Undelimited continuation block (call/cc)
 */
 
 typedef enum KosDynKind {
@@ -96,6 +100,7 @@ typedef enum KosDynKind {
   KOS_DYN_REGION = 3,
   KOS_DYN_PYCALL = 4,
   KOS_DYN_NS     = 5,
+  KOS_DYN_CC     = 6,
 } KosDynKind;
 
 
@@ -175,6 +180,22 @@ struct KosDynPrompt {
 
   KosCode *handler_code;  /* handler body code (borrowed, or NULL) */
   uint32_t handler_pc;    /* handler entry point */
+};
+
+
+/* === KosDynCC: undelimited continuation (call/cc) block === */
+
+
+/**
+   KosDynCC marks the extent of a call/cc block. When CAPTURE_CC runs,
+   the continuation resumes at resume_pc (instruction after POP_CC) in
+   the frame that is the parent of this node.
+*/
+
+struct KosDynCC {
+  KosDynNode base;        /* must be first */
+
+  uint32_t resume_pc;     /* instruction index to resume at on invoke */
 };
 
 
@@ -387,6 +408,7 @@ struct KosTransferPlan {
   KosDynFrame *resume_frame;    /* frame to resume into (invocation only) */
   KosStackBlock *resume_stack;  /* stack state at capture (invocation only) */
   PyObject *continuation_ref;   /* keep continuation alive until plan is freed */
+  KosContinuation *invoke_clone;  /* when set, release then free when plan freed */
 };
 
 
@@ -693,6 +715,26 @@ void kos_dyn_pop_prompt(KosContext *ctx, KosDynPrompt *prompt);
 
 
 /**
+   Push a CC (call/cc) block onto the dynamic chain.
+
+   :param ctx: execution context
+   :param resume_pc: instruction index to resume at when continuation is invoked
+
+   :return: the new CC node, or NULL on error
+*/
+KosDynCC *kos_dyn_push_cc(KosContext *ctx, uint32_t resume_pc);
+
+
+/**
+   Pop a CC block from the dynamic chain.
+
+   :param ctx: execution context
+   :param cc: the CC node to pop (must be at dyn_top)
+*/
+void kos_dyn_pop_cc(KosContext *ctx, KosDynCC *cc);
+
+
+/**
    Push a wind extent onto the dynamic chain.
 
    :param ctx: execution context
@@ -849,6 +891,16 @@ KosDynPrompt *kos_find_prompt(KosContext *ctx, uint32_t prompt_id);
 
 
 /**
+   Find the topmost CC (call/cc) block on the dynamic chain.
+
+   :param ctx: execution context
+
+   :return: topmost KosDynCC, or NULL if none
+*/
+KosDynCC *kos_find_cc(KosContext *ctx);
+
+
+/**
    Validate that continuation capture is allowed up to the prompt.
 
    Returns error if any PYCALL boundary nodes exist between dyn_top
@@ -880,6 +932,25 @@ int kos_shift_capture(
    KosContinuation **out_k);
 
 
+/** Sentinel prompt_id for undelimited (call/cc) continuations. */
+#define KOS_PROMPT_ID_UNDELIMITED ((uint32_t)-1)
+
+
+/**
+   Capture the undelimited continuation up to the current CC block.
+
+   The continuation resumes at the instruction after POP_CC in the
+   frame that was current when PUSH_CC was executed. Multi-shot by
+   default.
+
+   :param ctx: execution context
+   :param out_k: output for captured continuation
+
+   :return: 0 on success, -1 on error
+*/
+int kos_capture_cc(KosContext *ctx, KosContinuation **out_k);
+
+
 /**
    Free a captured continuation.
 
@@ -888,6 +959,15 @@ int kos_shift_capture(
    :param k: continuation to free (may be NULL)
 */
 void kos_continuation_free(KosContinuation *k);
+
+
+/**
+   Free a continuation; when releasing its resume_stack, do not DECREF
+   any slot equal to exclude_from_stack (used from the Python wrapper's
+   dealloc so the wrapper is not decref'd while being deallocated).
+   exclude_from_stack may be NULL.
+*/
+void kos_continuation_free_exclude(KosContinuation *k, PyObject *exclude_from_stack);
 
 
 /**
@@ -1143,6 +1223,7 @@ int kos_hookrunner_traverse(
 #define KosDynNode_IS_REGION(n)  (KosDynNode_KIND(n) == KOS_DYN_REGION)
 #define KosDynNode_IS_NS(n)      (KosDynNode_KIND(n) == KOS_DYN_NS)
 #define KosDynNode_IS_PYCALL(n)  (KosDynNode_KIND(n) == KOS_DYN_PYCALL)
+#define KosDynNode_IS_CC(n)      (KosDynNode_KIND(n) == KOS_DYN_CC)
 
 #define KosDynFrame_CODE(f)      (((KosDynFrame *)(f))->code)
 #define KosDynFrame_PC(f)        (((KosDynFrame *)(f))->pc)

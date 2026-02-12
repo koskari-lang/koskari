@@ -77,6 +77,11 @@ tox:  ## Run full tox suite (tests + lint + typecheck)
 	@echo "Running full tox suite..."
 	@tox -q
 
+gdb:  ## Run tests under gdb via tox
+	@$(call checkfor,tox)
+	@$(call checkfor,gdb)
+	@tox -qe gdb
+
 
 ##@ Container-based Memory Testing
 
@@ -151,7 +156,7 @@ version:  ## Show project version
 python:  ## Show Python executable
 	@echo $(PYTHON)
 
-.PHONY: help report-python build build-ext install install-dev uninstall test test-all tox test-native test-native-asan test-native-valgrind clean-native container-build container-test container-test-asan container-test-valgrind lint typecheck format clean-built clean-ext clean-pyc clean purge project version python
+.PHONY: help report-python build build-ext install install-dev uninstall test test-all tox gdb test-native test-native-asan test-native-valgrind clean-native container-build container-test container-test-asan container-test-valgrind lint typecheck format clean-built clean-ext clean-pyc clean purge project version python
 
 
 # The end.

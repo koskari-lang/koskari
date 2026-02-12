@@ -183,6 +183,50 @@ void kos_dynprompt_free(KosDynPrompt *prompt) {
 }
 
 
+/* === KosDynCC implementation === */
+
+
+KosDynCC *kos_dyncc_new(KosDynNode *parent, uint32_t resume_pc) {
+
+  KosDynCC *cc = PyMem_Malloc(sizeof(KosDynCC));
+  if (! cc) {
+    PyErr_NoMemory();
+    return NULL;
+  }
+
+  kos_dynnode_init(&cc->base, KOS_DYN_CC, parent);
+  cc->resume_pc = resume_pc;
+
+  return cc;
+}
+
+
+static KosDynCC *kos_dyncc_clone(KosDynCC *cc) {
+  if (! cc)
+    return NULL;
+
+  KosDynCC *clone = PyMem_Malloc(sizeof(KosDynCC));
+  if (! clone) {
+    PyErr_NoMemory();
+    return NULL;
+  }
+
+  kos_dynnode_init(&clone->base, KOS_DYN_CC, NULL);
+  clone->base.flags = cc->base.flags | KOS_DYNF_CLONED;
+  clone->resume_pc = cc->resume_pc;
+
+  return clone;
+}
+
+
+void kos_dyncc_free(KosDynCC *cc) {
+  if (! cc)
+    return;
+
+  PyMem_Free(cc);
+}
+
+
 /* === KosDynWind implementation === */
 
 
@@ -405,6 +449,9 @@ void kos_dynnode_free(KosDynNode *node) {
     case KOS_DYN_PYCALL:
       kos_dynpycall_free(node);
       break;
+    case KOS_DYN_CC:
+      kos_dyncc_free((KosDynCC *) node);
+      break;
   }
 }
 
@@ -426,6 +473,8 @@ KosDynNode *kos_dynnode_clone(KosDynNode *node) {
       return (KosDynNode *) kos_dynns_clone((KosDynNs *) node);
     case KOS_DYN_PYCALL:
       return kos_dynpycall_new(NULL);
+    case KOS_DYN_CC:
+      return (KosDynNode *) kos_dyncc_clone((KosDynCC *) node);
   }
 
   PyErr_Format(PyExc_RuntimeError, "cannot clone dynnode kind %u",
@@ -625,6 +674,30 @@ void kos_dyn_pop_prompt(KosContext *ctx, KosDynPrompt *prompt) {
 }
 
 
+KosDynCC *kos_dyn_push_cc(KosContext *ctx, uint32_t resume_pc) {
+
+  KosDynCC *cc = kos_dyncc_new(ctx->dyn_top, resume_pc);
+  if (! cc)
+    return NULL;
+
+  ctx->dyn_top = (KosDynNode *) cc;
+  ctx->chain_version++;
+
+  return cc;
+}
+
+
+void kos_dyn_pop_cc(KosContext *ctx, KosDynCC *cc) {
+  if (! ctx->dyn_top || ctx->dyn_top != (KosDynNode *) cc) {
+    return;
+  }
+
+  ctx->dyn_top = cc->base.parent;
+  ctx->chain_version++;
+  kos_dyncc_free(cc);
+}
+
+
 KosDynWind *kos_dyn_push_wind(
     KosContext *ctx,
     KosCode *before_code,
@@ -753,6 +826,10 @@ int kos_dyn_pop_top(KosContext *ctx) {
                     "cannot unwind past prompt");
     return -1;
 
+  case KOS_DYN_CC:
+    kos_dyn_pop_cc(ctx, (KosDynCC *) top);
+    return 0;
+
   case KOS_DYN_PYCALL:
     PyErr_SetString(PyExc_RuntimeError,
                     "cannot unwind past Python call boundary");
@@ -866,6 +943,40 @@ int kos_validate_capture(KosContext *ctx, KosDynPrompt *prompt) {
 }
 
 
+KosDynCC *kos_find_cc(KosContext *ctx) {
+  KosDynNode *node = ctx->dyn_top;
+
+  while (node) {
+    if (KosDynNode_IS_CC(node))
+      return (KosDynCC *) node;
+    node = node->parent;
+  }
+
+  return NULL;
+}
+
+
+static int kos_validate_capture_cc(KosContext *ctx, KosDynCC *cc) {
+  KosDynNode *node = ctx->dyn_top;
+
+  while (node && node != (KosDynNode *) cc) {
+    if (KosDynNode_IS_PYCALL(node)) {
+      PyErr_SetString(PyExc_RuntimeError,
+                      "cannot capture continuation across Python boundary");
+      return -1;
+    }
+    node = node->parent;
+  }
+
+  if (! node) {
+    PyErr_SetString(PyExc_RuntimeError, "CC block not found in chain");
+    return -1;
+  }
+
+  return 0;
+}
+
+
 /* === Continuation capture and free === */
 
 
@@ -963,7 +1074,83 @@ int kos_shift_capture(
 }
 
 
+int kos_capture_cc(KosContext *ctx, KosContinuation **out_k) {
+
+  KosDynCC *cc = kos_find_cc(ctx);
+  if (! cc) {
+    PyErr_SetString(PyExc_RuntimeError, "CAPTURE_CC: no CC block on dynamic chain");
+    return -1;
+  }
+
+  if (kos_validate_capture_cc(ctx, cc) < 0)
+    return -1;
+
+  /* Capture from the frame above the CC block (parent of CC) down to root.
+   * On invoke we install this segment and resume at resume_pc in that frame. */
+  KosDynNode *segment_top = cc->base.parent;
+  if (! segment_top) {
+    PyErr_SetString(PyExc_RuntimeError, "CAPTURE_CC: CC block has no parent");
+    return -1;
+  }
+
+  KosDynNode *captured_chain = kos_clone_chain_segment(segment_top, NULL);
+  if (! captured_chain) {
+    return -1;
+  }
+
+  /* Make the template self-contained */
+  {
+    KosDynNode *bottom = captured_chain;
+    while (bottom->parent)
+      bottom = bottom->parent;
+    bottom->parent = NULL;
+  }
+
+  /* Find the topmost frame in the captured chain (the resume frame) */
+  KosDynFrame *resume_frame = NULL;
+  KosDynNode *node = captured_chain;
+  while (node) {
+    if (KosDynNode_IS_FRAME(node)) {
+      resume_frame = (KosDynFrame *) node;
+      break;
+    }
+    node = node->parent;
+  }
+
+  if (! resume_frame) {
+    kos_dynchain_free(captured_chain, NULL);
+    PyErr_SetString(PyExc_RuntimeError, "CAPTURE_CC: no frame in captured segment");
+    return -1;
+  }
+
+  KosContinuation *k = PyMem_Malloc(sizeof(KosContinuation));
+  if (! k) {
+    PyErr_NoMemory();
+    kos_dynchain_free(captured_chain, NULL);
+    return -1;
+  }
+
+  k->captured_chain = captured_chain;
+  k->resume_frame = resume_frame;
+  k->resume_pc = cc->resume_pc;
+  k->resume_stack = KosStackBlock_COW(resume_frame->stack);
+  k->prompt_id = KOS_PROMPT_ID_UNDELIMITED;
+  k->one_shot = 0;  /* multi-shot by default */
+  k->token_ref = ctx->token ? (PyObject *) ctx->token : NULL;
+  if (k->token_ref)
+    Py_INCREF(k->token_ref);
+
+  *out_k = k;
+  return 0;
+}
+
+
 void kos_continuation_free(KosContinuation *k) {
+  kos_continuation_free_exclude(k, NULL);
+}
+
+
+void kos_continuation_free_exclude(KosContinuation *k, PyObject *exclude_from_stack) {
   if (! k)
     return;
 
@@ -973,14 +1160,12 @@ void kos_continuation_free(KosContinuation *k) {
   /* Free the captured chain */
   kos_dynchain_free(k->captured_chain, NULL);
 
-  /* Release the stack reference */
+  /* Release the stack reference. When called from the Python wrapper's
+   * dealloc, exclude_from_stack is the wrapper so we do not DECREF it
+   * (it is currently being deallocated). */
   if (k->resume_stack) {
-    KosStackBlock *b = k->resume_stack;
-    while (b) {
-      KosStackBlock *p = KosStackBlock_PARENT(b);
-      KosStackBlock_Release(b);
-      b = p;
-    }
+    KosStackBlock_ReleaseChainExclude(k->resume_stack, exclude_from_stack);
+    k->resume_stack = NULL;
   }
 
   PyMem_Free(k);
@@ -1057,18 +1242,25 @@ KosDynNode *kos_compute_lca(KosDynNode *a, KosDynNode *b) {
   size_t depth_a = kos_chain_depth(a);
   size_t depth_b = kos_chain_depth(b);
 
-  /* Align to same depth */
+  /* Align to same depth; disjoint chains (e.g. severed template) hit NULL */
   while (depth_a > depth_b) {
     a = a->parent;
     depth_a--;
+    if (! a)
+      return NULL;
   }
   while (depth_b > depth_a) {
     b = b->parent;
     depth_b--;
+    if (! b)
+      return NULL;
   }
 
-  /* Walk together until we find LCA */
+  /* Walk together until we find LCA.  If the chains are disjoint (e.g. target
+   * is a severed continuation template), we eventually hit NULL. */
   while (a != b) {
+    if (! a || ! b)
+      return NULL;
     a = a->parent;
     b = b->parent;
   }
@@ -1241,6 +1433,20 @@ void kos_free_transfer_plan(KosTransferPlan *plan) {
     }
   }
 
+  /* Release the multi-shot clone (if any) without DECREF'ing the continuation
+   * so we do not free k before releasing plan->resume_stack. */
+  if (plan->invoke_clone) {
+    KosContinuation *clone = plan->invoke_clone;
+    plan->invoke_clone = NULL;
+    if (clone->resume_stack) {
+      KosStackBlock_ReleaseChainExclude(clone->resume_stack,
+                                        plan->continuation_ref);
+      clone->resume_stack = NULL;
+    }
+    Py_XDECREF(clone->token_ref);
+    PyMem_Free(clone);
+  }
+
   /* Release the retained resume_stack reference */
   if (plan->resume_stack) {
     KosStackBlock *b = plan->resume_stack;
@@ -1300,6 +1506,9 @@ int kos_run_transfer_step(KosContext *ctx) {
              (void *) ctx->dyn_top, (void *) ctx->frame_top);
       ctx->dyn_top = seg;
       kos_update_frame_top(ctx);
+      /* New segment is the whole chain; topmost frame is the globals frame. */
+      ctx->globals_frame = ctx->frame_top;
+      ctx->globals_cache_version = ctx->chain_version + 1;
       /* Restore stack from plan (fresh copy from template). */
       if (ctx->frame_top && ctx->plan->resume_stack) {
         KosStackBlock *new_stack = KosStackBlock_COW(ctx->plan->resume_stack);
@@ -1318,6 +1527,7 @@ int kos_run_transfer_step(KosContext *ctx) {
         ctx->frame_top->pc = ctx->plan->resume_pc;
       }
       ctx->chain_version++;
+      ctx->globals_cache_version = ctx->chain_version;
       if (KOS_XFER_TRACE)
         SAYF("[xfer] INSTALL after: dyn_top=%p frame_top=%p",
              (void *) ctx->dyn_top, (void *) ctx->frame_top);
@@ -1509,7 +1719,10 @@ int kos_invoke_continuation(
 
   if (to_use != k) {
     to_use->captured_chain = NULL;
-    kos_continuation_free(to_use);
+    plan->invoke_clone = to_use;
+    /* Do not release to_use->resume_stack here; that would DECREF the
+     * continuation and free k before the plan runs. kos_free_transfer_plan
+     * will release it with exclude=continuation_ref then free to_use. */
   }
 
   return 0;
@@ -1543,6 +1756,7 @@ int kos_dynnode_traverse(KosDynNode *node, visitproc visit, void *arg) {
       break;
     }
     case KOS_DYN_PROMPT:
+    case KOS_DYN_CC:
     case KOS_DYN_WIND:
     case KOS_DYN_PYCALL:
       /* No PyObjects to visit */
