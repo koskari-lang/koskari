@@ -37,7 +37,7 @@ KOS_DYN_PYCALL.
   Macros: KosDynPrompt_ID, KosDynPrompt_HANDLER_CODE, KosDynPrompt_HANDLER_PC.
 - **Wind** (u.wind): before_code, before_pc, after_code, after_pc, entered.
   Macros: KosDynWind_BEFORE_CODE, KosDynWind_BEFORE_PC, KosDynWind_AFTER_CODE, KosDynWind_AFTER_PC, KosDynWind_ENTERED.
-- **Region** (u.region): style (KosRegionStyle: TRY, FINALLY, LOOP, WITH, FOREACH, etc.), break_pc, continue_pc, enabled, result, iter, exhausted.
+- **Region** (u.region): style (KosRegionStyle: TRY, FINALLY, LOOP, WITH, FOREACH, etc.), break_pc, continue_pc, enabled, result, iter, exhausted; FINALLY also has handling_raise (1 when entered due to exception) and result holds stashed return value.
   Macros: KosDynRegion_STYLE, KosDynRegion_BREAK_PC, KosDynRegion_CONTINUE_PC, KosDynRegion_ENABLED, etc.
 - **Ns** (u.ns): saved_ns. Macro: KosDynNs_SAVED_NS.
 - **CC** (u.cc): resume_pc. Macro: KosDynCC_RESUME_PC.
@@ -56,6 +56,8 @@ struct KosContext {
   KosDynFrame *globals_frame;     /* cached outermost frame (for op_GLOBALS) */
   uint32_t globals_cache_version; /* chain_version when globals_frame was set */
 
+  KosEvaluatorToken *token; /* evaluator identity; ownership marker for continuations */
+
   /* Hook execution state */
   KosHookRunner hook_runner;
 
@@ -67,17 +69,15 @@ struct KosContext {
   /* Delimited continuation: top of installed segment when inside invoked k */
   KosDynNode *invocation_segment_top;
 
-  /* Python await bridging state */
+  /* Python bridge: await/yield suspend and resume */
   PyObject *py_await_iter;   /* await-iterator from __await__() */
   PyObject *py_last_yielded; /* last yielded object (debug/optional) */
+  PyObject *py_resume_inject; /* value to push on next koskari_eval when resuming */
+  uint8_t py_resume_kind;    /* 0=none, 1=await, 2=yield */
 
-  /* Exception injection for resume */
-  int pending_throw;
-  PyObject *pending_exc;
-
-  /* Finally handler state: we entered a finally due to raise/return */
-  int handling_raise;        /* 1 when in finally because of exception */
-  PyObject *handling_result;  /* stashed return value (future return-through-finally) */
+  /* Exception injection (set by coroutine_throw or dynchain inject) */
+  int inject_mode;       /* 0=none, 1=pending_throw */
+  PyObject *inject_value;  /* exception object when inject_mode==1 */
 
   /* Pending async gen (in-loop NEXT/ITER_NEXT): gen frame is attached, awaiting yield/return */
   void *pending_agen;        /* KosPyAsyncGen * when set */

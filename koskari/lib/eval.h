@@ -185,26 +185,22 @@ struct KosContext {
   /* Delimited continuation: top of installed segment when inside invoked k */
   KosDynNode *invocation_segment_top;
 
-  /* Python await bridging state */
+  /* --- Python bridge: await/yield suspend and resume --- */
   PyObject *py_await_iter;   /* await-iterator from __await__() */
   PyObject *py_last_yielded; /* last yielded object (debug/optional) */
-  PyObject *py_await_inject; /* value to push on next koskari_eval when resuming */
-  PyObject *py_yield_inject; /* value to push on next koskari_eval when resuming from yield */
+  PyObject *py_resume_inject; /* value to push on next koskari_eval when resuming */
+  uint8_t py_resume_kind;    /* 0=none, 1=await, 2=yield */
 
-  /* exception injection for resume */
-  int pending_throw;
-  PyObject *pending_exc;
+  /* --- Exception injection (set by coroutine_throw or dynchain inject) --- */
+  int inject_mode;       /* 0=none, 1=pending_throw */
+  PyObject *inject_value;  /* exception object when inject_mode==1 */
 
-  /* finally handler state: we entered a finally due to raise/return */
-  int handling_raise;        /* 1 when in finally because of exception */
-  PyObject *handling_result;  /* stashed return value (future return-through-finally) */
-
-  /* Pending async gen: top frame is gen frame run for NEXT/ITER_NEXT (in-loop) */
+  /* --- Pending async gen: NEXT and ITER_NEXT (Koskari gen) --- */
   void *pending_agen;        /* KosPyAsyncGen * when set (avoid func.h in eval.h) */
   PyObject *pending_agen_default;  /* default value for 2-arg NEXT (or NULL) */
   int pending_agen_n;       /* 1 or 2 for NEXT; 0 for ITER_NEXT */
-  void *pending_agen_region; /* KosDynRegion * for ITER_NEXT exhausted (else target) */
-  uint32_t pending_agen_else_pc;  /* else PC for ITER_NEXT */
+  void *pending_agen_region;  /* KosDynRegion * for ITER_NEXT exhausted; NULL for NEXT */
+  uint32_t pending_agen_else_pc;  /* else PC for ITER_NEXT exhausted */
 
   uint32_t flags;            /* KosContextFlags */
 
@@ -226,12 +222,17 @@ struct KosContext {
 #define KosContext_INVOCATION_SEGMENT_TOP(c) (((KosContext *)(c))->invocation_segment_top)
 #define KosContext_PY_AWAIT_ITER(c)          (((KosContext *)(c))->py_await_iter)
 #define KosContext_PY_LAST_YIELDED(c)        (((KosContext *)(c))->py_last_yielded)
-#define KosContext_PY_AWAIT_INJECT(c)        (((KosContext *)(c))->py_await_inject)
-#define KosContext_PY_YIELD_INJECT(c)        (((KosContext *)(c))->py_yield_inject)
-#define KosContext_PENDING_THROW(c)          (((KosContext *)(c))->pending_throw)
-#define KosContext_PENDING_EXC(c)            (((KosContext *)(c))->pending_exc)
-#define KosContext_HANDLING_RAISE(c)         (((KosContext *)(c))->handling_raise)
-#define KosContext_HANDLING_RESULT(c)        (((KosContext *)(c))->handling_result)
+#define KosContext_PY_RESUME_INJECT(c)       (((KosContext *)(c))->py_resume_inject)
+#define KosContext_PY_RESUME_KIND(c)         (((KosContext *)(c))->py_resume_kind)
+
+#define KOS_RESUME_NONE  0
+#define KOS_RESUME_AWAIT 1
+#define KOS_RESUME_YIELD 2
+#define KosContext_INJECT_MODE(c)            (((KosContext *)(c))->inject_mode)
+#define KosContext_INJECT_VALUE(c)           (((KosContext *)(c))->inject_value)
+
+#define KOS_INJECT_NONE   0
+#define KOS_INJECT_THROW  1
 #define KosContext_PENDING_AGEN(c)           (((KosContext *)(c))->pending_agen)
 #define KosContext_PENDING_AGEN_DEFAULT(c)   (((KosContext *)(c))->pending_agen_default)
 #define KosContext_PENDING_AGEN_N(c)         (((KosContext *)(c))->pending_agen_n)

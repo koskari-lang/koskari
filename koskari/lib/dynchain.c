@@ -325,6 +325,8 @@ KosDynRegion *kos_dynregion_new(
   KosDynRegion_RESULT(region) = NULL;
   KosDynRegion_ITER(region) = NULL;
   KosDynRegion_EXHAUSTED(region) = 0;
+  KosDynRegion_HANDLING_RAISE(region) = 0;
+  KosDynRegion_PENDING_AGEN_STATE(region) = NULL;
   return region;
 }
 
@@ -348,7 +350,19 @@ KosDynRegion *kos_dynregion_clone(KosDynRegion *region) {
   KosDynRegion_ITER(clone) = KosDynRegion_ITER(region);
   Py_XINCREF(KosDynRegion_ITER(clone));
   KosDynRegion_EXHAUSTED(clone) = KosDynRegion_EXHAUSTED(region);
+  KosDynRegion_HANDLING_RAISE(clone) = KosDynRegion_HANDLING_RAISE(region);
+  KosDynRegion_PENDING_AGEN_STATE(clone) = NULL;  /* do not clone; in-flight state */
   return clone;
+}
+
+
+void kos_dynregion_clear_pending_agen_state(KosDynRegion *region) {
+  KosAgenAwaitState *state = (KosAgenAwaitState *) KosDynRegion_PENDING_AGEN_STATE(region);
+  if (! state)
+    return;
+  Py_XDECREF(state->default_val);
+  PyMem_Free(state);
+  KosDynRegion_PENDING_AGEN_STATE(region) = NULL;
 }
 
 
@@ -356,6 +370,7 @@ void kos_dynregion_free(KosDynRegion *region) {
   if (! region)
     return;
 
+  kos_dynregion_clear_pending_agen_state(region);
   /* DECREF payload owned references */
   Py_XDECREF(KosDynRegion_RESULT(region));
   Py_XDECREF(KosDynRegion_ITER(region));
@@ -1600,10 +1615,10 @@ int kos_run_transfer_step(KosContext *ctx) {
              KosContext_FRAME_TOP(ctx) ? (void *) KosDynFrame_STACK(KosContext_FRAME_TOP(ctx)) : NULL,
              action->data.inject.is_throw);
       if (action->data.inject.is_throw) {
-        KosContext_PENDING_THROW(ctx) = 1;
+        KosContext_INJECT_MODE(ctx) = KOS_INJECT_THROW;
         Py_XINCREF(action->data.inject.value);
-        Py_XDECREF(KosContext_PENDING_EXC(ctx));
-        KosContext_PENDING_EXC(ctx) = action->data.inject.value;
+        Py_XDECREF(KosContext_INJECT_VALUE(ctx));
+        KosContext_INJECT_VALUE(ctx) = action->data.inject.value;
       } else {
         /* Push value onto frame's stack (PushRef allocates block if NULL) */
         if (KosContext_FRAME_TOP(ctx) &&

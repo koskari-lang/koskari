@@ -117,6 +117,21 @@ typedef enum KosRegionStyle {
 } KosRegionStyle;
 
 
+/**
+   KosAgenAwaitState holds ITER_NEXT state when a FOREACH region is awaiting
+   a Koskari async gen. Stored in region.pending_agen_state. Caller (eval.c)
+   allocates with PyMem_Malloc; dynchain frees via kos_dynregion_clear_pending_agen_state.
+*/
+struct KosAgenAwaitState {
+  void *agen;           /* KosPyAsyncGen * (avoid func.h in dynchain.h) */
+  PyObject *default_val;  /* default for 2-arg NEXT; NULL for ITER_NEXT */
+  int n;                /* 1 or 2 for NEXT; 0 for ITER_NEXT */
+  uint32_t else_pc;     /* else PC for ITER_NEXT exhausted */
+};
+
+typedef struct KosAgenAwaitState KosAgenAwaitState;
+
+
 /* === KosDynNode: tagged union for all chain node kinds === */
 
 
@@ -164,6 +179,8 @@ struct KosDynNode {
       PyObject *result;
       PyObject *iter;
       uint8_t exhausted;
+      uint8_t handling_raise;  /* FINALLY only: 1 when entered due to exception */
+      void *pending_agen_state;  /* KosAgenAwaitState * for FOREACH ITER_NEXT; NULL otherwise */
     } region;
     struct {
       PyObject *saved_ns;
@@ -448,6 +465,16 @@ KosDynRegion *kos_dynregion_clone(KosDynRegion *region);
    :param region: region to free (may be NULL)
 */
 void kos_dynregion_free(KosDynRegion *region);
+
+
+/**
+   Clear and free pending_agen_state on a region if set. Call before freeing
+   or when unwinding an ITER_NEXT that hit a Koskari gen. Safe to call when
+   region or state is NULL.
+
+   :param region: region (may be NULL)
+*/
+void kos_dynregion_clear_pending_agen_state(KosDynRegion *region);
 
 
 /**
@@ -1133,6 +1160,10 @@ int kos_hookrunner_traverse(
 #define KosDynRegion_RESULT(r)     (((KosDynNode *)(r))->u.region.result)
 #define KosDynRegion_ITER(r)       (((KosDynNode *)(r))->u.region.iter)
 #define KosDynRegion_EXHAUSTED(r)  (((KosDynNode *)(r))->u.region.exhausted)
+#define KosDynRegion_HANDLING_RAISE(r) (((KosDynNode *)(r))->u.region.handling_raise)
+/* For FINALLY regions: result holds handling_result (stashed return value) */
+#define KosDynRegion_HANDLING_RESULT(r) KosDynRegion_RESULT(r)
+#define KosDynRegion_PENDING_AGEN_STATE(r) (((KosDynNode *)(r))->u.region.pending_agen_state)
 
 #define KosDynNs_SAVED_NS(n)      (((KosDynNode *)(n))->u.ns.saved_ns)
 

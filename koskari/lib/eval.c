@@ -124,14 +124,15 @@ static int run_transfer_plan_to_completion(KosContext *ctx, KosEvent *out_ev) {
 
 
 /**
-   Unwind pending async gen on error. If ctx has a pending async gen and the
-   top frame is the gen frame, detach it, close the gen, and clear all
-   pending_agen fields. Call when propagating an exception so the gen is
-   properly closed and state is reset.
+   Unwind pending async gen on error. If ctx has a pending async gen (NEXT or
+   ITER_NEXT), and the top frame is the gen frame, detach it, close the gen,
+   and clear state. Call when propagating an exception so the gen is properly
+   closed.
 */
 static void clear_pending_agen_on_error(KosContext *ctx) {
-  if (! KosContext_PENDING_AGEN(ctx) || ! KosContext_FRAME_TOP(ctx)
-      || KosDynNode_PARENT(KosContext_FRAME_TOP(ctx)) == NULL)
+  if (! KosContext_FRAME_TOP(ctx) || KosDynNode_PARENT(KosContext_FRAME_TOP(ctx)) == NULL)
+    return;
+  if (! KosContext_PENDING_AGEN(ctx))
     return;
   KosPyAsyncGen *agen = (KosPyAsyncGen *) KosContext_PENDING_AGEN(ctx);
   KosDynFrame *detached_frame = NULL;
@@ -426,18 +427,14 @@ KosContext *kos_context_new(KosDynFrame *top) {
   /* Initialize Python await bridging */
   KosContext_PY_AWAIT_ITER(ctx) = NULL;
   KosContext_PY_LAST_YIELDED(ctx) = NULL;
-  KosContext_PY_AWAIT_INJECT(ctx) = NULL;
-  KosContext_PY_YIELD_INJECT(ctx) = NULL;
+  KosContext_PY_RESUME_INJECT(ctx) = NULL;
+  KosContext_PY_RESUME_KIND(ctx) = KOS_RESUME_NONE;
 
   /* Initialize exception injection */
-  KosContext_PENDING_THROW(ctx) = 0;
-  KosContext_PENDING_EXC(ctx) = NULL;
+  KosContext_INJECT_MODE(ctx) = KOS_INJECT_NONE;
+  KosContext_INJECT_VALUE(ctx) = NULL;
 
-  /* Initialize finally-handler stash */
-  KosContext_HANDLING_RAISE(ctx) = 0;
-  KosContext_HANDLING_RESULT(ctx) = NULL;
-
-  /* Pending async gen (in-loop NEXT/ITER_NEXT) */
+  /* Pending async gen (NEXT and ITER_NEXT) */
   KosContext_PENDING_AGEN(ctx) = NULL;
   KosContext_PENDING_AGEN_DEFAULT(ctx) = NULL;
   KosContext_PENDING_AGEN_N(ctx) = 0;
@@ -481,10 +478,8 @@ void kos_context_free(KosContext *ctx) {
 
   Py_XDECREF(KosContext_PY_AWAIT_ITER(ctx));
   Py_XDECREF(KosContext_PY_LAST_YIELDED(ctx));
-  Py_XDECREF(KosContext_PY_AWAIT_INJECT(ctx));
-  Py_XDECREF(KosContext_PY_YIELD_INJECT(ctx));
-  Py_XDECREF(KosContext_PENDING_EXC(ctx));
-  Py_XDECREF(KosContext_HANDLING_RESULT(ctx));
+  Py_XDECREF(KosContext_PY_RESUME_INJECT(ctx));
+  Py_XDECREF(KosContext_INJECT_VALUE(ctx));
   Py_XDECREF(KosContext_PENDING_AGEN_DEFAULT(ctx));
 
   if (context_freecount < CONTEXT_MAX_FREE) {
@@ -509,10 +504,8 @@ int kos_context_traverse(
   Py_VISIT(KosContext_TOKEN(ctx));
   Py_VISIT(KosContext_PY_AWAIT_ITER(ctx));
   Py_VISIT(KosContext_PY_LAST_YIELDED(ctx));
-  Py_VISIT(KosContext_PY_AWAIT_INJECT(ctx));
-  Py_VISIT(KosContext_PY_YIELD_INJECT(ctx));
-  Py_VISIT(KosContext_PENDING_EXC(ctx));
-  Py_VISIT(KosContext_HANDLING_RESULT(ctx));
+  Py_VISIT(KosContext_PY_RESUME_INJECT(ctx));
+  Py_VISIT(KosContext_INJECT_VALUE(ctx));
   Py_VISIT(KosContext_PENDING_AGEN_DEFAULT(ctx));
 
   /* Traverse the dynamic chain */
@@ -1040,23 +1033,34 @@ KOS_OP_HANDLER(RETURN) {
 
   /* Frame has parent: return into parent in same loop. */
   if (KosDynNode_PARENT(KosContext_FRAME_TOP(ctx)) != NULL) {
-    int was_pending = (KosContext_PENDING_AGEN(ctx) != NULL);
-    KosPyAsyncGen *agen = was_pending ? (KosPyAsyncGen *) KosContext_PENDING_AGEN(ctx) : NULL;
+    int was_pending_ctx = (KosContext_PENDING_AGEN(ctx) != NULL);
     KosDynFrame *detached_frame = NULL;
     if (kos_dyn_detach_top_frame(ctx, &detached_frame) < 0) {
       Py_DECREF(val);
       return -1;
     }
-    if (was_pending && agen) {
+    KosPyAsyncGen *agen = was_pending_ctx ? (KosPyAsyncGen *) KosContext_PENDING_AGEN(ctx) : NULL;
+
+    if (was_pending_ctx && agen) {
       agen->closed = 1;
       agen->in_progress = 0;
+      if (KosContext_PENDING_AGEN_N(ctx) == 0 && KosContext_PENDING_AGEN_REGION(ctx)) {
+        /* ITER_NEXT case: exhausted; jump to else */
+        KosDynRegion *r = (KosDynRegion *) KosContext_PENDING_AGEN_REGION(ctx);
+        KosDynRegion_EXHAUSTED(r) = 1;
+        KosDynFrame_PC(KosContext_FRAME_TOP(ctx)) = KosContext_PENDING_AGEN_ELSE_PC(ctx);
+        KosContext_PENDING_AGEN(ctx) = NULL;
+        KosContext_PENDING_AGEN_DEFAULT(ctx) = NULL;
+        KosContext_PENDING_AGEN_REGION(ctx) = NULL;
+        Py_DECREF(val);
+        return 0;
+      }
       if (KosContext_PENDING_AGEN_N(ctx) == 2 && KosContext_PENDING_AGEN_DEFAULT(ctx)) {
         if (KosStackBlock_PushRef(&KosDynFrame_STACK(KosContext_FRAME_TOP(ctx)),
                                   KosContext_PENDING_AGEN_DEFAULT(ctx)) < 0) {
           Py_XDECREF(KosContext_PENDING_AGEN_DEFAULT(ctx));
           KosContext_PENDING_AGEN_DEFAULT(ctx) = NULL;
           KosContext_PENDING_AGEN(ctx) = NULL;
-          KosContext_PENDING_AGEN_REGION(ctx) = NULL;
           Py_DECREF(val);
           return -1;
         }
@@ -1067,19 +1071,12 @@ KOS_OP_HANDLER(RETURN) {
         Py_DECREF(val);
         KosContext_PENDING_AGEN(ctx) = NULL;
         KosContext_PENDING_AGEN_DEFAULT(ctx) = NULL;
-        KosContext_PENDING_AGEN_REGION(ctx) = NULL;
         return -1;
       } else {
-        /* ITER_NEXT: exhausted */
-        KosDynRegion *region = (KosDynRegion *) KosContext_PENDING_AGEN_REGION(ctx);
-        if (region)
-          KosDynRegion_EXHAUSTED(region) = 1;
-        KosDynFrame_PC(KosContext_FRAME_TOP(ctx)) = KosContext_PENDING_AGEN_ELSE_PC(ctx);
         Py_DECREF(val);
       }
       KosContext_PENDING_AGEN(ctx) = NULL;
       KosContext_PENDING_AGEN_DEFAULT(ctx) = NULL;
-      KosContext_PENDING_AGEN_REGION(ctx) = NULL;
       return 0;
     }
     /* Normal CALL return: push value onto parent. */
@@ -1654,12 +1651,12 @@ KOS_OP_HANDLER(POP_FINALLY) {
     return -1;
   }
 
-  if (KosContext_HANDLING_RAISE(ctx)) {
+  if (KosDynRegion_HANDLING_RAISE(region)) {
     PyObject *typ = NULL, *val = NULL, *tb = NULL;
     PyErr_GetExcInfo(&typ, &val, &tb);
     PyErr_Restore(typ, val, tb);
     PyErr_SetExcInfo(NULL, NULL, NULL);
-    KosContext_HANDLING_RAISE(ctx) = 0;
+    KosDynRegion_HANDLING_RAISE(region) = 0;
   }
   kos_dyn_pop_region(ctx, region);
   (void) out_ev;
@@ -2762,7 +2759,7 @@ KOS_OP_HANDLER(CONTINUE) {
 /**
    YIELD: arg = 0 (None), 1 (single value), or N (tuple of N values).
    Pop the value(s) from the stack and suspend with KOS_EV_YIELD.
-   Resumption (send value) is handled by py_yield_inject at re-entry.
+   Resumption (send value) is handled by py_resume_inject at re-entry.
 */
 KOS_OP_HANDLER(YIELD) {
   unsigned opa = insn->arg;
@@ -2789,39 +2786,16 @@ KOS_OP_HANDLER(YIELD) {
 
   /* Frame has parent: return into parent in same loop (CALL return or async gen step). */
   if (KosDynNode_PARENT(KosContext_FRAME_TOP(ctx)) != NULL) {
-    int was_pending = (KosContext_PENDING_AGEN(ctx) != NULL);
-    KosPyAsyncGen *agen = was_pending ? (KosPyAsyncGen *) KosContext_PENDING_AGEN(ctx) : NULL;
+    int was_pending_ctx = (KosContext_PENDING_AGEN(ctx) != NULL);
+    KosPyAsyncGen *agen = was_pending_ctx ? (KosPyAsyncGen *) KosContext_PENDING_AGEN(ctx) : NULL;
+    if (was_pending_ctx && agen)
+      agen->in_progress = 0;
     KosDynFrame *detached = NULL;
     if (kos_dyn_detach_top_frame(ctx, &detached) < 0) {
       Py_DECREF(val);
       return -1;
     }
-    if (was_pending && agen) {
-      agen->in_progress = 0;
-      KosContext_PENDING_AGEN(ctx) = NULL;
-      Py_XDECREF(KosContext_PENDING_AGEN_DEFAULT(ctx));
-      KosContext_PENDING_AGEN_DEFAULT(ctx) = NULL;
-      KosContext_PENDING_AGEN_REGION(ctx) = NULL;
-    }
-    if (KosStackBlock_PushRef(&KosDynFrame_STACK(KosContext_FRAME_TOP(ctx)), val) < 0) {
-      Py_DECREF(val);
-      return -1;
-    }
-    Py_DECREF(val);
-    return 0;
-  }
-
-  /* Frame has parent: return into parent in same loop. */
-  if (KosDynNode_PARENT(KosContext_FRAME_TOP(ctx)) != NULL) {
-    int was_pending = (KosContext_PENDING_AGEN(ctx) != NULL);
-    KosPyAsyncGen *agen = was_pending ? (KosPyAsyncGen *) KosContext_PENDING_AGEN(ctx) : NULL;
-    KosDynFrame *detached_frame = NULL;
-    if (kos_dyn_detach_top_frame(ctx, &detached_frame) < 0) {
-      Py_DECREF(val);
-      return -1;
-    }
-    if (was_pending && agen) {
-      agen->in_progress = 0;
+    if (was_pending_ctx && agen) {
       KosContext_PENDING_AGEN(ctx) = NULL;
       Py_XDECREF(KosContext_PENDING_AGEN_DEFAULT(ctx));
       KosContext_PENDING_AGEN_DEFAULT(ctx) = NULL;
@@ -2957,49 +2931,63 @@ static KosGetNextResult op_get_next_from_iter(
 static int op_attach_koskari_agen_frame(
     KosContext *ctx,
     KosPyAsyncGen *agen,
-    int for_next,
     PyObject *iter,
     PyObject *default_val) {
 
   KosDynFrame *gen_frame = KosContext_FRAME_TOP(agen->ctx);
   if (! gen_frame) {
     KosContext_PENDING_AGEN(ctx) = NULL;
-    if (for_next) {
-      Py_XDECREF(KosContext_PENDING_AGEN_DEFAULT(ctx));
-      KosContext_PENDING_AGEN_DEFAULT(ctx) = NULL;
-      Py_DECREF(iter);
-      Py_XDECREF(default_val);
-    } else {
-      KosContext_PENDING_AGEN_REGION(ctx) = NULL;
-    }
+    Py_XDECREF(KosContext_PENDING_AGEN_DEFAULT(ctx));
+    KosContext_PENDING_AGEN_DEFAULT(ctx) = NULL;
+    Py_DECREF(iter);
+    Py_DECREF(default_val);
     agen->in_progress = 0;
     PyErr_SetString(PyExc_RuntimeError, "async generator has no frame");
     return -1;
   }
   if (KosStackBlock_PushRef(&KosDynFrame_STACK(gen_frame), Py_None) < 0) {
     KosContext_PENDING_AGEN(ctx) = NULL;
-    if (for_next) {
-      Py_XDECREF(KosContext_PENDING_AGEN_DEFAULT(ctx));
-      KosContext_PENDING_AGEN_DEFAULT(ctx) = NULL;
-      Py_DECREF(iter);
-      Py_DECREF(default_val);
-    } else {
-      KosContext_PENDING_AGEN_REGION(ctx) = NULL;
-    }
+    Py_XDECREF(KosContext_PENDING_AGEN_DEFAULT(ctx));
+    KosContext_PENDING_AGEN_DEFAULT(ctx) = NULL;
+    Py_DECREF(iter);
+    Py_DECREF(default_val);
     agen->in_progress = 0;
     return -1;
   }
   if (kos_dyn_attach_frame(ctx, gen_frame) < 0) {
     (void) KosStackBlock_PopRef(&KosDynFrame_STACK(gen_frame));
     KosContext_PENDING_AGEN(ctx) = NULL;
-    if (for_next) {
-      Py_XDECREF(KosContext_PENDING_AGEN_DEFAULT(ctx));
-      KosContext_PENDING_AGEN_DEFAULT(ctx) = NULL;
-      Py_DECREF(iter);
-      Py_DECREF(default_val);
-    } else {
-      KosContext_PENDING_AGEN_REGION(ctx) = NULL;
-    }
+    Py_XDECREF(KosContext_PENDING_AGEN_DEFAULT(ctx));
+    KosContext_PENDING_AGEN_DEFAULT(ctx) = NULL;
+    Py_DECREF(iter);
+    Py_DECREF(default_val);
+    agen->in_progress = 0;
+    return -1;
+  }
+  return 0;
+}
+
+
+/**
+   ITER_NEXT variant: attach gen frame; on error clear region's pending_agen_state.
+*/
+static int op_attach_koskari_agen_frame_for_iter_next(
+    KosContext *ctx,
+    KosPyAsyncGen *agen,
+    KosDynRegion *region) {
+
+  KosDynFrame *gen_frame = KosContext_FRAME_TOP(agen->ctx);
+  if (! gen_frame) {
+    agen->in_progress = 0;
+    PyErr_SetString(PyExc_RuntimeError, "async generator has no frame");
+    return -1;
+  }
+  if (KosStackBlock_PushRef(&KosDynFrame_STACK(gen_frame), Py_None) < 0) {
+    agen->in_progress = 0;
+    return -1;
+  }
+  if (kos_dyn_attach_frame(ctx, gen_frame) < 0) {
+    (void) KosStackBlock_PopRef(&KosDynFrame_STACK(gen_frame));
     agen->in_progress = 0;
     return -1;
   }
@@ -3079,7 +3067,7 @@ KOS_OP_HANDLER(NEXT) {
       KosContext_PENDING_AGEN_DEFAULT(ctx) = NULL;
     }
     KosContext_PENDING_AGEN_N(ctx) = (int) n;
-    if (op_attach_koskari_agen_frame(ctx, agen, 1, iter, default_val) < 0)
+    if (op_attach_koskari_agen_frame(ctx, agen, iter, default_val) < 0)
       return -1;
     Py_DECREF(iter);
     Py_XDECREF(default_val);
@@ -3170,8 +3158,12 @@ KOS_OP_HANDLER(ITER_NEXT) {
     KosContext_PENDING_AGEN_N(ctx) = 0;
     KosContext_PENDING_AGEN_REGION(ctx) = (void *) region;
     KosContext_PENDING_AGEN_ELSE_PC(ctx) = insn->arg;
-    if (op_attach_koskari_agen_frame(ctx, agen, 0, NULL, NULL) < 0)
+    if (op_attach_koskari_agen_frame_for_iter_next(ctx, agen, region) < 0) {
+      agen->in_progress = 0;
+      KosContext_PENDING_AGEN(ctx) = NULL;
+      KosContext_PENDING_AGEN_REGION(ctx) = NULL;
       return -1;
+    }
     return 0;
   }
   PyObject *value = NULL;
@@ -4518,7 +4510,7 @@ static int try_local_exception_handler(KosContext *ctx, KosEvent *out_ev) {
   }
 
   if (KosDynRegion_STYLE(region) == KOS_REGION_FINALLY)
-    KosContext_HANDLING_RAISE(ctx) = 1;
+    KosDynRegion_HANDLING_RAISE(region) = 1;
 
   return 1;
 }
@@ -4545,10 +4537,10 @@ int koskari_eval(KosContext *ctx, KosEvent *out_ev) {
   KosEvaluatorToken_IncrementLiveDepth(KosContext_TOKEN(ctx));
 
   /* Handle pending exception injection */
-  if (KosContext_PENDING_THROW(ctx) && KosContext_PENDING_EXC(ctx)) {
-    PyErr_SetObject((PyObject *) Py_TYPE(KosContext_PENDING_EXC(ctx)), KosContext_PENDING_EXC(ctx));
-    Py_CLEAR(KosContext_PENDING_EXC(ctx));
-    KosContext_PENDING_THROW(ctx) = 0;
+  if (KosContext_INJECT_MODE(ctx) == KOS_INJECT_THROW && KosContext_INJECT_VALUE(ctx)) {
+    PyErr_SetObject((PyObject *) Py_TYPE(KosContext_INJECT_VALUE(ctx)), KosContext_INJECT_VALUE(ctx));
+    Py_CLEAR(KosContext_INJECT_VALUE(ctx));
+    KosContext_INJECT_MODE(ctx) = KOS_INJECT_NONE;
 
     out_ev->kind = KOS_EV_RAISE;
     out_ev->payload = NULL;
@@ -4586,26 +4578,17 @@ int koskari_eval(KosContext *ctx, KosEvent *out_ev) {
     goto koskari_eval_cleanup;
   }
 
-  /* Re-entry: inject value from completed Python await */
-  if (KosContext_PY_AWAIT_INJECT(ctx)) {
-    if (KosStackBlock_PushRef(&KosDynFrame_STACK(KosContext_FRAME_TOP(ctx)), KosContext_PY_AWAIT_INJECT(ctx)) < 0) {
-      Py_DECREF(KosContext_PY_AWAIT_INJECT(ctx));
-      KosContext_PY_AWAIT_INJECT(ctx) = NULL;
+  /* Re-entry: inject value from completed Python await or send() when resuming from yield */
+  if (KosContext_PY_RESUME_INJECT(ctx) && KosContext_PY_RESUME_KIND(ctx) != KOS_RESUME_NONE) {
+    if (KosStackBlock_PushRef(&KosDynFrame_STACK(KosContext_FRAME_TOP(ctx)), KosContext_PY_RESUME_INJECT(ctx)) < 0) {
+      Py_DECREF(KosContext_PY_RESUME_INJECT(ctx));
+      KosContext_PY_RESUME_INJECT(ctx) = NULL;
+      KosContext_PY_RESUME_KIND(ctx) = KOS_RESUME_NONE;
       eval_ret = -1;
       goto koskari_eval_cleanup;
     }
-    Py_CLEAR(KosContext_PY_AWAIT_INJECT(ctx));
-  }
-
-  /* Re-entry: inject value from send() when resuming from yield */
-  if (KosContext_PY_YIELD_INJECT(ctx)) {
-    if (KosStackBlock_PushRef(&KosDynFrame_STACK(KosContext_FRAME_TOP(ctx)), KosContext_PY_YIELD_INJECT(ctx)) < 0) {
-      Py_DECREF(KosContext_PY_YIELD_INJECT(ctx));
-      KosContext_PY_YIELD_INJECT(ctx) = NULL;
-      eval_ret = -1;
-      goto koskari_eval_cleanup;
-    }
-    Py_CLEAR(KosContext_PY_YIELD_INJECT(ctx));
+    Py_CLEAR(KosContext_PY_RESUME_INJECT(ctx));
+    KosContext_PY_RESUME_KIND(ctx) = KOS_RESUME_NONE;
   }
 
 #if KOS_USE_COMPUTED_GOTO

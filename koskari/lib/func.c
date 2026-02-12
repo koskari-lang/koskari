@@ -481,8 +481,9 @@ static PyObject *coroutine_send(PyObject *self, PyObject *value) {
   if (coro->state == KOS_CORO_YIELDED) {
     PyObject *inject = (value != NULL) ? value : Py_None;
     Py_INCREF(inject);
-    Py_XDECREF(coro->ctx->py_yield_inject);
-    coro->ctx->py_yield_inject = inject;
+    Py_XDECREF(KosContext_PY_RESUME_INJECT(coro->ctx));
+    KosContext_PY_RESUME_INJECT(coro->ctx) = inject;
+    KosContext_PY_RESUME_KIND(coro->ctx) = KOS_RESUME_YIELD;
     coro->state = KOS_CORO_RUNNING;
   }
 
@@ -505,8 +506,9 @@ static PyObject *coroutine_send(PyObject *self, PyObject *value) {
 
       Py_CLEAR(coro->ctx->py_await_iter);
       coro->state = KOS_CORO_RUNNING;
-      Py_XDECREF(coro->ctx->py_await_inject);
-      coro->ctx->py_await_inject = await_result;
+      Py_XDECREF(KosContext_PY_RESUME_INJECT(coro->ctx));
+      KosContext_PY_RESUME_INJECT(coro->ctx) = await_result;
+      KosContext_PY_RESUME_KIND(coro->ctx) = KOS_RESUME_AWAIT;
       /* fall through to drive and handle ev */
     } else {
       /* Exception from Python awaitable */
@@ -615,8 +617,9 @@ static PyObject *coroutine_throw(PyObject *self, PyObject *args) {
         await_result = Py_None;
       Py_CLEAR(coro->ctx->py_await_iter);
       coro->state = KOS_CORO_RUNNING;
-      Py_XDECREF(coro->ctx->py_await_inject);
-      coro->ctx->py_await_inject = await_result;
+      Py_XDECREF(KosContext_PY_RESUME_INJECT(coro->ctx));
+      KosContext_PY_RESUME_INJECT(coro->ctx) = await_result;
+      KosContext_PY_RESUME_KIND(coro->ctx) = KOS_RESUME_AWAIT;
       return coroutine_send(self, Py_None);
     } else {
       Py_CLEAR(coro->ctx->py_await_iter);
@@ -628,10 +631,10 @@ static PyObject *coroutine_throw(PyObject *self, PyObject *args) {
   /* Normalize exception */
   PyErr_NormalizeException(&typ, &val, &tb);
 
-  coro->ctx->pending_throw = 1;
+  KosContext_INJECT_MODE(coro->ctx) = KOS_INJECT_THROW;
   Py_XINCREF(val);
-  Py_XDECREF(coro->ctx->pending_exc);
-  coro->ctx->pending_exc = val;
+  Py_XDECREF(KosContext_INJECT_VALUE(coro->ctx));
+  KosContext_INJECT_VALUE(coro->ctx) = val;
 
   return coroutine_send(self, Py_None);
 }
