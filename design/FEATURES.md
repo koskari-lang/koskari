@@ -86,7 +86,7 @@ The VM in `eval.c` uses a jump table; every opcode has a handler. Handlers are e
 **Fully implemented** (handler does real work; no stub):
 - **Pseudo / stack**: NOOP, LABEL, POSITION, DUP, POP, CONST
 - **Control**: RETURN, AWAIT, YIELD (suspend with value; resumption via send; async gen support)
-- **Calls**: CALL (simple positional call; KosExpression/KosFunction → new frame via `kos_koscall`)
+- **Calls**: CALL (arg = N; stack [callable, arg_0, ..., arg_{N-1}]; Continuation/DelimitedContinuation → call_call_continuation; KosExpression/KosFunction → new frame in same loop; other callables → PyObject_Call then push_or_await)
 - **Introspection**: GLOBALS, LOCALS
 - **Variables by name**: VAR (load), VAR_BIND (bind), VAR_CLEAR (delete), VAR_REF (closure ref), VAR_STORE (store TOS to name)
 - **Variables by index (fast locals)**: FAST, FAST_BIND, FAST_CLEAR, FAST_REF, FAST_STORE
@@ -97,7 +97,8 @@ The VM in `eval.c` uses a jump table; every opcode has a handler. Handlers are e
 - **Exceptions**: EXCEPTION, EXCEPTION_CLEAR, EXCEPTION_MATCH, RAISE, CHECK_EXCEPTION
 - **Try/finally**: PUSH_TRY, PUSH_FINALLY, POP_TRY, POP_FINALLY, CLEAR_TRY, CLEAR_FINALLY
 - **Delimited continuations**: PUSH_PROMPT, SET_PROMPT_HANDLER, POP_PROMPT, SHIFT
-- **Continuation invocation**: INVOKE_K (stack-based: pop value, pop cont), INVOKE_K_VAR (name-based: pop value, lookup name in frame ns, invoke)
+- **Undelimited continuations**: PUSH_CC, CAPTURE_CC, POP_CC (capture); invocation via CALL 0 or CALL 1 with stack [callable, arg_0, ...]. Continuation carries token_ref (KosEvaluatorToken); same-token invoke applies directly, different-token raises KoskariContinuationApply (propagated to caller).
+- **Continuation invocation**: INVOKE_K (delimited: stack-based), INVOKE_K_VAR (delimited: name-based); undelimited via CALL as above
 - **Object protocol**: All OBJECT_* opcodes (comparisons, arithmetic, predicates, len/type/iter/str/repr/vars/dir, bitwise, in/not in, is/is not, isinstance/issubclass, etc.)
 - **Iteration**: ITER_NEXT (region-only, must be inside PUSH_FOREACH; uses region->iter; arg = else label; auto-await), NEXT (stack-based; arg = 1 or 2; 1-arg: StopIteration raises; 2-arg: StopIteration pushes default; auto-await for sync iter, Python async iter, Koskari async gen)
 - **Loop control**: PUSH_LOOP, PUSH_FOREACH, POP_LOOP, CLEAR_LOOP, BREAK, CONTINUE (use KosDynRegion LOOP/FOREACH on dynamic chain; PUSH_LOOP pushes stack block; BREAK/CONTINUE unwind via kos_find_region_for_loop; ITER_NEXT at loop head for foreach)
@@ -135,9 +136,8 @@ There are no **partially** implemented opcodes; each handler is either full or s
 ## Missing/To Design
 
 ### Call/CC (undelimited)
-- **Delimited continuations (reset/shift)**: Implemented in koskari. PUSH_PROMPT, SET_PROMPT_HANDLER, POP_PROMPT, SHIFT capture the continuation up to a prompt; INVOKE_K and INVOKE_K_VAR invoke captured delimited continuations. Multi-shot; transfer plans and LCA-based wind/unwind run on invocation. See design/interpreter/callcc.md.
-- **Undelimited call/cc**: Capture is not implemented (no CAPTURE_CC opcode or VM path to create a full continuation). The Python type `KosPyContinuation` and invocation path exist (callable, KoskariContinuationApply) so that if an undelimited continuation were created (e.g. from outside the VM), it could be invoked. Deferred until undelimited capture is added.
-- **Status**: sibilant-ceval may still be blocked on undelimited call/cc if that evaluator requires it.
+- **Delimited continuations (reset/shift)**: Implemented. PUSH_PROMPT, SET_PROMPT_HANDLER, POP_PROMPT, SHIFT capture the continuation up to a prompt; INVOKE_K and INVOKE_K_VAR invoke captured delimited continuations. Multi-shot; transfer plans and LCA-based wind/unwind run on invocation. See design/interpreter/callcc.md.
+- **Undelimited call/cc**: Implemented. PUSH_CC, CAPTURE_CC, POP_CC capture an undelimited continuation (stored with token_ref = owning KosEvaluatorToken). Invocation is via CALL 0 or CALL 1 with stack [callable, arg_0, ...]. If the continuation’s token matches the current evaluator token (or is undelimited with no token_ref), it is applied directly; otherwise the VM sets KoskariContinuationApply and returns -1 so the exception propagates to the caller. Python type KosPyContinuation is callable; cross-token invoke raises KoskariContinuationApply. See design/interpreter/evaluator-token-continuation.md.
 
 ### Additional Features
 - **Comprehensions**: List/dict/set comprehensions
@@ -181,7 +181,7 @@ There are no **partially** implemented opcodes; each handler is either full or s
 - GC traversal: helpers for all VM structures
 
 **Continuation Support**:
-- Delimited multi-shot continuations (reset/shift) implemented in VM; undelimited (call/cc) capture deferred (invocation path exists)
+- Delimited multi-shot continuations (reset/shift) and undelimited call/cc (PUSH_CC, CAPTURE_CC, POP_CC) implemented in VM; invocation via CALL; KoskariContinuationApply propagated when invoking undelimited continuation from a different evaluator token
 - Dynamic wind/unwind hooks (before/after) used by continuation transfer plans; PUSH_WIND/POP_WIND/END_WIND opcodes are stubbed
 - Flattened async execution
 - Eager-step awaitable optimization
@@ -216,7 +216,7 @@ There are no **partially** implemented opcodes; each handler is either full or s
 - **PUSH_NS / POP_NS**: Create and pop namespace scopes. PUSH_NS arg = count of values to bind; opa=0 uses stack [NSPEC]; opa>0 uses [NSPEC, val0, ..., val(N-1), NAMES]. Uses KosDynNs node; SHIFT unwind restores namespaces correctly.
 - **VAR_STORE**: Pop TOS and store in frame namespace under name (supports KosNamespace and dict).
 - **INVOKE_K_VAR**: Pop value, look up name in frame namespace, invoke that continuation. Enables shift handlers to bind continuation by name (PUSH_NS + VAR_STORE + INVOKE_K_VAR).
-- **CAPTURE_CC**: Deferred until undelimited continuations exist.
+- **CAPTURE_CC**: Implemented. Captures undelimited continuation up to the current PUSH_CC block; continuation holds token_ref; invoke via CALL 0 or CALL 1.
 
 ### To Design
 - JIT integration

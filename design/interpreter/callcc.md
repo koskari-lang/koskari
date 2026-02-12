@@ -65,10 +65,13 @@ struct KosContinuation {
   KosDynFrame *resume_frame;    /* frame to resume into */
   uint32_t resume_pc;           /* pc to resume at */
   KosStackBlock *resume_stack;  /* stack state (COW reference) */
-  uint32_t prompt_id;           /* target prompt tag */
+  uint32_t prompt_id;           /* target prompt tag (KOS_PROMPT_ID_UNDELIMITED for call/cc) */
   uint8_t one_shot;             /* 0 = multi-shot, 1 = one-shot */
+  PyObject *token_ref;          /* KosEvaluatorToken (ownership); NULL for legacy undelimited */
 };
 ```
+
+Both delimited and undelimited continuations use this structure. Undelimited capture (`kos_capture_cc`) sets `prompt_id` to `KOS_PROMPT_ID_UNDELIMITED` and stores the owning context’s token in `token_ref`. Invocation (via the CALL opcode or from Python) checks the current evaluator token against `token_ref`; mismatch raises `KoskariContinuationApply`.
 
 ### KosPyContinuation Python Type
 
@@ -292,7 +295,13 @@ Wrapper `tp_traverse` implementations walk all reachable PyObjects:
 
 ## Opcodes
 
-### Prompt Control
+### Undelimited continuations (call/cc)
+- `PUSH_CC` — Push CC block; arg = resume label (instruction index after POP_CC)
+- `CAPTURE_CC` — Capture undelimited continuation up to the current CC block; push continuation on stack; stores owning evaluator token in the continuation
+- `POP_CC` — Pop CC block (normal completion)
+- **Invocation**: Use the general `CALL` opcode with stack `[callable, arg_0, ...]`. Same evaluator token → direct apply; different token → VM sets `KoskariContinuationApply` and returns -1 so the exception propagates to the caller. CALL 0 = resume with one value (Py_None); CALL 1 = resume with one argument.
+
+### Prompt Control (delimited)
 - `PUSH_PROMPT` — Push prompt node with tag from constant pool
 - `POP_PROMPT` — Pop prompt node (normal completion)
 - `SHIFT` — Capture continuation, abort to prompt
@@ -303,7 +312,8 @@ Wrapper `tp_traverse` implementations walk all reachable PyObjects:
 - `END_WIND` — Sentinel: terminate hook block
 
 ### Continuation Invocation
-- `INVOKE_K` — Invoke continuation from TOS
+- **Undelimited**: Invoke via `CALL` 0 or 1 (continuation and optional arg on stack; stack order [callable, arg_0, ...]).
+- `INVOKE_K` — Invoke delimited continuation from TOS
 
 ### Region Control
 - `PUSH_REGION` — Push region node for try/finally/loop/with
