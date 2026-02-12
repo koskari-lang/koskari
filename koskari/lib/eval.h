@@ -212,6 +212,35 @@ struct KosContext {
 };
 
 
+/* === KosContext accessor macros === */
+
+#define KosContext_DYN_TOP(c)                (((KosContext *)(c))->dyn_top)
+#define KosContext_FRAME_TOP(c)              (((KosContext *)(c))->frame_top)
+#define KosContext_GLOBALS_FRAME(c)          (((KosContext *)(c))->globals_frame)
+#define KosContext_GLOBALS_CACHE_VERSION(c)  (((KosContext *)(c))->globals_cache_version)
+#define KosContext_TOKEN(c)                  (((KosContext *)(c))->token)
+#define KosContext_HOOK_RUNNER(c)            (&((KosContext *)(c))->hook_runner)
+#define KosContext_PLAN(c)                   (((KosContext *)(c))->plan)
+#define KosContext_PLAN_STACK(c)             (((KosContext *)(c))->plan_stack)
+#define KosContext_CHAIN_VERSION(c)          (((KosContext *)(c))->chain_version)
+#define KosContext_INVOCATION_SEGMENT_TOP(c) (((KosContext *)(c))->invocation_segment_top)
+#define KosContext_PY_AWAIT_ITER(c)          (((KosContext *)(c))->py_await_iter)
+#define KosContext_PY_LAST_YIELDED(c)        (((KosContext *)(c))->py_last_yielded)
+#define KosContext_PY_AWAIT_INJECT(c)        (((KosContext *)(c))->py_await_inject)
+#define KosContext_PY_YIELD_INJECT(c)        (((KosContext *)(c))->py_yield_inject)
+#define KosContext_PENDING_THROW(c)          (((KosContext *)(c))->pending_throw)
+#define KosContext_PENDING_EXC(c)            (((KosContext *)(c))->pending_exc)
+#define KosContext_HANDLING_RAISE(c)         (((KosContext *)(c))->handling_raise)
+#define KosContext_HANDLING_RESULT(c)        (((KosContext *)(c))->handling_result)
+#define KosContext_PENDING_AGEN(c)           (((KosContext *)(c))->pending_agen)
+#define KosContext_PENDING_AGEN_DEFAULT(c)   (((KosContext *)(c))->pending_agen_default)
+#define KosContext_PENDING_AGEN_N(c)         (((KosContext *)(c))->pending_agen_n)
+#define KosContext_PENDING_AGEN_REGION(c)    (((KosContext *)(c))->pending_agen_region)
+#define KosContext_PENDING_AGEN_ELSE_PC(c)   (((KosContext *)(c))->pending_agen_else_pc)
+#define KosContext_FLAGS(c)                  (((KosContext *)(c))->flags)
+#define KosContext_FREELIST_NEXT(c)          (((KosContext *)(c))->context_freelist_next)
+
+
 /* === Context lifecycle === */
 
 

@@ -521,7 +521,7 @@ KosDynNode *kos_clone_chain_segment(KosDynNode *top, KosDynNode *stop) {
     }
 
     cloned_prev = cloned;
-    node = node->parent;
+    node = KosDynNode_PARENT(node);
   }
 
   /* Set the bottom's parent to stop (or NULL if stop is NULL) */
@@ -541,15 +541,15 @@ KosDynNode *kos_clone_chain_segment(KosDynNode *top, KosDynNode *stop) {
    Walks from dyn_top to find the topmost FRAME node.
 */
 static void kos_update_frame_top(KosContext *ctx) {
-  KosDynNode *node = ctx->dyn_top;
+  KosDynNode *node = KosContext_DYN_TOP(ctx);
   while (node) {
     if (KosDynNode_IS_FRAME(node)) {
-      ctx->frame_top = (KosDynFrame *) node;
+      KosContext_FRAME_TOP(ctx) = (KosDynFrame *) node;
       return;
     }
-    node = node->parent;
+    node = KosDynNode_PARENT(node);
   }
-  ctx->frame_top = NULL;
+  KosContext_FRAME_TOP(ctx) = NULL;
 }
 
 
@@ -558,32 +558,32 @@ KosDynFrame *kos_dyn_push_frame(
     KosCode *code,
     PyObject *ns) {
 
-  KosDynFrame *frame = kos_dynframe_new(ctx->dyn_top, code, ns, NULL);
+  KosDynFrame *frame = kos_dynframe_new(KosContext_DYN_TOP(ctx), code, ns, NULL);
   if (! frame)
     return NULL;
 
-  ctx->dyn_top = (KosDynNode *) frame;
-  ctx->frame_top = frame;
-  ctx->chain_version++;
+  KosContext_DYN_TOP(ctx) = (KosDynNode *) frame;
+  KosContext_FRAME_TOP(ctx) = frame;
+  KosContext_CHAIN_VERSION(ctx)++;
 
   return frame;
 }
 
 
 int kos_dyn_pop_frame(KosContext *ctx) {
-  if (! ctx->dyn_top) {
+  if (! KosContext_DYN_TOP(ctx)) {
     PyErr_SetString(PyExc_RuntimeError, "no node to pop");
     return -1;
   }
 
-  if (! KosDynNode_IS_FRAME(ctx->dyn_top)) {
+  if (! KosDynNode_IS_FRAME(KosContext_DYN_TOP(ctx))) {
     PyErr_SetString(PyExc_RuntimeError, "top node is not a frame");
     return -1;
   }
 
-  KosDynNode *old_top = ctx->dyn_top;
-  ctx->dyn_top = old_top->parent;
-  ctx->chain_version++;
+  KosDynNode *old_top = KosContext_DYN_TOP(ctx);
+  KosContext_DYN_TOP(ctx) = KosDynNode_PARENT(old_top);
+  KosContext_CHAIN_VERSION(ctx)++;
 
   kos_dynnode_free(old_top);
   kos_update_frame_top(ctx);
@@ -595,7 +595,7 @@ int kos_dyn_pop_frame(KosContext *ctx) {
 /**
    Attach an existing frame to the context's dynamic chain (no allocation).
 
-   Reparents the frame so its parent is ctx->dyn_top, then sets it as
+   Reparents the frame so its parent is KosContext_DYN_TOP(ctx), then sets it as
    dyn_top/frame_top. Used to run a generator frame in the current context
    (e.g. async gen step). Does not free the frame on detach.
 
@@ -609,10 +609,10 @@ int kos_dyn_attach_frame(KosContext *ctx, KosDynFrame *frame) {
     PyErr_SetString(PyExc_RuntimeError, "NULL frame for attach");
     return -1;
   }
-  KosDynNode_PARENT(frame) = ctx->dyn_top;
-  ctx->dyn_top = (KosDynNode *) frame;
-  ctx->frame_top = frame;
-  ctx->chain_version++;
+  KosDynNode_PARENT(frame) = KosContext_DYN_TOP(ctx);
+  KosContext_DYN_TOP(ctx) = (KosDynNode *) frame;
+  KosContext_FRAME_TOP(ctx) = frame;
+  KosContext_CHAIN_VERSION(ctx)++;
   return 0;
 }
 
@@ -620,9 +620,10 @@ int kos_dyn_attach_frame(KosContext *ctx, KosDynFrame *frame) {
 /**
    Detach the top frame from the context's dynamic chain without freeing it.
 
-   Sets ctx->dyn_top to the frame's parent and updates frame_top. The frame
-   is returned in *frame_out; caller may set KosDynNode_PARENT(frame) = NULL and
-   keep the frame (e.g. for async gen storage in agen->ctx).
+   Sets KosContext_DYN_TOP(ctx) to the frame's parent and updates frame_top. Clears the
+   detached frame's parent link so it is fully disconnected from the chain.
+   The frame is returned in *frame_out; caller may keep it (e.g. for async
+   gen storage in agen->ctx).
 
    :param ctx: execution context
    :param frame_out: output; set to the detached frame (may be NULL)
@@ -630,18 +631,19 @@ int kos_dyn_attach_frame(KosContext *ctx, KosDynFrame *frame) {
    :return: 0 on success, -1 if top is not a frame
 */
 int kos_dyn_detach_top_frame(KosContext *ctx, KosDynFrame **frame_out) {
-  if (! ctx->dyn_top) {
+  if (! KosContext_DYN_TOP(ctx)) {
     PyErr_SetString(PyExc_RuntimeError, "no node to detach");
     return -1;
   }
-  if (! KosDynNode_IS_FRAME(ctx->dyn_top)) {
+  if (! KosDynNode_IS_FRAME(KosContext_DYN_TOP(ctx))) {
     PyErr_SetString(PyExc_RuntimeError, "top node is not a frame");
     return -1;
   }
-  KosDynFrame *frame = (KosDynFrame *) ctx->dyn_top;
-  ctx->dyn_top = KosDynNode_PARENT(frame);
-  ctx->chain_version++;
+  KosDynFrame *frame = (KosDynFrame *) KosContext_DYN_TOP(ctx);
+  KosContext_DYN_TOP(ctx) = KosDynNode_PARENT(frame);
+  KosContext_CHAIN_VERSION(ctx)++;
   kos_update_frame_top(ctx);
+  KosDynNode_PARENT(frame) = NULL;
   if (frame_out)
     *frame_out = frame;
   return 0;
@@ -650,49 +652,49 @@ int kos_dyn_detach_top_frame(KosContext *ctx, KosDynFrame **frame_out) {
 
 KosDynPrompt *kos_dyn_push_prompt(KosContext *ctx, uint32_t prompt_id) {
 
-  KosDynPrompt *prompt = kos_dynprompt_new(ctx->dyn_top, prompt_id);
+  KosDynPrompt *prompt = kos_dynprompt_new(KosContext_DYN_TOP(ctx), prompt_id);
   if (! prompt)
     return NULL;
 
-  ctx->dyn_top = (KosDynNode *) prompt;
-  ctx->chain_version++;
+  KosContext_DYN_TOP(ctx) = (KosDynNode *) prompt;
+  KosContext_CHAIN_VERSION(ctx)++;
 
   return prompt;
 }
 
 
 void kos_dyn_pop_prompt(KosContext *ctx, KosDynPrompt *prompt) {
-  if (! ctx->dyn_top || ctx->dyn_top != (KosDynNode *) prompt) {
+  if (! KosContext_DYN_TOP(ctx) || KosContext_DYN_TOP(ctx) != (KosDynNode *) prompt) {
     /* Prompt is not at top - this is an error but we handle gracefully */
     return;
   }
 
-  ctx->dyn_top = KosDynNode_PARENT(prompt);
-  ctx->chain_version++;
+  KosContext_DYN_TOP(ctx) = KosDynNode_PARENT(prompt);
+  KosContext_CHAIN_VERSION(ctx)++;
   kos_dynprompt_free(prompt);
 }
 
 
 KosDynCC *kos_dyn_push_cc(KosContext *ctx, uint32_t resume_pc) {
 
-  KosDynCC *cc = kos_dyncc_new(ctx->dyn_top, resume_pc);
+  KosDynCC *cc = kos_dyncc_new(KosContext_DYN_TOP(ctx), resume_pc);
   if (! cc)
     return NULL;
 
-  ctx->dyn_top = (KosDynNode *) cc;
-  ctx->chain_version++;
+  KosContext_DYN_TOP(ctx) = (KosDynNode *) cc;
+  KosContext_CHAIN_VERSION(ctx)++;
 
   return cc;
 }
 
 
 void kos_dyn_pop_cc(KosContext *ctx, KosDynCC *cc) {
-  if (! ctx->dyn_top || ctx->dyn_top != (KosDynNode *) cc) {
+  if (! KosContext_DYN_TOP(ctx) || KosContext_DYN_TOP(ctx) != (KosDynNode *) cc) {
     return;
   }
 
-  ctx->dyn_top = KosDynNode_PARENT(cc);
-  ctx->chain_version++;
+  KosContext_DYN_TOP(ctx) = KosDynNode_PARENT(cc);
+  KosContext_CHAIN_VERSION(ctx)++;
   kos_dyncc_free(cc);
 }
 
@@ -704,27 +706,27 @@ KosDynWind *kos_dyn_push_wind(
     KosCode *after_code,
     uint32_t after_pc) {
 
-  KosDynWind *wind = kos_dynwind_new(ctx->dyn_top,
+  KosDynWind *wind = kos_dynwind_new(KosContext_DYN_TOP(ctx),
                                      before_code, before_pc,
                                      after_code, after_pc);
   if (! wind)
     return NULL;
 
-  ctx->dyn_top = (KosDynNode *) wind;
-  ctx->chain_version++;
+  KosContext_DYN_TOP(ctx) = (KosDynNode *) wind;
+  KosContext_CHAIN_VERSION(ctx)++;
 
   return wind;
 }
 
 
 int kos_dyn_pop_wind(KosContext *ctx, KosDynWind *wind) {
-  if (! ctx->dyn_top || ctx->dyn_top != (KosDynNode *) wind) {
+  if (! KosContext_DYN_TOP(ctx) || KosContext_DYN_TOP(ctx) != (KosDynNode *) wind) {
     PyErr_SetString(PyExc_RuntimeError, "wind node is not at top of chain");
     return -1;
   }
 
-  ctx->dyn_top = KosDynNode_PARENT(wind);
-  ctx->chain_version++;
+  KosContext_DYN_TOP(ctx) = KosDynNode_PARENT(wind);
+  KosContext_CHAIN_VERSION(ctx)++;
   kos_dynwind_free(wind);
 
   return 0;
@@ -737,49 +739,49 @@ KosDynRegion *kos_dyn_push_region(
         uint32_t break_pc,
         uint32_t continue_pc) {
 
-  KosDynRegion *region = kos_dynregion_new(ctx->dyn_top,
+  KosDynRegion *region = kos_dynregion_new(KosContext_DYN_TOP(ctx),
                                            style, break_pc, continue_pc);
   if (! region)
     return NULL;
 
-  ctx->dyn_top = (KosDynNode *) region;
-  ctx->chain_version++;
+  KosContext_DYN_TOP(ctx) = (KosDynNode *) region;
+  KosContext_CHAIN_VERSION(ctx)++;
 
   return region;
 }
 
 
 void kos_dyn_pop_region(KosContext *ctx, KosDynRegion *region) {
-  if (! ctx->dyn_top || ctx->dyn_top != (KosDynNode *) region) {
+  if (! KosContext_DYN_TOP(ctx) || KosContext_DYN_TOP(ctx) != (KosDynNode *) region) {
     return;
   }
 
-  ctx->dyn_top = KosDynNode_PARENT(region);
-  ctx->chain_version++;
+  KosContext_DYN_TOP(ctx) = KosDynNode_PARENT(region);
+  KosContext_CHAIN_VERSION(ctx)++;
   kos_dynregion_free(region);
 }
 
 
 KosDynNs *kos_dyn_push_ns(KosContext *ctx, PyObject *saved_ns) {
 
-  KosDynNs *ns_node = kos_dynns_new(ctx->dyn_top, saved_ns);
+  KosDynNs *ns_node = kos_dynns_new(KosContext_DYN_TOP(ctx), saved_ns);
   if (! ns_node)
     return NULL;
 
-  ctx->dyn_top = (KosDynNode *) ns_node;
-  ctx->chain_version++;
+  KosContext_DYN_TOP(ctx) = (KosDynNode *) ns_node;
+  KosContext_CHAIN_VERSION(ctx)++;
 
   return ns_node;
 }
 
 
 void kos_dyn_pop_ns(KosContext *ctx, KosDynNs *node) {
-  if (! ctx->dyn_top || ctx->dyn_top != (KosDynNode *) node) {
+  if (! KosContext_DYN_TOP(ctx) || KosContext_DYN_TOP(ctx) != (KosDynNode *) node) {
     return;
   }
 
-  ctx->dyn_top = KosDynNode_PARENT(node);
-  ctx->chain_version++;
+  KosContext_DYN_TOP(ctx) = KosDynNode_PARENT(node);
+  KosContext_CHAIN_VERSION(ctx)++;
   kos_dynns_free(node);
 }
 
@@ -791,7 +793,7 @@ void kos_dyn_pop_ns(KosContext *ctx, KosDynNs *node) {
    :return: 0 on success, -1 on error or if top is PROMPT/PYCALL (cannot unwind)
 */
 int kos_dyn_pop_top(KosContext *ctx) {
-  KosDynNode *top = ctx->dyn_top;
+  KosDynNode *top = KosContext_DYN_TOP(ctx);
   if (! top) {
     PyErr_SetString(PyExc_RuntimeError, "cannot pop from empty dynamic chain");
     return -1;
@@ -810,11 +812,11 @@ int kos_dyn_pop_top(KosContext *ctx) {
 
   case KOS_DYN_NS: {
     KosDynNs *ns_node = (KosDynNs *) top;
-    if (ctx->frame_top) {
+    if (KosContext_FRAME_TOP(ctx)) {
       PyObject *prior = KosDynNs_SAVED_NS(ns_node);
       Py_INCREF(prior);
-      Py_DECREF(KosDynFrame_NS(ctx->frame_top));
-      KosDynFrame_NS(ctx->frame_top) = prior;
+      Py_DECREF(KosDynFrame_NS(KosContext_FRAME_TOP(ctx)));
+      KosDynFrame_NS(KosContext_FRAME_TOP(ctx)) = prior;
     }
     kos_dyn_pop_ns(ctx, ns_node);
     return 0;
@@ -841,7 +843,7 @@ int kos_dyn_pop_top(KosContext *ctx) {
 
 
 KosDynRegion *kos_find_region_for_raise(KosContext *ctx) {
-  KosDynNode *node = ctx->dyn_top;
+  KosDynNode *node = KosContext_DYN_TOP(ctx);
 
   while (node) {
     if (KosDynNode_IS_REGION(node)) {
@@ -852,7 +854,7 @@ KosDynRegion *kos_find_region_for_raise(KosContext *ctx) {
         return region;
       }
     }
-    node = node->parent;
+    node = KosDynNode_PARENT(node);
   }
 
   return NULL;
@@ -860,7 +862,7 @@ KosDynRegion *kos_find_region_for_raise(KosContext *ctx) {
 
 
 KosDynRegion *kos_find_region_for_loop(KosContext *ctx) {
-  KosDynNode *node = ctx->dyn_top;
+  KosDynNode *node = KosContext_DYN_TOP(ctx);
 
   while (node) {
     if (KosDynNode_IS_REGION(node)) {
@@ -870,7 +872,7 @@ KosDynRegion *kos_find_region_for_loop(KosContext *ctx) {
         return region;
       }
     }
-    node = node->parent;
+    node = KosDynNode_PARENT(node);
   }
 
   return NULL;
@@ -879,24 +881,24 @@ KosDynRegion *kos_find_region_for_loop(KosContext *ctx) {
 
 KosDynNode *kos_dyn_push_pycall(KosContext *ctx) {
 
-  KosDynNode *marker = kos_dynpycall_new(ctx->dyn_top);
+  KosDynNode *marker = kos_dynpycall_new(KosContext_DYN_TOP(ctx));
   if (! marker)
     return NULL;
 
-  ctx->dyn_top = marker;
-  ctx->chain_version++;
+  KosContext_DYN_TOP(ctx) = marker;
+  KosContext_CHAIN_VERSION(ctx)++;
 
   return marker;
 }
 
 
 void kos_dyn_pop_pycall(KosContext *ctx, KosDynNode *marker) {
-  if (! ctx->dyn_top || ctx->dyn_top != marker) {
+  if (! KosContext_DYN_TOP(ctx) || KosContext_DYN_TOP(ctx) != marker) {
     return;
   }
 
-  ctx->dyn_top = marker->parent;
-  ctx->chain_version++;
+  KosContext_DYN_TOP(ctx) = KosDynNode_PARENT(marker);
+  KosContext_CHAIN_VERSION(ctx)++;
   kos_dynpycall_free(marker);
 }
 
@@ -905,7 +907,7 @@ void kos_dyn_pop_pycall(KosContext *ctx, KosDynNode *marker) {
 
 
 KosDynPrompt *kos_find_prompt(KosContext *ctx, uint32_t prompt_id) {
-  KosDynNode *node = ctx->dyn_top;
+  KosDynNode *node = KosContext_DYN_TOP(ctx);
 
   while (node) {
     if (KosDynNode_IS_PROMPT(node)) {
@@ -914,7 +916,7 @@ KosDynPrompt *kos_find_prompt(KosContext *ctx, uint32_t prompt_id) {
         return prompt;
       }
     }
-    node = node->parent;
+    node = KosDynNode_PARENT(node);
   }
 
   return NULL;
@@ -922,7 +924,7 @@ KosDynPrompt *kos_find_prompt(KosContext *ctx, uint32_t prompt_id) {
 
 
 int kos_validate_capture(KosContext *ctx, KosDynPrompt *prompt) {
-  KosDynNode *node = ctx->dyn_top;
+  KosDynNode *node = KosContext_DYN_TOP(ctx);
 
   while (node && node != (KosDynNode *) prompt) {
     if (KosDynNode_IS_PYCALL(node)) {
@@ -930,7 +932,7 @@ int kos_validate_capture(KosContext *ctx, KosDynPrompt *prompt) {
                       "cannot capture continuation across Python boundary");
       return -1;
     }
-    node = node->parent;
+    node = KosDynNode_PARENT(node);
   }
 
   if (! node) {
@@ -943,12 +945,12 @@ int kos_validate_capture(KosContext *ctx, KosDynPrompt *prompt) {
 
 
 KosDynCC *kos_find_cc(KosContext *ctx) {
-  KosDynNode *node = ctx->dyn_top;
+  KosDynNode *node = KosContext_DYN_TOP(ctx);
 
   while (node) {
     if (KosDynNode_IS_CC(node))
       return (KosDynCC *) node;
-    node = node->parent;
+    node = KosDynNode_PARENT(node);
   }
 
   return NULL;
@@ -956,7 +958,7 @@ KosDynCC *kos_find_cc(KosContext *ctx) {
 
 
 static int kos_validate_capture_cc(KosContext *ctx, KosDynCC *cc) {
-  KosDynNode *node = ctx->dyn_top;
+  KosDynNode *node = KosContext_DYN_TOP(ctx);
 
   while (node && node != (KosDynNode *) cc) {
     if (KosDynNode_IS_PYCALL(node)) {
@@ -964,7 +966,7 @@ static int kos_validate_capture_cc(KosContext *ctx, KosDynCC *cc) {
                       "cannot capture continuation across Python boundary");
       return -1;
     }
-    node = node->parent;
+    node = KosDynNode_PARENT(node);
   }
 
   if (! node) {
@@ -1092,7 +1094,7 @@ int kos_shift_capture(
       resume_frame = (KosDynFrame *) node;
       break;
     }
-    node = node->parent;
+    node = KosDynNode_PARENT(node);
   }
 
   KosStackBlock *resume_stack = resume_frame
@@ -1104,7 +1106,7 @@ int kos_shift_capture(
       resume_stack,
       prompt_id,
       1,  /* one-shot */
-      ctx->token ? (PyObject *) ctx->token : NULL);
+      KosContext_TOKEN(ctx) ? (PyObject *) KosContext_TOKEN(ctx) : NULL);
   if (! k) {
     kos_dynchain_free(captured_chain, NULL);
     return -1;
@@ -1155,7 +1157,7 @@ int kos_capture_cc(KosContext *ctx, KosContinuation **out_k) {
       resume_frame = (KosDynFrame *) node;
       break;
     }
-    node = node->parent;
+    node = KosDynNode_PARENT(node);
   }
 
   if (! resume_frame) {
@@ -1171,7 +1173,7 @@ int kos_capture_cc(KosContext *ctx, KosContinuation **out_k) {
       KosStackBlock_COW(KosDynFrame_STACK(resume_frame)),
       KOS_PROMPT_ID_UNDELIMITED,
       0,  /* multi-shot */
-      ctx->token ? (PyObject *) ctx->token : NULL);
+      KosContext_TOKEN(ctx) ? (PyObject *) KosContext_TOKEN(ctx) : NULL);
   if (! k) {
     kos_dynchain_free(captured_chain, NULL);
     return -1;
@@ -1244,7 +1246,7 @@ KosContinuation *kos_continuation_clone(KosContinuation *k) {
       resume_frame = (KosDynFrame *) node;
       break;
     }
-    node = node->parent;
+    node = KosDynNode_PARENT(node);
   }
 
   KosContinuation *clone = kos_continuation_create(
@@ -1271,7 +1273,7 @@ static size_t kos_chain_depth(KosDynNode *node) {
   size_t depth = 0;
   while (node) {
     depth++;
-    node = node->parent;
+    node = KosDynNode_PARENT(node);
   }
   return depth;
 }
@@ -1345,7 +1347,7 @@ int kos_build_transfer_plan(
     int is_throw,
     KosTransferPlan **out_plan) {
 
-  KosDynNode *current = ctx->dyn_top;
+  KosDynNode *current = KosContext_DYN_TOP(ctx);
   KosDynNode *lca = kos_compute_lca(current, target);
   if (KOS_XFER_TRACE)
     SAYF("[xfer] build_plan current=%p target=%p lca=%p",
@@ -1363,7 +1365,7 @@ int kos_build_transfer_plan(
         action_count++;
       }
     }
-    node = node->parent;
+    node = KosDynNode_PARENT(node);
   }
 
   /* Add INSTALL action */
@@ -1380,7 +1382,7 @@ int kos_build_transfer_plan(
         wind_count++;
       }
     }
-    node = node->parent;
+    node = KosDynNode_PARENT(node);
   }
   action_count += wind_count;
 
@@ -1394,7 +1396,7 @@ int kos_build_transfer_plan(
   plan->action_count = action_count;
   plan->action_index = 0;
   plan->original_target = target;
-  plan->chain_version = ctx->chain_version;
+  plan->chain_version = KosContext_CHAIN_VERSION(ctx);
   plan->resume_pc = (uint32_t) -1;  /* not set; set by kos_invoke_continuation */
   plan->resume_frame = NULL;       /* set by kos_invoke_continuation */
   plan->resume_stack = NULL;      /* set by kos_invoke_continuation */
@@ -1417,7 +1419,7 @@ int kos_build_transfer_plan(
         idx++;
       }
     }
-    node = node->parent;
+    node = KosDynNode_PARENT(node);
   }
 
   /* INSTALL action */
@@ -1448,7 +1450,7 @@ int kos_build_transfer_plan(
           wind_nodes[wi++] = wind;
         }
       }
-      node = node->parent;
+      node = KosDynNode_PARENT(node);
     }
 
     /* Add in reverse order (outer to inner) */
@@ -1523,20 +1525,20 @@ void kos_free_transfer_plan(KosTransferPlan *plan) {
 
 
 int kos_run_transfer_step(KosContext *ctx) {
-  if (! ctx->plan)
+  if (! KosContext_PLAN(ctx))
     return 1;  /* no plan, complete */
 
-  if (ctx->plan->action_index >= ctx->plan->action_count) {
+  if (KosContext_PLAN(ctx)->action_index >= KosContext_PLAN(ctx)->action_count) {
     return 1;  /* plan complete */
   }
 
-  KosTransferAction *action = &ctx->plan->actions[ctx->plan->action_index];
+  KosTransferAction *action = &KosContext_PLAN(ctx)->actions[KosContext_PLAN(ctx)->action_index];
   if (KOS_XFER_TRACE)
     SAYF("[xfer] step %zu: plan=%p actions=%p step_type=%d (INSTALL=%d)",
-         (size_t) (ctx->plan->action_index),
-         (void *) ctx->plan, (void *) ctx->plan->actions,
+         (size_t) (KosContext_PLAN(ctx)->action_index),
+         (void *) KosContext_PLAN(ctx), (void *) KosContext_PLAN(ctx)->actions,
          (int) action->step, (int) KOS_XFER_INSTALL);
-  ctx->plan->action_index++;
+  KosContext_PLAN(ctx)->action_index++;
 
   switch (action->step) {
     case KOS_XFER_RUN_HOOK:
@@ -1555,57 +1557,57 @@ int kos_run_transfer_step(KosContext *ctx) {
       if (! seg && template_seg) {
         if (KOS_XFER_TRACE)
           SAY("[xfer] INSTALL clone segment failed");
-        ctx->plan->action_index--;  /* leave step for retry or caller */
+        KosContext_PLAN(ctx)->action_index--;  /* leave step for retry or caller */
         return -1;
       }
       if (KOS_XFER_TRACE)
         SAYF("[xfer] INSTALL segment=%p (fresh) resume_pc=%u (before: dyn_top=%p frame_top=%p)",
-             (void *) seg, (unsigned) ctx->plan->resume_pc,
-             (void *) ctx->dyn_top, (void *) ctx->frame_top);
-      ctx->dyn_top = seg;
+             (void *) seg, (unsigned) KosContext_PLAN(ctx)->resume_pc,
+             (void *) KosContext_DYN_TOP(ctx), (void *) KosContext_FRAME_TOP(ctx));
+      KosContext_DYN_TOP(ctx) = seg;
       kos_update_frame_top(ctx);
       /* New segment is the whole chain; topmost frame is the globals frame. */
-      ctx->globals_frame = ctx->frame_top;
-      ctx->globals_cache_version = ctx->chain_version + 1;
+      KosContext_GLOBALS_FRAME(ctx) = KosContext_FRAME_TOP(ctx);
+      KosContext_GLOBALS_CACHE_VERSION(ctx) = KosContext_CHAIN_VERSION(ctx) + 1;
       /* Restore stack from plan (fresh copy from template). */
-      if (ctx->frame_top && ctx->plan->resume_stack) {
-        KosStackBlock *new_stack = KosStackBlock_COW(ctx->plan->resume_stack);
-        KosStackBlock *old_stack = KosDynFrame_STACK(ctx->frame_top);
-        KosDynFrame_STACK(ctx->frame_top) = new_stack;
+      if (KosContext_FRAME_TOP(ctx) && KosContext_PLAN(ctx)->resume_stack) {
+        KosStackBlock *new_stack = KosStackBlock_COW(KosContext_PLAN(ctx)->resume_stack);
+        KosStackBlock *old_stack = KosDynFrame_STACK(KosContext_FRAME_TOP(ctx));
+        KosDynFrame_STACK(KosContext_FRAME_TOP(ctx)) = new_stack;
         if (old_stack && old_stack != new_stack) {
           /* Do not DECREF the continuation wrapper (plan->continuation_ref);
            * it may be on the old stack from CALL and would free k and the
            * captured chain while the plan still references them. */
           KosStackBlock_ReleaseChainExclude(old_stack,
-                                            ctx->plan->continuation_ref);
+                                            KosContext_PLAN(ctx)->continuation_ref);
         }
       }
-      if (ctx->plan->resume_pc != (uint32_t) -1 && ctx->frame_top) {
-        KosDynFrame_PC(ctx->frame_top) = ctx->plan->resume_pc;
+      if (KosContext_PLAN(ctx)->resume_pc != (uint32_t) -1 && KosContext_FRAME_TOP(ctx)) {
+        KosDynFrame_PC(KosContext_FRAME_TOP(ctx)) = KosContext_PLAN(ctx)->resume_pc;
       }
-      ctx->chain_version++;
-      ctx->globals_cache_version = ctx->chain_version;
+      KosContext_CHAIN_VERSION(ctx)++;
+      KosContext_GLOBALS_CACHE_VERSION(ctx) = KosContext_CHAIN_VERSION(ctx);
       if (KOS_XFER_TRACE)
         SAYF("[xfer] INSTALL after: dyn_top=%p frame_top=%p",
-             (void *) ctx->dyn_top, (void *) ctx->frame_top);
+             (void *) KosContext_DYN_TOP(ctx), (void *) KosContext_FRAME_TOP(ctx));
       break;
     }
 
     case KOS_XFER_INJECT:
       if (KOS_XFER_TRACE)
         SAYF("[xfer] INJECT frame_top=%p stack=%p is_throw=%d",
-             (void *) ctx->frame_top,
-             ctx->frame_top ? (void *) KosDynFrame_STACK(ctx->frame_top) : NULL,
+             (void *) KosContext_FRAME_TOP(ctx),
+             KosContext_FRAME_TOP(ctx) ? (void *) KosDynFrame_STACK(KosContext_FRAME_TOP(ctx)) : NULL,
              action->data.inject.is_throw);
       if (action->data.inject.is_throw) {
-        ctx->pending_throw = 1;
+        KosContext_PENDING_THROW(ctx) = 1;
         Py_XINCREF(action->data.inject.value);
-        Py_XDECREF(ctx->pending_exc);
-        ctx->pending_exc = action->data.inject.value;
+        Py_XDECREF(KosContext_PENDING_EXC(ctx));
+        KosContext_PENDING_EXC(ctx) = action->data.inject.value;
       } else {
         /* Push value onto frame's stack (PushRef allocates block if NULL) */
-        if (ctx->frame_top &&
-            KosStackBlock_PushRef(&KosDynFrame_STACK(ctx->frame_top),
+        if (KosContext_FRAME_TOP(ctx) &&
+            KosStackBlock_PushRef(&KosDynFrame_STACK(KosContext_FRAME_TOP(ctx)),
                                   action->data.inject.value) < 0) {
           if (KOS_XFER_TRACE)
             SAY("[xfer] INJECT PushRef failed");
@@ -1621,7 +1623,7 @@ int kos_run_transfer_step(KosContext *ctx) {
   }
 
   /* Check if plan is complete */
-  if (ctx->plan->action_index >= ctx->plan->action_count)
+  if (KosContext_PLAN(ctx)->action_index >= KosContext_PLAN(ctx)->action_count)
     return 1;
 
   return 0;  /* more steps remain */
@@ -1629,25 +1631,25 @@ int kos_run_transfer_step(KosContext *ctx) {
 
 
 void kos_suspend_transfer_plan(KosContext *ctx) {
-  if (! ctx->plan)
+  if (! KosContext_PLAN(ctx))
     return;
 
-  ctx->plan->suspended = ctx->plan_stack;
-  ctx->plan_stack = ctx->plan;
-  ctx->plan = NULL;
+  KosContext_PLAN(ctx)->suspended = KosContext_PLAN_STACK(ctx);
+  KosContext_PLAN_STACK(ctx) = KosContext_PLAN(ctx);
+  KosContext_PLAN(ctx) = NULL;
 }
 
 
 int kos_resume_transfer_plan(KosContext *ctx) {
-  if (! ctx->plan_stack)
+  if (! KosContext_PLAN_STACK(ctx))
     return 0;  /* nothing to resume */
 
-  ctx->plan = ctx->plan_stack;
-  ctx->plan_stack = ctx->plan->suspended;
-  ctx->plan->suspended = NULL;
+  KosContext_PLAN(ctx) = KosContext_PLAN_STACK(ctx);
+  KosContext_PLAN_STACK(ctx) = KosContext_PLAN(ctx)->suspended;
+  KosContext_PLAN(ctx)->suspended = NULL;
 
   /* Check if chain has changed */
-  if (ctx->chain_version != ctx->plan->chain_version) {
+  if (KosContext_CHAIN_VERSION(ctx) != KosContext_PLAN(ctx)->chain_version) {
     /* Chain changed during nested transfer - would need to replan */
     /* For now, just continue with existing plan */
     /* TODO: implement replanning */
@@ -1661,36 +1663,36 @@ int kos_resume_transfer_plan(KosContext *ctx) {
 
 
 int kos_begin_hook(KosContext *ctx, KosCode *code, uint32_t pc) {
-  if (ctx->hook_runner.active) {
+  if (KosContext_HOOK_RUNNER(ctx)->active) {
     PyErr_SetString(PyExc_RuntimeError, "hook already active");
     return -1;
   }
 
-  ctx->hook_runner.code = code;
-  ctx->hook_runner.pc = pc;
-  ctx->hook_runner.scratch = NULL;  /* TODO: allocate scratch stack */
-  ctx->hook_runner.active = 1;
+  KosContext_HOOK_RUNNER(ctx)->code = code;
+  KosContext_HOOK_RUNNER(ctx)->pc = pc;
+  KosContext_HOOK_RUNNER(ctx)->scratch = NULL;  /* TODO: allocate scratch stack */
+  KosContext_HOOK_RUNNER(ctx)->active = 1;
 
-  ctx->flags |= KOS_CTX_IN_HOOK;
+  KosContext_FLAGS(ctx) |= KOS_CTX_IN_HOOK;
 
   return 0;
 }
 
 
 int kos_hook_active(KosContext *ctx) {
-  return ctx->hook_runner.active;
+  return KosContext_HOOK_RUNNER(ctx)->active;
 }
 
 
 int kos_end_hook(KosContext *ctx) {
-  if (! ctx->hook_runner.active) {
+  if (! KosContext_HOOK_RUNNER(ctx)->active) {
     PyErr_SetString(PyExc_RuntimeError, "no hook active");
     return -1;
   }
 
   /* Clean up scratch stack */
-  if (ctx->hook_runner.scratch) {
-    KosStackBlock *b = ctx->hook_runner.scratch;
+  if (KosContext_HOOK_RUNNER(ctx)->scratch) {
+    KosStackBlock *b = KosContext_HOOK_RUNNER(ctx)->scratch;
     while (b) {
       KosStackBlock *p = KosStackBlock_PARENT(b);
       KosStackBlock_Release(b);
@@ -1698,12 +1700,12 @@ int kos_end_hook(KosContext *ctx) {
     }
   }
 
-  ctx->hook_runner.code = NULL;
-  ctx->hook_runner.pc = 0;
-  ctx->hook_runner.scratch = NULL;
-  ctx->hook_runner.active = 0;
+  KosContext_HOOK_RUNNER(ctx)->code = NULL;
+  KosContext_HOOK_RUNNER(ctx)->pc = 0;
+  KosContext_HOOK_RUNNER(ctx)->scratch = NULL;
+  KosContext_HOOK_RUNNER(ctx)->active = 0;
 
-  ctx->flags &= ~KOS_CTX_IN_HOOK;
+  KosContext_FLAGS(ctx) &= ~KOS_CTX_IN_HOOK;
 
   return 0;
 }
@@ -1745,7 +1747,7 @@ int kos_invoke_continuation(
   KosTransferPlan *plan = NULL;
   if (KOS_XFER_TRACE)
     SAYF("[xfer] kos_build_transfer_plan current=%p target=%p (template)",
-         (void *) ctx->dyn_top, (void *) to_use->captured_chain);
+         (void *) KosContext_DYN_TOP(ctx), (void *) to_use->captured_chain);
   int res = kos_build_transfer_plan(ctx, to_use->captured_chain,
                                     value, is_throw, &plan);
   if (KOS_XFER_TRACE)
@@ -1766,8 +1768,8 @@ int kos_invoke_continuation(
     SAYF("[xfer] plan resume_frame=%p resume_stack=%p",
          (void *) plan->resume_frame, (void *) plan->resume_stack);
 
-  ctx->plan = plan;
-  ctx->flags |= KOS_CTX_IN_TRANSFER;
+  KosContext_PLAN(ctx) = plan;
+  KosContext_FLAGS(ctx) |= KOS_CTX_IN_TRANSFER;
   plan->continuation_ref = NULL;
   if (continuation_ref) {
     Py_INCREF(continuation_ref);
@@ -1840,7 +1842,7 @@ int kos_dynchain_traverse(
     int res = kos_dynnode_traverse(node, visit, arg);
     if (res)
       return res;
-    node = node->parent;
+    node = KosDynNode_PARENT(node);
   }
 
   return 0;

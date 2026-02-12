@@ -562,7 +562,9 @@ int kos_dyn_attach_frame(KosContext *ctx, KosDynFrame *frame);
 
 
 /**
-   Detach the top frame without freeing it. Caller receives the frame.
+   Detach the top frame without freeing it. Clears the detached frame's
+   parent link so it is fully disconnected from the chain. Caller receives
+   the frame.
 
    :param ctx: execution context
    :param frame_out: output; set to the detached frame (may be NULL)
