@@ -8,6 +8,7 @@ Koskari, a LISP dialect for Python
 """
 
 from os import environ
+from pathlib import Path
 from setuptools import Extension, setup
 
 
@@ -46,8 +47,6 @@ def extension(platform=None, debug=None):
     Create Extension object for native module
     """
 
-    from pathlib import Path
-
     libdir = Path("koskari/lib")
     sources = sorted(map(str, libdir.glob("*.c")))
     depends = sorted(map(str, libdir.glob("*.h")))
@@ -61,7 +60,8 @@ def extension(platform=None, debug=None):
     )
 
 
-setup(ext_modules=[extension()])
+if __name__ == '__main__':
+    setup(ext_modules=[extension()])
 
 
 # The end.
