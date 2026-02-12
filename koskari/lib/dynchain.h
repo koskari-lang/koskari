@@ -648,6 +648,28 @@ int kos_dyn_pop_frame(KosContext *ctx);
 
 
 /**
+   Attach an existing frame to the context's dynamic chain (no allocation).
+
+   :param ctx: execution context
+   :param frame: existing frame (not freed by this module)
+
+   :return: 0 on success, -1 on error
+*/
+int kos_dyn_attach_frame(KosContext *ctx, KosDynFrame *frame);
+
+
+/**
+   Detach the top frame without freeing it. Caller receives the frame.
+
+   :param ctx: execution context
+   :param frame_out: output; set to the detached frame (may be NULL)
+
+   :return: 0 on success, -1 if top is not a frame
+*/
+int kos_dyn_detach_top_frame(KosContext *ctx, KosDynFrame **frame_out);
+
+
+/**
    Push a prompt delimiter onto the dynamic chain.
 
    :param ctx: execution context

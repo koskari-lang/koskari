@@ -49,6 +49,14 @@ PyObject *KosExpression_New(PyObject *code, PyObject *ns);
 PyObject *KosExpression_Eval(PyObject *expr);
 
 
+/**
+   Return the expression's code and namespace (borrowed refs).
+   Used by the evaluator to flatten Koskari calls.
+*/
+PyObject *KosExpression_GetCode(PyObject *expr);
+PyObject *KosExpression_GetNs(PyObject *expr);
+
+
 /* === Function === */
 
 
@@ -82,6 +90,22 @@ PyObject *KosFunction_CallNoArgs(PyObject *func);
 */
 PyObject *KosFunction_Call(PyObject *func,
                            PyObject *args, PyObject *kwds);
+
+
+/**
+   Prepare the call namespace for a KosFunction with args/kwds applied.
+   Used by the evaluator to flatten Koskari calls without creating a coroutine.
+   Returns new reference to frame namespace, or NULL on error.
+*/
+PyObject *KosFunction_PrepareCallNamespace(PyObject *func,
+                                            PyObject *args,
+                                            PyObject *kwds);
+
+
+/**
+   Return the function's code (borrowed ref). For use when flattening calls.
+*/
+PyObject *KosFunction_GetCode(PyObject *func);
 
 
 /* === Run code as coroutine === */

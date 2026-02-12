@@ -544,6 +544,62 @@ int kos_dyn_pop_frame(KosContext *ctx) {
 }
 
 
+/**
+   Attach an existing frame to the context's dynamic chain (no allocation).
+
+   Reparents the frame so its parent is ctx->dyn_top, then sets it as
+   dyn_top/frame_top. Used to run a generator frame in the current context
+   (e.g. async gen step). Does not free the frame on detach.
+
+   :param ctx: execution context
+   :param frame: existing frame (not freed by this module)
+
+   :return: 0 on success, -1 on error
+*/
+int kos_dyn_attach_frame(KosContext *ctx, KosDynFrame *frame) {
+  if (! frame) {
+    PyErr_SetString(PyExc_RuntimeError, "NULL frame for attach");
+    return -1;
+  }
+  frame->base.parent = ctx->dyn_top;
+  ctx->dyn_top = (KosDynNode *) frame;
+  ctx->frame_top = frame;
+  ctx->chain_version++;
+  return 0;
+}
+
+
+/**
+   Detach the top frame from the context's dynamic chain without freeing it.
+
+   Sets ctx->dyn_top to the frame's parent and updates frame_top. The frame
+   is returned in *frame_out; caller may set frame->base.parent = NULL and
+   keep the frame (e.g. for async gen storage in agen->ctx).
+
+   :param ctx: execution context
+   :param frame_out: output; set to the detached frame (may be NULL)
+
+   :return: 0 on success, -1 if top is not a frame
+*/
+int kos_dyn_detach_top_frame(KosContext *ctx, KosDynFrame **frame_out) {
+  if (! ctx->dyn_top) {
+    PyErr_SetString(PyExc_RuntimeError, "no node to detach");
+    return -1;
+  }
+  if (! KosDynNode_IS_FRAME(ctx->dyn_top)) {
+    PyErr_SetString(PyExc_RuntimeError, "top node is not a frame");
+    return -1;
+  }
+  KosDynFrame *frame = (KosDynFrame *) ctx->dyn_top;
+  ctx->dyn_top = frame->base.parent;
+  ctx->chain_version++;
+  kos_update_frame_top(ctx);
+  if (frame_out)
+    *frame_out = frame;
+  return 0;
+}
+
+
 KosDynPrompt *kos_dyn_push_prompt(KosContext *ctx, uint32_t prompt_id) {
 
   KosDynPrompt *prompt = kos_dynprompt_new(ctx->dyn_top, prompt_id);

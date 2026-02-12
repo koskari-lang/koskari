@@ -37,6 +37,12 @@
    4. Multi-shot: Continuations clone all state on invocation, allowing
       multiple independent resumptions.
 
+   5. In-loop flattening: Koskari-to-Koskari CALL and async gen stepping
+      run in the same koskari_eval loop. When the current frame has a
+      parent, YIELD and RETURN detach and push value onto the parent
+      (no boundary event); only the top-level frame produces KOS_EV_*
+      on yield/return/raise/await.
+
    :author: Christopher O'Brien <obriencj@preoccupied.net>
    :license: GNU General Public License v3
    :ai-assistant: Claude Opus 4.5 via Cursor
@@ -325,6 +331,13 @@ KosContext *kos_context_new(KosDynFrame *top) {
   ctx->handling_raise = 0;
   ctx->handling_result = NULL;
 
+  /* Pending async gen (in-loop NEXT/ITER_NEXT) */
+  ctx->pending_agen = NULL;
+  ctx->pending_agen_default = NULL;
+  ctx->pending_agen_n = 0;
+  ctx->pending_agen_region = NULL;
+  ctx->pending_agen_else_pc = 0;
+
   ctx->flags = 0;
 
   return ctx;
@@ -366,6 +379,7 @@ void kos_context_free(KosContext *ctx) {
   Py_XDECREF(ctx->py_yield_inject);
   Py_XDECREF(ctx->pending_exc);
   Py_XDECREF(ctx->handling_result);
+  Py_XDECREF(ctx->pending_agen_default);
 
   PyMem_Free(ctx);
 }
@@ -386,6 +400,7 @@ int kos_context_traverse(
   Py_VISIT(ctx->py_yield_inject);
   Py_VISIT(ctx->pending_exc);
   Py_VISIT(ctx->handling_result);
+  Py_VISIT(ctx->pending_agen_default);
 
   /* Traverse the dynamic chain */
   int res = kos_dynchain_traverse(ctx->dyn_top, NULL, visit, arg);
@@ -910,6 +925,61 @@ KOS_OP_HANDLER(RETURN) {
     }
   }
 
+  /* Frame has parent: return into parent in same loop. */
+  if (ctx->frame_top->base.parent != NULL) {
+    KosDynFrame *returning_frame = ctx->frame_top;
+    int was_pending = (ctx->pending_agen != NULL);
+    KosPyAsyncGen *agen = was_pending ? (KosPyAsyncGen *) ctx->pending_agen : NULL;
+    KosDynFrame *detached_frame = NULL;
+    if (kos_dyn_detach_top_frame(ctx, &detached_frame) < 0) {
+      Py_DECREF(val);
+      return -1;
+    }
+    if (was_pending && agen) {
+      returning_frame->base.parent = NULL;
+      agen->closed = 1;
+      agen->in_progress = 0;
+      if (ctx->pending_agen_n == 2 && ctx->pending_agen_default) {
+        if (KosStackBlock_PushRef(&ctx->frame_top->stack,
+                                  ctx->pending_agen_default) < 0) {
+          Py_XDECREF(ctx->pending_agen_default);
+          ctx->pending_agen_default = NULL;
+          ctx->pending_agen = NULL;
+          ctx->pending_agen_region = NULL;
+          Py_DECREF(val);
+          return -1;
+        }
+        Py_XDECREF(ctx->pending_agen_default);
+        Py_DECREF(val);
+      } else if (ctx->pending_agen_n == 1) {
+        PyErr_SetNone(PyExc_StopIteration);
+        Py_DECREF(val);
+        ctx->pending_agen = NULL;
+        ctx->pending_agen_default = NULL;
+        ctx->pending_agen_region = NULL;
+        return -1;
+      } else {
+        /* ITER_NEXT: exhausted */
+        KosDynRegion *region = (KosDynRegion *) ctx->pending_agen_region;
+        if (region)
+          region->exhausted = 1;
+        ctx->frame_top->pc = ctx->pending_agen_else_pc;
+        Py_DECREF(val);
+      }
+      ctx->pending_agen = NULL;
+      ctx->pending_agen_default = NULL;
+      ctx->pending_agen_region = NULL;
+      return 0;
+    }
+    /* Normal CALL return: push value onto parent. */
+    if (KosStackBlock_PushRef(&ctx->frame_top->stack, val) < 0) {
+      Py_DECREF(val);
+      return -1;
+    }
+    Py_DECREF(val);
+    return 0;
+  }
+
   SAYF("[eval] RETURN count=%u -> KOS_EV_RETURN\n", opa);
   SAYF("[eval] RETURN payload: %R\n", val);
   out_ev->kind = KOS_EV_RETURN;
@@ -998,6 +1068,51 @@ KOS_OP_HANDLER(CALL) {
     }
     Py_DECREF(resume_val);
     return -1;
+  }
+
+  /* Flatten Koskari calls: push callee frame and continue in same loop. */
+  if (Py_TYPE(callable) == &KosExpressionType && n == 0) {
+    PyObject *code = KosExpression_GetCode(callable);
+    PyObject *ns = KosExpression_GetNs(callable);
+    if (KosStackBlock_Drop(&ctx->frame_top->stack, 1) < 0)
+      return -1;
+    Py_INCREF(ns);
+    if (kos_dyn_push_frame(ctx, (KosCode *) code, ns) == NULL) {
+      Py_DECREF(ns);
+      return -1;
+    }
+    (void) out_ev;
+    return 0;
+  }
+  if (Py_TYPE(callable) == &KosFunctionType) {
+    PyObject *fn_obj = callable;
+    PyObject *args_tup = NULL;
+    if (n > 0) {
+      args_tup = PyTuple_New((Py_ssize_t) n);
+      if (! args_tup)
+        return -1;
+      for (unsigned i = 0; i < n; i++) {
+        PyObject *arg = tail[1 + i];
+        Py_INCREF(arg);
+        PyTuple_SET_ITEM(args_tup, (Py_ssize_t) i, arg);
+      }
+    }
+    PyObject *frame_ns = KosFunction_PrepareCallNamespace(
+        fn_obj, args_tup, NULL);
+    Py_XDECREF(args_tup);
+    if (! frame_ns)
+      return -1;
+    if (KosStackBlock_Drop(&ctx->frame_top->stack, n + 1) < 0) {
+      Py_DECREF(frame_ns);
+      return -1;
+    }
+    PyObject *fn_code = KosFunction_GetCode(fn_obj);
+    if (kos_dyn_push_frame(ctx, (KosCode *) fn_code, frame_ns) == NULL) {
+      Py_DECREF(frame_ns);
+      return -1;
+    }
+    (void) out_ev;
+    return 0;
   }
 
   SAYF("[CALL] callable: %R\n", callable);
@@ -2263,7 +2378,8 @@ static int kos_check_cmp(KosContext *ctx, KosEvent *out_ev, KosOp *insn,
 /* Unimplemented opcodes: documented handlers that delegate to op_unimplemented_stub. */
 
 /**
-   THEEND: arg unused. End of code; not yet implemented.
+   THEEND: arg unused. End of code; never implemented. This should never be
+   present in final bytecode. We'll make sure it raises a RuntimeError if it is.
 */
 KOS_OP_HANDLER(THEEND) {
   return op_unimplemented_stub(ctx, out_ev, insn);
@@ -2453,6 +2569,58 @@ KOS_OP_HANDLER(YIELD) {
     }
   }
 
+  /* Frame has parent: return into parent in same loop (CALL return or async gen step). */
+  if (ctx->frame_top->base.parent != NULL) {
+    KosDynFrame *yielding_frame = ctx->frame_top;
+    int was_pending = (ctx->pending_agen != NULL);
+    KosPyAsyncGen *agen = was_pending ? (KosPyAsyncGen *) ctx->pending_agen : NULL;
+    KosDynFrame *detached = NULL;
+    if (kos_dyn_detach_top_frame(ctx, &detached) < 0) {
+      Py_DECREF(val);
+      return -1;
+    }
+    if (was_pending && agen) {
+      yielding_frame->base.parent = NULL;
+      agen->in_progress = 0;
+      ctx->pending_agen = NULL;
+      Py_XDECREF(ctx->pending_agen_default);
+      ctx->pending_agen_default = NULL;
+      ctx->pending_agen_region = NULL;
+    }
+    if (KosStackBlock_PushRef(&ctx->frame_top->stack, val) < 0) {
+      Py_DECREF(val);
+      return -1;
+    }
+    Py_DECREF(val);
+    return 0;
+  }
+
+  /* Frame has parent: return into parent in same loop. */
+  if (ctx->frame_top->base.parent != NULL) {
+    KosDynFrame *yielding_frame = ctx->frame_top;
+    int was_pending = (ctx->pending_agen != NULL);
+    KosPyAsyncGen *agen = was_pending ? (KosPyAsyncGen *) ctx->pending_agen : NULL;
+    KosDynFrame *detached_frame = NULL;
+    if (kos_dyn_detach_top_frame(ctx, &detached_frame) < 0) {
+      Py_DECREF(val);
+      return -1;
+    }
+    if (was_pending && agen) {
+      yielding_frame->base.parent = NULL;
+      agen->in_progress = 0;
+      ctx->pending_agen = NULL;
+      Py_XDECREF(ctx->pending_agen_default);
+      ctx->pending_agen_default = NULL;
+      ctx->pending_agen_region = NULL;
+    }
+    if (KosStackBlock_PushRef(&ctx->frame_top->stack, val) < 0) {
+      Py_DECREF(val);
+      return -1;
+    }
+    Py_DECREF(val);
+    return 0;
+  }
+
   out_ev->kind = KOS_EV_YIELD;
   out_ev->payload = val;
   ctx->flags &= ~KOS_CTX_RUNNING;
@@ -2469,291 +2637,95 @@ KOS_OP_HANDLER(YIELD_FROM) {
 }
 
 
-/**
-   Implementation for ITER_NEXT when inside a FOREACH region. Reads the
-   iterator from region->iter, advances it, and pushes next value or jumps
-   to else target if exhausted.
+typedef enum {
+  GET_NEXT_VALUE,
+  GET_NEXT_EXHAUSTED,
+  GET_NEXT_SUSPEND,
+  GET_NEXT_ERROR
+} KosGetNextResult;
 
-   :return: 0 continue, 1 stop (AWAIT/RAISE), -1 error
+
+/**
+   Get next value from a Python async iterator using the given __anext__
+   awaitable. Caller must have obtained awaitable via get_await_next(iter);
+   this helper consumes it (DECREF). *result_out is set with a new
+   reference on GET_NEXT_VALUE.
 */
-static int op_iter_next_region(
+static KosGetNextResult next_from_python_async_iter(
         KosContext *ctx,
         KosEvent *out_ev,
-        KosOp *insn,
-        KosDynRegion *region) {
-
-  PyObject *iter = region->iter;
-
-  /* 1. Koskari async generator: run its context inline until yield/return/await */
-  if (KosPyAsyncGen_Check(iter)) {
-    KosPyAsyncGen *agen = (KosPyAsyncGen *) iter;
-    if (agen->in_progress) {
-      PyErr_SetString(PyExc_RuntimeError,
-                      "async generator already being iterated");
-      return -1;
-    }
-    if (agen->closed || ! agen->ctx) {
-      region->exhausted = 1;
-      ctx->frame_top->pc = insn->arg;
-      (void) out_ev;
-      return 0;
-    }
-    agen->in_progress = 1;
-    KosEvent ev = {0};
-    int res = koskari_eval(agen->ctx, &ev);
-    agen->in_progress = 0;
-
-    if (res < 0)
-      return -1;
-
-    switch (ev.kind) {
-      case KOS_EV_YIELD:
-        if (KosStackBlock_PushRef(&ctx->frame_top->stack, ev.payload) < 0) {
-          Py_DECREF(ev.payload);
-          return -1;
-        }
-        Py_DECREF(ev.payload);
-        (void) out_ev;
-        return 0;
-      case KOS_EV_RETURN:
-        Py_XDECREF(ev.payload);
-        region->exhausted = 1;
-        ctx->frame_top->pc = insn->arg;
-        (void) out_ev;
-        return 0;
-      case KOS_EV_RAISE:
-        out_ev->kind = KOS_EV_RAISE;
-        out_ev->payload = ev.payload;
-        return 1;
-      case KOS_EV_AWAIT:
-        out_ev->kind = KOS_EV_AWAIT;
-        out_ev->payload = ev.payload;
-        return 1;
-    }
-    PyErr_SetString(PyExc_RuntimeError, "unexpected event from async generator");
-    return -1;
+        PyObject *iter,
+        PyObject **result_out,
+        PyObject *awaitable) {
+  (void) iter;
+  int suspended = 0;
+  PyObject *yielded = NULL;
+  PyObject *result = eager_step_awaitable(awaitable, ctx, &suspended,
+                                          &yielded);
+  Py_DECREF(awaitable);
+  if (suspended && yielded) {
+    ctx->flags &= ~KOS_CTX_RUNNING;
+    out_ev->kind = KOS_EV_AWAIT;
+    out_ev->payload = yielded;
+    return GET_NEXT_SUSPEND;
   }
-
-  /* 2. Python async iterator: get __anext__ awaitable, eager_step */
-  {
-    PyObject *awaitable = get_await_next(iter);
-    if (awaitable) {
-      int suspended = 0;
-      PyObject *yielded = NULL;
-      PyObject *result = eager_step_awaitable(awaitable, ctx, &suspended,
-                                              &yielded);
-      Py_DECREF(awaitable);
-      if (suspended && yielded) {
-        ctx->flags &= ~KOS_CTX_RUNNING;
-        out_ev->kind = KOS_EV_AWAIT;
-        out_ev->payload = yielded;
-        return 1;
-      }
-      if (PyErr_ExceptionMatches(PyExc_StopAsyncIteration)) {
-        PyErr_Clear();
-        region->exhausted = 1;
-        ctx->frame_top->pc = insn->arg;
-        (void) out_ev;
-        return 0;
-      }
-      if (result) {
-        if (KosStackBlock_PushRef(&ctx->frame_top->stack, result) < 0) {
-          Py_DECREF(result);
-          return -1;
-        }
-        Py_DECREF(result);
-        (void) out_ev;
-        return 0;
-      }
-      return -1;
-    }
+  if (PyErr_ExceptionMatches(PyExc_StopAsyncIteration)) {
+    PyErr_Clear();
+    return GET_NEXT_EXHAUSTED;
   }
-
-  /* 3. Sync iterator: advance and push next value or mark exhausted */
-  if (PyIter_Check(iter)) {
-    PyObject *n = PyIter_Next(iter);
-    if (n) {
-      if (KosStackBlock_PushRef(&ctx->frame_top->stack, n) < 0) {
-        Py_DECREF(n);
-        return -1;
-      }
-      Py_DECREF(n);
-      (void) out_ev;
-      return 0;
-    }
-    if (PyErr_Occurred())
-      return -1;
-
-    /* Exhausted */
-    region->exhausted = 1;
-    ctx->frame_top->pc = insn->arg;
-    (void) out_ev;
-    return 0;
+  if (result) {
+    *result_out = result;
+    return GET_NEXT_VALUE;
   }
-
-  PyErr_SetString(PyExc_TypeError, "ITER_NEXT: region->iter is not an iterator");
-  return -1;
+  return GET_NEXT_ERROR;
 }
 
 
 /**
-   Advance iterator (sync, Python async iter, Koskari async gen). Used by NEXT.
-   Does not push iterator back; caller restores stack on suspend.
-
-   :param iter: iterator to advance (caller holds ref)
-   :param default_val: if non-NULL, push on exhaustion instead of raising
-   :return: 0 pushed value or default, 1 suspend (AWAIT), -1 error or exhausted
-           with no default
+   Get next value from a Python sync iterator (PyIter_Next).
+   *result_out is set with a new reference on GET_NEXT_VALUE.
 */
-static int op_next_advance(
+static KosGetNextResult next_from_python_sync_iter(
         KosContext *ctx,
         KosEvent *out_ev,
         PyObject *iter,
-        PyObject *default_val) {
-
-  /* 1. Koskari async generator */
-  if (KosPyAsyncGen_Check(iter)) {
-    KosPyAsyncGen *agen = (KosPyAsyncGen *) iter;
-    if (agen->in_progress) {
-      PyErr_SetString(PyExc_RuntimeError,
-                      "async generator already being iterated");
-      return -1;
-    }
-    if (agen->closed || ! agen->ctx) {
-      if (default_val) {
-        if (KosStackBlock_PushRef(&ctx->frame_top->stack, default_val) < 0)
-          return -1;
-        return 0;
-      }
-      PyErr_SetNone(PyExc_StopIteration);
-      return -1;
-    }
-    agen->in_progress = 1;
-    KosEvent ev = {0};
-    int res = koskari_eval(agen->ctx, &ev);
-    agen->in_progress = 0;
-
-    if (res < 0)
-      return -1;
-    switch (ev.kind) {
-      case KOS_EV_YIELD:
-        if (KosStackBlock_PushRef(&ctx->frame_top->stack, ev.payload) < 0) {
-          Py_DECREF(ev.payload);
-          return -1;
-        }
-        Py_DECREF(ev.payload);
-        (void) out_ev;
-        return 0;
-      case KOS_EV_RETURN:
-        Py_XDECREF(ev.payload);
-        if (default_val) {
-          if (KosStackBlock_PushRef(&ctx->frame_top->stack, default_val) < 0)
-            return -1;
-          return 0;
-        }
-        PyErr_SetNone(PyExc_StopIteration);
-        return -1;
-      case KOS_EV_RAISE:
-        out_ev->kind = KOS_EV_RAISE;
-        out_ev->payload = ev.payload;
-        return 1;
-      case KOS_EV_AWAIT:
-        out_ev->kind = KOS_EV_AWAIT;
-        out_ev->payload = ev.payload;
-        return 1;
-    }
-    PyErr_SetString(PyExc_RuntimeError, "unexpected event from async generator");
-    return -1;
+        PyObject **result_out) {
+  (void) ctx;
+  (void) out_ev;
+  PyObject *n = PyIter_Next(iter);
+  if (n) {
+    *result_out = n;
+    return GET_NEXT_VALUE;
   }
+  if (PyErr_Occurred())
+    return GET_NEXT_ERROR;
+  return GET_NEXT_EXHAUSTED;
+}
 
-  /* 2. Python async iterator: get __anext__ awaitable, eager_step */
+
+/**
+   Dispatcher: get next from iter (Koskari async gen, Python async iter,
+   or Python sync iter). Does not push; does not perform GetIter.
+   *result_out set only on GET_NEXT_VALUE (caller pushes and DECREF).
+*/
+static KosGetNextResult op_get_next_from_iter(
+        KosContext *ctx,
+        KosEvent *out_ev,
+        PyObject *iter,
+        PyObject **result_out) {
+  /* Koskari async gen is handled in NEXT/ITER_NEXT via in-loop attach; never here. */
   {
     PyObject *awaitable = get_await_next(iter);
     if (awaitable) {
-      int suspended = 0;
-      PyObject *yielded = NULL;
-      PyObject *result = eager_step_awaitable(awaitable, ctx, &suspended,
-                                              &yielded);
-      Py_DECREF(awaitable);
-      if (suspended && yielded) {
-        ctx->flags &= ~KOS_CTX_RUNNING;
-        out_ev->kind = KOS_EV_AWAIT;
-        out_ev->payload = yielded;
-        return 1;
-      }
-      if (PyErr_ExceptionMatches(PyExc_StopAsyncIteration)) {
-        PyErr_Clear();
-        if (default_val) {
-          if (KosStackBlock_PushRef(&ctx->frame_top->stack, default_val) < 0)
-            return -1;
-          return 0;
-        }
-        PyErr_SetNone(PyExc_StopIteration);
-        return -1;
-      }
-      if (result) {
-        if (KosStackBlock_PushRef(&ctx->frame_top->stack, result) < 0) {
-          Py_DECREF(result);
-          return -1;
-        }
-        Py_DECREF(result);
-        (void) out_ev;
-        return 0;
-      }
-      return -1;
+      KosGetNextResult r = next_from_python_async_iter(ctx, out_ev, iter,
+                                                       result_out, awaitable);
+      return r;
     }
   }
-
-  /* 3. Sync iterator */
-  if (PyIter_Check(iter)) {
-    PyObject *n = PyIter_Next(iter);
-    if (n) {
-      if (KosStackBlock_PushRef(&ctx->frame_top->stack, n) < 0) {
-        Py_DECREF(n);
-        return -1;
-      }
-      Py_DECREF(n);
-      (void) out_ev;
-      return 0;
-    }
-    if (PyErr_Occurred())
-      return -1;
-    if (default_val) {
-      if (KosStackBlock_PushRef(&ctx->frame_top->stack, default_val) < 0)
-        return -1;
-      return 0;
-    }
-    PyErr_SetNone(PyExc_StopIteration);
-    return -1;
-  }
-
-  /* 4. Not an iterator: GetIter then one next */
-  {
-    PyObject *it = PyObject_GetIter(iter);
-    if (! it)
-      return -1;
-    PyObject *n = PyIter_Next(it);
-    if (n) {
-      Py_DECREF(it);
-      if (KosStackBlock_PushRef(&ctx->frame_top->stack, n) < 0) {
-        Py_DECREF(n);
-        return -1;
-      }
-      Py_DECREF(n);
-      (void) out_ev;
-      return 0;
-    }
-    Py_DECREF(it);
-    if (PyErr_Occurred())
-      return -1;
-    if (default_val) {
-      if (KosStackBlock_PushRef(&ctx->frame_top->stack, default_val) < 0)
-        return -1;
-      return 0;
-    }
-    PyErr_SetNone(PyExc_StopIteration);
-    return -1;
-  }
+  if (PyIter_Check(iter))
+    return next_from_python_sync_iter(ctx, out_ev, iter, result_out);
+  PyErr_SetString(PyExc_TypeError, "not an iterator");
+  return GET_NEXT_ERROR;
 }
 
 
@@ -2780,26 +2752,141 @@ KOS_OP_HANDLER(NEXT) {
     Py_XDECREF(default_val);
     return -1;
   }
-  int res = op_next_advance(ctx, out_ev, iter, default_val);
-  if (res == 1) {
-    if (n == 2) {
-      if (KosStackBlock_PushRef(&ctx->frame_top->stack, default_val) < 0) {
-        Py_DECREF(default_val);
-        Py_DECREF(iter);
+  /* If not already an iterator, get one (NEXT allows iterables). */
+  if (! KosPyAsyncGen_Check(iter)) {
+    PyObject *awaitable = get_await_next(iter);
+    if (awaitable) {
+      Py_DECREF(awaitable);
+    } else if (! PyIter_Check(iter)) {
+      PyObject *it = PyObject_GetIter(iter);
+      Py_DECREF(iter);
+      if (! it) {
+        Py_XDECREF(default_val);
         return -1;
       }
+      iter = it;
     }
-    if (KosStackBlock_PushRef(&ctx->frame_top->stack, iter) < 0) {
+  }
+
+  /* Koskari async gen: flatten into same eval loop (attach gen frame, return 0). */
+  if (KosPyAsyncGen_Check(iter)) {
+    KosPyAsyncGen *agen = (KosPyAsyncGen *) iter;
+    if (agen->in_progress) {
+      PyErr_SetString(PyExc_RuntimeError,
+                      "async generator already being iterated");
       Py_DECREF(iter);
+      Py_XDECREF(default_val);
+      return -1;
+    }
+    if (agen->closed || ! agen->ctx) {
+      Py_DECREF(iter);
+      if (n == 2 && default_val) {
+        if (KosStackBlock_PushRef(&ctx->frame_top->stack, default_val) < 0) {
+          Py_XDECREF(default_val);
+          return -1;
+        }
+        Py_XDECREF(default_val);
+        return 0;
+      }
+      Py_XDECREF(default_val);
+      PyErr_SetNone(PyExc_StopIteration);
+      return -1;
+    }
+    agen->in_progress = 1;
+    ctx->pending_agen = (void *) agen;
+    if (default_val) {
+      Py_INCREF(default_val);
+      ctx->pending_agen_default = default_val;
+    } else {
+      ctx->pending_agen_default = NULL;
+    }
+    ctx->pending_agen_n = (int) n;
+    KosDynFrame *gen_frame = agen->ctx->frame_top;
+    if (! gen_frame) {
+      ctx->pending_agen = NULL;
+      Py_XDECREF(ctx->pending_agen_default);
+      ctx->pending_agen_default = NULL;
+      agen->in_progress = 0;
+      Py_DECREF(iter);
+      Py_XDECREF(default_val);
+      PyErr_SetString(PyExc_RuntimeError, "async generator has no frame");
+      return -1;
+    }
+    if (KosStackBlock_PushRef(&gen_frame->stack, Py_None) < 0) {
+      ctx->pending_agen = NULL;
+      Py_XDECREF(ctx->pending_agen_default);
+      ctx->pending_agen_default = NULL;
+      agen->in_progress = 0;
+      Py_DECREF(iter);
+      Py_XDECREF(default_val);
+      return -1;
+    }
+    if (kos_dyn_attach_frame(ctx, gen_frame) < 0) {
+      (void) KosStackBlock_PopRef(&gen_frame->stack);
+      ctx->pending_agen = NULL;
+      Py_XDECREF(ctx->pending_agen_default);
+      ctx->pending_agen_default = NULL;
+      agen->in_progress = 0;
+      Py_DECREF(iter);
+      Py_XDECREF(default_val);
       return -1;
     }
     Py_DECREF(iter);
     Py_XDECREF(default_val);
-    return 1;
+    return 0;
   }
-  Py_DECREF(iter);
-  Py_XDECREF(default_val);
-  return res;
+
+  PyObject *value = NULL;
+  KosGetNextResult get_res = op_get_next_from_iter(ctx, out_ev, iter, &value);
+  switch (get_res) {
+    case GET_NEXT_VALUE:
+      if (KosStackBlock_PushRef(&ctx->frame_top->stack, value) < 0) {
+        Py_DECREF(value);
+        Py_DECREF(iter);
+        Py_XDECREF(default_val);
+        return -1;
+      }
+      Py_DECREF(value);
+      Py_DECREF(iter);
+      Py_XDECREF(default_val);
+      return 0;
+    case GET_NEXT_EXHAUSTED:
+      Py_DECREF(iter);
+      if (default_val) {
+        if (KosStackBlock_PushRef(&ctx->frame_top->stack, default_val) < 0) {
+          Py_XDECREF(default_val);
+          return -1;
+        }
+        Py_XDECREF(default_val);
+        return 0;
+      }
+      Py_XDECREF(default_val);
+      PyErr_SetNone(PyExc_StopIteration);
+      return -1;
+    case GET_NEXT_SUSPEND:
+      if (n == 2) {
+        if (KosStackBlock_PushRef(&ctx->frame_top->stack, default_val) < 0) {
+          Py_DECREF(default_val);
+          Py_DECREF(iter);
+          return -1;
+        }
+      }
+      if (KosStackBlock_PushRef(&ctx->frame_top->stack, iter) < 0) {
+        Py_DECREF(iter);
+        return -1;
+      }
+      Py_DECREF(iter);
+      Py_XDECREF(default_val);
+      return 1;
+    case GET_NEXT_ERROR:
+      Py_DECREF(iter);
+      Py_XDECREF(default_val);
+      return -1;
+    default:
+      Py_DECREF(iter);
+      Py_XDECREF(default_val);
+      return -1;
+  }
 }
 
 
@@ -2814,7 +2901,69 @@ KOS_OP_HANDLER(ITER_NEXT) {
                     "ITER_NEXT must be used inside a PUSH_FOREACH block");
     return -1;
   }
-  return op_iter_next_region(ctx, out_ev, insn, region);
+  PyObject *iter = region->iter;
+  if (KosPyAsyncGen_Check(iter)) {
+    KosPyAsyncGen *agen = (KosPyAsyncGen *) iter;
+    if (agen->in_progress) {
+      PyErr_SetString(PyExc_RuntimeError,
+                      "async generator already being iterated");
+      return -1;
+    }
+    if (agen->closed || ! agen->ctx) {
+      region->exhausted = 1;
+      ctx->frame_top->pc = insn->arg;
+      return 0;
+    }
+    agen->in_progress = 1;
+    ctx->pending_agen = (void *) agen;
+    ctx->pending_agen_default = NULL;
+    ctx->pending_agen_n = 0;
+    ctx->pending_agen_region = (void *) region;
+    ctx->pending_agen_else_pc = insn->arg;
+    KosDynFrame *gen_frame = agen->ctx->frame_top;
+    if (! gen_frame) {
+      ctx->pending_agen = NULL;
+      ctx->pending_agen_region = NULL;
+      agen->in_progress = 0;
+      PyErr_SetString(PyExc_RuntimeError, "async generator has no frame");
+      return -1;
+    }
+    if (KosStackBlock_PushRef(&gen_frame->stack, Py_None) < 0) {
+      ctx->pending_agen = NULL;
+      ctx->pending_agen_region = NULL;
+      agen->in_progress = 0;
+      return -1;
+    }
+    if (kos_dyn_attach_frame(ctx, gen_frame) < 0) {
+      KosStackBlock_PopRef(&gen_frame->stack);
+      ctx->pending_agen = NULL;
+      ctx->pending_agen_region = NULL;
+      agen->in_progress = 0;
+      return -1;
+    }
+    return 0;
+  }
+  PyObject *value = NULL;
+  KosGetNextResult get_res = op_get_next_from_iter(ctx, out_ev, iter, &value);
+  switch (get_res) {
+    case GET_NEXT_VALUE:
+      if (KosStackBlock_PushRef(&ctx->frame_top->stack, value) < 0) {
+        Py_DECREF(value);
+        return -1;
+      }
+      Py_DECREF(value);
+      return 0;
+    case GET_NEXT_EXHAUSTED:
+      region->exhausted = 1;
+      ctx->frame_top->pc = insn->arg;
+      return 0;
+    case GET_NEXT_SUSPEND:
+      return 1;
+    case GET_NEXT_ERROR:
+      return -1;
+    default:
+      return -1;
+  }
 }
 
 
@@ -3724,9 +3873,20 @@ KOS_OP_HANDLER(PUSH_FOREACH) {
     return -1;
   }
 
-  /* Create iterator from iterable */
-  PyObject *iter = PyObject_GetIter(iterable);
-  Py_DECREF(iterable);
+  /* Create iterator from iterable (sync or async) */
+  PyObject *iter = NULL;
+  if (KosPyAsyncGen_Check(iterable)) {
+    iter = iterable;
+    Py_INCREF(iter);
+    Py_DECREF(iterable);
+  } else if (Py_TYPE(iterable)->tp_as_async &&
+             Py_TYPE(iterable)->tp_as_async->am_aiter) {
+    iter = Py_TYPE(iterable)->tp_as_async->am_aiter(iterable);
+    Py_DECREF(iterable);
+  } else {
+    iter = PyObject_GetIter(iterable);
+    Py_DECREF(iterable);
+  }
   if (! iter) {
     Py_DECREF(loop_result);
     return -1;
@@ -4288,6 +4448,21 @@ int koskari_eval(KosContext *ctx, KosEvent *out_ev) {
         eval_ret = 0;
         goto koskari_eval_cleanup;
       }
+      /* Unwind pending async gen so exception propagates to caller frame. */
+      if (ctx->pending_agen && ctx->frame_top
+          && ctx->frame_top->base.parent != NULL) {
+        KosPyAsyncGen *agen = (KosPyAsyncGen *) ctx->pending_agen;
+        KosDynFrame *detached_frame = NULL;
+        if (kos_dyn_detach_top_frame(ctx, &detached_frame) == 0 && detached_frame) {
+          detached_frame->base.parent = NULL;
+          agen->closed = 1;
+          agen->in_progress = 0;
+        }
+        ctx->pending_agen = NULL;
+        Py_XDECREF(ctx->pending_agen_default);
+        ctx->pending_agen_default = NULL;
+        ctx->pending_agen_region = NULL;
+      }
       if (try_local_exception_handler(ctx, out_ev))
         continue;
       eval_ret = 0;
@@ -4330,6 +4505,21 @@ int koskari_eval(KosContext *ctx, KosEvent *out_ev) {
 #endif
       if (unlikely(op_res != 0)) {
         if (PyErr_Occurred()) {
+          if (ctx->pending_agen && ctx->frame_top
+              && ctx->frame_top->base.parent != NULL) {
+            KosPyAsyncGen *agen = (KosPyAsyncGen *) ctx->pending_agen;
+            KosDynFrame *detached_frame = NULL;
+            if (kos_dyn_detach_top_frame(ctx, &detached_frame) == 0
+                && detached_frame) {
+              detached_frame->base.parent = NULL;
+              agen->closed = 1;
+              agen->in_progress = 0;
+            }
+            ctx->pending_agen = NULL;
+            Py_XDECREF(ctx->pending_agen_default);
+            ctx->pending_agen_default = NULL;
+            ctx->pending_agen_region = NULL;
+          }
           if (try_local_exception_handler(ctx, out_ev))
             continue;
           eval_ret = 0;

@@ -133,6 +133,13 @@ struct KosContext {
   int handling_raise;        /* 1 when in finally because of exception */
   PyObject *handling_result;  /* stashed return value (future return-through-finally) */
 
+  /* Pending async gen (in-loop NEXT/ITER_NEXT): gen frame is attached, awaiting yield/return */
+  void *pending_agen;        /* KosPyAsyncGen * when set */
+  PyObject *pending_agen_default;
+  int pending_agen_n;        /* 1 or 2 for NEXT; 0 for ITER_NEXT */
+  void *pending_agen_region; /* KosDynRegion * for ITER_NEXT exhausted target */
+  uint32_t pending_agen_else_pc;
+
   uint32_t flags;            /* KosContextFlags */
 };
 ```
@@ -239,6 +246,19 @@ struct KosHookRunner {
 - Wraps `KosContext` for async generator protocol
 - `__aiter__` returns self
 - `__anext__` returns `KosPyAsyncGenASend` awaitable
+- When driven from **within** a Koskari eval (e.g. `await-for-each`), the gen’s frame is **attached** to the current context and stepped in the same loop; when driven from Python (`__anext__`), `koskari_eval(agen->ctx, &ev)` is used directly.
+
+## In-loop flattening (same koskari_eval run)
+
+To avoid recursive C calls and keep a single state machine:
+
+1. **CALL (Koskari callables)**: When the callable is a `KosExpression` or `KosFunction`, the evaluator does **not** call Python or recurse into `koskari_eval`. It pushes a new frame with `kos_dyn_push_frame(ctx, code, ns)` (with args applied for functions) and continues the dispatch loop. When that frame executes RETURN, the **frame-has-parent** rule (below) applies: the frame is detached and the return value is pushed onto the caller’s stack in the same loop.
+
+2. **NEXT/ITER_NEXT (Koskari async gen)**: When the iterator is a Koskari async generator, the evaluator sets `pending_agen` and **attaches** the generator’s frame to the current context with `kos_dyn_attach_frame(ctx, gen_frame)`, then continues the loop. The gen’s frame runs until it YIELD or RETURN. On YIELD/RETURN, the **frame-has-parent** rule runs: the gen frame is **detached** (without freeing), the value (or exhausted/default) is delivered to the awaiting frame, and the loop continues with the caller as `frame_top`. No recursive `koskari_eval(agen->ctx, ...)`.
+
+3. **YIELD/RETURN (frame has parent)**: If the current frame’s `base.parent` is non-NULL, the frame is a **child** (either from a Koskari CALL or from an attached async gen). YIELD and RETURN then **do not** produce a boundary event. They call `kos_dyn_detach_top_frame` to pop the current frame, push the value (or handle exhausted/exception) onto the parent’s stack, and return 0 so the loop continues with the parent. Only when the frame has **no** parent do YIELD/RETURN set `out_ev` and return from `koskari_eval`.
+
+4. **Attach/detach (dynchain)**: `kos_dyn_attach_frame(ctx, frame)` reparents an existing frame onto `ctx->dyn_top` and sets it as the new top (no allocation). `kos_dyn_detach_top_frame(ctx, &frame_out)` removes the top frame from the chain without freeing it and returns it; used when the gen yields or returns so the frame can remain stored in the async gen’s context.
 
 ## Public C API
 
@@ -248,6 +268,10 @@ struct KosHookRunner {
 /* Push/pop frames */
 KosDynFrame *kos_dyn_push_frame(KosContext *ctx, KosCode *code, PyObject *ns);
 int kos_dyn_pop_frame(KosContext *ctx);
+
+/* Attach/detach existing frame (no allocation/free); for in-loop async gen stepping */
+int kos_dyn_attach_frame(KosContext *ctx, KosDynFrame *frame);
+int kos_dyn_detach_top_frame(KosContext *ctx, KosDynFrame **frame_out);
 
 /* Push/pop prompts */
 KosDynPrompt *kos_dyn_push_prompt(KosContext *ctx, uint32_t prompt_id);

@@ -26,6 +26,7 @@ import asyncio
 import unittest
 
 from koskari import Code, NamespaceSpec, OpCode
+from koskari.lib import AsyncGenerator
 from tests import make_callable
 
 
@@ -197,7 +198,8 @@ class TestEvaluatorToken(CevalTest):
 
 class TestStubOpcodes(CevalTest):
     """
-    Tests that stub opcodes raise RuntimeError when executed
+    Tests for opcodes that have no implementation yet.
+    Each test runs code that hits a stub opcode and expects RuntimeError.
     """
 
     def _run_stub_opcode(self, opname, arg=0):
@@ -276,79 +278,24 @@ class TestStubOpcodes(CevalTest):
             self._run_stub_opcode("THEEND", 0)
 
 
-    def test_break_outside_loop_raises(self):
-        """
-        BREAK without LOOP/FOREACH raises RuntimeError
-        """
-
-        with self.assertRaises(RuntimeError) as ctx:
-            self._run_stub_opcode("BREAK", 0)
-        self.assertIn("break outside loop", str(ctx.exception))
-
-
-    def test_continue_outside_loop_raises(self):
-        """
-        CONTINUE without LOOP/FOREACH raises RuntimeError
-        """
-
-        with self.assertRaises(RuntimeError) as ctx:
-            self._run_stub_opcode("CONTINUE", 0)
-        self.assertIn("continue outside loop", str(ctx.exception))
-
-
-    def test_yield_suspends_and_resumes(self):
-        """
-        YIELD pops value, suspends; send(None) resumes
-        """
-
-        code = [
-            ["CONST", 42],
-            ["YIELD", 1],
-            ["RETURN", 1],
-        ]
-        code_obj, ns = build_expr(code)
-        expr = make_callable(code_obj, ns)
-        coro = expr()
-        self.assertEqual(coro.send(None), 42)
-        with self.assertRaises(StopIteration) as ctx:
-            coro.send(None)
-        self.assertIs(ctx.exception.value, None)
-
-
     def test_yield_from_raises_not_implemented(self):
         """
-        YIELD_FROM raises RuntimeError
+        YIELD_FROM raises RuntimeError when the async gen is driven
         """
+
+        code_obj, ns = build_expr([
+            ["YIELD_FROM", 0],
+            ["RETURN", 1],
+        ])
+        expr = make_callable(code_obj, ns)
+        agen = expr()
+        self.assertIsInstance(agen, AsyncGenerator)
+
+        async def run():
+            await anext(agen)
 
         with self.assertRaises(RuntimeError):
-            self._run_stub_opcode("YIELD_FROM", 0)
-
-
-    def test_var_clear_raises_name_error_for_missing_name(self):
-        """
-        VAR_CLEAR raises NameError when name is not defined
-        """
-
-        with self.assertRaises(NameError):
-            self._run_stub_opcode("VAR_CLEAR", "x")
-
-
-    def test_var_ref_raises_name_error_for_missing_name(self):
-        """
-        VAR_REF raises NameError when name is not defined
-        """
-
-        with self.assertRaises(NameError):
-            self._run_stub_opcode("VAR_REF", "x")
-
-
-    def test_var_store_raises_not_implemented(self):
-        """
-        VAR_STORE raises RuntimeError
-        """
-
-        with self.assertRaises(RuntimeError):
-            self._run_stub_opcode("VAR_STORE", "x")
+            asyncio.run(run())
 
 
     def test_build_args_raises_not_implemented(self):
@@ -531,32 +478,6 @@ class TestStubOpcodes(CevalTest):
             self._run_stub_opcode("TAIL_RECUR_STAR", 0)
 
 
-    def test_push_foreach_with_iter_next_completes(self):
-        """
-        PUSH_FOREACH with ITER_NEXT on empty list exits to else.
-        POP_LOOP pushes the loop result (None in this case).
-        """
-
-        code, ns = build_expr([
-            ["CONST", None],  # loop_result
-            ["CONST", []],    # iterable
-            ["PUSH_FOREACH", "break_lbl"],
-            ["ITER_NEXT", "else_lbl"],
-            ["CONST", -1],
-            ["RETURN", 1],
-            ["LABEL", "else_lbl"],
-            ["CLEAR_LOOP", 0],
-            ["LABEL", "break_lbl"],
-            ["POP_LOOP", 0],
-            # POP_LOOP now pushes the loop result (None)
-            ["POP", 1],  # discard the loop result
-            ["CONST", 42],
-            ["RETURN", 1],
-        ])
-        result = run_to_completion(make_callable(code, ns)())
-        self.assertEqual(result, 42)
-
-
     def test_push_with_raises_not_implemented(self):
         """
         PUSH_WITH raises RuntimeError
@@ -575,25 +496,6 @@ class TestStubOpcodes(CevalTest):
             self._run_stub_opcode("PUSH_BEGIN", 0)
 
 
-    def test_push_loop_with_pop_loop_completes(self):
-        """
-        PUSH_LOOP with matching POP_LOOP completes normally.
-        POP_LOOP pushes the loop result (None) to the stack.
-        """
-
-        code, ns = build_expr([
-            ["PUSH_LOOP", "break_lbl"],
-            ["LABEL", "break_lbl"],
-            ["POP_LOOP", 0],
-            # POP_LOOP pushed loop result (None)
-            ["POP", 1],
-            ["CONST", 42],
-            ["RETURN", 1],
-        ])
-        result = run_to_completion(make_callable(code, ns)())
-        self.assertEqual(result, 42)
-
-
     def test_push_ns_raises_not_implemented(self):
         """
         PUSH_NS raises RuntimeError
@@ -601,15 +503,6 @@ class TestStubOpcodes(CevalTest):
 
         with self.assertRaises(RuntimeError):
             self._run_stub_opcode("PUSH_NS", 0)
-
-
-    def test_clear_loop_raises_not_implemented(self):
-        """
-        CLEAR_LOOP without preceding PUSH_LOOP/PUSH_FOREACH raises RuntimeError
-        """
-
-        with self.assertRaises(RuntimeError):
-            self._run_stub_opcode("CLEAR_LOOP", 0)
 
 
     def test_pop_with_raises_not_implemented(self):
@@ -630,15 +523,6 @@ class TestStubOpcodes(CevalTest):
             self._run_stub_opcode("POP_BEGIN", 0)
 
 
-    def test_pop_loop_raises_not_implemented(self):
-        """
-        POP_LOOP without preceding PUSH_LOOP/PUSH_FOREACH raises RuntimeError
-        """
-
-        with self.assertRaises(RuntimeError):
-            self._run_stub_opcode("POP_LOOP", 0)
-
-
     def test_pop_ns_raises_not_implemented(self):
         """
         POP_NS raises RuntimeError
@@ -648,9 +532,9 @@ class TestStubOpcodes(CevalTest):
             self._run_stub_opcode("POP_NS", 0)
 
 
-class TestStackOpcodes(CevalTest):
+class TestNoopLabelPositionOpcodes(CevalTest):
     """
-    Tests for NOOP, LABEL, POSITION, DUP, POP
+    Tests for NOOP, LABEL, POSITION (no-ops / compile-time only at runtime).
     """
 
     def test_noop_advances_pc(self):
@@ -694,6 +578,11 @@ class TestStackOpcodes(CevalTest):
         result = run_to_completion(make_callable(code, ns)())
         self.assertEqual(result, 3)
 
+
+class TestStackOpcodes(CevalTest):
+    """
+    Tests for DUP, POP
+    """
 
     def test_dup_copies_stack_top(self):
         """
@@ -997,33 +886,10 @@ class TestCheckOpcodes(CevalTest):
         self.assertEqual(result, 1)
 
 
-class TestIterNextOpcodes(CevalTest):
+class TestNextOpcodes(CevalTest):
     """
-    Tests for ITER_NEXT (region-only, inside PUSH_FOREACH) and NEXT (stack-based)
+    Tests for NEXT (stack-based).
     """
-
-    def test_iter_next_outside_foreach_fails(self):
-        """
-        ITER_NEXT outside PUSH_FOREACH fails at Code construction or runtime
-        """
-        try:
-            code, ns = build_expr([
-                ["CONST", [10]],
-                ["ITER_NEXT", "else_lbl"],
-                ["RETURN", 1],
-                ["LABEL", "else_lbl"],
-                ["CONST", 0],
-                ["RETURN", 1],
-            ])
-        except RuntimeError as e:
-            self.assertIn("ITER_NEXT", str(e))
-            self.assertIn("PUSH_FOREACH", str(e))
-            return
-        with self.assertRaises(RuntimeError) as cm:
-            run_to_completion(make_callable(code, ns)())
-        self.assertIn("ITER_NEXT", str(cm.exception))
-        self.assertIn("PUSH_FOREACH", str(cm.exception))
-
 
     def test_next_1_arg_pushes_value(self):
         """
@@ -1085,6 +951,155 @@ class TestIterNextOpcodes(CevalTest):
         self.assertEqual(result, 42)
 
 
+class TestYieldOpcodes(CevalTest):
+    """
+    Tests for YIELD and for NEXT/ITER_NEXT over async generators.
+    """
+
+    def test_yielding_expression_returns_async_generator(self):
+        """
+        Calling an Expression whose code has YIELD returns AsyncGenerator
+        """
+        gen_code, gen_ns = build_expr([
+            ["CONST", 1],
+            ["YIELD", 1],
+            ["RETURN", 0],
+        ])
+        expr = make_callable(gen_code, gen_ns)
+        agen = expr()
+        self.assertIsInstance(agen, AsyncGenerator)
+
+    def test_yield_suspends_and_resumes(self):
+        """
+        Yielding code returns AsyncGenerator; anext() yields value then StopAsyncIteration
+        """
+
+        code = [
+            ["CONST", 42],
+            ["YIELD", 1],
+            ["RETURN", 0],
+        ]
+        code_obj, ns = build_expr(code)
+        expr = make_callable(code_obj, ns)
+        agen = expr()
+        self.assertIsInstance(agen, AsyncGenerator)
+
+        async def run():
+            v = await anext(agen)
+            self.assertEqual(v, 42)
+            with self.assertRaises(StopAsyncIteration):
+                await anext(agen)
+
+        asyncio.run(run())
+
+    def test_next_accumulates_values_from_koskari_async_gen(self):
+        """
+        NEXT 1 on a Koskari async gen yields 1, 2, 3; consumer accumulates and returns 3
+        """
+        gen_code, gen_ns = build_expr([
+            ["CONST", 1],
+            ["YIELD", 1],
+            ["CONST", 2],
+            ["YIELD", 1],
+            ["CONST", 3],
+            ["YIELD", 1],
+            ["RETURN", 0],
+        ])
+        gen = make_callable(gen_code, gen_ns)()
+
+        consumer_code, consumer_ns = build_expr([
+            ["VAR", "gen"],
+            ["NEXT", 1],
+            ["VAR_STORE", "v1"],
+            ["VAR", "gen"],
+            ["NEXT", 1],
+            ["VAR_STORE", "v2"],
+            ["VAR", "gen"],
+            ["NEXT", 1],
+            ["VAR_STORE", "v3"],
+            ["VAR", "v3"],
+            ["RETURN", 1],
+        ], values={"gen": gen, "v1": None, "v2": None, "v3": None})
+        result = run_to_completion(make_callable(consumer_code, consumer_ns)())
+        self.assertEqual(result, 3)
+
+    def test_next_with_await_in_generator(self):
+        """
+        Koskari async gen that AWAITs a Python async noop between yields; consumer still gets 1,2,3
+        """
+        async def noop():
+            return None
+
+        gen_code, gen_ns = build_expr([
+            ["CONST", 1],
+            ["YIELD", 1],
+            ["VAR", "noop"],
+            ["CALL", 0],
+            ["AWAIT", 0],
+            ["POP", 1],
+            ["CONST", 2],
+            ["YIELD", 1],
+            ["CONST", 3],
+            ["YIELD", 1],
+            ["RETURN", 0],
+        ], values={"noop": noop})
+        gen = make_callable(gen_code, gen_ns)()
+
+        consumer_code, consumer_ns = build_expr([
+            ["VAR", "gen"],
+            ["NEXT", 1],
+            ["VAR_STORE", "v1"],
+            ["VAR", "gen"],
+            ["NEXT", 1],
+            ["VAR_STORE", "v2"],
+            ["VAR", "gen"],
+            ["NEXT", 1],
+            ["VAR_STORE", "v3"],
+            ["VAR", "v3"],
+            ["RETURN", 1],
+        ], values={"gen": gen, "v1": None, "v2": None, "v3": None})
+        result = asyncio.run(make_callable(consumer_code, consumer_ns)())
+        self.assertEqual(result, 3)
+
+    def test_foreach_iter_next_over_koskari_async_gen(self):
+        """
+        PUSH_FOREACH over a Koskari async gen; ITER_NEXT accumulates; last value is 3
+        """
+        gen_code, gen_ns = build_expr([
+            ["CONST", 1],
+            ["YIELD", 1],
+            ["CONST", 2],
+            ["YIELD", 1],
+            ["CONST", 3],
+            ["YIELD", 1],
+            ["RETURN", 0],
+        ])
+        gen = make_callable(gen_code, gen_ns)()
+
+        consumer_code, consumer_ns = build_expr([
+            ["CONST", None],
+            ["VAR", "gen"],
+            ["PUSH_FOREACH", "break_lbl"],
+            ["LABEL", "loop_head"],
+            ["ITER_NEXT", "else_lbl"],
+            ["VAR_STORE", "last"],
+            ["VAR", "count"],
+            ["CONST", 1],
+            ["OBJECT_ADD", 2],
+            ["VAR_STORE", "count"],
+            ["JUMP", "loop_head"],
+            ["LABEL", "else_lbl"],
+            ["CLEAR_LOOP", 0],
+            ["LABEL", "break_lbl"],
+            ["POP_LOOP", 0],
+            ["POP", 1],
+            ["VAR", "last"],
+            ["RETURN", 1],
+        ], values={"gen": gen, "count": 0, "last": None})
+        result = run_to_completion(make_callable(consumer_code, consumer_ns)())
+        self.assertEqual(result, 3)
+
+
 class TestLoopOpcodes(CevalTest):
     """
     Tests for PUSH_LOOP, POP_LOOP, CLEAR_LOOP, BREAK, CONTINUE.
@@ -1107,6 +1122,25 @@ class TestLoopOpcodes(CevalTest):
             ["LABEL", "break_lbl"],
             ["POP_LOOP", 0],
             ["LABEL", "after_pop"],
+            # POP_LOOP pushed loop result (None)
+            ["POP", 1],
+            ["CONST", 42],
+            ["RETURN", 1],
+        ])
+        result = run_to_completion(make_callable(code, ns)())
+        self.assertEqual(result, 42)
+
+
+    def test_push_loop_with_pop_loop_completes(self):
+        """
+        PUSH_LOOP with matching POP_LOOP completes normally.
+        POP_LOOP pushes the loop result (None) to the stack.
+        """
+
+        code, ns = build_expr([
+            ["PUSH_LOOP", "break_lbl"],
+            ["LABEL", "break_lbl"],
+            ["POP_LOOP", 0],
             # POP_LOOP pushed loop result (None)
             ["POP", 1],
             ["CONST", 42],
@@ -1220,6 +1254,49 @@ class TestLoopOpcodes(CevalTest):
         self.assertEqual(result, 1)
 
 
+    def test_break_outside_loop_raises(self):
+        """
+        BREAK without LOOP/FOREACH raises RuntimeError
+        """
+
+        code_obj, ns = build_expr([["BREAK", 0], ["RETURN", 1]])
+        with self.assertRaises(RuntimeError) as ctx:
+            run_to_completion(make_callable(code_obj, ns)())
+        self.assertIn("break outside loop", str(ctx.exception))
+
+
+    def test_continue_outside_loop_raises(self):
+        """
+        CONTINUE without LOOP/FOREACH raises RuntimeError
+        """
+
+        code_obj, ns = build_expr([["CONTINUE", 0], ["RETURN", 1]])
+        with self.assertRaises(RuntimeError) as ctx:
+            run_to_completion(make_callable(code_obj, ns)())
+        self.assertIn("continue outside loop", str(ctx.exception))
+
+
+    def test_clear_loop_outside_loop_raises(self):
+        """
+        CLEAR_LOOP without preceding PUSH_LOOP/PUSH_FOREACH raises RuntimeError
+        """
+
+        code_obj, ns = build_expr([["CLEAR_LOOP", 0], ["RETURN", 1]])
+        with self.assertRaises(RuntimeError):
+            run_to_completion(make_callable(code_obj, ns)())
+
+
+    def test_pop_loop_without_push_loop_raises(self):
+        """
+        POP_LOOP without preceding PUSH_LOOP/PUSH_FOREACH raises RuntimeError
+        (at code build or run).
+        """
+
+        with self.assertRaises(RuntimeError):
+            code_obj, ns = build_expr([["POP_LOOP", 0], ["RETURN", 1]])
+            run_to_completion(make_callable(code_obj, ns)())
+
+
 class TestForeachOpcodes(CevalTest):
     """
     Tests for PUSH_FOREACH with ITER_NEXT.
@@ -1229,6 +1306,29 @@ class TestForeachOpcodes(CevalTest):
     loop_result and iterator in the region. ITER_NEXT reads from region.
     POP_LOOP pushes region->result to the stack as the loop expression value.
     """
+
+    def test_iter_next_outside_foreach_fails(self):
+        """
+        ITER_NEXT outside PUSH_FOREACH fails at Code construction or runtime
+        """
+        try:
+            code, ns = build_expr([
+                ["CONST", [10]],
+                ["ITER_NEXT", "else_lbl"],
+                ["RETURN", 1],
+                ["LABEL", "else_lbl"],
+                ["CONST", 0],
+                ["RETURN", 1],
+            ])
+        except RuntimeError as e:
+            self.assertIn("ITER_NEXT", str(e))
+            self.assertIn("PUSH_FOREACH", str(e))
+            return
+        with self.assertRaises(RuntimeError) as cm:
+            run_to_completion(make_callable(code, ns)())
+        self.assertIn("ITER_NEXT", str(cm.exception))
+        self.assertIn("PUSH_FOREACH", str(cm.exception))
+
 
     def test_foreach_iterates_list(self):
         """
@@ -1311,6 +1411,32 @@ class TestForeachOpcodes(CevalTest):
         ])
         result = run_to_completion(make_callable(code, ns)())
         self.assertEqual(result, 99)
+
+
+    def test_push_foreach_with_iter_next_completes(self):
+        """
+        PUSH_FOREACH with ITER_NEXT on empty list exits to else.
+        POP_LOOP pushes the loop result (None in this case).
+        """
+
+        code, ns = build_expr([
+            ["CONST", None],  # loop_result
+            ["CONST", []],    # iterable
+            ["PUSH_FOREACH", "break_lbl"],
+            ["ITER_NEXT", "else_lbl"],
+            ["CONST", -1],
+            ["RETURN", 1],
+            ["LABEL", "else_lbl"],
+            ["CLEAR_LOOP", 0],
+            ["LABEL", "break_lbl"],
+            ["POP_LOOP", 0],
+            # POP_LOOP now pushes the loop result (None)
+            ["POP", 1],  # discard the loop result
+            ["CONST", 42],
+            ["RETURN", 1],
+        ])
+        result = run_to_completion(make_callable(code, ns)())
+        self.assertEqual(result, 42)
 
 
 class TestLoopResultOpcodes(CevalTest):
@@ -1678,10 +1804,23 @@ class TestItemOpcodes(CevalTest):
         self.assertEqual(result.deref(), "v")
 
 
-class TestConstItemOpcodes(CevalTest):
+class TestConstOpcodes(CevalTest):
     """
-    Tests for CONST_ITEM, CONST_ITEM_CLEAR, CONST_ITEM_REF, CONST_ITEM_STORE
+    Tests for CONST, CONST_ITEM, CONST_ITEM_CLEAR, CONST_ITEM_REF, CONST_ITEM_STORE
     """
+
+    def test_const_return_single_value(self):
+        """
+        CONST pushes value; RETURN 1 returns it
+        """
+
+        code, ns = build_expr([
+            ["CONST", 42],
+            ["RETURN", 1],
+        ])
+        result = run_to_completion(make_callable(code, ns)())
+        self.assertEqual(result, 42)
+
 
     def test_const_item_getitem(self):
         """
@@ -1744,23 +1883,10 @@ class TestConstItemOpcodes(CevalTest):
         self.assertEqual(result.deref(), "v")
 
 
-class TestConstAndReturn(CevalTest):
+class TestControlOpcodes(CevalTest):
     """
-    Tests for CONST and RETURN
+    Tests for RETURN, AWAIT.
     """
-
-    def test_const_return_single_value(self):
-        """
-        CONST pushes value; RETURN 1 returns it
-        """
-
-        code, ns = build_expr([
-            ["CONST", 42],
-            ["RETURN", 1],
-        ])
-        result = run_to_completion(make_callable(code, ns)())
-        self.assertEqual(result, 42)
-
 
     def test_return_multiple_values(self):
         """
@@ -1775,6 +1901,23 @@ class TestConstAndReturn(CevalTest):
         ])
         result = run_to_completion(make_callable(code, ns)())
         self.assertEqual(result, (1, 2, 3))
+
+
+    def test_await_suspends_and_resumes_with_value(self):
+        """
+        AWAIT suspends on awaitable; resumes with result
+        """
+
+        async def return_five():
+            return 5
+        code, ns = build_expr([
+            ["VAR", "f"],
+            ["CALL", 0],
+            ["AWAIT", 0],
+            ["RETURN", 1],
+        ], values={"f": return_five})
+        result = asyncio.run(make_callable(code, ns)())
+        self.assertEqual(result, 5)
 
 
 class TestNamespaceAndCall(CevalTest):
@@ -1793,6 +1936,36 @@ class TestNamespaceAndCall(CevalTest):
         ], values={"x": 99})
         result = run_to_completion(make_callable(code, ns)())
         self.assertEqual(result, 99)
+
+
+    def test_var_clear_raises_name_error_for_missing_name(self):
+        """
+        VAR_CLEAR raises NameError when name is not defined
+        """
+
+        code_obj, ns = build_expr([["VAR_CLEAR", "x"], ["RETURN", 1]])
+        with self.assertRaises(NameError):
+            run_to_completion(make_callable(code_obj, ns)())
+
+
+    def test_var_ref_raises_name_error_for_missing_name(self):
+        """
+        VAR_REF raises NameError when name is not defined
+        """
+
+        code_obj, ns = build_expr([["VAR_REF", "x"], ["RETURN", 1]])
+        with self.assertRaises(NameError):
+            run_to_completion(make_callable(code_obj, ns)())
+
+
+    def test_var_store_with_empty_stack_raises(self):
+        """
+        VAR_STORE with empty stack raises (stack underrun or RuntimeError)
+        """
+
+        code_obj, ns = build_expr([["VAR_STORE", "x"], ["RETURN", 1]])
+        with self.assertRaises(RuntimeError):
+            run_to_completion(make_callable(code_obj, ns)())
 
 
     def test_globals_pushes_globals_dict(self):
@@ -2015,28 +2188,6 @@ class TestExceptionOpcodes(CevalTest):
         ])
         result = run_to_completion(make_callable(code, ns)())
         self.assertEqual(result, 42)
-
-
-class TestAwaitOpcode(CevalTest):
-    """
-    Tests for AWAIT opcode
-    """
-
-    def test_await_suspends_and_resumes_with_value(self):
-        """
-        AWAIT suspends on awaitable; resumes with result
-        """
-
-        async def return_five():
-            return 5
-        code, ns = build_expr([
-            ["VAR", "f"],
-            ["CALL", 0],
-            ["AWAIT", 0],
-            ["RETURN", 1],
-        ], values={"f": return_five})
-        result = asyncio.run(make_callable(code, ns)())
-        self.assertEqual(result, 5)
 
 
 class TestObjectUnaryOpcodes(CevalTest):

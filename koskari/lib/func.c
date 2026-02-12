@@ -81,6 +81,20 @@ PyObject *KosExpression_Eval(PyObject *self) {
 }
 
 
+PyObject *KosExpression_GetCode(PyObject *self) {
+
+  KosExpression *ex = (KosExpression *) self;
+  return ex->code;
+}
+
+
+PyObject *KosExpression_GetNs(PyObject *self) {
+
+  KosExpression *ex = (KosExpression *) self;
+  return ex->ns;
+}
+
+
 static PyObject *expression_call(PyObject *self, PyObject *args,
                                  PyObject *kwargs) {
 
@@ -209,6 +223,29 @@ PyObject *KosFunction_Call(PyObject *self,
  fail:
   Py_XDECREF(frame_ns);
   return NULL;
+}
+
+
+PyObject *KosFunction_PrepareCallNamespace(PyObject *self,
+                                            PyObject *args,
+                                            PyObject *kwds) {
+
+  KosFunction *fn = (KosFunction *) self;
+  PyObject *frame_ns = func_obtain_call_namespace(fn);
+  if (! frame_ns)
+    return NULL;
+  if (KosFormals_Apply(fn->formals, frame_ns, args, kwds) < 0) {
+    Py_DECREF(frame_ns);
+    return NULL;
+  }
+  return frame_ns;
+}
+
+
+PyObject *KosFunction_GetCode(PyObject *self) {
+
+  KosFunction *fn = (KosFunction *) self;
+  return fn->code;
 }
 
 
@@ -344,6 +381,8 @@ PyObject *KosCoroutine_NewFromCode(PyObject *code, PyObject *ns) {
     return NULL;
   }
 
+  if (KosCode_YIELDS((KosCode *) code))
+    return KosPyAsyncGen_New(ctx);
   return KosCoroutine_New(ctx);
 }
 

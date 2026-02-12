@@ -46,6 +46,10 @@ Generators are created when a function contains `yield` or `yield-from`:
 - Functions with both `yield` and `await` become async generators
 - Operated via `await-for-each`
 - Uses `__aiter__` and `__anext__` protocol
+- When consumed from within Koskari (e.g. `await-for-each`), the gen’s frame
+  is attached to the current eval context and stepped in the same
+  `koskari_eval` loop (no recursive C call); see `design/interpreter/evaluator.md`
+  § "In-loop flattening".
 
 ## Migration Notes
 

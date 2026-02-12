@@ -107,6 +107,11 @@ typedef KosDynFrame KosFrame;
    KosEventKind enumerates the boundary conditions that can cause
    koskari_eval to suspend and return control to the caller.
 
+   These events are produced only when the current frame has no parent
+   (top-level completion). When the frame has a parent (e.g. callee or
+   attached async gen), YIELD/RETURN are handled in-loop by detaching
+   and pushing onto the parent.
+
    KOS_EV_RETURN - normal completion with a value
    KOS_EV_RAISE  - exception propagation
    KOS_EV_YIELD  - generator yield
@@ -193,6 +198,13 @@ struct KosContext {
   /* finally handler state: we entered a finally due to raise/return */
   int handling_raise;        /* 1 when in finally because of exception */
   PyObject *handling_result;  /* stashed return value (future return-through-finally) */
+
+  /* Pending async gen: top frame is gen frame run for NEXT/ITER_NEXT (in-loop) */
+  void *pending_agen;        /* KosPyAsyncGen * when set (avoid func.h in eval.h) */
+  PyObject *pending_agen_default;  /* default value for 2-arg NEXT (or NULL) */
+  int pending_agen_n;       /* 1 or 2 for NEXT; 0 for ITER_NEXT */
+  void *pending_agen_region; /* KosDynRegion * for ITER_NEXT exhausted (else target) */
+  uint32_t pending_agen_else_pc;  /* else PC for ITER_NEXT */
 
   uint32_t flags;            /* KosContextFlags */
 };

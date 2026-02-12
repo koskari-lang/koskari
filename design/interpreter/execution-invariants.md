@@ -66,6 +66,13 @@ correspond to CPython opcodes:
 
 These signals are consumed by the Koskari driver or wrapper layer.
 
+When the current frame has a **parent** (e.g. callee of a Koskari CALL or
+attached async gen frame), YIELD and RETURN do **not** produce a boundary
+signal; they are handled in-loop by detaching the frame and pushing the
+value onto the parent, and the dispatch loop continues with the parent.
+Only the top-level frame (no parent) produces a boundary event on
+yield/return/raise/await.
+
 ---
 
 ## 5. AWAIT Is a VM Suspension, Not a Yield (Invariant)
