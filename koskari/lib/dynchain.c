@@ -45,24 +45,54 @@ static void kos_dynnode_init(
     KosDynKind kind,
     KosDynNode *parent) {
 
-  node->parent = parent;
-  node->kind = kind;
-  node->flags = KOS_DYNF_NONE;
+  KosDynNode_PARENT(node) = parent;
+  KosDynNode_KIND(node) = kind;
+  KosDynNode_FLAGS(node) = KOS_DYNF_NONE;
 }
 
 
+#define DYN_NODE_MAX_FREE 128  /* cap for cached KosDynNode; tunable */
+
+static size_t dyn_freecount = 0;
+static KosDynNode *dyn_freelist = NULL;
+
+
 /**
-   Allocate and zero a DynNode-derived struct. Returns NULL on failure (sets
-   PyErr_NoMemory). Caller must init base and type-specific fields.
+   Allocate and zero a KosDynNode. Prefer reuse from freelist; else PyMem_Malloc.
+   Returns NULL on failure (sets PyErr_NoMemory). Caller must set kind and
+   the relevant union member.
 */
-static void *kos_dynnode_alloc(size_t size) {
-  void *p = PyMem_Malloc(size);
+static KosDynNode *kos_dynnode_alloc(void) {
+  KosDynNode *p = dyn_freelist;
+  if (p) {
+    dyn_freelist = KosDynNode_PARENT(p);
+    dyn_freecount--;
+    memset(p, 0, sizeof(KosDynNode));
+    return p;
+  }
+  p = PyMem_Malloc(sizeof(KosDynNode));
   if (! p) {
     PyErr_NoMemory();
     return NULL;
   }
-  memset(p, 0, size);
+  memset(p, 0, sizeof(KosDynNode));
   return p;
+}
+
+
+/**
+   Return a node to the freelist or free it. Call only after kind-specific
+   cleanup (refs released). Node is zeroed before being cached.
+*/
+static void kos_dynnode_return_to_freelist(KosDynNode *node) {
+  if (dyn_freecount < DYN_NODE_MAX_FREE) {
+    memset(node, 0, sizeof(KosDynNode));
+    KosDynNode_PARENT(node) = dyn_freelist;
+    dyn_freelist = node;
+    dyn_freecount++;
+  } else {
+    PyMem_Free(node);
+  }
 }
 
 
@@ -75,18 +105,18 @@ KosDynFrame *kos_dynframe_new(
     PyObject *ns,
     KosStackBlock *stack) {
 
-  KosDynFrame *frame = kos_dynnode_alloc(sizeof(KosDynFrame));
+  KosDynFrame *frame = kos_dynnode_alloc();
   if (! frame) {
     Py_XDECREF(ns);
     return NULL;
   }
 
-  kos_dynnode_init(&frame->base, KOS_DYN_FRAME, parent);
-  frame->code = code;  /* borrowed */
-  frame->pc = 0;
-  frame->stack = stack;  /* ownership transferred */
-  frame->ns = ns;  /* ownership transferred (already stole ref) */
-  frame->frame_flags = 0;
+  kos_dynnode_init(frame, KOS_DYN_FRAME, parent);
+  KosDynFrame_CODE(frame) = code;  /* borrowed */
+  KosDynFrame_PC(frame) = 0;
+  KosDynFrame_STACK(frame) = stack;  /* ownership transferred */
+  KosDynFrame_NS(frame) = ns;  /* ownership transferred (already stole ref) */
+  KosDynFrame_FLAGS(frame) = 0;
   return frame;
 }
 
@@ -95,9 +125,9 @@ KosDynFrame *kos_dynframe_clone(KosDynFrame *frame) {
   if (! frame)
     return NULL;
 
-  KosStackBlock *cloned_stack = KosStackBlock_COW(frame->stack);
+  KosStackBlock *cloned_stack = KosStackBlock_COW(KosDynFrame_STACK(frame));
 
-  KosDynFrame *clone = kos_dynnode_alloc(sizeof(KosDynFrame));
+  KosDynFrame *clone = kos_dynnode_alloc();
   if (! clone) {
     if (cloned_stack) {
       KosStackBlock *b = cloned_stack;
@@ -110,14 +140,14 @@ KosDynFrame *kos_dynframe_clone(KosDynFrame *frame) {
     return NULL;
   }
 
-  kos_dynnode_init(&clone->base, KOS_DYN_FRAME, NULL);
-  clone->base.flags = frame->base.flags | KOS_DYNF_CLONED;
-  clone->code = frame->code;  /* borrowed */
-  clone->pc = frame->pc;
-  clone->stack = cloned_stack;
-  clone->ns = frame->ns;
-  Py_XINCREF(clone->ns);
-  clone->frame_flags = frame->frame_flags;
+  kos_dynnode_init(clone, KOS_DYN_FRAME, NULL);
+  KosDynNode_FLAGS(clone) = KosDynNode_FLAGS(frame) | KOS_DYNF_CLONED;
+  KosDynFrame_CODE(clone) = KosDynFrame_CODE(frame);  /* borrowed */
+  KosDynFrame_PC(clone) = KosDynFrame_PC(frame);
+  KosDynFrame_STACK(clone) = cloned_stack;
+  KosDynFrame_NS(clone) = KosDynFrame_NS(frame);
+  Py_XINCREF(KosDynFrame_NS(clone));
+  KosDynFrame_FLAGS(clone) = KosDynFrame_FLAGS(frame);
   return clone;
 }
 
@@ -127,17 +157,17 @@ void kos_dynframe_free(KosDynFrame *frame) {
     return;
 
   /* Release the stack block chain */
-  KosStackBlock *block = frame->stack;
+  KosStackBlock *block = KosDynFrame_STACK(frame);
   while (block) {
     KosStackBlock *p = KosStackBlock_PARENT(block);
     KosStackBlock_Release(block);
     block = p;
   }
 
-  Py_XDECREF(frame->ns);
+  Py_XDECREF(KosDynFrame_NS(frame));
   /* code is borrowed, don't decref */
 
-  PyMem_Free(frame);
+  kos_dynnode_return_to_freelist(frame);
 }
 
 
@@ -146,14 +176,14 @@ void kos_dynframe_free(KosDynFrame *frame) {
 
 KosDynPrompt *kos_dynprompt_new(KosDynNode *parent, uint32_t prompt_id) {
 
-  KosDynPrompt *prompt = kos_dynnode_alloc(sizeof(KosDynPrompt));
+  KosDynPrompt *prompt = kos_dynnode_alloc();
   if (! prompt)
     return NULL;
 
-  kos_dynnode_init(&prompt->base, KOS_DYN_PROMPT, parent);
-  prompt->prompt_id = prompt_id;
-  prompt->handler_code = NULL;
-  prompt->handler_pc = 0;
+  kos_dynnode_init(prompt, KOS_DYN_PROMPT, parent);
+  KosDynPrompt_ID(prompt) = prompt_id;
+  KosDynPrompt_HANDLER_CODE(prompt) = NULL;
+  KosDynPrompt_HANDLER_PC(prompt) = 0;
   return prompt;
 }
 
@@ -162,15 +192,15 @@ static KosDynPrompt *kos_dynprompt_clone(KosDynPrompt *prompt) {
   if (! prompt)
     return NULL;
 
-  KosDynPrompt *clone = kos_dynnode_alloc(sizeof(KosDynPrompt));
+  KosDynPrompt *clone = kos_dynnode_alloc();
   if (! clone)
     return NULL;
 
-  kos_dynnode_init(&clone->base, KOS_DYN_PROMPT, NULL);
-  clone->base.flags = prompt->base.flags | KOS_DYNF_CLONED;
-  clone->prompt_id = prompt->prompt_id;
-  clone->handler_code = prompt->handler_code;  /* borrowed */
-  clone->handler_pc = prompt->handler_pc;
+  kos_dynnode_init(clone, KOS_DYN_PROMPT, NULL);
+  KosDynNode_FLAGS(clone) = KosDynNode_FLAGS(prompt) | KOS_DYNF_CLONED;
+  KosDynPrompt_ID(clone) = KosDynPrompt_ID(prompt);
+  KosDynPrompt_HANDLER_CODE(clone) = KosDynPrompt_HANDLER_CODE(prompt);  /* borrowed */
+  KosDynPrompt_HANDLER_PC(clone) = KosDynPrompt_HANDLER_PC(prompt);
   return clone;
 }
 
@@ -180,7 +210,7 @@ void kos_dynprompt_free(KosDynPrompt *prompt) {
     return;
 
   /* handler_code is borrowed */
-  PyMem_Free(prompt);
+  kos_dynnode_return_to_freelist(prompt);
 }
 
 
@@ -189,12 +219,12 @@ void kos_dynprompt_free(KosDynPrompt *prompt) {
 
 KosDynCC *kos_dyncc_new(KosDynNode *parent, uint32_t resume_pc) {
 
-  KosDynCC *cc = kos_dynnode_alloc(sizeof(KosDynCC));
+  KosDynCC *cc = kos_dynnode_alloc();
   if (! cc)
     return NULL;
 
-  kos_dynnode_init(&cc->base, KOS_DYN_CC, parent);
-  cc->resume_pc = resume_pc;
+  kos_dynnode_init(cc, KOS_DYN_CC, parent);
+  KosDynCC_RESUME_PC(cc) = resume_pc;
   return cc;
 }
 
@@ -203,13 +233,13 @@ static KosDynCC *kos_dyncc_clone(KosDynCC *cc) {
   if (! cc)
     return NULL;
 
-  KosDynCC *clone = kos_dynnode_alloc(sizeof(KosDynCC));
+  KosDynCC *clone = kos_dynnode_alloc();
   if (! clone)
     return NULL;
 
-  kos_dynnode_init(&clone->base, KOS_DYN_CC, NULL);
-  clone->base.flags = cc->base.flags | KOS_DYNF_CLONED;
-  clone->resume_pc = cc->resume_pc;
+  kos_dynnode_init(clone, KOS_DYN_CC, NULL);
+  KosDynNode_FLAGS(clone) = KosDynNode_FLAGS(cc) | KOS_DYNF_CLONED;
+  KosDynCC_RESUME_PC(clone) = KosDynCC_RESUME_PC(cc);
   return clone;
 }
 
@@ -218,7 +248,7 @@ void kos_dyncc_free(KosDynCC *cc) {
   if (! cc)
     return;
 
-  PyMem_Free(cc);
+  kos_dynnode_return_to_freelist(cc);
 }
 
 
@@ -232,16 +262,16 @@ KosDynWind *kos_dynwind_new(
     KosCode *after_code,
     uint32_t after_pc) {
 
-  KosDynWind *wind = kos_dynnode_alloc(sizeof(KosDynWind));
+  KosDynWind *wind = kos_dynnode_alloc();
   if (! wind)
     return NULL;
 
-  kos_dynnode_init(&wind->base, KOS_DYN_WIND, parent);
-  wind->before_code = before_code;  /* borrowed */
-  wind->before_pc = before_pc;
-  wind->after_code = after_code;  /* borrowed */
-  wind->after_pc = after_pc;
-  wind->entered = 0;
+  kos_dynnode_init(wind, KOS_DYN_WIND, parent);
+  KosDynWind_BEFORE_CODE(wind) = before_code;  /* borrowed */
+  KosDynWind_BEFORE_PC(wind) = before_pc;
+  KosDynWind_AFTER_CODE(wind) = after_code;  /* borrowed */
+  KosDynWind_AFTER_PC(wind) = after_pc;
+  KosDynWind_ENTERED(wind) = 0;
   return wind;
 }
 
@@ -250,17 +280,17 @@ KosDynWind *kos_dynwind_clone(KosDynWind *wind) {
   if (! wind)
     return NULL;
 
-  KosDynWind *clone = kos_dynnode_alloc(sizeof(KosDynWind));
+  KosDynWind *clone = kos_dynnode_alloc();
   if (! clone)
     return NULL;
 
-  kos_dynnode_init(&clone->base, KOS_DYN_WIND, NULL);
-  clone->base.flags = wind->base.flags | KOS_DYNF_CLONED;
-  clone->before_code = wind->before_code;  /* borrowed */
-  clone->before_pc = wind->before_pc;
-  clone->after_code = wind->after_code;  /* borrowed */
-  clone->after_pc = wind->after_pc;
-  clone->entered = wind->entered;
+  kos_dynnode_init(clone, KOS_DYN_WIND, NULL);
+  KosDynNode_FLAGS(clone) = KosDynNode_FLAGS(wind) | KOS_DYNF_CLONED;
+  KosDynWind_BEFORE_CODE(clone) = KosDynWind_BEFORE_CODE(wind);  /* borrowed */
+  KosDynWind_BEFORE_PC(clone) = KosDynWind_BEFORE_PC(wind);
+  KosDynWind_AFTER_CODE(clone) = KosDynWind_AFTER_CODE(wind);  /* borrowed */
+  KosDynWind_AFTER_PC(clone) = KosDynWind_AFTER_PC(wind);
+  KosDynWind_ENTERED(clone) = KosDynWind_ENTERED(wind);
   return clone;
 }
 
@@ -270,7 +300,7 @@ void kos_dynwind_free(KosDynWind *wind) {
     return;
 
   /* code pointers are borrowed */
-  PyMem_Free(wind);
+  kos_dynnode_return_to_freelist(wind);
 }
 
 
@@ -283,18 +313,18 @@ KosDynRegion *kos_dynregion_new(
     uint32_t break_pc,
     uint32_t continue_pc) {
 
-  KosDynRegion *region = kos_dynnode_alloc(sizeof(KosDynRegion));
+  KosDynRegion *region = kos_dynnode_alloc();
   if (! region)
     return NULL;
 
-  kos_dynnode_init(&region->base, KOS_DYN_REGION, parent);
-  region->style = style;
-  region->break_pc = break_pc;
-  region->continue_pc = continue_pc;
-  region->enabled = 1;
-  region->result = NULL;
-  region->iter = NULL;
-  region->exhausted = 0;
+  kos_dynnode_init(region, KOS_DYN_REGION, parent);
+  KosDynRegion_STYLE(region) = style;
+  KosDynRegion_BREAK_PC(region) = break_pc;
+  KosDynRegion_CONTINUE_PC(region) = continue_pc;
+  KosDynRegion_ENABLED(region) = 1;
+  KosDynRegion_RESULT(region) = NULL;
+  KosDynRegion_ITER(region) = NULL;
+  KosDynRegion_EXHAUSTED(region) = 0;
   return region;
 }
 
@@ -303,21 +333,21 @@ KosDynRegion *kos_dynregion_clone(KosDynRegion *region) {
   if (! region)
     return NULL;
 
-  KosDynRegion *clone = kos_dynnode_alloc(sizeof(KosDynRegion));
+  KosDynRegion *clone = kos_dynnode_alloc();
   if (! clone)
     return NULL;
 
-  kos_dynnode_init(&clone->base, KOS_DYN_REGION, NULL);
-  clone->base.flags = region->base.flags | KOS_DYNF_CLONED;
-  clone->style = region->style;
-  clone->break_pc = region->break_pc;
-  clone->continue_pc = region->continue_pc;
-  clone->enabled = region->enabled;
-  clone->result = region->result;
-  Py_XINCREF(clone->result);
-  clone->iter = region->iter;
-  Py_XINCREF(clone->iter);
-  clone->exhausted = region->exhausted;
+  kos_dynnode_init(clone, KOS_DYN_REGION, NULL);
+  KosDynNode_FLAGS(clone) = KosDynNode_FLAGS(region) | KOS_DYNF_CLONED;
+  KosDynRegion_STYLE(clone) = KosDynRegion_STYLE(region);
+  KosDynRegion_BREAK_PC(clone) = KosDynRegion_BREAK_PC(region);
+  KosDynRegion_CONTINUE_PC(clone) = KosDynRegion_CONTINUE_PC(region);
+  KosDynRegion_ENABLED(clone) = KosDynRegion_ENABLED(region);
+  KosDynRegion_RESULT(clone) = KosDynRegion_RESULT(region);
+  Py_XINCREF(KosDynRegion_RESULT(clone));
+  KosDynRegion_ITER(clone) = KosDynRegion_ITER(region);
+  Py_XINCREF(KosDynRegion_ITER(clone));
+  KosDynRegion_EXHAUSTED(clone) = KosDynRegion_EXHAUSTED(region);
   return clone;
 }
 
@@ -327,10 +357,10 @@ void kos_dynregion_free(KosDynRegion *region) {
     return;
 
   /* DECREF payload owned references */
-  Py_XDECREF(region->result);
-  Py_XDECREF(region->iter);
+  Py_XDECREF(KosDynRegion_RESULT(region));
+  Py_XDECREF(KosDynRegion_ITER(region));
 
-  PyMem_Free(region);
+  kos_dynnode_return_to_freelist(region);
 }
 
 
@@ -339,14 +369,14 @@ void kos_dynregion_free(KosDynRegion *region) {
 
 KosDynNs *kos_dynns_new(KosDynNode *parent, PyObject *saved_ns) {
 
-  KosDynNs *ns_node = kos_dynnode_alloc(sizeof(KosDynNs));
+  KosDynNs *ns_node = kos_dynnode_alloc();
   if (! ns_node) {
     Py_DECREF(saved_ns);
     return NULL;
   }
 
-  kos_dynnode_init(&ns_node->base, KOS_DYN_NS, parent);
-  ns_node->saved_ns = saved_ns;  /* caller transferred ownership */
+  kos_dynnode_init(ns_node, KOS_DYN_NS, parent);
+  KosDynNs_SAVED_NS(ns_node) = saved_ns;  /* caller transferred ownership */
   return ns_node;
 }
 
@@ -355,7 +385,7 @@ KosDynNs *kos_dynns_clone(KosDynNs *ns_node) {
   if (! ns_node)
     return NULL;
 
-  PyObject *saved = ns_node->saved_ns;
+  PyObject *saved = KosDynNs_SAVED_NS(ns_node);
   Py_INCREF(saved);
   return kos_dynns_new(NULL, saved);
 }
@@ -365,8 +395,8 @@ void kos_dynns_free(KosDynNs *ns_node) {
   if (! ns_node)
     return;
 
-  Py_DECREF(ns_node->saved_ns);
-  PyMem_Free(ns_node);
+  Py_DECREF(KosDynNs_SAVED_NS(ns_node));
+  kos_dynnode_return_to_freelist(ns_node);
 }
 
 
@@ -375,12 +405,12 @@ void kos_dynns_free(KosDynNs *ns_node) {
 
 KosDynNode *kos_dynpycall_new(KosDynNode *parent) {
 
-  KosDynNode *node = kos_dynnode_alloc(sizeof(KosDynNode));
+  KosDynNode *node = kos_dynnode_alloc();
   if (! node)
     return NULL;
 
   kos_dynnode_init(node, KOS_DYN_PYCALL, parent);
-  node->flags |= KOS_DYNF_BOUNDARY;
+  KosDynNode_FLAGS(node) |= KOS_DYNF_BOUNDARY;
   return node;
 }
 
@@ -389,7 +419,7 @@ void kos_dynpycall_free(KosDynNode *node) {
   if (! node)
     return;
 
-  PyMem_Free(node);
+  kos_dynnode_return_to_freelist(node);
 }
 
 
@@ -400,7 +430,7 @@ void kos_dynnode_free(KosDynNode *node) {
   if (! node)
     return;
 
-  switch (node->kind) {
+  switch (KosDynNode_KIND(node)) {
     case KOS_DYN_FRAME:
       kos_dynframe_free((KosDynFrame *) node);
       break;
@@ -430,7 +460,7 @@ KosDynNode *kos_dynnode_clone(KosDynNode *node) {
   if (! node)
     return NULL;
 
-  switch (node->kind) {
+  switch (KosDynNode_KIND(node)) {
     case KOS_DYN_FRAME:
       return (KosDynNode *) kos_dynframe_clone((KosDynFrame *) node);
     case KOS_DYN_PROMPT:
@@ -448,7 +478,7 @@ KosDynNode *kos_dynnode_clone(KosDynNode *node) {
   }
 
   PyErr_Format(PyExc_RuntimeError, "cannot clone dynnode kind %u",
-               (unsigned) node->kind);
+               (unsigned) KosDynNode_KIND(node));
   return NULL;
 }
 
@@ -475,7 +505,7 @@ KosDynNode *kos_clone_chain_segment(KosDynNode *top, KosDynNode *stop) {
   while (node && node != stop) {
     if (KOS_XFER_TRACE)
       SAYF("[xfer] clone_segment cloning node %p kind=%u",
-           (void *) node, (unsigned) node->kind);
+           (void *) node, (unsigned) KosDynNode_KIND(node));
     KosDynNode *cloned = kos_dynnode_clone(node);
     if (! cloned) {
       if (KOS_XFER_TRACE)
@@ -579,7 +609,7 @@ int kos_dyn_attach_frame(KosContext *ctx, KosDynFrame *frame) {
     PyErr_SetString(PyExc_RuntimeError, "NULL frame for attach");
     return -1;
   }
-  frame->base.parent = ctx->dyn_top;
+  KosDynNode_PARENT(frame) = ctx->dyn_top;
   ctx->dyn_top = (KosDynNode *) frame;
   ctx->frame_top = frame;
   ctx->chain_version++;
@@ -591,7 +621,7 @@ int kos_dyn_attach_frame(KosContext *ctx, KosDynFrame *frame) {
    Detach the top frame from the context's dynamic chain without freeing it.
 
    Sets ctx->dyn_top to the frame's parent and updates frame_top. The frame
-   is returned in *frame_out; caller may set frame->base.parent = NULL and
+   is returned in *frame_out; caller may set KosDynNode_PARENT(frame) = NULL and
    keep the frame (e.g. for async gen storage in agen->ctx).
 
    :param ctx: execution context
@@ -609,7 +639,7 @@ int kos_dyn_detach_top_frame(KosContext *ctx, KosDynFrame **frame_out) {
     return -1;
   }
   KosDynFrame *frame = (KosDynFrame *) ctx->dyn_top;
-  ctx->dyn_top = frame->base.parent;
+  ctx->dyn_top = KosDynNode_PARENT(frame);
   ctx->chain_version++;
   kos_update_frame_top(ctx);
   if (frame_out)
@@ -637,7 +667,7 @@ void kos_dyn_pop_prompt(KosContext *ctx, KosDynPrompt *prompt) {
     return;
   }
 
-  ctx->dyn_top = prompt->base.parent;
+  ctx->dyn_top = KosDynNode_PARENT(prompt);
   ctx->chain_version++;
   kos_dynprompt_free(prompt);
 }
@@ -661,7 +691,7 @@ void kos_dyn_pop_cc(KosContext *ctx, KosDynCC *cc) {
     return;
   }
 
-  ctx->dyn_top = cc->base.parent;
+  ctx->dyn_top = KosDynNode_PARENT(cc);
   ctx->chain_version++;
   kos_dyncc_free(cc);
 }
@@ -693,7 +723,7 @@ int kos_dyn_pop_wind(KosContext *ctx, KosDynWind *wind) {
     return -1;
   }
 
-  ctx->dyn_top = wind->base.parent;
+  ctx->dyn_top = KosDynNode_PARENT(wind);
   ctx->chain_version++;
   kos_dynwind_free(wind);
 
@@ -724,7 +754,7 @@ void kos_dyn_pop_region(KosContext *ctx, KosDynRegion *region) {
     return;
   }
 
-  ctx->dyn_top = region->base.parent;
+  ctx->dyn_top = KosDynNode_PARENT(region);
   ctx->chain_version++;
   kos_dynregion_free(region);
 }
@@ -748,7 +778,7 @@ void kos_dyn_pop_ns(KosContext *ctx, KosDynNs *node) {
     return;
   }
 
-  ctx->dyn_top = node->base.parent;
+  ctx->dyn_top = KosDynNode_PARENT(node);
   ctx->chain_version++;
   kos_dynns_free(node);
 }
@@ -781,10 +811,10 @@ int kos_dyn_pop_top(KosContext *ctx) {
   case KOS_DYN_NS: {
     KosDynNs *ns_node = (KosDynNs *) top;
     if (ctx->frame_top) {
-      PyObject *prior = ns_node->saved_ns;
+      PyObject *prior = KosDynNs_SAVED_NS(ns_node);
       Py_INCREF(prior);
-      Py_DECREF(ctx->frame_top->ns);
-      ctx->frame_top->ns = prior;
+      Py_DECREF(KosDynFrame_NS(ctx->frame_top));
+      KosDynFrame_NS(ctx->frame_top) = prior;
     }
     kos_dyn_pop_ns(ctx, ns_node);
     return 0;
@@ -816,9 +846,9 @@ KosDynRegion *kos_find_region_for_raise(KosContext *ctx) {
   while (node) {
     if (KosDynNode_IS_REGION(node)) {
       KosDynRegion *region = (KosDynRegion *) node;
-      if (region->enabled &&
-          (region->style == KOS_REGION_TRY ||
-           region->style == KOS_REGION_FINALLY)) {
+      if (KosDynRegion_ENABLED(region) &&
+          (KosDynRegion_STYLE(region) == KOS_REGION_TRY ||
+           KosDynRegion_STYLE(region) == KOS_REGION_FINALLY)) {
         return region;
       }
     }
@@ -835,8 +865,8 @@ KosDynRegion *kos_find_region_for_loop(KosContext *ctx) {
   while (node) {
     if (KosDynNode_IS_REGION(node)) {
       KosDynRegion *region = (KosDynRegion *) node;
-      if (region->style == KOS_REGION_LOOP ||
-          region->style == KOS_REGION_FOREACH) {
+      if (KosDynRegion_STYLE(region) == KOS_REGION_LOOP ||
+          KosDynRegion_STYLE(region) == KOS_REGION_FOREACH) {
         return region;
       }
     }
@@ -880,7 +910,7 @@ KosDynPrompt *kos_find_prompt(KosContext *ctx, uint32_t prompt_id) {
   while (node) {
     if (KosDynNode_IS_PROMPT(node)) {
       KosDynPrompt *prompt = (KosDynPrompt *) node;
-      if (prompt->prompt_id == prompt_id) {
+      if (KosDynPrompt_ID(prompt) == prompt_id) {
         return prompt;
       }
     }
@@ -955,6 +985,12 @@ static int kos_validate_capture_cc(KosContext *ctx, KosDynCC *cc) {
    token_ref is INCREF'd. Returns NULL on alloc failure (PyErr_NoMemory set);
    caller must free captured_chain on failure.
 */
+#define CONT_MAX_FREE 64  /* cap for cached KosContinuation; tunable */
+
+static size_t cont_freecount = 0;
+static KosContinuation *cont_freelist = NULL;
+
+
 static KosContinuation *kos_continuation_create(
     KosDynNode *captured_chain,
     KosDynFrame *resume_frame,
@@ -964,9 +1000,19 @@ static KosContinuation *kos_continuation_create(
     int one_shot,
     PyObject *token_ref) {
 
-  KosContinuation *k = kos_dynnode_alloc(sizeof(KosContinuation));
-  if (! k)
-    return NULL;
+  KosContinuation *k = cont_freelist;
+  if (k) {
+    cont_freelist = (KosContinuation *) k->captured_chain;
+    cont_freecount--;
+    memset(k, 0, sizeof(KosContinuation));
+  } else {
+    k = PyMem_Malloc(sizeof(KosContinuation));
+    if (! k) {
+      PyErr_NoMemory();
+      return NULL;
+    }
+    memset(k, 0, sizeof(KosContinuation));
+  }
 
   k->captured_chain = captured_chain;
   k->resume_frame = resume_frame;
@@ -1001,7 +1047,7 @@ int kos_shift_capture(
   /* Clone the chain segment that will be restored on invoke: the prompt and
    * the frame below it (the body we were running).  That way the resumed
    * context has a prompt to POP_PROMPT and can return to the invoker. */
-  KosDynNode *frame_inside = (KosDynNode *) prompt->base.parent;
+  KosDynNode *frame_inside = KosDynNode_PARENT(prompt);
   KosDynNode *segment_top = (KosDynNode *) prompt;
   KosDynNode *stop = frame_inside ? frame_inside->parent : NULL;
   if (KOS_XFER_TRACE && frame_inside) {
@@ -1010,8 +1056,8 @@ int kos_shift_capture(
       SAYF("[xfer] shift_capture segment_top=%p (prompt) frame_inside=%p kind=%u stack=%p len=%zu",
            (void *) segment_top, (void *) frame_inside,
            (unsigned) KosDynNode_KIND(frame_inside),
-           (void *) f->stack,
-           f->stack ? (size_t) KosStackBlock_LEN(f->stack) : 0);
+           (void *) KosDynFrame_STACK(f),
+           KosDynFrame_STACK(f) ? (size_t) KosStackBlock_LEN(KosDynFrame_STACK(f)) : 0);
       (void) f;
     } else {
       SAYF("[xfer] shift_capture segment_top=%p (prompt) frame_inside=%p kind=%u",
@@ -1050,11 +1096,11 @@ int kos_shift_capture(
   }
 
   KosStackBlock *resume_stack = resume_frame
-      ? KosStackBlock_COW(resume_frame->stack) : NULL;
+      ? KosStackBlock_COW(KosDynFrame_STACK(resume_frame)) : NULL;
   KosContinuation *k = kos_continuation_create(
       captured_chain,
       resume_frame,
-      resume_frame ? resume_frame->pc : 0,
+      resume_frame ? KosDynFrame_PC(resume_frame) : 0,
       resume_stack,
       prompt_id,
       1,  /* one-shot */
@@ -1082,7 +1128,7 @@ int kos_capture_cc(KosContext *ctx, KosContinuation **out_k) {
 
   /* Capture from the frame above the CC block (parent of CC) down to root.
    * On invoke we install this segment and resume at resume_pc in that frame. */
-  KosDynNode *segment_top = cc->base.parent;
+  KosDynNode *segment_top = KosDynNode_PARENT(cc);
   if (! segment_top) {
     PyErr_SetString(PyExc_RuntimeError, "CAPTURE_CC: CC block has no parent");
     return -1;
@@ -1121,8 +1167,8 @@ int kos_capture_cc(KosContext *ctx, KosContinuation **out_k) {
   KosContinuation *k = kos_continuation_create(
       captured_chain,
       resume_frame,
-      cc->resume_pc,
-      KosStackBlock_COW(resume_frame->stack),
+      KosDynCC_RESUME_PC(cc),
+      KosStackBlock_COW(KosDynFrame_STACK(resume_frame)),
       KOS_PROMPT_ID_UNDELIMITED,
       0,  /* multi-shot */
       ctx->token ? (PyObject *) ctx->token : NULL);
@@ -1163,7 +1209,14 @@ void kos_continuation_free_exclude(KosContinuation *k, PyObject *exclude_from_st
    * either unshared or already released by resume_stack release above). */
   kos_dynchain_free(k->captured_chain, NULL);
 
-  PyMem_Free(k);
+  if (cont_freecount < CONT_MAX_FREE) {
+    memset(k, 0, sizeof(KosContinuation));
+    k->captured_chain = (KosDynNode *) cont_freelist;
+    cont_freelist = k;
+    cont_freecount++;
+  } else {
+    PyMem_Free(k);
+  }
 }
 
 
@@ -1306,7 +1359,7 @@ int kos_build_transfer_plan(
   while (node && node != lca) {
     if (KosDynNode_IS_WIND(node)) {
       KosDynWind *wind = (KosDynWind *) node;
-      if (wind->entered && wind->after_code) {
+      if (KosDynWind_ENTERED(wind) && KosDynWind_AFTER_CODE(wind)) {
         action_count++;
       }
     }
@@ -1323,7 +1376,7 @@ int kos_build_transfer_plan(
   while (node && node != lca) {
     if (KosDynNode_IS_WIND(node)) {
       KosDynWind *wind = (KosDynWind *) node;
-      if (! wind->entered && wind->before_code) {
+      if (! KosDynWind_ENTERED(wind) && KosDynWind_BEFORE_CODE(wind)) {
         wind_count++;
       }
     }
@@ -1354,10 +1407,10 @@ int kos_build_transfer_plan(
   while (node && node != lca) {
     if (KosDynNode_IS_WIND(node)) {
       KosDynWind *wind = (KosDynWind *) node;
-      if (wind->entered && wind->after_code) {
+      if (KosDynWind_ENTERED(wind) && KosDynWind_AFTER_CODE(wind)) {
         plan->actions[idx].step = KOS_XFER_RUN_HOOK;
-        plan->actions[idx].data.hook.code = wind->after_code;
-        plan->actions[idx].data.hook.pc = wind->after_pc;
+        plan->actions[idx].data.hook.code = KosDynWind_AFTER_CODE(wind);
+        plan->actions[idx].data.hook.pc = KosDynWind_AFTER_PC(wind);
         if (KOS_XFER_TRACE)
           SAYF("[xfer] plan action[%zu] = RUN_HOOK (unwind) node=%p",
                idx, (void *) node);
@@ -1391,7 +1444,7 @@ int kos_build_transfer_plan(
     while (node && node != lca) {
       if (KosDynNode_IS_WIND(node)) {
         KosDynWind *wind = (KosDynWind *) node;
-        if (! wind->entered && wind->before_code) {
+        if (! KosDynWind_ENTERED(wind) && KosDynWind_BEFORE_CODE(wind)) {
           wind_nodes[wi++] = wind;
         }
       }
@@ -1402,8 +1455,8 @@ int kos_build_transfer_plan(
     while (wi--) {
       KosDynWind *wind = wind_nodes[wi];
       plan->actions[idx].step = KOS_XFER_RUN_HOOK;
-      plan->actions[idx].data.hook.code = wind->before_code;
-      plan->actions[idx].data.hook.pc = wind->before_pc;
+      plan->actions[idx].data.hook.code = KosDynWind_BEFORE_CODE(wind);
+      plan->actions[idx].data.hook.pc = KosDynWind_BEFORE_PC(wind);
       idx++;
     }
 
@@ -1443,7 +1496,14 @@ void kos_free_transfer_plan(KosTransferPlan *plan) {
       clone->resume_stack = NULL;
     }
     Py_XDECREF(clone->token_ref);
-    PyMem_Free(clone);
+    if (cont_freecount < CONT_MAX_FREE) {
+      memset(clone, 0, sizeof(KosContinuation));
+      clone->captured_chain = (KosDynNode *) cont_freelist;
+      cont_freelist = clone;
+      cont_freecount++;
+    } else {
+      PyMem_Free(clone);
+    }
   }
   /* Release the retained resume_stack reference */
   if (plan->resume_stack) {
@@ -1510,8 +1570,8 @@ int kos_run_transfer_step(KosContext *ctx) {
       /* Restore stack from plan (fresh copy from template). */
       if (ctx->frame_top && ctx->plan->resume_stack) {
         KosStackBlock *new_stack = KosStackBlock_COW(ctx->plan->resume_stack);
-        KosStackBlock *old_stack = ctx->frame_top->stack;
-        ctx->frame_top->stack = new_stack;
+        KosStackBlock *old_stack = KosDynFrame_STACK(ctx->frame_top);
+        KosDynFrame_STACK(ctx->frame_top) = new_stack;
         if (old_stack && old_stack != new_stack) {
           /* Do not DECREF the continuation wrapper (plan->continuation_ref);
            * it may be on the old stack from CALL and would free k and the
@@ -1521,7 +1581,7 @@ int kos_run_transfer_step(KosContext *ctx) {
         }
       }
       if (ctx->plan->resume_pc != (uint32_t) -1 && ctx->frame_top) {
-        ctx->frame_top->pc = ctx->plan->resume_pc;
+        KosDynFrame_PC(ctx->frame_top) = ctx->plan->resume_pc;
       }
       ctx->chain_version++;
       ctx->globals_cache_version = ctx->chain_version;
@@ -1535,7 +1595,7 @@ int kos_run_transfer_step(KosContext *ctx) {
       if (KOS_XFER_TRACE)
         SAYF("[xfer] INJECT frame_top=%p stack=%p is_throw=%d",
              (void *) ctx->frame_top,
-             ctx->frame_top ? (void *) ctx->frame_top->stack : NULL,
+             ctx->frame_top ? (void *) KosDynFrame_STACK(ctx->frame_top) : NULL,
              action->data.inject.is_throw);
       if (action->data.inject.is_throw) {
         ctx->pending_throw = 1;
@@ -1545,7 +1605,7 @@ int kos_run_transfer_step(KosContext *ctx) {
       } else {
         /* Push value onto frame's stack (PushRef allocates block if NULL) */
         if (ctx->frame_top &&
-            KosStackBlock_PushRef(&ctx->frame_top->stack,
+            KosStackBlock_PushRef(&KosDynFrame_STACK(ctx->frame_top),
                                   action->data.inject.value) < 0) {
           if (KOS_XFER_TRACE)
             SAY("[xfer] INJECT PushRef failed");
@@ -1733,12 +1793,12 @@ int kos_dynnode_traverse(KosDynNode *node, visitproc visit, void *arg) {
   if (! node)
     return 0;
 
-  switch (node->kind) {
+  switch (KosDynNode_KIND(node)) {
     case KOS_DYN_FRAME: {
       KosDynFrame *frame = (KosDynFrame *) node;
-      Py_VISIT(frame->ns);
+      Py_VISIT(KosDynFrame_NS(frame));
       /* Traverse stack */
-      KosStackBlock *b = frame->stack;
+      KosStackBlock *b = KosDynFrame_STACK(frame);
       while (b) {
         for (size_t i = b->len; i--; ) {
           Py_VISIT(b->objs[i]);
@@ -1749,7 +1809,7 @@ int kos_dynnode_traverse(KosDynNode *node, visitproc visit, void *arg) {
     }
     case KOS_DYN_NS: {
       KosDynNs *ns_node = (KosDynNs *) node;
-      Py_VISIT(ns_node->saved_ns);
+      Py_VISIT(KosDynNs_SAVED_NS(ns_node));
       break;
     }
     case KOS_DYN_PROMPT:
@@ -1760,8 +1820,8 @@ int kos_dynnode_traverse(KosDynNode *node, visitproc visit, void *arg) {
       break;
     case KOS_DYN_REGION: {
       KosDynRegion *region = (KosDynRegion *) node;
-      Py_VISIT(region->result);
-      Py_VISIT(region->iter);
+      Py_VISIT(KosDynRegion_RESULT(region));
+      Py_VISIT(KosDynRegion_ITER(region));
       break;
     }
   }

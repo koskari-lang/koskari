@@ -111,17 +111,19 @@ These are **commitments**: they must hold for correct behavior. They are elabora
 
 ## 4. Evaluator and Dynamic Chain (C Structures)
 
-- **KosDynNode**: Base for all chain nodes; first member must be `parent`, `kind`, `flags`. All node types embed this first.
+- **KosDynNode**: Single struct for all chain node kinds. Contains `parent`, `kind`, `flags` and a union `u` with kind-specific payloads (frame, prompt, cc, wind, region, ns, pycall). Typedefs (KosDynFrame, KosDynPrompt, etc.) refer to the same struct. **Access node fields only via the macros** in dynchain.h (e.g. KosDynNode_KIND, KosDynFrame_PC, KosDynRegion_STYLE); do not touch `u` or base fields directly outside the header.
 
-- **KosDynFrame**: Function activation; holds `code` (borrowed), `pc`, `stack` (owned), `ns` (owned). Frame owns stack and ns; code is not owned.
+- **KosDynFrame** (union variant): Function activation; `code` (borrowed), `pc`, `stack` (owned), `ns` (owned). Frame owns stack and ns; code is not owned. Access via KosDynFrame_CODE, KosDynFrame_PC, KosDynFrame_STACK, KosDynFrame_NS, KosDynFrame_FLAGS.
 
-- **KosDynPrompt**: Delimiter for reset; `prompt_id` for matching (0 = default). Optional `handler_code` / `handler_pc` for the handler run after shift aborts.
+- **KosDynPrompt** (union variant): Delimiter for reset; `prompt_id` for matching (0 = default). Optional `handler_code`/`handler_pc` for the handler run after shift aborts. Access via KosDynPrompt_ID, KosDynPrompt_HANDLER_CODE, KosDynPrompt_HANDLER_PC.
 
-- **KosDynWind**: Dynamic-wind extent; `before_code`/`before_pc`, `after_code`/`after_pc`; `entered` marks whether before has run. Hooks are bytecode blocks, not Python.
+- **KosDynWind** (union variant): Dynamic-wind extent; before/after code and pc; `entered` marks whether before has run. Hooks are bytecode blocks, not Python. Access via KosDynWind_BEFORE_CODE, KosDynWind_BEFORE_PC, KosDynWind_AFTER_CODE, KosDynWind_AFTER_PC, KosDynWind_ENTERED.
 
-- **KosDynRegion**: Block-local control; `KosRegionStyle` (TRY, FINALLY, LOOP, WITH, FOREACH, AWAIT_WITH, AWAIT_FOREACH, NS, BEGIN). `break_pc`, `continue_pc` are jump targets; `enabled` for exception handling.
+- **KosDynRegion** (union variant): Block-local control; `KosRegionStyle` (TRY, FINALLY, LOOP, WITH, FOREACH, etc.). `break_pc`, `continue_pc` are jump targets; `enabled` for exception handling. Access via KosDynRegion_STYLE, KosDynRegion_BREAK_PC, KosDynRegion_CONTINUE_PC, KosDynRegion_ENABLED, and related macros.
 
-- **KosDynNs**: Namespace scope from PUSH_NS; holds `saved_ns` (prior frame namespace) for restore on POP_NS. Separate from KosDynRegion; uses its own node kind on the dynamic chain.
+- **KosDynNs** (union variant): Namespace scope from PUSH_NS; holds `saved_ns` (prior frame namespace) for restore on POP_NS. Access via KosDynNs_SAVED_NS.
+
+- **Allocator caches**: dynchain.c maintains a **single freelist for all KosDynNode kinds** (one allocation size); KosContinuation has its own **freelist**; eval.c maintains a **context cache** (KosContext freelist). Caps are tunable (DYN_NODE_MAX_FREE, CONT_MAX_FREE, CONTEXT_MAX_FREE). Same pattern as stack block freelist in stack.c.
 
 - **KosContext**: Top-level VM state: `dyn_top`, `frame_top`, `globals_frame`, `globals_cache_version`, `hook_runner`, `plan` / `plan_stack`, `chain_version`, `invocation_segment_top`, `py_await_iter`, `py_await_inject`/`py_yield_inject`, `pending_throw`/`pending_exc`, `handling_raise`/`handling_result`, **pending async gen** (`pending_agen`, `pending_agen_default`, `pending_agen_n`, `pending_agen_region`, `pending_agen_else_pc` for in-loop NEXT/ITER_NEXT), `flags`.
 

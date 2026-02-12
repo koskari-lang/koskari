@@ -274,10 +274,10 @@ int kos_frame_traverse(
   if (! frame)
     return 0;
 
-  Py_VISIT(frame->ns);
+  Py_VISIT(KosDynFrame_NS(frame));
 
-  if (frame->stack) {
-    KosStackBlock *b = frame->stack;
+  if (KosDynFrame_STACK(frame)) {
+    KosStackBlock *b = KosDynFrame_STACK(frame);
     while (b) {
       for (size_t i = b->len; i--; ) {
         Py_VISIT(b->objs[i]);
@@ -292,18 +292,38 @@ int kos_frame_traverse(
 
 /* === KosContext implementation === */
 
+#define CONTEXT_MAX_FREE 16  /* cap for cached KosContext; tunable */
+
+static size_t context_freecount = 0;
+static KosContext *context_freelist = NULL;
+
 
 KosContext *kos_context_new(KosDynFrame *top) {
 
-  KosContext *ctx = PyMem_Malloc(sizeof(KosContext));
-  if (! ctx) {
-    PyErr_NoMemory();
-    return NULL;
+  KosContext *ctx = context_freelist;
+  if (ctx) {
+    context_freelist = ctx->context_freelist_next;
+    context_freecount--;
+    memset(ctx, 0, sizeof(KosContext));
+  } else {
+    ctx = PyMem_Malloc(sizeof(KosContext));
+    if (! ctx) {
+      PyErr_NoMemory();
+      return NULL;
+    }
+    memset(ctx, 0, sizeof(KosContext));
   }
 
   ctx->token = KosEvaluatorToken_New();
   if (! ctx->token) {
-    PyMem_Free(ctx);
+    if (context_freecount < CONTEXT_MAX_FREE) {
+      memset(ctx, 0, sizeof(KosContext));
+      ctx->context_freelist_next = context_freelist;
+      context_freelist = ctx;
+      context_freecount++;
+    } else {
+      PyMem_Free(ctx);
+    }
     return NULL;
   }
 
@@ -388,7 +408,14 @@ void kos_context_free(KosContext *ctx) {
   Py_XDECREF(ctx->handling_result);
   Py_XDECREF(ctx->pending_agen_default);
 
-  PyMem_Free(ctx);
+  if (context_freecount < CONTEXT_MAX_FREE) {
+    memset(ctx, 0, sizeof(KosContext));
+    ctx->context_freelist_next = context_freelist;
+    context_freelist = ctx;
+    context_freecount++;
+  } else {
+    PyMem_Free(ctx);
+  }
 }
 
 
@@ -480,7 +507,7 @@ int kos_tail_koscall(
   }
 
   KosDynFrame *old = ctx->frame_top;
-  KosDynNode *parent = old->base.parent;
+  KosDynNode *parent = KosDynNode_PARENT(old);
 
   /* Pop the old frame */
   ctx->dyn_top = parent;
@@ -633,7 +660,7 @@ static int push_or_await(KosContext *ctx, KosEvent *out_ev, PyObject *val) {
   SAYF("[eval] push_or_await entry is_awaitable=%d\n",
        (type->tp_as_async && type->tp_as_async->am_await) ? 1 : 0);
   if (! type->tp_as_async || ! type->tp_as_async->am_await) {
-    if (KosStackBlock_PushRef(&ctx->frame_top->stack, val) < 0) {
+    if (KosStackBlock_PushRef(&KosDynFrame_STACK(ctx->frame_top), val) < 0) {
       Py_DECREF(val);
       return -1;
     }
@@ -647,7 +674,7 @@ static int push_or_await(KosContext *ctx, KosEvent *out_ev, PyObject *val) {
   Py_DECREF(val);
 
   if (result) {
-    if (KosStackBlock_PushRef(&ctx->frame_top->stack, result) < 0) {
+    if (KosStackBlock_PushRef(&KosDynFrame_STACK(ctx->frame_top), result) < 0) {
       Py_DECREF(result);
       return -1;
     }
@@ -695,7 +722,7 @@ static PyObject *get_name_from_insn(KosCode *code, KosOp *insn) {
    Deref name in the current frame namespace. New reference or NULL.
 */
 static PyObject *frame_ns_deref(KosContext *ctx, PyObject *name) {
-  PyObject *ns = ctx->frame_top->ns;
+  PyObject *ns = KosDynFrame_NS(ctx->frame_top);
   if (KosNamespace_Check(ns))
     return KosNamespace_Deref(ns, name);
   if (PyDict_Check(ns)) {
@@ -719,7 +746,7 @@ static PyObject *frame_ns_deref(KosContext *ctx, PyObject *name) {
    ownership of val.
 */
 static int frame_ns_store(KosContext *ctx, PyObject *name, PyObject *val) {
-  PyObject *ns = ctx->frame_top->ns;
+  PyObject *ns = KosDynFrame_NS(ctx->frame_top);
   if (KosNamespace_Check(ns))
     return KosNamespace_Store(ns, name, val);
   if (PyDict_Check(ns))
@@ -734,7 +761,7 @@ static int frame_ns_store(KosContext *ctx, PyObject *name, PyObject *val) {
    Bind name to value in the current frame namespace. Consumes val.
 */
 static int frame_ns_bind(KosContext *ctx, PyObject *name, PyObject *val) {
-  PyObject *ns = ctx->frame_top->ns;
+  PyObject *ns = KosDynFrame_NS(ctx->frame_top);
   if (KosNamespace_Check(ns)) {
     PyObject *ref = KosSymbolicRef_New(name, val);
     Py_DECREF(val);
@@ -766,7 +793,7 @@ static int frame_ns_bind(KosContext *ctx, PyObject *name, PyObject *val) {
    Clear name from the current frame namespace.
 */
 static int frame_ns_clear(KosContext *ctx, PyObject *name) {
-  PyObject *ns = ctx->frame_top->ns;
+  PyObject *ns = KosDynFrame_NS(ctx->frame_top);
   if (KosNamespace_Check(ns))
     return KosNamespace_Clear(ns, name);
   if (PyDict_Check(ns))
@@ -782,7 +809,7 @@ static int frame_ns_clear(KosContext *ctx, PyObject *name) {
    Borrowed reference; caller must INCREF if keeping.
 */
 static PyObject *frame_ns_ref(KosContext *ctx, PyObject *name) {
-  PyObject *ns = ctx->frame_top->ns;
+  PyObject *ns = KosDynFrame_NS(ctx->frame_top);
   if (! KosNamespace_Check(ns)) {
     PyErr_Format(PyExc_TypeError,
                  "frame namespace must be Namespace for VAR_REF, got %R", ns);
@@ -858,7 +885,7 @@ KOS_OP_HANDLER(POSITION) {
    onto the stack.
 */
 KOS_OP_HANDLER(CONST) {
-  PyObject *val = KosCode_GetConstant((PyObject *) ctx->frame_top->code,
+  PyObject *val = KosCode_GetConstant((PyObject *) KosDynFrame_CODE(ctx->frame_top),
                                       insn->arg);
   if (! val) {
     SAYF("[eval] CONST GetConstant failed arg=%u\n",
@@ -884,7 +911,7 @@ KOS_OP_HANDLER(DUP) {
     return -1;
   }
 
-  if (KosStackBlock_Duplicate(&ctx->frame_top->stack, (size_t) opa) < 0)
+  if (KosStackBlock_Duplicate(&KosDynFrame_STACK(ctx->frame_top), (size_t) opa) < 0)
     return -1;
   (void) out_ev;
   return 0;
@@ -897,7 +924,7 @@ KOS_OP_HANDLER(DUP) {
 */
 KOS_OP_HANDLER(POP) {
   unsigned n = insn->arg;
-  if (KosStackBlock_Drop(&ctx->frame_top->stack, (size_t) n) < 0)
+  if (KosStackBlock_Drop(&KosDynFrame_STACK(ctx->frame_top), (size_t) n) < 0)
     return -1;
   (void) out_ev;
   return 0;
@@ -918,14 +945,14 @@ KOS_OP_HANDLER(RETURN) {
     Py_INCREF(val);
 
   } else if (opa == 1) {
-    val = KosStackBlock_PopRef(&ctx->frame_top->stack);
+    val = KosStackBlock_PopRef(&KosDynFrame_STACK(ctx->frame_top));
     if (! val) {
       SAY("[eval] RETURN pop underrun\n");
       return -1;
     }
 
   } else {
-    val = KosStackBlock_PopTail(&ctx->frame_top->stack, (size_t) opa);
+    val = KosStackBlock_PopTail(&KosDynFrame_STACK(ctx->frame_top), (size_t) opa);
     if (! val) {
       SAY("[eval] RETURN PopTail underrun\n");
       return -1;
@@ -933,7 +960,7 @@ KOS_OP_HANDLER(RETURN) {
   }
 
   /* Frame has parent: return into parent in same loop. */
-  if (ctx->frame_top->base.parent != NULL) {
+  if (KosDynNode_PARENT(ctx->frame_top) != NULL) {
     KosDynFrame *returning_frame = ctx->frame_top;
     int was_pending = (ctx->pending_agen != NULL);
     KosPyAsyncGen *agen = was_pending ? (KosPyAsyncGen *) ctx->pending_agen : NULL;
@@ -943,11 +970,11 @@ KOS_OP_HANDLER(RETURN) {
       return -1;
     }
     if (was_pending && agen) {
-      returning_frame->base.parent = NULL;
+      KosDynNode_PARENT(returning_frame) = NULL;
       agen->closed = 1;
       agen->in_progress = 0;
       if (ctx->pending_agen_n == 2 && ctx->pending_agen_default) {
-        if (KosStackBlock_PushRef(&ctx->frame_top->stack,
+        if (KosStackBlock_PushRef(&KosDynFrame_STACK(ctx->frame_top),
                                   ctx->pending_agen_default) < 0) {
           Py_XDECREF(ctx->pending_agen_default);
           ctx->pending_agen_default = NULL;
@@ -969,8 +996,8 @@ KOS_OP_HANDLER(RETURN) {
         /* ITER_NEXT: exhausted */
         KosDynRegion *region = (KosDynRegion *) ctx->pending_agen_region;
         if (region)
-          region->exhausted = 1;
-        ctx->frame_top->pc = ctx->pending_agen_else_pc;
+          KosDynRegion_EXHAUSTED(region) = 1;
+        KosDynFrame_PC(ctx->frame_top) = ctx->pending_agen_else_pc;
         Py_DECREF(val);
       }
       ctx->pending_agen = NULL;
@@ -979,7 +1006,7 @@ KOS_OP_HANDLER(RETURN) {
       return 0;
     }
     /* Normal CALL return: push value onto parent. */
-    if (KosStackBlock_PushRef(&ctx->frame_top->stack, val) < 0) {
+    if (KosStackBlock_PushRef(&KosDynFrame_STACK(ctx->frame_top), val) < 0) {
       Py_DECREF(val);
       return -1;
     }
@@ -1003,7 +1030,7 @@ KOS_OP_HANDLER(RETURN) {
 */
 KOS_OP_HANDLER(AWAIT) {
   (void) insn;
-  PyObject *val = KosStackBlock_PopRef(&ctx->frame_top->stack);
+  PyObject *val = KosStackBlock_PopRef(&KosDynFrame_STACK(ctx->frame_top));
   if (! val)
     return -1;
   return push_or_await(ctx, out_ev, val);
@@ -1161,12 +1188,12 @@ KOS_OP_HANDLER(CALL) {
 
   PyObject *args = NULL;
   if (n > 0) {
-    args = KosStackBlock_PopTail(&frame_top->stack, n);
+    args = KosStackBlock_PopTail(&KosDynFrame_STACK(frame_top), n);
     if (! args)
       return -1;
   }
 
-  PyObject *callable = KosStackBlock_PopRef(&frame_top->stack);
+  PyObject *callable = KosStackBlock_PopRef(&KosDynFrame_STACK(frame_top));
   if (! callable)
     return -1;
 
@@ -1213,7 +1240,7 @@ KOS_OP_HANDLER(GLOBALS) {
     ctx->globals_cache_version = ctx->chain_version;
   }
 
-  PyObject *ns = ctx->globals_frame->ns;
+  PyObject *ns = KosDynFrame_NS(ctx->globals_frame);
   Py_INCREF(ns);
   return push_result_or_await(ctx, out_ev, ns);
 }
@@ -1224,7 +1251,7 @@ KOS_OP_HANDLER(GLOBALS) {
    the stack.
 */
 KOS_OP_HANDLER(LOCALS) {
-  PyObject *ns = ctx->frame_top->ns;
+  PyObject *ns = KosDynFrame_NS(ctx->frame_top);
   Py_INCREF(ns);
   return push_result_or_await(ctx, out_ev, ns);
 }
@@ -1235,7 +1262,7 @@ KOS_OP_HANDLER(LOCALS) {
    frame's namespace and push the value (or await it if async).
 */
 KOS_OP_HANDLER(VAR) {
-  PyObject *name = get_name_from_insn(ctx->frame_top->code, insn);
+  PyObject *name = get_name_from_insn(KosDynFrame_CODE(ctx->frame_top), insn);
   if (! name)
     return -1;
   PyObject *val = frame_ns_deref(ctx, name);
@@ -1298,13 +1325,13 @@ KOS_OP_HANDLER(EXCEPTION_MATCH) {
   PyErr_GetExcInfo(&typ, &val, &tb);
 
   if (! typ) {
-    if (KosStackBlock_Drop(&ctx->frame_top->stack, (size_t) opa) < 0)
+    if (KosStackBlock_Drop(&KosDynFrame_STACK(ctx->frame_top), (size_t) opa) < 0)
       return -1;
     Py_INCREF(ret);
     return push_result_or_await(ctx, out_ev, ret);
   }
 
-  PyObject *const *checks = KosStackBlock_TailPtr(ctx->frame_top->stack,
+  PyObject *const *checks = KosStackBlock_TailPtr(KosDynFrame_STACK(ctx->frame_top),
                                                   (size_t) opa);
   if (! checks) {
     Py_DECREF(typ);
@@ -1320,7 +1347,7 @@ KOS_OP_HANDLER(EXCEPTION_MATCH) {
     }
   }
 
-  KosStackBlock_DropNoErr(&ctx->frame_top->stack, (size_t) opa);
+  KosStackBlock_DropNoErr(&KosDynFrame_STACK(ctx->frame_top), (size_t) opa);
 
   Py_DECREF(typ);
   Py_XDECREF(val);
@@ -1351,7 +1378,7 @@ KOS_OP_HANDLER(RAISE) {
     PyErr_SetExcInfo(NULL, NULL, NULL);
 
   } else if (n == 1) {
-    PyObject *exc = KosStackBlock_PopRef(&ctx->frame_top->stack);
+    PyObject *exc = KosStackBlock_PopRef(&KosDynFrame_STACK(ctx->frame_top));
     if (! exc) {
       return -1;
     }
@@ -1390,7 +1417,7 @@ KOS_OP_HANDLER(RAISE) {
    arg and continue (branch to handler).
 */
 KOS_OP_HANDLER(CHECK_EXCEPTION) {
-  PyObject *match = KosStackBlock_PopRef(&ctx->frame_top->stack);
+  PyObject *match = KosStackBlock_PopRef(&KosDynFrame_STACK(ctx->frame_top));
   if (! match)
     return -1;
 
@@ -1410,7 +1437,7 @@ KOS_OP_HANDLER(CHECK_EXCEPTION) {
     (void) out_ev;
     return 0;
   }
-  ctx->frame_top->pc = insn->arg;
+  KosDynFrame_PC(ctx->frame_top) = insn->arg;
   (void) out_ev;
   return 0;
 }
@@ -1422,7 +1449,7 @@ KOS_OP_HANDLER(CHECK_EXCEPTION) {
 */
 KOS_OP_HANDLER(PUSH_PROMPT) {
   uint32_t prompt_id;
-  if (get_prompt_id_from_insn(ctx->frame_top->code, insn, &prompt_id) < 0)
+  if (get_prompt_id_from_insn(KosDynFrame_CODE(ctx->frame_top), insn, &prompt_id) < 0)
     return -1;
   if (! kos_dyn_push_prompt(ctx, prompt_id))
     return -1;
@@ -1438,8 +1465,8 @@ KOS_OP_HANDLER(PUSH_PROMPT) {
 KOS_OP_HANDLER(SET_PROMPT_HANDLER) {
   if (ctx->dyn_top && KosDynNode_IS_PROMPT(ctx->dyn_top)) {
     KosDynPrompt *p = (KosDynPrompt *) ctx->dyn_top;
-    p->handler_code = ctx->frame_top->code;
-    p->handler_pc = insn->arg;
+    KosDynPrompt_HANDLER_CODE(p) = KosDynFrame_CODE(ctx->frame_top);
+    KosDynPrompt_HANDLER_PC(p) = insn->arg;
   }
   (void) out_ev;
   return 0;
@@ -1456,7 +1483,7 @@ KOS_OP_HANDLER(POP_PROMPT) {
        (ctx->dyn_top && KosDynNode_IS_PROMPT(ctx->dyn_top)) ? 1 : 0);
 
   if (ctx->invocation_segment_top != NULL) {
-    PyObject *val = KosStackBlock_PopRef(&ctx->frame_top->stack);
+    PyObject *val = KosStackBlock_PopRef(&KosDynFrame_STACK(ctx->frame_top));
     if (! val) {
       SAY("[eval] POP_PROMPT (invoke) pop underrun\n");
       return -1;
@@ -1520,7 +1547,7 @@ KOS_OP_HANDLER(POP_TRY) {
     return -1;
   }
   KosDynRegion *region = (KosDynRegion *) ctx->dyn_top;
-  if (region->style != KOS_REGION_TRY) {
+  if (KosDynRegion_STYLE(region) != KOS_REGION_TRY) {
     PyErr_SetString(PyExc_RuntimeError, "POP_TRY: top is not a TRY region");
     return -1;
   }
@@ -1544,7 +1571,7 @@ KOS_OP_HANDLER(POP_FINALLY) {
     return -1;
   }
   KosDynRegion *region = (KosDynRegion *) ctx->dyn_top;
-  if (region->style != KOS_REGION_FINALLY) {
+  if (KosDynRegion_STYLE(region) != KOS_REGION_FINALLY) {
     PyErr_SetString(PyExc_RuntimeError,
                     "POP_FINALLY: top is not a FINALLY region");
     return -1;
@@ -1573,11 +1600,11 @@ KOS_OP_HANDLER(CLEAR_TRY) {
     return -1;
   }
   KosDynRegion *region = (KosDynRegion *) ctx->dyn_top;
-  if (region->style != KOS_REGION_TRY) {
+  if (KosDynRegion_STYLE(region) != KOS_REGION_TRY) {
     PyErr_SetString(PyExc_RuntimeError, "CLEAR_TRY: top is not a TRY region");
     return -1;
   }
-  region->enabled = 0;
+  KosDynRegion_ENABLED(region) = 0;
   (void) out_ev;
   (void) insn;
   return 0;
@@ -1593,12 +1620,12 @@ KOS_OP_HANDLER(CLEAR_FINALLY) {
     return -1;
   }
   KosDynRegion *region = (KosDynRegion *) ctx->dyn_top;
-  if (region->style != KOS_REGION_FINALLY) {
+  if (KosDynRegion_STYLE(region) != KOS_REGION_FINALLY) {
     PyErr_SetString(PyExc_RuntimeError,
                     "CLEAR_FINALLY: top is not a FINALLY region");
     return -1;
   }
-  region->enabled = 0;
+  KosDynRegion_ENABLED(region) = 0;
   (void) out_ev;
   (void) insn;
   return 0;
@@ -1614,7 +1641,7 @@ KOS_OP_HANDLER(CLEAR_FINALLY) {
 KOS_OP_HANDLER(SHIFT) {
   uint32_t prompt_id;
   KosContinuation *k = NULL;
-  if (get_prompt_id_from_insn(ctx->frame_top->code, insn, &prompt_id) < 0)
+  if (get_prompt_id_from_insn(KosDynFrame_CODE(ctx->frame_top), insn, &prompt_id) < 0)
     return -1;
 
   SAYF("[eval] SHIFT prompt_id=%u\n", (unsigned) prompt_id);
@@ -1631,7 +1658,7 @@ KOS_OP_HANDLER(SHIFT) {
   }
 
   SAYF("[eval] SHIFT unwinding to prompt, then handler_pc=%u\n",
-       (unsigned) prompt->handler_pc);
+       (unsigned) KosDynPrompt_HANDLER_PC(prompt));
   while (ctx->dyn_top != (KosDynNode *) prompt) {
     if (kos_dyn_pop_top(ctx) != 0) {
       kos_continuation_free(k);
@@ -1644,7 +1671,7 @@ KOS_OP_HANDLER(SHIFT) {
     kos_continuation_free(k);
     return -1;
   }
-  if (! prompt->handler_code) {
+  if (! KosDynPrompt_HANDLER_CODE(prompt)) {
     Py_DECREF(wrapper);
     PyErr_SetString(PyExc_RuntimeError, "shift: prompt has no handler");
     return -1;
@@ -1655,14 +1682,14 @@ KOS_OP_HANDLER(SHIFT) {
     Py_DECREF(wrapper);
     return -1;
   }
-  KosDynFrame *handler_frame = kos_dyn_push_frame(ctx, prompt->handler_code, ns);
+  KosDynFrame *handler_frame = kos_dyn_push_frame(ctx, KosDynPrompt_HANDLER_CODE(prompt), ns);
   Py_DECREF(ns);
   if (! handler_frame) {
     Py_DECREF(wrapper);
     return -1;
   }
 
-  ctx->frame_top->pc = prompt->handler_pc;
+  KosDynFrame_PC(ctx->frame_top) = KosDynPrompt_HANDLER_PC(prompt);
   return push_result_or_await(ctx, out_ev, wrapper);
 }
 
@@ -1719,13 +1746,13 @@ KOS_OP_HANDLER(CAPTURE_CC) {
    the continuation with that value, replacing current execution state.
 */
 KOS_OP_HANDLER(INVOKE_K) {
-  PyObject *value = KosStackBlock_PopRef(&ctx->frame_top->stack);
+  PyObject *value = KosStackBlock_PopRef(&KosDynFrame_STACK(ctx->frame_top));
   if (! value) {
     SAY("[eval] INVOKE_K pop value failed\n");
     return -1;
   }
 
-  PyObject *cont_obj = KosStackBlock_PopRef(&ctx->frame_top->stack);
+  PyObject *cont_obj = KosStackBlock_PopRef(&KosDynFrame_STACK(ctx->frame_top));
   if (! cont_obj) {
     SAY("[eval] INVOKE_K pop cont failed\n");
     Py_DECREF(value);
@@ -1791,16 +1818,16 @@ KOS_OP_HANDLER(INVOKE_K) {
    current namespace, invoke that continuation with value.
 */
 KOS_OP_HANDLER(INVOKE_K_VAR) {
-  KosCode *code = ctx->frame_top->code;
+  KosCode *code = KosDynFrame_CODE(ctx->frame_top);
   PyObject *name = KosCode_GetConstant((PyObject *) code, insn->arg);
   if (! name)
     return -1;
 
-  PyObject *value = KosStackBlock_PopRef(&ctx->frame_top->stack);
+  PyObject *value = KosStackBlock_PopRef(&KosDynFrame_STACK(ctx->frame_top));
   if (! value)
     return -1;
 
-  PyObject *ns = ctx->frame_top->ns;
+  PyObject *ns = KosDynFrame_NS(ctx->frame_top);
   PyObject *cont_obj = NULL;
   if (KosNamespace_Check(ns)) {
     cont_obj = KosNamespace_Deref(ns, name);
@@ -1886,12 +1913,12 @@ static int obj_op_reducing(KosContext *ctx, KosEvent *out_ev, KosOp *insn,
   if (opa == 0) {
     res = fn(NULL, 0);
   } else {
-    PyObject *const *args = KosStackBlock_TailPtr(ctx->frame_top->stack,
+    PyObject *const *args = KosStackBlock_TailPtr(KosDynFrame_STACK(ctx->frame_top),
                                                   (size_t) opa);
     if (! args)
       return -1;
     res = fn(args, (size_t) opa);
-    KosStackBlock_DropNoErr(&ctx->frame_top->stack, (size_t) opa);
+    KosStackBlock_DropNoErr(&KosDynFrame_STACK(ctx->frame_top), (size_t) opa);
   }
 
   if (! res)
@@ -1911,7 +1938,7 @@ KOS_OP_HANDLER(OBJECT_ADD) {
 
 #define OP_UNARY(name, func)                                            \
   KOS_OP_HANDLER(name) {                                                \
-    PyObject *val = KosStackBlock_PopRef(&ctx->frame_top->stack);       \
+    PyObject *val = KosStackBlock_PopRef(&KosDynFrame_STACK(ctx->frame_top));       \
     if (! val) return -1;                                              \
     PyObject *res = func(val);                                          \
     Py_DECREF(val);                                                    \
@@ -1941,7 +1968,7 @@ OP_UNARY(OBJECT_DIR, PyObject_Dir)
    OBJECT_LEN: arg unused. Pop TOS, push len(TOS) as an integer.
 */
 KOS_OP_HANDLER(OBJECT_LEN) {
-  PyObject *val = KosStackBlock_PopRef(&ctx->frame_top->stack);
+  PyObject *val = KosStackBlock_PopRef(&KosDynFrame_STACK(ctx->frame_top));
   if (! val)
     return -1;
 
@@ -1962,7 +1989,7 @@ KOS_OP_HANDLER(OBJECT_LEN) {
    OBJECT_NOT: arg unused. Pop TOS, push bool(not TOS).
 */
 KOS_OP_HANDLER(OBJECT_NOT) {
-  PyObject *val = KosStackBlock_PopRef(&ctx->frame_top->stack);
+  PyObject *val = KosStackBlock_PopRef(&KosDynFrame_STACK(ctx->frame_top));
   if (! val)
     return -1;
 
@@ -1982,7 +2009,7 @@ KOS_OP_HANDLER(OBJECT_NOT) {
    OBJECT_TRUTH: arg unused. Pop TOS, push bool(TOS).
 */
 KOS_OP_HANDLER(OBJECT_TRUTH) {
-  PyObject *val = KosStackBlock_PopRef(&ctx->frame_top->stack);
+  PyObject *val = KosStackBlock_PopRef(&KosDynFrame_STACK(ctx->frame_top));
   if (! val)
     return -1;
 
@@ -2002,7 +2029,7 @@ KOS_OP_HANDLER(OBJECT_TRUTH) {
    OBJECT_TYPE: arg unused. Pop TOS, push type(TOS).
 */
 KOS_OP_HANDLER(OBJECT_TYPE) {
-  PyObject *val = KosStackBlock_PopRef(&ctx->frame_top->stack);
+  PyObject *val = KosStackBlock_PopRef(&KosDynFrame_STACK(ctx->frame_top));
   if (! val)
     return -1;
 
@@ -2018,7 +2045,7 @@ KOS_OP_HANDLER(OBJECT_TYPE) {
    OBJECT_VARS: arg unused. Pop TOS, push getattr(TOS, "__dict__").
 */
 KOS_OP_HANDLER(OBJECT_VARS) {
-  PyObject *val = KosStackBlock_PopRef(&ctx->frame_top->stack);
+  PyObject *val = KosStackBlock_PopRef(&KosDynFrame_STACK(ctx->frame_top));
   if (! val)
     return -1;
 
@@ -2040,7 +2067,7 @@ KOS_OP_HANDLER(OBJECT_VARS) {
    the async iterator or await it.
 */
 KOS_OP_HANDLER(OBJECT_AITER) {
-  PyObject *val = KosStackBlock_PopRef(&ctx->frame_top->stack);
+  PyObject *val = KosStackBlock_PopRef(&KosDynFrame_STACK(ctx->frame_top));
   if (! val)
     return -1;
 
@@ -2065,9 +2092,9 @@ KOS_OP_HANDLER(OBJECT_AITER) {
       PyErr_SetString(PyExc_RuntimeError, #name ": only arg 2 supported"); \
       return -1;                                                        \
     }                                                                   \
-    PyObject *right = KosStackBlock_PopRef(&ctx->frame_top->stack);      \
+    PyObject *right = KosStackBlock_PopRef(&KosDynFrame_STACK(ctx->frame_top));      \
     if (! right) return -1;                                            \
-    PyObject *left = KosStackBlock_PopRef(&ctx->frame_top->stack);      \
+    PyObject *left = KosStackBlock_PopRef(&KosDynFrame_STACK(ctx->frame_top));      \
     if (! left) { Py_DECREF(right); return -1; }                       \
     PyObject *res = func(left, right);                                 \
     Py_DECREF(left);                                                  \
@@ -2171,19 +2198,19 @@ KOS_OP_HANDLER(OBJECT_POWER) {
   PyObject *base = NULL, *exp = NULL, *mod = Py_None;
 
   if (opa == 3) {
-    mod = KosStackBlock_PopRef(&ctx->frame_top->stack);
+    mod = KosStackBlock_PopRef(&KosDynFrame_STACK(ctx->frame_top));
     if (! mod)
       return -1;
   }
 
-  exp = KosStackBlock_PopRef(&ctx->frame_top->stack);
+  exp = KosStackBlock_PopRef(&KosDynFrame_STACK(ctx->frame_top));
   if (! exp) {
     if (opa == 3)
       Py_DECREF(mod);
     return -1;
   }
 
-  base = KosStackBlock_PopRef(&ctx->frame_top->stack);
+  base = KosStackBlock_PopRef(&KosDynFrame_STACK(ctx->frame_top));
   if (! base) {
     Py_DECREF(exp);
     if (opa == 3)
@@ -2212,10 +2239,10 @@ static int obj_op_binary(
     KosOp *insn,
     PyObject *(*fn)(PyObject *left, PyObject *right)) {
 
-  PyObject *right = KosStackBlock_PopRef(&ctx->frame_top->stack);
+  PyObject *right = KosStackBlock_PopRef(&KosDynFrame_STACK(ctx->frame_top));
   if (! right)
     return -1;
-  PyObject *left = KosStackBlock_PopRef(&ctx->frame_top->stack);
+  PyObject *left = KosStackBlock_PopRef(&KosDynFrame_STACK(ctx->frame_top));
   if (! left) {
     Py_DECREF(right);
     return -1;
@@ -2286,10 +2313,10 @@ static int op_OBJECT_EQ_impl(
     KosOp *insn,
     int op) {
 
-  PyObject *right = KosStackBlock_PopRef(&ctx->frame_top->stack);
+  PyObject *right = KosStackBlock_PopRef(&KosDynFrame_STACK(ctx->frame_top));
   if (! right)
     return -1;
-  PyObject *left = KosStackBlock_PopRef(&ctx->frame_top->stack);
+  PyObject *left = KosStackBlock_PopRef(&KosDynFrame_STACK(ctx->frame_top));
   if (! left) {
     Py_DECREF(right);
     return -1;
@@ -2393,19 +2420,19 @@ KOS_OP_HANDLER(OBJECT_IS_INSTANCE) {
   PyObject *value = NULL, *match = NULL;
 
   if (opa < 2) {
-    match = KosStackBlock_PopRef(&ctx->frame_top->stack);
+    match = KosStackBlock_PopRef(&KosDynFrame_STACK(ctx->frame_top));
     if (! match)
       return -1;
-    value = KosStackBlock_PopRef(&ctx->frame_top->stack);
+    value = KosStackBlock_PopRef(&KosDynFrame_STACK(ctx->frame_top));
     if (! value) {
       Py_DECREF(match);
       return -1;
     }
   } else {
-    match = KosStackBlock_PopTail(&ctx->frame_top->stack, (size_t) opa);
+    match = KosStackBlock_PopTail(&KosDynFrame_STACK(ctx->frame_top), (size_t) opa);
     if (! match)
       return -1;
-    value = KosStackBlock_PopRef(&ctx->frame_top->stack);
+    value = KosStackBlock_PopRef(&KosDynFrame_STACK(ctx->frame_top));
     if (! value) {
       Py_DECREF(match);
       return -1;
@@ -2433,19 +2460,19 @@ KOS_OP_HANDLER(OBJECT_IS_SUBCLASS) {
   PyObject *value = NULL, *match = NULL;
 
   if (opa < 2) {
-    match = KosStackBlock_PopRef(&ctx->frame_top->stack);
+    match = KosStackBlock_PopRef(&KosDynFrame_STACK(ctx->frame_top));
     if (! match)
       return -1;
-    value = KosStackBlock_PopRef(&ctx->frame_top->stack);
+    value = KosStackBlock_PopRef(&KosDynFrame_STACK(ctx->frame_top));
     if (! value) {
       Py_DECREF(match);
       return -1;
     }
   } else {
-    match = KosStackBlock_PopTail(&ctx->frame_top->stack, (size_t) opa);
+    match = KosStackBlock_PopTail(&KosDynFrame_STACK(ctx->frame_top), (size_t) opa);
     if (! match)
       return -1;
-    value = KosStackBlock_PopRef(&ctx->frame_top->stack);
+    value = KosStackBlock_PopRef(&KosDynFrame_STACK(ctx->frame_top));
     if (! value) {
       Py_DECREF(match);
       return -1;
@@ -2472,10 +2499,10 @@ static int kos_check_cmp(
     KosOp *insn,
     int cmp_op) {
 
-  PyObject *right = KosStackBlock_PopRef(&ctx->frame_top->stack);
+  PyObject *right = KosStackBlock_PopRef(&KosDynFrame_STACK(ctx->frame_top));
   if (! right)
     return -1;
-  PyObject *left = KosStackBlock_PopRef(&ctx->frame_top->stack);
+  PyObject *left = KosStackBlock_PopRef(&KosDynFrame_STACK(ctx->frame_top));
   if (! left) {
     Py_DECREF(right);
     return -1;
@@ -2486,7 +2513,7 @@ static int kos_check_cmp(
   if (res < 0)
     return -1;
   if (res == 0)
-    ctx->frame_top->pc = insn->arg;
+    KosDynFrame_PC(ctx->frame_top) = insn->arg;
   (void) out_ev;
   return 0;
 }
@@ -2518,13 +2545,13 @@ KOS_OP_HANDLER(BREAK) {
     result = Py_None;
     Py_INCREF(result);
   } else if (opa == 1) {
-    result = KosStackBlock_PopRef(&ctx->frame_top->stack);
+    result = KosStackBlock_PopRef(&KosDynFrame_STACK(ctx->frame_top));
     if (! result) {
       PyErr_SetString(PyExc_RuntimeError, "BREAK pop underrun");
       return -1;
     }
   } else {
-    result = KosStackBlock_PopTail(&ctx->frame_top->stack, (size_t) opa);
+    result = KosStackBlock_PopTail(&KosDynFrame_STACK(ctx->frame_top), (size_t) opa);
     if (! result) {
       PyErr_SetString(PyExc_RuntimeError, "BREAK PopTail underrun");
       return -1;
@@ -2538,16 +2565,16 @@ KOS_OP_HANDLER(BREAK) {
     return -1;
   }
 
-  uint32_t break_pc = region->break_pc;
+  uint32_t break_pc = KosDynRegion_BREAK_PC(region);
 
   /* Unwind inner regions until we reach the target loop region */
   while (ctx->dyn_top != (KosDynNode *) region) {
     KosDynNode *top = ctx->dyn_top;
     if (KosDynNode_IS_REGION(top)) {
       KosDynRegion *r = (KosDynRegion *) top;
-      if (r->style == KOS_REGION_LOOP || r->style == KOS_REGION_FOREACH) {
+      if (KosDynRegion_STYLE(r) == KOS_REGION_LOOP || KosDynRegion_STYLE(r) == KOS_REGION_FOREACH) {
         kos_dyn_pop_region(ctx, r);
-        if (KosStackBlock_DropBlock(&ctx->frame_top->stack) < 0) {
+        if (KosStackBlock_DropBlock(&KosDynFrame_STACK(ctx->frame_top)) < 0) {
           Py_DECREF(result);
           return -1;
         }
@@ -2567,19 +2594,19 @@ KOS_OP_HANDLER(BREAK) {
 
   /* Pop the target loop region and its stack block */
   kos_dyn_pop_region(ctx, region);
-  if (KosStackBlock_DropBlock(&ctx->frame_top->stack) < 0) {
+  if (KosStackBlock_DropBlock(&KosDynFrame_STACK(ctx->frame_top)) < 0) {
     Py_DECREF(result);
     return -1;
   }
 
   /* Push result to parent stack as the loop expression value */
-  if (KosStackBlock_PushRef(&ctx->frame_top->stack, result) < 0) {
+  if (KosStackBlock_PushRef(&KosDynFrame_STACK(ctx->frame_top), result) < 0) {
     Py_DECREF(result);
     return -1;
   }
   Py_DECREF(result);
 
-  ctx->frame_top->pc = break_pc;
+  KosDynFrame_PC(ctx->frame_top) = break_pc;
   (void) out_ev;
   return 0;
 }
@@ -2600,13 +2627,13 @@ KOS_OP_HANDLER(CONTINUE) {
     result = Py_None;
     Py_INCREF(result);
   } else if (opa == 1) {
-    result = KosStackBlock_PopRef(&ctx->frame_top->stack);
+    result = KosStackBlock_PopRef(&KosDynFrame_STACK(ctx->frame_top));
     if (! result) {
       PyErr_SetString(PyExc_RuntimeError, "CONTINUE pop underrun");
       return -1;
     }
   } else {
-    result = KosStackBlock_PopTail(&ctx->frame_top->stack, (size_t) opa);
+    result = KosStackBlock_PopTail(&KosDynFrame_STACK(ctx->frame_top), (size_t) opa);
     if (! result) {
       PyErr_SetString(PyExc_RuntimeError, "CONTINUE PopTail underrun");
       return -1;
@@ -2621,19 +2648,19 @@ KOS_OP_HANDLER(CONTINUE) {
   }
 
   /* Update region result with continue value */
-  Py_XDECREF(region->result);
-  region->result = result;
+  Py_XDECREF(KosDynRegion_RESULT(region));
+  KosDynRegion_RESULT(region) = result;
 
-  uint32_t continue_pc = region->continue_pc;
+  uint32_t continue_pc = KosDynRegion_CONTINUE_PC(region);
 
   /* Unwind inner regions until we reach the target loop region */
   while (ctx->dyn_top != (KosDynNode *) region) {
     KosDynNode *top = ctx->dyn_top;
     if (KosDynNode_IS_REGION(top)) {
       KosDynRegion *r = (KosDynRegion *) top;
-      if (r->style == KOS_REGION_LOOP || r->style == KOS_REGION_FOREACH) {
+      if (KosDynRegion_STYLE(r) == KOS_REGION_LOOP || KosDynRegion_STYLE(r) == KOS_REGION_FOREACH) {
         kos_dyn_pop_region(ctx, r);
-        if (KosStackBlock_DropBlock(&ctx->frame_top->stack) < 0)
+        if (KosStackBlock_DropBlock(&KosDynFrame_STACK(ctx->frame_top)) < 0)
           return -1;
       } else {
         if (kos_dyn_pop_top(ctx) < 0)
@@ -2646,10 +2673,10 @@ KOS_OP_HANDLER(CONTINUE) {
   }
 
   /* Clear the loop stack block contents for next iteration */
-  if (KosStackBlock_ClearBlock(&ctx->frame_top->stack) < 0)
+  if (KosStackBlock_ClearBlock(&KosDynFrame_STACK(ctx->frame_top)) < 0)
     return -1;
 
-  ctx->frame_top->pc = continue_pc;
+  KosDynFrame_PC(ctx->frame_top) = continue_pc;
   (void) out_ev;
   return 0;
 }
@@ -2669,14 +2696,14 @@ KOS_OP_HANDLER(YIELD) {
     Py_INCREF(val);
 
   } else if (opa == 1) {
-    val = KosStackBlock_PopRef(&ctx->frame_top->stack);
+    val = KosStackBlock_PopRef(&KosDynFrame_STACK(ctx->frame_top));
     if (! val) {
       SAY("[eval] YIELD pop underrun\n");
       return -1;
     }
 
   } else {
-    val = KosStackBlock_PopTail(&ctx->frame_top->stack, (size_t) opa);
+    val = KosStackBlock_PopTail(&KosDynFrame_STACK(ctx->frame_top), (size_t) opa);
     if (! val) {
       SAY("[eval] YIELD PopTail underrun\n");
       return -1;
@@ -2684,7 +2711,7 @@ KOS_OP_HANDLER(YIELD) {
   }
 
   /* Frame has parent: return into parent in same loop (CALL return or async gen step). */
-  if (ctx->frame_top->base.parent != NULL) {
+  if (KosDynNode_PARENT(ctx->frame_top) != NULL) {
     KosDynFrame *yielding_frame = ctx->frame_top;
     int was_pending = (ctx->pending_agen != NULL);
     KosPyAsyncGen *agen = was_pending ? (KosPyAsyncGen *) ctx->pending_agen : NULL;
@@ -2694,14 +2721,14 @@ KOS_OP_HANDLER(YIELD) {
       return -1;
     }
     if (was_pending && agen) {
-      yielding_frame->base.parent = NULL;
+      KosDynNode_PARENT(yielding_frame) = NULL;
       agen->in_progress = 0;
       ctx->pending_agen = NULL;
       Py_XDECREF(ctx->pending_agen_default);
       ctx->pending_agen_default = NULL;
       ctx->pending_agen_region = NULL;
     }
-    if (KosStackBlock_PushRef(&ctx->frame_top->stack, val) < 0) {
+    if (KosStackBlock_PushRef(&KosDynFrame_STACK(ctx->frame_top), val) < 0) {
       Py_DECREF(val);
       return -1;
     }
@@ -2710,7 +2737,7 @@ KOS_OP_HANDLER(YIELD) {
   }
 
   /* Frame has parent: return into parent in same loop. */
-  if (ctx->frame_top->base.parent != NULL) {
+  if (KosDynNode_PARENT(ctx->frame_top) != NULL) {
     KosDynFrame *yielding_frame = ctx->frame_top;
     int was_pending = (ctx->pending_agen != NULL);
     KosPyAsyncGen *agen = was_pending ? (KosPyAsyncGen *) ctx->pending_agen : NULL;
@@ -2720,14 +2747,14 @@ KOS_OP_HANDLER(YIELD) {
       return -1;
     }
     if (was_pending && agen) {
-      yielding_frame->base.parent = NULL;
+      KosDynNode_PARENT(yielding_frame) = NULL;
       agen->in_progress = 0;
       ctx->pending_agen = NULL;
       Py_XDECREF(ctx->pending_agen_default);
       ctx->pending_agen_default = NULL;
       ctx->pending_agen_region = NULL;
     }
-    if (KosStackBlock_PushRef(&ctx->frame_top->stack, val) < 0) {
+    if (KosStackBlock_PushRef(&KosDynFrame_STACK(ctx->frame_top), val) < 0) {
       Py_DECREF(val);
       return -1;
     }
@@ -2876,7 +2903,7 @@ static int op_attach_koskari_agen_frame(
     PyErr_SetString(PyExc_RuntimeError, "async generator has no frame");
     return -1;
   }
-  if (KosStackBlock_PushRef(&gen_frame->stack, Py_None) < 0) {
+  if (KosStackBlock_PushRef(&KosDynFrame_STACK(gen_frame), Py_None) < 0) {
     ctx->pending_agen = NULL;
     if (for_next) {
       Py_XDECREF(ctx->pending_agen_default);
@@ -2890,7 +2917,7 @@ static int op_attach_koskari_agen_frame(
     return -1;
   }
   if (kos_dyn_attach_frame(ctx, gen_frame) < 0) {
-    (void) KosStackBlock_PopRef(&gen_frame->stack);
+    (void) KosStackBlock_PopRef(&KosDynFrame_STACK(gen_frame));
     ctx->pending_agen = NULL;
     if (for_next) {
       Py_XDECREF(ctx->pending_agen_default);
@@ -2921,11 +2948,11 @@ KOS_OP_HANDLER(NEXT) {
   PyObject *default_val = NULL;
   PyObject *iter = NULL;
   if (n == 2) {
-    default_val = KosStackBlock_PopRef(&ctx->frame_top->stack);
+    default_val = KosStackBlock_PopRef(&KosDynFrame_STACK(ctx->frame_top));
     if (! default_val)
       return -1;
   }
-  iter = KosStackBlock_PopRef(&ctx->frame_top->stack);
+  iter = KosStackBlock_PopRef(&KosDynFrame_STACK(ctx->frame_top));
   if (! iter) {
     Py_XDECREF(default_val);
     return -1;
@@ -2959,7 +2986,7 @@ KOS_OP_HANDLER(NEXT) {
     if (agen->closed || ! agen->ctx) {
       Py_DECREF(iter);
       if (n == 2 && default_val) {
-        if (KosStackBlock_PushRef(&ctx->frame_top->stack, default_val) < 0) {
+        if (KosStackBlock_PushRef(&KosDynFrame_STACK(ctx->frame_top), default_val) < 0) {
           Py_XDECREF(default_val);
           return -1;
         }
@@ -2990,7 +3017,7 @@ KOS_OP_HANDLER(NEXT) {
   KosGetNextResult get_res = op_get_next_from_iter(ctx, out_ev, iter, &value);
   switch (get_res) {
     case GET_NEXT_VALUE:
-      if (KosStackBlock_PushRef(&ctx->frame_top->stack, value) < 0) {
+      if (KosStackBlock_PushRef(&KosDynFrame_STACK(ctx->frame_top), value) < 0) {
         Py_DECREF(value);
         Py_DECREF(iter);
         Py_XDECREF(default_val);
@@ -3003,7 +3030,7 @@ KOS_OP_HANDLER(NEXT) {
     case GET_NEXT_EXHAUSTED:
       Py_DECREF(iter);
       if (default_val) {
-        if (KosStackBlock_PushRef(&ctx->frame_top->stack, default_val) < 0) {
+        if (KosStackBlock_PushRef(&KosDynFrame_STACK(ctx->frame_top), default_val) < 0) {
           Py_XDECREF(default_val);
           return -1;
         }
@@ -3015,13 +3042,13 @@ KOS_OP_HANDLER(NEXT) {
       return -1;
     case GET_NEXT_SUSPEND:
       if (n == 2) {
-        if (KosStackBlock_PushRef(&ctx->frame_top->stack, default_val) < 0) {
+        if (KosStackBlock_PushRef(&KosDynFrame_STACK(ctx->frame_top), default_val) < 0) {
           Py_DECREF(default_val);
           Py_DECREF(iter);
           return -1;
         }
       }
-      if (KosStackBlock_PushRef(&ctx->frame_top->stack, iter) < 0) {
+      if (KosStackBlock_PushRef(&KosDynFrame_STACK(ctx->frame_top), iter) < 0) {
         Py_DECREF(iter);
         return -1;
       }
@@ -3042,16 +3069,16 @@ KOS_OP_HANDLER(NEXT) {
 
 /**
    ITER_NEXT: arg = else PC. Must be inside PUSH_FOREACH block. Uses
-   region->iter, advances, pushes next or jumps to else. Auto-await.
+   KosDynRegion_ITER(region), advances, pushes next or jumps to else. Auto-await.
 */
 KOS_OP_HANDLER(ITER_NEXT) {
   KosDynRegion *region = kos_find_region_for_loop(ctx);
-  if (! region || region->style != KOS_REGION_FOREACH) {
+  if (! region || KosDynRegion_STYLE(region) != KOS_REGION_FOREACH) {
     PyErr_SetString(PyExc_RuntimeError,
                     "ITER_NEXT must be used inside a PUSH_FOREACH block");
     return -1;
   }
-  PyObject *iter = region->iter;
+  PyObject *iter = KosDynRegion_ITER(region);
   if (KosPyAsyncGen_Check(iter)) {
     KosPyAsyncGen *agen = (KosPyAsyncGen *) iter;
     if (agen->in_progress) {
@@ -3060,8 +3087,8 @@ KOS_OP_HANDLER(ITER_NEXT) {
       return -1;
     }
     if (agen->closed || ! agen->ctx) {
-      region->exhausted = 1;
-      ctx->frame_top->pc = insn->arg;
+      KosDynRegion_EXHAUSTED(region) = 1;
+      KosDynFrame_PC(ctx->frame_top) = insn->arg;
       return 0;
     }
     agen->in_progress = 1;
@@ -3078,15 +3105,15 @@ KOS_OP_HANDLER(ITER_NEXT) {
   KosGetNextResult get_res = op_get_next_from_iter(ctx, out_ev, iter, &value);
   switch (get_res) {
     case GET_NEXT_VALUE:
-      if (KosStackBlock_PushRef(&ctx->frame_top->stack, value) < 0) {
+      if (KosStackBlock_PushRef(&KosDynFrame_STACK(ctx->frame_top), value) < 0) {
         Py_DECREF(value);
         return -1;
       }
       Py_DECREF(value);
       return 0;
     case GET_NEXT_EXHAUSTED:
-      region->exhausted = 1;
-      ctx->frame_top->pc = insn->arg;
+      KosDynRegion_EXHAUSTED(region) = 1;
+      KosDynFrame_PC(ctx->frame_top) = insn->arg;
       return 0;
     case GET_NEXT_SUSPEND:
       return 1;
@@ -3102,7 +3129,7 @@ KOS_OP_HANDLER(ITER_NEXT) {
    JUMP: arg = target PC. Unconditional branch.
 */
 KOS_OP_HANDLER(JUMP) {
-  ctx->frame_top->pc = insn->arg;
+  KosDynFrame_PC(ctx->frame_top) = insn->arg;
   (void) out_ev;
   return 0;
 }
@@ -3112,7 +3139,7 @@ KOS_OP_HANDLER(JUMP) {
    JUMP_FALSE: arg = target PC. Branch if TOS is false.
 */
 KOS_OP_HANDLER(JUMP_FALSE) {
-  PyObject *val = KosStackBlock_PopRef(&ctx->frame_top->stack);
+  PyObject *val = KosStackBlock_PopRef(&KosDynFrame_STACK(ctx->frame_top));
   if (! val)
     return -1;
   int res = PyObject_Not(val);
@@ -3120,7 +3147,7 @@ KOS_OP_HANDLER(JUMP_FALSE) {
   if (res < 0)
     return -1;
   if (res)
-    ctx->frame_top->pc = insn->arg;
+    KosDynFrame_PC(ctx->frame_top) = insn->arg;
   (void) out_ev;
   return 0;
 }
@@ -3130,7 +3157,7 @@ KOS_OP_HANDLER(JUMP_FALSE) {
    JUMP_TRUE: arg = target PC. Branch if TOS is true.
 */
 KOS_OP_HANDLER(JUMP_TRUE) {
-  PyObject *val = KosStackBlock_PopRef(&ctx->frame_top->stack);
+  PyObject *val = KosStackBlock_PopRef(&KosDynFrame_STACK(ctx->frame_top));
   if (! val)
     return -1;
   int res = PyObject_IsTrue(val);
@@ -3138,7 +3165,7 @@ KOS_OP_HANDLER(JUMP_TRUE) {
   if (res < 0)
     return -1;
   if (res)
-    ctx->frame_top->pc = insn->arg;
+    KosDynFrame_PC(ctx->frame_top) = insn->arg;
   (void) out_ev;
   return 0;
 }
@@ -3149,7 +3176,7 @@ KOS_OP_HANDLER(JUMP_TRUE) {
    stack and jump; else pop and continue.
 */
 KOS_OP_HANDLER(JUMP_AND) {
-  PyObject *val = KosStackBlock_PopRef(&ctx->frame_top->stack);
+  PyObject *val = KosStackBlock_PopRef(&KosDynFrame_STACK(ctx->frame_top));
   if (! val)
     return -1;
   int res = PyObject_Not(val);
@@ -3158,12 +3185,12 @@ KOS_OP_HANDLER(JUMP_AND) {
     return -1;
   }
   if (res) {
-    if (KosStackBlock_PushRef(&ctx->frame_top->stack, val) < 0) {
+    if (KosStackBlock_PushRef(&KosDynFrame_STACK(ctx->frame_top), val) < 0) {
       Py_DECREF(val);
       return -1;
     }
     Py_DECREF(val);
-    ctx->frame_top->pc = insn->arg;
+    KosDynFrame_PC(ctx->frame_top) = insn->arg;
   } else {
     Py_DECREF(val);
   }
@@ -3177,7 +3204,7 @@ KOS_OP_HANDLER(JUMP_AND) {
    stack and jump; else pop and continue.
 */
 KOS_OP_HANDLER(JUMP_OR) {
-  PyObject *val = KosStackBlock_PopRef(&ctx->frame_top->stack);
+  PyObject *val = KosStackBlock_PopRef(&KosDynFrame_STACK(ctx->frame_top));
   if (! val)
     return -1;
   int res = PyObject_IsTrue(val);
@@ -3186,12 +3213,12 @@ KOS_OP_HANDLER(JUMP_OR) {
     return -1;
   }
   if (res) {
-    if (KosStackBlock_PushRef(&ctx->frame_top->stack, val) < 0) {
+    if (KosStackBlock_PushRef(&KosDynFrame_STACK(ctx->frame_top), val) < 0) {
       Py_DECREF(val);
       return -1;
     }
     Py_DECREF(val);
-    ctx->frame_top->pc = insn->arg;
+    KosDynFrame_PC(ctx->frame_top) = insn->arg;
   } else {
     Py_DECREF(val);
   }
@@ -3252,10 +3279,10 @@ KOS_OP_HANDLER(CHECK_NE) {
    CHECK_IN: arg = target PC. Branch if "in" check fails. Stack: container, value (TOS).
 */
 KOS_OP_HANDLER(CHECK_IN) {
-  PyObject *value = KosStackBlock_PopRef(&ctx->frame_top->stack);
+  PyObject *value = KosStackBlock_PopRef(&KosDynFrame_STACK(ctx->frame_top));
   if (! value)
     return -1;
-  PyObject *container = KosStackBlock_PopRef(&ctx->frame_top->stack);
+  PyObject *container = KosStackBlock_PopRef(&KosDynFrame_STACK(ctx->frame_top));
   if (! container) {
     Py_DECREF(value);
     return -1;
@@ -3266,7 +3293,7 @@ KOS_OP_HANDLER(CHECK_IN) {
   if (unlikely(cmp < 0))
     return -1;
   if (cmp == 0)
-    ctx->frame_top->pc = insn->arg;
+    KosDynFrame_PC(ctx->frame_top) = insn->arg;
   (void) out_ev;
   return 0;
 }
@@ -3276,10 +3303,10 @@ KOS_OP_HANDLER(CHECK_IN) {
    CHECK_NOT_IN: arg = target PC. Branch if "not in" check fails. Stack: container, value (TOS).
 */
 KOS_OP_HANDLER(CHECK_NOT_IN) {
-  PyObject *value = KosStackBlock_PopRef(&ctx->frame_top->stack);
+  PyObject *value = KosStackBlock_PopRef(&KosDynFrame_STACK(ctx->frame_top));
   if (! value)
     return -1;
-  PyObject *container = KosStackBlock_PopRef(&ctx->frame_top->stack);
+  PyObject *container = KosStackBlock_PopRef(&KosDynFrame_STACK(ctx->frame_top));
   if (! container) {
     Py_DECREF(value);
     return -1;
@@ -3290,7 +3317,7 @@ KOS_OP_HANDLER(CHECK_NOT_IN) {
   if (unlikely(cmp < 0))
     return -1;
   if (cmp == 1)
-    ctx->frame_top->pc = insn->arg;
+    KosDynFrame_PC(ctx->frame_top) = insn->arg;
   (void) out_ev;
   return 0;
 }
@@ -3300,10 +3327,10 @@ KOS_OP_HANDLER(CHECK_NOT_IN) {
    CHECK_IS: arg = target PC. Branch if "is" check fails. Stack: left, right.
 */
 KOS_OP_HANDLER(CHECK_IS) {
-  PyObject *right = KosStackBlock_PopRef(&ctx->frame_top->stack);
+  PyObject *right = KosStackBlock_PopRef(&KosDynFrame_STACK(ctx->frame_top));
   if (! right)
     return -1;
-  PyObject *left = KosStackBlock_PopRef(&ctx->frame_top->stack);
+  PyObject *left = KosStackBlock_PopRef(&KosDynFrame_STACK(ctx->frame_top));
   if (! left) {
     Py_DECREF(right);
     return -1;
@@ -3312,7 +3339,7 @@ KOS_OP_HANDLER(CHECK_IS) {
   Py_DECREF(left);
   Py_DECREF(right);
   if (cmp == 0)
-    ctx->frame_top->pc = insn->arg;
+    KosDynFrame_PC(ctx->frame_top) = insn->arg;
   (void) out_ev;
   return 0;
 }
@@ -3322,10 +3349,10 @@ KOS_OP_HANDLER(CHECK_IS) {
    CHECK_IS_NOT: arg = target PC. Branch if "is not" check fails. Stack: left, right.
 */
 KOS_OP_HANDLER(CHECK_IS_NOT) {
-  PyObject *right = KosStackBlock_PopRef(&ctx->frame_top->stack);
+  PyObject *right = KosStackBlock_PopRef(&KosDynFrame_STACK(ctx->frame_top));
   if (! right)
     return -1;
-  PyObject *left = KosStackBlock_PopRef(&ctx->frame_top->stack);
+  PyObject *left = KosStackBlock_PopRef(&KosDynFrame_STACK(ctx->frame_top));
   if (! left) {
     Py_DECREF(right);
     return -1;
@@ -3334,7 +3361,7 @@ KOS_OP_HANDLER(CHECK_IS_NOT) {
   Py_DECREF(left);
   Py_DECREF(right);
   if (cmp == 1)
-    ctx->frame_top->pc = insn->arg;
+    KosDynFrame_PC(ctx->frame_top) = insn->arg;
   (void) out_ev;
   return 0;
 }
@@ -3345,10 +3372,10 @@ KOS_OP_HANDLER(CHECK_IS_NOT) {
    Stack: value, class_or_tuple.
 */
 KOS_OP_HANDLER(CHECK_IS_INSTANCE) {
-  PyObject *class_or_tuple = KosStackBlock_PopRef(&ctx->frame_top->stack);
+  PyObject *class_or_tuple = KosStackBlock_PopRef(&KosDynFrame_STACK(ctx->frame_top));
   if (! class_or_tuple)
     return -1;
-  PyObject *value = KosStackBlock_PopRef(&ctx->frame_top->stack);
+  PyObject *value = KosStackBlock_PopRef(&KosDynFrame_STACK(ctx->frame_top));
   if (! value) {
     Py_DECREF(class_or_tuple);
     return -1;
@@ -3359,7 +3386,7 @@ KOS_OP_HANDLER(CHECK_IS_INSTANCE) {
   if (unlikely(res < 0))
     return -1;
   if (res == 0)
-    ctx->frame_top->pc = insn->arg;
+    KosDynFrame_PC(ctx->frame_top) = insn->arg;
   (void) out_ev;
   return 0;
 }
@@ -3370,10 +3397,10 @@ KOS_OP_HANDLER(CHECK_IS_INSTANCE) {
    Stack: class, class_or_tuple.
 */
 KOS_OP_HANDLER(CHECK_IS_SUBCLASS) {
-  PyObject *class_or_tuple = KosStackBlock_PopRef(&ctx->frame_top->stack);
+  PyObject *class_or_tuple = KosStackBlock_PopRef(&KosDynFrame_STACK(ctx->frame_top));
   if (! class_or_tuple)
     return -1;
-  PyObject *cls = KosStackBlock_PopRef(&ctx->frame_top->stack);
+  PyObject *cls = KosStackBlock_PopRef(&KosDynFrame_STACK(ctx->frame_top));
   if (! cls) {
     Py_DECREF(class_or_tuple);
     return -1;
@@ -3384,7 +3411,7 @@ KOS_OP_HANDLER(CHECK_IS_SUBCLASS) {
   if (unlikely(res < 0))
     return -1;
   if (res == 0)
-    ctx->frame_top->pc = insn->arg;
+    KosDynFrame_PC(ctx->frame_top) = insn->arg;
   (void) out_ev;
   return 0;
 }
@@ -3395,10 +3422,10 @@ KOS_OP_HANDLER(CHECK_IS_SUBCLASS) {
    the value at TOS (pop value, then bind).
 */
 KOS_OP_HANDLER(VAR_BIND) {
-  PyObject *name = get_name_from_insn(ctx->frame_top->code, insn);
+  PyObject *name = get_name_from_insn(KosDynFrame_CODE(ctx->frame_top), insn);
   if (! name)
     return -1;
-  PyObject *val = KosStackBlock_PopRef(&ctx->frame_top->stack);
+  PyObject *val = KosStackBlock_PopRef(&KosDynFrame_STACK(ctx->frame_top));
   if (! val)
     return -1;
   if (frame_ns_bind(ctx, name, val) < 0)
@@ -3412,7 +3439,7 @@ KOS_OP_HANDLER(VAR_BIND) {
    VAR_CLEAR: arg = constant index (name). Delete name from namespace.
 */
 KOS_OP_HANDLER(VAR_CLEAR) {
-  PyObject *name = get_name_from_insn(ctx->frame_top->code, insn);
+  PyObject *name = get_name_from_insn(KosDynFrame_CODE(ctx->frame_top), insn);
   if (! name)
     return -1;
   if (frame_ns_clear(ctx, name) < 0)
@@ -3426,7 +3453,7 @@ KOS_OP_HANDLER(VAR_CLEAR) {
    VAR_REF: arg = constant index (name). Push name reference (for closure).
 */
 KOS_OP_HANDLER(VAR_REF) {
-  PyObject *name = get_name_from_insn(ctx->frame_top->code, insn);
+  PyObject *name = get_name_from_insn(KosDynFrame_CODE(ctx->frame_top), insn);
   if (! name)
     return -1;
   PyObject *ref = frame_ns_ref(ctx, name);
@@ -3442,10 +3469,10 @@ KOS_OP_HANDLER(VAR_REF) {
    the current frame namespace.
 */
 KOS_OP_HANDLER(VAR_STORE) {
-  PyObject *name = get_name_from_insn(ctx->frame_top->code, insn);
+  PyObject *name = get_name_from_insn(KosDynFrame_CODE(ctx->frame_top), insn);
   if (! name)
     return -1;
-  PyObject *val = KosStackBlock_PopRef(&ctx->frame_top->stack);
+  PyObject *val = KosStackBlock_PopRef(&KosDynFrame_STACK(ctx->frame_top));
   if (! val)
     return -1;
   if (frame_ns_store(ctx, name, val) < 0) {
@@ -3462,7 +3489,7 @@ KOS_OP_HANDLER(VAR_STORE) {
    FAST: arg = slot index. Push value from fast local slot.
 */
 KOS_OP_HANDLER(FAST) {
-  PyObject *ns = ctx->frame_top->ns;
+  PyObject *ns = KosDynFrame_NS(ctx->frame_top);
   if (! KosNamespace_SupportsFast(ns)) {
     PyErr_Format(PyExc_RuntimeError, "FAST invoked on %R", ns);
     return -1;
@@ -3479,7 +3506,7 @@ KOS_OP_HANDLER(FAST) {
    FAST_BIND: arg = slot index. Bind name to fast slot.
 */
 KOS_OP_HANDLER(FAST_BIND) {
-  PyObject *ns = ctx->frame_top->ns;
+  PyObject *ns = KosDynFrame_NS(ctx->frame_top);
   if (! KosNamespace_SupportsFast(ns)) {
     PyErr_Format(PyExc_RuntimeError, "FAST_BIND invoked on %R", ns);
     return -1;
@@ -3490,7 +3517,7 @@ KOS_OP_HANDLER(FAST_BIND) {
                  idx);
     return -1;
   }
-  PyObject *val = KosStackBlock_PopRef(&ctx->frame_top->stack);
+  PyObject *val = KosStackBlock_PopRef(&KosDynFrame_STACK(ctx->frame_top));
   if (! val)
     return -1;
   KosNameBind *nb = KosNamespace_GET_FAST(ns, idx);
@@ -3511,7 +3538,7 @@ KOS_OP_HANDLER(FAST_BIND) {
    FAST_CLEAR: arg = slot index. Clear fast slot.
 */
 KOS_OP_HANDLER(FAST_CLEAR) {
-  PyObject *ns = ctx->frame_top->ns;
+  PyObject *ns = KosDynFrame_NS(ctx->frame_top);
   if (! KosNamespace_SupportsFast(ns)) {
     PyErr_Format(PyExc_RuntimeError, "FAST_CLEAR invoked on %R", ns);
     return -1;
@@ -3527,7 +3554,7 @@ KOS_OP_HANDLER(FAST_CLEAR) {
    FAST_REF: arg = slot index. Push reference to fast slot.
 */
 KOS_OP_HANDLER(FAST_REF) {
-  PyObject *ns = ctx->frame_top->ns;
+  PyObject *ns = KosDynFrame_NS(ctx->frame_top);
   if (! KosNamespace_SupportsFast(ns)) {
     PyErr_Format(PyExc_RuntimeError, "FAST_REF invoked on %R", ns);
     return -1;
@@ -3545,13 +3572,13 @@ KOS_OP_HANDLER(FAST_REF) {
    FAST_STORE: arg = slot index. Store TOS into fast slot.
 */
 KOS_OP_HANDLER(FAST_STORE) {
-  PyObject *ns = ctx->frame_top->ns;
+  PyObject *ns = KosDynFrame_NS(ctx->frame_top);
   if (! KosNamespace_SupportsFast(ns)) {
     PyErr_Format(PyExc_RuntimeError, "FAST_STORE invoked on %R", ns);
     return -1;
   }
   size_t idx = (size_t) insn->arg;
-  PyObject *val = KosStackBlock_PopRef(&ctx->frame_top->stack);
+  PyObject *val = KosStackBlock_PopRef(&KosDynFrame_STACK(ctx->frame_top));
   if (! val)
     return -1;
   int res = KosNamespace_FastStore(ns, idx, val);
@@ -3567,10 +3594,10 @@ KOS_OP_HANDLER(FAST_STORE) {
    ATTR: arg = constant index (name). Push getattr(TOS, name).
 */
 KOS_OP_HANDLER(ATTR) {
-  PyObject *name = get_name_from_insn(ctx->frame_top->code, insn);
+  PyObject *name = get_name_from_insn(KosDynFrame_CODE(ctx->frame_top), insn);
   if (! name)
     return -1;
-  PyObject *obj = KosStackBlock_PopRef(&ctx->frame_top->stack);
+  PyObject *obj = KosStackBlock_PopRef(&KosDynFrame_STACK(ctx->frame_top));
   if (! obj)
     return -1;
   PyObject *val = PyObject_GetAttr(obj, name);
@@ -3585,10 +3612,10 @@ KOS_OP_HANDLER(ATTR) {
    ATTR_CLEAR: arg = constant index (name). delattr(TOS, name).
 */
 KOS_OP_HANDLER(ATTR_CLEAR) {
-  PyObject *name = get_name_from_insn(ctx->frame_top->code, insn);
+  PyObject *name = get_name_from_insn(KosDynFrame_CODE(ctx->frame_top), insn);
   if (! name)
     return -1;
-  PyObject *obj = KosStackBlock_PopRef(&ctx->frame_top->stack);
+  PyObject *obj = KosStackBlock_PopRef(&KosDynFrame_STACK(ctx->frame_top));
   if (! obj)
     return -1;
   int res = PyObject_DelAttr(obj, name);
@@ -3604,10 +3631,10 @@ KOS_OP_HANDLER(ATTR_CLEAR) {
    ATTR_REF: arg = constant index (name). Push attribute reference.
 */
 KOS_OP_HANDLER(ATTR_REF) {
-  PyObject *name = get_name_from_insn(ctx->frame_top->code, insn);
+  PyObject *name = get_name_from_insn(KosDynFrame_CODE(ctx->frame_top), insn);
   if (! name)
     return -1;
-  PyObject *obj = KosStackBlock_PopRef(&ctx->frame_top->stack);
+  PyObject *obj = KosStackBlock_PopRef(&KosDynFrame_STACK(ctx->frame_top));
   if (! obj)
     return -1;
   PyObject *ref = KosAttributeRef_New(name, obj, name);
@@ -3622,13 +3649,13 @@ KOS_OP_HANDLER(ATTR_REF) {
    ATTR_STORE: arg = constant index (name). setattr(TOS1, name, TOS); pop val then obj.
 */
 KOS_OP_HANDLER(ATTR_STORE) {
-  PyObject *name = get_name_from_insn(ctx->frame_top->code, insn);
+  PyObject *name = get_name_from_insn(KosDynFrame_CODE(ctx->frame_top), insn);
   if (! name)
     return -1;
-  PyObject *val = KosStackBlock_PopRef(&ctx->frame_top->stack);
+  PyObject *val = KosStackBlock_PopRef(&KosDynFrame_STACK(ctx->frame_top));
   if (! val)
     return -1;
-  PyObject *obj = KosStackBlock_PopRef(&ctx->frame_top->stack);
+  PyObject *obj = KosStackBlock_PopRef(&KosDynFrame_STACK(ctx->frame_top));
   if (! obj) {
     Py_DECREF(val);
     return -1;
@@ -3647,10 +3674,10 @@ KOS_OP_HANDLER(ATTR_STORE) {
    ITEM: arg unused. Push TOS1[TOS] (subscript). Stack: obj, key (TOS).
 */
 KOS_OP_HANDLER(ITEM) {
-  PyObject *key = KosStackBlock_PopRef(&ctx->frame_top->stack);
+  PyObject *key = KosStackBlock_PopRef(&KosDynFrame_STACK(ctx->frame_top));
   if (! key)
     return -1;
-  PyObject *obj = KosStackBlock_PopRef(&ctx->frame_top->stack);
+  PyObject *obj = KosStackBlock_PopRef(&KosDynFrame_STACK(ctx->frame_top));
   if (! obj) {
     Py_DECREF(key);
     return -1;
@@ -3668,10 +3695,10 @@ KOS_OP_HANDLER(ITEM) {
    ITEM_CLEAR: arg unused. del TOS1[TOS]. Stack: obj, key (TOS).
 */
 KOS_OP_HANDLER(ITEM_CLEAR) {
-  PyObject *key = KosStackBlock_PopRef(&ctx->frame_top->stack);
+  PyObject *key = KosStackBlock_PopRef(&KosDynFrame_STACK(ctx->frame_top));
   if (! key)
     return -1;
-  PyObject *obj = KosStackBlock_PopRef(&ctx->frame_top->stack);
+  PyObject *obj = KosStackBlock_PopRef(&KosDynFrame_STACK(ctx->frame_top));
   if (! obj) {
     Py_DECREF(key);
     return -1;
@@ -3690,10 +3717,10 @@ KOS_OP_HANDLER(ITEM_CLEAR) {
    ITEM_REF: arg unused. Push item reference for subscription. Stack: obj, key (TOS).
 */
 KOS_OP_HANDLER(ITEM_REF) {
-  PyObject *key = KosStackBlock_PopRef(&ctx->frame_top->stack);
+  PyObject *key = KosStackBlock_PopRef(&KosDynFrame_STACK(ctx->frame_top));
   if (! key)
     return -1;
-  PyObject *obj = KosStackBlock_PopRef(&ctx->frame_top->stack);
+  PyObject *obj = KosStackBlock_PopRef(&KosDynFrame_STACK(ctx->frame_top));
   if (! obj) {
     Py_DECREF(key);
     return -1;
@@ -3711,15 +3738,15 @@ KOS_OP_HANDLER(ITEM_REF) {
    ITEM_STORE: arg unused. TOS2[TOS1] = TOS; pop val, key, obj.
 */
 KOS_OP_HANDLER(ITEM_STORE) {
-  PyObject *val = KosStackBlock_PopRef(&ctx->frame_top->stack);
+  PyObject *val = KosStackBlock_PopRef(&KosDynFrame_STACK(ctx->frame_top));
   if (! val)
     return -1;
-  PyObject *key = KosStackBlock_PopRef(&ctx->frame_top->stack);
+  PyObject *key = KosStackBlock_PopRef(&KosDynFrame_STACK(ctx->frame_top));
   if (! key) {
     Py_DECREF(val);
     return -1;
   }
-  PyObject *obj = KosStackBlock_PopRef(&ctx->frame_top->stack);
+  PyObject *obj = KosStackBlock_PopRef(&KosDynFrame_STACK(ctx->frame_top));
   if (! obj) {
     Py_DECREF(key);
     Py_DECREF(val);
@@ -3740,11 +3767,11 @@ KOS_OP_HANDLER(ITEM_STORE) {
    CONST_ITEM: arg = constant index (key). Push TOS[key].
 */
 KOS_OP_HANDLER(CONST_ITEM) {
-  PyObject *key = KosCode_GetConstant((PyObject *) ctx->frame_top->code,
+  PyObject *key = KosCode_GetConstant((PyObject *) KosDynFrame_CODE(ctx->frame_top),
                                       insn->arg);
   if (! key)
     return -1;
-  PyObject *obj = KosStackBlock_PopRef(&ctx->frame_top->stack);
+  PyObject *obj = KosStackBlock_PopRef(&KosDynFrame_STACK(ctx->frame_top));
   if (! obj)
     return -1;
   PyObject *item = PyObject_GetItem(obj, key);
@@ -3759,11 +3786,11 @@ KOS_OP_HANDLER(CONST_ITEM) {
    CONST_ITEM_CLEAR: arg = constant index (key). del TOS[key].
 */
 KOS_OP_HANDLER(CONST_ITEM_CLEAR) {
-  PyObject *key = KosCode_GetConstant((PyObject *) ctx->frame_top->code,
+  PyObject *key = KosCode_GetConstant((PyObject *) KosDynFrame_CODE(ctx->frame_top),
                                       insn->arg);
   if (! key)
     return -1;
-  PyObject *obj = KosStackBlock_PopRef(&ctx->frame_top->stack);
+  PyObject *obj = KosStackBlock_PopRef(&KosDynFrame_STACK(ctx->frame_top));
   if (! obj)
     return -1;
   int res = PyObject_DelItem(obj, key);
@@ -3779,11 +3806,11 @@ KOS_OP_HANDLER(CONST_ITEM_CLEAR) {
    CONST_ITEM_REF: arg = constant index (key). Push constant-key item reference.
 */
 KOS_OP_HANDLER(CONST_ITEM_REF) {
-  PyObject *key = KosCode_GetConstant((PyObject *) ctx->frame_top->code,
+  PyObject *key = KosCode_GetConstant((PyObject *) KosDynFrame_CODE(ctx->frame_top),
                                       insn->arg);
   if (! key)
     return -1;
-  PyObject *obj = KosStackBlock_PopRef(&ctx->frame_top->stack);
+  PyObject *obj = KosStackBlock_PopRef(&KosDynFrame_STACK(ctx->frame_top));
   if (! obj)
     return -1;
   PyObject *ref = KosItemRef_New(key, obj, key);
@@ -3798,14 +3825,14 @@ KOS_OP_HANDLER(CONST_ITEM_REF) {
    CONST_ITEM_STORE: arg = constant index (key). TOS1[key] = TOS; pop val then obj.
 */
 KOS_OP_HANDLER(CONST_ITEM_STORE) {
-  PyObject *key = KosCode_GetConstant((PyObject *) ctx->frame_top->code,
+  PyObject *key = KosCode_GetConstant((PyObject *) KosDynFrame_CODE(ctx->frame_top),
                                       insn->arg);
   if (! key)
     return -1;
-  PyObject *val = KosStackBlock_PopRef(&ctx->frame_top->stack);
+  PyObject *val = KosStackBlock_PopRef(&KosDynFrame_STACK(ctx->frame_top));
   if (! val)
     return -1;
-  PyObject *obj = KosStackBlock_PopRef(&ctx->frame_top->stack);
+  PyObject *obj = KosStackBlock_PopRef(&KosDynFrame_STACK(ctx->frame_top));
   if (! obj) {
     Py_DECREF(val);
     return -1;
@@ -3989,15 +4016,15 @@ KOS_OP_HANDLER(TAIL_RECUR_STAR) {
 */
 KOS_OP_HANDLER(PUSH_FOREACH) {
   uint32_t break_pc = insn->arg;
-  uint32_t continue_pc = ctx->frame_top->pc;  /* already advanced by drive loop */
+  uint32_t continue_pc = KosDynFrame_PC(ctx->frame_top);  /* already advanced by drive loop */
 
   /* Pop iterable (TOS) and loop_result from stack */
-  PyObject *iterable = KosStackBlock_PopRef(&ctx->frame_top->stack);
+  PyObject *iterable = KosStackBlock_PopRef(&KosDynFrame_STACK(ctx->frame_top));
   if (! iterable) {
     PyErr_SetString(PyExc_RuntimeError, "PUSH_FOREACH: missing iterable");
     return -1;
   }
-  PyObject *loop_result = KosStackBlock_PopRef(&ctx->frame_top->stack);
+  PyObject *loop_result = KosStackBlock_PopRef(&KosDynFrame_STACK(ctx->frame_top));
   if (! loop_result) {
     Py_DECREF(iterable);
     PyErr_SetString(PyExc_RuntimeError, "PUSH_FOREACH: missing loop_result");
@@ -4034,12 +4061,12 @@ KOS_OP_HANDLER(PUSH_FOREACH) {
   }
 
   /* Store result and iterator in region (takes ownership) */
-  region->result = loop_result;
-  region->iter = iter;
-  region->exhausted = 0;
+  KosDynRegion_RESULT(region) = loop_result;
+  KosDynRegion_ITER(region) = iter;
+  KosDynRegion_EXHAUSTED(region) = 0;
 
   /* Push stack block for iteration temporaries */
-  if (KosStackBlock_PushBlock(&ctx->frame_top->stack) < 0) {
+  if (KosStackBlock_PushBlock(&KosDynFrame_STACK(ctx->frame_top)) < 0) {
     kos_dyn_pop_region(ctx, region);
     return -1;
   }
@@ -4079,7 +4106,7 @@ KOS_OP_HANDLER(PUSH_CLASS) {
 */
 KOS_OP_HANDLER(PUSH_LOOP) {
   uint32_t break_pc = insn->arg;
-  uint32_t continue_pc = ctx->frame_top->pc;  /* already advanced by drive loop */
+  uint32_t continue_pc = KosDynFrame_PC(ctx->frame_top);  /* already advanced by drive loop */
   KosDynRegion *region = kos_dyn_push_region(ctx, KOS_REGION_LOOP,
                                              break_pc, continue_pc);
   if (! region) {
@@ -4089,9 +4116,9 @@ KOS_OP_HANDLER(PUSH_LOOP) {
 
   /* Initialize loop result to None */
   Py_INCREF(Py_None);
-  region->result = Py_None;
+  KosDynRegion_RESULT(region) = Py_None;
 
-  if (KosStackBlock_PushBlock(&ctx->frame_top->stack) < 0) {
+  if (KosStackBlock_PushBlock(&KosDynFrame_STACK(ctx->frame_top)) < 0) {
     kos_dyn_pop_region(ctx, region);
     return -1;
   }
@@ -4112,7 +4139,7 @@ KOS_OP_HANDLER(PUSH_NS) {
   PyObject *nspec = NULL;
   PyObject *names = NULL;
   PyObject *const *args = NULL;
-  PyObject *parent = ctx->frame_top->ns;
+  PyObject *parent = KosDynFrame_NS(ctx->frame_top);
   PyObject *new_ns = NULL;
   KosDynNs *ns_node = NULL;
 
@@ -4123,13 +4150,13 @@ KOS_OP_HANDLER(PUSH_NS) {
   }
 
   if (opa == 0) {
-    nspec = KosStackBlock_PopRef(&ctx->frame_top->stack);
+    nspec = KosStackBlock_PopRef(&KosDynFrame_STACK(ctx->frame_top));
     if (! nspec) {
       PyErr_SetString(PyExc_RuntimeError, "PUSH_NS stack underrun");
       return -1;
     }
   } else {
-    names = KosStackBlock_PopRef(&ctx->frame_top->stack);
+    names = KosStackBlock_PopRef(&KosDynFrame_STACK(ctx->frame_top));
     if (! names) {
       PyErr_SetString(PyExc_RuntimeError, "PUSH_NS stack underrun");
       return -1;
@@ -4140,7 +4167,7 @@ KOS_OP_HANDLER(PUSH_NS) {
                    "PUSH_NS names must be tuple, not %R", names);
       return -1;
     }
-    args = KosStackBlock_TailPtr(ctx->frame_top->stack, (size_t) opa + 1);
+    args = KosStackBlock_TailPtr(KosDynFrame_STACK(ctx->frame_top), (size_t) opa + 1);
     if (! args) {
       Py_DECREF(names);
       PyErr_SetString(PyExc_RuntimeError, "PUSH_NS stack underrun");
@@ -4193,7 +4220,7 @@ KOS_OP_HANDLER(PUSH_NS) {
         return -1;
       }
     }
-    KosStackBlock_DropNoErr(&ctx->frame_top->stack, (size_t) opa + 1);
+    KosStackBlock_DropNoErr(&KosDynFrame_STACK(ctx->frame_top), (size_t) opa + 1);
     Py_DECREF(names);
   }
 
@@ -4205,8 +4232,8 @@ KOS_OP_HANDLER(PUSH_NS) {
     return -1;
   }
 
-  Py_DECREF(ctx->frame_top->ns);
-  ctx->frame_top->ns = new_ns;
+  Py_DECREF(KosDynFrame_NS(ctx->frame_top));
+  KosDynFrame_NS(ctx->frame_top) = new_ns;
 
   (void) out_ev;
   return 0;
@@ -4223,12 +4250,12 @@ KOS_OP_HANDLER(CLEAR_LOOP) {
     return -1;
   }
   KosDynRegion *region = (KosDynRegion *) ctx->dyn_top;
-  if (region->style != KOS_REGION_LOOP && region->style != KOS_REGION_FOREACH) {
+  if (KosDynRegion_STYLE(region) != KOS_REGION_LOOP && KosDynRegion_STYLE(region) != KOS_REGION_FOREACH) {
     PyErr_SetString(PyExc_RuntimeError,
                     "CLEAR_LOOP: top is not a LOOP or FOREACH region");
     return -1;
   }
-  region->enabled = 0;
+  KosDynRegion_ENABLED(region) = 0;
   (void) out_ev;
   (void) insn;
   return 0;
@@ -4253,7 +4280,7 @@ KOS_OP_HANDLER(POP_BEGIN) {
 
 /**
    POP_LOOP: arg unused. Pop LOOP/FOREACH region, drop stack block,
-   and push region->result to the operand stack as the loop expression result.
+   and push KosDynRegion_RESULT(region) to the operand stack as the loop expression result.
 */
 KOS_OP_HANDLER(POP_LOOP) {
   if (! ctx->dyn_top || ! KosDynNode_IS_REGION(ctx->dyn_top)) {
@@ -4261,27 +4288,27 @@ KOS_OP_HANDLER(POP_LOOP) {
     return -1;
   }
   KosDynRegion *region = (KosDynRegion *) ctx->dyn_top;
-  if (region->style != KOS_REGION_LOOP && region->style != KOS_REGION_FOREACH) {
+  if (KosDynRegion_STYLE(region) != KOS_REGION_LOOP && KosDynRegion_STYLE(region) != KOS_REGION_FOREACH) {
     PyErr_SetString(PyExc_RuntimeError,
                     "POP_LOOP: top is not a LOOP or FOREACH region");
     return -1;
   }
 
   /* Get result before popping region (region owns the reference) */
-  PyObject *result = region->result;
+  PyObject *result = KosDynRegion_RESULT(region);
   Py_INCREF(result);
 
   /* Drop the stack block (both LOOP and FOREACH now push blocks) */
-  if (KosStackBlock_DropBlock(&ctx->frame_top->stack) < 0) {
+  if (KosStackBlock_DropBlock(&KosDynFrame_STACK(ctx->frame_top)) < 0) {
     Py_DECREF(result);
     return -1;
   }
 
-  /* Pop the region (this DECREFs region->result) */
+  /* Pop the region (this DECREFs KosDynRegion_RESULT(region)) */
   kos_dyn_pop_region(ctx, region);
 
   /* Push result to stack as loop expression value */
-  if (KosStackBlock_PushRef(&ctx->frame_top->stack, result) < 0) {
+  if (KosStackBlock_PushRef(&KosDynFrame_STACK(ctx->frame_top), result) < 0) {
     Py_DECREF(result);
     return -1;
   }
@@ -4304,10 +4331,10 @@ KOS_OP_HANDLER(POP_NS) {
   }
 
   KosDynNs *ns_node = (KosDynNs *) ctx->dyn_top;
-  PyObject *prior = ns_node->saved_ns;
+  PyObject *prior = KosDynNs_SAVED_NS(ns_node);
   Py_INCREF(prior);
-  Py_DECREF(ctx->frame_top->ns);
-  ctx->frame_top->ns = prior;
+  Py_DECREF(KosDynFrame_NS(ctx->frame_top));
+  KosDynFrame_NS(ctx->frame_top) = prior;
   kos_dyn_pop_ns(ctx, ns_node);
 
   (void) out_ev;
@@ -4392,12 +4419,12 @@ static int try_local_exception_handler(KosContext *ctx, KosEvent *out_ev) {
     return 0;
   }
 
-  uint32_t handler_pc = region->break_pc;
+  uint32_t handler_pc = KosDynRegion_BREAK_PC(region);
   {
     KosTryHandler th;
-    if (kos_try_handler_for((PyObject *) ctx->frame_top->code,
-                            ctx->frame_top->pc, &th) == 0) {
-      if (region->style == KOS_REGION_FINALLY && th.finally_pc != KOS_EXTENT_NONE) {
+    if (kos_try_handler_for((PyObject *) KosDynFrame_CODE(ctx->frame_top),
+                            KosDynFrame_PC(ctx->frame_top), &th) == 0) {
+      if (KosDynRegion_STYLE(region) == KOS_REGION_FINALLY && th.finally_pc != KOS_EXTENT_NONE) {
         handler_pc = th.finally_pc;
       }
       else if (th.except_pc != KOS_EXTENT_NONE) {
@@ -4406,8 +4433,8 @@ static int try_local_exception_handler(KosContext *ctx, KosEvent *out_ev) {
     }
   }
 
-  ctx->frame_top->pc = handler_pc;
-  region->enabled = 0;
+  KosDynFrame_PC(ctx->frame_top) = handler_pc;
+  KosDynRegion_ENABLED(region) = 0;
 
   /* Set aside exception in excinfo and clear so handler runs without PyErr set */
   {
@@ -4417,7 +4444,7 @@ static int try_local_exception_handler(KosContext *ctx, KosEvent *out_ev) {
     PyErr_Clear();
   }
 
-  if (region->style == KOS_REGION_FINALLY)
+  if (KosDynRegion_STYLE(region) == KOS_REGION_FINALLY)
     ctx->handling_raise = 1;
 
   return 1;
@@ -4488,7 +4515,7 @@ int koskari_eval(KosContext *ctx, KosEvent *out_ev) {
 
   /* Re-entry: inject value from completed Python await */
   if (ctx->py_await_inject) {
-    if (KosStackBlock_PushRef(&ctx->frame_top->stack, ctx->py_await_inject) < 0) {
+    if (KosStackBlock_PushRef(&KosDynFrame_STACK(ctx->frame_top), ctx->py_await_inject) < 0) {
       Py_DECREF(ctx->py_await_inject);
       ctx->py_await_inject = NULL;
       eval_ret = -1;
@@ -4499,7 +4526,7 @@ int koskari_eval(KosContext *ctx, KosEvent *out_ev) {
 
   /* Re-entry: inject value from send() when resuming from yield */
   if (ctx->py_yield_inject) {
-    if (KosStackBlock_PushRef(&ctx->frame_top->stack, ctx->py_yield_inject) < 0) {
+    if (KosStackBlock_PushRef(&KosDynFrame_STACK(ctx->frame_top), ctx->py_yield_inject) < 0) {
       Py_DECREF(ctx->py_yield_inject);
       ctx->py_yield_inject = NULL;
       eval_ret = -1;
@@ -4581,11 +4608,11 @@ int koskari_eval(KosContext *ctx, KosEvent *out_ev) {
       }
       /* Unwind pending async gen so exception propagates to caller frame. */
       if (ctx->pending_agen && ctx->frame_top
-          && ctx->frame_top->base.parent != NULL) {
+          && KosDynNode_PARENT(ctx->frame_top) != NULL) {
         KosPyAsyncGen *agen = (KosPyAsyncGen *) ctx->pending_agen;
         KosDynFrame *detached_frame = NULL;
         if (kos_dyn_detach_top_frame(ctx, &detached_frame) == 0 && detached_frame) {
-          detached_frame->base.parent = NULL;
+          KosDynNode_PARENT(detached_frame) = NULL;
           agen->closed = 1;
           agen->in_progress = 0;
         }
@@ -4600,8 +4627,8 @@ int koskari_eval(KosContext *ctx, KosEvent *out_ev) {
       goto koskari_eval_cleanup;
     }
 
-    KosCode *code = ctx->frame_top->code;
-    uint32_t pc = ctx->frame_top->pc;
+    KosCode *code = KosDynFrame_CODE(ctx->frame_top);
+    uint32_t pc = KosDynFrame_PC(ctx->frame_top);
 
     if (unlikely(pc >= code->code_len)) {
       SAYF("[eval] pc=%u OUT OF RANGE (code_len=%u)\n",
@@ -4614,8 +4641,8 @@ int koskari_eval(KosContext *ctx, KosEvent *out_ev) {
     KosOp *insn = &code->code[pc];
     SAYF("[eval] pc=%u op=%u arg=%u\n",
          (unsigned) pc, (unsigned) insn->op, (unsigned) insn->arg);
-    trace_stack("  before", ctx->frame_top->stack);
-    ctx->frame_top->pc = pc + 1;
+    trace_stack("  before", KosDynFrame_STACK(ctx->frame_top));
+    KosDynFrame_PC(ctx->frame_top) = pc + 1;
 
     if (unlikely((KosOpCode) insn->op > KOS_OP_THEEND)) {
       PyErr_Format(PyExc_RuntimeError, "invalid opcode %u",
@@ -4637,12 +4664,12 @@ int koskari_eval(KosContext *ctx, KosEvent *out_ev) {
       if (unlikely(op_res != 0)) {
         if (PyErr_Occurred()) {
           if (ctx->pending_agen && ctx->frame_top
-              && ctx->frame_top->base.parent != NULL) {
+              && KosDynNode_PARENT(ctx->frame_top) != NULL) {
             KosPyAsyncGen *agen = (KosPyAsyncGen *) ctx->pending_agen;
             KosDynFrame *detached_frame = NULL;
             if (kos_dyn_detach_top_frame(ctx, &detached_frame) == 0
                 && detached_frame) {
-              detached_frame->base.parent = NULL;
+              KosDynNode_PARENT(detached_frame) = NULL;
               agen->closed = 1;
               agen->in_progress = 0;
             }
@@ -4660,7 +4687,7 @@ int koskari_eval(KosContext *ctx, KosEvent *out_ev) {
         goto koskari_eval_cleanup;
       }
     }
-    trace_stack("  after ", ctx->frame_top->stack);
+    trace_stack("  after ", KosDynFrame_STACK(ctx->frame_top));
   }
 
 koskari_eval_cleanup:

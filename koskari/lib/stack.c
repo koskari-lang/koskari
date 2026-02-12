@@ -48,7 +48,7 @@
 
 static size_t block_freecount = 0;
 
-
+/* Linked-list cache for stack blocks; same pattern used for dyn nodes and context. */
 static KosStackBlock *block_freelist = NULL;
 
 

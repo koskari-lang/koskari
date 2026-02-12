@@ -133,11 +133,11 @@ There are no **partially** implemented opcodes; each handler is either full or s
 - **Import**: Import system integration
 - **Tracebacks**: Line number support
 
-## Missing/To Design
+### Continuations
+- **Delimited continuations (reset/shift)**: PUSH_PROMPT, SET_PROMPT_HANDLER, POP_PROMPT, SHIFT capture the continuation up to a prompt; INVOKE_K and INVOKE_K_VAR invoke captured delimited continuations. Multi-shot; transfer plans and LCA-based wind/unwind run on invocation. See design/interpreter/callcc.md.
+- **Undelimited call/cc**: PUSH_CC, CAPTURE_CC, POP_CC capture an undelimited continuation (stored with token_ref = owning KosEvaluatorToken). Invocation is via CALL 0 or CALL 1 with stack [callable, arg_0, ...]. If the continuation’s token matches the current evaluator token (or is undelimited with no token_ref), it is applied directly; otherwise the VM sets KoskariContinuationApply and returns -1 so the exception propagates to the caller. Python type KosPyContinuation is callable; cross-token invoke raises KoskariContinuationApply. See design/interpreter/evaluator-token-continuation.md.
 
-### Call/CC (undelimited)
-- **Delimited continuations (reset/shift)**: Implemented. PUSH_PROMPT, SET_PROMPT_HANDLER, POP_PROMPT, SHIFT capture the continuation up to a prompt; INVOKE_K and INVOKE_K_VAR invoke captured delimited continuations. Multi-shot; transfer plans and LCA-based wind/unwind run on invocation. See design/interpreter/callcc.md.
-- **Undelimited call/cc**: Implemented. PUSH_CC, CAPTURE_CC, POP_CC capture an undelimited continuation (stored with token_ref = owning KosEvaluatorToken). Invocation is via CALL 0 or CALL 1 with stack [callable, arg_0, ...]. If the continuation’s token matches the current evaluator token (or is undelimited with no token_ref), it is applied directly; otherwise the VM sets KoskariContinuationApply and returns -1 so the exception propagates to the caller. Python type KosPyContinuation is callable; cross-token invoke raises KoskariContinuationApply. See design/interpreter/evaluator-token-continuation.md.
+## Missing/To Design
 
 ### Additional Features
 - **Comprehensions**: List/dict/set comprehensions
@@ -173,6 +173,8 @@ There are no **partially** implemented opcodes; each handler is either full or s
 
 **Evaluator Core** (C extension, eval.c/eval.h):
 - VM structures: `KosFrame`, `KosContext`, `KosHandler`, `KosEvent`
+- Dynamic chain: single tagged-union `KosDynNode` (all node kinds); field access via macros only (dynchain.h)
+- Allocator caches: dyn-node freelist, KosContinuation freelist (dynchain.c), KosContext cache (eval.c); caps tunable
 - Python wrappers: `Continuation`, `Coroutine`, `AsyncGenerator`
 - Wind/unwind: `kos_push_wind`, `kos_push_before_wind`, `kos_push_after_wind`, `kos_pop_wind`
 - Continuation application: `kos_apply_continuation` with LCA computation and hook execution

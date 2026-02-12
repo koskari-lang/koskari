@@ -50,24 +50,6 @@ typedef struct KosContext KosContext;
 struct KosDynNode;
 typedef struct KosDynNode KosDynNode;
 
-struct KosDynFrame;
-typedef struct KosDynFrame KosDynFrame;
-
-struct KosDynPrompt;
-typedef struct KosDynPrompt KosDynPrompt;
-
-struct KosDynWind;
-typedef struct KosDynWind KosDynWind;
-
-struct KosDynRegion;
-typedef struct KosDynRegion KosDynRegion;
-
-struct KosDynNs;
-typedef struct KosDynNs KosDynNs;
-
-struct KosDynCC;
-typedef struct KosDynCC KosDynCC;
-
 struct KosContinuation;
 typedef struct KosContinuation KosContinuation;
 
@@ -114,121 +96,6 @@ typedef enum KosDynFlags {
 } KosDynFlags;
 
 
-/* === KosDynNode base structure === */
-
-
-/**
-   KosDynNode is the base structure for all dynamic chain nodes.
-   All node types embed this as their first member.
-
-   The parent pointer links nodes from inner to outer scope.
-   Walking parent pointers traverses the dynamic extent.
-*/
-
-struct KosDynNode {
-  KosDynNode *parent;   /* enclosing node (toward root) */
-  KosDynKind kind;      /* discriminator for node type */
-  uint32_t flags;       /* KosDynFlags bitfield */
-};
-
-
-/* === KosDynFrame: function activation record === */
-
-
-/**
-   KosDynFrame represents a function activation in the dynamic chain.
-   This is the primary execution unit; the VM executes bytecode from
-   the topmost frame.
-
-   Invariants:
-   - code is borrowed (not owned by frame)
-   - stack is owned (released on frame free)
-   - ns is owned (DECREF'd on frame free)
-*/
-
-struct KosDynFrame {
-  KosDynNode base;        /* must be first */
-
-  KosCode *code;          /* bytecode object (borrowed) */
-  uint32_t pc;            /* program counter */
-
-  KosStackBlock *stack;   /* operand stack (owned) */
-  PyObject *ns;           /* namespace PyObject (owned ref) */
-
-  uint32_t frame_flags;   /* frame-specific flags */
-};
-
-
-/* === KosDynPrompt: reset delimiter === */
-
-
-/**
-   KosDynPrompt marks a delimiter for delimited continuations.
-
-   When shift captures a continuation, it captures up to (but not
-   including) the nearest matching prompt. The prompt_id is used
-   for matching; 0 is the default prompt tag.
-
-   The handler_code/handler_pc fields are optional; they point to
-   the handler body that runs after shift aborts to this prompt.
-*/
-
-struct KosDynPrompt {
-  KosDynNode base;        /* must be first */
-
-  uint32_t prompt_id;     /* tag for matching (0 = default) */
-
-  KosCode *handler_code;  /* handler body code (borrowed, or NULL) */
-  uint32_t handler_pc;    /* handler entry point */
-};
-
-
-/* === KosDynCC: undelimited continuation (call/cc) block === */
-
-
-/**
-   KosDynCC marks the extent of a call/cc block. When CAPTURE_CC runs,
-   the continuation resumes at resume_pc (instruction after POP_CC) in
-   the frame that is the parent of this node.
-*/
-
-struct KosDynCC {
-  KosDynNode base;        /* must be first */
-
-  uint32_t resume_pc;     /* instruction index to resume at on invoke */
-};
-
-
-/* === KosDynWind: dynamic-wind extent === */
-
-
-/**
-   KosDynWind represents a dynamic-wind protected region.
-
-   The before_code/before_pc point to the "before" hook block.
-   The after_code/after_pc point to the "after" hook block.
-   Either may be NULL if the corresponding hook is not needed.
-
-   The entered flag tracks whether the before hook has run.
-   This prevents re-execution during continuation transfers.
-
-   Hooks are bytecode blocks terminated by END_WIND opcode.
-   They execute via the hook runner, not as normal function calls.
-*/
-
-struct KosDynWind {
-  KosDynNode base;        /* must be first */
-
-  KosCode *before_code;   /* before hook code (borrowed, or NULL) */
-  uint32_t before_pc;     /* before hook entry point */
-
-  KosCode *after_code;    /* after hook code (borrowed, or NULL) */
-  uint32_t after_pc;      /* after hook entry point */
-
-  uint8_t entered;        /* nonzero if before hook has run */
-};
-
-
 /* === KosRegionStyle enum === */
 
 
@@ -250,55 +117,69 @@ typedef enum KosRegionStyle {
 } KosRegionStyle;
 
 
-/* === KosDynRegion: block-local control === */
+/* === KosDynNode: tagged union for all chain node kinds === */
 
 
 /**
-   KosDynRegion represents block-local control structures like
-   try/finally, loops, and with statements.
-
-   The break_pc and continue_pc are jump targets for control transfers:
-   - For TRY: break_pc is exception handler, continue_pc unused
-   - For FINALLY: break_pc is finally block
-   - For LOOP: break_pc is break target, continue_pc is continue target
-   - For WITH: break_pc is exit handler
-   - For FOREACH: break_pc is break target, continue_pc is continue target
-
-   The enabled flag controls whether the region is active for
-   exception handling. It can be disabled during cleanup.
-
-   For LOOP and FOREACH regions, payload fields store region-lifetime
-   state that would otherwise require operand stack positioning tricks:
-   - result: accumulated loop result value (owned reference)
-   - iter: iterator object for FOREACH (owned reference, NULL for LOOP)
-   - exhausted: flag indicating iterator exhaustion for FOREACH
+   KosDynNode is the single structure for all dynamic chain nodes.
+   Base fields (parent, kind, flags) are fixed; the union u holds
+   kind-specific payloads. All node kinds share one allocation size
+   for a single freelist. Use the accessor macros; do not touch u
+   directly outside this header.
 */
 
-struct KosDynRegion {
-  KosDynNode base;        /* must be first */
+struct KosDynNode {
+  KosDynNode *parent;   /* enclosing node (toward root); reused as freelist link */
+  KosDynKind kind;      /* discriminator for node type */
+  uint32_t flags;       /* KosDynFlags bitfield */
 
-  KosRegionStyle style;   /* region type */
-  uint32_t break_pc;      /* break/exit jump target */
-  uint32_t continue_pc;   /* continue jump target (or 0) */
-
-  uint8_t enabled;        /* handler active flag */
-
-  /* Payload fields for LOOP and FOREACH regions */
-  PyObject *result;       /* accumulated loop result (owned ref) */
-  PyObject *iter;         /* iterator for FOREACH (owned ref, NULL for LOOP) */
-  uint8_t exhausted;      /* FOREACH: iterator exhausted flag */
+  union {
+    struct {
+      KosCode *code;
+      uint32_t pc;
+      KosStackBlock *stack;
+      PyObject *ns;
+      uint32_t frame_flags;
+    } frame;
+    struct {
+      uint32_t prompt_id;
+      KosCode *handler_code;
+      uint32_t handler_pc;
+    } prompt;
+    struct {
+      uint32_t resume_pc;
+    } cc;
+    struct {
+      KosCode *before_code;
+      uint32_t before_pc;
+      KosCode *after_code;
+      uint32_t after_pc;
+      uint8_t entered;
+    } wind;
+    struct {
+      KosRegionStyle style;
+      uint32_t break_pc;
+      uint32_t continue_pc;
+      uint8_t enabled;
+      PyObject *result;
+      PyObject *iter;
+      uint8_t exhausted;
+    } region;
+    struct {
+      PyObject *saved_ns;
+    } ns;
+    struct {
+      /* pycall: no extra fields */
+    } pycall;
+  } u;
 };
 
-
-/**
-   KosDynNs marks a namespace scope from PUSH_NS.  Stores the prior
-   frame namespace for restore on POP_NS.
-*/
-struct KosDynNs {
-  KosDynNode base;        /* must be first */
-
-  PyObject *saved_ns;     /* namespace to restore on pop (owned ref) */
-};
+typedef struct KosDynNode KosDynFrame;
+typedef struct KosDynNode KosDynPrompt;
+typedef struct KosDynNode KosDynWind;
+typedef struct KosDynNode KosDynRegion;
+typedef struct KosDynNode KosDynNs;
+typedef struct KosDynNode KosDynCC;
 
 
 /* === KosContinuation: captured delimited continuation === */
@@ -1225,26 +1106,33 @@ int kos_hookrunner_traverse(
 #define KosDynNode_IS_PYCALL(n)  (KosDynNode_KIND(n) == KOS_DYN_PYCALL)
 #define KosDynNode_IS_CC(n)      (KosDynNode_KIND(n) == KOS_DYN_CC)
 
-#define KosDynFrame_CODE(f)      (((KosDynFrame *)(f))->code)
-#define KosDynFrame_PC(f)        (((KosDynFrame *)(f))->pc)
-#define KosDynFrame_STACK(f)     (((KosDynFrame *)(f))->stack)
-#define KosDynFrame_NS(f)        (((KosDynFrame *)(f))->ns)
+#define KosDynFrame_CODE(f)       (((KosDynNode *)(f))->u.frame.code)
+#define KosDynFrame_PC(f)         (((KosDynNode *)(f))->u.frame.pc)
+#define KosDynFrame_STACK(f)      (((KosDynNode *)(f))->u.frame.stack)
+#define KosDynFrame_NS(f)         (((KosDynNode *)(f))->u.frame.ns)
+#define KosDynFrame_FLAGS(f)      (((KosDynNode *)(f))->u.frame.frame_flags)
 
-#define KosDynPrompt_ID(p)       (((KosDynPrompt *)(p))->prompt_id)
+#define KosDynPrompt_ID(p)        (((KosDynNode *)(p))->u.prompt.prompt_id)
+#define KosDynPrompt_HANDLER_CODE(p)  (((KosDynNode *)(p))->u.prompt.handler_code)
+#define KosDynPrompt_HANDLER_PC(p)    (((KosDynNode *)(p))->u.prompt.handler_pc)
 
-#define KosDynWind_BEFORE_CODE(w)  (((KosDynWind *)(w))->before_code)
-#define KosDynWind_BEFORE_PC(w)    (((KosDynWind *)(w))->before_pc)
-#define KosDynWind_AFTER_CODE(w)   (((KosDynWind *)(w))->after_code)
-#define KosDynWind_AFTER_PC(w)     (((KosDynWind *)(w))->after_pc)
-#define KosDynWind_ENTERED(w)      (((KosDynWind *)(w))->entered)
+#define KosDynCC_RESUME_PC(c)     (((KosDynNode *)(c))->u.cc.resume_pc)
 
-#define KosDynRegion_STYLE(r)      (((KosDynRegion *)(r))->style)
-#define KosDynRegion_BREAK_PC(r)   (((KosDynRegion *)(r))->break_pc)
-#define KosDynRegion_CONTINUE_PC(r) (((KosDynRegion *)(r))->continue_pc)
-#define KosDynRegion_ENABLED(r)    (((KosDynRegion *)(r))->enabled)
-#define KosDynRegion_RESULT(r)     (((KosDynRegion *)(r))->result)
-#define KosDynRegion_ITER(r)       (((KosDynRegion *)(r))->iter)
-#define KosDynRegion_EXHAUSTED(r)  (((KosDynRegion *)(r))->exhausted)
+#define KosDynWind_BEFORE_CODE(w) (((KosDynNode *)(w))->u.wind.before_code)
+#define KosDynWind_BEFORE_PC(w)   (((KosDynNode *)(w))->u.wind.before_pc)
+#define KosDynWind_AFTER_CODE(w)  (((KosDynNode *)(w))->u.wind.after_code)
+#define KosDynWind_AFTER_PC(w)    (((KosDynNode *)(w))->u.wind.after_pc)
+#define KosDynWind_ENTERED(w)     (((KosDynNode *)(w))->u.wind.entered)
+
+#define KosDynRegion_STYLE(r)      (((KosDynNode *)(r))->u.region.style)
+#define KosDynRegion_BREAK_PC(r)   (((KosDynNode *)(r))->u.region.break_pc)
+#define KosDynRegion_CONTINUE_PC(r) (((KosDynNode *)(r))->u.region.continue_pc)
+#define KosDynRegion_ENABLED(r)    (((KosDynNode *)(r))->u.region.enabled)
+#define KosDynRegion_RESULT(r)     (((KosDynNode *)(r))->u.region.result)
+#define KosDynRegion_ITER(r)       (((KosDynNode *)(r))->u.region.iter)
+#define KosDynRegion_EXHAUSTED(r)  (((KosDynNode *)(r))->u.region.exhausted)
+
+#define KosDynNs_SAVED_NS(n)      (((KosDynNode *)(n))->u.ns.saved_ns)
 
 
 /* === Unit lifecycle === */

@@ -22,84 +22,30 @@ The evaluator uses a unified **dynamic chain** that links all execution context:
 frames, prompts, wind extents, and control regions. This replaces the previous
 separate frame chain and handler chain.
 
-**KosDynNode** — Base structure for all chain nodes:
+**KosDynNode** — Single tagged-union struct for all chain node kinds. Base fields
+`parent`, `kind`, `flags` are followed by a union `u` with variants: `frame`,
+`prompt`, `cc`, `wind`, `region`, `ns`, `pycall`. Typedefs (KosDynFrame,
+KosDynPrompt, KosDynWind, KosDynRegion, KosDynNs, KosDynCC) all refer to this
+same struct. **All field access must use the macros** defined in dynchain.h;
+do not touch union members or base fields directly. Node kinds: KOS_DYN_FRAME,
+KOS_DYN_PROMPT, KOS_DYN_WIND, KOS_DYN_REGION, KOS_DYN_NS, KOS_DYN_CC,
+KOS_DYN_PYCALL.
 
-```c
-typedef enum KosDynKind {
-  KOS_DYN_FRAME,   /* function activation */
-  KOS_DYN_PROMPT,  /* reset delimiter */
-  KOS_DYN_WIND,    /* dynamic-wind extent */
-  KOS_DYN_REGION,  /* block-local control (try, with, loop) */
-  KOS_DYN_PYCALL,  /* Python/C boundary marker */
-} KosDynKind;
+- **Frame** (u.frame): code (borrowed), pc, stack (owned), ns (owned), frame_flags.
+  Macros: KosDynFrame_CODE, KosDynFrame_PC, KosDynFrame_STACK, KosDynFrame_NS, KosDynFrame_FLAGS.
+- **Prompt** (u.prompt): prompt_id, handler_code, handler_pc.
+  Macros: KosDynPrompt_ID, KosDynPrompt_HANDLER_CODE, KosDynPrompt_HANDLER_PC.
+- **Wind** (u.wind): before_code, before_pc, after_code, after_pc, entered.
+  Macros: KosDynWind_BEFORE_CODE, KosDynWind_BEFORE_PC, KosDynWind_AFTER_CODE, KosDynWind_AFTER_PC, KosDynWind_ENTERED.
+- **Region** (u.region): style (KosRegionStyle: TRY, FINALLY, LOOP, WITH, FOREACH, etc.), break_pc, continue_pc, enabled, result, iter, exhausted.
+  Macros: KosDynRegion_STYLE, KosDynRegion_BREAK_PC, KosDynRegion_CONTINUE_PC, KosDynRegion_ENABLED, etc.
+- **Ns** (u.ns): saved_ns. Macro: KosDynNs_SAVED_NS.
+- **CC** (u.cc): resume_pc. Macro: KosDynCC_RESUME_PC.
+- **Pycall** (u.pycall): no extra fields; marks Python/C boundary.
 
-struct KosDynNode {
-  KosDynNode *parent;   /* enclosing node (toward root) */
-  KosDynKind kind;      /* discriminator for node type */
-  uint32_t flags;       /* KosDynFlags bitfield */
-};
-```
-
-**KosDynFrame** — Function activation record:
-
-```c
-struct KosDynFrame {
-  KosDynNode base;        /* must be first */
-  KosCode *code;          /* bytecode object (borrowed) */
-  uint32_t pc;            /* program counter */
-  KosStackBlock *stack;   /* operand stack (owned) */
-  PyObject *ns;           /* namespace PyObject (owned ref) */
-  uint32_t frame_flags;   /* frame-specific flags */
-};
-```
-
-**KosDynPrompt** — Delimiter for delimited continuations (reset):
-
-```c
-struct KosDynPrompt {
-  KosDynNode base;        /* must be first */
-  uint32_t prompt_id;     /* tag for matching (0 = default) */
-  KosCode *handler_code;  /* handler body code (borrowed, or NULL) */
-  uint32_t handler_pc;    /* handler entry point */
-};
-```
-
-**KosDynWind** — Dynamic-wind extent with hook blocks:
-
-```c
-struct KosDynWind {
-  KosDynNode base;        /* must be first */
-  KosCode *before_code;   /* before hook code (borrowed, or NULL) */
-  uint32_t before_pc;     /* before hook entry point */
-  KosCode *after_code;    /* after hook code (borrowed, or NULL) */
-  uint32_t after_pc;      /* after hook entry point */
-  uint8_t entered;        /* nonzero if before hook has run */
-};
-```
-
-**KosDynRegion** — Block-local control (try/finally/loop/with):
-
-```c
-typedef enum KosRegionStyle {
-  KOS_REGION_TRY,
-  KOS_REGION_FINALLY,
-  KOS_REGION_LOOP,
-  KOS_REGION_WITH,
-  KOS_REGION_FOREACH,
-  KOS_REGION_AWAIT_WITH,
-  KOS_REGION_AWAIT_FOREACH,
-  KOS_REGION_NS,
-  KOS_REGION_BEGIN,
-} KosRegionStyle;
-
-struct KosDynRegion {
-  KosDynNode base;        /* must be first */
-  KosRegionStyle style;   /* region type */
-  uint32_t a_label;       /* primary jump target */
-  uint32_t b_label;       /* secondary jump target (or 0) */
-  uint8_t enabled;        /* handler active flag */
-};
-```
+All nodes are allocated from a single-size pool in dynchain.c (one freelist for
+all kinds). KosContinuation and KosContext have separate freelists/caches (see
+dynchain.c and eval.c).
 
 ### KosContext — Top-level VM Execution State
 

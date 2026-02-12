@@ -40,10 +40,10 @@ static int test_dynframe_new_free(void) {
     KosDynFrame *frame = kos_dynframe_new(NULL, NULL, ns, NULL);
     TEST_ASSERT_NOT_NULL(frame, "create frame");
 
-    TEST_ASSERT_EQ(frame->base.kind, KOS_DYN_FRAME, "frame kind is FRAME");
-    TEST_ASSERT_NULL(frame->base.parent, "frame parent is NULL");
-    TEST_ASSERT_EQ(frame->pc, 0, "frame pc is 0");
-    TEST_ASSERT_SAME(frame->ns, ns, "frame ns is set");
+    TEST_ASSERT_EQ(KosDynNode_KIND(frame), KOS_DYN_FRAME, "frame kind is FRAME");
+    TEST_ASSERT_NULL(KosDynNode_PARENT(frame), "frame parent is NULL");
+    TEST_ASSERT_EQ(KosDynFrame_PC(frame), 0, "frame pc is 0");
+    TEST_ASSERT_SAME(KosDynFrame_NS(frame), ns, "frame ns is set");
 
     kos_dynframe_free(frame);
 
@@ -59,14 +59,14 @@ static int test_dynframe_clone(void) {
     KosDynFrame *frame = kos_dynframe_new(NULL, NULL, ns, NULL);
     TEST_ASSERT_NOT_NULL(frame, "create frame");
 
-    frame->pc = 42;
+    KosDynFrame_PC(frame) = 42;
 
     KosDynFrame *clone = kos_dynframe_clone(frame);
     TEST_ASSERT_NOT_NULL(clone, "clone frame");
 
     TEST_ASSERT_NOT_SAME(frame, clone, "clone is different object");
-    TEST_ASSERT_EQ(clone->pc, 42, "clone has same pc");
-    TEST_ASSERT(clone->base.flags & KOS_DYNF_CLONED, "clone has CLONED flag");
+    TEST_ASSERT_EQ(KosDynFrame_PC(clone), 42, "clone has same pc");
+    TEST_ASSERT(KosDynNode_FLAGS(clone) & KOS_DYNF_CLONED, "clone has CLONED flag");
 
     kos_dynframe_free(clone);
     kos_dynframe_free(frame);
@@ -83,8 +83,8 @@ static int test_dynprompt_new_free(void) {
     KosDynPrompt *prompt = kos_dynprompt_new(NULL, 123);
     TEST_ASSERT_NOT_NULL(prompt, "create prompt");
 
-    TEST_ASSERT_EQ(prompt->base.kind, KOS_DYN_PROMPT, "prompt kind is PROMPT");
-    TEST_ASSERT_EQ(prompt->prompt_id, 123, "prompt id is set");
+    TEST_ASSERT_EQ(KosDynNode_KIND(prompt), KOS_DYN_PROMPT, "prompt kind is PROMPT");
+    TEST_ASSERT_EQ(KosDynPrompt_ID(prompt), 123, "prompt id is set");
 
     kos_dynprompt_free(prompt);
 
@@ -100,10 +100,10 @@ static int test_dynwind_new_free(void) {
     KosDynWind *wind = kos_dynwind_new(NULL, NULL, 10, NULL, 20);
     TEST_ASSERT_NOT_NULL(wind, "create wind");
 
-    TEST_ASSERT_EQ(wind->base.kind, KOS_DYN_WIND, "wind kind is WIND");
-    TEST_ASSERT_EQ(wind->before_pc, 10, "wind before_pc is set");
-    TEST_ASSERT_EQ(wind->after_pc, 20, "wind after_pc is set");
-    TEST_ASSERT_EQ(wind->entered, 0, "wind entered is 0");
+    TEST_ASSERT_EQ(KosDynNode_KIND(wind), KOS_DYN_WIND, "wind kind is WIND");
+    TEST_ASSERT_EQ(KosDynWind_BEFORE_PC(wind), 10, "wind before_pc is set");
+    TEST_ASSERT_EQ(KosDynWind_AFTER_PC(wind), 20, "wind after_pc is set");
+    TEST_ASSERT_EQ(KosDynWind_ENTERED(wind), 0, "wind entered is 0");
 
     kos_dynwind_free(wind);
 
@@ -116,14 +116,14 @@ static int test_dynwind_clone(void) {
     KosDynWind *wind = kos_dynwind_new(NULL, NULL, 10, NULL, 20);
     TEST_ASSERT_NOT_NULL(wind, "create wind");
 
-    wind->entered = 1;
+    KosDynWind_ENTERED(wind) = 1;
 
     KosDynWind *clone = kos_dynwind_clone(wind);
     TEST_ASSERT_NOT_NULL(clone, "clone wind");
 
     TEST_ASSERT_NOT_SAME(wind, clone, "clone is different object");
-    TEST_ASSERT_EQ(clone->entered, 1, "clone has same entered state");
-    TEST_ASSERT(clone->base.flags & KOS_DYNF_CLONED, "clone has CLONED flag");
+    TEST_ASSERT_EQ(KosDynWind_ENTERED(clone), 1, "clone has same entered state");
+    TEST_ASSERT(KosDynNode_FLAGS(clone) & KOS_DYNF_CLONED, "clone has CLONED flag");
 
     kos_dynwind_free(clone);
     kos_dynwind_free(wind);
@@ -140,11 +140,11 @@ static int test_dynregion_new_free(void) {
     KosDynRegion *region = kos_dynregion_new(NULL, KOS_REGION_TRY, 100, 200);
     TEST_ASSERT_NOT_NULL(region, "create region");
 
-    TEST_ASSERT_EQ(region->base.kind, KOS_DYN_REGION, "region kind is REGION");
-    TEST_ASSERT_EQ(region->style, KOS_REGION_TRY, "region style is TRY");
-    TEST_ASSERT_EQ(region->break_pc, 100, "region break_pc is set");
-    TEST_ASSERT_EQ(region->continue_pc, 200, "region continue_pc is set");
-    TEST_ASSERT_EQ(region->enabled, 1, "region enabled by default");
+    TEST_ASSERT_EQ(KosDynNode_KIND(region), KOS_DYN_REGION, "region kind is REGION");
+    TEST_ASSERT_EQ(KosDynRegion_STYLE(region), KOS_REGION_TRY, "region style is TRY");
+    TEST_ASSERT_EQ(KosDynRegion_BREAK_PC(region), 100, "region break_pc is set");
+    TEST_ASSERT_EQ(KosDynRegion_CONTINUE_PC(region), 200, "region continue_pc is set");
+    TEST_ASSERT_EQ(KosDynRegion_ENABLED(region), 1, "region enabled by default");
 
     kos_dynregion_free(region);
 
@@ -188,16 +188,16 @@ static int test_chain_clone_segment(void) {
     TEST_ASSERT_NOT_NULL(cloned, "clone segment");
 
     /* Verify clone structure */
-    TEST_ASSERT_EQ(cloned->kind, KOS_DYN_PROMPT, "cloned top is prompt");
-    TEST_ASSERT_EQ(((KosDynPrompt *) cloned)->prompt_id, 3, "cloned has p3 id");
+    TEST_ASSERT_EQ(KosDynNode_KIND(cloned), KOS_DYN_PROMPT, "cloned top is prompt");
+    TEST_ASSERT_EQ(KosDynPrompt_ID(cloned), 3, "cloned has p3 id");
 
-    KosDynNode *cloned_parent = cloned->parent;
+    KosDynNode *cloned_parent = KosDynNode_PARENT(cloned);
     TEST_ASSERT_NOT_NULL(cloned_parent, "cloned has parent");
-    TEST_ASSERT_EQ(((KosDynPrompt *) cloned_parent)->prompt_id, 2,
+    TEST_ASSERT_EQ(KosDynPrompt_ID(cloned_parent), 2,
                    "cloned parent has p2 id");
 
     /* The bottom of the clone should point to p1 (the stop node) */
-    TEST_ASSERT_SAME(cloned_parent->parent, p1, "clone bottom points to stop");
+    TEST_ASSERT_SAME(KosDynNode_PARENT(cloned_parent), p1, "clone bottom points to stop");
 
     /* Free cloned segment (but not p1 which we didn't clone) */
     kos_dynchain_free(cloned, (KosDynNode *) p1);

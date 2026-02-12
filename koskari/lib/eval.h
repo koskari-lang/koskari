@@ -207,6 +207,8 @@ struct KosContext {
   uint32_t pending_agen_else_pc;  /* else PC for ITER_NEXT */
 
   uint32_t flags;            /* KosContextFlags */
+
+  struct KosContext *context_freelist_next;  /* link when on context freelist only */
 };
 
 
