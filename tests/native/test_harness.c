@@ -142,6 +142,12 @@ static int initialize_types(void) {
         return -1;
     }
 
+    /* Initialize func types (Expression, Function, Continuation, etc.) */
+    if (koskari_func_init(kos_lib_module)) {
+        fprintf(stderr, "Failed to initialize func types\n");
+        return -1;
+    }
+
     return 0;
 }
 

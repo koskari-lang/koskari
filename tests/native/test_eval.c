@@ -369,7 +369,7 @@ static int test_eval_push_cc_capture_cc_pop_cc_returns_continuation(void) {
     TEST_ASSERT(res == 0, "koskari_eval succeeded");
     TEST_ASSERT(ev.kind == KOS_EV_RETURN, "event is RETURN");
     TEST_ASSERT_NOT_NULL(ev.payload, "payload not NULL");
-    TEST_ASSERT(PyObject_TypeCheck(ev.payload, KosPyContinuation_Type()),
+    TEST_ASSERT(PyObject_TypeCheck(ev.payload, &KosPyContinuationType),
                 "result is Continuation");
 
     Py_XDECREF(ev.payload);
@@ -515,6 +515,7 @@ int run_eval_tests(void) {
     RUN_TEST(test_eval_try_except_catch);
     RUN_TEST(test_eval_try_finally_rerase);
     RUN_TEST(test_eval_reset_shift_invoke);
+    RUN_TEST(test_eval_push_cc_capture_cc_pop_cc_returns_continuation);
     RUN_TEST(test_eval_pop_prompt_without_prompt);
     RUN_TEST(test_eval_call_continuation_underrun);
     RUN_TEST(test_eval_call_wrong_type);

@@ -52,6 +52,7 @@
 #include "lib.h"
 #include "debug.h"
 
+#include <stdint.h>
 
 /* Opcode handlers are always inlined so the eval loop stays fast. */
 #if defined(__GNUC__) || defined(__clang__)
@@ -106,9 +107,15 @@ static int run_transfer_plan_to_completion(KosContext *ctx, KosEvent *out_ev) {
     SAYF("[eval] transfer complete inv_seg_top=%p\n",
          (void *) ctx->dyn_top);
     ctx->invocation_segment_top = ctx->dyn_top;
-    kos_free_transfer_plan(ctx->plan);
-    ctx->plan = NULL;
-    ctx->flags &= ~KOS_CTX_IN_TRANSFER;
+    /* Clear plan before freeing so any re-entrant eval (e.g. from
+     * Py_XDECREF(continuation_ref) triggering Python dealloc/__del__)
+     * does not see the plan and touch it while it is being freed. */
+    {
+      KosTransferPlan *p = ctx->plan;
+      ctx->plan = NULL;
+      ctx->flags &= ~KOS_CTX_IN_TRANSFER;
+      kos_free_transfer_plan(p);
+    }
     if (ctx->plan_stack)
       kos_resume_transfer_plan(ctx);
   }
@@ -1003,6 +1010,145 @@ KOS_OP_HANDLER(AWAIT) {
 }
 
 
+/*
+   CALL strategy: PopTail(n) and PopRef() give the handler owned callable and
+   args (tuple or NULL). Handler passes them to one helper as borrowed refs;
+   helpers do not take ownership and must not DECREF them. The handler does
+   Py_DECREF(callable) and Py_XDECREF(args) once after dispatch returns.
+*/
+
+/**
+   call_call_continuation: callable and args are borrowed. First element of
+   args is resume_val for the continuation (we INCREF it; we own that ref only).
+   Plan INCREFs callable on same-evaluator path; handler releases callable and args.
+*/
+static int call_call_continuation(
+    KosContext *ctx,
+    PyObject *callable,
+    PyObject *args,
+    KosEvent *out_ev,
+    KosOp *insn) {
+
+  KosContinuation *k = KosPyDelimitedContinuation_Check(callable)
+      ? ((KosPyDelimitedContinuation *) callable)->captured
+      : ((KosPyContinuation *) callable)->captured;
+
+  Py_ssize_t n = args ? PyTuple_GET_SIZE(args) : 0;
+  PyObject *resume_val = (n > 0) ? PyTuple_GET_ITEM(args, 0) : Py_None;
+  Py_INCREF(resume_val);
+
+  /* Defensive: wrappers are only created with non-NULL k at capture time. */
+  if (! k) {
+    PyErr_SetString(PyExc_RuntimeError,
+                    "continuation has no captured state");
+    Py_DECREF(resume_val);
+    return -1;
+  }
+
+  if (k->prompt_id != KOS_PROMPT_ID_UNDELIMITED
+      && ! kos_find_prompt(ctx, k->prompt_id)) {
+    Py_DECREF(resume_val);
+    PyErr_SetString(KoskariContinuationError,
+                    "continuation: prompt not found in dynamic chain");
+    return -1;
+  }
+
+  if (k->token_ref == (PyObject *) ctx->token
+      || (k->prompt_id == KOS_PROMPT_ID_UNDELIMITED && ! k->token_ref)) {
+    if (kos_invoke_continuation(ctx, k, resume_val, 0, callable) < 0) {
+      Py_DECREF(resume_val);
+      return -1;
+    }
+    Py_DECREF(resume_val);
+    (void) out_ev;
+    (void) insn;
+    return 0;
+  }
+
+  {
+    PyObject *exc = PyObject_CallNoArgs(KoskariContinuationApply);
+    if (exc) {
+      PyObject_SetAttrString(exc, "target", k->token_ref);
+      PyObject_SetAttrString(exc, "continuation", callable);
+      PyObject *args_tup = PyTuple_Pack(1, resume_val);
+      if (args_tup) {
+        PyObject_SetAttrString(exc, "args", args_tup);
+        Py_DECREF(args_tup);
+      }
+      PyErr_SetObject(KoskariContinuationApply, exc);
+      Py_DECREF(exc);
+    }
+  }
+  Py_DECREF(resume_val);
+  return -1;
+}
+
+
+/**
+   call_native_flattened_expr: callable is borrowed (KosExpression, n is 0).
+   Push a new frame for that expression's code/ns. Handler releases callable.
+*/
+static int call_native_flattened_expr(
+    KosContext *ctx,
+    PyObject *callable,
+    KosEvent *out_ev) {
+
+  PyObject *code = KosExpression_GetCode(callable);
+  PyObject *ns = KosExpression_GetNs(callable);
+  Py_INCREF(ns);
+  if (kos_dyn_push_frame(ctx, (KosCode *) code, ns) == NULL) {
+    Py_DECREF(ns);
+    return -1;
+  }
+  (void) out_ev;
+  return 0;
+}
+
+
+/**
+   call_native_flattened_function: callable and args are borrowed. Pass args
+   to PrepareCallNamespace, push frame. Handler releases callable and args.
+*/
+static int call_native_flattened_function(
+    KosContext *ctx,
+    PyObject *callable,
+    PyObject *args,
+    KosEvent *out_ev) {
+
+  PyObject *frame_ns = KosFunction_PrepareCallNamespace(
+      callable, args, NULL);
+  if (! frame_ns)
+    return -1;
+  PyObject *fn_code = KosFunction_GetCode(callable);
+  if (kos_dyn_push_frame(ctx, (KosCode *) fn_code, frame_ns) == NULL) {
+    Py_DECREF(frame_ns);
+    return -1;
+  }
+  (void) out_ev;
+  return 0;
+}
+
+
+/**
+   call_pyobject_call: callable and args are borrowed. CallNoArgs or Call(tuple);
+   push result or await it (push_or_await takes ownership of result). Handler
+   releases callable and args.
+*/
+static int call_pyobject_call(
+    KosContext *ctx,
+    PyObject *callable,
+    PyObject *args,
+    KosEvent *out_ev) {
+
+  PyObject *result = (! args || PyTuple_GET_SIZE(args) == 0)
+      ? PyObject_CallNoArgs(callable)
+      : PyObject_Call(callable, args, NULL);
+  if (! result)
+    return -1;
+  return push_or_await(ctx, out_ev, result);
+}
+
+
 /**
    CALL: arg = number of positional arguments N. Stack has [callable, arg_0,
    ..., arg_{N-1}] (callable oldest). Call callable with those args, drop
@@ -1010,147 +1156,43 @@ KOS_OP_HANDLER(AWAIT) {
 */
 KOS_OP_HANDLER(CALL) {
   unsigned n = insn->arg;
-  /* Top (n+1) elements are [callable, arg_0, ..., arg_{n-1}]; callable is oldest
-     of that segment (same layout as sibilant-ceval). */
-  PyObject *const *tail = KosStackBlock_TailPtr(ctx->frame_top->stack, n + 1);
-  if (! tail)
-    return -1;
-  PyObject *callable = tail[0];
-  PyObject *result = NULL;
 
-  /* Special-case DelimitedContinuation and Continuation (undelimited).
-   * FIXME: The transfer path for delimited continuations invoked via CALL may
-   * still have bugs (LCA is now safe for severed chains). Prefer INVOKE_K for
-   * delimited continuation invocation. */
+  KosDynFrame *frame_top = ctx->frame_top;
+
+  PyObject *args = NULL;
+  if (n > 0) {
+    args = KosStackBlock_PopTail(&frame_top->stack, n);
+    if (! args)
+      return -1;
+  }
+
+  PyObject *callable = KosStackBlock_PopRef(&frame_top->stack);
+  if (! callable)
+    return -1;
+
+  int r;
   if (KosPyDelimitedContinuation_Check(callable)
       || KosPyContinuation_Check(callable)) {
-    KosContinuation *k = KosPyDelimitedContinuation_Check(callable)
-        ? ((KosPyDelimitedContinuation *) callable)->captured
-        : ((KosPyContinuation *) callable)->captured;
-    PyObject *resume_val = (n > 0 && tail[1]) ? tail[1] : Py_None;
-    Py_INCREF(resume_val);
+    r = call_call_continuation(ctx, callable, args, out_ev, insn);
 
-    if (KosStackBlock_Drop(&ctx->frame_top->stack, n + 1) < 0) {
-      Py_DECREF(resume_val);
-      return -1;
-    }
-
-    if (! k) {
-      PyErr_SetString(PyExc_RuntimeError,
-                      "continuation has no captured state");
-      Py_DECREF(resume_val);
-      return -1;
-    }
-
-    /* Delimited continuations require the prompt to be in the dynamic chain */
-    if (k->prompt_id != KOS_PROMPT_ID_UNDELIMITED
-        && ! kos_find_prompt(ctx, k->prompt_id)) {
-      Py_DECREF(resume_val);
-      PyErr_SetString(KoskariContinuationError,
-                      "continuation: prompt not found in dynamic chain");
-      return -1;
-    }
-
-    /* Same evaluator: token match, or undelimited with no token (captured
-     * in this run; token may not have been stored in some paths). */
-    if (k->token_ref == (PyObject *) ctx->token
-        || (k->prompt_id == KOS_PROMPT_ID_UNDELIMITED && ! k->token_ref)) {
-      if (kos_invoke_continuation(ctx, k, resume_val, 0, callable) < 0) {
-        Py_DECREF(resume_val);
-        return -1;
-      }
-      Py_DECREF(resume_val);
-      (void) out_ev;
-      (void) insn;
-      return 0;
-    }
-
-    /* Token mismatch: raise KoskariContinuationApply for upwards propagation */
-    {
-      PyObject *exc = PyObject_CallNoArgs(KoskariContinuationApply);
-      if (exc) {
-        PyObject_SetAttrString(exc, "target", k->token_ref);
-        PyObject_SetAttrString(exc, "continuation", callable);
-        PyObject *args_tup = PyTuple_Pack(1, resume_val);
-        if (args_tup) {
-          PyObject_SetAttrString(exc, "args", args_tup);
-          Py_DECREF(args_tup);
-        }
-        PyErr_SetObject(KoskariContinuationApply, exc);
-        Py_DECREF(exc);
-      }
-    }
-    Py_DECREF(resume_val);
-    return -1;
-  }
-
-  /* Flatten Koskari calls: push callee frame and continue in same loop. */
-  if (Py_TYPE(callable) == &KosExpressionType && n == 0) {
-    PyObject *code = KosExpression_GetCode(callable);
-    PyObject *ns = KosExpression_GetNs(callable);
-    if (KosStackBlock_Drop(&ctx->frame_top->stack, 1) < 0)
-      return -1;
-    Py_INCREF(ns);
-    if (kos_dyn_push_frame(ctx, (KosCode *) code, ns) == NULL) {
-      Py_DECREF(ns);
-      return -1;
-    }
-    (void) out_ev;
-    return 0;
-  }
-  if (Py_TYPE(callable) == &KosFunctionType) {
-    PyObject *fn_obj = callable;
-    PyObject *args_tup = NULL;
+  } else if (Py_TYPE(callable) == &KosExpressionType) {
     if (n > 0) {
-      args_tup = PyTuple_New((Py_ssize_t) n);
-      if (! args_tup)
-        return -1;
-      for (unsigned i = 0; i < n; i++) {
-        PyObject *arg = tail[1 + i];
-        Py_INCREF(arg);
-        PyTuple_SET_ITEM(args_tup, (Py_ssize_t) i, arg);
-      }
+      PyErr_SetString(PyExc_TypeError, "Expression takes no arguments");
+      r = -1;
+    } else {
+      r = call_native_flattened_expr(ctx, callable, out_ev);
     }
-    PyObject *frame_ns = KosFunction_PrepareCallNamespace(
-        fn_obj, args_tup, NULL);
-    Py_XDECREF(args_tup);
-    if (! frame_ns)
-      return -1;
-    if (KosStackBlock_Drop(&ctx->frame_top->stack, n + 1) < 0) {
-      Py_DECREF(frame_ns);
-      return -1;
-    }
-    PyObject *fn_code = KosFunction_GetCode(fn_obj);
-    if (kos_dyn_push_frame(ctx, (KosCode *) fn_code, frame_ns) == NULL) {
-      Py_DECREF(frame_ns);
-      return -1;
-    }
-    (void) out_ev;
-    return 0;
-  }
 
-  SAYF("[CALL] callable: %R\n", callable);
-  if (n == 0) {
-    result = PyObject_CallNoArgs(callable);
+  } else if (Py_TYPE(callable) == &KosFunctionType) {
+    r = call_native_flattened_function(ctx, callable, args, out_ev);
+
   } else {
-    result = PyObject_Vectorcall(callable, &tail[1], n, NULL);
+    r = call_pyobject_call(ctx, callable, args, out_ev);
   }
 
-  if (KosStackBlock_Drop(&ctx->frame_top->stack, n + 1) < 0) {
-    Py_XDECREF(result);
-    return -1;
-  }
-
-  SAYF("[CALL] result: %R\n", result);
-  if (result && Py_TYPE(result)->tp_as_async)
-  SAY("[CALL] result is awaitable, passing to push_or_await\n");
-
-  SAYF("[eval] op_CALL after PyObject_Call (result=%d awaitable=%d)\n",
-       result ? 1 : 0, result && Py_TYPE(result)->tp_as_async ? 1 : 0);
-
-  if (! result)
-    return -1;
-  return push_or_await(ctx, out_ev, result);
+  Py_DECREF(callable);
+  Py_XDECREF(args);
+  return r;
 }
 
 
@@ -4534,7 +4576,7 @@ int koskari_eval(KosContext *ctx, KosEvent *out_ev) {
           }
         }
         PyErr_Restore(typ, val, tb);
-        eval_ret = 0;
+        eval_ret = -1;  /* propagate KoskariContinuationApply to caller */
         goto koskari_eval_cleanup;
       }
       /* Unwind pending async gen so exception propagates to caller frame. */

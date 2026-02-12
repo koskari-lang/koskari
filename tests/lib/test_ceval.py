@@ -25,7 +25,7 @@ and stub opcodes (RuntimeError).
 import asyncio
 import unittest
 
-from koskari import Code, NamespaceSpec, OpCode
+from koskari import Code, FormalsSpec, NamespaceSpec, OpCode
 from koskari.lib import AsyncGenerator
 from tests import make_callable
 
@@ -176,6 +176,32 @@ class TestDelimitedContinuations(CevalTest):
             cont(42)
         self.assertIn("cannot be called from Python", str(ctx.exception))
 
+    def test_invoke_delimited_continuation_after_pop_prompt_raises_continuation_error(self):
+        """
+        After POP_PROMPT the prompt is gone; invoking the captured delimited
+        continuation (via CALL) raises KoskariContinuationError (prompt not
+        found in dynamic chain). Handler returns the continuation so main has
+        it on stack; main then POP_PROMPT, pushes 42, CALL 1.
+        """
+        import koskari.lib as lib
+        code = [
+            ["PUSH_PROMPT", 0],
+            ["SET_PROMPT_HANDLER", "handler"],
+            ["SHIFT", 0],
+            ["POP_PROMPT", 0],
+            ["CONST", 42],
+            ["CALL", 1],
+            ["RETURN", 1],
+            ["NOOP", 0],
+            ["LABEL", "handler"],
+            ["RETURN", 1],
+        ]
+        code_obj, ns = build_expr(code)
+        expr = make_callable(code_obj, ns)
+        with self.assertRaises(lib.KoskariContinuationError) as ctx:
+            asyncio.run(expr())
+        self.assertIn("prompt not found", str(ctx.exception))
+
 
 class TestUndelimitedContinuations(CevalTest):
     """
@@ -201,6 +227,24 @@ class TestUndelimitedContinuations(CevalTest):
         expr = make_callable(code_obj, ns)
         result = asyncio.run(expr())
         self.assertEqual(result, 42)
+
+    def test_call_cc_invoke_with_zero_args_resumes_with_none(self):
+        """
+        (call/cc (lambda (k) (k))) => None. Invoke continuation with CALL 0
+        (no args); resume_val is Py_None, RETURN 1 yields None.
+        """
+        code = [
+            ["PUSH_CC", "resume"],
+            ["CAPTURE_CC", 0],
+            ["POP_CC", 0],
+            ["CALL", 0],
+            ["LABEL", "resume"],
+            ["RETURN", 1],
+        ]
+        code_obj, ns = build_expr(code)
+        expr = make_callable(code_obj, ns)
+        result = asyncio.run(expr())
+        self.assertIsNone(result)
 
     def test_call_cc_capture_returns_continuation(self):
         """
@@ -235,6 +279,48 @@ class TestUndelimitedContinuations(CevalTest):
             asyncio.run(expr())
         self.assertIn("CAPTURE_CC", str(ctx.exception))
         self.assertIn("no CC block", str(ctx.exception))
+
+    def test_call_continuation_from_different_token_raises_continuation_apply(self):
+        """
+        Invoking a continuation from a different evaluator token raises
+        KoskariContinuationApply. Bottom Koskari captures a continuation and
+        calls a Python async bridge; the bridge invokes a top Koskari function
+        (new token) which calls the continuation with a constant, triggering
+        the exception boundary.
+        """
+        import koskari.lib as lib
+        self.assertTrue(hasattr(lib, "KoskariContinuationApply"))
+
+        # Top Koskari function: one formal k (the continuation). Body: invoke k
+        # with 42. Runs in a different evaluator run (new token) when called
+        # from Python.
+        top_code = build_code([
+            ["VAR", "k"],
+            ["CONST", 42],
+            ["CALL", 1],
+            ["RETURN", 1],
+        ], local_syms=("k",), name="top")
+        top_ns = NamespaceSpec(None, ("k",), ()).get_namespace(None)
+        top_fn = make_callable(top_code, top_ns, FormalsSpec(("k",)))
+
+        async def bridge(cont):
+            return await top_fn(cont)
+
+        # Bottom Koskari: push bridge (callable), capture continuation (arg),
+        # then call bridge(cont). Stack for CALL 1 must be [callable, arg].
+        bottom_code, bottom_ns = build_expr([
+            ["VAR", "bridge"],
+            ["PUSH_CC", "resume"],
+            ["CAPTURE_CC", 0],
+            ["POP_CC", 0],
+            ["CALL", 1],
+            ["LABEL", "resume"],
+            ["RETURN", 1],
+        ], values={"bridge": bridge})
+        bottom_expr = make_callable(bottom_code, bottom_ns)
+
+        with self.assertRaises(lib.KoskariContinuationApply):
+            asyncio.run(bottom_expr())
 
 
 class TestEvaluatorToken(CevalTest):
@@ -2066,6 +2152,21 @@ class TestNamespaceAndCall(CevalTest):
             ["CALL", 0],
             ["RETURN", 1],
         ], values={"f": forty_two})
+        result = run_to_completion(make_callable(code, ns)())
+        self.assertEqual(result, 42)
+
+    def test_call_invokes_callable_one_arg(self):
+        """
+        CALL 1 invokes callable with one argument (vectorcall path)
+        """
+        def double(x):
+            return x * 2
+        code, ns = build_expr([
+            ["VAR", "f"],
+            ["CONST", 21],
+            ["CALL", 1],
+            ["RETURN", 1],
+        ], values={"f": double})
         result = run_to_completion(make_callable(code, ns)())
         self.assertEqual(result, 42)
 

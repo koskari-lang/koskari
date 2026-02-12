@@ -29,6 +29,8 @@
 #include "lib.h"
 #include "debug.h"
 
+#include <stdint.h>
+#include <string.h>
 
 /* Set to 1 to trace transfer plan steps (for debugging).  All trace output
  * goes through SAYF from debug.h. */
@@ -49,6 +51,21 @@ static void kos_dynnode_init(
 }
 
 
+/**
+   Allocate and zero a DynNode-derived struct. Returns NULL on failure (sets
+   PyErr_NoMemory). Caller must init base and type-specific fields.
+*/
+static void *kos_dynnode_alloc(size_t size) {
+  void *p = PyMem_Malloc(size);
+  if (! p) {
+    PyErr_NoMemory();
+    return NULL;
+  }
+  memset(p, 0, size);
+  return p;
+}
+
+
 /* === KosDynFrame implementation === */
 
 
@@ -58,21 +75,18 @@ KosDynFrame *kos_dynframe_new(
     PyObject *ns,
     KosStackBlock *stack) {
 
-  KosDynFrame *frame = PyMem_Malloc(sizeof(KosDynFrame));
+  KosDynFrame *frame = kos_dynnode_alloc(sizeof(KosDynFrame));
   if (! frame) {
-    PyErr_NoMemory();
     Py_XDECREF(ns);
     return NULL;
   }
 
   kos_dynnode_init(&frame->base, KOS_DYN_FRAME, parent);
-
   frame->code = code;  /* borrowed */
   frame->pc = 0;
   frame->stack = stack;  /* ownership transferred */
   frame->ns = ns;  /* ownership transferred (already stole ref) */
   frame->frame_flags = 0;
-
   return frame;
 }
 
@@ -81,13 +95,10 @@ KosDynFrame *kos_dynframe_clone(KosDynFrame *frame) {
   if (! frame)
     return NULL;
 
-  /* Use COW for stack - just increment refcount on all blocks */
   KosStackBlock *cloned_stack = KosStackBlock_COW(frame->stack);
 
-  KosDynFrame *clone = PyMem_Malloc(sizeof(KosDynFrame));
+  KosDynFrame *clone = kos_dynnode_alloc(sizeof(KosDynFrame));
   if (! clone) {
-    PyErr_NoMemory();
-    /* Release the COW'd stack */
     if (cloned_stack) {
       KosStackBlock *b = cloned_stack;
       while (b) {
@@ -101,14 +112,12 @@ KosDynFrame *kos_dynframe_clone(KosDynFrame *frame) {
 
   kos_dynnode_init(&clone->base, KOS_DYN_FRAME, NULL);
   clone->base.flags = frame->base.flags | KOS_DYNF_CLONED;
-
   clone->code = frame->code;  /* borrowed */
   clone->pc = frame->pc;
   clone->stack = cloned_stack;
   clone->ns = frame->ns;
   Py_XINCREF(clone->ns);
   clone->frame_flags = frame->frame_flags;
-
   return clone;
 }
 
@@ -137,18 +146,14 @@ void kos_dynframe_free(KosDynFrame *frame) {
 
 KosDynPrompt *kos_dynprompt_new(KosDynNode *parent, uint32_t prompt_id) {
 
-  KosDynPrompt *prompt = PyMem_Malloc(sizeof(KosDynPrompt));
-  if (! prompt) {
-    PyErr_NoMemory();
+  KosDynPrompt *prompt = kos_dynnode_alloc(sizeof(KosDynPrompt));
+  if (! prompt)
     return NULL;
-  }
 
   kos_dynnode_init(&prompt->base, KOS_DYN_PROMPT, parent);
-
   prompt->prompt_id = prompt_id;
   prompt->handler_code = NULL;
   prompt->handler_pc = 0;
-
   return prompt;
 }
 
@@ -157,19 +162,15 @@ static KosDynPrompt *kos_dynprompt_clone(KosDynPrompt *prompt) {
   if (! prompt)
     return NULL;
 
-  KosDynPrompt *clone = PyMem_Malloc(sizeof(KosDynPrompt));
-  if (! clone) {
-    PyErr_NoMemory();
+  KosDynPrompt *clone = kos_dynnode_alloc(sizeof(KosDynPrompt));
+  if (! clone)
     return NULL;
-  }
 
   kos_dynnode_init(&clone->base, KOS_DYN_PROMPT, NULL);
   clone->base.flags = prompt->base.flags | KOS_DYNF_CLONED;
-
   clone->prompt_id = prompt->prompt_id;
   clone->handler_code = prompt->handler_code;  /* borrowed */
   clone->handler_pc = prompt->handler_pc;
-
   return clone;
 }
 
@@ -188,15 +189,12 @@ void kos_dynprompt_free(KosDynPrompt *prompt) {
 
 KosDynCC *kos_dyncc_new(KosDynNode *parent, uint32_t resume_pc) {
 
-  KosDynCC *cc = PyMem_Malloc(sizeof(KosDynCC));
-  if (! cc) {
-    PyErr_NoMemory();
+  KosDynCC *cc = kos_dynnode_alloc(sizeof(KosDynCC));
+  if (! cc)
     return NULL;
-  }
 
   kos_dynnode_init(&cc->base, KOS_DYN_CC, parent);
   cc->resume_pc = resume_pc;
-
   return cc;
 }
 
@@ -205,16 +203,13 @@ static KosDynCC *kos_dyncc_clone(KosDynCC *cc) {
   if (! cc)
     return NULL;
 
-  KosDynCC *clone = PyMem_Malloc(sizeof(KosDynCC));
-  if (! clone) {
-    PyErr_NoMemory();
+  KosDynCC *clone = kos_dynnode_alloc(sizeof(KosDynCC));
+  if (! clone)
     return NULL;
-  }
 
   kos_dynnode_init(&clone->base, KOS_DYN_CC, NULL);
   clone->base.flags = cc->base.flags | KOS_DYNF_CLONED;
   clone->resume_pc = cc->resume_pc;
-
   return clone;
 }
 
@@ -237,20 +232,16 @@ KosDynWind *kos_dynwind_new(
     KosCode *after_code,
     uint32_t after_pc) {
 
-  KosDynWind *wind = PyMem_Malloc(sizeof(KosDynWind));
-  if (! wind) {
-    PyErr_NoMemory();
+  KosDynWind *wind = kos_dynnode_alloc(sizeof(KosDynWind));
+  if (! wind)
     return NULL;
-  }
 
   kos_dynnode_init(&wind->base, KOS_DYN_WIND, parent);
-
   wind->before_code = before_code;  /* borrowed */
   wind->before_pc = before_pc;
   wind->after_code = after_code;  /* borrowed */
   wind->after_pc = after_pc;
   wind->entered = 0;
-
   return wind;
 }
 
@@ -259,21 +250,17 @@ KosDynWind *kos_dynwind_clone(KosDynWind *wind) {
   if (! wind)
     return NULL;
 
-  KosDynWind *clone = PyMem_Malloc(sizeof(KosDynWind));
-  if (! clone) {
-    PyErr_NoMemory();
+  KosDynWind *clone = kos_dynnode_alloc(sizeof(KosDynWind));
+  if (! clone)
     return NULL;
-  }
 
   kos_dynnode_init(&clone->base, KOS_DYN_WIND, NULL);
   clone->base.flags = wind->base.flags | KOS_DYNF_CLONED;
-
   clone->before_code = wind->before_code;  /* borrowed */
   clone->before_pc = wind->before_pc;
   clone->after_code = wind->after_code;  /* borrowed */
   clone->after_pc = wind->after_pc;
   clone->entered = wind->entered;
-
   return clone;
 }
 
@@ -291,29 +278,23 @@ void kos_dynwind_free(KosDynWind *wind) {
 
 
 KosDynRegion *kos_dynregion_new(
-        KosDynNode *parent,
-        KosRegionStyle style,
-        uint32_t break_pc,
-        uint32_t continue_pc) {
+    KosDynNode *parent,
+    KosRegionStyle style,
+    uint32_t break_pc,
+    uint32_t continue_pc) {
 
-  KosDynRegion *region = PyMem_Malloc(sizeof(KosDynRegion));
-  if (! region) {
-    PyErr_NoMemory();
+  KosDynRegion *region = kos_dynnode_alloc(sizeof(KosDynRegion));
+  if (! region)
     return NULL;
-  }
 
   kos_dynnode_init(&region->base, KOS_DYN_REGION, parent);
-
   region->style = style;
   region->break_pc = break_pc;
   region->continue_pc = continue_pc;
   region->enabled = 1;
-
-  /* Payload fields initialized to defaults; caller sets for LOOP/FOREACH */
   region->result = NULL;
   region->iter = NULL;
   region->exhausted = 0;
-
   return region;
 }
 
@@ -322,27 +303,21 @@ KosDynRegion *kos_dynregion_clone(KosDynRegion *region) {
   if (! region)
     return NULL;
 
-  KosDynRegion *clone = PyMem_Malloc(sizeof(KosDynRegion));
-  if (! clone) {
-    PyErr_NoMemory();
+  KosDynRegion *clone = kos_dynnode_alloc(sizeof(KosDynRegion));
+  if (! clone)
     return NULL;
-  }
 
   kos_dynnode_init(&clone->base, KOS_DYN_REGION, NULL);
   clone->base.flags = region->base.flags | KOS_DYNF_CLONED;
-
   clone->style = region->style;
   clone->break_pc = region->break_pc;
   clone->continue_pc = region->continue_pc;
   clone->enabled = region->enabled;
-
-  /* Clone payload with INCREF for owned references */
   clone->result = region->result;
   Py_XINCREF(clone->result);
   clone->iter = region->iter;
   Py_XINCREF(clone->iter);
   clone->exhausted = region->exhausted;
-
   return clone;
 }
 
@@ -364,16 +339,14 @@ void kos_dynregion_free(KosDynRegion *region) {
 
 KosDynNs *kos_dynns_new(KosDynNode *parent, PyObject *saved_ns) {
 
-  KosDynNs *ns_node = PyMem_Malloc(sizeof(KosDynNs));
+  KosDynNs *ns_node = kos_dynnode_alloc(sizeof(KosDynNs));
   if (! ns_node) {
-    PyErr_NoMemory();
     Py_DECREF(saved_ns);
     return NULL;
   }
 
   kos_dynnode_init(&ns_node->base, KOS_DYN_NS, parent);
   ns_node->saved_ns = saved_ns;  /* caller transferred ownership */
-
   return ns_node;
 }
 
@@ -402,15 +375,12 @@ void kos_dynns_free(KosDynNs *ns_node) {
 
 KosDynNode *kos_dynpycall_new(KosDynNode *parent) {
 
-  KosDynNode *node = PyMem_Malloc(sizeof(KosDynNode));
-  if (! node) {
-    PyErr_NoMemory();
+  KosDynNode *node = kos_dynnode_alloc(sizeof(KosDynNode));
+  if (! node)
     return NULL;
-  }
 
   kos_dynnode_init(node, KOS_DYN_PYCALL, parent);
   node->flags |= KOS_DYNF_BOUNDARY;
-
   return node;
 }
 
@@ -514,7 +484,6 @@ KosDynNode *kos_clone_chain_segment(KosDynNode *top, KosDynNode *stop) {
       kos_dynchain_free(cloned_top, NULL);
       return NULL;
     }
-
     if (cloned_prev) {
       cloned_prev->parent = cloned;
     } else {
@@ -980,6 +949,39 @@ static int kos_validate_capture_cc(KosContext *ctx, KosDynCC *cc) {
 /* === Continuation capture and free === */
 
 
+/**
+   Allocate and initialize a continuation. Takes ownership of captured_chain.
+   resume_stack is stored as-is (caller must have taken COW ref if needed).
+   token_ref is INCREF'd. Returns NULL on alloc failure (PyErr_NoMemory set);
+   caller must free captured_chain on failure.
+*/
+static KosContinuation *kos_continuation_create(
+    KosDynNode *captured_chain,
+    KosDynFrame *resume_frame,
+    uint32_t resume_pc,
+    KosStackBlock *resume_stack,
+    uint32_t prompt_id,
+    int one_shot,
+    PyObject *token_ref) {
+
+  KosContinuation *k = kos_dynnode_alloc(sizeof(KosContinuation));
+  if (! k)
+    return NULL;
+
+  k->captured_chain = captured_chain;
+  k->resume_frame = resume_frame;
+  k->resume_pc = resume_pc;
+  k->resume_stack = resume_stack;
+  k->prompt_id = prompt_id;
+  k->one_shot = one_shot;
+  k->token_ref = token_ref;
+  if (k->token_ref)
+    Py_INCREF(k->token_ref);
+
+  return k;
+}
+
+
 int kos_shift_capture(
     KosContext *ctx,
     uint32_t prompt_id,
@@ -1047,27 +1049,20 @@ int kos_shift_capture(
     node = node->parent;
   }
 
-  /* Allocate continuation struct */
-  KosContinuation *k = PyMem_Malloc(sizeof(KosContinuation));
+  KosStackBlock *resume_stack = resume_frame
+      ? KosStackBlock_COW(resume_frame->stack) : NULL;
+  KosContinuation *k = kos_continuation_create(
+      captured_chain,
+      resume_frame,
+      resume_frame ? resume_frame->pc : 0,
+      resume_stack,
+      prompt_id,
+      1,  /* one-shot */
+      ctx->token ? (PyObject *) ctx->token : NULL);
   if (! k) {
-    PyErr_NoMemory();
     kos_dynchain_free(captured_chain, NULL);
     return -1;
   }
-
-  k->captured_chain = captured_chain;
-  k->resume_frame = resume_frame;
-  k->resume_pc = resume_frame ? resume_frame->pc : 0;
-  /* Store stack as a template (COW).  At invoke the plan takes a COW ref;
-   * INSTALL gives the frame a COW ref; the first push/pop copies on write so
-   * each application sees an unmutated logical state. */
-  k->resume_stack = resume_frame
-      ? KosStackBlock_COW(resume_frame->stack) : NULL;
-  k->prompt_id = prompt_id;
-  k->one_shot = 1;  /* one-shot for now; multi-shot clone needs segment-only clone */
-  k->token_ref = ctx->token ? (PyObject *) ctx->token : NULL;
-  if (k->token_ref)
-    Py_INCREF(k->token_ref);
 
   *out_k = k;
   return 0;
@@ -1123,22 +1118,18 @@ int kos_capture_cc(KosContext *ctx, KosContinuation **out_k) {
     return -1;
   }
 
-  KosContinuation *k = PyMem_Malloc(sizeof(KosContinuation));
+  KosContinuation *k = kos_continuation_create(
+      captured_chain,
+      resume_frame,
+      cc->resume_pc,
+      KosStackBlock_COW(resume_frame->stack),
+      KOS_PROMPT_ID_UNDELIMITED,
+      0,  /* multi-shot */
+      ctx->token ? (PyObject *) ctx->token : NULL);
   if (! k) {
-    PyErr_NoMemory();
     kos_dynchain_free(captured_chain, NULL);
     return -1;
   }
-
-  k->captured_chain = captured_chain;
-  k->resume_frame = resume_frame;
-  k->resume_pc = cc->resume_pc;
-  k->resume_stack = KosStackBlock_COW(resume_frame->stack);
-  k->prompt_id = KOS_PROMPT_ID_UNDELIMITED;
-  k->one_shot = 0;  /* multi-shot by default */
-  k->token_ref = ctx->token ? (PyObject *) ctx->token : NULL;
-  if (k->token_ref)
-    Py_INCREF(k->token_ref);
 
   *out_k = k;
   return 0;
@@ -1157,16 +1148,20 @@ void kos_continuation_free_exclude(KosContinuation *k, PyObject *exclude_from_st
   Py_XDECREF(k->token_ref);
   k->token_ref = NULL;
 
-  /* Free the captured chain */
-  kos_dynchain_free(k->captured_chain, NULL);
-
-  /* Release the stack reference. When called from the Python wrapper's
-   * dealloc, exclude_from_stack is the wrapper so we do not DECREF it
-   * (it is currently being deallocated). */
+  /* Release the stack reference before freeing the captured chain. The
+   * frames in the chain may share stack blocks with k->resume_stack (COW);
+   * freeing the chain would release those blocks and DECREF slot values,
+   * which can re-enter the continuation wrapper's dealloc if the wrapper
+   * was on the stack at capture time. Releasing with exclude first avoids
+   * that. */
   if (k->resume_stack) {
     KosStackBlock_ReleaseChainExclude(k->resume_stack, exclude_from_stack);
     k->resume_stack = NULL;
   }
+
+  /* Free the captured chain (frame stacks may still be non-NULL but are
+   * either unshared or already released by resume_stack release above). */
+  kos_dynchain_free(k->captured_chain, NULL);
 
   PyMem_Free(k);
 }
@@ -1189,7 +1184,6 @@ KosContinuation *kos_continuation_clone(KosContinuation *k) {
     return NULL;
   }
 
-  /* Find the resume frame in the cloned chain */
   KosDynFrame *resume_frame = NULL;
   KosDynNode *node = cloned_chain;
   while (node) {
@@ -1200,23 +1194,18 @@ KosContinuation *kos_continuation_clone(KosContinuation *k) {
     node = node->parent;
   }
 
-  /* Allocate new continuation */
-  KosContinuation *clone = PyMem_Malloc(sizeof(KosContinuation));
+  KosContinuation *clone = kos_continuation_create(
+      cloned_chain,
+      resume_frame,
+      k->resume_pc,
+      KosStackBlock_COW(k->resume_stack),
+      k->prompt_id,
+      k->one_shot,
+      k->token_ref);
   if (! clone) {
-    PyErr_NoMemory();
     kos_dynchain_free(cloned_chain, NULL);
     return NULL;
   }
-
-  clone->captured_chain = cloned_chain;
-  clone->resume_frame = resume_frame;
-  clone->resume_pc = k->resume_pc;
-  clone->resume_stack = KosStackBlock_COW(k->resume_stack);
-  clone->prompt_id = k->prompt_id;
-  clone->one_shot = k->one_shot;
-  clone->token_ref = k->token_ref;
-  if (clone->token_ref)
-    Py_INCREF(clone->token_ref);
 
   return clone;
 }
@@ -1272,6 +1261,30 @@ KosDynNode *kos_compute_lca(KosDynNode *a, KosDynNode *b) {
 /* === Transfer plan building === */
 
 
+/**
+   Allocate a transfer plan with action_count action slots. Plan and actions
+   are zeroed. Returns NULL on failure (PyErr_NoMemory set).
+*/
+static KosTransferPlan *kos_transfer_plan_alloc(size_t action_count) {
+  KosTransferPlan *plan = PyMem_Malloc(sizeof(KosTransferPlan));
+  if (! plan) {
+    PyErr_NoMemory();
+    return NULL;
+  }
+  memset(plan, 0, sizeof(KosTransferPlan));
+
+  plan->actions = PyMem_Malloc(sizeof(KosTransferAction) * action_count);
+  if (! plan->actions) {
+    PyMem_Free(plan);
+    PyErr_NoMemory();
+    return NULL;
+  }
+  memset(plan->actions, 0, sizeof(KosTransferAction) * action_count);
+
+  return plan;
+}
+
+
 int kos_build_transfer_plan(
     KosContext *ctx,
     KosDynNode *target,
@@ -1321,22 +1334,9 @@ int kos_build_transfer_plan(
   /* Add INJECT action */
   action_count++;
 
-  /* Allocate plan and actions; zero so every action.step is 0 until set.
-   * This avoids garbage or padding making step read as RUN_HOOK. */
-  KosTransferPlan *plan = PyMem_Malloc(sizeof(KosTransferPlan));
-  if (! plan) {
-    PyErr_NoMemory();
+  KosTransferPlan *plan = kos_transfer_plan_alloc(action_count);
+  if (! plan)
     return -1;
-  }
-  memset(plan, 0, sizeof(KosTransferPlan));
-
-  plan->actions = PyMem_Malloc(sizeof(KosTransferAction) * action_count);
-  if (! plan->actions) {
-    PyMem_Free(plan);
-    PyErr_NoMemory();
-    return -1;
-  }
-  memset(plan->actions, 0, sizeof(KosTransferAction) * action_count);
 
   plan->action_count = action_count;
   plan->action_index = 0;
@@ -1432,7 +1432,6 @@ void kos_free_transfer_plan(KosTransferPlan *plan) {
       Py_XDECREF(plan->actions[i].data.inject.value);
     }
   }
-
   /* Release the multi-shot clone (if any) without DECREF'ing the continuation
    * so we do not free k before releasing plan->resume_stack. */
   if (plan->invoke_clone) {
@@ -1446,7 +1445,6 @@ void kos_free_transfer_plan(KosTransferPlan *plan) {
     Py_XDECREF(clone->token_ref);
     PyMem_Free(clone);
   }
-
   /* Release the retained resume_stack reference */
   if (plan->resume_stack) {
     KosStackBlock *b = plan->resume_stack;
@@ -1456,7 +1454,6 @@ void kos_free_transfer_plan(KosTransferPlan *plan) {
       b = p;
     }
   }
-
   Py_XDECREF(plan->continuation_ref);
   plan->continuation_ref = NULL;
 
@@ -1469,8 +1466,9 @@ int kos_run_transfer_step(KosContext *ctx) {
   if (! ctx->plan)
     return 1;  /* no plan, complete */
 
-  if (ctx->plan->action_index >= ctx->plan->action_count)
+  if (ctx->plan->action_index >= ctx->plan->action_count) {
     return 1;  /* plan complete */
+  }
 
   KosTransferAction *action = &ctx->plan->actions[ctx->plan->action_index];
   if (KOS_XFER_TRACE)
@@ -1515,12 +1513,11 @@ int kos_run_transfer_step(KosContext *ctx) {
         KosStackBlock *old_stack = ctx->frame_top->stack;
         ctx->frame_top->stack = new_stack;
         if (old_stack && old_stack != new_stack) {
-          KosStackBlock *b = old_stack;
-          while (b) {
-            KosStackBlock *p = KosStackBlock_PARENT(b);
-            KosStackBlock_Release(b);
-            b = p;
-          }
+          /* Do not DECREF the continuation wrapper (plan->continuation_ref);
+           * it may be on the old stack from CALL and would free k and the
+           * captured chain while the plan still references them. */
+          KosStackBlock_ReleaseChainExclude(old_stack,
+                                            ctx->plan->continuation_ref);
         }
       }
       if (ctx->plan->resume_pc != (uint32_t) -1 && ctx->frame_top) {
