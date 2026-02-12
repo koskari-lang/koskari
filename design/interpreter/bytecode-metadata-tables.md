@@ -53,7 +53,7 @@ Contents:
 * **Bytecode array**: fixed-width instructions (`op,arg`).
 * **Location table** (KosPosition): mapping from pc to source `(line,col)`; fixed-width entries, binary-search lookup.
 * **Extent table**:
-  * `KosExtentDesc` array (ranges, kind, kind-specific targets)
+  * `KosExtentDesc` array (ranges, kind, tagged-union kind-specific targets)
   * `top_extent_id[code_len]` per-pc lookup (Strategy B)
 
 ---
@@ -124,9 +124,9 @@ In both cases:
 
 ### Extent Descriptor
 
-An extent descriptor is immutable and references pcs by index.
+An extent descriptor is immutable and references pcs by index. It is a **tagged union**: common fields plus a union of kind-specific target structs. Use the union member that matches `kind`; the C API and `kos_try_handler_for` / `kos_shift_ic_for` do this for you.
 
-Minimum fields (per extent kind):
+Common fields:
 
 * `kind`: TRY, LOOP, RESET/PROMPT, SHIFT_BODY, CALLCC_BIND, etc.
 * `push_pc`
@@ -138,23 +138,13 @@ Derived:
 
 * `enter_pc = push_pc + 1`
 
-Kind-specific payload:
+Kind-specific payload (union `u`; use the variant for the extent kind):
 
-* TRY:
-
-  * `except_pc` (or 0xFFFF if none)
-  * `else_pc` (optional)
-  * `finally_pc` (optional)
-  * `exit_pc` (normal-flow continuation after the TRY construct)
-* SHIFT_BODY:
-
-  * `ic_pc` (the "end-of-shift" continuation pc)
-* CALLCC_BIND (unbounded continuation bind body):
-
-  * `exit_pc` (where to go after evaluating the body expressions)
-* LOOP:
-
-  * `break_pc`, `continue_pc`
+* TRY, FINALLY: `u.try_finally` — `except_pc`, `else_pc`, `finally_pc`, `exit_pc` (use 0xFFFF for none)
+* LOOP, FOREACH: `u.loop` — `break_pc`, `continue_pc`
+* WITH, CALLCC_BIND: `u.exit_only` — `exit_pc`
+* SHIFT_BODY: `u.shift` — `ic_pc` (the "end-of-shift" continuation pc)
+* Other kinds: no targets; union is still initialized (e.g. to NONE) for consistency
 
 ### pc→Extent Lookup
 
@@ -301,7 +291,7 @@ At end of a SHIFT body, evaluator needs to find the "ic" / return point, current
 * SHIFT compilation emits an extent of kind `SHIFT_BODY` with `ic_pc`.
 * Evaluator, when executing the terminal opcode of the shift body, performs:
 
-  * `ic = extent_find_kind(pc, SHIFT_BODY)->ic_pc`
+  * `ic = kos_shift_ic_for(code, pc)` (or `e->u.shift.ic_pc` when e is the SHIFT_BODY extent)
   * `pc = ic`
 
 No scanning.
@@ -318,7 +308,7 @@ TRY entry may require scanning forward to determine where to jump on exception, 
 
 TRY compilation emits:
 
-* TRY extent descriptor with `{except_pc, else_pc, finally_pc, exit_pc}`
+* TRY extent descriptor with `u.try_finally` (except_pc, else_pc, finally_pc, exit_pc)
 
 Evaluator TRY entry:
 
@@ -337,8 +327,8 @@ Unbounded continuations (call/cc) can be bound and then evaluate a block of sube
 
 ### New behavior
 
-* The compiler emits a `CALLCC_BIND` extent for the body with `exit_pc`.
-* The evaluator uses `exit_pc` when the bind body completes normally.
+* The compiler emits a `CALLCC_BIND` extent for the body with `u.exit_only.exit_pc`.
+* The evaluator uses that exit_pc when the bind body completes normally.
 
 This avoids encoding "return-to" as an ad-hoc instruction search.
 

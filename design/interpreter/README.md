@@ -5,7 +5,7 @@ This directory documents the interpreter implementation, including bytecode form
 ## Contents
 
 - **bytecode.md**: Bytecode format and opcodes (implemented in `koskari/lib/bytecode.c`)
-- **bytecode-metadata-tables.md**: Static metadata tables (location table, extent table); O(1) control targets, no forward scans; JUMP locality validation; **implemented** in bytecode.c
+- **bytecode-metadata-tables.md**: Static metadata tables (location table, extent table with tagged-union KosExtentDesc); O(1) control targets, no forward scans; JUMP locality validation; **implemented** in bytecode.c
 - **compiler.md**: Compiler architecture and phases
 - **evaluator.md**: Evaluation model and drive loop (eval.c); KosCoroutine and run-code-as-coroutine (func.c)
 - **execution-invariants.md**: Koskari execution model invariants and design commitments

@@ -793,27 +793,24 @@ static int derive_extents(
       e->pop_pc = 0;
       e->parent_extent_id = parent_id;
       e->flags = 0;
-      e->except_pc = KOS_EXTENT_NONE;
-      e->else_pc = KOS_EXTENT_NONE;
-      e->finally_pc = KOS_EXTENT_NONE;
-      e->exit_pc = KOS_EXTENT_NONE;
-      e->ic_pc = KOS_EXTENT_NONE;
-      e->break_pc = KOS_EXTENT_NONE;
-      e->continue_pc = KOS_EXTENT_NONE;
+      e->u.try_finally.except_pc = KOS_EXTENT_NONE;
+      e->u.try_finally.else_pc = KOS_EXTENT_NONE;
+      e->u.try_finally.finally_pc = KOS_EXTENT_NONE;
+      e->u.try_finally.exit_pc = KOS_EXTENT_NONE;
 
       switch (e->kind) {
       case KOS_EXT_TRY:
       case KOS_EXT_FINALLY:
-        e->except_pc = arg;
-        e->finally_pc = (e->kind == KOS_EXT_FINALLY) ? arg : KOS_EXTENT_NONE;
+        e->u.try_finally.except_pc = arg;
+        e->u.try_finally.finally_pc = (e->kind == KOS_EXT_FINALLY) ? arg : KOS_EXTENT_NONE;
         break;
       case KOS_EXT_LOOP:
       case KOS_EXT_FOREACH:
-        e->break_pc = arg;
-        e->continue_pc = pc + 1;
+        e->u.loop.break_pc = arg;
+        e->u.loop.continue_pc = pc + 1;
         break;
       case KOS_EXT_WITH:
-        e->exit_pc = arg;
+        e->u.exit_only.exit_pc = arg;
         break;
       case KOS_EXT_PROMPT:
         break;
@@ -1597,9 +1594,9 @@ int kos_try_handler_for(PyObject *code, uint32_t pc, KosTryHandler *out) {
   }
 
   out->extent_id = eid;
-  out->except_pc = e->except_pc;
-  out->finally_pc = e->finally_pc;
-  out->exit_pc = e->exit_pc;
+  out->except_pc = e->u.try_finally.except_pc;
+  out->finally_pc = e->u.try_finally.finally_pc;
+  out->exit_pc = e->u.try_finally.exit_pc;
 
   return 0;
 }
@@ -1617,7 +1614,7 @@ uint32_t kos_shift_ic_for(PyObject *code, uint32_t pc) {
     return KOS_EXTENT_NONE;
   }
 
-  return e->ic_pc;
+  return e->u.shift.ic_pc;
 }
 
 
