@@ -37,7 +37,7 @@ KOS_DYN_PYCALL.
   Macros: KosDynPrompt_ID, KosDynPrompt_HANDLER_CODE, KosDynPrompt_HANDLER_PC.
 - **Wind** (u.wind): before_code, before_pc, after_code, after_pc, entered.
   Macros: KosDynWind_BEFORE_CODE, KosDynWind_BEFORE_PC, KosDynWind_AFTER_CODE, KosDynWind_AFTER_PC, KosDynWind_ENTERED.
-- **Region** (u.region): style (KosRegionStyle: TRY, FINALLY, LOOP, WITH, FOREACH, etc.), break_pc, continue_pc, enabled, result, iter, exhausted; FINALLY also has handling_raise (1 when entered due to exception) and result holds stashed return value.
+- **Region** (u.region): style (KosRegionStyle: TRY, FINALLY, LOOP, WITH, FOREACH, etc.), break_pc, continue_pc, enabled, result, iter, exhausted; FINALLY also has handling_raise (1 when entered due to exception) and result holds stashed return value; FOREACH has iter_next_else_pc (else PC when ITER_NEXT gen exhausts; 0 = not set).
   Macros: KosDynRegion_STYLE, KosDynRegion_BREAK_PC, KosDynRegion_CONTINUE_PC, KosDynRegion_ENABLED, etc.
 - **Ns** (u.ns): saved_ns. Macro: KosDynNs_SAVED_NS.
 - **CC** (u.cc): resume_pc. Macro: KosDynCC_RESUME_PC.
@@ -82,9 +82,7 @@ struct KosContext {
   /* Pending async gen (in-loop NEXT/ITER_NEXT): gen frame is attached, awaiting yield/return */
   void *pending_agen;        /* KosPyAsyncGen * when set */
   PyObject *pending_agen_default;
-  int pending_agen_n;        /* 1 or 2 for NEXT; 0 for ITER_NEXT */
-  void *pending_agen_region; /* KosDynRegion * for ITER_NEXT exhausted target */
-  uint32_t pending_agen_else_pc;
+  int pending_agen_n;        /* 1 or 2 for NEXT; 0 for ITER_NEXT (exhausted path reads region via kos_find_region_for_loop) */
 
   uint32_t flags;            /* KosContextFlags */
 };

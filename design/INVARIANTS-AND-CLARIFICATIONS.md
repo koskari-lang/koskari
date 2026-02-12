@@ -119,13 +119,13 @@ These are **commitments**: they must hold for correct behavior. They are elabora
 
 - **KosDynWind** (union variant): Dynamic-wind extent; before/after code and pc; `entered` marks whether before has run. Hooks are bytecode blocks, not Python. Access via KosDynWind_BEFORE_CODE, KosDynWind_BEFORE_PC, KosDynWind_AFTER_CODE, KosDynWind_AFTER_PC, KosDynWind_ENTERED.
 
-- **KosDynRegion** (union variant): Block-local control; `KosRegionStyle` (TRY, FINALLY, LOOP, WITH, FOREACH, etc.). `break_pc`, `continue_pc` are jump targets; `enabled` for exception handling. Access via KosDynRegion_STYLE, KosDynRegion_BREAK_PC, KosDynRegion_CONTINUE_PC, KosDynRegion_ENABLED, and related macros.
+- **KosDynRegion** (union variant): Block-local control; `KosRegionStyle` (TRY, FINALLY, LOOP, WITH, FOREACH, etc.). `break_pc`, `continue_pc` are jump targets; `enabled` for exception handling. FOREACH regions have `iter_next_else_pc` for ITER_NEXT exhausted path. Access via KosDynRegion_STYLE, KosDynRegion_BREAK_PC, KosDynRegion_CONTINUE_PC, KosDynRegion_ENABLED, KosDynRegion_ITER_NEXT_ELSE_PC, and related macros.
 
 - **KosDynNs** (union variant): Namespace scope from PUSH_NS; holds `saved_ns` (prior frame namespace) for restore on POP_NS. Access via KosDynNs_SAVED_NS.
 
 - **Allocator caches**: dynchain.c maintains a **single freelist for all KosDynNode kinds** (one allocation size); KosContinuation has its own **freelist**; eval.c maintains a **context cache** (KosContext freelist). Caps are tunable (DYN_NODE_MAX_FREE, CONT_MAX_FREE, CONTEXT_MAX_FREE). Same pattern as stack block freelist in stack.c.
 
-- **KosContext**: Top-level VM state: `dyn_top`, `frame_top`, `globals_frame`, `globals_cache_version`, `token`, `hook_runner`, `plan` / `plan_stack`, `chain_version`, `invocation_segment_top`, `py_await_iter`, `py_resume_inject`/`py_resume_kind`, `inject_mode`/`inject_value`, **pending async gen** (`pending_agen`, `pending_agen_default`, `pending_agen_n`, `pending_agen_region`, `pending_agen_else_pc` for in-loop NEXT/ITER_NEXT), `flags`. FINALLY `handling_raise`/`handling_result` live on `KosDynRegion`, not context.
+- **KosContext**: Top-level VM state: `dyn_top`, `frame_top`, `globals_frame`, `globals_cache_version`, `token`, `hook_runner`, `plan` / `plan_stack`, `chain_version`, `invocation_segment_top`, `py_await_iter`, `py_resume_inject`/`py_resume_kind`, `inject_mode`/`inject_value`, **pending async gen** (`pending_agen`, `pending_agen_default`, `pending_agen_n` for in-loop NEXT/ITER_NEXT; ITER_NEXT exhausted path reads region and else_pc from FOREACH region via kos_find_region_for_loop), `flags`. FINALLY `handling_raise`/`handling_result` live on `KosDynRegion`, not context.
 
 - **KosEvent**: Boundary event from `koskari_eval`: `KOS_EV_RETURN`, `KOS_EV_RAISE`, `KOS_EV_YIELD`, `KOS_EV_AWAIT`; `payload` is a new reference owned by the caller. These are produced only when the current frame has **no parent** (top-level return/yield/raise/await); when the frame has a parent, YIELD/RETURN are handled in-loop by detaching and pushing onto the parent.
 

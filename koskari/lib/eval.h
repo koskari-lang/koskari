@@ -198,9 +198,7 @@ struct KosContext {
   /* --- Pending async gen: NEXT and ITER_NEXT (Koskari gen) --- */
   void *pending_agen;        /* KosPyAsyncGen * when set (avoid func.h in eval.h) */
   PyObject *pending_agen_default;  /* default value for 2-arg NEXT (or NULL) */
-  int pending_agen_n;       /* 1 or 2 for NEXT; 0 for ITER_NEXT */
-  void *pending_agen_region;  /* KosDynRegion * for ITER_NEXT exhausted; NULL for NEXT */
-  uint32_t pending_agen_else_pc;  /* else PC for ITER_NEXT exhausted */
+  int pending_agen_n;       /* 1 or 2 for NEXT; 0 for ITER_NEXT (ITER_NEXT exhausted path reads from region) */
 
   uint32_t flags;            /* KosContextFlags */
 
@@ -236,8 +234,6 @@ struct KosContext {
 #define KosContext_PENDING_AGEN(c)           (((KosContext *)(c))->pending_agen)
 #define KosContext_PENDING_AGEN_DEFAULT(c)   (((KosContext *)(c))->pending_agen_default)
 #define KosContext_PENDING_AGEN_N(c)         (((KosContext *)(c))->pending_agen_n)
-#define KosContext_PENDING_AGEN_REGION(c)    (((KosContext *)(c))->pending_agen_region)
-#define KosContext_PENDING_AGEN_ELSE_PC(c)   (((KosContext *)(c))->pending_agen_else_pc)
 #define KosContext_FLAGS(c)                  (((KosContext *)(c))->flags)
 #define KosContext_FREELIST_NEXT(c)          (((KosContext *)(c))->context_freelist_next)
 

@@ -143,7 +143,6 @@ static void clear_pending_agen_on_error(KosContext *ctx) {
   KosContext_PENDING_AGEN(ctx) = NULL;
   Py_XDECREF(KosContext_PENDING_AGEN_DEFAULT(ctx));
   KosContext_PENDING_AGEN_DEFAULT(ctx) = NULL;
-  KosContext_PENDING_AGEN_REGION(ctx) = NULL;
 }
 
 
@@ -438,8 +437,6 @@ KosContext *kos_context_new(KosDynFrame *top) {
   KosContext_PENDING_AGEN(ctx) = NULL;
   KosContext_PENDING_AGEN_DEFAULT(ctx) = NULL;
   KosContext_PENDING_AGEN_N(ctx) = 0;
-  KosContext_PENDING_AGEN_REGION(ctx) = NULL;
-  KosContext_PENDING_AGEN_ELSE_PC(ctx) = 0;
 
   KosContext_FLAGS(ctx) = 0;
 
@@ -1044,14 +1041,15 @@ KOS_OP_HANDLER(RETURN) {
     if (was_pending_ctx && agen) {
       agen->closed = 1;
       agen->in_progress = 0;
-      if (KosContext_PENDING_AGEN_N(ctx) == 0 && KosContext_PENDING_AGEN_REGION(ctx)) {
-        /* ITER_NEXT case: exhausted; jump to else */
-        KosDynRegion *r = (KosDynRegion *) KosContext_PENDING_AGEN_REGION(ctx);
-        KosDynRegion_EXHAUSTED(r) = 1;
-        KosDynFrame_PC(KosContext_FRAME_TOP(ctx)) = KosContext_PENDING_AGEN_ELSE_PC(ctx);
+      if (KosContext_PENDING_AGEN_N(ctx) == 0) {
+        /* ITER_NEXT case: exhausted; jump to else (region and else_pc on region) */
+        KosDynRegion *r = kos_find_region_for_loop(ctx);
+        if (r) {
+          KosDynRegion_EXHAUSTED(r) = 1;
+          KosDynFrame_PC(KosContext_FRAME_TOP(ctx)) = KosDynRegion_ITER_NEXT_ELSE_PC(r);
+        }
         KosContext_PENDING_AGEN(ctx) = NULL;
         KosContext_PENDING_AGEN_DEFAULT(ctx) = NULL;
-        KosContext_PENDING_AGEN_REGION(ctx) = NULL;
         Py_DECREF(val);
         return 0;
       }
@@ -2799,7 +2797,6 @@ KOS_OP_HANDLER(YIELD) {
       KosContext_PENDING_AGEN(ctx) = NULL;
       Py_XDECREF(KosContext_PENDING_AGEN_DEFAULT(ctx));
       KosContext_PENDING_AGEN_DEFAULT(ctx) = NULL;
-      KosContext_PENDING_AGEN_REGION(ctx) = NULL;
     }
     if (KosStackBlock_PushRef(&KosDynFrame_STACK(KosContext_FRAME_TOP(ctx)), val) < 0) {
       Py_DECREF(val);
@@ -2969,7 +2966,7 @@ static int op_attach_koskari_agen_frame(
 
 
 /**
-   ITER_NEXT variant: attach gen frame; on error clear region's pending_agen_state.
+   ITER_NEXT variant: attach gen frame; on error clear context pending_agen.
 */
 static int op_attach_koskari_agen_frame_for_iter_next(
     KosContext *ctx,
@@ -3156,12 +3153,10 @@ KOS_OP_HANDLER(ITER_NEXT) {
     KosContext_PENDING_AGEN(ctx) = (void *) agen;
     KosContext_PENDING_AGEN_DEFAULT(ctx) = NULL;
     KosContext_PENDING_AGEN_N(ctx) = 0;
-    KosContext_PENDING_AGEN_REGION(ctx) = (void *) region;
-    KosContext_PENDING_AGEN_ELSE_PC(ctx) = insn->arg;
+    KosDynRegion_ITER_NEXT_ELSE_PC(region) = insn->arg;
     if (op_attach_koskari_agen_frame_for_iter_next(ctx, agen, region) < 0) {
       agen->in_progress = 0;
       KosContext_PENDING_AGEN(ctx) = NULL;
-      KosContext_PENDING_AGEN_REGION(ctx) = NULL;
       return -1;
     }
     return 0;

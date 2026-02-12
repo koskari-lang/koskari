@@ -326,7 +326,7 @@ KosDynRegion *kos_dynregion_new(
   KosDynRegion_ITER(region) = NULL;
   KosDynRegion_EXHAUSTED(region) = 0;
   KosDynRegion_HANDLING_RAISE(region) = 0;
-  KosDynRegion_PENDING_AGEN_STATE(region) = NULL;
+  KosDynRegion_ITER_NEXT_ELSE_PC(region) = 0;
   return region;
 }
 
@@ -351,18 +351,8 @@ KosDynRegion *kos_dynregion_clone(KosDynRegion *region) {
   Py_XINCREF(KosDynRegion_ITER(clone));
   KosDynRegion_EXHAUSTED(clone) = KosDynRegion_EXHAUSTED(region);
   KosDynRegion_HANDLING_RAISE(clone) = KosDynRegion_HANDLING_RAISE(region);
-  KosDynRegion_PENDING_AGEN_STATE(clone) = NULL;  /* do not clone; in-flight state */
+  KosDynRegion_ITER_NEXT_ELSE_PC(clone) = KosDynRegion_ITER_NEXT_ELSE_PC(region);
   return clone;
-}
-
-
-void kos_dynregion_clear_pending_agen_state(KosDynRegion *region) {
-  KosAgenAwaitState *state = (KosAgenAwaitState *) KosDynRegion_PENDING_AGEN_STATE(region);
-  if (! state)
-    return;
-  Py_XDECREF(state->default_val);
-  PyMem_Free(state);
-  KosDynRegion_PENDING_AGEN_STATE(region) = NULL;
 }
 
 
@@ -370,7 +360,6 @@ void kos_dynregion_free(KosDynRegion *region) {
   if (! region)
     return;
 
-  kos_dynregion_clear_pending_agen_state(region);
   /* DECREF payload owned references */
   Py_XDECREF(KosDynRegion_RESULT(region));
   Py_XDECREF(KosDynRegion_ITER(region));
