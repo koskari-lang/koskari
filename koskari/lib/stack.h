@@ -375,6 +375,14 @@ PyObject *KosStackBlock_PopTail(KosStackBlock **self, size_t count);
 
 
 /**
+   Block-level API for eval: TOS = names tuple, below it count values.
+   Pops names and count values, returns a new dict mapping each name to
+   its value. Caller owns the returned reference.
+ */
+PyObject *KosStackBlock_PopTailDictNames(KosStackBlock **self, size_t count);
+
+
+/**
    Push a new empty block onto the block chain. *block is updated to the
    new top. For use by eval when entering loop/foreach blocks.
 

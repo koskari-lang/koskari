@@ -267,6 +267,17 @@ static PyObject *code_m_function(PyObject *self, PyObject *args) {
 }
 
 
+static PyObject *code_m_function_spec(PyObject *self, PyObject *formals_spec) {
+
+  if (! KosFormalsSpec_CheckExact(formals_spec)) {
+    PyErr_Format(PyExc_TypeError, "Code.function_spec formals_spec must be"
+                 " FormalsSpec, not %R", formals_spec);
+    return NULL;
+  }
+  return KosFunctionSpec_New(NULL, formals_spec, self);
+}
+
+
 static PyMethodDef code_methods[] = {
 
   { "constant", (PyCFunction) code_m_constant, METH_O,
@@ -286,6 +297,9 @@ static PyMethodDef code_methods[] = {
 
   { "function", (PyCFunction) code_m_function, METH_VARARGS,
     "C.function(formals, parent_ns) => Function (callable that returns Coroutine)" },
+
+  { "function_spec", (PyCFunction) code_m_function_spec, METH_O,
+    "C.function_spec(formals_spec) => FunctionSpec" },
 
   { NULL, },
 };
@@ -501,7 +515,7 @@ static int process_instr(
     }
 
     long lop = PyLong_AsLong(a);
-    if ((lop < (long) KOS_OP_NOOP) || (lop >= (long) KOS_OP_THEEND)) {
+    if ((lop < (long) KOS_OP_NOOP) || (lop > (long) KOS_OP_THEEND)) {
       PyErr_Format(PyExc_RuntimeError, "Code instruction undefined"
                    " %R:%R", a, b);
       goto failure;
@@ -585,8 +599,10 @@ static int process_instr(
       break;
 
     case KOS_OP_THEEND:
-      code[di].op = KOS_OP_NOOP;
-      /* fall through */
+      /* Emit THEEND as-is so evaluator can raise; do not rewrite to NOOP */
+      di++;
+      break;
+
     case KOS_OP_NOOP:
       break;
 
@@ -1067,7 +1083,7 @@ static int code_instr_init(PyObject *self, PyObject *instr) {
     }
 
     long lop = PyLong_AsLong(a);
-    if ((lop < (long) KOS_OP_NOOP) || (lop >= (long) KOS_OP_THEEND)) {
+    if ((lop < (long) KOS_OP_NOOP) || (lop > (long) KOS_OP_THEEND)) {
       PyErr_Format(PyExc_RuntimeError, "Code instruction undefined"
                    " %R", a);
       return -1;

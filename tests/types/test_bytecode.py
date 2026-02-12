@@ -27,7 +27,8 @@ deduplication, and position tracking.
 
 import unittest
 
-from koskari import Code, NamespaceSpec, OpCode
+from koskari import Code, FormalsSpec, NamespaceSpec, OpCode
+from koskari.lib import FunctionSpec
 
 
 def example_bytecode_truthy_yus():
@@ -225,6 +226,42 @@ class TestCode(unittest.TestCase):
         code = Code(nspec, instr, "fn", "script.ki")
         self.assertEqual(code.filename, "script.ki")
         self.assertEqual(code.name, "fn")
+
+
+class TestCodeFunctionSpec(unittest.TestCase):
+    """
+    Tests for Code.function_spec(formals_spec) and FunctionSpec type
+    """
+
+    def test_function_spec_type_exists(self):
+        """FunctionSpec is registered from koskari.lib"""
+
+        self.assertIsNotNone(FunctionSpec)
+        self.assertEqual(FunctionSpec.__name__, "FunctionSpec")
+        self.assertEqual(FunctionSpec.__module__, "koskari.lib")
+
+    def test_code_function_spec_returns_function_spec(self):
+        """Code.function_spec(FormalsSpec()) returns a FunctionSpec"""
+
+        nspec = NamespaceSpec(None, (), ())
+        instr = ([OpCode.KOS_OP_RETURN, 0],)
+        code = Code(nspec, instr, "inner")
+        fspec = FormalsSpec()
+        result = code.function_spec(fspec)
+        self.assertIsInstance(result, FunctionSpec)
+        self.assertIs(result.code, code)
+        self.assertIs(result.formals_spec, fspec)
+
+    def test_code_function_spec_requires_formals_spec(self):
+        """Code.function_spec(non-FormalsSpec) raises TypeError"""
+
+        nspec = NamespaceSpec(None, (), ())
+        instr = ([OpCode.KOS_OP_RETURN, 0],)
+        code = Code(nspec, instr, "inner")
+        with self.assertRaises(TypeError):
+            code.function_spec(None)
+        with self.assertRaises(TypeError):
+            code.function_spec("not a formals spec")
 
 
 # The end.

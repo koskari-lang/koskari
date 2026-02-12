@@ -25,8 +25,8 @@ and stub opcodes (RuntimeError).
 import asyncio
 import unittest
 
-from koskari import Code, FormalsSpec, NamespaceSpec, OpCode
-from koskari.lib import AsyncGenerator
+from koskari import Code, FormalsSpec, Function, NamespaceSpec, OpCode
+from koskari.lib import AsyncGenerator, FunctionSpec
 from tests import make_callable
 
 
@@ -415,13 +415,15 @@ class TestStubOpcodes(CevalTest):
             self._run_stub_opcode("POP_REGION", 0)
 
 
-    def test_theend_raises_not_implemented(self):
+    def test_theend_raises_unimpl(self):
         """
-        THEEND raises RuntimeError
+        THEEND has no runtime implementation; raises RuntimeError with fixed message
         """
 
-        with self.assertRaises(RuntimeError):
+        with self.assertRaises(RuntimeError) as ctx:
             self._run_stub_opcode("THEEND", 0)
+        self.assertIn("THEEND", str(ctx.exception))
+        self.assertIn("no runtime implementation", str(ctx.exception))
 
 
     def test_yield_from_raises_not_implemented(self):
@@ -453,9 +455,9 @@ class TestStubOpcodes(CevalTest):
             self._run_stub_opcode("BUILD_ARGS", 0)
 
 
-    def test_build_function_raises_not_implemented(self):
+    def test_build_function_stack_underrun_raises(self):
         """
-        BUILD_FUNCTION raises RuntimeError
+        BUILD_FUNCTION with no fspec on stack raises (stack underrun)
         """
 
         with self.assertRaises(RuntimeError):
@@ -676,6 +678,47 @@ class TestStubOpcodes(CevalTest):
 
         with self.assertRaises(RuntimeError):
             self._run_stub_opcode("POP_NS", 0)
+
+
+class TestBuildFunction(CevalTest):
+    """
+    Tests for BUILD_FUNCTION: CONST (FunctionSpec), BUILD_FUNCTION N, RETURN 1.
+    """
+
+    def test_build_function_no_defaults_returns_function(self):
+        """
+        CONST fspec, BUILD_FUNCTION 0, RETURN 1 yields a Function
+        """
+
+        inner_code = build_code([["RETURN", 0]], name="inner")
+        fspec = inner_code.function_spec(FormalsSpec())
+        code_obj, ns = build_expr([
+            ["CONST", fspec],
+            ["BUILD_FUNCTION", 0],
+            ["RETURN", 1],
+        ])
+        result = run_to_completion(make_callable(code_obj, ns)())
+        self.assertIsInstance(result, Function)
+
+    def test_build_function_returned_function_is_callable(self):
+        """
+        Function built via BUILD_FUNCTION is callable and returns a coroutine
+        """
+
+        inner_code = build_code([
+            ["CONST", 99],
+            ["RETURN", 1],
+        ], name="inner")
+        fspec = inner_code.function_spec(FormalsSpec())
+        code_obj, ns = build_expr([
+            ["CONST", fspec],
+            ["BUILD_FUNCTION", 0],
+            ["RETURN", 1],
+        ])
+        fn = run_to_completion(make_callable(code_obj, ns)())
+        self.assertIsInstance(fn, Function)
+        coro = fn()
+        self.assertEqual(run_to_completion(coro), 99)
 
 
 class TestNoopLabelPositionOpcodes(CevalTest):

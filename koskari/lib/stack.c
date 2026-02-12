@@ -885,7 +885,7 @@ static PyObject *KosStackBlock_PopTailDict(
 }
 
 
-static PyObject *KosStackBlock_PopTailDictNames(
+PyObject *KosStackBlock_PopTailDictNames(
     KosStackBlock **self,
     size_t count) {
 

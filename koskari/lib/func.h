@@ -57,6 +57,54 @@ PyObject *KosExpression_GetCode(PyObject *expr);
 PyObject *KosExpression_GetNs(PyObject *expr);
 
 
+/* === FunctionSpec === */
+
+
+extern PyTypeObject KosFunctionSpecType;
+
+
+typedef struct KosFunctionSpec {
+  PyObject_HEAD
+
+  PyObject *name;           /* PyUnicode or NULL */
+  PyObject *formals_spec;   /* KosFormalsSpec */
+  PyObject *code;           /* KosCode */
+} KosFunctionSpec;
+
+
+PyObject *KosFunctionSpec_New(PyObject *name, PyObject *formals_spec,
+                              PyObject *code);
+
+
+#define KosFunctionSpec_NAME(fspec)             \
+  (((KosFunctionSpec *) (fspec))->name)
+
+#define KosFunctionSpec_FORMALS_SPEC(fspec)    \
+  (((KosFunctionSpec *) (fspec))->formals_spec)
+
+#define KosFunctionSpec_CODE(fspec)            \
+  (((KosFunctionSpec *) (fspec))->code)
+
+#define KosFunctionSpec_CheckExact(obj)                \
+  ((obj) && ((obj)->ob_type == &KosFunctionSpecType))
+
+
+/**
+   Create a Function from a FunctionSpec and keyword defaults.
+   Used by BUILD_FUNCTION: formals = KosFormals_New(fspec->formals_spec,
+   kw_defaults), then KosFunction_NewFromFormals(fspec->code, formals,
+   parent_ns).
+
+   :param func_spec: KosFunctionSpec instance
+   :param kw_defaults: PyDict of name -> default value, or NULL
+   :param parent_namespace: KosNamespace (current frame NS)
+   :return: new KosFunction, or NULL on error
+*/
+PyObject *KosFunction_New(PyObject *func_spec,
+                          PyObject *kw_defaults,
+                          PyObject *parent_namespace);
+
+
 /* === Function === */
 
 

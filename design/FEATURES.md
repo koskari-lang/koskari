@@ -84,7 +84,7 @@ This document provides a high-level summary of all features identified from both
 The VM in `eval.c` uses a jump table; every opcode has a handler. Handlers are either **fully implemented**, **partially implemented**, or **stubs** (delegate to `op_unimplemented_stub`, which raises at runtime). Status is as of the current koskari implementation.
 
 **Fully implemented** (handler does real work; no stub):
-- **Pseudo / stack**: NOOP, LABEL, POSITION, DUP, POP, CONST
+- **Pseudo / stack**: NOOP, LABEL, POSITION (no-op at runtime: advance PC only; no effect), DUP, POP, CONST
 - **Control**: RETURN, AWAIT, YIELD (suspend with value; resumption via send; async gen support)
 - **Calls**: CALL (arg = N; stack [callable, arg_0, ..., arg_{N-1}]; Continuation/DelimitedContinuation → call_call_continuation; KosExpression/KosFunction → new frame in same loop; other callables → PyObject_Call then push_or_await)
 - **Introspection**: GLOBALS, LOCALS
@@ -103,14 +103,17 @@ The VM in `eval.c` uses a jump table; every opcode has a handler. Handlers are e
 - **Iteration**: ITER_NEXT (region-only, must be inside PUSH_FOREACH; uses region->iter; arg = else label; auto-await), NEXT (stack-based; arg = 1 or 2; 1-arg: StopIteration raises; 2-arg: StopIteration pushes default; auto-await for sync iter, Python async iter, Koskari async gen)
 - **Loop control**: PUSH_LOOP, PUSH_FOREACH, POP_LOOP, CLEAR_LOOP, BREAK, CONTINUE (use KosDynRegion LOOP/FOREACH on dynamic chain; PUSH_LOOP pushes stack block; BREAK/CONTINUE unwind via kos_find_region_for_loop; ITER_NEXT at loop head for foreach)
 
+**No runtime implementation** (hardcoded error; not a stub to be implemented later):
+- **THEEND**: End-of-code sentinel; if execution reaches it, raises RuntimeError with a fixed message ("THEEND has no runtime implementation"). Never has a runtime implementation.
+
 **Not implemented (stubs)** — hitting these at runtime raises "unimplemented opcode":
-- **Control / mode**: THEEND, YIELD_FROM
-- **Argument building**: BUILD_ARGS, BUILD_FUNCTION, BUILD_KWDS, BUILD_KWDS_NAMES, COMBINE_ARGS, COMBINE_KWDS
+- **Control / mode**: YIELD_FROM
+- **Argument building**: BUILD_ARGS, BUILD_KWDS, BUILD_KWDS_NAMES, COMBINE_ARGS, COMBINE_KWDS
 - **Calls**: CALL_NAMES, CALL_STAR; CALL_ATTR, CALL_ATTR_NAMES, CALL_ATTR_STAR; RECUR, RECUR_NAMES, RECUR_STAR; TAIL_CALL, TAIL_CALL_NAMES, TAIL_CALL_STAR; TAIL_RECUR, TAIL_RECUR_NAMES, TAIL_RECUR_STAR
 - **Block control**: PUSH_WITH, PUSH_BEGIN, PUSH_CLASS; POP_WITH, POP_BEGIN
 - **Wind / region**: PUSH_WIND, POP_WIND, END_WIND; PUSH_REGION, POP_REGION
 
-There are no **partially** implemented opcodes; each handler is either full or stub. The authoritative list is the set of handlers in `koskari/lib/eval.c` that do not call `op_unimplemented_stub`.
+There are no **partially** implemented opcodes; each handler is either full, a stub, or a dedicated "no runtime implementation" handler (THEEND). The authoritative list is the set of handlers in `koskari/lib/eval.c` that do not call `op_unimplemented_stub`.
 
 ### Compiler
 - **Phases**: Parse → Expand → Compile → Optimize → Generate

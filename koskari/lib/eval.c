@@ -2591,14 +2591,18 @@ static int kos_check_cmp(
 }
 
 
-/* Unimplemented opcodes: documented handlers that delegate to op_unimplemented_stub. */
+/* THEEND: no runtime implementation; hardcoded error (not a "stub" to be implemented). */
 
 /**
-   THEEND: arg unused. End of code; never implemented. This should never be
-   present in final bytecode. We'll make sure it raises a RuntimeError if it is.
+   THEEND: arg unused. End-of-code sentinel; has no runtime implementation.
+   If execution reaches THEEND, raise a hardcoded unimplemented error.
 */
 KOS_OP_HANDLER(THEEND) {
-  return op_unimplemented_stub(ctx, out_ev, insn);
+  (void) ctx;
+  (void) out_ev;
+  (void) insn;
+  PyErr_SetString(PyExc_RuntimeError, "THEEND has no runtime implementation");
+  return -1;
 }
 
 
@@ -3916,11 +3920,43 @@ KOS_OP_HANDLER(BUILD_ARGS) {
 
 
 /**
-   BUILD_FUNCTION: arg = constant index or similar. Build function/callable from stack;
-   not yet implemented.
+   BUILD_FUNCTION: arg = N (number of keyword default values).
+   Stack: ... fspec [, val_1 ... val_N, names_tuple ]. Pop fspec, then if
+   N > 0 pop N values and names tuple into a defaults dict. Build function
+   via KosFunction_New(fspec, defaults, frame_ns) and push result.
 */
 KOS_OP_HANDLER(BUILD_FUNCTION) {
-  return op_unimplemented_stub(ctx, out_ev, insn);
+  unsigned opa = insn->arg;
+  KosStackBlock **stack = &KosDynFrame_STACK(KosContext_FRAME_TOP(ctx));
+
+  PyObject *fspec = KosStackBlock_PopRef(stack);
+  if (! fspec)
+    return -1;
+
+  PyObject *defaults = NULL;
+  if (opa > 0) {
+    defaults = KosStackBlock_PopTailDictNames(stack, (size_t) opa);
+    if (! defaults) {
+      Py_DECREF(fspec);
+      return -1;
+    }
+  }
+
+  PyObject *parent_ns = KosDynFrame_NS(KosContext_FRAME_TOP(ctx));
+  PyObject *fn = KosFunction_New(fspec, defaults, parent_ns);
+  Py_DECREF(fspec);
+  Py_XDECREF(defaults);
+  if (! fn)
+    return -1;
+
+  if (KosStackBlock_PushRef(stack, fn) < 0) {
+    Py_DECREF(fn);
+    return -1;
+  }
+  Py_DECREF(fn);
+
+  (void) out_ev;
+  return 0;
 }
 
 

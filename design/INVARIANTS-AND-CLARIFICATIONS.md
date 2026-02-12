@@ -154,7 +154,7 @@ These are **commitments**: they must hold for correct behavior. They are elabora
 - **Instruction**: 4 bytes = `KosOp { op, arg }` (both uint16_t). The exact bytecode encoding is not finalized; current aim is a fixed-width encoding of (uint16 op, uint16 arg).
 - **Position**: Stored in a separate delta-encoded table; only changes are recorded; lookup by instruction index is binary search.
 - **Opcodes**: Defined in `opcodes.incl` with `OP(name, style)`. Styles: COMPILE, LABEL, NOARG, COUNT, PAIR_COUNT, STAR, CONST, VAR, FASTVAR. Categories include stack, control flow, jumps, variables (VAR / FASTVAR), attributes, items, calls (including tail/recur), block control, delimited continuations (PUSH_PROMPT, SET_PROMPT_HANDLER, POP_PROMPT, SHIFT), dynamic wind (PUSH_WIND, POP_WIND, END_WIND), continuation invocation (INVOKE_K), region control, object protocol, iteration, introspection, exceptions.
-- **Implementation status**: Each opcode has a handler in `eval.c`; handlers are either fully implemented or stubs (`op_unimplemented_stub`). The list of **fully implemented** vs **unimplemented (stub)** opcodes is documented in `design/FEATURES.md` (§ "Opcodes: implementation status") and summarized in `design/interpreter/bytecode.md` (§ "Opcode implementation status"). There are no partially implemented opcodes.
+- **Implementation status**: Each opcode has a handler in `eval.c`; handlers are either fully implemented, stubs (`op_unimplemented_stub`), or a dedicated "no runtime implementation" handler (THEEND: hardcoded error, not a stub). The list of **fully implemented**, **no runtime implementation** (THEEND), and **unimplemented (stub)** opcodes is documented in `design/FEATURES.md` (§ "Opcodes: implementation status") and summarized in `design/interpreter/bytecode.md` (§ "Opcode implementation status"). There are no partially implemented opcodes.
 
 **OPEN** (not settled): Full opcode set and per-opcode semantics; bytecode word size and encoding details beyond tentative format; full opcode inventory and formal operand conventions; precise opcode-level semantics for local-only jumps; exact taxonomy of continuation-related exceptions.
 
@@ -200,7 +200,7 @@ These are **commitments**: they must hold for correct behavior. They are elabora
 
 **Not yet implemented**:
 
-- Remaining opcode handlers: argument building, CALL_NAMES/CALL_STAR/CALL_ATTR*/RECUR*/TAIL_*, block control (foreach/with/begin/loop, wind, region), THEEND/BREAK/CONTINUE/YIELD/YIELD_FROM. See `design/FEATURES.md` § "Opcodes: implementation status".
+- Remaining opcode handlers: argument building (except BUILD_FUNCTION), CALL_NAMES/CALL_STAR/CALL_ATTR*/RECUR*/TAIL_*, block control (with/begin/class, wind, region), YIELD_FROM. THEEND has no runtime implementation (hardcoded error). See `design/FEATURES.md` § "Opcodes: implementation status".
 - Compiler (parse → expand → compile → bytecode).
 - Module creation/loading and import system integration.
 - Most special forms (only types, parsing, and runtime primitives exist).

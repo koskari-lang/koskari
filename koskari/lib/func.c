@@ -132,6 +132,139 @@ PyTypeObject KosExpressionType = {
 };
 
 
+/* === KosFunctionSpec: (name, formals_spec, code) for BUILD_FUNCTION === */
+
+
+static PyMemberDef function_spec_members[] = {
+  { "name", T_OBJECT,
+    offsetof(KosFunctionSpec, name), READONLY,
+    "name for function" },
+
+  { "formals_spec", T_OBJECT,
+    offsetof(KosFunctionSpec, formals_spec), READONLY,
+    "formals spec for function" },
+
+  { "code", T_OBJECT,
+    offsetof(KosFunctionSpec, code), READONLY,
+    "KosCode for function" },
+
+  { NULL, },
+};
+
+
+static PyObject *function_spec_call(PyObject *self,
+                                    PyObject *args, PyObject *kwds) {
+
+  if (kwds) {
+    PyErr_SetString(PyExc_TypeError, "FunctionSpec does not accept keyword"
+                    " arguments");
+    return NULL;
+  }
+
+  PyObject *defaults = NULL;
+  PyObject *parent = NULL;
+
+  if (! PyArg_ParseTuple(args, "OO:FunctionSpec", &defaults, &parent))
+    return NULL;
+
+  return KosFunction_New(self, defaults, parent);
+}
+
+
+static PyObject *function_spec_new(PyTypeObject *type,
+                                   PyObject *args, PyObject *kwds) {
+
+  if (kwds) {
+    PyErr_SetString(PyExc_TypeError, "FunctionSpec does not accept keyword"
+                    " arguments");
+    return NULL;
+  }
+
+  PyObject *name = NULL;
+  PyObject *fspec = NULL;
+  PyObject *code = NULL;
+
+  if (! PyArg_ParseTuple(args, "OOO:FunctionSpec", &name, &fspec, &code))
+    return NULL;
+
+  return KosFunctionSpec_New(name, fspec, code);
+}
+
+
+static void function_spec_dealloc(PyObject *self) {
+  Py_CLEAR(KosFunctionSpec_NAME(self));
+  Py_CLEAR(KosFunctionSpec_FORMALS_SPEC(self));
+  Py_CLEAR(KosFunctionSpec_CODE(self));
+  Py_TYPE(self)->tp_free(self);
+}
+
+
+static int function_spec_traverse(PyObject *self, visitproc visit, void *arg) {
+  Py_VISIT(KosFunctionSpec_NAME(self));
+  Py_VISIT(KosFunctionSpec_FORMALS_SPEC(self));
+  Py_VISIT(KosFunctionSpec_CODE(self));
+  return 0;
+}
+
+
+static int function_spec_clear(PyObject *self) {
+  Py_CLEAR(KosFunctionSpec_NAME(self));
+  Py_CLEAR(KosFunctionSpec_FORMALS_SPEC(self));
+  Py_CLEAR(KosFunctionSpec_CODE(self));
+  return 0;
+}
+
+
+PyTypeObject KosFunctionSpecType = {
+  PyVarObject_HEAD_INIT(NULL, 0)
+  .tp_name = "koskari.lib.FunctionSpec",
+  .tp_basicsize = sizeof(KosFunctionSpec),
+  .tp_flags = Py_TPFLAGS_DEFAULT,
+  .tp_members = function_spec_members,
+  .tp_new = function_spec_new,
+  .tp_call = function_spec_call,
+  .tp_dealloc = function_spec_dealloc,
+  .tp_traverse = function_spec_traverse,
+  .tp_clear = function_spec_clear,
+};
+
+
+PyObject *KosFunctionSpec_New(PyObject *name, PyObject *formals_spec,
+                              PyObject *code) {
+
+  if (! KosCode_Check(code)) {
+    PyErr_Format(PyExc_TypeError, "function spec code must be Code,"
+                 " not %R", code);
+    return NULL;
+  }
+
+  if (name == Py_None)
+    name = NULL;
+
+  if (! KosFormalsSpec_CheckExact(formals_spec)) {
+    PyErr_Format(PyExc_TypeError, "function spec formals must be FormalsSpec,"
+                 " not %R", formals_spec);
+    return NULL;
+  }
+
+  PyObject *self = PyType_GenericNew(&KosFunctionSpecType, NULL, NULL);
+  if (! self)
+    return NULL;
+
+  KosFunctionSpec *spec = (KosFunctionSpec *) self;
+  Py_XINCREF(name);
+  spec->name = name;
+
+  Py_INCREF(formals_spec);
+  spec->formals_spec = formals_spec;
+
+  Py_INCREF(code);
+  spec->code = code;
+
+  return self;
+}
+
+
 /* === KosFunction: callable (code, formals, base_ns) -> coroutine on __call__ === */
 
 
@@ -351,6 +484,29 @@ PyObject *KosFunction_NewFromFormals(
   fn->base_ns = parent_ns;
   fn->formals = formals;
   return self;
+}
+
+
+PyObject *KosFunction_New(PyObject *func_spec,
+                         PyObject *kw_defaults,
+                         PyObject *parent_namespace) {
+
+  if (! KosFunctionSpec_CheckExact(func_spec)) {
+    PyErr_Format(PyExc_TypeError, "KosFunction_New requires FunctionSpec,"
+                 " not %R", func_spec);
+    return NULL;
+  }
+
+  PyObject *formals_spec = KosFunctionSpec_FORMALS_SPEC(func_spec);
+  PyObject *code = KosFunctionSpec_CODE(func_spec);
+
+  PyObject *formals = KosFormals_New(formals_spec, kw_defaults);
+  if (! formals)
+    return NULL;
+
+  PyObject *fn = KosFunction_NewFromFormals(code, formals, parent_namespace);
+  Py_DECREF(formals);
+  return fn;
 }
 
 
@@ -1348,6 +1504,7 @@ int koskari_func_init(PyObject *mod) {
   STR_CONST(coro_str_close, "close");
 
   if (PyType_Ready(&KosExpressionType) ||
+      PyType_Ready(&KosFunctionSpecType) ||
       PyType_Ready(&KosFunctionType) ||
       PyType_Ready(&KosCoroutineType) ||
       PyType_Ready(&KosPyDelimitedContinuationType) ||
@@ -1358,6 +1515,10 @@ int koskari_func_init(PyObject *mod) {
 
   if (PyDict_SetItemString(dict, "Expression",
                            (PyObject *) &KosExpressionType))
+    return -1;
+
+  if (PyDict_SetItemString(dict, "FunctionSpec",
+                           (PyObject *) &KosFunctionSpecType))
     return -1;
 
   if (PyDict_SetItemString(dict, "Function",

@@ -505,6 +505,74 @@ static int test_eval_call_wrong_type(void) {
 }
 
 
+/* === Test: BUILD_FUNCTION (no defaults) => Function on stack === */
+
+
+static int test_eval_build_function_no_defaults(void) {
+    /*
+      Bytecode: CONST (FunctionSpec), BUILD_FUNCTION 0, RETURN 1.
+      FunctionSpec = (name=NULL, formals_spec=empty, code=inner).
+      Inner code is just RETURN 0. Frame ns must be KosNamespace so
+      KosFunction_New can use it as parent_ns. Expect KOS_EV_RETURN
+      with a KosFunction.
+    */
+    PyObject *nspec = create_test_nspec();
+    TEST_ASSERT_NOT_NULL(nspec, "create nspec");
+
+    PyObject *inner_instr = PyList_New(1);
+    TEST_ASSERT_NOT_NULL(inner_instr, "inner instr list");
+    PyList_SET_ITEM(inner_instr, 0, make_instr_int(KOS_OP_RETURN, 0));
+
+    PyObject *inner_code = KosCode_New(nspec, inner_instr, NULL, NULL);
+    TEST_ASSERT_NOT_NULL(inner_code, "inner Code");
+    Py_DECREF(inner_instr);
+
+    PyObject *formals_spec = KosFormalsSpec_New(
+        NULL, NULL, NULL, NULL, NULL, NULL);
+    TEST_ASSERT_NOT_NULL(formals_spec, "formals_spec");
+
+    PyObject *fspec = KosFunctionSpec_New(NULL, formals_spec, inner_code);
+    TEST_ASSERT_NOT_NULL(fspec, "FunctionSpec");
+    Py_DECREF(formals_spec);
+    Py_DECREF(inner_code);
+
+    PyObject *instr = PyList_New(3);
+    TEST_ASSERT_NOT_NULL(instr, "instr list");
+    PyList_SET_ITEM(instr, 0, make_instr(KOS_OP_CONST, fspec));
+    PyList_SET_ITEM(instr, 1, make_instr_int(KOS_OP_BUILD_FUNCTION, 0));
+    PyList_SET_ITEM(instr, 2, make_instr_int(KOS_OP_RETURN, 1));
+
+    PyObject *code_obj = KosCode_New(nspec, instr, NULL, NULL);
+    TEST_ASSERT_NOT_NULL(code_obj, "create Code");
+    Py_DECREF(instr);
+
+    PyObject *ns = KosNamespace_FromSpec(nspec, NULL);
+    TEST_ASSERT_NOT_NULL(ns, "create namespace");
+    Py_DECREF(nspec);
+
+    KosDynFrame *frame = kos_dynframe_new(NULL, (KosCode *) code_obj, ns, NULL);
+    TEST_ASSERT_NOT_NULL(frame, "create frame");
+
+    KosContext *ctx = kos_context_new(frame);
+    TEST_ASSERT_NOT_NULL(ctx, "create context");
+
+    KosEvent ev = {0};
+    int res = koskari_eval(ctx, &ev);
+
+    TEST_ASSERT(res == 0, "koskari_eval succeeded");
+    TEST_ASSERT(ev.kind == KOS_EV_RETURN, "event is RETURN");
+    TEST_ASSERT_NOT_NULL(ev.payload, "payload not NULL");
+    TEST_ASSERT(PyObject_TypeCheck(ev.payload, &KosFunctionType),
+                "result is Function");
+
+    Py_XDECREF(ev.payload);
+    kos_context_free(ctx);
+    Py_DECREF(code_obj);
+
+    return 0;
+}
+
+
 /* === Test runner === */
 
 int run_eval_tests(void) {
@@ -519,6 +587,7 @@ int run_eval_tests(void) {
     RUN_TEST(test_eval_pop_prompt_without_prompt);
     RUN_TEST(test_eval_call_continuation_underrun);
     RUN_TEST(test_eval_call_wrong_type);
+    RUN_TEST(test_eval_build_function_no_defaults);
 
     return 0;
 }
