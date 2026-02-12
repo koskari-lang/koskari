@@ -2101,8 +2101,12 @@ KOS_OP_HANDLER(OBJECT_POWER) {
    Binary op: pop right then left, call fn(left, right), push result or await.
    fn returns a new reference or NULL.
 */
-static int obj_op_binary(KosContext *ctx, KosEvent *out_ev, KosOp *insn,
-                         PyObject *(*fn)(PyObject *left, PyObject *right)) {
+static int obj_op_binary(
+    KosContext *ctx,
+    KosEvent *out_ev,
+    KosOp *insn,
+    PyObject *(*fn)(PyObject *left, PyObject *right)) {
+
   PyObject *right = KosStackBlock_PopRef(&ctx->frame_top->stack);
   if (! right)
     return -1;
@@ -2171,8 +2175,12 @@ KOS_OP_HANDLER(OBJECT_BIT_RIGHT) {
 }
 
 
-static int op_OBJECT_EQ_impl(KosContext *ctx, KosEvent *out_ev, KosOp *insn,
-                             int op) {
+static int op_OBJECT_EQ_impl(
+    KosContext *ctx,
+    KosEvent *out_ev,
+    KosOp *insn,
+    int op) {
+
   PyObject *right = KosStackBlock_PopRef(&ctx->frame_top->stack);
   if (! right)
     return -1;
@@ -2353,8 +2361,12 @@ KOS_OP_HANDLER(OBJECT_IS_SUBCLASS) {
 
 /* Helper for CHECK_EQ/GE/GT/LE/LT/NE: pop right then left, RichCompareBool;
    jump to insn->arg if comparison fails (res == 0). */
-static int kos_check_cmp(KosContext *ctx, KosEvent *out_ev, KosOp *insn,
-                         int cmp_op) {
+static int kos_check_cmp(
+    KosContext *ctx,
+    KosEvent *out_ev,
+    KosOp *insn,
+    int cmp_op) {
+
   PyObject *right = KosStackBlock_PopRef(&ctx->frame_top->stack);
   if (! right)
     return -1;
@@ -2528,11 +2540,8 @@ KOS_OP_HANDLER(CONTINUE) {
     }
   }
 
-  /* Clear the loop stack block contents for next iteration:
-     drop the current block and push a fresh one */
-  if (KosStackBlock_DropBlock(&ctx->frame_top->stack) < 0)
-    return -1;
-  if (KosStackBlock_PushBlock(&ctx->frame_top->stack) < 0)
+  /* Clear the loop stack block contents for next iteration */
+  if (KosStackBlock_ClearBlock(&ctx->frame_top->stack) < 0)
     return -1;
 
   ctx->frame_top->pc = continue_pc;
@@ -2652,11 +2661,12 @@ typedef enum {
    reference on GET_NEXT_VALUE.
 */
 static KosGetNextResult next_from_python_async_iter(
-        KosContext *ctx,
-        KosEvent *out_ev,
-        PyObject *iter,
-        PyObject **result_out,
-        PyObject *awaitable) {
+    KosContext *ctx,
+    KosEvent *out_ev,
+    PyObject *iter,
+    PyObject **result_out,
+    PyObject *awaitable) {
+
   (void) iter;
   int suspended = 0;
   PyObject *yielded = NULL;
@@ -2686,10 +2696,11 @@ static KosGetNextResult next_from_python_async_iter(
    *result_out is set with a new reference on GET_NEXT_VALUE.
 */
 static KosGetNextResult next_from_python_sync_iter(
-        KosContext *ctx,
-        KosEvent *out_ev,
-        PyObject *iter,
-        PyObject **result_out) {
+    KosContext *ctx,
+    KosEvent *out_ev,
+    PyObject *iter,
+    PyObject **result_out) {
+
   (void) ctx;
   (void) out_ev;
   PyObject *n = PyIter_Next(iter);
@@ -2709,21 +2720,23 @@ static KosGetNextResult next_from_python_sync_iter(
    *result_out set only on GET_NEXT_VALUE (caller pushes and DECREF).
 */
 static KosGetNextResult op_get_next_from_iter(
-        KosContext *ctx,
-        KosEvent *out_ev,
-        PyObject *iter,
-        PyObject **result_out) {
+    KosContext *ctx,
+    KosEvent *out_ev,
+    PyObject *iter,
+    PyObject **result_out) {
+
   /* Koskari async gen is handled in NEXT/ITER_NEXT via in-loop attach; never here. */
-  {
-    PyObject *awaitable = get_await_next(iter);
-    if (awaitable) {
-      KosGetNextResult r = next_from_python_async_iter(ctx, out_ev, iter,
-                                                       result_out, awaitable);
-      return r;
-    }
+
+  PyObject *awaitable = get_await_next(iter);
+  if (awaitable) {
+    KosGetNextResult r = next_from_python_async_iter(ctx, out_ev, iter,
+                                                      result_out, awaitable);
+    return r;
   }
+
   if (PyIter_Check(iter))
     return next_from_python_sync_iter(ctx, out_ev, iter, result_out);
+
   PyErr_SetString(PyExc_TypeError, "not an iterator");
   return GET_NEXT_ERROR;
 }

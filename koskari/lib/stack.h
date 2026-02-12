@@ -378,6 +378,15 @@ int KosStackBlock_DropBlock(KosStackBlock **block);
 
 
 /**
+   Clear the current block in place (COW): drop refs to all elements
+   and set length to 0. Does not drop or push blocks.
+
+   :return: 0 on success, -1 on error
+ */
+int KosStackBlock_ClearBlock(KosStackBlock **block);
+
+
+/**
    Allocates a new block and makes it the current block
  */
 int KosStack_PushBlock(PyObject *stack);

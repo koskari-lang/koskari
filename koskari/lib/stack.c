@@ -185,12 +185,12 @@ static int KosStackBlock_CopyForWrite(KosStackBlock **block) {
 }
 
 
-static int KosStackBlock_Clear(KosStackBlock **self) {
+int KosStackBlock_ClearBlock(KosStackBlock **block) {
 
-  if (KosStackBlock_CopyForWrite(self))
+  if (KosStackBlock_CopyForWrite(block))
     return -1;
 
-  KosStackBlock *s = *self;
+  KosStackBlock *s = *block;
 
   for (size_t i = s->len; i--; ) {
     Py_DECREF(s->objs[i]);
@@ -1701,7 +1701,7 @@ int KosStack_Clear(PyObject *self) {
          Update KosStack_BLOCK first since we may have released
          intermediate blocks above. */
       KosStack_BLOCK(self) = block;
-      if (KosStackBlock_Clear(&KosStack_BLOCK(self)))
+      if (KosStackBlock_ClearBlock(&KosStack_BLOCK(self)))
         return -1;
       break;
     }
