@@ -122,7 +122,7 @@ KosCode. Many opcodes have different argument meaning in each form.
 
 | Pre-compile arg        | Post-compile arg        | Opcodes (examples) |
 |------------------------|-------------------------|---------------------|
-| String label name      | pc (uint16)             | JUMP, JUMP_FALSE, JUMP_TRUE, JUMP_AND, JUMP_OR, ITER_NEXT, CHECK_*, SET_PROMPT_HANDLER, PUSH_LOOP, PUSH_FOREACH, PUSH_TRY, PUSH_FINALLY, PUSH_CC, PUSH_WIND, PUSH_REGION |
+| String label name      | pc (uint16)             | JUMP, JUMP_FALSE, JUMP_TRUE, JUMP_AND, JUMP_OR, ITER_NEXT, CHECK_*, SET_PROMPT_HANDLER, PUSH_LOOP, PUSH_FOREACH, PUSH_TRY, PUSH_FINALLY, PUSH_WIND, PUSH_REGION |
 | Literal value          | Constant pool index     | CONST |
 | Name (string/symbol)   | Constant pool index     | VAR, VAR_BIND, VAR_CLEAR, VAR_REF, VAR_STORE; ATTR*, CONST_ITEM* (key); INVOKE_K_VAR |
 | Name → slot (optional) | Fast local index       | VAR may be lowered to FAST*; then arg is slot index |
@@ -1658,47 +1658,62 @@ Object protocol opcodes: single Python operation on TOS (and optionally below); 
 
 ## 21. Undelimited continuations (call/cc)
 
+CAPTURE_CC captures the continuation of the CC dynamic extent (from the current
+pc until the extent is exited). Invoking that continuation is a **non-local
+jump to the POP_CC opcode**, with a value pushed onto the stack; POP_CC then
+runs (pops the CC block) and execution continues at the next instruction (the
+PUSH_CC resume target).
+
 ### KOS_OP_PUSH_CC
 
-- **Style**: LABEL. Arg = resume pc (instruction index after POP_CC).
-- **Status**: Stub.
-- **Stack**: Pushes CC block onto dynamic chain. Normal exit of body goes to arg.
+- **Style**: NOARG. The instruction has no argument. The resume PC (instruction
+  index to continue at when the continuation is invoked) is **not** stored in
+  the bytecode; the evaluator obtains it from the **block table** (extent
+  table): the CC extent for this PUSH_CC has `pop_pc` at the matching POP_CC,
+  and the resume PC is `pop_pc + 1` (the instruction immediately after POP_CC).
+- **Stack**: Pushes CC block onto dynamic chain. Normal exit: body runs, then
+  POP_CC runs, then execution continues at the next instruction (resume). On
+  invoke: jump to POP_CC with value on stack; POP_CC runs; continue at next
+  instruction (same resume PC from block table).
 - **Pushes:** KOS_DYN_CC (static extent KOS_EXT_CC).
-- **Intended (not yet implemented):** Push call/cc block; CAPTURE_CC captures
-  continuation; POP_CC exits block; resume at arg. **Current:** Stub (or
-  implemented per FEATURES.md); table below shows intended bytecode shape.
-- **Example:** (Stub.) Intended: arg = 5 (-> 5); body; POP_CC at 4; resume at 5.
+- **Example:** (call/cc (lambda (k) (k 42))) → 42. Body captures k, pushes 42,
+  CALL 1 invokes k(42); that jumps to POP_CC (index 4) with stack [..., 42];
+  POP_CC runs; execution continues at 5 (resume), RETURN 1 yields 42.
 
-| index | opcode  | arg | arg view | comment |
-|------:|---------|-----|----------|---------|
-| 0     | PUSH_CC | 5   | 5 (-> 5) | push CC block; resume at 5 |
-| 1     | CAPTURE_CC | 0 | 0        | stack: [..., continuation] |
-| 2     | POP_CC  | 0   | 0        | pop CC |
-| 3     | …       | …   | …        | use continuation |
-| 4     | LABEL   | —   | —        | (after POP_CC) |
-| 5     | LABEL   | —   | —        | resume (arg target) |
+| index | opcode     | arg | arg view   | comment |
+|------:|------------|-----|------------|---------|
+| 0     | PUSH_CC    | 0   | 0          | push CC block; resume at 5 (= pop_pc+1 from block table) |
+| 1     | CAPTURE_CC | 0   | 0          | stack before: [...]; after: [..., continuation] |
+| 2     | CONST      | 0   | 0 (42)     | stack: [..., continuation, 42] |
+| 3     | CALL       | 1   | 1          | invoke continuation with one arg → jump to POP_CC (4) with [..., 42] |
+| 4     | POP_CC     | 0   | 0          | invoke lands here with value on stack; pop CC; next pc = 5 (resume) |
+| 5     | RETURN     | 1   | 1          | yield TOS (42) |
 
 ---
 
 ### KOS_OP_POP_CC
 
 - **Style**: NOARG.
-- **Status**: Stub.
-- **Stack**: Pops CC block from dynamic chain.
-- **Example:** (Stub.) See PUSH_CC.
+- **Stack**: Pops CC block from dynamic chain. When the captured continuation
+  is invoked, the VM jumps *to* this opcode with the invoked value (or values)
+  on the stack; this opcode then runs (pops the CC block) and execution
+  continues at the next instruction (the PUSH_CC resume target).
+- **Example:** In the PUSH_CC table above, POP_CC at index 4 is the jump target
+  when the continuation is invoked; stack holds the value(s) passed to the
+  continuation; after POP_CC, execution continues at index 5 (resume).
 
 ---
 
 ### KOS_OP_CAPTURE_CC
 
 - **Style**: NOARG.
-- **Status**: Stub.
-- **Stack**: Captures undelimited continuation; pushes it onto stack.
-- **Example:** (Stub.) Stack after: [..., continuation].
-
-| index | opcode     | arg | arg view | comment |
-|------:|------------|-----|----------|---------|
-| 1     | CAPTURE_CC | 0   | 0        | stack: [..., continuation] |
+- **Stack**: Captures the continuation of the CC dynamic extent (from current pc
+  until the extent is exited at POP_CC); pushes it (KosPyContinuation) onto
+  stack. Stack effect: `[...] → [..., continuation]`. Invoking the continuation
+  is a non-local jump to the POP_CC opcode with a value pushed onto the stack.
+- **Example:** See the PUSH_CC disassembly table: at index 1, CAPTURE_CC pushes
+  the continuation. Invoking it (e.g. CALL 1 with 42) jumps to POP_CC (index 4)
+  with stack [..., 42]; POP_CC runs; execution continues at index 5 (resume).
 
 
 ## 22. Dynamic wind

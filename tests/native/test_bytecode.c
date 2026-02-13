@@ -461,7 +461,7 @@ static int test_code_extent_derivation(void) {
     uint32_t top0 = kos_extent_top(code, 0);
     TEST_ASSERT_EQ(top0, KOS_EXTENT_NONE, "pc 0 before TRY body");
     uint32_t top1 = kos_extent_top(code, 1);
-    TEST_ASSERT_EQ(top1, KOS_EXTENT_NONE, "pc 1 at PUSH_TRY");
+    TEST_ASSERT_EQ(top1, 0, "pc 1 at PUSH_TRY (start of extent)");
     uint32_t top2 = kos_extent_top(code, 2);
     TEST_ASSERT_EQ(top2, 0, "pc 2 inside TRY body");
     uint32_t top3 = kos_extent_top(code, 3);

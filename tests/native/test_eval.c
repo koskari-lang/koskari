@@ -331,17 +331,15 @@ static int test_eval_reset_shift_invoke(void) {
 
 static int test_eval_push_cc_capture_cc_pop_cc_returns_continuation(void) {
     /*
-      Bytecode: PUSH_CC "resume", CAPTURE_CC, POP_CC, LABEL "resume", RETURN 1.
-      Result is the continuation on the stack (no invoke).
+      Bytecode: PUSH_CC (no arg; resume PC from block table), CAPTURE_CC,
+      POP_CC, LABEL "resume", RETURN 1. Result is the continuation on the
+      stack (no invoke).
     */
     PyObject *nspec = create_test_nspec();
     TEST_ASSERT_NOT_NULL(nspec, "create nspec");
 
-    PyObject *resume_label = PyUnicode_FromString("resume");
-    TEST_ASSERT_NOT_NULL(resume_label, "resume label");
-
     PyObject *instr = PyList_New(5);
-    PyList_SET_ITEM(instr, 0, make_instr(KOS_OP_PUSH_CC, resume_label));
+    PyList_SET_ITEM(instr, 0, make_instr_int(KOS_OP_PUSH_CC, 0));
     PyList_SET_ITEM(instr, 1, make_instr_int(KOS_OP_CAPTURE_CC, 0));
     PyList_SET_ITEM(instr, 2, make_instr_int(KOS_OP_POP_CC, 0));
     PyList_SET_ITEM(instr, 3, make_instr(KOS_OP_LABEL, PyUnicode_FromString("resume")));
@@ -350,7 +348,6 @@ static int test_eval_push_cc_capture_cc_pop_cc_returns_continuation(void) {
     PyObject *code_obj = KosCode_New(nspec, instr, NULL, NULL);
     TEST_ASSERT_NOT_NULL(code_obj, "create Code");
 
-    Py_DECREF(resume_label);
     Py_DECREF(instr);
     Py_DECREF(nspec);
 

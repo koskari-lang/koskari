@@ -238,7 +238,7 @@ OP(INVOKE_K, NOARG)            // pop value, pop continuation; invoke delimited 
 OP(INVOKE_K_VAR, CONST)        // pop value; lookup name (constant index), invoke that continuation
 
 // undelimited continuation (call/cc) block
-OP(PUSH_CC, LABEL)             // arg = instruction index after POP_CC (resume PC)
+OP(PUSH_CC, NOARG)             // arg = instruction index after POP_CC (resume PC)
 OP(POP_CC, NOARG)              // pop CC block from dynamic chain
 OP(CAPTURE_CC, NOARG)          // capture undelimited continuation, push on stack
 

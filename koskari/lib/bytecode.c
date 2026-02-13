@@ -838,6 +838,8 @@ static int derive_extents(
       stack[stack_top].push_pc = pc;
       stack[stack_top].extent_id = extent_count;
       stack[stack_top].push_op = op;
+      /* So PUSH_CC (and other PUSH) can look up their extent at runtime */
+      top_extent_id[pc] = (uint16_t) extent_count;
       stack_top++;
       extent_count++;
     }

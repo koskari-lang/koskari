@@ -211,16 +211,16 @@ class TestUndelimitedContinuations(CevalTest):
 
     def test_call_cc_capture_and_invoke(self):
         """
-        (call/cc (lambda (k) (k 42))) => 42. PUSH_CC, CAPTURE_CC, POP_CC,
-        then invoke continuation with 42 via CALL 1; resume at label, RETURN 1.
+        (call/cc (lambda (k) (k 42))) => 42. PUSH_CC (no arg; resume PC from
+        block table = instruction after POP_CC), CAPTURE_CC, body (CONST 42,
+        CALL 1), POP_CC, RETURN 1. Resume must be immediately after POP_CC.
         """
         code = [
-            ["PUSH_CC", "resume"],
+            ["PUSH_CC", 0],
             ["CAPTURE_CC", 0],
-            ["POP_CC", 0],
             ["CONST", 42],
             ["CALL", 1],
-            ["LABEL", "resume"],
+            ["POP_CC", 0],
             ["RETURN", 1],
         ]
         code_obj, ns = build_expr(code)
@@ -231,14 +231,14 @@ class TestUndelimitedContinuations(CevalTest):
     def test_call_cc_invoke_with_zero_args_resumes_with_none(self):
         """
         (call/cc (lambda (k) (k))) => None. Invoke continuation with CALL 0
-        (no args); resume_val is Py_None, RETURN 1 yields None.
+        (no args); resume_val is Py_None, RETURN 1 yields None. Resume
+        immediately after POP_CC.
         """
         code = [
-            ["PUSH_CC", "resume"],
+            ["PUSH_CC", 0],
             ["CAPTURE_CC", 0],
-            ["POP_CC", 0],
             ["CALL", 0],
-            ["LABEL", "resume"],
+            ["POP_CC", 0],
             ["RETURN", 1],
         ]
         code_obj, ns = build_expr(code)
@@ -249,13 +249,12 @@ class TestUndelimitedContinuations(CevalTest):
     def test_call_cc_capture_returns_continuation(self):
         """
         PUSH_CC, CAPTURE_CC, POP_CC, return TOS. Result is the continuation
-        (without invoking it).
+        (without invoking it). Resume point (LABEL) immediately after POP_CC.
         """
         code = [
-            ["PUSH_CC", "resume"],
+            ["PUSH_CC", 0],
             ["CAPTURE_CC", 0],
             ["POP_CC", 0],
-            ["LABEL", "resume"],
             ["RETURN", 1],
         ]
         code_obj, ns = build_expr(code)
@@ -307,13 +306,13 @@ class TestUndelimitedContinuations(CevalTest):
             return await top_fn(cont)
 
         # Bottom Koskari: push bridge (callable), capture continuation (arg),
-        # then call bridge(cont). Stack for CALL 1 must be [callable, arg].
+        # then call bridge(cont). Resume immediately after POP_CC.
         bottom_code, bottom_ns = build_expr([
             ["VAR", "bridge"],
-            ["PUSH_CC", "resume"],
+            ["PUSH_CC", 0],
             ["CAPTURE_CC", 0],
-            ["POP_CC", 0],
             ["CALL", 1],
+            ["POP_CC", 0],
             ["LABEL", "resume"],
             ["RETURN", 1],
         ], values={"bridge": bridge})
