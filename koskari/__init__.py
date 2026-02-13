@@ -80,15 +80,13 @@ from .types import (
     set_position,
     fill_position,
 
-    # bytecode fragment
-    unique_append,
-    ByteCodeFragment,
-
     # exceptions
     KoskariException,
     NotYetImplemented,
     KoskariSyntaxError,
 )
+
+from .compile.fragment import ByteCodeFragment, unique_append
 
 from .parse import (
     # exceptions
@@ -168,6 +166,10 @@ __all__ = (
     # pair helpers
     "build_proper",
     "unpack",
+
+    # bytecode fragment
+    "ByteCodeFragment",
+    "unique_append",
 
     # position helpers
     "get_position",
