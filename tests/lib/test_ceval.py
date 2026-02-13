@@ -1140,6 +1140,48 @@ class TestNextOpcodes(CevalTest):
         self.assertEqual(result, 42)
 
 
+    def test_next_on_iterable_calls_get_iter(self):
+        """
+        NEXT on iterable (not iterator) calls PyObject_GetIter; yields first value
+        """
+        code, ns = build_expr([
+            ["CONST", [100, 200]],
+            ["NEXT", 1],
+            ["RETURN", 1],
+        ])
+        result = run_to_completion(make_callable(code, ns)())
+        self.assertEqual(result, 100)
+
+
+    def test_next_arg_validation_rejects_invalid_args(self):
+        """
+        NEXT with arg other than 1 or 2 raises ValueError
+        """
+        for bad_arg in (0, 3):
+            code, ns = build_expr([
+                ["CONST", []],
+                ["OBJECT_ITER", 0],
+                ["NEXT", bad_arg],
+                ["RETURN", 1],
+            ])
+            with self.assertRaises(ValueError) as cm:
+                run_to_completion(make_callable(code, ns)())
+            self.assertIn("NEXT arg must be 1 or 2", str(cm.exception))
+
+
+    def test_next_on_non_iterable_raises_type_error(self):
+        """
+        NEXT on object that is neither iterable nor iterator raises TypeError
+        """
+        code, ns = build_expr([
+            ["CONST", 42],
+            ["NEXT", 1],
+            ["RETURN", 1],
+        ])
+        with self.assertRaises(TypeError):
+            run_to_completion(make_callable(code, ns)())
+
+
 class TestYieldOpcodes(CevalTest):
     """
     Tests for YIELD and for NEXT/ITER_NEXT over async generators.
@@ -1287,6 +1329,185 @@ class TestYieldOpcodes(CevalTest):
         ], values={"gen": gen, "count": 0, "last": None})
         result = run_to_completion(make_callable(consumer_code, consumer_ns)())
         self.assertEqual(result, 3)
+
+
+    def test_next_1_on_koskari_agen_exhausted_raises_stopiteration(self):
+        """
+        NEXT 1 on Koskari async gen after last value raises StopIteration
+        """
+        gen_code, gen_ns = build_expr([
+            ["CONST", 1],
+            ["YIELD", 1],
+            ["RETURN", 0],
+        ])
+        gen = make_callable(gen_code, gen_ns)()
+
+        consumer_code, consumer_ns = build_expr([
+            ["VAR", "gen"],
+            ["NEXT", 1],
+            ["POP", 1],
+            ["VAR", "gen"],
+            ["NEXT", 1],
+            ["RETURN", 1],
+        ], values={"gen": gen})
+        coro = make_callable(consumer_code, consumer_ns)()
+        with self.assertRaises((StopIteration, RuntimeError)):
+            while True:
+                coro.send(None)
+
+
+    def test_next_2_on_koskari_agen_exhausted_returns_default(self):
+        """
+        NEXT 2 on Koskari async gen that returns immediately pushes default
+        """
+        gen_code, gen_ns = build_expr([
+            ["RETURN", 0],
+            ["CONST", None],
+            ["YIELD", 1],
+        ])
+        gen = make_callable(gen_code, gen_ns)()
+
+        consumer_code, consumer_ns = build_expr([
+            ["VAR", "gen"],
+            ["CONST", 99],
+            ["NEXT", 2],
+            ["RETURN", 1],
+        ], values={"gen": gen})
+        result = run_to_completion(make_callable(consumer_code, consumer_ns)())
+        self.assertEqual(result, 99)
+
+
+    def test_next_on_python_async_iterator(self):
+        """
+        NEXT 1 on Python async iterator (async gen) yields values via GET_NEXT_SUSPEND
+        """
+        async def async_gen():
+            yield 10
+            yield 20
+            yield 30
+
+        async def run():
+            aiter = async_gen()
+            consumer_code, consumer_ns = build_expr([
+                ["VAR", "aiter"],
+                ["NEXT", 1],
+                ["VAR_STORE", "v1"],
+                ["VAR", "aiter"],
+                ["NEXT", 1],
+                ["VAR_STORE", "v2"],
+                ["VAR", "aiter"],
+                ["NEXT", 1],
+                ["RETURN", 1],
+            ], values={"aiter": aiter, "v1": None, "v2": None})
+            return run_to_completion(make_callable(consumer_code, consumer_ns)())
+
+        result = asyncio.run(run())
+        self.assertEqual(result, 30)
+
+
+    def test_next_2_on_python_async_iterator_exhausted_returns_default(self):
+        """
+        NEXT 2 on empty Python async iterator returns default
+        """
+        async def empty_async_gen():
+            return
+            yield
+
+        async def run():
+            aiter = empty_async_gen()
+            consumer_code, consumer_ns = build_expr([
+                ["VAR", "aiter"],
+                ["CONST", 88],
+                ["NEXT", 2],
+                ["RETURN", 1],
+            ], values={"aiter": aiter})
+            return run_to_completion(make_callable(consumer_code, consumer_ns)())
+
+        result = asyncio.run(run())
+        self.assertEqual(result, 88)
+
+
+    def test_next_2_on_koskari_agen_after_yields_then_exhausted_returns_default(self):
+        """
+        NEXT 2 on Koskari async gen after consuming values then exhausting returns default
+        """
+        gen_code, gen_ns = build_expr([
+            ["CONST", 1],
+            ["YIELD", 1],
+            ["CONST", 2],
+            ["YIELD", 1],
+            ["RETURN", 0],
+        ])
+        gen = make_callable(gen_code, gen_ns)()
+
+        consumer_code, consumer_ns = build_expr([
+            ["VAR", "gen"],
+            ["CONST", -1],
+            ["NEXT", 2],
+            ["POP", 1],
+            ["VAR", "gen"],
+            ["CONST", -1],
+            ["NEXT", 2],
+            ["POP", 1],
+            ["VAR", "gen"],
+            ["CONST", 77],
+            ["NEXT", 2],
+            ["RETURN", 1],
+        ], values={"gen": gen})
+        result = run_to_completion(make_callable(consumer_code, consumer_ns)())
+        self.assertEqual(result, 77)
+
+
+    def test_next_2_on_python_async_iter_after_yields_then_exhausted_returns_default(self):
+        """
+        NEXT 2 on Python async iterator after consuming values then exhausting returns default
+        """
+        async def async_gen():
+            yield 10
+            yield 20
+
+        async def run():
+            aiter = async_gen()
+            consumer_code, consumer_ns = build_expr([
+                ["VAR", "aiter"],
+                ["CONST", -1],
+                ["NEXT", 2],
+                ["POP", 1],
+                ["VAR", "aiter"],
+                ["CONST", -1],
+                ["NEXT", 2],
+                ["POP", 1],
+                ["VAR", "aiter"],
+                ["CONST", 66],
+                ["NEXT", 2],
+                ["RETURN", 1],
+            ], values={"aiter": aiter})
+            return run_to_completion(make_callable(consumer_code, consumer_ns)())
+
+        result = asyncio.run(run())
+        self.assertEqual(result, 66)
+
+
+    def test_next_on_iterator_that_raises_propagates_error(self):
+        """
+        NEXT on iterator whose __next__ raises (not StopIteration) propagates GET_NEXT_ERROR
+        """
+        class BadIterator(object):
+            def __iter__(self):
+                return self
+
+            def __next__(self):
+                raise ValueError("iterator raised")
+
+        code, ns = build_expr([
+            ["CONST", BadIterator()],
+            ["OBJECT_ITER", 0],
+            ["NEXT", 1],
+            ["RETURN", 1],
+        ])
+        with self.assertRaises(ValueError) as cm:
+            run_to_completion(make_callable(code, ns)())
+        self.assertIn("iterator raised", str(cm.exception))
 
 
 class TestLoopOpcodes(CevalTest):
@@ -1626,6 +1847,152 @@ class TestForeachOpcodes(CevalTest):
         ])
         result = run_to_completion(make_callable(code, ns)())
         self.assertEqual(result, 42)
+
+
+    def test_foreach_iter_next_on_python_async_iterator(self):
+        """
+        PUSH_FOREACH over Python async iterator; ITER_NEXT yields values via GET_NEXT_SUSPEND
+        """
+        async def async_gen():
+            yield 5
+            yield 15
+            yield 25
+
+        async def run():
+            aiter = async_gen()
+            consumer_code, consumer_ns = build_expr([
+                ["CONST", None],
+                ["VAR", "aiter"],
+                ["PUSH_FOREACH", "break_lbl"],
+                ["LABEL", "loop_head"],
+                ["ITER_NEXT", "else_lbl"],
+                ["VAR_STORE", "last"],
+                ["JUMP", "loop_head"],
+                ["LABEL", "else_lbl"],
+                ["CLEAR_LOOP", 0],
+                ["LABEL", "break_lbl"],
+                ["POP_LOOP", 0],
+                ["POP", 1],
+                ["VAR", "last"],
+                ["RETURN", 1],
+            ], values={"aiter": aiter, "last": None})
+            return run_to_completion(make_callable(consumer_code, consumer_ns)())
+
+        result = asyncio.run(run())
+        self.assertEqual(result, 25)
+
+
+    def test_foreach_iter_next_iterates_all_values(self):
+        """
+        PUSH_FOREACH with ITER_NEXT over list accumulates; else runs when exhausted
+        """
+        code, ns = build_expr([
+            ["CONST", 0],
+            ["VAR_BIND", "total"],
+            ["CONST", None],
+            ["CONST", [1, 2, 3, 4, 5]],
+            ["PUSH_FOREACH", "break_lbl"],
+            ["LABEL", "loop_head"],
+            ["ITER_NEXT", "else_lbl"],
+            ["VAR", "total"],
+            ["OBJECT_ADD", 2],
+            ["VAR_STORE", "total"],
+            ["JUMP", "loop_head"],
+            ["LABEL", "else_lbl"],
+            ["CLEAR_LOOP", 0],
+            ["LABEL", "break_lbl"],
+            ["POP_LOOP", 0],
+            ["POP", 1],
+            ["VAR", "total"],
+            ["RETURN", 1],
+        ], values={"total": 0})
+        result = run_to_completion(make_callable(code, ns)())
+        self.assertEqual(result, 15)
+
+
+    def test_foreach_iter_next_on_empty_async_iterator_exits_to_else(self):
+        """
+        PUSH_FOREACH over empty Python async iterator exits to else
+        """
+        async def empty_gen():
+            return
+            yield
+
+        async def run():
+            aiter = empty_gen()
+            consumer_code, consumer_ns = build_expr([
+                ["CONST", None],
+                ["VAR", "aiter"],
+                ["PUSH_FOREACH", "break_lbl"],
+                ["ITER_NEXT", "else_lbl"],
+                ["CONST", -1],
+                ["RETURN", 1],
+                ["LABEL", "else_lbl"],
+                ["CLEAR_LOOP", 0],
+                ["LABEL", "break_lbl"],
+                ["POP_LOOP", 0],
+                ["POP", 1],
+                ["CONST", 999],
+                ["RETURN", 1],
+            ], values={"aiter": aiter})
+            return run_to_completion(make_callable(consumer_code, consumer_ns)())
+
+        result = asyncio.run(run())
+        self.assertEqual(result, 999)
+
+
+    def test_foreach_with_non_iterable_raises_type_error(self):
+        """
+        PUSH_FOREACH over non-iterable (e.g. int) raises TypeError
+        """
+        code, ns = build_expr([
+            ["CONST", None],
+            ["CONST", 42],
+            ["PUSH_FOREACH", "break_lbl"],
+            ["ITER_NEXT", "else_lbl"],
+            ["CONST", -1],
+            ["RETURN", 1],
+            ["LABEL", "else_lbl"],
+            ["CLEAR_LOOP", 0],
+            ["LABEL", "break_lbl"],
+            ["POP_LOOP", 0],
+            ["POP", 1],
+            ["CONST", 0],
+            ["RETURN", 1],
+        ])
+        with self.assertRaises(TypeError):
+            run_to_completion(make_callable(code, ns)())
+
+
+    def test_foreach_iter_next_when_iterator_raises_propagates_error(self):
+        """
+        ITER_NEXT when iterator raises on __next__ propagates GET_NEXT_ERROR
+        """
+        class BadIterator(object):
+            def __iter__(self):
+                return self
+
+            def __next__(self):
+                raise ValueError("iterator raised in foreach")
+
+        code, ns = build_expr([
+            ["CONST", None],
+            ["CONST", BadIterator()],
+            ["PUSH_FOREACH", "break_lbl"],
+            ["ITER_NEXT", "else_lbl"],
+            ["CONST", -1],
+            ["RETURN", 1],
+            ["LABEL", "else_lbl"],
+            ["CLEAR_LOOP", 0],
+            ["LABEL", "break_lbl"],
+            ["POP_LOOP", 0],
+            ["POP", 1],
+            ["CONST", 0],
+            ["RETURN", 1],
+        ])
+        with self.assertRaises(ValueError) as cm:
+            run_to_completion(make_callable(code, ns)())
+        self.assertIn("iterator raised in foreach", str(cm.exception))
 
 
 class TestLoopResultOpcodes(CevalTest):
