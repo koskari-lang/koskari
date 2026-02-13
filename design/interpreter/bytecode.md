@@ -1,9 +1,12 @@
 # Bytecode Format
 
-**OPEN (not settled)**: Full opcode set and per-opcode semantics; bytecode word
-size and encoding details beyond tentative (uint16 op, uint16 arg) format; full
-opcode inventory and formal operand conventions; precise opcode-level semantics
-for local-only jumps; exact taxonomy of continuation-related exceptions.
+**OPEN (not settled)**: Bytecode word size and encoding details beyond tentative
+(uint16 op, uint16 arg) format; exact taxonomy of continuation-related
+exceptions.
+
+**Per-opcode reference**: Authoritative opcode semantics, use cases, and
+invariants are documented in [../OPCODES.md](../OPCODES.md), organized by
+category.
 
 ## Koskari Bytecode (KosCode)
 
@@ -117,6 +120,10 @@ typedef enum KosOpStyle {
 ```
 
 ## Opcode Categories
+
+For the full opcode reference (semantics, invariants, use cases, and example
+disassembly), see [../OPCODES.md](../OPCODES.md). The summary below is for
+quick lookup.
 
 ### Stack Operations
 - `KOS_OP_NOOP`: No operation (runtime: advance PC only; no effect)
