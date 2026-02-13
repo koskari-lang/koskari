@@ -27,7 +27,14 @@ deduplication, and position tracking.
 
 import unittest
 
-from koskari import Code, FormalsSpec, NamespaceSpec, OpCode
+from koskari import (
+    ByteCodeFragment,
+    Code,
+    FormalsSpec,
+    NamespaceSpec,
+    OpCode,
+    unique_append,
+)
 from koskari.lib import FunctionSpec
 
 
@@ -262,6 +269,131 @@ class TestCodeFunctionSpec(unittest.TestCase):
             code.function_spec(None)
         with self.assertRaises(TypeError):
             code.function_spec("not a formals spec")
+
+
+class TestUniqueAppend(unittest.TestCase):
+    """Tests for unique_append helper."""
+
+    def test_append_when_absent(self):
+        lst = []
+        unique_append(lst, "a")
+        self.assertEqual(lst, ["a"])
+        unique_append(lst, "b")
+        self.assertEqual(lst, ["a", "b"])
+
+    def test_no_append_when_present(self):
+        lst = ["a"]
+        unique_append(lst, "a")
+        self.assertEqual(lst, ["a"])
+
+    def test_preserves_order(self):
+        lst = []
+        for x in ("b", "a", "b", "c", "a"):
+            unique_append(lst, x)
+        self.assertEqual(lst, ["b", "a", "c"])
+
+
+class TestByteCodeFragment(unittest.TestCase):
+    """Tests for ByteCodeFragment: instructions, requests, declares."""
+
+    def test_init_defaults(self):
+        f = ByteCodeFragment()
+        self.assertIsNone(f.name)
+        self.assertIsNone(f.filename)
+        self.assertIsNone(f.mode)
+        self.assertIsNone(f.compiler)
+        self.assertEqual(f.instructions, [])
+        self.assertEqual(f.requests, [])
+        self.assertEqual(f.declares, [])
+
+    def test_init_args(self):
+        f = ByteCodeFragment(name="block", filename="x.ki", mode=1)
+        self.assertEqual(f.name, "block")
+        self.assertEqual(f.filename, "x.ki")
+        self.assertEqual(f.mode, 1)
+        self.assertIsNone(f.compiler)
+
+    def test_declare_var(self):
+        f = ByteCodeFragment()
+        f.declare_var("a")
+        self.assertEqual(f.declares, ["a"])
+        f.declare_var("b")
+        self.assertEqual(f.declares, ["a", "b"])
+        f.declare_var("a")
+        self.assertEqual(f.declares, ["a", "b"])
+
+    def test_declare_vars(self):
+        f = ByteCodeFragment()
+        f.declare_vars(("x", "y", "z"))
+        self.assertEqual(f.declares, ["x", "y", "z"])
+        f.declare_vars(["z", "w"])
+        self.assertEqual(f.declares, ["x", "y", "z", "w"])
+
+    def test_request_var(self):
+        f = ByteCodeFragment()
+        f.request_var("outer")
+        self.assertEqual(f.requests, ["outer"])
+        f.request_var("other")
+        self.assertEqual(f.requests, ["outer", "other"])
+        f.request_var("outer")
+        self.assertEqual(f.requests, ["outer", "other"])
+
+    def test_request_var_skipped_if_declared(self):
+        f = ByteCodeFragment()
+        f.declare_var("local")
+        f.request_var("local")
+        self.assertEqual(f.declares, ["local"])
+        self.assertEqual(f.requests, [])
+
+    def test_instruction(self):
+        f = ByteCodeFragment()
+        f.instruction(OpCode.KOS_OP_CONST, 42)
+        f.instruction(OpCode.KOS_OP_RETURN, 1)
+        self.assertEqual(
+            f.instructions,
+            [(OpCode.KOS_OP_CONST, 42), (OpCode.KOS_OP_RETURN, 1)],
+        )
+
+    def test_position(self):
+        f = ByteCodeFragment()
+        f.position((3, 10), extra="line text")
+        self.assertEqual(
+            f.instructions,
+            [(OpCode.KOS_OP_POSITION, (3, 10, "line text"))],
+        )
+
+    def test_position_of_no_position(self):
+        f = ByteCodeFragment()
+        f.position_of(object())
+        self.assertEqual(f.instructions, [])
+
+    def test_as_namespace_spec(self):
+        f = ByteCodeFragment(name="ns1")
+        f.declare_var("a")
+        f.declare_var("b")
+        f.request_var("up")
+        nspec = f.as_namespace_spec()
+        self.assertIsInstance(nspec, NamespaceSpec)
+        self.assertEqual(nspec.name, "ns1")
+        self.assertEqual(tuple(nspec.local_syms or ()), ("a", "b"))
+        self.assertEqual(tuple(nspec.closure_syms or ()), ("up",))
+
+    def test_merge(self):
+        a = ByteCodeFragment(name="a")
+        a.declare_var("x")
+        a.request_var("y")
+        a.instruction(OpCode.KOS_OP_CONST, 1)
+        b = ByteCodeFragment(name="b")
+        b.declare_var("z")
+        b.request_var("y")
+        b.instruction(OpCode.KOS_OP_RETURN, 1)
+        a.merge(b)
+        self.assertEqual(a.declares, ["x", "z"])
+        self.assertEqual(a.requests, ["y"])
+        self.assertEqual(
+            a.instructions,
+            [(OpCode.KOS_OP_CONST, 1), (OpCode.KOS_OP_RETURN, 1)],
+        )
 
 
 # The end.

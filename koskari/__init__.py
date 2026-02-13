@@ -80,6 +80,10 @@ from .types import (
     set_position,
     fill_position,
 
+    # bytecode fragment
+    unique_append,
+    ByteCodeFragment,
+
     # exceptions
     KoskariException,
     NotYetImplemented,
@@ -169,6 +173,10 @@ __all__ = (
     "get_position",
     "set_position",
     "fill_position",
+
+    # bytecode fragment
+    "unique_append",
+    "ByteCodeFragment",
 
     # exceptions
     "KoskariException",
