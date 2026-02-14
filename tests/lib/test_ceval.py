@@ -432,6 +432,72 @@ class TestStubOpcodes(CevalTest):
         self.assertIn("no runtime implementation", str(ctx.exception))
 
 
+    def test_yield_from_upward_into_koskari_from_python_delegate(self):
+        """
+        Values from a Python delegate flow upward into the Koskari frame
+        running YIELD_FROM and then out to the Python consumer. Validates
+        that yield_from correctly propagates upward when the delegate is
+        a Python iterable.
+        """
+        it = iter([10, 20, 30])
+        code_obj, ns = build_expr([
+            ["CONST", it],
+            ["YIELD_FROM", 0],
+            ["RETURN", 1],
+        ])
+        expr = make_callable(code_obj, ns)
+        agen = expr()
+        self.assertIsInstance(agen, AsyncGenerator)
+
+        async def run():
+            # Each value from the Python iterable must appear at the consumer
+            # (flow: Python iterable -> Koskari YIELD_FROM -> Python anext)
+            self.assertEqual(await anext(agen), 10)
+            self.assertEqual(await anext(agen), 20)
+            self.assertEqual(await anext(agen), 30)
+            with self.assertRaises(StopAsyncIteration) as ctx:
+                await anext(agen)
+            final = self._stop_async_iteration_final(ctx)
+            self.assertIs(final, None)
+
+        asyncio.run(run())
+
+    def test_yield_from_upward_into_koskari_from_koskari_delegate(self):
+        """
+        Values from a Koskari async gen delegate flow upward into the
+        Koskari frame running YIELD_FROM and then out to the Python
+        consumer. Validates that yield_from correctly propagates upward
+        when the delegate is a Koskari async gen.
+        """
+        inner_code, inner_ns = build_expr([
+            ["CONST", "a"],
+            ["YIELD", 1],
+            ["CONST", "b"],
+            ["YIELD", 1],
+            ["CONST", "c"],
+            ["RETURN", 1],
+        ])
+        inner_gen = make_callable(inner_code, inner_ns)()
+        code_obj, ns = build_expr([
+            ["CONST", inner_gen],
+            ["YIELD_FROM", 0],
+            ["RETURN", 1],
+        ])
+        expr = make_callable(code_obj, ns)
+        agen = expr()
+        self.assertIsInstance(agen, AsyncGenerator)
+
+        async def run():
+            # Each value from the Koskari delegate must appear at the consumer
+            # (flow: Koskari inner gen -> outer Koskari YIELD_FROM -> Python anext)
+            self.assertEqual(await anext(agen), "a")
+            self.assertEqual(await anext(agen), "b")
+            with self.assertRaises(StopAsyncIteration) as ctx:
+                await anext(agen)
+            self.assertEqual(self._stop_async_iteration_final(ctx), "c")
+
+        asyncio.run(run())
+
     def test_yield_from_sync_iterator_values_and_final(self):
         """
         YIELD_FROM on a sync iterator yields each value then completes with final
@@ -677,6 +743,8 @@ class TestStubOpcodes(CevalTest):
         completes with the return value.
         """
         def empty_gen():
+            if False:
+                yield  # makes this a generator; never executed
             return 7
 
         g = empty_gen()
@@ -694,6 +762,50 @@ class TestStubOpcodes(CevalTest):
                 await anext(agen)
             final = self._stop_async_iteration_final(ctx)
             self.assertEqual(final, 7)
+
+        asyncio.run(run())
+
+    def test_yield_from_raises_type_error_on_non_iterable(self):
+        """
+        YIELD_FROM on a non-iterable (e.g. int) raises TypeError with
+        a message that indicates the requirement and the type received.
+        """
+        code_obj, ns = build_expr([
+            ["CONST", 7],
+            ["YIELD_FROM", 0],
+            ["RETURN", 1],
+        ])
+        expr = make_callable(code_obj, ns)
+        agen = expr()
+        self.assertIsInstance(agen, AsyncGenerator)
+
+        async def run():
+            with self.assertRaises(TypeError) as ctx:
+                await anext(agen)
+            msg = str(ctx.exception)
+            self.assertIn("iterable", msg, msg="exception should mention iterable requirement")
+            self.assertIn("int", msg, msg="exception should mention the type received")
+
+        asyncio.run(run())
+
+    def test_yield_from_raises_type_error_on_none(self):
+        """
+        YIELD_FROM on None raises TypeError (not iterable).
+        """
+        code_obj, ns = build_expr([
+            ["CONST", None],
+            ["YIELD_FROM", 0],
+            ["RETURN", 1],
+        ])
+        expr = make_callable(code_obj, ns)
+        agen = expr()
+        self.assertIsInstance(agen, AsyncGenerator)
+
+        async def run():
+            with self.assertRaises(TypeError) as ctx:
+                await anext(agen)
+            self.assertIn("iterable", str(ctx.exception))
+            self.assertIn("NoneType", str(ctx.exception))
 
         asyncio.run(run())
 
