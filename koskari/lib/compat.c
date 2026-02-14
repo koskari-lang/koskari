@@ -37,6 +37,40 @@ static PyObject *_str_await = NULL;
 
 
 /**
+   Return the value associated with a StopAsyncIteration instance (new ref).
+   On 3.13+ uses .value; on earlier versions uses exc.args[0].  Returns
+   Py_None (new ref) when no value is present.
+*/
+PyObject *koskari_StopAsyncIteration_value(PyObject *exc) {
+  if (! exc) {
+    Py_INCREF(Py_None);
+    return Py_None;
+  }
+#if PY_MINOR_VERSION >= 13
+  {
+    PyObject *v = PyObject_GetAttrString(exc, "value");
+    if (v)
+      return v;
+    PyErr_Clear();
+  }
+#endif
+  {
+    PyObject *args = PyObject_GetAttrString(exc, "args");
+    if (args && PyTuple_Check(args) && PyTuple_GET_SIZE(args) > 0) {
+      PyObject *v = PySequence_GetItem(args, 0);
+      Py_DECREF(args);
+      if (v)
+        return v;
+    } else {
+      Py_XDECREF(args);
+    }
+  }
+  Py_INCREF(Py_None);
+  return Py_None;
+}
+
+
+/**
    Return an awaitable (iterator) for o: if o has __await__, call it and
    return the result; otherwise return NULL. Caller must Py_DECREF the result.
 */

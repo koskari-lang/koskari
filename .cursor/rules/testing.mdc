@@ -1,6 +1,5 @@
 ---
-description: unit testing
-alwaysApply: false
+alwaysApply: true
 ---
 # Testing Rules
 
@@ -11,3 +10,8 @@ alwaysApply: false
 - Never manipulate fixtures, mocks, or assertions to mask genuine failures; do not "fake green" results.
 - Document observed failures clearly, including reproduction steps and suspected root cause.
 - Use `tox` as the canonical entry point for running test suites and related checks.
+
+
+- Running `python` or `python3` directly is illegal
+- Running `pip` is illegal
+- All python unit tests must be invoked via `tox`

@@ -88,6 +88,26 @@ static int koskari_lib_init(PyObject *mod) {
   if (koskari_eval_init(mod))
     return -1;
 
+  /* Subclass of StopAsyncIteration with .value set for 3.12 compatibility
+     when runtime expects exception.value (e.g. anext/await).  Must exist
+     before koskari_func_init so func can cache the type. */
+  {
+    PyObject *dict = PyModule_GetDict(mod);
+    PyObject *run = PyRun_String(
+        "class _StopAsyncIterationValue(StopAsyncIteration):\n"
+        "    def __init__(self, value):\n"
+        "        super().__init__(value)\n"
+        "        self.value = value\n",
+        Py_file_input, dict, dict);
+    if (! run) {
+      if (PyErr_Occurred())
+        return -1;
+    }
+    Py_XDECREF(run);
+    if (! PyDict_GetItemString(dict, "_StopAsyncIterationValue"))
+      return -1;
+  }
+
   if (koskari_func_init(mod))
     return -1;
 

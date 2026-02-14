@@ -3215,7 +3215,171 @@ KOS_OP_HANDLER(YIELD_FROM) {
     }
   }
 
-  /* PY_ASYNC_* and KOS_ASYNC_GEN: not yet implemented; raise. */
+  /* --- PY_ASYNC_ITER / PY_ASYNC_GEN --- */
+  if (kind == KOS_YF_PY_ASYNC_ITER || kind == KOS_YF_PY_ASYNC_GEN) {
+    /* Resuming from await: inflight was set when we suspended; TOS was popped into pending_arg. */
+    if (KosDynYieldFrom_INFLIGHT(yf)) {
+      PyObject *aw_result = KosDynYieldFrom_PENDING_ARG(yf);
+      Py_XDECREF(KosDynYieldFrom_INFLIGHT(yf));
+      KosDynYieldFrom_INFLIGHT(yf) = NULL;
+      KosDynYieldFrom_PENDING_ARG(yf) = NULL;
+      KosDynYieldFrom_PENDING_ACTION(yf) = KOS_YF_STEP;
+      if (! aw_result) {
+        PyErr_SetString(PyExc_RuntimeError, "yield-from resume with no await result");
+        return -1;
+      }
+      if (KosStackBlock_PushRef(&KosDynFrame_STACK(frame), aw_result) < 0) {
+        Py_DECREF(aw_result);
+        return -1;
+      }
+      Py_DECREF(aw_result);
+      yield_from_rollback_pc(ctx, insn);
+      {
+        PyObject *const *tos = KosStackBlock_TailPtr(
+            KosDynFrame_STACK(frame), 1);
+        out_ev->kind = KOS_EV_YIELD;
+        out_ev->payload = tos ? *tos : NULL;
+        Py_XINCREF(out_ev->payload);
+      }
+      KosContext_FLAGS(ctx) &= ~KOS_CTX_RUNNING;
+      KosContext_FLAGS(ctx) |= KOS_CTX_DEAD;
+      return 1;
+    }
+
+    /* INJECT_THROW with StopAsyncIteration: delegate exhausted, use value and complete. */
+    if (action == KOS_YF_THROW && KosDynYieldFrom_PENDING_ARG(yf)) {
+      PyObject *exc = KosDynYieldFrom_PENDING_ARG(yf);
+      if (PyObject_IsInstance(exc, (PyObject *) PyExc_StopAsyncIteration)) {
+        PyObject *final_val = StopAsyncIteration_VALUE(exc);
+        Py_XDECREF(KosDynYieldFrom_PENDING_ARG(yf));
+        KosDynYieldFrom_PENDING_ARG(yf) = NULL;
+        KosDynYieldFrom_PENDING_ACTION(yf) = KOS_YF_STEP;
+        kos_dyn_pop_yield_from(ctx, yf);
+        if (KosStackBlock_PushRef(&KosDynFrame_STACK(frame), final_val) < 0) {
+          Py_DECREF(final_val);
+          return -1;
+        }
+        Py_DECREF(final_val);
+        return 0;
+      }
+    }
+
+    /* Get awaitable for this step. */
+    PyObject *awaitable = NULL;
+    if (action == KOS_YF_STEP || (action == KOS_YF_SEND && ! KosDynYieldFrom_PENDING_ARG(yf))) {
+      awaitable = get_await_next(delegate);
+    } else if (kind == KOS_YF_PY_ASYNC_GEN && action == KOS_YF_SEND) {
+      PyObject *send_val = KosDynYieldFrom_PENDING_ARG(yf);
+      PyObject *name = PyUnicode_FromString("asend");
+      if (name) {
+        PyObject *tmp = PyObject_CallMethodObjArgs(delegate, name, send_val, NULL);
+        Py_DECREF(name);
+        if (tmp) {
+          awaitable = PyObject_GetAwaitable(tmp);
+          Py_DECREF(tmp);
+        }
+      }
+    } else if (kind == KOS_YF_PY_ASYNC_GEN && action == KOS_YF_THROW) {
+      PyObject *exc = KosDynYieldFrom_PENDING_ARG(yf);
+      PyObject *meth = PyUnicode_FromString("athrow");
+      if (meth && exc) {
+        PyObject *typ = (PyObject *) Py_TYPE(exc);
+        PyObject *tmp = PyObject_CallMethodObjArgs(delegate, meth, typ, exc,
+                                                   Py_None, NULL);
+        Py_DECREF(meth);
+        if (tmp) {
+          awaitable = PyObject_GetAwaitable(tmp);
+          Py_DECREF(tmp);
+        }
+      } else {
+        Py_XDECREF(meth);
+      }
+    } else if (kind == KOS_YF_PY_ASYNC_GEN && action == KOS_YF_CLOSE) {
+      PyObject *meth = PyUnicode_FromString("aclose");
+      if (meth) {
+        PyObject *tmp = PyObject_CallMethodObjArgs(delegate, meth, NULL);
+        Py_DECREF(meth);
+        if (tmp) {
+          awaitable = PyObject_GetAwaitable(tmp);
+          Py_DECREF(tmp);
+        }
+      }
+    } else if (action == KOS_YF_CLOSE) {
+      /* PY_ASYNC_ITER has no aclose; treat as exhausted with None. */
+      kos_dyn_pop_yield_from(ctx, yf);
+      if (KosStackBlock_PushRef(&KosDynFrame_STACK(frame), Py_None) < 0)
+        return -1;
+      return 0;
+    }
+
+    if (! awaitable) {
+      if (PyErr_ExceptionMatches(PyExc_StopAsyncIteration)) {
+        PyObject *exc = PyErr_GetRaisedException();
+        PyObject *final_val = StopAsyncIteration_VALUE(exc);
+        Py_DECREF(exc);
+        kos_dyn_pop_yield_from(ctx, yf);
+        if (KosStackBlock_PushRef(&KosDynFrame_STACK(frame), final_val) < 0) {
+          Py_DECREF(final_val);
+          return -1;
+        }
+        Py_DECREF(final_val);
+        return 0;
+      }
+      return -1;
+    }
+
+    int suspended = 0;
+    PyObject *yielded = NULL;
+    PyObject *result = eager_step_awaitable(awaitable, ctx, &suspended, &yielded);
+
+    if (suspended && yielded) {
+      KosDynYieldFrom_INFLIGHT(yf) = awaitable;
+      yield_from_rollback_pc(ctx, insn);
+      out_ev->kind = KOS_EV_AWAIT;
+      out_ev->payload = yielded;
+      KosContext_FLAGS(ctx) &= ~KOS_CTX_RUNNING;
+      KosContext_FLAGS(ctx) |= KOS_CTX_DEAD;
+      return 1;
+    }
+
+    Py_DECREF(awaitable);
+    if (result) {
+      KosDynYieldFrom_PENDING_ACTION(yf) = KOS_YF_STEP;
+      Py_XDECREF(KosDynYieldFrom_PENDING_ARG(yf));
+      KosDynYieldFrom_PENDING_ARG(yf) = NULL;
+      if (KosStackBlock_PushRef(&KosDynFrame_STACK(frame), result) < 0) {
+        Py_DECREF(result);
+        return -1;
+      }
+      Py_DECREF(result);
+      yield_from_rollback_pc(ctx, insn);
+      {
+        PyObject *const *tos = KosStackBlock_TailPtr(
+            KosDynFrame_STACK(frame), 1);
+        out_ev->kind = KOS_EV_YIELD;
+        out_ev->payload = tos ? *tos : NULL;
+        Py_XINCREF(out_ev->payload);
+      }
+      KosContext_FLAGS(ctx) &= ~KOS_CTX_RUNNING;
+      KosContext_FLAGS(ctx) |= KOS_CTX_DEAD;
+      return 1;
+    }
+    if (PyErr_ExceptionMatches(PyExc_StopAsyncIteration)) {
+      PyObject *exc = PyErr_GetRaisedException();
+      PyObject *final_val = StopAsyncIteration_VALUE(exc);
+      Py_DECREF(exc);
+      kos_dyn_pop_yield_from(ctx, yf);
+      if (KosStackBlock_PushRef(&KosDynFrame_STACK(frame), final_val) < 0) {
+        Py_DECREF(final_val);
+        return -1;
+      }
+      Py_DECREF(final_val);
+      return 0;
+    }
+    return -1;
+  }
+
+  /* KOS_ASYNC_GEN: not yet implemented; raise. */
   return op_unimplemented_stub(ctx, out_ev, insn);
 }
 

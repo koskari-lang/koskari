@@ -31,6 +31,11 @@
 #include "debug.h"
 
 
+/* Module and cached type for StopAsyncIteration with .value (set in koskari_func_init). */
+static PyObject *func_module = NULL;
+static PyObject *func_stop_async_iter_value_type = NULL;
+
+
 /* === KosExpression: callable (code, ns) -> coroutine on __call__ === */
 
 
@@ -1344,13 +1349,40 @@ static PyObject *asyncgenasend_iternext(PyObject *self) {
 
   switch (ev.kind) {
     case KOS_EV_RETURN:
-      /* Generator completed; pass return value as StopAsyncIteration value */
+      /* Generator completed; pass return value. Use subclass with .value so
+         3.12 runtimes that expect exception.value do not raise AttributeError.
+         Fallback: build StopAsyncIteration(payload) and set .value on the
+         instance so normalization to the base type still has .value. */
       agen->closed = 1;
-      if (ev.payload) {
-        PyErr_SetObject(PyExc_StopAsyncIteration, ev.payload);
-        Py_DECREF(ev.payload);
-      } else {
-        PyErr_SetNone(PyExc_StopAsyncIteration);
+      {
+        PyObject *payload = ev.payload;
+        if (! payload)
+          payload = Py_None;
+        PyObject *exc = NULL;
+        if (! func_stop_async_iter_value_type && func_module) {
+          func_stop_async_iter_value_type = PyObject_GetAttrString(
+              func_module, "_StopAsyncIterationValue");
+        }
+        if (func_stop_async_iter_value_type) {
+          exc = PyObject_CallFunctionObjArgs(func_stop_async_iter_value_type,
+                                              payload, NULL);
+        }
+        if (! exc) {
+          exc = PyObject_CallFunctionObjArgs(PyExc_StopAsyncIteration,
+                                            payload, NULL);
+          if (exc && PyObject_SetAttrString(exc, "value", payload) < 0) {
+            Py_DECREF(exc);
+            exc = NULL;
+          }
+        }
+        if (ev.payload)
+          Py_DECREF(ev.payload);
+        if (exc) {
+          PyErr_SetObject((PyObject *) Py_TYPE(exc), exc);
+          Py_DECREF(exc);
+        } else if (! PyErr_Occurred()) {
+          PyErr_SetNone(PyExc_StopAsyncIteration);
+        }
       }
       return NULL;
 
@@ -1503,6 +1535,18 @@ int koskari_func_init(PyObject *mod) {
   if (! dict)
     return -1;
 
+  func_module = mod;
+  Py_INCREF(func_module);
+  {
+    PyObject *dict = PyModule_GetDict(mod);
+    if (dict) {
+      PyObject *typ = PyDict_GetItemString(dict, "_StopAsyncIterationValue");
+      if (typ) {
+        func_stop_async_iter_value_type = typ;
+        Py_INCREF(func_stop_async_iter_value_type);
+      }
+    }
+  }
   STR_CONST(coro_str_send, "send");
   STR_CONST(coro_str_throw, "throw");
   STR_CONST(coro_str_close, "close");
@@ -1551,6 +1595,8 @@ int koskari_func_init(PyObject *mod) {
 
 int koskari_func_clear(PyObject *mod) {
 
+  Py_CLEAR(func_stop_async_iter_value_type);
+  Py_CLEAR(func_module);
   Py_CLEAR(coro_str_send);
   Py_CLEAR(coro_str_throw);
   Py_CLEAR(coro_str_close);

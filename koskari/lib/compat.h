@@ -40,6 +40,15 @@
 
 /* === macros for all versions === */
 
+/**
+   Return the value associated with a StopAsyncIteration instance (new ref).
+   On 3.13+ uses .value; on earlier versions uses exc.args[0].  Returns
+   Py_None (new ref) when no value is present.  Caller must Py_DECREF the result.
+*/
+PyObject *koskari_StopAsyncIteration_value(PyObject *exc);
+
+#define StopAsyncIteration_VALUE(exc)  koskari_StopAsyncIteration_value(exc)
+
 #define PyDict_NewPresized _PyDict_NewPresized
 #define PyGen_FetchStopIterationValue _PyGen_FetchStopIterationValue
 #define PyObject_LookupAttr _PyObject_LookupAttr
