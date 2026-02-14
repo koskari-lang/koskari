@@ -478,12 +478,12 @@ Other opcodes (CHECK_LT/LE/GT/GE, CHECK_IS_INSTANCE/IS_SUBCLASS, VAR_CLEAR, VAR_
 ### KOS_OP_YIELD_FROM
 
 - **Style**: NOARG.
-- **Status**: Stub (design complete; see design doc).
+- **Status**: Implemented.
 - **Stack**: On first entry: consume TOS (subexpr_result), push `KOS_DYN_YIELD_FROM`. On completion: pop dyn node, push final value. PC does not advance until delegation completes.
-- **Execution model**: Single-opcode delegation primitive (conduit); not loop sugar. Full send/throw/close propagation; async flattening for Python and Koskari async gens. Backed by dynamic extent node `KOS_DYN_YIELD_FROM`. **Current:** Stub; runtime error if executed.
+- **Execution model**: Single-opcode delegation primitive (conduit); not loop sugar. Full send/throw/close propagation; async flattening for Python and Koskari async gens. Backed by dynamic extent node `KOS_DYN_YIELD_FROM`. **Valid delegates**: sync/async iterators and generators (including Koskari async gen). **Rejected**: coroutines (Koskari or Python); normalization raises `TypeError: "coroutine object is not async iterable"`. Delegate results (yielded or final value) are never re-awaited; they are pushed or emitted as values only.
 - **Design**: [design/interpreter/yield-from-execution-model.md](interpreter/yield-from-execution-model.md)
 
-**Example:** (Stub; no runtime table.)
+**Example:** Delegate to sub-iterator; values and final value flow through.
 
 
 ## 7. Iteration
@@ -1352,6 +1352,7 @@ Check jumps: if the predicate does **not** hold, jump to `arg`. All take LABEL; 
 - **Style**: COUNT. Arg = number of positional arguments.
 - **Status**: Implemented.
 - **Stack**: `[..., callable, arg_1, ..., arg_n] → [..., result]`. KosExpression/KosFunction: new frame pushed, in-loop execution. Python callable: may suspend on awaitable.
+- **Execution model**: Only the **call result** is ever auto-awaited: when a Python call returns a coroutine/awaitable, the VM awaits it (flattened) and pushes the final value. All other opcodes (CONST, loads, getattr, subscript, binary ops, yield-from results, etc.) push their value with no automatic await; use the AWAIT opcode to await explicitly.
 - **Invariants**: Stack has at least 1 + arg elements. See execution-invariants for in-loop flattening.
 
 **Example:** Call with 1 argument. Pool: 0 = fn, 1 = 42.

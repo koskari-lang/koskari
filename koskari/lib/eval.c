@@ -717,8 +717,32 @@ static PyObject *get_await_next(PyObject *val) {
 
 
 /**
-   Push val onto the frame stack, or if val is awaitable run eager_step and
-   either push the result or suspend (set out_ev to KOS_EV_AWAIT and return 1).
+   Push val onto the frame stack. No auto-await; val is used as-is.
+   val is consumed (new reference). Use this for all values that are not
+   the direct result of a call (e.g. CONST, load, getattr, subscript).
+
+   :return: 0 continue, -1 error
+*/
+static int push_result(KosContext *ctx, PyObject *val) {
+
+  if (! val)
+    return -1;
+  if (KosStackBlock_PushRef(&KosDynFrame_STACK(KosContext_FRAME_TOP(ctx)), val) < 0) {
+    Py_DECREF(val);
+    return -1;
+  }
+  Py_DECREF(val);
+  return 0;
+}
+
+
+/**
+   Push val, or if val is awaitable run eager_step and either push the
+   result or suspend (KOS_EV_AWAIT). Use only for (1) the result of a
+   call (CALL opcode: callable returned a coroutine) and (2) the AWAIT
+   opcode (explicitly awaiting TOS). All other paths must use push_result
+   so we do not auto-await values that are merely loaded or computed.
+
    val is consumed (new reference).
 
    :return: 0 continue, 1 stop (AWAIT), -1 error
@@ -761,18 +785,6 @@ static int push_or_await(KosContext *ctx, KosEvent *out_ev, PyObject *val) {
   }
 
   return -1;
-}
-
-
-/**
-   Push a single result onto the frame stack and maybe await it if
-   awaitable. Caller passes a new reference in val; it is consumed.
-   Returns same as push_or_await: 0 continue, 1 stop (AWAIT), -1 error.
-*/
-static int push_result_or_await(KosContext *ctx, KosEvent *out_ev, PyObject *val) {
-  if (! val)
-    return -1;
-  return push_or_await(ctx, out_ev, val);
 }
 
 
@@ -964,7 +976,7 @@ KOS_OP_HANDLER(CONST) {
   if (PyLong_Check(val))
     SAYF("[eval] CONST pushed %ld\n", PyLong_AsLong(val));
   Py_INCREF(val);
-  return push_result_or_await(ctx, out_ev, val);
+  return push_result(ctx, val);
 }
 
 
@@ -1229,9 +1241,9 @@ static int call_native_flattened_function(
 
 
 /**
-   call_pyobject_call: callable and args are borrowed. CallNoArgs or Call(tuple);
-   push result or await it (push_or_await takes ownership of result). Handler
-   releases callable and args.
+   call_pyobject_call: callable and args are borrowed. CallNoArgs or Call(tuple).
+   Push the result; if it is a coroutine (call returned awaitable), we await it
+   here (push_or_await). Handler releases callable and args.
 */
 static int call_pyobject_call(
     KosContext *ctx,
@@ -1314,7 +1326,7 @@ KOS_OP_HANDLER(GLOBALS) {
 
   PyObject *ns = KosDynFrame_NS(KosContext_GLOBALS_FRAME(ctx));
   Py_INCREF(ns);
-  return push_result_or_await(ctx, out_ev, ns);
+  return push_result(ctx, ns);
 }
 
 
@@ -1325,7 +1337,7 @@ KOS_OP_HANDLER(GLOBALS) {
 KOS_OP_HANDLER(LOCALS) {
   PyObject *ns = KosDynFrame_NS(KosContext_FRAME_TOP(ctx));
   Py_INCREF(ns);
-  return push_result_or_await(ctx, out_ev, ns);
+  return push_result(ctx, ns);
 }
 
 
@@ -1340,7 +1352,7 @@ KOS_OP_HANDLER(VAR) {
   PyObject *val = frame_ns_deref(ctx, name);
   if (! val)
     return -1;
-  return push_or_await(ctx, out_ev, val);
+  return push_result(ctx, val);
 }
 
 
@@ -1354,7 +1366,7 @@ KOS_OP_HANDLER(EXCEPTION) {
 
   if (! typ) {
     Py_INCREF(Py_None);
-    return push_result_or_await(ctx, out_ev, Py_None);
+    return push_result(ctx, Py_None);
   }
 
   if (! val)
@@ -1363,7 +1375,7 @@ KOS_OP_HANDLER(EXCEPTION) {
   Py_DECREF(typ);
   Py_XDECREF(tb);
 
-  return push_result_or_await(ctx, out_ev, val);
+  return push_result(ctx, val);
 }
 
 
@@ -1400,7 +1412,7 @@ KOS_OP_HANDLER(EXCEPTION_MATCH) {
     if (KosStackBlock_Drop(&KosDynFrame_STACK(KosContext_FRAME_TOP(ctx)), (size_t) opa) < 0)
       return -1;
     Py_INCREF(ret);
-    return push_result_or_await(ctx, out_ev, ret);
+    return push_result(ctx, ret);
   }
 
   PyObject *const *checks = KosStackBlock_TailPtr(KosDynFrame_STACK(KosContext_FRAME_TOP(ctx)),
@@ -1426,7 +1438,7 @@ KOS_OP_HANDLER(EXCEPTION_MATCH) {
   Py_XDECREF(tb);
 
   Py_INCREF(ret);
-  return push_result_or_await(ctx, out_ev, ret);
+  return push_result(ctx, ret);
 }
 
 
@@ -1762,7 +1774,7 @@ KOS_OP_HANDLER(SHIFT) {
   }
 
   KosDynFrame_PC(KosContext_FRAME_TOP(ctx)) = KosDynPrompt_HANDLER_PC(prompt);
-  return push_result_or_await(ctx, out_ev, wrapper);
+  return push_result(ctx, wrapper);
 }
 
 
@@ -1823,7 +1835,7 @@ KOS_OP_HANDLER(CAPTURE_CC) {
     kos_continuation_free(k);
     return -1;
   }
-  return push_result_or_await(ctx, out_ev, wrapper);
+  return push_result(ctx, wrapper);
 }
 
 
@@ -2009,7 +2021,7 @@ static int obj_op_reducing(KosContext *ctx, KosEvent *out_ev, KosOp *insn,
 
   if (! res)
     return -1;
-  return push_or_await(ctx, out_ev, res);
+  return push_result(ctx, res);
 }
 
 
@@ -2030,7 +2042,7 @@ KOS_OP_HANDLER(OBJECT_ADD) {
     Py_DECREF(val);                                                    \
     if (! res) return -1;                                              \
     (void) insn;                                                       \
-    return push_or_await(ctx, out_ev, res);                             \
+    return push_result(ctx, res);                                      \
   }
 
 
@@ -2067,7 +2079,7 @@ KOS_OP_HANDLER(OBJECT_LEN) {
   if (! res)
     return -1;
   (void) insn;
-  return push_or_await(ctx, out_ev, res);
+  return push_result(ctx, res);
 }
 
 
@@ -2087,7 +2099,7 @@ KOS_OP_HANDLER(OBJECT_NOT) {
   PyObject *res = (r ? Py_True : Py_False);
   Py_INCREF(res);
   (void) insn;
-  return push_or_await(ctx, out_ev, res);
+  return push_result(ctx, res);
 }
 
 
@@ -2107,7 +2119,7 @@ KOS_OP_HANDLER(OBJECT_TRUTH) {
   PyObject *res = (r ? Py_True : Py_False);
   Py_INCREF(res);
   (void) insn;
-  return push_or_await(ctx, out_ev, res);
+  return push_result(ctx, res);
 }
 
 
@@ -2123,7 +2135,7 @@ KOS_OP_HANDLER(OBJECT_TYPE) {
   Py_INCREF(res);
   Py_DECREF(val);
   (void) insn;
-  return push_or_await(ctx, out_ev, res);
+  return push_result(ctx, res);
 }
 
 
@@ -2144,7 +2156,7 @@ KOS_OP_HANDLER(OBJECT_VARS) {
     return -1;
   }
   (void) insn;
-  return push_or_await(ctx, out_ev, d);
+  return push_result(ctx, d);
 }
 
 
@@ -2168,7 +2180,7 @@ KOS_OP_HANDLER(OBJECT_AITER) {
   }
   Py_DECREF(val);
   (void) insn;
-  return push_or_await(ctx, out_ev, res);
+  return push_result(ctx, res);
 }
 
 
@@ -2186,7 +2198,7 @@ KOS_OP_HANDLER(OBJECT_AITER) {
     Py_DECREF(left);                                                  \
     Py_DECREF(right);                                                 \
     if (! res) return -1;                                             \
-    return push_or_await(ctx, out_ev, res);                            \
+    return push_result(ctx, res);                                    \
   }
 
 
@@ -2311,7 +2323,7 @@ KOS_OP_HANDLER(OBJECT_POWER) {
     Py_DECREF(mod);
   if (! val)
     return -1;
-  return push_or_await(ctx, out_ev, val);
+  return push_result(ctx, val);
 }
 
 
@@ -2339,7 +2351,7 @@ static int obj_op_binary(
   if (! res)
     return -1;
   (void) insn;
-  return push_result_or_await(ctx, out_ev, res);
+  return push_result(ctx, res);
 }
 
 
@@ -2417,7 +2429,7 @@ static int op_OBJECT_EQ_impl(
   PyObject *res = (cmp ? Py_True : Py_False);
   Py_INCREF(res);
   (void) insn;
-  return push_or_await(ctx, out_ev, res);
+  return push_result(ctx, res);
 }
 
 
@@ -2533,7 +2545,7 @@ KOS_OP_HANDLER(OBJECT_IS_INSTANCE) {
 
   PyObject *out = (res ? Py_True : Py_False);
   Py_INCREF(out);
-  return push_or_await(ctx, out_ev, out);
+  return push_result(ctx, out);
 }
 
 
@@ -2573,7 +2585,7 @@ KOS_OP_HANDLER(OBJECT_IS_SUBCLASS) {
 
   PyObject *out = (res ? Py_True : Py_False);
   Py_INCREF(out);
-  return push_or_await(ctx, out_ev, out);
+  return push_result(ctx, out);
 }
 
 
@@ -2903,6 +2915,10 @@ void kos_yieldfrom_close_delegate(KosDynYieldFrom *node) {
 /**
    Normalize TOS to a (delegate, kind) for yield-from. On success returns 0
    and sets *delegate_out (new ref) and *kind_out. On failure returns -1.
+
+   Yield-from operates on iterables and async-iterables only. Coroutines
+   are rejected (same idea as iter(1) being invalid). We classify by type
+   so the handler can drive the delegate with the right protocol.
 */
 static int yield_from_normalize(
     PyObject *obj,
@@ -2914,7 +2930,21 @@ static int yield_from_normalize(
     return -1;
   }
 
-  /* Koskari async gen: delegate as-is. */
+  /* --- Reject non-iterables ---
+     Coroutines are awaitable, not iterable. Using yield-from on a
+     coroutine is a type error (like yield from 1). */
+  if (KosCoroutine_Check(obj)
+#ifdef PyCoro_CheckExact
+      || PyCoro_CheckExact(obj)
+#endif
+      ) {
+    PyErr_SetString(PyExc_TypeError,
+                    "coroutine object is not async iterable");
+    return -1;
+  }
+
+  /* --- Koskari async gen ---
+     We drive it in-process via koskari_eval; no Python protocol. */
   if (KosPyAsyncGen_Check(obj)) {
     Py_INCREF(obj);
     *delegate_out = obj;
@@ -2922,7 +2952,8 @@ static int yield_from_normalize(
     return 0;
   }
 
-  /* Python sync generator (or coroutine; both have send()). */
+  /* --- Python sync generator ---
+     Has send/throw/close; we use send(None) for step, send(val) for send. */
   if (PyGen_Check(obj)) {
     Py_INCREF(obj);
     *delegate_out = obj;
@@ -2930,7 +2961,9 @@ static int yield_from_normalize(
     return 0;
   }
 
-  /* Python async iterator (has __anext__). Distinguish async gen by asend. */
+  /* --- Python async iterator / async gen ---
+     Has __anext__; async gen also has asend/athrow/aclose. We use
+     __anext__ for step and asend/athrow/aclose when needed. */
   if (PyObject_HasAttrString(obj, "__anext__")) {
     Py_INCREF(obj);
     *delegate_out = obj;
@@ -2940,7 +2973,8 @@ static int yield_from_normalize(
     return 0;
   }
 
-  /* Sync iterator. */
+  /* --- Sync iterator ---
+     PyIter_Next for step; no send/close. */
   if (PyIter_Check(obj)) {
     Py_INCREF(obj);
     *delegate_out = obj;
@@ -2948,11 +2982,23 @@ static int yield_from_normalize(
     return 0;
   }
 
-  /* Callable (e.g. generator function): call once to get generator. */
+  /* --- Callable (e.g. generator function) ---
+     Call once to get the actual iterator/gen; then classify as above.
+     Reject if the call returns a coroutine. */
   if (PyCallable_Check(obj)) {
     PyObject *gen = PyObject_CallFunctionObjArgs(obj, NULL);
     if (! gen)
       return -1;
+    if (KosCoroutine_Check(gen)
+#ifdef PyCoro_CheckExact
+        || PyCoro_CheckExact(gen)
+#endif
+        ) {
+      Py_DECREF(gen);
+      PyErr_SetString(PyExc_TypeError,
+                      "coroutine object is not async iterable");
+      return -1;
+    }
     if (PyGen_Check(gen)) {
       *delegate_out = gen;
       *kind_out = KOS_YF_SYNC_GEN;
@@ -2976,7 +3022,8 @@ static int yield_from_normalize(
     return -1;
   }
 
-  /* Try iter(obj) for sync iteration. */
+  /* --- Fallback: sync iteration via iter(obj) ---
+     For any other object that supports __iter__. */
   {
     PyObject *it = PyObject_GetIter(obj);
     if (! it)
@@ -3002,15 +3049,84 @@ static void yield_from_rollback_pc(KosContext *ctx, KosOp *insn) {
 
 
 /**
-   YIELD_FROM: delegate to subgenerator; PC-stable state machine.
+   Fetch the value from the currently set StopIteration exception.
+   Call only when PyErr_ExceptionMatches(PyExc_StopIteration) is true.
+   Consumes the exception. Returns a new reference (value or Py_None).
+*/
+static PyObject *yield_from_fetch_stop_iteration_value(void) {
+
+  PyObject *value = NULL;
+  PyGen_FetchStopIterationValue(&value);
+  if (! value)
+    value = Py_None;
+  Py_INCREF(value);
+  return value;
+}
+
+
+/**
+   Emit KOS_EV_YIELD using the value at TOS. Call after pushing the
+   yielded value onto the frame stack. Sets DEAD and returns 1.
+*/
+static int yield_from_emit_yield(
+    KosContext *ctx,
+    KosDynFrame *frame,
+    KosEvent *out_ev,
+    KosOp *insn) {
+
+  yield_from_rollback_pc(ctx, insn);
+  {
+    PyObject *const *tos = KosStackBlock_TailPtr(
+        KosDynFrame_STACK(frame), 1);
+    out_ev->kind = KOS_EV_YIELD;
+    out_ev->payload = tos ? *tos : NULL;
+    Py_XINCREF(out_ev->payload);
+  }
+  KosContext_FLAGS(ctx) &= ~KOS_CTX_RUNNING;
+  KosContext_FLAGS(ctx) |= KOS_CTX_DEAD;
+  return 1;
+}
+
+
+/**
+   Emit KOS_EV_RETURN for delegate exhaustion. Pops the yield_from node,
+   takes ownership of final_val (caller must not DECREF), sets out_ev and
+   DEAD, returns 1.
+*/
+static int yield_from_emit_return(
+    KosContext *ctx,
+    KosDynYieldFrom *yf,
+    PyObject *final_val,
+    KosEvent *out_ev) {
+
+  kos_dyn_pop_yield_from(ctx, yf);
+  out_ev->kind = KOS_EV_RETURN;
+  out_ev->payload = final_val;
+  KosContext_FLAGS(ctx) &= ~KOS_CTX_RUNNING;
+  KosContext_FLAGS(ctx) |= KOS_CTX_DEAD;
+  return 1;
+}
+
+
+/**
+   YIELD_FROM: delegate to a sub-iterator or sub-generator; PC-stable
+   state machine. First time we see this insn, TOS is the delegate
+   (result of the yield-from expression); we normalize it, push a
+   yield_from dyn node, and roll back PC so we re-dispatch and drive.
+   On subsequent iterations we have that dyn node and we drive one step
+   (or handle close/throw). We branch by delegate kind so each protocol
+   is handled in one place.
 */
 KOS_OP_HANDLER(YIELD_FROM) {
 
   KosDynNode *dyn_top = KosContext_DYN_TOP(ctx);
   KosDynFrame *frame = KosContext_FRAME_TOP(ctx);
 
-  /* First entry: TOS is subexpr result. Pop, normalize, push dyn node, do not advance. */
   if (! KosDynNode_IS_YIELD_FROM(dyn_top)) {
+    /* First entry: TOS is the yield-from expression result. Pop it,
+       normalize to (delegate, kind), push the yield_from node, roll
+       back PC so the next iteration runs this handler again and we
+       drive the delegate. */
     PyObject *subexpr = KosStackBlock_PopRef(&KosDynFrame_STACK(frame));
     if (! subexpr) {
       return -1;
@@ -3033,8 +3149,9 @@ KOS_OP_HANDLER(YIELD_FROM) {
     return 0;
   }
 
-  /* Resume: we have a YIELD_FROM node. Consume inject from TOS if RESUME_KIND set (loop
-     pushed it at eval start), then drive. */
+  /* Resume: we have a yield_from node. If the loop pushed an inject
+     (from a previous yield or await), pop it into the node and set
+     action; then drive one step according to kind. */
   KosDynYieldFrom *yf = (KosDynYieldFrom *) dyn_top;
   uint8_t action = KosDynYieldFrom_PENDING_ACTION(yf);
 
@@ -3063,7 +3180,13 @@ KOS_OP_HANDLER(YIELD_FROM) {
   uint8_t kind = KosDynYieldFrom_KIND(yf);
   PyObject *delegate = KosDynYieldFrom_DELEGATE(yf);
 
-  /* --- SYNC_ITER --- */
+  /* Drive one step. Each branch handles one delegate kind and either
+     returns (event or error) or, for exhaustion with a value, pushes
+     and returns 0 so the YIELD_FROM completes. */
+
+  /* --- SYNC_ITER ---
+     Drive with PyIter_Next. No send/close; throw is ignored and we continue
+     stepping. Exhaustion is StopIteration (possibly with .value). */
   if (kind == KOS_YF_SYNC_ITER) {
     if (action != KOS_YF_STEP && action != KOS_YF_SEND) {
       if (action == KOS_YF_CLOSE)
@@ -3086,47 +3209,28 @@ KOS_OP_HANDLER(YIELD_FROM) {
         return -1;
       }
       Py_DECREF(n);
-      yield_from_rollback_pc(ctx, insn);
-      {
-        PyObject *const *tos = KosStackBlock_TailPtr(
-            KosDynFrame_STACK(frame), 1);
-        out_ev->kind = KOS_EV_YIELD;
-        out_ev->payload = tos ? *tos : NULL;
-        Py_XINCREF(out_ev->payload);
-      }
-      KosContext_FLAGS(ctx) &= ~KOS_CTX_RUNNING;
-      KosContext_FLAGS(ctx) |= KOS_CTX_DEAD;
-      return 1;
+      return yield_from_emit_yield(ctx, frame, out_ev, insn);
     }
     if (! PyErr_Occurred())
       return -1;
-    if (! PyErr_ExceptionMatches(PyExc_StopIteration)) {
+    if (! PyErr_ExceptionMatches(PyExc_StopIteration))
       return -1;
-    }
-    /* Exhausted: StopIteration. Extract value if any. */
     {
-      PyObject *exc = PyErr_GetRaisedException();
-      PyObject *final_val = PyObject_GetAttrString(exc, "value");
-      Py_DECREF(exc);
-      if (! final_val)
-        final_val = Py_None;
-      Py_INCREF(final_val);
-      kos_dyn_pop_yield_from(ctx, yf);
-      if (KosStackBlock_PushRef(&KosDynFrame_STACK(frame), final_val) < 0) {
-        Py_DECREF(final_val);
-        return -1;
-      }
-      Py_DECREF(final_val);
-      return 0;
+      PyObject *final_val = yield_from_fetch_stop_iteration_value();
+      return yield_from_emit_return(ctx, yf, final_val, out_ev);
     }
   }
 
-  /* --- SYNC_GEN --- */
+  /* --- SYNC_GEN ---
+     Drive with send(None) for step, send(val) for send, throw/close as
+     needed. Generator return raises StopIteration(value); we treat that
+     as exhaustion and emit RETURN. Check exhaustion before treating a
+     non-NULL return as a yielded value. */
   if (kind == KOS_YF_SYNC_GEN) {
     PyObject *send_val = Py_None;
-    if (action == KOS_YF_SEND && KosDynYieldFrom_PENDING_ARG(yf)) {
+    if (action == KOS_YF_SEND && KosDynYieldFrom_PENDING_ARG(yf))
       send_val = KosDynYieldFrom_PENDING_ARG(yf);
-    }
+
     if (action == KOS_YF_THROW) {
       PyObject *exc = KosDynYieldFrom_PENDING_ARG(yf);
       PyObject *meth = PyUnicode_FromString("throw");
@@ -3143,17 +3247,7 @@ KOS_OP_HANDLER(YIELD_FROM) {
             return -1;
           }
           Py_DECREF(res);
-          yield_from_rollback_pc(ctx, insn);
-          {
-            PyObject *const *tos = KosStackBlock_TailPtr(
-                KosDynFrame_STACK(frame), 1);
-            out_ev->kind = KOS_EV_YIELD;
-            out_ev->payload = tos ? *tos : NULL;
-            Py_XINCREF(out_ev->payload);
-          }
-          KosContext_FLAGS(ctx) &= ~KOS_CTX_RUNNING;
-          KosContext_FLAGS(ctx) |= KOS_CTX_DEAD;
-          return 1;
+          return yield_from_emit_yield(ctx, frame, out_ev, insn);
         }
       }
       kos_yieldfrom_close_delegate(yf);
@@ -3178,46 +3272,33 @@ KOS_OP_HANDLER(YIELD_FROM) {
         return -1;
       PyObject *res = PyObject_CallMethodObjArgs(delegate, meth, send_val, NULL);
       Py_XDECREF(meth);
+      if (PyErr_ExceptionMatches(PyExc_StopIteration)) {
+        Py_XDECREF(res);
+        PyObject *final_val = yield_from_fetch_stop_iteration_value();
+        return yield_from_emit_return(ctx, yf, final_val, out_ev);
+      }
       if (res) {
         if (KosStackBlock_PushRef(&KosDynFrame_STACK(frame), res) < 0) {
           Py_DECREF(res);
           return -1;
         }
         Py_DECREF(res);
-        yield_from_rollback_pc(ctx, insn);
-        {
-          PyObject *const *tos = KosStackBlock_TailPtr(
-              KosDynFrame_STACK(frame), 1);
-          out_ev->kind = KOS_EV_YIELD;
-          out_ev->payload = tos ? *tos : NULL;
-          Py_XINCREF(out_ev->payload);
-        }
-        KosContext_FLAGS(ctx) &= ~KOS_CTX_RUNNING;
-        KosContext_FLAGS(ctx) |= KOS_CTX_DEAD;
-        return 1;
-      }
-      if (PyErr_ExceptionMatches(PyExc_StopIteration)) {
-        PyObject *exc = PyErr_GetRaisedException();
-        PyObject *final_val = PyObject_GetAttrString(exc, "value");
-        Py_DECREF(exc);
-        if (! final_val)
-          final_val = Py_None;
-        Py_INCREF(final_val);
-        kos_dyn_pop_yield_from(ctx, yf);
-        if (KosStackBlock_PushRef(&KosDynFrame_STACK(frame), final_val) < 0) {
-          Py_DECREF(final_val);
-          return -1;
-        }
-        Py_DECREF(final_val);
-        return 0;
+        return yield_from_emit_yield(ctx, frame, out_ev, insn);
       }
       return -1;
     }
   }
 
-  /* --- PY_ASYNC_ITER / PY_ASYNC_GEN --- */
+  /* --- PY_ASYNC_ITER / PY_ASYNC_GEN ---
+     Drive via __anext__ (step), asend/athrow/aclose for async gen. We
+     obtain an awaitable, run eager_step_awaitable; if it suspends we
+     emit AWAIT; if it completes with a value we emit YIELD; if
+     StopAsyncIteration we push the value and return 0 (YIELD_FROM
+     completes with that value). Coroutines are rejected at normalize
+     so we never see immediate completion of a coroutine here. */
   if (kind == KOS_YF_PY_ASYNC_ITER || kind == KOS_YF_PY_ASYNC_GEN) {
-    /* Resuming from await: inflight was set when we suspended; TOS was popped into pending_arg. */
+    /* Resuming from await: we had suspended with INFLIGHT set; the
+       result was stashed in PENDING_ARG. Push it and emit YIELD. */
     if (KosDynYieldFrom_INFLIGHT(yf)) {
       PyObject *aw_result = KosDynYieldFrom_PENDING_ARG(yf);
       Py_XDECREF(KosDynYieldFrom_INFLIGHT(yf));
@@ -3225,7 +3306,8 @@ KOS_OP_HANDLER(YIELD_FROM) {
       KosDynYieldFrom_PENDING_ARG(yf) = NULL;
       KosDynYieldFrom_PENDING_ACTION(yf) = KOS_YF_STEP;
       if (! aw_result) {
-        PyErr_SetString(PyExc_RuntimeError, "yield-from resume with no await result");
+        PyErr_SetString(PyExc_RuntimeError,
+                        "yield-from resume with no await result");
         return -1;
       }
       if (KosStackBlock_PushRef(&KosDynFrame_STACK(frame), aw_result) < 0) {
@@ -3233,20 +3315,11 @@ KOS_OP_HANDLER(YIELD_FROM) {
         return -1;
       }
       Py_DECREF(aw_result);
-      yield_from_rollback_pc(ctx, insn);
-      {
-        PyObject *const *tos = KosStackBlock_TailPtr(
-            KosDynFrame_STACK(frame), 1);
-        out_ev->kind = KOS_EV_YIELD;
-        out_ev->payload = tos ? *tos : NULL;
-        Py_XINCREF(out_ev->payload);
-      }
-      KosContext_FLAGS(ctx) &= ~KOS_CTX_RUNNING;
-      KosContext_FLAGS(ctx) |= KOS_CTX_DEAD;
-      return 1;
+      return yield_from_emit_yield(ctx, frame, out_ev, insn);
     }
 
-    /* INJECT_THROW with StopAsyncIteration: delegate exhausted, use value and complete. */
+    /* Throw(StopAsyncIteration): delegate was closed with that; pop,
+       push the value, return 0 so YIELD_FROM completes with it. */
     if (action == KOS_YF_THROW && KosDynYieldFrom_PENDING_ARG(yf)) {
       PyObject *exc = KosDynYieldFrom_PENDING_ARG(yf);
       if (PyObject_IsInstance(exc, (PyObject *) PyExc_StopAsyncIteration)) {
@@ -3264,7 +3337,7 @@ KOS_OP_HANDLER(YIELD_FROM) {
       }
     }
 
-    /* Get awaitable for this step. */
+    /* Build the awaitable for this step: __anext__, asend, athrow, or aclose. */
     PyObject *awaitable = NULL;
     if (action == KOS_YF_STEP || (action == KOS_YF_SEND && ! KosDynYieldFrom_PENDING_ARG(yf))) {
       awaitable = get_await_next(delegate);
@@ -3352,17 +3425,7 @@ KOS_OP_HANDLER(YIELD_FROM) {
         return -1;
       }
       Py_DECREF(result);
-      yield_from_rollback_pc(ctx, insn);
-      {
-        PyObject *const *tos = KosStackBlock_TailPtr(
-            KosDynFrame_STACK(frame), 1);
-        out_ev->kind = KOS_EV_YIELD;
-        out_ev->payload = tos ? *tos : NULL;
-        Py_XINCREF(out_ev->payload);
-      }
-      KosContext_FLAGS(ctx) &= ~KOS_CTX_RUNNING;
-      KosContext_FLAGS(ctx) |= KOS_CTX_DEAD;
-      return 1;
+      return yield_from_emit_yield(ctx, frame, out_ev, insn);
     }
     if (PyErr_ExceptionMatches(PyExc_StopAsyncIteration)) {
       PyObject *exc = PyErr_GetRaisedException();
@@ -3379,11 +3442,16 @@ KOS_OP_HANDLER(YIELD_FROM) {
     return -1;
   }
 
-  /* --- KOS_ASYNC_GEN --- */
+  /* --- KOS_ASYNC_GEN ---
+     Delegate is our own async gen; we drive it with koskari_eval. Resume
+     from await by injecting the result into the inner context and
+     re-running. Events: YIELD (relay), RETURN (exhaustion), AWAIT
+     (suspend), RAISE (propagate). */
   if (kind == KOS_YF_KOS_ASYNC_GEN) {
     KosPyAsyncGen *agen = (KosPyAsyncGen *) delegate;
 
-    /* Resuming from await: inject result into inner context and drive again. */
+    /* Resuming from await: inject the result into the inner context
+       so the next koskari_eval run continues from the AWAIT. */
     if (KosDynYieldFrom_INFLIGHT(yf)) {
       KosContext *inner = agen->ctx;
       PyObject *aw_result = KosDynYieldFrom_PENDING_ARG(yf);
@@ -3474,32 +3542,15 @@ KOS_OP_HANDLER(YIELD_FROM) {
         return -1;
       }
       Py_DECREF(ev.payload);
-      yield_from_rollback_pc(ctx, insn);
-      {
-        PyObject *const *tos = KosStackBlock_TailPtr(
-            KosDynFrame_STACK(frame), 1);
-        out_ev->kind = KOS_EV_YIELD;
-        out_ev->payload = tos ? *tos : NULL;
-        Py_XINCREF(out_ev->payload);
-      }
-      KosContext_FLAGS(ctx) &= ~KOS_CTX_RUNNING;
-      KosContext_FLAGS(ctx) |= KOS_CTX_DEAD;
-      return 1;
+      return yield_from_emit_yield(ctx, frame, out_ev, insn);
 
-    case KOS_EV_RETURN:
-      kos_dyn_pop_yield_from(ctx, yf);
-      {
-        PyObject *payload = ev.payload ? ev.payload : Py_None;
-        Py_INCREF(payload);
-        if (ev.payload)
-          Py_DECREF(ev.payload);
-        if (KosStackBlock_PushRef(&KosDynFrame_STACK(frame), payload) < 0) {
-          Py_DECREF(payload);
-          return -1;
-        }
-        Py_DECREF(payload);
-      }
-      return 0;
+    case KOS_EV_RETURN: {
+      PyObject *payload = ev.payload ? ev.payload : Py_None;
+      Py_INCREF(payload);
+      if (ev.payload)
+        Py_DECREF(ev.payload);
+      return yield_from_emit_return(ctx, yf, payload, out_ev);
+    }
 
     case KOS_EV_AWAIT:
       Py_INCREF(ev.payload);
@@ -4232,7 +4283,7 @@ KOS_OP_HANDLER(VAR_REF) {
   if (! ref)
     return -1;
   Py_INCREF(ref);
-  return push_result_or_await(ctx, out_ev, ref);
+  return push_result(ctx, ref);
 }
 
 
@@ -4270,7 +4321,7 @@ KOS_OP_HANDLER(FAST) {
   PyObject *val = KosNamespace_FastDeref(ns, idx);
   if (! val)
     return -1;
-  return push_or_await(ctx, out_ev, val);
+  return push_result(ctx, val);
 }
 
 
@@ -4336,7 +4387,7 @@ KOS_OP_HANDLER(FAST_REF) {
   if (! ref)
     return -1;
   Py_INCREF(ref);
-  return push_result_or_await(ctx, out_ev, ref);
+  return push_result(ctx, ref);
 }
 
 
@@ -4376,7 +4427,7 @@ KOS_OP_HANDLER(ATTR) {
   Py_DECREF(obj);
   if (! val)
     return -1;
-  return push_result_or_await(ctx, out_ev, val);
+  return push_result(ctx, val);
 }
 
 
@@ -4413,7 +4464,7 @@ KOS_OP_HANDLER(ATTR_REF) {
   Py_DECREF(obj);
   if (! ref)
     return -1;
-  return push_result_or_await(ctx, out_ev, ref);
+  return push_result(ctx, ref);
 }
 
 
@@ -4459,7 +4510,7 @@ KOS_OP_HANDLER(ITEM) {
   Py_DECREF(key);
   if (! item)
     return -1;
-  return push_result_or_await(ctx, out_ev, item);
+  return push_result(ctx, item);
 }
 
 
@@ -4502,7 +4553,7 @@ KOS_OP_HANDLER(ITEM_REF) {
   Py_DECREF(key);
   if (! ref)
     return -1;
-  return push_result_or_await(ctx, out_ev, ref);
+  return push_result(ctx, ref);
 }
 
 
@@ -4550,7 +4601,7 @@ KOS_OP_HANDLER(CONST_ITEM) {
   Py_DECREF(obj);
   if (! item)
     return -1;
-  return push_result_or_await(ctx, out_ev, item);
+  return push_result(ctx, item);
 }
 
 
@@ -4589,7 +4640,7 @@ KOS_OP_HANDLER(CONST_ITEM_REF) {
   Py_DECREF(obj);
   if (! ref)
     return -1;
-  return push_result_or_await(ctx, out_ev, ref);
+  return push_result(ctx, ref);
 }
 
 

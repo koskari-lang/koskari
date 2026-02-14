@@ -2,7 +2,7 @@
 
 ## Purpose
 
-`YIELD_FROM` is a single-opcode delegation primitive. It is not loop sugar. It implements transparent generator/iterator delegation with full support for:
+`YIELD_FROM` is a single-opcode delegation primitive. It is not loop sugar. It operates on **iterables and async-iterables** only. It implements transparent generator/iterator delegation with full support for:
 
 * value propagation (yielded values)
 * `send()` propagation
@@ -11,6 +11,16 @@
 * async flattening (Python + Koskari async generators)
 
 It must behave as a pass-through conduit between caller and delegate.
+
+---
+
+## Valid Delegates and Rejected Targets
+
+- **Valid**: Sync iterators, sync generators, Python async iterators, Python async generators, Koskari async generators. Callables are called once; the returned object must be one of these. Fallback: `iter(obj)` for sync iteration.
+- **Rejected**: **Coroutines** (Koskari or Python). Using yield-from on a coroutine is a **type error**, same idea as iterating over a non-iterable (e.g. `yield from 1`). The runtime raises `TypeError: "coroutine object is not async iterable"` at normalization before any delegation. Coroutines are awaitable, not iterable; they must be used with `AWAIT`, not `YIELD_FROM`.
+- **Koskari classification**: A Koskari callable is an **async generator** only if its code contains at least one `YIELD` or `YIELD_FROM` opcode; otherwise it is a **coroutine**. Only async generators are valid yield-from targets. Code that returns without yielding is built as a coroutine and is rejected if used as the yield-from expression result.
+
+Delegate results (yielded values or final exhaustion value) are **never** re-awaited. They are pushed or emitted as plain values. The only await in the yield-from path is driving the delegate’s own step (e.g. the awaitable from `__anext__`/`asend`); the value produced by that step is relayed as a value.
 
 ---
 

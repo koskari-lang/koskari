@@ -27,10 +27,9 @@
 - Returns result of awaitable
 - Optional `send:` keyword for coroutine.send()
 
-**`yield-from`**: Delegate to generator/coroutine
+**`yield-from`**: Delegate to iterable/async-iterable
 - Syntax: `(yield-from EXPR)` or `(yield-from EXPR send: VALUE)`
-- Delegates to iterable/generator
-- For coroutines, acts like `await`
+- Delegates to an iterable or async-iterable (sync/async generators, iterators). **Coroutines are not valid targets**; use `await` for those. The runtime raises `TypeError` if EXPR evaluates to a coroutine.
 - Optional `send:` keyword
 
 ### Async Context Managers

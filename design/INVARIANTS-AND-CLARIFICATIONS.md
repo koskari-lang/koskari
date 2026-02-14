@@ -69,6 +69,10 @@ These are **commitments**: they must hold for correct behavior. They are elabora
 
 - **Generators vs async**: Generators are **not** awaitable. Async generators are **not** awaitable. Async **functions** return awaitables. Yield and await are **disjoint** control paths.
 
+- **Auto-await**: The VM auto-awaits only (1) the result of a Python CALL when that result is a coroutine/awaitable, and (2) the value consumed by the AWAIT opcode. All other values (CONST, loads, getattr, subscript, yield-from results, etc.) are pushed with no automatic await. See design/interpreter/evaluator.md § "Pushing results and auto-await".
+
+- **Yield-from**: YIELD_FROM operates on iterables and async-iterables only. Coroutines (Koskari or Python) are rejected at normalization with `TypeError: "coroutine object is not async iterable"`. Delegate results (yielded or final value) are never re-awaited; they are pushed or emitted as plain values. Koskari callables are async generators only if their code contains YIELD or YIELD_FROM; otherwise they are coroutines and invalid as yield-from targets. See design/interpreter/yield-from-execution-model.md.
+
 - **Python boundary for continuations**: Captured continuations **must not** include Python/C call stack. The dynamic chain marks Python boundaries with `KOS_DYN_PYCALL`. `shift` capture is **rejected** if any such node exists between current position and the target prompt. Implementation: `kos_validate_capture()` walks from `dyn_top` to the prompt.
 
 - **Unified dynamic chain**: All execution context (frames, prompts, winds, regions, namespace scopes) lives on a **single** chain of `KosDynNode` structures. Node kinds: `KOS_DYN_FRAME`, `KOS_DYN_PROMPT`, `KOS_DYN_WIND`, `KOS_DYN_REGION`, `KOS_DYN_NS`, `KOS_DYN_PYCALL`, `KOS_DYN_YIELD_FROM` (see design/interpreter/yield-from-execution-model.md). Walking the chain gives full dynamic extent. `KOS_DYN_NS` (KosDynNs) marks namespace scopes from PUSH_NS; stores `saved_ns` for restore on POP_NS.

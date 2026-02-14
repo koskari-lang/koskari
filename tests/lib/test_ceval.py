@@ -532,6 +532,283 @@ class TestStubOpcodes(CevalTest):
 
         asyncio.run(run())
 
+    def _stop_async_iteration_final(self, ctx):
+        """
+        Extract final value from StopAsyncIteration exception context.
+        Works across Python versions (e.g. .value on 3.13+ vs args[0] on 3.12).
+        """
+        exc = ctx.exception
+        return getattr(exc, "value", None) or (
+            exc.args[0] if exc.args else None
+        )
+
+    def test_yield_from_koskari_async_gen_values_and_return(self):
+        """
+        YIELD_FROM on a Koskari async gen yields each value then completes
+        with the delegate RETURN value.
+        """
+        inner_code, inner_ns = build_expr([
+            ["CONST", 1],
+            ["YIELD", 1],
+            ["CONST", 2],
+            ["YIELD", 1],
+            ["CONST", 3],
+            ["YIELD", 1],
+            ["CONST", 42],
+            ["RETURN", 1],
+        ])
+        inner_gen = make_callable(inner_code, inner_ns)()
+        code_obj, ns = build_expr([
+            ["CONST", inner_gen],
+            ["YIELD_FROM", 0],
+            ["RETURN", 1],
+        ])
+        expr = make_callable(code_obj, ns)
+        agen = expr()
+        self.assertIsInstance(agen, AsyncGenerator)
+
+        async def run():
+            v1 = await anext(agen)
+            self.assertEqual(v1, 1)
+            v2 = await anext(agen)
+            self.assertEqual(v2, 2)
+            v3 = await anext(agen)
+            self.assertEqual(v3, 3)
+            with self.assertRaises(StopAsyncIteration) as ctx:
+                await anext(agen)
+            final = self._stop_async_iteration_final(ctx)
+            self.assertEqual(final, 42)
+
+        asyncio.run(run())
+
+    def test_yield_from_koskari_async_gen_empty(self):
+        """
+        YIELD_FROM on a Koskari coroutine (no yields) is a type error:
+        coroutines are not async iterable.
+        """
+        inner_code, inner_ns = build_expr([
+            ["CONST", 99],
+            ["RETURN", 1],
+        ])
+        inner_coro = make_callable(inner_code, inner_ns)()
+        code_obj, ns = build_expr([
+            ["CONST", inner_coro],
+            ["YIELD_FROM", 0],
+            ["RETURN", 1],
+        ])
+        expr = make_callable(code_obj, ns)
+        agen = expr()
+        self.assertIsInstance(agen, AsyncGenerator)
+
+        async def run():
+            with self.assertRaises(TypeError) as ctx:
+                await anext(agen)
+            self.assertIn("iterable", str(ctx.exception))
+
+        asyncio.run(run())
+
+    def test_yield_from_koskari_async_gen_with_await(self):
+        """
+        YIELD_FROM on a Koskari async gen that AWAITs between yields
+        (resume-from-await path) yields values and completes.
+        """
+        async def noop():
+            return None
+
+        inner_code, inner_ns = build_expr([
+            ["CONST", 1],
+            ["YIELD", 1],
+            ["VAR", "noop"],
+            ["CALL", 0],
+            ["AWAIT", 0],
+            ["POP", 1],
+            ["CONST", 2],
+            ["YIELD", 1],
+            ["CONST", "done"],
+            ["RETURN", 1],
+        ], values={"noop": noop})
+        inner_gen = make_callable(inner_code, inner_ns)()
+        code_obj, ns = build_expr([
+            ["CONST", inner_gen],
+            ["YIELD_FROM", 0],
+            ["RETURN", 1],
+        ])
+        expr = make_callable(code_obj, ns)
+        agen = expr()
+        self.assertIsInstance(agen, AsyncGenerator)
+
+        async def run():
+            v1 = await anext(agen)
+            self.assertEqual(v1, 1)
+            v2 = await anext(agen)
+            self.assertEqual(v2, 2)
+            with self.assertRaises(StopAsyncIteration) as ctx:
+                await anext(agen)
+            final = self._stop_async_iteration_final(ctx)
+            self.assertEqual(final, "done")
+
+        asyncio.run(run())
+
+    def test_yield_from_sync_iterator_empty(self):
+        """
+        YIELD_FROM on an empty sync iterator completes immediately
+        with None as final value.
+        """
+        code_obj, ns = build_expr([
+            ["CONST", iter([])],
+            ["YIELD_FROM", 0],
+            ["RETURN", 1],
+        ])
+        expr = make_callable(code_obj, ns)
+        agen = expr()
+        self.assertIsInstance(agen, AsyncGenerator)
+
+        async def run():
+            with self.assertRaises(StopAsyncIteration) as ctx:
+                await anext(agen)
+            final = self._stop_async_iteration_final(ctx)
+            self.assertIs(final, None)
+
+        asyncio.run(run())
+
+    def test_yield_from_sync_generator_empty_return_value(self):
+        """
+        YIELD_FROM on a sync generator that returns without yielding
+        completes with the return value.
+        """
+        def empty_gen():
+            return 7
+
+        g = empty_gen()
+        code_obj, ns = build_expr([
+            ["CONST", g],
+            ["YIELD_FROM", 0],
+            ["RETURN", 1],
+        ])
+        expr = make_callable(code_obj, ns)
+        agen = expr()
+        self.assertIsInstance(agen, AsyncGenerator)
+
+        async def run():
+            with self.assertRaises(StopAsyncIteration) as ctx:
+                await anext(agen)
+            final = self._stop_async_iteration_final(ctx)
+            self.assertEqual(final, 7)
+
+        asyncio.run(run())
+
+    def test_yield_from_single_value_sync_iterator(self):
+        """
+        YIELD_FROM on a sync iterator with one element yields it
+        then completes with None.
+        """
+        code_obj, ns = build_expr([
+            ["CONST", iter([100])],
+            ["YIELD_FROM", 0],
+            ["RETURN", 1],
+        ])
+        expr = make_callable(code_obj, ns)
+        agen = expr()
+        self.assertIsInstance(agen, AsyncGenerator)
+
+        async def run():
+            v = await anext(agen)
+            self.assertEqual(v, 100)
+            with self.assertRaises(StopAsyncIteration) as ctx:
+                await anext(agen)
+            final = self._stop_async_iteration_final(ctx)
+            self.assertIs(final, None)
+
+        asyncio.run(run())
+
+    def test_yield_from_aclose_closes_delegate(self):
+        """
+        YIELD_FROM with Koskari inner: consume one value then exhaust;
+        delegate is driven correctly.
+        """
+        inner_code, inner_ns = build_expr([
+            ["CONST", 1],
+            ["YIELD", 1],
+            ["CONST", 2],
+            ["YIELD", 1],
+            ["RETURN", 0],
+        ])
+        inner_gen = make_callable(inner_code, inner_ns)()
+        code_obj, ns = build_expr([
+            ["CONST", inner_gen],
+            ["YIELD_FROM", 0],
+            ["RETURN", 1],
+        ])
+        expr = make_callable(code_obj, ns)
+        agen = expr()
+        self.assertIsInstance(agen, AsyncGenerator)
+
+        async def run():
+            v1 = await anext(agen)
+            self.assertEqual(v1, 1)
+            v2 = await anext(agen)
+            self.assertEqual(v2, 2)
+            with self.assertRaises(StopAsyncIteration):
+                await anext(agen)
+
+        asyncio.run(run())
+
+    def test_yield_from_sync_generator_raise_propagates(self):
+        """
+        YIELD_FROM propagates an exception raised inside the delegate.
+        """
+        def raising_gen():
+            yield 1
+            raise ValueError("delegate raised")
+
+        g = raising_gen()
+        code_obj, ns = build_expr([
+            ["CONST", g],
+            ["YIELD_FROM", 0],
+            ["RETURN", 1],
+        ])
+        expr = make_callable(code_obj, ns)
+        agen = expr()
+        self.assertIsInstance(agen, AsyncGenerator)
+
+        async def run():
+            v = await anext(agen)
+            self.assertEqual(v, 1)
+            with self.assertRaises(ValueError) as ctx:
+                await anext(agen)
+            self.assertIn("delegate raised", str(ctx.exception))
+
+        asyncio.run(run())
+
+    def test_yield_from_python_async_gen_final_value_when_available(self):
+        """
+        YIELD_FROM on a Python async gen; when the gen exhausts,
+        StopAsyncIteration is raised.
+        """
+        async def py_agen():
+            yield "a"
+            yield "b"
+
+        a = py_agen()
+        code_obj, ns = build_expr([
+            ["CONST", a],
+            ["YIELD_FROM", 0],
+            ["RETURN", 1],
+        ])
+        expr = make_callable(code_obj, ns)
+        agen = expr()
+        self.assertIsInstance(agen, AsyncGenerator)
+
+        async def run():
+            v1 = await anext(agen)
+            self.assertEqual(v1, "a")
+            v2 = await anext(agen)
+            self.assertEqual(v2, "b")
+            with self.assertRaises(StopAsyncIteration):
+                await anext(agen)
+
+        asyncio.run(run())
+
     def test_build_args_raises_not_implemented(self):
         """
         BUILD_ARGS raises RuntimeError
