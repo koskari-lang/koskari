@@ -71,7 +71,7 @@ These are **commitments**: they must hold for correct behavior. They are elabora
 
 - **Python boundary for continuations**: Captured continuations **must not** include Python/C call stack. The dynamic chain marks Python boundaries with `KOS_DYN_PYCALL`. `shift` capture is **rejected** if any such node exists between current position and the target prompt. Implementation: `kos_validate_capture()` walks from `dyn_top` to the prompt.
 
-- **Unified dynamic chain**: All execution context (frames, prompts, winds, regions, namespace scopes) lives on a **single** chain of `KosDynNode` structures. Node kinds: `KOS_DYN_FRAME`, `KOS_DYN_PROMPT`, `KOS_DYN_WIND`, `KOS_DYN_REGION`, `KOS_DYN_NS`, `KOS_DYN_PYCALL`. Walking the chain gives full dynamic extent. `KOS_DYN_NS` (KosDynNs) marks namespace scopes from PUSH_NS; stores `saved_ns` for restore on POP_NS.
+- **Unified dynamic chain**: All execution context (frames, prompts, winds, regions, namespace scopes) lives on a **single** chain of `KosDynNode` structures. Node kinds: `KOS_DYN_FRAME`, `KOS_DYN_PROMPT`, `KOS_DYN_WIND`, `KOS_DYN_REGION`, `KOS_DYN_NS`, `KOS_DYN_PYCALL`, `KOS_DYN_YIELD_FROM` (see design/interpreter/yield-from-execution-model.md). Walking the chain gives full dynamic extent. `KOS_DYN_NS` (KosDynNs) marks namespace scopes from PUSH_NS; stores `saved_ns` for restore on POP_NS.
 
 - **VM-native wind/unwind**: Wind/unwind hooks are **bytecode blocks** (implemented as null-arity Koskari callables that compile to bytecode). They run in the VM via `KosHookRunner` with **isolated** operand stacks and end with the `END_WIND` sentinel opcode. They execute in their own frames and capture lexical context via closure; they cannot see or change the enclosing frame’s stack.
 

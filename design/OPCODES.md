@@ -49,7 +49,7 @@ linking from design notes, PRs, or other docs.
   see bytecode-metadata-tables.md.
 - **dynamic chain / chain node**: At runtime, the evaluator maintains a chain of
   nodes (`KosDynKind`: KOS_DYN_FRAME, KOS_DYN_REGION, KOS_DYN_NS, KOS_DYN_PROMPT,
-  KOS_DYN_CC, KOS_DYN_WIND, etc.). PUSH_* opcodes push a node onto this chain;
+  KOS_DYN_CC, KOS_DYN_WIND, KOS_DYN_YIELD_FROM, etc.). PUSH_* opcodes push a node onto this chain;
   POP_* opcodes pop it. Each opcode section that pushes onto the chain states
   **Pushes:** the chain node type and, when relevant, the static extent kind.
 - **pre-compile / post-compile**: Pre-compile = stream emitted by compiler (labels
@@ -478,10 +478,10 @@ Other opcodes (CHECK_LT/LE/GT/GE, CHECK_IS_INSTANCE/IS_SUBCLASS, VAR_CLEAR, VAR_
 ### KOS_OP_YIELD_FROM
 
 - **Style**: NOARG.
-- **Status**: Stub.
-- **Stack**: (Intended: delegate to sub-iterator; not implemented.)
-- **Intended (not yet implemented):** Delegate to sub-iterator; yield/return values
-  from it. **Current:** Stub; runtime error if executed.
+- **Status**: Stub (design complete; see design doc).
+- **Stack**: On first entry: consume TOS (subexpr_result), push `KOS_DYN_YIELD_FROM`. On completion: pop dyn node, push final value. PC does not advance until delegation completes.
+- **Execution model**: Single-opcode delegation primitive (conduit); not loop sugar. Full send/throw/close propagation; async flattening for Python and Koskari async gens. Backed by dynamic extent node `KOS_DYN_YIELD_FROM`. **Current:** Stub; runtime error if executed.
+- **Design**: [design/interpreter/yield-from-execution-model.md](interpreter/yield-from-execution-model.md)
 
 **Example:** (Stub; no runtime table.)
 

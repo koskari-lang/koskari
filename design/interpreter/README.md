@@ -9,6 +9,7 @@ This directory documents the interpreter implementation, including bytecode form
 - **compiler.md**: Compiler architecture and phases
 - **evaluator.md**: Evaluation model and drive loop (eval.c); KosCoroutine and run-code-as-coroutine (func.c)
 - **execution-invariants.md**: Koskari execution model invariants and design commitments
+- **yield-from-execution-model.md**: YIELD_FROM opcode execution model (delegation conduit, KOS_DYN_YIELD_FROM, delegate kinds, PC discipline)
 - **introspection-trace.md**: Read-only introspection and trace snapshot design (TraceView, KOS_OP_CAPTURE_FRAME, exception integration)
 - **callcc.md**: Call/cc implementation design
 - **evaluator-token-continuation.md**: Evaluator token + continuation application model (KosEvaluatorToken, KoskariContinuationApply)

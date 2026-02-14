@@ -232,6 +232,7 @@ checking for `PYCALL` nodes.
 * `KOS_DYN_WIND` — dynamic-wind extent
 * `KOS_DYN_REGION` — block-local control (try, with, loop)
 * `KOS_DYN_PYCALL` — Python/C boundary marker
+* `KOS_DYN_YIELD_FROM` — yield-from delegation state (see yield-from-execution-model.md)
 
 ---
 

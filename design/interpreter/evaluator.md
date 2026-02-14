@@ -29,7 +29,7 @@ KosDynPrompt, KosDynWind, KosDynRegion, KosDynNs, KosDynCC) all refer to this
 same struct. **All field access must use the macros** defined in dynchain.h;
 do not touch union members or base fields directly. Node kinds: KOS_DYN_FRAME,
 KOS_DYN_PROMPT, KOS_DYN_WIND, KOS_DYN_REGION, KOS_DYN_NS, KOS_DYN_CC,
-KOS_DYN_PYCALL.
+KOS_DYN_PYCALL, KOS_DYN_YIELD_FROM (see yield-from-execution-model.md).
 
 - **Frame** (u.frame): code (borrowed), pc, stack (owned), ns (owned), frame_flags.
   Macros: KosDynFrame_CODE, KosDynFrame_PC, KosDynFrame_STACK, KosDynFrame_NS, KosDynFrame_FLAGS.
