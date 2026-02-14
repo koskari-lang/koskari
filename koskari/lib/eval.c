@@ -3379,7 +3379,157 @@ KOS_OP_HANDLER(YIELD_FROM) {
     return -1;
   }
 
-  /* KOS_ASYNC_GEN: not yet implemented; raise. */
+  /* --- KOS_ASYNC_GEN --- */
+  if (kind == KOS_YF_KOS_ASYNC_GEN) {
+    KosPyAsyncGen *agen = (KosPyAsyncGen *) delegate;
+
+    /* Resuming from await: inject result into inner context and drive again. */
+    if (KosDynYieldFrom_INFLIGHT(yf)) {
+      KosContext *inner = agen->ctx;
+      PyObject *aw_result = KosDynYieldFrom_PENDING_ARG(yf);
+      Py_XDECREF(KosDynYieldFrom_INFLIGHT(yf));
+      KosDynYieldFrom_INFLIGHT(yf) = NULL;
+      KosDynYieldFrom_PENDING_ARG(yf) = NULL;
+      KosDynYieldFrom_PENDING_ACTION(yf) = KOS_YF_STEP;
+      if (! aw_result) {
+        PyErr_SetString(PyExc_RuntimeError,
+                        "yield-from resume with no await result");
+        return -1;
+      }
+      Py_XDECREF(KosContext_PY_RESUME_INJECT(inner));
+      KosContext_PY_RESUME_INJECT(inner) = aw_result;
+      KosContext_PY_RESUME_KIND(inner) = KOS_RESUME_AWAIT;
+    }
+
+    if (action == KOS_YF_CLOSE) {
+      agen->closed = 1;
+      kos_dyn_pop_yield_from(ctx, yf);
+      PyErr_SetNone(PyExc_GeneratorExit);
+      return -1;
+    }
+
+    if (action == KOS_YF_THROW && KosDynYieldFrom_PENDING_ARG(yf)) {
+      PyObject *exc = KosDynYieldFrom_PENDING_ARG(yf);
+      if (PyObject_IsInstance(exc, (PyObject *) PyExc_StopAsyncIteration)) {
+        PyObject *final_val = StopAsyncIteration_VALUE(exc);
+        Py_XDECREF(KosDynYieldFrom_PENDING_ARG(yf));
+        KosDynYieldFrom_PENDING_ARG(yf) = NULL;
+        KosDynYieldFrom_PENDING_ACTION(yf) = KOS_YF_STEP;
+        kos_dyn_pop_yield_from(ctx, yf);
+        if (KosStackBlock_PushRef(&KosDynFrame_STACK(frame), final_val) < 0) {
+          Py_DECREF(final_val);
+          return -1;
+        }
+        Py_DECREF(final_val);
+        return 0;
+      }
+    }
+
+    if (! agen->ctx || agen->closed) {
+      kos_dyn_pop_yield_from(ctx, yf);
+      if (KosStackBlock_PushRef(&KosDynFrame_STACK(frame), Py_None) < 0)
+        return -1;
+      return 0;
+    }
+
+    if (action == KOS_YF_SEND && KosDynYieldFrom_PENDING_ARG(yf)) {
+      KosContext *inner = agen->ctx;
+      PyObject *send_val = KosDynYieldFrom_PENDING_ARG(yf);
+      Py_XDECREF(KosContext_PY_RESUME_INJECT(inner));
+      KosContext_PY_RESUME_INJECT(inner) = send_val;
+      KosContext_PY_RESUME_KIND(inner) = KOS_RESUME_YIELD;
+    }
+    if (action == KOS_YF_THROW && KosDynYieldFrom_PENDING_ARG(yf)) {
+      KosContext *inner = agen->ctx;
+      PyObject *exc = KosDynYieldFrom_PENDING_ARG(yf);
+      Py_XDECREF(KosContext_INJECT_VALUE(inner));
+      KosContext_INJECT_VALUE(inner) = exc;
+      Py_INCREF(exc);
+      KosContext_INJECT_MODE(inner) = KOS_INJECT_THROW;
+    }
+
+    agen->in_progress = 1;
+    KosEvent ev = {0};
+    int res = koskari_eval(agen->ctx, &ev);
+    agen->in_progress = 0;
+
+    {
+      PyObject *pending = KosDynYieldFrom_PENDING_ARG(yf);
+      KosDynYieldFrom_PENDING_ARG(yf) = NULL;
+      KosDynYieldFrom_PENDING_ACTION(yf) = KOS_YF_STEP;
+      if (action == KOS_YF_THROW && pending)
+        Py_DECREF(pending);
+    }
+
+    if (res < 0) {
+      agen->closed = 1;
+      kos_dyn_pop_yield_from(ctx, yf);
+      return -1;
+    }
+
+    switch (ev.kind) {
+    case KOS_EV_YIELD:
+      if (KosStackBlock_PushRef(&KosDynFrame_STACK(frame), ev.payload) < 0) {
+        Py_DECREF(ev.payload);
+        return -1;
+      }
+      Py_DECREF(ev.payload);
+      yield_from_rollback_pc(ctx, insn);
+      {
+        PyObject *const *tos = KosStackBlock_TailPtr(
+            KosDynFrame_STACK(frame), 1);
+        out_ev->kind = KOS_EV_YIELD;
+        out_ev->payload = tos ? *tos : NULL;
+        Py_XINCREF(out_ev->payload);
+      }
+      KosContext_FLAGS(ctx) &= ~KOS_CTX_RUNNING;
+      KosContext_FLAGS(ctx) |= KOS_CTX_DEAD;
+      return 1;
+
+    case KOS_EV_RETURN:
+      kos_dyn_pop_yield_from(ctx, yf);
+      {
+        PyObject *payload = ev.payload ? ev.payload : Py_None;
+        Py_INCREF(payload);
+        if (ev.payload)
+          Py_DECREF(ev.payload);
+        if (KosStackBlock_PushRef(&KosDynFrame_STACK(frame), payload) < 0) {
+          Py_DECREF(payload);
+          return -1;
+        }
+        Py_DECREF(payload);
+      }
+      return 0;
+
+    case KOS_EV_AWAIT:
+      Py_INCREF(ev.payload);
+      KosDynYieldFrom_INFLIGHT(yf) = ev.payload;
+      yield_from_rollback_pc(ctx, insn);
+      out_ev->kind = KOS_EV_AWAIT;
+      out_ev->payload = ev.payload;
+      KosContext_FLAGS(ctx) &= ~KOS_CTX_RUNNING;
+      KosContext_FLAGS(ctx) |= KOS_CTX_DEAD;
+      return 1;
+
+    case KOS_EV_RAISE:
+      agen->closed = 1;
+      kos_dyn_pop_yield_from(ctx, yf);
+      if (ev.payload) {
+        PyErr_SetObject((PyObject *) Py_TYPE(ev.payload), ev.payload);
+        Py_DECREF(ev.payload);
+      } else {
+        PyErr_SetNone(PyExc_StopAsyncIteration);
+      }
+      return -1;
+
+    default:
+      agen->closed = 1;
+      kos_dyn_pop_yield_from(ctx, yf);
+      PyErr_SetString(PyExc_RuntimeError, "unexpected event from Koskari async gen");
+      return -1;
+    }
+  }
+
   return op_unimplemented_stub(ctx, out_ev, insn);
 }
 
