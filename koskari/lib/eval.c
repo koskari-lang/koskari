@@ -2832,10 +2832,390 @@ KOS_OP_HANDLER(YIELD) {
 }
 
 
+/* Yield-from delegate kinds (must match normalizer and handler). */
+enum {
+  KOS_YF_SYNC_ITER = 0,
+  KOS_YF_SYNC_GEN = 1,
+  KOS_YF_PY_ASYNC_ITER = 2,
+  KOS_YF_PY_ASYNC_GEN = 3,
+  KOS_YF_KOS_ASYNC_GEN = 4,
+};
+
+
+/* Yield-from pending action (STEP / SEND / THROW / CLOSE). */
+enum {
+  KOS_YF_STEP = 0,
+  KOS_YF_SEND = 1,
+  KOS_YF_THROW = 2,
+  KOS_YF_CLOSE = 3,
+};
+
+
+void kos_yieldfrom_close_delegate(KosDynYieldFrom *node) {
+
+  if (! node)
+    return;
+
+  PyObject *delegate = KosDynYieldFrom_DELEGATE(node);
+  if (! delegate)
+    return;
+
+  uint8_t kind = KosDynYieldFrom_KIND(node);
+  PyObject *inflight = KosDynYieldFrom_INFLIGHT(node);
+
+  switch (kind) {
+  case KOS_YF_SYNC_ITER:
+    break;
+  case KOS_YF_SYNC_GEN: {
+    PyObject *meth = PyUnicode_FromString("close");
+    if (meth) {
+      PyObject *res = PyObject_CallMethodObjArgs(delegate, meth, NULL);
+      Py_XDECREF(meth);
+      Py_XDECREF(res);
+    }
+    PyErr_Clear();
+    break;
+  }
+  case KOS_YF_PY_ASYNC_ITER:
+  case KOS_YF_PY_ASYNC_GEN:
+    Py_XDECREF(inflight);
+    KosDynYieldFrom_INFLIGHT(node) = NULL;
+    {
+      PyObject *meth = PyUnicode_FromString("aclose");
+      if (meth) {
+        PyObject *res = PyObject_CallMethodObjArgs(delegate, meth, NULL);
+        Py_XDECREF(meth);
+        Py_XDECREF(res);
+      }
+      PyErr_Clear();
+    }
+    break;
+  case KOS_YF_KOS_ASYNC_GEN:
+    if (KosPyAsyncGen_Check(delegate))
+      ((KosPyAsyncGen *) delegate)->closed = 1;
+    break;
+  default:
+    break;
+  }
+}
+
+
 /**
-   YIELD_FROM: arg unused. Delegate to subgenerator; not yet implemented.
+   Normalize TOS to a (delegate, kind) for yield-from. On success returns 0
+   and sets *delegate_out (new ref) and *kind_out. On failure returns -1.
+*/
+static int yield_from_normalize(
+    PyObject *obj,
+    PyObject **delegate_out,
+    uint8_t *kind_out) {
+
+  if (! obj) {
+    PyErr_SetString(PyExc_TypeError, "yield-from requires an object");
+    return -1;
+  }
+
+  /* Koskari async gen: delegate as-is. */
+  if (KosPyAsyncGen_Check(obj)) {
+    Py_INCREF(obj);
+    *delegate_out = obj;
+    *kind_out = KOS_YF_KOS_ASYNC_GEN;
+    return 0;
+  }
+
+  /* Python sync generator (or coroutine; both have send()). */
+  if (PyGen_Check(obj)) {
+    Py_INCREF(obj);
+    *delegate_out = obj;
+    *kind_out = KOS_YF_SYNC_GEN;
+    return 0;
+  }
+
+  /* Python async iterator (has __anext__). Distinguish async gen by asend. */
+  if (PyObject_HasAttrString(obj, "__anext__")) {
+    Py_INCREF(obj);
+    *delegate_out = obj;
+    *kind_out = PyObject_HasAttrString(obj, "asend")
+        ? KOS_YF_PY_ASYNC_GEN
+        : KOS_YF_PY_ASYNC_ITER;
+    return 0;
+  }
+
+  /* Sync iterator. */
+  if (PyIter_Check(obj)) {
+    Py_INCREF(obj);
+    *delegate_out = obj;
+    *kind_out = KOS_YF_SYNC_ITER;
+    return 0;
+  }
+
+  /* Callable (e.g. generator function): call once to get generator. */
+  if (PyCallable_Check(obj)) {
+    PyObject *gen = PyObject_CallFunctionObjArgs(obj, NULL);
+    if (! gen)
+      return -1;
+    if (PyGen_Check(gen)) {
+      *delegate_out = gen;
+      *kind_out = KOS_YF_SYNC_GEN;
+      return 0;
+    }
+    if (PyObject_HasAttrString(gen, "__anext__")) {
+      *delegate_out = gen;
+      *kind_out = PyObject_HasAttrString(gen, "asend")
+          ? KOS_YF_PY_ASYNC_GEN
+          : KOS_YF_PY_ASYNC_ITER;
+      return 0;
+    }
+    if (KosPyAsyncGen_Check(gen)) {
+      *delegate_out = gen;
+      *kind_out = KOS_YF_KOS_ASYNC_GEN;
+      return 0;
+    }
+    Py_DECREF(gen);
+    PyErr_SetString(PyExc_TypeError,
+                    "yield-from callable did not return a generator");
+    return -1;
+  }
+
+  /* Try iter(obj) for sync iteration. */
+  {
+    PyObject *it = PyObject_GetIter(obj);
+    if (! it)
+      return -1;
+    *delegate_out = it;
+    *kind_out = KOS_YF_SYNC_ITER;
+    return 0;
+  }
+}
+
+
+/**
+   Set frame PC back to the YIELD_FROM instruction so the next loop
+   iteration re-dispatches to YIELD_FROM (used when suspending).
+*/
+static void yield_from_rollback_pc(KosContext *ctx, KosOp *insn) {
+
+  KosDynFrame *frame = KosContext_FRAME_TOP(ctx);
+  KosCode *code = KosDynFrame_CODE(frame);
+  uint32_t pc = (uint32_t)(insn - KosCode_CODE(code));
+  KosDynFrame_PC(frame) = pc;
+}
+
+
+/**
+   YIELD_FROM: delegate to subgenerator; PC-stable state machine.
 */
 KOS_OP_HANDLER(YIELD_FROM) {
+
+  KosDynNode *dyn_top = KosContext_DYN_TOP(ctx);
+  KosDynFrame *frame = KosContext_FRAME_TOP(ctx);
+
+  /* First entry: TOS is subexpr result. Pop, normalize, push dyn node, do not advance. */
+  if (! KosDynNode_IS_YIELD_FROM(dyn_top)) {
+    PyObject *subexpr = KosStackBlock_PopRef(&KosDynFrame_STACK(frame));
+    if (! subexpr) {
+      return -1;
+    }
+    PyObject *delegate = NULL;
+    uint8_t kind = 0;
+    if (yield_from_normalize(subexpr, &delegate, &kind) < 0) {
+      Py_DECREF(subexpr);
+      return -1;
+    }
+    Py_DECREF(subexpr);
+    if (! kos_dyn_push_yield_from(ctx, delegate, kind)) {
+      Py_DECREF(delegate);
+      return -1;
+    }
+    Py_DECREF(delegate);
+    KosDynYieldFrom_PENDING_ACTION(
+        (KosDynYieldFrom *) KosContext_DYN_TOP(ctx)) = KOS_YF_STEP;
+    yield_from_rollback_pc(ctx, insn);
+    return 0;
+  }
+
+  /* Resume: we have a YIELD_FROM node. Consume inject from TOS if RESUME_KIND set (loop
+     pushed it at eval start), then drive. */
+  KosDynYieldFrom *yf = (KosDynYieldFrom *) dyn_top;
+  uint8_t action = KosDynYieldFrom_PENDING_ACTION(yf);
+
+  if (KosContext_PY_RESUME_KIND(ctx) != KOS_RESUME_NONE) {
+    uint8_t resume_kind = KosContext_PY_RESUME_KIND(ctx);
+    KosContext_PY_RESUME_KIND(ctx) = KOS_RESUME_NONE;
+    PyObject *inject = KosStackBlock_PopRef(&KosDynFrame_STACK(frame));
+    if (! inject)
+      return -1;
+    Py_XDECREF(KosDynYieldFrom_PENDING_ARG(yf));
+    KosDynYieldFrom_PENDING_ARG(yf) = inject;
+    action = (resume_kind == KOS_RESUME_AWAIT) ? KOS_YF_STEP : KOS_YF_SEND;
+    KosDynYieldFrom_PENDING_ACTION(yf) = action;
+  }
+  if (KosContext_INJECT_MODE(ctx) == KOS_INJECT_THROW) {
+    PyObject *exc = KosContext_INJECT_VALUE(ctx);
+    KosContext_INJECT_MODE(ctx) = KOS_INJECT_NONE;
+    KosContext_INJECT_VALUE(ctx) = NULL;
+    Py_XDECREF(KosDynYieldFrom_PENDING_ARG(yf));
+    KosDynYieldFrom_PENDING_ARG(yf) = exc;
+    Py_INCREF(exc);
+    action = KOS_YF_THROW;
+    KosDynYieldFrom_PENDING_ACTION(yf) = action;
+  }
+
+  uint8_t kind = KosDynYieldFrom_KIND(yf);
+  PyObject *delegate = KosDynYieldFrom_DELEGATE(yf);
+
+  /* --- SYNC_ITER --- */
+  if (kind == KOS_YF_SYNC_ITER) {
+    if (action != KOS_YF_STEP && action != KOS_YF_SEND) {
+      if (action == KOS_YF_CLOSE)
+        ;  /* no-op for sync iter */
+      if (action == KOS_YF_THROW) {
+        Py_XDECREF(KosDynYieldFrom_PENDING_ARG(yf));
+        KosDynYieldFrom_PENDING_ARG(yf) = NULL;
+        KosDynYieldFrom_PENDING_ACTION(yf) = KOS_YF_STEP;
+      }
+    }
+    if (action == KOS_YF_SEND && KosDynYieldFrom_PENDING_ARG(yf) != Py_None) {
+      PyErr_SetString(PyExc_TypeError,
+                      "send() to sync iterator only accepts None");
+      return -1;
+    }
+    PyObject *n = PyIter_Next(delegate);
+    if (n) {
+      if (KosStackBlock_PushRef(&KosDynFrame_STACK(frame), n) < 0) {
+        Py_DECREF(n);
+        return -1;
+      }
+      Py_DECREF(n);
+      yield_from_rollback_pc(ctx, insn);
+      {
+        PyObject *const *tos = KosStackBlock_TailPtr(
+            KosDynFrame_STACK(frame), 1);
+        out_ev->kind = KOS_EV_YIELD;
+        out_ev->payload = tos ? *tos : NULL;
+        Py_XINCREF(out_ev->payload);
+      }
+      KosContext_FLAGS(ctx) &= ~KOS_CTX_RUNNING;
+      KosContext_FLAGS(ctx) |= KOS_CTX_DEAD;
+      return 1;
+    }
+    if (! PyErr_Occurred())
+      return -1;
+    if (! PyErr_ExceptionMatches(PyExc_StopIteration)) {
+      return -1;
+    }
+    /* Exhausted: StopIteration. Extract value if any. */
+    {
+      PyObject *exc = PyErr_GetRaisedException();
+      PyObject *final_val = PyObject_GetAttrString(exc, "value");
+      Py_DECREF(exc);
+      if (! final_val)
+        final_val = Py_None;
+      Py_INCREF(final_val);
+      kos_dyn_pop_yield_from(ctx, yf);
+      if (KosStackBlock_PushRef(&KosDynFrame_STACK(frame), final_val) < 0) {
+        Py_DECREF(final_val);
+        return -1;
+      }
+      Py_DECREF(final_val);
+      return 0;
+    }
+  }
+
+  /* --- SYNC_GEN --- */
+  if (kind == KOS_YF_SYNC_GEN) {
+    PyObject *send_val = Py_None;
+    if (action == KOS_YF_SEND && KosDynYieldFrom_PENDING_ARG(yf)) {
+      send_val = KosDynYieldFrom_PENDING_ARG(yf);
+    }
+    if (action == KOS_YF_THROW) {
+      PyObject *exc = KosDynYieldFrom_PENDING_ARG(yf);
+      PyObject *meth = PyUnicode_FromString("throw");
+      if (meth && exc) {
+        PyObject *res = PyObject_CallMethodObjArgs(delegate, meth,
+            exc, Py_None, Py_None, NULL);
+        Py_XDECREF(meth);
+        if (res) {
+          KosDynYieldFrom_PENDING_ACTION(yf) = KOS_YF_STEP;
+          Py_XDECREF(KosDynYieldFrom_PENDING_ARG(yf));
+          KosDynYieldFrom_PENDING_ARG(yf) = NULL;
+          if (KosStackBlock_PushRef(&KosDynFrame_STACK(frame), res) < 0) {
+            Py_DECREF(res);
+            return -1;
+          }
+          Py_DECREF(res);
+          yield_from_rollback_pc(ctx, insn);
+          {
+            PyObject *const *tos = KosStackBlock_TailPtr(
+                KosDynFrame_STACK(frame), 1);
+            out_ev->kind = KOS_EV_YIELD;
+            out_ev->payload = tos ? *tos : NULL;
+            Py_XINCREF(out_ev->payload);
+          }
+          KosContext_FLAGS(ctx) &= ~KOS_CTX_RUNNING;
+          KosContext_FLAGS(ctx) |= KOS_CTX_DEAD;
+          return 1;
+        }
+      }
+      kos_yieldfrom_close_delegate(yf);
+      kos_dyn_pop_yield_from(ctx, yf);
+      return -1;
+    }
+    if (action == KOS_YF_CLOSE) {
+      PyObject *meth = PyUnicode_FromString("close");
+      if (meth) {
+        PyObject *res = PyObject_CallMethodObjArgs(delegate, meth, NULL);
+        Py_XDECREF(meth);
+        Py_XDECREF(res);
+      }
+      PyErr_Clear();
+      kos_dyn_pop_yield_from(ctx, yf);
+      PyErr_SetNone(PyExc_GeneratorExit);
+      return -1;
+    }
+    {
+      PyObject *meth = PyUnicode_FromString("send");
+      if (! meth)
+        return -1;
+      PyObject *res = PyObject_CallMethodObjArgs(delegate, meth, send_val, NULL);
+      Py_XDECREF(meth);
+      if (res) {
+        if (KosStackBlock_PushRef(&KosDynFrame_STACK(frame), res) < 0) {
+          Py_DECREF(res);
+          return -1;
+        }
+        Py_DECREF(res);
+        yield_from_rollback_pc(ctx, insn);
+        {
+          PyObject *const *tos = KosStackBlock_TailPtr(
+              KosDynFrame_STACK(frame), 1);
+          out_ev->kind = KOS_EV_YIELD;
+          out_ev->payload = tos ? *tos : NULL;
+          Py_XINCREF(out_ev->payload);
+        }
+        KosContext_FLAGS(ctx) &= ~KOS_CTX_RUNNING;
+        KosContext_FLAGS(ctx) |= KOS_CTX_DEAD;
+        return 1;
+      }
+      if (PyErr_ExceptionMatches(PyExc_StopIteration)) {
+        PyObject *exc = PyErr_GetRaisedException();
+        PyObject *final_val = PyObject_GetAttrString(exc, "value");
+        Py_DECREF(exc);
+        if (! final_val)
+          final_val = Py_None;
+        Py_INCREF(final_val);
+        kos_dyn_pop_yield_from(ctx, yf);
+        if (KosStackBlock_PushRef(&KosDynFrame_STACK(frame), final_val) < 0) {
+          Py_DECREF(final_val);
+          return -1;
+        }
+        Py_DECREF(final_val);
+        return 0;
+      }
+      return -1;
+    }
+  }
+
+  /* PY_ASYNC_* and KOS_ASYNC_GEN: not yet implemented; raise. */
   return op_unimplemented_stub(ctx, out_ev, insn);
 }
 
@@ -4623,7 +5003,9 @@ int koskari_eval(KosContext *ctx, KosEvent *out_ev) {
     goto koskari_eval_cleanup;
   }
 
-  /* Re-entry: inject value from completed Python await or send() when resuming from yield */
+  /* Re-entry: inject value from completed Python await or send() when resuming from yield.
+     Push onto frame stack so the next opcode sees it. Do not clear RESUME_KIND here so
+     YIELD_FROM can detect inject and pop TOS into its dyn node; YIELD_FROM clears KIND. */
   if (KosContext_PY_RESUME_INJECT(ctx) && KosContext_PY_RESUME_KIND(ctx) != KOS_RESUME_NONE) {
     if (KosStackBlock_PushRef(&KosDynFrame_STACK(KosContext_FRAME_TOP(ctx)), KosContext_PY_RESUME_INJECT(ctx)) < 0) {
       Py_DECREF(KosContext_PY_RESUME_INJECT(ctx));
@@ -4633,7 +5015,6 @@ int koskari_eval(KosContext *ctx, KosEvent *out_ev) {
       goto koskari_eval_cleanup;
     }
     Py_CLEAR(KosContext_PY_RESUME_INJECT(ctx));
-    KosContext_PY_RESUME_KIND(ctx) = KOS_RESUME_NONE;
   }
 
 #if KOS_USE_COMPUTED_GOTO
@@ -4716,6 +5097,9 @@ int koskari_eval(KosContext *ctx, KosEvent *out_ev) {
         goto koskari_eval_cleanup;
       }
     }
+    /* Clear resume kind if still set (YIELD_FROM clears when it consumes; others leave it set) */
+    if (KosContext_PY_RESUME_KIND(ctx) != KOS_RESUME_NONE)
+      KosContext_PY_RESUME_KIND(ctx) = KOS_RESUME_NONE;
     trace_stack("  after ", KosDynFrame_STACK(KosContext_FRAME_TOP(ctx)));
   }
 

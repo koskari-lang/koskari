@@ -1344,10 +1344,14 @@ static PyObject *asyncgenasend_iternext(PyObject *self) {
 
   switch (ev.kind) {
     case KOS_EV_RETURN:
-      /* Generator completed */
+      /* Generator completed; pass return value as StopAsyncIteration value */
       agen->closed = 1;
-      Py_XDECREF(ev.payload);
-      PyErr_SetNone(PyExc_StopAsyncIteration);
+      if (ev.payload) {
+        PyErr_SetObject(PyExc_StopAsyncIteration, ev.payload);
+        Py_DECREF(ev.payload);
+      } else {
+        PyErr_SetNone(PyExc_StopAsyncIteration);
+      }
       return NULL;
 
     case KOS_EV_RAISE:

@@ -73,6 +73,7 @@ typedef struct KosHookRunner KosHookRunner;
    KOS_DYN_PYCALL - Python/C boundary marker (non-resumable)
    KOS_DYN_NS     - Namespace scope (PUSH_NS/POP_NS)
    KOS_DYN_CC     - Undelimited continuation block (call/cc)
+   KOS_DYN_YIELD_FROM - Yield-from delegation state
 */
 
 typedef enum KosDynKind {
@@ -83,6 +84,7 @@ typedef enum KosDynKind {
   KOS_DYN_PYCALL = 4,
   KOS_DYN_NS     = 5,
   KOS_DYN_CC     = 6,
+  KOS_DYN_YIELD_FROM = 7,
 } KosDynKind;
 
 
@@ -173,6 +175,13 @@ struct KosDynNode {
     struct {
       /* pycall: no extra fields */
     } pycall;
+    struct {
+      PyObject *delegate;
+      uint8_t kind;
+      uint8_t pending_action;
+      PyObject *pending_arg;
+      PyObject *inflight;
+    } yield_from;
   } u;
 };
 
@@ -182,6 +191,7 @@ typedef struct KosDynNode KosDynWind;
 typedef struct KosDynNode KosDynRegion;
 typedef struct KosDynNode KosDynNs;
 typedef struct KosDynNode KosDynCC;
+typedef struct KosDynNode KosDynYieldFrom;
 
 
 /* === KosContinuation: captured delimited continuation === */
@@ -758,6 +768,34 @@ KosDynNode *kos_dyn_push_pycall(KosContext *ctx);
 void kos_dyn_pop_pycall(KosContext *ctx, KosDynNode *marker);
 
 
+/**
+   Push a YIELD_FROM delegation node onto the context's dynamic chain.
+
+   Does not update frame_top (the frame remains the topmost frame).
+   Caller must have normalized the delegate and determined kind.
+
+   :param ctx: execution context
+   :param delegate: normalized delegate (new ref; node takes ownership)
+   :param kind: delegate kind (KOS_YF_* from eval.c)
+
+   :return: new node, or NULL on error
+*/
+KosDynYieldFrom *kos_dyn_push_yield_from(
+    KosContext *ctx,
+    PyObject *delegate,
+    uint8_t kind);
+
+
+/**
+   Pop a YIELD_FROM node. Caller must have closed the delegate if needed.
+   node must be dyn_top.
+
+   :param ctx: execution context
+   :param node: YIELD_FROM node to pop (must be current dyn_top)
+*/
+void kos_dyn_pop_yield_from(KosContext *ctx, KosDynYieldFrom *node);
+
+
 /* === Prompt lookup and continuation capture === */
 
 
@@ -1109,6 +1147,7 @@ int kos_hookrunner_traverse(
 #define KosDynNode_IS_NS(n)      (KosDynNode_KIND(n) == KOS_DYN_NS)
 #define KosDynNode_IS_PYCALL(n)  (KosDynNode_KIND(n) == KOS_DYN_PYCALL)
 #define KosDynNode_IS_CC(n)      (KosDynNode_KIND(n) == KOS_DYN_CC)
+#define KosDynNode_IS_YIELD_FROM(n)  (KosDynNode_KIND(n) == KOS_DYN_YIELD_FROM)
 
 #define KosDynFrame_CODE(f)       (((KosDynNode *)(f))->u.frame.code)
 #define KosDynFrame_PC(f)         (((KosDynNode *)(f))->u.frame.pc)
@@ -1141,6 +1180,12 @@ int kos_hookrunner_traverse(
 #define KosDynRegion_ITER_NEXT_ELSE_PC(r) (((KosDynNode *)(r))->u.region.iter_next_else_pc)
 
 #define KosDynNs_SAVED_NS(n)      (((KosDynNode *)(n))->u.ns.saved_ns)
+
+#define KosDynYieldFrom_DELEGATE(n)     (((KosDynNode *)(n))->u.yield_from.delegate)
+#define KosDynYieldFrom_KIND(n)         (((KosDynNode *)(n))->u.yield_from.kind)
+#define KosDynYieldFrom_PENDING_ACTION(n) (((KosDynNode *)(n))->u.yield_from.pending_action)
+#define KosDynYieldFrom_PENDING_ARG(n) (((KosDynNode *)(n))->u.yield_from.pending_arg)
+#define KosDynYieldFrom_INFLIGHT(n)    (((KosDynNode *)(n))->u.yield_from.inflight)
 
 
 /* === Unit lifecycle === */

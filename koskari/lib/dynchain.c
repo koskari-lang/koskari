@@ -427,6 +427,63 @@ void kos_dynpycall_free(KosDynNode *node) {
 }
 
 
+/* === KosDynYieldFrom implementation === */
+
+
+KosDynYieldFrom *kos_dynyieldfrom_new(
+    KosDynNode *parent,
+    PyObject *delegate,
+    uint8_t kind) {
+
+  KosDynYieldFrom *node = kos_dynnode_alloc();
+  if (! node) {
+    return NULL;
+  }
+
+  kos_dynnode_init((KosDynNode *) node, KOS_DYN_YIELD_FROM, parent);
+  Py_INCREF(delegate);
+  KosDynYieldFrom_DELEGATE(node) = delegate;
+  KosDynYieldFrom_KIND(node) = kind;
+  KosDynYieldFrom_PENDING_ACTION(node) = 0;
+  KosDynYieldFrom_PENDING_ARG(node) = NULL;
+  KosDynYieldFrom_INFLIGHT(node) = NULL;
+  return node;
+}
+
+
+void kos_dynyieldfrom_free(KosDynYieldFrom *node) {
+  if (! node)
+    return;
+
+  Py_XDECREF(KosDynYieldFrom_DELEGATE(node));
+  Py_XDECREF(KosDynYieldFrom_PENDING_ARG(node));
+  Py_XDECREF(KosDynYieldFrom_INFLIGHT(node));
+  kos_dynnode_return_to_freelist((KosDynNode *) node);
+}
+
+
+KosDynYieldFrom *kos_dynyieldfrom_clone(KosDynYieldFrom *node) {
+
+  KosDynYieldFrom *clone = kos_dynnode_alloc();
+  if (! clone)
+    return NULL;
+
+  kos_dynnode_init((KosDynNode *) clone, KOS_DYN_YIELD_FROM, NULL);
+  KosDynNode_FLAGS(clone) = KosDynNode_FLAGS(node) | KOS_DYNF_CLONED;
+  KosDynYieldFrom_DELEGATE(clone) = KosDynYieldFrom_DELEGATE(node);
+  Py_XINCREF(KosDynYieldFrom_DELEGATE(clone));
+  KosDynYieldFrom_KIND(clone) = KosDynYieldFrom_KIND(node);
+  KosDynYieldFrom_PENDING_ACTION(clone) = KosDynYieldFrom_PENDING_ACTION(node);
+  KosDynYieldFrom_PENDING_ARG(clone) = KosDynYieldFrom_PENDING_ARG(node);
+  if (KosDynYieldFrom_PENDING_ARG(clone))
+    Py_INCREF(KosDynYieldFrom_PENDING_ARG(clone));
+  KosDynYieldFrom_INFLIGHT(clone) = KosDynYieldFrom_INFLIGHT(node);
+  if (KosDynYieldFrom_INFLIGHT(clone))
+    Py_INCREF(KosDynYieldFrom_INFLIGHT(clone));
+  return clone;
+}
+
+
 /* === Generic DynNode operations === */
 
 
@@ -456,6 +513,9 @@ void kos_dynnode_free(KosDynNode *node) {
     case KOS_DYN_CC:
       kos_dyncc_free((KosDynCC *) node);
       break;
+    case KOS_DYN_YIELD_FROM:
+      kos_dynyieldfrom_free((KosDynYieldFrom *) node);
+      break;
   }
 }
 
@@ -479,6 +539,8 @@ KosDynNode *kos_dynnode_clone(KosDynNode *node) {
       return kos_dynpycall_new(NULL);
     case KOS_DYN_CC:
       return (KosDynNode *) kos_dyncc_clone((KosDynCC *) node);
+    case KOS_DYN_YIELD_FROM:
+      return (KosDynNode *) kos_dynyieldfrom_clone((KosDynYieldFrom *) node);
   }
 
   PyErr_Format(PyExc_RuntimeError, "cannot clone dynnode kind %u",
@@ -839,6 +901,16 @@ int kos_dyn_pop_top(KosContext *ctx) {
     PyErr_SetString(PyExc_RuntimeError,
                     "cannot unwind past Python call boundary");
     return -1;
+
+  case KOS_DYN_YIELD_FROM: {
+    KosDynYieldFrom *yf = (KosDynYieldFrom *) top;
+    kos_yieldfrom_close_delegate(yf);
+    KosContext_DYN_TOP(ctx) = KosDynNode_PARENT(top);
+    KosContext_CHAIN_VERSION(ctx)++;
+    kos_update_frame_top(ctx);
+    kos_dynyieldfrom_free(yf);
+    return 0;
+  }
   }
 
   PyErr_SetString(PyExc_RuntimeError, "unknown dynamic chain node kind");
@@ -904,6 +976,34 @@ void kos_dyn_pop_pycall(KosContext *ctx, KosDynNode *marker) {
   KosContext_DYN_TOP(ctx) = KosDynNode_PARENT(marker);
   KosContext_CHAIN_VERSION(ctx)++;
   kos_dynpycall_free(marker);
+}
+
+
+KosDynYieldFrom *kos_dyn_push_yield_from(
+    KosContext *ctx,
+    PyObject *delegate,
+    uint8_t kind) {
+
+  KosDynYieldFrom *node = kos_dynyieldfrom_new(
+      KosContext_DYN_TOP(ctx), delegate, kind);
+  if (! node)
+    return NULL;
+
+  KosContext_DYN_TOP(ctx) = (KosDynNode *) node;
+  KosContext_CHAIN_VERSION(ctx)++;
+  return node;
+}
+
+
+void kos_dyn_pop_yield_from(KosContext *ctx, KosDynYieldFrom *node) {
+
+  if (! KosContext_DYN_TOP(ctx) || KosContext_DYN_TOP(ctx) != (KosDynNode *) node) {
+    return;
+  }
+  KosContext_DYN_TOP(ctx) = KosDynNode_PARENT(node);
+  KosContext_CHAIN_VERSION(ctx)++;
+  kos_update_frame_top(ctx);
+  kos_dynyieldfrom_free(node);
 }
 
 
@@ -1828,6 +1928,13 @@ int kos_dynnode_traverse(KosDynNode *node, visitproc visit, void *arg) {
       KosDynRegion *region = (KosDynRegion *) node;
       Py_VISIT(KosDynRegion_RESULT(region));
       Py_VISIT(KosDynRegion_ITER(region));
+      break;
+    }
+    case KOS_DYN_YIELD_FROM: {
+      KosDynYieldFrom *yf = (KosDynYieldFrom *) node;
+      Py_VISIT(KosDynYieldFrom_DELEGATE(yf));
+      Py_VISIT(KosDynYieldFrom_PENDING_ARG(yf));
+      Py_VISIT(KosDynYieldFrom_INFLIGHT(yf));
       break;
     }
   }

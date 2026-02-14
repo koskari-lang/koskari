@@ -432,12 +432,82 @@ class TestStubOpcodes(CevalTest):
         self.assertIn("no runtime implementation", str(ctx.exception))
 
 
-    def test_yield_from_raises_not_implemented(self):
+    def test_yield_from_sync_iterator_values_and_final(self):
         """
-        YIELD_FROM raises RuntimeError when the async gen is driven
+        YIELD_FROM on a sync iterator yields each value then completes with final
         """
 
+        it = iter([10, 20, 30])
         code_obj, ns = build_expr([
+            ["CONST", it],
+            ["YIELD_FROM", 0],
+            ["RETURN", 1],
+        ])
+        expr = make_callable(code_obj, ns)
+        agen = expr()
+        self.assertIsInstance(agen, AsyncGenerator)
+
+        async def run():
+            v1 = await anext(agen)
+            self.assertEqual(v1, 10)
+            v2 = await anext(agen)
+            self.assertEqual(v2, 20)
+            v3 = await anext(agen)
+            self.assertEqual(v3, 30)
+            with self.assertRaises(StopAsyncIteration) as ctx:
+                await anext(agen)
+            final = getattr(ctx.exception, "value", None) or (
+                ctx.exception.args[0] if ctx.exception.args else None
+            )
+            self.assertIs(final, None)
+
+        asyncio.run(run())
+
+    def test_yield_from_sync_generator_values_and_return(self):
+        """
+        YIELD_FROM on a Python sync generator yields values and returns final
+        """
+
+        def py_gen():
+            yield 1
+            yield 2
+            return 99
+
+        gen = py_gen()
+        code_obj, ns = build_expr([
+            ["CONST", gen],
+            ["YIELD_FROM", 0],
+            ["RETURN", 1],
+        ])
+        expr = make_callable(code_obj, ns)
+        agen = expr()
+        self.assertIsInstance(agen, AsyncGenerator)
+
+        async def run():
+            v1 = await anext(agen)
+            self.assertEqual(v1, 1)
+            v2 = await anext(agen)
+            self.assertEqual(v2, 2)
+            with self.assertRaises(StopAsyncIteration) as ctx:
+                await anext(agen)
+            final = getattr(ctx.exception, "value", None) or (
+                ctx.exception.args[0] if ctx.exception.args else None
+            )
+            self.assertEqual(final, 99)
+
+        asyncio.run(run())
+
+    def test_yield_from_python_async_gen_raises_not_implemented(self):
+        """
+        YIELD_FROM on a Python async gen raises RuntimeError (not yet implemented)
+        """
+
+        async def py_agen():
+            yield 1
+
+        a = py_agen()
+        code_obj, ns = build_expr([
+            ["CONST", a],
             ["YIELD_FROM", 0],
             ["RETURN", 1],
         ])
