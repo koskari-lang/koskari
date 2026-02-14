@@ -164,7 +164,7 @@ When adding or changing an opcode:
 - [7. Iteration](#7-iteration) — ITER_NEXT, NEXT
 - [8. Jumps](#8-jumps) — JUMP, JUMP_FALSE, JUMP_TRUE, JUMP_AND, JUMP_OR
 - [9. Check jumps](#9-check-jumps) — CHECK_EQ, CHECK_GE, CHECK_GT, CHECK_LE, CHECK_LT, CHECK_NE, CHECK_IN, CHECK_NOT_IN, CHECK_IS, CHECK_IS_NOT, CHECK_IS_INSTANCE, CHECK_IS_SUBCLASS, CHECK_EXCEPTION
-- [10. Introspection](#10-introspection) — GLOBALS, LOCALS
+- [10. Introspection](#10-introspection) — GLOBALS, LOCALS, CAPTURE_FRAME
 - [11. Exception handling](#11-exception-handling) — EXCEPTION, EXCEPTION_CLEAR, EXCEPTION_MATCH
 - [12. Variables by name](#12-variables-by-name) — VAR, VAR_BIND, VAR_CLEAR, VAR_REF, VAR_STORE
 - [13. Fast variables](#13-fast-variables) — FAST, FAST_BIND, FAST_CLEAR, FAST_REF, FAST_STORE
@@ -213,6 +213,7 @@ When adding or changing an opcode:
 | CHECK_EXCEPTION | LABEL | Jump if exception no match | [§9](#kos_op_check_exception) |
 | GLOBALS | NOARG | Push globals dict | [§10](#kos_op_globals) |
 | LOCALS | NOARG | Push locals dict | [§10](#kos_op_locals) |
+| CAPTURE_FRAME | COUNT | Push TraceView snapshot | [§10](#kos_op_capture_frame) |
 | EXCEPTION | NOARG | Push current exception | [§11](#kos_op_exception) |
 | EXCEPTION_CLEAR | NOARG | Clear exception state | [§11](#kos_op_exception_clear) |
 | EXCEPTION_MATCH | COUNT | Match exception, push result | [§11](#kos_op_exception_match) |
@@ -865,6 +866,24 @@ Check jumps: if the predicate does **not** hold, jump to `arg`. All take LABEL; 
 |------:|--------|-----|----------|---------|
 | 0     | LOCALS | 0   | 0        | stack: [..., locals_dict] |
 | 1     | RETURN | 1   | 1        | |
+
+---
+
+### KOS_OP_CAPTURE_FRAME {#kos_op_capture_frame}
+
+- **Style**: COUNT.
+- **Status**: Design; not yet implemented.
+- **Stack**: `[...] → [..., traceview]`. Pushes a read-only TraceView snapshot onto the stack.
+- **Invariants**: Does not alter evaluator state; produces stable snapshot; cannot embed Python/C stack; cannot expose mutable VM internals.
+- **Argument meaning**: 0 → capture current frame only; 1 → capture full frame chain; N → capture N frames upward.
+- **Design**: See [interpreter/introspection-trace.md](interpreter/introspection-trace.md) for full specification. This opcode is debugging-only and may be gated behind build flags if desired.
+
+**Example:** Capture full frame chain (arg = 1).
+
+| index | opcode        | arg | arg view | comment |
+|------:|---------------|-----|----------|---------|
+| 0     | CAPTURE_FRAME | 1   | 1        | stack: [..., traceview] |
+| 1     | RETURN        | 1   | 1        | |
 
 
 ## 11. Exception handling

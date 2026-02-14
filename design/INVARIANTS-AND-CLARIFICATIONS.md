@@ -87,6 +87,8 @@ These are **commitments**: they must hold for correct behavior. They are elabora
 
 - **Chain version**: The context keeps a `chain_version` counter, incremented on every chain push/pop. Transfer plans record the version at creation. Nested transfers that change the chain can be detected by version mismatch for safe resumption.
 
+- **Introspection is read-only**: The evaluator provides a read-only introspection mechanism (TraceView snapshot; see `design/interpreter/introspection-trace.md`). Introspection does not mutate evaluator state, expose raw C structs, inject execution, or interact with continuations. Snapshot objects remain valid even if the VM continues. Exception trace reporting attaches a TraceView to raised exceptions (e.g. `exc.__koskari_trace__`).
+
 ---
 
 ## 3. Data and Type Invariants

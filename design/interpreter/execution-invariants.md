@@ -292,7 +292,19 @@ continuation invocations.
 
 ---
 
-## 20. Non-Goals / Explicit Exclusions
+## 20. Introspection Is Read-Only (Invariant)
+
+* The evaluator provides a read-only introspection mechanism (TraceView
+  snapshot; see [introspection-trace.md](introspection-trace.md)).
+* Introspection does not mutate evaluator state, expose raw C structs, inject
+  execution, or interact with continuations.
+* Snapshot objects remain valid even if the VM continues executing.
+* Exception trace reporting attaches a TraceView to raised exceptions (e.g.
+  `exc.__koskari_trace__`) for structured trace output.
+
+---
+
+## 21. Non-Goals / Explicit Exclusions
 
 * No implicit event loop creation on normal calls.
 * No reliance on CPython frame recursion for Koskari semantics.
@@ -301,7 +313,7 @@ continuation invocations.
 
 ---
 
-## Summary Invariant
+## 22. Summary Invariant
 
 **Koskari owns control flow.**
 Python observes execution only through explicit, protocol-correct projections
@@ -314,6 +326,7 @@ delimited continuation semantics.
 ## Related Documentation
 
 * [evaluator.md](evaluator.md) — Evaluation model and VM structures
+* [introspection-trace.md](introspection-trace.md) — Read-only introspection and trace snapshot design
 * [callcc.md](callcc.md) — Delimited continuation implementation
 * [evaluator-restructure.md](evaluator-restructure.md) — Design document for
   the DynNode chain restructure
