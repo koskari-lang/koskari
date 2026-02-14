@@ -1,5 +1,7 @@
 # Core Types
 
+Types are defined in the native extension `koskari.lib`; the Python module `koskari.types` imports those and adds predicates and helpers (`is_symbol`, `build_proper`, `unpack`, etc.). Base exceptions live in `koskari.exceptions`. Import from the defining module: `koskari.lib`, `koskari.types`, or `koskari.exceptions` as appropriate. See [package-layout.md](package-layout.md) for the full layout and import policy.
+
 ## From python-sibilant
 
 ### Symbol

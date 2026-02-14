@@ -21,7 +21,7 @@ Unit tests for utility functions
 
 import unittest
 
-from koskari import lib
+import koskari.lib as lib
 
 
 class TestReapply(unittest.TestCase):

@@ -30,6 +30,7 @@ from io import StringIO
 from os.path import exists
 from re import compile as regex, UNICODE, VERBOSE
 
+from .exceptions import KoskariSyntaxError
 from .types import (
     symbol,
     keyword,
@@ -38,7 +39,6 @@ from .types import (
     is_pair,
     setcdr,
     BaseSourceStream,
-    KoskariSyntaxError,
 )
 
 

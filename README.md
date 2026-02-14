@@ -91,23 +91,30 @@ make clean
 ```
 koskari/
 ├── design/              # Design documentation
-├── koskari/             # Main package
-│   ├── __init__.py      # Package exports
-│   ├── types.py         # Type definitions and predicates
-│   ├── parse.py         # S-expression parser
-│   └── lib/             # C extension sources
-│       ├── atom.c       # Symbol/keyword implementation
-│       ├── pair.c       # Cons cell implementation
-│       ├── namespace.c  # Namespace implementation
-│       ├── formals.c    # Parameter binding
-│       ├── ref.c        # Reference cells
-│       ├── values.c     # Multi-value returns
-│       ├── operator.c   # Operator helpers
-│       ├── parse.c      # Native stream I/O
+├── koskari/             # Main package (import from submodules; see design/api/package-layout.md)
+│   ├── __init__.py      # Minimal; no re-exports
+│   ├── exceptions.py    # Base exceptions (KoskariException, KoskariSyntaxError, ...)
+│   ├── types.py        # Value types from lib + Python predicates/helpers
+│   ├── parse.py        # S-expression parser (Reader, SourceStream, ...)
+│   ├── dis.py          # Disassembler for Code objects
+│   ├── compile/        # Compiler, ByteCodeFragment, special forms
+│   └── lib/            # C extension sources
+│       ├── atom.c      # Symbol/keyword implementation
+│       ├── pair.c     # Cons cell implementation
+│       ├── namespace.c # Namespace implementation
+│       ├── formals.c   # Parameter binding
+│       ├── ref.c       # Reference cells
+│       ├── values.c    # Multi-value returns
+│       ├── operator.c  # Operator helpers
+│       ├── parse.c     # Native stream I/O
 │       └── ...
-├── tests/               # Test suite (570+ tests)
-│   ├── types/           # Type unit tests
-│   └── native/          # Native memory tests (ASan, Valgrind)
+├── tests/               # Test suite (see design/api/package-layout.md)
+│   ├── lib/            # Native extension and ceval tests
+│   ├── compile/        # Compiler and bytecode fragment tests
+│   ├── parse/          # Parser tests
+│   ├── dis/            # Disassembler tests
+│   ├── types/          # Type predicate/helper tests
+│   └── native/         # Native memory tests (ASan, Valgrind)
 └── examples/            # Example koskari code (.ki files)
 ```
 

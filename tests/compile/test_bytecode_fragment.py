@@ -27,15 +27,9 @@ deduplication, and position tracking.
 
 import unittest
 
-from koskari import (
-    ByteCodeFragment,
-    Code,
-    FormalsSpec,
-    NamespaceSpec,
-    OpCode,
-    unique_append,
-)
-from koskari.lib import FunctionSpec
+from koskari.compile.fragment import ByteCodeFragment, unique_append
+from koskari.lib import Code, FunctionSpec, OpCode
+from koskari.types import FormalsSpec, NamespaceSpec
 
 
 def example_bytecode_truthy_yus():

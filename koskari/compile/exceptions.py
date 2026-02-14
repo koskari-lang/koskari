@@ -22,7 +22,7 @@ Compiler-related exceptions for Koskari.
 
 from enum import auto, IntEnum
 
-from ..types import KoskariException
+from ..exceptions import KoskariException
 
 
 class CompilerMode(IntEnum):

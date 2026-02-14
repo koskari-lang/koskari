@@ -144,7 +144,7 @@ class TestEvalModuleIntegration(unittest.TestCase):
     def test_all_types_registered(self):
         """All expected types are registered in koskari.lib"""
 
-        from koskari import lib
+        import koskari.lib as lib
 
         self.assertTrue(hasattr(lib, 'Continuation'))
         self.assertTrue(hasattr(lib, 'Coroutine'))

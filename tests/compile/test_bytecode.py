@@ -19,8 +19,8 @@ Tests for koskari.compile #bytecode special form.
 import asyncio
 import unittest
 
-from koskari import Module, ModuleNamespace
 from koskari.parse import default_reader, source_str
+from koskari.types import Module, ModuleNamespace
 from koskari.compile import Compiler, special_bytecode
 
 

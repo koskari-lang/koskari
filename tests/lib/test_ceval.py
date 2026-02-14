@@ -25,8 +25,15 @@ and stub opcodes (RuntimeError).
 import asyncio
 import unittest
 
-from koskari import Code, FormalsSpec, Function, NamespaceSpec, OpCode
-from koskari.lib import AsyncGenerator, FunctionSpec
+from koskari.lib import (
+    AsyncGenerator,
+    Code,
+    FormalsSpec,
+    Function,
+    FunctionSpec,
+    NamespaceSpec,
+    OpCode,
+)
 from tests import make_callable
 
 

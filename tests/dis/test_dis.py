@@ -21,7 +21,8 @@ Unit tests for koskari.dis (disassembler).
 import io
 import unittest
 
-from koskari import Code, NamespaceSpec, OpCode
+from koskari.lib import Code, OpCode
+from koskari.types import NamespaceSpec
 from koskari.dis import dis, _get_code, _get_instruction_lines, _format_constant
 
 

@@ -7,7 +7,7 @@ This directory contains the design documentation for koskari, organized into thr
 ## Structure
 
 - **language/**: Language features, syntax, special forms, operators, and built-in constructs
-- **api/**: Runtime API, types, functions, and interfaces
+- **api/**: Runtime API, types, functions, interfaces, and [package layout and import policy](api/package-layout.md)
 - **interpreter/**: Interpreter architecture, bytecode format, compiler design,
   evaluation model, and continuation application (including evaluator-token model)
 

@@ -23,7 +23,7 @@ Unit tests for reducing and special-case operators
 
 import unittest
 
-from koskari import lib
+import koskari.lib as lib
 
 
 class TestOperatorAdd(unittest.TestCase):

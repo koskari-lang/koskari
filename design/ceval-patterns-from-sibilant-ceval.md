@@ -6,7 +6,7 @@ Summary of patterns in sibilant-ceval code and tests, read with attention to det
 
 ## 1. Test layout and opcode tests
 
-**Location:** `tests/lib/ceval.py`
+**Location:** `tests/lib/test_ceval.py`
 
 - **Single-opcode focus:** Each test targets one opcode (or one opcode + one error path). The test builds a minimal bytecode program that runs that opcode, then asserts on stack/namespace/exception.
 - **Explicit docstring:** The file opens with a short explanation of the strategy: "validate each individual bytecode operation and its impact on the frame, including error conditions like stack underruns."
@@ -16,7 +16,7 @@ Summary of patterns in sibilant-ceval code and tests, read with attention to det
 
 ## 2. build_expr / step_expr: harness for expression tests
 
-**Location:** `tests/lib/ceval.py` (top of file)
+**Location:** `tests/lib/test_ceval.py` and `tests/lib/test_expression_function.py` (top of file)
 
 - **build_expr(code, nspec=None, glbls=None):**
   - Takes a list of `[op, arg]` (op is string like `"NOOP"`, `"VAR"`).
@@ -44,7 +44,7 @@ So: string names in ceval tests (clarity); enum in bytecode/structure tests (exa
 
 ## 4. Namespace and “bind into the namespace”
 
-**Locations:** `tests/lib/namespace.py`, `tests/lib/ceval.py` (e.g. test_var, test_fast)
+**Locations:** `tests/lib/test_namespace.py`, `tests/lib/test_ceval.py` (e.g. test_var, test_fast)
 
 - **Namespace is always the real type:** Tests use `Namespace(...)` or `ModuleNamespace(...)`. No plain dict as “namespace” in the test API; the VM may support dict internally, but tests exercise the real Namespace contract.
 - **Names come from spec:** For VAR/FAST, the namespace is created with the right names in `local_syms` (or closure). Then values are put in with `ns.store(name, value)` or, in the ceval harness, `step_expr(expr, values={name: value})` which does `frame.fr_namespace[key] = val`.
@@ -56,7 +56,7 @@ So: “bind it into the namespace” means use NamespaceSpec with the name in th
 
 ## 5. Shared test helpers and global namespace
 
-**Location:** `tests/__init__.py`, `tests/lib/ceval.py`
+**Location:** `tests/__init__.py` (e.g. `make_callable`; imports from `koskari.lib` and `koskari.types`), `tests/lib/test_ceval.py`
 
 - **get_glbls(**defns):** Returns a `ModuleNamespace("module", builtins)` with a small set of builtins (`+`, `-`, `<`, `>`, `==`, `APPEND`, `ITER`, etc.). Tests can override/extend with `get_glbls(**defns)` or pass a custom namespace.
 - **build_fspec(defn) / build_func(module, defn, **kwds):** Turn a single dict (code, formals, base_nspec, etc.) into a FunctionSpec or callable. Keeps func tests declarative and consistent.
@@ -67,7 +67,7 @@ So: shared, realistic “global” namespace and a single way to build functions
 
 ## 6. Assertion helpers for expected exceptions
 
-**Location:** `tests/lib/ceval.py`, class CevalTest
+**Location:** `tests/lib/test_ceval.py`, class CevalTest
 
 - Helpers like `assertRuntimeError(expr, *args, **kwds)` wrap `self.assertRaises(RuntimeError, step_expr, expr, *args, **kwds)`. Same for AttributeError, IndexError, TypeError.
 - Tests then say `self.assertRuntimeError(expr)` or `self.assertRaises(NameError, step_expr, expr)` instead of repeating the step_expr + exception pattern.
@@ -91,7 +91,7 @@ So: each opcode test tends to cover both “error when preconditions fail” and
 
 ## 8. Function-level tests: code + formals + namespace in one place
 
-**Location:** `tests/lib/func.py`
+**Location:** `tests/lib/test_ceval.py`, `tests/lib/test_expression_function.py` (function/callable tests)
 
 - Tests build a `defn` dict with keys like `"code"`, `"formals"`, `"base_nspec"`; code is a list of `[OpCode.OP_*, arg]`.
 - `base_nspec` is the frame’s namespace spec (e.g. `(None, (), ("FN", "VAL"))` for closure names).
@@ -104,7 +104,7 @@ So: “bind callables in the namespace (or globals), reference by name in byteco
 
 ## 9. Bytecode tests: constants and oparg
 
-**Location:** `tests/lib/bytecode.py`
+**Location:** `tests/compile/test_bytecode_fragment.py` (ByteCodeFragment/Code API), `tests/compile/test_bytecode.py` (#bytecode special form)
 
 - **example_bytecode_truthy_yus():** Returns a ByteCode built from a tuple of instructions; used by both bytecode tests and (via import) func tests. So one canonical example, reused.
 - Tests assert on `bc.oparg(i)`, `bc.constant(i)`, `bc.constants_pool`, `bc.length()` so that constant pool deduplication and instruction layout are checked explicitly.
@@ -115,7 +115,7 @@ So: bytecode tests focus on structure (oparg, constant pool, length); ceval test
 
 ## 10. Module and namespace types
 
-**Location:** `tests/lib/namespace.py`
+**Location:** `tests/lib/test_namespace.py`
 
 - Tests distinguish `Namespace` (child of another namespace, fixed local_syms/closure_syms) and `ModuleNamespace` (top-level, can create refs on first access). They test store/deref/ref/clear, nesting, and closure semantics.
 - No test uses a raw dict as the “namespace” object passed into the API; they use the real types and their methods (e.g. `ns.store('a', 123)`, `ns['a']`, `ns.deref('a')`).

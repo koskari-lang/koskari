@@ -133,11 +133,6 @@ __all__ = (
     "get_position",
     "set_position",
     "fill_position",
-
-    # exceptions
-    "KoskariException",
-    "NotYetImplemented",
-    "KoskariSyntaxError",
 )
 
 
@@ -257,44 +252,6 @@ def fill_position(value, position, follow=True):
 
     if position and is_pair(value):
         value.fill_position(position, follow)
-
-
-class KoskariException(Exception):
-    """
-    Base class for error-driven Exceptions raised by Koskari.
-    """
-
-    pass
-
-
-class NotYetImplemented(KoskariException):
-    """
-    Raised as a placeholder for features that have not been
-    implemented yet.
-    """
-
-    pass
-
-
-class KoskariSyntaxError(SyntaxError):
-    """
-    An error in Koskari syntax, either during read or compile time.
-    """
-
-    def __init__(self, message, location=None, filename=None, text=None):
-
-        if filename:
-            if not location:
-                location = (1, 0)
-            super().__init__(message, (filename, *location, text))
-            self.print_file_and_line = True
-        else:
-            super().__init__(message)
-
-        self.message = message
-        self.location = location
-        self.filename = filename
-        self.text = text
 
 
 # The end.

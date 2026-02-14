@@ -27,14 +27,8 @@ namespace (VAR); callables are not put in CONST.
 import asyncio
 import unittest
 
-from koskari import (
-    Code,
-    FormalsSpec,
-    NamespaceSpec,
-    OpCode,
-    Expression,
-    Function,
-)
+from koskari.lib import Code, Expression, Function
+from koskari.types import FormalsSpec, NamespaceSpec, OpCode
 from tests import make_callable
 
 

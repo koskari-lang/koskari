@@ -16,11 +16,8 @@
 Test suite for koskari.
 """
 
-from koskari import (
-    Expression,
-    FormalsSpec,
-    Function,
-)
+from koskari.lib import Expression, Function
+from koskari.types import FormalsSpec
 
 
 def make_callable(code, ns, formals_spec=None):

@@ -202,7 +202,7 @@ class Compiler:
         except (CompilerException,):
             raise
         except Exception as ex:
-            from ..types import KoskariSyntaxError
+            from ..exceptions import KoskariSyntaxError
             if isinstance(ex, KoskariSyntaxError):
                 raise
             raise UncaughtCompilerException(ex, source_obj) from ex
