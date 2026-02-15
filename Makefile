@@ -34,13 +34,19 @@ report-python:  ## Report Python version and executable
 
 ##@ Build and Install
 
-build: clean-built report-python  ## Build wheel package using uv via tox
+koskari/lib/handlers.incl: koskari/lib/opcodes.incl
+	@echo "Re-generating handlers.incl..."
+	@tox -qe handlers
+
+handlers: koskari/lib/handlers.incl
+
+build: handlers clean-built report-python  ## Build wheel package using uv via tox
 	@$(call checkfor,tox)
 	@echo "Building $(PROJECT) $(VERSION)..."
 	@tox -qe build
 	@echo "Build complete: $(DIST_DIR)/$(PROJECT)-$(VERSION)-*.whl"
 
-build-ext: report-python  ## Build native extensions only
+build-ext: handlers report-python  ## Build native extensions only
 	@echo "Building native extensions (DEBUG=$(DEBUG))..."
 	@DEBUG=$(DEBUG) $(PYTHON) setup.py build_ext --inplace
 
@@ -62,7 +68,7 @@ uninstall:  ## Uninstall package
 
 ##@ Development
 
-test:  ## Run tests on current Python version via tox
+test: handlers  ## Run tests on current Python version via tox
 	@$(call checkfor,tox)
 	@echo "Running tests..."
 	@tox -qe py
@@ -72,12 +78,12 @@ test-all:  ## Run tests on all supported Python versions via tox
 	@echo "Running tests on all Python versions..."
 	@tox -qe py39,py310,py311,py312
 
-tox:  ## Run full tox suite (tests + lint + typecheck)
+tox: handlers  ## Run full tox suite (tests + lint + typecheck)
 	@$(call checkfor,tox)
 	@echo "Running full tox suite..."
 	@tox -q
 
-gdb:  ## Run tests under gdb via tox
+gdb: handlers  ## Run tests under gdb via tox
 	@$(call checkfor,tox)
 	@$(call checkfor,gdb)
 	@tox -qe gdb

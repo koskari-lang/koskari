@@ -49,8 +49,11 @@ def extension(platform=None, debug=None):
 
     libdir = Path("koskari/lib")
     sources = sorted(map(str, libdir.glob("*.c")))
-    depends = sorted(map(str, libdir.glob("*.h")))
-    depends.append(str(libdir / "opcodes.incl"))
+
+    depends = list(libdir.glob("*.h"))
+    depends.extend(libdir.glob("*.incl"))
+    depends.extend(libdir.glob("opcode/*.c"))
+    depends = sorted(map(str, depends))
 
     return Extension(
         "koskari.lib",

@@ -1560,7 +1560,9 @@ void kos_yieldfrom_close_delegate(KosDynYieldFrom *node) {
 }
 
 
-#include "opcode/includes.incl"
+/*  Includes the implementation of all opcodes from the opcode/ directory.
+*/
+#include "handlers.incl"
 
 
 /* Dispatch table generated from opcodes.incl; every op_##name must be

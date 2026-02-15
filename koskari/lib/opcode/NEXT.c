@@ -26,6 +26,7 @@ KOS_OP_HANDLER(NEXT) {
     PyErr_Format(PyExc_ValueError, "NEXT arg must be 1 or 2, got %u", n);
     return -1;
   }
+
   PyObject *default_val = NULL;
   PyObject *iter = NULL;
   if (n == 2) {
@@ -38,6 +39,7 @@ KOS_OP_HANDLER(NEXT) {
     Py_XDECREF(default_val);
     return -1;
   }
+
   /* If not already an iterator, get one (NEXT allows iterables). */
   if (! KosPyAsyncGen_Check(iter)) {
     PyObject *awaitable = get_await_next(iter);
@@ -108,6 +110,7 @@ KOS_OP_HANDLER(NEXT) {
       Py_DECREF(iter);
       Py_XDECREF(default_val);
       return 0;
+
     case GET_NEXT_EXHAUSTED:
       Py_DECREF(iter);
       if (default_val) {
@@ -121,6 +124,7 @@ KOS_OP_HANDLER(NEXT) {
       Py_XDECREF(default_val);
       PyErr_SetNone(PyExc_StopIteration);
       return -1;
+
     case GET_NEXT_SUSPEND:
       if (n == 2) {
         if (KosStackBlock_PushRef(&CURRENT_STACK(ctx), default_val) < 0) {
@@ -136,10 +140,12 @@ KOS_OP_HANDLER(NEXT) {
       Py_DECREF(iter);
       Py_XDECREF(default_val);
       return 1;
+
     case GET_NEXT_ERROR:
       Py_DECREF(iter);
       Py_XDECREF(default_val);
       return -1;
+
     default:
       Py_DECREF(iter);
       Py_XDECREF(default_val);

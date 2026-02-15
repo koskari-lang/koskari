@@ -26,6 +26,7 @@ KOS_OP_HANDLER(ITER_NEXT) {
                     "ITER_NEXT must be used inside a PUSH_FOREACH block");
     return -1;
   }
+
   PyObject *iter = KosDynRegion_ITER(region);
   if (KosPyAsyncGen_Check(iter)) {
     KosPyAsyncGen *agen = (KosPyAsyncGen *) iter;
@@ -51,6 +52,7 @@ KOS_OP_HANDLER(ITER_NEXT) {
     }
     return 0;
   }
+
   PyObject *value = NULL;
   KosGetNextResult get_res = op_get_next_from_iter(ctx, out_ev, iter, &value);
   switch (get_res) {
