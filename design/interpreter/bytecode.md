@@ -140,7 +140,7 @@ quick lookup.
 - `KOS_OP_RAISE`: Raise exception
 - `KOS_OP_RETURN`: Return value
 - `KOS_OP_YIELD`: Yield value (sets YIELDS flag)
-- `KOS_OP_YIELD_FROM`: Yield from iterable (sets YIELDS flag)
+- `KOS_OP_YIELD_FROM`: Yield from iterable (implemented; sets YIELDS flag; delegate to sub-iterator/gen; KOS_DYN_YIELD_FROM; handler in koskari/lib/opcode/yield_from.c)
 
 ### Jumps
 - `KOS_OP_JUMP`: Unconditional jump
@@ -257,11 +257,11 @@ quick lookup.
 
 ## Opcode implementation status
 
-Handlers live in `koskari/lib/eval.c`. Each opcode has a handler; it is either **fully implemented**, a **stub** that calls `op_unimplemented_stub` (runtime error if executed), or a **dedicated unimpl** (THEEND: hardcoded "no runtime implementation" error). There are no partially implemented opcodes.
+Handlers live in `koskari/lib/eval.c` and opcode fragments under `koskari/lib/opcode/`. Each opcode has a handler; it is either **fully implemented**, a **stub** that calls `op_unimplemented_stub` (runtime error if executed), or a **dedicated unimpl** (THEEND: hardcoded "no runtime implementation" error). There are no partially implemented opcodes.
 
-- **Fully implemented**: Stack (NOOP, LABEL, POSITION as no-ops; DUP, POP, CONST); RETURN, AWAIT; CALL (simple call); BUILD_FUNCTION; GLOBALS, LOCALS; variables (VAR, VAR_BIND, VAR_CLEAR, VAR_REF, VAR_STORE); fast locals (FAST, FAST_BIND, FAST_REF, FAST_STORE); namespace scope (PUSH_NS, POP_NS); exception ops (EXCEPTION, EXCEPTION_CLEAR, EXCEPTION_MATCH, RAISE, CHECK_EXCEPTION); try/finally (PUSH_TRY, PUSH_FINALLY, POP_TRY, POP_FINALLY, CLEAR_TRY, CLEAR_FINALLY); loop control (PUSH_LOOP, PUSH_FOREACH, POP_LOOP, CLEAR_LOOP, BREAK, CONTINUE); delimited continuations (PUSH_PROMPT, SET_PROMPT_HANDLER, POP_PROMPT, SHIFT); INVOKE_K, INVOKE_K_VAR; all OBJECT_* opcodes; ITER_NEXT, NEXT.
+- **Fully implemented**: Stack (NOOP, LABEL, POSITION as no-ops; DUP, POP, CONST); RETURN, AWAIT; YIELD; YIELD_FROM (handler in koskari/lib/opcode/yield_from.c); CALL (simple call); BUILD_FUNCTION; GLOBALS, LOCALS; variables (VAR, VAR_BIND, VAR_CLEAR, VAR_REF, VAR_STORE); fast locals (FAST, FAST_BIND, FAST_REF, FAST_STORE); namespace scope (PUSH_NS, POP_NS); exception ops (EXCEPTION, EXCEPTION_CLEAR, EXCEPTION_MATCH, RAISE, CHECK_EXCEPTION); try/finally (PUSH_TRY, PUSH_FINALLY, POP_TRY, POP_FINALLY, CLEAR_TRY, CLEAR_FINALLY); loop control (PUSH_LOOP, PUSH_FOREACH, POP_LOOP, CLEAR_LOOP, BREAK, CONTINUE); delimited continuations (PUSH_PROMPT, SET_PROMPT_HANDLER, POP_PROMPT, SHIFT); INVOKE_K, INVOKE_K_VAR; all OBJECT_* opcodes; ITER_NEXT, NEXT.
 - **No runtime implementation (hardcoded error)**: THEEND.
-- **Stubs (unimplemented)**: YIELD_FROM; argument-building (BUILD_ARGS, BUILD_KWDS, BUILD_KWDS_NAMES, COMBINE_*, etc.); CALL_NAMES, CALL_STAR, CALL_ATTR*, RECUR*, TAIL_*; block control (PUSH_*/POP_*/CLEAR_* for with/begin/class); PUSH_WIND, POP_WIND, END_WIND; PUSH_REGION, POP_REGION.
+- **Stubs (unimplemented)**: Argument-building (BUILD_ARGS, BUILD_KWDS, BUILD_KWDS_NAMES, COMBINE_*, etc.); CALL_NAMES, CALL_STAR, CALL_ATTR*, RECUR*, TAIL_*; block control (PUSH_*/POP_*/CLEAR_* for with/begin/class); PUSH_WIND, POP_WIND, END_WIND; PUSH_REGION, POP_REGION.
 
 For the full categorized list, see [FEATURES.md](../FEATURES.md) § "Opcodes: implementation status".
 

@@ -53,14 +53,17 @@ Generators are created when a function contains `yield` or `yield-from`:
 
 ## Migration Notes
 
+### Migrated (VM)
+
+- **YIELD** and **YIELD_FROM** opcodes are fully implemented. YIELD_FROM delegates to sync/async iterators and generators; handler in `koskari/lib/opcode/yield_from.c`; dynamic chain node `KOS_DYN_YIELD_FROM`. See [../OPCODES.md](../OPCODES.md) and [../interpreter/yield-from-execution-model.md](../interpreter/yield-from-execution-model.md).
+
 ### To Migrate
 
-- Generator function creation (automatic via `yield`)
-- `yield` operation
-- `yield-from` operation
-- Generator protocol support
+- Compiler: emit YIELD/YIELD_FROM from `yield` and `yield-from` special forms
+- Generator function creation (automatic via `yield` in compiled code)
+- Generator protocol support (language surface)
 - Exception propagation in generators
-- Generator cleanup
+- Generator cleanup (language surface)
 
 ### To Reconsider
 
