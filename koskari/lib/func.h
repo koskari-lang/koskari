@@ -27,6 +27,20 @@
 extern PyTypeObject KosExpressionType;
 
 
+typedef struct {
+  PyObject_HEAD
+  PyObject *code;
+  PyObject *ns;
+} KosExpression;
+
+
+/** Borrowed reference. Do not Py_DECREF the result. */
+#define KosExpression_CODE(expr) (((KosExpression *) (expr))->code)
+
+/** Borrowed reference. Do not Py_DECREF the result. */
+#define KosExpression_NS(expr)   (((KosExpression *) (expr))->ns)
+
+
 /**
    Create an Expression (code, ns). Used by Code.expression(parent_ns).
 
@@ -50,10 +64,13 @@ PyObject *KosExpression_Eval(PyObject *expr);
 
 
 /**
-   Return the expression's code and namespace (borrowed refs).
-   Used by the evaluator to flatten Koskari calls.
+   Return the expression's code (new reference). Caller must Py_DECREF when done.
 */
 PyObject *KosExpression_GetCode(PyObject *expr);
+
+/**
+   Return the expression's namespace (new reference). Caller must Py_DECREF when done.
+*/
 PyObject *KosExpression_GetNs(PyObject *expr);
 
 
@@ -111,6 +128,18 @@ PyObject *KosFunction_New(PyObject *func_spec,
 extern PyTypeObject KosFunctionType;
 
 
+typedef struct {
+  PyObject_HEAD
+  PyObject *code;
+  PyObject *base_ns;
+  PyObject *formals;
+} KosFunction;
+
+
+/** Borrowed reference. Do not Py_DECREF the result. */
+#define KosFunction_CODE(func) (((KosFunction *) (func))->code)
+
+
 /**
    Create a Function from (code, formals, parent_ns). Used by
    Code.function(formals, parent_ns). Same assembly as sibilant-ceval
@@ -151,11 +180,11 @@ PyObject *KosFunction_PrepareCallNamespace(PyObject *func,
 
 
 /**
-   Return the function's code (borrowed ref). For use when flattening calls.
+   Return the function's code (new reference). Caller must Py_DECREF when done.
 */
 PyObject *KosFunction_GetCode(PyObject *func);
 
-#define KosFunction_CODE(func) (((KosFunction *) func)->code)
+
 
 
 /* === Run code as coroutine === */

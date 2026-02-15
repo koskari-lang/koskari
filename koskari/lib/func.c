@@ -39,13 +39,6 @@ static PyObject *func_stop_async_iter_value_type = NULL;
 /* === KosExpression: callable (code, ns) -> coroutine on __call__ === */
 
 
-typedef struct {
-  PyObject_HEAD
-  PyObject *code;
-  PyObject *ns;
-} KosExpression;
-
-
 static int expression_init(KosExpression *self, PyObject *args,
                             PyObject *kwargs) {
   PyObject *code = NULL;
@@ -89,6 +82,7 @@ PyObject *KosExpression_Eval(PyObject *self) {
 PyObject *KosExpression_GetCode(PyObject *self) {
 
   KosExpression *ex = (KosExpression *) self;
+  Py_INCREF(ex->code);
   return ex->code;
 }
 
@@ -96,6 +90,7 @@ PyObject *KosExpression_GetCode(PyObject *self) {
 PyObject *KosExpression_GetNs(PyObject *self) {
 
   KosExpression *ex = (KosExpression *) self;
+  Py_INCREF(ex->ns);
   return ex->ns;
 }
 
@@ -273,14 +268,6 @@ PyObject *KosFunctionSpec_New(PyObject *name, PyObject *formals_spec,
 /* === KosFunction: callable (code, formals, base_ns) -> coroutine on __call__ === */
 
 
-typedef struct {
-  PyObject_HEAD
-  PyObject *code;
-  PyObject *base_ns;
-  PyObject *formals;
-} KosFunction;
-
-
 static int function_init(KosFunction *self, PyObject *args,
                          PyObject *kwargs) {
   PyObject *code = NULL;
@@ -383,6 +370,7 @@ PyObject *KosFunction_PrepareCallNamespace(PyObject *self,
 PyObject *KosFunction_GetCode(PyObject *self) {
 
   KosFunction *fn = (KosFunction *) self;
+  Py_INCREF(fn->code);
   return fn->code;
 }
 

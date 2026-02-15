@@ -1016,8 +1016,8 @@ static int call_native_flattened_expr(
     PyObject *callable,
     KosEvent *out_ev) {
 
-  PyObject *code = KosExpression_GetCode(callable);
-  PyObject *ns = KosExpression_GetNs(callable);
+  PyObject *code = KosExpression_CODE(callable);
+  PyObject *ns = KosExpression_NS(callable);
   Py_INCREF(ns);
   if (kos_dyn_push_frame(ctx, (KosCode *) code, ns) == NULL) {
     Py_DECREF(ns);
@@ -1042,7 +1042,7 @@ static int call_native_flattened_function(
       callable, args, NULL);
   if (! frame_ns)
     return -1;
-  PyObject *fn_code = KosFunction_GetCode(callable);
+  PyObject *fn_code = KosFunction_CODE(callable);
   if (kos_dyn_push_frame(ctx, (KosCode *) fn_code, frame_ns) == NULL) {
     Py_DECREF(frame_ns);
     return -1;
