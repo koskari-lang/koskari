@@ -1668,8 +1668,13 @@ int kos_run_transfer_step(KosContext *ctx) {
         SAYF("[xfer] INSTALL segment=%p (fresh) resume_pc=%u (before: dyn_top=%p frame_top=%p)",
              (void *) seg, (unsigned) KosContext_PLAN(ctx)->resume_pc,
              (void *) KosContext_DYN_TOP(ctx), (void *) KosContext_FRAME_TOP(ctx));
-      KosContext_DYN_TOP(ctx) = seg;
-      kos_update_frame_top(ctx);
+      {
+        KosDynNode *old_top = KosContext_DYN_TOP(ctx);
+        KosContext_DYN_TOP(ctx) = seg;
+        kos_update_frame_top(ctx);
+        if (old_top)
+          kos_dynchain_free(old_top, NULL);
+      }
       /* New segment is the whole chain; topmost frame is the globals frame. */
       KosContext_GLOBALS_FRAME(ctx) = KosContext_FRAME_TOP(ctx);
       KosContext_GLOBALS_CACHE_VERSION(ctx) = KosContext_CHAIN_VERSION(ctx) + 1;
