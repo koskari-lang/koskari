@@ -174,4 +174,31 @@ class TestObjectBinaryOpcodes(CevalTest):
         ])
         self.assertEqual(run_to_completion(make_callable(code, ns)()), 32)
 
+    def test_object_add_three_values(self):
+        """
+        OBJECT_ADD 3 reduces 1+2+3 => 6
+        """
+        code, ns = build_expr([
+            ["CONST", 1],
+            ["CONST", 2],
+            ["CONST", 3],
+            ["OBJECT_ADD", 3],
+            ["RETURN", 1],
+        ])
+        self.assertEqual(run_to_completion(make_callable(code, ns)()), 6)
+
+    def test_object_add_type_error(self):
+        """
+        OBJECT_ADD with incompatible types raises TypeError
+        """
+        code, ns = build_expr([
+            ["CONST", "a"],
+            ["CONST", 1],
+            ["OBJECT_ADD", 2],
+            ["RETURN", 1],
+        ])
+        with self.assertRaises(TypeError):
+            run_to_completion(make_callable(code, ns)())
+
+
 # The end.

@@ -88,6 +88,16 @@ class TestFastOpcodes(CevalTest):
             self._run_fast_out_of_bounds("FAST_STORE", 0)
 
 
+    def test_fast_on_dict_namespace_raises_runtime_error(self):
+        """
+        FAST requires KosNamespace with fast slots; dict as frame ns => RuntimeError
+        """
+        code_obj, _ = build_expr([["FAST", 0], ["RETURN", 1]])
+        ns = {}
+        with self.assertRaises(RuntimeError) as ctx:
+            run_to_completion(make_callable(code_obj, ns)())
+        self.assertIn("FAST invoked", str(ctx.exception))
+
     def test_fast_clear_clears_slot(self):
         """
         FAST_CLEAR clears fast slot; subsequent FAST yields empty/ref

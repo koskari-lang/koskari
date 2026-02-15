@@ -22,7 +22,6 @@ indices).
 
 :author: Christopher O'Brien <obriencj@preoccupied.net>
 :license: GNU General Public License v3
-:ai-assistant: Auto via Cursor
 """
 
 from koskari.lib import Code, OpCode, OpStyle
@@ -38,7 +37,7 @@ def _opcode_maps():
     for op in OpCode:
         names[op.value] = op.name
         style = op.style
-        styles[op.value] = style.value if hasattr(style, 'value') else style
+        styles[op.value] = getattr(style, 'value', style)
     return names, styles
 
 

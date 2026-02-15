@@ -155,6 +155,8 @@ PyObject *KosFunction_PrepareCallNamespace(PyObject *func,
 */
 PyObject *KosFunction_GetCode(PyObject *func);
 
+#define KosFunction_CODE(func) (((KosFunction *) func)->code)
+
 
 /* === Run code as coroutine === */
 

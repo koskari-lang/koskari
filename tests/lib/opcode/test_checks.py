@@ -173,5 +173,125 @@ class TestCheckOpcodes(CevalTest):
         result = run_to_completion(make_callable(code, ns)())
         self.assertEqual(result, 1)
 
+    def test_check_is_same_identity_no_jump(self):
+        """
+        CHECK_IS does not jump when left and right are same object
+        """
+        same = []
+        code, ns = build_expr([
+            ["CONST", same],
+            ["CONST", same],
+            ["CHECK_IS", "diff"],
+            ["CONST", 42],
+            ["RETURN", 1],
+            ["LABEL", "diff"],
+            ["CONST", 0],
+            ["RETURN", 1],
+        ])
+        result = run_to_completion(make_callable(code, ns)())
+        self.assertEqual(result, 42)
+
+    def test_check_is_not_same_identity_jumps(self):
+        """
+        CHECK_IS_NOT jumps when left and right are same object
+        """
+        same = []
+        code, ns = build_expr([
+            ["CONST", same],
+            ["CONST", same],
+            ["CHECK_IS_NOT", "same_obj"],
+            ["CONST", 0],
+            ["RETURN", 1],
+            ["LABEL", "same_obj"],
+            ["CONST", 42],
+            ["RETURN", 1],
+        ])
+        result = run_to_completion(make_callable(code, ns)())
+        self.assertEqual(result, 42)
+
+    def test_check_not_in_jumps_when_contained(self):
+        """
+        CHECK_NOT_IN jumps when value in container
+        """
+        code, ns = build_expr([
+            ["CONST", [1, 2, 3]],
+            ["CONST", 2],
+            ["CHECK_NOT_IN", "in_it"],
+            ["CONST", 0],
+            ["RETURN", 1],
+            ["LABEL", "in_it"],
+            ["CONST", 42],
+            ["RETURN", 1],
+        ])
+        result = run_to_completion(make_callable(code, ns)())
+        self.assertEqual(result, 42)
+
+    def test_check_not_in_continues_when_not_contained(self):
+        """
+        CHECK_NOT_IN does not jump when value not in container
+        """
+        code, ns = build_expr([
+            ["CONST", [1, 2, 3]],
+            ["CONST", 99],
+            ["CHECK_NOT_IN", "in_it"],
+            ["CONST", 42],
+            ["RETURN", 1],
+            ["LABEL", "in_it"],
+            ["CONST", 0],
+            ["RETURN", 1],
+        ])
+        result = run_to_completion(make_callable(code, ns)())
+        self.assertEqual(result, 42)
+
+    def test_check_is_subclass_jumps_when_false(self):
+        """
+        CHECK_IS_SUBCLASS jumps when issubclass(x, cls) is False
+        """
+        code, ns = build_expr([
+            ["CONST", int],
+            ["CONST", str],
+            ["CHECK_IS_SUBCLASS", "no"],
+            ["CONST", 1],
+            ["RETURN", 1],
+            ["LABEL", "no"],
+            ["CONST", 0],
+            ["RETURN", 1],
+        ])
+        result = run_to_completion(make_callable(code, ns)())
+        self.assertEqual(result, 0)
+
+    def test_check_is_subclass_continues_when_true(self):
+        """
+        CHECK_IS_SUBCLASS does not jump when issubclass(x, cls) is True
+        """
+        code, ns = build_expr([
+            ["CONST", bool],
+            ["CONST", int],
+            ["CHECK_IS_SUBCLASS", "no"],
+            ["CONST", 42],
+            ["RETURN", 1],
+            ["LABEL", "no"],
+            ["CONST", 0],
+            ["RETURN", 1],
+        ])
+        result = run_to_completion(make_callable(code, ns)())
+        self.assertEqual(result, 42)
+
+    def test_check_exception_jumps_when_no_exception_set(self):
+        """
+        CHECK_EXCEPTION jumps to handler when no exception is set
+        """
+        code, ns = build_expr([
+            ["CONST", ValueError],
+            ["CHECK_EXCEPTION", "handler"],
+            ["CONST", 0],
+            ["RETURN", 1],
+            ["LABEL", "handler"],
+            ["CONST", 42],
+            ["RETURN", 1],
+        ])
+        result = run_to_completion(make_callable(code, ns)())
+        self.assertEqual(result, 42)
+
 
 # The end.

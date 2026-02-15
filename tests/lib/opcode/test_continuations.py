@@ -79,6 +79,55 @@ class TestDelimitedContinuations(CevalTest):
             cont(42)
         self.assertIn("cannot be called from Python", str(ctx.exception))
 
+    def test_invoke_k_var_lookup_and_invoke(self):
+        """
+        INVOKE_K_VAR: handler stores cont in ns, then INVOKE_K_VAR name
+        invokes it with value. (+ 1 (shift k (do (var-store k k) (invoke-k-var k 5)))) => 6
+        """
+        code = [
+            ["PUSH_PROMPT", 0],
+            ["SET_PROMPT_HANDLER", "handler"],
+            ["CONST", 1],
+            ["SHIFT", 0],
+            ["OBJECT_ADD", 2],
+            ["POP_PROMPT", 0],
+            ["RETURN", 1],
+            ["NOOP", 0],
+            ["LABEL", "handler"],
+            ["VAR_STORE", "k"],
+            ["CONST", 5],
+            ["INVOKE_K_VAR", "k"],
+            ["RETURN", 1],
+        ]
+        code_obj, ns = build_expr(code, local_syms=("k",))
+        expr = make_callable(code_obj, ns)
+        result = asyncio.run(expr())
+        self.assertEqual(result, 6)
+
+    def test_invoke_k_with_non_continuation_raises_type_error(self):
+        """
+        INVOKE_K expects DelimitedContinuation at TOS-1; int => TypeError
+        """
+        code = [
+            ["PUSH_PROMPT", 0],
+            ["SET_PROMPT_HANDLER", "handler"],
+            ["SHIFT", 0],
+            ["POP_PROMPT", 0],
+            ["RETURN", 1],
+            ["NOOP", 0],
+            ["LABEL", "handler"],
+            ["POP", 1],
+            ["CONST", 1],
+            ["CONST", 2],
+            ["INVOKE_K", 0],
+            ["RETURN", 1],
+        ]
+        code_obj, ns = build_expr(code)
+        expr = make_callable(code_obj, ns)
+        with self.assertRaises(TypeError) as ctx:
+            asyncio.run(expr())
+        self.assertIn("DelimitedContinuation", str(ctx.exception))
+
     def test_invoke_delimited_continuation_after_pop_prompt_raises_continuation_error(self):
         """
         After POP_PROMPT the prompt is gone; invoking the captured delimited
