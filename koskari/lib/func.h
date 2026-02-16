@@ -139,6 +139,10 @@ typedef struct {
 /** Borrowed reference. Do not Py_DECREF the result. */
 #define KosFunction_CODE(func) (((KosFunction *) (func))->code)
 
+#define KosFunction_BASE_NS(func) (((KosFunction *) (func))->base_ns)
+
+#define KosFunction_FORMALS(func) (((KosFunction *) (func))->formals)
+
 
 /**
    Create a Function from (code, formals, parent_ns). Used by

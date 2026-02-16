@@ -20,14 +20,7 @@ Compiler-related exceptions for Koskari.
 :license: GNU General Public License v3
 """
 
-from enum import auto, IntEnum
-
 from ..exceptions import KoskariException
-
-
-class CompilerMode(IntEnum):
-    FUNCTION = auto()
-    EXPRESSION = auto()
 
 
 class CompilerException(KoskariException):

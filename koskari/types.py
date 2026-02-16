@@ -147,6 +147,7 @@ class TypePredicate(partial):
         obj.__name__ = name or (typeobj.__name__ + "?")
         return obj
 
+
     def __repr__(self):
         return "<builtin type predicate %s>" % self.__name__
 
@@ -160,6 +161,7 @@ class BuiltinPredicate(partial):
         check = partial.__new__(cls, call, *args, **kwds)
         check.__name__ = name
         return check
+
 
     def __repr__(self):
         return "<builtin predicate %s>" % self.__name__

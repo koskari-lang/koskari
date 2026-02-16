@@ -27,7 +27,7 @@ deduplication, and position tracking.
 
 import unittest
 
-from koskari.compile.fragment import ByteCodeFragment, unique_append
+from koskari.compile import ByteCodeFragment
 from koskari.lib import Code, FunctionSpec, OpCode
 from koskari.types import FormalsSpec, NamespaceSpec
 
@@ -263,28 +263,6 @@ class TestCodeFunctionSpec(unittest.TestCase):
             code.function_spec(None)
         with self.assertRaises(TypeError):
             code.function_spec("not a formals spec")
-
-
-class TestUniqueAppend(unittest.TestCase):
-    """Tests for unique_append helper."""
-
-    def test_append_when_absent(self):
-        lst = []
-        unique_append(lst, "a")
-        self.assertEqual(lst, ["a"])
-        unique_append(lst, "b")
-        self.assertEqual(lst, ["a", "b"])
-
-    def test_no_append_when_present(self):
-        lst = ["a"]
-        unique_append(lst, "a")
-        self.assertEqual(lst, ["a"])
-
-    def test_preserves_order(self):
-        lst = []
-        for x in ("b", "a", "b", "c", "a"):
-            unique_append(lst, x)
-        self.assertEqual(lst, ["b", "a", "c"])
 
 
 class TestByteCodeFragment(unittest.TestCase):

@@ -39,73 +39,81 @@ static PyObject *func_stop_async_iter_value_type = NULL;
 /* === KosExpression: callable (code, ns) -> coroutine on __call__ === */
 
 
-static int expression_init(KosExpression *self, PyObject *args,
-                            PyObject *kwargs) {
+static int expression_init(
+    KosExpression *self,
+    PyObject *args,
+    PyObject *kwargs) {
+
+  (void) kwargs;
   PyObject *code = NULL;
   PyObject *ns = NULL;
 
-  (void) kwargs;
   if (! PyArg_ParseTuple(args, "OO:Expression", &code, &ns))
     return -1;
+
   if (! KosCode_Check(code)) {
     PyErr_Format(PyExc_TypeError, "expected Code, got %s",
                  Py_TYPE(code)->tp_name);
     return -1;
   }
+
   if (! ns) {
     PyErr_SetString(PyExc_TypeError, "namespace is required");
     return -1;
   }
+
   Py_INCREF(code);
+  KosExpression_CODE(self) = code;
+
   Py_INCREF(ns);
-  self->code = code;
-  self->ns = ns;
+  KosExpression_NS(self) = ns;
+
   return 0;
 }
 
 
 static void expression_dealloc(PyObject *self) {
-  KosExpression *ex = (KosExpression *) self;
-  Py_CLEAR(ex->code);
-  Py_CLEAR(ex->ns);
+  Py_CLEAR(KosExpression_CODE(self));
+  Py_CLEAR(KosExpression_NS(self));
   Py_TYPE(self)->tp_free(self);
 }
 
 
 PyObject *KosExpression_Eval(PyObject *self) {
-
-  KosExpression *ex = (KosExpression *) self;
-  return KosCoroutine_NewFromCode(ex->code, ex->ns);
+  return KosCoroutine_NewFromCode(
+    KosExpression_CODE(self),
+    KosExpression_NS(self)
+  );
 }
 
 
 PyObject *KosExpression_GetCode(PyObject *self) {
-
-  KosExpression *ex = (KosExpression *) self;
-  Py_INCREF(ex->code);
-  return ex->code;
+  Py_INCREF(KosExpression_CODE(self));
+  return KosExpression_CODE(self);
 }
 
 
 PyObject *KosExpression_GetNs(PyObject *self) {
-
-  KosExpression *ex = (KosExpression *) self;
-  Py_INCREF(ex->ns);
-  return ex->ns;
+  Py_INCREF(KosExpression_NS(self));
+  return KosExpression_NS(self);
 }
 
 
-static PyObject *expression_call(PyObject *self, PyObject *args,
-                                 PyObject *kwargs) {
+static PyObject *expression_call(
+    PyObject *self,
+    PyObject *args,
+    PyObject *kwargs) {
 
   if (args && PyTuple_GET_SIZE(args) != 0) {
     PyErr_SetString(PyExc_TypeError, "Expression() takes no arguments");
     return NULL;
   }
+
   if (kwargs && PyDict_Size(kwargs) != 0) {
     PyErr_SetString(PyExc_TypeError, "Expression takes no named arguments");
     return NULL;
   }
+
   return KosExpression_Eval(self);
 }
 
@@ -156,8 +164,10 @@ static PyObject *function_spec_call(PyObject *self,
                                     PyObject *args, PyObject *kwds) {
 
   if (kwds) {
-    PyErr_SetString(PyExc_TypeError, "FunctionSpec does not accept keyword"
-                    " arguments");
+    PyErr_SetString(
+      PyExc_TypeError,
+      "FunctionSpec does not accept keyword arguments"
+    );
     return NULL;
   }
 
@@ -171,12 +181,16 @@ static PyObject *function_spec_call(PyObject *self,
 }
 
 
-static PyObject *function_spec_new(PyTypeObject *type,
-                                   PyObject *args, PyObject *kwds) {
+static PyObject *function_spec_new(
+    PyTypeObject *type,
+    PyObject *args,
+    PyObject *kwds) {
 
   if (kwds) {
-    PyErr_SetString(PyExc_TypeError, "FunctionSpec does not accept keyword"
-                    " arguments");
+    PyErr_SetString(
+      PyExc_TypeError,
+      "FunctionSpec does not accept keyword arguments"
+    );
     return NULL;
   }
 
@@ -233,8 +247,11 @@ PyObject *KosFunctionSpec_New(PyObject *name, PyObject *formals_spec,
                               PyObject *code) {
 
   if (! KosCode_Check(code)) {
-    PyErr_Format(PyExc_TypeError, "function spec code must be Code,"
-                 " not %R", code);
+    PyErr_Format(
+      PyExc_TypeError,
+      "function spec code must be Code, not %R",
+      code
+    );
     return NULL;
   }
 
@@ -242,8 +259,11 @@ PyObject *KosFunctionSpec_New(PyObject *name, PyObject *formals_spec,
     name = NULL;
 
   if (! KosFormalsSpec_CheckExact(formals_spec)) {
-    PyErr_Format(PyExc_TypeError, "function spec formals must be FormalsSpec,"
-                 " not %R", formals_spec);
+    PyErr_Format(
+      PyExc_TypeError,
+      "function spec formals must be FormalsSpec, not %R",
+      formals_spec
+    );
     return NULL;
   }
 
@@ -253,13 +273,13 @@ PyObject *KosFunctionSpec_New(PyObject *name, PyObject *formals_spec,
 
   KosFunctionSpec *spec = (KosFunctionSpec *) self;
   Py_XINCREF(name);
-  spec->name = name;
+  KosFunctionSpec_NAME(spec) = name;
 
   Py_INCREF(formals_spec);
-  spec->formals_spec = formals_spec;
+  KosFunctionSpec_FORMALS_SPEC(spec) = formals_spec;
 
   Py_INCREF(code);
-  spec->code = code;
+  KosFunctionSpec_CODE(spec) = code;
 
   return self;
 }
@@ -268,8 +288,11 @@ PyObject *KosFunctionSpec_New(PyObject *name, PyObject *formals_spec,
 /* === KosFunction: callable (code, formals, base_ns) -> coroutine on __call__ === */
 
 
-static int function_init(KosFunction *self, PyObject *args,
-                         PyObject *kwargs) {
+static int function_init(
+    KosFunction *self,
+    PyObject *args,
+    PyObject *kwargs) {
+
   PyObject *code = NULL;
   PyObject *base_ns = NULL;
   PyObject *formals_spec = NULL;
@@ -278,37 +301,44 @@ static int function_init(KosFunction *self, PyObject *args,
   (void) kwargs;
   if (! PyArg_ParseTuple(args, "OOO:Function", &code, &base_ns, &formals_spec))
     return -1;
+
   if (! KosCode_Check(code)) {
     PyErr_Format(PyExc_TypeError, "expected Code, got %s",
                  Py_TYPE(code)->tp_name);
     return -1;
   }
+
   if (! KosFormalsSpec_CheckExact(formals_spec)) {
     PyErr_Format(PyExc_TypeError, "expected FormalsSpec, got %s",
                  Py_TYPE(formals_spec)->tp_name);
     return -1;
   }
+
   if (! base_ns) {
     PyErr_SetString(PyExc_TypeError, "base namespace is required");
     return -1;
   }
+
   formals = KosFormals_New(formals_spec, NULL);
   if (! formals)
     return -1;
+
+  KosFunction_FORMALS(self) = formals;
+
   Py_INCREF(code);
+  KosFunction_CODE(self) = code;
+
   Py_INCREF(base_ns);
-  self->code = code;
-  self->base_ns = base_ns;
-  self->formals = formals;
+  KosFunction_BASE_NS(self) = base_ns;
+
   return 0;
 }
 
 
 static void function_dealloc(PyObject *self) {
-  KosFunction *fn = (KosFunction *) self;
-  Py_CLEAR(fn->code);
-  Py_CLEAR(fn->base_ns);
-  Py_CLEAR(fn->formals);
+  Py_CLEAR(KosFunction_CODE(self));
+  Py_CLEAR(KosFunction_BASE_NS(self));
+  Py_CLEAR(KosFunction_FORMALS(self));
   Py_TYPE(self)->tp_free(self);
 }
 
@@ -351,14 +381,16 @@ PyObject *KosFunction_Call(PyObject *self,
 }
 
 
-PyObject *KosFunction_PrepareCallNamespace(PyObject *self,
-                                            PyObject *args,
-                                            PyObject *kwds) {
+PyObject *KosFunction_PrepareCallNamespace(
+    PyObject *self,
+    PyObject *args,
+    PyObject *kwds) {
 
   KosFunction *fn = (KosFunction *) self;
   PyObject *frame_ns = func_obtain_call_namespace(fn);
   if (! frame_ns)
     return NULL;
+
   if (KosFormals_Apply(fn->formals, frame_ns, args, kwds) < 0) {
     Py_DECREF(frame_ns);
     return NULL;
@@ -368,21 +400,20 @@ PyObject *KosFunction_PrepareCallNamespace(PyObject *self,
 
 
 PyObject *KosFunction_GetCode(PyObject *self) {
-
-  KosFunction *fn = (KosFunction *) self;
-  Py_INCREF(fn->code);
-  return fn->code;
+  Py_INCREF(KosFunction_CODE(self));
+  return KosFunction_CODE(self);
 }
 
 
 PyObject *KosFunction_CallNoArgs(PyObject *self) {
-
   return KosFunction_Call(self, NULL, NULL);
 }
 
 
-static PyObject *function_call(PyObject *self,
-                               PyObject *args, PyObject *kwargs) {
+static PyObject *function_call(
+    PyObject *self,
+    PyObject *args,
+    PyObject *kwargs) {
 
   return KosFunction_Call(self, args, kwargs);
 }
@@ -432,11 +463,12 @@ PyObject *KosExpression_New(PyObject *code, PyObject *ns) {
   if (! self)
     return NULL;
 
-  KosExpression *ex = (KosExpression *) self;
   Py_INCREF(code);
+  KosExpression_CODE(self) = code;
+
   Py_INCREF(ns);
-  ex->code = code;
-  ex->ns = ns;
+  KosExpression_NS(self) = ns;
+
   return self;
 }
 
@@ -469,20 +501,23 @@ PyObject *KosFunction_NewFromFormals(
   if (! self)
     return NULL;
 
-  KosFunction *fn = (KosFunction *) self;
   Py_INCREF(code);
+  KosFunction_CODE(self) = code;
+
   Py_INCREF(formals);
+  KosFunction_FORMALS(self) = formals;
+
   Py_INCREF(parent_ns);
-  fn->code = code;
-  fn->base_ns = parent_ns;
-  fn->formals = formals;
+  KosFunction_BASE_NS(self) = parent_ns;
+
   return self;
 }
 
 
-PyObject *KosFunction_New(PyObject *func_spec,
-                         PyObject *kw_defaults,
-                         PyObject *parent_namespace) {
+PyObject *KosFunction_New(
+    PyObject *func_spec,
+    PyObject *kw_defaults,
+    PyObject *parent_namespace) {
 
   if (! KosFunctionSpec_CheckExact(func_spec)) {
     PyErr_Format(PyExc_TypeError, "KosFunction_New requires FunctionSpec,"

@@ -101,4 +101,5 @@ class TestAttrOpcodes(CevalTest):
         self.assertIsInstance(result, AttributeRef)
         self.assertEqual(result.deref(), "bar")
 
+
 # The end.

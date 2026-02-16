@@ -21,7 +21,8 @@ import unittest
 
 from koskari.parse import default_reader, source_str
 from koskari.types import Module, ModuleNamespace
-from koskari.compile import Compiler, special_bytecode
+from koskari.compile import Compiler
+from koskari.compile.specials import special_bytecode
 
 
 def get_glbls(**defns):
@@ -39,7 +40,7 @@ def compile_expr(src_str, lineno=1, **defns):
     mod_ns = get_glbls(**defns)
     module = Module(mod_ns)
     ns = vars(module)
-    r = ns.ref("#bytecode")
+    r = ns.ref("compile/bytecode")
     r.store(special_bytecode)
 
     source = parse_source(src_str, lineno=lineno)
@@ -55,7 +56,7 @@ class TestBytecodeSpecial(unittest.TestCase):
 
     def test_bytecode_const_return(self):
         src_str = """
-        (#bytecode
+        (bytecode
           [CONST "Hello World"]
           [RETURN 1]
         )
@@ -66,7 +67,7 @@ class TestBytecodeSpecial(unittest.TestCase):
 
     def test_bytecode_var_call(self):
         src_str = """
-        (#bytecode
+        (bytecode
           [VAR add]
           [VAR value_a]
           [VAR value_b]

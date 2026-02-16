@@ -7,10 +7,9 @@ author: Christopher O'Brien <obriencj@preoccupied.net>
 license: GNU General Public License v3
 """
 
-from .compiler import Compiler
-from .exceptions import CompilerException, CompilerMode, UncaughtCompilerException
-from .fragment import ByteCodeFragment
-from .specials import SPECIAL_BYTECODE_SYMBOL, SPECIALS, special_bytecode
+from .compiler import ByteCodeFragment,Compiler, CompilerMode
+from .exceptions import CompilerException, UncaughtCompilerException
+from .specials import SPECIALS
 
 
 __all__ = (
@@ -19,9 +18,8 @@ __all__ = (
     "CompilerException",
     "CompilerMode",
     "UncaughtCompilerException",
-    "SPECIAL_BYTECODE_SYMBOL",
+
     "SPECIALS",
-    "special_bytecode",
 )
 
 

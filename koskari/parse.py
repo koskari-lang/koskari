@@ -231,6 +231,7 @@ class Reader(object):
             self._add_default_macros()
             self._add_default_atoms()
 
+
     def read(self, reader_stream):
         """
         Read a single s-expression from the stream
@@ -274,6 +275,7 @@ class Reader(object):
         else:
             raise reader_stream.error("invalid syntax", pos)
 
+
     def read_and_position(self, reader_stream):
         """
         Read a single s-expression and return its position
@@ -291,6 +293,7 @@ class Reader(object):
             return None, pos
         else:
             raise reader_stream.error("invalid syntax", pos)
+
 
     def _read(self, stream, raw=False):
         """
@@ -330,6 +333,7 @@ class Reader(object):
 
         return event, position, value
 
+
     def set_event_macro(self, char, macro_fn, terminating=False):
         """
         Add a character event macro to the reader
@@ -347,6 +351,7 @@ class Reader(object):
         if terminating:
             self._terms = "".join(self.terminating)
 
+
     def get_event_macro(self, char):
         """
         Get a character event macro from the reader
@@ -360,6 +365,7 @@ class Reader(object):
         except KeyError:
             return None
 
+
     def clear_event_macro(self, char):
         """
         Remove a character event macro from the reader
@@ -371,6 +377,7 @@ class Reader(object):
             self.terminating.remove(char)
             self._terms = "".join(self.terminating)
             del self.reader_macros[char]
+
 
     @contextmanager
     def temporary_event_macro(self, char, macro_fn, terminating=False):
@@ -393,6 +400,7 @@ class Reader(object):
         else:
             self.set_event_macro(char, *old)
 
+
     def set_macro_character(self, char, macro_fn, terminating=False):
         """
         Add a reader macro to the parser
@@ -410,6 +418,7 @@ class Reader(object):
 
         self.set_event_macro(char, macro_adapter, terminating)
 
+
     def temporary_macro_character(self, char, macro_fn, terminating=False):
         """
         Context manager to temporarily apply a reader macro
@@ -424,6 +433,7 @@ class Reader(object):
             return VALUE, macro_fn(stream, char)
 
         return self.temporary_event_macro(char, macro_adapter, terminating)
+
 
     def _add_default_macros(self):
         """
@@ -451,6 +461,7 @@ class Reader(object):
 
         sm('#', self._read_collection, False)
 
+
     def set_atom_pattern(self, namesym, match_fn, conversion_fn):
         """
         Add or update an atom pattern
@@ -468,6 +479,7 @@ class Reader(object):
         else:
             self.atom_patterns.insert(0, [namesym, match_fn, conversion_fn])
 
+
     def get_atom_pattern(self, namesym):
         """
         Get an atom pattern by name
@@ -482,6 +494,7 @@ class Reader(object):
         else:
             return None
 
+
     def clear_atom_pattern(self, namesym):
         """
         Remove an atom pattern by name
@@ -494,6 +507,7 @@ class Reader(object):
                 del self.atom_patterns[index]
                 break
 
+
     def set_atom_regex(self, namesym, regexstr, conversion_fn):
         """
         Add an atom pattern using a regex string
@@ -505,6 +519,7 @@ class Reader(object):
 
         match = partial(regex(regexstr).match)
         self.set_atom_pattern(namesym, match, conversion_fn)
+
 
     def _add_default_atoms(self):
         """
@@ -522,6 +537,7 @@ class Reader(object):
         ap(symbol("complex"), _complex_re, _as_complex)
         ap(symbol("fraction"), _fraction_re, _as_fraction)
         ap(symbol("decimal"), _decimal_re, _as_decimal)
+
 
     def _read_default(self, stream, c):
         """
@@ -541,6 +557,7 @@ class Reader(object):
 
         return ATOM, atom
 
+
     def process_atom(self, atom):
         """
         Process a raw atom string into a typed value
@@ -556,6 +573,7 @@ class Reader(object):
                 return conv(atom)
         else:
             return symbol(atom)
+
 
     def read_pair(self, stream, openchar=None, closechar=None):
         """
@@ -577,6 +595,7 @@ class Reader(object):
 
         _event, result = self._read_pair(closechar, stream, openchar)
         return result
+
 
     def _read_pair(self, closer, stream, char):
         """
@@ -636,6 +655,7 @@ class Reader(object):
 
         return VALUE, result
 
+
     def _read_begin(self, closer, stream, char):
         """
         Read a begin block (curly braces)
@@ -655,6 +675,7 @@ class Reader(object):
 
         return event, result
 
+
     def _close_pair(self, stream, char):
         """
         Handle a closing parenthesis/bracket/brace
@@ -665,6 +686,7 @@ class Reader(object):
         """
 
         return CLOSE_PAIR, char
+
 
     def _read_collection(self, stream, fchar):
         """
@@ -697,6 +719,7 @@ class Reader(object):
 
         return event, result
 
+
     def _read_fstring(self, stream, fchar):
         """
         Read a format string (f"...")
@@ -727,6 +750,7 @@ class Reader(object):
 
         return VALUE, cons(_symbol__str, *result)
 
+
     def _read_rstring(self, stream, char):
         """
         Read a raw string (r"...")
@@ -740,6 +764,7 @@ class Reader(object):
             return self._read_default(stream, char)
         else:
             return self._read_string(stream, stream.read(1), False)
+
 
     def _read_string(self, stream, char, with_escapes=True):
         """
@@ -775,6 +800,7 @@ class Reader(object):
             res = _as_unicode(res)
 
         return VALUE, res
+
 
     def _read_3string(self, stream, char, with_escapes=True):
         """
@@ -816,6 +842,7 @@ class Reader(object):
 
         return VALUE, value
 
+
     def _read_quote(self, stream, char):
         """
         Read a quoted expression ('expr)
@@ -832,6 +859,7 @@ class Reader(object):
             raise stream.error(msg, pos)
 
         return VALUE, cons(_symbol_quote, child, nil)
+
 
     def _read_quasiquote(self, stream, char):
         """
@@ -850,6 +878,7 @@ class Reader(object):
             raise stream.error(msg, pos)
 
         return VALUE, cons(_symbol_quasiquote, child, nil)
+
 
     def _read_unquote(self, stream, char):
         """
@@ -874,6 +903,7 @@ class Reader(object):
 
         return VALUE, value
 
+
     def _read_splice(self, stream, char):
         """
         Read a splice expression (@expr inside unquote)
@@ -890,6 +920,7 @@ class Reader(object):
             raise stream.error(msg, pos)
 
         return VALUE, cons(_symbol_splice, child, nil)
+
 
     def _read_comment(self, stream, char):
         """
@@ -919,6 +950,7 @@ class FormatStringReader(object):
             self.normal = default_reader
         else:
             self.normal = normal_reader
+
 
     def split(self, stream):
         """
@@ -1046,6 +1078,7 @@ class SourceStream(BaseSourceStream):
         if auto_skip_exec:
             self.skip_exec()
 
+
     def error(self, message, position=None):
         """
         Create a ReaderSyntaxError for the current position
@@ -1068,12 +1101,14 @@ class SourceStream(BaseSourceStream):
         return ReaderSyntaxError(message, position,
                                  text=text, filename=self.filename)
 
+
     def __iter__(self):
         """
         Iterate over characters in the stream
         """
 
         return iter(partial(self.read, 1), '')
+
 
     def skip_exec(self):
         """
