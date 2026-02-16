@@ -133,7 +133,7 @@ class TestYieldOpcodes(CevalTest):
             ["VAR", "v3"],
             ["RETURN", 1],
         ], values={"gen": gen, "v1": None, "v2": None, "v3": None})
-        result = asyncio.run(make_callable(consumer_code, consumer_ns)())
+        result = make_callable(consumer_code, consumer_ns)().run()
         self.assertEqual(result, 3)
 
     def test_foreach_iter_next_over_koskari_async_gen(self):

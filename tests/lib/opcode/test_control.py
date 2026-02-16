@@ -20,7 +20,6 @@ Tests for RETURN, AWAIT opcodes.
 
 import unittest
 
-import asyncio
 from tests import make_callable
 from tests.lib.opcode import CevalTest, build_expr, run_to_completion
 
@@ -58,7 +57,7 @@ class TestControlOpcodes(CevalTest):
             ["AWAIT", 0],
             ["RETURN", 1],
         ], values={"f": return_five})
-        result = asyncio.run(make_callable(code, ns)())
+        result = make_callable(code, ns)().run()
         self.assertEqual(result, 5)
 
 # The end.

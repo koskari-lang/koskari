@@ -19,7 +19,6 @@ INVOKE_K, POP_PROMPT, PUSH_CC, CAPTURE_CC, POP_CC) and evaluator token.
 :license: GNU General Public License v3
 """
 
-import asyncio
 import unittest
 
 from koskari.lib import FormalsSpec, NamespaceSpec
@@ -54,7 +53,7 @@ class TestDelimitedContinuations(CevalTest):
         ]
         code_obj, ns = build_expr(code)
         expr = make_callable(code_obj, ns)
-        result = asyncio.run(expr())
+        result = expr().run()
         self.assertEqual(result, 6)
 
     def test_delimited_continuation_cannot_be_called_from_python(self):
@@ -73,7 +72,7 @@ class TestDelimitedContinuations(CevalTest):
         ]
         code_obj, ns = build_expr(code)
         expr = make_callable(code_obj, ns)
-        cont = asyncio.run(expr())
+        cont = expr().run()
         self.assertIsNotNone(cont)
         with self.assertRaises(TypeError) as ctx:
             cont(42)
@@ -101,7 +100,7 @@ class TestDelimitedContinuations(CevalTest):
         ]
         code_obj, ns = build_expr(code, local_syms=("k",))
         expr = make_callable(code_obj, ns)
-        result = asyncio.run(expr())
+        result = expr().run()
         self.assertEqual(result, 6)
 
     def test_invoke_k_with_non_continuation_raises_type_error(self):
@@ -125,7 +124,7 @@ class TestDelimitedContinuations(CevalTest):
         code_obj, ns = build_expr(code)
         expr = make_callable(code_obj, ns)
         with self.assertRaises(TypeError) as ctx:
-            asyncio.run(expr())
+            expr().run()
         self.assertIn("DelimitedContinuation", str(ctx.exception))
 
     def test_invoke_delimited_continuation_after_pop_prompt_raises_continuation_error(self):
@@ -150,7 +149,7 @@ class TestDelimitedContinuations(CevalTest):
         code_obj, ns = build_expr(code)
         expr = make_callable(code_obj, ns)
         with self.assertRaises(lib.KoskariContinuationError) as ctx:
-            asyncio.run(expr())
+            expr().run()
         self.assertIn("prompt not found", str(ctx.exception))
 
 
@@ -173,7 +172,7 @@ class TestUndelimitedContinuations(CevalTest):
         ]
         code_obj, ns = build_expr(code)
         expr = make_callable(code_obj, ns)
-        result = asyncio.run(expr())
+        result = expr().run()
         self.assertEqual(result, 42)
 
     def test_call_cc_invoke_with_zero_args_resumes_with_none(self):
@@ -189,7 +188,7 @@ class TestUndelimitedContinuations(CevalTest):
         ]
         code_obj, ns = build_expr(code)
         expr = make_callable(code_obj, ns)
-        result = asyncio.run(expr())
+        result = expr().run()
         self.assertIsNone(result)
 
     def test_call_cc_capture_returns_continuation(self):
@@ -204,7 +203,7 @@ class TestUndelimitedContinuations(CevalTest):
         ]
         code_obj, ns = build_expr(code)
         expr = make_callable(code_obj, ns)
-        result = asyncio.run(expr())
+        result = expr().run()
         self.assertIsNotNone(result)
         import koskari.lib as lib
         self.assertIsInstance(result, lib.Continuation)
@@ -220,7 +219,7 @@ class TestUndelimitedContinuations(CevalTest):
         code_obj, ns = build_expr(code)
         expr = make_callable(code_obj, ns)
         with self.assertRaises(RuntimeError) as ctx:
-            asyncio.run(expr())
+            expr().run()
         self.assertIn("CAPTURE_CC", str(ctx.exception))
         self.assertIn("no CC block", str(ctx.exception))
 
@@ -256,7 +255,7 @@ class TestUndelimitedContinuations(CevalTest):
         bottom_expr = make_callable(bottom_code, bottom_ns)
 
         with self.assertRaises(lib.KoskariContinuationApply):
-            asyncio.run(bottom_expr())
+            bottom_expr().run()
 
 
 class TestEvaluatorToken(CevalTest):

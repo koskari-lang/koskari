@@ -69,6 +69,10 @@
 - Outer invocation gets next value from iterable/awaitable
 - Frame re-entered when exhausted/completed
 
+### Synchronous entry points (run / iter)
+
+For synchronous Python code (e.g. tests, scripts) that does not run an event loop, the runtime provides **KosCoroutine.run()** and **KosPyAsyncGen.iter()**. These use `asyncio.run()` under the hood so that callers can write `expr().run()` instead of `asyncio.run(expr())`, and `for x in agen.iter():` instead of driving the async gen with `async for` inside `asyncio.run()`. They must not be used when an event loop is already running (deadlock risk). See `design/interpreter/evaluator.md` § "Synchronous adapters (run / iter)".
+
 ## Migration Notes
 
 ### To Migrate

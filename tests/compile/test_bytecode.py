@@ -16,7 +16,6 @@ Tests for koskari.compile #bytecode special form.
 """
 
 
-import asyncio
 import unittest
 
 from koskari.parse import default_reader, source_str
@@ -62,7 +61,7 @@ class TestBytecodeSpecial(unittest.TestCase):
         )
         """
         expr, mod = compile_expr(src_str)
-        result = asyncio.run(expr())
+        result = expr().run()
         self.assertEqual("Hello World", result)
 
     def test_bytecode_var_call(self):
@@ -81,7 +80,7 @@ class TestBytecodeSpecial(unittest.TestCase):
             value_a = "Hello",
             value_b = " World",
         )
-        result = asyncio.run(expr())
+        result = expr().run()
         self.assertEqual("Hello World", result)
 
 

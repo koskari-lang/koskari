@@ -149,9 +149,9 @@ These are **commitments**: they must hold for correct behavior. They are elabora
 
 - **KosPyContinuation** (eval.c): Wraps `KosContinuation`. Callable: calling it returns a `KosCoroutine` that resumes with the argument. Multi-shot: each call clones captured state.
 
-- **KosCoroutine** (func.c): Wraps `KosContext` for the coroutine protocol (`__await__`, `send`, `throw`, `close`). States: NEW, RUNNING, WAITING_PY, DONE. Created by `kos_run_code_as_coroutine()` (Expression/Function call) or `KosCoroutine_New()` (Continuation call). Driving the coroutine (send/await) calls `koskari_eval()`.
+- **KosCoroutine** (func.c): Wraps `KosContext` for the coroutine protocol (`__await__`, `send`, `throw`, `close`). States: NEW, RUNNING, WAITING_PY, DONE. Created by `kos_run_code_as_coroutine()` (Expression/Function call) or `KosCoroutine_New()` (Continuation call). Driving the coroutine (send/await) calls `koskari_eval()`. **Sync adapter**: `run()` runs the coroutine via `asyncio.run(self)`; for tests and sync scripts only; must not be used when an event loop is already running (deadlock risk).
 
-- **KosPyAsyncGen** / **KosPyAsyncGenASend** (eval.c): Async generator protocol; `__anext__` returns an awaitable that drives until yield or completion.
+- **KosPyAsyncGen** / **KosPyAsyncGenASend** (eval.c): Async generator protocol; `__anext__` returns an awaitable that drives until yield or completion. **Sync adapter**: `iter()` returns a synchronous iterator that drives the gen via `asyncio.run()` on each `__anext__`; for tests and sync scripts only; must not be used when an event loop is already running (deadlock risk).
 
 ---
 

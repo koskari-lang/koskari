@@ -258,7 +258,7 @@ class TestAsyncAwait(unittest.TestCase):
         ])
         expr = make_callable(code, ns)
         coro = expr()
-        result = asyncio.run(coro)
+        result = coro.run()
         self.assertEqual(result, 42)
 
 
@@ -275,7 +275,7 @@ class TestAsyncAwait(unittest.TestCase):
         ])
         expr = make_callable(code, ns)
         coro = expr()
-        result = asyncio.run(coro)
+        result = coro.run()
         self.assertEqual(result, 42)
 
 
@@ -323,7 +323,7 @@ class TestAsyncAwait(unittest.TestCase):
         self.assertEqual(capture, [])
         self.assertIsNotNone(coro)
 
-        result = asyncio.run(coro)
+        result = coro.run()
         self.assertEqual(result, (42, 52))
         self.assertEqual(capture, [1, 2, 3])
 

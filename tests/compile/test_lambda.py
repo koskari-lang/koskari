@@ -16,7 +16,6 @@ Tests for koskari.compile lambda special (named and unnamed).
 """
 
 
-import asyncio
 import unittest
 
 from koskari.compile import Compiler
@@ -59,14 +58,14 @@ class TestLambdaAnonymous(unittest.TestCase):
     def test_anonymous_lambda_identity(self):
         src = "(lambda [x] x)"
         expr, mod = compile_expr(src)
-        fn = asyncio.run(expr())
-        result = asyncio.run(fn(42))
+        fn = expr().run()
+        result = fn(42).run()
         self.assertEqual(result, 42)
 
     def test_anonymous_lambda_repr_has_debug_label(self):
         src = "(lambda [x] x)"
         expr, mod = compile_expr(src)
-        fn = asyncio.run(expr())
+        fn = expr().run()
         repr_str = repr(fn)
         self.assertIn("<lambda>", repr_str,
                       "anonymous lambda repr should show debug label")
@@ -77,7 +76,7 @@ class TestLambdaNamed(unittest.TestCase):
     def test_named_lambda_repr_shows_name(self):
         src = "(lambda fact [n] n)"
         expr, mod = compile_expr(src)
-        fn = asyncio.run(expr())
+        fn = expr().run()
         repr_str = repr(fn)
         self.assertIn("fact", repr_str,
                       "named lambda repr should show proper name")
@@ -85,8 +84,8 @@ class TestLambdaNamed(unittest.TestCase):
     def test_named_lambda_identity(self):
         src = "(lambda fact [n] n)"
         expr, mod = compile_expr(src)
-        fn = asyncio.run(expr())
-        result = asyncio.run(fn(10))
+        fn = expr().run()
+        result = fn(10).run()
         self.assertEqual(result, 10)
 
 

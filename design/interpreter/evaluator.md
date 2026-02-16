@@ -192,6 +192,15 @@ struct KosHookRunner {
 - `__anext__` returns `KosPyAsyncGenASend` awaitable
 - When driven from **within** a Koskari eval (e.g. `await-for-each`), the gen’s frame is **attached** to the current context and stepped in the same loop; when driven from Python (`__anext__`), `koskari_eval(agen->ctx, &ev)` is used directly.
 
+### Synchronous adapters (run / iter)
+
+For ease of use in **synchronous** Python code (e.g. tests, scripts) that does not already run an event loop, the C extension provides:
+
+- **KosCoroutine.run()**: Runs the coroutine to completion using `asyncio.run(self)`. Callers can write `expr().run()` instead of `asyncio.run(expr())`.
+- **KosPyAsyncGen.iter()**: Returns a synchronous iterator that drives the async generator by calling `asyncio.run(awaitable)` on each `__anext__` result, so `for x in agen.iter():` yields values without an explicit event loop.
+
+**Warning**: These are **unsafe** convenience APIs. They must **not** be used when an event loop is already running (e.g. from inside async code or from another `run()` call), as that can cause deadlock. They are intended for tests and synchronous entry points only. The API docstrings and type docs carry this warning.
+
 ## In-loop flattening (same koskari_eval run)
 
 To avoid recursive C calls and keep a single state machine:
