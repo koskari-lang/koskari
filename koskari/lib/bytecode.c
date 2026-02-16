@@ -694,11 +694,22 @@ static const ExtentOpPair extent_pairs[] = {
   (sizeof extent_pairs / sizeof extent_pairs[0])
 
 
-static KosOpCode push_to_pop_table[KOS_OP_THEEND + 1];
-static KosExtentKind push_to_kind_table[KOS_OP_THEEND + 1];
-static unsigned char is_pop_op_table[KOS_OP_THEEND + 1];
+/*
+   O(1) extent lookup tables indexed by opcode. Filled from extent_pairs
+   in init_extent_tables() at bytecode module init. Used by derive_extents
+   and is_jump_op to classify PUSH_* / POP_* and map push opcodes to their
+   matching pop and extent kind without scanning extent_pairs.
+*/
+static KosOpCode push_to_pop_table[KOS_OP_THEEND + 1];  /* PUSH_* -> matching POP_*; 0 for non-push */
+static KosExtentKind push_to_kind_table[KOS_OP_THEEND + 1];  /* PUSH_* -> KOS_EXT_*; 0 for non-push */
+static unsigned char is_pop_op_table[KOS_OP_THEEND + 1];  /* 1 for POP_*, 0 otherwise */
 
 
+/**
+   Initialize push_to_pop_table, push_to_kind_table, and is_pop_op_table
+   from extent_pairs. Call once from koskari_bytecode_init before any
+   Code is created.
+*/
 static void init_extent_tables(void) {
 
   memset(push_to_pop_table, 0, sizeof push_to_pop_table);
