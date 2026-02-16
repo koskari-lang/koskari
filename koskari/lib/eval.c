@@ -232,6 +232,7 @@ static int get_prompt_id_from_insn(KosCode *code, KosOp *insn,
 }
 
 
+#if KOS_STACK_TRACE
 /**
    Print current stack block address/id and length when KOS_ENABLE_DEBUG;
    also print top two slot values as integers when PyLong.
@@ -249,6 +250,7 @@ static void trace_stack(const char *prefix, KosStackBlock *stack) {
   }
   SAY("\n");
 }
+#endif
 
 
 /* Module-level string constants for await/send/throw/close.  Initialized
@@ -423,7 +425,7 @@ KosContext *kos_context_new(KosDynFrame *top) {
   }
 
   KosContext_DYN_TOP(ctx) = (KosDynNode *) top;
-  CURRENT_FRAME(ctx) = top;
+  KosContext_FRAME_TOP(ctx) = top;
   KosContext_GLOBALS_FRAME(ctx) = top;
   KosContext_GLOBALS_CACHE_VERSION(ctx) = 0;
 
@@ -610,7 +612,7 @@ int kos_tail_koscall(
 
   /* Install new frame */
   KosContext_DYN_TOP(ctx) = (KosDynNode *) frame;
-  CURRENT_FRAME(ctx) = frame;
+  KosContext_FRAME_TOP(ctx) = frame;
   KosContext_CHAIN_VERSION(ctx)++;
 
   return 0;
@@ -1750,9 +1752,13 @@ int koskari_eval(KosContext *ctx, KosEvent *out_ev) {
     }
 
     KosOp *insn = &KosCode_CODE(code)[pc];
+#if VERBOSE_DEBUG
     SAYF("[eval] pc=%u op=%u arg=%u\n",
          (unsigned) pc, (unsigned) KosOp_OP(insn), (unsigned) KosOp_ARG(insn));
+#endif
+#if KOS_STACK_TRACE
     trace_stack("  before", CURRENT_STACK(ctx));
+#endif
     CURRENT_PC(ctx) = pc + 1;
 
     if (unlikely((KosOpCode) KosOp_OP(insn) > KOS_OP_THEEND)) {
@@ -1787,7 +1793,9 @@ int koskari_eval(KosContext *ctx, KosEvent *out_ev) {
     /* Clear resume kind if still set (YIELD_FROM clears when it consumes; others leave it set) */
     if (KosContext_PY_RESUME_KIND(ctx) != KOS_RESUME_NONE)
       KosContext_PY_RESUME_KIND(ctx) = KOS_RESUME_NONE;
+#if KOS_STACK_TRACE
     trace_stack("  after ", CURRENT_STACK(ctx));
+#endif
   }
 
 koskari_eval_cleanup:

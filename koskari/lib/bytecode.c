@@ -694,42 +694,23 @@ static const ExtentOpPair extent_pairs[] = {
   (sizeof extent_pairs / sizeof extent_pairs[0])
 
 
-static KosOpCode push_to_pop(KosOpCode push_op) {
+static KosOpCode push_to_pop_table[KOS_OP_THEEND + 1];
+static KosExtentKind push_to_kind_table[KOS_OP_THEEND + 1];
+static unsigned char is_pop_op_table[KOS_OP_THEEND + 1];
+
+
+static void init_extent_tables(void) {
+
+  memset(push_to_pop_table, 0, sizeof push_to_pop_table);
+  memset(push_to_kind_table, 0, sizeof push_to_kind_table);
+  memset(is_pop_op_table, 0, sizeof is_pop_op_table);
 
   for (size_t i = 0; i < N_EXTENT_PAIRS; i++) {
-    if (extent_pairs[i].push_op == push_op) {
-      return extent_pairs[i].pop_op;
-    }
+    KosOpCode push_op = extent_pairs[i].push_op;
+    push_to_pop_table[push_op] = extent_pairs[i].pop_op;
+    push_to_kind_table[push_op] = extent_pairs[i].kind;
+    is_pop_op_table[extent_pairs[i].pop_op] = 1;
   }
-  return KOS_OP_NOOP;
-}
-
-
-static KosExtentKind push_to_kind(KosOpCode push_op) {
-
-  for (size_t i = 0; i < N_EXTENT_PAIRS; i++) {
-    if (extent_pairs[i].push_op == push_op) {
-      return extent_pairs[i].kind;
-    }
-  }
-  return KOS_EXT_TRY;
-}
-
-
-static int is_push_op(KosOpCode op) {
-
-  return push_to_pop(op) != KOS_OP_NOOP;
-}
-
-
-static int is_pop_op(KosOpCode op) {
-
-  for (size_t i = 0; i < N_EXTENT_PAIRS; i++) {
-    if (extent_pairs[i].pop_op == op) {
-      return 1;
-    }
-  }
-  return 0;
 }
 
 
@@ -782,7 +763,7 @@ static int derive_extents(
     KosOpCode op = (KosOpCode) code[pc].op;
     uint16_t arg = code[pc].arg;
 
-    if (is_push_op(op)) {
+    if (push_to_pop_table[op] != KOS_OP_NOOP) {
       if (stack_top >= DERIVE_EXTENT_STACK_MAX) {
         PyErr_SetString(PyExc_RuntimeError,
                         "extent nesting too deep");
@@ -805,7 +786,7 @@ static int derive_extents(
       }
 
       KosExtentDesc *e = &extents[extent_count];
-      e->kind = push_to_kind(op);
+      e->kind = push_to_kind_table[op];
       e->push_pc = pc;
       e->pop_pc = 0;
       e->parent_extent_id = parent_id;
@@ -843,14 +824,14 @@ static int derive_extents(
       stack_top++;
       extent_count++;
     }
-    else if (is_pop_op(op)) {
+    else if (is_pop_op_table[op]) {
       if (stack_top == 0) {
         PyErr_Format(PyExc_RuntimeError,
                      "POP at pc %u with no matching PUSH", pc);
         goto failure;
       }
 
-      KosOpCode expected_pop = push_to_pop(stack[stack_top - 1].push_op);
+      KosOpCode expected_pop = push_to_pop_table[stack[stack_top - 1].push_op];
       if (op != expected_pop) {
         PyErr_Format(PyExc_RuntimeError,
                      "extent mismatch at pc %u: expected %d, got %d",
@@ -940,7 +921,7 @@ static int is_jump_op(KosOpCode op) {
 
   return (kos_opcode_style(op) == KOSTYLE_LABEL
           && op != KOS_OP_SET_PROMPT_HANDLER
-          && ! is_push_op(op));
+          && push_to_pop_table[op] == KOS_OP_NOOP);
 }
 
 
@@ -1771,6 +1752,8 @@ static PyObject *create_opcode_enum(void) {
 
 
 int koskari_bytecode_init(PyObject *mod) {
+
+  init_extent_tables();
 
   PyObject *dict = PyModule_GetDict(mod);
   if (! dict) {

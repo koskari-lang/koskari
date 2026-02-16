@@ -92,6 +92,18 @@ typedef struct KosStack {
   (((KosStackBlock *) sb)->len)
 
 
+/* === copy-on-write (internal; use EnsureExclusive for hot path) === */
+
+int KosStackBlock_CopyForWrite(KosStackBlock **block);
+
+static inline int KosStackBlock_EnsureExclusive(KosStackBlock **block) {
+  KosStackBlock *b = *block;
+  if (b && KosStackBlock_REFCOUNT(b) == 1)
+    return 0;
+  return KosStackBlock_CopyForWrite(block);
+}
+
+
 /* === public API === */
 
 

@@ -140,7 +140,7 @@ static KosStackBlock *KosStackBlock_Grow(KosStackBlock *self) {
 }
 
 
-static int KosStackBlock_CopyForWrite(KosStackBlock **block) {
+int KosStackBlock_CopyForWrite(KosStackBlock **block) {
   KosStackBlock *b = *block;
 
   SAYF("KosStackBlock_CopyForWrite(%p)", (void *) *block);
@@ -187,7 +187,7 @@ static int KosStackBlock_CopyForWrite(KosStackBlock **block) {
 
 int KosStackBlock_ClearBlock(KosStackBlock **block) {
 
-  if (KosStackBlock_CopyForWrite(block))
+  if (KosStackBlock_EnsureExclusive(block))
     return -1;
 
   KosStackBlock *s = *block;
@@ -333,7 +333,7 @@ static int KosStackBlock_Push(
          (void *) *self, KosStackBlock_LEN(*self), val);
   }
 
-  if (KosStackBlock_CopyForWrite(self))
+  if (KosStackBlock_EnsureExclusive(self))
     return -1;
 
   KosStackBlock *s = *self;
@@ -362,7 +362,7 @@ static int KosStackBlock_PUSH(
     KosStackBlock **self,
     PyObject *val) {
 
-  if (KosStackBlock_CopyForWrite(self))
+  if (KosStackBlock_EnsureExclusive(self))
     return -1;
 
   KosStackBlock *s = *self;
@@ -391,7 +391,7 @@ static int KosStackBlock_ExtendPtr(
   if (! count)
     return 0;
 
-  if (KosStackBlock_CopyForWrite(self))
+  if (KosStackBlock_EnsureExclusive(self))
     return -1;
 
   KosStackBlock *s = *self;
@@ -435,7 +435,7 @@ static int KosStackBlock_EXTENDPTR(
   if (! count)
     return 0;
 
-  if (KosStackBlock_CopyForWrite(self))
+  if (KosStackBlock_EnsureExclusive(self))
     return -1;
 
   KosStackBlock *s = *self;
@@ -519,7 +519,7 @@ static int KosStackBlock_Pull(KosStackBlock **self, size_t count) {
     return -1;
   }
 
-  if (KosStackBlock_CopyForWrite(&s))
+  if (KosStackBlock_EnsureExclusive(&s))
     return -1;
 
   while (s->len + count >= s->max) {
@@ -557,7 +557,7 @@ static PyObject *KosStackBlock_Pop(KosStackBlock **self) {
     return NULL;
   }
 
-  if (KosStackBlock_CopyForWrite(&s))
+  if (KosStackBlock_EnsureExclusive(&s))
     return NULL;
 
   s->len = --len;
@@ -592,7 +592,7 @@ int KosStackBlock_Drop(KosStackBlock **self, size_t count) {
     return -1;
   }
 
-  if (KosStackBlock_CopyForWrite(&s))
+  if (KosStackBlock_EnsureExclusive(&s))
     return -1;
 
   while (count--) {
@@ -621,7 +621,7 @@ int KosStackBlock_DropNoErr(KosStackBlock **self, size_t count) {
     res = -1;
   }
 
-  if (KosStackBlock_CopyForWrite(&s))
+  if (KosStackBlock_EnsureExclusive(&s))
     return -1;
 
   while (count--) {
@@ -650,7 +650,7 @@ int KosStackBlock_Duplicate(KosStackBlock **self, size_t count) {
     return -1;
   }
 
-  if (KosStackBlock_CopyForWrite(&s))
+  if (KosStackBlock_EnsureExclusive(&s))
     return -1;
 
   /* grow if needed */
@@ -688,7 +688,7 @@ static int KosStackBlock_Replace(
     return -1;
   }
 
-  if (KosStackBlock_CopyForWrite(&s))
+  if (KosStackBlock_EnsureExclusive(&s))
     return -1;
 
   Py_INCREF(value);
@@ -726,7 +726,7 @@ PyObject *KosStackBlock_PopTail(
   if (! ret)
     return NULL;
 
-  if (KosStackBlock_CopyForWrite(&s)) {
+  if (KosStackBlock_EnsureExclusive(&s)) {
     Py_DECREF(ret);
     return NULL;
   }
@@ -828,7 +828,7 @@ static int KosStackBlock_PopTailPtr(
     dest[count] = s->objs[--len];
   }
 
-  if (KosStackBlock_CopyForWrite(&s))
+  if (KosStackBlock_EnsureExclusive(&s))
     return -1;
 
   s->len = len;
@@ -862,7 +862,7 @@ static PyObject *KosStackBlock_PopTailDict(
   if (! ret)
     return NULL;
 
-  if (KosStackBlock_CopyForWrite(&s)) {
+  if (KosStackBlock_EnsureExclusive(&s)) {
     Py_DECREF(ret);
     return NULL;
   }
@@ -1656,7 +1656,7 @@ int KosStack_PopBlock(PyObject *self, size_t count) {
       return -1;
     }
 
-    if (KosStackBlock_CopyForWrite(&back))
+    if (KosStackBlock_EnsureExclusive(&back))
       return -1;
 
     size_t nlen = back->len + count;
