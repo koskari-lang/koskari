@@ -81,10 +81,11 @@ This document provides a high-level summary of all features identified from both
 - **Security**: Read-only memory protection after initialization
 
 ### Opcodes: implementation status
-The VM in `eval.c` uses a jump table; every opcode has a handler. Handlers are either **fully implemented**, **partially implemented**, or **stubs** (delegate to `op_unimplemented_stub`, which raises at runtime). Status is as of the current koskari implementation.
+The VM in `eval.c` uses a jump table; every opcode has a handler. Handlers are either **fully implemented** or **stubs** (delegate to `op_unimplemented_stub`, which raises at runtime). Status is as of the current koskari implementation.
 
 **Fully implemented** (handler does real work; no stub):
 - **Pseudo / stack**: NOOP, LABEL, POSITION (no-op at runtime: advance PC only; no effect), DUP, POP, CONST
+- **Argument production**: BUILD_FUNCTION (build Function from FunctionSpec; stack [fspec, ...kw_defaults, names_tuple] → [function])
 - **Control**: RETURN, AWAIT, YIELD (suspend with value; resumption via send; async gen support), YIELD_FROM (delegate to sub-iterator/gen; KOS_DYN_YIELD_FROM; send/throw/close; handler in koskari/lib/opcode/yield_from.c)
 - **Calls**: CALL (arg = N; stack [callable, arg_0, ..., arg_{N-1}]; Continuation/DelimitedContinuation → call_call_continuation; KosExpression/KosFunction → new frame in same loop; other callables → PyObject_Call then push_or_await)
 - **Introspection**: GLOBALS, LOCALS
@@ -107,7 +108,7 @@ The VM in `eval.c` uses a jump table; every opcode has a handler. Handlers are e
 - **THEEND**: End-of-code sentinel; if execution reaches it, raises RuntimeError with a fixed message ("THEEND has no runtime implementation"). Never has a runtime implementation.
 
 **Not implemented (stubs)** — hitting these at runtime raises "unimplemented opcode":
-- **Argument building**: BUILD_ARGS, BUILD_KWDS, BUILD_KWDS_NAMES, COMBINE_ARGS, COMBINE_KWDS
+- **Argument building**: BUILD_ARGS, BUILD_KWDS, BUILD_KWDS_NAMES, COMBINE_ARGS, COMBINE_KWDS (BUILD_FUNCTION is implemented)
 - **Calls**: CALL_NAMES, CALL_STAR; CALL_ATTR, CALL_ATTR_NAMES, CALL_ATTR_STAR; RECUR, RECUR_NAMES, RECUR_STAR; TAIL_CALL, TAIL_CALL_NAMES, TAIL_CALL_STAR; TAIL_RECUR, TAIL_RECUR_NAMES, TAIL_RECUR_STAR
 - **Block control**: PUSH_WITH, PUSH_BEGIN, PUSH_CLASS; POP_WITH, POP_BEGIN
 - **Wind / region**: PUSH_WIND, POP_WIND, END_WIND; PUSH_REGION, POP_REGION
@@ -115,9 +116,10 @@ The VM in `eval.c` uses a jump table; every opcode has a handler. Handlers are e
 There are no **partially** implemented opcodes; each handler is either full, a stub, or a dedicated "no runtime implementation" handler (THEEND). The authoritative list is the set of handlers in `koskari/lib/eval.c` that do not call `op_unimplemented_stub`.
 
 ### Compiler
-- **Phases**: Parse → Expand → Compile → Optimize → Generate
-- **Components**: Compiler, CodeContext, ByteCodeFragment
-- **Optimization**: Constant folding, dead code elimination, fast paths
+- **Phases**: Parse → Expand → Compile → Optimize → Generate (full pipeline in progress)
+- **Components**: Compiler, CodeContext, ByteCodeFragment (implemented in `koskari.compile`)
+- **Optimization**: Constant folding, dead code elimination, fast paths (planned)
+- **Implemented specials**: compile/bytecode, compile/begin, compile/call, lambda (see design/SPECIALS.md)
 
 ### Evaluator
 - **Model**: Custom drive loop (`koskari_eval` in eval.c). Callable types Expression and Function (func.c) return a KosCoroutine; driving the coroutine (await/send) runs the evaluator. Continuation call returns a KosCoroutine that resumes the captured segment.
@@ -125,7 +127,7 @@ There are no **partially** implemented opcodes; each handler is either full, a s
 - **Blocks**: try, loop, with, finally management
 
 ### Creating and calling functions and expressions
-- **Code**: Compiled bytecode is stored in a `Code` object (namespace spec, instructions, constant pool, position table). Code is produced by the compiler (not yet implemented); tests and tools build it manually.
+- **Code**: Compiled bytecode is stored in a `Code` object (namespace spec, instructions, constant pool, position table). The compiler (`koskari.compile`) is partially implemented: it supports `compile/bytecode`, `compile/begin`, `compile/call`, and `lambda` (see design/SPECIALS.md). Tests and tools also build Code manually for VM validation.
 - **Expressions**: `Code.expression(parent_ns)` builds an **Expression** from a `Code` and a parent **Namespace**. An Expression is nullary: calling it with `()` creates a **Coroutine** that runs that code in that namespace. No argument binding; used for thunks, modules, or single-shot code.
 - **Functions**: `Code.function(formals, parent_ns)` builds a **Function** from a `Code`, a **Formals** instance (parameter spec + defaults), and a parent namespace. Calling a Function with `(*args, **kwargs)` binds the formals to the arguments, builds a frame namespace (via the formals’ NamespaceSpec), applies the bindings, then creates a **Coroutine** that runs the code in that frame namespace.
 - **Call flow**: Calling an Expression or Function returns a **Coroutine**. Driving the coroutine (Python `await`, or `send(None)`/`send(value)`) invokes `koskari_eval()` until a boundary event (RETURN, RAISE, YIELD, AWAIT). For AWAIT, the VM suspends and the driver steps the Python awaitable; on completion the result is injected and evaluation resumes. Koskari-to-Koskari calls use `kos_koscall` / `kos_tail_koscall` (CALL opcode); the callee is a KosExpression or KosFunction, so the runtime creates a new frame and pushes it onto the dynamic chain and continues the same drive loop.
@@ -202,13 +204,12 @@ There are no **partially** implemented opcodes; each handler is either full, a s
 - Full opcode set for: stack ops, control flow, jumps, variables, attributes, items, calls, blocks, object protocol, iteration, exceptions
 
 ### Ready to Migrate
-- Most special forms from python-sibilant
+- Most special forms from python-sibilant (beyond compile/bytecode, compile/begin, compile/call, lambda)
 - Remaining operators (%, **, ~, <<, >>, comparisons)
-- Macro system
-- Control flow constructs
-- Function system
-- Compiler architecture from sibilant-ceval
-- Remaining opcode handlers (dispatch loop in place; variables, calls, blocks, etc. still stubbed)
+- Macro system (reader macros, defmacro, defalias)
+- Remaining control flow constructs (with, begin, class blocks)
+- Compiler: remaining specials, macro expansion, optimization passes
+- Remaining opcode handlers: BUILD_ARGS, BUILD_KWDS, COMBINE_*, CALL_NAMES, CALL_STAR, CALL_ATTR*, RECUR*, TAIL_*, PUSH_WITH, PUSH_BEGIN, PUSH_CLASS, PUSH_WIND, POP_WIND, END_WIND, PUSH_REGION, POP_REGION (see "Opcodes: implementation status" above)
 
 ### Needs Reconsideration
 - CPython bytecode target (abandoned)

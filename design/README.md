@@ -35,7 +35,7 @@ The following components have been fully migrated with native C extensions:
 | Ref types (6 variants) | sibilant-ceval | Complete |
 | Formals, FormalsSpec | sibilant-ceval | Complete |
 | Parser (Reader, SourceStream) | python-sibilant | Complete |
-| Compiler | python-sibilant | Not started |
+| Compiler | python-sibilant | In progress (compile/bytecode, compile/begin, compile/call, lambda; see SPECIALS.md) |
 | Evaluator | sibilant-ceval | Complete |
 
 See [api/types.md](api/types.md) for detailed type documentation.

@@ -207,7 +207,7 @@ These are **commitments**: they must hold for correct behavior. They are elabora
 **Not yet implemented**:
 
 - Remaining opcode handlers: argument building (except BUILD_FUNCTION), CALL_NAMES/CALL_STAR/CALL_ATTR*/RECUR*/TAIL_*, block control (with/begin/class, wind, region). THEEND has no runtime implementation (hardcoded error). See `design/FEATURES.md` § "Opcodes: implementation status".
-- Compiler (parse → expand → compile → bytecode).
+- Compiler: A partial implementation exists in `koskari.compile` (Compiler, ByteCodeFragment, specials: compile/bytecode, compile/begin, compile/call, lambda). Full parse → expand → compile → bytecode pipeline is not complete (macro expansion, remaining special forms, optimization passes).
 - Module creation/loading and import system integration.
 - Most special forms (only types, parsing, and runtime primitives exist).
 - Traceback integration with Koskari frames.

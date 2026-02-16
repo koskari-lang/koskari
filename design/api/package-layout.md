@@ -13,9 +13,9 @@ koskari/
 ├── dis.py            # Disassembler for Code objects
 ├── compile/          # Compiler, ByteCodeFragment, special forms
 │   ├── __init__.py
-│   ├── compiler.py
+│   ├── compiler.py   # Compiler, ByteCodeFragment
 │   ├── exceptions.py # CompilerException, CompilerMode, UncaughtCompilerException
-│   ├── fragment.py   # ByteCodeFragment, unique_append
+│   ├── helpers.py    # gather_formals, gather_parameters, helper_begin
 │   └── specials.py   # SPECIALS, special_bytecode, etc.
 └── lib/              # C extension (native types and runtime)
     ├── *.c, *.h     # atom, pair, namespace, formals, ref, values, bytecode, eval, ...
@@ -31,13 +31,13 @@ koskari/
 | Parse errors | `koskari.parse` | `ReaderSyntaxError`, `FormatStringSyntaxError` (subclass `KoskariSyntaxError` from `koskari.exceptions`) |
 | Compiler errors | `koskari.compile.exceptions` | `CompilerException`, `UncaughtCompilerException`, `CompilerMode` |
 | Parsing | `koskari.parse` | `Reader`, `SourceStream`, `source_str`, `source_open`, `default_reader` |
-| Compilation | `koskari.compile` | `Compiler`, `ByteCodeFragment` (and `unique_append` from `koskari.compile.fragment`) |
+| Compilation | `koskari.compile` | `Compiler`, `ByteCodeFragment`, `SPECIALS` (from compiler.py, specials.py) |
 | Disassembly | `koskari.dis` | `dis`, and internal helpers |
 
 ## Import policy
 
 - **Internal koskari code:** Import from the defining module only (e.g. `from koskari.exceptions import KoskariSyntaxError`, `from koskari.types import is_pair`, `from koskari.lib import Code`). Do not use `from koskari import ...` for submodule-defined symbols.
-- **Tests:** Same rule: import from `koskari.lib`, `koskari.types`, `koskari.exceptions`, `koskari.parse`, `koskari.compile`, `koskari.dis`, or `koskari.compile.fragment` as appropriate.
+- **Tests:** Same rule: import from `koskari.lib`, `koskari.types`, `koskari.exceptions`, `koskari.parse`, `koskari.compile`, or `koskari.dis` as appropriate.
 - **External programs:** Import from the submodule that defines the symbol. The top-level `koskari` package has no re-exports.
 
 ## Test layout

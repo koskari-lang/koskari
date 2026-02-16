@@ -82,13 +82,19 @@
 
 ## Migration Notes
 
+### Migrated (Partial)
+
+- **Compiler** and **ByteCodeFragment** (`koskari.compile`): Compiler compiles S-expression forms to bytecode fragments. Special form dispatch via `compile_impl`; head-symbol lookup in module namespace.
+- **Implemented specials** (see design/SPECIALS.md): `compile/bytecode`, `compile/begin`, `compile/call`, `lambda`. These emit opcodes directly; no macro expansion.
+- **Namespace handling**: NamespaceSpec, variable declarations, constant-pool and label resolution in fragment `complete` pass.
+- **Parser** (Reader, SourceStream) produces S-expressions; used as input to compiler.
+
 ### To Migrate
 
-- Compilation phases
-- Special form infrastructure
+- Macro expansion (reader macros, defmacro, defalias)
+- Remaining special forms (quote, quasiquote, let, define, cond, while, for-each, try, etc.)
 - Operator infrastructure
-- Namespace handling
-- Optimization passes
+- Optimization passes (constant folding, dead code elimination, VAR→FAST conversion)
 
 ### To Reconsider
 
