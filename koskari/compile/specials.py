@@ -184,7 +184,7 @@ def special_call(
     return fragment
 
 
-@special(symbol("lambda"))
+@special(symbol("compile/lambda"))
 def special_lambda(
         compiler: Compiler,
         source: pair,
