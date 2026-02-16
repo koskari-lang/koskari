@@ -142,9 +142,27 @@ static int initialize_types(void) {
         return -1;
     }
 
-    /* Initialize func types (Expression, Function, Continuation, etc.) */
+    /* Initialize func types (Expression, FunctionSpec, Function) */
     if (koskari_func_init(kos_lib_module)) {
         fprintf(stderr, "Failed to initialize func types\n");
+        return -1;
+    }
+
+    /* Initialize coro types (Coroutine) */
+    if (koskari_coro_init(kos_lib_module)) {
+        fprintf(stderr, "Failed to initialize coro types\n");
+        return -1;
+    }
+
+    /* Initialize cont types (DelimitedContinuation, Continuation) */
+    if (koskari_cont_init(kos_lib_module)) {
+        fprintf(stderr, "Failed to initialize cont types\n");
+        return -1;
+    }
+
+    /* Initialize iter types (AsyncGenerator, etc.) */
+    if (koskari_iter_init(kos_lib_module)) {
+        fprintf(stderr, "Failed to initialize iter types\n");
         return -1;
     }
 

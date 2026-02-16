@@ -90,7 +90,7 @@ static int koskari_lib_init(PyObject *mod) {
 
   /* Subclass of StopAsyncIteration with .value set for 3.12 compatibility
      when runtime expects exception.value (e.g. anext/await).  Must exist
-     before koskari_func_init so func can cache the type. */
+     before koskari_iter_init so iter can cache the type. */
   {
     PyObject *dict = PyModule_GetDict(mod);
     PyObject *run = PyRun_String(
@@ -111,6 +111,15 @@ static int koskari_lib_init(PyObject *mod) {
   if (koskari_func_init(mod))
     return -1;
 
+  if (koskari_coro_init(mod))
+    return -1;
+
+  if (koskari_cont_init(mod))
+    return -1;
+
+  if (koskari_iter_init(mod))
+    return -1;
+
   return 0;
 }
 
@@ -124,6 +133,15 @@ int koskari_lib_clear(PyObject *mod) {
     return -1;
 
   /* clear implementation units */
+  if (koskari_iter_clear(mod))
+    return -1;
+
+  if (koskari_cont_clear(mod))
+    return -1;
+
+  if (koskari_coro_clear(mod))
+    return -1;
+
   if (koskari_func_clear(mod))
     return -1;
 
