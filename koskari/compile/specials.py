@@ -21,9 +21,11 @@ Special form handlers for the Koskari compiler.
 """
 
 
-from ..lib import keyword, nil, OpCode, pair, symbol
-from .compiler import ByteCodeFragment, Compiler
-from .helpers import gather_parameters, helper_begin
+from ..lib import car, cdr, FormalsSpec, FunctionSpec, keyword, nil, OpCode, pair, symbol
+from ..types import is_pair, is_symbol
+from .compiler import ByteCodeFragment, Compiler, CompilerMode
+from .exceptions import CompilerException
+from .helpers import gather_formals, gather_parameters, helper_begin
 
 
 SPECIALS = {}
@@ -180,6 +182,76 @@ def special_call(
             fragment.instruction(OpCode.OP_CALL, len(pos))
 
     return fragment
+
+
+@special(symbol("lambda"))
+def special_lambda(
+        compiler: Compiler,
+        source: pair,
+        tc: bool = False) -> ByteCodeFragment:
+    """
+    Compile (lambda [args] body) or (lambda name [args] body).
+    Named form binds name in the function scope for self-reference.
+    """
+
+    called_by, rest = source
+    if rest is nil or not is_pair(rest):
+        raise CompilerException("lambda requires formals and body", source)
+
+    first = car(rest)
+    if is_symbol(first):
+        named = first
+        rest = cdr(rest)
+        if rest is nil or not is_pair(rest):
+            raise CompilerException("named lambda requires formals and body",
+                                   source)
+        formals_src = car(rest)
+        body_src = cdr(rest)
+    else:
+        named = None
+        formals_src = first
+        body_src = cdr(rest)
+
+    if body_src is nil or not is_pair(body_src):
+        body_src = pair(body_src, nil)
+
+    proper_name = str(named) if named is not None else None
+    fragment_name = proper_name if proper_name is not None else "<lambda>"
+
+    pos, defaults, kwonly, star, starstar = gather_formals(formals_src)
+    kw = []
+    pos = [str(k) for k in pos]
+    star = str(star) if star else None
+    starstar = str(starstar) if starstar else None
+
+    frag = compiler.fragment(called_by)
+    for k, expr in defaults:
+        kw.append(str(k))
+        frag.merge(compiler.full_compile(expr))
+
+    if defaults:
+        frag.instruction(OpCode.KOS_OP_CONST, tuple(kw))
+
+    lamb = compiler.fragment(fragment_name)
+    lamb.declare_vars(pos)
+    lamb.declare_vars(kw)
+    lamb.declare_vars([str(k) for k, _ in kwonly])
+    if star:
+        lamb.declare_var(star)
+    if starstar:
+        lamb.declare_var(starstar)
+    if proper_name is not None:
+        lamb.declare_var(proper_name)
+
+    lamb = helper_begin(lamb, body_src, True)
+    code = compiler.complete(lamb, CompilerMode.FUNCTION)
+    fspec = FunctionSpec(proper_name, FormalsSpec(
+        tuple(pos), (), tuple(kw), tuple(str(k) for k, _ in kwonly),
+        star, starstar), code)
+    frag.instruction(OpCode.KOS_OP_CONST, fspec)
+    frag.instruction(OpCode.KOS_OP_BUILD_FUNCTION, len(kw))
+
+    return frag
 
 
 # The end.

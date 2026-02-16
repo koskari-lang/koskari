@@ -336,6 +336,7 @@ static int function_init(
 
 
 static void function_dealloc(PyObject *self) {
+  Py_CLEAR(KosFunction_NAME(self));
   Py_CLEAR(KosFunction_CODE(self));
   Py_CLEAR(KosFunction_BASE_NS(self));
   Py_CLEAR(KosFunction_FORMALS(self));
@@ -345,10 +346,12 @@ static void function_dealloc(PyObject *self) {
 
 /**
    Obtain the call namespace for a function: formals' namespace spec
-   applied to base_ns.  Returns new reference or NULL on error.
+   (with code's nspec as base so code-local names like named-lambda self
+   are in scope) applied to base_ns.  Returns new reference or NULL on error.
 */
 static PyObject *func_obtain_call_namespace(KosFunction *fn) {
-  PyObject *nspec = KosFormals_NamespaceSpec(fn->formals, NULL);
+  PyObject *base_nspec = KosCode_NSPEC(fn->code);
+  PyObject *nspec = KosFormals_NamespaceSpec(fn->formals, base_nspec);
   if (! nspec)
     return NULL;
   PyObject *frame_ns = KosNamespace_FromSpec(nspec, fn->base_ns);
@@ -370,6 +373,11 @@ PyObject *KosFunction_Call(PyObject *self,
 
   if (KosFormals_Apply(fn->formals, frame_ns, args, kwds) < 0)
     goto fail;
+
+  if (fn->name != NULL) {
+    if (KosNamespace_Store(frame_ns, fn->name, self) < 0)
+      goto fail;
+  }
 
   coro = KosCoroutine_NewFromCode(fn->code, frame_ns);
   Py_DECREF(frame_ns);
@@ -395,6 +403,12 @@ PyObject *KosFunction_PrepareCallNamespace(
     Py_DECREF(frame_ns);
     return NULL;
   }
+  if (fn->name != NULL) {
+    if (KosNamespace_Store(frame_ns, fn->name, self) < 0) {
+      Py_DECREF(frame_ns);
+      return NULL;
+    }
+  }
   return frame_ns;
 }
 
@@ -407,6 +421,18 @@ PyObject *KosFunction_GetCode(PyObject *self) {
 
 PyObject *KosFunction_CallNoArgs(PyObject *self) {
   return KosFunction_Call(self, NULL, NULL);
+}
+
+
+static PyObject *function_repr(PyObject *self) {
+  KosFunction *fn = (KosFunction *) self;
+  PyObject *name = KosFunction_NAME(fn);
+  if (name != NULL)
+    return PyUnicode_FromFormat("<Function %R>", name);
+  name = KosCode_NAME(fn->code);
+  if (name != NULL)
+    return PyUnicode_FromFormat("<Function %R>", name);
+  return PyUnicode_FromString("<Function <lambda>>");
 }
 
 
@@ -423,6 +449,7 @@ static PyMemberDef function_members[] = {
   { "code", T_OBJECT, offsetof(KosFunction, code), READONLY, NULL },
   { "base_ns", T_OBJECT, offsetof(KosFunction, base_ns), READONLY, NULL },
   { "formals", T_OBJECT, offsetof(KosFunction, formals), READONLY, NULL },
+  { "name", T_OBJECT, offsetof(KosFunction, name), READONLY, NULL },
   { NULL, 0, 0, 0, NULL },
 };
 
@@ -432,7 +459,7 @@ PyTypeObject KosFunctionType = {
   .tp_name = "koskari.lib.Function",
   .tp_basicsize = sizeof(KosFunction),
   .tp_dealloc = function_dealloc,
-  .tp_repr = (reprfunc) NULL,
+  .tp_repr = function_repr,
   .tp_call = function_call,
   .tp_flags = Py_TPFLAGS_DEFAULT,
   .tp_doc = "Callable(Code, base_namespace, FormalsSpec). Calling with "
@@ -510,6 +537,8 @@ PyObject *KosFunction_NewFromFormals(
   Py_INCREF(parent_ns);
   KosFunction_BASE_NS(self) = parent_ns;
 
+  KosFunction_NAME(self) = NULL;
+
   return self;
 }
 
@@ -534,6 +563,13 @@ PyObject *KosFunction_New(
 
   PyObject *fn = KosFunction_NewFromFormals(code, formals, parent_namespace);
   Py_DECREF(formals);
+  if (fn != NULL) {
+    PyObject *spec_name = KosFunctionSpec_NAME(func_spec);
+    if (spec_name != NULL) {
+      KosFunction_NAME(fn) = spec_name;
+      Py_INCREF(spec_name);
+    }
+  }
   return fn;
 }
 

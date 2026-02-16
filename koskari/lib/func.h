@@ -133,11 +133,14 @@ typedef struct {
   PyObject *code;
   PyObject *base_ns;
   PyObject *formals;
+  PyObject *name;   /* proper name for self-reference and repr, or NULL */
 } KosFunction;
 
 
 /** Borrowed reference. Do not Py_DECREF the result. */
 #define KosFunction_CODE(func) (((KosFunction *) (func))->code)
+
+#define KosFunction_NAME(func) (((KosFunction *) (func))->name)
 
 #define KosFunction_BASE_NS(func) (((KosFunction *) (func))->base_ns)
 
