@@ -257,6 +257,9 @@ static PyObject *str_await = NULL;
 static PyObject *str_send = NULL;
 static PyObject *str_throw = NULL;
 static PyObject *str_close = NULL;
+static PyObject *str_asend = NULL;
+static PyObject *str_athrow = NULL;
+static PyObject *str_aclose = NULL;
 
 
 /* === TLS stack for active evaluator tokens === */
@@ -1527,12 +1530,8 @@ void kos_yieldfrom_close_delegate(KosDynYieldFrom *node) {
   case KOS_YF_SYNC_ITER:
     break;
   case KOS_YF_SYNC_GEN: {
-    PyObject *meth = PyUnicode_FromString("close");
-    if (meth) {
-      PyObject *res = PyObject_CallMethodObjArgs(delegate, meth, NULL);
-      Py_XDECREF(meth);
-      Py_XDECREF(res);
-    }
+    PyObject *res = PyObject_CallMethodObjArgs(delegate, str_close, NULL);
+    Py_XDECREF(res);
     PyErr_Clear();
     break;
   }
@@ -1541,12 +1540,8 @@ void kos_yieldfrom_close_delegate(KosDynYieldFrom *node) {
     Py_XDECREF(inflight);
     KosDynYieldFrom_INFLIGHT(node) = NULL;
     {
-      PyObject *meth = PyUnicode_FromString("aclose");
-      if (meth) {
-        PyObject *res = PyObject_CallMethodObjArgs(delegate, meth, NULL);
-        Py_XDECREF(meth);
-        Py_XDECREF(res);
-      }
+      PyObject *res = PyObject_CallMethodObjArgs(delegate, str_aclose, NULL);
+      Py_XDECREF(res);
       PyErr_Clear();
     }
     break;
@@ -1835,6 +1830,9 @@ int koskari_eval_init(PyObject *mod) {
   STR_CONST(str_send, "send");
   STR_CONST(str_throw, "throw");
   STR_CONST(str_close, "close");
+  STR_CONST(str_asend, "asend");
+  STR_CONST(str_athrow, "athrow");
+  STR_CONST(str_aclose, "aclose");
 
   /* Initialize KosEvaluatorToken type */
   if (PyType_Ready(&KosEvaluatorTokenType) < 0)
@@ -1878,6 +1876,9 @@ int koskari_eval_clear(PyObject *mod) {
   Py_CLEAR(str_send);
   Py_CLEAR(str_throw);
   Py_CLEAR(str_close);
+  Py_CLEAR(str_asend);
+  Py_CLEAR(str_athrow);
+  Py_CLEAR(str_aclose);
 
   /* Null out exception type pointers (module dict owns the refs) */
   KoskariContinuationDead = NULL;

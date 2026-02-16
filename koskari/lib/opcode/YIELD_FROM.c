@@ -287,11 +287,9 @@ static int yield_from_drive_sync_gen(
 
   if (action == KOS_YF_THROW) {
     PyObject *exc = KosDynYieldFrom_PENDING_ARG(yf);
-    PyObject *meth = PyUnicode_FromString("throw");
-    if (meth && exc) {
-      PyObject *res = PyObject_CallMethodObjArgs(delegate, meth,
+    if (exc) {
+      PyObject *res = PyObject_CallMethodObjArgs(delegate, str_throw,
           exc, Py_None, Py_None, NULL);
-      Py_DECREF(meth);
       if (res) {
         KosDynYieldFrom_PENDING_ACTION(yf) = KOS_YF_STEP;
         Py_XDECREF(KosDynYieldFrom_PENDING_ARG(yf));
@@ -309,23 +307,15 @@ static int yield_from_drive_sync_gen(
     return -1;
   }
   if (action == KOS_YF_CLOSE) {
-    PyObject *meth = PyUnicode_FromString("close");
-    if (meth) {
-      PyObject *res = PyObject_CallMethodObjArgs(delegate, meth, NULL);
-      Py_DECREF(meth);
-      Py_XDECREF(res);
-    }
+    PyObject *res = PyObject_CallMethodObjArgs(delegate, str_close, NULL);
+    Py_XDECREF(res);
     PyErr_Clear();
     kos_dyn_pop_yield_from(ctx, yf);
     PyErr_SetNone(PyExc_GeneratorExit);
     return -1;
   }
   {
-    PyObject *meth = PyUnicode_FromString("send");
-    if (! meth)
-      return -1;
-    PyObject *res = PyObject_CallMethodObjArgs(delegate, meth, send_val, NULL);
-    Py_DECREF(meth);
+    PyObject *res = PyObject_CallMethodObjArgs(delegate, str_send, send_val, NULL);
     if (PyErr_ExceptionMatches(PyExc_StopIteration)) {
       Py_XDECREF(res);
       PyObject *final_val = yield_from_fetch_stop_iteration_value();
@@ -405,39 +395,27 @@ static int yield_from_drive_py_async(
     awaitable = get_await_next(delegate);
   } else if (kind == KOS_YF_PY_ASYNC_GEN && action == KOS_YF_SEND) {
     PyObject *send_val = KosDynYieldFrom_PENDING_ARG(yf);
-    PyObject *name = PyUnicode_FromString("asend");
-    if (name) {
-      PyObject *tmp = PyObject_CallMethodObjArgs(delegate, name, send_val, NULL);
-      Py_DECREF(name);
-      if (tmp) {
-        awaitable = PyObject_GetAwaitable(tmp);
-        Py_DECREF(tmp);
-      }
+    PyObject *tmp = PyObject_CallMethodObjArgs(delegate, str_asend, send_val, NULL);
+    if (tmp) {
+      awaitable = PyObject_GetAwaitable(tmp);
+      Py_DECREF(tmp);
     }
   } else if (kind == KOS_YF_PY_ASYNC_GEN && action == KOS_YF_THROW) {
     PyObject *exc = KosDynYieldFrom_PENDING_ARG(yf);
-    PyObject *meth = PyUnicode_FromString("athrow");
-    if (meth && exc) {
+    if (exc) {
       PyObject *typ = (PyObject *) Py_TYPE(exc);
-      PyObject *tmp = PyObject_CallMethodObjArgs(delegate, meth, typ, exc,
+      PyObject *tmp = PyObject_CallMethodObjArgs(delegate, str_athrow, typ, exc,
                                                  Py_None, NULL);
-      Py_DECREF(meth);
       if (tmp) {
         awaitable = PyObject_GetAwaitable(tmp);
         Py_DECREF(tmp);
       }
-    } else {
-      Py_XDECREF(meth);
     }
   } else if (kind == KOS_YF_PY_ASYNC_GEN && action == KOS_YF_CLOSE) {
-    PyObject *meth = PyUnicode_FromString("aclose");
-    if (meth) {
-      PyObject *tmp = PyObject_CallMethodObjArgs(delegate, meth, NULL);
-      Py_DECREF(meth);
-      if (tmp) {
-        awaitable = PyObject_GetAwaitable(tmp);
-        Py_DECREF(tmp);
-      }
+    PyObject *tmp = PyObject_CallMethodObjArgs(delegate, str_aclose, NULL);
+    if (tmp) {
+      awaitable = PyObject_GetAwaitable(tmp);
+      Py_DECREF(tmp);
     }
   } else if (action == KOS_YF_CLOSE) {
     /* PY_ASYNC_ITER has no aclose; treat as exhausted with None. */
