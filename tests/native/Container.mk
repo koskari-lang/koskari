@@ -1,7 +1,9 @@
-# Makefile for native memory tests
+# Container.mk - native memory test build rules
 #
 # Build and run the C test harness that verifies memory management
-# in Koskari's native types.
+# in Koskari's native types. Intended for use inside the container
+# (run-tests.sh) where Valgrind and ASan are available; invoke with
+# make -f Container.mk <target>.
 
 # Python configuration
 PYTHON ?= python3
@@ -10,14 +12,10 @@ PYTHON_CONFIG ?= $(PYTHON)-config
 # Compiler
 CC ?= gcc
 
-# Test source files - add new test files here
-TEST_SRCS := test_harness.c test_atom.c test_pair.c test_namespace.c test_bytecode.c test_formals.c test_values.c test_stack.c test_dynchain.c test_eval.c
-# Future units: test_tco.c
-
-# Library source files - compiled into the test binary
-# These must match the sources in setup.py
+# Test and library sources discovered via globs (stay in sync with tree)
 LIB_DIR := ../../koskari/lib
-LIB_SRCS := $(LIB_DIR)/compat.c $(LIB_DIR)/atom.c $(LIB_DIR)/pair.c $(LIB_DIR)/ref.c $(LIB_DIR)/namespace.c $(LIB_DIR)/bytecode.c $(LIB_DIR)/formals.c $(LIB_DIR)/values.c $(LIB_DIR)/operator.c $(LIB_DIR)/stack.c $(LIB_DIR)/dynchain.c $(LIB_DIR)/utils.c $(LIB_DIR)/parse.c $(LIB_DIR)/eval.c $(LIB_DIR)/func.c $(LIB_DIR)/coro.c $(LIB_DIR)/cont.c $(LIB_DIR)/iter.c $(LIB_DIR)/lib.c
+TEST_SRCS := $(wildcard test_*.c)
+LIB_SRCS := $(wildcard $(LIB_DIR)/*.c)
 
 # All sources
 SRCS := $(TEST_SRCS) $(LIB_SRCS)

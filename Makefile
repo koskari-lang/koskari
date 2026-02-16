@@ -96,19 +96,19 @@ CONTAINER_ENGINE := $(shell which podman 2>/dev/null || which docker 2>/dev/null
 
 test-container-build:  ## Build the native test container
 	@echo "Building container image $(CONTAINER_IMAGE)..."
-	$(CONTAINER_ENGINE) build -t $(CONTAINER_IMAGE) -f tests/native/Containerfile tests/native/
+	@$(CONTAINER_ENGINE) build -q -t $(CONTAINER_IMAGE) -f tests/native/Containerfile tests/native/
 
 test-native: test-container-build  ## Run all native tests in container
 	@echo "Running all native memory tests in container..."
-	$(CONTAINER_ENGINE) run --rm -v $(PWD):/src:Z $(CONTAINER_IMAGE) all
+	@$(CONTAINER_ENGINE) run --rm -v $(PWD):/src:Z $(CONTAINER_IMAGE) all
 
 test-asan: test-container-build  ## Run ASan tests in container
 	@echo "Running ASan tests in container..."
-	$(CONTAINER_ENGINE) run --rm -v $(PWD):/src:Z $(CONTAINER_IMAGE) asan
+	@$(CONTAINER_ENGINE) run --rm -v $(PWD):/src:Z $(CONTAINER_IMAGE) asan
 
 test-valgrind: test-container-build  ## Run Valgrind tests in container
 	@echo "Running Valgrind tests in container..."
-	$(CONTAINER_ENGINE) run --rm -v $(PWD):/src:Z $(CONTAINER_IMAGE) valgrind
+	@$(CONTAINER_ENGINE) run --rm -v $(PWD):/src:Z $(CONTAINER_IMAGE) valgrind
 
 
 ##@ Code Quality

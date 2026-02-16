@@ -35,10 +35,10 @@ make test-native              # Run normal tests
 make test-native-asan         # Run ASan tests
 make test-native-valgrind     # Run Valgrind tests
 
-# Or from this directory
-make test                     # Normal tests
-make test-asan                # ASan tests
-make test-valgrind            # Valgrind tests
+# Or from this directory (use -f Container.mk; no default Makefile)
+make -f Container.mk test           # Normal tests
+make -f Container.mk test-asan      # ASan tests
+make -f Container.mk test-valgrind  # Valgrind tests
 ```
 
 ### Direct Script Usage
@@ -56,7 +56,7 @@ make test-valgrind            # Valgrind tests
 tests/native/
 ├── README.md              # This file
 ├── Containerfile          # Container definition (Fedora + tools)
-├── Makefile               # Build and test targets
+├── Container.mk           # Build and test rules (used only via run-tests.sh / container)
 ├── run-tests.sh           # Test runner script (container entrypoint)
 ├── valgrind-python.supp   # Valgrind suppressions for Python internals
 ├── test_harness.h         # Common macros and unit declarations
@@ -181,23 +181,14 @@ run_pair_tests();
 run_values_tests();  // ADD THIS
 ```
 
-### 4. Update the Makefile
+### 4. No Makefile update needed
 
-Add the test file to `TEST_SRCS` and any new library sources to `LIB_SRCS`:
-
-```makefile
-# Test source files
-TEST_SRCS := test_harness.c test_atom.c test_pair.c test_values.c
-
-# Library source files
-LIB_SRCS := $(LIB_DIR)/compat.c $(LIB_DIR)/atom.c $(LIB_DIR)/pair.c \
-            $(LIB_DIR)/values.c $(LIB_DIR)/lib.c
-```
+Sources are discovered via globs: test files matching `test_*.c` and library sources matching `koskari/lib/*.c` are picked up automatically (same as setup.py). Adding a new `test_foo.c` and wiring it in `test_harness.h` and `test_harness.c` is sufficient.
 
 ### 5. Run Tests
 
 ```bash
-make container-test
+make container-test   # or: ./run-tests.sh all
 ```
 
 ## Tips for Writing Good Memory Tests

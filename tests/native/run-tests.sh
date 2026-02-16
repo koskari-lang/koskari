@@ -16,6 +16,7 @@ set -e
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 cd "$SCRIPT_DIR"
 
+MAKEFILE=Container.mk
 MODE="${1:-all}"
 FAILED=0
 
@@ -46,8 +47,8 @@ log_error() {
 
 run_normal() {
     log_info "Running normal tests"
-    make clean >/dev/null 2>&1 || true
-    if make test; then
+    make -f "$MAKEFILE" clean >/dev/null 2>&1 || true
+    if make -f "$MAKEFILE" test; then
         log_info "Normal tests: PASSED"
     else
         log_error "Normal tests: FAILED"
@@ -64,8 +65,8 @@ run_asan() {
         return 0
     fi
 
-    make clean >/dev/null 2>&1 || true
-    if make test-asan; then
+    make -f "$MAKEFILE" clean >/dev/null 2>&1 || true
+    if make -f "$MAKEFILE" test-asan; then
         log_info "ASan tests: PASSED"
     else
         log_error "ASan tests: FAILED"
@@ -82,8 +83,8 @@ run_valgrind() {
         return 0
     fi
 
-    make clean >/dev/null 2>&1 || true
-    if make test-valgrind; then
+    make -f "$MAKEFILE" clean >/dev/null 2>&1 || true
+    if make -f "$MAKEFILE" test-valgrind; then
         log_info "Valgrind tests: PASSED"
     else
         log_error "Valgrind tests: FAILED"

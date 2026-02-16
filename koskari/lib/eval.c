@@ -65,9 +65,9 @@
 # define unlikely(x) (x)
 #endif
 
-/* Labels-as-values (computed goto) for direct dispatch; omit op_handlers[]
-   when enabled so the compiler can inline handler bodies. Build may override
-   with -DKOS_USE_COMPUTED_GOTO=0 or =1. */
+/* Dispatch: computed goto when available, else switch/case; no function table
+   so the compiler can inline handler bodies. Both paths use tail-dispatch to
+   next_insn. Build may override with -DKOS_USE_COMPUTED_GOTO=0 or =1. */
 #ifndef KOS_USE_COMPUTED_GOTO
 # if (defined(__GNUC__) || defined(__clang__)) && !defined(__STRICT_ANSI__)
 #  define KOS_USE_COMPUTED_GOTO 1
@@ -1562,18 +1562,6 @@ void kos_yieldfrom_close_delegate(KosDynYieldFrom *node) {
 #include "handlers.incl"
 
 
-/* Dispatch table generated from opcodes.incl; every op_##name must be
-   defined (implemented handler).  Omitted when KOS_USE_COMPUTED_GOTO so
-   the compiler can inline handler bodies at the jump targets. */
-#if !KOS_USE_COMPUTED_GOTO
-static int (*const op_handlers[])(KosContext *, KosEvent *, KosOp *) = {
-#define OP(name, style) op_##name,
-#include "opcodes.incl"
-#undef OP
-};
-#endif
-
-
 /**
    Try to handle an exception locally by finding a TRY or FINALLY region
    and jumping to its handler.  Call when PyErr_Occurred() is set.
@@ -1714,10 +1702,14 @@ int koskari_eval(KosContext *ctx, KosEvent *out_ev) {
   };
 #endif
 
-  /* Opcode dispatch loop */
+  /* Opcode dispatch loop; tail-dispatch: normal path jumps to next_insn. */
   for (;;) {
-#if KOS_USE_COMPUTED_GOTO
     next_insn:
+    /* Clear resume kind from previous op (YIELD_FROM clears when it consumes; others leave it set). */
+    if (KosContext_PY_RESUME_KIND(ctx) != KOS_RESUME_NONE)
+      KosContext_PY_RESUME_KIND(ctx) = KOS_RESUME_NONE;
+#if KOS_STACK_TRACE
+    trace_stack("  after ", CURRENT_STACK(ctx));
 #endif
     if (KosContext_PLAN(ctx) && run_transfer_plan_to_completion(ctx, out_ev) < 0) {
       eval_ret = 0;
@@ -1776,7 +1768,16 @@ int koskari_eval(KosContext *ctx, KosEvent *out_ev) {
 #undef OP
       handle_op_result:
 #else
-      op_res = op_handlers[KosOp_OP(insn)](ctx, out_ev, insn);
+      switch (KosOp_OP(insn)) {
+#define OP(name, style) case KOS_OP_##name: op_res = op_##name(ctx, out_ev, insn); break;
+#include "opcodes.incl"
+#undef OP
+      default:
+        PyErr_Format(PyExc_RuntimeError, "invalid opcode %u",
+                     (unsigned) KosOp_OP(insn));
+        eval_ret = -1;
+        goto koskari_eval_cleanup;
+      }
 #endif
       if (unlikely(op_res != 0)) {
         if (PyErr_Occurred()) {
@@ -1789,13 +1790,10 @@ int koskari_eval(KosContext *ctx, KosEvent *out_ev) {
         eval_ret = (op_res < 0) ? -1 : 0;
         goto koskari_eval_cleanup;
       }
-    }
-    /* Clear resume kind if still set (YIELD_FROM clears when it consumes; others leave it set) */
-    if (KosContext_PY_RESUME_KIND(ctx) != KOS_RESUME_NONE)
-      KosContext_PY_RESUME_KIND(ctx) = KOS_RESUME_NONE;
-#if KOS_STACK_TRACE
-    trace_stack("  after ", CURRENT_STACK(ctx));
+#if !KOS_USE_COMPUTED_GOTO
+      goto next_insn;
 #endif
+    }
   }
 
 koskari_eval_cleanup:
