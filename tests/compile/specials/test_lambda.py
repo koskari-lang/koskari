@@ -16,66 +16,32 @@ Tests for koskari.compile lambda special (named and unnamed).
 """
 
 
-import unittest
-
-from koskari.compile import Compiler
-from koskari.compile.specials import SPECIALS
-from koskari.parse import default_reader, source_str
-from koskari.types import Module, ModuleNamespace
+from . import SpecialsTestCase
 
 
-def get_glbls(**defns):
-    builtins = {}
-    builtins.update(defns)
-    return ModuleNamespace("test", builtins)
-
-
-def parse_source(src_str, lineno=1):
-    stream = source_str(src_str, __file__, line_no=lineno)
-    return default_reader.read(stream)
-
-
-def compile_expr(src_str, lineno=1, **defns):
-    mod_ns = get_glbls(**defns)
-    module = Module(mod_ns)
-    ns = vars(module)
-    for sym, fn in SPECIALS.items():
-        name = str(sym)
-        if not name.startswith("compile/"):
-            name = "compile/" + name
-        r = ns.ref(name)
-        r.store(fn)
-
-    source = parse_source(src_str, lineno=lineno)
-    compiler = Compiler("<unittest>", module, filename=__file__)
-    fragment = compiler.full_compile(source)
-    expr = fragment.as_expression(mod_ns)
-    return expr, module
-
-
-class TestLambdaAnonymous(unittest.TestCase):
+class TestLambdaAnonymous(SpecialsTestCase):
 
     def test_anonymous_lambda_identity(self):
         src = "(lambda [x] x)"
-        expr, mod = compile_expr(src)
+        expr, mod = self.compile_expr(src)
         fn = expr().run()
         result = fn(42).run()
         self.assertEqual(result, 42)
 
     def test_anonymous_lambda_repr_has_debug_label(self):
         src = "(lambda [x] x)"
-        expr, mod = compile_expr(src)
+        expr, mod = self.compile_expr(src)
         fn = expr().run()
         repr_str = repr(fn)
         self.assertIn("<lambda>", repr_str,
                       "anonymous lambda repr should show debug label")
 
 
-class TestLambdaNamed(unittest.TestCase):
+class TestLambdaNamed(SpecialsTestCase):
 
     def test_named_lambda_repr_shows_name(self):
         src = "(lambda fact [n] n)"
-        expr, mod = compile_expr(src)
+        expr, mod = self.compile_expr(src)
         fn = expr().run()
         repr_str = repr(fn)
         self.assertIn("fact", repr_str,
@@ -83,7 +49,7 @@ class TestLambdaNamed(unittest.TestCase):
 
     def test_named_lambda_identity(self):
         src = "(lambda fact [n] n)"
-        expr, mod = compile_expr(src)
+        expr, mod = self.compile_expr(src)
         fn = expr().run()
         result = fn(10).run()
         self.assertEqual(result, 10)
