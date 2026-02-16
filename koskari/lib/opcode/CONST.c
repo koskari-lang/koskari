@@ -20,10 +20,10 @@
 
 KOS_OP_HANDLER(CONST) {
   PyObject *val = KosCode_GetConstant((PyObject *) CURRENT_CODE(ctx),
-                                      insn->arg);
+                                      KosOp_ARG(insn));
   if (! val) {
     SAYF("[eval] CONST GetConstant failed arg=%u\n",
-         (unsigned) insn->arg);
+         (unsigned) KosOp_ARG(insn));
     return -1;
   }
   if (PyLong_Check(val))

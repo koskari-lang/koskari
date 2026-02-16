@@ -42,6 +42,9 @@ typedef struct {
 #define KosPyDelimitedContinuation_Check(obj)                           \
   ((obj) && PyType_IsSubtype((obj)->ob_type, &KosPyDelimitedContinuationType))
 
+#define KosPyDelimitedContinuation_CAPTURED(pyc) \
+  (((KosPyDelimitedContinuation *)(pyc))->captured)
+
 
 PyObject *KosPyDelimitedContinuation_New(KosContinuation *captured);
 
@@ -69,6 +72,9 @@ typedef struct {
 
 #define KosPyContinuation_CheckExact(obj)               \
   ((obj) && ((obj)->ob_type == &KosPyContinuationType))
+
+#define KosPyContinuation_CAPTURED(pyc) \
+  (((KosPyContinuation *)(pyc))->captured)
 
 
 PyObject *KosPyContinuation_New(KosContinuation *captured);

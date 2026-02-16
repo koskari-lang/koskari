@@ -111,14 +111,14 @@ static void clear_and_free_transfer_plan(KosContext *ctx) {
 static int run_transfer_plan_to_completion(KosContext *ctx, KosEvent *out_ev) {
   while (KosContext_PLAN(ctx)) {
     SAYF("[eval] transfer step %zu/%zu\n",
-         (size_t) KosContext_PLAN(ctx)->action_index,
-         (size_t) KosContext_PLAN(ctx)->action_count);
+         (size_t) KosTransferPlan_ACTION_INDEX(KosContext_PLAN(ctx)),
+         (size_t) KosTransferPlan_ACTION_COUNT(KosContext_PLAN(ctx)));
     int plan_res = kos_run_transfer_step(ctx);
     if (plan_res < 0) {
       SAY("[eval] transfer step failed -> KOS_EV_RAISE\n");
-      out_ev->kind = KOS_EV_RAISE;
-      out_ev->payload = NULL;
-      PyErr_Fetch(&out_ev->payload, NULL, NULL);
+      KosEvent_KIND(out_ev) = KOS_EV_RAISE;
+      KosEvent_PAYLOAD(out_ev) = NULL;
+      PyErr_Fetch(&KosEvent_PAYLOAD(out_ev), NULL, NULL);
       KosContext_FLAGS(ctx) &= ~KOS_CTX_RUNNING;
       KosContext_FLAGS(ctx) |= KOS_CTX_DEAD;
       return -1;
@@ -216,12 +216,12 @@ static int handle_continuation_apply(KosContext *ctx) {
 
 
 /**
-   Resolve insn->arg as a prompt_id constant from code.  Returns -1 on error,
+   Resolve KosOp_ARG(insn) as a prompt_id constant from code.  Returns -1 on error,
    0 on success with *out_prompt_id set.
 */
 static int get_prompt_id_from_insn(KosCode *code, KosOp *insn,
                                    uint32_t *out_prompt_id) {
-  PyObject *cid = KosCode_GetConstant((PyObject *) code, insn->arg);
+  PyObject *cid = KosCode_GetConstant((PyObject *) code, KosOp_ARG(insn));
   if (! cid)
     return -1;
   long pid = PyLong_AsLong(cid);
@@ -428,10 +428,10 @@ KosContext *kos_context_new(KosDynFrame *top) {
   KosContext_GLOBALS_CACHE_VERSION(ctx) = 0;
 
   /* Initialize hook runner */
-  KosContext_HOOK_RUNNER(ctx)->code = NULL;
-  KosContext_HOOK_RUNNER(ctx)->pc = 0;
-  KosContext_HOOK_RUNNER(ctx)->scratch = NULL;
-  KosContext_HOOK_RUNNER(ctx)->active = 0;
+  KosHookRunner_CODE(KosContext_HOOK_RUNNER(ctx)) = NULL;
+  KosHookRunner_PC(KosContext_HOOK_RUNNER(ctx)) = 0;
+  KosHookRunner_SCRATCH(KosContext_HOOK_RUNNER(ctx)) = NULL;
+  KosHookRunner_ACTIVE(KosContext_HOOK_RUNNER(ctx)) = 0;
 
   /* Initialize transfer plan state */
   KosContext_PLAN(ctx) = NULL;
@@ -475,13 +475,13 @@ void kos_context_free(KosContext *ctx) {
   kos_free_transfer_plan(KosContext_PLAN(ctx));
   while (KosContext_PLAN_STACK(ctx)) {
     KosTransferPlan *p = KosContext_PLAN_STACK(ctx);
-    KosContext_PLAN_STACK(ctx) = p->suspended;
+    KosContext_PLAN_STACK(ctx) = KosTransferPlan_SUSPENDED(p);
     kos_free_transfer_plan(p);
   }
 
   /* Free hook runner scratch stack */
-  if (KosContext_HOOK_RUNNER(ctx)->scratch) {
-    KosStackBlock *b = KosContext_HOOK_RUNNER(ctx)->scratch;
+  if (KosHookRunner_SCRATCH(KosContext_HOOK_RUNNER(ctx))) {
+    KosStackBlock *b = KosHookRunner_SCRATCH(KosContext_HOOK_RUNNER(ctx));
     while (b) {
       KosStackBlock *p = KosStackBlock_PARENT(b);
       KosStackBlock_Release(b);
@@ -793,8 +793,8 @@ static int push_or_await(KosContext *ctx, KosEvent *out_ev, PyObject *val) {
 
   if (suspended && yielded) {
     KosContext_FLAGS(ctx) &= ~KOS_CTX_RUNNING;
-    out_ev->kind = KOS_EV_AWAIT;
-    out_ev->payload = yielded;
+    KosEvent_KIND(out_ev) = KOS_EV_AWAIT;
+    KosEvent_PAYLOAD(out_ev) = yielded;
     SAYF("[eval] push_or_await set KOS_EV_AWAIT (suspended=%d yielded=%d)\n",
          suspended, yielded ? 1 : 0);
     return 1;
@@ -811,7 +811,7 @@ static int push_or_await(KosContext *ctx, KosEvent *out_ev, PyObject *val) {
    Get the name constant for a VAR_* opcode. Borrowed reference.
 */
 static PyObject *get_name_from_insn(KosCode *code, KosOp *insn) {
-  return KosCode_GetConstant((PyObject *) code, insn->arg);
+  return KosCode_GetConstant((PyObject *) code, KosOp_ARG(insn));
 }
 
 
@@ -923,7 +923,7 @@ static int op_unimplemented_stub(KosContext *ctx, KosEvent *out_ev, KosOp *insn)
   (void) ctx;
   (void) out_ev;
   PyErr_Format(PyExc_RuntimeError, "unimplemented opcode %u",
-               (unsigned) insn->op);
+               (unsigned) KosOp_OP(insn));
   return -1;
 }
 
@@ -971,16 +971,16 @@ static int call_call_continuation(
     return -1;
   }
 
-  if (k->prompt_id != KOS_PROMPT_ID_UNDELIMITED
-      && ! kos_find_prompt(ctx, k->prompt_id)) {
+  if (KosContinuation_PROMPT_ID(k) != KOS_PROMPT_ID_UNDELIMITED
+      && ! kos_find_prompt(ctx, KosContinuation_PROMPT_ID(k))) {
     Py_DECREF(resume_val);
     PyErr_SetString(KoskariContinuationError,
                     "continuation: prompt not found in dynamic chain");
     return -1;
   }
 
-  if (k->token_ref == (PyObject *) KosContext_TOKEN(ctx)
-      || (k->prompt_id == KOS_PROMPT_ID_UNDELIMITED && ! k->token_ref)) {
+  if (KosContinuation_TOKEN_REF(k) == (PyObject *) KosContext_TOKEN(ctx)
+      || (KosContinuation_PROMPT_ID(k) == KOS_PROMPT_ID_UNDELIMITED && ! KosContinuation_TOKEN_REF(k))) {
     if (kos_invoke_continuation(ctx, k, resume_val, 0, callable) < 0) {
       Py_DECREF(resume_val);
       return -1;
@@ -994,7 +994,7 @@ static int call_call_continuation(
   {
     PyObject *exc = PyObject_CallNoArgs(KoskariContinuationApply);
     if (exc) {
-      PyObject_SetAttrString(exc, "target", k->token_ref);
+      PyObject_SetAttrString(exc, "target", KosContinuation_TOKEN_REF(k));
       PyObject_SetAttrString(exc, "continuation", callable);
       PyObject *args_tup = PyTuple_Pack(1, resume_val);
       if (args_tup) {
@@ -1091,7 +1091,7 @@ static int call_pyobject_call(
  */
 static int obj_op_reducing(KosContext *ctx, KosEvent *out_ev, KosOp *insn,
                            KosOperatorReducing *fn) {
-  int opa = (int) insn->arg;
+  int opa = (int) KosOp_ARG(insn);
   PyObject *res;
 
   if (opa < 0) {
@@ -1204,7 +1204,7 @@ static int op_OBJECT_EQ_impl(
 
 
 /* Pop value then container; PySequence_Contains(container, value). Branch to
-   insn->arg when cmp == branch_when (CHECK_IN: 0, CHECK_NOT_IN: 1). */
+   KosOp_ARG(insn) when cmp == branch_when (CHECK_IN: 0, CHECK_NOT_IN: 1). */
 static int kos_check_contains(
     KosContext *ctx,
     KosEvent *out_ev,
@@ -1225,13 +1225,13 @@ static int kos_check_contains(
   if (unlikely(cmp < 0))
     return -1;
   if (cmp == branch_when)
-    CURRENT_PC(ctx) = insn->arg;
+    CURRENT_PC(ctx) = KosOp_ARG(insn);
   (void) out_ev;
   return 0;
 }
 
 
-/* Pop right then left; branch to insn->arg when (left == right) == branch_when_equal
+/* Pop right then left; branch to KosOp_ARG(insn) when (left == right) == branch_when_equal
    (CHECK_IS: 0 so branch when not equal; CHECK_IS_NOT: 1 so branch when equal). */
 static int kos_check_identity(
     KosContext *ctx,
@@ -1251,13 +1251,13 @@ static int kos_check_identity(
   Py_DECREF(left);
   Py_DECREF(right);
   if (cmp == branch_when_equal)
-    CURRENT_PC(ctx) = insn->arg;
+    CURRENT_PC(ctx) = KosOp_ARG(insn);
   (void) out_ev;
   return 0;
 }
 
 
-/* Pop right then left; call check(left, right). Branch to insn->arg when res == 0. */
+/* Pop right then left; call check(left, right). Branch to KosOp_ARG(insn) when res == 0. */
 static int kos_check_two_arg(
     KosContext *ctx,
     KosEvent *out_ev,
@@ -1278,14 +1278,14 @@ static int kos_check_two_arg(
   if (unlikely(res < 0))
     return -1;
   if (res == 0)
-    CURRENT_PC(ctx) = insn->arg;
+    CURRENT_PC(ctx) = KosOp_ARG(insn);
   (void) out_ev;
   return 0;
 }
 
 
 /* Helper for CHECK_EQ/GE/GT/LE/LT/NE: pop right then left, RichCompareBool;
-   jump to insn->arg if comparison fails (res == 0). */
+   jump to KosOp_ARG(insn) if comparison fails (res == 0). */
 static int kos_check_cmp(
     KosContext *ctx,
     KosEvent *out_ev,
@@ -1306,7 +1306,7 @@ static int kos_check_cmp(
   if (res < 0)
     return -1;
   if (res == 0)
-    CURRENT_PC(ctx) = insn->arg;
+    CURRENT_PC(ctx) = KosOp_ARG(insn);
   (void) out_ev;
   return 0;
 }
@@ -1351,8 +1351,8 @@ static KosGetNextResult next_from_python_async_iter(
   Py_DECREF(awaitable);
   if (suspended && yielded) {
     KosContext_FLAGS(ctx) &= ~KOS_CTX_RUNNING;
-    out_ev->kind = KOS_EV_AWAIT;
-    out_ev->payload = yielded;
+    KosEvent_KIND(out_ev) = KOS_EV_AWAIT;
+    KosEvent_PAYLOAD(out_ev) = yielded;
     return GET_NEXT_SUSPEND;
   }
   if (PyErr_ExceptionMatches(PyExc_StopAsyncIteration)) {
@@ -1587,8 +1587,8 @@ static int try_local_exception_handler(KosContext *ctx, KosEvent *out_ev) {
   if (! region) {
     PyObject *typ = NULL, *val = NULL, *tb = NULL;
     PyErr_Fetch(&typ, &val, &tb);
-    out_ev->kind = KOS_EV_RAISE;
-    out_ev->payload = val;  /* exception instance (caller DECREFs) */
+    KosEvent_KIND(out_ev) = KOS_EV_RAISE;
+    KosEvent_PAYLOAD(out_ev) = val;  /* exception instance (caller DECREFs) */
     Py_XDECREF(typ);
     Py_XDECREF(tb);
     KosContext_FLAGS(ctx) &= ~KOS_CTX_RUNNING;
@@ -1654,9 +1654,9 @@ int koskari_eval(KosContext *ctx, KosEvent *out_ev) {
     Py_CLEAR(KosContext_INJECT_VALUE(ctx));
     KosContext_INJECT_MODE(ctx) = KOS_INJECT_NONE;
 
-    out_ev->kind = KOS_EV_RAISE;
-    out_ev->payload = NULL;
-    PyErr_Fetch(&out_ev->payload, NULL, NULL);
+    KosEvent_KIND(out_ev) = KOS_EV_RAISE;
+    KosEvent_PAYLOAD(out_ev) = NULL;
+    PyErr_Fetch(&KosEvent_PAYLOAD(out_ev), NULL, NULL);
 
     KosContext_FLAGS(ctx) &= ~KOS_CTX_RUNNING;
     KosContext_FLAGS(ctx) |= KOS_CTX_DEAD;
@@ -1671,8 +1671,8 @@ int koskari_eval(KosContext *ctx, KosEvent *out_ev) {
 
   if (kos_hook_active(ctx)) {
     /* Minimal: no hook execution; return */
-    out_ev->kind = KOS_EV_RETURN;
-    out_ev->payload = Py_None;
+    KosEvent_KIND(out_ev) = KOS_EV_RETURN;
+    KosEvent_PAYLOAD(out_ev) = Py_None;
     Py_INCREF(Py_None);
     KosContext_FLAGS(ctx) &= ~KOS_CTX_RUNNING;
     KosContext_FLAGS(ctx) |= KOS_CTX_DEAD;
@@ -1681,8 +1681,8 @@ int koskari_eval(KosContext *ctx, KosEvent *out_ev) {
   }
 
   if (! CURRENT_FRAME(ctx)) {
-    out_ev->kind = KOS_EV_RETURN;
-    out_ev->payload = Py_None;
+    KosEvent_KIND(out_ev) = KOS_EV_RETURN;
+    KosEvent_PAYLOAD(out_ev) = Py_None;
     Py_INCREF(Py_None);
     KosContext_FLAGS(ctx) &= ~KOS_CTX_RUNNING;
     KosContext_FLAGS(ctx) |= KOS_CTX_DEAD;
@@ -1741,36 +1741,36 @@ int koskari_eval(KosContext *ctx, KosEvent *out_ev) {
     KosCode *code = CURRENT_CODE(ctx);
     uint32_t pc = CURRENT_PC(ctx);
 
-    if (unlikely(pc >= code->code_len)) {
+    if (unlikely(pc >= KosCode_CODE_LEN(code))) {
       SAYF("[eval] pc=%u OUT OF RANGE (code_len=%u)\n",
-           (unsigned) pc, (unsigned) code->code_len);
+           (unsigned) pc, (unsigned) KosCode_CODE_LEN(code));
       PyErr_SetString(PyExc_RuntimeError, "pc out of range");
       eval_ret = -1;
       goto koskari_eval_cleanup;
     }
 
-    KosOp *insn = &code->code[pc];
+    KosOp *insn = &KosCode_CODE(code)[pc];
     SAYF("[eval] pc=%u op=%u arg=%u\n",
-         (unsigned) pc, (unsigned) insn->op, (unsigned) insn->arg);
+         (unsigned) pc, (unsigned) KosOp_OP(insn), (unsigned) KosOp_ARG(insn));
     trace_stack("  before", CURRENT_STACK(ctx));
     CURRENT_PC(ctx) = pc + 1;
 
-    if (unlikely((KosOpCode) insn->op > KOS_OP_THEEND)) {
+    if (unlikely((KosOpCode) KosOp_OP(insn) > KOS_OP_THEEND)) {
       PyErr_Format(PyExc_RuntimeError, "invalid opcode %u",
-                   (unsigned) insn->op);
+                   (unsigned) KosOp_OP(insn));
       eval_ret = -1;
       goto koskari_eval_cleanup;
     }
     {
       int op_res;
 #if KOS_USE_COMPUTED_GOTO
-      goto *optable[insn->op];
+      goto *optable[KosOp_OP(insn)];
 #define OP(name, style) TARGET_##name: op_res = op_##name(ctx, out_ev, insn); if (op_res != 0) goto handle_op_result; goto next_insn;
 #include "opcodes.incl"
 #undef OP
       handle_op_result:
 #else
-      op_res = op_handlers[insn->op](ctx, out_ev, insn);
+      op_res = op_handlers[KosOp_OP(insn)](ctx, out_ev, insn);
 #endif
       if (unlikely(op_res != 0)) {
         if (PyErr_Occurred()) {

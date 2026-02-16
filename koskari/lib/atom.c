@@ -45,9 +45,6 @@ static PyObject *intern_syms = NULL;
 static PyObject *intern_kwds = NULL;
 
 
-#define ATOM_NAME(o) (((KosInternedAtom *)(o))->name)
-
-
 static PyObject *atom_new(
     PyObject *name,
     PyObject *intern,
@@ -76,10 +73,10 @@ static PyObject *atom_new(
       return NULL;
     }
 
-    atom->name = name;
+    KosInternedAtom_NAME(atom) = name;
 
     if (PyDict_SetItem(intern, name, (PyObject *) atom)) {
-      Py_DECREF(atom);  // this will clear atom->name as well
+      Py_DECREF(atom);  /* clears KosInternedAtom_NAME(atom) as well */
       return NULL;
     }
 
@@ -100,19 +97,19 @@ static PyObject *atom_new(
 static PyObject *atom_repr(PyObject *self) {
   return PyUnicode_FromFormat("<%s %R>",
                               self->ob_type->tp_name,
-                              ATOM_NAME(self));
+                              KosInternedAtom_NAME(self));
 }
 
 
 static PyObject *atom_str(PyObject *self) {
-  PyObject *name = ATOM_NAME(self);
+  PyObject *name = KosInternedAtom_NAME(self);
   Py_INCREF(name);
   return name;
 }
 
 
 static Py_ssize_t atom_len(PyObject *self) {
-  PyObject *name = ATOM_NAME(self);
+  PyObject *name = KosInternedAtom_NAME(self);
   return PyUnicode_GET_LENGTH(name);
 }
 
@@ -150,10 +147,10 @@ PyObject *KosSymbol_FromString(PyObject *name) {
 static void symbol_dealloc(PyObject *self) {
   if (intern_syms) {
     self->ob_refcnt = 3;
-    PyDict_DelItem(intern_syms, ((KosInternedAtom *) self)->name);
+    PyDict_DelItem(intern_syms, KosInternedAtom_NAME(self));
   }
 
-  Py_CLEAR(((KosInternedAtom *) self)->name);
+  Py_CLEAR(KosInternedAtom_NAME(self));
   Py_TYPE(self)->tp_free(self);
 }
 
@@ -182,7 +179,7 @@ static PyObject *symbol_split(
     PyObject *args,
     PyObject *kwds) {
 
-  PyObject *name = ATOM_NAME(self);
+  PyObject *name = KosInternedAtom_NAME(self);
   PyObject *method = NULL;
   PyObject *result = NULL;
 
@@ -208,7 +205,7 @@ static PyObject *symbol_rsplit(
     PyObject *args,
     PyObject *kwds) {
 
-  PyObject *name = ATOM_NAME(self);
+  PyObject *name = KosInternedAtom_NAME(self);
   PyObject *method = NULL;
   PyObject *result = NULL;
 
@@ -393,10 +390,10 @@ static PyObject *keyword_new(
 static void keyword_dealloc(PyObject *self) {
   if (intern_kwds) {
     self->ob_refcnt = 3;
-    PyDict_DelItem(intern_kwds, ((KosInternedAtom *) self)->name);
+    PyDict_DelItem(intern_kwds, KosInternedAtom_NAME(self));
   }
 
-  Py_CLEAR(((KosInternedAtom *) self)->name);
+  Py_CLEAR(KosInternedAtom_NAME(self));
   Py_TYPE(self)->tp_free(self);
 }
 
@@ -406,7 +403,7 @@ static PyObject *keyword_split(
     PyObject *args,
     PyObject *kwds) {
 
-  PyObject *name = ATOM_NAME(self);
+  PyObject *name = KosInternedAtom_NAME(self);
   PyObject *method = NULL;
   PyObject *result = NULL;
 
@@ -432,7 +429,7 @@ static PyObject *keyword_rsplit(
     PyObject *args,
     PyObject *kwds) {
 
-  PyObject *name = ATOM_NAME(self);
+  PyObject *name = KosInternedAtom_NAME(self);
   PyObject *method = NULL;
   PyObject *result = NULL;
 

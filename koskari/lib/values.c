@@ -67,8 +67,8 @@ static void values_dealloc(PyObject *self) {
     PyObject_GC_UnTrack(self);
     Py_TRASHCAN_BEGIN(self, values_dealloc);
 
-    Py_CLEAR(((KosValues *) self)->args);
-    Py_CLEAR(((KosValues *) self)->kwds);
+    Py_CLEAR(KosValues_ARGS(self));
+    Py_CLEAR(KosValues_KWDS(self));
 
     PyObject_GC_Del(self);
     Py_TRASHCAN_END;
@@ -76,36 +76,36 @@ static void values_dealloc(PyObject *self) {
 
 
 static int values_traverse(PyObject *self, visitproc visit, void *arg) {
-    Py_VISIT(((KosValues *) self)->args);
-    Py_VISIT(((KosValues *) self)->kwds);
+    Py_VISIT(KosValues_ARGS(self));
+    Py_VISIT(KosValues_KWDS(self));
     return 0;
 }
 
 
 static int values_clear(PyObject *self) {
-    Py_CLEAR(((KosValues *) self)->args);
-    Py_CLEAR(((KosValues *) self)->kwds);
+    Py_CLEAR(KosValues_ARGS(self));
+    Py_CLEAR(KosValues_KWDS(self));
     return 0;
 }
 
 
 static PyObject *values_iter(PyObject *self) {
-    return PyObject_GetIter(((KosValues *) self)->args);
+    return PyObject_GetIter(KosValues_ARGS(self));
 }
 
 
 static Py_ssize_t values_args_length(PyObject *self) {
-    return PyTuple_GET_SIZE(((KosValues *) self)->args);
+    return PyTuple_GET_SIZE(KosValues_ARGS(self));
 }
 
 
 static PyObject *values_args_getitem(PyObject *self, Py_ssize_t index) {
-    return PySequence_GetItem(((KosValues *) self)->args, index);
+    return PySequence_GetItem(KosValues_ARGS(self), index);
 }
 
 
 static Py_ssize_t values_kwds_length(PyObject *self) {
-    PyObject *kwds = ((KosValues *) self)->kwds;
+    PyObject *kwds = KosValues_KWDS(self);
     return kwds ? PyDict_Size(kwds) : 0;
 }
 
@@ -115,11 +115,11 @@ static PyObject *values_kwds_getitem(
     PyObject *key) {
 
     if (PyLong_CheckExact(key)) {
-        return PySequence_GetItem(((KosValues *) self)->args,
+        return PySequence_GetItem(KosValues_ARGS(self),
                                   PyLong_AsSsize_t(key));
 
     } else {
-        PyObject *kwds = ((KosValues *) self)->kwds;
+        PyObject *kwds = KosValues_KWDS(self);
         PyObject *result = kwds ? PyDict_GetItem(kwds, key) : NULL;
 
         if (result) {
@@ -163,9 +163,9 @@ static PyObject *values_call(
 
         tmp = PySequence_GetSlice(args, 1, PyTuple_GET_SIZE(args));
 
-        if (PyTuple_GET_SIZE(s->args)) {
+        if (PyTuple_GET_SIZE(KosValues_ARGS(s))) {
             /* merge the existing positionals with the invocation ones */
-            call_args = PySequence_Concat(s->args, tmp);
+            call_args = PySequence_Concat(KosValues_ARGS(s), tmp);
             Py_DECREF(tmp);
 
         } else {
@@ -177,7 +177,7 @@ static PyObject *values_call(
     } else {
         /* no additional positionals given at invocation, so we'll just be
            using our existing ones. */
-        call_args = s->args;
+        call_args = KosValues_ARGS(s);
         Py_INCREF(call_args);
     }
 
@@ -185,12 +185,12 @@ static PyObject *values_call(
         /* if keyword arguments were supplied, we'll need to add those to
            the work invocation. */
 
-        if (s->kwds && PyDict_Size(s->kwds)) {
+        if (KosValues_KWDS(s) && PyDict_Size(KosValues_KWDS(s))) {
             /* if the values already had keywords, we'll need to create a
                new dict and merge these two sets of keyword arguments
                together */
 
-            call_kwds = PyDict_Copy(s->kwds);
+            call_kwds = PyDict_Copy(KosValues_KWDS(s));
             PyDict_Update(call_kwds, kwds);
 
         } else {
@@ -204,7 +204,7 @@ static PyObject *values_call(
     } else {
         /* no extra keyword arguments were supplied, so we only need to
            use the ones from the values */
-        call_kwds = s->kwds;
+        call_kwds = KosValues_KWDS(s);
         Py_XINCREF(call_kwds);
     }
 
@@ -233,9 +233,9 @@ static PyObject *values_repr(PyObject *self) {
 
     PyList_Append(col, _str_values_paren);
 
-    limit = PyTuple_GET_SIZE(s->args);
+    limit = PyTuple_GET_SIZE(KosValues_ARGS(s));
     for (count = 0; count < limit; count++) {
-        tmp = PyObject_Repr(PyTuple_GET_ITEM(s->args, count));
+        tmp = PyObject_Repr(PyTuple_GET_ITEM(KosValues_ARGS(s), count));
         if (! tmp) {
             Py_DECREF(col);
             return NULL;
@@ -246,8 +246,8 @@ static PyObject *values_repr(PyObject *self) {
     }
 
     count = 0;
-    if (s->kwds && PyDict_Size(s->kwds)) {
-        while (PyDict_Next(s->kwds, &count, &key, &value)) {
+    if (KosValues_KWDS(s) && PyDict_Size(KosValues_KWDS(s))) {
+        while (PyDict_Next(KosValues_KWDS(s), &count, &key, &value)) {
             tmp = PyObject_Repr(value);
             if (! tmp) {
                 Py_DECREF(col);
@@ -280,16 +280,16 @@ static PyObject *values_repr(PyObject *self) {
 
 static Py_hash_t values_hash(PyObject *self) {
     KosValues *s = (KosValues *) self;
-    Py_uhash_t result = s->hashed, khash;
+    Py_uhash_t result = KosValues_HASHED(s), khash;
     PyObject *tmp, *frozen;
 
     if (result == 0) {
-        result = PyObject_Hash(s->args);
+        result = PyObject_Hash(KosValues_ARGS(s));
         if (result == (Py_uhash_t) -1)
             return -1;
 
-        if (s->kwds && PyDict_Size(s->kwds)) {
-            tmp = _PyDictView_New(s->kwds, &PyDictItems_Type);
+        if (KosValues_KWDS(s) && PyDict_Size(KosValues_KWDS(s))) {
+            tmp = _PyDictView_New(KosValues_KWDS(s), &PyDictItems_Type);
             if (! tmp)
                 return -1;
 
@@ -313,7 +313,7 @@ static Py_hash_t values_hash(PyObject *self) {
                 result = (Py_uhash_t) -2;
         }
 
-        s->hashed = result;
+        KosValues_HASHED(s) = result;
     }
 
     return result;
@@ -335,33 +335,33 @@ static long values_eq(PyObject *self, PyObject *other) {
            compare their positionals and keywords. We'll actually do the
            keywords check first, because it has a quick NULL-check */
 
-        if (s->kwds && o->kwds) {
-            answer = PyObject_RichCompareBool(s->kwds, o->kwds, Py_EQ);
+        if (KosValues_KWDS(s) && KosValues_KWDS(o)) {
+            answer = PyObject_RichCompareBool(KosValues_KWDS(s), KosValues_KWDS(o), Py_EQ);
         } else {
-            answer = (s->kwds == o->kwds);
+            answer = (KosValues_KWDS(s) == KosValues_KWDS(o));
         }
 
         answer = answer && \
-            PyObject_RichCompareBool(s->args, o->args, Py_EQ);
+            PyObject_RichCompareBool(KosValues_ARGS(s), KosValues_ARGS(o), Py_EQ);
 
     } else if (PyTuple_CheckExact(other)) {
         /* comparing against a tuple is fine, so long as keywords either
            are NULL or empty. */
 
-        answer = ((! s->kwds) || (! PyDict_Size(s->kwds))) &&   \
-            PyObject_RichCompareBool(s->args, other, Py_EQ);
+        answer = ((! KosValues_KWDS(s)) || (! PyDict_Size(KosValues_KWDS(s)))) &&   \
+            PyObject_RichCompareBool(KosValues_ARGS(s), other, Py_EQ);
 
     } else if (PyDict_CheckExact(other)) {
         /* comparing against a dict is fine, so long as positionals is
            empty. */
 
-        if (s->kwds) {
-            answer = (! PyTuple_GET_SIZE(s->args)) &&           \
-                PyObject_RichCompareBool(s->kwds, other, Py_EQ);
+        if (KosValues_KWDS(s)) {
+            answer = (! PyTuple_GET_SIZE(KosValues_ARGS(s))) &&           \
+                PyObject_RichCompareBool(KosValues_KWDS(s), other, Py_EQ);
 
         } else {
             /* we'll say a NULL keywords is equal to an empty dict */
-            answer = (! PyTuple_GET_SIZE(s->args)) && \
+            answer = (! PyTuple_GET_SIZE(KosValues_ARGS(s))) && \
                 (! PyDict_Size(other));
         }
     }
@@ -385,8 +385,8 @@ static PyObject *values_richcomp(PyObject *self, PyObject *other, int op) {
 
 
 static int values_bool(PyObject *self) {
-    PyObject *args = ((KosValues *) self)->args;
-    PyObject *kwds = ((KosValues *) self)->kwds;
+    PyObject *args = KosValues_ARGS(self);
+    PyObject *kwds = KosValues_KWDS(self);
 
     return !!((kwds && PyDict_Size(kwds)) ||
               (args && PyTuple_GET_SIZE(args)));
@@ -403,23 +403,23 @@ static PyObject *values_add(PyObject *left, PyObject *right) {
         if (KosValues_CheckExact(right)) {
             KosValues *o = (KosValues *) right;
 
-            args = PySequence_Concat(s->args, o->args);
+            args = PySequence_Concat(KosValues_ARGS(s), KosValues_ARGS(o));
             if (! args)
                 return NULL;
 
-            if (o->kwds) {
-                kwds = s->kwds ? PyDict_Copy(s->kwds) : PyDict_New();
-                PyDict_Update(kwds, o->kwds);
+            if (KosValues_KWDS(o)) {
+                kwds = KosValues_KWDS(s) ? PyDict_Copy(KosValues_KWDS(s)) : PyDict_New();
+                PyDict_Update(kwds, KosValues_KWDS(o));
             } else {
-                kwds = s->kwds;
+                kwds = KosValues_KWDS(s);
                 Py_XINCREF(kwds);
             }
 
         } else if (PyDict_Check(right)) {
-            args = s->args;
+            args = KosValues_ARGS(s);
             Py_INCREF(args);
 
-            kwds = s->kwds ? PyDict_Copy(s->kwds) : PyDict_New();
+            kwds = KosValues_KWDS(s) ? PyDict_Copy(KosValues_KWDS(s)) : PyDict_New();
             PyDict_Update(kwds, right);
 
         } else {
@@ -427,13 +427,13 @@ static PyObject *values_add(PyObject *left, PyObject *right) {
             if (! tmp)
                 return NULL;
 
-            args = PySequence_Concat(s->args, tmp);
+            args = PySequence_Concat(KosValues_ARGS(s), tmp);
             Py_DECREF(tmp);
 
             if (! args)
                 return NULL;
 
-            kwds = s->kwds;
+            kwds = KosValues_KWDS(s);
             Py_XINCREF(kwds);
         }
 
@@ -441,12 +441,12 @@ static PyObject *values_add(PyObject *left, PyObject *right) {
         KosValues *s = (KosValues *) right;
 
         if (PyDict_Check(left)) {
-            args = s->args;
+            args = KosValues_ARGS(s);
             Py_INCREF(args);
 
-            if (s->kwds) {
+            if (KosValues_KWDS(s)) {
                 kwds = PyDict_Copy(left);
-                PyDict_Update(kwds, s->kwds);
+                PyDict_Update(kwds, KosValues_KWDS(s));
 
             } else {
                 kwds = PyDict_Copy(left);
@@ -457,13 +457,13 @@ static PyObject *values_add(PyObject *left, PyObject *right) {
             if (! tmp)
                 return NULL;
 
-            args = PySequence_Concat(tmp, s->args);
+            args = PySequence_Concat(tmp, KosValues_ARGS(s));
             Py_DECREF(tmp);
 
             if (! args)
                 return NULL;
 
-            kwds = s->kwds;
+            kwds = KosValues_KWDS(s);
             Py_XINCREF(kwds);
         }
 
@@ -474,7 +474,7 @@ static PyObject *values_add(PyObject *left, PyObject *right) {
 
     result = (KosValues *) KosValues_New(args, NULL);
     if (result) {
-        result->kwds = kwds;  /* just to avoid another copy */
+        KosValues_KWDS(result) = kwds;  /* just to avoid another copy */
     } else {
         Py_XDECREF(kwds);
     }
@@ -490,10 +490,10 @@ static PyObject *values_keys(PyObject *self, PyObject *_noargs) {
     KosValues *s = (KosValues *) self;
     PyObject *tmp, *result = NULL;
 
-    if (s->kwds) {
+    if (KosValues_KWDS(s)) {
         /* this is what the default keys() impl on dict does. The
            PyDict_Keys API creates a list, which we don't want to do. */
-        result = _PyDictView_New(s->kwds, &PyDictKeys_Type);
+        result = _PyDictView_New(KosValues_KWDS(s), &PyDictKeys_Type);
 
     } else {
         /* a cheap empty iterator */
@@ -570,23 +570,23 @@ PyObject *KosValues_New(PyObject *args, PyObject *kwds) {
     if (! self)
         return NULL;
 
-    self->kwds = NULL;
+    KosValues_KWDS(self) = NULL;
 
-    self->args = PySequence_Tuple(args);
-    if (! self->args) {
+    KosValues_ARGS(self) = PySequence_Tuple(args);
+    if (! KosValues_ARGS(self)) {
         Py_DECREF(self);
         return NULL;
     }
 
     if (kwds) {
-        self->kwds = PyDict_Copy(kwds);
-        if (! self->kwds) {
+        KosValues_KWDS(self) = PyDict_Copy(kwds);
+        if (! KosValues_KWDS(self)) {
             Py_DECREF(self);
             return NULL;
         }
     }
 
-    self->hashed = 0;
+    KosValues_HASHED(self) = 0;
 
     PyObject_GC_Track((PyObject *) self);
     return (PyObject *) self;

@@ -19,7 +19,7 @@
 */
 
 KOS_OP_HANDLER(OBJECT_IS_SUBCLASS) {
-  int opa = (int) insn->arg;
+  int opa = (int) KosOp_ARG(insn);
   PyObject *value = NULL, *match = NULL;
 
   if (opa < 2) {

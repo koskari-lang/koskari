@@ -23,7 +23,7 @@ KOS_OP_HANDLER(FAST_REF) {
     PyErr_Format(PyExc_RuntimeError, "FAST_REF invoked on %R", ns);
     return -1;
   }
-  size_t idx = (size_t) insn->arg;
+  size_t idx = (size_t) KosOp_ARG(insn);
   PyObject *ref = KosNamespace_FastRef(ns, idx);
   if (! ref)
     return -1;

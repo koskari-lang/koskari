@@ -19,7 +19,7 @@
 */
 
 KOS_OP_HANDLER(PUSH_LOOP) {
-  uint32_t break_pc = insn->arg;
+  uint32_t break_pc = KosOp_ARG(insn);
   uint32_t continue_pc = CURRENT_PC(ctx);  /* already advanced by drive loop */
   KosDynRegion *region = kos_dyn_push_region(ctx, KOS_REGION_LOOP,
                                              break_pc, continue_pc);

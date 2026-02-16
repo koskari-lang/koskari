@@ -26,7 +26,7 @@ KOS_OP_HANDLER(JUMP_FALSE) {
   if (res < 0)
     return -1;
   if (res)
-    CURRENT_PC(ctx) = insn->arg;
+    CURRENT_PC(ctx) = KosOp_ARG(insn);
   (void) out_ev;
   return 0;
 }

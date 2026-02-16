@@ -204,15 +204,15 @@ static PyObject *coroutine_send(PyObject *self, PyObject *value) {
 
   coro->in_send = 0;
 
-  SAYF("[coroutine_send] koskari_eval -> res=%d ev.kind=%d, payload=%R\n",
-        res, ev.kind, ev.payload);
+  SAYF("[coroutine_send] koskari_eval -> res=%d KosEvent_KIND(&ev)=%d, payload=%R\n",
+        res, KosEvent_KIND(&ev), KosEvent_PAYLOAD(&ev));
 
   if (res < 0) {
     coro->state = KOS_CORO_DONE;
     return NULL;
   }
 
-  switch (ev.kind) {
+  switch (KosEvent_KIND(&ev)) {
     case KOS_EV_RETURN:
       coro->state = KOS_CORO_DONE;
 
@@ -221,29 +221,29 @@ static PyObject *coroutine_send(PyObject *self, PyObject *value) {
       // exception with a tuple payload, it unpacks it as the args for the
       // exception. So we'll create the exception instance ourselves to
       // avoid that.
-      PyObject *err = PyObject_CallOneArg(PyExc_StopIteration, ev.payload);
+      PyObject *err = PyObject_CallOneArg(PyExc_StopIteration, KosEvent_PAYLOAD(&ev));
       PyErr_SetObject(PyExc_StopIteration, err);
       Py_DECREF(err);
 
-      Py_XDECREF(ev.payload);
+      Py_XDECREF(KosEvent_PAYLOAD(&ev));
       return NULL;
 
     case KOS_EV_RAISE:
       coro->state = KOS_CORO_DONE;
-      if (ev.payload) {
-        PyErr_SetObject((PyObject *) Py_TYPE(ev.payload), ev.payload);
-        Py_DECREF(ev.payload);
+      if (KosEvent_PAYLOAD(&ev)) {
+        PyErr_SetObject((PyObject *) Py_TYPE(KosEvent_PAYLOAD(&ev)), KosEvent_PAYLOAD(&ev));
+        Py_DECREF(KosEvent_PAYLOAD(&ev));
       }
       return NULL;
 
     case KOS_EV_YIELD:
       coro->state = KOS_CORO_YIELDED;
-      return ev.payload;
+      return KosEvent_PAYLOAD(&ev);
 
     case KOS_EV_AWAIT: {
       SAYF("[eval] coroutine_send KOS_EV_AWAIT branch (payload=%d)\n",
-            ev.payload ? 1 : 0);
-      if (! ev.payload) {
+            KosEvent_PAYLOAD(&ev) ? 1 : 0);
+      if (! KosEvent_PAYLOAD(&ev)) {
         PyErr_SetString(PyExc_RuntimeError,
                         "KOS_EV_AWAIT event has NULL payload");
         coro->state = KOS_CORO_DONE;
@@ -254,7 +254,7 @@ static PyObject *coroutine_send(PyObject *self, PyObject *value) {
           send(None) twice and corrupt state). Just suspend and return the
           yielded value to the event loop. */
       coro->state = KOS_CORO_WAITING_PY;
-      return ev.payload;  /* transfer ownership to caller (asyncio) */
+      return KosEvent_PAYLOAD(&ev);  /* transfer ownership to caller (asyncio) */
     }
 
     default:

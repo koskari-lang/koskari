@@ -22,7 +22,7 @@
 */
 
 KOS_OP_HANDLER(PUSH_NS) {
-  int opa = (int) insn->arg;
+  int opa = (int) KosOp_ARG(insn);
   PyObject *nspec = NULL;
   PyObject *names = NULL;
   PyObject *const *args = NULL;

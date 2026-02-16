@@ -20,7 +20,7 @@
 */
 
 KOS_OP_HANDLER(YIELD) {
-  unsigned opa = insn->arg;
+  unsigned opa = KosOp_ARG(insn);
   PyObject *val = NULL;
 
   if (opa == 0) {
@@ -66,8 +66,8 @@ KOS_OP_HANDLER(YIELD) {
     return 0;
   }
 
-  out_ev->kind = KOS_EV_YIELD;
-  out_ev->payload = val;
+  KosEvent_KIND(out_ev) = KOS_EV_YIELD;
+  KosEvent_PAYLOAD(out_ev) = val;
   KosContext_FLAGS(ctx) &= ~KOS_CTX_RUNNING;
   KosContext_FLAGS(ctx) |= KOS_CTX_DEAD;
   return 1;

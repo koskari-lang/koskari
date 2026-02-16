@@ -31,6 +31,9 @@ typedef struct KosInternedAtom {
 } KosInternedAtom;
 
 
+#define KosInternedAtom_NAME(o) (((KosInternedAtom *)(o))->name)
+
+
 /* === type objects === */
 
 

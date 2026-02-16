@@ -81,6 +81,8 @@ extern KosPair _KosNil;
     Py_XINCREF(KosPair_CDR(p));                 \
   }
 
+#define KosPair_POSITION(p) (((KosPair *)(p))->position)
+
 
 /* === public API === */
 

@@ -23,7 +23,7 @@ KOS_OP_HANDLER(FAST_CLEAR) {
     PyErr_Format(PyExc_RuntimeError, "FAST_CLEAR invoked on %R", ns);
     return -1;
   }
-  if (KosNamespace_FastClear(ns, (size_t) insn->arg) < 0)
+  if (KosNamespace_FastClear(ns, (size_t) KosOp_ARG(insn)) < 0)
     return -1;
   (void) out_ev;
   return 0;

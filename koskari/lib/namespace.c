@@ -242,15 +242,15 @@ static PyObject *ns_borrow_ref(PyObject *namespace, PyObject *key) {
     if (index >= 0) {
       KosNameBind *nb = KosNamespace_GET_FAST(namespace, index);
 
-      if (! nb->raw) {
+      if (! KosNameBind_RAW(nb)) {
         PyErr_Format(PyExc_RuntimeError, "reference style mistmatch, %S"
-                     " is not raw, has value %R", key, nb->held);
+                     " is not raw, has value %R", key, KosNameBind_HELD(nb));
         return NULL;
       }
 
-      KosSymbolicRef_VALUE(ref) = nb->held;  // steal raw value
-      nb->held = ref;  // steals reference to ref
-      nb->raw = 0;     // not raw anymore
+      KosSymbolicRef_VALUE(ref) = KosNameBind_HELD(nb);  // steal raw value
+      KosNameBind_HELD(nb) = ref;  // steals reference to ref
+      KosNameBind_RAW(nb) = 0;     // not raw anymore
     }
   }
 
@@ -283,9 +283,9 @@ static int ns_init_syms(PyObject *self, PyObject *parent,
 
       KosNameBind *nb = KosNamespace_GET_FAST(self, count++);
       Py_INCREF(ref_name);
-      nb->name = ref_name;
-      nb->held = NULL;
-      nb->raw = 1;
+      KosNameBind_NAME(nb) = ref_name;
+      KosNameBind_HELD(nb) = NULL;
+      KosNameBind_RAW(nb) = 1;
     }
   }
 
@@ -310,10 +310,10 @@ static int ns_init_syms(PyObject *self, PyObject *parent,
 
       KosNameBind *nb = KosNamespace_GET_FAST(self, count++);
       Py_INCREF(ref_name);
-      nb->name = ref_name;
+      KosNameBind_NAME(nb) = ref_name;
       Py_INCREF(ref);
-      nb->held = ref;
-      nb->raw = 0;
+      KosNameBind_HELD(nb) = ref;
+      KosNameBind_RAW(nb) = 0;
     }
   }
 
@@ -330,7 +330,7 @@ static int ns_fast_index(PyObject *self, PyObject *key) {
   size_t count = KosNamespace_FAST_COUNT(self);
   for (size_t index = 0; index < count; index++) {
     KosNameBind *nb = KosNamespace_GET_FAST(self, index);
-    PyObject *name = nb->name;
+    PyObject *name = KosNameBind_NAME(nb);
     if (name && Py_EQUALS(key, name))
       return index;
   }
@@ -355,7 +355,7 @@ static PyObject *ns_deref_symbol(PyObject *self, PyObject *key) {
     }
 
     KosNameBind *nb = KosNamespace_GET_FAST(self, index);
-    PyObject *val = nb->held;
+    PyObject *val = KosNameBind_HELD(nb);
     if (val) {
       Py_INCREF(val);
     } else {
@@ -387,9 +387,9 @@ static int ns_store_symbol(PyObject *self, PyObject *key, PyObject *val) {
 
     KosNameBind *nb = KosNamespace_GET_FAST(self, index);
     Py_XINCREF(val);
-    Py_XDECREF(nb->held);
-    nb->held = val;
-    nb->raw = 1;
+    Py_XDECREF(KosNameBind_HELD(nb));
+    KosNameBind_HELD(nb) = val;
+    KosNameBind_RAW(nb) = 1;
 
     return 0;
 
@@ -414,14 +414,14 @@ static int ns_bind_ref(PyObject *self, PyObject *key, PyObject *ref) {
     KosNameBind *nb = KosNamespace_GET_FAST(self, fast);
 
     Py_INCREF(key);
-    Py_CLEAR(nb->name);
-    nb->name = key;
+    Py_CLEAR(KosNameBind_NAME(nb));
+    KosNameBind_NAME(nb) = key;
 
     Py_INCREF(ref);
-    Py_CLEAR(nb->held);
-    nb->held = ref;
+    Py_CLEAR(KosNameBind_HELD(nb));
+    KosNameBind_HELD(nb) = ref;
 
-    nb->raw = 0;
+    KosNameBind_RAW(nb) = 0;
   }
 
   fast = PyDict_SetItem(KosNamespace_BINDS(self), key, ref);
@@ -724,9 +724,9 @@ static PyObject *ns_newfull_type(
   // safety zero the fast namebinds
   for (size_t i = count; i--; ) {
     KosNameBind *nb = KosNamespace_GET_FAST(self, i);
-    nb->name = NULL;
-    nb->held = NULL;
-    nb->raw = 1;
+    KosNameBind_NAME(nb) = NULL;
+    KosNameBind_HELD(nb) = NULL;
+    KosNameBind_RAW(nb) = 1;
   }
 
   if(ns_init_syms(self, parent, local_syms, closure_syms))
@@ -786,9 +786,9 @@ static void ns_dealloc(PyObject *self) {
 
   for (size_t i = KosNamespace_FAST_COUNT(self); i--; ) {
     KosNameBind *nb = KosNamespace_GET_FAST(self, i);
-    Py_CLEAR(nb->name);
-    Py_CLEAR(nb->held);
-    nb->raw = 1;
+    Py_CLEAR(KosNameBind_NAME(nb));
+    Py_CLEAR(KosNameBind_HELD(nb));
+    KosNameBind_RAW(nb) = 1;
   }
   KosNamespace_FAST_COUNT(self) = 0;
 
@@ -803,8 +803,8 @@ static int ns_traverse(PyObject *self, visitproc visit, void *arg) {
 
   for (size_t i = KosNamespace_FAST_COUNT(self); i--; ) {
     KosNameBind *nb = KosNamespace_GET_FAST(self, i);
-    Py_VISIT(nb->name);
-    Py_VISIT(nb->held);
+    Py_VISIT(KosNameBind_NAME(nb));
+    Py_VISIT(KosNameBind_HELD(nb));
   }
 
   return 0;
@@ -818,9 +818,9 @@ static int ns_clear(PyObject *self) {
 
   for (size_t i = KosNamespace_FAST_COUNT(self); i--; ) {
     KosNameBind *nb = KosNamespace_GET_FAST(self, i);
-    Py_CLEAR(nb->name);
-    Py_CLEAR(nb->held);
-    nb->raw = 1;
+    Py_CLEAR(KosNameBind_NAME(nb));
+    Py_CLEAR(KosNameBind_HELD(nb));
+    KosNameBind_RAW(nb) = 1;
   }
   KosNamespace_FAST_COUNT(self) = 0;
 
@@ -1016,17 +1016,17 @@ PyObject *KosNamespace_FastDeref(PyObject *namespace, size_t index) {
 
   KosNameBind *nb = KosNamespace_GET_FAST(namespace, index);
 
-  if (nb->raw) {
-    PyObject *value = nb->held;
+  if (KosNameBind_RAW(nb)) {
+    PyObject *value = KosNameBind_HELD(nb);
     if (! value) {
-      PyErr_Format(PyExc_NameError, "Empty reference: %S", nb->name);
+      PyErr_Format(PyExc_NameError, "Empty reference: %S", KosNameBind_NAME(nb));
     } else {
       Py_INCREF(value);
     }
     return value;
 
   } else {
-    return KosRef_Deref(nb->held);
+    return KosRef_Deref(KosNameBind_HELD(nb));
   }
 }
 
@@ -1039,21 +1039,21 @@ PyObject *KosNamespace_FastRef(PyObject *namespace, size_t index) {
   }
 
   KosNameBind *nb = KosNamespace_GET_FAST(namespace, index);
-  if (nb->raw) {
-    PyObject *ref = KosSymbolicRef_New(nb->name, NULL);
+  if (KosNameBind_RAW(nb)) {
+    PyObject *ref = KosSymbolicRef_New(KosNameBind_NAME(nb), NULL);
     if (! ref)
       return NULL;
 
-    KosSymbolicRef_VALUE(ref) = nb->held;
-    nb->held = ref;
-    nb->raw = 0;
+    KosSymbolicRef_VALUE(ref) = KosNameBind_HELD(nb);
+    KosNameBind_HELD(nb) = ref;
+    KosNameBind_RAW(nb) = 0;
 
-    if (PyDict_SetItem(KosNamespace_BINDS(namespace), nb->name, ref)) {
+    if (PyDict_SetItem(KosNamespace_BINDS(namespace), KosNameBind_NAME(nb), ref)) {
       return NULL;
     }
   }
 
-  return nb->held;
+  return KosNameBind_HELD(nb);
 }
 
 
@@ -1069,14 +1069,14 @@ int KosNamespace_FastStore(
   }
 
   KosNameBind *nb = KosNamespace_GET_FAST(namespace, index);
-  if (nb->raw) {
+  if (KosNameBind_RAW(nb)) {
     Py_INCREF(value);
-    Py_CLEAR(nb->held);
-    nb->held = value;
+    Py_CLEAR(KosNameBind_HELD(nb));
+    KosNameBind_HELD(nb) = value;
     return 0;
 
   } else {
-    return KosRef_Store(nb->held, value);
+    return KosRef_Store(KosNameBind_HELD(nb), value);
   }
 }
 
@@ -1089,12 +1089,12 @@ int KosNamespace_FastClear(PyObject *namespace, size_t index) {
   }
 
   KosNameBind *nb = KosNamespace_GET_FAST(namespace, index);
-  if (nb->raw) {
-    Py_CLEAR(nb->held);
+  if (KosNameBind_RAW(nb)) {
+    Py_CLEAR(KosNameBind_HELD(nb));
     return 0;
 
   } else {
-    return KosRef_Clear(nb->held);
+    return KosRef_Clear(KosNameBind_HELD(nb));
   }
 }
 
@@ -1119,11 +1119,11 @@ int KosNamespace_FastBind(
   KosNameBind *nb = KosNamespace_GET_FAST(namespace, index);
 
   Py_INCREF(ref);
-  Py_CLEAR(nb->held);
-  nb->held = ref;
-  nb->raw = 0;
+  Py_CLEAR(KosNameBind_HELD(nb));
+  KosNameBind_HELD(nb) = ref;
+  KosNameBind_RAW(nb) = 0;
 
-  return PyDict_SetItem(KosNamespace_BINDS(namespace), nb->name, ref);
+  return PyDict_SetItem(KosNamespace_BINDS(namespace), KosNameBind_NAME(nb), ref);
 }
 
 

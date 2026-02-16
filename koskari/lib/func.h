@@ -89,8 +89,10 @@ typedef struct KosFunctionSpec {
 } KosFunctionSpec;
 
 
-PyObject *KosFunctionSpec_New(PyObject *name, PyObject *formals_spec,
-                              PyObject *code);
+PyObject *KosFunctionSpec_New(
+      PyObject *name,
+      PyObject *formals_spec,
+      PyObject *code);
 
 
 #define KosFunctionSpec_NAME(fspec)             \
@@ -117,9 +119,10 @@ PyObject *KosFunctionSpec_New(PyObject *name, PyObject *formals_spec,
    :param parent_namespace: KosNamespace (current frame NS)
    :return: new KosFunction, or NULL on error
 */
-PyObject *KosFunction_New(PyObject *func_spec,
-                          PyObject *kw_defaults,
-                          PyObject *parent_namespace);
+PyObject *KosFunction_New(
+      PyObject *func_spec,
+      PyObject *kw_defaults,
+      PyObject *parent_namespace);
 
 
 /* === Function === */
@@ -158,9 +161,10 @@ typedef struct {
    :param parent_ns: KosNamespace instance (base namespace)
    :return: new Function, or NULL on error
 */
-PyObject *KosFunction_NewFromFormals(PyObject *code,
-                                     PyObject *formals,
-                                     PyObject *parent_ns);
+PyObject *KosFunction_NewFromFormals(
+      PyObject *code,
+      PyObject *formals,
+      PyObject *parent_ns);
 
 
 /**
@@ -172,8 +176,10 @@ PyObject *KosFunction_CallNoArgs(PyObject *func);
 /**
    Call the function with the given args and kwds.
 */
-PyObject *KosFunction_Call(PyObject *func,
-                           PyObject *args, PyObject *kwds);
+PyObject *KosFunction_Call(
+      PyObject *func,
+      PyObject *args,
+      PyObject *kwds);
 
 
 /**
@@ -181,9 +187,10 @@ PyObject *KosFunction_Call(PyObject *func,
    Used by the evaluator to flatten Koskari calls without creating a coroutine.
    Returns new reference to frame namespace, or NULL on error.
 */
-PyObject *KosFunction_PrepareCallNamespace(PyObject *func,
-                                            PyObject *args,
-                                            PyObject *kwds);
+PyObject *KosFunction_PrepareCallNamespace(
+      PyObject *func,
+      PyObject *args,
+      PyObject *kwds);
 
 
 /**

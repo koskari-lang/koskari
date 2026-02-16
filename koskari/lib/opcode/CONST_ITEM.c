@@ -19,7 +19,7 @@
 
 KOS_OP_HANDLER(CONST_ITEM) {
   PyObject *key = KosCode_GetConstant((PyObject *) CURRENT_CODE(ctx),
-                                      insn->arg);
+                                      KosOp_ARG(insn));
   if (! key)
     return -1;
   PyObject *obj = KosStackBlock_PopRef(&CURRENT_STACK(ctx));

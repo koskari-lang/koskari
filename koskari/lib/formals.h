@@ -99,10 +99,14 @@ typedef struct KosFormals {
 PyObject *KosFormals_New(PyObject *spec, PyObject *defaults);
 
 
-PyObject *KosFormals_NewFull(PyObject *pos, PyObject *pos_only,
-                             PyObject *kwd, PyObject *kwd_only,
-                             PyObject *star, PyObject *starstar,
-                             PyObject *defaults);
+PyObject *KosFormals_NewFull(
+    PyObject *pos,
+    PyObject *pos_only,
+    PyObject *kwd,
+    PyObject *kwd_only,
+    PyObject *star,
+    PyObject *starstar,
+    PyObject *defaults);
 
 
 int KosFormals_Apply(

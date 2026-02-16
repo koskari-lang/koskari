@@ -140,6 +140,10 @@ typedef struct KosEvent {
 } KosEvent;
 
 
+#define KosEvent_KIND(ev)    (((KosEvent *) (ev))->kind)
+#define KosEvent_PAYLOAD(ev) (((KosEvent *) (ev))->payload)
+
+
 /* === KosContext: VM execution context === */
 
 /**

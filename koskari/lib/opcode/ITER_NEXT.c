@@ -37,14 +37,14 @@ KOS_OP_HANDLER(ITER_NEXT) {
     }
     if (agen->closed || ! agen->ctx) {
       KosDynRegion_EXHAUSTED(region) = 1;
-      CURRENT_PC(ctx) = insn->arg;
+      CURRENT_PC(ctx) = KosOp_ARG(insn);
       return 0;
     }
     agen->in_progress = 1;
     KosContext_PENDING_AGEN(ctx) = (void *) agen;
     KosContext_PENDING_AGEN_DEFAULT(ctx) = NULL;
     KosContext_PENDING_AGEN_N(ctx) = 0;
-    KosDynRegion_ITER_NEXT_ELSE_PC(region) = insn->arg;
+    KosDynRegion_ITER_NEXT_ELSE_PC(region) = KosOp_ARG(insn);
     if (op_attach_koskari_agen_frame_for_iter_next(ctx, agen, region) < 0) {
       agen->in_progress = 0;
       KosContext_PENDING_AGEN(ctx) = NULL;
@@ -65,7 +65,7 @@ KOS_OP_HANDLER(ITER_NEXT) {
       return 0;
     case GET_NEXT_EXHAUSTED:
       KosDynRegion_EXHAUSTED(region) = 1;
-      CURRENT_PC(ctx) = insn->arg;
+      CURRENT_PC(ctx) = KosOp_ARG(insn);
       return 0;
     case GET_NEXT_SUSPEND:
       return 1;

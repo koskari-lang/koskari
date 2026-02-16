@@ -71,6 +71,11 @@ typedef struct KosNameBind {
 } KosNameBind;
 
 
+#define KosNameBind_NAME(nb)  (((KosNameBind *)(nb))->name)
+#define KosNameBind_HELD(nb)  (((KosNameBind *)(nb))->held)
+#define KosNameBind_RAW(nb)   (((KosNameBind *)(nb))->raw)
+
+
 typedef struct KosNamespace {
   PyObject_VAR_HEAD
 

@@ -20,7 +20,7 @@
 
 KOS_OP_HANDLER(INVOKE_K_VAR) {
   KosCode *code = CURRENT_CODE(ctx);
-  PyObject *name = KosCode_GetConstant((PyObject *) code, insn->arg);
+  PyObject *name = KosCode_GetConstant((PyObject *) code, KosOp_ARG(insn));
   if (! name)
     return -1;
 

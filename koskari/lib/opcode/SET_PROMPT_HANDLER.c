@@ -22,7 +22,7 @@ KOS_OP_HANDLER(SET_PROMPT_HANDLER) {
   if (KosContext_DYN_TOP(ctx) && KosDynNode_IS_PROMPT(KosContext_DYN_TOP(ctx))) {
     KosDynPrompt *p = (KosDynPrompt *) KosContext_DYN_TOP(ctx);
     KosDynPrompt_HANDLER_CODE(p) = CURRENT_CODE(ctx);
-    KosDynPrompt_HANDLER_PC(p) = insn->arg;
+    KosDynPrompt_HANDLER_PC(p) = KosOp_ARG(insn);
   }
   (void) out_ev;
   return 0;

@@ -43,7 +43,7 @@ static void delimited_continuation_dealloc(PyObject *self) {
 
   KosPyDelimitedContinuation *cont = (KosPyDelimitedContinuation *) self;
 
-  kos_continuation_free_exclude(cont->captured, self);
+  kos_continuation_free_exclude(KosPyDelimitedContinuation_CAPTURED(cont), self);
 
   Py_TYPE(self)->tp_free(self);
 }
@@ -56,8 +56,8 @@ static int delimited_continuation_traverse(
 
   KosPyDelimitedContinuation *cont = (KosPyDelimitedContinuation *) self;
 
-  if (cont->captured) {
-    return kos_continuation_traverse(cont->captured, visit, arg);
+  if (KosPyDelimitedContinuation_CAPTURED(cont)) {
+    return kos_continuation_traverse(KosPyDelimitedContinuation_CAPTURED(cont), visit, arg);
   }
 
   return 0;
@@ -68,8 +68,8 @@ static int delimited_continuation_clear(PyObject *self) {
 
   KosPyDelimitedContinuation *cont = (KosPyDelimitedContinuation *) self;
 
-  kos_continuation_free(cont->captured);
-  cont->captured = NULL;
+  kos_continuation_free(KosPyDelimitedContinuation_CAPTURED(cont));
+  KosPyDelimitedContinuation_CAPTURED(cont) = NULL;
 
   return 0;
 }
@@ -119,7 +119,7 @@ PyObject *KosPyDelimitedContinuation_New(KosContinuation *captured) {
   if (! cont)
     return NULL;
 
-  cont->captured = captured;
+  KosPyDelimitedContinuation_CAPTURED(cont) = captured;
 
   PyObject_GC_Track((PyObject *) cont);
   return (PyObject *) cont;
@@ -140,7 +140,7 @@ static void continuation_dealloc(PyObject *self) {
 
   KosPyContinuation *cont = (KosPyContinuation *) self;
 
-  kos_continuation_free_exclude(cont->captured, self);
+  kos_continuation_free_exclude(KosPyContinuation_CAPTURED(cont), self);
 
   Py_TYPE(self)->tp_free(self);
 }
@@ -153,8 +153,8 @@ static int continuation_traverse(
 
   KosPyContinuation *cont = (KosPyContinuation *) self;
 
-  if (cont->captured) {
-    return kos_continuation_traverse(cont->captured, visit, arg);
+  if (KosPyContinuation_CAPTURED(cont)) {
+    return kos_continuation_traverse(KosPyContinuation_CAPTURED(cont), visit, arg);
   }
 
   return 0;
@@ -165,8 +165,8 @@ static int continuation_clear(PyObject *self) {
 
   KosPyContinuation *cont = (KosPyContinuation *) self;
 
-  kos_continuation_free(cont->captured);
-  cont->captured = NULL;
+  kos_continuation_free(KosPyContinuation_CAPTURED(cont));
+  KosPyContinuation_CAPTURED(cont) = NULL;
 
   return 0;
 }
@@ -180,7 +180,7 @@ static PyObject *continuation_call(
   KosPyContinuation *cont = (KosPyContinuation *) self;
   (void) kwds;
 
-  if (! cont->captured) {
+  if (! KosPyContinuation_CAPTURED(cont)) {
     PyErr_SetString(PyExc_RuntimeError,
                     "continuation has no captured state");
     return NULL;
@@ -202,7 +202,7 @@ static PyObject *continuation_call(
     Py_DECREF(resume_val);
     return NULL;
   }
-  PyObject_SetAttrString(exc, "target", cont->captured->token_ref);
+  PyObject_SetAttrString(exc, "target", KosContinuation_TOKEN_REF(KosPyContinuation_CAPTURED(cont)));
   PyObject_SetAttrString(exc, "continuation", self);
   PyObject *args_tup = PyTuple_Pack(1, resume_val);
   Py_DECREF(resume_val);
@@ -247,7 +247,7 @@ PyObject *KosPyContinuation_New(KosContinuation *captured) {
   if (! cont)
     return NULL;
 
-  cont->captured = captured;
+  KosPyContinuation_CAPTURED(cont) = captured;
 
   PyObject_GC_Track((PyObject *) cont);
   return (PyObject *) cont;

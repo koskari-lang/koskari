@@ -187,9 +187,9 @@ static int yield_from_emit_yield(
   {
     PyObject *const *tos = KosStackBlock_TailPtr(
         KosDynFrame_STACK(frame), 1);
-    out_ev->kind = KOS_EV_YIELD;
-    out_ev->payload = tos ? *tos : NULL;
-    Py_XINCREF(out_ev->payload);
+    KosEvent_KIND(out_ev) = KOS_EV_YIELD;
+    KosEvent_PAYLOAD(out_ev) = tos ? *tos : NULL;
+    Py_XINCREF(KosEvent_PAYLOAD(out_ev));
   }
   KosContext_FLAGS(ctx) &= ~KOS_CTX_RUNNING;
   KosContext_FLAGS(ctx) |= KOS_CTX_DEAD;
@@ -448,8 +448,8 @@ static int yield_from_drive_py_async(
   if (suspended && yielded) {
     KosDynYieldFrom_INFLIGHT(yf) = awaitable;
     yield_from_rollback_pc(ctx, insn);
-    out_ev->kind = KOS_EV_AWAIT;
-    out_ev->payload = yielded;
+    KosEvent_KIND(out_ev) = KOS_EV_AWAIT;
+    KosEvent_PAYLOAD(out_ev) = yielded;
     KosContext_FLAGS(ctx) &= ~KOS_CTX_RUNNING;
     KosContext_FLAGS(ctx) |= KOS_CTX_DEAD;
     return 1;
@@ -584,29 +584,29 @@ static int yield_from_drive_kos_async_gen(
     return -1;
   }
 
-  switch (ev.kind) {
+  switch (KosEvent_KIND(&ev)) {
   case KOS_EV_YIELD:
-    if (KosStackBlock_PushRef(&KosDynFrame_STACK(frame), ev.payload) < 0) {
-      Py_DECREF(ev.payload);
+    if (KosStackBlock_PushRef(&KosDynFrame_STACK(frame), KosEvent_PAYLOAD(&ev)) < 0) {
+      Py_DECREF(KosEvent_PAYLOAD(&ev));
       return -1;
     }
-    Py_DECREF(ev.payload);
+    Py_DECREF(KosEvent_PAYLOAD(&ev));
     return yield_from_emit_yield(ctx, frame, out_ev, insn);
 
   case KOS_EV_RETURN: {
-    PyObject *payload = ev.payload ? ev.payload : Py_None;
+    PyObject *payload = KosEvent_PAYLOAD(&ev) ? KosEvent_PAYLOAD(&ev) : Py_None;
     Py_INCREF(payload);
-    if (ev.payload)
-      Py_DECREF(ev.payload);
+    if (KosEvent_PAYLOAD(&ev))
+      Py_DECREF(KosEvent_PAYLOAD(&ev));
     return yield_from_complete_with_value(ctx, yf, frame, payload);
   }
 
   case KOS_EV_AWAIT:
-    Py_INCREF(ev.payload);
-    KosDynYieldFrom_INFLIGHT(yf) = ev.payload;
+    Py_INCREF(KosEvent_PAYLOAD(&ev));
+    KosDynYieldFrom_INFLIGHT(yf) = KosEvent_PAYLOAD(&ev);
     yield_from_rollback_pc(ctx, insn);
-    out_ev->kind = KOS_EV_AWAIT;
-    out_ev->payload = ev.payload;
+    KosEvent_KIND(out_ev) = KOS_EV_AWAIT;
+    KosEvent_PAYLOAD(out_ev) = KosEvent_PAYLOAD(&ev);
     KosContext_FLAGS(ctx) &= ~KOS_CTX_RUNNING;
     KosContext_FLAGS(ctx) |= KOS_CTX_DEAD;
     return 1;
@@ -614,9 +614,9 @@ static int yield_from_drive_kos_async_gen(
   case KOS_EV_RAISE:
     agen->closed = 1;
     kos_dyn_pop_yield_from(ctx, yf);
-    if (ev.payload) {
-      PyErr_SetObject((PyObject *) Py_TYPE(ev.payload), ev.payload);
-      Py_DECREF(ev.payload);
+    if (KosEvent_PAYLOAD(&ev)) {
+      PyErr_SetObject((PyObject *) Py_TYPE(KosEvent_PAYLOAD(&ev)), KosEvent_PAYLOAD(&ev));
+      Py_DECREF(KosEvent_PAYLOAD(&ev));
     } else {
       PyErr_SetNone(PyExc_StopAsyncIteration);
     }

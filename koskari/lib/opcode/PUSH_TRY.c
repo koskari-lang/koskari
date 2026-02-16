@@ -19,7 +19,7 @@
 */
 
 KOS_OP_HANDLER(PUSH_TRY) {
-  if (! kos_dyn_push_region(ctx, KOS_REGION_TRY, insn->arg, 0)) {
+  if (! kos_dyn_push_region(ctx, KOS_REGION_TRY, KosOp_ARG(insn), 0)) {
     PyErr_NoMemory();
     return -1;
   }

@@ -19,7 +19,7 @@
 */
 
 KOS_OP_HANDLER(POP) {
-  unsigned n = insn->arg;
+  unsigned n = KosOp_ARG(insn);
   if (KosStackBlock_Drop(&CURRENT_STACK(ctx), (size_t) n) < 0)
     return -1;
   (void) out_ev;

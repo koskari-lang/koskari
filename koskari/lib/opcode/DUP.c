@@ -19,7 +19,7 @@
 */
 
 KOS_OP_HANDLER(DUP) {
-  int opa = (int) insn->arg;
+  int opa = (int) KosOp_ARG(insn);
   if (opa < 0) {
     PyErr_Format(PyExc_RuntimeError, "DUP invoked with negative"
                  " argument count: %i", opa);

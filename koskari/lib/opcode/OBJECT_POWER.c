@@ -19,7 +19,7 @@
 */
 
 KOS_OP_HANDLER(OBJECT_POWER) {
-  int opa = (int) insn->arg;
+  int opa = (int) KosOp_ARG(insn);
   if (opa < 2 || opa > 3) {
     PyErr_Format(PyExc_RuntimeError,
                  "OBJECT_POWER requires 2 or 3 arguments, got %i", opa);

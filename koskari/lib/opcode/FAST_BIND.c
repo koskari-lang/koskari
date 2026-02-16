@@ -23,7 +23,7 @@ KOS_OP_HANDLER(FAST_BIND) {
     PyErr_Format(PyExc_RuntimeError, "FAST_BIND invoked on %R", ns);
     return -1;
   }
-  size_t idx = (size_t) insn->arg;
+  size_t idx = (size_t) KosOp_ARG(insn);
   if (idx >= KosNamespace_FAST_COUNT(ns)) {
     PyErr_Format(PyExc_NameError, "Namespace fast index out of bounds, %zu",
                  idx);
@@ -33,7 +33,7 @@ KOS_OP_HANDLER(FAST_BIND) {
   if (! val)
     return -1;
   KosNameBind *nb = KosNamespace_GET_FAST(ns, idx);
-  PyObject *ref = KosSymbolicRef_New(nb->name, val);
+  PyObject *ref = KosSymbolicRef_New(KosNameBind_NAME(nb), val);
   Py_DECREF(val);
   if (! ref)
     return -1;

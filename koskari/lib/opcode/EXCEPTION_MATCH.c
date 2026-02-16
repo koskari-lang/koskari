@@ -19,7 +19,7 @@
 */
 
 KOS_OP_HANDLER(EXCEPTION_MATCH) {
-  int opa = (int) insn->arg;
+  int opa = (int) KosOp_ARG(insn);
   if (opa < 1) {
     PyErr_Format(PyExc_RuntimeError, "EXCEPTION_MATCH with non-positive"
                  " count, %i", opa);

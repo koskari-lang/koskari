@@ -222,6 +222,15 @@ struct KosContinuation {
 };
 
 
+#define KosContinuation_CAPTURED_CHAIN(k)  (((KosContinuation *)(k))->captured_chain)
+#define KosContinuation_RESUME_FRAME(k)    (((KosContinuation *)(k))->resume_frame)
+#define KosContinuation_RESUME_PC(k)       (((KosContinuation *)(k))->resume_pc)
+#define KosContinuation_RESUME_STACK(k)    (((KosContinuation *)(k))->resume_stack)
+#define KosContinuation_PROMPT_ID(k)       (((KosContinuation *)(k))->prompt_id)
+#define KosContinuation_ONE_SHOT(k)        (((KosContinuation *)(k))->one_shot)
+#define KosContinuation_TOKEN_REF(k)       (((KosContinuation *)(k))->token_ref)
+
+
 /* === KosTransferStep enum === */
 
 
@@ -270,6 +279,14 @@ typedef struct KosTransferAction {
 } KosTransferAction;
 
 
+#define KosTransferAction_STEP(a)           (((KosTransferAction *)(a))->step)
+#define KosTransferAction_HOOK_CODE(a)     (((KosTransferAction *)(a))->data.hook.code)
+#define KosTransferAction_HOOK_PC(a)        (((KosTransferAction *)(a))->data.hook.pc)
+#define KosTransferAction_INSTALL_SEGMENT(a) (((KosTransferAction *)(a))->data.install.segment)
+#define KosTransferAction_INJECT_VALUE(a)   (((KosTransferAction *)(a))->data.inject.value)
+#define KosTransferAction_INJECT_IS_THROW(a) (((KosTransferAction *)(a))->data.inject.is_throw)
+
+
 /* === KosTransferPlan: continuation transfer execution plan === */
 
 
@@ -305,6 +322,19 @@ struct KosTransferPlan {
 };
 
 
+#define KosTransferPlan_SUSPENDED(p)        (((KosTransferPlan *)(p))->suspended)
+#define KosTransferPlan_ACTIONS(p)          (((KosTransferPlan *)(p))->actions)
+#define KosTransferPlan_ACTION_COUNT(p)     (((KosTransferPlan *)(p))->action_count)
+#define KosTransferPlan_ACTION_INDEX(p)     (((KosTransferPlan *)(p))->action_index)
+#define KosTransferPlan_ORIGINAL_TARGET(p)  (((KosTransferPlan *)(p))->original_target)
+#define KosTransferPlan_CHAIN_VERSION(p)   (((KosTransferPlan *)(p))->chain_version)
+#define KosTransferPlan_RESUME_PC(p)       (((KosTransferPlan *)(p))->resume_pc)
+#define KosTransferPlan_RESUME_FRAME(p)    (((KosTransferPlan *)(p))->resume_frame)
+#define KosTransferPlan_RESUME_STACK(p)    (((KosTransferPlan *)(p))->resume_stack)
+#define KosTransferPlan_CONTINUATION_REF(p) (((KosTransferPlan *)(p))->continuation_ref)
+#define KosTransferPlan_INVOKE_CLONE(p)    (((KosTransferPlan *)(p))->invoke_clone)
+
+
 /* === KosHookRunner: hook execution state === */
 
 
@@ -325,6 +355,12 @@ struct KosHookRunner {
   KosStackBlock *scratch; /* scratch operand stack (owned) */
   int active;             /* nonzero if hook is running */
 };
+
+
+#define KosHookRunner_CODE(r)    (((KosHookRunner *)(r))->code)
+#define KosHookRunner_PC(r)      (((KosHookRunner *)(r))->pc)
+#define KosHookRunner_SCRATCH(r) (((KosHookRunner *)(r))->scratch)
+#define KosHookRunner_ACTIVE(r)  (((KosHookRunner *)(r))->active)
 
 
 /* === DynNode allocation and lifecycle === */

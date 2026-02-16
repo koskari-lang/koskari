@@ -345,11 +345,11 @@ static void function_dealloc(PyObject *self) {
    are in scope) applied to base_ns.  Returns new reference or NULL on error.
 */
 static PyObject *func_obtain_call_namespace(KosFunction *fn) {
-  PyObject *base_nspec = KosCode_NSPEC(fn->code);
-  PyObject *nspec = KosFormals_NamespaceSpec(fn->formals, base_nspec);
+  PyObject *base_nspec = KosCode_NSPEC(KosFunction_CODE(fn));
+  PyObject *nspec = KosFormals_NamespaceSpec(KosFunction_FORMALS(fn), base_nspec);
   if (! nspec)
     return NULL;
-  PyObject *frame_ns = KosNamespace_FromSpec(nspec, fn->base_ns);
+  PyObject *frame_ns = KosNamespace_FromSpec(nspec, KosFunction_BASE_NS(fn));
   Py_DECREF(nspec);
   return frame_ns;
 }
@@ -366,15 +366,15 @@ PyObject *KosFunction_Call(PyObject *self,
   if (! frame_ns)
     goto fail;
 
-  if (KosFormals_Apply(fn->formals, frame_ns, args, kwds) < 0)
+  if (KosFormals_Apply(KosFunction_FORMALS(fn), frame_ns, args, kwds) < 0)
     goto fail;
 
-  if (fn->name != NULL) {
-    if (KosNamespace_Store(frame_ns, fn->name, self) < 0)
+  if (KosFunction_NAME(fn) != NULL) {
+    if (KosNamespace_Store(frame_ns, KosFunction_NAME(fn), self) < 0)
       goto fail;
   }
 
-  coro = KosCoroutine_NewFromCode(fn->code, frame_ns);
+  coro = KosCoroutine_NewFromCode(KosFunction_CODE(fn), frame_ns);
   Py_DECREF(frame_ns);
   return coro;
 
@@ -394,12 +394,12 @@ PyObject *KosFunction_PrepareCallNamespace(
   if (! frame_ns)
     return NULL;
 
-  if (KosFormals_Apply(fn->formals, frame_ns, args, kwds) < 0) {
+  if (KosFormals_Apply(KosFunction_FORMALS(fn), frame_ns, args, kwds) < 0) {
     Py_DECREF(frame_ns);
     return NULL;
   }
-  if (fn->name != NULL) {
-    if (KosNamespace_Store(frame_ns, fn->name, self) < 0) {
+  if (KosFunction_NAME(fn) != NULL) {
+    if (KosNamespace_Store(frame_ns, KosFunction_NAME(fn), self) < 0) {
       Py_DECREF(frame_ns);
       return NULL;
     }
@@ -424,7 +424,7 @@ static PyObject *function_repr(PyObject *self) {
   PyObject *name = KosFunction_NAME(fn);
   if (name != NULL)
     return PyUnicode_FromFormat("<Function %R>", name);
-  name = KosCode_NAME(fn->code);
+  name = KosCode_NAME(KosFunction_CODE(fn));
   if (name != NULL)
     return PyUnicode_FromFormat("<Function %R>", name);
   return PyUnicode_FromString("<Function <lambda>>");

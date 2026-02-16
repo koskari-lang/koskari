@@ -21,7 +21,7 @@
 */
 
 KOS_OP_HANDLER(CONTINUE) {
-  unsigned opa = insn->arg;
+  unsigned opa = KosOp_ARG(insn);
   PyObject *result = NULL;
 
   /* Pop result value(s) from stack before any unwinding */

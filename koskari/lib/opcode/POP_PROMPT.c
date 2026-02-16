@@ -32,8 +32,8 @@ KOS_OP_HANDLER(POP_PROMPT) {
     if (PyLong_Check(val))
       SAYF("[eval] POP_PROMPT return to invoker value=%ld\n",
            PyLong_AsLong(val));
-    out_ev->kind = KOS_EV_RETURN;
-    out_ev->payload = val;
+    KosEvent_KIND(out_ev) = KOS_EV_RETURN;
+    KosEvent_PAYLOAD(out_ev) = val;
     KosContext_INVOCATION_SEGMENT_TOP(ctx) = NULL;
     KosContext_FLAGS(ctx) &= ~KOS_CTX_RUNNING;
     (void) insn;

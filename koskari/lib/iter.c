@@ -29,8 +29,6 @@
 #include "lib.h"
 
 
-static PyObject *iter_module = NULL;
-static PyObject *iter_stop_async_iter_value_type = NULL;
 static PyObject *asyncio_run_func = NULL;
 
 
@@ -373,36 +371,16 @@ static PyObject *asyncgenasend_iternext(PyObject *self) {
     return NULL;
   }
 
-  switch (ev.kind) {
+  switch (KosEvent_KIND(&ev)) {
     case KOS_EV_RETURN:
-      /* Generator completed; pass return value. Use subclass with .value so
-         3.12 runtimes that expect exception.value do not raise AttributeError.
-         Fallback: build StopAsyncIteration(payload) and set .value on the
-         instance so normalization to the base type still has .value. */
+      /* Generator completed; pass return value. */
       agen->closed = 1;
       {
-        PyObject *payload = ev.payload;
-        if (! payload)
-          payload = Py_None;
-        PyObject *exc = NULL;
-        if (! iter_stop_async_iter_value_type && iter_module) {
-          iter_stop_async_iter_value_type = PyObject_GetAttrString(
-              iter_module, "_StopAsyncIterationValue");
-        }
-        if (iter_stop_async_iter_value_type) {
-          exc = PyObject_CallFunctionObjArgs(iter_stop_async_iter_value_type,
-                                              payload, NULL);
-        }
-        if (! exc) {
-          exc = PyObject_CallFunctionObjArgs(PyExc_StopAsyncIteration,
-                                            payload, NULL);
-          if (exc && PyObject_SetAttrString(exc, "value", payload) < 0) {
-            Py_DECREF(exc);
-            exc = NULL;
-          }
-        }
-        if (ev.payload)
-          Py_DECREF(ev.payload);
+        PyObject *payload = KosEvent_PAYLOAD(&ev);
+        PyObject *exc = koskari_StopAsyncIteration_FromValue(
+            payload ? payload : Py_None);
+        if (KosEvent_PAYLOAD(&ev))
+          Py_DECREF(KosEvent_PAYLOAD(&ev));
         if (exc) {
           PyErr_SetObject((PyObject *) Py_TYPE(exc), exc);
           Py_DECREF(exc);
@@ -414,9 +392,9 @@ static PyObject *asyncgenasend_iternext(PyObject *self) {
 
     case KOS_EV_RAISE:
       agen->closed = 1;
-      if (ev.payload) {
-        PyErr_SetObject((PyObject *) Py_TYPE(ev.payload), ev.payload);
-        Py_DECREF(ev.payload);
+      if (KosEvent_PAYLOAD(&ev)) {
+        PyErr_SetObject((PyObject *) Py_TYPE(KosEvent_PAYLOAD(&ev)), KosEvent_PAYLOAD(&ev));
+        Py_DECREF(KosEvent_PAYLOAD(&ev));
       } else {
         PyErr_SetNone(PyExc_StopAsyncIteration);
       }
@@ -426,8 +404,8 @@ static PyObject *asyncgenasend_iternext(PyObject *self) {
       /* Yielded a value - wrap in StopIteration to signal completion
          of this __anext__ awaitable.  Wrap in 1-tuple so PyErr_SetObject
          does not unpack a tuple payload. */
-      PyObject *args = PyTuple_Pack(1, ev.payload);
-      Py_XDECREF(ev.payload);
+      PyObject *args = PyTuple_Pack(1, KosEvent_PAYLOAD(&ev));
+      Py_XDECREF(KosEvent_PAYLOAD(&ev));
       if (! args) {
         return NULL;
       }
@@ -439,7 +417,7 @@ static PyObject *asyncgenasend_iternext(PyObject *self) {
     case KOS_EV_AWAIT:
       /* Need to suspend on Python awaitable */
       /* Return the awaitable for the caller to await */
-      return ev.payload;
+      return KosEvent_PAYLOAD(&ev);
   }
 
   PyErr_SetString(PyExc_RuntimeError, "unexpected event kind");
@@ -561,15 +539,6 @@ int koskari_iter_init(PyObject *mod) {
   if (! dict)
     return -1;
 
-  iter_module = mod;
-  Py_INCREF(iter_module);
-  {
-    PyObject *typ = PyDict_GetItemString(dict, "_StopAsyncIterationValue");
-    if (typ) {
-      iter_stop_async_iter_value_type = typ;
-      Py_INCREF(iter_stop_async_iter_value_type);
-    }
-  }
   {
     PyObject *asyncio_mod = PyImport_ImportModule("asyncio");
     if (asyncio_mod) {
@@ -594,8 +563,6 @@ int koskari_iter_init(PyObject *mod) {
 int koskari_iter_clear(PyObject *mod) {
 
   Py_CLEAR(asyncio_run_func);
-  Py_CLEAR(iter_stop_async_iter_value_type);
-  Py_CLEAR(iter_module);
 
   (void) mod;
   return 0;

@@ -46,6 +46,7 @@
    Py_None (new ref) when no value is present.  Caller must Py_DECREF the result.
 */
 PyObject *koskari_StopAsyncIteration_value(PyObject *exc);
+PyObject *koskari_StopAsyncIteration_FromValue(PyObject *payload);
 
 #define StopAsyncIteration_VALUE(exc)  koskari_StopAsyncIteration_value(exc)
 

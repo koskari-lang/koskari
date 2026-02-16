@@ -21,7 +21,7 @@
 */
 
 KOS_OP_HANDLER(BUILD_FUNCTION) {
-  unsigned opa = insn->arg;
+  unsigned opa = KosOp_ARG(insn);
   KosStackBlock **stack = &CURRENT_STACK(ctx);
 
   PyObject *fspec = KosStackBlock_PopRef(stack);

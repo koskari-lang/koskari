@@ -17,7 +17,7 @@
    OBJECT_MODULO: pop right, left; call PyNumber_Remainder; push result.
 */
 KOS_OP_HANDLER(OBJECT_MODULO) {
-    if (insn->arg != 2) {
+    if (KosOp_ARG(insn) != 2) {
       PyErr_SetString(PyExc_RuntimeError, "OBJECT_MODULO: only arg 2 supported");
       return -1;
     }

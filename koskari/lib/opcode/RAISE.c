@@ -19,7 +19,7 @@
 */
 
 KOS_OP_HANDLER(RAISE) {
-  unsigned n = insn->arg;
+  unsigned n = KosOp_ARG(insn);
   if (n == 0) {
     PyObject *typ = NULL, *val = NULL, *tb = NULL;
     PyErr_GetExcInfo(&typ, &val, &tb);

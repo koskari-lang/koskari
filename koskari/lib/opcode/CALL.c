@@ -20,7 +20,7 @@
 */
 
 KOS_OP_HANDLER(CALL) {
-  unsigned n = insn->arg;
+  unsigned n = KosOp_ARG(insn);
 
   KosDynFrame *frame_top = CURRENT_FRAME(ctx);
 

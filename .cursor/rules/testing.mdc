@@ -15,3 +15,6 @@ alwaysApply: true
 - Running `python` or `python3` directly is illegal
 - Running `pip` is illegal
 - All python unit tests must be invoked via `tox`
+- NO EXECUTION WORKAROUNDS ARE PERMITTED.
+- DO NOT ATTEMPT TO EXECUTE PYTHON BY SEPARATE PATHS
+- ONLY TOX. ONLY TOX. ONLY TOX.

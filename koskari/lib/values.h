@@ -33,6 +33,11 @@ typedef struct KosValues {
 } KosValues;
 
 
+#define KosValues_ARGS(v)   (((KosValues *)(v))->args)
+#define KosValues_KWDS(v)   (((KosValues *)(v))->kwds)
+#define KosValues_HASHED(v) (((KosValues *)(v))->hashed)
+
+
 /* === type objects === */
 
 

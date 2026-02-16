@@ -48,76 +48,23 @@ static int koskari_lib_init(PyObject *mod) {
     return -1;
 
   /* compat must be initialized first */
-  if (koskari_compat_init(mod))
-    return -1;
-
-  /* initialize implementation units */
-  if (koskari_atom_init(mod))
-    return -1;
-
-  if (koskari_pair_init(mod))
-    return -1;
-
-  if (koskari_ref_init(mod))
-    return -1;
-
-  if (koskari_namespace_init(mod))
-    return -1;
-
-  if (koskari_bytecode_init(mod))
-    return -1;
-
-  if (koskari_formals_init(mod))
-    return -1;
-
-  if (koskari_values_init(mod))
-    return -1;
-
-  if (koskari_operator_init(mod))
-    return -1;
-
-  if (koskari_stack_init(mod))
-    return -1;
-
-  if (koskari_utils_init(mod))
-    return -1;
-
-  if (koskari_parse_init(mod))
-    return -1;
-
-  if (koskari_eval_init(mod))
-    return -1;
-
-  /* Subclass of StopAsyncIteration with .value set for 3.12 compatibility
-     when runtime expects exception.value (e.g. anext/await).  Must exist
-     before koskari_iter_init so iter can cache the type. */
-  {
-    PyObject *dict = PyModule_GetDict(mod);
-    PyObject *run = PyRun_String(
-        "class _StopAsyncIterationValue(StopAsyncIteration):\n"
-        "    def __init__(self, value):\n"
-        "        super().__init__(value)\n"
-        "        self.value = value\n",
-        Py_file_input, dict, dict);
-    if (! run) {
-      if (PyErr_Occurred())
-        return -1;
-    }
-    Py_XDECREF(run);
-    if (! PyDict_GetItemString(dict, "_StopAsyncIterationValue"))
-      return -1;
-  }
-
-  if (koskari_func_init(mod))
-    return -1;
-
-  if (koskari_coro_init(mod))
-    return -1;
-
-  if (koskari_cont_init(mod))
-    return -1;
-
-  if (koskari_iter_init(mod))
+  if (koskari_atom_init(mod) ||
+      koskari_bytecode_init(mod) ||
+      koskari_compat_init(mod) ||
+      koskari_cont_init(mod) ||
+      koskari_coro_init(mod) ||
+      koskari_eval_init(mod) ||
+      koskari_formals_init(mod) ||
+      koskari_func_init(mod) ||
+      koskari_iter_init(mod) ||
+      koskari_namespace_init(mod) ||
+      koskari_operator_init(mod) ||
+      koskari_pair_init(mod) ||
+      koskari_parse_init(mod) ||
+      koskari_ref_init(mod) ||
+      koskari_stack_init(mod) ||
+      koskari_utils_init(mod) ||
+      koskari_values_init(mod))
     return -1;
 
   return 0;

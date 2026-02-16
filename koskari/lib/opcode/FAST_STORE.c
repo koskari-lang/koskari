@@ -23,7 +23,7 @@ KOS_OP_HANDLER(FAST_STORE) {
     PyErr_Format(PyExc_RuntimeError, "FAST_STORE invoked on %R", ns);
     return -1;
   }
-  size_t idx = (size_t) insn->arg;
+  size_t idx = (size_t) KosOp_ARG(insn);
   PyObject *val = KosStackBlock_PopRef(&CURRENT_STACK(ctx));
   if (! val)
     return -1;

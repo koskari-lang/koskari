@@ -33,7 +33,7 @@ KOS_OP_HANDLER(JUMP_OR) {
       return -1;
     }
     Py_DECREF(val);
-    CURRENT_PC(ctx) = insn->arg;
+    CURRENT_PC(ctx) = KosOp_ARG(insn);
   } else {
     Py_DECREF(val);
   }

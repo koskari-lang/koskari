@@ -17,7 +17,7 @@
    OBJECT_DIVMOD: pop right, left; call PyNumber_Divmod; push result.
 */
 KOS_OP_HANDLER(OBJECT_DIVMOD) {
-    if (insn->arg != 2) {
+    if (KosOp_ARG(insn) != 2) {
       PyErr_SetString(PyExc_RuntimeError, "OBJECT_DIVMOD: only arg 2 supported");
       return -1;
     }

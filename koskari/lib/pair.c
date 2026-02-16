@@ -565,7 +565,7 @@ static void pair_dealloc(PyObject *self) {
 
   Py_CLEAR(KosPair_CAR(self));
   Py_CLEAR(KosPair_CDR(self));
-  Py_CLEAR(((KosPair *) self)->position);
+  Py_CLEAR(KosPair_POSITION(self));
 
   if (pair_free_count < PAIR_MAX_FREE) {
     KosPair_CDR(self) = (PyObject *) pair_free_list;
@@ -583,7 +583,7 @@ static void pair_dealloc(PyObject *self) {
 static int pair_traverse(PyObject *self, visitproc visit, void *arg) {
   Py_VISIT(KosPair_CAR(self));
   Py_VISIT(KosPair_CDR(self));
-  Py_VISIT(((KosPair *) self)->position);
+  Py_VISIT(KosPair_POSITION(self));
   return 0;
 }
 
@@ -591,7 +591,7 @@ static int pair_traverse(PyObject *self, visitproc visit, void *arg) {
 static int pair_clear(PyObject *self) {
   Py_CLEAR(KosPair_CAR(self));
   Py_CLEAR(KosPair_CDR(self));
-  Py_CLEAR(((KosPair *) self)->position);
+  Py_CLEAR(KosPair_POSITION(self));
   return 0;
 }
 
@@ -630,7 +630,7 @@ static PyObject *pair_copy(PyObject *self, PyObject *_noargs) {
       Py_XDECREF(result);
       return NULL;
     }
-    Py_ASSIGN(((KosPair *) tmp)->position, ((KosPair *) self)->position);
+    Py_ASSIGN(KosPair_POSITION(tmp), KosPair_POSITION(self));
 
     PyDict_SetItem(seen, self_id, tmp);
     Py_DECREF(self_id);
@@ -818,7 +818,7 @@ static void pwalk_setpos(PyObject *pair, PyObject *seen, PyObject *pos) {
       Py_DECREF(pair_id);
     }
 
-    Py_ASSIGN(sp->position, pos);
+    Py_ASSIGN(KosPair_POSITION(sp), pos);
 
     if (KosPair_CheckExact(KosPair_CAR(sp))) {
       pwalk_setpos(KosPair_CAR(sp), seen, pos);
@@ -845,12 +845,12 @@ static void pwalk_fillpos(PyObject *pair, PyObject *seen, PyObject *pos) {
       Py_DECREF(pair_id);
     }
 
-    if (sp->position) {
-      pos = sp->position;
+    if (KosPair_POSITION(sp)) {
+      pos = KosPair_POSITION(sp);
 
     } else {
       Py_INCREF(pos);
-      sp->position = pos;
+      KosPair_POSITION(sp) = pos;
     }
 
     if (KosPair_CheckExact(KosPair_CAR(sp))) {
@@ -878,7 +878,7 @@ static PyObject *pair_clear_position(PyObject *self,
     Py_DECREF(seen);
 
   } else {
-    Py_CLEAR(((KosPair *) self)->position);
+    Py_CLEAR(KosPair_POSITION(self));
   }
 
   Py_RETURN_NONE;
@@ -905,7 +905,7 @@ static PyObject *pair_set_position(PyObject *self,
     Py_DECREF(seen);
 
   } else {
-    Py_ASSIGN(((KosPair *) self)->position, position);
+    Py_ASSIGN(KosPair_POSITION(self), position);
   }
 
   Py_RETURN_NONE;
@@ -929,9 +929,9 @@ static PyObject *pair_fill_position(PyObject *self,
     Py_DECREF(seen);
 
   } else {
-    if (! ((KosPair *) self)->position) {
+    if (! KosPair_POSITION(self)) {
       Py_INCREF(position);
-      ((KosPair *) self)->position = position;
+      KosPair_POSITION(self) = position;
     }
   }
 
@@ -940,7 +940,7 @@ static PyObject *pair_fill_position(PyObject *self,
 
 
 static PyObject *pair_get_position(PyObject *self, PyObject *_noargs) {
-  PyObject *position = ((KosPair *) self)->position;
+  PyObject *position = KosPair_POSITION(self);
 
   if (position) {
     Py_INCREF(position);
@@ -1040,7 +1040,7 @@ PyObject *KosPair_New(PyObject *head, PyObject *tail) {
       return NULL;
   }
 
-  self->position = NULL;
+  KosPair_POSITION(self) = NULL;
 
   Py_INCREF(head);
   self->head = head;

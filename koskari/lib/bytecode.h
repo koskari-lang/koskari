@@ -113,6 +113,10 @@ typedef struct KosOp {
 } KosOp;
 
 
+#define KosOp_OP(insn)   (((KosOp *) (insn))->op)
+#define KosOp_ARG(insn) (((KosOp *) (insn))->arg)
+
+
 /* === KosPosition: position change entry === */
 
 
