@@ -40,9 +40,9 @@ Koskari uses S-expressions (sexprs) as its primary syntax:
 - Qualified: `module.function`
 
 **Keywords**:
-- Prefix: `:keyword`
-- Suffix: `keyword:`
-- Used for: `else:`, `except:`, `finally:`, `as:`, `*:`
+- Prefix: `:keyword`, suffix: `keyword:`, or both: `:keyword:` (all denote the same keyword)
+- Used for: `else:`, `except:`, `finally:`, `as:`, `*:`, `**:`
+- For recommended use (named args vs flags, star/starstar), see [conventions.md](conventions.md#keywords)
 
 ## Reader Macros
 
@@ -82,9 +82,11 @@ Used in:
 
 ## Formals (Parameter Lists)
 
+By convention, formals are written with square brackets (see [conventions.md](conventions.md#brackets-for-non-evaluation-lists)). Rest args use the keywords `*:` and `**:`.
+
 ### Positional
 
-`(a b c)` - Three positional parameters
+`(a b c)` or `[a b c]` - Three positional parameters
 
 ### With Defaults
 
@@ -92,19 +94,19 @@ Used in:
 
 ### Keyword-Only
 
-`(a b * c: default-c d:)` - `*` separates positional from keyword-only
+`(a b *: c: default-c d:)` - `*:` separates positional from keyword-only
 
 ### Varargs
 
-`(a b *args)` - `*args` collects remaining positional args
+`(a b *: args)` or `[a b *: args]` - `*:` marks the rest positional parameter
 
 ### Varkeywords
 
-`(a b **kwargs)` - `**kwargs` collects keyword args
+`(a b **: kwargs)` or `[a b **: kwargs]` - `**:` marks the rest keyword parameter
 
 ### Combined
 
-`(a b: default-b *args c: default-c **kwargs)` - All features
+`(a b: default-b *: args c: default-c **: kwargs)` - All features
 
 ## Multi-Value Binding
 
@@ -122,7 +124,7 @@ Supports nested structures:
 
 ### Rest in Values
 
-`(define-values (a *rest c) ...)` - `*` keyword for rest in values
+`(define-values (a *: rest c) ...)` - `*:` keyword for rest in values
 
 ## Special Syntax
 

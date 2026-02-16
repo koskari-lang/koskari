@@ -4,6 +4,7 @@ This directory documents the language-level features of Koskari, including synta
 
 ## Contents
 
+- **conventions.md**: Recommended style for keywords and brackets (named args, flags, star/starstar, non-evaluation lists)
 - **special-forms.md**: All special forms (compile-time constructs)
 - **operators.md**: Operators and their compile-time optimizations
 - **macros.md**: Macro system (reader macros and compile-time macros)

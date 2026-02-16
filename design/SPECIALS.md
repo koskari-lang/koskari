@@ -77,8 +77,8 @@ body compiles to pushing `None` and returning it.
 
 **Symbol:** `compile/call`
 
-**Syntax:** `(compile/call CALLEE ARG ...)`  
-With optional keyword args: `(compile/call CALLEE ARG ... :KEY VAL ...)`  
+**Syntax:** `(compile/call CALLEE ARG ...)`
+With optional keyword args: `(compile/call CALLEE ARG ... KEY: VAL ...)`
 With rest args: `(compile/call CALLEE ARG ... * REST)` or `** KW-REST`.
 
 **Use-case:** Generic function application. Evaluates the callee and each
@@ -100,8 +100,8 @@ the compiler.
 (compile/call my-func a b c)
 
 ;; Keyword and star forms (emit opcodes; VM support pending)
-(compile/call fn 1 2 :name "x")
-(compile/call apply-fn * args)
+(compile/call fn 1 2 name: "x")
+(compile/call apply-fn *: args)
 ```
 
 
@@ -109,12 +109,12 @@ the compiler.
 
 **Symbol:** `lambda`
 
-**Syntax:**  
-- Anonymous: `(lambda FORMALS BODY ...)`  
+**Syntax:**
+- Anonymous: `(lambda FORMALS BODY ...)`
 - Named: `(lambda NAME FORMALS BODY ...)`
 
 **Formals:** A list or improper list of parameter names, optionally with keyword
-parameters and defaults, e.g. `[a b]`, `[a b :c default-c]`, or a single symbol
+parameters and defaults, e.g. `[a b]`, `[a b c: default-c]`, or a single symbol
 for rest. Supports `*` and `**` in formals (see `gather_formals` in helpers).
 
 **Use-case:** Create an anonymous or named function value. Named lambdas bind the
@@ -141,7 +141,7 @@ enclosing scope and passed in via the constant tuple for defaulted keywords.
   (compile/call cond ...))
 
 ;; Keyword parameter with default
-(lambda [x :flag true] ...)
+(lambda [x flag: true] ...)
 ```
 
 
