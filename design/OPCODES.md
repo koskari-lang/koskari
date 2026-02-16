@@ -229,6 +229,7 @@ When adding or changing an opcode:
 | CONST_ITEM | CONST | Get item (constant key) | [§15](#kos_op_const_item) |
 | BUILD_FUNCTION | COUNT | Build function from spec | [§16](#kos_op_build_function) |
 | CALL | COUNT | Call with N positional args | [§17](#kos_op_call) |
+| TAIL_CALL | COUNT | Tail call (replace frame) | [§17](#kos_op_tail_call) |
 | PUSH_FOREACH | LABEL | Push foreach region; break target | [§18](#kos_op_push_foreach) |
 | PUSH_LOOP | LABEL | Push loop region | [§18](#kos_op_push_loop) |
 | PUSH_NS | COUNT | Push namespace scope | [§18](#kos_op_push_ns) |
@@ -1406,11 +1407,38 @@ Check jumps: if the predicate does **not** hold, jump to `arg`. All take LABEL; 
 
 ---
 
-### KOS_OP_TAIL_CALL*, KOS_OP_TAIL_RECUR*
+### KOS_OP_TAIL_CALL
+
+- **Style**: COUNT. Arg = number of positional arguments.
+- **Status**: Implemented.
+- **Stack**: Same as CALL: `[..., callable, arg_1, ..., arg_n]`. For **KosExpression** or **KosFunction**: current frame is replaced (cleared and re-initialized) with the callee's code and namespace; execution continues in the same loop. For continuations/delimited continuations or other callables: same semantics as CALL (invoke or push/await result).
+- **Execution model**: When the callable is a KosExpression or KosFunction, the VM calls `kos_tail_koscall`: the current frame's namespace is decref'd, a new frame is created with the same parent and the callee's code and a **new** namespace (filled from formals for functions, or the expression's ns for expressions); the old frame is freed and the new frame becomes the top of the dynamic chain. This keeps the frame namespace safe for continuations (no COW). For all other callable types, behavior is identical to CALL.
+- **Invariants**: Stack has at least 1 + arg elements. KosExpression allows no arguments (arg must be 0); otherwise TypeError.
+- **Compiler form:** Emitted by the compile/call special when the call is in tail position (`tc` true).
+
+**Example:** Tail call with 0 args (replace frame with callee). Pool: 0 = fn.
+
+| index | opcode   | arg | arg view | comment |
+|------:|----------|-----|----------|---------|
+| 0     | CONST    | 0   | 0 (fn)   | stack: [..., callable] |
+| 1     | TAIL_CALL| 0   | 0        | replace frame; run callee. stack: [...,] (new frame) |
+
+---
+
+### KOS_OP_TAIL_CALL_NAMES, KOS_OP_TAIL_CALL_STAR
 
 - **Style**: COUNT, STAR.
 - **Status**: Stub.
-- **Stack**: (Intended: tail call / tail recur; replace current frame.)
+- **Stack**: (Intended: tail call with keyword names or *args/**kwargs; same replace-frame semantics as TAIL_CALL.)
+- **Example:** (Stub; no runtime table.)
+
+---
+
+### KOS_OP_TAIL_RECUR, KOS_OP_TAIL_RECUR_NAMES, KOS_OP_TAIL_RECUR_STAR
+
+- **Style**: COUNT, COUNT, STAR.
+- **Status**: Stub.
+- **Stack**: (Intended: tail recur; replace current frame with current function re-invoked.)
 - **Example:** (Stub; no runtime table.)
 
 

@@ -23,6 +23,7 @@ alwaysApply: true
 - Use **two** blank lines between method definitions; use two blank lines between top-level function or class definitions as well.
 - Terminate modules with `# The end.` followed by a single newline to match house style.
 - Docstrings for methods and functions must use Sphinx RestructuredText format when documenting arguments, return, and any expected raises.
+- A blank line between end of docstring quotes and method body
 
 ## Style examples
 
@@ -87,4 +88,21 @@ def another_method(self, y):
     """
 
     return y + 1
+```
+
+
+**INCORRECT:**
+
+The following violates multiple rules.
+
+* The quotes are not on their own line
+* The text is a single statement but ends in a period
+* There is no blank line after the docstring before the body
+
+```python
+
+def one_method(self, x):
+    """Only one segment here."""
+    return x * 2
+
 ```

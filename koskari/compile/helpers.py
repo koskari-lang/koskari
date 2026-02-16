@@ -258,7 +258,7 @@ def helper_begin(
         tc: bool = False) -> ByteCodeFragment:
 
     if body is nil:
-        fragment.instruction(OpCode.OP_CONST, None)
+        fragment.instruction(OpCode.KOS_OP_CONST, None)
         return fragment
 
     compiler = fragment.compiler
@@ -272,7 +272,7 @@ def helper_begin(
             break
         else:
             fragment.merge(compiler.full_compile(expr, False))
-            fragment.instruction(OpCode.OP_POP, 1)
+            fragment.instruction(OpCode.KOS_OP_POP, 1)
 
     return fragment
 

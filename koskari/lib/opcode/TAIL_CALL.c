@@ -14,9 +14,48 @@
 */
 
 /**
-   TAIL_CALL: arg = N. Tail call (replace frame); not yet implemented.
+   TAIL_CALL: arg = N. Same stack as CALL [callable, arg_0, ..., arg_{N-1}].
+   For KosExpression/KosFunction, replace current frame and continue in-place;
+   otherwise same semantics as CALL.
 */
 
 KOS_OP_HANDLER(TAIL_CALL) {
-  return op_unimplemented_stub(ctx, out_ev, insn);
+  unsigned n = KosOp_ARG(insn);
+
+  KosDynFrame *frame_top = CURRENT_FRAME(ctx);
+
+  PyObject *args = NULL;
+  if (n > 0) {
+    args = KosStackBlock_PopTail(&KosDynFrame_STACK(frame_top), n);
+    if (! args)
+      return -1;
+  }
+
+  PyObject *callable = KosStackBlock_PopRef(&KosDynFrame_STACK(frame_top));
+  if (! callable)
+    return -1;
+
+  int r;
+  if (KosPyDelimitedContinuation_Check(callable)
+      || KosPyContinuation_Check(callable)) {
+    r = call_call_continuation(ctx, callable, args, out_ev, insn);
+
+  } else if (Py_TYPE(callable) == &KosExpressionType) {
+    if (n > 0) {
+      PyErr_SetString(PyExc_TypeError, "Expression takes no arguments");
+      r = -1;
+    } else {
+      r = call_tail_flattened_expr(ctx, callable, out_ev);
+    }
+
+  } else if (Py_TYPE(callable) == &KosFunctionType) {
+    r = call_tail_flattened_function(ctx, callable, args, out_ev);
+
+  } else {
+    r = call_pyobject_call(ctx, callable, args, out_ev);
+  }
+
+  Py_DECREF(callable);
+  Py_XDECREF(args);
+  return r;
 }

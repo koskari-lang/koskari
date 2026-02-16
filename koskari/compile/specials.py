@@ -128,29 +128,29 @@ def special_call(
         if pos:
             for expr in pos:
                 fragment.merge(compiler.full_compile(expr, False))
-            fragment.instruction(OpCode.OP_BUILD_ARGS, len(pos))
+            fragment.instruction(OpCode.KOS_OP_BUILD_ARGS, len(pos))
 
         if vargs:
             fragment.merge(compiler.full_compile(vargs, False))
             if pos:
-                fragment.instruction(OpCode.OP_COMBINE_ARGS, 2)
+                fragment.instruction(OpCode.KOS_OP_COMBINE_ARGS, 2)
 
         if values:
             for expr in values:
                 fragment.merge(compiler.full_compile(expr, False))
-            fragment.instruction(OpCode.OP_BUILD_KWDS_NAMES,
+            fragment.instruction(OpCode.KOS_OP_BUILD_KWDS_NAMES,
                                  tuple(str(k) for k in kwds))
 
         if vkwds:
             fragment.merge(compiler.full_compile(vkwds, False))
             if values:
-                fragment.instruction(OpCode.OP_COMBINE_KWDS, 2)
+                fragment.instruction(OpCode.KOS_OP_COMBINE_KWDS, 2)
 
         fragment.position_of(source)
         if tc:
-            fragment.instruction(OpCode.OP_TAIL_CALL_STAR, opa)
+            fragment.instruction(OpCode.KOS_OP_TAIL_CALL_STAR, opa)
         else:
-            fragment.instruction(OpCode.OP_CALL_STAR, opa)
+            fragment.instruction(OpCode.KOS_OP_CALL_STAR, opa)
 
     elif kwds:
         # we'll use CALL_NAMES
@@ -161,14 +161,14 @@ def special_call(
 
         for expr in values:
             fragment.merge(compiler.full_compile(expr, False))
-        fragment.instruction(OpCode.OP_CONST,
+        fragment.instruction(OpCode.KOS_OP_CONST,
                              tuple(str(k) for k in kwds))
 
         fragment.position_of(source)
         if tc:
-            fragment.instruction(OpCode.OP_TAIL_CALL_NAMES, opa)
+            fragment.instruction(OpCode.KOS_OP_TAIL_CALL_NAMES, opa)
         else:
-            fragment.instruction(OpCode.OP_CALL_NAMES, opa)
+            fragment.instruction(OpCode.KOS_OP_CALL_NAMES, opa)
 
     else:
         # easy mode, we can just use CALL
@@ -177,9 +177,9 @@ def special_call(
 
         fragment.position_of(source)
         if tc:
-            fragment.instruction(OpCode.OP_TAIL_CALL, len(pos))
+            fragment.instruction(OpCode.KOS_OP_TAIL_CALL, len(pos))
         else:
-            fragment.instruction(OpCode.OP_CALL, len(pos))
+            fragment.instruction(OpCode.KOS_OP_CALL, len(pos))
 
     return fragment
 

@@ -87,7 +87,7 @@ The VM in `eval.c` uses a jump table; every opcode has a handler. Handlers are e
 - **Pseudo / stack**: NOOP, LABEL, POSITION (no-op at runtime: advance PC only; no effect), DUP, POP, CONST
 - **Argument production**: BUILD_FUNCTION (build Function from FunctionSpec; stack [fspec, ...kw_defaults, names_tuple] → [function])
 - **Control**: RETURN, AWAIT, YIELD (suspend with value; resumption via send; async gen support), YIELD_FROM (delegate to sub-iterator/gen; KOS_DYN_YIELD_FROM; send/throw/close; handler in koskari/lib/opcode/yield_from.c)
-- **Calls**: CALL (arg = N; stack [callable, arg_0, ..., arg_{N-1}]; Continuation/DelimitedContinuation → call_call_continuation; KosExpression/KosFunction → new frame in same loop; other callables → PyObject_Call then push_or_await)
+- **Calls**: CALL (arg = N; stack [callable, arg_0, ..., arg_{N-1}]; Continuation/DelimitedContinuation → call_call_continuation; KosExpression/KosFunction → new frame in same loop; other callables → PyObject_Call then push_or_await), TAIL_CALL (arg = N; same stack layout as CALL; replaces current frame with callee frame for proper tail-call semantics; compiler emits when call is in tail position)
 - **Introspection**: GLOBALS, LOCALS
 - **Variables by name**: VAR (load), VAR_BIND (bind), VAR_CLEAR (delete), VAR_REF (closure ref), VAR_STORE (store TOS to name)
 - **Variables by index (fast locals)**: FAST, FAST_BIND, FAST_CLEAR, FAST_REF, FAST_STORE
@@ -109,7 +109,7 @@ The VM in `eval.c` uses a jump table; every opcode has a handler. Handlers are e
 
 **Not implemented (stubs)** — hitting these at runtime raises "unimplemented opcode":
 - **Argument building**: BUILD_ARGS, BUILD_KWDS, BUILD_KWDS_NAMES, COMBINE_ARGS, COMBINE_KWDS (BUILD_FUNCTION is implemented)
-- **Calls**: CALL_NAMES, CALL_STAR; CALL_ATTR, CALL_ATTR_NAMES, CALL_ATTR_STAR; RECUR, RECUR_NAMES, RECUR_STAR; TAIL_CALL, TAIL_CALL_NAMES, TAIL_CALL_STAR; TAIL_RECUR, TAIL_RECUR_NAMES, TAIL_RECUR_STAR
+- **Calls**: CALL_NAMES, CALL_STAR; CALL_ATTR, CALL_ATTR_NAMES, CALL_ATTR_STAR; RECUR, RECUR_NAMES, RECUR_STAR; TAIL_CALL_NAMES, TAIL_CALL_STAR; TAIL_RECUR, TAIL_RECUR_NAMES, TAIL_RECUR_STAR
 - **Block control**: PUSH_WITH, PUSH_BEGIN, PUSH_CLASS; POP_WITH, POP_BEGIN
 - **Wind / region**: PUSH_WIND, POP_WIND, END_WIND; PUSH_REGION, POP_REGION
 
@@ -209,7 +209,7 @@ There are no **partially** implemented opcodes; each handler is either full, a s
 - Macro system (reader macros, defmacro, defalias)
 - Remaining control flow constructs (with, begin, class blocks)
 - Compiler: remaining specials, macro expansion, optimization passes
-- Remaining opcode handlers: BUILD_ARGS, BUILD_KWDS, COMBINE_*, CALL_NAMES, CALL_STAR, CALL_ATTR*, RECUR*, TAIL_*, PUSH_WITH, PUSH_BEGIN, PUSH_CLASS, PUSH_WIND, POP_WIND, END_WIND, PUSH_REGION, POP_REGION (see "Opcodes: implementation status" above)
+- Remaining opcode handlers: BUILD_ARGS, BUILD_KWDS, COMBINE_*, CALL_NAMES, CALL_STAR, CALL_ATTR*, RECUR*, TAIL_CALL_NAMES, TAIL_CALL_STAR, TAIL_RECUR*, PUSH_WITH, PUSH_BEGIN, PUSH_CLASS, PUSH_WIND, POP_WIND, END_WIND, PUSH_REGION, POP_REGION (see "Opcodes: implementation status" above)
 
 ### Needs Reconsideration
 - CPython bytecode target (abandoned)

@@ -234,15 +234,6 @@ class TestStubOpcodes(CevalTest):
             self._run_stub_opcode("RECUR_STAR", 0)
 
 
-    def test_tail_call_raises_not_implemented(self):
-        """
-        TAIL_CALL raises RuntimeError
-        """
-
-        with self.assertRaises(RuntimeError):
-            self._run_stub_opcode("TAIL_CALL", 0)
-
-
     def test_tail_call_names_raises_not_implemented(self):
         """
         TAIL_CALL_NAMES raises RuntimeError

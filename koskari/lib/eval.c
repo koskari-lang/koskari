@@ -1058,6 +1058,51 @@ static int call_native_flattened_function(
 
 
 /**
+   call_tail_flattened_expr: callable is borrowed (KosExpression, n is 0).
+   Replace current frame with expression's code/ns via kos_tail_koscall.
+*/
+static int call_tail_flattened_expr(
+    KosContext *ctx,
+    PyObject *callable,
+    KosEvent *out_ev) {
+
+  PyObject *code = KosExpression_CODE(callable);
+  PyObject *ns = KosExpression_NS(callable);
+  Py_INCREF(ns);
+  int r = kos_tail_koscall(ctx, (KosCode *) code, ns);
+  if (r < 0)
+    Py_DECREF(ns);
+  (void) out_ev;
+  return r;
+}
+
+
+/**
+   call_tail_flattened_function: callable and args are borrowed. Prepare
+   call namespace from formals, replace current frame via kos_tail_koscall.
+*/
+static int call_tail_flattened_function(
+    KosContext *ctx,
+    PyObject *callable,
+    PyObject *args,
+    KosEvent *out_ev) {
+
+  PyObject *frame_ns = KosFunction_PrepareCallNamespace(
+      callable, args, NULL);
+  if (! frame_ns)
+    return -1;
+  int r = kos_tail_koscall(ctx, (KosCode *) KosFunction_CODE(callable),
+                          frame_ns);
+  if (r < 0) {
+    Py_DECREF(frame_ns);
+    return -1;
+  }
+  (void) out_ev;
+  return 0;
+}
+
+
+/**
    call_pyobject_call: callable and args are borrowed. CallNoArgs or Call(tuple).
    Push the result; if it is a coroutine (call returned awaitable), we await it
    here (push_or_await). Handler releases callable and args.

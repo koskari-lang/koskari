@@ -12,7 +12,7 @@
 # along with this library; if not, see <http://www.gnu.org/licenses/>.
 
 """
-Tests for VAR, GLOBALS, LOCALS, CALL opcodes.
+Tests for VAR, GLOBALS, LOCALS, CALL, TAIL_CALL opcodes.
 
 :author: Christopher O'Brien <obriencj@preoccupied.net>
 :license: GNU General Public License v3
@@ -20,13 +20,14 @@ Tests for VAR, GLOBALS, LOCALS, CALL opcodes.
 
 import unittest
 
+from koskari.lib import FormalsSpec
 from tests import make_callable
-from tests.lib.opcode import CevalTest, build_expr, run_to_completion
+from tests.lib.opcode import CevalTest, build_code, build_expr, run_to_completion
 
 
 class TestNamespaceAndCall(CevalTest):
     """
-    Tests for VAR, GLOBALS, LOCALS, CALL
+    Tests for VAR, GLOBALS, LOCALS, CALL, TAIL_CALL
     """
 
     def test_var_loads_from_namespace(self):
@@ -127,5 +128,25 @@ class TestNamespaceAndCall(CevalTest):
         ], values={"f": double})
         result = run_to_completion(make_callable(code, ns)())
         self.assertEqual(result, 42)
+
+
+    def test_tail_call_replaces_frame_returns_result(self):
+        """
+        TAIL_CALL with KosFunction replaces current frame; callee return value
+        is the result of the invocation
+        """
+        inner_code = build_code([
+            ["CONST", 42],
+            ["RETURN", 1],
+        ], name="inner")
+        fspec = inner_code.function_spec(FormalsSpec())
+        code_obj, ns = build_expr([
+            ["CONST", fspec],
+            ["BUILD_FUNCTION", 0],
+            ["TAIL_CALL", 0],
+        ])
+        result = run_to_completion(make_callable(code_obj, ns)())
+        self.assertEqual(result, 42)
+
 
 # The end.
