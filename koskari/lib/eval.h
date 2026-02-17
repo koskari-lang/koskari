@@ -355,6 +355,15 @@ int kos_tail_koscall(KosContext *ctx, KosCode *code, PyObject *ns);
 int koskari_eval(KosContext *ctx, KosEvent *out_ev);
 
 
+/**
+   Return the active Koskari context during bytecode execution, or NULL
+   when not inside koskari_eval.
+
+   Callable from native Python object methods (e.g. ParamRef resolution).
+*/
+KosContext *kos_ctx_current(void);
+
+
 /* === GC helpers for Python wrappers === */
 
 /**

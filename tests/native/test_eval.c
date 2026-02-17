@@ -122,6 +122,49 @@ static int test_eval_object_add_return(void) {
 }
 
 
+/* === Test: kos_ctx_current before and after eval === */
+
+
+static int test_eval_ctx_current_outside_eval(void) {
+    TEST_ASSERT(kos_ctx_current() == NULL, "no current context before eval");
+
+    PyObject *nspec = create_test_nspec();
+    TEST_ASSERT_NOT_NULL(nspec, "create nspec");
+
+    PyObject *one = PyLong_FromLong(42);
+    PyObject *instr = PyList_New(2);
+    PyList_SET_ITEM(instr, 0, make_instr(KOS_OP_CONST, one));
+    PyList_SET_ITEM(instr, 1, make_instr_int(KOS_OP_RETURN, 1));
+
+    PyObject *code_obj = KosCode_New(nspec, instr, NULL, NULL);
+    TEST_ASSERT_NOT_NULL(code_obj, "create Code");
+
+    Py_DECREF(instr);
+    Py_DECREF(nspec);
+
+    PyObject *ns = PyDict_New();
+    TEST_ASSERT_NOT_NULL(ns, "create ns");
+
+    KosDynFrame *frame = kos_dynframe_new(NULL, (KosCode *) code_obj, ns, NULL);
+    TEST_ASSERT_NOT_NULL(frame, "create frame");
+
+    KosContext *ctx = kos_context_new(frame);
+    TEST_ASSERT_NOT_NULL(ctx, "create context");
+
+    KosEvent ev = {0};
+    int res = koskari_eval(ctx, &ev);
+
+    TEST_ASSERT(res == 0, "koskari_eval succeeded");
+    TEST_ASSERT(kos_ctx_current() == NULL, "no current context after eval");
+
+    Py_XDECREF(ev.payload);
+    kos_context_free(ctx);
+    Py_DECREF(code_obj);
+
+    return 0;
+}
+
+
 /* === Test: try/except - raise caught, handler result returned === */
 
 
@@ -1042,6 +1085,7 @@ int run_eval_tests(void) {
     BEGIN_TEST_SUITE("Eval Tests");
 
     RUN_TEST(test_eval_object_add_return);
+    RUN_TEST(test_eval_ctx_current_outside_eval);
     RUN_TEST(test_eval_try_except_catch);
     RUN_TEST(test_eval_try_finally_rerase);
     RUN_TEST(test_eval_reset_shift_invoke);

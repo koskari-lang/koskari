@@ -264,28 +264,71 @@ static PyObject *str_athrow = NULL;
 static PyObject *str_aclose = NULL;
 
 
-/* === TLS stack for active evaluator tokens === */
+/* === Per-thread TLS state for active context and token stacks === */
 
 #define KOS_TLS_STACK_MAX 32
 
-/* File-scope static stack.  koskari_eval is single-threaded per process
-   for the current design; nested eval (e.g. hook calling back) pushes
-   tokens onto this stack. */
-static KosEvaluatorToken *active_token_stack[KOS_TLS_STACK_MAX];
-static size_t active_token_depth = 0;
+typedef struct {
+  KosContext *ctx_stack[KOS_TLS_STACK_MAX];
+  size_t ctx_depth;
+  KosEvaluatorToken *token_stack[KOS_TLS_STACK_MAX];
+  size_t token_depth;
+} KosTlsState;
+
+static Py_tss_t tls_state_key = Py_tss_NEEDS_INIT;
+
+
+static KosTlsState *get_or_alloc_tls_state(void) {
+  KosTlsState *s = (KosTlsState *) PyThread_tss_get(&tls_state_key);
+  if (! s) {
+    s = (KosTlsState *) PyMem_Malloc(sizeof(KosTlsState));
+    if (! s)
+      return NULL;
+    s->ctx_depth = 0;
+    s->token_depth = 0;
+    PyThread_tss_set(&tls_state_key, s);
+  }
+  return s;
+}
 
 
 static void push_active_token(KosEvaluatorToken *token) {
-  if (active_token_depth < KOS_TLS_STACK_MAX) {
-    active_token_stack[active_token_depth++] = token;
-  }
+  KosTlsState *s = get_or_alloc_tls_state();
+  if (s && s->token_depth < KOS_TLS_STACK_MAX)
+    s->token_stack[s->token_depth++] = token;
 }
 
 
 static void pop_active_token(KosEvaluatorToken *token) {
   (void) token;
-  if (active_token_depth > 0)
-    active_token_depth--;
+  KosTlsState *s = (KosTlsState *) PyThread_tss_get(&tls_state_key);
+  if (s && s->token_depth > 0) {
+    s->token_depth--;
+    if (s->ctx_depth == 0 && s->token_depth == 0) {
+      PyMem_Free(s);
+      PyThread_tss_set(&tls_state_key, NULL);
+    }
+  }
+}
+
+
+static void push_active_ctx(KosContext *ctx) {
+  KosTlsState *s = get_or_alloc_tls_state();
+  if (s && s->ctx_depth < KOS_TLS_STACK_MAX)
+    s->ctx_stack[s->ctx_depth++] = ctx;
+}
+
+
+static void pop_active_ctx(void) {
+  KosTlsState *s = (KosTlsState *) PyThread_tss_get(&tls_state_key);
+  if (s && s->ctx_depth > 0)
+    s->ctx_depth--;
+}
+
+
+KosContext *kos_ctx_current(void) {
+  KosTlsState *s = (KosTlsState *) PyThread_tss_get(&tls_state_key);
+  return (s && s->ctx_depth > 0) ? s->ctx_stack[s->ctx_depth - 1] : NULL;
 }
 
 
@@ -1679,8 +1722,9 @@ int koskari_eval(KosContext *ctx, KosEvent *out_ev) {
   /* Mark context as running */
   KosContext_FLAGS(ctx) |= KOS_CTX_RUNNING;
 
-  /* Push token onto active stack and increment live_depth */
+  /* Push token and context onto per-thread TLS stacks and increment live_depth */
   push_active_token(KosContext_TOKEN(ctx));
+  push_active_ctx(ctx);
   KosEvaluatorToken_IncrementLiveDepth(KosContext_TOKEN(ctx));
 
   /* Handle pending exception injection */
@@ -1843,6 +1887,7 @@ int koskari_eval(KosContext *ctx, KosEvent *out_ev) {
 
 koskari_eval_cleanup:
   KosEvaluatorToken_DecrementLiveDepth(KosContext_TOKEN(ctx));
+  pop_active_ctx();
   pop_active_token(KosContext_TOKEN(ctx));
   return eval_ret;
 }
@@ -1916,6 +1961,10 @@ int koskari_eval_init(PyObject *mod) {
   if (koskari_dynchain_init(mod))
     return -1;
 
+  /* Create per-thread TLS key for context and token stacks */
+  if (PyThread_tss_create(&tls_state_key) != 0)
+    return -1;
+
   return 0;
 }
 
@@ -1937,6 +1986,8 @@ int koskari_eval_clear(PyObject *mod) {
   KoskariContinuationError = NULL;
 
   koskari_dynchain_clear(mod);
+
+  PyThread_tss_delete(&tls_state_key);
 
   return 0;
 }

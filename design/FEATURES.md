@@ -144,6 +144,7 @@ There are no **partially** implemented opcodes; each handler is either full, a s
 ## Missing/To Design
 
 ### Additional Features
+- **Domain (ambient dynamic context)**: Parameters, dynamic-extent scoping across AWAIT, Koskari↔Python boundaries, and continuations. See design/interpreter/domain.md.
 - **Comprehensions**: List/dict/set comprehensions
 - **Pattern Matching**: match/case style
 - **Type System**: Optional type hints/annotations
