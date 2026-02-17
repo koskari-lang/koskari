@@ -164,6 +164,27 @@ PyObject *KosMemoizedRef_New(PyObject *name, PyObject *getfn);
   (((KosMemoizedRef *) r)->getfn)
 
 
+/* === ParamRef === */
+
+
+extern PyTypeObject KosParamRefType;
+
+
+typedef struct KosParamRef {
+  KosRef super;
+} KosParamRef;
+
+
+#define KosParamRef_KEY(r)                      \
+  (KosRef_NAME(r))
+
+#define KosParamRef_DEFAULT(r)                  \
+  (((KosRef *) r)->obj)
+
+
+PyObject *KosParamRef_New(PyObject *key, PyObject *default_value);
+
+
 /* === Generic Ref functions === */
 
 
@@ -230,6 +251,9 @@ int KosRef_IsEmpty(PyObject *ref);
 
 #define KosMemoizedRef_CheckExact(obj)                  \
   ((obj) && ((obj)->ob_type == &KosMemoizedRefType))
+
+#define KosParamRef_CheckExact(obj)                     \
+  ((obj) && ((obj)->ob_type == &KosParamRefType))
 
 
 /* === Unit lifecycle === */

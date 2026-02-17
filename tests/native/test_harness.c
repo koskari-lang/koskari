@@ -238,6 +238,7 @@ int main(int argc, char *argv[]) {
     run_stack_tests();
     run_dynchain_tests();
     run_eval_tests();
+    run_paramref_tests();
 
     /* Future units:
     run_tco_tests();

@@ -30,6 +30,7 @@
 typedef struct {
   PyObject_HEAD
   uint64_t version;
+  PyObject *param_bindings;  /* PyDict: name -> value */
 } KosDomain;
 
 
@@ -53,6 +54,30 @@ extern PyTypeObject KosDomainType;
 
 
 KosDomain *KosDomain_New(void);
+
+
+/* === param value store API === */
+
+
+/**
+   Get param value from domain by name (key).
+   Returns borrowed reference or NULL if unset.
+*/
+PyObject *kos_domain_get_param(PyObject *domain, PyObject *key);
+
+
+/**
+   Set param value in domain by name (key).
+   Returns 0 on success, -1 on error.
+*/
+int kos_domain_set_param(PyObject *domain, PyObject *key, PyObject *value);
+
+
+/**
+   Remove param binding from domain by name (key).
+   Returns 0 on success, -1 on error.
+*/
+int kos_domain_clear_param(PyObject *domain, PyObject *key);
 
 
 /* === domain-scoped ambient context API === */

@@ -164,6 +164,7 @@ int run_values_tests(void);
 int run_stack_tests(void);
 int run_dynchain_tests(void);
 int run_eval_tests(void);
+int run_paramref_tests(void);
 
 /* Future units:
 int run_tco_tests(void);

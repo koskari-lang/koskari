@@ -144,7 +144,7 @@ There are no **partially** implemented opcodes; each handler is either full, a s
 ## Missing/To Design
 
 ### Additional Features
-- **Domain (ambient dynamic context)**: TLS plumbing, KosDomain type, and domain-scoping API are implemented in `domain.c`/`domain.h` (Step 1 and 2). ParamRef, PARAM dyn extent, opcodes, and compiler lowering are not yet implemented. See design/interpreter/domain.md.
+- **Domain (ambient dynamic context)**: TLS plumbing, KosDomain type, domain-scoping API, and ParamRef are implemented in `domain.c`/`domain.h` and `ref.c` (Steps 1–3). KosDomain holds param value store (name -> value); ParamRef resolves via `kos_domain_current()` and `kos_domain_get_param`. PARAM dyn extent (KOS_DYN_PARAM), opcodes, and compiler lowering are not yet implemented. See design/interpreter/domain.md.
 - **Comprehensions**: List/dict/set comprehensions
 - **Pattern Matching**: match/case style
 - **Type System**: Optional type hints/annotations
@@ -160,11 +160,11 @@ There are no **partially** implemented opcodes; each handler is either full, a s
 - Atom types: `symbol`, `keyword`, `gensym()`
 - Pair types: `pair`, `nil`, `cons()`, `car()`, `cdr()`, `setcar()`, `setcdr()`, `build_unpack_pair()`
 - Namespace types: `Namespace`, `NamespaceSpec`, `ModuleNamespace`, `CollectorNamespace`, `Module`
-- Reference types: `Ref`, `AttributeRef`, `ItemRef`, `DynamicRef`, `ConstantRef`, `MemoizedRef`
+- Reference types: `Ref`, `AttributeRef`, `ItemRef`, `DynamicRef`, `ConstantRef`, `MemoizedRef`, `ParamRef`
 - Formals types: `Formals`, `FormalsSpec`
 - Values type: `values`
 - Stack types: `Stack`, `BlockStyle` (block-structured operand stack)
-- Domain type: `Domain` (koskari.lib.Domain; identity/lifecycle anchor for ambient dynamic context; TLS in domain.c)
+- Domain type: `Domain` (koskari.lib.Domain; identity/lifecycle anchor, param value store; TLS in domain.c). ParamRef type: `ParamRef` (koskari.lib.ParamRef; Ref subclass; resolves via active domain)
 
 **Native Operators** (C extension):
 - Reducing arithmetic: `+`, `-`, `*`, `/`, `//`, `@`

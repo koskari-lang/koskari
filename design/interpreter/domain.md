@@ -2,7 +2,7 @@
 
 This document describes the design and implementation plan for **Domain** (ambient dynamic context), **ParamRef** (canonical parameter references), and **PARAM** dynamic extent (parameter bindings on the dyn chain). It specifies TLS plumbing, opcodes (`PARAM`, `PUSH_PARAM`, `POP_PARAM`), compiler lowering, hard invariants, and step-by-step implementation.
 
-**Implementation status**: Steps 1 and 2 are implemented. TLS and KosDomain live in `domain.c`; the domain-scoped API includes `kos_ctx_current()`, `kos_domain_current()`, `kos_domain_push_scope()`, `kos_domain_pop_scope()`. ParamRef, PARAM dyn extent, and opcodes are not yet implemented.
+**Implementation status**: Steps 1, 2, and 3 are implemented. TLS and KosDomain live in `domain.c`; the domain-scoped API includes `kos_ctx_current()`, `kos_domain_current()`, `kos_domain_push_scope()`, `kos_domain_pop_scope()`. KosDomain holds a param value store (PyDict: name -> value). ParamRef (Ref subclass) resolves via `kos_domain_current()` and `kos_domain_get_param(key)`; no interning; fully dynamic value lookup. PARAM dyn extent (KOS_DYN_PARAM), opcodes, and compiler lowering are not yet implemented.
 
 ---
 
@@ -41,7 +41,7 @@ A **Domain** is the general solution: it is the "ambient dynamic context object"
 
 1. **TLS plumbing and static API** (implemented): Per-thread TLS stack(s) for current context (and/or current domain); `kos_ctx_current()` and `kos_domain_current()` callable from native Python object methods. TLS, `KosTlsState`, and accessors live in `domain.c`. The evaluator calls `kos_domain_push_scope(ctx)` on entry and `kos_domain_pop_scope(ctx)` on cleanup. See `koskari/lib/domain.c`, `domain.h`.
 2. **KosDomain runtime object** (implemented): Minimal v1 — identity/lifecycle anchor with optional `version` field. Every KosContext owns a `domain` (PyObject* KosDomain). New contexts inherit the active context's domain when `kos_ctx_current() != NULL`; otherwise a fresh KosDomain is created. Exposed as `koskari.lib.Domain`.
-3. **ParamRef type**: Canonical identity per parameter key (interning); Ref-compatible API; resolves current value from active execution ambient state (via TLS).
+3. **ParamRef type** (implemented): Ref subclass; key (name) and default_value; no interning. Resolves via `kos_domain_current()` and `kos_domain_get_param(key)`. Exposed as `koskari.lib.ParamRef`.
 4. **PARAM dynamic extent**: New dyn node kind `KOS_DYN_PARAM`; correct unwind behavior; included in continuation capture/apply.
 5. **Bytecode/opcode additions**: Implement `PARAM`, `PUSH_PARAM`, `POP_PARAM` (or equivalent minimal pair); update opcode tables/docs and assembler/disassembler paths.
 6. **Compiler lowering (minimum)**: `(use-param X)` expands to binding `X` to `(PARAM "X")`; `parameterize` compiles as LET-like plus `PUSH_PARAM`/`POP_PARAM` around body.
@@ -82,26 +82,20 @@ There must be a single ParamRef instance per parameter key *within an interning 
 
 (Alternative later: Domain-level or process-level interning; do not block v1.)
 
-### D2 — Where bindings live (recommended)
+### D2 — Where bindings live (implemented)
 
-Make the **dyn chain the truth**:
+**Domain holds param values** (name -> value dict):
 
-- `KOS_DYN_PARAM` stores bindings as a compact vector of `(ParamRef*, value)` pairs (or parallel arrays).
-- `ParamRef.get()` resolves by walking the active dyn chain.
+- KosDomain has `param_bindings` (PyDict: name -> value); lazy-init on first access.
+- `ParamRef.deref()`: `domain = kos_domain_current()`; `value = kos_domain_get_param(domain, param_ref->key)`; return value or default.
+- ParamRef does **not** walk the dyn chain; it asks the active domain for the value.
+- A later phase will add `KOS_DYN_PARAM` on the dyn chain; the dyn node handler will call `kos_domain_set_param` on push and restore on pop, so the domain remains the single source of truth.
 
-This avoids dict/overlay mutation and makes continuation behavior automatic because the dyn chain is captured.
+### D3 — Domain role in v1 (implemented)
 
-Optional later optimization: caching keyed by `(ctx->chain_version, ParamRef*)`.
-
-### D3 — Domain role in v1
-
-Keep `KosDomain` minimal:
-
-- Exists to support future ambient features.
-- Provides an identity/lifecycle anchor.
-- May hold per-context ParamRef interning table (if you choose module interning, Domain can still be present).
-
-Do **not** require Domain overlay dicts for parameter bindings in v1.
+- KosDomain holds `param_bindings` (PyDict: name -> value).
+- ParamRef resolves via `kos_domain_current()` and `kos_domain_get_param(key)`.
+- Interning is not implemented in v1; ParamRef is created via constructor `ParamRef(key, default=None)`.
 
 ---
 
@@ -111,8 +105,8 @@ Do **not** require Domain overlay dicts for parameter bindings in v1.
 
 - **Context**: A heap-resident Koskari evaluator state (frames + dynamic chain) driven by `koskari_eval()` until a boundary event.
 - **Token**: An identity/safety handle used for continuation ownership checks.
-- **Domain**: The ambient dynamic context object associated with a Context (and optionally shared with other Contexts). In v1, minimal: identity/lifecycle anchor; parameter bindings live on the dyn chain, not in the Domain.
-- **ParamRef**: A canonical Ref-compatible object representing a parameter; one instance per key within the interning domain (e.g. per module). Resolution walks the dyn chain for `KOS_DYN_PARAM` bindings.
+- **Domain**: The ambient dynamic context object associated with a Context (and optionally shared with other Contexts). Holds `param_bindings` (name -> value). ParamRef resolves via `kos_domain_current()` and domain lookup.
+- **ParamRef**: A Ref-compatible object representing a parameter; stores key (name) and default_value. Resolution uses `kos_domain_current()` and `kos_domain_get_param(key)`; fully dynamic—no domain pointer stored. Two ParamRefs with the same key share the same domain binding.
 - **PARAM extent**: A dynamic extent introduced by `PUSH_PARAM` and removed by `POP_PARAM`; implemented as a `KOS_DYN_PARAM` node on the unified dynamic chain. Unwindable on exceptions and boundary exits; captured and restored as part of continuations.
 
 ### What Belongs in a Domain
@@ -136,25 +130,24 @@ Examples (all optional, but Domain gives you a home for them):
 
 ## Data Model
 
-### KosDomain (v1 minimal)
-
-For v1, Domain is a minimal shell:
+### KosDomain (v1 implemented)
 
 - Identity/lifecycle anchor associated with a Context (`ctx->domain`).
-- Optional version counter for future use.
-- No overlay dicts for parameter bindings in v1; bindings live on the dyn chain (D2, D3).
+- Version counter for future use.
+- `param_bindings` (PyDict: name -> value); lazy-init. API: `kos_domain_get_param(domain, key)`, `kos_domain_set_param(domain, key, value)`, `kos_domain_clear_param(domain, key)`.
+- A later phase will add KOS_DYN_PARAM on the dyn chain; its handler will call the domain API on push/pop.
 
 Typed hot slots (cancel token, capabilities, I/O defaults) and generic key/value overlays are deferred to a later iteration.
 
-### KOS_DYN_PARAM (dyn chain node)
+### KOS_DYN_PARAM (dyn chain node; not yet implemented)
 
-Parameter bindings are stored on the **unified dynamic chain** as a new node kind:
+A later phase will add parameter bindings on the **unified dynamic chain** as a new node kind:
 
 - **Node kind**: `KOS_DYN_PARAM`.
 - **Storage**: `count`; array of `(ParamRef*, value)` pairs (or parallel arrays: `ParamRef** params`, `PyObject** values`).
 - **Lookup**: `kos_dyn_param_lookup(KosDynNode* node, ParamRef* p, PyObject** out)` returns whether this node binds the given ParamRef and writes the value.
 
-Resolution: `ParamRef.get()` walks `ctx->dyn_top` downward, finds the first `KOS_DYN_PARAM` that binds this ParamRef, and returns that value; else returns the ParamRef’s default.
+The dyn node handler will call `kos_domain_set_param` on push and restore on pop; the domain remains the single source of truth. **Current implementation**: ParamRef resolves via `kos_domain_current()` and `kos_domain_get_param(key)`; no dyn chain walk. Store/clear update the domain directly.
 
 ---
 
@@ -190,16 +183,17 @@ Debug assertions: `kos_ctx_current() != NULL` during bytecode execution.
 
 ## ParamRef and PARAM Extent
 
-### ParamRef type
+### ParamRef type (implemented)
 
-- **Representation**: Native Python heap type; subclass of `Ref` or Ref-protocol compatible.
-- **Fields**: `key` (string/symbol), `default_value`, (optional) module/owning namespace pointer for interning.
-- **Interning**: `ParamRef* paramref_intern(owner, key)` returns the canonical instance for that key in `owner` (e.g. module/namespace for v1).
+- **Representation**: Native Python heap type; subclass of Ref.
+- **Fields**: `key` (name, used for domain lookup), `default_value`.
+- **No interning in v1**; ParamRef created via `ParamRef(key, default=None)` or `KosParamRef_New(key, default_value)`.
 
-**Semantics**:
+**Semantics** (fully dynamic—domain resolved at deref/store time):
 
-- **`ref_get(ParamRef)`**: `ctx = kos_ctx_current()`; walk `ctx->dyn_top` for `KOS_DYN_PARAM` nodes; find a binding for this ParamRef identity; else return `default_value`.
-- **`ref_set!(ParamRef, v)`** (recommended): mutate `default_value` only (does not mutate current dynamic binding). Optional separate API for “set current binding” if needed.
+- **`ref_get(ParamRef)`**: `domain = kos_domain_current()`; if NULL, return default or raise; else `value = kos_domain_get_param(domain, param_ref->key)`; return value or default.
+- **`ref_set!(ParamRef, v)`**: `domain = kos_domain_current()`; if NULL, raise; else `kos_domain_set_param(domain, param_ref->key, value)`.
+- ParamRef never stores a domain pointer; safe to capture in closures that may run on another thread.
 
 ### Surface API (Lisp)
 
@@ -277,13 +271,12 @@ Leaving any block that introduced PARAM bindings must restore previous bindings.
 - Implemented in `domain.c`, `domain.h`: KosDomain type (PyObject_HEAD + uint64_t version). `ctx->domain` in KosContext.
 - Domain lifecycle: `kos_context_new()` inherits domain from active ctx when `kos_ctx_current() != NULL`; else creates fresh KosDomain. GC: `Py_VISIT` in traverse, `Py_XDECREF` in free.
 
-### Step 3 — ParamRef type and interning
+### Step 3 — ParamRef type (done)
 
-- Implement ParamRef (Python heap type; Ref subclass or Ref protocol).
-- Fields: key, default_value, (optional) owner for interning.
-- `paramref_intern(owner, key)` returns canonical ParamRef for that key in owner.
-- `ref_get(ParamRef)`: use `kos_ctx_current()`, walk dyn chain for `KOS_DYN_PARAM`, resolve binding else default.
-- `ref_set!(ParamRef, v)`: set default_value (recommended).
+- Implemented ParamRef (Ref subclass); key (name) and default_value; no interning.
+- KosDomain: `param_bindings` (PyDict: name -> value), `kos_domain_get_param`, `kos_domain_set_param`, `kos_domain_clear_param`.
+- ParamRef.deref: `domain = kos_domain_current()`; `kos_domain_get_param(domain, key)` or default.
+- ParamRef.store: `domain = kos_domain_current()`; `kos_domain_set_param(domain, key, value)`.
 
 ### Step 4 — Add PARAM dyn node kind
 
@@ -309,6 +302,10 @@ Leaving any block that introduced PARAM bindings must restore previous bindings.
 
 ## Testing Matrix (Required)
 
+**Implemented tests**: Native C tests in `tests/native/test_paramref.c` and Python tests in `tests/lib/test_paramref.py` cover ParamRef creation, deref/store/clear outside and inside active domain, and shared value for same key.
+
+**Remaining tests** (for KOS_DYN_PARAM, opcodes, parameterize):
+
 1. **Nesting restore**: Outer binds X=8, inner binds X=16; verify correct values and restore.
 2. **Exception restore**: Parameterize binds X=16 then raises; after catching, X resolves to prior/default.
 3. **Cross-language re-entry**: Koskari parameterizes X then calls Python; Python calls back into Koskari; inner sees same X binding by default.
@@ -320,7 +317,7 @@ Leaving any block that introduced PARAM bindings must restore previous bindings.
 ## Completion Criteria
 
 - TLS stack and `kos_ctx_current()` are correct and do not leak across `AWAIT`.
-- ParamRef resolves current bindings reliably using only the active context/dyn chain.
+- ParamRef resolves current bindings reliably via `kos_domain_current()` and domain param store.
 - `KOS_DYN_PARAM` nodes are unwindable and included in continuation capture/apply.
 - `PARAM`, `PUSH_PARAM`, `POP_PARAM` opcodes function and are documented.
 - All required tests pass.

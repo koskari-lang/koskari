@@ -1,0 +1,175 @@
+# This library is free software; you can redistribute it and/or modify
+# it under the terms of the GNU General Public License as published by
+# the Free Software Foundation; either version 3 of the License, or
+# (at your option) any later version.
+#
+# This library is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
+# General Public License for more details.
+#
+# You should have received a copy of the GNU General Public License
+# along with this library; if not, see <http://www.gnu.org/licenses/>.
+
+"""
+Unit tests for ParamRef
+
+:author: Christopher O'Brien <obriencj@preoccupied.net>
+:license: GNU General Public License v3
+"""
+
+import unittest
+
+from koskari.lib import ParamRef, Ref
+from tests import make_callable
+from tests.lib.opcode import build_expr, run_to_completion
+
+
+class TestParamRefCreate(unittest.TestCase):
+    """ParamRef creation and basic properties"""
+
+    def test_create_with_key_and_default(self):
+        """ParamRef can be created with key and default value"""
+        p = ParamRef("x", 42)
+        self.assertIsInstance(p, ParamRef)
+        self.assertIsInstance(p, Ref)
+        self.assertEqual(p.name, "x")
+
+    def test_create_with_key_only(self):
+        """ParamRef can be created with key only"""
+        p = ParamRef("foo")
+        self.assertIsInstance(p, ParamRef)
+        self.assertEqual(p.name, "foo")
+
+
+class TestParamRefNoDomain(unittest.TestCase):
+    """ParamRef behavior outside active domain (no koskari_eval)"""
+
+    def test_deref_no_domain_returns_default(self):
+        """deref outside domain returns default value"""
+        p = ParamRef("x", 99)
+        self.assertEqual(p.deref(), 99)
+
+    def test_deref_no_domain_no_default_raises(self):
+        """deref outside domain with no default raises RuntimeError"""
+        p = ParamRef("x")
+        with self.assertRaises(RuntimeError):
+            p.deref()
+
+    def test_store_no_domain_raises(self):
+        """store outside domain raises RuntimeError"""
+        p = ParamRef("x", 0)
+        with self.assertRaises(RuntimeError):
+            p.store(42)
+
+    def test_clear_no_domain_raises(self):
+        """clear outside domain raises RuntimeError"""
+        p = ParamRef("x", 0)
+        with self.assertRaises(RuntimeError):
+            p.clear()
+
+
+class TestParamRefInsideScope(unittest.TestCase):
+    """ParamRef store/deref/clear inside active domain (Python callback during eval)"""
+
+    def test_store_and_deref_same_value(self):
+        """
+        Store value and deref during eval returns same value. Uses a Python
+        callback invoked from bytecode; domain is active during the call.
+        """
+        p = ParamRef("test_key", None)
+
+        def store_and_deref():
+            p.store(123)
+            return p.deref()
+
+        code, ns = build_expr([
+            ["VAR", "f"],
+            ["CALL", 0],
+            ["RETURN", 1],
+        ], values={"f": store_and_deref})
+        result = run_to_completion(make_callable(code, ns)())
+        self.assertEqual(result, 123)
+
+    def test_two_paramrefs_same_key_share_value(self):
+        """
+        Two ParamRefs with same key see the same value within a thread.
+        One stores, the other derefs.
+        """
+        p1 = ParamRef("shared", 0)
+        p2 = ParamRef("shared", 0)
+
+        def store_via_p1_deref_via_p2():
+            p1.store(777)
+            return p2.deref()
+
+        code, ns = build_expr([
+            ["VAR", "f"],
+            ["CALL", 0],
+            ["RETURN", 1],
+        ], values={"f": store_via_p1_deref_via_p2})
+        result = run_to_completion(make_callable(code, ns)())
+        self.assertEqual(result, 777)
+
+    def test_clear_then_deref_returns_default(self):
+        """
+        After store, clear makes empty; deref returns default.
+        """
+        p = ParamRef("x", 88)
+
+        def store_clear_deref():
+            p.store(100)
+            p.clear()
+            return p.deref()
+
+        code, ns = build_expr([
+            ["VAR", "f"],
+            ["CALL", 0],
+            ["RETURN", 1],
+        ], values={"f": store_clear_deref})
+        result = run_to_completion(make_callable(code, ns)())
+        self.assertEqual(result, 88)
+
+    def test_deref_before_store_returns_default(self):
+        """
+        deref before any store returns default; after store returns stored value.
+        """
+        p = ParamRef("y", 99)
+
+        def before_after_store():
+            before = p.deref()
+            p.store(1)
+            after = p.deref()
+            return (before, after)
+
+        code, ns = build_expr([
+            ["VAR", "f"],
+            ["CALL", 0],
+            ["RETURN", 1],
+        ], values={"f": before_after_store})
+        result = run_to_completion(make_callable(code, ns)())
+        self.assertEqual(result[0], 99)
+        self.assertEqual(result[1], 1)
+
+    def test_store_overwrites_previous(self):
+        """
+        store overwrites previous value; deref returns latest.
+        """
+        p = ParamRef("z", 0)
+
+        def overwrite():
+            p.store(10)
+            p.store(20)
+            p.store(30)
+            return p.deref()
+
+        code, ns = build_expr([
+            ["VAR", "f"],
+            ["CALL", 0],
+            ["RETURN", 1],
+        ], values={"f": overwrite})
+        result = run_to_completion(make_callable(code, ns)())
+        self.assertEqual(result, 30)
+
+
+# The end.

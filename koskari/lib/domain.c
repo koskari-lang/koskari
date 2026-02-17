@@ -121,11 +121,85 @@ void kos_domain_pop_scope(KosContext *ctx) {
 }
 
 
+/* === param value store helpers === */
+
+
+static PyObject *ensure_param_bindings(KosDomain *domain) {
+  if (! domain->param_bindings) {
+    domain->param_bindings = PyDict_New();
+    if (! domain->param_bindings)
+      return NULL;
+  }
+  return domain->param_bindings;
+}
+
+
 /* === KosDomain implementation === */
 
 
 static PyObject *domain_repr(PyObject *self) {
   return PyUnicode_FromFormat("<Domain %p>", (void *) self);
+}
+
+
+static void domain_dealloc(PyObject *self) {
+  KosDomain *domain = (KosDomain *) self;
+  Py_XDECREF(domain->param_bindings);
+  domain->param_bindings = NULL;
+  Py_TYPE(self)->tp_free(self);
+}
+
+
+PyObject *kos_domain_get_param(PyObject *domain_obj, PyObject *key) {
+  KosDomain *domain;
+  PyObject *bindings;
+  PyObject *value;
+
+  if (! domain_obj || ! KosDomain_CheckExact(domain_obj))
+    return NULL;
+  domain = (KosDomain *) domain_obj;
+  bindings = ensure_param_bindings(domain);
+  if (! bindings)
+    return NULL;
+  value = PyDict_GetItem(bindings, key);
+  if (value)
+    Py_INCREF(value);
+  return value;
+}
+
+
+int kos_domain_set_param(PyObject *domain_obj, PyObject *key, PyObject *value) {
+  KosDomain *domain;
+  PyObject *bindings;
+
+  if (! domain_obj || ! KosDomain_CheckExact(domain_obj))
+    return -1;
+  domain = (KosDomain *) domain_obj;
+  bindings = ensure_param_bindings(domain);
+  if (! bindings)
+    return -1;
+  return PyDict_SetItem(bindings, key, value);
+}
+
+
+int kos_domain_clear_param(PyObject *domain_obj, PyObject *key) {
+  KosDomain *domain;
+  PyObject *bindings;
+
+  if (! domain_obj || ! KosDomain_CheckExact(domain_obj))
+    return -1;
+  domain = (KosDomain *) domain_obj;
+  bindings = domain->param_bindings;
+  if (! bindings)
+    return 0;
+  if (PyDict_DelItem(bindings, key) < 0) {
+    if (PyErr_ExceptionMatches(PyExc_KeyError)) {
+      PyErr_Clear();
+      return 0;
+    }
+    return -1;
+  }
+  return 0;
 }
 
 
@@ -136,6 +210,7 @@ PyTypeObject KosDomainType = {
   .tp_itemsize = 0,
   .tp_new = PyType_GenericNew,
   .tp_repr = domain_repr,
+  .tp_dealloc = domain_dealloc,
   .tp_flags = Py_TPFLAGS_DEFAULT,
 };
 
@@ -145,6 +220,7 @@ KosDomain *KosDomain_New(void) {
   if (! domain)
     return NULL;
   domain->version = 0;
+  domain->param_bindings = NULL;
   return domain;
 }
 

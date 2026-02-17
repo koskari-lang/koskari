@@ -36,6 +36,7 @@ static PyObject *_str_item_ref = NULL;   // "<ItemRef>"
 static PyObject *_str_dyn_ref = NULL;    // "<DynamicRef>"
 static PyObject *_str_const_ref = NULL;  // "<ConstantRef>"
 static PyObject *_str_memo_ref = NULL;   // "<MemoizedRef>"
+static PyObject *_str_param_ref = NULL;  // "<ParamRef>"
 
 static PyObject *_str_deref = NULL;  // "deref"
 static PyObject *_str_store = NULL;  // "store"
@@ -1037,6 +1038,182 @@ PyObject *KosMemoizedRef_New(PyObject *name, PyObject *getfn) {
 }
 
 
+/* === ParamRef === */
+
+
+static int param_ref_init(PyObject *self, PyObject *key, PyObject *default_value) {
+  KosRef_NAME(self) = NULL;
+  KosParamRef_DEFAULT(self) = NULL;
+
+  if (! key || key == Py_None) {
+    PyErr_SetString(PyExc_ValueError, "ParamRef requires a key (name)");
+    return -1;
+  }
+  Py_INCREF(key);
+  KosRef_NAME(self) = key;
+
+  Py_XINCREF(default_value);
+  KosParamRef_DEFAULT(self) = default_value;
+
+  return 0;
+}
+
+
+static PyObject *param_ref_m_deref(PyObject *self) {
+  PyObject *domain;
+  PyObject *value;
+  PyObject *default_val;
+
+  domain = kos_domain_current();
+  if (! domain) {
+    default_val = KosParamRef_DEFAULT(self);
+    if (default_val) {
+      Py_INCREF(default_val);
+      return default_val;
+    }
+    PyErr_SetString(PyExc_RuntimeError,
+                    "ParamRef.deref outside active domain and no default");
+    return NULL;
+  }
+  value = kos_domain_get_param(domain, KosParamRef_KEY(self));
+  if (value)
+    return value;
+  default_val = KosParamRef_DEFAULT(self);
+  if (default_val) {
+    Py_INCREF(default_val);
+    return default_val;
+  }
+  PyErr_Format(PyExc_NameError, "Param %S has no binding and no default",
+               KosParamRef_KEY(self));
+  return NULL;
+}
+
+
+static PyObject *param_ref_m_store(PyObject *self, PyObject *value) {
+  PyObject *domain;
+
+  domain = kos_domain_current();
+  if (! domain) {
+    PyErr_SetString(PyExc_RuntimeError,
+                    "ParamRef.store outside active domain");
+    return NULL;
+  }
+  if (kos_domain_set_param(domain, KosParamRef_KEY(self), value) < 0)
+    return NULL;
+  Py_RETURN_NONE;
+}
+
+
+static PyObject *param_ref_m_clear(PyObject *self) {
+  PyObject *domain;
+
+  domain = kos_domain_current();
+  if (! domain) {
+    PyErr_SetString(PyExc_RuntimeError,
+                    "ParamRef.clear outside active domain");
+    return NULL;
+  }
+  kos_domain_clear_param(domain, KosParamRef_KEY(self));
+  Py_RETURN_NONE;
+}
+
+
+static PyObject *param_ref_m_is_empty(PyObject *self) {
+  PyObject *domain;
+  PyObject *value;
+
+  domain = kos_domain_current();
+  if (! domain)
+    return PyBool_FromLong(1);
+  value = kos_domain_get_param(domain, KosParamRef_KEY(self));
+  return PyBool_FromLong(! value);
+}
+
+
+static PyMethodDef param_ref_methods[] = {
+  { "deref", (PyCFunction) param_ref_m_deref, METH_NOARGS,
+    "R.deref() => V" },
+
+  { "store", (PyCFunction) param_ref_m_store, METH_O,
+    "R.store(V) => None" },
+
+  { "clear", (PyCFunction) param_ref_m_clear, METH_NOARGS,
+    "R.clear() => None" },
+
+  { NULL, },
+};
+
+
+static int param_ref_tp_init(PyObject *self, PyObject *args, PyObject *kwds) {
+  PyObject *key = NULL;
+  PyObject *default_value = NULL;
+
+  if (kwds && PyDict_Size(kwds)) {
+    PyErr_SetString(PyExc_TypeError, "ParamRef takes no named arguments");
+    return -1;
+  }
+
+  if (! PyArg_ParseTuple(args, "O|O:ParamRef", &key, &default_value))
+    return -1;
+
+  return param_ref_init(self, key, default_value);
+}
+
+
+static int param_ref_traverse(PyObject *self, visitproc visit, void *arg) {
+  Py_VISIT(KosRef_NAME(self));
+  Py_VISIT(KosParamRef_DEFAULT(self));
+  return 0;
+}
+
+
+static int param_ref_clear(PyObject *self) {
+  Py_CLEAR(KosRef_NAME(self));
+  Py_CLEAR(KosParamRef_DEFAULT(self));
+  return 0;
+}
+
+
+static void param_ref_dealloc(PyObject *self) {
+  Py_CLEAR(KosRef_NAME(self));
+  Py_CLEAR(KosParamRef_DEFAULT(self));
+  Py_TYPE(self)->tp_free(self);
+}
+
+
+PyTypeObject KosParamRefType = {
+  PyVarObject_HEAD_INIT(NULL, 0)
+
+  "ParamRef",
+  sizeof(KosParamRef),
+  0,
+
+  .tp_base = &KosRefType,
+  .tp_flags = Py_TPFLAGS_DEFAULT,
+  .tp_getset = sym_ref_getset,
+  .tp_methods = param_ref_methods,
+  .tp_new = PyType_GenericNew,
+  .tp_init = param_ref_tp_init,
+  .tp_traverse = param_ref_traverse,
+  .tp_clear = param_ref_clear,
+  .tp_dealloc = param_ref_dealloc,
+};
+
+
+PyObject *KosParamRef_New(PyObject *key, PyObject *default_value) {
+  PyObject *self = PyObject_New(PyObject, &KosParamRefType);
+  if (! self)
+    return NULL;
+
+  if (param_ref_init(self, key, default_value)) {
+    Py_CLEAR(self);
+    return NULL;
+  }
+
+  return self;
+}
+
+
 /* === Generic ref functions === */
 
 
@@ -1058,6 +1235,9 @@ PyObject *KosRef_Deref(PyObject *self) {
 
   } else if (tp == &KosDynamicRefType) {
     return dyn_ref_m_deref(self);
+
+  } else if (tp == &KosParamRefType) {
+    return param_ref_m_deref(self);
 
   } else {
     return PyObject_CallMethodObjArgs(self, _str_deref, NULL);
@@ -1084,6 +1264,9 @@ int KosRef_Store(PyObject *self, PyObject *value) {
 
   } else if (tp == &KosDynamicRefType) {
     res = dyn_ref_m_store(self, value);
+
+  } else if (tp == &KosParamRefType) {
+    res = param_ref_m_store(self, value);
 
   } else {
     res = PyObject_CallMethodObjArgs(self, _str_store, value, NULL);
@@ -1119,6 +1302,9 @@ int KosRef_Clear(PyObject *self) {
   } else if (tp == &KosDynamicRefType) {
     res = dyn_ref_m_clear(self);
 
+  } else if (tp == &KosParamRefType) {
+    res = param_ref_m_clear(self);
+
   } else {
     res = PyObject_CallMethodObjArgs(self, _str_clear, NULL);
   }
@@ -1151,6 +1337,9 @@ int KosRef_IsEmpty(PyObject *self) {
   } else if (tp == &KosDynamicRefType) {
     res = dyn_ref_get_empty(self, NULL);
 
+  } else if (tp == &KosParamRefType) {
+    res = param_ref_m_is_empty(self);
+
   } else {
     res = PyObject_GetAttr(self, _str_empty);
   }
@@ -1180,7 +1369,8 @@ int koskari_ref_init(PyObject *mod) {
       PyType_Ready(&KosItemRefType) ||
       PyType_Ready(&KosDynamicRefType) ||
       PyType_Ready(&KosConstantRefType) ||
-      PyType_Ready(&KosMemoizedRefType))
+      PyType_Ready(&KosMemoizedRefType) ||
+      PyType_Ready(&KosParamRefType))
     return -1;
 
   STR_CONST(_str_ref, "<Ref>");
@@ -1189,6 +1379,7 @@ int koskari_ref_init(PyObject *mod) {
   STR_CONST(_str_dyn_ref, "<DynamicRef>");
   STR_CONST(_str_const_ref, "<ConstantRef>");
   STR_CONST(_str_memo_ref, "<MemoizedRef>");
+  STR_CONST(_str_param_ref, "<ParamRef>");
   STR_CONST(_str_deref, "deref");
   STR_CONST(_str_store, "store");
   STR_CONST(_str_clear, "clear");
@@ -1206,6 +1397,8 @@ int koskari_ref_init(PyObject *mod) {
                        (PyObject *) &KosConstantRefType);
   PyDict_SetItemString(dict, "MemoizedRef",
                        (PyObject *) &KosMemoizedRefType);
+  PyDict_SetItemString(dict, "ParamRef",
+                       (PyObject *) &KosParamRefType);
 
   return 0;
 }
@@ -1219,6 +1412,7 @@ int koskari_ref_clear(PyObject *mod) {
   Py_CLEAR(_str_dyn_ref);
   Py_CLEAR(_str_const_ref);
   Py_CLEAR(_str_memo_ref);
+  Py_CLEAR(_str_param_ref);
   Py_CLEAR(_str_deref);
   Py_CLEAR(_str_store);
   Py_CLEAR(_str_clear);
