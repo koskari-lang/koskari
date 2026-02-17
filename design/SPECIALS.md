@@ -105,13 +105,13 @@ the compiler.
 ```
 
 
-## lambda
+## compile/lambda
 
-**Symbol:** `lambda`
+**Symbol:** `compile/lambda`
 
 **Syntax:**
-- Anonymous: `(lambda FORMALS BODY ...)`
-- Named: `(lambda NAME FORMALS BODY ...)`
+- Anonymous: `(compile/lambda FORMALS BODY ...)`
+- Named: `(compile/lambda NAME FORMALS BODY ...)`
 
 **Formals:** A list or improper list of parameter names, optionally with keyword
 parameters and defaults, e.g. `[a b]`, `[a b c: default-c]`, or a single symbol
@@ -131,18 +131,86 @@ enclosing scope and passed in via the constant tuple for defaulted keywords.
 
 ```scheme
 ;; Anonymous identity
-(lambda [x] x)
+(compile/lambda [x] x)
 
 ;; Anonymous two-argument function
-(lambda [a b] (compile/call add a b))
+(compile/lambda [a b] (compile/call add a b))
 
 ;; Named lambda for recursion
-(lambda fact [n]
-  (compile/call cond ...))
+(compile/lambda fact [n]
+  (compile/call fact ...))
 
 ;; Keyword parameter with default
-(lambda [x flag: true] ...)
+(compile/lambda [x flag: true] ...)
 ```
+
+
+## compile/let
+
+**Symbol:** `compile/let`
+
+**Syntax:**
+- Unnamed: `(compile/let BINDINGS BODY ...)`
+- Named: `(compile/let NAME BINDINGS BODY ...)`
+
+**Bindings:** A list of binding forms; each is `[SYM EXPR]` or `(EXPR as: SYM)`.
+Parsed with `gather_bindings` (see helpers).
+
+**Use-case:** Lexical bindings for the duration of the body. Unnamed let pushes a
+child namespace (PUSH_NS), binds names to compiled values, runs the body, and
+pops (POP_NS). Named let expands to an immediately-invoked named lambda:
+`((lambda NAME [args...] BODY...) val...)`, so the name is bound in the
+function's scope for recursion.
+
+**Behaviour:** Unnamed: `child_namespace` with the binding names and value
+expressions; body compiled with `helper_begin`. Named: rewrite to
+`(compile/call (compile/lambda NAME [args...] BODY...) val...)` via `pycons`.
+
+**Examples:**
+
+```scheme
+;; Unnamed let
+(compile/let [[x 1] [y 2]] (compile/call + x y))
+
+;; Named let (e.g. loop)
+(compile/let loop [[n 10]]
+  (compile/call loop ...))
+```
+
+
+## compile/parameterize
+
+**Symbol:** `compile/parameterize`
+
+**Syntax:** `(compile/parameterize BINDINGS BODY ...)`
+
+**Bindings:** Same as let: list of `[SYM EXPR]` or `(EXPR as: SYM)`; parsed with
+`gather_bindings`.
+
+**Use-case:** Temporarily rebind dynamic parameters for the duration of the
+body. Parameters are consumed by functions that read them (e.g. via
+ParamRef(name).deref(); bind-param not yet implemented). When the body runs,
+calls to such functions see the parameterized values; when the block exits,
+parameters are restored.
+
+**Behaviour:** Compiles each value expression onto the stack (first binding
+deepest, last at TOS), emits PUSH_PARAM with a constant names tuple, compiles the
+body with `helper_begin`, then emits POP_PARAM. Uses the VM's PARAM extent;
+restore on exit (and on unwind) is handled by the evaluator.
+
+**Examples:**
+
+```scheme
+;; Parameterize format; consumer pretty reads it via ParamRef("format").deref()
+(compile/parameterize [[format "woot %r woot"]]
+  (compile/call pretty 100))
+
+;; Multiple parameters
+(compile/parameterize [[a 100] [b 101]]
+  (compile/call check_both))
+```
+
+See `tests/compile/specials/test_parameterize.py` for full consumer-style tests.
 
 
 ## Adding New Specials

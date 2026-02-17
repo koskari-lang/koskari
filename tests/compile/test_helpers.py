@@ -18,8 +18,8 @@ Tests for koskari.compile.helpers (gather_parameters, gather_formals).
 
 import unittest
 
-from koskari.exceptions import KoskariSyntaxError
 from koskari.types import cons, keyword, nil, symbol
+from koskari.compile.exceptions import CompilerException
 from koskari.compile.helpers import gather_formals, gather_parameters
 
 
@@ -107,7 +107,7 @@ class TestGatherParameters(unittest.TestCase):
 
     def test_missing_value_for_keyword_raises(self):
         args = cons(keyword("a"), nil)
-        with self.assertRaises(KoskariSyntaxError) as ctx:
+        with self.assertRaises(CompilerException) as ctx:
             gather_parameters(args)
         self.assertIn("keyword", str(ctx.exception).lower())
 
@@ -118,11 +118,11 @@ class TestGatherParameters(unittest.TestCase):
         star_sym = symbol("s")
         extra = symbol("extra")
         args = cons(k, cons(star_sym, cons(extra, nil)))
-        with self.assertRaises(KoskariSyntaxError):
+        with self.assertRaises(CompilerException):
             gather_parameters(args)
 
     def test_not_symbol_or_pair_raises(self):
-        with self.assertRaises(KoskariSyntaxError):
+        with self.assertRaises(CompilerException):
             gather_parameters(42)
 
 
@@ -206,21 +206,21 @@ class TestGatherFormals(unittest.TestCase):
         rest = symbol("rest")
         k = keyword("x")
         args = cons(a, cons(rest, cons(k, nil)))
-        with self.assertRaises(KoskariSyntaxError):
+        with self.assertRaises(CompilerException):
             gather_formals(args)
 
     def test_non_symbol_positional_raises(self):
         args = cons(keyword("not-a-symbol"), nil)
-        with self.assertRaises(KoskariSyntaxError):
+        with self.assertRaises(CompilerException):
             gather_formals(args)
 
     def test_missing_value_for_keyword_raises(self):
         args = cons(symbol("a"), cons(keyword("k"), nil))
-        with self.assertRaises(KoskariSyntaxError):
+        with self.assertRaises(CompilerException):
             gather_formals(args)
 
     def test_not_symbol_or_pair_raises(self):
-        with self.assertRaises(KoskariSyntaxError):
+        with self.assertRaises(CompilerException):
             gather_formals(42)
 
 

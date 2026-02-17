@@ -146,7 +146,7 @@ There are no **partially** implemented opcodes; each handler is either full, a s
 ## Missing/To Design
 
 ### Additional Features
-- **Domain (ambient dynamic context)**: TLS plumbing, KosDomain type, domain-scoping API, ParamRef, and KOS_DYN_PARAM dyn extent are implemented in `domain.c`/`domain.h`, `ref.c`, and `dynchain.c` (Steps 1–5). KosDomain holds param value store (name -> value); ParamRef resolves via `kos_domain_current()` and `kos_domain_get_param`. KOS_DYN_PARAM nodes support `kos_dyn_push_param`/`kos_dyn_pop_param` with enter/restore and transfer-plan integration. Opcodes PARAM, PUSH_PARAM, POP_PARAM are implemented. Compiler lowering for parameterize not yet implemented. See design/interpreter/domain.md and design/interpreter/extent-wind-unwind.md.
+- **Domain (ambient dynamic context)**: TLS plumbing, KosDomain type, domain-scoping API, ParamRef, and KOS_DYN_PARAM dyn extent are implemented in `domain.c`/`domain.h`, `ref.c`, and `dynchain.c` (Steps 1–5). KosDomain holds param value store (name -> value); ParamRef resolves via `kos_domain_current()` and `kos_domain_get_param`. KOS_DYN_PARAM nodes support `kos_dyn_push_param`/`kos_dyn_pop_param` with enter/restore and transfer-plan integration. Opcodes PARAM, PUSH_PARAM, POP_PARAM are implemented. The compile/parameterize special form emits PUSH_PARAM/POP_PARAM; consumers read the current parameter via ParamRef(name).deref() (bind-param not yet implemented). See design/interpreter/domain.md and design/interpreter/extent-wind-unwind.md.
 - **Comprehensions**: List/dict/set comprehensions
 - **Pattern Matching**: match/case style
 - **Type System**: Optional type hints/annotations

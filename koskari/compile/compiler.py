@@ -20,6 +20,7 @@ The koskari compiler. Converts source forms into bytecode fragments.
 :license: GNU General Public License v3
 """
 
+from contextlib import contextmanager
 from enum import auto, IntEnum
 from typing import Any
 
@@ -237,6 +238,44 @@ class ByteCodeFragment:
         for name in other.requests:
             self.request_var(name)
         self.instructions.extend(other.instructions)
+
+
+    @contextmanager
+    def child_namespace(self, ns_name, names, values, pop=1):
+        """
+        Context manager that compiles a child scope with bound names.
+        On entry, compiles all value expressions and yields a fragment for
+        the body. On exit, emits CONST nspec, values, CONST names,
+        PUSH_NS, body instructions, POP_NS.
+
+        :param ns_name: name for the child namespace (e.g. source form)
+        :param names: sequence of bound names (strings or symbols)
+        :param values: sequence of expressions (one per name)
+        :param pop: argument for POP_NS (default 1)
+        """
+
+        compiler = self.compiler
+        ns_name = str(ns_name)
+        child = compiler.fragment(ns_name)
+        names = tuple(map(str, names))
+        if len(names) != len(values):
+            raise CompilerException("mismatch between names and values",
+                                   (names, values))
+        if names:
+            for name in names:
+                child.declare_var(name)
+            valfrag = compiler.fragment(ns_name)
+            for val in values:
+                valfrag.merge(compiler.full_compile(val, False))
+        yield child
+        nspec = child.as_namespace_spec()
+        self.instruction(OpCode.KOS_OP_CONST, nspec)
+        if names:
+            self.merge(valfrag)
+            self.instruction(OpCode.KOS_OP_CONST, names)
+        self.instruction(OpCode.KOS_OP_PUSH_NS, len(names))
+        self.instructions.extend(child.instructions)
+        self.instruction(OpCode.KOS_OP_POP_NS, pop)
 
 
     def as_bytecode(self):

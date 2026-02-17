@@ -44,8 +44,8 @@ A **Domain** is the general solution: it is the "ambient dynamic context object"
 3. **ParamRef type** (implemented): Ref subclass; key (name) and default_value; no interning. Resolves via `kos_domain_current()` and `kos_domain_get_param(key)`. Exposed as `koskari.lib.ParamRef`.
 4. **PARAM dynamic extent**: New dyn node kind `KOS_DYN_PARAM`; correct unwind behavior; included in continuation capture/apply.
 5. **Bytecode/opcode additions**: Implement `PARAM`, `PUSH_PARAM`, `POP_PARAM` (or equivalent minimal pair); update opcode tables/docs and assembler/disassembler paths.
-6. **Compiler lowering (minimum)**: `(use-param X)` expands to binding `X` to `(PARAM "X")`; `parameterize` compiles as LET-like plus `PUSH_PARAM`/`POP_PARAM` around body.
-7. **Tests**: Nested parameterize restore; exception/unwind restore; Koskari→Python→Koskari inheritance; async interleave on one OS thread; continuation capture/apply reinstates parameter bindings (multi-shot).
+6. **Compiler lowering (minimum)**: `(use-param X)` expands to binding `X` to `(PARAM "X")` (not yet implemented). `compile/parameterize` is implemented: compiles bindings onto the stack, emits PUSH_PARAM (names tuple constant), compiles body, emits POP_PARAM. Consumers read the current parameter via ParamRef(name).deref() until bind-param exists.
+7. **Tests**: Nested parameterize restore; exception/unwind restore; Koskari→Python→Koskari inheritance; async interleave on one OS thread; continuation capture/apply reinstates parameter bindings (multi-shot). Compile tests in `tests/compile/specials/test_parameterize.py` use consumer functions that call ParamRef(name).deref() and are invoked inside the parameterize body; they assert the consumer sees the parameterized value and that the parameter is restored after the block exits.
 
 ---
 
@@ -254,13 +254,13 @@ Opcodes must be added to opcode tables, docs, and assembler/disassembler paths.
 
 ## Compiler Lowering
 
-- **`(use-param X)`**: Expand to binding local `X` to `(PARAM "X")` (i.e. load ParamRef for key `"X"` and bind in current scope).
-- **`(parameterize ((X v) (Y w)) body...)`**:
-  - Compile each `(param, value)` pair onto the stack (e.g. evaluate param ref, evaluate value).
-  - Emit `PUSH_PARAM n`.
+- **`(use-param X)`**: Expand to binding local `X` to `(PARAM "X")` (i.e. load ParamRef for key `"X"` and bind in current scope). Not yet implemented.
+- **`(compile/parameterize [[X v] [Y w]] body...)`** (implemented in `koskari/compile/specials.py`):
+  - Compile each value expression onto the stack in order (first binding deepest, last at TOS).
+  - Emit `PUSH_PARAM` with constant index of names tuple `(str(X), str(Y), ...)`.
   - Compile body.
   - Emit `POP_PARAM`.
-  - Otherwise behave like LET (lexical scope); restore semantics come from `KOS_DYN_PARAM` unwind.
+  - Restore semantics come from `KOS_DYN_PARAM` unwind. Consumers of parameters (e.g. functions that will use bind-param) read the current value via ParamRef(name).deref(); the body typically calls such consumers. See `tests/compile/specials/test_parameterize.py`.
 
 ---
 
@@ -315,14 +315,14 @@ Leaving any block that introduced PARAM bindings must restore previous bindings.
 
 ### Step 7 — Compiler lowering and continuations
 
-- Lower `use-param` and `parameterize` as above.
+- `compile/parameterize` is implemented (PUSH_PARAM/POP_PARAM; consumers use ParamRef.deref()). `use-param` not yet implemented.
 - Ensure continuation capture/apply includes PARAM nodes (dyn chain slice). Add test: capture inside parameterize, exit parameterize, apply continuation and confirm bindings reinstated; test multi-shot.
 
 ---
 
 ## Testing Matrix (Required)
 
-**Implemented tests**: Native C tests in `tests/native/test_paramref.c` and Python tests in `tests/lib/test_paramref.py` cover ParamRef creation, deref/store/clear outside and inside active domain, shared value for same key, and `kos_dyn_push_param`/`kos_dyn_pop_param` enter/restore (including nested param extent restore). `tests/lib/test_domain.py` covers Domain as context manager. `tests/lib/opcode/test_push_param.py` covers PUSH_PARAM/POP_PARAM opcodes, including unwind-on-return and unwind-on-raise (PARAM extent restored when RETURN or exception exits before POP_PARAM).
+**Implemented tests**: Native C tests in `tests/native/test_paramref.c` and Python tests in `tests/lib/test_paramref.py` cover ParamRef creation, deref/store/clear outside and inside active domain, shared value for same key, and `kos_dyn_push_param`/`kos_dyn_pop_param` enter/restore (including nested param extent restore). `tests/lib/test_domain.py` covers Domain as context manager. `tests/lib/opcode/test_push_param.py` covers PUSH_PARAM/POP_PARAM opcodes, including unwind-on-return and unwind-on-raise (PARAM extent restored when RETURN or exception exits before POP_PARAM). `tests/compile/specials/test_parameterize.py` exercises the compile/parameterize special form: consumer functions (using ParamRef(name).deref() in place of bind-param) are invoked inside the parameterize body; tests assert the consumer sees the parameterized value, multiple parameters are visible, and the parameter is restored after the block exits.
 
 **Remaining tests** (for opcodes, parameterize):
 

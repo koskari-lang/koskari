@@ -21,11 +21,20 @@ Special form handlers for the Koskari compiler.
 """
 
 
-from ..lib import car, cdr, FormalsSpec, FunctionSpec, keyword, nil, OpCode, pair, symbol
-from ..types import is_pair, is_symbol
+from types import BuiltinMethodType
+from ..lib import cons, FormalsSpec, FunctionSpec, keyword, nil, OpCode, pair, symbol
+from ..types import get_position, is_pair, is_symbol, set_position
 from .compiler import ByteCodeFragment, Compiler, CompilerMode
 from .exceptions import CompilerException
-from .helpers import gather_formals, gather_parameters, helper_begin
+from .helpers import (
+    gather_bindings,
+    gather_formals,
+    gather_parameters,
+    helper_begin,
+    is_symbolish,
+    list_star,
+    pycons,
+)
 
 
 SPECIALS = {}
@@ -114,7 +123,7 @@ def special_call(
     obj, rest = body
     fragment.merge(compiler.full_compile(obj))
 
-    params = gather_parameters(rest)
+    params = gather_parameters(rest, source=rest)
     pos, kwds, values, vargs, vkwds = params
 
     if vargs or vkwds:
@@ -198,19 +207,16 @@ def special_lambda(
     if rest is nil or not is_pair(rest):
         raise CompilerException("lambda requires formals and body", source)
 
-    first = car(rest)
+    first, rest_tail = rest
     if is_symbol(first):
         named = first
-        rest = cdr(rest)
-        if rest is nil or not is_pair(rest):
+        if rest_tail is nil or not is_pair(rest_tail):
             raise CompilerException("named lambda requires formals and body",
                                    source)
-        formals_src = car(rest)
-        body_src = cdr(rest)
+        formals_src, body_src = rest_tail
     else:
         named = None
-        formals_src = first
-        body_src = cdr(rest)
+        formals_src, body_src = first, rest_tail
 
     if body_src is nil or not is_pair(body_src):
         body_src = pair(body_src, nil)
@@ -218,7 +224,8 @@ def special_lambda(
     proper_name = str(named) if named is not None else None
     fragment_name = proper_name if proper_name is not None else "<lambda>"
 
-    pos, defaults, kwonly, star, starstar = gather_formals(formals_src)
+    pos, defaults, kwonly, star, starstar = gather_formals(
+        formals_src, source=formals_src)
     kw = []
     pos = [str(k) for k in pos]
     star = str(star) if star else None
@@ -252,6 +259,84 @@ def special_lambda(
     frag.instruction(OpCode.KOS_OP_BUILD_FUNCTION, len(kw))
 
     return frag
+
+
+@special(symbol("compile/let"))
+def special_let(
+        compiler: Compiler,
+        source: pair,
+        tc: bool = False):
+    """
+    Compile (compile/let BINDINGS BODY...) or (compile/let NAME BINDINGS
+    BODY...). Named let expands to an immediately-invoked named lambda:
+    (let foo [[a 1] [b 2]] ...body) -> ((lambda foo [a b] ...body) 1 2).
+    """
+
+    called_by, rest = source
+    if rest is nil or not is_pair(rest):
+        raise CompilerException("let requires bindings and body", source)
+
+    bindings, body = rest
+
+    # TODO: adopt ceval-style named let: bind values as keyword defaults so
+    # (let foo [[a 1] [b 2]] body) -> ((lambda foo [a: 1 b: 2] body)); allows
+    # re-invocation with partial replacement.
+    # Named let: (let NAME [[var val] ...] BODY...) -> ((lambda NAME [var ...] BODY) val ...)
+    if is_symbolish(bindings):
+        named = bindings
+        bindings, body = body
+
+        args, vals = gather_bindings(bindings, source)
+
+        # Build (compile/lambda NAME [formal...] BODY...) using list_star so body_forms
+        # is the tail; then build (compile/call LAMBDA val...) using variadic cons.
+
+        src = (symbol('compile/call'),
+               (symbol('compile/lambda'), named, cons(*args, nil), *body.unpack()),
+               *vals)
+        return pycons(src)
+
+    # Unnamed let: (let [[var val] ...] BODY...) — push a child namespace, bind
+    # names to compiled values, compile body in that scope, pop.
+    args, vals = gather_bindings(bindings, source)
+    fragment = compiler.fragment(called_by)
+    fragment.position_of(source)
+    with fragment.child_namespace(called_by, args, vals) as frag:
+        helper_begin(frag, body, tc)
+
+    return fragment
+
+
+@special(symbol("compile/parameterize"))
+def special_parameterize(
+        compiler: Compiler,
+        source: pair,
+        tc: bool = False) -> ByteCodeFragment:
+    """
+    Compile (compile/parameterize [[name val] ...] BODY...). Binds names as
+    dynamic parameters for the duration of body; restores ambient values on
+    exit. Uses PUSH_PARAM (values on stack, names tuple constant) and POP_PARAM.
+    Consumers of parameters (e.g. functions that would use bind-param) read the
+    current value via ParamRef(name).deref(); the body typically calls such
+    consumers. See tests/compile/specials/test_parameterize.py.
+    """
+
+    called_by, rest = source
+    if rest is nil or not is_pair(rest):
+        raise CompilerException("parameterize requires bindings and body",
+                               source)
+    bindings, body = rest
+    args, vals = gather_bindings(bindings, source)
+    fragment = compiler.fragment(called_by)
+    fragment.position_of(source)
+
+    for val in vals:
+        fragment.merge(compiler.full_compile(val, False))
+
+    fragment.instruction(OpCode.KOS_OP_PUSH_PARAM, tuple(map(str, args)))
+    helper_begin(fragment, body, False)
+    fragment.instruction(OpCode.KOS_OP_POP_PARAM, 0)
+    return fragment
 
 
 # The end.
