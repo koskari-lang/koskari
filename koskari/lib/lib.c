@@ -53,6 +53,7 @@ static int koskari_lib_init(PyObject *mod) {
       koskari_compat_init(mod) ||
       koskari_cont_init(mod) ||
       koskari_coro_init(mod) ||
+      koskari_domain_init(mod) ||
       koskari_eval_init(mod) ||
       koskari_formals_init(mod) ||
       koskari_func_init(mod) ||
@@ -93,6 +94,9 @@ int koskari_lib_clear(PyObject *mod) {
     return -1;
 
   if (koskari_eval_clear(mod))
+    return -1;
+
+  if (koskari_domain_clear(mod))
     return -1;
 
   if (koskari_parse_clear(mod))

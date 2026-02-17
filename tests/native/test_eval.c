@@ -122,6 +122,86 @@ static int test_eval_object_add_return(void) {
 }
 
 
+/* === Test: domain non-null on fresh context === */
+
+
+static int test_domain_non_null(void) {
+    PyObject *nspec = create_test_nspec();
+    TEST_ASSERT_NOT_NULL(nspec, "create nspec");
+
+    PyObject *one = PyLong_FromLong(1);
+    PyObject *instr = PyList_New(2);
+    PyList_SET_ITEM(instr, 0, make_instr(KOS_OP_CONST, one));
+    PyList_SET_ITEM(instr, 1, make_instr_int(KOS_OP_RETURN, 1));
+
+    PyObject *code_obj = KosCode_New(nspec, instr, NULL, NULL);
+    TEST_ASSERT_NOT_NULL(code_obj, "create Code");
+
+    Py_DECREF(instr);
+    Py_DECREF(nspec);
+
+    PyObject *ns = PyDict_New();
+    TEST_ASSERT_NOT_NULL(ns, "create ns");
+
+    KosDynFrame *frame = kos_dynframe_new(NULL, (KosCode *) code_obj, ns, NULL);
+    TEST_ASSERT_NOT_NULL(frame, "create frame");
+
+    KosContext *ctx = kos_context_new(frame);
+    TEST_ASSERT_NOT_NULL(ctx, "create context");
+    TEST_ASSERT_NOT_NULL(KosContext_DOMAIN(ctx), "domain is non-null");
+
+    kos_context_free(ctx);
+    Py_DECREF(code_obj);
+
+    return 0;
+}
+
+
+/* === Test: two contexts without TLS get distinct domains === */
+
+
+static int test_domain_fresh_when_no_tls(void) {
+    PyObject *nspec = create_test_nspec();
+    TEST_ASSERT_NOT_NULL(nspec, "create nspec");
+
+    PyObject *one = PyLong_FromLong(1);
+    PyObject *instr = PyList_New(2);
+    PyList_SET_ITEM(instr, 0, make_instr(KOS_OP_CONST, one));
+    PyList_SET_ITEM(instr, 1, make_instr_int(KOS_OP_RETURN, 1));
+
+    PyObject *code_obj = KosCode_New(nspec, instr, NULL, NULL);
+    TEST_ASSERT_NOT_NULL(code_obj, "create Code");
+
+    Py_DECREF(instr);
+    Py_DECREF(nspec);
+
+    PyObject *ns1 = PyDict_New();
+    PyObject *ns2 = PyDict_New();
+    TEST_ASSERT_NOT_NULL(ns1, "create ns1");
+    TEST_ASSERT_NOT_NULL(ns2, "create ns2");
+
+    KosDynFrame *frame1 = kos_dynframe_new(NULL, (KosCode *) code_obj, ns1, NULL);
+    KosDynFrame *frame2 = kos_dynframe_new(NULL, (KosCode *) code_obj, ns2, NULL);
+    TEST_ASSERT_NOT_NULL(frame1, "create frame1");
+    TEST_ASSERT_NOT_NULL(frame2, "create frame2");
+
+    KosContext *ctx1 = kos_context_new(frame1);
+    KosContext *ctx2 = kos_context_new(frame2);
+    TEST_ASSERT_NOT_NULL(ctx1, "create ctx1");
+    TEST_ASSERT_NOT_NULL(ctx2, "create ctx2");
+    TEST_ASSERT_NOT_NULL(KosContext_DOMAIN(ctx1), "ctx1 domain non-null");
+    TEST_ASSERT_NOT_NULL(KosContext_DOMAIN(ctx2), "ctx2 domain non-null");
+    TEST_ASSERT_NOT_SAME(KosContext_DOMAIN(ctx1), KosContext_DOMAIN(ctx2),
+                         "contexts without TLS get distinct domains");
+
+    kos_context_free(ctx1);
+    kos_context_free(ctx2);
+    Py_DECREF(code_obj);
+
+    return 0;
+}
+
+
 /* === Test: kos_ctx_current before and after eval === */
 
 
@@ -1085,6 +1165,8 @@ int run_eval_tests(void) {
     BEGIN_TEST_SUITE("Eval Tests");
 
     RUN_TEST(test_eval_object_add_return);
+    RUN_TEST(test_domain_non_null);
+    RUN_TEST(test_domain_fresh_when_no_tls);
     RUN_TEST(test_eval_ctx_current_outside_eval);
     RUN_TEST(test_eval_try_except_catch);
     RUN_TEST(test_eval_try_finally_rerase);

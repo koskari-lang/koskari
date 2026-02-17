@@ -144,7 +144,7 @@ There are no **partially** implemented opcodes; each handler is either full, a s
 ## Missing/To Design
 
 ### Additional Features
-- **Domain (ambient dynamic context)**: Parameters, dynamic-extent scoping across AWAIT, Koskari↔Python boundaries, and continuations. See design/interpreter/domain.md.
+- **Domain (ambient dynamic context)**: TLS plumbing, KosDomain type, and domain-scoping API are implemented in `domain.c`/`domain.h` (Step 1 and 2). ParamRef, PARAM dyn extent, opcodes, and compiler lowering are not yet implemented. See design/interpreter/domain.md.
 - **Comprehensions**: List/dict/set comprehensions
 - **Pattern Matching**: match/case style
 - **Type System**: Optional type hints/annotations
@@ -164,6 +164,7 @@ There are no **partially** implemented opcodes; each handler is either full, a s
 - Formals types: `Formals`, `FormalsSpec`
 - Values type: `values`
 - Stack types: `Stack`, `BlockStyle` (block-structured operand stack)
+- Domain type: `Domain` (koskari.lib.Domain; identity/lifecycle anchor for ambient dynamic context; TLS in domain.c)
 
 **Native Operators** (C extension):
 - Reducing arithmetic: `+`, `-`, `*`, `/`, `//`, `@`
@@ -176,8 +177,9 @@ There are no **partially** implemented opcodes; each handler is either full, a s
 - Functional primitives: `identity`, `constantly`, `_pass`
 - Collection builders: `build_tuple`, `build_list`, `build_set`, `build_dict`
 
-**Evaluator Core** (C extension, eval.c/eval.h):
+**Evaluator Core** (C extension, eval.c/eval.h, domain.c/domain.h):
 - VM structures: `KosFrame`, `KosContext`, `KosHandler`, `KosEvent`
+- Domain-scoped TLS: `KosTlsState` (ctx_stack, token_stack), `kos_ctx_current()`, `kos_domain_current()`, `kos_domain_push_scope()`, `kos_domain_pop_scope()` in domain.c
 - Dynamic chain: single tagged-union `KosDynNode` (all node kinds); field access via macros only (dynchain.h)
 - Allocator caches: dyn-node freelist, KosContinuation freelist (dynchain.c), KosContext cache (eval.c); caps tunable
 - Python wrappers: `Continuation`, `Coroutine`, `AsyncGenerator`

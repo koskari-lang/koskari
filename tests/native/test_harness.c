@@ -136,6 +136,12 @@ static int initialize_types(void) {
         return -1;
     }
 
+    /* Initialize domain types (must precede eval: kos_context_new uses KosDomain) */
+    if (koskari_domain_init(kos_lib_module)) {
+        fprintf(stderr, "Failed to initialize domain types\n");
+        return -1;
+    }
+
     /* Initialize eval types */
     if (koskari_eval_init(kos_lib_module)) {
         fprintf(stderr, "Failed to initialize eval types\n");

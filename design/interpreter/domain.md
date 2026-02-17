@@ -1,6 +1,8 @@
 # Koskari Domain (Ambient Dynamic Context)
 
-This document describes the design and implementation plan for **Domain** (ambient dynamic context), **ParamRef** (canonical parameter references), and **PARAM** dynamic extent (parameter bindings on the dyn chain). It specifies TLS plumbing, opcodes (`PARAM`, `PUSH_PARAM`, `POP_PARAM`), compiler lowering, hard invariants, and step-by-step implementation. Not yet implemented.
+This document describes the design and implementation plan for **Domain** (ambient dynamic context), **ParamRef** (canonical parameter references), and **PARAM** dynamic extent (parameter bindings on the dyn chain). It specifies TLS plumbing, opcodes (`PARAM`, `PUSH_PARAM`, `POP_PARAM`), compiler lowering, hard invariants, and step-by-step implementation.
+
+**Implementation status**: Steps 1 and 2 are implemented. TLS and KosDomain live in `domain.c`; the domain-scoped API includes `kos_ctx_current()`, `kos_domain_current()`, `kos_domain_push_scope()`, `kos_domain_pop_scope()`. ParamRef, PARAM dyn extent, and opcodes are not yet implemented.
 
 ---
 
@@ -37,8 +39,8 @@ A **Domain** is the general solution: it is the "ambient dynamic context object"
 
 ## Deliverables
 
-1. **TLS plumbing and static API**: Per-thread TLS stack(s) for current context (and/or current domain); `kos_ctx_current()` and/or `kos_domain_current()` callable from native Python object methods.
-2. **KosDomain runtime object**: Minimal v1 — only what is required for parameter binding resolution and future expansion.
+1. **TLS plumbing and static API** (implemented): Per-thread TLS stack(s) for current context (and/or current domain); `kos_ctx_current()` and `kos_domain_current()` callable from native Python object methods. TLS, `KosTlsState`, and accessors live in `domain.c`. The evaluator calls `kos_domain_push_scope(ctx)` on entry and `kos_domain_pop_scope(ctx)` on cleanup. See `koskari/lib/domain.c`, `domain.h`.
+2. **KosDomain runtime object** (implemented): Minimal v1 — identity/lifecycle anchor with optional `version` field. Every KosContext owns a `domain` (PyObject* KosDomain). New contexts inherit the active context's domain when `kos_ctx_current() != NULL`; otherwise a fresh KosDomain is created. Exposed as `koskari.lib.Domain`.
 3. **ParamRef type**: Canonical identity per parameter key (interning); Ref-compatible API; resolves current value from active execution ambient state (via TLS).
 4. **PARAM dynamic extent**: New dyn node kind `KOS_DYN_PARAM`; correct unwind behavior; included in continuation capture/apply.
 5. **Bytecode/opcode additions**: Implement `PARAM`, `PUSH_PARAM`, `POP_PARAM` (or equivalent minimal pair); update opcode tables/docs and assembler/disassembler paths.
@@ -158,21 +160,23 @@ Resolution: `ParamRef.get()` walks `ctx->dyn_top` downward, finds the first `KOS
 
 ## Lifecycle and Boundary Rules
 
-### TLS Plumbing (I1, I2)
+### TLS Plumbing (I1, I2) (implemented)
 
-Per OS thread:
+Implemented in `koskari/lib/domain.c`. Per OS thread:
 
-- **`tls.ctx_stack`**: stack of `KosContext*` (stack discipline).
+- **`KosTlsState`**: holds `ctx_stack` and `token_stack` (stack of `KosContext*` and `KosEvaluatorToken*`; stack discipline).
 
-**Static API** (callable from native Python object methods):
+**Domain-scoped API** (callable from native Python object methods):
 
-- `KosContext* kos_ctx_current(void)` — returns top of stack or NULL.
-- Domain can be derived as `kos_ctx_current() ? kos_ctx_current()->domain : NULL`; optionally also expose `kos_domain_current()`.
+- `KosContext* kos_ctx_current(void)` — returns top of ctx stack or NULL.
+- `PyObject* kos_domain_current(void)` — returns active Domain or NULL (borrowed ref).
+- `void kos_domain_push_scope(KosContext *ctx)` — push token and ctx onto TLS, increment live_depth.
+- `void kos_domain_pop_scope(KosContext *ctx)` — decrement live_depth, pop ctx and token.
 
 **Evaluator integration**:
 
-- On entry to `koskari_eval(ctx)`: push `ctx` onto TLS stack.
-- On every exit path (RETURN, RAISE, YIELD, AWAIT): pop in a `finally`/C cleanup path so TLS is restored before returning to Python.
+- On entry to `koskari_eval(ctx)`: call `kos_domain_push_scope(ctx)`.
+- On every exit path (RETURN, RAISE, YIELD, AWAIT): call `kos_domain_pop_scope(ctx)` in the C cleanup path so TLS is restored before returning to Python.
 
 Debug assertions: `kos_ctx_current() != NULL` during bytecode execution.
 
@@ -262,17 +266,16 @@ Leaving any block that introduced PARAM bindings must restore previous bindings.
 
 ## Implementation Plan (Step-by-Step)
 
-### Step 1 — TLS stacks and static API
+### Step 1 — TLS stacks and static API (done)
 
-- Implement TLS: `tls.ctx_stack` (stack of `KosContext*`).
-- API: `KosContext* kos_ctx_current(void)` returns top or NULL.
-- In `koskari_eval(ctx)`: push ctx on entry; pop on every exit path (RETURN/RAISE/YIELD/AWAIT).
-- Add debug assertions: `kos_ctx_current() != NULL` during bytecode execution.
+- Implemented in `domain.c`: `KosTlsState` with `ctx_stack` and `token_stack`.
+- API: `kos_ctx_current()`, `kos_domain_current()`, `kos_domain_push_scope(ctx)`, `kos_domain_pop_scope(ctx)`.
+- In `koskari_eval(ctx)`: call `kos_domain_push_scope(ctx)` on entry; `kos_domain_pop_scope(ctx)` on every exit path (RETURN/RAISE/YIELD/AWAIT).
 
-### Step 2 — KosDomain object
+### Step 2 — KosDomain object (done)
 
-- Add `ctx->domain` (Python object or C struct with PyObject header). V1: empty shell plus optional version counter.
-- Domain lifecycle: when creating a new context from Python, default = inherit domain from active ctx if TLS non-empty; else create fresh domain.
+- Implemented in `domain.c`, `domain.h`: KosDomain type (PyObject_HEAD + uint64_t version). `ctx->domain` in KosContext.
+- Domain lifecycle: `kos_context_new()` inherits domain from active ctx when `kos_ctx_current() != NULL`; else creates fresh KosDomain. GC: `Py_VISIT` in traverse, `Py_XDECREF` in free.
 
 ### Step 3 — ParamRef type and interning
 

@@ -24,6 +24,7 @@
 #include "atom.h"
 #include "bytecode.h"
 #include "compat.h"
+#include "domain.h"
 #include "dynchain.h"
 #include "eval.h"
 #include "formals.h"

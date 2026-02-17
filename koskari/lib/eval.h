@@ -177,6 +177,7 @@ struct KosContext {
   uint32_t globals_cache_version; /* chain_version when globals_frame was set */
 
   KosEvaluatorToken *token; /* evaluator identity; ownership marker for continuations */
+  PyObject *domain;         /* KosDomain; ambient dynamic context anchor */
 
   /* Hook execution state */
   KosHookRunner hook_runner;
@@ -217,6 +218,7 @@ struct KosContext {
 #define KosContext_GLOBALS_FRAME(c)          (((KosContext *)(c))->globals_frame)
 #define KosContext_GLOBALS_CACHE_VERSION(c)  (((KosContext *)(c))->globals_cache_version)
 #define KosContext_TOKEN(c)                  (((KosContext *)(c))->token)
+#define KosContext_DOMAIN(c)                 (((KosContext *)(c))->domain)
 #define KosContext_HOOK_RUNNER(c)            (&((KosContext *)(c))->hook_runner)
 #define KosContext_PLAN(c)                   (((KosContext *)(c))->plan)
 #define KosContext_PLAN_STACK(c)             (((KosContext *)(c))->plan_stack)
@@ -362,6 +364,13 @@ int koskari_eval(KosContext *ctx, KosEvent *out_ev);
    Callable from native Python object methods (e.g. ParamRef resolution).
 */
 KosContext *kos_ctx_current(void);
+
+
+/**
+   Return the active KosDomain during bytecode execution, or NULL when
+   not inside koskari_eval. Borrowed reference.
+*/
+PyObject *kos_domain_current(void);
 
 
 /* === GC helpers for Python wrappers === */
