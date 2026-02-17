@@ -5,12 +5,12 @@ This document provides a high-level summary of all features identified from both
 ## Language Features
 
 ### Special Forms
-- **Core**: quote, quasiquote, begin, lambda, function, let, define, setq, delq, refq
+- **Core**: quote, quasiquote, begin, lambda, function, let, define, setq, delq, refq (quote, setq, delq, refq, bindq implemented as compile/quote, compile/setq, compile/delq, compile/refq, compile/bindq)
 - **Control Flow**: cond, while, for-each, try, return, break, continue
 - **Context**: with, await-with
 - **Generators**: yield, yield-from
 - **Async**: await, declare-async, await-for-each
-- **Attributes**: attr, set-attr, del-attr, method-call
+- **Attributes**: attr, set-attr, del-attr, method-call (attr, set-attr, del-attr, ref-attr implemented as compile/attr, compile/set-attr, compile/del-attr, compile/ref-attr)
 - **Values**: define-values, setq-values
 - **Import**: import, import-from
 - **Documentation**: doc
@@ -21,7 +21,7 @@ This document provides a high-level summary of all features identified from both
 - **Comparison**: ==, !=, <, <=, >, >=, is, is-not, in, not-in
 - **Logical**: and, or, not
 - **Collections**: build-tuple, build-list, build-set, build-dict, build-str
-- **Items**: item, set-item, del-item
+- **Items**: item, set-item, del-item, ref-item (implemented as compile/item, compile/set-item, compile/del-item, compile/ref-item)
 
 ### Macros
 - **Reader Macros**: Character-based parse-time transformation
@@ -121,7 +121,7 @@ There are no **partially** implemented opcodes; each handler is either full, a s
 - **Phases**: Parse → Expand → Compile → Optimize → Generate (full pipeline in progress)
 - **Components**: Compiler, CodeContext, ByteCodeFragment (implemented in `koskari.compile`)
 - **Optimization**: Constant folding, dead code elimination, fast paths (planned)
-- **Implemented specials**: compile/bytecode, compile/begin, compile/call, compile/lambda, compile/let, compile/parameterize (see design/SPECIALS.md)
+- **Implemented specials**: compile/bytecode, compile/begin, compile/call, compile/lambda, compile/let, compile/parameterize, compile/setq, compile/refq, compile/bindq, compile/delq, compile/attr, compile/del-attr, compile/set-attr, compile/ref-attr, compile/item, compile/ref-item, compile/del-item, compile/set-item, compile/quote (see design/SPECIALS.md)
 
 ### Evaluator
 - **Model**: Custom drive loop (`koskari_eval` in eval.c). Callable types Expression and Function (func.c) return a KosCoroutine; driving the coroutine (await/send) runs the evaluator. Continuation call returns a KosCoroutine that resumes the captured segment.
@@ -129,7 +129,7 @@ There are no **partially** implemented opcodes; each handler is either full, a s
 - **Blocks**: try, loop, with, finally management
 
 ### Creating and calling functions and expressions
-- **Code**: Compiled bytecode is stored in a `Code` object (namespace spec, instructions, constant pool, position table). The compiler (`koskari.compile`) is partially implemented: it supports `compile/bytecode`, `compile/begin`, `compile/call`, `compile/lambda`, `compile/let`, and `compile/parameterize` (see design/SPECIALS.md). Tests and tools also build Code manually for VM validation.
+- **Code**: Compiled bytecode is stored in a `Code` object (namespace spec, instructions, constant pool, position table). The compiler (`koskari.compile`) is partially implemented: it supports `compile/bytecode`, `compile/begin`, `compile/call`, `compile/lambda`, `compile/let`, `compile/parameterize`, `compile/setq`, `compile/refq`, `compile/bindq`, `compile/delq`, `compile/attr`, `compile/del-attr`, `compile/set-attr`, `compile/ref-attr`, `compile/item`, `compile/ref-item`, `compile/del-item`, `compile/set-item`, and `compile/quote` (see design/SPECIALS.md). Tests and tools also build Code manually for VM validation.
 - **Expressions**: `Code.expression(parent_ns)` builds an **Expression** from a `Code` and a parent **Namespace**. An Expression is nullary: calling it with `()` creates a **Coroutine** that runs that code in that namespace. No argument binding; used for thunks, modules, or single-shot code.
 - **Functions**: `Code.function(formals, parent_ns)` builds a **Function** from a `Code`, a **Formals** instance (parameter spec + defaults), and a parent namespace. Calling a Function with `(*args, **kwargs)` binds the formals to the arguments, builds a frame namespace (via the formals’ NamespaceSpec), applies the bindings, then creates a **Coroutine** that runs the code in that frame namespace.
 - **Call flow**: Calling an Expression or Function returns a **Coroutine**. Driving the coroutine (Python `await`, or `send(None)`/`send(value)`) invokes `koskari_eval()` until a boundary event (RETURN, RAISE, YIELD, AWAIT). For AWAIT, the VM suspends and the driver steps the Python awaitable; on completion the result is injected and evaluation resumes. Koskari-to-Koskari calls use `kos_koscall` / `kos_tail_koscall` (CALL opcode); the callee is a KosExpression or KosFunction, so the runtime creates a new frame and pushes it onto the dynamic chain and continues the same drive loop.

@@ -214,6 +214,261 @@ restore on exit (and on unwind) is handled by the evaluator.
 See `tests/compile/specials/test_parameterize.py` for full consumer-style tests.
 
 
+## compile/setq
+
+**Symbol:** `compile/setq`
+
+**Syntax:** `(compile/setq SYM EXPR)`
+
+**Use-case:** Store the value of EXPR into the variable named SYM (must already
+exist in scope or be requested from an enclosing scope). The form evaluates to
+None.
+
+**Behaviour:** Requests the variable name, compiles EXPR, emits VAR_STORE, then
+pushes CONST None so the form has a value.
+
+**Examples:**
+
+```scheme
+(compile/setq x 42)
+(compile/setq counter (compile/call + counter 1))
+```
+
+
+## compile/refq
+
+**Symbol:** `compile/refq`
+
+**Syntax:** `(compile/refq SYM)`
+
+**Use-case:** Yield a mutable reference (Ref) to the variable named SYM. The
+reference can be passed and later deref'd or stored into.
+
+**Behaviour:** Requests the variable name and emits VAR_REF. The value on the
+stack is a Ref for that name.
+
+**Examples:**
+
+```scheme
+(compile/refq my-var)
+```
+
+
+## compile/bindq
+
+**Symbol:** `compile/bindq`
+
+**Syntax:** `(compile/bindq SYM EXPR)`
+
+**Use-case:** Introduce a new binding SYM in the current scope with the value of
+EXPR. The form evaluates to None.
+
+**Behaviour:** Declares the variable name, compiles EXPR, emits VAR_BIND, then
+pushes CONST None.
+
+**Examples:**
+
+```scheme
+(compile/bindq local 10)
+```
+
+
+## compile/delq
+
+**Symbol:** `compile/delq`
+
+**Syntax:** `(compile/delq SYM)`
+
+**Use-case:** Delete the binding named SYM from the current scope. The form
+evaluates to None.
+
+**Behaviour:** Requests the variable name, emits VAR_CLEAR, then pushes CONST
+None.
+
+**Examples:**
+
+```scheme
+(compile/delq temp)
+```
+
+
+## compile/attr
+
+**Symbol:** `compile/attr`
+
+**Syntax:** `(compile/attr OBJ SYM)`
+
+**Use-case:** Load the attribute named SYM from OBJ (getattr). The value is
+pushed on the stack.
+
+**Behaviour:** Compiles OBJ, then emits ATTR with the attribute name (string).
+
+**Examples:**
+
+```scheme
+(compile/attr obj "value")
+(compile/attr thing count)
+```
+
+
+## compile/del-attr
+
+**Symbol:** `compile/del-attr`
+
+**Syntax:** `(compile/del-attr OBJ SYM)`
+
+**Use-case:** Delete the attribute named SYM on OBJ. The form evaluates to None.
+
+**Behaviour:** Compiles OBJ, emits ATTR_CLEAR, then pushes CONST None.
+
+**Examples:**
+
+```scheme
+(compile/del-attr obj x)
+```
+
+
+## compile/set-attr
+
+**Symbol:** `compile/set-attr`
+
+**Syntax:** `(compile/set-attr OBJ SYM VAL)`
+
+**Use-case:** Set the attribute named SYM on OBJ to the value of VAL. The form
+evaluates to None.
+
+**Behaviour:** Compiles OBJ, compiles VAL, emits ATTR_STORE with the attribute
+name, then pushes CONST None.
+
+**Examples:**
+
+```scheme
+(compile/set-attr obj "value" 42)
+```
+
+
+## compile/ref-attr
+
+**Symbol:** `compile/ref-attr`
+
+**Syntax:** `(compile/ref-attr OBJ SYM)`
+
+**Use-case:** Yield a mutable reference (AttributeRef) to the attribute named
+SYM on OBJ. The reference can be deref'd or stored into.
+
+**Behaviour:** Compiles OBJ, then emits ATTR_REF with the attribute name.
+
+**Examples:**
+
+```scheme
+(compile/ref-attr obj count)
+```
+
+
+## compile/item
+
+**Symbol:** `compile/item`
+
+**Syntax:** `(compile/item OBJ KEY)`
+
+**Use-case:** Load the item at key KEY from OBJ (subscript/getitem). If KEY
+compiles to a single constant, uses CONST_ITEM; otherwise compiles KEY and
+emits ITEM.
+
+**Behaviour:** Compiles OBJ. If the key expression is constant-only (per
+`const_only_expr`), emits CONST_ITEM with that constant; otherwise merges the
+key fragment and emits ITEM 0.
+
+**Examples:**
+
+```scheme
+(compile/item vec 0)
+(compile/item tbl (compile/call compute-key))
+```
+
+
+## compile/ref-item
+
+**Symbol:** `compile/ref-item`
+
+**Syntax:** `(compile/ref-item OBJ KEY)`
+
+**Use-case:** Yield a mutable reference (ItemRef) to the item at KEY in OBJ. Same
+constant-key optimization as compile/item.
+
+**Behaviour:** Like compile/item but emits CONST_ITEM_REF or ITEM_REF.
+
+**Examples:**
+
+```scheme
+(compile/ref-item lst i)
+```
+
+
+## compile/del-item
+
+**Symbol:** `compile/del-item`
+
+**Syntax:** `(compile/del-item OBJ KEY)`
+
+**Use-case:** Delete the item at KEY in OBJ. The form evaluates to None. Same
+constant-key optimization as compile/item.
+
+**Behaviour:** Compiles OBJ, then either CONST_ITEM_CLEAR or key fragment +
+ITEM_CLEAR, then CONST None.
+
+**Examples:**
+
+```scheme
+(compile/del-item d "key")
+```
+
+
+## compile/set-item
+
+**Symbol:** `compile/set-item`
+
+**Syntax:** `(compile/set-item OBJ KEY VAL)`
+
+**Use-case:** Set the item at KEY in OBJ to VAL. The form evaluates to None.
+Same constant-key optimization as compile/item.
+
+**Behaviour:** Compiles OBJ; if key is constant, compiles VAL and emits
+CONST_ITEM_STORE; otherwise merges key fragment, compiles VAL, emits
+ITEM_STORE 0. Then CONST None.
+
+**Examples:**
+
+```scheme
+(compile/set-item vec 0 99)
+```
+
+
+## compile/quote
+
+**Symbol:** `compile/quote`
+
+**Syntax:** `(compile/quote FORM)`
+
+**Use-case:** Prevent evaluation; FORM is produced as a literal value. For
+atoms, a single CONST is emitted. For non-nil lists, the form is rewritten to
+(cons (compile/quote e1) (compile/quote e2) ...) and that form is compiled so
+each element is quoted and consed.
+
+**Behaviour:** One argument required. If FORM is a non-nil pair, rewrite with
+`requote` to a cons of quoted elements (using symbol compile/quote), set
+position on the result, and return that pair so the compiler re-dispatches and
+compiles it. Otherwise emit CONST FORM.
+
+**Examples:**
+
+```scheme
+(compile/quote 42)
+(compile/quote x)
+(compile/quote (a b c))
+```
+
+
 ## Adding New Specials
 
 When implementing a new special form:

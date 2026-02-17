@@ -23,10 +23,11 @@ Special form handlers for the Koskari compiler.
 
 from types import BuiltinMethodType
 from ..lib import cons, FormalsSpec, FunctionSpec, keyword, nil, OpCode, pair, symbol
-from ..types import get_position, is_pair, is_symbol, set_position
+from ..types import get_position, is_nil, is_pair, is_symbol, set_position
 from .compiler import ByteCodeFragment, Compiler, CompilerMode
 from .exceptions import CompilerException
 from .helpers import (
+    const_only_expr,
     gather_bindings,
     gather_formals,
     gather_parameters,
@@ -34,6 +35,7 @@ from .helpers import (
     is_symbolish,
     list_star,
     pycons,
+    requote,
 )
 
 
@@ -337,6 +339,294 @@ def special_parameterize(
     helper_begin(fragment, body, False)
     fragment.instruction(OpCode.KOS_OP_POP_PARAM, 0)
     return fragment
+
+
+@special(symbol("compile/setq"))
+def special_setq(compiler, source, tc=False):
+    called_by, (sym, body) = source
+    expr, rest = body
+
+    sym = str(sym)
+
+    if rest is not nil:
+        raise CompilerException("setq takes two arguments", source)
+
+    frag = compiler.fragment(called_by)
+
+    if not is_pair(expr):
+        frag.position_of(body)
+
+    frag.request_var(sym)
+    frag.merge(compiler.full_compile(expr))
+    frag.instruction(OpCode.KOS_OP_VAR_STORE, sym)
+    frag.instruction(OpCode.KOS_OP_CONST, None)
+
+    return frag
+
+
+@special(symbol("compile/refq"))
+def special_refq(compiler, source, tc=False):
+    called_by, body = source
+    sym, rest = body
+
+    sym = str(sym)
+
+    if rest is not nil:
+        raise CompilerException("refq takes one argument", source)
+
+    frag = compiler.fragment(called_by)
+
+    frag.position_of(body)
+    frag.request_var(sym)
+    frag.instruction(OpCode.KOS_OP_VAR_REF, sym)
+
+    return frag
+
+
+@special(symbol("compile/bindq"))
+def special_bindq(compiler, source, tc=False):
+    called_by, (sym, body) = source
+    expr, rest = body
+
+    sym = str(sym)
+
+    if rest is not nil:
+        raise CompilerException("bindq takes two arguments", source)
+
+    frag = compiler.fragment(called_by)
+
+    if not is_pair(expr):
+        frag.position_of(body)
+
+    frag.declare_var(sym)
+    frag.merge(compiler.full_compile(expr))
+    frag.instruction(OpCode.KOS_OP_VAR_BIND, sym)
+    frag.instruction(OpCode.KOS_OP_CONST, None)
+
+    return frag
+
+
+@special(symbol("compile/delq"))
+def special_delq(compiler, source, tc=False):
+    called_by, body = source
+    sym, rest = body
+
+    sym = str(sym)
+
+    if rest is not nil:
+        raise CompilerException("delq takes one argument", source)
+
+    frag = compiler.fragment(called_by)
+
+    frag.position_of(body)
+    frag.request_var(sym)
+    frag.instruction(OpCode.KOS_OP_VAR_CLEAR, sym)
+    frag.instruction(OpCode.KOS_OP_CONST, None)
+
+    return frag
+
+
+@special(symbol("compile/attr"))
+def special_attr(compiler, source, tc=False):
+    called_by, body = source
+    obj, (sym, rest) = body
+
+    if rest is not nil:
+        raise CompilerException("attr takes two arguments", source)
+
+    frag = compiler.fragment(called_by)
+
+    frag.position_of(body)
+    frag.merge(compiler.full_compile(obj))
+    frag.instruction(OpCode.KOS_OP_ATTR, str(sym))
+
+    return frag
+
+
+@special(symbol("compile/del-attr"))
+def special_del_attr(compiler, source, tc=False):
+    called_by, body = source
+    obj, (sym, rest) = body
+
+    if rest is not nil:
+        raise CompilerException("del-attr takes two arguments", source)
+
+    frag = compiler.fragment(called_by)
+
+    frag.position_of(body)
+    frag.merge(compiler.full_compile(obj))
+    frag.instruction(OpCode.KOS_OP_ATTR_CLEAR, str(sym))
+    frag.instruction(OpCode.KOS_OP_CONST, None)
+
+    return frag
+
+
+@special(symbol("compile/set-attr"))
+def special_set_attr(compiler, source, tc=False):
+    called_by, body = source
+    obj, (sym, (val, rest)) = body
+
+    if rest is not nil:
+        raise CompilerException("set-attr takes three arguments", source)
+
+    frag = compiler.fragment(called_by)
+
+    frag.position_of(body)
+    frag.merge(compiler.full_compile(obj))
+    frag.merge(compiler.full_compile(val))
+    frag.instruction(OpCode.KOS_OP_ATTR_STORE, str(sym))
+    frag.instruction(OpCode.KOS_OP_CONST, None)
+
+    return frag
+
+
+@special(symbol("compile/ref-attr"))
+def special_ref_attr(compiler, source, tc=False):
+    called_by, body = source
+    obj, (sym, rest) = body
+
+    if rest is not nil:
+        raise CompilerException("ref-attr takes two arguments", source)
+
+    frag = compiler.fragment(called_by)
+
+    frag.position_of(body)
+    frag.merge(compiler.full_compile(obj))
+    frag.instruction(OpCode.KOS_OP_ATTR_REF, str(sym))
+
+    return frag
+
+
+@special(symbol("compile/item"))
+def special_item(compiler, source, tc=False):
+    called_by, body = source
+    obj, (key, rest) = body
+
+    if rest is not nil:
+        raise CompilerException("item takes two arguments", source)
+
+    frag = compiler.fragment(called_by)
+
+    frag.position_of(body)
+    frag.merge(compiler.full_compile(obj))
+
+    keyfrag = compiler.full_compile(key)
+    is_const, key_val = const_only_expr(keyfrag)
+
+    if is_const:
+        frag.instruction(OpCode.KOS_OP_CONST_ITEM, key_val)
+
+    else:
+        frag.merge(keyfrag)
+        frag.instruction(OpCode.KOS_OP_ITEM, 0)
+
+    return frag
+
+
+@special(symbol("compile/ref-item"))
+def special_ref_item(compiler, source, tc=False):
+    called_by, body = source
+    obj, (key, rest) = body
+
+    if rest is not nil:
+        raise CompilerException("ref-item takes two arguments", source)
+
+    frag = compiler.fragment(called_by)
+
+    frag.position_of(body)
+    frag.merge(compiler.full_compile(obj))
+
+    keyfrag = compiler.full_compile(key)
+    is_const, key_val = const_only_expr(keyfrag)
+
+    if is_const:
+        frag.instruction(OpCode.KOS_OP_CONST_ITEM_REF, key_val)
+
+    else:
+        frag.merge(keyfrag)
+        frag.instruction(OpCode.KOS_OP_ITEM_REF, 0)
+
+    return frag
+
+
+@special(symbol("compile/del-item"))
+def special_del_item(compiler, source, tc=False):
+    called_by, body = source
+    obj, (key, rest) = body
+
+    if rest is not nil:
+        raise CompilerException("del-item takes two arguments", source)
+
+    frag = compiler.fragment(called_by)
+
+    frag.position_of(body)
+    frag.merge(compiler.full_compile(obj))
+
+    keyfrag = compiler.full_compile(key)
+    is_const, key_val = const_only_expr(keyfrag)
+
+    if is_const:
+        frag.instruction(OpCode.KOS_OP_CONST_ITEM_CLEAR, key_val)
+
+    else:
+        frag.merge(keyfrag)
+        frag.instruction(OpCode.KOS_OP_ITEM_CLEAR, 0)
+
+    frag.instruction(OpCode.KOS_OP_CONST, None)
+
+    return frag
+
+
+@special(symbol("compile/set-item"))
+def special_set_item(compiler, source, tc=False):
+    called_by, body = source
+    obj, (key, (val, rest)) = body
+
+    if rest is not nil:
+        raise CompilerException("set-item takes three arguments", source)
+
+    frag = compiler.fragment(called_by)
+
+    frag.position_of(body)
+    frag.merge(compiler.full_compile(obj))
+
+    keyfrag = compiler.full_compile(key)
+    is_const, key_val = const_only_expr(keyfrag)
+
+    if is_const:
+        frag.merge(compiler.full_compile(val))
+        frag.instruction(OpCode.KOS_OP_CONST_ITEM_STORE, key_val)
+
+    else:
+        frag.merge(keyfrag)
+        frag.merge(compiler.full_compile(val))
+        frag.instruction(OpCode.KOS_OP_ITEM_STORE, 0)
+
+    frag.instruction(OpCode.KOS_OP_CONST, None)
+
+    return frag
+
+
+@special(symbol("compile/quote"))
+def special_quote(compiler, source, tc=False):
+    called_by, body = source
+
+    if body is nil or not is_pair(body):
+        raise CompilerException("Too few arguments to quote", source)
+
+    body, rest = body
+    if rest is not nil:
+        raise CompilerException("Too many arguments to quote", source)
+
+    if is_pair(body) and not is_nil(body):
+        body = requote(body)
+        set_position(body, get_position(source))
+        return body
+
+    frag = compiler.fragment(called_by)
+    frag.position_of(source)
+    frag.instruction(OpCode.KOS_OP_CONST, body)
+    return frag
 
 
 # The end.

@@ -409,6 +409,69 @@ def list_star(*args):
     return tail
 
 
+def const_only_expr(fragment):
+    """
+    Check whether a ByteCodeFragment consists only of a single CONST value.
+
+    Ignores NOOP and POSITION; allows a single CONST optionally followed by
+    POP 1. Used by item specials to choose CONST_ITEM* vs ITEM* opcodes.
+
+    :param fragment: ByteCodeFragment to inspect
+    :return: (found, value) — found is True iff exactly one CONST; value is
+        the constant or None
+    """
+
+    found = False
+    value = None
+
+    for op, opa in fragment.instructions:
+        if op == OpCode.KOS_OP_CONST:
+            if found:
+                return (False, None)
+            found = True
+            value = opa
+
+        elif op in (OpCode.KOS_OP_NOOP, OpCode.KOS_OP_POSITION):
+            continue
+
+        elif found and op == OpCode.KOS_OP_POP and opa == 1:
+            found = False
+            value = None
+
+        elif found:
+            return (False, None)
+
+    return (found, value)
+
+
+def requote(source,
+            cons_sym=None,
+            quote_sym=None):
+    """
+    Rewrite a list form so each element is wrapped in (quote_sym ELEMENT).
+    Builds (cons_sym (quote e1) (quote e2) ...). Used by compile/quote when
+    the quoted form is a pair.
+
+    :param source: proper or improper list (pair) to walk
+    :param cons_sym: symbol for the list constructor (default symbol("cons"))
+    :param quote_sym: symbol for each quoted wrapper (default symbol("compile/quote"))
+    :return: pair (cons_sym . ((quote e1) . ((quote e2) . ... nil)))
+    """
+
+    if cons_sym is None:
+        cons_sym = symbol("cons")
+    if quote_sym is None:
+        quote_sym = symbol("compile/quote")
+
+    col = []
+    while source:
+        element, source = source
+        elem = cons(quote_sym, element, nil)
+        col.append(elem)
+
+    return list_star(cons_sym, *col, nil)
+
+
 def helper_begin(
         fragment: ByteCodeFragment,
         body: pair,
@@ -435,6 +498,7 @@ def helper_begin(
 
 
 __all__ = (
+    "const_only_expr",
     "convert_bindings",
     "gather_bindings",
     "gather_formals",
@@ -445,6 +509,7 @@ __all__ = (
     "is_symbolish",
     "list_star",
     "pycons",
+    "requote",
     "simple_parameters",
 )
 
