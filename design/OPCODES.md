@@ -1335,10 +1335,10 @@ Check jumps: if the predicate does **not** hold, jump to `arg`. All take LABEL; 
 
 ### KOS_OP_BUILD_FUNCTION
 
-- **Style**: COUNT. Arg = count (e.g. 0 for no closure cells).
+- **Style**: COUNT. Arg = number of keyword default values (0 when no keyword defaults).
 - **Status**: Implemented.
-- **Stack**: `[..., spec_or_code] → [..., function]`. Build function from TOS (e.g. function spec from constant pool).
-- **Invariants**: TOS is function spec or code.
+- **Stack**: For arg = 0: `[..., fspec] → [..., function]`. For arg > 0: `[..., val_1, ..., val_N, names_tuple, fspec] → [..., function]`. The VM pops fspec, then (when arg > 0) pops the names tuple and N values via PopTailDictNames (TOS = names, below it the N default values in order); builds a defaults dict and creates the function from the spec. Build function from function spec (e.g. from constant pool).
+- **Invariants**: TOS (after positionals) is function spec; when arg > 0, names_tuple must be a tuple of N names and the stack must have N values below it.
 
 **Example:** Build function from spec in constant pool. Pool: 0 = function_spec. Covered by `tests/lib/test_ceval.py`: `test_build_function_returns_function`, `test_build_function_returned_function_is_callable`.
 
@@ -1383,9 +1383,8 @@ Check jumps: if the predicate does **not** hold, jump to `arg`. All take LABEL; 
 
 - **Style**: COUNT, STAR.
 - **Status**: Stub.
-- **Stack**: (Intended: call with keyword names or *args/**kwargs.)
-- **Intended (not yet implemented):** Call with keyword arguments (CALL_NAMES) or
-  *args/**kwargs (CALL_STAR). **Current:** Stub; runtime error if executed.
+- **Stack (intended for CALL_NAMES):** `[..., callable, pos_0, ..., pos_{N-1}, val_0, ..., val_{M-1}, names_tuple] → [..., result]`. Arg = N (number of positional arguments). TOS = names_tuple (tuple of M keyword names); below it the M keyword values in the same order as names; below that the N positional args; then callable. The compiler emits one CONST for the keyword names tuple, then CALL_NAMES with opa = N.
+- **Stack (intended for CALL_STAR):** Call with *args and/or **kwargs; stack layout and opa bits per implementation. **Current:** Stub; runtime error if executed.
 - **Example:** (Stub; no runtime table.)
 
 ---
@@ -1504,7 +1503,7 @@ Check jumps: if the predicate does **not** hold, jump to `arg`. All take LABEL; 
 
 - **Style**: COUNT. Arg = 0 or number of values to bind. 0: push namespace with NSPEC only; >0: NSPEC plus value/name bindings.
 - **Status**: Implemented.
-- **Stack**: Pops values/names as per arg; pushes namespace scope (KosDynNs).
+- **Stack**: Pops as per arg; pushes namespace scope (KosDynNs). **Stack layout (opa > 0):** `[..., NSPEC, val_0, val_1, ..., val_{N-1}, NAMES]` with TOS = NAMES (tuple of N names). VM pops NAMES, then the N values, then NSPEC; binds names to values in the new namespace. For opa = 0: stack is `[..., NSPEC]`; only NSPEC is popped.
 - **Pushes:** KOS_DYN_NS (static extent KOS_EXT_NS; stores saved namespace for restore on POP_NS).
 - **Invariants**: Extent kind KOS_EXT_NS.
 
@@ -1815,7 +1814,7 @@ Unified extent wind/unwind is described in [interpreter/extent-wind-unwind.md](i
 - **Style**: LABEL. Arg = handler label (pc for non-local exit).
 - **Status**: Stub.
 - **Stack**: Pushes region for block-local control.
-- **Pushes:** KOS_DYN_REGION (static extent kind and handler from arg/table).
+- **Pushes:** KOS_DYN_REGION. In the bytecode extent table, PUSH_REGION/POP_REGION are paired with **KOS_EXT_TRY** (there is no separate KOS_EXT_REGION); the extent kind is reused for region metadata.
 - **Example:** (Stub.) Intended: arg = handler pc.
 
 | index | opcode      | arg | arg view | comment |

@@ -83,8 +83,9 @@ With rest args: `(compile/call CALLEE ARG ... * REST)` or `** KW-REST`.
 
 **Use-case:** Generic function application. Evaluates the callee and each
 argument, then emits a call instruction. Supports positional arguments only in
-the current VM (CALL); keyword and star forms emit CALL_NAMES / CALL_STAR, which
-are stubbed in the interpreter until implemented.
+the current VM (CALL). Keyword and star forms emit CALL_NAMES / CALL_STAR, which
+are stubbed in the interpreter; calls that use keyword or rest arguments are
+not yet runnable and will raise at runtime until those opcodes are implemented.
 
 **Behaviour:** Compiles the first subform (the callee), then parses the
 remaining forms with `gather_parameters` into positional, keyword, and

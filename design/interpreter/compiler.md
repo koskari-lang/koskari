@@ -85,7 +85,7 @@
 ### Migrated (Partial)
 
 - **Compiler** and **ByteCodeFragment** (`koskari.compile`): Compiler compiles S-expression forms to bytecode fragments. Special form dispatch via `compile_impl`; head-symbol lookup in module namespace.
-- **Implemented specials** (see design/SPECIALS.md): `compile/bytecode`, `compile/begin`, `compile/call`, `lambda`. These emit opcodes directly; no macro expansion.
+- **Implemented specials** (see design/SPECIALS.md): `compile/bytecode`, `compile/begin`, `compile/call`, `compile/lambda`, `compile/let`, `compile/parameterize`. These emit opcodes directly; no macro expansion.
 - **Namespace handling**: NamespaceSpec, variable declarations, constant-pool and label resolution in fragment `complete` pass.
 - **Parser** (Reader, SourceStream) produces S-expressions; used as input to compiler.
 
