@@ -132,7 +132,8 @@ with C extension support and comprehensive test coverage:
 **Pair Types** (from python-sibilant):
 - `pair`: Mutable cons cell with position tracking, recursion detection
 - `nil`: Singleton empty list/false value (subtype of pair)
-- `cons()`: Variadic pair builder with recursive option
+- `cons()`: Variadic pair builder (last arg is tail); no recursive keyword
+- `make_recursive(pair)`, `break_recursive(pair)`: Make or break circular structure
 - `car()`, `cdr()`, `setcar()`, `setcdr()`: Pair accessors/mutators
 - `build_unpack_pair()`: Build pair from unpacked iterables
 

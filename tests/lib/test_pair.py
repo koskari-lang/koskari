@@ -21,7 +21,8 @@ Unit tests for pair and nil types
 import unittest
 
 from koskari.lib import (
-    pair, nil, cons, car, cdr, setcar, setcdr, build_unpack_pair
+    pair, nil, cons, car, cdr, setcar, setcdr, build_unpack_pair,
+    make_recursive, break_recursive,
 )
 
 
@@ -336,8 +337,9 @@ class TestCons(unittest.TestCase):
         self.assertEqual(list(p.unpack()), [1, 2, 3])
 
     def test_recursive(self):
-        """cons(..., recursive=True) creates circular list"""
-        p = cons(1, 2, 3, recursive=True)
+        """make_recursive(cons(...)) creates circular list"""
+        p = cons(1, 2, 3, nil)
+        make_recursive(p)
         self.assertTrue(p.is_recursive())
         # Follow should eventually loop back
         seen = set()
@@ -348,6 +350,8 @@ class TestCons(unittest.TestCase):
             seen.add(id(current))
             current = cdr(current)
         self.assertIn(id(current), seen)
+        break_recursive(p)
+        self.assertFalse(p.is_recursive())
 
 
 class TestBuildUnpackPair(unittest.TestCase):

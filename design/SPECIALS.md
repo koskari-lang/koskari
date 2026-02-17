@@ -452,11 +452,11 @@ ITEM_STORE 0. Then CONST None.
 
 **Use-case:** Prevent evaluation; FORM is produced as a literal value. For
 atoms, a single CONST is emitted. For non-nil lists, the form is rewritten to
-(cons (compile/quote e1) (compile/quote e2) ...) and that form is compiled so
-each element is quoted and consed.
+(compile/cons (compile/quote e1) (compile/quote e2) ...) and that form is
+compiled so each element is quoted and combined via the CONS opcode.
 
 **Behaviour:** One argument required. If FORM is a non-nil pair, rewrite with
-`requote` to a cons of quoted elements (using symbol compile/quote), set
+`requote` to a list of quoted elements (using compile/cons and compile/quote), set
 position on the result, and return that pair so the compiler re-dispatches and
 compiles it. Otherwise emit CONST FORM.
 
@@ -466,6 +466,68 @@ compiles it. Otherwise emit CONST FORM.
 (compile/quote 42)
 (compile/quote x)
 (compile/quote (a b c))
+```
+
+
+## compile/car
+
+**Symbol:** `compile/car`
+
+**Syntax:** `(compile/car EXPR)`
+
+**Use-case:** Compile code that evaluates EXPR (must produce a pair), then
+pushes the car of that pair. One argument.
+
+**Behaviour:** Compile EXPR, then emit CAR. At runtime, CAR pops one value; if
+it is not a pair or is nil, TypeError is raised. Otherwise the car (INCREF) is
+pushed.
+
+**Example:**
+
+```scheme
+(compile/car (compile/cons 1 nil))   ; → 1
+```
+
+
+## compile/cdr
+
+**Symbol:** `compile/cdr`
+
+**Syntax:** `(compile/cdr EXPR)`
+
+**Use-case:** Compile code that evaluates EXPR (must produce a pair), then
+pushes the cdr of that pair. One argument.
+
+**Behaviour:** Compile EXPR, then emit CDR. At runtime, CDR pops one value; if
+it is not a pair or is nil, TypeError is raised. Otherwise the cdr (INCREF)
+is pushed.
+
+**Example:**
+
+```scheme
+(compile/cdr (compile/cons 1 (compile/cons 2 nil)))   ; → (2 . nil)
+```
+
+
+## compile/cons
+
+**Symbol:** `compile/cons`
+
+**Syntax:** `(compile/cons EXPR1 EXPR2 ... EXPR_TAIL)`
+
+**Use-case:** Variadic pair construction. Equivalent to (cons EXPR1 (cons EXPR2
+(... (cons EXPR_TAIL) ...))). At least one argument (the tail).
+
+**Behaviour:** Compile each expression in order (stack bottom = first element,
+top = tail). Emit CONS with arg = number of expressions. VM builds the chain
+via KosPair_ConsFromPtr(TailPtr(block, count), count), then Drop(count) and
+push result. count 0 pushes nil.
+
+**Example:**
+
+```scheme
+(compile/cons 1 2 nil)                    ; → (1 . (2 . nil))
+(compile/cons (compile/quote a) (compile/quote (b c)) nil)  ; → (a b c)
 ```
 
 

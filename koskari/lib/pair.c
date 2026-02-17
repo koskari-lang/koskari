@@ -1157,50 +1157,113 @@ KosPair _KosNil = {
 };
 
 
-PyObject *KosPair_Cons(PyObject *members, int recursive) {
+PyObject *KosPair_Cons(PyObject *members) {
   PyObject *seq = PySequence_Fast(members,
                                   "cons members object must be a sequence");
-  if(! seq) {
+  if (! seq)
     return NULL;
-  }
 
-  int count = PySequence_Fast_GET_SIZE(seq);
-  if (! count) {
+  Py_ssize_t count = PySequence_Fast_GET_SIZE(seq);
+  if (count == 0) {
     Py_DECREF(seq);
     Py_INCREF(KosNil);
     return KosNil;
   }
 
-  PyObject *result = KosPair_New(PySequence_Fast_GET_ITEM(seq, 0), KosNil);
-  if (! result) {
-    Py_DECREF(seq);
-    return NULL;
-  }
-
-  if (count == 1) {
-    if (recursive) {
-      KosPair_SETCDR(result, result);
-    }
-
+  PyObject *result;
+  if (PyList_Check(seq)) {
+    PyObject **ptr = ((PyListObject *) seq)->ob_item;
+    result = KosPair_ConsFromPtr(ptr, (int) count);
   } else {
-    PyObject *work = recursive? result: PySequence_Fast_GET_ITEM(seq, --count);
-    Py_INCREF(work);
-
-    while (--count) {
-      PyObject *tmp = KosPair_New(PySequence_Fast_GET_ITEM(seq, count), work);
-      Py_DECREF(work);
-      if (! tmp) {
-        Py_DECREF(seq);
-        return NULL;
-      }
-      work = tmp;
+    PyObject **ptr = (PyObject **) PyMem_Malloc((size_t) count * sizeof(PyObject *));
+    if (! ptr) {
+      Py_DECREF(seq);
+      return NULL;
     }
-
-    KosPair_SETCDR(result, work);
-    Py_DECREF(work);
+    for (Py_ssize_t i = 0; i < count; i++)
+      ptr[i] = PySequence_Fast_GET_ITEM(seq, i);
+    result = KosPair_ConsFromPtr(ptr, (int) count);
+    PyMem_Free(ptr);
   }
 
   Py_DECREF(seq);
+  return result;
+}
+
+
+int KosPair_MakeRecursive(PyObject *pair) {
+  if (KosNil_Check(pair) || ! KosPair_Check(pair))
+    return -1;
+
+  PyObject *cdr = KosPair_CDR(pair);
+  if (cdr == KosNil || cdr == pair) {
+    /* single pair: self-loop; or already recursive */
+    if (cdr != pair)
+      KosPair_SETCDR(pair, pair);
+    return 0;
+  }
+
+  PyObject *current = pair;
+  while (1) {
+    PyObject *next = KosPair_CDR(current);
+    if (next == KosNil || next == pair)
+      break;
+    if (! KosPair_Check(next))
+      return -1;
+    current = next;
+  }
+
+  KosPair_SETCDR(current, pair);
+  return 0;
+}
+
+
+int KosPair_BreakRecursive(PyObject *pair) {
+  if (KosNil_Check(pair) || ! KosPair_Check(pair))
+    return -1;
+
+  PyObject *current = pair;
+  while (1) {
+    PyObject *cdr = KosPair_CDR(current);
+    if (cdr == pair) {
+      KosPair_SETCDR(current, KosNil);
+      return 0;
+    }
+    if (cdr == KosNil || ! KosPair_Check(cdr))
+      return -1;
+    current = cdr;
+  }
+}
+
+
+PyObject *KosPair_ConsFromPtr(PyObject *const *ptr, int count) {
+  if (count <= 0) {
+    Py_INCREF(KosNil);
+    return KosNil;
+  }
+
+  PyObject *result = KosPair_New(ptr[0], KosNil);
+  if (! result)
+    return NULL;
+
+  if (count == 1)
+    return result;
+
+  PyObject *work = ptr[count - 1];
+  Py_INCREF(work);
+
+  for (int i = count - 2; i >= 1; i--) {
+    PyObject *tmp = KosPair_New(ptr[i], work);
+    Py_DECREF(work);
+    if (! tmp) {
+      Py_DECREF(result);
+      return NULL;
+    }
+    work = tmp;
+  }
+
+  KosPair_SETCDR(result, work);
+  Py_DECREF(work);
   return result;
 }
 
@@ -1209,33 +1272,8 @@ PyObject *KosPair_Cons(PyObject *members, int recursive) {
 
 
 static PyObject *m_cons(PyObject *mod, PyObject *args, PyObject *kwds) {
-  int recursive = 0;
-
-  if (kwds) {
-    PyObject *tmp = PyDict_GetItem(kwds, _str_recursive);
-    /* tmp is a borrowed ref */
-
-    if (tmp) {
-      if (PyDict_Size(kwds) > 1) {
-        PyErr_SetString(PyExc_TypeError,
-                        "cons accepts one keyword argument: recursive");
-        return NULL;
-      }
-
-      recursive = PyObject_IsTrue(tmp);
-      if (recursive < 0)
-        return NULL;
-
-    } else {
-      if (PyDict_Size(kwds) > 0) {
-        PyErr_SetString(PyExc_TypeError,
-                        "cons accepts one keyword argument: recursive");
-        return NULL;
-      }
-    }
-  }
-
-  return KosPair_Cons(args, recursive);
+  (void) kwds;
+  return KosPair_Cons(args);
 }
 
 
@@ -1272,6 +1310,26 @@ static PyObject *m_cdr(PyObject *mod, PyObject *pair) {
   }
 
   return result;
+}
+
+
+static PyObject *m_make_recursive(PyObject *mod, PyObject *pair) {
+  if (KosPair_MakeRecursive(pair) < 0) {
+    if (! PyErr_Occurred())
+      PyErr_SetString(PyExc_ValueError, "make_recursive failed");
+    return NULL;
+  }
+  Py_RETURN_NONE;
+}
+
+
+static PyObject *m_break_recursive(PyObject *mod, PyObject *pair) {
+  if (KosPair_BreakRecursive(pair) < 0) {
+    if (! PyErr_Occurred())
+      PyErr_SetString(PyExc_ValueError, "break_recursive failed");
+    return NULL;
+  }
+  Py_RETURN_NONE;
 }
 
 
@@ -1372,7 +1430,7 @@ static PyObject *m_build_unpack_pair(PyObject *mod, PyObject *seqs) {
     }
   }
 
-  PyObject *result = KosPair_Cons(coll, 0);
+  PyObject *result = KosPair_Cons(coll);
   Py_DECREF(coll);
   return result;
 }
@@ -1381,9 +1439,16 @@ static PyObject *m_build_unpack_pair(PyObject *mod, PyObject *seqs) {
 static PyMethodDef pair_mod_methods[] = {
 
   { "cons", (PyCFunction) m_cons, METH_VARARGS|METH_KEYWORDS,
-    "cons(head, *tail, recursive=False) -> new pair\n"
-    "If no tail is specified, and recursive is False (the default),\n"
-    "then a nil will be presumed." },
+    "cons(head, *tail) -> new pair\n"
+    "Build a pair chain from the given sequence. No tail implies nil." },
+
+  { "make_recursive", m_make_recursive, METH_O,
+    "make_recursive(pair) -> None\n"
+    "Set the tail-most link's cdr to the head, making the chain circular." },
+
+  { "break_recursive", m_break_recursive, METH_O,
+    "break_recursive(pair) -> None\n"
+    "Set the first link whose cdr is the head to nil, breaking the cycle." },
 
   { "car", m_car, METH_O,
     "car(P) -> object\n"

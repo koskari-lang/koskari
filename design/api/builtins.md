@@ -6,11 +6,13 @@ This document describes the built-in functions available in koskari.lib.
 
 | Function | Signature | Description |
 |----------|-----------|-------------|
-| `cons` | `cons(*args, recursive=False)` | Create cons pair from arguments |
+| `cons` | `cons(*args)` | Create cons pair from arguments (last arg is tail; no tail implies nil) |
 | `car` | `car(pair)` | Get first element of pair |
 | `cdr` | `cdr(pair)` | Get rest of pair |
 | `setcar` | `setcar(pair, value)` | Set first element of pair |
 | `setcdr` | `setcdr(pair, value)` | Set rest of pair |
+| `make_recursive` | `make_recursive(pair)` | Set tail-most link's cdr to head, making the chain circular |
+| `break_recursive` | `break_recursive(pair)` | Set first link whose cdr is head to nil, breaking the cycle |
 | `build_unpack_pair` | `build_unpack_pair(*iterables)` | Build pair from unpacked iterables |
 
 ## Atom Operations

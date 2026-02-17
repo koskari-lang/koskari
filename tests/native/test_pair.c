@@ -346,7 +346,7 @@ static int test_cons_empty(void) {
     PyObject *empty = PyTuple_New(0);
     TEST_ASSERT_NOT_NULL(empty, "create empty tuple");
 
-    PyObject *result = KosPair_Cons(empty, 0);
+    PyObject *result = KosPair_Cons(empty);
     TEST_ASSERT_SAME(result, KosNil, "cons of empty is nil");
 
     Py_DECREF(result);
@@ -362,7 +362,7 @@ static int test_cons_proper_list(void) {
     PyObject *items = Py_BuildValue("(iiO)", 1, 2, KosNil);
     TEST_ASSERT_NOT_NULL(items, "create items tuple");
 
-    PyObject *result = KosPair_Cons(items, 0);
+    PyObject *result = KosPair_Cons(items);
     TEST_ASSERT_NOT_NULL(result, "cons creates pair");
     TEST_ASSERT(KosPair_IsProper(result), "result is proper list");
 
@@ -374,14 +374,18 @@ static int test_cons_proper_list(void) {
 
 static int test_cons_recursive(void) {
     /*
-      Test creating a recursive list with KosPair_Cons.
+      Test creating a proper list then making it recursive via KosPair_MakeRecursive.
     */
-    PyObject *items = Py_BuildValue("(iii)", 1, 2, 3);
+    PyObject *items = Py_BuildValue("(iiO)", 1, 2, KosNil);
     TEST_ASSERT_NOT_NULL(items, "create items tuple");
 
-    PyObject *result = KosPair_Cons(items, 1);  /* recursive=True */
-    TEST_ASSERT_NOT_NULL(result, "cons creates recursive pair");
+    PyObject *result = KosPair_Cons(items);
+    TEST_ASSERT_NOT_NULL(result, "cons creates pair");
+    TEST_ASSERT_EQ(KosPair_MakeRecursive(result), 0, "MakeRecursive succeeds");
     TEST_ASSERT(KosPair_IsRecursive(result), "result is recursive");
+
+    TEST_ASSERT_EQ(KosPair_BreakRecursive(result), 0, "BreakRecursive succeeds");
+    TEST_ASSERT(! KosPair_IsRecursive(result), "result no longer recursive");
 
     Py_DECREF(result);
     Py_DECREF(items);

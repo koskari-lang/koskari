@@ -16,7 +16,7 @@ Tests for koskari.compile compile/quote special form.
 """
 
 
-from koskari.lib import cons, symbol
+from koskari.lib import symbol
 
 from . import SpecialsTestCase
 
@@ -37,17 +37,52 @@ class TestQuoteSpecial(SpecialsTestCase):
         self.assertEqual(result, symbol("x"))
 
 
-    def test_quote_list_expands_to_cons(self):
+    def test_quote_list_expands_to_compile_cons(self):
         """
-        (compile/quote (1 2 3)) is rewritten to (cons (compile/quote 1) ...)
-        and compiles to a call to cons. Pass cons from koskari.lib so the
-        result is (1 . (2 . (3 . nil))); unpack to get [1, 2, 3].
+        (compile/quote (1 2 3)) is rewritten to (compile/cons (compile/quote 1)
+        ...) and compiles to CONST + CONS opcodes. Result is (1 . (2 . (3 .
+        nil))); unpack to get [1, 2, 3].
         """
         src_str = "(compile/quote (1 2 3))"
-        expr, mod = self.compile_expr(src_str, cons=cons)
+        expr, mod = self.compile_expr(src_str)
         result = expr().run()
         self.assertIsNotNone(result)
         self.assertEqual([1, 2, 3], list(result.unpack()))
+
+
+class TestCompileConsCarCdr(SpecialsTestCase):
+
+    def test_compile_cons_two_elements(self):
+        """(compile/cons 1 2 nil) yields (1 . (2 . nil)), unpack to [1, 2]."""
+        src_str = "(compile/cons 1 2 nil)"
+        expr, mod = self.compile_expr(src_str)
+        result = expr().run()
+        self.assertIsNotNone(result)
+        self.assertEqual([1, 2], list(result.unpack()))
+
+
+    def test_compile_cons_three_elements(self):
+        """(compile/cons 1 2 3 nil) yields (1 . (2 . (3 . nil)))."""
+        src_str = "(compile/cons 1 2 3 nil)"
+        expr, mod = self.compile_expr(src_str)
+        result = expr().run()
+        self.assertEqual([1, 2, 3], list(result.unpack()))
+
+
+    def test_compile_car(self):
+        """(compile/car (compile/cons 1 nil)) yields 1."""
+        src_str = "(compile/car (compile/cons 1 nil))"
+        expr, mod = self.compile_expr(src_str)
+        result = expr().run()
+        self.assertEqual(1, result)
+
+
+    def test_compile_cdr(self):
+        """(compile/cdr (compile/cons 1 (compile/cons 2 nil))) yields (2 . nil)."""
+        src_str = "(compile/cdr (compile/cons 1 (compile/cons 2 nil)))"
+        expr, mod = self.compile_expr(src_str)
+        result = expr().run()
+        self.assertEqual([2], list(result.unpack()))
 
 
 # The end.

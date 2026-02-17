@@ -450,16 +450,16 @@ def requote(source,
     """
     Rewrite a list form so each element is wrapped in (quote_sym ELEMENT).
     Builds (cons_sym (quote e1) (quote e2) ...). Used by compile/quote when
-    the quoted form is a pair.
+    the quoted form is a pair. No runtime cons: expansion uses compile/cons.
 
     :param source: proper or improper list (pair) to walk
-    :param cons_sym: symbol for the list constructor (default symbol("cons"))
+    :param cons_sym: symbol for the list constructor (default symbol("compile/cons"))
     :param quote_sym: symbol for each quoted wrapper (default symbol("compile/quote"))
     :return: pair (cons_sym . ((quote e1) . ((quote e2) . ... nil)))
     """
 
     if cons_sym is None:
-        cons_sym = symbol("cons")
+        cons_sym = symbol("compile/cons")
     if quote_sym is None:
         quote_sym = symbol("compile/quote")
 

@@ -85,6 +85,7 @@ The VM in `eval.c` uses a jump table; every opcode has a handler. Handlers are e
 
 **Fully implemented** (handler does real work; no stub):
 - **Pseudo / stack**: NOOP, LABEL, POSITION (no-op at runtime: advance PC only; no effect), DUP, POP, CONST
+- **Pair construction and access**: CAR, CDR, CONS (CAR/CDR pop one value and push car/cdr; CONS arg = count, stack bottom-to-top = first element … tail; TailPtr + ConsFromPtr + Drop + push result)
 - **Argument production**: BUILD_FUNCTION (build Function from FunctionSpec; stack [fspec, ...kw_defaults, names_tuple] → [function])
 - **Control**: RETURN, AWAIT, YIELD (suspend with value; resumption via send; async gen support), YIELD_FROM (delegate to sub-iterator/gen; KOS_DYN_YIELD_FROM; send/throw/close; handler in koskari/lib/opcode/yield_from.c)
 - **Calls**: CALL (arg = N; stack [callable, arg_0, ..., arg_{N-1}]; Continuation/DelimitedContinuation → call_call_continuation; KosExpression/KosFunction → new frame in same loop; other callables → PyObject_Call then push_or_await), TAIL_CALL (arg = N; same stack layout as CALL; replaces current frame with callee frame for proper tail-call semantics; compiler emits when call is in tail position)
@@ -121,7 +122,7 @@ There are no **partially** implemented opcodes; each handler is either full, a s
 - **Phases**: Parse → Expand → Compile → Optimize → Generate (full pipeline in progress)
 - **Components**: Compiler, CodeContext, ByteCodeFragment (implemented in `koskari.compile`)
 - **Optimization**: Constant folding, dead code elimination, fast paths (planned)
-- **Implemented specials**: compile/bytecode, compile/begin, compile/call, compile/lambda, compile/let, compile/parameterize, compile/setq, compile/refq, compile/bindq, compile/delq, compile/attr, compile/del-attr, compile/set-attr, compile/ref-attr, compile/item, compile/ref-item, compile/del-item, compile/set-item, compile/quote (see design/SPECIALS.md)
+- **Implemented specials**: compile/bytecode, compile/begin, compile/call, compile/lambda, compile/let, compile/parameterize, compile/setq, compile/refq, compile/bindq, compile/delq, compile/attr, compile/del-attr, compile/set-attr, compile/ref-attr, compile/item, compile/ref-item, compile/del-item, compile/set-item, compile/quote, compile/car, compile/cdr, compile/cons (see design/SPECIALS.md)
 
 ### Evaluator
 - **Model**: Custom drive loop (`koskari_eval` in eval.c). Callable types Expression and Function (func.c) return a KosCoroutine; driving the coroutine (await/send) runs the evaluator. Continuation call returns a KosCoroutine that resumes the captured segment.
@@ -129,7 +130,7 @@ There are no **partially** implemented opcodes; each handler is either full, a s
 - **Blocks**: try, loop, with, finally management
 
 ### Creating and calling functions and expressions
-- **Code**: Compiled bytecode is stored in a `Code` object (namespace spec, instructions, constant pool, position table). The compiler (`koskari.compile`) is partially implemented: it supports `compile/bytecode`, `compile/begin`, `compile/call`, `compile/lambda`, `compile/let`, `compile/parameterize`, `compile/setq`, `compile/refq`, `compile/bindq`, `compile/delq`, `compile/attr`, `compile/del-attr`, `compile/set-attr`, `compile/ref-attr`, `compile/item`, `compile/ref-item`, `compile/del-item`, `compile/set-item`, and `compile/quote` (see design/SPECIALS.md). Tests and tools also build Code manually for VM validation.
+- **Code**: Compiled bytecode is stored in a `Code` object (namespace spec, instructions, constant pool, position table). The compiler (`koskari.compile`) is partially implemented: it supports `compile/bytecode`, `compile/begin`, `compile/call`, `compile/lambda`, `compile/let`, `compile/parameterize`, `compile/setq`, `compile/refq`, `compile/bindq`, `compile/delq`, `compile/attr`, `compile/del-attr`, `compile/set-attr`, `compile/ref-attr`, `compile/item`, `compile/ref-item`, `compile/del-item`, `compile/set-item`, `compile/quote`, `compile/car`, `compile/cdr`, and `compile/cons` (see design/SPECIALS.md). Tests and tools also build Code manually for VM validation.
 - **Expressions**: `Code.expression(parent_ns)` builds an **Expression** from a `Code` and a parent **Namespace**. An Expression is nullary: calling it with `()` creates a **Coroutine** that runs that code in that namespace. No argument binding; used for thunks, modules, or single-shot code.
 - **Functions**: `Code.function(formals, parent_ns)` builds a **Function** from a `Code`, a **Formals** instance (parameter spec + defaults), and a parent namespace. Calling a Function with `(*args, **kwargs)` binds the formals to the arguments, builds a frame namespace (via the formals’ NamespaceSpec), applies the bindings, then creates a **Coroutine** that runs the code in that frame namespace.
 - **Call flow**: Calling an Expression or Function returns a **Coroutine**. Driving the coroutine (Python `await`, or `send(None)`/`send(value)`) invokes `koskari_eval()` until a boundary event (RETURN, RAISE, YIELD, AWAIT). For AWAIT, the VM suspends and the driver steps the Python awaitable; on completion the result is injected and evaluation resumes. Koskari-to-Koskari calls use `kos_koscall` / `kos_tail_koscall` (CALL opcode); the callee is a KosExpression or KosFunction, so the runtime creates a new frame and pushes it onto the dynamic chain and continues the same drive loop.
@@ -160,7 +161,7 @@ There are no **partially** implemented opcodes; each handler is either full, a s
 
 **Native Types** (C extension with full test coverage):
 - Atom types: `symbol`, `keyword`, `gensym()`
-- Pair types: `pair`, `nil`, `cons()`, `car()`, `cdr()`, `setcar()`, `setcdr()`, `build_unpack_pair()`
+- Pair types: `pair`, `nil`, `cons()`, `car()`, `cdr()`, `setcar()`, `setcdr()`, `make_recursive()`, `break_recursive()`, `build_unpack_pair()`
 - Namespace types: `Namespace`, `NamespaceSpec`, `ModuleNamespace`, `CollectorNamespace`, `Module`
 - Reference types: `Ref`, `AttributeRef`, `ItemRef`, `DynamicRef`, `ConstantRef`, `MemoizedRef`, `ParamRef`
 - Formals types: `Formals`, `FormalsSpec`

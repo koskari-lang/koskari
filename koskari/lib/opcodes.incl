@@ -53,6 +53,11 @@ OP(POP, COUNT)
 // constant loading
 OP(CONST, CONST)
 
+// pair access and variadic cons
+OP(CAR, NOARG)
+OP(CDR, NOARG)
+OP(CONS, COUNT)
+
 // mode control - all code is async, yields flag async generators
 OP(AWAIT, NOARG)
 OP(BREAK, COUNT)

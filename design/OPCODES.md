@@ -160,6 +160,7 @@ When adding or changing an opcode:
 - [3. No-op and compile-time](#3-no-op-and-compile-time) — NOOP, LABEL, POSITION
 - [4. Stack](#4-stack) — DUP, POP
 - [5. Constants](#5-constants) — CONST
+- [5.1 Pair construction and access](#51-pair-construction-and-access) — CAR, CDR, CONS
 - [6. Mode control](#6-mode-control) — AWAIT, BREAK, CONTINUE, RAISE, RETURN, YIELD, YIELD_FROM
 - [7. Iteration](#7-iteration) — ITER_NEXT, NEXT
 - [8. Jumps](#8-jumps) — JUMP, JUMP_FALSE, JUMP_TRUE, JUMP_AND, JUMP_OR
@@ -191,6 +192,9 @@ When adding or changing an opcode:
 | DUP | COUNT | Duplicate top N stack elements | [§4](#kos_op_dup) |
 | POP | COUNT | Pop N elements | [§4](#kos_op_pop) |
 | CONST | CONST | Push constant from pool | [§5](#kos_op_const) |
+| CAR | NOARG | Pop pair; push car | [§5.1](#kos_op_car) |
+| CDR | NOARG | Pop pair; push cdr | [§5.1](#kos_op_cdr) |
+| CONS | COUNT | Pop N values; push (e_0 . ... . e_{N-1}) | [§5.1](#kos_op_cons) |
 | AWAIT | NOARG | Suspend on awaitable; resume with value | [§6](#kos_op_await) |
 | BREAK | COUNT | Jump to loop break target | [§6](#kos_op_break) |
 | CONTINUE | COUNT | Jump to loop continue target | [§6](#kos_op_continue) |
@@ -375,6 +379,35 @@ Other opcodes (CHECK_LT/LE/GT/GE, CHECK_IS_INSTANCE/IS_SUBCLASS, VAR_CLEAR, VAR_
 |------:|--------|-----|----------|---------|
 | 0     | CONST  | 0   | 0 (42)   | stack: [..., 42] |
 | 1     | RETURN | 1   | 1        | |
+
+
+### 5.1 Pair construction and access
+
+#### KOS_OP_CAR
+
+- **Style**: NOARG.
+- **Status**: Implemented.
+- **Stack**: `[..., pair] → [..., car(pair)]`. Pops one value; if not a pair or
+  is nil, sets TypeError and returns -1. Otherwise pushes car (INCREF).
+
+
+#### KOS_OP_CDR
+
+- **Style**: NOARG.
+- **Status**: Implemented.
+- **Stack**: `[..., pair] → [..., cdr(pair)]`. Pops one value; if not a pair or
+  is nil, sets TypeError and returns -1. Otherwise pushes cdr (INCREF).
+
+
+#### KOS_OP_CONS
+
+- **Style**: COUNT. Arg = number of values on stack (bottom = first element,
+  top = tail).
+- **Status**: Implemented.
+- **Stack**: `[..., e_0, ..., e_{count-1}] → [..., result]` where result =
+  (e_0 . (e_1 . ... (e_{count-1}) ...)). Implemented via KosStackBlock_TailPtr,
+  KosPair_ConsFromPtr, KosStackBlock_Drop, then push result. count 0 → push
+  nil (INCREF).
 
 
 ## 6. Mode control

@@ -89,7 +89,26 @@ extern KosPair _KosNil;
 
 PyObject *KosPair_New(PyObject *head, PyObject *tail);
 
-PyObject *KosPair_Cons(PyObject *sequence, int recursive);
+PyObject *KosPair_Cons(PyObject *sequence);
+
+/**
+   Build a pair chain from a C array. ptr[0] is the first element,
+   ptr[count-1] is the tail. Same logical order as KosPair_Cons.
+   INCREFs each element when storing into a pair. count may be 0 (returns nil).
+ */
+PyObject *KosPair_ConsFromPtr(PyObject *const *ptr, int count);
+
+/**
+   Make the pair chain circular: set the tail-most link's cdr to the head.
+   Returns 0 on success, -1 if pair is nil or not a pair.
+ */
+int KosPair_MakeRecursive(PyObject *pair);
+
+/**
+   Break the first link whose cdr equals pair by setting that cdr to nil.
+   Returns 0 on success, -1 if pair is nil, not a pair, or no such link exists.
+ */
+int KosPair_BreakRecursive(PyObject *pair);
 
 PyObject *KosPair_Unpack(PyObject *self);
 

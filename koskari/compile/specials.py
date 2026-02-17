@@ -629,4 +629,76 @@ def special_quote(compiler, source, tc=False):
     return frag
 
 
+@special(symbol("compile/car"))
+def special_car(compiler, source, tc=False):
+    """
+    Compile (compile/car EXPR). Emit code that evaluates EXPR, then pushes
+    the car of that pair. One argument.
+    """
+
+    called_by, body = source
+    if body is nil or not is_pair(body):
+        raise CompilerException("compile/car requires one argument", source)
+
+    expr, rest = body
+    if rest is not nil:
+        raise CompilerException("compile/car takes one argument", source)
+
+    frag = compiler.fragment(called_by)
+    frag.position_of(body)
+    frag.merge(compiler.full_compile(expr))
+    frag.instruction(OpCode.KOS_OP_CAR, 0)
+
+    return frag
+
+
+@special(symbol("compile/cdr"))
+def special_cdr(compiler, source, tc=False):
+    """
+    Compile (compile/cdr EXPR). Emit code that evaluates EXPR, then pushes
+    the cdr of that pair. One argument.
+    """
+
+    called_by, body = source
+    if body is nil or not is_pair(body):
+        raise CompilerException("compile/cdr requires one argument", source)
+
+    expr, rest = body
+    if rest is not nil:
+        raise CompilerException("compile/cdr takes one argument", source)
+
+    frag = compiler.fragment(called_by)
+    frag.position_of(body)
+    frag.merge(compiler.full_compile(expr))
+    frag.instruction(OpCode.KOS_OP_CDR, 0)
+
+    return frag
+
+
+@special(symbol("compile/cons"))
+def special_cons(compiler, source, tc=False):
+    """
+    Variadic: (compile/cons EXPR1 EXPR2 ... EXPR_TAIL). Compile each
+    expression in order (stack bottom = first element, top = tail), then
+    emit CONS with arg = number of expressions. At least one argument
+    (the tail).
+    """
+
+    called_by, body = source
+    if body is nil or not is_pair(body):
+        raise CompilerException("compile/cons requires at least one argument",
+                               source)
+
+    exprs = list(body.unpack())
+    frag = compiler.fragment(called_by)
+    frag.position_of(source)
+
+    for expr in exprs:
+        frag.merge(compiler.full_compile(expr))
+
+    frag.instruction(OpCode.KOS_OP_CONS, len(exprs))
+
+    return frag
+
+
 # The end.
