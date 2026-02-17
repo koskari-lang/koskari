@@ -46,7 +46,13 @@ KOS_OP_HANDLER(RETURN) {
   if (KosDynNode_PARENT(CURRENT_FRAME(ctx)) != NULL) {
     int was_pending_ctx = (KosContext_PENDING_AGEN(ctx) != NULL);
     KosDynFrame *detached_frame = NULL;
-    if (kos_dyn_unwind_to_frame(ctx, CURRENT_FRAME(ctx)) < 0) {
+    int unw = kos_dyn_unwind_to_frame(ctx, CURRENT_FRAME(ctx));
+    if (unw == KOS_DYN_UNWIND_ASYNC_STARTED) {
+      KosContext_PENDING_RETURN_VALUE(ctx) = val;
+      KosContext_PENDING_RETURN_TO_PARENT(ctx) = 1;
+      return 0;
+    }
+    if (unw < 0) {
       Py_DECREF(val);
       return -1;
     }
@@ -104,7 +110,13 @@ KOS_OP_HANDLER(RETURN) {
     return 0;
   }
 
-  if (kos_dyn_unwind_to_frame(ctx, CURRENT_FRAME(ctx)) < 0) {
+  int unw = kos_dyn_unwind_to_frame(ctx, CURRENT_FRAME(ctx));
+  if (unw == KOS_DYN_UNWIND_ASYNC_STARTED) {
+    KosContext_PENDING_RETURN_VALUE(ctx) = val;
+    KosContext_PENDING_RETURN_TO_PARENT(ctx) = 0;
+    return 0;
+  }
+  if (unw < 0) {
     Py_DECREF(val);
     return -1;
   }

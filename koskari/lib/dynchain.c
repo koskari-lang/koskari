@@ -1103,31 +1103,24 @@ void kos_dyn_pop_param(KosContext *ctx, KosDynParam *node) {
    :return: 0 on success, -1 on error or if top is PROMPT/PYCALL (cannot unwind)
 */
 /**
-   Pop a KOS_DYN_NS node: restore the frame's namespace from the node's
-   saved_ns (the NS node was pushed by PUSH_NS), then remove the node
-   from the chain.  Called from kos_dyn_pop_top.
+   Pop a KOS_DYN_NS node: unwind (restore frame ns) then unlink and free.
+   Called from kos_dyn_pop_top.
 */
 static int dyn_pop_top_ns(KosContext *ctx, KosDynNode *top) {
   KosDynNs *ns_node = (KosDynNs *) top;
-  if (KosContext_FRAME_TOP(ctx)) {
-    PyObject *prior = KosDynNs_SAVED_NS(ns_node);
-    Py_INCREF(prior);
-    Py_DECREF(KosDynFrame_NS(KosContext_FRAME_TOP(ctx)));
-    KosDynFrame_NS(KosContext_FRAME_TOP(ctx)) = prior;
-  }
+  kos_dyn_ns_unwind(ctx, ns_node);
   kos_dyn_pop_ns(ctx, ns_node);
   return 0;
 }
 
 
 /**
-   Pop a KOS_DYN_YIELD_FROM node: close the delegate (so the underlying
-   iterator is left in a consistent state), unlink the node from the
-   chain, update frame_top, and free the node.  Called from kos_dyn_pop_top.
+   Pop a KOS_DYN_YIELD_FROM node: unwind (close delegate) then unlink and free.
+   Called from kos_dyn_pop_top.
 */
 static int dyn_pop_top_yield_from(KosContext *ctx, KosDynNode *top) {
   KosDynYieldFrom *yf = (KosDynYieldFrom *) top;
-  kos_yieldfrom_close_delegate(yf);
+  kos_dyn_yieldfrom_unwind(ctx, yf);
   KosContext_DYN_TOP(ctx) = KosDynNode_PARENT(top);
   KosContext_CHAIN_VERSION(ctx)++;
   kos_update_frame_top(ctx);
@@ -1137,18 +1130,76 @@ static int dyn_pop_top_yield_from(KosContext *ctx, KosDynNode *top) {
 
 
 /**
-   Pop a KOS_DYN_PARAM node: restore parameter bindings for the extent we
-   are leaving, unlink the node, update frame_top, and free the param node.
+   Pop a KOS_DYN_PARAM node: unwind (restore params) then unlink and free.
    Called from kos_dyn_pop_top.
 */
 static int dyn_pop_top_param(KosContext *ctx, KosDynNode *top) {
   KosDynParam *param_node = (KosDynParam *) top;
-  kos_dynparam_restore(ctx, param_node);
+  kos_dyn_param_unwind(ctx, param_node);
   KosContext_DYN_TOP(ctx) = KosDynNode_PARENT(top);
   KosContext_CHAIN_VERSION(ctx)++;
   kos_update_frame_top(ctx);
   kos_dynparam_free(param_node);
   return 0;
+}
+
+
+/* === Extent wind/unwind helpers (unified API for simple and transfer path) === */
+
+
+int kos_dyn_param_wind(KosContext *ctx, KosDynParam *node) {
+  return kos_dynparam_enter(ctx, node);
+}
+
+
+void kos_dyn_param_unwind(KosContext *ctx, KosDynParam *node) {
+  kos_dynparam_restore(ctx, node);
+}
+
+
+int kos_dyn_wind_wind(KosContext *ctx, KosDynWind *node) {
+  if (! node || ! KosDynWind_BEFORE_CODE(node))
+    return 0;
+  if (kos_begin_hook(ctx, KosDynWind_BEFORE_CODE(node),
+                     KosDynWind_BEFORE_PC(node)) < 0)
+    return -1;
+  return KOS_DYN_UNWIND_ASYNC_STARTED;
+}
+
+
+int kos_dyn_wind_unwind(KosContext *ctx, KosDynWind *node) {
+  if (! node || ! KosDynWind_ENTERED(node) || ! KosDynWind_AFTER_CODE(node))
+    return 0;
+  if (kos_begin_hook(ctx, KosDynWind_AFTER_CODE(node),
+                     KosDynWind_AFTER_PC(node)) < 0)
+    return -1;
+  return KOS_DYN_UNWIND_ASYNC_STARTED;
+}
+
+
+void kos_dyn_ns_unwind(KosContext *ctx, KosDynNs *node) {
+  if (! node)
+    return;
+  if (KosContext_FRAME_TOP(ctx)) {
+    PyObject *prior = KosDynNs_SAVED_NS(node);
+    Py_INCREF(prior);
+    Py_DECREF(KosDynFrame_NS(KosContext_FRAME_TOP(ctx)));
+    KosDynFrame_NS(KosContext_FRAME_TOP(ctx)) = prior;
+  }
+}
+
+
+void kos_dyn_region_unwind(KosContext *ctx, KosDynRegion *node) {
+  (void) ctx;
+  (void) node;
+  /* No teardown today; FINALLY will run body here later. */
+}
+
+
+void kos_dyn_yieldfrom_unwind(KosContext *ctx, KosDynYieldFrom *node) {
+  (void) ctx;
+  if (node)
+    kos_yieldfrom_close_delegate(node);
 }
 
 
@@ -1169,10 +1220,17 @@ int kos_dyn_pop_top(KosContext *ctx) {
   case KOS_DYN_FRAME:
     return kos_dyn_pop_frame(ctx);
 
-  case KOS_DYN_WIND:
+  case KOS_DYN_WIND: {
+    int unw = kos_dyn_wind_unwind(ctx, (KosDynWind *) top);
+    if (unw == KOS_DYN_UNWIND_ASYNC_STARTED)
+      return KOS_DYN_UNWIND_ASYNC_STARTED;
+    if (unw < 0)
+      return -1;
     return kos_dyn_pop_wind(ctx, (KosDynWind *) top);
+  }
 
   case KOS_DYN_REGION:
+    kos_dyn_region_unwind(ctx, (KosDynRegion *) top);
     kos_dyn_pop_region(ctx, (KosDynRegion *) top);
     return 0;
 
@@ -1208,9 +1266,15 @@ int kos_dyn_pop_top(KosContext *ctx) {
 int kos_dyn_unwind_to_frame(KosContext *ctx, KosDynFrame *frame) {
   while (KosContext_DYN_TOP(ctx) != NULL
          && KosContext_DYN_TOP(ctx) != (KosDynNode *) frame) {
-    if (kos_dyn_pop_top(ctx) != 0)
+    int pop_res = kos_dyn_pop_top(ctx);
+    if (pop_res == KOS_DYN_UNWIND_ASYNC_STARTED) {
+      KosContext_UNWIND_TARGET_FRAME(ctx) = frame;
+      return KOS_DYN_UNWIND_ASYNC_STARTED;
+    }
+    if (pop_res != 0)
       return -1;
   }
+  KosContext_UNWIND_TARGET_FRAME(ctx) = NULL;
   return 0;
 }
 
@@ -2052,7 +2116,7 @@ static int xfer_step_run_hook(KosContext *ctx, KosTransferAction *action) {
 */
 static void xfer_step_param_restore(KosContext *ctx, KosTransferAction *action) {
   KosDynParam *param_node = KosTransferAction_PARAM_NODE(action);
-  kos_dynparam_restore(ctx, param_node);
+  kos_dyn_param_unwind(ctx, param_node);
   if (KOS_XFER_TRACE)
     SAYF("[xfer] PARAM_RESTORE node=%p", (void *) param_node);
 }
@@ -2131,7 +2195,7 @@ static int xfer_step_install(KosContext *ctx, KosTransferAction *action) {
     Py_ssize_t n = PyList_GET_SIZE(param_list);
     for (Py_ssize_t i = n - 1; i >= 0; i--) {
       KosDynParam *p = (KosDynParam *) PyList_GET_ITEM(param_list, i);
-      if (kos_dynparam_enter(ctx, p) < 0) {
+      if (kos_dyn_param_wind(ctx, p) < 0) {
         Py_DECREF(param_list);
         if (KOS_XFER_TRACE)
           SAY("[xfer] INSTALL param enter failed");

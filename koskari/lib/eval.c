@@ -439,6 +439,10 @@ KosContext *kos_context_new(KosDynFrame *top) {
   KosHookRunner_SCRATCH(KosContext_HOOK_RUNNER(ctx)) = NULL;
   KosHookRunner_ACTIVE(KosContext_HOOK_RUNNER(ctx)) = 0;
 
+  KosContext_UNWIND_TARGET_FRAME(ctx) = NULL;
+  KosContext_PENDING_RETURN_VALUE(ctx) = NULL;
+  KosContext_PENDING_RETURN_TO_PARENT(ctx) = 0;
+
   /* Initialize transfer plan state */
   KosContext_PLAN(ctx) = NULL;
   KosContext_PLAN_STACK(ctx) = NULL;
@@ -499,6 +503,8 @@ void kos_context_free(KosContext *ctx) {
   Py_XDECREF(KosContext_PY_LAST_YIELDED(ctx));
   Py_XDECREF(KosContext_PY_RESUME_INJECT(ctx));
   Py_XDECREF(KosContext_INJECT_VALUE(ctx));
+  Py_XDECREF(KosContext_PENDING_RETURN_VALUE(ctx));
+  KosContext_PENDING_RETURN_VALUE(ctx) = NULL;
   Py_XDECREF(KosContext_PENDING_AGEN_DEFAULT(ctx));
   Py_XDECREF(KosContext_DOMAIN(ctx));
   KosContext_DOMAIN(ctx) = NULL;
@@ -1629,8 +1635,13 @@ static int try_local_exception_handler(KosContext *ctx, KosEvent *out_ev) {
   if (! region) {
     PyObject *typ = NULL, *val = NULL, *tb = NULL;
     PyErr_Fetch(&typ, &val, &tb);
-    if (CURRENT_FRAME(ctx))
-      kos_dyn_unwind_to_frame(ctx, CURRENT_FRAME(ctx));
+    if (CURRENT_FRAME(ctx)) {
+      int unw = kos_dyn_unwind_to_frame(ctx, CURRENT_FRAME(ctx));
+      if (unw == KOS_DYN_UNWIND_ASYNC_STARTED) {
+        PyErr_Restore(typ, val, tb);
+        return 1;
+      }
+    }
     PyErr_Clear();
     KosEvent_KIND(out_ev) = KOS_EV_RAISE;
     KosEvent_PAYLOAD(out_ev) = val;  /* exception instance (caller DECREFs) */
@@ -1713,18 +1724,7 @@ int koskari_eval(KosContext *ctx, KosEvent *out_ev) {
     goto koskari_eval_cleanup;
   }
 
-  if (kos_hook_active(ctx)) {
-    /* Minimal: no hook execution; return */
-    KosEvent_KIND(out_ev) = KOS_EV_RETURN;
-    KosEvent_PAYLOAD(out_ev) = Py_None;
-    Py_INCREF(Py_None);
-    KosContext_FLAGS(ctx) &= ~KOS_CTX_RUNNING;
-    KosContext_FLAGS(ctx) |= KOS_CTX_DEAD;
-    eval_ret = 0;
-    goto koskari_eval_cleanup;
-  }
-
-  if (! CURRENT_FRAME(ctx)) {
+  if (! CURRENT_FRAME(ctx) && ! kos_hook_active(ctx)) {
     KosEvent_KIND(out_ev) = KOS_EV_RETURN;
     KosEvent_PAYLOAD(out_ev) = Py_None;
     Py_INCREF(Py_None);
@@ -1786,8 +1786,12 @@ int koskari_eval(KosContext *ctx, KosEvent *out_ev) {
       goto koskari_eval_cleanup;
     }
 
-    KosCode *code = CURRENT_CODE(ctx);
-    uint32_t pc = CURRENT_PC(ctx);
+    KosCode *code = kos_hook_active(ctx)
+        ? KosHookRunner_CODE(KosContext_HOOK_RUNNER(ctx))
+        : CURRENT_CODE(ctx);
+    uint32_t pc = kos_hook_active(ctx)
+        ? KosHookRunner_PC(KosContext_HOOK_RUNNER(ctx))
+        : CURRENT_PC(ctx);
 
     if (unlikely(pc >= KosCode_CODE_LEN(code))) {
       SAYF("[eval] pc=%u OUT OF RANGE (code_len=%u)\n",
@@ -1805,7 +1809,10 @@ int koskari_eval(KosContext *ctx, KosEvent *out_ev) {
 #if KOS_STACK_TRACE
     trace_stack("  before", CURRENT_STACK(ctx));
 #endif
-    CURRENT_PC(ctx) = pc + 1;
+    if (kos_hook_active(ctx))
+      KosHookRunner_PC(KosContext_HOOK_RUNNER(ctx)) = pc + 1;
+    else
+      CURRENT_PC(ctx) = pc + 1;
 
     if (unlikely((KosOpCode) KosOp_OP(insn) > KOS_OP_THEEND)) {
       PyErr_Format(PyExc_RuntimeError, "invalid opcode %u",

@@ -821,6 +821,41 @@ int kos_dyn_unwind_to_frame(KosContext *ctx, KosDynFrame *frame);
 
 
 /**
+   Return value from extent unwind helpers when they start async exit
+   code (e.g. wind after hook).  Caller must not pop the node yet;
+   the evaluator runs the hook then resumes unwinding.
+*/
+#define KOS_DYN_UNWIND_ASYNC_STARTED 1
+
+
+/**
+   Extent wind (enter) and unwind (exit) helpers.  Each dynamic extent
+   kind has optional wind and unwind; the same helpers are used by the
+   simple pop path and by the transfer plan.  Helpers perform only
+   semantic work; the caller unlinks and frees the node.
+
+   wind(ctx, node): enter the extent.  Return 0 on success, -1 on
+   error, or KOS_DYN_UNWIND_ASYNC_STARTED if async (e.g. started
+   before hook).
+
+   unwind(ctx, node): exit the extent.  Return 0 when teardown
+   complete, -1 on error, or KOS_DYN_UNWIND_ASYNC_STARTED if async
+   exit code was started (caller must not pop until hook completes).
+*/
+int kos_dyn_param_wind(KosContext *ctx, KosDynParam *node);
+void kos_dyn_param_unwind(KosContext *ctx, KosDynParam *node);
+
+int kos_dyn_wind_wind(KosContext *ctx, KosDynWind *node);
+int kos_dyn_wind_unwind(KosContext *ctx, KosDynWind *node);
+
+void kos_dyn_ns_unwind(KosContext *ctx, KosDynNs *node);
+
+void kos_dyn_region_unwind(KosContext *ctx, KosDynRegion *node);
+
+void kos_dyn_yieldfrom_unwind(KosContext *ctx, KosDynYieldFrom *node);
+
+
+/**
    Find the first TRY or FINALLY region on the dynamic chain that is
    enabled, walking from dyn_top toward root. Used for exception
    handling: when an exception occurs, this returns the region whose

@@ -107,11 +107,13 @@ The VM in `eval.c` uses a jump table; every opcode has a handler. Handlers are e
 **No runtime implementation** (hardcoded error; not a stub to be implemented later):
 - **THEEND**: End-of-code sentinel; if execution reaches it, raises RuntimeError with a fixed message ("THEEND has no runtime implementation"). Never has a runtime implementation.
 
+- **Dynamic wind (partial)**: END_WIND is implemented (terminates before/after hook block, calls `kos_end_hook`; if unwind was in progress, resumes unwinding and delivers any stashed return). PUSH_WIND and POP_WIND remain stubs. Unified extent wind/unwind helpers (`kos_dyn_wind_wind`, `kos_dyn_wind_unwind`, etc.) are used by both simple pop and transfer plans; see design/interpreter/extent-wind-unwind.md.
+
 **Not implemented (stubs)** — hitting these at runtime raises "unimplemented opcode":
 - **Argument building**: BUILD_ARGS, BUILD_KWDS, BUILD_KWDS_NAMES, COMBINE_ARGS, COMBINE_KWDS (BUILD_FUNCTION is implemented)
 - **Calls**: CALL_NAMES, CALL_STAR; CALL_ATTR, CALL_ATTR_NAMES, CALL_ATTR_STAR; RECUR, RECUR_NAMES, RECUR_STAR; TAIL_CALL_NAMES, TAIL_CALL_STAR; TAIL_RECUR, TAIL_RECUR_NAMES, TAIL_RECUR_STAR
 - **Block control**: PUSH_WITH, PUSH_BEGIN, PUSH_CLASS; POP_WITH, POP_BEGIN
-- **Wind / region**: PUSH_WIND, POP_WIND, END_WIND; PUSH_REGION, POP_REGION
+- **Wind / region**: PUSH_WIND, POP_WIND (stubs); PUSH_REGION, POP_REGION
 
 There are no **partially** implemented opcodes; each handler is either full, a stub, or a dedicated "no runtime implementation" handler (THEEND). The authoritative list is the set of handlers in `koskari/lib/eval.c` that do not call `op_unimplemented_stub`.
 
@@ -144,7 +146,7 @@ There are no **partially** implemented opcodes; each handler is either full, a s
 ## Missing/To Design
 
 ### Additional Features
-- **Domain (ambient dynamic context)**: TLS plumbing, KosDomain type, domain-scoping API, ParamRef, and KOS_DYN_PARAM dyn extent are implemented in `domain.c`/`domain.h`, `ref.c`, and `dynchain.c` (Steps 1–5). KosDomain holds param value store (name -> value); ParamRef resolves via `kos_domain_current()` and `kos_domain_get_param`. KOS_DYN_PARAM nodes support `kos_dyn_push_param`/`kos_dyn_pop_param` with enter/restore and transfer-plan integration. Opcodes (PARAM, PUSH_PARAM, POP_PARAM) and compiler lowering are not yet implemented. See design/interpreter/domain.md.
+- **Domain (ambient dynamic context)**: TLS plumbing, KosDomain type, domain-scoping API, ParamRef, and KOS_DYN_PARAM dyn extent are implemented in `domain.c`/`domain.h`, `ref.c`, and `dynchain.c` (Steps 1–5). KosDomain holds param value store (name -> value); ParamRef resolves via `kos_domain_current()` and `kos_domain_get_param`. KOS_DYN_PARAM nodes support `kos_dyn_push_param`/`kos_dyn_pop_param` with enter/restore and transfer-plan integration. Opcodes PARAM, PUSH_PARAM, POP_PARAM are implemented. Compiler lowering for parameterize not yet implemented. See design/interpreter/domain.md and design/interpreter/extent-wind-unwind.md.
 - **Comprehensions**: List/dict/set comprehensions
 - **Pattern Matching**: match/case style
 - **Type System**: Optional type hints/annotations

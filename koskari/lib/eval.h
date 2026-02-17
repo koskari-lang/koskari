@@ -181,6 +181,14 @@ struct KosContext {
 
   /* Hook execution state */
   KosHookRunner hook_runner;
+  KosDynFrame *unwind_target_frame;
+
+  /* When unwind returns ASYNC_STARTED (wind after-hook), RETURN stashes the
+     value here; END_WIND delivers it when unwind completes.  If
+     pending_return_to_parent is set, push onto parent and detach; else
+     set KOS_EV_RETURN. */
+  PyObject *pending_return_value;
+  int pending_return_to_parent;
 
   /* Transfer plan state */
   KosTransferPlan *plan;        /* active transfer plan (or NULL) */
@@ -220,6 +228,10 @@ struct KosContext {
 #define KosContext_TOKEN(c)                  (((KosContext *)(c))->token)
 #define KosContext_DOMAIN(c)                 (((KosContext *)(c))->domain)
 #define KosContext_HOOK_RUNNER(c)            (&((KosContext *)(c))->hook_runner)
+#define KosContext_UNWIND_TARGET_FRAME(c)    (((KosContext *)(c))->unwind_target_frame)
+#define KosContext_UNWIND_TARGET_FRAME(c)    (((KosContext *)(c))->unwind_target_frame)
+#define KosContext_PENDING_RETURN_VALUE(c)   (((KosContext *)(c))->pending_return_value)
+#define KosContext_PENDING_RETURN_TO_PARENT(c) (((KosContext *)(c))->pending_return_to_parent)
 #define KosContext_PLAN(c)                   (((KosContext *)(c))->plan)
 #define KosContext_PLAN_STACK(c)             (((KosContext *)(c))->plan_stack)
 #define KosContext_CHAIN_VERSION(c)          (((KosContext *)(c))->chain_version)

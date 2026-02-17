@@ -1778,6 +1778,8 @@ PUSH_CC resume target).
 
 ## 22. Dynamic wind
 
+Unified extent wind/unwind is described in [interpreter/extent-wind-unwind.md](interpreter/extent-wind-unwind.md). The same helpers (`kos_dyn_wind_wind`, `kos_dyn_wind_unwind`) are used for simple pop and for transfer plans.
+
 ### KOS_OP_PUSH_WIND
 
 - **Style**: LABEL. Arg = after_block label (pc of code after unwind hook).
@@ -1800,9 +1802,10 @@ PUSH_CC resume target).
 ### KOS_OP_END_WIND
 
 - **Style**: NOARG.
-- **Status**: Stub.
-- **Stack**: Sentinel that terminates hook block execution (VM-native hooks).
-- **Example:** (Stub; no runtime table.)
+- **Status**: Implemented.
+- **Stack**: Sentinel that terminates hook block execution (before or after hook). Calls `kos_end_hook`; if the evaluator was unwinding and had started a wind after-hook (`KosContext_UNWIND_TARGET_FRAME` set), resumes unwinding via `kos_dyn_unwind_to_frame` and delivers any stashed return value when unwinding completes.
+- **Invariants**: Must be reached while a hook is active (`kos_hook_active`); otherwise RuntimeError.
+- **Example:** After-hook body ends with END_WIND; evaluator then continues unwinding or delivers pending return.
 
 
 ## 23. Region control

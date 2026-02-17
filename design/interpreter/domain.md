@@ -145,8 +145,10 @@ Parameter bindings on the **unified dynamic chain** as a new node kind:
 
 - **Node kind**: `KOS_DYN_PARAM`.
 - **Storage**: `bindings` (PyDict key -> value, what we bind; keys from ParamRef); `saved` (PyDict key -> value or SENTINEL_UNSET; filled at enter, used at restore; NULL if not yet entered).
-- **Enter**: `kos_dynparam_enter` saves current domain values into `saved`, merges `bindings` onto domain.
-- **Restore**: `kos_dynparam_restore` restores domain from `saved` (set or clear per key).
+- **Enter**: `kos_dynparam_enter` saves current domain values into `saved`, merges `bindings` onto domain. Exposed as the unified extent helper `kos_dyn_param_wind`.
+- **Restore**: `kos_dynparam_restore` restores domain from `saved` (set or clear per key). Exposed as `kos_dyn_param_unwind`.
+
+For the unified wind/unwind contract and the per-kind extent table (PARAM, WIND, NS, REGION, YIELD_FROM), see **extent-wind-unwind.md**.
 
 The dyn node handler calls `kos_domain_set_param` on push (after saving) and restore on pop; the domain remains the single source of truth. ParamRef resolves via `kos_domain_current()` and `kos_domain_get_param(key)`; no dyn chain walk. Transfer plan: PARAM_RESTORE on unwind (current -> LCA); param enter folded into INSTALL (walk installed chain, run enter for each PARAM).
 
@@ -264,10 +266,10 @@ Opcodes must be added to opcode tables, docs, and assembler/disassembler paths.
 
 ## Unwind Integration (I3) (implemented)
 
-Leaving any block that introduced PARAM bindings must restore previous bindings. Implemented via `kos_dyn_unwind_to_frame()` in `dynchain.c`: before RETURN (detach or top-level event) and before propagating an exception when no local handler is found, the evaluator pops all chain nodes from dyn_top down to the current frame. Each PARAM pop runs `kos_dynparam_restore`.
+Leaving any block that introduced PARAM bindings must restore previous bindings. Implemented via `kos_dyn_unwind_to_frame()` in `dynchain.c`: before RETURN (detach or top-level event) and before propagating an exception when no local handler is found, the evaluator pops all chain nodes from dyn_top down to the current frame. Each extent pop runs the corresponding **unified extent unwind helper** (e.g. `kos_dyn_param_unwind` for PARAM, `kos_dyn_ns_unwind` for NS); see **extent-wind-unwind.md**. For WIND with an after-hook, the helper may return `KOS_DYN_UNWIND_ASYNC_STARTED`: the evaluator then runs the after-hook (via the hook runner) and resumes unwinding when the hook hits END_WIND.
 
-- **RETURN**: `RETURN.c` calls `kos_dyn_unwind_to_frame(ctx, CURRENT_FRAME(ctx))` before `kos_dyn_detach_top_frame` (parent case) or before setting `KOS_EV_RETURN` (top-level).
-- **Exceptions**: `try_local_exception_handler` calls `kos_dyn_unwind_to_frame` when no region is found, before fetching the exception and setting `KOS_EV_RAISE`.
+- **RETURN**: `RETURN.c` calls `kos_dyn_unwind_to_frame(ctx, CURRENT_FRAME(ctx))` before `kos_dyn_detach_top_frame` (parent case) or before setting `KOS_EV_RETURN` (top-level). If unwind returns async (wind after-hook started), the return value is stashed and the loop runs the hook; END_WIND resumes unwinding and delivers the value.
+- **Exceptions**: `try_local_exception_handler` calls `kos_dyn_unwind_to_frame` when no region is found; if it returns async, the exception is restored and the loop runs the after-hook, then unwinding resumes from END_WIND.
 - `AWAIT`/`YIELD` boundary exits do not leave TLS or dyn chain inconsistent; the context’s chain is preserved across suspend/resume.
 - Continuation transfer plans splice the captured chain (which includes PARAM nodes) so bindings are reinstated on apply.
 
@@ -303,8 +305,8 @@ Leaving any block that introduced PARAM bindings must restore previous bindings.
 ### Step 5 — Unwind integration (done)
 
 - `kos_dyn_pop_top` handles KOS_DYN_PARAM: restore domain, pop node.
-- `kos_dyn_unwind_to_frame(ctx, frame)` pops nodes from dyn_top until dyn_top is the given frame; used by RETURN and exception propagation.
-- Transfer plan: PARAM_RESTORE actions on unwind (current -> LCA); param enter folded into INSTALL step (walk installed chain, run enter for each PARAM).
+- `kos_dyn_unwind_to_frame(ctx, frame)` pops nodes from dyn_top until dyn_top is the given frame; used by RETURN and exception propagation. Pops use the unified extent unwind helpers; WIND may defer the pop until the after-hook runs (see extent-wind-unwind.md).
+- Transfer plan: PARAM_RESTORE and RUN_HOOK steps call the same extent helpers (`kos_dyn_param_unwind`, wind after/before via `kos_begin_hook`); param enter folded into INSTALL step (walk installed chain, run `kos_dyn_param_wind` for each PARAM).
 
 ### Step 6 — Opcodes
 
