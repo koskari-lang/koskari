@@ -28,6 +28,9 @@
 
 #include "lib.h"
 #include "debug.h"
+#include "domain.h"
+#include "eval.h"
+#include "ref.h"
 
 #include <stdint.h>
 #include <string.h>
@@ -484,6 +487,165 @@ KosDynYieldFrom *kos_dynyieldfrom_clone(KosDynYieldFrom *node) {
 }
 
 
+/* === KosDynParam implementation === */
+
+
+/* Sentinel for "param was unset" in saved dict; value must not be a valid param value. */
+static PyObject *_param_sentinel_unset = NULL;
+
+
+static PyObject *param_sentinel_unset(void) {
+  if (! _param_sentinel_unset)
+    _param_sentinel_unset = Py_BuildValue("(s)", "<param was unset>");
+  return _param_sentinel_unset;
+}
+
+
+static KosDynParam *kos_dynparam_new(
+    KosDynNode *parent,
+    uint32_t count,
+    PyObject **params,
+    PyObject **values) {
+
+  if (count == 0) {
+    PyErr_SetString(PyExc_ValueError, "KosDynParam requires at least one binding");
+    return NULL;
+  }
+
+  PyObject *bindings = PyDict_New();
+  if (! bindings)
+    return NULL;
+
+  for (uint32_t i = 0; i < count; i++) {
+    PyObject *key = KosParamRef_KEY(params[i]);
+    if (PyDict_SetItem(bindings, key, values[i]) < 0) {
+      Py_DECREF(bindings);
+      return NULL;
+    }
+  }
+
+  KosDynParam *node = (KosDynParam *) kos_dynnode_alloc();
+  if (! node) {
+    Py_DECREF(bindings);
+    return NULL;
+  }
+
+  kos_dynnode_init((KosDynNode *) node, KOS_DYN_PARAM, parent);
+  KosDynParam_BINDINGS(node) = bindings;
+  KosDynParam_SAVED(node) = NULL;
+
+  return node;
+}
+
+
+static KosDynParam *kos_dynparam_clone(KosDynParam *node) {
+
+  if (! node)
+    return NULL;
+
+  PyObject *bindings = KosDynParam_BINDINGS(node);
+  PyObject *copy = PyDict_Copy(bindings);
+  if (! copy)
+    return NULL;
+
+  KosDynParam *clone = (KosDynParam *) kos_dynnode_alloc();
+  if (! clone) {
+    Py_DECREF(copy);
+    return NULL;
+  }
+
+  kos_dynnode_init((KosDynNode *) clone, KOS_DYN_PARAM, NULL);
+  KosDynNode_FLAGS(clone) = KosDynNode_FLAGS(node) | KOS_DYNF_CLONED;
+  KosDynParam_BINDINGS(clone) = copy;
+  KosDynParam_SAVED(clone) = NULL;
+
+  return clone;
+}
+
+
+static void kos_dynparam_free(KosDynParam *node) {
+
+  if (! node)
+    return;
+
+  Py_XDECREF(KosDynParam_BINDINGS(node));
+  KosDynParam_BINDINGS(node) = NULL;
+  Py_XDECREF(KosDynParam_SAVED(node));
+  KosDynParam_SAVED(node) = NULL;
+
+  kos_dynnode_return_to_freelist((KosDynNode *) node);
+}
+
+
+static int kos_dynparam_enter(KosContext *ctx, KosDynParam *node) {
+
+  PyObject *domain = KosContext_DOMAIN(ctx);
+  if (! domain) {
+    PyErr_SetString(PyExc_RuntimeError,
+                    "param enter requires active domain");
+    return -1;
+  }
+
+  PyObject *bindings = KosDynParam_BINDINGS(node);
+  PyObject *saved = PyDict_New();
+  if (! saved)
+    return -1;
+
+  PyObject *sentinel = param_sentinel_unset();
+  if (! sentinel) {
+    Py_DECREF(saved);
+    return -1;
+  }
+
+  PyObject *key;
+  PyObject *value;
+  Py_ssize_t pos = 0;
+
+  while (PyDict_Next(bindings, &pos, &key, &value)) {
+    PyObject *cur = kos_domain_get_param(domain, key);
+    PyObject *to_save = cur ? cur : sentinel;
+    if (PyDict_SetItem(saved, key, to_save) < 0) {
+      Py_XDECREF(cur);
+      Py_DECREF(saved);
+      return -1;
+    }
+    if (cur)
+      Py_DECREF(cur);  /* SetItem holds its own ref */
+    if (kos_domain_set_param(domain, key, value) < 0) {
+      Py_DECREF(saved);
+      return -1;
+    }
+  }
+
+  KosDynParam_SAVED(node) = saved;
+  return 0;
+}
+
+
+static void kos_dynparam_restore(KosContext *ctx, KosDynParam *node) {
+
+  PyObject *domain = KosContext_DOMAIN(ctx);
+  if (! domain)
+    return;
+
+  PyObject *saved = KosDynParam_SAVED(node);
+  if (! saved)
+    return;
+
+  PyObject *sentinel = param_sentinel_unset();
+  PyObject *key;
+  PyObject *old_val;
+  Py_ssize_t pos = 0;
+
+  while (PyDict_Next(saved, &pos, &key, &old_val)) {
+    if (old_val == sentinel)
+      kos_domain_clear_param(domain, key);
+    else
+      kos_domain_set_param(domain, key, old_val);
+  }
+}
+
+
 /* === Generic DynNode operations === */
 
 
@@ -516,6 +678,9 @@ void kos_dynnode_free(KosDynNode *node) {
     case KOS_DYN_YIELD_FROM:
       kos_dynyieldfrom_free((KosDynYieldFrom *) node);
       break;
+    case KOS_DYN_PARAM:
+      kos_dynparam_free((KosDynParam *) node);
+      break;
   }
 }
 
@@ -541,6 +706,8 @@ KosDynNode *kos_dynnode_clone(KosDynNode *node) {
       return (KosDynNode *) kos_dyncc_clone((KosDynCC *) node);
     case KOS_DYN_YIELD_FROM:
       return (KosDynNode *) kos_dynyieldfrom_clone((KosDynYieldFrom *) node);
+    case KOS_DYN_PARAM:
+      return (KosDynNode *) kos_dynparam_clone((KosDynParam *) node);
   }
 
   PyErr_Format(PyExc_RuntimeError, "cannot clone dynnode kind %u",
@@ -852,6 +1019,41 @@ void kos_dyn_pop_ns(KosContext *ctx, KosDynNs *node) {
 }
 
 
+KosDynParam *kos_dyn_push_param(
+    KosContext *ctx,
+    uint32_t count,
+    PyObject **params,
+    PyObject **values) {
+
+  KosDynParam *node = kos_dynparam_new(KosContext_DYN_TOP(ctx),
+                                       count, params, values);
+  if (! node)
+    return NULL;
+
+  if (kos_dynparam_enter(ctx, node) < 0) {
+    kos_dynparam_free(node);
+    return NULL;
+  }
+
+  KosContext_DYN_TOP(ctx) = (KosDynNode *) node;
+  KosContext_CHAIN_VERSION(ctx)++;
+
+  return node;
+}
+
+
+void kos_dyn_pop_param(KosContext *ctx, KosDynParam *node) {
+  if (! KosContext_DYN_TOP(ctx) || KosContext_DYN_TOP(ctx) != (KosDynNode *) node) {
+    return;
+  }
+
+  kos_dynparam_restore(ctx, node);
+  KosContext_DYN_TOP(ctx) = KosDynNode_PARENT(node);
+  KosContext_CHAIN_VERSION(ctx)++;
+  kos_dynparam_free(node);
+}
+
+
 /**
    Pop the top node of the dynamic chain. Dispatches on node kind.
    For NS, restores frame_top->ns from the node's saved_ns before popping.
@@ -909,6 +1111,16 @@ int kos_dyn_pop_top(KosContext *ctx) {
     KosContext_CHAIN_VERSION(ctx)++;
     kos_update_frame_top(ctx);
     kos_dynyieldfrom_free(yf);
+    return 0;
+  }
+
+  case KOS_DYN_PARAM: {
+    KosDynParam *param_node = (KosDynParam *) top;
+    kos_dynparam_restore(ctx, param_node);
+    KosContext_DYN_TOP(ctx) = KosDynNode_PARENT(top);
+    KosContext_CHAIN_VERSION(ctx)++;
+    kos_update_frame_top(ctx);
+    kos_dynparam_free(param_node);
     return 0;
   }
   }
@@ -1460,7 +1672,7 @@ int kos_build_transfer_plan(
   /* Count actions needed */
   size_t action_count = 0;
 
-  /* Count unwind (after) hooks from current to LCA */
+  /* Count unwind (after) hooks and PARAM_RESTORE from current to LCA */
   KosDynNode *node = current;
   while (node && node != lca) {
     if (KosDynNode_IS_WIND(node)) {
@@ -1468,6 +1680,8 @@ int kos_build_transfer_plan(
       if (KosDynWind_ENTERED(wind) && KosDynWind_AFTER_CODE(wind)) {
         action_count++;
       }
+    } else if (KosDynNode_IS_PARAM(node)) {
+      action_count++;
     }
     node = KosDynNode_PARENT(node);
   }
@@ -1508,7 +1722,7 @@ int kos_build_transfer_plan(
   /* Build actions */
   size_t idx = 0;
 
-  /* Unwind hooks (inner to outer: current toward LCA) */
+  /* Unwind hooks and PARAM_RESTORE (inner to outer: current toward LCA) */
   node = current;
   while (node && node != lca) {
     if (KosDynNode_IS_WIND(node)) {
@@ -1522,6 +1736,13 @@ int kos_build_transfer_plan(
                idx, (void *) node);
         idx++;
       }
+    } else if (KosDynNode_IS_PARAM(node)) {
+      KosTransferAction_STEP(&KosTransferPlan_ACTIONS(plan)[idx]) = KOS_XFER_PARAM_RESTORE;
+      KosTransferAction_PARAM_NODE(&KosTransferPlan_ACTIONS(plan)[idx]) = (KosDynParam *) node;
+      if (KOS_XFER_TRACE)
+        SAYF("[xfer] plan action[%zu] = PARAM_RESTORE node=%p",
+             idx, (void *) node);
+      idx++;
     }
     node = KosDynNode_PARENT(node);
   }
@@ -1649,6 +1870,14 @@ int kos_run_transfer_step(KosContext *ctx) {
       /* Start hook execution - return 0 to indicate more work */
       return kos_begin_hook(ctx, KosTransferAction_HOOK_CODE(action), KosTransferAction_HOOK_PC(action));
 
+    case KOS_XFER_PARAM_RESTORE: {
+      KosDynParam *param_node = KosTransferAction_PARAM_NODE(action);
+      kos_dynparam_restore(ctx, param_node);
+      if (KOS_XFER_TRACE)
+        SAYF("[xfer] PARAM_RESTORE node=%p", (void *) param_node);
+      break;
+    }
+
     case KOS_XFER_INSTALL: {
       /* Instantiate from template: clone the segment so we evaluate a new
        * copy (no mutated stack or broken back-links). */
@@ -1696,6 +1925,41 @@ int kos_run_transfer_step(KosContext *ctx) {
       }
       KosContext_CHAIN_VERSION(ctx)++;
       KosContext_GLOBALS_CACHE_VERSION(ctx) = KosContext_CHAIN_VERSION(ctx);
+      /* Run param enter for each PARAM node in the installed segment (outer to inner) */
+      {
+        PyObject *param_list = PyList_New(0);
+        if (! param_list) {
+          if (KOS_XFER_TRACE)
+            SAY("[xfer] INSTALL param_list alloc failed");
+          return -1;
+        }
+        KosDynNode *walk = seg;
+        KosDynNode *chain_bottom = seg;
+        while (chain_bottom && KosDynNode_PARENT(chain_bottom))
+          chain_bottom = KosDynNode_PARENT(chain_bottom);
+        KosDynNode *chain_stop = chain_bottom ? KosDynNode_PARENT(chain_bottom) : NULL;
+        while (walk && walk != chain_stop) {
+          if (KosDynNode_IS_PARAM(walk)) {
+            if (PyList_Append(param_list, (PyObject *) walk) < 0) {
+              Py_DECREF(param_list);
+              return -1;
+            }
+          }
+          walk = KosDynNode_PARENT(walk);
+        }
+        /* Process outer to inner (reverse of walk order) */
+        Py_ssize_t n = PyList_GET_SIZE(param_list);
+        for (Py_ssize_t i = n - 1; i >= 0; i--) {
+          KosDynParam *p = (KosDynParam *) PyList_GET_ITEM(param_list, i);
+          if (kos_dynparam_enter(ctx, p) < 0) {
+            Py_DECREF(param_list);
+            if (KOS_XFER_TRACE)
+              SAY("[xfer] INSTALL param enter failed");
+            return -1;
+          }
+        }
+        Py_DECREF(param_list);
+      }
       if (KOS_XFER_TRACE)
         SAYF("[xfer] INSTALL after: dyn_top=%p frame_top=%p",
              (void *) KosContext_DYN_TOP(ctx), (void *) KosContext_FRAME_TOP(ctx));
@@ -1940,6 +2204,12 @@ int kos_dynnode_traverse(KosDynNode *node, visitproc visit, void *arg) {
       Py_VISIT(KosDynYieldFrom_DELEGATE(yf));
       Py_VISIT(KosDynYieldFrom_PENDING_ARG(yf));
       Py_VISIT(KosDynYieldFrom_INFLIGHT(yf));
+      break;
+    }
+    case KOS_DYN_PARAM: {
+      KosDynParam *param_node = (KosDynParam *) node;
+      Py_VISIT(KosDynParam_BINDINGS(param_node));
+      Py_VISIT(KosDynParam_SAVED(param_node));
       break;
     }
   }

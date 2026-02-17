@@ -317,6 +317,152 @@ static int test_paramref_is_empty_inside_scope(void) {
 }
 
 
+/* === Test: kos_dyn_push_param / kos_dyn_pop_param enter and restore === */
+
+
+static int test_dynparam_push_pop_restore(void) {
+    PyObject *code_obj;
+    PyObject *ns;
+    KosDynFrame *frame;
+    KosContext *ctx;
+    PyObject *key;
+    PyObject *param_ref;
+    PyObject *params[1];
+    PyObject *values[1];
+    KosDynParam *param_node;
+    PyObject *value;
+    long val;
+
+    code_obj = create_minimal_code();
+    TEST_ASSERT_NOT_NULL(code_obj, "create Code");
+
+    ns = PyDict_New();
+    TEST_ASSERT_NOT_NULL(ns, "create ns");
+
+    frame = kos_dynframe_new(NULL, (KosCode *) code_obj, ns, NULL);
+    TEST_ASSERT_NOT_NULL(frame, "create frame");
+
+    ctx = kos_context_new(frame);
+    TEST_ASSERT_NOT_NULL(ctx, "create context");
+
+    key = PyUnicode_FromString("dynparam");
+    param_ref = KosParamRef_New(key, PyLong_FromLong(0));
+    TEST_ASSERT_NOT_NULL(param_ref, "create ParamRef");
+
+    kos_domain_push_scope(ctx);
+
+    /* Initially unset; deref returns default */
+    value = KosRef_Deref(param_ref);
+    TEST_ASSERT_NOT_NULL(value, "deref before push");
+    TEST_ASSERT_EQ(PyLong_AsLong(value), 0, "default value");
+    Py_DECREF(value);
+
+    /* Push param extent with value 999 */
+    params[0] = param_ref;
+    values[0] = PyLong_FromLong(999);
+    param_node = kos_dyn_push_param(ctx, 1, params, values);
+    TEST_ASSERT_NOT_NULL(param_node, "push param");
+    Py_DECREF(values[0]);
+
+    value = KosRef_Deref(param_ref);
+    TEST_ASSERT_NOT_NULL(value, "deref inside extent");
+    val = PyLong_AsLong(value);
+    TEST_ASSERT(val == 999, "value is 999");
+    Py_DECREF(value);
+
+    kos_dyn_pop_param(ctx, param_node);
+
+    /* After pop, restored to prior (unset -> default) */
+    value = KosRef_Deref(param_ref);
+    TEST_ASSERT_NOT_NULL(value, "deref after pop");
+    TEST_ASSERT_EQ(PyLong_AsLong(value), 0, "restored to default");
+    Py_DECREF(value);
+
+    kos_domain_pop_scope(ctx);
+
+    Py_DECREF(param_ref);
+    Py_DECREF(key);
+    kos_context_free(ctx);
+    Py_DECREF(code_obj);
+
+    return 0;
+}
+
+
+/* === Test: nested param extent restore === */
+
+
+static int test_dynparam_nested_restore(void) {
+    PyObject *code_obj;
+    PyObject *ns;
+    KosDynFrame *frame;
+    KosContext *ctx;
+    PyObject *key;
+    PyObject *param_ref;
+    PyObject *params[1];
+    PyObject *values_outer[1];
+    PyObject *values_inner[1];
+    KosDynParam *outer_node;
+    KosDynParam *inner_node;
+    PyObject *value;
+
+    code_obj = create_minimal_code();
+    TEST_ASSERT_NOT_NULL(code_obj, "create Code");
+
+    ns = PyDict_New();
+    frame = kos_dynframe_new(NULL, (KosCode *) code_obj, ns, NULL);
+    ctx = kos_context_new(frame);
+    key = PyUnicode_FromString("nested");
+    param_ref = KosParamRef_New(key, PyLong_FromLong(0));
+    TEST_ASSERT_NOT_NULL(param_ref, "create ParamRef");
+
+    kos_domain_push_scope(ctx);
+
+    params[0] = param_ref;
+    values_outer[0] = PyLong_FromLong(8);
+    outer_node = kos_dyn_push_param(ctx, 1, params, values_outer);
+    TEST_ASSERT_NOT_NULL(outer_node, "push outer");
+    Py_DECREF(values_outer[0]);
+
+    value = KosRef_Deref(param_ref);
+    TEST_ASSERT_NOT_NULL(value, "deref outer");
+    TEST_ASSERT_EQ(PyLong_AsLong(value), 8, "outer value");
+    Py_DECREF(value);
+
+    values_inner[0] = PyLong_FromLong(16);
+    inner_node = kos_dyn_push_param(ctx, 1, params, values_inner);
+    TEST_ASSERT_NOT_NULL(inner_node, "push inner");
+    Py_DECREF(values_inner[0]);
+
+    value = KosRef_Deref(param_ref);
+    TEST_ASSERT_NOT_NULL(value, "deref inner");
+    TEST_ASSERT_EQ(PyLong_AsLong(value), 16, "inner value");
+    Py_DECREF(value);
+
+    kos_dyn_pop_param(ctx, inner_node);
+
+    value = KosRef_Deref(param_ref);
+    TEST_ASSERT_NOT_NULL(value, "deref after inner pop");
+    TEST_ASSERT_EQ(PyLong_AsLong(value), 8, "restored to outer");
+    Py_DECREF(value);
+
+    kos_dyn_pop_param(ctx, outer_node);
+
+    value = KosRef_Deref(param_ref);
+    TEST_ASSERT_NOT_NULL(value, "deref after outer pop");
+    TEST_ASSERT_EQ(PyLong_AsLong(value), 0, "restored to default");
+    Py_DECREF(value);
+
+    kos_domain_pop_scope(ctx);
+    Py_DECREF(param_ref);
+    Py_DECREF(key);
+    kos_context_free(ctx);
+    Py_DECREF(code_obj);
+
+    return 0;
+}
+
+
 /* === Test runner === */
 
 
@@ -328,6 +474,8 @@ int run_paramref_tests(void) {
     RUN_TEST(test_paramref_store_deref_inside_scope);
     RUN_TEST(test_paramref_clear_inside_scope);
     RUN_TEST(test_paramref_is_empty_inside_scope);
+    RUN_TEST(test_dynparam_push_pop_restore);
+    RUN_TEST(test_dynparam_nested_restore);
     return 0;
 }
 

@@ -74,6 +74,7 @@ typedef struct KosHookRunner KosHookRunner;
    KOS_DYN_NS     - Namespace scope (PUSH_NS/POP_NS)
    KOS_DYN_CC     - Undelimited continuation block (call/cc)
    KOS_DYN_YIELD_FROM - Yield-from delegation state
+   KOS_DYN_PARAM     - Parameter bindings (parameterize extent)
 */
 
 typedef enum KosDynKind {
@@ -85,6 +86,7 @@ typedef enum KosDynKind {
   KOS_DYN_NS     = 5,
   KOS_DYN_CC     = 6,
   KOS_DYN_YIELD_FROM = 7,
+  KOS_DYN_PARAM  = 8,
 } KosDynKind;
 
 
@@ -182,6 +184,10 @@ struct KosDynNode {
       PyObject *pending_arg;
       PyObject *inflight;
     } yield_from;
+    struct {
+      PyObject *bindings;  /* PyDict: key -> value (what we bind; keys from ParamRef) */
+      PyObject *saved;     /* PyDict: key -> value or SENTINEL_UNSET (filled at enter, used at restore; NULL if not yet entered) */
+    } param;
   } u;
 };
 
@@ -192,6 +198,7 @@ typedef struct KosDynNode KosDynRegion;
 typedef struct KosDynNode KosDynNs;
 typedef struct KosDynNode KosDynCC;
 typedef struct KosDynNode KosDynYieldFrom;
+typedef struct KosDynNode KosDynParam;
 
 
 /* === KosContinuation: captured delimited continuation === */
@@ -237,15 +244,17 @@ struct KosContinuation {
 /**
    KosTransferStep identifies the type of action in a transfer plan.
 
-   KOS_XFER_RUN_HOOK  - Execute a wind/unwind hook block
-   KOS_XFER_INSTALL   - Install a chain segment as current
-   KOS_XFER_INJECT    - Push resume value onto stack (or throw)
+   KOS_XFER_RUN_HOOK      - Execute a wind/unwind hook block
+   KOS_XFER_INSTALL       - Install a chain segment as current
+   KOS_XFER_INJECT        - Push resume value onto stack (or throw)
+   KOS_XFER_PARAM_RESTORE - Restore domain param bindings before unwind
 */
 
 typedef enum KosTransferStep {
   KOS_XFER_RUN_HOOK = 0,
   KOS_XFER_INSTALL  = 1,
   KOS_XFER_INJECT   = 2,
+  KOS_XFER_PARAM_RESTORE = 3,
 } KosTransferStep;
 
 
@@ -274,12 +283,17 @@ typedef struct KosTransferAction {
       PyObject *value;
       int is_throw;
     } inject;
+
+    struct {
+      KosDynParam *param_node;
+    } param;
   } data;
 
 } KosTransferAction;
 
 
 #define KosTransferAction_STEP(a)           (((KosTransferAction *)(a))->step)
+#define KosTransferAction_PARAM_NODE(a)     (((KosTransferAction *)(a))->data.param.param_node)
 #define KosTransferAction_HOOK_CODE(a)     (((KosTransferAction *)(a))->data.hook.code)
 #define KosTransferAction_HOOK_PC(a)        (((KosTransferAction *)(a))->data.hook.pc)
 #define KosTransferAction_INSTALL_SEGMENT(a) (((KosTransferAction *)(a))->data.install.segment)
@@ -748,6 +762,37 @@ void kos_dyn_pop_ns(KosContext *ctx, KosDynNs *node);
 
 
 /**
+   Push a parameter extent onto the dynamic chain.
+
+   Creates a PARAM node, runs enter (save domain, set values), and pushes.
+   Caller passes arrays of params (ParamRef) and values; these are INCREF'd.
+
+   :param ctx: execution context
+   :param count: number of (param, value) pairs
+   :param params: array of ParamRef objects (new ref for each)
+   :param values: array of values to bind (new ref for each)
+
+   :return: new KosDynParam node, or NULL on error
+*/
+KosDynParam *kos_dyn_push_param(
+    KosContext *ctx,
+    uint32_t count,
+    PyObject **params,
+    PyObject **values);
+
+
+/**
+   Pop a parameter extent from the dynamic chain.
+
+   Restores domain, updates dyn_top, and frees the node.
+
+   :param ctx: execution context
+   :param node: PARAM node to pop (must be dyn_top)
+*/
+void kos_dyn_pop_param(KosContext *ctx, KosDynParam *node);
+
+
+/**
    Pop the top node of the dynamic chain. Dispatches on node kind.
    For NS, restores frame_top->ns from the node's saved_ns before popping.
 
@@ -1184,6 +1229,7 @@ int kos_hookrunner_traverse(
 #define KosDynNode_IS_PYCALL(n)  (KosDynNode_KIND(n) == KOS_DYN_PYCALL)
 #define KosDynNode_IS_CC(n)      (KosDynNode_KIND(n) == KOS_DYN_CC)
 #define KosDynNode_IS_YIELD_FROM(n)  (KosDynNode_KIND(n) == KOS_DYN_YIELD_FROM)
+#define KosDynNode_IS_PARAM(n)       (KosDynNode_KIND(n) == KOS_DYN_PARAM)
 
 #define KosDynFrame_CODE(f)       (((KosDynNode *)(f))->u.frame.code)
 #define KosDynFrame_PC(f)         (((KosDynNode *)(f))->u.frame.pc)
@@ -1222,6 +1268,9 @@ int kos_hookrunner_traverse(
 #define KosDynYieldFrom_PENDING_ACTION(n) (((KosDynNode *)(n))->u.yield_from.pending_action)
 #define KosDynYieldFrom_PENDING_ARG(n) (((KosDynNode *)(n))->u.yield_from.pending_arg)
 #define KosDynYieldFrom_INFLIGHT(n)    (((KosDynNode *)(n))->u.yield_from.inflight)
+
+#define KosDynParam_BINDINGS(n)    (((KosDynNode *)(n))->u.param.bindings)
+#define KosDynParam_SAVED(n)       (((KosDynNode *)(n))->u.param.saved)
 
 
 /* === Unit lifecycle === */

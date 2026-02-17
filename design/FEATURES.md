@@ -144,7 +144,7 @@ There are no **partially** implemented opcodes; each handler is either full, a s
 ## Missing/To Design
 
 ### Additional Features
-- **Domain (ambient dynamic context)**: TLS plumbing, KosDomain type, domain-scoping API, and ParamRef are implemented in `domain.c`/`domain.h` and `ref.c` (Steps 1–3). KosDomain holds param value store (name -> value); ParamRef resolves via `kos_domain_current()` and `kos_domain_get_param`. PARAM dyn extent (KOS_DYN_PARAM), opcodes, and compiler lowering are not yet implemented. See design/interpreter/domain.md.
+- **Domain (ambient dynamic context)**: TLS plumbing, KosDomain type, domain-scoping API, ParamRef, and KOS_DYN_PARAM dyn extent are implemented in `domain.c`/`domain.h`, `ref.c`, and `dynchain.c` (Steps 1–5). KosDomain holds param value store (name -> value); ParamRef resolves via `kos_domain_current()` and `kos_domain_get_param`. KOS_DYN_PARAM nodes support `kos_dyn_push_param`/`kos_dyn_pop_param` with enter/restore and transfer-plan integration. Opcodes (PARAM, PUSH_PARAM, POP_PARAM) and compiler lowering are not yet implemented. See design/interpreter/domain.md.
 - **Comprehensions**: List/dict/set comprehensions
 - **Pattern Matching**: match/case style
 - **Type System**: Optional type hints/annotations

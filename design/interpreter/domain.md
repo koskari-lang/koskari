@@ -2,7 +2,7 @@
 
 This document describes the design and implementation plan for **Domain** (ambient dynamic context), **ParamRef** (canonical parameter references), and **PARAM** dynamic extent (parameter bindings on the dyn chain). It specifies TLS plumbing, opcodes (`PARAM`, `PUSH_PARAM`, `POP_PARAM`), compiler lowering, hard invariants, and step-by-step implementation.
 
-**Implementation status**: Steps 1, 2, and 3 are implemented. TLS and KosDomain live in `domain.c`; the domain-scoped API includes `kos_ctx_current()`, `kos_domain_current()`, `kos_domain_push_scope()`, `kos_domain_pop_scope()`. KosDomain holds a param value store (PyDict: name -> value). ParamRef (Ref subclass) resolves via `kos_domain_current()` and `kos_domain_get_param(key)`; no interning; fully dynamic value lookup. PARAM dyn extent (KOS_DYN_PARAM), opcodes, and compiler lowering are not yet implemented.
+**Implementation status**: Steps 1, 2, 3, 4, and 5 are implemented. TLS and KosDomain live in `domain.c`; the domain-scoped API includes `kos_ctx_current()`, `kos_domain_current()`, `kos_domain_push_scope()`, `kos_domain_pop_scope()`. KosDomain holds a param value store (PyDict: name -> value). ParamRef (Ref subclass) resolves via `kos_domain_current()` and `kos_domain_get_param(key)`; no interning; fully dynamic value lookup. KOS_DYN_PARAM dyn nodes are implemented in `dynchain.c`: `kos_dyn_push_param`, `kos_dyn_pop_param`, enter/restore via domain, transfer-plan integration (PARAM_RESTORE on unwind, param enter folded into INSTALL). Opcodes (PARAM, PUSH_PARAM, POP_PARAM) and compiler lowering are not yet implemented.
 
 ---
 
@@ -135,19 +135,20 @@ Examples (all optional, but Domain gives you a home for them):
 - Identity/lifecycle anchor associated with a Context (`ctx->domain`).
 - Version counter for future use.
 - `param_bindings` (PyDict: name -> value); lazy-init. API: `kos_domain_get_param(domain, key)`, `kos_domain_set_param(domain, key, value)`, `kos_domain_clear_param(domain, key)`.
-- A later phase will add KOS_DYN_PARAM on the dyn chain; its handler will call the domain API on push/pop.
+- KOS_DYN_PARAM is implemented in dynchain.c; its enter/restore handlers call the domain API.
 
 Typed hot slots (cancel token, capabilities, I/O defaults) and generic key/value overlays are deferred to a later iteration.
 
-### KOS_DYN_PARAM (dyn chain node; not yet implemented)
+### KOS_DYN_PARAM (dyn chain node; implemented)
 
-A later phase will add parameter bindings on the **unified dynamic chain** as a new node kind:
+Parameter bindings on the **unified dynamic chain** as a new node kind:
 
 - **Node kind**: `KOS_DYN_PARAM`.
-- **Storage**: `count`; array of `(ParamRef*, value)` pairs (or parallel arrays: `ParamRef** params`, `PyObject** values`).
-- **Lookup**: `kos_dyn_param_lookup(KosDynNode* node, ParamRef* p, PyObject** out)` returns whether this node binds the given ParamRef and writes the value.
+- **Storage**: `bindings` (PyDict key -> value, what we bind; keys from ParamRef); `saved` (PyDict key -> value or SENTINEL_UNSET; filled at enter, used at restore; NULL if not yet entered).
+- **Enter**: `kos_dynparam_enter` saves current domain values into `saved`, merges `bindings` onto domain.
+- **Restore**: `kos_dynparam_restore` restores domain from `saved` (set or clear per key).
 
-The dyn node handler will call `kos_domain_set_param` on push and restore on pop; the domain remains the single source of truth. **Current implementation**: ParamRef resolves via `kos_domain_current()` and `kos_domain_get_param(key)`; no dyn chain walk. Store/clear update the domain directly.
+The dyn node handler calls `kos_domain_set_param` on push (after saving) and restore on pop; the domain remains the single source of truth. ParamRef resolves via `kos_domain_current()` and `kos_domain_get_param(key)`; no dyn chain walk. Transfer plan: PARAM_RESTORE on unwind (current -> LCA); param enter folded into INSTALL (walk installed chain, run enter for each PARAM).
 
 ---
 
@@ -278,15 +279,16 @@ Leaving any block that introduced PARAM bindings must restore previous bindings.
 - ParamRef.deref: `domain = kos_domain_current()`; `kos_domain_get_param(domain, key)` or default.
 - ParamRef.store: `domain = kos_domain_current()`; `kos_domain_set_param(domain, key, value)`.
 
-### Step 4 — Add PARAM dyn node kind
+### Step 4 — Add PARAM dyn node kind (done)
 
-- Add `KOS_DYN_PARAM` to dyn node kinds.
-- Node stores: count; `ParamRef** params` and `PyObject** values` (or array of pairs).
-- Lookup helper: `int kos_dyn_param_lookup(KosDynNode* node, ParamRef* p, PyObject** out)`.
+- Implemented in `dynchain.c`, `dynchain.h`: `KOS_DYN_PARAM` dyn node kind.
+- Node stores: `bindings` (PyDict key -> value), `saved` (PyDict key -> value or SENTINEL_UNSET; filled at enter).
+- `kos_dyn_push_param`, `kos_dyn_pop_param`; `kos_dynparam_enter`, `kos_dynparam_restore`.
 
-### Step 5 — Unwind integration
+### Step 5 — Unwind integration (done)
 
-- Confirm exceptions, AWAIT/YIELD boundary exits, and continuation transfer plans restore/unwind the dyn chain so PARAM extents are correct.
+- `kos_dyn_pop_top` handles KOS_DYN_PARAM: restore domain, pop node.
+- Transfer plan: PARAM_RESTORE actions on unwind (current -> LCA); param enter folded into INSTALL step (walk installed chain, run enter for each PARAM).
 
 ### Step 6 — Opcodes
 
@@ -302,9 +304,9 @@ Leaving any block that introduced PARAM bindings must restore previous bindings.
 
 ## Testing Matrix (Required)
 
-**Implemented tests**: Native C tests in `tests/native/test_paramref.c` and Python tests in `tests/lib/test_paramref.py` cover ParamRef creation, deref/store/clear outside and inside active domain, and shared value for same key.
+**Implemented tests**: Native C tests in `tests/native/test_paramref.c` and Python tests in `tests/lib/test_paramref.py` cover ParamRef creation, deref/store/clear outside and inside active domain, shared value for same key, and `kos_dyn_push_param`/`kos_dyn_pop_param` enter/restore (including nested param extent restore).
 
-**Remaining tests** (for KOS_DYN_PARAM, opcodes, parameterize):
+**Remaining tests** (for opcodes, parameterize):
 
 1. **Nesting restore**: Outer binds X=8, inner binds X=16; verify correct values and restore.
 2. **Exception restore**: Parameterize binds X=16 then raises; after catching, X resolves to prior/default.
