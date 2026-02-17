@@ -501,6 +501,24 @@ static PyObject *param_sentinel_unset(void) {
 }
 
 
+static KosDynParam *kos_dynparam_new_from_bindings(
+    KosDynNode *parent,
+    PyObject *bindings) {
+
+  KosDynParam *node = (KosDynParam *) kos_dynnode_alloc();
+  if (! node) {
+    Py_DECREF(bindings);
+    return NULL;
+  }
+
+  kos_dynnode_init((KosDynNode *) node, KOS_DYN_PARAM, parent);
+  KosDynParam_BINDINGS(node) = bindings;
+  KosDynParam_SAVED(node) = NULL;
+
+  return node;
+}
+
+
 static KosDynParam *kos_dynparam_new(
     KosDynNode *parent,
     uint32_t count,
@@ -524,17 +542,7 @@ static KosDynParam *kos_dynparam_new(
     }
   }
 
-  KosDynParam *node = (KosDynParam *) kos_dynnode_alloc();
-  if (! node) {
-    Py_DECREF(bindings);
-    return NULL;
-  }
-
-  kos_dynnode_init((KosDynNode *) node, KOS_DYN_PARAM, parent);
-  KosDynParam_BINDINGS(node) = bindings;
-  KosDynParam_SAVED(node) = NULL;
-
-  return node;
+  return kos_dynparam_new_from_bindings(parent, bindings);
 }
 
 
@@ -1019,6 +1027,40 @@ void kos_dyn_pop_ns(KosContext *ctx, KosDynNs *node) {
 }
 
 
+KosDynParam *kos_dyn_push_param_dict(KosContext *ctx, PyObject *bindings) {
+
+  if (! bindings) {
+    PyErr_SetString(PyExc_ValueError, "kos_dyn_push_param_dict: bindings is NULL");
+    return NULL;
+  }
+  if (! PyDict_CheckExact(bindings)) {
+    PyErr_Format(PyExc_TypeError, "kos_dyn_push_param_dict expected dict, got %R",
+                 bindings);
+    return NULL;
+  }
+  if (PyDict_Size(bindings) == 0) {
+    PyErr_SetString(PyExc_ValueError,
+                    "KosDynParam requires at least one binding");
+    return NULL;
+  }
+
+  KosDynParam *node = kos_dynparam_new_from_bindings(
+      KosContext_DYN_TOP(ctx), bindings);
+  if (! node)
+    return NULL;
+
+  if (kos_dynparam_enter(ctx, node) < 0) {
+    kos_dynparam_free(node);
+    return NULL;
+  }
+
+  KosContext_DYN_TOP(ctx) = (KosDynNode *) node;
+  KosContext_CHAIN_VERSION(ctx)++;
+
+  return node;
+}
+
+
 KosDynParam *kos_dyn_push_param(
     KosContext *ctx,
     uint32_t count,
@@ -1160,6 +1202,16 @@ int kos_dyn_pop_top(KosContext *ctx) {
 
   PyErr_SetString(PyExc_RuntimeError, "unknown dynamic chain node kind");
   return -1;
+}
+
+
+int kos_dyn_unwind_to_frame(KosContext *ctx, KosDynFrame *frame) {
+  while (KosContext_DYN_TOP(ctx) != NULL
+         && KosContext_DYN_TOP(ctx) != (KosDynNode *) frame) {
+    if (kos_dyn_pop_top(ctx) != 0)
+      return -1;
+  }
+  return 0;
 }
 
 

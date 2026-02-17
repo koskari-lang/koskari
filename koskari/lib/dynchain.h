@@ -762,6 +762,20 @@ void kos_dyn_pop_ns(KosContext *ctx, KosDynNs *node);
 
 
 /**
+   Push a parameter extent onto the dynamic chain from a bindings dict.
+
+   Creates a PARAM node, runs enter (save domain, set values), and pushes.
+   Caller gives ownership of bindings (dict name -> value); node takes it.
+
+   :param ctx: execution context
+   :param bindings: PyDict mapping names to values (ownership transferred)
+
+   :return: new KosDynParam node, or NULL on error
+*/
+KosDynParam *kos_dyn_push_param_dict(KosContext *ctx, PyObject *bindings);
+
+
+/**
    Push a parameter extent onto the dynamic chain.
 
    Creates a PARAM node, runs enter (save domain, set values), and pushes.
@@ -801,6 +815,9 @@ void kos_dyn_pop_param(KosContext *ctx, KosDynParam *node);
    :return: 0 on success, -1 on error or if top is PROMPT/PYCALL
 */
 int kos_dyn_pop_top(KosContext *ctx);
+
+
+int kos_dyn_unwind_to_frame(KosContext *ctx, KosDynFrame *frame);
 
 
 /**

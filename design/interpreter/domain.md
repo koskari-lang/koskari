@@ -2,7 +2,7 @@
 
 This document describes the design and implementation plan for **Domain** (ambient dynamic context), **ParamRef** (canonical parameter references), and **PARAM** dynamic extent (parameter bindings on the dyn chain). It specifies TLS plumbing, opcodes (`PARAM`, `PUSH_PARAM`, `POP_PARAM`), compiler lowering, hard invariants, and step-by-step implementation.
 
-**Implementation status**: Steps 1, 2, 3, 4, and 5 are implemented. TLS and KosDomain live in `domain.c`; the domain-scoped API includes `kos_ctx_current()`, `kos_domain_current()`, `kos_domain_push_scope()`, `kos_domain_pop_scope()`. KosDomain holds a param value store (PyDict: name -> value). ParamRef (Ref subclass) resolves via `kos_domain_current()` and `kos_domain_get_param(key)`; no interning; fully dynamic value lookup. KOS_DYN_PARAM dyn nodes are implemented in `dynchain.c`: `kos_dyn_push_param`, `kos_dyn_pop_param`, enter/restore via domain, transfer-plan integration (PARAM_RESTORE on unwind, param enter folded into INSTALL). Opcodes (PARAM, PUSH_PARAM, POP_PARAM) and compiler lowering are not yet implemented.
+**Implementation status**: Steps 1, 2, 3, 4, 5, and 6 (opcodes) are implemented. TLS and KosDomain live in `domain.c`; the domain-scoped API includes `kos_ctx_current()`, `kos_domain_current()`, `kos_domain_push_scope()`, `kos_domain_pop_scope()`, `kos_domain_push_python_scope()`, `kos_domain_pop_python_scope()`. KosDomain is a context manager (`with Domain():`) so Python can establish a domain before calling Koskari; `kos_domain_current()` consults the ctx stack and the per-thread `python_domain_stack`. KosDomain holds a param value store (PyDict: name -> value). ParamRef (Ref subclass) resolves via `kos_domain_current()` and `kos_domain_get_param(key)`; no interning; fully dynamic value lookup. KOS_DYN_PARAM dyn nodes are implemented in `dynchain.c`: `kos_dyn_push_param`, `kos_dyn_push_param_dict`, `kos_dyn_pop_param`, enter/restore via domain, transfer-plan integration (PARAM_RESTORE on unwind, param enter folded into INSTALL). Opcodes PARAM, PUSH_PARAM, POP_PARAM are implemented. PARAM extent is unwound on RETURN and exception propagation via `kos_dyn_unwind_to_frame()`. Compiler lowering is not yet implemented.
 
 ---
 
@@ -176,9 +176,22 @@ Debug assertions: `kos_ctx_current() != NULL` during bytecode execution.
 
 ### Koskari→Python→Koskari
 
-**Default**: When creating a new Context from Python, if TLS ctx stack is non-empty, the new Context **inherits** `domain` from the active context (shared). Otherwise, create a fresh domain.
+**Default**: When creating a new Context from Python, if TLS ctx stack is non-empty, the new Context **inherits** `domain` from the active context (shared). Otherwise, if `python_domain_stack` is non-empty, the new Context inherits the top domain. Otherwise, create a fresh domain.
 
 **Opt-out**: API to force a fresh domain (e.g. `koskari.eval(..., domain="fresh")` or `(with-fresh-domain ...)`).
+
+### Python-managed domain scope (implemented)
+
+Domain acts as a context manager so Python can establish a domain before calling Koskari and consume or set parameters after it returns:
+
+```python
+with Domain():
+    ParamRef("x").store(123)
+    result = await some_koskari_fn()
+    assert ParamRef("x").deref() == 123  # domain persists after koskari returns
+```
+
+Per-thread TLS includes `python_domain_stack`; `kos_domain_push_python_scope(domain)` and `kos_domain_pop_python_scope(domain)` push and pop. `kos_domain_current()` returns the top of `ctx_stack` when non-empty, else the top of `python_domain_stack`, else NULL. Domain implements `__enter__` and `__exit__`, which call the push/pop helpers.
 
 ---
 
@@ -249,11 +262,12 @@ Opcodes must be added to opcode tables, docs, and assembler/disassembler paths.
 
 ---
 
-## Unwind Integration (I3)
+## Unwind Integration (I3) (implemented)
 
-Leaving any block that introduced PARAM bindings must restore previous bindings. Ensure that:
+Leaving any block that introduced PARAM bindings must restore previous bindings. Implemented via `kos_dyn_unwind_to_frame()` in `dynchain.c`: before RETURN (detach or top-level event) and before propagating an exception when no local handler is found, the evaluator pops all chain nodes from dyn_top down to the current frame. Each PARAM pop runs `kos_dynparam_restore`.
 
-- Exceptions (try/finally, raise) unwind the dyn chain and thus pop `KOS_DYN_PARAM` nodes.
+- **RETURN**: `RETURN.c` calls `kos_dyn_unwind_to_frame(ctx, CURRENT_FRAME(ctx))` before `kos_dyn_detach_top_frame` (parent case) or before setting `KOS_EV_RETURN` (top-level).
+- **Exceptions**: `try_local_exception_handler` calls `kos_dyn_unwind_to_frame` when no region is found, before fetching the exception and setting `KOS_EV_RAISE`.
 - `AWAIT`/`YIELD` boundary exits do not leave TLS or dyn chain inconsistent; the context’s chain is preserved across suspend/resume.
 - Continuation transfer plans splice the captured chain (which includes PARAM nodes) so bindings are reinstated on apply.
 
@@ -270,7 +284,8 @@ Leaving any block that introduced PARAM bindings must restore previous bindings.
 ### Step 2 — KosDomain object (done)
 
 - Implemented in `domain.c`, `domain.h`: KosDomain type (PyObject_HEAD + uint64_t version). `ctx->domain` in KosContext.
-- Domain lifecycle: `kos_context_new()` inherits domain from active ctx when `kos_ctx_current() != NULL`; else creates fresh KosDomain. GC: `Py_VISIT` in traverse, `Py_XDECREF` in free.
+- Domain lifecycle: `kos_context_new()` inherits domain from active ctx when `kos_ctx_current() != NULL`; else from `python_domain_stack` when non-empty; else creates fresh KosDomain. GC: `Py_VISIT` in traverse, `Py_XDECREF` in free.
+- Domain is a context manager: `__enter__` and `__exit__` call `kos_domain_push_python_scope` and `kos_domain_pop_python_scope`.
 
 ### Step 3 — ParamRef type (done)
 
@@ -288,6 +303,7 @@ Leaving any block that introduced PARAM bindings must restore previous bindings.
 ### Step 5 — Unwind integration (done)
 
 - `kos_dyn_pop_top` handles KOS_DYN_PARAM: restore domain, pop node.
+- `kos_dyn_unwind_to_frame(ctx, frame)` pops nodes from dyn_top until dyn_top is the given frame; used by RETURN and exception propagation.
 - Transfer plan: PARAM_RESTORE actions on unwind (current -> LCA); param enter folded into INSTALL step (walk installed chain, run enter for each PARAM).
 
 ### Step 6 — Opcodes
@@ -304,7 +320,7 @@ Leaving any block that introduced PARAM bindings must restore previous bindings.
 
 ## Testing Matrix (Required)
 
-**Implemented tests**: Native C tests in `tests/native/test_paramref.c` and Python tests in `tests/lib/test_paramref.py` cover ParamRef creation, deref/store/clear outside and inside active domain, shared value for same key, and `kos_dyn_push_param`/`kos_dyn_pop_param` enter/restore (including nested param extent restore).
+**Implemented tests**: Native C tests in `tests/native/test_paramref.c` and Python tests in `tests/lib/test_paramref.py` cover ParamRef creation, deref/store/clear outside and inside active domain, shared value for same key, and `kos_dyn_push_param`/`kos_dyn_pop_param` enter/restore (including nested param extent restore). `tests/lib/test_domain.py` covers Domain as context manager. `tests/lib/opcode/test_push_param.py` covers PUSH_PARAM/POP_PARAM opcodes, including unwind-on-return and unwind-on-raise (PARAM extent restored when RETURN or exception exits before POP_PARAM).
 
 **Remaining tests** (for opcodes, parameterize):
 

@@ -947,6 +947,64 @@ PyObject *KosStackBlock_PopTailDictNames(
 }
 
 
+PyObject *KosStackBlock_PopTailDictFromNames(
+    KosStackBlock **self,
+    PyObject *names) {
+
+  PyObject *ret = NULL;
+
+  if (! PyTuple_CheckExact(names)) {
+    PyErr_Format(PyExc_RuntimeError, "pop tail dict from names expected"
+                 " tuple, got %R", names);
+    return NULL;
+  }
+
+  size_t count = (size_t) PyTuple_GET_SIZE(names);
+
+  if (! count)
+    return PyDict_New();
+
+  KosStackBlock *s = *self;
+  if (! s) {
+    PyErr_SetString(PyExc_RuntimeError, "stack pop tail dict from names"
+                    " underrun");
+    return NULL;
+  }
+
+  if (count > s->len) {
+    PyErr_SetString(PyExc_RuntimeError, "stack pop tail dict from names"
+                    " underrun");
+    return NULL;
+  }
+
+  ret = PyDict_NewPresized(count);
+  if (! ret)
+    return NULL;
+
+  if (KosStackBlock_EnsureExclusive(&s)) {
+    Py_DECREF(ret);
+    return NULL;
+  }
+
+  size_t base = s->len - count;
+  for (size_t j = 0; j < count; j++) {
+    PyObject *key = PyTuple_GET_ITEM(names, j);
+    PyObject *val = s->objs[base + j];
+
+    if (PyDict_SetItem(ret, key, val) < 0) {
+      Py_DECREF(val);
+      Py_DECREF(ret);
+      return NULL;
+    }
+    Py_DECREF(val);
+  }
+
+  s->len -= count;
+  *self = s;
+  return ret;
+}
+
+
 /* === Stack methods === */
 
 

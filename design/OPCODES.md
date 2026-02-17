@@ -178,7 +178,8 @@ When adding or changing an opcode:
 - [21. Undelimited continuations (call/cc)](#21-undelimited-continuations-callcc) — PUSH_CC, POP_CC, CAPTURE_CC
 - [22. Dynamic wind](#22-dynamic-wind) — PUSH_WIND, POP_WIND, END_WIND
 - [23. Region control](#23-region-control) — PUSH_REGION, POP_REGION
-- [24. Sentinel](#24-sentinel) — THEEND
+- [24. Parameterize extent](#24-parameterize-extent) — PUSH_PARAM, PARAM, POP_PARAM
+- [25. Sentinel](#25-sentinel) — THEEND
 
 ### 2.1 Quick-reference index
 
@@ -240,9 +241,9 @@ When adding or changing an opcode:
 | SHIFT | CONST | Capture continuation, abort to prompt | [§20](#kos_op_shift) |
 | INVOKE_K | NOARG | Pop value, pop k; invoke k(value) | [§20](#kos_op_invoke_k) |
 | INVOKE_K_VAR | CONST | Invoke continuation by name | [§20](#kos_op_invoke_k_var) |
-| THEEND | NOARG | Unreachable; no runtime | [§24](#kos_op_theend) |
+| THEEND | NOARG | Unreachable; no runtime | [§25](#kos_op_theend) |
 
-Other opcodes (CHECK_LT/LE/GT/GE, CHECK_IS_INSTANCE/IS_SUBCLASS, VAR_CLEAR, VAR_REF, FAST_BIND/CLEAR/REF, ATTR_CLEAR/REF, ITEM_CLEAR/REF, CONST_ITEM_*, BUILD_*, CALL_NAMES/STAR, CALL_ATTR*, RECUR*, TAIL_*, PUSH_FINALLY/POP_*, CLEAR_*, OBJECT_*, PUSH_CC/POP_CC/CAPTURE_CC, PUSH_WIND/POP_WIND/END_WIND, PUSH_REGION/POP_REGION) are listed under their category sections above; use the category index to jump to the section, then scan for the opcode name.
+Other opcodes (CHECK_LT/LE/GT/GE, CHECK_IS_INSTANCE/IS_SUBCLASS, VAR_CLEAR, VAR_REF, FAST_BIND/CLEAR/REF, ATTR_CLEAR/REF, ITEM_CLEAR/REF, CONST_ITEM_*, BUILD_*, CALL_NAMES/STAR, CALL_ATTR*, RECUR*, TAIL_*, PUSH_FINALLY/POP_*, CLEAR_*, OBJECT_*, PUSH_CC/POP_CC/CAPTURE_CC, PUSH_WIND/POP_WIND/END_WIND, PUSH_REGION/POP_REGION, PUSH_PARAM/PARAM/POP_PARAM) are listed under their category sections above; use the category index to jump to the section, then scan for the opcode name.
 
 
 ## 3. No-op and compile-time
@@ -1831,7 +1832,48 @@ PUSH_CC resume target).
 - **Example:** (Stub.) See PUSH_REGION.
 
 
-## 24. Sentinel
+## 24. Parameterize extent
+
+### KOS_OP_PUSH_PARAM
+
+- **Style**: CONST. Arg = constant pool index of names tuple `(name_0, name_1, ...)`.
+- **Status**: Implemented.
+- **Stack**: `[..., val_0, val_1, ..., val_{n-1}]` → `[]`. Values consumed; names come from constant.
+- **Pushes:** KOS_DYN_PARAM (extent kind KOS_EXT_PARAM). Builds dict from names and values, enters param extent.
+- **Invariants**: Constant at arg must be a tuple of names; stack must have at least `len(names)` values.
+- **Example:** `(parameterize ((x 1) (y 2)) body)` compiles to push values 1, 2, then PUSH_PARAM with names `("x", "y")`.
+
+| index | opcode     | arg | arg view     | comment                    |
+|------:|------------|-----|--------------|----------------------------|
+| 0     | CONST      | 1   | 1 (1)        | push 1                     |
+| 1     | CONST      | 2   | 2 (2)        | push 2                     |
+| 2     | PUSH_PARAM | 0   | 0 (names)    | pop 2 values, push param   |
+| 3     | …          | …   | …            | body                       |
+| N     | POP_PARAM  | 0   | 0            | pop param extent           |
+
+---
+
+### KOS_OP_PARAM
+
+- **Style**: CONST. Arg = constant pool index of name (string) for ParamRef key.
+- **Status**: Implemented.
+- **Stack**: `[]` → `[ParamRef]`. Pushes ParamRef for the given key (e.g. for `(use-param X)`).
+- **Invariants**: Constant at arg must be hashable (typically PyUnicode).
+- **Example:** `(use-param x)` compiles to PARAM with constant `"x"`, then binds the result.
+
+---
+
+### KOS_OP_POP_PARAM
+
+- **Style**: NOARG.
+- **Status**: Implemented.
+- **Stack**: No change.
+- **Pops:** KOS_DYN_PARAM from dynamic chain. Restores domain param bindings.
+- **Invariants**: Dyn top must be KOS_DYN_PARAM; otherwise RuntimeError.
+- **Example:** See PUSH_PARAM table.
+
+
+## 25. Sentinel
 
 ### KOS_OP_THEEND
 

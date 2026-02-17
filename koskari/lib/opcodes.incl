@@ -251,6 +251,11 @@ OP(END_WIND, NOARG)            // sentinel: terminates hook block
 OP(PUSH_REGION, LABEL)         // arg = handler label
 OP(POP_REGION, NOARG)          // pop region from dynamic chain
 
+// parameterize extent (domain param bindings)
+OP(PUSH_PARAM, CONST)          // arg = constant index of names tuple
+OP(PARAM, CONST)               // arg = constant index of name (ParamRef key)
+OP(POP_PARAM, NOARG)           // pop KOS_DYN_PARAM from chain
+
 // THEEND must always be last
 OP(THEEND, NOARG)
 

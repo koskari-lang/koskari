@@ -39,6 +39,8 @@ typedef struct {
   size_t ctx_depth;
   KosEvaluatorToken *token_stack[KOS_TLS_STACK_MAX];
   size_t token_depth;
+  PyObject *python_domain_stack[KOS_TLS_STACK_MAX];
+  size_t python_domain_depth;
 } KosTlsState;
 
 static Py_tss_t tls_state_key = Py_tss_NEEDS_INIT;
@@ -52,6 +54,7 @@ static KosTlsState *get_or_alloc_tls_state(void) {
       return NULL;
     s->ctx_depth = 0;
     s->token_depth = 0;
+    s->python_domain_depth = 0;
     PyThread_tss_set(&tls_state_key, s);
   }
   return s;
@@ -70,7 +73,7 @@ static void pop_active_token(KosEvaluatorToken *token) {
   KosTlsState *s = (KosTlsState *) PyThread_tss_get(&tls_state_key);
   if (s && s->token_depth > 0) {
     s->token_depth--;
-    if (s->ctx_depth == 0 && s->token_depth == 0) {
+    if (s->ctx_depth == 0 && s->token_depth == 0 && s->python_domain_depth == 0) {
       PyMem_Free(s);
       PyThread_tss_set(&tls_state_key, NULL);
     }
@@ -102,8 +105,17 @@ KosContext *kos_ctx_current(void) {
 
 
 PyObject *kos_domain_current(void) {
-  KosContext *c = kos_ctx_current();
-  return (c && KosContext_DOMAIN(c)) ? KosContext_DOMAIN(c) : NULL;
+  KosTlsState *s = (KosTlsState *) PyThread_tss_get(&tls_state_key);
+  KosContext *c;
+
+  if (s && s->ctx_depth > 0) {
+    c = s->ctx_stack[s->ctx_depth - 1];
+    if (c && KosContext_DOMAIN(c))
+      return KosContext_DOMAIN(c);
+  }
+  if (s && s->python_domain_depth > 0)
+    return s->python_domain_stack[s->python_domain_depth - 1];
+  return NULL;
 }
 
 
@@ -121,6 +133,49 @@ void kos_domain_pop_scope(KosContext *ctx) {
 }
 
 
+int kos_domain_push_python_scope(PyObject *domain) {
+  KosTlsState *s;
+
+  if (! domain || ! KosDomain_CheckExact(domain)) {
+    PyErr_SetString(PyExc_TypeError, "expected a Domain instance");
+    return -1;
+  }
+  s = get_or_alloc_tls_state();
+  if (! s)
+    return -1;
+  if (s->python_domain_depth >= KOS_TLS_STACK_MAX) {
+    PyErr_SetString(PyExc_RuntimeError, "python domain stack overflow");
+    return -1;
+  }
+  s->python_domain_stack[s->python_domain_depth++] = domain;
+  Py_INCREF(domain);
+  return 0;
+}
+
+
+int kos_domain_pop_python_scope(PyObject *domain) {
+  KosTlsState *s = (KosTlsState *) PyThread_tss_get(&tls_state_key);
+
+  if (! s || s->python_domain_depth == 0) {
+    PyErr_SetString(PyExc_RuntimeError, "python domain stack underflow");
+    return -1;
+  }
+  if (domain && s->python_domain_stack[s->python_domain_depth - 1] != domain) {
+    PyErr_SetString(PyExc_RuntimeError,
+                    "python domain stack mismatch: popped domain not at top");
+    return -1;
+  }
+  s->python_domain_depth--;
+  Py_DECREF(s->python_domain_stack[s->python_domain_depth]);
+  s->python_domain_stack[s->python_domain_depth] = NULL;
+  if (s->ctx_depth == 0 && s->token_depth == 0 && s->python_domain_depth == 0) {
+    PyMem_Free(s);
+    PyThread_tss_set(&tls_state_key, NULL);
+  }
+  return 0;
+}
+
+
 /* === param value store helpers === */
 
 
@@ -135,6 +190,36 @@ static PyObject *ensure_param_bindings(KosDomain *domain) {
 
 
 /* === KosDomain implementation === */
+
+
+static PyObject *domain_enter(PyObject *self) {
+  if (kos_domain_push_python_scope(self) < 0)
+    return NULL;
+  Py_INCREF(self);
+  return self;
+}
+
+
+static PyObject *domain_exit(PyObject *self, PyObject *args) {
+  PyObject *exc_type = NULL;
+  PyObject *exc_val = NULL;
+  PyObject *exc_tb = NULL;
+
+  (void) PyArg_UnpackTuple(args, "__exit__", 3, 3,
+                          &exc_type, &exc_val, &exc_tb);
+  if (kos_domain_pop_python_scope(self) < 0)
+    return NULL;
+  Py_RETURN_NONE;
+}
+
+
+static PyMethodDef domain_methods[] = {
+  {"__enter__", (PyCFunction) domain_enter, METH_NOARGS,
+   "Push this domain onto the per-thread scope stack"},
+  {"__exit__", (PyCFunction) domain_exit, METH_VARARGS,
+   "Pop this domain from the per-thread scope stack"},
+  {NULL, NULL, 0, NULL},
+};
 
 
 static PyObject *domain_repr(PyObject *self) {
@@ -212,6 +297,7 @@ PyTypeObject KosDomainType = {
   .tp_repr = domain_repr,
   .tp_dealloc = domain_dealloc,
   .tp_flags = Py_TPFLAGS_DEFAULT,
+  .tp_methods = domain_methods,
 };
 
 

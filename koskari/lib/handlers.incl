@@ -149,4 +149,7 @@
 #include "opcode/END_WIND.c"
 #include "opcode/PUSH_REGION.c"
 #include "opcode/POP_REGION.c"
+#include "opcode/PUSH_PARAM.c"
+#include "opcode/PARAM.c"
+#include "opcode/POP_PARAM.c"
 #include "opcode/THEEND.c"

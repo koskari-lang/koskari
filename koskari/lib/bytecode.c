@@ -687,6 +687,7 @@ static const ExtentOpPair extent_pairs[] = {
   { KOS_OP_PUSH_WIND,     KOS_OP_POP_WIND,     KOS_EXT_WIND },
   { KOS_OP_PUSH_REGION,   KOS_OP_POP_REGION,   KOS_EXT_TRY },
   { KOS_OP_PUSH_FOREACH,  KOS_OP_POP_LOOP,     KOS_EXT_FOREACH },
+  { KOS_OP_PUSH_PARAM,    KOS_OP_POP_PARAM,    KOS_EXT_PARAM },
 };
 
 

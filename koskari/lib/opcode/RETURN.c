@@ -46,6 +46,10 @@ KOS_OP_HANDLER(RETURN) {
   if (KosDynNode_PARENT(CURRENT_FRAME(ctx)) != NULL) {
     int was_pending_ctx = (KosContext_PENDING_AGEN(ctx) != NULL);
     KosDynFrame *detached_frame = NULL;
+    if (kos_dyn_unwind_to_frame(ctx, CURRENT_FRAME(ctx)) < 0) {
+      Py_DECREF(val);
+      return -1;
+    }
     if (kos_dyn_detach_top_frame(ctx, &detached_frame) < 0) {
       Py_DECREF(val);
       return -1;
@@ -100,6 +104,10 @@ KOS_OP_HANDLER(RETURN) {
     return 0;
   }
 
+  if (kos_dyn_unwind_to_frame(ctx, CURRENT_FRAME(ctx)) < 0) {
+    Py_DECREF(val);
+    return -1;
+  }
   SAYF("[eval] RETURN count=%u -> KOS_EV_RETURN\n", opa);
   SAYF("[eval] RETURN payload: %R\n", val);
   KosEvent_KIND(out_ev) = KOS_EV_RETURN;

@@ -395,6 +395,17 @@ PyObject *KosStackBlock_PopTailDictNames(KosStackBlock **self, size_t count);
 
 
 /**
+   Block-level API for eval: given a names tuple (not on stack), pop
+   len(names) values and return a new dict mapping each name to its
+   value. Stack layout: val_0 deepest, val_{n-1} at TOS; names[i] maps
+   to val_i. Caller owns the returned reference.
+ */
+PyObject *KosStackBlock_PopTailDictFromNames(
+    KosStackBlock **self,
+    PyObject *names);
+
+
+/**
    Push a new empty block onto the block chain. *block is updated to the
    new top. For use by eval when entering loop/foreach blocks.
 

@@ -400,9 +400,15 @@ KosContext *kos_context_new(KosDynFrame *top) {
   }
 
   {
+    PyObject *domain = NULL;
     KosContext *active = kos_ctx_current();
-    if (active && KosContext_DOMAIN(active)) {
-      ctx->domain = KosContext_DOMAIN(active);
+
+    if (active && KosContext_DOMAIN(active))
+      domain = KosContext_DOMAIN(active);
+    else
+      domain = kos_domain_current();
+    if (domain) {
+      ctx->domain = domain;
       Py_INCREF(ctx->domain);
     } else {
       ctx->domain = (PyObject *) KosDomain_New();
@@ -1623,6 +1629,9 @@ static int try_local_exception_handler(KosContext *ctx, KosEvent *out_ev) {
   if (! region) {
     PyObject *typ = NULL, *val = NULL, *tb = NULL;
     PyErr_Fetch(&typ, &val, &tb);
+    if (CURRENT_FRAME(ctx))
+      kos_dyn_unwind_to_frame(ctx, CURRENT_FRAME(ctx));
+    PyErr_Clear();
     KosEvent_KIND(out_ev) = KOS_EV_RAISE;
     KosEvent_PAYLOAD(out_ev) = val;  /* exception instance (caller DECREFs) */
     Py_XDECREF(typ);
