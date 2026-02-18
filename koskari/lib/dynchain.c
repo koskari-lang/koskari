@@ -1226,12 +1226,14 @@ static int dyn_pop_top_with(KosContext *ctx, KosDynNode *top) {
   if (! PyErr_Occurred()) {
     KosDynFrame *frame = KosContext_FRAME_TOP(ctx);
     if (frame) {
-      uint32_t pc = KosDynFrame_PC(frame);
-      if (pc > 0)
-        pc--;
+
+      // TODO: this is a hack to get the correct PC for the with body.
+      // We need to find a better way to do this.
+      // We should absolutely be storing the resume PC on the node itself.
+
       uint32_t eid = kos_extent_find(
           (PyObject *) KosDynFrame_CODE(frame),
-          pc,
+          KosDynFrame_PC(frame) - 1,
           KOS_EXT_WITH);
       if (eid != KOS_EXTENT_NONE) {
         KosExtentDesc *ext = kos_extent_desc(
