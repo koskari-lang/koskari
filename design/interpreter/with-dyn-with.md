@@ -107,6 +107,11 @@ block for the body.
 - The overall expression result is **always** `None`.
 - Any value needed from the body must be stored explicitly (e.g. `setq`) before
   leaving.
+- **Exit return is never the with value.** The value returned by `exit` (or
+  `__aexit__`) is used **only** for swallow logic (exception and truthy means
+  swallow). The VM never leaves the exit return on the stack as the
+  with-expression value; it is consumed and then `None` is pushed. Both the
+  sync path and the async exit path (sync completion and resume) enforce this.
 
 
 ## Enter/exit protocol and transparent async
@@ -203,6 +208,28 @@ extent:
    - pop the owned stack block
    - pop the dyn node
    - re-raise / propagate
+
+**Async exit — evaluator flow:** When `exit` returns an awaitable (e.g.
+`__aexit__`), the VM uses `kos_with_exit_start_await`, which steps the
+awaitable (via `push_or_await`). That helper pushes the awaitable's result
+when it completes; that value must **not** become the with-expression value.
+
+- **Sync completion (r==0):** The awaitable completed in one step, so the exit
+  result was pushed. POP_WITH and the unwind path (`dyn_pop_top_with`) call
+  `kos_complete_pending_with_exit(ctx)`, which pops TOS (the exit result),
+  applies swallow logic, drops the owned stack block, pops the WITH node, sets
+  frame PC to `resume_pc`, and pushes `None`.
+- **Suspend (r==1):** The evaluator returns `KOS_EV_AWAIT`; the context has
+  `PENDING_WITH_EXIT_*` set (node, typ, val, tb, normal). The driver sends
+  the await result and re-enters `koskari_eval`. On re-entry, **revive** runs
+  before the next opcode: for AWAIT it pushes the send value, then if
+  `PENDING_WITH_EXIT_NODE` is set it calls `kos_complete_pending_with_exit`,
+  which pops TOS (that send value = exit result), applies swallow, drops block,
+  pops node, sets PC, pushes `None`. Execution then continues at the
+  instruction after POP_WITH with `None` as the with value.
+
+So the exit return is never observable as the with-expression result; it is
+only used internally for swallow and then discarded in favour of `None`.
 
 
 ### PUSH_DYN_WITH \<name-or-None\>
@@ -305,6 +332,10 @@ for other extent kinds; no special case for dyn-with.
 3. Exception swallowed; stack restored; execution resumes; expression yields None.
 4. Break/continue exits body; exit runs; stack restored.
 5. Continuation transfer across `with` ⇒ explicit error.
+6. Async enter/exit: VM awaits enter then body then exit; expression returns None
+   (sync completion and suspend/resume paths). Opcode tests:
+   `tests/lib/opcode/test_with.py` (sync and async). Special-form tests:
+   `tests/compile/specials/test_with.py` (sync and async).
 
 ### Multi-shot
 

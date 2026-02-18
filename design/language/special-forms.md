@@ -45,8 +45,9 @@ Special forms are compile-time constructs that have no runtime representation. T
 - **`with`**: Single-shot context manager entry/exit
   - Syntax: `(with [name? expr] body ...)`; optional binding of enter result
   - In Koskari the expression value is always `None` (see [interpreter/with-dyn-with.md](../interpreter/with-dyn-with.md))
+  - Sync and async managers supported (VM auto-awaits enter/exit when they return awaitables)
   - Transfer across an active `with` is rejected at runtime
-  - Implemented via compile/with; see [SPECIALS.md](../SPECIALS.md) §with, `tests/compile/specials/test_with.py`, `tests/lib/opcode/test_with.py`
+  - Implemented via compile/with; see [SPECIALS.md](../SPECIALS.md) §with. Opcode tests: `tests/lib/opcode/test_with.py`; special-form tests: `tests/compile/specials/test_with.py` (both cover sync and async)
 - **`dyn-with`**: Multi-shot context manager; participates in continuation transfer (wind/unwind)
   - Same syntax as `with`; value always `None`
 

@@ -1510,7 +1510,7 @@ Full design: [interpreter/with-dyn-with.md](interpreter/with-dyn-with.md). Summa
 #### KOS_OP_PUSH_WITH
 
 - **Style**: CONST. Arg = constant pool index of binding name (symbol/string) or sentinel for no binding.
-- **Status**: Implemented (single-shot with; sync __enter__/__exit__ only; async enter/exit deferred).
+- **Status**: Implemented (single-shot with; sync and async __enter__/__exit__; VM auto-awaits when enter returns awaitable).
 - **Stack before:** `[..., mgr]`. **Stack after:** body runs in a fresh operand stack block.
 - **Behaviour:** Pop `mgr`; resolve and cache enter/exit; call enter (auto-await if needed); on success bind enter result if name given; push new stack block; look up WITH extent at current PC, compute `resume_pc = ext->pop_pc + 1`; push `KOS_DYN_WITH` with `resume_pc` stored on the node. On enter failure, no node or block is installed; exception propagates.
 - **Pushes:** KOS_DYN_WITH (single-shot; transfer barrier). Node stores `resume_pc` (instruction after POP_WITH) for use when exit swallows an exception.
@@ -1519,10 +1519,10 @@ Full design: [interpreter/with-dyn-with.md](interpreter/with-dyn-with.md). Summa
 #### KOS_OP_POP_WITH
 
 - **Style**: NOARG (or COUNT per existing opcodes.incl; design assumes no arg).
-- **Status**: Implemented (sync exit only; async exit deferred).
-- **Behaviour:** Call exit (no-exception form); auto-await if needed; pop owned stack block; pop dyn node; push `None`. On exception unwind (via no-region path or dyn_pop_top_with): call exit(exc_info); if swallow then clear exception, pop block, pop node, push `None`, set frame PC to `KosDynWith_RESUME_PC(node)` (the instruction after POP_WITH), resume; else pop block, pop node, re-raise.
-- **Invariants:** Top of chain must be KOS_DYN_WITH.
-- **Covered by:** `tests/lib/opcode/test_with.py`, `tests/compile/specials/test_with.py`.
+- **Status**: Implemented (sync and async exit; VM auto-awaits when exit returns awaitable).
+- **Behaviour:** Call exit (no-exception form); auto-await if needed; pop owned stack block; pop dyn node; push `None`. When exit returns an awaitable: step via `kos_with_exit_start_await`; on sync completion (r==0) call `kos_complete_pending_with_exit` to consume the exit result and push `None`; on suspend (r==1) return KOS_EV_AWAIT; on resume, revive calls `kos_complete_pending_with_exit` so the with-expression value is always `None` (exit return is never left on stack). On exception unwind (via no-region path or dyn_pop_top_with): call exit(exc_info); if swallow then clear exception, pop block, pop node, push `None`, set frame PC to `KosDynWith_RESUME_PC(node)` (the instruction after POP_WITH), resume; else pop block, pop node, re-raise.
+- **Invariants:** Top of chain must be KOS_DYN_WITH. With-expression value is always `None`; exit return is used only for swallow logic and is never the value seen by RETURN.
+- **Covered by:** `tests/lib/opcode/test_with.py`, `tests/compile/specials/test_with.py` (sync and async).
 
 #### KOS_OP_PUSH_DYN_WITH
 

@@ -1246,7 +1246,12 @@ static int dyn_pop_top_with(KosContext *ctx, KosDynNode *top,
     int r = kos_with_exit_start_await(ctx, out_ev, exit_awaitable);
     if (r == 1)
       return KOS_DYN_WITH_EXIT_ASYNC_STARTED;
-    return r;
+    if (r < 0)
+      return -1;
+    /* r == 0: exit completed synchronously; push_or_await pushed the exit
+       result. Consume it and push None (design: with value is never aexit
+       return). */
+    return kos_complete_pending_with_exit(ctx) == 0 ? 0 : -1;
   }
   if (unw < 0)
     return -1;
@@ -1439,9 +1444,6 @@ int kos_dyn_pop_top(KosContext *ctx, KosEvent *out_ev) {
 
   PyErr_Format(PyExc_RuntimeError, "unknown dyn node kind %u",
                (unsigned) KosDynNode_KIND(top));
-  return -1;
-
-  PyErr_SetString(PyExc_RuntimeError, "unknown dynamic chain node kind");
   return -1;
 }
 

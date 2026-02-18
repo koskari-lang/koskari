@@ -233,10 +233,13 @@ an active `with` raises a runtime error).
 pool index or no-binding sentinel), compiles body with `helper_begin`, emits
 POP_WITH. PUSH_WITH looks up the WITH extent at its PC and stores
 `resume_pc = pop_pc + 1` on the node for use when exit swallows an exception.
-The expression value is always `None`. See
+The expression value is always `None`. Both sync and async context managers
+are supported (VM auto-awaits enter/exit when they return awaitables). See
 [interpreter/with-dyn-with.md](interpreter/with-dyn-with.md).
 
-See `tests/compile/specials/test_with.py`, `tests/lib/opcode/test_with.py`.
+**Tests:** Opcode tests (`tests/lib/opcode/test_with.py`) and special-form
+tests (`tests/compile/specials/test_with.py`) cover sync and async
+enter/exit, normal completion, and exception propagation/swallow.
 
 **Examples:**
 

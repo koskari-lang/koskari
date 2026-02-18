@@ -222,6 +222,21 @@ The evaluator **auto-awaits** only in two places:
 
 All other opcodes push their result with **no** automatic await. That includes: CONST, VAR, GLOBALS, LOCALS, FAST, getattr, subscript, binary ops, yield-from yielded or final value, and any value that was already awaited or is not an awaitable. The implementation uses a push-only path (e.g. `push_result`) for every opcode except CALL's Python result and AWAIT. This avoids re-awaiting delegate results from YIELD_FROM and keeps semantics predictable.
 
+### AWAIT resume and pending WITH exit
+
+When `koskari_eval` returns `KOS_EV_AWAIT`, the driver (e.g. KosCoroutine.send or
+the sync adapter) sends the await result and calls `koskari_eval` again. On
+re-entry, **revive** runs before the next opcode is dispatched: for AWAIT it
+pushes the send value onto the current frame's stack, then checks
+`PENDING_WITH_EXIT_NODE`. If set (async WITH exit had suspended), it calls
+`kos_complete_pending_with_exit(ctx)`, which pops TOS (the exit result just
+pushed), applies swallow logic (exception and truthy ⇒ swallow), drops the WITH
+stack block, pops the WITH node, sets frame PC to the post-POP_WITH instruction,
+and pushes `None`. Thus the with-expression value is always `None`; the
+`__aexit__` return is never left on the stack for RETURN to use. See
+[with-dyn-with.md](with-dyn-with.md) for the full async exit flow (sync
+completion and suspend/resume).
+
 ## Public C API
 
 ### DynNode Chain Management
