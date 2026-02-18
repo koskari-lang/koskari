@@ -194,6 +194,8 @@ struct KosContext {
   KosTransferPlan *plan;        /* active transfer plan (or NULL) */
   KosTransferPlan *plan_stack;  /* suspended plans stack */
   uint32_t chain_version;       /* incremented on chain modifications */
+  int plan_suspended_await;     /* 1 when plan step returned awaitable and we suspended */
+  PyObject *plan_resume_inject; /* inject value for suspended step on resume (owned) */
 
   /* Delimited continuation: top of installed segment when inside invoked k */
   KosDynNode *invocation_segment_top;
@@ -212,6 +214,22 @@ struct KosContext {
   void *pending_agen;        /* KosPyAsyncGen * when set (avoid func.h in eval.h) */
   PyObject *pending_agen_default;  /* default value for 2-arg NEXT (or NULL) */
   int pending_agen_n;       /* 1 or 2 for NEXT; 0 for ITER_NEXT (ITER_NEXT exhausted path reads from region) */
+
+  /* Pending WITH: async enter/exit suspend (mgr != NULL or with_node != NULL when set) */
+  struct {
+    PyObject *mgr;
+    PyObject *enter;
+    PyObject *exit;
+    PyObject *name;
+    uint32_t resume_pc;
+  } pending_with_enter;
+  struct {
+    KosDynWith *with_node;
+    PyObject *exc_typ;
+    PyObject *exc_val;
+    PyObject *exc_tb;
+    int normal_exit;  /* 1 = exit(None,None,None), 0 = exception */
+  } pending_with_exit;
 
   uint32_t flags;            /* KosContextFlags */
 
@@ -235,6 +253,8 @@ struct KosContext {
 #define KosContext_PLAN(c)                   (((KosContext *)(c))->plan)
 #define KosContext_PLAN_STACK(c)             (((KosContext *)(c))->plan_stack)
 #define KosContext_CHAIN_VERSION(c)          (((KosContext *)(c))->chain_version)
+#define KosContext_PLAN_SUSPENDED_AWAIT(c)  (((KosContext *)(c))->plan_suspended_await)
+#define KosContext_PLAN_RESUME_INJECT(c)     (((KosContext *)(c))->plan_resume_inject)
 #define KosContext_INVOCATION_SEGMENT_TOP(c) (((KosContext *)(c))->invocation_segment_top)
 #define KosContext_PY_AWAIT_ITER(c)          (((KosContext *)(c))->py_await_iter)
 #define KosContext_PY_LAST_YIELDED(c)        (((KosContext *)(c))->py_last_yielded)
@@ -252,6 +272,19 @@ struct KosContext {
 #define KosContext_PENDING_AGEN(c)           (((KosContext *)(c))->pending_agen)
 #define KosContext_PENDING_AGEN_DEFAULT(c)   (((KosContext *)(c))->pending_agen_default)
 #define KosContext_PENDING_AGEN_N(c)         (((KosContext *)(c))->pending_agen_n)
+
+#define KosContext_PENDING_WITH_ENTER_MGR(c)   (((KosContext *)(c))->pending_with_enter.mgr)
+#define KosContext_PENDING_WITH_ENTER_ENTER(c) (((KosContext *)(c))->pending_with_enter.enter)
+#define KosContext_PENDING_WITH_ENTER_EXIT(c)  (((KosContext *)(c))->pending_with_enter.exit)
+#define KosContext_PENDING_WITH_ENTER_NAME(c)  (((KosContext *)(c))->pending_with_enter.name)
+#define KosContext_PENDING_WITH_ENTER_RESUME_PC(c) (((KosContext *)(c))->pending_with_enter.resume_pc)
+
+#define KosContext_PENDING_WITH_EXIT_NODE(c)   (((KosContext *)(c))->pending_with_exit.with_node)
+#define KosContext_PENDING_WITH_EXIT_TYP(c)    (((KosContext *)(c))->pending_with_exit.exc_typ)
+#define KosContext_PENDING_WITH_EXIT_VAL(c)    (((KosContext *)(c))->pending_with_exit.exc_val)
+#define KosContext_PENDING_WITH_EXIT_TB(c)     (((KosContext *)(c))->pending_with_exit.exc_tb)
+#define KosContext_PENDING_WITH_EXIT_NORMAL(c) (((KosContext *)(c))->pending_with_exit.normal_exit)
+
 #define KosContext_FLAGS(c)                  (((KosContext *)(c))->flags)
 #define KosContext_FREELIST_NEXT(c)          (((KosContext *)(c))->context_freelist_next)
 
@@ -433,6 +466,39 @@ int kos_context_traverse(KosContext *ctx, visitproc visit, void *arg);
    Called from dynchain.c when popping KOS_DYN_YIELD_FROM. Does not free the node.
 */
 void kos_yieldfrom_close_delegate(KosDynYieldFrom *node);
+
+
+/**
+   WITH enter: if result is awaitable stash and push_or_await (return 1 or -1);
+   else bind name, push block, push node (return 0). Consumes result and
+   takes ownership of mgr, enter, exit, name.
+*/
+int kos_push_with_after_enter(
+    KosContext *ctx,
+    KosEvent *out_ev,
+    PyObject *result,
+    PyObject *mgr,
+    PyObject *enter,
+    PyObject *exit,
+    PyObject *name,
+    uint32_t resume_pc);
+
+
+/**
+   Complete pending WITH enter after await (TOS is the enter result).
+   Returns 0 if no pending state or on success, -1 on error.
+*/
+int kos_complete_pending_with_enter(KosContext *ctx, KosEvent *out_ev);
+
+int kos_with_exit_start_await(KosContext *ctx, KosEvent *out_ev, PyObject *awaitable);
+
+int kos_complete_pending_with_exit(KosContext *ctx);
+void kos_clear_pending_with_exit(KosContext *ctx);
+
+/**
+   Clear pending WITH enter stash. No-op if not set.
+*/
+void kos_clear_pending_with_enter(KosContext *ctx);
 
 
 /* === Exception types === */

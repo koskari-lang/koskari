@@ -123,6 +123,10 @@ static int run_transfer_plan_to_completion(KosContext *ctx, KosEvent *out_ev) {
       KosContext_FLAGS(ctx) |= KOS_CTX_DEAD;
       return -1;
     }
+    if (plan_res == KOS_XFER_SUSPENDED_AWAIT) {
+      SAY("[eval] transfer step suspended on await\n");
+      return 0;  /* do not clear plan; driver will resume and feed inject */
+    }
     if (plan_res == 0)
       continue;
     SAYF("[eval] transfer complete inv_seg_top=%p\n",
@@ -264,11 +268,15 @@ static PyObject *str_athrow = NULL;
 static PyObject *str_aclose = NULL;
 static PyObject *str_enter = NULL;
 static PyObject *str_exit = NULL;
+static PyObject *str_aenter = NULL;
+static PyObject *str_aexit = NULL;
 
 
 /**
-   Resolve __enter__ and __exit__ on mgr (sync context manager protocol).
-   Phase 1: sync only. Returns new refs in *out_enter and *out_exit.
+   Resolve enter/exit on mgr. Prefer __aenter__/__aexit__ if present (async
+   protocol), else __enter__/__exit__ (sync). Returns new refs in *out_enter
+   and *out_exit.
+
    :return: 0 on success, -1 on error
 */
 static int resolve_context_enter_exit(
@@ -276,13 +284,22 @@ static int resolve_context_enter_exit(
     PyObject **out_enter,
     PyObject **out_exit) {
 
-  PyObject *enter = PyObject_GetAttr(mgr, str_enter);
-  if (! enter)
-    return -1;
-  PyObject *exit = PyObject_GetAttr(mgr, str_exit);
-  if (! exit) {
-    Py_DECREF(enter);
-    return -1;
+  PyObject *enter = PyObject_GetAttr(mgr, str_aenter);
+  PyObject *exit = NULL;
+  if (enter) {
+    exit = PyObject_GetAttr(mgr, str_aexit);
+  }
+  if (! enter || ! exit) {
+    Py_XDECREF(enter);
+    PyErr_Clear();
+    enter = PyObject_GetAttr(mgr, str_enter);
+    if (! enter)
+      return -1;
+    exit = PyObject_GetAttr(mgr, str_exit);
+    if (! exit) {
+      Py_DECREF(enter);
+      return -1;
+    }
   }
   *out_enter = enter;
   *out_exit = exit;
@@ -535,6 +552,20 @@ void kos_context_free(KosContext *ctx) {
   Py_XDECREF(KosContext_DOMAIN(ctx));
   KosContext_DOMAIN(ctx) = NULL;
 
+  /* Clear pending WITH state */
+  Py_XDECREF(KosContext_PENDING_WITH_ENTER_MGR(ctx));
+  KosContext_PENDING_WITH_ENTER_MGR(ctx) = NULL;
+  Py_XDECREF(KosContext_PENDING_WITH_ENTER_ENTER(ctx));
+  KosContext_PENDING_WITH_ENTER_ENTER(ctx) = NULL;
+  Py_XDECREF(KosContext_PENDING_WITH_ENTER_EXIT(ctx));
+  KosContext_PENDING_WITH_ENTER_EXIT(ctx) = NULL;
+  Py_XDECREF(KosContext_PENDING_WITH_ENTER_NAME(ctx));
+  KosContext_PENDING_WITH_ENTER_NAME(ctx) = NULL;
+  kos_clear_pending_with_exit(ctx);
+  Py_XDECREF(KosContext_PLAN_RESUME_INJECT(ctx));
+  KosContext_PLAN_RESUME_INJECT(ctx) = NULL;
+  KosContext_PLAN_SUSPENDED_AWAIT(ctx) = 0;
+
   if (context_freecount < CONTEXT_MAX_FREE) {
     memset(ctx, 0, sizeof(KosContext));
     KosContext_FREELIST_NEXT(ctx) = context_freelist;
@@ -561,6 +592,20 @@ int kos_context_traverse(
   Py_VISIT(KosContext_PY_RESUME_INJECT(ctx));
   Py_VISIT(KosContext_INJECT_VALUE(ctx));
   Py_VISIT(KosContext_PENDING_AGEN_DEFAULT(ctx));
+
+  /* Traverse pending WITH state */
+  if (KosContext_PENDING_WITH_ENTER_MGR(ctx)) {
+    Py_VISIT(KosContext_PENDING_WITH_ENTER_MGR(ctx));
+    Py_VISIT(KosContext_PENDING_WITH_ENTER_ENTER(ctx));
+    Py_VISIT(KosContext_PENDING_WITH_ENTER_EXIT(ctx));
+    Py_VISIT(KosContext_PENDING_WITH_ENTER_NAME(ctx));
+  }
+  if (KosContext_PENDING_WITH_EXIT_NODE(ctx)) {
+    Py_VISIT(KosContext_PENDING_WITH_EXIT_TYP(ctx));
+    Py_VISIT(KosContext_PENDING_WITH_EXIT_VAL(ctx));
+    Py_VISIT(KosContext_PENDING_WITH_EXIT_TB(ctx));
+  }
+  Py_VISIT(KosContext_PLAN_RESUME_INJECT(ctx));
 
   /* Traverse the dynamic chain */
   int res = kos_dynchain_traverse(KosContext_DYN_TOP(ctx), NULL, visit, arg);
@@ -842,6 +887,260 @@ static int push_or_await(KosContext *ctx, KosEvent *out_ev, PyObject *val) {
   }
 
   return -1;
+}
+
+
+/* Forward declaration for WITH helpers (frame_ns_bind is defined later). */
+static int frame_ns_bind(KosContext *ctx, PyObject *name, PyObject *val);
+
+
+/**
+   Use enter result: if awaitable stash and push_or_await; else bind, push block, push node.
+   Consumes result and takes ownership of mgr, enter, exit, name.
+*/
+int kos_push_with_after_enter(
+    KosContext *ctx,
+    KosEvent *out_ev,
+    PyObject *result,
+    PyObject *mgr,
+    PyObject *enter,
+    PyObject *exit,
+    PyObject *name,
+    uint32_t resume_pc) {
+
+  PyTypeObject *type = result ? Py_TYPE(result) : NULL;
+  int is_awaitable = (type && type->tp_as_async && type->tp_as_async->am_await);
+
+  if (is_awaitable) {
+    KosContext_PENDING_WITH_ENTER_MGR(ctx) = mgr;
+    KosContext_PENDING_WITH_ENTER_ENTER(ctx) = enter;
+    KosContext_PENDING_WITH_ENTER_EXIT(ctx) = exit;
+    KosContext_PENDING_WITH_ENTER_NAME(ctx) = name;
+    KosContext_PENDING_WITH_ENTER_RESUME_PC(ctx) = resume_pc;
+    int r = push_or_await(ctx, out_ev, result);
+    if (r == 1)
+      return 1;
+    if (r < 0) {
+      kos_clear_pending_with_enter(ctx);
+      return -1;
+    }
+    /* r == 0: awaitable completed synchronously; result was pushed on stack.
+       Pop it and use stashed refs for the sync path below; clear stash pointers
+       without DECREF so we pass ownership to the sync path. */
+    result = KosStackBlock_PopRef(&CURRENT_STACK(ctx));
+    if (! result) {
+      kos_clear_pending_with_enter(ctx);
+      return -1;
+    }
+    mgr = KosContext_PENDING_WITH_ENTER_MGR(ctx);
+    enter = KosContext_PENDING_WITH_ENTER_ENTER(ctx);
+    exit = KosContext_PENDING_WITH_ENTER_EXIT(ctx);
+    name = KosContext_PENDING_WITH_ENTER_NAME(ctx);
+    KosContext_PENDING_WITH_ENTER_MGR(ctx) = NULL;
+    KosContext_PENDING_WITH_ENTER_ENTER(ctx) = NULL;
+    KosContext_PENDING_WITH_ENTER_EXIT(ctx) = NULL;
+    KosContext_PENDING_WITH_ENTER_NAME(ctx) = NULL;
+  }
+
+  if (name && name != Py_None) {
+    if (frame_ns_bind(ctx, name, result) < 0) {
+      Py_DECREF(result);
+      Py_DECREF(exit);
+      Py_DECREF(enter);
+      Py_DECREF(mgr);
+      Py_XDECREF(name);
+      return -1;
+    }
+  }
+  Py_XDECREF(result);
+
+  if (KosStackBlock_PushBlock(&CURRENT_STACK(ctx)) < 0) {
+    Py_DECREF(exit);
+    Py_DECREF(enter);
+    Py_DECREF(mgr);
+    Py_XDECREF(name);
+    return -1;
+  }
+
+  if (! kos_dyn_push_with(ctx, mgr, enter, exit, name, resume_pc)) {
+    KosStackBlock_DropBlock(&CURRENT_STACK(ctx));
+    Py_DECREF(exit);
+    Py_DECREF(enter);
+    Py_DECREF(mgr);
+    Py_XDECREF(name);
+    return -1;
+  }
+  return 0;
+}
+
+
+/**
+   Complete pending WITH enter after await: TOS is the enter result.
+*/
+int kos_complete_pending_with_enter(KosContext *ctx, KosEvent *out_ev) {
+
+  if (! KosContext_PENDING_WITH_ENTER_MGR(ctx))
+    return 0;
+
+  PyObject *result = KosStackBlock_PopRef(&CURRENT_STACK(ctx));
+  if (! result) {
+    kos_clear_pending_with_enter(ctx);
+    return -1;
+  }
+
+  PyObject *mgr = KosContext_PENDING_WITH_ENTER_MGR(ctx);
+  PyObject *enter = KosContext_PENDING_WITH_ENTER_ENTER(ctx);
+  PyObject *exit = KosContext_PENDING_WITH_ENTER_EXIT(ctx);
+  PyObject *name = KosContext_PENDING_WITH_ENTER_NAME(ctx);
+  uint32_t resume_pc = KosContext_PENDING_WITH_ENTER_RESUME_PC(ctx);
+
+  KosContext_PENDING_WITH_ENTER_MGR(ctx) = NULL;
+  KosContext_PENDING_WITH_ENTER_ENTER(ctx) = NULL;
+  KosContext_PENDING_WITH_ENTER_EXIT(ctx) = NULL;
+  KosContext_PENDING_WITH_ENTER_NAME(ctx) = NULL;
+
+  if (name && name != Py_None) {
+    if (frame_ns_bind(ctx, name, result) < 0) {
+      Py_DECREF(result);
+      Py_DECREF(exit);
+      Py_DECREF(enter);
+      Py_DECREF(mgr);
+      Py_XDECREF(name);
+      return -1;
+    }
+  }
+  Py_XDECREF(result);
+
+  if (KosStackBlock_PushBlock(&CURRENT_STACK(ctx)) < 0) {
+    Py_DECREF(exit);
+    Py_DECREF(enter);
+    Py_DECREF(mgr);
+    Py_XDECREF(name);
+    return -1;
+  }
+
+  if (! kos_dyn_push_with(ctx, mgr, enter, exit, name, resume_pc)) {
+    KosStackBlock_DropBlock(&CURRENT_STACK(ctx));
+    Py_DECREF(exit);
+    Py_DECREF(enter);
+    Py_DECREF(mgr);
+    Py_XDECREF(name);
+    return -1;
+  }
+  (void) out_ev;
+  return 0;
+}
+
+
+/**
+   Start awaiting WITH exit result. Stash already set by kos_dyn_with_unwind.
+*/
+int kos_with_exit_start_await(KosContext *ctx, KosEvent *out_ev,
+                              PyObject *awaitable) {
+
+  return push_or_await(ctx, out_ev, awaitable);
+}
+
+
+/**
+   Complete pending WITH exit after await: TOS is the exit result.
+   Apply swallow logic, drop block, pop node, clear stash.
+*/
+int kos_complete_pending_with_exit(KosContext *ctx) {
+
+  if (! KosContext_PENDING_WITH_EXIT_NODE(ctx))
+    return 0;
+
+  PyObject *result = KosStackBlock_PopRef(&CURRENT_STACK(ctx));
+  if (! result) {
+    kos_clear_pending_with_exit(ctx);
+    return -1;
+  }
+
+  KosDynWith *with_node = KosContext_PENDING_WITH_EXIT_NODE(ctx);
+  PyObject *typ = KosContext_PENDING_WITH_EXIT_TYP(ctx);
+  PyObject *val = KosContext_PENDING_WITH_EXIT_VAL(ctx);
+  PyObject *tb = KosContext_PENDING_WITH_EXIT_TB(ctx);
+  (void) KosContext_PENDING_WITH_EXIT_NORMAL(ctx);
+
+  KosContext_PENDING_WITH_EXIT_NODE(ctx) = NULL;
+  KosContext_PENDING_WITH_EXIT_TYP(ctx) = NULL;
+  KosContext_PENDING_WITH_EXIT_VAL(ctx) = NULL;
+  KosContext_PENDING_WITH_EXIT_TB(ctx) = NULL;
+
+  int had_exception = (typ != Py_None);
+
+  if (had_exception && PyObject_IsTrue(result)) {
+    PyErr_Clear();
+    Py_DECREF(result);
+    Py_XDECREF(typ);
+    Py_XDECREF(val);
+    Py_XDECREF(tb);
+    if (KosStackBlock_DropBlock(&CURRENT_STACK(ctx)) < 0)
+      return -1;
+    if (KosContext_FRAME_TOP(ctx))
+      KosDynFrame_PC(KosContext_FRAME_TOP(ctx)) = KosDynWith_RESUME_PC(with_node);
+    kos_dyn_pop_with(ctx, with_node);
+    if (KosStackBlock_PushRef(&CURRENT_STACK(ctx), Py_None) < 0)
+      return -1;
+    return 0;
+  }
+
+  if (had_exception) {
+    Py_DECREF(result);
+    if (KosStackBlock_DropBlock(&CURRENT_STACK(ctx)) < 0) {
+      PyErr_Restore(typ, val, tb);
+      return -1;
+    }
+    kos_dyn_pop_with(ctx, with_node);
+    PyErr_Restore(typ, val, tb);
+    return -1;
+  }
+
+  Py_DECREF(result);
+  Py_XDECREF(typ);
+  Py_XDECREF(val);
+  Py_XDECREF(tb);
+  if (KosStackBlock_DropBlock(&CURRENT_STACK(ctx)) < 0)
+    return -1;
+  uint32_t next_pc = KosDynWith_RESUME_PC(with_node);
+  kos_dyn_pop_with(ctx, with_node);
+  if (KosContext_FRAME_TOP(ctx))
+    KosDynFrame_PC(KosContext_FRAME_TOP(ctx)) = next_pc;
+  if (KosStackBlock_PushRef(&CURRENT_STACK(ctx), Py_None) < 0)
+    return -1;
+  return 0;
+}
+
+
+/**
+   Clear pending WITH exit stash. No-op if not set.
+*/
+void kos_clear_pending_with_exit(KosContext *ctx) {
+
+  Py_XDECREF(KosContext_PENDING_WITH_EXIT_TYP(ctx));
+  KosContext_PENDING_WITH_EXIT_TYP(ctx) = NULL;
+  Py_XDECREF(KosContext_PENDING_WITH_EXIT_VAL(ctx));
+  KosContext_PENDING_WITH_EXIT_VAL(ctx) = NULL;
+  Py_XDECREF(KosContext_PENDING_WITH_EXIT_TB(ctx));
+  KosContext_PENDING_WITH_EXIT_TB(ctx) = NULL;
+  KosContext_PENDING_WITH_EXIT_NODE(ctx) = NULL;
+}
+
+
+/**
+   Clear pending WITH enter stash (release refs). No-op if not set.
+*/
+void kos_clear_pending_with_enter(KosContext *ctx) {
+
+  Py_XDECREF(KosContext_PENDING_WITH_ENTER_MGR(ctx));
+  KosContext_PENDING_WITH_ENTER_MGR(ctx) = NULL;
+  Py_XDECREF(KosContext_PENDING_WITH_ENTER_ENTER(ctx));
+  KosContext_PENDING_WITH_ENTER_ENTER(ctx) = NULL;
+  Py_XDECREF(KosContext_PENDING_WITH_ENTER_EXIT(ctx));
+  KosContext_PENDING_WITH_ENTER_EXIT(ctx) = NULL;
+  Py_XDECREF(KosContext_PENDING_WITH_ENTER_NAME(ctx));
+  KosContext_PENDING_WITH_ENTER_NAME(ctx) = NULL;
 }
 
 
@@ -1668,10 +1967,11 @@ static int try_local_exception_handler(KosContext *ctx, KosEvent *out_ev) {
         PyObject *saved_typ = NULL, *saved_val = NULL, *saved_tb = NULL;
         if (top && KosDynNode_IS_YIELD_FROM(top) && PyErr_Occurred())
           PyErr_Fetch(&saved_typ, &saved_val, &saved_tb);
-        int pop_res = kos_dyn_pop_top(ctx);
+        int pop_res = kos_dyn_pop_top(ctx, out_ev);
         if (saved_typ != NULL)
           PyErr_Restore(saved_typ, saved_val, saved_tb);
-        if (pop_res == KOS_DYN_UNWIND_ASYNC_STARTED) {
+        if (pop_res == KOS_DYN_UNWIND_ASYNC_STARTED
+            || pop_res == KOS_DYN_WITH_EXIT_ASYNC_STARTED) {
           KosContext_UNWIND_TARGET_FRAME(ctx) = CURRENT_FRAME(ctx);
           return 1;
         }
@@ -1804,6 +2104,21 @@ int koskari_eval(KosContext *ctx, KosEvent *out_ev) {
     Py_CLEAR(KosContext_PY_RESUME_INJECT(ctx));
   }
 
+  /* If we resumed from WITH exit await, complete the pop before dispatch. */
+  if (KosContext_PENDING_WITH_EXIT_NODE(ctx)) {
+    if (kos_complete_pending_with_exit(ctx) < 0) {
+      eval_ret = 0;
+      goto koskari_eval_cleanup;
+    }
+  }
+
+  /* If we resumed from transfer plan await, pop inject into plan slot for the step. */
+  if (KosContext_PLAN_SUSPENDED_AWAIT(ctx)) {
+    PyObject *inj = KosStackBlock_PopRef(&CURRENT_STACK(ctx));
+    KosContext_PLAN_RESUME_INJECT(ctx) = inj;
+    KosContext_PLAN_SUSPENDED_AWAIT(ctx) = 0;
+  }
+
 #if KOS_USE_COMPUTED_GOTO
   static const void *const optable[] = {
 #define OP(name, style) &&TARGET_##name,
@@ -1866,6 +2181,8 @@ int koskari_eval(KosContext *ctx, KosEvent *out_ev) {
     trace_stack("  before", CURRENT_STACK(ctx));
 #endif
 
+    /* Advance PC before dispatch so normal path advances. If handler returns 1
+       (suspend, e.g. WITH enter/exit await) we roll back so next eval is same insn. */
     if (kos_hook_active(ctx))
       KosHookRunner_PC(KosContext_HOOK_RUNNER(ctx)) = pc + 1;
     else
@@ -1904,6 +2221,18 @@ int koskari_eval(KosContext *ctx, KosEvent *out_ev) {
             continue;
           eval_ret = 0;
           goto koskari_eval_cleanup;
+        }
+        if (op_res == 1) {
+          /* WITH enter/exit await: do not advance PC so resume dispatches
+             the same opcode. Other opcodes (e.g. YIELD) use 1 for suspend
+             but resume at the next instruction. */
+          KosOpCode op = (KosOpCode) KosOp_OP(insn);
+          if (op == KOS_OP_PUSH_WITH || op == KOS_OP_POP_WITH) {
+            if (kos_hook_active(ctx))
+              KosHookRunner_PC(KosContext_HOOK_RUNNER(ctx)) = pc;
+            else
+              CURRENT_PC(ctx) = pc;
+          }
         }
         eval_ret = (op_res < 0) ? -1 : 0;
         goto koskari_eval_cleanup;
@@ -1958,6 +2287,8 @@ int koskari_eval_init(PyObject *mod) {
   STR_CONST(str_aclose, "aclose");
   STR_CONST(str_enter, "__enter__");
   STR_CONST(str_exit, "__exit__");
+  STR_CONST(str_aenter, "__aenter__");
+  STR_CONST(str_aexit, "__aexit__");
 
   /* Initialize KosEvaluatorToken type */
   if (PyType_Ready(&KosEvaluatorTokenType) < 0)
@@ -2006,6 +2337,8 @@ int koskari_eval_clear(PyObject *mod) {
   Py_CLEAR(str_aclose);
   Py_CLEAR(str_enter);
   Py_CLEAR(str_exit);
+  Py_CLEAR(str_aenter);
+  Py_CLEAR(str_aexit);
 
   /* Null out exception type pointers (module dict owns the refs) */
   KoskariContinuationDead = NULL;

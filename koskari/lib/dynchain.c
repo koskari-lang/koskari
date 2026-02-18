@@ -1178,7 +1178,9 @@ void kos_dyn_pop_with(KosContext *ctx, KosDynWith *node) {
 }
 
 
-int kos_dyn_with_unwind(KosContext *ctx, KosDynWith *node) {
+int kos_dyn_with_unwind(KosContext *ctx, KosDynWith *node,
+                        PyObject **out_awaitable) {
+
   PyObject *exit_fn = KosDynWith_EXIT(node);
   PyObject *typ = NULL;
   PyObject *val = NULL;
@@ -1187,6 +1189,9 @@ int kos_dyn_with_unwind(KosContext *ctx, KosDynWith *node) {
   if (PyErr_Occurred()) {
     PyErr_Fetch(&typ, &val, &tb);
     PyErr_Clear();
+    if (! typ) typ = Py_None;
+    if (! val) val = Py_None;
+    if (! tb) tb = Py_None;
   }
   else
     typ = val = tb = Py_None;
@@ -1196,6 +1201,19 @@ int kos_dyn_with_unwind(KosContext *ctx, KosDynWith *node) {
 
   if (! result)
     return -1;
+
+  if (out_awaitable) {
+    PyTypeObject *type = Py_TYPE(result);
+    if (type->tp_as_async && type->tp_as_async->am_await) {
+      KosContext_PENDING_WITH_EXIT_NODE(ctx) = node;
+      KosContext_PENDING_WITH_EXIT_TYP(ctx) = typ;
+      KosContext_PENDING_WITH_EXIT_VAL(ctx) = val;
+      KosContext_PENDING_WITH_EXIT_TB(ctx) = tb;
+      KosContext_PENDING_WITH_EXIT_NORMAL(ctx) = (typ == Py_None);
+      *out_awaitable = result;
+      return KOS_DYN_WITH_EXIT_ASYNC_STARTED;
+    }
+  }
 
   if (typ != Py_None && PyObject_IsTrue(result)) {
     PyErr_Clear();
@@ -1214,16 +1232,23 @@ int kos_dyn_with_unwind(KosContext *ctx, KosDynWith *node) {
 
 /**
    Pop a KOS_DYN_WITH node: run exit (unwind), drop stack block, unlink and free.
-   Called from kos_dyn_pop_top.
-
-   If __exit__ swallowed the exception (PyErr_Occurred() is now false), set
-   the frame PC to the WITH extent's end (pop_pc + 1) so execution resumes
-   after the with body.
+   Called from kos_dyn_pop_top. If exit returns awaitable, stash and start
+   await via kos_with_exit_start_await, return KOS_DYN_WITH_EXIT_ASYNC_STARTED.
 */
-static int dyn_pop_top_with(KosContext *ctx, KosDynNode *top) {
-  KosDynWith *with_node = (KosDynWith *) top;
+static int dyn_pop_top_with(KosContext *ctx, KosDynNode *top,
+                            KosEvent *out_ev) {
 
-  if (kos_dyn_with_unwind(ctx, with_node) < 0)
+  KosDynWith *with_node = (KosDynWith *) top;
+  PyObject *exit_awaitable = NULL;
+
+  int unw = kos_dyn_with_unwind(ctx, with_node, &exit_awaitable);
+  if (unw == KOS_DYN_WITH_EXIT_ASYNC_STARTED) {
+    int r = kos_with_exit_start_await(ctx, out_ev, exit_awaitable);
+    if (r == 1)
+      return KOS_DYN_WITH_EXIT_ASYNC_STARTED;
+    return r;
+  }
+  if (unw < 0)
     return -1;
 
   if (! PyErr_Occurred()) {
@@ -1359,7 +1384,8 @@ void kos_dyn_yieldfrom_unwind(KosContext *ctx, KosDynYieldFrom *node) {
    specific logic); prompt and pycall are barriers and return -1.  Used
    for unwinding (e.g. exception handling) and normal scope exit.
 */
-int kos_dyn_pop_top(KosContext *ctx) {
+int kos_dyn_pop_top(KosContext *ctx, KosEvent *out_ev) {
+
   KosDynNode *top = KosContext_DYN_TOP(ctx);
   if (! top) {
     PyErr_SetString(PyExc_RuntimeError, "cannot pop from empty dynamic chain");
@@ -1408,7 +1434,7 @@ int kos_dyn_pop_top(KosContext *ctx) {
     return dyn_pop_top_param(ctx, top);
 
   case KOS_DYN_WITH:
-    return dyn_pop_top_with(ctx, top);
+    return dyn_pop_top_with(ctx, top, out_ev);
   }
 
   PyErr_Format(PyExc_RuntimeError, "unknown dyn node kind %u",
@@ -1420,13 +1446,16 @@ int kos_dyn_pop_top(KosContext *ctx) {
 }
 
 
-int kos_dyn_unwind_to_frame(KosContext *ctx, KosDynFrame *frame) {
+int kos_dyn_unwind_to_frame(KosContext *ctx, KosDynFrame *frame,
+                            KosEvent *out_ev) {
+
   while (KosContext_DYN_TOP(ctx) != NULL
          && KosContext_DYN_TOP(ctx) != (KosDynNode *) frame) {
-    int pop_res = kos_dyn_pop_top(ctx);
-    if (pop_res == KOS_DYN_UNWIND_ASYNC_STARTED) {
+    int pop_res = kos_dyn_pop_top(ctx, out_ev);
+    if (pop_res == KOS_DYN_UNWIND_ASYNC_STARTED
+        || pop_res == KOS_DYN_WITH_EXIT_ASYNC_STARTED) {
       KosContext_UNWIND_TARGET_FRAME(ctx) = frame;
-      return KOS_DYN_UNWIND_ASYNC_STARTED;
+      return pop_res;
     }
     if (pop_res != 0)
       return -1;
@@ -2426,7 +2455,6 @@ int kos_run_transfer_step(KosContext *ctx) {
          (size_t) KosTransferPlan_ACTION_INDEX(KosContext_PLAN(ctx)),
          (void *) KosContext_PLAN(ctx), (void *) KosTransferPlan_ACTIONS(KosContext_PLAN(ctx)),
          (int) KosTransferAction_STEP(action), (int) KOS_XFER_INSTALL);
-  KosTransferPlan_ACTION_INDEX(KosContext_PLAN(ctx))++;
 
   switch (KosTransferAction_STEP(action)) {
     case KOS_XFER_RUN_HOOK:
@@ -2451,6 +2479,8 @@ int kos_run_transfer_step(KosContext *ctx) {
     }
   }
 
+  /* Advance only when step completed normally (no early return -1 or KOS_XFER_SUSPENDED_AWAIT). */
+  KosTransferPlan_ACTION_INDEX(KosContext_PLAN(ctx))++;
   if (KosTransferPlan_ACTION_INDEX(KosContext_PLAN(ctx)) >= KosTransferPlan_ACTION_COUNT(KosContext_PLAN(ctx)))
     return 1;
 

@@ -248,13 +248,14 @@ wind/unwind steps:
 - **Wind step:** run `enter`; re-bind `name` if present
 
 **Transfer plan suspension:** Enter/exit may suspend (auto-await). When a wind
-or unwind step returns an awaitable, the plan may suspend. The implementation
-must record progress (e.g. which steps completed, which step is next) and
-resume the plan when the await completes. Transfer plans must therefore support
-**suspension and resumption** (interruptible plans); this is a requirement for
-dyn-with and likely for other async extents as well. The exact state
-representation (e.g. plan-in-progress struct or step index) is not specified
-here; the plan must be resumable.
+or unwind step returns an awaitable, the plan suspends. The implementation
+records progress (e.g. which step suspended, inject slot for the result) and
+resumes the plan when the await completes: the driver receives `KOS_EV_AWAIT`,
+sends the result back on the next `koskari_eval`, and the eval loop feeds the
+inject into the plan and calls `kos_run_transfer_step` again. Transfer plans
+therefore support **suspension and resumption** (interruptible plans). See
+[extent-wind-unwind.md](extent-wind-unwind.md) for hook-body await and
+suspend-during-wind/unwind behaviour.
 
 **Wind/unwind ordering:** Unwind runs exit steps from **innermost** to
 **outermost**. Wind runs enter steps from **outermost** to **innermost**. This

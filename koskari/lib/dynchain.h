@@ -59,6 +59,8 @@ typedef struct KosTransferPlan KosTransferPlan;
 struct KosHookRunner;
 typedef struct KosHookRunner KosHookRunner;
 
+struct KosEvent;
+
 
 /* === DynNode kind enum === */
 
@@ -267,6 +269,14 @@ typedef enum KosTransferStep {
   KOS_XFER_INJECT   = 2,
   KOS_XFER_PARAM_RESTORE = 3,
 } KosTransferStep;
+
+
+/**
+   Return value from kos_run_transfer_step: plan suspended on await.
+   Step set py_await_iter and plan_suspended_await; driver resumes then
+   feeds inject and runs plan again.
+*/
+#define KOS_XFER_SUSPENDED_AWAIT 2
 
 
 /* === KosTransferAction: single transfer step === */
@@ -858,9 +868,14 @@ void kos_dyn_pop_with(KosContext *ctx, KosDynWith *node);
    :param ctx: execution context
    :param node: WITH node being unwound
 
-   :return: 0 on success, -1 on error
+   :param out_awaitable: if non-NULL and exit returns an awaitable,
+     set to the awaitable (new ref) and return KOS_DYN_WITH_EXIT_ASYNC_STARTED
+
+   :return: 0 on success, -1 on error, KOS_DYN_WITH_EXIT_ASYNC_STARTED if
+     exit returned awaitable (and *out_awaitable set)
 */
-int kos_dyn_with_unwind(KosContext *ctx, KosDynWith *node);
+int kos_dyn_with_unwind(KosContext *ctx, KosDynWith *node,
+                        PyObject **out_awaitable);
 
 
 /**
@@ -869,12 +884,16 @@ int kos_dyn_with_unwind(KosContext *ctx, KosDynWith *node);
 
    :param ctx: execution context
 
-   :return: 0 on success, -1 on error or if top is PROMPT/PYCALL
+   :param out_ev: event output for suspend (required when WITH may have async exit)
+
+   :return: 0 on success, -1 on error or if top is PROMPT/PYCALL,
+     KOS_DYN_UNWIND_ASYNC_STARTED or KOS_DYN_WITH_EXIT_ASYNC_STARTED when suspended
 */
-int kos_dyn_pop_top(KosContext *ctx);
+int kos_dyn_pop_top(KosContext *ctx, struct KosEvent *out_ev);
 
 
-int kos_dyn_unwind_to_frame(KosContext *ctx, KosDynFrame *frame);
+int kos_dyn_unwind_to_frame(KosContext *ctx, KosDynFrame *frame,
+                           struct KosEvent *out_ev);
 
 
 /**
@@ -883,6 +902,12 @@ int kos_dyn_unwind_to_frame(KosContext *ctx, KosDynFrame *frame);
    the evaluator runs the hook then resumes unwinding.
 */
 #define KOS_DYN_UNWIND_ASYNC_STARTED 1
+
+/**
+   Return value when WITH __exit__ returned an awaitable; caller must
+   stash and await before completing the pop.
+*/
+#define KOS_DYN_WITH_EXIT_ASYNC_STARTED 2
 
 
 /**

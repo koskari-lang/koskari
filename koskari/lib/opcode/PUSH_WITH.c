@@ -15,12 +15,16 @@
 
 /**
    PUSH_WITH: arg = constant pool index (name or None). Single-shot context
-   manager. Stack before: [..., mgr]. Pop mgr, resolve __enter__/__exit__,
-   call enter, optionally bind result to name, push stack block, push
-   KOS_DYN_WITH node. Phase 1: sync only.
+   manager. Stack before: [..., mgr]. Pop mgr, resolve enter/exit, call enter
+   (auto-await if awaitable), bind result to name, push stack block, push
+   KOS_DYN_WITH node.
 */
 
 KOS_OP_HANDLER(PUSH_WITH) {
+
+  if (KosContext_PENDING_WITH_ENTER_MGR(ctx))
+    return kos_complete_pending_with_enter(ctx, out_ev);
+
   PyObject *mgr = KosStackBlock_PopRef(&CURRENT_STACK(ctx));
   if (! mgr)
     return -1;
@@ -40,31 +44,11 @@ KOS_OP_HANDLER(PUSH_WITH) {
     return -1;
   }
 
-  PyObject *name_obj = get_name_from_insn(CURRENT_CODE(ctx), insn);
-  if (name_obj && name_obj != Py_None) {
-    if (frame_ns_bind(ctx, name_obj, result) < 0) {
-      Py_DECREF(result);
-      Py_DECREF(exit);
-      Py_DECREF(enter);
-      Py_DECREF(mgr);
-      return -1;
-    }
-  }
-  else
-    Py_DECREF(result);
-
-  if (KosStackBlock_PushBlock(&CURRENT_STACK(ctx)) < 0) {
-    Py_DECREF(exit);
-    Py_DECREF(enter);
-    Py_DECREF(mgr);
-    return -1;
-  }
-
   KosCode *code = CURRENT_CODE(ctx);
   uint32_t pc = (uint32_t)(insn - KosCode_CODE(code));
   uint32_t eid = kos_extent_find((PyObject *) code, pc, KOS_EXT_WITH);
   if (eid == KOS_EXTENT_NONE) {
-    KosStackBlock_DropBlock(&CURRENT_STACK(ctx));
+    Py_DECREF(result);
     Py_DECREF(exit);
     Py_DECREF(enter);
     Py_DECREF(mgr);
@@ -73,7 +57,7 @@ KOS_OP_HANDLER(PUSH_WITH) {
   }
   KosExtentDesc *ext = kos_extent_desc((PyObject *) code, eid);
   if (! ext) {
-    KosStackBlock_DropBlock(&CURRENT_STACK(ctx));
+    Py_DECREF(result);
     Py_DECREF(exit);
     Py_DECREF(enter);
     Py_DECREF(mgr);
@@ -82,16 +66,11 @@ KOS_OP_HANDLER(PUSH_WITH) {
   }
   uint32_t resume_pc = ext->pop_pc + 1u;
 
-  if (! kos_dyn_push_with(ctx, mgr, enter, exit, NULL, resume_pc)) {
-    KosStackBlock_DropBlock(&CURRENT_STACK(ctx));
-    Py_DECREF(exit);
-    Py_DECREF(enter);
-    Py_DECREF(mgr);
-    return -1;
-  }
+  PyObject *name_obj = get_name_from_insn(code, insn);
+  Py_XINCREF(name_obj);
 
-  (void) out_ev;
-  return 0;
+  return kos_push_with_after_enter(ctx, out_ev, result, mgr, enter, exit,
+                                   name_obj, resume_pc);
 }
 
 
