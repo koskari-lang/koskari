@@ -19,15 +19,16 @@
 */
 
 KOS_OP_HANDLER(CONST) {
-  PyObject *val = KosCode_GetConstant((PyObject *) CURRENT_CODE(ctx),
-                                      KosOp_ARG(insn));
-  if (! val) {
-    SAYF("[eval] CONST GetConstant failed arg=%u\n",
-         (unsigned) KosOp_ARG(insn));
+  KosCode *code = CURRENT_CODE(ctx);
+  uint32_t index = KosOp_ARG(insn);
+
+  if (unlikely(index >= KosCode_CPOOL_LEN(code))) {
+    PyErr_Format(PyExc_IndexError, "constant index out of bounds, %u",
+                 index);
     return -1;
   }
-  if (PyLong_Check(val))
-    SAYF("[eval] CONST pushed %ld\n", PyLong_AsLong(val));
+
+  PyObject *val = KosCode_GET_CONST(code, index);
   Py_INCREF(val);
   return push_result(ctx, val);
 }

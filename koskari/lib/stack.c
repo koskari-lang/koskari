@@ -31,6 +31,7 @@
 
 
 #include "lib.h"
+#include "hints.h"
 #include "debug.h"
 
 
@@ -154,7 +155,7 @@ int KosStackBlock_CopyForWrite(KosStackBlock **block) {
     return 0;
   }
 
-  if (KosStackBlock_REFCOUNT(b) == 1) {
+  if (likely(KosStackBlock_REFCOUNT(b) == 1)) {
     SAY("  only 1 ref, no copy needed");
     return 0;
 

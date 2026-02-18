@@ -50,31 +50,11 @@
 
 
 #include "lib.h"
+#include "hints.h"
 #include "debug.h"
 
 #include <stdint.h>
 
-/* Opcode handlers are always inlined so the eval loop stays fast. */
-#if defined(__GNUC__) || defined(__clang__)
-# define KOS_OP_INLINE static inline __attribute__((always_inline))
-# define likely(x)   __builtin_expect(!!(x), 1)
-# define unlikely(x) __builtin_expect(!!(x), 0)
-#else
-# define KOS_OP_INLINE static inline
-# define likely(x)   (x)
-# define unlikely(x) (x)
-#endif
-
-/* Dispatch: computed goto when available, else switch/case; no function table
-   so the compiler can inline handler bodies. Both paths use tail-dispatch to
-   next_insn. Build may override with -DKOS_USE_COMPUTED_GOTO=0 or =1. */
-#ifndef KOS_USE_COMPUTED_GOTO
-# if (defined(__GNUC__) || defined(__clang__)) && !defined(__STRICT_ANSI__)
-#  define KOS_USE_COMPUTED_GOTO 1
-# else
-#  define KOS_USE_COMPUTED_GOTO 0
-# endif
-#endif
 
 
 #define KOS_OP_HANDLER(name)                                            \
