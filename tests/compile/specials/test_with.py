@@ -18,6 +18,9 @@ Single-shot context manager: enter runs before body, exit runs after (or on
 exception). Uses PUSH_WITH/POP_WITH; sync __enter__/__exit__ only.
 """
 
+import sys
+
+from koskari import dis
 
 from . import SpecialsTestCase
 
@@ -111,11 +114,36 @@ class TestWithSpecial(SpecialsTestCase):
 
     def test_exception_swallowed_when_exit_returns_true(self):
         """
-        When exit returns true, exception is swallowed; expression yields None.
-        Skipped: resume-after-swallow requires setting PC to after POP_WITH
-        and try_local_exception_handler to continue; not yet implemented.
+        When exit returns true, exception is swallowed; execution resumes
+        after the with body; expression yields None.
         """
-        self.skipTest("resume after with-exit swallow not yet implemented")
+        state = {}
+        mgr = SwallowMgr()
+
+        def after_raise(x):
+            state["after"] = x
+
+        def raise_err():
+            raise ValueError("oops")
+
+        src = """
+        (compile/begin
+          (compile/with [(compile/call make_mgr)]
+            (compile/call raise_err))
+          (compile/call after_raise 1))
+        """
+        expr, mod = self.compile_expr(
+            src,
+            make_mgr=lambda: mgr,
+            raise_err=raise_err,
+            after_raise=after_raise,
+        )
+        result = expr().run()
+        self.assertIsNone(result)
+        self.assertTrue(mgr.entered)
+        self.assertTrue(mgr.exited)
+        self.assertEqual(mgr.exc_info[0], ValueError)
+        self.assertEqual(state.get("after"), 1)
 
 
 # The end.

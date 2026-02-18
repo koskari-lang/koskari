@@ -1659,23 +1659,43 @@ void kos_yieldfrom_close_delegate(KosDynYieldFrom *node) {
 static int try_local_exception_handler(KosContext *ctx, KosEvent *out_ev) {
   KosDynRegion *region = kos_find_region_for_raise(ctx);
   if (! region) {
-    PyObject *typ = NULL, *val = NULL, *tb = NULL;
-    PyErr_Fetch(&typ, &val, &tb);
     if (CURRENT_FRAME(ctx)) {
-      int unw = kos_dyn_unwind_to_frame(ctx, CURRENT_FRAME(ctx));
-      if (unw == KOS_DYN_UNWIND_ASYNC_STARTED) {
-        PyErr_Restore(typ, val, tb);
-        return 1;
+      while (KosContext_DYN_TOP(ctx) != NULL
+             && KosContext_DYN_TOP(ctx) != (KosDynNode *) CURRENT_FRAME(ctx)) {
+        int pop_res = kos_dyn_pop_top(ctx);
+        if (pop_res == KOS_DYN_UNWIND_ASYNC_STARTED) {
+          KosContext_UNWIND_TARGET_FRAME(ctx) = CURRENT_FRAME(ctx);
+          return 1;
+        }
+        if (pop_res != 0) {
+          PyObject *typ = NULL, *val = NULL, *tb = NULL;
+          PyErr_Fetch(&typ, &val, &tb);
+          PyErr_Clear();
+          KosEvent_KIND(out_ev) = KOS_EV_RAISE;
+          KosEvent_PAYLOAD(out_ev) = val;  /* exception instance (caller DECREFs) */
+          Py_XDECREF(typ);
+          Py_XDECREF(tb);
+          KosContext_FLAGS(ctx) &= ~KOS_CTX_RUNNING;
+          KosContext_FLAGS(ctx) |= KOS_CTX_DEAD;
+          return 0;
+        }
+        if (! PyErr_Occurred()) {
+          return 1;
+        }
       }
     }
-    PyErr_Clear();
-    KosEvent_KIND(out_ev) = KOS_EV_RAISE;
-    KosEvent_PAYLOAD(out_ev) = val;  /* exception instance (caller DECREFs) */
-    Py_XDECREF(typ);
-    Py_XDECREF(tb);
-    KosContext_FLAGS(ctx) &= ~KOS_CTX_RUNNING;
-    KosContext_FLAGS(ctx) |= KOS_CTX_DEAD;
-    return 0;
+    {
+      PyObject *typ = NULL, *val = NULL, *tb = NULL;
+      PyErr_Fetch(&typ, &val, &tb);
+      PyErr_Clear();
+      KosEvent_KIND(out_ev) = KOS_EV_RAISE;
+      KosEvent_PAYLOAD(out_ev) = val;  /* exception instance (caller DECREFs) */
+      Py_XDECREF(typ);
+      Py_XDECREF(tb);
+      KosContext_FLAGS(ctx) &= ~KOS_CTX_RUNNING;
+      KosContext_FLAGS(ctx) |= KOS_CTX_DEAD;
+      return 0;
+    }
   }
 
   uint32_t handler_pc = KosDynRegion_BREAK_PC(region);
@@ -1835,6 +1855,7 @@ int koskari_eval(KosContext *ctx, KosEvent *out_ev) {
 #if KOS_STACK_TRACE
     trace_stack("  before", CURRENT_STACK(ctx));
 #endif
+
     if (kos_hook_active(ctx))
       KosHookRunner_PC(KosContext_HOOK_RUNNER(ctx)) = pc + 1;
     else

@@ -28,12 +28,9 @@
 
 #include "lib.h"
 #include "debug.h"
-#include "domain.h"
-#include "eval.h"
-#include "ref.h"
 
 #include <stdint.h>
-#include <string.h>
+
 
 /* Set to 1 to trace transfer plan steps (for debugging).  All trace output
  * goes through SAYF from debug.h. */
@@ -1184,25 +1181,29 @@ int kos_dyn_with_unwind(KosContext *ctx, KosDynWith *node) {
   PyObject *val = NULL;
   PyObject *tb = NULL;
 
-  if (PyErr_Occurred())
-    PyErr_GetExcInfo(&typ, &val, &tb);
+  if (PyErr_Occurred()) {
+    PyErr_Fetch(&typ, &val, &tb);
+    PyErr_Clear();
+  }
   else
     typ = val = tb = Py_None;
 
   PyObject *result = PyObject_CallFunctionObjArgs(
       exit_fn, typ, val, tb, NULL);
 
-  if (typ != Py_None)
-    Py_XDECREF(typ);
-  if (val != Py_None)
-    Py_XDECREF(val);
-  if (tb != Py_None)
-    Py_XDECREF(tb);
-
   if (! result)
     return -1;
-  if (typ != Py_None && PyObject_IsTrue(result))
+
+  if (typ != Py_None && PyObject_IsTrue(result)) {
     PyErr_Clear();
+    Py_XDECREF(typ);
+    Py_XDECREF(val);
+    Py_XDECREF(tb);
+
+  } else if (typ != Py_None) {
+    PyErr_Restore(typ, val, tb);
+  }
+
   Py_DECREF(result);
   return 0;
 }
@@ -1211,6 +1212,10 @@ int kos_dyn_with_unwind(KosContext *ctx, KosDynWith *node) {
 /**
    Pop a KOS_DYN_WITH node: run exit (unwind), drop stack block, unlink and free.
    Called from kos_dyn_pop_top.
+
+   If __exit__ swallowed the exception (PyErr_Occurred() is now false), set
+   the frame PC to the WITH extent's end (pop_pc + 1) so execution resumes
+   after the with body.
 */
 static int dyn_pop_top_with(KosContext *ctx, KosDynNode *top) {
   KosDynWith *with_node = (KosDynWith *) top;
@@ -1218,9 +1223,33 @@ static int dyn_pop_top_with(KosContext *ctx, KosDynNode *top) {
   if (kos_dyn_with_unwind(ctx, with_node) < 0)
     return -1;
 
-  if (KosContext_FRAME_TOP(ctx) &&
-      KosStackBlock_DropBlock(&KosDynFrame_STACK(KosContext_FRAME_TOP(ctx))) < 0)
-    return -1;
+  if (! PyErr_Occurred()) {
+    KosDynFrame *frame = KosContext_FRAME_TOP(ctx);
+    if (frame) {
+      uint32_t pc = KosDynFrame_PC(frame);
+      if (pc > 0)
+        pc--;
+      uint32_t eid = kos_extent_find(
+          (PyObject *) KosDynFrame_CODE(frame),
+          pc,
+          KOS_EXT_WITH);
+      if (eid != KOS_EXTENT_NONE) {
+        KosExtentDesc *ext = kos_extent_desc(
+            (PyObject *) KosDynFrame_CODE(frame), eid);
+        if (ext)
+          KosDynFrame_PC(frame) = ext->pop_pc + 1u;
+      }
+    }
+  }
+
+  if (KosContext_FRAME_TOP(ctx)) {
+    if (KosStackBlock_DropBlock(&KosDynFrame_STACK(KosContext_FRAME_TOP(ctx))) < 0)
+      return -1;
+    if (! PyErr_Occurred() &&
+        KosStackBlock_PushRef(&KosDynFrame_STACK(KosContext_FRAME_TOP(ctx)),
+                             Py_None) < 0)
+      return -1;
+  }
 
   kos_dyn_pop_with(ctx, with_node);
   return 0;
