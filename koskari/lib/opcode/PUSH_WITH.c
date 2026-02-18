@@ -60,7 +60,29 @@ KOS_OP_HANDLER(PUSH_WITH) {
     return -1;
   }
 
-  if (! kos_dyn_push_with(ctx, mgr, enter, exit, NULL)) {
+  KosCode *code = CURRENT_CODE(ctx);
+  uint32_t pc = (uint32_t)(insn - KosCode_CODE(code));
+  uint32_t eid = kos_extent_find((PyObject *) code, pc, KOS_EXT_WITH);
+  if (eid == KOS_EXTENT_NONE) {
+    KosStackBlock_DropBlock(&CURRENT_STACK(ctx));
+    Py_DECREF(exit);
+    Py_DECREF(enter);
+    Py_DECREF(mgr);
+    PyErr_SetString(PyExc_RuntimeError, "PUSH_WITH: no WITH extent at this PC");
+    return -1;
+  }
+  KosExtentDesc *ext = kos_extent_desc((PyObject *) code, eid);
+  if (! ext) {
+    KosStackBlock_DropBlock(&CURRENT_STACK(ctx));
+    Py_DECREF(exit);
+    Py_DECREF(enter);
+    Py_DECREF(mgr);
+    PyErr_SetString(PyExc_RuntimeError, "PUSH_WITH: invalid extent");
+    return -1;
+  }
+  uint32_t resume_pc = ext->pop_pc + 1u;
+
+  if (! kos_dyn_push_with(ctx, mgr, enter, exit, NULL, resume_pc)) {
     KosStackBlock_DropBlock(&CURRENT_STACK(ctx));
     Py_DECREF(exit);
     Py_DECREF(enter);

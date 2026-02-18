@@ -1111,7 +1111,8 @@ static KosDynWith *kos_dynwith_new(
     PyObject *mgr,
     PyObject *enter,
     PyObject *exit,
-    PyObject *name) {
+    PyObject *name,
+    uint32_t resume_pc) {
 
   KosDynWith *node = (KosDynWith *) kos_dynnode_alloc();
   if (! node)
@@ -1123,6 +1124,7 @@ static KosDynWith *kos_dynwith_new(
   KosDynWith_EXIT(node) = exit;
   KosDynWith_ENTERED(node) = 0;
   KosDynWith_NAME(node) = name;
+  KosDynWith_RESUME_PC(node) = resume_pc;
   return node;
 }
 
@@ -1149,10 +1151,11 @@ KosDynWith *kos_dyn_push_with(
     PyObject *mgr,
     PyObject *enter,
     PyObject *exit,
-    PyObject *name) {
+    PyObject *name,
+    uint32_t resume_pc) {
 
   KosDynWith *node = kos_dynwith_new(
-      KosContext_DYN_TOP(ctx), mgr, enter, exit, name);
+      KosContext_DYN_TOP(ctx), mgr, enter, exit, name, resume_pc);
   if (! node)
     return NULL;
 
@@ -1225,23 +1228,8 @@ static int dyn_pop_top_with(KosContext *ctx, KosDynNode *top) {
 
   if (! PyErr_Occurred()) {
     KosDynFrame *frame = KosContext_FRAME_TOP(ctx);
-    if (frame) {
-
-      // TODO: this is a hack to get the correct PC for the with body.
-      // We need to find a better way to do this.
-      // We should absolutely be storing the resume PC on the node itself.
-
-      uint32_t eid = kos_extent_find(
-          (PyObject *) KosDynFrame_CODE(frame),
-          KosDynFrame_PC(frame) - 1,
-          KOS_EXT_WITH);
-      if (eid != KOS_EXTENT_NONE) {
-        KosExtentDesc *ext = kos_extent_desc(
-            (PyObject *) KosDynFrame_CODE(frame), eid);
-        if (ext)
-          KosDynFrame_PC(frame) = ext->pop_pc + 1u;
-      }
-    }
+    if (frame)
+      KosDynFrame_PC(frame) = KosDynWith_RESUME_PC(with_node);
   }
 
   if (KosContext_FRAME_TOP(ctx)) {

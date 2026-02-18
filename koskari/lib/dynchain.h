@@ -196,6 +196,7 @@ struct KosDynNode {
       PyObject *exit;      /* resolved exit callable (owned) */
       uint8_t entered;     /* 1 after enter succeeded */
       PyObject *name;      /* binding name or NULL (owned) */
+      uint32_t resume_pc;  /* PC to jump to after with body (pop_pc + 1) */
     } with;
   } u;
 };
@@ -828,6 +829,7 @@ void kos_dyn_pop_param(KosContext *ctx, KosDynParam *node);
    :param enter: resolved enter callable (ownership transferred)
    :param exit: resolved exit callable (ownership transferred)
    :param name: binding name or NULL (ownership transferred)
+   :param resume_pc: PC to resume at after with body (extent pop_pc + 1)
 
    :return: new KosDynWith node, or NULL on error
 */
@@ -836,7 +838,8 @@ KosDynWith *kos_dyn_push_with(
     PyObject *mgr,
     PyObject *enter,
     PyObject *exit,
-    PyObject *name);
+    PyObject *name,
+    uint32_t resume_pc);
 
 
 /**
@@ -1384,6 +1387,7 @@ int kos_hookrunner_traverse(
 #define KosDynWith_EXIT(n)         (((KosDynNode *)(n))->u.with.exit)
 #define KosDynWith_ENTERED(n)      (((KosDynNode *)(n))->u.with.entered)
 #define KosDynWith_NAME(n)         (((KosDynNode *)(n))->u.with.name)
+#define KosDynWith_RESUME_PC(n)    (((KosDynNode *)(n))->u.with.resume_pc)
 
 
 /* === Unit lifecycle === */
