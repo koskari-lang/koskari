@@ -325,8 +325,15 @@ typedef struct KosTransferAction {
 /* === KosTransferPlan: continuation transfer execution plan === */
 
 
+#define KOS_XFER_PLAN_DEFAULT_ACTIONS 32
+
+
 /**
    KosTransferPlan holds the action list for a continuation transfer.
+
+   Plan and actions are a single allocation. Default capacity is 32;
+   realloc the whole block when more are needed. One cached plan is
+   kept for reuse.
 
    Actions are executed in order from index 0 to action_count-1.
    The action_index tracks the next action to execute.
@@ -343,9 +350,9 @@ typedef struct KosTransferAction {
 struct KosTransferPlan {
   KosTransferPlan *suspended;   /* outer plan if nested */
 
-  KosTransferAction *actions;   /* action array */
   size_t action_count;          /* total actions */
   size_t action_index;          /* next action index */
+  size_t action_capacity;       /* slots allocated (>= action_count) */
 
   KosDynNode *original_target;  /* target for chain-change detection */
   uint32_t chain_version;       /* version at plan creation */
@@ -358,6 +365,8 @@ struct KosTransferPlan {
   /* Stateful step: when current step suspended on await, store awaitable and resume state */
   PyObject *step_awaitable;     /* awaitable when step suspended (owned) */
   PyObject *step_resume_inject; /* value or exception to inject when resuming step (owned) */
+
+  KosTransferAction actions[];  /* flexible array; size = action_capacity */
 };
 
 
@@ -365,6 +374,7 @@ struct KosTransferPlan {
 #define KosTransferPlan_ACTIONS(p)          (((KosTransferPlan *)(p))->actions)
 #define KosTransferPlan_ACTION_COUNT(p)     (((KosTransferPlan *)(p))->action_count)
 #define KosTransferPlan_ACTION_INDEX(p)     (((KosTransferPlan *)(p))->action_index)
+#define KosTransferPlan_ACTION_CAPACITY(p)  (((KosTransferPlan *)(p))->action_capacity)
 #define KosTransferPlan_ORIGINAL_TARGET(p)  (((KosTransferPlan *)(p))->original_target)
 #define KosTransferPlan_CHAIN_VERSION(p)   (((KosTransferPlan *)(p))->chain_version)
 #define KosTransferPlan_RESUME_PC(p)       (((KosTransferPlan *)(p))->resume_pc)

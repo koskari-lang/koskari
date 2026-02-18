@@ -1969,26 +1969,45 @@ KosDynNode *kos_compute_lca(KosDynNode *a, KosDynNode *b) {
 /* === Transfer plan building === */
 
 
+static KosTransferPlan *xfer_plan_cache = NULL;
+
+
 /**
    Allocate a transfer plan with action_count action slots. Plan and actions
-   are zeroed. Returns NULL on failure (PyErr_NoMemory set).
+   are one allocation; default 32 slots, realloc entire block if more needed.
+   Reuses cached plan when available. Returns NULL on failure (PyErr_NoMemory).
 */
 static KosTransferPlan *kos_transfer_plan_alloc(size_t action_count) {
-  KosTransferPlan *plan = PyMem_Malloc(sizeof(KosTransferPlan));
-  if (! plan) {
-    PyErr_NoMemory();
-    return NULL;
-  }
-  memset(plan, 0, sizeof(KosTransferPlan));
+  size_t capacity = (action_count <= KOS_XFER_PLAN_DEFAULT_ACTIONS)
+      ? KOS_XFER_PLAN_DEFAULT_ACTIONS
+      : action_count;
+  size_t size = sizeof(KosTransferPlan) + capacity * sizeof(KosTransferAction);
 
-  KosTransferPlan_ACTIONS(plan) = PyMem_Malloc(sizeof(KosTransferAction) * action_count);
-  if (! KosTransferPlan_ACTIONS(plan)) {
-    PyMem_Free(plan);
-    PyErr_NoMemory();
-    return NULL;
+  KosTransferPlan *plan = NULL;
+  if (xfer_plan_cache) {
+    plan = xfer_plan_cache;
+    xfer_plan_cache = NULL;
+    if (KosTransferPlan_ACTION_CAPACITY(plan) < action_count) {
+      capacity = action_count;
+      size = sizeof(KosTransferPlan) + capacity * sizeof(KosTransferAction);
+      plan = PyMem_Realloc(plan, size);
+      if (! plan) {
+        PyErr_NoMemory();
+        return NULL;
+      }
+    }
+  } else {
+    plan = PyMem_Malloc(size);
+    if (! plan) {
+      PyErr_NoMemory();
+      return NULL;
+    }
   }
-  memset(KosTransferPlan_ACTIONS(plan), 0, sizeof(KosTransferAction) * action_count);
 
+  memset(plan, 0, size);
+  plan->action_count = action_count;
+  plan->action_index = 0;
+  plan->action_capacity = capacity;
   return plan;
 }
 
@@ -2118,7 +2137,6 @@ static int xfer_plan_fill_wind_actions(
 
   KosDynWind **wind_nodes = PyMem_Malloc(sizeof(KosDynWind *) * wind_count);
   if (! wind_nodes) {
-    PyMem_Free(KosTransferPlan_ACTIONS(plan));
     PyMem_Free(plan);
     PyErr_NoMemory();
     return -1;
@@ -2253,8 +2271,8 @@ static void xfer_plan_release_invoke_clone(KosTransferPlan *plan) {
    Free a transfer plan and all resources it owns.  DECREFs any remaining
    INJECT values (we may have completed only part of the plan), releases
    the invoke clone (if any) via xfer_plan_release_invoke_clone, releases
-   the resume_stack chain, DECREFs the continuation ref, then frees the
-   actions array and the plan struct.  Safe to call with NULL.
+   the resume_stack chain, DECREFs the continuation ref.  Caches the plan
+   struct if cache is empty; otherwise frees it.  Safe to call with NULL.
 */
 void kos_free_transfer_plan(KosTransferPlan *plan) {
   if (! plan)
@@ -2281,8 +2299,14 @@ void kos_free_transfer_plan(KosTransferPlan *plan) {
   Py_XDECREF(KosTransferPlan_STEP_RESUME_INJECT(plan));
   KosTransferPlan_STEP_RESUME_INJECT(plan) = NULL;
 
-  PyMem_Free(KosTransferPlan_ACTIONS(plan));
-  PyMem_Free(plan);
+  if (! xfer_plan_cache) {
+    size_t cap = KosTransferPlan_ACTION_CAPACITY(plan);
+    memset(plan, 0, sizeof(KosTransferPlan) + cap * sizeof(KosTransferAction));
+    plan->action_capacity = cap;  /* preserve for reuse */
+    xfer_plan_cache = plan;
+  } else {
+    PyMem_Free(plan);
+  }
 }
 
 
@@ -2854,7 +2878,10 @@ int koskari_dynchain_init(PyObject *mod) {
 
 
 int koskari_dynchain_clear(PyObject *mod) {
-  /* Nothing to clean up */
+  if (xfer_plan_cache) {
+    PyMem_Free(xfer_plan_cache);
+    xfer_plan_cache = NULL;
+  }
   return 0;
 }
 

@@ -136,26 +136,36 @@ struct KosContinuation {
 
 ### KosTransferPlan — Continuation Transfer Execution
 
-When a continuation is invoked, a transfer plan orchestrates the execution:
+When a continuation is invoked, a transfer plan orchestrates the execution.
+Plan and actions are a single allocation (flexible array at end). Default
+capacity is 32 actions; the whole block is reallocated when more are needed.
+One freed plan is cached for reuse; `koskari_dynchain_clear` frees the cache.
 
 ```c
+#define KOS_XFER_PLAN_DEFAULT_ACTIONS 32
+
 typedef enum KosTransferStep {
-  KOS_XFER_RUN_HOOK,  /* execute a wind/unwind hook block */
-  KOS_XFER_INSTALL,   /* splice target chain segment */
-  KOS_XFER_INJECT,    /* push resume value onto stack */
+  KOS_XFER_RUN_HOOK,      /* execute a wind/unwind hook block */
+  KOS_XFER_INSTALL,       /* splice target chain segment */
+  KOS_XFER_INJECT,        /* push resume value onto stack */
+  KOS_XFER_PARAM_RESTORE, /* restore param bindings on unwind */
 } KosTransferStep;
 
 struct KosTransferPlan {
   KosTransferPlan *suspended;   /* outer plan if nested */
-  KosTransferAction *actions;   /* action array */
   size_t action_count;          /* total actions */
   size_t action_index;          /* next action index */
+  size_t action_capacity;       /* slots allocated (>= action_count) */
   KosDynNode *original_target;  /* for chain-change detection */
   uint32_t chain_version;       /* version at plan creation */
   uint32_t resume_pc;           /* UINT32_MAX = not set; set for invocation */
   KosDynFrame *resume_frame;    /* frame to resume into (invocation only) */
-  KosStackBlock *resume_stack; /* stack state at capture (invocation only) */
-  PyObject *continuation_ref;  /* keep continuation alive until plan is freed */
+  KosStackBlock *resume_stack;  /* stack state at capture (invocation only) */
+  PyObject *continuation_ref;   /* keep continuation alive until plan is freed */
+  KosContinuation *invoke_clone;/* release when plan freed (re-invocation clone) */
+  PyObject *step_awaitable;     /* when step suspended on await (owned) */
+  PyObject *step_resume_inject; /* value/exception to inject on resume (owned) */
+  KosTransferAction actions[];  /* flexible array; size = action_capacity */
 };
 ```
 

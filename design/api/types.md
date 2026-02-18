@@ -245,7 +245,9 @@ NOTE: Control flow metadata (block_style, enabled, labels) has been moved to
 - `KosDynRegion`: Block-local control (try/finally/loop/with)
   - Styles: TRY, FINALLY, LOOP, WITH, FOREACH, AWAIT_WITH, AWAIT_FOREACH, NS, BEGIN
 - `KosHookRunner`: Isolated execution context for wind/unwind hooks
-- `KosTransferPlan`: Action list for continuation transfer with hook execution
+- `KosTransferPlan`: Action list for continuation transfer with hook execution.
+  Single allocation (plan + flexible actions array). Default 32 slots; realloc
+  when needed. One cached plan reused on free.
 
 ### Not Migrating
 
