@@ -156,3 +156,5 @@
 #include "opcode/PARAM.c"
 #include "opcode/POP_PARAM.c"
 #include "opcode/THEEND.c"
+
+/* The end. */

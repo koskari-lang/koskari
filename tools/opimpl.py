@@ -45,12 +45,17 @@ def get_opcode_order(path):
 
 def main():
     ops = get_opcode_order(OPCODES_INCL)
-    lines = [
-        "/* Generated from opcodes.incl - one #include per opcode in order */",
-        "",
-    ] + ['#include "opcode/{}.c"'.format(op) for op in ops]
-    HANDLERS_INCL.write_text("\n".join(lines) + "\n")
-    print("Wrote {} ({} opcodes)".format(HANDLERS_INCL, len(ops)))
+
+    with HANDLERS_INCL.open("w") as f:
+        out = lambda l: print(l, file=f)
+        out("/* Generated from opcodes.incl - one #include per opcode in order */")
+        out("")
+        for op in ops:
+            out(f'#include "opcode/{op}.c"')
+        out("")
+        out("/* The end. */")
+
+    print(f"Wrote {HANDLERS_INCL} ({len(ops)} opcodes)")
 
 
 if __name__ == "__main__":
