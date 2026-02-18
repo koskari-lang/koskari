@@ -214,6 +214,65 @@ restore on exit (and on unwind) is handled by the evaluator.
 See `tests/compile/specials/test_parameterize.py` for full consumer-style tests.
 
 
+## with
+
+**Symbol:** `with`
+
+**Syntax:** `(with [name? expr] body ...)`
+
+Optional `name` binds the context manager's enter result for the body. If
+omitted, only `expr` and `body ...` are given (no binding).
+
+**Use-case:** Single-shot context manager: evaluate `expr` to get a manager,
+call enter (auto-await if needed), run body in a fresh operand stack block,
+then call exit on normal or exception exit. Safe for normal control-flow and
+exception unwind; **not** safe across continuation transfers (transfer across
+an active `with` raises a runtime error).
+
+**Behaviour:** Compiles `expr`, emits PUSH_WITH with optional name (constant
+pool index or no-binding sentinel), compiles body with `helper_begin`, emits
+POP_WITH. The expression value is always `None`. See
+[interpreter/with-dyn-with.md](interpreter/with-dyn-with.md).
+
+**Examples:**
+
+```scheme
+;; With binding
+(with [f (open-file path)]
+  (compile/call read-all f))
+
+;; Without binding
+(with [(make-lock)]
+  (compile/call do-work))
+```
+
+
+## dyn-with
+
+**Symbol:** `dyn-with`
+
+**Syntax:** `(dyn-with [name? expr] body ...)`
+
+Same syntax as `with`; optional `name` binds the enter result.
+
+**Use-case:** Multi-shot context manager that participates in continuation
+transfer plans (shift/reset, undelimited call/cc). On non-local transfer,
+enter/exit run as wind/unwind steps; re-entry creates a fresh extent
+instance.
+
+**Behaviour:** Same as `with` except emits PUSH_DYN_WITH and POP_DYN_WITH.
+Expression value is always `None`. See
+[interpreter/with-dyn-with.md](interpreter/with-dyn-with.md).
+
+**Examples:**
+
+```scheme
+;; Capture continuation inside dyn-with; invoke outside runs exit then enter
+(dyn-with [r (make-resource)]
+  (compile/call k (compile/refq r)))
+```
+
+
 ## compile/setq
 
 **Symbol:** `compile/setq`

@@ -46,15 +46,17 @@ def is_symbolish(thing):
     return is_symbol(thing) or is_lazygensym(thing)
 
 
-def helper_binding(source, required=True):
+def helper_binding(source, required=True, allow_unnamed=False):
     """
-    Parse a single binding form (SYM EXPR) or (EXPR as: SYM).
+    Parse a single binding form (SYM EXPR), (EXPR as: SYM), or when
+    allow_unnamed True then (EXPR) alone.
 
-    :param compiler: compiler instance (for error context)
     :param source: pair representing one binding
-    :param required: if False and source has one element, treat as (EXPR) with
-        binding name given by required (used for single-expr bindings)
-    :return: (sym, expr) where sym is the bound name
+    :param required: if False and source has one element (and not allow_unnamed),
+        treat as (EXPR) with binding name given by required
+    :param allow_unnamed: if True, a single element (EXPR) is allowed and
+        returns (None, expr)
+    :return: (name, expr) where name is the bound name or None if unnamed
     :raises CompilerException: when the binding form is invalid
     """
 
@@ -78,11 +80,13 @@ def helper_binding(source, required=True):
             sym, expr = first, second
             return (sym, expr)
         raise CompilerException(msg, source)
-    elif sc == 1 and not required:
+    elif sc == 1:
         expr = parts[0]
-        return (required, expr)
-    else:
-        raise CompilerException(msg, source)
+        if allow_unnamed:
+            return (None, expr)
+        if not required:
+            return (required, expr)
+    raise CompilerException(msg, source)
 
 
 def gather_parameters(args, source=None):

@@ -75,6 +75,7 @@ typedef struct KosHookRunner KosHookRunner;
    KOS_DYN_CC     - Undelimited continuation block (call/cc)
    KOS_DYN_YIELD_FROM - Yield-from delegation state
    KOS_DYN_PARAM     - Parameter bindings (parameterize extent)
+   KOS_DYN_WITH      - Single-shot context manager (with)
 */
 
 typedef enum KosDynKind {
@@ -87,6 +88,7 @@ typedef enum KosDynKind {
   KOS_DYN_CC     = 6,
   KOS_DYN_YIELD_FROM = 7,
   KOS_DYN_PARAM  = 8,
+  KOS_DYN_WITH   = 9,
 } KosDynKind;
 
 
@@ -188,6 +190,13 @@ struct KosDynNode {
       PyObject *bindings;  /* PyDict: key -> value (what we bind; keys from ParamRef) */
       PyObject *saved;     /* PyDict: key -> value or SENTINEL_UNSET (filled at enter, used at restore; NULL if not yet entered) */
     } param;
+    struct {
+      PyObject *mgr;       /* context manager (owned) */
+      PyObject *enter;     /* resolved enter callable (owned; NULL if not cached) */
+      PyObject *exit;      /* resolved exit callable (owned) */
+      uint8_t entered;     /* 1 after enter succeeded */
+      PyObject *name;      /* binding name or NULL (owned) */
+    } with;
   } u;
 };
 
@@ -199,6 +208,7 @@ typedef struct KosDynNode KosDynNs;
 typedef struct KosDynNode KosDynCC;
 typedef struct KosDynNode KosDynYieldFrom;
 typedef struct KosDynNode KosDynParam;
+typedef struct KosDynNode KosDynWith;
 
 
 /* === KosContinuation: captured delimited continuation === */
@@ -807,6 +817,50 @@ void kos_dyn_pop_param(KosContext *ctx, KosDynParam *node);
 
 
 /**
+   Push a single-shot with (context manager) extent onto the dynamic chain.
+
+   Caller must have called enter(mgr) and have the result; the node stores
+   mgr, enter, exit, and optional name. Node takes ownership of mgr, enter,
+   exit, and name (name may be NULL).
+
+   :param ctx: execution context
+   :param mgr: context manager object (ownership transferred)
+   :param enter: resolved enter callable (ownership transferred)
+   :param exit: resolved exit callable (ownership transferred)
+   :param name: binding name or NULL (ownership transferred)
+
+   :return: new KosDynWith node, or NULL on error
+*/
+KosDynWith *kos_dyn_push_with(
+    KosContext *ctx,
+    PyObject *mgr,
+    PyObject *enter,
+    PyObject *exit,
+    PyObject *name);
+
+
+/**
+   Pop a with extent from the dynamic chain.
+
+   :param ctx: execution context
+   :param node: WITH node to pop (must be dyn_top)
+*/
+void kos_dyn_pop_with(KosContext *ctx, KosDynWith *node);
+
+
+/**
+   Unwind helper for WITH: call exit(mgr, exc_type, exc_val, tb) with
+   current exception info. Sync only; returns 0 when done or -1 on error.
+
+   :param ctx: execution context
+   :param node: WITH node being unwound
+
+   :return: 0 on success, -1 on error
+*/
+int kos_dyn_with_unwind(KosContext *ctx, KosDynWith *node);
+
+
+/**
    Pop the top node of the dynamic chain. Dispatches on node kind.
    For NS, restores frame_top->ns from the node's saved_ns before popping.
 
@@ -1282,6 +1336,7 @@ int kos_hookrunner_traverse(
 #define KosDynNode_IS_CC(n)      (KosDynNode_KIND(n) == KOS_DYN_CC)
 #define KosDynNode_IS_YIELD_FROM(n)  (KosDynNode_KIND(n) == KOS_DYN_YIELD_FROM)
 #define KosDynNode_IS_PARAM(n)       (KosDynNode_KIND(n) == KOS_DYN_PARAM)
+#define KosDynNode_IS_WITH(n)       (KosDynNode_KIND(n) == KOS_DYN_WITH)
 
 #define KosDynFrame_CODE(f)       (((KosDynNode *)(f))->u.frame.code)
 #define KosDynFrame_PC(f)         (((KosDynNode *)(f))->u.frame.pc)
@@ -1323,6 +1378,12 @@ int kos_hookrunner_traverse(
 
 #define KosDynParam_BINDINGS(n)    (((KosDynNode *)(n))->u.param.bindings)
 #define KosDynParam_SAVED(n)       (((KosDynNode *)(n))->u.param.saved)
+
+#define KosDynWith_MGR(n)          (((KosDynNode *)(n))->u.with.mgr)
+#define KosDynWith_ENTER(n)        (((KosDynNode *)(n))->u.with.enter)
+#define KosDynWith_EXIT(n)         (((KosDynNode *)(n))->u.with.exit)
+#define KosDynWith_ENTERED(n)      (((KosDynNode *)(n))->u.with.entered)
+#define KosDynWith_NAME(n)         (((KosDynNode *)(n))->u.with.name)
 
 
 /* === Unit lifecycle === */

@@ -42,9 +42,12 @@ Special forms are compile-time constructs that have no runtime representation. T
 
 ### Context Management
 
-- **`with`**: Context manager entry/exit
-  - Alternative binding syntax: `(EXPRESSION as: BINDING)`
-  - Evaluates to last value of body
+- **`with`**: Single-shot context manager entry/exit
+  - Syntax: `(with [name? expr] body ...)`; optional binding of enter result
+  - In Koskari the expression value is always `None` (see [interpreter/with-dyn-with.md](../interpreter/with-dyn-with.md))
+  - Transfer across an active `with` is rejected at runtime
+- **`dyn-with`**: Multi-shot context manager; participates in continuation transfer (wind/unwind)
+  - Same syntax as `with`; value always `None`
 
 ### Generators and Coroutines
 

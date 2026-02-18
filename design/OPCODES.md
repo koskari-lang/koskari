@@ -9,7 +9,8 @@ invariants; the evaluator and compiler are expected to follow it.
 metadata tables), [interpreter/execution-invariants.md](interpreter/execution-invariants.md)
 (execution model), [interpreter/bytecode-metadata-tables.md](interpreter/bytecode-metadata-tables.md)
 (extents, jump locality), [interpreter/evaluator.md](interpreter/evaluator.md)
-(evaluation loop), [FEATURES.md](FEATURES.md) (implementation status).
+(evaluation loop), [interpreter/with-dyn-with.md](interpreter/with-dyn-with.md)
+(context managers), [FEATURES.md](FEATURES.md) (implementation status).
 
 
 ## 1. Overview and conventions
@@ -49,7 +50,7 @@ linking from design notes, PRs, or other docs.
   see bytecode-metadata-tables.md.
 - **dynamic chain / chain node**: At runtime, the evaluator maintains a chain of
   nodes (`KosDynKind`: KOS_DYN_FRAME, KOS_DYN_REGION, KOS_DYN_NS, KOS_DYN_PROMPT,
-  KOS_DYN_CC, KOS_DYN_WIND, KOS_DYN_YIELD_FROM, etc.). PUSH_* opcodes push a node onto this chain;
+  KOS_DYN_CC, KOS_DYN_WIND, KOS_DYN_WITH, KOS_DYN_DYN_WITH, KOS_DYN_YIELD_FROM, etc.). PUSH_* opcodes push a node onto this chain;
   POP_* opcodes pop it. Each opcode section that pushes onto the chain states
   **Pushes:** the chain node type and, when relevant, the static extent kind.
 - **pre-compile / post-compile**: Pre-compile = stream emitted by compiler (labels
@@ -174,6 +175,7 @@ When adding or changing an opcode:
 - [16. Argument production](#16-argument-production) — BUILD_ARGS, BUILD_FUNCTION, BUILD_KWDS, etc.
 - [17. Calls](#17-calls) — CALL, CALL_NAMES, CALL_STAR, CALL_ATTR*, RECUR*, TAIL_*
 - [18. Block control](#18-block-control) — PUSH_FOREACH, PUSH_LOOP, PUSH_NS, PUSH_TRY, PUSH_FINALLY, CLEAR_*, POP_*
+- [18.1 Context managers (with / dyn-with)](#181-context-managers-with--dyn-with) — PUSH_WITH, POP_WITH, PUSH_DYN_WITH, POP_DYN_WITH
 - [19. Object protocol](#19-object-protocol) — OBJECT_* (comparisons, predicates, numeric, general)
 - [20. Delimited continuations](#20-delimited-continuations) — PUSH_PROMPT, SET_PROMPT_HANDLER, POP_PROMPT, SHIFT, INVOKE_K, INVOKE_K_VAR
 - [21. Undelimited continuations (call/cc)](#21-undelimited-continuations-callcc) — PUSH_CC, POP_CC, CAPTURE_CC
@@ -247,7 +249,7 @@ When adding or changing an opcode:
 | INVOKE_K_VAR | CONST | Invoke continuation by name | [§20](#kos_op_invoke_k_var) |
 | THEEND | NOARG | Unreachable; no runtime | [§25](#kos_op_theend) |
 
-Other opcodes (CHECK_LT/LE/GT/GE, CHECK_IS_INSTANCE/IS_SUBCLASS, VAR_CLEAR, VAR_REF, FAST_BIND/CLEAR/REF, ATTR_CLEAR/REF, ITEM_CLEAR/REF, CONST_ITEM_*, BUILD_*, CALL_NAMES/STAR, CALL_ATTR*, RECUR*, TAIL_*, PUSH_FINALLY/POP_*, CLEAR_*, OBJECT_*, PUSH_CC/POP_CC/CAPTURE_CC, PUSH_WIND/POP_WIND/END_WIND, PUSH_REGION/POP_REGION, PUSH_PARAM/PARAM/POP_PARAM) are listed under their category sections above; use the category index to jump to the section, then scan for the opcode name.
+Other opcodes (CHECK_LT/LE/GT/GE, CHECK_IS_INSTANCE/IS_SUBCLASS, VAR_CLEAR, VAR_REF, FAST_BIND/CLEAR/REF, ATTR_CLEAR/REF, ITEM_CLEAR/REF, CONST_ITEM_*, BUILD_*, CALL_NAMES/STAR, CALL_ATTR*, RECUR*, TAIL_*, PUSH_FINALLY/POP_*, CLEAR_*, OBJECT_*, PUSH_WITH/POP_WITH/PUSH_DYN_WITH/POP_DYN_WITH, PUSH_CC/POP_CC/CAPTURE_CC, PUSH_WIND/POP_WIND/END_WIND, PUSH_REGION/POP_REGION, PUSH_PARAM/PARAM/POP_PARAM) are listed under their category sections above; use the category index to jump to the section, then scan for the opcode name.
 
 
 ## 3. No-op and compile-time
@@ -1501,10 +1503,44 @@ Check jumps: if the predicate does **not** hold, jump to `arg`. All take LABEL; 
 
 ---
 
-### KOS_OP_PUSH_WITH, KOS_OP_PUSH_BEGIN, KOS_OP_PUSH_CLASS
+### 18.1 Context managers (with / dyn-with)
+
+Full design: [interpreter/with-dyn-with.md](interpreter/with-dyn-with.md). Summary below.
+
+#### KOS_OP_PUSH_WITH
+
+- **Style**: CONST. Arg = constant pool index of binding name (symbol/string) or sentinel for no binding.
+- **Status**: Implemented (single-shot with; sync __enter__/__exit__ only; async enter/exit deferred).
+- **Stack before:** `[..., mgr]`. **Stack after:** body runs in a fresh operand stack block.
+- **Behaviour:** Pop `mgr`; resolve and cache enter/exit; call enter (auto-await if needed); on success bind enter result if name given; push new stack block; push `KOS_DYN_WITH`. On enter failure, no node or block is installed; exception propagates.
+- **Pushes:** KOS_DYN_WITH (single-shot; transfer barrier).
+- **Invariants:** Node owns one operand stack block; stack restoration is structural (block pop), not height-mark.
+
+#### KOS_OP_POP_WITH
+
+- **Style**: NOARG (or COUNT per existing opcodes.incl; design assumes no arg).
+- **Status**: Implemented (sync exit only; async exit deferred).
+- **Behaviour:** Call exit (no-exception form); auto-await if needed; pop owned stack block; pop dyn node; push `None`. On exception unwind: call exit(exc_info); if swallow then clear exception, pop block, pop node, push `None`, resume; else pop block, pop node, re-raise.
+- **Invariants:** Top of chain must be KOS_DYN_WITH.
+
+#### KOS_OP_PUSH_DYN_WITH
+
+- **Style**: CONST. Arg = name or no-binding sentinel (same as PUSH_WITH).
+- **Status**: Stub (design complete). Opcode not yet in opcodes.incl.
+- **Stack / behaviour:** Same as PUSH_WITH except pushes KOS_DYN_DYN_WITH. Node participates in continuation transfer plans (wind/unwind on non-local transfer).
+- **Pushes:** KOS_DYN_DYN_WITH.
+
+#### KOS_OP_POP_DYN_WITH
+
+- **Style**: NOARG.
+- **Status**: Stub (design complete). Opcode not yet in opcodes.incl.
+- **Behaviour:** Same as POP_WITH for normal and exception unwind. Pops KOS_DYN_DYN_WITH.
+
+---
+### KOS_OP_PUSH_BEGIN, KOS_OP_PUSH_CLASS
 
 - **Status**: Stub.
-- **Pushes (intended):** PUSH_WITH → KOS_DYN_REGION (KOS_EXT_WITH); PUSH_BEGIN → KOS_DYN_REGION (KOS_EXT_BEGIN); PUSH_CLASS → region or dedicated class extent per design.
+- **Pushes (intended):** PUSH_BEGIN → KOS_DYN_REGION (KOS_EXT_BEGIN); PUSH_CLASS → region or dedicated class extent per design.
 - **Example:** (Stub; no runtime table.)
 
 ---
@@ -1615,8 +1651,8 @@ Check jumps: if the predicate does **not** hold, jump to `arg`. All take LABEL; 
 
 ### KOS_OP_POP_WITH, KOS_OP_POP_BEGIN
 
-- **Status**: Stub.
-- **Example:** (Stub; no runtime table.)
+- **Status**: PUSH_WITH and POP_WITH implemented (single-shot with; sync only). POP_BEGIN stub.
+- **Example:** (See 18.1 for PUSH_WITH/POP_WITH.)
 
 
 ## 19. Object protocol

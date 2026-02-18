@@ -32,6 +32,7 @@ from .helpers import (
     gather_formals,
     gather_parameters,
     helper_begin,
+    helper_binding,
     is_symbolish,
     list_star,
     pycons,
@@ -338,6 +339,34 @@ def special_parameterize(
     fragment.instruction(OpCode.KOS_OP_PUSH_PARAM, tuple(map(str, args)))
     helper_begin(fragment, body, False)
     fragment.instruction(OpCode.KOS_OP_POP_PARAM, 0)
+    return fragment
+
+
+@special(symbol("compile/with"))
+def special_with(compiler, source, tc=False):
+    """
+    Compile (compile/with [name? expr] BODY...). Single-shot context manager
+    """
+
+    called_by, rest = source
+    if rest is nil or not is_pair(rest):
+        raise CompilerException("with requires [name? expr] and body", source)
+
+    spec, body = rest
+    if spec is nil or not is_pair(spec):
+        raise CompilerException("with requires [name? expr] list", source)
+
+    name, expr = helper_binding(spec, allow_unnamed=True)
+    name_arg = str(name) if name is not None else None
+
+    fragment = compiler.fragment(called_by)
+    fragment.position_of(source)
+    fragment.merge(compiler.full_compile(expr, False))
+
+    fragment.instruction(OpCode.KOS_OP_PUSH_WITH, name_arg)
+    helper_begin(fragment, body, False)
+    fragment.instruction(OpCode.KOS_OP_POP_WITH, 0)
+
     return fragment
 
 

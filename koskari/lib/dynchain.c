@@ -657,6 +657,9 @@ static void kos_dynparam_restore(KosContext *ctx, KosDynParam *node) {
 /* === Generic DynNode operations === */
 
 
+static void kos_dynwith_free(KosDynWith *node);
+
+
 void kos_dynnode_free(KosDynNode *node) {
   if (! node)
     return;
@@ -689,6 +692,9 @@ void kos_dynnode_free(KosDynNode *node) {
     case KOS_DYN_PARAM:
       kos_dynparam_free((KosDynParam *) node);
       break;
+    case KOS_DYN_WITH:
+      kos_dynwith_free((KosDynWith *) node);
+      break;
   }
 }
 
@@ -716,6 +722,10 @@ KosDynNode *kos_dynnode_clone(KosDynNode *node) {
       return (KosDynNode *) kos_dynyieldfrom_clone((KosDynYieldFrom *) node);
     case KOS_DYN_PARAM:
       return (KosDynNode *) kos_dynparam_clone((KosDynParam *) node);
+    case KOS_DYN_WITH:
+      PyErr_SetString(PyExc_RuntimeError,
+                      "cannot capture continuation across with");
+      return NULL;
   }
 
   PyErr_Format(PyExc_RuntimeError, "cannot clone dynnode kind %u",
@@ -1096,6 +1106,127 @@ void kos_dyn_pop_param(KosContext *ctx, KosDynParam *node) {
 }
 
 
+/* === KosDynWith (single-shot context manager) === */
+
+
+static KosDynWith *kos_dynwith_new(
+    KosDynNode *parent,
+    PyObject *mgr,
+    PyObject *enter,
+    PyObject *exit,
+    PyObject *name) {
+
+  KosDynWith *node = (KosDynWith *) kos_dynnode_alloc();
+  if (! node)
+    return NULL;
+
+  kos_dynnode_init((KosDynNode *) node, KOS_DYN_WITH, parent);
+  KosDynWith_MGR(node) = mgr;
+  KosDynWith_ENTER(node) = enter;
+  KosDynWith_EXIT(node) = exit;
+  KosDynWith_ENTERED(node) = 0;
+  KosDynWith_NAME(node) = name;
+  return node;
+}
+
+
+static void kos_dynwith_free(KosDynWith *node) {
+  if (! node)
+    return;
+
+  Py_XDECREF(KosDynWith_MGR(node));
+  KosDynWith_MGR(node) = NULL;
+  Py_XDECREF(KosDynWith_ENTER(node));
+  KosDynWith_ENTER(node) = NULL;
+  Py_XDECREF(KosDynWith_EXIT(node));
+  KosDynWith_EXIT(node) = NULL;
+  Py_XDECREF(KosDynWith_NAME(node));
+  KosDynWith_NAME(node) = NULL;
+
+  kos_dynnode_return_to_freelist((KosDynNode *) node);
+}
+
+
+KosDynWith *kos_dyn_push_with(
+    KosContext *ctx,
+    PyObject *mgr,
+    PyObject *enter,
+    PyObject *exit,
+    PyObject *name) {
+
+  KosDynWith *node = kos_dynwith_new(
+      KosContext_DYN_TOP(ctx), mgr, enter, exit, name);
+  if (! node)
+    return NULL;
+
+  KosDynWith_ENTERED(node) = 1;
+  KosContext_DYN_TOP(ctx) = (KosDynNode *) node;
+  KosContext_CHAIN_VERSION(ctx)++;
+
+  return node;
+}
+
+
+void kos_dyn_pop_with(KosContext *ctx, KosDynWith *node) {
+  if (! KosContext_DYN_TOP(ctx) || KosContext_DYN_TOP(ctx) != (KosDynNode *) node) {
+    return;
+  }
+
+  KosContext_DYN_TOP(ctx) = KosDynNode_PARENT(node);
+  KosContext_CHAIN_VERSION(ctx)++;
+  kos_dynwith_free(node);
+}
+
+
+int kos_dyn_with_unwind(KosContext *ctx, KosDynWith *node) {
+  PyObject *exit_fn = KosDynWith_EXIT(node);
+  PyObject *typ = NULL;
+  PyObject *val = NULL;
+  PyObject *tb = NULL;
+
+  if (PyErr_Occurred())
+    PyErr_GetExcInfo(&typ, &val, &tb);
+  else
+    typ = val = tb = Py_None;
+
+  PyObject *result = PyObject_CallFunctionObjArgs(
+      exit_fn, typ, val, tb, NULL);
+
+  if (typ != Py_None)
+    Py_XDECREF(typ);
+  if (val != Py_None)
+    Py_XDECREF(val);
+  if (tb != Py_None)
+    Py_XDECREF(tb);
+
+  if (! result)
+    return -1;
+  if (typ != Py_None && PyObject_IsTrue(result))
+    PyErr_Clear();
+  Py_DECREF(result);
+  return 0;
+}
+
+
+/**
+   Pop a KOS_DYN_WITH node: run exit (unwind), drop stack block, unlink and free.
+   Called from kos_dyn_pop_top.
+*/
+static int dyn_pop_top_with(KosContext *ctx, KosDynNode *top) {
+  KosDynWith *with_node = (KosDynWith *) top;
+
+  if (kos_dyn_with_unwind(ctx, with_node) < 0)
+    return -1;
+
+  if (KosContext_FRAME_TOP(ctx) &&
+      KosStackBlock_DropBlock(&KosDynFrame_STACK(KosContext_FRAME_TOP(ctx))) < 0)
+    return -1;
+
+  kos_dyn_pop_with(ctx, with_node);
+  return 0;
+}
+
+
 /**
    Pop the top node of the dynamic chain. Dispatches on node kind.
    For NS, restores frame_top->ns from the node's saved_ns before popping.
@@ -1256,7 +1387,14 @@ int kos_dyn_pop_top(KosContext *ctx) {
 
   case KOS_DYN_PARAM:
     return dyn_pop_top_param(ctx, top);
+
+  case KOS_DYN_WITH:
+    return dyn_pop_top_with(ctx, top);
   }
+
+  PyErr_Format(PyExc_RuntimeError, "unknown dyn node kind %u",
+               (unsigned) KosDynNode_KIND(top));
+  return -1;
 
   PyErr_SetString(PyExc_RuntimeError, "unknown dynamic chain node kind");
   return -1;
@@ -2528,6 +2666,19 @@ static int dynnode_traverse_param(KosDynNode *node, visitproc visit, void *arg) 
 
 
 /**
+   GC traverse a KOS_DYN_WITH: visit mgr, enter, exit, and name.
+*/
+static int dynnode_traverse_with(KosDynNode *node, visitproc visit, void *arg) {
+  KosDynWith *with_node = (KosDynWith *) node;
+  Py_VISIT(KosDynWith_MGR(with_node));
+  Py_VISIT(KosDynWith_ENTER(with_node));
+  Py_VISIT(KosDynWith_EXIT(with_node));
+  Py_VISIT(KosDynWith_NAME(with_node));
+  return 0;
+}
+
+
+/**
    GC traverse a single dynamic chain node.  Dispatches on node kind to
    visit all PyObject references reachable from the node (namespaces,
    stack slots, region state, param bindings, etc.).  Prompt, CC, wind,
@@ -2554,6 +2705,8 @@ int kos_dynnode_traverse(KosDynNode *node, visitproc visit, void *arg) {
       return dynnode_traverse_yield_from(node, visit, arg);
     case KOS_DYN_PARAM:
       return dynnode_traverse_param(node, visit, arg);
+    case KOS_DYN_WITH:
+      return dynnode_traverse_with(node, visit, arg);
   }
 
   return 0;

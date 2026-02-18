@@ -51,8 +51,9 @@ When `kos_dyn_unwind_to_frame` is used (e.g. by RETURN or by exception propagati
 
 ---
 
-## Future: try/catch, finally, with
+## Future: try/catch, finally
 
 - **TRY**: Unwind remains no-op (just pop). Catch is "find handler and jump" in the raise path, not in the generic unwind helper.
 - **FINALLY**: Unwind = run finally body (code at region's pc) then pop. Model as async: helper starts the body via the same hook runner; when the body ends, unwinding continues.
-- **WITH**: Wind = call __enter__, store result on node. Unwind = call __exit__(exc_type, exc_val, tb). Can be sync or async depending on __exit__.
+
+**With / dyn-with:** Context managers are specified in [with-dyn-with.md](with-dyn-with.md). Single-shot `with` (KOS_DYN_WITH) uses enter/exit and structural stack blocks; multi-shot `dyn-with` (KOS_DYN_DYN_WITH) participates in transfer-plan wind/unwind. Exit convention (Python-like: exit(exc_type, exc_val, tb), truthy => swallow) is defined there.

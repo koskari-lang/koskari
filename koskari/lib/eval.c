@@ -262,6 +262,32 @@ static PyObject *str_close = NULL;
 static PyObject *str_asend = NULL;
 static PyObject *str_athrow = NULL;
 static PyObject *str_aclose = NULL;
+static PyObject *str_enter = NULL;
+static PyObject *str_exit = NULL;
+
+
+/**
+   Resolve __enter__ and __exit__ on mgr (sync context manager protocol).
+   Phase 1: sync only. Returns new refs in *out_enter and *out_exit.
+   :return: 0 on success, -1 on error
+*/
+static int resolve_context_enter_exit(
+    PyObject *mgr,
+    PyObject **out_enter,
+    PyObject **out_exit) {
+
+  PyObject *enter = PyObject_GetAttr(mgr, str_enter);
+  if (! enter)
+    return -1;
+  PyObject *exit = PyObject_GetAttr(mgr, str_exit);
+  if (! exit) {
+    Py_DECREF(enter);
+    return -1;
+  }
+  *out_enter = enter;
+  *out_exit = exit;
+  return 0;
+}
 
 
 /* === KosEvaluatorToken type === */
@@ -1899,6 +1925,8 @@ int koskari_eval_init(PyObject *mod) {
   STR_CONST(str_asend, "asend");
   STR_CONST(str_athrow, "athrow");
   STR_CONST(str_aclose, "aclose");
+  STR_CONST(str_enter, "__enter__");
+  STR_CONST(str_exit, "__exit__");
 
   /* Initialize KosEvaluatorToken type */
   if (PyType_Ready(&KosEvaluatorTokenType) < 0)
@@ -1945,6 +1973,8 @@ int koskari_eval_clear(PyObject *mod) {
   Py_CLEAR(str_asend);
   Py_CLEAR(str_athrow);
   Py_CLEAR(str_aclose);
+  Py_CLEAR(str_enter);
+  Py_CLEAR(str_exit);
 
   /* Null out exception type pointers (module dict owns the refs) */
   KoskariContinuationDead = NULL;

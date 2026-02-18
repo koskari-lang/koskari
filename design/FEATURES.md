@@ -113,7 +113,7 @@ The VM in `eval.c` uses a jump table; every opcode has a handler. Handlers are e
 **Not implemented (stubs)** — hitting these at runtime raises "unimplemented opcode":
 - **Argument building**: BUILD_ARGS, BUILD_KWDS, BUILD_KWDS_NAMES, COMBINE_ARGS, COMBINE_KWDS (BUILD_FUNCTION is implemented)
 - **Calls**: CALL_NAMES, CALL_STAR; CALL_ATTR, CALL_ATTR_NAMES, CALL_ATTR_STAR; RECUR, RECUR_NAMES, RECUR_STAR; TAIL_CALL_NAMES, TAIL_CALL_STAR; TAIL_RECUR, TAIL_RECUR_NAMES, TAIL_RECUR_STAR
-- **Block control**: PUSH_WITH, PUSH_BEGIN, PUSH_CLASS; POP_WITH, POP_BEGIN
+- **Block control**: PUSH_WITH, POP_WITH implemented (single-shot `with`, sync only). PUSH_BEGIN, PUSH_CLASS; POP_BEGIN. Multi-shot `dyn-with` (PUSH_DYN_WITH/POP_DYN_WITH) specified in design/interpreter/with-dyn-with.md; opcodes not yet in opcodes.incl.
 - **Wind / region**: PUSH_WIND, POP_WIND (stubs); PUSH_REGION, POP_REGION
 
 There are no **partially** implemented opcodes; each handler is either full, a stub, or a dedicated "no runtime implementation" handler (THEEND). The authoritative list is the set of handlers in `koskari/lib/eval.c` that do not call `op_unimplemented_stub`.
@@ -215,7 +215,7 @@ There are no **partially** implemented opcodes; each handler is either full, a s
 - Macro system (reader macros, defmacro, defalias)
 - Remaining control flow constructs (with, begin, class blocks)
 - Compiler: remaining specials, macro expansion, optimization passes
-- Remaining opcode handlers: BUILD_ARGS, BUILD_KWDS, COMBINE_*, CALL_NAMES, CALL_STAR, CALL_ATTR*, RECUR*, TAIL_CALL_NAMES, TAIL_CALL_STAR, TAIL_RECUR*, PUSH_WITH, PUSH_BEGIN, PUSH_CLASS, PUSH_WIND, POP_WIND, END_WIND, PUSH_REGION, POP_REGION (see "Opcodes: implementation status" above)
+- Remaining opcode handlers: BUILD_ARGS, BUILD_KWDS, COMBINE_*, CALL_NAMES, CALL_STAR, CALL_ATTR*, RECUR*, TAIL_CALL_NAMES, TAIL_CALL_STAR, TAIL_RECUR*, PUSH_DYN_WITH, POP_DYN_WITH, PUSH_BEGIN, PUSH_CLASS, PUSH_WIND, POP_WIND, END_WIND, PUSH_REGION, POP_REGION (PUSH_WITH, POP_WITH implemented; see "Opcodes: implementation status" above; with/dyn-with design in design/interpreter/with-dyn-with.md)
 
 ### Needs Reconsideration
 - CPython bytecode target (abandoned)

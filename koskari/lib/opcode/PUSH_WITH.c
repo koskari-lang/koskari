@@ -14,9 +14,63 @@
 */
 
 /**
-   PUSH_WITH: arg = target. Push with/context-manager; not yet implemented.
+   PUSH_WITH: arg = constant pool index (name or None). Single-shot context
+   manager. Stack before: [..., mgr]. Pop mgr, resolve __enter__/__exit__,
+   call enter, optionally bind result to name, push stack block, push
+   KOS_DYN_WITH node. Phase 1: sync only.
 */
 
 KOS_OP_HANDLER(PUSH_WITH) {
-  return op_unimplemented_stub(ctx, out_ev, insn);
+  PyObject *mgr = KosStackBlock_PopRef(&CURRENT_STACK(ctx));
+  if (! mgr)
+    return -1;
+
+  PyObject *enter = NULL;
+  PyObject *exit = NULL;
+  if (resolve_context_enter_exit(mgr, &enter, &exit) < 0) {
+    Py_DECREF(mgr);
+    return -1;
+  }
+
+  PyObject *result = PyObject_CallNoArgs(enter);
+  if (! result) {
+    Py_DECREF(exit);
+    Py_DECREF(enter);
+    Py_DECREF(mgr);
+    return -1;
+  }
+
+  PyObject *name_obj = get_name_from_insn(CURRENT_CODE(ctx), insn);
+  if (name_obj && name_obj != Py_None) {
+    if (frame_ns_bind(ctx, name_obj, result) < 0) {
+      Py_DECREF(result);
+      Py_DECREF(exit);
+      Py_DECREF(enter);
+      Py_DECREF(mgr);
+      return -1;
+    }
+  }
+  else
+    Py_DECREF(result);
+
+  if (KosStackBlock_PushBlock(&CURRENT_STACK(ctx)) < 0) {
+    Py_DECREF(exit);
+    Py_DECREF(enter);
+    Py_DECREF(mgr);
+    return -1;
+  }
+
+  if (! kos_dyn_push_with(ctx, mgr, enter, exit, NULL)) {
+    KosStackBlock_DropBlock(&CURRENT_STACK(ctx));
+    Py_DECREF(exit);
+    Py_DECREF(enter);
+    Py_DECREF(mgr);
+    return -1;
+  }
+
+  (void) out_ev;
+  return 0;
 }
+
+
+// The end.
