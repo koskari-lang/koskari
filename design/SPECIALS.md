@@ -231,8 +231,12 @@ an active `with` raises a runtime error).
 
 **Behaviour:** Compiles `expr`, emits PUSH_WITH with optional name (constant
 pool index or no-binding sentinel), compiles body with `helper_begin`, emits
-POP_WITH. The expression value is always `None`. See
+POP_WITH. PUSH_WITH looks up the WITH extent at its PC and stores
+`resume_pc = pop_pc + 1` on the node for use when exit swallows an exception.
+The expression value is always `None`. See
 [interpreter/with-dyn-with.md](interpreter/with-dyn-with.md).
+
+See `tests/compile/specials/test_with.py`, `tests/lib/opcode/test_with.py`.
 
 **Examples:**
 

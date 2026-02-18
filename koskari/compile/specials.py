@@ -357,13 +357,16 @@ def special_with(compiler, source, tc=False):
         raise CompilerException("with requires [name? expr] list", source)
 
     name, expr = helper_binding(spec, allow_unnamed=True)
-    name_arg = str(name) if name is not None else None
 
     fragment = compiler.fragment(called_by)
     fragment.position_of(source)
     fragment.merge(compiler.full_compile(expr, False))
 
-    fragment.instruction(OpCode.KOS_OP_PUSH_WITH, name_arg)
+    if name is not None:
+        name = str(name)
+        fragment.declare_var(name)
+
+    fragment.instruction(OpCode.KOS_OP_PUSH_WITH, name)
     helper_begin(fragment, body, False)
     fragment.instruction(OpCode.KOS_OP_POP_WITH, 0)
 

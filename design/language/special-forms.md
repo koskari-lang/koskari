@@ -2,7 +2,7 @@
 
 Special forms are compile-time constructs that have no runtime representation. They compile directly to bytecode.
 
-**Implemented forms:** For the subset currently implemented in the koskari compiler (compile/bytecode, compile/begin, compile/call, lambda), see [SPECIALS.md](../SPECIALS.md).
+**Implemented forms:** For the subset currently implemented in the koskari compiler (compile/bytecode, compile/begin, compile/call, compile/with, lambda, etc.), see [SPECIALS.md](../SPECIALS.md).
 
 ## From python-sibilant
 
@@ -46,6 +46,7 @@ Special forms are compile-time constructs that have no runtime representation. T
   - Syntax: `(with [name? expr] body ...)`; optional binding of enter result
   - In Koskari the expression value is always `None` (see [interpreter/with-dyn-with.md](../interpreter/with-dyn-with.md))
   - Transfer across an active `with` is rejected at runtime
+  - Implemented via compile/with; see [SPECIALS.md](../SPECIALS.md) §with, `tests/compile/specials/test_with.py`, `tests/lib/opcode/test_with.py`
 - **`dyn-with`**: Multi-shot context manager; participates in continuation transfer (wind/unwind)
   - Same syntax as `with`; value always `None`
 

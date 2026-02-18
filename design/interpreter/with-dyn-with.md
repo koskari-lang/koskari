@@ -76,6 +76,8 @@ Dedicated dyn node kinds:
 - `exit`: resolved exit callable (sync or async; recommended to cache)
 - `entered`: bool (false until enter succeeds)
 - `name`: optional binding name (or null)
+- `resume_pc`: PC to resume at after the with body (pop_pc + 1); stored at push
+  time from the WITH extent, so the evaluator does not look it up at unwind
 - `stack_block`: reference/handle to the operand-stack block created for the body
 - `mode`: SINGLE or MULTI
 
@@ -166,7 +168,8 @@ auto-await as usual.
 4. On success, set `entered = true`.
 5. If `name` provided: bind enter result into the current namespace under `name`.
 6. Push a new operand stack block for the body.
-7. Push `KOS_DYN_WITH` on the dynamic chain.
+7. Look up the WITH extent at the current PC; compute `resume_pc = pop_pc + 1`.
+8. Push `KOS_DYN_WITH` on the dynamic chain with `resume_pc` stored on the node.
 
 **Stack after:** Body executes in a fresh stack block.
 
@@ -194,6 +197,7 @@ extent:
    - pop the owned stack block
    - pop the dyn node
    - push `None`
+   - set frame PC to the node's `resume_pc` (instruction after POP_WITH)
    - resume execution at the post-with continuation point
 3. Otherwise:
    - pop the owned stack block
