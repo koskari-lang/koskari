@@ -133,8 +133,6 @@ static int run_transfer_plan_to_completion(KosContext *ctx, KosEvent *out_ev) {
          (void *) KosContext_DYN_TOP(ctx));
     KosContext_INVOCATION_SEGMENT_TOP(ctx) = KosContext_DYN_TOP(ctx);
     clear_and_free_transfer_plan(ctx);
-    if (KosContext_PLAN_STACK(ctx))
-      kos_resume_transfer_plan(ctx);
   }
   return 0;
 }
@@ -164,58 +162,172 @@ static void clear_pending_agen_on_error(KosContext *ctx) {
 
 
 /**
-   Handle KoskariContinuationApply exception. Call when PyErr_ExceptionMatches
-   (KoskariContinuationApply). Fetches the exception, extracts target/continuation
-   from the exception value, and invokes if same-token.
-
-   :return: 1 to continue the eval loop; -1 to goto koskari_eval_cleanup
+   Revive the active transfer plan with send_val or throw_exc.
+   Consumes send_val/throw_exc for the plan. May set exception in context.
+   :return: KOS_MODE_TRANSFER to continue draining plan, KOS_MODE_EXCEPTION if throw_exc set, KOS_MODE_NORMAL if plan done
 */
-static int handle_continuation_apply(KosContext *ctx) {
-  PyObject *typ = NULL, *val = NULL, *tb = NULL;
-  PyErr_Fetch(&typ, &val, &tb);
-  PyObject *exc_target = val
-      ? PyObject_GetAttrString(val, "target") : NULL;
-  if (exc_target) {
-    int is_own = (exc_target == (PyObject *) KosContext_TOKEN(ctx));
-    Py_DECREF(exc_target);
-    if (is_own) {
-      PyObject *cont_obj = val
-          ? PyObject_GetAttrString(val, "continuation") : NULL;
-      PyObject *args_obj = val
-          ? PyObject_GetAttrString(val, "args") : NULL;
-      Py_XDECREF(typ);
-      Py_XDECREF(tb);
-      if (cont_obj && PyObject_TypeCheck(cont_obj, &KosPyContinuationType)) {
-        KosContinuation *k = ((KosPyContinuation *) cont_obj)->captured;
-        PyObject *resume_val = Py_None;
-        if (args_obj && PyTuple_Check(args_obj)
-            && PyTuple_GET_SIZE(args_obj) > 0) {
-          resume_val = PyTuple_GET_ITEM(args_obj, 0);
-          Py_INCREF(resume_val);
-        }
-        Py_XDECREF(args_obj);
-        args_obj = NULL;
-        PyErr_Clear();
-        if (k && kos_invoke_continuation(ctx, k, resume_val, 0,
-                                         cont_obj) == 0) {
-          Py_XDECREF(resume_val);
-          Py_DECREF(val);
-          return 1;
-        }
-        Py_XDECREF(resume_val);
-        Py_DECREF(cont_obj);
-      } else {
-        Py_XDECREF(cont_obj);
-        Py_XDECREF(args_obj);
-      }
-      Py_DECREF(val);
-      PyErr_SetString(PyExc_RuntimeError,
-                      "KoskariContinuationApply: invalid continuation");
-      return -1;
-    }
+static KosEvalMode revive_plan(KosContext *ctx, PyObject *send_val, PyObject *throw_exc) {
+  KosTransferPlan *plan = KosContext_PLAN(ctx);
+  if (throw_exc != NULL) {
+    PyErr_SetObject((PyObject *) Py_TYPE(throw_exc), throw_exc);
+    return KOS_MODE_EXCEPTION;
   }
-  PyErr_Restore(typ, val, tb);
-  return -1;
+  if (send_val != NULL) {
+    Py_XINCREF(send_val);
+    if (plan) {
+      Py_XDECREF(KosTransferPlan_STEP_RESUME_INJECT(plan));
+      KosTransferPlan_STEP_RESUME_INJECT(plan) = send_val;
+    }
+    Py_XDECREF(KosContext_PLAN_RESUME_INJECT(ctx));
+    KosContext_PLAN_RESUME_INJECT(ctx) = send_val;
+    KosContext_PLAN_SUSPENDED_AWAIT(ctx) = 0;
+  }
+  return KOS_MODE_TRANSFER;
+}
+
+
+/**
+   Set up VM for "resume with no value" after AWAIT suspend.
+   No inject; just continue. Call when send_val and throw_exc are both NULL and suspension_event was AWAIT.
+*/
+static KosEvalMode raise_await(KosContext *ctx) {
+  (void) ctx;
+  return KOS_MODE_NORMAL;
+}
+
+
+/**
+   Set up VM for "resume with no value" after YIELD suspend.
+*/
+static KosEvalMode raise_yield(KosContext *ctx) {
+  (void) ctx;
+  return KOS_MODE_NORMAL;
+}
+
+
+/**
+   Set up VM for "resume with no value" after YIELD_FROM suspend.
+*/
+static KosEvalMode raise_yield_from(KosContext *ctx) {
+  (void) ctx;
+  return KOS_MODE_NORMAL;
+}
+
+
+/**
+   Revive from AWAIT: push send_val or set throw_exc. Complete pending WITH exit if applicable.
+*/
+static KosEvalMode revive_await(KosContext *ctx, PyObject *send_val, PyObject *throw_exc) {
+  if (throw_exc != NULL) {
+    PyErr_SetObject((PyObject *) Py_TYPE(throw_exc), throw_exc);
+    return KOS_MODE_EXCEPTION;
+  }
+  if (send_val != NULL && CURRENT_FRAME(ctx)) {
+    if (KosStackBlock_PushRef(&CURRENT_STACK(ctx), send_val) < 0)
+      return KOS_MODE_EXCEPTION;
+  }
+  if (KosContext_PENDING_WITH_EXIT_NODE(ctx)) {
+    if (kos_complete_pending_with_exit(ctx) < 0)
+      return KOS_MODE_EXCEPTION;
+  }
+  return KOS_MODE_NORMAL;
+}
+
+
+/**
+   Revive from YIELD: push send_val or set throw_exc.
+*/
+static KosEvalMode revive_yield(KosContext *ctx, PyObject *send_val, PyObject *throw_exc) {
+  if (throw_exc != NULL) {
+    PyErr_SetObject((PyObject *) Py_TYPE(throw_exc), throw_exc);
+    return KOS_MODE_EXCEPTION;
+  }
+  if (send_val != NULL && CURRENT_FRAME(ctx)) {
+    if (KosStackBlock_PushRef(&CURRENT_STACK(ctx), send_val) < 0)
+      return KOS_MODE_EXCEPTION;
+  }
+  return KOS_MODE_NORMAL;
+}
+
+
+/**
+   Revive from YIELD_FROM: push send_val or set throw_exc.
+*/
+static KosEvalMode revive_yield_from(KosContext *ctx, PyObject *send_val, PyObject *throw_exc) {
+  if (throw_exc != NULL) {
+    PyErr_SetObject((PyObject *) Py_TYPE(throw_exc), throw_exc);
+    return KOS_MODE_EXCEPTION;
+  }
+  if (send_val != NULL && CURRENT_FRAME(ctx)) {
+    if (KosStackBlock_PushRef(&CURRENT_STACK(ctx), send_val) < 0)
+      return KOS_MODE_EXCEPTION;
+  }
+  return KOS_MODE_NORMAL;
+}
+
+
+static int try_local_exception_handler(KosContext *ctx, KosEvent *out_ev);
+
+/**
+   Process the current exception (in PyErr or context). Handles
+   KoskariContinuationApply (invoke continuation, replace plan), local
+   handlers (try/except/finally, WITH exit, unwind), or returns RAISE.
+   Call only when mode is EXCEPTION.
+
+   :return: KOS_MODE_NORMAL or KOS_MODE_TRANSFER to continue,
+            KOS_MODE_RAISE to propagate (out_ev set to KOS_EV_RAISE)
+*/
+static KosEvalMode process_raise(KosContext *ctx, KosEvent *out_ev) {
+  if (! PyErr_Occurred()) {
+    KosEvent_KIND(out_ev) = KOS_EV_RAISE;
+    KosEvent_PAYLOAD(out_ev) = NULL;
+    return KOS_MODE_RAISE;
+  }
+  if (KoskariContinuationApply && PyErr_ExceptionMatches(KoskariContinuationApply)) {
+    PyObject *typ = NULL, *val = NULL, *tb = NULL;
+    PyErr_Fetch(&typ, &val, &tb);
+    PyObject *exc_target = val ? PyObject_GetAttrString(val, "target") : NULL;
+    if (exc_target) {
+      int is_own = (exc_target == (PyObject *) KosContext_TOKEN(ctx));
+      Py_DECREF(exc_target);
+      if (is_own) {
+        PyObject *cont_obj = val ? PyObject_GetAttrString(val, "continuation") : NULL;
+        PyObject *args_obj = val ? PyObject_GetAttrString(val, "args") : NULL;
+        Py_XDECREF(typ);
+        Py_XDECREF(tb);
+        if (cont_obj && PyObject_TypeCheck(cont_obj, &KosPyContinuationType)) {
+          KosContinuation *k = ((KosPyContinuation *) cont_obj)->captured;
+          PyObject *resume_val = Py_None;
+          if (args_obj && PyTuple_Check(args_obj) && PyTuple_GET_SIZE(args_obj) > 0) {
+            resume_val = PyTuple_GET_ITEM(args_obj, 0);
+            Py_INCREF(resume_val);
+          }
+          Py_XDECREF(args_obj);
+          PyErr_Clear();
+          if (k && kos_invoke_continuation(ctx, k, resume_val, 0, cont_obj) == 0) {
+            Py_DECREF(resume_val);
+            Py_DECREF(val);
+            return KOS_MODE_TRANSFER;
+          }
+          Py_DECREF(resume_val);
+          Py_DECREF(cont_obj);
+        } else {
+          Py_XDECREF(cont_obj);
+          Py_XDECREF(args_obj);
+        }
+        Py_DECREF(val);
+        PyErr_SetString(PyExc_RuntimeError,
+                        "KoskariContinuationApply: invalid continuation");
+        return KOS_MODE_RAISE;
+      }
+    }
+    PyErr_Restore(typ, val, tb);
+  }
+  clear_pending_agen_on_error(ctx);
+  if (try_local_exception_handler(ctx, out_ev))
+    return KOS_MODE_NORMAL;
+  /* try_local_exception_handler already set out_ev and ctx flags when it returned 0 */
+  return KOS_MODE_RAISE;
 }
 
 
@@ -2040,7 +2152,7 @@ static int try_local_exception_handler(KosContext *ctx, KosEvent *out_ev) {
 }
 
 
-int koskari_eval(KosContext *ctx, KosEvent *out_ev) {
+int koskari_eval(KosContext *ctx, KosEvent *out_ev, PyObject *send_val, PyObject *throw_exc) {
   int eval_ret = 0;
 
   if (! ctx) {
@@ -2059,16 +2171,67 @@ int koskari_eval(KosContext *ctx, KosEvent *out_ev) {
   /* Push domain scope (token, context, live_depth) onto per-thread TLS */
   kos_domain_push_scope(ctx);
 
-  /* Handle pending exception injection */
-  if (KosContext_INJECT_MODE(ctx) == KOS_INJECT_THROW && KosContext_INJECT_VALUE(ctx)) {
-    PyErr_SetObject((PyObject *) Py_TYPE(KosContext_INJECT_VALUE(ctx)), KosContext_INJECT_VALUE(ctx));
-    Py_CLEAR(KosContext_INJECT_VALUE(ctx));
-    KosContext_INJECT_MODE(ctx) = KOS_INJECT_NONE;
+  /* Entry order: revive_plan first if plan, else branch on send_val/throw_exc and suspension_event */
+  KosEvalMode mode = KOS_MODE_NORMAL;
+  if (KosContext_PLAN(ctx)) {
+    mode = revive_plan(ctx, send_val, throw_exc);
+    if (mode != KOS_MODE_NORMAL && mode != KOS_MODE_TRANSFER)
+      goto entry_mode_dispatch;
+  } else if (send_val == NULL && throw_exc == NULL) {
+    switch (KosContext_SUSPENSION_EVENT(ctx)) {
+      case KOS_SUSP_NONE:
+        mode = KOS_MODE_NORMAL;
+        break;
+      case KOS_SUSP_AWAIT:
+        mode = raise_await(ctx);
+        break;
+      case KOS_SUSP_YIELD:
+        mode = raise_yield(ctx);
+        break;
+      case KOS_SUSP_YIELD_FROM:
+        mode = raise_yield_from(ctx);
+        break;
+      default:
+        mode = KOS_MODE_NORMAL;
+        break;
+    }
+  } else {
+    switch (KosContext_SUSPENSION_EVENT(ctx)) {
+      case KOS_SUSP_AWAIT:
+        mode = revive_await(ctx, send_val, throw_exc);
+        break;
+      case KOS_SUSP_YIELD:
+        mode = revive_yield(ctx, send_val, throw_exc);
+        break;
+      case KOS_SUSP_YIELD_FROM:
+        mode = revive_yield_from(ctx, send_val, throw_exc);
+        break;
+      default:
+        mode = revive_await(ctx, send_val, throw_exc);
+        break;
+    }
+  }
+  KosContext_SUSPENSION_EVENT(ctx) = KOS_SUSP_NONE;
 
+entry_mode_dispatch:
+  if (mode == KOS_MODE_EXCEPTION) {
+    clear_pending_agen_on_error(ctx);
+    if (try_local_exception_handler(ctx, out_ev)) {
+      mode = KOS_MODE_NORMAL;
+      goto eval_loop_start;
+    }
     KosEvent_KIND(out_ev) = KOS_EV_RAISE;
     KosEvent_PAYLOAD(out_ev) = NULL;
     PyErr_Fetch(&KosEvent_PAYLOAD(out_ev), NULL, NULL);
-
+    KosContext_FLAGS(ctx) &= ~KOS_CTX_RUNNING;
+    KosContext_FLAGS(ctx) |= KOS_CTX_DEAD;
+    eval_ret = 0;
+    goto koskari_eval_cleanup;
+  }
+  if (mode == KOS_MODE_RAISE) {
+    KosEvent_KIND(out_ev) = KOS_EV_RAISE;
+    KosEvent_PAYLOAD(out_ev) = NULL;
+    PyErr_Fetch(&KosEvent_PAYLOAD(out_ev), NULL, NULL);
     KosContext_FLAGS(ctx) &= ~KOS_CTX_RUNNING;
     KosContext_FLAGS(ctx) |= KOS_CTX_DEAD;
     eval_ret = 0;
@@ -2090,34 +2253,7 @@ int koskari_eval(KosContext *ctx, KosEvent *out_ev) {
     goto koskari_eval_cleanup;
   }
 
-  /* Re-entry: inject value from completed Python await or send() when resuming from yield.
-     Push onto frame stack so the next opcode sees it. Do not clear RESUME_KIND here so
-     YIELD_FROM can detect inject and pop TOS into its dyn node; YIELD_FROM clears KIND. */
-  if (KosContext_PY_RESUME_INJECT(ctx) && KosContext_PY_RESUME_KIND(ctx) != KOS_RESUME_NONE) {
-    if (KosStackBlock_PushRef(&CURRENT_STACK(ctx), KosContext_PY_RESUME_INJECT(ctx)) < 0) {
-      Py_DECREF(KosContext_PY_RESUME_INJECT(ctx));
-      KosContext_PY_RESUME_INJECT(ctx) = NULL;
-      KosContext_PY_RESUME_KIND(ctx) = KOS_RESUME_NONE;
-      eval_ret = -1;
-      goto koskari_eval_cleanup;
-    }
-    Py_CLEAR(KosContext_PY_RESUME_INJECT(ctx));
-  }
-
-  /* If we resumed from WITH exit await, complete the pop before dispatch. */
-  if (KosContext_PENDING_WITH_EXIT_NODE(ctx)) {
-    if (kos_complete_pending_with_exit(ctx) < 0) {
-      eval_ret = 0;
-      goto koskari_eval_cleanup;
-    }
-  }
-
-  /* If we resumed from transfer plan await, pop inject into plan slot for the step. */
-  if (KosContext_PLAN_SUSPENDED_AWAIT(ctx)) {
-    PyObject *inj = KosStackBlock_PopRef(&CURRENT_STACK(ctx));
-    KosContext_PLAN_RESUME_INJECT(ctx) = inj;
-    KosContext_PLAN_SUSPENDED_AWAIT(ctx) = 0;
-  }
+eval_loop_start:
 
 #if KOS_USE_COMPUTED_GOTO
   static const void *const optable[] = {
@@ -2142,19 +2278,12 @@ int koskari_eval(KosContext *ctx, KosEvent *out_ev) {
     }
 
     if (PyErr_Occurred()) {
-      if (KoskariContinuationApply
-          && PyErr_ExceptionMatches(KoskariContinuationApply)) {
-        int r = handle_continuation_apply(ctx);
-        if (r == 1)
-          continue;
-        eval_ret = -1;
+      KosEvalMode raise_mode = process_raise(ctx, out_ev);
+      if (raise_mode == KOS_MODE_RAISE) {
+        eval_ret = 0;
         goto koskari_eval_cleanup;
       }
-      clear_pending_agen_on_error(ctx);
-      if (try_local_exception_handler(ctx, out_ev))
-        continue;
-      eval_ret = 0;
-      goto koskari_eval_cleanup;
+      continue;
     }
 
     KosCode *code = kos_hook_active(ctx)
@@ -2234,6 +2363,11 @@ int koskari_eval(KosContext *ctx, KosEvent *out_ev) {
               CURRENT_PC(ctx) = pc;
           }
         }
+        /* Record why we suspended so next entry can choose revive path */
+        if (KosEvent_KIND(out_ev) == KOS_EV_AWAIT)
+          KosContext_SUSPENSION_EVENT(ctx) = KOS_SUSP_AWAIT;
+        else if (KosEvent_KIND(out_ev) == KOS_EV_YIELD)
+          KosContext_SUSPENSION_EVENT(ctx) = KOS_SUSP_YIELD;
         eval_ret = (op_res < 0) ? -1 : 0;
         goto koskari_eval_cleanup;
       }

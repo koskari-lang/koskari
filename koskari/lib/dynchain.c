@@ -2274,6 +2274,10 @@ void kos_free_transfer_plan(KosTransferPlan *plan) {
   }
   Py_XDECREF(KosTransferPlan_CONTINUATION_REF(plan));
   KosTransferPlan_CONTINUATION_REF(plan) = NULL;
+  Py_XDECREF(KosTransferPlan_STEP_AWAITABLE(plan));
+  KosTransferPlan_STEP_AWAITABLE(plan) = NULL;
+  Py_XDECREF(KosTransferPlan_STEP_RESUME_INJECT(plan));
+  KosTransferPlan_STEP_RESUME_INJECT(plan) = NULL;
 
   PyMem_Free(KosTransferPlan_ACTIONS(plan));
   PyMem_Free(plan);
@@ -2626,6 +2630,9 @@ int kos_invoke_continuation(
     SAYF("[xfer] plan resume_frame=%p resume_stack=%p",
          (void *) KosTransferPlan_RESUME_FRAME(plan), (void *) KosTransferPlan_RESUME_STACK(plan));
 
+  /* Plan replacement: one active plan at a time; discard any existing plan */
+  if (KosContext_PLAN(ctx))
+    kos_free_transfer_plan(KosContext_PLAN(ctx));
   KosContext_PLAN(ctx) = plan;
   KosContext_FLAGS(ctx) |= KOS_CTX_IN_TRANSFER;
   KosTransferPlan_CONTINUATION_REF(plan) = NULL;
@@ -2801,6 +2808,8 @@ int kos_transferplan_traverse(
     return 0;
 
   Py_VISIT(KosTransferPlan_CONTINUATION_REF(plan));
+  Py_VISIT(KosTransferPlan_STEP_AWAITABLE(plan));
+  Py_VISIT(KosTransferPlan_STEP_RESUME_INJECT(plan));
 
   for (size_t i = KosTransferPlan_ACTION_INDEX(plan); i < KosTransferPlan_ACTION_COUNT(plan); i++) {
     if (KosTransferPlan_ACTIONS(plan)[i].step == KOS_XFER_INJECT) {

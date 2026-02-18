@@ -354,6 +354,10 @@ struct KosTransferPlan {
   KosStackBlock *resume_stack;  /* stack state at capture (invocation only) */
   PyObject *continuation_ref;   /* keep continuation alive until plan is freed */
   KosContinuation *invoke_clone;  /* when set, release then free when plan freed */
+
+  /* Stateful step: when current step suspended on await, store awaitable and resume state */
+  PyObject *step_awaitable;     /* awaitable when step suspended (owned) */
+  PyObject *step_resume_inject; /* value or exception to inject when resuming step (owned) */
 };
 
 
@@ -368,6 +372,28 @@ struct KosTransferPlan {
 #define KosTransferPlan_RESUME_STACK(p)    (((KosTransferPlan *)(p))->resume_stack)
 #define KosTransferPlan_CONTINUATION_REF(p) (((KosTransferPlan *)(p))->continuation_ref)
 #define KosTransferPlan_INVOKE_CLONE(p)    (((KosTransferPlan *)(p))->invoke_clone)
+#define KosTransferPlan_STEP_AWAITABLE(p)  (((KosTransferPlan *)(p))->step_awaitable)
+#define KosTransferPlan_STEP_RESUME_INJECT(p) (((KosTransferPlan *)(p))->step_resume_inject)
+
+
+/* === Hook invocation contract === */
+
+
+/**
+   Result of "run one hook invocation": done (advance step) or in progress
+   (hook suspended on await; do not advance; store awaitable/state for resume).
+*/
+#define KOS_HOOK_DONE        0
+#define KOS_HOOK_IN_PROGRESS 1
+
+
+/**
+   Signature for running one hook (or one chunk). Run the hook in ctx; fill
+   out_ev on suspend. Return KOS_HOOK_DONE when the hook finished, or
+   KOS_HOOK_IN_PROGRESS when it suspended on await (caller will resume later
+   with send_val/throw_exc). hook_state is opaque state for the runner.
+*/
+typedef int (*KosHookInvokeFn)(struct KosContext *ctx, struct KosEvent *out_ev, void *hook_state);
 
 
 /* === KosHookRunner: hook execution state === */

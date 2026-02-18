@@ -155,13 +155,12 @@ static PyObject *coroutine_send(PyObject *self, PyObject *value) {
     return NULL;
   }
 
-  /* If suspended on yield, set inject and run */
+  /* If suspended on yield, pass value as send_val */
+  PyObject *send_val = NULL;
+  PyObject *throw_exc = NULL;
   if (coro->state == KOS_CORO_YIELDED) {
-    PyObject *inject = (value != NULL) ? value : Py_None;
-    Py_INCREF(inject);
-    Py_XDECREF(KosContext_PY_RESUME_INJECT(coro->ctx));
-    KosContext_PY_RESUME_INJECT(coro->ctx) = inject;
-    KosContext_PY_RESUME_KIND(coro->ctx) = KOS_RESUME_YIELD;
+    send_val = (value != NULL) ? value : Py_None;
+    Py_INCREF(send_val);
     coro->state = KOS_CORO_RUNNING;
   }
 
@@ -176,7 +175,7 @@ static PyObject *coroutine_send(PyObject *self, PyObject *value) {
     }
 
     if (PyErr_ExceptionMatches(PyExc_StopIteration)) {
-      /* Python awaitable completed - inject result and drive again */
+      /* Python awaitable completed - pass result as send_val and drive again */
       PyObject *await_result = NULL;
       PyGen_FetchStopIterationValue(&await_result);
       if (! await_result)
@@ -184,9 +183,8 @@ static PyObject *coroutine_send(PyObject *self, PyObject *value) {
 
       Py_CLEAR(coro->ctx->py_await_iter);
       coro->state = KOS_CORO_RUNNING;
-      Py_XDECREF(KosContext_PY_RESUME_INJECT(coro->ctx));
-      KosContext_PY_RESUME_INJECT(coro->ctx) = await_result;
-      KosContext_PY_RESUME_KIND(coro->ctx) = KOS_RESUME_AWAIT;
+      send_val = await_result;
+      Py_INCREF(send_val);
       /* fall through to drive and handle ev */
     } else {
       /* Exception from Python awaitable */
@@ -200,7 +198,8 @@ static PyObject *coroutine_send(PyObject *self, PyObject *value) {
   coro->state = KOS_CORO_RUNNING;
 
   KosEvent ev = {.kind = KOS_EV_RETURN, .payload = NULL};
-  int res = koskari_eval(coro->ctx, &ev);
+  int res = koskari_eval(coro->ctx, &ev, send_val, throw_exc);
+  Py_XDECREF(send_val);
 
   coro->in_send = 0;
 
@@ -306,15 +305,54 @@ static PyObject *coroutine_throw(PyObject *self, PyObject *args) {
     }
   }
 
-  /* Normalize exception */
+  /* Normalize exception; pass as throw_exc to evaluator */
   PyErr_NormalizeException(&typ, &val, &tb);
+  PyObject *exc = val;
+  if (! exc)
+    exc = typ;
+  Py_XINCREF(exc);
 
-  KosContext_INJECT_MODE(coro->ctx) = KOS_INJECT_THROW;
-  Py_XINCREF(val);
-  Py_XDECREF(KosContext_INJECT_VALUE(coro->ctx));
-  KosContext_INJECT_VALUE(coro->ctx) = val;
+  coro->in_send = 1;
+  coro->state = KOS_CORO_RUNNING;
+  KosEvent ev = {.kind = KOS_EV_RETURN, .payload = NULL};
+  int res = koskari_eval(coro->ctx, &ev, NULL, exc);
+  Py_DECREF(exc);
+  coro->in_send = 0;
 
-  return coroutine_send(self, Py_None);
+  if (res < 0) {
+    coro->state = KOS_CORO_DONE;
+    return NULL;
+  }
+  switch (KosEvent_KIND(&ev)) {
+    case KOS_EV_RETURN:
+      coro->state = KOS_CORO_DONE;
+      PyObject *err = PyObject_CallOneArg(PyExc_StopIteration, KosEvent_PAYLOAD(&ev));
+      PyErr_SetObject(PyExc_StopIteration, err);
+      Py_DECREF(err);
+      Py_XDECREF(KosEvent_PAYLOAD(&ev));
+      return NULL;
+    case KOS_EV_RAISE:
+      coro->state = KOS_CORO_DONE;
+      if (KosEvent_PAYLOAD(&ev)) {
+        PyErr_SetObject((PyObject *) Py_TYPE(KosEvent_PAYLOAD(&ev)), KosEvent_PAYLOAD(&ev));
+        Py_DECREF(KosEvent_PAYLOAD(&ev));
+      }
+      return NULL;
+    case KOS_EV_YIELD:
+      coro->state = KOS_CORO_YIELDED;
+      return KosEvent_PAYLOAD(&ev);
+    case KOS_EV_AWAIT:
+      if (! KosEvent_PAYLOAD(&ev)) {
+        PyErr_SetString(PyExc_RuntimeError, "KOS_EV_AWAIT event has NULL payload");
+        coro->state = KOS_CORO_DONE;
+        return NULL;
+      }
+      coro->state = KOS_CORO_WAITING_PY;
+      return KosEvent_PAYLOAD(&ev);
+    default:
+      PyErr_SetString(PyExc_RuntimeError, "unexpected event kind");
+      return NULL;
+  }
 }
 
 

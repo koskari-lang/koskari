@@ -127,6 +127,39 @@ typedef enum KosEventKind {
 
 
 /**
+   KosSuspensionEvent records why the evaluator last suspended.
+   Set when koskari_eval returns with KOS_EV_AWAIT, KOS_EV_YIELD, or
+   YIELD_FROM boundary; cleared when execution starts or context is not suspended.
+   Used at entry to choose revive path (revive_plan, revive_await, revive_yield,
+   revive_yield_from).
+*/
+typedef enum KosSuspensionEvent {
+  KOS_SUSP_NONE      = 0,
+  KOS_SUSP_AWAIT     = 1,
+  KOS_SUSP_YIELD     = 2,
+  KOS_SUSP_YIELD_FROM = 3,
+} KosSuspensionEvent;
+
+
+/**
+   KosEvalMode is the result of entry/revive and drives the mode-handler loop.
+   NORMAL = run next insn or check completion; TRANSFER = run process_plan;
+   EXCEPTION = run process_raise; RAISE/AWAIT/YIELD/YIELD_FROM = return with event;
+   RETURN = normal completion with value.
+*/
+typedef enum KosEvalMode {
+  KOS_MODE_NORMAL    = 0,
+  KOS_MODE_TRANSFER  = 1,
+  KOS_MODE_EXCEPTION = 2,
+  KOS_MODE_RAISE     = 3,
+  KOS_MODE_AWAIT     = 4,
+  KOS_MODE_YIELD     = 5,
+  KOS_MODE_YIELD_FROM = 6,
+  KOS_MODE_RETURN    = 7,
+} KosEvalMode;
+
+
+/**
    KosEvent carries the result of a koskari_eval call.
 
    The kind field indicates what boundary was reached.
@@ -210,6 +243,9 @@ struct KosContext {
   int inject_mode;       /* 0=none, 1=pending_throw */
   PyObject *inject_value;  /* exception object when inject_mode==1 */
 
+  /* --- Suspension: why we last suspended (set on return AWAIT/YIELD; cleared when running) --- */
+  uint8_t suspension_event;  /* KosSuspensionEvent */
+
   /* --- Pending async gen: NEXT and ITER_NEXT (Koskari gen) --- */
   void *pending_agen;        /* KosPyAsyncGen * when set (avoid func.h in eval.h) */
   PyObject *pending_agen_default;  /* default value for 2-arg NEXT (or NULL) */
@@ -269,6 +305,7 @@ struct KosContext {
 
 #define KOS_INJECT_NONE   0
 #define KOS_INJECT_THROW  1
+#define KosContext_SUSPENSION_EVENT(c)      (((KosContext *)(c))->suspension_event)
 #define KosContext_PENDING_AGEN(c)           (((KosContext *)(c))->pending_agen)
 #define KosContext_PENDING_AGEN_DEFAULT(c)   (((KosContext *)(c))->pending_agen_default)
 #define KosContext_PENDING_AGEN_N(c)         (((KosContext *)(c))->pending_agen_n)
@@ -396,10 +433,12 @@ int kos_tail_koscall(KosContext *ctx, KosCode *code, PyObject *ns);
 
    :param ctx: the execution context
    :param out_ev: output event structure
+   :param send_val: resume value when resuming from AWAIT/YIELD/YIELD_FROM; NULL on first call or when N/A
+   :param throw_exc: exception to inject when resuming with throw (e.g. coroutine.throw()); NULL when resuming with value or on first call
 
    :return: 0 on success, -1 on internal error
 */
-int koskari_eval(KosContext *ctx, KosEvent *out_ev);
+int koskari_eval(KosContext *ctx, KosEvent *out_ev, PyObject *send_val, PyObject *throw_exc);
 
 
 /**

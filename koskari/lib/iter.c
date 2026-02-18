@@ -361,7 +361,7 @@ static PyObject *asyncgenasend_iternext(PyObject *self) {
 
   /* Drive the context */
   KosEvent ev = {0};
-  int res = koskari_eval(agen->ctx, &ev);
+  int res = koskari_eval(agen->ctx, &ev, NULL, NULL);
 
   agen->in_progress = 0;
 

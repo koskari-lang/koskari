@@ -499,10 +499,11 @@ static int yield_from_drive_kos_async_gen(
 
   KosPyAsyncGen *agen = (KosPyAsyncGen *) delegate;
 
-  /* Resuming from await: inject the result into the inner context
-     so the next koskari_eval run continues from the AWAIT. */
+  PyObject *yf_send_val = NULL;
+  PyObject *yf_throw_exc = NULL;
+
+  /* Resuming from await: pass the result as send_val to the inner context */
   if (KosDynYieldFrom_INFLIGHT(yf)) {
-    KosContext *inner = agen->ctx;
     PyObject *aw_result = KosDynYieldFrom_PENDING_ARG(yf);
     Py_XDECREF(KosDynYieldFrom_INFLIGHT(yf));
     KosDynYieldFrom_INFLIGHT(yf) = NULL;
@@ -513,9 +514,8 @@ static int yield_from_drive_kos_async_gen(
                       "yield-from resume with no await result");
       return -1;
     }
-    Py_XDECREF(KosContext_PY_RESUME_INJECT(inner));
-    KosContext_PY_RESUME_INJECT(inner) = aw_result;
-    KosContext_PY_RESUME_KIND(inner) = KOS_RESUME_AWAIT;
+    yf_send_val = aw_result;
+    Py_INCREF(yf_send_val);
   }
 
   if (action == KOS_YF_CLOSE) {
@@ -550,24 +550,19 @@ static int yield_from_drive_kos_async_gen(
   }
 
   if (action == KOS_YF_SEND && KosDynYieldFrom_PENDING_ARG(yf)) {
-    KosContext *inner = agen->ctx;
-    PyObject *send_val = KosDynYieldFrom_PENDING_ARG(yf);
-    Py_XDECREF(KosContext_PY_RESUME_INJECT(inner));
-    KosContext_PY_RESUME_INJECT(inner) = send_val;
-    KosContext_PY_RESUME_KIND(inner) = KOS_RESUME_YIELD;
+    yf_send_val = KosDynYieldFrom_PENDING_ARG(yf);
+    Py_INCREF(yf_send_val);
   }
   if (action == KOS_YF_THROW && KosDynYieldFrom_PENDING_ARG(yf)) {
-    KosContext *inner = agen->ctx;
-    PyObject *exc = KosDynYieldFrom_PENDING_ARG(yf);
-    Py_XDECREF(KosContext_INJECT_VALUE(inner));
-    KosContext_INJECT_VALUE(inner) = exc;
-    Py_INCREF(exc);
-    KosContext_INJECT_MODE(inner) = KOS_INJECT_THROW;
+    yf_throw_exc = KosDynYieldFrom_PENDING_ARG(yf);
+    Py_INCREF(yf_throw_exc);
   }
 
   agen->in_progress = 1;
   KosEvent ev = {0};
-  int res = koskari_eval(agen->ctx, &ev);
+  int res = koskari_eval(agen->ctx, &ev, yf_send_val, yf_throw_exc);
+  Py_XDECREF(yf_send_val);
+  Py_XDECREF(yf_throw_exc);
   agen->in_progress = 0;
 
   {
