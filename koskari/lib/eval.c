@@ -1229,14 +1229,9 @@ int kos_complete_pending_with_exit(KosContext *ctx) {
    Clear pending WITH exit stash. No-op if not set.
 */
 void kos_clear_pending_with_exit(KosContext *ctx) {
-
-  Py_XDECREF(KosContext_PENDING_WITH_EXIT_TYP(ctx));
-  KosContext_PENDING_WITH_EXIT_TYP(ctx) = NULL;
-  Py_XDECREF(KosContext_PENDING_WITH_EXIT_VAL(ctx));
-  KosContext_PENDING_WITH_EXIT_VAL(ctx) = NULL;
-  Py_XDECREF(KosContext_PENDING_WITH_EXIT_TB(ctx));
-  KosContext_PENDING_WITH_EXIT_TB(ctx) = NULL;
-  KosContext_PENDING_WITH_EXIT_NODE(ctx) = NULL;
+  Py_CLEAR(KosContext_PENDING_WITH_EXIT_TYP(ctx));
+  Py_CLEAR(KosContext_PENDING_WITH_EXIT_VAL(ctx));
+  Py_CLEAR(KosContext_PENDING_WITH_EXIT_TB(ctx));
 }
 
 
@@ -1244,15 +1239,10 @@ void kos_clear_pending_with_exit(KosContext *ctx) {
    Clear pending WITH enter stash (release refs). No-op if not set.
 */
 void kos_clear_pending_with_enter(KosContext *ctx) {
-
-  Py_XDECREF(KosContext_PENDING_WITH_ENTER_MGR(ctx));
-  KosContext_PENDING_WITH_ENTER_MGR(ctx) = NULL;
-  Py_XDECREF(KosContext_PENDING_WITH_ENTER_ENTER(ctx));
-  KosContext_PENDING_WITH_ENTER_ENTER(ctx) = NULL;
-  Py_XDECREF(KosContext_PENDING_WITH_ENTER_EXIT(ctx));
-  KosContext_PENDING_WITH_ENTER_EXIT(ctx) = NULL;
-  Py_XDECREF(KosContext_PENDING_WITH_ENTER_NAME(ctx));
-  KosContext_PENDING_WITH_ENTER_NAME(ctx) = NULL;
+  Py_CLEAR(KosContext_PENDING_WITH_ENTER_MGR(ctx));
+  Py_CLEAR(KosContext_PENDING_WITH_ENTER_ENTER(ctx));
+  Py_CLEAR(KosContext_PENDING_WITH_ENTER_EXIT(ctx));
+  Py_CLEAR(KosContext_PENDING_WITH_ENTER_NAME(ctx));
 }
 
 
@@ -1586,8 +1576,12 @@ static int call_pyobject_call(
    Reducing operator: pop opa values (or use TailPtr for opa > 0), call fn,
    drop opa, push result. Faithful to ceval _obj_op.
  */
-static int obj_op_reducing(KosContext *ctx, KosEvent *out_ev, KosOp *insn,
-                           KosOperatorReducing *fn) {
+static int obj_op_reducing(
+    KosContext *ctx,
+    KosEvent *out_ev,
+    KosOp *insn,
+    KosOperatorReducing *fn) {
+
   int opa = (int) KosOp_ARG(insn);
   PyObject *res;
 
@@ -2302,10 +2296,9 @@ eval_loop_start:
     }
 
     KosOp *insn = &KosCode_CODE(code)[pc];
-#if VERBOSE_DEBUG
     SAYF("[eval] pc=%u op=%u arg=%u\n",
          (unsigned) pc, (unsigned) KosOp_OP(insn), (unsigned) KosOp_ARG(insn));
-#endif
+
 #if KOS_STACK_TRACE
     trace_stack("  before", CURRENT_STACK(ctx));
 #endif
@@ -2323,8 +2316,10 @@ eval_loop_start:
       eval_ret = -1;
       goto koskari_eval_cleanup;
     }
+
     {
       int op_res;
+
 #if KOS_USE_COMPUTED_GOTO
       goto *optable[KosOp_OP(insn)];
 #define OP(name, style) TARGET_##name: op_res = op_##name(ctx, out_ev, insn); if (op_res != 0) goto handle_op_result; goto next_insn;
@@ -2343,34 +2338,41 @@ eval_loop_start:
         goto koskari_eval_cleanup;
       }
 #endif
+
       if (unlikely(op_res != 0)) {
         if (PyErr_Occurred()) {
           clear_pending_agen_on_error(ctx);
           if (try_local_exception_handler(ctx, out_ev))
             continue;
+
           eval_ret = 0;
           goto koskari_eval_cleanup;
         }
+
         if (op_res == 1) {
           /* WITH enter/exit await: do not advance PC so resume dispatches
              the same opcode. Other opcodes (e.g. YIELD) use 1 for suspend
              but resume at the next instruction. */
           KosOpCode op = (KosOpCode) KosOp_OP(insn);
           if (op == KOS_OP_PUSH_WITH || op == KOS_OP_POP_WITH) {
-            if (kos_hook_active(ctx))
+            if (kos_hook_active(ctx)) {
               KosHookRunner_PC(KosContext_HOOK_RUNNER(ctx)) = pc;
-            else
+            } else {
               CURRENT_PC(ctx) = pc;
+            }
           }
         }
+
         /* Record why we suspended so next entry can choose revive path */
-        if (KosEvent_KIND(out_ev) == KOS_EV_AWAIT)
+        if (KosEvent_KIND(out_ev) == KOS_EV_AWAIT) {
           KosContext_SUSPENSION_EVENT(ctx) = KOS_SUSP_AWAIT;
-        else if (KosEvent_KIND(out_ev) == KOS_EV_YIELD)
+        } else if (KosEvent_KIND(out_ev) == KOS_EV_YIELD) {
           KosContext_SUSPENSION_EVENT(ctx) = KOS_SUSP_YIELD;
+        }
         eval_ret = (op_res < 0) ? -1 : 0;
         goto koskari_eval_cleanup;
       }
+
 #if !KOS_USE_COMPUTED_GOTO
       goto next_insn;
 #endif
@@ -2390,10 +2392,12 @@ koskari_eval_cleanup:
    Create a Koskari exception type and add it to the module. On success,
    the module owns the reference (PyModule_AddObject steals).
 */
-static int register_koskari_exception(PyObject *mod,
-                                       const char *full_name,
-                                       const char *attr_name,
-                                       PyObject **out_exc) {
+static int register_koskari_exception(
+    PyObject *mod,
+    const char *full_name,
+    const char *attr_name,
+    PyObject **out_exc) {
+
   PyObject *base = PyTuple_Pack(1, PyExc_BaseException);
   if (! base)
     return -1;

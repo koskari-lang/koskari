@@ -469,7 +469,7 @@ static int KosStackBlock_EXTENDPTR(
 }
 
 
-static PyObject *KosStackBlock_Peek(KosStackBlock *self) {
+PyObject *KosStackBlock_Peek(KosStackBlock *self) {
 
   size_t len = self->len;
   if (! len) {
@@ -482,7 +482,7 @@ static PyObject *KosStackBlock_Peek(KosStackBlock *self) {
 }
 
 
-static PyObject *KosStackBlock_PeekAt(
+PyObject *KosStackBlock_PeekAt(
     KosStackBlock *self,
     Py_ssize_t index) {
 

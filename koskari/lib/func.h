@@ -40,6 +40,9 @@ typedef struct {
 /** Borrowed reference. Do not Py_DECREF the result. */
 #define KosExpression_NS(expr)   (((KosExpression *) (expr))->ns)
 
+#define KosExpression_CheckExact(obj)                  \
+  ((obj) && ((obj)->ob_type == &KosExpressionType))
+
 
 /**
    Create an Expression (code, ns). Used by Code.expression(parent_ns).
@@ -148,6 +151,9 @@ typedef struct {
 #define KosFunction_BASE_NS(func) (((KosFunction *) (func))->base_ns)
 
 #define KosFunction_FORMALS(func) (((KosFunction *) (func))->formals)
+
+#define KosFunction_CheckExact(obj)                   \
+  ((obj) && ((obj)->ob_type == &KosFunctionType))
 
 
 /**

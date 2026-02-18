@@ -369,6 +369,20 @@ PyObject *const *KosStackBlock_TailPtr(KosStackBlock *self, size_t count);
 
 
 /**
+   Block-level API for eval: borrow reference to TOS. Same semantics as
+   KosStack_Peek. Sets err and returns NULL if underrun.
+ */
+PyObject *KosStackBlock_Peek(KosStackBlock *self);
+
+
+/**
+   Block-level API for eval: borrow reference at index. 0 = bottom, -1 = TOS.
+   Same semantics as KosStack_PeekAt. Sets err and returns NULL if over/underrun.
+ */
+PyObject *KosStackBlock_PeekAt(KosStackBlock *self, Py_ssize_t index);
+
+
+/**
    Block-level API for eval: remove last count elements. Sets err on underrun.
  */
 int KosStackBlock_Drop(KosStackBlock **self, size_t count);
