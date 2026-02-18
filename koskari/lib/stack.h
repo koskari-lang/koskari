@@ -96,13 +96,6 @@ typedef struct KosStack {
 
 int KosStackBlock_CopyForWrite(KosStackBlock **block);
 
-static inline int KosStackBlock_EnsureExclusive(KosStackBlock **block) {
-  KosStackBlock *b = *block;
-  if (b && KosStackBlock_REFCOUNT(b) == 1)
-    return 0;
-  return KosStackBlock_CopyForWrite(block);
-}
-
 
 /* === public API === */
 
@@ -386,6 +379,12 @@ PyObject *KosStackBlock_PeekAt(KosStackBlock *self, Py_ssize_t index);
    Block-level API for eval: remove last count elements. Sets err on underrun.
  */
 int KosStackBlock_Drop(KosStackBlock **self, size_t count);
+
+
+/**
+   Block-level API for eval: remove last element. Sets err on underrun.
+*/
+int KosStackBlock_Drop1(KosStackBlock **self);
 
 
 /**

@@ -35,6 +35,15 @@
 #include "debug.h"
 
 
+
+static inline int KosStackBlock_EnsureExclusive(KosStackBlock **block) {
+  KosStackBlock *b = *block;
+  if (likely(b && KosStackBlock_REFCOUNT(b) == 1))
+    return 0;
+  return KosStackBlock_CopyForWrite(block);
+}
+
+
 /* === StackBlock === */
 
 
@@ -520,7 +529,7 @@ static int KosStackBlock_Pull(KosStackBlock **self, size_t count) {
     return -1;
   }
 
-  if (KosStackBlock_EnsureExclusive(&s))
+  if (unlikely(KosStackBlock_EnsureExclusive(&s)))
     return -1;
 
   while (s->len + count >= s->max) {
@@ -558,7 +567,7 @@ static PyObject *KosStackBlock_Pop(KosStackBlock **self) {
     return NULL;
   }
 
-  if (KosStackBlock_EnsureExclusive(&s))
+  if (unlikely(KosStackBlock_EnsureExclusive(&s)))
     return NULL;
 
   s->len = --len;
@@ -577,23 +586,40 @@ PyObject *KosStackBlock_PopRef(KosStackBlock **block) {
 }
 
 
+int KosStackBlock_Drop1(KosStackBlock **self) {
+  KosStackBlock *s = *self;
+  if (unlikely(! s || ! KosStackBlock_LEN(s))) {
+    PyErr_SetString(PyExc_RuntimeError, "stack drop underrun");
+    return -1;
+  }
+
+  if(unlikely(KosStackBlock_EnsureExclusive(&s)))
+    return -1;
+
+  Py_DECREF(s->objs[--(KosStackBlock_LEN(s))]);
+  *self = s;
+
+  return 0;
+}
+
+
 int KosStackBlock_Drop(KosStackBlock **self, size_t count) {
-  if (! count)
+  if (unlikely(! count))
     return 0;
 
   KosStackBlock *s = *self;
-  if (! s) {
+  if (unlikely(! s)) {
     PyErr_SetString(PyExc_RuntimeError, "stack drop underrun");
     return -1;
   }
 
   size_t len = s->len;
-  if (count > len) {
+  if (unlikely(count > len)) {
     PyErr_SetString(PyExc_RuntimeError, "stack drop underrun");
     return -1;
   }
 
-  if (KosStackBlock_EnsureExclusive(&s))
+  if (unlikely(KosStackBlock_EnsureExclusive(&s)))
     return -1;
 
   while (count--) {

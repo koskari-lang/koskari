@@ -19,9 +19,12 @@
 */
 
 KOS_OP_HANDLER(POP) {
-  unsigned n = KosOp_ARG(insn);
-  if (KosStackBlock_Drop(&CURRENT_STACK(ctx), (size_t) n) < 0)
-    return -1;
   (void) out_ev;
-  return 0;
+
+  unsigned n = KosOp_ARG(insn);
+  if (likely(n == 1)) {
+    return KosStackBlock_Drop1(&CURRENT_STACK(ctx));
+  } else {
+    return KosStackBlock_Drop(&CURRENT_STACK(ctx), (size_t) n);
+  }
 }
