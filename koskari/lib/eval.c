@@ -52,6 +52,7 @@
 #include "lib.h"
 #include "hints.h"
 #include "debug.h"
+#include "tracing.h"
 
 #include <stdint.h>
 
@@ -514,8 +515,10 @@ KosContext *kos_context_new(KosDynFrame *top) {
   if (ctx) {
     context_freelist = KosContext_FREELIST_NEXT(ctx);
     context_freecount--;
+    KOS_TRACE_FL_ALLOC("context", 1);
     memset(ctx, 0, sizeof(KosContext));
   } else {
+    KOS_TRACE_FL_ALLOC("context", 0);
     ctx = PyMem_Malloc(sizeof(KosContext));
     if (! ctx) {
       PyErr_NoMemory();
@@ -527,11 +530,13 @@ KosContext *kos_context_new(KosDynFrame *top) {
   KosContext_TOKEN(ctx) = KosEvaluatorToken_New();
   if (! KosContext_TOKEN(ctx)) {
     if (context_freecount < CONTEXT_MAX_FREE) {
+      KOS_TRACE_FL_RETURN("context", 0);
       memset(ctx, 0, sizeof(KosContext));
       KosContext_FREELIST_NEXT(ctx) = context_freelist;
       context_freelist = ctx;
       context_freecount++;
     } else {
+      KOS_TRACE_FL_RETURN("context", 1);
       PyMem_Free(ctx);
     }
     return NULL;
@@ -554,11 +559,13 @@ KosContext *kos_context_new(KosDynFrame *top) {
         Py_DECREF(KosContext_TOKEN(ctx));
         KosContext_TOKEN(ctx) = NULL;
         if (context_freecount < CONTEXT_MAX_FREE) {
+          KOS_TRACE_FL_RETURN("context", 0);
           memset(ctx, 0, sizeof(KosContext));
           KosContext_FREELIST_NEXT(ctx) = context_freelist;
           context_freelist = ctx;
           context_freecount++;
         } else {
+          KOS_TRACE_FL_RETURN("context", 1);
           PyMem_Free(ctx);
         }
         return NULL;
@@ -671,11 +678,13 @@ void kos_context_free(KosContext *ctx) {
   KosContext_PLAN_SUSPENDED_AWAIT(ctx) = 0;
 
   if (context_freecount < CONTEXT_MAX_FREE) {
+    KOS_TRACE_FL_RETURN("context", 0);
     memset(ctx, 0, sizeof(KosContext));
     KosContext_FREELIST_NEXT(ctx) = context_freelist;
     context_freelist = ctx;
     context_freecount++;
   } else {
+    KOS_TRACE_FL_RETURN("context", 1);
     PyMem_Free(ctx);
   }
 }

@@ -25,13 +25,22 @@
 
 
 #include "lib.h"
+#include "tracing.h"
 
 
 /* === module methods === */
 
 
-static PyMethodDef libmod_methods[] = {
+static PyObject *lib_get_trace_report(PyObject *mod, PyObject *unused) {
+  (void) mod;
+  (void) unused;
+  return kos_trace_report();
+}
 
+
+static PyMethodDef libmod_methods[] = {
+  { "get_trace_report", (PyCFunction) lib_get_trace_report, METH_NOARGS,
+    "Return a dict of compile-time tracing report (flags and per-feature data)" },
   { NULL, },
 };
 
@@ -46,6 +55,8 @@ static int koskari_lib_init(PyObject *mod) {
   PyObject *dict = PyModule_GetDict(mod);
   if (! dict)
     return -1;
+
+  kos_trace_init();
 
   /* compat must be initialized first */
   if (koskari_atom_init(mod) ||
@@ -131,6 +142,8 @@ int koskari_lib_clear(PyObject *mod) {
 
   if (koskari_atom_clear(mod))
     return -1;
+
+  kos_trace_clear();
 
   /* compat should be cleared last */
   if (koskari_compat_clear(mod))

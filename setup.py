@@ -36,6 +36,15 @@ def extra_compile_args(platform=None, debug=False):
         args.append("-g")
         args.append("-DVERBOSE_DEBUG=1")
 
+    if environ.get("KOS_TRACE_FREELIST") == "1":
+        args.append("-DKOS_TRACE_FREELIST=1")
+    if environ.get("KOS_TRACE_INTERN") == "1":
+        args.append("-DKOS_TRACE_INTERN=1")
+    if environ.get("KOS_TRACE_EVENTS") == "1":
+        args.append("-DKOS_TRACE_EVENTS=1")
+    if environ.get("KOS_TRACE_TIMING") == "1":
+        args.append("-DKOS_TRACE_TIMING=1")
+
     if platform == "linux":
         args.append("-ffat-lto-objects")
 

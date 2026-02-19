@@ -33,6 +33,7 @@
 #include "lib.h"
 #include "hints.h"
 #include "debug.h"
+#include "tracing.h"
 
 
 
@@ -68,9 +69,11 @@ static KosStackBlock *KosStackBlock_New(KosStackBlock *parent) {
   if (self) {
     block_freelist = KosStackBlock_PARENT(self);
     block_freecount -= 1;
+    KOS_TRACE_FL_ALLOC("stack_block", 1);
     SAYF(" found free, new block_freecount: %zu", block_freecount);
 
   } else {
+    KOS_TRACE_FL_ALLOC("stack_block", 0);
     self = PyMem_Malloc(KosStackBlock_NEEDED_SIZE(BLOCK_NEW_SIZE));
     if (! self) {
       PyErr_SetString(PyExc_RuntimeError, "block malloc failed");
@@ -99,6 +102,7 @@ static KosStackBlock *KosStackBlock_NewSized(
   if (self) {
     block_freelist = KosStackBlock_PARENT(self);
     block_freecount -= 1;
+    KOS_TRACE_FL_ALLOC("stack_block", 1);
     SAYF(" found free, new block_freecount: %zu", block_freecount);
 
     if (self->max < max) {
@@ -111,6 +115,7 @@ static KosStackBlock *KosStackBlock_NewSized(
     }
 
   } else {
+    KOS_TRACE_FL_ALLOC("stack_block", 0);
     self = PyMem_Malloc(KosStackBlock_NEEDED_SIZE(max));
     if (! self) {
       PyErr_SetString(PyExc_RuntimeError, "block malloc failed");
@@ -235,6 +240,7 @@ void KosStackBlock_ReleaseExclude(KosStackBlock *self, PyObject *exclude) {
     }
 
     if (block_freecount < BLOCK_MAX_FREE) {
+      KOS_TRACE_FL_RETURN("stack_block", 0);
       KosStackBlock_REFCOUNT(self) = 0;
       KosStackBlock_LEN(self) = 0;
 
@@ -245,6 +251,7 @@ void KosStackBlock_ReleaseExclude(KosStackBlock *self, PyObject *exclude) {
            block_freecount);
 
     } else {
+      KOS_TRACE_FL_RETURN("stack_block", 1);
       PyMem_Free(self);
       SAY(" at max freelist size, dealloced");
     }

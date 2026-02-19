@@ -36,6 +36,20 @@ CFLAGS := -std=c99 -Wall -Werror -g
 CFLAGS += $(PYTHON_CFLAGS)
 CFLAGS += -I$(LIB_DIR)
 
+# Optional tracing flags (e.g. make KOS_TRACE_FREELIST=1)
+ifneq ($(KOS_TRACE_FREELIST),)
+CFLAGS += -DKOS_TRACE_FREELIST=1
+endif
+ifneq ($(KOS_TRACE_INTERN),)
+CFLAGS += -DKOS_TRACE_INTERN=1
+endif
+ifneq ($(KOS_TRACE_EVENTS),)
+CFLAGS += -DKOS_TRACE_EVENTS=1
+endif
+ifneq ($(KOS_TRACE_TIMING),)
+CFLAGS += -DKOS_TRACE_TIMING=1
+endif
+
 LDFLAGS := $(PYTHON_LDFLAGS)
 
 # ASan flags (used by test-asan target)

@@ -27,6 +27,7 @@
 
 
 #include "lib.h"
+#include "tracing.h"
 
 
 /* === string constants === */
@@ -568,11 +569,13 @@ static void pair_dealloc(PyObject *self) {
   Py_CLEAR(KosPair_POSITION(self));
 
   if (pair_free_count < PAIR_MAX_FREE) {
+    KOS_TRACE_FL_RETURN("pair", 0);
     KosPair_CDR(self) = (PyObject *) pair_free_list;
     pair_free_list = (KosPair *) self;
     pair_free_count++;
 
   } else {
+    KOS_TRACE_FL_RETURN("pair", 1);
     PyObject_GC_Del(self);
   }
 
@@ -1032,9 +1035,11 @@ PyObject *KosPair_New(PyObject *head, PyObject *tail) {
     self = pair_free_list;
     pair_free_list = (KosPair *) KosPair_CDR(self);
     pair_free_count--;
+    KOS_TRACE_FL_ALLOC("pair", 1);
     Py_INCREF(self);
 
   } else {
+    KOS_TRACE_FL_ALLOC("pair", 0);
     self = PyObject_GC_New(KosPair, &KosPairType);
     if (! self)
       return NULL;

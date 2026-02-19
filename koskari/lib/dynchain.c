@@ -28,6 +28,7 @@
 
 #include "lib.h"
 #include "debug.h"
+#include "tracing.h"
 
 #include <stdint.h>
 
@@ -70,12 +71,14 @@ static KosDynNode *kos_dynnode_alloc(void) {
   if (p) {
     dyn_freelist = KosDynNode_PARENT(p);
     dyn_freecount--;
+    KOS_TRACE_FL_ALLOC("dyn_node", 1);
     memset(p, 0, sizeof(KosDynNode));
     p->node_id = dyn_node_id_counter++;
     if (! dyn_node_id_counter)
       dyn_node_id_counter = 1;  /* avoid 0 on rollover */
     return p;
   }
+  KOS_TRACE_FL_ALLOC("dyn_node", 0);
   p = PyMem_Malloc(sizeof(KosDynNode));
   if (! p) {
     PyErr_NoMemory();
@@ -95,11 +98,13 @@ static KosDynNode *kos_dynnode_alloc(void) {
 */
 static void kos_dynnode_return_to_freelist(KosDynNode *node) {
   if (dyn_freecount < DYN_NODE_MAX_FREE) {
+    KOS_TRACE_FL_RETURN("dyn_node", 0);
     memset(node, 0, sizeof(KosDynNode));
     KosDynNode_PARENT(node) = dyn_freelist;
     dyn_freelist = node;
     dyn_freecount++;
   } else {
+    KOS_TRACE_FL_RETURN("dyn_node", 1);
     PyMem_Free(node);
   }
 }
@@ -1835,8 +1840,10 @@ static KosContinuation *kos_continuation_create(
   if (k) {
     cont_freelist = (KosContinuation *) KosContinuation_CAPTURED_CHAIN(k);
     cont_freecount--;
+    KOS_TRACE_FL_ALLOC("continuation", 1);
     memset(k, 0, sizeof(KosContinuation));
   } else {
+    KOS_TRACE_FL_ALLOC("continuation", 0);
     k = PyMem_Malloc(sizeof(KosContinuation));
     if (! k) {
       PyErr_NoMemory();
@@ -2047,11 +2054,13 @@ void kos_continuation_free_exclude(KosContinuation *k, PyObject *exclude_from_st
   kos_dynchain_free(KosContinuation_CAPTURED_CHAIN(k), NULL);
 
   if (cont_freecount < CONT_MAX_FREE) {
+    KOS_TRACE_FL_RETURN("continuation", 0);
     memset(k, 0, sizeof(KosContinuation));
     KosContinuation_CAPTURED_CHAIN(k) = (KosDynNode *) cont_freelist;
     cont_freelist = k;
     cont_freecount++;
   } else {
+    KOS_TRACE_FL_RETURN("continuation", 1);
     PyMem_Free(k);
   }
 }
@@ -2613,11 +2622,13 @@ static void xfer_plan_release_invoke_clone(KosTransferPlan *plan) {
   }
   Py_XDECREF(KosContinuation_TOKEN_REF(clone));
   if (cont_freecount < CONT_MAX_FREE) {
+    KOS_TRACE_FL_RETURN("continuation", 0);
     memset(clone, 0, sizeof(KosContinuation));
     KosContinuation_CAPTURED_CHAIN(clone) = (KosDynNode *) cont_freelist;
     cont_freelist = clone;
     cont_freecount++;
   } else {
+    KOS_TRACE_FL_RETURN("continuation", 1);
     PyMem_Free(clone);
   }
 }
