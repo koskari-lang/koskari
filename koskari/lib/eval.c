@@ -2081,10 +2081,10 @@ static int try_local_exception_handler(KosContext *ctx, KosEvent *out_ev) {
       while (KosContext_DYN_TOP(ctx) != NULL
              && KosContext_DYN_TOP(ctx) != (KosDynNode *) CURRENT_FRAME(ctx)) {
         KosDynNode *top = KosContext_DYN_TOP(ctx);
-        int top_was_with = (top && KosDynNode_IS_WITH(top));
-        /* YIELD_FROM close can call PyErr_Clear(); preserve exception across pop */
+        int top_may_swallow = (top && KosDynNode_HAS_CAP(top, KOS_DYN_CAP_MAY_SWALLOW_EXCEPTION));
+        /* Some nodes' pop can call PyErr_Clear(); preserve exception across pop */
         PyObject *saved_typ = NULL, *saved_val = NULL, *saved_tb = NULL;
-        if (top && KosDynNode_IS_YIELD_FROM(top) && PyErr_Occurred())
+        if (top && KosDynNode_HAS_CAP(top, KOS_DYN_CAP_PRESERVE_ERR_ACROSS_POP) && PyErr_Occurred())
           PyErr_Fetch(&saved_typ, &saved_val, &saved_tb);
         int pop_res = kos_dyn_pop_top(ctx, out_ev);
         if (saved_typ != NULL)
@@ -2106,9 +2106,9 @@ static int try_local_exception_handler(KosContext *ctx, KosEvent *out_ev) {
           KosContext_FLAGS(ctx) |= KOS_CTX_DEAD;
           return 0;
         }
-        /* Only continue when a WITH's __exit__ swallowed; other nodes (e.g.
-           YIELD_FROM) may clear PyErr in their teardown (e.g. delegate close). */
-        if (top_was_with && ! PyErr_Occurred()) {
+        /* Only continue when a node with may-swallow swallowed; other nodes
+           may clear PyErr in their teardown (e.g. delegate close). */
+        if (top_may_swallow && ! PyErr_Occurred()) {
           return 1;
         }
       }

@@ -43,11 +43,13 @@
 static void kos_dynnode_init(
     KosDynNode *node,
     KosDynKind kind,
-    KosDynNode *parent) {
+    KosDynNode *parent,
+    uint32_t caps) {
 
   KosDynNode_PARENT(node) = parent;
   KosDynNode_KIND(node) = kind;
   KosDynNode_FLAGS(node) = KOS_DYNF_NONE;
+  KosDynNode_CAPS(node) = caps;
 }
 
 
@@ -111,7 +113,7 @@ KosDynFrame *kos_dynframe_new(
     return NULL;
   }
 
-  kos_dynnode_init(frame, KOS_DYN_FRAME, parent);
+  kos_dynnode_init(frame, KOS_DYN_FRAME, parent, 0);
   KosDynFrame_CODE(frame) = code;  /* borrowed */
   KosDynFrame_PC(frame) = 0;
   KosDynFrame_STACK(frame) = stack;  /* ownership transferred */
@@ -140,7 +142,7 @@ KosDynFrame *kos_dynframe_clone(KosDynFrame *frame) {
     return NULL;
   }
 
-  kos_dynnode_init(clone, KOS_DYN_FRAME, NULL);
+  kos_dynnode_init(clone, KOS_DYN_FRAME, NULL, KosDynNode_CAPS(frame));
   KosDynNode_FLAGS(clone) = KosDynNode_FLAGS(frame) | KOS_DYNF_CLONED;
   KosDynFrame_CODE(clone) = KosDynFrame_CODE(frame);  /* borrowed */
   KosDynFrame_PC(clone) = KosDynFrame_PC(frame);
@@ -180,7 +182,7 @@ KosDynPrompt *kos_dynprompt_new(KosDynNode *parent, uint32_t prompt_id) {
   if (! prompt)
     return NULL;
 
-  kos_dynnode_init(prompt, KOS_DYN_PROMPT, parent);
+  kos_dynnode_init(prompt, KOS_DYN_PROMPT, parent, 0);
   KosDynPrompt_ID(prompt) = prompt_id;
   KosDynPrompt_HANDLER_CODE(prompt) = NULL;
   KosDynPrompt_HANDLER_PC(prompt) = 0;
@@ -196,7 +198,7 @@ static KosDynPrompt *kos_dynprompt_clone(KosDynPrompt *prompt) {
   if (! clone)
     return NULL;
 
-  kos_dynnode_init(clone, KOS_DYN_PROMPT, NULL);
+  kos_dynnode_init(clone, KOS_DYN_PROMPT, NULL, KosDynNode_CAPS(prompt));
   KosDynNode_FLAGS(clone) = KosDynNode_FLAGS(prompt) | KOS_DYNF_CLONED;
   KosDynPrompt_ID(clone) = KosDynPrompt_ID(prompt);
   KosDynPrompt_HANDLER_CODE(clone) = KosDynPrompt_HANDLER_CODE(prompt);  /* borrowed */
@@ -223,7 +225,7 @@ KosDynCC *kos_dyncc_new(KosDynNode *parent, uint32_t resume_pc) {
   if (! cc)
     return NULL;
 
-  kos_dynnode_init(cc, KOS_DYN_CC, parent);
+  kos_dynnode_init(cc, KOS_DYN_CC, parent, 0);
   KosDynCC_RESUME_PC(cc) = resume_pc;
   return cc;
 }
@@ -237,7 +239,7 @@ static KosDynCC *kos_dyncc_clone(KosDynCC *cc) {
   if (! clone)
     return NULL;
 
-  kos_dynnode_init(clone, KOS_DYN_CC, NULL);
+  kos_dynnode_init(clone, KOS_DYN_CC, NULL, KosDynNode_CAPS(cc));
   KosDynNode_FLAGS(clone) = KosDynNode_FLAGS(cc) | KOS_DYNF_CLONED;
   KosDynCC_RESUME_PC(clone) = KosDynCC_RESUME_PC(cc);
   return clone;
@@ -266,7 +268,12 @@ KosDynWind *kos_dynwind_new(
   if (! wind)
     return NULL;
 
-  kos_dynnode_init(wind, KOS_DYN_WIND, parent);
+  uint32_t wind_caps = 0;
+  if (after_code)
+    wind_caps |= KOS_DYN_CAP_NEEDS_UNWIND_ACTION;
+  if (before_code)
+    wind_caps |= KOS_DYN_CAP_NEEDS_WIND_BEFORE_ACTION;
+  kos_dynnode_init(wind, KOS_DYN_WIND, parent, wind_caps);
   KosDynWind_BEFORE_CODE(wind) = before_code;  /* borrowed */
   KosDynWind_BEFORE_PC(wind) = before_pc;
   KosDynWind_AFTER_CODE(wind) = after_code;  /* borrowed */
@@ -284,7 +291,7 @@ KosDynWind *kos_dynwind_clone(KosDynWind *wind) {
   if (! clone)
     return NULL;
 
-  kos_dynnode_init(clone, KOS_DYN_WIND, NULL);
+  kos_dynnode_init(clone, KOS_DYN_WIND, NULL, KosDynNode_CAPS(wind));
   KosDynNode_FLAGS(clone) = KosDynNode_FLAGS(wind) | KOS_DYNF_CLONED;
   KosDynWind_BEFORE_CODE(clone) = KosDynWind_BEFORE_CODE(wind);  /* borrowed */
   KosDynWind_BEFORE_PC(clone) = KosDynWind_BEFORE_PC(wind);
@@ -317,7 +324,7 @@ KosDynRegion *kos_dynregion_new(
   if (! region)
     return NULL;
 
-  kos_dynnode_init(region, KOS_DYN_REGION, parent);
+  kos_dynnode_init(region, KOS_DYN_REGION, parent, 0);
   KosDynRegion_STYLE(region) = style;
   KosDynRegion_BREAK_PC(region) = break_pc;
   KosDynRegion_CONTINUE_PC(region) = continue_pc;
@@ -339,7 +346,7 @@ KosDynRegion *kos_dynregion_clone(KosDynRegion *region) {
   if (! clone)
     return NULL;
 
-  kos_dynnode_init(clone, KOS_DYN_REGION, NULL);
+  kos_dynnode_init(clone, KOS_DYN_REGION, NULL, KosDynNode_CAPS(region));
   KosDynNode_FLAGS(clone) = KosDynNode_FLAGS(region) | KOS_DYNF_CLONED;
   KosDynRegion_STYLE(clone) = KosDynRegion_STYLE(region);
   KosDynRegion_BREAK_PC(clone) = KosDynRegion_BREAK_PC(region);
@@ -379,7 +386,7 @@ KosDynNs *kos_dynns_new(KosDynNode *parent, PyObject *saved_ns) {
     return NULL;
   }
 
-  kos_dynnode_init(ns_node, KOS_DYN_NS, parent);
+  kos_dynnode_init(ns_node, KOS_DYN_NS, parent, 0);
   KosDynNs_SAVED_NS(ns_node) = saved_ns;  /* caller transferred ownership */
   return ns_node;
 }
@@ -413,7 +420,7 @@ KosDynNode *kos_dynpycall_new(KosDynNode *parent) {
   if (! node)
     return NULL;
 
-  kos_dynnode_init(node, KOS_DYN_PYCALL, parent);
+  kos_dynnode_init(node, KOS_DYN_PYCALL, parent, KOS_DYN_CAP_BLOCKS_CAPTURE);
   KosDynNode_FLAGS(node) |= KOS_DYNF_BOUNDARY;
   return node;
 }
@@ -440,7 +447,8 @@ KosDynYieldFrom *kos_dynyieldfrom_new(
     return NULL;
   }
 
-  kos_dynnode_init((KosDynNode *) node, KOS_DYN_YIELD_FROM, parent);
+  kos_dynnode_init((KosDynNode *) node, KOS_DYN_YIELD_FROM, parent,
+                   KOS_DYN_CAP_PRESERVE_ERR_ACROSS_POP);
   Py_INCREF(delegate);
   KosDynYieldFrom_DELEGATE(node) = delegate;
   KosDynYieldFrom_KIND(node) = kind;
@@ -468,7 +476,8 @@ KosDynYieldFrom *kos_dynyieldfrom_clone(KosDynYieldFrom *node) {
   if (! clone)
     return NULL;
 
-  kos_dynnode_init((KosDynNode *) clone, KOS_DYN_YIELD_FROM, NULL);
+  kos_dynnode_init((KosDynNode *) clone, KOS_DYN_YIELD_FROM, NULL,
+                   KosDynNode_CAPS(node));
   KosDynNode_FLAGS(clone) = KosDynNode_FLAGS(node) | KOS_DYNF_CLONED;
   KosDynYieldFrom_DELEGATE(clone) = KosDynYieldFrom_DELEGATE(node);
   Py_XINCREF(KosDynYieldFrom_DELEGATE(clone));
@@ -508,7 +517,8 @@ static KosDynParam *kos_dynparam_new_from_bindings(
     return NULL;
   }
 
-  kos_dynnode_init((KosDynNode *) node, KOS_DYN_PARAM, parent);
+  kos_dynnode_init((KosDynNode *) node, KOS_DYN_PARAM, parent,
+                   KOS_DYN_CAP_NEEDS_UNWIND_ACTION | KOS_DYN_CAP_NEEDS_INSTALL_WIND);
   KosDynParam_BINDINGS(node) = bindings;
   KosDynParam_SAVED(node) = NULL;
 
@@ -559,7 +569,8 @@ static KosDynParam *kos_dynparam_clone(KosDynParam *node) {
     return NULL;
   }
 
-  kos_dynnode_init((KosDynNode *) clone, KOS_DYN_PARAM, NULL);
+  kos_dynnode_init((KosDynNode *) clone, KOS_DYN_PARAM, NULL,
+                   KosDynNode_CAPS(node));
   KosDynNode_FLAGS(clone) = KosDynNode_FLAGS(node) | KOS_DYNF_CLONED;
   KosDynParam_BINDINGS(clone) = copy;
   KosDynParam_SAVED(clone) = NULL;
@@ -1121,7 +1132,8 @@ static KosDynWith *kos_dynwith_new(
   if (! node)
     return NULL;
 
-  kos_dynnode_init((KosDynNode *) node, KOS_DYN_WITH, parent);
+  kos_dynnode_init((KosDynNode *) node, KOS_DYN_WITH, parent,
+                   KOS_DYN_CAP_MAY_SWALLOW_EXCEPTION | KOS_DYN_CAP_NEEDS_UNWIND_ACTION);
   KosDynWith_MGR(node) = mgr;
   KosDynWith_ENTER(node) = enter;
   KosDynWith_EXIT(node) = exit;
@@ -1144,7 +1156,9 @@ static KosDynWith *kos_dyndynwith_new(
   if (! node)
     return NULL;
 
-  kos_dynnode_init((KosDynNode *) node, KOS_DYN_DYN_WITH, parent);
+  kos_dynnode_init((KosDynNode *) node, KOS_DYN_DYN_WITH, parent,
+                   KOS_DYN_CAP_MAY_SWALLOW_EXCEPTION | KOS_DYN_CAP_NEEDS_UNWIND_ACTION
+                   | KOS_DYN_CAP_NEEDS_INSTALL_WIND);
   KosDynWith_MGR(node) = mgr;
   KosDynWith_ENTER(node) = enter;
   KosDynWith_EXIT(node) = exit;
@@ -1163,7 +1177,8 @@ KosDynWith *kos_dyndynwith_clone(KosDynWith *src) {
   if (! node)
     return NULL;
 
-  kos_dynnode_init((KosDynNode *) node, KOS_DYN_DYN_WITH, NULL);
+  kos_dynnode_init((KosDynNode *) node, KOS_DYN_DYN_WITH, NULL,
+                   KosDynNode_CAPS(src));
   KosDynWith_MGR(node) = KosDynWith_MGR(src);
   Py_XINCREF(KosDynWith_MGR(node));
   KosDynWith_ENTER(node) = KosDynWith_ENTER(src);
@@ -1400,6 +1415,27 @@ static int dyn_pop_top_param(KosContext *ctx, KosDynNode *top) {
 
 int kos_dyn_param_wind(KosContext *ctx, KosDynParam *node) {
   return kos_dynparam_enter(ctx, node);
+}
+
+
+/**
+   Run INSTALL-phase wind (enter) for a node with NEEDS_INSTALL_WIND.
+   Dispatches by kind: PARAM -> kos_dyn_param_wind, DYN_WITH ->
+   kos_dyn_dyn_with_wind. Used by xfer_step_install.
+   :return: 0 on success, -1 on error
+*/
+static int kos_dynnode_run_wind(KosContext *ctx, KosDynNode *node) {
+  switch (KosDynNode_KIND(node)) {
+    case KOS_DYN_PARAM:
+      return kos_dyn_param_wind(ctx, (KosDynParam *) node);
+    case KOS_DYN_DYN_WITH:
+      return kos_dyn_dyn_with_wind(ctx, (KosDynWith *) node);
+    default:
+      PyErr_Format(PyExc_RuntimeError,
+                   "kos_dynnode_run_wind: node kind %u has no wind",
+                   (unsigned) KosDynNode_KIND(node));
+      return -1;
+  }
 }
 
 
@@ -1652,7 +1688,7 @@ int kos_validate_capture(KosContext *ctx, KosDynPrompt *prompt) {
   KosDynNode *node = KosContext_DYN_TOP(ctx);
 
   while (node && node != (KosDynNode *) prompt) {
-    if (KosDynNode_IS_PYCALL(node)) {
+    if (KosDynNode_HAS_CAP(node, KOS_DYN_CAP_BLOCKS_CAPTURE)) {
       PyErr_SetString(PyExc_RuntimeError,
                       "cannot capture continuation across Python boundary");
       return -1;
@@ -1686,7 +1722,7 @@ static int kos_validate_capture_cc(KosContext *ctx, KosDynCC *cc) {
   KosDynNode *node = KosContext_DYN_TOP(ctx);
 
   while (node && node != (KosDynNode *) cc) {
-    if (KosDynNode_IS_PYCALL(node)) {
+    if (KosDynNode_HAS_CAP(node, KOS_DYN_CAP_BLOCKS_CAPTURE)) {
       PyErr_SetString(PyExc_RuntimeError,
                       "cannot capture continuation across Python boundary");
       return -1;
@@ -2098,14 +2134,14 @@ static size_t xfer_plan_count_unwind_and_params(KosDynNode *current, KosDynNode 
   size_t n = 0;
   KosDynNode *node = current;
   while (node && node != lca) {
-    if (KosDynNode_IS_WIND(node)) {
-      KosDynWind *wind = (KosDynWind *) node;
-      if (KosDynWind_ENTERED(wind) && KosDynWind_AFTER_CODE(wind))
+    if (KosDynNode_HAS_CAP(node, KOS_DYN_CAP_NEEDS_UNWIND_ACTION)) {
+      if (KosDynNode_IS_WIND(node)) {
+        KosDynWind *wind = (KosDynWind *) node;
+        if (KosDynWind_ENTERED(wind) && KosDynWind_AFTER_CODE(wind))
+          n++;
+      } else {
         n++;
-    } else if (KosDynNode_IS_PARAM(node)) {
-      n++;
-    } else if (KosDynNode_IS_DYN_WITH(node)) {
-      n++;
+      }
     }
     node = KosDynNode_PARENT(node);
   }
@@ -2124,7 +2160,7 @@ static size_t xfer_plan_count_wind_before(KosDynNode *target, KosDynNode *lca) {
   size_t n = 0;
   KosDynNode *node = target;
   while (node && node != lca) {
-    if (KosDynNode_IS_WIND(node)) {
+    if (KosDynNode_HAS_CAP(node, KOS_DYN_CAP_NEEDS_WIND_BEFORE_ACTION)) {
       KosDynWind *wind = (KosDynWind *) node;
       if (! KosDynWind_ENTERED(wind) && KosDynWind_BEFORE_CODE(wind))
         n++;
@@ -2149,30 +2185,32 @@ static void xfer_plan_fill_unwind_actions(
 
   KosDynNode *node = current;
   while (node && node != lca) {
-    if (KosDynNode_IS_WIND(node)) {
-      KosDynWind *wind = (KosDynWind *) node;
-      if (KosDynWind_ENTERED(wind) && KosDynWind_AFTER_CODE(wind)) {
-        KosTransferAction_STEP(&KosTransferPlan_ACTIONS(plan)[*idx]) = KOS_XFER_RUN_HOOK;
-        KosTransferAction_HOOK_CODE(&KosTransferPlan_ACTIONS(plan)[*idx]) = KosDynWind_AFTER_CODE(wind);
-        KosTransferAction_HOOK_PC(&KosTransferPlan_ACTIONS(plan)[*idx]) = KosDynWind_AFTER_PC(wind);
+    if (KosDynNode_HAS_CAP(node, KOS_DYN_CAP_NEEDS_UNWIND_ACTION)) {
+      if (KosDynNode_IS_WIND(node)) {
+        KosDynWind *wind = (KosDynWind *) node;
+        if (KosDynWind_ENTERED(wind) && KosDynWind_AFTER_CODE(wind)) {
+          KosTransferAction_STEP(&KosTransferPlan_ACTIONS(plan)[*idx]) = KOS_XFER_RUN_HOOK;
+          KosTransferAction_HOOK_CODE(&KosTransferPlan_ACTIONS(plan)[*idx]) = KosDynWind_AFTER_CODE(wind);
+          KosTransferAction_HOOK_PC(&KosTransferPlan_ACTIONS(plan)[*idx]) = KosDynWind_AFTER_PC(wind);
+          if (KOS_XFER_TRACE)
+            SAYF("[xfer] plan action[%zu] = RUN_HOOK (unwind) node=%p",
+                 *idx, (void *) node);
+          (*idx)++;
+        }
+      } else if (KosDynNode_IS_PARAM(node)) {
+        KosTransferAction_STEP(&KosTransferPlan_ACTIONS(plan)[*idx]) = KOS_XFER_PARAM_RESTORE;
+        KosTransferAction_PARAM_NODE(&KosTransferPlan_ACTIONS(plan)[*idx]) = (KosDynParam *) node;
         if (KOS_XFER_TRACE)
-          SAYF("[xfer] plan action[%zu] = RUN_HOOK (unwind) node=%p",
+          SAYF("[xfer] plan action[%zu] = PARAM_RESTORE node=%p",
                *idx, (void *) node);
         (*idx)++;
+      } else if (KosDynNode_IS_DYN_WITH(node)) {
+        KosTransferAction_STEP(&KosTransferPlan_ACTIONS(plan)[*idx]) = KOS_XFER_DYN_WITH_EXIT;
+        KosTransferAction_DYN_WITH_NODE(&KosTransferPlan_ACTIONS(plan)[*idx]) = (KosDynWith *) node;
+        if (KOS_XFER_TRACE)
+          SAYF("[xfer] plan action[%zu] = DYN_WITH_EXIT node=%p", *idx, (void *) node);
+        (*idx)++;
       }
-    } else if (KosDynNode_IS_PARAM(node)) {
-      KosTransferAction_STEP(&KosTransferPlan_ACTIONS(plan)[*idx]) = KOS_XFER_PARAM_RESTORE;
-      KosTransferAction_PARAM_NODE(&KosTransferPlan_ACTIONS(plan)[*idx]) = (KosDynParam *) node;
-      if (KOS_XFER_TRACE)
-        SAYF("[xfer] plan action[%zu] = PARAM_RESTORE node=%p",
-             *idx, (void *) node);
-      (*idx)++;
-    } else if (KosDynNode_IS_DYN_WITH(node)) {
-      KosTransferAction_STEP(&KosTransferPlan_ACTIONS(plan)[*idx]) = KOS_XFER_DYN_WITH_EXIT;
-      KosTransferAction_DYN_WITH_NODE(&KosTransferPlan_ACTIONS(plan)[*idx]) = (KosDynWith *) node;
-      if (KOS_XFER_TRACE)
-        SAYF("[xfer] plan action[%zu] = DYN_WITH_EXIT node=%p", *idx, (void *) node);
-      (*idx)++;
     }
     node = KosDynNode_PARENT(node);
   }
@@ -2224,7 +2262,7 @@ static int xfer_plan_fill_wind_actions(
   size_t wi = 0;
   KosDynNode *node = target;
   while (node && node != lca) {
-    if (KosDynNode_IS_WIND(node)) {
+    if (KosDynNode_HAS_CAP(node, KOS_DYN_CAP_NEEDS_WIND_BEFORE_ACTION)) {
       KosDynWind *wind = (KosDynWind *) node;
       if (! KosDynWind_ENTERED(wind) && KosDynWind_BEFORE_CODE(wind))
         wind_nodes[wi++] = wind;
@@ -2508,7 +2546,7 @@ static int xfer_step_install(KosContext *ctx, KosTransferAction *action) {
       chain_bottom = KosDynNode_PARENT(chain_bottom);
     KosDynNode *chain_stop = chain_bottom ? KosDynNode_PARENT(chain_bottom) : NULL;
     while (walk && walk != chain_stop) {
-      if (KosDynNode_IS_PARAM(walk) || KosDynNode_IS_DYN_WITH(walk)) {
+      if (KosDynNode_HAS_CAP(walk, KOS_DYN_CAP_NEEDS_INSTALL_WIND)) {
         if (PyList_Append(param_list, (PyObject *) walk) < 0) {
           Py_DECREF(param_list);
           return -1;
@@ -2519,20 +2557,11 @@ static int xfer_step_install(KosContext *ctx, KosTransferAction *action) {
     Py_ssize_t n = PyList_GET_SIZE(param_list);
     for (Py_ssize_t i = n - 1; i >= 0; i--) {
       KosDynNode *node = (KosDynNode *) PyList_GET_ITEM(param_list, i);
-      if (KosDynNode_IS_PARAM(node)) {
-        if (kos_dyn_param_wind(ctx, (KosDynParam *) node) < 0) {
-          Py_DECREF(param_list);
-          if (KOS_XFER_TRACE)
-            SAY("[xfer] INSTALL param enter failed");
-          return -1;
-        }
-      } else if (KosDynNode_IS_DYN_WITH(node)) {
-        if (kos_dyn_dyn_with_wind(ctx, (KosDynWith *) node) < 0) {
-          Py_DECREF(param_list);
-          if (KOS_XFER_TRACE)
-            SAY("[xfer] INSTALL dyn-with enter failed");
-          return -1;
-        }
+      if (kos_dynnode_run_wind(ctx, node) < 0) {
+        Py_DECREF(param_list);
+        if (KOS_XFER_TRACE)
+          SAY("[xfer] INSTALL wind failed");
+        return -1;
       }
     }
     Py_DECREF(param_list);

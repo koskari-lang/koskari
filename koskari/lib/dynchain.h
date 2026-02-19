@@ -106,6 +106,18 @@ typedef enum KosDynFlags {
 } KosDynFlags;
 
 
+/**
+   KosDynNode capability bits. Generic code checks these for behavior
+   instead of node type. Set at creation; copied on clone.
+*/
+#define KOS_DYN_CAP_MAY_SWALLOW_EXCEPTION    (1u << 0)
+#define KOS_DYN_CAP_PRESERVE_ERR_ACROSS_POP  (1u << 1)
+#define KOS_DYN_CAP_NEEDS_UNWIND_ACTION      (1u << 2)
+#define KOS_DYN_CAP_NEEDS_WIND_BEFORE_ACTION (1u << 3)
+#define KOS_DYN_CAP_NEEDS_INSTALL_WIND       (1u << 4)
+#define KOS_DYN_CAP_BLOCKS_CAPTURE           (1u << 5)
+
+
 /* === KosRegionStyle enum === */
 
 
@@ -142,6 +154,7 @@ struct KosDynNode {
   KosDynNode *parent;   /* enclosing node (toward root); reused as freelist link */
   KosDynKind kind;      /* discriminator for node type */
   uint32_t flags;       /* KosDynFlags bitfield */
+  uint32_t caps;        /* capability bits for generic code (KOS_DYN_CAP_*) */
 
   union {
     struct {
@@ -1433,6 +1446,8 @@ int kos_hookrunner_traverse(
 #define KosDynNode_KIND(n)    (((KosDynNode *)(n))->kind)
 #define KosDynNode_PARENT(n)  (((KosDynNode *)(n))->parent)
 #define KosDynNode_FLAGS(n)   (((KosDynNode *)(n))->flags)
+#define KosDynNode_CAPS(n)    (((KosDynNode *)(n))->caps)
+#define KosDynNode_HAS_CAP(n, cap)  (KosDynNode_CAPS(n) & (cap))
 
 #define KosDynNode_IS_FRAME(n)   (KosDynNode_KIND(n) == KOS_DYN_FRAME)
 #define KosDynNode_IS_PROMPT(n)  (KosDynNode_KIND(n) == KOS_DYN_PROMPT)
