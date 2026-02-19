@@ -23,7 +23,7 @@ Special form handlers for the Koskari compiler.
 
 from types import BuiltinMethodType
 from ..lib import cons, FormalsSpec, FunctionSpec, keyword, nil, OpCode, pair, symbol
-from ..types import get_position, is_nil, is_pair, is_symbol, set_position
+from ..types import get_position, is_nil, is_pair, is_symbol, set_position, unpack
 from .compiler import ByteCodeFragment, Compiler, CompilerMode
 from .exceptions import CompilerException
 from .helpers import (
@@ -37,6 +37,7 @@ from .helpers import (
     list_star,
     pycons,
     requote,
+    simple_parameters,
 )
 
 
@@ -737,6 +738,211 @@ def special_cdr(compiler, source, tc=False):
     frag.instruction(OpCode.KOS_OP_CDR, 0)
 
     return frag
+
+
+_keyword_else = keyword("else")
+
+
+@special(symbol("compile/cond"))
+def special_cond(compiler, source, tc=False):
+    """
+    Compile (compile/cond (TEST BODY...) (TEST BODY...) ... (else: BODY...)).
+    Conditionally executes body depending on a test expression. Multiple
+    clauses; first truthful test's body is evaluated and returned. No match
+    yields None. The else: keyword as test is always true.
+    """
+
+    called_by, cl = source
+
+    fragment = compiler.fragment(called_by)
+
+    gen_label = compiler.gen_label
+    done = gen_label()
+    label = gen_label()
+
+    while cl:
+        element, cl = cl
+
+        fragment.position_of(element)
+        fragment.instruction(OpCode.KOS_OP_LABEL, label)
+        label = gen_label()
+
+        test, body = element
+
+        if test is _keyword_else:
+            helper_begin(fragment, body, tc)
+            break
+
+        fragment.merge(compiler.full_compile(test))
+        fragment.instruction(OpCode.KOS_OP_JUMP_FALSE, label)
+        helper_begin(fragment, body, tc)
+        fragment.instruction(OpCode.KOS_OP_JUMP, done)
+
+    else:
+        fragment.instruction(OpCode.KOS_OP_LABEL, label)
+        fragment.instruction(OpCode.KOS_OP_CONST, None)
+
+    fragment.instruction(OpCode.KOS_OP_LABEL, done)
+    return fragment
+
+
+def _expand_if_to_cond(rest, source):
+    """
+    Parse (compile/if COND THEN ELSE) or (compile/if COND then: THEN else: ELSE).
+    Return a cond form suitable for full_compile.
+    """
+
+    pos, kw_dict = simple_parameters(rest, source)
+
+    if kw_dict:
+        cond_expr = pos[0] if pos else nil
+        then_expr = kw_dict.get("then")
+        else_expr = kw_dict.get("else")
+        if then_expr is None or else_expr is None:
+            raise CompilerException("if requires both then: and else: when using "
+                                    "keywords", source)
+    else:
+        if len(pos) < 3:
+            raise CompilerException("if requires condition, then, and else", source)
+        cond_expr, then_expr, else_expr = pos[0], pos[1], pos[2]
+
+    return pycons((symbol("compile/cond"),
+                  (cond_expr, then_expr),
+                  (_keyword_else, else_expr)))
+
+
+def _expand_when_to_cond(rest, source):
+    """
+    Parse (compile/when COND BODY...). Return a cond form.
+    """
+
+    if rest is nil or not is_pair(rest):
+        raise CompilerException("when requires condition and body", source)
+
+    cond_expr, body = rest
+    # body_tuple = tuple(unpack(body)) if is_pair(body) else (body,)
+    return pycons((symbol("compile/cond"),
+                   cons(cond_expr, body),
+                   (_keyword_else, None)))
+
+
+def _expand_unless_to_cond(rest, source):
+    """
+    Parse (compile/unless COND BODY...). Return a cond form.
+    """
+
+    if rest is nil or not is_pair(rest):
+        raise CompilerException("unless requires condition and body", source)
+
+    cond_expr, body = rest
+    # body_tuple = tuple(unpack(body)) if is_pair(body) else (body,)
+    return pycons((symbol("compile/cond"),
+                   (cond_expr, None),
+                   cons(_keyword_else, body)))
+
+
+@special(symbol("compile/if"))
+def special_if(compiler, source, tc=False):
+    """
+    Compile (compile/if COND THEN ELSE) or (compile/if COND then: THEN else: ELSE).
+    Expands to cond and compiles.
+    """
+
+    called_by, rest = source
+    expanded = _expand_if_to_cond(rest, source)
+    return compiler.full_compile(expanded, tc)
+
+
+@special(symbol("compile/when"))
+def special_when(compiler, source, tc=False):
+    """
+    Compile (compile/when COND BODY...). Expands to cond; no else yields None.
+    """
+
+    called_by, rest = source
+    expanded = _expand_when_to_cond(rest, source)
+    return compiler.full_compile(expanded, tc)
+
+
+@special(symbol("compile/unless"))
+def special_unless(compiler, source, tc=False):
+    """
+    Compile (compile/unless COND BODY...). Expands to cond; negated test.
+    """
+
+    called_by, rest = source
+    expanded = _expand_unless_to_cond(rest, source)
+    return compiler.full_compile(expanded, tc)
+
+
+@special(symbol("compile/while"))
+def special_while(compiler, source, tc=False):
+    """
+    Compile (compile/while TEST BODY...). Loop with break and continue support.
+    """
+
+    called_by, rest = source
+    if rest is nil or not is_pair(rest):
+        raise CompilerException("while requires test and body", source)
+
+    test, body = rest
+    fragment = compiler.fragment(called_by)
+    loop_head = compiler.gen_label("while.head")
+    loop_exit = compiler.gen_label("while.end")
+
+    with fragment.child_loop(called_by) as child:
+        child.instruction(OpCode.KOS_OP_LABEL, loop_head)
+        child.merge(compiler.full_compile(test, False))
+        child.instruction(OpCode.KOS_OP_JUMP_FALSE, loop_exit)
+        helper_begin(child, body, False)
+        child.instruction(OpCode.KOS_OP_JUMP, loop_head)
+        child.instruction(OpCode.KOS_OP_LABEL, loop_exit)
+        child.instruction(OpCode.KOS_OP_CLEAR_LOOP, 0)
+
+    return fragment
+
+
+def _special_break_continue(compiler, source, op):
+    """
+    Shared logic for break and continue. Emit op with count 0 or 1.
+    """
+
+    called_by, rest = source
+
+    if rest is nil:
+        frag = compiler.fragment(called_by)
+        frag.position_of(source)
+        frag.instruction(op, 0)
+        return frag
+
+    val, tail = rest
+    if tail is not nil:
+        raise CompilerException("%s takes at most one argument" % called_by,
+                               source)
+
+    frag = compiler.fragment(called_by)
+    frag.position_of(source)
+    frag.merge(compiler.full_compile(val, False))
+    frag.instruction(op, 1)
+    return frag
+
+
+@special(symbol("compile/break"))
+def special_break(compiler, source, tc=False):
+    """
+    Compile (compile/break) or (compile/break VAL). Exits innermost loop.
+    """
+
+    return _special_break_continue(compiler, source, OpCode.KOS_OP_BREAK)
+
+
+@special(symbol("compile/continue"))
+def special_continue(compiler, source, tc=False):
+    """
+    Compile (compile/continue) or (compile/continue VAL). Restarts loop.
+    """
+
+    return _special_break_continue(compiler, source, OpCode.KOS_OP_CONTINUE)
 
 
 @special(symbol("compile/cons"))

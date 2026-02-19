@@ -179,6 +179,170 @@ expressions; body compiled with `helper_begin`. Named: rewrite to
 ```
 
 
+## compile/cond
+
+**Symbol:** `compile/cond`
+
+**Syntax:** `(compile/cond [TEST BODY...] [TEST BODY...] ... [else: BODY...])`
+
+**Use-case:** Multi-branch conditional. Evaluates clauses in order; the first
+truthful test's body is evaluated and returned. No match yields `None`. The
+`else:` keyword as test is always true (catch-all).
+
+**Behaviour:** For each clause `(test body)`, emits LABEL, compiles test,
+JUMP_FALSE to next clause, compiles body with `helper_begin`, JUMP to done.
+If test is `else:`, compiles body and breaks. If no else clause, emits CONST
+None for the fall-through case.
+
+**Examples:**
+
+```scheme
+;; Empty cond → None
+(compile/cond)
+
+;; Single clause
+(compile/cond [True 100])
+
+;; else-only
+(compile/cond [else: 100])
+
+;; Multi-clause with else fallthrough
+(compile/cond
+  [False 100]
+  [True 101]
+  [else: 102])
+```
+
+
+## compile/if
+
+**Symbol:** `compile/if`
+
+**Syntax:** `(compile/if COND THEN ELSE)` or `(compile/if COND then: THEN else: ELSE)`
+
+**Use-case:** Binary conditional. Expands to cond.
+
+**Behaviour:** Parses condition, then, and else (positional or keyword). Builds
+`(compile/cond (COND THEN) (else: ELSE))` and compiles that.
+
+**Examples:**
+
+```scheme
+(compile/if True 1 2)    ; → 1
+(compile/if False 1 2)   ; → 2
+```
+
+
+## compile/when
+
+**Symbol:** `compile/when`
+
+**Syntax:** `(compile/when COND BODY...)`
+
+**Use-case:** Conditional with no else; yields `None` when condition is false.
+Expands to cond.
+
+**Behaviour:** Builds `(compile/cond (COND BODY...) (else: None))` and compiles.
+
+**Examples:**
+
+```scheme
+(compile/when True 42)   ; → 42
+(compile/when False 42)  ; → None
+```
+
+
+## compile/unless
+
+**Symbol:** `compile/unless`
+
+**Syntax:** `(compile/unless COND BODY...)`
+
+**Use-case:** Execute body when condition is false; when true, yields `None`.
+Expands to cond (negated test).
+
+**Behaviour:** Builds `(compile/cond (COND None) (else: BODY...))` and compiles.
+
+**Examples:**
+
+```scheme
+(compile/unless False 42)  ; → 42
+(compile/unless True 42)   ; → None
+```
+
+
+## compile/while
+
+**Symbol:** `compile/while`
+
+**Syntax:** `(compile/while TEST BODY...)`
+
+**Use-case:** Loop that runs body while TEST is truthy. Supports `compile/break`
+and `compile/continue` inside the body.
+
+**Behaviour:** Uses `child_loop` to emit PUSH_LOOP (break target after POP_LOOP),
+loop head label, test, JUMP_FALSE to exit, body, JUMP to head, LABEL exit,
+CLEAR_LOOP. The first instruction after PUSH_LOOP is the continue target.
+Evaluates to the loop result (from break, continue, or None on normal exit).
+
+**Examples:**
+
+```scheme
+;; Simple loop
+(compile/while x
+  (compile/call append c x)
+  (compile/setq x (compile/call sub x 1)))
+
+;; With break
+(compile/while True
+  (compile/cond [done (compile/break result)]
+                [else: (compile/call step)]))
+```
+
+
+## compile/break
+
+**Symbol:** `compile/break`
+
+**Syntax:** `(compile/break)` or `(compile/break VAL)`
+
+**Use-case:** Exit the innermost loop, optionally with a result value. Must be
+inside a `compile/while` (or future foreach) body.
+
+**Behaviour:** Compiles optional VAL (or pushes None), emits BREAK with count
+0 or 1. Runtime unwinds to the loop's break target and pushes the result.
+
+**Examples:**
+
+```scheme
+(compile/break)
+(compile/break 99)
+```
+
+
+## compile/continue
+
+**Symbol:** `compile/continue`
+
+**Syntax:** `(compile/continue)` or `(compile/continue VAL)`
+
+**Use-case:** Restart the innermost loop iteration, optionally storing VAL as
+the loop result (used when the loop terminates normally). Must be inside a
+`compile/while` (or future foreach) body.
+
+**Behaviour:** Compiles optional VAL (or pushes None), emits CONTINUE with
+count 0 or 1. Runtime jumps to the loop's continue target (loop head).
+
+**Examples:**
+
+```scheme
+(compile/continue)
+(compile/continue last-value)
+```
+
+**Tests:** `tests/compile/specials/test_cond.py`, `tests/compile/specials/test_while.py`
+
+
 ## compile/parameterize
 
 **Symbol:** `compile/parameterize`
