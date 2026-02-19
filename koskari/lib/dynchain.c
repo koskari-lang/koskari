@@ -35,7 +35,7 @@
 
 /* Set to 1 to trace transfer plan steps (for debugging).  All trace output
  * goes through SAYF from debug.h. */
-#define KOS_XFER_TRACE 1
+#define KOS_XFER_TRACE 0
 
 
 /* === DynNode base operations === */
@@ -516,15 +516,9 @@ KosDynYieldFrom *kos_dynyieldfrom_clone(KosDynYieldFrom *node) {
 /* === KosDynParam implementation === */
 
 
-/* Sentinel for "param was unset" in saved dict; value must not be a valid param value. */
+/* Sentinel for "param was unset" in saved dict; value must not be a valid param value.
+   Initialized in koskari_dynchain_init, cleared in koskari_dynchain_clear. */
 static PyObject *_param_sentinel_unset = NULL;
-
-
-static PyObject *param_sentinel_unset(void) {
-  if (! _param_sentinel_unset)
-    _param_sentinel_unset = Py_BuildValue("(s)", "<param was unset>");
-  return _param_sentinel_unset;
-}
 
 
 static KosDynParam *kos_dynparam_new_from_bindings(
@@ -628,7 +622,7 @@ static int kos_dynparam_enter(KosContext *ctx, KosDynParam *node) {
   if (! saved)
     return -1;
 
-  PyObject *sentinel = param_sentinel_unset();
+  PyObject *sentinel = _param_sentinel_unset;
   if (! sentinel) {
     Py_DECREF(saved);
     return -1;
@@ -669,7 +663,7 @@ static void kos_dynparam_restore(KosContext *ctx, KosDynParam *node) {
   if (! saved)
     return;
 
-  PyObject *sentinel = param_sentinel_unset();
+  PyObject *sentinel = _param_sentinel_unset;
   PyObject *key;
   PyObject *old_val;
   Py_ssize_t pos = 0;
@@ -3280,12 +3274,16 @@ int kos_hookrunner_traverse(
 
 
 int koskari_dynchain_init(PyObject *mod) {
-  /* No Python types to register for dynchain */
+  Py_CLEAR(_param_sentinel_unset);
+  _param_sentinel_unset = Py_BuildValue("(s)", "<param was unset>");
+  if (! _param_sentinel_unset)
+    return -1;
   return 0;
 }
 
 
 int koskari_dynchain_clear(PyObject *mod) {
+  Py_CLEAR(_param_sentinel_unset);
   if (xfer_plan_cache) {
     PyMem_Free(xfer_plan_cache);
     xfer_plan_cache = NULL;
