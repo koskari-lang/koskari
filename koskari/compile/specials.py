@@ -373,6 +373,38 @@ def special_with(compiler, source, tc=False):
     return fragment
 
 
+@special(symbol("compile/dyn-with"))
+def special_dyn_with(compiler, source, tc=False):
+    """
+    Compile (compile/dyn-with [name? expr] BODY...). Multi-shot context manager
+    that participates in transfer plans (exit on unwind, enter on wind).
+    """
+
+    called_by, rest = source
+    if rest is nil or not is_pair(rest):
+        raise CompilerException("dyn-with requires [name? expr] and body", source)
+
+    spec, body = rest
+    if spec is nil or not is_pair(spec):
+        raise CompilerException("dyn-with requires [name? expr] list", source)
+
+    name, expr = helper_binding(spec, allow_unnamed=True)
+
+    fragment = compiler.fragment(called_by)
+    fragment.position_of(source)
+    fragment.merge(compiler.full_compile(expr, False))
+
+    if name is not None:
+        name = str(name)
+        fragment.declare_var(name)
+
+    fragment.instruction(OpCode.KOS_OP_PUSH_DYN_WITH, name)
+    helper_begin(fragment, body, False)
+    fragment.instruction(OpCode.KOS_OP_POP_DYN_WITH, 0)
+
+    return fragment
+
+
 @special(symbol("compile/setq"))
 def special_setq(compiler, source, tc=False):
     called_by, (sym, body) = source

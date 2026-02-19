@@ -70,7 +70,7 @@ KOS_OP_HANDLER(PUSH_WITH) {
   Py_XINCREF(name_obj);
 
   return kos_push_with_after_enter(ctx, out_ev, result, mgr, enter, exit,
-                                   name_obj, resume_pc);
+                                   name_obj, resume_pc, 0);
 }
 
 

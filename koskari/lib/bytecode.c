@@ -682,6 +682,7 @@ static const ExtentOpPair extent_pairs[] = {
   { KOS_OP_PUSH_PROMPT,   KOS_OP_POP_PROMPT,   KOS_EXT_PROMPT },
   { KOS_OP_PUSH_CC,       KOS_OP_POP_CC,       KOS_EXT_CC },
   { KOS_OP_PUSH_WITH,     KOS_OP_POP_WITH,     KOS_EXT_WITH },
+  { KOS_OP_PUSH_DYN_WITH, KOS_OP_POP_DYN_WITH, KOS_EXT_DYN_WITH },
   { KOS_OP_PUSH_BEGIN,    KOS_OP_POP_BEGIN,    KOS_EXT_BEGIN },
   { KOS_OP_PUSH_NS,       KOS_OP_POP_NS,       KOS_EXT_NS },
   { KOS_OP_PUSH_WIND,     KOS_OP_POP_WIND,     KOS_EXT_WIND },
@@ -820,6 +821,7 @@ static int derive_extents(
         e->u.loop.continue_pc = pc + 1;
         break;
       case KOS_EXT_WITH:
+      case KOS_EXT_DYN_WITH:
         e->u.exit_only.exit_pc = arg;
         break;
       case KOS_EXT_PROMPT:

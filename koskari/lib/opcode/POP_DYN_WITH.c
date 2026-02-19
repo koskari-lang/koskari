@@ -1,0 +1,56 @@
+/*
+  This library is free software; you can redistribute it and/or modify
+  it under the terms of the GNU General Public License as published by
+  the Free Software Foundation; either version 3 of the License, or
+  (at your option) any later version.
+
+  This library is distributed in the hope that it will be useful, but
+  WITHOUT ANY WARRANTY; without even the implied warranty of
+  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
+  General Public License for more details.
+
+  You should have received a copy of the GNU General Public License
+  along with this library; if not, see <http://www.gnu.org/licenses/>.
+*/
+
+/**
+   POP_DYN_WITH: arg unused. Pop multi-shot dyn-with context. Call exit(typ, val, tb);
+   auto-await if exit returns awaitable. If exception and exit returns true,
+   swallow; else re-raise. Drop stack block, pop KOS_DYN_DYN_WITH node, push None.
+*/
+
+KOS_OP_HANDLER(POP_DYN_WITH) {
+
+  KosDynNode *top = KosContext_DYN_TOP(ctx);
+  if (! top || ! KosDynNode_IS_DYN_WITH(top)) {
+    PyErr_SetString(PyExc_RuntimeError, "POP_DYN_WITH: top is not a dyn-with node");
+    return -1;
+  }
+  KosDynWith *with_node = (KosDynWith *) top;
+  PyObject *exit_awaitable = NULL;
+
+  int unw = kos_dyn_with_unwind(ctx, with_node, &exit_awaitable);
+  if (unw == KOS_DYN_WITH_EXIT_ASYNC_STARTED) {
+    int r = kos_with_exit_start_await(ctx, out_ev, exit_awaitable);
+    if (r == 1)
+      return 1;
+    if (r < 0)
+      return -1;
+    return kos_complete_pending_with_exit(ctx);
+  }
+  if (unw < 0)
+    return -1;
+
+  if (KosStackBlock_DropBlock(&CURRENT_STACK(ctx)) < 0)
+    return -1;
+  kos_dyn_pop_with(ctx, with_node);
+  if (KosStackBlock_PushRef(&CURRENT_STACK(ctx), Py_None) < 0)
+    return -1;
+
+  (void) out_ev;
+  (void) insn;
+  return 0;
+}
+
+
+// The end.

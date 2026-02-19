@@ -690,6 +690,7 @@ void kos_dynnode_free(KosDynNode *node) {
       kos_dynparam_free((KosDynParam *) node);
       break;
     case KOS_DYN_WITH:
+    case KOS_DYN_DYN_WITH:
       kos_dynwith_free((KosDynWith *) node);
       break;
   }
@@ -723,6 +724,8 @@ KosDynNode *kos_dynnode_clone(KosDynNode *node) {
       PyErr_SetString(PyExc_RuntimeError,
                       "cannot capture continuation across with");
       return NULL;
+    case KOS_DYN_DYN_WITH:
+      return (KosDynNode *) kos_dyndynwith_clone((KosDynWith *) node);
   }
 
   PyErr_Format(PyExc_RuntimeError, "cannot clone dynnode kind %u",
@@ -1129,6 +1132,53 @@ static KosDynWith *kos_dynwith_new(
 }
 
 
+static KosDynWith *kos_dyndynwith_new(
+    KosDynNode *parent,
+    PyObject *mgr,
+    PyObject *enter,
+    PyObject *exit,
+    PyObject *name,
+    uint32_t resume_pc) {
+
+  KosDynWith *node = (KosDynWith *) kos_dynnode_alloc();
+  if (! node)
+    return NULL;
+
+  kos_dynnode_init((KosDynNode *) node, KOS_DYN_DYN_WITH, parent);
+  KosDynWith_MGR(node) = mgr;
+  KosDynWith_ENTER(node) = enter;
+  KosDynWith_EXIT(node) = exit;
+  KosDynWith_ENTERED(node) = 0;
+  KosDynWith_NAME(node) = name;
+  KosDynWith_RESUME_PC(node) = resume_pc;
+  return node;
+}
+
+
+KosDynWith *kos_dyndynwith_clone(KosDynWith *src) {
+  if (! src)
+    return NULL;
+
+  KosDynWith *node = (KosDynWith *) kos_dynnode_alloc();
+  if (! node)
+    return NULL;
+
+  kos_dynnode_init((KosDynNode *) node, KOS_DYN_DYN_WITH, NULL);
+  KosDynWith_MGR(node) = KosDynWith_MGR(src);
+  Py_XINCREF(KosDynWith_MGR(node));
+  KosDynWith_ENTER(node) = KosDynWith_ENTER(src);
+  Py_XINCREF(KosDynWith_ENTER(node));
+  KosDynWith_EXIT(node) = KosDynWith_EXIT(src);
+  Py_XINCREF(KosDynWith_EXIT(node));
+  KosDynWith_ENTERED(node) = KosDynWith_ENTERED(src);
+  KosDynWith_NAME(node) = KosDynWith_NAME(src);
+  if (KosDynWith_NAME(node))
+    Py_INCREF(KosDynWith_NAME(node));
+  KosDynWith_RESUME_PC(node) = KosDynWith_RESUME_PC(src);
+  return node;
+}
+
+
 static void kos_dynwith_free(KosDynWith *node) {
   if (! node)
     return;
@@ -1155,6 +1205,27 @@ KosDynWith *kos_dyn_push_with(
     uint32_t resume_pc) {
 
   KosDynWith *node = kos_dynwith_new(
+      KosContext_DYN_TOP(ctx), mgr, enter, exit, name, resume_pc);
+  if (! node)
+    return NULL;
+
+  KosDynWith_ENTERED(node) = 1;
+  KosContext_DYN_TOP(ctx) = (KosDynNode *) node;
+  KosContext_CHAIN_VERSION(ctx)++;
+
+  return node;
+}
+
+
+KosDynWith *kos_dyn_push_dyn_with(
+    KosContext *ctx,
+    PyObject *mgr,
+    PyObject *enter,
+    PyObject *exit,
+    PyObject *name,
+    uint32_t resume_pc) {
+
+  KosDynWith *node = kos_dyndynwith_new(
       KosContext_DYN_TOP(ctx), mgr, enter, exit, name, resume_pc);
   if (! node)
     return NULL;
@@ -1439,6 +1510,7 @@ int kos_dyn_pop_top(KosContext *ctx, KosEvent *out_ev) {
     return dyn_pop_top_param(ctx, top);
 
   case KOS_DYN_WITH:
+  case KOS_DYN_DYN_WITH:
     return dyn_pop_top_with(ctx, top, out_ev);
   }
 
@@ -2032,6 +2104,8 @@ static size_t xfer_plan_count_unwind_and_params(KosDynNode *current, KosDynNode 
         n++;
     } else if (KosDynNode_IS_PARAM(node)) {
       n++;
+    } else if (KosDynNode_IS_DYN_WITH(node)) {
+      n++;
     }
     node = KosDynNode_PARENT(node);
   }
@@ -2093,6 +2167,12 @@ static void xfer_plan_fill_unwind_actions(
         SAYF("[xfer] plan action[%zu] = PARAM_RESTORE node=%p",
              *idx, (void *) node);
       (*idx)++;
+    } else if (KosDynNode_IS_DYN_WITH(node)) {
+      KosTransferAction_STEP(&KosTransferPlan_ACTIONS(plan)[*idx]) = KOS_XFER_DYN_WITH_EXIT;
+      KosTransferAction_DYN_WITH_NODE(&KosTransferPlan_ACTIONS(plan)[*idx]) = (KosDynWith *) node;
+      if (KOS_XFER_TRACE)
+        SAYF("[xfer] plan action[%zu] = DYN_WITH_EXIT node=%p", *idx, (void *) node);
+      (*idx)++;
     }
     node = KosDynNode_PARENT(node);
   }
@@ -2122,8 +2202,7 @@ static void xfer_plan_fill_install_action(
    We need outer-to-inner order at run time, but the chain walk is
    target-to-lca (inner-to-outer).  So we collect wind nodes into a
    temporary array, then emit RUN_HOOK actions in reverse order.
-   Returns 0 on success, -1 on allocation failure (plan and actions are
-   freed and PyErr_NoMemory is set).  Advances *idx past the filled slots.
+   Returns 0 on success, -1 on allocation failure.
 */
 static int xfer_plan_fill_wind_actions(
     KosTransferPlan *plan,
@@ -2339,6 +2418,35 @@ static void xfer_step_param_restore(KosContext *ctx, KosTransferAction *action) 
 
 
 /**
+   Execute a DYN_WITH_EXIT step: run exit on the dyn-with node, drop the
+   stack block.  Sync only for now; async exit would require suspend handling.
+*/
+static int xfer_step_dyn_with_exit(KosContext *ctx, KosTransferAction *action) {
+  KosDynWith *with_node = KosTransferAction_DYN_WITH_NODE(action);
+  PyObject *exit_awaitable = NULL;
+
+  int unw = kos_dyn_with_unwind(ctx, with_node, &exit_awaitable);
+  if (unw == KOS_DYN_WITH_EXIT_ASYNC_STARTED) {
+    /* TODO: async exit suspend - would need to stash and return KOS_XFER_SUSPENDED_AWAIT */
+    Py_XDECREF(exit_awaitable);
+    PyErr_SetString(PyExc_RuntimeError, "async dyn-with exit during transfer not yet supported");
+    return -1;
+  }
+  if (unw < 0)
+    return -1;
+
+  if (KosContext_FRAME_TOP(ctx) &&
+      KosStackBlock_DropBlock(&KosDynFrame_STACK(KosContext_FRAME_TOP(ctx))) < 0)
+    return -1;
+
+  kos_dyn_pop_with(ctx, with_node);
+  if (KOS_XFER_TRACE)
+    SAYF("[xfer] DYN_WITH_EXIT node=%p done", (void *) with_node);
+  return 0;
+}
+
+
+/**
    Execute an INSTALL step: replace the current dynamic chain with a fresh
    clone of the plan's target segment, restore the frame's stack and PC
    from the plan's resume state, and run param_enter for each PARAM node
@@ -2400,7 +2508,7 @@ static int xfer_step_install(KosContext *ctx, KosTransferAction *action) {
       chain_bottom = KosDynNode_PARENT(chain_bottom);
     KosDynNode *chain_stop = chain_bottom ? KosDynNode_PARENT(chain_bottom) : NULL;
     while (walk && walk != chain_stop) {
-      if (KosDynNode_IS_PARAM(walk)) {
+      if (KosDynNode_IS_PARAM(walk) || KosDynNode_IS_DYN_WITH(walk)) {
         if (PyList_Append(param_list, (PyObject *) walk) < 0) {
           Py_DECREF(param_list);
           return -1;
@@ -2410,12 +2518,21 @@ static int xfer_step_install(KosContext *ctx, KosTransferAction *action) {
     }
     Py_ssize_t n = PyList_GET_SIZE(param_list);
     for (Py_ssize_t i = n - 1; i >= 0; i--) {
-      KosDynParam *p = (KosDynParam *) PyList_GET_ITEM(param_list, i);
-      if (kos_dyn_param_wind(ctx, p) < 0) {
-        Py_DECREF(param_list);
-        if (KOS_XFER_TRACE)
-          SAY("[xfer] INSTALL param enter failed");
-        return -1;
+      KosDynNode *node = (KosDynNode *) PyList_GET_ITEM(param_list, i);
+      if (KosDynNode_IS_PARAM(node)) {
+        if (kos_dyn_param_wind(ctx, (KosDynParam *) node) < 0) {
+          Py_DECREF(param_list);
+          if (KOS_XFER_TRACE)
+            SAY("[xfer] INSTALL param enter failed");
+          return -1;
+        }
+      } else if (KosDynNode_IS_DYN_WITH(node)) {
+        if (kos_dyn_dyn_with_wind(ctx, (KosDynWith *) node) < 0) {
+          Py_DECREF(param_list);
+          if (KOS_XFER_TRACE)
+            SAY("[xfer] INSTALL dyn-with enter failed");
+          return -1;
+        }
       }
     }
     Py_DECREF(param_list);
@@ -2494,12 +2611,23 @@ int kos_run_transfer_step(KosContext *ctx) {
       xfer_step_param_restore(ctx, action);
       break;
 
+    case KOS_XFER_DYN_WITH_EXIT: {
+      int res = xfer_step_dyn_with_exit(ctx, action);
+      if (res < 0)
+        return -1;
+      break;
+    }
+
     case KOS_XFER_INSTALL: {
       int res = xfer_step_install(ctx, action);
       if (res < 0)
         return -1;
       break;
     }
+
+    case KOS_XFER_DYN_WITH_ENTER:
+      /* DYN_WITH wind is done inside INSTALL; this step type is never emitted */
+      break;
 
     case KOS_XFER_INJECT: {
       int res = xfer_step_inject(ctx, action);
@@ -2788,6 +2916,7 @@ int kos_dynnode_traverse(KosDynNode *node, visitproc visit, void *arg) {
     case KOS_DYN_PARAM:
       return dynnode_traverse_param(node, visit, arg);
     case KOS_DYN_WITH:
+    case KOS_DYN_DYN_WITH:
       return dynnode_traverse_with(node, visit, arg);
   }
 

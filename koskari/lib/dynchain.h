@@ -78,6 +78,7 @@ struct KosEvent;
    KOS_DYN_YIELD_FROM - Yield-from delegation state
    KOS_DYN_PARAM     - Parameter bindings (parameterize extent)
    KOS_DYN_WITH      - Single-shot context manager (with)
+   KOS_DYN_DYN_WITH  - Multi-shot context manager (dyn-with)
 */
 
 typedef enum KosDynKind {
@@ -91,6 +92,7 @@ typedef enum KosDynKind {
   KOS_DYN_YIELD_FROM = 7,
   KOS_DYN_PARAM  = 8,
   KOS_DYN_WITH   = 9,
+  KOS_DYN_DYN_WITH   = 10,
 } KosDynKind;
 
 
@@ -268,6 +270,8 @@ typedef enum KosTransferStep {
   KOS_XFER_INSTALL  = 1,
   KOS_XFER_INJECT   = 2,
   KOS_XFER_PARAM_RESTORE = 3,
+  KOS_XFER_DYN_WITH_EXIT  = 4,
+  KOS_XFER_DYN_WITH_ENTER = 5,
 } KosTransferStep;
 
 
@@ -308,6 +312,10 @@ typedef struct KosTransferAction {
     struct {
       KosDynParam *param_node;
     } param;
+
+    struct {
+      KosDynWith *with_node;
+    } dyn_with;
   } data;
 
 } KosTransferAction;
@@ -320,6 +328,7 @@ typedef struct KosTransferAction {
 #define KosTransferAction_INSTALL_SEGMENT(a) (((KosTransferAction *)(a))->data.install.segment)
 #define KosTransferAction_INJECT_VALUE(a)   (((KosTransferAction *)(a))->data.inject.value)
 #define KosTransferAction_INJECT_IS_THROW(a) (((KosTransferAction *)(a))->data.inject.is_throw)
+#define KosTransferAction_DYN_WITH_NODE(a)  (((KosTransferAction *)(a))->data.dyn_with.with_node)
 
 
 /* === KosTransferPlan: continuation transfer execution plan === */
@@ -889,6 +898,40 @@ KosDynWith *kos_dyn_push_with(
 
 
 /**
+   Push a dyn-with (multi-shot context manager) extent onto the dynamic chain.
+   Same as kos_dyn_push_with but installs KOS_DYN_DYN_WITH for transfer-plan
+   participation.
+
+   :param ctx: execution context
+   :param mgr: context manager object (ownership transferred)
+   :param enter: resolved enter callable (ownership transferred)
+   :param exit: resolved exit callable (ownership transferred)
+   :param name: binding name or NULL (ownership transferred)
+   :param resume_pc: PC to resume at after dyn-with body (extent pop_pc + 1)
+
+   :return: new KosDynWith node (kind KOS_DYN_DYN_WITH), or NULL on error
+*/
+KosDynWith *kos_dyn_push_dyn_with(
+    KosContext *ctx,
+    PyObject *mgr,
+    PyObject *enter,
+    PyObject *exit,
+    PyObject *name,
+    uint32_t resume_pc);
+
+
+/**
+   Clone a KOS_DYN_DYN_WITH node for continuation capture.
+   Copies mgr, enter, exit, name with new references.
+
+   :param src: DYN_WITH node to clone
+
+   :return: cloned node, or NULL on error
+*/
+KosDynWith *kos_dyndynwith_clone(KosDynWith *src);
+
+
+/**
    Pop a with extent from the dynamic chain.
 
    :param ctx: execution context
@@ -1401,6 +1444,9 @@ int kos_hookrunner_traverse(
 #define KosDynNode_IS_YIELD_FROM(n)  (KosDynNode_KIND(n) == KOS_DYN_YIELD_FROM)
 #define KosDynNode_IS_PARAM(n)       (KosDynNode_KIND(n) == KOS_DYN_PARAM)
 #define KosDynNode_IS_WITH(n)       (KosDynNode_KIND(n) == KOS_DYN_WITH)
+#define KosDynNode_IS_DYN_WITH(n)   (KosDynNode_KIND(n) == KOS_DYN_DYN_WITH)
+#define KosDynNode_IS_WITH_OR_DYN_WITH(n) \
+  (KosDynNode_IS_WITH(n) || KosDynNode_IS_DYN_WITH(n))
 
 #define KosDynFrame_CODE(f)       (((KosDynNode *)(f))->u.frame.code)
 #define KosDynFrame_PC(f)         (((KosDynNode *)(f))->u.frame.pc)

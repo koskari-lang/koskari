@@ -148,6 +148,7 @@ typedef enum KosExtentKind {
   KOS_EXT_FINALLY,
   KOS_EXT_WIND,
   KOS_EXT_WITH,
+  KOS_EXT_DYN_WITH,
   KOS_EXT_FOREACH,
   KOS_EXT_BEGIN,
   KOS_EXT_NS,
@@ -181,7 +182,7 @@ typedef struct KosExtentDesc {
     } loop;          /* KOS_EXT_LOOP, KOS_EXT_FOREACH */
     struct {
       uint32_t exit_pc;
-    } exit_only;     /* KOS_EXT_WITH, KOS_EXT_CALLCC_BIND */
+    } exit_only;     /* KOS_EXT_WITH, KOS_EXT_DYN_WITH, KOS_EXT_CALLCC_BIND */
     struct {
       uint32_t ic_pc;
     } shift;         /* KOS_EXT_SHIFT_BODY */
