@@ -238,9 +238,9 @@ OP(OBJECT_VARS, NOARG)
 
 // delimited continuation control
 OP(PUSH_PROMPT, CONST)         // arg = prompt_id constant pool index
-OP(SET_PROMPT_HANDLER, LABEL)  // arg = handler pc (instruction index)
 OP(POP_PROMPT, NOARG)          // pop prompt from dynamic chain
-OP(SHIFT, CONST)               // capture continuation, abort to prompt
+OP(PUSH_SHIFT, CONST)          // arg = prompt_id; capture continuation, enter shift block
+OP(POP_SHIFT, NOARG)           // pop shift block; return from handler without invoking k
 OP(INVOKE_K, NOARG)            // pop value, pop continuation; invoke delimited continuation
 OP(INVOKE_K_VAR, CONST)        // pop value; lookup name (constant index), invoke that continuation
 

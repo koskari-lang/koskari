@@ -166,8 +166,7 @@ struct KosDynNode {
     } frame;
     struct {
       uint32_t prompt_id;
-      KosCode *handler_code;
-      uint32_t handler_pc;
+      KosStackBlock *stack;  /* prompt-owned operand stack; NULL if not used */
     } prompt;
     struct {
       uint32_t resume_pc;
@@ -1153,6 +1152,7 @@ int kos_validate_capture(KosContext *ctx, KosDynPrompt *prompt);
 int kos_shift_capture(
    KosContext *ctx,
    uint32_t prompt_id,
+   uint32_t resume_pc,
    KosContinuation **out_k);
 
 
@@ -1240,6 +1240,44 @@ int kos_build_transfer_plan(
    KosDynNode *target,
    PyObject *value,
    int is_throw,
+   KosTransferPlan **out_plan);
+
+
+/**
+   Build a transfer plan with no unwind actions (direct install).
+   Use when the path crosses a barrier (e.g. PROMPT) that cannot be
+   popped.  Caller sets RESUME_PC etc. after return.
+
+   :return: 0 on success, -1 on error
+*/
+int kos_build_direct_install_plan(
+   KosContext *ctx,
+   KosDynNode *target,
+   PyObject *value,
+   int is_throw,
+   KosTransferPlan **out_plan);
+
+
+/**
+   Build a minimal plan with only INSTALL and INJECT (no wind, no LCA).
+   Use for delimited k(value) return path when invocation-site chain is
+   disjoint from current.  Caller must set RESUME_PC.
+*/
+int kos_build_return_plan(
+   KosContext *ctx,
+   KosDynNode *segment,
+   PyObject *value,
+   int is_throw,
+   KosTransferPlan **out_plan);
+
+
+/**
+   Build a plan with only INSTALL and wind-before (no INJECT).
+   Caller pushes frame and value after running the plan.
+*/
+int kos_build_install_only_plan(
+   KosContext *ctx,
+   KosDynNode *target,
    KosTransferPlan **out_plan);
 
 
@@ -1464,8 +1502,7 @@ int kos_hookrunner_traverse(
 #define KosDynFrame_FLAGS(f)      (((KosDynNode *)(f))->u.frame.frame_flags)
 
 #define KosDynPrompt_ID(p)        (((KosDynNode *)(p))->u.prompt.prompt_id)
-#define KosDynPrompt_HANDLER_CODE(p)  (((KosDynNode *)(p))->u.prompt.handler_code)
-#define KosDynPrompt_HANDLER_PC(p)    (((KosDynNode *)(p))->u.prompt.handler_pc)
+#define KosDynPrompt_STACK(p)     (((KosDynNode *)(p))->u.prompt.stack)
 
 #define KosDynCC_RESUME_PC(c)     (((KosDynNode *)(c))->u.cc.resume_pc)
 

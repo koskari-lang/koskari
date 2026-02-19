@@ -74,11 +74,11 @@ void KosEvaluatorToken_DecrementLiveDepth(KosEvaluatorToken *token);
 
 
 typedef enum KosContextFlags {
-  KOS_CTX_RUNNING      = 0x01,
-  KOS_CTX_FROZEN       = 0x02,
-  KOS_CTX_DEAD         = 0x04,
-  KOS_CTX_IN_HOOK      = 0x08,  /* executing a hook block */
-  KOS_CTX_IN_TRANSFER  = 0x10,  /* executing a transfer plan */
+  KOS_CTX_RUNNING         = 0x01,
+  KOS_CTX_FROZEN          = 0x02,
+  KOS_CTX_DEAD            = 0x04,
+  KOS_CTX_IN_HOOK         = 0x08,  /* executing a hook block */
+  KOS_CTX_IN_TRANSFER     = 0x10,  /* executing a transfer plan */
 } KosContextFlags;
 
 
@@ -233,6 +233,11 @@ struct KosContext {
   /* Delimited continuation: top of installed segment when inside invoked k */
   KosDynNode *invocation_segment_top;
 
+  /* Delimited k(value) return path: when set, RETURN from continuation body
+   * runs a transfer plan back to the invocation site instead of normal return. */
+  KosDynNode *return_target_chain;  /* cloned invocation-site chain (owned) */
+  uint32_t return_target_pc;       /* pc to resume at (UINT32_MAX = not set) */
+
   /* --- Python bridge: await/yield suspend and resume --- */
   PyObject *py_await_iter;   /* await-iterator from __await__() */
   PyObject *py_last_yielded; /* last yielded object (debug/optional) */
@@ -294,6 +299,8 @@ struct KosContext {
 #define KosContext_PLAN_SUSPENDED_AWAIT(c)  (((KosContext *)(c))->plan_suspended_await)
 #define KosContext_PLAN_RESUME_INJECT(c)     (((KosContext *)(c))->plan_resume_inject)
 #define KosContext_INVOCATION_SEGMENT_TOP(c) (((KosContext *)(c))->invocation_segment_top)
+#define KosContext_RETURN_TARGET_CHAIN(c)   (((KosContext *)(c))->return_target_chain)
+#define KosContext_RETURN_TARGET_PC(c)      (((KosContext *)(c))->return_target_pc)
 #define KosContext_PY_AWAIT_ITER(c)          (((KosContext *)(c))->py_await_iter)
 #define KosContext_PY_LAST_YIELDED(c)        (((KosContext *)(c))->py_last_yielded)
 #define KosContext_PY_RESUME_INJECT(c)       (((KosContext *)(c))->py_resume_inject)

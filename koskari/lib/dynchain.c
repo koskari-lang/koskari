@@ -34,7 +34,7 @@
 
 /* Set to 1 to trace transfer plan steps (for debugging).  All trace output
  * goes through SAYF from debug.h. */
-#define KOS_XFER_TRACE 0
+#define KOS_XFER_TRACE 1
 
 
 /* === DynNode base operations === */
@@ -184,8 +184,7 @@ KosDynPrompt *kos_dynprompt_new(KosDynNode *parent, uint32_t prompt_id) {
 
   kos_dynnode_init(prompt, KOS_DYN_PROMPT, parent, 0);
   KosDynPrompt_ID(prompt) = prompt_id;
-  KosDynPrompt_HANDLER_CODE(prompt) = NULL;
-  KosDynPrompt_HANDLER_PC(prompt) = 0;
+  KosDynPrompt_STACK(prompt) = NULL;
   return prompt;
 }
 
@@ -201,8 +200,7 @@ static KosDynPrompt *kos_dynprompt_clone(KosDynPrompt *prompt) {
   kos_dynnode_init(clone, KOS_DYN_PROMPT, NULL, KosDynNode_CAPS(prompt));
   KosDynNode_FLAGS(clone) = KosDynNode_FLAGS(prompt) | KOS_DYNF_CLONED;
   KosDynPrompt_ID(clone) = KosDynPrompt_ID(prompt);
-  KosDynPrompt_HANDLER_CODE(clone) = KosDynPrompt_HANDLER_CODE(prompt);  /* borrowed */
-  KosDynPrompt_HANDLER_PC(clone) = KosDynPrompt_HANDLER_PC(prompt);
+  KosDynPrompt_STACK(clone) = KosDynPrompt_STACK(prompt);  /* shared, do not free */
   return clone;
 }
 
@@ -211,7 +209,6 @@ void kos_dynprompt_free(KosDynPrompt *prompt) {
   if (! prompt)
     return;
 
-  /* handler_code is borrowed */
   kos_dynnode_return_to_freelist(prompt);
 }
 
@@ -934,6 +931,7 @@ void kos_dyn_pop_prompt(KosContext *ctx, KosDynPrompt *prompt) {
   KosContext_DYN_TOP(ctx) = KosDynNode_PARENT(prompt);
   KosContext_CHAIN_VERSION(ctx)++;
   kos_dynprompt_free(prompt);
+  kos_update_frame_top(ctx);
 }
 
 
@@ -1842,6 +1840,7 @@ static KosContinuation *kos_continuation_create(
 int kos_shift_capture(
     KosContext *ctx,
     uint32_t prompt_id,
+    uint32_t resume_pc,
     KosContinuation **out_k) {
 
   /* Find the prompt */
@@ -1908,10 +1907,11 @@ int kos_shift_capture(
 
   KosStackBlock *resume_stack = resume_frame
       ? KosStackBlock_COW(KosDynFrame_STACK(resume_frame)) : NULL;
+  uint32_t pc = resume_frame ? resume_pc : 0;
   KosContinuation *k = kos_continuation_create(
       captured_chain,
       resume_frame,
-      resume_frame ? KosDynFrame_PC(resume_frame) : 0,
+      pc,
       resume_stack,
       prompt_id,
       1,  /* one-shot */
@@ -2396,6 +2396,156 @@ int kos_build_transfer_plan(
 
 
 /**
+   Build a minimal plan with only INSTALL and INJECT (no wind, no LCA).
+   Use for the delimited k(value) return path when the invocation-site
+   chain is disjoint from the current chain.  Caller must set RESUME_PC.
+   Returns 0 on success, -1 on error.
+*/
+int kos_build_return_plan(
+    KosContext *ctx,
+    KosDynNode *segment,
+    PyObject *value,
+    int is_throw,
+    KosTransferPlan **out_plan) {
+
+  KosTransferPlan *plan = kos_transfer_plan_alloc(2);  /* INSTALL + INJECT */
+  if (! plan)
+    return -1;
+
+  KosTransferPlan_ACTION_COUNT(plan) = 2;
+  KosTransferPlan_ACTION_INDEX(plan) = 0;
+  KosTransferPlan_ORIGINAL_TARGET(plan) = segment;
+  KosTransferPlan_CHAIN_VERSION(plan) = KosContext_CHAIN_VERSION(ctx);
+  KosTransferPlan_RESUME_PC(plan) = (uint32_t) -1;
+  KosTransferPlan_RESUME_FRAME(plan) = NULL;
+  KosTransferPlan_RESUME_STACK(plan) = NULL;
+
+  size_t idx = 0;
+  xfer_plan_fill_install_action(plan, &idx, segment);
+  xfer_plan_fill_inject_action(plan, &idx, value, is_throw);
+
+  *out_plan = plan;
+  return 0;
+}
+
+
+/**
+   Build a transfer plan that skips all unwind actions (direct install).
+   Use when the path from current to target crosses a barrier (e.g. PROMPT)
+   that kos_dyn_pop_top cannot traverse.  Plan has: INSTALL, wind before
+   hooks (if any), INJECT.  Caller must set RESUME_PC, RESUME_FRAME,
+   RESUME_STACK on the plan after this returns.
+   Returns 0 on success, -1 on error.
+*/
+int kos_build_direct_install_plan(
+    KosContext *ctx,
+    KosDynNode *target,
+    PyObject *value,
+    int is_throw,
+    KosTransferPlan **out_plan) {
+
+  KosDynNode *current = KosContext_DYN_TOP(ctx);
+  KosDynNode *lca = kos_compute_lca(current, target);
+  if (! lca) {
+    /* Target may be an ancestor of current (path crosses prompt). */
+    KosDynNode *n = current;
+    while (n && n != target)
+      n = KosDynNode_PARENT(n);
+    if (n == target)
+      lca = target;
+    /* Or target may be from a severed template (disjoint chain) - e.g.
+     * delimited invoke.  Use lca = target so wind_count = 0. */
+    if (! lca)
+      lca = target;
+  }
+  if (KOS_XFER_TRACE)
+    SAYF("[xfer] direct_install_plan current=%p target=%p lca=%p",
+         (void *) current, (void *) target, (void *) lca);
+
+  size_t wind_count = xfer_plan_count_wind_before(target, lca);
+  size_t action_count = 1  /* INSTALL */
+      + wind_count
+      + 1;  /* INJECT */
+
+  KosTransferPlan *plan = kos_transfer_plan_alloc(action_count);
+  if (! plan)
+    return -1;
+
+  KosTransferPlan_ACTION_COUNT(plan) = action_count;
+  KosTransferPlan_ACTION_INDEX(plan) = 0;
+  KosTransferPlan_ORIGINAL_TARGET(plan) = target;
+  KosTransferPlan_CHAIN_VERSION(plan) = KosContext_CHAIN_VERSION(ctx);
+  KosTransferPlan_RESUME_PC(plan) = (uint32_t) -1;
+  KosTransferPlan_RESUME_FRAME(plan) = NULL;
+  KosTransferPlan_RESUME_STACK(plan) = NULL;
+
+  size_t idx = 0;
+  xfer_plan_fill_install_action(plan, &idx, target);
+  if (xfer_plan_fill_wind_actions(plan, &idx, target, lca, wind_count) < 0)
+    return -1;
+  xfer_plan_fill_inject_action(plan, &idx, value, is_throw);
+
+  *out_plan = plan;
+  return 0;
+}
+
+
+/**
+   Build a transfer plan with only INSTALL and wind-before hooks (no
+   INJECT).  Use when the caller will push a frame and value manually
+   after the plan runs (e.g. PUSH_SHIFT abort-to-prompt).  Skips unwind
+   entirely, so safe when path crosses PROMPT.  Returns 0 on success.
+*/
+int kos_build_install_only_plan(
+    KosContext *ctx,
+    KosDynNode *target,
+    KosTransferPlan **out_plan) {
+
+  KosDynNode *current = KosContext_DYN_TOP(ctx);
+  KosDynNode *lca = kos_compute_lca(current, target);
+  if (! lca) {
+    KosDynNode *n = current;
+    while (n && n != target)
+      n = KosDynNode_PARENT(n);
+    if (n == target)
+      lca = target;
+    if (! lca) {
+      PyErr_SetString(PyExc_RuntimeError,
+                      "install_only: target not reachable from current chain");
+      return -1;
+    }
+  }
+  if (KOS_XFER_TRACE)
+    SAYF("[xfer] install_only_plan current=%p target=%p lca=%p",
+         (void *) current, (void *) target, (void *) lca);
+
+  size_t wind_count = xfer_plan_count_wind_before(target, lca);
+  size_t action_count = 1  /* INSTALL */
+      + wind_count;
+
+  KosTransferPlan *plan = kos_transfer_plan_alloc(action_count);
+  if (! plan)
+    return -1;
+
+  KosTransferPlan_ACTION_COUNT(plan) = action_count;
+  KosTransferPlan_ACTION_INDEX(plan) = 0;
+  KosTransferPlan_ORIGINAL_TARGET(plan) = target;
+  KosTransferPlan_CHAIN_VERSION(plan) = KosContext_CHAIN_VERSION(ctx);
+  KosTransferPlan_RESUME_PC(plan) = (uint32_t) -1;
+  KosTransferPlan_RESUME_FRAME(plan) = NULL;
+  KosTransferPlan_RESUME_STACK(plan) = NULL;
+
+  size_t idx = 0;
+  xfer_plan_fill_install_action(plan, &idx, target);
+  if (xfer_plan_fill_wind_actions(plan, &idx, target, lca, wind_count) < 0)
+    return -1;
+
+  *out_plan = plan;
+  return 0;
+}
+
+
+/**
    Release the multi-shot continuation clone held by the plan, if any.
    The clone was used for a re-invocation; we release its resume_stack
    with exclude=continuation_ref so we do not DECREF the original
@@ -2532,6 +2682,13 @@ static int xfer_step_install(KosContext *ctx, KosTransferAction *action) {
   if (KosTransferPlan_RESUME_PC(plan) != (uint32_t) -1 && KosContext_FRAME_TOP(ctx))
     KosDynFrame_PC(KosContext_FRAME_TOP(ctx)) = KosTransferPlan_RESUME_PC(plan);
   KosContext_CHAIN_VERSION(ctx)++;
+  if (KOS_XFER_TRACE && KosContext_FRAME_TOP(ctx))
+    SAYF("[xfer] INSTALL done: frame_top=%p stack=%p stack_len=%zu resume_pc=%u",
+         (void *) KosContext_FRAME_TOP(ctx),
+         (void *) KosDynFrame_STACK(KosContext_FRAME_TOP(ctx)),
+         KosDynFrame_STACK(KosContext_FRAME_TOP(ctx))
+             ? KosStackBlock_LEN(KosDynFrame_STACK(KosContext_FRAME_TOP(ctx))) : 0,
+         (unsigned) KosTransferPlan_RESUME_PC(plan));
   KosContext_GLOBALS_CACHE_VERSION(ctx) = KosContext_CHAIN_VERSION(ctx);
   {
     PyObject *param_list = PyList_New(0);
@@ -2583,9 +2740,11 @@ static int xfer_step_install(KosContext *ctx, KosTransferAction *action) {
 */
 static int xfer_step_inject(KosContext *ctx, KosTransferAction *action) {
   if (KOS_XFER_TRACE)
-    SAYF("[xfer] INJECT frame_top=%p stack=%p is_throw=%d",
+    SAYF("[xfer] INJECT frame_top=%p stack=%p stack_len=%zu is_throw=%d",
          (void *) KosContext_FRAME_TOP(ctx),
          KosContext_FRAME_TOP(ctx) ? (void *) KosDynFrame_STACK(KosContext_FRAME_TOP(ctx)) : NULL,
+         (KosContext_FRAME_TOP(ctx) && KosDynFrame_STACK(KosContext_FRAME_TOP(ctx)))
+             ? KosStackBlock_LEN(KosDynFrame_STACK(KosContext_FRAME_TOP(ctx))) : 0,
          KosTransferAction_INJECT_IS_THROW(action));
   if (KosTransferAction_INJECT_IS_THROW(action)) {
     KosContext_INJECT_MODE(ctx) = KOS_INJECT_THROW;
@@ -2784,18 +2943,49 @@ int kos_invoke_continuation(
     }
   }
 
-  /* Build plan from template; INSTALL will clone the segment so we evaluate
-   * a new copy each time (no mutated stack or broken back-links). */
+  /* Delimited k(value): path crosses PROMPT (cannot unwind through it).
+   * Capture invocation site for return path; use direct-install for invoke. */
+  int is_delimited = (KosContinuation_PROMPT_ID(k) != KOS_PROMPT_ID_UNDELIMITED);
+  if (is_delimited) {
+    KosDynNode *return_chain = kos_clone_chain_segment(KosContext_DYN_TOP(ctx),
+                                                       NULL);
+    if (! return_chain && KosContext_DYN_TOP(ctx)) {
+      if (to_use != k)
+        kos_continuation_free(to_use);
+      return -1;
+    }
+    if (KosContext_RETURN_TARGET_CHAIN(ctx))
+      kos_dynchain_free(KosContext_RETURN_TARGET_CHAIN(ctx), NULL);
+    KosContext_RETURN_TARGET_CHAIN(ctx) = return_chain;
+    KosContext_RETURN_TARGET_PC(ctx) = KosContext_FRAME_TOP(ctx)
+        ? KosDynFrame_PC(KosContext_FRAME_TOP(ctx)) : (uint32_t) -1;
+  }
+
+  /* Build plan: direct-install for delimited (path crosses prompt);
+   * full transfer for undelimited. */
   KosTransferPlan *plan = NULL;
+  int res;
+  if (is_delimited) {
+    if (KOS_XFER_TRACE)
+      SAYF("[xfer] kos_build_direct_install_plan (delimited) current=%p target=%p",
+           (void *) KosContext_DYN_TOP(ctx), (void *) to_use->captured_chain);
+    res = kos_build_direct_install_plan(ctx, to_use->captured_chain,
+                                        value, is_throw, &plan);
+  } else {
+    if (KOS_XFER_TRACE)
+      SAYF("[xfer] kos_build_transfer_plan current=%p target=%p (template)",
+           (void *) KosContext_DYN_TOP(ctx), (void *) to_use->captured_chain);
+    res = kos_build_transfer_plan(ctx, to_use->captured_chain,
+                                  value, is_throw, &plan);
+  }
   if (KOS_XFER_TRACE)
-    SAYF("[xfer] kos_build_transfer_plan current=%p target=%p (template)",
-         (void *) KosContext_DYN_TOP(ctx), (void *) to_use->captured_chain);
-  int res = kos_build_transfer_plan(ctx, to_use->captured_chain,
-                                    value, is_throw, &plan);
-  if (KOS_XFER_TRACE)
-    SAYF("[xfer] kos_build_transfer_plan -> res=%d plan=%p",
-         res, (void *) plan);
+    SAYF("[xfer] plan build -> res=%d plan=%p", res, (void *) plan);
   if (res < 0) {
+    if (is_delimited && KosContext_RETURN_TARGET_CHAIN(ctx)) {
+      kos_dynchain_free(KosContext_RETURN_TARGET_CHAIN(ctx), NULL);
+      KosContext_RETURN_TARGET_CHAIN(ctx) = NULL;
+      KosContext_RETURN_TARGET_PC(ctx) = (uint32_t) -1;
+    }
     if (to_use != k)
       kos_continuation_free(to_use);
     return -1;

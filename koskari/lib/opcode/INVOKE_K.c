@@ -70,8 +70,11 @@ KOS_OP_HANDLER(INVOKE_K) {
     return -1;
   }
 
-  SAYF("[eval] INVOKE_K calling kos_invoke_continuation captured_chain=%p\n",
-       (void *) k->captured_chain);
+  /* PC already advanced: return will resume at CURRENT_PC (next instr) */
+  SAYF("[INVOKE_K] calling kos_invoke_continuation: captured_chain=%p frame=%p stack_len=%zu return_pc=%u",
+       (void *) k->captured_chain, (void *) CURRENT_FRAME(ctx),
+       CURRENT_STACK(ctx) ? KosStackBlock_LEN(CURRENT_STACK(ctx)) : 0,
+       (unsigned) CURRENT_PC(ctx));
   if (kos_invoke_continuation(ctx, k, value, 0, cont_obj) < 0) {
     SAY("[eval] INVOKE_K kos_invoke_continuation returned -1\n");
     Py_DECREF(value);

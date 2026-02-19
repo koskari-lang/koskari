@@ -28,27 +28,24 @@ from tests.lib.opcode import CevalTest, build_code, build_expr
 
 class TestDelimitedContinuations(CevalTest):
     """
-    Tests for PUSH_PROMPT, SET_PROMPT_HANDLER, SHIFT, CALL (continuation), POP_PROMPT
+    Tests for PUSH_PROMPT, PUSH_SHIFT, POP_SHIFT, INVOKE_K, POP_PROMPT
     """
 
     def test_reset_shift_invoke(self):
         """
         Program (+ 1 (shift k (k 5))) => 6. Validates PUSH_PROMPT,
-        SET_PROMPT_HANDLER, SHIFT, INVOKE_K for continuation invocation, POP_PROMPT
+        PUSH_SHIFT, INVOKE_K, POP_SHIFT, POP_PROMPT for continuation invocation
         """
 
         code = [
             ["PUSH_PROMPT", 0],
-            ["SET_PROMPT_HANDLER", "handler"],
             ["CONST", 1],
-            ["SHIFT", 0],
-            ["OBJECT_ADD", 2],
-            ["POP_PROMPT", 0],
-            ["RETURN", 1],
-            ["NOOP", 0],
-            ["LABEL", "handler"],
+            ["PUSH_SHIFT", 0],
             ["CONST", 5],
             ["INVOKE_K", 0],
+            ["POP_SHIFT", 0],
+            ["OBJECT_ADD", 2],
+            ["POP_PROMPT", 0],
             ["RETURN", 1],
         ]
         code_obj, ns = build_expr(code)
@@ -60,14 +57,12 @@ class TestDelimitedContinuations(CevalTest):
         """
         (reset (shift k k)) returns k; calling k from Python raises TypeError
         """
+        # Shift body returns k without invoking via POP_SHIFT (empty body)
         code = [
             ["PUSH_PROMPT", 0],
-            ["SET_PROMPT_HANDLER", "handler"],
-            ["SHIFT", 0],
+            ["PUSH_SHIFT", 0],
+            ["POP_SHIFT", 0],
             ["POP_PROMPT", 0],
-            ["RETURN", 1],
-            ["NOOP", 0],
-            ["LABEL", "handler"],
             ["RETURN", 1],
         ]
         code_obj, ns = build_expr(code)
@@ -80,22 +75,19 @@ class TestDelimitedContinuations(CevalTest):
 
     def test_invoke_k_var_lookup_and_invoke(self):
         """
-        INVOKE_K_VAR: handler stores cont in ns, then INVOKE_K_VAR name
+        INVOKE_K_VAR: shift body stores cont in ns, then INVOKE_K_VAR name
         invokes it with value. (+ 1 (shift k (do (var-store k k) (invoke-k-var k 5)))) => 6
         """
         code = [
             ["PUSH_PROMPT", 0],
-            ["SET_PROMPT_HANDLER", "handler"],
             ["CONST", 1],
-            ["SHIFT", 0],
-            ["OBJECT_ADD", 2],
-            ["POP_PROMPT", 0],
-            ["RETURN", 1],
-            ["NOOP", 0],
-            ["LABEL", "handler"],
+            ["PUSH_SHIFT", 0],
             ["VAR_STORE", "k"],
             ["CONST", 5],
             ["INVOKE_K_VAR", "k"],
+            ["POP_SHIFT", 0],
+            ["OBJECT_ADD", 2],
+            ["POP_PROMPT", 0],
             ["RETURN", 1],
         ]
         code_obj, ns = build_expr(code, local_syms=("k",))
@@ -109,16 +101,13 @@ class TestDelimitedContinuations(CevalTest):
         """
         code = [
             ["PUSH_PROMPT", 0],
-            ["SET_PROMPT_HANDLER", "handler"],
-            ["SHIFT", 0],
-            ["POP_PROMPT", 0],
-            ["RETURN", 1],
-            ["NOOP", 0],
-            ["LABEL", "handler"],
+            ["PUSH_SHIFT", 0],
             ["POP", 1],
             ["CONST", 1],
             ["CONST", 2],
             ["INVOKE_K", 0],
+            ["POP_SHIFT", 0],
+            ["POP_PROMPT", 0],
             ["RETURN", 1],
         ]
         code_obj, ns = build_expr(code)
@@ -134,16 +123,15 @@ class TestDelimitedContinuations(CevalTest):
         found in dynamic chain).
         """
         import koskari.lib as lib
+        # (reset (shift k k)) then (k 42): shift body returns k via POP_SHIFT,
+        # then we invoke k(42) after the prompt is gone -> raises
         code = [
             ["PUSH_PROMPT", 0],
-            ["SET_PROMPT_HANDLER", "handler"],
-            ["SHIFT", 0],
+            ["PUSH_SHIFT", 0],
+            ["POP_SHIFT", 0],
             ["POP_PROMPT", 0],
             ["CONST", 42],
             ["CALL", 1],
-            ["RETURN", 1],
-            ["NOOP", 0],
-            ["LABEL", "handler"],
             ["RETURN", 1],
         ]
         code_obj, ns = build_expr(code)
@@ -160,7 +148,7 @@ class TestUndelimitedContinuations(CevalTest):
 
     def test_call_cc_capture_and_invoke(self):
         """
-        (call/cc (lambda (k) (k 42))) => 42.
+        (call/cc [k] (k 42)) => 42.
         """
         code = [
             ["PUSH_CC", 0],
@@ -177,7 +165,7 @@ class TestUndelimitedContinuations(CevalTest):
 
     def test_call_cc_invoke_with_zero_args_resumes_with_none(self):
         """
-        (call/cc (lambda (k) (k))) => None.
+        (call/cc [k] (k)) => None.
         """
         code = [
             ["PUSH_CC", 0],

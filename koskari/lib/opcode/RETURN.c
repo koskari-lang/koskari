@@ -23,6 +23,12 @@ KOS_OP_HANDLER(RETURN) {
   unsigned opa = KosOp_ARG(insn);
   PyObject *val = NULL;
 
+  /* PC already advanced: we are post-RETURN insn dispatch */
+  SAYF("[RETURN] opa=%u frame=%p stack=%p len=%zu (pc advanced to %u)",
+       opa, (void *) CURRENT_FRAME(ctx), (void *) CURRENT_STACK(ctx),
+       CURRENT_STACK(ctx) ? KosStackBlock_LEN(CURRENT_STACK(ctx)) : 0,
+       (unsigned) CURRENT_PC(ctx));
+
   if (opa == 0) {
     val = Py_None;
     Py_INCREF(val);
@@ -30,7 +36,9 @@ KOS_OP_HANDLER(RETURN) {
   } else if (opa == 1) {
     val = KosStackBlock_PopRef(&CURRENT_STACK(ctx));
     if (! val) {
-      SAY("[eval] RETURN pop underrun\n");
+      SAYF("[RETURN] pop underrun: stack=%p len=%zu",
+           (void *) CURRENT_STACK(ctx),
+           CURRENT_STACK(ctx) ? (unsigned long) KosStackBlock_LEN(CURRENT_STACK(ctx)) : 0UL);
       return -1;
     }
 
@@ -40,6 +48,33 @@ KOS_OP_HANDLER(RETURN) {
       SAY("[eval] RETURN PopTail underrun\n");
       return -1;
     }
+  }
+
+  /* Delimited k(value) return path: transfer back to invocation site. */
+  if (KosContext_RETURN_TARGET_CHAIN(ctx) != NULL
+      && KosContext_RETURN_TARGET_PC(ctx) != (uint32_t) -1) {
+    SAYF("[RETURN] taking return-target path: return_pc=%u", (unsigned) KosContext_RETURN_TARGET_PC(ctx));
+    KosTransferPlan *plan = NULL;
+    if (kos_build_return_plan(ctx, KosContext_RETURN_TARGET_CHAIN(ctx),
+                              val, 0, &plan) < 0) {
+      Py_DECREF(val);
+      return -1;
+    }
+    Py_DECREF(val);
+    KosTransferPlan_RESUME_PC(plan) = KosContext_RETURN_TARGET_PC(ctx);
+    KosTransferPlan_RESUME_FRAME(plan) = NULL;
+    KosTransferPlan_RESUME_STACK(plan) = NULL;
+    if (KosContext_PLAN(ctx))
+      kos_free_transfer_plan(KosContext_PLAN(ctx));
+    KosContext_PLAN(ctx) = plan;
+    KosContext_FLAGS(ctx) |= KOS_CTX_IN_TRANSFER;
+    KosTransferPlan_CONTINUATION_REF(plan) = NULL;
+    kos_dynchain_free(KosContext_RETURN_TARGET_CHAIN(ctx), NULL);
+    KosContext_RETURN_TARGET_CHAIN(ctx) = NULL;
+    KosContext_RETURN_TARGET_PC(ctx) = (uint32_t) -1;
+    if (run_transfer_plan_to_completion(ctx, out_ev) < 0)
+      return -1;
+    return 0;
   }
 
   /* Frame has parent: return into parent in same loop. */

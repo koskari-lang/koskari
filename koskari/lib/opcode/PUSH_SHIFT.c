@@ -14,33 +14,43 @@
 */
 
 /**
-   SHIFT: arg = constant index of prompt_id. Capture the continuation up to
-   that prompt, unwind the dynamic chain to the prompt, push a new frame for
-   the prompt's handler, and push the continuation (as a Python object) on
-   the stack; handler runs with continuation at TOS.
+   PUSH_SHIFT: arg = constant index of prompt_id. Capture the continuation
+   from POP_SHIFT+1 to POP_PROMPT (via extent), unwind to the matching
+   prompt, push a new frame for the shift body, push k on stack, and
+   enter the shift block (first instruction = push_pc + 1).
 */
 
-KOS_OP_HANDLER(SHIFT) {
+KOS_OP_HANDLER(PUSH_SHIFT) {
   uint32_t prompt_id;
   KosContinuation *k = NULL;
+  uint32_t resume_pc;
+  uint32_t shift_body_pc;
+
   if (get_prompt_id_from_insn(CURRENT_CODE(ctx), insn, &prompt_id) < 0)
     return -1;
 
-  SAYF("[eval] SHIFT prompt_id=%u\n", (unsigned) prompt_id);
-  if (kos_shift_capture(ctx, prompt_id, &k) < 0) {
-    SAY("[eval] SHIFT capture failed\n");
+  /* PC is advanced before handler runs; extent is at the PUSH_SHIFT's pc */
+  resume_pc = kos_shift_ic_for((PyObject *) CURRENT_CODE(ctx), CURRENT_PC(ctx) - 1);
+  if (resume_pc == KOS_EXTENT_NONE) {
+    PyErr_SetString(PyExc_RuntimeError, "PUSH_SHIFT: no SHIFT extent at pc");
+    return -1;
+  }
+
+  SAYF("[eval] PUSH_SHIFT prompt_id=%u resume_pc=%u\n",
+       (unsigned) prompt_id, (unsigned) resume_pc);
+  if (kos_shift_capture(ctx, prompt_id, resume_pc, &k) < 0) {
+    SAY("[eval] PUSH_SHIFT capture failed\n");
     return -1;
   }
 
   KosDynPrompt *prompt = kos_find_prompt(ctx, prompt_id);
   if (! prompt) {
     kos_continuation_free(k);
-    PyErr_SetString(PyExc_RuntimeError, "shift: prompt not found");
+    PyErr_SetString(PyExc_RuntimeError, "PUSH_SHIFT: prompt not found");
     return -1;
   }
 
-  SAYF("[eval] SHIFT unwinding to prompt, then handler_pc=%u\n",
-       (unsigned) KosDynPrompt_HANDLER_PC(prompt));
+  SAY("[eval] PUSH_SHIFT unwinding to prompt");
   while (KosContext_DYN_TOP(ctx) != (KosDynNode *) prompt) {
     int pop_res = kos_dyn_pop_top(ctx, out_ev);
     if (pop_res == KOS_DYN_UNWIND_ASYNC_STARTED
@@ -57,24 +67,21 @@ KOS_OP_HANDLER(SHIFT) {
     kos_continuation_free(k);
     return -1;
   }
-  if (! KosDynPrompt_HANDLER_CODE(prompt)) {
-    Py_DECREF(wrapper);
-    PyErr_SetString(PyExc_RuntimeError, "shift: prompt has no handler");
-    return -1;
-  }
 
   PyObject *ns = PyDict_New();
   if (! ns) {
     Py_DECREF(wrapper);
     return -1;
   }
-  KosDynFrame *handler_frame = kos_dyn_push_frame(ctx, KosDynPrompt_HANDLER_CODE(prompt), ns);
+  /* PC already points at first instr of shift body (advanced before dispatch) */
+  shift_body_pc = CURRENT_PC(ctx);
+  KosDynFrame *handler_frame = kos_dyn_push_frame(ctx, CURRENT_CODE(ctx), ns);
   Py_DECREF(ns);
   if (! handler_frame) {
     Py_DECREF(wrapper);
     return -1;
   }
 
-  CURRENT_PC(ctx) = KosDynPrompt_HANDLER_PC(prompt);
+  KosDynFrame_PC(handler_frame) = shift_body_pc;
   return push_result(ctx, wrapper);
 }

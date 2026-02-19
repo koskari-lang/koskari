@@ -583,6 +583,8 @@ KosContext *kos_context_new(KosDynFrame *top) {
   KosContext_PLAN_STACK(ctx) = NULL;
   KosContext_CHAIN_VERSION(ctx) = 0;
   KosContext_INVOCATION_SEGMENT_TOP(ctx) = NULL;
+  KosContext_RETURN_TARGET_CHAIN(ctx) = NULL;
+  KosContext_RETURN_TARGET_PC(ctx) = (uint32_t) -1;
 
   /* Initialize Python await bridging */
   KosContext_PY_AWAIT_ITER(ctx) = NULL;
@@ -615,6 +617,12 @@ void kos_context_free(KosContext *ctx) {
 
   /* Free the dynamic chain */
   kos_dynchain_free(KosContext_DYN_TOP(ctx), NULL);
+
+  /* Free return target chain (delimited k return path) */
+  if (KosContext_RETURN_TARGET_CHAIN(ctx)) {
+    kos_dynchain_free(KosContext_RETURN_TARGET_CHAIN(ctx), NULL);
+    KosContext_RETURN_TARGET_CHAIN(ctx) = NULL;
+  }
 
   /* Free any active transfer plan */
   kos_free_transfer_plan(KosContext_PLAN(ctx));
@@ -2095,13 +2103,26 @@ static int try_local_exception_handler(KosContext *ctx, KosEvent *out_ev) {
           return 1;
         }
         if (pop_res != 0) {
-          PyObject *typ = NULL, *val = NULL, *tb = NULL;
-          PyErr_Fetch(&typ, &val, &tb);
-          PyErr_Clear();
-          KosEvent_KIND(out_ev) = KOS_EV_RAISE;
-          KosEvent_PAYLOAD(out_ev) = val;  /* exception instance (caller DECREFs) */
-          Py_XDECREF(typ);
-          Py_XDECREF(tb);
+          /* kos_dyn_pop_top refuses to pop a prompt.  When unwinding to
+           * CURRENT_FRAME and the top is a prompt whose parent is that frame,
+           * we can abandon the delimited block via kos_dyn_pop_prompt. */
+          KosDynFrame *cur = CURRENT_FRAME(ctx);
+          int is_prompt = KosDynNode_IS_PROMPT(top);
+          KosDynNode *top_parent = top ? KosDynNode_PARENT(top) : NULL;
+          int parent_is_cur = (top_parent == (KosDynNode *) cur);
+          if (is_prompt && cur && parent_is_cur) {
+            kos_dyn_pop_prompt(ctx, (KosDynPrompt *) top);
+            continue;
+          }
+          {
+            PyObject *typ = NULL, *val = NULL, *tb = NULL;
+            PyErr_Fetch(&typ, &val, &tb);
+            PyErr_Clear();
+            KosEvent_KIND(out_ev) = KOS_EV_RAISE;
+            KosEvent_PAYLOAD(out_ev) = val;
+            Py_XDECREF(typ);
+            Py_XDECREF(tb);
+          }
           KosContext_FLAGS(ctx) &= ~KOS_CTX_RUNNING;
           KosContext_FLAGS(ctx) |= KOS_CTX_DEAD;
           return 0;
@@ -2118,7 +2139,7 @@ static int try_local_exception_handler(KosContext *ctx, KosEvent *out_ev) {
       PyErr_Fetch(&typ, &val, &tb);
       PyErr_Clear();
       KosEvent_KIND(out_ev) = KOS_EV_RAISE;
-      KosEvent_PAYLOAD(out_ev) = val;  /* exception instance (caller DECREFs) */
+      KosEvent_PAYLOAD(out_ev) = val;
       Py_XDECREF(typ);
       Py_XDECREF(tb);
       KosContext_FLAGS(ctx) &= ~KOS_CTX_RUNNING;

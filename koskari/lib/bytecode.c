@@ -680,6 +680,7 @@ static const ExtentOpPair extent_pairs[] = {
   { KOS_OP_PUSH_LOOP,     KOS_OP_POP_LOOP,     KOS_EXT_LOOP },
   { KOS_OP_PUSH_FINALLY,  KOS_OP_POP_FINALLY,  KOS_EXT_FINALLY },
   { KOS_OP_PUSH_PROMPT,   KOS_OP_POP_PROMPT,   KOS_EXT_PROMPT },
+  { KOS_OP_PUSH_SHIFT,    KOS_OP_POP_SHIFT,    KOS_EXT_SHIFT },
   { KOS_OP_PUSH_CC,       KOS_OP_POP_CC,       KOS_EXT_CC },
   { KOS_OP_PUSH_WITH,     KOS_OP_POP_WITH,     KOS_EXT_WITH },
   { KOS_OP_PUSH_DYN_WITH, KOS_OP_POP_DYN_WITH, KOS_EXT_DYN_WITH },
@@ -825,6 +826,7 @@ static int derive_extents(
         e->u.exit_only.exit_pc = arg;
         break;
       case KOS_EXT_PROMPT:
+      case KOS_EXT_SHIFT:
         break;
       default:
         break;
@@ -869,6 +871,8 @@ static int derive_extents(
           top_extent_id[j] = (uint16_t) eid;
         }
       }
+      if (top_extent_id[pc] == KOS_EXTENT_NONE)
+        top_extent_id[pc] = (uint16_t) eid;
 
       stack_top--;
     }
@@ -928,13 +932,12 @@ static int derive_extents(
 
 /**
    Opcodes that perform control-flow jumps (must stay local).
-   Excludes PUSH and SET_PROMPT_HANDLER whose args are handler targets
-   that may legitimately point outside the current block.
+   Excludes PUSH_* whose args are handler targets that may legitimately
+   point outside the current block.
 */
 static int is_jump_op(KosOpCode op) {
 
   return (kos_opcode_style(op) == KOSTYLE_LABEL
-          && op != KOS_OP_SET_PROMPT_HANDLER
           && push_to_pop_table[op] == KOS_OP_NOOP);
 }
 
@@ -942,7 +945,7 @@ static int is_jump_op(KosOpCode op) {
 /**
    Validate JUMP locality: all jump targets must be inside the source block
    or at the block's pop_pc (leaving). Called after derive_extents.
-   Only applies to control-flow jump opcodes, not PUSH or SET_PROMPT_HANDLER.
+   Only applies to control-flow jump opcodes, not PUSH_*.
 */
 static int validate_jump_locality(
     KosOp *code,
@@ -1618,7 +1621,7 @@ int kos_try_handler_for(PyObject *code, uint32_t pc, KosTryHandler *out) {
 
 uint32_t kos_shift_ic_for(PyObject *code, uint32_t pc) {
 
-  uint32_t eid = kos_extent_find(code, pc, KOS_EXT_SHIFT_BODY);
+  uint32_t eid = kos_extent_find(code, pc, KOS_EXT_SHIFT);
   if (eid == KOS_EXTENT_NONE) {
     return KOS_EXTENT_NONE;
   }
@@ -1628,7 +1631,7 @@ uint32_t kos_shift_ic_for(PyObject *code, uint32_t pc) {
     return KOS_EXTENT_NONE;
   }
 
-  return e->u.shift.ic_pc;
+  return e->pop_pc + 1;
 }
 
 
