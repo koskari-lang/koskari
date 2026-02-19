@@ -45,7 +45,7 @@ KOS_OP_HANDLER(PUSH_DYN_WITH) {
   }
 
   KosCode *code = CURRENT_CODE(ctx);
-  uint32_t pc = (uint32_t)(insn - KosCode_CODE(code));
+  uint32_t pc = CURRENT_ACTING_PC(ctx);
   uint32_t eid = kos_extent_find((PyObject *) code, pc, KOS_EXT_DYN_WITH);
   if (eid == KOS_EXTENT_NONE) {
     Py_DECREF(result);

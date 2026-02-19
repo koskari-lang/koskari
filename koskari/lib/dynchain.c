@@ -123,6 +123,7 @@ KosDynFrame *kos_dynframe_new(
   kos_dynnode_init(frame, KOS_DYN_FRAME, parent, 0);
   KosDynFrame_CODE(frame) = code;  /* borrowed */
   KosDynFrame_PC(frame) = 0;
+  KosDynFrame_ACTING_PC(frame) = 0;
   KosDynFrame_STACK(frame) = stack;  /* ownership transferred */
   KosDynFrame_NS(frame) = ns;  /* ownership transferred (already stole ref) */
   KosDynFrame_FLAGS(frame) = 0;
@@ -154,6 +155,7 @@ KosDynFrame *kos_dynframe_clone(KosDynFrame *frame) {
   KosDynNode_NODE_ID(clone) = KosDynNode_NODE_ID(frame);
   KosDynFrame_CODE(clone) = KosDynFrame_CODE(frame);  /* borrowed */
   KosDynFrame_PC(clone) = KosDynFrame_PC(frame);
+  KosDynFrame_ACTING_PC(clone) = KosDynFrame_ACTING_PC(frame);
   KosDynFrame_STACK(clone) = cloned_stack;
   KosDynFrame_NS(clone) = KosDynFrame_NS(frame);
   Py_XINCREF(KosDynFrame_NS(clone));
@@ -2948,6 +2950,7 @@ int kos_end_hook(KosContext *ctx) {
 
   KosHookRunner_CODE(KosContext_HOOK_RUNNER(ctx)) = NULL;
   KosHookRunner_PC(KosContext_HOOK_RUNNER(ctx)) = 0;
+  KosHookRunner_ACTING_PC(KosContext_HOOK_RUNNER(ctx)) = 0;
   KosHookRunner_SCRATCH(KosContext_HOOK_RUNNER(ctx)) = NULL;
   KosHookRunner_ACTIVE(KosContext_HOOK_RUNNER(ctx)) = 0;
 

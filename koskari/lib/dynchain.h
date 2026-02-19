@@ -160,7 +160,8 @@ struct KosDynNode {
   union {
     struct {
       KosCode *code;
-      uint32_t pc;
+      uint32_t pc;        /* next instruction */
+      uint32_t acting_pc; /* instruction currently being executed */
       KosStackBlock *stack;
       PyObject *ns;
       uint32_t frame_flags;
@@ -435,19 +436,22 @@ typedef int (*KosHookInvokeFn)(struct KosContext *ctx, struct KosEvent *out_ev, 
 
    The active flag indicates whether hook execution is in progress.
    When active, the VM dispatches from the hook code/pc instead of
-   the normal frame.
+   the normal frame. pc = next instruction; acting_pc = instruction
+   currently being executed.
 */
 
 struct KosHookRunner {
   KosCode *code;          /* hook bytecode (borrowed) */
-  uint32_t pc;            /* hook program counter */
+  uint32_t pc;            /* next instruction */
+  uint32_t acting_pc;     /* instruction currently being executed */
   KosStackBlock *scratch; /* scratch operand stack (owned) */
   int active;             /* nonzero if hook is running */
 };
 
 
-#define KosHookRunner_CODE(r)    (((KosHookRunner *)(r))->code)
-#define KosHookRunner_PC(r)      (((KosHookRunner *)(r))->pc)
+#define KosHookRunner_CODE(r)       (((KosHookRunner *)(r))->code)
+#define KosHookRunner_PC(r)         (((KosHookRunner *)(r))->pc)
+#define KosHookRunner_ACTING_PC(r)  (((KosHookRunner *)(r))->acting_pc)
 #define KosHookRunner_SCRATCH(r) (((KosHookRunner *)(r))->scratch)
 #define KosHookRunner_ACTIVE(r)  (((KosHookRunner *)(r))->active)
 
@@ -1513,6 +1517,7 @@ int kos_hookrunner_traverse(
 
 #define KosDynFrame_CODE(f)       (((KosDynNode *)(f))->u.frame.code)
 #define KosDynFrame_PC(f)         (((KosDynNode *)(f))->u.frame.pc)
+#define KosDynFrame_ACTING_PC(f)  (((KosDynNode *)(f))->u.frame.acting_pc)
 #define KosDynFrame_STACK(f)      (((KosDynNode *)(f))->u.frame.stack)
 #define KosDynFrame_NS(f)         (((KosDynNode *)(f))->u.frame.ns)
 #define KosDynFrame_FLAGS(f)      (((KosDynNode *)(f))->u.frame.frame_flags)

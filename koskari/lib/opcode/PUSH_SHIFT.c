@@ -29,8 +29,8 @@ KOS_OP_HANDLER(PUSH_SHIFT) {
   if (get_prompt_id_from_insn(CURRENT_CODE(ctx), insn, &prompt_id) < 0)
     return -1;
 
-  /* PC is advanced before handler runs; extent is at the PUSH_SHIFT's pc */
-  resume_pc = kos_shift_ic_for((PyObject *) CURRENT_CODE(ctx), CURRENT_PC(ctx) - 1);
+  resume_pc = kos_shift_ic_for((PyObject *) CURRENT_CODE(ctx),
+                               CURRENT_ACTING_PC(ctx));
   if (resume_pc == KOS_EXTENT_NONE) {
     PyErr_SetString(PyExc_RuntimeError, "PUSH_SHIFT: no SHIFT extent at pc");
     return -1;
@@ -73,8 +73,7 @@ KOS_OP_HANDLER(PUSH_SHIFT) {
     Py_DECREF(wrapper);
     return -1;
   }
-  /* PC already points at first instr of shift body (advanced before dispatch) */
-  shift_body_pc = CURRENT_PC(ctx);
+  shift_body_pc = CURRENT_ACTING_PC(ctx) + 1;
   KosDynFrame *handler_frame = kos_dyn_push_frame(ctx, CURRENT_CODE(ctx), ns);
   Py_DECREF(ns);
   if (! handler_frame) {

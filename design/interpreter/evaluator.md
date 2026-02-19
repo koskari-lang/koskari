@@ -31,8 +31,8 @@ do not touch union members or base fields directly. Node kinds: KOS_DYN_FRAME,
 KOS_DYN_PROMPT, KOS_DYN_WIND, KOS_DYN_REGION, KOS_DYN_NS, KOS_DYN_CC,
 KOS_DYN_PYCALL, KOS_DYN_YIELD_FROM (see yield-from-execution-model.md).
 
-- **Frame** (u.frame): code (borrowed), pc, stack (owned), ns (owned), frame_flags.
-  Macros: KosDynFrame_CODE, KosDynFrame_PC, KosDynFrame_STACK, KosDynFrame_NS, KosDynFrame_FLAGS.
+- **Frame** (u.frame): code (borrowed), pc (next instruction), acting_pc (instruction currently being executed), stack (owned), ns (owned), frame_flags.
+  Macros: KosDynFrame_CODE, KosDynFrame_PC, KosDynFrame_ACTING_PC, KosDynFrame_STACK, KosDynFrame_NS, KosDynFrame_FLAGS.
 - **Prompt** (u.prompt): prompt_id, handler_code, handler_pc.
   Macros: KosDynPrompt_ID, KosDynPrompt_HANDLER_CODE, KosDynPrompt_HANDLER_PC.
 - **Wind** (u.wind): before_code, before_pc, after_code, after_pc, entered.
@@ -177,7 +177,8 @@ Hooks are bytecode blocks (not Python callables) executed with isolated stacks:
 ```c
 struct KosHookRunner {
   KosCode *code;          /* hook bytecode (borrowed) */
-  uint32_t pc;            /* hook program counter */
+  uint32_t pc;            /* next instruction */
+  uint32_t acting_pc;     /* instruction currently being executed */
   KosStackBlock *scratch; /* scratch operand stack (owned) */
   int active;             /* nonzero if hook is running */
 };

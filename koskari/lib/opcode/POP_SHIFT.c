@@ -47,10 +47,9 @@ KOS_OP_HANDLER(POP_SHIFT) {
     return -1;
   }
 
-  /* PC already advanced past POP_SHIFT. Extent range is [push_pc, pop_pc);
-     at pop_pc we are outside. Find SHIFT extent by its pop_pc. */
+  /* acting_pc is POP_SHIFT; find SHIFT extent by its pop_pc. */
   {
-    uint32_t pop_pc = CURRENT_PC(ctx) > 0 ? CURRENT_PC(ctx) - 1 : 0;
+    uint32_t pop_pc = CURRENT_ACTING_PC(ctx);
     eid = kos_extent_find_by_pop_pc((PyObject *) code, pop_pc, KOS_EXT_SHIFT);
   }
   if (eid == KOS_EXTENT_NONE) {

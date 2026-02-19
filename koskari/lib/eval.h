@@ -90,15 +90,18 @@ typedef enum KosContextFlags {
    See dynchain.h for the actual structure definition.
 
    The frame represents a function activation in the dynamic chain.
-   It holds the bytecode, program counter, operand stack, and namespace.
+   It holds the bytecode, program counter (pc = next instruction,
+   acting_pc = instruction currently being executed), operand stack,
+   and namespace.
 */
 
 typedef KosDynFrame KosFrame;
 
-#define KosFrame_CODE(f)   KosDynFrame_CODE(f)
-#define KosFrame_PC(f)     KosDynFrame_PC(f)
-#define KosFrame_STACK(f)  KosDynFrame_STACK(f)
-#define KosFrame_NS(f)     KosDynFrame_NS(f)
+#define KosFrame_CODE(f)       KosDynFrame_CODE(f)
+#define KosFrame_PC(f)         KosDynFrame_PC(f)
+#define KosFrame_ACTING_PC(f)  KosDynFrame_ACTING_PC(f)
+#define KosFrame_STACK(f)      KosDynFrame_STACK(f)
+#define KosFrame_NS(f)         KosDynFrame_NS(f)
 
 
 /* === KosEvent: boundary events === */

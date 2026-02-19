@@ -289,6 +289,8 @@ Finalize must validate:
 * POP_SHIFT uses `kos_extent_find_by_pop_pc(code, pop_pc, KOS_EXT_SHIFT)` to find the extent (since at pop_pc, `kos_extent_top` returns NONE).
 * PUSH_SHIFT uses `kos_shift_ic_for(code, pc)` at push_pc to get `pop_pc + 1` for the captured continuation.
 
+Opcode handlers receive `CURRENT_ACTING_PC(ctx)` (the instruction being executed); the dispatch loop advances `pc` before dispatch, so extent lookup uses acting_pc rather than `pc - 1`.
+
 ---
 
 ## 9. Use-Case: TRY push knows handler targets

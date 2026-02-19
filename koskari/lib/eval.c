@@ -63,11 +63,14 @@
 /* Every handler has (ctx, out_ev, insn).  Cast unused parameters to (void)
    to silence warnings and make intent explicit, e.g. (void) out_ev; (void) insn; */
 
-#define CURRENT_FRAME(ctx)    KosContext_FRAME_TOP(ctx)
-#define CURRENT_STACK(ctx)    KosDynFrame_STACK(CURRENT_FRAME(ctx))
-#define CURRENT_CODE(ctx)     KosDynFrame_CODE(CURRENT_FRAME(ctx))
-#define CURRENT_NS(ctx)       KosDynFrame_NS(CURRENT_FRAME(ctx))
-#define CURRENT_PC(ctx)       KosDynFrame_PC(CURRENT_FRAME(ctx))
+#define CURRENT_FRAME(ctx)       KosContext_FRAME_TOP(ctx)
+#define CURRENT_STACK(ctx)       KosDynFrame_STACK(CURRENT_FRAME(ctx))
+#define CURRENT_CODE(ctx)        KosDynFrame_CODE(CURRENT_FRAME(ctx))
+#define CURRENT_NS(ctx)          KosDynFrame_NS(CURRENT_FRAME(ctx))
+#define CURRENT_PC(ctx)          KosDynFrame_PC(CURRENT_FRAME(ctx))
+#define CURRENT_ACTING_PC(ctx)   (KosContext_HOOK_ACTIVE(ctx) \
+    ? KosHookRunner_ACTING_PC(KosContext_HOOK_RUNNER(ctx)) \
+    : KosDynFrame_ACTING_PC(CURRENT_FRAME(ctx)))
 
 
 /**
@@ -571,6 +574,7 @@ KosContext *kos_context_new(KosDynFrame *top) {
   /* Initialize hook runner */
   KosHookRunner_CODE(KosContext_HOOK_RUNNER(ctx)) = NULL;
   KosHookRunner_PC(KosContext_HOOK_RUNNER(ctx)) = 0;
+  KosHookRunner_ACTING_PC(KosContext_HOOK_RUNNER(ctx)) = 0;
   KosHookRunner_SCRATCH(KosContext_HOOK_RUNNER(ctx)) = NULL;
   KosHookRunner_ACTIVE(KosContext_HOOK_RUNNER(ctx)) = 0;
 
@@ -2152,7 +2156,7 @@ static int try_local_exception_handler(KosContext *ctx, KosEvent *out_ev) {
   {
     KosTryHandler th;
     if (kos_try_handler_for((PyObject *) CURRENT_CODE(ctx),
-                            CURRENT_PC(ctx), &th) == 0) {
+                            CURRENT_ACTING_PC(ctx), &th) == 0) {
       if (KosDynRegion_STYLE(region) == KOS_REGION_FINALLY && th.finally_pc != KOS_EXTENT_NONE) {
         handler_pc = th.finally_pc;
       }
@@ -2338,6 +2342,12 @@ eval_loop_start:
     trace_stack("  before", CURRENT_STACK(ctx));
 #endif
 
+    /* Record acting_pc (instruction we are executing) before advance. */
+    if (in_hook)
+      KosHookRunner_ACTING_PC(KosContext_HOOK_RUNNER(ctx)) = pc;
+    else
+      KosDynFrame_ACTING_PC(CURRENT_FRAME(ctx)) = pc;
+
     /* Advance PC before dispatch so normal path advances. If handler returns 1
        (suspend, e.g. WITH enter/exit await) we roll back so next eval is same insn. */
     if (in_hook)
@@ -2393,8 +2403,10 @@ eval_loop_start:
               || op == KOS_OP_PUSH_DYN_WITH || op == KOS_OP_POP_DYN_WITH) {
             if (in_hook) {
               KosHookRunner_PC(KosContext_HOOK_RUNNER(ctx)) = pc;
+              KosHookRunner_ACTING_PC(KosContext_HOOK_RUNNER(ctx)) = pc;
             } else {
               CURRENT_PC(ctx) = pc;
+              KosDynFrame_ACTING_PC(CURRENT_FRAME(ctx)) = pc;
             }
           }
         }

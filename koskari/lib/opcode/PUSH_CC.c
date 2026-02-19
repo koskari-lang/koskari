@@ -21,7 +21,7 @@
 
 KOS_OP_HANDLER(PUSH_CC) {
   KosCode *code = CURRENT_CODE(ctx);
-  uint32_t pc = (uint32_t)(insn - KosCode_CODE(code));
+  uint32_t pc = CURRENT_ACTING_PC(ctx);
   uint32_t eid = kos_extent_find((PyObject *) code, pc, KOS_EXT_CC);
   if (eid == KOS_EXTENT_NONE) {
     PyErr_SetString(PyExc_RuntimeError, "PUSH_CC: no CC extent at this PC");
