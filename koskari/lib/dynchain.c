@@ -1444,6 +1444,54 @@ void kos_dyn_param_unwind(KosContext *ctx, KosDynParam *node) {
 }
 
 
+/**
+   Run transfer-plan unwind for a node with NEEDS_UNWIND_ACTION.
+   Dispatches by kind: PARAM -> kos_dyn_param_unwind; DYN_WITH ->
+   kos_dyn_with_unwind + drop block + kos_dyn_pop_with. Used by
+   kos_run_transfer_step for KOS_XFER_NODE_UNWIND.
+   :return: 0 on success, -1 on error
+*/
+static int kos_dynnode_run_transfer_unwind(KosContext *ctx, KosDynNode *node) {
+  switch (KosDynNode_KIND(node)) {
+    case KOS_DYN_PARAM:
+      kos_dyn_param_unwind(ctx, (KosDynParam *) node);
+      if (KOS_XFER_TRACE)
+        SAYF("[xfer] NODE_UNWIND (param) node=%p", (void *) node);
+      return 0;
+
+    case KOS_DYN_DYN_WITH: {
+      KosDynWith *with_node = (KosDynWith *) node;
+      PyObject *exit_awaitable = NULL;
+
+      int unw = kos_dyn_with_unwind(ctx, with_node, &exit_awaitable);
+      if (unw == KOS_DYN_WITH_EXIT_ASYNC_STARTED) {
+        Py_XDECREF(exit_awaitable);
+        PyErr_SetString(PyExc_RuntimeError,
+                        "async dyn-with exit during transfer not yet supported");
+        return -1;
+      }
+      if (unw < 0)
+        return -1;
+
+      if (KosContext_FRAME_TOP(ctx) &&
+          KosStackBlock_DropBlock(&KosDynFrame_STACK(KosContext_FRAME_TOP(ctx))) < 0)
+        return -1;
+
+      kos_dyn_pop_with(ctx, with_node);
+      if (KOS_XFER_TRACE)
+        SAYF("[xfer] NODE_UNWIND (dyn_with) node=%p done", (void *) with_node);
+      return 0;
+    }
+
+    default:
+      PyErr_Format(PyExc_RuntimeError,
+                   "kos_dynnode_run_transfer_unwind: node kind %u has no unwind",
+                   (unsigned) KosDynNode_KIND(node));
+      return -1;
+  }
+}
+
+
 int kos_dyn_wind_wind(KosContext *ctx, KosDynWind *node) {
   if (! node || ! KosDynWind_BEFORE_CODE(node))
     return 0;
@@ -2127,7 +2175,7 @@ static KosTransferPlan *kos_transfer_plan_alloc(size_t action_count) {
    Count how many transfer actions are needed to unwind from current to lca.
    Walks the dynamic chain from current inward toward lca.  For each node:
    - WIND with an "after" hook (unwind): one RUN_HOOK action.
-   - PARAM: one PARAM_RESTORE action.
+   - PARAM or DYN_WITH: one NODE_UNWIND action.
    Used to size the plan's action array before filling it.
 */
 static size_t xfer_plan_count_unwind_and_params(KosDynNode *current, KosDynNode *lca) {
@@ -2173,9 +2221,9 @@ static size_t xfer_plan_count_wind_before(KosDynNode *target, KosDynNode *lca) {
 
 /**
    Fill plan action slots with unwind-phase steps: RUN_HOOK (after) and
-   PARAM_RESTORE, from current inward to lca.  Order is inner-to-outer so
-   that when the plan is executed, we run after hooks and restore params
-   in the correct order.  Advances *idx past the filled slots.
+   NODE_UNWIND (PARAM/DYN_WITH), from current inward to lca.  Order is
+   inner-to-outer so that when the plan is executed, we run after hooks
+   and unwind nodes in the correct order.  Advances *idx past the filled slots.
 */
 static void xfer_plan_fill_unwind_actions(
     KosTransferPlan *plan,
@@ -2197,18 +2245,12 @@ static void xfer_plan_fill_unwind_actions(
                  *idx, (void *) node);
           (*idx)++;
         }
-      } else if (KosDynNode_IS_PARAM(node)) {
-        KosTransferAction_STEP(&KosTransferPlan_ACTIONS(plan)[*idx]) = KOS_XFER_PARAM_RESTORE;
-        KosTransferAction_PARAM_NODE(&KosTransferPlan_ACTIONS(plan)[*idx]) = (KosDynParam *) node;
+      } else {
+        /* PARAM or DYN_WITH with NEEDS_UNWIND_ACTION */
+        KosTransferAction_STEP(&KosTransferPlan_ACTIONS(plan)[*idx]) = KOS_XFER_NODE_UNWIND;
+        KosTransferAction_NODE_UNWIND_NODE(&KosTransferPlan_ACTIONS(plan)[*idx]) = node;
         if (KOS_XFER_TRACE)
-          SAYF("[xfer] plan action[%zu] = PARAM_RESTORE node=%p",
-               *idx, (void *) node);
-        (*idx)++;
-      } else if (KosDynNode_IS_DYN_WITH(node)) {
-        KosTransferAction_STEP(&KosTransferPlan_ACTIONS(plan)[*idx]) = KOS_XFER_DYN_WITH_EXIT;
-        KosTransferAction_DYN_WITH_NODE(&KosTransferPlan_ACTIONS(plan)[*idx]) = (KosDynWith *) node;
-        if (KOS_XFER_TRACE)
-          SAYF("[xfer] plan action[%zu] = DYN_WITH_EXIT node=%p", *idx, (void *) node);
+          SAYF("[xfer] plan action[%zu] = NODE_UNWIND node=%p", *idx, (void *) node);
         (*idx)++;
       }
     }
@@ -2443,48 +2485,6 @@ static int xfer_step_run_hook(KosContext *ctx, KosTransferAction *action) {
 
 
 /**
-   Execute a PARAM_RESTORE step: restore the parameter bindings for the
-   given param node (unwinding past a parameterize extent).  Does not
-   return a status; the plan continues with the next step.
-*/
-static void xfer_step_param_restore(KosContext *ctx, KosTransferAction *action) {
-  KosDynParam *param_node = KosTransferAction_PARAM_NODE(action);
-  kos_dyn_param_unwind(ctx, param_node);
-  if (KOS_XFER_TRACE)
-    SAYF("[xfer] PARAM_RESTORE node=%p", (void *) param_node);
-}
-
-
-/**
-   Execute a DYN_WITH_EXIT step: run exit on the dyn-with node, drop the
-   stack block.  Sync only for now; async exit would require suspend handling.
-*/
-static int xfer_step_dyn_with_exit(KosContext *ctx, KosTransferAction *action) {
-  KosDynWith *with_node = KosTransferAction_DYN_WITH_NODE(action);
-  PyObject *exit_awaitable = NULL;
-
-  int unw = kos_dyn_with_unwind(ctx, with_node, &exit_awaitable);
-  if (unw == KOS_DYN_WITH_EXIT_ASYNC_STARTED) {
-    /* TODO: async exit suspend - would need to stash and return KOS_XFER_SUSPENDED_AWAIT */
-    Py_XDECREF(exit_awaitable);
-    PyErr_SetString(PyExc_RuntimeError, "async dyn-with exit during transfer not yet supported");
-    return -1;
-  }
-  if (unw < 0)
-    return -1;
-
-  if (KosContext_FRAME_TOP(ctx) &&
-      KosStackBlock_DropBlock(&KosDynFrame_STACK(KosContext_FRAME_TOP(ctx))) < 0)
-    return -1;
-
-  kos_dyn_pop_with(ctx, with_node);
-  if (KOS_XFER_TRACE)
-    SAYF("[xfer] DYN_WITH_EXIT node=%p done", (void *) with_node);
-  return 0;
-}
-
-
-/**
    Execute an INSTALL step: replace the current dynamic chain with a fresh
    clone of the plan's target segment, restore the frame's stack and PC
    from the plan's resume state, and run param_enter for each PARAM node
@@ -2613,10 +2613,10 @@ static int xfer_step_inject(KosContext *ctx, KosTransferAction *action) {
    Run the next action in the context's current transfer plan.  If there
    is no plan or the plan is already complete, returns 1 (done).  Otherwise
    advances the action index, dispatches to the appropriate step handler
-   (RUN_HOOK, PARAM_RESTORE, INSTALL, INJECT), and returns: 0 if more
-   steps remain, 1 if the plan is now complete, -1 on error.  RUN_HOOK
-   returns immediately after starting the hook; the evaluator will call
-   back here after the hook finishes.
+   (RUN_HOOK, NODE_UNWIND, INSTALL, INJECT), and returns: 0 if more steps
+   remain, 1 if the plan is now complete, -1 on error.  RUN_HOOK returns
+   immediately after starting the hook; the evaluator will call back here
+   after the hook finishes.
 */
 int kos_run_transfer_step(KosContext *ctx) {
   if (! KosContext_PLAN(ctx))
@@ -2636,12 +2636,9 @@ int kos_run_transfer_step(KosContext *ctx) {
     case KOS_XFER_RUN_HOOK:
       return xfer_step_run_hook(ctx, action);
 
-    case KOS_XFER_PARAM_RESTORE:
-      xfer_step_param_restore(ctx, action);
-      break;
-
-    case KOS_XFER_DYN_WITH_EXIT: {
-      int res = xfer_step_dyn_with_exit(ctx, action);
+    case KOS_XFER_NODE_UNWIND: {
+      int res = kos_dynnode_run_transfer_unwind(ctx,
+                                                KosTransferAction_NODE_UNWIND_NODE(action));
       if (res < 0)
         return -1;
       break;

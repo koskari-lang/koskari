@@ -275,16 +275,15 @@ struct KosContinuation {
    KOS_XFER_RUN_HOOK      - Execute a wind/unwind hook block
    KOS_XFER_INSTALL       - Install a chain segment as current
    KOS_XFER_INJECT        - Push resume value onto stack (or throw)
-   KOS_XFER_PARAM_RESTORE - Restore domain param bindings before unwind
+   KOS_XFER_NODE_UNWIND   - Unwind a node with NEEDS_UNWIND_ACTION (PARAM or DYN_WITH)
 */
 
 typedef enum KosTransferStep {
   KOS_XFER_RUN_HOOK = 0,
   KOS_XFER_INSTALL  = 1,
   KOS_XFER_INJECT   = 2,
-  KOS_XFER_PARAM_RESTORE = 3,
-  KOS_XFER_DYN_WITH_EXIT  = 4,
-  KOS_XFER_DYN_WITH_ENTER = 5,
+  KOS_XFER_NODE_UNWIND = 3,
+  KOS_XFER_DYN_WITH_ENTER = 4,
 } KosTransferStep;
 
 
@@ -323,25 +322,20 @@ typedef struct KosTransferAction {
     } inject;
 
     struct {
-      KosDynParam *param_node;
-    } param;
-
-    struct {
-      KosDynWith *with_node;
-    } dyn_with;
+      KosDynNode *node;
+    } node_unwind;
   } data;
 
 } KosTransferAction;
 
 
 #define KosTransferAction_STEP(a)           (((KosTransferAction *)(a))->step)
-#define KosTransferAction_PARAM_NODE(a)     (((KosTransferAction *)(a))->data.param.param_node)
+#define KosTransferAction_NODE_UNWIND_NODE(a) (((KosTransferAction *)(a))->data.node_unwind.node)
 #define KosTransferAction_HOOK_CODE(a)     (((KosTransferAction *)(a))->data.hook.code)
 #define KosTransferAction_HOOK_PC(a)        (((KosTransferAction *)(a))->data.hook.pc)
 #define KosTransferAction_INSTALL_SEGMENT(a) (((KosTransferAction *)(a))->data.install.segment)
 #define KosTransferAction_INJECT_VALUE(a)   (((KosTransferAction *)(a))->data.inject.value)
 #define KosTransferAction_INJECT_IS_THROW(a) (((KosTransferAction *)(a))->data.inject.is_throw)
-#define KosTransferAction_DYN_WITH_NODE(a)  (((KosTransferAction *)(a))->data.dyn_with.with_node)
 
 
 /* === KosTransferPlan: continuation transfer execution plan === */
