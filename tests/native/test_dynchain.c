@@ -225,11 +225,11 @@ static int test_compute_lca(void) {
     TEST_ASSERT_NOT_NULL(b2, "create b2");
 
     /* LCA of a2 and b2 should be root */
-    KosDynNode *lca = kos_compute_lca((KosDynNode *) a2, (KosDynNode *) b2);
+    KosDynNode *lca = kos_compute_lca((KosDynNode *) a2, (KosDynNode *) b2, 0);
     TEST_ASSERT_SAME(lca, root, "LCA is root");
 
     /* LCA of a2 and a1 should be a1 */
-    lca = kos_compute_lca((KosDynNode *) a2, (KosDynNode *) a1);
+    lca = kos_compute_lca((KosDynNode *) a2, (KosDynNode *) a1, 0);
     TEST_ASSERT_SAME(lca, a1, "LCA of a2 and a1 is a1");
 
     /* Free all nodes */

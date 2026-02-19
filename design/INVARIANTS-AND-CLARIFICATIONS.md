@@ -117,7 +117,7 @@ These are **commitments**: they must hold for correct behavior. They are elabora
 
 ## 4. Evaluator and Dynamic Chain (C Structures)
 
-- **KosDynNode**: Single struct for all chain node kinds. Contains `parent`, `kind`, `flags` and a union `u` with kind-specific payloads (frame, prompt, cc, wind, region, ns, pycall). Typedefs (KosDynFrame, KosDynPrompt, etc.) refer to the same struct. **Access node fields only via the macros** in dynchain.h (e.g. KosDynNode_KIND, KosDynFrame_PC, KosDynRegion_STYLE); do not touch `u` or base fields directly outside the header.
+- **KosDynNode**: Single struct for all chain node kinds. Contains `parent`, `kind`, `flags`, `node_id` (stable uint32 assigned on alloc, copied on clone for LCA matching across disjoint chains) and a union `u` with kind-specific payloads (frame, prompt, cc, wind, region, ns, pycall). Typedefs (KosDynFrame, KosDynPrompt, etc.) refer to the same struct. **Access node fields only via the macros** in dynchain.h (e.g. KosDynNode_KIND, KosDynNode_NODE_ID, KosDynFrame_PC, KosDynRegion_STYLE); do not touch `u` or base fields directly outside the header.
 
 - **KosDynFrame** (union variant): Function activation; `code` (borrowed), `pc`, `stack` (owned), `ns` (owned). Frame owns stack and ns; code is not owned. Access via KosDynFrame_CODE, KosDynFrame_PC, KosDynFrame_STACK, KosDynFrame_NS, KosDynFrame_FLAGS.
 
@@ -135,7 +135,7 @@ These are **commitments**: they must hold for correct behavior. They are elabora
 
 - **KosEvent**: Boundary event from `koskari_eval`: `KOS_EV_RETURN`, `KOS_EV_RAISE`, `KOS_EV_YIELD`, `KOS_EV_AWAIT`; `payload` is a new reference owned by the caller. These are produced only when the current frame has **no parent** (top-level return/yield/raise/await); when the frame has a parent, YIELD/RETURN are handled in-loop by detaching and pushing onto the parent.
 
-- **KosContinuation**: Captured segment: `captured_chain`, `resume_frame`, `resume_pc`, `resume_stack`, `prompt_id`, `one_shot`, `token_ref` (PyObject * KosEvaluatorToken; ownership marker for evaluator identity). Multi-shot clones on each invoke.
+- **KosContinuation**: Captured segment: `captured_chain`, `resume_frame`, `resume_pc`, `resume_stack`, `prompt_id`, `graft_point_id` (node_id of graft point for LCA fallback when chains disjoint; 0 for capture-cc), `one_shot`, `token_ref` (PyObject * KosEvaluatorToken; ownership marker for evaluator identity). Multi-shot clones on each invoke.
 
 - **KosTransferPlan**: Ordered list of steps: `KOS_XFER_RUN_HOOK`, `KOS_XFER_INSTALL`, `KOS_XFER_INJECT`. Tracks `chain_version` and `original_target` for replanning after nested transfers. For invocation: `resume_pc`, `resume_frame`, `resume_stack`, `continuation_ref`.
 

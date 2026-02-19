@@ -57,6 +57,7 @@ static void kos_dynnode_init(
 
 static size_t dyn_freecount = 0;
 static KosDynNode *dyn_freelist = NULL;
+static uint32_t dyn_node_id_counter = 1;  /* 0 reserved for unset / no graft point */
 
 
 /**
@@ -70,6 +71,9 @@ static KosDynNode *kos_dynnode_alloc(void) {
     dyn_freelist = KosDynNode_PARENT(p);
     dyn_freecount--;
     memset(p, 0, sizeof(KosDynNode));
+    p->node_id = dyn_node_id_counter++;
+    if (! dyn_node_id_counter)
+      dyn_node_id_counter = 1;  /* avoid 0 on rollover */
     return p;
   }
   p = PyMem_Malloc(sizeof(KosDynNode));
@@ -78,6 +82,9 @@ static KosDynNode *kos_dynnode_alloc(void) {
     return NULL;
   }
   memset(p, 0, sizeof(KosDynNode));
+  p->node_id = dyn_node_id_counter++;
+  if (! dyn_node_id_counter)
+    dyn_node_id_counter = 1;  /* avoid 0 on rollover */
   return p;
 }
 
@@ -144,6 +151,7 @@ KosDynFrame *kos_dynframe_clone(KosDynFrame *frame) {
 
   kos_dynnode_init(clone, KOS_DYN_FRAME, NULL, KosDynNode_CAPS(frame));
   KosDynNode_FLAGS(clone) = KosDynNode_FLAGS(frame) | KOS_DYNF_CLONED;
+  KosDynNode_NODE_ID(clone) = KosDynNode_NODE_ID(frame);
   KosDynFrame_CODE(clone) = KosDynFrame_CODE(frame);  /* borrowed */
   KosDynFrame_PC(clone) = KosDynFrame_PC(frame);
   KosDynFrame_STACK(clone) = cloned_stack;
@@ -199,6 +207,7 @@ static KosDynPrompt *kos_dynprompt_clone(KosDynPrompt *prompt) {
 
   kos_dynnode_init(clone, KOS_DYN_PROMPT, NULL, KosDynNode_CAPS(prompt));
   KosDynNode_FLAGS(clone) = KosDynNode_FLAGS(prompt) | KOS_DYNF_CLONED;
+  KosDynNode_NODE_ID(clone) = KosDynNode_NODE_ID(prompt);
   KosDynPrompt_ID(clone) = KosDynPrompt_ID(prompt);
   KosDynPrompt_STACK(clone) = KosDynPrompt_STACK(prompt);  /* shared, do not free */
   return clone;
@@ -238,6 +247,7 @@ static KosDynCC *kos_dyncc_clone(KosDynCC *cc) {
 
   kos_dynnode_init(clone, KOS_DYN_CC, NULL, KosDynNode_CAPS(cc));
   KosDynNode_FLAGS(clone) = KosDynNode_FLAGS(cc) | KOS_DYNF_CLONED;
+  KosDynNode_NODE_ID(clone) = KosDynNode_NODE_ID(cc);
   KosDynCC_RESUME_PC(clone) = KosDynCC_RESUME_PC(cc);
   return clone;
 }
@@ -290,6 +300,7 @@ KosDynWind *kos_dynwind_clone(KosDynWind *wind) {
 
   kos_dynnode_init(clone, KOS_DYN_WIND, NULL, KosDynNode_CAPS(wind));
   KosDynNode_FLAGS(clone) = KosDynNode_FLAGS(wind) | KOS_DYNF_CLONED;
+  KosDynNode_NODE_ID(clone) = KosDynNode_NODE_ID(wind);
   KosDynWind_BEFORE_CODE(clone) = KosDynWind_BEFORE_CODE(wind);  /* borrowed */
   KosDynWind_BEFORE_PC(clone) = KosDynWind_BEFORE_PC(wind);
   KosDynWind_AFTER_CODE(clone) = KosDynWind_AFTER_CODE(wind);  /* borrowed */
@@ -345,6 +356,7 @@ KosDynRegion *kos_dynregion_clone(KosDynRegion *region) {
 
   kos_dynnode_init(clone, KOS_DYN_REGION, NULL, KosDynNode_CAPS(region));
   KosDynNode_FLAGS(clone) = KosDynNode_FLAGS(region) | KOS_DYNF_CLONED;
+  KosDynNode_NODE_ID(clone) = KosDynNode_NODE_ID(region);
   KosDynRegion_STYLE(clone) = KosDynRegion_STYLE(region);
   KosDynRegion_BREAK_PC(clone) = KosDynRegion_BREAK_PC(region);
   KosDynRegion_CONTINUE_PC(clone) = KosDynRegion_CONTINUE_PC(region);
@@ -395,7 +407,10 @@ KosDynNs *kos_dynns_clone(KosDynNs *ns_node) {
 
   PyObject *saved = KosDynNs_SAVED_NS(ns_node);
   Py_INCREF(saved);
-  return kos_dynns_new(NULL, saved);
+  KosDynNs *clone = kos_dynns_new(NULL, saved);
+  if (clone)
+    KosDynNode_NODE_ID(clone) = KosDynNode_NODE_ID(ns_node);
+  return clone;
 }
 
 
@@ -476,6 +491,7 @@ KosDynYieldFrom *kos_dynyieldfrom_clone(KosDynYieldFrom *node) {
   kos_dynnode_init((KosDynNode *) clone, KOS_DYN_YIELD_FROM, NULL,
                    KosDynNode_CAPS(node));
   KosDynNode_FLAGS(clone) = KosDynNode_FLAGS(node) | KOS_DYNF_CLONED;
+  KosDynNode_NODE_ID(clone) = KosDynNode_NODE_ID(node);
   KosDynYieldFrom_DELEGATE(clone) = KosDynYieldFrom_DELEGATE(node);
   Py_XINCREF(KosDynYieldFrom_DELEGATE(clone));
   KosDynYieldFrom_KIND(clone) = KosDynYieldFrom_KIND(node);
@@ -569,6 +585,7 @@ static KosDynParam *kos_dynparam_clone(KosDynParam *node) {
   kos_dynnode_init((KosDynNode *) clone, KOS_DYN_PARAM, NULL,
                    KosDynNode_CAPS(node));
   KosDynNode_FLAGS(clone) = KosDynNode_FLAGS(node) | KOS_DYNF_CLONED;
+  KosDynNode_NODE_ID(clone) = KosDynNode_NODE_ID(node);
   KosDynParam_BINDINGS(clone) = copy;
   KosDynParam_SAVED(clone) = NULL;
 
@@ -1177,6 +1194,8 @@ KosDynWith *kos_dyndynwith_clone(KosDynWith *src) {
 
   kos_dynnode_init((KosDynNode *) node, KOS_DYN_DYN_WITH, NULL,
                    KosDynNode_CAPS(src));
+  KosDynNode_FLAGS(node) = KosDynNode_FLAGS(src) | KOS_DYNF_CLONED;
+  KosDynNode_NODE_ID(node) = KosDynNode_NODE_ID(src);
   KosDynWith_MGR(node) = KosDynWith_MGR(src);
   Py_XINCREF(KosDynWith_MGR(node));
   KosDynWith_ENTER(node) = KosDynWith_ENTER(src);
@@ -1806,6 +1825,7 @@ static KosContinuation *kos_continuation_create(
     uint32_t resume_pc,
     KosStackBlock *resume_stack,
     uint32_t prompt_id,
+    uint32_t graft_point_id,
     int one_shot,
     PyObject *token_ref) {
 
@@ -1828,6 +1848,7 @@ static KosContinuation *kos_continuation_create(
   KosContinuation_RESUME_PC(k) = resume_pc;
   KosContinuation_RESUME_STACK(k) = resume_stack;
   KosContinuation_PROMPT_ID(k) = prompt_id;
+  KosContinuation_GRAPT_POINT_ID(k) = graft_point_id;
   KosContinuation_ONE_SHOT(k) = one_shot;
   KosContinuation_TOKEN_REF(k) = token_ref;
   if (KosContinuation_TOKEN_REF(k))
@@ -1908,12 +1929,14 @@ int kos_shift_capture(
   KosStackBlock *resume_stack = resume_frame
       ? KosStackBlock_COW(KosDynFrame_STACK(resume_frame)) : NULL;
   uint32_t pc = resume_frame ? resume_pc : 0;
+  uint32_t graft_point_id = stop ? KosDynNode_NODE_ID(stop) : 0;
   KosContinuation *k = kos_continuation_create(
       captured_chain,
       resume_frame,
       pc,
       resume_stack,
       prompt_id,
+      graft_point_id,
       1,  /* one-shot */
       KosContext_TOKEN(ctx) ? (PyObject *) KosContext_TOKEN(ctx) : NULL);
   if (! k) {
@@ -1981,6 +2004,7 @@ int kos_capture_cc(KosContext *ctx, KosContinuation **out_k) {
       KosDynCC_RESUME_PC(cc),
       KosStackBlock_COW(KosDynFrame_STACK(resume_frame)),
       KOS_PROMPT_ID_UNDELIMITED,
+      0,  /* graft_point_id: capture-cc captures to root */
       0,  /* multi-shot */
       KosContext_TOKEN(ctx) ? (PyObject *) KosContext_TOKEN(ctx) : NULL);
   if (! k) {
@@ -2064,6 +2088,7 @@ KosContinuation *kos_continuation_clone(KosContinuation *k) {
       KosContinuation_RESUME_PC(k),
       KosStackBlock_COW(KosContinuation_RESUME_STACK(k)),
       KosContinuation_PROMPT_ID(k),
+      KosContinuation_GRAPT_POINT_ID(k),
       KosContinuation_ONE_SHOT(k),
       KosContinuation_TOKEN_REF(k));
   if (! clone) {
@@ -2078,6 +2103,17 @@ KosContinuation *kos_continuation_clone(KosContinuation *k) {
 /* === LCA computation === */
 
 
+static KosDynNode *kos_find_node_by_id(KosDynNode *chain, uint32_t id) {
+  KosDynNode *node = chain;
+  while (node) {
+    if (KosDynNode_NODE_ID(node) == id)
+      return node;
+    node = KosDynNode_PARENT(node);
+  }
+  return NULL;
+}
+
+
 static size_t kos_chain_depth(KosDynNode *node) {
   size_t depth = 0;
   while (node) {
@@ -2088,10 +2124,11 @@ static size_t kos_chain_depth(KosDynNode *node) {
 }
 
 
-KosDynNode *kos_compute_lca(KosDynNode *a, KosDynNode *b) {
+KosDynNode *kos_compute_lca(KosDynNode *a, KosDynNode *b, uint32_t graft_point_id) {
   if (! a || ! b)
     return NULL;
 
+  KosDynNode *orig_a = a;
   size_t depth_a = kos_chain_depth(a);
   size_t depth_b = kos_chain_depth(b);
 
@@ -2112,8 +2149,13 @@ KosDynNode *kos_compute_lca(KosDynNode *a, KosDynNode *b) {
   /* Walk together until we find LCA.  If the chains are disjoint (e.g. target
    * is a severed continuation template), we eventually hit NULL. */
   while (a != b) {
-    if (! a || ! b)
+    if (! a || ! b) {
+      /* Pointer match failed (disjoint chains); try ID fallback for graft point
+       * in the first chain (orig_a, typically current). */
+      if (graft_point_id)
+        return kos_find_node_by_id(orig_a, graft_point_id);
       return NULL;
+    }
     a = a->parent;
     b = b->parent;
   }
@@ -2357,10 +2399,11 @@ int kos_build_transfer_plan(
     KosDynNode *target,
     PyObject *value,
     int is_throw,
+    uint32_t graft_point_id,
     KosTransferPlan **out_plan) {
 
   KosDynNode *current = KosContext_DYN_TOP(ctx);
-  KosDynNode *lca = kos_compute_lca(current, target);
+  KosDynNode *lca = kos_compute_lca(current, target, graft_point_id);
   if (KOS_XFER_TRACE)
     SAYF("[xfer] build_plan current=%p target=%p lca=%p",
          (void *) current, (void *) target, (void *) lca);
@@ -2442,10 +2485,11 @@ int kos_build_direct_install_plan(
     KosDynNode *target,
     PyObject *value,
     int is_throw,
+    uint32_t graft_point_id,
     KosTransferPlan **out_plan) {
 
   KosDynNode *current = KosContext_DYN_TOP(ctx);
-  KosDynNode *lca = kos_compute_lca(current, target);
+  KosDynNode *lca = kos_compute_lca(current, target, graft_point_id);
   if (! lca) {
     /* Target may be an ancestor of current (path crosses prompt). */
     KosDynNode *n = current;
@@ -2499,10 +2543,11 @@ int kos_build_direct_install_plan(
 int kos_build_install_only_plan(
     KosContext *ctx,
     KosDynNode *target,
+    uint32_t graft_point_id,
     KosTransferPlan **out_plan) {
 
   KosDynNode *current = KosContext_DYN_TOP(ctx);
-  KosDynNode *lca = kos_compute_lca(current, target);
+  KosDynNode *lca = kos_compute_lca(current, target, graft_point_id);
   if (! lca) {
     KosDynNode *n = current;
     while (n && n != target)
@@ -2970,13 +3015,17 @@ int kos_invoke_continuation(
       SAYF("[xfer] kos_build_direct_install_plan (delimited) current=%p target=%p",
            (void *) KosContext_DYN_TOP(ctx), (void *) to_use->captured_chain);
     res = kos_build_direct_install_plan(ctx, to_use->captured_chain,
-                                        value, is_throw, &plan);
+                                        value, is_throw,
+                                        KosContinuation_GRAPT_POINT_ID(to_use),
+                                        &plan);
   } else {
     if (KOS_XFER_TRACE)
       SAYF("[xfer] kos_build_transfer_plan current=%p target=%p (template)",
            (void *) KosContext_DYN_TOP(ctx), (void *) to_use->captured_chain);
     res = kos_build_transfer_plan(ctx, to_use->captured_chain,
-                                  value, is_throw, &plan);
+                                  value, is_throw,
+                                  KosContinuation_GRAPT_POINT_ID(to_use),
+                                  &plan);
   }
   if (KOS_XFER_TRACE)
     SAYF("[xfer] plan build -> res=%d plan=%p", res, (void *) plan);

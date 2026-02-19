@@ -66,6 +66,7 @@ struct KosContinuation {
   uint32_t resume_pc;           /* pc to resume at */
   KosStackBlock *resume_stack;  /* stack state (COW reference) */
   uint32_t prompt_id;           /* target prompt tag (KOS_PROMPT_ID_UNDELIMITED for call/cc) */
+  uint32_t graft_point_id;      /* node_id of graft point for LCA fallback; 0 for capture-cc */
   uint8_t one_shot;             /* 0 = multi-shot, 1 = one-shot */
   PyObject *token_ref;          /* KosEvaluatorToken (ownership); NULL for legacy undelimited */
 };
@@ -136,7 +137,8 @@ int kos_invoke_continuation(KosContext *ctx, KosContinuation *k,
 2. **Build transfer plan**: Create action list for wind/unwind hooks
    ```c
    int kos_build_transfer_plan(KosContext *ctx, KosDynNode *target,
-           PyObject *value, int is_throw, KosTransferPlan **out_plan);
+           PyObject *value, int is_throw, uint32_t graft_point_id,
+           KosTransferPlan **out_plan);
    ```
 
 3. **Execute transfer**: Run the plan to completion
@@ -174,11 +176,13 @@ struct KosTransferPlan {
 ### LCA Computation
 
 ```c
-KosDynNode *kos_compute_lca(KosDynNode *a, KosDynNode *b);
+KosDynNode *kos_compute_lca(KosDynNode *a, KosDynNode *b, uint32_t graft_point_id);
 ```
 
-Finds the lowest common ancestor between two chain positions. Used to determine
-which hooks need to run during transfer.
+Finds the lowest common ancestor between two chain positions. Uses pointer
+equality first; when chains are disjoint (e.g. template vs current), a nonzero
+`graft_point_id` triggers an ID-based fallback to locate the graft point in the
+first chain. Used to determine which hooks need to run during transfer.
 
 ### Re-Entrant Transfers
 

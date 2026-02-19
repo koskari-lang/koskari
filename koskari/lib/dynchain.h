@@ -155,6 +155,7 @@ struct KosDynNode {
   KosDynKind kind;      /* discriminator for node type */
   uint32_t flags;       /* KosDynFlags bitfield */
   uint32_t caps;        /* capability bits for generic code (KOS_DYN_CAP_*) */
+  uint32_t node_id;     /* stable allocation ID; copied on clone for LCA matching */
 
   union {
     struct {
@@ -251,6 +252,7 @@ struct KosContinuation {
   uint32_t resume_pc;           /* pc to resume at */
   KosStackBlock *resume_stack;  /* stack state (COW reference) */
   uint32_t prompt_id;           /* target prompt tag */
+  uint32_t graft_point_id;      /* node_id of graft point for ID fallback; 0 = none */
   uint8_t one_shot;             /* 0 = multi-shot, 1 = one-shot */
   PyObject *token_ref;          /* KosEvaluatorToken (ownership marker) */
 };
@@ -261,6 +263,7 @@ struct KosContinuation {
 #define KosContinuation_RESUME_PC(k)       (((KosContinuation *)(k))->resume_pc)
 #define KosContinuation_RESUME_STACK(k)    (((KosContinuation *)(k))->resume_stack)
 #define KosContinuation_PROMPT_ID(k)       (((KosContinuation *)(k))->prompt_id)
+#define KosContinuation_GRAPT_POINT_ID(k)  (((KosContinuation *)(k))->graft_point_id)
 #define KosContinuation_ONE_SHOT(k)        (((KosContinuation *)(k))->one_shot)
 #define KosContinuation_TOKEN_REF(k)       (((KosContinuation *)(k))->token_ref)
 
@@ -1210,12 +1213,16 @@ KosContinuation *kos_continuation_clone(KosContinuation *k);
 /**
    Compute the lowest common ancestor between two chain positions.
 
-   :param a: first chain position
-   :param b: second chain position
+   Tries pointer equality first; when chains are disjoint (e.g. template vs
+   current), uses graft_point_id to find the graft point in chain a by node_id.
+
+   :param a: first chain position (typically current)
+   :param b: second chain position (typically target)
+   :param graft_point_id: node_id of graft point for ID fallback; 0 = none
 
    :return: LCA node, or NULL if chains don't share an ancestor
 */
-KosDynNode *kos_compute_lca(KosDynNode *a, KosDynNode *b);
+KosDynNode *kos_compute_lca(KosDynNode *a, KosDynNode *b, uint32_t graft_point_id);
 
 
 /**
@@ -1231,6 +1238,7 @@ KosDynNode *kos_compute_lca(KosDynNode *a, KosDynNode *b);
    :param target: target chain position
    :param value: resume value (borrowed, may be NULL)
    :param is_throw: if nonzero, throw value as exception
+   :param graft_point_id: node_id for LCA fallback when chains disjoint; 0 = none
    :param out_plan: output for transfer plan
 
    :return: 0 on success, -1 on error
@@ -1240,6 +1248,7 @@ int kos_build_transfer_plan(
    KosDynNode *target,
    PyObject *value,
    int is_throw,
+   uint32_t graft_point_id,
    KosTransferPlan **out_plan);
 
 
@@ -1248,6 +1257,8 @@ int kos_build_transfer_plan(
    Use when the path crosses a barrier (e.g. PROMPT) that cannot be
    popped.  Caller sets RESUME_PC etc. after return.
 
+   :param graft_point_id: node_id for LCA fallback when chains disjoint; 0 = none
+
    :return: 0 on success, -1 on error
 */
 int kos_build_direct_install_plan(
@@ -1255,6 +1266,7 @@ int kos_build_direct_install_plan(
    KosDynNode *target,
    PyObject *value,
    int is_throw,
+   uint32_t graft_point_id,
    KosTransferPlan **out_plan);
 
 
@@ -1274,10 +1286,13 @@ int kos_build_return_plan(
 /**
    Build a plan with only INSTALL and wind-before (no INJECT).
    Caller pushes frame and value after running the plan.
+
+   :param graft_point_id: node_id for LCA fallback when chains disjoint; 0 = none
 */
 int kos_build_install_only_plan(
    KosContext *ctx,
    KosDynNode *target,
+   uint32_t graft_point_id,
    KosTransferPlan **out_plan);
 
 
@@ -1479,6 +1494,7 @@ int kos_hookrunner_traverse(
 #define KosDynNode_PARENT(n)  (((KosDynNode *)(n))->parent)
 #define KosDynNode_FLAGS(n)   (((KosDynNode *)(n))->flags)
 #define KosDynNode_CAPS(n)    (((KosDynNode *)(n))->caps)
+#define KosDynNode_NODE_ID(n) (((KosDynNode *)(n))->node_id)
 #define KosDynNode_HAS_CAP(n, cap)  (KosDynNode_CAPS(n) & (cap))
 
 #define KosDynNode_IS_FRAME(n)   (KosDynNode_KIND(n) == KOS_DYN_FRAME)

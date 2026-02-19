@@ -106,7 +106,7 @@ KOS_OP_HANDLER(POP_SHIFT) {
   }
 
   if (kos_build_direct_install_plan(ctx, (KosDynNode *) target_frame,
-                                    result, 0, &plan) < 0) {
+                                    result, 0, 0, &plan) < 0) {
     Py_DECREF(result);
     return -1;
   }

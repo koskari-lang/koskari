@@ -130,6 +130,7 @@ struct KosContinuation {
   uint32_t resume_pc;           /* pc to resume at */
   KosStackBlock *resume_stack;  /* stack state (COW reference) */
   uint32_t prompt_id;           /* target prompt tag */
+  uint32_t graft_point_id;      /* node_id of graft point for LCA fallback; 0 for capture-cc */
   uint8_t one_shot;             /* 0 = multi-shot, 1 = one-shot */
 };
 ```
@@ -309,13 +310,13 @@ KosContinuation *kos_continuation_clone(KosContinuation *k);
 ### Transfer Planning
 
 ```c
-/* Compute LCA between two chain positions */
-KosDynNode *kos_compute_lca(KosDynNode *a, KosDynNode *b);
+/* Compute LCA between two chain positions; graft_point_id enables ID fallback when chains disjoint */
+KosDynNode *kos_compute_lca(KosDynNode *a, KosDynNode *b, uint32_t graft_point_id);
 
 /* Build transfer plan */
 int kos_build_transfer_plan(KosContext *ctx,
         KosDynNode *target, PyObject *value, int is_throw,
-        KosTransferPlan **out_plan);
+        uint32_t graft_point_id, KosTransferPlan **out_plan);
 
 /* Execute next step of transfer plan */
 int kos_run_transfer_step(KosContext *ctx);
