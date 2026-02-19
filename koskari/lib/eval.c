@@ -917,7 +917,7 @@ static PyObject *get_await_next(PyObject *val) {
 
    :return: 0 continue, -1 error
 */
-static int push_result(KosContext *ctx, PyObject *val) {
+KOS_OP_INLINE int push_result(KosContext *ctx, PyObject *val) {
 
   if (! val)
     return -1;
@@ -2250,7 +2250,7 @@ entry_mode_dispatch:
     goto koskari_eval_cleanup;
   }
 
-  if (! CURRENT_FRAME(ctx) && ! kos_hook_active(ctx)) {
+  if (! CURRENT_FRAME(ctx) && ! KosContext_HOOK_ACTIVE(ctx)) {
     KosEvent_KIND(out_ev) = KOS_EV_RETURN;
     KosEvent_PAYLOAD(out_ev) = Py_None;
     Py_INCREF(Py_None);
@@ -2274,7 +2274,7 @@ eval_loop_start:
   for (;;) {
     next_insn:
     /* Clear resume kind from previous op (YIELD_FROM clears when it consumes; others leave it set). */
-    if (KosContext_PY_RESUME_KIND(ctx) != KOS_RESUME_NONE)
+    if (unlikely(KosContext_PY_RESUME_KIND(ctx) != KOS_RESUME_NONE))
       KosContext_PY_RESUME_KIND(ctx) = KOS_RESUME_NONE;
 #if KOS_STACK_TRACE
     trace_stack("  after ", CURRENT_STACK(ctx));
@@ -2293,10 +2293,11 @@ eval_loop_start:
       continue;
     }
 
-    KosCode *code = kos_hook_active(ctx)
+    int in_hook = KosContext_HOOK_ACTIVE(ctx);
+    KosCode *code = in_hook
         ? KosHookRunner_CODE(KosContext_HOOK_RUNNER(ctx))
         : CURRENT_CODE(ctx);
-    uint32_t pc = kos_hook_active(ctx)
+    uint32_t pc = in_hook
         ? KosHookRunner_PC(KosContext_HOOK_RUNNER(ctx))
         : CURRENT_PC(ctx);
 
@@ -2318,7 +2319,7 @@ eval_loop_start:
 
     /* Advance PC before dispatch so normal path advances. If handler returns 1
        (suspend, e.g. WITH enter/exit await) we roll back so next eval is same insn. */
-    if (kos_hook_active(ctx))
+    if (in_hook)
       KosHookRunner_PC(KosContext_HOOK_RUNNER(ctx)) = pc + 1;
     else
       CURRENT_PC(ctx) = pc + 1;
@@ -2369,7 +2370,7 @@ eval_loop_start:
           KosOpCode op = (KosOpCode) KosOp_OP(insn);
           if (op == KOS_OP_PUSH_WITH || op == KOS_OP_POP_WITH
               || op == KOS_OP_PUSH_DYN_WITH || op == KOS_OP_POP_DYN_WITH) {
-            if (kos_hook_active(ctx)) {
+            if (in_hook) {
               KosHookRunner_PC(KosContext_HOOK_RUNNER(ctx)) = pc;
             } else {
               CURRENT_PC(ctx) = pc;

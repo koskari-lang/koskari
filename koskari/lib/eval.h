@@ -283,6 +283,7 @@ struct KosContext {
 #define KosContext_TOKEN(c)                  (((KosContext *)(c))->token)
 #define KosContext_DOMAIN(c)                 (((KosContext *)(c))->domain)
 #define KosContext_HOOK_RUNNER(c)            (&((KosContext *)(c))->hook_runner)
+#define KosContext_HOOK_ACTIVE(c)            KosHookRunner_ACTIVE(KosContext_HOOK_RUNNER(c))
 #define KosContext_UNWIND_TARGET_FRAME(c)    (((KosContext *)(c))->unwind_target_frame)
 #define KosContext_UNWIND_TARGET_FRAME(c)    (((KosContext *)(c))->unwind_target_frame)
 #define KosContext_PENDING_RETURN_VALUE(c)   (((KosContext *)(c))->pending_return_value)

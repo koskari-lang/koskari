@@ -2722,7 +2722,7 @@ int kos_begin_hook(KosContext *ctx, KosCode *code, uint32_t pc) {
 
 
 int kos_hook_active(KosContext *ctx) {
-  return KosHookRunner_ACTIVE(KosContext_HOOK_RUNNER(ctx));
+  return KosContext_HOOK_ACTIVE(ctx);
 }
 
 
