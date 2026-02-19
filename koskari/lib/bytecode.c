@@ -865,14 +865,15 @@ static int derive_extents(
         goto failure;
       }
 
+      /* Extent range is [push_pc, pop_pc): push_pc and body are inside; pop_pc
+       * is outside (executing the POP exits the extent).  Do not set
+       * top_extent_id[pc]; kos_extent_top at pop_pc returns KOS_EXTENT_NONE. */
       uint32_t enter_pc = extents[eid].push_pc + 1;
       for (uint32_t j = enter_pc; j < pc; j++) {
         if (top_extent_id[j] == KOS_EXTENT_NONE) {
           top_extent_id[j] = (uint16_t) eid;
         }
       }
-      if (top_extent_id[pc] == KOS_EXTENT_NONE)
-        top_extent_id[pc] = (uint16_t) eid;
 
       stack_top--;
     }
@@ -1572,6 +1573,25 @@ uint32_t kos_extent_find(PyObject *code, uint32_t pc, KosExtentKind kind) {
     eid = extents[eid].parent_extent_id;
   }
 
+  return KOS_EXTENT_NONE;
+}
+
+
+uint32_t kos_extent_find_by_pop_pc(PyObject *code, uint32_t pop_pc,
+    KosExtentKind kind) {
+
+  if (! code || ! KosCode_Check(code)) {
+    return KOS_EXTENT_NONE;
+  }
+
+  KosExtentDesc *extents = KosCode_EXTENTS(code);
+  uint32_t extent_len = KosCode_EXTENT_LEN(code);
+
+  for (uint32_t eid = 0; eid < extent_len; eid++) {
+    if (extents[eid].kind == kind && extents[eid].pop_pc == pop_pc) {
+      return eid;
+    }
+  }
   return KOS_EXTENT_NONE;
 }
 

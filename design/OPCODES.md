@@ -123,7 +123,7 @@ KosCode. Many opcodes have different argument meaning in each form.
 
 | Pre-compile arg        | Post-compile arg        | Opcodes (examples) |
 |------------------------|-------------------------|---------------------|
-| String label name      | pc (uint16)             | JUMP, JUMP_FALSE, JUMP_TRUE, JUMP_AND, JUMP_OR, ITER_NEXT, CHECK_*, SET_PROMPT_HANDLER, PUSH_LOOP, PUSH_FOREACH, PUSH_TRY, PUSH_FINALLY, PUSH_WIND, PUSH_REGION |
+| String label name      | pc (uint16)             | JUMP, JUMP_FALSE, JUMP_TRUE, JUMP_AND, JUMP_OR, ITER_NEXT, CHECK_*, PUSH_LOOP, PUSH_FOREACH, PUSH_TRY, PUSH_FINALLY, PUSH_WIND, PUSH_REGION |
 | Literal value          | Constant pool index     | CONST |
 | Name (string/symbol)   | Constant pool index     | VAR, VAR_BIND, VAR_CLEAR, VAR_REF, VAR_STORE; ATTR*, CONST_ITEM* (key); INVOKE_K_VAR |
 | Name → slot (optional) | Fast local index       | VAR may be lowered to FAST*; then arg is slot index |
@@ -177,7 +177,7 @@ When adding or changing an opcode:
 - [18. Block control](#18-block-control) — PUSH_FOREACH, PUSH_LOOP, PUSH_NS, PUSH_TRY, PUSH_FINALLY, CLEAR_*, POP_*
 - [18.1 Context managers (with / dyn-with)](#181-context-managers-with--dyn-with) — PUSH_WITH, POP_WITH, PUSH_DYN_WITH, POP_DYN_WITH
 - [19. Object protocol](#19-object-protocol) — OBJECT_* (comparisons, predicates, numeric, general)
-- [20. Delimited continuations](#20-delimited-continuations) — PUSH_PROMPT, SET_PROMPT_HANDLER, POP_PROMPT, SHIFT, INVOKE_K, INVOKE_K_VAR
+- [20. Delimited continuations](#20-delimited-continuations) — PUSH_PROMPT, PUSH_SHIFT, POP_SHIFT, POP_PROMPT, INVOKE_K, INVOKE_K_VAR
 - [21. Undelimited continuations (call/cc)](#21-undelimited-continuations-callcc) — PUSH_CC, POP_CC, CAPTURE_CC
 - [22. Dynamic wind](#22-dynamic-wind) — PUSH_WIND, POP_WIND, END_WIND
 - [23. Region control](#23-region-control) — PUSH_REGION, POP_REGION
@@ -242,9 +242,9 @@ When adding or changing an opcode:
 | PUSH_NS | COUNT | Push namespace scope | [§18](#kos_op_push_ns) |
 | PUSH_TRY | LABEL | Push try region | [§18](#kos_op_push_try) |
 | PUSH_PROMPT | CONST | Push prompt (delimited cont.) | [§20](#kos_op_push_prompt) |
-| SET_PROMPT_HANDLER | LABEL | Set handler for top prompt | [§20](#kos_op_set_prompt_handler) |
+| PUSH_SHIFT | CONST | Capture continuation, enter shift block | [§20](#kos_op_push_shift) |
+| POP_SHIFT | NOARG | Return from shift block without invoking k | [§20](#kos_op_pop_shift) |
 | POP_PROMPT | NOARG | Pop prompt | [§20](#kos_op_pop_prompt) |
-| SHIFT | CONST | Capture continuation, abort to prompt | [§20](#kos_op_shift) |
 | INVOKE_K | NOARG | Pop value, pop k; invoke k(value) | [§20](#kos_op_invoke_k) |
 | INVOKE_K_VAR | CONST | Invoke continuation by name | [§20](#kos_op_invoke_k_var) |
 | THEEND | NOARG | Unreachable; no runtime | [§25](#kos_op_theend) |
@@ -1684,13 +1684,17 @@ Object protocol opcodes: single Python operation on TOS (and optionally below); 
 
 ## 20. Delimited continuations
 
+Delimited continuations use a block-based layout: PUSH_PROMPT establishes the
+reset; PUSH_SHIFT and POP_SHIFT delimit the shift block (handler); the
+continuation is the code between POP_SHIFT and POP_PROMPT.
+
 ### KOS_OP_PUSH_PROMPT
 
 - **Style**: CONST. Arg = prompt_id (constant pool index, post-compile).
 - **Status**: Implemented.
 - **Stack**: No stack change. Pushes prompt onto dynamic chain.
-- **Pushes:** KOS_DYN_PROMPT (static extent KOS_EXT_PROMPT; SHIFT captures up to this prompt).
-- **Invariants**: SHIFT captures up to this prompt.
+- **Pushes:** KOS_DYN_PROMPT (static extent KOS_EXT_PROMPT; PUSH_SHIFT captures up to this prompt).
+- **Invariants**: PUSH_SHIFT captures up to this prompt.
 - **Compiler form:** Pre-compile arg may be prompt id value or symbol; post-compile arg = pool index.
 
 **Example:** reset (push prompt). Pool: 0 = prompt_id.
@@ -1698,26 +1702,44 @@ Object protocol opcodes: single Python operation on TOS (and optionally below); 
 | index | opcode     | arg | arg view | comment |
 |------:|------------|-----|----------|---------|
 | 0     | PUSH_PROMPT| 0   | 0 (pid)  | push prompt onto chain |
-| 1     | SET_PROMPT_HANDLER | 3 | 3 (-> 3) | handler at 3 |
-| 2     | …          | …   | …        | body (may SHIFT) |
-| 3     | LABEL      | —   | —        | handler: (k, val) |
-| 4     | POP_PROMPT | 0   | 0        | pop prompt |
+| 1     | …          | …   | …        | body before shift (continuation prefix) |
+| 2     | PUSH_SHIFT | 0   | 0 (pid)  | capture k; enter shift block with k on stack |
+| 3     | …          | …   | …        | shift body (k available) |
+| 4     | POP_SHIFT  | 0   | 0        | return from shift without invoking |
+| 5     | …          | …   | …        | continuation (body after shift) |
+| 6     | POP_PROMPT | 0   | 0        | pop prompt |
 
 ---
 
-### KOS_OP_SET_PROMPT_HANDLER
+### KOS_OP_PUSH_SHIFT
 
-- **Style**: LABEL. Arg = handler pc (post-compile).
+- **Style**: CONST. Arg = prompt_id (constant pool index, post-compile).
 - **Status**: Implemented.
-- **Stack**: No stack change. Sets handler for top prompt.
-- **Invariants**: Must be immediately after PUSH_PROMPT (or before code that can capture).
-- **Compiler form:** Pre-compile arg = string label (handler block); post-compile arg = pc.
+- **Stack**: Captures continuation from POP_SHIFT+1 to POP_PROMPT; unwinds to prompt; pushes continuation onto stack; enters shift block. Shift body runs with k on stack.
+- **Invariants**: No PYCALL node between current position and prompt. Capture validated by kos_validate_capture. Extent KOS_EXT_SHIFT pairs with POP_SHIFT.
+- **Compiler form:** Pre-compile arg may be prompt id value/symbol; post-compile arg = pool index.
 
-**Example:** See PUSH_PROMPT table; arg = 3 (-> 3).
+**Example:** shift k: body. Capture k, run shift body with k on stack. Pool: 0 = prompt_id.
 
-| index | opcode           | arg | arg view | comment |
-|------:|------------------|-----|----------|---------|
-| 1     | SET_PROMPT_HANDLER | 3  | 3 (-> 3) | handler for top prompt at pc 3 |
+| index | opcode    | arg | arg view | comment |
+|------:|-----------|-----|----------|---------|
+| 2     | PUSH_SHIFT| 0   | 0 (pid)  | capture k; unwind to prompt; push k; enter shift block |
+
+---
+
+### KOS_OP_POP_SHIFT
+
+- **Style**: NOARG.
+- **Status**: Implemented.
+- **Stack**: Pops TOS as result; builds transfer plan; unwinds SHIFT and PROMPT blocks; jumps past POP_PROMPT; pushes result. Handler returns without invoking k.
+- **Invariants**: Must be inside a PUSH_SHIFT extent (parent is PROMPT extent).
+- **Compiler form:** No argument.
+
+**Example:** Shift handler returns value without invoking k.
+
+| index | opcode   | arg | arg view | comment |
+|------:|----------|-----|----------|---------|
+| 4     | POP_SHIFT| 0   | 0        | pop result; unwind to past POP_PROMPT; push result |
 
 ---
 
@@ -1732,24 +1754,7 @@ Object protocol opcodes: single Python operation on TOS (and optionally below); 
 
 | index | opcode    | arg | arg view | comment |
 |------:|-----------|-----|----------|---------|
-| 4     | POP_PROMPT| 0   | 0        | pop prompt from chain |
-
----
-
-### KOS_OP_SHIFT
-
-- **Style**: CONST. Arg = prompt_id (constant pool index, post-compile).
-- **Status**: Implemented.
-- **Stack**: Captures continuation from current point up to prompt; aborts to prompt handler with (continuation, value). Value typically from TOS.
-- **Invariants**: No PYCALL node between current position and prompt. Capture validated by kos_validate_capture.
-- **Compiler form:** Pre-compile arg may be prompt id value/symbol; post-compile arg = pool index.
-
-**Example:** shift k: body. Capture k, pass to handler. Pool: 0 = prompt_id.
-
-| index | opcode | arg | arg view | comment |
-|------:|--------|-----|----------|---------|
-| 2     | CONST  | 1   | 1 (42)   | stack: [..., 42] (value to send to handler) |
-| 3     | SHIFT  | 0   | 0 (pid)  | capture continuation; abort to prompt handler with (k, 42) |
+| 6     | POP_PROMPT| 0   | 0        | pop prompt from chain |
 
 ---
 

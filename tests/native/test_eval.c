@@ -375,9 +375,10 @@ static int test_eval_try_finally_rerase(void) {
 
 static int test_eval_reset_shift_invoke(void) {
     /*
-      Bytecode: PUSH_PROMPT 0, SET_PROMPT_HANDLER 8, CONST 1, SHIFT 0,
-      OBJECT_ADD 2, POP_PROMPT, RETURN. Handler at 8: LABEL 8, CONST 5,
-      INVOKE_K (pop value 5, pop cont, invoke). Expect final KOS_EV_RETURN with value 6.
+      Bytecode: PUSH_PROMPT 0, CONST 1, PUSH_SHIFT 0, CONST 5, INVOKE_K 0,
+      POP_SHIFT 0, OBJECT_ADD 2, POP_PROMPT 0, RETURN 1.
+      (+ 1 (shift k (k 5))) => 6. Shift body: k on stack, CONST 5, INVOKE_K.
+      Continuation: OBJECT_ADD 2 (1+5=6), POP_PROMPT, RETURN.
     */
     PyObject *nspec = create_test_nspec();
     TEST_ASSERT_NOT_NULL(nspec, "create nspec");
@@ -385,21 +386,17 @@ static int test_eval_reset_shift_invoke(void) {
     PyObject *zero = PyLong_FromLong(0);
     PyObject *one = PyLong_FromLong(1);
     PyObject *five = PyLong_FromLong(5);
-    PyObject *label_8 = PyLong_FromLong(8);
 
-    PyObject *instr = PyList_New(12);
+    PyObject *instr = PyList_New(9);
     PyList_SET_ITEM(instr, 0, make_instr(KOS_OP_PUSH_PROMPT, zero));
-    PyList_SET_ITEM(instr, 1, make_instr(KOS_OP_SET_PROMPT_HANDLER, label_8));
-    PyList_SET_ITEM(instr, 2, make_instr(KOS_OP_CONST, one));
-    PyList_SET_ITEM(instr, 3, make_instr(KOS_OP_SHIFT, zero));
-    PyList_SET_ITEM(instr, 4, make_instr_int(KOS_OP_OBJECT_ADD, 2));
-    PyList_SET_ITEM(instr, 5, make_instr_int(KOS_OP_POP_PROMPT, 0));
-    PyList_SET_ITEM(instr, 6, make_instr_int(KOS_OP_RETURN, 0));
-    PyList_SET_ITEM(instr, 7, make_instr_int(KOS_OP_NOOP, 0));
-    PyList_SET_ITEM(instr, 8, make_instr(KOS_OP_LABEL, label_8));
-    PyList_SET_ITEM(instr, 9, make_instr(KOS_OP_CONST, five));
-    PyList_SET_ITEM(instr, 10, make_instr_int(KOS_OP_INVOKE_K, 0));
-    PyList_SET_ITEM(instr, 11, make_instr_int(KOS_OP_RETURN, 0));
+    PyList_SET_ITEM(instr, 1, make_instr(KOS_OP_CONST, one));
+    PyList_SET_ITEM(instr, 2, make_instr(KOS_OP_PUSH_SHIFT, zero));
+    PyList_SET_ITEM(instr, 3, make_instr(KOS_OP_CONST, five));
+    PyList_SET_ITEM(instr, 4, make_instr_int(KOS_OP_INVOKE_K, 0));
+    PyList_SET_ITEM(instr, 5, make_instr_int(KOS_OP_POP_SHIFT, 0));
+    PyList_SET_ITEM(instr, 6, make_instr_int(KOS_OP_OBJECT_ADD, 2));
+    PyList_SET_ITEM(instr, 7, make_instr_int(KOS_OP_POP_PROMPT, 0));
+    PyList_SET_ITEM(instr, 8, make_instr_int(KOS_OP_RETURN, 1));
 
     PyObject *code_obj = KosCode_New(nspec, instr, NULL, NULL);
     TEST_ASSERT_NOT_NULL(code_obj, "create Code");
@@ -407,7 +404,6 @@ static int test_eval_reset_shift_invoke(void) {
     Py_DECREF(zero);
     Py_DECREF(one);
     Py_DECREF(five);
-    Py_DECREF(label_8);
     Py_DECREF(instr);
     Py_DECREF(nspec);
 

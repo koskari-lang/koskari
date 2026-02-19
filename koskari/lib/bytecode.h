@@ -306,6 +306,8 @@ int kos_loc_lookup(PyObject *code, uint32_t pc, uint16_t *line, uint16_t *col);
 
 uint32_t kos_extent_top(PyObject *code, uint32_t pc);
 uint32_t kos_extent_find(PyObject *code, uint32_t pc, KosExtentKind kind);
+uint32_t kos_extent_find_by_pop_pc(PyObject *code, uint32_t pop_pc,
+    KosExtentKind kind);
 KosExtentDesc *kos_extent_desc(PyObject *code, uint32_t extent_id);
 
 

@@ -34,7 +34,7 @@ Primary goals:
 
 * **pc**: instruction index into `code->insns[]`.
 * **IC / return point**: a compiler-designated destination pc used as the "continuation return pc" for a block (not necessarily a `RETURN`).
-* **Extent / block**: a statically known region of code with entry/exit semantics (TRY, LOOP, PROMPT/RESET, SHIFT-BODY, CALLCC-BIND, etc.).
+* **Extent / block**: a statically known region of code with entry/exit semantics (TRY, LOOP, PROMPT/RESET, SHIFT, CALLCC-BIND, etc.).
 * **Boundary pc**: a pc immediately after a PUSH-boundary or immediately before a POP-boundary for a block.
 * **Compressed bytecode**: the final `op,arg` instruction stream stored in the code object.
 * **Pre-compressed stream**: the compiler's initial stream, which may include compile-time opcodes like `LABEL` and `POSITION`, and may embed constants by value rather than pool indices.
@@ -128,7 +128,7 @@ An extent descriptor is immutable and references pcs by index. It is a **tagged 
 
 Common fields:
 
-* `kind`: TRY, LOOP, RESET/PROMPT, SHIFT_BODY, CALLCC_BIND, etc.
+* `kind`: TRY, LOOP, RESET/PROMPT, SHIFT, CALLCC_BIND, etc.
 * `push_pc`
 * `pop_pc`
 * `parent_extent_id` (nesting)
@@ -143,7 +143,7 @@ Kind-specific payload (union `u`; use the variant for the extent kind):
 * TRY, FINALLY: `u.try_finally` — `except_pc`, `else_pc`, `finally_pc`, `exit_pc` (use 0xFFFF for none)
 * LOOP, FOREACH: `u.loop` — `break_pc`, `continue_pc`
 * WITH, CALLCC_BIND: `u.exit_only` — `exit_pc`
-* SHIFT_BODY: `u.shift` — `ic_pc` (the "end-of-shift" continuation pc)
+* SHIFT: `u.shift` — `ic_pc` (the "end-of-shift" continuation pc)
 * Other kinds: no targets; union is still initialized (e.g. to NONE) for consistency
 
 ### pc→Extent Lookup
@@ -194,7 +194,7 @@ Any place the evaluator previously scanned forward to find a sentinel or a match
 
 **Non-local jumps are forbidden** for control-flow jump opcodes. During Code construction we validate that JUMP, JUMP_FALSE, JUMP_TRUE, JUMP_AND, JUMP_OR, ITER_NEXT, and all CHECK_* opcodes do **not** target a pc outside the current active block. ITER_NEXT must be inside a PUSH_FOREACH block.
 
-**Excluded from validation**: PUSH_TRY, PUSH_FINALLY, PUSH_LOOP, SET_PROMPT_HANDLER, PUSH_WITH, etc. Their args are handler/target labels that may legitimately point outside the block (e.g. exception handler after POP_TRY).
+**Excluded from validation**: PUSH_TRY, PUSH_FINALLY, PUSH_LOOP, PUSH_WITH, etc. Their args are handler/target labels that may legitimately point outside the block (e.g. exception handler after POP_TRY).
 
 Definitions:
 
@@ -280,21 +280,14 @@ Finalize must validate:
 
 ---
 
-## 8. Use-Case: SHIFT / end-of-shift IC jump
+## 8. Use-Case: PUSH_SHIFT / POP_SHIFT and end-of-shift IC jump
 
-### Current pain
+### Current behavior
 
-At end of a SHIFT body, evaluator needs to find the "ic" / return point, currently by scanning forward to locate a marker.
-
-### New behavior
-
-* SHIFT compilation emits an extent of kind `SHIFT_BODY` with `ic_pc`.
-* Evaluator, when executing the terminal opcode of the shift body, performs:
-
-  * `ic = kos_shift_ic_for(code, pc)` (or `e->u.shift.ic_pc` when e is the SHIFT_BODY extent)
-  * `pc = ic`
-
-No scanning.
+* PUSH_SHIFT/POP_SHIFT form an extent of kind `KOS_EXT_SHIFT` with `pop_pc` at POP_SHIFT.
+* The extent's `ic_pc` (continuation resume point) is `pop_pc + 1` (first instruction after POP_SHIFT).
+* POP_SHIFT uses `kos_extent_find_by_pop_pc(code, pop_pc, KOS_EXT_SHIFT)` to find the extent (since at pop_pc, `kos_extent_top` returns NONE).
+* PUSH_SHIFT uses `kos_shift_ic_for(code, pc)` at push_pc to get `pop_pc + 1` for the captured continuation.
 
 ---
 
@@ -422,13 +415,14 @@ These are not blockers, but they are common footguns in table-driven designs.
 APIs in `bytecode.h` / `bytecode.c`:
 
 * `kos_loc_lookup(code, pc, line, col)` — returns 0 on success, -1 on error
-* `kos_extent_top(code, pc)` — extent_id or KOS_EXTENT_NONE
+* `kos_extent_top(code, pc)` — extent_id or KOS_EXTENT_NONE. At pop_pc returns KOS_EXTENT_NONE (extent range is [push_pc, pop_pc)).
 * `kos_extent_find(code, pc, kind)` — extent_id or KOS_EXTENT_NONE
+* `kos_extent_find_by_pop_pc(code, pop_pc, kind)` — extent_id for extent with given pop_pc and kind, or KOS_EXTENT_NONE. Used by POP handlers at pop_pc.
 * `kos_extent_desc(code, extent_id)` — KosExtentDesc pointer or NULL
 * `kos_try_handler_for(code, pc, out)` — fills KosTryHandler; returns 0 if found, -1 otherwise
-* `kos_shift_ic_for(code, pc)` — ic_pc for SHIFT_BODY extent, or KOS_EXTENT_NONE
+* `kos_shift_ic_for(code, pc)` — ic_pc for SHIFT extent, or KOS_EXTENT_NONE
 
-Extent kinds: TRY, LOOP, PROMPT, SHIFT_BODY, CALLCC_BIND, FINALLY, WIND, WITH, FOREACH, BEGIN, NS. PUSH/POP pairs: TRY, LOOP, FINALLY, PROMPT, WITH, BEGIN, NS, WIND, REGION, FOREACH (FOREACH→POP_LOOP).
+Extent kinds: TRY, LOOP, PROMPT, SHIFT, CALLCC_BIND, FINALLY, WIND, WITH, FOREACH, BEGIN, NS. PUSH/POP pairs: TRY, LOOP, FINALLY, PROMPT, SHIFT (PUSH_SHIFT/POP_SHIFT), WITH, BEGIN, NS, WIND, REGION, FOREACH (FOREACH→POP_LOOP).
 
 ---
 
