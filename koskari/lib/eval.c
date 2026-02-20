@@ -78,11 +78,19 @@
    Clear the context's transfer plan and free it.  Plan pointer is nulled
    before freeing so any re-entrant eval (e.g. from Py_XDECREF(continuation_ref)
    triggering Python dealloc/__del__) does not see the plan while it is freed.
+   For PUSH_SHIFT unwind plans, transfers continuation_ref to push_shift_pending
+   so the opcode can push the handler frame on re-entry.
 */
 static void clear_and_free_transfer_plan(KosContext *ctx) {
   KosTransferPlan *p = KosContext_PLAN(ctx);
   KosContext_PLAN(ctx) = NULL;
   KosContext_FLAGS(ctx) &= ~KOS_CTX_IN_TRANSFER;
+  if (p && KosTransferPlan_CONTINUATION_REF(p)
+      && KosTransferPlan_ORIGINAL_TARGET(p)
+      && KosDynNode_IS_PROMPT(KosTransferPlan_ORIGINAL_TARGET(p))) {
+    KosContext_PUSH_SHIFT_PENDING(ctx) = KosTransferPlan_CONTINUATION_REF(p);
+    KosTransferPlan_CONTINUATION_REF(p) = NULL;
+  }
   kos_free_transfer_plan(p);
 }
 
@@ -97,7 +105,7 @@ static int run_transfer_plan_to_completion(KosContext *ctx, KosEvent *out_ev) {
     SAYF("[eval] transfer step %zu/%zu\n",
          (size_t) KosTransferPlan_ACTION_INDEX(KosContext_PLAN(ctx)),
          (size_t) KosTransferPlan_ACTION_COUNT(KosContext_PLAN(ctx)));
-    int plan_res = kos_run_transfer_step(ctx);
+    int plan_res = kos_run_transfer_step(ctx, out_ev);
     if (plan_res < 0) {
       SAY("[eval] transfer step failed -> KOS_EV_RAISE\n");
       KosEvent_KIND(out_ev) = KOS_EV_RAISE;
@@ -598,6 +606,7 @@ KosContext *kos_context_new(KosDynFrame *top) {
   KosContext_RETURN_TARGET_PC(ctx) = (uint32_t) -1;
   KosContext_DELIMITED_RETURN_FRAME(ctx) = NULL;
   KosContext_DELIMITED_RETURN_PC(ctx) = (uint32_t) -1;
+  KosContext_DELIMITED_RETURN_NODE(ctx) = NULL;
 
   /* Initialize Python await bridging */
   KosContext_PY_AWAIT_ITER(ctx) = NULL;
@@ -677,6 +686,8 @@ void kos_context_free(KosContext *ctx) {
   kos_clear_pending_with_exit(ctx);
   Py_XDECREF(KosContext_PLAN_RESUME_INJECT(ctx));
   KosContext_PLAN_RESUME_INJECT(ctx) = NULL;
+  Py_XDECREF(KosContext_PUSH_SHIFT_PENDING(ctx));
+  KosContext_PUSH_SHIFT_PENDING(ctx) = NULL;
   KosContext_PLAN_SUSPENDED_AWAIT(ctx) = 0;
 
   if (context_freecount < CONTEXT_MAX_FREE) {
@@ -721,6 +732,7 @@ int kos_context_traverse(
     Py_VISIT(KosContext_PENDING_WITH_EXIT_TB(ctx));
   }
   Py_VISIT(KosContext_PLAN_RESUME_INJECT(ctx));
+  Py_VISIT(KosContext_PUSH_SHIFT_PENDING(ctx));
 
   /* Traverse the dynamic chain */
   int res = kos_dynchain_traverse(KosContext_DYN_TOP(ctx), NULL, visit, arg);
@@ -1178,6 +1190,9 @@ int kos_complete_pending_with_exit(KosContext *ctx) {
 
   if (! KosContext_PENDING_WITH_EXIT_NODE(ctx))
     return 0;
+
+  if (! KosContext_FRAME_TOP(ctx))
+    return -1;
 
   PyObject *result = KosStackBlock_PopRef(&CURRENT_STACK(ctx));
   if (! result) {
@@ -2099,7 +2114,14 @@ static int try_local_exception_handler(KosContext *ctx, KosEvent *out_ev) {
       while (KosContext_DYN_TOP(ctx) != NULL
              && KosContext_DYN_TOP(ctx) != (KosDynNode *) CURRENT_FRAME(ctx)) {
         KosDynNode *top = KosContext_DYN_TOP(ctx);
-        int top_may_swallow = (top && KosDynNode_HAS_CAP(top, KOS_DYN_CAP_MAY_SWALLOW_EXCEPTION));
+        int top_may_swallow = (top && KosDynNode_HAS_CAP(top, KOS_DYN_CAP_CATCH));
+        uint32_t catch_resume_pc = (uint32_t) -1;
+        if (top && top_may_swallow) {
+          if (KosDynNode_IS_CC(top))
+            catch_resume_pc = KosDynCC_RESUME_PC((KosDynCC *) top);
+          else if (KosDynNode_IS_WITH_OR_DYN_WITH(top))
+            catch_resume_pc = KosDynWith_RESUME_PC((KosDynWith *) top);
+        }
         /* Some nodes' pop can call PyErr_Clear(); preserve exception across pop */
         PyObject *saved_typ = NULL, *saved_val = NULL, *saved_tb = NULL;
         if (top && KosDynNode_HAS_CAP(top, KOS_DYN_CAP_PRESERVE_ERR_ACROSS_POP) && PyErr_Occurred())
@@ -2139,6 +2161,8 @@ static int try_local_exception_handler(KosContext *ctx, KosEvent *out_ev) {
         /* Only continue when a node with may-swallow swallowed; other nodes
            may clear PyErr in their teardown (e.g. delegate close). */
         if (top_may_swallow && ! PyErr_Occurred()) {
+          if (catch_resume_pc != (uint32_t) -1 && CURRENT_FRAME(ctx))
+            CURRENT_PC(ctx) = catch_resume_pc;
           return 1;
         }
       }
@@ -2254,6 +2278,11 @@ entry_mode_dispatch:
   if (mode == KOS_MODE_EXCEPTION) {
     clear_pending_agen_on_error(ctx);
     if (try_local_exception_handler(ctx, out_ev)) {
+      if (KosEvent_KIND(out_ev) == KOS_EV_AWAIT) {
+        KosContext_SUSPENSION_EVENT(ctx) = KOS_SUSP_AWAIT;
+        eval_ret = 0;
+        goto koskari_eval_cleanup;
+      }
       mode = KOS_MODE_NORMAL;
       goto eval_loop_start;
     }
@@ -2320,10 +2349,21 @@ eval_loop_start:
         eval_ret = 0;
         goto koskari_eval_cleanup;
       }
+      if (KosEvent_KIND(out_ev) == KOS_EV_AWAIT) {
+        KosContext_SUSPENSION_EVENT(ctx) = KOS_SUSP_AWAIT;
+        eval_ret = 0;
+        goto koskari_eval_cleanup;
+      }
       continue;
     }
 
     int in_hook = KosContext_HOOK_ACTIVE(ctx);
+    if (! in_hook && ! CURRENT_FRAME(ctx)) {
+      PyErr_SetString(PyExc_RuntimeError,
+                      "eval loop: no active frame and not in hook");
+      eval_ret = -1;
+      goto koskari_eval_cleanup;
+    }
     KosCode *code = in_hook
         ? KosHookRunner_CODE(KosContext_HOOK_RUNNER(ctx))
         : CURRENT_CODE(ctx);
@@ -2392,8 +2432,14 @@ eval_loop_start:
       if (unlikely(op_res != 0)) {
         if (PyErr_Occurred()) {
           clear_pending_agen_on_error(ctx);
-          if (try_local_exception_handler(ctx, out_ev))
+          if (try_local_exception_handler(ctx, out_ev)) {
+            if (KosEvent_KIND(out_ev) == KOS_EV_AWAIT) {
+              KosContext_SUSPENSION_EVENT(ctx) = KOS_SUSP_AWAIT;
+              eval_ret = 0;
+              goto koskari_eval_cleanup;
+            }
             continue;
+          }
 
           eval_ret = 0;
           goto koskari_eval_cleanup;

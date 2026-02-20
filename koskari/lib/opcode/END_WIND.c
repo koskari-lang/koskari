@@ -61,6 +61,7 @@ KOS_OP_HANDLER(END_WIND) {
         KosContext_INVOCATION_SEGMENT_TOP(ctx) = NULL;
         KosContext_DELIMITED_RETURN_FRAME(ctx) = NULL;
         KosContext_DELIMITED_RETURN_PC(ctx) = (uint32_t) -1;
+        KosContext_DELIMITED_RETURN_NODE(ctx) = NULL;
       } else {
         KosContext_PENDING_RETURN_TO_PARENT(ctx) = 0;
         KosEvent_KIND(out_ev) = KOS_EV_RETURN;

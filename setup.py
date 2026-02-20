@@ -28,14 +28,17 @@ def extra_compile_args(platform=None, debug=False):
         "--std=c99",
         "-Wall",
         "-Werror",
-        "-O2",
         "-flto=auto",
     ]
 
     if debug:
         args.append("-g")
-        args.append("-DVERBOSE_DEBUG=1")
+        args.append("-O0")
+    else:
+        args.append("-O2")
 
+    if environ.get("VERBOSE_DEBUG") == "1":
+        args.append("-DVERBOSE_DEBUG=1")
     if environ.get("KOS_TRACE_FREELIST") == "1":
         args.append("-DKOS_TRACE_FREELIST=1")
     if environ.get("KOS_TRACE_INTERN") == "1":

@@ -19,6 +19,10 @@
 
 KOS_OP_HANDLER(FAST_REF) {
   PyObject *ns = CURRENT_NS(ctx);
+  if (! ns) {
+    PyErr_SetString(PyExc_RuntimeError, "FAST_REF invoked on NULL namespace");
+    return -1;
+  }
   if (! KosNamespace_SupportsFast(ns)) {
     PyErr_Format(PyExc_RuntimeError, "FAST_REF invoked on %R", ns);
     return -1;

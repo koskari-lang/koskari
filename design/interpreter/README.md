@@ -12,6 +12,7 @@ This directory documents the interpreter implementation, including bytecode form
 - **yield-from-execution-model.md**: YIELD_FROM opcode execution model (delegation conduit, KOS_DYN_YIELD_FROM, delegate kinds, PC discipline)
 - **introspection-trace.md**: Read-only introspection and trace snapshot design (TraceView, KOS_OP_CAPTURE_FRAME, exception integration)
 - **callcc.md**: Call/cc implementation design
+- **dynamic-node-unified-api.md**: Dynamic node unified API redesign and migration specification (implementation prompt)
 - **evaluator-token-continuation.md**: Evaluator token + continuation application model (KosEvaluatorToken, KoskariContinuationApply)
 - **domain.md**: Koskari Domain (ambient dynamic context) — design proposal for parameters and dynamic-extent scoping across AWAIT, boundaries, and continuations
 

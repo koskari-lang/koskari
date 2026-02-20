@@ -229,6 +229,7 @@ struct KosContext {
   /* Transfer plan state */
   KosTransferPlan *plan;        /* active transfer plan (or NULL) */
   KosTransferPlan *plan_stack;  /* suspended plans stack */
+  PyObject *push_shift_pending; /* wrapper to push after push_shift unwind (owned) */
   uint32_t chain_version;       /* incremented on chain modifications */
   int plan_suspended_await;     /* 1 when plan step returned awaitable and we suspended */
   PyObject *plan_resume_inject; /* inject value for suspended step on resume (owned) */
@@ -244,6 +245,7 @@ struct KosContext {
   /* Delimited push model: frame to return to when continuation hits POP_PROMPT */
   KosDynFrame *delimited_return_frame;  /* invocation site frame (owned ref) */
   uint32_t delimited_return_pc;         /* pc to resume at (UINT32_MAX = not set) */
+  KosDynNode *delimited_return_node;    /* unwind stop (e.g. SHIFT) so POP_SHIFT can run */
 
   /* --- Python bridge: await/yield suspend and resume --- */
   PyObject *py_await_iter;   /* await-iterator from __await__() */
@@ -302,6 +304,7 @@ struct KosContext {
 #define KosContext_PENDING_RETURN_TO_PARENT(c) (((KosContext *)(c))->pending_return_to_parent)
 #define KosContext_PLAN(c)                   (((KosContext *)(c))->plan)
 #define KosContext_PLAN_STACK(c)             (((KosContext *)(c))->plan_stack)
+#define KosContext_PUSH_SHIFT_PENDING(c)     (((KosContext *)(c))->push_shift_pending)
 #define KosContext_CHAIN_VERSION(c)          (((KosContext *)(c))->chain_version)
 #define KosContext_PLAN_SUSPENDED_AWAIT(c)  (((KosContext *)(c))->plan_suspended_await)
 #define KosContext_PLAN_RESUME_INJECT(c)     (((KosContext *)(c))->plan_resume_inject)
@@ -310,6 +313,7 @@ struct KosContext {
 #define KosContext_RETURN_TARGET_PC(c)      (((KosContext *)(c))->return_target_pc)
 #define KosContext_DELIMITED_RETURN_FRAME(c) (((KosContext *)(c))->delimited_return_frame)
 #define KosContext_DELIMITED_RETURN_PC(c)   (((KosContext *)(c))->delimited_return_pc)
+#define KosContext_DELIMITED_RETURN_NODE(c) (((KosContext *)(c))->delimited_return_node)
 #define KosContext_PY_AWAIT_ITER(c)          (((KosContext *)(c))->py_await_iter)
 #define KosContext_PY_LAST_YIELDED(c)        (((KosContext *)(c))->py_last_yielded)
 #define KosContext_PY_RESUME_INJECT(c)       (((KosContext *)(c))->py_resume_inject)

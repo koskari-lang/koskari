@@ -14,12 +14,12 @@
 */
 
 /**
-   POP_SHIFT: Take TOS as result, unwind the SHIFT block and the PROMPT
-   block, jump past POP_PROMPT, push the result.
+   POP_SHIFT: Take TOS as result, unwind the SHIFT node (teardown drops its
+   stack block) and the PROMPT, jump past POP_PROMPT, push the result.
 
-   Uses a transfer plan to unwind to the frame that runs the continuation
-   (parent of the prompt) and inject the result.  Avoids "cannot unwind
-   past prompt" by replacing the chain via INSTALL instead of popping.
+   Expects DYN_TOP to be a KOS_DYN_SHIFT node.  Uses a transfer plan to
+   unwind (EXTENT_ACTION for the shift, then TRUNCATE_AND_INJECT) and
+   inject the result past the prompt.
 */
 
 KOS_OP_HANDLER(POP_SHIFT) {
@@ -32,8 +32,12 @@ KOS_OP_HANDLER(POP_SHIFT) {
   KosCode *code = CURRENT_CODE(ctx);
   KosDynNode *node;
   KosDynPrompt *prompt = NULL;
-  KosDynNode *target_frame;
   KosTransferPlan *plan = NULL;
+
+  if (! KosContext_DYN_TOP(ctx) || ! KosDynNode_IS_SHIFT(KosContext_DYN_TOP(ctx))) {
+    PyErr_SetString(PyExc_RuntimeError, "POP_SHIFT: top is not a shift node");
+    return -1;
+  }
 
   /* PC already advanced: we are post-INSN, so resume will run instruction at
    * prompt_pop_pc+1 (first instr after POP_PROMPT). */
@@ -96,16 +100,7 @@ KOS_OP_HANDLER(POP_SHIFT) {
     return -1;
   }
 
-  target_frame = (KosDynFrame *) KosDynNode_PARENT((KosDynNode *) prompt);
-  if (! target_frame || ! KosDynNode_IS_FRAME((KosDynNode *) target_frame)) {
-    Py_DECREF(result);
-    PyErr_SetString(PyExc_RuntimeError,
-                    "POP_SHIFT: prompt parent is not a frame");
-    return -1;
-  }
-
-  if (kos_build_direct_install_plan(ctx, (KosDynNode *) target_frame,
-                                    result, 0, 0, &plan) < 0) {
+  if (kos_dyn_build_pop_shift_plan(ctx, prompt, result, &plan) < 0) {
     Py_DECREF(result);
     return -1;
   }
@@ -114,8 +109,8 @@ KOS_OP_HANDLER(POP_SHIFT) {
   KosTransferPlan_RESUME_PC(plan) = prompt_pop_pc + 1;
   KosTransferPlan_RESUME_FRAME(plan) = NULL;
   KosTransferPlan_RESUME_STACK(plan) = NULL;
-  SAYF("[POP_SHIFT] plan ready: RESUME_PC=%u (first instr after POP_PROMPT), target_frame=%p",
-       (unsigned) (prompt_pop_pc + 1), (void *) target_frame);
+  SAYF("[POP_SHIFT] plan ready: RESUME_PC=%u (first instr after POP_PROMPT)",
+       (unsigned) (prompt_pop_pc + 1));
 
   if (KosContext_PLAN(ctx))
     kos_free_transfer_plan(KosContext_PLAN(ctx));

@@ -79,6 +79,7 @@ struct KosEvent;
    KOS_DYN_PARAM     - Parameter bindings (parameterize extent)
    KOS_DYN_WITH      - Single-shot context manager (with)
    KOS_DYN_DYN_WITH  - Multi-shot context manager (dyn-with)
+   KOS_DYN_SHIFT     - Shift handler block (push stack block; no frame/namespace)
 */
 
 typedef enum KosDynKind {
@@ -93,6 +94,7 @@ typedef enum KosDynKind {
   KOS_DYN_PARAM  = 8,
   KOS_DYN_WITH   = 9,
   KOS_DYN_DYN_WITH   = 10,
+  KOS_DYN_SHIFT  = 11,
 } KosDynKind;
 
 
@@ -117,6 +119,32 @@ typedef enum KosDynFlags {
 #define KOS_DYN_CAP_NEEDS_INSTALL_WIND       (1u << 4)
 #define KOS_DYN_CAP_BLOCKS_CAPTURE           (1u << 5)
 #define KOS_DYN_CAP_NEEDS_TRANSFER_TEARDOWN  (1u << 6)
+#define KOS_DYN_CAP_BARRIER                  (1u << 7)
+
+/* Alias for KOS_DYN_CAP_MAY_SWALLOW_EXCEPTION (unified API naming) */
+#define KOS_DYN_CAP_CATCH KOS_DYN_CAP_MAY_SWALLOW_EXCEPTION
+
+
+/* === KosDynTypeOps: per-type handler table for unified API === */
+
+
+/**
+   KosDynTypeOps provides type-specific handlers for install, pop,
+   wind, unwind, teardown, and clone. Generic code dispatches via
+   kos_dyn_type_ops[kind]. NULL slots mean no-op or not applicable.
+*/
+typedef struct KosDynTypeOps {
+  int (*install)(KosContext *ctx, KosDynNode *node);
+  int (*pop)(KosContext *ctx, KosDynNode *node, struct KosEvent *out_ev);
+  int (*wind)(KosContext *ctx, KosDynNode *node);
+  int (*unwind)(KosContext *ctx, KosDynNode *node, PyObject **out_awaitable);
+  int (*teardown_after_unwind)(KosContext *ctx, KosDynNode *node);
+  KosDynNode *(*clone)(KosDynNode *node);
+  uint32_t caps;
+} KosDynTypeOps;
+
+
+extern const KosDynTypeOps kos_dyn_type_ops[];
 
 
 /* === KosRegionStyle enum === */
@@ -217,6 +245,9 @@ struct KosDynNode {
       PyObject *name;      /* binding name or NULL (owned) */
       uint32_t resume_pc;  /* PC to jump to after with body (pop_pc + 1) */
     } with;
+    struct {
+      /* shift: no extra fields; install pushes stack block, teardown drops it */
+    } shift;
   } u;
 };
 
@@ -229,6 +260,7 @@ typedef struct KosDynNode KosDynCC;
 typedef struct KosDynNode KosDynYieldFrom;
 typedef struct KosDynNode KosDynParam;
 typedef struct KosDynNode KosDynWith;
+typedef struct KosDynNode KosDynShift;
 
 
 /* === KosContinuation: captured delimited continuation === */
@@ -282,10 +314,12 @@ struct KosContinuation {
 
    KOS_XFER_INSTALL       - Install a chain segment as current
    KOS_XFER_INJECT        - Push resume value onto stack (or throw)
-   KOS_XFER_DYN_WITH_ENTER - Reserved (DYN_WITH wind done inside INSTALL)
+   KOS_XFER_POP_ONE       - Run unwind for current top, unlink and free
    KOS_XFER_PUSH          - Append segment to current chain (graft bottom to
                             current dyn_top).  Used for delimited continuation
                             invoke; caller stays on chain.
+   KOS_XFER_TRUNCATE_AND_INJECT - Free from current top through node
+                            (inclusive), set dyn_top to node's parent, push value.
 */
 
 #define KOS_XFER_EXTENT_PHASE_WIND   0
@@ -295,8 +329,9 @@ typedef enum KosTransferStep {
   KOS_XFER_EXTENT_ACTION = 0,
   KOS_XFER_INSTALL       = 1,
   KOS_XFER_INJECT        = 2,
-  KOS_XFER_DYN_WITH_ENTER = 3,
+  KOS_XFER_POP_ONE       = 3,
   KOS_XFER_PUSH          = 4,
+  KOS_XFER_TRUNCATE_AND_INJECT = 5,
 } KosTransferStep;
 
 
@@ -333,6 +368,12 @@ typedef struct KosTransferAction {
       PyObject *value;
       int is_throw;
     } inject;
+
+    struct {
+      KosDynNode *node;
+      PyObject *value;
+      int is_throw;
+    } truncate_and_inject;
   } data;
 
 } KosTransferAction;
@@ -344,6 +385,9 @@ typedef struct KosTransferAction {
 #define KosTransferAction_INSTALL_SEGMENT(a)   (((KosTransferAction *)(a))->data.install.segment)
 #define KosTransferAction_INJECT_VALUE(a)      (((KosTransferAction *)(a))->data.inject.value)
 #define KosTransferAction_INJECT_IS_THROW(a)   (((KosTransferAction *)(a))->data.inject.is_throw)
+#define KosTransferAction_TRUNCATE_NODE(a)     (((KosTransferAction *)(a))->data.truncate_and_inject.node)
+#define KosTransferAction_TRUNCATE_VALUE(a)    (((KosTransferAction *)(a))->data.truncate_and_inject.value)
+#define KosTransferAction_TRUNCATE_IS_THROW(a) (((KosTransferAction *)(a))->data.truncate_and_inject.is_throw)
 
 
 /* === KosTransferPlan: continuation transfer execution plan === */
@@ -664,6 +708,50 @@ KosDynNode *kos_clone_chain_segment(
    KosDynNode *stop);
 
 
+/* === Unified dynamic chain API === */
+
+
+/**
+   Push a node onto the context's dynamic chain.  Caller must have
+   allocated the node and set its parent.  Calls install handler if
+   the type has one.  Updates dyn_top and chain_version.
+
+   :param ctx: execution context
+   :param node: node to push (parent already set)
+
+   :return: 0 on success, -1 on error
+*/
+int kos_dyn_push(KosContext *ctx, KosDynNode *node);
+
+
+/**
+   Pop a node from the context's dynamic chain.  Node must be dyn_top.
+   For BARRIER nodes (PROMPT, PYCALL) returns -1.  Otherwise runs the
+   type's pop handler (if any) then unlinks and frees.  Returns
+   KOS_DYN_UNWIND_ASYNC_STARTED when async extent action started.
+
+   :param ctx: execution context
+   :param node: node to pop (must be dyn_top)
+   :param out_ev: event output for async suspend
+
+   :return: 0 on success, -1 on error or BARRIER, KOS_DYN_UNWIND_ASYNC_STARTED
+     when async
+*/
+int kos_dyn_pop(KosContext *ctx, KosDynNode *node, struct KosEvent *out_ev);
+
+
+/**
+   Clone a node and push onto the chain.  Fails for types that cannot
+   clone (e.g. returns error for types that must not cross capture).
+
+   :param ctx: execution context
+   :param node: node to clone
+
+   :return: 0 on success, -1 on error
+*/
+int kos_dyn_push_clone(KosContext *ctx, KosDynNode *node);
+
+
 /* === Dynamic chain context operations === */
 
 
@@ -761,6 +849,18 @@ KosDynCC *kos_dyn_push_cc(KosContext *ctx, uint32_t resume_pc);
    :param cc: the CC node to pop (must be at dyn_top)
 */
 void kos_dyn_pop_cc(KosContext *ctx, KosDynCC *cc);
+
+
+/**
+   Push a SHIFT block onto the dynamic chain.  A shift node pushes a stack
+   block for its body (no frame, no namespace).  Used by PUSH_SHIFT after
+   unwinding to the prompt.
+
+   :param ctx: execution context
+
+   :return: 0 on success, -1 on error
+*/
+int kos_dyn_push_shift(KosContext *ctx);
 
 
 /**
@@ -946,6 +1046,7 @@ KosDynWith *kos_dyn_push_dyn_with(
 
    :return: cloned node, or NULL on error
 */
+KosDynWith *kos_dynwith_clone(KosDynWith *src);
 KosDynWith *kos_dyndynwith_clone(KosDynWith *src);
 
 
@@ -990,6 +1091,10 @@ int kos_dyn_pop_top(KosContext *ctx, struct KosEvent *out_ev);
 
 
 int kos_dyn_unwind_to_frame(KosContext *ctx, KosDynFrame *frame,
+                           struct KosEvent *out_ev);
+
+
+int kos_dyn_unwind_to_node(KosContext *ctx, KosDynNode *target,
                            struct KosEvent *out_ev);
 
 
@@ -1338,12 +1443,37 @@ int kos_build_install_only_plan(
    If the step is RUN_HOOK, begins hook execution and returns.
    If the step is INSTALL, splices the target chain.
    If the step is INJECT, pushes the resume value.
+   POP_ONE and TRUNCATE_AND_INJECT use out_ev for async suspend.
 
    :param ctx: execution context
+   :param out_ev: event output for async suspend (required for POP_ONE)
 
-   :return: 1 if plan complete, 0 if more steps remain, -1 on error
+   :return: 1 if plan complete, 0 if more steps remain, -1 on error,
+     KOS_XFER_SUSPENDED_AWAIT when async
 */
-int kos_run_transfer_step(KosContext *ctx);
+int kos_run_transfer_step(KosContext *ctx, struct KosEvent *out_ev);
+
+
+/**
+   Build a plan for POP_SHIFT: unwind from current to prompt (exclusive),
+   then TRUNCATE_AND_INJECT (free through prompt, push value).  Caller
+   must set RESUME_PC on the plan for the first instruction after POP_PROMPT.
+
+   :return: 0 on success, -1 on error
+*/
+int kos_dyn_build_pop_shift_plan(KosContext *ctx, KosDynPrompt *prompt,
+                                 PyObject *value, KosTransferPlan **out_plan);
+
+
+/**
+   Build a plan for PUSH_SHIFT unwind: POP_ONE for each node from current
+   top down to (but not including) the prompt.  After completion,
+   dyn_top == prompt.
+
+   :return: 0 on success, -1 on error
+*/
+int kos_dyn_build_push_shift_unwind_plan(KosContext *ctx, KosDynPrompt *prompt,
+                                         KosTransferPlan **out_plan);
 
 
 /**
@@ -1546,6 +1676,7 @@ int kos_hookrunner_traverse(
 #define KosDynNode_IS_DYN_WITH(n)   (KosDynNode_KIND(n) == KOS_DYN_DYN_WITH)
 #define KosDynNode_IS_WITH_OR_DYN_WITH(n) \
   (KosDynNode_IS_WITH(n) || KosDynNode_IS_DYN_WITH(n))
+#define KosDynNode_IS_SHIFT(n)    (KosDynNode_KIND(n) == KOS_DYN_SHIFT)
 
 #define KosDynFrame_CODE(f)       (((KosDynNode *)(f))->u.frame.code)
 #define KosDynFrame_PC(f)         (((KosDynNode *)(f))->u.frame.pc)

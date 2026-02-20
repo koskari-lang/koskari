@@ -36,9 +36,16 @@ KOS_OP_HANDLER(POP_PROMPT) {
 
     if (KosContext_DELIMITED_RETURN_FRAME(ctx) != NULL
         && KosContext_DELIMITED_RETURN_PC(ctx) != (uint32_t) -1) {
-      int unw = kos_dyn_unwind_to_frame(ctx,
-                                        KosContext_DELIMITED_RETURN_FRAME(ctx),
-                                        out_ev);
+      int unw;
+      if (KosContext_DELIMITED_RETURN_NODE(ctx) != NULL) {
+        unw = kos_dyn_unwind_to_node(ctx,
+                                     KosContext_DELIMITED_RETURN_NODE(ctx),
+                                     out_ev);
+      } else {
+        unw = kos_dyn_unwind_to_frame(ctx,
+                                      KosContext_DELIMITED_RETURN_FRAME(ctx),
+                                      out_ev);
+      }
       if (unw == KOS_DYN_UNWIND_ASYNC_STARTED) {
         KosContext_PENDING_RETURN_VALUE(ctx) = val;
         KosContext_PENDING_RETURN_TO_PARENT(ctx) = 0;
@@ -61,6 +68,7 @@ KOS_OP_HANDLER(POP_PROMPT) {
       KosContext_INVOCATION_SEGMENT_TOP(ctx) = NULL;
       KosContext_DELIMITED_RETURN_FRAME(ctx) = NULL;
       KosContext_DELIMITED_RETURN_PC(ctx) = (uint32_t) -1;
+      KosContext_DELIMITED_RETURN_NODE(ctx) = NULL;
       (void) insn;
       return 0;
     }
