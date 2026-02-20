@@ -71,6 +71,13 @@ class TestNamespaceSpec(unittest.TestCase):
         self.assertIn("z", spec)
         self.assertNotIn("missing", spec)
 
+    def test_repr(self):
+        """repr shows name, closure_syms, and local_syms"""
+        spec = NamespaceSpec(None, ("k",), ())
+        self.assertEqual(repr(spec), "NamespaceSpec(None, (), ('k',))")
+        spec2 = NamespaceSpec("foo", ("a", "b"), ("z",))
+        self.assertEqual(repr(spec2), "NamespaceSpec('foo', ('z',), ('a', 'b'))")
+
 
 class TestNamespace(unittest.TestCase):
     """Tests for the Namespace type"""

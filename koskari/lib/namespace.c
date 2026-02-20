@@ -138,6 +138,40 @@ static int nspec_clear(PyObject *self) {
 }
 
 
+static PyObject *nspec_repr(PyObject *self) {
+  PyObject *name = KosNamespaceSpec_NAME(self);
+  PyObject *closures = KosNamespaceSpec_CLOSURE_SYMS(self);
+  PyObject *locals = KosNamespaceSpec_LOCAL_SYMS(self);
+  PyObject *result;
+
+  if (! name)
+    name = Py_None;
+  if (! closures) {
+    closures = PyTuple_New(0);
+    if (! closures)
+      return NULL;
+  }
+  if (! locals) {
+    locals = PyTuple_New(0);
+    if (! locals) {
+      if (! KosNamespaceSpec_CLOSURE_SYMS(self))
+        Py_DECREF(closures);
+      return NULL;
+    }
+  }
+
+  result = PyUnicode_FromFormat("NamespaceSpec(%R, %R, %R)",
+                               name, closures, locals);
+
+  if (! KosNamespaceSpec_CLOSURE_SYMS(self))
+    Py_DECREF(closures);
+  if (! KosNamespaceSpec_LOCAL_SYMS(self))
+    Py_DECREF(locals);
+
+  return result;
+}
+
+
 PyTypeObject KosNamespaceSpecType = {
   PyVarObject_HEAD_INIT(NULL, 0)
 
@@ -153,7 +187,7 @@ PyTypeObject KosNamespaceSpecType = {
   .tp_dealloc = nspec_dealloc,
   .tp_traverse = nspec_traverse,
   .tp_clear = nspec_clear,
-  // .tp_repr = ns_repr,
+  .tp_repr = nspec_repr,
 };
 
 
