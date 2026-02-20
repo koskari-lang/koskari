@@ -20,7 +20,7 @@ exception). Uses PUSH_WITH/POP_WITH. Covers sync and async __enter__/__exit__
 """
 
 from . import SpecialsTestCase
-
+from koskari.dis import dis
 
 class SimpleMgr:
     """Python context manager for tests; tracks enter/exit and optional binding."""
@@ -237,6 +237,7 @@ class TestWithSpecial(SpecialsTestCase):
             raise_err=raise_err,
             after_raise=after_raise,
         )
+        # dis(expr.code)
         result = expr().run()
         self.assertIsNone(result)
         self.assertTrue(mgr.entered)

@@ -1184,9 +1184,12 @@ int kos_with_exit_start_await(KosContext *ctx, KosEvent *out_ev,
 
 /**
    Complete pending WITH exit after await: TOS is the exit result.
-   Apply swallow logic, drop block, pop node, clear stash.
+   Apply swallow logic, drop block, optionally pop node, clear stash.
+
+   :param do_pop_node: If true, unlink and free the WITH node. If false,
+                       only do semantic work (caller will unlink/free).
 */
-int kos_complete_pending_with_exit(KosContext *ctx) {
+static int kos_complete_pending_with_exit_impl(KosContext *ctx, int do_pop_node) {
 
   if (! KosContext_PENDING_WITH_EXIT_NODE(ctx))
     return 0;
@@ -1223,7 +1226,9 @@ int kos_complete_pending_with_exit(KosContext *ctx) {
       return -1;
     if (KosContext_FRAME_TOP(ctx))
       KosDynFrame_PC(KosContext_FRAME_TOP(ctx)) = KosDynWith_RESUME_PC(with_node);
-    kos_dyn_pop_with(ctx, with_node);
+    if (do_pop_node) {
+      kos_dyn_pop_with(ctx, with_node);
+    }
     if (KosStackBlock_PushRef(&CURRENT_STACK(ctx), Py_None) < 0)
       return -1;
     return 0;
@@ -1235,7 +1240,9 @@ int kos_complete_pending_with_exit(KosContext *ctx) {
       PyErr_Restore(typ, val, tb);
       return -1;
     }
-    kos_dyn_pop_with(ctx, with_node);
+    if (do_pop_node) {
+      kos_dyn_pop_with(ctx, with_node);
+    }
     PyErr_Restore(typ, val, tb);
     return -1;
   }
@@ -1246,13 +1253,24 @@ int kos_complete_pending_with_exit(KosContext *ctx) {
   Py_XDECREF(tb);
   if (KosStackBlock_DropBlock(&CURRENT_STACK(ctx)) < 0)
     return -1;
-  uint32_t next_pc = KosDynWith_RESUME_PC(with_node);
-  kos_dyn_pop_with(ctx, with_node);
   if (KosContext_FRAME_TOP(ctx))
-    KosDynFrame_PC(KosContext_FRAME_TOP(ctx)) = next_pc;
+    KosDynFrame_PC(KosContext_FRAME_TOP(ctx)) = KosDynWith_RESUME_PC(with_node);
+  if (do_pop_node) {
+    kos_dyn_pop_with(ctx, with_node);
+  }
   if (KosStackBlock_PushRef(&CURRENT_STACK(ctx), Py_None) < 0)
     return -1;
   return 0;
+}
+
+
+int kos_complete_pending_with_exit(KosContext *ctx) {
+  return kos_complete_pending_with_exit_impl(ctx, 1);
+}
+
+
+int kos_complete_pending_with_exit_semantic(KosContext *ctx) {
+  return kos_complete_pending_with_exit_impl(ctx, 0);
 }
 
 

@@ -565,6 +565,7 @@ int kos_dyn_dyn_with_wind(KosContext *ctx, KosDynWith *node);
 int kos_with_exit_start_await(KosContext *ctx, KosEvent *out_ev, PyObject *awaitable);
 
 int kos_complete_pending_with_exit(KosContext *ctx);
+int kos_complete_pending_with_exit_semantic(KosContext *ctx);
 void kos_clear_pending_with_exit(KosContext *ctx);
 
 /**

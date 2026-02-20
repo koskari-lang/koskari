@@ -1874,7 +1874,7 @@ static int type_ops_with_pop_semantic(KosContext *ctx, KosDynNode *top,
     }
     if (r < 0)
       return -1;
-    return kos_complete_pending_with_exit(ctx) == 0 ? 0 : -1;
+    return kos_complete_pending_with_exit_semantic(ctx) == 0 ? 0 : -1;
   }
   if (unw < 0)
     return -1;
