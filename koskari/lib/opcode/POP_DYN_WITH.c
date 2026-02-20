@@ -30,7 +30,7 @@ KOS_OP_HANDLER(POP_DYN_WITH) {
   PyObject *exit_awaitable = NULL;
 
   int unw = kos_dyn_with_unwind(ctx, with_node, &exit_awaitable);
-  if (unw == KOS_DYN_WITH_EXIT_ASYNC_STARTED) {
+  if (unw == KOS_DYN_UNWIND_ASYNC_STARTED) {
     int r = kos_with_exit_start_await(ctx, out_ev, exit_awaitable);
     if (r == 1)
       return 1;

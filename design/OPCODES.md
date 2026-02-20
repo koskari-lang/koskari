@@ -1852,7 +1852,7 @@ PUSH_CC resume target).
 
 ## 22. Dynamic wind
 
-Unified extent wind/unwind is described in [interpreter/extent-wind-unwind.md](interpreter/extent-wind-unwind.md). The same helpers (`kos_dyn_wind_wind`, `kos_dyn_wind_unwind`) are used for simple pop and for transfer plans.
+Unified extent wind/unwind is described in [interpreter/extent-wind-unwind.md](interpreter/extent-wind-unwind.md). The unified API (`kos_extent_run_wind`, `kos_extent_run_unwind`) dispatches by node kind for simple pop and transfer plans.
 
 ### KOS_OP_PUSH_WIND
 

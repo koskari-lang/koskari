@@ -1315,7 +1315,7 @@ int kos_dyn_with_unwind(KosContext *ctx, KosDynWith *node,
       KosContext_PENDING_WITH_EXIT_TB(ctx) = tb;
       KosContext_PENDING_WITH_EXIT_NORMAL(ctx) = (typ == Py_None);
       *out_awaitable = result;
-      return KOS_DYN_WITH_EXIT_ASYNC_STARTED;
+      return KOS_DYN_UNWIND_ASYNC_STARTED;
     }
   }
 
@@ -1337,7 +1337,7 @@ int kos_dyn_with_unwind(KosContext *ctx, KosDynWith *node,
 /**
    Pop a KOS_DYN_WITH node: run exit (unwind), drop stack block, unlink and free.
    Called from kos_dyn_pop_top. If exit returns awaitable, stash and start
-   await via kos_with_exit_start_await, return KOS_DYN_WITH_EXIT_ASYNC_STARTED.
+   await via kos_with_exit_start_await, return KOS_DYN_UNWIND_ASYNC_STARTED.
 */
 static int dyn_pop_top_with(KosContext *ctx, KosDynNode *top,
                             KosEvent *out_ev) {
@@ -1345,11 +1345,11 @@ static int dyn_pop_top_with(KosContext *ctx, KosDynNode *top,
   KosDynWith *with_node = (KosDynWith *) top;
   PyObject *exit_awaitable = NULL;
 
-  int unw = kos_dyn_with_unwind(ctx, with_node, &exit_awaitable);
-  if (unw == KOS_DYN_WITH_EXIT_ASYNC_STARTED) {
+  int unw = kos_extent_run_unwind(ctx, top, &exit_awaitable);
+  if (unw == KOS_DYN_UNWIND_ASYNC_STARTED) {
     int r = kos_with_exit_start_await(ctx, out_ev, exit_awaitable);
     if (r == 1)
-      return KOS_DYN_WITH_EXIT_ASYNC_STARTED;
+      return KOS_DYN_UNWIND_ASYNC_STARTED;
     if (r < 0)
       return -1;
     /* r == 0: exit completed synchronously; push_or_await pushed the exit
@@ -1438,22 +1438,11 @@ int kos_dyn_param_wind(KosContext *ctx, KosDynParam *node) {
 
 /**
    Run INSTALL-phase wind (enter) for a node with NEEDS_INSTALL_WIND.
-   Dispatches by kind: PARAM -> kos_dyn_param_wind, DYN_WITH ->
-   kos_dyn_dyn_with_wind. Used by xfer_step_install.
+   Dispatches via kos_extent_run_wind. Used by xfer_step_install.
    :return: 0 on success, -1 on error
 */
 static int kos_dynnode_run_wind(KosContext *ctx, KosDynNode *node) {
-  switch (KosDynNode_KIND(node)) {
-    case KOS_DYN_PARAM:
-      return kos_dyn_param_wind(ctx, (KosDynParam *) node);
-    case KOS_DYN_DYN_WITH:
-      return kos_dyn_dyn_with_wind(ctx, (KosDynWith *) node);
-    default:
-      PyErr_Format(PyExc_RuntimeError,
-                   "kos_dynnode_run_wind: node kind %u has no wind",
-                   (unsigned) KosDynNode_KIND(node));
-      return -1;
-  }
+  return kos_extent_run_wind(ctx, node);
 }
 
 
@@ -1464,13 +1453,15 @@ void kos_dyn_param_unwind(KosContext *ctx, KosDynParam *node) {
 
 /**
    Run transfer-plan unwind for a node with NEEDS_UNWIND_ACTION.
-   Dispatches by kind: PARAM -> kos_dyn_param_unwind; DYN_WITH ->
-   kos_dyn_with_unwind + drop block + kos_dyn_pop_with. Used by
-   kos_run_transfer_step for KOS_XFER_NODE_UNWIND.
+   Dispatches via kos_extent_run_unwind; DYN_WITH also drops block and
+   pops. Used by kos_run_transfer_step for KOS_XFER_EXTENT_ACTION (unwind).
    :return: 0 on success, -1 on error
 */
 static int kos_dynnode_run_transfer_unwind(KosContext *ctx, KosDynNode *node) {
   switch (KosDynNode_KIND(node)) {
+    case KOS_DYN_WIND:
+      return kos_extent_run_unwind(ctx, node, NULL);
+
     case KOS_DYN_PARAM:
       kos_dyn_param_unwind(ctx, (KosDynParam *) node);
       if (KOS_XFER_TRACE)
@@ -1481,8 +1472,8 @@ static int kos_dynnode_run_transfer_unwind(KosContext *ctx, KosDynNode *node) {
       KosDynWith *with_node = (KosDynWith *) node;
       PyObject *exit_awaitable = NULL;
 
-      int unw = kos_dyn_with_unwind(ctx, with_node, &exit_awaitable);
-      if (unw == KOS_DYN_WITH_EXIT_ASYNC_STARTED) {
+      int unw = kos_extent_run_unwind(ctx, node, &exit_awaitable);
+      if (unw == KOS_DYN_UNWIND_ASYNC_STARTED) {
         Py_XDECREF(exit_awaitable);
         PyErr_SetString(PyExc_RuntimeError,
                         "async dyn-with exit during transfer not yet supported");
@@ -1527,6 +1518,46 @@ int kos_dyn_wind_unwind(KosContext *ctx, KosDynWind *node) {
                      KosDynWind_AFTER_PC(node)) < 0)
     return -1;
   return KOS_DYN_UNWIND_ASYNC_STARTED;
+}
+
+
+int kos_extent_run_wind(KosContext *ctx, KosDynNode *node) {
+  switch (KosDynNode_KIND(node)) {
+    case KOS_DYN_PARAM:
+      return kos_dyn_param_wind(ctx, (KosDynParam *) node);
+    case KOS_DYN_DYN_WITH:
+      return kos_dyn_dyn_with_wind(ctx, (KosDynWith *) node);
+    case KOS_DYN_WIND:
+      return kos_dyn_wind_wind(ctx, (KosDynWind *) node);
+    default:
+      PyErr_Format(PyExc_RuntimeError,
+                   "kos_extent_run_wind: node kind %u has no wind",
+                   (unsigned) KosDynNode_KIND(node));
+      return -1;
+  }
+}
+
+
+int kos_extent_run_unwind(KosContext *ctx, KosDynNode *node,
+                         PyObject **out_awaitable) {
+  PyObject *dummy = NULL;
+  PyObject **out = (out_awaitable != NULL) ? out_awaitable : &dummy;
+
+  switch (KosDynNode_KIND(node)) {
+    case KOS_DYN_PARAM:
+      kos_dyn_param_unwind(ctx, (KosDynParam *) node);
+      return 0;
+    case KOS_DYN_WIND:
+      return kos_dyn_wind_unwind(ctx, (KosDynWind *) node);
+    case KOS_DYN_WITH:
+    case KOS_DYN_DYN_WITH:
+      return kos_dyn_with_unwind(ctx, (KosDynWith *) node, out);
+    default:
+      PyErr_Format(PyExc_RuntimeError,
+                   "kos_extent_run_unwind: node kind %u has no unwind",
+                   (unsigned) KosDynNode_KIND(node));
+      return -1;
+  }
 }
 
 
@@ -1575,7 +1606,7 @@ int kos_dyn_pop_top(KosContext *ctx, KosEvent *out_ev) {
     return kos_dyn_pop_frame(ctx);
 
   case KOS_DYN_WIND: {
-    int unw = kos_dyn_wind_unwind(ctx, (KosDynWind *) top);
+    int unw = kos_extent_run_unwind(ctx, top, NULL);
     if (unw == KOS_DYN_UNWIND_ASYNC_STARTED)
       return KOS_DYN_UNWIND_ASYNC_STARTED;
     if (unw < 0)
@@ -1628,8 +1659,7 @@ int kos_dyn_unwind_to_frame(KosContext *ctx, KosDynFrame *frame,
   while (KosContext_DYN_TOP(ctx) != NULL
          && KosContext_DYN_TOP(ctx) != (KosDynNode *) frame) {
     int pop_res = kos_dyn_pop_top(ctx, out_ev);
-    if (pop_res == KOS_DYN_UNWIND_ASYNC_STARTED
-        || pop_res == KOS_DYN_WITH_EXIT_ASYNC_STARTED) {
+    if (pop_res == KOS_DYN_UNWIND_ASYNC_STARTED) {
       KosContext_UNWIND_TARGET_FRAME(ctx) = frame;
       return pop_res;
     }
@@ -2284,20 +2314,21 @@ static void xfer_plan_fill_unwind_actions(
       if (KosDynNode_IS_WIND(node)) {
         KosDynWind *wind = (KosDynWind *) node;
         if (KosDynWind_ENTERED(wind) && KosDynWind_AFTER_CODE(wind)) {
-          KosTransferAction_STEP(&KosTransferPlan_ACTIONS(plan)[*idx]) = KOS_XFER_RUN_HOOK;
-          KosTransferAction_HOOK_CODE(&KosTransferPlan_ACTIONS(plan)[*idx]) = KosDynWind_AFTER_CODE(wind);
-          KosTransferAction_HOOK_PC(&KosTransferPlan_ACTIONS(plan)[*idx]) = KosDynWind_AFTER_PC(wind);
+          KosTransferAction_STEP(&KosTransferPlan_ACTIONS(plan)[*idx]) = KOS_XFER_EXTENT_ACTION;
+          KosTransferAction_EXTENT_NODE(&KosTransferPlan_ACTIONS(plan)[*idx]) = node;
+          KosTransferAction_EXTENT_PHASE(&KosTransferPlan_ACTIONS(plan)[*idx]) = KOS_XFER_EXTENT_PHASE_UNWIND;
           if (KOS_XFER_TRACE)
-            SAYF("[xfer] plan action[%zu] = RUN_HOOK (unwind) node=%p",
+            SAYF("[xfer] plan action[%zu] = EXTENT_ACTION (unwind wind) node=%p",
                  *idx, (void *) node);
           (*idx)++;
         }
       } else {
         /* PARAM or DYN_WITH with NEEDS_UNWIND_ACTION */
-        KosTransferAction_STEP(&KosTransferPlan_ACTIONS(plan)[*idx]) = KOS_XFER_NODE_UNWIND;
-        KosTransferAction_NODE_UNWIND_NODE(&KosTransferPlan_ACTIONS(plan)[*idx]) = node;
+        KosTransferAction_STEP(&KosTransferPlan_ACTIONS(plan)[*idx]) = KOS_XFER_EXTENT_ACTION;
+        KosTransferAction_EXTENT_NODE(&KosTransferPlan_ACTIONS(plan)[*idx]) = node;
+        KosTransferAction_EXTENT_PHASE(&KosTransferPlan_ACTIONS(plan)[*idx]) = KOS_XFER_EXTENT_PHASE_UNWIND;
         if (KOS_XFER_TRACE)
-          SAYF("[xfer] plan action[%zu] = NODE_UNWIND node=%p", *idx, (void *) node);
+          SAYF("[xfer] plan action[%zu] = EXTENT_ACTION (unwind) node=%p", *idx, (void *) node);
         (*idx)++;
       }
     }
@@ -2361,9 +2392,9 @@ static int xfer_plan_fill_wind_actions(
 
   while (wi--) {
     KosDynWind *wind = wind_nodes[wi];
-    KosTransferAction_STEP(&KosTransferPlan_ACTIONS(plan)[*idx]) = KOS_XFER_RUN_HOOK;
-    KosTransferAction_HOOK_CODE(&KosTransferPlan_ACTIONS(plan)[*idx]) = KosDynWind_BEFORE_CODE(wind);
-    KosTransferAction_HOOK_PC(&KosTransferPlan_ACTIONS(plan)[*idx]) = KosDynWind_BEFORE_PC(wind);
+    KosTransferAction_STEP(&KosTransferPlan_ACTIONS(plan)[*idx]) = KOS_XFER_EXTENT_ACTION;
+    KosTransferAction_EXTENT_NODE(&KosTransferPlan_ACTIONS(plan)[*idx]) = (KosDynNode *) wind;
+    KosTransferAction_EXTENT_PHASE(&KosTransferPlan_ACTIONS(plan)[*idx]) = KOS_XFER_EXTENT_PHASE_WIND;
     (*idx)++;
   }
 
@@ -2675,14 +2706,18 @@ void kos_free_transfer_plan(KosTransferPlan *plan) {
 
 
 /**
-   Execute a RUN_HOOK step: start running the wind before/after hook at
-   the given code and pc.  The evaluator will run the hook; when it
-   returns, kos_run_transfer_step is called again for the next action.
-   Returns the result of kos_begin_hook (0 = more work, -1 = error).
+   Execute an EXTENT_ACTION step: run extent wind (enter) or unwind
+   (exit) for the stored node.  Dispatches via kos_extent_run_wind or
+   kos_dynnode_run_transfer_unwind.  Returns 0 on sync completion, -1
+   on error, or KOS_DYN_UNWIND_ASYNC_STARTED when async started.
 */
-static int xfer_step_run_hook(KosContext *ctx, KosTransferAction *action) {
-  return kos_begin_hook(ctx, KosTransferAction_HOOK_CODE(action),
-                        KosTransferAction_HOOK_PC(action));
+static int xfer_step_extent_action(KosContext *ctx, KosTransferAction *action) {
+  KosDynNode *node = KosTransferAction_EXTENT_NODE(action);
+  int phase = KosTransferAction_EXTENT_PHASE(action);
+
+  if (phase == KOS_XFER_EXTENT_PHASE_WIND)
+    return kos_extent_run_wind(ctx, node);
+  return kos_dynnode_run_transfer_unwind(ctx, node);
 }
 
 
@@ -2824,9 +2859,9 @@ static int xfer_step_inject(KosContext *ctx, KosTransferAction *action) {
    Run the next action in the context's current transfer plan.  If there
    is no plan or the plan is already complete, returns 1 (done).  Otherwise
    advances the action index, dispatches to the appropriate step handler
-   (RUN_HOOK, NODE_UNWIND, INSTALL, INJECT), and returns: 0 if more steps
-   remain, 1 if the plan is now complete, -1 on error.  RUN_HOOK returns
-   immediately after starting the hook; the evaluator will call back here
+   (EXTENT_ACTION, INSTALL, INJECT), and returns: 0 if more steps
+   remain, 1 if the plan is now complete, -1 on error.  EXTENT_ACTION
+   returns immediately after starting an async hook; the evaluator will call back here
    after the hook finishes.
 */
 int kos_run_transfer_step(KosContext *ctx) {
@@ -2844,12 +2879,10 @@ int kos_run_transfer_step(KosContext *ctx) {
          (int) KosTransferAction_STEP(action), (int) KOS_XFER_INSTALL);
 
   switch (KosTransferAction_STEP(action)) {
-    case KOS_XFER_RUN_HOOK:
-      return xfer_step_run_hook(ctx, action);
-
-    case KOS_XFER_NODE_UNWIND: {
-      int res = kos_dynnode_run_transfer_unwind(ctx,
-                                                KosTransferAction_NODE_UNWIND_NODE(action));
+    case KOS_XFER_EXTENT_ACTION: {
+      int res = xfer_step_extent_action(ctx, action);
+      if (res == KOS_DYN_UNWIND_ASYNC_STARTED)
+        return KOS_XFER_SUSPENDED_AWAIT;
       if (res < 0)
         return -1;
       break;

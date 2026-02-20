@@ -2110,8 +2110,7 @@ static int try_local_exception_handler(KosContext *ctx, KosEvent *out_ev) {
         int pop_res = kos_dyn_pop_top(ctx, out_ev);
         if (saved_typ != NULL)
           PyErr_Restore(saved_typ, saved_val, saved_tb);
-        if (pop_res == KOS_DYN_UNWIND_ASYNC_STARTED
-            || pop_res == KOS_DYN_WITH_EXIT_ASYNC_STARTED) {
+        if (pop_res == KOS_DYN_UNWIND_ASYNC_STARTED) {
           KosContext_UNWIND_TARGET_FRAME(ctx) = CURRENT_FRAME(ctx);
           return 1;
         }

@@ -64,8 +64,7 @@ KOS_OP_HANDLER(BREAK) {
         }
       } else {
         int pop_res = kos_dyn_pop_top(ctx, out_ev);
-        if (pop_res == KOS_DYN_UNWIND_ASYNC_STARTED
-            || pop_res == KOS_DYN_WITH_EXIT_ASYNC_STARTED)
+        if (pop_res == KOS_DYN_UNWIND_ASYNC_STARTED)
           return 0;
         if (pop_res < 0) {
           Py_DECREF(result);
@@ -74,8 +73,7 @@ KOS_OP_HANDLER(BREAK) {
       }
     } else {
       int pop_res = kos_dyn_pop_top(ctx, out_ev);
-      if (pop_res == KOS_DYN_UNWIND_ASYNC_STARTED
-          || pop_res == KOS_DYN_WITH_EXIT_ASYNC_STARTED)
+      if (pop_res == KOS_DYN_UNWIND_ASYNC_STARTED)
         return 0;
       if (pop_res < 0) {
         Py_DECREF(result);

@@ -146,7 +146,7 @@ One freed plan is cached for reuse; `koskari_dynchain_clear` frees the cache.
 #define KOS_XFER_PLAN_DEFAULT_ACTIONS 32
 
 typedef enum KosTransferStep {
-  KOS_XFER_RUN_HOOK,      /* execute a wind/unwind hook block */
+  KOS_XFER_EXTENT_ACTION, /* execute extent wind or unwind for a node */
   KOS_XFER_INSTALL,       /* splice target chain segment */
   KOS_XFER_INJECT,        /* push resume value onto stack */
   KOS_XFER_PARAM_RESTORE, /* restore param bindings on unwind */

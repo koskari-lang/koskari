@@ -137,7 +137,7 @@ These are **commitments**: they must hold for correct behavior. They are elabora
 
 - **KosContinuation**: Captured segment: `captured_chain`, `resume_frame`, `resume_pc`, `resume_stack`, `prompt_id`, `graft_point_id` (node_id of graft point for LCA fallback when chains disjoint; 0 for capture-cc), `one_shot`, `token_ref` (PyObject * KosEvaluatorToken; ownership marker for evaluator identity). Multi-shot clones on each invoke.
 
-- **KosTransferPlan**: Ordered list of steps: `KOS_XFER_RUN_HOOK`, `KOS_XFER_INSTALL`, `KOS_XFER_INJECT`. Tracks `chain_version` and `original_target` for replanning after nested transfers. For invocation: `resume_pc`, `resume_frame`, `resume_stack`, `continuation_ref`.
+- **KosTransferPlan**: Ordered list of steps: `KOS_XFER_EXTENT_ACTION`, `KOS_XFER_INSTALL`, `KOS_XFER_INJECT`. Tracks `chain_version` and `original_target` for replanning after nested transfers. For invocation: `resume_pc`, `resume_frame`, `resume_stack`, `continuation_ref`.
 
 - **KosHookRunner**: Runs one hook block: `code`, `pc`, `scratch` stack, `active` flag.
 

@@ -33,7 +33,7 @@ KOS_OP_HANDLER(POP_WITH) {
 
   int unw = kos_dyn_with_unwind(ctx, with_node, &exit_awaitable);
   SAYF("[eval] POP_WITH unw=%d exit_awaitable=%d\n", unw, exit_awaitable ? 1 : 0);
-  if (unw == KOS_DYN_WITH_EXIT_ASYNC_STARTED) {
+  if (unw == KOS_DYN_UNWIND_ASYNC_STARTED) {
     SAY("[eval] POP_WITH async exit started -> kos_with_exit_start_await");
     int r = kos_with_exit_start_await(ctx, out_ev, exit_awaitable);
     if (r == 1)

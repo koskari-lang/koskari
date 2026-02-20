@@ -26,8 +26,7 @@ KOS_OP_HANDLER(END_WIND) {
   while (KosContext_UNWIND_TARGET_FRAME(ctx)) {
     KosDynFrame *target = KosContext_UNWIND_TARGET_FRAME(ctx);
     int unw = kos_dyn_unwind_to_frame(ctx, target, out_ev);
-    if (unw == KOS_DYN_UNWIND_ASYNC_STARTED
-        || unw == KOS_DYN_WITH_EXIT_ASYNC_STARTED)
+    if (unw == KOS_DYN_UNWIND_ASYNC_STARTED)
       return 0;
     KosContext_UNWIND_TARGET_FRAME(ctx) = NULL;
     if (unw < 0)

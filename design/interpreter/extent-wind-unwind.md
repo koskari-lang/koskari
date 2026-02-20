@@ -25,7 +25,7 @@ Helpers perform only semantic work; the caller unlinks and frees the node (or, f
 | REGION     | (none)                   | `kos_dyn_region_unwind`     | sync (no-op for now; FINALLY will be async) |
 | YIELD_FROM | (none)                   | `kos_dyn_yieldfrom_unwind`  | sync       |
 
-- **PARAM**: Wind applies bindings to the domain (save current, set new); unwind restores from saved. Used by normal push/pop and by the transfer plan (INSTALL runs wind for params in the segment; PARAM_RESTORE runs unwind).
+- **PARAM**: Wind applies bindings to the domain (save current, set new); unwind restores from saved. Used by normal push/pop and by the transfer plan (INSTALL runs wind for params in the segment; EXTENT_ACTION unwind runs param restore).
 - **WIND**: Wind runs the before-hook (code/pc) via `kos_begin_hook`; unwind runs the after-hook if the extent was entered. Both can return `KOS_DYN_UNWIND_ASYNC_STARTED`; the evaluator runs the hook then continues.
 - **NS**: Unwind restores the frame's namespace from the node's saved_ns. No wind helper (re-entry for continuations could add one later).
 - **REGION**: Unwind is currently a no-op. FINALLY will run the finally body (async). TRY/LOOP/FOREACH have no teardown.
@@ -33,10 +33,14 @@ Helpers perform only semantic work; the caller unlinks and frees the node (or, f
 
 ---
 
+## Unified API
+
+Consumers use `kos_extent_run_wind(ctx, node)` and `kos_extent_run_unwind(ctx, node, out_awaitable)` which dispatch by node kind. Both return 0, -1, or `KOS_DYN_UNWIND_ASYNC_STARTED`. A single async return code is used for all extent kinds (WIND hooks, WITH exit); callers treat them identically.
+
 ## Consumers
 
-1. **Simple path** (`kos_dyn_pop_top`): For each node kind, the pop path calls the corresponding `kos_dyn_<kind>_unwind(ctx, top)` then unlinks and frees (except for WIND when unwind returns `KOS_DYN_UNWIND_ASYNC_STARTED`; then the evaluator runs the after-hook and resumes unwinding from END_WIND).
-2. **Transfer plan**: Unwind phase uses RUN_HOOK (wind after) and PARAM_RESTORE; step handlers call `kos_dyn_param_unwind` and `kos_begin_hook` (same as wind helpers). INSTALL runs `kos_dyn_param_wind` for each PARAM in the installed segment. Wind-before phase uses RUN_HOOK with before code/pc.
+1. **Simple path** (`kos_dyn_pop_top`): Calls `kos_extent_run_unwind` for WIND and WITH/DYN_WITH, then unlinks and frees (except when async; evaluator runs the hook/exit and resumes unwinding from END_WIND or with-completion path).
+2. **Transfer plan**: Uses `KOS_XFER_EXTENT_ACTION` steps with `(node, phase)` where phase is WIND or UNWIND. Step handler dispatches via `kos_extent_run_wind` or `kos_dynnode_run_transfer_unwind`. INSTALL runs `kos_extent_run_wind` for each PARAM and DYN_WITH in the installed segment.
 
 ---
 

@@ -53,8 +53,7 @@ KOS_OP_HANDLER(PUSH_SHIFT) {
   SAY("[eval] PUSH_SHIFT unwinding to prompt");
   while (KosContext_DYN_TOP(ctx) != (KosDynNode *) prompt) {
     int pop_res = kos_dyn_pop_top(ctx, out_ev);
-    if (pop_res == KOS_DYN_UNWIND_ASYNC_STARTED
-        || pop_res == KOS_DYN_WITH_EXIT_ASYNC_STARTED)
+    if (pop_res == KOS_DYN_UNWIND_ASYNC_STARTED)
       return 0;
     if (pop_res != 0) {
       kos_continuation_free(k);

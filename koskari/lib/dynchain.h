@@ -275,18 +275,23 @@ struct KosContinuation {
 /**
    KosTransferStep identifies the type of action in a transfer plan.
 
-   KOS_XFER_RUN_HOOK      - Execute a wind/unwind hook block
+   KOS_XFER_EXTENT_ACTION - Run extent wind (enter) or unwind (exit) for a
+   node.  Stores (node, phase).  Replaces the former RUN_HOOK and
+   NODE_UNWIND step types.
+
    KOS_XFER_INSTALL       - Install a chain segment as current
    KOS_XFER_INJECT        - Push resume value onto stack (or throw)
-   KOS_XFER_NODE_UNWIND   - Unwind a node with NEEDS_UNWIND_ACTION (PARAM or DYN_WITH)
+   KOS_XFER_DYN_WITH_ENTER - Reserved (DYN_WITH wind done inside INSTALL)
 */
 
+#define KOS_XFER_EXTENT_PHASE_WIND   0
+#define KOS_XFER_EXTENT_PHASE_UNWIND 1
+
 typedef enum KosTransferStep {
-  KOS_XFER_RUN_HOOK = 0,
-  KOS_XFER_INSTALL  = 1,
-  KOS_XFER_INJECT   = 2,
-  KOS_XFER_NODE_UNWIND = 3,
-  KOS_XFER_DYN_WITH_ENTER = 4,
+  KOS_XFER_EXTENT_ACTION = 0,
+  KOS_XFER_INSTALL       = 1,
+  KOS_XFER_INJECT        = 2,
+  KOS_XFER_DYN_WITH_ENTER = 3,
 } KosTransferStep;
 
 
@@ -311,9 +316,9 @@ typedef struct KosTransferAction {
 
   union {
     struct {
-      KosCode *code;
-      uint32_t pc;
-    } hook;
+      KosDynNode *node;
+      int phase;  /* KOS_XFER_EXTENT_PHASE_WIND or KOS_XFER_EXTENT_PHASE_UNWIND */
+    } extent_action;
 
     struct {
       KosDynNode *segment;
@@ -323,22 +328,17 @@ typedef struct KosTransferAction {
       PyObject *value;
       int is_throw;
     } inject;
-
-    struct {
-      KosDynNode *node;
-    } node_unwind;
   } data;
 
 } KosTransferAction;
 
 
-#define KosTransferAction_STEP(a)           (((KosTransferAction *)(a))->step)
-#define KosTransferAction_NODE_UNWIND_NODE(a) (((KosTransferAction *)(a))->data.node_unwind.node)
-#define KosTransferAction_HOOK_CODE(a)     (((KosTransferAction *)(a))->data.hook.code)
-#define KosTransferAction_HOOK_PC(a)        (((KosTransferAction *)(a))->data.hook.pc)
-#define KosTransferAction_INSTALL_SEGMENT(a) (((KosTransferAction *)(a))->data.install.segment)
-#define KosTransferAction_INJECT_VALUE(a)   (((KosTransferAction *)(a))->data.inject.value)
-#define KosTransferAction_INJECT_IS_THROW(a) (((KosTransferAction *)(a))->data.inject.is_throw)
+#define KosTransferAction_STEP(a)              (((KosTransferAction *)(a))->step)
+#define KosTransferAction_EXTENT_NODE(a)       (((KosTransferAction *)(a))->data.extent_action.node)
+#define KosTransferAction_EXTENT_PHASE(a)      (((KosTransferAction *)(a))->data.extent_action.phase)
+#define KosTransferAction_INSTALL_SEGMENT(a)   (((KosTransferAction *)(a))->data.install.segment)
+#define KosTransferAction_INJECT_VALUE(a)      (((KosTransferAction *)(a))->data.inject.value)
+#define KosTransferAction_INJECT_IS_THROW(a)   (((KosTransferAction *)(a))->data.inject.is_throw)
 
 
 /* === KosTransferPlan: continuation transfer execution plan === */
@@ -961,9 +961,9 @@ void kos_dyn_pop_with(KosContext *ctx, KosDynWith *node);
    :param node: WITH node being unwound
 
    :param out_awaitable: if non-NULL and exit returns an awaitable,
-     set to the awaitable (new ref) and return KOS_DYN_WITH_EXIT_ASYNC_STARTED
+     set to the awaitable (new ref) and return KOS_DYN_UNWIND_ASYNC_STARTED
 
-   :return: 0 on success, -1 on error, KOS_DYN_WITH_EXIT_ASYNC_STARTED if
+   :return: 0 on success, -1 on error, KOS_DYN_UNWIND_ASYNC_STARTED if
      exit returned awaitable (and *out_awaitable set)
 */
 int kos_dyn_with_unwind(KosContext *ctx, KosDynWith *node,
@@ -979,7 +979,7 @@ int kos_dyn_with_unwind(KosContext *ctx, KosDynWith *node,
    :param out_ev: event output for suspend (required when WITH may have async exit)
 
    :return: 0 on success, -1 on error or if top is PROMPT/PYCALL,
-     KOS_DYN_UNWIND_ASYNC_STARTED or KOS_DYN_WITH_EXIT_ASYNC_STARTED when suspended
+     KOS_DYN_UNWIND_ASYNC_STARTED when async extent action started (resume later)
 */
 int kos_dyn_pop_top(KosContext *ctx, struct KosEvent *out_ev);
 
@@ -989,17 +989,12 @@ int kos_dyn_unwind_to_frame(KosContext *ctx, KosDynFrame *frame,
 
 
 /**
-   Return value from extent unwind helpers when they start async exit
-   code (e.g. wind after hook).  Caller must not pop the node yet;
-   the evaluator runs the hook then resumes unwinding.
+   Return value from extent wind/unwind helpers when they start async
+   exit code (e.g. wind after hook, WITH __exit__ returning awaitable).
+   Caller must not pop the node yet; the evaluator runs the hook or
+   awaits the exit then resumes unwinding.
 */
 #define KOS_DYN_UNWIND_ASYNC_STARTED 1
-
-/**
-   Return value when WITH __exit__ returned an awaitable; caller must
-   stash and await before completing the pop.
-*/
-#define KOS_DYN_WITH_EXIT_ASYNC_STARTED 2
 
 
 /**
@@ -1021,6 +1016,24 @@ void kos_dyn_param_unwind(KosContext *ctx, KosDynParam *node);
 
 int kos_dyn_wind_wind(KosContext *ctx, KosDynWind *node);
 int kos_dyn_wind_unwind(KosContext *ctx, KosDynWind *node);
+
+
+/**
+   Unified extent wind (enter) and unwind (exit) API.  Dispatches by
+   node kind to the appropriate helper.  Single call site for
+   "run this node's wind/unwind".
+
+   kos_extent_run_wind(ctx, node): enter the extent.  Return 0 on
+   success, -1 on error, or KOS_DYN_UNWIND_ASYNC_STARTED if async.
+
+   kos_extent_run_unwind(ctx, node, out_awaitable): exit the extent.
+   Return 0 when complete, -1 on error, or KOS_DYN_UNWIND_ASYNC_STARTED
+   if async exit started.  For WITH/DYN_WITH, when async, stores the
+   awaitable in *out_awaitable (caller may pass NULL if not needed).
+*/
+int kos_extent_run_wind(KosContext *ctx, KosDynNode *node);
+int kos_extent_run_unwind(KosContext *ctx, KosDynNode *node,
+                         PyObject **out_awaitable);
 
 void kos_dyn_ns_unwind(KosContext *ctx, KosDynNs *node);
 

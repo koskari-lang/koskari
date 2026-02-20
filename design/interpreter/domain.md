@@ -306,7 +306,7 @@ Leaving any block that introduced PARAM bindings must restore previous bindings.
 
 - `kos_dyn_pop_top` handles KOS_DYN_PARAM: restore domain, pop node.
 - `kos_dyn_unwind_to_frame(ctx, frame)` pops nodes from dyn_top until dyn_top is the given frame; used by RETURN and exception propagation. Pops use the unified extent unwind helpers; WIND may defer the pop until the after-hook runs (see extent-wind-unwind.md).
-- Transfer plan: PARAM_RESTORE and RUN_HOOK steps call the same extent helpers (`kos_dyn_param_unwind`, wind after/before via `kos_begin_hook`); param enter folded into INSTALL step (walk installed chain, run `kos_dyn_param_wind` for each PARAM).
+- Transfer plan: EXTENT_ACTION steps call `kos_extent_run_wind` / `kos_extent_run_unwind`; INSTALL step runs `kos_extent_run_wind` for each PARAM and DYN_WITH in the installed segment.
 
 ### Step 6 — Opcodes
 

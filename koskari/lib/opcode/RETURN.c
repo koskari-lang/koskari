@@ -82,8 +82,7 @@ KOS_OP_HANDLER(RETURN) {
     int was_pending_ctx = (KosContext_PENDING_AGEN(ctx) != NULL);
     KosDynFrame *detached_frame = NULL;
     int unw = kos_dyn_unwind_to_frame(ctx, CURRENT_FRAME(ctx), out_ev);
-    if (unw == KOS_DYN_UNWIND_ASYNC_STARTED
-        || unw == KOS_DYN_WITH_EXIT_ASYNC_STARTED) {
+    if (unw == KOS_DYN_UNWIND_ASYNC_STARTED) {
       KosContext_PENDING_RETURN_VALUE(ctx) = val;
       KosContext_PENDING_RETURN_TO_PARENT(ctx) = 1;
       return 0;
@@ -147,8 +146,7 @@ KOS_OP_HANDLER(RETURN) {
   }
 
   int unw = kos_dyn_unwind_to_frame(ctx, CURRENT_FRAME(ctx), out_ev);
-  if (unw == KOS_DYN_UNWIND_ASYNC_STARTED
-      || unw == KOS_DYN_WITH_EXIT_ASYNC_STARTED) {
+  if (unw == KOS_DYN_UNWIND_ASYNC_STARTED) {
     KosContext_PENDING_RETURN_VALUE(ctx) = val;
     KosContext_PENDING_RETURN_TO_PARENT(ctx) = 0;
     return 0;

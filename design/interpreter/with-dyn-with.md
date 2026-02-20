@@ -8,6 +8,8 @@ transfer-plan rules.
 **See also:** [OPCODES.md](../OPCODES.md) (opcode reference), [extent-wind-unwind.md](extent-wind-unwind.md)
 (unified wind/unwind model), [execution-invariants.md](execution-invariants.md).
 
+WITH and DYN_WITH participate in the same extent contract as WIND: both use the unified `kos_extent_run_wind` / `kos_extent_run_unwind` API and the single async return code `KOS_DYN_UNWIND_ASYNC_STARTED` for suspend-during-unwind.
+
 
 ## Goal
 

@@ -152,7 +152,7 @@ Transfer plans orchestrate continuation application with proper hook execution:
 
 ```c
 typedef enum KosTransferStep {
-  KOS_XFER_RUN_HOOK,  /* execute a wind/unwind hook block */
+  KOS_XFER_EXTENT_ACTION,  /* execute extent wind or unwind for a node */
   KOS_XFER_INSTALL,   /* splice target chain segment */
   KOS_XFER_INJECT,    /* push resume value onto stack */
 } KosTransferStep;
@@ -168,9 +168,9 @@ struct KosTransferPlan {
 ```
 
 **Plan structure**:
-1. `RUN_HOOK` actions for `after` hooks from current to LCA (inner-to-outer)
+1. `EXTENT_ACTION` (unwind) for WIND after hooks and PARAM/DYN_WITH from current to LCA (inner-to-outer)
 2. `INSTALL` action to splice target chain
-3. `RUN_HOOK` actions for `before` hooks from LCA to target (outer-to-inner)
+3. `EXTENT_ACTION` (wind) for WIND before hooks from LCA to target (outer-to-inner)
 4. `INJECT` action to push resume value
 
 ### LCA Computation
