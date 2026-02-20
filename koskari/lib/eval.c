@@ -2380,8 +2380,8 @@ eval_loop_start:
     }
 
     KosOp *insn = &KosCode_CODE(code)[pc];
-    SAYF("[eval] pc=%u op=%u arg=%u\n",
-         (unsigned) pc, (unsigned) KosOp_OP(insn), (unsigned) KosOp_ARG(insn));
+    SAYF("[eval] pc=%u op=%s arg=%u\n",
+         (unsigned) pc, kos_opcode_name(KosOp_OP(insn)), (unsigned) KosOp_ARG(insn));
 
 #if KOS_STACK_TRACE
     trace_stack("  before", CURRENT_STACK(ctx));

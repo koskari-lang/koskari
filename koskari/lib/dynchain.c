@@ -35,7 +35,193 @@
 
 /* Set to 1 to trace transfer plan steps (for debugging).  All trace output
  * goes through SAYF from debug.h. */
-#define KOS_XFER_TRACE 0
+#define KOS_XFER_TRACE 1
+
+
+/* === Debug helper functions === */
+
+
+const char *kos_dynnode_kind_name(int kind) {
+  switch (kind) {
+    case KOS_DYN_FRAME:      return "FRAME";
+    case KOS_DYN_PROMPT:     return "PROMPT";
+    case KOS_DYN_WIND:       return "WIND";
+    case KOS_DYN_REGION:     return "REGION";
+    case KOS_DYN_PYCALL:     return "PYCALL";
+    case KOS_DYN_NS:         return "NS";
+    case KOS_DYN_CC:         return "CC";
+    case KOS_DYN_YIELD_FROM: return "YIELD_FROM";
+    case KOS_DYN_PARAM:      return "PARAM";
+    case KOS_DYN_WITH:       return "WITH";
+    case KOS_DYN_DYN_WITH:   return "DYN_WITH";
+    case KOS_DYN_SHIFT:      return "SHIFT";
+    default:                 return "UNKNOWN";
+  }
+}
+
+
+const char *kos_opcode_name(int opcode) {
+  switch (opcode) {
+    case 0: return "NOOP";
+    case 1: return "LOAD_GLOBAL";
+    case 2: return "POSITION";
+    case 3: return "LOAD_CONST_TRUE";
+    case 4: return "LOAD_CONST_FALSE";
+    case 5: return "CONST";
+    case 6: return "LOAD_CONST_NONE";
+    case 7: return "LOAD_CONST_EMPTY_TUPLE";
+    case 8: return "LOAD_CONST_ZERO";
+    case 9: return "LOAD_CONST_ONE";
+    case 10: return "LOAD_CONST_NEG_ONE";
+    case 11: return "LOAD_CONST_EMPTY_STR";
+    case 12: return "LOAD_CONST_EMPTY_BYTES";
+    case 13: return "RETURN";
+    case 14: return "YIELD";
+    case 15: return "YIELD_FROM";
+    case 16: return "POP";
+    case 17: return "DUP";
+    case 18: return "ROT2";
+    case 19: return "ROT3";
+    case 20: return "UNPACK";
+    case 21: return "BUILD_TUPLE";
+    case 22: return "BUILD_LIST";
+    case 23: return "BUILD_SET";
+    case 24: return "BUILD_DICT";
+    case 25: return "BUILD_SLICE";
+    case 26: return "LIST_APPEND";
+    case 27: return "SET_ADD";
+    case 28: return "DICT_MERGE";
+    case 29: return "DICT_UPDATE";
+    case 30: return "LIST_EXTEND";
+    case 31: return "SET_UPDATE";
+    case 32: return "UNARY_POS";
+    case 33: return "UNARY_NEG";
+    case 34: return "UNARY_NOT";
+    case 35: return "UNARY_INV";
+    case 36: return "BINARY_ADD";
+    case 37: return "BINARY_SUB";
+    case 38: return "BINARY_MUL";
+    case 39: return "BINARY_DIV";
+    case 40: return "BINARY_FLOORDIV";
+    case 41: return "BINARY_MOD";
+    case 42: return "BINARY_POW";
+    case 43: return "BINARY_LSHIFT";
+    case 44: return "BINARY_RSHIFT";
+    case 45: return "BINARY_AND";
+    case 46: return "FAST";
+    case 47: return "BINARY_OR";
+    case 48: return "BINARY_XOR";
+    case 49: return "INPLACE_ADD";
+    case 50: return "FAST_STORE";
+    case 51: return "INPLACE_SUB";
+    case 52: return "INPLACE_MUL";
+    case 53: return "INPLACE_DIV";
+    case 54: return "INPLACE_FLOORDIV";
+    case 55: return "INPLACE_MOD";
+    case 56: return "INPLACE_POW";
+    case 57: return "INPLACE_LSHIFT";
+    case 58: return "INPLACE_RSHIFT";
+    case 59: return "INPLACE_AND";
+    case 60: return "INPLACE_OR";
+    case 61: return "INPLACE_XOR";
+    case 62: return "COMPARE_LT";
+    case 63: return "COMPARE_LE";
+    case 64: return "COMPARE_EQ";
+    case 65: return "COMPARE_NE";
+    case 66: return "COMPARE_GT";
+    case 67: return "COMPARE_GE";
+    case 68: return "COMPARE_IN";
+    case 69: return "CALL";
+    case 70: return "COMPARE_IS";
+    case 71: return "COMPARE_IS_NOT";
+    case 72: return "COMPARE_NOT_IN";
+    case 73: return "GETATTR";
+    case 74: return "SETATTR";
+    case 75: return "DELATTR";
+    case 76: return "GETITEM";
+    case 77: return "SETITEM";
+    case 78: return "DELITEM";
+    case 79: return "JUMP";
+    case 80: return "JUMP_IF_TRUE";
+    case 81: return "JUMP_IF_FALSE";
+    case 82: return "JUMP_IF_TRUE_OR_POP";
+    case 83: return "JUMP_IF_FALSE_OR_POP";
+    case 84: return "POP_JUMP_IF_TRUE";
+    case 85: return "POP_JUMP_IF_FALSE";
+    case 86: return "RAISE";
+    case 87: return "PUSH_REGION";
+    case 88: return "POP_REGION";
+    case 89: return "BREAK";
+    case 90: return "CONTINUE";
+    case 91: return "PUSH_NS";
+    case 92: return "PUSH_WIND";
+    case 93: return "POP_WIND";
+    case 94: return "PUSH_WITH";
+    case 95: return "PUSH_DYN_WITH";
+    case 96: return "POP_WITH";
+    case 97: return "POP_DYN_WITH";
+    case 98: return "STORE_GLOBAL";
+    case 99: return "DELETE_GLOBAL";
+    case 100: return "STORE_FAST";
+    case 101: return "POP_NS";
+    case 102: return "DELETE_FAST";
+    case 103: return "LOAD_CLOSURE";
+    case 104: return "MAKE_CLOSURE";
+    case 105: return "LOAD_DEREF";
+    case 106: return "STORE_DEREF";
+    case 107: return "DELETE_DEREF";
+    case 108: return "IMPORT_NAME";
+    case 109: return "IMPORT_FROM";
+    case 110: return "IMPORT_STAR";
+    case 111: return "SETUP_ANNOTATIONS";
+    case 112: return "STORE_ANNOTATION";
+    case 113: return "FORMAT_VALUE";
+    case 114: return "BUILD_STRING";
+    case 115: return "UNPACK_EX";
+    case 116: return "MATCH_CLASS";
+    case 117: return "MATCH_MAPPING";
+    case 118: return "MATCH_SEQUENCE";
+    case 119: return "MATCH_KEYS";
+    case 120: return "COPY_DICT_WITHOUT_KEYS";
+    case 121: return "GET_LEN";
+    case 122: return "MATCH_COMPARE";
+    case 123: return "LOAD_ASSERTION_ERROR";
+    case 124: return "CONTAINS_OP";
+    case 125: return "IS_OP";
+    case 126: return "JUMP_IF_NOT_EXC_MATCH";
+    case 127: return "LIST_TO_TUPLE";
+    case 128: return "GEN_START";
+    case 129: return "GET_AWAITABLE";
+    case 130: return "GET_AITER";
+    case 131: return "GET_ANEXT";
+    case 132: return "END_ASYNC_FOR";
+    case 133: return "BEFORE_ASYNC_WITH";
+    case 134: return "SETUP_ASYNC_WITH";
+    case 135: return "CALL_FUNCTION_EX";
+    case 136: return "MAKE_FUNCTION";
+    case 137: return "BUILD_CONST_KEY_MAP";
+    case 138: return "BUILD_MAP_UNPACK";
+    case 139: return "BUILD_TUPLE_UNPACK";
+    case 140: return "PUSH_PROMPT";
+    case 141: return "POP_PROMPT";
+    case 142: return "PUSH_SHIFT";
+    case 143: return "POP_SHIFT";
+    case 144: return "PUSH_CC";
+    case 145: return "POP_CC";
+    case 146: return "AWAIT";
+    case 147: return "PUSH_PYCALL";
+    case 148: return "POP_PYCALL";
+    case 149: return "PUSH_YIELD_FROM";
+    case 150: return "POP_YIELD_FROM";
+    case 151: return "SEND_YIELD_FROM";
+    case 152: return "THROW_YIELD_FROM";
+    case 153: return "CLOSE_YIELD_FROM";
+    case 154: return "PUSH_PARAM";
+    case 155: return "GET_PARAM";
+    case 156: return "POP_PARAM";
+    default: return "UNKNOWN_OP";
+  }
+}
 
 
 /* === DynNode base operations === */
@@ -197,7 +383,8 @@ KosDynPrompt *kos_dynprompt_new(KosDynNode *parent, uint32_t prompt_id) {
   if (! prompt)
     return NULL;
 
-  kos_dynnode_init(prompt, KOS_DYN_PROMPT, parent, KOS_DYN_CAP_BARRIER);
+  kos_dynnode_init(prompt, KOS_DYN_PROMPT, parent,
+                   KOS_DYN_CAP_BARRIER | KOS_DYN_CAP_NEEDS_TRANSFER_TEARDOWN);
   KosDynPrompt_ID(prompt) = prompt_id;
   KosDynPrompt_STACK(prompt) = NULL;
   return prompt;
@@ -276,8 +463,7 @@ KosDynShift *kos_dynshift_new(KosDynNode *parent) {
   if (! shift)
     return NULL;
 
-  kos_dynnode_init((KosDynNode *) shift, KOS_DYN_SHIFT, parent,
-                   KOS_DYN_CAP_NEEDS_UNWIND_ACTION | KOS_DYN_CAP_NEEDS_TRANSFER_TEARDOWN);
+  kos_dynnode_init((KosDynNode *) shift, KOS_DYN_SHIFT, parent, 0);
   return shift;
 }
 
@@ -1040,8 +1226,10 @@ KosDynPrompt *kos_dyn_push_prompt(KosContext *ctx, uint32_t prompt_id) {
   if (! prompt)
     return NULL;
 
-  KosContext_DYN_TOP(ctx) = (KosDynNode *) prompt;
-  KosContext_CHAIN_VERSION(ctx)++;
+  if (kos_dyn_push(ctx, (KosDynNode *) prompt) < 0) {
+    kos_dynprompt_free(prompt);
+    return NULL;
+  }
 
   return prompt;
 }
@@ -1710,33 +1898,72 @@ static int type_ops_with_pop_semantic(KosContext *ctx, KosDynNode *top,
 }
 
 
-static int type_ops_shift_install(KosContext *ctx, KosDynNode *node) {
-  (void) node;
+static int type_ops_prompt_install(KosContext *ctx, KosDynNode *node) {
   if (! KosContext_FRAME_TOP(ctx))
     return 0;
-  return KosStackBlock_PushBlock(&KosDynFrame_STACK(KosContext_FRAME_TOP(ctx)));
+  if (KOS_XFER_TRACE) {
+    size_t len_before = KosDynFrame_STACK(KosContext_FRAME_TOP(ctx))
+        ? KosStackBlock_LEN(KosDynFrame_STACK(KosContext_FRAME_TOP(ctx))) : 0;
+    SAYF("[xfer] prompt_install node=%p: pushing stack block, len before=%zu",
+         (void *) node, len_before);
+    (void) len_before;
+  }
+  int result = KosStackBlock_PushBlock(&KosDynFrame_STACK(KosContext_FRAME_TOP(ctx)));
+  if (KOS_XFER_TRACE && result == 0) {
+    size_t len_after = KosDynFrame_STACK(KosContext_FRAME_TOP(ctx))
+        ? KosStackBlock_LEN(KosDynFrame_STACK(KosContext_FRAME_TOP(ctx))) : 0;
+    SAYF("[xfer] prompt_install node=%p done, len after=%zu", (void *) node, len_after);
+    (void) len_after;
+  }
+  return result;
 }
 
 
-static int type_ops_shift_pop(KosContext *ctx, KosDynNode *node, KosEvent *out_ev) {
-  (void) node;
+static int type_ops_prompt_pop(KosContext *ctx, KosDynNode *node, KosEvent *out_ev) {
   (void) out_ev;
   if (! KosContext_FRAME_TOP(ctx))
     return 0;
-  return KosStackBlock_DropBlock(&KosDynFrame_STACK(KosContext_FRAME_TOP(ctx)));
+  if (KOS_XFER_TRACE) {
+    size_t len_before = KosDynFrame_STACK(KosContext_FRAME_TOP(ctx))
+        ? KosStackBlock_LEN(KosDynFrame_STACK(KosContext_FRAME_TOP(ctx))) : 0;
+    SAYF("[xfer] prompt_pop node=%p: dropping stack block, len before=%zu",
+         (void *) node, len_before);
+    (void) len_before;
+  }
+  int result = KosStackBlock_DropBlock(&KosDynFrame_STACK(KosContext_FRAME_TOP(ctx)));
+  if (KOS_XFER_TRACE && result == 0) {
+    size_t len_after = KosDynFrame_STACK(KosContext_FRAME_TOP(ctx))
+        ? KosStackBlock_LEN(KosDynFrame_STACK(KosContext_FRAME_TOP(ctx))) : 0;
+    SAYF("[xfer] prompt_pop node=%p done, len after=%zu", (void *) node, len_after);
+    (void) len_after;
+  }
+  return result;
 }
 
 
-static int type_ops_teardown_shift(KosContext *ctx, KosDynNode *node) {
+static int type_ops_teardown_prompt(KosContext *ctx, KosDynNode *node) {
   (void) node;
   if (! KosContext_FRAME_TOP(ctx))
     return 0;
+  if (KOS_XFER_TRACE) {
+    size_t len_before = KosDynFrame_STACK(KosContext_FRAME_TOP(ctx))
+        ? KosStackBlock_LEN(KosDynFrame_STACK(KosContext_FRAME_TOP(ctx))) : 0;
+    SAYF("[xfer] teardown_prompt node=%p: dropping stack block, len before=%zu",
+         (void *) node, len_before);
+    (void) len_before;
+  }
   if (KosStackBlock_DropBlock(&KosDynFrame_STACK(KosContext_FRAME_TOP(ctx))) < 0)
     return -1;
-  if (KOS_XFER_TRACE)
-    SAYF("[xfer] teardown_shift node=%p done", (void *) node);
+  if (KOS_XFER_TRACE) {
+    size_t len_after = KosDynFrame_STACK(KosContext_FRAME_TOP(ctx))
+        ? KosStackBlock_LEN(KosDynFrame_STACK(KosContext_FRAME_TOP(ctx))) : 0;
+    SAYF("[xfer] teardown_prompt node=%p done, len after=%zu", (void *) node, len_after);
+    (void) len_after;
+  }
   return 0;
 }
+
+
 
 
 static int type_ops_teardown_dyn_with(KosContext *ctx, KosDynNode *node) {
@@ -1771,13 +1998,13 @@ const KosDynTypeOps kos_dyn_type_ops[] = {
   },
   /* KOS_DYN_PROMPT */
   {
-    .install = NULL,
-    .pop = NULL,
+    .install = type_ops_prompt_install,
+    .pop = type_ops_prompt_pop,
     .wind = NULL,
     .unwind = NULL,
-    .teardown_after_unwind = NULL,
+    .teardown_after_unwind = type_ops_teardown_prompt,
     .clone = (KosDynNode *(*)(KosDynNode *)) kos_dynprompt_clone,
-    .caps = KOS_DYN_CAP_BARRIER,
+    .caps = KOS_DYN_CAP_BARRIER | KOS_DYN_CAP_NEEDS_TRANSFER_TEARDOWN,
   },
   /* KOS_DYN_WIND */
   {
@@ -1872,13 +2099,13 @@ const KosDynTypeOps kos_dyn_type_ops[] = {
   },
   /* KOS_DYN_SHIFT */
   {
-    .install = type_ops_shift_install,
-    .pop = type_ops_shift_pop,
+    .install = NULL,
+    .pop = NULL,
     .wind = NULL,
     .unwind = NULL,
-    .teardown_after_unwind = type_ops_teardown_shift,
+    .teardown_after_unwind = NULL,
     .clone = (KosDynNode *(*)(KosDynNode *)) kos_dynshift_clone,
-    .caps = KOS_DYN_CAP_NEEDS_UNWIND_ACTION | KOS_DYN_CAP_NEEDS_TRANSFER_TEARDOWN,
+    .caps = 0,
   },
 };
 
@@ -1908,9 +2135,16 @@ int kos_dyn_pop_top(KosContext *ctx, KosEvent *out_ev) {
 int kos_dyn_unwind_to_node(KosContext *ctx, KosDynNode *target,
                            KosEvent *out_ev) {
 
+  if (KOS_XFER_TRACE)
+    SAYF("[xfer] unwind_to_node: target=%p kind=%s",
+         (void *) target, target ? kos_dynnode_kind_name(KosDynNode_KIND(target)) : "NULL");
+
   while (KosContext_DYN_TOP(ctx) != NULL
          && KosContext_DYN_TOP(ctx) != target) {
     KosDynNode *top = KosContext_DYN_TOP(ctx);
+    if (KOS_XFER_TRACE)
+      SAYF("[xfer] unwind_to_node: popping node=%p kind=%s",
+           (void *) top, kos_dynnode_kind_name(KosDynNode_KIND(top)));
     int pop_res;
     if (KosDynNode_IS_PROMPT(top)) {
       kos_dyn_pop_prompt(ctx, (KosDynPrompt *) top);
@@ -1923,6 +2157,8 @@ int kos_dyn_unwind_to_node(KosContext *ctx, KosDynNode *target,
     if (pop_res != 0)
       return -1;
   }
+  if (KOS_XFER_TRACE)
+    SAYF("[xfer] unwind_to_node: done, dyn_top=%p", (void *) KosContext_DYN_TOP(ctx));
   return 0;
 }
 
@@ -1930,9 +2166,15 @@ int kos_dyn_unwind_to_node(KosContext *ctx, KosDynNode *target,
 int kos_dyn_unwind_to_frame(KosContext *ctx, KosDynFrame *frame,
                             KosEvent *out_ev) {
 
+  if (KOS_XFER_TRACE)
+    SAYF("[xfer] unwind_to_frame: target frame=%p", (void *) frame);
+
   while (KosContext_DYN_TOP(ctx) != NULL
          && KosContext_DYN_TOP(ctx) != (KosDynNode *) frame) {
     KosDynNode *top = KosContext_DYN_TOP(ctx);
+    if (KOS_XFER_TRACE)
+      SAYF("[xfer] unwind_to_frame: popping node=%p kind=%s",
+           (void *) top, kos_dynnode_kind_name(KosDynNode_KIND(top)));
     int pop_res;
     if (KosDynNode_IS_PROMPT(top)) {
       kos_dyn_pop_prompt(ctx, (KosDynPrompt *) top);
@@ -1948,6 +2190,8 @@ int kos_dyn_unwind_to_frame(KosContext *ctx, KosDynFrame *frame,
       return -1;
   }
   KosContext_UNWIND_TARGET_FRAME(ctx) = NULL;
+  if (KOS_XFER_TRACE)
+    SAYF("[xfer] unwind_to_frame: done, dyn_top=%p", (void *) KosContext_DYN_TOP(ctx));
   return 0;
 }
 
@@ -3223,38 +3467,47 @@ static int xfer_step_install(KosContext *ctx, KosTransferAction *action) {
              ? KosStackBlock_LEN(KosDynFrame_STACK(KosContext_FRAME_TOP(ctx))) : 0,
          (unsigned) KosTransferPlan_RESUME_PC(plan));
   KosContext_GLOBALS_CACHE_VERSION(ctx) = KosContext_CHAIN_VERSION(ctx);
+  /* Run install wind for nodes that need it (in reverse order) */
   {
-    PyObject *param_list = PyList_New(0);
-    if (! param_list) {
-      if (KOS_XFER_TRACE)
-        SAY("[xfer] INSTALL param_list alloc failed");
-      return -1;
-    }
+    /* First pass: count nodes that need wind */
+    size_t wind_count = 0;
     KosDynNode *walk = seg;
     KosDynNode *chain_bottom = seg;
     while (chain_bottom && KosDynNode_PARENT(chain_bottom))
       chain_bottom = KosDynNode_PARENT(chain_bottom);
     KosDynNode *chain_stop = chain_bottom ? KosDynNode_PARENT(chain_bottom) : NULL;
     while (walk && walk != chain_stop) {
-      if (KosDynNode_HAS_CAP(walk, KOS_DYN_CAP_NEEDS_INSTALL_WIND)) {
-        if (PyList_Append(param_list, (PyObject *) walk) < 0) {
-          Py_DECREF(param_list);
+      if (KosDynNode_HAS_CAP(walk, KOS_DYN_CAP_NEEDS_INSTALL_WIND))
+        wind_count++;
+      walk = KosDynNode_PARENT(walk);
+    }
+
+    /* Second pass: collect nodes into C array */
+    if (wind_count > 0) {
+      KosDynNode **wind_nodes = PyMem_Malloc(wind_count * sizeof(KosDynNode *));
+      if (! wind_nodes) {
+        PyErr_NoMemory();
+        return -1;
+      }
+      size_t idx = 0;
+      walk = seg;
+      while (walk && walk != chain_stop) {
+        if (KosDynNode_HAS_CAP(walk, KOS_DYN_CAP_NEEDS_INSTALL_WIND))
+          wind_nodes[idx++] = walk;
+        walk = KosDynNode_PARENT(walk);
+      }
+
+      /* Third pass: run wind in reverse order */
+      for (size_t i = wind_count; i > 0; i--) {
+        if (kos_dynnode_run_wind(ctx, wind_nodes[i - 1]) < 0) {
+          PyMem_Free(wind_nodes);
+          if (KOS_XFER_TRACE)
+            SAY("[xfer] INSTALL wind failed");
           return -1;
         }
       }
-      walk = KosDynNode_PARENT(walk);
+      PyMem_Free(wind_nodes);
     }
-    Py_ssize_t n = PyList_GET_SIZE(param_list);
-    for (Py_ssize_t i = n - 1; i >= 0; i--) {
-      KosDynNode *node = (KosDynNode *) PyList_GET_ITEM(param_list, i);
-      if (kos_dynnode_run_wind(ctx, node) < 0) {
-        Py_DECREF(param_list);
-        if (KOS_XFER_TRACE)
-          SAY("[xfer] INSTALL wind failed");
-        return -1;
-      }
-    }
-    Py_DECREF(param_list);
   }
   if (KOS_XFER_TRACE)
     SAYF("[xfer] INSTALL after: dyn_top=%p frame_top=%p",
@@ -3317,39 +3570,44 @@ static int xfer_step_push(KosContext *ctx, KosTransferAction *action) {
         KosTransferPlan_RESUME_PC(plan);
   KosContext_CHAIN_VERSION(ctx)++;
 
-  {
-    PyObject *param_list = PyList_New(0);
-    if (! param_list) {
-      if (KOS_XFER_TRACE)
-        SAY("[xfer] PUSH param_list alloc failed");
-      return -1;
-    }
+  /* Run install wind for nodes that need it (in reverse order) */
+  if (seg) {
+    /* First pass: count nodes that need wind */
+    size_t wind_count = 0;
     KosDynNode *walk = seg;
-    KosDynNode *chain_bottom = seg;
-    while (chain_bottom && KosDynNode_PARENT(chain_bottom))
-      chain_bottom = KosDynNode_PARENT(chain_bottom);
-    KosDynNode *chain_stop =
-        chain_bottom ? KosDynNode_PARENT(chain_bottom) : NULL;
+    KosDynNode *chain_stop = current_top;
     while (walk && walk != chain_stop) {
-      if (KosDynNode_HAS_CAP(walk, KOS_DYN_CAP_NEEDS_INSTALL_WIND)) {
-        if (PyList_Append(param_list, (PyObject *) walk) < 0) {
-          Py_DECREF(param_list);
+      if (KosDynNode_HAS_CAP(walk, KOS_DYN_CAP_NEEDS_INSTALL_WIND))
+        wind_count++;
+      walk = KosDynNode_PARENT(walk);
+    }
+
+    /* Second pass: collect nodes into C array */
+    if (wind_count > 0) {
+      KosDynNode **wind_nodes = PyMem_Malloc(wind_count * sizeof(KosDynNode *));
+      if (! wind_nodes) {
+        PyErr_NoMemory();
+        return -1;
+      }
+      size_t idx = 0;
+      walk = seg;
+      while (walk && walk != chain_stop) {
+        if (KosDynNode_HAS_CAP(walk, KOS_DYN_CAP_NEEDS_INSTALL_WIND))
+          wind_nodes[idx++] = walk;
+        walk = KosDynNode_PARENT(walk);
+      }
+
+      /* Third pass: run wind in reverse order */
+      for (size_t i = wind_count; i > 0; i--) {
+        if (kos_dynnode_run_wind(ctx, wind_nodes[i - 1]) < 0) {
+          PyMem_Free(wind_nodes);
+          if (KOS_XFER_TRACE)
+            SAY("[xfer] PUSH wind failed");
           return -1;
         }
       }
-      walk = KosDynNode_PARENT(walk);
+      PyMem_Free(wind_nodes);
     }
-    Py_ssize_t n = PyList_GET_SIZE(param_list);
-    for (Py_ssize_t i = n - 1; i >= 0; i--) {
-      KosDynNode *node = (KosDynNode *) PyList_GET_ITEM(param_list, i);
-      if (kos_dynnode_run_wind(ctx, node) < 0) {
-        Py_DECREF(param_list);
-        if (KOS_XFER_TRACE)
-          SAY("[xfer] PUSH wind failed");
-        return -1;
-      }
-    }
-    Py_DECREF(param_list);
   }
   if (KOS_XFER_TRACE)
     SAYF("[xfer] PUSH after: dyn_top=%p frame_top=%p",
@@ -3431,6 +3689,22 @@ static int xfer_step_truncate_and_inject(KosContext *ctx,
     return -1;
   }
 
+  if (KOS_XFER_TRACE)
+    SAYF("[xfer] TRUNCATE_AND_INJECT: freeing from current=%p to stop_node=%p (inclusive), new_top will be=%p",
+         (void *) current, (void *) stop_node, (void *) new_top);
+
+  KosDynNode *node = current;
+  while (node && node != new_top) {
+    KosDynNode *parent = KosDynNode_PARENT(node);
+    if (KosDynNode_HAS_CAP(node, KOS_DYN_CAP_NEEDS_TRANSFER_TEARDOWN)) {
+      if (kos_dyn_transfer_unwind_teardown(ctx, node) < 0) {
+        kos_dynchain_free(node, new_top);
+        return -1;
+      }
+    }
+    node = parent;
+  }
+
   kos_dynchain_free(current, new_top);
   KosContext_DYN_TOP(ctx) = new_top;
   KosContext_CHAIN_VERSION(ctx)++;
@@ -3442,15 +3716,32 @@ static int xfer_step_truncate_and_inject(KosContext *ctx,
   }
 
   if (KosTransferAction_TRUNCATE_IS_THROW(action)) {
+    if (KOS_XFER_TRACE)
+      SAY("[xfer] TRUNCATE_AND_INJECT: setting inject mode to THROW");
     KosContext_INJECT_MODE(ctx) = KOS_INJECT_THROW;
     Py_XINCREF(KosTransferAction_TRUNCATE_VALUE(action));
     Py_XDECREF(KosContext_INJECT_VALUE(ctx));
     KosContext_INJECT_VALUE(ctx) = KosTransferAction_TRUNCATE_VALUE(action);
   } else if (KosContext_FRAME_TOP(ctx)) {
+    size_t stack_len_before = 0;
+    if (KOS_XFER_TRACE) {
+      stack_len_before = KosDynFrame_STACK(KosContext_FRAME_TOP(ctx))
+          ? KosStackBlock_LEN(KosDynFrame_STACK(KosContext_FRAME_TOP(ctx))) : 0;
+      SAYF("[xfer] TRUNCATE_AND_INJECT: pushing value %R onto frame=%p stack (len before=%zu)",
+           KosTransferAction_TRUNCATE_VALUE(action),
+           (void *) KosContext_FRAME_TOP(ctx), stack_len_before);
+    }
+    (void) stack_len_before;
     if (KosStackBlock_PushRef(&KosDynFrame_STACK(KosContext_FRAME_TOP(ctx)),
                               KosTransferAction_TRUNCATE_VALUE(action)) < 0) {
       Py_DECREF(KosTransferAction_TRUNCATE_VALUE(action));
       return -1;
+    }
+    if (KOS_XFER_TRACE) {
+      size_t stack_len_after = KosDynFrame_STACK(KosContext_FRAME_TOP(ctx))
+          ? KosStackBlock_LEN(KosDynFrame_STACK(KosContext_FRAME_TOP(ctx))) : 0;
+      SAYF("[xfer] TRUNCATE_AND_INJECT: stack len after=%zu", stack_len_after);
+      (void) stack_len_after;
     }
     Py_DECREF(KosTransferAction_TRUNCATE_VALUE(action));
   }
@@ -3662,9 +3953,15 @@ int kos_invoke_continuation(
     KosContext_DELIMITED_RETURN_FRAME(ctx) = KosContext_FRAME_TOP(ctx);
     KosContext_DELIMITED_RETURN_PC(ctx) = KosContext_FRAME_TOP(ctx)
         ? KosDynFrame_PC(KosContext_FRAME_TOP(ctx)) : (uint32_t) -1;
-    KosContext_DELIMITED_RETURN_NODE(ctx) =
-        (KosContext_DYN_TOP(ctx) && KosDynNode_IS_SHIFT(KosContext_DYN_TOP(ctx)))
-            ? KosContext_DYN_TOP(ctx) : NULL;
+    /* Return to current dyn_top, not frame_top, so we don't unwind past
+       nodes that were pushed after the continuation was invoked (e.g. PARAM) */
+    KosContext_DELIMITED_RETURN_NODE(ctx) = KosContext_DYN_TOP(ctx);
+    if (KOS_XFER_TRACE)
+      SAYF("[xfer] invoke: set DELIMITED_RETURN dyn_top=%p kind=%s frame_top=%p return_node=%p",
+           (void *) KosContext_DYN_TOP(ctx),
+           KosContext_DYN_TOP(ctx) ? kos_dynnode_kind_name(KosDynNode_KIND(KosContext_DYN_TOP(ctx))) : "NULL",
+           (void *) KosContext_FRAME_TOP(ctx),
+           (void *) KosContext_DELIMITED_RETURN_NODE(ctx));
     if (KosContext_RETURN_TARGET_CHAIN(ctx)) {
       kos_dynchain_free(KosContext_RETURN_TARGET_CHAIN(ctx), NULL);
       KosContext_RETURN_TARGET_CHAIN(ctx) = NULL;

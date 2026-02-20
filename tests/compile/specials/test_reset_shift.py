@@ -120,6 +120,7 @@ class TestResetShiftSpecials(SpecialsTestCase):
         """
 
         def add(a, b):
+            print("add", a, b)
             return a + b
 
         src_str = """
@@ -129,6 +130,7 @@ class TestResetShiftSpecials(SpecialsTestCase):
         """
 
         expr, mod = self.compile_expr(src_str, add=add)
+        dis(expr.code)
 
         result = expr().run()
         self.assertEqual(result, 11)
@@ -144,7 +146,7 @@ class TestResetShiftSpecials(SpecialsTestCase):
         = 10 + amt = 10 + 100 = 110.
 
         Second seq branch: parameterize amt=200, invoke stolen(9). Continuation
-        resumes in *current* param scope: add(9) = 9 + 200 = 209.
+        resumes and transfers back to original param scope: add(9) = 9 + 100 = 109.
         """
 
         def seq(*args):
@@ -154,19 +156,26 @@ class TestResetShiftSpecials(SpecialsTestCase):
             return a + ParamRef('amt', 0).deref()
 
         src_str = """
-        (compile/let [[stolen 0]]
-          (compile/call seq
-            (compile/parameterize [[amt 100]]
+        (compile/parameterize [[amt 100]]
+          (compile/let [[stolen 0]]
+            (compile/call seq None
+              (compile/call add 1)
               (compile/reset
-                (add (compile/shift k (compile/setq stolen k) (compile/call k 10)))))
-            (compile/parameterize [[amt 200]]
-              (compile/call stolen 9))))
+                (compile/call add (compile/shift k (compile/setq stolen k) (compile/call k 10))))
+              (compile/parameterize [[amt 200]]
+                (compile/call stolen 9))
+              (compile/call add 2)
+            )))
         """
 
         expr, mod = self.compile_expr(src_str, add=add, seq=seq)
+        # dis(expr.code)
+
+        self.assertIs(mod.add, add)
+        self.assertIs(mod.seq, seq)
 
         result = expr().run()
-        self.assertEqual(result, (110, 209))
+        self.assertEqual(result, (None, 101, 110, 109, 102))
 
 
 # The end.

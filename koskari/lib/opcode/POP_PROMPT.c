@@ -20,9 +20,11 @@
 */
 
 KOS_OP_HANDLER(POP_PROMPT) {
-  SAYF("[eval] POP_PROMPT inv_seg=%p dyn_top=%p IS_PROMPT=%d\n",
+  SAYF("[eval] POP_PROMPT inv_seg=%p dyn_top=%p IS_PROMPT=%d frame=%p stack_len=%zu\n",
        (void *) KosContext_INVOCATION_SEGMENT_TOP(ctx), (void *) KosContext_DYN_TOP(ctx),
-       (KosContext_DYN_TOP(ctx) && KosDynNode_IS_PROMPT(KosContext_DYN_TOP(ctx))) ? 1 : 0);
+       (KosContext_DYN_TOP(ctx) && KosDynNode_IS_PROMPT(KosContext_DYN_TOP(ctx))) ? 1 : 0,
+       (void *) CURRENT_FRAME(ctx),
+       CURRENT_STACK(ctx) ? KosStackBlock_LEN(CURRENT_STACK(ctx)) : 0);
 
   if (KosContext_INVOCATION_SEGMENT_TOP(ctx) != NULL) {
     PyObject *val = KosStackBlock_PopRef(&CURRENT_STACK(ctx));
@@ -36,6 +38,9 @@ KOS_OP_HANDLER(POP_PROMPT) {
 
     if (KosContext_DELIMITED_RETURN_FRAME(ctx) != NULL
         && KosContext_DELIMITED_RETURN_PC(ctx) != (uint32_t) -1) {
+      SAYF("[eval] POP_PROMPT unwinding to return frame=%p node=%p",
+           (void *) KosContext_DELIMITED_RETURN_FRAME(ctx),
+           (void *) KosContext_DELIMITED_RETURN_NODE(ctx));
       int unw;
       if (KosContext_DELIMITED_RETURN_NODE(ctx) != NULL) {
         unw = kos_dyn_unwind_to_node(ctx,
@@ -55,6 +60,9 @@ KOS_OP_HANDLER(POP_PROMPT) {
         Py_DECREF(val);
         return -1;
       }
+      SAYF("[eval] POP_PROMPT after unwind: dyn_top=%p kind=%s",
+           (void *) KosContext_DYN_TOP(ctx),
+           KosContext_DYN_TOP(ctx) ? kos_dynnode_kind_name(KosDynNode_KIND(KosContext_DYN_TOP(ctx))) : "NULL");
       if (KosStackBlock_PushRef(
               &KosDynFrame_STACK(KosContext_DELIMITED_RETURN_FRAME(ctx)),
               val) < 0) {
@@ -85,7 +93,33 @@ KOS_OP_HANDLER(POP_PROMPT) {
     PyErr_SetString(PyExc_RuntimeError, "POP_PROMPT: top is not a prompt");
     return -1;
   }
+  SAYF("[eval] POP_PROMPT (normal): popping prompt, frame=%p stack_len=%zu",
+       (void *) CURRENT_FRAME(ctx),
+       CURRENT_STACK(ctx) ? KosStackBlock_LEN(CURRENT_STACK(ctx)) : 0);
+  
+  PyObject *result = NULL;
+  if (CURRENT_STACK(ctx)) {
+    result = KosStackBlock_PopRef(&CURRENT_STACK(ctx));
+    if (! result) {
+      SAY("[eval] POP_PROMPT (normal): stack underrun");
+      return -1;
+    }
+  }
+  
   kos_dyn_pop_prompt(ctx, (KosDynPrompt *) KosContext_DYN_TOP(ctx));
+  
+  SAYF("[eval] POP_PROMPT (normal): after pop, frame=%p stack_len=%zu",
+       (void *) CURRENT_FRAME(ctx),
+       CURRENT_STACK(ctx) ? KosStackBlock_LEN(CURRENT_STACK(ctx)) : 0);
+  
+  if (result && CURRENT_STACK(ctx)) {
+    if (KosStackBlock_PushRef(&CURRENT_STACK(ctx), result) < 0) {
+      Py_DECREF(result);
+      return -1;
+    }
+  }
+  Py_XDECREF(result);
+  
   (void) insn;
   return 0;
 }

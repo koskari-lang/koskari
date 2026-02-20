@@ -19,8 +19,17 @@
 
 KOS_OP_HANDLER(POP_PARAM) {
   KosDynNode *top = KosContext_DYN_TOP(ctx);
-  if (! top || ! KosDynNode_IS_PARAM(top)) {
-    PyErr_SetString(PyExc_RuntimeError, "POP_PARAM: top is not a PARAM extent");
+  if (! top) {
+    PyErr_SetString(PyExc_RuntimeError, "POP_PARAM: dyn_top is NULL");
+    return -1;
+  }
+  if (! KosDynNode_IS_PARAM(top)) {
+    const char *actual_kind = kos_dynnode_kind_name(KosDynNode_KIND(top));
+    char msg[256];
+    snprintf(msg, sizeof(msg), 
+             "POP_PARAM: top is %s (expected PARAM), node=%p",
+             actual_kind, (void *) top);
+    PyErr_SetString(PyExc_RuntimeError, msg);
     return -1;
   }
 
