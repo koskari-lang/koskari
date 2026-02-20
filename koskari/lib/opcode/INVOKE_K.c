@@ -61,14 +61,8 @@ KOS_OP_HANDLER(INVOKE_K) {
     return -1;
   }
 
-  /* Validate prompt exists in current dynamic chain */
-  if (! kos_find_prompt(ctx, k->prompt_id)) {
-    Py_DECREF(value);
-    Py_DECREF(cont_obj);
-    PyErr_SetString(KoskariContinuationError,
-                    "INVOKE_K: prompt not found in dynamic chain");
-    return -1;
-  }
+  /* Prompt need not be in chain: push model grafts cont frames onto current
+   * chain and returns to call site when POP_PROMPT runs. */
 
   /* PC already advanced: return will resume at CURRENT_PC (next instr) */
   SAYF("[INVOKE_K] calling kos_invoke_continuation: captured_chain=%p frame=%p stack_len=%zu return_pc=%u",

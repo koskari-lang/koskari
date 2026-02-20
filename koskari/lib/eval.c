@@ -596,6 +596,8 @@ KosContext *kos_context_new(KosDynFrame *top) {
   KosContext_INVOCATION_SEGMENT_TOP(ctx) = NULL;
   KosContext_RETURN_TARGET_CHAIN(ctx) = NULL;
   KosContext_RETURN_TARGET_PC(ctx) = (uint32_t) -1;
+  KosContext_DELIMITED_RETURN_FRAME(ctx) = NULL;
+  KosContext_DELIMITED_RETURN_PC(ctx) = (uint32_t) -1;
 
   /* Initialize Python await bridging */
   KosContext_PY_AWAIT_ITER(ctx) = NULL;
@@ -1447,13 +1449,8 @@ static int call_call_continuation(
     return -1;
   }
 
-  if (KosContinuation_PROMPT_ID(k) != KOS_PROMPT_ID_UNDELIMITED
-      && ! kos_find_prompt(ctx, KosContinuation_PROMPT_ID(k))) {
-    Py_DECREF(resume_val);
-    PyErr_SetString(KoskariContinuationError,
-                    "continuation: prompt not found in dynamic chain");
-    return -1;
-  }
+  /* Delimited: prompt need not be in chain; push model grafts onto current
+   * chain and returns to call site on POP_PROMPT. */
 
   if (KosContinuation_TOKEN_REF(k) == (PyObject *) KosContext_TOKEN(ctx)
       || (KosContinuation_PROMPT_ID(k) == KOS_PROMPT_ID_UNDELIMITED && ! KosContinuation_TOKEN_REF(k))) {

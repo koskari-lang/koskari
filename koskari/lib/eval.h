@@ -241,6 +241,10 @@ struct KosContext {
   KosDynNode *return_target_chain;  /* cloned invocation-site chain (owned) */
   uint32_t return_target_pc;       /* pc to resume at (UINT32_MAX = not set) */
 
+  /* Delimited push model: frame to return to when continuation hits POP_PROMPT */
+  KosDynFrame *delimited_return_frame;  /* invocation site frame (owned ref) */
+  uint32_t delimited_return_pc;         /* pc to resume at (UINT32_MAX = not set) */
+
   /* --- Python bridge: await/yield suspend and resume --- */
   PyObject *py_await_iter;   /* await-iterator from __await__() */
   PyObject *py_last_yielded; /* last yielded object (debug/optional) */
@@ -304,6 +308,8 @@ struct KosContext {
 #define KosContext_INVOCATION_SEGMENT_TOP(c) (((KosContext *)(c))->invocation_segment_top)
 #define KosContext_RETURN_TARGET_CHAIN(c)   (((KosContext *)(c))->return_target_chain)
 #define KosContext_RETURN_TARGET_PC(c)      (((KosContext *)(c))->return_target_pc)
+#define KosContext_DELIMITED_RETURN_FRAME(c) (((KosContext *)(c))->delimited_return_frame)
+#define KosContext_DELIMITED_RETURN_PC(c)   (((KosContext *)(c))->delimited_return_pc)
 #define KosContext_PY_AWAIT_ITER(c)          (((KosContext *)(c))->py_await_iter)
 #define KosContext_PY_LAST_YIELDED(c)        (((KosContext *)(c))->py_last_yielded)
 #define KosContext_PY_RESUME_INJECT(c)       (((KosContext *)(c))->py_resume_inject)

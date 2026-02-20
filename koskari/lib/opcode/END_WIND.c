@@ -45,6 +45,22 @@ KOS_OP_HANDLER(END_WIND) {
           return -1;
         }
         Py_DECREF(val);
+      } else if (KosContext_DELIMITED_RETURN_FRAME(ctx) != NULL
+                 && KosContext_DELIMITED_RETURN_PC(ctx) != (uint32_t) -1) {
+        KosContext_PENDING_RETURN_TO_PARENT(ctx) = 0;
+        if (KosStackBlock_PushRef(
+                &KosDynFrame_STACK(KosContext_DELIMITED_RETURN_FRAME(ctx)),
+                val) < 0) {
+          Py_DECREF(val);
+          return -1;
+        }
+        Py_DECREF(val);
+        KosDynFrame_PC(KosContext_DELIMITED_RETURN_FRAME(ctx)) =
+            KosContext_DELIMITED_RETURN_PC(ctx);
+        KosContext_FRAME_TOP(ctx) = KosContext_DELIMITED_RETURN_FRAME(ctx);
+        KosContext_INVOCATION_SEGMENT_TOP(ctx) = NULL;
+        KosContext_DELIMITED_RETURN_FRAME(ctx) = NULL;
+        KosContext_DELIMITED_RETURN_PC(ctx) = (uint32_t) -1;
       } else {
         KosContext_PENDING_RETURN_TO_PARENT(ctx) = 0;
         KosEvent_KIND(out_ev) = KOS_EV_RETURN;

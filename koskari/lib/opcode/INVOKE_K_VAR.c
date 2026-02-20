@@ -75,13 +75,8 @@ KOS_OP_HANDLER(INVOKE_K_VAR) {
     return -1;
   }
 
-  if (! kos_find_prompt(ctx, k->prompt_id)) {
-    Py_DECREF(value);
-    Py_DECREF(cont_obj);
-    PyErr_SetString(KoskariContinuationError,
-                    "INVOKE_K_VAR: prompt not found in dynamic chain");
-    return -1;
-  }
+  /* Prompt need not be in chain: push model grafts cont frames onto current
+   * chain and returns to call site when POP_PROMPT runs. */
 
   if (kos_invoke_continuation(ctx, k, value, 0, cont_obj) < 0) {
     Py_DECREF(value);

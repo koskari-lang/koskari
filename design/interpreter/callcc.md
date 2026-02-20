@@ -134,12 +134,18 @@ int kos_invoke_continuation(KosContext *ctx, KosContinuation *k,
 
 1. **Clone if multi-shot**: For multi-shot continuations, clone before use
 
-2. **Build transfer plan**: Create action list for wind/unwind hooks
-   ```c
-   int kos_build_transfer_plan(KosContext *ctx, KosDynNode *target,
-           PyObject *value, int is_throw, uint32_t graft_point_id,
-           KosTransferPlan **out_plan);
-   ```
+2. **Build transfer plan**:
+   - **Delimited (push model)**: Use `kos_build_delimited_push_plan()`. The
+     prompt need not be in the current chain; invoke grafts the continuation
+     segment onto the current frame_top and sets `DELIMITED_RETURN_FRAME` /
+     `DELIMITED_RETURN_PC` so that when the continuation hits `POP_PROMPT`,
+     control unwinds to the call site and resumes with the value.
+   - **Undelimited**: Use `kos_build_transfer_plan()` with INSTALL:
+     ```c
+     int kos_build_transfer_plan(KosContext *ctx, KosDynNode *target,
+             PyObject *value, int is_throw, uint32_t graft_point_id,
+             KosTransferPlan **out_plan);
+     ```
 
 3. **Execute transfer**: Run the plan to completion
    ```c
@@ -153,6 +159,7 @@ Transfer plans orchestrate continuation application with proper hook execution:
 ```c
 typedef enum KosTransferStep {
   KOS_XFER_EXTENT_ACTION,  /* execute extent wind or unwind for a node */
+  KOS_XFER_PUSH,      /* append continuation segment to current chain (delimited) */
   KOS_XFER_INSTALL,   /* splice target chain segment */
   KOS_XFER_INJECT,    /* push resume value onto stack */
 } KosTransferStep;
@@ -167,11 +174,19 @@ struct KosTransferPlan {
 };
 ```
 
-**Plan structure**:
+**Plan structure** (undelimited / INSTALL):
 1. `EXTENT_ACTION` (unwind) for WIND after hooks and PARAM/DYN_WITH from current to LCA (inner-to-outer)
 2. `INSTALL` action to splice target chain
 3. `EXTENT_ACTION` (wind) for WIND before hooks from LCA to target (outer-to-inner)
 4. `INJECT` action to push resume value
+
+**Plan structure** (delimited / PUSH):
+1. `EXTENT_ACTION` (wind) for PARAM nodes in the continuation segment, if any
+2. `PUSH` action to graft the continuation frames onto the current chain
+   (caller stays below; no INSTALL)
+3. `INJECT` action to push resume value
+4. When the continuation runs and hits `POP_PROMPT`, unwind to `DELIMITED_RETURN_FRAME`,
+   push the value, set PC to `DELIMITED_RETURN_PC`, and continue the eval loop
 
 ### LCA Computation
 
@@ -307,8 +322,8 @@ Wrapper `tp_traverse` implementations walk all reachable PyObjects:
 
 ### Prompt Control (delimited)
 - `PUSH_PROMPT` — Push prompt node with tag from constant pool
-- `POP_PROMPT` — Pop prompt node (normal completion)
-- `SHIFT` — Capture continuation, abort to prompt
+- `POP_PROMPT` — Pop prompt node (normal completion); when returning from an invoked delimited continuation, unwinds to call site and resumes with value
+- `PUSH_SHIFT` / `POP_SHIFT` — Capture continuation, enter shift block; POP_SHIFT aborts to past POP_PROMPT
 
 ### Wind Control
 - `PUSH_WIND` — Push wind node with hook entry points
@@ -317,7 +332,7 @@ Wrapper `tp_traverse` implementations walk all reachable PyObjects:
 
 ### Continuation Invocation
 - **Undelimited**: Invoke via `CALL` 0 or 1 (continuation and optional arg on stack; stack order [callable, arg_0, ...]).
-- `INVOKE_K` — Invoke delimited continuation from TOS
+- `INVOKE_K` / `INVOKE_K_VAR` — Invoke delimited continuation; push model (graft frames onto current chain; return to call site when POP_PROMPT runs). Prompt need not be in chain.
 
 ### Region Control
 - `PUSH_REGION` — Push region node for try/finally/loop/with

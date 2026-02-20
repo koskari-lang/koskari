@@ -1747,8 +1747,9 @@ continuation is the code between POP_SHIFT and POP_PROMPT.
 
 - **Style**: NOARG.
 - **Status**: Implemented.
-- **Stack**: No stack change. Pops prompt from dynamic chain.
-- **Invariants**: Top of chain must be the matching prompt.
+- **Stack**: Normal case: no stack change; pops prompt from dynamic chain. Invoked-continuation return case: pops value from stack, unwinds continuation frames to the call site, pushes value onto the return frame, sets PC, and resumes.
+- **Invariants**: Top of chain must be the matching prompt. When returning from an invoked delimited continuation (INVOCATION_SEGMENT_TOP and DELIMITED_RETURN_FRAME set), POP_PROMPT transfers control back to the call site with the result value instead of exiting.
+- **Push-return model**: Delimited invoke uses PUSH (graft frames onto current chain). When the continuation runs and hits POP_PROMPT, it unwinds to DELIMITED_RETURN_FRAME and resumes at the instruction after INVOKE_K with the value on stack.
 
 **Example:** End of reset body.
 
@@ -1762,8 +1763,8 @@ continuation is the code between POP_SHIFT and POP_PROMPT.
 
 - **Style**: NOARG.
 - **Status**: Implemented.
-- **Stack**: Pops value, then continuation (TOS); invokes continuation with value. Transfer plan runs; wind/unwind executed.
-- **Invariants**: Continuation must be valid (same context, usable state). Multi-shot: invocation clones state.
+- **Stack**: Pops value, then continuation (TOS); invokes continuation with value. Uses push model: grafts continuation frames onto current chain (caller stays below); winds PARAM nodes in cont if any; injects value. When continuation hits POP_PROMPT, control returns to the call site with the result. Prompt need not be in the dynamic chain.
+- **Invariants**: Continuation must be valid (same evaluator token, usable state). Multi-shot: invocation clones state.
 
 **Example:** Invoke continuation k with value 100. Stack before: [..., 100, k].
 
@@ -1778,7 +1779,7 @@ continuation is the code between POP_SHIFT and POP_PROMPT.
 
 - **Style**: CONST. Arg = constant pool index of name (post-compile).
 - **Status**: Implemented.
-- **Stack**: Pops value; looks up continuation by name; invokes it with value.
+- **Stack**: Pops value; looks up continuation by name; invokes it with value. Same push model as INVOKE_K; prompt need not be in chain.
 - **Invariants**: Name must be bound to a continuation (e.g. from shift handler).
 - **Compiler form:** Pre-compile arg = name (string/symbol); post-compile arg = pool index.
 

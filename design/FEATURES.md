@@ -141,7 +141,7 @@ There are no **partially** implemented opcodes; each handler is either full, a s
 - **Tracebacks**: Line number support
 
 ### Continuations
-- **Delimited continuations (reset/shift)**: PUSH_PROMPT, PUSH_SHIFT, POP_SHIFT, POP_PROMPT. PUSH_SHIFT captures the continuation (from POP_SHIFT+1 to POP_PROMPT) and enters the shift block with k on stack; INVOKE_K and INVOKE_K_VAR invoke captured delimited continuations. Multi-shot; transfer plans and LCA-based wind/unwind run on invocation. See design/interpreter/callcc.md.
+- **Delimited continuations (reset/shift)**: PUSH_PROMPT, PUSH_SHIFT, POP_SHIFT, POP_PROMPT. PUSH_SHIFT captures the continuation (from POP_SHIFT+1 to POP_PROMPT) and enters the shift block with k on stack; INVOKE_K and INVOKE_K_VAR invoke captured delimited continuations using the push model (graft frames onto current chain; return to call site when continuation hits POP_PROMPT). Multi-shot; prompt need not be in chain when invoking. See design/interpreter/callcc.md.
 - **Undelimited call/cc**: PUSH_CC, CAPTURE_CC, POP_CC capture an undelimited continuation (stored with token_ref = owning KosEvaluatorToken). Invocation is via CALL 0 or CALL 1 with stack [callable, arg_0, ...]. If the continuation’s token matches the current evaluator token (or is undelimited with no token_ref), it is applied directly; otherwise the VM sets KoskariContinuationApply and returns -1 so the exception propagates to the caller. Python type KosPyContinuation is callable; cross-token invoke raises KoskariContinuationApply. See design/interpreter/evaluator-token-continuation.md.
 
 ## Missing/To Design

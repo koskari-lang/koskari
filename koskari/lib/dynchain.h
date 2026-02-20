@@ -116,6 +116,7 @@ typedef enum KosDynFlags {
 #define KOS_DYN_CAP_NEEDS_WIND_BEFORE_ACTION (1u << 3)
 #define KOS_DYN_CAP_NEEDS_INSTALL_WIND       (1u << 4)
 #define KOS_DYN_CAP_BLOCKS_CAPTURE           (1u << 5)
+#define KOS_DYN_CAP_NEEDS_TRANSFER_TEARDOWN  (1u << 6)
 
 
 /* === KosRegionStyle enum === */
@@ -282,6 +283,9 @@ struct KosContinuation {
    KOS_XFER_INSTALL       - Install a chain segment as current
    KOS_XFER_INJECT        - Push resume value onto stack (or throw)
    KOS_XFER_DYN_WITH_ENTER - Reserved (DYN_WITH wind done inside INSTALL)
+   KOS_XFER_PUSH          - Append segment to current chain (graft bottom to
+                            current dyn_top).  Used for delimited continuation
+                            invoke; caller stays on chain.
 */
 
 #define KOS_XFER_EXTENT_PHASE_WIND   0
@@ -292,6 +296,7 @@ typedef enum KosTransferStep {
   KOS_XFER_INSTALL       = 1,
   KOS_XFER_INJECT        = 2,
   KOS_XFER_DYN_WITH_ENTER = 3,
+  KOS_XFER_PUSH          = 4,
 } KosTransferStep;
 
 
@@ -1284,6 +1289,20 @@ int kos_build_direct_install_plan(
    PyObject *value,
    int is_throw,
    uint32_t graft_point_id,
+   KosTransferPlan **out_plan);
+
+
+/**
+   Build a PUSH plan for delimited continuation invoke.  Appends continuation
+   frames (excluding prompt) to the current chain.  Plan has: EXTENT_ACTION
+   (wind) for PARAM nodes in the segment if any, PUSH, INJECT.  Caller must
+   set RESUME_PC, RESUME_FRAME, RESUME_STACK after return.
+*/
+int kos_build_delimited_push_plan(
+   KosContext *ctx,
+   KosDynNode *segment,
+   PyObject *value,
+   int is_throw,
    KosTransferPlan **out_plan);
 
 

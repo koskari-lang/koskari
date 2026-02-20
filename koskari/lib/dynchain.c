@@ -1174,7 +1174,8 @@ static KosDynWith *kos_dyndynwith_new(
 
   kos_dynnode_init((KosDynNode *) node, KOS_DYN_DYN_WITH, parent,
                    KOS_DYN_CAP_MAY_SWALLOW_EXCEPTION | KOS_DYN_CAP_NEEDS_UNWIND_ACTION
-                   | KOS_DYN_CAP_NEEDS_INSTALL_WIND);
+                   | KOS_DYN_CAP_NEEDS_INSTALL_WIND
+                   | KOS_DYN_CAP_NEEDS_TRANSFER_TEARDOWN);
   KosDynWith_MGR(node) = mgr;
   KosDynWith_ENTER(node) = enter;
   KosDynWith_EXIT(node) = exit;
@@ -1447,57 +1448,51 @@ static int kos_dynnode_run_wind(KosContext *ctx, KosDynNode *node) {
 
 
 void kos_dyn_param_unwind(KosContext *ctx, KosDynParam *node) {
+  if (KOS_XFER_TRACE)
+    SAYF("[xfer] param unwind node=%p", (void *) node);
   kos_dynparam_restore(ctx, node);
 }
 
 
 /**
+   Post-unwind teardown for transfer: drop stack block and pop node.
+   Only nodes with NEEDS_TRANSFER_TEARDOWN (DYN_WITH) do work; others no-op.
+   Called after kos_extent_run_unwind during transfer plan execution.
+   :return: 0 on success, -1 on error
+*/
+static int kos_dyn_transfer_unwind_teardown(KosContext *ctx, KosDynNode *node) {
+  if (! KosDynNode_HAS_CAP(node, KOS_DYN_CAP_NEEDS_TRANSFER_TEARDOWN))
+    return 0;
+
+  KosDynWith *with_node = (KosDynWith *) node;
+  if (KosContext_FRAME_TOP(ctx) &&
+      KosStackBlock_DropBlock(&KosDynFrame_STACK(KosContext_FRAME_TOP(ctx))) < 0)
+    return -1;
+  kos_dyn_pop_with(ctx, with_node);
+  if (KOS_XFER_TRACE)
+    SAYF("[xfer] NODE_UNWIND (dyn_with) node=%p done", (void *) with_node);
+  return 0;
+}
+
+
+/**
    Run transfer-plan unwind for a node with NEEDS_UNWIND_ACTION.
-   Dispatches via kos_extent_run_unwind; DYN_WITH also drops block and
-   pops. Used by kos_run_transfer_step for KOS_XFER_EXTENT_ACTION (unwind).
+   Uses kos_extent_run_unwind; teardown (drop block, pop) for nodes with
+   NEEDS_TRANSFER_TEARDOWN. Used by kos_run_transfer_step for EXTENT_ACTION.
    :return: 0 on success, -1 on error
 */
 static int kos_dynnode_run_transfer_unwind(KosContext *ctx, KosDynNode *node) {
-  switch (KosDynNode_KIND(node)) {
-    case KOS_DYN_WIND:
-      return kos_extent_run_unwind(ctx, node, NULL);
-
-    case KOS_DYN_PARAM:
-      kos_dyn_param_unwind(ctx, (KosDynParam *) node);
-      if (KOS_XFER_TRACE)
-        SAYF("[xfer] NODE_UNWIND (param) node=%p", (void *) node);
-      return 0;
-
-    case KOS_DYN_DYN_WITH: {
-      KosDynWith *with_node = (KosDynWith *) node;
-      PyObject *exit_awaitable = NULL;
-
-      int unw = kos_extent_run_unwind(ctx, node, &exit_awaitable);
-      if (unw == KOS_DYN_UNWIND_ASYNC_STARTED) {
-        Py_XDECREF(exit_awaitable);
-        PyErr_SetString(PyExc_RuntimeError,
-                        "async dyn-with exit during transfer not yet supported");
-        return -1;
-      }
-      if (unw < 0)
-        return -1;
-
-      if (KosContext_FRAME_TOP(ctx) &&
-          KosStackBlock_DropBlock(&KosDynFrame_STACK(KosContext_FRAME_TOP(ctx))) < 0)
-        return -1;
-
-      kos_dyn_pop_with(ctx, with_node);
-      if (KOS_XFER_TRACE)
-        SAYF("[xfer] NODE_UNWIND (dyn_with) node=%p done", (void *) with_node);
-      return 0;
-    }
-
-    default:
-      PyErr_Format(PyExc_RuntimeError,
-                   "kos_dynnode_run_transfer_unwind: node kind %u has no unwind",
-                   (unsigned) KosDynNode_KIND(node));
-      return -1;
+  PyObject *exit_awaitable = NULL;
+  int r = kos_extent_run_unwind(ctx, node, &exit_awaitable);
+  if (r == KOS_DYN_UNWIND_ASYNC_STARTED) {
+    Py_XDECREF(exit_awaitable);
+    PyErr_SetString(PyExc_RuntimeError,
+                    "async dyn-with exit during transfer not yet supported");
+    return -1;
   }
+  if (r < 0)
+    return -1;
+  return kos_dyn_transfer_unwind_teardown(ctx, node);
 }
 
 
@@ -2356,6 +2351,24 @@ static void xfer_plan_fill_install_action(
 
 
 /**
+   Fill a single PUSH action: append a clone of the segment to the current
+   chain (graft bottom to dyn_top).  Advances *idx by one.
+*/
+static void xfer_plan_fill_push_action(
+    KosTransferPlan *plan,
+    size_t *idx,
+    KosDynNode *target) {
+
+  KosTransferAction_STEP(&KosTransferPlan_ACTIONS(plan)[*idx]) = KOS_XFER_PUSH;
+  KosTransferAction_INSTALL_SEGMENT(&KosTransferPlan_ACTIONS(plan)[*idx]) = target;
+  if (KOS_XFER_TRACE)
+    SAYF("[xfer] plan action[%zu] = PUSH segment=%p",
+         *idx, (void *) target);
+  (*idx)++;
+}
+
+
+/**
    Fill plan action slots with wind "before" hooks from lca toward target.
    We need outer-to-inner order at run time, but the chain walk is
    target-to-lca (inner-to-outer).  So we collect wind nodes into a
@@ -2501,6 +2514,49 @@ int kos_build_return_plan(
 
   size_t idx = 0;
   xfer_plan_fill_install_action(plan, &idx, segment);
+  xfer_plan_fill_inject_action(plan, &idx, value, is_throw);
+
+  *out_plan = plan;
+  return 0;
+}
+
+
+/**
+   Build a PUSH plan for delimited continuation invoke.  Segment is the
+   continuation's frames (first child of prompt in captured_chain).
+*/
+int kos_build_delimited_push_plan(
+    KosContext *ctx,
+    KosDynNode *segment,
+    PyObject *value,
+    int is_throw,
+    KosTransferPlan **out_plan) {
+
+  if (! segment) {
+    PyErr_SetString(PyExc_RuntimeError,
+                    "delimited push: empty continuation segment");
+    return -1;
+  }
+
+  size_t wind_count = xfer_plan_count_wind_before(segment, NULL);
+  size_t action_count = wind_count + 1  /* PUSH */ + 1;  /* INJECT */
+
+  KosTransferPlan *plan = kos_transfer_plan_alloc(action_count);
+  if (! plan)
+    return -1;
+
+  KosTransferPlan_ACTION_COUNT(plan) = action_count;
+  KosTransferPlan_ACTION_INDEX(plan) = 0;
+  KosTransferPlan_ORIGINAL_TARGET(plan) = segment;
+  KosTransferPlan_CHAIN_VERSION(plan) = KosContext_CHAIN_VERSION(ctx);
+  KosTransferPlan_RESUME_PC(plan) = (uint32_t) -1;
+  KosTransferPlan_RESUME_FRAME(plan) = NULL;
+  KosTransferPlan_RESUME_STACK(plan) = NULL;
+
+  size_t idx = 0;
+  if (xfer_plan_fill_wind_actions(plan, &idx, segment, NULL, wind_count) < 0)
+    return -1;
+  xfer_plan_fill_push_action(plan, &idx, segment);
   xfer_plan_fill_inject_action(plan, &idx, value, is_throw);
 
   *out_plan = plan;
@@ -2818,6 +2874,101 @@ static int xfer_step_install(KosContext *ctx, KosTransferAction *action) {
 
 
 /**
+   Execute a PUSH step: append a clone of the segment to the current chain,
+   grafting the segment bottom to dyn_top.  Does not free the current chain.
+   Restores stack/PC from plan and runs param wind for pushed nodes.
+*/
+static int xfer_step_push(KosContext *ctx, KosTransferAction *action) {
+  KosTransferPlan *plan = KosContext_PLAN(ctx);
+  KosDynNode *template_seg = KosTransferAction_INSTALL_SEGMENT(action);
+  KosDynNode *template_bottom = template_seg;
+  while (template_bottom && KosDynNode_PARENT(template_bottom))
+    template_bottom = KosDynNode_PARENT(template_bottom);
+  KosDynNode *stop = template_bottom ? KosDynNode_PARENT(template_bottom) : NULL;
+  KosDynNode *seg = kos_clone_chain_segment(template_seg, stop);
+  if (! seg && template_seg) {
+    if (KOS_XFER_TRACE)
+      SAY("[xfer] PUSH clone segment failed");
+    KosTransferPlan_ACTION_INDEX(plan)--;
+    return -1;
+  }
+  if (KOS_XFER_TRACE)
+    SAYF("[xfer] PUSH segment=%p (before: dyn_top=%p frame_top=%p)",
+         (void *) seg, (void *) KosContext_DYN_TOP(ctx),
+         (void *) KosContext_FRAME_TOP(ctx));
+
+  /* Graft bottom of segment to current dyn_top */
+  KosDynNode *current_top = KosContext_DYN_TOP(ctx);
+  KosDynNode *seg_bottom = seg;
+  while (seg_bottom && KosDynNode_PARENT(seg_bottom))
+    seg_bottom = KosDynNode_PARENT(seg_bottom);
+  if (seg_bottom)
+    KosDynNode_PARENT(seg_bottom) = current_top;
+
+  KosContext_DYN_TOP(ctx) = seg;
+  kos_update_frame_top(ctx);
+  KosContext_GLOBALS_FRAME(ctx) = KosContext_FRAME_TOP(ctx);
+  KosContext_GLOBALS_CACHE_VERSION(ctx) = KosContext_CHAIN_VERSION(ctx) + 1;
+
+  if (KosContext_FRAME_TOP(ctx) && KosTransferPlan_RESUME_STACK(plan)) {
+    KosStackBlock *new_stack =
+        KosStackBlock_COW(KosTransferPlan_RESUME_STACK(plan));
+    KosStackBlock *old_stack =
+        KosDynFrame_STACK(KosContext_FRAME_TOP(ctx));
+    KosDynFrame_STACK(KosContext_FRAME_TOP(ctx)) = new_stack;
+    if (old_stack && old_stack != new_stack) {
+      KosStackBlock_ReleaseChainExclude(old_stack,
+                                        KosTransferPlan_CONTINUATION_REF(plan));
+    }
+  }
+  if (KosTransferPlan_RESUME_PC(plan) != (uint32_t) -1
+      && KosContext_FRAME_TOP(ctx))
+    KosDynFrame_PC(KosContext_FRAME_TOP(ctx)) =
+        KosTransferPlan_RESUME_PC(plan);
+  KosContext_CHAIN_VERSION(ctx)++;
+
+  {
+    PyObject *param_list = PyList_New(0);
+    if (! param_list) {
+      if (KOS_XFER_TRACE)
+        SAY("[xfer] PUSH param_list alloc failed");
+      return -1;
+    }
+    KosDynNode *walk = seg;
+    KosDynNode *chain_bottom = seg;
+    while (chain_bottom && KosDynNode_PARENT(chain_bottom))
+      chain_bottom = KosDynNode_PARENT(chain_bottom);
+    KosDynNode *chain_stop =
+        chain_bottom ? KosDynNode_PARENT(chain_bottom) : NULL;
+    while (walk && walk != chain_stop) {
+      if (KosDynNode_HAS_CAP(walk, KOS_DYN_CAP_NEEDS_INSTALL_WIND)) {
+        if (PyList_Append(param_list, (PyObject *) walk) < 0) {
+          Py_DECREF(param_list);
+          return -1;
+        }
+      }
+      walk = KosDynNode_PARENT(walk);
+    }
+    Py_ssize_t n = PyList_GET_SIZE(param_list);
+    for (Py_ssize_t i = n - 1; i >= 0; i--) {
+      KosDynNode *node = (KosDynNode *) PyList_GET_ITEM(param_list, i);
+      if (kos_dynnode_run_wind(ctx, node) < 0) {
+        Py_DECREF(param_list);
+        if (KOS_XFER_TRACE)
+          SAY("[xfer] PUSH wind failed");
+        return -1;
+      }
+    }
+    Py_DECREF(param_list);
+  }
+  if (KOS_XFER_TRACE)
+    SAYF("[xfer] PUSH after: dyn_top=%p frame_top=%p",
+         (void *) KosContext_DYN_TOP(ctx), (void *) KosContext_FRAME_TOP(ctx));
+  return 0;
+}
+
+
+/**
    Execute an INJECT step: deliver the continuation's result to the
    resumed context.  If is_throw, set inject mode and store the value for
    the evaluator to raise; otherwise push the value onto the current
@@ -2890,6 +3041,13 @@ int kos_run_transfer_step(KosContext *ctx) {
 
     case KOS_XFER_INSTALL: {
       int res = xfer_step_install(ctx, action);
+      if (res < 0)
+        return -1;
+      break;
+    }
+
+    case KOS_XFER_PUSH: {
+      int res = xfer_step_push(ctx, action);
       if (res < 0)
         return -1;
       break;
@@ -3029,35 +3187,32 @@ int kos_invoke_continuation(
     }
   }
 
-  /* Delimited k(value): path crosses PROMPT (cannot unwind through it).
-   * Capture invocation site for return path; use direct-install for invoke. */
+  /* Delimited k(value): use PUSH so caller stays on chain; return path
+   * unwinds to DELIMITED_RETURN_FRAME when continuation hits POP_PROMPT. */
   int is_delimited = (KosContinuation_PROMPT_ID(k) != KOS_PROMPT_ID_UNDELIMITED);
+  KosDynNode *push_segment = NULL;
   if (is_delimited) {
-    KosDynNode *return_chain = kos_clone_chain_segment(KosContext_DYN_TOP(ctx),
-                                                       NULL);
-    if (! return_chain && KosContext_DYN_TOP(ctx)) {
-      if (to_use != k)
-        kos_continuation_free(to_use);
-      return -1;
-    }
-    if (KosContext_RETURN_TARGET_CHAIN(ctx))
-      kos_dynchain_free(KosContext_RETURN_TARGET_CHAIN(ctx), NULL);
-    KosContext_RETURN_TARGET_CHAIN(ctx) = return_chain;
-    KosContext_RETURN_TARGET_PC(ctx) = KosContext_FRAME_TOP(ctx)
+    KosDynNode *captured = KosContinuation_CAPTURED_CHAIN(to_use);
+    /* Segment to push: frames below the prompt (exclude prompt from push) */
+    push_segment = captured ? KosDynNode_PARENT(captured) : NULL;
+    KosContext_DELIMITED_RETURN_FRAME(ctx) = KosContext_FRAME_TOP(ctx);
+    KosContext_DELIMITED_RETURN_PC(ctx) = KosContext_FRAME_TOP(ctx)
         ? KosDynFrame_PC(KosContext_FRAME_TOP(ctx)) : (uint32_t) -1;
+    if (KosContext_RETURN_TARGET_CHAIN(ctx)) {
+      kos_dynchain_free(KosContext_RETURN_TARGET_CHAIN(ctx), NULL);
+      KosContext_RETURN_TARGET_CHAIN(ctx) = NULL;
+    }
+    KosContext_RETURN_TARGET_PC(ctx) = (uint32_t) -1;
   }
 
-  /* Build plan: direct-install for delimited (path crosses prompt);
-   * full transfer for undelimited. */
+  /* Build plan: PUSH for delimited; full transfer for undelimited. */
   KosTransferPlan *plan = NULL;
   int res;
   if (is_delimited) {
     if (KOS_XFER_TRACE)
-      SAYF("[xfer] kos_build_direct_install_plan (delimited) current=%p target=%p",
-           (void *) KosContext_DYN_TOP(ctx), (void *) to_use->captured_chain);
-    res = kos_build_direct_install_plan(ctx, to_use->captured_chain,
-                                        value, is_throw,
-                                        KosContinuation_GRAPT_POINT_ID(to_use),
+      SAYF("[xfer] kos_build_delimited_push_plan (delimited) segment=%p",
+           (void *) push_segment);
+    res = kos_build_delimited_push_plan(ctx, push_segment, value, is_throw,
                                         &plan);
   } else {
     if (KOS_XFER_TRACE)
@@ -3071,10 +3226,9 @@ int kos_invoke_continuation(
   if (KOS_XFER_TRACE)
     SAYF("[xfer] plan build -> res=%d plan=%p", res, (void *) plan);
   if (res < 0) {
-    if (is_delimited && KosContext_RETURN_TARGET_CHAIN(ctx)) {
-      kos_dynchain_free(KosContext_RETURN_TARGET_CHAIN(ctx), NULL);
-      KosContext_RETURN_TARGET_CHAIN(ctx) = NULL;
-      KosContext_RETURN_TARGET_PC(ctx) = (uint32_t) -1;
+    if (is_delimited) {
+      KosContext_DELIMITED_RETURN_FRAME(ctx) = NULL;
+      KosContext_DELIMITED_RETURN_PC(ctx) = (uint32_t) -1;
     }
     if (to_use != k)
       kos_continuation_free(to_use);

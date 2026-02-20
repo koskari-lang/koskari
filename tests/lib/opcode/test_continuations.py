@@ -116,15 +116,56 @@ class TestDelimitedContinuations(CevalTest):
             expr().run()
         self.assertIn("DelimitedContinuation", str(ctx.exception))
 
-    def test_invoke_delimited_continuation_after_pop_prompt_raises_continuation_error(self):
+    def test_delimited_continuation_stored_and_invoked_outside_shift(self):
         """
-        After POP_PROMPT the prompt is gone; invoking the captured delimited
-        continuation (via CALL) raises KoskariContinuationError (prompt not
-        found in dynamic chain).
+        (reset (shift k (pop-shift k))) stores k; then (k 42) invokes from
+        outside the shift body. Result 42 returns to call site.
         """
-        import koskari.lib as lib
-        # (reset (shift k k)) then (k 42): shift body returns k via POP_SHIFT,
-        # then we invoke k(42) after the prompt is gone -> raises
+        code = [
+            ["PUSH_PROMPT", 0],
+            ["PUSH_SHIFT", 0],
+            ["POP_SHIFT", 0],
+            ["POP_PROMPT", 0],
+            ["VAR_STORE", "k"],
+            ["VAR", "k"],
+            ["CONST", 42],
+            ["INVOKE_K", 0],
+            ["RETURN", 1],
+        ]
+        code_obj, ns = build_expr(code, local_syms=("k",))
+        expr = make_callable(code_obj, ns)
+        result = expr().run()
+        self.assertEqual(result, 42)
+
+    def test_delimited_result_from_outside_shift(self):
+        """
+        (reset (shift k (pop-shift k))) then (k 99) => 99. When invoking from
+        outside (after POP_SHIFT), the continuation's first op is POP_SHIFT
+        which yields the value; the result 99 flows to the call site.
+        """
+        code = [
+            ["PUSH_PROMPT", 0],
+            ["PUSH_SHIFT", 0],
+            ["POP_SHIFT", 0],
+            ["POP_PROMPT", 0],
+            ["VAR_STORE", "k"],
+            ["VAR", "k"],
+            ["CONST", 99],
+            ["INVOKE_K", 0],
+            ["RETURN", 1],
+        ]
+        code_obj, ns = build_expr(code, local_syms=("k",))
+        expr = make_callable(code_obj, ns)
+        result = expr().run()
+        self.assertEqual(result, 99)
+
+    def test_invoke_delimited_continuation_after_pop_prompt_returns_value(self):
+        """
+        (reset (shift k k)) then (k 42): shift returns k via POP_SHIFT, then
+        we invoke k(42) after the prompt is gone. Push model allows invoke
+        from outside; result 42 returns to call site.
+        """
+        # (reset (shift k k)) returns k; (k 42) invokes from outside the reset
         code = [
             ["PUSH_PROMPT", 0],
             ["PUSH_SHIFT", 0],
@@ -136,9 +177,8 @@ class TestDelimitedContinuations(CevalTest):
         ]
         code_obj, ns = build_expr(code)
         expr = make_callable(code_obj, ns)
-        with self.assertRaises(lib.KoskariContinuationError) as ctx:
-            expr().run()
-        self.assertIn("prompt not found", str(ctx.exception))
+        result = expr().run()
+        self.assertEqual(result, 42)
 
 
 class TestUndelimitedContinuations(CevalTest):
