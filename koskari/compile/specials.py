@@ -406,6 +406,56 @@ def special_dyn_with(compiler, source, tc=False):
     return fragment
 
 
+@special(symbol("compile/reset"))
+def special_reset(compiler, source, tc=False):
+    """
+    Compile (compile/reset EXPR...). Establishes a prompt (tag 0), runs body,
+    pops prompt. Enables delimited continuations via compile/shift.
+    """
+
+    called_by, rest = source
+    if rest is nil or not is_pair(rest):
+        raise CompilerException("reset requires body", source)
+
+    fragment = compiler.fragment(called_by)
+    fragment.position_of(source)
+    fragment.instruction(OpCode.KOS_OP_PUSH_PROMPT, 0)
+    helper_begin(fragment, rest, False)
+    fragment.instruction(OpCode.KOS_OP_POP_PROMPT, 0)
+
+    return fragment
+
+
+@special(symbol("compile/shift"))
+def special_shift(compiler, source, tc=False):
+    """
+    Compile (compile/shift K EXPR...). Captures continuation, binds to K, runs
+    handler body. K must be a symbol; tag 0.
+    """
+
+    called_by, rest = source
+    if rest is nil or not is_pair(rest):
+        raise CompilerException("shift requires continuation variable and body",
+                               source)
+
+    k, body = rest
+    if not is_symbolish(k):
+        raise CompilerException("shift continuation variable must be a symbol",
+                               source)
+
+    k_name = str(k)
+
+    fragment = compiler.fragment(called_by)
+    fragment.position_of(source)
+    fragment.instruction(OpCode.KOS_OP_PUSH_SHIFT, 0)
+    fragment.declare_var(k_name)
+    fragment.instruction(OpCode.KOS_OP_VAR_STORE, k_name)
+    helper_begin(fragment, body, False)
+    fragment.instruction(OpCode.KOS_OP_POP_SHIFT, 0)
+
+    return fragment
+
+
 @special(symbol("compile/setq"))
 def special_setq(compiler, source, tc=False):
     called_by, (sym, body) = source
