@@ -2141,7 +2141,9 @@ static int try_local_exception_handler(KosContext *ctx, KosEvent *out_ev) {
             catch_resume_pc = KosDynWith_RESUME_PC((KosDynWith *) top);
         }
         /* Some nodes' pop can call PyErr_Clear(); preserve exception across pop.
-           Also preserve across barrier checks since we may need to handle PROMPT barriers. */
+           Barrier nodes return an error from kos_dyn_pop_top, so also preserve
+           across that call to keep the original exception available for
+           unwind_on_exception dispatch. */
         PyObject *saved_typ = NULL, *saved_val = NULL, *saved_tb = NULL;
         int needs_preserve = (top && KosDynNode_HAS_CAP(top, KOS_DYN_CAP_PRESERVE_ERR_ACROSS_POP))
             || (top && KosDynNode_HAS_CAP(top, KOS_DYN_CAP_BARRIER));
@@ -2155,16 +2157,23 @@ static int try_local_exception_handler(KosContext *ctx, KosEvent *out_ev) {
           return 1;
         }
         if (pop_res != 0) {
-          /* kos_dyn_pop_top refuses to pop a prompt.  When unwinding to
-           * CURRENT_FRAME and the top is a prompt whose parent is that frame,
-           * we can abandon the delimited block via kos_dyn_pop_prompt. */
-          KosDynFrame *cur = CURRENT_FRAME(ctx);
-          int is_prompt = KosDynNode_IS_PROMPT(top);
-          KosDynNode *top_parent = top ? KosDynNode_PARENT(top) : NULL;
-          int parent_is_cur = (top_parent == (KosDynNode *) cur);
-          if (is_prompt && cur && parent_is_cur) {
-            kos_dyn_pop_prompt(ctx, (KosDynPrompt *) top);
-            continue;
+          /* Node refused to pop (e.g. a BARRIER node). Dispatch to the
+             node's exception handler if it has the HANDLES_EXCEPTIONS cap. */
+          if (top && KosDynNode_HAS_CAP(top, KOS_DYN_CAP_HANDLES_EXCEPTIONS)) {
+            const KosDynTypeOps *ops = &kos_dyn_type_ops[KosDynNode_KIND(top)];
+            if (ops->unwind_on_exception) {
+              int exc_res = ops->unwind_on_exception(ctx, top, out_ev);
+              if (exc_res == KOS_DYN_UNWIND_ASYNC_STARTED) {
+                KosContext_UNWIND_TARGET_FRAME(ctx) = CURRENT_FRAME(ctx);
+                return 1;
+              }
+              if (exc_res == 1) {
+                return 1;
+              }
+              if (exc_res == 0) {
+                continue;
+              }
+            }
           }
           {
             PyObject *typ = NULL, *val = NULL, *tb = NULL;

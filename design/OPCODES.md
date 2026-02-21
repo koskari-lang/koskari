@@ -1685,29 +1685,30 @@ Object protocol opcodes: single Python operation on TOS (and optionally below); 
 ## 20. Delimited continuations
 
 Delimited continuations use a block-based layout: PUSH_PROMPT establishes the
-reset; PUSH_SHIFT and POP_SHIFT delimit the shift block (handler); the
-continuation is the code between POP_SHIFT and POP_PROMPT.
+reset and owns the COW stack block for the delimited region; PUSH_SHIFT and
+POP_SHIFT delimit the shift block (handler); the continuation is the code
+between POP_SHIFT and POP_PROMPT.
 
 ### KOS_OP_PUSH_PROMPT
 
 - **Style**: CONST. Arg = prompt_id (constant pool index, post-compile).
 - **Status**: Implemented.
-- **Stack**: No stack change. Pushes prompt onto dynamic chain.
-- **Pushes:** KOS_DYN_PROMPT (static extent KOS_EXT_PROMPT; PUSH_SHIFT captures up to this prompt).
-- **Invariants**: PUSH_SHIFT captures up to this prompt.
+- **Stack**: Pushes a new COW stack block (so the reset body has an isolated stack), then pushes the prompt node onto the dynamic chain.
+- **Pushes:** KOS_DYN_PROMPT (static extent KOS_EXT_PROMPT; PUSH_SHIFT captures up to this prompt). PROMPT owns the stack block for the delimited region; SHIFT does not create one.
+- **Invariants**: PUSH_SHIFT captures up to this prompt. Exception unwinding past a PROMPT drops the stack block and unlinks the node via the HANDLES_EXCEPTIONS capability (no kind-specific check in the unwind loop).
 - **Compiler form:** Pre-compile arg may be prompt id value or symbol; post-compile arg = pool index.
 
 **Example:** reset (push prompt). Pool: 0 = prompt_id.
 
 | index | opcode     | arg | arg view | comment |
 |------:|------------|-----|----------|---------|
-| 0     | PUSH_PROMPT| 0   | 0 (pid)  | push prompt onto chain |
+| 0     | PUSH_PROMPT| 0   | 0 (pid)  | push stack block; push prompt onto chain |
 | 1     | …          | …   | …        | body before shift (continuation prefix) |
 | 2     | PUSH_SHIFT | 0   | 0 (pid)  | capture k; enter shift block with k on stack |
 | 3     | …          | …   | …        | shift body (k available) |
 | 4     | POP_SHIFT  | 0   | 0        | return from shift without invoking |
 | 5     | …          | …   | …        | continuation (body after shift) |
-| 6     | POP_PROMPT | 0   | 0        | pop prompt |
+| 6     | POP_PROMPT | 0   | 0        | drop stack block; pop prompt |
 
 ---
 
@@ -1715,15 +1716,16 @@ continuation is the code between POP_SHIFT and POP_PROMPT.
 
 - **Style**: CONST. Arg = prompt_id (constant pool index, post-compile).
 - **Status**: Implemented.
-- **Stack**: Captures continuation from POP_SHIFT+1 to POP_PROMPT; unwinds to prompt; pushes continuation onto stack; enters shift block. Shift body runs with k on stack.
-- **Invariants**: No PYCALL node between current position and prompt. Capture validated by kos_validate_capture. Extent KOS_EXT_SHIFT pairs with POP_SHIFT.
+- **Stack**: Captures continuation from POP_SHIFT+1 to POP_PROMPT; builds an unwind transfer plan to unwind from the current position to the matching prompt (exclusive); runs the plan; pushes the captured continuation onto the prompt's stack (which is now the active stack after PUSH_PROMPT's block push); enters the shift block. Shift body runs with k on stack. SHIFT does not push its own stack block; the PROMPT's block is the active block throughout.
+- **Pushes:** KOS_DYN_SHIFT (simple marker; no stack block, no handlers).
+- **Invariants**: No PYCALL node between current position and prompt. Capture validated by kos_validate_capture. Extent KOS_EXT_SHIFT pairs with POP_SHIFT. Stack block is owned by PROMPT, not SHIFT.
 - **Compiler form:** Pre-compile arg may be prompt id value/symbol; post-compile arg = pool index.
 
 **Example:** shift k: body. Capture k, run shift body with k on stack. Pool: 0 = prompt_id.
 
 | index | opcode    | arg | arg view | comment |
 |------:|-----------|-----|----------|---------|
-| 2     | PUSH_SHIFT| 0   | 0 (pid)  | capture k; unwind to prompt; push k; enter shift block |
+| 2     | PUSH_SHIFT| 0   | 0 (pid)  | capture k; unwind to prompt; push k (onto prompt's stack); enter shift block |
 
 ---
 
@@ -1731,15 +1733,15 @@ continuation is the code between POP_SHIFT and POP_PROMPT.
 
 - **Style**: NOARG.
 - **Status**: Implemented.
-- **Stack**: Pops TOS as result; builds transfer plan; unwinds SHIFT and PROMPT blocks; jumps past POP_PROMPT; pushes result. Handler returns without invoking k.
-- **Invariants**: Must be inside a PUSH_SHIFT extent (parent is PROMPT extent).
+- **Stack**: Pops TOS as result; builds a transfer plan that unwinds from the current position through the matching SHIFT and PROMPT nodes (TRUNCATE_AND_INJECT step drops both and their stack block), then injects the single result value onto the outer frame's stack (below the PROMPT's block boundary). Handler returns without invoking k.
+- **Invariants**: Must be inside a PUSH_SHIFT extent (parent is PROMPT extent). Stack block owned by PROMPT is dropped as part of the TRUNCATE_AND_INJECT step; the injected value lands on the frame's stack below the former block boundary.
 - **Compiler form:** No argument.
 
 **Example:** Shift handler returns value without invoking k.
 
 | index | opcode   | arg | arg view | comment |
 |------:|----------|-----|----------|---------|
-| 4     | POP_SHIFT| 0   | 0        | pop result; unwind to past POP_PROMPT; push result |
+| 4     | POP_SHIFT| 0   | 0        | pop result; unwind through SHIFT+PROMPT; drop stack block; inject result onto outer stack |
 
 ---
 
@@ -1747,15 +1749,16 @@ continuation is the code between POP_SHIFT and POP_PROMPT.
 
 - **Style**: NOARG.
 - **Status**: Implemented.
-- **Stack**: Normal case: no stack change; pops prompt from dynamic chain. Invoked-continuation return case: pops value from stack, unwinds continuation frames to the call site, pushes value onto the return frame, sets PC, and resumes.
-- **Invariants**: Top of chain must be the matching prompt. When returning from an invoked delimited continuation (INVOCATION_SEGMENT_TOP and DELIMITED_RETURN_FRAME set), POP_PROMPT transfers control back to the call site with the result value instead of exiting.
-- **Push-return model**: Delimited invoke uses PUSH (graft frames onto current chain). When the continuation runs and hits POP_PROMPT, it unwinds to DELIMITED_RETURN_FRAME and resumes at the instruction after INVOKE_K with the value on stack.
+- **Stack**: Normal case (no active continuation return): pops TOS as the reset result, drops the PROMPT's COW stack block, unlinks the prompt from the chain, and pushes the result onto the parent stack. Invoked-continuation return case: when `DELIMITED_RETURN_FRAME` is set, pops TOS as result, unwinds continuation frames back to the invocation site, drops the PROMPT's stack block, pushes result, sets PC to post-INVOKE_K, and resumes.
+- **Invariants**: Top of chain must be the matching prompt when POP_PROMPT executes. When returning from an invoked delimited continuation (`INVOCATION_SEGMENT_TOP` and `DELIMITED_RETURN_FRAME` are set), POP_PROMPT transfers control back to the call site with the result value instead of exiting normally. Exactly one value is consumed from the PROMPT's stack block and one is injected to the outer stack.
+- **Push-return model**: Delimited invoke uses PUSH (graft frames onto current chain). When the continuation runs and hits POP_PROMPT, it unwinds to `DELIMITED_RETURN_FRAME` and resumes at the instruction after INVOKE_K with the value on stack.
+- **Exception propagation**: If an exception escapes past the PROMPT during unwinding, the `unwind_on_exception` handler (dispatched via `KOS_DYN_CAP_HANDLES_EXCEPTIONS`) drops the stack block and unlinks the PROMPT, then continues unwinding. No POP_PROMPT opcode executes in this path.
 
 **Example:** End of reset body.
 
 | index | opcode    | arg | arg view | comment |
 |------:|-----------|-----|----------|---------|
-| 6     | POP_PROMPT| 0   | 0        | pop prompt from chain |
+| 6     | POP_PROMPT| 0   | 0        | pop result; drop stack block; pop prompt; push result to outer stack |
 
 ---
 

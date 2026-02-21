@@ -24,18 +24,19 @@ Each dynamic node type defines handlers via a type operations table. Generic cod
 
 | Slot | When invoked | Purpose |
 |------|--------------|---------|
-| **install** | After push | Establish extent (e.g. enter for WITH, bind for PARAM, before for WIND) |
-| **pop** | Before unlink | Tear down extent (e.g. exit for WITH, restore for PARAM, after for WIND) |
+| **install** | After push | Establish extent (e.g. enter for WITH, bind for PARAM, push stack block for PROMPT) |
+| **pop** | Before unlink | Tear down extent (e.g. exit for WITH, restore for PARAM, drop stack block for PROMPT) |
 | **wind** | During transfer only | Re-enter extent when winding toward target (e.g. before for WIND, enter for PARAM/DYN_WITH) |
 | **unwind** | During transfer only | Tear down when unwinding from source (e.g. after for WIND, exit for WITH/DYN_WITH) |
-| **teardown_after_unwind** | After unwind completes | Structural cleanup: drop stack block, unlink node. Only DYN_WITH needs this. |
+| **teardown_after_unwind** | After transfer unwind completes | Structural cleanup: drop stack block, unlink node (DYN_WITH and PROMPT). |
+| **unwind_on_exception** | During exception unwinding, when normal pop is refused (e.g. BARRIER) | Capability-based exception dispatch. Handler performs cleanup, unlinks the node, and returns: 0 to continue unwinding, 1 if the exception was swallowed and execution should resume, `KOS_DYN_UNWIND_ASYNC_STARTED` if an async operation was started, or -1 on error. Only invoked when node has `KOS_DYN_CAP_HANDLES_EXCEPTIONS`. |
 | **clone** | For continuation capture | Clone node for inclusion in captured chain. NULL = cannot clone (e.g. PYCALL creates new marker). |
 
 Nodes may have NULL for handlers they do not need. Install and wind may be the same function when semantics allow (e.g. PARAM, DYN_WITH).
 
 ### 2.2 Type Operations Structure
 
-The implementer may use a function table for dispatch. Example shape:
+The implementer may use a function table for dispatch. Actual shape:
 
 ```c
 typedef struct KosDynTypeOps {
@@ -44,6 +45,7 @@ typedef struct KosDynTypeOps {
   int (*wind)(KosContext *ctx, KosDynNode *node);
   int (*unwind)(KosContext *ctx, KosDynNode *node, PyObject **out_awaitable);
   int (*teardown_after_unwind)(KosContext *ctx, KosDynNode *node);
+  int (*unwind_on_exception)(KosContext *ctx, KosDynNode *node, struct KosEvent *out_ev);
   KosDynNode *(*clone)(KosDynNode *node);
   uint32_t caps;
 } KosDynTypeOps;
@@ -52,7 +54,7 @@ typedef struct KosDynTypeOps {
 extern const KosDynTypeOps kos_dyn_type_ops[];
 ```
 
-Dispatch: `kos_dyn_type_ops[kind].install(ctx, node)`, etc. The generic push/pop/wind/unwind paths call these.
+Dispatch: `kos_dyn_type_ops[kind].install(ctx, node)`, etc. The generic push/pop/wind/unwind/exception-unwind paths call these.
 
 ### 2.3 Capability Bits
 
@@ -64,8 +66,9 @@ Dispatch: `kos_dyn_type_ops[kind].install(ctx, node)`, etc. The generic push/pop
 | `KOS_DYN_CAP_NEEDS_UNWIND_ACTION` | Node has unwind handler for transfer (WIND after, WITH/DYN_WITH exit, PARAM restore). |
 | `KOS_DYN_CAP_NEEDS_WIND_BEFORE_ACTION` | Node has wind handler for transfer (WIND before only). |
 | `KOS_DYN_CAP_NEEDS_INSTALL_WIND` | Node needs wind run when a segment is installed or pushed (PARAM enter, DYN_WITH enter). |
-| `KOS_DYN_CAP_NEEDS_TRANSFER_TEARDOWN` | Node needs teardown_after_unwind (DYN_WITH: drop stack block, pop). |
+| `KOS_DYN_CAP_NEEDS_TRANSFER_TEARDOWN` | Node needs teardown_after_unwind after transfer unwind (DYN_WITH and PROMPT). |
 | `KOS_DYN_CAP_PRESERVE_ERR_ACROSS_POP` | Preserve exception state across pop for outer handlers. |
+| `KOS_DYN_CAP_HANDLES_EXCEPTIONS` | Node has an `unwind_on_exception` handler. When normal `kos_dyn_pop_top` is refused (e.g. BARRIER), the exception unwind loop invokes this handler instead of treating the refusal as a fatal error. Used by PROMPT. |
 
 Use `KOS_DYN_CAP_CATCH`. Replace the existing `KOS_DYN_CAP_MAY_SWALLOW_EXCEPTION` with `KOS_DYN_CAP_CATCH` everywhere; they are the same concept.
 
@@ -75,25 +78,28 @@ Use `KOS_DYN_CAP_CATCH`. Replace the existing `KOS_DYN_CAP_MAY_SWALLOW_EXCEPTION
 
 Each type binds handlers and caps. This table is authoritative.
 
-| Type | Install | Pop | Wind | Unwind | Teardown | Clone | Caps |
-|------|---------|-----|------|--------|----------|-------|------|
-| FRAME | — | unlink | — | — | — | yes | — |
-| PROMPT | — | unlink (abandon) | — | — | — | yes | BARRIER |
-| WIND | — | after | before | after | — | yes | NEEDS_UNWIND, NEEDS_WIND_BEFORE |
-| REGION | — | — | — | — | — | yes | — |
-| PYCALL | — | — | — | — | — | new marker | BARRIER, BLOCKS_CAPTURE |
-| NS | — | restore ns | — | — | — | yes | — |
-| CC | — | unlink | — | — | — | yes | — |
-| YIELD_FROM | — | close delegate | — | — | — | yes | — |
-| PARAM | enter | restore | enter | restore | — | yes | NEEDS_UNWIND, NEEDS_INSTALL_WIND |
-| WITH | enter | exit + teardown | — | exit + teardown | — | yes | CATCH, NEEDS_UNWIND |
-| DYN_WITH | enter | exit + teardown | enter | exit + teardown | yes | yes | CATCH, NEEDS_UNWIND, NEEDS_INSTALL_WIND, NEEDS_TRANSFER_TEARDOWN |
+| Type | Install | Pop | Wind | Unwind | Teardown | Unwind-on-exc | Clone | Caps |
+|------|---------|-----|------|--------|----------|---------------|-------|------|
+| FRAME | — | unlink | — | — | — | — | yes | — |
+| PROMPT | push stack block | drop stack block + unlink | — | — | drop stack block | unlink + drop stack block | yes | BARRIER, NEEDS_TRANSFER_TEARDOWN, HANDLES_EXCEPTIONS |
+| WIND | — | after | before | after | — | — | yes | NEEDS_UNWIND, NEEDS_WIND_BEFORE |
+| REGION | — | — | — | — | — | — | yes | — |
+| PYCALL | — | — | — | — | — | — | new marker | BARRIER, BLOCKS_CAPTURE |
+| NS | — | restore ns | — | — | — | — | yes | — |
+| CC | — | unlink | — | — | — | — | yes | — |
+| YIELD_FROM | — | close delegate | — | — | — | — | yes | PRESERVE_ERR_ACROSS_POP |
+| PARAM | enter | restore | enter | restore | — | — | yes | NEEDS_UNWIND, NEEDS_INSTALL_WIND |
+| WITH | enter | exit + teardown | — | exit + teardown | — | — | yes | CATCH, NEEDS_UNWIND |
+| DYN_WITH | enter | exit + teardown | enter | exit + teardown | yes | — | yes | CATCH, NEEDS_UNWIND, NEEDS_INSTALL_WIND, NEEDS_TRANSFER_TEARDOWN |
+| SHIFT | — | — | — | — | — | — | yes | — |
 
 **Notes:**
 
 - **WIND before:** Run by the opcode/compiler *before* calling push. The generic push does not run it. The install slot for WIND is NULL.
 - **WITH vs DYN_WITH:** Both can be cloned. Single-shot for WITH is enforced by push/pop: enter runs once at push, exit runs once at pop. DYN_WITH additionally runs enter during transfer install when landing a cloned segment.
-- **PROMPT:** BARRIER means generic `kos_dyn_pop` refuses to pop it. Transfer plans handle PROMPT explicitly (store return continuation, truncate, etc.).
+- **PROMPT and stack blocks:** PROMPT owns the COW stack block for the delimited continuation extent. `install` pushes a new stack block; `pop` and `unwind_on_exception` drop it. SHIFT is a simple marker with no stack block of its own.
+- **PROMPT barrier and exception unwinding:** BARRIER means generic `kos_dyn_pop` refuses to pop it. During exception unwinding, `try_local_exception_handler` checks `HANDLES_EXCEPTIONS` and calls `unwind_on_exception`, which drops the stack block and unlinks the PROMPT, then returns 0 to continue unwinding past it. Transfer plans handle PROMPT explicitly (store return continuation, truncate, etc.).
+- **SHIFT:** Marker node only; no handlers needed. Created by PUSH_SHIFT, popped as part of POP_SHIFT's transfer plan (TRUNCATE_AND_INJECT step).
 
 ---
 
@@ -204,11 +210,15 @@ INSTALL → Wind → INJECT. Use when the path from current to target crosses a 
 
 ---
 
-## 6. Exception Handling: CATCH
+## 6. Exception Handling: CATCH and HANDLES_EXCEPTIONS
 
-Nodes with `KOS_DYN_CAP_CATCH` (WITH, DYN_WITH, future try/catch/finally) can clear an exception during unwind.
+Two separate capability-based mechanisms govern exception handling during unwind.
 
-### 6.1 Unwind Loop Convention
+### 6.1 CATCH — Exception Swallow via Unwind Handler
+
+Nodes with `KOS_DYN_CAP_CATCH` (WITH, DYN_WITH) can clear an exception during normal unwind.
+
+**Unwind loop convention:**
 
 1. Before calling the unwind handler: ensure the current exception is restored (so the handler sees it).
 2. Call the unwind handler. It may be async; wait for completion.
@@ -218,13 +228,33 @@ Nodes with `KOS_DYN_CAP_CATCH` (WITH, DYN_WITH, future try/catch/finally) can cl
 
 The unwind loop does not know the handler's logic. It only checks the outcome.
 
-### 6.2 Swallow Semantics
-
-When a CATCH node's unwind handler clears the exception (e.g. WITH exit returns truthy), that means:
+**Swallow semantics:** When a CATCH node's unwind handler clears the exception (e.g. `__exit__` / `__aexit__` returns truthy):
 
 - Exception is cleared.
 - Unwinding **stops**.
 - Execution resumes past the extent at the node's `resume_pc`, as if the block evaluated normally.
+
+### 6.2 HANDLES_EXCEPTIONS — Barrier-Compatible Exception Dispatch
+
+Nodes with `KOS_DYN_CAP_HANDLES_EXCEPTIONS` (currently PROMPT) provide an `unwind_on_exception`
+handler that is invoked during exception unwinding when `kos_dyn_pop_top` refuses to pop the
+node (because it is a BARRIER).
+
+**Unwind loop convention when pop is refused:**
+
+1. `try_local_exception_handler` calls `kos_dyn_pop_top`; for a BARRIER node this returns non-zero.
+2. The original Python exception is preserved across this call (fetched before, restored after).
+3. If the node has `KOS_DYN_CAP_HANDLES_EXCEPTIONS` and `ops->unwind_on_exception` is non-NULL:
+   - Call `ops->unwind_on_exception(ctx, node, out_ev)`.
+   - Return 0: node cleaned up and unlinked itself; continue unwinding.
+   - Return 1: exception swallowed; stop unwinding and resume execution.
+   - Return `KOS_DYN_UNWIND_ASYNC_STARTED`: async operation started; suspend.
+   - Return -1: error; fall through to RAISE event.
+4. If no handler or handler failed: convert the active exception to a `KOS_EV_RAISE` event and mark context dead.
+
+**PROMPT's unwind_on_exception:** Drops the stack block (via `kos_dyn_pop_prompt`, which invokes
+`type_ops_prompt_pop`) and unlinks the PROMPT node. Returns 0 so unwinding continues past the
+prompt boundary. The exception propagates out of the `reset` region.
 
 ---
 
@@ -295,4 +325,6 @@ No new API functions. No changes to transfer plan building or execution beyond w
 - **All extent actions** (wind, unwind) go through the unified extent runner. No inline extent logic in opcodes.
 - **Async suspension** is handled uniformly: store awaitable, return suspended code, re-enter on resume.
 - **CATCH nodes** determine swallow by clearing the exception. The unwind loop only observes the outcome.
+- **HANDLES_EXCEPTIONS nodes** are invoked via `unwind_on_exception` when pop is refused (BARRIER). No kind-specific checks in the generic exception unwind loop.
+- **PROMPT owns the stack block.** PUSH_PROMPT pushes a COW stack block; POP_PROMPT drops it. SHIFT is a simple marker with no stack block.
 - **Reset/shift** store the call-site continuation in the cloned prompt during delimited invoke. No other special cases.

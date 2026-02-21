@@ -225,14 +225,33 @@ checking for `PYCALL` nodes.
   **single unified dynamic chain**.
 * The chain is a linked list of `KosDynNode` structures with typed payloads.
 * Walking the chain provides complete dynamic extent information.
+* All mutations to the chain go through `kos_dyn_push`, `kos_dyn_pop`, or
+  transfer plan execution. No direct chain manipulation is permitted.
 
 **Node types**:
-* `KOS_DYN_FRAME` — function activation
-* `KOS_DYN_PROMPT` — reset delimiter
-* `KOS_DYN_WIND` — dynamic-wind extent
-* `KOS_DYN_REGION` — block-local control (try, with, loop)
-* `KOS_DYN_PYCALL` — Python/C boundary marker
+* `KOS_DYN_FRAME` — function activation record
+* `KOS_DYN_PROMPT` — reset/shift delimiter; owns a COW stack block for the delimited region; BARRIER + HANDLES_EXCEPTIONS
+* `KOS_DYN_SHIFT` — shift block marker; simple, no stack block or handlers
+* `KOS_DYN_WIND` — dynamic-wind extent (before/after hooks)
+* `KOS_DYN_REGION` — block-local control (try, finally, loop, foreach)
+* `KOS_DYN_NS` — namespace scope (PUSH_NS/POP_NS)
+* `KOS_DYN_CC` — call/cc extent (PUSH_CC/POP_CC)
+* `KOS_DYN_PYCALL` — Python/C boundary marker; BARRIER + BLOCKS_CAPTURE
 * `KOS_DYN_YIELD_FROM` — yield-from delegation state (see yield-from-execution-model.md)
+* `KOS_DYN_PARAM` — parameterize extent (PUSH_PARAM/POP_PARAM); binds/restores dynamic param
+* `KOS_DYN_WITH` — with context manager extent (PUSH_WITH/POP_WITH); CATCH
+* `KOS_DYN_DYN_WITH` — multi-shot with extent (PUSH_DYN_WITH/POP_DYN_WITH); CATCH
+
+**Capability bits** govern behavior without kind checks in generic handlers:
+* `KOS_DYN_CAP_CATCH` — node may swallow exception (WITH, DYN_WITH)
+* `KOS_DYN_CAP_BARRIER` — normal pop refused (PROMPT, PYCALL)
+* `KOS_DYN_CAP_BLOCKS_CAPTURE` — continuation capture cannot cross (PYCALL)
+* `KOS_DYN_CAP_HANDLES_EXCEPTIONS` — node has `unwind_on_exception` handler invoked during exception unwind when pop is refused (PROMPT)
+* `KOS_DYN_CAP_NEEDS_UNWIND_ACTION` — node has transfer-plan unwind handler (WIND, WITH, DYN_WITH, PARAM)
+* `KOS_DYN_CAP_NEEDS_WIND_BEFORE_ACTION` — node has transfer-plan wind handler (WIND)
+* `KOS_DYN_CAP_NEEDS_INSTALL_WIND` — node runs wind on segment install (PARAM, DYN_WITH)
+* `KOS_DYN_CAP_NEEDS_TRANSFER_TEARDOWN` — node needs post-unwind teardown (DYN_WITH, PROMPT)
+* `KOS_DYN_CAP_PRESERVE_ERR_ACROSS_POP` — preserve exception across pop (YIELD_FROM)
 
 ---
 

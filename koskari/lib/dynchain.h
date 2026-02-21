@@ -120,6 +120,7 @@ typedef enum KosDynFlags {
 #define KOS_DYN_CAP_BLOCKS_CAPTURE           (1u << 5)
 #define KOS_DYN_CAP_NEEDS_TRANSFER_TEARDOWN  (1u << 6)
 #define KOS_DYN_CAP_BARRIER                  (1u << 7)
+#define KOS_DYN_CAP_HANDLES_EXCEPTIONS       (1u << 8)
 
 /* Alias for KOS_DYN_CAP_MAY_SWALLOW_EXCEPTION (unified API naming) */
 #define KOS_DYN_CAP_CATCH KOS_DYN_CAP_MAY_SWALLOW_EXCEPTION
@@ -130,8 +131,16 @@ typedef enum KosDynFlags {
 
 /**
    KosDynTypeOps provides type-specific handlers for install, pop,
-   wind, unwind, teardown, and clone. Generic code dispatches via
-   kos_dyn_type_ops[kind]. NULL slots mean no-op or not applicable.
+   wind, unwind, teardown, unwind_on_exception, and clone. Generic code
+   dispatches via kos_dyn_type_ops[kind]. NULL slots mean no-op or not
+   applicable.
+
+   unwind_on_exception is invoked during exception unwinding when the
+   normal pop handler declines (e.g., a BARRIER node). The handler
+   should perform any necessary cleanup, unlink the node from the chain,
+   and return: 0 to continue unwinding, 1 if the exception was swallowed
+   and execution should resume, KOS_DYN_UNWIND_ASYNC_STARTED if an async
+   operation was started, or -1 on error.
 */
 typedef struct KosDynTypeOps {
   int (*install)(KosContext *ctx, KosDynNode *node);
@@ -139,6 +148,7 @@ typedef struct KosDynTypeOps {
   int (*wind)(KosContext *ctx, KosDynNode *node);
   int (*unwind)(KosContext *ctx, KosDynNode *node, PyObject **out_awaitable);
   int (*teardown_after_unwind)(KosContext *ctx, KosDynNode *node);
+  int (*unwind_on_exception)(KosContext *ctx, KosDynNode *node, struct KosEvent *out_ev);
   KosDynNode *(*clone)(KosDynNode *node);
   uint32_t caps;
 } KosDynTypeOps;

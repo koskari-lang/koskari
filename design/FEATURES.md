@@ -98,9 +98,10 @@ The VM in `eval.c` uses a jump table; every opcode has a handler. Handlers are e
 - **Namespace scope**: PUSH_NS, POP_NS (creates child namespace from NamespaceSpec; supports value binding; uses KosDynNs on dynamic chain)
 - **Exceptions**: EXCEPTION, EXCEPTION_CLEAR, EXCEPTION_MATCH, RAISE, CHECK_EXCEPTION
 - **Try/finally**: PUSH_TRY, PUSH_FINALLY, POP_TRY, POP_FINALLY, CLEAR_TRY, CLEAR_FINALLY
-- **Delimited continuations**: PUSH_PROMPT, PUSH_SHIFT, POP_SHIFT, POP_PROMPT
+- **Delimited continuations**: PUSH_PROMPT (pushes COW stack block + KOS_DYN_PROMPT), PUSH_SHIFT (captures continuation, unwinds to prompt, enters shift block; SHIFT is a simple marker), POP_SHIFT (pops result; TRUNCATE_AND_INJECT unwinds through SHIFT+PROMPT and injects value onto outer stack), POP_PROMPT (normal: drops stack block, pops prompt, pushes result; continuation-return: unwinds to invocation site via DELIMITED_RETURN_FRAME)
 - **Undelimited continuations**: PUSH_CC, CAPTURE_CC, POP_CC (capture); invocation via CALL 0 or CALL 1 with stack [callable, arg_0, ...]. Continuation carries token_ref (KosEvaluatorToken); same-token invoke applies directly, different-token raises KoskariContinuationApply (propagated to caller).
 - **Continuation invocation**: INVOKE_K (delimited: stack-based), INVOKE_K_VAR (delimited: name-based); undelimited via CALL as above
+- **Context managers**: PUSH_WITH, POP_WITH (sync and async single-shot `with`; KOS_DYN_WITH; `__aexit__` truthy return swallows exception). PUSH_DYN_WITH, POP_DYN_WITH (multi-shot `dyn-with`; async enter/exit; cloneable; KOS_DYN_DYN_WITH). Both use KOS_DYN_CAP_CATCH for exception swallow. See design/interpreter/with-dyn-with.md.
 - **Object protocol**: All OBJECT_* opcodes (comparisons, arithmetic, predicates, len/type/iter/str/repr/vars/dir, bitwise, in/not in, is/is not, isinstance/issubclass, etc.)
 - **Iteration**: ITER_NEXT (region-only, must be inside PUSH_FOREACH; uses region->iter; arg = else label; auto-await), NEXT (stack-based; arg = 1 or 2; 1-arg: StopIteration raises; 2-arg: StopIteration pushes default; auto-await for sync iter, Python async iter, Koskari async gen)
 - **Loop control**: PUSH_LOOP, PUSH_FOREACH, POP_LOOP, CLEAR_LOOP, BREAK, CONTINUE (use KosDynRegion LOOP/FOREACH on dynamic chain; PUSH_LOOP pushes stack block; BREAK/CONTINUE unwind via kos_find_region_for_loop; ITER_NEXT at loop head for foreach)
@@ -113,7 +114,7 @@ The VM in `eval.c` uses a jump table; every opcode has a handler. Handlers are e
 **Not implemented (stubs)** — hitting these at runtime raises "unimplemented opcode":
 - **Argument building**: BUILD_ARGS, BUILD_KWDS, BUILD_KWDS_NAMES, COMBINE_ARGS, COMBINE_KWDS (BUILD_FUNCTION is implemented)
 - **Calls**: CALL_NAMES, CALL_STAR; CALL_ATTR, CALL_ATTR_NAMES, CALL_ATTR_STAR; RECUR, RECUR_NAMES, RECUR_STAR; TAIL_CALL_NAMES, TAIL_CALL_STAR; TAIL_RECUR, TAIL_RECUR_NAMES, TAIL_RECUR_STAR
-- **Block control**: PUSH_WITH, POP_WITH implemented (single-shot `with`, sync only). PUSH_BEGIN, PUSH_CLASS; POP_BEGIN. Multi-shot `dyn-with` (PUSH_DYN_WITH/POP_DYN_WITH) specified in design/interpreter/with-dyn-with.md; opcodes not yet in opcodes.incl.
+- **Block control (remaining)**: PUSH_BEGIN, PUSH_CLASS, POP_BEGIN (stubs)
 - **Wind / region**: PUSH_WIND, POP_WIND (stubs); PUSH_REGION, POP_REGION
 
 There are no **partially** implemented opcodes; each handler is either full, a stub, or a dedicated "no runtime implementation" handler (THEEND). The authoritative list is the set of handlers in `koskari/lib/eval.c` that do not call `op_unimplemented_stub`.
@@ -141,7 +142,7 @@ There are no **partially** implemented opcodes; each handler is either full, a s
 - **Tracebacks**: Line number support
 
 ### Continuations
-- **Delimited continuations (reset/shift)**: PUSH_PROMPT, PUSH_SHIFT, POP_SHIFT, POP_PROMPT. PUSH_SHIFT captures the continuation (from POP_SHIFT+1 to POP_PROMPT) and enters the shift block with k on stack; INVOKE_K and INVOKE_K_VAR invoke captured delimited continuations using the push model (graft frames onto current chain; return to call site when continuation hits POP_PROMPT). Multi-shot; prompt need not be in chain when invoking. See design/interpreter/callcc.md.
+- **Delimited continuations (reset/shift)**: PUSH_PROMPT, PUSH_SHIFT, POP_SHIFT, POP_PROMPT. PUSH_PROMPT owns a COW stack block for the delimited region (SHIFT does not create one). PUSH_SHIFT captures the continuation (from POP_SHIFT+1 to POP_PROMPT) and enters the shift block with k on stack; INVOKE_K and INVOKE_K_VAR invoke captured delimited continuations using the push model (graft frames onto current chain; return to call site when continuation hits POP_PROMPT). Multi-shot; prompt need not be in chain when invoking. Exception propagation past a PROMPT uses `KOS_DYN_CAP_HANDLES_EXCEPTIONS` / `unwind_on_exception` (no kind check in the unwind loop). See design/interpreter/callcc.md.
 - **Undelimited call/cc**: PUSH_CC, CAPTURE_CC, POP_CC capture an undelimited continuation (stored with token_ref = owning KosEvaluatorToken). Invocation is via CALL 0 or CALL 1 with stack [callable, arg_0, ...]. If the continuation’s token matches the current evaluator token (or is undelimited with no token_ref), it is applied directly; otherwise the VM sets KoskariContinuationApply and returns -1 so the exception propagates to the caller. Python type KosPyContinuation is callable; cross-token invoke raises KoskariContinuationApply. See design/interpreter/evaluator-token-continuation.md.
 
 ## Missing/To Design

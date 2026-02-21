@@ -384,7 +384,8 @@ KosDynPrompt *kos_dynprompt_new(KosDynNode *parent, uint32_t prompt_id) {
     return NULL;
 
   kos_dynnode_init(prompt, KOS_DYN_PROMPT, parent,
-                   KOS_DYN_CAP_BARRIER | KOS_DYN_CAP_NEEDS_TRANSFER_TEARDOWN);
+                   KOS_DYN_CAP_BARRIER | KOS_DYN_CAP_NEEDS_TRANSFER_TEARDOWN
+                   | KOS_DYN_CAP_HANDLES_EXCEPTIONS);
   KosDynPrompt_ID(prompt) = prompt_id;
   KosDynPrompt_STACK(prompt) = NULL;
   return prompt;
@@ -1968,6 +1969,24 @@ static int type_ops_teardown_prompt(KosContext *ctx, KosDynNode *node) {
 }
 
 
+static int type_ops_prompt_unwind_exception(
+        KosContext *ctx,
+        KosDynNode *node,
+        KosEvent *out_ev) {
+
+  (void) out_ev;
+  if (KOS_XFER_TRACE)
+    SAYF("[xfer] prompt_unwind_exception node=%p: unlinking prompt", (void *) node);
+
+  /* kos_dyn_pop_prompt invokes type_ops_prompt_pop which drops the stack
+     block, then unlinks and frees the node. */
+  kos_dyn_pop_prompt(ctx, (KosDynPrompt *) node);
+
+  /* Exception propagates past the prompt boundary; continue unwinding */
+  return 0;
+}
+
+
 
 
 static int type_ops_teardown_dyn_with(KosContext *ctx, KosDynNode *node) {
@@ -1997,6 +2016,7 @@ const KosDynTypeOps kos_dyn_type_ops[] = {
     .wind = NULL,
     .unwind = NULL,
     .teardown_after_unwind = NULL,
+    .unwind_on_exception = NULL,
     .clone = (KosDynNode *(*)(KosDynNode *)) kos_dynframe_clone,
     .caps = 0,
   },
@@ -2007,8 +2027,10 @@ const KosDynTypeOps kos_dyn_type_ops[] = {
     .wind = NULL,
     .unwind = NULL,
     .teardown_after_unwind = type_ops_teardown_prompt,
+    .unwind_on_exception = type_ops_prompt_unwind_exception,
     .clone = (KosDynNode *(*)(KosDynNode *)) kos_dynprompt_clone,
-    .caps = KOS_DYN_CAP_BARRIER | KOS_DYN_CAP_NEEDS_TRANSFER_TEARDOWN,
+    .caps = KOS_DYN_CAP_BARRIER | KOS_DYN_CAP_NEEDS_TRANSFER_TEARDOWN
+            | KOS_DYN_CAP_HANDLES_EXCEPTIONS,
   },
   /* KOS_DYN_WIND */
   {
@@ -2017,6 +2039,7 @@ const KosDynTypeOps kos_dyn_type_ops[] = {
     .wind = (int (*)(KosContext *, KosDynNode *)) kos_dyn_wind_wind,
     .unwind = (int (*)(KosContext *, KosDynNode *, PyObject **)) kos_dyn_wind_unwind,
     .teardown_after_unwind = NULL,
+    .unwind_on_exception = NULL,
     .clone = (KosDynNode *(*)(KosDynNode *)) kos_dynwind_clone,
     .caps = 0,
   },
@@ -2027,6 +2050,7 @@ const KosDynTypeOps kos_dyn_type_ops[] = {
     .wind = NULL,
     .unwind = NULL,
     .teardown_after_unwind = NULL,
+    .unwind_on_exception = NULL,
     .clone = (KosDynNode *(*)(KosDynNode *)) kos_dynregion_clone,
     .caps = 0,
   },
@@ -2037,6 +2061,7 @@ const KosDynTypeOps kos_dyn_type_ops[] = {
     .wind = NULL,
     .unwind = NULL,
     .teardown_after_unwind = NULL,
+    .unwind_on_exception = NULL,
     .clone = type_ops_pycall_clone,
     .caps = KOS_DYN_CAP_BARRIER | KOS_DYN_CAP_BLOCKS_CAPTURE,
   },
@@ -2047,6 +2072,7 @@ const KosDynTypeOps kos_dyn_type_ops[] = {
     .wind = NULL,
     .unwind = NULL,
     .teardown_after_unwind = NULL,
+    .unwind_on_exception = NULL,
     .clone = (KosDynNode *(*)(KosDynNode *)) kos_dynns_clone,
     .caps = 0,
   },
@@ -2057,6 +2083,7 @@ const KosDynTypeOps kos_dyn_type_ops[] = {
     .wind = NULL,
     .unwind = NULL,
     .teardown_after_unwind = NULL,
+    .unwind_on_exception = NULL,
     .clone = (KosDynNode *(*)(KosDynNode *)) kos_dyncc_clone,
     .caps = 0,
   },
@@ -2067,6 +2094,7 @@ const KosDynTypeOps kos_dyn_type_ops[] = {
     .wind = NULL,
     .unwind = NULL,
     .teardown_after_unwind = NULL,
+    .unwind_on_exception = NULL,
     .clone = (KosDynNode *(*)(KosDynNode *)) kos_dynyieldfrom_clone,
     .caps = KOS_DYN_CAP_PRESERVE_ERR_ACROSS_POP,
   },
@@ -2077,6 +2105,7 @@ const KosDynTypeOps kos_dyn_type_ops[] = {
     .wind = (int (*)(KosContext *, KosDynNode *)) kos_dyn_param_wind,
     .unwind = NULL,
     .teardown_after_unwind = NULL,
+    .unwind_on_exception = NULL,
     .clone = (KosDynNode *(*)(KosDynNode *)) kos_dynparam_clone,
     .caps = KOS_DYN_CAP_NEEDS_UNWIND_ACTION | KOS_DYN_CAP_NEEDS_INSTALL_WIND,
   },
@@ -2087,6 +2116,7 @@ const KosDynTypeOps kos_dyn_type_ops[] = {
     .wind = NULL,
     .unwind = (int (*)(KosContext *, KosDynNode *, PyObject **)) kos_dyn_with_unwind,
     .teardown_after_unwind = NULL,
+    .unwind_on_exception = NULL,
     .clone = (KosDynNode *(*)(KosDynNode *)) kos_dynwith_clone,
     .caps = KOS_DYN_CAP_CATCH | KOS_DYN_CAP_NEEDS_UNWIND_ACTION,
   },
@@ -2097,6 +2127,7 @@ const KosDynTypeOps kos_dyn_type_ops[] = {
     .wind = (int (*)(KosContext *, KosDynNode *)) kos_dyn_dyn_with_wind,
     .unwind = (int (*)(KosContext *, KosDynNode *, PyObject **)) kos_dyn_with_unwind,
     .teardown_after_unwind = type_ops_teardown_dyn_with,
+    .unwind_on_exception = NULL,
     .clone = (KosDynNode *(*)(KosDynNode *)) kos_dyndynwith_clone,
     .caps = KOS_DYN_CAP_CATCH | KOS_DYN_CAP_NEEDS_UNWIND_ACTION
         | KOS_DYN_CAP_NEEDS_INSTALL_WIND | KOS_DYN_CAP_NEEDS_TRANSFER_TEARDOWN,
@@ -2108,6 +2139,7 @@ const KosDynTypeOps kos_dyn_type_ops[] = {
     .wind = NULL,
     .unwind = NULL,
     .teardown_after_unwind = NULL,
+    .unwind_on_exception = NULL,
     .clone = (KosDynNode *(*)(KosDynNode *)) kos_dynshift_clone,
     .caps = 0,
   },
