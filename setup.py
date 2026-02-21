@@ -12,6 +12,23 @@ from pathlib import Path
 from setuptools import Extension, setup
 
 
+passenvs = (
+    "KOS_TRACE_FREELIST",
+    "KOS_TRACE_INTERN",
+    "KOS_TRACE_EVENTS",
+    "KOS_TRACE_TIMING",
+    "VERBOSE_DEBUG",
+)
+
+
+baseline_args = (
+    "--std=c99",
+    "-Wall",
+    "-Werror",
+    "-flto=auto",
+)
+
+
 def extra_compile_args(platform=None, debug=False):
     """
     Get compiler flags for C extensions
@@ -24,12 +41,7 @@ def extra_compile_args(platform=None, debug=False):
     if debug is None:
         debug = environ.get("DEBUG") == "1"
 
-    args = [
-        "--std=c99",
-        "-Wall",
-        "-Werror",
-        "-flto=auto",
-    ]
+    args = list(baseline_args)
 
     if debug:
         args.append("-g")
@@ -37,16 +49,9 @@ def extra_compile_args(platform=None, debug=False):
     else:
         args.append("-O2")
 
-    if environ.get("VERBOSE_DEBUG") == "1":
-        args.append("-DVERBOSE_DEBUG=1")
-    if environ.get("KOS_TRACE_FREELIST") == "1":
-        args.append("-DKOS_TRACE_FREELIST=1")
-    if environ.get("KOS_TRACE_INTERN") == "1":
-        args.append("-DKOS_TRACE_INTERN=1")
-    if environ.get("KOS_TRACE_EVENTS") == "1":
-        args.append("-DKOS_TRACE_EVENTS=1")
-    if environ.get("KOS_TRACE_TIMING") == "1":
-        args.append("-DKOS_TRACE_TIMING=1")
+    for env in passenvs:
+        if environ.get(env) == "1":
+            args.append(f"-D{env}=1")
 
     if platform == "linux":
         args.append("-ffat-lto-objects")
