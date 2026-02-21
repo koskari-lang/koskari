@@ -25,7 +25,7 @@ Special form handlers for compile/while, compile/break, and compile/continue.
 from ...lib import nil, OpCode, symbol
 from ...types import is_pair
 from ..exceptions import CompilerException
-from ..helpers import helper_begin, special
+from ..helpers import helper_begin, helper_binding, helper_elsebody, special
 
 
 @special(symbol("compile/while"))
@@ -51,6 +51,72 @@ def special_while(compiler, source, tc=False):
         child.instruction(OpCode.KOS_OP_JUMP, loop_head)
         child.instruction(OpCode.KOS_OP_LABEL, loop_exit)
         child.instruction(OpCode.KOS_OP_CLEAR_LOOP, 0)
+
+    return fragment
+
+
+@special(symbol("compile/for-each"))
+def special_for_each(compiler, source, tc=False):
+    """
+    Compile (compile/for-each [BINDING EXPR] BODY... [else: ELSEBODY]).
+    Iterates EXPR, binding each element to BINDING and running BODY.
+    On natural exhaustion, runs ELSEBODY if provided.
+    Break exits the loop early without running the else clause.
+    The loop expression value is None unless break or else provides a value.
+    """
+
+    called_by, rest = source
+    if rest is nil or not is_pair(rest):
+        raise CompilerException("for-each requires [binding expr] and body", source)
+
+    spec, body = rest
+    if spec is nil or not is_pair(spec):
+        raise CompilerException("for-each requires [binding expr] list", source)
+
+    binding, expr = helper_binding(spec)
+    body, elsebody = helper_elsebody(body)
+
+    has_elsebody = elsebody is not nil and elsebody is not None
+
+    fragment = compiler.fragment(called_by)
+    fragment.position_of(source)
+
+    loop_else = compiler.gen_label("foreach.else")
+    after_pop = compiler.gen_label("foreach.after_pop")
+
+    binding_name = str(binding)
+
+    if has_elsebody:
+        result_var = compiler.gen_label("foreach.result")
+        fragment.declare_var(result_var)
+        fragment.instruction(OpCode.KOS_OP_CONST, None)
+        fragment.instruction(OpCode.KOS_OP_VAR_STORE, result_var)
+
+    fragment.instruction(OpCode.KOS_OP_CONST, None)
+    fragment.merge(compiler.full_compile(expr, False))
+    fragment.instruction(OpCode.KOS_OP_PUSH_FOREACH, after_pop)
+    fragment.instruction(OpCode.KOS_OP_ITER_NEXT, loop_else)
+
+    fragment.declare_var(binding_name)
+    fragment.instruction(OpCode.KOS_OP_VAR_STORE, binding_name)
+
+    helper_begin(fragment, body, False)
+    fragment.instruction(OpCode.KOS_OP_CONTINUE, 0)
+
+    fragment.instruction(OpCode.KOS_OP_LABEL, loop_else)
+    fragment.instruction(OpCode.KOS_OP_CLEAR_LOOP, 0)
+
+    if has_elsebody:
+        fragment.merge(compiler.full_compile(elsebody, False))
+        fragment.instruction(OpCode.KOS_OP_VAR_STORE, result_var)
+
+    fragment.instruction(OpCode.KOS_OP_POP_LOOP, 0)
+
+    fragment.instruction(OpCode.KOS_OP_LABEL, after_pop)
+
+    if has_elsebody:
+        fragment.instruction(OpCode.KOS_OP_POP, 1)
+        fragment.instruction(OpCode.KOS_OP_VAR, result_var)
 
     return fragment
 

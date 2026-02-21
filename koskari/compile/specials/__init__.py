@@ -33,7 +33,7 @@ from .context import special_dyn_with, special_parameterize, special_with
 from .items import special_del_item, special_item, special_ref_item, special_set_item
 from .lambda_ import special_lambda
 from .let import special_let
-from .loops import special_break, special_continue, special_while
+from .loops import special_break, special_continue, special_for_each, special_while
 from .pairs import special_car, special_cdr, special_cons, special_quote
 from .slots import special_attr, special_del_attr, special_ref_attr, special_set_attr
 from .variables import special_bindq, special_delq, special_refq, special_setq
@@ -57,6 +57,7 @@ __all__ = (
     "special_del_item",
     "special_delq",
     "special_dyn_with",
+    "special_for_each",
     "special_if",
     "special_item",
     "special_lambda",

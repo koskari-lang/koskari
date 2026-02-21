@@ -505,6 +505,39 @@ def helper_begin(
     return fragment
 
 
+_keyword_else = keyword("else")
+
+
+def helper_elsebody(source):
+    """
+    Strip a trailing [else: EXPR] clause from a body list
+
+    Returns a tuple of (body_list, else_expr_or_nil) where body_list is a pair
+    list of all body expressions before the optional else clause.
+    If no else clause is present, else_expr_or_nil is nil.
+    If the else clause is empty, else_expr_or_nil is None.
+    """
+
+    collected = []
+    current = source
+
+    while current is not nil:
+        head, tail = current
+        if tail is nil and is_pair(head):
+            e, ebody = head
+            if e is _keyword_else:
+                body_list = cons(*collected, nil) if collected else nil
+                if ebody is nil:
+                    return body_list, None
+                else:
+                    return body_list, ebody[0]
+        collected.append(head)
+        current = tail
+
+    body_list = cons(*collected, nil) if collected else nil
+    return body_list, nil
+
+
 __all__ = (
     "const_only_expr",
     "convert_bindings",
@@ -513,6 +546,7 @@ __all__ = (
     "gather_parameters",
     "helper_begin",
     "helper_binding",
+    "helper_elsebody",
     "is_lazygensym",
     "is_symbolish",
     "list_star",

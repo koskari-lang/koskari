@@ -300,14 +300,67 @@ Evaluates to the loop result (from break, continue, or None on normal exit).
 ```
 
 
+## compile/for-each
+
+**Symbol:** `compile/for-each`
+
+**Syntax:** `(compile/for-each [BINDING EXPR] BODY... [else: ELSEBODY])`
+
+**Use-case:** Iterate over the sequence produced by EXPR, binding each element
+to BINDING and evaluating BODY on each iteration. Supports `compile/break` and
+`compile/continue` inside the body. An optional `[else: ELSEBODY]` clause runs
+only when the iterator is exhausted naturally (i.e. not via `compile/break`);
+its value becomes the loop's expression value. Without an else clause the loop
+evaluates to `None`.
+
+**Behaviour:** Emits CONST None (default loop result), compiles EXPR (the
+iterable), then PUSH_FOREACH whose break target is set to a label after
+POP_LOOP. The continue target (first instruction after PUSH_FOREACH) is
+ITER_NEXT. On each iteration, ITER_NEXT pushes the next value or jumps to the
+else label on exhaustion. The value is stored with VAR_STORE into the binding
+name. The body is compiled with `helper_begin`; CONTINUE 0 resets the stack
+block and jumps back to ITER_NEXT.
+
+On exhaustion, CLEAR_LOOP marks natural exit. When an else body is present, its
+result is saved to a compiler-generated temporary variable before POP_LOOP (so
+it survives the block drop), then loaded after POP_LOOP discards the region's
+None result. When there is no else body, POP_LOOP's None is the loop value.
+`compile/break` with no else body lands directly after POP_LOOP; with an else
+body, break bypasses the save/restore path and its value is already on the
+parent stack.
+
+**Examples:**
+
+```scheme
+;; Basic iteration; loop value is None
+(compile/for-each [i items]
+  (compile/call append result i))
+
+;; Else fires when iterator exhausts without a break
+(compile/for-each [i items]
+  (compile/cond
+    [(compile/call gt i 4) (compile/break)]
+    [else: (compile/call append result i)])
+  [else: "finished"])
+
+;; Break with a value
+(compile/for-each [i items]
+  (compile/cond
+    [(compile/call eq i target) (compile/break "found")]
+    [else: None]))
+```
+
+**Tests:** `tests/compile/specials/test_for_each.py`
+
+
 ## compile/break
 
 **Symbol:** `compile/break`
 
 **Syntax:** `(compile/break)` or `(compile/break VAL)`
 
-**Use-case:** Exit the innermost loop, optionally with a result value. Must be
-inside a `compile/while` (or future foreach) body.
+**Use-case:** Exit the innermost loop (`compile/while` or `compile/for-each`),
+optionally with a result value.
 
 **Behaviour:** Compiles optional VAL (or pushes None), emits BREAK with count
 0 or 1. Runtime unwinds to the loop's break target and pushes the result.
@@ -326,12 +379,12 @@ inside a `compile/while` (or future foreach) body.
 
 **Syntax:** `(compile/continue)` or `(compile/continue VAL)`
 
-**Use-case:** Restart the innermost loop iteration, optionally storing VAL as
-the loop result (used when the loop terminates normally). Must be inside a
-`compile/while` (or future foreach) body.
+**Use-case:** Restart the innermost loop iteration. Must be inside a
+`compile/while` or `compile/for-each` body.
 
 **Behaviour:** Compiles optional VAL (or pushes None), emits CONTINUE with
-count 0 or 1. Runtime jumps to the loop's continue target (loop head).
+count 0 or 1. Runtime jumps to the loop's continue target (loop head for while,
+ITER_NEXT for for-each).
 
 **Examples:**
 
