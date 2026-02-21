@@ -35,9 +35,6 @@
    via the refcount field.
 */
 
-typedef struct KosStackBlock KosStackBlock;
-
-
 struct KosStackBlock {
   KosStackBlock *back;    /* previous block (toward bottom) */
 

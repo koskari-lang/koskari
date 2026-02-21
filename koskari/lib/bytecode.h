@@ -197,7 +197,7 @@ typedef struct KosExtentDesc {
 extern PyTypeObject KosCodeType;
 
 
-typedef struct KosCode {
+struct KosCode {
   PyObject_HEAD
 
   PyObject *name;       /* function/expression name (PyUnicode) */
@@ -223,7 +223,7 @@ typedef struct KosCode {
 
   PyCodeObject *faux;   /* faux code object for tracebacks */
   PyObject *extras;     /* extra metadata (PyDict) */
-} KosCode;
+};
 
 
 /* === Constructor === */

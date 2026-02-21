@@ -39,12 +39,6 @@
 #include "dynchain.h"
 
 
-/* === Forward declarations === */
-
-struct KosCode;
-typedef struct KosCode KosCode;
-
-
 /* === KosEvaluatorToken === */
 
 
@@ -54,8 +48,6 @@ typedef struct KosCode KosCode;
    this thread (live_depth) and serves as an ownership marker for
    Continuations and DelimitedContinuations.
 */
-
-typedef struct KosEvaluatorToken KosEvaluatorToken;
 
 struct KosEvaluatorToken {
   PyObject_HEAD

@@ -36,32 +36,6 @@
 #include <stdint.h>
 
 
-/* === Forward declarations === */
-
-struct KosCode;
-typedef struct KosCode KosCode;
-
-struct KosStackBlock;
-typedef struct KosStackBlock KosStackBlock;
-
-struct KosContext;
-typedef struct KosContext KosContext;
-
-struct KosDynNode;
-typedef struct KosDynNode KosDynNode;
-
-struct KosContinuation;
-typedef struct KosContinuation KosContinuation;
-
-struct KosTransferPlan;
-typedef struct KosTransferPlan KosTransferPlan;
-
-struct KosHookRunner;
-typedef struct KosHookRunner KosHookRunner;
-
-struct KosEvent;
-
-
 /* === DynNode kind enum === */
 
 
