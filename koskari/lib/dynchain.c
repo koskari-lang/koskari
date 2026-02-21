@@ -1237,8 +1237,12 @@ KosDynPrompt *kos_dyn_push_prompt(KosContext *ctx, uint32_t prompt_id) {
 
 void kos_dyn_pop_prompt(KosContext *ctx, KosDynPrompt *prompt) {
   if (! KosContext_DYN_TOP(ctx) || KosContext_DYN_TOP(ctx) != (KosDynNode *) prompt) {
-    /* Prompt is not at top - this is an error but we handle gracefully */
     return;
+  }
+
+  const KosDynTypeOps *ops = &kos_dyn_type_ops[KOS_DYN_PROMPT];
+  if (ops->pop) {
+    ops->pop(ctx, (KosDynNode *) prompt, NULL);
   }
 
   KosContext_DYN_TOP(ctx) = KosDynNode_PARENT(prompt);

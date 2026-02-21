@@ -2140,9 +2140,12 @@ static int try_local_exception_handler(KosContext *ctx, KosEvent *out_ev) {
           else if (KosDynNode_IS_WITH_OR_DYN_WITH(top))
             catch_resume_pc = KosDynWith_RESUME_PC((KosDynWith *) top);
         }
-        /* Some nodes' pop can call PyErr_Clear(); preserve exception across pop */
+        /* Some nodes' pop can call PyErr_Clear(); preserve exception across pop.
+           Also preserve across barrier checks since we may need to handle PROMPT barriers. */
         PyObject *saved_typ = NULL, *saved_val = NULL, *saved_tb = NULL;
-        if (top && KosDynNode_HAS_CAP(top, KOS_DYN_CAP_PRESERVE_ERR_ACROSS_POP) && PyErr_Occurred())
+        int needs_preserve = (top && KosDynNode_HAS_CAP(top, KOS_DYN_CAP_PRESERVE_ERR_ACROSS_POP))
+            || (top && KosDynNode_HAS_CAP(top, KOS_DYN_CAP_BARRIER));
+        if (needs_preserve && PyErr_Occurred())
           PyErr_Fetch(&saved_typ, &saved_val, &saved_tb);
         int pop_res = kos_dyn_pop_top(ctx, out_ev);
         if (saved_typ != NULL)
