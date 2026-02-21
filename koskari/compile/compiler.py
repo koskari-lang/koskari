@@ -22,7 +22,6 @@ The koskari compiler. Converts source forms into bytecode fragments.
 
 from contextlib import contextmanager
 from enum import auto, IntEnum
-from typing import Any
 
 from ..lib import (
     cons,
@@ -44,7 +43,6 @@ from ..types import (
     is_proper,
     is_symbol,
     get_position,
-    fill_position,
 )
 
 from .exceptions import CompilerException, UncaughtCompilerException
@@ -257,22 +255,28 @@ class ByteCodeFragment:
         compiler = self.compiler
         ns_name = str(ns_name)
         child = compiler.fragment(ns_name)
+
         names = tuple(map(str, names))
         if len(names) != len(values):
-            raise CompilerException("mismatch between names and values",
-                                   (names, values))
+            raise CompilerException(
+                "mismatch between names and values",
+                (names, values))
+
         if names:
             for name in names:
                 child.declare_var(name)
             valfrag = compiler.fragment(ns_name)
             for val in values:
                 valfrag.merge(compiler.full_compile(val, False))
+
         yield child
         nspec = child.as_namespace_spec()
         self.instruction(OpCode.KOS_OP_CONST, nspec)
+
         if names:
             self.merge(valfrag)
             self.instruction(OpCode.KOS_OP_CONST, names)
+
         self.instruction(OpCode.KOS_OP_PUSH_NS, len(names))
         self.instructions.extend(child.instructions)
         self.instruction(OpCode.KOS_OP_POP_NS, pop)
@@ -484,8 +488,9 @@ class Compiler:
         fragment.position_of(source_obj)
 
         if not is_proper(source_obj):
-            raise CompilerException("Cannot evaluate improper lists as"
-                                    " expressions", source_obj)
+            raise CompilerException(
+                "Cannot evaluate improper lists as expressions",
+                source_obj)
 
         head, tail = source_obj
 
@@ -521,15 +526,15 @@ class Compiler:
         squished = [(OpCode.KOS_OP_NOOP, 0)]
 
         for (op, arg) in instr:
-            if ((op == OpCode.KOS_OP_POP and
-                 arg == 1 and
-                 squished[-1][0] in (OpCode.KOS_OP_CONST,
-                                     OpCode.KOS_OP_DUP))):
+            if ((op == OpCode.KOS_OP_POP
+                 and arg == 1
+                 and squished[-1][0] in (OpCode.KOS_OP_CONST,
+                                         OpCode.KOS_OP_DUP))):
                 del squished[-1]
                 continue
 
-            elif (op == OpCode.KOS_OP_JUMP_TRUE and
-                  squished[-1][0] == OpCode.KOS_OP_CONST):
+            elif (op == OpCode.KOS_OP_JUMP_TRUE
+                  and squished[-1][0] == OpCode.KOS_OP_CONST):
                 truthy = bool(squished[-1][1])
                 del squished[-1]
                 if truthy:
@@ -537,8 +542,8 @@ class Compiler:
                 else:
                     continue
 
-            elif (op == OpCode.KOS_OP_JUMP_FALSE and
-                  squished[-1][0] == OpCode.KOS_OP_CONST):
+            elif (op == OpCode.KOS_OP_JUMP_FALSE
+                  and squished[-1][0] == OpCode.KOS_OP_CONST):
                 truthy = not squished[-1][1]
                 del squished[-1]
                 if truthy:
@@ -548,13 +553,12 @@ class Compiler:
 
             elif op == OpCode.KOS_OP_LABEL:
                 prior = squished[-1]
-                if (prior[0] == OpCode.KOS_OP_JUMP and
-                        prior[1] == arg):
+                if prior[0] == OpCode.KOS_OP_JUMP and prior[1] == arg:
                     del squished[-1]
 
                 elif (prior[0] in (OpCode.KOS_OP_JUMP_TRUE,
-                                  OpCode.KOS_OP_JUMP_FALSE) and
-                      prior[1] == arg):
+                                   OpCode.KOS_OP_JUMP_FALSE)
+                      and prior[1] == arg):
                     if len(squished) > 1 and squished[-2][0] == OpCode.KOS_OP_CONST:
                         del squished[-1]
                         del squished[-1]
@@ -564,10 +568,10 @@ class Compiler:
             elif ((op in (OpCode.KOS_OP_RETURN,
                           OpCode.KOS_OP_BREAK,
                           OpCode.KOS_OP_CONTINUE,
-                          OpCode.KOS_OP_YIELD) and
-                   arg == 1 and
-                   squished[-1][0] == OpCode.KOS_OP_CONST and
-                   squished[-1][1] is None)):
+                          OpCode.KOS_OP_YIELD)
+                   and arg == 1
+                   and squished[-1][0] == OpCode.KOS_OP_CONST
+                   and squished[-1][1] is None)):
                 del squished[-1]
                 arg = 0
 

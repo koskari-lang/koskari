@@ -7,7 +7,7 @@ author: Christopher O'Brien <obriencj@preoccupied.net>
 license: GNU General Public License v3
 """
 
-from .compiler import ByteCodeFragment,Compiler, CompilerMode
+from .compiler import ByteCodeFragment, Compiler, CompilerMode
 from .exceptions import CompilerException, UncaughtCompilerException
 from .specials import SPECIALS
 

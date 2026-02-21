@@ -154,8 +154,10 @@ def gather_parameters(args, source=None):
         elif is_keyword(arg):
             continue
         else:
-            raise CompilerException("keyword parameters must be alternating keywords and"
-                " values, not %r" % arg, source)
+            raise CompilerException(
+                "keyword parameters must be alternating keywords and"
+                " values, not %r" % arg,
+                source)
 
     star = None
     starstar = None
@@ -250,7 +252,8 @@ def gather_formals(args, source=None):
         elif is_keyword(arg):
             continue
         else:
-            raise CompilerException("keyword formals must be alternating keywords and"
+            raise CompilerException(
+                "keyword formals must be alternating keywords and"
                 " values, not %r" % arg)
 
     star = None
@@ -288,7 +291,8 @@ def gather_formals(args, source=None):
         elif is_keyword(arg):
             continue
         else:
-            raise CompilerException("keyword-only formals must be alternating keywords"
+            raise CompilerException(
+                "keyword-only formals must be alternating keywords"
                 " and values, not %r" % arg)
 
     if arg is _keyword_starstar:
@@ -515,7 +519,26 @@ __all__ = (
     "pycons",
     "requote",
     "simple_parameters",
+    "special",
+    "SPECIALS",
 )
+
+
+SPECIALS = {}
+
+
+def special(form_symbol):
+    """
+    Decorator that registers a function as a special form handler.
+    The decorated function gets a compile_impl attribute for dispatch.
+    """
+
+    def decorator(fn):
+        SPECIALS[form_symbol] = fn
+        fn.compile_impl = fn
+        return fn
+
+    return decorator
 
 
 # The end.
