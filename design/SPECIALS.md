@@ -322,11 +322,11 @@ name. The body is compiled with `helper_begin`; CONTINUE 0 resets the stack
 block and jumps back to ITER_NEXT.
 
 On exhaustion, CLEAR_LOOP marks natural exit. When an else body is present, its
-result is saved to a compiler-generated temporary variable before POP_LOOP (so
-it survives the block drop), then loaded after POP_LOOP discards the region's
-None result. When there is no else body, POP_LOOP's None is the loop value.
-`compile/break` with no else body lands directly after POP_LOOP; with an else
-body, break bypasses the save/restore path and its value is already on the
+result is compiled and then BREAK 1 is emitted: this pops the FOREACH region,
+pushes the else result directly to the parent stack, and jumps to after_pop —
+so the else value arrives cleanly without any temporary variable. When there is
+no else body, POP_LOOP falls through to after_pop and pushes the region's None.
+User `compile/break` also jumps to after_pop with its value already on the
 parent stack.
 
 **Examples:**

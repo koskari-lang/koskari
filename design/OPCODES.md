@@ -123,11 +123,12 @@ KosCode. Many opcodes have different argument meaning in each form.
 
 | Pre-compile arg        | Post-compile arg        | Opcodes (examples) |
 |------------------------|-------------------------|---------------------|
-| String label name      | pc (uint16)             | JUMP, JUMP_FALSE, JUMP_TRUE, JUMP_AND, JUMP_OR, ITER_NEXT, CHECK_*, PUSH_LOOP, PUSH_FOREACH, PUSH_TRY, PUSH_FINALLY, PUSH_WIND, PUSH_REGION |
+| String label name      | pc (uint16)             | JUMP, JUMP_FALSE, JUMP_TRUE, JUMP_AND, JUMP_OR, ITER_NEXT, CHECK_*, PUSH_TRY, PUSH_FINALLY, PUSH_WIND, PUSH_REGION |
 | Literal value          | Constant pool index     | CONST |
 | Name (string/symbol)   | Constant pool index     | VAR, VAR_BIND, VAR_CLEAR, VAR_REF, VAR_STORE; ATTR*, CONST_ITEM* (key); INVOKE_K_VAR |
 | Name → slot (optional) | Fast local index       | VAR may be lowered to FAST*; then arg is slot index |
 | (unchanged)            | (unchanged)             | NOARG, COUNT, etc. |
+| 0 (no arg; break target derived at runtime from extent table `pop_pc + 1`) | 0 (unused) | PUSH_FOREACH, PUSH_LOOP |
 
 **Compile-time only**: LABEL and POSITION are **omitted** in the post-compile
 bytecode under normal circumstances. Finalize strips them and adjusts any branch
@@ -237,8 +238,8 @@ When adding or changing an opcode:
 | BUILD_FUNCTION | COUNT | Build function from spec | [§16](#kos_op_build_function) |
 | CALL | COUNT | Call with N positional args | [§17](#kos_op_call) |
 | TAIL_CALL | COUNT | Tail call (replace frame) | [§17](#kos_op_tail_call) |
-| PUSH_FOREACH | LABEL | Push foreach region; break target | [§18](#kos_op_push_foreach) |
-| PUSH_LOOP | LABEL | Push loop region | [§18](#kos_op_push_loop) |
+| PUSH_FOREACH | NOARG | Push foreach region; break target from extent table | [§18](#kos_op_push_foreach) |
+| PUSH_LOOP | NOARG | Push loop region; break target from extent table | [§18](#kos_op_push_loop) |
 | PUSH_NS | COUNT | Push namespace scope | [§18](#kos_op_push_ns) |
 | PUSH_TRY | LABEL | Push try region | [§18](#kos_op_push_try) |
 | PUSH_PROMPT | CONST | Push prompt (delimited cont.) | [§20](#kos_op_push_prompt) |
@@ -549,7 +550,7 @@ Other opcodes (CHECK_LT/LE/GT/GE, CHECK_IS_INSTANCE/IS_SUBCLASS, VAR_CLEAR, VAR_
 | index | opcode   | arg | arg view | comment |
 |------:|----------|-----|----------|---------|
 | 0     | CONST    | 0   | 0 ([1,2,3]) | stack: [..., iterable] (and loop_result) |
-| 1     | PUSH_FOREACH | 6 | 6 (-> 6) | push region; iterator from iterable |
+| 1     | PUSH_FOREACH | 0 | 0        | push region; iterator from iterable; break target from extent table |
 | 2     | ITER_NEXT| 6   | 6 (-> 6)  | next from region; if exhausted → pc=6. stack: [..., val] or jump |
 | 3     | POP      | 1   | 1        | consume value (body) |
 | 4     | JUMP     | 2   | 2 (-> 2) | loop back |
@@ -1481,25 +1482,25 @@ Check jumps: if the predicate does **not** hold, jump to `arg`. All take LABEL; 
 
 ### KOS_OP_PUSH_FOREACH
 
-- **Style**: LABEL. Arg = break target pc (post-compile).
+- **Style**: NOARG. Argument unused; break target is derived at runtime from the extent table (`pop_pc + 1`).
 - **Status**: Implemented.
-- **Stack**: Pops iterable (and loop_result); creates iterator; pushes FOREACH region. ITER_NEXT uses region's iterator.
+- **Stack**: Pops iterable (TOS) and loop_result (below TOS); creates iterator; pushes FOREACH region and stack block. ITER_NEXT uses region's iterator. Break target = `extent.pop_pc + 1` (instruction after the matching POP_LOOP).
 - **Pushes:** KOS_DYN_REGION (static extent KOS_EXT_FOREACH; region holds iterator and loop state).
-- **Invariants**: Jump locality for break target. Extent kind KOS_EXT_FOREACH.
-- **Compiler form:** Pre-compile arg = string label (break target); post-compile arg = pc.
+- **Invariants**: A KOS_EXT_FOREACH extent must exist at the PUSH_FOREACH PC; otherwise RuntimeError. Extent kind KOS_EXT_FOREACH.
+- **Compiler form:** Pre-compile arg = 0 (unused). Break target is not stored in the instruction; it is derived at runtime via `kos_extent_find(KOS_EXT_FOREACH)` → `ext->pop_pc + 1`.
 
-**Example:** for x in [1,2,3]: body. Stack at entry: [..., loop_result, iterable]. Pool: 0 = [1,2,3].
+**Example:** for x in [1,2,3]: body. Stack at entry: [..., loop_result, iterable]. Pool: 0 = None, 1 = [1,2,3].
 
 | index | opcode       | arg | arg view | comment |
 |------:|--------------|-----|----------|---------|
 | 0     | CONST        | 0   | 0 (None) | stack: [..., loop_result] |
 | 1     | CONST        | 1   | 1 ([1,2,3]) | stack: [..., loop_result, iterable] |
-| 2     | PUSH_FOREACH | 7   | 7 (-> 7) | pop both; push FOREACH region; break → 7 |
+| 2     | PUSH_FOREACH | 0   | 0        | pop both; push FOREACH region; break_pc = pop_pc+1 from extent table |
 | 3     | ITER_NEXT    | 7   | 7 (-> 7) | next from region; else → 7. stack: [..., x] |
 | 4     | POP          | 1   | 1        | body: consume x |
 | 5     | JUMP         | 3   | 3 (-> 3) | loop back |
 | 6     | POP_LOOP     | 0   | 0        | |
-| 7     | LABEL        | —   | —        | break / exhausted |
+| 7     | LABEL        | —   | —        | break / exhausted (= pop_pc+1) |
 
 ---
 
@@ -1548,24 +1549,24 @@ Full design: [interpreter/with-dyn-with.md](interpreter/with-dyn-with.md). Summa
 
 ### KOS_OP_PUSH_LOOP
 
-- **Style**: LABEL. Arg = break target pc (post-compile).
+- **Style**: NOARG. Argument unused; break target is derived at runtime from the extent table (`pop_pc + 1`). Continue target = instruction immediately following PUSH_LOOP (i.e. `CURRENT_PC` after the evaluator has advanced past the opcode).
 - **Status**: Implemented.
-- **Stack**: Pushes LOOP region and stack block. Break/continue use extent break_pc/continue_pc.
+- **Stack**: Pushes LOOP region and stack block. Break/continue use `break_pc` (derived at runtime) and `continue_pc` (next instruction after PUSH_LOOP). Initializes region result to `None`.
 - **Pushes:** KOS_DYN_REGION (static extent KOS_EXT_LOOP; plus stack block for loop body).
-- **Invariants**: Extent kind KOS_EXT_LOOP. Jump locality for break/continue.
-- **Compiler form:** Pre-compile arg = string label (break target); post-compile arg = pc.
+- **Invariants**: A KOS_EXT_LOOP extent must exist at the PUSH_LOOP PC; otherwise RuntimeError. Extent kind KOS_EXT_LOOP.
+- **Compiler form:** Pre-compile arg = 0 (unused). Break target is not stored in the instruction; it is derived at runtime via `kos_extent_find(KOS_EXT_LOOP)` → `ext->pop_pc + 1`.
 
-**Example:** while loop. Break target = 6.
+**Example:** while loop. Break target derived from extent table (pop_pc+1 = 6).
 
 | index | opcode    | arg | arg view | comment |
 |------:|-----------|-----|----------|---------|
-| 0     | PUSH_LOOP | 6   | 6 (-> 6) | push LOOP region; break → 6 |
+| 0     | PUSH_LOOP | 0   | 0        | push LOOP region; break_pc = pop_pc+1 from extent table; continue_pc = 1 |
 | 1     | CONST     | 0   | 0 (False)| condition |
-| 2     | JUMP_FALSE| 6   | 6 (-> 6) | exit loop if false |
+| 2     | JUMP_FALSE| 5   | 5 (-> 5) | exit loop if false; jumps to POP_LOOP |
 | 3     | …         | …   | …        | body |
 | 4     | JUMP      | 1   | 1 (-> 1) | continue (loop head) |
 | 5     | POP_LOOP  | 0   | 0        | |
-| 6     | LABEL     | —   | —        | break target |
+| 6     | LABEL     | —   | —        | break target (= pop_pc+1) |
 
 ---
 

@@ -66,7 +66,7 @@ class TestForeachOpcodes(CevalTest):
         code, ns = build_expr([
             ["CONST", None],  # loop_result
             ["CONST", [10, 20, 30]],  # iterable
-            ["PUSH_FOREACH", "after_pop"],
+            ["PUSH_FOREACH", 0],
             ["ITER_NEXT", "else_lbl"],
             ["RETURN", 1],
             ["LABEL", "else_lbl"],
@@ -92,7 +92,7 @@ class TestForeachOpcodes(CevalTest):
         code, ns = build_expr([
             ["CONST", None],  # loop_result
             ["CONST", [1, 2, 3, 4]],  # iterable
-            ["PUSH_FOREACH", "after_pop"],
+            ["PUSH_FOREACH", 0],
             ["LABEL", "loop_head"],
             ["ITER_NEXT", "else_lbl"],
             ["CONST", 2],
@@ -123,7 +123,7 @@ class TestForeachOpcodes(CevalTest):
         code, ns = build_expr([
             ["CONST", None],  # loop_result
             ["CONST", []],    # iterable
-            ["PUSH_FOREACH", "after_pop"],
+            ["PUSH_FOREACH", 0],
             ["ITER_NEXT", "else_lbl"],
             ["CONST", -1],
             ["RETURN", 1],
@@ -150,7 +150,7 @@ class TestForeachOpcodes(CevalTest):
         code, ns = build_expr([
             ["CONST", None],  # loop_result
             ["CONST", []],    # iterable
-            ["PUSH_FOREACH", "break_lbl"],
+            ["PUSH_FOREACH", 0],
             ["ITER_NEXT", "else_lbl"],
             ["CONST", -1],
             ["RETURN", 1],
@@ -181,7 +181,7 @@ class TestForeachOpcodes(CevalTest):
             consumer_code, consumer_ns = build_expr([
                 ["CONST", None],
                 ["VAR", "aiter"],
-                ["PUSH_FOREACH", "break_lbl"],
+                ["PUSH_FOREACH", 0],
                 ["LABEL", "loop_head"],
                 ["ITER_NEXT", "else_lbl"],
                 ["VAR_STORE", "last"],
@@ -209,7 +209,7 @@ class TestForeachOpcodes(CevalTest):
             ["VAR_BIND", "total"],
             ["CONST", None],
             ["CONST", [1, 2, 3, 4, 5]],
-            ["PUSH_FOREACH", "break_lbl"],
+            ["PUSH_FOREACH", 0],
             ["LABEL", "loop_head"],
             ["ITER_NEXT", "else_lbl"],
             ["VAR", "total"],
@@ -241,7 +241,7 @@ class TestForeachOpcodes(CevalTest):
             consumer_code, consumer_ns = build_expr([
                 ["CONST", None],
                 ["VAR", "aiter"],
-                ["PUSH_FOREACH", "break_lbl"],
+                ["PUSH_FOREACH", 0],
                 ["ITER_NEXT", "else_lbl"],
                 ["CONST", -1],
                 ["RETURN", 1],
@@ -266,7 +266,7 @@ class TestForeachOpcodes(CevalTest):
         code, ns = build_expr([
             ["CONST", None],
             ["CONST", 42],
-            ["PUSH_FOREACH", "break_lbl"],
+            ["PUSH_FOREACH", 0],
             ["ITER_NEXT", "else_lbl"],
             ["CONST", -1],
             ["RETURN", 1],
@@ -296,7 +296,7 @@ class TestForeachOpcodes(CevalTest):
         code, ns = build_expr([
             ["CONST", None],
             ["CONST", BadIterator()],
-            ["PUSH_FOREACH", "break_lbl"],
+            ["PUSH_FOREACH", 0],
             ["ITER_NEXT", "else_lbl"],
             ["CONST", -1],
             ["RETURN", 1],

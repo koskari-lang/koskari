@@ -44,7 +44,7 @@ class TestLoopResultOpcodes(CevalTest):
         """
 
         code, ns = build_expr([
-            ["PUSH_LOOP", "after_loop"],
+            ["PUSH_LOOP", 0],
             ["CONST", 42],
             ["BREAK", 1],
             ["LABEL", "break_lbl"],
@@ -63,7 +63,7 @@ class TestLoopResultOpcodes(CevalTest):
         """
 
         code, ns = build_expr([
-            ["PUSH_LOOP", "after_loop"],
+            ["PUSH_LOOP", 0],
             ["CONST", 1],
             ["CONST", 2],
             ["CONST", 3],
@@ -86,7 +86,7 @@ class TestLoopResultOpcodes(CevalTest):
         code, ns = build_expr([
             ["CONST", 0],
             ["VAR_BIND", "n"],
-            ["PUSH_LOOP", "break_lbl"],
+            ["PUSH_LOOP", 0],
             ["VAR", "n"],
             ["CONST", 1],
             ["OBJECT_ADD", 2],
@@ -114,7 +114,7 @@ class TestLoopResultOpcodes(CevalTest):
         """
 
         code, ns = build_expr([
-            ["PUSH_LOOP", "break_lbl"],
+            ["PUSH_LOOP", 0],
             ["LABEL", "break_lbl"],
             ["POP_LOOP", 0],
             # POP_LOOP pushed None (initial result)
@@ -132,7 +132,7 @@ class TestLoopResultOpcodes(CevalTest):
         code, ns = build_expr([
             ["CONST", None],  # loop_result
             ["CONST", [10, 20, 30]],  # iterable
-            ["PUSH_FOREACH", "after_loop"],
+            ["PUSH_FOREACH", 0],
             ["LABEL", "loop_head"],
             ["ITER_NEXT", "else_lbl"],
             # Stack: [iter_value]

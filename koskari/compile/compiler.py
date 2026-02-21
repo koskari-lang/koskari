@@ -286,16 +286,16 @@ class ByteCodeFragment:
     def child_loop(self, named="<loop>"):
         """
         Context manager that compiles a loop body. On exit, emits
-        PUSH_LOOP (break target = after_pop), the child's instructions,
-        POP_LOOP, LABEL after_pop. The child must end with LABEL and
-        CLEAR_LOOP for normal exit. The first instruction after PUSH_LOOP
-        is the continue target.
+        PUSH_LOOP (break target derived from extent table at runtime),
+        the child's instructions, POP_LOOP, LABEL after_pop. The child
+        must end with LABEL and CLEAR_LOOP for normal exit. The first
+        instruction after PUSH_LOOP is the continue target.
         """
 
         child = self.compiler.fragment(named)
         yield child
         after_pop = self.compiler.gen_label("loop.after_pop")
-        self.instruction(OpCode.KOS_OP_PUSH_LOOP, after_pop)
+        self.instruction(OpCode.KOS_OP_PUSH_LOOP, 0)
         self.merge(child)
         self.instruction(OpCode.KOS_OP_POP_LOOP, 0)
         self.instruction(OpCode.KOS_OP_LABEL, after_pop)

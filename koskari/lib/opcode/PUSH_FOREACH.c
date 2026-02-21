@@ -14,13 +14,13 @@
 */
 
 /**
-   PUSH_FOREACH: arg = break target PC. Stack: [loop_result, iterable].
+   PUSH_FOREACH: no arg. Break target is derived from the extent table
+   (pop_pc + 1), not from the instruction argument. Stack: [loop_result, iterable].
    Pops iterable and loop_result, creates iterator, stores both in region,
    pushes FOREACH region and stack block. Continue target = next insn.
 */
 
 KOS_OP_HANDLER(PUSH_FOREACH) {
-  uint32_t break_pc = KosOp_ARG(insn);
   uint32_t continue_pc = CURRENT_PC(ctx);  /* already advanced by drive loop */
 
   /* Pop iterable (TOS) and loop_result from stack */
@@ -35,6 +35,26 @@ KOS_OP_HANDLER(PUSH_FOREACH) {
     PyErr_SetString(PyExc_RuntimeError, "PUSH_FOREACH: missing loop_result");
     return -1;
   }
+
+  /* Derive break target from the extent table (pop_pc + 1) */
+  KosCode *code = CURRENT_CODE(ctx);
+  uint32_t pc = CURRENT_ACTING_PC(ctx);
+  uint32_t eid = kos_extent_find((PyObject *) code, pc, KOS_EXT_FOREACH);
+  if (eid == KOS_EXTENT_NONE) {
+    Py_DECREF(loop_result);
+    Py_DECREF(iterable);
+    PyErr_SetString(PyExc_RuntimeError,
+                    "PUSH_FOREACH: no FOREACH extent at this PC");
+    return -1;
+  }
+  KosExtentDesc *ext = kos_extent_desc((PyObject *) code, eid);
+  if (! ext) {
+    Py_DECREF(loop_result);
+    Py_DECREF(iterable);
+    PyErr_SetString(PyExc_RuntimeError, "PUSH_FOREACH: invalid extent");
+    return -1;
+  }
+  uint32_t break_pc = ext->pop_pc + 1u;
 
   /* Create iterator from iterable (sync or async) */
   PyObject *iter = NULL;

@@ -833,9 +833,12 @@ static int derive_extents(
         e->u.try_finally.finally_pc = (e->kind == KOS_EXT_FINALLY) ? arg : KOS_EXTENT_NONE;
         break;
       case KOS_EXT_LOOP:
-      case KOS_EXT_FOREACH:
-        e->u.loop.break_pc = arg;
         e->u.loop.continue_pc = pc + 1;
+        /* break_pc = pop_pc + 1; derived at runtime */
+        break;
+      case KOS_EXT_FOREACH:
+        e->u.loop.continue_pc = pc + 1;
+        /* break_pc is derived at runtime as pop_pc + 1 */
         break;
       case KOS_EXT_WITH:
       case KOS_EXT_DYN_WITH:

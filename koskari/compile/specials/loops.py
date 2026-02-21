@@ -82,19 +82,12 @@ def special_for_each(compiler, source, tc=False):
     fragment.position_of(source)
 
     loop_else = compiler.gen_label("foreach.else")
-    after_pop = compiler.gen_label("foreach.after_pop")
 
     binding_name = str(binding)
 
-    if has_elsebody:
-        result_var = compiler.gen_label("foreach.result")
-        fragment.declare_var(result_var)
-        fragment.instruction(OpCode.KOS_OP_CONST, None)
-        fragment.instruction(OpCode.KOS_OP_VAR_STORE, result_var)
-
     fragment.instruction(OpCode.KOS_OP_CONST, None)
     fragment.merge(compiler.full_compile(expr, False))
-    fragment.instruction(OpCode.KOS_OP_PUSH_FOREACH, after_pop)
+    fragment.instruction(OpCode.KOS_OP_PUSH_FOREACH, 0)
     fragment.instruction(OpCode.KOS_OP_ITER_NEXT, loop_else)
 
     fragment.declare_var(binding_name)
@@ -108,15 +101,9 @@ def special_for_each(compiler, source, tc=False):
 
     if has_elsebody:
         fragment.merge(compiler.full_compile(elsebody, False))
-        fragment.instruction(OpCode.KOS_OP_VAR_STORE, result_var)
+        fragment.instruction(OpCode.KOS_OP_BREAK, 1)
 
     fragment.instruction(OpCode.KOS_OP_POP_LOOP, 0)
-
-    fragment.instruction(OpCode.KOS_OP_LABEL, after_pop)
-
-    if has_elsebody:
-        fragment.instruction(OpCode.KOS_OP_POP, 1)
-        fragment.instruction(OpCode.KOS_OP_VAR, result_var)
 
     return fragment
 

@@ -40,7 +40,7 @@ class TestLoopOpcodes(CevalTest):
         """
 
         code, ns = build_expr([
-            ["PUSH_LOOP", "after_pop"],
+            ["PUSH_LOOP", 0],
             ["CONST", 99],
             ["BREAK", 0],
             ["LABEL", "break_lbl"],
@@ -62,7 +62,7 @@ class TestLoopOpcodes(CevalTest):
         """
 
         code, ns = build_expr([
-            ["PUSH_LOOP", "break_lbl"],
+            ["PUSH_LOOP", 0],
             ["LABEL", "break_lbl"],
             ["POP_LOOP", 0],
             # POP_LOOP pushed loop result (None)
@@ -82,7 +82,7 @@ class TestLoopOpcodes(CevalTest):
         code, ns = build_expr([
             ["CONST", 0],
             ["VAR_BIND", "n"],
-            ["PUSH_LOOP", "break_lbl"],
+            ["PUSH_LOOP", 0],
             ["VAR", "n"],
             ["CONST", 1],
             ["OBJECT_ADD", 2],
@@ -113,10 +113,10 @@ class TestLoopOpcodes(CevalTest):
             ["VAR_BIND", "outer"],
             ["CONST", 0],
             ["VAR_BIND", "inner"],
-            ["PUSH_LOOP", "outer_end"],
+            ["PUSH_LOOP", 0],
             ["CONST", 0],
             ["VAR_STORE", "inner"],
-            ["PUSH_LOOP", "inner_end"],
+            ["PUSH_LOOP", 0],
             ["VAR", "inner"],
             ["CONST", 2],
             ["OBJECT_GE", 2],
@@ -150,23 +150,25 @@ class TestLoopOpcodes(CevalTest):
         self.assertEqual(result, 2)
 
 
-    def test_nested_loops_break_outer(self):
+    def test_nested_loops_break_inner_then_outer(self):
         """
-        Nested loops: inner BREAK targets outer exit, exiting both loops
+        Nested loops: BREAK exits innermost loop; outer loop then breaks too
         """
 
         code, ns = build_expr([
             ["CONST", 0],
             ["VAR_BIND", "x"],
-            ["PUSH_LOOP", "outer_end"],
-            ["PUSH_LOOP", "outer_end"],
+            ["PUSH_LOOP", 0],
+            ["PUSH_LOOP", 0],
             ["CONST", 1],
             ["VAR_STORE", "x"],
             ["BREAK", 0],
             ["LABEL", "inner_end"],
             ["POP_LOOP", 0],
-            # POP_LOOP pushed inner loop result
+            # POP_LOOP pushed inner loop result (None)
             ["POP", 1],
+            # x is now 1; break the outer loop too
+            ["BREAK", 0],
             ["LABEL", "outer_end"],
             ["POP_LOOP", 0],
             # POP_LOOP pushed outer loop result

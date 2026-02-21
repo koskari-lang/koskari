@@ -14,13 +14,30 @@
 */
 
 /**
-   PUSH_LOOP: arg = break target PC. Push LOOP region and stack block;
-   continue target = next instruction. Initializes region result to None.
+   PUSH_LOOP: no arg. Break target is derived from the extent table
+   (pop_pc + 1). Push LOOP region and stack block; continue target =
+   next instruction. Initializes region result to None.
 */
 
 KOS_OP_HANDLER(PUSH_LOOP) {
-  uint32_t break_pc = KosOp_ARG(insn);
   uint32_t continue_pc = CURRENT_PC(ctx);  /* already advanced by drive loop */
+
+  /* Derive break target from the extent table (pop_pc + 1) */
+  KosCode *code = CURRENT_CODE(ctx);
+  uint32_t pc = CURRENT_ACTING_PC(ctx);
+  uint32_t eid = kos_extent_find((PyObject *) code, pc, KOS_EXT_LOOP);
+  if (eid == KOS_EXTENT_NONE) {
+    PyErr_SetString(PyExc_RuntimeError,
+                    "PUSH_LOOP: no LOOP extent at this PC");
+    return -1;
+  }
+  KosExtentDesc *ext = kos_extent_desc((PyObject *) code, eid);
+  if (! ext) {
+    PyErr_SetString(PyExc_RuntimeError, "PUSH_LOOP: invalid extent");
+    return -1;
+  }
+  uint32_t break_pc = ext->pop_pc + 1u;
+
   KosDynRegion *region = kos_dyn_push_region(ctx, KOS_REGION_LOOP,
                                              break_pc, continue_pc);
   if (! region) {

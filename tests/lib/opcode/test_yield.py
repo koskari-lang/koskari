@@ -154,7 +154,7 @@ class TestYieldOpcodes(CevalTest):
         consumer_code, consumer_ns = build_expr([
             ["CONST", None],
             ["VAR", "gen"],
-            ["PUSH_FOREACH", "break_lbl"],
+            ["PUSH_FOREACH", 0],
             ["LABEL", "loop_head"],
             ["ITER_NEXT", "else_lbl"],
             ["VAR_STORE", "last"],

@@ -29,7 +29,11 @@ KOS_OP_HANDLER(CLEAR_LOOP) {
                     "CLEAR_LOOP: top is not a LOOP or FOREACH region");
     return -1;
   }
+
   KosDynRegion_ENABLED(region) = 0;
+  if (KosStackBlock_ClearBlock(&CURRENT_STACK(ctx)) < 0)
+    return -1;
+
   (void) out_ev;
   (void) insn;
   return 0;
