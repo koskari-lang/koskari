@@ -6,6 +6,8 @@ The KosCoroutine type and `kos_run_code_as_coroutine` (the Python-facing
 entry that creates a coroutine from code+namespace) live in `func.c`/`func.h`;
 driving a KosCoroutine (send/await) invokes `koskari_eval()` from func.c.
 
+**Scope**: VM structures and C API reference. For the numbered execution invariants list, see [execution-invariants.md](execution-invariants.md). For the combined master reference (invariants + type details + implementation status), see [../INVARIANTS-AND-CLARIFICATIONS.md](../INVARIANTS-AND-CLARIFICATIONS.md).
+
 ## Design Philosophy
 
 Koskari's evaluator implements:
@@ -470,8 +472,8 @@ This matches Scheme's `dynamic-wind` semantics.
 
 ## Related Documentation
 
-- [evaluator-restructure.md](evaluator-restructure.md) — Design document for
-  the DynNode chain restructure
+- [../archive/evaluator-restructure.md](../archive/evaluator-restructure.md) — Design document for
+  the DynNode chain restructure (implemented; archived)
 - [introspection-trace.md](introspection-trace.md) — Read-only introspection
   and trace snapshot design (TraceView, KOS_OP_CAPTURE_FRAME)
 - [callcc.md](callcc.md) — Delimited continuation implementation details

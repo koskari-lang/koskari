@@ -344,8 +344,8 @@ Wrapper `tp_traverse` implementations walk all reachable PyObjects:
   token, KosEvaluatorToken, KoskariContinuationApply, and continuation
   application model
 - [evaluator.md](evaluator.md) — Overall evaluation model and API
-- [evaluator-restructure.md](evaluator-restructure.md) — Design document for
-  the DynNode chain restructure
+- [../archive/evaluator-restructure.md](../archive/evaluator-restructure.md) — Design document for
+  the DynNode chain restructure (implemented; archived)
 - [execution-invariants.md](execution-invariants.md) — Semantic commitments
 - [bytecode.md](bytecode.md) — Bytecode format and opcodes
 - [../language/control-flow.md](../language/control-flow.md) — Language-level

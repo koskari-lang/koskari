@@ -2,18 +2,21 @@
 
 This document is intended for teaching another system (human or agent) about the current state of Koskari: what is designed, what is implemented, and what invariants and clarifications hold across the codebase and design docs. Use it as a single reference for "how things work" and "what must stay true."
 
+**Scope**: Agent/human teaching master reference — covers execution invariants, type and data invariants, C structures, implementation status, and clarifications in one place. For a focused numbered invariant list, see [interpreter/execution-invariants.md](interpreter/execution-invariants.md). For the full VM API reference, see [interpreter/evaluator.md](interpreter/evaluator.md).
+
 **Meta**: This document records settled design facts and invariants only. No speculative alternatives are permitted here. Conflicts are recorded explicitly and left unresolved.
 
 ---
 
 ## 1. Project Identity and Lineage
 
-**Koskari** is a LISP dialect for Python (sibilant-ng). It is the successor to:
+**Koskari** is a LISP dialect for Python (sibilant-ng). It is the fourth iteration of the Sibilant idea, preceded by:
 
+- **spexy**: String-to-string transformer; parsed s-expression text and emitted Python expression strings. The original proof-of-concept; the earliest reader and s-expression representation ideas trace back here.
 - **python-sibilant**: Compiles to CPython bytecode (targets 3.5–3.7); provides reader, types, compiler to `.pyc`.
 - **sibilant-ceval**: Custom bytecode and custom evaluator; provides Namespace, Ref, Formals, frame/stack model.
 
-Koskari **abandons** compiling to CPython bytecode. It uses a **custom bytecode format** and a **custom C evaluator** (VM). Design and implementation draw from both predecessors; migration status is tracked in `design/README.md` and `design/FEATURES.md`.
+Koskari **abandons** compiling to CPython bytecode. It uses a **custom bytecode format** and a **custom C evaluator** (VM). Design and implementation draw from python-sibilant and sibilant-ceval; migration status is tracked in `design/README.md` and `design/FEATURES.md`.
 
 **Package layout**: The runtime lives under `koskari/` (Python API and C extension in `koskari/lib/`). Design docs live under `design/` (language, api, interpreter). Tests are under `tests/` (Python and `tests/native/` for C).
 

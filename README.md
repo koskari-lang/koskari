@@ -4,7 +4,8 @@ Koskari is a LISP dialect for Python - a playground language designed for joyful
 
 ## Overview
 
-Koskari is the third iteration of the Sibilant project, learning from the experiences of:
+Koskari is the fourth iteration of the Sibilant idea, learning from the experiences of:
+- **spexy**: String-to-string transformer; parsed s-expression text and emitted Python expression strings. The earliest groundwork — reader and s-expression representation — carries through to this day.
 - **python-sibilant**: CPython bytecode target (abandoned due to version churn)
 - **sibilant-ceval**: Custom bytecode evaluator (blocked on call/cc implementation)
 
@@ -41,10 +42,12 @@ This version aims to be a "perfect playground" - a language with all the useful 
 - `SourceStream`: Python stream wrapper with error handling
 - `Reader`: Extensible s-expression reader with macro support
 
+**Evaluator:**
+- Custom bytecode evaluator (`koskari_eval`): coroutines, async generators, continuations, dynamic wind/unwind, parameterize, with/dyn-with
+
 ### In Progress
 
-- Compiler and bytecode generation
-- Custom evaluator (ceval)
+- Compiler (many special forms implemented; see [design/SPECIALS.md](design/SPECIALS.md) for the current list; macro expansion, `try`, `for-each`, and operator infrastructure remain)
 - REPL and CLI
 
 ## Quick Start

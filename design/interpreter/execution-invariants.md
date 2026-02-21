@@ -4,6 +4,8 @@ This document records the agreed execution semantics, invariants, and boundary
 policies for Koskari, intended for IDE/agent ingestion. These are *design
 commitments*, not exploratory notes.
 
+**Scope**: Numbered invariant reference focused on execution semantics and boundary decisions. For the combined master reference (invariants + type/C-struct details + implementation status), see [../INVARIANTS-AND-CLARIFICATIONS.md](../INVARIANTS-AND-CLARIFICATIONS.md). For the full VM API reference, see [evaluator.md](evaluator.md).
+
 ---
 
 ## 1. Dual Execution Perspectives (Invariant)
@@ -348,8 +350,8 @@ delimited continuation semantics.
 * [evaluator.md](evaluator.md) — Evaluation model and VM structures
 * [introspection-trace.md](introspection-trace.md) — Read-only introspection and trace snapshot design
 * [callcc.md](callcc.md) — Delimited continuation implementation
-* [evaluator-restructure.md](evaluator-restructure.md) — Design document for
-  the DynNode chain restructure
+* [../archive/evaluator-restructure.md](../archive/evaluator-restructure.md) — Design document for
+  the DynNode chain restructure (implemented; archived)
 * [../language/async.md](../language/async.md) — Async and coroutine language
   features
 * [../language/generators.md](../language/generators.md) — Generator language

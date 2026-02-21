@@ -251,6 +251,6 @@ inside Koskari.
 ## Related Documentation
 
 - [callcc.md](callcc.md) — Delimited continuation implementation (shift/reset)
-- [evaluator-restructure.md](evaluator-restructure.md) — DynNode chain restructure
+- [../archive/evaluator-restructure.md](../archive/evaluator-restructure.md) — DynNode chain restructure (implemented; archived)
 - [evaluator.md](evaluator.md) — Overall evaluation model and API
 - [execution-invariants.md](execution-invariants.md) — Semantic commitments

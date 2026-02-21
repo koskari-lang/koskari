@@ -100,7 +100,6 @@ Runtime support for `dynamic-wind` semantics:
 - Import system integration
 - Line number support
 - Traceback integration
-- Opcode dispatch loop
 
 ### To Reconsider
 
