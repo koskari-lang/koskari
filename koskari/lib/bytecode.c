@@ -48,14 +48,11 @@ static PyObject *_str_anon = NULL;
 /* === Opcode styles table === */
 
 
-#define OP(name, style)   \
-  KOSTYLE_##style ,
-
 static const KosOpStyle opcode_styles[] = {
-#include "opcodes.incl"
+  #define OP(name, style) KOSTYLE_##style ,
+  #include "opcodes.incl"
+  #undef OP
 };
-
-#undef OP
 
 
 KosOpStyle kos_opcode_style(KosOpCode op) {
@@ -64,6 +61,25 @@ KosOpStyle kos_opcode_style(KosOpCode op) {
     return opcode_styles[op];
   }
   return (KosOpStyle) -1;
+}
+
+
+/* === Opcode names table === */
+
+
+static const char *const opcode_names[] = {
+  #define OP(name, style) #name ,
+  #include "opcodes.incl"
+  #undef OP
+};
+
+
+const char *kos_opcode_name(KosOpCode op) {
+
+  if (op <= KOS_OP_THEEND) {
+    return opcode_names[op];
+  }
+  return "UNKNOWN_OP";
 }
 
 
@@ -1758,9 +1774,7 @@ static PyObject *create_opcode_enum(void) {
   if (! enum_dict)
     return NULL;
 
-#define OP(name, style)                         \
-  int_enum(enum_dict, KOS_OP_##name);
-
+#define OP(name, style) int_enum(enum_dict, KOS_OP_##name);
 #include "opcodes.incl"
 #undef OP
 

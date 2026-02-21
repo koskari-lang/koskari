@@ -43,7 +43,6 @@
 
 /* Debug helper functions */
 const char *kos_dynnode_kind_name(int kind);
-const char *kos_opcode_name(int opcode);
 
 
 #endif

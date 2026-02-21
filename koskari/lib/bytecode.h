@@ -356,6 +356,16 @@ PyCodeObject *KosCode_Faux(PyObject *self);
 KosOpStyle kos_opcode_style(KosOpCode op);
 
 
+/**
+   Get the name string for a given opcode.
+
+   :param op: opcode enum value
+
+   :return: string name, or "UNKNOWN_OP" if invalid
+*/
+const char *kos_opcode_name(KosOpCode op);
+
+
 /* === Accessor macros === */
 
 
