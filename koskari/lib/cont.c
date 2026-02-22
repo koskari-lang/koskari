@@ -202,15 +202,28 @@ static PyObject *continuation_call(
     Py_DECREF(resume_val);
     return NULL;
   }
-  PyObject_SetAttrString(exc, "target", KosContinuation_TOKEN_REF(KosPyContinuation_CAPTURED(cont)));
-  PyObject_SetAttrString(exc, "continuation", self);
+  if (PyObject_SetAttrString(exc, "target",
+          KosContinuation_TOKEN_REF(KosPyContinuation_CAPTURED(cont))) < 0) {
+    Py_DECREF(exc);
+    Py_DECREF(resume_val);
+    return NULL;
+  }
+  if (PyObject_SetAttrString(exc, "continuation", self) < 0) {
+    Py_DECREF(exc);
+    Py_DECREF(resume_val);
+    return NULL;
+  }
   PyObject *args_tup = PyTuple_Pack(1, resume_val);
   Py_DECREF(resume_val);
   if (! args_tup) {
     Py_DECREF(exc);
     return NULL;
   }
-  PyObject_SetAttrString(exc, "args", args_tup);
+  if (PyObject_SetAttrString(exc, "args", args_tup) < 0) {
+    Py_DECREF(args_tup);
+    Py_DECREF(exc);
+    return NULL;
+  }
   Py_DECREF(args_tup);
   PyErr_SetObject(KoskariContinuationApply, exc);
   Py_DECREF(exc);

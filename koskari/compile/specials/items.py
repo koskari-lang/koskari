@@ -24,13 +24,20 @@ and compile/set-item.
 
 
 from ...lib import nil, OpCode, symbol
+from ...types import is_pair
 from ..exceptions import CompilerException
 from ..helpers import const_only_expr, special
 
 
 @special(symbol("compile/item"))
 def special_item(compiler, source, tc=False):
+    """
+    Compile (compile/item OBJ KEY). Load item at KEY from OBJ
+    """
+
     called_by, body = source
+    if not is_pair(body):
+        raise CompilerException("item requires two arguments", source)
     obj, (key, rest) = body
 
     if rest is not nil:
@@ -56,7 +63,13 @@ def special_item(compiler, source, tc=False):
 
 @special(symbol("compile/ref-item"))
 def special_ref_item(compiler, source, tc=False):
+    """
+    Compile (compile/ref-item OBJ KEY). Produce a mutable reference to item at KEY in OBJ
+    """
+
     called_by, body = source
+    if not is_pair(body):
+        raise CompilerException("ref-item requires two arguments", source)
     obj, (key, rest) = body
 
     if rest is not nil:
@@ -82,7 +95,13 @@ def special_ref_item(compiler, source, tc=False):
 
 @special(symbol("compile/del-item"))
 def special_del_item(compiler, source, tc=False):
+    """
+    Compile (compile/del-item OBJ KEY). Delete item at KEY from OBJ
+    """
+
     called_by, body = source
+    if not is_pair(body):
+        raise CompilerException("del-item requires two arguments", source)
     obj, (key, rest) = body
 
     if rest is not nil:
@@ -110,7 +129,13 @@ def special_del_item(compiler, source, tc=False):
 
 @special(symbol("compile/set-item"))
 def special_set_item(compiler, source, tc=False):
+    """
+    Compile (compile/set-item OBJ KEY VAL). Store VAL at item KEY in OBJ
+    """
+
     called_by, body = source
+    if not is_pair(body):
+        raise CompilerException("set-item requires three arguments", source)
     obj, (key, (val, rest)) = body
 
     if rest is not nil:

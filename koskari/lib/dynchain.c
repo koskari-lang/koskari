@@ -33,11 +33,6 @@
 #include <stdint.h>
 
 
-/* Set to 1 to trace transfer plan steps (for debugging).  All trace output
- * goes through SAYF from debug.h. */
-#define KOS_XFER_TRACE 1
-
-
 /* === Forward declarations === */
 
 
@@ -390,7 +385,6 @@ void kos_dyn_pop_prompt(KosContext *ctx, KosDynPrompt *prompt) {
   KosContext_DYN_TOP(ctx) = KosDynNode_PARENT(prompt);
   KosContext_CHAIN_VERSION(ctx)++;
   kos_dynprompt_free(prompt);
-  kos_update_frame_top(ctx);
 }
 
 
@@ -499,7 +493,6 @@ int kos_dyn_push_shift(KosContext *ctx) {
   if (! shift)
     return -1;
 
-  KosDynNode_PARENT(shift) = KosContext_DYN_TOP(ctx);
   return kos_dyn_push(ctx, (KosDynNode *) shift);
 }
 
@@ -1346,7 +1339,6 @@ void kos_dyn_pop_with(KosContext *ctx, KosDynWith *node) {
 
   KosContext_DYN_TOP(ctx) = KosDynNode_PARENT(node);
   KosContext_CHAIN_VERSION(ctx)++;
-  kos_update_frame_top(ctx);
   kos_dynwith_free(node);
 }
 
@@ -1362,12 +1354,17 @@ int kos_dyn_with_unwind(KosContext *ctx, KosDynWith *node,
   if (PyErr_Occurred()) {
     PyErr_Fetch(&typ, &val, &tb);
     PyErr_Clear();
-    if (! typ) typ = Py_None;
-    if (! val) val = Py_None;
-    if (! tb) tb = Py_None;
+    /* PyErr_Fetch returns new refs or NULL; substitute Py_None for any
+       missing component so the caller can unconditionally DECREF all three. */
+    if (! typ) { Py_INCREF(Py_None); typ = Py_None; }
+    if (! val) { Py_INCREF(Py_None); val = Py_None; }
+    if (! tb)  { Py_INCREF(Py_None); tb  = Py_None; }
   }
-  else
-    typ = val = tb = Py_None;
+  else {
+    Py_INCREF(Py_None); typ = Py_None;
+    Py_INCREF(Py_None); val = Py_None;
+    Py_INCREF(Py_None); tb  = Py_None;
+  }
 
   PyObject *result = PyObject_CallFunctionObjArgs(
       exit_fn, typ, val, tb, NULL);
@@ -1538,7 +1535,8 @@ int kos_dyn_push(KosContext *ctx, KosDynNode *node) {
 
   KosContext_DYN_TOP(ctx) = node;
   KosContext_CHAIN_VERSION(ctx)++;
-  kos_update_frame_top(ctx);
+  if (KosDynNode_IS_FRAME(node))
+    KosContext_FRAME_TOP(ctx) = (KosDynFrame *) node;
 
   if (kos_dyn_install(ctx, node) < 0)
     return -1;
@@ -1563,9 +1561,11 @@ int kos_dyn_pop(KosContext *ctx, KosDynNode *node, KosEvent *out_ev) {
   if (r < 0)
     return -1;
 
+  int was_frame = KosDynNode_IS_FRAME(node);
   KosContext_DYN_TOP(ctx) = KosDynNode_PARENT(node);
   KosContext_CHAIN_VERSION(ctx)++;
-  kos_update_frame_top(ctx);
+  if (was_frame)
+    kos_update_frame_top(ctx);
   KosDynNode_PARENT(node) = NULL;
   kos_dynnode_free(node);
   return 0;
@@ -2102,7 +2102,6 @@ void kos_dyn_pop_yield_from(KosContext *ctx, KosDynYieldFrom *node) {
   }
   KosContext_DYN_TOP(ctx) = KosDynNode_PARENT(node);
   KosContext_CHAIN_VERSION(ctx)++;
-  kos_update_frame_top(ctx);
   kos_dynyieldfrom_free(node);
 }
 
@@ -2228,7 +2227,7 @@ static KosContinuation *kos_continuation_create(
   KosContinuation_RESUME_PC(k) = resume_pc;
   KosContinuation_RESUME_STACK(k) = resume_stack;
   KosContinuation_PROMPT_ID(k) = prompt_id;
-  KosContinuation_GRAPT_POINT_ID(k) = graft_point_id;
+  KosContinuation_GRAFT_POINT_ID(k) = graft_point_id;
   KosContinuation_ONE_SHOT(k) = one_shot;
   KosContinuation_TOKEN_REF(k) = token_ref;
   if (KosContinuation_TOKEN_REF(k))
@@ -2478,7 +2477,7 @@ KosContinuation *kos_continuation_clone(KosContinuation *k) {
       KosContinuation_RESUME_PC(k),
       KosStackBlock_COW(KosContinuation_RESUME_STACK(k)),
       KosContinuation_PROMPT_ID(k),
-      KosContinuation_GRAPT_POINT_ID(k),
+      KosContinuation_GRAFT_POINT_ID(k),
       KosContinuation_ONE_SHOT(k),
       KosContinuation_TOKEN_REF(k));
   if (! clone) {
@@ -2504,53 +2503,33 @@ static KosDynNode *kos_find_node_by_id(KosDynNode *chain, uint32_t id) {
 }
 
 
-static size_t kos_chain_depth(KosDynNode *node) {
-  size_t depth = 0;
-  while (node) {
-    depth++;
-    node = KosDynNode_PARENT(node);
-  }
-  return depth;
-}
-
-
 KosDynNode *kos_compute_lca(KosDynNode *a, KosDynNode *b, uint32_t graft_point_id) {
   if (! a || ! b)
     return NULL;
 
   KosDynNode *orig_a = a;
-  size_t depth_a = kos_chain_depth(a);
-  size_t depth_b = kos_chain_depth(b);
 
-  /* Align to same depth; disjoint chains (e.g. severed template) hit NULL */
-  while (depth_a > depth_b) {
-    a = a->parent;
-    depth_a--;
-    if (! a)
-      return NULL;
-  }
-  while (depth_b > depth_a) {
-    b = b->parent;
-    depth_b--;
-    if (! b)
-      return NULL;
-  }
+  /* Mark every node in chain a with the transient visited flag. */
+  for (KosDynNode *n = a; n; n = KosDynNode_PARENT(n))
+    KosDynNode_FLAGS(n) |= KOS_DYNF_LCA_VISITED;
 
-  /* Walk together until we find LCA.  If the chains are disjoint (e.g. target
-   * is a severed continuation template), we eventually hit NULL. */
-  while (a != b) {
-    if (! a || ! b) {
-      /* Pointer match failed (disjoint chains); try ID fallback for graft point
-       * in the first chain (orig_a, typically current). */
-      if (graft_point_id)
-        return kos_find_node_by_id(orig_a, graft_point_id);
-      return NULL;
+  /* Walk chain b; the first marked node is the LCA.  If the chains are
+   * disjoint (e.g. severed continuation template), no marked node is found. */
+  KosDynNode *lca = NULL;
+  for (KosDynNode *n = b; n; n = KosDynNode_PARENT(n)) {
+    if (KosDynNode_FLAGS(n) & KOS_DYNF_LCA_VISITED) {
+      lca = n;
+      break;
     }
-    a = a->parent;
-    b = b->parent;
   }
 
-  return a;
+  /* Clear the transient marks from chain a. */
+  for (KosDynNode *n = a; n; n = KosDynNode_PARENT(n))
+    KosDynNode_FLAGS(n) &= ~KOS_DYNF_LCA_VISITED;
+
+  if (! lca && graft_point_id)
+    return kos_find_node_by_id(orig_a, graft_point_id);
+  return lca;
 }
 
 
@@ -2747,6 +2726,9 @@ static int xfer_plan_fill_wind_actions(
 
   KosDynWind **wind_nodes = PyMem_Malloc(sizeof(KosDynWind *) * wind_count);
   if (! wind_nodes) {
+    /* Ownership inversion: this function frees plan on failure so that callers
+       (kos_build_transfer_plan, kos_build_delimited_push_plan, etc.) can do a
+       single unconditional "return -1" without a separate free on this path. */
     PyMem_Free(plan);
     PyErr_NoMemory();
     return -1;
@@ -3220,8 +3202,11 @@ void kos_free_transfer_plan(KosTransferPlan *plan) {
     return;
 
   for (size_t i = KosTransferPlan_ACTION_INDEX(plan); i < KosTransferPlan_ACTION_COUNT(plan); i++) {
-    if (KosTransferAction_STEP(&KosTransferPlan_ACTIONS(plan)[i]) == KOS_XFER_INJECT) {
-      Py_XDECREF(KosTransferAction_INJECT_VALUE(&KosTransferPlan_ACTIONS(plan)[i]));
+    KosTransferAction *a = &KosTransferPlan_ACTIONS(plan)[i];
+    if (KosTransferAction_STEP(a) == KOS_XFER_INJECT) {
+      Py_XDECREF(KosTransferAction_INJECT_VALUE(a));
+    } else if (KosTransferAction_STEP(a) == KOS_XFER_TRUNCATE_AND_INJECT) {
+      Py_XDECREF(KosTransferAction_TRUNCATE_VALUE(a));
     }
   }
   xfer_plan_release_invoke_clone(plan);
@@ -3341,12 +3326,18 @@ static int xfer_step_install(KosContext *ctx, KosTransferAction *action) {
       walk = KosDynNode_PARENT(walk);
     }
 
-    /* Second pass: collect nodes into C array */
+    /* Second pass: collect nodes into C array (stack buffer for common case) */
     if (wind_count > 0) {
-      KosDynNode **wind_nodes = PyMem_Malloc(wind_count * sizeof(KosDynNode *));
-      if (! wind_nodes) {
-        PyErr_NoMemory();
-        return -1;
+      KosDynNode *stack_buf[16];
+      KosDynNode **wind_nodes;
+      if (wind_count <= 16) {
+        wind_nodes = stack_buf;
+      } else {
+        wind_nodes = PyMem_Malloc(wind_count * sizeof(KosDynNode *));
+        if (! wind_nodes) {
+          PyErr_NoMemory();
+          return -1;
+        }
       }
       size_t idx = 0;
       walk = seg;
@@ -3359,13 +3350,15 @@ static int xfer_step_install(KosContext *ctx, KosTransferAction *action) {
       /* Third pass: run wind in reverse order */
       for (size_t i = wind_count; i > 0; i--) {
         if (kos_dynnode_run_wind(ctx, wind_nodes[i - 1]) < 0) {
-          PyMem_Free(wind_nodes);
+          if (wind_nodes != stack_buf)
+            PyMem_Free(wind_nodes);
           if (KOS_XFER_TRACE)
             SAY("[xfer] INSTALL wind failed");
           return -1;
         }
       }
-      PyMem_Free(wind_nodes);
+      if (wind_nodes != stack_buf)
+        PyMem_Free(wind_nodes);
     }
   }
   if (KOS_XFER_TRACE)
@@ -3441,12 +3434,18 @@ static int xfer_step_push(KosContext *ctx, KosTransferAction *action) {
       walk = KosDynNode_PARENT(walk);
     }
 
-    /* Second pass: collect nodes into C array */
+    /* Second pass: collect nodes into C array (stack buffer for common case) */
     if (wind_count > 0) {
-      KosDynNode **wind_nodes = PyMem_Malloc(wind_count * sizeof(KosDynNode *));
-      if (! wind_nodes) {
-        PyErr_NoMemory();
-        return -1;
+      KosDynNode *stack_buf[16];
+      KosDynNode **wind_nodes;
+      if (wind_count <= 16) {
+        wind_nodes = stack_buf;
+      } else {
+        wind_nodes = PyMem_Malloc(wind_count * sizeof(KosDynNode *));
+        if (! wind_nodes) {
+          PyErr_NoMemory();
+          return -1;
+        }
       }
       size_t idx = 0;
       walk = seg;
@@ -3459,13 +3458,15 @@ static int xfer_step_push(KosContext *ctx, KosTransferAction *action) {
       /* Third pass: run wind in reverse order */
       for (size_t i = wind_count; i > 0; i--) {
         if (kos_dynnode_run_wind(ctx, wind_nodes[i - 1]) < 0) {
-          PyMem_Free(wind_nodes);
+          if (wind_nodes != stack_buf)
+            PyMem_Free(wind_nodes);
           if (KOS_XFER_TRACE)
             SAY("[xfer] PUSH wind failed");
           return -1;
         }
       }
-      PyMem_Free(wind_nodes);
+      if (wind_nodes != stack_buf)
+        PyMem_Free(wind_nodes);
     }
   }
   if (KOS_XFER_TRACE)
@@ -3843,7 +3844,7 @@ int kos_invoke_continuation(
            (void *) KosContext_DYN_TOP(ctx), (void *) to_use->captured_chain);
     res = kos_build_transfer_plan(ctx, to_use->captured_chain,
                                   value, is_throw,
-                                  KosContinuation_GRAPT_POINT_ID(to_use),
+                                  KosContinuation_GRAFT_POINT_ID(to_use),
                                   &plan);
   }
   if (KOS_XFER_TRACE)
@@ -4104,6 +4105,21 @@ int koskari_dynchain_init(PyObject *mod) {
 
 int koskari_dynchain_clear(PyObject *mod) {
   Py_CLEAR(_param_sentinel_unset);
+
+  while (dyn_freelist) {
+    KosDynNode *next = KosDynNode_PARENT(dyn_freelist);
+    PyMem_Free(dyn_freelist);
+    dyn_freelist = next;
+  }
+  dyn_freecount = 0;
+
+  while (cont_freelist) {
+    KosContinuation *next = (KosContinuation *) KosContinuation_CAPTURED_CHAIN(cont_freelist);
+    PyMem_Free(cont_freelist);
+    cont_freelist = next;
+  }
+  cont_freecount = 0;
+
   if (xfer_plan_cache) {
     PyMem_Free(xfer_plan_cache);
     xfer_plan_cache = NULL;

@@ -87,9 +87,10 @@ const char *kos_dynnode_kind_name(KosDynKind kind);
 
 
 typedef enum KosDynFlags {
-  KOS_DYNF_NONE     = 0x00,
-  KOS_DYNF_CLONED   = 0x01,  /* node was cloned for continuation capture */
-  KOS_DYNF_BOUNDARY = 0x02,  /* node marks a non-resumable boundary */
+  KOS_DYNF_NONE        = 0x00,
+  KOS_DYNF_CLONED      = 0x01,  /* node was cloned for continuation capture */
+  KOS_DYNF_BOUNDARY    = 0x02,  /* node marks a non-resumable boundary */
+  KOS_DYNF_LCA_VISITED = (int) 0x80000000u,  /* transient: set during kos_compute_lca */
 } KosDynFlags;
 
 
@@ -265,7 +266,7 @@ struct KosContinuation {
 #define KosContinuation_RESUME_PC(k)       (((KosContinuation *)(k))->resume_pc)
 #define KosContinuation_RESUME_STACK(k)    (((KosContinuation *)(k))->resume_stack)
 #define KosContinuation_PROMPT_ID(k)       (((KosContinuation *)(k))->prompt_id)
-#define KosContinuation_GRAPT_POINT_ID(k)  (((KosContinuation *)(k))->graft_point_id)
+#define KosContinuation_GRAFT_POINT_ID(k)  (((KosContinuation *)(k))->graft_point_id)
 #define KosContinuation_ONE_SHOT(k)        (((KosContinuation *)(k))->one_shot)
 #define KosContinuation_TOKEN_REF(k)       (((KosContinuation *)(k))->token_ref)
 

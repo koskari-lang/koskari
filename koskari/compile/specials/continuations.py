@@ -64,14 +64,16 @@ def special_let_cc(compiler, source, tc=False):
             "let/cc continuation variable must be a symbol",
             source)
 
+    k_name = str(k)
+
     fragment = compiler.fragment(called_by)
     fragment.position_of(source)
 
     fragment.instruction(OpCode.KOS_OP_PUSH_CC, 0)
     with fragment.child_namespace(called_by, [], []) as frag:
-        frag.declare_var(k)
+        frag.declare_var(k_name)
         frag.instruction(OpCode.KOS_OP_CAPTURE_CC, 0)
-        frag.instruction(OpCode.KOS_OP_VAR_STORE, k)
+        frag.instruction(OpCode.KOS_OP_VAR_STORE, k_name)
         helper_begin(frag, body, False)
     fragment.instruction(OpCode.KOS_OP_POP_CC, 0)
 
@@ -83,6 +85,12 @@ def special_capture_cc(compiler, source, tc=False):
     """
     Compile (compile/capture/cc K BODY...). Captures continuation, binds to K,
     runs body.
+
+    Intentionally does not open a child namespace: K is bound directly into
+    the enclosing scope so the continuation remains reachable after the body
+    exits. This is the semantic distinction from compile/let/cc, which
+    introduces a fresh child namespace that is discarded once its body
+    completes.
     """
 
     called_by, (k, body) = source
@@ -91,11 +99,13 @@ def special_capture_cc(compiler, source, tc=False):
             "capture/cc continuation variable must be a symbol",
             source)
 
+    k_name = str(k)
+
     fragment = compiler.fragment(called_by)
     fragment.position_of(source)
     fragment.instruction(OpCode.KOS_OP_PUSH_CC, 0)
     fragment.instruction(OpCode.KOS_OP_CAPTURE_CC, 0)
-    fragment.instruction(OpCode.KOS_OP_VAR_STORE, k)
+    fragment.instruction(OpCode.KOS_OP_VAR_STORE, k_name)
     helper_begin(fragment, body, False)
     fragment.instruction(OpCode.KOS_OP_POP_CC, 0)
 

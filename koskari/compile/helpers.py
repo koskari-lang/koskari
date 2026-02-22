@@ -254,7 +254,8 @@ def gather_formals(args, source=None):
         else:
             raise CompilerException(
                 "keyword formals must be alternating keywords and"
-                " values, not %r" % arg)
+                " values, not %r" % arg,
+                source)
 
     star = None
     starstar = None
@@ -300,7 +301,7 @@ def gather_formals(args, source=None):
         if starstar is undefined:
             raise CompilerException("** keyword requires symbol binding", source)
         elif not (is_symbol(starstar) or is_lazygensym(starstar)):
-            raise CompilerException("** keyword requires symbol binding, not %r" % star, source)
+            raise CompilerException("** keyword requires symbol binding, not %r" % starstar, source)
         arg = next(iargs, undefined)
 
     if arg is not undefined:

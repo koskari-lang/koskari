@@ -24,13 +24,20 @@ and compile/ref-attr.
 
 
 from ...lib import nil, OpCode, symbol
+from ...types import is_pair
 from ..exceptions import CompilerException
 from ..helpers import special
 
 
 @special(symbol("compile/attr"))
 def special_attr(compiler, source, tc=False):
+    """
+    Compile (compile/attr OBJ SYM). Load attribute SYM from OBJ
+    """
+
     called_by, body = source
+    if not is_pair(body):
+        raise CompilerException("attr requires two arguments", source)
     obj, (sym, rest) = body
 
     if rest is not nil:
@@ -47,7 +54,13 @@ def special_attr(compiler, source, tc=False):
 
 @special(symbol("compile/del-attr"))
 def special_del_attr(compiler, source, tc=False):
+    """
+    Compile (compile/del-attr OBJ SYM). Delete attribute SYM from OBJ
+    """
+
     called_by, body = source
+    if not is_pair(body):
+        raise CompilerException("del-attr requires two arguments", source)
     obj, (sym, rest) = body
 
     if rest is not nil:
@@ -65,7 +78,13 @@ def special_del_attr(compiler, source, tc=False):
 
 @special(symbol("compile/set-attr"))
 def special_set_attr(compiler, source, tc=False):
+    """
+    Compile (compile/set-attr OBJ SYM VAL). Store VAL into attribute SYM on OBJ
+    """
+
     called_by, body = source
+    if not is_pair(body):
+        raise CompilerException("set-attr requires three arguments", source)
     obj, (sym, (val, rest)) = body
 
     if rest is not nil:
@@ -84,7 +103,13 @@ def special_set_attr(compiler, source, tc=False):
 
 @special(symbol("compile/ref-attr"))
 def special_ref_attr(compiler, source, tc=False):
+    """
+    Compile (compile/ref-attr OBJ SYM). Produce a mutable reference to attribute SYM on OBJ
+    """
+
     called_by, body = source
+    if not is_pair(body):
+        raise CompilerException("ref-attr requires two arguments", source)
     obj, (sym, rest) = body
 
     if rest is not nil:

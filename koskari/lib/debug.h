@@ -23,6 +23,11 @@
 #endif
 
 
+#ifndef KOS_XFER_TRACE
+#define KOS_XFER_TRACE 0
+#endif
+
+
 #ifndef VERBOSE_DEBUG
 #define VERBOSE_DEBUG 0
 #endif

@@ -31,6 +31,10 @@ from ..helpers import special
 
 @special(symbol("compile/setq"))
 def special_setq(compiler, source, tc=False):
+    """
+    Compile (compile/setq SYM EXPR). Store the value of EXPR into the existing binding SYM
+    """
+
     called_by, (sym, body) = source
     expr, rest = body
 
@@ -54,6 +58,10 @@ def special_setq(compiler, source, tc=False):
 
 @special(symbol("compile/refq"))
 def special_refq(compiler, source, tc=False):
+    """
+    Compile (compile/refq SYM). Load the value of the binding named SYM
+    """
+
     called_by, body = source
     sym, rest = body
 
@@ -73,6 +81,10 @@ def special_refq(compiler, source, tc=False):
 
 @special(symbol("compile/bindq"))
 def special_bindq(compiler, source, tc=False):
+    """
+    Compile (compile/bindq SYM EXPR). Declare a new binding SYM and initialize it to EXPR
+    """
+
     called_by, (sym, body) = source
     expr, rest = body
 
@@ -96,6 +108,10 @@ def special_bindq(compiler, source, tc=False):
 
 @special(symbol("compile/delq"))
 def special_delq(compiler, source, tc=False):
+    """
+    Compile (compile/delq SYM). Clear the binding SYM, resetting it to unset
+    """
+
     called_by, body = source
     sym, rest = body
 

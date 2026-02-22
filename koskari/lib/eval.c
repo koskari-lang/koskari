@@ -976,13 +976,18 @@ static PyObject *eager_step_awaitable(
   /* Check for StopIteration (immediate completion) */
   if (PyErr_ExceptionMatches(PyExc_StopIteration)) {
     PyObject *value = NULL;
-    PyGen_FetchStopIterationValue(&value);
+    if (PyGen_FetchStopIterationValue(&value) < 0) {
+      /* FetchStopIterationValue failed and set a new exception; propagate. */
+      Py_DECREF(await_iter);
+      return NULL;
+    }
     Py_DECREF(await_iter);
 
-    if (! value)
+    if (! value) {
       value = Py_None;
+      Py_INCREF(value);
+    }
 
-    Py_INCREF(value);
     return value;
   }
 
@@ -2391,7 +2396,11 @@ entry_mode_dispatch:
   if (mode == KOS_MODE_RAISE) {
     KosEvent_KIND(out_ev) = KOS_EV_RAISE;
     KosEvent_PAYLOAD(out_ev) = NULL;
-    PyErr_Fetch(&KosEvent_PAYLOAD(out_ev), NULL, NULL);
+    PyObject *raise_typ = NULL;
+    PyObject *raise_tb  = NULL;
+    PyErr_Fetch(&raise_typ, &KosEvent_PAYLOAD(out_ev), &raise_tb);
+    Py_XDECREF(raise_typ);
+    Py_XDECREF(raise_tb);
     KosContext_FLAGS(ctx) &= ~KOS_CTX_RUNNING;
     KosContext_FLAGS(ctx) |= KOS_CTX_DEAD;
     return KOS_STEP_STOP_EVENT;
@@ -2828,6 +2837,13 @@ int koskari_eval_clear(PyObject *mod) {
   KoskariContinuationDead = NULL;
   KoskariContinuationApply = NULL;
   KoskariContinuationError = NULL;
+
+  while (context_freelist) {
+    KosContext *next = KosContext_FREELIST_NEXT(context_freelist);
+    PyMem_Free(context_freelist);
+    context_freelist = next;
+  }
+  context_freecount = 0;
 
   koskari_dynchain_clear(mod);
 
