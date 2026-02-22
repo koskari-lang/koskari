@@ -15,6 +15,7 @@ This directory documents the interpreter implementation, including bytecode form
 - **dynamic-node-unified-api.md**: Dynamic node unified API redesign and migration specification (implementation prompt)
 - **evaluator-token-continuation.md**: Evaluator token + continuation application model (KosEvaluatorToken, KoskariContinuationApply)
 - **domain.md**: Koskari Domain (ambient dynamic context) — design proposal for parameters and dynamic-extent scoping across AWAIT, boundaries, and continuations
+- **kio-format.md**: `.kio` compiled cache format — binary file layout, softened/hardened serialization levels, constant pool policy, `TaggedTuple`, cache invalidation, and loader algorithm
 
 ## Implementation Status
 
@@ -27,3 +28,4 @@ This directory documents the interpreter implementation, including bytecode form
 | Opcode dispatch | Implemented | `eval.c` (many opcodes implemented; many still stubs) |
 | Continuation support | Implemented | `eval.c`, `dynchain.c` |
 | Compiler | Not started | - |
+| `.kio` cache format | Design only | `design/interpreter/kio-format.md` |
