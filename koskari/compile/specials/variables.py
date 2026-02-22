@@ -14,8 +14,8 @@
 """
 koskari.compile.specials.variables
 
-Special form handlers for compile/setq, compile/refq, compile/bindq, and
-compile/delq.
+Special form handlers for compile/setq, compile/refq, compile/bindq,
+compile/delq, and compile/define.
 
 :author: Christopher O'Brien <obriencj@preoccupied.net>
 :license: GNU General Public License v3
@@ -23,10 +23,10 @@ compile/delq.
 """
 
 
-from ...lib import nil, OpCode, symbol
+from ...lib import nil, OpCode, symbol, cons
 from ...types import is_pair
 from ..exceptions import CompilerException
-from ..helpers import special
+from ..helpers import is_symbolish, pycons, special
 
 
 @special(symbol("compile/setq"))
@@ -125,6 +125,48 @@ def special_delq(compiler, source, tc=False):
     frag.position_of(body)
     frag.request_var(sym)
     frag.instruction(OpCode.KOS_OP_VAR_CLEAR, sym)
+    frag.instruction(OpCode.KOS_OP_CONST, None)
+
+    return frag
+
+
+@special(symbol("compile/define"))
+def special_define(compiler, source, tc=False):
+    """
+    Compile (define X), (define X EXPR), or (define X [Y Z] BODY...).
+    Declaration-only; declare-and-bind; or function shorthand equivalent
+    to (define X (lambda X [Y Z] BODY...)).
+    """
+
+    called_by, rest = source
+    if rest is nil or not is_pair(rest):
+        raise CompilerException("define requires a name", source)
+
+    X, rest_tail = rest
+    if not is_symbolish(X):
+        raise CompilerException("define name must be a symbol", source)
+
+    sym = str(X)
+
+    frag = compiler.fragment(called_by)
+    frag.declare_var(sym)
+
+    if rest_tail is nil:
+        frag.instruction(OpCode.KOS_OP_CONST, None)
+        return frag
+
+    val_expr, lbody = rest_tail
+
+    if is_pair(val_expr) and lbody is not nil:
+        val_expr = cons(symbol('compile/lambda'), X, val_expr, lbody)
+
+    elif lbody is not nil:
+        raise CompilerException(
+            "define with expression takes exactly two arguments",
+            source)
+
+    frag.merge(compiler.full_compile(val_expr))
+    frag.instruction(OpCode.KOS_OP_VAR_BIND, sym)
     frag.instruction(OpCode.KOS_OP_CONST, None)
 
     return frag

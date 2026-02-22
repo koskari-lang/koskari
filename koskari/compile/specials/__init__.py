@@ -36,7 +36,7 @@ from .let import special_let
 from .loops import special_break, special_continue, special_for_each, special_while
 from .pairs import special_car, special_cdr, special_cons, special_quote
 from .slots import special_attr, special_del_attr, special_ref_attr, special_set_attr
-from .variables import special_bindq, special_delq, special_refq, special_setq
+from .variables import special_bindq, special_define, special_delq, special_refq, special_setq
 
 
 __all__ = (
@@ -57,6 +57,7 @@ __all__ = (
     "special_continue",
     "special_del_attr",
     "special_del_item",
+    "special_define",
     "special_delq",
     "special_dyn_with",
     "special_for_each",
