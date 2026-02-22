@@ -15,17 +15,16 @@
 
 
 /**
-   koskari/lib/eval.h
+  koskari/lib/eval.h
 
-   Evaluator core for Koskari: delimited multi-shot continuations,
-   dynamic wind/unwind, and flattened async execution.
+  Evaluator core for Koskari: delimited multi-shot continuations,
+  dynamic wind/unwind, and flattened async execution.
 
-   This version uses the DynNode chain infrastructure from dynchain.h
-   for unified dynamic extent tracking.
+  This version uses the DynNode chain infrastructure from dynchain.h
+  for unified dynamic extent tracking.
 
-   :author: Christopher O'Brien <obriencj@preoccupied.net>
-   :license: GNU General Public License v3
-   :ai-assistant: Claude Opus 4.5 via Cursor
+  :author: Christopher O'Brien <obriencj@preoccupied.net>
+  :license: GNU General Public License v3
 */
 
 
@@ -43,10 +42,10 @@
 
 
 /**
-   KosEvaluatorToken is a refcounted PyObject that identifies a koskari_eval
-   domain/instance.  It tracks whether the evaluator is currently active on
-   this thread (live_depth) and serves as an ownership marker for
-   Continuations and DelimitedContinuations.
+  KosEvaluatorToken is a refcounted PyObject that identifies a koskari_eval
+  domain/instance.  It tracks whether the evaluator is currently active on
+  this thread (live_depth) and serves as an ownership marker for
+  Continuations and DelimitedContinuations.
 */
 
 struct KosEvaluatorToken {
@@ -78,13 +77,13 @@ typedef enum KosContextFlags {
 
 
 /**
-   KosFrame is an alias for KosDynFrame for backward compatibility.
-   See dynchain.h for the actual structure definition.
+  KosFrame is an alias for KosDynFrame for backward compatibility.
+  See dynchain.h for the actual structure definition.
 
-   The frame represents a function activation in the dynamic chain.
-   It holds the bytecode, program counter (pc = next instruction,
-   acting_pc = instruction currently being executed), operand stack,
-   and namespace.
+  The frame represents a function activation in the dynamic chain.
+  It holds the bytecode, program counter (pc = next instruction,
+  acting_pc = instruction currently being executed), operand stack,
+  and namespace.
 */
 
 typedef KosDynFrame KosFrame;
@@ -99,18 +98,18 @@ typedef KosDynFrame KosFrame;
 /* === KosEvent: boundary events === */
 
 /**
-   KosEventKind enumerates the boundary conditions that can cause
-   koskari_eval to suspend and return control to the caller.
+  KosEventKind enumerates the boundary conditions that can cause
+  koskari_eval to suspend and return control to the caller.
 
-   These events are produced only when the current frame has no parent
-   (top-level completion). When the frame has a parent (e.g. callee or
-   attached async gen), YIELD/RETURN are handled in-loop by detaching
-   and pushing onto the parent.
+  These events are produced only when the current frame has no parent
+  (top-level completion). When the frame has a parent (e.g. callee or
+  attached async gen), YIELD/RETURN are handled in-loop by detaching
+  and pushing onto the parent.
 
-   KOS_EV_RETURN - normal completion with a value
-   KOS_EV_RAISE  - exception propagation
-   KOS_EV_YIELD  - generator yield
-   KOS_EV_AWAIT  - suspension on Python awaitable
+  KOS_EV_RETURN - normal completion with a value
+  KOS_EV_RAISE  - exception propagation
+  KOS_EV_YIELD  - generator yield
+  KOS_EV_AWAIT  - suspension on Python awaitable
 */
 
 typedef enum KosEventKind {
@@ -122,11 +121,11 @@ typedef enum KosEventKind {
 
 
 /**
-   KosSuspensionEvent records why the evaluator last suspended.
-   Set when koskari_eval returns with KOS_EV_AWAIT, KOS_EV_YIELD, or
-   YIELD_FROM boundary; cleared when execution starts or context is not suspended.
-   Used at entry to choose revive path (revive_plan, revive_await, revive_yield,
-   revive_yield_from).
+  KosSuspensionEvent records why the evaluator last suspended.
+  Set when koskari_eval returns with KOS_EV_AWAIT, KOS_EV_YIELD, or
+  YIELD_FROM boundary; cleared when execution starts or context is not suspended.
+  Used at entry to choose revive path (revive_plan, revive_await, revive_yield,
+  revive_yield_from).
 */
 typedef enum KosSuspensionEvent {
   KOS_SUSP_NONE      = 0,
@@ -137,10 +136,10 @@ typedef enum KosSuspensionEvent {
 
 
 /**
-   KosEvalMode is the result of entry/revive and drives the mode-handler loop.
-   NORMAL = run next insn or check completion; TRANSFER = run process_plan;
-   EXCEPTION = run process_raise; RAISE/AWAIT/YIELD/YIELD_FROM = return with event;
-   RETURN = normal completion with value.
+  KosEvalMode is the result of entry/revive and drives the mode-handler loop.
+  NORMAL = run next insn or check completion; TRANSFER = run process_plan;
+  EXCEPTION = run process_raise; RAISE/AWAIT/YIELD/YIELD_FROM = return with event;
+  RETURN = normal completion with value.
 */
 typedef enum KosEvalMode {
   KOS_MODE_NORMAL    = 0,
@@ -155,11 +154,11 @@ typedef enum KosEvalMode {
 
 
 /**
-   KosEvalStep is the return type of each internal phase helper inside
-   koskari_eval.  CONTINUE means the phase completed normally and the next
-   phase should run.  STOP_EVENT means out_ev has been filled and the
-   evaluator should return to its caller.  FATAL_ERROR means a PyErr has
-   been set and koskari_eval must return -1.
+  KosEvalStep is the return type of each internal phase helper inside
+  koskari_eval.  CONTINUE means the phase completed normally and the next
+  phase should run.  STOP_EVENT means out_ev has been filled and the
+  evaluator should return to its caller.  FATAL_ERROR means a PyErr has
+  been set and koskari_eval must return -1.
 */
 typedef enum KosEvalStep {
   KOS_STEP_CONTINUE,
@@ -169,9 +168,9 @@ typedef enum KosEvalStep {
 
 
 /**
-   KosDispatchCtx bundles the per-instruction context assembled by
-   eval_phase_prepare_dispatch and consumed by eval_phase_execute_opcode
-   and eval_phase_post_opcode.
+  KosDispatchCtx bundles the per-instruction context assembled by
+  eval_phase_prepare_dispatch and consumed by eval_phase_execute_opcode
+  and eval_phase_post_opcode.
 */
 typedef struct KosDispatchCtx {
   int in_hook;     /* non-zero when executing inside a hook runner */
@@ -182,11 +181,11 @@ typedef struct KosDispatchCtx {
 
 
 /**
-   KosEvent carries the result of a koskari_eval call.
+  KosEvent carries the result of a koskari_eval call.
 
-   The kind field indicates what boundary was reached.
-   The payload field holds the associated value (return value,
-   exception, yielded value, or awaitable).
+  The kind field indicates what boundary was reached.
+  The payload field holds the associated value (return value,
+  exception, yielded value, or awaitable).
 */
 
 typedef struct KosEvent {
@@ -202,27 +201,27 @@ typedef struct KosEvent {
 /* === KosContext: VM execution context === */
 
 /**
-   KosContext is the top-level execution state for the Koskari VM.
+  KosContext is the top-level execution state for the Koskari VM.
 
-   This version uses the DynNode chain for dynamic extent tracking.
-   The dyn_top field points to the top of the chain, which may be
-   any node type (FRAME, PROMPT, WIND, REGION, PYCALL).
+  This version uses the DynNode chain for dynamic extent tracking.
+  The dyn_top field points to the top of the chain, which may be
+  any node type (FRAME, PROMPT, WIND, REGION, PYCALL).
 
-   The frame_top field is a cached pointer to the topmost FRAME node
-   for fast access during normal execution.
+  The frame_top field is a cached pointer to the topmost FRAME node
+  for fast access during normal execution.
 
-   Hook execution state is tracked via the hook_runner field.
-   Transfer plan execution is tracked via the plan/plan_stack fields.
+  Hook execution state is tracked via the hook_runner field.
+  Transfer plan execution is tracked via the plan/plan_stack fields.
 
-   Ownership and lifecycle:
-   - A context is created via kos_context_new and freed via kos_context_free.
-   - The context owns its dynamic chain and associated state.
-   - While RUNNING, exactly one Python wrapper (KosPyCoroutine) may own it.
+  Ownership and lifecycle:
+  - A context is created via kos_context_new and freed via kos_context_free.
+  - The context owns its dynamic chain and associated state.
+  - While RUNNING, exactly one Python wrapper (KosPyCoroutine) may own it.
 
-   Suspension and resumption:
-   - When koskari_eval returns KOS_EV_AWAIT, the context is suspended.
-   - py_await_iter holds the iterator from __await__() on the Python awaitable.
-   - Resumption injects the result back into the VM via the stack.
+  Suspension and resumption:
+  - When koskari_eval returns KOS_EV_AWAIT, the context is suspended.
+  - py_await_iter holds the iterator from __await__() on the Python awaitable.
+  - Resumption injects the result back into the VM via the stack.
 */
 
 struct KosContext {
@@ -372,22 +371,22 @@ struct KosContext {
 
 
 /**
-   Create a new execution context with the given initial frame.
+  Create a new execution context with the given initial frame.
 
-   :param top: initial frame (ownership transferred to context)
+  :param top: initial frame (ownership transferred to context)
 
-   :return: new context, or NULL on error
+  :return: new context, or NULL on error
 */
 KosContext *kos_context_new(KosDynFrame *top);
 
 
 /**
-   Free an execution context and all its resources.
+  Free an execution context and all its resources.
 
-   Frees the entire dynamic chain, any active transfer plan, and
-   the hook runner scratch stack.
+  Frees the entire dynamic chain, any active transfer plan, and
+  the hook runner scratch stack.
 
-   :param ctx: context to free (may be NULL)
+  :param ctx: context to free (may be NULL)
 */
 void kos_context_free(KosContext *ctx);
 
@@ -396,16 +395,16 @@ void kos_context_free(KosContext *ctx);
 
 
 /**
-   Create a new frame.
+  Create a new frame.
 
-   This is a convenience wrapper around kos_dynframe_new.
+  This is a convenience wrapper around kos_dynframe_new.
 
-   :param code: bytecode object (borrowed)
-   :param ns: namespace (reference is stolen)
-   :param stack: operand stack (ownership transferred), or NULL
-   :param parent: parent node in dynamic chain (or NULL)
+  :param code: bytecode object (borrowed)
+  :param ns: namespace (reference is stolen)
+  :param stack: operand stack (ownership transferred), or NULL
+  :param parent: parent node in dynamic chain (or NULL)
 
-   :return: new frame, or NULL on error
+  :return: new frame, or NULL on error
 */
 KosFrame *kos_frame_new(
     KosCode *code,
@@ -415,86 +414,62 @@ KosFrame *kos_frame_new(
 
 
 /**
-   Clone a frame for continuation capture.
+  Clone a frame for continuation capture.
 
-   Clones the frame's stack using COW semantics.
+  Clones the frame's stack using COW semantics.
 
-   :param frame: frame to clone
+  :param frame: frame to clone
 
-   :return: cloned frame, or NULL on error
+  :return: cloned frame, or NULL on error
 */
 KosFrame *kos_frame_clone(KosFrame *frame);
 
 
 /**
-   Free a frame and its resources.
+  Free a frame and its resources.
 
-   :param frame: frame to free (may be NULL)
+  :param frame: frame to free (may be NULL)
 */
 void kos_frame_free(KosFrame *frame);
-
-
-/* === Koskari call operations === */
-
-/**
-   Push a new frame for the given code object and namespace.
-
-   This is a non-tail call: the current frame becomes the parent
-   of the new frame.
-
-   :return: 0 on success, -1 on error
-*/
-int kos_koscall(KosContext *ctx, KosCode *code, PyObject *ns);
-
-
-/**
-   Replace the current frame with a new frame for the given code.
-
-   This is a tail call: the current frame is discarded and replaced
-   by the new frame, preserving the parent chain.
-
-   :return: 0 on success, -1 on error
-*/
-int kos_tail_koscall(KosContext *ctx, KosCode *code, PyObject *ns);
 
 
 /* === Drive loop === */
 
 /**
-   Execute the VM until a boundary event occurs.
+  Execute the VM until a boundary event occurs.
 
-   This is the main entry point for driving execution. The function
-   runs opcodes from ctx->frame_top until:
-   - RETURN: normal completion
-   - RAISE: exception propagation
-   - YIELD: generator yield
-   - AWAIT: Python awaitable encountered
+  This is the main entry point for driving execution. The function
+  runs opcodes from ctx->frame_top until:
+  - RETURN: normal completion
+  - RAISE: exception propagation
+  - YIELD: generator yield
+  - AWAIT: Python awaitable encountered
 
-   On return, out_ev is populated with the event kind and payload.
-   The caller owns the reference in out_ev->payload.
+  On return, out_ev is populated with the event kind and payload.
+  The caller owns the reference in out_ev->payload.
 
-   :param ctx: the execution context
-   :param out_ev: output event structure
-   :param send_val: resume value when resuming from AWAIT/YIELD/YIELD_FROM; NULL on first call or when N/A
-   :param throw_exc: exception to inject when resuming with throw (e.g. coroutine.throw()); NULL when resuming with value or on first call
+  :param ctx: the execution context
+  :param out_ev: output event structure
+  :param send_val: resume value when resuming from AWAIT/YIELD/YIELD_FROM; NULL on first call or when N/A
+  :param throw_exc: exception to inject when resuming with throw (e.g. coroutine.throw()); NULL when resuming with value or on first call
 
-   :return: 0 on success, -1 on internal error
+  :return: 0 on success, -1 on internal error
 */
 int koskari_eval(KosContext *ctx, KosEvent *out_ev, PyObject *send_val, PyObject *throw_exc);
 
 
 /**
-   Return the active Koskari context during bytecode execution, or NULL
-   when not inside koskari_eval.
+  Return the active Koskari context during bytecode execution, or NULL
+  when not inside koskari_eval.
 
-   Callable from native Python object methods (e.g. ParamRef resolution).
+  Callable from native Python object methods (e.g. ParamRef resolution).
 */
 KosContext *kos_ctx_current(void);
 
 
 /**
-   Return the active KosDomain during bytecode execution, or NULL when
-   not inside koskari_eval. Borrowed reference.
+  Return the active KosDomain during bytecode execution, or NULL when
+  not inside koskari_eval. Borrowed reference.
 */
 PyObject *kos_domain_current(void);
 
@@ -502,17 +477,17 @@ PyObject *kos_domain_current(void);
 /* === GC helpers for Python wrappers === */
 
 /**
-   Traverse a KosStackBlock chain for GC.
+  Traverse a KosStackBlock chain for GC.
 
-   This is used by Python wrapper types (KosCoroutine, etc.) to
-   implement tp_traverse. It visits all PyObject* values held in
-   the stack blocks.
+  This is used by Python wrapper types (KosCoroutine, etc.) to
+  implement tp_traverse. It visits all PyObject* values held in
+  the stack blocks.
 
-   :param block: the head of the block chain
-   :param visit: the visitproc callback
-   :param arg: the opaque arg for visit
+  :param block: the head of the block chain
+  :param visit: the visitproc callback
+  :param arg: the opaque arg for visit
 
-   :return: 0 on success, non-zero if visit returns non-zero
+  :return: 0 on success, non-zero if visit returns non-zero
 */
 int kos_stackblock_traverse(
     KosStackBlock *block,
@@ -521,40 +496,40 @@ int kos_stackblock_traverse(
 
 
 /**
-   Traverse a KosFrame for GC.
+  Traverse a KosFrame for GC.
 
-   :param frame: frame to traverse
-   :param visit: visitproc callback
-   :param arg: opaque arg for visit
+  :param frame: frame to traverse
+  :param visit: visitproc callback
+  :param arg: opaque arg for visit
 
-   :return: 0 on success, non-zero if visit returns non-zero
+  :return: 0 on success, non-zero if visit returns non-zero
 */
 int kos_frame_traverse(KosFrame *frame, visitproc visit, void *arg);
 
 
 /**
-   Traverse a KosContext for GC.
+  Traverse a KosContext for GC.
 
-   Visits all Python objects reachable from the context.
+  Visits all Python objects reachable from the context.
 
-   :return: 0 on success, non-zero if visit returns non-zero
+  :return: 0 on success, non-zero if visit returns non-zero
 */
 int kos_context_traverse(KosContext *ctx, visitproc visit, void *arg);
 
 
 /**
-   Close the delegate of a YIELD_FROM dyn node (on unwind/error).
-   Called from dynchain.c when popping KOS_DYN_YIELD_FROM. Does not free the node.
+  Close the delegate of a YIELD_FROM dyn node (on unwind/error).
+  Called from dynchain.c when popping KOS_DYN_YIELD_FROM. Does not free the node.
 */
 void kos_yieldfrom_close_delegate(KosDynYieldFrom *node);
 
 
 /**
-   WITH enter: if result is awaitable stash and push_or_await (return 1 or -1);
-   else bind name, push block, push node (return 0). Consumes result and
-   takes ownership of mgr, enter, exit, name.
+  WITH enter: if result is awaitable stash and push_or_await (return 1 or -1);
+  else bind name, push block, push node (return 0). Consumes result and
+  takes ownership of mgr, enter, exit, name.
 
-   :param use_dyn_with: 1 for dyn-with (KOS_DYN_DYN_WITH), 0 for with (KOS_DYN_WITH)
+  :param use_dyn_with: 1 for dyn-with (KOS_DYN_DYN_WITH), 0 for with (KOS_DYN_WITH)
 */
 int kos_push_with_after_enter(
     KosContext *ctx,

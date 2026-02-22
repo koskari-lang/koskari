@@ -846,25 +846,7 @@ int kos_stackblock_traverse(
 /* === Koskari call operations === */
 
 
-int kos_koscall(
-    KosContext *ctx,
-    KosCode *code,
-    PyObject *ns) {
-
-  if (! ctx) {
-    PyErr_SetString(PyExc_RuntimeError, "NULL context for koscall");
-    return -1;
-  }
-
-  KosDynFrame *frame = kos_dyn_push_frame(ctx, code, ns);
-  if (! frame)
-    return -1;
-
-  return 0;
-}
-
-
-int kos_tail_koscall(
+static int kos_tail_koscall(
     KosContext *ctx,
     KosCode *code,
     PyObject *ns) {
