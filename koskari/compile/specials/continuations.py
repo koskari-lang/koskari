@@ -14,7 +14,8 @@
 """
 koskari.compile.specials.continuations
 
-Special form handlers for compile/reset and compile/shift.
+Special form handlers for compile/call/cc, compile/let/cc,
+compile/capture/cc, compile/reset, and compile/shift.
 
 :author: Christopher O'Brien <obriencj@preoccupied.net>
 :license: GNU General Public License v3
@@ -22,10 +23,83 @@ Special form handlers for compile/reset and compile/shift.
 """
 
 
-from ...lib import nil, OpCode, symbol
-from ...types import is_pair
+from ...lib import nil, OpCode, symbol, cons
+from ...types import is_pair, is_nil
 from ..exceptions import CompilerException
-from ..helpers import helper_begin, is_symbolish, special
+from ..helpers import helper_begin, is_symbolish, special, pycons
+
+
+@special(symbol("compile/call/cc"))
+def special_call_cc(compiler, source, tc=False):
+    """
+    Compile (compile/call/cc FN). Captures continuation, invokes FN with the
+    continuation, and returns the result.
+    """
+
+    called_by, (expr, rest) = source
+    if not is_nil(rest):
+        raise CompilerException("call/cc requires a single argument", source)
+
+    fragment = compiler.fragment(called_by)
+    fragment.position_of(source)
+    fragment.instruction(OpCode.KOS_OP_PUSH_CC, 0)
+    fragment.merge(compiler.full_compile(expr, False))
+    fragment.instruction(OpCode.KOS_OP_CAPTURE_CC, 0)
+    fragment.instruction(OpCode.KOS_OP_CALL, 1)
+    fragment.instruction(OpCode.KOS_OP_POP_CC, 0)
+
+    return fragment
+
+
+@special(symbol("compile/let/cc"))
+def special_let_cc(compiler, source, tc=False):
+    """
+    Compile (compile/let/cc K BODY...). Pushes new namespace to hold K,
+    captures continuation, binds to K, runs body. K must be a symbol
+    """
+
+    called_by, (k, body) = source
+    if not is_symbolish(k):
+        raise CompilerException(
+            "let/cc continuation variable must be a symbol",
+            source)
+
+    fragment = compiler.fragment(called_by)
+    fragment.position_of(source)
+
+    fragment.instruction(OpCode.KOS_OP_PUSH_CC, 0)
+    with fragment.child_namespace(called_by, [], []) as frag:
+        frag.declare_var(k)
+        frag.instruction(OpCode.KOS_OP_CAPTURE_CC, 0)
+        frag.instruction(OpCode.KOS_OP_VAR_STORE, k)
+        helper_begin(frag, body, False)
+    fragment.instruction(OpCode.KOS_OP_POP_CC, 0)
+
+    return fragment
+
+
+@special(symbol("compile/capture/cc"))
+def special_capture_cc(compiler, source, tc=False):
+    """
+    Compile (compile/capture/cc K BODY...). Captures continuation, binds to K,
+    runs body.
+    """
+
+    called_by, (k, body) = source
+    if not is_symbolish(k):
+        raise CompilerException(
+            "capture/cc continuation variable must be a symbol",
+            source)
+
+    fragment = compiler.fragment(called_by)
+    fragment.position_of(source)
+    fragment.instruction(OpCode.KOS_OP_PUSH_CC, 0)
+    fragment.instruction(OpCode.KOS_OP_CAPTURE_CC, 0)
+    fragment.instruction(OpCode.KOS_OP_VAR_STORE, k)
+    helper_begin(fragment, body, False)
+    fragment.instruction(OpCode.KOS_OP_POP_CC, 0)
+
+    return fragment
 
 
 @special(symbol("compile/reset"))

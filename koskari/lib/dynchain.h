@@ -19,12 +19,12 @@
 
    Dynamic chain infrastructure for delimited continuations and
    dynamic-wind semantics. Provides DynNode types (FRAME, PROMPT,
-   WIND, REGION) that form a unified parent chain, replacing the
-   separate frame and handler chains.
+   WIND, REGION, CC_RAISE, and others) that form a unified parent
+   chain, replacing the separate frame and handler chains.
 
    :author: Christopher O'Brien <obriencj@preoccupied.net>
    :license: GNU General Public License v3
-   :ai-assistant: Claude Opus 4.5 via Cursor
+   :ai-assistant: claude-4.6-sonnet-high via Cursor
 */
 
 
@@ -54,6 +54,9 @@
    KOS_DYN_WITH      - Single-shot context manager (with)
    KOS_DYN_DYN_WITH  - Multi-shot context manager (dyn-with)
    KOS_DYN_SHIFT     - Shift handler block (push stack block; no frame/namespace)
+   KOS_DYN_CC_RAISE  - Sentinel node holding a KoskariContinuationApply exception
+                       for the foreign-token transfer path; its unwind re-raises the
+                       stored exception so the eval loop exits with KOS_EV_RAISE
 */
 
 typedef enum KosDynKind {
@@ -69,6 +72,7 @@ typedef enum KosDynKind {
   KOS_DYN_WITH   = 9,
   KOS_DYN_DYN_WITH   = 10,
   KOS_DYN_SHIFT  = 11,
+  KOS_DYN_CC_RAISE   = 12,
 } KosDynKind;
 
 
@@ -232,6 +236,9 @@ struct KosDynNode {
     struct {
       /* shift: no extra fields; install pushes stack block, teardown drops it */
     } shift;
+    struct {
+      PyObject *exc_val;  /* borrowed-then-owned KoskariContinuationApply instance */
+    } cc_raise;
   } u;
 };
 
@@ -245,6 +252,7 @@ typedef struct KosDynNode KosDynYieldFrom;
 typedef struct KosDynNode KosDynParam;
 typedef struct KosDynNode KosDynWith;
 typedef struct KosDynNode KosDynShift;
+typedef struct KosDynNode KosDynCCRaise;
 
 
 /* === KosContinuation: captured delimited continuation === */
@@ -845,6 +853,33 @@ void kos_dyn_pop_cc(KosContext *ctx, KosDynCC *cc);
    :return: 0 on success, -1 on error
 */
 int kos_dyn_push_shift(KosContext *ctx);
+
+
+/**
+   Build a transfer plan that unwinds all frames in the context to the root
+   (NULL frame), running WITH/finally teardown along the way, then re-raises
+   the stored KoskariContinuationApply exception via a KosDynCCRaise sentinel
+   node inserted at the bottom of the chain.
+
+   This is the foreign-token path for cross-context continuation invocation:
+   the current eval context cannot apply the continuation directly, so it
+   performs a segmented transfer by unwinding its dynamic chain completely and
+   exiting with the original exception so it can propagate further upward.
+
+   Inserts a KosDynCCRaise node at the root of the chain (below all existing
+   nodes) before building the plan.  The node's unwind callback re-raises
+   exc_val after all WITH/finally teardowns complete.
+
+   :param ctx: execution context
+   :param exc_val: the KoskariContinuationApply exception value (new ref stolen)
+   :param out_plan: output for the constructed transfer plan
+
+   :return: 0 on success, -1 on error
+*/
+int kos_build_cc_unwind_plan(
+    KosContext *ctx,
+    PyObject *exc_val,
+    KosTransferPlan **out_plan);
 
 
 /**
@@ -1661,6 +1696,7 @@ int kos_hookrunner_traverse(
 #define KosDynNode_IS_WITH_OR_DYN_WITH(n) \
   (KosDynNode_IS_WITH(n) || KosDynNode_IS_DYN_WITH(n))
 #define KosDynNode_IS_SHIFT(n)    (KosDynNode_KIND(n) == KOS_DYN_SHIFT)
+#define KosDynNode_IS_CC_RAISE(n) (KosDynNode_KIND(n) == KOS_DYN_CC_RAISE)
 
 #define KosDynFrame_CODE(f)       (((KosDynNode *)(f))->u.frame.code)
 #define KosDynFrame_PC(f)         (((KosDynNode *)(f))->u.frame.pc)
@@ -1702,6 +1738,8 @@ int kos_hookrunner_traverse(
 
 #define KosDynParam_BINDINGS(n)    (((KosDynNode *)(n))->u.param.bindings)
 #define KosDynParam_SAVED(n)       (((KosDynNode *)(n))->u.param.saved)
+
+#define KosDynCCRaise_EXC_VAL(n)   (((KosDynNode *)(n))->u.cc_raise.exc_val)
 
 #define KosDynWith_MGR(n)          (((KosDynNode *)(n))->u.with.mgr)
 #define KosDynWith_ENTER(n)        (((KosDynNode *)(n))->u.with.enter)

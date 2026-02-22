@@ -43,9 +43,21 @@
       (no boundary event); only the top-level frame produces KOS_EV_*
       on yield/return/raise/await.
 
+   6. Cross-context continuation invocation (segmented transfer): when a
+      KoskariContinuationApply exception targets a different eval context
+      (foreign token), process_raise intercepts it via
+      handle_continuation_apply.  The exception is cleared, a
+      KosDynCCRaise sentinel is inserted at the root of the dynamic chain,
+      and a NULL-target transfer plan is built.  The plan unwinds all
+      WITH/finally extents in the current context (calling their exit
+      handlers with no active exception), and then the sentinel's unwind
+      callback re-raises the original exception.  The eval loop exits with
+      KOS_EV_RAISE, propagating the exception upward through the Python
+      async call chain to the owning eval context.
+
    :author: Christopher O'Brien <obriencj@preoccupied.net>
    :license: GNU General Public License v3
-   :ai-assistant: Claude Opus 4.5 via Cursor
+   :ai-assistant: claude-4.6-sonnet-high via Cursor
 */
 
 
@@ -110,7 +122,13 @@ static int run_transfer_plan_to_completion(KosContext *ctx, KosEvent *out_ev) {
       SAY("[eval] transfer step failed -> KOS_EV_RAISE\n");
       KosEvent_KIND(out_ev) = KOS_EV_RAISE;
       KosEvent_PAYLOAD(out_ev) = NULL;
-      PyErr_Fetch(&KosEvent_PAYLOAD(out_ev), NULL, NULL);
+      {
+        PyObject *exc_typ = NULL, *exc_val = NULL, *exc_tb = NULL;
+        PyErr_Fetch(&exc_typ, &exc_val, &exc_tb);
+        Py_XDECREF(exc_typ);
+        Py_XDECREF(exc_tb);
+        KosEvent_PAYLOAD(out_ev) = exc_val;  /* caller owns this ref */
+      }
       KosContext_FLAGS(ctx) &= ~KOS_CTX_RUNNING;
       KosContext_FLAGS(ctx) |= KOS_CTX_DEAD;
       return -1;
@@ -261,8 +279,98 @@ static KosEvalMode revive_yield_from(KosContext *ctx, PyObject *send_val, PyObje
 static int try_local_exception_handler(KosContext *ctx, KosEvent *out_ev);
 
 /**
+   Intercept a KoskariContinuationApply exception and install the appropriate
+   transfer plan.  PyErr must be set to KoskariContinuationApply on entry.
+
+   Own-token path: the continuation targets this eval context.  Extract the
+   continuation and resume value, clear PyErr, and call kos_invoke_continuation
+   to install a direct-apply transfer plan.
+
+   Foreign-token path: the continuation targets a different eval context.
+   Fetch and clear PyErr, insert a KosDynCCRaise sentinel at the root of the
+   dynamic chain, and build a NULL-target transfer plan that unwinds all local
+   WITH/finally extents and then re-raises the original exception via the
+   sentinel's unwind callback.  The eval loop then exits with KOS_EV_RAISE so
+   the exception propagates upward to the owning context.
+
+   :return: KOS_MODE_TRANSFER on success, KOS_MODE_RAISE on error
+*/
+static KosEvalMode handle_continuation_apply(KosContext *ctx, KosEvent *out_ev) {
+  (void) out_ev;
+
+  PyObject *typ = NULL, *val = NULL, *tb = NULL;
+  PyErr_Fetch(&typ, &val, &tb);
+  Py_XDECREF(typ);
+  Py_XDECREF(tb);
+
+  if (! val) {
+    PyErr_SetString(PyExc_RuntimeError,
+                    "KoskariContinuationApply: missing exception value");
+    return KOS_MODE_RAISE;
+  }
+
+  PyObject *exc_target = PyObject_GetAttrString(val, "target");
+  if (! exc_target) {
+    Py_DECREF(val);
+    return KOS_MODE_RAISE;
+  }
+
+  int is_own = (exc_target == (PyObject *) KosContext_TOKEN(ctx));
+  Py_DECREF(exc_target);
+
+  if (is_own) {
+    PyObject *cont_obj = PyObject_GetAttrString(val, "continuation");
+    PyObject *args_obj = PyObject_GetAttrString(val, "args");
+
+    if (cont_obj && PyObject_TypeCheck(cont_obj, &KosPyContinuationType)) {
+      KosContinuation *k = ((KosPyContinuation *) cont_obj)->captured;
+      PyObject *resume_val = Py_None;
+      if (args_obj && PyTuple_Check(args_obj) && PyTuple_GET_SIZE(args_obj) > 0) {
+        resume_val = PyTuple_GET_ITEM(args_obj, 0);
+        Py_INCREF(resume_val);
+      } else {
+        Py_INCREF(resume_val);
+      }
+      Py_XDECREF(args_obj);
+      PyErr_Clear();
+      if (k && kos_invoke_continuation(ctx, k, resume_val, 0, cont_obj) == 0) {
+        Py_DECREF(resume_val);
+        Py_DECREF(val);
+        Py_DECREF(cont_obj);
+        return KOS_MODE_TRANSFER;
+      }
+      Py_DECREF(resume_val);
+    } else {
+      Py_XDECREF(args_obj);
+    }
+    Py_XDECREF(cont_obj);
+    Py_DECREF(val);
+    if (! PyErr_Occurred())
+      PyErr_SetString(PyExc_RuntimeError,
+                      "KoskariContinuationApply: invalid continuation");
+    return KOS_MODE_RAISE;
+  }
+
+  /* Foreign-token path: unwind this context to null and re-raise. */
+  PyErr_Clear();
+  KosTransferPlan *plan = NULL;
+  if (kos_build_cc_unwind_plan(ctx, val, &plan) < 0) {
+    Py_DECREF(val);
+    return KOS_MODE_RAISE;
+  }
+  Py_DECREF(val);
+
+  if (KosContext_PLAN(ctx))
+    kos_free_transfer_plan(KosContext_PLAN(ctx));
+  KosContext_PLAN(ctx) = plan;
+  KosContext_FLAGS(ctx) |= KOS_CTX_IN_TRANSFER;
+  return KOS_MODE_TRANSFER;
+}
+
+
+/**
    Process the current exception (in PyErr or context). Handles
-   KoskariContinuationApply (invoke continuation, replace plan), local
+   KoskariContinuationApply (invoke continuation or unwind-and-reraise), local
    handlers (try/except/finally, WITH exit, unwind), or returns RAISE.
    Call only when mode is EXCEPTION.
 
@@ -275,46 +383,8 @@ static KosEvalMode process_raise(KosContext *ctx, KosEvent *out_ev) {
     KosEvent_PAYLOAD(out_ev) = NULL;
     return KOS_MODE_RAISE;
   }
-  if (KoskariContinuationApply && PyErr_ExceptionMatches(KoskariContinuationApply)) {
-    PyObject *typ = NULL, *val = NULL, *tb = NULL;
-    PyErr_Fetch(&typ, &val, &tb);
-    PyObject *exc_target = val ? PyObject_GetAttrString(val, "target") : NULL;
-    if (exc_target) {
-      int is_own = (exc_target == (PyObject *) KosContext_TOKEN(ctx));
-      Py_DECREF(exc_target);
-      if (is_own) {
-        PyObject *cont_obj = val ? PyObject_GetAttrString(val, "continuation") : NULL;
-        PyObject *args_obj = val ? PyObject_GetAttrString(val, "args") : NULL;
-        Py_XDECREF(typ);
-        Py_XDECREF(tb);
-        if (cont_obj && PyObject_TypeCheck(cont_obj, &KosPyContinuationType)) {
-          KosContinuation *k = ((KosPyContinuation *) cont_obj)->captured;
-          PyObject *resume_val = Py_None;
-          if (args_obj && PyTuple_Check(args_obj) && PyTuple_GET_SIZE(args_obj) > 0) {
-            resume_val = PyTuple_GET_ITEM(args_obj, 0);
-            Py_INCREF(resume_val);
-          }
-          Py_XDECREF(args_obj);
-          PyErr_Clear();
-          if (k && kos_invoke_continuation(ctx, k, resume_val, 0, cont_obj) == 0) {
-            Py_DECREF(resume_val);
-            Py_DECREF(val);
-            return KOS_MODE_TRANSFER;
-          }
-          Py_DECREF(resume_val);
-          Py_DECREF(cont_obj);
-        } else {
-          Py_XDECREF(cont_obj);
-          Py_XDECREF(args_obj);
-        }
-        Py_DECREF(val);
-        PyErr_SetString(PyExc_RuntimeError,
-                        "KoskariContinuationApply: invalid continuation");
-        return KOS_MODE_RAISE;
-      }
-    }
-    PyErr_Restore(typ, val, tb);
-  }
+  if (KoskariContinuationApply && PyErr_ExceptionMatches(KoskariContinuationApply))
+    return handle_continuation_apply(ctx, out_ev);
   clear_pending_agen_on_error(ctx);
   if (try_local_exception_handler(ctx, out_ev))
     return KOS_MODE_NORMAL;
@@ -2493,16 +2563,15 @@ static KosEvalStep eval_phase_post_opcode(
   *loop_continue = 0;
 
   if (PyErr_Occurred()) {
-    clear_pending_agen_on_error(ctx);
-    if (try_local_exception_handler(ctx, out_ev)) {
-      if (KosEvent_KIND(out_ev) == KOS_EV_AWAIT) {
-        KosContext_SUSPENSION_EVENT(ctx) = KOS_SUSP_AWAIT;
-        return KOS_STEP_STOP_EVENT;
-      }
-      *loop_continue = 1;
-      return KOS_STEP_CONTINUE;
+    KosEvalMode raise_mode = process_raise(ctx, out_ev);
+    if (raise_mode == KOS_MODE_RAISE)
+      return KOS_STEP_STOP_EVENT;
+    if (KosEvent_KIND(out_ev) == KOS_EV_AWAIT) {
+      KosContext_SUSPENSION_EVENT(ctx) = KOS_SUSP_AWAIT;
+      return KOS_STEP_STOP_EVENT;
     }
-    return KOS_STEP_STOP_EVENT;
+    *loop_continue = 1;
+    return KOS_STEP_CONTINUE;
   }
 
   if (op_res == 1) {

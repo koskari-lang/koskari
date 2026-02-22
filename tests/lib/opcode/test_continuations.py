@@ -14,16 +14,19 @@
 """
 Tests for delimited and undelimited continuations (PUSH_PROMPT, SHIFT,
 INVOKE_K, POP_PROMPT, PUSH_CC, CAPTURE_CC, POP_CC) and evaluator token.
+Includes cross-context continuation pass-through tests verifying the
+segmented transfer path (foreign-token KoskariContinuationApply handling).
 
 :author: Christopher O'Brien <obriencj@preoccupied.net>
 :license: GNU General Public License v3
+:ai-assistant: claude-4.6-sonnet-high via Cursor
 """
 
 import unittest
 
-from koskari.lib import FormalsSpec, NamespaceSpec
+from koskari.lib import Code, FormalsSpec, NamespaceSpec
 from tests import make_callable
-from tests.lib.opcode import CevalTest, build_code, build_expr
+from tests.lib.opcode import CevalTest, _op, build_code, build_expr
 
 
 class TestDelimitedContinuations(CevalTest):
@@ -251,10 +254,15 @@ class TestUndelimitedContinuations(CevalTest):
         self.assertIn("CAPTURE_CC", str(ctx.exception))
         self.assertIn("no CC block", str(ctx.exception))
 
-    def test_call_continuation_from_different_token_raises_continuation_apply(self):
+    def test_call_continuation_from_different_token_resumes_owner(self):
         """
-        Invoking a continuation from a different evaluator token raises
-        KoskariContinuationApply.
+        Invoking a continuation from a nested koskari context (different eval
+        token) raises KoskariContinuationApply in the nested context, which
+        propagates upward through the Python awaitable chain until it reaches
+        the owning eval loop. The owning loop catches it via
+        eval_phase_post_opcode, matches the token, applies the continuation,
+        and resumes normally. The result is the value passed to the
+        continuation.
         """
         import koskari.lib as lib
         self.assertTrue(hasattr(lib, "KoskariContinuationApply"))
@@ -282,8 +290,83 @@ class TestUndelimitedContinuations(CevalTest):
         ], values={"bridge": bridge})
         bottom_expr = make_callable(bottom_code, bottom_ns)
 
-        with self.assertRaises(lib.KoskariContinuationApply):
-            bottom_expr().run()
+        result = bottom_expr().run()
+        self.assertEqual(result, 42)
+
+
+    def test_continuation_passes_through_intermediate_context_with_dyn_with_unwind(self):
+        """
+        Four-level call stack: owner koskari -> python -> middle koskari
+        (with an active dyn-with) -> python (invokes foreign continuation).
+
+        The KoskariContinuationApply exception must:
+          1. Be intercepted by the middle koskari eval loop (foreign token).
+          2. Trigger a NULL-frame unwind in the middle context, running the
+             dyn-with __exit__ before the context exits.
+          3. Re-raise unchanged so it propagates upward through the Python
+             async bridge to the owning koskari eval loop.
+          4. Be caught and applied by the owner, resuming with 42.
+
+        Assertions:
+          - result == 42 (continuation applied correctly by owner)
+          - dyn-with __exit__ was called (middle context unwound cleanly)
+          - __exit__ received no exception info (the exception was hidden
+            from the context manager during the segmented transfer)
+        """
+
+        class Tracker:
+            def __init__(self):
+                self.exited = False
+                self.exc_info = (None, None, None)
+
+            def __enter__(self):
+                return self
+
+            def __exit__(self, typ, val, tb):
+                self.exited = True
+                self.exc_info = (typ, val, tb)
+                return False
+
+        tracker = Tracker()
+
+        def python_invoker(cont):
+            return cont(42)
+
+        middle_nspec = NamespaceSpec(None, ("cont",), ("invoker",))
+        middle_instr = tuple([_op(op), arg] for op, arg in [
+            ["CONST", tracker],
+            ["PUSH_DYN_WITH", None],
+            ["VAR", "invoker"],
+            ["VAR", "cont"],
+            ["CALL", 1],
+            ["POP_DYN_WITH", 0],
+            ["RETURN", 1],
+        ])
+        middle_code = Code(middle_nspec, middle_instr, "middle")
+        middle_ns = NamespaceSpec(None, ("invoker",), ()).get_namespace(None)
+        middle_ns.store("invoker", python_invoker)
+        middle_fn = make_callable(
+            middle_code, middle_ns, FormalsSpec(("cont",)))
+
+        async def python_bridge(cont):
+            return await middle_fn(cont)
+
+        bottom_code, bottom_ns = build_expr([
+            ["VAR", "python_bridge"],
+            ["PUSH_CC", 0],
+            ["CAPTURE_CC", 0],
+            ["CALL", 1],
+            ["POP_CC", 0],
+            ["LABEL", "resume"],
+            ["RETURN", 1],
+        ], values={"python_bridge": python_bridge})
+        bottom_expr = make_callable(bottom_code, bottom_ns)
+
+        result = bottom_expr().run()
+
+        self.assertEqual(result, 42)
+        self.assertTrue(tracker.exited, "dyn-with __exit__ must be called during middle-context unwind")
+        self.assertIsNone(tracker.exc_info[0], "dyn-with __exit__ must see no exception (hidden during segmented transfer)")
 
 
 class TestEvaluatorToken(CevalTest):

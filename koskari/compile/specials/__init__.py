@@ -28,7 +28,7 @@ from .begin import special_begin
 from .bytecode import special_bytecode
 from .call import special_call
 from .conditionals import special_cond, special_if, special_unless, special_when
-from .continuations import special_reset, special_shift
+from .continuations import special_call_cc, special_let_cc, special_capture_cc, special_reset, special_shift
 from .context import special_dyn_with, special_parameterize, special_with
 from .items import special_del_item, special_item, special_ref_item, special_set_item
 from .lambda_ import special_lambda
@@ -48,6 +48,8 @@ __all__ = (
     "special_break",
     "special_bytecode",
     "special_call",
+    "special_call_cc",
+    "special_capture_cc",
     "special_car",
     "special_cdr",
     "special_cond",
@@ -62,6 +64,7 @@ __all__ = (
     "special_item",
     "special_lambda",
     "special_let",
+    "special_let_cc",
     "special_parameterize",
     "special_quote",
     "special_ref_attr",

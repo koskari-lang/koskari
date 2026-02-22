@@ -22,7 +22,7 @@
 
    :author: Christopher O'Brien <obriencj@preoccupied.net>
    :license: GNU General Public License v3
-   :ai-assistant: Claude Opus 4.5 via Cursor
+   :ai-assistant: claude-4.6-sonnet-high via Cursor
 */
 
 
@@ -55,6 +55,7 @@ const char *kos_dynnode_kind_name(int kind) {
     case KOS_DYN_WITH:       return "WITH";
     case KOS_DYN_DYN_WITH:   return "DYN_WITH";
     case KOS_DYN_SHIFT:      return "SHIFT";
+    case KOS_DYN_CC_RAISE:   return "CC_RAISE";
     default:                 return "UNKNOWN";
   }
 }
@@ -326,6 +327,32 @@ void kos_dynshift_free(KosDynShift *shift) {
     return;
 
   kos_dynnode_return_to_freelist(shift);
+}
+
+
+/* === KosDynCCRaise implementation === */
+
+
+KosDynCCRaise *kos_dyn_cc_raise_new(KosDynNode *parent, PyObject *exc_val) {
+  KosDynCCRaise *node = (KosDynCCRaise *) kos_dynnode_alloc();
+  if (! node)
+    return NULL;
+
+  kos_dynnode_init((KosDynNode *) node, KOS_DYN_CC_RAISE, parent,
+                   KOS_DYN_CAP_NEEDS_UNWIND_ACTION);
+  Py_INCREF(exc_val);
+  KosDynCCRaise_EXC_VAL(node) = exc_val;
+  return node;
+}
+
+
+void kos_dyn_cc_raise_free(KosDynCCRaise *node) {
+  if (! node)
+    return;
+
+  Py_XDECREF(KosDynCCRaise_EXC_VAL(node));
+  KosDynCCRaise_EXC_VAL(node) = NULL;
+  kos_dynnode_return_to_freelist(node);
 }
 
 
@@ -784,6 +811,9 @@ void kos_dynnode_free(KosDynNode *node) {
     case KOS_DYN_SHIFT:
       kos_dynshift_free((KosDynShift *) node);
       break;
+    case KOS_DYN_CC_RAISE:
+      kos_dyn_cc_raise_free((KosDynCCRaise *) node);
+      break;
   }
 }
 
@@ -817,6 +847,10 @@ KosDynNode *kos_dynnode_clone(KosDynNode *node) {
       return (KosDynNode *) kos_dyndynwith_clone((KosDynWith *) node);
     case KOS_DYN_SHIFT:
       return (KosDynNode *) kos_dynshift_clone((KosDynShift *) node);
+    case KOS_DYN_CC_RAISE:
+      PyErr_SetString(PyExc_RuntimeError,
+                      "cannot clone CC_RAISE sentinel node");
+      return NULL;
   }
 
   PyErr_Format(PyExc_RuntimeError, "cannot clone dynnode kind %u",
@@ -1609,6 +1643,25 @@ int kos_extent_run_wind(KosContext *ctx, KosDynNode *node) {
 }
 
 
+static int cc_raise_unwind(KosContext *ctx, KosDynNode *node,
+                           PyObject **out_awaitable) {
+  (void) ctx;
+  (void) out_awaitable;
+  PyObject *exc_val = KosDynCCRaise_EXC_VAL(node);
+  if (exc_val) {
+    PyObject *typ = PyObject_Type(exc_val);
+    Py_INCREF(exc_val);
+    PyErr_SetObject(typ, exc_val);
+    Py_XDECREF(typ);
+    Py_DECREF(exc_val);
+  } else {
+    PyErr_SetString(PyExc_RuntimeError,
+                    "cc_raise_unwind: missing exception value");
+  }
+  return -1;
+}
+
+
 int kos_extent_run_unwind(KosContext *ctx, KosDynNode *node,
                          PyObject **out_awaitable) {
   PyObject *dummy = NULL;
@@ -1626,6 +1679,8 @@ int kos_extent_run_unwind(KosContext *ctx, KosDynNode *node,
     case KOS_DYN_WITH:
     case KOS_DYN_DYN_WITH:
       return kos_dyn_with_unwind(ctx, (KosDynWith *) node, out);
+    case KOS_DYN_CC_RAISE:
+      return cc_raise_unwind(ctx, node, out);
     default:
       PyErr_Format(PyExc_RuntimeError,
                    "kos_extent_run_unwind: node kind %u has no unwind",
@@ -1978,6 +2033,17 @@ const KosDynTypeOps kos_dyn_type_ops[] = {
     .unwind_on_exception = NULL,
     .clone = (KosDynNode *(*)(KosDynNode *)) kos_dynshift_clone,
     .caps = 0,
+  },
+  /* KOS_DYN_CC_RAISE */
+  {
+    .install = NULL,
+    .pop = NULL,
+    .wind = NULL,
+    .unwind = (int (*)(KosContext *, KosDynNode *, PyObject **)) cc_raise_unwind,
+    .teardown_after_unwind = NULL,
+    .unwind_on_exception = NULL,
+    .clone = NULL,
+    .caps = KOS_DYN_CAP_NEEDS_UNWIND_ACTION,
   },
 };
 
@@ -3059,6 +3125,43 @@ int kos_build_direct_install_plan(
 }
 
 
+int kos_build_cc_unwind_plan(
+    KosContext *ctx,
+    PyObject *exc_val,
+    KosTransferPlan **out_plan) {
+
+  /* Insert the sentinel at the bottom (root) of the chain so that the
+     transfer plan unwinds all existing WITH/finally nodes first and hits the
+     KosDynCCRaise re-raise step last.  We walk to the current chain root and
+     attach the new node below it. */
+  KosDynCCRaise *raise_node = kos_dyn_cc_raise_new(NULL, exc_val);
+  if (! raise_node)
+    return -1;
+
+  KosDynNode *cur = KosContext_DYN_TOP(ctx);
+  if (! cur) {
+    /* Empty chain: the sentinel becomes dyn_top directly. */
+    KosContext_DYN_TOP(ctx) = (KosDynNode *) raise_node;
+    KosContext_CHAIN_VERSION(ctx)++;
+  } else {
+    /* Walk to the bottom of the chain and attach below it. */
+    while (KosDynNode_PARENT(cur))
+      cur = KosDynNode_PARENT(cur);
+    KosDynNode_PARENT(cur) = (KosDynNode *) raise_node;
+    KosContext_CHAIN_VERSION(ctx)++;
+  }
+
+  /* Build a plan that unwinds from dyn_top all the way to NULL, running
+     WITH/finally teardowns along the way.  kos_build_transfer_plan with
+     target=NULL treats lca=NULL, so it emits EXTENT_ACTION steps for every
+     node that has NEEDS_UNWIND_ACTION (including our sentinel at the bottom),
+     then INSTALL(NULL), then INJECT.  When the plan reaches the KosDynCCRaise
+     EXTENT_ACTION, cc_raise_unwind sets PyErr and returns -1, which causes
+     run_transfer_plan_to_completion to package it as KOS_EV_RAISE. */
+  return kos_build_transfer_plan(ctx, NULL, Py_None, 0, 0, out_plan);
+}
+
+
 int kos_dyn_build_pop_shift_plan(KosContext *ctx, KosDynPrompt *prompt,
                                  PyObject *value, KosTransferPlan **out_plan) {
 
@@ -4006,6 +4109,9 @@ int kos_dynnode_traverse(KosDynNode *node, visitproc visit, void *arg) {
     case KOS_DYN_WIND:
     case KOS_DYN_PYCALL:
     case KOS_DYN_SHIFT:
+      break;
+    case KOS_DYN_CC_RAISE:
+      Py_VISIT(KosDynCCRaise_EXC_VAL(node));
       break;
     case KOS_DYN_REGION:
       return dynnode_traverse_region(node, visit, arg);
