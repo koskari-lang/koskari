@@ -27,5 +27,5 @@ This directory documents the interpreter implementation, including bytecode form
 | KosCoroutine / run-code-as-coroutine | Implemented | `func.c`, `func.h` |
 | Opcode dispatch | Implemented | `eval.c` (many opcodes implemented; many still stubs) |
 | Continuation support | Implemented | `eval.c`, `dynchain.c` |
-| Compiler | Not started | - |
+| Compiler | In progress — see [SPECIALS.md](../SPECIALS.md) | `koskari/compile/compiler.py`, `koskari/compile/specials/` |
 | `.kio` cache format | Design only | `design/interpreter/kio-format.md` |

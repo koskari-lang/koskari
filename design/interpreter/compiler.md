@@ -92,7 +92,7 @@
 ### To Migrate
 
 - Macro expansion (reader macros, `defmacro`, `defalias`)
-- `for-each`, `try`/`catch`/`finally`, `quasiquote`/unquote
+- `try`/`catch`/`finally`, `quasiquote`/unquote
 - Operator infrastructure (arithmetic, comparison, logical operators)
 - Optimization passes (constant folding, dead code elimination, VAR→FAST conversion)
 
