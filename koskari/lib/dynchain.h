@@ -60,20 +60,27 @@
 */
 
 typedef enum KosDynKind {
-  KOS_DYN_FRAME  = 0,
-  KOS_DYN_PROMPT = 1,
-  KOS_DYN_WIND   = 2,
-  KOS_DYN_REGION = 3,
-  KOS_DYN_PYCALL = 4,
-  KOS_DYN_NS     = 5,
-  KOS_DYN_CC     = 6,
-  KOS_DYN_YIELD_FROM = 7,
-  KOS_DYN_PARAM  = 8,
-  KOS_DYN_WITH   = 9,
-  KOS_DYN_DYN_WITH   = 10,
-  KOS_DYN_SHIFT  = 11,
-  KOS_DYN_CC_RAISE   = 12,
+  KOS_DYN_FRAME = 0,
+  KOS_DYN_PROMPT,
+  KOS_DYN_WIND,
+  KOS_DYN_REGION,
+  KOS_DYN_PYCALL,
+  KOS_DYN_NS,
+  KOS_DYN_CC,
+  KOS_DYN_YIELD_FROM,
+  KOS_DYN_PARAM,
+  KOS_DYN_WITH,
+  KOS_DYN_DYN_WITH,
+  KOS_DYN_SHIFT,
+  KOS_DYN_CC_RAISE,
+
+  // sentinel value
+  KOS_DYN_UNKNOWN,
 } KosDynKind;
+
+
+/* Debug helper functions */
+const char *kos_dynnode_kind_name(KosDynKind kind);
 
 
 /* === DynNode flags === */

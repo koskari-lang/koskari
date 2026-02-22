@@ -41,10 +41,6 @@
 #endif
 
 
-/* Debug helper functions */
-const char *kos_dynnode_kind_name(int kind);
-
-
 #endif
 
 // The end.

@@ -49,23 +49,29 @@ int kos_dyn_push(KosContext *ctx, KosDynNode *node);
 /* === Debug helper functions === */
 
 
-const char *kos_dynnode_kind_name(int kind) {
-  switch (kind) {
-    case KOS_DYN_FRAME:      return "FRAME";
-    case KOS_DYN_PROMPT:     return "PROMPT";
-    case KOS_DYN_WIND:       return "WIND";
-    case KOS_DYN_REGION:     return "REGION";
-    case KOS_DYN_PYCALL:     return "PYCALL";
-    case KOS_DYN_NS:         return "NS";
-    case KOS_DYN_CC:         return "CC";
-    case KOS_DYN_YIELD_FROM: return "YIELD_FROM";
-    case KOS_DYN_PARAM:      return "PARAM";
-    case KOS_DYN_WITH:       return "WITH";
-    case KOS_DYN_DYN_WITH:   return "DYN_WITH";
-    case KOS_DYN_SHIFT:      return "SHIFT";
-    case KOS_DYN_CC_RAISE:   return "CC_RAISE";
-    default:                 return "UNKNOWN";
+static const char *kos_dynnode_kind_names[] = {
+  "FRAME",
+  "PROMPT",
+  "WIND",
+  "REGION",
+  "PYCALL",
+  "NS",
+  "CC",
+  "YIELD_FROM",
+  "PARAM",
+  "WITH",
+  "DYN_WITH",
+  "SHIFT",
+  "CC_RAISE",
+  "UNKNOWN",
+};
+
+
+const char *kos_dynnode_kind_name(KosDynKind kind) {
+  if (kind < 0 || kind >= KOS_DYN_UNKNOWN) {
+    return "UNKNOWN";
   }
+  return kos_dynnode_kind_names[kind];
 }
 
 
@@ -391,7 +397,7 @@ void kos_dyn_pop_prompt(KosContext *ctx, KosDynPrompt *prompt) {
 /* === KosDynCC implementation === */
 
 
-KosDynCC *kos_dyncc_new(KosDynNode *parent, uint32_t resume_pc) {
+static KosDynCC *kos_dyncc_new(KosDynNode *parent, uint32_t resume_pc) {
 
   KosDynCC *cc = kos_dynnode_alloc();
   if (! cc)
@@ -419,7 +425,7 @@ static KosDynCC *kos_dyncc_clone(KosDynCC *cc) {
 }
 
 
-void kos_dyncc_free(KosDynCC *cc) {
+static void kos_dyncc_free(KosDynCC *cc) {
   if (! cc)
     return;
 
@@ -454,7 +460,7 @@ void kos_dyn_pop_cc(KosContext *ctx, KosDynCC *cc) {
 /* === KosDynShift implementation === */
 
 
-KosDynShift *kos_dynshift_new(KosDynNode *parent) {
+static KosDynShift *kos_dynshift_new(KosDynNode *parent) {
   KosDynShift *shift = (KosDynShift *) kos_dynnode_alloc();
   if (! shift)
     return NULL;
@@ -464,7 +470,7 @@ KosDynShift *kos_dynshift_new(KosDynNode *parent) {
 }
 
 
-KosDynShift *kos_dynshift_clone(KosDynShift *shift) {
+static KosDynShift *kos_dynshift_clone(KosDynShift *shift) {
   if (! shift)
     return NULL;
 
@@ -480,7 +486,7 @@ KosDynShift *kos_dynshift_clone(KosDynShift *shift) {
 }
 
 
-void kos_dynshift_free(KosDynShift *shift) {
+static void kos_dynshift_free(KosDynShift *shift) {
   if (! shift)
     return;
 
@@ -501,7 +507,7 @@ int kos_dyn_push_shift(KosContext *ctx) {
 /* === KosDynCCRaise implementation === */
 
 
-KosDynCCRaise *kos_dyn_cc_raise_new(KosDynNode *parent, PyObject *exc_val) {
+static KosDynCCRaise *kos_dyn_cc_raise_new(KosDynNode *parent, PyObject *exc_val) {
   KosDynCCRaise *node = (KosDynCCRaise *) kos_dynnode_alloc();
   if (! node)
     return NULL;
@@ -514,7 +520,7 @@ KosDynCCRaise *kos_dyn_cc_raise_new(KosDynNode *parent, PyObject *exc_val) {
 }
 
 
-void kos_dyn_cc_raise_free(KosDynCCRaise *node) {
+static void kos_dyn_cc_raise_free(KosDynCCRaise *node) {
   if (! node)
     return;
 
@@ -759,7 +765,7 @@ void kos_dyn_pop_region(KosContext *ctx, KosDynRegion *region) {
 /* === KosDynNs (namespace scope) implementation === */
 
 
-KosDynNs *kos_dynns_new(KosDynNode *parent, PyObject *saved_ns) {
+static KosDynNs *kos_dynns_new(KosDynNode *parent, PyObject *saved_ns) {
 
   KosDynNs *ns_node = kos_dynnode_alloc();
   if (! ns_node) {
@@ -773,7 +779,7 @@ KosDynNs *kos_dynns_new(KosDynNode *parent, PyObject *saved_ns) {
 }
 
 
-KosDynNs *kos_dynns_clone(KosDynNs *ns_node) {
+static KosDynNs *kos_dynns_clone(KosDynNs *ns_node) {
   if (! ns_node)
     return NULL;
 
@@ -786,7 +792,7 @@ KosDynNs *kos_dynns_clone(KosDynNs *ns_node) {
 }
 
 
-void kos_dynns_free(KosDynNs *ns_node) {
+static void kos_dynns_free(KosDynNs *ns_node) {
   if (! ns_node)
     return;
 
@@ -880,7 +886,7 @@ KosDynYieldFrom *kos_dynyieldfrom_new(
 }
 
 
-void kos_dynyieldfrom_free(KosDynYieldFrom *node) {
+static void kos_dynyieldfrom_free(KosDynYieldFrom *node) {
   if (! node)
     return;
 
@@ -891,7 +897,7 @@ void kos_dynyieldfrom_free(KosDynYieldFrom *node) {
 }
 
 
-KosDynYieldFrom *kos_dynyieldfrom_clone(KosDynYieldFrom *node) {
+static KosDynYieldFrom *kos_dynyieldfrom_clone(KosDynYieldFrom *node) {
 
   KosDynYieldFrom *clone = kos_dynnode_alloc();
   if (! clone)
@@ -1442,6 +1448,11 @@ void kos_dynnode_free(KosDynNode *node) {
     case KOS_DYN_CC_RAISE:
       kos_dyn_cc_raise_free((KosDynCCRaise *) node);
       break;
+    default:
+      PyErr_Format(PyExc_RuntimeError,
+                   "kos_dynnode_free: unknown node kind %u",
+                   (unsigned) KosDynNode_KIND(node));
+      break;
   }
 }
 
@@ -1912,11 +1923,12 @@ KosDynNode *kos_dyn_clone(KosDynNode *node) {
       PyErr_SetString(PyExc_RuntimeError,
                       "cannot clone CC_RAISE sentinel node");
       return NULL;
+    default:
+      PyErr_Format(PyExc_RuntimeError,
+                   "kos_dyn_clone: unknown node kind %u",
+                   (unsigned) KosDynNode_KIND(node));
+      return NULL;
   }
-
-  PyErr_Format(PyExc_RuntimeError, "cannot clone dynnode kind %u",
-               (unsigned) KosDynNode_KIND(node));
-  return NULL;
 }
 
 
@@ -3994,6 +4006,11 @@ int kos_dynnode_traverse(KosDynNode *node, visitproc visit, void *arg) {
     case KOS_DYN_WITH:
     case KOS_DYN_DYN_WITH:
       return dynnode_traverse_with(node, visit, arg);
+    default:
+      PyErr_Format(PyExc_RuntimeError,
+                   "kos_dynnode_traverse: unknown node kind %u",
+                   (unsigned) KosDynNode_KIND(node));
+      return -1;
   }
 
   return 0;
