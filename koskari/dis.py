@@ -22,9 +22,11 @@ indices).
 
 :author: Christopher O'Brien <obriencj@preoccupied.net>
 :license: GNU General Public License v3
+:ai-assistant: claude-4.6-sonnet-high via Cursor
 """
 
 from koskari.lib import Code, OpCode, OpStyle
+from koskari.types import NamespaceSpec
 
 
 def _opcode_maps():
@@ -42,6 +44,8 @@ def _opcode_maps():
 
 
 _OPCODE_NAMES, _OPCODE_STYLES = _opcode_maps()
+
+_PUSH_NS_OPS = frozenset(('KOS_OP_PUSH_NS', 'KOS_OP_PUSH_CLASS'))
 
 
 def _get_code(x):
@@ -69,10 +73,92 @@ def _format_constant(val):
     return r
 
 
-def _format_arg(code, op_style, arg, cpool, local_names, closure_names):
+def _format_nspec_inline(cpool_idx, nspec):
+    """
+    Short inline label for a NamespaceSpec used in instruction annotations.
+
+    Returns a string of the form "ns#K 'name'" where K is the constant
+    pool index and name is the namespace name.
+
+    :param cpool_idx: integer index into the constant pool
+    :param nspec: NamespaceSpec instance
+    :return: inline annotation string
+    """
+
+    ns_name = nspec.name
+    name_repr = repr(ns_name) if ns_name is not None else 'None'
+    return 'ns#%d %s' % (cpool_idx, name_repr)
+
+
+def _write_nspec_cpool_entry(file, cpool_idx, nspec):
+    """
+    Write an expanded constant pool entry for a NamespaceSpec.
+
+    Emits the ns# label line followed by indented locals and closures
+    lines, so the reader can see all names available in the namespace.
+
+    :param file: file-like object to write to
+    :param cpool_idx: integer index into the constant pool
+    :param nspec: NamespaceSpec instance
+    """
+
+    ns_name = nspec.name
+    name_repr = repr(ns_name) if ns_name is not None else 'None'
+    local_syms = nspec.local_syms or ()
+    closure_syms = nspec.closure_syms or ()
+    file.write('  ns#%d: NamespaceSpec %s\n' % (cpool_idx, name_repr))
+    file.write('          locals:   %r\n' % (tuple(local_syms),))
+    file.write('          closures: %r\n' % (tuple(closure_syms),))
+
+
+def _build_ns_const_map(code):
+    """
+    Pre-scan instructions and return a mapping from PUSH_NS / PUSH_CLASS
+    instruction index to the constant pool index of the NamespaceSpec
+    loaded immediately before it.
+
+    The compiler always emits CONST <nspec> immediately before
+    PUSH_NS or PUSH_CLASS. Intervening non-CONST instructions reset
+    tracking so only the direct predecessor is used.
+
+    :param code: Code instance
+    :return: dict mapping instruction index -> constant pool index
+    """
+
+    result = {}
+    cpool = code.constants_pool
+    last_nspec_cpool_idx = None
+    for i in range(code.length()):
+        op_int, arg = code.oparg(i)
+        op_name = _OPCODE_NAMES.get(op_int)
+        if op_name == 'KOS_OP_CONST':
+            if 0 <= arg < len(cpool) and isinstance(cpool[arg], NamespaceSpec):
+                last_nspec_cpool_idx = arg
+            else:
+                last_nspec_cpool_idx = None
+        elif op_name in _PUSH_NS_OPS:
+            if last_nspec_cpool_idx is not None:
+                result[i] = last_nspec_cpool_idx
+            last_nspec_cpool_idx = None
+        else:
+            last_nspec_cpool_idx = None
+    return result
+
+
+def _format_arg(
+        code,
+        op_style,
+        arg,
+        cpool,
+        local_names,
+        closure_names,
+        ns_label=None):
     """
     Format an opcode argument for display. Uses constant pool, local
     names, and closure names when the argument is an index into them.
+
+    For PUSH_NS and PUSH_CLASS, the optional ns_label string is appended
+    to annotate which namespace is being pushed.
 
     :param code: Koskari Code
     :param op_style: OpStyle value (from OpCode.style or OpStyle enum)
@@ -80,12 +166,15 @@ def _format_arg(code, op_style, arg, cpool, local_names, closure_names):
     :param cpool: code.constants_pool (sequence)
     :param local_names: sequence of local sym names from nspec
     :param closure_names: sequence of closure sym names from nspec
+    :param ns_label: optional inline namespace label for PUSH_NS / PUSH_CLASS
     :return: string description of the argument
     """
 
     if op_style == OpStyle.KOSTYLE_CONST:
         if 0 <= arg < len(cpool):
             val = cpool[arg]
+            if isinstance(val, NamespaceSpec):
+                return '%d (%s)' % (arg, _format_nspec_inline(arg, val))
             return '%d (%s)' % (arg, _format_constant(val))
         return str(arg)
 
@@ -96,11 +185,10 @@ def _format_arg(code, op_style, arg, cpool, local_names, closure_names):
         return str(arg)
 
     if op_style == OpStyle.KOSTYLE_FASTVAR:
-        # Fast index: locals then closures in nspec order
         n_local = len(local_names) if local_names else 0
         if arg < n_local:
             name = local_names[arg] if local_names else ('local[%d]' % arg)
-            return '%d (%s)' % (arg, repr(name))
+            return '%d (local %s)' % (arg, repr(name))
         idx = arg - n_local
         if closure_names and 0 <= idx < len(closure_names):
             return '%d (closure %s)' % (arg, repr(closure_names[idx]))
@@ -109,7 +197,10 @@ def _format_arg(code, op_style, arg, cpool, local_names, closure_names):
     if op_style == OpStyle.KOSTYLE_LABEL:
         return '%d (-> %d)' % (arg, arg)
 
-    if op_style in (OpStyle.KOSTYLE_COUNT, OpStyle.KOSTYLE_PAIR_COUNT, OpStyle.KOSTYLE_STAR):
+    if op_style in (OpStyle.KOSTYLE_COUNT, OpStyle.KOSTYLE_PAIR_COUNT,
+                    OpStyle.KOSTYLE_STAR):
+        if ns_label is not None:
+            return '%d (%s)' % (arg, ns_label)
         return str(arg)
 
     return str(arg)
@@ -133,9 +224,12 @@ def dis(x, file=None):
     """
     Print a disassembly of a Koskari Code object.
 
-    Output includes constant pool, vars (local_syms from namespace_spec),
-    closure refs (closure_syms from namespace_spec), and indexed
-    instructions with decoded arguments.
+    Output includes constant pool (with NamespaceSpec entries expanded to
+    show their locals and closures), vars (local_syms from namespace_spec),
+    closure refs (closure_syms from namespace_spec), and indexed instructions
+    with decoded arguments. FAST_* instructions show whether the slot is a
+    local or closure. PUSH_NS and PUSH_CLASS instructions are annotated with
+    the namespace ID (ns#K) and name of the NamespaceSpec they push.
 
     :param x: Code instance
     :param file: file-like object to print to (default: stdout)
@@ -150,6 +244,7 @@ def dis(x, file=None):
 
     cpool = code.constants_pool
     local_syms, closure_syms = _local_and_closure_syms(code)
+    ns_const_map = _build_ns_const_map(code)
 
     # Header (Code has .name, .filename, .yields from the C extension)
     name = code.name
@@ -163,7 +258,10 @@ def dis(x, file=None):
     # Constant pool
     file.write('Constant pool (%d):\n' % len(cpool))
     for i, val in enumerate(cpool):
-        file.write('  %3d: %s\n' % (i, _format_constant(val)))
+        if isinstance(val, NamespaceSpec):
+            _write_nspec_cpool_entry(file, i, val)
+        else:
+            file.write('  %3d: %s\n' % (i, _format_constant(val)))
     file.write('\n')
 
     # Vars (local_syms)
@@ -191,8 +289,12 @@ def dis(x, file=None):
         op_int, arg = code.oparg(i)
         op_name = _OPCODE_NAMES.get(op_int, 'OP_%d' % op_int)
         op_style = _OPCODE_STYLES.get(op_int, OpStyle.KOSTYLE_NOARG)
+        ns_label = None
+        if i in ns_const_map:
+            ns_label = _format_nspec_inline(ns_const_map[i], cpool[ns_const_map[i]])
         arg_str = _format_arg(
-            code, op_style, arg, cpool, local_syms, closure_syms
+            code, op_style, arg, cpool, local_syms, closure_syms,
+            ns_label=ns_label,
         )
         pos_str = ''
         try:
@@ -211,13 +313,18 @@ def _get_instruction_lines(code):
 
     cpool = code.constants_pool
     local_syms, closure_syms = _local_and_closure_syms(code)
+    ns_const_map = _build_ns_const_map(code)
     n = code.length()
     for i in range(n):
         op_int, arg = code.oparg(i)
         op_name = _OPCODE_NAMES.get(op_int, 'OP_%d' % op_int)
         op_style = _OPCODE_STYLES.get(op_int, OpStyle.KOSTYLE_NOARG)
+        ns_label = None
+        if i in ns_const_map:
+            ns_label = _format_nspec_inline(ns_const_map[i], cpool[ns_const_map[i]])
         arg_str = _format_arg(
-            code, op_style, arg, cpool, local_syms, closure_syms
+            code, op_style, arg, cpool, local_syms, closure_syms,
+            ns_label=ns_label,
         )
         yield i, op_name, arg_str
 
