@@ -132,16 +132,23 @@ Holds:
 
 ### `__call__` Semantics
 
+Liveness is determined by `token->live_depth` (incremented on koskari_eval
+entry, decremented on exit). If the owning context is no longer in the call
+chain, `live_depth == 0`.
+
 If `token->live_depth == 0`:
   raise KoskariContinuationDead
 
 Else:
   raise KoskariContinuationApply(target=token, cap=cap, args=...)
 
-This is a BaseException subclass.
+**KoskariContinuationDead** is a normal Exception (subclass of RuntimeError),
+not a BaseException. It can be caught by `except Exception` or
+`except RuntimeError` and represents a runtime error when the owning context
+is no longer alive.
 
-It forces unwinding of CPython frames until reaching the owning koskari_eval
-loop.
+**KoskariContinuationApply** is a BaseException subclass. It forces unwinding
+of CPython frames until reaching the owning koskari_eval loop.
 
 ---
 

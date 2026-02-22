@@ -184,6 +184,27 @@ static PyObject *continuation_call(
     return NULL;
   }
 
+  {
+    PyObject *token_ref = KosContinuation_TOKEN_REF(KosPyContinuation_CAPTURED(cont));
+    int target_dead = 0;
+    if (! token_ref) {
+      target_dead = 1;
+    } else if (PyObject_TypeCheck(token_ref, &KosEvaluatorTokenType)) {
+      KosEvaluatorToken *token = (KosEvaluatorToken *) token_ref;
+      if (token->live_depth == 0)
+        target_dead = 1;
+    }
+    if (target_dead) {
+      if (KoskariContinuationDead)
+        PyErr_SetString(KoskariContinuationDead,
+                        "continuation target context is no longer alive");
+      else
+        PyErr_SetString(PyExc_RuntimeError,
+                        "continuation target context is no longer alive");
+      return NULL;
+    }
+  }
+
   PyObject *resume_val = Py_None;
   if (args && PyTuple_GET_SIZE(args) > 0)
     resume_val = PyTuple_GET_ITEM(args, 0);

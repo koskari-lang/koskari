@@ -1539,6 +1539,29 @@ static int call_call_continuation(
     return -1;
   }
 
+  /* Undelimited: check liveness before apply or raise. */
+  if (KosContinuation_PROMPT_ID(k) == KOS_PROMPT_ID_UNDELIMITED) {
+    PyObject *token_ref = KosContinuation_TOKEN_REF(k);
+    int target_dead = 0;
+    if (! token_ref) {
+      target_dead = 1;
+    } else if (PyObject_TypeCheck(token_ref, &KosEvaluatorTokenType)) {
+      KosEvaluatorToken *token = (KosEvaluatorToken *) token_ref;
+      if (token->live_depth == 0)
+        target_dead = 1;
+    }
+    if (target_dead) {
+      if (KoskariContinuationDead)
+        PyErr_SetString(KoskariContinuationDead,
+                        "continuation target context is no longer alive");
+      else
+        PyErr_SetString(PyExc_RuntimeError,
+                        "continuation target context is no longer alive");
+      Py_DECREF(resume_val);
+      return -1;
+    }
+  }
+
   /* Delimited: prompt need not be in chain; push model grafts onto current
    * chain and returns to call site on POP_PROMPT. */
 
@@ -2728,18 +2751,20 @@ koskari_eval_cleanup:
 /**
    Create a Koskari exception type and add it to the module. On success,
    the module owns the reference (PyModule_AddObject steals).
+   base: parent exception type (e.g. PyExc_BaseException or PyExc_RuntimeError)
 */
 static int register_koskari_exception(
     PyObject *mod,
     const char *full_name,
     const char *attr_name,
+    PyObject *base,
     PyObject **out_exc) {
 
-  PyObject *base = PyTuple_Pack(1, PyExc_BaseException);
-  if (! base)
+  PyObject *bases = PyTuple_Pack(1, base);
+  if (! bases)
     return -1;
-  *out_exc = PyErr_NewException(full_name, base, NULL);
-  Py_DECREF(base);
+  *out_exc = PyErr_NewException(full_name, bases, NULL);
+  Py_DECREF(bases);
   if (! *out_exc)
     return -1;
   return PyModule_AddObject(mod, attr_name, *out_exc);
@@ -2775,20 +2800,23 @@ int koskari_eval_init(PyObject *mod) {
     return -1;
   }
 
-  /* Initialize exception types (subclass BaseException) */
+  /* Initialize exception types */
   if (register_koskari_exception(mod,
                                  "koskari.lib.KoskariContinuationDead",
                                  "KoskariContinuationDead",
+                                 (PyObject *) PyExc_RuntimeError,
                                  &KoskariContinuationDead) < 0)
     return -1;
   if (register_koskari_exception(mod,
                                  "koskari.lib.KoskariContinuationApply",
                                  "KoskariContinuationApply",
+                                 (PyObject *) PyExc_BaseException,
                                  &KoskariContinuationApply) < 0)
     return -1;
   if (register_koskari_exception(mod,
                                  "koskari.lib.KoskariContinuationError",
                                  "KoskariContinuationError",
+                                 (PyObject *) PyExc_BaseException,
                                  &KoskariContinuationError) < 0)
     return -1;
 

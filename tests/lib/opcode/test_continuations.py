@@ -368,6 +368,40 @@ class TestUndelimitedContinuations(CevalTest):
         self.assertTrue(tracker.exited, "dyn-with __exit__ must be called during middle-context unwind")
         self.assertIsNone(tracker.exc_info[0], "dyn-with __exit__ must see no exception (hidden during segmented transfer)")
 
+    def test_invoking_continuation_after_eval_exits_raises_koskari_continuation_dead(self):
+        """
+        Capture a continuation, fully exit the koskari eval, then invoke it
+        from Python. The owning context is no longer alive; expect
+        KoskariContinuationDead (a normal Exception).
+        """
+        import koskari.lib as lib
+        code = [
+            ["PUSH_CC", 0],
+            ["CAPTURE_CC", 0],
+            ["POP_CC", 0],
+            ["RETURN", 1],
+        ]
+        code_obj, ns = build_expr(code)
+        expr = make_callable(code_obj, ns)
+        cont = expr().run()
+        self.assertIsNotNone(cont)
+        with self.assertRaises(lib.KoskariContinuationDead) as ctx:
+            cont(42)
+        self.assertIn("no longer alive", str(ctx.exception))
+        try:
+            raise ctx.exception
+        except Exception:
+            pass
+
+    def test_koskari_continuation_dead_is_normal_exception(self):
+        """
+        KoskariContinuationDead subclasses RuntimeError so it is a normal
+        catchable exception, not a BaseException.
+        """
+        import koskari.lib as lib
+        self.assertTrue(issubclass(lib.KoskariContinuationDead, RuntimeError))
+        self.assertTrue(issubclass(lib.KoskariContinuationDead, Exception))
+
 
 class TestEvaluatorToken(CevalTest):
     """
