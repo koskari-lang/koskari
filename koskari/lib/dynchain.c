@@ -3255,6 +3255,9 @@ static int xfer_step_extent_action(KosContext *ctx, KosTransferAction *action) {
 }
 
 
+#define KOS_STACK_BUF_SIZE 8
+
+
 /**
    Execute an INSTALL step: replace the current dynamic chain with a fresh
    clone of the plan's target segment, restore the frame's stack and PC
@@ -3328,9 +3331,9 @@ static int xfer_step_install(KosContext *ctx, KosTransferAction *action) {
 
     /* Second pass: collect nodes into C array (stack buffer for common case) */
     if (wind_count > 0) {
-      KosDynNode *stack_buf[16];
+      KosDynNode *stack_buf[KOS_STACK_BUF_SIZE];
       KosDynNode **wind_nodes;
-      if (wind_count <= 16) {
+      if (wind_count <= KOS_STACK_BUF_SIZE) {
         wind_nodes = stack_buf;
       } else {
         wind_nodes = PyMem_Malloc(wind_count * sizeof(KosDynNode *));
@@ -3436,9 +3439,9 @@ static int xfer_step_push(KosContext *ctx, KosTransferAction *action) {
 
     /* Second pass: collect nodes into C array (stack buffer for common case) */
     if (wind_count > 0) {
-      KosDynNode *stack_buf[16];
+      KosDynNode *stack_buf[KOS_STACK_BUF_SIZE];
       KosDynNode **wind_nodes;
-      if (wind_count <= 16) {
+      if (wind_count <= KOS_STACK_BUF_SIZE) {
         wind_nodes = stack_buf;
       } else {
         wind_nodes = PyMem_Malloc(wind_count * sizeof(KosDynNode *));
