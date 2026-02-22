@@ -62,12 +62,15 @@ tests/native/
 ├── test_harness.h         # Common macros and unit declarations
 ├── test_harness.c         # Main entry point
 ├── test_atom.c            # Tests for symbol/keyword types
-├── test_pair.c            # Tests for pair/nil types
-├── test_namespace.c       # Tests for namespace types
 ├── test_bytecode.c        # Tests for bytecode/Code type
+├── test_dynchain.c        # Tests for DynNode chain types (frame, prompt, wind, region)
+├── test_eval.c            # Tests for koskari_eval (opcodes, suspend/resume, exception flow)
 ├── test_formals.c         # Tests for formals types
-├── test_values.c          # Tests for values type
-└── test_stack.c           # Tests for stack types
+├── test_namespace.c       # Tests for namespace types
+├── test_pair.c            # Tests for pair/nil types
+├── test_paramref.c        # Tests for dynamic parameter binding (paramref/dynparam)
+├── test_stack.c           # Tests for stack types
+└── test_values.c          # Tests for values type
 ```
 
 ## Writing Tests
@@ -117,6 +120,31 @@ int run_mytype_tests(void) {
     return 0;
 }
 ```
+
+## Evaluator Phase Tests (test_eval.c)
+
+`test_eval.c` exercises `koskari_eval` directly at the C level using manually
+constructed bytecode.  Tests are organized into two groups:
+
+**Opcode correctness / error paths** — stack underrun, wrong-type operand,
+missing TRY/FINALLY/CC push, domain invariants, delimited continuation capture
+and invocation.
+
+**Phase-boundary tests** — cover the six internal phase helpers introduced in
+the evaluator refactor:
+
+| Test | Phase exercised |
+|------|----------------|
+| `test_eval_yield_empty_resume` | phase 1 (`eval_phase_entry` — raise_yield → MODE_NORMAL) |
+| `test_eval_yield_send_resume` | phase 1 (`eval_phase_entry` — revive_yield with send value) |
+| `test_eval_yield_throw_resume` | phase 1 (`eval_phase_entry` — revive_yield with throw, no handler) |
+| `test_eval_yield_throw_caught` | phase 1 (`eval_phase_entry` — KOS_MODE_EXCEPTION, local handler found) |
+| `test_eval_opcode_error_caught_by_try` | phase 6 (`eval_phase_post_opcode` — op_res < 0, PyErr, local handler) |
+
+The helper `make_simple_ctx(instr, &code_obj, &ctx)` constructs a minimal
+nspec + code + frame + context from a Python list of instruction tuples.
+Note that `kos_dynframe_new` **steals** the `ns` reference; the helper
+accounts for this — do not `Py_DECREF(ns)` after passing it.
 
 ## Adding Tests for a New Type
 
