@@ -134,7 +134,7 @@ def special_delq(compiler, source, tc=False):
 def special_define(compiler, source, tc=False):
     """
     Compile (define X), (define X EXPR), or (define X [Y Z] BODY...).
-    Declaration-only; declare-and-bind; or function shorthand equivalent
+    Declaration-only; declare-and-store; or function shorthand equivalent
     to (define X (lambda X [Y Z] BODY...)).
     """
 

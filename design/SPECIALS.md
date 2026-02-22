@@ -556,6 +556,47 @@ pushes CONST None.
 ```
 
 
+## compile/define
+
+**Symbol:** `compile/define`
+
+**Syntax:**
+- Declaration only: `(compile/define X)`
+- Declare and store: `(compile/define X EXPR)`
+- Function shorthand: `(compile/define X [Y Z] BODY ...)`
+
+**Use-case:** Variable and function definition for module-level loading.
+Declaration-only leaves the ref in scope but empty (reading before assignment
+raises). Declare-and-store evaluates EXPR and stores the result in the slot
+(equivalent to compile/bindq). Function shorthand expands to
+`(define X (lambda X [Y Z] BODY ...))`, storing a named function in the slot.
+
+**Behaviour:** Declares the variable name. For declaration-only: emits CONST
+None. For declare-and-store: compiles EXPR, emits VAR_BIND to store the value,
+then CONST None. For function shorthand (second element is a pair and a body
+follows): builds `(compile/lambda X FORMALS BODY...)` and compiles it as the
+value expression, then emits VAR_BIND to store it.
+
+**Examples:**
+
+```scheme
+;; Declaration only; assign later with compile/setq
+(compile/define x)
+(compile/setq x 42)
+
+;; Declare and store
+(compile/define y 99)
+
+;; Function shorthand
+(compile/define double [x] (* x 2))
+(compile/define fact [n]
+  (compile/cond [(eq n 0) 1]
+                [else: (* n (fact (sub n 1)))]))
+```
+
+**Tests:** `tests/compile/specials/test_define.py`
+
+
 ## compile/delq
 
 **Symbol:** `compile/delq`
