@@ -2,7 +2,7 @@
 
 Special forms are compile-time constructs that have no runtime representation. They compile directly to bytecode.
 
-**Implemented forms:** For the subset currently implemented in the koskari compiler (compile/bytecode, compile/begin, compile/call, compile/with, lambda, etc.), see [SPECIALS.md](../SPECIALS.md).
+**Implemented forms:** For the subset currently implemented in the koskari compiler (compile/bytecode, compile/begin, compile/call, compile/with, compile/call/cc, compile/let/cc, compile/capture/cc, compile/reset, compile/shift, lambda, etc.), see [SPECIALS.md](../SPECIALS.md).
 
 ## From python-sibilant
 
@@ -134,6 +134,5 @@ Special forms are compile-time constructs that have no runtime representation. T
 
 ### To Design
 
-- `call/cc` support (bounded and unbounded continuations)
 - `let*` (sequential let binding)
 - Quasiquote implementation (needs review for ceval compatibility)

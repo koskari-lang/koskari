@@ -814,17 +814,171 @@ push result. count 0 pushes nil.
 ```
 
 
+## compile/call/cc
+
+**Symbol:** `compile/call/cc`
+
+**Syntax:** `(compile/call/cc FN)`
+
+**Use-case:** Undelimited call-with-current-continuation (Scheme-like). Captures
+the current continuation at the call site, wraps it in a `Continuation` object,
+and immediately calls `FN` with that continuation as its sole argument. When the
+continuation is invoked with a value, control returns to the point just after the
+`compile/call/cc` form with that value. If `FN` returns normally without invoking
+the continuation, the return value of `FN` becomes the value of the form.
+
+**Behaviour:** Emits `PUSH_CC` (opens a CC block), compiles `FN`, emits
+`CAPTURE_CC` (captures the continuation and pushes it), emits `CALL 1` (calls
+`FN` with the continuation), then `POP_CC` (closes the CC block on normal
+return). The continuation may be invoked from within the same eval context
+(direct apply) or from Python code in a frame above the owning eval loop
+(upwards apply via `KoskariContinuationApply`). Cross-context invocation from
+a different eval context triggers the segmented-transfer path.
+
+**Examples:**
+
+```scheme
+;; Capture and immediately invoke: returns 42
+(compile/call/cc
+  (compile/lambda [k]
+    (compile/call k 42)))
+
+;; Escape continuation: short-circuit a computation
+(compile/call/cc
+  (compile/lambda [escape]
+    (compile/begin
+      (compile/call do-setup)
+      (compile/call escape "early-exit")
+      (compile/call do-cleanup))))
+```
+
+**Tests:** `tests/compile/specials/test_call_cc.py`
+
+
+## compile/let/cc
+
+**Symbol:** `compile/let/cc`
+
+**Syntax:** `(compile/let/cc K BODY ...)`
+
+**Use-case:** Koskari-specific undelimited continuation capture. Pushes a new
+child namespace, captures the current continuation and binds it to the name `K`
+inside that namespace, then evaluates the body forms sequentially. If the
+continuation bound to `K` is invoked later, control resumes just after the
+`compile/let/cc` form with the supplied value. This is the idiomatic way to
+name a continuation for later use without wrapping the body in a lambda.
+
+**Behaviour:** Emits `PUSH_CC`, then opens a `child_namespace` that declares
+`K` as a local. Inside the namespace: `CAPTURE_CC` captures the continuation
+and pushes it; `VAR_STORE K` binds it to the declared name; the body is
+compiled with `helper_begin`. Finally `POP_CC` closes the CC block outside the
+namespace. `K` is not visible after the `compile/let/cc` form.
+
+**Examples:**
+
+```scheme
+;; Bind escape continuation k, use it inside the body
+(compile/let/cc k
+  (compile/begin
+    (compile/call do-step-one)
+    (compile/call k "done")
+    (compile/call never-reached)))
+```
+
+**Tests:** `tests/compile/specials/test_call_cc.py`
+
+
+## compile/capture/cc
+
+**Symbol:** `compile/capture/cc`
+
+**Syntax:** `(compile/capture/cc K BODY ...)`
+
+**Use-case:** Lowest-level undelimited continuation capture. Like
+`compile/let/cc` but binds `K` in the **current** (ambient) namespace rather
+than a fresh child namespace, so `K` remains accessible after the form's CC
+block closes. Useful when the continuation needs to outlive the block or be
+visible in a scope that already contains `K`.
+
+**Behaviour:** Emits `PUSH_CC`, then `CAPTURE_CC` (captures and pushes the
+continuation), `VAR_STORE K` (stores into the current namespace's slot for
+`K`), the body via `helper_begin`, and finally `POP_CC`.
+
+**Examples:**
+
+```scheme
+;; Capture into ambient namespace; k accessible later
+(compile/capture/cc k
+  (compile/begin
+    (compile/call do-work k)
+    (compile/call k 0)))
+```
+
+**Tests:** `tests/compile/specials/test_call_cc.py`
+
+
+## compile/reset
+
+**Symbol:** `compile/reset`
+
+**Syntax:** `(compile/reset BODY ...)`
+
+**Use-case:** Establish a prompt delimiter for delimited continuations
+(`compile/shift`). The body is evaluated with a prompt on the dynamic chain;
+`compile/shift` inside the body can capture the continuation up to (but not
+including) this prompt.
+
+**Behaviour:** Emits `PUSH_PROMPT 0`, compiles the body with `helper_begin`,
+emits `POP_PROMPT 0`.
+
+**Examples:**
+
+```scheme
+;; (reset (+ 1 (shift k (k 5)))) => 6
+(compile/reset
+  (compile/call +
+    1
+    (compile/shift k (compile/call k 5))))
+```
+
+
+## compile/shift
+
+**Symbol:** `compile/shift`
+
+**Syntax:** `(compile/shift K BODY ...)`
+
+**Use-case:** Capture the current delimited continuation up to the nearest
+`compile/reset` prompt and bind it to `K`, then run `BODY`. `K` is a
+`DelimitedContinuation` that cannot be called from Python (only from within a
+Koskari eval loop via `INVOKE_K` or `INVOKE_K_VAR`).
+
+**Behaviour:** Emits `PUSH_SHIFT 0`, declares `K` as a local variable, emits
+`VAR_STORE K` (binds the captured delimited continuation), compiles body with
+`helper_begin`, emits `POP_SHIFT 0`.
+
+**Examples:**
+
+```scheme
+;; Capture k; invoke immediately
+(compile/reset
+  (compile/shift k
+    (compile/call k "value")))
+```
+
+
 ## Adding New Specials
 
 When implementing a new special form:
 
-1. Implement the handler in `koskari/compile/specials.py` and register it with
-   the `@special(symbol("name"))` decorator.
+1. Add a handler function in the appropriate module under
+   `koskari/compile/specials/` and decorate it with `@special(symbol("name"))`.
+   The specials package (`koskari/compile/specials/__init__.py`) imports and
+   re-exports all handlers.
 2. If the form needs parameter or formals parsing, use `gather_parameters` or
    `gather_formals` from `koskari/compile/helpers.py`; add new helpers there if
    needed.
-3. Register the special in the module namespace used by the compiler (e.g. in
-   tests, store each entry in `SPECIALS` under the symbol used at the call site;
-   the compiler looks up the head symbol in the module).
+3. Add the handler to the import line and `__all__` in
+   `koskari/compile/specials/__init__.py`.
 4. Add a section to this document: symbol, syntax, use-case, behaviour, and at
    least one simple example.

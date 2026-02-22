@@ -124,22 +124,45 @@ loop.
 
 ## 5. koskari_eval Exception Handling
 
-The koskari_eval loop must wrap its execution in a catch for:
+The koskari_eval loop intercepts `KoskariContinuationApply` in
+`process_raise` (via `handle_continuation_apply`) whenever `PyErr` is set
+after an opcode completes.
 
-```
-KoskariContinuationApply
-```
+### Own-token path (`exc.target == current_token`)
 
-If `exc.target != current_token`:
-  re-raise
+- Extract continuation and args from the exception value
+- Clear PyErr
+- Call `kos_invoke_continuation` to install a direct-apply transfer plan
+- Resume evaluation via the transfer path
 
-Else:
+### Foreign-token path (`exc.target != current_token`)
 
-- Extract CapturedContext + args
-- Apply continuation into current live Context
-- Resume evaluation
+The current eval context cannot apply this continuation — it belongs to
+another eval loop higher up the call stack. The correct behaviour is a
+**segmented transfer**:
 
-This enables upwards-only cross-C-stack application.
+1. Fetch and clear `PyErr` (the exception is now owned locally)
+2. Insert a `KosDynCCRaise` sentinel node at the root of the dynamic chain
+   (below all existing WITH/finally/wind extents)
+3. Build a NULL-target transfer plan via `kos_build_cc_unwind_plan`; this
+   plan unwinds every extent in the chain from innermost to outermost,
+   calling WITH/finally exit handlers **with no active exception** (so they
+   see a clean `(None, None, None)` exit)
+4. When the transfer reaches the `KosDynCCRaise` sentinel at the bottom,
+   its unwind callback re-raises the original `KoskariContinuationApply`
+   exception unchanged
+5. The eval loop exits with `KOS_EV_RAISE`; `coro.c` propagates the
+   exception back through Python's awaitable chain toward the owning eval
+   loop
+
+This guarantees that:
+- All dynamic extents (WITH, dyn-with, finally) in the intermediate context
+  are properly torn down before the context exits
+- The exception passed to WITH/finally exit handlers is `(None, None, None)`,
+  not `KoskariContinuationApply` — the intermediate context is not "handling"
+  the continuation, merely passing it through
+- The original `KoskariContinuationApply` object is re-raised unmodified so
+  the owning eval loop can match it by token identity
 
 ---
 

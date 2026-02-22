@@ -41,11 +41,17 @@ Wind/unwind hooks are **bytecode blocks**, not Python callables:
 
 **Full continuations** (call/cc):
 - May cross the CPython boundary only in the *upwards* direction
-- Crossing is implemented by raising a specialized `BaseException`, forcing a
-  single return through intervening Python/C frames until the owning Koskari
-  evaluator loop is reached
+- Crossing is implemented by raising a specialized `BaseException`
+  (`KoskariContinuationApply`), forcing a single return through intervening
+  Python/C frames until the owning Koskari evaluator loop is reached
 - Python and C frames are not embedded in the Koskari dynamic chain; only
   Koskari frames are re-enterable
+- When the exception passes through an *intermediate* Koskari eval loop (one
+  whose token does not match the continuation's), that context performs a
+  **segmented transfer**: it clears the exception, unwinds all its own
+  WITH/finally extents cleanly (exit handlers see `(None, None, None)`), then
+  re-raises the original exception unchanged via a `KosDynCCRaise` sentinel at
+  the root of its chain (see [evaluator-token-continuation.md §5](evaluator-token-continuation.md))
 
 ## Implementation
 
@@ -151,6 +157,25 @@ int kos_invoke_continuation(KosContext *ctx, KosContinuation *k,
    ```c
    int kos_run_transfer_step(KosContext *ctx);
    ```
+
+### KosDynCCRaise Sentinel
+
+`KosDynCCRaise` (kind `KOS_DYN_CC_RAISE = 12`) is a dynamic chain node used
+exclusively on the foreign-token transfer path. It holds a reference to a
+`KoskariContinuationApply` exception value and carries the
+`KOS_DYN_CAP_NEEDS_UNWIND_ACTION` capability.
+
+`kos_build_cc_unwind_plan` inserts it at the **root** of the chain (below all
+existing nodes) before building a NULL-target transfer plan. As the plan
+unwinds from innermost to outermost, normal WITH/dyn-with/finally extents run
+their exit handlers first (with no active exception). When the sentinel is
+reached last, its `cc_raise_unwind` callback calls `PyErr_SetObject` with the
+stored exception and returns `-1`, causing the transfer to exit with
+`KOS_EV_RAISE` and propagate the exception upward.
+
+The sentinel is never cloned (cloning raises `RuntimeError`) and is freed by
+`kos_dynnode_free` via the standard freelist.
+
 
 ### Transfer Plan
 
