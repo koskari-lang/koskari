@@ -26,12 +26,12 @@ separate frame chain and handler chain.
 
 **KosDynNode** — Single tagged-union struct for all chain node kinds. Base fields
 `parent`, `kind`, `flags`, `caps` are followed by a union `u` with variants: `frame`,
-`prompt`, `cc`, `wind`, `region`, `ns`, `pycall`, `with_`, `shift`, `param`, `yieldfrom`.
+`prompt`, `cc`, `wind`, `region`, `ns`, `with_`, `shift`, `param`, `yieldfrom`.
 Typedefs (KosDynFrame, KosDynPrompt, KosDynWind, KosDynRegion, KosDynNs, KosDynCC,
 KosDynWith, KosDynShift, KosDynParam, KosDynYieldFrom) all refer to this same struct.
 **All field access must use the macros** defined in dynchain.h; do not touch union
 members or base fields directly. Node kinds: KOS_DYN_FRAME, KOS_DYN_PROMPT,
-KOS_DYN_SHIFT, KOS_DYN_WIND, KOS_DYN_REGION, KOS_DYN_NS, KOS_DYN_CC, KOS_DYN_PYCALL,
+KOS_DYN_SHIFT, KOS_DYN_WIND, KOS_DYN_REGION, KOS_DYN_NS, KOS_DYN_CC,
 KOS_DYN_YIELD_FROM, KOS_DYN_PARAM, KOS_DYN_WITH, KOS_DYN_DYN_WITH. Behavior is driven
 by capability bits (`KOS_DYN_CAP_*`) and the per-kind type-ops table (`kos_dyn_type_ops[]`);
 see [dynamic-node-unified-api.md](dynamic-node-unified-api.md) for the full handler model.
@@ -46,7 +46,6 @@ see [dynamic-node-unified-api.md](dynamic-node-unified-api.md) for the full hand
   Macros: KosDynRegion_STYLE, KosDynRegion_BREAK_PC, KosDynRegion_CONTINUE_PC, KosDynRegion_ENABLED, etc.
 - **Ns** (u.ns): saved_ns. Macro: KosDynNs_SAVED_NS.
 - **CC** (u.cc): resume_pc. Macro: KosDynCC_RESUME_PC.
-- **Pycall** (u.pycall): no extra fields; marks Python/C boundary.
 
 All nodes are allocated from a single-size pool in dynchain.c (one freelist for
 all kinds). KosContinuation and KosContext have separate freelists/caches (see
@@ -216,17 +215,17 @@ struct KosHookRunner {
 
 ## Python-Facing Wrapper Types
 
-**KosPyContinuation** (eval.c):
-- Wraps `KosContinuation`
-- Callable: returns `KosCoroutine` that resumes with the passed value
-- Multi-shot: clones captured state on each invocation
+**KosPyContinuation** (cont.c):
+- Wraps undelimited `KosContinuation` (call/cc)
+- Callable from Python: does not return; raises `KoskariContinuationApply` to perform upwards transfer via exception
+- Multi-shot: clones captured state on each apply
 - GC-tracked: traverses captured chain
 
 **KosCoroutine** (func.c):
 - Wraps `KosContext` for Python coroutine protocol
 - Implements `__await__`, `send`, `throw`, `close`
 - State machine: NEW → RUNNING → WAITING_PY → DONE
-- Created by Expression/Function call (via `kos_run_code_as_coroutine`) or Continuation call; drive calls `koskari_eval()`
+- Created by Expression/Function call (via `kos_run_code_as_coroutine`); drive calls `koskari_eval()`. (Continuation invocation from Python raises; it does not create a KosCoroutine.)
 
 **KosPyAsyncGen** / **KosPyAsyncGenASend** (eval.c):
 - Wraps `KosContext` for async generator protocol
@@ -325,10 +324,6 @@ void kos_dyn_pop_region(KosContext *ctx, KosDynRegion *region);
 /* Find topmost enabled TRY or FINALLY region (for exception handling) */
 KosDynRegion *kos_find_region_for_raise(KosContext *ctx);
 
-/* Python boundary markers */
-KosDynNode *kos_dyn_push_pycall(KosContext *ctx);
-void kos_dyn_pop_pycall(KosContext *ctx, KosDynNode *marker);
-
 /* Async WITH exit completion */
 int kos_complete_pending_with_exit(KosContext *ctx);
 int kos_complete_pending_with_exit_semantic(KosContext *ctx);
@@ -344,7 +339,7 @@ int kos_dyn_unwind_to_frame(KosContext *ctx, KosDynFrame *frame, KosEvent *out_e
 /* Find prompt by tag */
 KosDynPrompt *kos_find_prompt(KosContext *ctx, uint32_t prompt_id);
 
-/* Validate capture (checks for Python boundaries) */
+/* Validate capture (prompt reachability in chain) */
 int kos_validate_capture(KosContext *ctx, KosDynPrompt *prompt);
 
 /* Capture continuation (shift) */
@@ -406,10 +401,7 @@ void kos_frame_free(KosFrame *frame);
 
 ### Call Operations
 
-```c
-int kos_koscall(KosContext *ctx, KosCode *code, PyObject *ns);
-int kos_tail_koscall(KosContext *ctx, KosCode *code, PyObject *ns);
-```
+Koskari-to-Koskari calls (CALL opcode) replace the current frame with the callee and continue in the same drive loop. The implementation is internal to eval.c.
 
 ### Drive Loop
 
@@ -499,8 +491,9 @@ int kos_context_traverse(KosContext *ctx, visitproc visit, void *arg);
 5. **GC safety**: Only Python-visible wrapper objects are GC-tracked.
    Internal C structs are traversed via wrapper `tp_traverse`.
 
-6. **Python boundary**: Continuation capture rejects if any `KOS_DYN_PYCALL`
-   boundary nodes exist between current position and the target prompt.
+6. **Python boundary**: The chain is per-context. Delimited capture only finds
+   prompts in the current chain. Delimited invocation from Python is blocked
+   at `DelimitedContinuation.tp_call` (always raises).
 
 7. **Hook isolation**: Wind/unwind hooks execute with isolated operand stacks
    and cannot observe or modify the enclosing frame's stack.

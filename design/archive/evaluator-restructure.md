@@ -364,9 +364,10 @@ rebuilding the action list for remaining unwind/wind hooks.
 
 ### INV-1: Python Boundary Constraint
 
-Captured continuations MUST NOT include Python/C call stack segments. If the
-dynamic chain contains a boundary marker (e.g., `KOS_DYN_PYCALL`), shift
-capture is rejected with an error.
+Captured continuations MUST NOT include Python/C call stack segments. The
+dynamic chain is scoped per evaluator context. Delimited capture only finds
+prompts in the current chain. Delimited invocation from Python is blocked at
+the type level (`DelimitedContinuation.tp_call` always raises).
 
 **Rationale**: Python call frames cannot be cloned or resumed; including them
 would create non-resumable continuations.

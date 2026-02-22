@@ -1448,7 +1448,7 @@ Check jumps: if the predicate does **not** hold, jump to `arg`. All take LABEL; 
 - **Style**: COUNT. Arg = number of positional arguments.
 - **Status**: Implemented.
 - **Stack**: Same as CALL: `[..., callable, arg_1, ..., arg_n]`. For **KosExpression** or **KosFunction**: current frame is replaced (cleared and re-initialized) with the callee's code and namespace; execution continues in the same loop. For continuations/delimited continuations or other callables: same semantics as CALL (invoke or push/await result).
-- **Execution model**: When the callable is a KosExpression or KosFunction, the VM calls `kos_tail_koscall`: the current frame's namespace is decref'd, a new frame is created with the same parent and the callee's code and a **new** namespace (filled from formals for functions, or the expression's ns for expressions); the old frame is freed and the new frame becomes the top of the dynamic chain. This keeps the frame namespace safe for continuations (no COW). For all other callable types, behavior is identical to CALL.
+- **Execution model**: When the callable is a KosExpression or KosFunction, the VM replaces the current frame: the current frame's namespace is decref'd, a new frame is created with the same parent and the callee's code and a **new** namespace (filled from formals for functions, or the expression's ns for expressions); the old frame is freed and the new frame becomes the top of the dynamic chain. This keeps the frame namespace safe for continuations (no COW). For all other callable types, behavior is identical to CALL.
 - **Invariants**: Stack has at least 1 + arg elements. KosExpression allows no arguments (arg must be 0); otherwise TypeError.
 - **Compiler form:** Emitted by the compile/call special when the call is in tail position (`tc` true).
 
@@ -1719,7 +1719,7 @@ between POP_SHIFT and POP_PROMPT.
 - **Status**: Implemented.
 - **Stack**: Captures continuation from POP_SHIFT+1 to POP_PROMPT; builds an unwind transfer plan to unwind from the current position to the matching prompt (exclusive); runs the plan; pushes the captured continuation onto the prompt's stack (which is now the active stack after PUSH_PROMPT's block push); enters the shift block. Shift body runs with k on stack. SHIFT does not push its own stack block; the PROMPT's block is the active block throughout.
 - **Pushes:** KOS_DYN_SHIFT (simple marker; no stack block, no handlers).
-- **Invariants**: No PYCALL node between current position and prompt. Capture validated by kos_validate_capture. Extent KOS_EXT_SHIFT pairs with POP_SHIFT. Stack block is owned by PROMPT, not SHIFT.
+- **Invariants**: Capture validated by kos_validate_capture (prompt reachability in chain). Extent KOS_EXT_SHIFT pairs with POP_SHIFT. Stack block is owned by PROMPT, not SHIFT.
 - **Compiler form:** Pre-compile arg may be prompt id value/symbol; post-compile arg = pool index.
 
 **Example:** shift k: body. Capture k, run shift body with k on stack. Pool: 0 = prompt_id.

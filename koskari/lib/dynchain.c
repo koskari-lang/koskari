@@ -49,7 +49,6 @@ static const char *kos_dynnode_kind_names[] = {
   "PROMPT",
   "WIND",
   "REGION",
-  "PYCALL",
   "NS",
   "CC",
   "YIELD_FROM",
@@ -830,30 +829,6 @@ void kos_dyn_pop_ns(KosContext *ctx, KosDynNs *node) {
 }
 
 
-/* === KosDynPycall (boundary marker) implementation === */
-
-
-KosDynNode *kos_dynpycall_new(KosDynNode *parent) {
-
-  KosDynNode *node = kos_dynnode_alloc();
-  if (! node)
-    return NULL;
-
-  kos_dynnode_init(node, KOS_DYN_PYCALL, parent,
-                   KOS_DYN_CAP_BARRIER | KOS_DYN_CAP_BLOCKS_CAPTURE);
-  KosDynNode_FLAGS(node) |= KOS_DYNF_BOUNDARY;
-  return node;
-}
-
-
-void kos_dynpycall_free(KosDynNode *node) {
-  if (! node)
-    return;
-
-  kos_dynnode_return_to_freelist(node);
-}
-
-
 /* === KosDynYieldFrom implementation === */
 
 
@@ -1423,9 +1398,6 @@ void kos_dynnode_free(KosDynNode *node) {
     case KOS_DYN_NS:
       kos_dynns_free((KosDynNs *) node);
       break;
-    case KOS_DYN_PYCALL:
-      kos_dynpycall_free(node);
-      break;
     case KOS_DYN_CC:
       kos_dyncc_free((KosDynCC *) node);
       break;
@@ -1905,8 +1877,6 @@ KosDynNode *kos_dyn_clone(KosDynNode *node) {
       return (KosDynNode *) kos_dynregion_clone((KosDynRegion *) node);
     case KOS_DYN_NS:
       return (KosDynNode *) kos_dynns_clone((KosDynNs *) node);
-    case KOS_DYN_PYCALL:
-      return kos_dynpycall_new(NULL);
     case KOS_DYN_CC:
       return (KosDynNode *) kos_dyncc_clone((KosDynCC *) node);
     case KOS_DYN_YIELD_FROM:
@@ -1934,7 +1904,7 @@ KosDynNode *kos_dyn_clone(KosDynNode *node) {
 
 /**
    Pop the top node of the dynamic chain.  Uses unified kos_dyn_pop.
-   BARRIER nodes (PROMPT, PYCALL) return -1.  Used for unwinding
+   BARRIER nodes (PROMPT) return -1.  Used for unwinding
    (e.g. exception handling) and normal scope exit.
 */
 int kos_dyn_pop_top(KosContext *ctx, KosEvent *out_ev) {
@@ -2055,30 +2025,6 @@ KosDynRegion *kos_find_region_for_loop(KosContext *ctx) {
 }
 
 
-KosDynNode *kos_dyn_push_pycall(KosContext *ctx) {
-
-  KosDynNode *marker = kos_dynpycall_new(KosContext_DYN_TOP(ctx));
-  if (! marker)
-    return NULL;
-
-  KosContext_DYN_TOP(ctx) = marker;
-  KosContext_CHAIN_VERSION(ctx)++;
-
-  return marker;
-}
-
-
-void kos_dyn_pop_pycall(KosContext *ctx, KosDynNode *marker) {
-  if (! KosContext_DYN_TOP(ctx) || KosContext_DYN_TOP(ctx) != marker) {
-    return;
-  }
-
-  KosContext_DYN_TOP(ctx) = KosDynNode_PARENT(marker);
-  KosContext_CHAIN_VERSION(ctx)++;
-  kos_dynpycall_free(marker);
-}
-
-
 KosDynYieldFrom *kos_dyn_push_yield_from(
     KosContext *ctx,
     PyObject *delegate,
@@ -2130,11 +2076,6 @@ int kos_validate_capture(KosContext *ctx, KosDynPrompt *prompt) {
   KosDynNode *node = KosContext_DYN_TOP(ctx);
 
   while (node && node != (KosDynNode *) prompt) {
-    if (KosDynNode_HAS_CAP(node, KOS_DYN_CAP_BLOCKS_CAPTURE)) {
-      PyErr_SetString(PyExc_RuntimeError,
-                      "cannot capture continuation across Python boundary");
-      return -1;
-    }
     node = KosDynNode_PARENT(node);
   }
 
@@ -2164,11 +2105,6 @@ static int kos_validate_capture_cc(KosContext *ctx, KosDynCC *cc) {
   KosDynNode *node = KosContext_DYN_TOP(ctx);
 
   while (node && node != (KosDynNode *) cc) {
-    if (KosDynNode_HAS_CAP(node, KOS_DYN_CAP_BLOCKS_CAPTURE)) {
-      PyErr_SetString(PyExc_RuntimeError,
-                      "cannot capture continuation across Python boundary");
-      return -1;
-    }
     node = KosDynNode_PARENT(node);
   }
 
@@ -3979,8 +3915,8 @@ static int dynnode_traverse_with(KosDynNode *node, visitproc visit, void *arg) {
 /**
    GC traverse a single dynamic chain node.  Dispatches on node kind to
    visit all PyObject references reachable from the node (namespaces,
-   stack slots, region state, param bindings, etc.).  Prompt, CC, wind,
-   and pycall nodes hold no such references and are no-ops.  Used by
+   stack slots, region state, param bindings, etc.).  Prompt, CC, and
+   wind nodes hold no such references and are no-ops.  Used by
    kos_dynchain_traverse and by continuation/plan traversals.
 */
 int kos_dynnode_traverse(KosDynNode *node, visitproc visit, void *arg) {
@@ -3995,7 +3931,6 @@ int kos_dynnode_traverse(KosDynNode *node, visitproc visit, void *arg) {
     case KOS_DYN_PROMPT:
     case KOS_DYN_CC:
     case KOS_DYN_WIND:
-    case KOS_DYN_PYCALL:
     case KOS_DYN_SHIFT:
       break;
     case KOS_DYN_CC_RAISE:

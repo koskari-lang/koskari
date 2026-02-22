@@ -15,14 +15,13 @@
 
 
 /**
-   koskari/lib/cont.c
+  koskari/lib/cont.c
 
-   KosPyDelimitedContinuation and KosPyContinuation. Python wrappers
-   for captured continuations (shift and call/cc).
+  KosPyDelimitedContinuation and KosPyContinuation. Python wrappers
+  for captured continuations (shift and call/cc).
 
-   :author: Christopher O'Brien <obriencj@preoccupied.net>
-   :license: GNU General Public License v3
-   :ai-assistant: Auto via Cursor
+  :author: Christopher O'Brien <obriencj@preoccupied.net>
+  :license: GNU General Public License v3
 */
 
 
@@ -32,15 +31,7 @@
 /* === KosPyDelimitedContinuation type === */
 
 
-/**
-   KosPyDelimitedContinuation wraps a KosContinuation captured by shift.
-
-   DelimitedContinuation cannot be called from Python; application is only
-   permitted via CALL inside koskari_eval.
-*/
-
 static void delimited_continuation_dealloc(PyObject *self) {
-
   KosPyDelimitedContinuation *cont = (KosPyDelimitedContinuation *) self;
 
   kos_continuation_free_exclude(KosPyDelimitedContinuation_CAPTURED(cont), self);
@@ -106,16 +97,24 @@ PyTypeObject KosPyDelimitedContinuationType = {
   .tp_repr = delimited_continuation_repr,
   .tp_call = delimited_continuation_call,
   .tp_flags = Py_TPFLAGS_DEFAULT | Py_TPFLAGS_HAVE_GC,
-  .tp_doc = "Captured delimited continuation (multi-shot, from shift)",
+  .tp_doc = "Captured delimited continuation",
   .tp_traverse = delimited_continuation_traverse,
   .tp_clear = delimited_continuation_clear,
 };
 
 
+/**
+  KosPyDelimitedContinuation wraps a KosContinuation captured by shift.
+
+  DelimitedContinuation cannot be called from Python; application is only
+  permitted via CALL inside koskari_eval.
+*/
 PyObject *KosPyDelimitedContinuation_New(KosContinuation *captured) {
 
-  KosPyDelimitedContinuation *cont = PyObject_GC_New(KosPyDelimitedContinuation,
-                                            &KosPyDelimitedContinuationType);
+  KosPyDelimitedContinuation *cont = PyObject_GC_New(
+    KosPyDelimitedContinuation,
+    &KosPyDelimitedContinuationType);
+
   if (! cont)
     return NULL;
 
@@ -128,13 +127,6 @@ PyObject *KosPyDelimitedContinuation_New(KosContinuation *captured) {
 
 /* === KosPyContinuation type (undelimited, for future call/cc) === */
 
-
-/**
-   KosPyContinuation wraps an undelimited KosContinuation (from call/cc).
-
-   Python-callable: raises KoskariContinuationDead or KoskariContinuationApply.
-   Not yet instantiated (call/cc capture not implemented).
-*/
 
 static void continuation_dealloc(PyObject *self) {
 
@@ -202,8 +194,9 @@ static PyObject *continuation_call(
     Py_DECREF(resume_val);
     return NULL;
   }
-  if (PyObject_SetAttrString(exc, "target",
-          KosContinuation_TOKEN_REF(KosPyContinuation_CAPTURED(cont))) < 0) {
+  if (PyObject_SetAttrString(
+      exc, "target",
+      KosContinuation_TOKEN_REF(KosPyContinuation_CAPTURED(cont))) < 0) {
     Py_DECREF(exc);
     Py_DECREF(resume_val);
     return NULL;
@@ -247,16 +240,24 @@ PyTypeObject KosPyContinuationType = {
   .tp_repr = continuation_repr,
   .tp_call = continuation_call,
   .tp_flags = Py_TPFLAGS_DEFAULT | Py_TPFLAGS_HAVE_GC,
-  .tp_doc = "Captured undelimited continuation (multi-shot, from call/cc)",
+  .tp_doc = "Captured undelimited continuation",
   .tp_traverse = continuation_traverse,
   .tp_clear = continuation_clear,
 };
 
 
+/**
+  KosPyContinuation wraps an undelimited KosContinuation (from call/cc).
+
+  Python-callable: raises KoskariContinuationDead or KoskariContinuationApply.
+  Not yet instantiated (call/cc capture not implemented).
+*/
 PyObject *KosPyContinuation_New(KosContinuation *captured) {
 
-  KosPyContinuation *cont = PyObject_GC_New(KosPyContinuation,
-                                            &KosPyContinuationType);
+  KosPyContinuation *cont = PyObject_GC_New(
+    KosPyContinuation,
+    &KosPyContinuationType);
+
   if (! cont)
     return NULL;
 

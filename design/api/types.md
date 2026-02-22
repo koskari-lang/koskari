@@ -219,12 +219,14 @@ NOTE: Control flow metadata (block_style, enabled, labels) has been moved to
   - COMPILE, LABEL, NOARG, COUNT, PAIR_COUNT, STAR, CONST, VAR, FASTVAR
 
 **Evaluator Types** (new for Koskari VM):
-- `Continuation`: Captured delimited continuation (multi-shot)
-  - Callable: returns `Coroutine` that resumes at captured point
-  - Multi-shot: each call clones captured state
+- `DelimitedContinuation`: Captured delimited continuation (shift); multi-shot
+  - Callable from Python: always raises `TypeError` (invocation only via CALL inside koskari_eval)
   - Delimited: captures up to prompt delimiter, not entire stack
   - Supports resume value or exception injection
   - Cannot span Python/C call boundaries
+- `Continuation`: Captured undelimited continuation (call/cc); multi-shot
+  - Callable from Python: raises `KoskariContinuationApply` to perform upwards transfer via exception (does not return a coroutine)
+  - When invoked inside koskari_eval with matching token: direct apply
 - `Coroutine`: Koskari coroutine wrapper
   - Implements Python awaitable protocol (`__await__`)
   - `send(value)`: Resume with value
@@ -238,7 +240,7 @@ NOTE: Control flow metadata (block_style, enabled, labels) has been moved to
 
 **Dynamic Chain Types** (internal, for evaluator infrastructure):
 - `KosDynNode`: Base structure for dynamic chain nodes
-  - Types: FRAME, PROMPT, WIND, REGION, PYCALL
+  - Types: FRAME, PROMPT, WIND, REGION
 - `KosDynFrame`: Function activation record (code, pc, stack, namespace)
 - `KosDynPrompt`: Delimiter for delimited continuations (prompt_id, handler)
 - `KosDynWind`: Dynamic-wind extent (before/after hook bytecode blocks)

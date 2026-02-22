@@ -63,7 +63,7 @@ The Koskari evaluator provides the runtime execution engine:
 **Python-Facing Wrappers**:
 - `Coroutine`: Wraps `KosContext` for async function execution
 - `AsyncGenerator`: Wraps `KosContext` for async generator execution
-- `Continuation`: Captured continuation, callable, returns `Coroutine`
+- `Continuation`: Captured undelimited continuation; callable from Python raises `KoskariContinuationApply` for upwards transfer (does not return)
 
 **Execution Model**:
 - Single evaluator with heap-resident frame stack

@@ -70,6 +70,29 @@ On koskari_eval exit (all paths):
 
 ---
 
+## 2.1 Context, Chain, and Python Boundary
+
+Each `koskari_eval` driver has one context; the dynamic chain is owned by that
+context. The chain is **scoped per context**: when Python code calls into a new
+`koskari_eval` (e.g. a nested driver), that is a new context with its own chain.
+Prompts and other nodes exist only on the chain of the context that pushed them.
+
+**Same-context rule**: Delimited continuations can only be invoked when
+`ctx->token == cont->token` (enforced in INVOKE_K_VAR and the CALL path). A
+delimited continuation captured in one context cannot be invoked from another.
+
+**Cross-boundary behavior**:
+- Koskari → Python → back to same Koskari context: same chain, same token; no
+  boundary crossing. The chain is unchanged across the Python call.
+- Python → new `koskari_eval` (nested driver): new context, new chain, different
+  token. Prompts from the outer context are not on the inner context's chain.
+- **Delimited**: Cannot be invoked from Python (`tp_call` raises). Capture only
+  sees prompts in the current chain.
+- **Undelimited**: Can be invoked from Python; raises `KoskariContinuationApply`
+  to unwind upward to the owning driver.
+
+---
+
 ## 3. CapturedContext
 
 CapturedContext is NOT a PyObject.

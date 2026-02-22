@@ -35,8 +35,10 @@ runtimes.
   control flow.
 * The evaluator is driven by `koskari_eval()`, which is invoked when a
   KosCoroutine or KosPyAsyncGen is driven (e.g. via Python `await` or `send`).
-  KosCoroutines are created by calling a KosExpression, KosFunction, or
-  KosPyContinuation (each returns a new KosCoroutine).
+  KosCoroutines are created by calling a KosExpression or KosFunction (each
+  returns a new KosCoroutine). Calling a KosPyContinuation from Python raises
+  `KoskariContinuationApply` for upwards transfer; it does not return a
+  KosCoroutine.
 
 This enables flattening of async suspension without C-stack growth.
 
@@ -207,17 +209,19 @@ Yielding and awaiting are disjoint control paths internally and at the surface.
   direction (from callee toward caller). Crossing is implemented by raising a
   specialized `BaseException`, forcing a single return through intervening
   Python/C frames until the owning Koskari evaluator loop is reached.
-* The dynamic chain tracks Python boundaries via `KOS_DYN_PYCALL` nodes.
-* `shift` capture is **rejected** if any `PYCALL` boundary exists between the
-  current position and the target prompt.
+* The dynamic chain does **not** track Python boundaries with nodes. One chain
+  per evaluator context (driver). Delimited capture only finds prompts in the
+  current chain. Delimited invocation from Python is **blocked** at
+  `DelimitedContinuation.tp_call` (always raises).
 * Python and C frames are **not** embedded in the Koskari dynamic chain; only
   Koskari frames are re-enterable.
 
 **Rationale**: Python call frames cannot be cloned or resumed. Including them
 would create non-resumable continuations.
 
-**Implementation**: `kos_validate_capture()` walks from `dyn_top` to the prompt,
-checking for `PYCALL` nodes.
+**Implementation**: `kos_validate_capture()` verifies prompt reachability from
+`dyn_top` on the chain. Context/token identity and type-level blocking enforce
+the boundary constraint.
 
 ---
 
@@ -238,7 +242,6 @@ checking for `PYCALL` nodes.
 * `KOS_DYN_REGION` — block-local control (try, finally, loop, foreach)
 * `KOS_DYN_NS` — namespace scope (PUSH_NS/POP_NS)
 * `KOS_DYN_CC` — call/cc extent (PUSH_CC/POP_CC)
-* `KOS_DYN_PYCALL` — Python/C boundary marker; BARRIER + BLOCKS_CAPTURE
 * `KOS_DYN_YIELD_FROM` — yield-from delegation state (see yield-from-execution-model.md)
 * `KOS_DYN_PARAM` — parameterize extent (PUSH_PARAM/POP_PARAM); binds/restores dynamic param
 * `KOS_DYN_WITH` — with context manager extent (PUSH_WITH/POP_WITH); CATCH
@@ -246,8 +249,7 @@ checking for `PYCALL` nodes.
 
 **Capability bits** govern behavior without kind checks in generic handlers:
 * `KOS_DYN_CAP_CATCH` — node may swallow exception (WITH, DYN_WITH)
-* `KOS_DYN_CAP_BARRIER` — normal pop refused (PROMPT, PYCALL)
-* `KOS_DYN_CAP_BLOCKS_CAPTURE` — continuation capture cannot cross (PYCALL)
+* `KOS_DYN_CAP_BARRIER` — normal pop refused (PROMPT)
 * `KOS_DYN_CAP_HANDLES_EXCEPTIONS` — node has `unwind_on_exception` handler invoked during exception unwind when pop is refused (PROMPT)
 * `KOS_DYN_CAP_NEEDS_UNWIND_ACTION` — node has transfer-plan unwind handler (WIND, WITH, DYN_WITH, PARAM)
 * `KOS_DYN_CAP_NEEDS_WIND_BEFORE_ACTION` — node has transfer-plan wind handler (WIND)

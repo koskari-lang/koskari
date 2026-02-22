@@ -270,7 +270,7 @@ For the full categorized list, see [FEATURES.md](../FEATURES.md) § "Opcodes: im
 
 - **Expression**: `Code.expression(parent_ns)` returns an **Expression** (code + namespace). Calling it with `()` creates a **Coroutine** that runs that code in that namespace (no arguments).
 - **Function**: `Code.function(formals, parent_ns)` returns a **Function** (code + formals + base namespace). Calling it with `(*args, **kwargs)` binds formals, builds a frame namespace, and creates a **Coroutine** that runs the code in that frame.
-- **Execution**: Driving the Coroutine (e.g. Python `await` or `send`) invokes `koskari_eval()`. A Koskari **CALL** with a KosExpression or KosFunction pushes a new frame via `kos_koscall` and continues in the same loop. See [evaluator.md](evaluator.md) and [FEATURES.md](../FEATURES.md) § "Creating and calling functions and expressions".
+- **Execution**: Driving the Coroutine (e.g. Python `await` or `send`) invokes `koskari_eval()`. A Koskari **CALL** with a KosExpression or KosFunction replaces the current frame with the callee and continues in the same loop. See [evaluator.md](evaluator.md) and [FEATURES.md](../FEATURES.md) § "Creating and calling functions and expressions".
 
 ## Comparison with Previous Implementations
 

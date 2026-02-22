@@ -205,7 +205,7 @@ typedef struct KosEvent {
 
   This version uses the DynNode chain for dynamic extent tracking.
   The dyn_top field points to the top of the chain, which may be
-  any node type (FRAME, PROMPT, WIND, REGION, PYCALL).
+  any node type (FRAME, PROMPT, WIND, REGION).
 
   The frame_top field is a cached pointer to the topmost FRAME node
   for fast access during normal execution.

@@ -46,7 +46,6 @@
    KOS_DYN_PROMPT - Delimiter for delimited continuations (reset)
    KOS_DYN_WIND   - Dynamic-wind extent with before/after hooks
    KOS_DYN_REGION - Block-local control (try/finally/loop/with)
-   KOS_DYN_PYCALL - Python/C boundary marker (non-resumable)
    KOS_DYN_NS     - Namespace scope (PUSH_NS/POP_NS)
    KOS_DYN_CC     - Undelimited continuation block (call/cc)
    KOS_DYN_YIELD_FROM - Yield-from delegation state
@@ -64,7 +63,6 @@ typedef enum KosDynKind {
   KOS_DYN_PROMPT,
   KOS_DYN_WIND,
   KOS_DYN_REGION,
-  KOS_DYN_PYCALL,
   KOS_DYN_NS,
   KOS_DYN_CC,
   KOS_DYN_YIELD_FROM,
@@ -103,7 +101,6 @@ typedef enum KosDynFlags {
 #define KOS_DYN_CAP_NEEDS_UNWIND_ACTION      (1u << 2)
 #define KOS_DYN_CAP_NEEDS_WIND_BEFORE_ACTION (1u << 3)
 #define KOS_DYN_CAP_NEEDS_INSTALL_WIND       (1u << 4)
-#define KOS_DYN_CAP_BLOCKS_CAPTURE           (1u << 5)
 #define KOS_DYN_CAP_NEEDS_TRANSFER_TEARDOWN  (1u << 6)
 #define KOS_DYN_CAP_BARRIER                  (1u << 7)
 #define KOS_DYN_CAP_HANDLES_EXCEPTIONS       (1u << 8)
@@ -188,9 +185,6 @@ struct KosDynNode {
     struct {
       PyObject *saved_ns;
     } ns;
-    struct {
-      /* pycall: no extra fields */
-    } pycall;
     struct {
       PyObject *delegate;
       uint8_t kind;
@@ -610,24 +604,6 @@ void kos_dynregion_free(KosDynRegion *region);
 
 
 /**
-   Allocate a Python call boundary marker.
-
-   :param parent: parent node in dynamic chain
-
-   :return: new boundary node, or NULL on error
-*/
-KosDynNode *kos_dynpycall_new(KosDynNode *parent);
-
-
-/**
-   Free a boundary marker node.
-
-   :param node: node to free (may be NULL)
-*/
-void kos_dynpycall_free(KosDynNode *node);
-
-
-/**
    Free a single DynNode of any kind.
 
    Dispatches to the appropriate type-specific free function.
@@ -695,7 +671,7 @@ int kos_dyn_push(KosContext *ctx, KosDynNode *node);
 
 /**
    Pop a node from the context's dynamic chain.  Node must be dyn_top.
-   For BARRIER nodes (PROMPT, PYCALL) returns -1.  Otherwise runs the
+   For BARRIER nodes (PROMPT) returns -1.  Otherwise runs the
    type's pop handler (if any) then unlinks and frees.  Returns
    KOS_DYN_UNWIND_ASYNC_STARTED when async extent action started.
 
@@ -1080,7 +1056,7 @@ int kos_dyn_with_unwind(KosContext *ctx, KosDynWith *node,
 
    :param out_ev: event output for suspend (required when WITH may have async exit)
 
-   :return: 0 on success, -1 on error or if top is PROMPT/PYCALL,
+   :return: 0 on success, -1 on error or if top is PROMPT,
      KOS_DYN_UNWIND_ASYNC_STARTED when async extent action started (resume later)
 */
 int kos_dyn_pop_top(KosContext *ctx, struct KosEvent *out_ev);
@@ -1181,28 +1157,6 @@ KosDynRegion *kos_find_region_for_loop(KosContext *ctx);
 
 
 /**
-   Push a Python call boundary marker.
-
-   This marks the point where Python code called into Koskari.
-   Continuation capture will fail if it would cross this boundary.
-
-   :param ctx: execution context
-
-   :return: boundary node, or NULL on error
-*/
-KosDynNode *kos_dyn_push_pycall(KosContext *ctx);
-
-
-/**
-   Pop a Python call boundary marker.
-
-   :param ctx: execution context
-   :param marker: boundary node to pop (must be dyn_top)
-*/
-void kos_dyn_pop_pycall(KosContext *ctx, KosDynNode *marker);
-
-
-/**
    Push a YIELD_FROM delegation node onto the context's dynamic chain.
 
    Does not update frame_top (the frame remains the topmost frame).
@@ -1258,10 +1212,7 @@ KosDynCC *kos_find_cc(KosContext *ctx);
 
 
 /**
-   Validate that continuation capture is allowed up to the prompt.
-
-   Returns error if any PYCALL boundary nodes exist between dyn_top
-   and the prompt.
+   Validate that the prompt is reachable from dyn_top on the chain.
 
    :param ctx: execution context
    :param prompt: target prompt
@@ -1672,7 +1623,6 @@ int kos_hookrunner_traverse(
 #define KosDynNode_IS_WIND(n)    (KosDynNode_KIND(n) == KOS_DYN_WIND)
 #define KosDynNode_IS_REGION(n)  (KosDynNode_KIND(n) == KOS_DYN_REGION)
 #define KosDynNode_IS_NS(n)      (KosDynNode_KIND(n) == KOS_DYN_NS)
-#define KosDynNode_IS_PYCALL(n)  (KosDynNode_KIND(n) == KOS_DYN_PYCALL)
 #define KosDynNode_IS_CC(n)      (KosDynNode_KIND(n) == KOS_DYN_CC)
 #define KosDynNode_IS_YIELD_FROM(n)  (KosDynNode_KIND(n) == KOS_DYN_YIELD_FROM)
 #define KosDynNode_IS_PARAM(n)       (KosDynNode_KIND(n) == KOS_DYN_PARAM)

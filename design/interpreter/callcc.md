@@ -34,9 +34,11 @@ Wind/unwind hooks are **bytecode blocks**, not Python callables:
 
 **Delimited continuations** (shift):
 - Captured continuations **cannot span Python/C call boundaries**
-- `KOS_DYN_PYCALL` nodes mark Python boundaries in the chain
-- `shift` capture rejects if any boundary exists between current and prompt
-- Delimited capture may not cross the CPython C calling-convention boundary
+- The dynamic chain is scoped to a single evaluator context (driver); each
+  driver has its own chain. Delimited capture only finds prompts in that chain.
+- Delimited invocation from Python is **blocked**: `DelimitedContinuation.tp_call`
+  always raises. Delimited continuations may only be invoked via CALL inside
+  koskari_eval (same context).
 - This ensures all captured state is VM-resumable
 
 **Full continuations** (call/cc):
@@ -92,9 +94,8 @@ typedef struct {
 ```
 
 **Behavior**:
-- Callable from Python
-- `tp_call(value)` returns a `KosCoroutine` that resumes with `value`
-- Multi-shot: clones captured state on each call
+- Not callable from Python: `tp_call` always raises `TypeError` (invocation only via CALL inside koskari_eval)
+- Multi-shot: clones captured state on each apply
 - GC-tracked: traverses captured chain
 
 ### Continuation Capture (shift)

@@ -30,7 +30,7 @@ Each dynamic node type defines handlers via a type operations table. Generic cod
 | **unwind** | During transfer only | Tear down when unwinding from source (e.g. after for WIND, exit for WITH/DYN_WITH) |
 | **teardown_after_unwind** | After transfer unwind completes | Structural cleanup: drop stack block, unlink node (DYN_WITH and PROMPT). |
 | **unwind_on_exception** | During exception unwinding, when normal pop is refused (e.g. BARRIER) | Capability-based exception dispatch. Handler performs cleanup, unlinks the node, and returns: 0 to continue unwinding, 1 if the exception was swallowed and execution should resume, `KOS_DYN_UNWIND_ASYNC_STARTED` if an async operation was started, or -1 on error. Only invoked when node has `KOS_DYN_CAP_HANDLES_EXCEPTIONS`. |
-| **clone** | For continuation capture | Clone node for inclusion in captured chain. NULL = cannot clone (e.g. PYCALL creates new marker). |
+| **clone** | For continuation capture | Clone node for inclusion in captured chain. NULL = cannot clone (e.g. CC_RAISE sentinel). |
 
 Nodes may have NULL for handlers they do not need. Install and wind may be the same function when semantics allow (e.g. PARAM, DYN_WITH).
 
@@ -61,8 +61,7 @@ Dispatch: `kos_dyn_type_ops[kind].install(ctx, node)`, etc. The generic push/pop
 | Cap | Meaning |
 |-----|---------|
 | `KOS_DYN_CAP_CATCH` | Node may clear an exception during unwind. After handler returns, check `PyErr_Occurred()`; if clear, stop unwinding and resume at node's `resume_pc`. |
-| `KOS_DYN_CAP_BARRIER` | Node blocks normal pop. Generic `kos_dyn_pop` returns error. Used by PROMPT, PYCALL. |
-| `KOS_DYN_CAP_BLOCKS_CAPTURE` | Capture cannot span this node. Used by PYCALL. |
+| `KOS_DYN_CAP_BARRIER` | Node blocks normal pop. Generic `kos_dyn_pop` returns error. Used by PROMPT. |
 | `KOS_DYN_CAP_NEEDS_UNWIND_ACTION` | Node has unwind handler for transfer (WIND after, WITH/DYN_WITH exit, PARAM restore). |
 | `KOS_DYN_CAP_NEEDS_WIND_BEFORE_ACTION` | Node has wind handler for transfer (WIND before only). |
 | `KOS_DYN_CAP_NEEDS_INSTALL_WIND` | Node needs wind run when a segment is installed or pushed (PARAM enter, DYN_WITH enter). |
@@ -84,7 +83,6 @@ Each type binds handlers and caps. This table is authoritative.
 | PROMPT | push stack block | drop stack block + unlink | — | — | drop stack block | unlink + drop stack block | yes | BARRIER, NEEDS_TRANSFER_TEARDOWN, HANDLES_EXCEPTIONS |
 | WIND | — | after | before | after | — | — | yes | NEEDS_UNWIND, NEEDS_WIND_BEFORE |
 | REGION | — | — | — | — | — | — | yes | — |
-| PYCALL | — | — | — | — | — | — | new marker | BARRIER, BLOCKS_CAPTURE |
 | NS | — | restore ns | — | — | — | — | yes | — |
 | CC | — | unlink | — | — | — | — | yes | — |
 | YIELD_FROM | — | close delegate | — | — | — | — | yes | PRESERVE_ERR_ACROSS_POP |
@@ -113,7 +111,7 @@ All opcodes and eval code must use these entry points exclusively. No direct man
 /* Push node onto context. Calls install handler after linking. Returns 0 on success, -1 on error. */
 int kos_dyn_push(KosContext *ctx, KosDynNode *node);
 
-/* Pop node from context. Calls pop handler before unlinking. Returns 0, -1, or KOS_DYN_UNWIND_ASYNC_STARTED. For BARRIER nodes (PROMPT, PYCALL) returns -1. Use kos_dyn_pop_prompt (or equivalent) to abandon a prompt explicitly (POP_RESET path). */
+/* Pop node from context. Calls pop handler before unlinking. Returns 0, -1, or KOS_DYN_UNWIND_ASYNC_STARTED. For BARRIER nodes (PROMPT) returns -1. Use kos_dyn_pop_prompt (or equivalent) to abandon a prompt explicitly (POP_RESET path). */
 int kos_dyn_pop(KosContext *ctx, KosDynNode *node, KosEvent *out_ev);
 
 /* Clone node and push. Fails if node type cannot clone (e.g. returns error for types that must not cross capture). */

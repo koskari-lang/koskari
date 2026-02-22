@@ -126,7 +126,7 @@ There are no **partially** implemented opcodes; each handler is either full, a s
 - **Implemented specials**: compile/bytecode, compile/begin, compile/call, compile/lambda, compile/let, compile/parameterize, compile/cond, compile/if, compile/when, compile/unless, compile/while, compile/for-each, compile/break, compile/continue, compile/setq, compile/refq, compile/bindq, compile/delq, compile/attr, compile/del-attr, compile/set-attr, compile/ref-attr, compile/item, compile/ref-item, compile/del-item, compile/set-item, compile/quote, compile/car, compile/cdr, compile/cons (see design/SPECIALS.md)
 
 ### Evaluator
-- **Model**: Custom drive loop (`koskari_eval` in eval.c). Callable types Expression and Function (func.c) return a KosCoroutine; driving the coroutine (await/send) runs the evaluator. Continuation call returns a KosCoroutine that resumes the captured segment.
+- **Model**: Custom drive loop (`koskari_eval` in eval.c). Callable types Expression and Function (func.c) return a KosCoroutine; driving the coroutine (await/send) runs the evaluator. Continuation invocation from Python raises `KoskariContinuationApply` for upwards transfer (does not return a coroutine).
 - **Frame**: Custom frame type with stack and namespace
 - **Blocks**: try, loop, with, finally management
 
@@ -134,7 +134,7 @@ There are no **partially** implemented opcodes; each handler is either full, a s
 - **Code**: Compiled bytecode is stored in a `Code` object (namespace spec, instructions, constant pool, position table). The compiler (`koskari.compile`) is partially implemented: it supports `compile/bytecode`, `compile/begin`, `compile/call`, `compile/lambda`, `compile/let`, `compile/parameterize`, `compile/cond`, `compile/if`, `compile/when`, `compile/unless`, `compile/while`, `compile/for-each`, `compile/break`, `compile/continue`, `compile/setq`, `compile/refq`, `compile/bindq`, `compile/delq`, `compile/attr`, `compile/del-attr`, `compile/set-attr`, `compile/ref-attr`, `compile/item`, `compile/ref-item`, `compile/del-item`, `compile/set-item`, `compile/quote`, `compile/car`, `compile/cdr`, and `compile/cons` (see design/SPECIALS.md). Tests and tools also build Code manually for VM validation.
 - **Expressions**: `Code.expression(parent_ns)` builds an **Expression** from a `Code` and a parent **Namespace**. An Expression is nullary: calling it with `()` creates a **Coroutine** that runs that code in that namespace. No argument binding; used for thunks, modules, or single-shot code.
 - **Functions**: `Code.function(formals, parent_ns)` builds a **Function** from a `Code`, a **Formals** instance (parameter spec + defaults), and a parent namespace. Calling a Function with `(*args, **kwargs)` binds the formals to the arguments, builds a frame namespace (via the formals’ NamespaceSpec), applies the bindings, then creates a **Coroutine** that runs the code in that frame namespace.
-- **Call flow**: Calling an Expression or Function returns a **Coroutine**. Driving the coroutine (Python `await`, or `send(None)`/`send(value)`) invokes `koskari_eval()` until a boundary event (RETURN, RAISE, YIELD, AWAIT). For AWAIT, the VM suspends and the driver steps the Python awaitable; on completion the result is injected and evaluation resumes. Koskari-to-Koskari calls use `kos_koscall` / `kos_tail_koscall` (CALL opcode); the callee is a KosExpression or KosFunction, so the runtime creates a new frame and pushes it onto the dynamic chain and continues the same drive loop.
+- **Call flow**: Calling an Expression or Function returns a **Coroutine**. Driving the coroutine (Python `await`, or `send(None)`/`send(value)`) invokes `koskari_eval()` until a boundary event (RETURN, RAISE, YIELD, AWAIT). For AWAIT, the VM suspends and the driver steps the Python awaitable; on completion the result is injected and evaluation resumes. Koskari-to-Koskari calls (CALL opcode) replace the current frame with the callee and continue in the same drive loop.
 
 ### Runtime
 - **Modules**: Module creation and loading
@@ -143,7 +143,7 @@ There are no **partially** implemented opcodes; each handler is either full, a s
 
 ### Continuations
 - **Delimited continuations (reset/shift)**: PUSH_PROMPT, PUSH_SHIFT, POP_SHIFT, POP_PROMPT. PUSH_PROMPT owns a COW stack block for the delimited region (SHIFT does not create one). PUSH_SHIFT captures the continuation (from POP_SHIFT+1 to POP_PROMPT) and enters the shift block with k on stack; INVOKE_K and INVOKE_K_VAR invoke captured delimited continuations using the push model (graft frames onto current chain; return to call site when continuation hits POP_PROMPT). Multi-shot; prompt need not be in chain when invoking. Exception propagation past a PROMPT uses `KOS_DYN_CAP_HANDLES_EXCEPTIONS` / `unwind_on_exception` (no kind check in the unwind loop). See design/interpreter/callcc.md.
-- **Undelimited call/cc**: PUSH_CC, CAPTURE_CC, POP_CC capture an undelimited continuation (stored with token_ref = owning KosEvaluatorToken). Invocation is via CALL 0 or CALL 1 with stack [callable, arg_0, ...]. If the continuation’s token matches the current evaluator token (or is undelimited with no token_ref), it is applied directly; otherwise the VM sets KoskariContinuationApply and returns -1 so the exception propagates to the caller. Python type KosPyContinuation is callable; cross-token invoke raises KoskariContinuationApply. See design/interpreter/evaluator-token-continuation.md.
+- **Undelimited call/cc**: PUSH_CC, CAPTURE_CC, POP_CC capture an undelimited continuation (stored with token_ref = owning KosEvaluatorToken). Invocation is via CALL 0 or CALL 1 with stack [callable, arg_0, ...]. If the continuation’s token matches the current evaluator token (or is undelimited with no token_ref), it is applied directly; otherwise the VM sets KoskariContinuationApply and returns -1 so the exception propagates to the caller. Python type KosPyContinuation is callable from Python; invocation always raises `KoskariContinuationApply` to perform upwards transfer via exception (never returns a coroutine). See design/interpreter/evaluator-token-continuation.md.
 
 ## Missing/To Design
 
@@ -189,7 +189,7 @@ There are no **partially** implemented opcodes; each handler is either full, a s
 - Python wrappers: `Continuation`, `Coroutine`, `AsyncGenerator`
 - Wind/unwind: `kos_push_wind`, `kos_push_before_wind`, `kos_push_after_wind`, `kos_pop_wind`
 - Continuation application: `kos_apply_continuation` with LCA computation and hook execution
-- Call operations: `kos_koscall`, `kos_tail_koscall`
+- Call operations: internal tail-call for KosExpression/KosFunction (eval.c)
 - Drive loop: `koskari_eval` (opcode fetch and dispatch implemented; many opcodes still stubs)
 - GC traversal: helpers for all VM structures
 
