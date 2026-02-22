@@ -1154,6 +1154,327 @@ static int test_eval_build_function_no_defaults(void) {
 }
 
 
+/* === Phase-refactor resume-matrix tests === */
+
+
+/*
+  Helper: build a minimal nspec+code+frame+context.
+  Returns 0 on success; -1 on failure (PyErr set).
+  Caller owns code_obj_out and ctx_out references; ns is owned by the frame.
+*/
+static int make_simple_ctx(
+    PyObject *instr,
+    PyObject **code_obj_out,
+    KosContext **ctx_out)
+{
+    PyObject *nspec = create_test_nspec();
+    if (! nspec) return -1;
+
+    *code_obj_out = KosCode_New(nspec, instr, NULL, NULL);
+    Py_DECREF(nspec);
+    if (! *code_obj_out) return -1;
+
+    PyObject *ns = PyDict_New();
+    if (! ns) { Py_DECREF(*code_obj_out); return -1; }
+
+    /* kos_dynframe_new steals the ns reference; do not Py_DECREF ns after this. */
+    KosDynFrame *frame = kos_dynframe_new(NULL, (KosCode *) *code_obj_out, ns, NULL);
+    if (! frame) { Py_DECREF(*code_obj_out); return -1; }
+
+    *ctx_out = kos_context_new(frame);
+    if (! *ctx_out) { Py_DECREF(*code_obj_out); return -1; }
+    return 0;
+}
+
+
+/* === Test: YIELD empty resume (NULL/NULL) => RETURN with next CONST === */
+
+
+static int test_eval_yield_empty_resume(void) {
+    /*
+      Bytecode: CONST 42, YIELD 1, CONST 99, RETURN 1.
+      First eval (NULL, NULL): expect KOS_EV_YIELD(42).
+      Second eval (NULL, NULL): raise_yield returns KOS_MODE_NORMAL;
+      execution resumes at CONST 99, RETURN 1 => KOS_EV_RETURN(99).
+    */
+    PyObject *forty_two = PyLong_FromLong(42);
+    PyObject *ninety_nine = PyLong_FromLong(99);
+
+    PyObject *instr = PyList_New(4);
+    PyList_SET_ITEM(instr, 0, make_instr(KOS_OP_CONST, forty_two));
+    PyList_SET_ITEM(instr, 1, make_instr_int(KOS_OP_YIELD, 1));
+    PyList_SET_ITEM(instr, 2, make_instr(KOS_OP_CONST, ninety_nine));
+    PyList_SET_ITEM(instr, 3, make_instr_int(KOS_OP_RETURN, 1));
+
+    Py_DECREF(forty_two);
+    Py_DECREF(ninety_nine);
+
+    PyObject *code_obj = NULL;
+    KosContext *ctx = NULL;
+    int rc = make_simple_ctx(instr, &code_obj, &ctx);
+    Py_DECREF(instr);
+    TEST_ASSERT(rc == 0, "create context");
+
+    KosEvent ev = {0};
+    int res = koskari_eval(ctx, &ev, NULL, NULL);
+    TEST_ASSERT(res == 0, "first koskari_eval succeeded");
+    TEST_ASSERT(ev.kind == KOS_EV_YIELD, "first event is YIELD");
+    TEST_ASSERT_NOT_NULL(ev.payload, "first payload not NULL");
+    TEST_ASSERT_EQ(PyLong_AsLong(ev.payload), 42, "yielded value is 42");
+    Py_XDECREF(ev.payload);
+
+    ev.kind = KOS_EV_RETURN;
+    ev.payload = NULL;
+    res = koskari_eval(ctx, &ev, NULL, NULL);
+    TEST_ASSERT(res == 0, "second koskari_eval succeeded");
+    TEST_ASSERT(ev.kind == KOS_EV_RETURN, "second event is RETURN");
+    TEST_ASSERT_NOT_NULL(ev.payload, "second payload not NULL");
+    TEST_ASSERT_EQ(PyLong_AsLong(ev.payload), 99, "resumed result is 99");
+
+    Py_XDECREF(ev.payload);
+    kos_context_free(ctx);
+    Py_DECREF(code_obj);
+
+    return 0;
+}
+
+
+/* === Test: YIELD send resume => RETURN with sent value === */
+
+
+static int test_eval_yield_send_resume(void) {
+    /*
+      Bytecode: CONST 42, YIELD 1, RETURN 1.
+      First eval (NULL, NULL): KOS_EV_YIELD(42).
+      Second eval (send_val=7, NULL): revive_yield pushes 7 onto stack;
+      RETURN 1 pops TOS => KOS_EV_RETURN(7).
+    */
+    PyObject *forty_two = PyLong_FromLong(42);
+
+    PyObject *instr = PyList_New(3);
+    PyList_SET_ITEM(instr, 0, make_instr(KOS_OP_CONST, forty_two));
+    PyList_SET_ITEM(instr, 1, make_instr_int(KOS_OP_YIELD, 1));
+    PyList_SET_ITEM(instr, 2, make_instr_int(KOS_OP_RETURN, 1));
+
+    Py_DECREF(forty_two);
+
+    PyObject *code_obj = NULL;
+    KosContext *ctx = NULL;
+    int rc = make_simple_ctx(instr, &code_obj, &ctx);
+    Py_DECREF(instr);
+    TEST_ASSERT(rc == 0, "create context");
+
+    KosEvent ev = {0};
+    int res = koskari_eval(ctx, &ev, NULL, NULL);
+    TEST_ASSERT(res == 0, "first koskari_eval succeeded");
+    TEST_ASSERT(ev.kind == KOS_EV_YIELD, "first event is YIELD");
+    TEST_ASSERT_EQ(PyLong_AsLong(ev.payload), 42, "yielded value is 42");
+    Py_XDECREF(ev.payload);
+
+    PyObject *send_val = PyLong_FromLong(7);
+    ev.kind = KOS_EV_RETURN;
+    ev.payload = NULL;
+    res = koskari_eval(ctx, &ev, send_val, NULL);
+    Py_DECREF(send_val);
+    TEST_ASSERT(res == 0, "second koskari_eval succeeded");
+    TEST_ASSERT(ev.kind == KOS_EV_RETURN, "second event is RETURN");
+    TEST_ASSERT_NOT_NULL(ev.payload, "second payload not NULL");
+    TEST_ASSERT_EQ(PyLong_AsLong(ev.payload), 7, "returned sent value 7");
+
+    Py_XDECREF(ev.payload);
+    kos_context_free(ctx);
+    Py_DECREF(code_obj);
+
+    return 0;
+}
+
+
+/* === Test: YIELD throw resume => RAISE event (no handler) === */
+
+
+static int test_eval_yield_throw_resume(void) {
+    /*
+      Bytecode: CONST 42, YIELD 1, RETURN 1.
+      First eval (NULL, NULL): KOS_EV_YIELD(42).
+      Second eval (NULL, throw_exc=ValueError): revive_yield sets PyErr =>
+      KOS_MODE_EXCEPTION; no TRY handler present => KOS_EV_RAISE.
+    */
+    PyObject *forty_two = PyLong_FromLong(42);
+
+    PyObject *instr = PyList_New(3);
+    PyList_SET_ITEM(instr, 0, make_instr(KOS_OP_CONST, forty_two));
+    PyList_SET_ITEM(instr, 1, make_instr_int(KOS_OP_YIELD, 1));
+    PyList_SET_ITEM(instr, 2, make_instr_int(KOS_OP_RETURN, 1));
+
+    Py_DECREF(forty_two);
+
+    PyObject *code_obj = NULL;
+    KosContext *ctx = NULL;
+    int rc = make_simple_ctx(instr, &code_obj, &ctx);
+    Py_DECREF(instr);
+    TEST_ASSERT(rc == 0, "create context");
+
+    KosEvent ev = {0};
+    int res = koskari_eval(ctx, &ev, NULL, NULL);
+    TEST_ASSERT(res == 0, "first koskari_eval succeeded");
+    TEST_ASSERT(ev.kind == KOS_EV_YIELD, "first event is YIELD");
+    Py_XDECREF(ev.payload);
+
+    PyObject *throw_exc = PyObject_CallFunction(
+        (PyObject *) PyExc_ValueError, "s", "thrown into yield");
+    TEST_ASSERT_NOT_NULL(throw_exc, "create throw_exc");
+
+    ev.kind = KOS_EV_RETURN;
+    ev.payload = NULL;
+    res = koskari_eval(ctx, &ev, NULL, throw_exc);
+    Py_DECREF(throw_exc);
+    TEST_ASSERT(res == 0, "second koskari_eval succeeded");
+    TEST_ASSERT(ev.kind == KOS_EV_RAISE, "second event is RAISE");
+    TEST_ASSERT_NOT_NULL(ev.payload, "raise payload not NULL");
+    TEST_ASSERT(PyExceptionInstance_Check(ev.payload), "payload is exception");
+    TEST_ASSERT(PyErr_GivenExceptionMatches((PyObject *) Py_TYPE(ev.payload),
+                                            PyExc_ValueError),
+                "exception is ValueError");
+
+    Py_XDECREF(ev.payload);
+    kos_context_free(ctx);
+    Py_DECREF(code_obj);
+
+    return 0;
+}
+
+
+/* === Test: YIELD throw resume caught by TRY handler => RETURN === */
+
+
+static int test_eval_yield_throw_caught(void) {
+    /*
+      Bytecode: PUSH_TRY(5), CONST 42, YIELD 1, POP_TRY, RETURN 1,
+                LABEL(5), EXCEPTION, POP 1, CONST 55, POP_TRY, RETURN 1.
+      First eval (NULL, NULL): KOS_EV_YIELD(42); TRY region stays live.
+      Second eval (NULL, throw_exc): eval_phase_entry calls
+      try_local_exception_handler, which finds the TRY region and redirects
+      PC to the handler => EXCEPTION/POP/CONST 55/POP_TRY/RETURN =>
+      KOS_EV_RETURN(55).
+    */
+    PyObject *forty_two = PyLong_FromLong(42);
+    PyObject *fifty_five = PyLong_FromLong(55);
+    PyObject *label_5 = PyLong_FromLong(5);
+
+    /*
+      One PUSH_TRY and one POP_TRY (on the normal path).  The handler
+      does not POP_TRY — try_local_exception_handler already disabled the
+      region; the context is freed by kos_context_free after RETURN.
+    */
+    PyObject *instr = PyList_New(10);
+    PyList_SET_ITEM(instr, 0, make_instr_int(KOS_OP_PUSH_TRY, 5));
+    PyList_SET_ITEM(instr, 1, make_instr(KOS_OP_CONST, forty_two));
+    PyList_SET_ITEM(instr, 2, make_instr_int(KOS_OP_YIELD, 1));
+    PyList_SET_ITEM(instr, 3, make_instr_int(KOS_OP_POP_TRY, 0));
+    PyList_SET_ITEM(instr, 4, make_instr_int(KOS_OP_RETURN, 1));
+    PyList_SET_ITEM(instr, 5, make_instr(KOS_OP_LABEL, label_5));
+    PyList_SET_ITEM(instr, 6, make_instr_int(KOS_OP_EXCEPTION, 0));
+    PyList_SET_ITEM(instr, 7, make_instr_int(KOS_OP_POP, 1));
+    PyList_SET_ITEM(instr, 8, make_instr(KOS_OP_CONST, fifty_five));
+    PyList_SET_ITEM(instr, 9, make_instr_int(KOS_OP_RETURN, 1));
+
+    Py_DECREF(forty_two);
+    Py_DECREF(fifty_five);
+    Py_DECREF(label_5);
+
+    PyObject *code_obj = NULL;
+    KosContext *ctx = NULL;
+    int rc = make_simple_ctx(instr, &code_obj, &ctx);
+    Py_DECREF(instr);
+    TEST_ASSERT(rc == 0, "create context");
+
+    KosEvent ev = {0};
+    int res = koskari_eval(ctx, &ev, NULL, NULL);
+    TEST_ASSERT(res == 0, "first koskari_eval succeeded");
+    TEST_ASSERT(ev.kind == KOS_EV_YIELD, "first event is YIELD");
+    TEST_ASSERT_EQ(PyLong_AsLong(ev.payload), 42, "yielded value is 42");
+    Py_XDECREF(ev.payload);
+
+    PyObject *throw_exc = PyObject_CallFunction(
+        (PyObject *) PyExc_ValueError, "s", "thrown into yield");
+    TEST_ASSERT_NOT_NULL(throw_exc, "create throw_exc");
+
+    ev.kind = KOS_EV_RETURN;
+    ev.payload = NULL;
+    res = koskari_eval(ctx, &ev, NULL, throw_exc);
+    Py_DECREF(throw_exc);
+    TEST_ASSERT(res == 0, "second koskari_eval succeeded");
+    TEST_ASSERT(ev.kind == KOS_EV_RETURN, "second event is RETURN");
+    TEST_ASSERT_NOT_NULL(ev.payload, "payload not NULL");
+    TEST_ASSERT(PyLong_Check(ev.payload), "payload is int");
+    TEST_ASSERT_EQ(PyLong_AsLong(ev.payload), 55, "handler result is 55");
+
+    Py_XDECREF(ev.payload);
+    kos_context_free(ctx);
+    Py_DECREF(code_obj);
+
+    return 0;
+}
+
+
+/* === Test: exception from opcode (op_res != 0) caught by TRY handler === */
+
+
+static int test_eval_opcode_error_caught_by_try(void) {
+    /*
+      Bytecode: PUSH_TRY(4), YIELD 1, POP_TRY, RETURN 0,
+                LABEL(4), EXCEPTION, POP 1, CONST 77, POP_TRY, RETURN 1.
+      YIELD 1 with empty stack returns op_res=-1 with PyErr set.
+      eval_phase_post_opcode detects PyErr and calls try_local_exception_handler,
+      which finds the TRY region and redirects to the handler =>
+      EXCEPTION/POP/CONST 77/POP_TRY/RETURN => KOS_EV_RETURN(77).
+      This exercises the exception path inside eval_phase_post_opcode directly.
+    */
+    PyObject *seventy_seven = PyLong_FromLong(77);
+    PyObject *label_4 = PyLong_FromLong(4);
+
+    /*
+      One PUSH_TRY and one POP_TRY (on the normal path).  The handler
+      does not POP_TRY — the region is disabled by try_local_exception_handler;
+      the context is freed by kos_context_free after RETURN.
+    */
+    PyObject *instr = PyList_New(9);
+    PyList_SET_ITEM(instr, 0, make_instr_int(KOS_OP_PUSH_TRY, 4));
+    PyList_SET_ITEM(instr, 1, make_instr_int(KOS_OP_YIELD, 1));
+    PyList_SET_ITEM(instr, 2, make_instr_int(KOS_OP_POP_TRY, 0));
+    PyList_SET_ITEM(instr, 3, make_instr_int(KOS_OP_RETURN, 0));
+    PyList_SET_ITEM(instr, 4, make_instr(KOS_OP_LABEL, label_4));
+    PyList_SET_ITEM(instr, 5, make_instr_int(KOS_OP_EXCEPTION, 0));
+    PyList_SET_ITEM(instr, 6, make_instr_int(KOS_OP_POP, 1));
+    PyList_SET_ITEM(instr, 7, make_instr(KOS_OP_CONST, seventy_seven));
+    PyList_SET_ITEM(instr, 8, make_instr_int(KOS_OP_RETURN, 1));
+
+    Py_DECREF(seventy_seven);
+    Py_DECREF(label_4);
+
+    PyObject *code_obj = NULL;
+    KosContext *ctx = NULL;
+    int rc = make_simple_ctx(instr, &code_obj, &ctx);
+    Py_DECREF(instr);
+    TEST_ASSERT(rc == 0, "create context");
+
+    KosEvent ev = {0};
+    int res = koskari_eval(ctx, &ev, NULL, NULL);
+
+    TEST_ASSERT(res == 0, "koskari_eval succeeded");
+    TEST_ASSERT(ev.kind == KOS_EV_RETURN, "event is RETURN");
+    TEST_ASSERT_NOT_NULL(ev.payload, "payload not NULL");
+    TEST_ASSERT(PyLong_Check(ev.payload), "payload is int");
+    TEST_ASSERT_EQ(PyLong_AsLong(ev.payload), 77, "handler result is 77");
+
+    Py_XDECREF(ev.payload);
+    kos_context_free(ctx);
+    Py_DECREF(code_obj);
+
+    return 0;
+}
+
+
 /* === Test runner === */
 
 int run_eval_tests(void) {
@@ -1184,6 +1505,12 @@ int run_eval_tests(void) {
     RUN_TEST(test_eval_invoke_k_wrong_type);
     RUN_TEST(test_eval_call_zero_args);
     RUN_TEST(test_eval_fast_on_dict_ns);
+
+    RUN_TEST(test_eval_yield_empty_resume);
+    RUN_TEST(test_eval_yield_send_resume);
+    RUN_TEST(test_eval_yield_throw_resume);
+    RUN_TEST(test_eval_yield_throw_caught);
+    RUN_TEST(test_eval_opcode_error_caught_by_try);
 
     return 0;
 }

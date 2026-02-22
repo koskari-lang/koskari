@@ -155,6 +155,33 @@ typedef enum KosEvalMode {
 
 
 /**
+   KosEvalStep is the return type of each internal phase helper inside
+   koskari_eval.  CONTINUE means the phase completed normally and the next
+   phase should run.  STOP_EVENT means out_ev has been filled and the
+   evaluator should return to its caller.  FATAL_ERROR means a PyErr has
+   been set and koskari_eval must return -1.
+*/
+typedef enum KosEvalStep {
+  KOS_STEP_CONTINUE,
+  KOS_STEP_STOP_EVENT,
+  KOS_STEP_FATAL_ERROR,
+} KosEvalStep;
+
+
+/**
+   KosDispatchCtx bundles the per-instruction context assembled by
+   eval_phase_prepare_dispatch and consumed by eval_phase_execute_opcode
+   and eval_phase_post_opcode.
+*/
+typedef struct KosDispatchCtx {
+  int in_hook;     /* non-zero when executing inside a hook runner */
+  KosCode *code;   /* code object for the current frame or hook */
+  uint32_t pc;     /* pc before pre-advance (acting_pc value) */
+  KosOp *insn;     /* pointer into code->code at the acting pc */
+} KosDispatchCtx;
+
+
+/**
    KosEvent carries the result of a koskari_eval call.
 
    The kind field indicates what boundary was reached.

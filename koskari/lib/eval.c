@@ -2243,26 +2243,25 @@ static int try_local_exception_handler(KosContext *ctx, KosEvent *out_ev) {
 }
 
 
-int koskari_eval(KosContext *ctx, KosEvent *out_ev, PyObject *send_val, PyObject *throw_exc) {
-  int eval_ret = 0;
+/**
+   Phase 1: entry and revive normalization.
 
-  if (! ctx) {
-    PyErr_SetString(PyExc_RuntimeError, "NULL context for koskari_eval");
-    return -1;
-  }
+   Determines the initial KosEvalMode by dispatching through the current
+   suspension state and send_val/throw_exc arguments.  Handles the
+   EXCEPTION and RAISE outcomes in-place (filling out_ev and flagging the
+   context dead).  Clears KosContext_SUSPENSION_EVENT after mode selection.
 
-  if (! out_ev) {
-    PyErr_SetString(PyExc_RuntimeError, "NULL output event");
-    return -1;
-  }
+   :param mode_out: Receives the resolved KosEvalMode on KOS_STEP_CONTINUE.
+   :return: KOS_STEP_CONTINUE when the loop should proceed;
+            KOS_STEP_STOP_EVENT when out_ev is filled and eval should return.
+*/
+static KosEvalStep eval_phase_entry(
+        KosContext *ctx,
+        KosEvent *out_ev,
+        PyObject *send_val,
+        PyObject *throw_exc,
+        KosEvalMode *mode_out) {
 
-  /* Mark context as running */
-  KosContext_FLAGS(ctx) |= KOS_CTX_RUNNING;
-
-  /* Push domain scope (token, context, live_depth) onto per-thread TLS */
-  kos_domain_push_scope(ctx);
-
-  /* Entry order: revive_plan first if plan, else branch on send_val/throw_exc and suspension_event */
   KosEvalMode mode = KOS_MODE_NORMAL;
   if (KosContext_PLAN(ctx)) {
     mode = revive_plan(ctx, send_val, throw_exc);
@@ -2310,19 +2309,17 @@ entry_mode_dispatch:
     if (try_local_exception_handler(ctx, out_ev)) {
       if (KosEvent_KIND(out_ev) == KOS_EV_AWAIT) {
         KosContext_SUSPENSION_EVENT(ctx) = KOS_SUSP_AWAIT;
-        eval_ret = 0;
-        goto koskari_eval_cleanup;
+        return KOS_STEP_STOP_EVENT;
       }
-      mode = KOS_MODE_NORMAL;
-      goto eval_loop_start;
+      *mode_out = KOS_MODE_NORMAL;
+      return KOS_STEP_CONTINUE;
     }
-    KosEvent_KIND(out_ev) = KOS_EV_RAISE;
-    KosEvent_PAYLOAD(out_ev) = NULL;
-    PyErr_Fetch(&KosEvent_PAYLOAD(out_ev), NULL, NULL);
+    /* try_local_exception_handler returning 0 has already filled out_ev with
+       KOS_EV_RAISE and the exception payload, and cleared PyErr.  Just mark
+       the context dead and stop; do not call PyErr_Fetch again. */
     KosContext_FLAGS(ctx) &= ~KOS_CTX_RUNNING;
     KosContext_FLAGS(ctx) |= KOS_CTX_DEAD;
-    eval_ret = 0;
-    goto koskari_eval_cleanup;
+    return KOS_STEP_STOP_EVENT;
   }
   if (mode == KOS_MODE_RAISE) {
     KosEvent_KIND(out_ev) = KOS_EV_RAISE;
@@ -2330,14 +2327,28 @@ entry_mode_dispatch:
     PyErr_Fetch(&KosEvent_PAYLOAD(out_ev), NULL, NULL);
     KosContext_FLAGS(ctx) &= ~KOS_CTX_RUNNING;
     KosContext_FLAGS(ctx) |= KOS_CTX_DEAD;
-    eval_ret = 0;
-    goto koskari_eval_cleanup;
+    return KOS_STEP_STOP_EVENT;
   }
 
-  if (run_transfer_plan_to_completion(ctx, out_ev) < 0) {
-    eval_ret = 0;
-    goto koskari_eval_cleanup;
-  }
+  *mode_out = mode;
+  return KOS_STEP_CONTINUE;
+}
+
+
+/**
+   Phase 2: transfer-plan synchronization.
+
+   Drains any active transfer plan to completion.  When no frame and no
+   hook remain after draining, emits a terminal KOS_EV_RETURN(None) and
+   marks the context dead.
+
+   :return: KOS_STEP_CONTINUE when the dispatch loop should start;
+            KOS_STEP_STOP_EVENT when out_ev is filled and eval should return.
+*/
+static KosEvalStep eval_phase_transfer(KosContext *ctx, KosEvent *out_ev) {
+
+  if (run_transfer_plan_to_completion(ctx, out_ev) < 0)
+    return KOS_STEP_STOP_EVENT;
 
   if (! CURRENT_FRAME(ctx) && ! KosContext_HOOK_ACTIVE(ctx)) {
     KosEvent_KIND(out_ev) = KOS_EV_RETURN;
@@ -2345,12 +2356,217 @@ entry_mode_dispatch:
     Py_INCREF(Py_None);
     KosContext_FLAGS(ctx) &= ~KOS_CTX_RUNNING;
     KosContext_FLAGS(ctx) |= KOS_CTX_DEAD;
-    eval_ret = 0;
-    goto koskari_eval_cleanup;
+    return KOS_STEP_STOP_EVENT;
   }
 
-eval_loop_start:
+  return KOS_STEP_CONTINUE;
+}
 
+
+/**
+   Phase 3: async exception check at each loop iteration top.
+
+   When PyErr_Occurred() is set on entry to the dispatch loop (e.g. from a
+   signal handler or a mid-loop async exception), calls process_raise to
+   attempt local handling.  Sets *loop_continue when the caller should
+   issue a bare continue rather than proceeding to dispatch.
+
+   :param loop_continue: Set to 1 when the loop should continue without dispatch.
+   :return: KOS_STEP_STOP_EVENT when out_ev is filled and eval should return;
+            KOS_STEP_CONTINUE otherwise (including when *loop_continue is set).
+*/
+static KosEvalStep eval_phase_pending_exception(
+        KosContext *ctx,
+        KosEvent *out_ev,
+        int *loop_continue) {
+
+  *loop_continue = 0;
+  if (! PyErr_Occurred())
+    return KOS_STEP_CONTINUE;
+
+  KosEvalMode raise_mode = process_raise(ctx, out_ev);
+  if (raise_mode == KOS_MODE_RAISE)
+    return KOS_STEP_STOP_EVENT;
+
+  if (KosEvent_KIND(out_ev) == KOS_EV_AWAIT) {
+    KosContext_SUSPENSION_EVENT(ctx) = KOS_SUSP_AWAIT;
+    return KOS_STEP_STOP_EVENT;
+  }
+
+  *loop_continue = 1;
+  return KOS_STEP_CONTINUE;
+}
+
+
+/**
+   Phase 4: dispatch prelude — fetch, validate, and pre-advance.
+
+   Fetches code and PC from the active hook runner or current frame, performs
+   bounds and opcode-range checks, records acting_pc, pre-advances pc, and
+   loads the instruction pointer into dc.
+
+   :param dc: Filled with in_hook, code, acting pc, and insn on success.
+   :return: KOS_STEP_CONTINUE on success;
+            KOS_STEP_FATAL_ERROR when a hard internal error is set via PyErr.
+*/
+static KosEvalStep eval_phase_prepare_dispatch(
+        KosContext *ctx,
+        KosEvent *out_ev,
+        KosDispatchCtx *dc) {
+
+  (void) out_ev;
+
+  int in_hook = KosContext_HOOK_ACTIVE(ctx);
+  if (! in_hook && ! CURRENT_FRAME(ctx)) {
+    PyErr_SetString(PyExc_RuntimeError,
+                    "eval loop: no active frame and not in hook");
+    return KOS_STEP_FATAL_ERROR;
+  }
+
+  KosCode *code = in_hook
+      ? KosHookRunner_CODE(KosContext_HOOK_RUNNER(ctx))
+      : CURRENT_CODE(ctx);
+  uint32_t pc = in_hook
+      ? KosHookRunner_PC(KosContext_HOOK_RUNNER(ctx))
+      : CURRENT_PC(ctx);
+
+  if (unlikely(pc >= KosCode_CODE_LEN(code))) {
+    SAYF("[eval] pc=%u OUT OF RANGE (code_len=%u)\n",
+         (unsigned) pc, (unsigned) KosCode_CODE_LEN(code));
+    PyErr_SetString(PyExc_RuntimeError, "pc out of range");
+    return KOS_STEP_FATAL_ERROR;
+  }
+
+  KosOp *insn = &KosCode_CODE(code)[pc];
+  SAYF("[eval] pc=%u op=%s arg=%u\n",
+       (unsigned) pc, kos_opcode_name(KosOp_OP(insn)), (unsigned) KosOp_ARG(insn));
+
+  /* Record acting_pc (instruction we are executing) before advance. */
+  if (in_hook)
+    KosHookRunner_ACTING_PC(KosContext_HOOK_RUNNER(ctx)) = pc;
+  else
+    KosDynFrame_ACTING_PC(CURRENT_FRAME(ctx)) = pc;
+
+  /* Advance PC before dispatch so normal path advances. If handler returns 1
+     (suspend, e.g. WITH enter/exit await) we roll back so next eval is same insn. */
+  if (in_hook)
+    KosHookRunner_PC(KosContext_HOOK_RUNNER(ctx)) = pc + 1;
+  else
+    CURRENT_PC(ctx) = pc + 1;
+
+  if (unlikely((KosOpCode) KosOp_OP(insn) > KOS_OP_THEEND)) {
+    PyErr_Format(PyExc_RuntimeError, "invalid opcode %u",
+                 (unsigned) KosOp_OP(insn));
+    return KOS_STEP_FATAL_ERROR;
+  }
+
+  dc->in_hook = in_hook;
+  dc->code    = code;
+  dc->pc      = pc;
+  dc->insn    = insn;
+  return KOS_STEP_CONTINUE;
+}
+
+
+/**
+   Phase 6: post-opcode result handling.
+
+   Called when an opcode handler returns a non-zero op_res.  Handles the
+   exception path (via try_local_exception_handler), the WITH-family PC
+   rollback for async enter/exit suspend, and suspension-event tagging for
+   AWAIT and YIELD events.  Sets *loop_continue when an exception was locally
+   handled and the loop should continue without stopping.
+
+   :param op_res: The non-zero return value from the opcode handler.
+   :param loop_continue: Set to 1 when exception was handled and loop should continue.
+   :return: KOS_STEP_FATAL_ERROR when op_res < 0 and no exception/event (caller uses eval_ret -1);
+            KOS_STEP_STOP_EVENT when out_ev is filled and eval should return (eval_ret 0);
+            KOS_STEP_CONTINUE when *loop_continue is set.
+*/
+static KosEvalStep eval_phase_post_opcode(
+        KosContext *ctx,
+        KosEvent *out_ev,
+        KosDispatchCtx *dc,
+        int op_res,
+        int *loop_continue) {
+
+  *loop_continue = 0;
+
+  if (PyErr_Occurred()) {
+    clear_pending_agen_on_error(ctx);
+    if (try_local_exception_handler(ctx, out_ev)) {
+      if (KosEvent_KIND(out_ev) == KOS_EV_AWAIT) {
+        KosContext_SUSPENSION_EVENT(ctx) = KOS_SUSP_AWAIT;
+        return KOS_STEP_STOP_EVENT;
+      }
+      *loop_continue = 1;
+      return KOS_STEP_CONTINUE;
+    }
+    return KOS_STEP_STOP_EVENT;
+  }
+
+  if (op_res == 1) {
+    /* WITH enter/exit await: do not advance PC so resume dispatches
+       the same opcode. Other opcodes (e.g. YIELD) use 1 for suspend
+       but resume at the next instruction. */
+    KosOpCode op = (KosOpCode) KosOp_OP(dc->insn);
+    if (op == KOS_OP_PUSH_WITH || op == KOS_OP_POP_WITH
+        || op == KOS_OP_PUSH_DYN_WITH || op == KOS_OP_POP_DYN_WITH) {
+      if (dc->in_hook) {
+        KosHookRunner_PC(KosContext_HOOK_RUNNER(ctx)) = dc->pc;
+        KosHookRunner_ACTING_PC(KosContext_HOOK_RUNNER(ctx)) = dc->pc;
+      } else {
+        CURRENT_PC(ctx) = dc->pc;
+        KosDynFrame_ACTING_PC(CURRENT_FRAME(ctx)) = dc->pc;
+      }
+    }
+  }
+
+  /* Record why we suspended so next entry can choose revive path */
+  if (KosEvent_KIND(out_ev) == KOS_EV_AWAIT) {
+    KosContext_SUSPENSION_EVENT(ctx) = KOS_SUSP_AWAIT;
+  } else if (KosEvent_KIND(out_ev) == KOS_EV_YIELD) {
+    KosContext_SUSPENSION_EVENT(ctx) = KOS_SUSP_YIELD;
+  }
+
+  /* op_res < 0 with no PyErr and no suspension event is a fatal internal error */
+  return (op_res < 0) ? KOS_STEP_FATAL_ERROR : KOS_STEP_STOP_EVENT;
+}
+
+
+int koskari_eval(KosContext *ctx, KosEvent *out_ev, PyObject *send_val, PyObject *throw_exc) {
+  int eval_ret = 0;
+
+  if (! ctx) {
+    PyErr_SetString(PyExc_RuntimeError, "NULL context for koskari_eval");
+    return -1;
+  }
+
+  if (! out_ev) {
+    PyErr_SetString(PyExc_RuntimeError, "NULL output event");
+    return -1;
+  }
+
+  /* Mark context as running */
+  KosContext_FLAGS(ctx) |= KOS_CTX_RUNNING;
+
+  /* Push domain scope (token, context, live_depth) onto per-thread TLS */
+  kos_domain_push_scope(ctx);
+
+  /* Phase 1: entry/revive normalization */
+  KosEvalMode mode = KOS_MODE_NORMAL;
+  if (eval_phase_entry(ctx, out_ev, send_val, throw_exc, &mode) != KOS_STEP_CONTINUE)
+    goto koskari_eval_cleanup;
+
+  /* Phase 2: transfer-plan synchronization (only when mode warrants it) */
+  if (mode == KOS_MODE_NORMAL || mode == KOS_MODE_TRANSFER) {
+    if (eval_phase_transfer(ctx, out_ev) != KOS_STEP_CONTINUE)
+      goto koskari_eval_cleanup;
+  }
+
+/* The optable and all TARGET_* labels must remain in koskari_eval because
+   GCC/Clang computed-goto requires label addresses (&&TARGET_name) and the
+   indirect goto (goto *optable[op]) to be in the same function body. */
 #if KOS_USE_COMPUTED_GOTO
   static const void *const optable[] = {
 #define OP(name, style) &&TARGET_##name,
@@ -2373,133 +2589,68 @@ eval_loop_start:
       goto koskari_eval_cleanup;
     }
 
-    if (PyErr_Occurred()) {
-      KosEvalMode raise_mode = process_raise(ctx, out_ev);
-      if (raise_mode == KOS_MODE_RAISE) {
+    /* Phase 3: async pending-exception check */
+    {
+      int loop_continue = 0;
+      if (eval_phase_pending_exception(ctx, out_ev, &loop_continue) == KOS_STEP_STOP_EVENT) {
         eval_ret = 0;
         goto koskari_eval_cleanup;
       }
-      if (KosEvent_KIND(out_ev) == KOS_EV_AWAIT) {
-        KosContext_SUSPENSION_EVENT(ctx) = KOS_SUSP_AWAIT;
-        eval_ret = 0;
-        goto koskari_eval_cleanup;
-      }
-      continue;
+      if (loop_continue)
+        continue;
     }
 
-    int in_hook = KosContext_HOOK_ACTIVE(ctx);
-    if (! in_hook && ! CURRENT_FRAME(ctx)) {
-      PyErr_SetString(PyExc_RuntimeError,
-                      "eval loop: no active frame and not in hook");
-      eval_ret = -1;
-      goto koskari_eval_cleanup;
-    }
-    KosCode *code = in_hook
-        ? KosHookRunner_CODE(KosContext_HOOK_RUNNER(ctx))
-        : CURRENT_CODE(ctx);
-    uint32_t pc = in_hook
-        ? KosHookRunner_PC(KosContext_HOOK_RUNNER(ctx))
-        : CURRENT_PC(ctx);
-
-    if (unlikely(pc >= KosCode_CODE_LEN(code))) {
-      SAYF("[eval] pc=%u OUT OF RANGE (code_len=%u)\n",
-           (unsigned) pc, (unsigned) KosCode_CODE_LEN(code));
-      PyErr_SetString(PyExc_RuntimeError, "pc out of range");
-      eval_ret = -1;
-      goto koskari_eval_cleanup;
-    }
-
-    KosOp *insn = &KosCode_CODE(code)[pc];
-    SAYF("[eval] pc=%u op=%s arg=%u\n",
-         (unsigned) pc, kos_opcode_name(KosOp_OP(insn)), (unsigned) KosOp_ARG(insn));
-
+    /* Phase 4: dispatch prelude */
 #if KOS_STACK_TRACE
     trace_stack("  before", CURRENT_STACK(ctx));
 #endif
-
-    /* Record acting_pc (instruction we are executing) before advance. */
-    if (in_hook)
-      KosHookRunner_ACTING_PC(KosContext_HOOK_RUNNER(ctx)) = pc;
-    else
-      KosDynFrame_ACTING_PC(CURRENT_FRAME(ctx)) = pc;
-
-    /* Advance PC before dispatch so normal path advances. If handler returns 1
-       (suspend, e.g. WITH enter/exit await) we roll back so next eval is same insn. */
-    if (in_hook)
-      KosHookRunner_PC(KosContext_HOOK_RUNNER(ctx)) = pc + 1;
-    else
-      CURRENT_PC(ctx) = pc + 1;
-
-    if (unlikely((KosOpCode) KosOp_OP(insn) > KOS_OP_THEEND)) {
-      PyErr_Format(PyExc_RuntimeError, "invalid opcode %u",
-                   (unsigned) KosOp_OP(insn));
-      eval_ret = -1;
-      goto koskari_eval_cleanup;
+    KosDispatchCtx dc;
+    {
+      KosEvalStep pds = eval_phase_prepare_dispatch(ctx, out_ev, &dc);
+      if (pds == KOS_STEP_FATAL_ERROR) {
+        eval_ret = -1;
+        goto koskari_eval_cleanup;
+      }
     }
 
+    /* Phase 5: opcode dispatch.
+       Computed-goto dispatch stays here; see comment above optable[]. */
     {
       int op_res;
 
 #if KOS_USE_COMPUTED_GOTO
-      goto *optable[KosOp_OP(insn)];
-#define OP(name, style) TARGET_##name: op_res = op_##name(ctx, out_ev, insn); if (op_res != 0) goto handle_op_result; goto next_insn;
+      goto *optable[KosOp_OP(dc.insn)];
+#define OP(name, style) TARGET_##name: op_res = op_##name(ctx, out_ev, dc.insn); if (op_res != 0) goto handle_op_result; goto next_insn;
 #include "opcodes.incl"
 #undef OP
       handle_op_result:
 #else
-      switch (KosOp_OP(insn)) {
-#define OP(name, style) case KOS_OP_##name: op_res = op_##name(ctx, out_ev, insn); break;
+      switch (KosOp_OP(dc.insn)) {
+#define OP(name, style) case KOS_OP_##name: op_res = op_##name(ctx, out_ev, dc.insn); break;
 #include "opcodes.incl"
 #undef OP
       default:
         PyErr_Format(PyExc_RuntimeError, "invalid opcode %u",
-                     (unsigned) KosOp_OP(insn));
+                     (unsigned) KosOp_OP(dc.insn));
         eval_ret = -1;
         goto koskari_eval_cleanup;
       }
 #endif
 
+      /* Phase 6: post-opcode result handling */
       if (unlikely(op_res != 0)) {
-        if (PyErr_Occurred()) {
-          clear_pending_agen_on_error(ctx);
-          if (try_local_exception_handler(ctx, out_ev)) {
-            if (KosEvent_KIND(out_ev) == KOS_EV_AWAIT) {
-              KosContext_SUSPENSION_EVENT(ctx) = KOS_SUSP_AWAIT;
-              eval_ret = 0;
-              goto koskari_eval_cleanup;
-            }
-            continue;
-          }
-
+        int loop_continue = 0;
+        KosEvalStep ps = eval_phase_post_opcode(ctx, out_ev, &dc, op_res, &loop_continue);
+        if (ps == KOS_STEP_FATAL_ERROR) {
+          eval_ret = -1;
+          goto koskari_eval_cleanup;
+        }
+        if (ps == KOS_STEP_STOP_EVENT) {
           eval_ret = 0;
           goto koskari_eval_cleanup;
         }
-
-        if (op_res == 1) {
-          /* WITH enter/exit await: do not advance PC so resume dispatches
-             the same opcode. Other opcodes (e.g. YIELD) use 1 for suspend
-             but resume at the next instruction. */
-          KosOpCode op = (KosOpCode) KosOp_OP(insn);
-          if (op == KOS_OP_PUSH_WITH || op == KOS_OP_POP_WITH
-              || op == KOS_OP_PUSH_DYN_WITH || op == KOS_OP_POP_DYN_WITH) {
-            if (in_hook) {
-              KosHookRunner_PC(KosContext_HOOK_RUNNER(ctx)) = pc;
-              KosHookRunner_ACTING_PC(KosContext_HOOK_RUNNER(ctx)) = pc;
-            } else {
-              CURRENT_PC(ctx) = pc;
-              KosDynFrame_ACTING_PC(CURRENT_FRAME(ctx)) = pc;
-            }
-          }
-        }
-
-        /* Record why we suspended so next entry can choose revive path */
-        if (KosEvent_KIND(out_ev) == KOS_EV_AWAIT) {
-          KosContext_SUSPENSION_EVENT(ctx) = KOS_SUSP_AWAIT;
-        } else if (KosEvent_KIND(out_ev) == KOS_EV_YIELD) {
-          KosContext_SUSPENSION_EVENT(ctx) = KOS_SUSP_YIELD;
-        }
-        eval_ret = (op_res < 0) ? -1 : 0;
-        goto koskari_eval_cleanup;
+        if (loop_continue)
+          continue;
       }
 
 #if !KOS_USE_COMPUTED_GOTO
