@@ -104,37 +104,6 @@ typedef enum KosDynFlags {
 #define KOS_DYN_CAP_CATCH KOS_DYN_CAP_MAY_SWALLOW_EXCEPTION
 
 
-/* === KosDynTypeOps: per-type handler table for unified API === */
-
-
-/**
-   KosDynTypeOps provides type-specific handlers for install, pop,
-   wind, unwind, teardown, unwind_on_exception, and clone. Generic code
-   dispatches via kos_dyn_type_ops[kind]. NULL slots mean no-op or not
-   applicable.
-
-   unwind_on_exception is invoked during exception unwinding when the
-   normal pop handler declines (e.g., a BARRIER node). The handler
-   should perform any necessary cleanup, unlink the node from the chain,
-   and return: 0 to continue unwinding, 1 if the exception was swallowed
-   and execution should resume, KOS_DYN_UNWIND_ASYNC_STARTED if an async
-   operation was started, or -1 on error.
-*/
-typedef struct KosDynTypeOps {
-  int (*install)(KosContext *ctx, KosDynNode *node);
-  int (*pop)(KosContext *ctx, KosDynNode *node, struct KosEvent *out_ev);
-  int (*wind)(KosContext *ctx, KosDynNode *node);
-  int (*unwind)(KosContext *ctx, KosDynNode *node, PyObject **out_awaitable);
-  int (*teardown_after_unwind)(KosContext *ctx, KosDynNode *node);
-  int (*unwind_on_exception)(KosContext *ctx, KosDynNode *node, struct KosEvent *out_ev);
-  KosDynNode *(*clone)(KosDynNode *node);
-  uint32_t caps;
-} KosDynTypeOps;
-
-
-extern const KosDynTypeOps kos_dyn_type_ops[];
-
-
 /* === KosRegionStyle enum === */
 
 
@@ -1148,21 +1117,29 @@ int kos_dyn_wind_unwind(KosContext *ctx, KosDynWind *node);
 
 
 /**
-   Unified extent wind (enter) and unwind (exit) API.  Dispatches by
-   node kind to the appropriate helper.  Single call site for
-   "run this node's wind/unwind".
+   Generic dispatch functions for the seven dynchain operations.  Each
+   switches on the node's kind and invokes the appropriate per-type
+   implementation directly, allowing the compiler to emit a jump table
+   with inlined handlers rather than an indirect function-pointer call.
 
-   kos_extent_run_wind(ctx, node): enter the extent.  Return 0 on
-   success, -1 on error, or KOS_DYN_UNWIND_ASYNC_STARTED if async.
-
-   kos_extent_run_unwind(ctx, node, out_awaitable): exit the extent.
-   Return 0 when complete, -1 on error, or KOS_DYN_UNWIND_ASYNC_STARTED
-   if async exit started.  For WITH/DYN_WITH, when async, stores the
-   awaitable in *out_awaitable (caller may pass NULL if not needed).
+   kos_dyn_install: run install-phase setup when a node is pushed.
+   kos_dyn_wind: run wind (enter) for extent nodes during continuation transfer.
+   kos_dyn_unwind: run unwind (exit) for extent nodes; may start async.
+   kos_dyn_teardown_after_unwind: post-unwind structural teardown during transfer.
+   kos_dyn_unwind_on_exception: called when exception propagation reaches a
+     HANDLES_EXCEPTIONS node; returns 0 to continue, 1 if swallowed,
+     KOS_DYN_UNWIND_ASYNC_STARTED if async, -1 on error.
+   kos_dyn_clone: allocate a copy of the node; NULL return on error or if
+     the type forbids cloning.
 */
-int kos_extent_run_wind(KosContext *ctx, KosDynNode *node);
-int kos_extent_run_unwind(KosContext *ctx, KosDynNode *node,
-                         PyObject **out_awaitable);
+int kos_dyn_install(KosContext *ctx, KosDynNode *node);
+int kos_dyn_wind(KosContext *ctx, KosDynNode *node);
+int kos_dyn_unwind(KosContext *ctx, KosDynNode *node,
+                   PyObject **out_awaitable);
+int kos_dyn_teardown_after_unwind(KosContext *ctx, KosDynNode *node);
+int kos_dyn_unwind_on_exception(KosContext *ctx, KosDynNode *node,
+                                struct KosEvent *out_ev);
+KosDynNode *kos_dyn_clone(KosDynNode *node);
 
 void kos_dyn_ns_unwind(KosContext *ctx, KosDynNs *node);
 
