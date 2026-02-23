@@ -23,6 +23,7 @@ Layout handlers for reader block syntax (layout decorator and LAYOUTS).
 
 
 from .helpers import LAYOUTS, layout
+from . import conditionals  # register built-in conditional layouts
 
 
 __all__ = (

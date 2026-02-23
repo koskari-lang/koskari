@@ -15,9 +15,6 @@
 tests.parse.test_layout
 
 Unit tests for koskari.parse LayoutReader and block syntax.
-
-:author: Christopher O'Brien <obriencj@preoccupied.net>
-:license: GNU General Public License v3
 """
 
 
@@ -30,11 +27,13 @@ from koskari.types import (
     cdr,
     is_pair,
     symbol,
+    keyword,
 )
 from koskari.reader import LayoutReader, source_str
 from koskari.compile.helpers import pycons
 
 _layout_block = symbol('layout/block')
+_layout_if = symbol('layout/if')
 
 
 def _parse_layout(src_str):
@@ -49,13 +48,13 @@ class TestLayoutBlockSyntax(TestCase):
 
     def test_simple_block(self):
         src = """
-        if x :
+        foo x :
           y
         """
         result = _parse_layout(src)
         self.assertTrue(result is not None)
         self.assertEqual(car(result), _layout_block)
-        self.assertEqual(car(cdr(result)), symbol('if'))
+        self.assertEqual(car(cdr(result)), symbol('foo'))
         self.assertEqual(car(cdr(cdr(result))), symbol('x'))
         self.assertEqual(car(cdr(cdr(cdr(result)))), symbol('y'))
 
@@ -64,18 +63,6 @@ class TestLayoutBlockSyntax(TestCase):
         let [[x 1000]
              [y 2000]] :
           (do_something x y)
-        """
-        result = _parse_layout(src)
-        self.assertTrue(result is not None)
-        self.assertEqual(car(result), _layout_block)
-        self.assertEqual(car(cdr(result)), symbol('let'))
-        body = car(cdr(cdr(cdr(result))))
-        self.assertEqual(car(body), symbol('do_something'))
-
-    def test_nested_blocks(self):
-        src = """
-        let [[x 1]] :
-          (do_something x)
         """
         result = _parse_layout(src)
         self.assertTrue(result is not None)
@@ -98,14 +85,9 @@ class TestLayoutBlockSyntax(TestCase):
             _layout_block,
             symbol('let'),
             ((symbol('x'), 1),),
-            (_layout_block,
-                symbol('if'),
-                symbol('x'),
-                (symbol('foo'), symbol('x'),),)
+            (_layout_if,
+                (symbol('x'), (symbol('foo'), symbol('x'),),),)
         ))
-
-        # print(result)
-        # print(expected)
 
         self.assertEqual(result, expected)
 
@@ -134,6 +116,72 @@ class TestLayoutBlockSyntax(TestCase):
         self.assertEqual(car(cdr(result)), symbol('unknown'))
 
 
+class TestLayoutIfPeers(TestCase):
+
+    def test_if_without_peers(self):
+        src = """
+        if x :
+          y
+        """
+        result = _parse_layout(src)
+        self.assertEqual(car(result), _layout_if)
+        first_clause = car(cdr(result))
+        self.assertEqual(car(first_clause), symbol('x'))
+        self.assertEqual(car(cdr(first_clause)), symbol('y'))
+
+    def test_if_with_else_peer(self):
+        src = """
+        if x :
+          y
+        else :
+          z
+        """
+        result = _parse_layout(src)
+        self.assertEqual(car(result), _layout_if)
+
+        first = car(cdr(result))
+        second = car(cdr(cdr(result)))
+
+        self.assertEqual(car(first), symbol('x'))
+        self.assertEqual(car(cdr(first)), symbol('y'))
+        self.assertEqual(car(second), keyword('else'))
+        self.assertEqual(car(cdr(second)), symbol('z'))
+
+    def test_if_with_elif_then_else(self):
+        src = """
+        if x :
+          a
+        elif y :
+          b
+        else :
+          c
+        """
+        result = _parse_layout(src)
+        self.assertEqual(car(result), _layout_if)
+
+        first = car(cdr(result))
+        second = car(cdr(cdr(result)))
+        third = car(cdr(cdr(cdr(result))))
+
+        self.assertEqual(car(first), symbol('x'))
+        self.assertEqual(car(cdr(first)), symbol('a'))
+        self.assertEqual(car(second), symbol('y'))
+        self.assertEqual(car(cdr(second)), symbol('b'))
+        self.assertEqual(car(third), keyword('else'))
+        self.assertEqual(car(cdr(third)), symbol('c'))
+
+    def test_if_invalid_peer_order(self):
+        src = """
+        if x :
+          a
+        else :
+          b
+        elif y :
+          c
+        """
+        self.assertRaises(SyntaxError, _parse_layout, src)
+
+
 class TestLayoutReaderNamespace(TestCase):
 
     def test_accepts_module(self):
@@ -145,3 +193,6 @@ class TestLayoutReaderNamespace(TestCase):
     def test_accepts_dict(self):
         reader = LayoutReader({})
         self.assertIsNotNone(reader._ns)
+
+
+# The end.

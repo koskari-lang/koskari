@@ -25,18 +25,32 @@ Layout decorator and LAYOUTS collector for reader block syntax.
 LAYOUTS = {}
 
 
-def layout(head_symbol):
+class LayoutHandler(object):
+    """
+    Wrapper for layout handlers with optional peer metadata.
+
+    A handler is called as read_fn(reader, source, peers).
+    """
+
+    def __init__(self, head_symbol, read_fn, peers=()):
+        self.head = head_symbol
+        self.read = read_fn
+        self.peers = tuple(peers or ())
+
+
+def layout(head_symbol, peers=()):
     """
     Decorator that registers a function as a layout handler.
-    The handler must have signature (stream, head, args, outer_indent)
-    and return the parsed form. The decorated function gets .read = self
-    so LayoutReader.find_layout can use it.
+
+    The handler must have signature (reader, source, peers) and return
+    the parsed form. Optional ``peers`` declares peer block head symbols
+    that the parser should gather contiguously after this block.
     """
 
     def decorator(fn):
-        LAYOUTS[head_symbol] = fn
-        fn.read = fn
-        return fn
+        handler = LayoutHandler(head_symbol, fn, peers=peers)
+        LAYOUTS[head_symbol] = handler
+        return handler
 
     return decorator
 
