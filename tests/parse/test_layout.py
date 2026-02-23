@@ -28,9 +28,11 @@ from koskari.types import (
     ModuleNamespace,
     car,
     cdr,
+    is_pair,
     symbol,
 )
 from koskari.parse import LayoutReader, source_str
+from koskari.compile.helpers import pycons
 
 _layout_block = symbol('layout/block')
 
@@ -81,6 +83,31 @@ class TestLayoutBlockSyntax(TestCase):
         self.assertEqual(car(cdr(result)), symbol('let'))
         body = car(cdr(cdr(cdr(result))))
         self.assertEqual(car(body), symbol('do_something'))
+
+    def test_nested_block_inside_block(self):
+        src = """
+        let [[x 1]] :
+          if x :
+            (foo x)
+        """
+        result = _parse_layout(src)
+
+        self.assertTrue(result is not None)
+
+        expected = pycons((
+            _layout_block,
+            symbol('let'),
+            ((symbol('x'), 1),),
+            (_layout_block,
+                symbol('if'),
+                symbol('x'),
+                (symbol('foo'), symbol('x'),),)
+        ))
+
+        # print(result)
+        # print(expected)
+
+        self.assertEqual(result, expected)
 
     def test_dedent_ends_body(self):
         src = """
