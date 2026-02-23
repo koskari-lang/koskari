@@ -26,7 +26,7 @@ import unittest
 from koskari.compile import Compiler, CompilerMode
 from koskari.compile.specials import SPECIALS
 from koskari.lib import FunctionSpec, OpCode
-from koskari.parse import default_reader, source_str
+from koskari.reader import default_reader, source_str
 from koskari.types import Module, ModuleNamespace
 
 

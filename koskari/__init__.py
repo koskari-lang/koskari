@@ -16,7 +16,7 @@ koskari
 
 A LISP dialect for Python - a playground language for joyful expression.
 
-Import from submodules only: koskari.types, koskari.exceptions, koskari.parse,
+Import from submodules only: koskari.types, koskari.exceptions, koskari.reader,
 koskari.compile, koskari.dis, koskari.lib.
 
 :author: Christopher O'Brien <obriencj@preoccupied.net>

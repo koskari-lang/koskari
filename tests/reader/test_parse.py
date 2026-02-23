@@ -25,7 +25,7 @@ from io import StringIO
 from unittest import TestCase
 
 from koskari.types import cons, symbol, keyword, nil, car, cdr, BaseSourceStream
-from koskari.parse import default_reader, source_str
+from koskari.reader import default_reader, source_str
 
 
 def parse_source(src_str):
@@ -500,7 +500,7 @@ class TestCollections(TestCase):
 class TestReader(TestCase):
 
     def test_read_atom(self):
-        from koskari.parse import Reader, Atom
+        from koskari.reader import Reader, Atom
 
         reader = Reader()
         stream = source_str("hello", "<unittest>")
@@ -509,7 +509,7 @@ class TestReader(TestCase):
         self.assertEqual(result, "hello")
 
     def test_read_and_position(self):
-        from koskari.parse import Reader
+        from koskari.reader import Reader
 
         reader = Reader()
         stream = source_str("  hello", "<unittest>")
@@ -781,7 +781,7 @@ class TestSourceStreamInheritance(TestCase):
         self.assertIsInstance(s, BaseSourceStream)
 
     def test_type_is_source_stream(self):
-        from koskari.parse import SourceStream
+        from koskari.reader import SourceStream
         s = source_str("test", "<unittest>")
         self.assertIsInstance(s, SourceStream)
 
@@ -808,7 +808,7 @@ class TestSourceStreamInheritance(TestCase):
         self.assertEqual(data, "hello")
 
     def test_skip_whitespace_native(self):
-        from koskari.parse import SourceStream
+        from koskari.reader import SourceStream
         s = SourceStream(StringIO("  hello"), "test.txt", auto_skip_exec=False)
         # SourceStream uses native skip_whitespace from BaseSourceStream
         ws = s.skip_whitespace()

@@ -9,7 +9,10 @@ koskari/
 ├── __init__.py       # Minimal: docstring only, no re-exports
 ├── exceptions.py     # KoskariException, NotYetImplemented, KoskariSyntaxError
 ├── types.py          # Value types (from lib) + Python predicates/helpers
-├── parse.py          # Reader, SourceStream, reader macros, parse errors
+├── reader/           # Parser, layout block syntax, reader macros
+│   ├── __init__.py
+│   ├── parser.py     # Reader, SourceStream, reader macros, parse errors
+│   └── layouts/      # Layout decorator, LAYOUTS collector
 ├── dis.py            # Disassembler for Code objects
 ├── compile/          # Compiler, ByteCodeFragment, special forms
 │   ├── __init__.py
@@ -28,16 +31,16 @@ koskari/
 | Base exceptions | `koskari.exceptions` | `KoskariException`, `NotYetImplemented`, `KoskariSyntaxError` |
 | Value types (native) | `koskari.lib` | `symbol`, `keyword`, `pair`, `nil`, `cons`, `car`, `cdr`, `Namespace`, `NamespaceSpec`, `Code`, `OpCode`, `FormalsSpec`, `values`, `Expression`, `Function`, etc. |
 | Value types + predicates | `koskari.types` | Imports from `koskari.lib`; defines `TypePredicate`, `BuiltinPredicate`, `is_symbol`, `is_pair`, `build_proper`, `unpack`, `get_position`, etc. |
-| Parse errors | `koskari.parse` | `ReaderSyntaxError`, `FormatStringSyntaxError` (subclass `KoskariSyntaxError` from `koskari.exceptions`) |
+| Parse errors | `koskari.reader` | `ReaderSyntaxError`, `FormatStringSyntaxError` (subclass `KoskariSyntaxError` from `koskari.exceptions`) |
 | Compiler errors | `koskari.compile.exceptions` | `CompilerException`, `UncaughtCompilerException`, `CompilerMode` |
-| Parsing | `koskari.parse` | `Reader`, `SourceStream`, `source_str`, `source_open`, `default_reader` |
+| Parsing | `koskari.reader` | `Reader`, `LayoutReader`, `SourceStream`, `source_str`, `source_open`, `default_reader` |
 | Compilation | `koskari.compile` | `Compiler`, `ByteCodeFragment`, `SPECIALS` (from compiler.py, specials.py) |
 | Disassembly | `koskari.dis` | `dis`, and internal helpers |
 
 ## Import policy
 
 - **Internal koskari code:** Import from the defining module only (e.g. `from koskari.exceptions import KoskariSyntaxError`, `from koskari.types import is_pair`, `from koskari.lib import Code`). Do not use `from koskari import ...` for submodule-defined symbols.
-- **Tests:** Same rule: import from `koskari.lib`, `koskari.types`, `koskari.exceptions`, `koskari.parse`, `koskari.compile`, or `koskari.dis` as appropriate.
+- **Tests:** Same rule: import from `koskari.lib`, `koskari.types`, `koskari.exceptions`, `koskari.reader`, `koskari.compile`, or `koskari.dis` as appropriate.
 - **External programs:** Import from the submodule that defines the symbol. The top-level `koskari` package has no re-exports.
 
 ## Test layout

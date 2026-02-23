@@ -31,7 +31,7 @@ from koskari.types import (
     is_pair,
     symbol,
 )
-from koskari.parse import LayoutReader, source_str
+from koskari.reader import LayoutReader, source_str
 from koskari.compile.helpers import pycons
 
 _layout_block = symbol('layout/block')

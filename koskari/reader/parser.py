@@ -12,7 +12,7 @@
 # along with this library; if not, see <http://www.gnu.org/licenses/>.
 
 """
-koskari.parse
+koskari.reader.parser
 
 Koskari's s-expression parser with run-time modifiable reader macros.
 
@@ -30,8 +30,8 @@ from io import StringIO
 from os.path import exists
 from re import compile as regex, UNICODE, VERBOSE
 
-from .exceptions import KoskariSyntaxError
-from .types import (
+from ..exceptions import KoskariSyntaxError
+from ..types import (
     Module,
     symbol,
     keyword,
@@ -976,7 +976,7 @@ class LayoutReader(Reader):
         """
 
         super().__init__(nodefaults=nodefaults)
-        from .types import ModuleNamespace
+        from ..types import ModuleNamespace
 
         if isinstance(namespace, Module):
             self._ns = vars(namespace)
@@ -1394,7 +1394,10 @@ class IndentAwareStream(object):
             if (len(self._buffer) > 1 and self._buffer[0] == '\n'):
                 self._dedent_detected = True
                 return ''
-            if len(self._buffer) == 1 and self._buffer[0] == '\n':
+            if all(c in ' \t' for c in self._buffer):
+                self._buffer = []
+                self._buffer_start_pos = None
+            elif len(self._buffer) == 1 and self._buffer[0] == '\n':
                 next_indent = 0
                 line_chars = []
                 while True:
