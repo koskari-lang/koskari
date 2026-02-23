@@ -803,6 +803,212 @@ static PyObject *pair_is_recursive(PyObject *self, PyObject *_noargs) {
 }
 
 
+/**
+   Walk the cons chain from self to the last pair. Uses seen set to
+   detect cycles. Returns the last pair, or NULL if recursive. On
+   success, *out_cdr receives the cdr of the last pair (caller does
+   not take a new reference).
+ */
+static KosPair *pair_find_last(PyObject *self, PyObject *seen,
+                               PyObject **out_cdr) {
+  KosPair *last = NULL;
+  PyObject *pair_id;
+
+  for ( ; KosPair_CheckExact(self); self = KosPair_CDR(self)) {
+    last = (KosPair *) self;
+    pair_id = PyLong_FromVoidPtr(self);
+
+    if (PySet_Contains(seen, pair_id)) {
+      Py_DECREF(pair_id);
+      PyErr_SetString(PyExc_ValueError,
+                      "cannot append/extend/splice: recursive pair");
+      return NULL;
+    }
+
+    PySet_Add(seen, pair_id);
+    Py_DECREF(pair_id);
+  }
+
+  if (last) {
+    *out_cdr = KosPair_CDR(last);
+    return last;
+  }
+
+  return NULL;
+}
+
+
+/**
+   Convert a Python iterable (tuple, list, iterator, etc.) to a proper
+   cons chain. Returns new pair or NULL on error.
+ */
+static PyObject *pair_iterable_to_proper_cons(PyObject *obj) {
+  PyObject *it = PyObject_GetIter(obj);
+  PyObject *coll;
+  PyObject *item;
+  PyObject *result;
+
+  if (! it)
+    return NULL;
+
+  coll = PyList_New(0);
+  if (! coll) {
+    Py_DECREF(it);
+    return NULL;
+  }
+
+  while ((item = PyIter_Next(it)) != NULL) {
+    if (PyList_Append(coll, item) < 0) {
+      Py_DECREF(item);
+      Py_DECREF(coll);
+      Py_DECREF(it);
+      return NULL;
+    }
+    Py_DECREF(item);
+  }
+  Py_DECREF(it);
+
+  if (PyErr_Occurred()) {
+    Py_DECREF(coll);
+    return NULL;
+  }
+
+  if (PyList_Append(coll, KosNil) < 0) {
+    Py_DECREF(coll);
+    return NULL;
+  }
+
+  result = KosPair_Cons(coll);
+  Py_DECREF(coll);
+  return result;
+}
+
+
+static PyObject *pair_append(PyObject *self, PyObject *obj) {
+  PyObject *seen;
+  PyObject *last_cdr;
+  KosPair *last;
+  PyObject *new_pair;
+
+  if (KosNil_Check(self)) {
+    PyErr_SetString(PyExc_TypeError, "cannot append to nil");
+    return NULL;
+  }
+
+  seen = PySet_New(NULL);
+  if (! seen)
+    return NULL;
+
+  last = pair_find_last(self, seen, &last_cdr);
+  Py_DECREF(seen);
+
+  if (! last)
+    return NULL;
+
+  if (last_cdr == KosNil) {
+    new_pair = KosPair_New(obj, KosNil);
+  } else {
+    new_pair = KosPair_New(last_cdr, obj);
+  }
+
+  if (! new_pair)
+    return NULL;
+
+  KosPair_SETCDR(last, new_pair);
+  Py_DECREF(new_pair);
+  Py_RETURN_NONE;
+}
+
+
+static void pair_splice_at_last(KosPair *last, PyObject *last_cdr,
+                                PyObject *splice_head) {
+  PyObject *bridge;
+
+  if (last_cdr == KosNil) {
+    KosPair_SETCDR(last, splice_head);
+  } else {
+    bridge = KosPair_New(last_cdr, splice_head);
+    if (bridge) {
+      KosPair_SETCDR(last, bridge);
+      Py_DECREF(bridge);
+    }
+  }
+}
+
+
+static PyObject *pair_extend(PyObject *self, PyObject *obj) {
+  PyObject *seen;
+  PyObject *last_cdr;
+  KosPair *last;
+  PyObject *splice_head = NULL;
+
+  if (KosNil_Check(self)) {
+    PyErr_SetString(PyExc_TypeError, "cannot extend nil");
+    return NULL;
+  }
+
+  seen = PySet_New(NULL);
+  if (! seen)
+    return NULL;
+
+  last = pair_find_last(self, seen, &last_cdr);
+  Py_DECREF(seen);
+
+  if (! last)
+    return NULL;
+
+  if (KosPair_CheckExact(obj)) {
+    splice_head = pair_copy(obj, NULL);
+  } else {
+    splice_head = pair_iterable_to_proper_cons(obj);
+  }
+
+  if (! splice_head)
+    return NULL;
+
+  pair_splice_at_last(last, last_cdr, splice_head);
+  Py_DECREF(splice_head);
+  Py_RETURN_NONE;
+}
+
+
+static PyObject *pair_splice(PyObject *self, PyObject *obj) {
+  PyObject *seen;
+  PyObject *last_cdr;
+  KosPair *last;
+  PyObject *splice_head = NULL;
+
+  if (KosNil_Check(self)) {
+    PyErr_SetString(PyExc_TypeError, "cannot splice nil");
+    return NULL;
+  }
+
+  seen = PySet_New(NULL);
+  if (! seen)
+    return NULL;
+
+  last = pair_find_last(self, seen, &last_cdr);
+  Py_DECREF(seen);
+
+  if (! last)
+    return NULL;
+
+  if (KosPair_CheckExact(obj)) {
+    Py_INCREF(obj);
+    splice_head = obj;
+  } else {
+    splice_head = pair_iterable_to_proper_cons(obj);
+  }
+
+  if (! splice_head)
+    return NULL;
+
+  pair_splice_at_last(last, last_cdr, splice_head);
+  Py_DECREF(splice_head);
+  Py_RETURN_NONE;
+}
+
+
 static void pwalk_setpos(PyObject *pair, PyObject *seen, PyObject *pos) {
   PyObject *pair_id;
   KosPair *sp;
@@ -973,6 +1179,15 @@ static PyMethodDef pair_methods[] = {
 
   { "is_recursive", (PyCFunction) pair_is_recursive, METH_NOARGS,
     "P.is_recursive()" },
+
+  { "append", (PyCFunction) pair_append, METH_O,
+    "P.append(obj)" },
+
+  { "extend", (PyCFunction) pair_extend, METH_O,
+    "P.extend(obj)" },
+
+  { "splice", (PyCFunction) pair_splice, METH_O,
+    "P.splice(obj)" },
 
   { "clear_position", (PyCFunction) pair_clear_position,
     METH_VARARGS|METH_KEYWORDS,

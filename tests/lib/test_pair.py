@@ -464,6 +464,129 @@ class TestPairRecursion(unittest.TestCase):
         self.assertEqual(length, 2)
 
 
+class TestPairAppendExtendSplice(unittest.TestCase):
+    """Tests for append, extend, splice methods"""
+
+    def test_append_proper(self):
+        """append on proper list adds element before nil"""
+        p = cons("foo", "bar", nil)
+        result = p.append("baz")
+        self.assertIsNone(result)
+        self.assertEqual(list(p.unpack()), ["foo", "bar", "baz"])
+        self.assertTrue(p.is_proper())
+
+    def test_append_improper(self):
+        """append on improper list inserts before tail"""
+        p = cons("foo", "bar")
+        result = p.append("baz")
+        self.assertIsNone(result)
+        self.assertEqual(list(p.unpack()), ["foo", "bar", "baz"])
+        self.assertFalse(p.is_proper())
+        self.assertEqual(cdr(cdr(p)), "baz")
+
+    def test_append_nil_error(self):
+        """append on nil raises TypeError"""
+        with self.assertRaises(TypeError):
+            nil.append(1)
+
+    def test_append_recursive_error(self):
+        """append on recursive pair raises ValueError"""
+        p = pair(1, nil)
+        setcdr(p, p)
+        with self.assertRaises(ValueError):
+            p.append(2)
+
+    def test_extend_with_list(self):
+        """extend with list concatenates elements"""
+        p = cons("foo", "bar", nil)
+        p.extend([1, 2, 3])
+        self.assertEqual(list(p.unpack()), ["foo", "bar", 1, 2, 3])
+        self.assertTrue(p.is_proper())
+
+    def test_extend_improper_with_list(self):
+        """extend improper list with list inserts before tail"""
+        p = cons("foo", "bar")
+        p.extend([1, 2, 3])
+        self.assertEqual(list(p.unpack()), ["foo", "bar", 1, 2, 3])
+        self.assertTrue(p.is_proper())
+
+    def test_extend_with_tuple(self):
+        """extend with tuple works like list"""
+        p = cons(1, 2, nil)
+        p.extend((3, 4))
+        self.assertEqual(list(p.unpack()), [1, 2, 3, 4])
+
+    def test_extend_with_iterator(self):
+        """extend with iterator consumes and appends"""
+        p = cons(1, nil)
+        p.extend(iter([2, 3]))
+        self.assertEqual(list(p.unpack()), [1, 2, 3])
+
+    def test_extend_with_proper_cons(self):
+        """extend with proper cons copies and splices"""
+        p = cons("foo", "bar", nil)
+        other = cons(1, 2, 3, nil)
+        p.extend(other)
+        self.assertEqual(list(p.unpack()), ["foo", "bar", 1, 2, 3])
+        self.assertTrue(p.is_proper())
+        self.assertIsNot(cdr(cdr(p)), other)
+
+    def test_extend_with_improper_cons(self):
+        """extend with improper cons preserves improper tail"""
+        p = cons("foo", "bar", nil)
+        other = cons(1, 2, 3)
+        p.extend(other)
+        self.assertEqual(list(p.unpack()), ["foo", "bar", 1, 2, 3])
+        self.assertFalse(p.is_proper())
+        self.assertEqual(cdr(cdr(cdr(cdr(p)))), 3)
+
+    def test_extend_improper_with_proper_cons(self):
+        """extend improper with proper cons yields proper"""
+        p = cons("foo", "bar")
+        other = cons(1, 2, 3, nil)
+        p.extend(other)
+        self.assertEqual(list(p.unpack()), ["foo", "bar", 1, 2, 3])
+        self.assertTrue(p.is_proper())
+
+    def test_extend_nil_error(self):
+        """extend on nil raises TypeError"""
+        with self.assertRaises(TypeError):
+            nil.extend([1])
+
+    def test_extend_recursive_error(self):
+        """extend on recursive pair raises ValueError"""
+        p = pair(1, nil)
+        setcdr(p, p)
+        with self.assertRaises(ValueError):
+            p.extend([2])
+
+    def test_splice_with_cons_in_place(self):
+        """splice with cons reuses argument in place"""
+        p = cons("foo", "bar", nil)
+        other = cons(1, 2, 3, nil)
+        p.splice(other)
+        self.assertEqual(list(p.unpack()), ["foo", "bar", 1, 2, 3])
+        self.assertIs(cdr(cdr(p)), other)
+
+    def test_splice_with_list(self):
+        """splice with list builds new cons like extend"""
+        p = cons("foo", "bar", nil)
+        p.splice([1, 2, 3])
+        self.assertEqual(list(p.unpack()), ["foo", "bar", 1, 2, 3])
+
+    def test_splice_nil_error(self):
+        """splice on nil raises TypeError"""
+        with self.assertRaises(TypeError):
+            nil.splice(cons(1, nil))
+
+    def test_splice_recursive_error(self):
+        """splice on recursive pair raises ValueError"""
+        p = pair(1, nil)
+        setcdr(p, p)
+        with self.assertRaises(ValueError):
+            p.splice(cons(2, nil))
+
+
 class TestPairNilDistinct(unittest.TestCase):
     """Tests that pair and nil have proper type relationship"""
 
