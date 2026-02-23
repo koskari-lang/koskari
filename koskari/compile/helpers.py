@@ -9,11 +9,57 @@ parsing; all helpers raise CompilerException with optional source context.
 :license: GNU General Public License v3
 """
 
+
+from typing import TypeAlias, Callable, Union, Dict
+
 from ..lib import car, cons, keyword, nil, OpCode, pair, symbol
 from ..types import is_keyword, is_pair, is_proper, is_symbol, unpack
 
-from .compiler import ByteCodeFragment
+from .compiler import Compiler, ByteCodeFragment
 from .exceptions import CompilerException
+
+
+__all__ = (
+    "const_only_expr",
+    "convert_bindings",
+    "gather_bindings",
+    "gather_formals",
+    "gather_parameters",
+    "helper_begin",
+    "helper_binding",
+    "helper_elsebody",
+    "is_lazygensym",
+    "is_symbolish",
+    "list_star",
+    "pycons",
+    "requote",
+    "simple_parameters",
+    "special",
+    "SPECIALS",
+)
+
+
+SpecialFn: TypeAlias = Callable[
+    [Compiler, pair, bool],
+    Union[ByteCodeFragment, pair, None]
+]
+
+
+SPECIALS: Dict[symbol, SpecialFn] = {}
+
+
+def special(form_symbol: symbol) -> Callable[[SpecialFn], SpecialFn]:
+    """
+    Decorator that registers a function as a special form handler.
+    The decorated function gets a compile_impl attribute for dispatch.
+    """
+
+    def decorator(fn: SpecialFn):
+        SPECIALS[form_symbol] = fn
+        fn.compile_impl = fn
+        return fn
+
+    return decorator
 
 
 # Types that pycons leaves as-is (atoms and pairs). Recurse only into tuple/list.
@@ -537,43 +583,6 @@ def helper_elsebody(source):
 
     body_list = cons(*collected, nil) if collected else nil
     return body_list, nil
-
-
-__all__ = (
-    "const_only_expr",
-    "convert_bindings",
-    "gather_bindings",
-    "gather_formals",
-    "gather_parameters",
-    "helper_begin",
-    "helper_binding",
-    "helper_elsebody",
-    "is_lazygensym",
-    "is_symbolish",
-    "list_star",
-    "pycons",
-    "requote",
-    "simple_parameters",
-    "special",
-    "SPECIALS",
-)
-
-
-SPECIALS = {}
-
-
-def special(form_symbol):
-    """
-    Decorator that registers a function as a special form handler.
-    The decorated function gets a compile_impl attribute for dispatch.
-    """
-
-    def decorator(fn):
-        SPECIALS[form_symbol] = fn
-        fn.compile_impl = fn
-        return fn
-
-    return decorator
 
 
 # The end.
