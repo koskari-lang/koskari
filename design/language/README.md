@@ -9,6 +9,7 @@ This directory documents the language-level features of Koskari, including synta
 - **operators.md**: Operators and their compile-time optimizations
 - **macros.md**: Macro system (reader macros and compile-time macros)
 - **syntax.md**: Syntax elements, literals, and parsing rules
+- **layout-syntax.md**: Layout-based block syntax, layout heads, and reader model
 - **control-flow.md**: Control flow constructs (loops, conditionals, exceptions)
 - **functions.md**: Function definition and calling conventions
 - **async.md**: Async/await and coroutine features

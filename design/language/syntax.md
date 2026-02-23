@@ -1,5 +1,18 @@
 # Syntax
 
+## Layout System
+
+Koskari supports a layout-based, indentation-friendly surface syntax that lowers into canonical s-expressions. See [layout-syntax.md](layout-syntax.md) for the full design.
+
+Key concepts:
+
+* Block syntax via lines ending in `:` (e.g. `let [[x 1]]:`)
+* Pluggable layout heads via `layout/<head>` resolution
+* Two-phase model: read (structural) then expand (lowering)
+* Pure s-expr syntax remains valid and may be embedded anywhere
+
+---
+
 ## S-Expressions
 
 Koskari uses S-expressions (sexprs) as its primary syntax:
