@@ -79,10 +79,11 @@ class TestLayoutBlockSyntax(TestCase):
         result = parse_layout(src)
         self.assertEqual(result, expected)
 
+
     def test_nested_block_inside_block(self):
         src = """
         foo [[x 1]]:
-          bar x:
+          bar x :
             (baz x)
         """
 
@@ -90,9 +91,9 @@ class TestLayoutBlockSyntax(TestCase):
           (symbol('foo'),
            ((symbol('x'), 1),),
            (symbol('compile/begin'),
-            (symbol('bar'), symbol('x'),
-             (symbol('compile/begin'),
-              (symbol('baz'), symbol('x'))))))
+             ((symbol('bar'), symbol('x'),
+              (symbol('compile/begin'),
+               (symbol('baz'), symbol('x')))))))
         )
 
         result = parse_layout(src)
@@ -104,6 +105,7 @@ class TestLayoutBlockSyntax(TestCase):
 
         self.assertEqual(result, expected)
 
+
     def test_dedent_ends_body(self):
         src = """
         foo x :
@@ -112,16 +114,25 @@ class TestLayoutBlockSyntax(TestCase):
         bar
         """
 
+        expected = pycons(
+          (symbol('foo'),
+           symbol('x'),
+           (symbol('compile/begin'),
+            symbol('a'),
+            symbol('b'),))
+          )
+
         result = parse_layout(src)
-        self.assertTrue(result is not None)
-        body = car(cdr(cdr(result)))
-        body_forms = list(unpack(body))
-        self.assertIn(symbol('a'), body_forms)
-        self.assertIn(symbol('b'), body_forms)
+
+        print("result:", result)
+        print("expected:", expected)
+
+        self.assertEqual(result, expected)
+
 
     def test_fallback_no_layout_head(self):
         src = """
-        unknown x:
+        unknown x :
           (print x)
         """
 
@@ -133,7 +144,6 @@ class TestLayoutBlockSyntax(TestCase):
           )
 
         result = parse_layout(src)
-
 
         print("result:", result)
         print("expected:", expected)

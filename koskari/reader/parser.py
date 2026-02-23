@@ -1042,8 +1042,10 @@ class LayoutReader(Reader):
             raise stream.error('block header must have head and opener', pos)
 
         head = forms[0]
-        args = forms[1:-1]
         opener = forms[-1]
+        args = list(forms[1:-1])
+        if is_keyword(opener) and str(opener).endswith(':'):
+            args.append(symbol(str(opener)[:-1]))
         return (head, args, opener)
 
 
@@ -1111,17 +1113,15 @@ class LayoutReader(Reader):
                     forms.append(form)
                     if _is_block_opener(form):
                         head = forms[0]
-                        args = forms[1:-1]
-                        inner_stream = (
-                            wrapped._stream
-                            if isinstance(wrapped, IndentAwareStream)
-                            else wrapped
-                        )
+                        args = list(forms[1:-1])
+                        if is_keyword(form) and str(form).endswith(':'):
+                            args.append(symbol(str(form)[:-1]))
                         block = self.read_block(
-                            inner_stream, header_indent, head, args)
+                            wrapped, header_indent, head, args)
                         body.append(block)
                         break
 
+        print("read_block_body ->", body)
         return body
 
 
@@ -1129,7 +1129,7 @@ class LayoutReader(Reader):
         pos = stream.position()
         body = self.read_block_body(stream, outer_indent)
         header = cons(head, *args, nil)
-        source = cons(header, cons(*body, nil), nil)
+        source = cons(header, *body, nil)
         if is_pair(source):
             source.set_position(pos)
 
