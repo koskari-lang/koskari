@@ -42,7 +42,11 @@ from ..types import (
     is_keyword,
     setcdr,
     BaseSourceStream,
+    unpack,
 )
+
+from .layouts import LAYOUTS
+
 
 
 DEDENT = keyword("dedent")
@@ -1000,15 +1004,19 @@ class LayoutReader(Reader):
         try:
             r = self._ns.ref(name)
         except (KeyError, AttributeError, TypeError):
-            return None
+            return LAYOUTS.get(head_symbol)
 
         if r is None or getattr(r, 'empty', True):
+            v = LAYOUTS.get(head_symbol)
+            if v is not None:
+                return v
             return None
 
         v = r.deref()
         if hasattr(v, 'read') and callable(getattr(v, 'read', None)):
             return v
-        return None
+
+        return LAYOUTS.get(head_symbol)
 
 
     def read_block_header(self, stream):
@@ -1051,7 +1059,10 @@ class LayoutReader(Reader):
         :return: list of body forms
         """
 
-        wrapped = IndentAwareStream(stream, max_indent=outer_indent)
+        if isinstance(stream, IndentAwareStream):
+            wrapped = stream
+        else:
+            wrapped = IndentAwareStream(stream, max_indent=outer_indent)
         body = []
 
         while True:
@@ -1109,6 +1120,87 @@ class LayoutReader(Reader):
         return body
 
 
+    def _compose_body_form(self, body):
+        if len(body) == 0:
+            return nil
+        elif len(body) == 1:
+            return body[0]
+        else:
+            return cons(_symbol_begin, *body, nil)
+
+
+    def _read_block_source(self, stream, outer_indent, head, args):
+        pos = stream.position()
+        body = self.read_block_body(stream, outer_indent)
+        body_form = self._compose_body_form(body)
+        source = cons(head, *args, body_form, nil)
+        if is_pair(source):
+            source.set_position(pos)
+        return source
+
+
+    def _peek_declared_peer_head(self, stream, outer_indent):
+        stream.skip_whitespace()
+        if not getattr(stream, '_dedent_detected', False):
+            return None
+
+        buf = list(getattr(stream, '_buffer', []) or [])
+        if not buf or buf[0] != '\n':
+            return None
+
+        i = 1
+        indent = 0
+        while i < len(buf) and buf[i] in ' 	':
+            indent += 1
+            i += 1
+
+        if indent != outer_indent or i >= len(buf):
+            return None
+
+        prefix = ''.join(buf[i:])
+        suffix = stream._stream.peek(256) or ''
+        text = prefix + suffix
+
+        token = []
+        for ch in text:
+            if ch in ' \\t\\r\\n':
+                break
+            if ch in '()[]{}':
+                break
+            token.append(ch)
+
+        if not token:
+            return None
+
+        head = ''.join(token)
+        if head.endswith(':'):
+            head = head[:-1]
+
+        if not head:
+            return None
+
+        return symbol(head)
+
+
+    def _read_declared_peers(self, stream, outer_indent, layout_obj):
+        declared = tuple(getattr(layout_obj, 'peers', ()) or ())
+        if not declared:
+            return []
+
+        declared_set = {str(sym) for sym in declared}
+        peers = []
+
+        while True:
+            head = self._peek_declared_peer_head(stream, outer_indent)
+            if head is None or str(head) not in declared_set:
+                break
+
+            phead, pargs, _opener = self.read_block_header(stream)
+            peers.append(self._read_block_source(stream, outer_indent, phead, pargs))
+
+        return peers
+
+
     def read_block(self, stream, outer_indent, head=None, args=None):
         """
         Read a block: header (if not provided) and body, resolve layout
@@ -1123,23 +1215,21 @@ class LayoutReader(Reader):
         if head is None:
             head, args, opener = self.read_block_header(stream)
 
+        wrapped = IndentAwareStream(stream, max_indent=outer_indent)
+        source = self._read_block_source(wrapped, outer_indent, head, args)
+
         layout_obj = self.find_layout(head)
         if layout_obj is not None:
-            return layout_obj.read(stream, head, args, outer_indent)
+            peers = self._read_declared_peers(wrapped, outer_indent, layout_obj)
+            self._layout_stream = wrapped
+            try:
+                return layout_obj.read(self, source, peers)
+            finally:
+                self._layout_stream = None
 
-        pos = stream.position()
-        body = self.read_block_body(stream, outer_indent)
-
-        if len(body) == 0:
-            body_form = nil
-        elif len(body) == 1:
-            body_form = body[0]
-        else:
-            body_form = cons(_symbol_begin, *body, nil)
-
-        result = cons(_layout_block, head, *args, body_form, nil)
+        result = cons(_layout_block, *list(unpack(source)), nil)
         if is_pair(result):
-            result.set_position(pos)
+            result.set_position(source.get_position())
         return result
 
 
