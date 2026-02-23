@@ -32,24 +32,33 @@ from re import compile as regex, UNICODE, VERBOSE
 
 from .exceptions import KoskariSyntaxError
 from .types import (
+    Module,
     symbol,
     keyword,
     cons,
     nil,
     is_pair,
+    is_symbol,
+    is_keyword,
     setcdr,
     BaseSourceStream,
 )
 
 
+DEDENT = keyword("dedent")
+
+_layout_block = symbol("layout/block")
+
 __all__ = (
     "ReaderSyntaxError",
     "FormatStringSyntaxError",
     "SourceStream",
+    "IndentAwareStream",
     "source_open",
     "source_str",
     "source_stream",
     "Reader",
+    "LayoutReader",
     "default_reader",
 )
 
@@ -934,6 +943,260 @@ class Reader(object):
         return SKIP, stream.readline()
 
 
+def _is_block_opener(form):
+    """
+    Return True if form is a block opener per layout-syntax
+
+    Block openers: standalone colon symbol, or keyword ending with colon
+    """
+
+    if is_keyword(form):
+        return str(form).endswith(':')
+    if is_symbol(form):
+        return str(form) == ':'
+    return False
+
+
+class LayoutReader(Reader):
+    """
+    Reader that supports layout-based block syntax
+
+    Subclasses Reader and adds indent-aware block reading. Resolves
+    layout heads via namespace (layout/<head>). Requires a namespace
+    for layout resolution, like the compiler.
+    """
+
+    def __init__(self, namespace, nodefaults=False):
+        """
+        Initialize the layout reader
+
+        :param namespace: Module, Namespace, or dict for layout lookup.
+            If Module, uses vars(module). If dict, wraps in ModuleNamespace.
+        :param nodefaults: if True, do not add default macros and patterns
+        """
+
+        super().__init__(nodefaults=nodefaults)
+        from .types import ModuleNamespace
+
+        if isinstance(namespace, Module):
+            self._ns = vars(namespace)
+        elif isinstance(namespace, dict):
+            self._ns = ModuleNamespace('layout', namespace)
+        else:
+            self._ns = namespace
+
+        self._layout_depth = 0
+
+
+    def find_layout(self, head_symbol):
+        """
+        Resolve layout/<head> in namespace and builtins
+
+        :param head_symbol: symbol for the block head (e.g. if, let)
+        :return: layout object with .read, or None
+        """
+
+        name = 'layout/' + str(head_symbol)
+        try:
+            r = self._ns.ref(name)
+        except (KeyError, AttributeError, TypeError):
+            return None
+
+        if r is None or getattr(r, 'empty', True):
+            return None
+
+        v = r.deref()
+        if hasattr(v, 'read') and callable(getattr(v, 'read', None)):
+            return v
+        return None
+
+
+    def read_block_header(self, stream):
+        """
+        Read forms until block opener; handles s-exprs spanning lines
+
+        :param stream: the source stream
+        :return: (head, args, opener) where head is first form, args
+            are forms between head and opener, opener is the colon/keyword
+        :raises ReaderSyntaxError: on EOF in header
+        """
+
+        forms = []
+        while True:
+            event, pos, value = self._read(stream)
+            if event is EOF:
+                raise stream.error('unexpected EOF in block header', pos)
+            forms.append(value)
+            if _is_block_opener(value):
+                break
+
+        if len(forms) < 2:
+            raise stream.error('block header must have head and opener', pos)
+
+        head = forms[0]
+        args = forms[1:-1]
+        opener = forms[-1]
+        return (head, args, opener)
+
+
+    def read_block_body(self, stream, outer_indent):
+        """
+        Read body elements until dedent or EOF
+
+        Each element is either a simple form or a sub-block. Uses
+        IndentAwareStream to stop at dedent.
+
+        :param stream: the source stream
+        :param outer_indent: indent level that ends the block
+        :return: list of body forms
+        """
+
+        wrapped = IndentAwareStream(stream, max_indent=outer_indent)
+        body = []
+
+        while True:
+            wrapped.skip_whitespace()
+            if getattr(wrapped, '_dedent_detected', False):
+                break
+
+            c = wrapped.peek(1)
+            if not c:
+                break
+
+            if c in '([{':
+                event, pos, form = self._read(wrapped)
+                if event is EOF:
+                    break
+                body.append(form)
+            else:
+                event, pos, form1 = self._read(wrapped)
+                if event is EOF:
+                    break
+                header_indent = pos[1]
+                wrapped.skip_whitespace()
+                if getattr(wrapped, '_dedent_detected', False):
+                    body.append(form1)
+                    continue
+                if not wrapped.peek(1):
+                    body.append(form1)
+                    continue
+
+                forms = [form1]
+                while True:
+                    wrapped.skip_whitespace()
+                    if getattr(wrapped, '_dedent_detected', False):
+                        for f in forms:
+                            body.append(f)
+                        break
+
+                    event, pos, form = self._read(wrapped)
+                    if event is EOF:
+                        if len(forms) == 1:
+                            body.append(form1)
+                        else:
+                            raise stream.error(
+                                'unexpected EOF in block header', pos)
+                        break
+                    forms.append(form)
+                    if _is_block_opener(form):
+                        head = forms[0]
+                        args = forms[1:-1]
+                        block = self.read_block(
+                            wrapped, header_indent, head, args)
+                        body.append(block)
+                        break
+
+        return body
+
+
+    def read_block(self, stream, outer_indent, head=None, args=None):
+        """
+        Read a block: header (if not provided) and body, resolve layout
+
+        :param stream: the source stream
+        :param outer_indent: indent of the block header line
+        :param head: if provided, block header was already read
+        :param args: if provided, header args were already read
+        :return: (layout/block HEAD ARGS... BODY) or layout object result
+        """
+
+        if head is None:
+            head, args, opener = self.read_block_header(stream)
+
+        layout_obj = self.find_layout(head)
+        if layout_obj is not None:
+            return layout_obj.read(stream, head, args, outer_indent)
+
+        pos = stream.position()
+        body = self.read_block_body(stream, outer_indent)
+
+        if len(body) == 0:
+            body_form = nil
+        elif len(body) == 1:
+            body_form = body[0]
+        else:
+            body_form = cons(_symbol_begin, *body, nil)
+
+        result = cons(_layout_block, head, *args, body_form, nil)
+        if is_pair(result):
+            result.set_position(pos)
+        return result
+
+
+    def read_layout_form(self, stream):
+        """
+        Read one top-level layout form: s-expr or block
+
+        At depth 0, detects blocks. Inside delimiters, uses base _read.
+        """
+
+        if self._layout_depth > 0:
+            event, pos, value = self._read(stream)
+            return event, pos, value
+
+        stream.skip_whitespace()
+        position = stream.position()
+        c = stream.peek(1)
+        if not c:
+            return EOF, position, None
+
+        if c in '([{':
+            event, pos, value = self._read(stream)
+            return event, pos, value
+
+        head, args, opener = self.read_block_header(stream)
+        outer_indent = position[1]
+        block = self.read_block(stream, outer_indent, head, args)
+        return VALUE, position, block
+
+
+    def read(self, reader_stream):
+        """
+        Read a single layout form from the stream
+
+        Delegates to read_layout_form at top level.
+        """
+
+        event, pos, value = self.read_layout_form(reader_stream)
+
+        if event is VALUE:
+            return value
+        elif event is EOF:
+            return None
+        else:
+            raise reader_stream.error('invalid syntax', pos)
+
+
+    def _read_pair(self, closer, stream, char):
+        """Override to track layout depth for s-expr mode"""
+
+        self._layout_depth += 1
+        try:
+            return super()._read_pair(closer, stream, char)
+        finally:
+            self._layout_depth -= 1
+
+
 class FormatStringReader(object):
     """
     Reader for parsing the interior of format strings.
@@ -1046,6 +1309,189 @@ def source_stream(source_stream, filename, auto_skip_exec=True):
 
     return SourceStream(source_stream, filename,
                         auto_skip_exec=auto_skip_exec)
+
+
+class IndentAwareStream(object):
+    """
+    Wraps a SourceStream to provide indent-bounded skip_whitespace
+
+    When max_indent is set, skip_whitespace stops at a line whose indent
+    is <= max_indent (dedent), leaving that line unconsumed for the next
+    reader. Uses an internal buffer for pushback when stopping at dedent.
+    """
+
+    def __init__(self, stream, max_indent=None):
+        """
+        Initialize the indent-aware stream
+
+        :param stream: the underlying SourceStream to wrap
+        :param max_indent: when set, skip_whitespace stops at dedent
+        """
+
+        self._stream = stream
+        self._max_indent = max_indent
+        self._buffer = []
+        self._buffer_start_pos = None
+
+
+    def _read_from_underlying(self, n=1):
+        return self._stream.read(n)
+
+
+    def read(self, n=1):
+        if self._buffer:
+            result = []
+            while len(result) < n and self._buffer:
+                result.append(self._buffer.pop(0))
+            if not self._buffer:
+                self._buffer_start_pos = None
+            rest = n - len(result)
+            if rest > 0:
+                result.append(self._read_from_underlying(rest))
+            return ''.join(result) if result else self._read_from_underlying(n)
+        return self._read_from_underlying(n)
+
+
+    def peek(self, n=1):
+        if self._buffer:
+            from_buf = min(n, len(self._buffer))
+            buf_part = ''.join(self._buffer[:from_buf])
+            if from_buf >= n:
+                return buf_part
+            return buf_part + (self._stream.peek(n - from_buf) or '')
+        return self._stream.peek(n)
+
+
+    def position(self):
+        if self._buffer and self._buffer_start_pos is not None:
+            return self._buffer_start_pos
+        return self._stream.position()
+
+
+    @property
+    def filename(self):
+        return self._stream.filename
+
+
+    def error(self, message, position=None):
+        return self._stream.error(message, position)
+
+
+    def skip_whitespace(self):
+        """
+        Skip whitespace, stopping at dedent when max_indent is set
+
+        When max_indent is set and the next line would dedent (indent <=
+        max_indent), does not consume the newline; puts it into the
+        internal buffer and returns. Otherwise behaves like normal skip.
+        """
+
+        if self._max_indent is None:
+            return self._stream.skip_whitespace()
+
+        self._dedent_detected = False
+        if self._buffer:
+            if (len(self._buffer) > 1 and self._buffer[0] == '\n'):
+                self._dedent_detected = True
+                return ''
+            if len(self._buffer) == 1 and self._buffer[0] == '\n':
+                next_indent = 0
+                line_chars = []
+                while True:
+                    ch = self._read_from_underlying(1)
+                    if not ch:
+                        self._dedent_detected = True
+                        return ''
+                    if ch in ' \t':
+                        next_indent += 1
+                        line_chars.append(ch)
+                    elif ch == '\n':
+                        next_indent = 0
+                        line_chars = []
+                    else:
+                        if next_indent <= self._max_indent:
+                            self._buffer = ['\n'] + line_chars + [ch]
+                            self._buffer_start_pos = self._stream.position()
+                            self._dedent_detected = True
+                            return ''
+                        self._buffer = [ch]
+                        self._buffer_start_pos = self._stream.position()
+                        return ''
+            else:
+                return ''
+
+        while True:
+            pos = self._stream.position()
+            c = self._read_from_underlying(1)
+
+            if not c:
+                break
+
+            if c in ' \t':
+                continue
+
+            if c == '\n':
+                next_indent = 0
+                line_chars = []
+
+                while True:
+                    ch = self._read_from_underlying(1)
+                    if not ch:
+                        self._buffer = ['\n'] + line_chars
+                        self._buffer_start_pos = pos
+                        self._dedent_detected = True
+                        return ''
+                    if ch in ' \t':
+                        next_indent += 1
+                        line_chars.append(ch)
+                    elif ch == '\n':
+                        next_indent = 0
+                        line_chars = []
+                    else:
+                        if next_indent <= self._max_indent:
+                            putback = ['\n'] + line_chars + [ch]
+                            self._buffer = putback
+                            self._buffer_start_pos = pos
+                            self._dedent_detected = True
+                            return ''
+                        self._buffer = [ch]
+                        self._buffer_start_pos = self._stream.position()
+                        return ''
+                break
+
+            putback = [c]
+            self._buffer = putback
+            self._buffer_start_pos = pos
+            return ''
+
+        return ''
+
+
+    def read_until_chars(self, terminators):
+        result = []
+        while True:
+            c = self.read(1)
+            if not c:
+                break
+            if c in terminators:
+                self._buffer.insert(0, c)
+                if self._buffer_start_pos is None:
+                    self._buffer_start_pos = self._stream.position()
+                break
+            result.append(c)
+        return ''.join(result)
+
+
+    def readline(self):
+        result = []
+        while True:
+            c = self.read(1)
+            if not c:
+                break
+            result.append(c)
+            if c == '\n':
+                break
+        return ''.join(result)
 
 
 class SourceStream(BaseSourceStream):
