@@ -10,6 +10,7 @@ This directory documents the language-level features of Koskari, including synta
 - **macros.md**: Macro system (reader macros and compile-time macros)
 - **syntax.md**: Syntax elements, literals, and parsing rules
 - **layout-syntax.md**: Layout-based block syntax, layout heads, and reader model
+- **layout-syntax-formal.md**: Formal EBNF specification of the Koskari Layout Syntax (lexical preprocessing, logical lines, grammar)
 - **control-flow.md**: Control flow constructs (loops, conditionals, exceptions)
 - **functions.md**: Function definition and calling conventions
 - **async.md**: Async/await and coroutine features

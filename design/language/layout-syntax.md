@@ -2,6 +2,8 @@
 
 This document describes the **default Koskari syntax** and the layout-based reader model we have decided on.
 
+**Formal syntax:** The authoritative grammar is defined in [layout-syntax-formal.md](layout-syntax-formal.md) (EBNF). This document covers the design model; the formal spec covers lexical preprocessing, logical lines, delimiter depth, and the grammar.
+
 Koskari now has a first-class, whitespace-friendly surface syntax that lowers into canonical s-expressions. Pure s-expr syntax remains fully supported and may be embedded anywhere.
 
 The layout system is:
@@ -54,9 +56,15 @@ Each layout head (e.g. `layout/if`) may implement:
 
 # 2. Block Syntax
 
+The formal grammar (see [layout-syntax-formal.md](layout-syntax-formal.md)) defines:
+
+* **Logical lines** — a physical newline ends a logical line only when delimiter depth is 0
+* **Header terminator** — the final `:` at delimiter depth 0, after which only whitespace/comment remain; it is not part of header content
+* **Multiline continuation** — newlines inside balanced `()`, `[]`, `{}` do not end the header
+
 ## 2.1 Block Opener
 
-A line ending in `:` starts a block.
+A block header is terminated by a trailing `:` as above.
 
 Example:
 
@@ -65,15 +73,9 @@ let [[x 1] [y 2]]:
   (+ x y)
 ```
 
-### Block Detection Rule
+Headers may span multiple physical lines when delimiters are unbalanced, e.g. `let [[a 1]\n     [b 2]]:`.
 
-In layout mode, a block header is any line where the **last significant token is `:`**.
-
-The colon must be the final token on the line.
-
----
-
-## 2.2 Keyword vs Block Colon
+## 2.2 Keyword vs Block Colon (Lexer Concern)
 
 We distinguish two forms:
 
@@ -224,17 +226,9 @@ Expand hooks then lower these into canonical s-expr or `compile/*` forms.
 
 ## 7.1 Entering Pure s-expr Mode
 
-If a line begins with:
+When a `HeaderPart` or `ExprPart` is scanned and the next character is `(`, `[`, or `{`, the s-expr reader parses a complete balanced expression and yields it as a single `SEXPR` terminal. See the formal spec §7.1.
 
-* `(`
-* `[`
-* `{`
-
-The reader enters pure s-expr mode until the delimiter closes.
-
-Indentation is ignored inside s-expr mode.
-
-After the closing delimiter, layout mode resumes.
+Indentation inside `SEXPR` is ignored by the layout grammar.
 
 Example:
 
