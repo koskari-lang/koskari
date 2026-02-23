@@ -35,7 +35,7 @@ class LayoutHandler(object):
     def __init__(self, head_symbol, read_fn, peers=()):
         self.head = head_symbol
         self.read = read_fn
-        self.peers = tuple(peers or ())
+        self.peers = peers
 
 
 def layout(head_symbol, peers=()):

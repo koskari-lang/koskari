@@ -32,21 +32,22 @@ from re import compile as regex, UNICODE, VERBOSE
 
 from ..exceptions import KoskariSyntaxError
 from ..types import (
-    Module,
-    symbol,
-    keyword,
-    cons,
-    nil,
-    is_pair,
-    is_symbol,
-    is_keyword,
-    setcdr,
     BaseSourceStream,
+    Module,
+    car,
+    cdr,
+    cons,
+    is_pair,
+    is_keyword,
+    is_symbol,
+    keyword,
+    nil,
+    setcdr,
+    symbol,
     unpack,
 )
 
-from .layouts import LAYOUTS
-
+from .layouts import LayoutHandler
 
 
 DEDENT = keyword("dedent")
@@ -992,31 +993,30 @@ class LayoutReader(Reader):
         self._layout_depth = 0
 
 
-    def find_layout(self, head_symbol):
+    def find_layout(self, name):
         """
         Resolve layout/<head> in namespace and builtins
 
-        :param head_symbol: symbol for the block head (e.g. if, let)
+        :param name: symbol for the block head (e.g. if, let)
         :return: layout object with .read, or None
         """
 
-        name = 'layout/' + str(head_symbol)
+        name = str(name)
+        if not name.startswith('layout/'):
+            name = 'layout/' + name
+
         try:
             r = self._ns.ref(name)
         except (KeyError, AttributeError, TypeError):
-            return LAYOUTS.get(head_symbol)
+            return None
 
-        if r is None or getattr(r, 'empty', True):
-            v = LAYOUTS.get(head_symbol)
-            if v is not None:
-                return v
+        if r is None or r.empty:
             return None
 
         v = r.deref()
-        if hasattr(v, 'read') and callable(getattr(v, 'read', None)):
+        if isinstance(v, LayoutHandler):
             return v
-
-        return LAYOUTS.get(head_symbol)
+        return None
 
 
     def read_block_header(self, stream):
@@ -1112,30 +1112,28 @@ class LayoutReader(Reader):
                     if _is_block_opener(form):
                         head = forms[0]
                         args = forms[1:-1]
+                        inner_stream = (
+                            wrapped._stream
+                            if isinstance(wrapped, IndentAwareStream)
+                            else wrapped
+                        )
                         block = self.read_block(
-                            wrapped, header_indent, head, args)
+                            inner_stream, header_indent, head, args)
                         body.append(block)
                         break
 
         return body
 
 
-    def _compose_body_form(self, body):
-        if len(body) == 0:
-            return nil
-        elif len(body) == 1:
-            return body[0]
-        else:
-            return cons(_symbol_begin, *body, nil)
-
-
     def _read_block_source(self, stream, outer_indent, head, args):
         pos = stream.position()
         body = self.read_block_body(stream, outer_indent)
-        body_form = self._compose_body_form(body)
-        source = cons(head, *args, body_form, nil)
+        header = cons(head, *args, nil)
+        source = cons(header, cons(*body, nil), nil)
         if is_pair(source):
             source.set_position(pos)
+
+        print("_read_block_source ->", source)
         return source
 
 
@@ -1195,6 +1193,8 @@ class LayoutReader(Reader):
             if head is None or str(head) not in declared_set:
                 break
 
+            stream.read(1)
+            stream.read(outer_indent)
             phead, pargs, _opener = self.read_block_header(stream)
             peers.append(self._read_block_source(stream, outer_indent, phead, pargs))
 
@@ -1209,7 +1209,7 @@ class LayoutReader(Reader):
         :param outer_indent: indent of the block header line
         :param head: if provided, block header was already read
         :param args: if provided, header args were already read
-        :return: (layout/block HEAD ARGS... BODY) or layout object result
+        :return: layout object result (default blocks route through layout/block)
         """
 
         if head is None:
@@ -1227,10 +1227,20 @@ class LayoutReader(Reader):
             finally:
                 self._layout_stream = None
 
-        result = cons(_layout_block, *list(unpack(source)), nil)
-        if is_pair(result):
-            result.set_position(source.get_position())
-        return result
+        header, body = source
+        synthetic_header = cons(_layout_block, *list(unpack(header)), nil)
+        default_source = cons(synthetic_header, body)
+        if is_pair(default_source):
+            default_source.set_position(source.get_position())
+
+        layout_obj = self.find_layout(symbol('layout/block'))
+        if layout_obj is None:
+            raise stream.error('layout/block not found', stream.position())
+        self._layout_stream = wrapped
+        try:
+            return layout_obj.read(self, default_source, [])
+        finally:
+            self._layout_stream = None
 
 
     def read_layout_form(self, stream):

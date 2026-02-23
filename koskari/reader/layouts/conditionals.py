@@ -18,7 +18,7 @@ Layout handlers for conditional block syntax.
 """
 
 
-from ...types import cons, keyword, nil, symbol, unpack
+from ...types import car, cdr, cons, keyword, nil, symbol, unpack
 from .helpers import layout
 
 
@@ -29,45 +29,90 @@ _symbol_else = symbol('else')
 _keyword_else = keyword('else')
 
 
-@layout(_symbol_if, peers=(_symbol_elif, _symbol_else))
+@layout(symbol('layout/block'))
+def layout_block(reader, source, peers):
+    """
+    the default block layout handler
+
+    eg.
+    layout/block foo x:
+      bar
+
+    becomes
+    (foo x (compile/begin bar))
+    """
+
+    if peers:
+        raise reader._layout_stream.error('block does not take peers')
+
+    header, body = source
+    _called_by, hdr = header
+
+    hdr.append(cons(symbol('compile/begin'), body))
+    return hdr
+
+
+@layout(symbol('layout/begin'))
+def layout_begin(reader, source, peers):
+    """
+    lowers into a compile/begin
+
+    eg.
+    layout/begin:
+      (bar)
+
+    becomes
+    (compile/begin bar)
+    """
+
+    if peers:
+        raise reader._layout_stream.error('block does not take peers')
+
+    called_by, exprs = source
+    return cons(symbol('compile/begin'), exprs)
+
+
+@layout(symbol('layout/if'), peers=(_symbol_elif, _symbol_else))
 def layout_if(reader, source, peers):
     """
     Build a layout/if form from if/elif/else block sources.
 
     :param reader: active LayoutReader
-    :param source: (if COND BODY)
-    :param peers: list of peer sources (elif/else blocks)
+    :param source: ((if COND) . BODY) pair
+    :param peers: list of peer (header . body) pairs
     """
 
-    parts = list(unpack(source))
-    args = parts[1:-1]
-    body = parts[-1]
+    print(source)
+    print(peers)
 
-    if len(args) != 1:
+    header, body = source
+    header_parts = list(unpack(header))
+    pargs = header_parts[1:]
+
+    if len(pargs) != 1:
         raise reader._layout_stream.error('if block requires exactly one condition')
 
-    clauses = [cons(args[0], body, nil)]
+    clauses = [cons(pargs[0], body)]
     saw_else = False
 
     for peer in peers:
-        pparts = list(unpack(peer))
-        phead = pparts[0]
-        pargs = pparts[1:-1]
-        pbody = pparts[-1]
+        pheader, pbody = car(peer), cdr(peer)
+        phead = car(pheader)
+        ppargs = list(unpack(cdr(pheader)))
 
         if phead is _symbol_elif:
             if saw_else:
                 raise reader._layout_stream.error('elif cannot follow else')
-            if len(pargs) != 1:
+            if len(ppargs) != 1:
                 raise reader._layout_stream.error('elif block requires exactly one condition')
-            clauses.append(cons(pargs[0], pbody, nil))
+            clauses.append(cons(ppargs[0], pbody))
 
         elif phead is _symbol_else:
             if saw_else:
                 raise reader._layout_stream.error('multiple else peers are not allowed')
-            if pargs:
+            if ppargs:
                 raise reader._layout_stream.error('else block does not take arguments')
-            clauses.append(cons(_keyword_else, pbody, nil))
+            clauses.append(cons(_keyword_else, pbody))
             saw_else = True
 
         else:
