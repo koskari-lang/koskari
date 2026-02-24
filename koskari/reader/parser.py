@@ -1267,7 +1267,7 @@ class LayoutReader(Reader):
 
         token = []
         for ch in text:
-            if ch in ' \\t\\r\\n':
+            if ch in ' \t\r\n':
                 break
             if ch in '()[]{}':
                 break

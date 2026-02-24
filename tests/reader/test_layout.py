@@ -161,6 +161,39 @@ class TestLayoutBlockSyntax(TestCase):
         self.assertEqual(result, expected)
 
 
+    def test_single_forms(self):
+        src = """
+        if x:
+          1
+        else :
+          2
+        """
+
+        expected = pycons(
+          (symbol('compile/cond'),
+           (symbol('x'), 1),
+           (keyword('else'), 2))
+        )
+
+        result = parse_layout(src)
+        self.assertEqual(result, expected)
+
+        # should by identical to above
+        src = """
+        if x:
+          1
+        else:
+          2
+        """
+
+        result = parse_layout(src)
+
+        print("result   :", result)
+        print("expected :", expected)
+
+        self.assertEqual(result, expected)
+
+
 class TestLayoutReaderNamespace(TestCase):
 
     def test_accepts_module(self):

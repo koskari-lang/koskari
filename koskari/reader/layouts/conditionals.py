@@ -91,7 +91,7 @@ def layout_if(reader, source, peers):
     saw_else = False
 
     for peer in peers:
-        pheader, pbody = car(peer), cdr(peer)
+        pheader, pbody = peer
         phead = car(pheader)
         ppargs = list(unpack(cdr(pheader)))
 

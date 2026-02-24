@@ -33,7 +33,7 @@ class TestLayoutIfPeers(TestCase):
         src = """
         if x:
           y
-        else :
+        else:
           z
         """
 
@@ -57,7 +57,7 @@ class TestLayoutIfPeers(TestCase):
           a
         elif y:
           b
-        else :
+        else:
           c
         """
 
@@ -80,7 +80,7 @@ class TestLayoutIfPeers(TestCase):
         src = """
         if x:
           a
-        else :
+        else:
           b
         elif y:
           c
