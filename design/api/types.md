@@ -53,6 +53,21 @@ Types are defined in the native extension `koskari.lib`; the Python module `kosk
 - `cadr`, `caddr`, `cadddr`, etc.: Composed accessors
 - `first`, `second`, `third`, etc.: Named accessors
 
+**Methods (on pair values)** (see koskari `koskari/lib/pair.c`):
+- `pair.length()`: Number of elements in the chain (stops at cycle for recursive pairs)
+- `pair.follow()`: Return an iterator over the pair chain (yields each cons cell)
+- `pair.unpack()`: Return an iterator that yields the car of each cell (list elements only)
+- `pair.__copy__()`: Shallow copy of the chain; preserves circular structure in the copy
+- `pair.is_proper()`: True if the pair is a proper list (ends with nil or is circular)
+- `pair.is_recursive()`: True if the chain is circular
+- `pair.append(obj)`: Mutate in place: find last cons, then add obj at the end (new cell `(last_cdr . obj)` or `(obj . nil)` if proper). Raises TypeError on nil.
+- `pair.extend(obj)`: Mutate in place: find last cons, then splice a *copy* of obj onto the end (obj may be a pair or an iterable; pairs are copied, other iterables converted to proper list).
+- `pair.splice(obj)`: Like extend but if obj is a pair, reuse it in place (shared structure); otherwise convert iterable to proper list and splice. Raises TypeError on nil.
+- `pair.clear_position(follow=False)`: Clear position on this pair; if follow true, clear along entire cdr chain
+- `pair.set_position(position, follow=False)`: Set position; if follow true, set on entire cdr chain
+- `pair.fill_position(position, follow=False)`: Set position only where unset; if follow true, walk chain and fill
+- `pair.get_position()`: Return position object or None
+
 ### Nil
 
 **`nil`**: Empty list / false value
@@ -136,6 +151,7 @@ with C extension support and comprehensive test coverage:
 - `make_recursive(pair)`, `break_recursive(pair)`: Make or break circular structure
 - `car()`, `cdr()`, `setcar()`, `setcdr()`: Pair accessors/mutators
 - `build_unpack_pair()`: Build pair from unpacked iterables
+- Pair instance methods: `length()`, `follow()`, `unpack()`, `__copy__`, `is_proper()`, `is_recursive()`, `append()`, `extend()`, `splice()`, `clear_position()`, `set_position()`, `fill_position()`, `get_position()` (see koskari `koskari/lib/pair.c`)
 
 **Namespace Types** (from sibilant-ceval):
 - `Namespace`: Lexical scope with local/closure bindings and ref conversion

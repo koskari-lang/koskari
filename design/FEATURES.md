@@ -169,7 +169,7 @@ There are no **partially** implemented opcodes; each handler is either full, a s
 
 **Native Types** (C extension with full test coverage):
 - Atom types: `symbol`, `keyword`, `gensym()`
-- Pair types: `pair`, `nil`, `cons()`, `car()`, `cdr()`, `setcar()`, `setcdr()`, `make_recursive()`, `break_recursive()`, `build_unpack_pair()`
+- Pair types: `pair`, `nil`, `cons()`, `car()`, `cdr()`, `setcar()`, `setcdr()`, `make_recursive()`, `break_recursive()`, `build_unpack_pair()`; pair methods: `length()`, `follow()`, `unpack()`, `__copy__`, `is_proper()`, `is_recursive()`, `append()`, `extend()`, `splice()`, `clear_position()`, `set_position()`, `fill_position()`, `get_position()` (koskari/lib/pair.c)
 - Namespace types: `Namespace`, `NamespaceSpec`, `ModuleNamespace`, `CollectorNamespace`, `Module`
 - Reference types: `Ref`, `AttributeRef`, `ItemRef`, `DynamicRef`, `ConstantRef`, `MemoizedRef`, `ParamRef`
 - Formals types: `Formals`, `FormalsSpec`

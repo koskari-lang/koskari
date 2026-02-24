@@ -71,6 +71,14 @@ unary operations.
 | `constantly` | `constantly(value)` | Return callable that always returns value |
 | `_pass` | `_pass(*args, **kwargs)` | No-op; accepts anything, returns None |
 
+## Async handle: defer (DeferCoroutine)
+
+| Construct | Signature | Description |
+|-----------|-----------|-------------|
+| `defer` | `(defer f a b c ... key: val ...)` | Build a single-shot await-handle: stores `f`, positional `args`, and keyword `kwds`; does not call `f` until first explicit `await`. Accepts all argument types. Excluded from implicit auto-await so it can be passed around as a value. |
+
+See [defer-coroutine.md](defer-coroutine.md) for full design (lifecycle, defer-of-defer collapse, AWAIT integration, invariants).
+
 ## Types Available
 
 The following types are exported from `koskari.lib`:
@@ -105,6 +113,12 @@ The following types are exported from `koskari.lib`:
 | `DynamicRef` | Reference backed by getter/setter/deleter |
 | `ConstantRef` | Immutable reference |
 | `MemoizedRef` | Lazy reference caching first result |
+
+### Async handle type
+
+| Type | Description |
+|------|-------------|
+| `DeferCoroutine` | Single-shot await-handle produced by `defer`; awaitable only via explicit `await`, not by implicit greedy await |
 
 ### Formals Types
 

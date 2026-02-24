@@ -98,8 +98,13 @@ For synchronous Python code (e.g. tests, scripts) that does not run an event loo
 - Integration with `call/cc` (async continuations?)
 - Structured concurrency primitives
 
+### Defer (await-handle)
+
+The **`defer`** builtin produces a `DeferCoroutine`: a single-shot await-handle that is **not** auto-awaited by implicit greedy await (e.g. on call return paths), but **is** driven by explicit `await`. This allows passing coroutines around as values. See [../api/defer-coroutine.md](../api/defer-coroutine.md) for the full design.
+
 ## Related Documentation
 
+- [../api/defer-coroutine.md](../api/defer-coroutine.md) — DeferCoroutine (`defer`) design: single-shot await-handle, lifecycle, defer-of-defer collapse, AWAIT integration
 - [../interpreter/execution-invariants.md](../interpreter/execution-invariants.md) —
   Execution model invariants including AWAIT semantics, flattened async, and
   Python interop
