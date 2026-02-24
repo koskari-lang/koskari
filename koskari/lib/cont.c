@@ -87,19 +87,24 @@ static PyObject *delimited_continuation_repr(PyObject *self) {
 }
 
 
-PyTypeObject KosPyDelimitedContinuationType = {
-  PyVarObject_HEAD_INIT(NULL, 0)
+KosCallableTypeObject KosPyDelimitedContinuationType = {
+  .type = {
+    PyVarObject_HEAD_INIT(NULL, 0)
 
-  .tp_name = "koskari.lib.DelimitedContinuation",
-  .tp_basicsize = sizeof(KosPyDelimitedContinuation),
-  .tp_itemsize = 0,
-  .tp_dealloc = delimited_continuation_dealloc,
-  .tp_repr = delimited_continuation_repr,
-  .tp_call = delimited_continuation_call,
-  .tp_flags = Py_TPFLAGS_DEFAULT | Py_TPFLAGS_HAVE_GC,
-  .tp_doc = "Captured delimited continuation",
-  .tp_traverse = delimited_continuation_traverse,
-  .tp_clear = delimited_continuation_clear,
+    .tp_name = "koskari.lib.DelimitedContinuation",
+    .tp_basicsize = sizeof(KosPyDelimitedContinuation),
+    .tp_itemsize = 0,
+    .tp_dealloc = delimited_continuation_dealloc,
+    .tp_repr = delimited_continuation_repr,
+    .tp_call = delimited_continuation_call,
+    .tp_flags = Py_TPFLAGS_DEFAULT | Py_TPFLAGS_HAVE_GC,
+    .tp_doc = "Captured delimited continuation",
+    .tp_traverse = delimited_continuation_traverse,
+    .tp_clear = delimited_continuation_clear,
+    .tp_base = KOS_CALLABLE_PYTYPE(KosCallableType),
+  },
+  .tp_kos_call = kos_callable_continuation_call,
+  .tp_kos_tail_call = kos_callable_continuation_call,
 };
 
 
@@ -113,7 +118,7 @@ PyObject *KosPyDelimitedContinuation_New(KosContinuation *captured) {
 
   KosPyDelimitedContinuation *cont = PyObject_GC_New(
     KosPyDelimitedContinuation,
-    &KosPyDelimitedContinuationType);
+    KOS_CALLABLE_PYTYPE(KosPyDelimitedContinuationType));
 
   if (! cont)
     return NULL;
@@ -251,19 +256,24 @@ static PyObject *continuation_repr(PyObject *self) {
 }
 
 
-PyTypeObject KosPyContinuationType = {
-  PyVarObject_HEAD_INIT(NULL, 0)
+KosCallableTypeObject KosPyContinuationType = {
+  .type = {
+    PyVarObject_HEAD_INIT(NULL, 0)
 
-  .tp_name = "koskari.lib.Continuation",
-  .tp_basicsize = sizeof(KosPyContinuation),
-  .tp_itemsize = 0,
-  .tp_dealloc = continuation_dealloc,
-  .tp_repr = continuation_repr,
-  .tp_call = continuation_call,
-  .tp_flags = Py_TPFLAGS_DEFAULT | Py_TPFLAGS_HAVE_GC,
-  .tp_doc = "Captured undelimited continuation",
-  .tp_traverse = continuation_traverse,
-  .tp_clear = continuation_clear,
+    .tp_name = "koskari.lib.Continuation",
+    .tp_basicsize = sizeof(KosPyContinuation),
+    .tp_itemsize = 0,
+    .tp_dealloc = continuation_dealloc,
+    .tp_repr = continuation_repr,
+    .tp_call = continuation_call,
+    .tp_flags = Py_TPFLAGS_DEFAULT | Py_TPFLAGS_HAVE_GC,
+    .tp_doc = "Captured undelimited continuation",
+    .tp_traverse = continuation_traverse,
+    .tp_clear = continuation_clear,
+    .tp_base = KOS_CALLABLE_PYTYPE(KosCallableType),
+  },
+  .tp_kos_call = kos_callable_continuation_call,
+  .tp_kos_tail_call = kos_callable_continuation_call,
 };
 
 
@@ -277,7 +287,7 @@ PyObject *KosPyContinuation_New(KosContinuation *captured) {
 
   KosPyContinuation *cont = PyObject_GC_New(
     KosPyContinuation,
-    &KosPyContinuationType);
+    KOS_CALLABLE_PYTYPE(KosPyContinuationType));
 
   if (! cont)
     return NULL;
@@ -298,16 +308,16 @@ int koskari_cont_init(PyObject *mod) {
   if (! dict)
     return -1;
 
-  if (PyType_Ready(&KosPyDelimitedContinuationType) ||
-      PyType_Ready(&KosPyContinuationType))
+  if (PyType_Ready(KOS_CALLABLE_PYTYPE(KosPyDelimitedContinuationType)) ||
+      PyType_Ready(KOS_CALLABLE_PYTYPE(KosPyContinuationType)))
     return -1;
 
   if (PyDict_SetItemString(dict, "DelimitedContinuation",
-                           (PyObject *) &KosPyDelimitedContinuationType))
+                           (PyObject *) KOS_CALLABLE_PYTYPE(KosPyDelimitedContinuationType)))
     return -1;
 
   if (PyDict_SetItemString(dict, "Continuation",
-                           (PyObject *) &KosPyContinuationType))
+                           (PyObject *) KOS_CALLABLE_PYTYPE(KosPyContinuationType)))
     return -1;
 
   return 0;

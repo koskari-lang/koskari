@@ -61,6 +61,7 @@ static int koskari_lib_init(PyObject *mod) {
   /* compat must be initialized first */
   if (koskari_atom_init(mod) ||
       koskari_bytecode_init(mod) ||
+      koskari_callable_init(mod) ||
       koskari_compat_init(mod) ||
       koskari_cont_init(mod) ||
       koskari_coro_init(mod) ||
@@ -142,6 +143,9 @@ int koskari_lib_clear(PyObject *mod) {
     return -1;
 
   if (koskari_pair_clear(mod))
+    return -1;
+
+  if (koskari_callable_clear(mod))
     return -1;
 
   if (koskari_atom_clear(mod))

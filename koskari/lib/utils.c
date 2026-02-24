@@ -62,6 +62,48 @@ static PyTypeObject KosConstantlyType = {
 };
 
 
+
+static PyObject *apply_call(
+    PyObject *self,
+    PyObject *args,
+    PyObject *kwargs) {
+
+  (void) self;
+
+  PyObject *func = NULL;
+  PyObject *call_args = NULL;
+  PyObject *call_kwargs = NULL;
+
+  static char *keywords[] = { "func", "args", "kwargs", NULL };
+
+  if (! PyArg_ParseTupleAndKeywords(args, kwargs, "O|OO", keywords,
+                                    &func, &call_args, &call_kwargs))
+    return NULL;
+
+  return KosUtils_Apply(func, call_args, call_kwargs);
+}
+
+
+static KosCallableTypeObject KosApplyType = {
+  .type = {
+    PyVarObject_HEAD_INIT(NULL, 0)
+    .tp_name = "koskari.lib.ApplyHelper",
+    .tp_basicsize = sizeof(PyObject),
+    .tp_dealloc = (destructor) PyObject_Del,
+    .tp_call = apply_call,
+    .tp_flags = Py_TPFLAGS_DEFAULT,
+    .tp_doc = "Callable helper implementing apply(func, args=(), kwargs=None)",
+    .tp_new = PyType_GenericNew,
+    .tp_base = KOS_CALLABLE_PYTYPE(KosCallableType),
+  },
+  .tp_kos_call = kos_callable_apply_call,
+  .tp_kos_tail_call = kos_callable_apply_tail_call,
+};
+
+
+static PyObject *KosApplyObject = NULL;
+
+
 /* === utility function implementations === */
 
 
@@ -305,22 +347,6 @@ static PyObject *m_reapply(PyObject *mod,
 }
 
 
-static PyObject *m_apply(PyObject *mod,
-                         PyObject *args, PyObject *kwds) {
-
-  PyObject *func = NULL;
-  PyObject *call_args = NULL;
-  PyObject *call_kwargs = NULL;
-
-  static char *keywords[] = { "func", "args", "kwargs", NULL };
-
-  if (! PyArg_ParseTupleAndKeywords(args, kwds, "O|OO", keywords,
-                                    &func, &call_args, &call_kwargs))
-    return NULL;
-
-  return KosUtils_Apply(func, call_args, call_kwargs);
-}
-
 
 static PyObject *m_identity(PyObject *mod, PyObject *value) {
 
@@ -376,9 +402,6 @@ static PyMethodDef utils_methods[] = {
     "reapply(func, data, count) -> result\n"
     "Calls data = func(data) count times, returns final result." },
 
-  { "apply", (PyCFunction) m_apply, METH_VARARGS | METH_KEYWORDS,
-    "apply(func, args=(), kwargs=None) -> result\n"
-    "Call func with args and kwargs. Args may be a pair, tuple, or list." },
 
   { "identity", (PyCFunction) m_identity, METH_O,
     "identity(value) -> value\n"
@@ -420,7 +443,8 @@ int koskari_utils_init(PyObject *mod) {
   if (! mod)
     return -1;
 
-  if (PyType_Ready(&KosConstantlyType) < 0)
+  if (PyType_Ready(&KosConstantlyType) < 0 ||
+      PyType_Ready(KOS_CALLABLE_PYTYPE(KosApplyType)) < 0)
     return -1;
 
   for (PyMethodDef *mdef = utils_methods; mdef->ml_name; mdef++) {
@@ -435,12 +459,22 @@ int koskari_utils_init(PyObject *mod) {
       return -1;
   }
 
+  Py_CLEAR(KosApplyObject);
+  KosApplyObject = PyObject_CallNoArgs((PyObject *) KOS_CALLABLE_PYTYPE(KosApplyType));
+  if (! KosApplyObject)
+    return -1;
+
+  if (PyObject_SetAttrString(mod, "apply", KosApplyObject) < 0)
+    return -1;
+
   return 0;
 }
 
 
 int koskari_utils_clear(PyObject *mod) {
 
+  (void) mod;
+  Py_CLEAR(KosApplyObject);
   return 0;
 }
 

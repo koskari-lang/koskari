@@ -35,25 +35,7 @@ KOS_OP_HANDLER(TAIL_CALL) {
   if (! callable)
     return -1;
 
-  int r;
-  if (KosPyDelimitedContinuation_Check(callable)
-      || KosPyContinuation_Check(callable)) {
-    r = call_call_continuation(ctx, callable, args, out_ev, insn);
-
-  } else if (Py_TYPE(callable) == &KosExpressionType) {
-    if (n > 0) {
-      PyErr_SetString(PyExc_TypeError, "Expression takes no arguments");
-      r = -1;
-    } else {
-      r = call_tail_flattened_expr(ctx, callable, out_ev);
-    }
-
-  } else if (Py_TYPE(callable) == &KosFunctionType) {
-    r = call_tail_flattened_function(ctx, callable, args, out_ev);
-
-  } else {
-    r = call_pyobject_call(ctx, callable, args, out_ev);
-  }
+  int r = kos_call_dispatch(ctx, out_ev, callable, args, 1);
 
   Py_DECREF(callable);
   Py_XDECREF(args);
