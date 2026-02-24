@@ -1,76 +1,91 @@
 from unittest import TestCase
 
-from koskari.types import car, cdr, symbol, keyword
+from koskari.types import keyword, symbol
+from koskari.compile.helpers import pycons
 
 from .. import parse_layout
 
-
-_layout_if = symbol('layout/if')
+_compile_cond = symbol('compile/cond')
 
 
 class TestLayoutIfPeers(TestCase):
 
     def test_if_without_peers(self):
         src = """
-        if x :
+        if x:
           y
         """
+
+        expected = pycons(
+            (_compile_cond,
+             (symbol('x'), symbol('y')))
+        )
+
         result = parse_layout(src)
-        self.assertEqual(car(result), _layout_if)
-        first_clause = car(cdr(result))
-        self.assertEqual(car(first_clause), symbol('x'))
-        self.assertEqual(car(cdr(first_clause)), symbol('y'))
+
+        print("result   :", result)
+        print("expected :", expected)
+
+        self.assertEqual(result, expected)
+
 
     def test_if_with_else_peer(self):
         src = """
-        if x :
+        if x:
           y
         else :
           z
         """
+
+        expected = pycons(
+            (_compile_cond,
+             (symbol('x'), symbol('y')),
+             (keyword('else'), symbol('z')))
+        )
+
         result = parse_layout(src)
-        self.assertEqual(car(result), _layout_if)
 
-        first = car(cdr(result))
-        second = car(cdr(cdr(result)))
+        print("result   :", result)
+        print("expected :", expected)
 
-        self.assertEqual(car(first), symbol('x'))
-        self.assertEqual(car(cdr(first)), symbol('y'))
-        self.assertEqual(car(second), keyword('else'))
-        self.assertEqual(car(cdr(second)), symbol('z'))
+        self.assertEqual(result, expected)
+
 
     def test_if_with_elif_then_else(self):
         src = """
-        if x :
+        if x:
           a
-        elif y :
+        elif y:
           b
         else :
           c
         """
+
+        expected = pycons(
+            (_compile_cond,
+             (symbol('x'), symbol('a')),
+             (symbol('y'), symbol('b')),
+             (keyword('else'), symbol('c')))
+        )
+
         result = parse_layout(src)
-        self.assertEqual(car(result), _layout_if)
 
-        first = car(cdr(result))
-        second = car(cdr(cdr(result)))
-        third = car(cdr(cdr(cdr(result))))
+        print("result   :", result)
+        print("expected :", expected)
 
-        self.assertEqual(car(first), symbol('x'))
-        self.assertEqual(car(cdr(first)), symbol('a'))
-        self.assertEqual(car(second), symbol('y'))
-        self.assertEqual(car(cdr(second)), symbol('b'))
-        self.assertEqual(car(third), keyword('else'))
-        self.assertEqual(car(cdr(third)), symbol('c'))
+        self.assertEqual(result, expected)
+
 
     def test_if_invalid_peer_order(self):
         src = """
-        if x :
+        if x:
           a
         else :
           b
-        elif y :
+        elif y:
           c
         """
+
         self.assertRaises(SyntaxError, parse_layout, src)
 
 

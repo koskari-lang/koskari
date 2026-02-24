@@ -22,8 +22,6 @@ from ...types import car, cdr, cons, keyword, nil, symbol, unpack
 from .helpers import layout
 
 
-_symbol_layout_if = symbol('layout/if')
-_symbol_if = symbol('if')
 _symbol_elif = symbol('elif')
 _symbol_else = symbol('else')
 _keyword_else = keyword('else')
@@ -75,15 +73,12 @@ def layout_begin(reader, source, peers):
 @layout(symbol('layout/if'), peers=(_symbol_elif, _symbol_else))
 def layout_if(reader, source, peers):
     """
-    Build a layout/if form from if/elif/else block sources.
+    Lower if/elif/else block sources to compile/cond for compilation.
 
     :param reader: active LayoutReader
     :param source: ((if COND) . BODY) pair
     :param peers: list of peer (header . body) pairs
     """
-
-    print(source)
-    print(peers)
 
     header, body = source
     header_parts = list(unpack(header))
@@ -118,7 +113,7 @@ def layout_if(reader, source, peers):
         else:
             raise reader._layout_stream.error('invalid peer for if block: %r' % (phead,))
 
-    return cons(_symbol_layout_if, *clauses, nil)
+    return cons(symbol('compile/cond'), *clauses, nil)
 
 
 # The end.

@@ -35,7 +35,6 @@ from koskari.reader.layouts import LAYOUTS
 from koskari.compile.helpers import pycons
 
 _layout_block = symbol('layout/block')
-_layout_if = symbol('layout/if')
 
 from . import parse_layout
 
