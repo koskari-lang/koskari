@@ -119,6 +119,13 @@ The VM in `eval.c` uses a jump table; every opcode has a handler. Handlers are e
 
 There are no **partially** implemented opcodes; each handler is either full, a stub, or a dedicated "no runtime implementation" handler (THEEND). The authoritative list is the set of handlers in `koskari/lib/eval.c` that do not call `op_unimplemented_stub`.
 
+### Reader (Koskari Layout Syntax)
+- **Default syntax**: Indentation-based block syntax with colon-terminated headers; lowers into canonical s-expressions. See `design/language/layout-syntax.md` and `design/language/layout-syntax-formal.md`.
+- **Block parsing**: Header terminator is the final `:` at delimiter depth 0; `x:` and `x :` parse identically. Keywords like `as:`, `x:` remain intact inside headers.
+- **Probe pass + break marker**: Reader uses a two-step process to locate header end without lexer ambiguity (RecordingStream, MARK event).
+- **Layout heads**: Block heads resolve via `layout/<head>` lookup; handlers receive `(header . body)` and optional peer blocks. Fallback: `layout/block` for unknown heads.
+- **Mixed mode**: Pure s-expr syntax embeddable anywhere; layout and s-expr alternate by context.
+
 ### Compiler
 - **Phases**: Parse → Expand → Compile → Optimize → Generate (full pipeline in progress)
 - **Components**: Compiler, CodeContext, ByteCodeFragment (implemented in `koskari.compile`)

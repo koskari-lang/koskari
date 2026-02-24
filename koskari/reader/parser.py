@@ -86,6 +86,7 @@ DOT = keyword("dot")
 SKIP = keyword("skip")
 CLOSE_PAIR = keyword("close-pair")
 EOF = keyword("eof")
+MARK = keyword("mark")
 
 _integer_re = regex(r"^-?\d+$").match
 _bin_re = regex(r"^0b[01]+$").match
@@ -991,6 +992,76 @@ class LayoutReader(Reader):
             self._ns = namespace
 
         self._layout_depth = 0
+        self._break_marker = None
+
+
+    def _read(self, stream, raw=False):
+        """
+        Override to support break marker for block-header parsing
+        """
+
+        if self._break_marker is not None:
+            stream.skip_whitespace()
+            pos = stream.position()
+            if pos >= self._break_marker:
+                self._break_marker = None
+                return MARK, pos, None
+
+        return super()._read(stream, raw)
+
+
+    def _probe_block_header_end(self, stream, require_colon=True):
+        """
+        Probe pass: parse with : as terminator, discard, find last colon
+
+        Returns (recorded_str, last_colon_pos, start_pos). The stream is
+        consumed past the header. If require_colon and no colon found, raises.
+        """
+
+        start_pos = stream.position()
+        wrapped = RecordingStream(stream)
+
+        def colon_macro(s, c):
+            return VALUE, symbol(':')
+
+        depth = 0
+        last_colon_pos = None
+
+        with self.temporary_event_macro(':', colon_macro, terminating=True):
+            while True:
+                peek = wrapped.peek(1)
+                if not peek:
+                    break
+
+                if peek in '([{':
+                    depth += 1
+
+                event, pos, form = self._read(wrapped)
+                if event is EOF:
+                    break
+
+                if peek in '([{':
+                    depth -= 1
+
+                if form == symbol(':') and depth == 0:
+                    last_colon_pos = pos
+                    wrapped.skip_whitespace()
+                    break
+
+                if form != symbol(':') and depth == 0 and not require_colon:
+                    wrapped.skip_whitespace()
+                    inner = getattr(wrapped, '_stream', wrapped)
+                    if getattr(inner, '_dedent_detected', False):
+                        break
+                    next_c = wrapped.peek(1)
+                    if next_c == '\n' or not next_c:
+                        break
+
+        if require_colon and last_colon_pos is None:
+            raise stream.error(
+                'block header must end with colon', start_pos)
+
+        return wrapped.get_recorded(), last_colon_pos, start_pos
 
 
     def find_layout(self, name):
@@ -1023,29 +1094,50 @@ class LayoutReader(Reader):
         """
         Read forms until block opener; handles s-exprs spanning lines
 
+        Uses probe pass (parse with : terminator, discard) to find the
+        final colon, then reads from a fresh stream until MARK. Both
+        "unknown x:" and "unknown x :" parse identically.
+
         :param stream: the source stream
         :return: (head, args, opener) where head is first form, args
             are forms between head and opener, opener is the colon/keyword
         :raises ReaderSyntaxError: on EOF in header
         """
 
-        forms = []
-        while True:
-            event, pos, value = self._read(stream)
-            if event is EOF:
-                raise stream.error('unexpected EOF in block header', pos)
-            forms.append(value)
-            if _is_block_opener(value):
-                break
+        recorded, last_colon_pos, start_pos = self._probe_block_header_end(
+            stream)
+        start_lin, start_col = start_pos
 
-        if len(forms) < 2:
-            raise stream.error('block header must have head and opener', pos)
+        header_stream = source_str(
+            recorded, stream.filename,
+            line_no=start_lin, col_no=start_col)
+
+        self._break_marker = last_colon_pos
+
+        def colon_macro(s, c):
+            return VALUE, symbol(':')
+
+        forms = []
+        try:
+            with self.temporary_event_macro(':', colon_macro, terminating=True):
+                while True:
+                    event, pos, value = self._read(header_stream)
+                    if event is MARK:
+                        break
+                    if event is EOF:
+                        raise stream.error(
+                            'unexpected EOF in block header', pos)
+                    forms.append(value)
+        finally:
+            self._break_marker = None
+
+        if len(forms) < 1:
+            raise stream.error(
+                'block header must have head and opener', pos)
 
         head = forms[0]
-        opener = forms[-1]
-        args = list(forms[1:-1])
-        if is_keyword(opener) and str(opener).endswith(':'):
-            args.append(symbol(str(opener)[:-1]))
+        args = list(forms[1:])
+        opener = symbol(':')
         return (head, args, opener)
 
 
@@ -1094,34 +1186,48 @@ class LayoutReader(Reader):
                     body.append(form1)
                     continue
 
-                forms = [form1]
-                while True:
-                    wrapped.skip_whitespace()
-                    if getattr(wrapped, '_dedent_detected', False):
-                        for f in forms:
-                            body.append(f)
-                        break
+                header_start = wrapped.position()
+                recording = RecordingStream(wrapped)
+                recorded, last_colon_pos, _ = (
+                    self._probe_block_header_end(
+                        recording, require_colon=False))
 
-                    event, pos, form = self._read(wrapped)
-                    if event is EOF:
-                        if len(forms) == 1:
-                            body.append(form1)
-                        else:
-                            raise stream.error(
-                                'unexpected EOF in block header', pos)
-                        break
-                    forms.append(form)
-                    if _is_block_opener(form):
-                        head = forms[0]
-                        args = list(forms[1:-1])
-                        if is_keyword(form) and str(form).endswith(':'):
-                            args.append(symbol(str(form)[:-1]))
-                        block = self.read_block(
-                            wrapped, header_indent, head, args)
-                        body.append(block)
-                        break
+                if last_colon_pos is not None:
+                    start_lin, start_col = header_start
+                    sub_header_stream = source_str(
+                        recorded, wrapped.filename,
+                        line_no=start_lin, col_no=start_col)
+                    self._break_marker = last_colon_pos
+                    try:
+                        probe_forms = []
+                        with self.temporary_event_macro(
+                                ':', lambda s, c: (VALUE, symbol(':')),
+                                terminating=True):
+                            while True:
+                                event, pos, value = self._read(
+                                    sub_header_stream)
+                                if event is MARK:
+                                    break
+                                if event is EOF:
+                                    raise wrapped.error(
+                                        'unexpected EOF in block header',
+                                        pos)
+                                probe_forms.append(value)
+                    finally:
+                        self._break_marker = None
 
-        print("read_block_body ->", body)
+                    head = form1
+                    args = [f for f in probe_forms if f != symbol(':')]
+                    block = self.read_block(
+                        wrapped, header_indent, head, args)
+                    body.append(block)
+                else:
+                    wrapped._buffer = list(recorded) + (
+                        getattr(wrapped, '_buffer', []) or [])
+                    wrapped._buffer_start_pos = header_start
+                    body.append(form1)
+
+        # print("read_block_body ->", body)
         return body
 
 
@@ -1133,7 +1239,7 @@ class LayoutReader(Reader):
         if is_pair(source):
             source.set_position(pos)
 
-        print("_read_block_source ->", source)
+        # print("_read_block_source ->", source)
         return source
 
 
@@ -1394,7 +1500,8 @@ def source_str(source_str, filename, auto_skip_exec=True,
     """
 
     return SourceStream(StringIO(source_str), filename,
-                        auto_skip_exec=auto_skip_exec)
+                        auto_skip_exec=auto_skip_exec,
+                        line_no=line_no, col_no=col_no)
 
 
 def source_stream(source_stream, filename, auto_skip_exec=True):
@@ -1409,6 +1516,86 @@ def source_stream(source_stream, filename, auto_skip_exec=True):
 
     return SourceStream(source_stream, filename,
                         auto_skip_exec=auto_skip_exec)
+
+
+class RecordingStream(object):
+    """
+    Wraps a stream and records all characters read for replay
+
+    Used by the block-header probe pass: record the header, then
+    create a fresh stream from the recording for the real read pass.
+    """
+
+    def __init__(self, stream):
+        self._stream = stream
+        self._record = []
+        self._putback = []
+
+
+    def read(self, n=1):
+        if self._putback:
+            result = []
+            while len(result) < n and self._putback:
+                c = self._putback.pop(0)
+                result.append(c)
+                self._record.append(c)
+            rest = n - len(result)
+            if rest <= 0:
+                return ''.join(result)[:n]
+            data = self._stream.read(rest)
+            if data:
+                self._record.extend(data)
+            return ''.join(result) + (data or '')
+        data = self._stream.read(n)
+        if data:
+            self._record.extend(data)
+        return data
+
+
+    def peek(self, n=1):
+        if self._putback:
+            from_buf = min(n, len(self._putback))
+            result = ''.join(self._putback[:from_buf])
+            if from_buf >= n:
+                return result
+            return result + (self._stream.peek(n - from_buf) or '')
+        return self._stream.peek(n)
+
+
+    def position(self):
+        return self._stream.position()
+
+
+    @property
+    def filename(self):
+        return self._stream.filename
+
+
+    def error(self, message, position=None):
+        return self._stream.error(message, position)
+
+
+    def skip_whitespace(self):
+        while True:
+            c = self._stream.peek(1)
+            if not c or c not in ' \t\n\r':
+                return
+            c = self._stream.read(1)
+            self._record.append(c)
+
+
+    def read_until_chars(self, terminators):
+        data = self._stream.read_until_chars(terminators)
+        if data:
+            self._record.extend(data)
+        return data
+
+
+    def get_recorded(self):
+        """
+        Return the string of all characters read since creation
+        """
+        return ''.join(self._record)
 
 
 class IndentAwareStream(object):

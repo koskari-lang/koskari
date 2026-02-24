@@ -45,13 +45,10 @@ def layout_block(reader, source, peers):
     if peers:
         raise reader._layout_stream.error('block does not take peers')
 
-    print("layout/block source:", source)
-
     header, body = source
     _called_by, hdr = header
 
     hdr.append(cons(symbol('compile/begin'), body))
-    print("layout/block ->", hdr)
     return hdr
 
 

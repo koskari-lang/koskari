@@ -95,6 +95,7 @@ Notes:
 
 * `SEXPR` may span multiple physical lines according to the delimiter depth rule.
 * `ATOM` tokenization may include keyword-like atoms (e.g. `as:`), but the final header terminator `:` is structural and stripped.
+* `unknown x:` and `unknown x :` are equivalent: both produce header content ending before the colon. The reader uses a probe pass plus break marker to locate the terminating `:` without lexer ambiguity.
 
 ---
 
@@ -179,9 +180,18 @@ This affects the produced **layout forms**, but does not change the surface synt
 
 Peer blocks (e.g. `else:` following an `if:`) are syntactically just `BlockLine` nodes.
 
-Whether a block is accepted as a peer is defined solely by the active layout head's read hook.
+Whether a block is accepted as a peer is defined solely by the active layout head's read hook (via declared peer symbols).
 
 The base layout grammar does not assign special meaning to particular header symbols.
+
+## 7.4 Block Source Structure
+
+The reader presents blocks to layout handlers as:
+
+* **source** = `(header . body)` where `header` = `(head . args)` and `body` = list of body forms.
+* **peers** = list of `(pheader . pbody)` pairs for contiguously following blocks at same indent whose heads match the layout's declared peers.
+
+Sub-blocks inside a body are recursively processed by `read_block` (layout resolution); their results become body elements.
 
 ---
 

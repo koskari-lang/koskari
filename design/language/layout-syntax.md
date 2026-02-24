@@ -75,36 +75,63 @@ let [[x 1] [y 2]]:
 
 Headers may span multiple physical lines when delimiters are unbalanced, e.g. `let [[a 1]\n     [b 2]]:`.
 
-## 2.2 Keyword vs Block Colon (Lexer Concern)
+## 2.2 Header Terminator: Colon Handling
 
-We distinguish two forms:
+Both `unknown x:` and `unknown x :` parse identically. The reader treats the **final** `:` at delimiter depth 0 as the block opener; spacing around it does not matter.
 
-* `name:` → keyword token
-* `name :` → symbol `name` followed by standalone `:` token
+Keywords like `as:`, `x:`, `y:` remain intact inside headers. Only the colon that terminates the header is structural. Example:
 
-This allows:
+```kosk
+foo x: 1 y: 2:
+  (+ x y)
+```
+
+Here `x:` and `y:` are keywords in the header; the last `:` ends the header. Similarly:
 
 ```kosk
 with [(foo) as: x]:
   ...
 ```
 
-Here `as:` is a keyword.
+Here `as:` is a keyword; the trailing `:` opens the block.
 
-Versus:
+### Implementation: Probe Pass + Break Marker
 
-```kosk
-assume x :
-  ...
+The reader uses a two-step process to locate the header end without lexer ambiguity:
+
+1. **Probe pass** — Wrap the stream in a `RecordingStream`, add `:` as a terminator, and parse forward (discarding forms). Track the last bare `:` seen at depth 0. Record all characters consumed.
+2. **Break marker** — Set an internal marker at that position. When `_read` reaches the marker, emit `MARK` and stop.
+3. **Read pass** — Create a fresh stream from the recording, read forms until `MARK`. The colon is never tokenized as part of the header; it is the structural boundary.
+
+This ensures `x:` and `x :` behave the same and that keywords elsewhere in the header are preserved.
+
+## 2.3 Block Parsing Flow and Source Structure
+
+**read_block** = layout resolution over an anonymous block read.
+
+**Anonymous block read** produces `(header . body)`:
+
+* Read header forms (head + args) up to the terminating `:`.
+* Read body elements until dedent. Each element is either a simple form or a sub-block.
+* When a sub-block is detected (same indent, header ending in `:`), recur into **read_block** (full layout path) and append its result to the body.
+* Inner blocks are thus processed by layouts first; their results become body elements for the outer block.
+
+**Source shape:** Header and body are a pair, not a single joined form:
+
+```lisp
+((if x) . ('true . nil))
+((else . nil) . ('false . nil))
 ```
 
-Here `x` is a symbol, and the standalone `:` opens the block.
+For a block `if cond:\n  a`:
 
-Rule:
+* `header` = `(if . (cond . nil))`
+* `body` = `(a . nil)`
+* `source` = `(header . body)`
 
-* A colon attached to a token forms a keyword.
-* A colon separated by whitespace is a standalone token.
-* Only a standalone `:` or a keyword-at-end-of-line may serve as a block opener.
+For peer blocks (e.g. `else:`), each peer is `(pheader . pbody)`.
+
+**Default fallback:** If no `layout/<head>` is found, the reader prepends `layout/block` to the header and invokes the `layout/block` handler with the synthetic source. That handler lowers to `(HEAD ARG1 ARG2 ... BODY)`.
 
 ---
 
@@ -134,17 +161,14 @@ This makes layout behavior:
 
 # 4. Default Block Behavior
 
-If no `layout/<head>` exists, the reader produces:
+If no `layout/<head>` exists, the reader builds a synthetic source by prepending `layout/block` to the header, then invokes the `layout/block` handler:
 
 ```lisp
-(layout/block HEAD ARG1 ARG2 ... BODY...)
+;; synthetic_header = (layout/block HEAD ARG1 ARG2 ...)
+;; default_source = (synthetic_header . body)
 ```
 
-This is the generic fallback.
-
-### Default Lowering
-
-`layout/block` lowers mechanically to:
+The `layout/block` handler receives this source and lowers it to:
 
 ```lisp
 (HEAD ARG1 ARG2 ... BODY)
@@ -154,7 +178,7 @@ Where BODY is:
 
 * 0 forms → `None`
 * 1 form → that form
-* N > 1 forms → `(begin ...)`
+* N > 1 forms → `(begin ...)` (or equivalent)
 
 This enables natural DSL usage:
 
@@ -178,7 +202,7 @@ No layout plugin required.
 
 # 5. Peering (else / except / etc.)
 
-Layout objects are responsible for peer handling.
+Layout objects declare peer heads (e.g. `elif`, `else` for `layout/if`). The reader gathers contiguously following blocks at the same indent whose heads match the declared set, builds `(pheader . pbody)` pairs for each, and passes them as the `peers` argument to the layout's `read` hook.
 
 Example:
 
@@ -192,31 +216,29 @@ else:
 Flow:
 
 1. Reader resolves `layout/if`.
-2. `layout/if.read(...)` reads its body.
-3. It looks ahead at same indent for valid peer headers.
-4. It consumes `else:` and attaches it as a peer.
+2. Reader reads the if block body (including any sub-blocks via `read_block`).
+3. Reader calls `_read_declared_peers` with the layout's declared peers (`elif`, `else`).
+4. For each matching peer at same indent, the reader consumes the block and appends `(pheader . pbody)` to peers.
+5. `layout/if.read(reader, source, peers)` receives the source and peer list.
 
-Peering is owned entirely by the layout object.
-
-The core reader does not implement global continuation rules.
+Peering is driven by layout metadata; the core reader implements the gathering loop but does not assign meaning to particular heads.
 
 ---
 
 # 6. layout/* Form Structure
 
-Layout read hooks must return structured layout forms, e.g.:
+Layout read hooks receive:
+
+* **source** — `(header . body)` where `header` = `(head . args)` (variadic cons), `body` = list of body forms (possibly including sub-block results).
+* **peers** — list of `(pheader . pbody)` pairs for declared peer blocks.
+
+Handlers return structured layout forms, e.g.:
 
 ```lisp
 (layout/if <cond> <then-body> <clauses...>)
 ```
 
-Peers may be represented as:
-
-```lisp
-[else: <body>]
-```
-
-Or other structured clause representations.
+The layout object is responsible for interpreting peers (e.g. `else` → `(else . body)` or `(keyword('else) . body)`).
 
 Expand hooks then lower these into canonical s-expr or `compile/*` forms.
 
@@ -286,9 +308,10 @@ We have decided:
 * Default syntax is layout-enabled.
 * Pure s-expr is always allowed.
 * Block heads resolve via `layout/<head>` lookup at read time.
-* Layout objects own peering behavior.
+* Layout objects declare peers; the reader gathers them and passes `(pheader . pbody)` pairs.
 * Fallback is `layout/block` → normal call lowering.
-* Colon spacing distinguishes keyword vs block opener.
+* The final `:` at depth 0 terminates the header; `x:` and `x :` parse identically; keywords elsewhere stay intact.
+* Block source is `(header . body)`; layout handlers receive source and peers.
 * Layout objects have separate read and expand phases.
 * Reader is module-aware and replaceable.
 

@@ -44,7 +44,7 @@ class TestLayoutBlockSyntax(TestCase):
 
     def test_simple_block(self):
         src = """
-        foo x :
+        foo x:
           y
         """
 
@@ -83,7 +83,7 @@ class TestLayoutBlockSyntax(TestCase):
     def test_nested_block_inside_block(self):
         src = """
         foo [[x 1]]:
-          bar x :
+          bar x:
             (baz x)
         """
 
@@ -97,18 +97,37 @@ class TestLayoutBlockSyntax(TestCase):
         )
 
         result = parse_layout(src)
-
-        # leave to debug failures
-        print()
-        print("result   :", result)
-        print("expected :", expected)
-
         self.assertEqual(result, expected)
+
+
+    def test_block_header_colon_no_space(self):
+        """Both 'x:' and 'x :' parse identically"""
+        src_no_space = """
+        unknown x:
+          (print x)
+        """
+        src_with_space = """
+        unknown x :
+          (print x)
+        """
+        expected = pycons(
+          (symbol('unknown'),
+           symbol('x'),
+           (symbol('compile/begin'),
+            (symbol('print'), symbol('x'))))
+        )
+
+        result_no_space = parse_layout(src_no_space)
+        result_with_space = parse_layout(src_with_space)
+
+        self.assertEqual(result_no_space, expected)
+        self.assertEqual(result_with_space, expected)
+        self.assertEqual(result_no_space, result_with_space)
 
 
     def test_dedent_ends_body(self):
         src = """
-        foo x :
+        foo x:
           a
           b
         bar
@@ -123,16 +142,12 @@ class TestLayoutBlockSyntax(TestCase):
           )
 
         result = parse_layout(src)
-
-        print("result:", result)
-        print("expected:", expected)
-
         self.assertEqual(result, expected)
 
 
     def test_fallback_no_layout_head(self):
         src = """
-        unknown x :
+        unknown x:
           (print x)
         """
 
@@ -144,10 +159,6 @@ class TestLayoutBlockSyntax(TestCase):
           )
 
         result = parse_layout(src)
-
-        print("result:", result)
-        print("expected:", expected)
-
         self.assertEqual(result, expected)
 
 
