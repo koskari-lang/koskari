@@ -1,6 +1,11 @@
 # Special Call Protocol (Kos Call)
 
-**Implementation status**: Design only. Not yet implemented.
+## Implementation status
+
+**Partially implemented.**
+
+- **Implemented**: Single dispatch for CALL and TAIL_CALL; type-slot lookup only (no registry); handler contract (signature, return 0/1/-1); default handler (Python call + push_or_await); KosFunction, KosExpression, DelimitedContinuation, Continuation, and apply as kos callables via `KosCallableTypeObject` and `tp_kos_call` / `tp_kos_tail_call`. The apply callable: 1/2/3-argument form, flattening when `fn` is KosFunction or KosExpression and `kwds` is NULL, else `PyObject_Call` + push_or_await. AWAIT uses a small `kos_await_dispatch` (defer vs push_or_await).
+- **Not implemented**: Registry-based handler lookup; resume (`is_resume != 0`) and pending native continuation (Phase 1.5, frame-stored handler+cookie); CALL_NAMES, CALL_STAR, TAIL_CALL_NAMES, TAIL_CALL_STAR (still stubs); kos next protocol.
 
 ## Purpose
 
@@ -25,6 +30,12 @@ The evaluator does **not** use an if/else chain on callable type. Instead it res
 The default handler implements normal Python invocation: `PyObject_Call(callable, args, kwds)` (or equivalent) and then `push_or_await` for the result. So any type without a registered handler behaves as a normal Python callable.
 
 "Type-checking" in the evaluator is therefore a single lookup and one indirect call—no special cases for KosFunction, KosExpression, continuations, or future types.
+
+### Current implementation (C)
+
+- **Lookup**: Type slot only. No registry. Callable types extend a base whose C struct is `KosCallableTypeObject` (a `PyTypeObject` plus `tp_kos_call` and `tp_kos_tail_call`). The evaluator uses `KosCallable_Check(callable)` (subtype of base) then reads `KosCallableType_CALL(Py_TYPE(callable))` or `KosCallableType_TAIL_CALL(Py_TYPE(callable))`. The slot macros cast `PyTypeObject *` to `KosCallableTypeObject *`; they are valid only for types whose definition is that struct (or has the same layout for the first three fields).
+- **Dispatcher**: `kos_call_dispatch(ctx, out_ev, callable, args, is_tail)`. If the type has a non-NULL handler for the requested tail/non-tail slot, that handler is called with `(ctx, out_ev, 0, callable, args)`. Otherwise the default handler is used. CALL and TAIL_CALL opcodes pop callable and args then call this dispatcher; CALL_NAMES, CALL_STAR, TAIL_CALL_NAMES, TAIL_CALL_STAR do not yet use it.
+- **Default**: A subtype of the callable base that leaves `tp_kos_call` / `tp_kos_tail_call` NULL still passes `KosCallable_Check`; the dispatcher then calls the default handler (Python call + push_or_await), so such types behave as normal Python callables from bytecode.
 
 ---
 
@@ -93,10 +104,12 @@ The handler is allowed to:
 
 ### Single dispatch for CALL-family opcodes
 
-All opcodes that invoke a callable (CALL, CALL_NAMES, CALL_STAR, TAIL_CALL, TAIL_CALL_NAMES, TAIL_CALL_STAR, and the RECUR/TAIL_RECUR family) follow the same path:
+All opcodes that invoke a callable (CALL, CALL_NAMES, CALL_STAR, TAIL_CALL, TAIL_CALL_NAMES, TAIL_CALL_STAR, and the RECUR/TAIL_RECUR family) should follow the same path. **Currently only CALL and TAIL_CALL use the unified dispatcher** (`kos_call_dispatch`); CALL_NAMES, CALL_STAR, and the TAIL_* variants are not yet wired to it.
+
+Intended path:
 
 1. Pop arguments and callable from the stack according to the opcode (e.g. CALL N pops N args then callable).
-2. Call the unified dispatcher, e.g. `kos_dispatch_call(ctx, callable, args, out_ev, tail_p)`. The `tail_p` flag (or equivalent) selects normal vs tail semantics. Keyword and star-arg variants pass the appropriate representation of args/kwds.
+2. Call the unified dispatcher, e.g. `kos_call_dispatch(ctx, out_ev, callable, args, tail_p)`. The `tail_p` flag selects normal vs tail semantics. Keyword and star-arg variants will pass the appropriate representation of args/kwds when implemented.
 3. If the dispatcher returns 0, the evaluator continues the loop (next opcode). If 1, the evaluator exits with the event. If -1, the evaluator propagates the error.
 
 The dispatcher's logic is:
@@ -221,13 +234,26 @@ So from Koskari, `(apply fn arglist kwds)` is equivalent to calling `fn` directl
 - The handler must map the 1/2/3-argument convention from the CALL opcode's `args` (and any kwds) into the internal (fn, arglist, kwds) form. The compiler will emit CALL with 1, 2, or 3 positional arguments; the handler receives the tuple and interprets element 0 as `fn`, element 1 (if present) as `arglist`, element 2 (if present) as `kwds`. Omitted arguments are treated as no extra args and no keywords (equivalent to `()` and `None` or empty mapping).
 - The handler can reuse the same namespace-preparation and frame-push/tail-replace logic as the existing KosFunction and KosExpression handlers, so unification allows apply to "forward" into the same code paths without duplicating them.
 
+**Current apply implementation**: Flattening is used only when `fn` is exactly `KosFunction` or exactly `KosExpression` (e.g. `KosFunction_CheckExact(fn)`), and for expressions only when the positional arglist is empty and `kwds` is NULL. If `kwds` is non-NULL (including an empty dict), the handler does not flatten and uses `PyObject_Call(fn, seq_args, kwds)` then push_or_await, because the flattened call path does not accept keyword arguments. Arglist-to-tuple conversion is implemented in both the kos call handler (eval) and in `KosUtils_Apply` (Python `tp_call`); the two must stay in sync.
+
+---
+
+## Concerns and caveats
+
+The following points are not implied by "planned work" elsewhere and are worth keeping in mind when maintaining or extending the implementation.
+
+- **Flattening and subclasses**: Apply uses `KosFunction_CheckExact` and `KosExpression_CheckExact` to decide whether to flatten. Subtypes of KosFunction or KosExpression do not get the flattened path; they are invoked via `PyObject_Call` + push_or_await. If a future type should be flattenable via apply, either switch to a `Check` (subtype) predicate or add an explicit allowlist.
+- **NULL handler fallback**: Any type that passes `KosCallable_Check` but has NULL in the relevant slot (e.g. the base `KosCallableType`, or a subtype that omits the slot) is treated as a normal Python callable: the default handler is used. Document this so that new callable types do not assume "no slot" has a different meaning.
+- **Type layout for slot macros**: `KosCallableType_CALL(typ)` and `KosCallableType_TAIL_CALL(typ)` cast `typ` (a `PyTypeObject *`) to `KosCallableTypeObject *`. This is correct only for types defined as `KosCallableTypeObject` (same memory layout). Do not use these macros on other type layouts.
+- **Duplicate arglist conversion**: The logic that converts `arglist` (pair, tuple, list, or other sequence) into a tuple lives in both the apply kos call handler (eval.c) and in `KosUtils_Apply` (utils.c). Changes to one (e.g. new sequence types, error messages) should be reflected in the other to avoid behavioral drift.
+
 ---
 
 ## Summary
 
-- **One path**: All CALL-family opcodes pop callable and args, then call a single dispatcher.
-- **One contract, same signature for call and resume**: Handlers use a single signature `(ctx, out_ev, is_resume, arg1, arg2)`: initial call has `is_resume==0` (arg1=callable, arg2=args); resume has `is_resume!=0` (arg1=resumed value, arg2=cookie). Return 0 (continue), 1 (suspend), or -1 (error). Continuation can be frame-based (no re-entry) or native (pending continuation re-invokes the same handler with is_resume set).
-- **Lookup by type**: Handler is resolved via type slot or registry; default is Python call + push_or_await.
-- **Resume**: The pending native continuation (handler + cookie) is stored on a frame, not the context. **The handler implementation decides which frame**: utility callables (apply, map) typically use the **caller's** frame (no frame of their own); JIT or heavy native may push their **own** frame and use it. The evaluator always checks the **top** frame for a continuation (after any revive—await, yield, etc.—or when the top frame changes after a return) and invokes it with (ctx, out_ev, 1, value, cookie). **All suspend types** (await, yield, and any other boundary that delivers a value) use this same mechanism. Storing on the frame gives correct nesting and lifecycle (continuation goes with the frame when it is popped). Native bodies can be re-entered many times across suspends or across nested Koskari calls.
-- **apply**: First real implementation; from Koskari it flattens when `fn` is a Koskari function/expression, otherwise behaves like simple application.
+- **One path**: All CALL-family opcodes should pop callable and args, then call a single dispatcher. Currently only CALL and TAIL_CALL do so.
+- **One contract, same signature for call and resume**: Handlers use a single signature `(ctx, out_ev, is_resume, arg1, arg2)`: initial call has `is_resume==0` (arg1=callable, arg2=args); resume has `is_resume!=0` (arg1=resumed value, arg2=cookie). Return 0 (continue), 1 (suspend), or -1 (error). Continuation can be frame-based (no re-entry) or native (pending continuation re-invokes the same handler with is_resume set). Resume is not yet implemented; all handlers currently error on `is_resume != 0`.
+- **Lookup by type**: Handler is resolved via type slot (implemented) or registry (not implemented); default is Python call + push_or_await.
+- **Resume**: The pending native continuation (handler + cookie) is stored on a frame, not the context. **The handler implementation decides which frame**: utility callables (apply, map) typically use the **caller's** frame (no frame of their own); JIT or heavy native may push their **own** frame and use it. The evaluator always checks the **top** frame for a continuation (after any revive—await, yield, etc.—or when the top frame changes after a return) and invokes it with (ctx, out_ev, 1, value, cookie). **All suspend types** (await, yield, and any other boundary that delivers a value) use this same mechanism. Storing on the frame gives correct nesting and lifecycle (continuation goes with the frame when it is popped). Native bodies can be re-entered many times across suspends or across nested Koskari calls. **This resume mechanism is not yet implemented.**
+- **apply**: First real implementation; from Koskari it flattens when `fn` is exactly KosFunction or KosExpression and (for expressions) arity 0 and no kwds; otherwise behaves like simple application. See **Concerns and caveats** for subclass and arglist-conversion notes.
 - **map**: Future example of a meta-opcode-style callable and optional kos next iterator; no evaluator special cases.

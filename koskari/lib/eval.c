@@ -1960,6 +1960,9 @@ static int kos_call_dispatch(
 }
 
 
+static int defer_drive(KosContext *ctx, KosEvent *out_ev, PyObject *defer_obj);
+
+
 static int kos_await_dispatch(KosContext *ctx, KosEvent *out_ev, PyObject *value) {
   if (KosDefer_Check(value))
     return defer_drive(ctx, out_ev, value);
