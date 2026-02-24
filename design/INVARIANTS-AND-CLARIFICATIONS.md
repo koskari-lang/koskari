@@ -72,7 +72,7 @@ These are **commitments**: they must hold for correct behavior. They are elabora
 
 - **Generators vs async**: Generators are **not** awaitable. Async generators are **not** awaitable. Async **functions** return awaitables. Yield and await are **disjoint** control paths.
 
-- **Auto-await**: The VM auto-awaits only (1) the result of a Python CALL when that result is a coroutine/awaitable, and (2) the value consumed by the AWAIT opcode. All other values (CONST, loads, getattr, subscript, yield-from results, etc.) are pushed with no automatic await. See design/interpreter/evaluator.md § "Pushing results and auto-await".
+- **Auto-await**: The VM auto-awaits only (1) the result of a Python CALL when that result is a coroutine/awaitable, and (2) the value consumed by the AWAIT opcode. All other values (CONST, loads, getattr, subscript, yield-from results, etc.) are pushed with no automatic await. **Defer objects are not eagerly awaited**: a value of type `defer` is never auto-awaited by CALL return or other implicit await sites; it is pushed as a plain value. Only the explicit AWAIT opcode drives a defer. See design/interpreter/evaluator.md § "Pushing results and auto-await" and design/api/defer-coroutine.md.
 
 - **Yield-from**: YIELD_FROM operates on iterables and async-iterables only. Coroutines (Koskari or Python) are rejected at normalization with `TypeError: "coroutine object is not async iterable"`. Delegate results (yielded or final value) are never re-awaited; they are pushed or emitted as plain values. Koskari callables are async generators only if their code contains YIELD or YIELD_FROM; otherwise they are coroutines and invalid as yield-from targets. See design/interpreter/yield-from-execution-model.md.
 
@@ -111,6 +111,8 @@ These are **commitments**: they must hold for correct behavior. They are elabora
 - **Formals**: Parameter specification; `FormalsSpec` is the template; `Formals` instances are created with `apply()` for binding. Implemented in `koskari/lib/formals.c`.
 
 - **Values**: Multi-value return object (positional and keyword). Implemented in `koskari/lib/values.c`.
+
+- **Defer**: Single-shot await-handle; stores fn, args, kwds for application on first explicit await. Not eagerly awaited (CALL return and other implicit await sites push it as a plain value). Implemented in `koskari/lib/defer.c`; see design/api/defer-coroutine.md.
 
 - **Stack**: `Stack` (Python) is block-structured; the **storage** for the VM is `KosStackBlock` (C). Control-flow metadata (block style, labels, enabled) lives in **`KosDynRegion`** nodes on the dynamic chain, not on the stack. Implemented in `koskari/lib/stack.c` (storage only).
 

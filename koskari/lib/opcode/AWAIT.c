@@ -23,5 +23,7 @@ KOS_OP_HANDLER(AWAIT) {
   PyObject *val = KosStackBlock_PopRef(&CURRENT_STACK(ctx));
   if (! val)
     return -1;
+  if (KosDefer_Check(val))
+    return defer_drive(ctx, out_ev, val);
   return push_or_await(ctx, out_ev, val);
 }

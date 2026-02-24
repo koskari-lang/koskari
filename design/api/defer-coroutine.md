@@ -1,5 +1,7 @@
 # DeferCoroutine (`defer`) — single-shot await-handle
 
+**Implementation status**: Implemented in `koskari/lib/defer.c` and `koskari/lib/defer.h`; wired into the evaluator (push_or_await skips defer, AWAIT opcode drives via defer_drive). Tests in `tests/lib/test_defer.py`.
+
 ## Purpose
 
 Koskari's default async model performs **implicit greedy await** in selected evaluation sites (notably function call return paths). This is convenient for "async-by-default" programming, but it removes an important capability: sometimes code needs a **handle** to something that will eventually be awaited, rather than the awaited result.

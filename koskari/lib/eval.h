@@ -270,6 +270,7 @@ struct KosContext {
   PyObject *py_last_yielded; /* last yielded object (debug/optional) */
   PyObject *py_resume_inject; /* value to push on next koskari_eval when resuming */
   uint8_t py_resume_kind;    /* 0=none, 1=await, 2=yield */
+  PyObject *pending_defer;   /* KosDefer * when AWAIT suspended on inner (feed result on resume) */
 
   /* --- Exception injection (set by coroutine_throw or dynchain inject) --- */
   int inject_mode;       /* 0=none, 1=pending_throw */
@@ -336,6 +337,7 @@ struct KosContext {
 #define KosContext_PY_LAST_YIELDED(c)        (((KosContext *)(c))->py_last_yielded)
 #define KosContext_PY_RESUME_INJECT(c)       (((KosContext *)(c))->py_resume_inject)
 #define KosContext_PY_RESUME_KIND(c)         (((KosContext *)(c))->py_resume_kind)
+#define KosContext_PENDING_DEFER(c)         (((KosContext *)(c))->pending_defer)
 
 #define KOS_RESUME_NONE  0
 #define KOS_RESUME_AWAIT 1

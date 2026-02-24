@@ -57,6 +57,7 @@ struct KosEvent;
 #include "stack.h"
 #include "utils.h"
 #include "values.h"
+#include "defer.h"
 
 
 /* === unit initializers === */

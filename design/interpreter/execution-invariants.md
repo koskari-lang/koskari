@@ -91,6 +91,15 @@ This is a deliberate divergence from CPython's `YIELD_FROM` ladder.
 
 ---
 
+## 5a. Defer Objects Are Not Eagerly Awaited (Invariant)
+
+* Values of type **defer** (single-shot await-handle) are **never** auto-awaited by the VM.
+* CALL return paths and other implicit await sites push a defer value as a **plain value**; they do not drive it.
+* Only the **explicit AWAIT opcode** drives a defer (invokes its target and delegates to any resulting awaitable).
+* This allows defer to be passed around as a handle and awaited exactly when the programmer chooses. See design/api/defer-coroutine.md.
+
+---
+
 ## 6. Flattened Async Semantics (Invariant)
 
 * Koskari async suspension is **flattened**:

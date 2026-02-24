@@ -232,6 +232,10 @@ static KosEvalMode revive_await(KosContext *ctx, PyObject *send_val, PyObject *t
     PyErr_SetObject((PyObject *) Py_TYPE(throw_exc), throw_exc);
     return KOS_MODE_EXCEPTION;
   }
+  if (KosContext_PENDING_DEFER(ctx) && send_val != NULL) {
+    KosDefer_FeedResult((KosDefer *) KosContext_PENDING_DEFER(ctx), send_val);
+    Py_CLEAR(KosContext_PENDING_DEFER(ctx));
+  }
   if (send_val != NULL && CURRENT_FRAME(ctx)) {
     if (KosStackBlock_PushRef(&CURRENT_STACK(ctx), send_val) < 0)
       return KOS_MODE_EXCEPTION;
@@ -683,6 +687,7 @@ KosContext *kos_context_new(KosDynFrame *top) {
   KosContext_PY_LAST_YIELDED(ctx) = NULL;
   KosContext_PY_RESUME_INJECT(ctx) = NULL;
   KosContext_PY_RESUME_KIND(ctx) = KOS_RESUME_NONE;
+  KosContext_PENDING_DEFER(ctx) = NULL;
 
   /* Initialize exception injection */
   KosContext_INJECT_MODE(ctx) = KOS_INJECT_NONE;
@@ -737,6 +742,8 @@ void kos_context_free(KosContext *ctx) {
   Py_XDECREF(KosContext_PY_AWAIT_ITER(ctx));
   Py_XDECREF(KosContext_PY_LAST_YIELDED(ctx));
   Py_XDECREF(KosContext_PY_RESUME_INJECT(ctx));
+  Py_XDECREF(KosContext_PENDING_DEFER(ctx));
+  KosContext_PENDING_DEFER(ctx) = NULL;
   Py_XDECREF(KosContext_INJECT_VALUE(ctx));
   Py_XDECREF(KosContext_PENDING_RETURN_VALUE(ctx));
   KosContext_PENDING_RETURN_VALUE(ctx) = NULL;
@@ -786,6 +793,7 @@ int kos_context_traverse(
   Py_VISIT(KosContext_PY_AWAIT_ITER(ctx));
   Py_VISIT(KosContext_PY_LAST_YIELDED(ctx));
   Py_VISIT(KosContext_PY_RESUME_INJECT(ctx));
+  Py_VISIT(KosContext_PENDING_DEFER(ctx));
   Py_VISIT(KosContext_INJECT_VALUE(ctx));
   Py_VISIT(KosContext_PENDING_AGEN_DEFAULT(ctx));
 
@@ -1034,6 +1042,16 @@ KOS_OP_INLINE int push_result(KosContext *ctx, PyObject *val) {
    :return: 0 continue, 1 stop (AWAIT), -1 error
 */
 static int push_or_await(KosContext *ctx, KosEvent *out_ev, PyObject *val) {
+
+  /* Defer is not auto-awaited; push as plain value (explicit AWAIT drives it). */
+  if (KosDefer_Check(val)) {
+    if (KosStackBlock_PushRef(&CURRENT_STACK(ctx), val) < 0) {
+      Py_DECREF(val);
+      return -1;
+    }
+    Py_DECREF(val);
+    return 0;
+  }
 
   PyTypeObject *type = Py_TYPE(val);
   SAYF("[eval] push_or_await entry is_awaitable=%d\n",
@@ -2186,6 +2204,97 @@ void kos_yieldfrom_close_delegate(KosDynYieldFrom *node) {
     break;
   default:
     break;
+  }
+}
+
+
+/**
+   Drive a defer to completion or suspension. Used only by AWAIT opcode.
+   Consumes defer (caller's ref). Returns 0 continue, 1 stop (AWAIT), -1 error.
+   When DELEGATING(inner), calls push_or_await(ctx, out_ev, inner); on suspend
+   stores defer in ctx->pending_defer for FeedResult on resume.
+*/
+static int defer_drive(KosContext *ctx, KosEvent *out_ev, PyObject *defer_obj) {
+  KosDefer *defer = (KosDefer *) defer_obj;
+  for (;;) {
+    int suspended = 0;
+    PyObject *yielded = NULL;
+    PyObject *result = KosDefer_Start(defer, &suspended, &yielded);
+
+    if (result) {
+      if (KosStackBlock_PushRef(&CURRENT_STACK(ctx), result) < 0) {
+        Py_DECREF(result);
+        Py_DECREF(defer_obj);
+        return -1;
+      }
+      Py_DECREF(result);
+      Py_DECREF(defer_obj);
+      return 0;
+    }
+
+    if (PyErr_Occurred()) {
+      Py_DECREF(defer_obj);
+      return -1;
+    }
+
+    if (suspended && yielded) {
+      /* If inner is itself a defer, drive it; then feed outer with result. */
+      if (KosDefer_Check(yielded)) {
+        int r = defer_drive(ctx, out_ev, yielded);
+        if (r == 0) {
+          PyObject *inner_result = KosStackBlock_PopRef(&CURRENT_STACK(ctx));
+          if (! inner_result) {
+            Py_DECREF(defer_obj);
+            return -1;
+          }
+          KosDefer_FeedResult(defer, inner_result);
+          if (KosStackBlock_PushRef(&CURRENT_STACK(ctx), inner_result) < 0) {
+            Py_DECREF(inner_result);
+            Py_DECREF(defer_obj);
+            return -1;
+          }
+          Py_DECREF(inner_result);
+          Py_DECREF(defer_obj);
+          return 0;
+        }
+        if (r == 1) {
+          Py_XDECREF(KosContext_PENDING_DEFER(ctx));
+          KosContext_PENDING_DEFER(ctx) = defer_obj;
+          return 1;
+        }
+        Py_DECREF(defer_obj);
+        return -1;
+      }
+      int r = push_or_await(ctx, out_ev, yielded);
+      Py_DECREF(yielded);
+      if (r == 0) {
+        PyObject *inner_result = KosStackBlock_PopRef(&CURRENT_STACK(ctx));
+        if (! inner_result) {
+          Py_DECREF(defer_obj);
+          return -1;
+        }
+        KosDefer_FeedResult(defer, inner_result);
+        if (KosStackBlock_PushRef(&CURRENT_STACK(ctx), inner_result) < 0) {
+          Py_DECREF(inner_result);
+          Py_DECREF(defer_obj);
+          return -1;
+        }
+        Py_DECREF(inner_result);
+        Py_DECREF(defer_obj);
+        return 0;
+      }
+      if (r == 1) {
+        Py_XDECREF(KosContext_PENDING_DEFER(ctx));
+        KosContext_PENDING_DEFER(ctx) = defer_obj;
+        return 1;
+      }
+      Py_DECREF(defer_obj);
+      return -1;
+    }
+
+    Py_DECREF(defer_obj);
+    PyErr_SetString(PyExc_RuntimeError, "defer Start returned without value or suspend");
+    return -1;
   }
 }
 

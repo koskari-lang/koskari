@@ -175,6 +175,12 @@ with C extension support and comprehensive test coverage:
 **Values Type** (from python-sibilant):
 - `values`: Multi-value return object with positional and keyword support
 
+**Defer Type** (async handle, implemented in koskari):
+- `defer`: Single-shot await-handle; stores callable and args/kwds for application on first explicit await
+- Not eagerly awaited: CALL return and other implicit await sites push it as a plain value; only the AWAIT opcode drives it
+- Builtin: `defer(fn, *args, **kwds)`; Python type: `DeferCoroutine` (koskari/lib/defer.c)
+- See design/api/defer-coroutine.md for lifecycle and invariants
+
 **Parser Types** (from python-sibilant):
 - `BaseSourceStream`: Native C base class for efficient character-level I/O
   - `read(count)`: Read characters with position tracking

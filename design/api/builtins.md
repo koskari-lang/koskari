@@ -77,7 +77,7 @@ unary operations.
 |-----------|-----------|-------------|
 | `defer` | `(defer f a b c ... key: val ...)` | Build a single-shot await-handle: stores `f`, positional `args`, and keyword `kwds`; does not call `f` until first explicit `await`. Accepts all argument types. Excluded from implicit auto-await so it can be passed around as a value. |
 
-See [defer-coroutine.md](defer-coroutine.md) for full design (lifecycle, defer-of-defer collapse, AWAIT integration, invariants).
+Implemented in `koskari/lib/defer.c`. See [defer-coroutine.md](defer-coroutine.md) for full design (lifecycle, defer-of-defer collapse, AWAIT integration, invariants).
 
 ## Types Available
 

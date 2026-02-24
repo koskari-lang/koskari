@@ -88,7 +88,7 @@ The VM in `eval.c` uses a jump table; every opcode has a handler. Handlers are e
 - **Pair construction and access**: CAR, CDR, CONS (CAR/CDR pop one value and push car/cdr; CONS arg = count, stack bottom-to-top = first element … tail; TailPtr + ConsFromPtr + Drop + push result)
 - **Argument production**: BUILD_FUNCTION (build Function from FunctionSpec; stack [fspec, ...kw_defaults, names_tuple] → [function])
 - **Control**: RETURN, AWAIT, YIELD (suspend with value; resumption via send; async gen support), YIELD_FROM (delegate to sub-iterator/gen; KOS_DYN_YIELD_FROM; send/throw/close; handler in koskari/lib/opcode/yield_from.c)
-- **Calls**: CALL (arg = N; stack [callable, arg_0, ..., arg_{N-1}]; Continuation/DelimitedContinuation → call_call_continuation; KosExpression/KosFunction → new frame in same loop; other callables → PyObject_Call then push_or_await), TAIL_CALL (arg = N; same stack layout as CALL; replaces current frame with callee frame for proper tail-call semantics; compiler emits when call is in tail position)
+- **Calls**: CALL (arg = N; stack [callable, arg_0, ..., arg_{N-1}]; Continuation/DelimitedContinuation → call_call_continuation; KosExpression/KosFunction → new frame in same loop; other callables → PyObject_Call then push_or_await; **defer** return values are not auto-awaited — pushed as plain values), TAIL_CALL (arg = N; same stack layout as CALL; replaces current frame with callee frame for proper tail-call semantics; compiler emits when call is in tail position)
 - **Introspection**: GLOBALS, LOCALS
 - **Variables by name**: VAR (load), VAR_BIND (bind), VAR_CLEAR (delete), VAR_REF (closure ref), VAR_STORE (store TOS to name)
 - **Variables by index (fast locals)**: FAST, FAST_BIND, FAST_CLEAR, FAST_REF, FAST_STORE
@@ -174,6 +174,7 @@ There are no **partially** implemented opcodes; each handler is either full, a s
 - Reference types: `Ref`, `AttributeRef`, `ItemRef`, `DynamicRef`, `ConstantRef`, `MemoizedRef`, `ParamRef`
 - Formals types: `Formals`, `FormalsSpec`
 - Values type: `values`
+- Defer type: `defer` (single-shot await-handle; not eagerly awaited; implemented in koskari/lib/defer.c)
 - Stack types: `Stack`, `BlockStyle` (block-structured operand stack)
 - Domain type: `Domain` (koskari.lib.Domain; identity/lifecycle anchor, param value store; TLS in domain.c). ParamRef type: `ParamRef` (koskari.lib.ParamRef; Ref subclass; resolves via active domain)
 
@@ -205,6 +206,7 @@ There are no **partially** implemented opcodes; each handler is either full, a s
 - Dynamic wind/unwind hooks (before/after) used by continuation transfer plans; PUSH_WIND/POP_WIND/END_WIND opcodes are stubbed
 - Flattened async execution
 - Eager-step awaitable optimization
+- Defer (single-shot await-handle): not eagerly awaited; explicit AWAIT drives it (koskari/lib/defer.c)
 
 **Bytecode System** (C extension, bytecode.c/bytecode.h):
 - `Code`: Compiled bytecode storage with read-only protection
