@@ -23,6 +23,9 @@ import unittest
 
 import koskari.lib as lib
 
+from tests import make_callable
+from tests.lib.opcode import build_expr, run_to_completion
+
 
 class TestReapply(unittest.TestCase):
     """
@@ -139,6 +142,19 @@ class TestApply(unittest.TestCase):
 
         result = lib.apply(max, (1, 2, 3), None)
         self.assertEqual(result, 3)
+
+    def test_apply_is_callable_object(self):
+        """apply is exposed as a callable helper object."""
+
+        self.assertTrue(callable(lib.apply))
+
+    def test_apply_python_to_koskari_function(self):
+        """python caller can apply a Koskari function."""
+
+        code, ns = build_expr([["CONST", 77], ["RETURN", 1]])
+        fn = make_callable(code, ns)
+        result = run_to_completion(lib.apply(fn))
+        self.assertEqual(result, 77)
 
 
 class TestIdentity(unittest.TestCase):

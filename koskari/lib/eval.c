@@ -326,7 +326,7 @@ static KosEvalMode handle_continuation_apply(KosContext *ctx, KosEvent *out_ev) 
     PyObject *cont_obj = PyObject_GetAttrString(val, "continuation");
     PyObject *args_obj = PyObject_GetAttrString(val, "args");
 
-    if (cont_obj && PyObject_TypeCheck(cont_obj, &KosPyContinuationType)) {
+    if (cont_obj && PyObject_TypeCheck(cont_obj, KOS_CALLABLE_PYTYPE(KosPyContinuationType))) {
       KosContinuation *k = ((KosPyContinuation *) cont_obj)->captured;
       PyObject *resume_val = Py_None;
       if (args_obj && PyTuple_Check(args_obj) && PyTuple_GET_SIZE(args_obj) > 0) {
@@ -1721,6 +1721,252 @@ static int call_pyobject_call(
   if (! result)
     return -1;
   return push_or_await(ctx, out_ev, result);
+}
+
+
+int kos_callable_function_call(
+    KosContext *ctx,
+    KosEvent *out_ev,
+    int is_resume,
+    PyObject *arg1,
+    PyObject *arg2) {
+
+  if (unlikely(is_resume != 0)) {
+    PyErr_SetString(PyExc_RuntimeError,
+                    "function kos call resume is not implemented");
+    return -1;
+  }
+  return call_native_flattened_function(ctx, arg1, arg2, out_ev);
+}
+
+
+int kos_callable_function_tail_call(
+    KosContext *ctx,
+    KosEvent *out_ev,
+    int is_resume,
+    PyObject *arg1,
+    PyObject *arg2) {
+
+  if (unlikely(is_resume != 0)) {
+    PyErr_SetString(PyExc_RuntimeError,
+                    "function kos tail call resume is not implemented");
+    return -1;
+  }
+  return call_tail_flattened_function(ctx, arg1, arg2, out_ev);
+}
+
+
+int kos_callable_expression_call(
+    KosContext *ctx,
+    KosEvent *out_ev,
+    int is_resume,
+    PyObject *arg1,
+    PyObject *arg2) {
+
+  if (unlikely(is_resume != 0)) {
+    PyErr_SetString(PyExc_RuntimeError,
+                    "expression kos call resume is not implemented");
+    return -1;
+  }
+  if (arg2 && PyTuple_GET_SIZE(arg2) > 0) {
+    PyErr_SetString(PyExc_TypeError, "Expression takes no arguments");
+    return -1;
+  }
+  return call_native_flattened_expr(ctx, arg1, out_ev);
+}
+
+
+int kos_callable_expression_tail_call(
+    KosContext *ctx,
+    KosEvent *out_ev,
+    int is_resume,
+    PyObject *arg1,
+    PyObject *arg2) {
+
+  if (unlikely(is_resume != 0)) {
+    PyErr_SetString(PyExc_RuntimeError,
+                    "expression kos tail call resume is not implemented");
+    return -1;
+  }
+  if (arg2 && PyTuple_GET_SIZE(arg2) > 0) {
+    PyErr_SetString(PyExc_TypeError, "Expression takes no arguments");
+    return -1;
+  }
+  return call_tail_flattened_expr(ctx, arg1, out_ev);
+}
+
+
+int kos_callable_continuation_call(
+    KosContext *ctx,
+    KosEvent *out_ev,
+    int is_resume,
+    PyObject *arg1,
+    PyObject *arg2) {
+
+  if (unlikely(is_resume != 0)) {
+    PyErr_SetString(PyExc_RuntimeError,
+                    "continuation kos call resume is not implemented");
+    return -1;
+  }
+  return call_call_continuation(ctx, arg1, arg2, out_ev, NULL);
+}
+
+
+static int kos_apply_build_args_tuple(PyObject *arglist, PyObject **out_args) {
+  if (! arglist || arglist == Py_None) {
+    *out_args = PyTuple_New(0);
+  } else if (KosPair_Check(arglist)) {
+    PyObject *iter = KosPair_Unpack(arglist);
+    if (! iter)
+      return -1;
+    *out_args = PySequence_Tuple(iter);
+    Py_DECREF(iter);
+  } else if (PyTuple_Check(arglist)) {
+    *out_args = arglist;
+    Py_INCREF(*out_args);
+  } else if (PyList_Check(arglist)) {
+    *out_args = PyList_AsTuple(arglist);
+  } else {
+    *out_args = PySequence_Tuple(arglist);
+  }
+
+  if (! *out_args)
+    return -1;
+  return 0;
+}
+
+
+static int kos_callable_apply_impl(
+    KosContext *ctx,
+    KosEvent *out_ev,
+    int is_resume,
+    PyObject *arg2,
+    int is_tail) {
+
+  if (unlikely(is_resume != 0)) {
+    PyErr_SetString(PyExc_RuntimeError,
+                    "apply kos call resume is not implemented");
+    return -1;
+  }
+
+  Py_ssize_t n = arg2 ? PyTuple_GET_SIZE(arg2) : 0;
+  if (n < 1 || n > 3) {
+    PyErr_SetString(PyExc_TypeError,
+                    "apply expects 1, 2, or 3 arguments");
+    return -1;
+  }
+
+  PyObject *fn = PyTuple_GET_ITEM(arg2, 0);
+  PyObject *arglist = (n >= 2) ? PyTuple_GET_ITEM(arg2, 1) : NULL;
+  PyObject *kwds = (n >= 3) ? PyTuple_GET_ITEM(arg2, 2) : NULL;
+  PyObject *seq_args = NULL;
+
+  if (kos_apply_build_args_tuple(arglist, &seq_args) < 0)
+    return -1;
+
+  if (kwds == Py_None)
+    kwds = NULL;
+
+  if (kwds && ! PyDict_Check(kwds)) {
+    PyErr_SetString(PyExc_TypeError,
+                    "apply kwargs must be a dict or None");
+    Py_DECREF(seq_args);
+    return -1;
+  }
+
+  int r = -1;
+
+  if (KosFunction_CheckExact(fn) && kwds == NULL) {
+    r = is_tail
+        ? call_tail_flattened_function(ctx, fn, seq_args, out_ev)
+        : call_native_flattened_function(ctx, fn, seq_args, out_ev);
+    Py_DECREF(seq_args);
+    return r;
+  }
+
+  if (KosExpression_CheckExact(fn) && kwds == NULL && PyTuple_GET_SIZE(seq_args) == 0) {
+    r = is_tail
+        ? call_tail_flattened_expr(ctx, fn, out_ev)
+        : call_native_flattened_expr(ctx, fn, out_ev);
+    Py_DECREF(seq_args);
+    return r;
+  }
+
+  PyObject *result = PyObject_Call(fn, seq_args, kwds);
+  Py_DECREF(seq_args);
+  if (! result)
+    return -1;
+  return push_or_await(ctx, out_ev, result);
+}
+
+
+int kos_callable_apply_call(
+    KosContext *ctx,
+    KosEvent *out_ev,
+    int is_resume,
+    PyObject *arg1,
+    PyObject *arg2) {
+
+  (void) arg1;
+  return kos_callable_apply_impl(ctx, out_ev, is_resume, arg2, 0);
+}
+
+
+int kos_callable_apply_tail_call(
+    KosContext *ctx,
+    KosEvent *out_ev,
+    int is_resume,
+    PyObject *arg1,
+    PyObject *arg2) {
+
+  (void) arg1;
+  return kos_callable_apply_impl(ctx, out_ev, is_resume, arg2, 1);
+}
+
+
+static int kos_call_handle_default(
+    KosContext *ctx,
+    KosEvent *out_ev,
+    int is_resume,
+    PyObject *arg1,
+    PyObject *arg2) {
+
+  if (unlikely(is_resume != 0)) {
+    PyErr_SetString(PyExc_RuntimeError,
+                    "default kos call resume is not implemented");
+    return -1;
+  }
+  return call_pyobject_call(ctx, arg1, arg2, out_ev);
+}
+
+
+static int kos_call_dispatch(
+    KosContext *ctx,
+    KosEvent *out_ev,
+    PyObject *callable,
+    PyObject *args,
+    int is_tail) {
+
+  if (KosCallable_Check(callable)) {
+    PyTypeObject *callable_type = Py_TYPE(callable);
+    KosCallHandler handler = is_tail
+        ? KosCallableType_TAIL_CALL(callable_type)
+        : KosCallableType_CALL(callable_type);
+    if (handler)
+      return handler(ctx, out_ev, 0, callable, args);
+  }
+
+  return kos_call_handle_default(ctx, out_ev, 0, callable, args);
+}
+
+
+static int defer_drive(KosContext *ctx, KosEvent *out_ev, PyObject *defer_obj);
+
+
+static int kos_await_dispatch(KosContext *ctx, KosEvent *out_ev, PyObject *value) {
+  if (KosDefer_Check(value))
+    return defer_drive(ctx, out_ev, value);
+  return push_or_await(ctx, out_ev, value);
 }
 
 

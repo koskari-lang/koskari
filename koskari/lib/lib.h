@@ -40,6 +40,7 @@ struct KosEvent;
 
 #include "atom.h"
 #include "bytecode.h"
+#include "callable.h"
 #include "compat.h"
 #include "domain.h"
 #include "dynchain.h"

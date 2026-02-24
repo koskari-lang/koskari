@@ -149,4 +149,50 @@ class TestNamespaceAndCall(CevalTest):
         self.assertEqual(result, 42)
 
 
+    def test_call_apply_helper_to_python_callable(self):
+        """CALL apply delegates to python callable for normal objects."""
+
+        def plus(a, b, c=0):
+            return a + b + c
+
+        import koskari.lib as lib
+        code, ns = build_expr([
+            ["VAR", "apply"],
+            ["VAR", "f"],
+            ["CONST", (2, 3)],
+            ["CONST", {"c": 4}],
+            ["CALL", 3],
+            ["RETURN", 1],
+        ], values={"apply": lib.apply, "f": plus})
+        result = run_to_completion(make_callable(code, ns)())
+        self.assertEqual(result, 9)
+
+
+    def test_call_apply_helper_to_koskari_function(self):
+        """CALL apply with Koskari Function target executes and returns value."""
+
+        import koskari.lib as lib
+
+        inner_code = build_code([
+            ["CONST", 42],
+            ["RETURN", 1],
+        ], name="inner")
+        fspec = inner_code.function_spec(FormalsSpec())
+        fn_code, fn_ns = build_expr([
+            ["CONST", fspec],
+            ["BUILD_FUNCTION", 0],
+            ["RETURN", 1],
+        ], name="make_fn")
+        fn = run_to_completion(make_callable(fn_code, fn_ns)())
+
+        code, ns = build_expr([
+            ["VAR", "apply"],
+            ["VAR", "fn"],
+            ["CALL", 1],
+            ["RETURN", 1],
+        ], values={"apply": lib.apply, "fn": fn})
+        result = run_to_completion(make_callable(code, ns)())
+        self.assertEqual(result, 42)
+
+
 # The end.

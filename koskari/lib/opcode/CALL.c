@@ -35,21 +35,7 @@ KOS_OP_HANDLER(CALL) {
   if (! callable)
     return -1;
 
-  int r = 0;
-
-  if (likely(KosFunction_CheckExact(callable))) {
-    r = call_native_flattened_function(ctx, callable, args, out_ev);
-
-  } else if (unlikely(KosExpression_CheckExact(callable))) {
-    r = call_native_flattened_expr(ctx, callable, out_ev);
-
-  } else if (unlikely(KosPyDelimitedContinuation_Check(callable) ||
-                      KosPyContinuation_Check(callable))) {
-    r = call_call_continuation(ctx, callable, args, out_ev, insn);
-
-  } else {
-    r = call_pyobject_call(ctx, callable, args, out_ev);
-  }
+  int r = kos_call_dispatch(ctx, out_ev, callable, args, 0);
 
   Py_DECREF(callable);
   Py_XDECREF(args);

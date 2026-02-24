@@ -120,8 +120,9 @@ static PyMemberDef expression_members[] = {
 };
 
 
-PyTypeObject KosExpressionType = {
-  PyVarObject_HEAD_INIT(NULL, 0)
+KosCallableTypeObject KosExpressionType = {
+  .type = {
+    PyVarObject_HEAD_INIT(NULL, 0)
   .tp_name = "koskari.lib.Expression",
   .tp_basicsize = sizeof(KosExpression),
   .tp_dealloc = expression_dealloc,
@@ -132,6 +133,10 @@ PyTypeObject KosExpressionType = {
   .tp_init = (initproc) expression_init,
   .tp_new = PyType_GenericNew,
   .tp_members = expression_members,
+    .tp_base = KOS_CALLABLE_PYTYPE(KosCallableType),
+  },
+  .tp_kos_call = kos_callable_expression_call,
+  .tp_kos_tail_call = kos_callable_expression_tail_call,
 };
 
 
@@ -449,8 +454,9 @@ static PyMemberDef function_members[] = {
 };
 
 
-PyTypeObject KosFunctionType = {
-  PyVarObject_HEAD_INIT(NULL, 0)
+KosCallableTypeObject KosFunctionType = {
+  .type = {
+    PyVarObject_HEAD_INIT(NULL, 0)
   .tp_name = "koskari.lib.Function",
   .tp_basicsize = sizeof(KosFunction),
   .tp_dealloc = function_dealloc,
@@ -462,6 +468,10 @@ PyTypeObject KosFunctionType = {
   .tp_init = (initproc) function_init,
   .tp_new = PyType_GenericNew,
   .tp_members = function_members,
+    .tp_base = KOS_CALLABLE_PYTYPE(KosCallableType),
+  },
+  .tp_kos_call = kos_callable_function_call,
+  .tp_kos_tail_call = kos_callable_function_tail_call,
 };
 
 
@@ -481,7 +491,7 @@ PyObject *KosExpression_New(PyObject *code, PyObject *ns) {
     return NULL;
   }
 
-  PyObject *self = PyType_GenericNew(&KosExpressionType, NULL, NULL);
+  PyObject *self = PyType_GenericNew(KOS_CALLABLE_PYTYPE(KosExpressionType), NULL, NULL);
   if (! self)
     return NULL;
 
@@ -519,7 +529,7 @@ PyObject *KosFunction_NewFromFormals(
     return NULL;
   }
 
-  PyObject *self = PyType_GenericNew(&KosFunctionType, NULL, NULL);
+  PyObject *self = PyType_GenericNew(KOS_CALLABLE_PYTYPE(KosFunctionType), NULL, NULL);
   if (! self)
     return NULL;
 
@@ -578,13 +588,13 @@ int koskari_func_init(PyObject *mod) {
   if (! dict)
     return -1;
 
-  if (PyType_Ready(&KosExpressionType) ||
+  if (PyType_Ready(KOS_CALLABLE_PYTYPE(KosExpressionType)) ||
       PyType_Ready(&KosFunctionSpecType) ||
-      PyType_Ready(&KosFunctionType))
+      PyType_Ready(KOS_CALLABLE_PYTYPE(KosFunctionType)))
     return -1;
 
   if (PyDict_SetItemString(dict, "Expression",
-                           (PyObject *) &KosExpressionType))
+                           (PyObject *) KOS_CALLABLE_PYTYPE(KosExpressionType)))
     return -1;
 
   if (PyDict_SetItemString(dict, "FunctionSpec",
@@ -592,7 +602,7 @@ int koskari_func_init(PyObject *mod) {
     return -1;
 
   if (PyDict_SetItemString(dict, "Function",
-                           (PyObject *) &KosFunctionType))
+                           (PyObject *) KOS_CALLABLE_PYTYPE(KosFunctionType)))
     return -1;
 
   return 0;

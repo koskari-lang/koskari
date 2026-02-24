@@ -19,12 +19,13 @@
 
 
 #include <Python.h>
+#include "callable.h"
 
 
 /* === Expression === */
 
 
-extern PyTypeObject KosExpressionType;
+extern KosCallableTypeObject KosExpressionType;
 
 
 typedef struct {
@@ -41,7 +42,7 @@ typedef struct {
 #define KosExpression_NS(expr)   (((KosExpression *) (expr))->ns)
 
 #define KosExpression_CheckExact(obj)                  \
-  ((obj) && ((obj)->ob_type == &KosExpressionType))
+  ((obj) && ((obj)->ob_type == KOS_CALLABLE_PYTYPE(KosExpressionType)))
 
 
 /**
@@ -131,7 +132,7 @@ PyObject *KosFunction_New(
 /* === Function === */
 
 
-extern PyTypeObject KosFunctionType;
+extern KosCallableTypeObject KosFunctionType;
 
 
 typedef struct {
@@ -153,7 +154,7 @@ typedef struct {
 #define KosFunction_FORMALS(func) (((KosFunction *) (func))->formals)
 
 #define KosFunction_CheckExact(obj)                   \
-  ((obj) && ((obj)->ob_type == &KosFunctionType))
+  ((obj) && ((obj)->ob_type == KOS_CALLABLE_PYTYPE(KosFunctionType)))
 
 
 /**
