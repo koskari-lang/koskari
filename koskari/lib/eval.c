@@ -1962,13 +1962,10 @@ static int kos_call_dispatch(
 
 int kos_callable_call(KosContext *ctx, KosEvent *out_ev,
                       PyObject *callable, PyObject *args_tuple, PyObject *kwds_dict) {
-  if (KosCallable_Check(callable)
-      && KosCallableType_INSTALL(Py_TYPE(callable)) != NULL) {
-    KosDynFrame *frame = kos_dyn_push_frame_empty(ctx);
-    if (! frame)
-      return -1;
-    return KosCallableType_INSTALL(Py_TYPE(callable))(
-        ctx, out_ev, callable, args_tuple, kwds_dict, 0);
+  if (KosCallable_Check(callable)) {
+    KosInstallFunc fn = KosCallableType_INSTALL(Py_TYPE(callable));
+    if (fn)
+      return fn(ctx, out_ev, callable, args_tuple, kwds_dict);
   }
   return kos_call_dispatch(ctx, out_ev, callable, args_tuple, 0);
 }
@@ -1976,13 +1973,223 @@ int kos_callable_call(KosContext *ctx, KosEvent *out_ev,
 
 int kos_callable_tail_call(KosContext *ctx, KosEvent *out_ev,
                            PyObject *callable, PyObject *args_tuple, PyObject *kwds_dict) {
-  if (KosCallable_Check(callable)
-      && KosCallableType_INSTALL(Py_TYPE(callable)) != NULL) {
-    kos_dynframe_reset_for_tail(CURRENT_FRAME(ctx));
-    return KosCallableType_INSTALL(Py_TYPE(callable))(
-        ctx, out_ev, callable, args_tuple, kwds_dict, 1);
+  if (KosCallable_Check(callable)) {
+    KosInstallFunc fn = KosCallableType_TAIL_INSTALL(Py_TYPE(callable));
+    if (fn)
+      return fn(ctx, out_ev, callable, args_tuple, kwds_dict);
+    fn = KosCallableType_INSTALL(Py_TYPE(callable));
+    if (fn) {
+      KosDynFrame *frame = kos_dyn_push_frame_empty(ctx);
+      if (! frame)
+        return -1;
+      return fn(ctx, out_ev, callable, args_tuple, kwds_dict);
+    }
   }
   return kos_call_dispatch(ctx, out_ev, callable, args_tuple, 1);
+}
+
+
+/* === Install slot implementations === */
+
+
+int kos_install_function(KosContext *ctx, KosEvent *out_ev,
+                         PyObject *callable, PyObject *args_tuple, PyObject *kwds_dict) {
+  (void) kwds_dict;
+  return call_native_flattened_function(ctx, callable, args_tuple, out_ev);
+}
+
+
+int kos_tail_install_function(KosContext *ctx, KosEvent *out_ev,
+                              PyObject *callable, PyObject *args_tuple, PyObject *kwds_dict) {
+  (void) kwds_dict;
+  return call_tail_flattened_function(ctx, callable, args_tuple, out_ev);
+}
+
+
+int kos_install_expression(KosContext *ctx, KosEvent *out_ev,
+                           PyObject *callable, PyObject *args_tuple, PyObject *kwds_dict) {
+  if (args_tuple && PyTuple_GET_SIZE(args_tuple) != 0) {
+    PyErr_SetString(PyExc_TypeError, "Expression takes no arguments");
+    return -1;
+  }
+  if (kwds_dict && PyDict_Size(kwds_dict) != 0) {
+    PyErr_SetString(PyExc_TypeError, "Expression takes no named arguments");
+    return -1;
+  }
+  return call_native_flattened_expr(ctx, callable, out_ev);
+}
+
+
+int kos_tail_install_expression(KosContext *ctx, KosEvent *out_ev,
+                                PyObject *callable, PyObject *args_tuple, PyObject *kwds_dict) {
+  if (args_tuple && PyTuple_GET_SIZE(args_tuple) != 0) {
+    PyErr_SetString(PyExc_TypeError, "Expression takes no arguments");
+    return -1;
+  }
+  if (kwds_dict && PyDict_Size(kwds_dict) != 0) {
+    PyErr_SetString(PyExc_TypeError, "Expression takes no named arguments");
+    return -1;
+  }
+  return call_tail_flattened_expr(ctx, callable, out_ev);
+}
+
+
+int kos_install_continuation(KosContext *ctx, KosEvent *out_ev,
+                             PyObject *callable, PyObject *args_tuple, PyObject *kwds_dict) {
+  (void) kwds_dict;
+  return call_call_continuation(ctx, callable, args_tuple, out_ev, NULL);
+}
+
+
+/**
+   Native handler for apply (non-flattening path). Stack has [fn, seq_args, kwds]
+   (kwds may be Py_None). Pops them, PyObject_Call, then pops the apply frame,
+   pushes result onto parent stack, and push_or_await. The apply frame has
+   code=NULL so we must detach it before continuing; otherwise the eval loop
+   would segfault in prepare_dispatch.
+*/
+static int apply_native_handler(
+    KosContext *ctx,
+    KosEvent *out_ev,
+    int is_resume,
+    PyObject *delivered_value) {
+
+  (void) delivered_value;
+  if (unlikely(is_resume != 0)) {
+    PyErr_SetString(PyExc_RuntimeError, "apply native handler resume not implemented");
+    return -1;
+  }
+
+  PyObject *kwds = KosStackBlock_PopRef(&CURRENT_STACK(ctx));
+  PyObject *seq_args = KosStackBlock_PopRef(&CURRENT_STACK(ctx));
+  PyObject *fn = KosStackBlock_PopRef(&CURRENT_STACK(ctx));
+  if (! fn || ! seq_args) {
+    Py_XDECREF(kwds);
+    Py_XDECREF(seq_args);
+    Py_XDECREF(fn);
+    return -1;
+  }
+  if (kwds == Py_None)
+    kwds = NULL;
+
+  KosDynFrame_NATIVE_HANDLER(CURRENT_FRAME(ctx)) = NULL;
+  PyObject *result = PyObject_Call(fn, seq_args, kwds);
+  Py_DECREF(fn);
+  Py_DECREF(seq_args);
+  Py_XDECREF(kwds);
+  if (! result)
+    return -1;
+
+  /* Pop apply frame (code=NULL) and deliver result to parent. */
+  KosDynFrame *detached = NULL;
+  if (kos_dyn_unwind_to_frame(ctx, CURRENT_FRAME(ctx), out_ev) < 0) {
+    Py_DECREF(result);
+    return -1;
+  }
+  if (kos_dyn_detach_top_frame(ctx, &detached) < 0) {
+    Py_DECREF(result);
+    return -1;
+  }
+  if (detached)
+    kos_dynframe_free(detached);
+
+  return push_or_await(ctx, out_ev, result);
+}
+
+
+static int kos_install_apply_impl(
+    KosContext *ctx,
+    KosEvent *out_ev,
+    PyObject *callable,
+    PyObject *args_tuple,
+    int is_tail) {
+
+  (void) callable;
+  Py_ssize_t n = args_tuple ? PyTuple_GET_SIZE(args_tuple) : 0;
+  if (n < 1 || n > 3) {
+    PyErr_SetString(PyExc_TypeError, "apply expects 1, 2, or 3 arguments");
+    return -1;
+  }
+
+  PyObject *fn = PyTuple_GET_ITEM(args_tuple, 0);
+  PyObject *arglist = (n >= 2) ? PyTuple_GET_ITEM(args_tuple, 1) : NULL;
+  PyObject *kwds = (n >= 3) ? PyTuple_GET_ITEM(args_tuple, 2) : NULL;
+  PyObject *seq_args = NULL;
+
+  if (kos_apply_build_args_tuple(arglist, &seq_args) < 0)
+    return -1;
+
+  if (kwds == Py_None)
+    kwds = NULL;
+
+  if (kwds && ! PyDict_Check(kwds)) {
+    PyErr_SetString(PyExc_TypeError, "apply kwargs must be a dict or None");
+    Py_DECREF(seq_args);
+    return -1;
+  }
+
+  /* Flattening: delegate to inner callable's install */
+  if (KosFunction_CheckExact(fn) && kwds == NULL) {
+    KosInstallFunc inner = is_tail
+        ? KosCallableType_TAIL_INSTALL(Py_TYPE(fn))
+        : KosCallableType_INSTALL(Py_TYPE(fn));
+    if (inner) {
+      int r = inner(ctx, out_ev, fn, seq_args, NULL);
+      Py_DECREF(seq_args);
+      return r;
+    }
+  }
+  if (KosExpression_CheckExact(fn) && kwds == NULL && PyTuple_GET_SIZE(seq_args) == 0) {
+    KosInstallFunc inner = is_tail
+        ? KosCallableType_TAIL_INSTALL(Py_TYPE(fn))
+        : KosCallableType_INSTALL(Py_TYPE(fn));
+    if (inner) {
+      Py_DECREF(seq_args);
+      return inner(ctx, out_ev, fn, NULL, NULL);
+    }
+  }
+
+  /* Non-flattening: push native frame with fn, seq_args, kwds on stack */
+  if (is_tail) {
+    kos_dynframe_reset_for_tail(CURRENT_FRAME(ctx));
+  } else {
+    KosDynFrame *frame = kos_dyn_push_frame_empty(ctx);
+    if (! frame) {
+      Py_DECREF(seq_args);
+      return -1;
+    }
+  }
+
+  KosDynFrame *frame = CURRENT_FRAME(ctx);
+  typedef int (*NativeHandlerFn)(void *, void *, int, PyObject *);
+  KosDynFrame_NATIVE_HANDLER(frame) = (NativeHandlerFn) apply_native_handler;
+
+  if (KosStackBlock_PushRef(&CURRENT_STACK(ctx), fn) < 0
+      || KosStackBlock_PushRef(&CURRENT_STACK(ctx), seq_args) < 0) {
+    Py_DECREF(seq_args);
+    return -1;
+  }
+  PyObject *kwds_push = kwds ? kwds : Py_None;
+  Py_INCREF(kwds_push);
+  if (KosStackBlock_PushRef(&CURRENT_STACK(ctx), kwds_push) < 0) {
+    Py_DECREF(kwds_push);
+    return -1;
+  }
+  return 0;
+}
+
+
+int kos_install_apply(KosContext *ctx, KosEvent *out_ev,
+                      PyObject *callable, PyObject *args_tuple, PyObject *kwds_dict) {
+  (void) kwds_dict;
+  return kos_install_apply_impl(ctx, out_ev, callable, args_tuple, 0);
+}
+
+
+int kos_tail_install_apply(KosContext *ctx, KosEvent *out_ev,
+                           PyObject *callable, PyObject *args_tuple, PyObject *kwds_dict) {
+  (void) kwds_dict;
+  return kos_install_apply_impl(ctx, out_ev, callable, args_tuple, 1);
 }
 
 

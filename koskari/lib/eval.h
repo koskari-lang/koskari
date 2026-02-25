@@ -637,6 +637,25 @@ int kos_callable_apply_tail_call(
     PyObject *arg2);
 
 
+/* === KosCallable install slot implementations === */
+
+
+int kos_install_function(KosContext *ctx, KosEvent *out_ev,
+                         PyObject *callable, PyObject *args_tuple, PyObject *kwds_dict);
+int kos_tail_install_function(KosContext *ctx, KosEvent *out_ev,
+                              PyObject *callable, PyObject *args_tuple, PyObject *kwds_dict);
+int kos_install_expression(KosContext *ctx, KosEvent *out_ev,
+                           PyObject *callable, PyObject *args_tuple, PyObject *kwds_dict);
+int kos_tail_install_expression(KosContext *ctx, KosEvent *out_ev,
+                                PyObject *callable, PyObject *args_tuple, PyObject *kwds_dict);
+int kos_install_continuation(KosContext *ctx, KosEvent *out_ev,
+                             PyObject *callable, PyObject *args_tuple, PyObject *kwds_dict);
+int kos_install_apply(KosContext *ctx, KosEvent *out_ev,
+                      PyObject *callable, PyObject *args_tuple, PyObject *kwds_dict);
+int kos_tail_install_apply(KosContext *ctx, KosEvent *out_ev,
+                           PyObject *callable, PyObject *args_tuple, PyObject *kwds_dict);
+
+
 int koskari_eval_init(PyObject *mod);
 int koskari_eval_clear(PyObject *mod);
 
