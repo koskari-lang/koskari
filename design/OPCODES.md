@@ -237,7 +237,11 @@ When adding or changing an opcode:
 | CONST_ITEM | CONST | Get item (constant key) | [§15](#kos_op_const_item) |
 | BUILD_FUNCTION | COUNT | Build function from spec | [§16](#kos_op_build_function) |
 | CALL | COUNT | Call with N positional args | [§17](#kos_op_call) |
+| CALL_NAMES | COUNT | Call with keyword names on stack | [§17](#kos_op_call_names) |
+| CALL_STAR | STAR | Call with *args and/or **kwargs | [§17](#kos_op_call_star) |
 | TAIL_CALL | COUNT | Tail call (replace frame) | [§17](#kos_op_tail_call) |
+| TAIL_CALL_NAMES | COUNT | Tail call with keyword names | [§17](#kos_op_tail_call_names) |
+| TAIL_CALL_STAR | STAR | Tail call with *args and/or **kwargs | [§17](#kos_op_tail_call_star) |
 | PUSH_FOREACH | NOARG | Push foreach region; break target from extent table | [§18](#kos_op_push_foreach) |
 | PUSH_LOOP | NOARG | Push loop region; break target from extent table | [§18](#kos_op_push_loop) |
 | PUSH_NS | COUNT | Push namespace scope | [§18](#kos_op_push_ns) |
@@ -250,7 +254,7 @@ When adding or changing an opcode:
 | INVOKE_K_VAR | CONST | Invoke continuation by name | [§20](#kos_op_invoke_k_var) |
 | THEEND | NOARG | Unreachable; no runtime | [§25](#kos_op_theend) |
 
-Other opcodes (CHECK_LT/LE/GT/GE, CHECK_IS_INSTANCE/IS_SUBCLASS, VAR_CLEAR, VAR_REF, FAST_BIND/CLEAR/REF, ATTR_CLEAR/REF, ITEM_CLEAR/REF, CONST_ITEM_*, BUILD_*, CALL_NAMES/STAR, CALL_ATTR*, RECUR*, TAIL_*, PUSH_FINALLY/POP_*, CLEAR_*, OBJECT_*, PUSH_WITH/POP_WITH/PUSH_DYN_WITH/POP_DYN_WITH, PUSH_CC/POP_CC/CAPTURE_CC, PUSH_WIND/POP_WIND/END_WIND, PUSH_REGION/POP_REGION, PUSH_PARAM/PARAM/POP_PARAM) are listed under their category sections above; use the category index to jump to the section, then scan for the opcode name.
+Other opcodes (CHECK_LT/LE/GT/GE, CHECK_IS_INSTANCE/IS_SUBCLASS, VAR_CLEAR, VAR_REF, FAST_BIND/CLEAR/REF, ATTR_CLEAR/REF, ITEM_CLEAR/REF, CONST_ITEM_*, BUILD_*, CALL_ATTR*, RECUR*, TAIL_RECUR*, PUSH_FINALLY/POP_*, CLEAR_*, OBJECT_*, PUSH_WITH/POP_WITH/PUSH_DYN_WITH/POP_DYN_WITH, PUSH_CC/POP_CC/CAPTURE_CC, PUSH_WIND/POP_WIND/END_WIND, PUSH_REGION/POP_REGION, PUSH_PARAM/PARAM/POP_PARAM) are listed under their category sections above; use the category index to jump to the section, then scan for the opcode name.
 
 
 ## 3. No-op and compile-time
@@ -1437,13 +1441,42 @@ Check jumps: if the predicate does **not** hold, jump to `arg`. All take LABEL; 
 
 ---
 
-### KOS_OP_CALL_NAMES, KOS_OP_CALL_STAR
+### KOS_OP_CALL_NAMES {#kos_op_call_names}
 
-- **Style**: COUNT, STAR.
-- **Status**: Stub.
-- **Stack (intended for CALL_NAMES):** `[..., callable, pos_0, ..., pos_{N-1}, val_0, ..., val_{M-1}, names_tuple] → [..., result]`. Arg = N (number of positional arguments). TOS = names_tuple (tuple of M keyword names); below it the M keyword values in the same order as names; below that the N positional args; then callable. The compiler emits one CONST for the keyword names tuple, then CALL_NAMES with opa = N.
-- **Stack (intended for CALL_STAR):** Call with *args and/or **kwargs; stack layout and opa bits per implementation. **Current:** Stub; runtime error if executed.
-- **Example:** (Stub; no runtime table.)
+- **Style**: COUNT. Arg = N (number of positional arguments).
+- **Status**: Implemented.
+- **Stack**: `[..., callable, pos_0, ..., pos_{N-1}, val_0, ..., val_{M-1}, names_tuple] → [..., result]`. TOS = names_tuple (tuple of M keyword names); below it the M keyword values in the same order as names; below that the N positional args; then callable. Pop names, validate tuple; PopTailDictFromNames for kwds; PopTail for args; PopRef for callable. Call via kos_callable_call(ctx, out_ev, callable, args, kwds).
+- **Invariants**: names_tuple must be a tuple; stack must have 1 + N + M + 1 elements (callable + N positionals + M keyword values + names).
+
+**Example:** Call with 1 positional and 1 keyword (x=42). Pool: 0 = fn, 1 = 10, 2 = 42, 3 = ("x",).
+
+| index | opcode    | arg | arg view | comment |
+|------:|-----------|-----|----------|---------|
+| 0     | CONST     | 0   | 0 (fn)   | stack: [..., callable] |
+| 1     | CONST     | 1   | 1 (10)   | stack: [..., callable, 10] |
+| 2     | CONST     | 2   | 2 (42)   | stack: [..., callable, 10, 42] |
+| 3     | CONST     | 3   | 3 (names)| stack: [..., callable, 10, 42, names] |
+| 4     | CALL_NAMES| 1   | 1        | stack: [..., result] |
+| 5     | RETURN    | 1   | 1        | |
+
+---
+
+### KOS_OP_CALL_STAR {#kos_op_call_star}
+
+- **Style**: STAR. Arg = bitflags (1 = has *args, 2 = has **kwargs).
+- **Status**: Implemented.
+- **Stack**: `[..., callable, pos, kwd]` with kwd at TOS. pos = *args (tuple or iterable); kwd = **kwargs (dict). Pop per opa: both (opa & 3 == 3): pop 3; **kwargs only (opa & 2): pop 2, pos = (); *args only (opa & 1): pop 2, kwd = NULL; neither: pop 1, pos = (), kwd = NULL. Ensure pos is tuple (PySequence_Tuple if needed). Call via kos_callable_call(ctx, out_ev, callable, pos, kwd).
+- **Invariants**: Stack height per opa; pos converted to tuple when *args present.
+
+**Example:** Call with *args and **kwargs. Pool: 0 = fn, 1 = (1,2), 2 = {"x": 3}.
+
+| index | opcode  | arg | arg view | comment |
+|------:|---------|-----|----------|---------|
+| 0     | CONST   | 0   | 0 (fn)   | stack: [..., callable] |
+| 1     | CONST   | 1   | 1 (pos)  | stack: [..., callable, pos] |
+| 2     | CONST   | 2   | 2 (kwd)  | stack: [..., callable, pos, kwd] |
+| 3     | CALL_STAR | 3 | 3 (bits) | stack: [..., result] |
+| 4     | RETURN  | 1   | 1        | |
 
 ---
 
@@ -1483,12 +1516,19 @@ Check jumps: if the predicate does **not** hold, jump to `arg`. All take LABEL; 
 
 ---
 
-### KOS_OP_TAIL_CALL_NAMES, KOS_OP_TAIL_CALL_STAR
+### KOS_OP_TAIL_CALL_NAMES {#kos_op_tail_call_names}
 
-- **Style**: COUNT, STAR.
-- **Status**: Stub.
-- **Stack**: (Intended: tail call with keyword names or *args/**kwargs; same replace-frame semantics as TAIL_CALL.)
-- **Example:** (Stub; no runtime table.)
+- **Style**: COUNT. Arg = N (number of positional arguments).
+- **Status**: Implemented.
+- **Stack**: Same layout as CALL_NAMES: `[..., callable, pos_0, ..., pos_{N-1}, val_0, ..., val_{M-1}, names_tuple]`. Pop order and validation as CALL_NAMES. Call via kos_callable_tail_call(ctx, out_ev, callable, args, kwds). Same replace-frame semantics as TAIL_CALL.
+
+---
+
+### KOS_OP_TAIL_CALL_STAR {#kos_op_tail_call_star}
+
+- **Style**: STAR. Arg = bitflags (1 = has *args, 2 = has **kwargs).
+- **Status**: Implemented.
+- **Stack**: Same layout as CALL_STAR: `[..., callable, pos, kwd]`. Pop order and ensure_tuple as CALL_STAR. Call via kos_callable_tail_call(ctx, out_ev, callable, pos, kwd). Same replace-frame semantics as TAIL_CALL.
 
 ---
 
