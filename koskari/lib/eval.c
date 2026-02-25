@@ -1960,6 +1960,32 @@ static int kos_call_dispatch(
 }
 
 
+int kos_callable_call(KosContext *ctx, KosEvent *out_ev,
+                      PyObject *callable, PyObject *args_tuple, PyObject *kwds_dict) {
+  if (KosCallable_Check(callable)
+      && KosCallableType_INSTALL(Py_TYPE(callable)) != NULL) {
+    KosDynFrame *frame = kos_dyn_push_frame_empty(ctx);
+    if (! frame)
+      return -1;
+    return KosCallableType_INSTALL(Py_TYPE(callable))(
+        ctx, out_ev, callable, args_tuple, kwds_dict, 0);
+  }
+  return kos_call_dispatch(ctx, out_ev, callable, args_tuple, 0);
+}
+
+
+int kos_callable_tail_call(KosContext *ctx, KosEvent *out_ev,
+                           PyObject *callable, PyObject *args_tuple, PyObject *kwds_dict) {
+  if (KosCallable_Check(callable)
+      && KosCallableType_INSTALL(Py_TYPE(callable)) != NULL) {
+    kos_dynframe_reset_for_tail(CURRENT_FRAME(ctx));
+    return KosCallableType_INSTALL(Py_TYPE(callable))(
+        ctx, out_ev, callable, args_tuple, kwds_dict, 1);
+  }
+  return kos_call_dispatch(ctx, out_ev, callable, args_tuple, 1);
+}
+
+
 static int defer_drive(KosContext *ctx, KosEvent *out_ev, PyObject *defer_obj);
 
 
@@ -2766,6 +2792,22 @@ entry_mode_dispatch:
     return KOS_STEP_STOP_EVENT;
   }
 
+  /* Resume delivery: if we revived with a value and top frame has native_handler, deliver to it */
+  if (send_val != NULL && mode == KOS_MODE_NORMAL && CURRENT_FRAME(ctx)
+      && KosDynFrame_NATIVE_HANDLER(CURRENT_FRAME(ctx)) != NULL) {
+    PyObject *val = KosStackBlock_PopRef(&CURRENT_STACK(ctx));
+    if (val) {
+      typedef int (*NativeHandlerFn)(void *, void *, int, PyObject *);
+      NativeHandlerFn fn =
+          (NativeHandlerFn) KosDynFrame_NATIVE_HANDLER(CURRENT_FRAME(ctx));
+      int res = fn(ctx, out_ev, 1, val);
+      if (res < 0)
+        return KOS_STEP_FATAL_ERROR;
+      if (res == 1)
+        return KOS_STEP_STOP_EVENT;
+    }
+  }
+
   *mode_out = mode;
   return KOS_STEP_CONTINUE;
 }
@@ -3033,6 +3075,34 @@ int koskari_eval(KosContext *ctx, KosEvent *out_ev, PyObject *send_val, PyObject
       }
       if (loop_continue)
         continue;
+    }
+
+    /* Native frame: run native handler as frame evaluator (skip bytecode dispatch) */
+    if (! KosContext_HOOK_ACTIVE(ctx) && CURRENT_FRAME(ctx)
+        && KosDynFrame_NATIVE_HANDLER(CURRENT_FRAME(ctx)) != NULL) {
+      typedef int (*NativeHandlerFn)(void *, void *, int, PyObject *);
+      NativeHandlerFn fn = (NativeHandlerFn) KosDynFrame_NATIVE_HANDLER(CURRENT_FRAME(ctx));
+      int op_res = fn(ctx, out_ev, 0, NULL);
+      if (op_res != 0) {
+        KosDispatchCtx dc_native = { 0 };
+        dc_native.in_hook = 0;
+        dc_native.code = NULL;
+        dc_native.pc = 0;
+        dc_native.insn = NULL;
+        int loop_continue = 0;
+        KosEvalStep ps = eval_phase_post_opcode(ctx, out_ev, &dc_native, op_res, &loop_continue);
+        if (ps == KOS_STEP_FATAL_ERROR) {
+          eval_ret = -1;
+          goto koskari_eval_cleanup;
+        }
+        if (ps == KOS_STEP_STOP_EVENT) {
+          eval_ret = 0;
+          goto koskari_eval_cleanup;
+        }
+        if (loop_continue)
+          continue;
+      }
+      goto next_insn;
     }
 
     /* Phase 4: dispatch prelude */

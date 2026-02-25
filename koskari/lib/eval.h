@@ -93,6 +93,7 @@ typedef KosDynFrame KosFrame;
 #define KosFrame_ACTING_PC(f)  KosDynFrame_ACTING_PC(f)
 #define KosFrame_STACK(f)      KosDynFrame_STACK(f)
 #define KosFrame_NS(f)         KosDynFrame_NS(f)
+#define KosFrame_NATIVE_HANDLER(f) KosDynFrame_NATIVE_HANDLER(f)
 
 
 /* === KosEvent: boundary events === */

@@ -156,6 +156,8 @@ struct KosDynNode {
       KosStackBlock *stack;
       PyObject *ns;
       uint32_t frame_flags;
+      /* Native frame evaluator: int (*)(void* ctx, void* out_ev, int is_resume, PyObject* val) */
+      int (*native_handler)(void *, void *, int, PyObject *);
     } frame;
     struct {
       uint32_t prompt_id;
@@ -713,6 +715,17 @@ int kos_dyn_push_clone(KosContext *ctx, KosDynNode *node);
    :return: new frame, or NULL on error
 */
 KosDynFrame *kos_dyn_push_frame(KosContext *ctx, KosCode *code, PyObject *ns);
+
+
+/**
+   Push a frame with code=NULL, ns=empty dict, stack=NULL for INSTALL to configure.
+
+   :return: new frame, or NULL on error
+*/
+KosDynFrame *kos_dyn_push_frame_empty(KosContext *ctx);
+
+
+void kos_dynframe_reset_for_tail(KosDynFrame *frame);
 
 
 /**
@@ -1639,6 +1652,7 @@ int kos_hookrunner_traverse(
 #define KosDynFrame_STACK(f)      (((KosDynNode *)(f))->u.frame.stack)
 #define KosDynFrame_NS(f)         (((KosDynNode *)(f))->u.frame.ns)
 #define KosDynFrame_FLAGS(f)      (((KosDynNode *)(f))->u.frame.frame_flags)
+#define KosDynFrame_NATIVE_HANDLER(f) (((KosDynNode *)(f))->u.frame.native_handler)
 
 #define KosDynPrompt_ID(p)        (((KosDynNode *)(p))->u.prompt.prompt_id)
 #define KosDynPrompt_STACK(p)     (((KosDynNode *)(p))->u.prompt.stack)

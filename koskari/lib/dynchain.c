@@ -163,6 +163,7 @@ KosDynFrame *kos_dynframe_new(
   KosDynFrame_STACK(frame) = stack;  /* ownership transferred */
   KosDynFrame_NS(frame) = ns;  /* ownership transferred (already stole ref) */
   KosDynFrame_FLAGS(frame) = 0;
+  KosDynFrame_NATIVE_HANDLER(frame) = NULL;
   return frame;
 }
 
@@ -196,6 +197,7 @@ KosDynFrame *kos_dynframe_clone(KosDynFrame *frame) {
   KosDynFrame_NS(clone) = KosDynFrame_NS(frame);
   Py_XINCREF(KosDynFrame_NS(clone));
   KosDynFrame_FLAGS(clone) = KosDynFrame_FLAGS(frame);
+  KosDynFrame_NATIVE_HANDLER(clone) = KosDynFrame_NATIVE_HANDLER(frame);
   return clone;
 }
 
@@ -233,6 +235,39 @@ KosDynFrame *kos_dyn_push_frame(
   KosContext_CHAIN_VERSION(ctx)++;
 
   return frame;
+}
+
+
+KosDynFrame *kos_dyn_push_frame_empty(KosContext *ctx) {
+  PyObject *ns = PyDict_New();
+  if (! ns)
+    return NULL;
+  return kos_dyn_push_frame(ctx, NULL, ns);
+}
+
+
+void kos_dynframe_reset_for_tail(KosDynFrame *frame) {
+  if (! frame)
+    return;
+
+  /* Release the stack block chain */
+  KosStackBlock *block = KosDynFrame_STACK(frame);
+  while (block) {
+    KosStackBlock *p = KosStackBlock_PARENT(block);
+    KosStackBlock_Release(block);
+    block = p;
+  }
+  KosDynFrame_STACK(frame) = NULL;
+
+  /* Replace ns with empty dict */
+  Py_XDECREF(KosDynFrame_NS(frame));
+  KosDynFrame_NS(frame) = PyDict_New();
+
+  KosDynFrame_CODE(frame) = NULL;
+  KosDynFrame_PC(frame) = 0;
+  KosDynFrame_ACTING_PC(frame) = 0;
+  KosDynFrame_FLAGS(frame) = 0;
+  KosDynFrame_NATIVE_HANDLER(frame) = NULL;
 }
 
 

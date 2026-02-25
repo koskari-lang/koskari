@@ -6,8 +6,7 @@ This document reflects the **Koskari revision**: defer cookies and dedicated nat
 
 - **No second frame type**: All resumable native execution uses a normal `KosFrame` activation.
 - **No generalized mutable cookie**: Native handlers store state in the frame (stack, namespace) and optionally minimal frame fields. The frame `pc` is repurposed as the **native resume label** when in native mode.
-- **INSTALL step**: Every Kos-callable invocation performs a mandatory INSTALL step via a type slot (`tp_kos_install`); argument binding and frame configuration are INSTALL's responsibility.
-- **Invocation selects, INSTALL configures**: The caller selects tail vs non-tail (frame reuse vs push); INSTALL configures the selected frame for bytecode or native execution.
+- **Install slots own frame setup**: Every Kos-callable invocation goes through one of two type slots (`tp_kos_install` or `tp_kos_tail_install`). The install function performs all frame manipulation (push or reset), argument binding, and frame configuration. There is no split between "invocation selects" and "install configures"—the install does everything.
 - **Native handler is frame evaluator**: If the top frame has `native_handler != NULL`, that handler *is* the frame's evaluator; signals (await result, yield send, nested-call return) are routed to it first.
 
 ---
@@ -16,8 +15,8 @@ This document reflects the **Koskari revision**: defer cookies and dedicated nat
 
 **Partially implemented.**
 
-- **Implemented**: Single dispatch for CALL and TAIL_CALL; type-slot lookup only (no registry); handler contract (signature, return 0/1/-1); default handler (Python call + push_or_await); KosFunction, KosExpression, DelimitedContinuation, Continuation, and apply as kos callables via `KosCallableTypeObject` and `tp_kos_call` / `tp_kos_tail_call`. The apply callable: 1/2/3-argument form, flattening when `fn` is KosFunction or KosExpression and `kwds` is NULL, else `PyObject_Call` + push_or_await. AWAIT uses a small `kos_await_dispatch` (defer vs push_or_await).
-- **Not implemented**: INSTALL slot (`tp_kos_install`) and unified invocation entry points (KosCallable_Call, KosCallable_TailCall); native handler as frame evaluator; resume via `frame->pc` as native label (no cookie); CALL_NAMES, CALL_STAR, TAIL_CALL_NAMES, TAIL_CALL_STAR (still stubs); kos next protocol.
+- **Implemented**: Single dispatch for CALL and TAIL_CALL; type-slot lookup; handler contract (signature, return 0/1/-1); default handler (Python call + push_or_await); KosFunction, KosExpression, DelimitedContinuation, Continuation, and apply as kos callables via `KosCallableTypeObject` and `tp_kos_call` / `tp_kos_tail_call`; native handler as frame evaluator; resume via `frame->pc` as native label; transfer plan model (context holds plan, eval loop drains it). Apply: 1/2/3-argument form, flattening when `fn` is KosFunction or KosExpression and `kwds` is NULL, else `PyObject_Call` + push_or_await. AWAIT uses `kos_await_dispatch` (defer vs push_or_await).
+- **Not implemented**: Install slots (`tp_kos_install`, `tp_kos_tail_install`) and unified invocation entry points (`kos_callable_call`, `kos_callable_tail_call`) as the canonical interface; CALL_NAMES, CALL_STAR, TAIL_CALL_NAMES, TAIL_CALL_STAR (still stubs); kos next protocol.
 
 ## Purpose
 
@@ -57,39 +56,11 @@ State captured by continuations/templates is therefore captured by **frame cloni
 
 ---
 
-## INSTALL step and invocation entry points
+## Install slots and invocation entry points
 
-### Principle: invocation selects, INSTALL configures
+### Two slots: install and tail_install
 
-Tail-position knowledge exists at the invocation site (opcode/compiled call). Therefore:
-
-- **Invocation** selects whether to reuse the current frame (tail) or push a new frame (non-tail).
-- **INSTALL** configures the selected frame for execution.
-
-### Two invocation entry points
-
-The caller chooses one of two entry points:
-
-- `KosCallable_Call(...)` (non-tail): Allocate a new callee `KosFrame`; push it (becomes `ctx->top_frame`).
-- `KosCallable_TailCall(...)` (tail): Reuse the current frame; **clear/reset** it to a pristine state suitable for replacement; it remains `ctx->top_frame`.
-
-The only semantic difference is frame selection/reuse.
-
-### Tail-call clearing/reset
-
-Before INSTALL, tail-call must reset the current frame at minimum:
-
-- operand stack contents / blocks
-- exception slot
-- any per-frame pending state that should not survive replacement
-- `pc` (to an entry label)
-- installed native handler (unless explicitly allowed; default: clear)
-
-INSTALL will then populate the new namespace/bindings and execution engine.
-
-### Mandatory INSTALL step via KosCallable install slot
-
-Before a callable's frame executes (bytecode or native), the VM performs an **INSTALL** step. INSTALL is not hardcoded to `Formals`. Instead, `KosCallable` defines a type slot:
+`KosCallable` defines two type slots; there is no `is_tail` parameter—the slot identity implies the mode:
 
 ```c
 typedef int (*KosInstallFunc)(
@@ -97,32 +68,81 @@ typedef int (*KosInstallFunc)(
     KosEvent   *out_ev,
     PyObject   *callable,
     PyObject   *args_tuple,
-    PyObject   *kwds_dict,   /* may be NULL */
-    int         is_tail
+    PyObject   *kwds_dict   /* may be NULL */
 );
+
+typedef struct {
+  PyTypeObject type;
+  KosInstallFunc tp_kos_install;       /* non-tail; NULL => default (PyCall + push_or_await) */
+  KosInstallFunc tp_kos_tail_install;  /* tail; NULL => no TCO; fallback to push + install */
+} KosCallableTypeObject;
 ```
 
-The evaluator invokes this install function for the callable's type.
+- **tp_kos_install** (non-tail): The install performs all frame setup, including pushing a new frame.
+- **tp_kos_tail_install** (tail): The install performs all frame setup, including resetting the current frame for reuse. If NULL, the type does not support tail-call optimization; the invocation layer falls back to push + non-tail install.
 
-**Install slot responsibilities**:
+### Install owns frame setup
+
+Each install function is responsible for *all* frame manipulation:
 
 1. Validate arity and argument shape.
-2. Perform any binding logic (e.g. using `Formals` for function-like callables).
-3. Allocate/configure the callee frame as needed.
-4. Select the execution engine for that frame: bytecode (`frame->code != NULL`), or native (`frame->native_handler != NULL`), or hybrid/JIT (both present, with native taking precedence at runtime).
+2. Perform binding logic (e.g. Formals for function-like callables).
+3. **Push** a new frame (non-tail) or **reset** the current frame (tail).
+4. Configure the frame: set `code`, `ns`, and optionally `native_handler` for native execution.
 
-**Formals as one install strategy**: For function-like callables, the callable carries `Formals` and INSTALL uses them to bind `(args_tuple, kwds_dict)` into the frame namespace. For other callables (apply, map, JIT, utility types), INSTALL may implement custom binding logic or push a native-configured frame directly.
+The invocation layer does *not* push or reset; it only dispatches to the appropriate slot.
 
-### Return-to-loop rule
+### Invocation entry points
 
-Invocation performs **no execution** beyond frame selection + INSTALL. It then returns to the evaluator loop, which begins execution based on the top frame's configured engine:
+The CALL and TAIL_CALL opcodes call the unified entry points:
 
-- if `native_handler != NULL`: native handler runs as frame evaluator
-- else: bytecode dispatch runs
+```c
+int kos_callable_call(KosContext *ctx, KosEvent *out_ev,
+                      PyObject *callable, PyObject *args_tuple, PyObject *kwds_dict);
+int kos_callable_tail_call(KosContext *ctx, KosEvent *out_ev,
+                           PyObject *callable, PyObject *args_tuple, PyObject *kwds_dict);
+```
 
-### Lookup (current implementation, pre-INSTALL)
+**kos_callable_call**: Look up `tp_kos_install`. If non-NULL, invoke it. Else fall back to default (Python call + push_or_await).
 
-Until INSTALL is implemented, the evaluator continues to use `tp_kos_call` / `tp_kos_tail_call` via `KosCallableTypeObject`. The INSTALL design unifies these into a single `tp_kos_install` plus the invocation entry points above. Types without an install slot fall back to the default handler (Python call + push_or_await).
+**kos_callable_tail_call**: Look up `tp_kos_tail_install`. If non-NULL, invoke it. Else fall back: push a new frame via `kos_dyn_push_frame_empty`, then invoke `tp_kos_install` (no TCO).
+
+### Return convention
+
+Install returns 0 (continue), 1 (suspend, out_ev set), or -1 (error). On 0, the evaluator loop proceeds with the top frame (bytecode dispatch or native handler).
+
+### Transfer plan integration
+
+The context holds an active transfer plan (`KosContext_PLAN(ctx)`). At the top of each dispatch loop iteration, the evaluator drains the plan via `run_transfer_plan_to_completion`. An install that builds a transfer plan (e.g. continuation) sets `KosContext_PLAN(ctx) = plan` and returns 0. The evaluator loop takes over and drains the plan on the next iteration.
+
+---
+
+## Per-type install behavior
+
+The following describes how each Koskari callable type implements the install slots. This is the canonical unified interface for invoking Koskari-aware callables.
+
+### KosFunction
+
+- **install**: Push a new frame. Use `KosFunction_PrepareCallNamespace` to bind formals from `(args_tuple, kwds_dict)`. Set `frame->code` and `frame->ns`. Set `frame->native_handler = NULL` (bytecode execution). Return 0.
+- **tail_install**: Reset the current frame (clear stack, pc, native_handler, etc.). Apply formals and set code/ns as above. Return 0.
+
+### KosExpression
+
+- **install**: Push a new frame. Validate that `args_tuple` is empty and `kwds_dict` is NULL/empty. Set `frame->code` and `frame->ns` from the expression. Set `frame->native_handler = NULL`. Return 0.
+- **tail_install**: Reset the current frame. Set code/ns as above. Return 0.
+
+### DelimitedContinuation / Continuation
+
+- **install**: Build the transfer plan (same-evaluator or cross-evaluator as appropriate). Set `KosContext_PLAN(ctx) = plan`. Return 0. The evaluator loop drains the plan on the next iteration.
+- **tail_install**: May be NULL (no tail optimization for continuations) or same as install; continuation invocation semantics may not differentiate.
+
+### Apply
+
+Apply accepts 1, 2, or 3 arguments: `(fn)`, `(fn, arglist)`, or `(fn, arglist, kwds)`.
+
+- **install (flattening)**: When `fn` is KosFunction or KosExpression and (for Expression) no args and no kwds, delegate to the inner callable's `tp_kos_install`: `KosCallableType_INSTALL(Py_TYPE(fn))(ctx, out_ev, fn, seq_args, kwds)`. The inner install pushes the frame.
+- **install (non-flattening)**: Push a new frame. Set `frame->native_handler` to the apply handler. Push `fn`, `seq_args`, and `kwds` (if any) onto the frame stack for the handler. Set `frame->code = NULL`. Return 0. The evaluator runs the native handler, which does `PyObject_Call(fn, args, kwds)` and `push_or_await`.
+- **tail_install**: Same logic; when flattening, delegate to inner `tp_kos_tail_install`; when not, reset the current frame and install the native handler.
 
 ---
 
@@ -168,18 +188,18 @@ Maintain **at most one pending native continuation per frame**, and make it **no
 
 ## Evaluator behavior
 
-### Single path for CALL-family opcodes (INSTALL design)
+### Single path for CALL-family opcodes
 
 All CALL-family opcodes reduce to:
 
 1. Build canonical `(args_tuple, kwds_dict)`.
-2. Lookup `tp_kos_install` on the callable's type.
-3. Invoke INSTALL (or fall back to default handler if no slot).
-4. Evaluator runs the top frame (bytecode or native).
+2. Invoke `kos_callable_call` (CALL) or `kos_callable_tail_call` (TAIL_CALL), which look up `tp_kos_install` or `tp_kos_tail_install` and dispatch.
+3. Install returns 0 (continue), 1 (suspend), or -1 (error).
+4. Evaluator runs the top frame (bytecode or native) or drains the transfer plan if one was installed.
 
-There is no separate "begin argument" channel; argument handling is entirely the responsibility of INSTALL.
+There is no separate "begin argument" channel; argument handling is entirely the responsibility of the install function.
 
-**Current implementation (pre-INSTALL)**: CALL and TAIL_CALL use `kos_call_dispatch` with `tp_kos_call` / `tp_kos_tail_call`. CALL_NAMES, CALL_STAR, and the TAIL_* variants are not yet wired to the unified path.
+**Current implementation**: CALL and TAIL_CALL use `kos_callable_call` / `kos_callable_tail_call`, which currently dispatch to `tp_kos_call` / `tp_kos_tail_call` when install slots are NULL (legacy fallback). CALL_NAMES, CALL_STAR, and the TAIL_* variants are not yet wired to the unified path.
 
 ### Resume precedence — native handler is the frame evaluator (Tweak 2)
 
@@ -260,23 +280,20 @@ When invoked from Python (e.g. `apply(some_fn, (1, 2), {'key': val})`), the call
 
 ### Behavior from Koskari
 
-When the CALL opcode invokes this callable (via the unified dispatcher or, in the INSTALL design, via the apply type's **INSTALL** slot), the handler performs custom binding:
+When the CALL opcode invokes this callable via `kos_callable_call` or `kos_callable_tail_call`, the apply type's **install** or **tail_install** slot runs:
 
-1. Interprets the arguments (1, 2, or 3) from the `args` tuple (and kwds) to get `fn`, optional `arglist`, optional `kwds`.
-2. If `fn` is a type that supports **flattening** (e.g. `KosFunction` or `KosExpression`), the handler does **not** call `fn` via PyObject_Call. Instead it prepares the call namespace from `arglist` and `kwds` and either:
-   - Pushes a new frame for `fn`'s code with that namespace (normal call), or
-   - Reuses the current frame (tail call) and configures it with `fn`'s code and namespace, matching the current opcode (CALL vs TAIL_CALL).
-3. If `fn` is not flattenable (e.g. a Python callable), the handler falls back to normal application: build the combined args/kwds and call the default handler (or PyObject_Call + push_or_await) for `fn`.
+1. Parse the arguments (1, 2, or 3) from `args_tuple` to get `fn`, optional `arglist`, optional `kwds`.
+2. **Flattening**: If `fn` is KosFunction or KosExpression (and for Expression: no args, no kwds), delegate to the inner callable's install or tail_install. The inner install pushes or resets the frame.
+3. **Non-flattening**: Push (or tail-reset) a frame with `native_handler` set to the apply handler. Push `fn`, `seq_args`, and `kwds` onto the frame stack. Return 0. The evaluator runs the native handler, which performs `PyObject_Call` + `push_or_await`.
 
-So from Koskari, `(apply fn arglist kwds)` is equivalent to calling `fn` directly with those arguments when `fn` is a Koskari function or expression—the evaluator flattens into the current context and runs `fn`'s code directly. When `fn` is not flattenable, behavior is the same as from Python (simple application). Under the INSTALL design, apply implements custom binding logic in its install slot rather than using Formals.
+So from Koskari, `(apply fn arglist kwds)` is equivalent to calling `fn` directly when `fn` is a Koskari function or expression—apply delegates to the inner install. When `fn` is not flattenable, apply uses a native frame whose handler does Python application.
 
 ### Implementation notes
 
-- The apply callable is a new type (e.g. `KosApplyType`) that has both `tp_call` (for Python) and a registered kos call handler (for the evaluator).
-- The handler must map the 1/2/3-argument convention from the CALL opcode's `args` (and any kwds) into the internal (fn, arglist, kwds) form. The compiler will emit CALL with 1, 2, or 3 positional arguments; the handler receives the tuple and interprets element 0 as `fn`, element 1 (if present) as `arglist`, element 2 (if present) as `kwds`. Omitted arguments are treated as no extra args and no keywords (equivalent to `()` and `None` or empty mapping).
-- The handler can reuse the same namespace-preparation and frame-push/tail-replace logic as the existing KosFunction and KosExpression handlers, so unification allows apply to "forward" into the same code paths without duplicating them.
-
-**Current apply implementation**: Flattening is used only when `fn` is exactly `KosFunction` or exactly `KosExpression` (e.g. `KosFunction_CheckExact(fn)`), and for expressions only when the positional arglist is empty and `kwds` is NULL. If `kwds` is non-NULL (including an empty dict), the handler does not flatten and uses `PyObject_Call(fn, seq_args, kwds)` then push_or_await, because the flattened call path does not accept keyword arguments. Arglist-to-tuple conversion is implemented in both the kos call handler (eval) and in `KosUtils_Apply` (Python `tp_call`); the two must stay in sync.
+- The apply callable has `tp_call` (for Python) and `tp_kos_install` / `tp_kos_tail_install` (for the evaluator).
+- The install maps the 1/2/3-argument convention: element 0 = `fn`, element 1 = `arglist`, element 2 = `kwds`. Omitted arguments are treated as empty args and no keywords.
+- When flattening, apply delegates to the inner callable's install or tail_install, which performs frame push/reset and configuration.
+- **Current implementation**: Uses `tp_kos_call` / `tp_kos_tail_call` (legacy); flattening when `fn` is exactly KosFunction or KosExpression and (for Expression) arity 0 and no kwds. Arglist-to-tuple conversion must stay in sync between the kos handler and `KosUtils_Apply` (Python `tp_call`).
 
 ---
 
@@ -285,20 +302,21 @@ So from Koskari, `(apply fn arglist kwds)` is equivalent to calling `fn` directl
 The following points are not implied by "planned work" elsewhere and are worth keeping in mind when maintaining or extending the implementation.
 
 - **Flattening and subclasses**: Apply uses `KosFunction_CheckExact` and `KosExpression_CheckExact` to decide whether to flatten. Subtypes of KosFunction or KosExpression do not get the flattened path; they are invoked via `PyObject_Call` + push_or_await. If a future type should be flattenable via apply, either switch to a `Check` (subtype) predicate or add an explicit allowlist.
-- **NULL handler/install fallback**: Any type that passes `KosCallable_Check` but has NULL in the relevant slot (`tp_kos_call`/`tp_kos_tail_call` today, or `tp_kos_install` in the INSTALL design) is treated as a normal Python callable: the default handler is used. Document this so that new callable types do not assume "no slot" has a different meaning.
-- **Type layout for slot macros**: `KosCallableType_CALL(typ)` and `KosCallableType_TAIL_CALL(typ)` cast `typ` (a `PyTypeObject *`) to `KosCallableTypeObject *`. This is correct only for types defined as `KosCallableTypeObject` (same memory layout). Do not use these macros on other type layouts.
+- **NULL slot fallback**: Any type that passes `KosCallable_Check` but has NULL in the relevant slot (`tp_kos_install` or `tp_kos_tail_install`) is treated as a normal Python callable: the default handler (Python call + push_or_await) is used. Document this so that new callable types do not assume "no slot" has a different meaning.
+- **Type layout for slot macros**: `KosCallableType_INSTALL(typ)` and `KosCallableType_TAIL_INSTALL(typ)` (or equivalent) cast `typ` (a `PyTypeObject *`) to `KosCallableTypeObject *`. This is correct only for types defined as `KosCallableTypeObject` (same memory layout). Do not use these macros on other type layouts.
 - **Duplicate arglist conversion**: The logic that converts `arglist` (pair, tuple, list, or other sequence) into a tuple lives in both the apply kos call handler (eval.c) and in `KosUtils_Apply` (utils.c). Changes to one (e.g. new sequence types, error messages) should be reflected in the other to avoid behavioral drift.
 
 ---
 
 ## Summary
 
-- **Revision**: Defer cookies and dedicated native frame kind; reuse KosFrame. Frame `pc` is the native resume label; no cookie. INSTALL step configures the selected frame; invocation selects tail vs non-tail.
-- **One path (INSTALL design)**: CALL-family opcodes build (args_tuple, kwds_dict), invoke `tp_kos_install`, then evaluator runs top frame. Currently CALL/TAIL_CALL use `tp_kos_call` / `tp_kos_tail_call`; INSTALL not yet implemented.
-- **Invocation entry points**: `KosCallable_Call` (non-tail: push new frame) and `KosCallable_TailCall` (tail: reuse + reset current frame). INSTALL configures the selected frame for bytecode or native execution.
+- **Revision**: Defer cookies and dedicated native frame kind; reuse KosFrame. Frame `pc` is the native resume label; no cookie. Install slots own all frame setup (push or reset).
+- **Two slots**: `tp_kos_install` (non-tail) and `tp_kos_tail_install` (tail). If tail_install is NULL, no tail-call optimization; fallback is push + install.
+- **Unified invocation**: `kos_callable_call` and `kos_callable_tail_call` are the canonical entry points. CALL and TAIL_CALL opcodes invoke them. Install functions perform all frame manipulation and configuration.
+- **Per-type behavior**: Function and Expression push/reset frames with code/ns; Continuation builds a transfer plan, sets `KosContext_PLAN`, returns; Apply delegates when flattening or installs a native frame with handler for Python call. The evaluator loop drains transfer plans at each iteration.
 - **Native handler as frame evaluator**: If `top_frame->native_handler != NULL`, that handler is the frame's evaluator. Signals (await result, yield send, nested-call return) are routed to it first. Handler uses `frame->pc` as resume label. Handler not cleared before invocation.
 - **Leaf vs activation mode**: Handlers that never need re-entry (no suspend, no nested-call resume) may run in leaf mode (no activation frame). Handlers that suspend or need nested-call resume must use activation mode (own frame with native_handler).
 - **One pending native continuation per frame**: Non-overwritable; installing when one exists must error/assert. Evaluator clears immediately before invoking.
 - **Frame cloning**: Continuation/template capture clones the frame; native state (stack, namespace, pc, handler) is automatically snapshotted. No cookie cloning needed.
-- **apply**: First real implementation; from Koskari it flattens when `fn` is exactly KosFunction or KosExpression and (for expressions) arity 0 and no kwds; otherwise behaves like simple application. With INSTALL, apply implements custom binding in its install slot.
+- **apply**: Flattens by delegating to inner callable's install when `fn` is KosFunction or KosExpression (and for Expression, arity 0, no kwds); otherwise installs a native frame whose handler performs Python call + push_or_await.
 - **map**: Future example of a meta-opcode-style callable and optional kos next iterator; no evaluator special cases.

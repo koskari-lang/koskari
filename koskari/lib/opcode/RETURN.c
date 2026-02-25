@@ -136,7 +136,15 @@ KOS_OP_HANDLER(RETURN) {
       KosContext_PENDING_AGEN_DEFAULT(ctx) = NULL;
       return 0;
     }
-    /* Normal CALL return: push value onto parent. */
+    /* Normal CALL return: deliver to parent (native handler or push). */
+    if (KosDynFrame_NATIVE_HANDLER(CURRENT_FRAME(ctx)) != NULL) {
+      typedef int (*NativeHandlerFn)(void *, void *, int, PyObject *);
+      NativeHandlerFn fn =
+          (NativeHandlerFn) KosDynFrame_NATIVE_HANDLER(CURRENT_FRAME(ctx));
+      int res = fn(ctx, out_ev, 1, val);
+      Py_DECREF(val);
+      return res;
+    }
     if (KosStackBlock_PushRef(&CURRENT_STACK(ctx), val) < 0) {
       Py_DECREF(val);
       return -1;

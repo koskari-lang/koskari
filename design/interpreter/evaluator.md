@@ -246,7 +246,7 @@ For ease of use in **synchronous** Python code (e.g. tests, scripts) that does n
 
 To avoid recursive C calls and keep a single state machine:
 
-1. **CALL (Koskari callables)**: When the callable is a `KosExpression` or `KosFunction`, the evaluator does **not** call Python or recurse into `koskari_eval`. It pushes a new frame with `kos_dyn_push_frame(ctx, code, ns)` (with args applied for functions) and continues the dispatch loop. When that frame executes RETURN, the **frame-has-parent** rule (below) applies: the frame is detached and the return value is pushed onto the caller’s stack in the same loop.
+1. **CALL (Koskari callables)**: The CALL opcode invokes `kos_callable_call`, which dispatches to the callable's install slot (or legacy `tp_kos_call`). The install (or handler) pushes a new frame (or, for TAIL_CALL, resets the current frame) and configures it for bytecode or native execution. The evaluator does **not** call Python or recurse into `koskari_eval`; it continues the dispatch loop. See [api/special-call-protocol.md](../api/special-call-protocol.md) for the install-slot design. When that frame executes RETURN, the **frame-has-parent** rule (below) applies: the frame is detached and the return value is pushed onto the caller’s stack in the same loop.
 
 2. **NEXT/ITER_NEXT (Koskari async gen)**: When the iterator is a Koskari async generator, the evaluator sets `pending_agen` and **attaches** the generator’s frame to the current context with `kos_dyn_attach_frame(ctx, gen_frame)`, then continues the loop. The gen’s frame runs until it YIELD or RETURN. On YIELD/RETURN, the **frame-has-parent** rule runs: the gen frame is **detached** (without freeing), the value (or exhausted/default) is delivered to the awaiting frame, and the loop continues with the caller as `frame_top`. No recursive `koskari_eval(agen->ctx, ...)`.
 
@@ -401,7 +401,7 @@ void kos_frame_free(KosFrame *frame);
 
 ### Call Operations
 
-Koskari-to-Koskari calls (CALL opcode) replace the current frame with the callee and continue in the same drive loop. The implementation is internal to eval.c.
+Koskari-to-Koskari calls (CALL/TAIL_CALL opcodes) invoke `kos_callable_call` or `kos_callable_tail_call`, which dispatch to the callable's install slots. The install pushes a new frame (CALL) or resets the current frame (TAIL_CALL), and execution continues in the same drive loop. See [api/special-call-protocol.md](../api/special-call-protocol.md). The implementation is internal to eval.c.
 
 ### Drive Loop
 

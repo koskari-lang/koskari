@@ -35,7 +35,7 @@ KOS_OP_HANDLER(CALL) {
   if (! callable)
     return -1;
 
-  int r = kos_call_dispatch(ctx, out_ev, callable, args, 0);
+  int r = kos_callable_call(ctx, out_ev, callable, args, NULL);
 
   Py_DECREF(callable);
   Py_XDECREF(args);
