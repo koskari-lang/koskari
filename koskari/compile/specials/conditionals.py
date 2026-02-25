@@ -25,7 +25,7 @@ compile/unless.
 
 from ...lib import cons, keyword, nil, OpCode, symbol
 from ...types import is_pair
-from ..exceptions import CompilerException
+from ...exceptions import SpecialError
 from ..helpers import helper_begin, pycons, simple_parameters, special
 
 
@@ -88,11 +88,11 @@ def _expand_if_to_cond(rest, source):
         then_expr = kw_dict.get("then")
         else_expr = kw_dict.get("else")
         if then_expr is None or else_expr is None:
-            raise CompilerException("if requires both then: and else: when using "
+            raise SpecialError("if requires both then: and else: when using "
                                     "keywords", source)
     else:
         if len(pos) < 3:
-            raise CompilerException("if requires condition, then, and else", source)
+            raise SpecialError("if requires condition, then, and else", source)
         cond_expr, then_expr, else_expr = pos[0], pos[1], pos[2]
 
     return pycons((symbol("compile/cond"),
@@ -106,7 +106,7 @@ def _expand_when_to_cond(rest, source):
     """
 
     if rest is nil or not is_pair(rest):
-        raise CompilerException("when requires condition and body", source)
+        raise SpecialError("when requires condition and body", source)
 
     cond_expr, body = rest
     # body_tuple = tuple(unpack(body)) if is_pair(body) else (body,)
@@ -121,7 +121,7 @@ def _expand_unless_to_cond(rest, source):
     """
 
     if rest is nil or not is_pair(rest):
-        raise CompilerException("unless requires condition and body", source)
+        raise SpecialError("unless requires condition and body", source)
 
     cond_expr, body = rest
     # body_tuple = tuple(unpack(body)) if is_pair(body) else (body,)

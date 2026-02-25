@@ -25,7 +25,7 @@ compile/capture/cc, compile/reset, and compile/shift.
 
 from ...lib import nil, OpCode, symbol, cons
 from ...types import is_pair, is_nil
-from ..exceptions import CompilerException
+from ...exceptions import SpecialError
 from ..helpers import helper_begin, is_symbolish, special, pycons
 
 
@@ -36,9 +36,12 @@ def special_call_cc(compiler, source, tc=False):
     continuation, and returns the result.
     """
 
-    called_by, (expr, rest) = source
+    called_by, args = source
+    if args is nil or not is_pair(args):
+        raise SpecialError("call/cc requires a single argument", source)
+    expr, rest = args
     if not is_nil(rest):
-        raise CompilerException("call/cc requires a single argument", source)
+        raise SpecialError("call/cc requires a single argument", source)
 
     fragment = compiler.fragment(called_by)
     fragment.position_of(source)
@@ -60,7 +63,7 @@ def special_let_cc(compiler, source, tc=False):
 
     called_by, (k, body) = source
     if not is_symbolish(k):
-        raise CompilerException(
+        raise SpecialError(
             "let/cc continuation variable must be a symbol",
             source)
 
@@ -95,7 +98,7 @@ def special_capture_cc(compiler, source, tc=False):
 
     called_by, (k, body) = source
     if not is_symbolish(k):
-        raise CompilerException(
+        raise SpecialError(
             "capture/cc continuation variable must be a symbol",
             source)
 
@@ -121,7 +124,7 @@ def special_reset(compiler, source, tc=False):
 
     called_by, rest = source
     if rest is nil or not is_pair(rest):
-        raise CompilerException("reset requires body", source)
+        raise SpecialError("reset requires body", source)
 
     fragment = compiler.fragment(called_by)
     fragment.position_of(source)
@@ -141,13 +144,13 @@ def special_shift(compiler, source, tc=False):
 
     called_by, rest = source
     if rest is nil or not is_pair(rest):
-        raise CompilerException(
+        raise SpecialError(
             "shift requires continuation variable and body",
             source)
 
     k, body = rest
     if not is_symbolish(k):
-        raise CompilerException(
+        raise SpecialError(
             "shift continuation variable must be a symbol",
             source)
 

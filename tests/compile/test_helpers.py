@@ -19,7 +19,7 @@ Tests for koskari.compile.helpers (gather_parameters, gather_formals).
 import unittest
 
 from koskari.types import cons, keyword, nil, symbol
-from koskari.compile.exceptions import CompilerException
+from koskari.exceptions import ParametersError, SpecialError
 from koskari.compile.helpers import gather_formals, gather_parameters_ng
 from koskari.compile.helpers import gather_parameters
 
@@ -108,7 +108,7 @@ class TestGatherParameters(unittest.TestCase):
 
     def test_missing_value_for_keyword_raises(self):
         args = cons(keyword("a"), nil)
-        with self.assertRaises(CompilerException) as ctx:
+        with self.assertRaises(ParametersError) as ctx:
             gather_parameters(args)
         self.assertIn("keyword", str(ctx.exception).lower())
 
@@ -119,11 +119,11 @@ class TestGatherParameters(unittest.TestCase):
         star_sym = symbol("s")
         extra = symbol("extra")
         args = cons(k, cons(star_sym, cons(extra, nil)))
-        with self.assertRaises(CompilerException):
+        with self.assertRaises(ParametersError):
             gather_parameters(args)
 
     def test_not_symbol_or_pair_raises(self):
-        with self.assertRaises(CompilerException):
+        with self.assertRaises(ParametersError):
             gather_parameters(42)
 
 
@@ -214,7 +214,7 @@ class TestGatherParametersNg(unittest.TestCase):
 
     def test_missing_value_for_keyword_raises(self):
         args = cons(keyword("a"), nil)
-        with self.assertRaises(CompilerException) as ctx:
+        with self.assertRaises(ParametersError) as ctx:
             gather_parameters_ng(args)
         self.assertIn("keyword", str(ctx.exception).lower())
 
@@ -225,7 +225,7 @@ class TestGatherParametersNg(unittest.TestCase):
         k_star = keyword("*")
         star_sym = symbol("foo")
         args = cons(a, cons(k, cons(v, cons(k_star, cons(star_sym, nil)))))
-        with self.assertRaises(CompilerException) as ctx:
+        with self.assertRaises(ParametersError) as ctx:
             gather_parameters_ng(args)
         self.assertIn("*", str(ctx.exception))
         self.assertIn("before keyword", str(ctx.exception).lower())
@@ -235,13 +235,13 @@ class TestGatherParametersNg(unittest.TestCase):
         v = symbol("v")
         extra = symbol("extra")
         args = cons(k, cons(v, cons(extra, nil)))
-        with self.assertRaises(CompilerException) as ctx:
+        with self.assertRaises(ParametersError) as ctx:
             gather_parameters_ng(args)
         self.assertIn("positional", str(ctx.exception).lower())
         self.assertIn("before keyword", str(ctx.exception).lower())
 
     def test_not_symbol_or_pair_raises(self):
-        with self.assertRaises(CompilerException):
+        with self.assertRaises(ParametersError):
             gather_parameters_ng(42)
 
 
@@ -325,21 +325,21 @@ class TestGatherFormals(unittest.TestCase):
         rest = symbol("rest")
         k = keyword("x")
         args = cons(a, cons(rest, cons(k, nil)))
-        with self.assertRaises(CompilerException):
+        with self.assertRaises(SpecialError):
             gather_formals(args)
 
     def test_non_symbol_positional_raises(self):
         args = cons(keyword("not-a-symbol"), nil)
-        with self.assertRaises(CompilerException):
+        with self.assertRaises(SpecialError):
             gather_formals(args)
 
     def test_missing_value_for_keyword_raises(self):
         args = cons(symbol("a"), cons(keyword("k"), nil))
-        with self.assertRaises(CompilerException):
+        with self.assertRaises(SpecialError):
             gather_formals(args)
 
     def test_not_symbol_or_pair_raises(self):
-        with self.assertRaises(CompilerException):
+        with self.assertRaises(SpecialError):
             gather_formals(42)
 
 

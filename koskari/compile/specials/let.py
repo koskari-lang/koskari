@@ -25,7 +25,7 @@ Special form handler for compile/let.
 from ...lib import cons, nil, pair, symbol
 from ...types import is_pair
 from ..compiler import Compiler
-from ..exceptions import CompilerException
+from ...exceptions import SpecialError
 from ..helpers import gather_bindings, helper_begin, is_symbolish, pycons, special
 
 
@@ -42,7 +42,7 @@ def special_let(
 
     called_by, rest = source
     if rest is nil or not is_pair(rest):
-        raise CompilerException("let requires bindings and body", source)
+        raise SpecialError("let requires bindings and body", source)
 
     bindings, body = rest
 

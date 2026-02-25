@@ -45,7 +45,7 @@ from ..types import (
     get_position,
 )
 
-from .exceptions import CompilerException, UncaughtCompilerException
+from ..exceptions import CompilerError, SpecialError, UncaughtCompilerError
 
 
 def _is_compiled(v):
@@ -258,7 +258,7 @@ class ByteCodeFragment:
 
         names = tuple(map(str, names))
         if len(names) != len(values):
-            raise CompilerException(
+            raise CompilerError(
                 "mismatch between names and values",
                 (names, values))
 
@@ -372,7 +372,7 @@ class Compiler:
 
 
     def error(self, msg, source):
-        raise CompilerException(msg, source)
+        raise CompilerError(msg, source)
 
 
     def find_compiled(self, name):
@@ -424,17 +424,17 @@ class Compiler:
         elif _is_const(source_obj):
             dispatch = self.compile_const
         else:
-            raise CompilerException("Unsupported source object", source_obj)
+            raise CompilerError("Unsupported source object", source_obj)
 
         try:
             return dispatch(fragment, source_obj, tc) or fragment
-        except (CompilerException,):
+        except CompilerError:
             raise
         except Exception as ex:
             from ..exceptions import KoskariSyntaxError
             if isinstance(ex, KoskariSyntaxError):
                 raise
-            raise UncaughtCompilerException(ex, source_obj) from ex
+            raise UncaughtCompilerError(ex, source_obj) from ex
 
 
     def compile_const(self, fragment, value, tc):
@@ -488,7 +488,7 @@ class Compiler:
         fragment.position_of(source_obj)
 
         if not is_proper(source_obj):
-            raise CompilerException(
+            raise CompilerError(
                 "Cannot evaluate improper lists as expressions",
                 source_obj)
 

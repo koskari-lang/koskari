@@ -31,7 +31,7 @@ import unittest
 
 import koskari.lib as lib
 
-from koskari.compile.exceptions import CompilerException
+from koskari.exceptions import SpecialError
 
 from . import SpecialsTestCase
 
@@ -98,22 +98,22 @@ class TestCallCcSpecial(SpecialsTestCase):
 
     def test_call_cc_wrong_arg_count_raises(self):
         """
-        (call/cc) with no arguments raises CompilerException
+        (call/cc) with no arguments raises SpecialError
         """
 
-        with self.assertRaises(CompilerException):
+        with self.assertRaises(SpecialError):
             self.compile_expr("(compile/call/cc)")
 
 
     def test_call_cc_too_many_args_raises(self):
         """
-        (call/cc f g) with two arguments raises CompilerException
+        (call/cc f g) with two arguments raises SpecialError
         """
 
         def fn(k):
             return k
 
-        with self.assertRaises(CompilerException):
+        with self.assertRaises(SpecialError):
             self.compile_expr("(compile/call/cc fn fn)", fn=fn)
 
 
@@ -144,10 +144,10 @@ class TestLetCcSpecial(SpecialsTestCase):
 
     def test_let_cc_continuation_variable_must_be_symbol(self):
         """
-        (let/cc 42 body) raises CompilerException because 42 is not a symbol
+        (let/cc 42 body) raises SpecialError because 42 is not a symbol
         """
 
-        with self.assertRaises(CompilerException):
+        with self.assertRaises(SpecialError):
             self.compile_expr("(compile/let/cc 42 0)")
 
 
@@ -237,10 +237,10 @@ class TestCaptureCcSpecial(SpecialsTestCase):
 
     def test_capture_cc_continuation_variable_must_be_symbol(self):
         """
-        (capture/cc 42 body) raises CompilerException because 42 is not a symbol
+        (capture/cc 42 body) raises SpecialError because 42 is not a symbol
         """
 
-        with self.assertRaises(CompilerException):
+        with self.assertRaises(SpecialError):
             self.compile_expr("(compile/capture/cc 42 0)")
 
 

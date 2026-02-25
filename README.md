@@ -96,7 +96,7 @@ koskari/
 ├── design/              # Design documentation
 ├── koskari/             # Main package (import from submodules; see design/api/package-layout.md)
 │   ├── __init__.py      # Minimal; no re-exports
-│   ├── exceptions.py    # Base exceptions (KoskariException, KoskariSyntaxError, ...)
+│   ├── exceptions.py    # All exceptions (Koskari*, Reader*, Layout*, Compiler*, etc.)
 │   ├── types.py        # Value types from lib + Python predicates/helpers
 │   ├── parse.py        # S-expression parser (Reader, SourceStream, ...)
 │   ├── dis.py          # Disassembler for Code objects

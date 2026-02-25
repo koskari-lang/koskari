@@ -3,7 +3,7 @@ Helper functions for compiler specials
 
 Parse and validate formals (definition-site), parameters (invocation-site),
 and bindings (declare-and-bind, e.g. let). Validation is by raising during
-parsing; all helpers raise CompilerException with optional source context.
+parsing; all helpers raise SpecialError or ParametersError with optional source context.
 
 :author: Christopher O'Brien <obriencj@preoccupied.net>
 :license: GNU General Public License v3
@@ -16,7 +16,7 @@ from ..lib import car, cons, keyword, nil, OpCode, pair, symbol
 from ..types import is_keyword, is_pair, is_proper, is_symbol, unpack
 
 from .compiler import Compiler, ByteCodeFragment
-from .exceptions import CompilerException
+from ..exceptions import ParametersError, SpecialError
 
 
 __all__ = (
@@ -104,14 +104,14 @@ def helper_binding(source, required=True, allow_unnamed=False):
     :param allow_unnamed: if True, a single element (EXPR) is allowed and
         returns (None, expr)
     :return: (name, expr) where name is the bound name or None if unnamed
-    :raises CompilerException: when the binding form is invalid
+    :raises SpecialError: when the binding form is invalid
     """
 
     msg = ("a binding must be in the form of (SYM EXPR) or (EXPR as: SYM),"
            " not %s" % source)
 
     if not is_proper(source):
-        raise CompilerException(msg, source)
+        raise SpecialError(msg, source)
 
     parts = list(unpack(source))
     sc = len(parts)
@@ -126,14 +126,14 @@ def helper_binding(source, required=True, allow_unnamed=False):
         if is_symbolish(first):
             sym, expr = first, second
             return (sym, expr)
-        raise CompilerException(msg, source)
+        raise SpecialError(msg, source)
     elif sc == 1:
         expr = parts[0]
         if allow_unnamed:
             return (None, expr)
         if not required:
             return (required, expr)
-    raise CompilerException(msg, source)
+    raise SpecialError(msg, source)
 
 
 def gather_parameters(args, source=None):
@@ -148,7 +148,7 @@ def gather_parameters(args, source=None):
         - values: list of expressions (one per keyword)
         - stararg: symbol or None for *args
         - starstararg: symbol or None for **kwargs
-    :raises CompilerException: on invalid parameter list
+    :raises ParametersError: on invalid parameter list
     """
 
     undefined = object()
@@ -167,7 +167,7 @@ def gather_parameters(args, source=None):
         improper = True
 
     else:
-        raise CompilerException("parameters must be symbol or pair, not %r" % args, source)
+        raise ParametersError("parameters must be symbol or pair, not %r" % args, source)
 
     positional = []
 
@@ -191,7 +191,7 @@ def gather_parameters(args, source=None):
 
         value = next(iargs, undefined)
         if value is undefined:
-            raise CompilerException("missing value for keyword parameter %s" % arg, source)
+            raise ParametersError("missing value for keyword parameter %s" % arg, source)
         else:
             defaults.append(value)
 
@@ -201,7 +201,7 @@ def gather_parameters(args, source=None):
         elif is_keyword(arg):
             continue
         else:
-            raise CompilerException(
+            raise ParametersError(
                 "keyword parameters must be alternating keywords and"
                 " values, not %r" % arg,
                 source)
@@ -215,17 +215,17 @@ def gather_parameters(args, source=None):
     if arg is _keyword_star:
         star = next(iargs, undefined)
         if star is undefined:
-            raise CompilerException("* keyword parameter needs value", source)
+            raise ParametersError("* keyword parameter needs value", source)
         arg = next(iargs, undefined)
 
     if arg is _keyword_starstar:
         starstar = next(iargs, undefined)
         if starstar is undefined:
-            raise CompilerException("** keyword parameter needs value", source)
+            raise ParametersError("** keyword parameter needs value", source)
         arg = next(iargs, undefined)
 
     if arg is not undefined:
-        raise CompilerException("leftover parameters %r" % arg, source)
+        raise ParametersError("leftover parameters %r" % arg, source)
 
     return (positional, keywords, defaults, star, starstar)
 
@@ -245,7 +245,7 @@ def gather_parameters_ng(args, source=None):
           for star-args
         - kwds_seq: list of (keyword_name, expr) for keywords or ("**", symbol)
           for starstar-args
-    :raises CompilerException: on invalid parameter list
+    :raises ParametersError: on invalid parameter list
     """
 
     undefined = object()
@@ -264,7 +264,7 @@ def gather_parameters_ng(args, source=None):
         improper = True
 
     else:
-        raise CompilerException("parameters must be symbol or pair, not %r"
+        raise ParametersError("parameters must be symbol or pair, not %r"
                                % args, source)
 
     args_seq = []
@@ -279,30 +279,30 @@ def gather_parameters_ng(args, source=None):
         if is_keyword(arg):
             if arg is _keyword_star:
                 if in_kwds_phase:
-                    raise CompilerException(
+                    raise ParametersError(
                         "* args must come before keyword arguments", source)
                 star_sym = next(iargs, undefined)
                 if star_sym is undefined:
-                    raise CompilerException("* keyword parameter needs value",
+                    raise ParametersError("* keyword parameter needs value",
                                            source)
                 args_seq.append(("*", star_sym))
             elif arg is _keyword_starstar:
                 in_kwds_phase = True
                 starstar_sym = next(iargs, undefined)
                 if starstar_sym is undefined:
-                    raise CompilerException(
+                    raise ParametersError(
                         "** keyword parameter needs value", source)
                 kwds_seq.append(("**", starstar_sym))
             else:
                 in_kwds_phase = True
                 value = next(iargs, undefined)
                 if value is undefined:
-                    raise CompilerException(
+                    raise ParametersError(
                         "missing value for keyword parameter %s" % arg, source)
                 kwds_seq.append((str(arg), value))
         else:
             if in_kwds_phase:
-                raise CompilerException(
+                raise ParametersError(
                     "positional arguments must come before keywords", source)
             args_seq.append((pos_index, arg))
             pos_index += 1
@@ -327,7 +327,7 @@ def gather_formals(args, source=None):
         - kwonly: list of (keyword, default_expr) for keyword-only params
         - star: symbol or None for *args
         - starstar: symbol or None for **kwargs
-    :raises CompilerException: on invalid formals list
+    :raises SpecialError: on invalid formals list
     """
 
     undefined = object()
@@ -346,7 +346,7 @@ def gather_formals(args, source=None):
         improper = True
 
     else:
-        raise CompilerException("formals must be symbol or pair, not %r" % args, source)
+        raise SpecialError("formals must be symbol or pair, not %r" % args, source)
 
     positional = []
 
@@ -354,13 +354,13 @@ def gather_formals(args, source=None):
     for arg in iargs:
         if is_keyword(arg):
             if improper:
-                raise CompilerException("cannot mix improper formal with keywords", source)
+                raise SpecialError("cannot mix improper formal with keywords", source)
             else:
                 break
         elif is_symbol(arg) or is_lazygensym(arg):
             positional.append(arg)
         else:
-            raise CompilerException("positional formals must be symbols, not %r" % arg, source)
+            raise SpecialError("positional formals must be symbols, not %r" % arg, source)
     else:
         if improper:
             return (positional[:-1], [], [], positional[-1], None)
@@ -373,7 +373,7 @@ def gather_formals(args, source=None):
     while arg not in (_keyword_star, _keyword_starstar):
         value = next(iargs, undefined)
         if value is undefined:
-            raise CompilerException("missing value for keyword formal %s" % args, source)
+            raise SpecialError("missing value for keyword formal %s" % args, source)
         else:
             defaults.append((arg, value))
 
@@ -384,7 +384,7 @@ def gather_formals(args, source=None):
         elif is_keyword(arg):
             continue
         else:
-            raise CompilerException(
+            raise SpecialError(
                 "keyword formals must be alternating keywords and"
                 " values, not %r" % arg,
                 source)
@@ -398,23 +398,23 @@ def gather_formals(args, source=None):
     if arg is _keyword_star:
         star = next(iargs, undefined)
         if star is undefined:
-            raise CompilerException("* keyword requires symbol binding", source)
+            raise SpecialError("* keyword requires symbol binding", source)
         elif star is nil:
             pass
         elif not (is_symbol(star) or is_lazygensym(star)):
-            raise CompilerException("* keyword requires symbol binding, not %r" % star, source)
+            raise SpecialError("* keyword requires symbol binding, not %r" % star, source)
         arg = next(iargs, undefined)
 
     if arg is undefined:
         return (positional, defaults, kwonly, star, starstar)
 
     if not is_keyword(arg):
-        raise CompilerException("expected keyword in formals, got %r" % arg, source)
+        raise SpecialError("expected keyword in formals, got %r" % arg, source)
 
     while arg not in (_keyword_star, _keyword_starstar):
         value = next(iargs, undefined)
         if value is undefined:
-            raise CompilerException("missing value for keyword-only formal %s" % arg, source)
+            raise SpecialError("missing value for keyword-only formal %s" % arg, source)
         else:
             kwonly.append((arg, value))
 
@@ -424,20 +424,20 @@ def gather_formals(args, source=None):
         elif is_keyword(arg):
             continue
         else:
-            raise CompilerException(
+            raise SpecialError(
                 "keyword-only formals must be alternating keywords"
                 " and values, not %r" % arg)
 
     if arg is _keyword_starstar:
         starstar = next(iargs, undefined)
         if starstar is undefined:
-            raise CompilerException("** keyword requires symbol binding", source)
+            raise SpecialError("** keyword requires symbol binding", source)
         elif not (is_symbol(starstar) or is_lazygensym(starstar)):
-            raise CompilerException("** keyword requires symbol binding, not %r" % starstar, source)
+            raise SpecialError("** keyword requires symbol binding, not %r" % starstar, source)
         arg = next(iargs, undefined)
 
     if arg is not undefined:
-        raise CompilerException("leftover formals %r" % arg, source)
+        raise SpecialError("leftover formals %r" % arg, source)
 
     return (positional, defaults, kwonly, star, starstar)
 
@@ -451,7 +451,7 @@ def simple_parameters(source_args, source=None):
     :param source_args: same as gather_parameters args
     :param source: optional source form for error context
     :return: (pos_list, kw_dict) where kw_dict maps keyword name (str) to value expr
-    :raises CompilerException: on invalid parameter list
+    :raises ParametersError: on invalid parameter list
     """
 
     pos, keywords, values, star, starstar = gather_parameters(
@@ -472,7 +472,7 @@ def gather_bindings(bindings_source, source=None):
     :param bindings_source: proper list of binding forms, e.g. [[a 1] [b 2]]
     :param source: optional source form for error context
     :return: (names, values) — list of name symbols and list of expressions
-    :raises CompilerException: on invalid or duplicate binding
+    :raises SpecialError: on invalid or duplicate binding
     """
 
     names = []
@@ -482,7 +482,7 @@ def gather_bindings(bindings_source, source=None):
     for elem in bindings_source.unpack():
         name, val = helper_binding(elem)
         if name in names:
-            raise CompilerException(
+            raise SpecialError(
                 "duplicate declarations for %s in bindings" % name,
                 source if source is not None else bindings_source)
         names.append(name)
@@ -502,7 +502,7 @@ def convert_bindings(bindings_source, source=None):
     :param bindings_source: proper list of binding forms
     :param source: optional source form for error context
     :return: proper list of (keyword(name), val, keyword(name), val, ...)
-    :raises CompilerException: on invalid or duplicate binding
+    :raises SpecialError: on invalid or duplicate binding
     """
 
     names, values = gather_bindings(bindings_source, source)

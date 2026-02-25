@@ -22,9 +22,8 @@ Koskari s-expression reader and layout block parsing.
 """
 
 
+from ..exceptions import ReaderSyntaxError, FormatStringSyntaxError
 from .parser import (
-    ReaderSyntaxError,
-    FormatStringSyntaxError,
     SourceStream,
     IndentAwareStream,
     source_open,

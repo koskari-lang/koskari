@@ -4,7 +4,7 @@ This directory documents the runtime API of Koskari, including types, functions,
 
 ## Contents
 
-- **package-layout.md**: Package structure, where symbols are defined, and import policy (import from submodules only; no top-level re-exports)
+- **package-layout.md**: Package structure, where symbols are defined (including all exceptions in `koskari.exceptions`), and import policy (import from submodules only; no top-level re-exports)
 - **types.md**: Core data types (symbol, keyword, pair, nil, etc.)
 - **builtins.md**: Built-in functions and utilities
 - **defer-coroutine.md**: DeferCoroutine (`defer`) — single-shot await-handle, excluded from implicit auto-await

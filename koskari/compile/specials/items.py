@@ -25,7 +25,7 @@ and compile/set-item.
 
 from ...lib import nil, OpCode, symbol
 from ...types import is_pair
-from ..exceptions import CompilerException
+from ...exceptions import SpecialError
 from ..helpers import const_only_expr, special
 
 
@@ -37,11 +37,11 @@ def special_item(compiler, source, tc=False):
 
     called_by, body = source
     if not is_pair(body):
-        raise CompilerException("item requires two arguments", source)
+        raise SpecialError("item requires two arguments", source)
     obj, (key, rest) = body
 
     if rest is not nil:
-        raise CompilerException("item takes two arguments", source)
+        raise SpecialError("item takes two arguments", source)
 
     frag = compiler.fragment(called_by)
 
@@ -69,11 +69,11 @@ def special_ref_item(compiler, source, tc=False):
 
     called_by, body = source
     if not is_pair(body):
-        raise CompilerException("ref-item requires two arguments", source)
+        raise SpecialError("ref-item requires two arguments", source)
     obj, (key, rest) = body
 
     if rest is not nil:
-        raise CompilerException("ref-item takes two arguments", source)
+        raise SpecialError("ref-item takes two arguments", source)
 
     frag = compiler.fragment(called_by)
 
@@ -101,11 +101,11 @@ def special_del_item(compiler, source, tc=False):
 
     called_by, body = source
     if not is_pair(body):
-        raise CompilerException("del-item requires two arguments", source)
+        raise SpecialError("del-item requires two arguments", source)
     obj, (key, rest) = body
 
     if rest is not nil:
-        raise CompilerException("del-item takes two arguments", source)
+        raise SpecialError("del-item takes two arguments", source)
 
     frag = compiler.fragment(called_by)
 
@@ -135,11 +135,11 @@ def special_set_item(compiler, source, tc=False):
 
     called_by, body = source
     if not is_pair(body):
-        raise CompilerException("set-item requires three arguments", source)
+        raise SpecialError("set-item requires three arguments", source)
     obj, (key, (val, rest)) = body
 
     if rest is not nil:
-        raise CompilerException("set-item takes three arguments", source)
+        raise SpecialError("set-item takes three arguments", source)
 
     frag = compiler.fragment(called_by)
 

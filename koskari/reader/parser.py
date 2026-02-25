@@ -30,7 +30,7 @@ from io import StringIO
 from os.path import exists
 from re import compile as regex, UNICODE, VERBOSE
 
-from ..exceptions import KoskariSyntaxError
+from ..exceptions import KoskariSyntaxError, ReaderSyntaxError, FormatStringSyntaxError, ReaderSyntaxError, FormatStringSyntaxError
 from ..types import (
     BaseSourceStream,
     Module,
@@ -195,22 +195,6 @@ def _as_unicode(s, pattern=ESCAPE_SEQUENCE_RE):
     """
 
     return pattern.sub(_decode_sub, s)
-
-
-class ReaderSyntaxError(KoskariSyntaxError):
-    """
-    An error in Koskari syntax during read time
-    """
-
-    pass
-
-
-class FormatStringSyntaxError(ReaderSyntaxError):
-    """
-    A read-time error from inside an f-string
-    """
-
-    pass
 
 
 class Atom(str):

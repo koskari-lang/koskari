@@ -26,7 +26,7 @@ compile/dyn-with.
 from ...lib import nil, OpCode, pair, symbol
 from ...types import is_pair
 from ..compiler import ByteCodeFragment, Compiler
-from ..exceptions import CompilerException
+from ...exceptions import SpecialError
 from ..helpers import gather_bindings, helper_begin, helper_binding, special
 
 
@@ -46,7 +46,7 @@ def special_parameterize(
 
     called_by, rest = source
     if rest is nil or not is_pair(rest):
-        raise CompilerException(
+        raise SpecialError(
             "parameterize requires bindings and body",
             source)
 
@@ -72,11 +72,11 @@ def special_with(compiler, source, tc=False):
 
     called_by, rest = source
     if rest is nil or not is_pair(rest):
-        raise CompilerException("with requires [name? expr] and body", source)
+        raise SpecialError("with requires [name? expr] and body", source)
 
     spec, body = rest
     if spec is nil or not is_pair(spec):
-        raise CompilerException("with requires [name? expr] list", source)
+        raise SpecialError("with requires [name? expr] list", source)
 
     name, expr = helper_binding(spec, allow_unnamed=True)
 
@@ -104,11 +104,11 @@ def special_dyn_with(compiler, source, tc=False):
 
     called_by, rest = source
     if rest is nil or not is_pair(rest):
-        raise CompilerException("dyn-with requires [name? expr] and body", source)
+        raise SpecialError("dyn-with requires [name? expr] and body", source)
 
     spec, body = rest
     if spec is nil or not is_pair(spec):
-        raise CompilerException("dyn-with requires [name? expr] list", source)
+        raise SpecialError("dyn-with requires [name? expr] list", source)
 
     name, expr = helper_binding(spec, allow_unnamed=True)
 

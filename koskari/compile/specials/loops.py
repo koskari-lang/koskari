@@ -24,7 +24,7 @@ Special form handlers for compile/while, compile/break, and compile/continue.
 
 from ...lib import nil, OpCode, symbol
 from ...types import is_pair
-from ..exceptions import CompilerException
+from ...exceptions import SpecialError
 from ..helpers import helper_begin, helper_binding, helper_elsebody, special
 
 
@@ -36,7 +36,7 @@ def special_while(compiler, source, tc=False):
 
     called_by, rest = source
     if rest is nil or not is_pair(rest):
-        raise CompilerException("while requires test and body", source)
+        raise SpecialError("while requires test and body", source)
 
     test, body = rest
     fragment = compiler.fragment(called_by)
@@ -67,11 +67,11 @@ def special_for_each(compiler, source, tc=False):
 
     called_by, rest = source
     if rest is nil or not is_pair(rest):
-        raise CompilerException("for-each requires [binding expr] and body", source)
+        raise SpecialError("for-each requires [binding expr] and body", source)
 
     spec, body = rest
     if spec is nil or not is_pair(spec):
-        raise CompilerException("for-each requires [binding expr] list", source)
+        raise SpecialError("for-each requires [binding expr] list", source)
 
     binding, expr = helper_binding(spec)
     body, elsebody = helper_elsebody(body)
@@ -123,7 +123,7 @@ def _special_break_continue(compiler, source, op):
 
     val, tail = rest
     if tail is not nil:
-        raise CompilerException(
+        raise SpecialError(
             "%s takes at most one argument" % called_by,
             source)
 

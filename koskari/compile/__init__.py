@@ -8,16 +8,23 @@ The koskari compiler. Converts source forms into bytecode fragments.
 """
 
 from .compiler import ByteCodeFragment, Compiler, CompilerMode
-from .exceptions import CompilerException, UncaughtCompilerException
+from ..exceptions import (
+    CompilerError,
+    ParametersError,
+    SpecialError,
+    UncaughtCompilerError,
+)
 from .specials import SPECIALS
 
 
 __all__ = (
     "Compiler",
     "ByteCodeFragment",
-    "CompilerException",
+    "CompilerError",
     "CompilerMode",
-    "UncaughtCompilerException",
+    "ParametersError",
+    "SpecialError",
+    "UncaughtCompilerError",
 
     "SPECIALS",
 )

@@ -25,7 +25,7 @@ Special form handler for compile/lambda.
 from ...lib import FormalsSpec, FunctionSpec, nil, OpCode, pair, symbol
 from ...types import is_pair, is_symbol
 from ..compiler import ByteCodeFragment, Compiler, CompilerMode
-from ..exceptions import CompilerException
+from ...exceptions import SpecialError
 from ..helpers import gather_formals, helper_begin, special
 
 
@@ -41,13 +41,13 @@ def special_lambda(
 
     called_by, rest = source
     if rest is nil or not is_pair(rest):
-        raise CompilerException("lambda requires formals and body", source)
+        raise SpecialError("lambda requires formals and body", source)
 
     first, rest_tail = rest
     if is_symbol(first):
         named = first
         if rest_tail is nil or not is_pair(rest_tail):
-            raise CompilerException(
+            raise SpecialError(
                 "named lambda requires formals and body",
                 source)
         formals_src, body_src = rest_tail

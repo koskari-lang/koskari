@@ -59,4 +59,68 @@ class KoskariSyntaxError(SyntaxError):
         self.text = text
 
 
+class ReaderError(KoskariSyntaxError):
+    """
+    Base class for reader-phase errors
+    """
+
+    pass
+
+
+class ReaderSyntaxError(ReaderError):
+    """
+    Low-level parse errors during s-expression or layout reading
+    """
+
+    pass
+
+
+class FormatStringSyntaxError(ReaderSyntaxError):
+    """
+    Errors in format string (f-string) syntax
+    """
+
+    pass
+
+
+class LayoutError(ReaderError):
+    """
+    Layout block structure errors
+    """
+
+    pass
+
+
+class CompilerError(KoskariException):
+    """
+    Base class for compile-phase errors
+    """
+
+    pass
+
+
+class SpecialError(CompilerError):
+    """
+    Special-form validation errors
+    """
+
+    pass
+
+
+class ParametersError(CompilerError):
+    """
+    Call-site parameter errors from gather_parameters and gather_parameters_ng
+    """
+
+    pass
+
+
+class UncaughtCompilerError(CompilerError):
+    """
+    Wraps unexpected exceptions raised during compilation
+    """
+
+    pass
+
+
 # The end.

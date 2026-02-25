@@ -25,7 +25,7 @@ and compile/ref-attr.
 
 from ...lib import nil, OpCode, symbol
 from ...types import is_pair
-from ..exceptions import CompilerException
+from ...exceptions import SpecialError
 from ..helpers import special
 
 
@@ -37,11 +37,11 @@ def special_attr(compiler, source, tc=False):
 
     called_by, body = source
     if not is_pair(body):
-        raise CompilerException("attr requires two arguments", source)
+        raise SpecialError("attr requires two arguments", source)
     obj, (sym, rest) = body
 
     if rest is not nil:
-        raise CompilerException("attr takes two arguments", source)
+        raise SpecialError("attr takes two arguments", source)
 
     frag = compiler.fragment(called_by)
 
@@ -60,11 +60,11 @@ def special_del_attr(compiler, source, tc=False):
 
     called_by, body = source
     if not is_pair(body):
-        raise CompilerException("del-attr requires two arguments", source)
+        raise SpecialError("del-attr requires two arguments", source)
     obj, (sym, rest) = body
 
     if rest is not nil:
-        raise CompilerException("del-attr takes two arguments", source)
+        raise SpecialError("del-attr takes two arguments", source)
 
     frag = compiler.fragment(called_by)
 
@@ -84,11 +84,11 @@ def special_set_attr(compiler, source, tc=False):
 
     called_by, body = source
     if not is_pair(body):
-        raise CompilerException("set-attr requires three arguments", source)
+        raise SpecialError("set-attr requires three arguments", source)
     obj, (sym, (val, rest)) = body
 
     if rest is not nil:
-        raise CompilerException("set-attr takes three arguments", source)
+        raise SpecialError("set-attr takes three arguments", source)
 
     frag = compiler.fragment(called_by)
 
@@ -109,11 +109,11 @@ def special_ref_attr(compiler, source, tc=False):
 
     called_by, body = source
     if not is_pair(body):
-        raise CompilerException("ref-attr requires two arguments", source)
+        raise SpecialError("ref-attr requires two arguments", source)
     obj, (sym, rest) = body
 
     if rest is not nil:
-        raise CompilerException("ref-attr takes two arguments", source)
+        raise SpecialError("ref-attr takes two arguments", source)
 
     frag = compiler.fragment(called_by)
 

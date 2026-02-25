@@ -25,7 +25,7 @@ compile/delq, and compile/define.
 
 from ...lib import nil, OpCode, symbol, cons
 from ...types import is_pair
-from ..exceptions import CompilerException
+from ...exceptions import SpecialError
 from ..helpers import is_symbolish, pycons, special
 
 
@@ -41,7 +41,7 @@ def special_setq(compiler, source, tc=False):
     sym = str(sym)
 
     if rest is not nil:
-        raise CompilerException("setq takes two arguments", source)
+        raise SpecialError("setq takes two arguments", source)
 
     frag = compiler.fragment(called_by)
 
@@ -68,7 +68,7 @@ def special_refq(compiler, source, tc=False):
     sym = str(sym)
 
     if rest is not nil:
-        raise CompilerException("refq takes one argument", source)
+        raise SpecialError("refq takes one argument", source)
 
     frag = compiler.fragment(called_by)
 
@@ -91,7 +91,7 @@ def special_bindq(compiler, source, tc=False):
     sym = str(sym)
 
     if rest is not nil:
-        raise CompilerException("bindq takes two arguments", source)
+        raise SpecialError("bindq takes two arguments", source)
 
     frag = compiler.fragment(called_by)
 
@@ -118,7 +118,7 @@ def special_delq(compiler, source, tc=False):
     sym = str(sym)
 
     if rest is not nil:
-        raise CompilerException("delq takes one argument", source)
+        raise SpecialError("delq takes one argument", source)
 
     frag = compiler.fragment(called_by)
 
@@ -140,11 +140,11 @@ def special_define(compiler, source, tc=False):
 
     called_by, rest = source
     if rest is nil or not is_pair(rest):
-        raise CompilerException("define requires a name", source)
+        raise SpecialError("define requires a name", source)
 
     X, rest_tail = rest
     if not is_symbolish(X):
-        raise CompilerException("define name must be a symbol", source)
+        raise SpecialError("define name must be a symbol", source)
 
     sym = str(X)
 
@@ -161,7 +161,7 @@ def special_define(compiler, source, tc=False):
         val_expr = cons(symbol('compile/lambda'), X, val_expr, lbody)
 
     elif lbody is not nil:
-        raise CompilerException(
+        raise SpecialError(
             "define with expression takes exactly two arguments",
             source)
 

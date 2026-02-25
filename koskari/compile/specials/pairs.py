@@ -25,7 +25,7 @@ compile/cons.
 
 from ...lib import nil, OpCode, symbol
 from ...types import get_position, is_nil, is_pair, set_position
-from ..exceptions import CompilerException
+from ...exceptions import SpecialError
 from ..helpers import requote, special
 
 
@@ -34,11 +34,11 @@ def special_quote(compiler, source, tc=False):
     called_by, body = source
 
     if body is nil or not is_pair(body):
-        raise CompilerException("Too few arguments to quote", source)
+        raise SpecialError("Too few arguments to quote", source)
 
     body, rest = body
     if rest is not nil:
-        raise CompilerException("Too many arguments to quote", source)
+        raise SpecialError("Too many arguments to quote", source)
 
     if is_pair(body) and not is_nil(body):
         body = requote(body)
@@ -60,11 +60,11 @@ def special_car(compiler, source, tc=False):
 
     called_by, body = source
     if body is nil or not is_pair(body):
-        raise CompilerException("compile/car requires one argument", source)
+        raise SpecialError("compile/car requires one argument", source)
 
     expr, rest = body
     if rest is not nil:
-        raise CompilerException("compile/car takes one argument", source)
+        raise SpecialError("compile/car takes one argument", source)
 
     frag = compiler.fragment(called_by)
     frag.position_of(body)
@@ -83,11 +83,11 @@ def special_cdr(compiler, source, tc=False):
 
     called_by, body = source
     if body is nil or not is_pair(body):
-        raise CompilerException("compile/cdr requires one argument", source)
+        raise SpecialError("compile/cdr requires one argument", source)
 
     expr, rest = body
     if rest is not nil:
-        raise CompilerException("compile/cdr takes one argument", source)
+        raise SpecialError("compile/cdr takes one argument", source)
 
     frag = compiler.fragment(called_by)
     frag.position_of(body)
@@ -108,7 +108,7 @@ def special_cons(compiler, source, tc=False):
 
     called_by, body = source
     if body is nil or not is_pair(body):
-        raise CompilerException(
+        raise SpecialError(
             "compile/cons requires at least one argument",
             source)
 

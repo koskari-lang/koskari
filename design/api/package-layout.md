@@ -7,7 +7,7 @@ Koskari is organized by use case. Internal code and tests import only from the *
 ```
 koskari/
 ├── __init__.py       # Minimal: docstring only, no re-exports
-├── exceptions.py     # KoskariException, NotYetImplemented, KoskariSyntaxError
+├── exceptions.py     # All exceptions: Koskari*, Reader*, Layout*, Compiler*, etc.
 ├── types.py          # Value types (from lib) + Python predicates/helpers
 ├── reader/           # Parser, layout block syntax, reader macros
 │   ├── __init__.py
@@ -17,7 +17,7 @@ koskari/
 ├── compile/          # Compiler, ByteCodeFragment, special forms
 │   ├── __init__.py
 │   ├── compiler.py   # Compiler, ByteCodeFragment
-│   ├── exceptions.py # CompilerException, CompilerMode, UncaughtCompilerException
+│   # (no exceptions.py; compiler errors live in koskari.exceptions)
 │   ├── helpers.py    # gather_formals, gather_parameters, helper_begin
 │   └── specials.py   # SPECIALS, special_bytecode, etc.
 └── lib/              # C extension (native types and runtime)
@@ -31,8 +31,8 @@ koskari/
 | Base exceptions | `koskari.exceptions` | `KoskariException`, `NotYetImplemented`, `KoskariSyntaxError` |
 | Value types (native) | `koskari.lib` | `symbol`, `keyword`, `pair`, `nil`, `cons`, `car`, `cdr`, `Namespace`, `NamespaceSpec`, `Code`, `OpCode`, `FormalsSpec`, `values`, `Expression`, `Function`, etc. |
 | Value types + predicates | `koskari.types` | Imports from `koskari.lib`; defines `TypePredicate`, `BuiltinPredicate`, `is_symbol`, `is_pair`, `build_proper`, `unpack`, `get_position`, etc. |
-| Parse errors | `koskari.reader` | `ReaderSyntaxError`, `FormatStringSyntaxError` (subclass `KoskariSyntaxError` from `koskari.exceptions`) |
-| Compiler errors | `koskari.compile.exceptions` | `CompilerException`, `UncaughtCompilerException`, `CompilerMode` |
+| Parse errors | `koskari.exceptions` | `ReaderError`, `ReaderSyntaxError`, `FormatStringSyntaxError`, `LayoutError` (subclass `KoskariSyntaxError`) |
+| Compiler errors | `koskari.exceptions` | `CompilerError`, `SpecialError`, `ParametersError`, `UncaughtCompilerError` |
 | Parsing | `koskari.reader` | `Reader`, `LayoutReader`, `SourceStream`, `source_str`, `source_open`, `default_reader` |
 | Compilation | `koskari.compile` | `Compiler`, `ByteCodeFragment`, `SPECIALS` (from compiler.py, specials.py) |
 | Disassembly | `koskari.dis` | `dis`, and internal helpers |
