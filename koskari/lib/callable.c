@@ -26,8 +26,6 @@ KosCallableTypeObject KosCallableType = {
     .tp_doc = "Internal base type for native Koskari callables",
     .tp_new = NULL,
   },
-  .tp_kos_call = NULL,
-  .tp_kos_tail_call = NULL,
   .tp_kos_install = NULL,
   .tp_kos_tail_install = NULL,
 };

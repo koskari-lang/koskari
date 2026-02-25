@@ -96,8 +96,6 @@ static KosCallableTypeObject KosApplyType = {
     .tp_new = PyType_GenericNew,
     .tp_base = KOS_CALLABLE_PYTYPE(KosCallableType),
   },
-  .tp_kos_call = kos_callable_apply_call,
-  .tp_kos_tail_call = kos_callable_apply_tail_call,
   .tp_kos_install = kos_install_apply,
   .tp_kos_tail_install = kos_tail_install_apply,
 };

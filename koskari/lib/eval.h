@@ -584,59 +584,6 @@ extern PyObject *KoskariContinuationError;
 
 
 
-/* === KosCallable protocol handlers === */
-
-
-int kos_callable_function_call(
-    KosContext *ctx,
-    KosEvent *out_ev,
-    int is_resume,
-    PyObject *arg1,
-    PyObject *arg2);
-
-int kos_callable_function_tail_call(
-    KosContext *ctx,
-    KosEvent *out_ev,
-    int is_resume,
-    PyObject *arg1,
-    PyObject *arg2);
-
-int kos_callable_expression_call(
-    KosContext *ctx,
-    KosEvent *out_ev,
-    int is_resume,
-    PyObject *arg1,
-    PyObject *arg2);
-
-int kos_callable_expression_tail_call(
-    KosContext *ctx,
-    KosEvent *out_ev,
-    int is_resume,
-    PyObject *arg1,
-    PyObject *arg2);
-
-int kos_callable_continuation_call(
-    KosContext *ctx,
-    KosEvent *out_ev,
-    int is_resume,
-    PyObject *arg1,
-    PyObject *arg2);
-
-int kos_callable_apply_call(
-    KosContext *ctx,
-    KosEvent *out_ev,
-    int is_resume,
-    PyObject *arg1,
-    PyObject *arg2);
-
-int kos_callable_apply_tail_call(
-    KosContext *ctx,
-    KosEvent *out_ev,
-    int is_resume,
-    PyObject *arg1,
-    PyObject *arg2);
-
-
 /* === KosCallable install slot implementations === */
 
 

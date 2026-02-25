@@ -135,8 +135,6 @@ KosCallableTypeObject KosExpressionType = {
   .tp_members = expression_members,
     .tp_base = KOS_CALLABLE_PYTYPE(KosCallableType),
   },
-  .tp_kos_call = kos_callable_expression_call,
-  .tp_kos_tail_call = kos_callable_expression_tail_call,
   .tp_kos_install = kos_install_expression,
   .tp_kos_tail_install = kos_tail_install_expression,
 };
@@ -472,8 +470,6 @@ KosCallableTypeObject KosFunctionType = {
   .tp_members = function_members,
     .tp_base = KOS_CALLABLE_PYTYPE(KosCallableType),
   },
-  .tp_kos_call = kos_callable_function_call,
-  .tp_kos_tail_call = kos_callable_function_tail_call,
   .tp_kos_install = kos_install_function,
   .tp_kos_tail_install = kos_tail_install_function,
 };

@@ -25,14 +25,6 @@ struct KosContext;
 struct KosEvent;
 
 
-typedef int (*KosCallHandler)(
-    struct KosContext *ctx,
-    struct KosEvent *out_ev,
-    int is_resume,
-    PyObject *arg1,
-    PyObject *arg2);
-
-
 typedef int (*KosInstallFunc)(
     struct KosContext *ctx,
     struct KosEvent *out_ev,
@@ -43,8 +35,6 @@ typedef int (*KosInstallFunc)(
 
 typedef struct {
   PyTypeObject type;
-  KosCallHandler tp_kos_call;
-  KosCallHandler tp_kos_tail_call;
   KosInstallFunc tp_kos_install;       /* non-tail; may be NULL */
   KosInstallFunc tp_kos_tail_install;  /* tail; may be NULL; NULL => no TCO */
 } KosCallableTypeObject;
@@ -58,8 +48,6 @@ extern KosCallableTypeObject KosCallableType;
 #define KosCallable_Check(obj)                                           \
   ((obj) && PyType_IsSubtype((obj)->ob_type, KOS_CALLABLE_PYTYPE(KosCallableType)))
 
-#define KosCallableType_CALL(typ)      (((KosCallableTypeObject *) (typ))->tp_kos_call)
-#define KosCallableType_TAIL_CALL(typ) (((KosCallableTypeObject *) (typ))->tp_kos_tail_call)
 #define KosCallableType_INSTALL(typ)       (((KosCallableTypeObject *) (typ))->tp_kos_install)
 #define KosCallableType_TAIL_INSTALL(typ)  (((KosCallableTypeObject *) (typ))->tp_kos_tail_install)
 

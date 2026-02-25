@@ -103,8 +103,6 @@ KosCallableTypeObject KosPyDelimitedContinuationType = {
     .tp_clear = delimited_continuation_clear,
     .tp_base = KOS_CALLABLE_PYTYPE(KosCallableType),
   },
-  .tp_kos_call = kos_callable_continuation_call,
-  .tp_kos_tail_call = kos_callable_continuation_call,
   .tp_kos_install = kos_install_continuation,
   .tp_kos_tail_install = NULL,
 };
@@ -274,8 +272,6 @@ KosCallableTypeObject KosPyContinuationType = {
     .tp_clear = continuation_clear,
     .tp_base = KOS_CALLABLE_PYTYPE(KosCallableType),
   },
-  .tp_kos_call = kos_callable_continuation_call,
-  .tp_kos_tail_call = kos_callable_continuation_call,
   .tp_kos_install = kos_install_continuation,
   .tp_kos_tail_install = NULL,
 };
