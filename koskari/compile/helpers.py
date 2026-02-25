@@ -24,6 +24,7 @@ __all__ = (
     "convert_bindings",
     "gather_bindings",
     "gather_formals",
+    "gather_parameters_ng",
     "gather_parameters",
     "helper_begin",
     "helper_binding",
@@ -227,6 +228,91 @@ def gather_parameters(args, source=None):
         raise CompilerException("leftover parameters %r" % arg, source)
 
     return (positional, keywords, defaults, star, starstar)
+
+
+def gather_parameters_ng(args, source=None):
+    """
+    Parse call-site argument list into interleaved args_seq and kwds_seq.
+
+    Supports Python 3.5+ semantics: positionals interleave with star-args;
+    keywords interleave with starstar-args. All positionals and * must come
+    before any keywords or **; a keyword cannot be followed by * or positional.
+
+    :param args: pair, improper list, or single symbol (rest arg)
+    :param source: optional source form for error context
+    :return: (args_seq, kwds_seq)
+        - args_seq: list of (index, expr) for positionals or ("*", symbol)
+          for star-args
+        - kwds_seq: list of (keyword_name, expr) for keywords or ("**", symbol)
+          for starstar-args
+    :raises CompilerException: on invalid parameter list
+    """
+
+    undefined = object()
+
+    if is_symbol(args) or is_lazygensym(args):
+        return ([("*", args)], [])
+
+    elif isinstance(args, (list, tuple)):
+        improper = False
+        args = cons(*args, nil) if args else nil
+
+    elif is_proper(args):
+        improper = False
+
+    elif is_pair(args):
+        improper = True
+
+    else:
+        raise CompilerException("parameters must be symbol or pair, not %r"
+                               % args, source)
+
+    args_seq = []
+    kwds_seq = []
+    pos_index = 0
+    in_kwds_phase = False
+
+    iargs = iter(unpack(args))
+    arg = next(iargs, undefined)
+
+    while arg is not undefined:
+        if is_keyword(arg):
+            if arg is _keyword_star:
+                if in_kwds_phase:
+                    raise CompilerException(
+                        "* args must come before keyword arguments", source)
+                star_sym = next(iargs, undefined)
+                if star_sym is undefined:
+                    raise CompilerException("* keyword parameter needs value",
+                                           source)
+                args_seq.append(("*", star_sym))
+            elif arg is _keyword_starstar:
+                in_kwds_phase = True
+                starstar_sym = next(iargs, undefined)
+                if starstar_sym is undefined:
+                    raise CompilerException(
+                        "** keyword parameter needs value", source)
+                kwds_seq.append(("**", starstar_sym))
+            else:
+                in_kwds_phase = True
+                value = next(iargs, undefined)
+                if value is undefined:
+                    raise CompilerException(
+                        "missing value for keyword parameter %s" % arg, source)
+                kwds_seq.append((str(arg), value))
+        else:
+            if in_kwds_phase:
+                raise CompilerException(
+                    "positional arguments must come before keywords", source)
+            args_seq.append((pos_index, arg))
+            pos_index += 1
+
+        arg = next(iargs, undefined)
+
+    if improper and args_seq:
+        last = args_seq.pop()
+        args_seq.append(("*", last[1]))
+    return (args_seq, kwds_seq)
 
 
 def gather_formals(args, source=None):

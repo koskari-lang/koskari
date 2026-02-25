@@ -86,14 +86,41 @@ class SpecialsTestCase(unittest.TestCase):
         return compiler.complete(fragment, mode=CompilerMode.EXPRESSION)
 
 
+    CALL_OPCODES = (
+        OpCode.KOS_OP_CALL,
+        OpCode.KOS_OP_TAIL_CALL,
+        OpCode.KOS_OP_CALL_NAMES,
+        OpCode.KOS_OP_TAIL_CALL_NAMES,
+        OpCode.KOS_OP_CALL_STAR,
+        OpCode.KOS_OP_TAIL_CALL_STAR,
+    )
+
+
     def call_ops(self, code):
         """
-        List of (index, opcode, arg) for CALL and TAIL_CALL in code
+        List of (index, opcode, arg) for call opcodes in code
         """
 
         return [(i, op, arg) for i in range(code.length())
                 for op, arg in [code.oparg(i)]
-                if op in (OpCode.KOS_OP_CALL, OpCode.KOS_OP_TAIL_CALL)]
+                if op in self.CALL_OPCODES]
+
+
+    def arg_building_ops(self, code):
+        """
+        List of (index, opcode, arg) for BUILD_ARGS, COMBINE_ARGS,
+        BUILD_KWDS_NAMES, COMBINE_KWDS in code
+        """
+
+        arg_ops = (
+            OpCode.KOS_OP_BUILD_ARGS,
+            OpCode.KOS_OP_COMBINE_ARGS,
+            OpCode.KOS_OP_BUILD_KWDS_NAMES,
+            OpCode.KOS_OP_COMBINE_KWDS,
+        )
+        return [(i, op, arg) for i in range(code.length())
+                for op, arg in [code.oparg(i)]
+                if op in arg_ops]
 
 
     def lambda_body_code(self, code):

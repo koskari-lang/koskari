@@ -78,31 +78,62 @@ body compiles to pushing `None` and returning it.
 **Symbol:** `compile/call`
 
 **Syntax:** `(compile/call CALLEE ARG ...)`
-With optional keyword args: `(compile/call CALLEE ARG ... KEY: VAL ...)`
-With rest args: `(compile/call CALLEE ARG ... * REST)` or `** KW-REST`.
+
+Argument specifiers (order matters; analogous to Python 3.5+):
+
+| Form        | Syntax        | Example                | Pythonic equivalent   |
+| ----------- | ------------- | ---------------------- | --------------------- |
+| Positional  | `EXPR ...`    | `(f a b c)`            | `f(a, b, c)`          |
+| Keyword     | `KEY: VAL`    | `(f x: 1 y: 2)`        | `f(x=1, y=2)`         |
+| Star args   | `*: EXPR`     | `(f *: more)`          | `f(*more)`            |
+| Star kwargs | `**: EXPR`    | `(f **: kwargs)`       | `f(**kwargs)`         |
+
+Positionals may interleave with `*:` (star args); keywords may interleave with
+`**:` (star kwargs). All positionals and `*:` must come before any keywords or
+`**:`; a keyword cannot be followed by `*:` or a positional. Full form examples:
+
+```scheme
+(compile/call fn a b *: more x: xval y: yval **: kwargs)
+```
+
+is equivalent to `fn(a, b, *more, x=xval, y=yval, **kwargs)` in Python.
+
+```scheme
+(compile/call fn a *: bargs c *: dargs)
+(compile/call fn x: 1 **: kw1 y: 2 **: kw2)
+```
+
+are equivalent to `fn(a, *bargs, c, *dargs)` and
+`fn(x=1, **kw1, y=2, **kw2)` in Python.
 
 **Use-case:** Generic function application. Evaluates the callee and each
-argument, then emits a call instruction. Supports positional arguments only in
-the current VM (CALL). Keyword and star forms emit CALL_NAMES / CALL_STAR, which
-are stubbed in the interpreter; calls that use keyword or rest arguments are
-not yet runnable and will raise at runtime until those opcodes are implemented.
+argument, then emits CALL (positional only), CALL_NAMES (positional + keywords),
+or CALL_STAR (any use of `*:` or `**:`).
 
 **Behaviour:** Compiles the first subform (the callee), then parses the
-remaining forms with `gather_parameters` into positional, keyword, and
-optional `*` / `**` rest. For positional-only calls, emits code that evaluates
-each argument and then `CALL n`. Tail-call mode (`tc`) is respected when set by
-the compiler.
+remaining forms with `gather_parameters_ng` into positionals and star-args
+(interleaved) and keywords and starstar-args (interleaved). Positional-only
+calls emit `CALL n`; keyword calls emit `CALL_NAMES`; any star or starstar use
+emits `CALL_STAR`. Tail-call mode (`tc`) is respected when set by the compiler.
 
 **Examples:**
 
 ```scheme
-;; Positional call (fully supported)
+;; Positional
 (compile/call add 1 2)
 (compile/call my-func a b c)
 
-;; Keyword and star forms (emit opcodes; VM support pending)
+;; Keyword (KEY: VAL)
 (compile/call fn 1 2 name: "x")
+
+;; Star args (*: EXPR) and star kwargs (**: EXPR)
 (compile/call apply-fn *: args)
+(compile/call merge *: pos **: kw)
+(compile/call fn a b *: rest x: 1 **: extra)
+
+;; Interleaved (Python 3.5+ style)
+(compile/call fn a *: bargs c *: dargs)
+(compile/call fn x: 1 **: kw1 y: 2 **: kw2)
 ```
 
 

@@ -20,7 +20,8 @@ import unittest
 
 from koskari.types import cons, keyword, nil, symbol
 from koskari.compile.exceptions import CompilerException
-from koskari.compile.helpers import gather_formals, gather_parameters
+from koskari.compile.helpers import gather_formals, gather_parameters_ng
+from koskari.compile.helpers import gather_parameters
 
 
 class TestGatherParameters(unittest.TestCase):
@@ -124,6 +125,124 @@ class TestGatherParameters(unittest.TestCase):
     def test_not_symbol_or_pair_raises(self):
         with self.assertRaises(CompilerException):
             gather_parameters(42)
+
+
+class TestGatherParametersNg(unittest.TestCase):
+
+    def test_positional_only(self):
+        args = cons(symbol("a"), cons(symbol("b"), nil))
+        args_seq, kwds_seq = gather_parameters_ng(args)
+        self.assertEqual(args_seq, [(0, symbol("a")), (1, symbol("b"))])
+        self.assertEqual(kwds_seq, [])
+
+    def test_empty_list(self):
+        args_seq, kwds_seq = gather_parameters_ng(nil)
+        self.assertEqual(args_seq, [])
+        self.assertEqual(kwds_seq, [])
+
+    def test_single_symbol_rest(self):
+        rest = symbol("args")
+        args_seq, kwds_seq = gather_parameters_ng(rest)
+        self.assertEqual(args_seq, [("*", rest)])
+        self.assertEqual(kwds_seq, [])
+
+    def test_keywords(self):
+        k1 = keyword("k1")
+        k2 = keyword("k2")
+        v1 = symbol("v1")
+        v2 = symbol("v2")
+        args = cons(k1, cons(v1, cons(k2, cons(v2, nil))))
+        args_seq, kwds_seq = gather_parameters_ng(args)
+        self.assertEqual(args_seq, [])
+        self.assertEqual(kwds_seq, [("k1", v1), ("k2", v2)])
+
+    def test_positional_then_keywords(self):
+        a = symbol("a")
+        b = symbol("b")
+        k = keyword("x")
+        v = symbol("v")
+        args = cons(a, cons(b, cons(k, cons(v, nil))))
+        args_seq, kwds_seq = gather_parameters_ng(args)
+        self.assertEqual(args_seq, [(0, a), (1, b)])
+        self.assertEqual(kwds_seq, [("x", v)])
+
+    def test_improper_list_rest(self):
+        a = symbol("a")
+        rest = symbol("rest")
+        args = cons(a, rest)
+        args_seq, kwds_seq = gather_parameters_ng(args)
+        self.assertEqual(args_seq, [(0, a), ("*", rest)])
+        self.assertEqual(kwds_seq, [])
+
+    def test_star_starstar(self):
+        star_sym = symbol("args")
+        starstar_sym = symbol("kwargs")
+        k = keyword("*")
+        kk = keyword("**")
+        args = cons(k, cons(star_sym, cons(kk, cons(starstar_sym, nil))))
+        args_seq, kwds_seq = gather_parameters_ng(args)
+        self.assertEqual(args_seq, [("*", star_sym)])
+        self.assertEqual(kwds_seq, [("**", starstar_sym)])
+
+    def test_interleaved_positional_and_star(self):
+        a = symbol("a")
+        bargs = symbol("bargs")
+        c = symbol("c")
+        dargs = symbol("dargs")
+        k_star = keyword("*")
+        args = cons(a, cons(k_star, cons(bargs, cons(c, cons(
+            k_star, cons(dargs, nil))))))
+        args_seq, kwds_seq = gather_parameters_ng(args)
+        self.assertEqual(args_seq, [
+            (0, a), ("*", bargs), (1, c), ("*", dargs)])
+        self.assertEqual(kwds_seq, [])
+
+    def test_interleaved_keyword_and_starstar(self):
+        x = keyword("x")
+        xval = symbol("xval")
+        kw1 = symbol("kw1")
+        y = keyword("y")
+        yval = symbol("yval")
+        kw2 = symbol("kw2")
+        kk = keyword("**")
+        args = cons(x, cons(xval, cons(kk, cons(kw1, cons(
+            y, cons(yval, cons(kk, cons(kw2, nil))))))))
+        args_seq, kwds_seq = gather_parameters_ng(args)
+        self.assertEqual(args_seq, [])
+        self.assertEqual(kwds_seq, [
+            ("x", xval), ("**", kw1), ("y", yval), ("**", kw2)])
+
+    def test_missing_value_for_keyword_raises(self):
+        args = cons(keyword("a"), nil)
+        with self.assertRaises(CompilerException) as ctx:
+            gather_parameters_ng(args)
+        self.assertIn("keyword", str(ctx.exception).lower())
+
+    def test_star_after_keyword_raises(self):
+        a = symbol("a")
+        k = keyword("a")
+        v = symbol("v")
+        k_star = keyword("*")
+        star_sym = symbol("foo")
+        args = cons(a, cons(k, cons(v, cons(k_star, cons(star_sym, nil)))))
+        with self.assertRaises(CompilerException) as ctx:
+            gather_parameters_ng(args)
+        self.assertIn("*", str(ctx.exception))
+        self.assertIn("before keyword", str(ctx.exception).lower())
+
+    def test_positional_after_keyword_raises(self):
+        k = keyword("x")
+        v = symbol("v")
+        extra = symbol("extra")
+        args = cons(k, cons(v, cons(extra, nil)))
+        with self.assertRaises(CompilerException) as ctx:
+            gather_parameters_ng(args)
+        self.assertIn("positional", str(ctx.exception).lower())
+        self.assertIn("before keyword", str(ctx.exception).lower())
+
+    def test_not_symbol_or_pair_raises(self):
+        with self.assertRaises(CompilerException):
+            gather_parameters_ng(42)
 
 
 class TestGatherFormals(unittest.TestCase):
