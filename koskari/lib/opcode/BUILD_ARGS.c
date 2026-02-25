@@ -14,9 +14,24 @@
 */
 
 /**
-   BUILD_ARGS: arg unused. Build positional args tuple from stack; not yet implemented.
+   BUILD_ARGS: arg = count of positional arguments.
+   Stack: [..., v_0, ..., v_{n-1}] -> [..., tuple].
+   Pop n elements and push a tuple of them.
 */
 
 KOS_OP_HANDLER(BUILD_ARGS) {
-  return op_unimplemented_stub(ctx, out_ev, insn);
+  unsigned opa = KosOp_ARG(insn);
+  PyObject *built = KosStackBlock_PopTail(&CURRENT_STACK(ctx), (size_t) opa);
+
+  if (! built)
+    return -1;
+
+  if (KosStackBlock_PushRef(&CURRENT_STACK(ctx), built) < 0) {
+    Py_DECREF(built);
+    return -1;
+  }
+  Py_DECREF(built);
+
+  (void) out_ev;
+  return 0;
 }

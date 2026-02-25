@@ -14,10 +14,36 @@
 */
 
 /**
-   BUILD_KWDS_NAMES: arg = constant (names). Build keyword dict from names and stack;
-   not yet implemented.
+   BUILD_KWDS_NAMES: arg = constant pool index of names tuple.
+   Stack: [..., v_0, ..., v_{n-1}] -> [..., dict].
+   Pop n values and map names[i] -> value[i]; push the resulting dict.
 */
 
 KOS_OP_HANDLER(BUILD_KWDS_NAMES) {
-  return op_unimplemented_stub(ctx, out_ev, insn);
+  PyObject *names = KosCode_GetConstant((PyObject *) CURRENT_CODE(ctx),
+                                         KosOp_ARG(insn));
+
+  if (! names)
+    return -1;
+
+  if (! PyTuple_CheckExact(names)) {
+    PyErr_Format(PyExc_TypeError, "BUILD_KWDS_NAMES names must be tuple, not %R",
+                 names);
+    return -1;
+  }
+
+  PyObject *kwds = KosStackBlock_PopTailDictFromNames(&CURRENT_STACK(ctx),
+                                                       names);
+
+  if (! kwds)
+    return -1;
+
+  if (KosStackBlock_PushRef(&CURRENT_STACK(ctx), kwds) < 0) {
+    Py_DECREF(kwds);
+    return -1;
+  }
+  Py_DECREF(kwds);
+
+  (void) out_ev;
+  return 0;
 }

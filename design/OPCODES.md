@@ -1363,9 +1363,14 @@ Check jumps: if the predicate does **not** hold, jump to `arg`. All take LABEL; 
 ### KOS_OP_BUILD_ARGS
 
 - **Style**: COUNT. Arg = number of positional arguments.
-- **Status**: Stub.
-- **Stack**: (Intended: build positional args bundle from stack for CALL.)
-- **Example:** (Stub; no runtime table.)
+- **Status**: Implemented.
+- **Stack**: `[..., v_0, ..., v_{n-1}] → [..., tuple]`. Pop n elements and push a tuple of them.
+- **Example:** Build empty args. Covered by `tests/lib/opcode/test_arg_opcodes.py`.
+
+| index | opcode    | arg | arg view | comment |
+|------:|-----------|-----|----------|---------|
+| 0     | BUILD_ARGS| 0   | 0        | stack: [..., ()] |
+| 1     | RETURN    | 1   | 1        | |
 
 ---
 
@@ -1386,12 +1391,29 @@ Check jumps: if the predicate does **not** hold, jump to `arg`. All take LABEL; 
 
 ---
 
-### KOS_OP_BUILD_KWDS, KOS_OP_BUILD_KWDS_NAMES, KOS_OP_COMBINE_ARGS, KOS_OP_COMBINE_KWDS
+### KOS_OP_BUILD_KWDS
 
-- **Styles**: PAIR_COUNT, CONST, COUNT, COUNT.
-- **Status**: Stub.
-- **Stack**: (Intended: build keyword/combined args for CALL_NAMES/CALL_STAR.)
-- **Example:** (Stub; no runtime table.)
+- **Style**: PAIR_COUNT. Arg = number of keyword pairs.
+- **Status**: Implemented.
+- **Stack**: `[..., k_0, v_0, ..., k_{n-1}, v_{n-1}] → [..., dict]`. Pop 2*opa elements as key,value pairs and push a dict.
+
+### KOS_OP_BUILD_KWDS_NAMES
+
+- **Style**: CONST. Arg = constant pool index of names tuple.
+- **Status**: Implemented.
+- **Stack**: `[..., v_0, ..., v_{n-1}] → [..., dict]`. Pop n values, map names[i] → value[i], push dict. Names tuple from constant pool; values from stack (val_0 deepest, val_{n-1} at TOS).
+
+### KOS_OP_COMBINE_ARGS
+
+- **Style**: COUNT. Arg = count of sequences to combine.
+- **Status**: Implemented.
+- **Stack**: `[..., t_0, ..., t_{m-1}] → [..., tuple]`. Concatenate the m sequences (each via iteration) into a single tuple. Non-tuple values are converted with PySequence_Tuple when m == 1.
+
+### KOS_OP_COMBINE_KWDS
+
+- **Style**: COUNT. Arg = count of dicts to merge.
+- **Status**: Implemented.
+- **Stack**: `[..., d_0, ..., d_{m-1}] → [..., dict]`. Merge the m dicts (later overwrites earlier on key clash) and push result.
 
 
 ## 17. Calls

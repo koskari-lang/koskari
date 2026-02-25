@@ -86,7 +86,7 @@ The VM in `eval.c` uses a jump table; every opcode has a handler. Handlers are e
 **Fully implemented** (handler does real work; no stub):
 - **Pseudo / stack**: NOOP, LABEL, POSITION (no-op at runtime: advance PC only; no effect), DUP, POP, CONST
 - **Pair construction and access**: CAR, CDR, CONS (CAR/CDR pop one value and push car/cdr; CONS arg = count, stack bottom-to-top = first element … tail; TailPtr + ConsFromPtr + Drop + push result)
-- **Argument production**: BUILD_FUNCTION (build Function from FunctionSpec; stack [fspec, ...kw_defaults, names_tuple] → [function])
+- **Argument production**: BUILD_ARGS, BUILD_KWDS, BUILD_KWDS_NAMES, COMBINE_ARGS, COMBINE_KWDS (build args/kwds for CALL_NAMES/CALL_STAR), BUILD_FUNCTION (build Function from FunctionSpec; stack [fspec, ...kw_defaults, names_tuple] → [function])
 - **Control**: RETURN, AWAIT, YIELD (suspend with value; resumption via send; async gen support), YIELD_FROM (delegate to sub-iterator/gen; KOS_DYN_YIELD_FROM; send/throw/close; handler in koskari/lib/opcode/yield_from.c)
 - **Calls**: CALL (arg = N; stack [callable, arg_0, ..., arg_{N-1}]; Continuation/DelimitedContinuation → call_call_continuation; KosExpression/KosFunction → new frame in same loop; other callables → PyObject_Call then push_or_await; **defer** return values are not auto-awaited — pushed as plain values), TAIL_CALL (arg = N; same stack layout as CALL; replaces current frame with callee frame for proper tail-call semantics; compiler emits when call is in tail position)
 - **Introspection**: GLOBALS, LOCALS
@@ -112,7 +112,6 @@ The VM in `eval.c` uses a jump table; every opcode has a handler. Handlers are e
 - **Dynamic wind (partial)**: END_WIND is implemented (terminates before/after hook block, calls `kos_end_hook`; if unwind was in progress, resumes unwinding and delivers any stashed return). PUSH_WIND and POP_WIND remain stubs. Unified extent wind/unwind helpers (`kos_dyn_wind_wind`, `kos_dyn_wind_unwind`, etc.) are used by both simple pop and transfer plans; see design/interpreter/extent-wind-unwind.md.
 
 **Not implemented (stubs)** — hitting these at runtime raises "unimplemented opcode":
-- **Argument building**: BUILD_ARGS, BUILD_KWDS, BUILD_KWDS_NAMES, COMBINE_ARGS, COMBINE_KWDS (BUILD_FUNCTION is implemented)
 - **Calls**: CALL_NAMES, CALL_STAR; CALL_ATTR, CALL_ATTR_NAMES, CALL_ATTR_STAR; RECUR, RECUR_NAMES, RECUR_STAR; TAIL_CALL_NAMES, TAIL_CALL_STAR; TAIL_RECUR, TAIL_RECUR_NAMES, TAIL_RECUR_STAR
 - **Block control (remaining)**: PUSH_BEGIN, PUSH_CLASS, POP_BEGIN (stubs)
 - **Wind / region**: PUSH_WIND, POP_WIND (stubs); PUSH_REGION, POP_REGION
@@ -225,7 +224,7 @@ There are no **partially** implemented opcodes; each handler is either full, a s
 - Macro system (reader macros, defmacro, defalias)
 - Remaining control flow constructs (with, begin, class blocks)
 - Compiler: remaining specials, macro expansion, optimization passes
-- Remaining opcode handlers: BUILD_ARGS, BUILD_KWDS, COMBINE_*, CALL_NAMES, CALL_STAR, CALL_ATTR*, RECUR*, TAIL_CALL_NAMES, TAIL_CALL_STAR, TAIL_RECUR*, PUSH_DYN_WITH, POP_DYN_WITH, PUSH_BEGIN, PUSH_CLASS, PUSH_WIND, POP_WIND, END_WIND, PUSH_REGION, POP_REGION (PUSH_WITH, POP_WITH implemented; see "Opcodes: implementation status" above; with/dyn-with design in design/interpreter/with-dyn-with.md)
+- Remaining opcode handlers: CALL_NAMES, CALL_STAR, CALL_ATTR*, RECUR*, TAIL_CALL_NAMES, TAIL_CALL_STAR, TAIL_RECUR*, PUSH_DYN_WITH, POP_DYN_WITH, PUSH_BEGIN, PUSH_CLASS, PUSH_WIND, POP_WIND, END_WIND, PUSH_REGION, POP_REGION (BUILD_ARGS, BUILD_KWDS, BUILD_KWDS_NAMES, COMBINE_ARGS, COMBINE_KWDS, PUSH_WITH, POP_WITH implemented; see "Opcodes: implementation status" above; with/dyn-with design in design/interpreter/with-dyn-with.md)
 
 ### Needs Reconsideration
 - CPython bytecode target (abandoned)

@@ -108,15 +108,6 @@ class TestStubOpcodes(CevalTest):
         self.assertIn("no runtime implementation", str(ctx.exception))
 
 
-    def test_build_args_raises_not_implemented(self):
-        """
-        BUILD_ARGS raises RuntimeError
-        """
-
-        with self.assertRaises(RuntimeError):
-            self._run_stub_opcode("BUILD_ARGS", 0)
-
-
     def test_build_function_stack_underrun_raises(self):
         """
         BUILD_FUNCTION with no fspec on stack raises (stack underrun)
@@ -124,42 +115,6 @@ class TestStubOpcodes(CevalTest):
 
         with self.assertRaises(RuntimeError):
             self._run_stub_opcode("BUILD_FUNCTION", 0)
-
-
-    def test_build_kwds_raises_not_implemented(self):
-        """
-        BUILD_KWDS raises RuntimeError
-        """
-
-        with self.assertRaises(RuntimeError):
-            self._run_stub_opcode("BUILD_KWDS", 0)
-
-
-    def test_build_kwds_names_raises_not_implemented(self):
-        """
-        BUILD_KWDS_NAMES raises RuntimeError
-        """
-
-        with self.assertRaises(RuntimeError):
-            self._run_stub_opcode("BUILD_KWDS_NAMES", "x")
-
-
-    def test_combine_args_raises_not_implemented(self):
-        """
-        COMBINE_ARGS raises RuntimeError
-        """
-
-        with self.assertRaises(RuntimeError):
-            self._run_stub_opcode("COMBINE_ARGS", 0)
-
-
-    def test_combine_kwds_raises_not_implemented(self):
-        """
-        COMBINE_KWDS raises RuntimeError
-        """
-
-        with self.assertRaises(RuntimeError):
-            self._run_stub_opcode("COMBINE_KWDS", 0)
 
 
     def test_call_names_raises_not_implemented(self):

@@ -14,9 +14,24 @@
 */
 
 /**
-   BUILD_KWDS: arg unused. Build keyword dict from stack; not yet implemented.
+   BUILD_KWDS: arg = pair count (number of keyword pairs).
+   Stack: [..., k_0, v_0, ..., k_{n-1}, v_{n-1}] -> [..., dict].
+   Pop 2*opa elements as key,value pairs and push a dict.
 */
 
 KOS_OP_HANDLER(BUILD_KWDS) {
-  return op_unimplemented_stub(ctx, out_ev, insn);
+  unsigned opa = KosOp_ARG(insn);
+  PyObject *built = KosStackBlock_PopTailDict(&CURRENT_STACK(ctx), (size_t) opa);
+
+  if (! built)
+    return -1;
+
+  if (KosStackBlock_PushRef(&CURRENT_STACK(ctx), built) < 0) {
+    Py_DECREF(built);
+    return -1;
+  }
+  Py_DECREF(built);
+
+  (void) out_ev;
+  return 0;
 }

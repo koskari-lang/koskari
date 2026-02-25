@@ -14,9 +14,51 @@
 */
 
 /**
-   COMBINE_KWDS: arg unused. Combine keyword args for call; not yet implemented.
+   COMBINE_KWDS: arg = count of dicts to merge.
+   Stack: [..., d_0, ..., d_{m-1}] -> [..., dict].
+   Merge the m dicts (later overwrite earlier on key clash) and push result.
 */
 
 KOS_OP_HANDLER(COMBINE_KWDS) {
-  return op_unimplemented_stub(ctx, out_ev, insn);
+  unsigned opa = KosOp_ARG(insn);
+
+  PyObject *built = PyDict_New();
+  if (! built)
+    return -1;
+
+  if (opa == 0) {
+    if (KosStackBlock_PushRef(&CURRENT_STACK(ctx), built) < 0) {
+      Py_DECREF(built);
+      return -1;
+    }
+    Py_DECREF(built);
+    (void) out_ev;
+    return 0;
+  }
+
+  PyObject *const *vals = KosStackBlock_TailPtr(CURRENT_STACK(ctx),
+                                                 (size_t) opa);
+  if (! vals) {
+    Py_DECREF(built);
+    return -1;
+  }
+
+  for (unsigned i = 0; i < opa; i++) {
+    if (PyDict_Merge(built, vals[i], 1) != 0) {
+      Py_DECREF(built);
+      KosStackBlock_DropNoErr(&CURRENT_STACK(ctx), (size_t) opa);
+      return -1;
+    }
+  }
+
+  KosStackBlock_DropNoErr(&CURRENT_STACK(ctx), (size_t) opa);
+
+  if (KosStackBlock_PushRef(&CURRENT_STACK(ctx), built) < 0) {
+    Py_DECREF(built);
+    return -1;
+  }
+  Py_DECREF(built);
+
+  (void) out_ev;
+  return 0;
 }

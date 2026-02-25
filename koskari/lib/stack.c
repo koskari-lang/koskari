@@ -872,7 +872,7 @@ static int KosStackBlock_PopTailPtr(
 }
 
 
-static PyObject *KosStackBlock_PopTailDict(
+PyObject *KosStackBlock_PopTailDict(
     KosStackBlock **self,
     size_t count) {
 
