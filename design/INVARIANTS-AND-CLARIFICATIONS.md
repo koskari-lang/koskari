@@ -124,7 +124,7 @@ These are **commitments**: they must hold for correct behavior. They are elabora
 
 - **KosDynNode**: Single struct for all chain node kinds. Contains `parent`, `kind`, `flags`, `node_id` (stable uint32 assigned on alloc, copied on clone for LCA matching across disjoint chains) and a union `u` with kind-specific payloads (frame, prompt, cc, wind, region, ns). Typedefs (KosDynFrame, KosDynPrompt, etc.) refer to the same struct. **Access node fields only via the macros** in dynchain.h (e.g. KosDynNode_KIND, KosDynNode_NODE_ID, KosDynFrame_PC, KosDynRegion_STYLE); do not touch `u` or base fields directly outside the header.
 
-- **KosDynFrame** (union variant): Function activation; `code` (borrowed), `pc`, `stack` (owned), `ns` (owned). Frame owns stack and ns; code is not owned. Access via KosDynFrame_CODE, KosDynFrame_PC, KosDynFrame_STACK, KosDynFrame_NS, KosDynFrame_FLAGS.
+- **KosDynFrame** (union variant): Function activation; `code` (borrowed), `pc`, `stack` (owned), `ns` (owned), `native_handler` (optional; when non-NULL, handler is frame evaluator). Frame owns stack and ns; code is not owned. Access via KosDynFrame_CODE, KosDynFrame_PC, KosDynFrame_STACK, KosDynFrame_NS, KosDynFrame_FLAGS, KosDynFrame_NATIVE_HANDLER.
 
 - **KosDynPrompt** (union variant): Delimiter for reset; `prompt_id` for matching (0 = default). Optional `handler_code`/`handler_pc` for the handler run after shift aborts. Access via KosDynPrompt_ID, KosDynPrompt_HANDLER_CODE, KosDynPrompt_HANDLER_PC.
 

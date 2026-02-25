@@ -15,8 +15,8 @@ This document reflects the **Koskari revision**: defer cookies and dedicated nat
 
 **Partially implemented.**
 
-- **Implemented**: Single dispatch for CALL and TAIL_CALL; type-slot lookup; handler contract (signature, return 0/1/-1); default handler (Python call + push_or_await); KosFunction, KosExpression, DelimitedContinuation, Continuation, and apply as kos callables via `KosCallableTypeObject` and `tp_kos_call` / `tp_kos_tail_call`; native handler as frame evaluator; resume via `frame->pc` as native label; transfer plan model (context holds plan, eval loop drains it). Apply: 1/2/3-argument form, flattening when `fn` is KosFunction or KosExpression and `kwds` is NULL, else `PyObject_Call` + push_or_await. AWAIT uses `kos_await_dispatch` (defer vs push_or_await).
-- **Not implemented**: Install slots (`tp_kos_install`, `tp_kos_tail_install`) and unified invocation entry points (`kos_callable_call`, `kos_callable_tail_call`) as the canonical interface; CALL_NAMES, CALL_STAR, TAIL_CALL_NAMES, TAIL_CALL_STAR (still stubs); kos next protocol.
+- **Implemented**: Install slots (`tp_kos_install`, `tp_kos_tail_install`) and unified invocation entry points (`kos_callable_call`, `kos_callable_tail_call`) as the canonical interface; single dispatch for CALL and TAIL_CALL; type-slot lookup; handler contract (signature, return 0/1/-1); default handler (Python call + push_or_await) for types without install; KosFunction, KosExpression, DelimitedContinuation, Continuation, and apply all use install slots (with legacy `tp_kos_call` / `tp_kos_tail_call` fallback for types without install); native handler as frame evaluator; resume via `frame->pc` as native label; transfer plan model (context holds plan, eval loop drains it). Apply: 1/2/3-argument form, flattening when `fn` is KosFunction or KosExpression and `kwds` is NULL, else native frame with handler for `PyObject_Call` + push_or_await. AWAIT uses `kos_await_dispatch` (defer vs push_or_await).
+- **Not implemented**: CALL_NAMES, CALL_STAR, TAIL_CALL_NAMES, TAIL_CALL_STAR (still stubs); kos next protocol.
 
 ## Purpose
 
@@ -199,7 +199,7 @@ All CALL-family opcodes reduce to:
 
 There is no separate "begin argument" channel; argument handling is entirely the responsibility of the install function.
 
-**Current implementation**: CALL and TAIL_CALL use `kos_callable_call` / `kos_callable_tail_call`, which currently dispatch to `tp_kos_call` / `tp_kos_tail_call` when install slots are NULL (legacy fallback). CALL_NAMES, CALL_STAR, and the TAIL_* variants are not yet wired to the unified path.
+**Current implementation**: CALL and TAIL_CALL use `kos_callable_call` / `kos_callable_tail_call`, which dispatch to `tp_kos_install` / `tp_kos_tail_install` when non-NULL, else fall back to `tp_kos_call` / `tp_kos_tail_call` (legacy). CALL_NAMES, CALL_STAR, and the TAIL_* variants are not yet wired to the unified path.
 
 ### Resume precedence — native handler is the frame evaluator (Tweak 2)
 
@@ -293,7 +293,7 @@ So from Koskari, `(apply fn arglist kwds)` is equivalent to calling `fn` directl
 - The apply callable has `tp_call` (for Python) and `tp_kos_install` / `tp_kos_tail_install` (for the evaluator).
 - The install maps the 1/2/3-argument convention: element 0 = `fn`, element 1 = `arglist`, element 2 = `kwds`. Omitted arguments are treated as empty args and no keywords.
 - When flattening, apply delegates to the inner callable's install or tail_install, which performs frame push/reset and configuration.
-- **Current implementation**: Uses `tp_kos_call` / `tp_kos_tail_call` (legacy); flattening when `fn` is exactly KosFunction or KosExpression and (for Expression) arity 0 and no kwds. Arglist-to-tuple conversion must stay in sync between the kos handler and `KosUtils_Apply` (Python `tp_call`).
+- **Current implementation**: Uses `tp_kos_install` / `tp_kos_tail_install`; flattening when `fn` is exactly KosFunction or KosExpression and (for Expression) arity 0 and no kwds; non-flattening path uses a native frame whose handler does `PyObject_Call` + push_or_await and detaches the frame before returning. Arglist-to-tuple conversion must stay in sync between the kos handler and `KosUtils_Apply` (Python `tp_call`).
 
 ---
 

@@ -36,8 +36,8 @@ KOS_DYN_YIELD_FROM, KOS_DYN_PARAM, KOS_DYN_WITH, KOS_DYN_DYN_WITH. Behavior is d
 by capability bits (`KOS_DYN_CAP_*`) and the per-kind type-ops table (`kos_dyn_type_ops[]`);
 see [dynamic-node-unified-api.md](dynamic-node-unified-api.md) for the full handler model.
 
-- **Frame** (u.frame): code (borrowed), pc (next instruction), acting_pc (instruction currently being executed), stack (owned), ns (owned), frame_flags.
-  Macros: KosDynFrame_CODE, KosDynFrame_PC, KosDynFrame_ACTING_PC, KosDynFrame_STACK, KosDynFrame_NS, KosDynFrame_FLAGS.
+- **Frame** (u.frame): code (borrowed), pc (next instruction), acting_pc (instruction currently being executed), stack (owned), ns (owned), frame_flags, native_handler (optional; when non-NULL, handler is frame evaluator; see [api/special-call-protocol.md](../api/special-call-protocol.md)).
+  Macros: KosDynFrame_CODE, KosDynFrame_PC, KosDynFrame_ACTING_PC, KosDynFrame_STACK, KosDynFrame_NS, KosDynFrame_FLAGS, KosDynFrame_NATIVE_HANDLER.
 - **Prompt** (u.prompt): prompt_id, handler_code, handler_pc.
   Macros: KosDynPrompt_ID, KosDynPrompt_HANDLER_CODE, KosDynPrompt_HANDLER_PC.
 - **Wind** (u.wind): before_code, before_pc, after_code, after_pc, entered.
