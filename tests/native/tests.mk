@@ -16,16 +16,21 @@ LIB_DIR := ../../koskari/lib
 TEST_SRCS := $(wildcard test_*.c)
 LIB_SRCS := $(wildcard $(LIB_DIR)/*.c)
 
+# Build output directory (empty = current dir; set e.g. BUILD_DIR=/build in container)
+BUILD_DIR ?=
+OBJDIR := $(or $(BUILD_DIR),.)
+VPATH := . $(LIB_DIR)
+
 # All sources
 SRCS := $(TEST_SRCS) $(LIB_SRCS)
 
-# Object files
-TEST_OBJS := $(TEST_SRCS:.c=.o)
-LIB_OBJS := $(notdir $(LIB_SRCS:.c=.o))
+# Object files (under OBJDIR when BUILD_DIR is set)
+TEST_OBJS := $(addprefix $(OBJDIR)/, $(notdir $(TEST_SRCS:.c=.o)))
+LIB_OBJS := $(addprefix $(OBJDIR)/, $(notdir $(LIB_SRCS:.c=.o)))
 OBJS := $(TEST_OBJS) $(LIB_OBJS)
 
 # Output binary
-TARGET := test_harness
+TARGET := $(OBJDIR)/test_harness
 
 # Compiler flags
 PYTHON_CFLAGS := $(shell $(PYTHON_CONFIG) --cflags 2>/dev/null || echo "-I/usr/include/python3")
@@ -90,17 +95,20 @@ asan: test-asan  ## Run tests with AddressSanitizer
 valgrind: test-valgrind  ## Run tests under Valgrind
 all: normal asan valgrind  ## Run all test modes
 
-$(TARGET): $(TEST_OBJS) $(LIB_OBJS)
+$(OBJDIR):
+	mkdir -p $@
+
+$(TARGET): $(TEST_OBJS) $(LIB_OBJS) | $(OBJDIR)
 	$(CC) $(CFLAGS) -o $@ $^ $(LDFLAGS)
 
 # Test source compilation
-%.o: %.c test_harness.h
+$(OBJDIR)/%.o: %.c test_harness.h | $(OBJDIR)
 	$(CC) $(CFLAGS) -c -o $@ $<
 
 # Library source compilation (from lib directory)
 # Pattern rule: build .o from .c and matching .h (if exists) in LIB_DIR
 # Assumes: .o and .c in same basename, .h optional, LIB_DIR already set
-%.o: $(LIB_DIR)/%.c $(LIB_DIR)/%.h $(LIB_DIR)/lib.h
+$(OBJDIR)/%.o: $(LIB_DIR)/%.c $(LIB_DIR)/%.h $(LIB_DIR)/lib.h | $(OBJDIR)
 	$(CC) $(CFLAGS) -c -o $@ $<
 
 
@@ -116,19 +124,19 @@ test: $(TARGET)  ## Run tests normally
 	@echo "Running native memory tests..."
 	@echo "Make sure the extension is built: cd ../.. && make build-ext"
 	@echo ""
-	./$(TARGET)
+	$(TARGET)
 
 # ASan build - compile all sources with sanitizer flags
 $(TARGET)-asan: CFLAGS += $(ASAN_CFLAGS)
 $(TARGET)-asan: LDFLAGS += $(ASAN_LDFLAGS)
-$(TARGET)-asan: $(TEST_SRCS) $(LIB_SRCS) test_harness.h
+$(TARGET)-asan: $(TEST_SRCS) $(LIB_SRCS) test_harness.h | $(OBJDIR)
 	$(CC) $(CFLAGS) -o $@ $(TEST_SRCS) $(LIB_SRCS) $(LDFLAGS)
 
 test-asan: $(TARGET)-asan  ## Run tests with AddressSanitizer
 	@echo "Running native memory tests with AddressSanitizer..."
 	@echo "Make sure the extension is built: cd ../.. && make build-ext"
 	@echo ""
-	ASAN_OPTIONS=$(ASAN_OPTIONS) ./$(TARGET)-asan
+	ASAN_OPTIONS=$(ASAN_OPTIONS) $(TARGET)-asan
 
 test-valgrind: $(TARGET)  ## Run tests under Valgrind
 	@echo "Running native memory tests under Valgrind..."
@@ -137,7 +145,7 @@ test-valgrind: $(TARGET)  ## Run tests under Valgrind
 	@if [ ! -f valgrind-python.supp ]; then \
 		echo "Warning: valgrind-python.supp not found, expect false positives"; \
 	fi
-	$(VALGRIND) $(VALGRIND_OPTS) ./$(TARGET)
+	$(VALGRIND) $(VALGRIND_OPTS) $(TARGET)
 
 ##@ Development
 

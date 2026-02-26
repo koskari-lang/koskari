@@ -39,6 +39,8 @@ RUN dnf install -y \
 
 WORKDIR /src/tests/native
 
+ENV BUILD_DIR=/build
+
 ENTRYPOINT ["make", "-f", "tests.mk"]
 CMD ["normal"]
 

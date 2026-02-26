@@ -142,6 +142,9 @@ clean-pyc:  ## Remove Python cache files
 	@find . -type f -name "*.pyc" -delete
 	@find . -type f -name "*.pyo" -delete
 
+clean-native:  ## Remove native test build artifacts
+	@$(MAKE) -C tests/native -f tests.mk clean
+
 clean: clean-built clean-ext clean-pyc clean-native  ## Remove all build artifacts and caches
 	@echo "Clean complete"
 
