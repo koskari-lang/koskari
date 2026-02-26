@@ -1,9 +1,8 @@
-# Container.mk - native memory test build rules
+# tests.mk - native memory test build rules
 #
 # Build and run the C test harness that verifies memory management
 # in Koskari's native types. Intended for use inside the container
-# (run-tests.sh) where Valgrind and ASan are available; invoke with
-# make -f Container.mk <target>.
+# or directly; invoke with make -f tests.mk <target>.
 
 # Python configuration
 PYTHON ?= python3
@@ -74,14 +73,19 @@ VALGRIND_OPTS := --leak-check=full \
 
 ##@ Build Targets
 
-.PHONY: all clean help
+.PHONY: all build clean help normal asan valgrind
 
 .DEFAULT_GOAL := help
 
 help:  ## Display this help
 	@awk 'BEGIN {FS = ":.*##"; printf "\nUsage:\n  make \033[36m<target>\033[0m\n"} /^[a-zA-Z0-9_-]+:.*?##/ { printf "  \033[36m%-20s\033[0m %s\n", $$1, $$2 } /^##@/ { printf "\n\033[1m%s\033[0m\n", substr($$0, 5) } ' $(MAKEFILE_LIST)
 
-all: $(TARGET)  ## Build the test harness
+build: $(TARGET)  ## Build the test harness
+
+normal: test  ## Run tests normally (default for container)
+asan: test-asan  ## Run tests with AddressSanitizer
+valgrind: test-valgrind  ## Run tests under Valgrind
+all: normal asan valgrind  ## Run all test modes
 
 $(TARGET): $(TEST_OBJS) $(LIB_OBJS)
 	$(CC) $(CFLAGS) -o $@ $^ $(LDFLAGS)
@@ -136,7 +140,7 @@ test-valgrind: $(TARGET)  ## Run tests under Valgrind
 
 .PHONY: rebuild check-python
 
-rebuild: clean all  ## Clean and rebuild
+rebuild: clean build  ## Clean and rebuild
 
 check-python:  ## Show Python configuration being used
 	@echo "Python: $(PYTHON)"

@@ -35,19 +35,10 @@ make test-native              # Run normal tests
 make test-native-asan         # Run ASan tests
 make test-native-valgrind     # Run Valgrind tests
 
-# Or from this directory (use -f Container.mk; no default Makefile)
-make -f Container.mk test           # Normal tests
-make -f Container.mk test-asan      # ASan tests
-make -f Container.mk test-valgrind  # Valgrind tests
-```
-
-### Direct Script Usage
-
-```bash
-./run-tests.sh all            # Run all modes
-./run-tests.sh normal         # Normal only
-./run-tests.sh asan           # ASan only
-./run-tests.sh valgrind       # Valgrind only
+# Or from this directory (use -f tests.mk; no default Makefile)
+make -f tests.mk test           # Normal tests
+make -f tests.mk test-asan      # ASan tests
+make -f tests.mk test-valgrind  # Valgrind tests
 ```
 
 ## File Structure
@@ -56,8 +47,7 @@ make -f Container.mk test-valgrind  # Valgrind tests
 tests/native/
 ├── README.md              # This file
 ├── Containerfile          # Container definition (Fedora + tools)
-├── Container.mk           # Build and test rules (used only via run-tests.sh / container)
-├── run-tests.sh           # Test runner script (container entrypoint)
+├── tests.mk               # Build and test rules (container entrypoint uses this)
 ├── valgrind-python.supp   # Valgrind suppressions for Python internals
 ├── test_harness.h         # Common macros and unit declarations
 ├── test_harness.c         # Main entry point
@@ -216,7 +206,7 @@ Sources are discovered via globs: test files matching `test_*.c` and library sou
 ### 5. Run Tests
 
 ```bash
-make container-test   # or: ./run-tests.sh all
+make container-test
 ```
 
 ## Tips for Writing Good Memory Tests

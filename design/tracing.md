@@ -31,7 +31,7 @@ macros must include it explicitly (same opt-in pattern as `debug.h`).
 Flags are defaulted in `tracing.h` with `#ifndef`. Override at build time:
 
 - **setup.py**: `KOS_TRACE_FREELIST=1 python setup.py build_ext`
-- **Container.mk**: `make KOS_TRACE_FREELIST=1`
+- **tests.mk**: `make KOS_TRACE_FREELIST=1`
 
 ## API
 

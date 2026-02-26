@@ -7,13 +7,13 @@
 # Build:
 #   podman build -t koskari-native-tests -f Containerfile .
 #
-# Run all tests:
+# Default (normal tests):
 #   podman run --rm -v ../../:/src:Z koskari-native-tests
 #
 # Run specific test mode:
 #   podman run --rm -v ../../:/src:Z koskari-native-tests asan
 #   podman run --rm -v ../../:/src:Z koskari-native-tests valgrind
-#   podman run --rm -v ../../:/src:Z koskari-native-tests normal
+#   podman run --rm -v ../../:/src:Z koskari-native-tests all
 #
 # author: Christopher O'Brien <obriencj@gmail.com>
 # license: GPL v.3
@@ -37,13 +37,10 @@ RUN dnf install -y \
     valgrind \
     && dnf clean all
 
-WORKDIR /src
+WORKDIR /src/tests/native
 
-# The entrypoint script handles different test modes
-ENTRYPOINT ["/src/tests/native/run-tests.sh"]
-
-# Default: run all test modes
-CMD ["all"]
+ENTRYPOINT ["make", "-f", "tests.mk"]
+CMD ["normal"]
 
 
 # The end.
