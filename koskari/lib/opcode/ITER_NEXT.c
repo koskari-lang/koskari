@@ -20,14 +20,14 @@
 */
 
 KOS_OP_HANDLER(ITER_NEXT) {
-  KosDynRegion *region = kos_find_region_for_loop(ctx);
-  if (! region || KosDynRegion_STYLE(region) != KOS_REGION_FOREACH) {
+  KosDynNode *region = kos_find_node_for_loop(ctx);
+  if (! region || ! KosDynNode_IS_FOREACH(region)) {
     PyErr_SetString(PyExc_RuntimeError,
                     "ITER_NEXT must be used inside a PUSH_FOREACH block");
     return -1;
   }
 
-  PyObject *iter = KosDynRegion_ITER(region);
+  PyObject *iter = KosDynForeach_ITER((KosDynForeach *) region);
   if (KosPyAsyncGen_Check(iter)) {
     KosPyAsyncGen *agen = (KosPyAsyncGen *) iter;
     if (agen->in_progress) {
@@ -36,7 +36,7 @@ KOS_OP_HANDLER(ITER_NEXT) {
       return -1;
     }
     if (agen->closed || ! agen->ctx) {
-      KosDynRegion_EXHAUSTED(region) = 1;
+      KosDynForeach_EXHAUSTED((KosDynForeach *) region) = 1;
       CURRENT_PC(ctx) = KosOp_ARG(insn);
       return 0;
     }
@@ -44,7 +44,7 @@ KOS_OP_HANDLER(ITER_NEXT) {
     KosContext_PENDING_AGEN(ctx) = (void *) agen;
     KosContext_PENDING_AGEN_DEFAULT(ctx) = NULL;
     KosContext_PENDING_AGEN_N(ctx) = 0;
-    KosDynRegion_ITER_NEXT_ELSE_PC(region) = KosOp_ARG(insn);
+    KosDynForeach_ITER_NEXT_ELSE_PC((KosDynForeach *) region) = KosOp_ARG(insn);
     if (op_attach_koskari_agen_frame_for_iter_next(ctx, agen, region) < 0) {
       agen->in_progress = 0;
       KosContext_PENDING_AGEN(ctx) = NULL;
@@ -64,7 +64,7 @@ KOS_OP_HANDLER(ITER_NEXT) {
       Py_DECREF(value);
       return 0;
     case GET_NEXT_EXHAUSTED:
-      KosDynRegion_EXHAUSTED(region) = 1;
+      KosDynForeach_EXHAUSTED((KosDynForeach *) region) = 1;
       CURRENT_PC(ctx) = KosOp_ARG(insn);
       return 0;
     case GET_NEXT_SUSPEND:

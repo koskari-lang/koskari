@@ -76,7 +76,7 @@ KOS_OP_HANDLER(PUSH_FOREACH) {
   }
 
   /* Push region */
-  KosDynRegion *region = kos_dyn_push_region(ctx, KOS_REGION_FOREACH,
+  KosDynNode *region = (KosDynNode *) kos_dyn_push_foreach(ctx,
                                              break_pc, continue_pc);
   if (! region) {
     Py_DECREF(iter);
@@ -86,13 +86,13 @@ KOS_OP_HANDLER(PUSH_FOREACH) {
   }
 
   /* Store result and iterator in region (takes ownership) */
-  KosDynRegion_RESULT(region) = loop_result;
-  KosDynRegion_ITER(region) = iter;
-  KosDynRegion_EXHAUSTED(region) = 0;
+  KosDynForeach_RESULT((KosDynForeach *) region) = loop_result;
+  KosDynForeach_ITER((KosDynForeach *) region) = iter;
+  KosDynForeach_EXHAUSTED((KosDynForeach *) region) = 0;
 
   /* Push stack block for iteration temporaries */
   if (KosStackBlock_PushBlock(&CURRENT_STACK(ctx)) < 0) {
-    kos_dyn_pop_region(ctx, region);
+    if (KosDynNode_IS_TRY(region)) kos_dyn_pop_try(ctx, (KosDynTry *) region); else if (KosDynNode_IS_FINALLY(region)) kos_dyn_pop_finally(ctx, (KosDynFinally *) region); else if (KosDynNode_IS_LOOP(region)) kos_dyn_pop_loop(ctx, (KosDynLoop *) region); else if (KosDynNode_IS_FOREACH(region)) kos_dyn_pop_foreach(ctx, (KosDynForeach *) region);
     return -1;
   }
 

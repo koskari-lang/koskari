@@ -42,7 +42,7 @@ KOS_OP_HANDLER(CONTINUE) {
     }
   }
 
-  KosDynRegion *region = kos_find_region_for_loop(ctx);
+  KosDynNode *region = kos_find_node_for_loop(ctx);
   if (! region) {
     Py_DECREF(result);
     PyErr_SetString(PyExc_RuntimeError, "continue outside loop");
@@ -50,18 +50,20 @@ KOS_OP_HANDLER(CONTINUE) {
   }
 
   /* Update region result with continue value */
-  Py_XDECREF(KosDynRegion_RESULT(region));
-  KosDynRegion_RESULT(region) = result;
+  if (KosDynNode_IS_LOOP(region)) Py_XDECREF(KosDynLoop_RESULT((KosDynLoop *) region)); else Py_XDECREF(KosDynForeach_RESULT((KosDynForeach *) region));
+  if (KosDynNode_IS_LOOP(region)) KosDynLoop_RESULT((KosDynLoop *) region) = result; else KosDynForeach_RESULT((KosDynForeach *) region) = result;
 
-  uint32_t continue_pc = KosDynRegion_CONTINUE_PC(region);
+  uint32_t continue_pc = (KosDynNode_IS_LOOP(region) ? KosDynLoop_CONTINUE_PC((KosDynLoop *) region) : KosDynForeach_CONTINUE_PC((KosDynForeach *) region));
 
   /* Unwind inner regions until we reach the target loop region */
   while (KosContext_DYN_TOP(ctx) != (KosDynNode *) region) {
     KosDynNode *top = KosContext_DYN_TOP(ctx);
     if (KosDynNode_IS_REGION(top)) {
-      KosDynRegion *r = (KosDynRegion *) top;
-      if (KosDynRegion_STYLE(r) == KOS_REGION_LOOP || KosDynRegion_STYLE(r) == KOS_REGION_FOREACH) {
-        kos_dyn_pop_region(ctx, r);
+      KosDynNode *r = (KosDynNode *) top;
+      if (KosDynNode_IS_LOOP(r)) {
+        kos_dyn_pop_loop(ctx, (KosDynLoop *) r);
+      } else if (KosDynNode_IS_FOREACH(r)) {
+        kos_dyn_pop_foreach(ctx, (KosDynForeach *) r);
         if (KosStackBlock_DropBlock(&CURRENT_STACK(ctx)) < 0)
           return -1;
       } else {

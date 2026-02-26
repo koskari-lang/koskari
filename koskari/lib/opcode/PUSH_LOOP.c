@@ -38,7 +38,7 @@ KOS_OP_HANDLER(PUSH_LOOP) {
   }
   uint32_t break_pc = ext->pop_pc + 1u;
 
-  KosDynRegion *region = kos_dyn_push_region(ctx, KOS_REGION_LOOP,
+  KosDynNode *region = (KosDynNode *) kos_dyn_push_loop(ctx,
                                              break_pc, continue_pc);
   if (! region) {
     PyErr_NoMemory();
@@ -47,10 +47,10 @@ KOS_OP_HANDLER(PUSH_LOOP) {
 
   /* Initialize loop result to None */
   Py_INCREF(Py_None);
-  KosDynRegion_RESULT(region) = Py_None;
+  KosDynLoop_RESULT((KosDynLoop *) region) = Py_None;
 
   if (KosStackBlock_PushBlock(&CURRENT_STACK(ctx)) < 0) {
-    kos_dyn_pop_region(ctx, region);
+    if (KosDynNode_IS_TRY(region)) kos_dyn_pop_try(ctx, (KosDynTry *) region); else if (KosDynNode_IS_FINALLY(region)) kos_dyn_pop_finally(ctx, (KosDynFinally *) region); else if (KosDynNode_IS_LOOP(region)) kos_dyn_pop_loop(ctx, (KosDynLoop *) region); else if (KosDynNode_IS_FOREACH(region)) kos_dyn_pop_foreach(ctx, (KosDynForeach *) region);
     return -1;
   }
   (void) out_ev;
