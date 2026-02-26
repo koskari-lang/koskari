@@ -437,6 +437,13 @@ static void trace_stack(const char *prefix, KosStackBlock *stack) {
 
 /* Module-level string constants for await/send/throw/close.  Initialized
    in koskari_eval_init, cleared in koskari_eval_clear. */
+
+/* Sentinel fromlist for IMPORT / IMPORT_REL opcodes.  Passing ("*",) as
+   fromlist to PyImport_ImportModuleLevelObject causes it to return the
+   deepest (leaf) submodule rather than the topmost package, matching
+   importlib.import_module semantics.  Initialized in koskari_eval_init. */
+PyObject *_import_fromlist = NULL;
+
 static PyObject *str_await = NULL;
 static PyObject *str_send = NULL;
 static PyObject *str_throw = NULL;
@@ -3206,6 +3213,17 @@ int koskari_eval_init(PyObject *mod) {
   if (! dict)
     return -1;
 
+  /* Initialize the import fromlist sentinel used by IMPORT / IMPORT_REL. */
+  if (! _import_fromlist) {
+    PyObject *star = PyUnicode_FromString("*");
+    if (! star)
+      return -1;
+    _import_fromlist = PyTuple_Pack(1, star);
+    Py_DECREF(star);
+    if (! _import_fromlist)
+      return -1;
+  }
+
   /* Initialize string constants (cleared in koskari_eval_clear). */
   STR_CONST(str_await, "__await__");
   STR_CONST(str_send, "send");
@@ -3259,7 +3277,8 @@ int koskari_eval_init(PyObject *mod) {
 
 int koskari_eval_clear(PyObject *mod) {
 
-  /* Clear string constants initialized in koskari_eval_init. */
+  /* Clear import sentinel and string constants initialized in koskari_eval_init. */
+  Py_CLEAR(_import_fromlist);
   Py_CLEAR(str_await);
   Py_CLEAR(str_send);
   Py_CLEAR(str_throw);

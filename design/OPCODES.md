@@ -167,7 +167,7 @@ When adding or changing an opcode:
 - [7. Iteration](#7-iteration) — ITER_NEXT, NEXT
 - [8. Jumps](#8-jumps) — JUMP, JUMP_FALSE, JUMP_TRUE, JUMP_AND, JUMP_OR
 - [9. Check jumps](#9-check-jumps) — CHECK_EQ, CHECK_GE, CHECK_GT, CHECK_LE, CHECK_LT, CHECK_NE, CHECK_IN, CHECK_NOT_IN, CHECK_IS, CHECK_IS_NOT, CHECK_IS_INSTANCE, CHECK_IS_SUBCLASS, CHECK_EXCEPTION
-- [10. Introspection](#10-introspection) — GLOBALS, LOCALS, CAPTURE_FRAME
+- [10. Introspection](#10-introspection) — GLOBALS, LOCALS, IMPORT, IMPORT_REL, IMPORT_FROM, CAPTURE_FRAME
 - [11. Exception handling](#11-exception-handling) — EXCEPTION, EXCEPTION_CLEAR, EXCEPTION_MATCH
 - [12. Variables by name](#12-variables-by-name) — VAR, VAR_BIND, VAR_CLEAR, VAR_REF, VAR_STORE
 - [13. Fast variables](#13-fast-variables) — FAST, FAST_BIND, FAST_CLEAR, FAST_REF, FAST_STORE
@@ -220,6 +220,9 @@ When adding or changing an opcode:
 | CHECK_EXCEPTION | LABEL | Jump if exception no match | [§9](#kos_op_check_exception) |
 | GLOBALS | NOARG | Push globals dict | [§10](#kos_op_globals) |
 | LOCALS | NOARG | Push locals dict | [§10](#kos_op_locals) |
+| IMPORT | CONST | Absolute import; push leaf module | [§10.1](#kos_op_import) |
+| IMPORT_REL | CONST | Relative import; push leaf module | [§10.1](#kos_op_import_rel) |
+| IMPORT_FROM | CONST | **PEEK-NOT-POP** module at TOS; push named attr | [§10.1](#kos_op_import_from) |
 | CAPTURE_FRAME | COUNT | Push TraceView snapshot | [§10](#kos_op_capture_frame) |
 | EXCEPTION | NOARG | Push current exception | [§11](#kos_op_exception) |
 | EXCEPTION_CLEAR | NOARG | Clear exception state | [§11](#kos_op_exception_clear) |
@@ -918,6 +921,118 @@ Check jumps: if the predicate does **not** hold, jump to `arg`. All take LABEL; 
 |------:|--------|-----|----------|---------|
 | 0     | LOCALS | 0   | 0        | stack: [..., locals_dict] |
 | 1     | RETURN | 1   | 1        | |
+
+---
+
+### 10.1 Module import
+
+The three import opcodes together implement Python's `import` statement at the
+bytecode level. IMPORT and IMPORT_REL load a module and push it; IMPORT_FROM
+extracts named attributes from the module. See `koskari/compile/specials/imports.py`
+(`helper_import_from_sequence`, `special_import`, `special_import_from`) for
+the compiler special forms that emit these opcodes.
+
+#### KOS_OP_IMPORT {#kos_op_import}
+
+- **Style**: CONST. Arg = constant pool index of module name string (post-compile).
+- **Status**: Implemented.
+- **Stack**: `[...] → [..., module]`. Perform an absolute module import and push
+  the **leaf** module. For dotted names (e.g. `"os.path"`), the leaf component
+  (`os.path`) is pushed, not the root (`os`). This matches `importlib.import_module`
+  semantics and differs from bare `__import__()`.
+- **Invariants**: `cpool[arg]` must be a str.
+- **Leaf behaviour**: Achieved by passing the module-level sentinel
+  `_import_fromlist = ("*",)` as `fromlist` to `PyImport_ImportModuleLevelObject`.
+  `_import_fromlist` is initialised once in `koskari_eval_init` and cleared in
+  `koskari_eval_clear`.
+- **Compiler form:** Pre-compile arg = module name string (e.g. `"os"` or
+  `"os.path"`); post-compile arg = constant pool index.
+- **Implementation**: `koskari/lib/opcode/IMPORT.c`
+
+**Example:** `(import os.path)` — load `os.path` and bind as `path`.
+Pool: 0 = `"os.path"`, 1 = `"path"`, 2 = None.
+
+| index | opcode   | arg | arg view       | comment |
+|------:|----------|-----|----------------|---------|
+| 0     | IMPORT   | 0   | 0 ("os.path")  | stack: [..., os.path] |
+| 1     | VAR_BIND | 1   | 1 ("path")     | bind "path" = module; stack: [...] |
+| 2     | CONST    | 2   | 2 (None)       | statement value; stack: [..., None] |
+| 3     | RETURN   | 1   | 1              | |
+
+---
+
+#### KOS_OP_IMPORT_REL {#kos_op_import_rel}
+
+- **Style**: CONST. Arg = constant pool index of a `(level:int, name:str|None)` tuple
+  (post-compile).
+- **Status**: Implemented.
+- **Stack**: `[...] → [..., module]`. Perform a relative module import and push
+  the leaf module. Semantics otherwise identical to IMPORT.
+- **Invariants**: `cpool[arg]` must be a 2-tuple `(int, str|None)`.
+- **`level`**: Number of leading dots in the import expression (e.g. 1 for
+  `(import .foo)`, 2 for `(import ..foo)`).
+- **`name`**: Module name after the dots, or `None` for a bare relative import
+  (e.g. `(import .)` which imports the enclosing package itself).
+- **Anchor resolution**: The globals namespace of the outermost frame is passed as
+  the `globals` argument to `PyImport_ImportModuleLevelObject` so Python can read
+  `__name__` and `__package__` to resolve the anchor package. This is identical to
+  what Python's own relative import mechanism does.
+- **Compiler form:** Pre-compile arg = `(level, name)` Python tuple; post-compile
+  arg = constant pool index.
+- **Implementation**: `koskari/lib/opcode/IMPORT_REL.c`
+
+**Example:** `(import .foo)` inside package `mypkg` — load `mypkg.foo` and bind as `foo`.
+Pool: 0 = `(1, "foo")`, 1 = `"foo"`, 2 = None.
+
+| index | opcode     | arg | arg view       | comment |
+|------:|------------|-----|----------------|---------|
+| 0     | IMPORT_REL | 0   | 0 ((1, "foo")) | stack: [..., mypkg.foo] |
+| 1     | VAR_BIND   | 1   | 1 ("foo")      | bind "foo" = module; stack: [...] |
+| 2     | CONST      | 2   | 2 (None)       | statement value |
+| 3     | RETURN     | 1   | 1              | |
+
+---
+
+#### KOS_OP_IMPORT_FROM {#kos_op_import_from}
+
+- **Style**: CONST. Arg = constant pool index of attribute name string
+  (post-compile).
+- **Status**: Implemented.
+- **Stack**: `[..., module] → [..., module, value]`. Read named attribute from
+  TOS **without consuming TOS**. The module remains on the stack.
+
+> **PEEK-NOT-POP WARNING** — This is the **only** opcode in the Koskari
+> instruction set that reads TOS without removing it. This behaviour allows
+> multiple successive IMPORT_FROM instructions to extract different attributes
+> from the same module. Every sequence of one or more IMPORT_FROM instructions
+> **must** be followed by `POP 1` to remove the module from the stack.
+> Omitting the POP leaves a dangling module reference that corrupts the stack.
+>
+> This invariant is **structurally enforced**: IMPORT_FROM is only ever emitted
+> by `helper_import_from_sequence()` in `koskari/compile/specials/imports.py`,
+> which always emits the compensating `POP 1` as its final instruction.
+> Do not emit IMPORT_FROM anywhere else.
+
+- **Invariants**: TOS must be a module or object with the named attribute.
+  `cpool[arg]` must be a str. The module is **not popped**; the caller (always
+  `helper_import_from_sequence`) is responsible for the compensating `POP 1`.
+- **Compiler form:** Pre-compile arg = attribute name string; post-compile arg =
+  constant pool index.
+- **Implementation**: `koskari/lib/opcode/IMPORT_FROM.c`
+
+**Example:** `(import-from os path sep)` — import `os`, extract `path` and `sep`.
+Pool: 0 = `"os"`, 1 = `"path"`, 2 = `"sep"`, 3 = None.
+
+| index | opcode      | arg | arg view    | comment |
+|------:|-------------|-----|-------------|---------|
+| 0     | IMPORT      | 0   | 0 ("os")    | stack: [..., os] |
+| 1     | IMPORT_FROM | 1   | 1 ("path")  | PEEK TOS; stack: [..., os, os.path] |
+| 2     | VAR_BIND    | 1   | 1 ("path")  | bind "path"; stack: [..., os] |
+| 3     | IMPORT_FROM | 2   | 2 ("sep")   | PEEK TOS; stack: [..., os, os.sep] |
+| 4     | VAR_BIND    | 2   | 2 ("sep")   | bind "sep"; stack: [..., os] |
+| 5     | POP         | 1   | 1           | remove module; stack: [...] |
+| 6     | CONST       | 3   | 3 (None)    | statement value |
+| 7     | RETURN      | 1   | 1           | |
 
 ---
 

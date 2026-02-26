@@ -12,7 +12,7 @@ This document provides a high-level summary of all features identified from both
 - **Async**: await, declare-async, await-for-each
 - **Attributes**: attr, set-attr, del-attr, method-call (attr, set-attr, del-attr, ref-attr implemented as compile/attr, compile/set-attr, compile/del-attr, compile/ref-attr)
 - **Values**: define-values, setq-values
-- **Import**: import, import-from
+- **Import**: import, import-from (implemented; see `koskari.importer` and compiler specials `import`, `import-from`)
 - **Documentation**: doc
 
 ### Operators
@@ -90,6 +90,7 @@ The VM in `eval.c` uses a jump table; every opcode has a handler. Handlers are e
 - **Control**: RETURN, AWAIT, YIELD (suspend with value; resumption via send; async gen support), YIELD_FROM (delegate to sub-iterator/gen; KOS_DYN_YIELD_FROM; send/throw/close; handler in koskari/lib/opcode/yield_from.c)
 - **Calls**: CALL (arg = N; stack [callable, arg_0, ..., arg_{N-1}]; Continuation/DelimitedContinuation → call_call_continuation; KosExpression/KosFunction → new frame in same loop; other callables → PyObject_Call then push_or_await; **defer** return values are not auto-awaited — pushed as plain values), CALL_NAMES (arg = N; stack [callable, pos_0..pos_{N-1}, kwdv_0..kwdv_{M-1}, names] with names tuple at TOS; kos_callable_call), CALL_STAR (arg = bitflags 1=*args 2=**kwargs; stack [callable, pos, kwd]; kos_callable_call), TAIL_CALL (arg = N; same stack layout as CALL; replaces current frame with callee frame for proper tail-call semantics; compiler emits when call is in tail position), TAIL_CALL_NAMES (arg = N; same stack as CALL_NAMES; kos_callable_tail_call), TAIL_CALL_STAR (arg = bitflags; same stack as CALL_STAR; kos_callable_tail_call)
 - **Introspection**: GLOBALS, LOCALS
+- **Module import**: IMPORT (absolute dotted import; arg = cpool str; pushes leaf module via `_import_fromlist` sentinel), IMPORT_REL (relative import; arg = cpool `(level:int, name:str|None)` tuple; uses outermost frame globals as anchor), IMPORT_FROM (**PEEK-NOT-POP**: arg = cpool str; reads named attr from TOS module without consuming TOS; every use site must be followed by `POP 1` — structurally guaranteed by `helper_import_from_sequence()`)
 - **Variables by name**: VAR (load), VAR_BIND (bind), VAR_CLEAR (delete), VAR_REF (closure ref), VAR_STORE (store TOS to name)
 - **Variables by index (fast locals)**: FAST, FAST_BIND, FAST_CLEAR, FAST_REF, FAST_STORE
 - **Jumps**: JUMP, JUMP_FALSE, JUMP_TRUE, JUMP_AND, JUMP_OR
@@ -129,7 +130,7 @@ There are no **partially** implemented opcodes; each handler is either full, a s
 - **Phases**: Parse → Expand → Compile → Optimize → Generate (full pipeline in progress)
 - **Components**: Compiler, CodeContext, ByteCodeFragment (implemented in `koskari.compile`)
 - **Optimization**: Constant folding, dead code elimination, fast paths (planned)
-- **Implemented specials**: compile/bytecode, compile/begin, compile/call, compile/define, compile/lambda, compile/let, compile/parameterize, compile/cond, compile/if, compile/when, compile/unless, compile/while, compile/for-each, compile/break, compile/continue, compile/try, compile/raise, compile/check-exception, compile/clear-exception, compile/load-exception, compile/setq, compile/refq, compile/bindq, compile/delq, compile/attr, compile/del-attr, compile/set-attr, compile/ref-attr, compile/item, compile/ref-item, compile/del-item, compile/set-item, compile/quote, compile/car, compile/cdr, compile/cons (see design/SPECIALS.md)
+- **Implemented specials**: compile/bytecode, compile/begin, compile/call, compile/define, compile/lambda, compile/let, compile/parameterize, compile/cond, compile/if, compile/when, compile/unless, compile/while, compile/for-each, compile/break, compile/continue, compile/try, compile/raise, compile/check-exception, compile/clear-exception, compile/load-exception, compile/setq, compile/refq, compile/bindq, compile/delq, compile/attr, compile/del-attr, compile/set-attr, compile/ref-attr, compile/item, compile/ref-item, compile/del-item, compile/set-item, compile/quote, compile/car, compile/cdr, compile/cons, **import**, **import-from** (see design/SPECIALS.md)
 
 ### Evaluator
 - **Model**: Custom drive loop (`koskari_eval` in eval.c). Callable types Expression and Function (func.c) return a KosCoroutine; driving the coroutine (await/send) runs the evaluator. Continuation invocation from Python raises `KoskariContinuationApply` for upwards transfer (does not return a coroutine).
@@ -137,14 +138,14 @@ There are no **partially** implemented opcodes; each handler is either full, a s
 - **Blocks**: try, loop, with, finally management
 
 ### Creating and calling functions and expressions
-- **Code**: Compiled bytecode is stored in a `Code` object (namespace spec, instructions, constant pool, position table). The compiler (`koskari.compile`) is partially implemented: it supports `compile/bytecode`, `compile/begin`, `compile/call`, `compile/define`, `compile/lambda`, `compile/let`, `compile/parameterize`, `compile/cond`, `compile/if`, `compile/when`, `compile/unless`, `compile/while`, `compile/for-each`, `compile/break`, `compile/continue`, `compile/try`, `compile/raise`, `compile/check-exception`, `compile/clear-exception`, `compile/load-exception`, `compile/setq`, `compile/refq`, `compile/bindq`, `compile/delq`, `compile/attr`, `compile/del-attr`, `compile/set-attr`, `compile/ref-attr`, `compile/item`, `compile/ref-item`, `compile/del-item`, `compile/set-item`, `compile/quote`, `compile/car`, `compile/cdr`, and `compile/cons` (see design/SPECIALS.md). Tests and tools also build Code manually for VM validation.
+- **Code**: Compiled bytecode is stored in a `Code` object (namespace spec, instructions, constant pool, position table). The compiler (`koskari.compile`) is partially implemented: it supports `compile/bytecode`, `compile/begin`, `compile/call`, `compile/define`, `compile/lambda`, `compile/let`, `compile/parameterize`, `compile/cond`, `compile/if`, `compile/when`, `compile/unless`, `compile/while`, `compile/for-each`, `compile/break`, `compile/continue`, `compile/try`, `compile/raise`, `compile/check-exception`, `compile/clear-exception`, `compile/load-exception`, `compile/setq`, `compile/refq`, `compile/bindq`, `compile/delq`, `compile/attr`, `compile/del-attr`, `compile/set-attr`, `compile/ref-attr`, `compile/item`, `compile/ref-item`, `compile/del-item`, `compile/set-item`, `compile/quote`, `compile/car`, `compile/cdr`, `compile/cons`, `import`, and `import-from` (see design/SPECIALS.md). Tests and tools also build Code manually for VM validation.
 - **Expressions**: `Code.expression(parent_ns)` builds an **Expression** from a `Code` and a parent **Namespace**. An Expression is nullary: calling it with `()` creates a **Coroutine** that runs that code in that namespace. No argument binding; used for thunks, modules, or single-shot code.
 - **Functions**: `Code.function(formals, parent_ns)` builds a **Function** from a `Code`, a **Formals** instance (parameter spec + defaults), and a parent namespace. Calling a Function with `(*args, **kwargs)` binds the formals to the arguments, builds a frame namespace (via the formals’ NamespaceSpec), applies the bindings, then creates a **Coroutine** that runs the code in that frame namespace.
 - **Call flow**: Calling an Expression or Function returns a **Coroutine**. Driving the coroutine (Python `await`, or `send(None)`/`send(value)`) invokes `koskari_eval()` until a boundary event (RETURN, RAISE, YIELD, AWAIT). For AWAIT, the VM suspends and the driver steps the Python awaitable; on completion the result is injected and evaluation resumes. Koskari-to-Koskari calls (CALL opcode) replace the current frame with the callee and continue in the same drive loop.
 
 ### Runtime
-- **Modules**: Module creation and loading
-- **Import**: Import system integration
+- **Modules**: Module creation and loading via `koskari.importer.module` (`new_module`, `init_module`, `load_module_async`). Each module gets a `ModuleNamespace` backed by a builtins layer assembled by `koskari.importer.builtins.make_builtins()`.
+- **Import**: Import system integration via `koskari.importer`. A custom `KoskariPathFinder` is inserted at the front of `sys.meta_path` so that Python's `import` machinery can discover `.ki` files. `KoskariSourceFileLoader.exec_module` calls `load_module_async` through `koskari._sync.run_sync` to bridge the async VM into Python's synchronous import protocol. Install/uninstall is handled by `koskari.importer.install()` / `koskari.importer.uninstall()`; the hook is auto-installed at `koskari` package import time (respects `KOSKARI_NOIMPORTER` environment variable). Koskari code uses the `import` and `import-from` compiler specials, which emit the native `IMPORT`, `IMPORT_REL`, and `IMPORT_FROM` opcodes backed by `PyImport_ImportModuleLevelObject`.
 - **Tracebacks**: Line number support
 
 ### Continuations
@@ -230,7 +231,6 @@ There are no **partially** implemented opcodes; each handler is either full, a s
 - CPython bytecode target (abandoned)
 - Wide bytecode format
 - Module representation
-- Import system strategy
 
 ### Namespace and Continuation Binding
 - **PUSH_NS / POP_NS**: Create and pop namespace scopes. PUSH_NS arg = count of values to bind; opa=0 uses stack [NSPEC]; opa>0 uses [NSPEC, val0, ..., val(N-1), NAMES]. Uses KosDynNs node; SHIFT unwind restores namespaces correctly.

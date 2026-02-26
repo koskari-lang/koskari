@@ -98,6 +98,11 @@ OP(CHECK_EXCEPTION, LABEL)
 OP(GLOBALS, NOARG)
 OP(LOCALS, NOARG)
 
+// module import
+OP(IMPORT,      CONST)  // arg = cpool str; absolute dotted import; pushes leaf module
+OP(IMPORT_REL,  CONST)  // arg = cpool (level:int, name:str|None); relative import; pushes leaf module
+OP(IMPORT_FROM, CONST)  // arg = cpool str; PEEK-NOT-POP module at TOS, push named attr — MUST be followed by POP 1
+
 // exception handling
 OP(EXCEPTION, NOARG)
 OP(EXCEPTION_CLEAR, NOARG)
