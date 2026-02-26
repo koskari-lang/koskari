@@ -2584,6 +2584,10 @@ static int defer_drive(KosContext *ctx, KosEvent *out_ev, PyObject *defer_obj) {
 */
 static int try_local_exception_handler(KosContext *ctx, KosEvent *out_ev) {
   KosDynNode *region = kos_find_node_for_raise(ctx);
+  SAYF("[try_local] region=%p dyn_top=%p acting_pc=%u stack_len=%zu",
+       (void *) region, (void *) KosContext_DYN_TOP(ctx),
+       (unsigned) CURRENT_ACTING_PC(ctx),
+       (size_t) (CURRENT_STACK(ctx) ? KosStackBlock_LEN(CURRENT_STACK(ctx)) : 0));
   if (! region) {
     if (CURRENT_FRAME(ctx)) {
       while (KosContext_DYN_TOP(ctx) != NULL

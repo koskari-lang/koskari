@@ -1653,7 +1653,7 @@ Full design: [interpreter/with-dyn-with.md](interpreter/with-dyn-with.md). Summa
 
 - **Style**: LABEL. Handler targets in extent table.
 - **Status**: Implemented.
-- **Stack**: Pushes TRY region and a KosStackBlock (like PUSH_LOOP). Exception dispatch clears the block before jumping to the handler. POP_TRY drops the block (with PopBlock(count) to preserve handler result); region unwind (e.g. BREAK through TRY) also drops the block.
+- **Stack**: Pushes TRY region and a KosStackBlock (like PUSH_LOOP). Exception dispatch clears the block before jumping to the handler. POP_TRY drops the block (with PopBlock(1) to promote one value to parent); block must have exactly one value when POP_TRY runs. Region unwind (e.g. BREAK through TRY) also drops the block.
 - **Pushes:** KOS_DYN_REGION (static extent KOS_EXT_TRY; handler targets in extent descriptor) and KosStackBlock.
 - **Invariants**: Extent kind KOS_EXT_TRY. Handler targets (except_pc, finally_pc, exit_pc) from extent descriptor.
 
@@ -1674,7 +1674,7 @@ Full design: [interpreter/with-dyn-with.md](interpreter/with-dyn-with.md). Summa
 
 - **Style**: LABEL. Arg = handler/finally target.
 - **Status**: Implemented.
-- **Stack**: Pushes FINALLY region and a KosStackBlock (like PUSH_TRY). Exception dispatch clears the block before jumping to the finally handler. POP_FINALLY drops the block (with PopBlock(count) to preserve finally result); region unwind drops the block when control passes through.
+- **Stack**: Pushes FINALLY region and a KosStackBlock (like PUSH_TRY). Exception dispatch clears the block before jumping to the finally handler. POP_FINALLY drops the block (with PopBlock(1) to promote one value to parent); block must have exactly one value when POP_FINALLY runs. Region unwind drops the block when control passes through.
 - **Pushes:** KOS_DYN_REGION (static extent KOS_EXT_FINALLY) and KosStackBlock.
 - **Invariants**: Extent kind KOS_EXT_FINALLY.
 
@@ -1700,8 +1700,13 @@ Full design: [interpreter/with-dyn-with.md](interpreter/with-dyn-with.md). Summa
 
 ### KOS_OP_POP_LOOP, KOS_OP_POP_NS, KOS_OP_POP_TRY, KOS_OP_POP_FINALLY
 
+- **Style**: All NOARG. Argument unused (or 0).
 - **Status**: Implemented.
-- **Stack**: Pop corresponding region from dynamic chain. POP_TRY and POP_FINALLY take a COUNT arg: they use PopBlock(count) to move that many values from the block to the parent before dropping the block (matching sibilant-ceval); count 0 drops without preserving.
+- **Stack**:
+  - **POP_TRY**: Promote one value (TOS) from try block to parent via PopBlock(1), then drop the block and pop the region. Block must have exactly one value. Clear exception state before pop.
+  - **POP_FINALLY**: Same as POP_TRY for the finally block.
+  - **POP_LOOP**: Drop stack block (no promotion); pop LOOP/FOREACH region; push loop/foreach result from the region (stored on the region, not from the block).
+  - **POP_NS**: Restore frame namespace from saved_ns; pop NS node. No stack block.
 - **Invariants**: Top of chain must match the POP kind. pc == pop_pc is outside block.
 
 **Example:** POP_NS. Pool: N/A.

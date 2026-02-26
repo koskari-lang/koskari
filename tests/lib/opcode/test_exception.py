@@ -45,7 +45,31 @@ class TestExceptionOpcodes(CevalTest):
             ["EXCEPTION", 0],
             ["POP", 1],
             ["CONST", 42],
-            ["POP_TRY", 1],
+            ["POP_TRY", 0],
+            ["RETURN", 1],
+        ])
+        result = run_to_completion(make_callable(code, ns)())
+        self.assertEqual(result, 42)
+
+
+    def test_eval_try_except_catch(self):
+        """
+        Mirrors native test_eval_try_except_catch: same bytecode operations.
+        PUSH_TRY 3, CONST (ValueError), RAISE 1, LABEL 3, EXCEPTION 0,
+        POP 1, CONST 42, POP_TRY 1, RETURN 1. Handler at LABEL. Expect 42.
+        Run with: tox -e gdb -- tests/lib/opcode/test_exception.py::TestExceptionOpcodes::test_eval_try_except_catch
+        """
+
+        exc_inst = ValueError("test")
+        code, ns = build_expr([
+            ["PUSH_TRY", "handler"],
+            ["CONST", exc_inst],
+            ["RAISE", 1],
+            ["LABEL", "handler"],
+            ["EXCEPTION", 0],
+            ["POP", 1],
+            ["CONST", 42],
+            ["POP_TRY", 0],
             ["RETURN", 1],
         ])
         result = run_to_completion(make_callable(code, ns)())
@@ -66,7 +90,7 @@ class TestExceptionOpcodes(CevalTest):
             ["CONST", 99],
             ["POP", 1],
             ["EXCEPTION", 0],
-            ["POP_FINALLY", 1],
+            ["POP_FINALLY", 0],
             ["RAISE", 1],
             ["NOOP", 0],
         ])
@@ -88,7 +112,7 @@ class TestExceptionOpcodes(CevalTest):
             ["EXCEPTION", 0],
             ["POP", 1],
             ["CONST", 42],
-            ["POP_TRY", 1],
+            ["POP_TRY", 0],
             ["RETURN", 1],
         ])
         result = run_to_completion(make_callable(code, ns)())
@@ -120,6 +144,7 @@ class TestExceptionOpcodes(CevalTest):
             ["CONST", 1],
             ["CLEAR_TRY", 0],
             ["POP_TRY", 0],
+            ["POP", 1],
             ["LABEL", "skip"],
             ["CONST", 42],
             ["RETURN", 1],
@@ -137,7 +162,7 @@ class TestExceptionOpcodes(CevalTest):
             ["PUSH_FINALLY", "fin"],
             ["CONST", 42],
             ["CLEAR_FINALLY", 0],
-            ["POP_FINALLY", 1],
+            ["POP_FINALLY", 0],
             ["RETURN", 1],
             ["NOOP", 0],
             ["LABEL", "fin"],
@@ -160,7 +185,7 @@ class TestExceptionOpcodes(CevalTest):
             ["POP", 1],
             ["EXCEPTION_CLEAR", 0],
             ["CONST", 42],
-            ["POP_TRY", 1],
+            ["POP_TRY", 0],
             ["RETURN", 1],
         ])
         result = run_to_completion(make_callable(code, ns)())
@@ -181,7 +206,7 @@ class TestExceptionOpcodes(CevalTest):
             ["POP", 1],
             ["CONST", ValueError],
             ["EXCEPTION_MATCH", 1],
-            ["POP_TRY", 1],
+            ["POP_TRY", 0],
             ["RETURN", 1],
         ])
         result = run_to_completion(make_callable(code, ns)())
@@ -223,7 +248,7 @@ class TestExceptionOpcodes(CevalTest):
             ["EXCEPTION", 0],
             ["POP", 1],
             ["CONST", 42],
-            ["POP_TRY", 1],
+            ["POP_TRY", 0],
             ["RETURN", 1],
         ])
         result = run_to_completion(make_callable(code, ns)())
@@ -245,7 +270,9 @@ class TestExceptionOpcodes(CevalTest):
             ["LABEL", "finally"],
             ["CONST", 99],
             ["POP_FINALLY", 0],
-            ["RETURN", 1],
+            ["POP", 1],
+            ["EXCEPTION", 0],
+            ["RAISE", 1],
             ["NOOP", 0],
         ])
         with self.assertRaises(ValueError):
@@ -254,7 +281,7 @@ class TestExceptionOpcodes(CevalTest):
 
     def test_try_normal_path_drops_block(self):
         """
-        No exception; body runs, CLEAR_TRY, POP_TRY, then RETURN
+        No exception; body runs, CLEAR_TRY, POP_TRY, POP 1, then RETURN
         """
 
         code, ns = build_expr([
@@ -262,6 +289,7 @@ class TestExceptionOpcodes(CevalTest):
             ["CONST", 1],
             ["CLEAR_TRY", 0],
             ["POP_TRY", 0],
+            ["POP", 1],
             ["LABEL", "skip"],
             ["CONST", 42],
             ["RETURN", 1],
@@ -279,7 +307,7 @@ class TestExceptionOpcodes(CevalTest):
             ["PUSH_FINALLY", "fin"],
             ["CONST", 42],
             ["CLEAR_FINALLY", 0],
-            ["POP_FINALLY", 1],
+            ["POP_FINALLY", 0],
             ["RETURN", 1],
             ["NOOP", 0],
             ["LABEL", "fin"],
@@ -305,7 +333,7 @@ class TestExceptionOpcodes(CevalTest):
             ["EXCEPTION", 0],
             ["POP", 1],
             ["CONST", 42],
-            ["POP_TRY", 1],
+            ["POP_TRY", 0],
             ["RETURN", 1],
         ])
         result = run_to_completion(make_callable(code, ns)())
@@ -323,7 +351,7 @@ class TestExceptionOpcodes(CevalTest):
             ["CLEAR_FINALLY", 0],
             ["LABEL", "fin"],
             ["CONST", 5],
-            ["POP_FINALLY", 1],
+            ["POP_FINALLY", 0],
             ["RETURN", 1],
         ])
         result = run_to_completion(make_callable(code, ns)())
@@ -343,7 +371,9 @@ class TestExceptionOpcodes(CevalTest):
             ["LABEL", "handler"],
             ["EXCEPTION", 0],
             ["POP", 1],
+            ["CONST", None],
             ["POP_TRY", 0],
+            ["POP", 1],
             ["CONST", 0],
             ["RETURN", 1],
             ["LABEL", "break_lbl"],
@@ -367,13 +397,13 @@ class TestExceptionOpcodes(CevalTest):
             ["RAISE", 1],
             ["LABEL", "inner_h"],
             ["EXCEPTION", 0],
-            ["POP_TRY", 1],
+            ["POP_TRY", 0],
             ["RAISE", 1],
             ["LABEL", "outer_fin"],
             ["CONST", 99],
             ["POP", 1],
             ["EXCEPTION", 0],
-            ["POP_FINALLY", 1],
+            ["POP_FINALLY", 0],
             ["RAISE", 1],
             ["NOOP", 0],
         ])

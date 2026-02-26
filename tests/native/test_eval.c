@@ -251,7 +251,7 @@ static int test_eval_ctx_current_outside_eval(void) {
 static int test_eval_try_except_catch(void) {
     /*
       Bytecode: PUSH_TRY 3, CONST (ValueError), RAISE 1, EXCEPTION, POP 1,
-      CONST 42, POP_TRY, RETURN. Handler at index 3. Expect KOS_EV_RETURN 42.
+      CONST 42, POP_TRY 1, RETURN. Handler at index 3. Expect KOS_EV_RETURN 42.
     */
     PyObject *nspec = create_test_nspec();
     TEST_ASSERT_NOT_NULL(nspec, "create nspec");
@@ -314,8 +314,8 @@ static int test_eval_try_except_catch(void) {
 static int test_eval_try_finally_rerase(void) {
     /*
       Bytecode: PUSH_FINALLY 3, CONST (ValueError), RAISE 1, (finally at 3:)
-      CONST 99, POP_FINALLY, RETURN. After POP_FINALLY we re-raise; no handler
-      left. Expect KOS_EV_RAISE.
+      CONST 99, POP_FINALLY, POP 1, EXCEPTION 0, RAISE 1. Re-raise after finally.
+      Expect KOS_EV_RAISE.
     */
     PyObject *nspec = create_test_nspec();
     TEST_ASSERT_NOT_NULL(nspec, "create nspec");
@@ -329,15 +329,17 @@ static int test_eval_try_finally_rerase(void) {
     TEST_ASSERT_NOT_NULL(label_3, "create label 3");
 
     /* Finally handler at index 3; LABEL 3 defines it for bytecode label resolution */
-    PyObject *instr = PyList_New(8);
+    PyObject *instr = PyList_New(10);
     PyList_SET_ITEM(instr, 0, make_instr_int(KOS_OP_PUSH_FINALLY, 3));
     PyList_SET_ITEM(instr, 1, make_instr(KOS_OP_CONST, exc_inst));
     PyList_SET_ITEM(instr, 2, make_instr_int(KOS_OP_RAISE, 1));
     PyList_SET_ITEM(instr, 3, make_instr(KOS_OP_LABEL, label_3));
     PyList_SET_ITEM(instr, 4, make_instr(KOS_OP_CONST, ninety_nine));
     PyList_SET_ITEM(instr, 5, make_instr_int(KOS_OP_POP_FINALLY, 0));
-    PyList_SET_ITEM(instr, 6, make_instr_int(KOS_OP_RETURN, 1));
-    PyList_SET_ITEM(instr, 7, make_instr_int(KOS_OP_NOOP, 0));
+    PyList_SET_ITEM(instr, 6, make_instr_int(KOS_OP_POP, 1));
+    PyList_SET_ITEM(instr, 7, make_instr_int(KOS_OP_EXCEPTION, 0));
+    PyList_SET_ITEM(instr, 8, make_instr_int(KOS_OP_RAISE, 1));
+    PyList_SET_ITEM(instr, 9, make_instr_int(KOS_OP_NOOP, 0));
 
     PyObject *code_obj = KosCode_New(nspec, instr, NULL, NULL);
     TEST_ASSERT_NOT_NULL(code_obj, "create Code");
@@ -1349,8 +1351,8 @@ static int test_eval_yield_throw_resume(void) {
 
 static int test_eval_yield_throw_caught(void) {
     /*
-      Bytecode: PUSH_TRY(5), CONST 42, YIELD 1, POP_TRY, RETURN 1,
-                LABEL(5), EXCEPTION, POP 1, CONST 55, POP_TRY, RETURN 1.
+      Bytecode: PUSH_TRY(6), CONST 42, DUP 1, YIELD 1, POP_TRY, RETURN 1,
+                LABEL(6), EXCEPTION, POP 1, CONST 55, POP_TRY, RETURN 1.
       First eval (NULL, NULL): KOS_EV_YIELD(42); TRY region stays live.
       Second eval (NULL, throw_exc): eval_phase_entry calls
       try_local_exception_handler, which finds the TRY region and redirects
@@ -1359,28 +1361,29 @@ static int test_eval_yield_throw_caught(void) {
     */
     PyObject *forty_two = PyLong_FromLong(42);
     PyObject *fifty_five = PyLong_FromLong(55);
-    PyObject *label_5 = PyLong_FromLong(5);
+    PyObject *label_6 = PyLong_FromLong(6);
 
     /*
       One PUSH_TRY and one POP_TRY (on the normal path).  The handler
       does not POP_TRY — try_local_exception_handler already disabled the
       region; the context is freed by kos_context_free after RETURN.
     */
-    PyObject *instr = PyList_New(10);
-    PyList_SET_ITEM(instr, 0, make_instr_int(KOS_OP_PUSH_TRY, 5));
+    PyObject *instr = PyList_New(11);
+    PyList_SET_ITEM(instr, 0, make_instr_int(KOS_OP_PUSH_TRY, 6));
     PyList_SET_ITEM(instr, 1, make_instr(KOS_OP_CONST, forty_two));
-    PyList_SET_ITEM(instr, 2, make_instr_int(KOS_OP_YIELD, 1));
-    PyList_SET_ITEM(instr, 3, make_instr_int(KOS_OP_POP_TRY, 0));
-    PyList_SET_ITEM(instr, 4, make_instr_int(KOS_OP_RETURN, 1));
-    PyList_SET_ITEM(instr, 5, make_instr(KOS_OP_LABEL, label_5));
-    PyList_SET_ITEM(instr, 6, make_instr_int(KOS_OP_EXCEPTION, 0));
-    PyList_SET_ITEM(instr, 7, make_instr_int(KOS_OP_POP, 1));
-    PyList_SET_ITEM(instr, 8, make_instr(KOS_OP_CONST, fifty_five));
-    PyList_SET_ITEM(instr, 9, make_instr_int(KOS_OP_RETURN, 1));
+    PyList_SET_ITEM(instr, 2, make_instr_int(KOS_OP_DUP, 1));
+    PyList_SET_ITEM(instr, 3, make_instr_int(KOS_OP_YIELD, 1));
+    PyList_SET_ITEM(instr, 4, make_instr_int(KOS_OP_POP_TRY, 0));
+    PyList_SET_ITEM(instr, 5, make_instr_int(KOS_OP_RETURN, 1));
+    PyList_SET_ITEM(instr, 6, make_instr(KOS_OP_LABEL, label_6));
+    PyList_SET_ITEM(instr, 7, make_instr_int(KOS_OP_EXCEPTION, 0));
+    PyList_SET_ITEM(instr, 8, make_instr_int(KOS_OP_POP, 1));
+    PyList_SET_ITEM(instr, 9, make_instr(KOS_OP_CONST, fifty_five));
+    PyList_SET_ITEM(instr, 10, make_instr_int(KOS_OP_RETURN, 1));
 
     Py_DECREF(forty_two);
     Py_DECREF(fifty_five);
-    Py_DECREF(label_5);
+    Py_DECREF(label_6);
 
     PyObject *code_obj = NULL;
     KosContext *ctx = NULL;
