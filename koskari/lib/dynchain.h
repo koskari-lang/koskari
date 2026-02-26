@@ -192,7 +192,7 @@ struct KosDynNode {
       uint32_t resume_pc;  /* PC to jump to after with body (pop_pc + 1) */
     } with;
     struct {
-      /* shift: no extra fields; install pushes stack block, teardown drops it */
+      /* shift: simple marker; PROMPT owns the stack block for the delimited region */
     } shift;
     struct {
       PyObject *exc_val;  /* borrowed-then-owned KoskariContinuationApply instance */

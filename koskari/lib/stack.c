@@ -239,7 +239,14 @@ void KosStackBlock_ReleaseExclude(KosStackBlock *self, PyObject *exclude) {
       Py_DECREF(o);
     }
 
-    if (block_freecount < BLOCK_MAX_FREE) {
+    /* Grown blocks (max > BLOCK_NEW_SIZE) are from KosStackBlock_Grow via
+       PyMem_Realloc. Do not cache them: Valgrind reports them as indirectly
+       lost when the freelist chain crosses Python-allocated memory. */
+    if (self->max > BLOCK_NEW_SIZE) {
+      KOS_TRACE_FL_RETURN("stack_block", 1);
+      PyMem_Free(self);
+      SAY(" grown block, dealloced");
+    } else if (block_freecount < BLOCK_MAX_FREE) {
       KOS_TRACE_FL_RETURN("stack_block", 0);
       KosStackBlock_REFCOUNT(self) = 0;
       KosStackBlock_LEN(self) = 0;
