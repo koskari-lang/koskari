@@ -1,7 +1,7 @@
 # Dynchain Flatten and Simplify: Design Proposal
 
-**Status:** Proposal  
-**Author:** —  
+**Status:** Proposal
+**Author:** —
 **Related:** [dynamic-node-unified-api.md](dynamic-node-unified-api.md), [extent-wind-unwind.md](extent-wind-unwind.md), `koskari/lib/dynchain.c`, `koskari/lib/dynchain.h`
 
 This document proposes a refactor of the Koskari dynamic chain to reduce complexity, eliminate redundant branching, and make behavior easy to locate.
@@ -142,64 +142,9 @@ The following are the **only** operations that switch on `KosDynKind`. All branc
 
 ## 7. File Layout for Discoverability
 
-To make it trivial to find the implementation of any generic behavior for a given kind, adopt this layout:
+**Generic dispatch must be implemented via switch/case on the kind value.** A function pointer table or handler registry is not acceptable; the implementation must branch explicitly on `KosDynKind` in each generic operation.
 
-### 7.1 Handler Registry
-
-One file, `koskari/lib/dynchain_handlers.c`, contains:
-
-1. **Handler table** — `KosDynTypeOps kos_dyn_type_ops[KOS_DYN_UNKNOWN]` with function pointers.
-2. **Generic entry points** — `kos_dyn_install`, `kos_dyn_uninstall`, `kos_dyn_wind`, `kos_dyn_unwind`, `kos_dyn_exception_unwind`, `kos_dyn_clone`. Each is a thin wrapper that indexes by kind and calls the slot.
-
-### 7.2 Per-Kind Implementation Files
-
-One file per kind (or per logical group), with a predictable naming convention:
-
-```
-koskari/lib/dynnode/
-  frame.c       # FRAME
-  prompt.c      # PROMPT
-  wind.c        # WIND
-  try.c         # TRY
-  finally.c     # FINALLY
-  loop.c        # LOOP
-  foreach.c     # FOREACH
-  ns.c          # NS
-  cc.c          # CC
-  yield_from.c  # YIELD_FROM
-  param.c       # PARAM
-  with.c        # WITH, DYN_WITH (shared)
-  shift.c       # SHIFT
-  cc_raise.c    # CC_RAISE
-```
-
-Each file contains:
-
-- `kos_dyn_<kind>_install` (if needed)
-- `kos_dyn_<kind>_uninstall`
-- `kos_dyn_<kind>_wind` (if needed)
-- `kos_dyn_<kind>_unwind` (if needed)
-- `kos_dyn_<kind>_exception_unwind` (if needed)
-- `kos_dyn_<kind>_clone`
-- `kos_dyn_<kind>_new`, `kos_dyn_<kind>_free`
-- Kind-specific accessors (or they stay in the header)
-
-**Index at top of dynchain_handlers.c:**
-
-```c
-/*
- * Handler implementations by kind:
- *   TRY      -> dynnode/try.c
- *   FINALLY  -> dynnode/finally.c
- *   LOOP     -> dynnode/loop.c
- *   FOREACH  -> dynnode/foreach.c
- *   ...
- */
-```
-
-### 7.3 Alternative: Single File with Clear Sections
-
-If many small files are undesirable, use a single `dynchain.c` with labeled sections:
+To make it trivial to find the implementation of any generic behavior for a given kind, use a single `dynchain.c` with labeled sections:
 
 ```c
 /* === KOS_DYN_TRY === */
@@ -240,34 +185,7 @@ And a header comment mapping Kind → line range or section.
 
 ---
 
-## 10. Additional Simplification Suggestions
-
-### 10.1 Consolidate Finder Logic
-
-`kos_find_node_for_raise` and `kos_find_node_for_loop` share structure. Consider:
-
-```c
-/* Walk chain from top toward root; return first node for which predicate(node) is true. */
-KosDynNode *kos_dyn_find(KosContext *ctx, int (*predicate)(KosDynNode *));
-```
-
-With predicates like `is_exception_handler` and `is_loop_target`. Reduces duplication.
-
-### 10.2 Eliminate Redundant Top-of-Chain Checks
-
-Many functions check `KosContext_DYN_TOP(ctx) != node` before proceeding. If the caller is always correct (e.g. opcodes), these could be assertions. Document the precondition and use `assert` in debug builds.
-
-### 10.3 Unified Allocation for Same-Size Kinds
-
-TRY, FINALLY, LOOP, FOREACH could share one allocation size. WITH and DYN_WITH already share the `with` struct. Ensure the union's max size doesn't grow unnecessarily when splitting region.
-
-### 10.4 Handler Table as Single Source of Truth
-
-Define the handler table declaratively and generate stubs for unimplemented handlers (no-op returning 0) to avoid switch-case default arms. Makes the matrix explicit.
-
----
-
-## 11. Migration Order
+## 10. Migration Order
 
 1. Add new kinds (TRY, FINALLY, LOOP, FOREACH) and union slots; keep KOS_DYN_REGION temporarily.
 2. Add per-kind handlers; wire them into the switch for the new kinds.
@@ -276,11 +194,11 @@ Define the handler table declaratively and generate stubs for unimplemented hand
 5. Remove KOS_DYN_REGION and KosRegionStyle.
 6. Merge teardown into unwind; remove NEEDS_TRANSFER_TEARDOWN.
 7. Rename pop → uninstall, unwind_on_exception → exception_unwind.
-8. Reorganize into dynnode/ files or clearly labeled sections.
+8. Reorganize into clearly labeled sections.
 
 ---
 
-## 12. Summary
+## 11. Summary
 
 | Change | Effect |
 |--------|--------|
@@ -289,6 +207,6 @@ Define the handler table declaratively and generate stubs for unimplemented hand
 | Teardown folded into unwind | One less operation, one less capability |
 | pop → uninstall | Consistent install/uninstall naming |
 | Kind checks only in generic layer | No scattering of type tests |
-| Per-kind files or sections | Immediate discoverability of behavior |
+| Per-kind sections | Immediate discoverability of behavior |
 
 The end state: six generic operations (install, uninstall, wind, unwind, exception_unwind, clone), each a single switch on Kind dispatching to kind-specific handlers. No other code branches on kind.
