@@ -3528,10 +3528,21 @@ static int xfer_step_truncate_and_inject(KosContext *ctx,
     SAYF("[xfer] TRUNCATE_AND_INJECT: freeing from current=%p to stop_node=%p (inclusive), new_top will be=%p",
          (void *) current, (void *) stop_node, (void *) new_top);
 
-  KosDynNode *node = current;
-  while (node && node != new_top) {
-    KosDynNode *parent = KosDynNode_PARENT(node);
-        node = parent;
+  /* Teardown PROMPT and DYN_WITH nodes before freeing: drop stack blocks.
+   * The flatten removed NEEDS_TRANSFER_TEARDOWN but TRUNCATE does not run
+   * uninstall handlers; we must drop blocks here so the frame's stack shape
+   * is correct when we inject the value onto new_top's frame. */
+  {
+    KosDynNode *node = current;
+    while (node && node != new_top) {
+      KosDynNode *parent = KosDynNode_PARENT(node);
+      if (KosDynNode_IS_PROMPT(node) || KosDynNode_IS_DYN_WITH(node)) {
+        if (KosContext_FRAME_TOP(ctx)
+            && KosStackBlock_DropBlock(&KosDynFrame_STACK(KosContext_FRAME_TOP(ctx))) < 0)
+          return -1;
+      }
+      node = parent;
+    }
   }
 
   kos_dynchain_free(current, new_top);

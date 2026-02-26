@@ -2667,13 +2667,8 @@ static int try_local_exception_handler(KosContext *ctx, KosEvent *out_ev) {
 
   uint32_t handler_pc = KosDynNode_IS_TRY(region) ? KosDynTry_HANDLER_PC((KosDynTry *) region) : KosDynFinally_HANDLER_PC((KosDynFinally *) region);
   {
-    /* PC of raising instruction: prepare_dispatch advances PC before dispatch,
-       so CURRENT_PC points past the raising instruction; use CURRENT_PC - 1.
-       This is correct for both post_opcode and pending_exception paths. */
-    uint32_t raise_pc = CURRENT_PC(ctx) > 0 ? CURRENT_PC(ctx) - 1
-                                             : CURRENT_ACTING_PC(ctx);
     KosTryHandler th;
-    if (kos_try_handler_for((PyObject *) CURRENT_CODE(ctx), raise_pc, &th) == 0) {
+    if (kos_try_handler_for((PyObject *) CURRENT_CODE(ctx), CURRENT_ACTING_PC(ctx), &th) == 0) {
       if (KosDynNode_IS_FINALLY(region) && th.finally_pc != KOS_EXTENT_NONE) {
         handler_pc = th.finally_pc;
       }
