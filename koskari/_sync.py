@@ -64,6 +64,15 @@ def _get_executor_loop():
         return _executor
 
 
+def _active_loop():
+    try:
+        asyncio.get_running_loop()
+    except RuntimeError:
+        return False
+    else:
+        return True
+
+
 def run_sync(awaitable):
     """
     Run an awaitable to completion from synchronous code.
@@ -73,14 +82,12 @@ def run_sync(awaitable):
     the awaitable in a dedicated executor thread to avoid deadlock.
     """
 
-    try:
-        asyncio.get_running_loop()
-    except RuntimeError:
+    if _active_loop():
+        loop = _get_executor_loop()
+        future = asyncio.run_coroutine_threadsafe(awaitable, loop)
+        return future.result()
+    else:
         return asyncio.run(awaitable)
-
-    loop = _get_executor_loop()
-    future = asyncio.run_coroutine_threadsafe(awaitable, loop)
-    return future.result()
 
 
 class _SyncIterator:
@@ -94,36 +101,39 @@ class _SyncIterator:
         self._aiter = None
         self._loop = None
 
+
     def _ensure_started(self):
         if self._aiter is not None:
             return
         self._aiter = self._async_iterable.__aiter__()
-        try:
-            asyncio.get_running_loop()
-        except RuntimeError:
-            self._loop = asyncio.new_event_loop()
-        else:
+
+        if _active_loop():
             self._loop = _get_executor_loop()
+        else:
+            self._loop = asyncio.new_event_loop()
+
 
     def __iter__(self):
         self._ensure_started()
         return self
+
 
     def __next__(self):
         self._ensure_started()
 
         try:
             awaitable = self._aiter.__anext__()
-            try:
-                asyncio.get_running_loop()
-            except RuntimeError:
-                result = self._loop.run_until_complete(awaitable)
-            else:
+
+            if _active_loop():
                 future = asyncio.run_coroutine_threadsafe(awaitable, self._loop)
                 result = future.result()
+            else:
+                result = self._loop.run_until_complete(awaitable)
             return result
+
         except StopIteration as e:
             return e.value
+
         except StopAsyncIteration:
             raise StopIteration from None
 
