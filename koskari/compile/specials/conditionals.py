@@ -24,7 +24,7 @@ compile/unless.
 
 
 from ...lib import cons, keyword, nil, OpCode, symbol
-from ...types import is_pair
+from ...types import is_keyword, is_pair
 from ...exceptions import SpecialError
 from ..helpers import helper_begin, pycons, simple_parameters, special
 
@@ -58,7 +58,7 @@ def special_cond(compiler, source, tc=False):
 
         test, body = element
 
-        if test is _keyword_else:
+        if is_keyword(test) and str(test) == "else":
             helper_begin(fragment, body, tc)
             break
 

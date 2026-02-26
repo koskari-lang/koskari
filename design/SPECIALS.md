@@ -302,6 +302,110 @@ Expands to cond (negated test).
 ```
 
 
+## compile/try
+
+**Symbol:** `compile/try`
+
+**Syntax:** `(try BODY [except: TYPE BODY...] [except: TYPE as: NAME BODY...] [(TYPE) BODY...] [(TYPE as: NAME) BODY...] [else: BODY...] [finally: BODY...])`
+
+**Use-case:** Exception handling. Runs BODY; on exception, matches against
+clauses and runs the first matching handler. Optional `else:` runs when no
+exception occurred. Optional `finally:` always runs (on normal exit or
+exception). At least one `except:` or `finally:` is required.
+
+**Clause forms:**
+- `(except: TYPE BODY...)` — catch TYPE (or subclass); no binding
+- `(except: TYPE as: NAME BODY...)` — bind caught value to NAME
+- `((TYPE) BODY...)` — same as except: with no binding
+- `((TYPE as: NAME) BODY...)` — same as except: with binding
+- `(else: BODY...)` — run when try body completed without exception
+- `(finally: BODY...)` — always run; must be last
+
+**Behaviour:** Uses PUSH_TRY, CLEAR_TRY, POP_TRY, PUSH_FINALLY, POP_FINALLY.
+Exception handlers use EXCEPTION_MATCH, EXCEPTION_CLEAR, EXCEPTION opcodes.
+Builds a cond over check-exception clauses; uncaught exceptions re-raise via
+compile/raise. Else runs between CLEAR_TRY and POP_TRY; finally runs after
+cleanup.
+
+**Examples:**
+
+```scheme
+;; Try with except
+(try (risky-call)
+  (except: Exception (handle-exception)))
+
+;; Named binding
+(try (parse input)
+  ((ValueError as: e) (compile/call log e)))
+
+;; Try/else/finally
+(try (do-work)
+  (else: (success))
+  (finally: (cleanup)))
+```
+
+**Tests:** `tests/compile/specials/test_try.py`
+
+
+## compile/raise
+
+**Symbol:** `compile/raise`
+
+**Syntax:** `(compile/raise)` or `(compile/raise EXPR)`
+
+**Use-case:** Re-raise the current exception (no arg) or raise a new exception
+(EXPR). Used internally by try for re-raise on uncaught.
+
+**Behaviour:** With no arg, emits RAISE 0 (re-raise). With EXPR, compiles EXPR,
+emits RAISE 1 (raise the value as exception).
+
+**Examples:**
+
+```scheme
+(compile/raise)
+(compile/raise (ValueError "invalid"))
+```
+
+
+## compile/check-exception
+
+**Symbol:** `compile/check-exception`
+
+**Syntax:** `(compile/check-exception TYPE ...)`
+
+**Use-case:** Internal form used by compile/try. Checks if the current
+exception matches any of the given types; if so, clears the exception and
+continues; otherwise falls through.
+
+**Behaviour:** Compiles each TYPE, emits EXCEPTION_MATCH with the count.
+Used inside the cond built by _except.
+
+**Examples:** Internal use only; not normally written by users.
+
+
+## compile/clear-exception
+
+**Symbol:** `compile/clear-exception`
+
+**Syntax:** `(compile/clear-exception)`
+
+**Use-case:** Internal form. Clears the current exception state.
+
+**Behaviour:** Emits EXCEPTION_CLEAR. No arguments.
+
+
+## compile/load-exception
+
+**Symbol:** `compile/load-exception`
+
+**Syntax:** `(compile/load-exception)`
+
+**Use-case:** Internal form used by try handlers. Pushes the current exception
+value onto the stack (e.g. for binding with as: NAME).
+
+**Behaviour:** Emits EXCEPTION. No arguments.
+
+
 ## compile/while
 
 **Symbol:** `compile/while`

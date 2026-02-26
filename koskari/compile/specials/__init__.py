@@ -30,6 +30,13 @@ from .call import special_call
 from .conditionals import special_cond, special_if, special_unless, special_when
 from .continuations import special_call_cc, special_let_cc, special_capture_cc, special_reset, special_shift
 from .context import special_dyn_with, special_parameterize, special_with
+from .exceptions import (
+    special_check_exception,
+    special_clear_exception,
+    special_load_exception,
+    special_raise,
+    special_try,
+)
 from .items import special_del_item, special_item, special_ref_item, special_set_item
 from .lambda_ import special_lambda
 from .let import special_let
@@ -59,15 +66,19 @@ __all__ = (
     "special_del_item",
     "special_define",
     "special_delq",
+    "special_check_exception",
+    "special_clear_exception",
     "special_dyn_with",
     "special_for_each",
     "special_if",
     "special_item",
     "special_lambda",
     "special_let",
+    "special_load_exception",
     "special_let_cc",
     "special_parameterize",
     "special_quote",
+    "special_raise",
     "special_ref_attr",
     "special_ref_item",
     "special_refq",
@@ -76,6 +87,7 @@ __all__ = (
     "special_set_item",
     "special_setq",
     "special_shift",
+    "special_try",
     "special_unless",
     "special_when",
     "special_while",

@@ -140,6 +140,66 @@ else:
 **Implementation:** `koskari/reader/layouts/conditionals.layout_if`
 
 
+## layout/try
+
+**Symbol:** `layout/try`
+
+**Use-case:** try/except/else/finally block syntax. Lowers to `(try ...)` for
+compilation. Requires at least one `except` or `finally` peer.
+
+**Behaviour:** Accepts peer blocks `except`, `else`, and `finally`. Produces
+`(try (compile/begin BODY) CATCHES...)` where CATCHES is the list of except,
+else, and finally clauses. Rules: `else` and `finally` take no arguments;
+multiple `else` or `finally` are not allowed; at least one except or finally
+is required. `except` blocks require an exception type; optional binding uses
+`as: NAME` (e.g. `except Exception as: e`).
+
+**Syntax:**
+
+```
+try:
+  BODY
+except TYPE:
+  HANDLER
+except TYPE as: NAME:
+  HANDLER
+else:
+  ELSE-BODY
+finally:
+  FINALLY-BODY
+```
+
+**Examples:**
+
+```scheme
+try:
+  x
+except Exception:
+  y
+;; → (try (compile/begin x) ((except Exception) y))
+
+try:
+  x
+finally:
+  z
+;; → (try (compile/begin x) (finally z))
+
+try:
+  x
+except Exception:
+  y
+else:
+  a
+finally:
+  z
+;; → (try (compile/begin x) ((except Exception) y) (else a) (finally z))
+```
+
+**Implementation:** `koskari/reader/layouts/exceptions.layout_try`
+
+**Tests:** `tests/reader/layouts/test_try.py`
+
+
 ## Peers
 
 Some layouts declare **peer** block heads. After reading the main block's body,
@@ -148,8 +208,9 @@ of the declared peers. These are gathered contiguously and passed to the layout
 handler as the `peers` argument.
 
 `layout/if` declares `peers=(elif, else)`, so `elif` and `else` blocks at the
-same indent as the initial `if` are read and passed as peers. Layouts without
-peers receive an empty list.
+same indent as the initial `if` are read and passed as peers. `layout/try`
+declares `peers=(except, else, finally)` for exception-handling blocks.
+Layouts without peers receive an empty list.
 
 
 ## Adding New Layouts
