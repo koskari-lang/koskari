@@ -34,8 +34,6 @@ static PyObject *coro_str_send = NULL;
 static PyObject *coro_str_throw = NULL;
 static PyObject *coro_str_close = NULL;
 
-static PyObject *asyncio_run_func = NULL;
-
 
 /* === Run code as coroutine === */
 
@@ -400,19 +398,13 @@ static PyObject *coroutine_close(PyObject *self) {
 
 
 /*
-   run() – UNSAFE synchronizer. Do not call when an event loop is already
-   running (e.g. from async code or from another run()); can deadlock.
-   For tests and synchronous scripts only.
+   run() – Run coroutine to completion from sync context. Safe when an
+   event loop is already running (uses executor thread). For tests and
+   synchronous scripts.
 */
 static PyObject *coroutine_run(PyObject *self) {
 
-  if (! asyncio_run_func) {
-    PyErr_SetString(PyExc_RuntimeError,
-                    "asyncio.run not available (koskari.lib init failed?)");
-    return NULL;
-  }
-
-  return PyObject_CallOneArg(asyncio_run_func, self);
+  return Koskari_RunSync(self);
 }
 
 
@@ -427,9 +419,8 @@ static PyMethodDef coroutine_methods[] = {
     "Close the coroutine" },
 
   { "run", (PyCFunction) coroutine_run, METH_NOARGS,
-    "Run coroutine to completion via a new event loop (UNSAFE: do not use "
-    "when an event loop is already running; can deadlock). For tests and "
-    "synchronous scripts only." },
+    "Run coroutine to completion from sync context. Safe when an event loop "
+    "is already running. For tests and synchronous scripts." },
 
   { NULL, NULL, 0, NULL },
 };
@@ -519,14 +510,6 @@ int koskari_coro_init(PyObject *mod) {
   STR_CONST(coro_str_throw, "throw");
   STR_CONST(coro_str_close, "close");
 
-  {
-    PyObject *asyncio_mod = PyImport_ImportModule("asyncio");
-    if (asyncio_mod) {
-      asyncio_run_func = PyObject_GetAttrString(asyncio_mod, "run");
-      Py_DECREF(asyncio_mod);
-    }
-  }
-
   if (PyType_Ready(&KosCoroutineType))
     return -1;
 
@@ -540,7 +523,6 @@ int koskari_coro_init(PyObject *mod) {
 
 int koskari_coro_clear(PyObject *mod) {
 
-  Py_CLEAR(asyncio_run_func);
   Py_CLEAR(coro_str_send);
   Py_CLEAR(coro_str_throw);
   Py_CLEAR(coro_str_close);

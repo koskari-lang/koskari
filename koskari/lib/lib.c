@@ -58,11 +58,12 @@ static int koskari_lib_init(PyObject *mod) {
 
   kos_trace_init();
 
-  /* compat must be initialized first */
+  /* compat must be initialized first; sync before coro and iter */
   if (koskari_atom_init(mod) ||
       koskari_bytecode_init(mod) ||
       koskari_callable_init(mod) ||
       koskari_compat_init(mod) ||
+      koskari_sync_init(mod) ||
       koskari_cont_init(mod) ||
       koskari_coro_init(mod) ||
       koskari_domain_init(mod) ||
@@ -95,6 +96,9 @@ int koskari_lib_clear(PyObject *mod) {
 
   /* clear implementation units */
   if (koskari_iter_clear(mod))
+    return -1;
+
+  if (koskari_sync_clear(mod))
     return -1;
 
   if (koskari_cont_clear(mod))

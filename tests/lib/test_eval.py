@@ -157,5 +157,61 @@ class TestEvalModuleIntegration(unittest.TestCase):
         self.assertIsInstance(Coroutine, type)
         self.assertIsInstance(AsyncGenerator, type)
 
+    def test_run_sync_and_iter_sync_registered(self):
+        """run_sync and iter_sync are registered in koskari.lib"""
+
+        import koskari.lib as lib
+
+        self.assertTrue(hasattr(lib, 'run_sync'))
+        self.assertTrue(hasattr(lib, 'iter_sync'))
+        self.assertTrue(callable(lib.run_sync))
+        self.assertTrue(callable(lib.iter_sync))
+
+
+class TestCoroutineRunIntegration(unittest.TestCase):
+    """
+    Integration tests for Coroutine.run() via run_sync
+    """
+
+    def test_coroutine_run_uses_run_sync(self):
+        """Coroutine.run() completes and returns value"""
+
+        from tests import make_callable
+        from tests.lib.opcode import build_expr
+
+        code, ns = build_expr([
+            ["CONST", 42],
+            ["RETURN", 1],
+        ])
+        expr = make_callable(code, ns)
+        result = expr().run()
+        self.assertEqual(result, 42)
+
+
+class TestAsyncGeneratorIterIntegration(unittest.TestCase):
+    """
+    Integration tests for AsyncGenerator.iter() via iter_sync
+    """
+
+    def test_async_generator_iter_uses_iter_sync(self):
+        """AsyncGenerator.iter() yields values via iter_sync"""
+
+        from tests import make_callable
+        from tests.lib.opcode import build_expr
+
+        gen_code, gen_ns = build_expr([
+            ["CONST", 1],
+            ["YIELD", 1],
+            ["CONST", 2],
+            ["YIELD", 1],
+            ["CONST", 3],
+            ["YIELD", 1],
+            ["RETURN", 0],
+        ])
+        expr = make_callable(gen_code, gen_ns)
+        agen = expr()
+        self.assertIsInstance(agen, AsyncGenerator)
+        self.assertEqual(list(agen.iter()), [1, 2, 3])
+
 
 # The end.

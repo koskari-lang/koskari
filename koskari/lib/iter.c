@@ -29,9 +29,6 @@
 #include "lib.h"
 
 
-static PyObject *asyncio_run_func = NULL;
-
-
 /* === KosPyAsyncGen type === */
 
 
@@ -100,148 +97,21 @@ static PyObject *asyncgen_repr(PyObject *self) {
 
 
 /*
-   iter() – UNSAFE synchronizer. Do not use when an event loop is already
-   running; can deadlock. For tests and synchronous scripts only.
+   iter() – Return a sync iterator that drives this async generator.
+   Reuses a single event loop per iteration session. Safe when an event
+   loop is already running.
 */
-static PyObject *asyncgen_iter(PyObject *self);
+static PyObject *asyncgen_iter(PyObject *self) {
+
+  return Koskari_IterSync(self);
+}
 
 static PyMethodDef asyncgen_methods[] = {
   { "iter", (PyCFunction) asyncgen_iter, METH_NOARGS,
-    "Return a synchronous iterator that drives this async generator via "
-    "asyncio.run on each __anext__ (UNSAFE: do not use when an event loop "
-    "is already running; can deadlock). For tests and synchronous scripts only." },
+    "Return a synchronous iterator that drives this async generator. "
+    "Reuses a loop per session. Safe when an event loop is already running." },
   { NULL, NULL, 0, NULL },
 };
-
-
-/* === KosPyAsyncGenSyncIter (internal sync iterator for asyncgen_iter) === */
-
-
-typedef struct {
-  PyObject_HEAD
-  PyObject *agen;
-} KosPyAsyncGenSyncIter;
-
-
-static void asyncgen_synciter_dealloc(PyObject *self) {
-
-  PyObject_GC_UnTrack(self);
-  KosPyAsyncGenSyncIter *it = (KosPyAsyncGenSyncIter *) self;
-  Py_XDECREF(it->agen);
-  Py_TYPE(self)->tp_free(self);
-}
-
-
-static int asyncgen_synciter_traverse(
-    PyObject *self,
-    visitproc visit,
-    void *arg) {
-
-  KosPyAsyncGenSyncIter *it = (KosPyAsyncGenSyncIter *) self;
-  Py_VISIT(it->agen);
-  return 0;
-}
-
-
-static int asyncgen_synciter_clear(PyObject *self) {
-
-  KosPyAsyncGenSyncIter *it = (KosPyAsyncGenSyncIter *) self;
-  Py_CLEAR(it->agen);
-  return 0;
-}
-
-
-static PyObject *asyncgen_synciter_iternext(PyObject *self) {
-
-  KosPyAsyncGenSyncIter *it = (KosPyAsyncGenSyncIter *) self;
-  if (! it->agen || ! asyncio_run_func) {
-    if (! asyncio_run_func)
-      PyErr_SetString(PyExc_RuntimeError,
-                      "asyncio.run not available (koskari.lib init failed?)");
-    return NULL;
-  }
-
-  PyObject *awaitable = asyncgen_anext(it->agen);
-  if (! awaitable)
-    return NULL;
-
-  PyObject *result = PyObject_CallOneArg(asyncio_run_func, awaitable);
-  Py_DECREF(awaitable);
-
-  if (result)
-    return result;
-
-  /* Exception set. Normal yield: __anext__ awaitable raises StopIteration
-     with the yielded value (possibly in a 1-tuple). */
-  if (PyErr_ExceptionMatches(PyExc_StopIteration)) {
-    PyObject *value = NULL;
-    PyGen_FetchStopIterationValue(&value);
-    if (value && PyTuple_Check(value) && PyTuple_GET_SIZE(value) == 1) {
-      PyObject *item = PyTuple_GET_ITEM(value, 0);
-      Py_INCREF(item);
-      Py_DECREF(value);
-      return item;
-    }
-    return value;
-  }
-
-  /* Generator exhausted: convert StopAsyncIteration to StopIteration. */
-  if (PyErr_ExceptionMatches(PyExc_StopAsyncIteration)) {
-    PyObject *exc_typ = NULL, *exc_val = NULL, *exc_tb = NULL;
-    PyErr_Fetch(&exc_typ, &exc_val, &exc_tb);
-    PyObject *value = koskari_StopAsyncIteration_value(exc_val);
-    Py_XDECREF(exc_typ);
-    Py_XDECREF(exc_val);
-    Py_XDECREF(exc_tb);
-    if (value) {
-      PyObject *stop = PyObject_CallOneArg(PyExc_StopIteration, value);
-      Py_DECREF(value);
-      if (stop) {
-        PyErr_SetObject(PyExc_StopIteration, stop);
-        Py_DECREF(stop);
-      } else
-        PyErr_SetNone(PyExc_StopIteration);
-    } else
-      PyErr_SetNone(PyExc_StopIteration);
-    return NULL;
-  }
-
-  return NULL;
-}
-
-
-static PyTypeObject KosPyAsyncGenSyncIterType = {
-  PyVarObject_HEAD_INIT(NULL, 0)
-  .tp_name = "koskari.lib._AsyncGeneratorSyncIter",
-  .tp_basicsize = sizeof(KosPyAsyncGenSyncIter),
-  .tp_itemsize = 0,
-  .tp_dealloc = asyncgen_synciter_dealloc,
-  .tp_flags = Py_TPFLAGS_DEFAULT | Py_TPFLAGS_HAVE_GC,
-  .tp_traverse = asyncgen_synciter_traverse,
-  .tp_clear = asyncgen_synciter_clear,
-  .tp_iter = PyObject_SelfIter,
-  .tp_iternext = asyncgen_synciter_iternext,
-};
-
-
-static PyObject *asyncgen_iter(PyObject *self) {
-
-  if (! asyncio_run_func) {
-    PyErr_SetString(PyExc_RuntimeError,
-                    "asyncio.run not available (koskari.lib init failed?)");
-    return NULL;
-  }
-
-  KosPyAsyncGenSyncIter *it = PyObject_GC_New(KosPyAsyncGenSyncIter,
-                                              &KosPyAsyncGenSyncIterType);
-  if (! it)
-    return NULL;
-
-  it->agen = self;
-  Py_INCREF(self);
-  PyObject_GC_Track((PyObject *) it);
-  return (PyObject *) it;
-}
 
 
 static PyAsyncMethods asyncgen_async_methods = {
@@ -539,16 +409,7 @@ int koskari_iter_init(PyObject *mod) {
   if (! dict)
     return -1;
 
-  {
-    PyObject *asyncio_mod = PyImport_ImportModule("asyncio");
-    if (asyncio_mod) {
-      asyncio_run_func = PyObject_GetAttrString(asyncio_mod, "run");
-      Py_DECREF(asyncio_mod);
-    }
-  }
-
-  if (PyType_Ready(&KosPyAsyncGenSyncIterType) ||
-      PyType_Ready(&KosPyAsyncGenType) ||
+  if (PyType_Ready(&KosPyAsyncGenType) ||
       PyType_Ready(&KosPyAsyncGenASendType))
     return -1;
 
@@ -561,8 +422,6 @@ int koskari_iter_init(PyObject *mod) {
 
 
 int koskari_iter_clear(PyObject *mod) {
-
-  Py_CLEAR(asyncio_run_func);
 
   (void) mod;
   return 0;
