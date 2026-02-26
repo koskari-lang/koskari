@@ -201,14 +201,13 @@ quick lookup.
 ### Block Control
 - `KOS_OP_PUSH_FOREACH`: Push for-each loop (implemented); arg = break target; TOS = iterable for ITER_NEXT; pushes KosDynRegion FOREACH only (no stack block)
 - `KOS_OP_PUSH_WITH`: Push with context (stub)
-- `KOS_OP_PUSH_BEGIN`: Push begin block (stub)
 - `KOS_OP_PUSH_CLASS`: Push class definition (stub)
 - `KOS_OP_PUSH_FINALLY`: Push finally block (implemented)
 - `KOS_OP_PUSH_LOOP`: Push while loop (implemented); arg = break target; pushes KosDynRegion LOOP and KosStackBlock
 - `KOS_OP_PUSH_NS`: Push namespace scope; arg = count of values to bind; opa=0: [NSPEC]; opa>0: [NSPEC, val0, ..., NAMES]; creates KosNamespace, pushes KosDynNs
 - `KOS_OP_PUSH_TRY`: Push try block (implemented)
 - `KOS_OP_CLEAR_FINALLY`, `KOS_OP_CLEAR_LOOP`, `KOS_OP_CLEAR_TRY` (CLEAR_LOOP implemented)
-- `KOS_OP_POP_WITH`, `KOS_OP_POP_BEGIN`, `KOS_OP_POP_FINALLY`, `KOS_OP_POP_LOOP`, `KOS_OP_POP_NS` (POP_NS, POP_LOOP implemented), etc.
+- `KOS_OP_POP_WITH`, `KOS_OP_POP_FINALLY`, `KOS_OP_POP_LOOP`, `KOS_OP_POP_NS` (POP_NS, POP_LOOP implemented), etc.
 
 ### Delimited Continuations
 - `KOS_OP_PUSH_PROMPT`: Push prompt delimiter; also pushes a COW stack block for the delimited region (arg = prompt_id constant index)
@@ -225,10 +224,6 @@ quick lookup.
 ### Continuation Invocation
 - `KOS_OP_INVOKE_K`: Pop value then continuation from stack; invoke continuation with value
 - `KOS_OP_INVOKE_K_VAR`: Pop value; look up name (constant index) in frame namespace; invoke that continuation with value. Used when continuation is bound by name (e.g. shift handler with PUSH_NS + VAR_STORE)
-
-### Region Control
-- `KOS_OP_PUSH_REGION`: Push region for block-local control (arg = handler label)
-- `KOS_OP_POP_REGION`: Pop region from dynamic chain
 
 ### Object Protocol
 - Comparisons: `KOS_OP_OBJECT_EQ`, `KOS_OP_OBJECT_NE`, `KOS_OP_OBJECT_LT`, etc.
@@ -262,7 +257,7 @@ Handlers live in `koskari/lib/eval.c` and opcode fragments under `koskari/lib/op
 
 - **Fully implemented**: Stack (NOOP, LABEL, POSITION as no-ops; DUP, POP, CONST); RETURN, AWAIT; YIELD; YIELD_FROM (handler in koskari/lib/opcode/yield_from.c); CALL (simple call); TAIL_CALL; BUILD_FUNCTION; GLOBALS, LOCALS; variables (VAR, VAR_BIND, VAR_CLEAR, VAR_REF, VAR_STORE); fast locals (FAST, FAST_BIND, FAST_REF, FAST_STORE); namespace scope (PUSH_NS, POP_NS); exception ops (EXCEPTION, EXCEPTION_CLEAR, EXCEPTION_MATCH, RAISE, CHECK_EXCEPTION); try/finally (PUSH_TRY, PUSH_FINALLY, POP_TRY, POP_FINALLY, CLEAR_TRY, CLEAR_FINALLY); loop control (PUSH_LOOP, PUSH_FOREACH, POP_LOOP, CLEAR_LOOP, BREAK, CONTINUE); context managers (PUSH_WITH, POP_WITH, PUSH_DYN_WITH, POP_DYN_WITH); delimited continuations (PUSH_PROMPT, POP_PROMPT, PUSH_SHIFT, POP_SHIFT; PROMPT owns COW stack block; SHIFT is a simple marker); INVOKE_K, INVOKE_K_VAR; undelimited continuations (PUSH_CC, CAPTURE_CC, POP_CC); all OBJECT_* opcodes; ITER_NEXT, NEXT; parameterize (PARAM, PUSH_PARAM, POP_PARAM); END_WIND (terminates hook block; see extent-wind-unwind.md).
 - **No runtime implementation (hardcoded error)**: THEEND.
-- **Stubs (unimplemented)**: CALL_NAMES, CALL_STAR, CALL_ATTR*, RECUR*, TAIL_CALL_NAMES, TAIL_CALL_STAR, TAIL_RECUR*; remaining block control (PUSH_BEGIN, PUSH_CLASS, POP_BEGIN); PUSH_WIND, POP_WIND; PUSH_REGION, POP_REGION.
+- **Stubs (unimplemented)**: CALL_ATTR*, RECUR*, TAIL_RECUR*; remaining block control (PUSH_CLASS); PUSH_WIND, POP_WIND.
 
 For the full categorized list, see [FEATURES.md](../FEATURES.md) § "Opcodes: implementation status".
 

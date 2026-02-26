@@ -123,7 +123,7 @@ KosCode. Many opcodes have different argument meaning in each form.
 
 | Pre-compile arg        | Post-compile arg        | Opcodes (examples) |
 |------------------------|-------------------------|---------------------|
-| String label name      | pc (uint16)             | JUMP, JUMP_FALSE, JUMP_TRUE, JUMP_AND, JUMP_OR, ITER_NEXT, CHECK_*, PUSH_TRY, PUSH_FINALLY, PUSH_WIND, PUSH_REGION |
+| String label name      | pc (uint16)             | JUMP, JUMP_FALSE, JUMP_TRUE, JUMP_AND, JUMP_OR, ITER_NEXT, CHECK_*, PUSH_TRY, PUSH_FINALLY, PUSH_WIND |
 | Literal value          | Constant pool index     | CONST |
 | Name (string/symbol)   | Constant pool index     | VAR, VAR_BIND, VAR_CLEAR, VAR_REF, VAR_STORE; ATTR*, CONST_ITEM* (key); INVOKE_K_VAR |
 | Name → slot (optional) | Fast local index       | VAR may be lowered to FAST*; then arg is slot index |
@@ -181,9 +181,8 @@ When adding or changing an opcode:
 - [20. Delimited continuations](#20-delimited-continuations) — PUSH_PROMPT, PUSH_SHIFT, POP_SHIFT, POP_PROMPT, INVOKE_K, INVOKE_K_VAR
 - [21. Undelimited continuations (call/cc)](#21-undelimited-continuations-callcc) — PUSH_CC, POP_CC, CAPTURE_CC
 - [22. Dynamic wind](#22-dynamic-wind) — PUSH_WIND, POP_WIND, END_WIND
-- [23. Region control](#23-region-control) — PUSH_REGION, POP_REGION
-- [24. Parameterize extent](#24-parameterize-extent) — PUSH_PARAM, PARAM, POP_PARAM
-- [25. Sentinel](#25-sentinel) — THEEND
+- [23. Parameterize extent](#23-parameterize-extent) — PUSH_PARAM, PARAM, POP_PARAM
+- [24. Sentinel](#24-sentinel) — THEEND
 
 ### 2.1 Quick-reference index
 
@@ -254,7 +253,7 @@ When adding or changing an opcode:
 | INVOKE_K_VAR | CONST | Invoke continuation by name | [§20](#kos_op_invoke_k_var) |
 | THEEND | NOARG | Unreachable; no runtime | [§25](#kos_op_theend) |
 
-Other opcodes (CHECK_LT/LE/GT/GE, CHECK_IS_INSTANCE/IS_SUBCLASS, VAR_CLEAR, VAR_REF, FAST_BIND/CLEAR/REF, ATTR_CLEAR/REF, ITEM_CLEAR/REF, CONST_ITEM_*, BUILD_*, CALL_ATTR*, RECUR*, TAIL_RECUR*, PUSH_FINALLY/POP_*, CLEAR_*, OBJECT_*, PUSH_WITH/POP_WITH/PUSH_DYN_WITH/POP_DYN_WITH, PUSH_CC/POP_CC/CAPTURE_CC, PUSH_WIND/POP_WIND/END_WIND, PUSH_REGION/POP_REGION, PUSH_PARAM/PARAM/POP_PARAM) are listed under their category sections above; use the category index to jump to the section, then scan for the opcode name.
+Other opcodes (CHECK_LT/LE/GT/GE, CHECK_IS_INSTANCE/IS_SUBCLASS, VAR_CLEAR, VAR_REF, FAST_BIND/CLEAR/REF, ATTR_CLEAR/REF, ITEM_CLEAR/REF, CONST_ITEM_*, BUILD_*, CALL_ATTR*, RECUR*, TAIL_RECUR*, PUSH_FINALLY/POP_*, CLEAR_*, OBJECT_*, PUSH_WITH/POP_WITH/PUSH_DYN_WITH/POP_DYN_WITH, PUSH_CC/POP_CC/CAPTURE_CC, PUSH_WIND/POP_WIND/END_WIND, PUSH_PARAM/PARAM/POP_PARAM) are listed under their category sections above; use the category index to jump to the section, then scan for the opcode name.
 
 
 ## 3. No-op and compile-time
@@ -1589,22 +1588,22 @@ Full design: [interpreter/with-dyn-with.md](interpreter/with-dyn-with.md). Summa
 
 #### KOS_OP_PUSH_DYN_WITH
 
-- **Style**: CONST. Arg = name or no-binding sentinel (same as PUSH_WITH).
-- **Status**: Stub (design complete). Opcode not yet in opcodes.incl.
+- **Style**: CONST. Arg = constant pool index of binding name or sentinel for no binding (same as PUSH_WITH).
+- **Status**: Implemented (multi-shot dyn-with; sync and async enter/exit; VM auto-awaits when enter returns awaitable).
 - **Stack / behaviour:** Same as PUSH_WITH except pushes KOS_DYN_DYN_WITH. Node participates in continuation transfer plans (wind/unwind on non-local transfer).
 - **Pushes:** KOS_DYN_DYN_WITH.
 
 #### KOS_OP_POP_DYN_WITH
 
 - **Style**: NOARG.
-- **Status**: Stub (design complete). Opcode not yet in opcodes.incl.
+- **Status**: Implemented (sync and async exit; VM auto-awaits when exit returns awaitable).
 - **Behaviour:** Same as POP_WITH for normal and exception unwind. Pops KOS_DYN_DYN_WITH.
 
 ---
-### KOS_OP_PUSH_BEGIN, KOS_OP_PUSH_CLASS
+### KOS_OP_PUSH_CLASS
 
 - **Status**: Stub.
-- **Pushes (intended):** PUSH_BEGIN → KOS_DYN_REGION (KOS_EXT_BEGIN); PUSH_CLASS → region or dedicated class extent per design.
+- **Pushes (intended):** PUSH_CLASS → region or dedicated class extent per design.
 - **Example:** (Stub; no runtime table.)
 
 ---
@@ -1713,9 +1712,9 @@ Full design: [interpreter/with-dyn-with.md](interpreter/with-dyn-with.md). Summa
 
 ---
 
-### KOS_OP_POP_WITH, KOS_OP_POP_BEGIN
+### KOS_OP_POP_WITH
 
-- **Status**: PUSH_WITH and POP_WITH implemented (single-shot with; sync only). POP_BEGIN stub.
+- **Status**: PUSH_WITH and POP_WITH implemented (single-shot with; sync and async). PUSH_DYN_WITH and POP_DYN_WITH implemented (multi-shot dyn-with).
 - **Example:** (See 18.1 for PUSH_WITH/POP_WITH.)
 
 
@@ -1949,34 +1948,7 @@ Unified extent wind/unwind is described in [interpreter/extent-wind-unwind.md](i
 - **Example:** After-hook body ends with END_WIND; evaluator then continues unwinding or delivers pending return.
 
 
-## 23. Region control
-
-### KOS_OP_PUSH_REGION
-
-- **Style**: LABEL. Arg = handler label (pc for non-local exit).
-- **Status**: Stub.
-- **Stack**: Pushes region for block-local control.
-- **Pushes:** KOS_DYN_REGION. In the bytecode extent table, PUSH_REGION/POP_REGION are paired with **KOS_EXT_TRY** (there is no separate KOS_EXT_REGION); the extent kind is reused for region metadata.
-- **Example:** (Stub.) Intended: arg = handler pc.
-
-| index | opcode      | arg | arg view | comment |
-|------:|-------------|-----|----------|---------|
-| 0     | PUSH_REGION | 4   | 4 (-> 4) | push region; handler at 4 |
-| 1     | …           | …   | …        | body |
-| 2     | POP_REGION  | 0   | 0        | pop region |
-| 4     | LABEL       | —   | —        | handler |
-
----
-
-### KOS_OP_POP_REGION
-
-- **Style**: NOARG.
-- **Status**: Stub.
-- **Stack**: Pops region from dynamic chain.
-- **Example:** (Stub.) See PUSH_REGION.
-
-
-## 24. Parameterize extent
+## 23. Parameterize extent
 
 ### KOS_OP_PUSH_PARAM
 
@@ -2017,7 +1989,7 @@ Unified extent wind/unwind is described in [interpreter/extent-wind-unwind.md](i
 - **Example:** See PUSH_PARAM table.
 
 
-## 25. Sentinel
+## 24. Sentinel
 
 ### KOS_OP_THEEND
 

@@ -113,8 +113,8 @@ The VM in `eval.c` uses a jump table; every opcode has a handler. Handlers are e
 
 **Not implemented (stubs)** — hitting these at runtime raises "unimplemented opcode":
 - **Calls**: CALL_ATTR, CALL_ATTR_NAMES, CALL_ATTR_STAR; RECUR, RECUR_NAMES, RECUR_STAR; TAIL_RECUR, TAIL_RECUR_NAMES, TAIL_RECUR_STAR
-- **Block control (remaining)**: PUSH_BEGIN, PUSH_CLASS, POP_BEGIN (stubs)
-- **Wind / region**: PUSH_WIND, POP_WIND (stubs); PUSH_REGION, POP_REGION
+- **Block control (remaining)**: PUSH_CLASS (stub)
+- **Wind**: PUSH_WIND, POP_WIND (stubs)
 
 There are no **partially** implemented opcodes; each handler is either full, a stub, or a dedicated "no runtime implementation" handler (THEEND). The authoritative list is the set of handlers in `koskari/lib/eval.c` that do not call `op_unimplemented_stub`.
 
@@ -202,7 +202,7 @@ There are no **partially** implemented opcodes; each handler is either full, a s
 
 **Continuation Support**:
 - Delimited multi-shot continuations (reset/shift) and undelimited call/cc (PUSH_CC, CAPTURE_CC, POP_CC) implemented in VM; invocation via CALL; KoskariContinuationApply propagated when invoking undelimited continuation from a different evaluator token
-- Dynamic wind/unwind hooks (before/after) used by continuation transfer plans; PUSH_WIND/POP_WIND/END_WIND opcodes are stubbed
+- Dynamic wind/unwind hooks (before/after) used by continuation transfer plans; PUSH_WIND and POP_WIND are stubs; END_WIND is implemented
 - Flattened async execution
 - Eager-step awaitable optimization
 - Defer (single-shot await-handle): not eagerly awaited; explicit AWAIT drives it (koskari/lib/defer.c)
@@ -224,7 +224,7 @@ There are no **partially** implemented opcodes; each handler is either full, a s
 - Macro system (reader macros, defmacro, defalias)
 - Remaining control flow constructs (with, begin, class blocks)
 - Compiler: remaining specials, macro expansion, optimization passes
-- Remaining opcode handlers: CALL_ATTR*, RECUR*, TAIL_RECUR*, PUSH_DYN_WITH, POP_DYN_WITH, PUSH_BEGIN, PUSH_CLASS, PUSH_WIND, POP_WIND, END_WIND, PUSH_REGION, POP_REGION (BUILD_ARGS, BUILD_KWDS, BUILD_KWDS_NAMES, COMBINE_ARGS, COMBINE_KWDS, PUSH_WITH, POP_WITH, CALL_NAMES, CALL_STAR, TAIL_CALL_NAMES, TAIL_CALL_STAR implemented; see "Opcodes: implementation status" above; with/dyn-with design in design/interpreter/with-dyn-with.md)
+- Remaining opcode handlers: CALL_ATTR*, RECUR*, TAIL_RECUR*, PUSH_CLASS, PUSH_WIND, POP_WIND (BUILD_ARGS, BUILD_KWDS, BUILD_KWDS_NAMES, COMBINE_ARGS, COMBINE_KWDS, PUSH_WITH, POP_WITH, PUSH_DYN_WITH, POP_DYN_WITH, CALL_NAMES, CALL_STAR, TAIL_CALL_NAMES, TAIL_CALL_STAR, END_WIND implemented; see "Opcodes: implementation status" above; with/dyn-with design in design/interpreter/with-dyn-with.md)
 
 ### Needs Reconsideration
 - CPython bytecode target (abandoned)

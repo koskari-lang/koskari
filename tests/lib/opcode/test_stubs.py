@@ -79,24 +79,6 @@ class TestStubOpcodes(CevalTest):
             self._run_stub_opcode("END_WIND", 0)
 
 
-    def test_push_region_raises_not_implemented(self):
-        """
-        PUSH_REGION raises RuntimeError
-        """
-
-        with self.assertRaises(RuntimeError):
-            self._run_stub_opcode("PUSH_REGION", "handler")
-
-
-    def test_pop_region_raises_not_implemented(self):
-        """
-        POP_REGION raises RuntimeError
-        """
-
-        with self.assertRaises(RuntimeError):
-            self._run_stub_opcode("POP_REGION", 0)
-
-
     def test_theend_raises_unimpl(self):
         """
         THEEND has no runtime implementation; raises RuntimeError with fixed message
@@ -243,15 +225,6 @@ class TestStubOpcodes(CevalTest):
             self._run_stub_opcode("PUSH_WITH", "target")
 
 
-    def test_push_begin_raises_not_implemented(self):
-        """
-        PUSH_BEGIN raises RuntimeError
-        """
-
-        with self.assertRaises(RuntimeError):
-            self._run_stub_opcode("PUSH_BEGIN", 0)
-
-
     def test_push_ns_raises_not_implemented(self):
         """
         PUSH_NS raises RuntimeError
@@ -268,15 +241,6 @@ class TestStubOpcodes(CevalTest):
 
         with self.assertRaises(RuntimeError):
             self._run_stub_opcode("POP_WITH", 0)
-
-
-    def test_pop_begin_raises_not_implemented(self):
-        """
-        POP_BEGIN raises RuntimeError
-        """
-
-        with self.assertRaises(RuntimeError):
-            self._run_stub_opcode("POP_BEGIN", 0)
 
 
     def test_pop_ns_raises_not_implemented(self):

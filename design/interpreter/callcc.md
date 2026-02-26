@@ -360,10 +360,6 @@ Wrapper `tp_traverse` implementations walk all reachable PyObjects:
 - **Undelimited**: Invoke via `CALL` 0 or 1 (continuation and optional arg on stack; stack order [callable, arg_0, ...]).
 - `INVOKE_K` / `INVOKE_K_VAR` — Invoke delimited continuation; push model (graft frames onto current chain; return to call site when POP_PROMPT runs). Prompt need not be in chain.
 
-### Region Control
-- `PUSH_REGION` — Push region node for try/finally/loop/with
-- `POP_REGION` — Pop region node
-
 ## Related Documentation
 
 - [evaluator-token-continuation.md](evaluator-token-continuation.md) — Evaluator
