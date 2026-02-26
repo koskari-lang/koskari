@@ -15,7 +15,7 @@
 
 /**
    POP_LOOP: arg unused. Pop LOOP/FOREACH region, drop stack block,
-   and push KosDynRegion_RESULT(region) to the operand stack as the loop expression result.
+   and push (KosDynNode_IS_LOOP(region) ? KosDynLoop_RESULT((KosDynLoop *) region) : KosDynForeach_RESULT((KosDynForeach *) region)) to the operand stack as the loop expression result.
 */
 
 KOS_OP_HANDLER(POP_LOOP) {
@@ -23,15 +23,15 @@ KOS_OP_HANDLER(POP_LOOP) {
     PyErr_SetString(PyExc_RuntimeError, "POP_LOOP: top is not a region");
     return -1;
   }
-  KosDynRegion *region = (KosDynRegion *) KosContext_DYN_TOP(ctx);
-  if (KosDynRegion_STYLE(region) != KOS_REGION_LOOP && KosDynRegion_STYLE(region) != KOS_REGION_FOREACH) {
+  KosDynNode *region = (KosDynNode *) KosContext_DYN_TOP(ctx);
+  if (! KosDynNode_IS_LOOP(region) && ! KosDynNode_IS_FOREACH(region)) {
     PyErr_SetString(PyExc_RuntimeError,
                     "POP_LOOP: top is not a LOOP or FOREACH region");
     return -1;
   }
 
   /* Get result before popping region (region owns the reference) */
-  PyObject *result = KosDynRegion_RESULT(region);
+  PyObject *result = (KosDynNode_IS_LOOP(region) ? KosDynLoop_RESULT((KosDynLoop *) region) : KosDynForeach_RESULT((KosDynForeach *) region));
   Py_INCREF(result);
 
   /* Drop the stack block (both LOOP and FOREACH now push blocks) */
@@ -40,8 +40,8 @@ KOS_OP_HANDLER(POP_LOOP) {
     return -1;
   }
 
-  /* Pop the region (this DECREFs KosDynRegion_RESULT(region)) */
-  kos_dyn_pop_region(ctx, region);
+  /* Pop the region (this DECREFs (KosDynNode_IS_LOOP(region) ? KosDynLoop_RESULT((KosDynLoop *) region) : KosDynForeach_RESULT((KosDynForeach *) region))) */
+  if (KosDynNode_IS_TRY(region)) kos_dyn_pop_try(ctx, (KosDynTry *) region); else if (KosDynNode_IS_FINALLY(region)) kos_dyn_pop_finally(ctx, (KosDynFinally *) region); else if (KosDynNode_IS_LOOP(region)) kos_dyn_pop_loop(ctx, (KosDynLoop *) region); else if (KosDynNode_IS_FOREACH(region)) kos_dyn_pop_foreach(ctx, (KosDynForeach *) region);
 
   /* Push result to stack as loop expression value */
   if (KosStackBlock_PushRef(&CURRENT_STACK(ctx), result) < 0) {

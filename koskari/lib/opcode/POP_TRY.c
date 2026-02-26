@@ -14,9 +14,9 @@
 */
 
 /**
-   POP_TRY: arg = count of values to move from try block to parent before
-   dropping the block. Verify top of dynamic chain is a TRY region, clear
-   exception state, then pop the region.
+   POP_TRY: NOARG. Promote one value (TOS) from try block to parent before
+   dropping. Verify top of dynamic chain is a TRY region, clear exception
+   state, then pop the region.
 */
 
 KOS_OP_HANDLER(POP_TRY) {
@@ -24,18 +24,17 @@ KOS_OP_HANDLER(POP_TRY) {
     PyErr_SetString(PyExc_RuntimeError, "POP_TRY: top is not a region");
     return -1;
   }
-  KosDynRegion *region = (KosDynRegion *) KosContext_DYN_TOP(ctx);
-  if (KosDynRegion_STYLE(region) != KOS_REGION_TRY) {
+  KosDynNode *region = (KosDynNode *) KosContext_DYN_TOP(ctx);
+  if (! KosDynNode_IS_TRY(region)) {
     PyErr_SetString(PyExc_RuntimeError, "POP_TRY: top is not a TRY region");
     return -1;
   }
 
   PyErr_Clear();
   PyErr_SetExcInfo(NULL, NULL, NULL);
-  unsigned opa = (unsigned) KosOp_ARG(insn);
-  if (KosStackBlock_PopBlock(&CURRENT_STACK(ctx), (size_t) opa) < 0)
+  if (KosStackBlock_PopBlock(&CURRENT_STACK(ctx), 1) < 0)
     return -1;
-  kos_dyn_pop_region(ctx, region);
+  if (KosDynNode_IS_TRY(region)) kos_dyn_pop_try(ctx, (KosDynTry *) region); else if (KosDynNode_IS_FINALLY(region)) kos_dyn_pop_finally(ctx, (KosDynFinally *) region); else if (KosDynNode_IS_LOOP(region)) kos_dyn_pop_loop(ctx, (KosDynLoop *) region); else if (KosDynNode_IS_FOREACH(region)) kos_dyn_pop_foreach(ctx, (KosDynForeach *) region);
   (void) out_ev;
   return 0;
 }

@@ -102,10 +102,10 @@ KOS_OP_HANDLER(RETURN) {
       agen->in_progress = 0;
       if (KosContext_PENDING_AGEN_N(ctx) == 0) {
         /* ITER_NEXT case: exhausted; jump to else (region and else_pc on region) */
-        KosDynRegion *r = kos_find_region_for_loop(ctx);
+        KosDynNode *r = kos_find_node_for_loop(ctx);
         if (r) {
-          KosDynRegion_EXHAUSTED(r) = 1;
-          CURRENT_PC(ctx) = KosDynRegion_ITER_NEXT_ELSE_PC(r);
+          KosDynForeach_EXHAUSTED((KosDynForeach *) r) = 1;
+          CURRENT_PC(ctx) = KosDynForeach_ITER_NEXT_ELSE_PC((KosDynForeach *) r);
         }
         KosContext_PENDING_AGEN(ctx) = NULL;
         KosContext_PENDING_AGEN_DEFAULT(ctx) = NULL;

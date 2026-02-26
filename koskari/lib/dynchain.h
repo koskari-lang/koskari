@@ -45,7 +45,10 @@
    KOS_DYN_FRAME  - Function activation record
    KOS_DYN_PROMPT - Delimiter for delimited continuations (reset)
    KOS_DYN_WIND   - Dynamic-wind extent with before/after hooks
-   KOS_DYN_REGION - Block-local control (try/finally/loop/with)
+   KOS_DYN_TRY - try region
+   KOS_DYN_FINALLY - finally region
+   KOS_DYN_LOOP - loop region
+   KOS_DYN_FOREACH - foreach region
    KOS_DYN_NS     - Namespace scope (PUSH_NS/POP_NS)
    KOS_DYN_CC     - Undelimited continuation block (call/cc)
    KOS_DYN_YIELD_FROM - Yield-from delegation state
@@ -62,7 +65,10 @@ typedef enum KosDynKind {
   KOS_DYN_FRAME = 0,
   KOS_DYN_PROMPT,
   KOS_DYN_WIND,
-  KOS_DYN_REGION,
+  KOS_DYN_TRY,
+  KOS_DYN_FINALLY,
+  KOS_DYN_LOOP,
+  KOS_DYN_FOREACH,
   KOS_DYN_NS,
   KOS_DYN_CC,
   KOS_DYN_YIELD_FROM,
@@ -101,7 +107,6 @@ typedef enum KosDynFlags {
 #define KOS_DYN_CAP_NEEDS_UNWIND_ACTION      (1u << 2)
 #define KOS_DYN_CAP_NEEDS_WIND_BEFORE_ACTION (1u << 3)
 #define KOS_DYN_CAP_NEEDS_INSTALL_WIND       (1u << 4)
-#define KOS_DYN_CAP_NEEDS_TRANSFER_TEARDOWN  (1u << 6)
 #define KOS_DYN_CAP_BARRIER                  (1u << 7)
 #define KOS_DYN_CAP_HANDLES_EXCEPTIONS       (1u << 8)
 
@@ -109,24 +114,11 @@ typedef enum KosDynFlags {
 #define KOS_DYN_CAP_CATCH KOS_DYN_CAP_MAY_SWALLOW_EXCEPTION
 
 
-/* === KosRegionStyle enum === */
-
-
-/**
-   KosRegionStyle identifies the type of block-local control region.
-   This replaces the old KosBlockStyle enum that was on KosStackBlock.
-*/
-
 typedef enum KosRegionStyle {
   KOS_REGION_TRY      = 0,
   KOS_REGION_FINALLY  = 1,
   KOS_REGION_LOOP     = 2,
-  KOS_REGION_WITH     = 3,
   KOS_REGION_FOREACH  = 4,
-  KOS_REGION_AWAIT_WITH     = 5,
-  KOS_REGION_AWAIT_FOREACH  = 6,
-  KOS_REGION_NS       = 7,
-  KOS_REGION_BEGIN    = 8,
 } KosRegionStyle;
 
 
@@ -173,17 +165,10 @@ struct KosDynNode {
       uint32_t after_pc;
       uint8_t entered;
     } wind;
-    struct {
-      KosRegionStyle style;
-      uint32_t break_pc;
-      uint32_t continue_pc;
-      uint8_t enabled;
-      PyObject *result;
-      PyObject *iter;
-      uint8_t exhausted;
-      uint8_t handling_raise;  /* FINALLY only: 1 when entered due to exception */
-      uint32_t iter_next_else_pc;  /* FOREACH only: else PC when ITER_NEXT gen exhausts; 0 = not set */
-    } region;
+    struct { uint32_t handler_pc; uint8_t enabled; } try_;
+    struct { uint32_t handler_pc; uint8_t enabled; uint8_t handling_raise; PyObject *handling_result; } finally_;
+    struct { uint32_t break_pc; uint32_t continue_pc; uint8_t enabled; PyObject *result; } loop;
+    struct { uint32_t break_pc; uint32_t continue_pc; uint8_t enabled; PyObject *result; PyObject *iter; uint8_t exhausted; uint32_t iter_next_else_pc; } foreach;
     struct {
       PyObject *saved_ns;
     } ns;
@@ -207,7 +192,7 @@ struct KosDynNode {
       uint32_t resume_pc;  /* PC to jump to after with body (pop_pc + 1) */
     } with;
     struct {
-      /* shift: no extra fields; install pushes stack block, teardown drops it */
+      /* shift: simple marker; PROMPT owns the stack block for the delimited region */
     } shift;
     struct {
       PyObject *exc_val;  /* borrowed-then-owned KoskariContinuationApply instance */
@@ -218,7 +203,10 @@ struct KosDynNode {
 typedef struct KosDynNode KosDynFrame;
 typedef struct KosDynNode KosDynPrompt;
 typedef struct KosDynNode KosDynWind;
-typedef struct KosDynNode KosDynRegion;
+typedef struct KosDynNode KosDynTry;
+typedef struct KosDynNode KosDynFinally;
+typedef struct KosDynNode KosDynLoop;
+typedef struct KosDynNode KosDynForeach;
 typedef struct KosDynNode KosDynNs;
 typedef struct KosDynNode KosDynCC;
 typedef struct KosDynNode KosDynYieldFrom;
@@ -580,11 +568,10 @@ void kos_dynwind_free(KosDynWind *wind);
 
    :return: new region node, or NULL on error
 */
-KosDynRegion *kos_dynregion_new(
-   KosDynNode *parent,
-   KosRegionStyle style,
-   uint32_t break_pc,
-   uint32_t continue_pc);
+KosDynTry *kos_dyntry_new(KosDynNode *parent, uint32_t handler_pc);
+KosDynFinally *kos_dynfinally_new(KosDynNode *parent, uint32_t handler_pc);
+KosDynLoop *kos_dynloop_new(KosDynNode *parent, uint32_t break_pc, uint32_t continue_pc);
+KosDynForeach *kos_dynforeach_new(KosDynNode *parent, uint32_t break_pc, uint32_t continue_pc);
 
 
 /**
@@ -594,7 +581,10 @@ KosDynRegion *kos_dynregion_new(
 
    :return: cloned region, or NULL on error
 */
-KosDynRegion *kos_dynregion_clone(KosDynRegion *region);
+KosDynTry *kos_dyntry_clone(KosDynTry *node);
+KosDynFinally *kos_dynfinally_clone(KosDynFinally *node);
+KosDynLoop *kos_dynloop_clone(KosDynLoop *node);
+KosDynForeach *kos_dynforeach_clone(KosDynForeach *node);
 
 
 /**
@@ -602,7 +592,10 @@ KosDynRegion *kos_dynregion_clone(KosDynRegion *region);
 
    :param region: region to free (may be NULL)
 */
-void kos_dynregion_free(KosDynRegion *region);
+void kos_dyntry_free(KosDynTry *node);
+void kos_dynfinally_free(KosDynFinally *node);
+void kos_dynloop_free(KosDynLoop *node);
+void kos_dynforeach_free(KosDynForeach *node);
 
 
 /**
@@ -684,7 +677,8 @@ int kos_dyn_push(KosContext *ctx, KosDynNode *node);
    :return: 0 on success, -1 on error or BARRIER, KOS_DYN_UNWIND_ASYNC_STARTED
      when async
 */
-int kos_dyn_pop(KosContext *ctx, KosDynNode *node, struct KosEvent *out_ev);
+int kos_dyn_uninstall(KosContext *ctx, KosDynNode *node, struct KosEvent *out_ev);
+#define kos_dyn_pop kos_dyn_uninstall
 
 
 /**
@@ -891,11 +885,10 @@ int kos_dyn_pop_wind(KosContext *ctx, KosDynWind *wind);
 
    :return: new region, or NULL on error
 */
-KosDynRegion *kos_dyn_push_region(
-   KosContext *ctx,
-   KosRegionStyle style,
-   uint32_t break_pc,
-   uint32_t continue_pc);
+KosDynTry *kos_dyn_push_try(KosContext *ctx, uint32_t handler_pc);
+KosDynFinally *kos_dyn_push_finally(KosContext *ctx, uint32_t handler_pc);
+KosDynLoop *kos_dyn_push_loop(KosContext *ctx, uint32_t break_pc, uint32_t continue_pc);
+KosDynForeach *kos_dyn_push_foreach(KosContext *ctx, uint32_t break_pc, uint32_t continue_pc);
 
 
 /**
@@ -904,7 +897,10 @@ KosDynRegion *kos_dyn_push_region(
    :param ctx: execution context
    :param region: region to pop (must be dyn_top)
 */
-void kos_dyn_pop_region(KosContext *ctx, KosDynRegion *region);
+void kos_dyn_pop_try(KosContext *ctx, KosDynTry *node);
+void kos_dyn_pop_finally(KosContext *ctx, KosDynFinally *node);
+void kos_dyn_pop_loop(KosContext *ctx, KosDynLoop *node);
+void kos_dyn_pop_foreach(KosContext *ctx, KosDynForeach *node);
 
 
 /**
@@ -1122,8 +1118,7 @@ int kos_dyn_wind_unwind(KosContext *ctx, KosDynWind *node);
    kos_dyn_install: run install-phase setup when a node is pushed.
    kos_dyn_wind: run wind (enter) for extent nodes during continuation transfer.
    kos_dyn_unwind: run unwind (exit) for extent nodes; may start async.
-   kos_dyn_teardown_after_unwind: post-unwind structural teardown during transfer.
-   kos_dyn_unwind_on_exception: called when exception propagation reaches a
+   kos_dyn_exception_unwind: called when exception propagation reaches a
      HANDLES_EXCEPTIONS node; returns 0 to continue, 1 if swallowed,
      KOS_DYN_UNWIND_ASYNC_STARTED if async, -1 on error.
    kos_dyn_clone: allocate a copy of the node; NULL return on error or if
@@ -1133,14 +1128,11 @@ int kos_dyn_install(KosContext *ctx, KosDynNode *node);
 int kos_dyn_wind(KosContext *ctx, KosDynNode *node);
 int kos_dyn_unwind(KosContext *ctx, KosDynNode *node,
                    PyObject **out_awaitable);
-int kos_dyn_teardown_after_unwind(KosContext *ctx, KosDynNode *node);
-int kos_dyn_unwind_on_exception(KosContext *ctx, KosDynNode *node,
-                                struct KosEvent *out_ev);
+int kos_dyn_exception_unwind(KosContext *ctx, KosDynNode *node,
+                               struct KosEvent *out_ev);
 KosDynNode *kos_dyn_clone(KosDynNode *node);
 
 void kos_dyn_ns_unwind(KosContext *ctx, KosDynNs *node);
-
-void kos_dyn_region_unwind(KosContext *ctx, KosDynRegion *node);
 
 void kos_dyn_yieldfrom_unwind(KosContext *ctx, KosDynYieldFrom *node);
 
@@ -1155,7 +1147,7 @@ void kos_dyn_yieldfrom_unwind(KosContext *ctx, KosDynYieldFrom *node);
 
    :return: the topmost enabled TRY or FINALLY region, or NULL
 */
-KosDynRegion *kos_find_region_for_raise(KosContext *ctx);
+KosDynNode *kos_find_node_for_raise(KosContext *ctx);
 
 
 /**
@@ -1166,7 +1158,7 @@ KosDynRegion *kos_find_region_for_raise(KosContext *ctx);
 
    :return: the topmost LOOP or FOREACH region, or NULL if none found
  */
-KosDynRegion *kos_find_region_for_loop(KosContext *ctx);
+KosDynNode *kos_find_node_for_loop(KosContext *ctx);
 
 
 /**
@@ -1634,7 +1626,11 @@ int kos_hookrunner_traverse(
 #define KosDynNode_IS_FRAME(n)   (KosDynNode_KIND(n) == KOS_DYN_FRAME)
 #define KosDynNode_IS_PROMPT(n)  (KosDynNode_KIND(n) == KOS_DYN_PROMPT)
 #define KosDynNode_IS_WIND(n)    (KosDynNode_KIND(n) == KOS_DYN_WIND)
-#define KosDynNode_IS_REGION(n)  (KosDynNode_KIND(n) == KOS_DYN_REGION)
+#define KosDynNode_IS_TRY(n)     (KosDynNode_KIND(n) == KOS_DYN_TRY)
+#define KosDynNode_IS_FINALLY(n) (KosDynNode_KIND(n) == KOS_DYN_FINALLY)
+#define KosDynNode_IS_LOOP(n)    (KosDynNode_KIND(n) == KOS_DYN_LOOP)
+#define KosDynNode_IS_FOREACH(n) (KosDynNode_KIND(n) == KOS_DYN_FOREACH)
+#define KosDynNode_IS_REGION(n)  (KosDynNode_IS_TRY(n) || KosDynNode_IS_FINALLY(n) || KosDynNode_IS_LOOP(n) || KosDynNode_IS_FOREACH(n))
 #define KosDynNode_IS_NS(n)      (KosDynNode_KIND(n) == KOS_DYN_NS)
 #define KosDynNode_IS_CC(n)      (KosDynNode_KIND(n) == KOS_DYN_CC)
 #define KosDynNode_IS_YIELD_FROM(n)  (KosDynNode_KIND(n) == KOS_DYN_YIELD_FROM)
@@ -1665,17 +1661,23 @@ int kos_hookrunner_traverse(
 #define KosDynWind_AFTER_PC(w)    (((KosDynNode *)(w))->u.wind.after_pc)
 #define KosDynWind_ENTERED(w)     (((KosDynNode *)(w))->u.wind.entered)
 
-#define KosDynRegion_STYLE(r)      (((KosDynNode *)(r))->u.region.style)
-#define KosDynRegion_BREAK_PC(r)   (((KosDynNode *)(r))->u.region.break_pc)
-#define KosDynRegion_CONTINUE_PC(r) (((KosDynNode *)(r))->u.region.continue_pc)
-#define KosDynRegion_ENABLED(r)    (((KosDynNode *)(r))->u.region.enabled)
-#define KosDynRegion_RESULT(r)     (((KosDynNode *)(r))->u.region.result)
-#define KosDynRegion_ITER(r)       (((KosDynNode *)(r))->u.region.iter)
-#define KosDynRegion_EXHAUSTED(r)  (((KosDynNode *)(r))->u.region.exhausted)
-#define KosDynRegion_HANDLING_RAISE(r) (((KosDynNode *)(r))->u.region.handling_raise)
-/* For FINALLY regions: result holds handling_result (stashed return value) */
-#define KosDynRegion_HANDLING_RESULT(r) KosDynRegion_RESULT(r)
-#define KosDynRegion_ITER_NEXT_ELSE_PC(r) (((KosDynNode *)(r))->u.region.iter_next_else_pc)
+#define KosDynTry_HANDLER_PC(r)      (((KosDynNode *)(r))->u.try_.handler_pc)
+#define KosDynTry_ENABLED(r)         (((KosDynNode *)(r))->u.try_.enabled)
+#define KosDynFinally_HANDLER_PC(r)  (((KosDynNode *)(r))->u.finally_.handler_pc)
+#define KosDynFinally_ENABLED(r)     (((KosDynNode *)(r))->u.finally_.enabled)
+#define KosDynFinally_HANDLING_RAISE(r) (((KosDynNode *)(r))->u.finally_.handling_raise)
+#define KosDynFinally_HANDLING_RESULT(r) (((KosDynNode *)(r))->u.finally_.handling_result)
+#define KosDynLoop_BREAK_PC(r)       (((KosDynNode *)(r))->u.loop.break_pc)
+#define KosDynLoop_CONTINUE_PC(r)    (((KosDynNode *)(r))->u.loop.continue_pc)
+#define KosDynLoop_ENABLED(r)        (((KosDynNode *)(r))->u.loop.enabled)
+#define KosDynLoop_RESULT(r)         (((KosDynNode *)(r))->u.loop.result)
+#define KosDynForeach_BREAK_PC(r)    (((KosDynNode *)(r))->u.foreach.break_pc)
+#define KosDynForeach_CONTINUE_PC(r) (((KosDynNode *)(r))->u.foreach.continue_pc)
+#define KosDynForeach_ENABLED(r)     (((KosDynNode *)(r))->u.foreach.enabled)
+#define KosDynForeach_RESULT(r)      (((KosDynNode *)(r))->u.foreach.result)
+#define KosDynForeach_ITER(r)        (((KosDynNode *)(r))->u.foreach.iter)
+#define KosDynForeach_EXHAUSTED(r)   (((KosDynNode *)(r))->u.foreach.exhausted)
+#define KosDynForeach_ITER_NEXT_ELSE_PC(r) (((KosDynNode *)(r))->u.foreach.iter_next_else_pc)
 
 #define KosDynNs_SAVED_NS(n)      (((KosDynNode *)(n))->u.ns.saved_ns)
 

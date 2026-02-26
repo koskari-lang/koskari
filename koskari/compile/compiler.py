@@ -239,7 +239,7 @@ class ByteCodeFragment:
 
 
     @contextmanager
-    def child_namespace(self, ns_name, names, values, pop=1):
+    def child_namespace(self, ns_name, names, values):
         """
         Context manager that compiles a child scope with bound names.
         On entry, compiles all value expressions and yields a fragment for
@@ -249,7 +249,6 @@ class ByteCodeFragment:
         :param ns_name: name for the child namespace (e.g. source form)
         :param names: sequence of bound names (strings or symbols)
         :param values: sequence of expressions (one per name)
-        :param pop: argument for POP_NS (default 1)
         """
 
         compiler = self.compiler
@@ -279,7 +278,7 @@ class ByteCodeFragment:
 
         self.instruction(OpCode.KOS_OP_PUSH_NS, len(names))
         self.instructions.extend(child.instructions)
-        self.instruction(OpCode.KOS_OP_POP_NS, pop)
+        self.instruction(OpCode.KOS_OP_POP_NS, 0)
 
 
     @contextmanager

@@ -2392,7 +2392,7 @@ static int op_attach_koskari_agen_frame(
 static int op_attach_koskari_agen_frame_for_iter_next(
     KosContext *ctx,
     KosPyAsyncGen *agen,
-    KosDynRegion *region) {
+    KosDynNode *region) {
 
   KosDynFrame *gen_frame = KosContext_FRAME_TOP(agen->ctx);
   if (! gen_frame) {
@@ -2583,7 +2583,11 @@ static int defer_drive(KosContext *ctx, KosEvent *out_ev, PyObject *defer_obj) {
             0 if no handler (out_ev set to KOS_EV_RAISE, caller should return)
 */
 static int try_local_exception_handler(KosContext *ctx, KosEvent *out_ev) {
-  KosDynRegion *region = kos_find_region_for_raise(ctx);
+  KosDynNode *region = kos_find_node_for_raise(ctx);
+  SAYF("[try_local] region=%p dyn_top=%p acting_pc=%u stack_len=%zu",
+       (void *) region, (void *) KosContext_DYN_TOP(ctx),
+       (unsigned) CURRENT_ACTING_PC(ctx),
+       (size_t) (CURRENT_STACK(ctx) ? KosStackBlock_LEN(CURRENT_STACK(ctx)) : 0));
   if (! region) {
     if (CURRENT_FRAME(ctx)) {
       while (KosContext_DYN_TOP(ctx) != NULL
@@ -2617,7 +2621,7 @@ static int try_local_exception_handler(KosContext *ctx, KosEvent *out_ev) {
           /* Node refused to pop (e.g. a BARRIER node). Dispatch to the
              node's exception handler if it has the HANDLES_EXCEPTIONS cap. */
           if (top && KosDynNode_HAS_CAP(top, KOS_DYN_CAP_HANDLES_EXCEPTIONS)) {
-            int exc_res = kos_dyn_unwind_on_exception(ctx, top, out_ev);
+            int exc_res = kos_dyn_exception_unwind(ctx, top, out_ev);
             if (exc_res == KOS_DYN_UNWIND_ASYNC_STARTED) {
               KosContext_UNWIND_TARGET_FRAME(ctx) = CURRENT_FRAME(ctx);
               return 1;
@@ -2665,12 +2669,11 @@ static int try_local_exception_handler(KosContext *ctx, KosEvent *out_ev) {
     }
   }
 
-  uint32_t handler_pc = KosDynRegion_BREAK_PC(region);
+  uint32_t handler_pc = KosDynNode_IS_TRY(region) ? KosDynTry_HANDLER_PC((KosDynTry *) region) : KosDynFinally_HANDLER_PC((KosDynFinally *) region);
   {
     KosTryHandler th;
-    if (kos_try_handler_for((PyObject *) CURRENT_CODE(ctx),
-                            CURRENT_ACTING_PC(ctx), &th) == 0) {
-      if (KosDynRegion_STYLE(region) == KOS_REGION_FINALLY && th.finally_pc != KOS_EXTENT_NONE) {
+    if (kos_try_handler_for((PyObject *) CURRENT_CODE(ctx), CURRENT_ACTING_PC(ctx), &th) == 0) {
+      if (KosDynNode_IS_FINALLY(region) && th.finally_pc != KOS_EXTENT_NONE) {
         handler_pc = th.finally_pc;
       }
       else if (th.except_pc != KOS_EXTENT_NONE) {
@@ -2679,14 +2682,13 @@ static int try_local_exception_handler(KosContext *ctx, KosEvent *out_ev) {
     }
   }
 
-  if (KosDynRegion_STYLE(region) == KOS_REGION_TRY ||
-      KosDynRegion_STYLE(region) == KOS_REGION_FINALLY) {
+  if (KosDynNode_IS_TRY(region) || KosDynNode_IS_FINALLY(region)) {
     if (KosStackBlock_ClearBlock(&CURRENT_STACK(ctx)) < 0)
       return -1;
   }
 
   CURRENT_PC(ctx) = handler_pc;
-  KosDynRegion_ENABLED(region) = 0;
+  if (KosDynNode_IS_TRY(region)) KosDynTry_ENABLED((KosDynTry *) region) = 0; else KosDynFinally_ENABLED((KosDynFinally *) region) = 0;
 
   /* Set aside exception in excinfo and clear so handler runs without PyErr set */
   {
@@ -2696,8 +2698,8 @@ static int try_local_exception_handler(KosContext *ctx, KosEvent *out_ev) {
     PyErr_Clear();
   }
 
-  if (KosDynRegion_STYLE(region) == KOS_REGION_FINALLY)
-    KosDynRegion_HANDLING_RAISE(region) = 1;
+  if (KosDynNode_IS_FINALLY(region))
+    KosDynFinally_HANDLING_RAISE((KosDynFinally *) region) = 1;
 
   return 1;
 }

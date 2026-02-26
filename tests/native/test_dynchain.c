@@ -132,21 +132,94 @@ static int test_dynwind_clone(void) {
 }
 
 
-/* === DynRegion tests === */
+/* === DynTry / DynFinally / DynLoop / DynForeach tests === */
 
 
-static int test_dynregion_new_free(void) {
-    /* Test region node allocation and freeing */
-    KosDynRegion *region = kos_dynregion_new(NULL, KOS_REGION_TRY, 100, 200);
-    TEST_ASSERT_NOT_NULL(region, "create region");
+static int test_dyntry_new_free(void) {
+    /* Test TRY node allocation and freeing */
+    KosDynTry *node = kos_dyntry_new(NULL, 100);
+    TEST_ASSERT_NOT_NULL(node, "create TRY node");
 
-    TEST_ASSERT_EQ(KosDynNode_KIND(region), KOS_DYN_REGION, "region kind is REGION");
-    TEST_ASSERT_EQ(KosDynRegion_STYLE(region), KOS_REGION_TRY, "region style is TRY");
-    TEST_ASSERT_EQ(KosDynRegion_BREAK_PC(region), 100, "region break_pc is set");
-    TEST_ASSERT_EQ(KosDynRegion_CONTINUE_PC(region), 200, "region continue_pc is set");
-    TEST_ASSERT_EQ(KosDynRegion_ENABLED(region), 1, "region enabled by default");
+    TEST_ASSERT_EQ(KosDynNode_KIND(node), KOS_DYN_TRY, "node kind is TRY");
+    TEST_ASSERT_EQ(KosDynTry_HANDLER_PC(node), 100, "handler_pc is set");
+    TEST_ASSERT_EQ(KosDynTry_ENABLED(node), 1, "enabled by default");
 
-    kos_dynregion_free(region);
+    kos_dyntry_free(node);
+
+    return 0;
+}
+
+
+static int test_dyntry_clone(void) {
+    /* Test TRY node cloning */
+    KosDynTry *node = kos_dyntry_new(NULL, 50);
+    TEST_ASSERT_NOT_NULL(node, "create TRY node");
+
+    KosDynTry_ENABLED(node) = 0;
+
+    KosDynTry *clone = kos_dyntry_clone(node);
+    TEST_ASSERT_NOT_NULL(clone, "clone TRY");
+
+    TEST_ASSERT_NOT_SAME(node, clone, "clone is different object");
+    TEST_ASSERT_EQ(KosDynTry_HANDLER_PC(clone), 50, "clone has same handler_pc");
+    TEST_ASSERT_EQ(KosDynTry_ENABLED(clone), 0, "clone has same enabled state");
+    TEST_ASSERT(KosDynNode_FLAGS(clone) & KOS_DYNF_CLONED, "clone has CLONED flag");
+
+    kos_dyntry_free(clone);
+    kos_dyntry_free(node);
+
+    return 0;
+}
+
+
+static int test_dynfinally_new_free(void) {
+    /* Test FINALLY node allocation and freeing */
+    KosDynFinally *node = kos_dynfinally_new(NULL, 100);
+    TEST_ASSERT_NOT_NULL(node, "create FINALLY node");
+
+    TEST_ASSERT_EQ(KosDynNode_KIND(node), KOS_DYN_FINALLY, "node kind is FINALLY");
+    TEST_ASSERT_EQ(KosDynFinally_HANDLER_PC(node), 100, "handler_pc is set");
+    TEST_ASSERT_EQ(KosDynFinally_ENABLED(node), 1, "enabled by default");
+    TEST_ASSERT_EQ(KosDynFinally_HANDLING_RAISE(node), 0, "handling_raise is 0");
+    TEST_ASSERT_NULL(KosDynFinally_HANDLING_RESULT(node), "handling_result is NULL");
+
+    kos_dynfinally_free(node);
+
+    return 0;
+}
+
+
+static int test_dynloop_new_free(void) {
+    /* Test LOOP node allocation and freeing */
+    KosDynLoop *node = kos_dynloop_new(NULL, 100, 200);
+    TEST_ASSERT_NOT_NULL(node, "create LOOP node");
+
+    TEST_ASSERT_EQ(KosDynNode_KIND(node), KOS_DYN_LOOP, "node kind is LOOP");
+    TEST_ASSERT_EQ(KosDynLoop_BREAK_PC(node), 100, "break_pc is set");
+    TEST_ASSERT_EQ(KosDynLoop_CONTINUE_PC(node), 200, "continue_pc is set");
+    TEST_ASSERT_EQ(KosDynLoop_ENABLED(node), 1, "enabled by default");
+    TEST_ASSERT_NULL(KosDynLoop_RESULT(node), "result is NULL");
+
+    kos_dynloop_free(node);
+
+    return 0;
+}
+
+
+static int test_dynforeach_new_free(void) {
+    /* Test FOREACH node allocation and freeing */
+    KosDynForeach *node = kos_dynforeach_new(NULL, 100, 200);
+    TEST_ASSERT_NOT_NULL(node, "create FOREACH node");
+
+    TEST_ASSERT_EQ(KosDynNode_KIND(node), KOS_DYN_FOREACH, "node kind is FOREACH");
+    TEST_ASSERT_EQ(KosDynForeach_BREAK_PC(node), 100, "break_pc is set");
+    TEST_ASSERT_EQ(KosDynForeach_CONTINUE_PC(node), 200, "continue_pc is set");
+    TEST_ASSERT_EQ(KosDynForeach_ENABLED(node), 1, "enabled by default");
+    TEST_ASSERT_NULL(KosDynForeach_RESULT(node), "result is NULL");
+    TEST_ASSERT_NULL(KosDynForeach_ITER(node), "iter is NULL");
+    TEST_ASSERT_EQ(KosDynForeach_EXHAUSTED(node), 0, "exhausted is 0");
+
+    kos_dynforeach_free(node);
 
     return 0;
 }
@@ -280,8 +353,12 @@ int run_dynchain_tests(void) {
     RUN_TEST(test_dynwind_new_free);
     RUN_TEST(test_dynwind_clone);
 
-    /* Region tests */
-    RUN_TEST(test_dynregion_new_free);
+    /* TRY / FINALLY / LOOP / FOREACH tests */
+    RUN_TEST(test_dyntry_new_free);
+    RUN_TEST(test_dyntry_clone);
+    RUN_TEST(test_dynfinally_new_free);
+    RUN_TEST(test_dynloop_new_free);
+    RUN_TEST(test_dynforeach_new_free);
 
     /* Chain operation tests */
     RUN_TEST(test_chain_free);

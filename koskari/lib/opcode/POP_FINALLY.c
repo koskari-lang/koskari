@@ -14,9 +14,9 @@
 */
 
 /**
-   POP_FINALLY: arg = count of values to move from finally block to parent
-   before dropping the block. Verify top is a FINALLY region; if we were
-   handling a raise, restore the exception. Then pop the region.
+   POP_FINALLY: NOARG. Promote one value (TOS) from finally block to parent
+   before dropping. Verify top is a FINALLY region; if we were handling a
+   raise, restore the exception. Then pop the region.
 */
 
 KOS_OP_HANDLER(POP_FINALLY) {
@@ -24,24 +24,23 @@ KOS_OP_HANDLER(POP_FINALLY) {
     PyErr_SetString(PyExc_RuntimeError, "POP_FINALLY: top is not a region");
     return -1;
   }
-  KosDynRegion *region = (KosDynRegion *) KosContext_DYN_TOP(ctx);
-  if (KosDynRegion_STYLE(region) != KOS_REGION_FINALLY) {
+  KosDynNode *region = (KosDynNode *) KosContext_DYN_TOP(ctx);
+  if (! KosDynNode_IS_FINALLY(region)) {
     PyErr_SetString(PyExc_RuntimeError,
                     "POP_FINALLY: top is not a FINALLY region");
     return -1;
   }
 
-  if (KosDynRegion_HANDLING_RAISE(region)) {
+  if (KosDynFinally_HANDLING_RAISE((KosDynFinally *) region)) {
     PyObject *typ = NULL, *val = NULL, *tb = NULL;
     PyErr_GetExcInfo(&typ, &val, &tb);
     PyErr_Restore(typ, val, tb);
     PyErr_SetExcInfo(NULL, NULL, NULL);
-    KosDynRegion_HANDLING_RAISE(region) = 0;
+    KosDynFinally_HANDLING_RAISE((KosDynFinally *) region) = 0;
   }
-  unsigned opa = (unsigned) KosOp_ARG(insn);
-  if (KosStackBlock_PopBlock(&CURRENT_STACK(ctx), (size_t) opa) < 0)
+  if (KosStackBlock_PopBlock(&CURRENT_STACK(ctx), 1) < 0)
     return -1;
-  kos_dyn_pop_region(ctx, region);
+  if (KosDynNode_IS_TRY(region)) kos_dyn_pop_try(ctx, (KosDynTry *) region); else if (KosDynNode_IS_FINALLY(region)) kos_dyn_pop_finally(ctx, (KosDynFinally *) region); else if (KosDynNode_IS_LOOP(region)) kos_dyn_pop_loop(ctx, (KosDynLoop *) region); else if (KosDynNode_IS_FOREACH(region)) kos_dyn_pop_foreach(ctx, (KosDynForeach *) region);
   (void) out_ev;
   return 0;
 }

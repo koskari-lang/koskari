@@ -19,13 +19,13 @@
 */
 
 KOS_OP_HANDLER(PUSH_FINALLY) {
-  KosDynRegion *region = kos_dyn_push_region(ctx, KOS_REGION_FINALLY, KosOp_ARG(insn), 0);
+  KosDynNode *region = (KosDynNode *) kos_dyn_push_finally(ctx, KosOp_ARG(insn));
   if (! region) {
     PyErr_NoMemory();
     return -1;
   }
   if (KosStackBlock_PushBlock(&CURRENT_STACK(ctx)) < 0) {
-    kos_dyn_pop_region(ctx, region);
+    if (KosDynNode_IS_TRY(region)) kos_dyn_pop_try(ctx, (KosDynTry *) region); else if (KosDynNode_IS_FINALLY(region)) kos_dyn_pop_finally(ctx, (KosDynFinally *) region); else if (KosDynNode_IS_LOOP(region)) kos_dyn_pop_loop(ctx, (KosDynLoop *) region); else if (KosDynNode_IS_FOREACH(region)) kos_dyn_pop_foreach(ctx, (KosDynForeach *) region);
     return -1;
   }
   (void) out_ev;

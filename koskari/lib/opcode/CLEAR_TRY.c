@@ -22,12 +22,12 @@ KOS_OP_HANDLER(CLEAR_TRY) {
     PyErr_SetString(PyExc_RuntimeError, "CLEAR_TRY: top is not a region");
     return -1;
   }
-  KosDynRegion *region = (KosDynRegion *) KosContext_DYN_TOP(ctx);
-  if (KosDynRegion_STYLE(region) != KOS_REGION_TRY) {
+  KosDynNode *region = (KosDynNode *) KosContext_DYN_TOP(ctx);
+  if (! KosDynNode_IS_TRY(region)) {
     PyErr_SetString(PyExc_RuntimeError, "CLEAR_TRY: top is not a TRY region");
     return -1;
   }
-  KosDynRegion_ENABLED(region) = 0;
+  if (KosDynNode_IS_TRY(region)) KosDynTry_ENABLED((KosDynTry *) region)=0; else if (KosDynNode_IS_FINALLY(region)) KosDynFinally_ENABLED((KosDynFinally *) region)=0; else if (KosDynNode_IS_LOOP(region)) KosDynLoop_ENABLED((KosDynLoop *) region)=0; else KosDynForeach_ENABLED((KosDynForeach *) region)=0;
   (void) out_ev;
   (void) insn;
   return 0;
