@@ -14,7 +14,8 @@
 */
 
 /**
-   POP_TRY: arg unused. Verify top of dynamic chain is a TRY region, clear
+   POP_TRY: arg = count of values to move from try block to parent before
+   dropping the block. Verify top of dynamic chain is a TRY region, clear
    exception state, then pop the region.
 */
 
@@ -31,8 +32,10 @@ KOS_OP_HANDLER(POP_TRY) {
 
   PyErr_Clear();
   PyErr_SetExcInfo(NULL, NULL, NULL);
+  unsigned opa = (unsigned) KosOp_ARG(insn);
+  if (KosStackBlock_PopBlock(&CURRENT_STACK(ctx), (size_t) opa) < 0)
+    return -1;
   kos_dyn_pop_region(ctx, region);
   (void) out_ev;
-  (void) insn;
   return 0;
 }

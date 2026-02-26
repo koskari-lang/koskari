@@ -45,7 +45,7 @@ class TestExceptionOpcodes(CevalTest):
             ["EXCEPTION", 0],
             ["POP", 1],
             ["CONST", 42],
-            ["POP_TRY", 0],
+            ["POP_TRY", 1],
             ["RETURN", 1],
         ])
         result = run_to_completion(make_callable(code, ns)())
@@ -64,8 +64,10 @@ class TestExceptionOpcodes(CevalTest):
             ["RAISE", 1],
             ["LABEL", "finally"],
             ["CONST", 99],
-            ["POP_FINALLY", 0],
-            ["RETURN", 1],
+            ["POP", 1],
+            ["EXCEPTION", 0],
+            ["POP_FINALLY", 1],
+            ["RAISE", 1],
             ["NOOP", 0],
         ])
         with self.assertRaises(ValueError):
@@ -86,7 +88,7 @@ class TestExceptionOpcodes(CevalTest):
             ["EXCEPTION", 0],
             ["POP", 1],
             ["CONST", 42],
-            ["POP_TRY", 0],
+            ["POP_TRY", 1],
             ["RETURN", 1],
         ])
         result = run_to_completion(make_callable(code, ns)())
@@ -135,7 +137,7 @@ class TestExceptionOpcodes(CevalTest):
             ["PUSH_FINALLY", "fin"],
             ["CONST", 42],
             ["CLEAR_FINALLY", 0],
-            ["POP_FINALLY", 0],
+            ["POP_FINALLY", 1],
             ["RETURN", 1],
             ["NOOP", 0],
             ["LABEL", "fin"],
@@ -158,7 +160,7 @@ class TestExceptionOpcodes(CevalTest):
             ["POP", 1],
             ["EXCEPTION_CLEAR", 0],
             ["CONST", 42],
-            ["POP_TRY", 0],
+            ["POP_TRY", 1],
             ["RETURN", 1],
         ])
         result = run_to_completion(make_callable(code, ns)())
@@ -179,7 +181,7 @@ class TestExceptionOpcodes(CevalTest):
             ["POP", 1],
             ["CONST", ValueError],
             ["EXCEPTION_MATCH", 1],
-            ["POP_TRY", 0],
+            ["POP_TRY", 1],
             ["RETURN", 1],
         ])
         result = run_to_completion(make_callable(code, ns)())
@@ -202,5 +204,180 @@ class TestExceptionOpcodes(CevalTest):
         ])
         result = run_to_completion(make_callable(code, ns)())
         self.assertEqual(result, 42)
+
+
+    def test_try_stack_block_isolated_on_exception(self):
+        """
+        Body pushes values, raises; handler sees clean stack (block cleared)
+        """
+
+        exc_inst = ValueError("test")
+        code, ns = build_expr([
+            ["PUSH_TRY", "handler"],
+            ["CONST", 1],
+            ["CONST", 2],
+            ["CONST", 3],
+            ["CONST", exc_inst],
+            ["RAISE", 1],
+            ["LABEL", "handler"],
+            ["EXCEPTION", 0],
+            ["POP", 1],
+            ["CONST", 42],
+            ["POP_TRY", 1],
+            ["RETURN", 1],
+        ])
+        result = run_to_completion(make_callable(code, ns)())
+        self.assertEqual(result, 42)
+
+
+    def test_finally_stack_block_isolated_on_exception(self):
+        """
+        Body pushes values, raises; finally sees clean stack (block cleared)
+        """
+
+        exc_inst = ValueError("test")
+        code, ns = build_expr([
+            ["PUSH_FINALLY", "finally"],
+            ["CONST", 1],
+            ["CONST", 2],
+            ["CONST", exc_inst],
+            ["RAISE", 1],
+            ["LABEL", "finally"],
+            ["CONST", 99],
+            ["POP_FINALLY", 0],
+            ["RETURN", 1],
+            ["NOOP", 0],
+        ])
+        with self.assertRaises(ValueError):
+            run_to_completion(make_callable(code, ns)())
+
+
+    def test_try_normal_path_drops_block(self):
+        """
+        No exception; body runs, CLEAR_TRY, POP_TRY, then RETURN
+        """
+
+        code, ns = build_expr([
+            ["PUSH_TRY", "skip"],
+            ["CONST", 1],
+            ["CLEAR_TRY", 0],
+            ["POP_TRY", 0],
+            ["LABEL", "skip"],
+            ["CONST", 42],
+            ["RETURN", 1],
+        ])
+        result = run_to_completion(make_callable(code, ns)())
+        self.assertEqual(result, 42)
+
+
+    def test_finally_normal_path_drops_block(self):
+        """
+        Normal path, CLEAR_FINALLY, POP_FINALLY
+        """
+
+        code, ns = build_expr([
+            ["PUSH_FINALLY", "fin"],
+            ["CONST", 42],
+            ["CLEAR_FINALLY", 0],
+            ["POP_FINALLY", 1],
+            ["RETURN", 1],
+            ["NOOP", 0],
+            ["LABEL", "fin"],
+        ])
+        result = run_to_completion(make_callable(code, ns)())
+        self.assertEqual(result, 42)
+
+
+    def test_try_stack_depth_on_handler_entry(self):
+        """
+        Body pushes N values, raises; handler gets EXCEPTION (stack cleared)
+        """
+
+        exc_inst = RuntimeError("x")
+        code, ns = build_expr([
+            ["PUSH_TRY", "h"],
+            ["CONST", 10],
+            ["CONST", 20],
+            ["CONST", 30],
+            ["CONST", exc_inst],
+            ["RAISE", 1],
+            ["LABEL", "h"],
+            ["EXCEPTION", 0],
+            ["POP", 1],
+            ["CONST", 42],
+            ["POP_TRY", 1],
+            ["RETURN", 1],
+        ])
+        result = run_to_completion(make_callable(code, ns)())
+        self.assertEqual(result, 42)
+
+
+    def test_finally_runs_on_normal_exit(self):
+        """
+        Body completes, CLEAR_FINALLY, jump to finally, POP_FINALLY
+        """
+
+        code, ns = build_expr([
+            ["PUSH_FINALLY", "fin"],
+            ["CONST", 100],
+            ["CLEAR_FINALLY", 0],
+            ["LABEL", "fin"],
+            ["CONST", 5],
+            ["POP_FINALLY", 1],
+            ["RETURN", 1],
+        ])
+        result = run_to_completion(make_callable(code, ns)())
+        self.assertEqual(result, 5)
+
+
+    def test_break_through_try_drops_block(self):
+        """
+        PUSH_TRY inside PUSH_LOOP; BREAK unwinds through TRY (drops its block)
+        """
+
+        code, ns = build_expr([
+            ["PUSH_LOOP", 0],
+            ["PUSH_TRY", "handler"],
+            ["CONST", 1],
+            ["BREAK", 1],
+            ["LABEL", "handler"],
+            ["EXCEPTION", 0],
+            ["POP", 1],
+            ["POP_TRY", 0],
+            ["CONST", 0],
+            ["RETURN", 1],
+            ["LABEL", "break_lbl"],
+            ["POP_LOOP", 0],
+            ["RETURN", 1],
+        ])
+        result = run_to_completion(make_callable(code, ns)())
+        self.assertEqual(result, 1)
+
+
+    def test_nested_try_finally(self):
+        """
+        Outer PUSH_FINALLY, inner PUSH_TRY; inner raises, handler re-raises; finally runs
+        """
+
+        exc_inst = ValueError("nested")
+        code, ns = build_expr([
+            ["PUSH_FINALLY", "outer_fin"],
+            ["PUSH_TRY", "inner_h"],
+            ["CONST", exc_inst],
+            ["RAISE", 1],
+            ["LABEL", "inner_h"],
+            ["EXCEPTION", 0],
+            ["POP_TRY", 1],
+            ["RAISE", 1],
+            ["LABEL", "outer_fin"],
+            ["CONST", 99],
+            ["POP", 1],
+            ["EXCEPTION", 0],
+            ["POP_FINALLY", 1],
+            ["RAISE", 1],
+            ["NOOP", 0],
+        ])
+        with self.assertRaises(ValueError):
+            run_to_completion(make_callable(code, ns)())
 
 # The end.

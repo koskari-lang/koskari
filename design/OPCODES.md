@@ -1653,8 +1653,8 @@ Full design: [interpreter/with-dyn-with.md](interpreter/with-dyn-with.md). Summa
 
 - **Style**: LABEL. Handler targets in extent table.
 - **Status**: Implemented.
-- **Stack**: Pushes TRY region. Exception dispatch uses kos_try_handler_for.
-- **Pushes:** KOS_DYN_REGION (static extent KOS_EXT_TRY; handler targets in extent descriptor).
+- **Stack**: Pushes TRY region and a KosStackBlock (like PUSH_LOOP). Exception dispatch clears the block before jumping to the handler. POP_TRY drops the block (with PopBlock(count) to preserve handler result); region unwind (e.g. BREAK through TRY) also drops the block.
+- **Pushes:** KOS_DYN_REGION (static extent KOS_EXT_TRY; handler targets in extent descriptor) and KosStackBlock.
 - **Invariants**: Extent kind KOS_EXT_TRY. Handler targets (except_pc, finally_pc, exit_pc) from extent descriptor.
 
 **Example:** try/except. Extent table holds except_pc, finally_pc, exit_pc.
@@ -1674,8 +1674,8 @@ Full design: [interpreter/with-dyn-with.md](interpreter/with-dyn-with.md). Summa
 
 - **Style**: LABEL. Arg = handler/finally target.
 - **Status**: Implemented.
-- **Stack**: Pushes FINALLY region; extent table holds finally_pc and related targets.
-- **Pushes:** KOS_DYN_REGION (static extent KOS_EXT_FINALLY).
+- **Stack**: Pushes FINALLY region and a KosStackBlock (like PUSH_TRY). Exception dispatch clears the block before jumping to the finally handler. POP_FINALLY drops the block (with PopBlock(count) to preserve finally result); region unwind drops the block when control passes through.
+- **Pushes:** KOS_DYN_REGION (static extent KOS_EXT_FINALLY) and KosStackBlock.
 - **Invariants**: Extent kind KOS_EXT_FINALLY.
 
 **Example:** Push finally block. Arg = finally block pc (or extent holds it).
@@ -1693,7 +1693,7 @@ Full design: [interpreter/with-dyn-with.md](interpreter/with-dyn-with.md). Summa
 ### KOS_OP_CLEAR_FINALLY, KOS_OP_CLEAR_LOOP, KOS_OP_CLEAR_TRY
 
 - **Status**: Implemented. Used for cleanup on non-local exit (break/continue/exception).
-- **Stack**: Clear region state; do not pop (POP_* does that at target).
+- **Stack**: Clear region state; do not pop (POP_* does that at target). CLEAR_TRY and CLEAR_FINALLY do not touch the stack block (only disable the region); the block is dropped by POP_* or by region unwind.
 - **Example:** On break: CLEAR_LOOP (and possibly CLEAR_TRY) then jump to break_pc; POP_LOOP at target.
 
 ---
@@ -1701,7 +1701,7 @@ Full design: [interpreter/with-dyn-with.md](interpreter/with-dyn-with.md). Summa
 ### KOS_OP_POP_LOOP, KOS_OP_POP_NS, KOS_OP_POP_TRY, KOS_OP_POP_FINALLY
 
 - **Status**: Implemented.
-- **Stack**: Pop corresponding region from dynamic chain.
+- **Stack**: Pop corresponding region from dynamic chain. POP_TRY and POP_FINALLY take a COUNT arg: they use PopBlock(count) to move that many values from the block to the parent before dropping the block (matching sibilant-ceval); count 0 drops without preserving.
 - **Invariants**: Top of chain must match the POP kind. pc == pop_pc is outside block.
 
 **Example:** POP_NS. Pool: N/A.

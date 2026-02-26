@@ -14,7 +14,8 @@
 */
 
 /**
-   POP_FINALLY: arg unused. Verify top is a FINALLY region; if we were
+   POP_FINALLY: arg = count of values to move from finally block to parent
+   before dropping the block. Verify top is a FINALLY region; if we were
    handling a raise, restore the exception. Then pop the region.
 */
 
@@ -37,8 +38,10 @@ KOS_OP_HANDLER(POP_FINALLY) {
     PyErr_SetExcInfo(NULL, NULL, NULL);
     KosDynRegion_HANDLING_RAISE(region) = 0;
   }
+  unsigned opa = (unsigned) KosOp_ARG(insn);
+  if (KosStackBlock_PopBlock(&CURRENT_STACK(ctx), (size_t) opa) < 0)
+    return -1;
   kos_dyn_pop_region(ctx, region);
   (void) out_ev;
-  (void) insn;
   return 0;
 }

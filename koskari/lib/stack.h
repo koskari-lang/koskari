@@ -442,6 +442,16 @@ int KosStackBlock_DropBlock(KosStackBlock **block);
 
 
 /**
+   Steal the last count elements from the current block, append them
+   to the parent block, then drop the current block. For count 0,
+   same as DropBlock.
+
+   :return: 0 on success, -1 on error
+ */
+int KosStackBlock_PopBlock(KosStackBlock **block, size_t count);
+
+
+/**
    Clear the current block in place (COW): drop refs to all elements
    and set length to 0. Does not drop or push blocks.
 

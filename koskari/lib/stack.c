@@ -836,6 +836,50 @@ int KosStackBlock_DropBlock(KosStackBlock **block) {
 }
 
 
+int KosStackBlock_PopBlock(KosStackBlock **block, size_t count) {
+  KosStackBlock *top = *block;
+  if (! top) {
+    PyErr_SetString(PyExc_RuntimeError, "pop block failed; no top block");
+    return -1;
+  }
+  KosStackBlock *back = top->back;
+  if (! back) {
+    PyErr_SetString(PyExc_RuntimeError, "cannot pop root block");
+    return -1;
+  }
+
+  if (count) {
+    size_t len = top->len;
+    if (count > len) {
+      PyErr_Format(PyExc_RuntimeError, "pop block underrun: requested %zu, available %zu",
+                   count, len);
+      return -1;
+    }
+
+    if (KosStackBlock_EnsureExclusive(&back))
+      return -1;
+
+    size_t nlen = back->len + count;
+    while (nlen > back->max) {
+      back = KosStackBlock_Grow(back);
+      if (! back)
+        return -1;
+    }
+
+    back->len = nlen;
+    while (count--) {
+      PyObject *v = top->objs[--len];
+      back->objs[--nlen] = v;
+      Py_INCREF(v);
+    }
+  }
+
+  *block = back;
+  KosStackBlock_Release(top);
+  return 0;
+}
+
+
 static int KosStackBlock_PopTailPtr(
     KosStackBlock **self,
     size_t count,

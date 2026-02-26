@@ -2679,6 +2679,12 @@ static int try_local_exception_handler(KosContext *ctx, KosEvent *out_ev) {
     }
   }
 
+  if (KosDynRegion_STYLE(region) == KOS_REGION_TRY ||
+      KosDynRegion_STYLE(region) == KOS_REGION_FINALLY) {
+    if (KosStackBlock_ClearBlock(&CURRENT_STACK(ctx)) < 0)
+      return -1;
+  }
+
   CURRENT_PC(ctx) = handler_pc;
   KosDynRegion_ENABLED(region) = 0;
 

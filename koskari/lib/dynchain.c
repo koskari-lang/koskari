@@ -754,9 +754,12 @@ void kos_dynregion_free(KosDynRegion *region) {
 
 
 void kos_dyn_region_unwind(KosContext *ctx, KosDynRegion *node) {
-  (void) ctx;
-  (void) node;
-  /* No teardown today; FINALLY will run body here later. */
+  if (! KosContext_FRAME_TOP(ctx))
+    return;
+  if (KosDynRegion_STYLE(node) == KOS_REGION_TRY ||
+      KosDynRegion_STYLE(node) == KOS_REGION_FINALLY) {
+    KosStackBlock_DropBlock(&KosDynFrame_STACK(KosContext_FRAME_TOP(ctx)));
+  }
 }
 
 

@@ -19,8 +19,13 @@
 */
 
 KOS_OP_HANDLER(PUSH_TRY) {
-  if (! kos_dyn_push_region(ctx, KOS_REGION_TRY, KosOp_ARG(insn), 0)) {
+  KosDynRegion *region = kos_dyn_push_region(ctx, KOS_REGION_TRY, KosOp_ARG(insn), 0);
+  if (! region) {
     PyErr_NoMemory();
+    return -1;
+  }
+  if (KosStackBlock_PushBlock(&CURRENT_STACK(ctx)) < 0) {
+    kos_dyn_pop_region(ctx, region);
     return -1;
   }
   (void) out_ev;
