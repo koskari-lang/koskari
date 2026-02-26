@@ -1924,8 +1924,11 @@ int kos_dyn_wind(KosContext *ctx, KosDynNode *node) {
    :param out_awaitable: receives the awaitable when async; may be NULL
    :return: 0 on success, -1 on error, KOS_DYN_UNWIND_ASYNC_STARTED when async
 */
-int kos_dyn_unwind(KosContext *ctx, KosDynNode *node,
-                   PyObject **out_awaitable) {
+int kos_dyn_unwind(
+    KosContext *ctx,
+    KosDynNode *node,
+    PyObject **out_awaitable) {
+
   PyObject *dummy = NULL;
   PyObject **out = (out_awaitable != NULL) ? out_awaitable : &dummy;
 
@@ -1959,8 +1962,11 @@ int kos_dyn_unwind(KosContext *ctx, KosDynNode *node,
    the exception was swallowed and execution should resume,
    KOS_DYN_UNWIND_ASYNC_STARTED if async, or -1 on error.
 */
-int kos_dyn_exception_unwind(KosContext *ctx, KosDynNode *node,
-                                KosEvent *out_ev) {
+int kos_dyn_exception_unwind(
+    KosContext *ctx,
+    KosDynNode *node,
+    KosEvent *out_ev) {
+
   switch (KosDynNode_KIND(node)) {
     case KOS_DYN_PROMPT:
       (void) out_ev;
@@ -2318,12 +2324,14 @@ int kos_shift_capture(
            (void *) KosDynFrame_STACK(f),
            KosDynFrame_STACK(f) ? (size_t) KosStackBlock_LEN(KosDynFrame_STACK(f)) : 0);
       (void) f;
+
     } else {
       SAYF("[xfer] shift_capture segment_top=%p (prompt) frame_inside=%p kind=%u",
            (void *) segment_top, (void *) frame_inside,
            (unsigned) KosDynNode_KIND(frame_inside));
     }
   }
+
   KosDynNode *captured_chain = kos_clone_chain_segment(segment_top, stop);
   if (! captured_chain && segment_top != stop) {
     /* Clone failed */
@@ -2373,6 +2381,7 @@ int kos_shift_capture(
       graft_point_id,
       1,  /* one-shot */
       KosContext_TOKEN(ctx) ? (PyObject *) KosContext_TOKEN(ctx) : NULL);
+
   if (! k) {
     kos_dynchain_free(captured_chain, NULL);
     return -1;
@@ -2441,6 +2450,7 @@ int kos_capture_cc(KosContext *ctx, KosContinuation **out_k) {
       0,  /* graft_point_id: capture-cc captures to root */
       0,  /* multi-shot */
       KosContext_TOKEN(ctx) ? (PyObject *) KosContext_TOKEN(ctx) : NULL);
+
   if (! k) {
     kos_dynchain_free(captured_chain, NULL);
     return -1;
@@ -2527,6 +2537,7 @@ KosContinuation *kos_continuation_clone(KosContinuation *k) {
       KosContinuation_GRAFT_POINT_ID(k),
       KosContinuation_ONE_SHOT(k),
       KosContinuation_TOKEN_REF(k));
+
   if (! clone) {
     kos_dynchain_free(cloned_chain, NULL);
     return NULL;
@@ -2591,7 +2602,9 @@ static KosTransferPlan *xfer_plan_cache = NULL;
    are one allocation; default 32 slots, realloc entire block if more needed.
    Reuses cached plan when available. Returns NULL on failure (PyErr_NoMemory).
 */
-static KosTransferPlan *kos_transfer_plan_alloc(size_t action_count) {
+static KosTransferPlan *kos_transfer_plan_alloc(
+    size_t action_count) {
+
   size_t capacity = (action_count <= KOS_XFER_PLAN_DEFAULT_ACTIONS)
       ? KOS_XFER_PLAN_DEFAULT_ACTIONS
       : action_count;
@@ -2636,7 +2649,10 @@ static KosTransferPlan *kos_transfer_plan_alloc(size_t action_count) {
    - PARAM or DYN_WITH: one NODE_UNWIND action.
    Used to size the plan's action array before filling it.
 */
-static size_t xfer_plan_count_unwind_and_params(KosDynNode *current, KosDynNode *lca) {
+static size_t xfer_plan_count_unwind_and_params(
+    KosDynNode *current,
+    KosDynNode *lca) {
+
   size_t n = 0;
   KosDynNode *node = current;
   while (node && node != lca) {
@@ -2662,7 +2678,10 @@ static size_t xfer_plan_count_unwind_and_params(KosDynNode *current, KosDynNode 
    re-enter the segment.  Used to size the plan and to allocate the temp
    array in xfer_plan_fill_wind_actions.
 */
-static size_t xfer_plan_count_wind_before(KosDynNode *target, KosDynNode *lca) {
+static size_t xfer_plan_count_wind_before(
+    KosDynNode *target,
+    KosDynNode *lca) {
+
   size_t n = 0;
   KosDynNode *node = target;
   while (node && node != lca) {
