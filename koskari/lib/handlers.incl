@@ -9,6 +9,8 @@
 #include "opcode/CAR.c"
 #include "opcode/CDR.c"
 #include "opcode/CONS.c"
+#include "opcode/PROPER.c"
+#include "opcode/PAIR_SPLICE.c"
 #include "opcode/AWAIT.c"
 #include "opcode/BREAK.c"
 #include "opcode/CONTINUE.c"

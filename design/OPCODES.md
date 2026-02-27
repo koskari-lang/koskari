@@ -164,7 +164,7 @@ When adding or changing an opcode:
 - [3. No-op and compile-time](#3-no-op-and-compile-time) — NOOP, LABEL, POSITION
 - [4. Stack](#4-stack) — DUP, POP
 - [5. Constants](#5-constants) — CONST
-- [5.1 Pair construction and access](#51-pair-construction-and-access) — CAR, CDR, CONS
+- [5.1 Pair construction and access](#51-pair-construction-and-access) — CAR, CDR, CONS, PROPER, PAIR_SPLICE
 - [6. Mode control](#6-mode-control) — AWAIT, BREAK, CONTINUE, RAISE, RETURN, YIELD, YIELD_FROM
 - [7. Iteration](#7-iteration) — ITER_NEXT, NEXT
 - [8. Jumps](#8-jumps) — JUMP, JUMP_FALSE, JUMP_TRUE, JUMP_AND, JUMP_OR
@@ -199,6 +199,8 @@ When adding or changing an opcode:
 | CAR | NOARG | Pop pair; push car | [§5.1](#kos_op_car) |
 | CDR | NOARG | Pop pair; push cdr | [§5.1](#kos_op_cdr) |
 | CONS | COUNT | Pop N values; push (e_0 . ... . e_{N-1}) | [§5.1](#kos_op_cons) |
+| PROPER | COUNT | Pop N values; push proper list (e_0 ... e_{N-1}) | [§5.1](#kos_op_proper) |
+| PAIR_SPLICE | COUNT | Concatenate N pair/tuple segments into one proper list | [§5.1](#kos_op_pair_splice) |
 | AWAIT | NOARG | Suspend on awaitable; resume with value | [§6](#kos_op_await) |
 | BREAK | COUNT | Jump to loop break target | [§6](#kos_op_break) |
 | CONTINUE | COUNT | Jump to loop continue target | [§6](#kos_op_continue) |
@@ -258,7 +260,7 @@ When adding or changing an opcode:
 | INVOKE_K_VAR | CONST | Invoke continuation by name | [§20](#kos_op_invoke_k_var) |
 | THEEND | NOARG | Unreachable; no runtime | [§25](#kos_op_theend) |
 
-Other opcodes (CHECK_LT/LE/GT/GE, CHECK_IS_INSTANCE/IS_SUBCLASS, VAR_CLEAR, VAR_REF, FAST_BIND/CLEAR/REF, ATTR_CLEAR/REF, ITEM_CLEAR/REF, CONST_ITEM_*, BUILD_*, CALL_ATTR*, RECUR*, TAIL_RECUR*, PUSH_FINALLY/POP_*, CLEAR_*, OBJECT_*, PUSH_WITH/POP_WITH/PUSH_DYN_WITH/POP_DYN_WITH, PUSH_CC/POP_CC/CAPTURE_CC, PUSH_WIND/POP_WIND/END_WIND, PUSH_PARAM/PARAM/POP_PARAM) are listed under their category sections above; use the category index to jump to the section, then scan for the opcode name.
+Other opcodes (PROPER, PAIR_SPLICE, CHECK_LT/LE/GT/GE, CHECK_IS_INSTANCE/IS_SUBCLASS, VAR_CLEAR, VAR_REF, FAST_BIND/CLEAR/REF, ATTR_CLEAR/REF, ITEM_CLEAR/REF, CONST_ITEM_*, BUILD_*, CALL_ATTR*, RECUR*, TAIL_RECUR*, PUSH_FINALLY/POP_*, CLEAR_*, OBJECT_*, PUSH_WITH/POP_WITH/PUSH_DYN_WITH/POP_DYN_WITH, PUSH_CC/POP_CC/CAPTURE_CC, PUSH_WIND/POP_WIND/END_WIND, PUSH_PARAM/PARAM/POP_PARAM) are listed under their category sections above; use the category index to jump to the section, then scan for the opcode name.
 
 
 ## 3. No-op and compile-time
@@ -419,6 +421,58 @@ Other opcodes (CHECK_LT/LE/GT/GE, CHECK_IS_INSTANCE/IS_SUBCLASS, VAR_CLEAR, VAR_
   (e_0 . (e_1 . ... (e_{count-1}) ...)). Implemented via KosStackBlock_TailPtr,
   KosPair_ConsFromPtr, KosStackBlock_Drop, then push result. count 0 → push
   nil (INCREF).
+
+
+#### KOS_OP_PROPER
+
+- **Style**: COUNT. Arg = number of element values on stack.
+- **Status**: Implemented. (`koskari/lib/opcode/PROPER.c`)
+- **Stack**: `[..., e_0, ..., e_{count-1}] → [..., result]` where result is the
+  proper list `(e_0 e_1 ... e_{count-1})`. nil is implicitly appended as the
+  tail. count 0 → push nil directly.
+- **Invariants**: Each `e_i` may be any Python object; none need be a pair.
+- **Use-case**: Emitted by the quasiquote compiler for segments of non-splice
+  elements. Equivalent to CONS with an extra `CONST nil` on the stack, but more
+  compact: saves one instruction per list.
+
+**Example:** Build the proper list `(a b c)` from three constants.
+
+| index | opcode | arg | arg view | comment |
+|------:|--------|-----|----------|---------|
+| 0     | CONST  | 0   | 0 (sym a)  | stack: [..., a] |
+| 1     | CONST  | 1   | 1 (sym b)  | stack: [..., a, b] |
+| 2     | CONST  | 2   | 2 (sym c)  | stack: [..., a, b, c] |
+| 3     | PROPER | 3   | 3          | stack: [..., (a b c)] |
+
+
+#### KOS_OP_PAIR_SPLICE
+
+- **Style**: COUNT. Arg = number of segments on stack (bottom = first segment,
+  top = last segment).
+- **Status**: Implemented. (`koskari/lib/opcode/PAIR_SPLICE.c`)
+- **Stack**: `[..., seg_0, ..., seg_{count-1}] → [..., result]` where result is
+  the concatenation of all segments as a single proper list. Each segment may be:
+  nil (contributes nothing), a pair (proper or improper; its elements are
+  appended), a Python tuple (its elements are appended), or any iterable.
+  count 0 → push nil.
+- **Invariants**: All segments must be iterable; non-iterable values raise
+  TypeError. The result is always a proper pair list (or nil if all segments are
+  empty). Dotted-pair segments are walked until nil; the implicit nil tail of
+  the last segment is not included.
+- **Use-case**: Emitted by the quasiquote compiler when at least one
+  `unquote-splicing` site is present in a list. Each constant-only segment is
+  folded into a single `CONST tuple` (which PAIR_SPLICE accepts natively),
+  reducing instruction count significantly for mostly-literal lists.
+
+**Example:** Splice a variable list `b` between constants.
+`` `(a ,@b c) `` compiles to roughly:
+
+| index | opcode      | arg | arg view        | comment |
+|------:|-------------|-----|-----------------|---------|
+| 0     | CONST       | 0   | 0 ((sym a,))    | segment: tuple `(a,)` |
+| 1     | VAR         | 1   | 1 (b)           | splice value |
+| 2     | CONST       | 2   | 2 ((sym c,))    | segment: tuple `(c,)` |
+| 3     | PAIR_SPLICE | 3   | 3               | stack: [..., (a . (b_0 ... b_n . (c)))] |
 
 
 ## 6. Mode control

@@ -68,16 +68,16 @@ __all__ = (
 )
 
 
-_symbol__str = symbol("#str")
-_symbol_begin = symbol("begin")
+_symbol__str = symbol("compile/str")
+_symbol_begin = symbol("compile/begin")
 _symbol_decimal = symbol("decimal")
 _symbol_format = symbol("format")
 _symbol_fraction = symbol("fraction")
-_symbol_quasiquote = symbol("quasiquote")
-_symbol_quote = symbol("quote")
-_symbol_splice = symbol("splice")
-_symbol_unquote = symbol("unquote")
-_symbol_unquote_splicing = symbol("unquote-splicing")
+_symbol_quasiquote = symbol("compile/quasiquote")
+_symbol_quote = symbol("compile/quote")
+_symbol_splice = symbol("compile/splice")
+_symbol_unquote = symbol("compile/unquote")
+_symbol_unquote_splicing = symbol("compile/unquote-splicing")
 
 IN_PROGRESS = keyword("work-in-progress")
 VALUE = keyword("value")

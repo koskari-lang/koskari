@@ -42,6 +42,7 @@ from .lambda_ import special_lambda
 from .let import special_let
 from .loops import special_break, special_continue, special_for_each, special_while
 from .pairs import special_car, special_cdr, special_cons, special_quote
+from .quasiquote import special_quasiquote, special_unquote, special_unquote_splicing
 from .slots import special_attr, special_del_attr, special_ref_attr, special_set_attr
 from .imports import helper_import_from_sequence, special_import, special_import_from
 from .object import (
@@ -150,6 +151,7 @@ __all__ = (
     "special_not_in",
     "special_parameterize",
     "special_power",
+    "special_quasiquote",
     "special_quote",
     "special_raise",
     "special_ref_attr",
@@ -168,6 +170,8 @@ __all__ = (
     "special_try",
     "special_type",
     "special_unless",
+    "special_unquote",
+    "special_unquote_splicing",
     "special_vars",
     "special_when",
     "special_while",

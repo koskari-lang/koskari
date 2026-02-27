@@ -928,6 +928,132 @@ compiles it. Otherwise emit CONST FORM.
 ```
 
 
+## compile/quasiquote
+
+**Symbol:** `compile/quasiquote`
+
+**Syntax:** `` `EXPR `` (reader shorthand) or `(compile/quasiquote EXPR)`
+
+**Use-case:** Quasi-quotation: construct a pair structure at compile time with
+selected sub-expressions evaluated at runtime. Inside the body, `,EXPR`
+(unquote) splices a single evaluated value, and `,@EXPR` (unquote-splicing)
+flattens a list into the surrounding list.
+
+**Reader shorthands:**
+- `` `EXPR `` → `(compile/quasiquote EXPR)`
+- `,EXPR` → `(compile/unquote EXPR)` (only valid inside a quasiquote body)
+- `,@EXPR` → `(compile/unquote-splicing EXPR)` (only valid inside a quasiquote body)
+
+**Behaviour:** One argument required. The compiler walks the expression
+recursively at a nesting *level* (starting at 0):
+
+- **Atoms and constants** (symbols, keywords, numbers, nil): emitted as `CONST`.
+- **`(compile/unquote INNER)`** at level 0: `INNER` is compiled normally
+  (evaluated at runtime); its result becomes that position's value.
+- **`(compile/unquote INNER)`** at level > 0: the unquote form is reconstructed
+  literally as a pair — `CONST compile/unquote`, recurse on INNER at level − 1,
+  `PROPER 2`.
+- **`(compile/quasiquote INNER)`** at any level: reconstructed literally at
+  level + 1.
+- **Proper lists**: walked element by element. Consecutive non-splice elements
+  are accumulated into *segments*:
+  - If no `unquote-splicing` site is present anywhere in the list, each segment
+    is emitted individually with `PROPER n`.
+  - If any splice is present, constant-only segments are folded into a single
+    `CONST (e0, e1, ...)` tuple (which `PAIR_SPLICE` accepts natively); mixed
+    segments use `PROPER n`. Each splice site compiles its inner expression
+    directly (must produce an iterable pair or nil). All segments and splices are
+    gathered then combined with `PAIR_SPLICE count`.
+- **Dotted (improper) pairs**: like a proper list but the non-nil tail is emitted
+  after all elements and the whole thing is closed with `CONS count+1` (the tail
+  is explicit). Splice in dotted-tail position raises `SpecialError`.
+
+**Nesting:** Each additional `` ` `` increments the level; each `,` decrements
+it. At level > 0, unquote forms are data, not escapes.
+
+**Note on dotted tails with unquote:** `(a . ,x)` is parsed by the reader as the
+three-element proper list `(a compile/unquote x)` (because `(a . (unquote x))`
+collapses to a proper list). Only atomic tails produce genuine improper pairs
+(e.g. `` `(a . 42) `` or `` `(a . b) ``).
+
+**Opcodes emitted:** `CONST`, `PROPER`, `CONS`, `PAIR_SPLICE` (see OPCODES.md §5.1).
+
+**Examples:**
+
+```scheme
+;; Atom: just a constant
+`42           ; → 42
+`foo          ; → symbol foo
+
+;; Proper list — compiles to PROPER 3
+`(a b c)      ; → (a b c)
+
+;; Unquote — x is evaluated at runtime
+`(a ,x b)     ; → (a <value of x> b)
+
+;; Unquote-splicing — items is spliced in
+`(a ,@items b) ; → (a item0 item1 ... b)
+
+;; Dotted pair with atom tail
+`(a . 42)     ; → (a . 42)
+
+;; Nested quasiquote — inner unquote is NOT evaluated at outer level
+``(a ,(+ 1 2)) ; → (compile/quasiquote (a (compile/unquote (+ 1 2))))
+```
+
+**Implementation:** `koskari/compile/specials/quasiquote.py`
+
+**Tests:** `tests/compile/specials/test_quasiquote.py`
+
+
+## compile/unquote
+
+**Symbol:** `compile/unquote`
+
+**Syntax:** `,EXPR` (reader shorthand) or `(compile/unquote EXPR)`
+
+**Use-case:** Escape from quasi-quotation. Only valid inside a
+`compile/quasiquote` body; at the active nesting level (level 0) the argument
+is compiled and evaluated normally, and its result is inserted at that position.
+
+**Behaviour:** When called as a top-level special form (outside quasiquote),
+raises `SpecialError`. Inside quasiquote, this form is handled directly by the
+`compile/quasiquote` compiler and never reaches the `compile/unquote` handler.
+
+**Examples:**
+
+```scheme
+`(a ,x b)    ; x is evaluated
+`(a ,(+ 1 2) b)  ; (+ 1 2) is evaluated, giving 3
+```
+
+
+## compile/unquote-splicing
+
+**Symbol:** `compile/unquote-splicing`
+
+**Syntax:** `,@EXPR` (reader shorthand) or `(compile/unquote-splicing EXPR)`
+
+**Use-case:** Splice a list into a quasi-quoted list. Only valid in list
+(element) position inside a `compile/quasiquote` body; the argument must
+evaluate to a pair list or nil at runtime, and its elements are inserted
+into the surrounding list.
+
+**Behaviour:** When called as a top-level special form (outside quasiquote),
+raises `SpecialError`. When the enclosing list is being compiled, splice sites
+are detected by the quasiquote compiler and compiled directly; the spliced
+value is pushed onto the stack as a `PAIR_SPLICE` argument. Not valid in the
+cdr (dotted tail) position of an improper list; the quasiquote compiler raises
+`SpecialError` if a splice form appears there.
+
+**Examples:**
+
+```scheme
+`(a ,@items b)   ; items (a list) is spliced in between a and b
+`(,@xs ,@ys)     ; two lists concatenated
+```
+
+
 ## compile/car
 
 **Symbol:** `compile/car`

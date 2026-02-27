@@ -57,6 +57,8 @@ OP(CONST, CONST)
 OP(CAR, NOARG)
 OP(CDR, NOARG)
 OP(CONS, COUNT)
+OP(PROPER, COUNT)
+OP(PAIR_SPLICE, COUNT)
 
 // mode control - all code is async, yields flag async generators
 OP(AWAIT, NOARG)

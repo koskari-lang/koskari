@@ -305,14 +305,14 @@ class TestQuoted(TestCase):
         'foo
         """
         col = parse_source(src)
-        self.assertEqual(col, cons(symbol("quote"), symbol("foo"), nil))
+        self.assertEqual(col, cons(symbol("compile/quote"), symbol("foo"), nil))
 
     def test_quote_list(self):
         src = """
         '(foo bar)
         """
         col = parse_source(src)
-        expected = cons(symbol("quote"),
+        expected = cons(symbol("compile/quote"),
                         cons(symbol("foo"), symbol("bar"), nil),
                         nil)
         self.assertEqual(col, expected)
@@ -322,15 +322,15 @@ class TestQuoted(TestCase):
         `bar
         """
         col = parse_source(src)
-        self.assertEqual(col, cons(symbol("quasiquote"), symbol("bar"), nil))
+        self.assertEqual(col, cons(symbol("compile/quasiquote"), symbol("bar"), nil))
 
     def test_unquote_splicing(self):
         src = """
         `(,@foo)
         """
         col = parse_source(src)
-        exp = cons(symbol("quasiquote"),
-                   cons(cons(symbol("unquote-splicing"),
+        exp = cons(symbol("compile/quasiquote"),
+                   cons(cons(symbol("compile/unquote-splicing"),
                              symbol("foo"),
                              nil),
                         nil),
@@ -383,7 +383,7 @@ class TestConsPairs(TestCase):
     def test_implicit_begin(self):
         src = "{testing a thing}"
         col = parse_source(src)
-        self.assertEqual(col, cons(symbol("begin"),
+        self.assertEqual(col, cons(symbol("compile/begin"),
                                    symbol("testing"),
                                    symbol("a"),
                                    symbol("thing"),
