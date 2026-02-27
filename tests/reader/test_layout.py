@@ -194,6 +194,37 @@ class TestLayoutBlockSyntax(TestCase):
         self.assertEqual(result, expected)
 
 
+    def test_prefix_symbol_not_mangled_in_begin_body(self):
+        src = """
+        begin:
+          define double [x]:
+            (+ x x)
+          define tagged-double [x]:
+            (double-result (double x))
+        """
+
+        # This is a test for a parser regression where the second
+        # "define" was being mangled to "efine"
+
+        expected = pycons(
+          (symbol("compile/begin"),
+
+           (symbol("define"), symbol("double"), (symbol("x"),),
+            (symbol("compile/begin"),
+             (symbol("+"), symbol("x"), symbol("x")))),
+
+           (symbol("define"), symbol("tagged-double"), (symbol("x"),),
+            (symbol("compile/begin"),
+             (symbol("double-result"), (symbol("double"), symbol("x"))))))
+        )
+
+        result = parse_layout(src)
+        print("result   :", result)
+        print("expected :", expected)
+
+        self.assertEqual(result, expected)
+
+
 class TestLayoutReaderNamespace(TestCase):
 
     def test_accepts_module(self):

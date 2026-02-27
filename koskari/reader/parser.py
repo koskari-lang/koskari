@@ -982,6 +982,16 @@ class LayoutReader(Reader):
     def _read(self, stream, raw=False):
         """
         Override to support break marker for block-header parsing
+
+        When _break_marker is set, checks the current stream position before
+        each form read. If the position has reached or passed the marker (the
+        column of the block-opener colon), returns a synthetic MARK event
+        instead of reading the next form. This lets read_block_header stop
+        exactly at the colon without accidentally consuming it as a form.
+
+        The position comparison uses tuple ordering: (line, col) pairs compare
+        lexicographically, so a later column on the same line, or any position
+        on a later line, will be >= the marker.
         """
 
         if self._break_marker is not None:
@@ -996,10 +1006,30 @@ class LayoutReader(Reader):
 
     def _probe_block_header_end(self, stream, require_colon=True):
         """
-        Probe pass: parse with : as terminator, discard, find last colon
+        Probe pass: read the block header to locate the final colon
 
-        Returns (recorded_str, last_colon_pos, start_pos). The stream is
-        consumed past the header. If require_colon and no colon found, raises.
+        Wraps the stream in a RecordingStream so every character consumed is
+        captured. Installs ':' as a terminating reader macro so the colon
+        surfaces as a VALUE form rather than crashing the atom reader. Reads
+        forms until either the colon (at depth 0) or the end of the header
+        line is found, recording their text along the way.
+
+        The depth counter prevents a colon inside a nested s-expression (e.g.
+        a keyword argument) from being mistaken for the block opener.
+
+        Returns (recorded_str, last_colon_pos, start_pos):
+        - recorded_str: every character consumed during the probe, suitable
+          for replaying through source_str in the real read pass
+        - last_colon_pos: stream position of the colon token (position before
+          the colon char was consumed), or None if no colon was found
+        - start_pos: stream position at the start of the probe
+
+        The stream is left positioned just after the trailing whitespace that
+        follows the colon (the newline before the body indent).
+
+        When require_colon=False (used from read_block_body during the
+        speculative header scan), returns without raising even if no colon is
+        found; the caller uses last_colon_pos=None to decide it is not a block.
         """
 
         start_pos = stream.position()
@@ -1029,11 +1059,16 @@ class LayoutReader(Reader):
 
                 if form == symbol(':') and depth == 0:
                     last_colon_pos = pos
+                    # Consume trailing whitespace (the newline + body indent)
+                    # into the recording so the replay stream covers the full
+                    # header text.
                     wrapped.skip_whitespace()
                     break
 
                 if form != symbol(':') and depth == 0 and not require_colon:
                     wrapped.skip_whitespace()
+                    # When scanning speculatively, stop at end-of-line or
+                    # when a dedent is detected by the underlying stream.
                     inner = getattr(wrapped, '_stream', wrapped)
                     if getattr(inner, '_dedent_detected', False):
                         break
@@ -1078,14 +1113,31 @@ class LayoutReader(Reader):
         """
         Read forms until block opener; handles s-exprs spanning lines
 
-        Uses probe pass (parse with : terminator, discard) to find the
-        final colon, then reads from a fresh stream until MARK. Both
-        "unknown x:" and "unknown x :" parse identically.
+        Two-pass approach: first probe to find the exact colon position, then
+        replay the recorded text through a fresh stream for the real parse.
 
-        :param stream: the source stream
-        :return: (head, args, opener) where head is first form, args
-            are forms between head and opener, opener is the colon/keyword
-        :raises ReaderSyntaxError: on EOF in header
+        The probe pass (_probe_block_header_end) consumes all characters of
+        the header from the live stream into a RecordingStream, returning the
+        full text and the colon's position. The real pass then reads forms
+        from a new SourceStream built from that recorded text. Setting
+        _break_marker to the colon's position causes _read to return a
+        synthetic MARK event the moment the reader reaches the colon, so the
+        colon is never added to the form list.
+
+        This two-pass design means "unknown x:" and "unknown x :" parse
+        identically: whitespace before the colon is consumed in the probe and
+        included in the recording, so the replay stream positions match
+        regardless of whether there was a space.
+
+        The col_no passed to source_str must match the column where the first
+        character of the header appears in the original source, so that
+        position tuples from the replay stream are comparable to
+        last_colon_pos, which was captured from the live stream.
+
+        :param stream: the source stream positioned at the first header token
+        :return: (head, args, opener) where head is the first form, args are
+            the remaining forms before the colon, opener is symbol(':')
+        :raises ReaderSyntaxError: on EOF or missing colon
         """
 
         recorded, last_colon_pos, start_pos = self._probe_block_header_end(
@@ -1129,12 +1181,22 @@ class LayoutReader(Reader):
         """
         Read body elements until dedent or EOF
 
-        Each element is either a simple form or a sub-block. Uses
-        IndentAwareStream to stop at dedent.
+        Each body element is either a parenthesised s-expression or a
+        potential sub-block. When the body stream reaches a line whose
+        indentation is <= outer_indent, skip_whitespace sets _dedent_detected
+        and this loop breaks.
+
+        Sub-block detection works speculatively: after reading the first token
+        of a line (form1), a RecordingStream is wrapped around the stream and
+        _probe_block_header_end is called with require_colon=False. If the
+        probe finds a colon, form1 is the sub-block head and the remaining
+        forms before the colon are the args. If no colon is found, the probe
+        text must be put back so subsequent reads see those characters again.
 
         :param stream: the source stream
-        :param outer_indent: indent level that ends the block
-        :return: list of body forms
+        :param outer_indent: column number that, when reached by the next
+            line's indent, signals the end of the block body
+        :return: list of parsed body forms
         """
 
         if isinstance(stream, IndentAwareStream):
@@ -1153,23 +1215,29 @@ class LayoutReader(Reader):
                 break
 
             if c in '([{':
+                # Parenthesised form: read it directly, no block detection.
                 event, pos, form = self._read(wrapped)
                 if event is EOF:
                     break
                 body.append(form)
             else:
+                # Non-paren token: could be the head of a sub-block.
+                # Read the first token, then check whether a colon follows.
                 event, pos, form1 = self._read(wrapped)
                 if event is EOF:
                     break
                 header_indent = pos[1]
                 wrapped.skip_whitespace()
                 if getattr(wrapped, '_dedent_detected', False):
+                    # Nothing follows on this line; form1 is a plain value.
                     body.append(form1)
                     continue
                 if not wrapped.peek(1):
                     body.append(form1)
                     continue
 
+                # Speculatively probe for a block header colon. All characters
+                # read during the probe are captured by the RecordingStream.
                 header_start = wrapped.position()
                 recording = RecordingStream(wrapped)
                 recorded, last_colon_pos, _ = (
@@ -1177,6 +1245,9 @@ class LayoutReader(Reader):
                         recording, require_colon=False))
 
                 if last_colon_pos is not None:
+                    # Colon found: form1 is the sub-block head. Replay the
+                    # recorded text through a fresh stream to extract the
+                    # args between form1 and the colon.
                     start_lin, start_col = header_start
                     sub_header_stream = source_str(
                         recorded, wrapped.filename,
@@ -1206,49 +1277,86 @@ class LayoutReader(Reader):
                         wrapped, header_indent, head, args)
                     body.append(block)
                 else:
+                    # No colon found: form1 is a plain symbol and the probed
+                    # text must be replayed. Push the recorded characters back
+                    # into the stream's buffer so the next read iteration sees
+                    # them as if the probe never happened.
                     wrapped._buffer = list(recorded) + (
                         getattr(wrapped, '_buffer', []) or [])
                     wrapped._buffer_start_pos = header_start
                     body.append(form1)
 
-        # print("read_block_body ->", body)
         return body
 
 
     def _read_block_source(self, stream, outer_indent, head, args):
+        """
+        Build the raw block source structure: ((head . args) . body...)
+
+        Reads the block body then wraps head, args, and body into a nested
+        cons structure that layout handlers receive as their source argument.
+        The position of the overall structure is set to the position at the
+        start of the body read.
+
+        :param stream: source stream positioned after the block header colon
+        :param outer_indent: column of the block head line, used as body limit
+        :param head: the block head symbol (e.g. 'if', 'define')
+        :param args: list of forms between head and colon
+        :return: cons((head . args) . body...) with position set
+        """
+
         pos = stream.position()
         body = self.read_block_body(stream, outer_indent)
         header = cons(head, *args, nil)
         source = cons(header, *body, nil)
         if is_pair(source):
             source.set_position(pos)
-
-        # print("_read_block_source ->", source)
         return source
 
 
     def _peek_declared_peer_head(self, stream, outer_indent):
+        """
+        Non-consumingly check whether the next line starts a declared peer
+
+        Calls skip_whitespace on the stream; if it does not detect a dedent,
+        there is no candidate peer line at the outer indent level. When a
+        dedent is detected, skip_whitespace has consumed nothing, so a large
+        peek can read the '\n', the indent spaces, and the opening token of
+        the next line all at once without advancing the stream.
+
+        The opening token is extracted by scanning until whitespace or a
+        delimiter. A trailing ':' (from "else:") is stripped before
+        converting to a symbol, so both "else :" and "else:" resolve to the
+        same symbol for the declared-peer lookup.
+
+        Returns the peer head symbol if the next line is indented exactly at
+        outer_indent and starts with a token, or None otherwise.
+
+        :param stream: IndentAwareStream positioned at end of current block
+        :param outer_indent: column of the enclosing block head
+        :return: symbol or None
+        """
+
         stream.skip_whitespace()
         if not getattr(stream, '_dedent_detected', False):
             return None
 
-        buf = list(getattr(stream, '_buffer', []) or [])
-        if not buf or buf[0] != '\n':
+        # Peek far enough to cover the newline, outer_indent spaces, and up
+        # to 256 characters of the peer head token.
+        ahead = stream.peek(outer_indent + 257) or ''
+        if not ahead or ahead[0] != '\n':
             return None
 
-        i = 1
         indent = 0
-        while i < len(buf) and buf[i] in ' 	':
+        i = 1
+        while i < len(ahead) and ahead[i] in ' \t':
             indent += 1
             i += 1
 
-        if indent != outer_indent or i >= len(buf):
+        if indent != outer_indent or i >= len(ahead):
             return None
 
-        prefix = ''.join(buf[i:])
-        suffix = stream._stream.peek(256) or ''
-        text = prefix + suffix
-
+        text = ahead[i:]
         token = []
         for ch in text:
             if ch in ' \t\r\n':
@@ -1271,6 +1379,31 @@ class LayoutReader(Reader):
 
 
     def _read_declared_peers(self, stream, outer_indent, layout_obj):
+        """
+        Read any declared peer blocks following the primary block
+
+        Some layouts (e.g. layout/if) expect peer blocks like 'elif' and
+        'else' to follow the main body at the same indentation level. The
+        layout object carries a 'peers' attribute listing the allowed peer
+        head symbols.
+
+        After the primary body finishes, skip_whitespace leaves the stream
+        positioned at the '\n' before the potential peer line (dedent
+        detected, nothing consumed). This loop peeks at the next line without
+        consuming anything; if the line starts with a declared peer head, the
+        '\n' and indent are consumed and the peer block header and body are
+        read normally.
+
+        Stops as soon as the next line does not match a declared peer, leaving
+        the stream positioned before that line for the caller to handle.
+
+        :param stream: IndentAwareStream after the primary block body
+        :param outer_indent: column of the enclosing block head
+        :param layout_obj: LayoutHandler whose peers attribute lists allowed
+            peer head symbols
+        :return: list of raw source structures, one per peer block
+        """
+
         declared = tuple(getattr(layout_obj, 'peers', ()) or ())
         if not declared:
             return []
@@ -1283,6 +1416,8 @@ class LayoutReader(Reader):
             if head is None or str(head) not in declared_set:
                 break
 
+            # Consume the '\n' and the outer_indent spaces to advance past
+            # the line break and align to the peer head token.
             stream.read(1)
             stream.read(outer_indent)
             phead, pargs, _opener = self.read_block_header(stream)
@@ -1295,11 +1430,25 @@ class LayoutReader(Reader):
         """
         Read a block: header (if not provided) and body, resolve layout
 
-        :param stream: the source stream
-        :param outer_indent: indent of the block header line
-        :param head: if provided, block header was already read
-        :param args: if provided, header args were already read
-        :return: layout object result (default blocks route through layout/block)
+        Creates an IndentAwareStream wrapping the incoming stream so that
+        body reads stop automatically at dedent. The IndentAwareStream is a
+        thin wrapper; it does not consume characters beyond what is needed and
+        does not buffer speculatively, so it can be discarded safely when the
+        block is done without any risk of losing characters to its caller.
+
+        If a specific layout handler is registered for 'head' (looked up as
+        'layout/<head>' in the namespace), that handler also receives any
+        declared peer blocks (elif/else for an if block, etc.). Otherwise the
+        block is routed through the default 'layout/block' handler which wraps
+        the body in a compile/begin.
+
+        :param stream: the source stream, positioned after the header colon
+            and its trailing whitespace
+        :param outer_indent: column of the block head line; any line at this
+            indent level or less ends the block body
+        :param head: block head symbol if already read by the caller
+        :param args: header argument forms if already read by the caller
+        :return: the transformed form produced by the layout handler
         """
 
         if head is None:
@@ -1317,6 +1466,8 @@ class LayoutReader(Reader):
             finally:
                 self._layout_stream = None
 
+        # No specific layout handler: prepend layout/block to the header and
+        # dispatch through the default block handler.
         header, body = source
         synthetic_header = cons(_layout_block, *list(unpack(header)), nil)
         default_source = cons(synthetic_header, body)
@@ -1506,8 +1657,15 @@ class RecordingStream(object):
     """
     Wraps a stream and records all characters read for replay
 
-    Used by the block-header probe pass: record the header, then
-    create a fresh stream from the recording for the real read pass.
+    Used by the block-header probe pass: all characters consumed during the
+    probe are captured in _record. Afterwards, get_recorded() returns the full
+    text of the header so it can be replayed through a fresh SourceStream for
+    the real parse pass with correct position tracking.
+
+    The _putback list is a small local buffer for characters that have been
+    read from the underlying stream but not yet formally consumed (e.g. when
+    the probe overshoots and needs to retry). It is not used in the current
+    implementation but retained for symmetry with IndentAwareStream.
     """
 
     def __init__(self, stream):
@@ -1560,6 +1718,8 @@ class RecordingStream(object):
 
 
     def skip_whitespace(self):
+        # Read and record whitespace one character at a time, stopping at the
+        # first non-whitespace character without consuming it.
         while True:
             c = self._stream.peek(1)
             if not c or c not in ' \t\n\r':
@@ -1569,6 +1729,7 @@ class RecordingStream(object):
 
 
     def read_until_chars(self, terminators):
+        # Delegate to the underlying stream; record whatever it consumed.
         data = self._stream.read_until_chars(terminators)
         if data:
             self._record.extend(data)
@@ -1586,27 +1747,39 @@ class IndentAwareStream(object):
     """
     Wraps a SourceStream to provide indent-bounded skip_whitespace
 
-    When max_indent is set, skip_whitespace stops at a line whose indent
-    is <= max_indent (dedent), leaving that line unconsumed for the next
-    reader. Uses an internal buffer for pushback when stopping at dedent.
+    When max_indent is set, skip_whitespace uses non-consuming peek calls to
+    look ahead and determine whether the next content line is indented more
+    than max_indent. If it is, the leading whitespace up to the content
+    character is consumed and the stream advances normally. If it is not
+    (dedent), skip_whitespace sets _dedent_detected = True and returns without
+    consuming a single character, leaving the newline and the next line's
+    content fully intact for the caller.
+
+    This non-consuming approach means an IndentAwareStream can be discarded
+    after its block body is read without leaking any characters: nothing was
+    taken from the underlying stream beyond what was actually part of the body.
+
+    The _buffer / _buffer_start_pos mechanism exists solely to support the
+    fallback path in read_block_body where a speculative header probe found no
+    colon. In that case the recorded text is pushed back into _buffer so the
+    next read sees those characters as if the probe never ran. The buffer is
+    also used by read_until_chars to push back a terminator character.
     """
 
     def __init__(self, stream, max_indent=None):
         """
         Initialize the indent-aware stream
 
-        :param stream: the underlying SourceStream to wrap
-        :param max_indent: when set, skip_whitespace stops at dedent
+        :param stream: the underlying stream to wrap (SourceStream or another
+            IndentAwareStream)
+        :param max_indent: column value; skip_whitespace stops without
+            consuming when a content line's indent is <= this value
         """
 
         self._stream = stream
         self._max_indent = max_indent
         self._buffer = []
         self._buffer_start_pos = None
-
-
-    def _read_from_underlying(self, n=1):
-        return self._stream.read(n)
 
 
     def read(self, n=1):
@@ -1618,12 +1791,16 @@ class IndentAwareStream(object):
                 self._buffer_start_pos = None
             rest = n - len(result)
             if rest > 0:
-                result.append(self._read_from_underlying(rest))
-            return ''.join(result) if result else self._read_from_underlying(n)
-        return self._read_from_underlying(n)
+                data = self._stream.read(rest)
+                if data:
+                    result.append(data)
+            return ''.join(result)
+        return self._stream.read(n)
 
 
     def peek(self, n=1):
+        # Compose peeked bytes from the pushback buffer first, then from the
+        # underlying stream's native (non-consuming) peek.
         if self._buffer:
             from_buf = min(n, len(self._buffer))
             buf_part = ''.join(self._buffer[:from_buf])
@@ -1634,6 +1811,9 @@ class IndentAwareStream(object):
 
 
     def position(self):
+        # When characters are buffered (pushed back), their position is stored
+        # in _buffer_start_pos. Report that instead of the underlying stream's
+        # position, which has already advanced past those characters.
         if self._buffer and self._buffer_start_pos is not None:
             return self._buffer_start_pos
         return self._stream.position()
@@ -1652,105 +1832,108 @@ class IndentAwareStream(object):
         """
         Skip whitespace, stopping at dedent when max_indent is set
 
-        When max_indent is set and the next line would dedent (indent <=
-        max_indent), does not consume the newline; puts it into the
-        internal buffer and returns. Otherwise behaves like normal skip.
+        Scans ahead using peek(i+1) without consuming any characters. Blank
+        lines are skipped over. When the first non-blank, non-empty line is
+        found, its indent is measured:
+
+        - If indent <= max_indent: sets _dedent_detected = True and returns
+          without consuming anything. The newline and all peeked characters
+          remain in the underlying stream exactly as they were.
+
+        - If indent > max_indent: consumes the whitespace-only characters
+          that were scanned past (the newline and indent spaces), leaving the
+          stream positioned at the content character.
+
+        When max_indent is None, delegates directly to the underlying stream's
+        skip_whitespace (typically the native C implementation).
+
+        The underlying SourceStream is seekable (backed by StringIO), so
+        peek(n) for large n is cheap: BaseSourceStream.peek uses tell/seek
+        internally and never leaves the stream in an inconsistent state.
         """
 
         if self._max_indent is None:
             return self._stream.skip_whitespace()
 
         self._dedent_detected = False
-        if self._buffer:
-            if (len(self._buffer) > 1 and self._buffer[0] == '\n'):
-                self._dedent_detected = True
-                return ''
-            if all(c in ' \t' for c in self._buffer):
-                self._buffer = []
-                self._buffer_start_pos = None
-            elif len(self._buffer) == 1 and self._buffer[0] == '\n':
-                next_indent = 0
-                line_chars = []
-                while True:
-                    ch = self._read_from_underlying(1)
-                    if not ch:
-                        self._dedent_detected = True
-                        return ''
-                    if ch in ' \t':
-                        next_indent += 1
-                        line_chars.append(ch)
-                    elif ch == '\n':
-                        next_indent = 0
-                        line_chars = []
-                    else:
-                        if next_indent <= self._max_indent:
-                            self._buffer = ['\n'] + line_chars + [ch]
-                            self._buffer_start_pos = self._stream.position()
-                            self._dedent_detected = True
-                            return ''
-                        self._buffer = [ch]
-                        self._buffer_start_pos = self._stream.position()
-                        return ''
-            else:
-                return ''
+
+        consume = 0
+        i = 0
 
         while True:
-            pos = self._stream.position()
-            c = self._read_from_underlying(1)
-
-            if not c:
-                break
+            ahead = self.peek(i + 1)
+            if not ahead or len(ahead) <= i:
+                # EOF reached while scanning ahead: treat as dedent so the
+                # caller's loop exits cleanly.
+                self._dedent_detected = True
+                return ''
+            c = ahead[i]
 
             if c in ' \t':
+                # Leading whitespace on the current line: count it but do not
+                # consume yet; the decision depends on what follows.
+                consume += 1
+                i += 1
                 continue
 
-            if c == '\n':
-                next_indent = 0
-                line_chars = []
+            if c != '\n':
+                # Non-whitespace content on the current line (no newline
+                # encountered). Consume the leading spaces counted so far and
+                # leave the stream at the content character.
+                for _ in range(consume):
+                    self.read(1)
+                return ''
 
-                while True:
-                    ch = self._read_from_underlying(1)
-                    if not ch:
-                        self._buffer = ['\n'] + line_chars
-                        self._buffer_start_pos = pos
+            # Newline found. Measure the indent of the following content line,
+            # skipping blank lines entirely.
+            newline_start = i
+            i += 1
+            next_indent = 0
+
+            while True:
+                ahead = self.peek(i + 1)
+                if not ahead or len(ahead) <= i:
+                    self._dedent_detected = True
+                    return ''
+                nc = ahead[i]
+                if nc in ' \t':
+                    next_indent += 1
+                    i += 1
+                elif nc == '\n':
+                    # Blank line: reset and continue to the next line.
+                    i += 1
+                    next_indent = 0
+                else:
+                    if next_indent <= self._max_indent:
+                        # Dedent: the next content line belongs to an outer
+                        # block. Return without consuming anything so the
+                        # newline and all peeked characters are still in the
+                        # stream for the outer reader.
                         self._dedent_detected = True
                         return ''
-                    if ch in ' \t':
-                        next_indent += 1
-                        line_chars.append(ch)
-                    elif ch == '\n':
-                        next_indent = 0
-                        line_chars = []
-                    else:
-                        if next_indent <= self._max_indent:
-                            putback = ['\n'] + line_chars + [ch]
-                            self._buffer = putback
-                            self._buffer_start_pos = pos
-                            self._dedent_detected = True
-                            return ''
-                        self._buffer = [ch]
-                        self._buffer_start_pos = self._stream.position()
-                        return ''
-                break
-
-            putback = [c]
-            self._buffer = putback
-            self._buffer_start_pos = pos
-            return ''
-
-        return ''
+                    # Continuation: consume the newline and indent spaces
+                    # (from newline_start through the last space), leaving
+                    # the stream positioned at the content character.
+                    for _ in range(newline_start + 1 + next_indent):
+                        self.read(1)
+                    return ''
 
 
     def read_until_chars(self, terminators):
+        # Read characters one at a time. When a terminator is found, push it
+        # back into _buffer (with its pre-read position) so that the next
+        # read or position() call sees it correctly. This matches the contract
+        # of BaseSourceStream.read_until_chars: the terminator is not consumed.
         result = []
         while True:
+            pos = self.position()
             c = self.read(1)
             if not c:
                 break
             if c in terminators:
                 self._buffer.insert(0, c)
                 if self._buffer_start_pos is None:
-                    self._buffer_start_pos = self._stream.position()
+                    self._buffer_start_pos = pos
                 break
             result.append(c)
         return ''.join(result)
