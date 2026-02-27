@@ -990,6 +990,138 @@ push result. count 0 pushes nil.
 ```
 
 
+## Object operator specials
+
+The forms in this section all map directly to `OBJECT_*` opcodes. They are
+implemented in `koskari/compile/specials/object.py` and tested in
+`tests/compile/specials/test_object_specials.py`.
+
+### Constant folding
+
+Reducible (COUNT) operators apply left-to-right constant folding: consecutive
+leading arguments that compile to a single `CONST` are folded together using
+the corresponding Python operator before any code is emitted. Folding stops at
+the first non-constant argument to preserve dunder dispatch semantics.
+
+```scheme
+(compile/+ 1 2 a)   ; → CONST 3, VAR a, OBJECT_ADD 2
+(compile/+ 1 2)     ; → CONST 3, OBJECT_ADD 1
+(compile/+ a 1 2)   ; → VAR a, CONST 1, CONST 2, OBJECT_ADD 3  (no fold)
+```
+
+`compile/**`, `compile/isinstance`, and `compile/issubclass` never fold
+(non-trivial multi-argument semantics).
+
+---
+
+### Comparison interface
+
+All comparison specials require exactly 2 arguments and emit a NOARG opcode
+(the arg value is ignored by the C handler).
+
+| Special | Opcode | Python |
+| --- | --- | --- |
+| `(compile/= A B)` | `OBJECT_EQ` | `A == B` |
+| `(compile/!= A B)` | `OBJECT_NE` | `A != B` |
+| `(compile/< A B)` | `OBJECT_LT` | `A < B` |
+| `(compile/<= A B)` | `OBJECT_LE` | `A <= B` |
+| `(compile/> A B)` | `OBJECT_GT` | `A > B` |
+| `(compile/>= A B)` | `OBJECT_GE` | `A >= B` |
+
+---
+
+### Predicate interface
+
+**Binary (NOARG, exactly 2 args):**
+
+| Special | Opcode | Python |
+| --- | --- | --- |
+| `(compile/in ITEM COLLECTION)` | `OBJECT_IN` | `ITEM in COLLECTION` |
+| `(compile/not-in ITEM COLLECTION)` | `OBJECT_NOT_IN` | `ITEM not in COLLECTION` |
+| `(compile/is A B)` | `OBJECT_IS` | `A is B` |
+| `(compile/is-not A B)` | `OBJECT_IS_NOT` | `A is not B` |
+
+**Type checks (COUNT, at least 2 args):**
+
+```scheme
+(compile/isinstance OBJ TYPE)
+(compile/isinstance OBJ TYPE1 TYPE2 ...)
+(compile/issubclass CLS BASE)
+(compile/issubclass CLS BASE1 BASE2 ...)
+```
+
+The opcode argument encodes the number of type arguments. With a single type
+the C handler pops value and type individually (arg=1). With multiple types it
+collects them into a tuple via `PopTail(N)` (arg=N).
+
+| Special | Opcode |
+| --- | --- |
+| `compile/isinstance` | `OBJECT_IS_INSTANCE` |
+| `compile/issubclass` | `OBJECT_IS_SUBCLASS` |
+
+---
+
+### Numeric interface — variadic (COUNT, constant folding)
+
+These accept one or more arguments. The opcode arg is the total number of
+values on the stack after any constant folding.
+
+| Special | Opcode | Python fold |
+| --- | --- | --- |
+| `(compile/+ A ...)` | `OBJECT_ADD` | `operator.add` |
+| `(compile/- A ...)` | `OBJECT_SUBTRACT` | `operator.sub` |
+| `(compile/* A ...)` | `OBJECT_MULTIPLY` | `operator.mul` |
+| `(compile/** BASE EXP [MOD])` | `OBJECT_POWER` | no fold |
+| `(compile/& A ...)` | `OBJECT_BIT_AND` | `operator.and_` |
+| `(compile/\| A ...)` | `OBJECT_BIT_OR` | `operator.or_` |
+| `(compile/^ A ...)` | `OBJECT_BIT_XOR` | `operator.xor` |
+| `(compile/// A ...)` | `OBJECT_FLOOR_DIVIDE` | `operator.floordiv` |
+| `(compile// A ...)` | `OBJECT_TRUE_DIVIDE` | `operator.truediv` |
+| `(compile/@ A ...)` | `OBJECT_MATRIX_MULTIPLY` | `operator.matmul` |
+
+---
+
+### Numeric interface — binary (NOARG, exactly 2 args)
+
+These always require exactly 2 arguments. The C handler ignores the opcode
+arg for `BIT_LEFT`, `BIT_RIGHT`, but `MODULO` and `DIVMOD` require arg=2.
+
+| Special | Opcode | Python |
+| --- | --- | --- |
+| `(compile/% A B)` | `OBJECT_MODULO` | `A % B` |
+| `(compile/<< A B)` | `OBJECT_BIT_LEFT` | `A << B` |
+| `(compile/>> A B)` | `OBJECT_BIT_RIGHT` | `A >> B` |
+| `(compile/divmod A B)` | `OBJECT_DIVMOD` | `divmod(A, B)` |
+
+---
+
+### General object interface — unary (NOARG, exactly 1 arg)
+
+Each requires exactly one argument.
+
+| Special | Opcode | Python |
+| --- | --- | --- |
+| `(compile/not OBJ)` | `OBJECT_NOT` | `not OBJ` |
+| `(compile/repr OBJ)` | `OBJECT_REPR` | `repr(OBJ)` |
+| `(compile/truth OBJ)` | `OBJECT_TRUTH` | `bool(OBJ)` |
+| `(compile/iter OBJ)` | `OBJECT_ITER` | `iter(OBJ)` |
+| `(compile/~ OBJ)` | `OBJECT_BIT_INVERT` | `~OBJ` |
+| `(compile/str OBJ ...)` | `OBJECT_STR` | `str(OBJ)` / f-string join |
+| `(compile/len OBJ)` | `OBJECT_LEN` | `len(OBJ)` |
+| `(compile/type OBJ)` | `OBJECT_TYPE` | `type(OBJ)` |
+| `(compile/dir OBJ)` | `OBJECT_DIR` | `dir(OBJ)` |
+| `(compile/vars OBJ)` | `OBJECT_VARS` | `vars(OBJ)` |
+| `(compile/aiter OBJ)` | `OBJECT_AITER` | `aiter(OBJ)` |
+
+Note: `compile/str` is variadic (COUNT) at the C level — it uses
+`KosOperator_BuildStr` / `obj_op_reducing` — useful for f-string style
+multi-part concatenation. The compile-time special accepts one or more
+arguments.
+
+**Tests:** `tests/compile/specials/test_object_specials.py`
+
+---
+
 ## compile/call/cc
 
 **Symbol:** `compile/call/cc`

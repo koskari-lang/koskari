@@ -54,6 +54,8 @@ def _is_compiled(v):
 
 
 def _is_alias(v):
+    # TODO: we'll likely want to add a distinct type for aliases.
+    # for now aliasing is disabled in compile_symbol
     return _is_compiled(v)
 
 
@@ -442,9 +444,16 @@ class Compiler:
 
 
     def compile_symbol(self, fragment, sym, tc):
-        comp = self.find_compiled(sym)
-        if comp and _is_alias(comp):
-            return self.compile_special(fragment, comp, sym, tc)
+
+        # TODO: we may want to add an alias/FOO form for
+        # compile-time symbolic aliases. These would be distinct
+        # from compile/FOO forms which compile over their full
+        # source list -- the aliases would only expand the symbol
+        # itself.
+
+        # comp = self.find_compiled(sym)
+        # if comp and _is_alias(comp):
+        #     return self.compile_special(fragment, comp, sym, tc)
         return self.compile_raw_symbol(fragment, sym, tc)
 
 

@@ -16,10 +16,12 @@ This document provides a high-level summary of all features identified from both
 - **Documentation**: doc
 
 ### Operators
-- **Arithmetic**: +, -, *, /, //, %, **, @
-- **Bitwise**: &, |, ^, ~, <<, >>
-- **Comparison**: ==, !=, <, <=, >, >=, is, is-not, in, not-in
-- **Logical**: and, or, not
+- **Arithmetic**: +, -, *, /, //, %, **, @ (implemented as compile/+, compile/-, compile/*, compile//, compile///, compile/%, compile/**, compile/@ via OBJECT_* opcodes with left-to-right constant folding for leading constant arguments)
+- **Bitwise**: &, |, ^, ~, <<, >> (implemented as compile/&, compile/|, compile/^, compile/~, compile/<<, compile/>> via OBJECT_* opcodes; &, |, ^ are variadic with constant folding)
+- **Comparison**: =, !=, <, <=, >, >=, is, is-not, in, not-in (implemented as compile/=, compile/!=, compile/<, compile/<=, compile/>, compile/>=, compile/is, compile/is-not, compile/in, compile/not-in via OBJECT_* opcodes)
+- **Type checks**: isinstance, issubclass (implemented as compile/isinstance, compile/issubclass via OBJECT_IS_INSTANCE, OBJECT_IS_SUBCLASS; variadic type arguments)
+- **Logical**: and, or, not (compile/not implemented via OBJECT_NOT; and/or not yet implemented as specials)
+- **Object introspection**: repr, truth, iter, str, len, type, dir, vars, aiter, divmod (implemented as compile/repr, compile/truth, compile/iter, compile/str, compile/len, compile/type, compile/dir, compile/vars, compile/aiter, compile/divmod via OBJECT_* opcodes)
 - **Collections**: build-tuple, build-list, build-set, build-dict, build-str
 - **Items**: item, set-item, del-item, ref-item (implemented as compile/item, compile/set-item, compile/del-item, compile/ref-item)
 
@@ -130,7 +132,7 @@ There are no **partially** implemented opcodes; each handler is either full, a s
 - **Phases**: Parse → Expand → Compile → Optimize → Generate (full pipeline in progress)
 - **Components**: Compiler, CodeContext, ByteCodeFragment (implemented in `koskari.compile`)
 - **Optimization**: Constant folding, dead code elimination, fast paths (planned)
-- **Implemented specials**: compile/bytecode, compile/begin, compile/call, compile/define, compile/lambda, compile/let, compile/parameterize, compile/cond, compile/if, compile/when, compile/unless, compile/while, compile/for-each, compile/break, compile/continue, compile/try, compile/raise, compile/check-exception, compile/clear-exception, compile/load-exception, compile/setq, compile/refq, compile/bindq, compile/delq, compile/attr, compile/del-attr, compile/set-attr, compile/ref-attr, compile/item, compile/ref-item, compile/del-item, compile/set-item, compile/quote, compile/car, compile/cdr, compile/cons, **import**, **import-from** (see design/SPECIALS.md)
+- **Implemented specials**: compile/bytecode, compile/begin, compile/call, compile/define, compile/lambda, compile/let, compile/parameterize, compile/cond, compile/if, compile/when, compile/unless, compile/while, compile/for-each, compile/break, compile/continue, compile/try, compile/raise, compile/check-exception, compile/clear-exception, compile/load-exception, compile/setq, compile/refq, compile/bindq, compile/delq, compile/attr, compile/del-attr, compile/set-attr, compile/ref-attr, compile/item, compile/ref-item, compile/del-item, compile/set-item, compile/quote, compile/car, compile/cdr, compile/cons, **import**, **import-from**, **compile/= compile/!= compile/< compile/<= compile/> compile/>= compile/in compile/not-in compile/is compile/is-not compile/isinstance compile/issubclass compile/+ compile/- compile/* compile/** compile/& compile/| compile/^ compile/// compile// compile/@ compile/% compile/<< compile/>> compile/divmod compile/not compile/repr compile/truth compile/iter compile/~ compile/str compile/len compile/type compile/dir compile/vars compile/aiter** (see design/SPECIALS.md)
 
 ### Evaluator
 - **Model**: Custom drive loop (`koskari_eval` in eval.c). Callable types Expression and Function (func.c) return a KosCoroutine; driving the coroutine (await/send) runs the evaluator. Continuation invocation from Python raises `KoskariContinuationApply` for upwards transfer (does not return a coroutine).
@@ -138,7 +140,7 @@ There are no **partially** implemented opcodes; each handler is either full, a s
 - **Blocks**: try, loop, with, finally management
 
 ### Creating and calling functions and expressions
-- **Code**: Compiled bytecode is stored in a `Code` object (namespace spec, instructions, constant pool, position table). The compiler (`koskari.compile`) is partially implemented: it supports `compile/bytecode`, `compile/begin`, `compile/call`, `compile/define`, `compile/lambda`, `compile/let`, `compile/parameterize`, `compile/cond`, `compile/if`, `compile/when`, `compile/unless`, `compile/while`, `compile/for-each`, `compile/break`, `compile/continue`, `compile/try`, `compile/raise`, `compile/check-exception`, `compile/clear-exception`, `compile/load-exception`, `compile/setq`, `compile/refq`, `compile/bindq`, `compile/delq`, `compile/attr`, `compile/del-attr`, `compile/set-attr`, `compile/ref-attr`, `compile/item`, `compile/ref-item`, `compile/del-item`, `compile/set-item`, `compile/quote`, `compile/car`, `compile/cdr`, `compile/cons`, `import`, and `import-from` (see design/SPECIALS.md). Tests and tools also build Code manually for VM validation.
+- **Code**: Compiled bytecode is stored in a `Code` object (namespace spec, instructions, constant pool, position table). The compiler (`koskari.compile`) is partially implemented: it supports `compile/bytecode`, `compile/begin`, `compile/call`, `compile/define`, `compile/lambda`, `compile/let`, `compile/parameterize`, `compile/cond`, `compile/if`, `compile/when`, `compile/unless`, `compile/while`, `compile/for-each`, `compile/break`, `compile/continue`, `compile/try`, `compile/raise`, `compile/check-exception`, `compile/clear-exception`, `compile/load-exception`, `compile/setq`, `compile/refq`, `compile/bindq`, `compile/delq`, `compile/attr`, `compile/del-attr`, `compile/set-attr`, `compile/ref-attr`, `compile/item`, `compile/ref-item`, `compile/del-item`, `compile/set-item`, `compile/quote`, `compile/car`, `compile/cdr`, `compile/cons`, `import`, `import-from`, and all `OBJECT_*` operator specials (`compile/+`, `compile/-`, `compile/*`, `compile/**`, `compile/&`, `compile/|`, `compile/^`, `compile///`, `compile//`, `compile/@`, `compile/%`, `compile/<<`, `compile/>>`, `compile/divmod`, `compile/=`, `compile/!=`, `compile/<`, `compile/<=`, `compile/>`, `compile/>=`, `compile/in`, `compile/not-in`, `compile/is`, `compile/is-not`, `compile/isinstance`, `compile/issubclass`, `compile/not`, `compile/repr`, `compile/truth`, `compile/iter`, `compile/~`, `compile/str`, `compile/len`, `compile/type`, `compile/dir`, `compile/vars`, `compile/aiter`) (see design/SPECIALS.md). Tests and tools also build Code manually for VM validation.
 - **Expressions**: `Code.expression(parent_ns)` builds an **Expression** from a `Code` and a parent **Namespace**. An Expression is nullary: calling it with `()` creates a **Coroutine** that runs that code in that namespace. No argument binding; used for thunks, modules, or single-shot code.
 - **Functions**: `Code.function(formals, parent_ns)` builds a **Function** from a `Code`, a **Formals** instance (parameter spec + defaults), and a parent namespace. Calling a Function with `(*args, **kwargs)` binds the formals to the arguments, builds a frame namespace (via the formals’ NamespaceSpec), applies the bindings, then creates a **Coroutine** that runs the code in that frame namespace.
 - **Call flow**: Calling an Expression or Function returns a **Coroutine**. Driving the coroutine (Python `await`, or `send(None)`/`send(value)`) invokes `koskari_eval()` until a boundary event (RETURN, RAISE, YIELD, AWAIT). For AWAIT, the VM suspends and the driver steps the Python awaitable; on completion the result is injected and evaluation resumes. Koskari-to-Koskari calls (CALL opcode) replace the current frame with the callee and continue in the same drive loop.
@@ -220,11 +222,10 @@ There are no **partially** implemented opcodes; each handler is either full, a s
 - Full opcode set for: stack ops, control flow, jumps, variables, attributes, items, calls, blocks, object protocol, iteration, exceptions
 
 ### Ready to Migrate
-- Most special forms from python-sibilant (beyond compile/bytecode, compile/begin, compile/call, lambda)
-- Remaining operators (%, **, ~, <<, >>, comparisons)
+- Most special forms from python-sibilant (beyond what is already implemented)
 - Macro system (reader macros, defmacro, defalias)
-- Remaining control flow constructs (with, begin, class blocks)
-- Compiler: remaining specials, macro expansion, optimization passes
+- Remaining control flow constructs (class blocks)
+- Compiler: remaining specials (and/or logical operators, quasiquote, yield, await, define-values, setq-values), macro expansion, optimization passes
 - Remaining opcode handlers: CALL_ATTR*, RECUR*, TAIL_RECUR*, PUSH_CLASS, PUSH_WIND, POP_WIND (BUILD_ARGS, BUILD_KWDS, BUILD_KWDS_NAMES, COMBINE_ARGS, COMBINE_KWDS, PUSH_WITH, POP_WITH, PUSH_DYN_WITH, POP_DYN_WITH, CALL_NAMES, CALL_STAR, TAIL_CALL_NAMES, TAIL_CALL_STAR, END_WIND implemented; see "Opcodes: implementation status" above; with/dyn-with design in design/interpreter/with-dyn-with.md)
 
 ### Needs Reconsideration
