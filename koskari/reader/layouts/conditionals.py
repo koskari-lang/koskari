@@ -19,7 +19,7 @@ Layout handlers for conditional block syntax.
 
 
 from ...exceptions import LayoutError
-from ...types import car, cdr, cons, keyword, nil, symbol, unpack
+from ...types import car, cdr, cons, get_position, keyword, nil, symbol, unpack
 from .helpers import layout
 
 
@@ -29,7 +29,7 @@ _keyword_else = keyword('else')
 
 
 @layout(symbol('layout/block'))
-def layout_block(reader, source, peers):
+def layout_block(source, peers):
     """
     the default block layout handler
 
@@ -42,11 +42,9 @@ def layout_block(reader, source, peers):
     """
 
     if peers:
-        stream = reader._layout_stream
         raise LayoutError(
             'block does not take peers',
-            stream.position(),
-            filename=getattr(stream, 'filename', None))
+            get_position(source))
 
     header, body = source
     _called_by, hdr = header
@@ -56,7 +54,7 @@ def layout_block(reader, source, peers):
 
 
 @layout(symbol('layout/begin'))
-def layout_begin(reader, source, peers):
+def layout_begin(source, peers):
     """
     lowers into a compile/begin
 
@@ -69,22 +67,19 @@ def layout_begin(reader, source, peers):
     """
 
     if peers:
-        stream = reader._layout_stream
         raise LayoutError(
             'block does not take peers',
-            stream.position(),
-            filename=getattr(stream, 'filename', None))
+            get_position(source))
 
     called_by, exprs = source
     return cons(symbol('compile/begin'), exprs)
 
 
 @layout(symbol('layout/if'), peers=(_symbol_elif, _symbol_else))
-def layout_if(reader, source, peers):
+def layout_if(source, peers):
     """
     Lower if/elif/else block sources to compile/cond for compilation.
 
-    :param reader: active LayoutReader
     :param source: ((if COND) . BODY) pair
     :param peers: list of peer (header . body) pairs
     """
@@ -94,11 +89,9 @@ def layout_if(reader, source, peers):
     pargs = header_parts[1:]
 
     if len(pargs) != 1:
-        stream = reader._layout_stream
         raise LayoutError(
             'if block requires exactly one condition',
-            stream.position(),
-            filename=getattr(stream, 'filename', None))
+            get_position(source))
 
     clauses = [cons(pargs[0], body)]
     saw_else = False
@@ -109,40 +102,32 @@ def layout_if(reader, source, peers):
         ppargs = list(unpack(cdr(pheader)))
 
         if phead is _symbol_elif:
-            stream = reader._layout_stream
             if saw_else:
                 raise LayoutError(
                     'elif cannot follow else',
-                    stream.position(),
-                    filename=getattr(stream, 'filename', None))
+                    get_position(peer))
             if len(ppargs) != 1:
                 raise LayoutError(
                     'elif block requires exactly one condition',
-                    stream.position(),
-                    filename=getattr(stream, 'filename', None))
+                    get_position(peer))
             clauses.append(cons(ppargs[0], pbody))
 
         elif phead is _symbol_else:
-            stream = reader._layout_stream
             if saw_else:
                 raise LayoutError(
                     'multiple else peers are not allowed',
-                    stream.position(),
-                    filename=getattr(stream, 'filename', None))
+                    get_position(peer))
             if ppargs:
                 raise LayoutError(
                     'else block does not take arguments',
-                    stream.position(),
-                    filename=getattr(stream, 'filename', None))
+                    get_position(peer))
             clauses.append(cons(_keyword_else, pbody))
             saw_else = True
 
         else:
-            stream = reader._layout_stream
             raise LayoutError(
                 'invalid peer for if block: %r' % (phead,),
-                stream.position(),
-                filename=getattr(stream, 'filename', None))
+                get_position(peer))
 
     return cons(symbol('compile/cond'), *clauses, nil)
 

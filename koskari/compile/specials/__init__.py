@@ -42,6 +42,7 @@ from .lambda_ import special_lambda
 from .let import special_let
 from .loops import special_break, special_continue, special_for_each, special_while
 from .pairs import special_car, special_cdr, special_cons, special_quote
+from .apply_layout import special_apply_layout
 from .quasiquote import special_quasiquote, special_unquote, special_unquote_splicing
 from .slots import special_attr, special_del_attr, special_ref_attr, special_set_attr
 from .imports import helper_import_from_sequence, special_import, special_import_from
@@ -91,6 +92,7 @@ __all__ = (
     "SPECIALS",
     "special",
     "special_add",
+    "special_apply_layout",
     "special_aiter",
     "special_attr",
     "special_begin",

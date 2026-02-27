@@ -396,6 +396,35 @@ class Compiler:
         return None
 
 
+    def find_layout(self, name):
+        """
+        Resolve layout/<head> in the module namespace
+
+        :param name: symbol or string for the block head (e.g. if, begin)
+        :return: LayoutHandler instance, or None
+        """
+
+        from ..reader.layouts.helpers import LayoutHandler
+
+        name = str(name)
+        if not name.startswith('layout/'):
+            name = 'layout/' + name
+
+        ns = vars(self.module)
+        try:
+            r = ns.ref(name)
+        except (KeyError, AttributeError, TypeError):
+            return None
+
+        if r is None or r.empty:
+            return None
+
+        v = r.deref()
+        if isinstance(v, LayoutHandler):
+            return v
+        return None
+
+
     def fragment(self, name=None, mode=None):
         return ByteCodeFragment(self, str(name), self.filename, mode=mode)
 

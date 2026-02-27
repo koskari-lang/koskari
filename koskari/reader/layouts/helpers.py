@@ -29,7 +29,7 @@ class LayoutHandler(object):
     """
     Wrapper for layout handlers with optional peer metadata.
 
-    A handler is called as read_fn(reader, source, peers).
+    A handler is called as read_fn(source, peers).
     """
 
     def __init__(self, head_symbol, read_fn, peers=()):

@@ -1460,11 +1460,7 @@ class LayoutReader(Reader):
         layout_obj = self.find_layout(head)
         if layout_obj is not None:
             peers = self._read_declared_peers(wrapped, outer_indent, layout_obj)
-            self._layout_stream = wrapped
-            try:
-                return layout_obj.read(self, source, peers)
-            finally:
-                self._layout_stream = None
+            return layout_obj.read(source, peers)
 
         # No specific layout handler: prepend layout/block to the header and
         # dispatch through the default block handler.
@@ -1477,11 +1473,7 @@ class LayoutReader(Reader):
         layout_obj = self.find_layout(symbol('layout/block'))
         if layout_obj is None:
             raise stream.error('layout/block not found', stream.position())
-        self._layout_stream = wrapped
-        try:
-            return layout_obj.read(self, default_source, [])
-        finally:
-            self._layout_stream = None
+        return layout_obj.read(default_source, [])
 
 
     def read_layout_form(self, stream):

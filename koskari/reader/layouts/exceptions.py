@@ -20,7 +20,7 @@ Layout handlers for try/except/else/finally block syntax.
 
 from ...exceptions import LayoutError
 from ...compile.helpers import helper_binding
-from ...types import car, cdr, cons, keyword, nil, symbol, unpack
+from ...types import car, cdr, cons, get_position, keyword, nil, symbol, unpack
 from .helpers import layout
 
 
@@ -32,17 +32,15 @@ _keyword_finally = keyword('finally')
 
 
 @layout(symbol('layout/try'), peers=(_symbol_except, _symbol_else, _symbol_finally))
-def layout_try(reader, source, peers):
+def layout_try(source, peers):
     """
     Lower try/except/else/finally block sources to (try ...) for compilation.
 
-    :param reader: active LayoutReader
     :param source: ((try) . BODY) pair
     :param peers: list of peer (header . body) pairs
     """
 
     header, body = source
-    stream = reader._layout_stream
 
     has_except = False
     act_else = None
@@ -59,8 +57,7 @@ def layout_try(reader, source, peers):
             if not ppargs:
                 raise LayoutError(
                     'except block requires an exception type',
-                    stream.position(),
-                    filename=getattr(stream, 'filename', None))
+                    get_position(peer))
             try:
                 bind_source = cons(ppargs[0], nil)
                 if len(ppargs) > 1:
@@ -69,8 +66,7 @@ def layout_try(reader, source, peers):
             except Exception as e:
                 raise LayoutError(
                     'invalid except binding: %s' % e,
-                    stream.position(),
-                    filename=getattr(stream, 'filename', None))
+                    get_position(peer))
             if binding is not None:
                 except_clauses.append(cons(cons(binding, ex_type), pbody))
             else:
@@ -80,39 +76,33 @@ def layout_try(reader, source, peers):
             if act_else is not None:
                 raise LayoutError(
                     'multiple else peers are not allowed',
-                    stream.position(),
-                    filename=getattr(stream, 'filename', None))
+                    get_position(peer))
             if ppargs:
                 raise LayoutError(
                     'else block does not take arguments',
-                    stream.position(),
-                    filename=getattr(stream, 'filename', None))
+                    get_position(peer))
             act_else = pbody
 
         elif phead is _symbol_finally:
             if act_finally is not None:
                 raise LayoutError(
                     'multiple finally peers are not allowed',
-                    stream.position(),
-                    filename=getattr(stream, 'filename', None))
+                    get_position(peer))
             if ppargs:
                 raise LayoutError(
                     'finally block does not take arguments',
-                    stream.position(),
-                    filename=getattr(stream, 'filename', None))
+                    get_position(peer))
             act_finally = pbody
 
         else:
             raise LayoutError(
                 'invalid peer for try block: %r' % (phead,),
-                stream.position(),
-                filename=getattr(stream, 'filename', None))
+                get_position(peer))
 
     if not has_except and act_finally is None:
         raise LayoutError(
             'try block requires at least one except or one finally',
-            stream.position(),
-            filename=getattr(stream, 'filename', None))
+            get_position(source))
 
     try_body = cons(symbol('compile/begin'), body) if body is not nil else cons(symbol('compile/begin'), nil)
     catches = []
