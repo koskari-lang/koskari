@@ -267,6 +267,13 @@ If a continuation transfer (delimited or undelimited) would cross an active
 
 This preserves the single-shot contract and prevents resource unsafety.
 
+> **Note:** [dynamic-node-unified-api.md](dynamic-node-unified-api.md) §9.7 supersedes
+> this rule with respect to continuation **capture**: WITH nodes may be included in captured
+> chain segments (they are cloneable). The barrier applies only to **transfer** (wind/unwind
+> across an active WITH instance), not to capture of a chain that contains a WITH node.
+> Single-shot semantics are preserved because each clone creates a fresh extent instance
+> (enter runs once per instance on wind, exit once on unwind); no instance is re-entered.
+
 ### Rule 2: `dyn-with` participates in transfer plans
 
 For `KOS_DYN_DYN_WITH` nodes, the transfer-plan builder must include them as
@@ -351,7 +358,7 @@ for other extent kinds; no special case for dyn-with.
 
 - Stack restoration for with bodies is structural (block push/pop), never
   arithmetic marking.
-- `with` is single-shot and cannot be crossed by continuation transfer.
+- `with` is single-shot: each dynamic extent instance is entered and exited at most once. Transfer across an active WITH instance is rejected; capture of a chain containing a WITH node is permitted (clone creates a fresh instance).
 - `dyn-with` is multi-shot and must wind/unwind on non-local transfer.
 - Expression value is always `None`.
 - Enter failure installs no dyn node and no stack block.

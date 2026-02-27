@@ -22,13 +22,17 @@ Helpers perform only semantic work; the caller unlinks and frees the node (or, f
 | PARAM      | `kos_dyn_param_wind`     | `kos_dyn_param_unwind`      | sync       |
 | WIND       | `kos_dyn_wind_wind`      | `kos_dyn_wind_unwind`       | async      |
 | NS         | (none; set at push)      | `kos_dyn_ns_unwind`         | sync       |
-| REGION     | (none)                   | `kos_dyn_region_unwind`     | sync (drops TRY/FINALLY stack block; FINALLY body async in future) |
+| TRY        | (none)                   | `kos_dyn_try_unwind`        | sync (drops stack block when BREAK/CONTINUE passes through) |
+| FINALLY    | (none)                   | `kos_dyn_finally_unwind`    | sync (drops stack block; finally body is async in future) |
+| LOOP       | (none)                   | `kos_dyn_loop_unwind`       | sync (drops stack block) |
+| FOREACH    | (none)                   | `kos_dyn_foreach_unwind`    | sync (drops stack block) |
 | YIELD_FROM | (none)                   | `kos_dyn_yieldfrom_unwind`  | sync       |
 
 - **PARAM**: Wind applies bindings to the domain (save current, set new); unwind restores from saved. Used by normal push/pop and by the transfer plan (INSTALL runs wind for params in the segment; EXTENT_ACTION unwind runs param restore).
 - **WIND**: Wind runs the before-hook (code/pc) via `kos_begin_hook`; unwind runs the after-hook if the extent was entered. Both can return `KOS_DYN_UNWIND_ASYNC_STARTED`; the evaluator runs the hook then continues.
 - **NS**: Unwind restores the frame's namespace from the node's saved_ns. No wind helper (re-entry for continuations could add one later).
-- **REGION**: Unwind drops the stack block for TRY and FINALLY when BREAK/CONTINUE passes through them. FINALLY will run the finally body (async) in future work.
+- **TRY / FINALLY**: These were previously represented as a single `KOS_DYN_REGION` kind with `KosRegionStyle`; they are now separate kinds. Unwind drops the stack block when BREAK/CONTINUE passes through them. The FINALLY body will run the finally code (async) in future work.
+- **LOOP / FOREACH**: Also previously `KOS_DYN_REGION`. Unwind drops the stack block. The macro `KosDynNode_IS_REGION` matches all four (TRY, FINALLY, LOOP, FOREACH) for convenience.
 - **YIELD_FROM**: Unwind closes the delegate so the underlying iterator is left in a consistent state.
 
 ---
@@ -57,7 +61,7 @@ When `kos_dyn_unwind_to_frame` is used (e.g. by RETURN or by exception propagati
 
 ## Try/catch, finally
 
-- **TRY**: PUSH_TRY and PUSH_FINALLY each push a KosStackBlock. Exception dispatch clears the block before jumping to the handler. `kos_dyn_region_unwind` drops the TRY/FINALLY stack block when BREAK/CONTINUE passes through. Catch is "find handler and jump" in the raise path, not in the generic unwind helper.
+- **TRY**: PUSH_TRY and PUSH_FINALLY each push a KosStackBlock. Exception dispatch clears the block before jumping to the handler. The per-kind unwind helpers drop the stack block when BREAK/CONTINUE passes through. Catch is "find handler and jump" in the raise path, not in the generic unwind helper.
 - **FINALLY**: Same stack block behavior as TRY. Unwind = run finally body (code at region's pc) then pop. Model as async: helper starts the body via the same hook runner; when the body ends, unwinding continues.
 
 **With / dyn-with:** Context managers are specified in [with-dyn-with.md](with-dyn-with.md). Single-shot `with` (KOS_DYN_WITH) uses enter/exit and structural stack blocks; multi-shot `dyn-with` (KOS_DYN_DYN_WITH) participates in transfer-plan wind/unwind.

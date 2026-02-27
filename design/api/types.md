@@ -221,8 +221,8 @@ with C extension support and comprehensive test coverage:
   - `clear()`: Pop all blocks except root, empty it
   - `copy()`: Create COW clone of stack
 
-NOTE: Control flow metadata (block_style, enabled, labels) has been moved to
-`KosDynRegion` nodes in the dynamic chain. See evaluator.md for details.
+NOTE: Control flow metadata (block_style, enabled, labels) lives in the region
+nodes on the dynamic chain (TRY, FINALLY, LOOP, FOREACH). See evaluator.md for details.
 
 **Bytecode Types** (from sibilant-ceval, redesigned):
 - `Code`: Compiled bytecode storage object
@@ -262,12 +262,16 @@ NOTE: Control flow metadata (block_style, enabled, labels) has been moved to
 
 **Dynamic Chain Types** (internal, for evaluator infrastructure):
 - `KosDynNode`: Base structure for dynamic chain nodes
-  - Types: FRAME, PROMPT, WIND, REGION
+  - Kinds: FRAME, PROMPT, WIND, TRY, FINALLY, LOOP, FOREACH, NS, CC, CC_RAISE, YIELD_FROM, PARAM, WITH, DYN_WITH, SHIFT
+  - `KosDynNode_IS_REGION` matches TRY, FINALLY, LOOP, FOREACH
 - `KosDynFrame`: Function activation record (code, pc, stack, namespace)
 - `KosDynPrompt`: Delimiter for delimited continuations (prompt_id, handler)
 - `KosDynWind`: Dynamic-wind extent (before/after hook bytecode blocks)
-- `KosDynRegion`: Block-local control (try/finally/loop/with)
-  - Styles: TRY, FINALLY, LOOP, WITH, FOREACH, AWAIT_WITH, AWAIT_FOREACH, NS, BEGIN
+- Region kinds (formerly `KosDynRegion` with `KosRegionStyle`; now separate kinds):
+  - `KOS_DYN_TRY`: try block (handler_pc, enabled)
+  - `KOS_DYN_FINALLY`: finally block (handler_pc, enabled, handling_raise)
+  - `KOS_DYN_LOOP`: while loop (break_pc, continue_pc, enabled)
+  - `KOS_DYN_FOREACH`: for-each loop (extends LOOP with iter, exhausted, iter_next_else_pc)
 - `KosHookRunner`: Isolated execution context for wind/unwind hooks
 - `KosTransferPlan`: Action list for continuation transfer with hook execution.
   Single allocation (plan + flexible actions array). Default 32 slots; realloc

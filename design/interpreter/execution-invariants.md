@@ -248,7 +248,11 @@ the boundary constraint.
 * `KOS_DYN_PROMPT` — reset/shift delimiter; owns a COW stack block for the delimited region; BARRIER + HANDLES_EXCEPTIONS
 * `KOS_DYN_SHIFT` — shift block marker; simple, no stack block or handlers
 * `KOS_DYN_WIND` — dynamic-wind extent (before/after hooks)
-* `KOS_DYN_REGION` — block-local control (try, finally, loop, foreach)
+* `KOS_DYN_TRY` — try block (handler_pc, enabled; owns stack block)
+* `KOS_DYN_FINALLY` — finally block (handler_pc, enabled, handling_raise; owns stack block)
+* `KOS_DYN_LOOP` — while loop (break_pc, continue_pc, enabled; owns stack block)
+* `KOS_DYN_FOREACH` — for-each loop (extends LOOP with iter, exhausted, iter_next_else_pc; owns stack block)
+  (The macro `KosDynNode_IS_REGION` matches all four of these kinds.)
 * `KOS_DYN_NS` — namespace scope (PUSH_NS/POP_NS)
 * `KOS_DYN_CC` — call/cc extent (PUSH_CC/POP_CC)
 * `KOS_DYN_YIELD_FROM` — yield-from delegation state (see yield-from-execution-model.md)

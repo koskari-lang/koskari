@@ -4,6 +4,37 @@ This document specifies the redesign of the Koskari dynamic node system into a c
 
 **Existing reference material:** `dynchain.c`, `dynchain.h`, `eval.c`, [callcc.md](callcc.md), [with-dyn-with.md](with-dyn-with.md), [extent-wind-unwind.md](extent-wind-unwind.md).
 
+## Implementation Status
+
+This specification was partially adopted. The following notes describe what was implemented and what was not.
+
+**Adopted:**
+- §2.3 Capability bits (`KOS_DYN_CAP_*`): all capability constants are implemented in `dynchain.h`.
+  `KOS_DYN_CAP_MAY_SWALLOW_EXCEPTION` exists as an alias for `KOS_DYN_CAP_CATCH` (§2.3 rename
+  partially done; both names are present).
+- §3 Per-type semantics: TRY, FINALLY, LOOP, FOREACH as separate kinds (from the flatten proposal,
+  which this doc informed). REGION row in the per-type table below no longer maps to a real kind;
+  TRY/FINALLY/LOOP/FOREACH supersede it.
+- §5 Transfer plan step types: `KOS_XFER_TRUNCATE_AND_INJECT` and `KOS_XFER_POP_ONE` are
+  implemented. `KOS_XFER_DYN_WITH_ENTER` was removed as proposed.
+- §7 POP_SHIFT via transfer plan: implemented.
+- §9 Migration item 7 (WITH clone): WITH participates in capture. See §9.7 note below.
+
+**Not adopted:**
+- §2.2 `KosDynTypeOps` function-pointer dispatch table and `kos_dyn_type_ops[]` array: not
+  implemented. Dispatch uses inline `switch` on `KosDynKind` throughout `dynchain.c` (as
+  described in the flatten proposal §7, which this document also allowed as an option).
+- §2.1 `teardown_after_unwind` handler slot and `KOS_DYN_CAP_NEEDS_TRANSFER_TEARDOWN` capability:
+  not implemented. Teardown is folded into the unwind path rather than being a separate phase.
+- §4 `kos_dyn_push` / `kos_dyn_pop` as the sole unified entry points: the existing
+  `kos_dyn_push_*` / `kos_dyn_pop_*` per-type entry points are still present alongside the
+  generic helpers.
+- §8 "Adding a New Dynamic Node Type" via function table: since the table was not adopted, new
+  kinds are added by extending the `switch` statements in `dynchain.c`.
+
+**Open work:** See `design/interpreter/dynchain-refactor-notes.md` for remaining kind-check
+violations that would be resolved by fuller adoption of the capability-based dispatch model.
+
 ---
 
 ## 1. Goals

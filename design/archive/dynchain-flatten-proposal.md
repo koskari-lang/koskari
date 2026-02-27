@@ -1,10 +1,42 @@
 # Dynchain Flatten and Simplify: Design Proposal
 
-**Status:** Proposal
+**Status:** Partially implemented — see implementation notes below.
 **Author:** —
-**Related:** [dynamic-node-unified-api.md](dynamic-node-unified-api.md), [extent-wind-unwind.md](extent-wind-unwind.md), `koskari/lib/dynchain.c`, `koskari/lib/dynchain.h`
+**Related:** [dynamic-node-unified-api.md](../interpreter/dynamic-node-unified-api.md), [extent-wind-unwind.md](../interpreter/extent-wind-unwind.md), `koskari/lib/dynchain.c`, `koskari/lib/dynchain.h`
 
-This document proposes a refactor of the Koskari dynamic chain to reduce complexity, eliminate redundant branching, and make behavior easy to locate.
+This document proposed a refactor of the Koskari dynamic chain to reduce complexity, eliminate redundant branching, and make behavior easy to locate.
+
+## Implementation Notes (Post-Execution)
+
+The core of this proposal — replacing `KOS_DYN_REGION + KosRegionStyle` with distinct top-level
+kind values — **has been implemented**. `KOS_DYN_TRY`, `KOS_DYN_FINALLY`, `KOS_DYN_LOOP`, and
+`KOS_DYN_FOREACH` now exist as separate enum values with separate union slots (`try_`, `finally_`,
+`loop`, `foreach`) and per-kind predicate macros (`KosDynNode_IS_TRY`, etc.).
+
+**Adopted:**
+- §1 Goal 1 (flatten region kinds): implemented.
+- §1 Goal 2 (minimal payloads): implemented — separate union slots per kind.
+- §2 KosDynKind enumeration: matches the implementation exactly.
+- §3 Union layout: implemented with the per-kind struct layout described.
+- §9 Opcode changes: PUSH_TRY, PUSH_FINALLY, PUSH_LOOP, PUSH_FOREACH each push the corresponding kind.
+- §7 File layout / discoverability: implemented via labeled sections in `dynchain.c`.
+- §10 Migration steps 1–4: completed.
+
+**Not adopted:**
+- §4/§8 Generic operation names `kos_dyn_install` / `kos_dyn_uninstall`: the existing
+  `kos_dyn_push_*` / `kos_dyn_pop_*` / `kos_dyn_uninstall_handler` naming was retained. The
+  `kos_dyn_install` and `kos_dyn_uninstall` entry points described in §4 do not exist under
+  those names.
+- §4 `kos_dyn_unwind_on_exception` rename: the existing name `kos_dyn_unwind_on_exception` was
+  not renamed to `kos_dyn_exception_unwind`.
+- §6 No-kind-checks-outside-generic-functions: partially achieved. `KosDynNode_IS_REGION` now
+  exists as a macro alias checking all four concrete kinds; there are still inline kind checks
+  in some opcode and eval paths (see `design/interpreter/dynchain-refactor-notes.md`).
+- §10 Steps 5–7 (remove `KosRegionStyle`, merge teardown into unwind, rename pop→uninstall):
+  `KosRegionStyle` is still present as a vestigial typedef in `dynchain.h`.
+
+**Superseded:** See `design/interpreter/evaluator.md` and `design/INVARIANTS-AND-CLARIFICATIONS.md`
+for the current accurate description of the dynamic chain kinds.
 
 ---
 

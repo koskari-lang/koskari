@@ -75,6 +75,9 @@ no mismatch that could cause leaked or orphaned blocks.
 
 - Runs `kos_dyn_uninstall` for the popped node, which dispatches to `kos_dyn_uninstall_handler` → DropBlock for types that push blocks.
 
-## Potential Issue
+## Resolved Issue
 
-The **dynchain.h** u.shift comment "install pushes stack block, teardown drops it" contradicts both the implementation (no push/drop for SHIFT) and the design docs (PROMPT owns the block). Consider updating the header to: "shift: simple marker; PROMPT owns the stack block for the delimited region."
+The **dynchain.h** `u.shift` comment previously read "install pushes stack block, teardown drops it",
+which contradicted both the implementation (no push/drop for SHIFT) and the design docs (PROMPT owns
+the block). This comment has been corrected; it now reads: "shift: simple marker; PROMPT owns the
+stack block for the delimited region." No implementation changes were required.

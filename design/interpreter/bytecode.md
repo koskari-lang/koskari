@@ -199,13 +199,13 @@ quick lookup.
 - `KOS_OP_TAIL_RECUR_NAMES`, `KOS_OP_TAIL_RECUR_STAR`
 
 ### Block Control
-- `KOS_OP_PUSH_FOREACH`: Push for-each loop (implemented); arg = break target; TOS = iterable for ITER_NEXT; pushes KosDynRegion FOREACH only (no stack block)
+- `KOS_OP_PUSH_FOREACH`: Push for-each loop (implemented); arg = break target; TOS = iterable for ITER_NEXT; pushes KOS_DYN_FOREACH and stack block
 - `KOS_OP_PUSH_WITH`: Push with context (stub)
 - `KOS_OP_PUSH_CLASS`: Push class definition (stub)
-- `KOS_OP_PUSH_FINALLY`: Push finally block (implemented); pushes KosDynRegion FINALLY and KosStackBlock
-- `KOS_OP_PUSH_LOOP`: Push while loop (implemented); arg = break target; pushes KosDynRegion LOOP and KosStackBlock
+- `KOS_OP_PUSH_FINALLY`: Push finally block (implemented); pushes KOS_DYN_FINALLY and KosStackBlock
+- `KOS_OP_PUSH_LOOP`: Push while loop (implemented); arg = break target; pushes KOS_DYN_LOOP and KosStackBlock
 - `KOS_OP_PUSH_NS`: Push namespace scope; arg = count of values to bind; opa=0: [NSPEC]; opa>0: [NSPEC, val0, ..., NAMES]; creates KosNamespace, pushes KosDynNs
-- `KOS_OP_PUSH_TRY`: Push try block (implemented); pushes KosDynRegion TRY and KosStackBlock
+- `KOS_OP_PUSH_TRY`: Push try block (implemented); pushes KOS_DYN_TRY and KosStackBlock
 - `KOS_OP_CLEAR_FINALLY`, `KOS_OP_CLEAR_LOOP`, `KOS_OP_CLEAR_TRY` (CLEAR_LOOP implemented)
 - `KOS_OP_POP_WITH`, `KOS_OP_POP_FINALLY`, `KOS_OP_POP_LOOP`, `KOS_OP_POP_NS` (POP_NS, POP_LOOP implemented), etc.
 

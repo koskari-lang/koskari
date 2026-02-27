@@ -25,16 +25,19 @@ frames, prompts, wind extents, and control regions. This replaces the previous
 separate frame chain and handler chain.
 
 **KosDynNode** — Single tagged-union struct for all chain node kinds. Base fields
-`parent`, `kind`, `flags`, `caps` are followed by a union `u` with variants: `frame`,
-`prompt`, `cc`, `wind`, `region`, `ns`, `with_`, `shift`, `param`, `yieldfrom`.
-Typedefs (KosDynFrame, KosDynPrompt, KosDynWind, KosDynRegion, KosDynNs, KosDynCC,
-KosDynWith, KosDynShift, KosDynParam, KosDynYieldFrom) all refer to this same struct.
+`parent`, `kind`, `flags`, `caps`, `node_id` are followed by a union `u` with variants:
+`frame`, `prompt`, `cc`, `wind`, `try_`, `finally_`, `loop`, `foreach`, `ns`, `with_`,
+`shift`, `param`, `yieldfrom`.
+Typedefs (KosDynFrame, KosDynPrompt, KosDynWind, KosDynNs, KosDynCC, KosDynWith,
+KosDynShift, KosDynParam, KosDynYieldFrom) all refer to this same struct.
 **All field access must use the macros** defined in dynchain.h; do not touch union
 members or base fields directly. Node kinds: KOS_DYN_FRAME, KOS_DYN_PROMPT,
-KOS_DYN_SHIFT, KOS_DYN_WIND, KOS_DYN_REGION, KOS_DYN_NS, KOS_DYN_CC,
-KOS_DYN_YIELD_FROM, KOS_DYN_PARAM, KOS_DYN_WITH, KOS_DYN_DYN_WITH. Behavior is driven
-by capability bits (`KOS_DYN_CAP_*`) and the per-kind type-ops table (`kos_dyn_type_ops[]`);
-see [dynamic-node-unified-api.md](dynamic-node-unified-api.md) for the full handler model.
+KOS_DYN_SHIFT, KOS_DYN_WIND, KOS_DYN_TRY, KOS_DYN_FINALLY, KOS_DYN_LOOP,
+KOS_DYN_FOREACH, KOS_DYN_NS, KOS_DYN_CC, KOS_DYN_YIELD_FROM, KOS_DYN_PARAM,
+KOS_DYN_WITH, KOS_DYN_DYN_WITH, KOS_DYN_CC_RAISE. The macro `KosDynNode_IS_REGION`
+matches TRY, FINALLY, LOOP, and FOREACH for convenience. Behavior is driven by
+capability bits (`KOS_DYN_CAP_*`); see [dynamic-node-unified-api.md](dynamic-node-unified-api.md)
+for the capability model.
 
 - **Frame** (u.frame): code (borrowed), pc (next instruction), acting_pc (instruction currently being executed), stack (owned), ns (owned), frame_flags, native_handler (optional; when non-NULL, handler is frame evaluator; see [api/special-call-protocol.md](../api/special-call-protocol.md)).
   Macros: KosDynFrame_CODE, KosDynFrame_PC, KosDynFrame_ACTING_PC, KosDynFrame_STACK, KosDynFrame_NS, KosDynFrame_FLAGS, KosDynFrame_NATIVE_HANDLER.
@@ -42,8 +45,10 @@ see [dynamic-node-unified-api.md](dynamic-node-unified-api.md) for the full hand
   Macros: KosDynPrompt_ID, KosDynPrompt_HANDLER_CODE, KosDynPrompt_HANDLER_PC.
 - **Wind** (u.wind): before_code, before_pc, after_code, after_pc, entered.
   Macros: KosDynWind_BEFORE_CODE, KosDynWind_BEFORE_PC, KosDynWind_AFTER_CODE, KosDynWind_AFTER_PC, KosDynWind_ENTERED.
-- **Region** (u.region): style (KosRegionStyle: TRY, FINALLY, LOOP, WITH, FOREACH, etc.), break_pc, continue_pc, enabled, result, iter, exhausted; FINALLY also has handling_raise (1 when entered due to exception) and result holds stashed return value; FOREACH has iter_next_else_pc (else PC when ITER_NEXT gen exhausts; 0 = not set).
-  Macros: KosDynRegion_STYLE, KosDynRegion_BREAK_PC, KosDynRegion_CONTINUE_PC, KosDynRegion_ENABLED, etc.
+- **Try** (u.try_): handler_pc, enabled. Macros: KosDynTry_HANDLER_PC, KosDynTry_ENABLED.
+- **Finally** (u.finally_): handler_pc, enabled, handling_raise (1 when entered due to exception), result (stashed return value). Macros: KosDynFinally_HANDLER_PC, KosDynFinally_ENABLED, KosDynFinally_HANDLING_RAISE, KosDynFinally_RESULT.
+- **Loop** (u.loop): break_pc, continue_pc, enabled, result. Macros: KosDynLoop_BREAK_PC, KosDynLoop_CONTINUE_PC, KosDynLoop_ENABLED, KosDynLoop_RESULT.
+- **Foreach** (u.foreach): break_pc, continue_pc, enabled, result, iter, exhausted, iter_next_else_pc (else PC when ITER_NEXT gen exhausts; 0 = not set). Macros: KosDynForeach_ITER, KosDynForeach_EXHAUSTED, KosDynForeach_ITER_NEXT_ELSE_PC, and the shared Loop macros.
 - **Ns** (u.ns): saved_ns. Macro: KosDynNs_SAVED_NS.
 - **CC** (u.cc): resume_pc. Macro: KosDynCC_RESUME_PC.
 
@@ -119,8 +124,8 @@ struct KosContext {
 
 ### KosStackBlock — Storage-Only Operand Stack
 
-Control flow metadata (block style, labels, enabled flag) has been moved to
-`KosDynRegion` nodes. `KosStackBlock` is now purely storage:
+Control flow metadata (block style, labels, enabled flag) lives in the region
+nodes on the dynamic chain (TRY, FINALLY, LOOP, FOREACH). `KosStackBlock` is purely storage:
 
 ```c
 struct KosStackBlock {
@@ -316,13 +321,18 @@ KosDynWind *kos_dyn_push_wind(KosContext *ctx,
         KosCode *after_code, uint32_t after_pc);
 int kos_dyn_pop_wind(KosContext *ctx, KosDynWind *wind);
 
-/* Push/pop regions */
-KosDynRegion *kos_dyn_push_region(KosContext *ctx,
-        KosRegionStyle style, uint32_t label_a, uint32_t label_b);
-void kos_dyn_pop_region(KosContext *ctx, KosDynRegion *region);
+/* Push/pop region kinds (TRY, FINALLY, LOOP, FOREACH) */
+KosDynNode *kos_dyn_push_try(KosContext *ctx, uint32_t handler_pc);
+KosDynNode *kos_dyn_push_finally(KosContext *ctx, uint32_t handler_pc);
+KosDynNode *kos_dyn_push_loop(KosContext *ctx, uint32_t break_pc, uint32_t continue_pc);
+KosDynNode *kos_dyn_push_foreach(KosContext *ctx, uint32_t break_pc, uint32_t continue_pc);
+void kos_dyn_uninstall_handler(KosContext *ctx, KosDynNode *node);
 
-/* Find topmost enabled TRY or FINALLY region (for exception handling) */
-KosDynRegion *kos_find_region_for_raise(KosContext *ctx);
+/* Find topmost enabled TRY or FINALLY node (for exception handling) */
+KosDynNode *kos_find_node_for_raise(KosContext *ctx);
+
+/* Find topmost LOOP or FOREACH node (for break/continue) */
+KosDynNode *kos_find_node_for_loop(KosContext *ctx);
 
 /* Async WITH exit completion */
 int kos_complete_pending_with_exit(KosContext *ctx);

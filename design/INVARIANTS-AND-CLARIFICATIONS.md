@@ -78,7 +78,7 @@ These are **commitments**: they must hold for correct behavior. They are elabora
 
 - **Python boundary for continuations**: Captured continuations **must not** include Python/C call stack. The dynamic chain is scoped per evaluator context (one chain per driver). Delimited capture only finds prompts in the current chain. Delimited invocation from Python is **blocked** at `DelimitedContinuation.tp_call` (always raises). Implementation: `kos_validate_capture()` verifies prompt reachability from `dyn_top`.
 
-- **Unified dynamic chain**: All execution context (frames, prompts, winds, regions, namespace scopes, parameter extents) lives on a **single** chain of `KosDynNode` structures. Node kinds: `KOS_DYN_FRAME`, `KOS_DYN_PROMPT`, `KOS_DYN_WIND`, `KOS_DYN_REGION`, `KOS_DYN_NS`, `KOS_DYN_YIELD_FROM`, `KOS_DYN_PARAM` (see design/interpreter/yield-from-execution-model.md, design/interpreter/domain.md). Walking the chain gives full dynamic extent. `KOS_DYN_NS` (KosDynNs) marks namespace scopes from PUSH_NS; stores `saved_ns` for restore on POP_NS. `KOS_DYN_PARAM` (KosDynParam) marks parameterize extents; enter/restore domain bindings on push/pop and during continuation transfer.
+- **Unified dynamic chain**: All execution context (frames, prompts, winds, regions, namespace scopes, parameter extents) lives on a **single** chain of `KosDynNode` structures. Node kinds: `KOS_DYN_FRAME`, `KOS_DYN_PROMPT`, `KOS_DYN_WIND`, `KOS_DYN_TRY`, `KOS_DYN_FINALLY`, `KOS_DYN_LOOP`, `KOS_DYN_FOREACH`, `KOS_DYN_NS`, `KOS_DYN_YIELD_FROM`, `KOS_DYN_PARAM`, `KOS_DYN_WITH`, `KOS_DYN_DYN_WITH`, `KOS_DYN_SHIFT`, `KOS_DYN_CC`, `KOS_DYN_CC_RAISE` (see design/interpreter/yield-from-execution-model.md, design/interpreter/domain.md). The macro `KosDynNode_IS_REGION` is a convenience alias that matches TRY, FINALLY, LOOP, and FOREACH. Walking the chain gives full dynamic extent. `KOS_DYN_NS` (KosDynNs) marks namespace scopes from PUSH_NS; stores `saved_ns` for restore on POP_NS. `KOS_DYN_PARAM` (KosDynParam) marks parameterize extents; enter/restore domain bindings on push/pop and during continuation transfer.
 
 - **VM-native wind/unwind**: Wind/unwind hooks are **bytecode blocks** (implemented as null-arity Koskari callables that compile to bytecode). They run in the VM via `KosHookRunner` and end with the `END_WIND` sentinel opcode. When the evaluator unwinds (return or exception), each extent is torn down via **unified extent helpers** (`kos_dyn_*_unwind`); for WIND with an after-hook, the helper may start the hook and return async, in which case the evaluator runs the hook then resumes unwinding from END_WIND (unwind-in-progress state). Same helpers are used by transfer plans. See design/interpreter/extent-wind-unwind.md. Hook blocks execute in their own frames and capture lexical context via closure; they cannot see or change the enclosing frame’s stack.
 
@@ -114,7 +114,7 @@ These are **commitments**: they must hold for correct behavior. They are elabora
 
 - **Defer**: Single-shot await-handle; stores fn, args, kwds for application on first explicit await. Not eagerly awaited (CALL return and other implicit await sites push it as a plain value). Implemented in `koskari/lib/defer.c`; see design/api/defer-coroutine.md.
 
-- **Stack**: `Stack` (Python) is block-structured; the **storage** for the VM is `KosStackBlock` (C). Control-flow metadata (block style, labels, enabled) lives in **`KosDynRegion`** nodes on the dynamic chain, not on the stack. Implemented in `koskari/lib/stack.c` (storage only).
+- **Stack**: `Stack` (Python) is block-structured; the **storage** for the VM is `KosStackBlock` (C). Control-flow metadata (block style, labels, enabled) lives in the region nodes (`KOS_DYN_TRY`, `KOS_DYN_FINALLY`, `KOS_DYN_LOOP`, `KOS_DYN_FOREACH`) on the dynamic chain, not on the stack. Implemented in `koskari/lib/stack.c` (storage only).
 
 - **Bytecode**: `Code` holds immutable instructions (4 bytes each: `uint16_t op`, `uint16_t arg`), delta-encoded position table, constant pool, and extent table. After init, code, pool, and extent table are made read-only with `mprotect()`. `KOS_CODE_YIELDS` marks code that contains yield (→ async generator). The extent table (tagged-union `KosExtentDesc` array, `top_extent_id[pc]`) is derived from PUSH/POP pairs during construction; it enables O(1) lookup of block membership and handler targets. Exception dispatch uses `kos_try_handler_for()` when the extent table is present. JUMP locality is validated: control-flow jumps (JUMP, JUMP_FALSE, etc.) may not target outside the current block; PUSH/SET_PROMPT_HANDLER handler targets may point outside. Malformed bytecode (unmatched PUSH/POP) is rejected at Code construction. Implemented in `koskari/lib/bytecode.c`; opcodes in `koskari/lib/opcodes.incl`. See `design/interpreter/bytecode-metadata-tables.md`.
 
@@ -122,7 +122,7 @@ These are **commitments**: they must hold for correct behavior. They are elabora
 
 ## 4. Evaluator and Dynamic Chain (C Structures)
 
-- **KosDynNode**: Single struct for all chain node kinds. Contains `parent`, `kind`, `flags`, `node_id` (stable uint32 assigned on alloc, copied on clone for LCA matching across disjoint chains) and a union `u` with kind-specific payloads (frame, prompt, cc, wind, region, ns). Typedefs (KosDynFrame, KosDynPrompt, etc.) refer to the same struct. **Access node fields only via the macros** in dynchain.h (e.g. KosDynNode_KIND, KosDynNode_NODE_ID, KosDynFrame_PC, KosDynRegion_STYLE); do not touch `u` or base fields directly outside the header.
+- **KosDynNode**: Single struct for all chain node kinds. Contains `parent`, `kind`, `flags`, `node_id` (stable uint32 assigned on alloc, copied on clone for LCA matching across disjoint chains) and a union `u` with kind-specific payloads (frame, prompt, cc, wind, try_, finally_, loop, foreach, ns, with_, shift, param, yieldfrom). Typedefs (KosDynFrame, KosDynPrompt, etc.) refer to the same struct. **Access node fields only via the macros** in dynchain.h (e.g. KosDynNode_KIND, KosDynNode_NODE_ID, KosDynFrame_PC, KosDynTry_HANDLER_PC, KosDynLoop_BREAK_PC); do not touch `u` or base fields directly outside the header.
 
 - **KosDynFrame** (union variant): Function activation; `code` (borrowed), `pc`, `stack` (owned), `ns` (owned), `native_handler` (optional; when non-NULL, handler is frame evaluator). Frame owns stack and ns; code is not owned. Access via KosDynFrame_CODE, KosDynFrame_PC, KosDynFrame_STACK, KosDynFrame_NS, KosDynFrame_FLAGS, KosDynFrame_NATIVE_HANDLER.
 
@@ -130,13 +130,13 @@ These are **commitments**: they must hold for correct behavior. They are elabora
 
 - **KosDynWind** (union variant): Dynamic-wind extent; before/after code and pc; `entered` marks whether before has run. Hooks are bytecode blocks, not Python. Access via KosDynWind_BEFORE_CODE, KosDynWind_BEFORE_PC, KosDynWind_AFTER_CODE, KosDynWind_AFTER_PC, KosDynWind_ENTERED.
 
-- **KosDynRegion** (union variant): Block-local control; `KosRegionStyle` (TRY, FINALLY, LOOP, WITH, FOREACH, etc.). `break_pc`, `continue_pc` are jump targets; `enabled` for exception handling. FOREACH regions have `iter_next_else_pc` for ITER_NEXT exhausted path. Access via KosDynRegion_STYLE, KosDynRegion_BREAK_PC, KosDynRegion_CONTINUE_PC, KosDynRegion_ENABLED, KosDynRegion_ITER_NEXT_ELSE_PC, and related macros.
+- **KosDynTry / KosDynFinally / KosDynLoop / KosDynForeach** (union variants): Block-local control — formerly a single `KosDynRegion` with `KosRegionStyle`, now four separate kinds with minimal per-kind payloads. TRY and FINALLY carry `handler_pc` and `enabled`. LOOP adds `break_pc`, `continue_pc`, and `result`. FOREACH extends LOOP with `iter`, `exhausted`, and `iter_next_else_pc` for the ITER_NEXT exhausted path. `KosDynNode_IS_REGION` is a macro alias that matches all four. Access via kind-specific macros (e.g. `KosDynTry_HANDLER_PC`, `KosDynLoop_BREAK_PC`, `KosDynForeach_ITER`).
 
 - **KosDynNs** (union variant): Namespace scope from PUSH_NS; holds `saved_ns` (prior frame namespace) for restore on POP_NS. Access via KosDynNs_SAVED_NS.
 
 - **Allocator caches**: dynchain.c maintains a **single freelist for all KosDynNode kinds** (one allocation size); KosContinuation has its own **freelist**; eval.c maintains a **context cache** (KosContext freelist). Caps are tunable (DYN_NODE_MAX_FREE, CONT_MAX_FREE, CONTEXT_MAX_FREE). Same pattern as stack block freelist in stack.c.
 
-- **KosContext**: Top-level VM state: `dyn_top`, `frame_top`, `globals_frame`, `globals_cache_version`, `token`, **`domain`** (PyObject* KosDomain; ambient dynamic context anchor), `hook_runner`, `plan` / `plan_stack`, `chain_version`, `invocation_segment_top`, `py_await_iter`, `py_resume_inject`/`py_resume_kind`, `inject_mode`/`inject_value`, **pending async gen** (`pending_agen`, `pending_agen_default`, `pending_agen_n` for in-loop NEXT/ITER_NEXT; ITER_NEXT exhausted path reads region and else_pc from FOREACH region via kos_find_region_for_loop), `flags`. FINALLY `handling_raise`/`handling_result` live on `KosDynRegion`, not context.
+- **KosContext**: Top-level VM state: `dyn_top`, `frame_top`, `globals_frame`, `globals_cache_version`, `token`, **`domain`** (PyObject* KosDomain; ambient dynamic context anchor), `hook_runner`, `plan` / `plan_stack`, `chain_version`, `invocation_segment_top`, `py_await_iter`, `py_resume_inject`/`py_resume_kind`, `inject_mode`/`inject_value`, **pending async gen** (`pending_agen`, `pending_agen_default`, `pending_agen_n` for in-loop NEXT/ITER_NEXT; ITER_NEXT exhausted path reads iter and else_pc from the FOREACH node via `kos_find_node_for_loop`), `flags`. FINALLY `handling_raise`/`handling_result` live on the FINALLY node, not context.
 
 - **KosEvent**: Boundary event from `koskari_eval`: `KOS_EV_RETURN`, `KOS_EV_RAISE`, `KOS_EV_YIELD`, `KOS_EV_AWAIT`; `payload` is a new reference owned by the caller. These are produced only when the current frame has **no parent** (top-level return/yield/raise/await); when the frame has a parent, YIELD/RETURN are handled in-loop by detaching and pushing onto the parent.
 
@@ -200,7 +200,7 @@ These are **commitments**: they must hold for correct behavior. They are elabora
 - Stack: block-structured storage (stack.c); region metadata in DynRegion.
 - Bytecode: Code, 4-byte instructions, position table, constant pool, read-only protection (bytecode.c).
 - Parser/reader: BaseSourceStream, SourceStream, Reader (parse.c, parse.py).
-- Dynamic chain: all DynNode types, push/pop, clone, free, kos_find_region_for_raise (dynchain.c).
+- Dynamic chain: all DynNode types (TRY, FINALLY, LOOP, FOREACH, WITH, DYN_WITH, SHIFT, and others), push/pop, clone, free, `kos_find_node_for_raise`, `kos_find_node_for_loop` (dynchain.c).
 - Continuation: capture, validate, clone, invoke, transfer plan, LCA (dynchain.c, eval.c).
 - Wind: push/pop wind, hook runner, begin/hook_active/end_hook (dynchain.c, eval.c).
 - Evaluator core: KosContext (with domain field), KosFrame, kos_context_new/free, kos_frame_new/clone/free (eval.c). Domain: KosDomain type (param value store: name -> value), ParamRef (Ref subclass; resolves via kos_domain_current and kos_domain_get_param), TLS (KosTlsState, ctx_stack, token_stack), kos_ctx_current, kos_domain_current, kos_domain_push_scope, kos_domain_pop_scope (domain.c).
@@ -211,7 +211,7 @@ These are **commitments**: they must hold for correct behavior. They are elabora
 
 **Not yet implemented**:
 
-- Remaining opcode handlers: argument building (except BUILD_FUNCTION), CALL_NAMES/CALL_STAR/CALL_ATTR*/RECUR*/TAIL_*, block control (with/begin/class, wind, region). THEEND has no runtime implementation (hardcoded error). See `design/FEATURES.md` § "Opcodes: implementation status".
+- Remaining opcode handlers: CALL_NAMES/CALL_STAR/CALL_ATTR*/RECUR*/TAIL_*, BUILD_CLASS. THEEND has no runtime implementation (hardcoded error). See `design/FEATURES.md` § "Opcodes: implementation status".
 - Compiler: A partial implementation exists in `koskari.compile` (Compiler, ByteCodeFragment, specials: compile/bytecode, compile/begin, compile/call, lambda). Full parse → expand → compile → bytecode pipeline is not complete (macro expansion, remaining special forms, optimization passes).
 - Module creation/loading and import system integration.
 - Most special forms (only types, parsing, and runtime primitives exist).
@@ -227,7 +227,7 @@ These are **commitments**: they must hold for correct behavior. They are elabora
 
 - **Frame vs KosDynFrame**: `KosFrame` is a typedef for `KosDynFrame`; they are the same. The “frame” is the topmost FRAME node on the dynamic chain; `ctx->frame_top` caches it.
 
-- **Stack “block”**: In C, the evaluator uses `KosStackBlock` (linked blocks of value arrays). The Python `Stack` type is the block-structured value stack API; control-flow metadata is in `KosDynRegion`, not in the stack.
+- **Stack “block”**: In C, the evaluator uses `KosStackBlock` (linked blocks of value arrays). The Python `Stack` type is the block-structured value stack API; control-flow metadata is in the region nodes on the dynamic chain (TRY, FINALLY, LOOP, FOREACH), not in the stack.
 
 - **Borrowed vs owned**: In C, “borrowed” means the frame/code does not take ownership (no DECREF); “owned” or “stolen” means the receiver is responsible for DECREF or free. Docstrings in dynchain.h and eval.h specify per field.
 

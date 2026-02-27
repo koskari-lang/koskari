@@ -47,7 +47,7 @@ This version aims to be a "perfect playground" - a language with all the useful 
 
 ### In Progress
 
-- Compiler (many special forms implemented; see [design/SPECIALS.md](design/SPECIALS.md) for the current list; macro expansion, `try`, `for-each`, and operator infrastructure remain)
+- Compiler (many special forms implemented; see [design/SPECIALS.md](design/SPECIALS.md) for the current list; macro expansion and remaining special forms continue)
 - REPL and CLI
 
 ## Quick Start

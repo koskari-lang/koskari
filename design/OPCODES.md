@@ -49,10 +49,12 @@ linking from design notes, PRs, or other docs.
   KOS_EXT_PROMPT, KOS_EXT_NS, etc.), enter/exit pcs, and kind-specific targets;
   see bytecode-metadata-tables.md.
 - **dynamic chain / chain node**: At runtime, the evaluator maintains a chain of
-  nodes (`KosDynKind`: KOS_DYN_FRAME, KOS_DYN_REGION, KOS_DYN_NS, KOS_DYN_PROMPT,
-  KOS_DYN_CC, KOS_DYN_WIND, KOS_DYN_WITH, KOS_DYN_DYN_WITH, KOS_DYN_YIELD_FROM, etc.). PUSH_* opcodes push a node onto this chain;
-  POP_* opcodes pop it. Each opcode section that pushes onto the chain states
-  **Pushes:** the chain node type and, when relevant, the static extent kind.
+  nodes (`KosDynKind`: KOS_DYN_FRAME, KOS_DYN_TRY, KOS_DYN_FINALLY, KOS_DYN_LOOP,
+  KOS_DYN_FOREACH, KOS_DYN_NS, KOS_DYN_PROMPT, KOS_DYN_CC, KOS_DYN_CC_RAISE,
+  KOS_DYN_WIND, KOS_DYN_WITH, KOS_DYN_DYN_WITH, KOS_DYN_YIELD_FROM, KOS_DYN_PARAM,
+  KOS_DYN_SHIFT). PUSH_* opcodes push a node onto this chain; POP_* opcodes pop it.
+  Each opcode section that pushes onto the chain states **Pushes:** the chain node
+  type and, when relevant, the static extent kind.
 - **pre-compile / post-compile**: Pre-compile = stream emitted by compiler (labels
   as strings, constants as values). Post-compile = final bytecode after finalize
   (labels → pcs, values → pool indices). §1.7 details the pipeline.
@@ -1660,8 +1662,8 @@ Pool: 0 = `"os"`, 1 = `"path"`, 2 = `"sep"`, 3 = None.
 
 - **Style**: NOARG. Argument unused; break target is derived at runtime from the extent table (`pop_pc + 1`).
 - **Status**: Implemented.
-- **Stack**: Pops iterable (TOS) and loop_result (below TOS); creates iterator; pushes FOREACH region and stack block. ITER_NEXT uses region's iterator. Break target = `extent.pop_pc + 1` (instruction after the matching POP_LOOP).
-- **Pushes:** KOS_DYN_REGION (static extent KOS_EXT_FOREACH; region holds iterator and loop state).
+- **Stack**: Pops iterable (TOS) and loop_result (below TOS); creates iterator; pushes FOREACH node and stack block. ITER_NEXT uses the node's iterator. Break target = `extent.pop_pc + 1` (instruction after the matching POP_LOOP).
+- **Pushes:** KOS_DYN_FOREACH (static extent KOS_EXT_FOREACH; node holds iterator and loop state).
 - **Invariants**: A KOS_EXT_FOREACH extent must exist at the PUSH_FOREACH PC; otherwise RuntimeError. Extent kind KOS_EXT_FOREACH.
 - **Compiler form:** Pre-compile arg = 0 (unused). Break target is not stored in the instruction; it is derived at runtime via `kos_extent_find(KOS_EXT_FOREACH)` → `ext->pop_pc + 1`.
 
@@ -1727,8 +1729,8 @@ Full design: [interpreter/with-dyn-with.md](interpreter/with-dyn-with.md). Summa
 
 - **Style**: NOARG. Argument unused; break target is derived at runtime from the extent table (`pop_pc + 1`). Continue target = instruction immediately following PUSH_LOOP (i.e. `CURRENT_PC` after the evaluator has advanced past the opcode).
 - **Status**: Implemented.
-- **Stack**: Pushes LOOP region and stack block. Break/continue use `break_pc` (derived at runtime) and `continue_pc` (next instruction after PUSH_LOOP). Initializes region result to `None`.
-- **Pushes:** KOS_DYN_REGION (static extent KOS_EXT_LOOP; plus stack block for loop body).
+- **Stack**: Pushes LOOP node and stack block. Break/continue use `break_pc` (derived at runtime) and `continue_pc` (next instruction after PUSH_LOOP). Initializes node result to `None`.
+- **Pushes:** KOS_DYN_LOOP (static extent KOS_EXT_LOOP; plus stack block for loop body).
 - **Invariants**: A KOS_EXT_LOOP extent must exist at the PUSH_LOOP PC; otherwise RuntimeError. Extent kind KOS_EXT_LOOP.
 - **Compiler form:** Pre-compile arg = 0 (unused). Break target is not stored in the instruction; it is derived at runtime via `kos_extent_find(KOS_EXT_LOOP)` → `ext->pop_pc + 1`.
 
@@ -1768,8 +1770,8 @@ Full design: [interpreter/with-dyn-with.md](interpreter/with-dyn-with.md). Summa
 
 - **Style**: LABEL. Handler targets in extent table.
 - **Status**: Implemented.
-- **Stack**: Pushes TRY region and a KosStackBlock (like PUSH_LOOP). Exception dispatch clears the block before jumping to the handler. POP_TRY drops the block (with PopBlock(1) to promote one value to parent); block must have exactly one value when POP_TRY runs. Region unwind (e.g. BREAK through TRY) also drops the block.
-- **Pushes:** KOS_DYN_REGION (static extent KOS_EXT_TRY; handler targets in extent descriptor) and KosStackBlock.
+- **Stack**: Pushes TRY node and a KosStackBlock (like PUSH_LOOP). Exception dispatch clears the block before jumping to the handler. POP_TRY drops the block (with PopBlock(1) to promote one value to parent); block must have exactly one value when POP_TRY runs. Node unwind (e.g. BREAK through TRY) also drops the block.
+- **Pushes:** KOS_DYN_TRY (static extent KOS_EXT_TRY; handler targets in extent descriptor) and KosStackBlock.
 - **Invariants**: Extent kind KOS_EXT_TRY. Handler targets (except_pc, finally_pc, exit_pc) from extent descriptor.
 
 **Example:** try/except. Extent table holds except_pc, finally_pc, exit_pc.
@@ -1789,8 +1791,8 @@ Full design: [interpreter/with-dyn-with.md](interpreter/with-dyn-with.md). Summa
 
 - **Style**: LABEL. Arg = handler/finally target.
 - **Status**: Implemented.
-- **Stack**: Pushes FINALLY region and a KosStackBlock (like PUSH_TRY). Exception dispatch clears the block before jumping to the finally handler. POP_FINALLY drops the block (with PopBlock(1) to promote one value to parent); block must have exactly one value when POP_FINALLY runs. Region unwind drops the block when control passes through.
-- **Pushes:** KOS_DYN_REGION (static extent KOS_EXT_FINALLY) and KosStackBlock.
+- **Stack**: Pushes FINALLY node and a KosStackBlock (like PUSH_TRY). Exception dispatch clears the block before jumping to the finally handler. POP_FINALLY drops the block (with PopBlock(1) to promote one value to parent); block must have exactly one value when POP_FINALLY runs. Node unwind drops the block when control passes through.
+- **Pushes:** KOS_DYN_FINALLY (static extent KOS_EXT_FINALLY) and KosStackBlock.
 - **Invariants**: Extent kind KOS_EXT_FINALLY.
 
 **Example:** Push finally block. Arg = finally block pc (or extent holds it).
