@@ -176,7 +176,7 @@ When adding or changing an opcode:
 - [14. Attributes](#14-attributes) — ATTR, ATTR_CLEAR, ATTR_REF, ATTR_STORE
 - [15. Items](#15-items) — ITEM, CONST_ITEM, and variants
 - [16. Argument production](#16-argument-production) — BUILD_ARGS, BUILD_FUNCTION, BUILD_KWDS, etc.
-- [17. Calls](#17-calls) — CALL, CALL_NAMES, CALL_STAR, CALL_ATTR*, RECUR*, TAIL_*
+- [17. Calls](#17-calls) — CALL, CALL_NAMES, CALL_STAR, CALL_ATTR*, TAIL_*
 - [18. Block control](#18-block-control) — PUSH_FOREACH, PUSH_LOOP, PUSH_NS, PUSH_TRY, PUSH_FINALLY, CLEAR_*, POP_*
 - [18.1 Context managers (with / dyn-with)](#181-context-managers-with--dyn-with) — PUSH_WITH, POP_WITH, PUSH_DYN_WITH, POP_DYN_WITH
 - [19. Object protocol](#19-object-protocol) — OBJECT_* (comparisons, predicates, numeric, general)
@@ -260,7 +260,7 @@ When adding or changing an opcode:
 | INVOKE_K_VAR | CONST | Invoke continuation by name | [§20](#kos_op_invoke_k_var) |
 | THEEND | NOARG | Unreachable; no runtime | [§25](#kos_op_theend) |
 
-Other opcodes (PROPER, PAIR_SPLICE, CHECK_LT/LE/GT/GE, CHECK_IS_INSTANCE/IS_SUBCLASS, VAR_CLEAR, VAR_REF, FAST_BIND/CLEAR/REF, ATTR_CLEAR/REF, ITEM_CLEAR/REF, CONST_ITEM_*, BUILD_*, CALL_ATTR*, RECUR*, TAIL_RECUR*, PUSH_FINALLY/POP_*, CLEAR_*, OBJECT_*, PUSH_WITH/POP_WITH/PUSH_DYN_WITH/POP_DYN_WITH, PUSH_CC/POP_CC/CAPTURE_CC, PUSH_WIND/POP_WIND/END_WIND, PUSH_PARAM/PARAM/POP_PARAM) are listed under their category sections above; use the category index to jump to the section, then scan for the opcode name.
+Other opcodes (PROPER, PAIR_SPLICE, CHECK_LT/LE/GT/GE, CHECK_IS_INSTANCE/IS_SUBCLASS, VAR_CLEAR, VAR_REF, FAST_BIND/CLEAR/REF, ATTR_CLEAR/REF, ITEM_CLEAR/REF, CONST_ITEM_*, BUILD_*, CALL_ATTR*, PUSH_FINALLY/POP_*, CLEAR_*, OBJECT_*, PUSH_WITH/POP_WITH/PUSH_DYN_WITH/POP_DYN_WITH, PUSH_CC/POP_CC/CAPTURE_CC, PUSH_WIND/POP_WIND/END_WIND, PUSH_PARAM/PARAM/POP_PARAM) are listed under their category sections above; use the category index to jump to the section, then scan for the opcode name.
 
 
 ## 3. No-op and compile-time
@@ -1691,15 +1691,6 @@ Pool: 0 = `"os"`, 1 = `"path"`, 2 = `"sep"`, 3 = None.
 
 ---
 
-### KOS_OP_RECUR, KOS_OP_RECUR_NAMES, KOS_OP_RECUR_STAR
-
-- **Style**: COUNT, COUNT, STAR.
-- **Status**: Stub.
-- **Stack**: (Intended: explicit recursion; call current function.)
-- **Example:** (Stub; no runtime table.)
-
----
-
 ### KOS_OP_TAIL_CALL
 
 - **Style**: COUNT. Arg = number of positional arguments.
@@ -1733,13 +1724,6 @@ Pool: 0 = `"os"`, 1 = `"path"`, 2 = `"sep"`, 3 = None.
 - **Stack**: Same layout as CALL_STAR: `[..., callable, pos, kwd]`. Pop order and ensure_tuple as CALL_STAR. Call via kos_callable_tail_call(ctx, out_ev, callable, pos, kwd). Same replace-frame semantics as TAIL_CALL.
 
 ---
-
-### KOS_OP_TAIL_RECUR, KOS_OP_TAIL_RECUR_NAMES, KOS_OP_TAIL_RECUR_STAR
-
-- **Style**: COUNT, COUNT, STAR.
-- **Status**: Stub.
-- **Stack**: (Intended: tail recur; replace current frame with current function re-invoked.)
-- **Example:** (Stub; no runtime table.)
 
 
 ## 18. Block control

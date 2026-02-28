@@ -38,7 +38,7 @@ This document provides a high-level summary of all features identified from both
 
 ### Functions
 - **Definition**: function, lambda (named and anonymous)
-- **Calling**: Direct call, method call, recur
+- **Calling**: Direct call, method call
 - **Formals**: Positional, defaults, keyword-only, *args, **kwargs
 
 ### Async/Coroutines
@@ -115,7 +115,7 @@ The VM in `eval.c` uses a jump table; every opcode has a handler. Handlers are e
 - **Dynamic wind (partial)**: END_WIND is implemented (terminates before/after hook block, calls `kos_end_hook`; if unwind was in progress, resumes unwinding and delivers any stashed return). PUSH_WIND and POP_WIND remain stubs. Unified extent wind/unwind helpers (`kos_dyn_wind_wind`, `kos_dyn_wind_unwind`, etc.) are used by both simple pop and transfer plans; see design/interpreter/extent-wind-unwind.md.
 
 **Not implemented (stubs)** — hitting these at runtime raises "unimplemented opcode":
-- **Calls**: CALL_ATTR, CALL_ATTR_NAMES, CALL_ATTR_STAR; RECUR, RECUR_NAMES, RECUR_STAR; TAIL_RECUR, TAIL_RECUR_NAMES, TAIL_RECUR_STAR
+- **Calls**: CALL_ATTR, CALL_ATTR_NAMES, CALL_ATTR_STAR
 - **Block control (remaining)**: PUSH_CLASS (stub)
 - **Wind**: PUSH_WIND, POP_WIND (stubs)
 
@@ -226,7 +226,7 @@ There are no **partially** implemented opcodes; each handler is either full, a s
 - Macro system (reader macros, defmacro, defalias)
 - Remaining control flow constructs (class blocks)
 - Compiler: remaining specials (and/or logical operators, yield, await, define-values, setq-values), macro expansion, optimization passes
-- Remaining opcode handlers: CALL_ATTR*, RECUR*, TAIL_RECUR*, PUSH_CLASS, PUSH_WIND, POP_WIND (BUILD_ARGS, BUILD_KWDS, BUILD_KWDS_NAMES, COMBINE_ARGS, COMBINE_KWDS, PUSH_WITH, POP_WITH, PUSH_DYN_WITH, POP_DYN_WITH, CALL_NAMES, CALL_STAR, TAIL_CALL_NAMES, TAIL_CALL_STAR, END_WIND implemented; see "Opcodes: implementation status" above; with/dyn-with design in design/interpreter/with-dyn-with.md)
+- Remaining opcode handlers: CALL_ATTR*, PUSH_CLASS, PUSH_WIND, POP_WIND (BUILD_ARGS, BUILD_KWDS, BUILD_KWDS_NAMES, COMBINE_ARGS, COMBINE_KWDS, PUSH_WITH, POP_WITH, PUSH_DYN_WITH, POP_DYN_WITH, CALL_NAMES, CALL_STAR, TAIL_CALL_NAMES, TAIL_CALL_STAR, END_WIND implemented; see "Opcodes: implementation status" above; with/dyn-with design in design/interpreter/with-dyn-with.md)
 
 ### Needs Reconsideration
 - CPython bytecode target (abandoned)

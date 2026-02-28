@@ -99,7 +99,6 @@ Special forms are compile-time constructs that have no runtime representation. T
 - **`super`**: Superclass access
 - **`letrec`**: Recursive let binding
 - **`collect-let`**: Let with collection semantics
-- **`recur`**: Tail-recursive call (optimized)
 - **`call-object`**: Generic function call
 - **`call-method`**: Method call
 - **`check-exception`**: Exception type matching
@@ -129,7 +128,6 @@ Special forms are compile-time constructs that have no runtime representation. T
 
 - `#bytecode` direct injection (useful for testing, but security concern?)
 - `collect-let` vs `let` semantics
-- `recur` vs tail-call optimization in general
 - Method call syntax (`!` vs `method-call`)
 
 ### To Design

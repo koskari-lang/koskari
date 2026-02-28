@@ -56,11 +56,6 @@
 - Optimized method invocation
 - Supports all argument patterns
 
-**`recur`**: Tail-recursive call
-- Syntax: `(recur ARG...)`
-- Optimized tail call to current function
-- Supports all argument patterns
-
 ## Tail-Call Optimization (TCO)
 
 ### From python-sibilant
@@ -74,13 +69,6 @@
 - Functions with `yield` (generators)
 - Functions with `await` (coroutines)
 - Functions explicitly disabled
-
-### From sibilant-ceval
-
-**`recur` opcode**: Direct tail-recursive call
-- Compiles to `OP_RECUR` or `OP_TAIL_RECUR` opcodes
-- Efficient direct tail call for self-recursion
-- Supports all argument patterns
 
 ## Function Features
 
@@ -115,7 +103,6 @@
 ### To Reconsider
 
 - Direct tail-call opcodes
-- `recur` vs. general TCO
 - Method call optimization strategy
 - Function introspection capabilities
 

@@ -191,12 +191,8 @@ quick lookup.
 - `KOS_OP_CALL_STAR`: Call with *args/**kwargs
 - `KOS_OP_CALL_ATTR`: Method call
 - `KOS_OP_CALL_ATTR_NAMES`, `KOS_OP_CALL_ATTR_STAR`
-- `KOS_OP_RECUR`: Explicit recursion
-- `KOS_OP_RECUR_NAMES`, `KOS_OP_RECUR_STAR`
 - `KOS_OP_TAIL_CALL`: Tail call (replaces frame)
 - `KOS_OP_TAIL_CALL_NAMES`, `KOS_OP_TAIL_CALL_STAR`
-- `KOS_OP_TAIL_RECUR`: Tail recursion
-- `KOS_OP_TAIL_RECUR_NAMES`, `KOS_OP_TAIL_RECUR_STAR`
 
 ### Block Control
 - `KOS_OP_PUSH_FOREACH`: Push for-each loop (implemented); arg = break target; TOS = iterable for ITER_NEXT; pushes KOS_DYN_FOREACH and stack block

@@ -1526,7 +1526,7 @@ static int op_unimplemented_stub(KosContext *ctx, KosEvent *out_ev, KosOp *insn)
    NOOP, LABEL, POSITION - no-op / debug
    CONST, DUP, POP - stack
    RETURN, AWAIT - control
-   CALL, CALL_*, RECUR, TAIL_* - calls
+   CALL, CALL_*, TAIL_* - calls
    GLOBALS, LOCALS - namespaces
    VAR_*, FAST_* - variable access
    EXCEPTION_* - exceptions

@@ -160,20 +160,10 @@ OP(CALL_ATTR, COUNT)
 OP(CALL_ATTR_NAMES, COUNT)
 OP(CALL_ATTR_STAR, STAR)
 
-// explicit recursion
-OP(RECUR, COUNT)
-OP(RECUR_NAMES, COUNT)
-OP(RECUR_STAR, STAR)
-
 // tail call (replaces current frame)
 OP(TAIL_CALL, COUNT)
 OP(TAIL_CALL_NAMES, COUNT)
 OP(TAIL_CALL_STAR, STAR)
-
-// tail recursion (replaces current frame with self-call)
-OP(TAIL_RECUR, COUNT)
-OP(TAIL_RECUR_NAMES, COUNT)
-OP(TAIL_RECUR_STAR, STAR)
 
 // block control - all foreach/with are async in Koskari
 OP(PUSH_FOREACH, NOARG)

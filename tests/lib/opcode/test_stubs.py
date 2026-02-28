@@ -144,33 +144,6 @@ class TestStubOpcodes(CevalTest):
             self._run_stub_opcode("CALL_ATTR_STAR", 0)
 
 
-    def test_recur_raises_not_implemented(self):
-        """
-        RECUR raises RuntimeError
-        """
-
-        with self.assertRaises(RuntimeError):
-            self._run_stub_opcode("RECUR", 0)
-
-
-    def test_recur_names_raises_not_implemented(self):
-        """
-        RECUR_NAMES raises RuntimeError
-        """
-
-        with self.assertRaises(RuntimeError):
-            self._run_stub_opcode("RECUR_NAMES", 0)
-
-
-    def test_recur_star_raises_not_implemented(self):
-        """
-        RECUR_STAR raises RuntimeError
-        """
-
-        with self.assertRaises(RuntimeError):
-            self._run_stub_opcode("RECUR_STAR", 0)
-
-
     def test_tail_call_names_raises_not_implemented(self):
         """
         TAIL_CALL_NAMES raises RuntimeError
@@ -187,33 +160,6 @@ class TestStubOpcodes(CevalTest):
 
         with self.assertRaises(RuntimeError):
             self._run_stub_opcode("TAIL_CALL_STAR", 0)
-
-
-    def test_tail_recur_raises_not_implemented(self):
-        """
-        TAIL_RECUR raises RuntimeError
-        """
-
-        with self.assertRaises(RuntimeError):
-            self._run_stub_opcode("TAIL_RECUR", 0)
-
-
-    def test_tail_recur_names_raises_not_implemented(self):
-        """
-        TAIL_RECUR_NAMES raises RuntimeError
-        """
-
-        with self.assertRaises(RuntimeError):
-            self._run_stub_opcode("TAIL_RECUR_NAMES", 0)
-
-
-    def test_tail_recur_star_raises_not_implemented(self):
-        """
-        TAIL_RECUR_STAR raises RuntimeError
-        """
-
-        with self.assertRaises(RuntimeError):
-            self._run_stub_opcode("TAIL_RECUR_STAR", 0)
 
 
     def test_push_with_raises_not_implemented(self):
