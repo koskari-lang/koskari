@@ -14,8 +14,9 @@
 """
 koskari.compile.specials.quasiquote
 
-Special form handlers for compile/quasiquote, compile/unquote, and
-compile/unquote-splicing.
+Special form handlers for compile/quasiquote, compile/unquote,
+compile/unquote-splicing, compile/quote-block, and
+compile/quasiquote-block.
 
 Quasi-quote constructs a pair structure at runtime, with selected
 sub-expressions evaluated via unquote (,) and lists spliced in via
@@ -40,13 +41,16 @@ accepts tuples as segments natively.
 
 
 from ...lib import nil, OpCode, symbol
-from ...types import is_nil, is_pair
+from ...types import cons, get_position, is_nil, is_pair, set_position
 from ...exceptions import SpecialError
 from ..compiler import _is_const
 from ..helpers import special
 
 
+_symbol_apply_layout = symbol("compile/apply-layout")
 _symbol_quasiquote = symbol("compile/quasiquote")
+_symbol_quasiquote_block = symbol("compile/quasiquote-block")
+_symbol_quote = symbol("compile/quote")
 _symbol_quote_block = symbol("compile/quote-block")
 _symbol_unquote = symbol("compile/unquote")
 _symbol_unquote_splicing = symbol("compile/unquote-splicing")
@@ -105,6 +109,18 @@ def _qq_expr(compiler, frag, expr, level):
             raise SpecialError("quasiquote takes one argument", expr)
 
         frag.instruction(OpCode.KOS_OP_CONST, _symbol_quasiquote)
+        _qq_expr(compiler, frag, inner, level + 1)
+        frag.instruction(OpCode.KOS_OP_PROPER, 2)
+        return
+
+    if head is _symbol_quasiquote_block:
+        if tail is nil or not is_pair(tail):
+            raise SpecialError("quasiquote-block requires one argument", expr)
+        inner, rest = tail
+        if rest is not nil:
+            raise SpecialError("quasiquote-block takes one argument", expr)
+
+        frag.instruction(OpCode.KOS_OP_CONST, _symbol_quasiquote_block)
         _qq_expr(compiler, frag, inner, level + 1)
         frag.instruction(OpCode.KOS_OP_PROPER, 2)
         return
@@ -329,17 +345,16 @@ def special_quasiquote(compiler, source, tc=False):
 @special(symbol("compile/quote-block"))
 def special_quote_block(compiler, source, tc=False):
     """
-    Compile (compile/quote-block BLOCK-REPR) — emit code to construct the
-    :block: cons structure as a literal data value at runtime
+    Compile (compile/quote-block BLOCK-REPR) as (compile/quote BLOCK-REPR)
 
-    BLOCK-REPR is a :block: cons possibly containing nested :block: cons
-    nodes for sub-blocks. No layout expansion takes place; the structure is
-    treated as opaque data, analogous to compile/quote on an ordinary cons.
+    The :block: cons is opaque data — no different from any other quoted
+    cons. Delegate directly to compile/quote by returning the rewritten
+    form for normal compiler dispatch.
 
     :param compiler: the active Compiler
     :param source: the full source cons (compile/quote-block BLOCK-REPR)
     :param tc: tail-call flag (unused)
-    :return: ByteCodeFragment emitting the :block: cons structure at runtime
+    :return: (compile/quote BLOCK-REPR) cons for further compilation
     """
 
     called_by, body = source
@@ -347,14 +362,46 @@ def special_quote_block(compiler, source, tc=False):
     if body is nil or not is_pair(body):
         raise SpecialError("quote-block requires one argument", source)
 
-    block_repr, rest = body
-    if rest is not nil:
+    if not is_pair(body[0]) or body[1] is not nil:
         raise SpecialError("quote-block takes one argument", source)
 
-    frag = compiler.fragment(called_by)
-    frag.position_of(source)
-    _qq_expr(compiler, frag, block_repr, 0)
-    return frag
+    rewritten = cons(_symbol_quote, body, nil)
+    set_position(rewritten, get_position(source))
+    return rewritten
+
+
+@special(symbol("compile/quasiquote-block"))
+def special_quasiquote_block(compiler, source, tc=False):
+    """
+    Compile (compile/quasiquote-block BLOCK-REPR) as a source rewrite
+
+    Purely transformative: returns
+    (compile/quasiquote (compile/apply-layout BLOCK-REPR))
+    for normal compiler dispatch. compile/quasiquote handles all
+    unquote and unquote-splicing slot-filling through the :block: cons
+    structure; compile/apply-layout expands the filled-in block through
+    its layout handlers.
+
+    :param compiler: the active Compiler
+    :param source: the full source cons (compile/quasiquote-block BLOCK-REPR)
+    :param tc: tail-call flag (unused)
+    :return: rewritten cons for further compilation
+    """
+
+    called_by, body = source
+
+    if body is nil or not is_pair(body):
+        raise SpecialError("quasiquote-block requires one argument", source)
+
+    block_repr, rest = body
+    if rest is not nil:
+        raise SpecialError("quasiquote-block takes one argument", source)
+
+    apply_layout_call = cons(_symbol_apply_layout, block_repr, nil)
+    set_position(apply_layout_call, get_position(source))
+    rewritten = cons(_symbol_quasiquote, apply_layout_call, nil)
+    set_position(rewritten, get_position(source))
+    return rewritten
 
 
 @special(symbol("compile/unquote"))

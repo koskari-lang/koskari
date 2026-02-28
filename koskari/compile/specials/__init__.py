@@ -43,7 +43,13 @@ from .let import special_let
 from .loops import special_break, special_continue, special_for_each, special_while
 from .pairs import special_car, special_cdr, special_cons, special_quote
 from .apply_layout import special_apply_layout
-from .quasiquote import special_quasiquote, special_quote_block, special_unquote, special_unquote_splicing
+from .quasiquote import (
+    special_quasiquote,
+    special_quasiquote_block,
+    special_quote_block,
+    special_unquote,
+    special_unquote_splicing,
+)
 from .slots import special_attr, special_del_attr, special_ref_attr, special_set_attr
 from .imports import helper_import_from_sequence, special_import, special_import_from
 from .object import (
@@ -154,6 +160,7 @@ __all__ = (
     "special_parameterize",
     "special_power",
     "special_quasiquote",
+    "special_quasiquote_block",
     "special_quote",
     "special_quote_block",
     "special_raise",

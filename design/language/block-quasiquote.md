@@ -1,6 +1,6 @@
 # Block Quasiquote Design
 
-**Status:** Proposed
+**Status:** Partially Implemented
 **Author:** Christopher O'Brien <obriencj@preoccupied.net>
 
 ---
@@ -66,7 +66,7 @@ so consumers always iterate them uniformly regardless of arity.
 block or a peer such as `else` — is encoded as an independent `:block:` cons.
 Peer blocks appear as sibling elements in the enclosing body, in source order,
 immediately following the block they are associated with.
-`compile/expand-layouts` is responsible for identifying peers by consulting
+`compile/apply-layout` is responsible for identifying peers by consulting
 the layout's declared peer set at expansion time.
 
 #### Examples
@@ -91,7 +91,7 @@ the layout's declared peer set at expansion time.
 (:block: (begin) ((:block: (if test) (result)) (:block: (else) (fallback))))
 ```
 
-When `compile/expand-layouts` processes the outer `begin` block it will walk
+When `compile/apply-layout` processes the outer `begin` block it will walk
 its body.  On encountering the `(:block: (if test) ...)` element it looks up
 `layout/if`, sees that `else` is a declared peer, then checks whether the
 immediately following sibling in the body is a `:block:` whose head is `else`.
@@ -100,16 +100,141 @@ If so, that sibling is consumed as a peer and removed from the body before the
 
 ---
 
+## Implementation Status
+
+### Completed
+
+#### Reader: raw block reading and `_block_macros` registry
+
+`LayoutReader` now separates block parsing into two independent phases:
+
+- **`_read_block_source`** — parse characters into `((head . args) . body)`
+- **`_apply_layout`** — dispatch the parsed source cons through its layout
+  handler and collect declared peer blocks
+
+**`read_layout_block`** chains both phases.  **`read_block`** calls only the
+first phase (via `_build_block`) and returns the `:block:` cons
+without invoking any layout handler.
+
+`LayoutReader` carries a **`_block_macros`** dict mapping prefix characters
+to wrapper functions `(raw_block, position) -> cons`.  The `'` character is
+pre-registered, mapping to a function that wraps the raw block in
+`(compile/quote-block ...)`.  Adding `` ` `` for quasiquote-block requires
+only one additional entry — no hardcoded character checks needed.
+
+**`_block_mode`** is a boolean instance flag.  When `read_block` sets
+it, `read_form` routes any detected sub-block through `read_block`
+instead of `read_layout_block`, so the entire nested tree is encoded as `:block:`
+nodes without layout expansion at any level.  `read_raw_block_body` has been
+eliminated; `read_block_body` delegates uniformly to `read_form` and
+adapts based on the flag.
+
+#### Reader: unified `read_form`
+
+`read_form` is the single dispatch entry point for all forms.  It has
+four branches:
+
+1. **S-expression** (`c in '([{'`) — delegates to `_read` with no block
+   detection.
+2. **Block-macro prefix** (`c in _block_macros`) — speculatively probes for
+   `head:` syntax.  If a colon is found, calls `read_block` and passes
+   the result to the registered wrapper function.  Falls back to `_read` for
+   normal quoting if no colon follows.
+3. **Keyword atom** (`is_keyword(form1)`) — handles the case where the atom
+   reader consumed the trailing colon as part of the atom (e.g. `begin:`
+   becomes `keyword('begin')`).  Converts back to a symbol and dispatches to
+   the appropriate block reader directly.
+4. **Bare atom with speculative probe** — reads `form1`, calls
+   `skip_whitespace`, checks for dedent, then probes for a colon to
+   distinguish a sub-block head from a plain form.
+
+`read_block_body` is now a simple loop that calls `read_form` for each
+body element, removing roughly 80 lines of duplicated probe logic.
+
+#### Compile special: `compile/quote-block`
+
+`special_quote_block` is registered in `koskari/compile/specials/quasiquote.py`
+and exported from `koskari/compile/specials/__init__.py`.
+
+**Syntax:** `(compile/quote-block BLOCK-REPR)`
+
+Emits code that constructs the `:block:` cons structure as literal data at
+runtime by reusing `_qq_expr` at quasiquote depth 0.  Analogous to
+`compile/quote` on an ordinary cons; no layout expansion takes place.
+
+#### Compile special: `compile/apply-layout`
+
+`special_apply_layout` is implemented in
+`koskari/compile/specials/apply_layout.py` and exported.
+
+**Syntax:** `(compile/apply-layout BLOCK ...)`
+
+Performs a depth-first expansion of one or more `:block:` cons literals
+through the layout handler system at compile time:
+
+1. Recursively expands any nested `:block:` elements in the body.
+2. Looks up the layout handler for the block head via `compiler.find_layout`,
+   falling back to `layout/block` with the synthetic header prepend.
+3. Scans the following sibling arguments for declared peer blocks, consuming
+   them.
+4. Calls `layout_obj.read(source, peers)` with the expanded source cons.
+5. If multiple top-level results exist, wraps them in `(compile/begin ...)`.
+6. Compiles and returns the result.
+
+`Compiler.find_layout` was added to mirror `find_compiled`, looking up
+`layout/<head>` in the module namespace and checking `isinstance(v, LayoutHandler)`.
+
+#### Layout handler signature: drop `reader`
+
+All layout handlers (`layout_block`, `layout_begin`, `layout_if`,
+`layout_try`) were updated from `(reader, source, peers)` to `(source, peers)`.
+Error reporting now uses `get_position(source)` or `get_position(peer)` to
+derive location data from cons pairs directly.  The `_layout_stream` instance
+variable and all `reader`/proxy pass-through code were removed from the parser
+and `apply_layout.py`.
+
+### Not Yet Implemented
+
+#### `compile/quasiquote-block`
+
+The `` ` `` prefix reader macro entry in `_block_macros` has not been added.
+The `compile/quasiquote-block` special has not been implemented.
+
+When implemented, registering the macro requires only:
+
+```python
+self._block_macros["`"] = lambda raw, pos: cons(_symbol_quasiquote_block, raw, nil)
+```
+
+`special_quasiquote_block` should emit code equivalent to:
+
+```
+(compile/quasiquote (compile/apply-layout BLOCK-REPR))
+```
+
+The existing `compile/quasiquote` machinery handles all unquote and
+unquote-splicing recursion through the `:block:` cons structure.  At runtime
+the filled-in `:block:` cons is passed to `compile/apply-layout` (or an
+equivalent runtime expander) to perform layout expansion.
+
+#### Runtime expansion path
+
+The design originally described `compile/expand-layouts` as a runtime special
+(evaluated after quasiquote slot-filling).  The compile-time
+`compile/apply-layout` covers the static case (no unquote sites).  The
+runtime path — needed when `:block:` structures carry unquoted slots that are
+only known at runtime — has not been implemented.
+
+---
+
 ## New Reader Behaviour: `compile/quote-block` and `compile/quasiquote-block`
 
-### `'head:` — block quote
+### `'head:` — block quote *(implemented)*
 
-A `'` immediately preceding a block head (i.e. the `'` is the first
-character on the block's header line, before any symbol) causes the entire
-block to be read and encoded as a `:block:` cons tagged with
-`compile/quote-block`.  Any following peer blocks (e.g. `else`) are read as
-independent `:block:` nodes and appear as subsequent siblings in whatever body
-contains the quoted block — exactly as they would appear in source order.
+A `'` immediately preceding a block head causes the entire block to be read
+and encoded as a `:block:` cons wrapped in `compile/quote-block`.  Any
+sub-blocks in the body are read recursively as raw `:block:` nodes without
+layout expansion.
 
 ```
 'begin:
@@ -127,7 +252,10 @@ When compiled, `compile/quote-block` emits code that constructs the
 `:block:` cons structure as literal data at runtime — analogous to
 `compile/quote` on an ordinary cons.
 
-### `` `head: `` — block quasiquote
+The `'` is registered in `LayoutReader._block_macros`; adding further
+block-aware prefix characters requires only a new entry in that dict.
+
+### `` `head: `` — block quasiquote *(not yet implemented)*
 
 A `` ` `` immediately preceding a block head causes the entire block to be
 read with the `,`/`,@` unquote reader macros active for all header arguments
@@ -168,7 +296,7 @@ Produces:
 
 The `if` and `else` blocks are siblings in the outer `begin` block's
 `BODY-EXPRS`.  The reader does not group them; it simply encodes each block
-independently in source order.  `compile/expand-layouts` is responsible for
+independently in source order.  `compile/apply-layout` is responsible for
 recognising at expansion time that `else` is a declared peer of `if` and
 consuming it accordingly.
 
@@ -191,7 +319,7 @@ argument parsing (mid-header case).
 
 ## New Compile Specials
 
-### `compile/quote-block`
+### `compile/quote-block` *(implemented)*
 
 **Syntax:** `(compile/quote-block BLOCK-REPR)`
 
@@ -199,7 +327,19 @@ Where `BLOCK-REPR` is a `:block:` cons.  Emits code that constructs the
 `:block:` cons structure as a literal data value at runtime, analogous to
 `compile/quote`.  No layout expansion takes place.
 
-### `compile/quasiquote-block`
+### `compile/apply-layout` *(implemented)*
+
+**Syntax:** `(compile/apply-layout BLOCK ...)`
+
+Compile-time depth-first expansion of `:block:` cons literals through layout
+handlers.  Peer blocks are consumed from subsequent arguments when the primary
+layout declares peers.  Multiple results are wrapped in `compile/begin`.
+
+This is the compile-time analogue of the runtime `compile/expand-layouts`
+described below.  The quasiquote-block special will emit an
+`compile/apply-layout` call once slot-filling is complete.
+
+### `compile/quasiquote-block` *(not yet implemented)*
 
 **Syntax:** `(compile/quasiquote-block BLOCK-REPR)`
 
@@ -211,7 +351,7 @@ This special expands in two phases:
 **Phase 1 — slot fill-in.**  Emit code equivalent to:
 
 ```
-(compile/quasiquote (compile/expand-layouts BLOCK-REPR))
+(compile/quasiquote BLOCK-REPR)
 ```
 
 The existing `compile/quasiquote` machinery handles all unquote and
@@ -220,225 +360,157 @@ runtime values wherever `,expr` and `,@expr` appear.  The result at runtime
 is a fully-substituted `:block:` cons with all slots replaced by their
 runtime values.
 
-**Phase 2 — layout expansion.**  The `compile/expand-layouts` special
-(described below) is called at runtime with the filled-in `:block:` cons.
-It walks the structure, applies layout handlers, and returns the expanded
-cons form.
+**Phase 2 — layout expansion.**  The filled-in `:block:` cons is passed to a
+runtime call to `compile/apply-layout` (or an equivalent runtime expander).
+It walks the structure, applies layout handlers, and returns the expanded cons
+form.
 
 Because phase 1 uses standard `compile/quasiquote`, nested quasiquote depth
 tracking (level > 0) works correctly with no additional changes.
 
-### `compile/expand-layouts`
+### `compile/expand-layouts` *(not yet implemented)*
 
 **Syntax:** `(compile/expand-layouts EXPR)`
 
 A runtime function that accepts any value.  If the value is not a `:block:`
-cons, it is returned unchanged.  If it is a `:block:` cons, the following
-algorithm is applied:
+cons, it is returned unchanged.  If it is a `:block:` cons, applies the same
+depth-first expansion algorithm as `compile/apply-layout` but operating over
+an in-memory cons list rather than a stream.
 
-1. Destructure: extract `HEAD-ARGS` and `BODY-EXPRS`.
-2. `head = car(HEAD-ARGS)`.  `header-args = cdr(HEAD-ARGS)`.
-3. Look up `layout/<head>` using the standard layout namespace lookup.
-4. **Peer extraction:** if the resolved layout has a non-empty `peers`
-   declaration, walk `BODY-EXPRS` left to right.  Each time an element is a
-   `:block:` cons, check whether its head appears in the current layout's
-   declared peer set:
-   - If it does **not** match a peer, it belongs to the current block's body.
-     Recursively apply `expand-layouts` to it and add the result to the
-     working body list.
-   - If it **does** match a peer, stop adding to the body; switch to consuming
-     peers.  Continue scanning: each subsequent `:block:` element whose head
-     is in the peer set is itself recursively expanded (its own body may
-     contain further sub-blocks) and appended to the peer list.  Stop when
-     the end of `BODY-EXPRS` is reached or an element is encountered that is
-     not a matching peer block.
-   This mirrors the stream-based peer discovery the reader performs today, but
-   operates over an in-memory cons list.  Non-block body elements are always
-   treated as body forms and are never consumed as peers.
-5. Build a source cons matching the form layout handlers currently receive:
-   `((head . header-args) . body-forms...)`.  Each peer is similarly
-   structured as `((peer-head . peer-args) . peer-body-forms...)`.
-6. Invoke the layout handler: `layout_obj.read(reader_proxy, source, peers)`.
-   A `reader_proxy` is a lightweight stand-in that satisfies whatever the
-   layout handler accesses on the reader (currently only `_layout_stream`
-   for error reporting; this can be a null stream returning a sentinel
-   position).
-7. Return the handler's result.
-
-If no layout handler is found for `head`, the default `layout/block`
-fallback is applied, exactly as the reader does today.
-
-Note that `expand-layouts` is a plain Python function invoked at runtime (not
-a compile-time macro), because the `:block:` structure it processes is
-produced by quasiquote slot-filling and is not statically known at compile
-time.
+This is required for the runtime path used by `compile/quasiquote-block`,
+where the `:block:` structure is only fully materialised at runtime after
+quasiquote slot-filling.
 
 ---
 
 ## Implementation Touchpoints
 
-### `koskari/reader/parser.py`
+### `koskari/reader/parser.py` *(implemented)*
 
-#### The raw-block reading gap
+The two-phase split, `_block_macros` registry, unified `read_form`,
+and `_block_mode` flag are all in place.  Key methods:
 
-The current `read_block_body` always calls `self.read_block(...)` when it
-detects a sub-block, and `read_block` always applies layout expansion.  There
-is no existing path that reads a block and returns a raw `:block:` cons
-instead.  This gap must be filled before the rest of the design can work.
+- **`_apply_layout(stream, outer_indent, source)`** — extracted from
+  `read_layout_block`; applies layout handler + peer collection to an already-parsed
+  source cons.
+- **`read_block(stream, outer_indent, head, args)`** — reads a block
+  without layout expansion; sets `_block_mode` so nested sub-blocks are
+  also read as blocks.
+- **`_build_block(stream, outer_indent, head, args)`** — builds the
+  `(:block: HEAD-ARGS BODY-EXPRS)` cons.
+- **`read_layout_block(stream, outer_indent, head, args)`** — chains
+  `_read_block_source` and `_apply_layout`; produces the layout-expanded form.
+- **`read_form(stream)`** — unified four-branch entry point; delegates
+  `read_block_body` body elements here, removing all duplicated probe logic.
+- **`LayoutReader._block_macros`** — `{"'": _read_quote_block, "\`": _read_quasiquote_block}`.
 
-**New method: `LayoutReader.read_raw_block(stream, outer_indent, head, args)`**
+No changes are required to `read_block_header`.  The quasiquote-block path
+is handled by `_read_quasiquote_block`, which installs the `,`/`,@`
+reader macros before calling `read_block`.
 
-Mirrors `read_block` but never invokes a layout handler and never calls
-`_read_declared_peers`.  Instead it:
+### `koskari/compile/specials/apply_layout.py` *(implemented)*
 
-1. Calls `_read_block_source` to collect `(header . body)` exactly as
-   `read_block` does today.
-2. Recursively reads each body element that turns out to be a sub-block using
-   `read_raw_block` rather than `read_block`, so the entire nested tree is
-   encoded as `:block:` nodes with no layout expansion at any level.
-3. Returns `(:block: HEAD-ARGS BODY-EXPRS)`.
+Contains `_is_block`, `_expand_body`, `_expand_block`, and
+`special_apply_layout`.
 
-**New method: `LayoutReader.read_raw_block_body(stream, outer_indent)`**
+### `koskari/compile/specials/quasiquote.py` *(partially implemented)*
 
-Mirrors `read_block_body` but, in the sub-block detection branch, calls
-`read_raw_block` instead of `read_block`.  Also activates the `,`/`@` reader
-macros if the enclosing context is a quasiquote-block (passed as a flag or
-via a reader instance variable).
+`special_quote_block` is implemented.  `special_quasiquote_block` is not.
 
-These two methods form the raw reading path.  All existing methods are
-unchanged.
+### `koskari/compile/compiler.py` *(implemented)*
 
-#### Detecting the leading prefix
+`Compiler.find_layout` resolves `layout/<head>` symbols from the module
+namespace with a lazy import of `LayoutHandler` to avoid circular imports.
 
-**`LayoutReader.read_layout_form`** — before calling `read_block_header`,
-peek at the first non-whitespace character.  If it is `'` or `` ` ``,
-consume it, record which prefix was seen, and route to `read_raw_block`
-rather than `read_block`.
+### `koskari/reader/layouts/conditionals.py`, `exceptions.py` *(implemented)*
 
-**Sub-block detection in `LayoutReader.read_raw_block_body`** — the same
-speculative probe logic as `read_block_body`, but when a colon is found, it
-calls `read_raw_block` instead of `read_block`.  It also peeks for a leading
-`'` or `` ` `` before the sub-block head token so that explicitly-quoted
-sub-blocks within a raw body are handled (though this is an edge case; most
-sub-block content inside a quoted outer block should simply be raw).
+All layout handlers updated to `(source, peers)` signature; error reporting
+uses `get_position(source)` / `get_position(peer)`.
 
-#### Assembling the result
+### `koskari/compile/specials/__init__.py` *(implemented)*
 
-When `read_raw_block` has collected `HEAD-ARGS` and `BODY-EXPRS`, it wraps
-them in `(:block: HEAD-ARGS BODY-EXPRS)`.  The caller (`read_layout_form` or
-`read_raw_block_body`) then wraps that in `(compile/quote-block ...)` or
-`(compile/quasiquote-block ...)` at the outermost level only.  Inner
-`:block:` nodes (sub-blocks of the quoted block) are stored bare inside
-`BODY-EXPRS` — they are not individually wrapped in quote/quasiquote-block,
-because the outer wrapper already covers the whole tree.
-
-No changes are required to any layout handler.  No changes are required to
-`read_block`, `read_block_body`, or `read_block_header` for the ordinary
-(non-quoted) case.
-
-### `koskari/compile/specials/quasiquote.py`
-
-Add `special_quote_block`, `special_quasiquote_block`, and
-`special_expand_layouts`.
-
-`special_quasiquote_block` emits code equivalent to invoking
-`compile/quasiquote` on `(compile/expand-layouts BLOCK-REPR)`.  It can be
-implemented by constructing that wrapper cons and delegating to
-`special_quasiquote`, keeping the implementation small.
-
-`special_expand_layouts` is a runtime special: it compiles its single
-argument, emits a call to the `expand_layouts` Python function, and returns
-the result fragment.  Alternatively it can be implemented as a macro that
-expands at compile time if the `:block:` structure is statically known —
-but this optimisation is not required for correctness.
-
-`expand_layouts` (a plain Python function called at runtime) implements the
-algorithm described in the `compile/expand-layouts` section above, using the
-same `LayoutHandler` objects and `LAYOUTS` registry already in place.
-
-### `koskari/compile/specials/__init__.py`
-
-Import and register the three new specials.
+Exports `special_apply_layout` and `special_quote_block`.
 
 ---
 
 ## Test Plan
 
-### Reader tests
+### Reader tests *(partially implemented)*
 
 Located in `tests/reader/layouts/test_quasiquote.py`.
 
-1. **`test_quote_block`** (existing, currently failing) — verify that
-   `` `begin: \n  ,@hello `` parses to
-   `(compile/quasiquote-block (:block: (begin) ((compile/unquote-splicing hello))))`.
-2. **`test_quasiquote_block_with_peers`** — verify that the `if`/`else`
-   example from this document parses to a flat sibling representation: the
-   `if` and `else` `:block:` nodes appear as consecutive elements of the
-   outer `begin` block's `BODY-EXPRS`, not nested inside one another.
-3. **`test_block_quote`** — verify that `'begin: \n  foo` parses to
-   `(compile/quote-block (:block: (begin) (foo)))`.
-4. **`test_mid_header_backtick_unaffected`** — verify that
-   `` without `(who ,@hello) we: `` still parses as today (mid-header
-   backtick wraps the s-expression only, does not enter block-quote mode).
-5. **`test_raw_block_body_sub_blocks`** — verify that sub-blocks nested
-   inside a quoted outer block are themselves encoded as raw `:block:` nodes
-   (via `read_raw_block`) rather than being layout-expanded, and that they
-   appear as siblings rather than being grouped by peer relationship.
+- **`TestQuoteBlock`** *(implemented)* — four cases: simple `'begin:`,
+  empty-body quoted block, nested sub-blocks encoded as raw `:block:` nodes,
+  and quoted block inside a normal `define` block body.
+- **`skipme_test_quote_block`** — backtick quasiquote-block case; left skipped
+  pending `compile/quasiquote-block` implementation.
+- **`test_quasiquote_block_with_peers`** *(not yet written)* — verify the
+  `if`/`else` sibling representation.
+- **`test_mid_header_backtick_unaffected`** *(not yet written)* — verify that
+  a mid-header backtick wraps only the next s-expression.
 
-### Compiler tests
+### Compiler tests *(implemented)*
 
-Located in `tests/compile/specials/` (new file `test_quasiquote_block.py`).
+Located in `tests/compile/specials/test_apply_layout.py`.
 
-1. **`test_expand_layouts_passthrough`** — `compile/expand-layouts` on a
-   non-`:block:` value returns it unchanged.
-2. **`test_expand_layouts_simple_block`** — `compile/expand-layouts` on a
-   `(:block: (begin) (foo bar))` returns `(compile/begin foo bar)`.
-3. **`test_expand_layouts_if_else`** — `compile/expand-layouts` on the
-   `if`/`else` `:block:` structure returns a `(compile/cond ...)` form.
-4. **`test_quasiquote_block_runtime`** — a function using `` `begin: ,@forms ``
-   evaluates correctly when called with a list of forms.
+- `test_begin_block`, `test_if_block_no_peers`, `test_if_else_blocks`,
+  `test_unknown_head_falls_back_to_layout_block`, `test_non_block_arg_raises`,
+  `test_nested_body_blocks`, `test_multiple_blocks_wrapped_in_begin` — all
+  passing.
+
+### Compiler tests *(not yet written)*
+
+- `test_quote_block_compile` — verify that `compile/quote-block` emits code
+  producing a `:block:` cons at runtime.
+- `test_quasiquote_block_runtime` — a function using `` `begin: ,@forms ``
+  evaluates correctly when called with a list of forms.
 
 ---
 
 ## Open Questions
 
-1. **Reader proxy for error reporting.**  Layout handlers currently access
-   `reader._layout_stream` for position information when raising `LayoutError`.
-   `compile/expand-layouts` runs at runtime without a stream.  The proposed
-   solution (a null-stream proxy returning a sentinel position) is sufficient
-   for now, but error messages will lack source location.  A future refinement
-   could attach position metadata to `:block:` nodes.
+1. **Runtime expansion for `compile/quasiquote-block`.**  The compile-time
+   `compile/apply-layout` covers the static case.  The runtime path needs
+   a Python-level `expand_layouts` function (or equivalent) that the emitted
+   code can call after quasiquote slot-filling.  The function would use the
+   same `LayoutHandler` objects and `LAYOUTS` registry already in place.
 
-2. **`:block:` in non-quoted positions.**  If a user accidentally places a raw
-   `:block:` cons in non-quoted source (e.g. hand-assembled data passed to
-   `compile/expand-layouts` outside of a quasiquote context), the compiler
-   will process it.  This is intentional — it is the open user protocol — but
-   should be documented clearly.
+2. **Activating unquote macros inside `read_block`.**  Currently
+   `read_block` reads sub-blocks without activating `,`/`,@`.  For
+   quasiquote-block, the reader installs the unquote macros before
+   entering `read_block` and restores them afterwards via the
+   `temporary_event_macro` context manager.  This is handled by
+   `_read_quasiquote_block`.
 
-3. **`compile/quote-block` optimisation.**  `compile/quote-block` could be
-   implemented as a simple alias for `compile/quote` since a `:block:` cons is
-   just data.  The distinction is kept as a separate special to allow clearer
-   error messages and potential future optimisations (e.g. stripping position
-   metadata from quoted blocks).
+3. **`:block:` in non-quoted positions.**  If a user places a raw `:block:`
+   cons in non-quoted source (e.g. hand-assembled data passed to
+   `compile/apply-layout` outside of a quasiquote context), the compiler
+   will process it.  This is intentional — it is the open user protocol —
+   but should be documented clearly.
 
-4. **Nested quasiquote depth.**  The `_qq_expr` function already tracks nesting
-   depth to handle `(compile/quasiquote ...)` forms correctly at depth > 0.
-   `compile/quasiquote-block` at depth > 0 (i.e. a quasi-block inside a
-   quasi-quote) should reconstruct the `compile/quasiquote-block` form as
-   literal data rather than expanding it.  This requires `_qq_expr` to
-   recognise `compile/quasiquote-block` the same way it currently recognises
-   `compile/quasiquote`.  This is a small, localised change.
+4. **`compile/quote-block` vs `compile/quote`.**  `compile/quote-block` is
+   kept as a distinct special (rather than aliasing `compile/quote`) to allow
+   clearer error messages and potential future optimisations.
+
+5. **Nested quasiquote depth.**  `_qq_expr` already tracks nesting depth.
+   `compile/quasiquote-block` at depth > 0 should reconstruct the
+   `compile/quasiquote-block` form as literal data rather than expanding it.
+   This requires `_qq_expr` to recognise `compile/quasiquote-block` the same
+   way it currently recognises `compile/quasiquote`.
 
 ---
 
 ## Summary
 
-| Concern                       | Before this design              | After this design                        |
-|-------------------------------|---------------------------------|------------------------------------------|
-| Ordinary block parsing        | Reader → layout → cons          | Unchanged                                |
-| Backtick on a block head      | Only wraps the head atom        | Wraps entire block; `,`/`,@` active      |
-| Block structure representation| Not preserved after read        | `:block:` cons (public protocol)         |
-| Peer discovery                | Stream-time character peeking   | Expansion-time, from sibling `:block:` nodes |
-| Unquote inside block body     | Impossible                      | Natural via standard quasiquote          |
-| Layout expansion of QQ result | N/A                             | `compile/expand-layouts` at runtime      |
-| User macro block synthesis    | Not possible                    | Produce `:block:` cons directly          |
+| Concern                        | Before this design              | After this design                        | Status       |
+|--------------------------------|---------------------------------|------------------------------------------|--------------|
+| Ordinary block parsing         | Reader → layout → cons          | Unchanged                                | —            |
+| `'` on a block head            | Wrapped only the head atom      | Entire block read as `:block:`, wrapped in `compile/quote-block` | **Done** |
+| Backtick on a block head       | Only wraps the head atom        | *(not yet)* Wraps entire block; `,`/`,@` active | Pending |
+| Block structure representation | Not preserved after read        | `:block:` cons (public protocol)         | **Done** |
+| Peer discovery (compile-time)  | Stream-time character peeking   | `compile/apply-layout` at compile time   | **Done** |
+| Peer discovery (runtime)       | N/A                             | *(not yet)* `compile/expand-layouts`     | Pending |
+| Layout handler signature       | `(reader, source, peers)`       | `(source, peers)`                        | **Done** |
+| `_block_macros` registry       | Hardcoded `'` check             | Extensible dict; `'` pre-registered      | **Done** |
+| Unquote inside block body      | Impossible                      | *(not yet)* Natural via quasiquote       | Pending |
+| User macro block synthesis     | Not possible                    | Produce `:block:` cons directly          | **Done** |

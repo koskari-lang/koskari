@@ -254,6 +254,7 @@ class Reader(object):
         else:
             raise reader_stream.error("invalid syntax", pos)
 
+
     def read_atom(self, reader_stream):
         """
         Read a single s-expression, returning atoms as unprocessed strings
@@ -933,20 +934,6 @@ class Reader(object):
         """
 
         return SKIP, stream.readline()
-
-
-def _is_block_opener(form):
-    """
-    Return True if form is a block opener per layout-syntax
-
-    Block openers: standalone colon symbol, or keyword ending with colon
-    """
-
-    if is_keyword(form):
-        return str(form).endswith(':')
-    if is_symbol(form):
-        return str(form) == ':'
-    return False
 
 
 class LayoutReader(Reader):
@@ -2103,16 +2090,16 @@ class IndentAwareStream(object):
         return ''.join(result)
 
 
-    def readline(self):
-        result = []
-        while True:
-            c = self.read(1)
-            if not c:
-                break
-            result.append(c)
-            if c == '\n':
-                break
-        return ''.join(result)
+    # def readline(self):
+    #     result = []
+    #     while True:
+    #         c = self.read(1)
+    #         if not c:
+    #             break
+    #         result.append(c)
+    #         if c == '\n':
+    #             break
+    #     return ''.join(result)
 
 
 class SourceStream(BaseSourceStream):
