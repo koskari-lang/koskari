@@ -32,8 +32,8 @@ from unittest import TestCase
 
 from koskari.compile.helpers import pycons
 from koskari.reader.layouts import LAYOUTS
-from koskari.reader.parser_ng import (IndentAwareStream, LayoutReader, Reader,
-                                      SourceStream, default_reader, source_str)
+from koskari.reader.parser import (IndentAwareStream, LayoutReader, Reader,
+                                   SourceStream, default_reader, source_str)
 from koskari.types import BaseSourceStream, cons, keyword, nil, symbol
 
 
