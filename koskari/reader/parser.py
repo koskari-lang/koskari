@@ -75,9 +75,11 @@ _symbol_format = symbol("format")
 _symbol_fraction = symbol("fraction")
 _symbol_quasiquote = symbol("compile/quasiquote")
 _symbol_quote = symbol("compile/quote")
+_symbol_quote_block = symbol("compile/quote-block")
 _symbol_splice = symbol("compile/splice")
 _symbol_unquote = symbol("compile/unquote")
 _symbol_unquote_splicing = symbol("compile/unquote-splicing")
+_keyword_block = keyword(":block:")
 
 IN_PROGRESS = keyword("work-in-progress")
 VALUE = keyword("value")
@@ -977,6 +979,10 @@ class LayoutReader(Reader):
 
         self._layout_depth = 0
         self._break_marker = None
+        self._raw_block_mode = False
+        self._block_macros = {
+            "'": lambda raw, pos: cons(_symbol_quote_block, raw, nil),
+        }
 
 
     def _read(self, stream, raw=False):
@@ -1181,17 +1187,11 @@ class LayoutReader(Reader):
         """
         Read body elements until dedent or EOF
 
-        Each body element is either a parenthesised s-expression or a
-        potential sub-block. When the body stream reaches a line whose
-        indentation is <= outer_indent, skip_whitespace sets _dedent_detected
-        and this loop breaks.
-
-        Sub-block detection works speculatively: after reading the first token
-        of a line (form1), a RecordingStream is wrapped around the stream and
-        _probe_block_header_end is called with require_colon=False. If the
-        probe finds a colon, form1 is the sub-block head and the remaining
-        forms before the colon are the args. If no colon is found, the probe
-        text must be put back so subsequent reads see those characters again.
+        Delegates each body element to read_layout_form, which handles
+        s-expressions, block-macro prefixes (e.g. ' for compile/quote-block),
+        sub-block detection, and plain forms uniformly. When _raw_block_mode is
+        True (set by read_raw_block), read_layout_form routes sub-blocks through
+        read_raw_block instead of read_block.
 
         :param stream: the source stream
         :param outer_indent: column number that, when reached by the next
@@ -1210,81 +1210,13 @@ class LayoutReader(Reader):
             if getattr(wrapped, '_dedent_detected', False):
                 break
 
-            c = wrapped.peek(1)
-            if not c:
+            if not wrapped.peek(1):
                 break
 
-            if c in '([{':
-                # Parenthesised form: read it directly, no block detection.
-                event, pos, form = self._read(wrapped)
-                if event is EOF:
-                    break
-                body.append(form)
-            else:
-                # Non-paren token: could be the head of a sub-block.
-                # Read the first token, then check whether a colon follows.
-                event, pos, form1 = self._read(wrapped)
-                if event is EOF:
-                    break
-                header_indent = pos[1]
-                wrapped.skip_whitespace()
-                if getattr(wrapped, '_dedent_detected', False):
-                    # Nothing follows on this line; form1 is a plain value.
-                    body.append(form1)
-                    continue
-                if not wrapped.peek(1):
-                    body.append(form1)
-                    continue
-
-                # Speculatively probe for a block header colon. All characters
-                # read during the probe are captured by the RecordingStream.
-                header_start = wrapped.position()
-                recording = RecordingStream(wrapped)
-                recorded, last_colon_pos, _ = (
-                    self._probe_block_header_end(
-                        recording, require_colon=False))
-
-                if last_colon_pos is not None:
-                    # Colon found: form1 is the sub-block head. Replay the
-                    # recorded text through a fresh stream to extract the
-                    # args between form1 and the colon.
-                    start_lin, start_col = header_start
-                    sub_header_stream = source_str(
-                        recorded, wrapped.filename,
-                        line_no=start_lin, col_no=start_col)
-                    self._break_marker = last_colon_pos
-                    try:
-                        probe_forms = []
-                        with self.temporary_event_macro(
-                                ':', lambda s, c: (VALUE, symbol(':')),
-                                terminating=True):
-                            while True:
-                                event, pos, value = self._read(
-                                    sub_header_stream)
-                                if event is MARK:
-                                    break
-                                if event is EOF:
-                                    raise wrapped.error(
-                                        'unexpected EOF in block header',
-                                        pos)
-                                probe_forms.append(value)
-                    finally:
-                        self._break_marker = None
-
-                    head = form1
-                    args = [f for f in probe_forms if f != symbol(':')]
-                    block = self.read_block(
-                        wrapped, header_indent, head, args)
-                    body.append(block)
-                else:
-                    # No colon found: form1 is a plain symbol and the probed
-                    # text must be replayed. Push the recorded characters back
-                    # into the stream's buffer so the next read iteration sees
-                    # them as if the probe never happened.
-                    wrapped._buffer = list(recorded) + (
-                        getattr(wrapped, '_buffer', []) or [])
-                    wrapped._buffer_start_pos = header_start
-                    body.append(form1)
+            event, pos, form = self.read_layout_form(wrapped)
+            if event is EOF:
+                break
+            body.append(form)
 
         return body
 
@@ -1426,21 +1358,111 @@ class LayoutReader(Reader):
         return peers
 
 
+    def _read_raw_block_source(self, stream, outer_indent, head, args):
+        """
+        Build the raw :block: cons structure: (:block: (head . args) body...)
+
+        Reads the block body using read_block_body (which routes sub-blocks
+        through read_raw_block when _raw_block_mode is True). Returns a
+        (:block: HEAD-ARGS BODY-EXPRS) cons.
+
+        :param stream: source stream positioned after the block header colon
+        :param outer_indent: column of the block head line, used as body limit
+        :param head: the block head symbol (e.g. 'if', 'define')
+        :param args: list of forms between head and colon
+        :return: (:block: (head . args) (body...)) cons with position set
+        """
+
+        pos = stream.position()
+        body = self.read_block_body(stream, outer_indent)
+        header = cons(head, *args, nil)
+        body_list = cons(*body, nil) if body else nil
+        result = cons(_keyword_block, header, body_list, nil)
+        if is_pair(result):
+            result.set_position(pos)
+        return result
+
+
+    def read_raw_block(self, stream, outer_indent, head=None, args=None):
+        """
+        Read a block as a raw :block: cons without invoking layout handlers
+
+        Sets _raw_block_mode so that read_layout_form (called by
+        read_block_body) routes any detected sub-blocks through read_raw_block
+        instead of read_block, encoding the full nested tree as :block: cons
+        nodes with no layout expansion at any level.
+
+        :param stream: the source stream, positioned after the header colon
+            and its trailing whitespace
+        :param outer_indent: column of the block head line; any line at this
+            indent level or less ends the block body
+        :param head: block head symbol if already read by the caller
+        :param args: header argument forms if already read by the caller
+        :return: (:block: (head . args) (body...)) cons
+        """
+
+        if head is None:
+            head, args, opener = self.read_block_header(stream)
+
+        wrapped = IndentAwareStream(stream, max_indent=outer_indent)
+        prev = self._raw_block_mode
+        self._raw_block_mode = True
+        try:
+            return self._read_raw_block_source(wrapped, outer_indent, head, args)
+        finally:
+            self._raw_block_mode = prev
+
+
+    def _apply_layout(self, stream, outer_indent, source):
+        """
+        Apply a layout handler to an already-read block source cons
+
+        Given a source cons of the form ((head . args) . body-forms), looks up
+        the layout handler for head (or falls back to layout/block), collects
+        any declared peers from the stream at the same indent level, and calls
+        the handler to produce the final expanded form.
+
+        This is the second phase of block reading; the first phase is
+        _read_block_source. Separating them allows prefix macros (e.g. the
+        quote-block path) to call only _read_raw_block_source and skip layout
+        expansion entirely.
+
+        :param stream: IndentAwareStream positioned after the primary block body
+        :param outer_indent: column of the block head line
+        :param source: cons of the form ((head . args) . body-forms)
+        :return: the expanded form produced by the layout handler
+        """
+
+        header = source[0]
+        head = header[0]
+
+        layout_obj = self.find_layout(head)
+        if layout_obj is not None:
+            peers = self._read_declared_peers(stream, outer_indent, layout_obj)
+            return layout_obj.read(source, peers)
+
+        # No specific layout handler: prepend layout/block to the header and
+        # dispatch through the default block handler.
+        body = source[1]
+        synthetic_header = cons(_layout_block, *list(unpack(header)), nil)
+        default_source = cons(synthetic_header, body)
+        if is_pair(default_source):
+            default_source.set_position(source.get_position())
+
+        layout_obj = self.find_layout(symbol('layout/block'))
+        if layout_obj is None:
+            raise stream.error('layout/block not found', stream.position())
+        return layout_obj.read(default_source, [])
+
+
     def read_block(self, stream, outer_indent, head=None, args=None):
         """
         Read a block: header (if not provided) and body, resolve layout
 
         Creates an IndentAwareStream wrapping the incoming stream so that
-        body reads stop automatically at dedent. The IndentAwareStream is a
-        thin wrapper; it does not consume characters beyond what is needed and
-        does not buffer speculatively, so it can be discarded safely when the
-        block is done without any risk of losing characters to its caller.
-
-        If a specific layout handler is registered for 'head' (looked up as
-        'layout/<head>' in the namespace), that handler also receives any
-        declared peer blocks (elif/else for an if block, etc.). Otherwise the
-        block is routed through the default 'layout/block' handler which wraps
-        the body in a compile/begin.
+        body reads stop automatically at dedent. Calls _read_block_source to
+        parse the header and body, then _apply_layout to dispatch through the
+        appropriate layout handler.
 
         :param stream: the source stream, positioned after the header colon
             and its trailing whitespace
@@ -1456,31 +1478,36 @@ class LayoutReader(Reader):
 
         wrapped = IndentAwareStream(stream, max_indent=outer_indent)
         source = self._read_block_source(wrapped, outer_indent, head, args)
-
-        layout_obj = self.find_layout(head)
-        if layout_obj is not None:
-            peers = self._read_declared_peers(wrapped, outer_indent, layout_obj)
-            return layout_obj.read(source, peers)
-
-        # No specific layout handler: prepend layout/block to the header and
-        # dispatch through the default block handler.
-        header, body = source
-        synthetic_header = cons(_layout_block, *list(unpack(header)), nil)
-        default_source = cons(synthetic_header, body)
-        if is_pair(default_source):
-            default_source.set_position(source.get_position())
-
-        layout_obj = self.find_layout(symbol('layout/block'))
-        if layout_obj is None:
-            raise stream.error('layout/block not found', stream.position())
-        return layout_obj.read(default_source, [])
+        return self._apply_layout(wrapped, outer_indent, source)
 
 
     def read_layout_form(self, stream):
         """
-        Read one top-level layout form: s-expr or block
+        Read one layout form: s-expr, prefixed raw block, or normal block
 
-        At depth 0, detects blocks. Inside delimiters, uses base _read.
+        At layout depth > 0 (inside delimiters), delegates to the base _read.
+
+        At depth 0, four cases:
+
+        1. c in '([{' -- parenthesised s-expression, read directly via _read.
+
+        2. c in _block_macros -- a prefix character that may introduce a raw
+           block (e.g. ' for compile/quote-block). Consumes the prefix, probes
+           speculatively for a colon. If a colon is found, reads the block via
+           read_raw_block and passes the result to the registered wrapper
+           function. If no colon (or if the next char is a paren), restores the
+           prefix into the buffer and falls through to _read for normal quote
+           behaviour.
+
+        3. Bare atom with a colon -- the line is a sub-block. Probes
+           speculatively: if a colon is found, reads via read_block (or
+           read_raw_block when _raw_block_mode is True).
+
+        4. Bare atom without a colon -- a plain form. The probed chars are
+           restored to the buffer and _read is called to return the form.
+
+        :param stream: source stream positioned at the start of the next form
+        :return: (event, position, value)
         """
 
         if self._layout_depth > 0:
@@ -1488,6 +1515,9 @@ class LayoutReader(Reader):
             return event, pos, value
 
         stream.skip_whitespace()
+        if getattr(stream, '_dedent_detected', False):
+            return EOF, stream.position(), None
+
         position = stream.position()
         c = stream.peek(1)
         if not c:
@@ -1497,10 +1527,152 @@ class LayoutReader(Reader):
             event, pos, value = self._read(stream)
             return event, pos, value
 
-        head, args, opener = self.read_block_header(stream)
         outer_indent = position[1]
-        block = self.read_block(stream, outer_indent, head, args)
-        return VALUE, position, block
+
+        # Case 2: block-macro prefix character (e.g. ')
+        # Speculatively probe for 'head: syntax. Consume the prefix, then peek
+        # at the next character to decide:
+        # - Next char is a paren or missing: fall through to _read, which will
+        #   apply the normal reader macro for the prefix (e.g. compile/quote).
+        # - Next char is an atom start: probe the rest of the header for a
+        #   colon using a RecordingStream so chars can be restored on failure.
+        #   If a colon is found, produce a raw block wrapped by the registered
+        #   function. If no colon, restore all chars (prefix + probed text)
+        #   and let _read handle everything as a normal form.
+        if c in self._block_macros:
+            stream.read(1)
+            next_c = stream.peek(1)
+            if next_c and next_c not in '([{':
+                prefix_pos = position
+                header_start = stream.position()
+                recording = RecordingStream(stream)
+                recorded, last_colon_pos, _ = self._probe_block_header_end(
+                    recording, require_colon=False)
+                if last_colon_pos is not None:
+                    start_lin, start_col = header_start
+                    sub_header_stream = source_str(
+                        recorded, stream.filename,
+                        line_no=start_lin, col_no=start_col)
+                    self._break_marker = last_colon_pos
+                    try:
+                        probe_forms = []
+                        with self.temporary_event_macro(
+                                ':', lambda s, c: (VALUE, symbol(':')),
+                                terminating=True):
+                            while True:
+                                ev, p, val = self._read(sub_header_stream)
+                                if ev is MARK:
+                                    break
+                                if ev is EOF:
+                                    raise stream.error(
+                                        'unexpected EOF in block header', p)
+                                probe_forms.append(val)
+                    finally:
+                        self._break_marker = None
+
+                    if not probe_forms:
+                        raise stream.error(
+                            'block header must have head and opener',
+                            header_start)
+                    head = probe_forms[0]
+                    args = [f for f in probe_forms[1:] if f != symbol(':')]
+                    raw_block = self.read_raw_block(
+                        stream, outer_indent, head, args)
+                    wrapper_fn = self._block_macros[c]
+                    result = wrapper_fn(raw_block, position)
+                    if is_pair(result):
+                        result.set_position(position)
+                    return VALUE, position, result
+                # No colon: restore prefix + all probed chars, fall to _read.
+                restored = [c] + list(recorded) + (
+                    getattr(stream, '_buffer', []) or [])
+                stream._buffer = restored
+                stream._buffer_start_pos = prefix_pos
+            else:
+                # Next char is a paren: restore prefix, fall through to _read.
+                stream._buffer = [c] + (getattr(stream, '_buffer', []) or [])
+                stream._buffer_start_pos = position
+            event, pos, value = self._read(stream)
+            return event, pos, value
+
+        # Case 3 / 4: bare atom — read the first token, then speculatively
+        # probe the rest of the header for a colon. This two-phase approach
+        # mirrors the old read_block_body logic: the first _read consumes the
+        # head candidate; skip_whitespace then tells us whether the next
+        # content is at the same (or lower) indent level before we probe
+        # further, preventing the probe from crossing into peer blocks.
+        #
+        # Special case: if the atom reader consumed a trailing colon (e.g.
+        # 'begin:' → keyword('begin')), the block opener is already consumed
+        # and no speculative probe is needed. Convert the keyword back to a
+        # symbol for the head and call the block reader directly.
+        event, pos, form1 = self._read(stream)
+        if event is EOF:
+            return EOF, pos, None
+
+        header_indent = pos[1]
+
+        if is_keyword(form1):
+            # Colon was consumed as part of the atom (e.g. 'begin:').
+            # The stream is already positioned after the colon; call
+            # skip_whitespace to consume the newline and body indent, then
+            # dispatch to the appropriate block reader.
+            stream.skip_whitespace()
+            head = symbol(str(form1))
+            if self._raw_block_mode:
+                block = self.read_raw_block(stream, header_indent, head, [])
+            else:
+                block = self.read_block(stream, header_indent, head, [])
+            return VALUE, position, block
+
+        stream.skip_whitespace()
+        if getattr(stream, '_dedent_detected', False):
+            return VALUE, pos, form1
+        if not stream.peek(1):
+            return VALUE, pos, form1
+
+        header_start = stream.position()
+        recording = RecordingStream(stream)
+        recorded, last_colon_pos, _ = self._probe_block_header_end(
+            recording, require_colon=False)
+
+        if last_colon_pos is not None:
+            # Colon found: form1 is the sub-block head; recorded text holds
+            # any intervening args.
+            start_lin, start_col = header_start
+            sub_header_stream = source_str(
+                recorded, stream.filename,
+                line_no=start_lin, col_no=start_col)
+            self._break_marker = last_colon_pos
+            try:
+                probe_forms = []
+                with self.temporary_event_macro(
+                        ':', lambda s, c: (VALUE, symbol(':')),
+                        terminating=True):
+                    while True:
+                        ev, p, val = self._read(sub_header_stream)
+                        if ev is MARK:
+                            break
+                        if ev is EOF:
+                            raise stream.error(
+                                'unexpected EOF in block header', p)
+                        probe_forms.append(val)
+            finally:
+                self._break_marker = None
+
+            head = form1
+            args = [f for f in probe_forms if f != symbol(':')]
+            if self._raw_block_mode:
+                block = self.read_raw_block(stream, header_indent, head, args)
+            else:
+                block = self.read_block(stream, header_indent, head, args)
+            return VALUE, position, block
+
+        # No colon: restore probed chars and return form1 as a plain form.
+        restored = list(recorded) + (getattr(stream, '_buffer', []) or [])
+        stream._buffer = restored
+        stream._buffer_start_pos = header_start
+        return VALUE, pos, form1
 
 
     def read(self, reader_stream):

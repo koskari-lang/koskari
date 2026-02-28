@@ -47,6 +47,7 @@ from ..helpers import special
 
 
 _symbol_quasiquote = symbol("compile/quasiquote")
+_symbol_quote_block = symbol("compile/quote-block")
 _symbol_unquote = symbol("compile/unquote")
 _symbol_unquote_splicing = symbol("compile/unquote-splicing")
 
@@ -322,6 +323,37 @@ def special_quasiquote(compiler, source, tc=False):
     frag = compiler.fragment(called_by)
     frag.position_of(source)
     _qq_expr(compiler, frag, expr, 0)
+    return frag
+
+
+@special(symbol("compile/quote-block"))
+def special_quote_block(compiler, source, tc=False):
+    """
+    Compile (compile/quote-block BLOCK-REPR) — emit code to construct the
+    :block: cons structure as a literal data value at runtime
+
+    BLOCK-REPR is a :block: cons possibly containing nested :block: cons
+    nodes for sub-blocks. No layout expansion takes place; the structure is
+    treated as opaque data, analogous to compile/quote on an ordinary cons.
+
+    :param compiler: the active Compiler
+    :param source: the full source cons (compile/quote-block BLOCK-REPR)
+    :param tc: tail-call flag (unused)
+    :return: ByteCodeFragment emitting the :block: cons structure at runtime
+    """
+
+    called_by, body = source
+
+    if body is nil or not is_pair(body):
+        raise SpecialError("quote-block requires one argument", source)
+
+    block_repr, rest = body
+    if rest is not nil:
+        raise SpecialError("quote-block takes one argument", source)
+
+    frag = compiler.fragment(called_by)
+    frag.position_of(source)
+    _qq_expr(compiler, frag, block_repr, 0)
     return frag
 
 

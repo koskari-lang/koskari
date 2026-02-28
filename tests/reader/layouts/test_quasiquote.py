@@ -32,6 +32,9 @@ from koskari.compile.helpers import pycons
 from .. import parse_layout
 
 
+_keyword_block = keyword(':block:')
+
+
 class TestQuasiquoteLayout(TestCase):
     """
     Atoms and simple lists inside quasiquote via layout syntax
@@ -141,6 +144,122 @@ class TestQuasiquoteLayout(TestCase):
             (symbol("compile/quasiquote"),
              (symbol("begin"),
               (symbol("compile/unquote-splicing"), symbol("hello"))))))
+        )
+
+        result = parse_layout(src)
+        print("result   :", result)
+        print("expected :", expected)
+
+        self.assertEqual(result, expected)
+
+
+class TestQuoteBlock(TestCase):
+    """
+    Tests for the 'head: raw block quote syntax that produces compile/quote-block forms
+    """
+
+    def test_simple_quote_block(self):
+        """
+        A leading ' before a block head reads the block as a :block: cons
+        wrapped in compile/quote-block
+        """
+
+        src = """
+        'begin:
+          foo
+          bar
+        """
+
+        expected = pycons(
+            (symbol("compile/quote-block"),
+             (_keyword_block,
+              (symbol("begin"),),
+              (symbol("foo"), symbol("bar"))))
+        )
+
+        result = parse_layout(src)
+        print("result   :", result)
+        print("expected :", expected)
+
+        self.assertEqual(result, expected)
+
+
+    def test_quote_block_empty_body(self):
+        """
+        A quoted block with no body produces a :block: with nil body list
+        """
+
+        src = """
+        'begin:
+        """
+
+        from koskari.types import cons, is_pair, car, cdr, is_nil
+
+        result = parse_layout(src)
+
+        self.assertTrue(is_pair(result))
+        self.assertEqual(car(result), symbol("compile/quote-block"))
+
+        block_repr = car(cdr(result))
+        self.assertTrue(is_pair(block_repr))
+        self.assertEqual(car(block_repr), _keyword_block)
+
+        head_args = car(cdr(block_repr))
+        self.assertTrue(is_pair(head_args))
+        self.assertEqual(car(head_args), symbol("begin"))
+
+        body_exprs = car(cdr(cdr(block_repr)))
+        self.assertTrue(is_nil(body_exprs))
+
+
+    def test_quote_block_nested_sub_block(self):
+        """
+        Sub-blocks inside a quoted block become nested :block: cons nodes
+        rather than being expanded through layout handlers
+        """
+
+        src = """
+        'begin:
+          if x:
+            foo
+        """
+
+        expected = pycons(
+            (symbol("compile/quote-block"),
+             (_keyword_block,
+              (symbol("begin"),),
+              ((_keyword_block,
+                (symbol("if"), symbol("x")),
+                (symbol("foo"),)),)))
+        )
+
+        result = parse_layout(src)
+        print("result   :", result)
+        print("expected :", expected)
+
+        self.assertEqual(result, expected)
+
+
+    def test_quote_block_inside_normal_block(self):
+        """
+        A quoted block used as a body element inside a normal define block
+        is returned as a compile/quote-block form in the body
+        """
+
+        src = """
+        define get-block []:
+          'begin:
+            foo
+            bar
+        """
+
+        expected = pycons(
+            (symbol("define"), symbol("get-block"), nil,
+             (symbol("compile/begin"),
+              (symbol("compile/quote-block"),
+               (_keyword_block,
+                (symbol("begin"),),
+                (symbol("foo"), symbol("bar"))))))
         )
 
         result = parse_layout(src)
