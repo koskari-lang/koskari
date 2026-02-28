@@ -180,11 +180,11 @@ def _as_complex(s):
 
 ESCAPE_SEQUENCE_RE = regex(r'''
 (\\U........
-|| \\u....
-|| \\x..
-|| \\[0-7]{1,3}
-|| \\N\{[^}]+\}
-|| \\[\\'"abfnrtv]
+| \\u....
+| \\x..
+| \\[0-7]{1,3}
+| \\N\{[^}]+\}
+| \\[\\'"abfnrtv]
 )''', UNICODE | VERBOSE)
 
 
