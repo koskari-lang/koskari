@@ -23,7 +23,7 @@ Koskari s-expression reader and layout block parsing.
 
 
 from ..exceptions import ReaderSyntaxError, FormatStringSyntaxError
-from .parser import (
+from .parser_ng import (
     SourceStream,
     IndentAwareStream,
     source_open,

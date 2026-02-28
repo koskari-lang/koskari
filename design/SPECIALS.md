@@ -943,6 +943,7 @@ flattens a list into the surrounding list.
 - `` `EXPR `` → `(compile/quasiquote EXPR)`
 - `,EXPR` → `(compile/unquote EXPR)` (only valid inside a quasiquote body)
 - `,@EXPR` → `(compile/unquote-splicing EXPR)` (only valid inside a quasiquote body)
+- `` `HEAD: BODY `` → `(compile/quasiquote-block (:block: ...))` (block quasiquote; see below)
 
 **Behaviour:** One argument required. The compiler walks the expression
 recursively at a nesting *level* (starting at 0):
@@ -1004,6 +1005,167 @@ collapses to a proper list). Only atomic tails produce genuine improper pairs
 **Implementation:** `koskari/compile/specials/quasiquote.py`
 
 **Tests:** `tests/compile/specials/test_quasiquote.py`
+
+
+## compile/quote-block
+
+**Symbol:** `compile/quote-block`
+
+**Syntax:** `'HEAD: BODY` (reader shorthand) or `(compile/quote-block BLOCK-REPR)`
+
+**Use-case:** Produce a `:block:` cons as literal data — the block-syntax
+analogue of `compile/quote`. The entire indented block (including any nested
+sub-blocks) is captured as a `:block:` cons without invoking any layout
+handler. Useful for passing block structure as data to macros or other
+compile-time code.
+
+**Reader shorthand:** A `'` immediately preceding a block head (e.g. `'begin:
+...`) causes the reader to read the entire block as a raw `:block:` cons and
+wrap it in `(compile/quote-block ...)`. Sub-blocks in the body are recursively
+read as `:block:` nodes without layout expansion.
+
+**Behaviour:** Purely transformative. Rewrites to `(compile/quote BLOCK-REPR)`
+and returns that cons for normal compiler dispatch. The `:block:` cons is
+treated as opaque data — no layout expansion takes place.
+
+**Examples:**
+
+```scheme
+;; Reader shorthand: produces (:block: (begin) (foo bar)) as data
+'begin:
+  foo
+  bar
+
+;; Explicit form
+(compile/quote-block (:block: (begin) (foo bar)))
+```
+
+**Implementation:** `koskari/compile/specials/quasiquote.py`
+
+**Tests:** `tests/compile/specials/test_quasiquote.py`, `tests/reader/layouts/test_quasiquote.py`
+
+
+## compile/quasiquote-block
+
+**Symbol:** `compile/quasiquote-block`
+
+**Syntax:** `` `HEAD: BODY `` (reader shorthand) or `(compile/quasiquote-block BLOCK-REPR)`
+
+**Use-case:** The block-syntax analogue of `compile/quasiquote`. Captures an
+entire indented block (including nested peer blocks such as `if`/`else`) as a
+`:block:` cons with `,EXPR` and `,@EXPR` unquote sites active throughout the
+header and body. The primary tool for writing macros in block syntax.
+
+**Reader shorthand:** A `` ` `` immediately preceding a block head causes the
+reader to read the entire block as a raw `:block:` cons with `,`/`,@` unquote
+reader macros active for all header arguments, body forms, and nested
+sub-block headers and bodies.
+
+```scheme
+`begin:
+  ,@forms
+```
+
+produces:
+
+```
+(compile/quasiquote-block (:block: (begin) ((compile/unquote-splicing forms))))
+```
+
+Peers are represented as sibling `:block:` nodes inside the enclosing body:
+
+```scheme
+`begin:
+  if ,cond:
+    ,then
+  else:
+    ,else
+```
+
+produces:
+
+```
+(compile/quasiquote-block
+  (:block: (begin)
+   ((:block: (if (compile/unquote cond)) ((compile/unquote then)))
+    (:block: (else) ((compile/unquote else))))))
+```
+
+**Behaviour:** Purely transformative. Rewrites to:
+
+```
+(compile/quasiquote (compile/apply-layout BLOCK-REPR))
+```
+
+`compile/quasiquote` then quasi-quotes the whole form. When the compiled code
+runs (at macro-expansion time), it produces a new source cons:
+
+```
+(compile/apply-layout (:block: ... filled slots ...))
+```
+
+The compiler sees that cons and dispatches `compile/apply-layout`, which
+performs depth-first layout expansion and returns the final compiled form.
+This is the standard koskari two-phase compile model for macros.
+
+**Nesting:** `_qq_expr` recognises `compile/quasiquote-block` at depth > 0
+and reconstructs it as literal data, exactly like nested `compile/quasiquote`.
+
+**Implementation:** `koskari/compile/specials/quasiquote.py`
+
+**Tests:** `tests/compile/specials/test_quasiquote.py` (`TestQuasiquoteBlockShape`,
+`TestQuasiquoteBlockTwoPhase`, `TestQuasiquoteBlockFullStack`),
+`tests/reader/layouts/test_quasiquote.py`
+
+
+## compile/apply-layout
+
+**Symbol:** `compile/apply-layout`
+
+**Syntax:** `(compile/apply-layout BLOCK ...)`
+
+**Use-case:** Compile-time depth-first expansion of one or more `:block:` cons
+literals through the layout handler system. This is how block structure
+(captured by `compile/quote-block` or `compile/quasiquote-block`) is turned
+into normal compiled forms. It is also the second phase of macro expansion
+when `compile/quasiquote-block` is used.
+
+**Behaviour:**
+
+1. Each argument must be a `:block:` cons; a non-block argument raises
+   `SpecialError`.
+2. Recursively expands any nested `:block:` elements in the body of each block
+   before invoking its layout handler.
+3. Looks up the layout handler for the block head via `compiler.find_layout`
+   (resolves `layout/<head>` in the module namespace). Falls back to
+   `layout/block` (the generic handler) if no specific handler is found.
+4. Scans the following sibling arguments for declared peer blocks (e.g. `else`
+   after `if`), consuming them.
+5. Calls `layout_obj.read(source, peers)` with the expanded source cons.
+6. If multiple top-level results remain after peer consumption, wraps them in
+   `(compile/begin ...)`.
+7. Compiles and returns the final form.
+
+**Examples:**
+
+```scheme
+;; Expand a begin block directly
+(compile/apply-layout (:block: (begin) (42)))        ; → 42
+
+;; Expand if/else peers
+(compile/apply-layout
+  (:block: (if True) (1))
+  (:block: (else) (2)))                              ; → 1
+
+;; Typical use: second phase of quasiquote-block macro expansion
+;; (this form is produced at runtime by compiled quasiquote-block code)
+(compile/apply-layout (:block: (begin) ((compile/unquote x))))
+```
+
+**Implementation:** `koskari/compile/specials/apply_layout.py`
+
+**Tests:** `tests/compile/specials/test_apply_layout.py`,
+`tests/compile/specials/test_quasiquote.py`
 
 
 ## compile/unquote

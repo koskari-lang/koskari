@@ -123,6 +123,30 @@ class TestQuasiquoteLayout(TestCase):
                (symbol("sing"))))))
         )
 
+        result = parse_layout(src)
+        print("result   :", result)
+        print("expected :", expected)
+
+        self.assertEqual(result, expected)
+
+
+    def test_quote_block(self):
+        src = """
+        define get-name []:
+          `begin:
+            ,@hello
+        """
+
+        _kw_block = keyword(':block:')
+
+        expected = pycons(
+          (symbol("define"), symbol("get-name"), nil,
+           (symbol("compile/begin"),
+            (symbol("compile/quasiquote-block"),
+             (_kw_block,
+              (symbol("begin"),),
+              ((symbol("compile/unquote-splicing"), symbol("hello")),)))))
+        )
 
         result = parse_layout(src)
         print("result   :", result)
@@ -131,19 +155,37 @@ class TestQuasiquoteLayout(TestCase):
         self.assertEqual(result, expected)
 
 
-    def skipme_test_quote_block(self):
-        src = """
-        define get-name []:
-          `begin:
-            ,@hello
+    def test_quote_block_with_peers(self):
+        """
+        A quasiquote-block whose body contains if/else sibling sub-blocks.
+        Both sub-blocks appear as :block: siblings in the outer body.
+        Unquote sites in sub-block headers and bodies are parsed correctly.
         """
 
+        src = """
+        define get-cond []:
+          `begin:
+            if ,test-expr:
+              ,result
+            else:
+              ,fallback
+        """
+
+        _kw_block = keyword(':block:')
+
         expected = pycons(
-          (symbol("define"), symbol("get-name"), nil,
+          (symbol("define"), symbol("get-cond"), nil,
            (symbol("compile/begin"),
-            (symbol("compile/quasiquote"),
-             (symbol("begin"),
-              (symbol("compile/unquote-splicing"), symbol("hello"))))))
+            (symbol("compile/quasiquote-block"),
+             (_kw_block,
+              (symbol("begin"),),
+              ((_kw_block,
+                (symbol("if"),
+                 (symbol("compile/unquote"), symbol("test-expr"))),
+                ((symbol("compile/unquote"), symbol("result")),)),
+               (_kw_block,
+                (symbol("else"),),
+                ((symbol("compile/unquote"), symbol("fallback")),)),)))))
         )
 
         result = parse_layout(src)
@@ -171,7 +213,7 @@ class TestQuoteBlock(TestCase):
         """
 
         expected = pycons(
-            (symbol("compile/quote-block"),
+            (symbol("compile/quote"),
              (_keyword_block,
               (symbol("begin"),),
               (symbol("foo"), symbol("bar"))))
@@ -198,7 +240,7 @@ class TestQuoteBlock(TestCase):
         result = parse_layout(src)
 
         self.assertTrue(is_pair(result))
-        self.assertEqual(car(result), symbol("compile/quote-block"))
+        self.assertEqual(car(result), symbol("compile/quote"))
 
         block_repr = car(cdr(result))
         self.assertTrue(is_pair(block_repr))
@@ -225,7 +267,7 @@ class TestQuoteBlock(TestCase):
         """
 
         expected = pycons(
-            (symbol("compile/quote-block"),
+            (symbol("compile/quote"),
              (_keyword_block,
               (symbol("begin"),),
               ((_keyword_block,
@@ -256,7 +298,7 @@ class TestQuoteBlock(TestCase):
         expected = pycons(
             (symbol("define"), symbol("get-block"), nil,
              (symbol("compile/begin"),
-              (symbol("compile/quote-block"),
+              (symbol("compile/quote"),
                (_keyword_block,
                 (symbol("begin"),),
                 (symbol("foo"), symbol("bar"))))))
