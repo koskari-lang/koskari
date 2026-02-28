@@ -16,26 +16,31 @@
 /**
    TAIL_CALL: arg = N. Same stack as CALL [callable, arg_0, ..., arg_{N-1}].
    For KosExpression/KosFunction, replace current frame and continue in-place;
-   otherwise same semantics as CALL.
+   otherwise same semantics as CALL. Uses vectorcall convention via
+   kos_callable_tail_vcall, with args popped into a tuple for ref safety.
 */
 
 KOS_OP_HANDLER(TAIL_CALL) {
   unsigned n = KosOp_ARG(insn);
 
   KosDynFrame *frame_top = CURRENT_FRAME(ctx);
+  KosStackBlock **stack = &KosDynFrame_STACK(frame_top);
 
   PyObject *args = NULL;
   if (n > 0) {
-    args = KosStackBlock_PopTail(&KosDynFrame_STACK(frame_top), n);
+    args = KosStackBlock_PopTail(stack, n);
     if (! args)
       return -1;
   }
 
-  PyObject *callable = KosStackBlock_PopRef(&KosDynFrame_STACK(frame_top));
-  if (! callable)
+  PyObject *callable = KosStackBlock_PopRef(stack);
+  if (! callable) {
+    Py_XDECREF(args);
     return -1;
+  }
 
-  int r = kos_callable_tail_call(ctx, out_ev, callable, args, NULL);
+  PyObject *const *argv = args ? &PyTuple_GET_ITEM(args, 0) : NULL;
+  int r = kos_callable_tail_vcall(ctx, out_ev, callable, argv, (Py_ssize_t) n, NULL);
 
   Py_DECREF(callable);
   Py_XDECREF(args);

@@ -1785,6 +1785,160 @@ int kos_callable_tail_call(KosContext *ctx, KosEvent *out_ev,
 }
 
 
+/**
+   Vectorcall fallback for plain Python callables. Passes the C array directly
+   to PyObject_Vectorcall, avoiding any tuple construction.
+   callable, args, and kwnames are all borrowed.
+*/
+static int call_default_python_vcall(
+    KosContext *ctx,
+    KosEvent *out_ev,
+    PyObject *callable,
+    PyObject *const *args,
+    Py_ssize_t nargs,
+    PyObject *kwnames) {
+
+  PyObject *result = PyObject_Vectorcall(callable, args, (size_t) nargs, kwnames);
+  if (! result)
+    return -1;
+  return push_or_await(ctx, out_ev, result);
+}
+
+
+/**
+   Build a tuple from a C args array. Used as a fallback in kos_callable_vcall
+   when a KosCallable type has only the legacy install slot, not the vector one.
+*/
+static PyObject *vcall_build_args_tuple(PyObject *const *args, Py_ssize_t nargs) {
+  PyObject *tup = PyTuple_New(nargs);
+  if (! tup)
+    return NULL;
+  for (Py_ssize_t i = 0; i < nargs; i++) {
+    Py_INCREF(args[i]);
+    PyTuple_SET_ITEM(tup, i, args[i]);
+  }
+  return tup;
+}
+
+
+/**
+   Build a kwds dict from a C args slice and a kwnames tuple. Used as a
+   fallback when a KosCallable type has only the legacy install slot.
+*/
+static PyObject *vcall_build_kwds_dict(
+    PyObject *const *kw_vals,
+    PyObject *kwnames) {
+
+  Py_ssize_t nkw = PyTuple_GET_SIZE(kwnames);
+  PyObject *kwds = PyDict_New();
+  if (! kwds)
+    return NULL;
+  for (Py_ssize_t i = 0; i < nkw; i++) {
+    if (PyDict_SetItem(kwds, PyTuple_GET_ITEM(kwnames, i), kw_vals[i]) < 0) {
+      Py_DECREF(kwds);
+      return NULL;
+    }
+  }
+  return kwds;
+}
+
+
+int kos_callable_vcall(KosContext *ctx, KosEvent *out_ev,
+                       PyObject *callable,
+                       PyObject *const *args, Py_ssize_t nargs,
+                       PyObject *kwnames) {
+  if (KosCallable_Check(callable)) {
+    KosVectorInstallFunc vfn = KosCallableType_VINSTALL(Py_TYPE(callable));
+    if (vfn)
+      return vfn(ctx, out_ev, callable, args, nargs, kwnames);
+
+    /* fallback: build tuple (and dict) for the legacy install slot */
+    KosInstallFunc fn = KosCallableType_INSTALL(Py_TYPE(callable));
+    if (fn) {
+      PyObject *tup = (nargs > 0) ? vcall_build_args_tuple(args, nargs) : NULL;
+      if (nargs > 0 && ! tup)
+        return -1;
+      PyObject *kwds = NULL;
+      if (kwnames) {
+        kwds = vcall_build_kwds_dict(args + nargs, kwnames);
+        if (! kwds) {
+          Py_XDECREF(tup);
+          return -1;
+        }
+      }
+      int r = fn(ctx, out_ev, callable, tup, kwds);
+      Py_XDECREF(tup);
+      Py_XDECREF(kwds);
+      return r;
+    }
+  }
+  return call_default_python_vcall(ctx, out_ev, callable, args, nargs, kwnames);
+}
+
+
+int kos_callable_tail_vcall(KosContext *ctx, KosEvent *out_ev,
+                            PyObject *callable,
+                            PyObject *const *args, Py_ssize_t nargs,
+                            PyObject *kwnames) {
+  if (KosCallable_Check(callable)) {
+    KosVectorInstallFunc vfn = KosCallableType_TAIL_VINSTALL(Py_TYPE(callable));
+    if (vfn)
+      return vfn(ctx, out_ev, callable, args, nargs, kwnames);
+
+    /* fallback: try the non-tail vector slot, pushing an empty frame */
+    vfn = KosCallableType_VINSTALL(Py_TYPE(callable));
+    if (vfn) {
+      KosDynFrame *frame = kos_dyn_push_frame_empty(ctx);
+      if (! frame)
+        return -1;
+      return vfn(ctx, out_ev, callable, args, nargs, kwnames);
+    }
+
+    /* fallback: build tuple (and dict) for legacy install slots */
+    KosInstallFunc fn = KosCallableType_TAIL_INSTALL(Py_TYPE(callable));
+    if (fn) {
+      PyObject *tup = (nargs > 0) ? vcall_build_args_tuple(args, nargs) : NULL;
+      if (nargs > 0 && ! tup)
+        return -1;
+      PyObject *kwds = NULL;
+      if (kwnames) {
+        kwds = vcall_build_kwds_dict(args + nargs, kwnames);
+        if (! kwds) {
+          Py_XDECREF(tup);
+          return -1;
+        }
+      }
+      int r = fn(ctx, out_ev, callable, tup, kwds);
+      Py_XDECREF(tup);
+      Py_XDECREF(kwds);
+      return r;
+    }
+    fn = KosCallableType_INSTALL(Py_TYPE(callable));
+    if (fn) {
+      KosDynFrame *frame = kos_dyn_push_frame_empty(ctx);
+      if (! frame)
+        return -1;
+      PyObject *tup = (nargs > 0) ? vcall_build_args_tuple(args, nargs) : NULL;
+      if (nargs > 0 && ! tup)
+        return -1;
+      PyObject *kwds = NULL;
+      if (kwnames) {
+        kwds = vcall_build_kwds_dict(args + nargs, kwnames);
+        if (! kwds) {
+          Py_XDECREF(tup);
+          return -1;
+        }
+      }
+      int r = fn(ctx, out_ev, callable, tup, kwds);
+      Py_XDECREF(tup);
+      Py_XDECREF(kwds);
+      return r;
+    }
+  }
+  return call_default_python_vcall(ctx, out_ev, callable, args, nargs, kwnames);
+}
+
+
 /* === Install slot implementations === */
 
 
@@ -1799,6 +1953,43 @@ int kos_tail_install_function(KosContext *ctx, KosEvent *out_ev,
                               PyObject *callable, PyObject *args_tuple, PyObject *kwds_dict) {
   (void) kwds_dict;
   return call_tail_flattened_function(ctx, callable, args_tuple, out_ev);
+}
+
+
+int kos_vinstall_function(KosContext *ctx, KosEvent *out_ev,
+                          PyObject *callable,
+                          PyObject *const *args, Py_ssize_t nargs,
+                          PyObject *kwnames) {
+
+  PyObject *frame_ns = KosFunction_PrepareCallNamespaceFromVector(
+      callable, args, nargs, kwnames);
+  if (! frame_ns)
+    return -1;
+  PyObject *fn_code = KosFunction_CODE(callable);
+  if (kos_dyn_push_frame(ctx, (KosCode *) fn_code, frame_ns) == NULL) {
+    Py_DECREF(frame_ns);
+    return -1;
+  }
+  (void) out_ev;
+  return 0;
+}
+
+
+int kos_tail_vinstall_function(KosContext *ctx, KosEvent *out_ev,
+                               PyObject *callable,
+                               PyObject *const *args, Py_ssize_t nargs,
+                               PyObject *kwnames) {
+
+  PyObject *frame_ns = KosFunction_PrepareCallNamespaceFromVector(
+      callable, args, nargs, kwnames);
+  if (! frame_ns)
+    return -1;
+  int r = kos_tail_koscall(ctx, (KosCode *) KosFunction_CODE(callable),
+                           frame_ns);
+  if (r < 0)
+    Py_DECREF(frame_ns);
+  (void) out_ev;
+  return r;
 }
 
 

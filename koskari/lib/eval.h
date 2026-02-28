@@ -591,6 +591,14 @@ int kos_install_function(KosContext *ctx, KosEvent *out_ev,
                          PyObject *callable, PyObject *args_tuple, PyObject *kwds_dict);
 int kos_tail_install_function(KosContext *ctx, KosEvent *out_ev,
                               PyObject *callable, PyObject *args_tuple, PyObject *kwds_dict);
+int kos_vinstall_function(KosContext *ctx, KosEvent *out_ev,
+                          PyObject *callable,
+                          PyObject *const *args, Py_ssize_t nargs,
+                          PyObject *kwnames);
+int kos_tail_vinstall_function(KosContext *ctx, KosEvent *out_ev,
+                               PyObject *callable,
+                               PyObject *const *args, Py_ssize_t nargs,
+                               PyObject *kwnames);
 int kos_install_expression(KosContext *ctx, KosEvent *out_ev,
                            PyObject *callable, PyObject *args_tuple, PyObject *kwds_dict);
 int kos_tail_install_expression(KosContext *ctx, KosEvent *out_ev,

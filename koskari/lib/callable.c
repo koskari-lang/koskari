@@ -28,6 +28,8 @@ KosCallableTypeObject KosCallableType = {
   },
   .tp_kos_install = NULL,
   .tp_kos_tail_install = NULL,
+  .tp_kos_vinstall = NULL,
+  .tp_kos_tail_vinstall = NULL,
 };
 
 
