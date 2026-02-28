@@ -31,7 +31,7 @@ import unittest
 from koskari.exceptions import SpecialError
 from koskari.lib import cons, nil, symbol
 
-from . import SpecialsTestCase
+from . import SpecialsTestCase, _register_specials
 
 
 class TestQuasiquoteAtoms(SpecialsTestCase):
@@ -396,6 +396,365 @@ class TestQuasiquoteErrors(SpecialsTestCase):
             SpecialError,
             self.compile_expr,
             "(compile/unquote-splicing x)")
+
+
+from koskari.compile import Compiler
+from koskari.compile.specials import SPECIALS
+from koskari.reader import LayoutReader, source_str
+from koskari.reader.layouts import LAYOUTS
+from koskari.types import is_pair, keyword as _kw_type, Module, ModuleNamespace, symbol as _sym_type
+
+_keyword_block = _kw_type(':block:')
+_symbol_apply_layout = _sym_type('compile/apply-layout')
+
+
+def _make_block(head_args_tuple, body_tuple):
+    """
+    Build a :block: cons from Python tuples.
+
+    head_args_tuple is a tuple of atoms (head, arg0, arg1, ...),
+    body_tuple is a tuple of body forms.
+    """
+
+    head_args = cons(*head_args_tuple, nil)
+    body = cons(*body_tuple, nil) if body_tuple else nil
+    return cons(_keyword_block, head_args, body, nil)
+
+
+def _register_layouts(ns):
+    for sym, handler in LAYOUTS.items():
+        ns.store(str(sym), handler)
+
+
+class QuasiquoteBlockTestCase(unittest.TestCase):
+    """
+    Base for compile/quasiquote-block tests.
+
+    compile/quasiquote-block is a macro-writing tool. When compiled and run,
+    it produces an intermediate source cons of the form
+    (compile/apply-layout (:block: ...)) with all unquote slots filled in.
+    That source cons is the result of running the first compilation phase;
+    a second compile+run is needed to obtain the final evaluated value.
+    """
+
+    def make_module(self, **defns):
+        """
+        Create a module with specials and layout handlers registered.
+
+        :param defns: name->value bindings
+        :return: (module, mod_ns, compiler)
+        """
+
+        mod_ns = ModuleNamespace("test", defns)
+        module = Module(mod_ns)
+        ns = vars(module)
+        _register_specials(ns, SPECIALS)
+        _register_layouts(ns)
+        compiler = Compiler("<unittest>", module, filename=__file__)
+        return module, mod_ns, compiler
+
+
+    def compile_cons_to_source(self, source, **defns):
+        """
+        Compile a cons source form and run it to obtain the intermediate
+        source cons produced by compile/quasiquote-block.
+
+        :param source: a cons to compile (typically compile/quasiquote-block ...)
+        :param defns: name->value bindings placed in the module namespace
+        :return: (intermediate_source_cons, module, mod_ns, compiler)
+        """
+
+        module, mod_ns, compiler = self.make_module(**defns)
+        fragment = compiler.full_compile(source)
+        expr = fragment.as_expression(mod_ns)
+        intermediate = expr().run()
+        return intermediate, module, mod_ns, compiler
+
+
+    def compile_layout_src_to_source(self, src_str, **defns):
+        """
+        Read a layout-syntax source string, compile it, and run it to obtain
+        the intermediate source cons produced by compile/quasiquote-block.
+
+        Uses a LayoutReader with all layout handlers registered so block syntax
+        (e.g. `begin: ...) is correctly parsed.
+
+        :param src_str: koskari layout source containing a quasiquote-block form
+        :param defns: name->value bindings placed in the module namespace
+        :return: (intermediate_source_cons, module, mod_ns, compiler)
+        """
+
+        module, mod_ns, compiler = self.make_module(**defns)
+        layout_builtins = {str(sym): handler for sym, handler in LAYOUTS.items()}
+        reader = LayoutReader(layout_builtins)
+        stream = source_str(src_str, __file__)
+        source = reader.read(stream)
+        fragment = compiler.full_compile(source)
+        expr = fragment.as_expression(mod_ns)
+        intermediate = expr().run()
+        return intermediate, module, mod_ns, compiler
+
+
+    def run_source(self, intermediate, module, mod_ns, compiler):
+        """
+        Compile and run an intermediate source cons (the second phase).
+
+        :param intermediate: the source cons from the first phase
+        :param module: the module with specials and layouts registered
+        :param mod_ns: the module namespace
+        :param compiler: the compiler to reuse
+        :return: the final evaluated value
+        """
+
+        fragment2 = compiler.full_compile(intermediate)
+        expr2 = fragment2.as_expression(mod_ns)
+        return expr2().run()
+
+
+class TestQuasiquoteBlockShape(QuasiquoteBlockTestCase):
+    """
+    Type-1 tests: verify the shape of the intermediate source cons produced
+    by running compiled compile/quasiquote-block code.
+
+    The result of running a compiled compile/quasiquote-block form is a
+    (compile/apply-layout (:block: ...)) cons with unquote slots filled in.
+    """
+
+    def test_static_begin_block_shape(self):
+        """
+        Static block with no unquotes produces
+        (compile/apply-layout (:block: (begin) (42)))
+        """
+
+        block = _make_block((symbol('begin'),), (42,))
+        source = cons(symbol('compile/quasiquote-block'), block, nil)
+        intermediate, _, _, _ = self.compile_cons_to_source(source)
+
+        self.assertTrue(is_pair(intermediate))
+        head, tail = intermediate
+        self.assertIs(head, _symbol_apply_layout)
+        self.assertTrue(is_pair(tail))
+        block_repr, rest = tail
+        self.assertIs(rest, nil)
+        self.assertTrue(is_pair(block_repr))
+        self.assertIs(block_repr[0], _keyword_block)
+
+
+    def test_unquote_slot_filled(self):
+        """
+        A ,x unquote site is filled with the runtime value of x in the
+        intermediate source cons
+        """
+
+        unquote_x = cons(symbol('compile/unquote'), symbol('x'), nil)
+        block = _make_block((symbol('begin'),), (unquote_x,))
+        source = cons(symbol('compile/quasiquote-block'), block, nil)
+        intermediate, _, _, _ = self.compile_cons_to_source(source, x=99)
+
+        self.assertTrue(is_pair(intermediate))
+        apply_sym, apply_tail = intermediate
+        self.assertIs(apply_sym, _symbol_apply_layout)
+        block_repr, _ = apply_tail
+        _, block_tail = block_repr
+        head_args, body_tail = block_tail
+        body_exprs, _ = body_tail
+        first_body_elem, _ = body_exprs
+        self.assertEqual(first_body_elem, 99)
+
+
+    def test_unquote_splicing_slot_filled(self):
+        """
+        A ,@forms unquote-splicing site is spliced into the body list in the
+        intermediate source cons
+        """
+
+        splice = cons(symbol('compile/unquote-splicing'), symbol('forms'), nil)
+        block = _make_block((symbol('begin'),), (splice,))
+        source = cons(symbol('compile/quasiquote-block'), block, nil)
+        forms = cons(10, cons(20, nil))
+        intermediate, _, _, _ = self.compile_cons_to_source(source, forms=forms)
+
+        self.assertTrue(is_pair(intermediate))
+        apply_sym, apply_tail = intermediate
+        self.assertIs(apply_sym, _symbol_apply_layout)
+        block_repr, _ = apply_tail
+        _, block_tail = block_repr
+        head_args, body_tail = block_tail
+        body_exprs, _ = body_tail
+        first_elem, rest_elems = body_exprs
+        second_elem, _ = rest_elems
+        self.assertEqual(first_elem, 10)
+        self.assertEqual(second_elem, 20)
+
+
+class TestQuasiquoteBlockTwoPhase(QuasiquoteBlockTestCase):
+    """
+    Type-2 tests: two-phase compile of compile/quasiquote-block forms.
+
+    Phase 1 compiles and runs the quasiquote-block, producing an intermediate
+    (compile/apply-layout (:block: ...)) source cons with slots filled.
+    Phase 2 compiles and runs that source cons to obtain the final value.
+    """
+
+    def test_static_begin_block(self):
+        """
+        Static block with no unquotes; two-phase result is 42
+        """
+
+        block = _make_block((symbol('begin'),), (42,))
+        source = cons(symbol('compile/quasiquote-block'), block, nil)
+        intermediate, module, mod_ns, compiler = self.compile_cons_to_source(source)
+        result = self.run_source(intermediate, module, mod_ns, compiler)
+        self.assertEqual(result, 42)
+
+
+    def test_unquote_in_body(self):
+        """
+        ,x unquote in body; with x=99 two-phase result is 99
+        """
+
+        unquote_x = cons(symbol('compile/unquote'), symbol('x'), nil)
+        block = _make_block((symbol('begin'),), (unquote_x,))
+        source = cons(symbol('compile/quasiquote-block'), block, nil)
+        intermediate, module, mod_ns, compiler = self.compile_cons_to_source(
+            source, x=99)
+        result = self.run_source(intermediate, module, mod_ns, compiler)
+        self.assertEqual(result, 99)
+
+
+    def test_unquote_splicing_in_body(self):
+        """
+        ,@forms splice in body; with forms=(1 2 3) two-phase result is 3
+        """
+
+        splice = cons(symbol('compile/unquote-splicing'), symbol('forms'), nil)
+        block = _make_block((symbol('begin'),), (splice,))
+        source = cons(symbol('compile/quasiquote-block'), block, nil)
+        forms = cons(1, cons(2, cons(3, nil)))
+        intermediate, module, mod_ns, compiler = self.compile_cons_to_source(
+            source, forms=forms)
+        result = self.run_source(intermediate, module, mod_ns, compiler)
+        self.assertEqual(result, 3)
+
+
+    def test_if_else_peers_true_branch(self):
+        """
+        begin block with if/else peer siblings; with cond=True result is 1
+        """
+
+        unquote_cond = cons(symbol('compile/unquote'), symbol('cond'), nil)
+        if_block = _make_block((symbol('if'), unquote_cond), (1,))
+        else_block = _make_block((symbol('else'),), (2,))
+        outer = _make_block((symbol('begin'),), (if_block, else_block))
+        source = cons(symbol('compile/quasiquote-block'), outer, nil)
+        intermediate, module, mod_ns, compiler = self.compile_cons_to_source(
+            source, cond=True)
+        result = self.run_source(intermediate, module, mod_ns, compiler)
+        self.assertEqual(result, 1)
+
+
+    def test_if_else_peers_false_branch(self):
+        """
+        begin block with if/else peer siblings; with cond=False result is 2
+        """
+
+        unquote_cond = cons(symbol('compile/unquote'), symbol('cond'), nil)
+        if_block = _make_block((symbol('if'), unquote_cond), (1,))
+        else_block = _make_block((symbol('else'),), (2,))
+        outer = _make_block((symbol('begin'),), (if_block, else_block))
+        source = cons(symbol('compile/quasiquote-block'), outer, nil)
+        intermediate, module, mod_ns, compiler = self.compile_cons_to_source(
+            source, cond=False)
+        result = self.run_source(intermediate, module, mod_ns, compiler)
+        self.assertEqual(result, 2)
+
+
+class TestQuasiquoteBlockFullStack(QuasiquoteBlockTestCase):
+    """
+    Full-stack integration tests: read layout source via the default reader,
+    compile, run (producing the intermediate source cons), then compile+run
+    again to obtain the final value.
+    """
+
+    def test_static_begin_block(self):
+        """
+        `begin: 42 — two-phase result is 42
+        """
+
+        src = """
+        `begin:
+          42
+        """
+        intermediate, module, mod_ns, compiler = self.compile_layout_src_to_source(src)
+        result = self.run_source(intermediate, module, mod_ns, compiler)
+        self.assertEqual(result, 42)
+
+
+    def test_unquote_body(self):
+        """
+        `begin: ,x — with x=99 two-phase result is 99
+        """
+
+        src = """
+        `begin:
+          ,x
+        """
+        intermediate, module, mod_ns, compiler = self.compile_layout_src_to_source(
+            src, x=99)
+        result = self.run_source(intermediate, module, mod_ns, compiler)
+        self.assertEqual(result, 99)
+
+
+    def test_unquote_splicing_body(self):
+        """
+        `begin: ,@forms — with forms=(1 2 3) two-phase result is 3
+        """
+
+        src = """
+        `begin:
+          ,@forms
+        """
+        forms = cons(1, cons(2, cons(3, nil)))
+        intermediate, module, mod_ns, compiler = self.compile_layout_src_to_source(
+            src, forms=forms)
+        result = self.run_source(intermediate, module, mod_ns, compiler)
+        self.assertEqual(result, 3)
+
+
+    def test_if_else_unquote_true(self):
+        """
+        `begin: if ,cond: ,yes else: ,no — with cond=True two-phase result is 1
+        """
+
+        src = """
+        `begin:
+          if ,cond:
+            ,yes
+          else:
+            ,no
+        """
+        intermediate, module, mod_ns, compiler = self.compile_layout_src_to_source(
+            src, cond=True, yes=1, no=2)
+        result = self.run_source(intermediate, module, mod_ns, compiler)
+        self.assertEqual(result, 1)
+
+
+    def test_if_else_unquote_false(self):
+        """
+        `begin: if ,cond: ,yes else: ,no — with cond=False two-phase result is 2
+        """
+
+        src = """
+        `begin:
+          if ,cond:
+            ,yes
+          else:
+            ,no
+        """
+        intermediate, module, mod_ns, compiler = self.compile_layout_src_to_source(
+            src, cond=False, yes=1, no=2)
+        result = self.run_source(intermediate, module, mod_ns, compiler)
+        self.assertEqual(result, 2)
 
 
 # The end.

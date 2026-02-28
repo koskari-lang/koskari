@@ -30,16 +30,11 @@ Tests focus on the new interface contracts introduced in parser_ng:
 from io import StringIO
 from unittest import TestCase
 
-from koskari.types import BaseSourceStream, cons, keyword, nil, symbol
-from koskari.reader.parser_ng import (
-    SourceStream,
-    IndentAwareStream,
-    Reader,
-    LayoutReader,
-    source_str,
-    default_reader,
-)
+from koskari.compile.helpers import pycons
 from koskari.reader.layouts import LAYOUTS
+from koskari.reader.parser_ng import (IndentAwareStream, LayoutReader, Reader,
+                                      SourceStream, default_reader, source_str)
+from koskari.types import BaseSourceStream, cons, keyword, nil, symbol
 
 
 def _stream(text, line_no=1, col_no=0):
@@ -297,7 +292,6 @@ class TestLayoutReaderNg(TestCase):
         foo x:
           y
         """
-        from koskari.compile.helpers import pycons
         expected = pycons(
             (symbol('foo'),
              symbol('x'),
@@ -313,7 +307,6 @@ class TestLayoutReaderNg(TestCase):
         else:
           2
         """
-        from koskari.compile.helpers import pycons
         expected = pycons(
             (symbol('compile/cond'),
              (symbol('x'), 1),
@@ -328,7 +321,6 @@ class TestLayoutReaderNg(TestCase):
           bar y:
             z
         """
-        from koskari.compile.helpers import pycons
         expected = pycons(
             (symbol('foo'),
              symbol('x'),
@@ -359,7 +351,6 @@ class TestLayoutReaderNg(TestCase):
           foo
           bar
         """
-        from koskari.compile.helpers import pycons
         _kw_block = keyword(':block:')
         expected = pycons(
             (symbol("compile/quote"),
@@ -376,7 +367,6 @@ class TestLayoutReaderNg(TestCase):
           x
           y
         """
-        from koskari.compile.helpers import pycons
         expected = pycons(
             (symbol("compile/begin"),
              symbol("x"),
@@ -389,14 +379,12 @@ class TestLayoutReaderNg(TestCase):
         # This test verifies that LayoutReader.read wraps a plain SourceStream
         # in an IndentAwareStream so that stream.dedented is always a real
         # attribute and not discovered through getattr.
-        from koskari.reader.parser_ng import LayoutReader, SourceStream
         builtins = {str(k): v for k, v in LAYOUTS.items()}
         reader = LayoutReader(builtins)
         plain = source_str("foo x:\n  y\n", '<test>')
         self.assertIsInstance(plain, SourceStream)
         self.assertNotIsInstance(plain, IndentAwareStream)
         # read() should still work correctly by wrapping internally
-        from koskari.compile.helpers import pycons
         result = reader.read(plain)
         expected = pycons(
             (symbol('foo'),
