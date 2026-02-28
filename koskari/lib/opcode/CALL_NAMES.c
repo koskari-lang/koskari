@@ -17,8 +17,9 @@
    CALL_NAMES: arg = N (number of positional arguments). Stack:
    [callable, pos_0, ..., pos_{N-1}, kwd_val_0, ..., kwd_val_{M-1}, names]
    with names at TOS. names is a tuple of M keyword names; kwd_val_i
-   maps to names[i]. Pop all, build args tuple and kwds dict, call via
-   kos_callable_call.
+   maps to names[i]. Pops everything, builds a contiguous arg array from
+   the popped-tuple items, and passes names directly as kwnames to
+   kos_callable_vcall, avoiding a kwds dict allocation.
 */
 
 KOS_OP_HANDLER(CALL_NAMES) {
@@ -37,11 +38,10 @@ KOS_OP_HANDLER(CALL_NAMES) {
     return -1;
   }
 
-  size_t nkwds = PyTuple_GET_SIZE(names);
-  size_t total = (size_t) opa + nkwds;
+  Py_ssize_t nkwds = PyTuple_GET_SIZE(names);
+  Py_ssize_t npos = (Py_ssize_t) opa;
+  Py_ssize_t total = npos + nkwds;
 
-  PyObject *args = NULL;
-  PyObject *kwds = NULL;
   PyObject *callable = NULL;
 
   if (total == 0) {
@@ -49,40 +49,37 @@ KOS_OP_HANDLER(CALL_NAMES) {
     callable = KosStackBlock_PopRef(stack);
     if (! callable)
       return -1;
-
-    int r = kos_callable_call(ctx, out_ev, callable, NULL, NULL);
+    int r = kos_callable_vcall(ctx, out_ev, callable, NULL, 0, NULL);
     Py_DECREF(callable);
     return r;
   }
 
-  if (nkwds > 0) {
-    kwds = KosStackBlock_PopTailDictFromNames(stack, names);
-    if (! kwds) {
-      Py_DECREF(names);
-      return -1;
-    }
-  }
-  Py_DECREF(names);
-
-  if (opa > 0) {
-    args = KosStackBlock_PopTail(stack, opa);
-    if (! args) {
-      Py_XDECREF(kwds);
-      return -1;
-    }
+  /*
+     Pop all positional + keyword values into a single contiguous tuple.
+     The tuple layout is [pos_0, ..., pos_{N-1}, kwd_val_0, ..., kwd_val_{M-1}].
+     Pass its item array as args and npos as nargs, with names as kwnames.
+     This avoids building a dict while still transferring ownership out of
+     the stack before the call (no push_or_await ordering hazard).
+  */
+  PyObject *all_args = KosStackBlock_PopTail(stack, (size_t) total);
+  if (! all_args) {
+    Py_DECREF(names);
+    return -1;
   }
 
   callable = KosStackBlock_PopRef(stack);
   if (! callable) {
-    Py_XDECREF(args);
-    Py_XDECREF(kwds);
+    Py_DECREF(all_args);
+    Py_DECREF(names);
     return -1;
   }
 
-  int r = kos_callable_call(ctx, out_ev, callable, args, kwds);
+  PyObject *const *argv = &PyTuple_GET_ITEM(all_args, 0);
+  int r = kos_callable_vcall(ctx, out_ev, callable, argv, npos,
+                             nkwds ? names : NULL);
 
   Py_DECREF(callable);
-  Py_XDECREF(args);
-  Py_XDECREF(kwds);
+  Py_DECREF(all_args);
+  Py_DECREF(names);
   return r;
 }

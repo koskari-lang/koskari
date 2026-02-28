@@ -31,6 +31,14 @@
 #include "debug.h"
 
 
+/* forward declaration; defined below before KosFunctionType */
+static PyObject *kos_function_vectorcall(
+    PyObject *self,
+    PyObject *const *args,
+    size_t nargsf,
+    PyObject *kwnames);
+
+
 /* === KosExpression: callable (code, ns) -> coroutine on __call__ === */
 
 
@@ -331,6 +339,8 @@ static int function_init(
   Py_INCREF(base_ns);
   KosFunction_BASE_NS(self) = base_ns;
 
+  self->vectorcall = kos_function_vectorcall;
+
   return 0;
 }
 
@@ -413,6 +423,66 @@ PyObject *KosFunction_PrepareCallNamespace(
 }
 
 
+PyObject *KosFunction_PrepareCallNamespaceFromVector(
+    PyObject *self,
+    PyObject *const *args,
+    Py_ssize_t nargs,
+    PyObject *kwnames) {
+
+  KosFunction *fn = (KosFunction *) self;
+  PyObject *frame_ns = func_obtain_call_namespace(fn);
+  if (! frame_ns)
+    return NULL;
+
+  if (KosFormals_VectorApply(KosFunction_FORMALS(fn), frame_ns,
+                             args, (size_t) nargs, kwnames) < 0) {
+    Py_DECREF(frame_ns);
+    return NULL;
+  }
+  if (KosFunction_NAME(fn) != NULL) {
+    if (KosNamespace_Store(frame_ns, KosFunction_NAME(fn), self) < 0) {
+      Py_DECREF(frame_ns);
+      return NULL;
+    }
+  }
+  return frame_ns;
+}
+
+
+PyObject *KosFunction_VectorCall(
+    PyObject *self,
+    PyObject *const *args,
+    size_t nargsf,
+    PyObject *kwnames) {
+
+  KosFunction *fn = (KosFunction *) self;
+  PyObject *frame_ns = NULL;
+  PyObject *coro = NULL;
+
+  frame_ns = func_obtain_call_namespace(fn);
+  if (! frame_ns)
+    goto fail;
+
+  Py_ssize_t nargs = (Py_ssize_t) PyVectorcall_NARGS(nargsf);
+  if (KosFormals_VectorApply(KosFunction_FORMALS(fn), frame_ns,
+                             args, (size_t) nargs, kwnames) < 0)
+    goto fail;
+
+  if (KosFunction_NAME(fn) != NULL) {
+    if (KosNamespace_Store(frame_ns, KosFunction_NAME(fn), self) < 0)
+      goto fail;
+  }
+
+  coro = KosCoroutine_NewFromCode(KosFunction_CODE(fn), frame_ns);
+  Py_DECREF(frame_ns);
+  return coro;
+
+ fail:
+  Py_XDECREF(frame_ns);
+  return NULL;
+}
+
+
 PyObject *KosFunction_GetCode(PyObject *self) {
   Py_INCREF(KosFunction_CODE(self));
   return KosFunction_CODE(self);
@@ -445,6 +515,16 @@ static PyObject *function_call(
 }
 
 
+static PyObject *kos_function_vectorcall(
+    PyObject *self,
+    PyObject *const *args,
+    size_t nargsf,
+    PyObject *kwnames) {
+
+  return KosFunction_VectorCall(self, args, nargsf, kwnames);
+}
+
+
 static PyMemberDef function_members[] = {
   { "code", T_OBJECT, offsetof(KosFunction, code), READONLY, NULL },
   { "base_ns", T_OBJECT, offsetof(KosFunction, base_ns), READONLY, NULL },
@@ -462,7 +542,8 @@ KosCallableTypeObject KosFunctionType = {
   .tp_dealloc = function_dealloc,
   .tp_repr = function_repr,
   .tp_call = function_call,
-  .tp_flags = Py_TPFLAGS_DEFAULT,
+  .tp_flags = Py_TPFLAGS_DEFAULT | Py_TPFLAGS_HAVE_VECTORCALL,
+  .tp_vectorcall_offset = KosFunction_VECTORCALL_OFFSET,
   .tp_doc = "Callable(Code, base_namespace, FormalsSpec). Calling with "
              "(*args, **kwargs) binds formals and returns a Coroutine.",
   .tp_init = (initproc) function_init,
@@ -472,6 +553,8 @@ KosCallableTypeObject KosFunctionType = {
   },
   .tp_kos_install = kos_install_function,
   .tp_kos_tail_install = kos_tail_install_function,
+  .tp_kos_vinstall = kos_vinstall_function,
+  .tp_kos_tail_vinstall = kos_tail_vinstall_function,
 };
 
 
@@ -543,6 +626,7 @@ PyObject *KosFunction_NewFromFormals(
   KosFunction_BASE_NS(self) = parent_ns;
 
   KosFunction_NAME(self) = NULL;
+  ((KosFunction *) self)->vectorcall = kos_function_vectorcall;
 
   return self;
 }

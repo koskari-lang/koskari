@@ -15,27 +15,34 @@
 
 /**
    CALL: arg = number of positional arguments N. Stack has [callable, arg_0,
-   ..., arg_{N-1}] (callable oldest). Call callable with those args, drop
-   them, then push result or await it.
+   ..., arg_{N-1}] (callable oldest). Pop args and callable (transferring
+   ownership out of the stack), call via the vectorcall path, then release.
+   For KosFunction/KosExpression the vector install slot is used directly
+   (no tuple); for plain Python callables PyObject_Vectorcall is used with
+   the tuple's internal item array.
 */
 
 KOS_OP_HANDLER(CALL) {
   unsigned n = KosOp_ARG(insn);
 
   KosDynFrame *frame_top = CURRENT_FRAME(ctx);
+  KosStackBlock **stack = &KosDynFrame_STACK(frame_top);
 
   PyObject *args = NULL;
   if (n > 0) {
-    args = KosStackBlock_PopTail(&KosDynFrame_STACK(frame_top), n);
+    args = KosStackBlock_PopTail(stack, n);
     if (! args)
       return -1;
   }
 
-  PyObject *callable = KosStackBlock_PopRef(&KosDynFrame_STACK(frame_top));
-  if (! callable)
+  PyObject *callable = KosStackBlock_PopRef(stack);
+  if (! callable) {
+    Py_XDECREF(args);
     return -1;
+  }
 
-  int r = kos_callable_call(ctx, out_ev, callable, args, NULL);
+  PyObject *const *argv = args ? &PyTuple_GET_ITEM(args, 0) : NULL;
+  int r = kos_callable_vcall(ctx, out_ev, callable, argv, (Py_ssize_t) n, NULL);
 
   Py_DECREF(callable);
   Py_XDECREF(args);

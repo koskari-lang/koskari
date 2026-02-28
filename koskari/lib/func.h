@@ -140,7 +140,8 @@ typedef struct {
   PyObject *code;
   PyObject *base_ns;
   PyObject *formals;
-  PyObject *name;   /* proper name for self-reference and repr, or NULL */
+  PyObject *name;           /* proper name for self-reference and repr, or NULL */
+  vectorcallfunc vectorcall; /* for Py_TPFLAGS_HAVE_VECTORCALL; always set */
 } KosFunction;
 
 
@@ -152,6 +153,8 @@ typedef struct {
 #define KosFunction_BASE_NS(func) (((KosFunction *) (func))->base_ns)
 
 #define KosFunction_FORMALS(func) (((KosFunction *) (func))->formals)
+
+#define KosFunction_VECTORCALL_OFFSET offsetof(KosFunction, vectorcall)
 
 #define KosFunction_CheckExact(obj)                   \
   ((obj) && ((obj)->ob_type == KOS_CALLABLE_PYTYPE(KosFunctionType)))
@@ -198,6 +201,31 @@ PyObject *KosFunction_PrepareCallNamespace(
       PyObject *func,
       PyObject *args,
       PyObject *kwds);
+
+
+/**
+   Prepare the call namespace using the vectorcall convention. args is a
+   C array of nargs positional arguments followed by keyword argument values;
+   kwnames is a tuple of keyword names (may be NULL for positional-only).
+   Returns new reference to frame namespace, or NULL on error.
+*/
+PyObject *KosFunction_PrepareCallNamespaceFromVector(
+      PyObject *func,
+      PyObject *const *args,
+      Py_ssize_t nargs,
+      PyObject *kwnames);
+
+
+/**
+   Call the function using the vectorcall convention, returning a new Coroutine.
+   nargsf encodes the positional count (use PyVectorcall_NARGS to extract).
+   kwnames is a tuple of keyword names corresponding to values at args[npos..].
+*/
+PyObject *KosFunction_VectorCall(
+      PyObject *func,
+      PyObject *const *args,
+      size_t nargsf,
+      PyObject *kwnames);
 
 
 /**

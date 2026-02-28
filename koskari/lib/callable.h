@@ -33,10 +33,21 @@ typedef int (*KosInstallFunc)(
     PyObject *kwds_dict);   /* may be NULL */
 
 
+typedef int (*KosVectorInstallFunc)(
+    struct KosContext *ctx,
+    struct KosEvent *out_ev,
+    PyObject *callable,
+    PyObject *const *args,
+    Py_ssize_t nargs,
+    PyObject *kwnames);     /* may be NULL */
+
+
 typedef struct {
   PyTypeObject type;
-  KosInstallFunc tp_kos_install;       /* non-tail; may be NULL */
-  KosInstallFunc tp_kos_tail_install;  /* tail; may be NULL; NULL => no TCO */
+  KosInstallFunc tp_kos_install;            /* non-tail; may be NULL */
+  KosInstallFunc tp_kos_tail_install;       /* tail; may be NULL; NULL => no TCO */
+  KosVectorInstallFunc tp_kos_vinstall;     /* vectorcall non-tail; may be NULL */
+  KosVectorInstallFunc tp_kos_tail_vinstall; /* vectorcall tail; may be NULL */
 } KosCallableTypeObject;
 
 
@@ -48,14 +59,25 @@ extern KosCallableTypeObject KosCallableType;
 #define KosCallable_Check(obj)                                           \
   ((obj) && PyType_IsSubtype((obj)->ob_type, KOS_CALLABLE_PYTYPE(KosCallableType)))
 
-#define KosCallableType_INSTALL(typ)       (((KosCallableTypeObject *) (typ))->tp_kos_install)
-#define KosCallableType_TAIL_INSTALL(typ)  (((KosCallableTypeObject *) (typ))->tp_kos_tail_install)
+#define KosCallableType_INSTALL(typ)            (((KosCallableTypeObject *) (typ))->tp_kos_install)
+#define KosCallableType_TAIL_INSTALL(typ)       (((KosCallableTypeObject *) (typ))->tp_kos_tail_install)
+#define KosCallableType_VINSTALL(typ)           (((KosCallableTypeObject *) (typ))->tp_kos_vinstall)
+#define KosCallableType_TAIL_VINSTALL(typ)      (((KosCallableTypeObject *) (typ))->tp_kos_tail_vinstall)
 
 
 int kos_callable_call(struct KosContext *ctx, struct KosEvent *out_ev,
                       PyObject *callable, PyObject *args_tuple, PyObject *kwds_dict);
 int kos_callable_tail_call(struct KosContext *ctx, struct KosEvent *out_ev,
                            PyObject *callable, PyObject *args_tuple, PyObject *kwds_dict);
+
+int kos_callable_vcall(struct KosContext *ctx, struct KosEvent *out_ev,
+                       PyObject *callable,
+                       PyObject *const *args, Py_ssize_t nargs,
+                       PyObject *kwnames);
+int kos_callable_tail_vcall(struct KosContext *ctx, struct KosEvent *out_ev,
+                            PyObject *callable,
+                            PyObject *const *args, Py_ssize_t nargs,
+                            PyObject *kwnames);
 
 int koskari_callable_init(PyObject *mod);
 int koskari_callable_clear(PyObject *mod);
