@@ -14,8 +14,8 @@
 """
 koskari.compile.specials.conditionals
 
-Special form handlers for compile/cond, compile/if, compile/when, and
-compile/unless.
+Special form handlers for compile/and, compile/or, compile/cond, compile/if,
+compile/when, and compile/unless.
 
 :author: Christopher O'Brien <obriencj@preoccupied.net>
 :license: GNU General Public License v3
@@ -162,6 +162,66 @@ def special_unless(compiler, source, tc=False):
     called_by, rest = source
     expanded = _expand_unless_to_cond(rest, source)
     return compiler.full_compile(expanded, tc)
+
+
+@special(symbol("compile/and"))
+def special_and(compiler, source, tc=False):
+    """
+    Compile (compile/and EXPR ...). Short-circuit conjunction. Evaluates
+    expressions left-to-right; returns the first falsy value without evaluating
+    further. If all values are truthy, returns the last value. Zero arguments
+    yields True
+    """
+
+    called_by, cl = source
+
+    fragment = compiler.fragment(called_by)
+
+    if not cl:
+        fragment.instruction(OpCode.KOS_OP_CONST, True)
+        return fragment
+
+    done = compiler.gen_label()
+
+    while cl:
+        expr, cl = cl
+        fragment.position_of(expr)
+        fragment.merge(compiler.full_compile(expr, tc if not cl else False))
+        if cl:
+            fragment.instruction(OpCode.KOS_OP_JUMP_AND, done)
+
+    fragment.instruction(OpCode.KOS_OP_LABEL, done)
+    return fragment
+
+
+@special(symbol("compile/or"))
+def special_or(compiler, source, tc=False):
+    """
+    Compile (compile/or EXPR ...). Short-circuit disjunction. Evaluates
+    expressions left-to-right; returns the first truthy value without evaluating
+    further. If all values are falsy, returns the last value. Zero arguments
+    yields False
+    """
+
+    called_by, cl = source
+
+    fragment = compiler.fragment(called_by)
+
+    if not cl:
+        fragment.instruction(OpCode.KOS_OP_CONST, False)
+        return fragment
+
+    done = compiler.gen_label()
+
+    while cl:
+        expr, cl = cl
+        fragment.position_of(expr)
+        fragment.merge(compiler.full_compile(expr, tc if not cl else False))
+        if cl:
+            fragment.instruction(OpCode.KOS_OP_JUMP_OR, done)
+
+    fragment.instruction(OpCode.KOS_OP_LABEL, done)
+    return fragment
 
 
 # The end.

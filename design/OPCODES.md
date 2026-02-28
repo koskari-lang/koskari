@@ -720,9 +720,25 @@ Other opcodes (PROPER, PAIR_SPLICE, CHECK_LT/LE/GT/GE, CHECK_IS_INSTANCE/IS_SUBC
 
 - **Style**: LABEL. Short-circuit AND: jump if TOS is false.
 - **Status**: Implemented.
-- **Stack**: Pops one value; if false, jump to `arg`; else advance.
+- **Stack**: Pops one value; if false, push it back and jump to `arg`; if true,
+  discard it and advance. Either way TOS is consumed on the fall-through path.
 - **Invariants**: Jump locality for target.
 - **Compiler form:** Pre-compile arg = string label; post-compile arg = pc.
+
+**Compiler use-case:** `compile/and` is the canonical consumer
+(`koskari/compile/specials/conditionals.py`). For `(compile/and A B C)` the
+compiler emits one `JUMP_AND done` after each non-last term; the last term is
+compiled without a jump. Because `JUMP_AND` already discards the value on the
+fall-through path, no `POP` is needed between terms.
+
+```
+eval A
+JUMP_AND done   ; falsy → push A back, jump to done
+eval B          ; A was already discarded on fall-through
+JUMP_AND done
+eval C          ; last term — value stays on stack
+done:
+```
 
 **Example:** Short-circuit and: if first operand false, jump to "fail".
 
@@ -740,9 +756,25 @@ Other opcodes (PROPER, PAIR_SPLICE, CHECK_LT/LE/GT/GE, CHECK_IS_INSTANCE/IS_SUBC
 
 - **Style**: LABEL. Short-circuit OR: jump if TOS is true.
 - **Status**: Implemented.
-- **Stack**: Pops one value; if true, jump to `arg`; else advance.
+- **Stack**: Pops one value; if true, push it back and jump to `arg`; if false,
+  discard it and advance. Either way TOS is consumed on the fall-through path.
 - **Invariants**: Jump locality for target.
 - **Compiler form:** Pre-compile arg = string label; post-compile arg = pc.
+
+**Compiler use-case:** `compile/or` is the canonical consumer
+(`koskari/compile/specials/conditionals.py`). For `(compile/or A B C)` the
+compiler emits one `JUMP_OR done` after each non-last term; the last term is
+compiled without a jump. Because `JUMP_OR` already discards the value on the
+fall-through path, no `POP` is needed between terms.
+
+```
+eval A
+JUMP_OR done    ; truthy → push A back, jump to done
+eval B          ; A was already discarded on fall-through
+JUMP_OR done
+eval C          ; last term — value stays on stack
+done:
+```
 
 **Example:** Short-circuit or: if first operand true, jump to "ok".
 

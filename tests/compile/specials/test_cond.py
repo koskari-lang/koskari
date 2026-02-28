@@ -125,4 +125,118 @@ class TestCondSpecial(SpecialsTestCase):
         self.assertEqual(expr().run(), None)
 
 
+class TestAndSpecial(SpecialsTestCase):
+
+    def test_and_no_args(self):
+        src_str = "(compile/and)"
+        expr, mod = self.compile_expr(src_str)
+        self.assertEqual(expr().run(), True)
+
+
+    def test_and_single_truthy(self):
+        src_str = "(compile/and 42)"
+        expr, mod = self.compile_expr(src_str)
+        self.assertEqual(expr().run(), 42)
+
+
+    def test_and_single_falsy(self):
+        src_str = "(compile/and None)"
+        expr, mod = self.compile_expr(src_str)
+        self.assertEqual(expr().run(), None)
+
+
+    def test_and_all_truthy_returns_last(self):
+        src_str = "(compile/and 1 2 3)"
+        expr, mod = self.compile_expr(src_str)
+        self.assertEqual(expr().run(), 3)
+
+
+    def test_and_short_circuits_on_falsy(self):
+        src_str = "(compile/and 1 None 3)"
+        expr, mod = self.compile_expr(src_str)
+        self.assertEqual(expr().run(), None)
+
+
+    def test_and_returns_first_falsy(self):
+        src_str = "(compile/and False 99)"
+        expr, mod = self.compile_expr(src_str)
+        self.assertEqual(expr().run(), False)
+
+
+    def test_and_side_effects_stop_at_falsy(self):
+        log = []
+
+        def side(val):
+            log.append(val)
+            return val
+
+        src_str = """
+        (compile/and
+          (compile/call side 1)
+          (compile/call side None)
+          (compile/call side 3))
+        """
+        expr, mod = self.compile_expr(src_str, side=side)
+        result = expr().run()
+        self.assertIsNone(result)
+        self.assertEqual(log, [1, None])
+
+
+class TestOrSpecial(SpecialsTestCase):
+
+    def test_or_no_args(self):
+        src_str = "(compile/or)"
+        expr, mod = self.compile_expr(src_str)
+        self.assertEqual(expr().run(), False)
+
+
+    def test_or_single_truthy(self):
+        src_str = "(compile/or 42)"
+        expr, mod = self.compile_expr(src_str)
+        self.assertEqual(expr().run(), 42)
+
+
+    def test_or_single_falsy(self):
+        src_str = "(compile/or None)"
+        expr, mod = self.compile_expr(src_str)
+        self.assertEqual(expr().run(), None)
+
+
+    def test_or_short_circuits_on_truthy(self):
+        src_str = "(compile/or None 99 0)"
+        expr, mod = self.compile_expr(src_str)
+        self.assertEqual(expr().run(), 99)
+
+
+    def test_or_all_falsy_returns_last(self):
+        src_str = "(compile/or None False 0)"
+        expr, mod = self.compile_expr(src_str)
+        self.assertEqual(expr().run(), 0)
+
+
+    def test_or_returns_first_truthy(self):
+        src_str = "(compile/or False 42)"
+        expr, mod = self.compile_expr(src_str)
+        self.assertEqual(expr().run(), 42)
+
+
+    def test_or_side_effects_stop_at_truthy(self):
+        log = []
+
+        def side(val):
+            log.append(val)
+            return val
+
+        src_str = """
+        (compile/or
+          (compile/call side None)
+          (compile/call side 42)
+          (compile/call side 99))
+        """
+        expr, mod = self.compile_expr(src_str, side=side)
+        result = expr().run()
+        self.assertEqual(result, 42)
+        self.assertEqual(log, [None, 42])
+
+
 # The end.
