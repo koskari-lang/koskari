@@ -37,8 +37,6 @@ entry point required by importlib.
 """
 
 
-import sys
-
 from importlib.abc import FileLoader
 from importlib.machinery import FileFinder, PathFinder
 from os import getcwd

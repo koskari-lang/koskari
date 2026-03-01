@@ -26,13 +26,14 @@ compile/delq, and compile/define.
 from ...lib import nil, OpCode, symbol, cons
 from ...types import is_pair
 from ...exceptions import SpecialError
-from ..helpers import is_symbolish, pycons, special
+from ..helpers import is_symbolish, special
 
 
 @special(symbol("compile/setq"))
 def special_setq(compiler, source, tc=False):
     """
-    Compile (compile/setq SYM EXPR). Store the value of EXPR into the existing binding SYM
+    Compile (compile/setq SYM EXPR). Store the value of EXPR into the existing
+    binding SYM
     """
 
     called_by, (sym, body) = source
@@ -82,7 +83,8 @@ def special_refq(compiler, source, tc=False):
 @special(symbol("compile/bindq"))
 def special_bindq(compiler, source, tc=False):
     """
-    Compile (compile/bindq SYM EXPR). Declare a new binding SYM and initialize it to EXPR
+    Compile (compile/bindq SYM EXPR). Declare a new binding SYM and initialize
+    it to EXPR
     """
 
     called_by, (sym, body) = source

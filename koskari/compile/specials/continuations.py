@@ -23,10 +23,10 @@ compile/capture/cc, compile/reset, and compile/shift.
 """
 
 
-from ...lib import nil, OpCode, symbol, cons
+from ...lib import nil, OpCode, symbol
 from ...types import is_pair, is_nil
 from ...exceptions import SpecialError
-from ..helpers import helper_begin, is_symbolish, special, pycons
+from ..helpers import helper_begin, is_symbolish, special
 
 
 @special(symbol("compile/call/cc"))

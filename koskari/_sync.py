@@ -25,7 +25,6 @@ of whether an event loop is already running in the current thread.
 
 import asyncio
 import threading
-from concurrent.futures import Future, ThreadPoolExecutor
 
 
 __all__ = ('run_sync', 'iter_sync')

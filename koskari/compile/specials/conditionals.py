@@ -88,11 +88,15 @@ def _expand_if_to_cond(rest, source):
         then_expr = kw_dict.get("then")
         else_expr = kw_dict.get("else")
         if then_expr is None or else_expr is None:
-            raise SpecialError("if requires both then: and else: when using "
-                                    "keywords", source)
+            raise SpecialError(
+                "if requires both then: and else: when using keywords",
+                source)
     else:
         if len(pos) < 3:
-            raise SpecialError("if requires condition, then, and else", source)
+            raise SpecialError(
+                "if requires condition, then, and else",
+                source)
+
         cond_expr, then_expr, else_expr = pos[0], pos[1], pos[2]
 
     return pycons((symbol("compile/cond"),

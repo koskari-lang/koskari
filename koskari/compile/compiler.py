@@ -45,7 +45,7 @@ from ..types import (
     get_position,
 )
 
-from ..exceptions import CompilerError, SpecialError, UncaughtCompilerError
+from ..exceptions import CompilerError, UncaughtCompilerError
 
 
 def _is_compiled(v):

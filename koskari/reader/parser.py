@@ -39,25 +39,12 @@ from fractions import Fraction as fraction
 from functools import partial
 from io import StringIO
 from os.path import exists
-from re import compile as regex, UNICODE, VERBOSE
+from re import UNICODE, VERBOSE
+from re import compile as regex
 
-from ..exceptions import KoskariSyntaxError, ReaderSyntaxError, FormatStringSyntaxError
-from ..types import (
-    BaseSourceStream,
-    Module,
-    car,
-    cdr,
-    cons,
-    is_pair,
-    is_keyword,
-    is_symbol,
-    keyword,
-    nil,
-    setcdr,
-    symbol,
-    unpack,
-)
-
+from ..exceptions import FormatStringSyntaxError, ReaderSyntaxError
+from ..types import (BaseSourceStream, Module, cons, is_keyword, is_pair,
+                     keyword, nil, setcdr, symbol, unpack)
 from .layouts import LayoutHandler
 
 
@@ -1844,8 +1831,13 @@ class LayoutReader(Reader):
             self._block_mode = prev
 
 
-    def _read_quote_block(self, stream, outer_indent,
-            recorded, header_start, last_colon_pos):
+    def _read_quote_block(
+            self,
+            stream,
+            outer_indent,
+            recorded,
+            header_start,
+            last_colon_pos):
         """
         Block-macro handler for the ' prefix
 
@@ -1862,18 +1854,29 @@ class LayoutReader(Reader):
         """
 
         forms = self._replay_header_forms(
-            recorded, stream, header_start, last_colon_pos)
+            recorded,
+            stream,
+            header_start,
+            last_colon_pos)
+
         if not forms:
             raise stream.error(
-                'block header must have head and opener', header_start)
+                'block header must have head and opener',
+                header_start)
+
         head = forms[0]
         args = [f for f in forms[1:] if f != symbol(':')]
         raw = self.read_block(stream, outer_indent, head, args)
         return cons(_symbol_quote, raw, nil)
 
 
-    def _read_quasiquote_block(self, stream, outer_indent,
-            recorded, header_start, last_colon_pos):
+    def _read_quasiquote_block(
+            self,
+            stream,
+            outer_indent,
+            recorded,
+            header_start,
+            last_colon_pos):
         """
         Block-macro handler for the backtick prefix
 
@@ -1952,8 +1955,12 @@ class LayoutReader(Reader):
         return self._apply_layout(stream, outer_indent, source)
 
 
-    def _replay_header_forms(self, recorded, stream, header_start,
-                             last_colon_pos):
+    def _replay_header_forms(
+            self,
+            recorded,
+            stream,
+            header_start,
+            last_colon_pos):
         """
         Replay recorded header text and extract forms up to the colon marker
 

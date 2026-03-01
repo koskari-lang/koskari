@@ -34,9 +34,9 @@ from koskari.reader import LayoutReader, source_str
 from koskari.reader.layouts import LAYOUTS
 from koskari.compile.helpers import pycons
 
-_layout_block = symbol('layout/block')
-
 from . import parse_layout
+
+_layout_block = symbol('layout/block')
 
 
 class TestLayoutBlockSyntax(TestCase):
@@ -100,7 +100,10 @@ class TestLayoutBlockSyntax(TestCase):
 
 
     def test_block_header_colon_no_space(self):
-        """Both 'x:' and 'x :' parse identically"""
+        """
+        Both 'x:' and 'x :' parse identically
+        """
+
         src_no_space = """
         unknown x:
           (print x)

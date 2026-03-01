@@ -264,8 +264,9 @@ def gather_parameters_ng(args, source=None):
         improper = True
 
     else:
-        raise ParametersError("parameters must be symbol or pair, not %r"
-                               % args, source)
+        raise ParametersError(
+            "parameters must be symbol or pair, not %r"
+            % args, source)
 
     args_seq = []
     kwds_seq = []
@@ -280,19 +281,24 @@ def gather_parameters_ng(args, source=None):
             if arg is _keyword_star:
                 if in_kwds_phase:
                     raise ParametersError(
-                        "* args must come before keyword arguments", source)
+                        "* args must come before keyword arguments",
+                        source)
                 star_sym = next(iargs, undefined)
                 if star_sym is undefined:
-                    raise ParametersError("* keyword parameter needs value",
-                                           source)
+                    raise ParametersError(
+                        "* keyword parameter needs value",
+                        source)
                 args_seq.append(("*", star_sym))
+
             elif arg is _keyword_starstar:
                 in_kwds_phase = True
                 starstar_sym = next(iargs, undefined)
                 if starstar_sym is undefined:
                     raise ParametersError(
-                        "** keyword parameter needs value", source)
+                        "** keyword parameter needs value",
+                        source)
                 kwds_seq.append(("**", starstar_sym))
+
             else:
                 in_kwds_phase = True
                 value = next(iargs, undefined)
@@ -300,6 +306,7 @@ def gather_parameters_ng(args, source=None):
                     raise ParametersError(
                         "missing value for keyword parameter %s" % arg, source)
                 kwds_seq.append((str(arg), value))
+
         else:
             if in_kwds_phase:
                 raise ParametersError(
@@ -312,6 +319,7 @@ def gather_parameters_ng(args, source=None):
     if improper and args_seq:
         last = args_seq.pop()
         args_seq.append(("*", last[1]))
+
     return (args_seq, kwds_seq)
 
 

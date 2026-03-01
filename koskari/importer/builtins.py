@@ -47,13 +47,9 @@ from ..lib import (
 )
 from ..types import (
     TypePredicate,
-    BuiltinPredicate,
     is_nil,
-    is_pair,
     is_proper,
     is_recursive,
-    is_symbol,
-    is_keyword,
     build_proper,
     unpack,
 )
