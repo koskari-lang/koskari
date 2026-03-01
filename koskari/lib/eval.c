@@ -69,7 +69,6 @@
 #include <stdint.h>
 
 
-
 #define KOS_OP_HANDLER(name)                                            \
   KOS_OP_INLINE int op_##name(KosContext *ctx, KosEvent *out_ev,        \
                               KosOp *insn)
@@ -112,12 +111,16 @@ static void clear_and_free_transfer_plan(KosContext *ctx) {
    cleared or was NULL).  Returns -1 if a step failed (out_ev set to RAISE,
    caller should return 0 from koskari_eval).
 */
-static int run_transfer_plan_to_completion(KosContext *ctx, KosEvent *out_ev) {
+static int run_transfer_plan_to_completion(
+    KosContext *ctx,
+    KosEvent *out_ev) {
+
   while (KosContext_PLAN(ctx)) {
     SAYF("[eval] transfer step %zu/%zu\n",
          (size_t) KosTransferPlan_ACTION_INDEX(KosContext_PLAN(ctx)),
          (size_t) KosTransferPlan_ACTION_COUNT(KosContext_PLAN(ctx)));
     int plan_res = kos_run_transfer_step(ctx, out_ev);
+
     if (plan_res < 0) {
       SAY("[eval] transfer step failed -> KOS_EV_RAISE\n");
       KosEvent_KIND(out_ev) = KOS_EV_RAISE;
@@ -133,17 +136,22 @@ static int run_transfer_plan_to_completion(KosContext *ctx, KosEvent *out_ev) {
       KosContext_FLAGS(ctx) |= KOS_CTX_DEAD;
       return -1;
     }
+
     if (plan_res == KOS_XFER_SUSPENDED_AWAIT) {
       SAY("[eval] transfer step suspended on await\n");
       return 0;  /* do not clear plan; driver will resume and feed inject */
     }
+
     if (plan_res == 0)
       continue;
+
     SAYF("[eval] transfer complete inv_seg_top=%p\n",
          (void *) KosContext_DYN_TOP(ctx));
+
     KosContext_INVOCATION_SEGMENT_TOP(ctx) = KosContext_DYN_TOP(ctx);
     clear_and_free_transfer_plan(ctx);
   }
+
   return 0;
 }
 
@@ -157,14 +165,17 @@ static int run_transfer_plan_to_completion(KosContext *ctx, KosEvent *out_ev) {
 static void clear_pending_agen_on_error(KosContext *ctx) {
   if (! CURRENT_FRAME(ctx) || KosDynNode_PARENT(CURRENT_FRAME(ctx)) == NULL)
     return;
+
   if (! KosContext_PENDING_AGEN(ctx))
     return;
+
   KosPyAsyncGen *agen = (KosPyAsyncGen *) KosContext_PENDING_AGEN(ctx);
   KosDynFrame *detached_frame = NULL;
   if (kos_dyn_detach_top_frame(ctx, &detached_frame) == 0 && detached_frame) {
     agen->closed = 1;
     agen->in_progress = 0;
   }
+
   KosContext_PENDING_AGEN(ctx) = NULL;
   Py_XDECREF(KosContext_PENDING_AGEN_DEFAULT(ctx));
   KosContext_PENDING_AGEN_DEFAULT(ctx) = NULL;
@@ -176,22 +187,30 @@ static void clear_pending_agen_on_error(KosContext *ctx) {
    Consumes send_val/throw_exc for the plan. May set exception in context.
    :return: KOS_MODE_TRANSFER to continue draining plan, KOS_MODE_EXCEPTION if throw_exc set, KOS_MODE_NORMAL if plan done
 */
-static KosEvalMode revive_plan(KosContext *ctx, PyObject *send_val, PyObject *throw_exc) {
+static KosEvalMode revive_plan(
+    KosContext *ctx,
+    PyObject *send_val,
+    PyObject *throw_exc) {
+
   KosTransferPlan *plan = KosContext_PLAN(ctx);
+
   if (throw_exc != NULL) {
     PyErr_SetObject((PyObject *) Py_TYPE(throw_exc), throw_exc);
     return KOS_MODE_EXCEPTION;
   }
+
   if (send_val != NULL) {
     Py_XINCREF(send_val);
     if (plan) {
       Py_XDECREF(KosTransferPlan_STEP_RESUME_INJECT(plan));
       KosTransferPlan_STEP_RESUME_INJECT(plan) = send_val;
     }
+
     Py_XDECREF(KosContext_PLAN_RESUME_INJECT(ctx));
     KosContext_PLAN_RESUME_INJECT(ctx) = send_val;
     KosContext_PLAN_SUSPENDED_AWAIT(ctx) = 0;
   }
+
   return KOS_MODE_TRANSFER;
 }
 
@@ -299,7 +318,10 @@ static int try_local_exception_handler(KosContext *ctx, KosEvent *out_ev);
 
    :return: KOS_MODE_TRANSFER on success, KOS_MODE_RAISE on error
 */
-static KosEvalMode handle_continuation_apply(KosContext *ctx, KosEvent *out_ev) {
+static KosEvalMode handle_continuation_apply(
+    KosContext *ctx,
+    KosEvent *out_ev) {
+
   (void) out_ev;
 
   PyObject *typ = NULL, *val = NULL, *tb = NULL;
@@ -329,14 +351,17 @@ static KosEvalMode handle_continuation_apply(KosContext *ctx, KosEvent *out_ev) 
     if (cont_obj && PyObject_TypeCheck(cont_obj, KOS_CALLABLE_PYTYPE(KosPyContinuationType))) {
       KosContinuation *k = ((KosPyContinuation *) cont_obj)->captured;
       PyObject *resume_val = Py_None;
+
       if (args_obj && PyTuple_Check(args_obj) && PyTuple_GET_SIZE(args_obj) > 0) {
         resume_val = PyTuple_GET_ITEM(args_obj, 0);
         Py_INCREF(resume_val);
       } else {
         Py_INCREF(resume_val);
       }
+
       Py_XDECREF(args_obj);
       PyErr_Clear();
+
       if (k && kos_invoke_continuation(ctx, k, resume_val, 0, cont_obj) == 0) {
         Py_DECREF(resume_val);
         Py_DECREF(val);
@@ -347,8 +372,10 @@ static KosEvalMode handle_continuation_apply(KosContext *ctx, KosEvent *out_ev) 
     } else {
       Py_XDECREF(args_obj);
     }
+
     Py_XDECREF(cont_obj);
     Py_DECREF(val);
+
     if (! PyErr_Occurred())
       PyErr_SetString(PyExc_RuntimeError,
                       "KoskariContinuationApply: invalid continuation");
@@ -1942,24 +1969,37 @@ int kos_callable_tail_vcall(KosContext *ctx, KosEvent *out_ev,
 /* === Install slot implementations === */
 
 
-int kos_install_function(KosContext *ctx, KosEvent *out_ev,
-                         PyObject *callable, PyObject *args_tuple, PyObject *kwds_dict) {
+int kos_install_function(
+    KosContext *ctx,
+    KosEvent *out_ev,
+    PyObject *callable,
+    PyObject *args_tuple,
+    PyObject *kwds_dict) {
+
   (void) kwds_dict;
   return call_native_flattened_function(ctx, callable, args_tuple, out_ev);
 }
 
 
-int kos_tail_install_function(KosContext *ctx, KosEvent *out_ev,
-                              PyObject *callable, PyObject *args_tuple, PyObject *kwds_dict) {
+int kos_tail_install_function(
+    KosContext *ctx,
+    KosEvent *out_ev,
+    PyObject *callable,
+    PyObject *args_tuple,
+    PyObject *kwds_dict) {
+
   (void) kwds_dict;
   return call_tail_flattened_function(ctx, callable, args_tuple, out_ev);
 }
 
 
-int kos_vinstall_function(KosContext *ctx, KosEvent *out_ev,
-                          PyObject *callable,
-                          PyObject *const *args, Py_ssize_t nargs,
-                          PyObject *kwnames) {
+int kos_vinstall_function(
+    KosContext *ctx,
+    KosEvent *out_ev,
+    PyObject *callable,
+    PyObject *const *args,
+    Py_ssize_t nargs,
+    PyObject *kwnames) {
 
   PyObject *frame_ns = KosFunction_PrepareCallNamespaceFromVector(
       callable, args, nargs, kwnames);
@@ -1975,10 +2015,13 @@ int kos_vinstall_function(KosContext *ctx, KosEvent *out_ev,
 }
 
 
-int kos_tail_vinstall_function(KosContext *ctx, KosEvent *out_ev,
-                               PyObject *callable,
-                               PyObject *const *args, Py_ssize_t nargs,
-                               PyObject *kwnames) {
+int kos_tail_vinstall_function(
+    KosContext *ctx,
+    KosEvent *out_ev,
+    PyObject *callable,
+    PyObject *const *args,
+    Py_ssize_t nargs,
+    PyObject *kwnames) {
 
   PyObject *frame_ns = KosFunction_PrepareCallNamespaceFromVector(
       callable, args, nargs, kwnames);
@@ -1993,8 +2036,13 @@ int kos_tail_vinstall_function(KosContext *ctx, KosEvent *out_ev,
 }
 
 
-int kos_install_expression(KosContext *ctx, KosEvent *out_ev,
-                           PyObject *callable, PyObject *args_tuple, PyObject *kwds_dict) {
+int kos_install_expression(
+    KosContext *ctx,
+    KosEvent *out_ev,
+    PyObject *callable,
+    PyObject *args_tuple,
+    PyObject *kwds_dict) {
+
   if (args_tuple && PyTuple_GET_SIZE(args_tuple) != 0) {
     PyErr_SetString(PyExc_TypeError, "Expression takes no arguments");
     return -1;
@@ -2007,8 +2055,13 @@ int kos_install_expression(KosContext *ctx, KosEvent *out_ev,
 }
 
 
-int kos_tail_install_expression(KosContext *ctx, KosEvent *out_ev,
-                                PyObject *callable, PyObject *args_tuple, PyObject *kwds_dict) {
+int kos_tail_install_expression(
+    KosContext *ctx,
+    KosEvent *out_ev,
+    PyObject *callable,
+    PyObject *args_tuple,
+    PyObject *kwds_dict) {
+
   if (args_tuple && PyTuple_GET_SIZE(args_tuple) != 0) {
     PyErr_SetString(PyExc_TypeError, "Expression takes no arguments");
     return -1;
@@ -2021,8 +2074,13 @@ int kos_tail_install_expression(KosContext *ctx, KosEvent *out_ev,
 }
 
 
-int kos_install_continuation(KosContext *ctx, KosEvent *out_ev,
-                             PyObject *callable, PyObject *args_tuple, PyObject *kwds_dict) {
+int kos_install_continuation(
+    KosContext *ctx,
+    KosEvent *out_ev,
+    PyObject *callable,
+    PyObject *args_tuple,
+    PyObject *kwds_dict) {
+
   (void) kwds_dict;
   return call_call_continuation(ctx, callable, args_tuple, out_ev, NULL);
 }
