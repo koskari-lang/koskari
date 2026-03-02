@@ -321,7 +321,7 @@ Rules:
 ```
 try:
   body-form
-except SomeError as e:
+except [SomeError as: e]:
   handler-form
 else:
   else-form
