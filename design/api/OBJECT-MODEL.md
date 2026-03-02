@@ -2,8 +2,9 @@
 
 This document defines the initial implementation of Koskari runtime types
 (KosType) and instances (KosObject) with interoperability for Python's
-sync expectations. It synthesizes the first-cut design with the sibilant-ceval
-class creation approach that Koskari will mirror.
+sync expectations. Class creation uses PUSH_CLASS / POP_CLASS opcodes;
+sibilant-ceval achieves equivalent semantics via collect-let and metaclass
+call (see §2.4).
 
 ---
 
@@ -21,56 +22,89 @@ dictionary level. Class bodies materialize to normal Python dicts.
 
 ## 2. Class Creation Model
 
-### 2.1 PUSH_CLASS / POP_CLASS (Design Target)
+### 2.1 PUSH_CLASS / POP_CLASS
 
-* PUSH_CLASS installs a temporary collector namespace for executing the
-  class body.
-* Definitions inside the block populate that namespace.
-* POP_CLASS extracts bindings from the collector namespace, materializes
-  them into a **plain Python dict**, and invokes the metaclass:
+Koskari uses explicit PUSH_CLASS and POP_CLASS opcodes. The class body runs
+inside a CollectorNamespace; the class value is produced by the metaclass
+invocation at POP_CLASS, not by the body's return value.
 
-  ```python
-  cls = metaclass(name, bases, dict, **kwargs)
-  ```
+**PUSH_CLASS**
 
-* Ref semantics inside the class body do not persist structurally into
-  the class dict in this phase.
+1. Pop and parse arguments from the stack (same format as CALL_STAR).
+2. Parse pos tuple via PyArg_ParseTuple with format "OO|O" → (name, bases,
+   [metaclass]). If metaclass is absent, use default KosType.
+3. Allocate KOS_DYN_CLASS node with metaclass, name, bases, kwargs, and
+   class_binding_ns (parent scope with __class__ slot for super).
+4. Install the node. The install handler:
+   * Pushes a new stack block for the class body.
+   * Creates a CollectorNamespace (parent = class_binding_ns).
+   * Installs it as the frame's current namespace.
+5. Body runs; definitions populate the collector via VAR_BIND / VAR_STORE.
 
-### 2.2 Mapping from sibilant-ceval
+**POP_CLASS**
 
-sibilant-ceval uses equivalent machinery without explicit PUSH_CLASS /
-POP_CLASS opcodes:
+1. Current frame namespace is the collector.
+2. Materialize to plain Python dict (Namespace implements mapping protocol).
+3. Call cls = metaclass(name, bases, cls_dict, **kwargs).
+4. Store cls in class_binding_ns.__class__ (for super lookups in methods).
+5. Pop the node. The uninstall handler:
+   * Restores frame namespace to saved_ns.
+   * Pops the class-body stack block.
+6. Push cls onto the enclosing stack (TOS after block pop).
 
-* **collect-let** special form: Creates a child namespace via
-  `child_collect_namespace`, which emits `PUSH_COLLECT` and installs a
-  `CollectorNamespace` as the current frame namespace. CollectorNamespace
-  blocks closure capture (FindRef does not expose refs) so class members
-  do not close over each other, matching Python's class member model.
+Ref semantics inside the class body do not persist into the class dict in
+this phase.
 
-* **load-locals**: Emits `OP_LOCALS`, which pushes the current frame
-  namespace (the CollectorNamespace) onto the stack.
+### 2.2 PUSH_CLASS Argument Format (CALL_STAR-style)
 
-* **dict**: Python builtin. The Namespace (and CollectorNamespace) implements
-  the mapping protocol (tp_as_mapping with mp_subscript); `dict(namespace)`
-  produces a plain Python dict of name → value from the collector.
+PUSH_CLASS uses the same stack layout as CALL_STAR for consistency and
+compiler reuse:
 
-* **letrec + metaclass call**: The class special form compiles to:
+* **arg** = bitflags: 1 = has pos, 2 = has kwd (same as CALL_STAR).
+* **Stack (opa = 3):** [pos, kwd] with pos at TOS-1, kwd at TOS.
+* **pos** = tuple (name, bases) or (name, bases, metaclass).
+* **kwd** = dict of extra keyword args for metaclass (e.g. metaclass=MyMeta).
 
-  ```lisp
-  (letrec [[__class__ (metaclass name (#tuple . bases)
-                  (collect-let []
-                    ,@members
-                    (dict (load-locals))))]]
-     __class__)
-  ```
+Parse with PyArg_ParseTuple(pos, "OO|O", &name, &bases, &metaclass). If
+metaclass is NULL, also check kwd["metaclass"]. If still absent, use
+default KosType. Before calling the metaclass, remove "metaclass" from
+kwargs (it is consumed for selection, not passed through). The compiler
+can reuse BUILD_ARGS,
+BUILD_KWDS, and COMBINE_ARGS to construct pos and kwd.
 
-  So: execute members in a collector namespace, materialize to dict, pass
-  to metaclass(name, bases, dict). Default metaclass is `type`.
+### 2.3 Dynamic Extent (KOS_DYN_CLASS)
 
-* **Koskari mapping**: Koskari will use the same pattern—collect-let (or
-  equivalent PUSH_COLLECT/CollectorNamespace) for the class body, then
-  (dict (load-locals)) to produce the class dict, then invoke the metaclass.
-  The metaclass for Koskari classes will be KosType (or a subclass).
+The class block's chain node holds:
+
+* metaclass (PyObject *)
+* name (PyObject *, str)
+* bases (PyObject *, tuple)
+* kwargs (PyObject *, dict or NULL)
+* class_binding_ns (parent of collector; has __class__ slot for super)
+* saved_ns (enclosing scope to restore on pop)
+
+CollectorNamespace is a normal Namespace subtype; it is safe to push and
+pop on the frame like any other namespace. The install handler creates and
+installs it; the uninstall handler restores the prior namespace and pops
+the stack block. No special frame logic is required for the collector itself.
+
+### 2.4 Mapping from sibilant-ceval
+
+sibilant-ceval achieves the same effect without PUSH_CLASS / POP_CLASS:
+
+* **collect-let** special form: Emits PUSH_COLLECT, installs
+  CollectorNamespace. Blocks closure capture so class members do not close
+  over each other.
+
+* **load-locals + dict**: Emits OP_LOCALS to push the namespace, then
+  dict(namespace) materializes to a plain dict.
+
+* **letrec + metaclass call**: Class form compiles to letrec binding
+  __class__ to (metaclass name bases (collect-let [] ... (dict
+  (load-locals)))), then returns __class__.
+
+Koskari consolidates this into PUSH_CLASS / POP_CLASS. The metaclass for
+Koskari-defined classes is KosType by default (or a subclass).
 
 ---
 
@@ -237,9 +271,22 @@ class creation.
 
 ## 9. Implementation Notes
 
-### 9.1 sibilant-ceval Class Special Form Reference
+### 9.1 Koskari Class Compiler Output
 
-From `sibceval/specials.py`:
+The class special form compiles to:
+
+* BUILD_ARGS (and optionally BUILD_KWDS / COMBINE_ARGS) to construct pos and
+  kwd on the stack.
+* PUSH_CLASS (STAR-style arg for pos/kwd presence).
+* Class body instructions (define, defmethod, etc.).
+* POP_CLASS.
+
+No letrec, load-locals, or dict call; POP_CLASS handles dict materialization
+and metaclass invocation internally.
+
+### 9.2 sibilant-ceval Class Special Form Reference
+
+From `sibceval/specials.py` (equivalent semantics, different encoding):
 
 * `_class_parents(*parents, metaclass=None)` – keyword extraction for
   metaclass and bases.
@@ -249,17 +296,19 @@ From `sibceval/specials.py`:
 * `special_collect_let` – compile-time special; `special_load_locals` emits
   OP_LOCALS.
 
-### 9.2 Koskari Infrastructure to Add
+### 9.3 Koskari Infrastructure to Add
 
 * KosType – metaclass implementing tp_call (awaitable), KosCallable, and
   C.new classmethod.
 * KosObject – base for Koskari instances (or standard PyObject of heap type).
 * KosFunction – function type implementing __get__ for descriptor binding.
 * KosBoundMethod – bound method wrapper implementing KosCallable.
-* collect-let / PUSH_COLLECT equivalent if not already present.
-* class special form in koskari compile/specials, mirroring sibilant-ceval.
+* KOS_DYN_CLASS – chain node with install/uninstall handlers; stores
+  metaclass, name, bases, kwargs, class_binding_ns, saved_ns.
+* PUSH_CLASS / POP_CLASS opcode handlers (PUSH_CLASS is currently a stub).
+* class special form in koskari compile/specials.
 
-### 9.3 Namespace → dict for Class Bodies
+### 9.4 Namespace → dict for Class Bodies
 
 Koskari's Namespace (and CollectorNamespace) must support conversion to
 plain dict for metaclass invocation. sibilant-ceval does this via
