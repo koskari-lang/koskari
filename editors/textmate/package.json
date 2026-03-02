@@ -1,0 +1,37 @@
+{
+  "name": "koskari",
+  "publisher": "sibilant",
+  "displayName": "Koskari",
+  "description": "TextMate syntax highlighting for Koskari (.ki) source files",
+  "version": "0.1.0",
+  "license": "GPL-3.0-or-later",
+  "engines": {
+    "vscode": "*"
+  },
+  "categories": [
+    "Programming Languages"
+  ],
+  "contributes": {
+    "languages": [
+      {
+        "id": "koskari",
+        "aliases": [
+          "Koskari",
+          "koskari"
+        ],
+        "extensions": [
+          ".ki"
+        ],
+        "firstLineMatch": "^#!.*koskari",
+        "configuration": "./language-configuration.json"
+      }
+    ],
+    "grammars": [
+      {
+        "language": "koskari",
+        "scopeName": "source.koskari",
+        "path": "./syntaxes/koskari.tmLanguage.json"
+      }
+    ]
+  }
+}
