@@ -16,7 +16,6 @@ Tests for koskari.compile try/except/finally special form.
 """
 
 
-from os import pread
 from . import SpecialsTestCase
 from koskari.dis import dis
 
@@ -119,7 +118,7 @@ class TestTrySpecial(SpecialsTestCase):
         src = """
         (try
           (bad_guy 567)
-          ((Exception) (good_guy -111)))
+          (Exception (good_guy -111)))
         """
         expr, mod = self.compile_expr(src, bad_guy=bad_guy, good_guy=good_guy, Exception=Exception)
 
@@ -131,20 +130,36 @@ class TestTrySpecial(SpecialsTestCase):
         self.assertEqual(accu2, [-111])
 
 
-    def test_keyword_try_exc(self):
+    def test_bare_except(self):
         accu1, bad_guy = make_raise_accumulator()
         accu2, good_guy = make_accumulator()
 
         src = """
         (try
           (bad_guy 567)
-          (except: Exception (good_guy -111)))
+          (except: (good_guy -111)))
         """
-        expr, mod = self.compile_expr(src, bad_guy=bad_guy, good_guy=good_guy, Exception=Exception)
+        expr, mod = self.compile_expr(src, bad_guy=bad_guy, good_guy=good_guy)
         res = expr().run()
         self.assertEqual(res, -111)
         self.assertEqual(accu1, [567])
         self.assertEqual(accu2, [-111])
+
+
+    def test_bare_except_catches_base(self):
+        accu1, bad_guy = make_raise_accumulator(BaseException)
+        accu2, good_guy = make_accumulator()
+
+        src = """
+        (try
+          (bad_guy 999)
+          (except: (good_guy -222)))
+        """
+        expr, mod = self.compile_expr(src, bad_guy=bad_guy, good_guy=good_guy)
+        res = expr().run()
+        self.assertEqual(res, -222)
+        self.assertEqual(accu1, [999])
+        self.assertEqual(accu2, [-222])
 
 
     def test_named_try_exc(self):
@@ -170,7 +185,7 @@ class TestTrySpecial(SpecialsTestCase):
         src = """
         (try
           (bad_guy 123)
-          ((Exception) (good_guy -111)))
+          (Exception (good_guy -111)))
         """
         expr, mod = self.compile_expr(src, bad_guy=bad_guy, good_guy=good_guy, Exception=Exception)
         with self.assertRaises(BaseException):
@@ -186,7 +201,7 @@ class TestTrySpecial(SpecialsTestCase):
         src = """
         (try
           (bad_guy 567)
-          ((Exception) (good_guy -111))
+          (Exception (good_guy -111))
           (else: (good_guy 987)))
         """
         expr, mod = self.compile_expr(src, bad_guy=bad_guy, good_guy=good_guy, Exception=Exception)
@@ -203,7 +218,7 @@ class TestTrySpecial(SpecialsTestCase):
         src = """
         (try
           (bad_guy 567)
-          ((Exception) (good_guy -111))
+          (Exception (good_guy -111))
           (finally: (good_guy 999)))
         """
         expr, mod = self.compile_expr(src, bad_guy=bad_guy, good_guy=good_guy, Exception=Exception)
@@ -220,7 +235,7 @@ class TestTrySpecial(SpecialsTestCase):
         src = """
         (try
           (bad_guy 567)
-          ((Exception) (good_guy -111))
+          (Exception (good_guy -111))
           (else: (good_guy 987))
           (finally: (good_guy 999)))
         """

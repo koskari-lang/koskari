@@ -27,6 +27,7 @@ from .helpers import layout
 _symbol_except = symbol('except')
 _symbol_else = symbol('else')
 _symbol_finally = symbol('finally')
+_keyword_except = keyword('except')
 _keyword_else = keyword('else')
 _keyword_finally = keyword('finally')
 
@@ -55,23 +56,21 @@ def layout_try(source, peers):
         if phead is _symbol_except:
             has_except = True
             if not ppargs:
-                raise LayoutError(
-                    'except block requires an exception type',
-                    get_position(peer))
-            try:
-                if len(ppargs) == 1 and is_pair(ppargs[0]):
-                    bind_source = ppargs[0]
-                else:
-                    bind_source = cons(*ppargs, nil)
-                binding, ex_type = helper_binding(bind_source, allow_unnamed=True)
-            except Exception as e:
-                raise LayoutError(
-                    'invalid except binding: %s' % e,
-                    get_position(peer))
-            if binding is not None:
-                except_clauses.append(cons(cons(binding, ex_type, nil), pbody))
+                except_clauses.append(cons(_keyword_except, pbody))
+            elif len(ppargs) == 1 and not is_pair(ppargs[0]):
+                except_clauses.append(cons(ppargs[0], pbody))
             else:
-                except_clauses.append(cons(cons(keyword('except'), ex_type, nil), pbody))
+                try:
+                    bind_source = (
+                        ppargs[0]
+                        if len(ppargs) == 1 and is_pair(ppargs[0])
+                        else cons(*ppargs, nil))
+                    binding, ex_type = helper_binding(bind_source, allow_unnamed=False)
+                except Exception as e:
+                    raise LayoutError(
+                        'invalid except binding: %s' % e,
+                        get_position(peer))
+                except_clauses.append(cons(cons(binding, ex_type, nil), pbody))
 
         elif phead is _symbol_else:
             if act_else is not None:

@@ -378,41 +378,56 @@ term).
 
 **Symbol:** `compile/try`
 
-**Syntax:** `(try BODY [except: TYPE BODY...] [except: TYPE as: NAME BODY...] [(TYPE) BODY...] [(TYPE as: NAME) BODY...] [else: BODY...] [finally: BODY...])`
+**Syntax:** `(try BODY CLAUSE...)`
+
+where each `CLAUSE` is `(EXCEPTMATCH BODY...)` and `EXCEPTMATCH` is one of:
+
+- `except:` — bare catch-all; catches any exception without a type check or binding
+- `TYPEEXPR` — type-only; catches any exception that is an instance of TYPEEXPR
+- `(SYM TYPEEXPR)` or `(TYPEEXPR as: SYM)` — binding form; catches the type
+  and binds the exception value to SYM
+
+In addition, two keyword-head clauses are accepted:
+
+- `(else: BODY...)` — run when the try body completed without exception
+- `(finally: BODY...)` — always run; must be last
 
 **Use-case:** Exception handling. Runs BODY; on exception, matches against
-clauses and runs the first matching handler. Optional `else:` runs when no
-exception occurred. Optional `finally:` always runs (on normal exit or
-exception). At least one `except:` or `finally:` is required.
-
-**Clause forms:**
-- `(except: TYPE BODY...)` — catch TYPE (or subclass); no binding
-- `(except: TYPE as: NAME BODY...)` — bind caught value to NAME
-- `((TYPE) BODY...)` — same as except: with no binding
-- `((TYPE as: NAME) BODY...)` — same as except: with binding
-- `(else: BODY...)` — run when try body completed without exception
-- `(finally: BODY...)` — always run; must be last
+clauses in order and runs the first matching handler. Optional `else:` runs
+when no exception occurred. Optional `finally:` always runs (on normal exit
+or exception). At least one except-style clause or `finally:` is required.
 
 **Behaviour:** Uses PUSH_TRY, CLEAR_TRY, POP_TRY, PUSH_FINALLY, POP_FINALLY.
 Exception handlers use EXCEPTION_MATCH, EXCEPTION_CLEAR, EXCEPTION opcodes.
-Builds a cond over check-exception clauses; uncaught exceptions re-raise via
-compile/raise. Else runs between CLEAR_TRY and POP_TRY; finally runs after
-cleanup.
+The bare `except:` form is lowered to an `else:` clause in the internal
+`compile/cond` dispatch so no EXCEPTION_MATCH is emitted; uncaught exceptions
+re-raise via compile/raise unless a bare handler is present. `else:` runs
+between CLEAR_TRY and POP_TRY; `finally:` runs after cleanup.
 
 **Examples:**
 
 ```scheme
-;; Try with except
+;; Type-only catch
 (try (risky-call)
-  (except: Exception (handle-exception)))
+  (Exception (handle-exception)))
 
 ;; Named binding
 (try (parse input)
-  ((ValueError as: e) (compile/call log e)))
+  ((e ValueError) (compile/call log e)))
+
+;; Bare catch-all
+(try (risky-call)
+  (except: (handle-anything)))
 
 ;; Try/else/finally
 (try (do-work)
   (else: (success))
+  (finally: (cleanup)))
+
+;; Full form
+(try (do-work)
+  (Exception (handle-exc))
+  (else: (on-success))
   (finally: (cleanup)))
 ```
 

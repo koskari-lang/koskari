@@ -37,6 +37,19 @@ def _collect_catches(compiler, catches):
     """
     Parse try catch list into normal_catches, act_else, act_finally.
 
+    Each element of catches must be (EXCEPTMATCH BODY...) where EXCEPTMATCH
+    is one of:
+
+    - keyword("except") — bare catch-all, no type check, no binding
+    - TYPEEXPR (any non-keyword, non-pair atom) — type-only, no binding
+    - (SYM TYPEEXPR) or (TYPEEXPR as: SYM) — binding form
+
+    Normal catches are normalised to (HEAD . BODY) where HEAD is a pair:
+
+    - (except: . nil) for bare
+    - (except: . TYPEEXPR) for type-only
+    - (SYM . TYPEEXPR) for bound
+
     :param compiler: active Compiler
     :param catches: pair list of clauses
     :return: (normal_catches, act_else, act_finally)
@@ -52,20 +65,24 @@ def _collect_catches(compiler, catches):
             raise SpecialError("clause with no body in try", ca)
 
         ex, act = ca
-        if is_pair(ex) and ex.is_proper():
-            ex_binding, ex_expr = helper_binding(ex, required=True, allow_unnamed=True)
+
+        if ex is _keyword_except:
+            ex_pair = cons(cons(_keyword_except, nil), act)
+            pos = get_position(ca)
+            if pos:
+                fill_position(ex_pair, pos)
+            normal_catches.append(ex_pair)
+
+        elif is_pair(ex) and ex.is_proper():
+            ex_binding, ex_expr = helper_binding(ex, required=True, allow_unnamed=False)
             ex_pair = cons(cons(ex_binding, ex_expr), act)
             pos = get_position(ca)
             if pos:
                 fill_position(ex_pair, pos)
             normal_catches.append(ex_pair)
 
-        elif ex is _keyword_except:
-            if act is nil or not is_pair(act):
-                raise SpecialError("malformed except: clause in try", ca)
-            ex_type = car(act)
-            act_body = cdr(act)
-            ex_pair = cons(cons(ex, ex_type), act_body)
+        elif not is_keyword(ex):
+            ex_pair = cons(cons(_keyword_except, ex), act)
             pos = get_position(ca)
             if pos:
                 fill_position(ex_pair, pos)
@@ -82,7 +99,7 @@ def _collect_catches(compiler, catches):
             act_else = act
 
         else:
-            raise SpecialError("missing keyword label in else/finally", ca)
+            raise SpecialError("unrecognised clause keyword in try: %r" % ex, ca)
 
     return (normal_catches, act_else, act_finally)
 
@@ -241,39 +258,50 @@ def _try_else_finally(
 
 def _except(compiler, catches):
     mod = [symbol("compile/cond")]
+    has_bare = False
 
     for ca in catches:
         key_match, act = ca
-        if is_pair(key_match):
-            key = car(key_match)
-            match = cdr(key_match)
-        else:
-            key = key_match
-            match = nil
-
-        if key is _keyword_except:
-            key = None
-
-        if is_pair(match):
-            checksrc = cons(symbol("check-exception"), match)
-        else:
-            checksrc = cons(symbol("check-exception"), cons(match, nil))
+        key = car(key_match)
+        match = cdr(key_match)
 
         pos = get_position(ca)
-        if pos:
-            fill_position(checksrc, pos)
 
-        act_list = list(unpack(act))
-        if key is not None:
+        if key is _keyword_except and match is nil:
+            has_bare = True
+            act_list = list(unpack(act))
+            mod.append(
+                (keyword("else"),) + tuple(act_list)
+                if act_list
+                else (keyword("else"), nil))
+
+        elif key is _keyword_except:
+            checksrc = cons(
+                symbol("check-exception"),
+                cons(match, nil) if not is_pair(match) else match)
+            if pos:
+                fill_position(checksrc, pos)
+            act_list = list(unpack(act))
+            mod.append(
+                (checksrc,) + tuple(act_list)
+                if act_list
+                else (checksrc, nil))
+
+        else:
+            checksrc = cons(
+                symbol("check-exception"),
+                cons(match, nil) if not is_pair(match) else match)
+            if pos:
+                fill_position(checksrc, pos)
             define_form = cons(
                 symbol("compile/define"),
                 cons(symbol(str(key)), cons(cons(symbol("load-exception"), nil), nil)))
             begin_body = cons(define_form, act if is_pair(act) else cons(act, nil))
             mod.append((checksrc, cons(symbol("compile/begin"), begin_body)))
-        else:
-            mod.append((checksrc,) + tuple(act_list) if act_list else (checksrc, nil))
 
-    mod.append((keyword("else"), cons(symbol("raise"), nil)))
+    if not has_bare:
+        mod.append((keyword("else"), cons(symbol("raise"), nil)))
+
     expr = pycons(mod)
 
     return compiler.full_compile(expr, False)

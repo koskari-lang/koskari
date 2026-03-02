@@ -42,7 +42,7 @@ class TestLayoutTryExceptBindings(TestCase):
         expected = pycons(
           (symbol('try'),
            (_compile_begin, symbol('x')),
-           ((keyword('except'), symbol('Exception')), symbol('y')))
+           (symbol('Exception'), symbol('y')))
         )
 
         result = parse_layout(src)
@@ -97,7 +97,7 @@ class TestLayoutTryExceptBindings(TestCase):
         self.assertEqual(result, expected)
 
 
-    def test_except_untyped_error(self):
+    def test_except_bare(self):
         src = """
         try:
           x
@@ -129,9 +129,7 @@ class TestLayoutTry(TestCase):
           y
         """
         try_body = cons(_compile_begin, symbol('x'), nil)
-        except_clause = cons(
-            cons(keyword('except'), symbol('Exception'), nil),
-            symbol('y'), nil)
+        except_clause = cons(symbol('Exception'), symbol('y'), nil)
         expected = cons(_symbol_try, try_body, except_clause, nil)
         result = parse_layout(src)
         self.assertEqual(result, expected)
@@ -163,9 +161,7 @@ class TestLayoutTry(TestCase):
           z
         """
         try_body = cons(_compile_begin, symbol('x'), nil)
-        except_clause = cons(
-            cons(keyword('except'), symbol('Exception'), nil),
-            symbol('y'), nil)
+        except_clause = cons(symbol('Exception'), symbol('y'), nil)
         else_clause = cons(keyword('else'), symbol('a'), nil)
         finally_clause = cons(keyword('finally'), symbol('z'), nil)
         expected = cons(_symbol_try, try_body, except_clause, else_clause, finally_clause, nil)
