@@ -12,16 +12,17 @@
 # along with this library; if not, see <http://www.gnu.org/licenses/>.
 
 """
-Tests for koskari.cli: run_file, repl, option_parser, main.
+Tests for koskari.cli: run_file_async, repl_async, option_parser, main.
 """
 
 
+import asyncio
 import io
 import os
 import sys
 import unittest
 
-from koskari.cli import main, option_parser, repl, run_file, REPLCodeBoundary
+from koskari.cli import main, option_parser, repl_async, run_file_async, REPLCodeBoundary
 from koskari.importer.module import new_module
 
 
@@ -81,7 +82,7 @@ class TestRunFile(unittest.TestCase):
         orig = sys.stdout
         sys.stdout = captured
         try:
-            run_file(mod, _script('hello.ki'))
+            asyncio.run(run_file_async(mod, _script('hello.ki')))
         finally:
             sys.stdout = orig
         self.assertIn('Hello, koskari!', captured.getvalue())
@@ -92,7 +93,7 @@ class TestRunFile(unittest.TestCase):
         orig = sys.stdout
         sys.stdout = captured
         try:
-            run_file(mod, _script('define_and_print.ki'))
+            asyncio.run(run_file_async(mod, _script('define_and_print.ki')))
         finally:
             sys.stdout = orig
         self.assertIn('42', captured.getvalue())
@@ -100,7 +101,7 @@ class TestRunFile(unittest.TestCase):
     def test_run_file_raises_system_exit(self):
         mod = new_module('__main__')
         with self.assertRaises(SystemExit) as ctx:
-            run_file(mod, _script('exit_code.ki'))
+            asyncio.run(run_file_async(mod, _script('exit_code.ki')))
         self.assertEqual(42, ctx.exception.code)
 
 
@@ -124,7 +125,7 @@ class TestRepl(unittest.TestCase):
                 raise EOFError
 
         mod = new_module('__main__')
-        repl(mod, prompter=prompter, stdout=stdout, stderr=stderr)
+        asyncio.run(repl_async(mod, prompter=prompter, stdout=stdout, stderr=stderr))
         return stdout.getvalue(), stderr.getvalue()
 
     def test_simple_expression_prints_result(self):

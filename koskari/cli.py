@@ -25,6 +25,7 @@ pluggable input backend that supports both readline and prompt_toolkit.
 """
 
 
+import asyncio
 import sys
 
 from argparse import ArgumentParser, REMAINDER
@@ -35,9 +36,9 @@ from traceback import format_exception, format_exception_only
 __all__ = (
     'main',
     'option_parser',
-    'cli',
-    'run_file',
-    'repl',
+    'cli_async',
+    'run_file_async',
+    'repl_async',
     'REPLCodeBoundary',
 )
 
@@ -141,15 +142,15 @@ class REPLCodeBoundary(Exception):
     """
 
 
-def _boundary_call(fn, /, *a, **kw):
+async def _boundary_call_async(fn, /, *a, **kw):
     """
-    Call fn with the given arguments.  If an exception is raised, re-raise
+    Await fn with the given arguments.  If an exception is raised, re-raise
     REPLCodeBoundary from it so the cause's traceback can be used for display
     (omitting REPL infrastructure frames).
     """
 
     try:
-        return fn(*a, **kw)
+        return await fn(*a, **kw)
     except Exception as e:
         raise REPLCodeBoundary() from e
 
@@ -162,13 +163,12 @@ def _boundary_call(fn, /, *a, **kw):
 _INCOMPLETE = object()
 
 
-def _eval_expression(compiler, line, ns):
+async def _eval_expression_async(compiler, line, ns):
     """
     Run one REPL expression.
     """
 
     from koskari.reader import default_reader, source_str
-    from koskari._sync import run_sync
 
     stream = source_str(line, '<stdin>')
     source_expr = default_reader.read(stream)
@@ -176,14 +176,10 @@ def _eval_expression(compiler, line, ns):
         return _INCOMPLETE
     fragment = compiler.full_compile(source_expr)
     expr = fragment.as_expression(ns)
-
-    async def _eval():
-        return await expr()
-
-    return run_sync(_eval())
+    return await expr()
 
 
-def repl(mod, prompter=None, stdin=None, stdout=None, stderr=None):
+async def repl_async(mod, prompter=None, stdin=None, stdout=None, stderr=None):
     """
     Run an interactive read-eval-print loop for a koskari module.
 
@@ -209,9 +205,11 @@ def repl(mod, prompter=None, stdin=None, stdout=None, stderr=None):
     if prompter is None:
         prompter = _make_prompter()
 
+    loop = asyncio.get_running_loop()
+
     # init_module registers compiler specials into the namespace.  When the
-    # module already has __file__ set (e.g. after run_file), we preserve it;
-    # otherwise use the sentinel '<stdin>' so the compiler has a filename.
+    # module already has __file__ set (e.g. after run_file_async), we preserve
+    # it; otherwise use the sentinel '<stdin>' so the compiler has a filename.
     if not getattr(mod, '__file__', None):
         init_module(mod, '<stdin>')
 
@@ -223,7 +221,7 @@ def repl(mod, prompter=None, stdin=None, stdout=None, stderr=None):
 
     while True:
         try:
-            line = prompter('koskari> ')
+            line = await loop.run_in_executor(None, lambda: prompter('koskari> '))
 
         except KeyboardInterrupt:
             print('', file=stderr)
@@ -239,7 +237,8 @@ def repl(mod, prompter=None, stdin=None, stdout=None, stderr=None):
             continue
 
         try:
-            result = _boundary_call(_eval_expression, compiler, line, ns)
+            result = await _boundary_call_async(
+                _eval_expression_async, compiler, line, ns)
 
             if result is _INCOMPLETE:
                 continue
@@ -297,22 +296,21 @@ def repl(mod, prompter=None, stdin=None, stdout=None, stderr=None):
 # ---------------------------------------------------------------------------
 
 
-def run_file(mod, filename):
+async def run_file_async(mod, filename):
     """
     Load and execute a koskari source file into mod.
 
     Calls init_module to attach file metadata and compiler specials, then
-    drives load_module_async synchronously via run_sync.
+    awaits load_module_async.
 
     :param mod: koskari Module to execute into
     :param filename: path to the .ki source file
     """
 
     from koskari.importer.module import init_module, load_module_async
-    from koskari._sync import run_sync
 
     init_module(mod, filename)
-    run_sync(load_module_async(mod))
+    await load_module_async(mod)
 
 
 # ---------------------------------------------------------------------------
@@ -320,7 +318,7 @@ def run_file(mod, filename):
 # ---------------------------------------------------------------------------
 
 
-def cli(options):
+async def cli_async(options):
     """
     Execute the koskari command-line session described by options.
 
@@ -349,13 +347,13 @@ def cli(options):
     mod = new_module('__main__')
 
     if filename:
-        run_file(mod, filename)
+        await run_file_async(mod, filename)
 
         if not options.interactive:
             return
 
     prompter = _make_prompter(options.histfile)
-    repl(mod, prompter=prompter)
+    await repl_async(mod, prompter=prompter)
 
 
 # ---------------------------------------------------------------------------
@@ -430,7 +428,7 @@ def main(argv=None):
     options = parser.parse_args(args)
 
     try:
-        cli(options)
+        asyncio.run(cli_async(options))
 
     except KeyboardInterrupt:
         print('', file=sys.stderr)
