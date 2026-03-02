@@ -268,6 +268,22 @@ class TestReaderWithSourceStreamNg(TestCase):
         result = _parse_ng("`foo")
         self.assertEqual(result, cons(symbol("compile/quasiquote"), symbol("foo"), nil))
 
+    def test_read_ref_macro(self):
+        result = _parse_ng("&foo")
+        self.assertEqual(result, cons(symbol("ref"), symbol("foo"), nil))
+
+    def test_read_ref_macro_dotted(self):
+        result = _parse_ng("&foo.bar")
+        self.assertEqual(
+            result,
+            cons(symbol("ref"), symbol("foo.bar"), nil))
+
+    def test_read_deref_atom(self):
+        result = _parse_ng("*bar")
+        self.assertEqual(
+            result,
+            cons(symbol("compile/deref"), symbol("bar"), nil))
+
     def test_read_eof_returns_none(self):
         self.assertIsNone(_parse_ng(""))
 

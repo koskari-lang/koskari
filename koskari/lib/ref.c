@@ -117,6 +117,20 @@ static PyObject *sym_ref_m_clear(PyObject *self) {
 }
 
 
+static PyObject *m_deref(PyObject *mod, PyObject *ref) {
+  (void) mod;
+  return PyObject_CallMethod(ref, "deref", NULL);
+}
+
+
+static PyMethodDef ref_mod_methods[] = {
+  { "deref", (PyCFunction) m_deref, METH_O,
+    "deref(ref) => value\n"
+    "Call ref.deref() to obtain the value held by the reference." },
+  { NULL, },
+};
+
+
 static PyMethodDef sym_ref_methods[] = {
   { "deref", (PyCFunction) sym_ref_m_deref, METH_NOARGS,
     "R.deref() => V" },
@@ -1399,6 +1413,18 @@ int koskari_ref_init(PyObject *mod) {
                        (PyObject *) &KosMemoizedRefType);
   PyDict_SetItemString(dict, "ParamRef",
                        (PyObject *) &KosParamRefType);
+
+  for (PyMethodDef *mdef = ref_mod_methods; mdef->ml_name; mdef++) {
+    PyObject *func = PyCFunction_New(mdef, mod);
+    if (! func)
+      return -1;
+
+    if (PyDict_SetItemString(dict, mdef->ml_name, func) < 0) {
+      Py_DECREF(func);
+      return -1;
+    }
+    Py_DECREF(func);
+  }
 
   return 0;
 }

@@ -68,6 +68,7 @@
 #include "opcode/CONST_ITEM_CLEAR.c"
 #include "opcode/CONST_ITEM_REF.c"
 #include "opcode/CONST_ITEM_STORE.c"
+#include "opcode/DEREF.c"
 #include "opcode/BUILD_ARGS.c"
 #include "opcode/BUILD_FUNCTION.c"
 #include "opcode/BUILD_KWDS.c"

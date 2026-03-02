@@ -50,7 +50,14 @@ from .quasiquote import (
     special_unquote,
     special_unquote_splicing,
 )
-from .slots import special_attr, special_del_attr, special_ref_attr, special_set_attr
+from .slots import (
+    special_attr,
+    special_del_attr,
+    special_deref,
+    special_ref,
+    special_ref_attr,
+    special_set_attr,
+)
 from .imports import helper_import_from_sequence, special_import, special_import_from
 from .object import (
     special_add,
@@ -124,6 +131,7 @@ __all__ = (
     "special_cons",
     "special_continue",
     "special_del_attr",
+    "special_deref",
     "special_del_item",
     "special_define",
     "special_delq",
@@ -166,6 +174,7 @@ __all__ = (
     "special_quote",
     "special_quote_block",
     "special_raise",
+    "special_ref",
     "special_ref_attr",
     "special_ref_item",
     "special_refq",

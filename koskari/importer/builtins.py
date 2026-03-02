@@ -35,6 +35,7 @@ from ..lib import (
     car,
     cdr,
     cons,
+    deref,
     nil,
     pair,
     symbol,
@@ -95,6 +96,7 @@ def make_builtins():
     _bind('recursive?', is_recursive)
     _bind('build-proper', build_proper)
     _bind('unpack', unpack)
+    _bind('deref', deref)
 
     # atom types and operations
     _ty('symbol', symbol)
