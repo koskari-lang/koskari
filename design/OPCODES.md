@@ -175,6 +175,7 @@ When adding or changing an opcode:
 - [13. Fast variables](#13-fast-variables) — FAST, FAST_BIND, FAST_CLEAR, FAST_REF, FAST_STORE
 - [14. Attributes](#14-attributes) — ATTR, ATTR_CLEAR, ATTR_REF, ATTR_STORE
 - [15. Items](#15-items) — ITEM, CONST_ITEM, and variants
+- [15.1 Reference dereference](#151-reference-dereference) — DEREF
 - [16. Argument production](#16-argument-production) — BUILD_ARGS, BUILD_FUNCTION, BUILD_KWDS, etc.
 - [17. Calls](#17-calls) — CALL, CALL_NAMES, CALL_STAR, CALL_ATTR*, TAIL_*
 - [18. Block control](#18-block-control) — PUSH_FOREACH, PUSH_LOOP, PUSH_NS, PUSH_TRY, PUSH_FINALLY, CLEAR_*, POP_*
@@ -241,6 +242,7 @@ When adding or changing an opcode:
 | ITEM | NOARG | Get item (key on stack) | [§15](#kos_op_item) |
 | ITEM_STORE | NOARG | Set item | [§15](#kos_op_item_store) |
 | CONST_ITEM | CONST | Get item (constant key) | [§15](#kos_op_const_item) |
+| DEREF | NOARG | Pop Ref, call ref.deref(), push result | [§15.1](#kos_op_deref) |
 | BUILD_FUNCTION | COUNT | Build function from spec | [§16](#kos_op_build_function) |
 | CALL | COUNT | Call with N positional args | [§17](#kos_op_call) |
 | CALL_NAMES | COUNT | Call with keyword names on stack | [§17](#kos_op_call_names) |
@@ -260,7 +262,7 @@ When adding or changing an opcode:
 | INVOKE_K_VAR | CONST | Invoke continuation by name | [§20](#kos_op_invoke_k_var) |
 | THEEND | NOARG | Unreachable; no runtime | [§25](#kos_op_theend) |
 
-Other opcodes (PROPER, PAIR_SPLICE, CHECK_LT/LE/GT/GE, CHECK_IS_INSTANCE/IS_SUBCLASS, VAR_CLEAR, VAR_REF, FAST_BIND/CLEAR/REF, ATTR_CLEAR/REF, ITEM_CLEAR/REF, CONST_ITEM_*, BUILD_*, CALL_ATTR*, PUSH_FINALLY/POP_*, CLEAR_*, OBJECT_*, PUSH_WITH/POP_WITH/PUSH_DYN_WITH/POP_DYN_WITH, PUSH_CC/POP_CC/CAPTURE_CC, PUSH_WIND/POP_WIND/END_WIND, PUSH_PARAM/PARAM/POP_PARAM) are listed under their category sections above; use the category index to jump to the section, then scan for the opcode name.
+Other opcodes (PROPER, PAIR_SPLICE, CHECK_LT/LE/GT/GE, CHECK_IS_INSTANCE/IS_SUBCLASS, VAR_CLEAR, VAR_REF, FAST_BIND/CLEAR/REF, ATTR_CLEAR/REF, ITEM_CLEAR/REF, CONST_ITEM_*, DEREF, BUILD_*, CALL_ATTR*, PUSH_FINALLY/POP_*, CLEAR_*, OBJECT_*, PUSH_WITH/POP_WITH/PUSH_DYN_WITH/POP_DYN_WITH, PUSH_CC/POP_CC/CAPTURE_CC, PUSH_WIND/POP_WIND/END_WIND, PUSH_PARAM/PARAM/POP_PARAM) are listed under their category sections above; use the category index to jump to the section, then scan for the opcode name.
 
 
 ## 3. No-op and compile-time
@@ -1562,6 +1564,23 @@ Pool: 0 = `"os"`, 1 = `"path"`, 2 = `"sep"`, 3 = None.
 |------:|---------------|-----|----------|---------|
 | 0     | VAR           | 0   | 0 ('obj')| stack: [..., obj] |
 | 1     | CONST_ITEM_REF| 0   | 0 ('key')| stack: [..., obj, item_ref] |
+
+
+## 15.1 Reference dereference
+
+### KOS_OP_DEREF
+
+- **Style**: NOARG.
+- **Status**: Implemented.
+- **Stack**: `[..., ref] → [..., value]`. Pop one value (a Ref with a deref method). Call `ref.deref()`, push result. Raises TypeError if TOS has no deref method.
+- **Use-case**: Fast path for dereferencing a mutable reference. Used by the `*identifier` reader atom and `(compile/deref EXPR)` special form.
+
+**Example:** Dereference a ref. For `*r` where r holds a Ref: VAR (or FAST) loads r, DEREF calls ref.deref().
+
+| index | opcode | arg | arg view | comment |
+|------:|--------|-----|----------|---------|
+| 0     | VAR    | 0   | 0 ('r')  | stack: [..., ref] |
+| 1     | DEREF  | 0   | 0        | stack: [..., value] |
 
 
 ## 16. Argument production

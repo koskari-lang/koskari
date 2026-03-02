@@ -740,6 +740,34 @@ pushes CONST None so the form has a value.
 ```
 
 
+## compile/ref
+
+**Symbol:** `compile/ref` (alias: `ref`)
+
+**Syntax:** `(compile/ref ARG)` or `(ref ARG)`
+
+**Use-case:** Selective expansion to yield a mutable reference. Dispatches on its
+single argument form: plain symbol → refq; (attr obj name) → ref-attr;
+(item coll key) → ref-item. The `&expr` reader macro expands to `(ref expr)`.
+
+**Behaviour:** Inspects ARG. If symbol: expand to `(compile/refq ARG)`. If
+`(attr OBJ NAME)` or `(compile/attr OBJ NAME)`: expand to
+`(compile/ref-attr OBJ NAME)`. If `(item COLL KEY)` or `(compile/item COLL KEY)`:
+expand to `(compile/ref-item COLL KEY)`. Otherwise raise SpecialError. Dotted
+forms like `foo.bar` are expanded at read-time to `(attr foo bar)`, so
+`&foo.bar` reads as `(ref (attr foo bar))` and expands to ref-attr.
+
+**Examples:**
+
+```scheme
+(ref x)                    ; → (compile/refq x)
+(ref (attr obj count))     ; → (compile/ref-attr obj count)
+(ref (item lst 0))         ; → (compile/ref-item lst 0)
+&foo                       ; reader: (ref foo) → refq
+&foo.bar                   ; reader: (ref (attr foo bar)) → ref-attr
+```
+
+
 ## compile/refq
 
 **Symbol:** `compile/refq`
@@ -948,6 +976,29 @@ constant-key optimization as compile/item.
 
 ```scheme
 (compile/ref-item lst i)
+```
+
+
+## compile/deref
+
+**Symbol:** `compile/deref`
+
+**Syntax:** `(compile/deref EXPR)`
+
+**Use-case:** Dereference a mutable reference. Compiles EXPR (which must produce
+a Ref on the stack), then emits the DEREF opcode to call `ref.deref()` and push
+the result. The `*identifier` reader atom expands to `(compile/deref identifier)`.
+The runtime `deref` builtin remains available for higher-order use (e.g.
+`(map deref refs)`).
+
+**Behaviour:** Compiles EXPR, emits KOS_OP_DEREF. Fast path; avoids a full call.
+
+**Examples:**
+
+```scheme
+(compile/deref r)   ; compiles expr for r, emits DEREF
+*r                  ; reader: (compile/deref r)
+(deref r)           ; runtime call; use when passing deref as first-class fn
 ```
 
 
