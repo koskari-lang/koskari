@@ -21,7 +21,7 @@ import os
 import sys
 import unittest
 
-from koskari.cli import main, option_parser, repl, run_file
+from koskari.cli import main, option_parser, repl, run_file, REPLCodeBoundary
 from koskari.importer.module import new_module
 
 
@@ -160,6 +160,18 @@ class TestRepl(unittest.TestCase):
     def test_multiple_expressions_accumulate_state(self):
         out, _ = self._run_repl(['(define n 10)', '(* n n)'])
         self.assertIn('100', out)
+
+    def test_repl_exception_traceback_trimmed(self):
+        _, err = self._run_repl(['(/ 1 0)'])
+        self.assertIn('ZeroDivisionError', err)
+        self.assertNotIn(' in repl\n', err)
+        self.assertNotIn(' in repl ', err)
+
+
+class TestREPLCodeBoundary(unittest.TestCase):
+
+    def test_repl_code_boundary_exported(self):
+        self.assertTrue(issubclass(REPLCodeBoundary, Exception))
 
 
 class TestMain(unittest.TestCase):

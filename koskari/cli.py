@@ -38,6 +38,7 @@ __all__ = (
     'cli',
     'run_file',
     'repl',
+    'REPLCodeBoundary',
 )
 
 
@@ -88,59 +89,98 @@ def _make_prompter(histfile=None):
 
 
 # ---------------------------------------------------------------------------
+# REPL code boundary
+# ---------------------------------------------------------------------------
+
+
+REPL_INFRASTRUCTURE_MODULES = frozenset((
+    'koskari.cli',
+    'koskari._sync',
+    'asyncio',
+    'asyncio.base_events',
+    'asyncio.events',
+    'asyncio.runners',
+    'concurrent.futures',
+    'concurrent.futures._base',
+))
+
+
+def _filter_infrastructure_tb(tb):
+    """
+    Remove infrastructure frames from a traceback.
+
+    Walks the chain, drops frames whose __name__ is in
+    REPL_INFRASTRUCTURE_MODULES, and relinks.  Returns the filtered head.
+
+    :param tb: traceback object (root of chain)
+    :return: filtered traceback, or original if all frames would be removed
+    """
+
+    if tb is None:
+        return tb
+    filtered = []
+    current = tb
+    while current is not None:
+        frame = current.tb_frame
+        mod = frame.f_globals.get('__name__', '')
+        if mod not in REPL_INFRASTRUCTURE_MODULES:
+            filtered.append(current)
+        current = current.tb_next
+    if not filtered:
+        return None
+    for i in range(len(filtered) - 1):
+        filtered[i].tb_next = filtered[i + 1]
+    filtered[-1].tb_next = None
+    return filtered[0]
+
+
+class REPLCodeBoundary(Exception):
+    """
+    Internal marker for the boundary between REPL infrastructure and user
+    expression evaluation.  Never shown to the user.
+    """
+
+
+def _boundary_call(fn, /, *a, **kw):
+    """
+    Call fn with the given arguments.  If an exception is raised, re-raise
+    REPLCodeBoundary from it so the cause's traceback can be used for display
+    (omitting REPL infrastructure frames).
+    """
+
+    try:
+        return fn(*a, **kw)
+    except Exception as e:
+        raise REPLCodeBoundary() from e
+
+
+# ---------------------------------------------------------------------------
 # REPL
 # ---------------------------------------------------------------------------
 
 
-REPL_FILTER_MODULES = frozenset((
-    'koskari.cli',
-    'koskari.compile',
-    'koskari.compile.compiler',
-    'koskari.compile.helpers',
-    'koskari.reader',
-    'koskari.reader.parser',
-    'koskari.importer.module',
-    'koskari._sync',
-))
+_INCOMPLETE = object()
 
 
-def _iter_traceback(tb):
+def _eval_expression(compiler, line, ns):
     """
-    Yield each frame in a traceback chain.
-
-    :param tb: a traceback object or None
+    Run one REPL expression.
     """
 
-    while tb is not None:
-        yield tb
-        tb = tb.tb_next
+    from koskari.reader import default_reader, source_str
+    from koskari._sync import run_sync
 
+    stream = source_str(line, '<stdin>')
+    source_expr = default_reader.read(stream)
+    if source_expr is None:
+        return _INCOMPLETE
+    fragment = compiler.full_compile(source_expr)
+    expr = fragment.as_expression(ns)
 
-def _filter_internal_tb(tb):
-    """
-    Return a copy of the traceback with koskari-internal frames removed.
+    async def _eval():
+        return await expr()
 
-    Walks the original chain, skips frames whose __name__ is in
-    REPL_FILTER_MODULES, and relinks the remaining frames.  Returns the
-    filtered head, or the original tb when every frame would be removed.
-
-    :param tb: the original traceback object
-    :return: filtered traceback object, possibly the same as tb
-    """
-
-    filtered = [
-        frame for frame in _iter_traceback(tb)
-        if frame.tb_frame.f_globals.get('__name__') not in REPL_FILTER_MODULES
-    ]
-
-    if not filtered:
-        return tb
-
-    for i in range(len(filtered) - 1):
-        filtered[i].tb_next = filtered[i + 1]
-    filtered[-1].tb_next = None
-
-    return filtered[0]
+    return run_sync(_eval())
 
 
 def repl(mod, prompter=None, stdin=None, stdout=None, stderr=None):
@@ -161,8 +201,6 @@ def repl(mod, prompter=None, stdin=None, stdout=None, stderr=None):
 
     from koskari.compile import Compiler
     from koskari.importer.module import init_module
-    from koskari.reader import default_reader, source_str
-    from koskari._sync import run_sync
 
     stdin = stdin or sys.stdin
     stdout = stdout or sys.stdout
@@ -201,19 +239,10 @@ def repl(mod, prompter=None, stdin=None, stdout=None, stderr=None):
             continue
 
         try:
-            stream = source_str(line, '<stdin>')
-            source_expr = default_reader.read(stream)
+            result = _boundary_call(_eval_expression, compiler, line, ns)
 
-            if source_expr is None:
+            if result is _INCOMPLETE:
                 continue
-
-            fragment = compiler.full_compile(source_expr)
-            expr = fragment.as_expression(ns)
-
-            async def _eval():
-                return await expr()
-
-            result = run_sync(_eval())
 
             ns.store('_', result) if hasattr(ns, 'store') else ns.__setitem__('_', result)
 
@@ -240,11 +269,21 @@ def repl(mod, prompter=None, stdin=None, stdout=None, stderr=None):
 
         except Exception:
             exc_type, exc_val, tb = sys.exc_info()
-            sys.last_type = exc_type
-            sys.last_value = exc_val
-            tb = _filter_internal_tb(tb)
-            sys.last_traceback = tb
-            msg = ''.join(format_exception(exc_type, exc_val, tb))
+            if isinstance(exc_val, REPLCodeBoundary) and exc_val.__cause__ is not None:
+                cause = exc_val.__cause__
+                tb = _filter_infrastructure_tb(cause.__traceback__)
+                sys.last_type = type(cause)
+                sys.last_value = cause
+                sys.last_traceback = tb
+                if tb is not None:
+                    msg = ''.join(format_exception(type(cause), cause, tb))
+                else:
+                    msg = ''.join(format_exception_only(type(cause), cause))
+            else:
+                sys.last_type = exc_type
+                sys.last_value = exc_val
+                sys.last_traceback = tb
+                msg = ''.join(format_exception(exc_type, exc_val, tb))
             print(msg, end='', file=stderr)
             stderr.flush()
 

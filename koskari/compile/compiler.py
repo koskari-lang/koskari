@@ -102,7 +102,7 @@ def _label_generator(formatstr="label_%04x"):
 _symbol_None = symbol("None")
 _symbol_True = symbol("True")
 _symbol_False = symbol("False")
-_symbol_attr = symbol("attr")
+_symbol_attr = symbol("compile/attr")
 _symbol_ellipsis = symbol("ellipsis")
 _symbol_nil = symbol("nil")
 
@@ -507,7 +507,7 @@ class Compiler:
             fragment.instruction(OpCode.KOS_OP_VAR, sym)
             return fragment
 
-        ex = str(sym).rsplit(".", 1)
+        ex = sym.rsplit(".", 1)
         if len(ex) == 1:
             sym = str(sym)
             fragment.request_var(sym)

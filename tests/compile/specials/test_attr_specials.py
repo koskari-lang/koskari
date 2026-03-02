@@ -73,4 +73,38 @@ class TestDelAttrSpecial(SpecialsTestCase):
         self.assertFalse(hasattr(obj, "temporary"))
 
 
+class TestDottedFormExpansion(SpecialsTestCase):
+
+    def test_dotted_symbol_loads_attribute(self):
+        foo = SimpleNamespace(bar=42)
+        src_str = "foo.bar"
+        expr, mod = self.compile_expr(src_str, foo=foo)
+        result = expr().run()
+        self.assertEqual(42, result)
+
+
+    def test_dotted_symbol_multi_level(self):
+        obj = SimpleNamespace(foo=SimpleNamespace(bar=99))
+        src_str = "obj.foo.bar"
+        expr, mod = self.compile_expr(src_str, obj=obj)
+        result = expr().run()
+        self.assertEqual(99, result)
+
+
+    def test_dotted_form_as_call(self):
+        foo = SimpleNamespace(bar=lambda a, b: a + b)
+        src_str = "(foo.bar 1 2)"
+        expr, mod = self.compile_expr(src_str, foo=foo)
+        result = expr().run()
+        self.assertEqual(3, result)
+
+
+    def test_simple_dotted_no_split(self):
+        foo = 100
+        src_str = "foo"
+        expr, mod = self.compile_expr(src_str, foo=foo)
+        result = expr().run()
+        self.assertEqual(100, result)
+
+
 # The end.
