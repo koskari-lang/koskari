@@ -154,9 +154,9 @@ These are **commitments**: they must hold for correct behavior. They are elabora
 
 - **KosPyContinuation** (cont.c): Wraps undelimited `KosContinuation` (call/cc). Callable from Python: does not return; raises `KoskariContinuationApply` to perform upwards transfer via exception. Multi-shot: each apply clones captured state.
 
-- **KosCoroutine** (func.c): Wraps `KosContext` for the coroutine protocol (`__await__`, `send`, `throw`, `close`). States: NEW, RUNNING, WAITING_PY, DONE. Created by `kos_run_code_as_coroutine()` (Expression/Function call). Driving the coroutine (send/await) calls `koskari_eval()`. (Continuation invocation from Python raises; it does not create a KosCoroutine.) **Sync adapter**: `run()` runs the coroutine via `asyncio.run(self)`; for tests and sync scripts only; must not be used when an event loop is already running (deadlock risk).
+- **KosCoroutine** (coro.c / coro.h): Wraps `KosContext` for the coroutine protocol (`__await__`, `send`, `throw`, `close`). States: NEW, RUNNING, WAITING_PY, YIELDED, DONE. Created by `KosCoroutine_NewFromCode()` (Expression/Function call). Driving the coroutine (send/await) calls `koskari_eval()`. (Continuation invocation from Python raises; it does not create a KosCoroutine.) **Sync adapter**: `run()` drives the coroutine to completion from synchronous code via `Koskari_RunSync()` (sync.c / koskari._sync); safe when an event loop is already running (uses a dedicated executor thread to avoid deadlock).
 
-- **KosPyAsyncGen** / **KosPyAsyncGenASend** (eval.c): Async generator protocol; `__anext__` returns an awaitable that drives until yield or completion. **Sync adapter**: `iter()` returns a synchronous iterator that drives the gen via `asyncio.run()` on each `__anext__`; for tests and sync scripts only; must not be used when an event loop is already running (deadlock risk).
+- **KosPyAsyncGen** / **KosPyAsyncGenASend** (iter.c / iter.h): Async generator protocol; `__anext__` returns an awaitable that drives until yield or completion. **Sync adapter**: `iter()` returns a synchronous iterator via `Koskari_IterSync()` (sync.c / koskari._sync); reuses a single event loop per iteration session; safe when an event loop is already running.
 
 ---
 
@@ -181,7 +181,7 @@ These are **commitments**: they must hold for correct behavior. They are elabora
 
 ## 8. Language and Syntax (Design)
 
-- **Syntax**: S-expressions; lists and improper lists; atoms (symbols, keywords, numbers, strings, etc.). Reader: `Reader`, `SourceStream`; reader macros (e.g. `'`, `` ` ``, `,`, `,@`). See `design/language/syntax.md`.
+- **Syntax**: S-expressions; lists and improper lists; atoms (symbols, keywords, numbers, strings, etc.). Reader stream types: `BaseSourceStream` (C, hot-path I/O), `SourceStream` (Python, error reporting and pushback), `IndentAwareStream` (indent-bounded whitespace skip for layout blocks). Reader classes: `Reader` (plain s-expressions), `LayoutReader` (indent-aware block syntax; requires `IndentAwareStream`); reader macros (e.g. `'`, `` ` ``, `,`, `,@`). See `design/language/syntax.md`.
 - **Special forms**: Compile to bytecode; no runtime form. Core: quote, quasiquote, begin, lambda, function, let, define, setq, delq, refq; control: cond, while, for-each, try, return, break, continue; context: with, await-with; generators/async: yield, yield-from, await, declare-async; attributes, values, import, doc. See `design/language/special-forms.md`.
 - **Formals**: Positional, defaults, keyword-only, `*args`, `**kwargs`; syntax uses `*` and `:`. Multi-value binding with `define-values` / `setq-values` and optional `*` rest.
 
@@ -199,22 +199,21 @@ These are **commitments**: they must hold for correct behavior. They are elabora
 - Values (values.c).
 - Stack: block-structured storage (stack.c); region metadata in DynRegion.
 - Bytecode: Code, 4-byte instructions, position table, constant pool, read-only protection (bytecode.c).
-- Parser/reader: BaseSourceStream, SourceStream, Reader (parse.c, parse.py).
+- Parser/reader: BaseSourceStream (parse.c), SourceStream, IndentAwareStream, Reader, LayoutReader (koskari/reader/parser.py).
 - Dynamic chain: all DynNode types (TRY, FINALLY, LOOP, FOREACH, WITH, DYN_WITH, SHIFT, and others), push/pop, clone, free, `kos_find_node_for_raise`, `kos_find_node_for_loop` (dynchain.c).
 - Continuation: capture, validate, clone, invoke, transfer plan, LCA (dynchain.c, eval.c).
 - Wind: push/pop wind, hook runner, begin/hook_active/end_hook (dynchain.c, eval.c).
 - Evaluator core: KosContext (with domain field), KosFrame, kos_context_new/free, kos_frame_new/clone/free (eval.c). Domain: KosDomain type (param value store: name -> value), ParamRef (Ref subclass; resolves via kos_domain_current and kos_domain_get_param), TLS (KosTlsState, ctx_stack, token_stack), kos_ctx_current, kos_domain_current, kos_domain_push_scope, kos_domain_pop_scope (domain.c).
 - Drive loop: `koskari_eval()` is implemented with opcode fetch, dispatch table, and boundary handling. **CALL** (stack [callable, arg_0, ..., arg_{N-1}]): for Continuation/DelimitedContinuation, same-token invoke applies directly, different-token sets KoskariContinuationApply and returns -1; for KosExpression/KosFunction pushes the callee frame and continues in the same loop (flattened); for other callables goes through Python (push_or_await result). **NEXT/ITER_NEXT** for a Koskari async gen attach the gen’s frame to the current context and continue in the same loop until the gen yields or completes (flattened). **YIELD/RETURN** with a parent frame detach and push value onto the parent, then continue in the same loop; only with no parent do they set a boundary event. Fully implemented opcodes include stack, constants, RETURN/AWAIT, YIELD, YIELD_FROM, CALL (as above), variables (VAR, VAR_BIND, VAR_CLEAR, VAR_REF, VAR_STORE), fast locals (FAST, FAST_BIND, FAST_CLEAR, FAST_REF, FAST_STORE), jumps (JUMP, JUMP_FALSE, JUMP_TRUE, JUMP_AND, JUMP_OR), check jumps (CHECK_EQ, CHECK_NE, CHECK_LT, CHECK_LE, CHECK_GT, CHECK_GE, CHECK_IN, CHECK_NOT_IN, CHECK_IS, CHECK_IS_NOT, CHECK_IS_INSTANCE, CHECK_IS_SUBCLASS), attributes and items (ATTR, ATTR_CLEAR, ATTR_REF, ATTR_STORE; ITEM, ITEM_CLEAR, ITEM_REF, ITEM_STORE; CONST_ITEM, CONST_ITEM_CLEAR, CONST_ITEM_REF, CONST_ITEM_STORE), iteration (ITER_NEXT, NEXT; transparent async, Koskari async gen in-loop attach/detach), namespace scope (PUSH_NS, POP_NS), exceptions and try/finally, delimited continuations (PUSH_PROMPT, SET_PROMPT_HANDLER, POP_PROMPT, SHIFT), undelimited continuations (PUSH_CC, CAPTURE_CC, POP_CC; invoke via CALL), INVOKE_K and INVOKE_K_VAR, and the full object-protocol set (OBJECT_*). All other opcodes are stubs; see `design/FEATURES.md` § "Opcodes: implementation status".
-- Python wrappers: KosPyContinuation, KosPyAsyncGen, KosPyAsyncGenASend (eval.c); KosCoroutine and `kos_run_code_as_coroutine` (func.c). KosCoroutine drive (send/throw/close) in func.c; async-gen drive and eager-step await in eval.c.
+- Python wrappers: KosPyContinuation (cont.c); KosCoroutine and `KosCoroutine_NewFromCode` (coro.c); KosPyAsyncGen, KosPyAsyncGenASend (iter.c). KosCoroutine drive (send/throw/close) in coro.c; async-gen drive and eager-step await in eval.c / iter.c. Sync adapter: `Koskari_RunSync` / `Koskari_IterSync` (sync.c), backed by `koskari._sync` (_sync.py).
 - GC: traverse helpers for context, frame, stack block, chain, continuation, transfer plan, hook runner (eval.c, dynchain.c).
 - Operators: reducing arithmetic, bitwise, membership, build-str; apply, reapply, identity, constantly, _pass; build_tuple, build_list, build_set, build_dict (operator.c, lib.c).
 
 **Not yet implemented**:
 
 - Remaining opcode handlers: CALL_NAMES/CALL_STAR/CALL_ATTR*/RECUR*/TAIL_*, BUILD_CLASS. THEEND has no runtime implementation (hardcoded error). See `design/FEATURES.md` § "Opcodes: implementation status".
-- Compiler: A partial implementation exists in `koskari.compile` (Compiler, ByteCodeFragment, specials: compile/bytecode, compile/begin, compile/call, lambda). Full parse → expand → compile → bytecode pipeline is not complete (macro expansion, remaining special forms, optimization passes).
+- Compiler: `koskari.compile` contains a substantially complete compiler (Compiler, ByteCodeFragment, specials covering begin, bytecode, call, conditionals, continuations, context/with/parameterize, exceptions/try, items, lambda, let, loops, object protocol, pairs/quote/quasiquote, slots/attrs, variables, imports). The full end-to-end pipeline (macro expansion, optimization passes, module loading integration) is not yet complete.
 - Module creation/loading and import system integration.
-- Most special forms (only types, parsing, and runtime primitives exist).
 - Traceback integration with Koskari frames.
 
 ---
@@ -241,13 +240,16 @@ These are **commitments**: they must hold for correct behavior. They are elabora
 |-------------------|-----------------------------------|-----------------------------------------|
 | Execution model   | interpreter/execution-invariants.md| koskari/lib/eval.c, eval.h              |
 | Domain (TLS, KosDomain) | interpreter/domain.md      | koskari/lib/domain.c, domain.h          |
-| Coroutine / run-code | (this doc, evaluator.md)         | koskari/lib/func.c, func.h              |
+| Coroutine / run-code | (this doc, evaluator.md)       | koskari/lib/coro.c, coro.h              |
+| Async generator   | (this doc, evaluator.md)         | koskari/lib/iter.c, iter.h              |
+| Sync adapter      | (this doc)                       | koskari/lib/sync.c, sync.h, koskari/_sync.py |
 | Dynamic chain     | interpreter/evaluator.md          | koskari/lib/dynchain.c, dynchain.h      |
 | Continuations     | interpreter/callcc.md             | dynchain.c (capture/invoke), eval.c     |
 | Bytecode          | interpreter/bytecode.md, bytecode-metadata-tables.md | koskari/lib/bytecode.c, bytecode.h, opcodes.incl |
 | Types             | api/types.md                     | koskari/lib/*.c, koskari/types.py       |
 | Builtins/API      | api/builtins.md, api/runtime.md   | koskari/lib/lib.c, operator.c           |
-| Language          | language/*.md                    | koskari/parse.py, koskari/lib/parse.c   |
+| Language / Reader | language/*.md, SYNTAX.md, LAYOUTS.md | koskari/reader/parser.py, koskari/lib/parse.c |
+| Compiler          | SPECIALS.md, OPCODES.md, interpreter/compiler.md | koskari/compile/                  |
 | Feature list      | FEATURES.md, README.md           | —                                       |
 
 ---
