@@ -33,6 +33,10 @@ This is the koskari analogue of sibilant.module from python-sibilant.
 
 from os.path import split
 
+from ..compile import Compiler
+from ..lib import Module, ModuleNamespace
+from ..reader import IndentAwareStream, LayoutReader, source_open
+
 
 __all__ = (
     'new_module',
@@ -53,7 +57,6 @@ def new_module(name, package=None):
     :return: koskari Module instance
     """
 
-    from ..lib import Module, ModuleNamespace
     from .builtins import make_builtins
 
     ns = ModuleNamespace(name, make_builtins())
@@ -68,20 +71,16 @@ def new_module(name, package=None):
 
 def init_module(module, filename, spec=None):
     """
-    Initialise a koskari Module with source file metadata and register
-    compiler specials into its namespace.
+    Initialise a koskari Module with source file metadata.
 
     Sets __file__, and if the filename is an __init__.ki also sets __path__
     to the containing directory.  Stores __spec__ and __loader__ when
-    provided via spec.  Registers all compiler special forms so that the
-    module's namespace can be used directly with the koskari Compiler.
+    provided via spec.
 
     :param module: koskari Module instance
     :param filename: absolute path to the .ki source file
     :param spec: importlib ModuleSpec, or None
     """
-
-    from ..compile.specials import SPECIALS
 
     ns = vars(module)
 
@@ -98,10 +97,6 @@ def init_module(module, filename, spec=None):
         if spec.submodule_search_locations is not None:
             _ns_store(ns, '__path__', list(spec.submodule_search_locations))
 
-    # Register all compiler specials so the Compiler can find them
-    for sym, fn in SPECIALS.items():
-        ns.store(str(sym), fn)
-
 
 async def load_module_async(module):
     """
@@ -116,21 +111,29 @@ async def load_module_async(module):
     :param module: koskari Module instance with __file__ and __stream__ set
     """
 
-    from ..compile import Compiler
-    from ..reader import default_reader, source_open
-
     filename = getattr(module, '__file__', '<unknown>')
     ns = vars(module)
 
-    with source_open(filename) as stream:
-        compiler = Compiler(getattr(module, '__name__', '<module>'),
-                            module,
-                            filename=filename)
+    with source_open(filename) as source_stream:
 
-        reader = default_reader
+        compiler = Compiler(
+            getattr(module, '__name__', '<module>'),
+            module,
+            filename=filename)
+
+        reader = LayoutReader(module)
+        stream = IndentAwareStream(
+            source_stream.stream,
+            source_stream.filename,
+            auto_skip_exec=False,
+            line_no=source_stream.lin,
+            col_no=source_stream.col,
+            max_indent=None)
 
         while True:
             source_expr = reader.read(stream)
+            # print(f"source_expr: {source_expr}")
+
             if source_expr is None:
                 break
 

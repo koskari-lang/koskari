@@ -1,0 +1,12 @@
+;; Simple hello-world script used by CLI tests.
+
+
+define main []:
+    (print "Hello, koskari!")
+
+
+when (eq? __name__ "__main__"):
+    (main)
+
+
+;; The end.

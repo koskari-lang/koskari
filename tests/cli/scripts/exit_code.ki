@@ -1,0 +1,2 @@
+;; Raises SystemExit with a known code for exit-code tests.
+(raise (SystemExit 42))

@@ -54,6 +54,9 @@ from ..types import (
     unpack,
 )
 
+from ..compile.specials import SPECIALS
+from ..reader.layouts import LAYOUTS
+
 
 __all__ = ('make_builtins',)
 
@@ -148,6 +151,14 @@ def make_builtins():
     _bind('vars', vars)
     _bind('dir', dir)
     _bind('open', open)
+
+    # Register all compiler specials so the Compiler can find them
+    for sym, fn in SPECIALS.items():
+        _bind(str(sym), fn)
+
+    # Register all reader layout handlers so the LayoutReader can find them
+    for sym, handler in LAYOUTS.items():
+        _bind(str(sym), handler)
 
     # exceptions (all subclasses of BaseException from builtins)
     import builtins as _builtins

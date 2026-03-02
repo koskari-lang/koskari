@@ -214,8 +214,13 @@ class SourceStream(BaseSourceStream):
     position() reflects the buffer start while characters are buffered.
     """
 
-    def __init__(self, stream, filename=None, auto_skip_exec=True,
-                 line_no=1, col_no=0):
+    def __init__(
+            self,
+            stream,
+            filename=None,
+            auto_skip_exec=True,
+            line_no=1,
+            col_no=0):
         """
         Initialize a source stream
 
@@ -476,6 +481,32 @@ class IndentAwareStream(SourceStream):
         consume = 0
         i = 0
 
+        # When the C-level column is 0 and _buffer is empty, the stream is
+        # at the start of a new line (a preceding \n was consumed without
+        # going through the peek-ahead path below). Synthesise a virtual \n
+        # by jumping directly into the next-line indent measurement loop.
+        if self.col == 0 and not self._buffer:
+            next_indent = 0
+            while True:
+                ahead = self.peek(next_indent + 1)
+                if not ahead or len(ahead) <= next_indent:
+                    self.dedented = True
+                    return ''
+                nc = ahead[next_indent]
+                if nc in ' \t':
+                    next_indent += 1
+                elif nc == '\n':
+                    # blank line — skip over it via the normal scan below
+                    break
+                else:
+                    if next_indent <= self._max_indent:
+                        self.dedented = True
+                        return ''
+                    for _ in range(next_indent):
+                        self.read(1)
+                    return ''
+            # blank line encountered; fall through to the normal scan
+
         while True:
             ahead = self.peek(i + 1)
             if not ahead or len(ahead) <= i:
@@ -551,9 +582,12 @@ def source_str(src, filename, auto_skip_exec=True, line_no=1, col_no=0):
     :return: a SourceStream
     """
 
-    return SourceStream(StringIO(src), filename,
-                        auto_skip_exec=auto_skip_exec,
-                        line_no=line_no, col_no=col_no)
+    return SourceStream(
+        StringIO(src),
+        filename,
+        auto_skip_exec=auto_skip_exec,
+        line_no=line_no,
+        col_no=col_no)
 
 
 def source_stream(underlying, filename, auto_skip_exec=True):
@@ -1370,12 +1404,12 @@ class _ProbeStream(object):
 
 
     def skip_whitespace(self):
-        # Skip and record whitespace one character at a time without consuming
-        # past non-whitespace. Delegates peek to the underlying stream so that
-        # indent-aware streams still see the correct lookahead.
+        # Skip and record horizontal whitespace (spaces and tabs) only.
+        # Does NOT consume newlines so that _probe_block_header_end can
+        # detect the end of a header line via peek() after this call.
         while True:
             c = self._stream.peek(1)
-            if not c or c not in ' \t\n\r':
+            if not c or c not in ' \t':
                 return ''
             c = self._stream.read(1)
             self._record.append(c)
@@ -1455,10 +1489,17 @@ class LayoutReader(Reader):
         self._layout_depth = 0
         self._break_marker = None
         self._block_mode = False
-        self._block_macros = {
+        self._block_macros = {}
+
+        if not nodefaults:
+            self._add_default_block_macros()
+
+
+    def _add_default_block_macros(self):
+        self._block_macros.update({
             "'": self._read_quote_block,
             "`": self._read_quasiquote_block,
-        }
+        })
 
 
     def _read(self, stream, raw=False):
@@ -1514,6 +1555,12 @@ class LayoutReader(Reader):
             while True:
                 peek = probe.peek(1)
                 if not peek:
+                    break
+
+                if not require_colon and depth == 0 and peek == '\n':
+                    break
+
+                if not require_colon and depth == 0 and peek == ';':
                     break
 
                 if peek in '([{':
@@ -2031,100 +2078,107 @@ class LayoutReader(Reader):
         if self._layout_depth > 0:
             return self._read(stream)
 
-        stream.skip_whitespace()
-        if stream.dedented:
-            return EOF, stream.position(), None
-
-        position = stream.position()
-        c = stream.peek(1)
-        if not c:
-            return EOF, position, None
-
-        if c in '([{':
-            return self._read(stream)
-
-        outer_indent = position[1]
-
-        # Case 2: block-macro prefix character (e.g. ')
-        # Consume the prefix, look at the following character:
-        # - next char is a paren/missing: restore prefix, fall to _read
-        # - next char starts an atom: probe for a colon
-        #   - colon found: read as raw block, wrap with the registered fn
-        #   - colon not found: restore prefix + probed chars, fall to _read
-        if c in self._block_macros:
-            prefix_pos = position
-            stream.read(1)
-            next_c = stream.peek(1)
-
-            if next_c and next_c not in '([{':
-                header_start = stream.position()
-                recorded, last_colon_pos, _ = self._probe_block_header_end(
-                    stream, require_colon=False)
-
-                if last_colon_pos is not None:
-                    block_macro = self._block_macros[c]
-                    result = block_macro(
-                        stream, outer_indent,
-                        recorded, header_start, last_colon_pos)
-                    if is_pair(result):
-                        result.set_position(position)
-                    return VALUE, position, result
-
-                # No colon found; stream already restored by probe.
-                # Also restore the prefix character itself.
-                stream.pushback(c, prefix_pos)
-                return self._read(stream)
-
-            else:
-                # Next char is a paren or EOF: restore prefix, fall to _read.
-                stream.pushback(c, prefix_pos)
-                return self._read(stream)
-
-        # Cases 3 and 4: bare atom
-        # Read the first token. If it came out as a keyword, the colon was
-        # already consumed by the atom reader (e.g. 'begin:' -> keyword('begin')).
-        # Otherwise probe the rest of the line for a colon.
-        event, pos, form1 = self._read(stream)
-        if event is EOF:
-            return EOF, pos, None
-
-        header_indent = pos[1]
-
-        if is_keyword(form1):
-            # Case 3: trailing colon already consumed.
+        while True:
             stream.skip_whitespace()
-            head = symbol(str(form1))
-            if self._block_mode:
-                block = self.read_block(stream, header_indent, head, [])
-            else:
-                block = self.read_layout_block(stream, header_indent, head, [])
-            return VALUE, position, block
+            if stream.dedented:
+                return EOF, stream.position(), None
 
-        # Case 4: check whether the rest of the line has a colon.
-        stream.skip_whitespace()
-        if stream.dedented:
+            position = stream.position()
+            c = stream.peek(1)
+            if not c:
+                return EOF, position, None
+
+            if c == ';':
+                stream.read(1)
+                stream.read_until_chars('\n')
+                stream.read(1)
+                continue
+
+            if c in '([{':
+                return self._read(stream)
+
+            outer_indent = position[1]
+
+            # Case 2: block-macro prefix character (e.g. ')
+            # Consume the prefix, look at the following character:
+            # - next char is a paren/missing: restore prefix, fall to _read
+            # - next char starts an atom: probe for a colon
+            #   - colon found: read as raw block, wrap with the registered fn
+            #   - colon not found: restore prefix + probed chars, fall to _read
+            if c in self._block_macros:
+                prefix_pos = position
+                stream.read(1)
+                next_c = stream.peek(1)
+
+                if next_c and next_c not in '([{':
+                    header_start = stream.position()
+                    recorded, last_colon_pos, _ = self._probe_block_header_end(
+                        stream, require_colon=False)
+
+                    if last_colon_pos is not None:
+                        block_macro = self._block_macros[c]
+                        result = block_macro(
+                            stream, outer_indent,
+                            recorded, header_start, last_colon_pos)
+                        if is_pair(result):
+                            result.set_position(position)
+                        return VALUE, position, result
+
+                    # No colon found; stream already restored by probe.
+                    # Also restore the prefix character itself.
+                    stream.pushback(c, prefix_pos)
+                    return self._read(stream)
+
+                else:
+                    # Next char is a paren or EOF: restore prefix, fall to _read.
+                    stream.pushback(c, prefix_pos)
+                    return self._read(stream)
+
+            # Cases 3 and 4: bare atom
+            # Read the first token. If it came out as a keyword, the colon was
+            # already consumed by the atom reader (e.g. 'begin:' -> keyword('begin')).
+            # Otherwise probe the rest of the line for a colon.
+            event, pos, form1 = self._read(stream)
+            if event is EOF:
+                return EOF, pos, None
+
+            header_indent = pos[1]
+
+            if is_keyword(form1):
+                # Case 3: trailing colon already consumed.
+                stream.skip_whitespace()
+                head = symbol(str(form1))
+                if self._block_mode:
+                    block = self.read_block(stream, header_indent, head, [])
+                else:
+                    block = self.read_layout_block(stream, header_indent, head, [])
+                return VALUE, position, block
+
+            # Case 4: check whether the rest of the line has a colon.
+            stream.skip_whitespace()
+            if stream.dedented:
+                return VALUE, pos, form1
+            if not stream.peek(1):
+                return VALUE, pos, form1
+
+            header_start = stream.position()
+            recorded, last_colon_pos, _ = self._probe_block_header_end(
+                stream, require_colon=False)
+
+            if last_colon_pos is not None:
+                forms = self._replay_header_forms(
+                    recorded, stream, header_start, last_colon_pos)
+
+                head = form1
+                args = [f for f in forms if f != symbol(':')]
+                if self._block_mode:
+                    block = self.read_block(stream, header_indent, head, args)
+                else:
+                    block = self.read_layout_block(stream, header_indent, head, args)
+                return VALUE, position, block
+
+            # No colon: probe restored the stream. Return form1 as a plain form.
             return VALUE, pos, form1
-        if not stream.peek(1):
-            return VALUE, pos, form1
-
-        header_start = stream.position()
-        recorded, last_colon_pos, _ = self._probe_block_header_end(
-            stream, require_colon=False)
-
-        if last_colon_pos is not None:
-            forms = self._replay_header_forms(
-                recorded, stream, header_start, last_colon_pos)
-
-            head = form1
-            args = [f for f in forms if f != symbol(':')]
-            if self._block_mode:
-                block = self.read_block(stream, header_indent, head, args)
-            else:
-                block = self.read_layout_block(stream, header_indent, head, args)
-            return VALUE, position, block
-
-        # No colon: probe restored the stream. Return form1 as a plain form.
-        return VALUE, pos, form1
 
 
     def read(self, reader_stream):

@@ -228,6 +228,161 @@ class TestLayoutBlockSyntax(TestCase):
         self.assertEqual(result, expected)
 
 
+def _parse_layout_all(src_str):
+    builtins = {}
+    for name, value in LAYOUTS.items():
+        builtins[str(name)] = value
+
+    reader = LayoutReader(builtins)
+    stream = source_str(src_str, '<unittest>')
+    results = []
+    while True:
+        form = reader.read(stream)
+        if form is None:
+            break
+        results.append(form)
+    return results
+
+
+class TestLayoutReaderComments(TestCase):
+
+    def test_comment_before_block_header(self):
+        src = """
+        ;; leading comment
+        foo x:
+          y
+        """
+
+        expected = pycons(
+            (symbol('foo'),
+             symbol('x'),
+             (symbol('compile/begin'), symbol('y')))
+        )
+
+        result = parse_layout(src)
+        self.assertEqual(result, expected)
+
+
+    def test_comment_after_colon(self):
+        src = """
+        foo x: ;; trailing header comment
+          y
+        """
+
+        expected = pycons(
+            (symbol('foo'),
+             symbol('x'),
+             (symbol('compile/begin'), symbol('y')))
+        )
+
+        result = parse_layout(src)
+        self.assertEqual(result, expected)
+
+
+    def test_comment_as_first_body_line(self):
+        src = """
+        foo x:
+          ;; first-body comment
+          y
+        """
+
+        expected = pycons(
+            (symbol('foo'),
+             symbol('x'),
+             (symbol('compile/begin'), symbol('y')))
+        )
+
+        result = parse_layout(src)
+        self.assertEqual(result, expected)
+
+
+    def test_comment_between_body_lines(self):
+        src = """
+        foo x:
+          a
+          ;; mid-body comment
+          b
+        """
+
+        expected = pycons(
+            (symbol('foo'),
+             symbol('x'),
+             (symbol('compile/begin'), symbol('a'), symbol('b')))
+        )
+
+        result = parse_layout(src)
+        self.assertEqual(result, expected)
+
+
+    def test_comment_after_last_body_line(self):
+        src = """
+        foo x:
+          a
+          ;; trailing body comment
+        bar
+        """
+
+        expected = pycons(
+            (symbol('foo'),
+             symbol('x'),
+             (symbol('compile/begin'), symbol('a')))
+        )
+
+        result = parse_layout(src)
+        self.assertEqual(result, expected)
+
+
+    def test_comment_in_multiline_formals(self):
+        src = """
+        define foobar [
+              a  ; the a value
+              b  ; the b value
+              ]:
+          (+ a b)
+        """
+
+        expected = pycons(
+            (symbol('define'),
+             symbol('foobar'),
+             (symbol('a'), symbol('b')),
+             (symbol('compile/begin'),
+              (symbol('+'), symbol('a'), symbol('b'))))
+        )
+
+        result = parse_layout(src)
+        self.assertEqual(result, expected)
+
+
+    def test_comment_only_input_returns_none(self):
+        src = """
+        ;; just a comment
+        ;; another comment
+        """
+
+        result = parse_layout(src)
+        self.assertIsNone(result)
+
+
+    def test_comment_between_top_level_forms(self):
+        src = """
+        (+ 1 2)
+        ;; between forms
+        (* 3 4)
+        """
+
+        results = _parse_layout_all(src)
+
+        self.assertEqual(len(results), 2)
+        self.assertEqual(
+            results[0],
+            pycons((symbol('+'), 1, 2))
+        )
+        self.assertEqual(
+            results[1],
+            pycons((symbol('*'), 3, 4))
+        )
+
+
 class TestLayoutReaderNamespace(TestCase):
 
     def test_accepts_module(self):

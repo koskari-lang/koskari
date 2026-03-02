@@ -10,7 +10,7 @@ parsing; all helpers raise SpecialError or ParametersError with optional source 
 """
 
 
-from typing import TypeAlias, Callable, Union, Dict
+from typing import TypeAlias, Callable, Union, Dict, Tuple
 
 from ..lib import car, cons, keyword, nil, OpCode, pair, symbol
 from ..types import is_keyword, is_pair, is_proper, is_symbol, unpack
@@ -49,7 +49,9 @@ SpecialFn: TypeAlias = Callable[
 SPECIALS: Dict[symbol, SpecialFn] = {}
 
 
-def special(form_symbol: symbol) -> Callable[[SpecialFn], SpecialFn]:
+def special(
+        form_symbol: symbol,
+        aliases: Tuple[symbol, ...] = ()) -> Callable[[SpecialFn], SpecialFn]:
     """
     Decorator that registers a function as a special form handler.
     The decorated function gets a compile_impl attribute for dispatch.
@@ -57,6 +59,8 @@ def special(form_symbol: symbol) -> Callable[[SpecialFn], SpecialFn]:
 
     def decorator(fn: SpecialFn):
         SPECIALS[form_symbol] = fn
+        for alias in aliases:
+            SPECIALS[alias] = fn
         fn.compile_impl = fn
         return fn
 

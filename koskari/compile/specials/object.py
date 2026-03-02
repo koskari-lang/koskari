@@ -202,7 +202,7 @@ def _unary_op(op, compiler, source):
 # Comparison interface (NOARG binary)
 # ---------------------------------------------------------------------------
 
-@special(symbol("compile/="))
+@special(symbol("compile/="), aliases=(symbol("compile/eq?"),))
 def special_eq(compiler, source, tc=False):
     """
     Compile (compile/= A B). Test equality via __eq__
@@ -211,7 +211,7 @@ def special_eq(compiler, source, tc=False):
     return _binary_op(OpCode.KOS_OP_OBJECT_EQ, compiler, source)
 
 
-@special(symbol("compile/!="))
+@special(symbol("compile/!="), aliases=(symbol("compile/neq?"),))
 def special_ne(compiler, source, tc=False):
     """
     Compile (compile/!= A B). Test inequality via __ne__
@@ -220,7 +220,7 @@ def special_ne(compiler, source, tc=False):
     return _binary_op(OpCode.KOS_OP_OBJECT_NE, compiler, source)
 
 
-@special(symbol("compile/<"))
+@special(symbol("compile/<"), aliases=(symbol("compile/lt?"),))
 def special_lt(compiler, source, tc=False):
     """
     Compile (compile/< A B). Test less-than via __lt__
@@ -229,7 +229,7 @@ def special_lt(compiler, source, tc=False):
     return _binary_op(OpCode.KOS_OP_OBJECT_LT, compiler, source)
 
 
-@special(symbol("compile/<="))
+@special(symbol("compile/<="), aliases=(symbol("compile/le?"),))
 def special_le(compiler, source, tc=False):
     """
     Compile (compile/<= A B). Test less-than-or-equal via __le__
@@ -238,7 +238,7 @@ def special_le(compiler, source, tc=False):
     return _binary_op(OpCode.KOS_OP_OBJECT_LE, compiler, source)
 
 
-@special(symbol("compile/>"))
+@special(symbol("compile/>"), aliases=(symbol("compile/gt?"),))
 def special_gt(compiler, source, tc=False):
     """
     Compile (compile/> A B). Test greater-than via __gt__
@@ -247,7 +247,7 @@ def special_gt(compiler, source, tc=False):
     return _binary_op(OpCode.KOS_OP_OBJECT_GT, compiler, source)
 
 
-@special(symbol("compile/>="))
+@special(symbol("compile/>="), aliases=(symbol("compile/ge?"),))
 def special_ge(compiler, source, tc=False):
     """
     Compile (compile/>= A B). Test greater-than-or-equal via __ge__
