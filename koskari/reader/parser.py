@@ -306,24 +306,31 @@ class SourceStream(BaseSourceStream):
         """
         Read characters until a terminating character is found
 
-        The terminating character is not consumed; it is pushed back
-        into the buffer so that the next read or position() call sees
-        it at its correct position.
+        The terminating character is not consumed. When the pushback buffer
+        is empty, delegates to the C-native implementation which leaves the
+        terminator unconsumed without any pushback. When the buffer is
+        non-empty, drains non-terminating characters manually then delegates
+        to C for the remainder.
 
         :param terminators: string of terminating characters
         :return: text read up to (not including) the terminator
         """
 
+        if not self._buffer:
+            return super().read_until_chars(terminators)
+
         result = []
-        while True:
-            pos = self.position()
-            c = self.read(1)
-            if not c:
-                break
+        while self._buffer:
+            c = self._buffer[0]
             if c in terminators:
-                self.pushback(c, pos)
-                break
-            result.append(c)
+                return ''.join(result)
+            result.append(self._buffer.pop(0))
+        if not self._buffer:
+            self._buffer_start_pos = None
+
+        rest = super().read_until_chars(terminators)
+        if rest:
+            result.append(rest)
         return ''.join(result)
 
 
@@ -458,18 +465,19 @@ class IndentAwareStream(SourceStream):
 
         When max_indent is None, delegates to the native C skip_whitespace.
 
-        Otherwise, scans ahead using peek(i+1) without consuming any
-        characters. Blank lines are skipped over. When the first non-blank,
-        non-empty line is found, its indent is measured:
+        Otherwise, peeks ahead with a single large-window read to obtain
+        the lookahead string, then scans it as a plain Python string. Blank
+        lines are skipped over. When the first non-blank, non-empty line is
+        found, its indent is measured:
 
         - If indent <= max_indent: sets self.dedented = True and returns
           without consuming anything.
 
-        - If indent > max_indent: consumes the whitespace-only characters
-          scanned (the newline and indent spaces), leaving the stream at
-          the content character.
+        - If indent > max_indent: consumes exactly the whitespace prefix
+          scanned (the newline and indent spaces) via a single read(n),
+          leaving the stream at the content character.
 
-        The underlying stream is seekable so peek(n) for large n is cheap.
+        The underlying stream is seekable so a single large peek is cheap.
         """
 
         if self._max_indent is None:
@@ -478,50 +486,36 @@ class IndentAwareStream(SourceStream):
 
         self.dedented = False
 
-        consume = 0
-        i = 0
-
         # When the C-level column is 0 and _buffer is empty, the stream is
         # at the start of a new line (a preceding \n was consumed without
         # going through the peek-ahead path below). Synthesise a virtual \n
-        # by jumping directly into the next-line indent measurement loop.
+        # by prepending one to the lookahead so the main scan's newline
+        # branch fires immediately and measures the indent of the first
+        # real content line. Track the synthetic offset so that the consume
+        # count is adjusted to exclude it.
         if self.col == 0 and not self._buffer:
-            next_indent = 0
-            while True:
-                ahead = self.peek(next_indent + 1)
-                if not ahead or len(ahead) <= next_indent:
-                    self.dedented = True
-                    return ''
-                nc = ahead[next_indent]
-                if nc in ' \t':
-                    next_indent += 1
-                elif nc == '\n':
-                    # blank line — skip over it via the normal scan below
-                    break
-                else:
-                    if next_indent <= self._max_indent:
-                        self.dedented = True
-                        return ''
-                    for _ in range(next_indent):
-                        self.read(1)
-                    return ''
-            # blank line encountered; fall through to the normal scan
+            ahead = '\n' + (self.peek(512) or '')
+            synthetic = 1
+        else:
+            ahead = self.peek(512) or ''
+            synthetic = 0
+
+        i = 0
 
         while True:
-            ahead = self.peek(i + 1)
-            if not ahead or len(ahead) <= i:
+            if i >= len(ahead):
                 self.dedented = True
                 return ''
             c = ahead[i]
 
             if c in ' \t':
-                consume += 1
                 i += 1
                 continue
 
             if c != '\n':
-                for _ in range(consume):
-                    self.read(1)
+                consume = i - synthetic
+                if consume > 0:
+                    self.read(consume)
                 return ''
 
             newline_start = i
@@ -529,8 +523,7 @@ class IndentAwareStream(SourceStream):
             next_indent = 0
 
             while True:
-                ahead = self.peek(i + 1)
-                if not ahead or len(ahead) <= i:
+                if i >= len(ahead):
                     self.dedented = True
                     return ''
                 nc = ahead[i]
@@ -544,8 +537,9 @@ class IndentAwareStream(SourceStream):
                     if next_indent <= self._max_indent:
                         self.dedented = True
                         return ''
-                    for _ in range(newline_start + 1 + next_indent):
-                        self.read(1)
+                    consume = newline_start + 1 + next_indent - synthetic
+                    if consume > 0:
+                        self.read(consume)
                     return ''
 
 
@@ -1463,13 +1457,9 @@ class LayoutReader(Reader):
         :return: True if a bare block-opener colon exists ahead
         """
 
+        ahead = stream.peek(512) or ''
         depth = 0
-        i = 0
-        while True:
-            ahead = stream.peek(i + 1)
-            if not ahead or len(ahead) <= i:
-                return False
-            ch = ahead[i]
+        for ch in ahead:
             if depth == 0 and ch in '\n;':
                 return False
             if ch in '([{':
@@ -1478,7 +1468,7 @@ class LayoutReader(Reader):
                 depth -= 1
             elif ch == ':' and depth == 0:
                 return True
-            i += 1
+        return False
 
 
     def _read_header_args(self, stream):

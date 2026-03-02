@@ -34,6 +34,7 @@
 static PyObject *_str_read = NULL;
 static PyObject *_str_seek = NULL;
 static PyObject *_str_tell = NULL;
+static PyObject *_long_one = NULL;
 
 
 /* === helper macros === */
@@ -362,16 +363,11 @@ PyObject *KosBaseSourceStream_ReadUntilPred(
 
   /* scan character by character */
   Py_ssize_t scan_count = 0;
-  PyObject *one = PyLong_FromLong(1);
-  if (! one)
-    return NULL;
 
   while (1) {
-    PyObject *ch = PyObject_CallMethodObjArgs(s->stream, _str_read, one, NULL);
-    if (! ch) {
-      Py_DECREF(one);
+    PyObject *ch = PyObject_CallMethodObjArgs(s->stream, _str_read, _long_one, NULL);
+    if (! ch)
       return NULL;
-    }
 
     if (! PyUnicode_Check(ch) || PyUnicode_GET_LENGTH(ch) == 0) {
       /* EOF reached */
@@ -383,10 +379,8 @@ PyObject *KosBaseSourceStream_ReadUntilPred(
     Py_UCS4 codepoint = PyUnicode_ReadChar(ch, 0);
     Py_DECREF(ch);
 
-    if (codepoint == (Py_UCS4) -1 && PyErr_Occurred()) {
-      Py_DECREF(one);
+    if (codepoint == (Py_UCS4) -1 && PyErr_Occurred())
       return NULL;
-    }
 
     /* check predicate */
     if (pred(codepoint, context))
@@ -394,8 +388,6 @@ PyObject *KosBaseSourceStream_ReadUntilPred(
 
     scan_count++;
   }
-
-  Py_DECREF(one);
 
   /* seek back to start */
   if (stream_seek(s->stream, start_pos) < 0)
@@ -435,16 +427,11 @@ PyObject *KosBaseSourceStream_ReadUntil(
 
   /* scan character by character */
   Py_ssize_t scan_count = 0;
-  PyObject *one = PyLong_FromLong(1);
-  if (! one)
-    return NULL;
 
   while (1) {
-    PyObject *ch = PyObject_CallMethodObjArgs(s->stream, _str_read, one, NULL);
-    if (! ch) {
-      Py_DECREF(one);
+    PyObject *ch = PyObject_CallMethodObjArgs(s->stream, _str_read, _long_one, NULL);
+    if (! ch)
       return NULL;
-    }
 
     if (! PyUnicode_Check(ch) || PyUnicode_GET_LENGTH(ch) == 0) {
       /* EOF reached */
@@ -456,27 +443,20 @@ PyObject *KosBaseSourceStream_ReadUntil(
     PyObject *result = PyObject_CallFunctionObjArgs(testf, ch, NULL);
     Py_DECREF(ch);
 
-    if (! result) {
-      Py_DECREF(one);
+    if (! result)
       return NULL;
-    }
 
     int is_truthy = PyObject_IsTrue(result);
     Py_DECREF(result);
 
-    if (is_truthy < 0) {
-      /* error in PyObject_IsTrue */
-      Py_DECREF(one);
+    if (is_truthy < 0)
       return NULL;
-    }
 
     if (is_truthy)
       break;
 
     scan_count++;
   }
-
-  Py_DECREF(one);
 
   /* seek back to start */
   if (stream_seek(s->stream, start_pos) < 0)
@@ -592,17 +572,12 @@ static PyObject *m_bss_readline(
 
   /* scan to newline */
   Py_ssize_t scan_count = 0;
-  PyObject *one = PyLong_FromLong(1);
-  if (! one)
-    return NULL;
   int found_newline = 0;
 
   while (1) {
-    PyObject *ch = PyObject_CallMethodObjArgs(s->stream, _str_read, one, NULL);
-    if (! ch) {
-      Py_DECREF(one);
+    PyObject *ch = PyObject_CallMethodObjArgs(s->stream, _str_read, _long_one, NULL);
+    if (! ch)
       return NULL;
-    }
 
     if (! PyUnicode_Check(ch) || PyUnicode_GET_LENGTH(ch) == 0) {
       /* EOF reached */
@@ -621,8 +596,6 @@ static PyObject *m_bss_readline(
 
     Py_DECREF(ch);
   }
-
-  Py_DECREF(one);
 
   /* seek back to start */
   if (stream_seek(s->stream, start_pos) < 0)
@@ -758,6 +731,13 @@ int koskari_parse_init(PyObject *mod) {
   STR_CONST(_str_seek, "seek");
   STR_CONST(_str_tell, "tell");
 
+  /* initialize integer constants */
+  if (! _long_one) {
+    _long_one = PyLong_FromLong(1);
+    if (! _long_one)
+      return -1;
+  }
+
   /* initialize types */
   if (PyType_Ready(&KosBaseSourceStreamType))
     return -1;
@@ -777,6 +757,9 @@ int koskari_parse_clear(PyObject *mod) {
   Py_CLEAR(_str_read);
   Py_CLEAR(_str_seek);
   Py_CLEAR(_str_tell);
+
+  /* clear integer constants */
+  Py_CLEAR(_long_one);
 
   return 0;
 }
