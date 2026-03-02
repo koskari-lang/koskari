@@ -21,11 +21,102 @@ try/except/else/finally block syntax parsing.
 from unittest import TestCase
 
 from koskari.types import cons, keyword, nil, symbol
+from koskari.compile.helpers import pycons
 from .. import parse_layout
 
 
 _symbol_try = symbol('try')
 _compile_begin = symbol('compile/begin')
+
+
+class TestLayoutTryExceptBindings(TestCase):
+
+    def test_except_bare_type(self):
+        src = """
+        try:
+          x
+        except Exception:
+          y
+        """
+
+        expected = pycons(
+          (symbol('try'),
+           (_compile_begin, symbol('x')),
+           ((keyword('except'), symbol('Exception')), symbol('y')))
+        )
+
+        result = parse_layout(src)
+
+        print(f"result  : {result}")
+        print(f"expected: {expected}")
+
+        self.assertEqual(result, expected)
+
+
+    def test_except_simple_binding(self):
+        src = """
+        try:
+          x
+        except [e Exception]:
+          y
+        """
+
+        expected = pycons(
+          (symbol('try'),
+           (_compile_begin, symbol('x')),
+           ((symbol('e'), symbol('Exception')), symbol('y')))
+        )
+
+        result = parse_layout(src)
+
+        print(f"result  : {result}")
+        print(f"expected: {expected}")
+
+        self.assertEqual(result, expected)
+
+
+    def test_except_as_binding(self):
+        src = """
+        try:
+          x
+        except [Exception as: e]:
+          y
+        """
+
+        expected = pycons(
+          (symbol('try'),
+           (_compile_begin, symbol('x')),
+           ((symbol('e'), symbol('Exception')), symbol('y')))
+        )
+
+        result = parse_layout(src)
+
+        print(f"result  : {result}")
+        print(f"expected: {expected}")
+
+        self.assertEqual(result, expected)
+
+
+    def test_except_untyped_error(self):
+        src = """
+        try:
+          x
+        except:
+          y
+        """
+
+        expected = pycons(
+          (symbol('try'),
+           (_compile_begin, symbol('x')),
+           (keyword('except'), symbol('y')))
+        )
+
+        result = parse_layout(src)
+
+        print(f"result  : {result}")
+        print(f"expected: {expected}")
+
+        self.assertEqual(result, expected)
 
 
 class TestLayoutTry(TestCase):
@@ -37,11 +128,11 @@ class TestLayoutTry(TestCase):
         except Exception:
           y
         """
-        try_body = cons(_compile_begin, cons(symbol('x'), nil))
+        try_body = cons(_compile_begin, symbol('x'), nil)
         except_clause = cons(
-            cons(keyword('except'), symbol('Exception')),
-            cons(symbol('y'), nil))
-        expected = cons(_symbol_try, cons(try_body, cons(except_clause, nil)))
+            cons(keyword('except'), symbol('Exception'), nil),
+            symbol('y'), nil)
+        expected = cons(_symbol_try, try_body, except_clause, nil)
         result = parse_layout(src)
         self.assertEqual(result, expected)
 
@@ -53,9 +144,9 @@ class TestLayoutTry(TestCase):
         finally:
           z
         """
-        try_body = cons(_compile_begin, cons(symbol('x'), nil))
-        finally_clause = cons(keyword('finally'), cons(symbol('z'), nil))
-        expected = cons(_symbol_try, cons(try_body, cons(finally_clause, nil)))
+        try_body = cons(_compile_begin, symbol('x'), nil)
+        finally_clause = cons(keyword('finally'), symbol('z'), nil)
+        expected = cons(_symbol_try, try_body, finally_clause, nil)
         result = parse_layout(src)
         self.assertEqual(result, expected)
 
@@ -71,14 +162,13 @@ class TestLayoutTry(TestCase):
         finally:
           z
         """
-        try_body = cons(_compile_begin, cons(symbol('x'), nil))
+        try_body = cons(_compile_begin, symbol('x'), nil)
         except_clause = cons(
-            cons(keyword('except'), symbol('Exception')),
-            cons(symbol('y'), nil))
-        else_clause = cons(keyword('else'), cons(symbol('a'), nil))
-        finally_clause = cons(keyword('finally'), cons(symbol('z'), nil))
-        catches = cons(except_clause, cons(else_clause, cons(finally_clause, nil)))
-        expected = cons(_symbol_try, cons(try_body, catches))
+            cons(keyword('except'), symbol('Exception'), nil),
+            symbol('y'), nil)
+        else_clause = cons(keyword('else'), symbol('a'), nil)
+        finally_clause = cons(keyword('finally'), symbol('z'), nil)
+        expected = cons(_symbol_try, try_body, except_clause, else_clause, finally_clause, nil)
         result = parse_layout(src)
         self.assertEqual(result, expected)
 

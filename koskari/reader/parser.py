@@ -1927,13 +1927,24 @@ class LayoutReader(Reader):
     def _read_pair(self, closer, stream, char):
         """
         Override to track layout depth for s-expr mode
+
+        Removes ':' from the terminating set while inside a delimiter so that
+        trailing-colon keywords (e.g. as:) can form normally in s-expr mode.
+        Restores it on exit.
         """
 
         self._layout_depth += 1
+        colon_was_terminating = ':' in self.terminating
+        if colon_was_terminating:
+            self.terminating.remove(':')
+            self._terms = "".join(self.terminating)
         try:
             return super()._read_pair(closer, stream, char)
         finally:
             self._layout_depth -= 1
+            if colon_was_terminating:
+                self.terminating.append(':')
+                self._terms = "".join(self.terminating)
 
 
 # ===========================================================================

@@ -79,6 +79,48 @@ class TestLayoutBlockSyntax(TestCase):
         self.assertEqual(result, expected)
 
 
+    def test_block_header_keyword_inside_brackets(self):
+        """
+        A trailing-colon keyword inside brackets in the block header is not
+        treated as the block-opening colon
+        """
+
+        src = """
+        unknown [(foo) as: x]:
+          y
+        """
+
+        expected = pycons(
+          (symbol('unknown'),
+           ((symbol('foo'),), keyword('as'), symbol('x')),
+           (symbol('compile/begin'), symbol('y')))
+        )
+
+        result = parse_layout(src)
+        self.assertEqual(result, expected)
+
+
+    def test_block_header_keyword_inside_parens(self):
+        """
+        A trailing-colon keyword inside parentheses in the block header is not
+        treated as the block-opening colon
+        """
+
+        src = """
+        unknown (foo as: x):
+          y
+        """
+
+        expected = pycons(
+          (symbol('unknown'),
+           (symbol('foo'), keyword('as'), symbol('x')),
+           (symbol('compile/begin'), symbol('y')))
+        )
+
+        result = parse_layout(src)
+        self.assertEqual(result, expected)
+
+
     def test_nested_block_inside_block(self):
         src = """
         foo [[x 1]]:

@@ -119,7 +119,12 @@ def helper_binding(source, required=True, allow_unnamed=False):
 
     parts = list(unpack(source))
     sc = len(parts)
-    if sc == 2:
+    if sc == 3:
+        first, second, third = parts[0], parts[1], parts[2]
+        if is_keyword(second) and str(second) == "as" and is_symbolish(third):
+            return (third, first)
+        raise SpecialError(msg, source)
+    elif sc == 2:
         first, second = parts[0], parts[1]
         if is_pair(second) and not is_symbolish(first):
             _as, sym_rest = second

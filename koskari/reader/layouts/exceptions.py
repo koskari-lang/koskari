@@ -20,7 +20,7 @@ Layout handlers for try/except/else/finally block syntax.
 
 from ...exceptions import LayoutError
 from ...compile.helpers import helper_binding
-from ...types import car, cdr, cons, get_position, keyword, nil, symbol, unpack
+from ...types import car, cdr, cons, get_position, is_pair, keyword, nil, symbol, unpack
 from .helpers import layout
 
 
@@ -59,18 +59,19 @@ def layout_try(source, peers):
                     'except block requires an exception type',
                     get_position(peer))
             try:
-                bind_source = cons(ppargs[0], nil)
-                if len(ppargs) > 1:
-                    bind_source = cons(ppargs[0], cons(ppargs[1], nil) if len(ppargs) == 2 else cons(*ppargs, nil))
+                if len(ppargs) == 1 and is_pair(ppargs[0]):
+                    bind_source = ppargs[0]
+                else:
+                    bind_source = cons(*ppargs, nil)
                 binding, ex_type = helper_binding(bind_source, allow_unnamed=True)
             except Exception as e:
                 raise LayoutError(
                     'invalid except binding: %s' % e,
                     get_position(peer))
             if binding is not None:
-                except_clauses.append(cons(cons(binding, ex_type), pbody))
+                except_clauses.append(cons(cons(binding, ex_type, nil), pbody))
             else:
-                except_clauses.append(cons(cons(keyword('except'), ex_type), pbody))
+                except_clauses.append(cons(cons(keyword('except'), ex_type, nil), pbody))
 
         elif phead is _symbol_else:
             if act_else is not None:
