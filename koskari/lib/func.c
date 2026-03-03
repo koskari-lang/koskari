@@ -293,6 +293,207 @@ PyObject *KosFunctionSpec_New(PyObject *name, PyObject *formals_spec,
 }
 
 
+/* === KosBoundMethod: bound method (func, self) via descriptor protocol === */
+
+
+static int kos_install_boundmethod(
+    KosContext *ctx,
+    KosEvent *out_ev,
+    PyObject *callable,
+    PyObject *args_tuple,
+    PyObject *kwds_dict) {
+
+  PyObject *func = KosBoundMethod_FUNC(callable);
+  PyObject *self = KosBoundMethod_SELF(callable);
+  Py_ssize_t n = args_tuple ? PyTuple_GET_SIZE(args_tuple) : 0;
+  PyObject *bound_args = PyTuple_New(1 + n);
+  if (! bound_args)
+    return -1;
+  Py_INCREF(self);
+  PyTuple_SET_ITEM(bound_args, 0, self);
+  for (Py_ssize_t i = 0; i < n; i++) {
+    PyObject *item = PyTuple_GET_ITEM(args_tuple, i);
+    Py_INCREF(item);
+    PyTuple_SET_ITEM(bound_args, 1 + i, item);
+  }
+  int r = kos_install_function(ctx, out_ev, func, bound_args, kwds_dict);
+  Py_DECREF(bound_args);
+  return r;
+}
+
+
+static int kos_tail_install_boundmethod(
+    KosContext *ctx,
+    KosEvent *out_ev,
+    PyObject *callable,
+    PyObject *args_tuple,
+    PyObject *kwds_dict) {
+
+  PyObject *func = KosBoundMethod_FUNC(callable);
+  PyObject *self = KosBoundMethod_SELF(callable);
+  Py_ssize_t n = args_tuple ? PyTuple_GET_SIZE(args_tuple) : 0;
+  PyObject *bound_args = PyTuple_New(1 + n);
+  if (! bound_args)
+    return -1;
+  Py_INCREF(self);
+  PyTuple_SET_ITEM(bound_args, 0, self);
+  for (Py_ssize_t i = 0; i < n; i++) {
+    PyObject *item = PyTuple_GET_ITEM(args_tuple, i);
+    Py_INCREF(item);
+    PyTuple_SET_ITEM(bound_args, 1 + i, item);
+  }
+  int r = kos_tail_install_function(ctx, out_ev, func, bound_args, kwds_dict);
+  Py_DECREF(bound_args);
+  return r;
+}
+
+
+static int kos_vinstall_boundmethod(
+    KosContext *ctx,
+    KosEvent *out_ev,
+    PyObject *callable,
+    PyObject *const *args,
+    Py_ssize_t nargs,
+    PyObject *kwnames) {
+
+  PyObject *func = KosBoundMethod_FUNC(callable);
+  PyObject *self = KosBoundMethod_SELF(callable);
+  PyObject **new_args = PyMem_New(PyObject *, (size_t) (nargs + 1));
+  if (! new_args)
+    return -1;
+  new_args[0] = self;
+  for (Py_ssize_t i = 0; i < nargs; i++)
+    new_args[1 + i] = args[i];
+  int r = kos_vinstall_function(ctx, out_ev, func, new_args, nargs + 1, kwnames);
+  PyMem_Del(new_args);
+  return r;
+}
+
+
+static int kos_tail_vinstall_boundmethod(
+    KosContext *ctx,
+    KosEvent *out_ev,
+    PyObject *callable,
+    PyObject *const *args,
+    Py_ssize_t nargs,
+    PyObject *kwnames) {
+
+  PyObject *func = KosBoundMethod_FUNC(callable);
+  PyObject *self = KosBoundMethod_SELF(callable);
+  PyObject **new_args = PyMem_New(PyObject *, (size_t) (nargs + 1));
+  if (! new_args)
+    return -1;
+  new_args[0] = self;
+  for (Py_ssize_t i = 0; i < nargs; i++)
+    new_args[1 + i] = args[i];
+  int r = kos_tail_vinstall_function(
+      ctx, out_ev, func, new_args, nargs + 1, kwnames);
+  PyMem_Del(new_args);
+  return r;
+}
+
+
+static PyObject *boundmethod_call(
+    PyObject *self,
+    PyObject *args,
+    PyObject *kwargs) {
+
+  PyObject *func = KosBoundMethod_FUNC(self);
+  PyObject *bound_self = KosBoundMethod_SELF(self);
+  PyObject *bound_args = NULL;
+  PyObject *result = NULL;
+
+  if (! args || PyTuple_GET_SIZE(args) == 0) {
+    bound_args = PyTuple_Pack(1, bound_self);
+  } else {
+    Py_ssize_t n = PyTuple_GET_SIZE(args);
+    bound_args = PyTuple_New(1 + n);
+    if (! bound_args)
+      return NULL;
+    Py_INCREF(bound_self);
+    PyTuple_SET_ITEM(bound_args, 0, bound_self);
+    for (Py_ssize_t i = 0; i < n; i++) {
+      PyObject *item = PyTuple_GET_ITEM(args, i);
+      Py_INCREF(item);
+      PyTuple_SET_ITEM(bound_args, 1 + i, item);
+    }
+  }
+  if (! bound_args)
+    return NULL;
+  result = KosFunction_Call(func, bound_args, kwargs);
+  Py_DECREF(bound_args);
+  return result;
+}
+
+
+static void boundmethod_dealloc(PyObject *self) {
+  Py_CLEAR(KosBoundMethod_FUNC(self));
+  Py_CLEAR(KosBoundMethod_SELF(self));
+  Py_TYPE(self)->tp_free(self);
+}
+
+
+static PyMemberDef boundmethod_members[] = {
+  { "__func__", T_OBJECT, offsetof(KosBoundMethod, func), READONLY, NULL },
+  { "__self__", T_OBJECT, offsetof(KosBoundMethod, self), READONLY, NULL },
+  { NULL, 0, 0, 0, NULL },
+};
+
+
+static PyObject *boundmethod_repr(PyObject *self) {
+  return PyUnicode_FromFormat(
+      "<bound method %R of %R>",
+      KosFunction_NAME(KosBoundMethod_FUNC(self))
+          ? KosFunction_NAME(KosBoundMethod_FUNC(self))
+          : (PyObject *) Py_None,
+      KosBoundMethod_SELF(self));
+}
+
+
+KosCallableTypeObject KosBoundMethodType = {
+  .type = {
+    PyVarObject_HEAD_INIT(NULL, 0)
+    .tp_name = "koskari.lib.BoundMethod",
+    .tp_basicsize = sizeof(KosBoundMethod),
+    .tp_dealloc = boundmethod_dealloc,
+    .tp_repr = boundmethod_repr,
+    .tp_call = boundmethod_call,
+    .tp_flags = Py_TPFLAGS_DEFAULT,
+    .tp_doc = "Bound method wrapper. Implements KosCallable by prepending"
+              " self to call arguments.",
+    .tp_members = boundmethod_members,
+    .tp_base = KOS_CALLABLE_PYTYPE(KosCallableType),
+  },
+  .tp_kos_install = kos_install_boundmethod,
+  .tp_kos_tail_install = kos_tail_install_boundmethod,
+  .tp_kos_vinstall = kos_vinstall_boundmethod,
+  .tp_kos_tail_vinstall = kos_tail_vinstall_boundmethod,
+};
+
+
+PyObject *KosBoundMethod_New(PyObject *func, PyObject *self) {
+
+  if (! KosFunction_CheckExact(func)) {
+    PyErr_Format(PyExc_TypeError, "KosBoundMethod requires Function, got %R",
+                 func);
+    return NULL;
+  }
+  if (! self) {
+    PyErr_SetString(PyExc_TypeError, "KosBoundMethod requires non-NULL self");
+    return NULL;
+  }
+  PyObject *bm = PyType_GenericNew(
+      KOS_CALLABLE_PYTYPE(KosBoundMethodType), NULL, NULL);
+  if (! bm)
+    return NULL;
+  Py_INCREF(func);
+  KosBoundMethod_FUNC(bm) = func;
+  Py_INCREF(self);
+  KosBoundMethod_SELF(bm) = self;
+  return bm;
+}
+
+
 /* === KosFunction: callable (code, formals, base_ns) -> coroutine on __call__ === */
 
 
@@ -494,6 +695,19 @@ PyObject *KosFunction_CallNoArgs(PyObject *self) {
 }
 
 
+static PyObject *function_descr_get(
+    PyObject *self,
+    PyObject *obj,
+    PyObject *owner) {
+
+  if (obj == NULL) {
+    Py_INCREF(self);
+    return self;
+  }
+  return KosBoundMethod_New(self, obj);
+}
+
+
 static PyObject *function_repr(PyObject *self) {
   KosFunction *fn = (KosFunction *) self;
   PyObject *name = KosFunction_NAME(fn);
@@ -541,6 +755,7 @@ KosCallableTypeObject KosFunctionType = {
   .tp_basicsize = sizeof(KosFunction),
   .tp_dealloc = function_dealloc,
   .tp_repr = function_repr,
+  .tp_descr_get = function_descr_get,
   .tp_call = function_call,
   .tp_flags = Py_TPFLAGS_DEFAULT | Py_TPFLAGS_HAVE_VECTORCALL,
   .tp_vectorcall_offset = KosFunction_VECTORCALL_OFFSET,
@@ -674,6 +889,7 @@ int koskari_func_init(PyObject *mod) {
 
   if (PyType_Ready(KOS_CALLABLE_PYTYPE(KosExpressionType)) ||
       PyType_Ready(&KosFunctionSpecType) ||
+      PyType_Ready(KOS_CALLABLE_PYTYPE(KosBoundMethodType)) ||
       PyType_Ready(KOS_CALLABLE_PYTYPE(KosFunctionType)))
     return -1;
 
@@ -687,6 +903,10 @@ int koskari_func_init(PyObject *mod) {
 
   if (PyDict_SetItemString(dict, "Function",
                            (PyObject *) KOS_CALLABLE_PYTYPE(KosFunctionType)))
+    return -1;
+
+  if (PyDict_SetItemString(dict, "BoundMethod",
+                           (PyObject *) KOS_CALLABLE_PYTYPE(KosBoundMethodType)))
     return -1;
 
   return 0;

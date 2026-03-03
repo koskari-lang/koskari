@@ -160,6 +160,33 @@ typedef struct {
   ((obj) && ((obj)->ob_type == KOS_CALLABLE_PYTYPE(KosFunctionType)))
 
 
+/* === KosBoundMethod === */
+
+
+extern KosCallableTypeObject KosBoundMethodType;
+
+
+typedef struct {
+  PyObject_HEAD
+  PyObject *func;
+  PyObject *self;
+} KosBoundMethod;
+
+
+#define KosBoundMethod_FUNC(bm) (((KosBoundMethod *) (bm))->func)
+#define KosBoundMethod_SELF(bm) (((KosBoundMethod *) (bm))->self)
+
+#define KosBoundMethod_CheckExact(obj)                           \
+  ((obj) && ((obj)->ob_type == KOS_CALLABLE_PYTYPE(KosBoundMethodType)))
+
+
+/**
+   Create a KosBoundMethod (func, self). Used by KosFunction.__get__
+   when accessed via instance. Caller must Py_DECREF when done.
+*/
+PyObject *KosBoundMethod_New(PyObject *func, PyObject *self);
+
+
 /**
    Create a Function from (code, formals, parent_ns). Used by
    Code.function(formals, parent_ns). Same assembly as sibilant-ceval

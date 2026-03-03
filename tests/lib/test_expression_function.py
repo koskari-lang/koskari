@@ -27,7 +27,7 @@ namespace (VAR); callables are not put in CONST.
 import asyncio
 import unittest
 
-from koskari.lib import Code, Expression, Function
+from koskari.lib import BoundMethod, Code, Expression, Function
 from koskari.types import FormalsSpec, NamespaceSpec, OpCode
 from tests import make_callable
 
@@ -326,6 +326,118 @@ class TestAsyncAwait(unittest.TestCase):
         result = coro.run()
         self.assertEqual(result, (42, 52))
         self.assertEqual(capture, [1, 2, 3])
+
+
+class TestFunctionDescriptor(unittest.TestCase):
+    """
+    Tests for KosFunction descriptor protocol (__get__) and KosBoundMethod
+    """
+
+    def test_function_get_via_class_returns_self(self):
+        """
+        KosFunction.__get__(None, owner) returns the function (class access)
+        """
+        code, base_ns = build_expr([["CONST", 42], ["RETURN", 1]])
+        fspec = FormalsSpec(('self',), None, ())
+        formals = fspec()
+        fn = code.function(formals, base_ns)
+        result = fn.__get__(None, type(None))
+        self.assertIs(result, fn)
+
+    def test_function_get_via_instance_returns_bound_method(self):
+        """
+        KosFunction.__get__(obj, owner) returns KosBoundMethod (instance access)
+        """
+        code, base_ns = build_expr([["CONST", 42], ["RETURN", 1]])
+        fspec = FormalsSpec(('self',), None, ())
+        formals = fspec()
+        fn = code.function(formals, base_ns)
+        obj = object()
+        result = fn.__get__(obj, type(obj))
+        self.assertIsInstance(result, BoundMethod)
+        self.assertIs(result.__self__, obj)
+        self.assertIs(result.__func__, fn)
+
+    def test_bound_method_call_prepends_self(self):
+        """
+        Calling a bound method passes self as first argument
+        """
+        code, base_ns = build_expr([
+            ["VAR", "self"],
+            ["CONST", 1],
+            ["OBJECT_ADD", 2],
+            ["RETURN", 1],
+        ])
+        fspec = FormalsSpec(('self',), None, ())
+        formals = fspec()
+        fn = code.function(formals, base_ns)
+        obj = 41
+        bm = fn.__get__(obj, type(obj))
+        result = run_to_completion(bm())
+        self.assertEqual(result, 42)
+
+    def test_bound_method_via_class_dict_and_instance_access(self):
+        """
+        KosFunction in class dict; access via instance triggers __get__,
+        returns bound method that can be called.
+        """
+        code, base_ns = build_expr([
+            ["VAR", "self"],
+            ["CONST", 1],
+            ["OBJECT_ADD", 2],
+            ["RETURN", 1],
+        ])
+        fspec = FormalsSpec(('self',), None, ())
+        formals = fspec()
+        fn = code.function(formals, base_ns)
+
+        class Box:
+            def __init__(self, val):
+                self.val = val
+            def __add__(self, other):
+                return self.val + other
+
+        Box.add_one = fn
+        c = Box(41)
+        bm = c.add_one
+        self.assertIsInstance(bm, BoundMethod)
+        self.assertIs(bm.__self__, c)
+        result = run_to_completion(bm())
+        self.assertEqual(result, 42)
+
+    def test_apply_with_bound_method_flattens(self):
+        """
+        apply(obj.method, args) flattens when method is KosFunction in class
+        """
+        code, base_ns = build_expr([
+            ["VAR", "self"],
+            ["VAR", "x"],
+            ["OBJECT_ADD", 2],
+            ["RETURN", 1],
+        ])
+        fspec = FormalsSpec(('self', 'x'), None, ())
+        formals = fspec()
+        fn = code.function(formals, base_ns)
+
+        class Box:
+            def __init__(self, val):
+                self.val = val
+            def __add__(self, other):
+                return self.val + other
+
+        Box.add = fn
+        c = Box(35)
+        import koskari.lib as lib
+        apply_code, ns = build_expr([
+            ["VAR", "apply"],
+            ["VAR", "c"],
+            ["ATTR", "add"],
+            ["CONST", (7,)],
+            ["CALL", 2],
+            ["RETURN", 1],
+        ], values={"apply": lib.apply, "c": c})
+        result = run_to_completion(make_callable(apply_code, ns)())
+        self.assertEqual(result, 42)
 
 
 # The end.

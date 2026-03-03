@@ -1075,7 +1075,7 @@ KOS_OP_INLINE int push_result(KosContext *ctx, PyObject *val) {
 
    :return: 0 continue, 1 stop (AWAIT), -1 error
 */
-static int push_or_await(KosContext *ctx, KosEvent *out_ev, PyObject *val) {
+int kos_push_or_await(KosContext *ctx, KosEvent *out_ev, PyObject *val) {
 
   /* Defer is not auto-awaited; push as plain value (explicit AWAIT drives it). */
   if (KosDefer_Check(val)) {
@@ -1155,7 +1155,7 @@ int kos_push_with_after_enter(
     KosContext_PENDING_WITH_ENTER_NAME(ctx) = name;
     KosContext_PENDING_WITH_ENTER_RESUME_PC(ctx) = resume_pc;
     KosContext_PENDING_WITH_ENTER_IS_DYN(ctx) = use_dyn_with;
-    int r = push_or_await(ctx, out_ev, result);
+    int r = kos_push_or_await(ctx, out_ev, result);
     if (r == 1)
       return 1;
     if (r < 0) {
@@ -1287,7 +1287,7 @@ int kos_complete_pending_with_enter(KosContext *ctx, KosEvent *out_ev) {
 int kos_with_exit_start_await(KosContext *ctx, KosEvent *out_ev,
                               PyObject *awaitable) {
 
-  return push_or_await(ctx, out_ev, awaitable);
+  return kos_push_or_await(ctx, out_ev, awaitable);
 }
 
 
@@ -1670,17 +1670,18 @@ static int call_native_flattened_expr(
 
 
 /**
-   call_native_flattened_function: callable and args are borrowed. Pass args
-   to PrepareCallNamespace, push frame. Handler releases callable and args.
+   call_native_flattened_function: callable, args, and kwds are borrowed.
+   Pass args and kwds to PrepareCallNamespace, push frame.
 */
 static int call_native_flattened_function(
     KosContext *ctx,
     PyObject *callable,
     PyObject *args,
+    PyObject *kwds,
     KosEvent *out_ev) {
 
   PyObject *frame_ns = KosFunction_PrepareCallNamespace(
-      callable, args, NULL);
+      callable, args, kwds);
   if (! frame_ns)
     return -1;
   PyObject *fn_code = KosFunction_CODE(callable);
@@ -1714,17 +1715,18 @@ static int call_tail_flattened_expr(
 
 
 /**
-   call_tail_flattened_function: callable and args are borrowed. Prepare
-   call namespace from formals, replace current frame via kos_tail_koscall.
+   call_tail_flattened_function: callable, args, and kwds are borrowed.
+   Prepare call namespace from formals, replace frame via kos_tail_koscall.
 */
 static int call_tail_flattened_function(
     KosContext *ctx,
     PyObject *callable,
     PyObject *args,
+    PyObject *kwds,
     KosEvent *out_ev) {
 
   PyObject *frame_ns = KosFunction_PrepareCallNamespace(
-      callable, args, NULL);
+      callable, args, kwds);
   if (! frame_ns)
     return -1;
   int r = kos_tail_koscall(ctx, (KosCode *) KosFunction_CODE(callable),
@@ -1755,7 +1757,7 @@ static int call_default_python_call(
       : PyObject_Call(callable, args_tuple, kwds_dict ? kwds_dict : NULL);
   if (! result)
     return -1;
-  return push_or_await(ctx, out_ev, result);
+  return kos_push_or_await(ctx, out_ev, result);
 }
 
 
@@ -1828,7 +1830,7 @@ static int call_default_python_vcall(
   PyObject *result = PyObject_Vectorcall(callable, args, (size_t) nargs, kwnames);
   if (! result)
     return -1;
-  return push_or_await(ctx, out_ev, result);
+  return kos_push_or_await(ctx, out_ev, result);
 }
 
 
@@ -1976,8 +1978,8 @@ int kos_install_function(
     PyObject *args_tuple,
     PyObject *kwds_dict) {
 
-  (void) kwds_dict;
-  return call_native_flattened_function(ctx, callable, args_tuple, out_ev);
+  return call_native_flattened_function(
+      ctx, callable, args_tuple, kwds_dict, out_ev);
 }
 
 
@@ -1988,8 +1990,8 @@ int kos_tail_install_function(
     PyObject *args_tuple,
     PyObject *kwds_dict) {
 
-  (void) kwds_dict;
-  return call_tail_flattened_function(ctx, callable, args_tuple, out_ev);
+  return call_tail_flattened_function(
+      ctx, callable, args_tuple, kwds_dict, out_ev);
 }
 
 
@@ -2138,7 +2140,7 @@ static int apply_native_handler(
   if (detached)
     kos_dynframe_free(detached);
 
-  return push_or_await(ctx, out_ev, result);
+  return kos_push_or_await(ctx, out_ev, result);
 }
 
 
@@ -2174,23 +2176,14 @@ static int kos_install_apply_impl(
   }
 
   /* Flattening: delegate to inner callable's install */
-  if (KosFunction_CheckExact(fn) && kwds == NULL) {
+  if (KosCallable_Check(fn)) {
     KosInstallFunc inner = is_tail
         ? KosCallableType_TAIL_INSTALL(Py_TYPE(fn))
         : KosCallableType_INSTALL(Py_TYPE(fn));
     if (inner) {
-      int r = inner(ctx, out_ev, fn, seq_args, NULL);
+      int r = inner(ctx, out_ev, fn, seq_args, kwds);
       Py_DECREF(seq_args);
       return r;
-    }
-  }
-  if (KosExpression_CheckExact(fn) && kwds == NULL && PyTuple_GET_SIZE(seq_args) == 0) {
-    KosInstallFunc inner = is_tail
-        ? KosCallableType_TAIL_INSTALL(Py_TYPE(fn))
-        : KosCallableType_INSTALL(Py_TYPE(fn));
-    if (inner) {
-      Py_DECREF(seq_args);
-      return inner(ctx, out_ev, fn, NULL, NULL);
     }
   }
 
@@ -2244,7 +2237,7 @@ static int defer_drive(KosContext *ctx, KosEvent *out_ev, PyObject *defer_obj);
 static int kos_await_dispatch(KosContext *ctx, KosEvent *out_ev, PyObject *value) {
   if (KosDefer_Check(value))
     return defer_drive(ctx, out_ev, value);
-  return push_or_await(ctx, out_ev, value);
+  return kos_push_or_await(ctx, out_ev, value);
 }
 
 
@@ -2735,7 +2728,7 @@ void kos_yieldfrom_close_delegate(KosDynYieldFrom *node) {
 /**
    Drive a defer to completion or suspension. Used only by AWAIT opcode.
    Consumes defer (caller's ref). Returns 0 continue, 1 stop (AWAIT), -1 error.
-   When DELEGATING(inner), calls push_or_await(ctx, out_ev, inner); on suspend
+   When DELEGATING(inner), calls kos_push_or_await(ctx, out_ev, inner); on suspend
    stores defer in ctx->pending_defer for FeedResult on resume.
 */
 static int defer_drive(KosContext *ctx, KosEvent *out_ev, PyObject *defer_obj) {
@@ -2789,7 +2782,7 @@ static int defer_drive(KosContext *ctx, KosEvent *out_ev, PyObject *defer_obj) {
         Py_DECREF(defer_obj);
         return -1;
       }
-      int r = push_or_await(ctx, out_ev, yielded);
+      int r = kos_push_or_await(ctx, out_ev, yielded);
       Py_DECREF(yielded);
       if (r == 0) {
         PyObject *inner_result = KosStackBlock_PopRef(&CURRENT_STACK(ctx));
