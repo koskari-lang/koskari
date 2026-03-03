@@ -60,6 +60,7 @@ static const char *kos_dynnode_kind_names[] = {
   "DYN_WITH",
   "SHIFT",
   "CC_RAISE",
+  "CLASS",
   "UNKNOWN",
 };
 
@@ -983,6 +984,54 @@ void kos_dyn_pop_ns(KosContext *ctx, KosDynNs *node) {
 }
 
 
+/* === KosDynClass implementation === */
+
+
+KosDynClass *kos_dynclass_new(
+    KosDynNode *parent,
+    PyObject *metaclass,
+    PyObject *name,
+    PyObject *bases,
+    PyObject *kwargs,
+    PyObject *class_binding_ns,
+    PyObject *saved_ns) {
+
+  KosDynClass *node = (KosDynClass *) kos_dynnode_alloc();
+  if (! node) {
+    Py_DECREF(metaclass);
+    Py_DECREF(name);
+    Py_DECREF(bases);
+    Py_XDECREF(kwargs);
+    Py_DECREF(class_binding_ns);
+    Py_DECREF(saved_ns);
+    return NULL;
+  }
+
+  kos_dynnode_init((KosDynNode *) node, KOS_DYN_CLASS, parent, 0);
+  KosDynClass_METACLASS(node) = metaclass;
+  KosDynClass_NAME(node) = name;
+  KosDynClass_BASES(node) = bases;
+  KosDynClass_KWARGS(node) = kwargs;
+  KosDynClass_BINDING_NS(node) = class_binding_ns;
+  KosDynClass_SAVED_NS(node) = saved_ns;
+  return node;
+}
+
+
+static void kos_dynclass_free(KosDynClass *node) {
+  if (! node)
+    return;
+
+  Py_CLEAR(KosDynClass_METACLASS(node));
+  Py_CLEAR(KosDynClass_NAME(node));
+  Py_CLEAR(KosDynClass_BASES(node));
+  Py_CLEAR(KosDynClass_KWARGS(node));
+  Py_CLEAR(KosDynClass_BINDING_NS(node));
+  Py_CLEAR(KosDynClass_SAVED_NS(node));
+  kos_dynnode_return_to_freelist((KosDynNode *) node);
+}
+
+
 /* === KosDynYieldFrom implementation === */
 
 
@@ -1590,6 +1639,9 @@ void kos_dynnode_free(KosDynNode *node) {
     case KOS_DYN_CC_RAISE:
       kos_dyn_cc_raise_free((KosDynCCRaise *) node);
       break;
+    case KOS_DYN_CLASS:
+      kos_dynclass_free((KosDynClass *) node);
+      break;
     default:
       PyErr_Format(PyExc_RuntimeError,
                    "kos_dynnode_free: unknown node kind %u",
@@ -1798,6 +1850,27 @@ int kos_dyn_install(KosContext *ctx, KosDynNode *node) {
       return kos_dynparam_enter(ctx, (KosDynParam *) node);
     case KOS_DYN_DYN_WITH:
       return kos_dyn_dyn_with_wind(ctx, (KosDynWith *) node);
+    case KOS_DYN_CLASS: {
+      KosDynClass *cls_node = (KosDynClass *) node;
+      if (! KosContext_FRAME_TOP(ctx))
+        return 0;
+      if (KosStackBlock_PushBlock(&KosDynFrame_STACK(KosContext_FRAME_TOP(ctx))) < 0)
+        return -1;
+      PyObject *empty = PyTuple_New(0);
+      if (! empty)
+        return -1;
+      PyObject *collector = KosCollectorNamespace_NewFull(
+          KosDynClass_NAME(cls_node),
+          KosDynClass_BINDING_NS(cls_node),
+          empty,
+          empty);
+      Py_DECREF(empty);
+      if (! collector)
+        return -1;
+      Py_DECREF(KosDynFrame_NS(KosContext_FRAME_TOP(ctx)));
+      KosDynFrame_NS(KosContext_FRAME_TOP(ctx)) = collector;
+      return 0;
+    }
     default:
       return 0;
   }
@@ -1846,6 +1919,12 @@ static int kos_dyn_uninstall_handler(KosContext *ctx, KosDynNode *node, KosEvent
       (void) out_ev;
       kos_dyn_ns_unwind(ctx, (KosDynNs *) node);
       return 0;
+    case KOS_DYN_CLASS: {
+      (void) out_ev;
+      if (! KosContext_FRAME_TOP(ctx))
+        return 0;
+      return KosStackBlock_DropBlock(&KosDynFrame_STACK(KosContext_FRAME_TOP(ctx)));
+    }
     case KOS_DYN_PARAM:
       (void) out_ev;
       kos_dyn_param_unwind(ctx, (KosDynParam *) node);
@@ -2023,6 +2102,10 @@ KosDynNode *kos_dyn_clone(KosDynNode *node) {
     case KOS_DYN_CC_RAISE:
       PyErr_SetString(PyExc_RuntimeError,
                       "cannot clone CC_RAISE sentinel node");
+      return NULL;
+    case KOS_DYN_CLASS:
+      PyErr_SetString(PyExc_RuntimeError,
+                      "cannot clone CLASS node");
       return NULL;
     default:
       PyErr_Format(PyExc_RuntimeError,
@@ -4039,6 +4122,22 @@ static int dynnode_traverse_param(KosDynNode *node, visitproc visit, void *arg) 
 
 
 /**
+   GC traverse a KOS_DYN_CLASS: visit metaclass, name, bases, kwargs,
+   class_binding_ns, and saved_ns.
+*/
+static int dynnode_traverse_class(KosDynNode *node, visitproc visit, void *arg) {
+  KosDynClass *cls_node = (KosDynClass *) node;
+  Py_VISIT(KosDynClass_METACLASS(cls_node));
+  Py_VISIT(KosDynClass_NAME(cls_node));
+  Py_VISIT(KosDynClass_BASES(cls_node));
+  Py_VISIT(KosDynClass_KWARGS(cls_node));
+  Py_VISIT(KosDynClass_BINDING_NS(cls_node));
+  Py_VISIT(KosDynClass_SAVED_NS(cls_node));
+  return 0;
+}
+
+
+/**
    GC traverse a KOS_DYN_WITH: visit mgr, enter, exit, and name.
 */
 static int dynnode_traverse_with(KosDynNode *node, visitproc visit, void *arg) {
@@ -4087,6 +4186,8 @@ int kos_dynnode_traverse(KosDynNode *node, visitproc visit, void *arg) {
     case KOS_DYN_WITH:
     case KOS_DYN_DYN_WITH:
       return dynnode_traverse_with(node, visit, arg);
+    case KOS_DYN_CLASS:
+      return dynnode_traverse_class(node, visit, arg);
     default:
       PyErr_Format(PyExc_RuntimeError,
                    "kos_dynnode_traverse: unknown node kind %u",

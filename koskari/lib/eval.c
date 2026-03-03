@@ -482,6 +482,7 @@ static PyObject *str_enter = NULL;
 static PyObject *str_exit = NULL;
 static PyObject *str_aenter = NULL;
 static PyObject *str_aexit = NULL;
+static PyObject *str_class = NULL;
 
 
 /**
@@ -3483,6 +3484,7 @@ int koskari_eval_init(PyObject *mod) {
   STR_CONST(str_exit, "__exit__");
   STR_CONST(str_aenter, "__aenter__");
   STR_CONST(str_aexit, "__aexit__");
+  STR_CONST(str_class, "__class__");
 
   /* Initialize KosEvaluatorToken type */
   if (PyType_Ready(&KosEvaluatorTokenType) < 0)
@@ -3537,6 +3539,7 @@ int koskari_eval_clear(PyObject *mod) {
   Py_CLEAR(str_exit);
   Py_CLEAR(str_aenter);
   Py_CLEAR(str_aexit);
+  Py_CLEAR(str_class);
 
   /* Null out exception type pointers (module dict owns the refs) */
   KoskariContinuationDead = NULL;

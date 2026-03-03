@@ -88,6 +88,7 @@
 #include "opcode/PUSH_WITH.c"
 #include "opcode/PUSH_DYN_WITH.c"
 #include "opcode/PUSH_CLASS.c"
+#include "opcode/POP_CLASS.c"
 #include "opcode/PUSH_FINALLY.c"
 #include "opcode/PUSH_LOOP.c"
 #include "opcode/PUSH_NS.c"

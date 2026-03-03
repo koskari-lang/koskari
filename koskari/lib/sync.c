@@ -62,6 +62,16 @@ int koskari_sync_init(PyObject *mod) {
   if (! dict)
     return -1;
 
+  /* Native test harness uses _koskari_test; no koskari package available */
+  {
+    PyObject *mod_name = PyModule_GetNameObject(mod);
+    int is_harness = (mod_name &&
+        PyUnicode_CompareWithASCIIString(mod_name, "_koskari_test") == 0);
+    Py_XDECREF(mod_name);
+    if (is_harness)
+      return 0;
+  }
+
   sync_mod = PyImport_ImportModule("koskari._sync");
   if (! sync_mod)
     return -1;

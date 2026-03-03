@@ -152,6 +152,7 @@ typedef enum KosExtentKind {
   KOS_EXT_DYN_WITH,
   KOS_EXT_FOREACH,
   KOS_EXT_NS,
+  KOS_EXT_CLASS,
   KOS_EXT_PARAM,
 } KosExtentKind;
 

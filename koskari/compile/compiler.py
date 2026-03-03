@@ -661,7 +661,7 @@ class Compiler:
                 push_nspec(nspec)
                 nspec = None
 
-            elif op == OpCode.KOS_OP_POP_NS:
+            elif op in (OpCode.KOS_OP_POP_NS, OpCode.KOS_OP_POP_CLASS):
                 pop_nspec()
 
             elif nstack and (OpCode.KOS_OP_VAR <= op <= OpCode.KOS_OP_VAR_STORE):

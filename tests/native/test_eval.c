@@ -895,6 +895,147 @@ static int test_eval_pop_cc_without_push_cc(void) {
 }
 
 
+/* === Test: PUSH_CLASS / POP_CLASS - empty class C => type with __name__ "C" === */
+
+
+static int test_eval_push_class_pop_class_empty(void) {
+    /*
+      Bytecode: CONST "C", CONST (), BUILD_ARGS 2, PUSH_CLASS 1, POP_CLASS 0,
+      RETURN 1. Expect KOS_EV_RETURN with a KosType whose __name__ is "C".
+      Frame ns must be KosNamespace so PUSH_CLASS can create class_binding_ns.
+    */
+    PyObject *nspec = create_test_nspec();
+    TEST_ASSERT_NOT_NULL(nspec, "create nspec");
+
+    PyObject *name_c = PyUnicode_FromString("C");
+    PyObject *empty_bases = PyTuple_New(0);
+    TEST_ASSERT_NOT_NULL(name_c, "create name C");
+    TEST_ASSERT_NOT_NULL(empty_bases, "create empty bases");
+
+    PyObject *instr = PyList_New(6);
+    PyList_SET_ITEM(instr, 0, make_instr(KOS_OP_CONST, name_c));
+    PyList_SET_ITEM(instr, 1, make_instr(KOS_OP_CONST, empty_bases));
+    PyList_SET_ITEM(instr, 2, make_instr_int(KOS_OP_BUILD_ARGS, 2));
+    PyList_SET_ITEM(instr, 3, make_instr_int(KOS_OP_PUSH_CLASS, 1));
+    PyList_SET_ITEM(instr, 4, make_instr_int(KOS_OP_POP_CLASS, 0));
+    PyList_SET_ITEM(instr, 5, make_instr_int(KOS_OP_RETURN, 1));
+
+    PyObject *code_obj = KosCode_New(nspec, instr, NULL, NULL);
+    TEST_ASSERT_NOT_NULL(code_obj, "create Code");
+
+    Py_DECREF(instr);
+
+    PyObject *ns = KosNamespace_FromSpec(nspec, NULL);
+    TEST_ASSERT_NOT_NULL(ns, "create namespace");
+    Py_DECREF(nspec);
+
+    KosDynFrame *frame = kos_dynframe_new(NULL, (KosCode *) code_obj, ns, NULL);
+    TEST_ASSERT_NOT_NULL(frame, "create frame");
+
+    KosContext *ctx = kos_context_new(frame);
+    TEST_ASSERT_NOT_NULL(ctx, "create context");
+
+    KosEvent ev = {0};
+    int res = koskari_eval(ctx, &ev, NULL, NULL);
+
+    TEST_ASSERT(res == 0, "koskari_eval succeeded");
+    TEST_ASSERT(ev.kind == KOS_EV_RETURN, "event is RETURN");
+    TEST_ASSERT_NOT_NULL(ev.payload, "payload not NULL");
+    TEST_ASSERT(PyType_Check(ev.payload), "result is a type");
+    TEST_ASSERT(KosType_Check(ev.payload), "result is KosType (metaclass used)");
+
+    PyObject *cname = PyObject_GetAttrString(ev.payload, "__name__");
+    TEST_ASSERT_NOT_NULL(cname, "__name__ exists");
+    TEST_ASSERT(PyUnicode_Check(cname), "__name__ is str");
+    TEST_ASSERT(PyUnicode_CompareWithASCIIString(cname, "C") == 0,
+                "__name__ is C");
+    Py_DECREF(cname);
+    Py_XDECREF(ev.payload);
+    kos_context_free(ctx);
+    Py_DECREF(code_obj);
+
+    return 0;
+}
+
+
+/* === Test: PUSH_CLASS no args (opa & 1 == 0) => RuntimeError === */
+
+
+static int test_eval_push_class_no_args_raises(void) {
+    /*
+      PUSH_CLASS 0 has no pos, no kwd. Expect KOS_EV_RAISE with RuntimeError.
+    */
+    PyObject *nspec = create_test_nspec();
+    TEST_ASSERT_NOT_NULL(nspec, "create nspec");
+
+    PyObject *instr = PyList_New(3);
+    PyList_SET_ITEM(instr, 0, make_instr_int(KOS_OP_PUSH_CLASS, 0));
+    PyList_SET_ITEM(instr, 1, make_instr_int(KOS_OP_POP_CLASS, 0));
+    PyList_SET_ITEM(instr, 2, make_instr_int(KOS_OP_RETURN, 1));
+
+    PyObject *code_obj = KosCode_New(nspec, instr, NULL, NULL);
+    TEST_ASSERT_NOT_NULL(code_obj, "create Code");
+
+    Py_DECREF(instr);
+    Py_DECREF(nspec);
+
+    PyObject *ns = PyDict_New();
+    TEST_ASSERT_NOT_NULL(ns, "create ns");
+
+    KosDynFrame *frame = kos_dynframe_new(NULL, (KosCode *) code_obj, ns, NULL);
+    TEST_ASSERT_NOT_NULL(frame, "create frame");
+
+    KosContext *ctx = kos_context_new(frame);
+    TEST_ASSERT_NOT_NULL(ctx, "create context");
+
+    KosEvent ev = {0};
+    int res = koskari_eval(ctx, &ev, NULL, NULL);
+
+    TEST_ASSERT(res == 0, "koskari_eval succeeded");
+    TEST_ASSERT(ev.kind == KOS_EV_RAISE, "event is RAISE");
+    TEST_ASSERT_NOT_NULL(ev.payload, "payload not NULL");
+    TEST_ASSERT(PyErr_GivenExceptionMatches(
+                    (PyObject *) Py_TYPE(ev.payload), PyExc_RuntimeError),
+                "exception is RuntimeError");
+
+    Py_XDECREF(ev.payload);
+    kos_context_free(ctx);
+    Py_DECREF(code_obj);
+
+    return 0;
+}
+
+
+/* === Test: POP_CLASS without PUSH_CLASS => rejected at Code construction === */
+
+
+static int test_eval_pop_class_without_push_class(void) {
+    /*
+      Malformed bytecode (POP_CLASS without matching PUSH) rejected at
+      Code construction by extent validation.
+    */
+    PyObject *nspec = create_test_nspec();
+    TEST_ASSERT_NOT_NULL(nspec, "create nspec");
+
+    PyObject *instr = PyList_New(2);
+    PyList_SET_ITEM(instr, 0, make_instr_int(KOS_OP_POP_CLASS, 0));
+    PyList_SET_ITEM(instr, 1, make_instr_int(KOS_OP_RETURN, 0));
+
+    PyErr_Clear();
+    PyObject *code_obj = KosCode_New(nspec, instr, NULL, NULL);
+    TEST_ASSERT_NULL(code_obj, "Code creation fails for malformed bytecode");
+    TEST_ASSERT(PyErr_Occurred(), "error is set");
+    TEST_ASSERT(PyErr_ExceptionMatches(PyExc_RuntimeError),
+                "exception is RuntimeError");
+
+    PyErr_Clear();
+    Py_DECREF(instr);
+    Py_DECREF(nspec);
+
+    return 0;
+}
+
+
 /* === Test: INVOKE_K stack underrun === */
 
 
@@ -1496,6 +1637,9 @@ int run_eval_tests(void) {
     RUN_TEST(test_eval_call_continuation_underrun);
     RUN_TEST(test_eval_call_wrong_type);
     RUN_TEST(test_eval_build_function_no_defaults);
+    RUN_TEST(test_eval_push_class_pop_class_empty);
+    RUN_TEST(test_eval_push_class_no_args_raises);
+    RUN_TEST(test_eval_pop_class_without_push_class);
 
     RUN_TEST(test_eval_object_add_underrun);
     RUN_TEST(test_eval_return_underrun);

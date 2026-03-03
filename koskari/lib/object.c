@@ -214,6 +214,14 @@ PyObject *kos_construct_awaitable_new(PyObject *instance,
 static PyObject *kostype_tp_call(PyObject *cls, PyObject *args,
                                  PyObject *kwargs) {
 
+  /* 3-arg form (name, bases, namespace) is class creation; delegate
+     to type's tp_call. Instance construction uses kos_construct. */
+  if (args && PyTuple_GET_SIZE(args) == 3
+      && PyUnicode_Check(PyTuple_GET_ITEM(args, 0))
+      && PyTuple_Check(PyTuple_GET_ITEM(args, 1))
+      && PyDict_Check(PyTuple_GET_ITEM(args, 2))) {
+    return PyType_Type.tp_call(cls, args, kwargs);
+  }
   return kos_construct(cls, args, kwargs, KOS_CONSTRUCT_MODE_ASYNC);
 }
 
@@ -384,6 +392,16 @@ int kostype_install(KosContext *ctx, KosEvent *out_ev,
   }
   Py_DECREF(result);
   return kos_push_or_await(ctx, out_ev, instance);
+}
+
+
+/* === kos_get_default_metaclass === */
+
+
+PyObject *kos_get_default_metaclass(void) {
+  PyObject *meta = (PyObject *) KOS_CALLABLE_PYTYPE(KosTypeType);
+  Py_INCREF(meta);
+  return meta;
 }
 
 

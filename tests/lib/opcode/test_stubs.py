@@ -24,6 +24,29 @@ from tests import make_callable
 from tests.lib.opcode import CevalTest, build_expr, run_to_completion
 
 
+class TestPushClassPopClass(CevalTest):
+
+    def test_push_class_pop_class_defines_class(self):
+        """
+        PUSH_CLASS / POP_CLASS define a class via bytecode and return a KosType
+        """
+
+        code_obj, ns = build_expr([
+            ["CONST", "C"],
+            ["CONST", ()],
+            ["BUILD_ARGS", 2],
+            ["PUSH_CLASS", 1],
+            ["POP_CLASS", 0],
+            ["RETURN", 1],
+        ])
+        expr = make_callable(code_obj, ns)
+        result = run_to_completion(expr())
+        self.assertIsInstance(result, type)
+        self.assertEqual(result.__name__, "C")
+        KosType = __import__("koskari.lib", fromlist=["KosType"]).KosType
+        self.assertIs(type(result), KosType)
+
+
 class TestStubOpcodes(CevalTest):
     """
     Tests for opcodes that have no implementation yet.
@@ -43,9 +66,9 @@ class TestStubOpcodes(CevalTest):
         return run_to_completion(expr())
 
 
-    def test_push_class_raises_not_implemented(self):
+    def test_push_class_raises_with_no_args(self):
         """
-        PUSH_CLASS raises RuntimeError
+        PUSH_CLASS with no args (opa 0) raises RuntimeError
         """
 
         with self.assertRaises(RuntimeError):

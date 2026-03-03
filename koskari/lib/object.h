@@ -38,6 +38,13 @@ extern KosCallableTypeObject KosTypeType;
    (Py_TYPE(obj) == KOS_CALLABLE_PYTYPE(KosTypeType)))
 
 
+/**
+   Return the default metaclass for Koskari-defined classes (KosType).
+   Caller receives a new reference.
+*/
+PyObject *kos_get_default_metaclass(void);
+
+
 /* === kos_construct === */
 
 

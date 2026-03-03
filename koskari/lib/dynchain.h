@@ -77,8 +77,9 @@ typedef enum KosDynKind {
   KOS_DYN_DYN_WITH,
   KOS_DYN_SHIFT,
   KOS_DYN_CC_RAISE,
+  KOS_DYN_CLASS,
 
-  // sentinel value
+  /* sentinel value */
   KOS_DYN_UNKNOWN,
 } KosDynKind;
 
@@ -197,6 +198,14 @@ struct KosDynNode {
     struct {
       PyObject *exc_val;  /* borrowed-then-owned KoskariContinuationApply instance */
     } cc_raise;
+    struct {
+      PyObject *metaclass;       /* metaclass to invoke at POP_CLASS */
+      PyObject *name;            /* class name (str) */
+      PyObject *bases;           /* bases tuple */
+      PyObject *kwargs;          /* extra kwargs for metaclass (dict or NULL) */
+      PyObject *class_binding_ns; /* parent of collector; __class__ slot for super */
+      PyObject *saved_ns;        /* enclosing scope to restore on pop */
+    } class_;
   } u;
 };
 
@@ -214,6 +223,7 @@ typedef struct KosDynNode KosDynParam;
 typedef struct KosDynNode KosDynWith;
 typedef struct KosDynNode KosDynShift;
 typedef struct KosDynNode KosDynCCRaise;
+typedef struct KosDynNode KosDynClass;
 
 
 /* === KosContinuation: captured delimited continuation === */
@@ -924,6 +934,30 @@ KosDynNs *kos_dyn_push_ns(KosContext *ctx, PyObject *saved_ns);
    :param node: NS node to pop (must be dyn_top)
 */
 void kos_dyn_pop_ns(KosContext *ctx, KosDynNs *node);
+
+
+/**
+   Allocate a class scope node (for PUSH_CLASS).  Caller pushes via
+   kos_dyn_push; install creates CollectorNamespace and sets frame ns.
+
+   :param parent: parent node in dynamic chain
+   :param metaclass: metaclass to invoke at POP_CLASS (new ref)
+   :param name: class name (new ref)
+   :param bases: bases tuple (new ref)
+   :param kwargs: extra kwargs for metaclass or NULL (new ref if non-NULL)
+   :param class_binding_ns: parent of collector; __class__ slot (new ref)
+   :param saved_ns: enclosing scope to restore on pop (new ref)
+
+   :return: new KosDynClass node, or NULL on error
+*/
+KosDynClass *kos_dynclass_new(
+    KosDynNode *parent,
+    PyObject *metaclass,
+    PyObject *name,
+    PyObject *bases,
+    PyObject *kwargs,
+    PyObject *class_binding_ns,
+    PyObject *saved_ns);
 
 
 /**
@@ -1641,6 +1675,14 @@ int kos_hookrunner_traverse(
   (KosDynNode_IS_WITH(n) || KosDynNode_IS_DYN_WITH(n))
 #define KosDynNode_IS_SHIFT(n)    (KosDynNode_KIND(n) == KOS_DYN_SHIFT)
 #define KosDynNode_IS_CC_RAISE(n) (KosDynNode_KIND(n) == KOS_DYN_CC_RAISE)
+#define KosDynNode_IS_CLASS(n)    (KosDynNode_KIND(n) == KOS_DYN_CLASS)
+
+#define KosDynClass_METACLASS(n)       (((KosDynNode *)(n))->u.class_.metaclass)
+#define KosDynClass_NAME(n)            (((KosDynNode *)(n))->u.class_.name)
+#define KosDynClass_BASES(n)           (((KosDynNode *)(n))->u.class_.bases)
+#define KosDynClass_KWARGS(n)          (((KosDynNode *)(n))->u.class_.kwargs)
+#define KosDynClass_BINDING_NS(n)      (((KosDynNode *)(n))->u.class_.class_binding_ns)
+#define KosDynClass_SAVED_NS(n)        (((KosDynNode *)(n))->u.class_.saved_ns)
 
 #define KosDynFrame_CODE(f)       (((KosDynNode *)(f))->u.frame.code)
 #define KosDynFrame_PC(f)         (((KosDynNode *)(f))->u.frame.pc)
