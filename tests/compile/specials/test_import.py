@@ -111,14 +111,14 @@ class TestSpecialImportAbsolute(_OpcodeHelper, SpecialsTestCase):
         arg = self.first_op_with(code, OpCode.KOS_OP_IMPORT)
         self.assertEqual('os', arg)
 
-    def test_simple_import_var_bind(self):
+    def test_simple_import_var_store(self):
         code = self.compile_to_code('(import os)')
         ops = self.op_sequence(code)
-        self.assertIn(OpCode.KOS_OP_VAR_BIND, ops)
+        self.assertIn(OpCode.KOS_OP_VAR_STORE, ops)
 
     def test_simple_import_binds_leaf_name(self):
         code = self.compile_to_code('(import os)')
-        arg = self.first_op_with(code, OpCode.KOS_OP_VAR_BIND)
+        arg = self.first_op_with(code, OpCode.KOS_OP_VAR_STORE)
         self.assertEqual('os', arg)
 
     def test_simple_import_ends_with_const_none(self):
@@ -132,15 +132,15 @@ class TestSpecialImportAbsolute(_OpcodeHelper, SpecialsTestCase):
         arg = self.first_op_with(code, OpCode.KOS_OP_IMPORT)
         self.assertEqual('os.path', arg)
 
-    def test_dotted_import_binds_leaf(self):
+    def test_dotted_import_var_store(self):
         code = self.compile_to_code('(import os.path)')
-        arg = self.first_op_with(code, OpCode.KOS_OP_VAR_BIND)
+        arg = self.first_op_with(code, OpCode.KOS_OP_VAR_STORE)
         self.assertEqual('path', arg)
 
     def test_import_with_alias(self):
         code = self.compile_to_code('(import os.path as: p)')
         import_arg = self.first_op_with(code, OpCode.KOS_OP_IMPORT)
-        bind_arg = self.first_op_with(code, OpCode.KOS_OP_VAR_BIND)
+        bind_arg = self.first_op_with(code, OpCode.KOS_OP_VAR_STORE)
         self.assertEqual('os.path', import_arg)
         self.assertEqual('p', bind_arg)
 
@@ -181,13 +181,13 @@ class TestSpecialImportRelative(_OpcodeHelper, SpecialsTestCase):
 
     def test_relative_binds_leaf_name(self):
         code = self.compile_to_code('(import .foo)')
-        bind_arg = self.first_op_with(code, OpCode.KOS_OP_VAR_BIND)
+        bind_arg = self.first_op_with(code, OpCode.KOS_OP_VAR_STORE)
         self.assertEqual('foo', bind_arg)
 
     def test_relative_dotted_binds_leaf(self):
         code = self.compile_to_code('(import .foo.bar)')
         level, name = self.first_op_with(code, OpCode.KOS_OP_IMPORT_REL)
-        bind_arg = self.first_op_with(code, OpCode.KOS_OP_VAR_BIND)
+        bind_arg = self.first_op_with(code, OpCode.KOS_OP_VAR_STORE)
         self.assertEqual(1, level)
         self.assertEqual('foo.bar', name)
         self.assertEqual('bar', bind_arg)
@@ -212,13 +212,13 @@ class TestSpecialImportFrom(_OpcodeHelper, SpecialsTestCase):
 
     def test_import_from_single_member_bind(self):
         code = self.compile_to_code('(import-from os path)')
-        arg = self.first_op_with(code, OpCode.KOS_OP_VAR_BIND)
+        arg = self.first_op_with(code, OpCode.KOS_OP_VAR_STORE)
         self.assertEqual('path', arg)
 
     def test_import_from_multiple_members(self):
         code = self.compile_to_code('(import-from os path sep)')
         from_args = self.ops_with(code, OpCode.KOS_OP_IMPORT_FROM)
-        bind_args = self.ops_with(code, OpCode.KOS_OP_VAR_BIND)
+        bind_args = self.ops_with(code, OpCode.KOS_OP_VAR_STORE)
         self.assertEqual(['path', 'sep'], from_args)
         self.assertEqual(['path', 'sep'], bind_args)
 
@@ -236,7 +236,7 @@ class TestSpecialImportFrom(_OpcodeHelper, SpecialsTestCase):
     def test_import_from_with_alias(self):
         code = self.compile_to_code('(import-from os [getcwd as: cwd])')
         from_args = self.ops_with(code, OpCode.KOS_OP_IMPORT_FROM)
-        bind_args = self.ops_with(code, OpCode.KOS_OP_VAR_BIND)
+        bind_args = self.ops_with(code, OpCode.KOS_OP_VAR_STORE)
         self.assertEqual(['getcwd'], from_args)
         self.assertEqual(['cwd'], bind_args)
 

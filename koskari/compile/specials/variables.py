@@ -168,7 +168,7 @@ def special_define(compiler, source, tc=False):
             source)
 
     frag.merge(compiler.full_compile(val_expr))
-    frag.instruction(OpCode.KOS_OP_VAR_BIND, sym)
+    frag.instruction(OpCode.KOS_OP_VAR_STORE, sym)
     frag.instruction(OpCode.KOS_OP_CONST, None)
 
     return frag

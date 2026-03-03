@@ -206,7 +206,7 @@ class TestForeachOpcodes(CevalTest):
         """
         code, ns = build_expr([
             ["CONST", 0],
-            ["VAR_BIND", "total"],
+            ["VAR_STORE", "total"],
             ["CONST", None],
             ["CONST", [1, 2, 3, 4, 5]],
             ["PUSH_FOREACH", 0],

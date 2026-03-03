@@ -119,7 +119,7 @@ class TestClassBytecode(SpecialsTestCase):
         opcodes = [code.oparg(i)[0] for i in range(code.length())]
         self.assertIn(self.opcode_named("PUSH_CLASS"), opcodes)
         self.assertIn(self.opcode_named("POP_CLASS"), opcodes)
-        self.assertIn(self.opcode_named("VAR_BIND"), opcodes)
+        self.assertIn(self.opcode_named("VAR_STORE"), opcodes)
         self.assertIn(self.opcode_named("BUILD_ARGS"), opcodes)
 
 

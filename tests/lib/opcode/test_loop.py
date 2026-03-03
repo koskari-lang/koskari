@@ -81,7 +81,7 @@ class TestLoopOpcodes(CevalTest):
 
         code, ns = build_expr([
             ["CONST", 0],
-            ["VAR_BIND", "n"],
+            ["VAR_STORE", "n"],
             ["PUSH_LOOP", 0],
             ["VAR", "n"],
             ["CONST", 1],
@@ -110,9 +110,9 @@ class TestLoopOpcodes(CevalTest):
 
         code, ns = build_expr([
             ["CONST", 0],
-            ["VAR_BIND", "outer"],
+            ["VAR_STORE", "outer"],
             ["CONST", 0],
-            ["VAR_BIND", "inner"],
+            ["VAR_STORE", "inner"],
             ["PUSH_LOOP", 0],
             ["CONST", 0],
             ["VAR_STORE", "inner"],
@@ -157,7 +157,7 @@ class TestLoopOpcodes(CevalTest):
 
         code, ns = build_expr([
             ["CONST", 0],
-            ["VAR_BIND", "x"],
+            ["VAR_STORE", "x"],
             ["PUSH_LOOP", 0],
             ["PUSH_LOOP", 0],
             ["CONST", 1],

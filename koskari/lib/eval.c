@@ -1133,12 +1133,12 @@ int kos_push_or_await(KosContext *ctx, KosEvent *out_ev, PyObject *val) {
 }
 
 
-/* Forward declaration for WITH helpers (frame_ns_bind is defined later). */
-static int frame_ns_bind(KosContext *ctx, PyObject *name, PyObject *val);
+/* Forward declaration for WITH helpers (frame_ns_store is defined later). */
+static int frame_ns_store(KosContext *ctx, PyObject *name, PyObject *val);
 
 
 /**
-   Use enter result: if awaitable stash and push_or_await; else bind, push block, push node.
+   Use enter result: if awaitable stash and push_or_await; else store, push block, push node.
    Consumes result and takes ownership of mgr, enter, exit, name.
 */
 int kos_push_with_after_enter(
@@ -1188,7 +1188,7 @@ int kos_push_with_after_enter(
   }
 
   if (name && name != Py_None) {
-    if (frame_ns_bind(ctx, name, result) < 0) {
+    if (frame_ns_store(ctx, name, result) < 0) {
       Py_DECREF(result);
       Py_DECREF(exit);
       Py_DECREF(enter);
@@ -1251,7 +1251,7 @@ int kos_complete_pending_with_enter(KosContext *ctx, KosEvent *out_ev) {
   KosContext_PENDING_WITH_ENTER_NAME(ctx) = NULL;
 
   if (name && name != Py_None) {
-    if (frame_ns_bind(ctx, name, result) < 0) {
+    if (frame_ns_store(ctx, name, result) < 0) {
       Py_DECREF(result);
       Py_DECREF(exit);
       Py_DECREF(enter);
@@ -1419,7 +1419,7 @@ int kos_dyn_dyn_with_wind(KosContext *ctx, KosDynWith *node) {
 
   PyObject *name = KosDynWith_NAME(node);
   if (name && name != Py_None) {
-    if (frame_ns_bind(ctx, name, result) < 0) {
+    if (frame_ns_store(ctx, name, result) < 0) {
       Py_DECREF(result);
       return -1;
     }
@@ -1449,16 +1449,6 @@ static PyObject *frame_ns_deref(KosContext *ctx, PyObject *name) {
   PyObject *ns = CURRENT_NS(ctx);
   if (KosNamespace_Check(ns))
     return KosNamespace_Deref(ns, name);
-  if (PyDict_Check(ns)) {
-    PyObject *val = PyDict_GetItemWithError(ns, name);
-    if (val) {
-      Py_INCREF(val);
-      return val;
-    }
-    if (! PyErr_Occurred())
-      PyErr_Format(PyExc_NameError, "name %R is not defined", name);
-    return NULL;
-  }
   PyErr_Format(PyExc_TypeError, "frame namespace must be Namespace or dict,"
                " got %R", ns);
   return NULL;
@@ -1471,44 +1461,27 @@ static PyObject *frame_ns_deref(KosContext *ctx, PyObject *name) {
 */
 static int frame_ns_store(KosContext *ctx, PyObject *name, PyObject *val) {
   PyObject *ns = CURRENT_NS(ctx);
+
   if (KosNamespace_Check(ns))
     return KosNamespace_Store(ns, name, val);
-  if (PyDict_Check(ns))
-    return PyDict_SetItem(ns, name, val);
+
   PyErr_Format(PyExc_TypeError,
-               "frame namespace must be Namespace or dict, got %R", ns);
+               "frame namespace must be Namespace, got %R", ns);
   return -1;
 }
 
 
 /**
-   Bind name to value in the current frame namespace. Consumes val.
+   Bind name to reference in the current frame namespace.
 */
-static int frame_ns_bind(KosContext *ctx, PyObject *name, PyObject *val) {
+static int frame_ns_bind(KosContext *ctx, PyObject *name, PyObject *ref) {
   PyObject *ns = CURRENT_NS(ctx);
-  if (KosNamespace_Check(ns)) {
-    PyObject *ref = KosSymbolicRef_New(name, val);
-    Py_DECREF(val);
-    if (! ref)
-      return -1;
-    if (KosNamespace_Bind(ns, name, ref) < 0) {
-      Py_DECREF(ref);
-      return -1;
-    }
-    Py_DECREF(ref);
-    return 0;
-  }
-  if (PyDict_Check(ns)) {
-    if (PyDict_SetItem(ns, name, val) < 0) {
-      Py_DECREF(val);
-      return -1;
-    }
-    Py_DECREF(val);
-    return 0;
-  }
-  Py_DECREF(val);
-  PyErr_SetString(PyExc_TypeError,
-                  "frame namespace must be Namespace or dict");
+
+  if (KosNamespace_Check(ns))
+    return KosNamespace_Bind(ns, name, ref);
+
+  PyErr_Format(PyExc_TypeError,
+               "frame namespace must be Namespace, got %R", ns);
   return -1;
 }
 
@@ -1520,10 +1493,8 @@ static int frame_ns_clear(KosContext *ctx, PyObject *name) {
   PyObject *ns = CURRENT_NS(ctx);
   if (KosNamespace_Check(ns))
     return KosNamespace_Clear(ns, name);
-  if (PyDict_Check(ns))
-    return PyDict_DelItem(ns, name);
   PyErr_Format(PyExc_TypeError,
-               "frame namespace must be Namespace or dict, got %R", ns);
+               "frame namespace must be Namespace, got %R", ns);
   return -1;
 }
 

@@ -18,9 +18,10 @@ metadata tables), [interpreter/execution-invariants.md](interpreter/execution-in
 ### 1.1 How to use this document
 
 - **VM / evaluator implementers:** Per-opcode stack effect, invariants, and
-  post-compile disassembly tables. Section 1.3 (global invariants) and each
-  opcode's Invariants bullets are the **contract**: the evaluator must preserve
-  them; violations are undefined behaviour (or asserted in debug builds).
+  post-compile disassembly tables. Section 1.3 (global invariants), §1.9 (BIND vs
+  STORE—do not confuse them), and each opcode's Invariants bullets are the
+  **contract**: the evaluator must preserve them; violations are undefined
+  behaviour (or asserted in debug builds).
 - **Compiler writers:** Section 1.7 (pre-compile vs post-compile), **Compiler form**
   lines, and pre-compile list-of-pairs examples. Ensure emitted code satisfies
   the invariants documented per opcode.
@@ -41,6 +42,10 @@ linking from design notes, PRs, or other docs.
 
 ### 1.3 Glossary
 
+- **BIND** (verb): Establish or replace the name→ref mapping. "I will now use this
+  reference to resolve the given name." Opposed to STORE. See §1.9.
+- **STORE** (verb): Write a value through the reference that already resolves a
+  name. "I will now store this value in the given name." Opposed to BIND. See §1.9.
 - **pc**: Instruction index (program counter) into the code array.
 - **TOS**: Top of stack; rightmost element in stack notation.
 - **cpool**: Constant pool; the read-only array of constants in a KosCode (`cpool[i]`).
@@ -144,7 +149,21 @@ Where the pre form differs from the bytecode form, opcode sections below include
 a **Compiler form** line. Disassembly tables are **post-compile** unless marked
 otherwise.
 
-### 1.8 Maintaining this document
+### 1.9 BIND vs STORE: critical distinction
+
+**BIND and STORE are NOT interchangeable. They are fundamentally different operations.**
+
+| Operation | Meaning | When to use |
+|-----------|---------|-------------|
+| **BIND** | *"I will now use this reference to resolve the given name."* | Establish or replace the name→ref mapping. The name will resolve to this reference from now on. |
+| **STORE** | *"I will now store this value in the given name."* | Write a value through the reference that already resolves the name. The name must already be bound. |
+
+- **BIND** takes a reference (or value that becomes a reference) and makes it the resolution for a name. It changes *what the name refers to*.
+- **STORE** takes a value and writes it into the storage that the name already refers to. It changes *the content* at that reference; it does not change the binding itself.
+
+Use **VAR_BIND** / **FAST_BIND** when introducing or re-binding a name. Use **VAR_STORE** / **FAST_STORE** when updating the value at an existing binding.
+
+### 1.10 Maintaining this document
 
 When adding or changing an opcode:
 
@@ -234,10 +253,11 @@ When adding or changing an opcode:
 | EXCEPTION_CLEAR | NOARG | Clear exception state | [§11](#kos_op_exception_clear) |
 | EXCEPTION_MATCH | COUNT | Match exception, push result | [§11](#kos_op_exception_match) |
 | VAR | VAR | Load by name | [§12](#kos_op_var) |
-| VAR_BIND | VAR | Bind name to value | [§12](#kos_op_var_bind) |
-| VAR_STORE | VAR | Store TOS in named variable | [§12](#kos_op_var_store) |
+| VAR_BIND | VAR | BIND: use TOS ref to resolve name | [§12](#kos_op_var_bind) |
+| VAR_STORE | VAR | STORE: write TOS value into name | [§12](#kos_op_var_store) |
 | FAST | FASTVAR | Load from slot | [§13](#kos_op_fast) |
-| FAST_STORE | FASTVAR | Store TOS in slot | [§13](#kos_op_fast_store) |
+| FAST_BIND | FASTVAR | BIND: use TOS ref to resolve slot | [§13](#kos_op_fast_bind) |
+| FAST_STORE | FASTVAR | STORE: write TOS value into slot | [§13](#kos_op_fast_store) |
 | ATTR | CONST | Get attribute | [§14](#kos_op_attr) |
 | ATTR_STORE | CONST | Set attribute | [§14](#kos_op_attr_store) |
 | ITEM | NOARG | Get item (key on stack) | [§15](#kos_op_item) |
@@ -1220,16 +1240,17 @@ Pool: 0 = `"os"`, 1 = `"path"`, 2 = `"sep"`, 3 = None.
 
 - **Style**: VAR. Arg = constant pool index of name (post-compile).
 - **Status**: Implemented.
-- **Stack**: `[..., value] → [...]`. Bind name to value in frame namespace.
+- **Stack**: `[..., ref] → [...]`. **BIND**: use this reference to resolve the
+  given name in the frame namespace. See §1.9.
 - **Invariants**: Name in constant pool.
 - **Compiler form:** Pre-compile arg = name (string/symbol); post-compile arg = pool index.
 
-**Example:** Bind "n" to TOS. Pool: 0 = "n".
+**Example:** Bind name "n" to the reference at TOS. Pool: 0 = "n".
 
 | index | opcode   | arg | arg view | comment |
 |------:|----------|-----|----------|---------|
-| 0     | CONST    | 0   | 0 (42)   | stack: [..., 42] |
-| 1     | VAR_BIND | 1   | 1 ('n')  | bind n = 42; stack: [...] |
+| 0     | CONST    | 0   | 0 (42)   | stack: [..., ref] |
+| 1     | VAR_BIND | 1   | 1 ('n')  | BIND: name "n" resolves to this ref; stack: [...] |
 
 ---
 
@@ -1269,16 +1290,17 @@ Pool: 0 = `"os"`, 1 = `"path"`, 2 = `"sep"`, 3 = None.
 
 - **Style**: VAR. Arg = constant pool index of name (post-compile).
 - **Status**: Implemented.
-- **Stack**: `[..., value] → [...]`. Store TOS into the named variable.
-- **Invariants**: Name must be bound (e.g. to a ref or slot).
+- **Stack**: `[..., value] → [...]`. **STORE**: store this value in the given
+  name (through the reference that already resolves it). See §1.9.
+- **Invariants**: Name must already be bound.
 - **Compiler form:** Pre-compile arg = name; post-compile arg = pool index.
 
-**Example:** Store TOS into "x". Pool: 0 = "x".
+**Example:** Store value 10 into name "x". Pool: 0 = "x".
 
 | index | opcode    | arg | arg view | comment |
 |------:|-----------|-----|----------|---------|
 | 0     | CONST     | 0   | 0 (10)   | stack: [..., 10] |
-| 1     | VAR_STORE | 1   | 1 ('x')  | store 10 in "x"; stack: [...] |
+| 1     | VAR_STORE | 1   | 1 ('x')  | STORE: write 10 into name "x"; stack: [...] |
 
 
 ## 13. Fast variables
@@ -1306,16 +1328,17 @@ Pool: 0 = `"os"`, 1 = `"path"`, 2 = `"sep"`, 3 = None.
 
 - **Style**: FASTVAR. Arg = fast local slot index.
 - **Status**: Implemented.
-- **Stack**: `[..., value] → [...]`. Bind slot (pop value into slot).
+- **Stack**: `[..., ref] → [...]`. **BIND**: use this reference to resolve the
+  given slot (name). See §1.9. Not interchangeable with FAST_STORE.
 - **Invariants**: Slot index in range.
 - **Compiler form:** Typically post-compile (from VAR_BIND lowering) or compiler emits with slot index.
 
-**Example:** Bind slot 0 to TOS.
+**Example:** Bind slot 0 to the reference at TOS.
 
 | index | opcode   | arg | arg view | comment |
 |------:|----------|-----|----------|---------|
-| 0     | CONST    | 0   | 0 (1)    | stack: [..., 1] |
-| 1     | FAST_BIND| 0   | 0 (a)    | slot 0 := 1; stack: [...] |
+| 0     | CONST    | 0   | 0 (1)    | stack: [..., ref] |
+| 1     | FAST_BIND| 0   | 0 (a)    | BIND: slot 0 resolves to this ref; stack: [...] |
 
 ---
 
@@ -1353,15 +1376,17 @@ Pool: 0 = `"os"`, 1 = `"path"`, 2 = `"sep"`, 3 = None.
 
 - **Style**: FASTVAR. Arg = fast local slot index.
 - **Status**: Implemented.
-- **Stack**: `[..., value] → [...]`. Store TOS in slot.
-- **Invariants**: Slot index in range.
+- **Stack**: `[..., value] → [...]`. **STORE**: store this value in the given
+  slot (through the reference that already resolves it). See §1.9. Not
+  interchangeable with FAST_BIND.
+- **Invariants**: Slot must already be bound. Slot index in range.
 
-**Example:** Store TOS in slot 0.
+**Example:** Store value 99 in slot 0.
 
 | index | opcode     | arg | arg view | comment |
 |------:|------------|-----|----------|---------|
 | 0     | CONST      | 0   | 0 (99)   | stack: [..., 99] |
-| 1     | FAST_STORE | 0   | 0 (a)    | slot 0 := 99; stack: [...] |
+| 1     | FAST_STORE | 0   | 0 (a)    | STORE: write 99 into slot 0; stack: [...] |
 
 
 ## 14. Attributes
@@ -2271,6 +2296,6 @@ Unified extent wind/unwind is described in [interpreter/extent-wind-unwind.md](i
 
 This document is the design target for Koskari opcodes. When semantics or
 invariants change, update this file and the implementation together. Last
-substantive update: pre/post-compile representation (§1.5–1.8), LABEL/POSITION
+substantive update: pre/post-compile representation (§1.5–1.10), LABEL/POSITION
 stripping, quick-reference index, glossary, maintaining checklist, and
 intended/current notes for stubs.

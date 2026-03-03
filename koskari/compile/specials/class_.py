@@ -22,10 +22,9 @@ Special form handler for compile/class.
 """
 
 
-from ...lib import nil, OpCode, pair, symbol
+from ...lib import nil, OpCode, symbol
 from ...types import is_pair
 from ...exceptions import ParametersError, SpecialError
-from ..compiler import Compiler
 from ..helpers import gather_parameters_ng, helper_begin, is_symbolish, special
 
 
@@ -107,7 +106,7 @@ def special_class(compiler, source, tc=False):
     frag.instruction(OpCode.KOS_OP_PUSH_CLASS, 1)
     helper_begin(frag, body, tc)
     frag.instruction(OpCode.KOS_OP_POP_CLASS, 0)
-    frag.instruction(OpCode.KOS_OP_VAR_BIND, name)
+    frag.instruction(OpCode.KOS_OP_VAR_STORE, name)
     frag.instruction(OpCode.KOS_OP_CONST, None)
 
     return frag

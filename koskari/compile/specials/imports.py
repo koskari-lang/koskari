@@ -34,36 +34,36 @@ its final instruction.  Do not emit IMPORT_FROM anywhere else.
 Opcode sequences produced
 ==========================
 (import foo)
-    IMPORT "foo" / VAR_BIND "foo" / CONST None
+    IMPORT "foo" / VAR_STORE "foo" / CONST None
 
 (import foo.bar)
-    IMPORT "foo.bar" / VAR_BIND "bar" / CONST None       (leaf binding)
+    IMPORT "foo.bar" / VAR_STORE "bar" / CONST None       (leaf binding)
 
 (import foo.bar as: baz)
-    IMPORT "foo.bar" / VAR_BIND "baz" / CONST None
+    IMPORT "foo.bar" / VAR_STORE "baz" / CONST None
 
 (import .foo)
-    IMPORT_REL (1, "foo") / VAR_BIND "foo" / CONST None
+    IMPORT_REL (1, "foo") / VAR_STORE "foo" / CONST None
 
 (import ..foo.bar)
-    IMPORT_REL (2, "foo.bar") / VAR_BIND "bar" / CONST None
+    IMPORT_REL (2, "foo.bar") / VAR_STORE "bar" / CONST None
 
 (import-from foo bar baz)
     IMPORT "foo"
-    IMPORT_FROM "bar" / VAR_BIND "bar"
-    IMPORT_FROM "baz" / VAR_BIND "baz"
+    IMPORT_FROM "bar" / VAR_STORE "bar"
+    IMPORT_FROM "baz" / VAR_STORE "baz"
     POP 1
     CONST None
 
 (import-from foo [bar as: b])
     IMPORT "foo"
-    IMPORT_FROM "bar" / VAR_BIND "b"
+    IMPORT_FROM "bar" / VAR_STORE "b"
     POP 1
     CONST None
 
 (import-from .foo bar)
     IMPORT_REL (1, "foo")
-    IMPORT_FROM "bar" / VAR_BIND "bar"
+    IMPORT_FROM "bar" / VAR_STORE "bar"
     POP 1
     CONST None
 
@@ -150,7 +150,7 @@ def helper_import_from_sequence(frag, import_frag, members):
     for bind_name, attr_name in members:
         frag.declare_var(bind_name)
         frag.instruction(OpCode.KOS_OP_IMPORT_FROM, attr_name)
-        frag.instruction(OpCode.KOS_OP_VAR_BIND, bind_name)
+        frag.instruction(OpCode.KOS_OP_VAR_STORE, bind_name)
 
     # Compensate for the PEEK-NOT-POP behaviour: remove the module
     frag.instruction(OpCode.KOS_OP_POP, 1)
@@ -241,7 +241,7 @@ def special_import(compiler, source, tc=False):
             "bare relative import (without name) requires as: ALIAS", source)
 
     frag.declare_var(bind_name)
-    frag.instruction(OpCode.KOS_OP_VAR_BIND, bind_name)
+    frag.instruction(OpCode.KOS_OP_VAR_STORE, bind_name)
     frag.instruction(OpCode.KOS_OP_CONST, None)
 
     return frag

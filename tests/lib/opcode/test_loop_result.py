@@ -85,7 +85,7 @@ class TestLoopResultOpcodes(CevalTest):
 
         code, ns = build_expr([
             ["CONST", 0],
-            ["VAR_BIND", "n"],
+            ["VAR_STORE", "n"],
             ["PUSH_LOOP", 0],
             ["VAR", "n"],
             ["CONST", 1],

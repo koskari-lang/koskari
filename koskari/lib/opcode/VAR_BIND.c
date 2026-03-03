@@ -19,14 +19,18 @@
 */
 
 KOS_OP_HANDLER(VAR_BIND) {
+  (void) out_ev;
+
   PyObject *name = get_name_from_insn(CURRENT_CODE(ctx), insn);
   if (! name)
     return -1;
+
   PyObject *val = KosStackBlock_PopRef(&CURRENT_STACK(ctx));
   if (! val)
     return -1;
-  if (frame_ns_bind(ctx, name, val) < 0)
-    return -1;
-  (void) out_ev;
-  return 0;
+
+  int res = frame_ns_bind(ctx, name, val);
+  Py_DECREF(val);
+
+  return res;
 }

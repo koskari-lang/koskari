@@ -14,8 +14,13 @@
 """
 Tests for koskari.compile compile/setq, compile/refq, compile/bindq,
 compile/delq special forms.
+
+bindq binds a name to a Ref instance for future resolution; it does not
+store a raw value.
 """
 
+
+from types import SimpleNamespace
 
 from . import SpecialsTestCase
 
@@ -54,10 +59,11 @@ class TestBindqSpecial(SpecialsTestCase):
     def test_bindq_then_read(self):
         src_str = """
         (compile/begin
-          (compile/bindq y 99)
+          (compile/bindq y (compile/ref-attr obj value))
           y)
         """
-        expr, mod = self.compile_expr(src_str)
+        obj = SimpleNamespace(value=99)
+        expr, mod = self.compile_expr(src_str, obj=obj)
         result = expr().run()
         self.assertEqual(99, result)
 
@@ -66,8 +72,7 @@ class TestDelqSpecial(SpecialsTestCase):
 
     def test_delq_returns_none(self):
         src_str = """
-        (compile/begin
-          (compile/bindq z 1)
+        (compile/let [[z 1]]
           (compile/delq z))
         """
         expr, mod = self.compile_expr(src_str)
