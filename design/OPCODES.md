@@ -274,7 +274,7 @@ When adding or changing an opcode:
 | PUSH_FOREACH | NOARG | Push foreach region; break target from extent table | [§18](#kos_op_push_foreach) |
 | PUSH_LOOP | NOARG | Push loop region; break target from extent table | [§18](#kos_op_push_loop) |
 | PUSH_NS | COUNT | Push namespace scope | [§18](#kos_op_push_ns) |
-| PUSH_COLLECT | COUNT | Push collector namespace scope | [§18](#kos_op_push_collect) |
+| PUSH_COLLECT | CONST | Push collector namespace scope | [§18](#kos_op_push_collect) |
 | POP_COLLECT | NOARG | Pop collect scope, push ns | [§18](#kos_op_pop_collect) |
 | BUILD_CLASS | NOARG | Consume pos+ns, call metaclass | [§18](#kos_op_build_class) |
 | PUSH_TRY | LABEL | Push try region | [§18](#kos_op_push_try) |
@@ -1837,13 +1837,14 @@ Full design: [interpreter/with-dyn-with.md](interpreter/with-dyn-with.md). Summa
 ---
 ### KOS_OP_PUSH_COLLECT
 
-- **Style**: COUNT. Arg = count of value/name bindings (0 or N). Same as PUSH_NS.
+- **Style**: CONST. Arg = constant pool index of NamespaceSpec.
 - **Status**: Implemented.
-- **Stack**: Pops NSPEC; if arg > 0, pops values and NAMES. Creates CollectorNamespace
-  from NSPEC, optionally binds values to names, installs as frame ns, pushes
-  KOS_DYN_COLLECT.
+- **Stack**: Does not consume the stack. Loads NamespaceSpec from constant pool at
+  arg, creates CollectorNamespace, installs as frame ns, pushes KOS_DYN_COLLECT,
+  then pushes a stack block. The body runs in this block; expression results (e.g.
+  None from compile/define) stay in the block and are discarded on POP_COLLECT.
 - **Pushes:** KOS_DYN_COLLECT (static extent KOS_EXT_COLLECT; stores saved ns for
-  restore on POP_COLLECT; POP_COLLECT pushes the collected namespace).
+  restore on POP_COLLECT), then a stack block for the body.
 - **Invariants**: Extent kind KOS_EXT_COLLECT. Frame namespace must be KosNamespace.
 
 ---
@@ -1852,9 +1853,9 @@ Full design: [interpreter/with-dyn-with.md](interpreter/with-dyn-with.md). Summa
 
 - **Style**: NOARG. Argument unused.
 - **Status**: Implemented.
-- **Stack**: Verifies dyn_top is KOS_DYN_COLLECT. Restores frame ns, pops node,
-  **pushes the collected namespace** onto the value stack.
-  `[..., (from body)] → [..., ns]`.
+- **Stack**: Verifies dyn_top is KOS_DYN_COLLECT. Restores frame ns, drops the stack
+  block (discarding body expression results), pops the dyn node, **pushes the
+  collected namespace** onto the value stack. `[..., pos] → [..., pos, ns]`.
 - **Invariants**: Top of chain must be KOS_DYN_COLLECT.
 
 ---
@@ -1870,18 +1871,17 @@ Full design: [interpreter/with-dyn-with.md](interpreter/with-dyn-with.md). Summa
 - **Compiler form:** Build pos with BUILD_ARGS; use with_collector_namespace for
   PUSH_COLLECT/body/POP_COLLECT; then BUILD_CLASS. See design/api/OBJECT-MODEL.md.
 
-**Example:** Empty class C.
+**Example:** Empty class C. PUSH_COLLECT arg = constant pool index of nspec.
 
 | index | opcode     | arg | arg view | comment |
 |------:|------------|-----|----------|---------|
 | 0     | CONST      | 0   | 0 ("C")  | name |
 | 1     | CONST      | 1   | 1 (())   | bases |
 | 2     | BUILD_ARGS | 2   | 2        | stack: [..., pos] |
-| 3     | CONST      | 2   | 2 (nspec)| namespace spec |
-| 4     | PUSH_COLLECT | 0 | 0        | push collect scope |
-| 5     | POP_COLLECT | 0 | 0        | pop; push ns |
-| 6     | BUILD_CLASS| 0   | 0        | metaclass(name,bases,dict); push cls |
-| 7     | RETURN     | 1   | 1        | |
+| 3     | PUSH_COLLECT | 2 | 2 (nspec)| push collect scope; nspec from cpool |
+| 4     | POP_COLLECT | 0 | 0        | drop block; pop; push ns |
+| 5     | BUILD_CLASS| 0   | 0        | metaclass(name,bases,dict); push cls |
+| 6     | RETURN     | 1   | 1        | |
 
 ---
 

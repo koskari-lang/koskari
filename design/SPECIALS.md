@@ -863,9 +863,11 @@ run body in CollectorNamespace, bind the resulting class to NAME. Default
 metaclass is KosType; use `meta: MyMeta` in SUPERS for a custom metaclass.
 
 **Behaviour:** Builds pos tuple (name, bases) or (name, bases, metaclass) with
-BUILD_ARGS, emits PUSH_COLLECT via with_collector_namespace, compiles body with
-helper_begin, emits POP_COLLECT, BUILD_CLASS, then VAR_STORE to bind the class
-to NAME. Returns None (matches compile/define).
+BUILD_ARGS, emits PUSH_COLLECT (CONST-style, namespace spec from constant pool)
+via with_collector_namespace, compiles body with helper_begin, emits POP_COLLECT,
+BUILD_CLASS, then VAR_STORE to bind the class to NAME. The collect scope pushes
+a stack block so body expression results (e.g. None from compile/define) do not
+reach BUILD_CLASS. Returns None (matches compile/define).
 
 **Examples:**
 
