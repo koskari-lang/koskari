@@ -657,8 +657,13 @@ class Compiler:
                 if isinstance(arg, NamespaceSpec):
                     nspec = arg
 
-            elif op in (OpCode.KOS_OP_PUSH_NS, OpCode.KOS_OP_PUSH_CLASS):
+            elif op == OpCode.KOS_OP_PUSH_NS:
                 push_nspec(nspec)
+                nspec = None
+
+            elif op == OpCode.KOS_OP_PUSH_CLASS:
+                # we don't convert PUSH_CLASS VAR references to FAST.
+                push_nspec(None)
                 nspec = None
 
             elif op in (OpCode.KOS_OP_POP_NS, OpCode.KOS_OP_POP_CLASS):
