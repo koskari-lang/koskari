@@ -24,19 +24,23 @@ from tests import make_callable
 from tests.lib.opcode import CevalTest, build_expr, run_to_completion
 
 
-class TestPushClassPopClass(CevalTest):
+class TestPushCollectPopCollectBuildClass(CevalTest):
 
-    def test_push_class_pop_class_defines_class(self):
+    def test_push_collect_pop_collect_build_class_defines_class(self):
         """
-        PUSH_CLASS / POP_CLASS define a class via bytecode and return a KosType
+        PUSH_COLLECT / POP_COLLECT / BUILD_CLASS define a class via bytecode
         """
 
+        from koskari.lib import NamespaceSpec
+
+        collect_nspec = NamespaceSpec("C", (), ())
         code_obj, ns = build_expr([
             ["CONST", "C"],
             ["CONST", ()],
             ["BUILD_ARGS", 2],
-            ["PUSH_CLASS", 1],
-            ["POP_CLASS", 0],
+            ["PUSH_COLLECT", collect_nspec],
+            ["POP_COLLECT", 0],
+            ["BUILD_CLASS", 0],
             ["RETURN", 1],
         ])
         expr = make_callable(code_obj, ns)
@@ -66,13 +70,14 @@ class TestStubOpcodes(CevalTest):
         return run_to_completion(expr())
 
 
-    def test_push_class_raises_with_no_args(self):
+    def test_push_collect_raises_with_invalid_constant(self):
         """
-        PUSH_CLASS with no args (opa 0) raises RuntimeError
+        PUSH_COLLECT with invalid constant (int, not NamespaceSpec)
+        raises RuntimeError
         """
 
         with self.assertRaises(RuntimeError):
-            self._run_stub_opcode("PUSH_CLASS", 0)
+            self._run_stub_opcode("PUSH_COLLECT", 0)
 
 
     def test_push_wind_raises_not_implemented(self):

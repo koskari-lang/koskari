@@ -25,7 +25,7 @@ class TestClassEmpty(SpecialsTestCase):
     def test_empty_class_binds_and_is_type(self):
         src_str = """
         (compile/begin
-          (compile/class C ())
+          (compile/class C () 5)
           C)
         """
         expr, mod = self.compile_expr(src_str)
@@ -39,15 +39,19 @@ class TestClassEmpty(SpecialsTestCase):
 
         src_str = """
         (compile/begin
-          (compile/class C ())
+          (compile/class C () 5)
           C)
         """
         expr, mod = self.compile_expr(src_str)
+
+        dis(expr.code)
+
         result = expr().run()
         self.assertIs(type(result), KosType)
 
         c = result.new()
         self.assertIsInstance(c, result)
+
 
 class TestClassWithAttribute(SpecialsTestCase):
 
@@ -75,7 +79,13 @@ class TestClassWithSuperclass(SpecialsTestCase):
             (compile/define x 1))
           C.x)
         """
+
+        print(src_str)
+
         expr, mod = self.compile_expr(src_str, object=object)
+
+        dis(expr.code)
+
         result = expr().run()
         self.assertEqual(1, result)
 
@@ -115,14 +125,15 @@ class TestClassWithInitAndMethods(SpecialsTestCase):
 
 class TestClassBytecode(SpecialsTestCase):
 
-    def test_class_emits_push_pop_class_and_var_bind(self):
+    def test_class_emits_push_pop_collect_build_class_and_var_bind(self):
         src_str = """
         (compile/class C () (compile/define x 1))
         """
         code = self.compile_to_code(src_str)
         opcodes = [code.oparg(i)[0] for i in range(code.length())]
-        self.assertIn(self.opcode_named("PUSH_CLASS"), opcodes)
-        self.assertIn(self.opcode_named("POP_CLASS"), opcodes)
+        self.assertIn(self.opcode_named("PUSH_COLLECT"), opcodes)
+        self.assertIn(self.opcode_named("POP_COLLECT"), opcodes)
+        self.assertIn(self.opcode_named("BUILD_CLASS"), opcodes)
         self.assertIn(self.opcode_named("VAR_STORE"), opcodes)
         self.assertIn(self.opcode_named("BUILD_ARGS"), opcodes)
 

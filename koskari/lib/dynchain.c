@@ -53,6 +53,7 @@ static const char *kos_dynnode_kind_names[] = {
   "LOOP",
   "FOREACH",
   "NS",
+  "COLLECT",
   "CC",
   "YIELD_FROM",
   "PARAM",
@@ -60,7 +61,6 @@ static const char *kos_dynnode_kind_names[] = {
   "DYN_WITH",
   "SHIFT",
   "CC_RAISE",
-  "CLASS",
   "UNKNOWN",
 };
 
@@ -984,51 +984,77 @@ void kos_dyn_pop_ns(KosContext *ctx, KosDynNs *node) {
 }
 
 
-/* === KosDynClass implementation === */
+/* === KosDynCollect implementation === */
 
 
-KosDynClass *kos_dynclass_new(
-    KosDynNode *parent,
-    PyObject *metaclass,
-    PyObject *name,
-    PyObject *bases,
-    PyObject *kwargs,
-    PyObject *class_binding_ns,
-    PyObject *saved_ns) {
-
-  KosDynClass *node = (KosDynClass *) kos_dynnode_alloc();
-  if (! node) {
-    Py_DECREF(metaclass);
-    Py_DECREF(name);
-    Py_DECREF(bases);
-    Py_XDECREF(kwargs);
-    Py_DECREF(class_binding_ns);
+static KosDynCollect *kos_dyncollect_new(KosDynNode *parent, PyObject *saved_ns) {
+  KosDynCollect *col_node = (KosDynCollect *) kos_dynnode_alloc();
+  if (! col_node) {
     Py_DECREF(saved_ns);
     return NULL;
   }
 
-  kos_dynnode_init((KosDynNode *) node, KOS_DYN_CLASS, parent, 0);
-  KosDynClass_METACLASS(node) = metaclass;
-  KosDynClass_NAME(node) = name;
-  KosDynClass_BASES(node) = bases;
-  KosDynClass_KWARGS(node) = kwargs;
-  KosDynClass_BINDING_NS(node) = class_binding_ns;
-  KosDynClass_SAVED_NS(node) = saved_ns;
-  return node;
+  kos_dynnode_init((KosDynNode *) col_node, KOS_DYN_COLLECT, parent, 0);
+  KosDynCollect_SAVED_NS(col_node) = saved_ns;
+  return col_node;
 }
 
 
-static void kos_dynclass_free(KosDynClass *node) {
-  if (! node)
+static KosDynCollect *kos_dyncollect_clone(KosDynCollect *col_node) {
+  if (! col_node)
+    return NULL;
+
+  PyObject *saved = KosDynCollect_SAVED_NS(col_node);
+  Py_INCREF(saved);
+  KosDynCollect *clone = kos_dyncollect_new(NULL, saved);
+  if (clone)
+    KosDynNode_NODE_ID(clone) = KosDynNode_NODE_ID((KosDynNode *) col_node);
+  return clone;
+}
+
+
+static void kos_dyncollect_free(KosDynCollect *col_node) {
+  if (! col_node)
     return;
 
-  Py_CLEAR(KosDynClass_METACLASS(node));
-  Py_CLEAR(KosDynClass_NAME(node));
-  Py_CLEAR(KosDynClass_BASES(node));
-  Py_CLEAR(KosDynClass_KWARGS(node));
-  Py_CLEAR(KosDynClass_BINDING_NS(node));
-  Py_CLEAR(KosDynClass_SAVED_NS(node));
-  kos_dynnode_return_to_freelist((KosDynNode *) node);
+  Py_DECREF(KosDynCollect_SAVED_NS(col_node));
+  kos_dynnode_return_to_freelist((KosDynNode *) col_node);
+}
+
+
+void kos_dyn_collect_unwind(KosContext *ctx, KosDynCollect *node) {
+  if (! node)
+    return;
+  if (KosContext_FRAME_TOP(ctx)) {
+    PyObject *prior = KosDynCollect_SAVED_NS(node);
+    Py_INCREF(prior);
+    Py_DECREF(KosDynFrame_NS(KosContext_FRAME_TOP(ctx)));
+    KosDynFrame_NS(KosContext_FRAME_TOP(ctx)) = prior;
+  }
+}
+
+
+KosDynCollect *kos_dyn_push_collect(KosContext *ctx, PyObject *saved_ns) {
+  KosDynCollect *col_node = kos_dyncollect_new(KosContext_DYN_TOP(ctx), saved_ns);
+  if (! col_node)
+    return NULL;
+
+  KosContext_DYN_TOP(ctx) = (KosDynNode *) col_node;
+  KosContext_CHAIN_VERSION(ctx)++;
+
+  return col_node;
+}
+
+
+void kos_dyn_pop_collect(KosContext *ctx, KosDynCollect *node) {
+  if (! KosContext_DYN_TOP(ctx) ||
+      KosContext_DYN_TOP(ctx) != (KosDynNode *) node) {
+    return;
+  }
+
+  KosContext_DYN_TOP(ctx) = KosDynNode_PARENT(node);
+  KosContext_CHAIN_VERSION(ctx)++;
+  kos_dyncollect_free(node);
 }
 
 
@@ -1040,7 +1066,7 @@ KosDynYieldFrom *kos_dynyieldfrom_new(
     PyObject *delegate,
     uint8_t kind) {
 
-  KosDynYieldFrom *node = kos_dynnode_alloc();
+  KosDynYieldFrom *node = (KosDynYieldFrom *) kos_dynnode_alloc();
   if (! node) {
     return NULL;
   }
@@ -1639,8 +1665,8 @@ void kos_dynnode_free(KosDynNode *node) {
     case KOS_DYN_CC_RAISE:
       kos_dyn_cc_raise_free((KosDynCCRaise *) node);
       break;
-    case KOS_DYN_CLASS:
-      kos_dynclass_free((KosDynClass *) node);
+    case KOS_DYN_COLLECT:
+      kos_dyncollect_free((KosDynCollect *) node);
       break;
     default:
       PyErr_Format(PyExc_RuntimeError,
@@ -1850,27 +1876,10 @@ int kos_dyn_install(KosContext *ctx, KosDynNode *node) {
       return kos_dynparam_enter(ctx, (KosDynParam *) node);
     case KOS_DYN_DYN_WITH:
       return kos_dyn_dyn_with_wind(ctx, (KosDynWith *) node);
-    case KOS_DYN_CLASS: {
-      KosDynClass *cls_node = (KosDynClass *) node;
-      if (! KosContext_FRAME_TOP(ctx))
-        return 0;
-      if (KosStackBlock_PushBlock(&KosDynFrame_STACK(KosContext_FRAME_TOP(ctx))) < 0)
-        return -1;
-      PyObject *empty = PyTuple_New(0);
-      if (! empty)
-        return -1;
-      PyObject *collector = KosCollectorNamespace_NewFull(
-          KosDynClass_NAME(cls_node),
-          KosDynClass_BINDING_NS(cls_node),
-          empty,
-          empty);
-      Py_DECREF(empty);
-      if (! collector)
-        return -1;
-      Py_DECREF(KosDynFrame_NS(KosContext_FRAME_TOP(ctx)));
-      KosDynFrame_NS(KosContext_FRAME_TOP(ctx)) = collector;
+    case KOS_DYN_COLLECT:
+      /* PUSH_COLLECT handler installs collector as frame ns before pushing
+         the node; no install action needed. */
       return 0;
-    }
     default:
       return 0;
   }
@@ -1919,11 +1928,13 @@ static int kos_dyn_uninstall_handler(KosContext *ctx, KosDynNode *node, KosEvent
       (void) out_ev;
       kos_dyn_ns_unwind(ctx, (KosDynNs *) node);
       return 0;
-    case KOS_DYN_CLASS: {
+    case KOS_DYN_COLLECT: {
       (void) out_ev;
-      if (! KosContext_FRAME_TOP(ctx))
-        return 0;
-      return KosStackBlock_DropBlock(&KosDynFrame_STACK(KosContext_FRAME_TOP(ctx)));
+      if (KosContext_FRAME_TOP(ctx)
+          && KosStackBlock_DropBlock(&KosDynFrame_STACK(KosContext_FRAME_TOP(ctx))) < 0)
+        return -1;
+      kos_dyn_collect_unwind(ctx, (KosDynCollect *) node);
+      return 0;
     }
     case KOS_DYN_PARAM:
       (void) out_ev;
@@ -2103,10 +2114,8 @@ KosDynNode *kos_dyn_clone(KosDynNode *node) {
       PyErr_SetString(PyExc_RuntimeError,
                       "cannot clone CC_RAISE sentinel node");
       return NULL;
-    case KOS_DYN_CLASS:
-      PyErr_SetString(PyExc_RuntimeError,
-                      "cannot clone CLASS node");
-      return NULL;
+    case KOS_DYN_COLLECT:
+      return (KosDynNode *) kos_dyncollect_clone((KosDynCollect *) node);
     default:
       PyErr_Format(PyExc_RuntimeError,
                    "kos_dyn_clone: unknown node kind %u",
@@ -4122,22 +4131,6 @@ static int dynnode_traverse_param(KosDynNode *node, visitproc visit, void *arg) 
 
 
 /**
-   GC traverse a KOS_DYN_CLASS: visit metaclass, name, bases, kwargs,
-   class_binding_ns, and saved_ns.
-*/
-static int dynnode_traverse_class(KosDynNode *node, visitproc visit, void *arg) {
-  KosDynClass *cls_node = (KosDynClass *) node;
-  Py_VISIT(KosDynClass_METACLASS(cls_node));
-  Py_VISIT(KosDynClass_NAME(cls_node));
-  Py_VISIT(KosDynClass_BASES(cls_node));
-  Py_VISIT(KosDynClass_KWARGS(cls_node));
-  Py_VISIT(KosDynClass_BINDING_NS(cls_node));
-  Py_VISIT(KosDynClass_SAVED_NS(cls_node));
-  return 0;
-}
-
-
-/**
    GC traverse a KOS_DYN_WITH: visit mgr, enter, exit, and name.
 */
 static int dynnode_traverse_with(KosDynNode *node, visitproc visit, void *arg) {
@@ -4186,8 +4179,9 @@ int kos_dynnode_traverse(KosDynNode *node, visitproc visit, void *arg) {
     case KOS_DYN_WITH:
     case KOS_DYN_DYN_WITH:
       return dynnode_traverse_with(node, visit, arg);
-    case KOS_DYN_CLASS:
-      return dynnode_traverse_class(node, visit, arg);
+    case KOS_DYN_COLLECT:
+      Py_VISIT(KosDynCollect_SAVED_NS((KosDynCollect *) node));
+      break;
     default:
       PyErr_Format(PyExc_RuntimeError,
                    "kos_dynnode_traverse: unknown node kind %u",

@@ -2,7 +2,7 @@
 
 This document defines the initial implementation of Koskari runtime types
 (KosType) and instances (KosObject) with interoperability for Python's
-sync expectations. Class creation uses PUSH_CLASS / POP_CLASS opcodes;
+sync expectations. Class creation uses PUSH_COLLECT / POP_COLLECT / BUILD_CLASS opcodes;
 sibilant-ceval achieves equivalent semantics via collect-let and metaclass
 call (see §2.4).
 
@@ -22,75 +22,55 @@ dictionary level. Class bodies materialize to normal Python dicts.
 
 ## 2. Class Creation Model
 
-### 2.1 PUSH_CLASS / POP_CLASS
+### 2.1 PUSH_COLLECT / POP_COLLECT / BUILD_CLASS
 
-Koskari uses explicit PUSH_CLASS and POP_CLASS opcodes. The class body runs
-inside a CollectorNamespace; the class value is produced by the metaclass
-invocation at POP_CLASS, not by the body's return value.
+Koskari uses PUSH_COLLECT, POP_COLLECT, and BUILD_CLASS. The class body runs
+inside a CollectorNamespace; the class value is produced by BUILD_CLASS
+(which calls the metaclass), not by the body's return value.
 
-**PUSH_CLASS**
+**PUSH_COLLECT** (same style as PUSH_NS, COUNT arg)
 
-1. Pop and parse arguments from the stack (same format as CALL_STAR).
-2. Parse pos tuple via PyArg_ParseTuple with format "OO|O" → (name, bases,
-   [metaclass]). If metaclass is absent, use default KosType.
-3. Allocate KOS_DYN_CLASS node with metaclass, name, bases, kwargs, and
-   class_binding_ns (parent scope with __class__ slot for super).
-4. Install the node. The install handler:
-   * Pushes a new stack block for the class body.
-   * Creates a CollectorNamespace (parent = class_binding_ns).
-   * Installs it as the frame's current namespace.
-5. Body runs; definitions populate the collector via VAR_BIND / VAR_STORE.
+1. Pop NSPEC (and optionally values/names if arg > 0).
+2. Create CollectorNamespace from NSPEC, install as frame ns.
+3. Push KOS_DYN_COLLECT node (saves prior ns for restore).
 
-**POP_CLASS**
+**POP_COLLECT**
 
-1. Current frame namespace is the collector.
-2. Materialize to plain Python dict (Namespace implements mapping protocol).
-3. Call cls = metaclass(name, bases, cls_dict, **kwargs).
-4. Store cls in class_binding_ns.__class__ (for super lookups in methods).
-5. Pop the node. The uninstall handler:
-   * Restores frame namespace to saved_ns.
-   * Pops the class-body stack block.
-6. Push cls onto the enclosing stack (TOS after block pop).
+1. Verify dyn_top is KOS_DYN_COLLECT.
+2. Restore frame ns from saved_ns, pop the node.
+3. **Push the collected namespace onto the value stack.**
 
-Ref semantics inside the class body do not persist into the class dict in
-this phase.
+**BUILD_CLASS**
 
-### 2.2 PUSH_CLASS Argument Format (CALL_STAR-style)
+1. Pop ns (TOS), pop pos (TOS-1). pos = (name, bases) or (name, bases, metaclass).
+2. Parse pos; if metaclass absent, use default KosType.
+3. Materialize ns to plain Python dict (dereference refs for KosNamespace).
+4. Call cls = metaclass(name, bases, cls_dict).
+5. Push cls onto the stack.
 
-PUSH_CLASS uses the same stack layout as CALL_STAR for consistency and
-compiler reuse:
+### 2.2 Stack Layout for Class Creation
 
-* **arg** = bitflags: 1 = has pos, 2 = has kwd (same as CALL_STAR).
-* **Stack (opa = 3):** [pos, kwd] with pos at TOS-1, kwd at TOS.
-* **pos** = tuple (name, bases) or (name, bases, metaclass).
-* **kwd** = dict of extra keyword args for metaclass (e.g. metaclass=MyMeta).
+The compiler builds pos on the stack before PUSH_COLLECT; pos stays below
+the collect scope. After POP_COLLECT, stack is [..., pos, ns]. BUILD_CLASS
+consumes both and pushes the class.
 
-Parse with PyArg_ParseTuple(pos, "OO|O", &name, &bases, &metaclass). If
-metaclass is NULL, also check kwd["metaclass"]. If still absent, use
-default KosType. Before calling the metaclass, remove "metaclass" from
-kwargs (it is consumed for selection, not passed through). The compiler
-can reuse BUILD_ARGS,
-BUILD_KWDS, and COMBINE_ARGS to construct pos and kwd.
+* **pos** = tuple (name, bases) or (name, bases, metaclass), built via BUILD_ARGS.
+* **ns** = CollectorNamespace pushed by POP_COLLECT.
 
-### 2.3 Dynamic Extent (KOS_DYN_CLASS)
+### 2.3 Dynamic Extent (KOS_DYN_COLLECT)
 
-The class block's chain node holds:
+The collect block's chain node (KOS_DYN_COLLECT) holds:
 
-* metaclass (PyObject *)
-* name (PyObject *, str)
-* bases (PyObject *, tuple)
-* kwargs (PyObject *, dict or NULL)
-* class_binding_ns (parent of collector; has __class__ slot for super)
 * saved_ns (enclosing scope to restore on pop)
 
 CollectorNamespace is a normal Namespace subtype; it is safe to push and
-pop on the frame like any other namespace. The install handler creates and
-installs it; the uninstall handler restores the prior namespace and pops
-the stack block. No special frame logic is required for the collector itself.
+pop on the frame like any other namespace. PUSH_COLLECT creates and
+installs it; POP_COLLECT restores the prior namespace, pops the node,
+and pushes the collector onto the value stack.
 
 ### 2.4 Mapping from sibilant-ceval
 
-sibilant-ceval achieves the same effect without PUSH_CLASS / POP_CLASS:
+sibilant-ceval achieves equivalent semantics:
 
 * **collect-let** special form: Emits PUSH_COLLECT, installs
   CollectorNamespace. Blocks closure capture so class members do not close
@@ -103,7 +83,7 @@ sibilant-ceval achieves the same effect without PUSH_CLASS / POP_CLASS:
   __class__ to (metaclass name bases (collect-let [] ... (dict
   (load-locals)))), then returns __class__.
 
-Koskari consolidates this into PUSH_CLASS / POP_CLASS. The metaclass for
+Koskari uses PUSH_COLLECT / POP_COLLECT / BUILD_CLASS. The metaclass for
 Koskari-defined classes is KosType by default (or a subclass).
 
 ---
@@ -275,14 +255,14 @@ class creation.
 
 The class special form compiles to:
 
-* BUILD_ARGS (and optionally BUILD_KWDS / COMBINE_ARGS) to construct pos and
-  kwd on the stack.
-* PUSH_CLASS (STAR-style arg for pos/kwd presence).
+* BUILD_ARGS to construct pos (name, bases) or (name, bases, metaclass).
+* PUSH_COLLECT (COUNT-style, NSPEC only for empty class).
 * Class body instructions (define, defmethod, etc.).
-* POP_CLASS.
+* POP_COLLECT (pushes ns onto stack).
+* BUILD_CLASS (consumes pos and ns, calls metaclass, pushes class).
+* VAR_STORE to bind the class to the name.
 
-No letrec, load-locals, or dict call; POP_CLASS handles dict materialization
-and metaclass invocation internally.
+BUILD_CLASS handles dict materialization and metaclass invocation.
 
 ### 9.2 sibilant-ceval Class Special Form Reference
 
@@ -292,7 +272,8 @@ From `sibceval/specials.py` (equivalent semantics, different encoding):
   metaclass and bases.
 * `special_class` – expands to letrec with `(metaclass name (#tuple . bases)
   (collect-let [] ,@members (dict (load-locals))))`.
-* `child_collect_namespace` – uses OP_PUSH_COLLECT with CollectorNamespace.
+* `child_collect_namespace` – uses OP_PUSH_COLLECT with CollectorNamespace
+  (Koskari mirrors this with ByteCodeFragment.with_collector_namespace).
 * `special_collect_let` – compile-time special; `special_load_locals` emits
   OP_LOCALS.
 
@@ -303,9 +284,8 @@ From `sibceval/specials.py` (equivalent semantics, different encoding):
 * KosObject – base for Koskari instances (or standard PyObject of heap type).
 * KosFunction – function type implementing __get__ for descriptor binding.
 * KosBoundMethod – bound method wrapper implementing KosCallable.
-* KOS_DYN_CLASS – chain node with install/uninstall handlers; stores
-  metaclass, name, bases, kwargs, class_binding_ns, saved_ns.
-* PUSH_CLASS / POP_CLASS opcode handlers (implemented).
+* KOS_DYN_COLLECT – chain node storing saved_ns for restore on POP_COLLECT.
+* PUSH_COLLECT / POP_COLLECT / BUILD_CLASS opcode handlers (implemented).
 * class special form in koskari compile/specials.
 
 ### 9.4 Namespace → dict for Class Bodies

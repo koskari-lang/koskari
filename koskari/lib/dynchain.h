@@ -50,6 +50,7 @@
    KOS_DYN_LOOP - loop region
    KOS_DYN_FOREACH - foreach region
    KOS_DYN_NS     - Namespace scope (PUSH_NS/POP_NS)
+   KOS_DYN_COLLECT - Collector scope (PUSH_COLLECT/POP_COLLECT); push ns on pop
    KOS_DYN_CC     - Undelimited continuation block (call/cc)
    KOS_DYN_YIELD_FROM - Yield-from delegation state
    KOS_DYN_PARAM     - Parameter bindings (parameterize extent)
@@ -70,6 +71,7 @@ typedef enum KosDynKind {
   KOS_DYN_LOOP,
   KOS_DYN_FOREACH,
   KOS_DYN_NS,
+  KOS_DYN_COLLECT,
   KOS_DYN_CC,
   KOS_DYN_YIELD_FROM,
   KOS_DYN_PARAM,
@@ -77,8 +79,6 @@ typedef enum KosDynKind {
   KOS_DYN_DYN_WITH,
   KOS_DYN_SHIFT,
   KOS_DYN_CC_RAISE,
-  KOS_DYN_CLASS,
-
   /* sentinel value */
   KOS_DYN_UNKNOWN,
 } KosDynKind;
@@ -198,14 +198,6 @@ struct KosDynNode {
     struct {
       PyObject *exc_val;  /* borrowed-then-owned KoskariContinuationApply instance */
     } cc_raise;
-    struct {
-      PyObject *metaclass;       /* metaclass to invoke at POP_CLASS */
-      PyObject *name;            /* class name (str) */
-      PyObject *bases;           /* bases tuple */
-      PyObject *kwargs;          /* extra kwargs for metaclass (dict or NULL) */
-      PyObject *class_binding_ns; /* parent of collector; __class__ slot for super */
-      PyObject *saved_ns;        /* enclosing scope to restore on pop */
-    } class_;
   } u;
 };
 
@@ -217,13 +209,13 @@ typedef struct KosDynNode KosDynFinally;
 typedef struct KosDynNode KosDynLoop;
 typedef struct KosDynNode KosDynForeach;
 typedef struct KosDynNode KosDynNs;
+typedef struct KosDynNode KosDynCollect;
 typedef struct KosDynNode KosDynCC;
 typedef struct KosDynNode KosDynYieldFrom;
 typedef struct KosDynNode KosDynParam;
 typedef struct KosDynNode KosDynWith;
 typedef struct KosDynNode KosDynShift;
 typedef struct KosDynNode KosDynCCRaise;
-typedef struct KosDynNode KosDynClass;
 
 
 /* === KosContinuation: captured delimited continuation === */
@@ -937,27 +929,28 @@ void kos_dyn_pop_ns(KosContext *ctx, KosDynNs *node);
 
 
 /**
-   Allocate a class scope node (for PUSH_CLASS).  Caller pushes via
-   kos_dyn_push; install creates CollectorNamespace and sets frame ns.
+   Push a collector scope node (for PUSH_COLLECT).  Caller creates
+   CollectorNamespace and sets frame ns before pushing.
 
-   :param parent: parent node in dynamic chain
-   :param metaclass: metaclass to invoke at POP_CLASS (new ref)
-   :param name: class name (new ref)
-   :param bases: bases tuple (new ref)
-   :param kwargs: extra kwargs for metaclass or NULL (new ref if non-NULL)
-   :param class_binding_ns: parent of collector; __class__ slot (new ref)
+   :param ctx: execution context
    :param saved_ns: enclosing scope to restore on pop (new ref)
 
-   :return: new KosDynClass node, or NULL on error
+   :return: new KosDynCollect node, or NULL on error
 */
-KosDynClass *kos_dynclass_new(
-    KosDynNode *parent,
-    PyObject *metaclass,
-    PyObject *name,
-    PyObject *bases,
-    PyObject *kwargs,
-    PyObject *class_binding_ns,
-    PyObject *saved_ns);
+KosDynCollect *kos_dyn_push_collect(KosContext *ctx, PyObject *saved_ns);
+
+
+/**
+   Pop a collector scope node.  Caller must restore frame->ns and push
+   the collected namespace onto the value stack before calling this.
+
+   :param ctx: execution context
+   :param node: COLLECT node to pop (must be dyn_top)
+*/
+void kos_dyn_pop_collect(KosContext *ctx, KosDynCollect *node);
+
+
+void kos_dyn_collect_unwind(KosContext *ctx, KosDynCollect *node);
 
 
 /**
@@ -1666,6 +1659,7 @@ int kos_hookrunner_traverse(
 #define KosDynNode_IS_FOREACH(n) (KosDynNode_KIND(n) == KOS_DYN_FOREACH)
 #define KosDynNode_IS_REGION(n)  (KosDynNode_IS_TRY(n) || KosDynNode_IS_FINALLY(n) || KosDynNode_IS_LOOP(n) || KosDynNode_IS_FOREACH(n))
 #define KosDynNode_IS_NS(n)      (KosDynNode_KIND(n) == KOS_DYN_NS)
+#define KosDynNode_IS_COLLECT(n) (KosDynNode_KIND(n) == KOS_DYN_COLLECT)
 #define KosDynNode_IS_CC(n)      (KosDynNode_KIND(n) == KOS_DYN_CC)
 #define KosDynNode_IS_YIELD_FROM(n)  (KosDynNode_KIND(n) == KOS_DYN_YIELD_FROM)
 #define KosDynNode_IS_PARAM(n)       (KosDynNode_KIND(n) == KOS_DYN_PARAM)
@@ -1675,14 +1669,8 @@ int kos_hookrunner_traverse(
   (KosDynNode_IS_WITH(n) || KosDynNode_IS_DYN_WITH(n))
 #define KosDynNode_IS_SHIFT(n)    (KosDynNode_KIND(n) == KOS_DYN_SHIFT)
 #define KosDynNode_IS_CC_RAISE(n) (KosDynNode_KIND(n) == KOS_DYN_CC_RAISE)
-#define KosDynNode_IS_CLASS(n)    (KosDynNode_KIND(n) == KOS_DYN_CLASS)
 
-#define KosDynClass_METACLASS(n)       (((KosDynNode *)(n))->u.class_.metaclass)
-#define KosDynClass_NAME(n)            (((KosDynNode *)(n))->u.class_.name)
-#define KosDynClass_BASES(n)           (((KosDynNode *)(n))->u.class_.bases)
-#define KosDynClass_KWARGS(n)          (((KosDynNode *)(n))->u.class_.kwargs)
-#define KosDynClass_BINDING_NS(n)      (((KosDynNode *)(n))->u.class_.class_binding_ns)
-#define KosDynClass_SAVED_NS(n)        (((KosDynNode *)(n))->u.class_.saved_ns)
+#define KosDynCollect_SAVED_NS(n) (((KosDynNode *)(n))->u.ns.saved_ns)
 
 #define KosDynFrame_CODE(f)       (((KosDynNode *)(f))->u.frame.code)
 #define KosDynFrame_PC(f)         (((KosDynNode *)(f))->u.frame.pc)

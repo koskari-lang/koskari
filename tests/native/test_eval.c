@@ -895,14 +895,14 @@ static int test_eval_pop_cc_without_push_cc(void) {
 }
 
 
-/* === Test: PUSH_CLASS / POP_CLASS - empty class C => type with __name__ "C" === */
+/* === Test: PUSH_COLLECT / POP_COLLECT / BUILD_CLASS - empty class C === */
 
 
-static int test_eval_push_class_pop_class_empty(void) {
+static int test_eval_push_collect_pop_collect_build_class_empty(void) {
     /*
-      Bytecode: CONST "C", CONST (), BUILD_ARGS 2, PUSH_CLASS 1, POP_CLASS 0,
-      RETURN 1. Expect KOS_EV_RETURN with a KosType whose __name__ is "C".
-      Frame ns must be KosNamespace so PUSH_CLASS can create class_binding_ns.
+      Bytecode: CONST "C", CONST (), BUILD_ARGS 2, PUSH_COLLECT nspec,
+      POP_COLLECT, BUILD_CLASS, RETURN 1.
+      Expect KOS_EV_RETURN with a KosType whose __name__ is "C".
     */
     PyObject *nspec = create_test_nspec();
     TEST_ASSERT_NOT_NULL(nspec, "create nspec");
@@ -912,13 +912,14 @@ static int test_eval_push_class_pop_class_empty(void) {
     TEST_ASSERT_NOT_NULL(name_c, "create name C");
     TEST_ASSERT_NOT_NULL(empty_bases, "create empty bases");
 
-    PyObject *instr = PyList_New(6);
+    PyObject *instr = PyList_New(7);
     PyList_SET_ITEM(instr, 0, make_instr(KOS_OP_CONST, name_c));
     PyList_SET_ITEM(instr, 1, make_instr(KOS_OP_CONST, empty_bases));
     PyList_SET_ITEM(instr, 2, make_instr_int(KOS_OP_BUILD_ARGS, 2));
-    PyList_SET_ITEM(instr, 3, make_instr_int(KOS_OP_PUSH_CLASS, 1));
-    PyList_SET_ITEM(instr, 4, make_instr_int(KOS_OP_POP_CLASS, 0));
-    PyList_SET_ITEM(instr, 5, make_instr_int(KOS_OP_RETURN, 1));
+    PyList_SET_ITEM(instr, 3, make_instr(KOS_OP_PUSH_COLLECT, nspec));
+    PyList_SET_ITEM(instr, 4, make_instr_int(KOS_OP_POP_COLLECT, 0));
+    PyList_SET_ITEM(instr, 5, make_instr_int(KOS_OP_BUILD_CLASS, 0));
+    PyList_SET_ITEM(instr, 6, make_instr_int(KOS_OP_RETURN, 1));
 
     PyObject *code_obj = KosCode_New(nspec, instr, NULL, NULL);
     TEST_ASSERT_NOT_NULL(code_obj, "create Code");
@@ -958,29 +959,30 @@ static int test_eval_push_class_pop_class_empty(void) {
 }
 
 
-/* === Test: PUSH_CLASS no args (opa & 1 == 0) => RuntimeError === */
+/* === Test: PUSH_COLLECT with empty stack => RuntimeError === */
 
 
-static int test_eval_push_class_no_args_raises(void) {
+static int test_eval_push_collect_empty_stack_raises(void) {
     /*
-      PUSH_CLASS 0 has no pos, no kwd. Expect KOS_EV_RAISE with RuntimeError.
+      PUSH_COLLECT with invalid constant (int 0, not NamespaceSpec).
+      Expect KOS_EV_RAISE.
     */
     PyObject *nspec = create_test_nspec();
     TEST_ASSERT_NOT_NULL(nspec, "create nspec");
 
     PyObject *instr = PyList_New(3);
-    PyList_SET_ITEM(instr, 0, make_instr_int(KOS_OP_PUSH_CLASS, 0));
-    PyList_SET_ITEM(instr, 1, make_instr_int(KOS_OP_POP_CLASS, 0));
+    PyList_SET_ITEM(instr, 0, make_instr_int(KOS_OP_PUSH_COLLECT, 0));
+    PyList_SET_ITEM(instr, 1, make_instr_int(KOS_OP_POP_COLLECT, 0));
     PyList_SET_ITEM(instr, 2, make_instr_int(KOS_OP_RETURN, 1));
 
     PyObject *code_obj = KosCode_New(nspec, instr, NULL, NULL);
     TEST_ASSERT_NOT_NULL(code_obj, "create Code");
 
     Py_DECREF(instr);
-    Py_DECREF(nspec);
 
-    PyObject *ns = PyDict_New();
+    PyObject *ns = KosNamespace_FromSpec(nspec, NULL);
     TEST_ASSERT_NOT_NULL(ns, "create ns");
+    Py_DECREF(nspec);
 
     KosDynFrame *frame = kos_dynframe_new(NULL, (KosCode *) code_obj, ns, NULL);
     TEST_ASSERT_NOT_NULL(frame, "create frame");
@@ -1006,19 +1008,19 @@ static int test_eval_push_class_no_args_raises(void) {
 }
 
 
-/* === Test: POP_CLASS without PUSH_CLASS => rejected at Code construction === */
+/* === Test: POP_COLLECT without PUSH_COLLECT => rejected at Code construction === */
 
 
-static int test_eval_pop_class_without_push_class(void) {
+static int test_eval_pop_collect_without_push_collect(void) {
     /*
-      Malformed bytecode (POP_CLASS without matching PUSH) rejected at
+      Malformed bytecode (POP_COLLECT without matching PUSH) rejected at
       Code construction by extent validation.
     */
     PyObject *nspec = create_test_nspec();
     TEST_ASSERT_NOT_NULL(nspec, "create nspec");
 
     PyObject *instr = PyList_New(2);
-    PyList_SET_ITEM(instr, 0, make_instr_int(KOS_OP_POP_CLASS, 0));
+    PyList_SET_ITEM(instr, 0, make_instr_int(KOS_OP_POP_COLLECT, 0));
     PyList_SET_ITEM(instr, 1, make_instr_int(KOS_OP_RETURN, 0));
 
     PyErr_Clear();
@@ -1637,9 +1639,9 @@ int run_eval_tests(void) {
     RUN_TEST(test_eval_call_continuation_underrun);
     RUN_TEST(test_eval_call_wrong_type);
     RUN_TEST(test_eval_build_function_no_defaults);
-    RUN_TEST(test_eval_push_class_pop_class_empty);
-    RUN_TEST(test_eval_push_class_no_args_raises);
-    RUN_TEST(test_eval_pop_class_without_push_class);
+    RUN_TEST(test_eval_push_collect_pop_collect_build_class_empty);
+    RUN_TEST(test_eval_push_collect_empty_stack_raises);
+    RUN_TEST(test_eval_pop_collect_without_push_collect);
 
     RUN_TEST(test_eval_object_add_underrun);
     RUN_TEST(test_eval_return_underrun);

@@ -99,7 +99,7 @@ The VM in `eval.c` uses a jump table; every opcode has a handler. Handlers are e
 - **Check jumps**: CHECK_EQ, CHECK_NE, CHECK_LT, CHECK_LE, CHECK_GT, CHECK_GE, CHECK_IN, CHECK_NOT_IN, CHECK_IS, CHECK_IS_NOT, CHECK_IS_INSTANCE, CHECK_IS_SUBCLASS
 - **Attributes / items**: ATTR, ATTR_CLEAR, ATTR_REF, ATTR_STORE; ITEM, ITEM_CLEAR, ITEM_REF, ITEM_STORE; CONST_ITEM, CONST_ITEM_CLEAR, CONST_ITEM_REF, CONST_ITEM_STORE
 - **Namespace scope**: PUSH_NS, POP_NS (creates child namespace from NamespaceSpec; supports value binding; uses KosDynNs on dynamic chain)
-- **Class scope**: PUSH_CLASS, POP_CLASS (STAR-style args; KOS_DYN_CLASS; installs CollectorNamespace for class body; metaclass(name, bases, cls_dict, **kwargs) at POP_CLASS; default metaclass KosType)
+- **Class scope**: PUSH_COLLECT, POP_COLLECT, BUILD_CLASS (COUNT-style NSPEC; KOS_DYN_COLLECT; installs CollectorNamespace for class body; POP_COLLECT pushes ns; BUILD_CLASS consumes pos+ns, calls metaclass; default metaclass KosType)
 - **Exceptions**: EXCEPTION, EXCEPTION_CLEAR, EXCEPTION_MATCH, RAISE, CHECK_EXCEPTION
 - **Try/finally**: PUSH_TRY, PUSH_FINALLY, POP_TRY, POP_FINALLY, CLEAR_TRY, CLEAR_FINALLY (each PUSH_TRY and PUSH_FINALLY pushes its own KosStackBlock; exception dispatch clears the block before jumping to the handler; POP_TRY and POP_FINALLY drop the block, with PopBlock(count) to preserve handler/finally results; region unwind drops the block when BREAK/CONTINUE passes through)
 - **Delimited continuations**: PUSH_PROMPT (pushes COW stack block + KOS_DYN_PROMPT), PUSH_SHIFT (captures continuation, unwinds to prompt, enters shift block; SHIFT is a simple marker), POP_SHIFT (pops result; TRUNCATE_AND_INJECT unwinds through SHIFT+PROMPT and injects value onto outer stack), POP_PROMPT (normal: drops stack block, pops prompt, pushes result; continuation-return: unwinds to invocation site via DELIMITED_RETURN_FRAME)
@@ -226,7 +226,7 @@ There are no **partially** implemented opcodes; each handler is either full, a s
 - Macro system (reader macros, defmacro, defalias)
 - Remaining control flow constructs (class blocks)
 - Compiler: remaining specials (yield, await, define-values, setq-values), macro expansion, optimization passes
-- Remaining opcode handlers: CALL_ATTR*, PUSH_WIND, POP_WIND (PUSH_CLASS, POP_CLASS, BUILD_ARGS, BUILD_KWDS, BUILD_KWDS_NAMES, COMBINE_ARGS, COMBINE_KWDS, PUSH_WITH, POP_WITH, PUSH_DYN_WITH, POP_DYN_WITH, CALL_NAMES, CALL_STAR, TAIL_CALL_NAMES, TAIL_CALL_STAR, END_WIND implemented; see "Opcodes: implementation status" above; with/dyn-with design in design/interpreter/with-dyn-with.md)
+- Remaining opcode handlers: CALL_ATTR*, PUSH_WIND, POP_WIND (PUSH_COLLECT, POP_COLLECT, BUILD_CLASS, BUILD_ARGS, BUILD_KWDS, BUILD_KWDS_NAMES, COMBINE_ARGS, COMBINE_KWDS, PUSH_WITH, POP_WITH, PUSH_DYN_WITH, POP_DYN_WITH, CALL_NAMES, CALL_STAR, TAIL_CALL_NAMES, TAIL_CALL_STAR, END_WIND implemented; see "Opcodes: implementation status" above; with/dyn-with design in design/interpreter/with-dyn-with.md)
 
 ### Needs Reconsideration
 - CPython bytecode target (abandoned)

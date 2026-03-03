@@ -45,7 +45,7 @@ def _opcode_maps():
 
 _OPCODE_NAMES, _OPCODE_STYLES = _opcode_maps()
 
-_PUSH_NS_OPS = frozenset(('KOS_OP_PUSH_NS', 'KOS_OP_PUSH_CLASS'))
+_PUSH_NS_OPS = frozenset(('KOS_OP_PUSH_NS', 'KOS_OP_PUSH_COLLECT'))
 
 
 def _get_code(x):
@@ -113,13 +113,11 @@ def _write_nspec_cpool_entry(file, cpool_idx, nspec):
 
 def _build_ns_const_map(code):
     """
-    Pre-scan instructions and return a mapping from PUSH_NS / PUSH_CLASS
-    instruction index to the constant pool index of the NamespaceSpec
-    loaded immediately before it.
+    Pre-scan instructions and return a mapping from PUSH_NS / PUSH_COLLECT
+    instruction index to the constant pool index of the NamespaceSpec.
 
-    The compiler always emits CONST <nspec> immediately before
-    PUSH_NS or PUSH_CLASS. Intervening non-CONST instructions reset
-    tracking so only the direct predecessor is used.
+    PUSH_NS: compiler emits CONST <nspec> immediately before; the direct
+    predecessor is used. PUSH_COLLECT: arg is the constant pool index.
 
     :param code: Code instance
     :return: dict mapping instruction index -> constant pool index
@@ -136,9 +134,13 @@ def _build_ns_const_map(code):
                 last_nspec_cpool_idx = arg
             else:
                 last_nspec_cpool_idx = None
-        elif op_name in _PUSH_NS_OPS:
+        elif op_name == 'KOS_OP_PUSH_NS':
             if last_nspec_cpool_idx is not None:
                 result[i] = last_nspec_cpool_idx
+            last_nspec_cpool_idx = None
+        elif op_name == 'KOS_OP_PUSH_COLLECT':
+            if 0 <= arg < len(cpool) and isinstance(cpool[arg], NamespaceSpec):
+                result[i] = arg
             last_nspec_cpool_idx = None
         else:
             last_nspec_cpool_idx = None

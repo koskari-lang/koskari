@@ -44,8 +44,9 @@ def _extract_metaclass(kwds_seq):
 def special_class(compiler, source, tc=False):
     """
     Compile (compile/class NAME (SUPERS) BODY...). Creates a class via
-    PUSH_CLASS/POP_CLASS, runs body in CollectorNamespace, binds result to NAME.
-    SUPERS may include superclass expressions and optional meta: Metaclass.
+    PUSH_COLLECT/POP_COLLECT/BUILD_CLASS, runs body in CollectorNamespace,
+    binds result to NAME. SUPERS may include superclass expressions and
+    optional meta: Metaclass.
     """
 
     called_by, rest = source
@@ -103,9 +104,10 @@ def special_class(compiler, source, tc=False):
     else:
         frag.instruction(OpCode.KOS_OP_BUILD_ARGS, 2)
 
-    frag.instruction(OpCode.KOS_OP_PUSH_CLASS, 1)
-    helper_begin(frag, body, tc)
-    frag.instruction(OpCode.KOS_OP_POP_CLASS, 0)
+    with frag.collector_namespace(called_by) as body_frag:
+        helper_begin(body_frag, body, tc)
+
+    frag.instruction(OpCode.KOS_OP_BUILD_CLASS, 0)
     frag.instruction(OpCode.KOS_OP_VAR_STORE, name)
     frag.instruction(OpCode.KOS_OP_CONST, None)
 

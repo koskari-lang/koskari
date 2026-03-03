@@ -284,6 +284,30 @@ class ByteCodeFragment:
 
 
     @contextmanager
+    def collector_namespace(self, ns_name):
+        """
+        Context manager for a collector namespace (CollectorNamespace).
+        Like child_namespace but uses PUSH_COLLECT/POP_COLLECT. POP_COLLECT
+        pushes the collected namespace onto the stack.
+
+        :param ns_name: name for the child namespace
+        :param names: sequence of bound names (strings or symbols)
+        :param values: sequence of expressions (one per name)
+        """
+
+        compiler = self.compiler
+        ns_name = str(ns_name)
+        child = compiler.fragment(ns_name)
+
+        yield child
+        nspec = child.as_namespace_spec()
+
+        self.instruction(OpCode.KOS_OP_PUSH_COLLECT, nspec)
+        self.instructions.extend(child.instructions)
+        self.instruction(OpCode.KOS_OP_POP_COLLECT, 0)
+
+
+    @contextmanager
     def child_loop(self, named="<loop>"):
         """
         Context manager that compiles a loop body. On exit, emits
@@ -661,12 +685,11 @@ class Compiler:
                 push_nspec(nspec)
                 nspec = None
 
-            elif op == OpCode.KOS_OP_PUSH_CLASS:
-                # we don't convert PUSH_CLASS VAR references to FAST.
-                push_nspec(None)
+            elif op == OpCode.KOS_OP_PUSH_COLLECT:
+                push_nspec(arg if isinstance(arg, NamespaceSpec) else nspec)
                 nspec = None
 
-            elif op in (OpCode.KOS_OP_POP_NS, OpCode.KOS_OP_POP_CLASS):
+            elif op in (OpCode.KOS_OP_POP_NS, OpCode.KOS_OP_POP_COLLECT):
                 pop_nspec()
 
             elif nstack and (OpCode.KOS_OP_VAR <= op <= OpCode.KOS_OP_VAR_STORE):

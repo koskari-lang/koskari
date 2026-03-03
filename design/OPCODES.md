@@ -51,11 +51,11 @@ linking from design notes, PRs, or other docs.
 - **cpool**: Constant pool; the read-only array of constants in a KosCode (`cpool[i]`).
 - **extent**: A statically described block (stored in the code object's extent
   table) with kind `KosExtentKind` (KOS_EXT_TRY, KOS_EXT_LOOP, KOS_EXT_FOREACH,
-  KOS_EXT_PROMPT, KOS_EXT_NS, KOS_EXT_CLASS, etc.), enter/exit pcs, and
+  KOS_EXT_PROMPT, KOS_EXT_NS, KOS_EXT_COLLECT, etc.), enter/exit pcs, and
   kind-specific targets; see bytecode-metadata-tables.md.
 - **dynamic chain / chain node**: At runtime, the evaluator maintains a chain of
   nodes (`KosDynKind`: KOS_DYN_FRAME, KOS_DYN_TRY, KOS_DYN_FINALLY, KOS_DYN_LOOP,
-  KOS_DYN_FOREACH, KOS_DYN_NS, KOS_DYN_CLASS, KOS_DYN_PROMPT, KOS_DYN_CC,
+  KOS_DYN_FOREACH, KOS_DYN_NS, KOS_DYN_COLLECT, KOS_DYN_PROMPT, KOS_DYN_CC,
   KOS_DYN_CC_RAISE, KOS_DYN_WIND, KOS_DYN_WITH, KOS_DYN_DYN_WITH, KOS_DYN_YIELD_FROM,
   KOS_DYN_PARAM, KOS_DYN_SHIFT). PUSH_* opcodes push a node onto this chain;
   POP_* opcodes pop it.
@@ -198,7 +198,7 @@ When adding or changing an opcode:
 - [15.1 Reference dereference](#151-reference-dereference) — DEREF
 - [16. Argument production](#16-argument-production) — BUILD_ARGS, BUILD_FUNCTION, BUILD_KWDS, etc.
 - [17. Calls](#17-calls) — CALL, CALL_NAMES, CALL_STAR, CALL_ATTR*, TAIL_*
-- [18. Block control](#18-block-control) — PUSH_FOREACH, PUSH_LOOP, PUSH_NS, PUSH_CLASS, PUSH_TRY, PUSH_FINALLY, CLEAR_*, POP_*
+- [18. Block control](#18-block-control) — PUSH_FOREACH, PUSH_LOOP, PUSH_NS, PUSH_COLLECT, PUSH_TRY, PUSH_FINALLY, CLEAR_*, POP_*
 - [18.1 Context managers (with / dyn-with)](#181-context-managers-with--dyn-with) — PUSH_WITH, POP_WITH, PUSH_DYN_WITH, POP_DYN_WITH
 - [19. Object protocol](#19-object-protocol) — OBJECT_* (comparisons, predicates, numeric, general)
 - [20. Delimited continuations](#20-delimited-continuations) — PUSH_PROMPT, PUSH_SHIFT, POP_SHIFT, POP_PROMPT, INVOKE_K, INVOKE_K_VAR
@@ -274,8 +274,9 @@ When adding or changing an opcode:
 | PUSH_FOREACH | NOARG | Push foreach region; break target from extent table | [§18](#kos_op_push_foreach) |
 | PUSH_LOOP | NOARG | Push loop region; break target from extent table | [§18](#kos_op_push_loop) |
 | PUSH_NS | COUNT | Push namespace scope | [§18](#kos_op_push_ns) |
-| PUSH_CLASS | STAR | Push class definition scope | [§18](#kos_op_push_class) |
-| POP_CLASS | NOARG | Pop class scope, push class | [§18](#kos_op_pop_class) |
+| PUSH_COLLECT | COUNT | Push collector namespace scope | [§18](#kos_op_push_collect) |
+| POP_COLLECT | NOARG | Pop collect scope, push ns | [§18](#kos_op_pop_collect) |
+| BUILD_CLASS | NOARG | Consume pos+ns, call metaclass | [§18](#kos_op_build_class) |
 | PUSH_TRY | LABEL | Push try region | [§18](#kos_op_push_try) |
 | PUSH_PROMPT | CONST | Push prompt (delimited cont.) | [§20](#kos_op_push_prompt) |
 | PUSH_SHIFT | CONST | Capture continuation, enter shift block | [§20](#kos_op_push_shift) |
@@ -1834,45 +1835,53 @@ Full design: [interpreter/with-dyn-with.md](interpreter/with-dyn-with.md). Summa
 - **Behaviour:** Same as POP_WITH for normal and exception unwind. Pops KOS_DYN_DYN_WITH.
 
 ---
-### KOS_OP_PUSH_CLASS
+### KOS_OP_PUSH_COLLECT
 
-- **Style**: STAR. Arg = bitflags (1 = has pos, 2 = has kwd), same as CALL_STAR.
+- **Style**: COUNT. Arg = count of value/name bindings (0 or N). Same as PUSH_NS.
 - **Status**: Implemented.
-- **Stack**: Pops pos and optionally kwd according to arg. **Stack layout (opa = 1):**
-  `[..., pos]` with pos = (name, bases) or (name, bases, metaclass). **Stack layout
-  (opa = 3):** `[..., pos, kwd]` with pos at TOS-1, kwd at TOS. Requires at least
-  positional args (opa & 1); otherwise RuntimeError. Parses pos via
-  PyArg_ParseTuple(pos, "OO|O", &name, &bases, &metaclass). If metaclass absent,
-  uses kwd["metaclass"] or default KosType. Creates KOS_DYN_CLASS, installs
-  CollectorNamespace as current namespace for class body.
-- **Pushes:** KOS_DYN_CLASS (static extent KOS_EXT_CLASS; stack block + CollectorNamespace).
-- **Invariants**: Extent kind KOS_EXT_CLASS. Frame namespace must be KosNamespace for
-  class_binding_ns parent.
-- **Compiler form:** Same as CALL_STAR. Use BUILD_ARGS for pos; BUILD_KWDS/COMBINE_*
-  for kwd. See design/api/OBJECT-MODEL.md §2.2.
+- **Stack**: Pops NSPEC; if arg > 0, pops values and NAMES. Creates CollectorNamespace
+  from NSPEC, optionally binds values to names, installs as frame ns, pushes
+  KOS_DYN_COLLECT.
+- **Pushes:** KOS_DYN_COLLECT (static extent KOS_EXT_COLLECT; stores saved ns for
+  restore on POP_COLLECT; POP_COLLECT pushes the collected namespace).
+- **Invariants**: Extent kind KOS_EXT_COLLECT. Frame namespace must be KosNamespace.
 
-**Example:** Empty class C. Stack before PUSH_CLASS: [..., ("C", ())].
+---
+
+### KOS_OP_POP_COLLECT
+
+- **Style**: NOARG. Argument unused.
+- **Status**: Implemented.
+- **Stack**: Verifies dyn_top is KOS_DYN_COLLECT. Restores frame ns, pops node,
+  **pushes the collected namespace** onto the value stack.
+  `[..., (from body)] → [..., ns]`.
+- **Invariants**: Top of chain must be KOS_DYN_COLLECT.
+
+---
+
+### KOS_OP_BUILD_CLASS
+
+- **Style**: NOARG. Argument unused.
+- **Status**: Implemented.
+- **Stack**: Expects `[..., pos, ns]` with TOS = ns, TOS-1 = pos. Pops ns, pos.
+  pos = (name, bases) or (name, bases, metaclass). Materializes ns to dict
+  (dereferencing refs for KosNamespace), calls metaclass(name, bases, cls_dict),
+  pushes resulting class.
+- **Compiler form:** Build pos with BUILD_ARGS; use with_collector_namespace for
+  PUSH_COLLECT/body/POP_COLLECT; then BUILD_CLASS. See design/api/OBJECT-MODEL.md.
+
+**Example:** Empty class C.
 
 | index | opcode     | arg | arg view | comment |
 |------:|------------|-----|----------|---------|
 | 0     | CONST      | 0   | 0 ("C")  | name |
 | 1     | CONST      | 1   | 1 (())   | bases |
-| 2     | BUILD_ARGS | 2   | 2        | stack: [..., ("C", ())] |
-| 3     | PUSH_CLASS | 1   | 1 (pos)  | push class scope; collector as ns |
-| 4     | POP_CLASS  | 0   | 0        | pop; materialize; metaclass(name,bases,dict); push cls |
-| 5     | RETURN     | 1   | 1        | |
-
----
-
-### KOS_OP_POP_CLASS
-
-- **Style**: NOARG. Argument unused.
-- **Status**: Implemented.
-- **Stack**: Verifies dyn_top is KOS_DYN_CLASS. Materializes collector (current ns)
-  to dict, calls metaclass(name, bases, cls_dict, **kwargs), stores result in
-  class_binding_ns.__class__, restores frame ns, pops node, pushes class.
-  `[..., (from body)] → [..., cls]`.
-- **Invariants**: Top of chain must be KOS_DYN_CLASS. pc == pop_pc is outside block.
+| 2     | BUILD_ARGS | 2   | 2        | stack: [..., pos] |
+| 3     | CONST      | 2   | 2 (nspec)| namespace spec |
+| 4     | PUSH_COLLECT | 0 | 0        | push collect scope |
+| 5     | POP_COLLECT | 0 | 0        | pop; push ns |
+| 6     | BUILD_CLASS| 0   | 0        | metaclass(name,bases,dict); push cls |
+| 7     | RETURN     | 1   | 1        | |
 
 ---
 
