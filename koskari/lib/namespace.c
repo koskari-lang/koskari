@@ -408,6 +408,16 @@ static int ns_store_symbol(PyObject *self, PyObject *key, PyObject *val) {
   PyObject *ref = KosNamespace_LOOSE_REF(self, key);
 
   if (! ref) {
+
+    if (KosCollectorNamespace_CheckExact(self)) {
+      PyObject *slot = KosSymbolicRef_New(key, val);
+      if (! slot)
+        return -1;
+      int res = PyDict_SetItem(KosNamespace_BINDS(self), key, slot);
+      Py_DECREF(slot);
+      return res;
+    }
+
     if (! PyErr_Occurred())
       PyErr_Format(PyExc_NameError, "No such reference: %S", key);
     return -1;

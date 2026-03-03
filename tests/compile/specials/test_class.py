@@ -16,6 +16,7 @@ Tests for koskari.compile compile/class special form.
 """
 
 
+from koskari.dis import dis
 from . import SpecialsTestCase
 
 
@@ -58,6 +59,9 @@ class TestClassWithAttribute(SpecialsTestCase):
           C.x)
         """
         expr, mod = self.compile_expr(src_str)
+
+        dis(expr.code)
+
         result = expr().run()
         self.assertEqual(42, result)
 
