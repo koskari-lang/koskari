@@ -1075,7 +1075,7 @@ KOS_OP_INLINE int push_result(KosContext *ctx, PyObject *val) {
 
    :return: 0 continue, 1 stop (AWAIT), -1 error
 */
-int kos_push_or_await(KosContext *ctx, KosEvent *out_ev, PyObject *val) {
+static int push_or_await(KosContext *ctx, KosEvent *out_ev, PyObject *val) {
 
   /* Defer is not auto-awaited; push as plain value (explicit AWAIT drives it). */
   if (KosDefer_Check(val)) {
@@ -1126,6 +1126,11 @@ int kos_push_or_await(KosContext *ctx, KosEvent *out_ev, PyObject *val) {
 }
 
 
+int kos_push_or_await(KosContext *ctx, KosEvent *out_ev, PyObject *val) {
+  return push_or_await(ctx, out_ev, val);
+}
+
+
 /* Forward declaration for WITH helpers (frame_ns_bind is defined later). */
 static int frame_ns_bind(KosContext *ctx, PyObject *name, PyObject *val);
 
@@ -1155,7 +1160,7 @@ int kos_push_with_after_enter(
     KosContext_PENDING_WITH_ENTER_NAME(ctx) = name;
     KosContext_PENDING_WITH_ENTER_RESUME_PC(ctx) = resume_pc;
     KosContext_PENDING_WITH_ENTER_IS_DYN(ctx) = use_dyn_with;
-    int r = kos_push_or_await(ctx, out_ev, result);
+    int r = push_or_await(ctx, out_ev, result);
     if (r == 1)
       return 1;
     if (r < 0) {
@@ -1287,7 +1292,7 @@ int kos_complete_pending_with_enter(KosContext *ctx, KosEvent *out_ev) {
 int kos_with_exit_start_await(KosContext *ctx, KosEvent *out_ev,
                               PyObject *awaitable) {
 
-  return kos_push_or_await(ctx, out_ev, awaitable);
+  return push_or_await(ctx, out_ev, awaitable);
 }
 
 
@@ -1757,7 +1762,7 @@ static int call_default_python_call(
       : PyObject_Call(callable, args_tuple, kwds_dict ? kwds_dict : NULL);
   if (! result)
     return -1;
-  return kos_push_or_await(ctx, out_ev, result);
+  return push_or_await(ctx, out_ev, result);
 }
 
 
@@ -1830,7 +1835,7 @@ static int call_default_python_vcall(
   PyObject *result = PyObject_Vectorcall(callable, args, (size_t) nargs, kwnames);
   if (! result)
     return -1;
-  return kos_push_or_await(ctx, out_ev, result);
+  return push_or_await(ctx, out_ev, result);
 }
 
 
@@ -2140,7 +2145,7 @@ static int apply_native_handler(
   if (detached)
     kos_dynframe_free(detached);
 
-  return kos_push_or_await(ctx, out_ev, result);
+  return push_or_await(ctx, out_ev, result);
 }
 
 
@@ -2237,7 +2242,7 @@ static int defer_drive(KosContext *ctx, KosEvent *out_ev, PyObject *defer_obj);
 static int kos_await_dispatch(KosContext *ctx, KosEvent *out_ev, PyObject *value) {
   if (KosDefer_Check(value))
     return defer_drive(ctx, out_ev, value);
-  return kos_push_or_await(ctx, out_ev, value);
+  return push_or_await(ctx, out_ev, value);
 }
 
 
@@ -2728,7 +2733,7 @@ void kos_yieldfrom_close_delegate(KosDynYieldFrom *node) {
 /**
    Drive a defer to completion or suspension. Used only by AWAIT opcode.
    Consumes defer (caller's ref). Returns 0 continue, 1 stop (AWAIT), -1 error.
-   When DELEGATING(inner), calls kos_push_or_await(ctx, out_ev, inner); on suspend
+   When DELEGATING(inner), calls push_or_await(ctx, out_ev, inner); on suspend
    stores defer in ctx->pending_defer for FeedResult on resume.
 */
 static int defer_drive(KosContext *ctx, KosEvent *out_ev, PyObject *defer_obj) {
@@ -2782,7 +2787,7 @@ static int defer_drive(KosContext *ctx, KosEvent *out_ev, PyObject *defer_obj) {
         Py_DECREF(defer_obj);
         return -1;
       }
-      int r = kos_push_or_await(ctx, out_ev, yielded);
+      int r = push_or_await(ctx, out_ev, yielded);
       Py_DECREF(yielded);
       if (r == 0) {
         PyObject *inner_result = KosStackBlock_PopRef(&CURRENT_STACK(ctx));

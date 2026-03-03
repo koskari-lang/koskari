@@ -142,6 +142,20 @@ static int initialize_types(void) {
         return -1;
     }
 
+    /* Initialize callable, sync, object (object needs both; eval may dispatch to KosType) */
+    if (koskari_callable_init(kos_lib_module)) {
+        fprintf(stderr, "Failed to initialize callable\n");
+        return -1;
+    }
+    if (koskari_sync_init(kos_lib_module)) {
+        fprintf(stderr, "Failed to initialize sync\n");
+        return -1;
+    }
+    if (koskari_object_init(kos_lib_module)) {
+        fprintf(stderr, "Failed to initialize object\n");
+        return -1;
+    }
+
     /* Initialize eval types */
     if (koskari_eval_init(kos_lib_module)) {
         fprintf(stderr, "Failed to initialize eval types\n");

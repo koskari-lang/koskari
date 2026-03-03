@@ -2,7 +2,12 @@
 
 
 define main []:
+    """
+    This is a docstring
+    """
+
     (print "Hello, koskari!")
+
 
 when (eq? __name__ "__main__"):
     (main)

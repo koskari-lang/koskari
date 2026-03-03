@@ -611,6 +611,15 @@ int kos_tail_install_apply(KosContext *ctx, KosEvent *out_ev,
                            PyObject *callable, PyObject *args_tuple, PyObject *kwds_dict);
 
 
+/**
+   Push val onto the current frame stack, or if val is awaitable run one step
+   and either push the result or suspend with KOS_EV_AWAIT.
+
+   :return: 0 continue, 1 stop (AWAIT), -1 error
+*/
+int kos_push_or_await(KosContext *ctx, KosEvent *out_ev, PyObject *val);
+
+
 int koskari_eval_init(PyObject *mod);
 int koskari_eval_clear(PyObject *mod);
 

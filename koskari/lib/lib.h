@@ -52,6 +52,7 @@ struct KosEvent;
 #include "cont.h"
 #include "iter.h"
 #include "namespace.h"
+#include "object.h"
 #include "operator.h"
 #include "pair.h"
 #include "parse.h"
