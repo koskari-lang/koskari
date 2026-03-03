@@ -153,6 +153,12 @@ def make_builtins():
     _bind('vars', vars)
     _bind('dir', dir)
     _bind('open', open)
+    _bind('range', range)
+
+    import koskari.lib as kl
+    for name in ('*', '+', '-', '/', '//', '&', '|', '^',
+                 'in', 'not-in', ):
+        _bind(name, getattr(kl, name))
 
     # Register all compiler specials so the Compiler can find them
     for sym, fn in SPECIALS.items():
