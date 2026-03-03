@@ -1127,6 +1127,7 @@ static int push_or_await(KosContext *ctx, KosEvent *out_ev, PyObject *val) {
 }
 
 
+/* Public wrapper for external callers; delegates to static push_or_await. */
 int kos_push_or_await(KosContext *ctx, KosEvent *out_ev, PyObject *val) {
   return push_or_await(ctx, out_ev, val);
 }

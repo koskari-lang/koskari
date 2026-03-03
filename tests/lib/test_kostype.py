@@ -30,16 +30,6 @@ import warnings
 from koskari.lib import KosType, run_sync
 
 
-def _await_result(awaitable):
-    """
-    Drive an awaitable to completion via run_sync. asyncio.run expects a
-    coroutine, so wrap the awaitable in one.
-    """
-    async def _run():
-        return await awaitable
-    return run_sync(_run())
-
-
 class TestKosTypeImport(unittest.TestCase):
 
     def test_kostype_importable(self):
@@ -78,7 +68,7 @@ class TestKosTypeSyncInit(unittest.TestCase):
 
         aw = C(42)
         self.assertTrue(hasattr(aw, '__await__'))
-        instance = _await_result(aw)
+        instance = run_sync(aw)
         self.assertIsInstance(instance, C)
         self.assertEqual(42, instance.x)
 
@@ -128,7 +118,7 @@ class TestKosTypeAsyncInit(unittest.TestCase):
 
         aw = AsyncC(99)
         self.assertTrue(hasattr(aw, '__await__'))
-        instance = _await_result(aw)
+        instance = run_sync(aw)
         self.assertIsInstance(instance, AsyncC)
         self.assertEqual(99, instance.value)
 
@@ -181,7 +171,7 @@ class TestKosTypeNoInit(unittest.TestCase):
             pass
 
         aw = C()
-        instance = _await_result(aw)
+        instance = run_sync(aw)
         self.assertIsInstance(instance, C)
 
 

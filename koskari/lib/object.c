@@ -33,6 +33,40 @@
 #define CURRENT_STACK(ctx)  KosDynFrame_STACK(CURRENT_FRAME(ctx))
 
 
+/* === Helpers for init invocation === */
+
+
+/**
+   Build (instance, *args). Caller owns instance; refcount unchanged.
+*/
+static PyObject *build_full_init_args(PyObject *instance, PyObject *args) {
+
+  PyObject *init_args = PyTuple_Pack(1, instance);
+  if (! init_args)
+    return NULL;
+  PyObject *full = PySequence_Concat(init_args, args ? args : PyTuple_New(0));
+  Py_DECREF(init_args);
+  return full;
+}
+
+
+/**
+   Build (instance, *args) and call init(instance, *args, **kwargs).
+   Returns init result or NULL on error. Caller owns instance; refcount
+   unchanged on success, DECREF on error.
+*/
+static PyObject *call_init_with_instance(PyObject *init, PyObject *instance,
+                                         PyObject *args, PyObject *kwargs) {
+
+  PyObject *full_args = build_full_init_args(instance, args);
+  if (! full_args)
+    return NULL;
+  PyObject *result = PyObject_Call(init, full_args, kwargs);
+  Py_DECREF(full_args);
+  return result;
+}
+
+
 /* === kos_construct === */
 
 
@@ -55,20 +89,7 @@ PyObject *kos_construct(PyObject *cls, PyObject *args, PyObject *kwargs,
     return kos_construct_awaitable_new(instance, NULL);
   }
 
-  PyObject *init_args = PyTuple_Pack(1, instance);
-  if (! init_args) {
-    Py_DECREF(instance);
-    return NULL;
-  }
-  PyObject *full_args = PySequence_Concat(init_args, args ? args : PyTuple_New(0));
-  Py_DECREF(init_args);
-  if (! full_args) {
-    Py_DECREF(instance);
-    return NULL;
-  }
-
-  PyObject *result = PyObject_Call(init, full_args, kwargs);
-  Py_DECREF(full_args);
+  PyObject *result = call_init_with_instance(init, instance, args, kwargs);
   if (! result) {
     Py_DECREF(instance);
     return NULL;
@@ -191,7 +212,7 @@ static PyTypeObject KosTypeConstructAwaitableType = {
 
 
 PyObject *kos_construct_awaitable_new(PyObject *instance,
-                                       PyObject *init_result) {
+                                       PyObject *init_coroutine) {
 
   if (PyType_Ready(&KosTypeConstructAwaitableType) < 0)
     return NULL;
@@ -201,9 +222,9 @@ PyObject *kos_construct_awaitable_new(PyObject *instance,
     return NULL;
   Py_INCREF(instance);
   a->instance = instance;
-  a->init_result = init_result ? init_result : NULL;
-  if (init_result)
-    Py_INCREF(init_result);
+  a->init_result = init_coroutine;
+  if (init_coroutine)
+    Py_INCREF(init_coroutine);
   return (PyObject *) a;
 }
 
@@ -254,6 +275,7 @@ static PyObject *kostype_tp_new(PyTypeObject *metaclass, PyObject *args,
   if (! cls)
     return NULL;
 
+  /* Best-effort injection of C.new; class remains usable if this fails. */
   PyObject *new_cm = PyDescr_NewClassMethod(
       (PyTypeObject *) cls, &kostype_new_method_def);
   if (new_cm) {
@@ -268,6 +290,11 @@ static PyObject *kostype_tp_new(PyTypeObject *metaclass, PyObject *args,
 /* === kostype_init_done_handler === */
 
 
+/**
+   Runs when a KosCallable __init__ (e.g. compiled Koskari function) has
+   completed. Pops the instance, detaches the frame, and delivers the
+   instance to the parent via push_or_await.
+*/
 typedef int (*KosNativeHandlerFn)(void *, void *, int, PyObject *);
 
 
@@ -325,14 +352,8 @@ int kostype_install(KosContext *ctx, KosEvent *out_ev,
   }
 
   if (KosCallable_Check(init)) {
-    PyObject *init_args = PyTuple_Pack(1, instance);
-    if (! init_args) {
-      Py_DECREF(instance);
-      return -1;
-    }
-    PyObject *full_args = PySequence_Concat(
-        init_args, args_tuple ? args_tuple : PyTuple_New(0));
-    Py_DECREF(init_args);
+    PyObject *full_args = build_full_init_args(instance,
+        args_tuple ? args_tuple : NULL);
     if (! full_args) {
       Py_DECREF(instance);
       return -1;
@@ -362,20 +383,8 @@ int kostype_install(KosContext *ctx, KosEvent *out_ev,
   }
 
   /* Plain Python callable */
-  PyObject *init_args = PyTuple_Pack(1, instance);
-  if (! init_args) {
-    Py_DECREF(instance);
-    return -1;
-  }
-  PyObject *full_args = PySequence_Concat(
-      init_args, args_tuple ? args_tuple : PyTuple_New(0));
-  Py_DECREF(init_args);
-  if (! full_args) {
-    Py_DECREF(instance);
-    return -1;
-  }
-  PyObject *result = PyObject_Call(init, full_args, kwds_dict);
-  Py_DECREF(full_args);
+  PyObject *result = call_init_with_instance(init, instance,
+      args_tuple ? args_tuple : NULL, kwds_dict);
   if (! result) {
     Py_DECREF(instance);
     return -1;

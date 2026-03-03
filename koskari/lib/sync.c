@@ -28,6 +28,7 @@
 #include "lib.h"
 
 
+static PyObject *as_coroutine_func = NULL;
 static PyObject *run_sync_func = NULL;
 static PyObject *iter_sync_func = NULL;
 
@@ -76,18 +77,23 @@ int koskari_sync_init(PyObject *mod) {
   if (! sync_mod)
     return -1;
 
+  as_coroutine_func = PyObject_GetAttrString(sync_mod, "as_coroutine");
   run_sync_func = PyObject_GetAttrString(sync_mod, "run_sync");
   iter_sync_func = PyObject_GetAttrString(sync_mod, "iter_sync");
   Py_DECREF(sync_mod);
 
-  if (! run_sync_func || ! iter_sync_func) {
+  if (! as_coroutine_func || ! run_sync_func || ! iter_sync_func) {
+    Py_XDECREF(as_coroutine_func);
     Py_XDECREF(run_sync_func);
     Py_XDECREF(iter_sync_func);
+    as_coroutine_func = NULL;
     run_sync_func = NULL;
     iter_sync_func = NULL;
     return -1;
   }
 
+  if (PyDict_SetItemString(dict, "as_coroutine", as_coroutine_func))
+    return -1;
   if (PyDict_SetItemString(dict, "run_sync", run_sync_func))
     return -1;
   if (PyDict_SetItemString(dict, "iter_sync", iter_sync_func))
@@ -99,6 +105,7 @@ int koskari_sync_init(PyObject *mod) {
 
 int koskari_sync_clear(PyObject *mod) {
 
+  Py_CLEAR(as_coroutine_func);
   Py_CLEAR(run_sync_func);
   Py_CLEAR(iter_sync_func);
   (void) mod;

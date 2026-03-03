@@ -27,7 +27,7 @@ import asyncio
 import threading
 
 
-__all__ = ('run_sync', 'iter_sync')
+__all__ = ('as_coroutine', 'run_sync', 'iter_sync')
 
 
 _executor = None
@@ -72,15 +72,31 @@ def _active_loop():
         return True
 
 
+def as_coroutine(awaitable):
+    """
+    Return a coroutine that, when awaited, awaits the given awaitable
+    and returns its result. Accepts arbitrary awaitables (e.g. custom
+    __await__), not just coroutines. asyncio.run requires a coroutine,
+    so use this to adapt before passing to run_sync or asyncio.run.
+    """
+
+    async def _wrap():
+        return await awaitable
+    return _wrap()
+
+
 def run_sync(awaitable):
     """
     Run an awaitable to completion from synchronous code.
 
+    Accepts arbitrary awaitables; wraps non-coroutines via as_coroutine.
     If no event loop is running in the current thread, uses asyncio.run().
     If a loop is already running (e.g. in Jupyter or an async app), runs
     the awaitable in a dedicated executor thread to avoid deadlock.
     """
 
+    if not asyncio.iscoroutine(awaitable):
+        awaitable = as_coroutine(awaitable)
     if _active_loop():
         loop = _get_executor_loop()
         future = asyncio.run_coroutine_threadsafe(awaitable, loop)
