@@ -64,8 +64,6 @@ class SpecialsTestCase(unittest.TestCase):
 
         source = self.parse_source(src_str, lineno=lineno)
 
-        print("source:", source)
-
         compiler = Compiler("<unittest>", module, filename=__file__)
         fragment = compiler.full_compile(source)
         expr = fragment.as_expression(mod_ns)
