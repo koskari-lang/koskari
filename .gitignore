@@ -77,3 +77,4 @@ dmypy.json
 # The end.
 vgcore.*
 uv.lock
+*.elc
