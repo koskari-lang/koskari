@@ -43,7 +43,7 @@ from re import UNICODE, VERBOSE
 from re import compile as regex
 
 from ..exceptions import FormatStringSyntaxError, ReaderSyntaxError
-from ..types import (BaseSourceStream, Module, cons, is_pair,
+from ..types import (BaseSourceStream, Module, cons, is_pair, is_symbol,
                      keyword, nil, setcdr, symbol, unpack)
 from .layouts import LayoutHandler
 
@@ -73,8 +73,10 @@ _symbol_format = symbol("format")
 _symbol_fraction = symbol("fraction")
 _symbol_quasiquote = symbol("compile/quasiquote")
 _symbol_quasiquote_block = symbol("compile/quasiquote-block")
+_symbol_attr = symbol("compile/attr")
 _symbol_quote = symbol("compile/quote")
-_symbol_ref = symbol("ref")
+_symbol_ref = symbol("compile/ref")
+_symbol_refq = symbol("compile/refq")
 _symbol_splice = symbol("compile/splice")
 _symbol_unquote = symbol("compile/unquote")
 _symbol_unquote_splicing = symbol("compile/unquote-splicing")
@@ -102,7 +104,9 @@ _decimal_re = regex(r"^-?((\d*\.\d+)|(\d+\.\d*)|\d+)d$").match
 _fraction_re = regex(r"-?\d+/\d+").match
 _complex_re = regex(r"^-?\d*\.?\d+\+\d*\.?\d*[ij]$").match
 _keyword_re = regex(r"^(:.+|.+:)$").match
-_deref_atom_re = regex(r"^\*[a-zA-Z_][a-zA-Z0-9_-]*$").match
+_dotted_attr_atom_re = regex(
+    r"^[a-zA-Z_][a-zA-Z0-9_-]*(\.[a-zA-Z_][a-zA-Z0-9_-]*)+$").match
+_ref_atom_re = regex(r"^&\S+$").match
 
 _as_integer = int
 _as_bin = partial(int, base=2)
@@ -151,12 +155,18 @@ def _as_decimal(s):
     return cons(_symbol_decimal, tuple(ct), nil)
 
 
-def _as_deref_atom(s):
+def _as_dotted_attr_atom(s):
     """
-    Convert *identifier atom to (compile/deref identifier)
+    Convert dotted identifier atom (e.g. foo.bar) to (compile/attr obj name).
+    Left-associative: foo.bar.baz becomes (compile/attr (compile/attr foo bar)
+    baz).
     """
 
-    return cons(symbol("compile/deref"), symbol(s[1:]), nil)
+    parts = s.split(".")
+    obj = symbol(parts[0])
+    for name in parts[1:]:
+        obj = cons(_symbol_attr, obj, symbol(name), nil)
+    return obj
 
 
 def _as_complex(s):
@@ -875,7 +885,6 @@ class Reader(object):
         sm('"', self._read_string, True)
         sm("'", self._read_quote, True)
         sm("`", self._read_quasiquote, True)
-        sm("&", self._read_ref, False)
         sm(';', self._read_comment, True)
 
         sm('f', self._read_fstring, False)
@@ -950,7 +959,8 @@ class Reader(object):
 
         ap = self.set_atom_pattern
 
-        ap(symbol("compile/deref"), _deref_atom_re, _as_deref_atom)
+        ap(symbol("compile/refq"), _ref_atom_re, self._as_ref_atom)
+        ap(symbol("compile/attr"), _dotted_attr_atom_re, _as_dotted_attr_atom)
         ap(symbol("keyword"), _keyword_re, keyword)
         ap(symbol("int"), _integer_re, _as_integer)
         ap(symbol("float"), _float_re, _as_float)
@@ -979,6 +989,17 @@ class Reader(object):
             return DOT, None
 
         return ATOM, atom
+
+
+    def _as_ref_atom(self, s):
+        """
+        Convert &rest atom to (compile/ref expanded). Strips the leading &
+        and defers to process_atom for the rest.
+        """
+
+        rest = s[1:]
+        expanded = self.process_atom(rest)
+        return cons(_symbol_ref, expanded, nil)
 
 
     def process_atom(self, atom):
@@ -1282,24 +1303,6 @@ class Reader(object):
             raise stream.error(msg, pos)
 
         return VALUE, cons(_symbol_quote, child, nil)
-
-
-    def _read_ref(self, stream, char):
-        """
-        Read a ref expression (&expr)
-
-        :param stream: the source stream
-        :param char: the ampersand character
-        :return: tuple of (VALUE, (ref expr))
-        """
-
-        event, pos, child = self._read(stream)
-
-        if event is not VALUE:
-            msg = "invalid use of %s" % char
-            raise stream.error(msg, pos)
-
-        return VALUE, cons(_symbol_ref, child, nil)
 
 
     def _read_quasiquote(self, stream, char):

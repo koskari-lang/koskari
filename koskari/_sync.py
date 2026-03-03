@@ -72,7 +72,7 @@ def _active_loop():
         return True
 
 
-def as_coroutine(awaitable):
+async def as_coroutine(awaitable):
     """
     Return a coroutine that, when awaited, awaits the given awaitable
     and returns its result. Accepts arbitrary awaitables (e.g. custom
@@ -80,9 +80,7 @@ def as_coroutine(awaitable):
     so use this to adapt before passing to run_sync or asyncio.run.
     """
 
-    async def _wrap():
-        return await awaitable
-    return _wrap()
+    return await awaitable
 
 
 def run_sync(awaitable):
@@ -97,6 +95,7 @@ def run_sync(awaitable):
 
     if not asyncio.iscoroutine(awaitable):
         awaitable = as_coroutine(awaitable)
+
     if _active_loop():
         loop = _get_executor_loop()
         future = asyncio.run_coroutine_threadsafe(awaitable, loop)

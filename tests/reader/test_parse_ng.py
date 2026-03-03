@@ -268,21 +268,51 @@ class TestReaderWithSourceStreamNg(TestCase):
         result = _parse_ng("`foo")
         self.assertEqual(result, cons(symbol("compile/quasiquote"), symbol("foo"), nil))
 
-    def test_read_ref_macro(self):
+    def test_read_ref_atom(self):
         result = _parse_ng("&foo")
-        self.assertEqual(result, cons(symbol("ref"), symbol("foo"), nil))
+        self.assertEqual(
+            result,
+            cons(symbol("compile/ref"), symbol("foo"), nil))
 
-    def test_read_ref_macro_dotted(self):
+    def test_read_ref_atom_dotted(self):
         result = _parse_ng("&foo.bar")
-        self.assertEqual(
-            result,
-            cons(symbol("ref"), symbol("foo.bar"), nil))
+        expected = cons(
+            symbol("compile/ref"),
+            cons(symbol("compile/attr"), symbol("foo"), symbol("bar"), nil),
+            nil)
+        self.assertEqual(result, expected)
 
-    def test_read_deref_atom(self):
-        result = _parse_ng("*bar")
+    def test_read_ref_atom_bare_ampersand(self):
+        result = _parse_ng("(& 8 1)")
+        expected = cons(symbol("&"), cons(8, cons(1, nil)))
+        self.assertEqual(result, expected)
+
+    def test_read_ref_atom_dotted_multi(self):
+        result = _parse_ng("&foo.bar.baz")
+        expected = cons(
+            symbol("compile/ref"),
+            cons(
+                symbol("compile/attr"),
+                cons(symbol("compile/attr"), symbol("foo"), symbol("bar"), nil),
+                symbol("baz"),
+                nil),
+            nil)
+        self.assertEqual(result, expected)
+
+    def test_read_dotted_attr_atom(self):
+        result = _parse_ng("foo.bar")
         self.assertEqual(
             result,
-            cons(symbol("compile/deref"), symbol("bar"), nil))
+            cons(symbol("compile/attr"), symbol("foo"), symbol("bar"), nil))
+
+    def test_read_dotted_attr_atom_multi(self):
+        result = _parse_ng("obj.foo.bar")
+        expected = cons(
+            symbol("compile/attr"),
+            cons(symbol("compile/attr"), symbol("obj"), symbol("foo"), nil),
+            symbol("bar"),
+            nil)
+        self.assertEqual(result, expected)
 
     def test_read_eof_returns_none(self):
         self.assertIsNone(_parse_ng(""))

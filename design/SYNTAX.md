@@ -160,6 +160,33 @@ depth 0 in `LayoutReader` when no block-header colon is found on the line.
                             ; inside a quasiquote, "," and ",@" become active:
 <unquote-form>          ::= "," <form>      ; desugars to: (compile/unquote <form>)
 <unquote-splice-form>   ::= ",@" <form>     ; desugars to: (compile/unquote-splicing <form>)
+
+```
+
+### Reader macros and atom expansions
+
+The default reader applies these transformations. These may be gated behind a
+pragma in future.
+
+**Ref (ampersand) — atom pattern.** An atom matching `&` followed by one or
+more non-whitespace characters expands. The `&` is stripped and the remainder
+is processed by the atom expander (e.g. `foo.bar` becomes `(compile/attr foo
+bar)`); the result is wrapped in `(compile/ref ...)`.
+
+| Input      | Expansion                               |
+|-----------|------------------------------------------|
+| `&foo`    | `(compile/ref foo)` → compile/ref expands to refq |
+| `&foo.bar`| `(compile/ref (compile/attr foo bar))` → ref-attr |
+| `&` alone | No match — parses as symbol `&`         |
+| `(& 8 1)` | List with symbol `&` as head            |
+
+**Dotted attribute — atom pattern.** An atom that is a dotted identifier (e.g.
+`foo.bar`, `obj.foo.bar`) expands to a nested `(compile/attr ...)` form,
+left-associative:
+
+```
+foo.bar      ->  (compile/attr foo bar)
+obj.foo.bar  ->  (compile/attr (compile/attr obj foo) bar)
 ```
 
 ### Dotted pairs

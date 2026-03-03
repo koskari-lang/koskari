@@ -74,7 +74,7 @@ Opcode sequences produced
 
 
 from ...lib import nil, OpCode, symbol, keyword
-from ...types import is_keyword, is_pair, is_symbol
+from ...types import is_keyword, is_pair, is_symbol, unpack
 from ...exceptions import SpecialError
 from ..helpers import is_symbolish, special
 
@@ -89,28 +89,68 @@ __all__ = (
 _keyword_as = keyword('as')
 
 
-def _parse_import_name(name_sym, source):
+def _attr_form_to_dotted(form, source):
     """
-    Split a module name symbol into (level:int, dotted_name:str).
+    Convert (compile/attr obj name) or nested equivalent to dotted string.
+
+    :param form: (compile/attr obj name) with obj symbol or nested attr
+    :param source: source form for error context
+    :return: str like "os.path" or "foo.bar.baz"
+    :raises SpecialError: when form is invalid
+    """
+
+    if is_symbol(form) or isinstance(form, str):
+        return str(form)
+    if not is_pair(form):
+        raise SpecialError("import argument must be symbol or (compile/attr ...)",
+                          source)
+    head, tail = form
+    if str(head) != 'compile/attr':
+        raise SpecialError("import argument must be symbol or (compile/attr ...)",
+                          source)
+    parts = list(unpack(tail))
+    if len(parts) < 2:
+        raise SpecialError("compile/attr in import requires two arguments",
+                          source)
+    result = []
+    for p in parts:
+        if is_symbol(p) or isinstance(p, str):
+            result.append(str(p))
+        elif is_pair(p) and str(p[0]) == 'compile/attr':
+            result.append(_attr_form_to_dotted(p, source))
+        else:
+            raise SpecialError("import compile/attr arguments must be symbols",
+                              source)
+    return '.'.join(result)
+
+
+def _parse_import_name(name_form, source):
+    """
+    Split a module name (symbol or (compile/attr ...)) into (level:int,
+    dotted_name:str).
 
     Counts leading dots for relative imports and strips them from the
     returned name.  A bare dot sequence (level > 0, no name) returns
     (level, None) representing an import of the enclosing package itself.
 
-    :param name_sym: a symbol such as 'foo', 'foo.bar', '.foo', '..bar'
+    :param name_form: symbol like 'foo', 'foo.bar', '.foo' or (compile/attr
+        obj name) from reader expansion
     :param source: source form for error context
     :return: (level, name) where level >= 0 and name is str or None
-    :raises SpecialError: when name_sym is not a symbol or str
+    :raises SpecialError: when name_form is not a symbol, str, or attr form
     """
 
-    if not (is_symbol(name_sym) or isinstance(name_sym, str)):
-        raise SpecialError("import argument must be a symbol", source)
-
-    raw = str(name_sym)
-    stripped = raw.lstrip('.')
-    level = len(raw) - len(stripped)
-    name = stripped if stripped else None
-    return (level, name)
+    if is_symbol(name_form) or isinstance(name_form, str):
+        raw = str(name_form)
+        stripped = raw.lstrip('.')
+        level = len(raw) - len(stripped)
+        name = stripped if stripped else None
+        return (level, name)
+    if is_pair(name_form) and str(name_form[0]) == 'compile/attr':
+        dotted = _attr_form_to_dotted(name_form, source)
+        return (0, dotted)
+    raise SpecialError("import argument must be a symbol or (compile/attr ...)",
+                      source)
 
 
 def _leaf_name(dotted):

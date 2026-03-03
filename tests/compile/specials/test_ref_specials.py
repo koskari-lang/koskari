@@ -49,6 +49,18 @@ class TestRefSpecial(SpecialsTestCase):
         result = expr().run()
         self.assertEqual(5, result)
 
+    def test_ampersand_dotted_expands_to_ref_attr(self):
+        obj = SimpleNamespace(count=7)
+        src_str = """
+        (compile/call deref &obj.count)
+        """
+        def deref(r):
+            return r.deref()
+
+        expr, mod = self.compile_expr(src_str, obj=obj, deref=deref)
+        result = expr().run()
+        self.assertEqual(7, result)
+
     def test_ref_item_expands_to_ref_item(self):
         lst = [10, 20, 30]
         src_str = """
@@ -68,7 +80,7 @@ class TestDerefSpecial(SpecialsTestCase):
         src_str = """
         (compile/let [[x 42]]
           (compile/let [[r (compile/refq x)]]
-            *r))
+            (compile/deref r)))
         """
         expr, mod = self.compile_expr(src_str)
         result = expr().run()
@@ -78,7 +90,7 @@ class TestDerefSpecial(SpecialsTestCase):
         code = self.compile_to_code("""
         (compile/let [[x 1]]
           (compile/let [[r (compile/refq x)]]
-            *r))
+            (compile/deref r)))
         """)
         ops = [code.oparg(i)[0] for i in range(code.length())]
         self.assertIn(OpCode.KOS_OP_DEREF, ops)
