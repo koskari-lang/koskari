@@ -847,6 +847,47 @@ value expression, then emits VAR_BIND to store it.
 **Tests:** `tests/compile/specials/test_define.py`
 
 
+## compile/class
+
+**Symbol:** `compile/class`
+
+**Syntax:** `(compile/class NAME (SUPERS) BODY ...)`
+
+- **NAME**: symbol — the class name and binding target
+- **SUPERS**: list of superclass expressions and optional `meta: Metaclass` keyword
+- **BODY**: forms compiled in sequence inside the CollectorNamespace (e.g.
+  `compile/define` for class attributes and methods)
+
+**Use-case:** Create a Koskari class via PUSH_CLASS/POP_CLASS, run body in
+CollectorNamespace, bind the resulting class to NAME. Default metaclass is
+KosType; use `meta: MyMeta` in SUPERS for a custom metaclass.
+
+**Behaviour:** Builds pos tuple (name, bases) or (name, bases, metaclass) with
+BUILD_ARGS, emits PUSH_CLASS, compiles body with helper_begin, emits POP_CLASS,
+then VAR_BIND to bind the class to NAME. Returns None (matches compile/define).
+
+**Examples:**
+
+```scheme
+;; Empty class
+(compile/class C ())
+
+;; Class with attribute
+(compile/class C ()
+  (compile/define x 42))
+
+;; Class with superclass
+(compile/class C (object)
+  (compile/define x 1))
+
+;; Custom metaclass
+(compile/class C (Base meta: MyMeta)
+  (compile/define x 1))
+```
+
+**Tests:** `tests/compile/specials/test_class.py`
+
+
 ## compile/delq
 
 **Symbol:** `compile/delq`
