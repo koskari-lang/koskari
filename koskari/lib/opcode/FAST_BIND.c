@@ -19,32 +19,32 @@
 
 KOS_OP_HANDLER(FAST_BIND) {
   PyObject *ns = CURRENT_NS(ctx);
-  if (! ns) {
+  if (unlikely(! ns)) {
     PyErr_SetString(PyExc_RuntimeError, "FAST_BIND invoked on NULL namespace");
     return -1;
   }
-  if (! KosNamespace_SupportsFast(ns)) {
+
+  if (unlikely(! KosNamespace_SupportsFast(ns))) {
     PyErr_Format(PyExc_RuntimeError, "FAST_BIND invoked on %R", ns);
     return -1;
   }
+
   size_t idx = (size_t) KosOp_ARG(insn);
-  if (idx >= KosNamespace_FAST_COUNT(ns)) {
+  if (unlikely(idx >= KosNamespace_FAST_COUNT(ns))) {
     PyErr_Format(PyExc_NameError, "Namespace fast index out of bounds, %zu",
                  idx);
     return -1;
   }
+
   PyObject *val = KosStackBlock_PopRef(&CURRENT_STACK(ctx));
-  if (! val)
+  if (unlikely(! val))
     return -1;
-  KosNameBind *nb = KosNamespace_GET_FAST(ns, idx);
-  PyObject *ref = KosSymbolicRef_New(KosNameBind_NAME(nb), val);
+
+  int res = KosNamespace_FastBind(ns, idx, val);
   Py_DECREF(val);
-  if (! ref)
+  if (unlikely(res < 0))
     return -1;
-  int res = KosNamespace_FastBind(ns, idx, ref);
-  Py_DECREF(ref);
-  if (res < 0)
-    return -1;
+
   (void) out_ev;
   return 0;
 }

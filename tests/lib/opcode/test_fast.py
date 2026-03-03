@@ -98,18 +98,20 @@ class TestFastOpcodes(CevalTest):
             run_to_completion(make_callable(code_obj, ns)())
         self.assertIn("FAST invoked", str(ctx.exception))
 
-    def test_fast_clear_clears_slot(self):
+    def test_fast_bind_binds_slot(self):
         """
-        FAST_CLEAR clears fast slot; subsequent FAST yields empty/ref
+        FAST_BIND binds value to fast slot; subsequent FAST yields value
         """
         code, ns = build_expr([
             ["CONST", 100],
-            ["FAST_BIND", 0],
-            ["FAST_CLEAR", 0],
-            ["CONST", 42],
+            ["FAST_STORE", 0],
+            ["FAST_REF", 0],
+            ["FAST_BIND", 1],
+            ["FAST", 1],
             ["RETURN", 1],
-        ], local_syms=("x",))
+        ], local_syms=("x", "y"))
+
         result = run_to_completion(make_callable(code, ns)())
-        self.assertEqual(result, 42)
+        self.assertEqual(result, 100)
 
 # The end.

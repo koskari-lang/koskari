@@ -1,4 +1,30 @@
 ;; Example koskari program
 ;; This is a placeholder - replace with actual koskari code when parser is implemented
 
+
+class FunTimes []:
+
+    define __init__ [self x]:
+        (self.set_x x)
+
+    define get_x [self]:
+        self.real_x
+
+    define set_x [self x]:
+        (set-attr self real_x x)
+
+
 (print "Hello, Koskari!")
+(define fun (FunTimes 10))
+
+(print "fun:" fun)
+(print "fun.real_x:" fun.real_x)
+(print "fun.get_x:" (fun.get_x))
+
+(bindq fx (ref-attr fun real_x))
+
+(fun.set_x 20)
+(print "fx:" fx)
+
+
+;; The end.
