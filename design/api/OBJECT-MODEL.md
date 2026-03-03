@@ -305,7 +305,7 @@ From `sibceval/specials.py` (equivalent semantics, different encoding):
 * KosBoundMethod – bound method wrapper implementing KosCallable.
 * KOS_DYN_CLASS – chain node with install/uninstall handlers; stores
   metaclass, name, bases, kwargs, class_binding_ns, saved_ns.
-* PUSH_CLASS / POP_CLASS opcode handlers (PUSH_CLASS is currently a stub).
+* PUSH_CLASS / POP_CLASS opcode handlers (implemented).
 * class special form in koskari compile/specials.
 
 ### 9.4 Namespace → dict for Class Bodies
