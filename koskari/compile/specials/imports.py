@@ -101,17 +101,24 @@ def _attr_form_to_dotted(form, source):
 
     if is_symbol(form) or isinstance(form, str):
         return str(form)
+
     if not is_pair(form):
-        raise SpecialError("import argument must be symbol or (compile/attr ...)",
-                          source)
+        raise SpecialError(
+            "import argument must be symbol or (compile/attr ...)",
+            source)
+
     head, tail = form
     if str(head) != 'compile/attr':
-        raise SpecialError("import argument must be symbol or (compile/attr ...)",
-                          source)
+        raise SpecialError(
+            "import argument must be symbol or (compile/attr ...)",
+            source)
+
     parts = list(unpack(tail))
     if len(parts) < 2:
-        raise SpecialError("compile/attr in import requires two arguments",
-                          source)
+        raise SpecialError(
+            "compile/attr in import requires two arguments",
+            source)
+
     result = []
     for p in parts:
         if is_symbol(p) or isinstance(p, str):
@@ -119,8 +126,10 @@ def _attr_form_to_dotted(form, source):
         elif is_pair(p) and str(p[0]) == 'compile/attr':
             result.append(_attr_form_to_dotted(p, source))
         else:
-            raise SpecialError("import compile/attr arguments must be symbols",
-                              source)
+            raise SpecialError(
+                "import compile/attr arguments must be symbols",
+                source)
+
     return '.'.join(result)
 
 
@@ -146,11 +155,14 @@ def _parse_import_name(name_form, source):
         level = len(raw) - len(stripped)
         name = stripped if stripped else None
         return (level, name)
+
     if is_pair(name_form) and str(name_form[0]) == 'compile/attr':
         dotted = _attr_form_to_dotted(name_form, source)
         return (0, dotted)
-    raise SpecialError("import argument must be a symbol or (compile/attr ...)",
-                      source)
+
+    raise SpecialError(
+        "import argument must be a symbol or (compile/attr ...)",
+        source)
 
 
 def _leaf_name(dotted):
@@ -221,8 +233,10 @@ def _parse_member(elem, source):
         parts = list(elem.unpack())
         if len(parts) == 3 and is_keyword(parts[1]) and str(parts[1]) == 'as':
             attr_sym, _, bind_sym = parts
+
             if is_symbolish(attr_sym) and is_symbolish(bind_sym):
                 return (str(bind_sym), str(attr_sym))
+
         if len(parts) == 1 and is_symbolish(parts[0]):
             name = str(parts[0])
             return (name, name)
@@ -254,9 +268,11 @@ def special_import(compiler, source, tc=False):
         if is_keyword(maybe_as) and str(maybe_as) == 'as':
             if rest2 is nil:
                 raise SpecialError("import as: requires an alias symbol", source)
+
             alias_sym, rest = rest2
             if not is_symbolish(alias_sym):
                 raise SpecialError("import alias must be a symbol", source)
+
             alias = str(alias_sym)
         # else: rest still has content; will be caught by too-many-args check
 
@@ -278,7 +294,8 @@ def special_import(compiler, source, tc=False):
     )
     if bind_name is None:
         raise SpecialError(
-            "bare relative import (without name) requires as: ALIAS", source)
+            "bare relative import (without name) requires as: ALIAS",
+            source)
 
     frag.declare_var(bind_name)
     frag.instruction(OpCode.KOS_OP_VAR_STORE, bind_name)
