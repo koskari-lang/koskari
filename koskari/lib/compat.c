@@ -53,7 +53,7 @@ PyObject *koskari_StopAsyncIteration_value(PyObject *exc) {
     return Py_None;
   }
   PyObject *args = NULL;
-#if PY_MINOR_VERSION >= 11
+#if PY_MINOR_VERSION >= 12
   args = PyException_GetArgs(exc);
 #else
   args = PyObject_GetAttrString(exc, "args");
