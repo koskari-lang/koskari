@@ -1,0 +1,40 @@
+# Containerfile for per-Python-version test runs
+#
+# Builds a minimal image with a specific Python version, tox, and build
+# deps for C extensions.  Use PYTHON_VERSION build arg (e.g. 3.11).
+#
+# Build:
+#   podman build --build-arg PYTHON_VERSION=3.11 -t koskari-py311 -f Containerfile .
+#
+# Run (mount repo at /src, pass tox env as CMD):
+#   podman run --rm -v /path/to/repo:/src:Z koskari-py311 py311
+#
+# author: Christopher O'Brien <obriencj@gmail.com>
+# license: GPL v.3
+
+ARG PYTHON_VERSION=3.12
+FROM python:${PYTHON_VERSION}-slim
+
+ENV DEBIAN_FRONTEND=noninteractive
+
+RUN apt-get update -qq && \
+    apt-get install -qy --no-install-recommends \
+        gcc \
+        make \
+        python3-dev \
+        && \
+    rm -rf /var/lib/apt/lists/*
+
+RUN pip install --root-user-action=ignore --no-cache-dir \
+    tox setuptools wheel
+
+ENV TOX_WORK_DIR=/venvs
+RUN mkdir -p "$TOX_WORK_DIR"
+
+WORKDIR /src
+
+ENTRYPOINT ["tox", "-qe"]
+CMD ["py"]
+
+
+# The end.
