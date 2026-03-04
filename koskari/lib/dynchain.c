@@ -585,25 +585,25 @@ static int cc_raise_unwind(KosContext *ctx, KosDynNode *node,
 
 KosDynWind *kos_dynwind_new(
     KosDynNode *parent,
-    KosCode *before_code,
-    uint32_t before_pc,
-    KosCode *after_code,
-    uint32_t after_pc) {
+    PyObject *before_thunk,
+    PyObject *after_thunk) {
 
   KosDynWind *wind = kos_dynnode_alloc();
   if (! wind)
     return NULL;
 
   uint32_t wind_caps = 0;
-  if (after_code)
+  if (after_thunk)
     wind_caps |= KOS_DYN_CAP_NEEDS_UNWIND_ACTION;
-  if (before_code)
+  if (before_thunk)
     wind_caps |= KOS_DYN_CAP_NEEDS_WIND_BEFORE_ACTION;
   kos_dynnode_init(wind, KOS_DYN_WIND, parent, wind_caps);
-  KosDynWind_BEFORE_CODE(wind) = before_code;  /* borrowed */
-  KosDynWind_BEFORE_PC(wind) = before_pc;
-  KosDynWind_AFTER_CODE(wind) = after_code;  /* borrowed */
-  KosDynWind_AFTER_PC(wind) = after_pc;
+  KosDynWind_BEFORE_THUNK(wind) = before_thunk;
+  if (before_thunk)
+    Py_INCREF(before_thunk);
+  KosDynWind_AFTER_THUNK(wind) = after_thunk;
+  if (after_thunk)
+    Py_INCREF(after_thunk);
   KosDynWind_ENTERED(wind) = 0;
   return wind;
 }
@@ -620,10 +620,12 @@ KosDynWind *kos_dynwind_clone(KosDynWind *wind) {
   kos_dynnode_init(clone, KOS_DYN_WIND, NULL, KosDynNode_CAPS(wind));
   KosDynNode_FLAGS(clone) = KosDynNode_FLAGS(wind) | KOS_DYNF_CLONED;
   KosDynNode_NODE_ID(clone) = KosDynNode_NODE_ID(wind);
-  KosDynWind_BEFORE_CODE(clone) = KosDynWind_BEFORE_CODE(wind);  /* borrowed */
-  KosDynWind_BEFORE_PC(clone) = KosDynWind_BEFORE_PC(wind);
-  KosDynWind_AFTER_CODE(clone) = KosDynWind_AFTER_CODE(wind);  /* borrowed */
-  KosDynWind_AFTER_PC(clone) = KosDynWind_AFTER_PC(wind);
+  KosDynWind_BEFORE_THUNK(clone) = KosDynWind_BEFORE_THUNK(wind);
+  if (KosDynWind_BEFORE_THUNK(clone))
+    Py_INCREF(KosDynWind_BEFORE_THUNK(clone));
+  KosDynWind_AFTER_THUNK(clone) = KosDynWind_AFTER_THUNK(wind);
+  if (KosDynWind_AFTER_THUNK(clone))
+    Py_INCREF(KosDynWind_AFTER_THUNK(clone));
   KosDynWind_ENTERED(clone) = KosDynWind_ENTERED(wind);
   return clone;
 }
@@ -633,41 +635,60 @@ void kos_dynwind_free(KosDynWind *wind) {
   if (! wind)
     return;
 
-  /* code pointers are borrowed */
+  Py_XDECREF(KosDynWind_BEFORE_THUNK(wind));
+  KosDynWind_BEFORE_THUNK(wind) = NULL;
+  Py_XDECREF(KosDynWind_AFTER_THUNK(wind));
+  KosDynWind_AFTER_THUNK(wind) = NULL;
   kos_dynnode_return_to_freelist(wind);
 }
 
 
 int kos_dyn_wind_wind(KosContext *ctx, KosDynWind *node) {
-  if (! node || ! KosDynWind_BEFORE_CODE(node))
+  PyObject *args;
+  if (! node || ! KosDynWind_BEFORE_THUNK(node))
     return 0;
-  if (kos_begin_hook(ctx, KosDynWind_BEFORE_CODE(node),
-                     KosDynWind_BEFORE_PC(node)) < 0)
+  args = PyTuple_New(0);
+  if (! args)
     return -1;
+  if (kos_callable_call(ctx, NULL, KosDynWind_BEFORE_THUNK(node), args, NULL) < 0) {
+    Py_DECREF(args);
+    return -1;
+  }
+  Py_DECREF(args);
+  KosContext_FLAGS(ctx) |= KOS_CTX_IN_WIND_THUNK;
   return KOS_DYN_UNWIND_ASYNC_STARTED;
 }
 
 
 int kos_dyn_wind_unwind(KosContext *ctx, KosDynWind *node) {
-  if (! node || ! KosDynWind_ENTERED(node) || ! KosDynWind_AFTER_CODE(node))
+  if (KosContext_FLAGS(ctx) & KOS_CTX_WIND_AFTER_RAN) {
+    KosContext_FLAGS(ctx) &= ~KOS_CTX_WIND_AFTER_RAN;
+    return 0;  /* after thunk just finished; skip, let uninstall unlink */
+  }
+  if (! node || ! KosDynWind_ENTERED(node) || ! KosDynWind_AFTER_THUNK(node))
     return 0;
-  if (kos_begin_hook(ctx, KosDynWind_AFTER_CODE(node),
-                     KosDynWind_AFTER_PC(node)) < 0)
-    return -1;
+  {
+    PyObject *args = PyTuple_New(0);
+    if (! args)
+      return -1;
+    if (kos_callable_call(ctx, NULL, KosDynWind_AFTER_THUNK(node), args, NULL) < 0) {
+      Py_DECREF(args);
+      return -1;
+    }
+    Py_DECREF(args);
+  }
+  KosContext_FLAGS(ctx) |= KOS_CTX_IN_WIND_THUNK;
   return KOS_DYN_UNWIND_ASYNC_STARTED;
 }
 
 
 KosDynWind *kos_dyn_push_wind(
     KosContext *ctx,
-    KosCode *before_code,
-    uint32_t before_pc,
-    KosCode *after_code,
-    uint32_t after_pc) {
+    PyObject *before_thunk,
+    PyObject *after_thunk) {
 
   KosDynWind *wind = kos_dynwind_new(KosContext_DYN_TOP(ctx),
-                                     before_code, before_pc,
-                                     after_code, after_pc);
+                                     before_thunk, after_thunk);
   if (! wind)
     return NULL;
 
@@ -1831,10 +1852,14 @@ static int kos_dynnode_run_transfer_unwind(KosContext *ctx, KosDynNode *node) {
   PyObject *exit_awaitable = NULL;
   int r = kos_dyn_unwind(ctx, node, &exit_awaitable);
   if (r == KOS_DYN_UNWIND_ASYNC_STARTED) {
-    Py_XDECREF(exit_awaitable);
-    PyErr_SetString(PyExc_RuntimeError,
-                    "async dyn-with exit during transfer not yet supported");
-    return -1;
+    /* WIND after-thunk or WITH async exit: propagate for eval loop to run thunk */
+    if (exit_awaitable) {
+      Py_XDECREF(exit_awaitable);
+      PyErr_SetString(PyExc_RuntimeError,
+                      "async dyn-with exit during transfer not yet supported");
+      return -1;
+    }
+    return KOS_DYN_UNWIND_ASYNC_STARTED;
   }
   if (r < 0)
     return -1;
@@ -2751,7 +2776,7 @@ static size_t xfer_plan_count_unwind_and_params(
     if (KosDynNode_HAS_CAP(node, KOS_DYN_CAP_NEEDS_UNWIND_ACTION)) {
       if (KosDynNode_IS_WIND(node)) {
         KosDynWind *wind = (KosDynWind *) node;
-        if (KosDynWind_ENTERED(wind) && KosDynWind_AFTER_CODE(wind))
+        if (KosDynWind_ENTERED(wind) && KosDynWind_AFTER_THUNK(wind))
           n++;
       } else {
         n++;
@@ -2779,7 +2804,7 @@ static size_t xfer_plan_count_wind_before(
   while (node && node != lca) {
     if (KosDynNode_HAS_CAP(node, KOS_DYN_CAP_NEEDS_WIND_BEFORE_ACTION)) {
       KosDynWind *wind = (KosDynWind *) node;
-      if (! KosDynWind_ENTERED(wind) && KosDynWind_BEFORE_CODE(wind))
+      if (! KosDynWind_ENTERED(wind) && KosDynWind_BEFORE_THUNK(wind))
         n++;
     }
     node = KosDynNode_PARENT(node);
@@ -2805,7 +2830,7 @@ static void xfer_plan_fill_unwind_actions(
     if (KosDynNode_HAS_CAP(node, KOS_DYN_CAP_NEEDS_UNWIND_ACTION)) {
       if (KosDynNode_IS_WIND(node)) {
         KosDynWind *wind = (KosDynWind *) node;
-        if (KosDynWind_ENTERED(wind) && KosDynWind_AFTER_CODE(wind)) {
+        if (KosDynWind_ENTERED(wind) && KosDynWind_AFTER_THUNK(wind)) {
           KosTransferAction_STEP(&KosTransferPlan_ACTIONS(plan)[*idx]) = KOS_XFER_EXTENT_ACTION;
           KosTransferAction_EXTENT_NODE(&KosTransferPlan_ACTIONS(plan)[*idx]) = node;
           KosTransferAction_EXTENT_PHASE(&KosTransferPlan_ACTIONS(plan)[*idx]) = KOS_XFER_EXTENT_PHASE_UNWIND;
@@ -2897,7 +2922,7 @@ static int xfer_plan_fill_wind_actions(
   while (node && node != lca) {
     if (KosDynNode_HAS_CAP(node, KOS_DYN_CAP_NEEDS_WIND_BEFORE_ACTION)) {
       KosDynWind *wind = (KosDynWind *) node;
-      if (! KosDynWind_ENTERED(wind) && KosDynWind_BEFORE_CODE(wind))
+      if (! KosDynWind_ENTERED(wind) && KosDynWind_BEFORE_THUNK(wind))
         wind_nodes[wi++] = wind;
     }
     node = KosDynNode_PARENT(node);
@@ -3884,59 +3909,6 @@ int kos_resume_transfer_plan(KosContext *ctx) {
 }
 
 
-/* === Hook execution === */
-
-
-int kos_begin_hook(KosContext *ctx, KosCode *code, uint32_t pc) {
-  if (KosHookRunner_ACTIVE(KosContext_HOOK_RUNNER(ctx))) {
-    PyErr_SetString(PyExc_RuntimeError, "hook already active");
-    return -1;
-  }
-
-  KosHookRunner_CODE(KosContext_HOOK_RUNNER(ctx)) = code;
-  KosHookRunner_PC(KosContext_HOOK_RUNNER(ctx)) = pc;
-  KosHookRunner_SCRATCH(KosContext_HOOK_RUNNER(ctx)) = NULL;  /* TODO: allocate scratch stack */
-  KosHookRunner_ACTIVE(KosContext_HOOK_RUNNER(ctx)) = 1;
-
-  KosContext_FLAGS(ctx) |= KOS_CTX_IN_HOOK;
-
-  return 0;
-}
-
-
-int kos_hook_active(KosContext *ctx) {
-  return KosContext_HOOK_ACTIVE(ctx);
-}
-
-
-int kos_end_hook(KosContext *ctx) {
-  if (! KosHookRunner_ACTIVE(KosContext_HOOK_RUNNER(ctx))) {
-    PyErr_SetString(PyExc_RuntimeError, "no hook active");
-    return -1;
-  }
-
-  /* Clean up scratch stack */
-  if (KosHookRunner_SCRATCH(KosContext_HOOK_RUNNER(ctx))) {
-    KosStackBlock *b = KosHookRunner_SCRATCH(KosContext_HOOK_RUNNER(ctx));
-    while (b) {
-      KosStackBlock *p = KosStackBlock_PARENT(b);
-      KosStackBlock_Release(b);
-      b = p;
-    }
-  }
-
-  KosHookRunner_CODE(KosContext_HOOK_RUNNER(ctx)) = NULL;
-  KosHookRunner_PC(KosContext_HOOK_RUNNER(ctx)) = 0;
-  KosHookRunner_ACTING_PC(KosContext_HOOK_RUNNER(ctx)) = 0;
-  KosHookRunner_SCRATCH(KosContext_HOOK_RUNNER(ctx)) = NULL;
-  KosHookRunner_ACTIVE(KosContext_HOOK_RUNNER(ctx)) = 0;
-
-  KosContext_FLAGS(ctx) &= ~KOS_CTX_IN_HOOK;
-
-  return 0;
-}
-
-
 /* === Continuation invocation === */
 
 
@@ -4080,6 +4052,17 @@ static int dynnode_traverse_frame(KosDynNode *node, visitproc visit, void *arg) 
 
 
 /**
+   GC traverse a KOS_DYN_WIND: visit the before and after thunk callables.
+*/
+static int dynnode_traverse_wind(KosDynNode *node, visitproc visit, void *arg) {
+  KosDynWind *wind = (KosDynWind *) node;
+  Py_VISIT(KosDynWind_BEFORE_THUNK(wind));
+  Py_VISIT(KosDynWind_AFTER_THUNK(wind));
+  return 0;
+}
+
+
+/**
    GC traverse a KOS_DYN_NS: visit the saved namespace reference.
 */
 static int dynnode_traverse_ns(KosDynNode *node, visitproc visit, void *arg) {
@@ -4161,9 +4144,10 @@ int kos_dynnode_traverse(KosDynNode *node, visitproc visit, void *arg) {
       return dynnode_traverse_ns(node, visit, arg);
     case KOS_DYN_PROMPT:
     case KOS_DYN_CC:
-    case KOS_DYN_WIND:
     case KOS_DYN_SHIFT:
       break;
+    case KOS_DYN_WIND:
+      return dynnode_traverse_wind(node, visit, arg);
     case KOS_DYN_CC_RAISE:
       Py_VISIT(KosDynCCRaise_EXC_VAL(node));
       break;
@@ -4239,27 +4223,6 @@ int kos_transferplan_traverse(
     if (KosTransferPlan_ACTIONS(plan)[i].step == KOS_XFER_INJECT) {
       Py_VISIT(KosTransferPlan_ACTIONS(plan)[i].data.inject.value);
     }
-  }
-
-  return 0;
-}
-
-
-int kos_hookrunner_traverse(
-    KosHookRunner *runner,
-    visitproc visit,
-    void *arg) {
-
-  if (! runner || ! runner->active)
-    return 0;
-
-  /* Traverse scratch stack */
-  KosStackBlock *b = runner->scratch;
-  while (b) {
-    for (size_t i = b->len; i--; ) {
-      Py_VISIT(b->objs[i]);
-    }
-    b = KosStackBlock_PARENT(b);
   }
 
   return 0;

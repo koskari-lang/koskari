@@ -68,8 +68,9 @@ typedef enum KosContextFlags {
   KOS_CTX_RUNNING         = 0x01,
   KOS_CTX_FROZEN          = 0x02,
   KOS_CTX_DEAD            = 0x04,
-  KOS_CTX_IN_HOOK         = 0x08,  /* executing a hook block */
   KOS_CTX_IN_TRANSFER     = 0x10,  /* executing a transfer plan */
+  KOS_CTX_IN_WIND_THUNK   = 0x20,  /* returning from a wind before/after thunk */
+  KOS_CTX_WIND_AFTER_RAN  = 0x40,  /* after thunk just finished; skip on next unwind */
 } KosContextFlags;
 
 
@@ -174,8 +175,7 @@ typedef enum KosEvalStep {
   and eval_phase_post_opcode.
 */
 typedef struct KosDispatchCtx {
-  int in_hook;     /* non-zero when executing inside a hook runner */
-  KosCode *code;   /* code object for the current frame or hook */
+  KosCode *code;   /* code object for the current frame */
   uint32_t pc;     /* pc before pre-advance (acting_pc value) */
   KosOp *insn;     /* pointer into code->code at the acting pc */
 } KosDispatchCtx;
@@ -211,7 +211,6 @@ typedef struct KosEvent {
   The frame_top field is a cached pointer to the topmost FRAME node
   for fast access during normal execution.
 
-  Hook execution state is tracked via the hook_runner field.
   Transfer plan execution is tracked via the plan/plan_stack fields.
 
   Ownership and lifecycle:
@@ -234,12 +233,10 @@ struct KosContext {
   KosEvaluatorToken *token; /* evaluator identity; ownership marker for continuations */
   PyObject *domain;         /* KosDomain; ambient dynamic context anchor */
 
-  /* Hook execution state */
-  KosHookRunner hook_runner;
   KosDynFrame *unwind_target_frame;
 
-  /* When unwind returns ASYNC_STARTED (wind after-hook), RETURN stashes the
-     value here; END_WIND delivers it when unwind completes.  If
+  /*   When unwind returns ASYNC_STARTED (wind after-thunk), RETURN stashes the
+     value here and resumes unwinding when the thunk returns.  If
      pending_return_to_parent is set, push onto parent and detach; else
      set KOS_EV_RETURN. */
   PyObject *pending_return_value;
@@ -316,8 +313,6 @@ struct KosContext {
 #define KosContext_GLOBALS_CACHE_VERSION(c)  (((KosContext *)(c))->globals_cache_version)
 #define KosContext_TOKEN(c)                  (((KosContext *)(c))->token)
 #define KosContext_DOMAIN(c)                 (((KosContext *)(c))->domain)
-#define KosContext_HOOK_RUNNER(c)            (&((KosContext *)(c))->hook_runner)
-#define KosContext_HOOK_ACTIVE(c)            KosHookRunner_ACTIVE(KosContext_HOOK_RUNNER(c))
 #define KosContext_UNWIND_TARGET_FRAME(c)    (((KosContext *)(c))->unwind_target_frame)
 #define KosContext_UNWIND_TARGET_FRAME(c)    (((KosContext *)(c))->unwind_target_frame)
 #define KosContext_PENDING_RETURN_VALUE(c)   (((KosContext *)(c))->pending_return_value)

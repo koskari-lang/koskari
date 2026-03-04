@@ -266,14 +266,13 @@ nodes on the dynamic chain (TRY, FINALLY, LOOP, FOREACH). See evaluator.md for d
   - `KosDynNode_IS_REGION` matches TRY, FINALLY, LOOP, FOREACH
 - `KosDynFrame`: Function activation record (code, pc, stack, namespace)
 - `KosDynPrompt`: Delimiter for delimited continuations (prompt_id, handler)
-- `KosDynWind`: Dynamic-wind extent (before/after hook bytecode blocks)
+- `KosDynWind`: Dynamic-wind extent (before/after thunk callables)
 - Region kinds (formerly `KosDynRegion` with `KosRegionStyle`; now separate kinds):
   - `KOS_DYN_TRY`: try block (handler_pc, enabled)
   - `KOS_DYN_FINALLY`: finally block (handler_pc, enabled, handling_raise)
   - `KOS_DYN_LOOP`: while loop (break_pc, continue_pc, enabled)
   - `KOS_DYN_FOREACH`: for-each loop (extends LOOP with iter, exhausted, iter_next_else_pc)
-- `KosHookRunner`: Isolated execution context for wind/unwind hooks
-- `KosTransferPlan`: Action list for continuation transfer with hook execution.
+ `KosTransferPlan`: Action list for continuation transfer with hook execution.
   Single allocation (plan + flexible actions array). Default 32 slots; realloc
   when needed. One cached plan reused on free.
 

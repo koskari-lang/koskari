@@ -110,7 +110,7 @@ The VM in `eval.c` uses a jump table; every opcode has a handler. Handlers are e
 - **Iteration**: ITER_NEXT (region-only, must be inside PUSH_FOREACH; uses region->iter; arg = else label; auto-await), NEXT (stack-based; arg = 1 or 2; 1-arg: StopIteration raises; 2-arg: StopIteration pushes default; auto-await for sync iter, Python async iter, Koskari async gen)
 - **Loop control**: PUSH_LOOP, PUSH_FOREACH, POP_LOOP, CLEAR_LOOP, BREAK, CONTINUE (use KOS_DYN_LOOP/KOS_DYN_FOREACH on dynamic chain; each pushes a stack block; PUSH_TRY and PUSH_FINALLY also push their own stack blocks; BREAK/CONTINUE unwind via kos_find_node_for_loop; unwind drops TRY/FINALLY blocks when control passes through; ITER_NEXT at loop head for foreach)
 
-- **Dynamic wind (partial)**: END_WIND is implemented (terminates before/after hook block, calls `kos_end_hook`; if unwind was in progress, resumes unwinding and delivers any stashed return). PUSH_WIND and POP_WIND remain stubs. Unified extent wind/unwind helpers (`kos_dyn_wind_wind`, `kos_dyn_wind_unwind`, etc.) are used by both simple pop and transfer plans; see design/interpreter/extent-wind-unwind.md.
+- **Dynamic wind**: Fully implemented. PUSH_WIND (arg=1 or 2) and POP_WIND run before/after thunks via kos_callable_call (normal call path); thunk return handling in RETURN opcode resumes unwind or transfer plan. Unified extent wind/unwind helpers (`kos_dyn_wind_wind`, `kos_dyn_wind_unwind`, etc.) are used by both simple pop and transfer plans; see design/interpreter/extent-wind-unwind.md.
 - **YIELD_FROM**: Fully implemented for all supported delegate kinds (sync iterator, sync generator, Python async iterator/async generator, Koskari async generator); see `koskari/lib/opcode/YIELD_FROM.c`. The handler file contains a final safety fallthrough to `op_unimplemented_stub` for unrecognised delegate kinds, but all real delegate kinds are handled.
 
 **No runtime implementation** (hardcoded error; not a stub to be implemented later):
@@ -118,7 +118,6 @@ The VM in `eval.c` uses a jump table; every opcode has a handler. Handlers are e
 
 **Not implemented (stubs)** — hitting these at runtime raises "unimplemented opcode":
 - **Calls**: CALL_ATTR, CALL_ATTR_NAMES, CALL_ATTR_STAR
-- **Wind**: PUSH_WIND, POP_WIND (stubs)
 
 There are no **partially** implemented opcodes; each handler is either full, a stub, or a dedicated "no runtime implementation" handler (THEEND). The authoritative list is the set of handlers in `koskari/lib/eval.c` that do not call `op_unimplemented_stub`.
 
@@ -126,14 +125,14 @@ There are no **partially** implemented opcodes; each handler is either full, a s
 - **Default syntax**: Indentation-based block syntax with colon-terminated headers; lowers into canonical s-expressions. See `design/language/layout-syntax.md` and `design/language/layout-syntax-formal.md`.
 - **Block parsing**: Header terminator is the final `:` at delimiter depth 0; `x:` and `x :` parse identically. Keywords like `as:`, `x:` remain intact inside headers.
 - **Probe pass + break marker**: Reader uses a two-step process to locate header end without lexer ambiguity (RecordingStream, MARK event).
-- **Layout heads**: Block heads resolve via `layout/<head>` lookup; handlers receive `(header . body)` and optional peer blocks. Implemented: layout/if (peers: elif, else), layout/try (peers: except, else, finally). Fallback: `layout/block` for unknown heads.
+- **Layout heads**: Block heads resolve via `layout/<head>` lookup; handlers receive `(header . body)` and optional peer blocks. Implemented: layout/if (peers: elif, else), layout/try (peers: except, else, finally), layout/dyn-wind (peers: before, body, after). Fallback: `layout/block` for unknown heads.
 - **Mixed mode**: Pure s-expr syntax embeddable anywhere; layout and s-expr alternate by context.
 
 ### Compiler
 - **Phases**: Parse → Expand → Compile → Optimize → Generate (full pipeline in progress)
 - **Components**: Compiler, CodeContext, ByteCodeFragment (implemented in `koskari.compile`)
 - **Optimization**: Constant folding, dead code elimination, fast paths (planned)
-- **Implemented specials**: compile/bytecode, compile/begin, compile/call, compile/class, compile/define, compile/lambda, compile/let, compile/parameterize, compile/cond, compile/if, compile/when, compile/unless, compile/and, compile/or, compile/while, compile/for-each, compile/break, compile/continue, compile/try, compile/raise, compile/check-exception, compile/clear-exception, compile/load-exception, compile/setq, compile/refq, compile/bindq, compile/delq, compile/attr, compile/del-attr, compile/set-attr, compile/ref-attr, compile/item, compile/ref-item, compile/del-item, compile/set-item, compile/quote, **compile/quasiquote, compile/unquote, compile/unquote-splicing**, compile/car, compile/cdr, compile/cons, compile/with, compile/dyn-with, **import**, **import-from**, **compile/= compile/!= compile/< compile/<= compile/> compile/>= compile/in compile/not-in compile/is compile/is-not compile/isinstance compile/issubclass compile/+ compile/- compile/* compile/** compile/& compile/| compile/^ compile/// compile// compile/@ compile/% compile/<< compile/>> compile/divmod compile/not compile/repr compile/truth compile/iter compile/~ compile/str compile/len compile/type compile/dir compile/vars compile/aiter** (see design/SPECIALS.md)
+- **Implemented specials**: compile/bytecode, compile/begin, compile/call, compile/class, compile/define, compile/lambda, compile/let, compile/parameterize, compile/cond, compile/if, compile/when, compile/unless, compile/and, compile/or, compile/while, compile/for-each, compile/break, compile/continue, compile/try, compile/raise, compile/check-exception, compile/clear-exception, compile/load-exception, compile/setq, compile/refq, compile/bindq, compile/delq, compile/attr, compile/del-attr, compile/set-attr, compile/ref-attr, compile/item, compile/ref-item, compile/del-item, compile/set-item, compile/quote, **compile/quasiquote, compile/unquote, compile/unquote-splicing**, compile/car, compile/cdr, compile/cons, compile/with, compile/dyn-with, compile/dyn-wind, **import**, **import-from**, **compile/= compile/!= compile/< compile/<= compile/> compile/>= compile/in compile/not-in compile/is compile/is-not compile/isinstance compile/issubclass compile/+ compile/- compile/* compile/** compile/& compile/| compile/^ compile/// compile// compile/@ compile/% compile/<< compile/>> compile/divmod compile/not compile/repr compile/truth compile/iter compile/~ compile/str compile/len compile/type compile/dir compile/vars compile/aiter** (see design/SPECIALS.md)
 
 ### Evaluator
 - **Model**: Custom drive loop (`koskari_eval` in eval.c). Callable types Expression and Function (func.c) return a KosCoroutine (coro.c); driving the coroutine (await/send) runs the evaluator. Continuation invocation from Python raises `KoskariContinuationApply` for upwards transfer (does not return a coroutine).
@@ -205,7 +204,7 @@ There are no **partially** implemented opcodes; each handler is either full, a s
 
 **Continuation Support**:
 - Delimited multi-shot continuations (reset/shift) and undelimited call/cc (PUSH_CC, CAPTURE_CC, POP_CC) implemented in VM; invocation via CALL; KoskariContinuationApply propagated when invoking undelimited continuation from a different evaluator token
-- Dynamic wind/unwind hooks (before/after) used by continuation transfer plans; PUSH_WIND and POP_WIND are stubs; END_WIND is implemented
+- Dynamic wind/unwind thunks (before/after) used by continuation transfer plans; PUSH_WIND and POP_WIND run before/after thunks via kos_callable_call; thunk return handling in RETURN opcode resumes unwind or transfer plan
 - Flattened async execution
 - Eager-step awaitable optimization
 - Defer (single-shot await-handle): not eagerly awaited; explicit AWAIT drives it (koskari/lib/defer.c)
@@ -226,7 +225,7 @@ There are no **partially** implemented opcodes; each handler is either full, a s
 - Macro system (reader macros, defmacro, defalias)
 - Remaining control flow constructs (class blocks)
 - Compiler: remaining specials (yield, await, define-values, setq-values), macro expansion, optimization passes
-- Remaining opcode handlers: CALL_ATTR*, PUSH_WIND, POP_WIND (PUSH_COLLECT, POP_COLLECT, BUILD_CLASS, BUILD_ARGS, BUILD_KWDS, BUILD_KWDS_NAMES, COMBINE_ARGS, COMBINE_KWDS, PUSH_WITH, POP_WITH, PUSH_DYN_WITH, POP_DYN_WITH, CALL_NAMES, CALL_STAR, TAIL_CALL_NAMES, TAIL_CALL_STAR, END_WIND implemented; see "Opcodes: implementation status" above; with/dyn-with design in design/interpreter/with-dyn-with.md)
+- Remaining opcode handlers: CALL_ATTR* (PUSH_WIND, POP_WIND, PUSH_COLLECT, POP_COLLECT, BUILD_CLASS, BUILD_ARGS, BUILD_KWDS, BUILD_KWDS_NAMES, COMBINE_ARGS, COMBINE_KWDS, PUSH_WITH, POP_WITH, PUSH_DYN_WITH, POP_DYN_WITH, CALL_NAMES, CALL_STAR, TAIL_CALL_NAMES, TAIL_CALL_STAR implemented; see "Opcodes: implementation status" above; with/dyn-with design in design/interpreter/with-dyn-with.md)
 
 ### Needs Reconsideration
 - CPython bytecode target (abandoned)

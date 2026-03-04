@@ -80,33 +80,6 @@ class TestStubOpcodes(CevalTest):
             self._run_stub_opcode("PUSH_COLLECT", 0)
 
 
-    def test_push_wind_raises_not_implemented(self):
-        """
-        PUSH_WIND raises RuntimeError
-        """
-
-        with self.assertRaises(RuntimeError):
-            self._run_stub_opcode("PUSH_WIND", "after")
-
-
-    def test_pop_wind_raises_not_implemented(self):
-        """
-        POP_WIND raises RuntimeError
-        """
-
-        with self.assertRaises(RuntimeError):
-            self._run_stub_opcode("POP_WIND", 0)
-
-
-    def test_end_wind_raises_not_implemented(self):
-        """
-        END_WIND raises RuntimeError
-        """
-
-        with self.assertRaises(RuntimeError):
-            self._run_stub_opcode("END_WIND", 0)
-
-
     def test_theend_raises_unimpl(self):
         """
         THEEND has no runtime implementation; raises RuntimeError with fixed message

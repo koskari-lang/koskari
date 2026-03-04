@@ -31,6 +31,7 @@ from .class_ import special_class
 from .conditionals import special_and, special_cond, special_if, special_or, special_unless, special_when
 from .continuations import special_call_cc, special_let_cc, special_capture_cc, special_reset, special_shift
 from .context import special_dyn_with, special_parameterize, special_with
+from .dyn_wind import special_dyn_wind
 from .exceptions import (
     special_check_exception,
     special_clear_exception,
@@ -142,6 +143,7 @@ __all__ = (
     "special_eq",
     "special_check_exception",
     "special_clear_exception",
+    "special_dyn_wind",
     "special_dyn_with",
     "special_floor_divide",
     "special_for_each",

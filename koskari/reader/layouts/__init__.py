@@ -25,6 +25,7 @@ Layout handlers for reader block syntax (layout decorator and LAYOUTS).
 from .helpers import LAYOUTS, layout, LayoutHandler
 from .classes import layout_class
 from .conditionals import layout_block, layout_begin, layout_if
+from .dyn_wind import layout_dyn_wind
 from .exceptions import layout_try
 
 
@@ -36,6 +37,7 @@ __all__ = (
     "layout_block",
     "layout_begin",
     "layout_class",
+    "layout_dyn_wind",
     "layout_if",
     "layout_try",
 )

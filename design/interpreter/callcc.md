@@ -257,43 +257,26 @@ if (ctx->chain_version != plan->chain_version) {
 
 `(dynamic-wind before thunk after)`:
 
-1. Push a `WIND` node with `before_code`/`after_code` pointers
-2. Execute `before` hook block (via HookRunner)
-3. Mark WIND as `entered = 1`
-4. Execute `thunk`
-5. Execute `after` hook block
-6. Pop the WIND node
-7. Return thunk's result
+1. Push a `WIND` node with before/after thunk callables
+2. Run wind phase: invoke `before` thunk if present (sets `entered` when it returns)
+3. Execute `thunk`
+4. On pop: invoke `after` thunk if present and `entered`; thunks run as normal frames
+5. Pop the WIND node
+6. Return thunk's result
 
-### Hook Execution
+### Thunk Execution
 
-Hooks are NOT Python callables. They are bytecode blocks executed via
-`KosHookRunner`:
+Before/after thunks are null-arity Koskari callables invoked via
+`kos_callable_call`. They run as normal frames; when a thunk returns, the
+RETURN opcode clears `IN_WIND_THUNK` and resumes unwinding or the transfer plan.
 
-```c
-struct KosHookRunner {
-  KosCode *code;          /* hook bytecode */
-  uint32_t pc;            /* entry point */
-  KosStackBlock *scratch; /* isolated operand stack */
-  int active;             /* nonzero if executing */
-};
-```
+### Thunk Ordering
 
-**Execution**:
-1. Allocate (or reuse) a scratch stack
-2. Execute bytecode starting at `pc` until `END_WIND` sentinel opcode
-3. `END_WIND` terminates hook; any TOS value is discarded (hooks return void)
-4. Deallocate scratch stack
-
-Hooks run with the current namespace but with an isolated operand stack.
-
-### Hook Ordering
-
-Wind hooks (`before`) are invoked when:
+Wind thunks (`before`) are invoked when:
 - Entering a dynamic-wind protected region normally
 - Resuming into a region via continuation application
 
-Unwind hooks (`after`) are invoked when:
+Unwind thunks (`after`) are invoked when:
 - Exiting a dynamic-wind protected region normally
 - Leaving a region via continuation application
 - Exception propagation crosses the region boundary

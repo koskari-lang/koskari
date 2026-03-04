@@ -14,9 +14,22 @@
 */
 
 /**
-   POP_WIND: arg unused. Pop dynamic-wind; not yet implemented.
+   POP_WIND: arg unused. Pop the top wind node from the dynamic chain.
+   Invokes the after thunk if entered and non-null; may return
+   KOS_DYN_UNWIND_ASYNC_STARTED when the thunk pushes a frame.
 */
 
 KOS_OP_HANDLER(POP_WIND) {
-  return op_unimplemented_stub(ctx, out_ev, insn);
+  if (! KosContext_DYN_TOP(ctx) || ! KosDynNode_IS_WIND(KosContext_DYN_TOP(ctx))) {
+    PyErr_SetString(PyExc_RuntimeError, "POP_WIND: top is not a wind node");
+    return -1;
+  }
+
+  int r = kos_dyn_pop_top(ctx, out_ev);
+  if (r == KOS_DYN_UNWIND_ASYNC_STARTED) {
+    KosDynNode *wind = KosDynNode_PARENT(CURRENT_FRAME(ctx));
+    KosContext_UNWIND_TARGET_FRAME(ctx) = (KosDynFrame *) KosDynNode_PARENT(wind);
+    return 0;  /* eval continues in thunk frame; RETURN will resume unwinding */
+  }
+  return r;
 }

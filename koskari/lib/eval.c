@@ -80,9 +80,7 @@
 #define CURRENT_CODE(ctx)        KosDynFrame_CODE(CURRENT_FRAME(ctx))
 #define CURRENT_NS(ctx)          KosDynFrame_NS(CURRENT_FRAME(ctx))
 #define CURRENT_PC(ctx)          KosDynFrame_PC(CURRENT_FRAME(ctx))
-#define CURRENT_ACTING_PC(ctx)   (KosContext_HOOK_ACTIVE(ctx) \
-    ? KosHookRunner_ACTING_PC(KosContext_HOOK_RUNNER(ctx)) \
-    : KosDynFrame_ACTING_PC(CURRENT_FRAME(ctx)))
+#define CURRENT_ACTING_PC(ctx)   KosDynFrame_ACTING_PC(CURRENT_FRAME(ctx))
 
 
 /**
@@ -695,13 +693,6 @@ KosContext *kos_context_new(KosDynFrame *top) {
   KosContext_GLOBALS_FRAME(ctx) = top;
   KosContext_GLOBALS_CACHE_VERSION(ctx) = 0;
 
-  /* Initialize hook runner */
-  KosHookRunner_CODE(KosContext_HOOK_RUNNER(ctx)) = NULL;
-  KosHookRunner_PC(KosContext_HOOK_RUNNER(ctx)) = 0;
-  KosHookRunner_ACTING_PC(KosContext_HOOK_RUNNER(ctx)) = 0;
-  KosHookRunner_SCRATCH(KosContext_HOOK_RUNNER(ctx)) = NULL;
-  KosHookRunner_ACTIVE(KosContext_HOOK_RUNNER(ctx)) = 0;
-
   KosContext_UNWIND_TARGET_FRAME(ctx) = NULL;
   KosContext_PENDING_RETURN_VALUE(ctx) = NULL;
   KosContext_PENDING_RETURN_TO_PARENT(ctx) = 0;
@@ -762,16 +753,6 @@ void kos_context_free(KosContext *ctx) {
     KosTransferPlan *p = KosContext_PLAN_STACK(ctx);
     KosContext_PLAN_STACK(ctx) = KosTransferPlan_SUSPENDED(p);
     kos_free_transfer_plan(p);
-  }
-
-  /* Free hook runner scratch stack */
-  if (KosHookRunner_SCRATCH(KosContext_HOOK_RUNNER(ctx))) {
-    KosStackBlock *b = KosHookRunner_SCRATCH(KosContext_HOOK_RUNNER(ctx));
-    while (b) {
-      KosStackBlock *p = KosStackBlock_PARENT(b);
-      KosStackBlock_Release(b);
-      b = p;
-    }
   }
 
   Py_XDECREF(KosContext_PY_AWAIT_ITER(ctx));
@@ -854,11 +835,6 @@ int kos_context_traverse(
 
   /* Traverse transfer plan */
   res = kos_transferplan_traverse(KosContext_PLAN(ctx), visit, arg);
-  if (res)
-    return res;
-
-  /* Traverse hook runner */
-  res = kos_hookrunner_traverse(KosContext_HOOK_RUNNER(ctx), visit, arg);
   if (res)
     return res;
 
@@ -3059,7 +3035,7 @@ static KosEvalStep eval_phase_transfer(KosContext *ctx, KosEvent *out_ev) {
   if (run_transfer_plan_to_completion(ctx, out_ev) < 0)
     return KOS_STEP_STOP_EVENT;
 
-  if (! CURRENT_FRAME(ctx) && ! KosContext_HOOK_ACTIVE(ctx)) {
+  if (! CURRENT_FRAME(ctx)) {
     KosEvent_KIND(out_ev) = KOS_EV_RETURN;
     KosEvent_PAYLOAD(out_ev) = Py_None;
     Py_INCREF(Py_None);
@@ -3114,7 +3090,7 @@ static KosEvalStep eval_phase_pending_exception(
    bounds and opcode-range checks, records acting_pc, pre-advances pc, and
    loads the instruction pointer into dc.
 
-   :param dc: Filled with in_hook, code, acting pc, and insn on success.
+   :param dc: Filled with code, acting pc, and insn on success.
    :return: KOS_STEP_CONTINUE on success;
             KOS_STEP_FATAL_ERROR when a hard internal error is set via PyErr.
 */
@@ -3125,19 +3101,13 @@ static KosEvalStep eval_phase_prepare_dispatch(
 
   (void) out_ev;
 
-  int in_hook = KosContext_HOOK_ACTIVE(ctx);
-  if (! in_hook && ! CURRENT_FRAME(ctx)) {
-    PyErr_SetString(PyExc_RuntimeError,
-                    "eval loop: no active frame and not in hook");
+  if (! CURRENT_FRAME(ctx)) {
+    PyErr_SetString(PyExc_RuntimeError, "eval loop: no active frame");
     return KOS_STEP_FATAL_ERROR;
   }
 
-  KosCode *code = in_hook
-      ? KosHookRunner_CODE(KosContext_HOOK_RUNNER(ctx))
-      : CURRENT_CODE(ctx);
-  uint32_t pc = in_hook
-      ? KosHookRunner_PC(KosContext_HOOK_RUNNER(ctx))
-      : CURRENT_PC(ctx);
+  KosCode *code = CURRENT_CODE(ctx);
+  uint32_t pc = CURRENT_PC(ctx);
 
   if (unlikely(pc >= KosCode_CODE_LEN(code))) {
     SAYF("[eval] pc=%u OUT OF RANGE (code_len=%u)\n",
@@ -3151,17 +3121,11 @@ static KosEvalStep eval_phase_prepare_dispatch(
        (unsigned) pc, kos_opcode_name(KosOp_OP(insn)), (unsigned) KosOp_ARG(insn));
 
   /* Record acting_pc (instruction we are executing) before advance. */
-  if (in_hook)
-    KosHookRunner_ACTING_PC(KosContext_HOOK_RUNNER(ctx)) = pc;
-  else
-    KosDynFrame_ACTING_PC(CURRENT_FRAME(ctx)) = pc;
+  KosDynFrame_ACTING_PC(CURRENT_FRAME(ctx)) = pc;
 
   /* Advance PC before dispatch so normal path advances. If handler returns 1
      (suspend, e.g. WITH enter/exit await) we roll back so next eval is same insn. */
-  if (in_hook)
-    KosHookRunner_PC(KosContext_HOOK_RUNNER(ctx)) = pc + 1;
-  else
-    CURRENT_PC(ctx) = pc + 1;
+  CURRENT_PC(ctx) = pc + 1;
 
   if (unlikely((KosOpCode) KosOp_OP(insn) > KOS_OP_THEEND)) {
     PyErr_Format(PyExc_RuntimeError, "invalid opcode %u",
@@ -3169,7 +3133,6 @@ static KosEvalStep eval_phase_prepare_dispatch(
     return KOS_STEP_FATAL_ERROR;
   }
 
-  dc->in_hook = in_hook;
   dc->code    = code;
   dc->pc      = pc;
   dc->insn    = insn;
@@ -3220,13 +3183,8 @@ static KosEvalStep eval_phase_post_opcode(
     KosOpCode op = (KosOpCode) KosOp_OP(dc->insn);
     if (op == KOS_OP_PUSH_WITH || op == KOS_OP_POP_WITH
         || op == KOS_OP_PUSH_DYN_WITH || op == KOS_OP_POP_DYN_WITH) {
-      if (dc->in_hook) {
-        KosHookRunner_PC(KosContext_HOOK_RUNNER(ctx)) = dc->pc;
-        KosHookRunner_ACTING_PC(KosContext_HOOK_RUNNER(ctx)) = dc->pc;
-      } else {
-        CURRENT_PC(ctx) = dc->pc;
-        KosDynFrame_ACTING_PC(CURRENT_FRAME(ctx)) = dc->pc;
-      }
+      CURRENT_PC(ctx) = dc->pc;
+      KosDynFrame_ACTING_PC(CURRENT_FRAME(ctx)) = dc->pc;
     }
   }
 
@@ -3309,14 +3267,13 @@ int koskari_eval(KosContext *ctx, KosEvent *out_ev, PyObject *send_val, PyObject
     }
 
     /* Native frame: run native handler as frame evaluator (skip bytecode dispatch) */
-    if (! KosContext_HOOK_ACTIVE(ctx) && CURRENT_FRAME(ctx)
+    if (CURRENT_FRAME(ctx)
         && KosDynFrame_NATIVE_HANDLER(CURRENT_FRAME(ctx)) != NULL) {
       typedef int (*NativeHandlerFn)(void *, void *, int, PyObject *);
       NativeHandlerFn fn = (NativeHandlerFn) KosDynFrame_NATIVE_HANDLER(CURRENT_FRAME(ctx));
       int op_res = fn(ctx, out_ev, 0, NULL);
       if (op_res != 0) {
         KosDispatchCtx dc_native = { 0 };
-        dc_native.in_hook = 0;
         dc_native.code = NULL;
         dc_native.pc = 0;
         dc_native.insn = NULL;

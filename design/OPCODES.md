@@ -2204,30 +2204,20 @@ Unified extent wind/unwind is described in [interpreter/extent-wind-unwind.md](i
 
 ### KOS_OP_PUSH_WIND
 
-- **Style**: LABEL. Arg = after_block label (pc of code after unwind hook).
-- **Status**: Stub.
-- **Stack**: Pushes wind extent; before/after hooks run on entry/exit.
+- **Style**: COUNT. Arg = 1 (before only) or 2 (both before and after).
+- **Status**: Implemented.
+- **Stack**: For arg=2: `[..., before, after]` (before below, after above). Pops thunks; each must be callable or nil. For arg=1: `[..., before]`. Pushes KOS_DYN_WIND extent; runs before thunk on entry (via normal call path; may return KOS_DYN_UNWIND_ASYNC_STARTED).
 - **Pushes:** KOS_DYN_WIND (static extent KOS_EXT_WIND).
-- **Example:** (Stub; no runtime table.)
+- **Example:** See extent-wind-unwind.md; thunks are invoked via kos_callable_call.
 
 ---
 
 ### KOS_OP_POP_WIND
 
 - **Style**: NOARG.
-- **Status**: Stub.
-- **Stack**: Pops wind from dynamic chain; runs unwind hook.
-- **Example:** (Stub; no runtime table.)
-
----
-
-### KOS_OP_END_WIND
-
-- **Style**: NOARG.
 - **Status**: Implemented.
-- **Stack**: Sentinel that terminates hook block execution (before or after hook). Calls `kos_end_hook`; if the evaluator was unwinding and had started a wind after-hook (`KosContext_UNWIND_TARGET_FRAME` set), resumes unwinding via `kos_dyn_unwind_to_frame` and delivers any stashed return value when unwinding completes.
-- **Invariants**: Must be reached while a hook is active (`kos_hook_active`); otherwise RuntimeError.
-- **Example:** After-hook body ends with END_WIND; evaluator then continues unwinding or delivers pending return.
+- **Stack**: Pops wind from dynamic chain; runs after thunk (if entered and non-null) via kos_dyn_wind_unwind; may return KOS_DYN_UNWIND_ASYNC_STARTED when thunk pushes a frame.
+- **Invariants**: Dyn top must be KOS_DYN_WIND; otherwise RuntimeError.
 
 
 ## 23. Parameterize extent

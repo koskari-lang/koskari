@@ -160,10 +160,8 @@ struct KosDynNode {
       uint32_t resume_pc;
     } cc;
     struct {
-      KosCode *before_code;
-      uint32_t before_pc;
-      KosCode *after_code;
-      uint32_t after_pc;
+      PyObject *before_thunk;  /* callable (owned) or NULL */
+      PyObject *after_thunk;   /* callable (owned) or NULL */
       uint8_t entered;
     } wind;
     struct { uint32_t handler_pc; uint8_t enabled; } try_;
@@ -429,37 +427,6 @@ struct KosTransferPlan {
 typedef int (*KosHookInvokeFn)(struct KosContext *ctx, struct KosEvent *out_ev, void *hook_state);
 
 
-/* === KosHookRunner: hook execution state === */
-
-
-/**
-   KosHookRunner holds the state for executing a hook block.
-
-   Hooks are bytecode blocks that run with an isolated scratch
-   stack. They terminate when the END_WIND opcode is reached.
-
-   The active flag indicates whether hook execution is in progress.
-   When active, the VM dispatches from the hook code/pc instead of
-   the normal frame. pc = next instruction; acting_pc = instruction
-   currently being executed.
-*/
-
-struct KosHookRunner {
-  KosCode *code;          /* hook bytecode (borrowed) */
-  uint32_t pc;            /* next instruction */
-  uint32_t acting_pc;     /* instruction currently being executed */
-  KosStackBlock *scratch; /* scratch operand stack (owned) */
-  int active;             /* nonzero if hook is running */
-};
-
-
-#define KosHookRunner_CODE(r)       (((KosHookRunner *)(r))->code)
-#define KosHookRunner_PC(r)         (((KosHookRunner *)(r))->pc)
-#define KosHookRunner_ACTING_PC(r)  (((KosHookRunner *)(r))->acting_pc)
-#define KosHookRunner_SCRATCH(r) (((KosHookRunner *)(r))->scratch)
-#define KosHookRunner_ACTIVE(r)  (((KosHookRunner *)(r))->active)
-
-
 /* === DynNode allocation and lifecycle === */
 
 
@@ -527,19 +494,15 @@ void kos_dynprompt_free(KosDynPrompt *prompt);
    Allocate a new wind node.
 
    :param parent: parent node in dynamic chain
-   :param before_code: before hook code (borrowed, or NULL)
-   :param before_pc: before hook entry point
-   :param after_code: after hook code (borrowed, or NULL)
-   :param after_pc: after hook entry point
+   :param before_thunk: before hook callable (new ref, or NULL)
+   :param after_thunk: after hook callable (new ref, or NULL)
 
    :return: new wind node, or NULL on error
 */
 KosDynWind *kos_dynwind_new(
    KosDynNode *parent,
-   KosCode *before_code,
-   uint32_t before_pc,
-   KosCode *after_code,
-   uint32_t after_pc);
+   PyObject *before_thunk,
+   PyObject *after_thunk);
 
 
 /**
@@ -848,19 +811,15 @@ int kos_build_cc_unwind_plan(
    Push a wind extent onto the dynamic chain.
 
    :param ctx: execution context
-   :param before_code: before hook code (borrowed, or NULL)
-   :param before_pc: before hook entry point
-   :param after_code: after hook code (borrowed, or NULL)
-   :param after_pc: after hook entry point
+   :param before_thunk: before hook callable (new ref, or NULL)
+   :param after_thunk: after hook callable (new ref, or NULL)
 
    :return: new wind node, or NULL on error
 */
 KosDynWind *kos_dyn_push_wind(
    KosContext *ctx,
-   KosCode *before_code,
-   uint32_t before_pc,
-   KosCode *after_code,
-   uint32_t after_pc);
+   PyObject *before_thunk,
+   PyObject *after_thunk);
 
 
 /**
@@ -1494,47 +1453,6 @@ void kos_suspend_transfer_plan(KosContext *ctx);
 int kos_resume_transfer_plan(KosContext *ctx);
 
 
-/* === Hook execution === */
-
-
-/**
-   Begin executing a hook block.
-
-   Sets up the hook runner with the given code/pc and allocates
-   a scratch stack.
-
-   :param ctx: execution context
-   :param code: hook bytecode
-   :param pc: hook entry point
-
-   :return: 0 on success, -1 on error
-*/
-int kos_begin_hook(KosContext *ctx, KosCode *code, uint32_t pc);
-
-
-/**
-   Check if hook execution is active.
-
-   :param ctx: execution context
-
-   :return: nonzero if hook is running
-*/
-int kos_hook_active(KosContext *ctx);
-
-
-/**
-   End hook execution (called when END_WIND opcode is hit).
-
-   Cleans up the hook runner and returns control to the transfer
-   plan (if any).
-
-   :param ctx: execution context
-
-   :return: 0 on success, -1 on error
-*/
-int kos_end_hook(KosContext *ctx);
-
-
 /* === Continuation invocation === */
 
 
@@ -1625,21 +1543,6 @@ int kos_transferplan_traverse(
    void *arg);
 
 
-/**
-   Traverse a KosHookRunner for GC.
-
-   :param runner: hook runner to traverse
-   :param visit: visitproc callback
-   :param arg: opaque arg for visit
-
-   :return: 0 on success, non-zero if visit returns non-zero
-*/
-int kos_hookrunner_traverse(
-   KosHookRunner *runner,
-   visitproc visit,
-   void *arg);
-
-
 /* === Utility macros === */
 
 
@@ -1685,11 +1588,9 @@ int kos_hookrunner_traverse(
 
 #define KosDynCC_RESUME_PC(c)     (((KosDynNode *)(c))->u.cc.resume_pc)
 
-#define KosDynWind_BEFORE_CODE(w) (((KosDynNode *)(w))->u.wind.before_code)
-#define KosDynWind_BEFORE_PC(w)   (((KosDynNode *)(w))->u.wind.before_pc)
-#define KosDynWind_AFTER_CODE(w)  (((KosDynNode *)(w))->u.wind.after_code)
-#define KosDynWind_AFTER_PC(w)    (((KosDynNode *)(w))->u.wind.after_pc)
-#define KosDynWind_ENTERED(w)     (((KosDynNode *)(w))->u.wind.entered)
+#define KosDynWind_BEFORE_THUNK(w) (((KosDynNode *)(w))->u.wind.before_thunk)
+#define KosDynWind_AFTER_THUNK(w)  (((KosDynNode *)(w))->u.wind.after_thunk)
+#define KosDynWind_ENTERED(w)      (((KosDynNode *)(w))->u.wind.entered)
 
 #define KosDynTry_HANDLER_PC(r)      (((KosDynNode *)(r))->u.try_.handler_pc)
 #define KosDynTry_ENABLED(r)         (((KosDynNode *)(r))->u.try_.enabled)

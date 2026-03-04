@@ -29,7 +29,7 @@ Helpers perform only semantic work; the caller unlinks and frees the node (or, f
 | YIELD_FROM | (none)                   | `kos_dyn_yieldfrom_unwind`  | sync       |
 
 - **PARAM**: Wind applies bindings to the domain (save current, set new); unwind restores from saved. Used by normal push/pop and by the transfer plan (INSTALL runs wind for params in the segment; EXTENT_ACTION unwind runs param restore).
-- **WIND**: Wind runs the before-hook (code/pc) via `kos_begin_hook`; unwind runs the after-hook if the extent was entered. Both can return `KOS_DYN_UNWIND_ASYNC_STARTED`; the evaluator runs the hook then continues.
+- **WIND**: Wind runs the before-thunk via `kos_callable_call` (normal call path); unwind runs the after-thunk if the extent was entered. Both can return `KOS_DYN_UNWIND_ASYNC_STARTED`; the evaluator runs the thunk as a normal frame, and when the thunk returns, the RETURN opcode (IN_WIND_THUNK path) resumes unwinding or the transfer plan.
 - **NS**: Unwind restores the frame's namespace from the node's saved_ns. No wind helper (re-entry for continuations could add one later).
 - **TRY / FINALLY**: These were previously represented as a single `KOS_DYN_REGION` kind with `KosRegionStyle`; they are now separate kinds. Unwind drops the stack block when BREAK/CONTINUE passes through them. The FINALLY body will run the finally code (async) in future work.
 - **LOOP / FOREACH**: Also previously `KOS_DYN_REGION`. Unwind drops the stack block. The macro `KosDynNode_IS_REGION` matches all four (TRY, FINALLY, LOOP, FOREACH) for convenience.
@@ -43,7 +43,7 @@ Consumers use `kos_extent_run_wind(ctx, node)` and `kos_extent_run_unwind(ctx, n
 
 ## Consumers
 
-1. **Simple path** (`kos_dyn_pop_top`): Calls `kos_extent_run_unwind` for WIND and WITH/DYN_WITH, then unlinks and frees (except when async; evaluator runs the hook/exit and resumes unwinding from END_WIND or with-completion path).
+1. **Simple path** (`kos_dyn_pop_top`): Calls `kos_extent_run_unwind` for WIND and WITH/DYN_WITH, then unlinks and frees (except when async; evaluator runs the thunk/exit as a normal frame and the RETURN opcode resumes unwinding).
 2. **Transfer plan**: Uses `KOS_XFER_EXTENT_ACTION` steps with `(node, phase)` where phase is WIND or UNWIND. Step handler dispatches via `kos_extent_run_wind` or `kos_dynnode_run_transfer_unwind`. INSTALL runs `kos_extent_run_wind` for each PARAM and DYN_WITH in the installed segment.
 
 ---
@@ -54,8 +54,8 @@ When `kos_dyn_unwind_to_frame` is used (e.g. by RETURN or by exception propagati
 
 - `kos_dyn_unwind_to_frame` sets `KosContext_UNWIND_TARGET_FRAME(ctx)` to the target frame and returns `KOS_DYN_UNWIND_ASYNC_STARTED`.
 - The caller (RETURN or `try_local_exception_handler`) stashes any return value or restores the exception and returns so the eval loop continues.
-- The evaluator runs from the hook runner's code/pc (when `kos_hook_active(ctx)`).
-- When the hook hits END_WIND, `kos_end_hook` is called, then unwinding is resumed via `kos_dyn_unwind_to_frame(ctx, unwind_target_frame)`. When that completes, any stashed return value is delivered (in END_WIND) or exception handling continues.
+- The evaluator runs the thunk as a normal frame (thunk was pushed by `kos_callable_call`).
+- When the thunk returns, the RETURN opcode sees `KOS_CTX_IN_WIND_THUNK`, clears it, detaches the thunk frame, then resumes unwinding via the same loop (or advances the transfer plan). Any stashed return value is delivered when unwinding completes.
 
 ---
 
@@ -66,4 +66,4 @@ When `kos_dyn_unwind_to_frame` is used (e.g. by RETURN or by exception propagati
 
 **With / dyn-with:** Context managers are specified in [with-dyn-with.md](with-dyn-with.md). Single-shot `with` (KOS_DYN_WITH) uses enter/exit and structural stack blocks; multi-shot `dyn-with` (KOS_DYN_DYN_WITH) participates in transfer-plan wind/unwind.
 
-**Suspend during wind/unwind:** The evaluator supports suspension (await) at several points. **Hook body may await:** Wind and unwind hooks are executed as normal bytecode; if a hook contains AWAIT, the evaluator yields with `KOS_EV_AWAIT`. When the driver resumes, the same hook continues (same code/pc in the hook runner). While the hook is active, `kos_hook_active(ctx)` is true; after an AWAIT, resume still uses that code/pc until END_WIND. END_WIND runs when the hook reaches the end, then unwinding (or the transfer plan) continues. **Transfer plans:** When a wind or unwind step returns an awaitable (e.g. a future dyn-with exit step), the plan suspends (`KOS_XFER_SUSPENDED_AWAIT`); the driver gets the awaitable and later sends the result back; on resume the inject is fed into the plan and the plan continues. See [with-dyn-with.md](with-dyn-with.md) for transfer plan suspension and single-shot with async enter/exit. Exit convention (Python-like: exit(exc_type, exc_val, tb), truthy => swallow) is defined there.
+**Suspend during wind/unwind:** The evaluator supports suspension (await) at several points. **Thunk body may await:** Wind and unwind thunks are executed as normal bytecode (pushed via `kos_callable_call`); if a thunk contains AWAIT, the evaluator yields with `KOS_EV_AWAIT`. When the driver resumes, the same thunk continues. When the thunk returns (RETURN opcode), the IN_WIND_THUNK path resumes unwinding or the transfer plan. **Transfer plans:** When a wind or unwind step returns an awaitable (e.g. a future dyn-with exit step), the plan suspends (`KOS_XFER_SUSPENDED_AWAIT`); the driver gets the awaitable and later sends the result back; on resume the inject is fed into the plan and the plan continues. See [with-dyn-with.md](with-dyn-with.md) for transfer plan suspension and single-shot with async enter/exit. Exit convention (Python-like: exit(exc_type, exc_val, tb), truthy => swallow) is defined there.

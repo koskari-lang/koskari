@@ -68,8 +68,7 @@ struct KosContext {
   KosEvaluatorToken *token; /* evaluator identity; ownership marker for continuations */
   PyObject *domain;         /* KosDomain; ambient dynamic context anchor */
 
-  /* Hook execution state */
-  KosHookRunner hook_runner;
+  /* Wind thunk and unwind state */
   KosDynFrame *unwind_target_frame; /* target frame for async unwind completion */
 
   /* Pending async return (when RETURN fires while wind after-hook is in progress) */
@@ -201,20 +200,6 @@ struct KosTransferPlan {
   PyObject *step_awaitable;     /* when step suspended on await (owned) */
   PyObject *step_resume_inject; /* value/exception to inject on resume (owned) */
   KosTransferAction actions[];  /* flexible array; size = action_capacity */
-};
-```
-
-### KosHookRunner — Hook Execution State
-
-Hooks are bytecode blocks (not Python callables) executed with isolated stacks:
-
-```c
-struct KosHookRunner {
-  KosCode *code;          /* hook bytecode (borrowed) */
-  uint32_t pc;            /* next instruction */
-  uint32_t acting_pc;     /* instruction currently being executed */
-  KosStackBlock *scratch; /* scratch operand stack (owned) */
-  int active;             /* nonzero if hook is running */
 };
 ```
 
@@ -386,14 +371,6 @@ void kos_free_transfer_plan(KosTransferPlan *plan);
 /* Suspend/resume for nested transfers */
 void kos_suspend_transfer_plan(KosContext *ctx);
 int kos_resume_transfer_plan(KosContext *ctx);
-```
-
-### Hook Execution
-
-```c
-int kos_begin_hook(KosContext *ctx, KosCode *code, uint32_t pc);
-int kos_hook_active(KosContext *ctx);
-int kos_end_hook(KosContext *ctx);
 ```
 
 ### Context and Frame Lifecycle

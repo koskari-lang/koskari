@@ -97,12 +97,12 @@ static int test_dynprompt_new_free(void) {
 
 static int test_dynwind_new_free(void) {
     /* Test wind node allocation and freeing */
-    KosDynWind *wind = kos_dynwind_new(NULL, NULL, 10, NULL, 20);
+    KosDynWind *wind = kos_dynwind_new(NULL, NULL, NULL);
     TEST_ASSERT_NOT_NULL(wind, "create wind");
 
     TEST_ASSERT_EQ(KosDynNode_KIND(wind), KOS_DYN_WIND, "wind kind is WIND");
-    TEST_ASSERT_EQ(KosDynWind_BEFORE_PC(wind), 10, "wind before_pc is set");
-    TEST_ASSERT_EQ(KosDynWind_AFTER_PC(wind), 20, "wind after_pc is set");
+    TEST_ASSERT(KosDynWind_BEFORE_THUNK(wind) == NULL, "wind before_thunk is NULL");
+    TEST_ASSERT(KosDynWind_AFTER_THUNK(wind) == NULL, "wind after_thunk is NULL");
     TEST_ASSERT_EQ(KosDynWind_ENTERED(wind), 0, "wind entered is 0");
 
     kos_dynwind_free(wind);
@@ -113,7 +113,7 @@ static int test_dynwind_new_free(void) {
 
 static int test_dynwind_clone(void) {
     /* Test wind node cloning */
-    KosDynWind *wind = kos_dynwind_new(NULL, NULL, 10, NULL, 20);
+    KosDynWind *wind = kos_dynwind_new(NULL, NULL, NULL);
     TEST_ASSERT_NOT_NULL(wind, "create wind");
 
     KosDynWind_ENTERED(wind) = 1;

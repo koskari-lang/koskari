@@ -272,19 +272,18 @@ the boundary constraint.
 
 ---
 
-## 16. VM-Native Wind/Unwind Hooks (Invariant)
+## 16. VM-Native Wind/Unwind Thunks (Invariant)
 
-* Wind/unwind hooks are **bytecode blocks** (implemented as null-arity Koskari
-  callables that compile to bytecode), not Python callables.
-* Hooks execute within the VM via `KosHookRunner` with isolated operand stacks.
-* Hooks run in their own frames and capture lexical context via closure.
-* Hooks terminate with `END_WIND` sentinel opcode.
-* Hooks cannot observe or modify the enclosing frame's stack.
+* Wind/unwind thunks are **null-arity Koskari callables** (bytecode blocks)
+  invoked via `kos_callable_call`, not Python callables.
+* Thunks run as normal frames in the eval loop; when a thunk returns, the
+  RETURN opcode detects `IN_WIND_THUNK` and resumes unwind or transfer plan.
+* Thunks capture lexical context via closure.
 * **Local jumps and wind/unwind are distinct**: local jumps do *not* invoke
   wind/unwind handlers; continuation transfer *does* invoke them.
 
-**Rationale**: This allows hooks to participate in continuation capture and
-avoids Python/C boundary crossings during wind/unwind.
+**Rationale**: Using the normal call path allows thunks to participate in
+continuation capture and avoids special hook machinery.
 
 ---
 

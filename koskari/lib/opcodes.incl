@@ -250,9 +250,8 @@ OP(POP_CC, NOARG)              // pop CC block from dynamic chain
 OP(CAPTURE_CC, NOARG)          // capture undelimited continuation, push on stack
 
 // dynamic wind control
-OP(PUSH_WIND, LABEL)           // arg = after_block label
+OP(PUSH_WIND, COUNT)           // arg = 1 (before only) or 2 (both); stack: [..., before, after]
 OP(POP_WIND, NOARG)            // pop wind from dynamic chain
-OP(END_WIND, NOARG)            // sentinel: terminates hook block
 
 // parameterize extent (domain param bindings)
 OP(PUSH_PARAM, CONST)          // arg = constant index of names tuple

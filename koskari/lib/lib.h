@@ -33,7 +33,6 @@ struct KosContext;          typedef struct KosContext          KosContext;
 struct KosDynNode;          typedef struct KosDynNode          KosDynNode;
 struct KosContinuation;     typedef struct KosContinuation     KosContinuation;
 struct KosTransferPlan;     typedef struct KosTransferPlan     KosTransferPlan;
-struct KosHookRunner;       typedef struct KosHookRunner       KosHookRunner;
 struct KosEvaluatorToken;   typedef struct KosEvaluatorToken   KosEvaluatorToken;
 struct KosEvent;
 
