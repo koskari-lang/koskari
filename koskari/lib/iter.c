@@ -231,7 +231,7 @@ static PyObject *asyncgenasend_iternext(PyObject *self) {
 
   /* Drive the context */
   KosEvent ev = {0};
-  int res = koskari_eval(agen->ctx, &ev, NULL, NULL);
+  int res = koskari_eval(agen->ctx, &ev, NULL, NULL, NULL);
 
   agen->in_progress = 0;
 
@@ -262,7 +262,15 @@ static PyObject *asyncgenasend_iternext(PyObject *self) {
 
     case KOS_EV_RAISE:
       agen->closed = 1;
-      if (KosEvent_PAYLOAD(&ev)) {
+      if (KosEvent_EXC_TYPE(&ev)) {
+        if (KosEvent_PAYLOAD(&ev)) {
+          PyErr_SetObject(KosEvent_EXC_TYPE(&ev), KosEvent_PAYLOAD(&ev));
+          Py_DECREF(KosEvent_PAYLOAD(&ev));
+        } else {
+          PyErr_SetNone(KosEvent_EXC_TYPE(&ev));
+        }
+        Py_XDECREF(KosEvent_EXC_TYPE(&ev));
+      } else if (KosEvent_PAYLOAD(&ev)) {
         PyErr_SetObject((PyObject *) Py_TYPE(KosEvent_PAYLOAD(&ev)), KosEvent_PAYLOAD(&ev));
         Py_DECREF(KosEvent_PAYLOAD(&ev));
       } else {

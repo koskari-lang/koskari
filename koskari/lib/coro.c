@@ -196,7 +196,9 @@ static PyObject *coroutine_send(PyObject *self, PyObject *value) {
   coro->state = KOS_CORO_RUNNING;
 
   KosEvent ev = {.kind = KOS_EV_RETURN, .payload = NULL};
-  int res = koskari_eval(coro->ctx, &ev, send_val, throw_exc);
+  int res = koskari_eval(coro->ctx, &ev, send_val,
+                        throw_exc ? (PyObject *) Py_TYPE(throw_exc) : NULL,
+                        throw_exc);
   Py_XDECREF(send_val);
 
   coro->in_send = 0;
@@ -227,9 +229,19 @@ static PyObject *coroutine_send(PyObject *self, PyObject *value) {
 
     case KOS_EV_RAISE:
       coro->state = KOS_CORO_DONE;
-      if (KosEvent_PAYLOAD(&ev)) {
+      if (KosEvent_EXC_TYPE(&ev)) {
+        if (KosEvent_PAYLOAD(&ev)) {
+          PyErr_SetObject(KosEvent_EXC_TYPE(&ev), KosEvent_PAYLOAD(&ev));
+          Py_DECREF(KosEvent_PAYLOAD(&ev));
+        } else {
+          PyErr_SetNone(KosEvent_EXC_TYPE(&ev));
+        }
+        Py_XDECREF(KosEvent_EXC_TYPE(&ev));
+      } else if (KosEvent_PAYLOAD(&ev)) {
         PyErr_SetObject((PyObject *) Py_TYPE(KosEvent_PAYLOAD(&ev)), KosEvent_PAYLOAD(&ev));
         Py_DECREF(KosEvent_PAYLOAD(&ev));
+      } else {
+        PyErr_SetNone(PyExc_StopIteration);
       }
       return NULL;
 
@@ -313,7 +325,7 @@ static PyObject *coroutine_throw(PyObject *self, PyObject *args) {
   coro->in_send = 1;
   coro->state = KOS_CORO_RUNNING;
   KosEvent ev = {.kind = KOS_EV_RETURN, .payload = NULL};
-  int res = koskari_eval(coro->ctx, &ev, NULL, exc);
+  int res = koskari_eval(coro->ctx, &ev, NULL, typ, exc);
   Py_DECREF(exc);
   coro->in_send = 0;
 
@@ -331,9 +343,19 @@ static PyObject *coroutine_throw(PyObject *self, PyObject *args) {
       return NULL;
     case KOS_EV_RAISE:
       coro->state = KOS_CORO_DONE;
-      if (KosEvent_PAYLOAD(&ev)) {
+      if (KosEvent_EXC_TYPE(&ev)) {
+        if (KosEvent_PAYLOAD(&ev)) {
+          PyErr_SetObject(KosEvent_EXC_TYPE(&ev), KosEvent_PAYLOAD(&ev));
+          Py_DECREF(KosEvent_PAYLOAD(&ev));
+        } else {
+          PyErr_SetNone(KosEvent_EXC_TYPE(&ev));
+        }
+        Py_XDECREF(KosEvent_EXC_TYPE(&ev));
+      } else if (KosEvent_PAYLOAD(&ev)) {
         PyErr_SetObject((PyObject *) Py_TYPE(KosEvent_PAYLOAD(&ev)), KosEvent_PAYLOAD(&ev));
         Py_DECREF(KosEvent_PAYLOAD(&ev));
+      } else {
+        PyErr_SetNone(PyExc_StopIteration);
       }
       return NULL;
     case KOS_EV_YIELD:

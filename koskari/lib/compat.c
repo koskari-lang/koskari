@@ -23,7 +23,12 @@
 */
 
 
-#include "lib.h"
+#include <Python.h>
+
+#define STR_CONST(which, val) {                 \
+  if (! (which))                              \
+    (which) = PyUnicode_FromString(val);      \
+}
 
 
 /* === string constants === */
@@ -48,7 +53,7 @@ PyObject *koskari_StopAsyncIteration_value(PyObject *exc) {
     return Py_None;
   }
   PyObject *args = NULL;
-#if PY_MINOR_VERSION >= 9
+#if PY_MINOR_VERSION >= 11
   args = PyException_GetArgs(exc);
 #else
   args = PyObject_GetAttrString(exc, "args");
@@ -92,6 +97,142 @@ PyObject *koskari_StopAsyncIteration_FromValue(PyObject *payload) {
   }
 #endif
   return exc;
+}
+
+
+/**
+   Extend list with items from iterable.  Returns 0 on success, -1 on error.
+   Uses PyList_Extend on 3.14+, _PyList_Extend on earlier versions.
+*/
+int koskari_List_Extend(PyObject *list, PyObject *iterable) {
+#if PY_MINOR_VERSION >= 14
+  return PyList_Extend(list, iterable);
+#else
+  PyObject *tmp = _PyList_Extend((PyListObject *) list, iterable);
+  if (! tmp)
+    return -1;
+  Py_DECREF(tmp);
+  return 0;
+#endif
+}
+
+
+#if PY_MINOR_VERSION >= 13
+/**
+   Fetch value from StopIteration/StopAsyncIteration.  Used on 3.13+ when
+   PyGen_FetchStopIterationValue is not exported.  Implementation uses
+   PyErr_Fetch and extracts value from exception args or .value.
+*/
+static int fetch_stop_iteration_value(PyObject **ptr, PyObject *exc) {
+  PyObject *val = NULL;
+  PyObject *args = PyException_GetArgs(exc);
+  if (args && PyTuple_Check(args) && PyTuple_GET_SIZE(args) > 0) {
+    val = PyTuple_GET_ITEM(args, 0);
+    Py_INCREF(val);
+    Py_DECREF(args);
+  } else {
+    Py_XDECREF(args);
+    val = PyObject_GetAttrString(exc, "value");
+    if (! val)
+      PyErr_Clear();
+    if (! val) {
+      Py_INCREF(Py_None);
+      val = Py_None;
+    }
+  }
+  *ptr = val;
+  return 0;
+}
+#endif
+
+int koskari_FetchStopIterationValue(PyObject **ptr) {
+#if PY_MINOR_VERSION >= 13
+  PyObject *type = NULL;
+  PyObject *value = NULL;
+  PyObject *tb = NULL;
+  PyErr_Fetch(&type, &value, &tb);
+  Py_XDECREF(tb);
+  if (! type) {
+    *ptr = NULL;
+    return -1;
+  }
+  int ok = 0;
+  if (PyErr_GivenExceptionMatches(type, PyExc_StopIteration) ||
+      PyErr_GivenExceptionMatches(type, PyExc_StopAsyncIteration))
+    ok = fetch_stop_iteration_value(ptr, value ? value : type);
+  else {
+    PyErr_Restore(type, value, NULL);
+    *ptr = NULL;
+    return -1;
+  }
+  Py_DECREF(type);
+  Py_XDECREF(value);
+  return ok;
+#else
+  return _PyGen_FetchStopIterationValue(ptr);
+#endif
+}
+
+
+/**
+   Fetch and clear the current exception, return the exception instance
+   (new ref).  Uses PyErr_GetRaisedException on 3.12+, PyErr_Fetch on older.
+*/
+PyObject *koskari_Err_GetRaisedException(void) {
+#if PY_MINOR_VERSION >= 12
+  return PyErr_GetRaisedException();
+#else
+  PyObject *type = NULL;
+  PyObject *value = NULL;
+  PyObject *tb = NULL;
+  PyErr_Fetch(&type, &value, &tb);
+  Py_XDECREF(tb);
+  if (! type)
+    return NULL;
+  PyObject *exc = value ? value : PyObject_CallFunctionObjArgs(type, NULL);
+  Py_DECREF(type);
+  Py_XDECREF(value);
+  return exc;
+#endif
+}
+
+
+/**
+   Create a dict presized for minused entries.  Uses _PyDict_NewPresized on
+   older versions; PyDict_New() on 3.14 when PyDict_NewPresized is not exported.
+*/
+PyObject *koskari_Dict_NewPresized(Py_ssize_t minused) {
+#if PY_MINOR_VERSION >= 14
+  (void) minused;
+  return PyDict_New();
+#else
+  return _PyDict_NewPresized(minused);
+#endif
+}
+
+
+/**
+   Return dict.items() view.  Uses PyObject_CallMethod on 3.14+ (replaces
+   _PyDictView_New removed in 3.14).
+*/
+PyObject *koskari_DictView_Items(PyObject *dict) {
+#if PY_MINOR_VERSION >= 14
+  return PyObject_CallMethod(dict, "items", NULL);
+#else
+  return _PyDictView_New(dict, &PyDictItems_Type);
+#endif
+}
+
+/**
+   Return dict.keys() view.  Uses PyObject_CallMethod on 3.14+ (replaces
+   _PyDictView_New removed in 3.14).
+*/
+PyObject *koskari_DictView_Keys(PyObject *dict) {
+#if PY_MINOR_VERSION >= 14
+  return PyObject_CallMethod(dict, "keys", NULL);
+#else
+  return _PyDictView_New(dict, &PyDictKeys_Type);
+#endif
 }
 
 

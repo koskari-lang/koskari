@@ -538,13 +538,15 @@ int kos_dyn_push_shift(KosContext *ctx) {
 /* === KosDynCCRaise implementation === */
 
 
-static KosDynCCRaise *kos_dyn_cc_raise_new(KosDynNode *parent, PyObject *exc_val) {
+static KosDynCCRaise *kos_dyn_cc_raise_new(KosDynNode *parent, PyObject *exc_type, PyObject *exc_val) {
   KosDynCCRaise *node = (KosDynCCRaise *) kos_dynnode_alloc();
   if (! node)
     return NULL;
 
   kos_dynnode_init((KosDynNode *) node, KOS_DYN_CC_RAISE, parent,
                    KOS_DYN_CAP_NEEDS_UNWIND_ACTION);
+  Py_INCREF(exc_type);
+  KosDynCCRaise_EXC_TYPE(node) = exc_type;
   Py_INCREF(exc_val);
   KosDynCCRaise_EXC_VAL(node) = exc_val;
   return node;
@@ -555,6 +557,8 @@ static void kos_dyn_cc_raise_free(KosDynCCRaise *node) {
   if (! node)
     return;
 
+  Py_XDECREF(KosDynCCRaise_EXC_TYPE(node));
+  KosDynCCRaise_EXC_TYPE(node) = NULL;
   Py_XDECREF(KosDynCCRaise_EXC_VAL(node));
   KosDynCCRaise_EXC_VAL(node) = NULL;
   kos_dynnode_return_to_freelist(node);
@@ -565,12 +569,16 @@ static int cc_raise_unwind(KosContext *ctx, KosDynNode *node,
                            PyObject **out_awaitable) {
   (void) ctx;
   (void) out_awaitable;
+  PyObject *exc_type = KosDynCCRaise_EXC_TYPE(node);
   PyObject *exc_val = KosDynCCRaise_EXC_VAL(node);
-  if (exc_val) {
-    PyObject *typ = PyObject_Type(exc_val);
+  if (exc_type && exc_val) {
+    Py_INCREF(exc_val);
+    PyErr_SetObject(exc_type, exc_val);
+    Py_DECREF(exc_val);
+  } else if (exc_val) {
+    PyObject *typ = (PyObject *) Py_TYPE(exc_val);
     Py_INCREF(exc_val);
     PyErr_SetObject(typ, exc_val);
-    Py_XDECREF(typ);
     Py_DECREF(exc_val);
   } else {
     PyErr_SetString(PyExc_RuntimeError,
@@ -1099,6 +1107,7 @@ KosDynYieldFrom *kos_dynyieldfrom_new(
   KosDynYieldFrom_KIND(node) = kind;
   KosDynYieldFrom_PENDING_ACTION(node) = 0;
   KosDynYieldFrom_PENDING_ARG(node) = NULL;
+  KosDynYieldFrom_PENDING_ARG_TYPE(node) = NULL;
   KosDynYieldFrom_INFLIGHT(node) = NULL;
   return node;
 }
@@ -1110,6 +1119,7 @@ static void kos_dynyieldfrom_free(KosDynYieldFrom *node) {
 
   Py_XDECREF(KosDynYieldFrom_DELEGATE(node));
   Py_XDECREF(KosDynYieldFrom_PENDING_ARG(node));
+  Py_XDECREF(KosDynYieldFrom_PENDING_ARG_TYPE(node));
   Py_XDECREF(KosDynYieldFrom_INFLIGHT(node));
   kos_dynnode_return_to_freelist((KosDynNode *) node);
 }
@@ -1133,9 +1143,12 @@ static KosDynYieldFrom *kos_dynyieldfrom_clone(KosDynYieldFrom *node) {
   KosDynYieldFrom_KIND(clone) = KosDynYieldFrom_KIND(node);
   KosDynYieldFrom_PENDING_ACTION(clone) = KosDynYieldFrom_PENDING_ACTION(node);
   KosDynYieldFrom_PENDING_ARG(clone) = KosDynYieldFrom_PENDING_ARG(node);
+  KosDynYieldFrom_PENDING_ARG_TYPE(clone) = KosDynYieldFrom_PENDING_ARG_TYPE(node);
 
   if (KosDynYieldFrom_PENDING_ARG(clone))
     Py_INCREF(KosDynYieldFrom_PENDING_ARG(clone));
+  if (KosDynYieldFrom_PENDING_ARG_TYPE(clone))
+    Py_INCREF(KosDynYieldFrom_PENDING_ARG_TYPE(clone));
 
   KosDynYieldFrom_INFLIGHT(clone) = KosDynYieldFrom_INFLIGHT(node);
   if (KosDynYieldFrom_INFLIGHT(clone))
@@ -2943,18 +2956,24 @@ static int xfer_plan_fill_wind_actions(
 
 /**
    Fill a single INJECT action: the value (or throw) to deliver when the
-   transfer completes.  Takes a new reference on value.  Advances *idx by one.
+   transfer completes.  Takes a new reference on value (and exc_type when
+   is_throw).  Advances *idx by one.
 */
 static void xfer_plan_fill_inject_action(
     KosTransferPlan *plan,
     size_t *idx,
     PyObject *value,
+    PyObject *exc_type,
     int is_throw) {
 
-  KosTransferAction_STEP(&KosTransferPlan_ACTIONS(plan)[*idx]) = KOS_XFER_INJECT;
-  KosTransferAction_INJECT_VALUE(&KosTransferPlan_ACTIONS(plan)[*idx]) = value;
-  KosTransferAction_INJECT_IS_THROW(&KosTransferPlan_ACTIONS(plan)[*idx]) = is_throw;
+  KosTransferAction *a = &KosTransferPlan_ACTIONS(plan)[*idx];
+  KosTransferAction_STEP(a) = KOS_XFER_INJECT;
+  KosTransferAction_INJECT_VALUE(a) = value;
   Py_XINCREF(value);
+  KosTransferAction_INJECT_TYPE(a) = exc_type;
+  if (exc_type)
+    Py_INCREF(exc_type);
+  KosTransferAction_INJECT_IS_THROW(a) = is_throw;
   (*idx)++;
 }
 
@@ -2970,14 +2989,18 @@ static void xfer_plan_fill_truncate_and_inject_action(
     size_t *idx,
     KosDynNode *node,
     PyObject *value,
+    PyObject *exc_type,
     int is_throw) {
 
   KosTransferAction *a = &KosTransferPlan_ACTIONS(plan)[*idx];
   KosTransferAction_STEP(a) = KOS_XFER_TRUNCATE_AND_INJECT;
   KosTransferAction_TRUNCATE_NODE(a) = node;
   KosTransferAction_TRUNCATE_VALUE(a) = value;
-  KosTransferAction_TRUNCATE_IS_THROW(a) = is_throw;
   Py_XINCREF(value);
+  KosTransferAction_TRUNCATE_TYPE(a) = exc_type;
+  if (exc_type)
+    Py_INCREF(exc_type);
+  KosTransferAction_TRUNCATE_IS_THROW(a) = is_throw;
   (*idx)++;
 }
 
@@ -3028,7 +3051,7 @@ int kos_build_transfer_plan(
   xfer_plan_fill_install_action(plan, &idx, target);
   if (xfer_plan_fill_wind_actions(plan, &idx, target, lca, wind_count) < 0)
     return -1;
-  xfer_plan_fill_inject_action(plan, &idx, value, is_throw);
+  xfer_plan_fill_inject_action(plan, &idx, value, is_throw ? (PyObject *) Py_TYPE(value) : NULL, is_throw);
 
   *out_plan = plan;
   return 0;
@@ -3062,7 +3085,7 @@ int kos_build_return_plan(
 
   size_t idx = 0;
   xfer_plan_fill_install_action(plan, &idx, segment);
-  xfer_plan_fill_inject_action(plan, &idx, value, is_throw);
+  xfer_plan_fill_inject_action(plan, &idx, value, is_throw ? (PyObject *) Py_TYPE(value) : NULL, is_throw);
 
   *out_plan = plan;
   return 0;
@@ -3105,7 +3128,7 @@ int kos_build_delimited_push_plan(
   if (xfer_plan_fill_wind_actions(plan, &idx, segment, NULL, wind_count) < 0)
     return -1;
   xfer_plan_fill_push_action(plan, &idx, segment);
-  xfer_plan_fill_inject_action(plan, &idx, value, is_throw);
+  xfer_plan_fill_inject_action(plan, &idx, value, is_throw ? (PyObject *) Py_TYPE(value) : NULL, is_throw);
 
   *out_plan = plan;
   return 0;
@@ -3167,7 +3190,7 @@ int kos_build_direct_install_plan(
   xfer_plan_fill_install_action(plan, &idx, target);
   if (xfer_plan_fill_wind_actions(plan, &idx, target, lca, wind_count) < 0)
     return -1;
-  xfer_plan_fill_inject_action(plan, &idx, value, is_throw);
+  xfer_plan_fill_inject_action(plan, &idx, value, is_throw ? (PyObject *) Py_TYPE(value) : NULL, is_throw);
 
   *out_plan = plan;
   return 0;
@@ -3176,6 +3199,7 @@ int kos_build_direct_install_plan(
 
 int kos_build_cc_unwind_plan(
     KosContext *ctx,
+    PyObject *exc_type,
     PyObject *exc_val,
     KosTransferPlan **out_plan) {
 
@@ -3183,7 +3207,7 @@ int kos_build_cc_unwind_plan(
      transfer plan unwinds all existing WITH/finally nodes first and hits the
      KosDynCCRaise re-raise step last.  We walk to the current chain root and
      attach the new node below it. */
-  KosDynCCRaise *raise_node = kos_dyn_cc_raise_new(NULL, exc_val);
+  KosDynCCRaise *raise_node = kos_dyn_cc_raise_new(NULL, exc_type, exc_val);
   if (! raise_node)
     return -1;
 
@@ -3235,7 +3259,7 @@ int kos_dyn_build_pop_shift_plan(KosContext *ctx, KosDynPrompt *prompt,
   size_t idx = 0;
   xfer_plan_fill_unwind_actions(plan, &idx, current, prompt_node);
   xfer_plan_fill_truncate_and_inject_action(plan, &idx, prompt_node,
-                                            value, 0);
+                                            value, NULL, 0);
 
   *out_plan = plan;
   return 0;
@@ -3683,6 +3707,10 @@ static int xfer_step_inject(KosContext *ctx, KosTransferAction *action) {
     Py_XINCREF(KosTransferAction_INJECT_VALUE(action));
     Py_XDECREF(KosContext_INJECT_VALUE(ctx));
     KosContext_INJECT_VALUE(ctx) = KosTransferAction_INJECT_VALUE(action);
+    Py_XDECREF(KosContext_INJECT_TYPE(ctx));
+    KosContext_INJECT_TYPE(ctx) = KosTransferAction_INJECT_TYPE(action);
+    if (KosContext_INJECT_TYPE(ctx))
+      Py_INCREF(KosContext_INJECT_TYPE(ctx));
   } else {
     if (KosContext_FRAME_TOP(ctx) &&
         KosStackBlock_PushRef(&KosDynFrame_STACK(KosContext_FRAME_TOP(ctx)),
@@ -3696,6 +3724,8 @@ static int xfer_step_inject(KosContext *ctx, KosTransferAction *action) {
   }
   Py_DECREF(KosTransferAction_INJECT_VALUE(action));
   KosTransferAction_INJECT_VALUE(action) = NULL;
+  Py_XDECREF(KosTransferAction_INJECT_TYPE(action));
+  KosTransferAction_INJECT_TYPE(action) = NULL;
   return 0;
 }
 
@@ -3773,6 +3803,10 @@ static int xfer_step_truncate_and_inject(KosContext *ctx,
     Py_XINCREF(KosTransferAction_TRUNCATE_VALUE(action));
     Py_XDECREF(KosContext_INJECT_VALUE(ctx));
     KosContext_INJECT_VALUE(ctx) = KosTransferAction_TRUNCATE_VALUE(action);
+    Py_XDECREF(KosContext_INJECT_TYPE(ctx));
+    KosContext_INJECT_TYPE(ctx) = KosTransferAction_TRUNCATE_TYPE(action);
+    if (KosContext_INJECT_TYPE(ctx))
+      Py_INCREF(KosContext_INJECT_TYPE(ctx));
   } else if (KosContext_FRAME_TOP(ctx)) {
     size_t stack_len_before = 0;
     if (KOS_XFER_TRACE) {
@@ -3797,6 +3831,8 @@ static int xfer_step_truncate_and_inject(KosContext *ctx,
     Py_DECREF(KosTransferAction_TRUNCATE_VALUE(action));
   }
   KosTransferAction_TRUNCATE_VALUE(action) = NULL;
+  Py_XDECREF(KosTransferAction_TRUNCATE_TYPE(action));
+  KosTransferAction_TRUNCATE_TYPE(action) = NULL;
   return 0;
 }
 
@@ -4096,6 +4132,7 @@ static int dynnode_traverse_yield_from(KosDynNode *node, visitproc visit, void *
   KosDynYieldFrom *yf = (KosDynYieldFrom *) node;
   Py_VISIT(KosDynYieldFrom_DELEGATE(yf));
   Py_VISIT(KosDynYieldFrom_PENDING_ARG(yf));
+  Py_VISIT(KosDynYieldFrom_PENDING_ARG_TYPE(yf));
   Py_VISIT(KosDynYieldFrom_INFLIGHT(yf));
   return 0;
 }

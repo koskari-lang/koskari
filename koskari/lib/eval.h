@@ -187,16 +187,19 @@ typedef struct KosDispatchCtx {
   The kind field indicates what boundary was reached.
   The payload field holds the associated value (return value,
   exception, yielded value, or awaitable).
+  For KOS_EV_RAISE, exc_type holds the exception type (from PyErr_Fetch).
 */
 
 typedef struct KosEvent {
   KosEventKind kind;
   PyObject *payload;       /* new reference; caller owns it */
+  PyObject *exc_type;      /* for KOS_EV_RAISE: exception type (new ref) */
 } KosEvent;
 
 
 #define KosEvent_KIND(ev)    (((KosEvent *) (ev))->kind)
 #define KosEvent_PAYLOAD(ev) (((KosEvent *) (ev))->payload)
+#define KosEvent_EXC_TYPE(ev) (((KosEvent *) (ev))->exc_type)
 
 
 /* === KosContext: VM execution context === */
@@ -272,6 +275,7 @@ struct KosContext {
 
   /* --- Exception injection (set by coroutine_throw or dynchain inject) --- */
   int inject_mode;       /* 0=none, 1=pending_throw */
+  PyObject *inject_type;  /* exception type when inject_mode==KOS_INJECT_THROW */
   PyObject *inject_value;  /* exception object when inject_mode==1 */
 
   /* --- Suspension: why we last suspended (set on return AWAIT/YIELD; cleared when running) --- */
@@ -339,6 +343,7 @@ struct KosContext {
 #define KOS_RESUME_AWAIT 1
 #define KOS_RESUME_YIELD 2
 #define KosContext_INJECT_MODE(c)            (((KosContext *)(c))->inject_mode)
+#define KosContext_INJECT_TYPE(c)            (((KosContext *)(c))->inject_type)
 #define KosContext_INJECT_VALUE(c)           (((KosContext *)(c))->inject_value)
 
 #define KOS_INJECT_NONE   0
@@ -453,7 +458,7 @@ void kos_frame_free(KosFrame *frame);
 
   :return: 0 on success, -1 on internal error
 */
-int koskari_eval(KosContext *ctx, KosEvent *out_ev, PyObject *send_val, PyObject *throw_exc);
+int koskari_eval(KosContext *ctx, KosEvent *out_ev, PyObject *send_val, PyObject *throw_typ, PyObject *throw_exc);
 
 
 /**

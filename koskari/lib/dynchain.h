@@ -176,6 +176,7 @@ struct KosDynNode {
       uint8_t kind;
       uint8_t pending_action;
       PyObject *pending_arg;
+      PyObject *pending_arg_type;  /* for KOS_YF_THROW: exception type */
       PyObject *inflight;
     } yield_from;
     struct {
@@ -194,7 +195,8 @@ struct KosDynNode {
       /* shift: simple marker; PROMPT owns the stack block for the delimited region */
     } shift;
     struct {
-      PyObject *exc_val;  /* borrowed-then-owned KoskariContinuationApply instance */
+      PyObject *exc_type;  /* exception type from PyErr_Fetch */
+      PyObject *exc_val;   /* exception value */
     } cc_raise;
   } u;
 };
@@ -319,12 +321,14 @@ typedef struct KosTransferAction {
 
     struct {
       PyObject *value;
+      PyObject *exc_type;  /* for is_throw: exception type */
       int is_throw;
     } inject;
 
     struct {
       KosDynNode *node;
       PyObject *value;
+      PyObject *exc_type;  /* for is_throw: exception type */
       int is_throw;
     } truncate_and_inject;
   } data;
@@ -337,9 +341,11 @@ typedef struct KosTransferAction {
 #define KosTransferAction_EXTENT_PHASE(a)      (((KosTransferAction *)(a))->data.extent_action.phase)
 #define KosTransferAction_INSTALL_SEGMENT(a)   (((KosTransferAction *)(a))->data.install.segment)
 #define KosTransferAction_INJECT_VALUE(a)      (((KosTransferAction *)(a))->data.inject.value)
+#define KosTransferAction_INJECT_TYPE(a)       (((KosTransferAction *)(a))->data.inject.exc_type)
 #define KosTransferAction_INJECT_IS_THROW(a)   (((KosTransferAction *)(a))->data.inject.is_throw)
 #define KosTransferAction_TRUNCATE_NODE(a)     (((KosTransferAction *)(a))->data.truncate_and_inject.node)
 #define KosTransferAction_TRUNCATE_VALUE(a)    (((KosTransferAction *)(a))->data.truncate_and_inject.value)
+#define KosTransferAction_TRUNCATE_TYPE(a)     (((KosTransferAction *)(a))->data.truncate_and_inject.exc_type)
 #define KosTransferAction_TRUNCATE_IS_THROW(a) (((KosTransferAction *)(a))->data.truncate_and_inject.is_throw)
 
 
@@ -803,6 +809,7 @@ int kos_dyn_push_shift(KosContext *ctx);
 */
 int kos_build_cc_unwind_plan(
     KosContext *ctx,
+    PyObject *exc_type,
     PyObject *exc_val,
     KosTransferPlan **out_plan);
 
@@ -1616,11 +1623,13 @@ int kos_transferplan_traverse(
 #define KosDynYieldFrom_KIND(n)         (((KosDynNode *)(n))->u.yield_from.kind)
 #define KosDynYieldFrom_PENDING_ACTION(n) (((KosDynNode *)(n))->u.yield_from.pending_action)
 #define KosDynYieldFrom_PENDING_ARG(n) (((KosDynNode *)(n))->u.yield_from.pending_arg)
+#define KosDynYieldFrom_PENDING_ARG_TYPE(n) (((KosDynNode *)(n))->u.yield_from.pending_arg_type)
 #define KosDynYieldFrom_INFLIGHT(n)    (((KosDynNode *)(n))->u.yield_from.inflight)
 
 #define KosDynParam_BINDINGS(n)    (((KosDynNode *)(n))->u.param.bindings)
 #define KosDynParam_SAVED(n)       (((KosDynNode *)(n))->u.param.saved)
 
+#define KosDynCCRaise_EXC_TYPE(n)  (((KosDynNode *)(n))->u.cc_raise.exc_type)
 #define KosDynCCRaise_EXC_VAL(n)   (((KosDynNode *)(n))->u.cc_raise.exc_val)
 
 #define KosDynWith_MGR(n)          (((KosDynNode *)(n))->u.with.mgr)

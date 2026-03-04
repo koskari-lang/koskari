@@ -20,8 +20,20 @@
 
 #include <Python.h>
 
-#if PY_MINOR_VERSION == 11
+#if PY_MINOR_VERSION == 14
+#include "compat_314.h"
+
+#elif PY_MINOR_VERSION == 13
+#include "compat_313.h"
+
+#elif PY_MINOR_VERSION == 12
+#include "compat_312.h"
+
+#elif PY_MINOR_VERSION == 11
 #include "compat_311.h"
+
+#elif PY_MINOR_VERSION == 10
+#include "compat_310.h"
 
 #elif PY_MINOR_VERSION == 9
 #include "compat_39.h"
@@ -50,9 +62,7 @@ PyObject *koskari_StopAsyncIteration_FromValue(PyObject *payload);
 
 #define StopAsyncIteration_VALUE(exc)  koskari_StopAsyncIteration_value(exc)
 
-#define PyDict_NewPresized _PyDict_NewPresized
-#define PyGen_FetchStopIterationValue _PyGen_FetchStopIterationValue
-#define PyObject_LookupAttr _PyObject_LookupAttr
+/* _PyType_Lookup remains private on all supported versions */
 #define PyType_Lookup _PyType_Lookup
 
 
@@ -64,6 +74,72 @@ int koskari_compat_clear(PyObject *mod);
 
 /* Our wrapper when the C API symbol is not exported (e.g. 3.12) */
 PyObject *PyObject_GetAwaitable(PyObject *o);
+
+
+/**
+   Extend list with items from iterable.  Returns 0 on success, -1 on error.
+   Replaces _PyList_Extend (removed in 3.13+).
+*/
+int koskari_List_Extend(PyObject *list, PyObject *iterable);
+
+
+/**
+   Return dict.items() view (new ref).  Replaces _PyDictView_New(,,PyDictItems_Type).
+*/
+PyObject *koskari_DictView_Items(PyObject *dict);
+
+/**
+   Return dict.keys() view (new ref).  Replaces _PyDictView_New(,,PyDictKeys_Type).
+*/
+PyObject *koskari_DictView_Keys(PyObject *dict);
+
+
+/**
+   Create a dict presized for minused entries (new ref).  Replaces
+   PyDict_NewPresized when the symbol is not exported (e.g. 3.14).
+*/
+PyObject *koskari_Dict_NewPresized(Py_ssize_t minused);
+
+
+/**
+   Fetch value from current StopIteration/StopAsyncIteration exception.
+   Returns 0 on success, -1 on error.  Clears the exception.  On success
+   sets *ptr to the value (new ref) or Py_None.  Replaces
+   PyGen_FetchStopIterationValue when the symbol is not exported (e.g. 3.14).
+*/
+int koskari_FetchStopIterationValue(PyObject **ptr);
+
+
+/**
+   Fetch and clear the current exception, return the exception instance
+   (new ref).  Replaces PyErr_GetRaisedException (added in 3.12).
+*/
+PyObject *koskari_Err_GetRaisedException(void);
+
+
+/**
+   Set exception from type and message string.  On Python 3.10, wraps the
+   string in exc_type(msg) so PyErr_Fetch returns the instance.  Shadowed
+   via macro in compat_310.h.
+*/
+void koskari_Err_SetString(PyObject *exc_type, const char *message);
+
+
+/**
+   Set exception from type and format string.  On Python 3.10, uses
+   PyUnicode_FromFormatV to create the exception value.  Shadowed via
+   macro in compat_310.h.
+*/
+void koskari_Err_Format(PyObject *exc_type, const char *format, ...);
+
+
+/**
+   Set exception from type and value.  On Python 3.10, when value is a
+   string or other non-instance, wraps it in exc_type(value) before
+   calling PyErr_SetObject.  On 3.11+, delegates to PyErr_SetObject
+   directly.  Use when value may be a plain string (e.g. KeyError key).
+*/
+void koskari_Err_SetObject(PyObject *exc_type, PyObject *value);
 
 
 #endif
