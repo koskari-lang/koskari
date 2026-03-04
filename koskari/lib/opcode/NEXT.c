@@ -41,20 +41,21 @@ KOS_OP_HANDLER(NEXT) {
   }
 
   /* If not already an iterator, get one (NEXT allows iterables). */
-  if (! KosPyAsyncGen_Check(iter)) {
-    PyObject *awaitable = get_await_next(iter);
-    if (awaitable) {
-      Py_DECREF(awaitable);
-    } else if (! PyIter_Check(iter)) {
-      PyObject *it = PyObject_GetIter(iter);
-      Py_DECREF(iter);
-      if (! it) {
-        Py_XDECREF(default_val);
-        return -1;
-      }
-      iter = it;
-    }
-  }
+  /* this was a stupid idea, but I'm leaving it here for posterity */
+  // if (! KosPyAsyncGen_Check(iter)) {
+  //   PyObject *awaitable = get_await_next(iter);
+  //   if (awaitable) {
+  //     Py_DECREF(awaitable);
+  //   } else if (! PyIter_Check(iter)) {
+  //     PyObject *it = PyObject_GetIter(iter);
+  //     Py_DECREF(iter);
+  //     if (! it) {
+  //       Py_XDECREF(default_val);
+  //       return -1;
+  //     }
+  //     iter = it;
+  //   }
+  // }
 
   /* Koskari async gen: flatten into same eval loop (attach gen frame, return 0). */
   if (KosPyAsyncGen_Check(iter)) {

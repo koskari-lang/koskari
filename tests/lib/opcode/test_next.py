@@ -99,8 +99,9 @@ class TestNextOpcodes(CevalTest):
             ["NEXT", 1],
             ["RETURN", 1],
         ])
-        result = run_to_completion(make_callable(code, ns)())
-        self.assertEqual(result, 100)
+
+        with self.assertRaises(TypeError):
+            run_to_completion(make_callable(code, ns)())
 
 
     def test_next_arg_validation_rejects_invalid_args(self):
