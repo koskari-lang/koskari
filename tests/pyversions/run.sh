@@ -32,8 +32,7 @@ for ver in $VERSIONS; do
     -t "$tag" -f "$SCRIPT_DIR/Containerfile" "$SCRIPT_DIR"
 
   echo "=== Running tests for Python $ver ($tox_env) ==="
-  echo "$ENGINE" run --rm -v "$REPO_ROOT:/src:Z" "$tag" "$tox_env"
-  "$ENGINE" run --rm -v "$REPO_ROOT:/src:Z" "$tag" "$tox_env"
+  "$ENGINE" run -t --rm -v "$REPO_ROOT:/src:Z" "$tag" "$tox_env"
 done
 
-echo "=== All version tests complete ==="
+# The end.
