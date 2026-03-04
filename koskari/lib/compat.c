@@ -102,10 +102,10 @@ PyObject *koskari_StopAsyncIteration_FromValue(PyObject *payload) {
 
 /**
    Extend list with items from iterable.  Returns 0 on success, -1 on error.
-   Uses PyList_Extend on 3.14+, _PyList_Extend on earlier versions.
+   Uses PyList_Extend on 3.13+, _PyList_Extend on earlier versions.
 */
 int koskari_List_Extend(PyObject *list, PyObject *iterable) {
-#if PY_MINOR_VERSION >= 14
+#if PY_MINOR_VERSION >= 13
   return PyList_Extend(list, iterable);
 #else
   PyObject *tmp = _PyList_Extend((PyListObject *) list, iterable);
@@ -115,6 +115,21 @@ int koskari_List_Extend(PyObject *list, PyObject *iterable) {
   return 0;
 #endif
 }
+
+
+#if PY_MINOR_VERSION >= 13
+/**
+   Extend list with items from iterable.  Returns list (new ref) on success,
+   NULL on error.  Replaces _PyList_Extend for code that expects the old
+   return-semantics (list pointer).  Used via _PyList_Extend macro in compat_313/314.h.
+*/
+PyObject *koskari_List_ExtendRet(PyObject *list, PyObject *iterable) {
+  if (PyList_Extend(list, iterable) < 0)
+    return NULL;
+  Py_INCREF(list);
+  return list;
+}
+#endif
 
 
 #if PY_MINOR_VERSION >= 13
@@ -212,28 +227,41 @@ PyObject *koskari_Dict_NewPresized(Py_ssize_t minused) {
 
 
 /**
-   Return dict.items() view.  Uses PyObject_CallMethod on 3.14+ (replaces
-   _PyDictView_New removed in 3.14).
+   Return dict.items() view.  Uses PyObject_CallMethod on 3.13+ (replaces
+   _PyDictView_New removed in 3.13).
 */
 PyObject *koskari_DictView_Items(PyObject *dict) {
-#if PY_MINOR_VERSION >= 14
+#if PY_MINOR_VERSION >= 13
   return PyObject_CallMethod(dict, "items", NULL);
 #else
   return _PyDictView_New(dict, &PyDictItems_Type);
 #endif
 }
 
-/**
-   Return dict.keys() view.  Uses PyObject_CallMethod on 3.14+ (replaces
-   _PyDictView_New removed in 3.14).
-*/
+
 PyObject *koskari_DictView_Keys(PyObject *dict) {
-#if PY_MINOR_VERSION >= 14
+#if PY_MINOR_VERSION >= 13
   return PyObject_CallMethod(dict, "keys", NULL);
 #else
   return _PyDictView_New(dict, &PyDictKeys_Type);
 #endif
 }
+
+
+#if PY_MINOR_VERSION >= 13
+/**
+   Replace _PyDictView_New (removed in 3.13).  Dispatches to items() or keys()
+   based on type.  Used via macro in compat_313/314.h.
+*/
+PyObject *koskari_DictView_New(PyObject *dict, PyTypeObject *type) {
+  if (type == &PyDictItems_Type)
+    return koskari_DictView_Items(dict);
+  if (type == &PyDictKeys_Type)
+    return koskari_DictView_Keys(dict);
+  PyErr_SetString(PyExc_TypeError, "unsupported dict view type");
+  return NULL;
+}
+#endif
 
 
 /**

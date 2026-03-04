@@ -19,5 +19,14 @@
 #define PyDict_NewPresized koskari_Dict_NewPresized
 #define PyGen_FetchStopIterationValue koskari_FetchStopIterationValue
 
+/* _PyList_Extend was removed in 3.13; PyList_Extend returns int.  Provide
+   a wrapper that returns the list on success for code expecting the old API. */
+PyObject *koskari_List_ExtendRet(PyObject *list, PyObject *iterable);
+#define _PyList_Extend(list, iter) koskari_List_ExtendRet((PyObject *)(list), (iter))
+
+/* _PyDictView_New was removed in 3.13.  Wrapper dispatches to items/keys. */
+PyObject *koskari_DictView_New(PyObject *dict, PyTypeObject *type);
+#define _PyDictView_New(dict, type) koskari_DictView_New((dict), (type))
+
 
 // The end.
