@@ -894,6 +894,8 @@ int KosFormals_Apply(
     // we've run out of positional args but are expecting a star arg,
     // so let's provide an empty one
     PyObject *sl = PyTuple_New(0);
+    if (! sl)
+      return -1;
     if (KosNamespace_Store(namespace, star, sl)) {
       Py_DECREF(sl);
       return -1;
@@ -1005,6 +1007,8 @@ int KosFormals_VectorApply(
     } else if (star) {
       size_t nstar = l - i;
       PyObject *sl = PyTuple_New(nstar);
+      if (! sl)
+        return -1;
       for (size_t istar = 0; istar < nstar; istar++) {
         PyObject *a = args[i++];
         Py_INCREF(a);
@@ -1036,6 +1040,8 @@ int KosFormals_VectorApply(
     // we've run out of positional args but are expecting a star arg,
     // so let's provide an empty one
     PyObject *sl = PyTuple_New(0);
+    if (! sl)
+      return -1;
     if (KosNamespace_Store(namespace, star, sl)) {
       Py_DECREF(sl);
       return -1;
@@ -1071,11 +1077,16 @@ int KosFormals_VectorApply(
   PyObject *kwargs = NULL;
   if (names) {
     kwargs = PyDict_NewPresized(k);
+    if (! kwargs)
+      return -1;
     for (i = 0; i < k; i++) {
-      PyObject *k = PyTuple_GET_ITEM(names, i);
+      PyObject *name = PyTuple_GET_ITEM(names, i);
       PyObject *v = args[l + i];
-      SAYF(" VEC NAME %i, %i, %R, %R", i, l + i, k, v);
-      PyDict_SetItem(kwargs, k, v);
+      SAYF(" VEC NAME %i, %i, %R, %R", i, l + i, name, v);
+      if (PyDict_SetItem(kwargs, name, v) < 0) {
+        Py_DECREF(kwargs);
+        return -1;
+      }
     }
   }
 
