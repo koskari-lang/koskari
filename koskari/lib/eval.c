@@ -1117,6 +1117,53 @@ static int frame_ns_store(KosContext *ctx, PyObject *name, PyObject *val);
    Use enter result: if awaitable stash and push_or_await; else store, push block, push node.
    Consumes result and takes ownership of mgr, enter, exit, name.
 */
+static int finalize_with_enter_result(
+    KosContext *ctx,
+    PyObject *result,
+    PyObject *mgr,
+    PyObject *enter,
+    PyObject *exit,
+    PyObject *name,
+    uint32_t resume_pc,
+    int use_dyn_with) {
+
+  if (name && name != Py_None) {
+    if (frame_ns_store(ctx, name, result) < 0) {
+      Py_DECREF(result);
+      Py_DECREF(exit);
+      Py_DECREF(enter);
+      Py_DECREF(mgr);
+      Py_XDECREF(name);
+      return -1;
+    }
+  }
+  Py_XDECREF(result);
+
+  if (KosStackBlock_PushBlock(&CURRENT_STACK(ctx)) < 0) {
+    Py_DECREF(exit);
+    Py_DECREF(enter);
+    Py_DECREF(mgr);
+    Py_XDECREF(name);
+    return -1;
+  }
+
+  {
+    KosDynWith *node = use_dyn_with
+        ? kos_dyn_push_dyn_with(ctx, mgr, enter, exit, name, resume_pc)
+        : kos_dyn_push_with(ctx, mgr, enter, exit, name, resume_pc);
+    if (! node) {
+      KosStackBlock_DropBlock(&CURRENT_STACK(ctx));
+      Py_DECREF(exit);
+      Py_DECREF(enter);
+      Py_DECREF(mgr);
+      Py_XDECREF(name);
+      return -1;
+    }
+  }
+  return 0;
+}
+
+
 int kos_push_with_after_enter(
     KosContext *ctx,
     KosEvent *out_ev,
@@ -1163,40 +1210,8 @@ int kos_push_with_after_enter(
     KosContext_PENDING_WITH_ENTER_NAME(ctx) = NULL;
   }
 
-  if (name && name != Py_None) {
-    if (frame_ns_store(ctx, name, result) < 0) {
-      Py_DECREF(result);
-      Py_DECREF(exit);
-      Py_DECREF(enter);
-      Py_DECREF(mgr);
-      Py_XDECREF(name);
-      return -1;
-    }
-  }
-  Py_XDECREF(result);
-
-  if (KosStackBlock_PushBlock(&CURRENT_STACK(ctx)) < 0) {
-    Py_DECREF(exit);
-    Py_DECREF(enter);
-    Py_DECREF(mgr);
-    Py_XDECREF(name);
-    return -1;
-  }
-
-  {
-    KosDynWith *node = use_dyn_with
-        ? kos_dyn_push_dyn_with(ctx, mgr, enter, exit, name, resume_pc)
-        : kos_dyn_push_with(ctx, mgr, enter, exit, name, resume_pc);
-    if (! node) {
-      KosStackBlock_DropBlock(&CURRENT_STACK(ctx));
-      Py_DECREF(exit);
-      Py_DECREF(enter);
-      Py_DECREF(mgr);
-      Py_XDECREF(name);
-      return -1;
-    }
-  }
-  return 0;
+  return finalize_with_enter_result(
+      ctx, result, mgr, enter, exit, name, resume_pc, use_dyn_with);
 }
 
 
@@ -1226,39 +1241,9 @@ int kos_complete_pending_with_enter(KosContext *ctx, KosEvent *out_ev) {
   KosContext_PENDING_WITH_ENTER_EXIT(ctx) = NULL;
   KosContext_PENDING_WITH_ENTER_NAME(ctx) = NULL;
 
-  if (name && name != Py_None) {
-    if (frame_ns_store(ctx, name, result) < 0) {
-      Py_DECREF(result);
-      Py_DECREF(exit);
-      Py_DECREF(enter);
-      Py_DECREF(mgr);
-      Py_XDECREF(name);
-      return -1;
-    }
-  }
-  Py_XDECREF(result);
-
-  if (KosStackBlock_PushBlock(&CURRENT_STACK(ctx)) < 0) {
-    Py_DECREF(exit);
-    Py_DECREF(enter);
-    Py_DECREF(mgr);
-    Py_XDECREF(name);
+  if (finalize_with_enter_result(
+          ctx, result, mgr, enter, exit, name, resume_pc, use_dyn_with) < 0)
     return -1;
-  }
-
-  {
-    KosDynWith *node = use_dyn_with
-        ? kos_dyn_push_dyn_with(ctx, mgr, enter, exit, name, resume_pc)
-        : kos_dyn_push_with(ctx, mgr, enter, exit, name, resume_pc);
-    if (! node) {
-      KosStackBlock_DropBlock(&CURRENT_STACK(ctx));
-      Py_DECREF(exit);
-      Py_DECREF(enter);
-      Py_DECREF(mgr);
-      Py_XDECREF(name);
-      return -1;
-    }
-  }
   (void) out_ev;
   return 0;
 }
