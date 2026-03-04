@@ -576,24 +576,35 @@ static int yield_from_drive_kos_async_gen(
     Py_INCREF(yf_send_val);
   }
 
+  PyObject *yf_throw_typ = NULL;
   if (action == KOS_YF_THROW && KosDynYieldFrom_PENDING_ARG(yf)) {
+    yf_throw_typ = KosDynYieldFrom_PENDING_ARG_TYPE(yf);
     yf_throw_exc = KosDynYieldFrom_PENDING_ARG(yf);
+    if (yf_throw_typ)
+      Py_INCREF(yf_throw_typ);
     Py_INCREF(yf_throw_exc);
   }
 
   agen->in_progress = 1;
   KosEvent ev = {0};
-  int res = koskari_eval(agen->ctx, &ev, yf_send_val, yf_throw_exc);
+  int res = koskari_eval(agen->ctx, &ev, yf_send_val, yf_throw_typ, yf_throw_exc);
   Py_XDECREF(yf_send_val);
+  Py_XDECREF(yf_throw_typ);
   Py_XDECREF(yf_throw_exc);
   agen->in_progress = 0;
 
   {
     PyObject *pending = KosDynYieldFrom_PENDING_ARG(yf);
+    PyObject *pending_typ = KosDynYieldFrom_PENDING_ARG_TYPE(yf);
     KosDynYieldFrom_PENDING_ARG(yf) = NULL;
+    KosDynYieldFrom_PENDING_ARG_TYPE(yf) = NULL;
     KosDynYieldFrom_PENDING_ACTION(yf) = KOS_YF_STEP;
-    if (action == KOS_YF_THROW && pending)
-      Py_DECREF(pending);
+    if (action == KOS_YF_THROW) {
+      if (pending)
+        Py_DECREF(pending);
+      if (pending_typ)
+        Py_DECREF(pending_typ);
+    }
   }
 
   if (res < 0) {
@@ -633,9 +644,11 @@ static int yield_from_drive_kos_async_gen(
     agen->closed = 1;
     kos_dyn_pop_yield_from(ctx, yf);
     if (KosEvent_PAYLOAD(&ev)) {
-      PyErr_SetObject((PyObject *) Py_TYPE(KosEvent_PAYLOAD(&ev)), KosEvent_PAYLOAD(&ev));
+      PyErr_SetObject(KosEvent_EXC_TYPE(&ev), KosEvent_PAYLOAD(&ev));
+      Py_XDECREF(KosEvent_EXC_TYPE(&ev));
       Py_DECREF(KosEvent_PAYLOAD(&ev));
     } else {
+      Py_XDECREF(KosEvent_EXC_TYPE(&ev));
       PyErr_SetNone(PyExc_StopAsyncIteration);
     }
     return -1;
@@ -716,11 +729,17 @@ KOS_OP_HANDLER(YIELD_FROM) {
 
   if (KosContext_INJECT_MODE(ctx) == KOS_INJECT_THROW) {
     PyObject *exc = KosContext_INJECT_VALUE(ctx);
+    PyObject *exc_type = KosContext_INJECT_TYPE(ctx);
     KosContext_INJECT_MODE(ctx) = KOS_INJECT_NONE;
     KosContext_INJECT_VALUE(ctx) = NULL;
+    KosContext_INJECT_TYPE(ctx) = NULL;
     Py_XDECREF(KosDynYieldFrom_PENDING_ARG(yf));
     KosDynYieldFrom_PENDING_ARG(yf) = exc;
     Py_INCREF(exc);
+    Py_XDECREF(KosDynYieldFrom_PENDING_ARG_TYPE(yf));
+    KosDynYieldFrom_PENDING_ARG_TYPE(yf) = exc_type;
+    if (exc_type)
+      Py_INCREF(exc_type);
     action = KOS_YF_THROW;
     KosDynYieldFrom_PENDING_ACTION(yf) = action;
   }

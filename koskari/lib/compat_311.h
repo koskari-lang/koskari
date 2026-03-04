@@ -14,6 +14,14 @@
 */
 
 
+#define PyDict_NewPresized _PyDict_NewPresized
+#define PyGen_FetchStopIterationValue _PyGen_FetchStopIterationValue
+#define PyObject_LookupAttr _PyObject_LookupAttr
+
+/* PyErr_GetRaisedException added in 3.12 */
+#define PyErr_GetRaisedException koskari_Err_GetRaisedException
+
+
 // In 3.11+ the PyFrameObject structure becomes opaque. However we
 // need to be able get and set f_back and f_lineno, so I've copied the
 // structure into this header.

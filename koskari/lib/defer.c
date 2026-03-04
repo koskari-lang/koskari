@@ -64,8 +64,10 @@ static void defer_adopt(KosDefer *self, KosDefer *donor) {
       break;
     case KOS_DEFER_FAILED:
       self->state = KOS_DEFER_FAILED;
-      self->u.exc = donor->u.exc;
-      donor->u.exc = NULL;
+      self->u.failed.exc_type = donor->u.failed.exc_type;
+      self->u.failed.exc = donor->u.failed.exc;
+      donor->u.failed.exc_type = NULL;
+      donor->u.failed.exc = NULL;
       break;
     case KOS_DEFER_MOVED_FROM:
       /* nothing to adopt */
@@ -130,7 +132,8 @@ static void defer_dealloc(PyObject *self) {
       Py_CLEAR(d->u.value);
       break;
     case KOS_DEFER_FAILED:
-      Py_CLEAR(d->u.exc);
+      Py_CLEAR(d->u.failed.exc_type);
+      Py_CLEAR(d->u.failed.exc);
       break;
     case KOS_DEFER_MOVED_FROM:
       break;
@@ -154,7 +157,8 @@ static int defer_traverse(PyObject *self, visitproc visit, void *arg) {
       Py_VISIT(d->u.value);
       break;
     case KOS_DEFER_FAILED:
-      Py_VISIT(d->u.exc);
+      Py_VISIT(d->u.failed.exc_type);
+      Py_VISIT(d->u.failed.exc);
       break;
     case KOS_DEFER_MOVED_FROM:
       break;
@@ -178,7 +182,8 @@ static int defer_clear(PyObject *self) {
       Py_CLEAR(d->u.value);
       break;
     case KOS_DEFER_FAILED:
-      Py_CLEAR(d->u.exc);
+      Py_CLEAR(d->u.failed.exc_type);
+      Py_CLEAR(d->u.failed.exc);
       break;
     case KOS_DEFER_MOVED_FROM:
       break;
@@ -201,7 +206,7 @@ static PyObject *defer_repr(PyObject *self) {
     case KOS_DEFER_DONE:
       return PyUnicode_FromString("<defer done>");
     case KOS_DEFER_FAILED:
-      return PyUnicode_FromFormat("<defer failed exc=%R>", d->u.exc);
+      return PyUnicode_FromFormat("<defer failed exc=%R>", d->u.failed.exc);
     case KOS_DEFER_MOVED_FROM:
       return PyUnicode_FromString("<defer moved_from>");
     default:
@@ -252,7 +257,7 @@ PyObject *KosDefer_Start(KosDefer *self, int *suspended, PyObject **yielded) {
   }
 
   if (self->state == KOS_DEFER_FAILED) {
-    PyErr_SetObject((PyObject *) Py_TYPE(self->u.exc), self->u.exc);
+    PyErr_SetObject(self->u.failed.exc_type, self->u.failed.exc);
     return NULL;
   }
 
@@ -283,14 +288,10 @@ PyObject *KosDefer_Start(KosDefer *self, int *suspended, PyObject **yielded) {
       PyObject *exc_tb = NULL;
       PyErr_Fetch(&exc_typ, &exc_val, &exc_tb);
       self->state = KOS_DEFER_FAILED;
-      self->u.exc = exc_val ? exc_val : exc_typ;
-      if (self->u.exc) {
-        Py_INCREF(self->u.exc);
-      } else {
-        self->u.exc = Py_None;
-        Py_INCREF(Py_None);
-      }
-      Py_XDECREF(exc_typ);
+      self->u.failed.exc_type = exc_typ;
+      Py_INCREF(exc_typ);
+      self->u.failed.exc = exc_val ? exc_val : exc_typ;
+      Py_INCREF(self->u.failed.exc);
       Py_XDECREF(exc_tb);
       return NULL;
     }
@@ -323,7 +324,7 @@ PyObject *KosDefer_Start(KosDefer *self, int *suspended, PyObject **yielded) {
     return self->u.value;
   }
   if (self->state == KOS_DEFER_FAILED) {
-    PyErr_SetObject((PyObject *) Py_TYPE(self->u.exc), self->u.exc);
+    PyErr_SetObject(self->u.failed.exc_type, self->u.failed.exc);
     return NULL;
   }
   if (self->state == KOS_DEFER_DELEGATING) {

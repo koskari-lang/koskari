@@ -106,7 +106,7 @@ static int test_eval_object_add_return(void) {
     TEST_ASSERT_NOT_NULL(ctx, "create context");
 
     KosEvent ev = {0};
-    int res = koskari_eval(ctx, &ev, NULL, NULL);
+    int res = koskari_eval(ctx, &ev, NULL, NULL, NULL);
 
     TEST_ASSERT(res == 0, "koskari_eval succeeded");
     TEST_ASSERT(ev.kind == KOS_EV_RETURN, "event is RETURN");
@@ -232,7 +232,7 @@ static int test_eval_ctx_current_outside_eval(void) {
     TEST_ASSERT_NOT_NULL(ctx, "create context");
 
     KosEvent ev = {0};
-    int res = koskari_eval(ctx, &ev, NULL, NULL);
+    int res = koskari_eval(ctx, &ev, NULL, NULL, NULL);
 
     TEST_ASSERT(res == 0, "koskari_eval succeeded");
     TEST_ASSERT(kos_ctx_current() == NULL, "no current context after eval");
@@ -292,7 +292,7 @@ static int test_eval_try_except_catch(void) {
     TEST_ASSERT_NOT_NULL(ctx, "create context");
 
     KosEvent ev = {0};
-    int res = koskari_eval(ctx, &ev, NULL, NULL);
+    int res = koskari_eval(ctx, &ev, NULL, NULL, NULL);
 
     TEST_ASSERT(res == 0, "koskari_eval succeeded");
     TEST_ASSERT(ev.kind == KOS_EV_RETURN, "event is RETURN");
@@ -357,7 +357,7 @@ static int test_eval_try_finally_rerase(void) {
     TEST_ASSERT_NOT_NULL(ctx, "create context");
 
     KosEvent ev = {0};
-    int res = koskari_eval(ctx, &ev, NULL, NULL);
+    int res = koskari_eval(ctx, &ev, NULL, NULL, NULL);
 
     TEST_ASSERT(res == 0, "koskari_eval succeeded");
     TEST_ASSERT(ev.kind == KOS_EV_RAISE, "event is RAISE");
@@ -419,7 +419,7 @@ static int test_eval_reset_shift_invoke(void) {
     TEST_ASSERT_NOT_NULL(ctx, "create context");
 
     KosEvent ev = {0};
-    int res = koskari_eval(ctx, &ev, NULL, NULL);
+    int res = koskari_eval(ctx, &ev, NULL, NULL, NULL);
 
     if (res != 0) {
       if (PyErr_Occurred())
@@ -482,7 +482,7 @@ static int test_eval_push_cc_capture_cc_pop_cc_returns_continuation(void) {
     TEST_ASSERT_NOT_NULL(ctx, "create context");
 
     KosEvent ev = {0};
-    int res = koskari_eval(ctx, &ev, NULL, NULL);
+    int res = koskari_eval(ctx, &ev, NULL, NULL, NULL);
 
     TEST_ASSERT(res == 0, "koskari_eval succeeded");
     TEST_ASSERT(ev.kind == KOS_EV_RETURN, "event is RETURN");
@@ -556,7 +556,7 @@ static int test_eval_call_continuation_underrun(void) {
     TEST_ASSERT_NOT_NULL(ctx, "create context");
 
     KosEvent ev = {0};
-    int res = koskari_eval(ctx, &ev, NULL, NULL);
+    int res = koskari_eval(ctx, &ev, NULL, NULL, NULL);
 
     TEST_ASSERT(res == 0, "koskari_eval succeeded");
     TEST_ASSERT(ev.kind == KOS_EV_RAISE, "event is RAISE");
@@ -605,7 +605,7 @@ static int test_eval_call_wrong_type(void) {
     TEST_ASSERT_NOT_NULL(ctx, "create context");
 
     KosEvent ev = {0};
-    int res = koskari_eval(ctx, &ev, NULL, NULL);
+    int res = koskari_eval(ctx, &ev, NULL, NULL, NULL);
 
     TEST_ASSERT(res == 0, "koskari_eval succeeded");
     TEST_ASSERT(ev.kind == KOS_EV_RAISE, "event is RAISE");
@@ -656,7 +656,7 @@ static int test_eval_object_add_underrun(void) {
     TEST_ASSERT_NOT_NULL(ctx, "create context");
 
     KosEvent ev = {0};
-    int res = koskari_eval(ctx, &ev, NULL, NULL);
+    int res = koskari_eval(ctx, &ev, NULL, NULL, NULL);
 
     TEST_ASSERT(res == 0, "koskari_eval succeeded");
     TEST_ASSERT(ev.kind == KOS_EV_RAISE, "event is RAISE");
@@ -703,7 +703,7 @@ static int test_eval_return_underrun(void) {
     TEST_ASSERT_NOT_NULL(ctx, "create context");
 
     KosEvent ev = {0};
-    int res = koskari_eval(ctx, &ev, NULL, NULL);
+    int res = koskari_eval(ctx, &ev, NULL, NULL, NULL);
 
     TEST_ASSERT(res == 0, "koskari_eval succeeded");
     TEST_ASSERT(ev.kind == KOS_EV_RAISE, "event is RAISE");
@@ -747,7 +747,7 @@ static int test_eval_dup_underrun(void) {
     TEST_ASSERT_NOT_NULL(ctx, "create context");
 
     KosEvent ev = {0};
-    int res = koskari_eval(ctx, &ev, NULL, NULL);
+    int res = koskari_eval(ctx, &ev, NULL, NULL, NULL);
 
     TEST_ASSERT(res == 0, "koskari_eval succeeded");
     TEST_ASSERT(ev.kind == KOS_EV_RAISE, "event is RAISE");
@@ -791,7 +791,7 @@ static int test_eval_call_empty_stack(void) {
     TEST_ASSERT_NOT_NULL(ctx, "create context");
 
     KosEvent ev = {0};
-    int res = koskari_eval(ctx, &ev, NULL, NULL);
+    int res = koskari_eval(ctx, &ev, NULL, NULL, NULL);
 
     TEST_ASSERT(res == 0, "koskari_eval succeeded");
     TEST_ASSERT(ev.kind == KOS_EV_RAISE, "event is RAISE");
@@ -937,7 +937,7 @@ static int test_eval_push_collect_pop_collect_build_class_empty(void) {
     TEST_ASSERT_NOT_NULL(ctx, "create context");
 
     KosEvent ev = {0};
-    int res = koskari_eval(ctx, &ev, NULL, NULL);
+    int res = koskari_eval(ctx, &ev, NULL, NULL, NULL);
 
     TEST_ASSERT(res == 0, "koskari_eval succeeded");
     TEST_ASSERT(ev.kind == KOS_EV_RETURN, "event is RETURN");
@@ -991,7 +991,7 @@ static int test_eval_push_collect_empty_stack_raises(void) {
     TEST_ASSERT_NOT_NULL(ctx, "create context");
 
     KosEvent ev = {0};
-    int res = koskari_eval(ctx, &ev, NULL, NULL);
+    int res = koskari_eval(ctx, &ev, NULL, NULL, NULL);
 
     TEST_ASSERT(res == 0, "koskari_eval succeeded");
     TEST_ASSERT(ev.kind == KOS_EV_RAISE, "event is RAISE");
@@ -1069,7 +1069,7 @@ static int test_eval_invoke_k_underrun(void) {
     TEST_ASSERT_NOT_NULL(ctx, "create context");
 
     KosEvent ev = {0};
-    int res = koskari_eval(ctx, &ev, NULL, NULL);
+    int res = koskari_eval(ctx, &ev, NULL, NULL, NULL);
 
     TEST_ASSERT(res == 0, "koskari_eval succeeded");
     TEST_ASSERT(ev.kind == KOS_EV_RAISE, "event is RAISE");
@@ -1121,7 +1121,7 @@ static int test_eval_invoke_k_wrong_type(void) {
     TEST_ASSERT_NOT_NULL(ctx, "create context");
 
     KosEvent ev = {0};
-    int res = koskari_eval(ctx, &ev, NULL, NULL);
+    int res = koskari_eval(ctx, &ev, NULL, NULL, NULL);
 
     TEST_ASSERT(res == 0, "koskari_eval succeeded");
     TEST_ASSERT(ev.kind == KOS_EV_RAISE, "event is RAISE");
@@ -1173,7 +1173,7 @@ static int test_eval_call_zero_args(void) {
     TEST_ASSERT_NOT_NULL(ctx, "create context");
 
     KosEvent ev = {0};
-    int res = koskari_eval(ctx, &ev, NULL, NULL);
+    int res = koskari_eval(ctx, &ev, NULL, NULL, NULL);
 
     TEST_ASSERT(res == 0, "koskari_eval succeeded");
     TEST_ASSERT(ev.kind == KOS_EV_RETURN, "event is RETURN");
@@ -1217,7 +1217,7 @@ static int test_eval_fast_on_dict_ns(void) {
     TEST_ASSERT_NOT_NULL(ctx, "create context");
 
     KosEvent ev = {0};
-    int res = koskari_eval(ctx, &ev, NULL, NULL);
+    int res = koskari_eval(ctx, &ev, NULL, NULL, NULL);
 
     TEST_ASSERT(res == 0, "koskari_eval succeeded");
     TEST_ASSERT(ev.kind == KOS_EV_RAISE, "event is RAISE");
@@ -1283,7 +1283,7 @@ static int test_eval_build_function_no_defaults(void) {
     TEST_ASSERT_NOT_NULL(ctx, "create context");
 
     KosEvent ev = {0};
-    int res = koskari_eval(ctx, &ev, NULL, NULL);
+    int res = koskari_eval(ctx, &ev, NULL, NULL, NULL);
 
     TEST_ASSERT(res == 0, "koskari_eval succeeded");
     TEST_ASSERT(ev.kind == KOS_EV_RETURN, "event is RETURN");
@@ -1361,7 +1361,7 @@ static int test_eval_yield_empty_resume(void) {
     TEST_ASSERT(rc == 0, "create context");
 
     KosEvent ev = {0};
-    int res = koskari_eval(ctx, &ev, NULL, NULL);
+    int res = koskari_eval(ctx, &ev, NULL, NULL, NULL);
     TEST_ASSERT(res == 0, "first koskari_eval succeeded");
     TEST_ASSERT(ev.kind == KOS_EV_YIELD, "first event is YIELD");
     TEST_ASSERT_NOT_NULL(ev.payload, "first payload not NULL");
@@ -1370,7 +1370,7 @@ static int test_eval_yield_empty_resume(void) {
 
     ev.kind = KOS_EV_RETURN;
     ev.payload = NULL;
-    res = koskari_eval(ctx, &ev, NULL, NULL);
+    res = koskari_eval(ctx, &ev, NULL, NULL, NULL);
     TEST_ASSERT(res == 0, "second koskari_eval succeeded");
     TEST_ASSERT(ev.kind == KOS_EV_RETURN, "second event is RETURN");
     TEST_ASSERT_NOT_NULL(ev.payload, "second payload not NULL");
@@ -1410,7 +1410,7 @@ static int test_eval_yield_send_resume(void) {
     TEST_ASSERT(rc == 0, "create context");
 
     KosEvent ev = {0};
-    int res = koskari_eval(ctx, &ev, NULL, NULL);
+    int res = koskari_eval(ctx, &ev, NULL, NULL, NULL);
     TEST_ASSERT(res == 0, "first koskari_eval succeeded");
     TEST_ASSERT(ev.kind == KOS_EV_YIELD, "first event is YIELD");
     TEST_ASSERT_EQ(PyLong_AsLong(ev.payload), 42, "yielded value is 42");
@@ -1419,7 +1419,7 @@ static int test_eval_yield_send_resume(void) {
     PyObject *send_val = PyLong_FromLong(7);
     ev.kind = KOS_EV_RETURN;
     ev.payload = NULL;
-    res = koskari_eval(ctx, &ev, send_val, NULL);
+    res = koskari_eval(ctx, &ev, send_val, NULL, NULL);
     Py_DECREF(send_val);
     TEST_ASSERT(res == 0, "second koskari_eval succeeded");
     TEST_ASSERT(ev.kind == KOS_EV_RETURN, "second event is RETURN");
@@ -1460,7 +1460,7 @@ static int test_eval_yield_throw_resume(void) {
     TEST_ASSERT(rc == 0, "create context");
 
     KosEvent ev = {0};
-    int res = koskari_eval(ctx, &ev, NULL, NULL);
+    int res = koskari_eval(ctx, &ev, NULL, NULL, NULL);
     TEST_ASSERT(res == 0, "first koskari_eval succeeded");
     TEST_ASSERT(ev.kind == KOS_EV_YIELD, "first event is YIELD");
     Py_XDECREF(ev.payload);
@@ -1471,7 +1471,7 @@ static int test_eval_yield_throw_resume(void) {
 
     ev.kind = KOS_EV_RETURN;
     ev.payload = NULL;
-    res = koskari_eval(ctx, &ev, NULL, throw_exc);
+    res = koskari_eval(ctx, &ev, NULL, (PyObject *) Py_TYPE(throw_exc), throw_exc);
     Py_DECREF(throw_exc);
     TEST_ASSERT(res == 0, "second koskari_eval succeeded");
     TEST_ASSERT(ev.kind == KOS_EV_RAISE, "second event is RAISE");
@@ -1535,7 +1535,7 @@ static int test_eval_yield_throw_caught(void) {
     TEST_ASSERT(rc == 0, "create context");
 
     KosEvent ev = {0};
-    int res = koskari_eval(ctx, &ev, NULL, NULL);
+    int res = koskari_eval(ctx, &ev, NULL, NULL, NULL);
     TEST_ASSERT(res == 0, "first koskari_eval succeeded");
     TEST_ASSERT(ev.kind == KOS_EV_YIELD, "first event is YIELD");
     TEST_ASSERT_EQ(PyLong_AsLong(ev.payload), 42, "yielded value is 42");
@@ -1547,7 +1547,7 @@ static int test_eval_yield_throw_caught(void) {
 
     ev.kind = KOS_EV_RETURN;
     ev.payload = NULL;
-    res = koskari_eval(ctx, &ev, NULL, throw_exc);
+    res = koskari_eval(ctx, &ev, NULL, (PyObject *) Py_TYPE(throw_exc), throw_exc);
     Py_DECREF(throw_exc);
     TEST_ASSERT(res == 0, "second koskari_eval succeeded");
     TEST_ASSERT(ev.kind == KOS_EV_RETURN, "second event is RETURN");
@@ -1605,7 +1605,7 @@ static int test_eval_opcode_error_caught_by_try(void) {
     TEST_ASSERT(rc == 0, "create context");
 
     KosEvent ev = {0};
-    int res = koskari_eval(ctx, &ev, NULL, NULL);
+    int res = koskari_eval(ctx, &ev, NULL, NULL, NULL);
 
     TEST_ASSERT(res == 0, "koskari_eval succeeded");
     TEST_ASSERT(ev.kind == KOS_EV_RETURN, "event is RETURN");

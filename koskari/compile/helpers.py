@@ -10,7 +10,7 @@ parsing; all helpers raise SpecialError or ParametersError with optional source 
 """
 
 
-from typing import TypeAlias, Callable, Union, Dict, Tuple
+from typing import Callable, Union, Dict, Tuple
 
 from ..lib import car, cons, keyword, nil, OpCode, pair, symbol
 from ..types import is_keyword, is_pair, is_proper, is_symbol, unpack
@@ -40,7 +40,7 @@ __all__ = (
 )
 
 
-SpecialFn: TypeAlias = Callable[
+SpecialFn = Callable[
     [Compiler, pair, bool],
     Union[ByteCodeFragment, pair, None]
 ]

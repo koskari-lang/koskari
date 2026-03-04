@@ -76,7 +76,7 @@ test: handlers  ## Run tests on current Python version via tox
 test-all:  ## Run tests on all supported Python versions via tox
 	@$(call checkfor,tox)
 	@echo "Running tests on all Python versions..."
-	@tox -qe py39,py310,py311,py312
+	@tox -qe py39,py310,py311,py312,py313,py314
 
 tox: handlers  ## Run full tox suite (tests + lint + typecheck)
 	@$(call checkfor,tox)
@@ -109,6 +109,37 @@ test-asan: test-container-build  ## Run ASan tests in container
 test-valgrind: test-container-build  ## Run Valgrind tests in container
 	@echo "Running Valgrind tests in container..."
 	@$(CONTAINER_ENGINE) run --rm -v $(PWD):/src:Z $(CONTAINER_IMAGE) valgrind
+
+
+##@ Multi-version Container Testing
+
+test-pyversions: handlers  ## Run tests in containers for all Python versions
+	@$(call checkfor,$(CONTAINER_ENGINE))
+	@tests/pyversions/run.sh $(CONTAINER_ENGINE)
+
+test-py39: handlers  ## Run tests in container for Python 3.9
+	@$(call checkfor,$(CONTAINER_ENGINE))
+	@tests/pyversions/run.sh $(CONTAINER_ENGINE) 3.9
+
+test-py310: handlers  ## Run tests in container for Python 3.10
+	@$(call checkfor,$(CONTAINER_ENGINE))
+	@tests/pyversions/run.sh $(CONTAINER_ENGINE) 3.10
+
+test-py311: handlers  ## Run tests in container for Python 3.11
+	@$(call checkfor,$(CONTAINER_ENGINE))
+	@tests/pyversions/run.sh $(CONTAINER_ENGINE) 3.11
+
+test-py312: handlers  ## Run tests in container for Python 3.12
+	@$(call checkfor,$(CONTAINER_ENGINE))
+	@tests/pyversions/run.sh $(CONTAINER_ENGINE) 3.12
+
+test-py313: handlers  ## Run tests in container for Python 3.13
+	@$(call checkfor,$(CONTAINER_ENGINE))
+	@tests/pyversions/run.sh $(CONTAINER_ENGINE) 3.13
+
+test-py314: handlers  ## Run tests in container for Python 3.14
+	@$(call checkfor,$(CONTAINER_ENGINE))
+	@tests/pyversions/run.sh $(CONTAINER_ENGINE) 3.14
 
 
 ##@ Code Quality
@@ -165,7 +196,7 @@ version:  ## Show project version
 python:  ## Show Python executable
 	@echo $(PYTHON)
 
-.PHONY: help report-python build build-ext install install-dev uninstall test test-all tox gdb test-native test-native-asan test-native-valgrind clean-native container-build container-test container-test-asan container-test-valgrind lint typecheck format clean-built clean-ext clean-pyc clean purge project version python
+.PHONY: help report-python build build-ext install install-dev uninstall test test-all tox gdb test-native test-native-asan test-native-valgrind test-pyversions test-py39 test-py310 test-py311 test-py312 test-py313 test-py314 clean-native container-build container-test container-test-asan container-test-valgrind lint typecheck format clean-built clean-ext clean-pyc clean purge project version python
 
 
 # The end.

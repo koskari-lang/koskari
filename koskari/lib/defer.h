@@ -47,7 +47,10 @@ typedef struct KosDefer {
     } pending;
     PyObject *inner;
     PyObject *value;
-    PyObject *exc;
+    struct {
+      PyObject *exc_type;
+      PyObject *exc;
+    } failed;
   } u;
 } KosDefer;
 

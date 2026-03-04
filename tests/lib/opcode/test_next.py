@@ -20,6 +20,7 @@ Tests for NEXT, ITER_NEXT opcodes.
 
 import unittest
 
+import asyncio
 from tests import make_callable
 from tests.lib.opcode import CevalTest, build_expr, run_to_completion
 
@@ -98,8 +99,9 @@ class TestNextOpcodes(CevalTest):
             ["NEXT", 1],
             ["RETURN", 1],
         ])
-        result = run_to_completion(make_callable(code, ns)())
-        self.assertEqual(result, 100)
+
+        with self.assertRaises(TypeError):
+            run_to_completion(make_callable(code, ns)())
 
 
     def test_next_arg_validation_rejects_invalid_args(self):
@@ -129,5 +131,295 @@ class TestNextOpcodes(CevalTest):
         ])
         with self.assertRaises(TypeError):
             run_to_completion(make_callable(code, ns)())
+
+
+    def test_next_accumulates_values_from_koskari_async_gen(self):
+        """
+        NEXT 1 on a Koskari async gen yields 1, 2, 3; consumer accumulates and returns 3
+        """
+        gen_code, gen_ns = build_expr([
+            ["CONST", 1],
+            ["YIELD", 1],
+            ["CONST", 2],
+            ["YIELD", 1],
+            ["CONST", 3],
+            ["YIELD", 1],
+            ["RETURN", 0],
+        ])
+        gen = make_callable(gen_code, gen_ns)()
+
+        consumer_code, consumer_ns = build_expr([
+            ["VAR", "gen"],
+            ["NEXT", 1],
+            ["VAR_STORE", "v1"],
+            ["VAR", "gen"],
+            ["NEXT", 1],
+            ["VAR_STORE", "v2"],
+            ["VAR", "gen"],
+            ["NEXT", 1],
+            ["VAR_STORE", "v3"],
+            ["VAR", "v3"],
+            ["RETURN", 1],
+        ], values={"gen": gen, "v1": None, "v2": None, "v3": None})
+        result = run_to_completion(make_callable(consumer_code, consumer_ns)())
+        self.assertEqual(result, 3)
+
+
+    def test_next_with_await_in_generator(self):
+        """
+        Koskari async gen that AWAITs a Python async noop between yields; consumer still gets 1,2,3
+        """
+        async def noop():
+            return None
+
+        gen_code, gen_ns = build_expr([
+            ["CONST", 1],
+            ["YIELD", 1],
+            ["VAR", "noop"],
+            ["CALL", 0],
+            ["AWAIT", 0],
+            ["POP", 1],
+            ["CONST", 2],
+            ["YIELD", 1],
+            ["CONST", 3],
+            ["YIELD", 1],
+            ["RETURN", 0],
+        ], values={"noop": noop})
+        gen = make_callable(gen_code, gen_ns)()
+
+        consumer_code, consumer_ns = build_expr([
+            ["VAR", "gen"],
+            ["NEXT", 1],
+            ["VAR_STORE", "v1"],
+            ["VAR", "gen"],
+            ["NEXT", 1],
+            ["VAR_STORE", "v2"],
+            ["VAR", "gen"],
+            ["NEXT", 1],
+            ["VAR_STORE", "v3"],
+            ["VAR", "v3"],
+            ["RETURN", 1],
+        ], values={"gen": gen, "v1": None, "v2": None, "v3": None})
+        result = make_callable(consumer_code, consumer_ns)().run()
+        self.assertEqual(result, 3)
+
+
+    def test_foreach_iter_next_over_koskari_async_gen(self):
+        """
+        PUSH_FOREACH over a Koskari async gen; ITER_NEXT accumulates; last value is 3
+        """
+        gen_code, gen_ns = build_expr([
+            ["CONST", 1],
+            ["YIELD", 1],
+            ["CONST", 2],
+            ["YIELD", 1],
+            ["CONST", 3],
+            ["YIELD", 1],
+            ["RETURN", 0],
+        ])
+        gen = make_callable(gen_code, gen_ns)()
+
+        consumer_code, consumer_ns = build_expr([
+            ["CONST", None],
+            ["VAR", "gen"],
+            ["PUSH_FOREACH", 0],
+            ["LABEL", "loop_head"],
+            ["ITER_NEXT", "else_lbl"],
+            ["VAR_STORE", "last"],
+            ["VAR", "count"],
+            ["CONST", 1],
+            ["OBJECT_ADD", 2],
+            ["VAR_STORE", "count"],
+            ["JUMP", "loop_head"],
+            ["LABEL", "else_lbl"],
+            ["CLEAR_LOOP", 0],
+            ["LABEL", "break_lbl"],
+            ["POP_LOOP", 0],
+            ["POP", 1],
+            ["VAR", "last"],
+            ["RETURN", 1],
+        ], values={"gen": gen, "count": 0, "last": None})
+        result = run_to_completion(make_callable(consumer_code, consumer_ns)())
+        self.assertEqual(result, 3)
+
+
+    def test_next_1_on_koskari_agen_exhausted_raises_stopiteration(self):
+        """
+        NEXT 1 on Koskari async gen after last value raises StopIteration
+        """
+        gen_code, gen_ns = build_expr([
+            ["CONST", 1],
+            ["YIELD", 1],
+            ["RETURN", 0],
+        ])
+        gen = make_callable(gen_code, gen_ns)()
+
+        consumer_code, consumer_ns = build_expr([
+            ["VAR", "gen"],
+            ["NEXT", 1],
+            ["POP", 1],
+            ["VAR", "gen"],
+            ["NEXT", 1],
+            ["RETURN", 1],
+        ], values={"gen": gen})
+        coro = make_callable(consumer_code, consumer_ns)()
+        with self.assertRaises((StopIteration, RuntimeError)):
+            while True:
+                coro.send(None)
+
+
+    def test_next_2_on_koskari_agen_exhausted_returns_default(self):
+        """
+        NEXT 2 on Koskari async gen that returns immediately pushes default
+        """
+        gen_code, gen_ns = build_expr([
+            ["RETURN", 0],
+            ["CONST", None],
+            ["YIELD", 1],
+        ])
+        gen = make_callable(gen_code, gen_ns)()
+
+        consumer_code, consumer_ns = build_expr([
+            ["VAR", "gen"],
+            ["CONST", 99],
+            ["NEXT", 2],
+            ["RETURN", 1],
+        ], values={"gen": gen})
+        result = run_to_completion(make_callable(consumer_code, consumer_ns)())
+        self.assertEqual(result, 99)
+
+
+    def test_next_on_python_async_iterator(self):
+        """
+        NEXT 1 on Python async iterator (async gen) yields values via GET_NEXT_SUSPEND
+        """
+        async def async_gen():
+            yield 10
+            yield 20
+            yield 30
+
+        async def run():
+            aiter = async_gen()
+            consumer_code, consumer_ns = build_expr([
+                ["VAR", "aiter"],
+                ["NEXT", 1],
+                ["VAR_STORE", "v1"],
+                ["VAR", "aiter"],
+                ["NEXT", 1],
+                ["VAR_STORE", "v2"],
+                ["VAR", "aiter"],
+                ["NEXT", 1],
+                ["RETURN", 1],
+            ], values={"aiter": aiter, "v1": None, "v2": None})
+            return await make_callable(consumer_code, consumer_ns)()
+
+        result = asyncio.run(run())
+        self.assertEqual(result, 30)
+
+
+    def test_next_2_on_python_async_iterator_exhausted_returns_default(self):
+        """
+        NEXT 2 on empty Python async iterator returns default
+        """
+        async def empty_async_gen():
+            return
+            yield
+
+        async def run():
+            aiter = empty_async_gen()
+            consumer_code, consumer_ns = build_expr([
+                ["VAR", "aiter"],
+                ["CONST", 88],
+                ["NEXT", 2],
+                ["RETURN", 1],
+            ], values={"aiter": aiter})
+            return run_to_completion(make_callable(consumer_code, consumer_ns)())
+
+        result = asyncio.run(run())
+        self.assertEqual(result, 88)
+
+
+    def test_next_2_on_koskari_agen_after_yields_then_exhausted_returns_default(self):
+        """
+        NEXT 2 on Koskari async gen after consuming values then exhausting returns default
+        """
+        gen_code, gen_ns = build_expr([
+            ["CONST", 1],
+            ["YIELD", 1],
+            ["CONST", 2],
+            ["YIELD", 1],
+            ["RETURN", 0],
+        ])
+        gen = make_callable(gen_code, gen_ns)()
+
+        consumer_code, consumer_ns = build_expr([
+            ["VAR", "gen"],
+            ["CONST", -1],
+            ["NEXT", 2],
+            ["POP", 1],
+            ["VAR", "gen"],
+            ["CONST", -1],
+            ["NEXT", 2],
+            ["POP", 1],
+            ["VAR", "gen"],
+            ["CONST", 77],
+            ["NEXT", 2],
+            ["RETURN", 1],
+        ], values={"gen": gen})
+        result = run_to_completion(make_callable(consumer_code, consumer_ns)())
+        self.assertEqual(result, 77)
+
+
+    def test_next_2_on_python_async_iter_after_yields_then_exhausted_returns_default(self):
+        """
+        NEXT 2 on Python async iterator after consuming values then exhausting returns default
+        """
+        async def async_gen():
+            yield 10
+            yield 20
+
+        async def run():
+            aiter = async_gen()
+            consumer_code, consumer_ns = build_expr([
+                ["VAR", "aiter"],
+                ["CONST", -1],
+                ["NEXT", 2],
+                ["POP", 1],
+                ["VAR", "aiter"],
+                ["CONST", -1],
+                ["NEXT", 2],
+                ["POP", 1],
+                ["VAR", "aiter"],
+                ["CONST", 66],
+                ["NEXT", 2],
+                ["RETURN", 1],
+            ], values={"aiter": aiter})
+            return run_to_completion(make_callable(consumer_code, consumer_ns)())
+
+        result = asyncio.run(run())
+        self.assertEqual(result, 66)
+
+
+    def test_next_on_iterator_that_raises_propagates_error(self):
+        """
+        NEXT on iterator whose __next__ raises (not StopIteration) propagates GET_NEXT_ERROR
+        """
+        class BadIterator(object):
+            def __iter__(self):
+                return self
+
+            def __next__(self):
+                raise ValueError("iterator raised")
+
+        code, ns = build_expr([
+            ["CONST", BadIterator()],
+            ["OBJECT_ITER", 0],
+            ["NEXT", 1],
+            ["RETURN", 1],
+        ])
+        with self.assertRaises(ValueError) as cm:
+            run_to_completion(make_callable(code, ns)())
+        self.assertIn("iterator raised", str(cm.exception))
+
 
 # The end.

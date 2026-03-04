@@ -452,7 +452,7 @@ static PyObject *item_ref_get_empty(PyObject *self, void *_unused) {
   PyObject *obj = KosItemRef_OBJ(self);
 
   if (PyMapping_Check(obj)) {
-    haskey = PyMapping_HasKey(obj, KosItemRef_KEY(self));
+    haskey = PyMapping_HasKeyWithError(obj, KosItemRef_KEY(self));
 
   } else {
     PyObject *res = PyObject_GetItem(obj, KosItemRef_KEY(self));
@@ -466,10 +466,11 @@ static PyObject *item_ref_get_empty(PyObject *self, void *_unused) {
   }
 
   if (haskey == -1) {
-    return NULL;
-  } else {
-    return PyBool_FromLong(! haskey);
+    PyErr_Clear();
+    haskey = 0;
   }
+
+  return PyBool_FromLong(! haskey);
 }
 
 
