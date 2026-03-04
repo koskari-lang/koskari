@@ -26,6 +26,13 @@ from tests import make_callable
 from tests.lib.opcode import CevalTest, build_expr
 
 
+try:
+    anext
+except NameError:
+    async def anext(agen):
+        return await agen.__anext__()
+
+
 class TestYieldFrom(CevalTest):
     """
     YIELD_FROM: delegate to sync/async iterators and generators

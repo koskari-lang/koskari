@@ -26,6 +26,13 @@ from tests.lib.opcode import CevalTest, build_expr
 from koskari.lib import AsyncGenerator
 
 
+try:
+    anext
+except NameError:
+    async def anext(agen):
+        return await agen.__anext__()
+
+
 class TestYieldOpcodes(CevalTest):
     """
     Tests for YIELD opcode and async generators.
