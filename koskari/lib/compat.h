@@ -52,6 +52,10 @@
 
 /* === macros for all versions === */
 
+#if PY_MINOR_VERSION < 13
+#define PyMapping_HasKeyWithError(o, k)  PyMapping_HasKey((o), (k))
+#endif
+
 /**
    Return the value associated with a StopAsyncIteration instance (new ref).
    On 3.13+ uses .value; on earlier versions uses exc.args[0].  Returns
