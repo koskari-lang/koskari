@@ -27,10 +27,11 @@ pluggable input backend that supports both readline and prompt_toolkit.
 
 import asyncio
 import sys
+import traceback
 
 from argparse import ArgumentParser, REMAINDER
 from os.path import basename
-from traceback import format_exception, format_exception_only
+from traceback import format_exception_only
 
 
 __all__ = (
@@ -40,6 +41,7 @@ __all__ = (
     'run_file_async',
     'repl_async',
     'REPLCodeBoundary',
+    'format_exception_with_koskari_trace',
 )
 
 
@@ -104,6 +106,58 @@ REPL_INFRASTRUCTURE_MODULES = frozenset((
     'concurrent.futures',
     'concurrent.futures._base',
 ))
+
+
+def _render_koskari_dynchain(trace_data):
+    """
+    Render dynchain metadata attached to synthetic koskari native frames.
+
+    :param trace_data: iterable of dict-like frame metadata
+    :return: list[str] of traceback-formatted lines
+    """
+
+    if not isinstance(trace_data, (list, tuple)) or not trace_data:
+        return []
+
+    lines = ['  Koskari dynchain (native eval):\n']
+    for frame in trace_data:
+        if not isinstance(frame, dict):
+            continue
+
+        name = frame.get('name', '<anonymous>')
+        filename = frame.get('filename', '<unknown>')
+        line = frame.get('line', 0)
+        col = frame.get('col', 0)
+        pc = frame.get('pc', 0)
+        lines.append(f'    at {name} ({filename}:{line}:{col}) [pc={pc}]\n')
+
+    return lines
+
+
+def format_exception_with_koskari_trace(exc_type, exc_val, tb):
+    """
+    Format an exception traceback, interleaving koskari native dynchain data
+    after synthetic native frames that carry ``__koskari_trace__`` in globals.
+
+    Falls back to normal traceback formatting when no traceback is present.
+
+    :return: list[str], matching traceback.format_exception style
+    """
+
+    if tb is None:
+        return list(format_exception_only(exc_type, exc_val))
+
+    out = ['Traceback (most recent call last):\n']
+    extracted = traceback.extract_tb(tb)
+    walked = list(traceback.walk_tb(tb))
+
+    for summary, (frame, _lineno) in zip(extracted, walked):
+        out.extend(traceback.format_list([summary]))
+        trace_data = frame.f_globals.get('__koskari_trace__')
+        out.extend(_render_koskari_dynchain(trace_data))
+
+    out.extend(format_exception_only(exc_type, exc_val))
+    return out
 
 
 def _filter_infrastructure_tb(tb):
@@ -275,14 +329,14 @@ async def repl_async(mod, prompter=None, stdin=None, stdout=None, stderr=None):
                 sys.last_value = cause
                 sys.last_traceback = tb
                 if tb is not None:
-                    msg = ''.join(format_exception(type(cause), cause, tb))
+                    msg = ''.join(format_exception_with_koskari_trace(type(cause), cause, tb))
                 else:
                     msg = ''.join(format_exception_only(type(cause), cause))
             else:
                 sys.last_type = exc_type
                 sys.last_value = exc_val
                 sys.last_traceback = tb
-                msg = ''.join(format_exception(exc_type, exc_val, tb))
+                msg = ''.join(format_exception_with_koskari_trace(exc_type, exc_val, tb))
             print(msg, end='', file=stderr)
             stderr.flush()
 

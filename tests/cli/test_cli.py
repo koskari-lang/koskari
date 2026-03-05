@@ -20,9 +20,17 @@ import asyncio
 import io
 import os
 import sys
+import traceback
 import unittest
 
-from koskari.cli import main, option_parser, repl_async, run_file_async, REPLCodeBoundary
+from koskari.cli import (
+    main,
+    option_parser,
+    repl_async,
+    run_file_async,
+    REPLCodeBoundary,
+    format_exception_with_koskari_trace,
+)
 from koskari.importer.module import new_module
 
 
@@ -173,6 +181,48 @@ class TestREPLCodeBoundary(unittest.TestCase):
 
     def test_repl_code_boundary_exported(self):
         self.assertTrue(issubclass(REPLCodeBoundary, Exception))
+
+
+class TestKoskariTracebackFormatting(unittest.TestCase):
+
+    def test_formats_koskari_dynchain_from_synthetic_frame(self):
+        g = {
+            '__name__': 'koskari.native',
+            '__koskari_trace__': [
+                {
+                    'name': 'inner-fn',
+                    'filename': 'example.ki',
+                    'line': 12,
+                    'col': 3,
+                    'pc': 42,
+                },
+            ],
+        }
+
+        try:
+            exec('def boom():\n    1/0\nboom()\n', g, g)
+        except Exception:
+            exc_type, exc_val, tb = sys.exc_info()
+        else:
+            self.fail('expected an exception from synthetic frame test')
+
+        rendered = ''.join(format_exception_with_koskari_trace(exc_type, exc_val, tb))
+        self.assertIn('Traceback (most recent call last):', rendered)
+        self.assertIn('Koskari dynchain (native eval):', rendered)
+        self.assertIn('at inner-fn (example.ki:12:3) [pc=42]', rendered)
+        self.assertIn('ZeroDivisionError', rendered)
+
+    def test_falls_back_to_standard_format_without_special_frame(self):
+        try:
+            1 / 0
+        except Exception:
+            exc_type, exc_val, tb = sys.exc_info()
+        else:
+            self.fail('expected zero division')
+
+        rendered = ''.join(format_exception_with_koskari_trace(exc_type, exc_val, tb))
+        standard = ''.join(traceback.format_exception(exc_type, exc_val, tb))
+        self.assertEqual(standard, rendered)
 
 
 class TestMain(unittest.TestCase):
