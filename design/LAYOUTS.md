@@ -276,6 +276,91 @@ finally:
 **Tests:** `tests/reader/layouts/test_try.py`
 
 
+## layout/syntax-rules
+
+**Symbol:** `layout/syntax-rules`
+
+**Use-case:** Block syntax for the `syntax-rules` transformer within a
+`define-syntax` block. Converts indented pattern/template rule blocks into the
+canonical `(syntax-rules (LIT ...) ((PATTERN) TEMPLATE) ...)` form. Used as the
+inner block of `layout/define-syntax`.
+
+**Behaviour:** Accepts a literals list in the header (e.g. `[x]` or `(x y)`).
+Each indented rule block has a pattern in the header and a template in the
+body. Does not accept peers.
+
+**Syntax:**
+
+```
+syntax-rules [LIT ...]:
+  PATTERN1:
+    TEMPLATE1...
+  PATTERN2 ARG:
+    TEMPLATE2...
+```
+
+**Examples:**
+
+```scheme
+syntax-rules [x]:
+  do-something-with-x:
+    (print "no args" x)
+    x
+  do-something-with-x y:
+    (print "one arg" x y)
+    (+ x y)
+;; → (syntax-rules (x)
+;;     ((do-something-with-x) (compile/begin (print "no args" x) x))
+;;     ((do-something-with-x y) (compile/begin (print "one arg" x y) (+ x y))))
+```
+
+**Implementation:** `koskari/reader/layouts/define_syntax.layout_syntax_rules`
+
+
+## layout/define-syntax
+
+**Symbol:** `layout/define-syntax`
+
+**Use-case:** Block syntax for defining syntax transformers. Wraps a single
+`syntax-rules` block and lowers to `(compile/define-syntax NAME (syntax-rules ...))`.
+
+**Behaviour:** Expects exactly one body form: a `syntax-rules` form (typically
+produced by `layout/syntax-rules`). Produces `(compile/define-syntax NAME
+syntax-rules-form)`. Does not accept peers.
+
+**Syntax:**
+
+```
+define-syntax NAME:
+  syntax-rules [LIT ...]:
+    PATTERN1:
+      TEMPLATE1...
+    PATTERN2:
+      TEMPLATE2...
+```
+
+**Examples:**
+
+```scheme
+define-syntax do-something-with-x:
+  syntax-rules [x]:
+    do-something-with-x:
+      (print "x and no args" x)
+      x
+    do-something-with-x y:
+      (print "x and one arg" x y)
+      (+ x y)
+;; → (compile/define-syntax do-something-with-x
+;;     (syntax-rules (x)
+;;       ((do-something-with-x) (compile/begin (print "x and no args" x) x))
+;;       ((do-something-with-x y) (compile/begin (print "x and one arg" x y) (+ x y)))))
+```
+
+**Implementation:** `koskari/reader/layouts/define_syntax.layout_define_syntax`
+
+**Tests:** `tests/reader/layouts/test_define_syntax.py`
+
+
 ## Peers
 
 Some layouts declare **peer** block heads. After reading the main block's body,
