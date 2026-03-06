@@ -20,6 +20,7 @@ The koskari compiler. Converts source forms into bytecode fragments.
 :license: GNU General Public License v3
 """
 
+
 from contextlib import contextmanager
 from enum import auto, IntEnum
 

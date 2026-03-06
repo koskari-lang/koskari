@@ -14,3 +14,4 @@ This directory documents the runtime API of Koskari, including types, functions,
 - **NAMESPACE-AND-REFS.md**: Namespace, Ref types, and related special forms
 - **import-system.md**: Import system and module resolution _(not yet written; import system design is pending)_
 - **lexer.md**: Lexer subpackage for lexical-only parsing, prompt_toolkit and LSP integration
+- **pattern-matching.md**: Pattern matching and template expansion API for special-form handlers and future define-syntax; tagged-tuple representation, Python and Koskari consumption
