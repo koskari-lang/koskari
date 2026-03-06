@@ -63,14 +63,12 @@ def special_let(
 
     if name:
         return cons(_sym_call,
-            cons(_sym_lambda,
-                name,
-                cons(*args, nil),
-                body,
-            ),
-            *vals,
-            nil,
-        )
+                    cons(_sym_lambda,
+                         name,
+                         cons(*args, nil),
+                         body),
+                    *vals,
+                    nil)
 
     else:
         fragment = compiler.fragment(called_by)
