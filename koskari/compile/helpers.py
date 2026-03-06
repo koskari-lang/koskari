@@ -10,13 +10,14 @@ parsing; all helpers raise SpecialError or ParametersError with optional source 
 """
 
 
-from typing import Callable, Union, Dict, Tuple
+from typing import Callable, Union, Dict, Tuple, List
 
 from ..lib import car, cons, keyword, nil, OpCode, pair, symbol
 from ..types import is_keyword, is_pair, is_proper, is_symbol, unpack
 
 from .compiler import Compiler, Special, ByteCodeFragment
 from ..exceptions import ParametersError, SpecialError
+from ..matcher import Matcher
 
 
 __all__ = (
@@ -50,8 +51,20 @@ SpecialFn = Callable[
 SPECIALS: Dict[symbol, SpecialFn] = {}
 
 
+def special_forms(
+        patterns: List[Matcher]) -> Callable[[Special], Special]:
+    """
+    Purely informational decorator that adds patterns to a special form
+    """
+
+    def decorator(inst: Special) -> Special:
+        inst.forms.extend(patterns)
+        return inst
+    return decorator
+
+
 def special_form(
-        pattern: Tuple[symbol, ...]) -> Callable[[Special], Special]:
+        pattern: Matcher) -> Callable[[Special], Special]:
     """
     Purely informational decorator that adds a pattern to a special form
     """
@@ -59,7 +72,6 @@ def special_form(
     def decorator(inst: Special) -> Special:
         inst.forms.append(pattern)
         return inst
-
     return decorator
 
 

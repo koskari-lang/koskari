@@ -23,12 +23,23 @@ Special form handler for compile/let.
 
 
 from ...lib import cons, nil, pair, symbol
-from ...types import is_pair
+from ...matcher import BIND, BIND_SYM, BIND_PAIR, MATCH, REST, match
 from ..compiler import Compiler
 from ...exceptions import SpecialError
-from ..helpers import gather_bindings, helper_begin, is_symbolish, pycons, special
+from ..helpers import gather_bindings, helper_begin, special, special_forms
 
 
+_sym_call = symbol('compile/call')
+_sym_lambda = symbol('compile/lambda')
+
+
+_LET_PATTERNS = [
+    MATCH(BIND_SYM("name"), BIND_PAIR("bindings"), REST("body")),
+    MATCH(BIND_PAIR("bindings"), REST("body")),
+]
+
+
+@special_forms(_LET_PATTERNS)
 @special(symbol("compile/let"))
 def special_let(
         compiler: Compiler,
@@ -41,36 +52,33 @@ def special_let(
     """
 
     called_by, rest = source
-    if rest is nil or not is_pair(rest):
+
+    matched = match(rest, _LET_PATTERNS)
+    if matched is None:
         raise SpecialError("let requires bindings and body", source)
 
-    bindings, body = rest
+    name = matched.get("name", None)
+    bindings = matched["bindings"]
+    body = matched["body"]
 
-    # TODO: adopt ceval-style named let: bind values as keyword defaults so
-    # (let foo [[a 1] [b 2]] body) -> ((lambda foo [a: 1 b: 2] body)); allows
-    # re-invocation with partial replacement.
-    # Named let: (let NAME [[var val] ...] BODY...) -> ((lambda NAME [var ...] BODY) val ...)
-    if is_symbolish(bindings):
-        named = bindings
-        bindings, body = body
-
-        args, vals = gather_bindings(bindings, source)
-
-        # Build (compile/lambda NAME [formal...] BODY...) using list_star so body_forms
-        # is the tail; then build (compile/call LAMBDA val...) using variadic cons.
-
-        src = (symbol('compile/call'),
-               (symbol('compile/lambda'), named, cons(*args, nil), *body.unpack()),
-               *vals)
-        return pycons(src)
-
-    # Unnamed let: (let [[var val] ...] BODY...) — push a child namespace, bind
-    # names to compiled values, compile body in that scope, pop.
     args, vals = gather_bindings(bindings, source)
-    fragment = compiler.fragment(called_by)
-    fragment.position_of(source)
-    with fragment.child_namespace(called_by, args, vals) as frag:
-        helper_begin(frag, body, tc)
+
+    if name:
+        return cons(_sym_call,
+            cons(_sym_lambda,
+                name,
+                cons(*args, nil),
+                body,
+            ),
+            *vals,
+            nil,
+        )
+
+    else:
+        fragment = compiler.fragment(called_by)
+        fragment.position_of(source)
+        with fragment.child_namespace(called_by, args, vals) as frag:
+            helper_begin(frag, body, tc)
 
     return fragment
 

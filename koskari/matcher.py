@@ -35,6 +35,8 @@ __all__ = (
 
     'ANY_ORDER',
     'BIND',
+    'BIND_PAIR',
+    'BIND_SYM',
     'LITERAL',
     'LITERAL_KW',
     'LITERAL_SYM',
@@ -84,6 +86,8 @@ class Matcher(Protocol):
 _tag_match = symbol('matcher/match')
 _tag_literal = symbol('matcher/literal')
 _tag_bind = symbol('matcher/bind')
+_tag_bind_sym = symbol('matcher/bind-sym')
+_tag_bind_pair = symbol('matcher/bind-pair')
 _tag_rest = symbol('matcher/rest')
 _tag_pair = symbol('matcher/pair')
 _tag_opt = symbol('matcher/opt')
@@ -191,6 +195,70 @@ class _BindMatcher:
 
     def to_tuple(self):
         return (_tag_bind, symbol(self._key) if isinstance(self.slot, str) else self.slot)
+
+
+@matcher(_tag_bind_sym)
+class _BindSymMatcher:
+    """
+    Capture one element only when it is a symbol
+    """
+
+    def __init__(self, slot):
+        self.slot = slot
+        self._key = _slot_key(slot)
+
+
+    @classmethod
+    def from_payload(cls, payload, deserialize):
+        if len(payload) != 1:
+            raise ValueError('bind-sym expects 1 payload, got %d' % len(payload))
+        return cls(payload[0])
+
+
+    def match(self, source, literals, result):
+        if source is nil:
+            return (None, False)
+        head, tail = car(source), cdr(source)
+        if not is_symbol(head):
+            return (None, False)
+        result[self._key] = head
+        return (tail, True)
+
+
+    def to_tuple(self):
+        return (_tag_bind_sym, symbol(self._key) if isinstance(self.slot, str) else self.slot)
+
+
+@matcher(_tag_bind_pair)
+class _BindPairMatcher:
+    """
+    Capture one element only when it is a pair
+    """
+
+    def __init__(self, slot):
+        self.slot = slot
+        self._key = _slot_key(slot)
+
+
+    @classmethod
+    def from_payload(cls, payload, deserialize):
+        if len(payload) != 1:
+            raise ValueError('bind-pair expects 1 payload, got %d' % len(payload))
+        return cls(payload[0])
+
+
+    def match(self, source, literals, result):
+        if source is nil:
+            return (None, False)
+        head, tail = car(source), cdr(source)
+        if not is_pair(head):
+            return (None, False)
+        result[self._key] = head
+        return (tail, True)
+
+
+    def to_tuple(self):
+        return (_tag_bind_pair, symbol(self._key) if isinstance(self.slot, str) else self.slot)
 
 
 @matcher(_tag_rest)
@@ -455,6 +523,22 @@ def BIND(slot):
     """
 
     return _BindMatcher(slot)
+
+
+def BIND_SYM(slot):
+    """
+    Capture one element into slot only when it is a symbol
+    """
+
+    return _BindSymMatcher(slot)
+
+
+def BIND_PAIR(slot):
+    """
+    Capture one element into slot only when it is a pair
+    """
+
+    return _BindPairMatcher(slot)
 
 
 def REST(slot):

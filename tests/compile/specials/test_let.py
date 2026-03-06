@@ -16,6 +16,7 @@ Tests for koskari.compile compile/let special form.
 """
 
 
+from koskari.dis import dis
 from . import SpecialsTestCase
 
 
@@ -24,6 +25,9 @@ class TestLetSpecial(SpecialsTestCase):
     def test_let_single_binding(self):
         src_str = "(compile/let [[x 42]] x)"
         expr, mod = self.compile_expr(src_str)
+
+        dis(expr.code)
+
         result = expr().run()
         self.assertEqual(42, result)
 
@@ -34,6 +38,9 @@ class TestLetSpecial(SpecialsTestCase):
           (compile/call + a b))
         """
         expr, mod = self.compile_expr(src_str, **{"+": lambda x, y: x + y})
+
+        dis(expr.code)
+
         result = expr().run()
         self.assertEqual(3, result)
 
@@ -45,6 +52,9 @@ class TestLetSpecial(SpecialsTestCase):
             (compile/call * x 2)))
         """
         expr, mod = self.compile_expr(src_str, **{"*": lambda x, y: x * y})
+
+        dis(expr.code)
+
         result = expr().run()
         self.assertEqual(20, result)
 
