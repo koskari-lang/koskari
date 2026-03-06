@@ -13,6 +13,28 @@ All pattern and template structures use **tagged tuples**: every element is `(ta
 
 ---
 
+## Implementation (Current)
+
+The matcher lives in **koskari.matcher**. Builder functions and the `match()` entry point are imported from there:
+
+```python
+from koskari.matcher import MATCH, BIND, BIND_SYM, BIND_PAIR, REST, PAIR, OPT, ANY_ORDER
+from koskari.matcher import LITERAL, LITERAL_KW, LITERAL_SYM
+from koskari.matcher import match, from_tuple, match_tuple
+```
+
+A compile-specific matcher, **BIND_BINDINGS**, lives in **koskari.compile.helpers** (it depends on `gather_bindings`):
+
+```python
+from koskari.compile.helpers import BIND_BINDINGS
+```
+
+Matcher classes are registered via the `@matcher(tag)` decorator into a `MATCHERS` dict. Tagged tuples are deserialized via `from_tuple(tup)`, which looks up the tag in `MATCHERS` and calls the class `from_payload()`.
+
+**Current usage**: The let form and `helper_binding` use the matcher. See `koskari/compile/specials/let.py` and `koskari/compile/helpers.py`.
+
+---
+
 ## Tagged Tuple Representation
 
 ### Canonical Form
@@ -23,46 +45,75 @@ Every pattern or template element is a tagged tuple:
 (tag, ...payload)
 ```
 
-- **Tag**: a symbol (e.g. `symbol("match")`, `symbol("literal")`, `symbol("bind")`).
+- **Tag**: a symbol in the `matcher/` namespace (e.g. `symbol("matcher/match")`, `symbol("matcher/literal")`).
 - **Payload**: koskari values (symbols, keywords, pairs, nested tagged tuples).
-
-Tags use a reserved symbol namespace (e.g. `symbol("pattern/match")`) or a prefix to avoid collision with user binding names.
 
 ### Round-Trip
 
-- **Python API**: Builder objects (e.g. `MATCH(...)`, `BIND("x")`) with `to_tuple()` → tagged tuple, and `from_tuple(t)` → restore object (or interpret directly).
-- **Koskari**: Patterns stored as constant data; the matcher/expander interprets tagged tuples directly.
+- **Python API**: Builder objects (e.g. `MATCH(...)`, `BIND("x")`) with `to_tuple()` → tagged tuple, and `from_tuple(t)` → restore object via `MATCHERS` registry.
+- **Koskari**: Patterns stored as constant data; the matcher interprets tagged tuples via `from_tuple()`.
 
 ---
 
 ## Pattern Matching
 
-### Tags
+### Matcher Protocol
+
+Implementations provide:
+
+```python
+def match(self, source, literals, result) -> Tuple[Optional[Any], bool]:
+    """On success: mutate result with bindings, return (remainder, True). On failure: (None, False)."""
+```
+
+### Tags (koskari.matcher)
 
 | Tag | Payload | Meaning |
 |-----|---------|---------|
-| `match` | elem, elem, ... | Top-level sequence; elements must appear in order |
-| `literal` | value | Match this value exactly (keyword or symbol) |
-| `bind` | slot | Capture one element into binding `slot` |
-| `rest` | slot | Capture remainder of list into `slot` |
-| `pair` | car_spec, cdr_spec | Element must be pair; car matches car_spec, cdr bound per cdr_spec |
-| `opt` | elem | Optionally match elem (succeed if absent) |
-| `any-order` | elem, elem, ... | All elements must match, in any order |
+| `matcher/match` | elem, elem, ... | Top-level sequence; elements must appear in order |
+| `matcher/literal` | value | Match this value exactly (keyword or symbol) |
+| `matcher/bind` | slot | Capture one element into binding `slot` |
+| `matcher/bind-sym` | slot | Capture one element into `slot` only when it is a symbol |
+| `matcher/bind-pair` | slot | Capture one element into `slot` only when it is a pair |
+| `matcher/rest` | slot | Capture remainder of list into `slot` |
+| `matcher/pair` | car_spec, cdr_spec | Element must be pair; car matches car_spec, cdr bound per cdr_spec |
+| `matcher/opt` | elem | Optionally match elem (succeed if absent) |
+| `matcher/any-order` | elem, elem, ... | All elements must match, in any order |
+
+### Tags (koskari.compile.helpers)
+
+| Tag | Payload | Meaning |
+|-----|---------|---------|
+| `matcher/bind-bindings` | slot | Element must be a list; apply `gather_bindings` and bind `(names, values)` tuple to `slot` |
 
 ### Helpers
 
-- **LITERAL_KW(str)**: Serializes to `(literal, keyword(str))`.
-- **LITERAL_SYM(str)**: Serializes to `(literal, symbol(str))`.
+- **LITERAL_KW(str)**: Returns `LITERAL(keyword(str))`.
+- **LITERAL_SYM(str)**: Returns `LITERAL(symbol(str))`.
 
 Keywords in the source are matched literally; only symbols are ambiguous (literal vs. binding). The matcher accepts a `literals` set of symbols to treat as literal; all others are binding slot names.
 
 ### Clause Forms
 
-- **Keyword clause**: `(pair, (literal, keyword("before:")), (bind, symbol("before_body")))` — match a pair whose car is the keyword, bind cdr to `before_body`.
-- **Positional**: `(bind, symbol("body"))` — capture one element.
-- **Rest**: `(rest, symbol("tail"))` — capture remainder of list.
+- **Keyword clause**: `PAIR(LITERAL_KW("before:"), BIND("before_body"))` — match a pair whose car is the keyword, bind cdr to `before_body`.
+- **Positional**: `BIND("body")` — capture one element.
+- **Rest**: `REST("tail")` — capture remainder of list.
+- **Type-constrained**: `BIND_SYM("name")` for symbols, `BIND_PAIR("bindings")` for pairs, `BIND_BINDINGS("bindings")` for binding lists (pre-parsed).
 
-### Example: dyn-wind
+### Example: let form (implemented)
+
+The let special uses `BIND_SYM` and `BIND_BINDINGS`:
+
+```python
+_LET_PATTERNS = [
+    MATCH(BIND_SYM("name"), BIND_BINDINGS("bindings"), REST("body")),   # named let
+    MATCH(BIND_BINDINGS("bindings"), REST("body")),                      # unnamed let
+]
+matched = match(rest, _LET_PATTERNS)
+# matched["bindings"] is (args, vals) from gather_bindings; no manual call needed
+```
+
+### Example: dyn-wind (proposed)
 
 ```python
 # Python API
@@ -87,11 +138,11 @@ PATTERNS = [
 Serialized (tagged tuple):
 
 ```python
-(symbol("match"),
- (symbol("any-order"),
-  (symbol("pair"), (symbol("literal"), keyword("before:")), (symbol("bind"), symbol("before_body"))),
-  (symbol("pair"), (symbol("literal"), keyword("body:")), (symbol("bind"), symbol("body"))),
-  (symbol("pair"), (symbol("literal"), keyword("after:")), (symbol("bind"), symbol("after_body")))),
+(symbol("matcher/match"),
+ (symbol("matcher/any-order"),
+  (symbol("matcher/pair"), (symbol("matcher/literal"), keyword("before:")), (symbol("matcher/bind"), symbol("before_body"))),
+  (symbol("matcher/pair"), (symbol("matcher/literal"), keyword("body:")), (symbol("matcher/bind"), symbol("body"))),
+  (symbol("matcher/pair"), (symbol("matcher/literal"), keyword("after:")), (symbol("matcher/bind"), symbol("after_body")))),
 )
 ```
 
@@ -143,12 +194,13 @@ Serialized:
 
 ### Builder Objects
 
-Construct patterns and templates ergonomically:
+Construct patterns ergonomically:
 
 ```python
-from koskari.compile.patterns import MATCH, PAIR, BIND, REST, OPT, ANY_ORDER
-from koskari.compile.patterns import LITERAL_KW, LITERAL_SYM
-from koskari.compile.patterns import REF, CONS, LITERAL, GEN
+from koskari.matcher import MATCH, PAIR, BIND, BIND_SYM, BIND_PAIR, REST, OPT, ANY_ORDER
+from koskari.matcher import LITERAL_KW, LITERAL_SYM, LITERAL
+from koskari.matcher import match, from_tuple, match_tuple
+from koskari.compile.helpers import BIND_BINDINGS
 
 # Build
 pattern = MATCH(
@@ -160,10 +212,16 @@ pattern = MATCH(
 # Serialize
 tup = pattern.to_tuple()
 
-# Match (from tuple or object)
-bindings = match(source, tup, literals=set())
+# Deserialize (for tagged tuples from koskari or stored forms)
+matcher_obj = from_tuple(tup)
+
+# Match (accepts builder objects, tagged tuples, or lists of patterns)
+bindings = match(source, pattern, literals=set())
 if bindings is None:
     raise SpecialError("expected before: and/or after: clauses", source)
+
+# Convenience: deserialize and match in one step
+bindings = match_tuple(source, tup, literals=set())
 ```
 
 ### Match Function
@@ -175,18 +233,42 @@ def match(source, patterns, literals=None):
     Returns dict of bindings on first match, else None.
 
     :param source: pair (proper list) or iterable of elements
-    :param patterns: single tagged tuple or list of patterns
-    :param literals: set of symbols to match literally (not as binding slots)
+    :param patterns: single matcher, tagged tuple, or sequence of patterns
+    :param literals: set/frozenset of symbols to match literally; default empty
     :return: dict mapping slot names (str) to values, or None
     """
 ```
 
-### Expand Function
+### from_tuple and match_tuple
+
+```python
+def from_tuple(tup):
+    """
+    Deserialize tagged tuple into matcher object. Dispatches via MATCHERS registry.
+
+    :param tup: tagged tuple (tag, ...payload)
+    :return: matcher object with match() and to_tuple()
+    :raises ValueError: when tup is not a valid matcher tuple
+    """
+
+def match_tuple(source, tup, literals=None):
+    """
+    Deserialize tagged tuple to matcher, then match. Convenience for from_tuple + match.
+
+    :param source: pair or iterable
+    :param tup: tagged tuple pattern
+    :param literals: set/frozenset; default empty
+    :return: dict of bindings, or None
+    """
+```
+
+### Expand Function (Future)
 
 ```python
 def expand(template, bindings, gensyms=None):
     """
     Walk template (tagged tuple), substitute REF/GEN, emit result.
+    Not yet implemented.
 
     :param template: tagged tuple or builder object
     :param bindings: dict from match
@@ -242,9 +324,10 @@ These expand to the same tagged tuples the matcher expects.
 ### Current Specials
 
 1. Compiler dispatches to `compile_special(fragment, comp, source_obj, tc)`.
-2. Special handler receives `source_obj` (the full form, e.g. `(compile/dyn-wind ...)`).
-3. **Today**: Handler manually unpacks, checks keywords, validates structure.
-4. **With patterns**: Handler calls `match(tail, PATTERNS, literals)`; on success, uses bindings to compile.
+2. Special handler receives `source_obj` (the full form, e.g. `(compile/let ...)`).
+3. **With patterns**: Handler calls `match(tail, PATTERNS, literals)`; on success, uses bindings to compile.
+
+**Current adopters**: The let form (`compile/specials/let.py`) and `helper_binding` (`compile/helpers.py`) use the matcher. Others (e.g. dyn-wind) still use manual unpacking.
 
 ### Future Macros
 
@@ -264,9 +347,13 @@ These expand to the same tagged tuples the matcher expects.
 
 ## Implementation Notes
 
+### MATCHERS Registry
+
+Matcher classes register via `@matcher(tag)`. The `from_tuple()` function looks up the tag in `MATCHERS` and calls `cls.from_payload(payload, from_tuple)`. New matcher types can be added by defining a class with `match()`, `from_payload()`, and `to_tuple()`, then registering with the decorator. `BIND_BINDINGS` lives in `compile/helpers` but registers into `MATCHERS` so tagged-tuple deserialization works.
+
 ### Const-Pool Friendliness
 
-- Tags are symbols.
+- Tags are symbols in the `matcher/` namespace.
 - Payloads are keywords, symbols, pairs, nil.
 - Patterns can live in Python module scope (created at import) or in koskari constant pools.
 
