@@ -17,6 +17,9 @@ koskari.lexer.lsp.handlers
 LSP request/notification handlers for diagnostics, hover, and completion.
 """
 
+# This file was entirely generated via prompt, as the basis for the
+# prompt_toolkit LSP enhancements.
+
 
 from lsprotocol.types import (
     CompletionItem,

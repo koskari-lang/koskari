@@ -17,6 +17,9 @@ koskari.lexer.prompt_toolkit.key_bindings
 Key bindings for Koskari REPL: Tab inserts 2-space indent when at line start.
 """
 
+# This file was entirely generated via prompt, as the basis for the
+# prompt_toolkit REPL enhancements.
+
 
 from prompt_toolkit.filters import Condition
 from prompt_toolkit.key_binding.key_bindings import KeyBindings

@@ -17,6 +17,9 @@ koskari.lexer.lsp.server
 LSP server entry point and registration.
 """
 
+# This file was entirely generated via prompt, as the basis for the
+# prompt_toolkit LSP enhancements.
+
 
 from lsprotocol.types import (
     TEXT_DOCUMENT_COMPLETION,

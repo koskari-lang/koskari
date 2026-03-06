@@ -24,6 +24,9 @@ for syntax highlighting and completion without compilation.
 :ai-assistant: Claude Opus 4.5 via Cursor
 """
 
+# This file was entirely generated via prompt, as the basis for the
+# prompt_toolkit REPL enhancements.
+
 
 from collections import namedtuple
 from re import compile as regex

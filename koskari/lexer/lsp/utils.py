@@ -17,6 +17,9 @@ koskari.lexer.lsp.utils
 Position conversion and document utilities for LSP handlers.
 """
 
+# This file was entirely generated via prompt, as the basis for the
+# prompt_toolkit LSP enhancements.
+
 
 def koskari_to_lsp_range(location, line_content=None):
     """

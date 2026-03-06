@@ -24,6 +24,9 @@ for editor integration (syntax highlighting, completion).
 :ai-assistant: Claude Opus 4.5 via Cursor
 """
 
+# This file was entirely generated via prompt, as the basis for the
+# prompt_toolkit REPL enhancements.
+
 
 from .parser import default_layout_reader, parse, parse_all
 from .tokens import (
