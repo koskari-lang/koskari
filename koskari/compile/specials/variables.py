@@ -201,12 +201,15 @@ def special_define_syntax(compiler, source, tc=False):
         raise SpecialError(str(ex), source) from ex
 
     tagged = transformer.to_tuple()
-    build_call = cons(symbol("build-syntax-rules"), name, tagged, nil)
+    build_call = cons(symbol("build-syntax-rules"), str(name), tagged, nil)
 
     frag = compiler.fragment(called_by)
+    frag.declare_var(str(name))
+
     frag.merge(compiler.full_compile(build_call))
-    frag.instruction(OpCode.KOS_OP_VAR_STORE, "compile/" + str(name))
+    frag.instruction(OpCode.KOS_OP_VAR_STORE, str(name))
     frag.instruction(OpCode.KOS_OP_CONST, None)
+
     return frag
 
 

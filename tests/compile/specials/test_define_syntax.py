@@ -2,13 +2,25 @@
 # it under the terms of the GNU General Public License as published by
 # the Free Software Foundation; either version 3 of the License, or
 # (at your option) any later version.
+#
+# This library is distributed in the hope that it will be useful, but
+# WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
+# General Public License for more details.
+#
+# You should have received a copy of the GNU General Public License
+# along with this library; if not, see <http://www.gnu.org/licenses/>.
 
 """
-Tests for compile/define-syntax with syntax-rules transformers.
+Tests for koskari.compile define-syntax special form.
+
+:author: Christopher O'Brien <obriencj@preoccupied.net>
+:license: GNU General Public License v3
 """
 
 
-from koskari.compile.syntax import SyntaxRulesTransformer
+from koskari.compile.syntax import SyntaxRulesTransformer, build_syntax
+from koskari.dis import dis
 from koskari.lib import OpCode
 
 from . import SpecialsTestCase
@@ -16,49 +28,81 @@ from . import SpecialsTestCase
 
 class TestDefineSyntax(SpecialsTestCase):
 
+    def compile_expr(self, src_str, **defns):
+        defns["build-syntax-rules"] = build_syntax
+        return super().compile_expr(src_str, **defns)
+
+
     def test_define_syntax_unless_with_literal_else(self):
         src_str = """
-        (compile/begin
-          (define-syntax unless
-            (syntax-rules (else:)
-              ((unless test body ...)
-               (if test None (compile/begin body ...)))
-              ((unless test body ... else: alt)
-               (if test alt (compile/begin body ...)))))
-          (unless True 10)
-          (unless False 40 else: 9))
+        (compile/define-syntax unless
+          (syntax-rules (else:)
+            ((unless test body ... else: alt)
+             (if test alt (compile/begin body ...)))
+            ((unless test body ...)
+             (if test None (compile/begin body ...)))))
         """
         expr, mod = self.compile_expr(src_str)
+        dis(expr.code)
+
+        expr().run()
+        defn = {"compile/unless": vars(mod)["unless"]}
+
+        src_str = """
+        (compile/begin
+          (unless True 10)
+          (unless False 40))
+        """
+        expr, mod = self.compile_expr(src_str, **defn)
+        dis(expr.code)
+
         result = expr().run()
         self.assertEqual(40, result)
 
+
     def test_hygienic_renaming_for_introduced_symbols(self):
         src_str = """
-        (compile/begin
-          (compile/define-syntax use-temp
-            (syntax-rules ()
-              ((use-temp x)
-               ((compile/lambda []
-                  (define t 99)
-                  (add t x))))))
+        (compile/define-syntax use-temp
+          (syntax-rules ()
+            ((use-temp x)
+              (let [[t 99]]
+                (+ t x)))))
+        """
+        expr, mod = self.compile_expr(src_str)
+        dis(expr.code)
+
+        expr().run()
+        defn = {"compile/use-temp": vars(mod)["use-temp"]}
+
+        src_str = """
+        (begin
           (define t 2)
           (use-temp 5)
           t)
         """
-        expr, mod = self.compile_expr(src_str, add=lambda a, b: a + b)
+        expr, mod = self.compile_expr(src_str, **defn)
+        dis(expr.code)
+
         result = expr().run()
         self.assertEqual(2, result)
 
+
     def test_rule_without_match_raises(self):
         src_str = """
-        (compile/begin
-          (compile/define-syntax only-one
-            (syntax-rules ()
-              ((only-one x) x)))
-          (only-one 1 2))
+        (compile/define-syntax only-one
+          (syntax-rules ()
+            ((only-one x) x)))
+        """
+        expr, mod = self.compile_expr(src_str)
+        expr().run()
+        defn = {"compile/only-one": vars(mod)["only-one"]}
+
+        src_str = """
+        (only-one 1 2)
         """
         with self.assertRaises(Exception):
-            self.compile_expr(src_str)
+            self.compile_expr(src_str, **defn)
+
 
     def test_define_syntax_uses_tagged_tuple_constant(self):
         code = self.compile_to_code(

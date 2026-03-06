@@ -8,7 +8,7 @@ Data-driven syntax-rule transformer objects used by define-syntax.
 from dataclasses import dataclass
 
 from ..exceptions import CompilerError
-from ..lib import car, cdr, cons, keyword, nil, symbol
+from ..lib import car, cdr, cons, nil, symbol
 from ..types import is_pair, is_proper, is_symbol, unpack
 
 
@@ -96,6 +96,110 @@ def _collect_symbols(expr, out):
     if is_pair(expr):
         for elem in unpack(expr):
             _collect_symbols(elem, out)
+
+
+def _form_head(expr):
+    """
+    Return the base name of a form (let, lambda, etc.) for binding detection.
+    Handles both bare and compile/-prefixed symbols.
+    """
+    if not is_symbol(expr):
+        return None
+    s = str(expr)
+    if s.startswith("compile/"):
+        return s[8:]
+    return s
+
+
+def _collect_bindings_from_list(bindings_list, out, recurse):
+    """
+    Extract binding names from a let-style bindings list ((VAR VAL) ...).
+    Only handles (SYM EXPR) pairs; (EXPR as: SYM) is deferred.
+    recurse is called on each VAL for nested binding forms.
+    """
+    if not is_pair(bindings_list):
+        return
+    for elem in unpack(bindings_list):
+        if is_pair(elem):
+            var = car(elem)
+            val_tail = cdr(elem)
+            if is_pair(val_tail):
+                val = car(val_tail)
+                if is_symbol(var):
+                    out.add(var)
+                out |= recurse(val)
+
+
+def _collect_formals_symbols(args, out):
+    """
+    Extract parameter symbols from lambda formals (list or rest symbol).
+    """
+    if is_symbol(args):
+        out.add(args)
+        return
+    if is_pair(args):
+        for elem in unpack(args):
+            if is_symbol(elem):
+                out.add(elem)
+
+
+def _collect_binding_symbols(template):
+    """
+    Walk template and return set of symbols in binding position.
+    Recognizes let, lambda, let/cc, capture/cc (bare and compile/ prefixed).
+    """
+    out = set()
+    if not is_pair(template):
+        return out
+    items = list(unpack(template))
+    if not items:
+        return out
+    head = items[0]
+    base = _form_head(head)
+    rest = items[1:]
+    if not rest:
+        return out
+
+    if base == "let":
+        if len(rest) >= 3 and is_symbol(rest[0]):
+            name, bindings, body = rest[0], rest[1], rest[2]
+            out.add(name)
+            _collect_bindings_from_list(bindings, out, _collect_binding_symbols)
+            out |= _collect_binding_symbols(body)
+            for r in rest[3:]:
+                out |= _collect_binding_symbols(r)
+        else:
+            bindings, body = rest[0], rest[1]
+            _collect_bindings_from_list(bindings, out, _collect_binding_symbols)
+            out |= _collect_binding_symbols(body)
+            for r in rest[2:]:
+                out |= _collect_binding_symbols(r)
+
+    elif base == "lambda":
+        if len(rest) >= 3 and is_symbol(rest[0]):
+            name, formals, body = rest[0], rest[1], rest[2]
+            out.add(name)
+            _collect_formals_symbols(formals, out)
+            out |= _collect_binding_symbols(body)
+            for r in rest[3:]:
+                out |= _collect_binding_symbols(r)
+        else:
+            formals, body = rest[0], rest[1]
+            _collect_formals_symbols(formals, out)
+            out |= _collect_binding_symbols(body)
+            for r in rest[2:]:
+                out |= _collect_binding_symbols(r)
+
+    elif base in ("let/cc", "capture/cc") and len(rest) >= 1 and is_symbol(rest[0]):
+        out.add(rest[0])
+        for r in rest[1:]:
+            out |= _collect_binding_symbols(r)
+
+    else:
+        for elem in rest:
+            out |= _collect_binding_symbols(elem)
+
+    return out
 
 
 def _match_pattern(pattern, expr, literals):
@@ -188,7 +292,7 @@ def _repeat_count(template, bindings):
     return next(iter(counts))
 
 
-def _expand_template(template, bindings, literals, compiler, introduced, index=None):
+def _expand_template(template, bindings, binding_symbols, compiler, introduced, index=None):
     if is_symbol(template):
         if template in bindings:
             val = bindings[template]
@@ -201,12 +305,12 @@ def _expand_template(template, bindings, literals, compiler, introduced, index=N
         if template is _ellipsis:
             return template
 
-        if template in literals or str(template).startswith("compile/"):
-            return template
+        if template in binding_symbols:
+            if template not in introduced:
+                introduced[template] = symbol(compiler.gen_label("syntax_%s" % str(template)))
+            return introduced[template]
 
-        if template not in introduced:
-            introduced[template] = symbol(compiler.gen_label("syntax_%s" % str(template)))
-        return introduced[template]
+        return template
 
     if not is_pair(template):
         return template
@@ -218,13 +322,13 @@ def _expand_template(template, bindings, literals, compiler, introduced, index=N
         elem = items[i]
         rep = (i + 1 < len(items) and items[i + 1] is _ellipsis)
         if not rep:
-            out.append(_expand_template(elem, bindings, literals, compiler, introduced, index=index))
+            out.append(_expand_template(elem, bindings, binding_symbols, compiler, introduced, index=index))
             i += 1
             continue
 
         count = _repeat_count(elem, bindings)
         for rep_i in range(count):
-            out.append(_expand_template(elem, bindings, literals, compiler, introduced, index=rep_i))
+            out.append(_expand_template(elem, bindings, binding_symbols, compiler, introduced, index=rep_i))
         i += 2
 
     return _from_list(out)
@@ -279,11 +383,12 @@ class SyntaxRulesTransformer:
             if bindings is None:
                 continue
 
+            binding_symbols = _collect_binding_symbols(rule.template)
             introduced = {}
             return _expand_template(
                 rule.template,
                 bindings,
-                self.literals,
+                binding_symbols,
                 compiler,
                 introduced)
 
@@ -317,6 +422,8 @@ def build_syntax_rules_transformer(name, spec):
 
     literals_expr, rules_expr = tail
     literals = frozenset(_to_list(literals_expr))
+    # Syntax name is implicitly a literal for pattern matching
+    literals = literals | {name}
     rules = []
 
     if rules_expr is nil:
