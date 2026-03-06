@@ -102,7 +102,11 @@ def handle_did_change(ls, params):
 
 
 def _get_uri(text_document):
-    return getattr(text_document, 'uri', text_document.get('uri'))
+    if hasattr(text_document, 'uri'):
+        return text_document.uri
+    if isinstance(text_document, dict):
+        return text_document.get('uri')
+    return None
 
 
 def handle_completion(ls, params):
