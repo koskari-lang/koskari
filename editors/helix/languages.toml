@@ -1,0 +1,26 @@
+# Koskari language and LSP configuration for Helix.
+#
+# Merge these sections into your Helix languages.toml:
+#   - ~/.config/helix/languages.toml (user config)
+#   - or .helix/languages.toml (project-local)
+#
+# Prerequisites:
+#   - koskari with LSP: pip install -e ".[lsp]" (koskari-lsp in PATH)
+#   - tree-sitter grammar: see editors/helix/README.md for build steps
+
+[language-server.koskari-lsp]
+command = "koskari-lsp"
+
+[[language]]
+name = "koskari"
+scope = "source.koskari"
+file-types = ["ki"]
+comment-tokens = ";"
+indent = { tab-width = 4, unit = "    " }
+language-servers = ["koskari-lsp"]
+grammar = "koskari"
+
+[[grammar]]
+name = "koskari"
+# Use absolute path; e.g. source = { path = "/path/to/sibilant-ng/editors/helix/tree-sitter-koskari" }
+source = { path = "editors/helix/tree-sitter-koskari" }

@@ -43,7 +43,7 @@ from re import UNICODE, VERBOSE
 from re import compile as regex
 
 from ..exceptions import FormatStringSyntaxError, ReaderSyntaxError
-from ..types import (BaseSourceStream, Module, cons, is_pair, is_symbol,
+from ..types import (BaseSourceStream, Module, cons, is_pair,
                      keyword, nil, setcdr, symbol, unpack)
 from .layouts import LayoutHandler
 

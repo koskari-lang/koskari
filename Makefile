@@ -73,11 +73,6 @@ test: handlers  ## Run tests on current Python version via tox
 	@echo "Running tests..."
 	@tox -qe py
 
-test-all:  ## Run tests on all supported Python versions via tox
-	@$(call checkfor,tox)
-	@echo "Running tests on all Python versions..."
-	@tox -qe py39,py310,py311,py312,py313,py314
-
 tox: handlers  ## Run full tox suite (tests + lint + typecheck)
 	@$(call checkfor,tox)
 	@echo "Running full tox suite..."
@@ -196,7 +191,40 @@ version:  ## Show project version
 python:  ## Show Python executable
 	@echo $(PYTHON)
 
-.PHONY: help report-python build build-ext install install-dev uninstall test test-all tox gdb test-native test-native-asan test-native-valgrind test-pyversions test-py39 test-py310 test-py311 test-py312 test-py313 test-py314 clean-native container-build container-test container-test-asan container-test-valgrind lint typecheck format clean-built clean-ext clean-pyc clean purge project version python
+.PHONY: \
+	build \
+	build-ext \
+	clean \
+	clean-built \
+	clean-ext \
+	clean-native \
+	clean-pyc \
+	gdb \
+	handlers \
+	help \
+	install \
+	install-dev \
+	lint \
+	project \
+	purge \
+	python \
+	report-python \
+	test \
+	test-asan \
+	test-container-build \
+	test-native \
+	test-py310 \
+	test-py311 \
+	test-py312 \
+	test-py313 \
+	test-py314 \
+	test-py39 \
+	test-pyversions \
+	test-valgrind \
+	tox \
+	typecheck \
+	uninstall \
+	version
 
 
 # The end.
