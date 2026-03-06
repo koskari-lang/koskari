@@ -15,7 +15,7 @@ from typing import Callable, Union, Dict, Tuple
 from ..lib import car, cons, keyword, nil, OpCode, pair, symbol
 from ..types import is_keyword, is_pair, is_proper, is_symbol, unpack
 
-from .compiler import Compiler, ByteCodeFragment
+from .compiler import Compiler, Special, ByteCodeFragment
 from ..exceptions import ParametersError, SpecialError
 
 
@@ -36,6 +36,7 @@ __all__ = (
     "requote",
     "simple_parameters",
     "special",
+    "special_form",
     "SPECIALS",
 )
 
@@ -49,20 +50,33 @@ SpecialFn = Callable[
 SPECIALS: Dict[symbol, SpecialFn] = {}
 
 
+def special_form(
+        pattern: Tuple[symbol, ...]) -> Callable[[Special], Special]:
+    """
+    Purely informational decorator that adds a pattern to a special form
+    """
+
+    def decorator(inst: Special) -> Special:
+        inst.forms.append(pattern)
+        return inst
+
+    return decorator
+
+
 def special(
         form_symbol: symbol,
-        aliases: Tuple[symbol, ...] = ()) -> Callable[[SpecialFn], SpecialFn]:
+        aliases: Tuple[symbol, ...] = ()) -> Special:
     """
     Decorator that registers a function as a special form handler.
     The decorated function gets a compile_impl attribute for dispatch.
     """
 
     def decorator(fn: SpecialFn):
-        SPECIALS[form_symbol] = fn
+        inst = Special(form_symbol, fn, aliases)
+        SPECIALS[form_symbol] = inst
         for alias in aliases:
-            SPECIALS[alias] = fn
-        fn.compile_impl = fn
-        return fn
+            SPECIALS[alias] = inst
+        return inst
 
     return decorator
 
@@ -124,6 +138,7 @@ def helper_binding(source, required=True, allow_unnamed=False):
         if is_keyword(second) and str(second) == "as" and is_symbolish(third):
             return (third, first)
         raise SpecialError(msg, source)
+
     elif sc == 2:
         first, second = parts[0], parts[1]
         if is_pair(second) and not is_symbolish(first):
@@ -136,6 +151,7 @@ def helper_binding(source, required=True, allow_unnamed=False):
             sym, expr = first, second
             return (sym, expr)
         raise SpecialError(msg, source)
+
     elif sc == 1:
         expr = parts[0]
         if allow_unnamed:

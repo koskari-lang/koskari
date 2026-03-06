@@ -23,6 +23,7 @@ The koskari compiler. Converts source forms into bytecode fragments.
 
 from contextlib import contextmanager
 from enum import auto, IntEnum
+from typing import Protocol
 
 from ..lib import (
     cons,
@@ -49,15 +50,42 @@ from ..types import (
 from ..exceptions import CompilerError, UncaughtCompilerError
 
 
-def _is_compiled(v):
-    return hasattr(v, 'compile_impl') and callable(
-        getattr(v, 'compile_impl', None))
+class Compiled(Protocol):
+
+    def compile_impl(self, compiler, source_obj, tc):
+        ...
+
+
+class Special(Compiled):
+
+    def __init__(self, name, compile_impl, aliases=()):
+        self.name = name
+        self.aliases = aliases
+        self.forms = []
+        self._impl = compile_impl
+
+    def compile_impl(self, compiler, source_obj, tc):
+        return self._impl(compiler, source_obj, tc)
+
+
+class Alias(Compiled):
+
+    def __init__(self, name, compile_impl):
+        self.name = name
+        self._impl = compile_impl
+
+    def compile_impl(self, compiler, source_obj, tc):
+        return self._impl(compiler, source_obj, tc)
+
+
+def _is_special(v):
+    return isinstance(v, Special)
 
 
 def _is_alias(v):
     # TODO: we'll likely want to add a distinct type for aliases.
     # for now aliasing is disabled in compile_symbol
-    return _is_compiled(v)
+    return isinstance(v, Alias)
 
 
 def _is_lazygensym(x):
@@ -416,7 +444,7 @@ class Compiler:
             return None
 
         v = r.deref()
-        if _is_compiled(v):
+        if _is_special(v):
             return v
         return None
 
