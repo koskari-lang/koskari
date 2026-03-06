@@ -33,6 +33,14 @@ from re import compile as regex
 from re import UNICODE
 
 
+__all__ = (
+    'Token',
+    'tokenize',
+    'SPECIAL_NAMES',
+    'LAYOUT_NAMES',
+    'LAYOUT_HEAD_NAMES',
+)
+
 Token = namedtuple(
     'Token',
     ('type', 'text', 'start_line', 'start_col', 'end_line', 'end_col'),
@@ -73,11 +81,12 @@ _integer_re = regex(r"^-?\d+$").match
 _bin_re = regex(r"^0b[01]+$").match
 _oct_re = regex(r"^0o[0-7]+$").match
 _hex_re = regex(r"^0x[\da-fA-F]+$").match
-_float_re = regex(r"^-?("
-                  r"(\d*\.\d+|\d+\.\d*)(e-?\d+)?f?"
-                  r"|(\d+e-?\d+)f?"
-                  r"|\d+f"
-                  ")$").match
+_float_re = regex(
+    r"^-?("
+    r"(\d*\.\d+|\d+\.\d*)(e-?\d+)?f?"
+    r"|(\d+e-?\d+)f?"
+    r"|\d+f"
+    ")$").match
 _decimal_re = regex(r"^-?((\d*\.\d+)|(\d+\.\d*)|\d+)d$").match
 _fraction_re = regex(r"-?\d+/\d+").match
 _complex_re = regex(r"^-?\d*\.?\d+\+\d*\.?\d*[ij]$").match
@@ -148,6 +157,9 @@ def tokenize(source, filename='<string>'):
     :yield: Token instances
     """
 
+    # TODO: Look at this with human eyes, it seems like a lot of code
+    # that is probably duplicating the original reader, but slower
+
     line = 1
     col = 1
     i = 0
@@ -193,8 +205,12 @@ def tokenize(source, filename='<string>'):
             if i < n and sl[i] == '@':
                 i += 1
                 line, col = _advance_pos(line, col, '@')
-                yield Token('unquote_splicing', ',@', start_line, start_col,
-                           line, col)
+                yield Token(
+                    'unquote_splicing',
+                    ',@',
+                    start_line,
+                    start_col,
+                    line, col)
             else:
                 yield Token('comma', ch, start_line, start_col, line, col)
             continue
@@ -266,8 +282,12 @@ def tokenize(source, filename='<string>'):
                 text = ch + sl[i]
                 i += 1
                 line, col = _advance_pos(line, col, text[1:])
-                yield Token('collection_open', text, start_line, start_col,
-                           line, col)
+                yield Token(
+                    'collection_open',
+                    text,
+                    start_line,
+                    start_col,
+                    line, col)
             else:
                 text = ch
                 while i < n and sl[i] not in _ATOM_TERMINATOR_SET:
@@ -285,15 +305,6 @@ def tokenize(source, filename='<string>'):
         line, col = _advance_pos(line, col, text[1:])
         tok_type = _atom_type(text)
         yield Token(tok_type, text, start_line, start_col, line, col)
-
-
-__all__ = (
-    'Token',
-    'tokenize',
-    'SPECIAL_NAMES',
-    'LAYOUT_NAMES',
-    'LAYOUT_HEAD_NAMES',
-)
 
 
 # The end.

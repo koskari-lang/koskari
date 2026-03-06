@@ -118,17 +118,29 @@ class SyncIterator:
         self._async_iterable = async_iterable
         self._aiter = None
         self._loop = None
+        self._owns_loop = False
 
 
     def _ensure_started(self):
         if self._aiter is not None:
             return
+
         self._aiter = self._async_iterable.__aiter__()
 
         if _active_loop():
             self._loop = _get_executor_loop()
         else:
             self._loop = asyncio.new_event_loop()
+            self._owns_loop = True
+
+
+    def _close_owned_loop(self):
+        if not self._owns_loop or self._loop is None:
+            return
+
+        self._loop.close()
+        self._loop = None
+        self._owns_loop = False
 
 
     def __iter__(self):
@@ -138,22 +150,29 @@ class SyncIterator:
 
     def __next__(self):
         self._ensure_started()
+        running_in_loop = _active_loop()
 
         try:
             awaitable = self._aiter.__anext__()
 
-            if _active_loop():
+            if running_in_loop:
                 future = asyncio.run_coroutine_threadsafe(awaitable, self._loop)
                 result = future.result()
             else:
                 result = self._loop.run_until_complete(awaitable)
             return result
 
-        except StopIteration as e:
-            return e.value
-
-        except StopAsyncIteration:
+        except (StopIteration, StopAsyncIteration):
+            self._close_owned_loop()
             raise StopIteration from None
+
+        except Exception:
+            self._close_owned_loop()
+            raise
+
+
+    def __del__(self):
+        self._close_owned_loop()
 
 
 def iter_sync(async_iterable):

@@ -14,7 +14,7 @@
 """
 koskari.lexer.prompt_toolkit.key_bindings
 
-Key bindings for Koskari REPL: Tab inserts 2-space indent when at line start.
+Key bindings for Koskari REPL: Tab inserts 4-space indent when at line start.
 """
 
 # This file was entirely generated via prompt, as the basis for the
@@ -37,7 +37,7 @@ def load_koskari_key_bindings():
     """
     Return KeyBindings for the Koskari REPL.
 
-    Tab inserts 2 spaces when the text before the cursor on the current
+    Tab inserts 4 spaces when the text before the cursor on the current
     line is whitespace-only.  Otherwise the default Tab (completion) runs.
     """
 
@@ -45,7 +45,7 @@ def load_koskari_key_bindings():
 
     @kb.add(Keys.Tab, filter=Condition(_whitespace_before_cursor))
     def _insert_indent(event):
-        event.current_buffer.insert_text('  ')
+        event.current_buffer.insert_text('    ')
 
     return kb
 

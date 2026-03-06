@@ -68,8 +68,14 @@ def create_server():
 def main():
     """Entry point for koskari-lsp console script."""
 
-    from pygls.cli import start_server
-    start_server(create_server())
+    import sys
+    try:
+        from pygls.cli import start_server
+        start_server(create_server())
+    except ImportError:
+        print('koskari-lsp requires koskari[lsp]. Install with: pip install koskari[lsp]',
+              file=sys.stderr)
+        sys.exit(1)
 
 
 __all__ = (

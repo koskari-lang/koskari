@@ -25,19 +25,15 @@ from lsprotocol.types import (
     CompletionItem,
     CompletionItemKind,
     CompletionList,
-    CompletionParams,
     Diagnostic,
     DiagnosticSeverity,
-    DidChangeTextDocumentParams,
-    DidOpenTextDocumentParams,
     Hover,
-    HoverParams,
     MarkupContent,
     MarkupKind,
     PublishDiagnosticsParams,
 )
 
-from koskari.exceptions import LayoutError, ReaderError
+from koskari.exceptions import ReaderError
 from koskari.lexer import LAYOUT_HEAD_NAMES, SPECIAL_NAMES, parse_all, tokenize
 from koskari.lexer.lsp.utils import get_word_at_position, koskari_to_lsp_range
 
@@ -82,6 +78,8 @@ def handle_did_open(ls, params):
     """Handle textDocument/didOpen: parse and publish diagnostics."""
 
     doc = ls.workspace.get_text_document(_get_uri(params.text_document))
+    if doc is None:
+        return
     diagnostics = collect_diagnostics(doc.source, doc.uri)
     ls.diagnostics[doc.uri] = (doc.version, diagnostics)
     ls.text_document_publish_diagnostics(
@@ -95,6 +93,8 @@ def handle_did_change(ls, params):
     """Handle textDocument/didChange: parse and publish diagnostics."""
 
     doc = ls.workspace.get_text_document(_get_uri(params.text_document))
+    if doc is None:
+        return
     diagnostics = collect_diagnostics(doc.source, doc.uri)
     ls.diagnostics[doc.uri] = (doc.version, diagnostics)
     ls.text_document_publish_diagnostics(
@@ -116,6 +116,8 @@ def handle_completion(ls, params):
     """Handle textDocument/completion: return special forms and layout heads."""
 
     doc = ls.workspace.get_text_document(_get_uri(params.text_document))
+    if doc is None:
+        return CompletionList(is_incomplete=False, items=[])
     prefix = get_word_at_position(doc, params.position)
     candidates = SPECIAL_NAMES | LAYOUT_HEAD_NAMES
 
@@ -160,12 +162,14 @@ def handle_hover(ls, params):
     """Handle textDocument/hover: return doc for special/layout at position."""
 
     doc = ls.workspace.get_text_document(_get_uri(params.text_document))
+    if doc is None:
+        return None
     pos = params.position
     line_1 = pos.line + 1
     col_1 = pos.character + 1
 
     tok, _ = _token_at_position(doc.source, line_1, col_1)
-    if tok is None or tok.type != 'symbol' and tok.type != 'special' and tok.type != 'layout':
+    if tok is None or tok.type not in ('symbol', 'special', 'layout'):
         return None
 
     content = _hover_for_symbol(tok.text)
