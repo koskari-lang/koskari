@@ -17,15 +17,8 @@ tests.lexer.prompt_toolkit.test_lexer
 Unit tests for koskari.lexer.prompt_toolkit.
 """
 
-
-import pytest
-
-pytest.importorskip('prompt_toolkit')
-
 from unittest import TestCase
-
 from prompt_toolkit.document import Document
-
 from koskari.lexer.prompt_toolkit import KoskariLexer, koskari_style
 
 

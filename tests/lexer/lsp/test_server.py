@@ -18,12 +18,7 @@ Unit tests for koskari.lexer.lsp server.
 """
 
 
-import pytest
-
-pytest.importorskip('pygls')
-
 from unittest import TestCase
-
 from koskari.lexer.lsp import create_server
 
 

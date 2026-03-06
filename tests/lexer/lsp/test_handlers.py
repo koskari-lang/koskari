@@ -18,14 +18,8 @@ Unit tests for koskari.lexer.lsp handlers.
 """
 
 
-import pytest
-
-pytest.importorskip('pygls')
-
 from unittest import TestCase
-
 from lsprotocol.types import CompletionParams, HoverParams, Position
-
 from koskari.lexer.lsp.handlers import (
     collect_diagnostics,
     handle_completion,
