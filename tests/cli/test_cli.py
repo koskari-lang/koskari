@@ -30,6 +30,7 @@ from koskari.cli import (
     run_file_async,
     REPLCodeBoundary,
     format_exception_with_koskari_trace,
+    _filter_infrastructure_tb,
 )
 from koskari.importer.module import new_module
 
@@ -176,6 +177,14 @@ class TestRepl(unittest.TestCase):
         self.assertNotIn(' in repl\n', err)
         self.assertNotIn(' in repl ', err)
 
+    def test_repl_koskari_exception_shows_native_traceback(self):
+        """
+        Koskari exceptions via REPL show dynchain, not wrapper traceback.
+        """
+        _, err = self._run_repl(['(/ 1 0)'])
+        self.assertIn('ZeroDivisionError', err)
+        self.assertIn('Koskari dynchain', err)
+
 
 class TestREPLCodeBoundary(unittest.TestCase):
 
@@ -223,6 +232,37 @@ class TestKoskariTracebackFormatting(unittest.TestCase):
         rendered = ''.join(format_exception_with_koskari_trace(exc_type, exc_val, tb))
         standard = ''.join(traceback.format_exception(exc_type, exc_val, tb))
         self.assertEqual(standard, rendered)
+
+
+class TestFilterInfrastructureTb(unittest.TestCase):
+
+    def test_filters_infrastructure_frames(self):
+        ns = {'__name__': 'asyncio'}
+        try:
+            exec('raise ValueError("test")', ns)
+        except ValueError:
+            tb = sys.exc_info()[2]
+        else:
+            self.fail('expected ValueError')
+        original_count = len(list(traceback.walk_tb(tb)))
+        result = _filter_infrastructure_tb(tb)
+        self.assertIsNotNone(result)
+        filtered_count = len(list(traceback.walk_tb(result)))
+        self.assertLess(filtered_count, original_count)
+
+    def test_preserves_non_infrastructure_frames(self):
+        ns = {'__name__': '__main__'}
+        try:
+            exec('raise ValueError("test")', ns)
+        except ValueError:
+            exc_type, exc_val, tb = sys.exc_info()
+        else:
+            self.fail('expected ValueError')
+        result = _filter_infrastructure_tb(tb)
+        self.assertIsNotNone(result)
+        formatted = ''.join(traceback.format_exception(exc_type, exc_val, result))
+        self.assertIn('ValueError', formatted)
+        self.assertIn('test', formatted)
 
 
 class TestMain(unittest.TestCase):

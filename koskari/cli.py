@@ -132,6 +132,10 @@ def _render_koskari_dynchain(trace_data):
     """
     Render dynchain metadata attached to synthetic koskari native frames.
 
+    trace_data is built innermost-first by the C runtime; it is reversed
+    before rendering so output matches Python's root-first traceback order.
+    Non-dict entries in trace_data are silently skipped.
+
     :param trace_data: iterable of dict-like frame metadata
     :return: list[str] of traceback-formatted lines
     """
@@ -139,8 +143,10 @@ def _render_koskari_dynchain(trace_data):
     if not isinstance(trace_data, (list, tuple)) or not trace_data:
         return []
 
+    frames = list(trace_data)
+    frames.reverse()
     lines = ['  Koskari dynchain (native eval):\n']
-    for frame in trace_data:
+    for frame in frames:
         if not isinstance(frame, dict):
             continue
 
@@ -186,6 +192,12 @@ def _filter_infrastructure_tb(tb):
 
     Walks the chain, drops frames whose __name__ is in
     REPL_INFRASTRUCTURE_MODULES, and relinks.  Returns the filtered head.
+
+    Mutates the traceback chain in place by rewriting tb_next on existing
+    traceback objects.  Code that holds references to the same traceback
+    (e.g. debuggers, logging) will see the modified chain.  Python does not
+    provide a straightforward way to build new traceback chains without
+    mutation.
 
     :param tb: traceback object (root of chain)
     :return: filtered traceback, or original if all frames would be removed
@@ -406,18 +418,15 @@ async def repl_async(mod, prompter=None, histfile=None, stdin=None, stdout=None,
                 cause = exc_val.__cause__
                 sys.last_type = type(cause)
                 sys.last_value = cause
-                sys.last_traceback = tb
-                
+
                 if isinstance(cause, LayoutError):
                     msg = ''.join(format_exception_only(type(cause), cause))
                     sys.last_traceback = None
-                elif tb is not None:
-                    msg = ''.join(format_exception_with_koskari_trace(type(cause), cause, tb))
                 else:
                     tb = _filter_infrastructure_tb(cause.__traceback__)
                     sys.last_traceback = tb
                     if tb is not None:
-                        msg = ''.join(format_exception(type(cause), cause, tb))
+                        msg = ''.join(format_exception_with_koskari_trace(type(cause), cause, tb))
                     else:
                         msg = ''.join(format_exception_only(type(cause), cause))
             else:
