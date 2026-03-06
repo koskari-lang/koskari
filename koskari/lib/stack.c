@@ -56,11 +56,27 @@ static inline int KosStackBlock_EnsureExclusive(KosStackBlock **block) {
 #define BLOCK_MAX_SIZE 256
 
 #define BLOCK_MAX_FREE 256
+#define BLOCK_PREALLOC_FREE 16
 
 static size_t block_freecount = 0;
 
 /* Linked-list cache for stack blocks; same pattern used for dyn nodes and context. */
 static KosStackBlock *block_freelist = NULL;
+
+
+static void stack_block_freelist_preallocate(void) {
+  while (block_freecount < BLOCK_PREALLOC_FREE) {
+    KosStackBlock *b = PyMem_Malloc(KosStackBlock_NEEDED_SIZE(BLOCK_NEW_SIZE));
+    if (! b)
+      break;
+
+    memset(b, 0, KosStackBlock_NEEDED_SIZE(BLOCK_NEW_SIZE));
+    KosStackBlock_MAX(b) = BLOCK_NEW_SIZE;
+    KosStackBlock_PARENT(b) = block_freelist;
+    block_freelist = b;
+    block_freecount++;
+  }
+}
 
 
 static KosStackBlock *KosStackBlock_New(KosStackBlock *parent) {
@@ -1887,6 +1903,8 @@ int koskari_stack_init(PyObject *mod) {
 
   if (PyDict_SetItemString(dict, "Stack", (PyObject *) &KosStackType))
     return -1;
+
+  stack_block_freelist_preallocate();
 
   return 0;
 }

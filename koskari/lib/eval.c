@@ -754,6 +754,20 @@ static size_t context_freecount = 0;
 static KosContext *context_freelist = NULL;
 
 
+static void context_freelist_preallocate(void) {
+  while (context_freecount < CONTEXT_MAX_FREE) {
+    KosContext *ctx = PyMem_Malloc(sizeof(KosContext));
+    if (! ctx)
+      break;
+
+    memset(ctx, 0, sizeof(KosContext));
+    KosContext_FREELIST_NEXT(ctx) = context_freelist;
+    context_freelist = ctx;
+    context_freecount++;
+  }
+}
+
+
 KosContext *kos_context_new(KosDynFrame *top) {
 
   KosContext *ctx = context_freelist;
@@ -3572,6 +3586,8 @@ int koskari_eval_init(PyObject *mod) {
   /* Initialize dynchain module */
   if (koskari_dynchain_init(mod))
     return -1;
+
+  context_freelist_preallocate();
 
   return 0;
 }
