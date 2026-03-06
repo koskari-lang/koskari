@@ -67,6 +67,7 @@
 #include "tracing.h"
 
 #include <stdint.h>
+#include <frameobject.h>
 
 
 #define KOS_OP_HANDLER(name)                                            \
@@ -300,6 +301,129 @@ static KosEvalMode revive_yield_from(KosContext *ctx, PyObject *send_val, PyObje
 
 
 static int try_local_exception_handler(KosContext *ctx, KosEvent *out_ev);
+
+
+static void decorate_exception_with_dynchain(KosContext *ctx, PyObject *exc_val) {
+
+  if (! ctx || ! exc_val || ! PyExceptionInstance_Check(exc_val)) {
+    return;
+  }
+
+  PyObject *frames = PyList_New(0);
+  if (! frames) {
+    PyErr_Clear();
+    return;
+  }
+
+  for (KosDynNode *node = KosContext_DYN_TOP(ctx); node; node = KosDynNode_PARENT(node)) {
+    if (! KosDynNode_IS_FRAME(node)) {
+      continue;
+    }
+    KosDynFrame *frame = (KosDynFrame *) node;
+    PyObject *meta = PyDict_New();
+    if (! meta) {
+      PyErr_Clear();
+      continue;
+    }
+
+    KosCode *code = KosDynFrame_CODE(frame);
+    uint16_t line = 0, col = 0;
+    uint32_t pc = KosDynFrame_ACTING_PC(frame);
+    if (code)
+      kos_loc_lookup((PyObject *) code, pc, &line, &col);
+
+    PyObject *name = code ? KosCode_NAME(code) : Py_None;
+    PyObject *filename = code ? KosCode_FILENAME(code) : Py_None;
+
+    PyDict_SetItemString(meta, "name", name ? name : Py_None);
+    PyDict_SetItemString(meta, "filename", filename ? filename : Py_None);
+    PyObject *line_o = PyLong_FromUnsignedLong((unsigned long) line);
+    PyObject *col_o = PyLong_FromUnsignedLong((unsigned long) col);
+    PyObject *pc_o = PyLong_FromUnsignedLong((unsigned long) pc);
+    if (line_o && col_o && pc_o) {
+      PyDict_SetItemString(meta, "line", line_o);
+      PyDict_SetItemString(meta, "col", col_o);
+      PyDict_SetItemString(meta, "pc", pc_o);
+    }
+    Py_XDECREF(line_o);
+    Py_XDECREF(col_o);
+    Py_XDECREF(pc_o);
+    PyList_Append(frames, meta);
+    Py_DECREF(meta);
+  }
+
+  if (PyObject_SetAttrString(exc_val, "__koskari_dynchain__", frames) < 0) {
+    PyErr_Clear();
+  }
+
+  Py_DECREF(frames);
+}
+
+
+static void inject_eval_frame_traceback(
+    KosContext *ctx,
+    PyObject **exc_type,
+    PyObject **exc_val,
+    PyObject **exc_tb) {
+
+  if (! ctx || ! exc_type || ! exc_val || ! *exc_val) {
+    return;
+  }
+
+  if (KoskariContinuationApply && *exc_type
+      && PyObject_IsSubclass(*exc_type, KoskariContinuationApply)) {
+    return;
+  }
+
+  decorate_exception_with_dynchain(ctx, *exc_val);
+
+  KosDynFrame *frame_top = CURRENT_FRAME(ctx);
+  if (! frame_top || ! KosDynFrame_CODE(frame_top)) {
+    return;
+  }
+
+  PyCodeObject *faux = KosCode_Faux((PyObject *) KosDynFrame_CODE(frame_top));
+  if (! faux) {
+    PyErr_Clear();
+    return;
+  }
+
+  PyObject *globals = PyDict_New();
+  if (! globals) {
+    PyErr_Clear();
+    return;
+  }
+  PyObject *modname = PyUnicode_FromString("koskari.native");
+  if (modname) {
+    PyDict_SetItemString(globals, "__name__", modname);
+    Py_DECREF(modname);
+  }
+  PyObject *trace_data = PyObject_GetAttrString(*exc_val, "__koskari_dynchain__");
+  if (trace_data) {
+    PyDict_SetItemString(globals, "__koskari_trace__", trace_data);
+    Py_DECREF(trace_data);
+  } else {
+    PyErr_Clear();
+  }
+
+  PyFrameObject *pyframe = PyFrame_New(PyThreadState_Get(), faux, globals, NULL);
+  Py_DECREF(globals);
+  if (! pyframe) {
+    PyErr_Clear();
+    return;
+  }
+
+  PyErr_Restore(*exc_type, *exc_val, *exc_tb);
+  *exc_type = NULL;
+  *exc_val = NULL;
+  *exc_tb = NULL;
+
+  if (PyTraceBack_Here(pyframe) < 0) {
+    PyErr_Clear();
+  }
+  Py_DECREF(pyframe);
+  PyErr_Fetch(exc_type, exc_val, exc_tb);
+}
 
 /**
    Intercept a KoskariContinuationApply exception and install the appropriate
@@ -2834,6 +2958,7 @@ static int try_local_exception_handler(KosContext *ctx, KosEvent *out_ev) {
           {
             PyObject *typ = NULL, *val = NULL, *tb = NULL;
             PyErr_Fetch(&typ, &val, &tb);
+            inject_eval_frame_traceback(ctx, &typ, &val, &tb);
             PyErr_Clear();
             KosEvent_KIND(out_ev) = KOS_EV_RAISE;
             KosEvent_EXC_TYPE(out_ev) = typ;
@@ -2856,6 +2981,7 @@ static int try_local_exception_handler(KosContext *ctx, KosEvent *out_ev) {
     {
       PyObject *typ = NULL, *val = NULL, *tb = NULL;
       PyErr_Fetch(&typ, &val, &tb);
+      inject_eval_frame_traceback(ctx, &typ, &val, &tb);
       PyErr_Clear();
       KosEvent_KIND(out_ev) = KOS_EV_RAISE;
       KosEvent_EXC_TYPE(out_ev) = typ;
@@ -2989,6 +3115,7 @@ entry_mode_dispatch:
     PyObject *raise_typ = NULL;
     PyObject *raise_tb  = NULL;
     PyErr_Fetch(&raise_typ, &KosEvent_PAYLOAD(out_ev), &raise_tb);
+    inject_eval_frame_traceback(ctx, &raise_typ, &KosEvent_PAYLOAD(out_ev), &raise_tb);
     KosEvent_EXC_TYPE(out_ev) = raise_typ;
     Py_XDECREF(raise_tb);
     KosContext_FLAGS(ctx) &= ~KOS_CTX_RUNNING;
