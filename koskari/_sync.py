@@ -64,6 +64,10 @@ def _get_executor_loop():
 
 
 def _active_loop():
+    """
+    Return True if an event loop is already running in the current thread.
+    """
+
     try:
         asyncio.get_running_loop()
     except RuntimeError:
@@ -104,7 +108,7 @@ def run_sync(awaitable):
         return asyncio.run(awaitable)
 
 
-class _SyncIterator:
+class SyncIterator:
     """
     Synchronous iterator that drives an async iterator.
     Reuses a single event loop for the entire iteration session.
@@ -160,7 +164,7 @@ def iter_sync(async_iterable):
     called from a thread that already has a running loop.
     """
 
-    return _SyncIterator(async_iterable)
+    return SyncIterator(async_iterable)
 
 
 # The end.
