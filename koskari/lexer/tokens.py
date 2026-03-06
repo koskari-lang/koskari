@@ -76,6 +76,14 @@ LAYOUT_HEAD_NAMES = _make_layout_head_names()
 
 _ATOM_TERMINATORS = ' \t\n\r()[]{}"\';`,'
 _ATOM_TERMINATOR_SET = frozenset(_ATOM_TERMINATORS)
+_BRACKET_TOKENS = {
+    '(': 'paren_open',
+    ')': 'paren_close',
+    '[': 'bracket_open',
+    ']': 'bracket_close',
+    '{': 'brace_open',
+    '}': 'brace_close',
+}
 
 _integer_re = regex(r"^-?\d+$").match
 _bin_re = regex(r"^0b[01]+$").match
@@ -91,6 +99,16 @@ _decimal_re = regex(r"^-?((\d*\.\d+)|(\d+\.\d*)|\d+)d$").match
 _fraction_re = regex(r"-?\d+/\d+").match
 _complex_re = regex(r"^-?\d*\.?\d+\+\d*\.?\d*[ij]$").match
 _keyword_re = regex(r"^(:.+|.+:)$", UNICODE).match
+_NUMBER_MATCHERS = (
+    _integer_re,
+    _bin_re,
+    _oct_re,
+    _hex_re,
+    _float_re,
+    _decimal_re,
+    _fraction_re,
+    _complex_re,
+)
 
 
 def _atom_type(text):
@@ -101,22 +119,9 @@ def _atom_type(text):
     :return: token type string
     """
 
-    if _integer_re(text):
-        return 'number'
-    if _bin_re(text):
-        return 'number'
-    if _oct_re(text):
-        return 'number'
-    if _hex_re(text):
-        return 'number'
-    if _float_re(text):
-        return 'number'
-    if _decimal_re(text):
-        return 'number'
-    if _fraction_re(text):
-        return 'number'
-    if _complex_re(text):
-        return 'number'
+    for matcher in _NUMBER_MATCHERS:
+        if matcher(text):
+            return 'number'
     if _keyword_re(text):
         return 'keyword'
     if text in SPECIAL_NAMES:
@@ -143,6 +148,15 @@ def _advance_pos(line, col, text):
         else:
             col += 1
     return line, col
+
+
+def _scan_atom_end(source, start, n):
+    """Return index one-past the end of an atom token."""
+
+    i = start
+    while i < n and source[i] not in _ATOM_TERMINATOR_SET:
+        i += 1
+    return i
 
 
 def tokenize(source, filename='<string>'):
@@ -177,24 +191,17 @@ def tokenize(source, filename='<string>'):
             continue
 
         if ch == ';':
-            text = ch
-            while i < n and sl[i] != '\n':
-                text += sl[i]
-                i += 1
+            end = sl.find('\n', i)
+            if end < 0:
+                end = n
+            text = sl[i - 1:end]
             line, col = _advance_pos(line, col, text[1:])
+            i = end
             yield Token('comment', text, start_line, start_col, line, col)
             continue
 
         if ch in '()[]{}':
-            tok_type = {
-                '(': 'paren_open',
-                ')': 'paren_close',
-                '[': 'bracket_open',
-                ']': 'bracket_close',
-                '{': 'brace_open',
-                '}': 'brace_close',
-            }[ch]
-            yield Token(tok_type, ch, start_line, start_col, line, col)
+            yield Token(_BRACKET_TOKENS[ch], ch, start_line, start_col, line, col)
             continue
 
         if ch == '.':
@@ -289,19 +296,17 @@ def tokenize(source, filename='<string>'):
                     start_col,
                     line, col)
             else:
-                text = ch
-                while i < n and sl[i] not in _ATOM_TERMINATOR_SET:
-                    text += sl[i]
-                    i += 1
+                end = _scan_atom_end(sl, i, n)
+                text = sl[i - 1:end]
+                i = end
                 line, col = _advance_pos(line, col, text[1:])
                 tok_type = _atom_type(text) if text != '#' else 'symbol'
                 yield Token(tok_type, text, start_line, start_col, line, col)
             continue
 
-        text = ch
-        while i < n and sl[i] not in _ATOM_TERMINATOR_SET:
-            text += sl[i]
-            i += 1
+        end = _scan_atom_end(sl, i, n)
+        text = sl[i - 1:end]
+        i = end
         line, col = _advance_pos(line, col, text[1:])
         tok_type = _atom_type(text)
         yield Token(tok_type, text, start_line, start_col, line, col)
