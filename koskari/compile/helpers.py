@@ -12,15 +12,26 @@ parsing; all helpers raise SpecialError or ParametersError with optional source 
 
 from typing import Callable, Union, Dict, Tuple, List
 
-from ..lib import car, cons, keyword, nil, OpCode, pair, symbol
+from ..lib import car, cdr, cons, keyword, nil, OpCode, pair, symbol
 from ..types import is_keyword, is_pair, is_proper, is_symbol, unpack
 
 from .compiler import Compiler, Special, ByteCodeFragment
 from ..exceptions import ParametersError, SpecialError
-from ..matcher import Matcher
+from ..matcher import (
+    BIND,
+    BIND_SYM,
+    LITERAL,
+    LITERAL_KW,
+    MATCH,
+    PAIR,
+    Matcher,
+    match,
+    matcher,
+)
 
 
 __all__ = (
+    "BIND_BINDINGS",
     "const_only_expr",
     "convert_bindings",
     "gather_bindings",
@@ -123,6 +134,61 @@ def is_symbolish(thing):
     return is_symbol(thing) or is_lazygensym(thing)
 
 
+_tag_bind_bindings = symbol('matcher/bind-bindings')
+
+
+@matcher(_tag_bind_bindings)
+class _BindingsMatcher:
+    """
+    Match a list and bind the result of gather_bindings as (names, values)
+    """
+
+    def __init__(self, slot):
+        self.slot = slot
+        self._key = str(slot)
+
+
+    @classmethod
+    def from_payload(cls, payload, deserialize):
+        if len(payload) != 1:
+            raise ValueError('bind-bindings expects 1 payload, got %d' % len(payload))
+        return cls(payload[0])
+
+
+    def match(self, source, literals, result):
+        if source is nil:
+            return (None, False)
+        head = car(source)
+        tail = cdr(source)
+        if not is_pair(head):
+            return (None, False)
+        names, values = gather_bindings(head, head)
+        result[self._key] = (names, values)
+        return (tail, True)
+
+
+    def to_tuple(self):
+        return (_tag_bind_bindings, symbol(self._key) if isinstance(self.slot, str) else self.slot)
+
+
+
+def BIND_BINDINGS(slot):
+    """
+    Match a list and bind (names, values) from gather_bindings
+    """
+    return _BindingsMatcher(slot)
+
+
+_BINDING_PATTERNS_3 = [
+    MATCH(BIND("expr"), LITERAL_KW("as"), BIND_SYM("sym")),
+]
+_BINDING_PATTERNS_2 = [
+    MATCH(BIND("expr"), PAIR(LITERAL_KW("as"), PAIR(BIND_SYM("sym"), LITERAL(nil)))),
+    MATCH(BIND_SYM("sym"), BIND("expr")),
+]
+_BINDING_PATTERN_1 = MATCH(BIND("expr"))
+
+
 def helper_binding(source, required=True, allow_unnamed=False):
     """
     Parse a single binding form (SYM EXPR), (EXPR as: SYM), or when
@@ -143,33 +209,22 @@ def helper_binding(source, required=True, allow_unnamed=False):
     if not is_proper(source):
         raise SpecialError(msg, source)
 
-    parts = list(unpack(source))
-    sc = len(parts)
-    if sc == 3:
-        first, second, third = parts[0], parts[1], parts[2]
-        if is_keyword(second) and str(second) == "as" and is_symbolish(third):
-            return (third, first)
+    patterns = list(_BINDING_PATTERNS_3) + list(_BINDING_PATTERNS_2)
+    if allow_unnamed or not required:
+        patterns.append(_BINDING_PATTERN_1)
+
+    m = match(source, patterns)
+    if m is None:
         raise SpecialError(msg, source)
 
-    elif sc == 2:
-        first, second = parts[0], parts[1]
-        if is_pair(second) and not is_symbolish(first):
-            _as, sym_rest = second
-            if is_keyword(_as) and str(_as) == "as":
-                sym = car(sym_rest) if is_pair(sym_rest) else sym_rest
-                if is_symbolish(sym):
-                    return (sym, first)
-        if is_symbolish(first):
-            sym, expr = first, second
-            return (sym, expr)
-        raise SpecialError(msg, source)
+    if "sym" in m and "expr" in m:
+        return (m["sym"], m["expr"])
 
-    elif sc == 1:
-        expr = parts[0]
+    if "expr" in m:
         if allow_unnamed:
-            return (None, expr)
-        if not required:
-            return (required, expr)
+            return (None, m["expr"])
+        return (required, m["expr"])
+
     raise SpecialError(msg, source)
 
 

@@ -23,10 +23,10 @@ Special form handler for compile/let.
 
 
 from ...lib import cons, nil, pair, symbol
-from ...matcher import BIND, BIND_SYM, BIND_PAIR, MATCH, REST, match
+from ...matcher import BIND_SYM, MATCH, REST, match
 from ..compiler import Compiler
 from ...exceptions import SpecialError
-from ..helpers import gather_bindings, helper_begin, special, special_forms
+from ..helpers import BIND_BINDINGS, helper_begin, special, special_forms
 
 
 _sym_call = symbol('compile/call')
@@ -34,8 +34,8 @@ _sym_lambda = symbol('compile/lambda')
 
 
 _LET_PATTERNS = [
-    MATCH(BIND_SYM("name"), BIND_PAIR("bindings"), REST("body")),
-    MATCH(BIND_PAIR("bindings"), REST("body")),
+    MATCH(BIND_SYM("name"), BIND_BINDINGS("bindings"), REST("body")),
+    MATCH(BIND_BINDINGS("bindings"), REST("body")),
 ]
 
 
@@ -58,10 +58,8 @@ def special_let(
         raise SpecialError("let requires bindings and body", source)
 
     name = matched.get("name", None)
-    bindings = matched["bindings"]
+    args, vals = matched["bindings"]
     body = matched["body"]
-
-    args, vals = gather_bindings(bindings, source)
 
     if name:
         return cons(_sym_call,
