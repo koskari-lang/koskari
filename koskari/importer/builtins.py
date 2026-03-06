@@ -57,6 +57,7 @@ from ..types import (
 
 from ..compile.specials import SPECIALS
 from ..reader.layouts import LAYOUTS
+from ..compile.syntax import build_syntax as build_syntax_rules
 
 
 __all__ = ('make_builtins',)
@@ -154,6 +155,9 @@ def make_builtins():
     _bind('dir', dir)
     _bind('open', open)
     _bind('range', range)
+
+    # syntax-rule constructor for define-syntax lowering
+    _bind('build-syntax-rules', build_syntax_rules)
 
     import koskari.lib as kl
     for name in ('*', '+', '-', '/', '//', '&', '|', '^',
