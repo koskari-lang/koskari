@@ -96,6 +96,20 @@ static KosDynNode *dyn_freelist = NULL;
 static uint32_t dyn_node_id_counter = 1;  /* 0 reserved for unset / no graft point */
 
 
+static void dynnode_freelist_preallocate(void) {
+  while (dyn_freecount < DYN_NODE_MAX_FREE) {
+    KosDynNode *node = PyMem_Malloc(sizeof(KosDynNode));
+    if (! node)
+      break;
+
+    memset(node, 0, sizeof(KosDynNode));
+    KosDynNode_PARENT(node) = dyn_freelist;
+    dyn_freelist = node;
+    dyn_freecount++;
+  }
+}
+
+
 /**
    Allocate and zero a KosDynNode. Prefer reuse from freelist; else PyMem_Malloc.
    Returns NULL on failure (sets PyErr_NoMemory). Caller must set kind and
@@ -2379,6 +2393,20 @@ static size_t cont_freecount = 0;
 static KosContinuation *cont_freelist = NULL;
 
 
+static void continuation_freelist_preallocate(void) {
+  while (cont_freecount < CONT_MAX_FREE) {
+    KosContinuation *k = PyMem_Malloc(sizeof(KosContinuation));
+    if (! k)
+      break;
+
+    memset(k, 0, sizeof(KosContinuation));
+    KosContinuation_CAPTURED_CHAIN(k) = (KosDynNode *) cont_freelist;
+    cont_freelist = k;
+    cont_freecount++;
+  }
+}
+
+
 static KosContinuation *kos_continuation_create(
     KosDynNode *captured_chain,
     KosDynFrame *resume_frame,
@@ -4274,6 +4302,10 @@ int koskari_dynchain_init(PyObject *mod) {
   _param_sentinel_unset = Py_BuildValue("(s)", "<param was unset>");
   if (! _param_sentinel_unset)
     return -1;
+
+  dynnode_freelist_preallocate();
+  continuation_freelist_preallocate();
+
   return 0;
 }
 

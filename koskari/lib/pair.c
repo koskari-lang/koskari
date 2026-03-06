@@ -52,9 +52,24 @@ static PyObject *_str_esc_quote = NULL;
 
 
 #define PAIR_MAX_FREE 256
+#define PAIR_PREALLOC_FREE 32
 
 static KosPair *pair_free_list = NULL;
 static int pair_free_count = 0;
+
+
+static void pair_freelist_preallocate(void) {
+  while (pair_free_count < PAIR_PREALLOC_FREE) {
+    KosPair *p = PyObject_GC_New(KosPair, &KosPairType);
+    if (! p)
+      break;
+
+    memset(p, 0, sizeof(KosPair));
+    KosPair_CDR(p) = (PyObject *) pair_free_list;
+    pair_free_list = p;
+    pair_free_count++;
+  }
+}
 
 
 /* === helper macros === */
@@ -1731,6 +1746,8 @@ int koskari_pair_init(PyObject *mod) {
 
   if (PyType_Ready(&KosNilType))
     return -1;
+
+  pair_freelist_preallocate();
 
   /* add types and nil to module dict */
   if (PyDict_SetItemString(dict, "pair", (PyObject *) &KosPairType))
