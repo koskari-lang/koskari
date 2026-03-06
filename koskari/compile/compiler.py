@@ -79,7 +79,7 @@ class Alias(Compiled):
 
 
 def _is_special(v):
-    return isinstance(v, Special)
+    return isinstance(v, Special) or hasattr(v, "compile_impl")
 
 
 def _is_alias(v):

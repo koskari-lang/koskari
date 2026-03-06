@@ -100,7 +100,7 @@ from .object import (
     special_type,
     special_vars,
 )
-from .variables import special_bindq, special_define, special_delq, special_refq, special_setq
+from .variables import special_bindq, special_define, special_define_syntax, special_delq, special_refq, special_setq
 
 
 __all__ = (
@@ -137,6 +137,7 @@ __all__ = (
     "special_deref",
     "special_del_item",
     "special_define",
+    "special_define_syntax",
     "special_delq",
     "special_dir",
     "special_divmod",

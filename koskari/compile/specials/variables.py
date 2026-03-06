@@ -25,8 +25,9 @@ compile/delq, and compile/define.
 
 from ...lib import nil, OpCode, symbol, cons
 from ...types import is_pair
-from ...exceptions import SpecialError
+from ...exceptions import CompilerError, SpecialError
 from ..helpers import is_symbolish, special
+from ..syntax import build_syntax_rules_transformer
 
 
 @special(symbol("compile/setq"))
@@ -169,6 +170,44 @@ def special_define(compiler, source, tc=False):
 
     frag.merge(compiler.full_compile(val_expr))
     frag.instruction(OpCode.KOS_OP_VAR_STORE, sym)
+    frag.instruction(OpCode.KOS_OP_CONST, None)
+
+    return frag
+
+
+@special(symbol("compile/define-syntax"), aliases=(symbol("define-syntax"),))
+def special_define_syntax(compiler, source, tc=False):
+    """
+    Compile (define-syntax NAME (syntax-rules ...)). Registers a
+    deterministic matcher/transformer object under compile/NAME.
+    """
+
+    called_by, rest = source
+    if rest is nil or not is_pair(rest):
+        raise SpecialError("define-syntax requires a name and transformer", source)
+
+    name, rest_tail = rest
+    if not is_symbolish(name):
+        raise SpecialError("define-syntax name must be a symbol", source)
+
+    if rest_tail is nil or not is_pair(rest_tail) or rest_tail[1] is not nil:
+        raise SpecialError("define-syntax takes exactly two arguments", source)
+
+    transformer_spec = rest_tail[0]
+
+    try:
+        transformer = build_syntax_rules_transformer(name, transformer_spec)
+    except CompilerError as ex:
+        raise SpecialError(str(ex), source) from ex
+
+    tagged = transformer.to_tuple()
+    build_call = cons(symbol("build-syntax-rules"), str(name), tagged, nil)
+
+    frag = compiler.fragment(called_by)
+    frag.declare_var(str(name))
+
+    frag.merge(compiler.full_compile(build_call))
+    frag.instruction(OpCode.KOS_OP_VAR_STORE, str(name))
     frag.instruction(OpCode.KOS_OP_CONST, None)
 
     return frag
