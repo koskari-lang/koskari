@@ -32,6 +32,8 @@ from argparse import ArgumentParser, REMAINDER
 from os.path import basename
 from traceback import format_exception, format_exception_only
 
+from koskari.exceptions import LayoutError
+
 
 __all__ = (
     'main',
@@ -48,24 +50,42 @@ __all__ = (
 # ---------------------------------------------------------------------------
 
 
-def _make_prompter(histfile=None):
+def _make_prompter(histfile=None, get_namespace=None):
     """
     Return a callable suitable for prompting the user in the REPL.
 
-    Tries prompt_toolkit first, then readline, then falls back to the
-    built-in input().  When histfile is provided and readline is used,
-    the history file is loaded on startup and saved on exit.
+    Tries prompt_toolkit first (with lexer, completer, style), then
+    readline, then falls back to the built-in input().  When histfile
+    is provided and readline is used, the history file is loaded on
+    startup and saved on exit.
 
     :param histfile: path to the readline history file, or None
+    :param get_namespace: callable() -> namespace or None; for REPL
+        symbol completion when using prompt_toolkit
     :return: a callable with the same signature as input(prompt)
     """
 
     try:
         from prompt_toolkit import PromptSession
+        from prompt_toolkit.auto_suggest import AutoSuggestFromHistory
         from prompt_toolkit.history import FileHistory
 
+        from koskari.lexer.prompt_toolkit import (
+            KoskariCompleter,
+            KoskariLexer,
+            koskari_style,
+            load_koskari_key_bindings,
+        )
+
         history = FileHistory(histfile) if histfile else None
-        session = PromptSession(history=history)
+        completer = KoskariCompleter(get_namespace=get_namespace)
+        session = PromptSession(
+            history=history,
+            lexer=KoskariLexer(),
+            completer=completer,
+            style=koskari_style,
+            auto_suggest=AutoSuggestFromHistory(),
+            key_bindings=load_koskari_key_bindings())
         return session.prompt
 
     except ImportError:
@@ -163,15 +183,19 @@ async def _boundary_call_async(fn, /, *a, **kw):
 _INCOMPLETE = object()
 
 
-async def _eval_expression_async(compiler, line, ns):
+async def _eval_expression_async(compiler, source, ns):
     """
     Run one REPL expression.
+
+    :param compiler: Compiler instance
+    :param source: source string (may span multiple lines)
+    :param ns: module namespace
+    :return: eval result or _INCOMPLETE if parse returned None
     """
 
-    from koskari.reader import default_reader, source_str
+    from koskari.lexer import parse
 
-    stream = source_str(line, '<stdin>')
-    source_expr = default_reader.read(stream)
+    source_expr = parse(source, '<stdin>')
     if source_expr is None:
         return _INCOMPLETE
     fragment = compiler.full_compile(source_expr)
@@ -179,17 +203,41 @@ async def _eval_expression_async(compiler, line, ns):
     return await expr()
 
 
-async def repl_async(mod, prompter=None, stdin=None, stdout=None, stderr=None):
+def _in_block_body(buffer):
+    """
+    True if buffer appears to be inside a layout block body (user may add more).
+
+    We have a block header (some line ends with :) and the last non-empty
+    line has leading whitespace.  A blank line will terminate the block.
+    """
+
+    if not buffer or ':' not in buffer:
+        return False
+    lines = buffer.splitlines()
+    has_header = any(ln.rstrip().endswith(':') for ln in lines)
+    if not has_header:
+        return False
+    for i in range(len(lines) - 1, -1, -1):
+        ln = lines[i]
+        if ln.strip():
+            return ln and ln[0] in ' \t'
+    return False
+
+
+async def repl_async(mod, prompter=None, histfile=None, stdin=None, stdout=None,
+                     stderr=None):
     """
     Run an interactive read-eval-print loop for a koskari module.
 
-    Each line entered by the user is compiled and executed as a single
-    top-level expression.  Non-None results are printed to stdout.  The
-    last result is also stored as '_' in the module namespace.
+    Each form entered by the user is compiled and executed.  Multi-line
+    input is supported via continuation prompt.  Non-None results are
+    printed to stdout.  The last result is stored as '_' in the namespace.
 
     :param mod: koskari Module to use as the execution context
     :param prompter: callable with the same signature as input(); when
-        None, _make_prompter() is called with no arguments
+        None, _make_prompter(histfile, get_namespace) is called
+    :param histfile: path to history file for _make_prompter when
+        prompter is None
     :param stdin: input stream, defaults to sys.stdin
     :param stdout: output stream, defaults to sys.stdout
     :param stderr: error stream, defaults to sys.stderr
@@ -202,9 +250,6 @@ async def repl_async(mod, prompter=None, stdin=None, stdout=None, stderr=None):
     stdout = stdout or sys.stdout
     stderr = stderr or sys.stderr
 
-    if prompter is None:
-        prompter = _make_prompter()
-
     loop = asyncio.get_running_loop()
 
     # init_module registers compiler specials into the namespace.  When the
@@ -214,14 +259,20 @@ async def repl_async(mod, prompter=None, stdin=None, stdout=None, stderr=None):
         init_module(mod, '<stdin>')
 
     ns = vars(mod)
+    if prompter is None:
+        prompter = _make_prompter(histfile=histfile, get_namespace=lambda: ns)
+
     compiler = Compiler(
         getattr(mod, '__name__', '__main__'),
         mod,
         filename='<stdin>')
 
+    buffer = ''
+    prompt = '>>> '
+
     while True:
         try:
-            line = await loop.run_in_executor(None, lambda: prompter('koskari> '))
+            line = await loop.run_in_executor(None, lambda: prompter(prompt))
 
         except KeyboardInterrupt:
             print('', file=stderr)
@@ -233,15 +284,31 @@ async def repl_async(mod, prompter=None, stdin=None, stdout=None, stderr=None):
             stderr.flush()
             break
 
-        if not line.strip():
+        buffer = buffer + ('\n' + line if buffer else line)
+
+        if not buffer.strip():
+            buffer = ''
             continue
+
+        line_is_blank = not line.strip()
+        if not line_is_blank:
+            if buffer.rstrip().endswith(':'):
+                prompt = '... '
+                continue
+            if _in_block_body(buffer):
+                prompt = '... '
+                continue
 
         try:
             result = await _boundary_call_async(
-                _eval_expression_async, compiler, line, ns)
+                _eval_expression_async, compiler, buffer, ns)
 
             if result is _INCOMPLETE:
+                prompt = '... '
                 continue
+
+            buffer = ''
+            prompt = '>>> '
 
             ns.store('_', result) if hasattr(ns, 'store') else ns.__setitem__('_', result)
 
@@ -265,19 +332,36 @@ async def repl_async(mod, prompter=None, stdin=None, stdout=None, stderr=None):
             msg = ''.join(format_exception_only(exc_type, exc_val))
             print(msg, end='', file=stderr)
             stderr.flush()
+            buffer = ''
+            prompt = '>>> '
+
+        except LayoutError:
+            exc_type, exc_val, _ = sys.exc_info()
+            sys.last_type = exc_type
+            sys.last_value = exc_val
+            sys.last_traceback = None
+            msg = ''.join(format_exception_only(exc_type, exc_val))
+            print(msg, end='', file=stderr)
+            stderr.flush()
+            buffer = ''
+            prompt = '>>> '
 
         except Exception:
             exc_type, exc_val, tb = sys.exc_info()
             if isinstance(exc_val, REPLCodeBoundary) and exc_val.__cause__ is not None:
                 cause = exc_val.__cause__
-                tb = _filter_infrastructure_tb(cause.__traceback__)
                 sys.last_type = type(cause)
                 sys.last_value = cause
-                sys.last_traceback = tb
-                if tb is not None:
-                    msg = ''.join(format_exception(type(cause), cause, tb))
-                else:
+                sys.last_traceback = None
+                if isinstance(cause, LayoutError):
                     msg = ''.join(format_exception_only(type(cause), cause))
+                else:
+                    tb = _filter_infrastructure_tb(cause.__traceback__)
+                    sys.last_traceback = tb
+                    if tb is not None:
+                        msg = ''.join(format_exception(type(cause), cause, tb))
+                    else:
+                        msg = ''.join(format_exception_only(type(cause), cause))
             else:
                 sys.last_type = exc_type
                 sys.last_value = exc_val
@@ -285,6 +369,8 @@ async def repl_async(mod, prompter=None, stdin=None, stdout=None, stderr=None):
                 msg = ''.join(format_exception(exc_type, exc_val, tb))
             print(msg, end='', file=stderr)
             stderr.flush()
+            buffer = ''
+            prompt = '>>> '
 
         stdout.flush()
 
@@ -352,8 +438,7 @@ async def cli_async(options):
         if not options.interactive:
             return
 
-    prompter = _make_prompter(options.histfile)
-    await repl_async(mod, prompter=prompter)
+    await repl_async(mod, histfile=options.histfile)
 
 
 # ---------------------------------------------------------------------------

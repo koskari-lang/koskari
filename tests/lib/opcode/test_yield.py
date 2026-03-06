@@ -51,6 +51,7 @@ class TestYieldOpcodes(CevalTest):
         agen = expr()
         self.assertIsInstance(agen, AsyncGenerator)
 
+
     def test_yield_suspends_and_resumes(self):
         """
         Yielding code returns AsyncGenerator; anext() yields value then StopAsyncIteration

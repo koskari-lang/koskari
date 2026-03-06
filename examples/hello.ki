@@ -1,5 +1,4 @@
 ;; Example koskari program
-;; This is a placeholder - replace with actual koskari code when parser is implemented
 
 
 class FunTimes []:

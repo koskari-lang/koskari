@@ -68,6 +68,7 @@ class TestYieldFrom(CevalTest):
 
         asyncio.run(run())
 
+
     def test_yield_from_upward_into_koskari_from_koskari_delegate(self):
         """
         Values from a Koskari async gen delegate flow upward into the
@@ -104,6 +105,7 @@ class TestYieldFrom(CevalTest):
 
         asyncio.run(run())
 
+
     def test_yield_from_sync_iterator_values_and_final(self):
         """
         YIELD_FROM on a sync iterator yields each value then completes with final
@@ -131,6 +133,7 @@ class TestYieldFrom(CevalTest):
             self.assertIs(final, None)
 
         asyncio.run(run())
+
 
     def test_yield_from_sync_generator_values_and_return(self):
         """
@@ -197,11 +200,13 @@ class TestYieldFrom(CevalTest):
 
         asyncio.run(run())
 
+
     def test_yield_from_koskari_async_gen_values_and_return(self):
         """
         YIELD_FROM on a Koskari async gen yields each value then completes
         with the delegate RETURN value.
         """
+
         inner_code, inner_ns = build_expr([
             ["CONST", 1],
             ["YIELD", 1],
@@ -236,11 +241,13 @@ class TestYieldFrom(CevalTest):
 
         asyncio.run(run())
 
+
     def test_yield_from_koskari_async_gen_empty(self):
         """
         YIELD_FROM on a Koskari coroutine (no yields) is a type error:
         coroutines are not async iterable.
         """
+
         inner_code, inner_ns = build_expr([
             ["CONST", 99],
             ["RETURN", 1],
@@ -262,11 +269,13 @@ class TestYieldFrom(CevalTest):
 
         asyncio.run(run())
 
+
     def test_yield_from_koskari_async_gen_with_await(self):
         """
         YIELD_FROM on a Koskari async gen that AWAITs between yields
         (resume-from-await path) yields values and completes.
         """
+
         async def noop():
             return None
 
@@ -304,11 +313,13 @@ class TestYieldFrom(CevalTest):
 
         asyncio.run(run())
 
+
     def test_yield_from_sync_iterator_empty(self):
         """
         YIELD_FROM on an empty sync iterator completes immediately
         with None as final value.
         """
+
         code_obj, ns = build_expr([
             ["CONST", iter([])],
             ["YIELD_FROM", 0],
@@ -326,11 +337,13 @@ class TestYieldFrom(CevalTest):
 
         asyncio.run(run())
 
+
     def test_yield_from_sync_generator_empty_return_value(self):
         """
         YIELD_FROM on a sync generator that returns without yielding
         completes with the return value.
         """
+
         def empty_gen():
             if False:
                 yield  # makes this a generator; never executed
@@ -354,11 +367,13 @@ class TestYieldFrom(CevalTest):
 
         asyncio.run(run())
 
+
     def test_yield_from_raises_type_error_on_non_iterable(self):
         """
         YIELD_FROM on a non-iterable (e.g. int) raises TypeError with
         a message that indicates the requirement and the type received.
         """
+
         code_obj, ns = build_expr([
             ["CONST", 7],
             ["YIELD_FROM", 0],
@@ -377,10 +392,12 @@ class TestYieldFrom(CevalTest):
 
         asyncio.run(run())
 
+
     def test_yield_from_raises_type_error_on_none(self):
         """
         YIELD_FROM on None raises TypeError (not iterable).
         """
+
         code_obj, ns = build_expr([
             ["CONST", None],
             ["YIELD_FROM", 0],
@@ -398,11 +415,13 @@ class TestYieldFrom(CevalTest):
 
         asyncio.run(run())
 
+
     def test_yield_from_single_value_sync_iterator(self):
         """
         YIELD_FROM on a sync iterator with one element yields it
         then completes with None.
         """
+
         code_obj, ns = build_expr([
             ["CONST", iter([100])],
             ["YIELD_FROM", 0],
@@ -422,11 +441,13 @@ class TestYieldFrom(CevalTest):
 
         asyncio.run(run())
 
+
     def test_yield_from_aclose_closes_delegate(self):
         """
         YIELD_FROM with Koskari inner: consume one value then exhaust;
         delegate is driven correctly.
         """
+
         inner_code, inner_ns = build_expr([
             ["CONST", 1],
             ["YIELD", 1],
@@ -454,10 +475,12 @@ class TestYieldFrom(CevalTest):
 
         asyncio.run(run())
 
+
     def test_yield_from_sync_generator_raise_propagates(self):
         """
         YIELD_FROM propagates an exception raised inside the delegate.
         """
+
         def raising_gen():
             yield 1
             raise ValueError("delegate raised")
@@ -481,11 +504,13 @@ class TestYieldFrom(CevalTest):
 
         asyncio.run(run())
 
+
     def test_yield_from_python_async_gen_final_value_when_available(self):
         """
         YIELD_FROM on a Python async gen; when the gen exhausts,
         StopAsyncIteration is raised.
         """
+
         async def py_agen():
             yield "a"
             yield "b"

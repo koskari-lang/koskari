@@ -13,3 +13,4 @@ This directory documents the runtime API of Koskari, including types, functions,
 - **OBJECT-MODEL.md**: Koskari object model (KosType, KosObject, class creation, awaitable construction, C.new sync adapter)
 - **NAMESPACE-AND-REFS.md**: Namespace, Ref types, and related special forms
 - **import-system.md**: Import system and module resolution _(not yet written; import system design is pending)_
+- **lexer.md**: Lexer subpackage for lexical-only parsing, prompt_toolkit and LSP integration
