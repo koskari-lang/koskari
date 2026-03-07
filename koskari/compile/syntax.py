@@ -26,8 +26,8 @@ from dataclasses import dataclass
 
 from ..exceptions import CompilerError
 from ..lib import car, cdr, cons, nil, symbol
-from ..matcher import (extract_binder_symbols, is_binder_spec,
-                       is_scope_region_spec, match)
+from ..matcher import (BindingsResult, extract_binder_symbols, FormalsResult,
+                       is_binder_spec, is_scope_region_spec, match)
 from ..types import is_pair, is_proper, is_symbol, unpack
 
 
@@ -119,6 +119,29 @@ def _collect_symbols(expr, out):
             _collect_symbols(elem, out)
 
 
+def _recurse_target(val):
+    """
+    Return the value(s) to recurse into for binding symbol collection.
+
+    For BindingsResult: values list. For FormalsResult: defaults and kwonly.
+    For MatchResult or has .source: source. Else: val itself.
+    """
+    if val is None:
+        return None
+    if isinstance(val, BindingsResult):
+        return val.values
+    if isinstance(val, FormalsResult):
+        out = []
+        for _kw, expr in (val.defaults or ()):
+            out.append(expr)
+        for _kw, expr in (val.kwonly or ()):
+            out.append(expr)
+        return out
+    if hasattr(val, 'source'):
+        return val.source
+    return val
+
+
 def _scope_region_keys(matched, specs):
     """
     Return set of keys that are scope regions from specs and binder metadata
@@ -194,37 +217,50 @@ def _collect_binding_symbols_matcher(template, find_compiled):
         if key in matched:
             val = matched[key]
             if val is not None:
-                if is_pair(val):
-                    for elem in unpack(val):
+                target = _recurse_target(val)
+                if target is None:
+                    pass
+                elif is_pair(target):
+                    for elem in unpack(target):
                         out |= _collect_binding_symbols_matcher(
                             elem if is_pair(elem) else cons(elem, nil),
                             find_compiled)
+                elif isinstance(target, (list, tuple)):
+                    for v in target:
+                        out |= _collect_binding_symbols_matcher(
+                            v if is_pair(v) else cons(v, nil),
+                            find_compiled)
                 else:
                     out |= _collect_binding_symbols_matcher(
-                        val if is_pair(val) else cons(val, nil),
+                        target if is_pair(target) else cons(target, nil),
                         find_compiled)
 
     for key, spec in specs.items():
         if is_binder_spec(spec) and key in matched:
             val = matched[key]
             if spec is not None and type(spec).__name__ == '_BindingsMatcher':
-                if isinstance(val, (tuple, list)) and len(val) == 2:
-                    _names, values = val
-                    for v in (values or ()):
-                        out |= _collect_binding_symbols_matcher(
-                            v if is_pair(v) else cons(v, nil),
-                            find_compiled)
+                values = val.values if isinstance(val, BindingsResult) else (
+                    val[1] if isinstance(val, (tuple, list)) and len(val) == 2
+                    else ())
+                for v in (values or ()):
+                    out |= _collect_binding_symbols_matcher(
+                        v if is_pair(v) else cons(v, nil),
+                        find_compiled)
             if spec is not None and type(spec).__name__ == '_FormalsMatcher':
-                if isinstance(val, (tuple, list)) and len(val) == 5:
+                if isinstance(val, FormalsResult):
+                    defaults, kwonly = val.defaults, val.kwonly
+                elif isinstance(val, (tuple, list)) and len(val) == 5:
                     _pos, defaults, kwonly, _star, _starstar = val
-                    for _kw, expr in (defaults or ()):
-                        out |= _collect_binding_symbols_matcher(
-                            expr if is_pair(expr) else cons(expr, nil),
-                            find_compiled)
-                    for _kw, expr in (kwonly or ()):
-                        out |= _collect_binding_symbols_matcher(
-                            expr if is_pair(expr) else cons(expr, nil),
-                            find_compiled)
+                else:
+                    defaults, kwonly = (), ()
+                for _kw, expr in (defaults or ()):
+                    out |= _collect_binding_symbols_matcher(
+                        expr if is_pair(expr) else cons(expr, nil),
+                        find_compiled)
+                for _kw, expr in (kwonly or ()):
+                    out |= _collect_binding_symbols_matcher(
+                        expr if is_pair(expr) else cons(expr, nil),
+                        find_compiled)
 
     return out
 

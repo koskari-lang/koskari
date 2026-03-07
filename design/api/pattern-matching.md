@@ -138,7 +138,7 @@ def match(self, source, literals, result, specs=None) -> Tuple[Optional[Any], bo
 |-----|---------|---------|
 | `matcher/match` | elem, elem, ... [, key] | Sequence match; when sub-expr, element must be pair, destructure (car, cdr). Optional key captures matched pair. |
 | `matcher/literal` | value | Match this value exactly (keyword or symbol) |
-| `matcher/bind` | slot | Capture one element into binding `slot` |
+| `matcher/bind` | slot | Capture one element; bind MatchResult(source, source_pos) to `slot` |
 | `matcher/bind-sym` | slot | Capture symbol (SYMBOL) |
 | `matcher/bind-pair` | slot | Capture pair; same as `matcher/pair` |
 | `matcher/rest` | slot | Capture remainder of list into `slot` |
@@ -151,9 +151,9 @@ def match(self, source, literals, result, specs=None) -> Tuple[Optional[Any], bo
 
 | Tag | Payload | Meaning |
 |-----|---------|---------|
-| `matcher/bind-bindings` | slot | Element must be a list; apply `gather_bindings` and bind `(names, values)` tuple to `slot`. Accepts optional `mode`, `scope`, `scopes` for hygiene (see matcher-hygiene-extensions.md). |
+| `matcher/bind-bindings` | slot | Element must be a list; apply `gather_bindings`; bind BindingsResult (names, values, source, source_pos). Accepts optional `mode`, `scope`, `scopes` for hygiene (see matcher-hygiene-extensions.md). |
 | `matcher/bind-binding` | slot | Single binding; `(name, value)`; optional `allow_unnamed` (planned) |
-| `matcher/formals` | slot | Formal parameters for lambda; uses `scope`/`scopes` (planned) |
+| `matcher/formals` | slot | Formal parameters for lambda; bind FormalsResult (positional, defaults, kwonly, star, starstar, source, source_pos). Use `scope`/`scopes` for hygiene. |
 | `matcher/define` | slot | Single define-style name; gensym'd (planned) |
 
 ### Helpers
@@ -170,6 +170,16 @@ Keywords in the source are matched literally; only symbols are ambiguous (litera
 - **Rest**: `REST("tail")` — capture remainder of list.
 - **Type-constrained**: `SYMBOL("name")` for symbols, `PAIR("bindings")` for whole pairs, `BINDINGS("bindings")` for binding lists (pre-parsed, with optional `mode`, `scope`, `scopes`).
 
+### Match Result Types
+
+Every capture yields a structured result object with `source` (raw matched value) and `source_pos` (position when available):
+
+* **MatchResult** — base class for simple captures (BIND, SYMBOL, DEFINE, VALUE, PAIR, REST, EXPR). Attributes: `source`, `source_pos`. Use `result["key"].source` for the raw value.
+* **FormalsResult** — for FORMALS. Attributes: `source`, `source_pos`, `positional`, `defaults`, `kwonly`, `star`, `starstar`. Supports unpacking: `pos, defaults, kwonly, star, starstar = matched["formals"]`.
+* **BindingsResult** — for BINDINGS. Attributes: `source`, `source_pos`, `names`, `values`. Supports unpacking: `names, values = matched["bindings"]`.
+
+All capturing matchers store these result types. Use `.source` when the raw form is needed (e.g. for lambda construction or position reporting).
+
 ### Example: let form (implemented)
 
 The let special uses `SYMBOL`, `BINDINGS`, and `REST`:
@@ -180,8 +190,8 @@ _LET_PATTERNS = [
     MATCH(BINDINGS("bindings", mode="parallel", scope="body"), REST("body")),
 ]
 matched = match(rest, _LET_PATTERNS)
-# matched["bindings"] is (args, vals) from gather_bindings; no manual call needed
-# REST("body") captures the remaining forms as the body region
+# matched["bindings"] is BindingsResult; unpack: args, vals = matched["bindings"]
+# matched["body"].source is the raw body list
 ```
 
 ### Example: dyn-wind (proposed, target syntax)

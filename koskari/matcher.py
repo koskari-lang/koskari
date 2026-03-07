@@ -26,17 +26,78 @@ tuple interpretation for future define-syntax integration.
 from typing import Any, Dict, Optional, Protocol, Tuple
 
 from .lib import car, cdr, cons, keyword, nil, symbol
-from .types import is_pair, is_symbol, unpack
+from .types import get_position, is_pair, is_symbol, unpack
+
+
+class MatchResult:
+    """
+    Base result for simple captures. Every capture includes source (raw value)
+    and source_pos (position when source is a pair).
+    """
+
+    __slots__ = ('source', 'source_pos')
+
+    def __init__(self, source, source_pos=None):
+        self.source = source
+        self.source_pos = source_pos
+
+
+class FormalsResult(MatchResult):
+    """
+    Result for FORMALS: source, source_pos, plus positional, defaults, kwonly,
+    star, starstar. Supports unpacking for backward compat.
+    """
+
+    __slots__ = ('positional', 'defaults', 'kwonly', 'star', 'starstar')
+
+    def __init__(
+            self,
+            source,
+            source_pos=None,
+            positional=None,
+            defaults=None,
+            kwonly=None,
+            star=None,
+            starstar=None):
+        super().__init__(source, source_pos)
+        self.positional = positional if positional is not None else []
+        self.defaults = defaults if defaults is not None else []
+        self.kwonly = kwonly if kwonly is not None else []
+        self.star = star
+        self.starstar = starstar
+
+    def __iter__(self):
+        return iter((self.positional, self.defaults, self.kwonly,
+                     self.star, self.starstar))
+
+
+class BindingsResult(MatchResult):
+    """
+    Result for BINDINGS: source, source_pos, plus names, values. Supports
+    unpacking for backward compat.
+    """
+
+    __slots__ = ('names', 'values')
+
+    def __init__(self, source, source_pos=None, names=None, values=None):
+        super().__init__(source, source_pos)
+        self.names = names if names is not None else []
+        self.values = values if values is not None else []
+
+    def __iter__(self):
+        return iter((self.names, self.values))
 
 
 __all__ = (
+    'BindingsResult',
+    'FormalsResult',
+    'MatchResult',
     'Matcher',
     'matcher',
 
     'ANY_ORDER',
     'BIND',
-    'BIND_PAIR',
-    'BIND_SYM',
+    'DEFINE',
     'EXPR',
     'LITERAL',
     'LITERAL_KW',
@@ -46,6 +107,7 @@ __all__ = (
     'PAIR',
     'REST',
     'SYMBOL',
+    'VALUE',
     'extract_binder_symbols',
     'from_tuple',
     'is_binder_spec',
@@ -101,6 +163,8 @@ _tag_pair = symbol('matcher/pair')
 _tag_opt = symbol('matcher/opt')
 _tag_any_order = symbol('matcher/any-order')
 _tag_expr = symbol('matcher/expr')
+_tag_define = symbol('matcher/define')
+_tag_value = symbol('matcher/value')
 
 
 def _slot_key(slot):
@@ -198,7 +262,7 @@ class _BindMatcher:
         if source is nil:
             return (None, False)
         head, tail = car(source), cdr(source)
-        result[self._key] = head
+        result[self._key] = MatchResult(head, get_position(source))
         if specs is not None:
             specs[self._key] = self
         return (tail, True)
@@ -232,7 +296,7 @@ class _SymbolMatcher:
         head, tail = car(source), cdr(source)
         if not is_symbol(head):
             return (None, False)
-        result[self._key] = head
+        result[self._key] = MatchResult(head, get_position(source))
         if specs is not None:
             specs[self._key] = self
         return (tail, True)
@@ -240,6 +304,75 @@ class _SymbolMatcher:
 
     def to_tuple(self):
         return (_tag_bind_sym, symbol(self._key) if isinstance(self.slot, str) else self.slot)
+
+
+@matcher(_tag_define)
+class _DefineMatcher:
+    """
+    Capture one element only when it is a symbol; binder for hygiene
+
+    Single-introduced-name form like (define X Y). Does not declare scope
+    for its value slot.
+    """
+
+    def __init__(self, slot):
+        self.slot = slot
+        self._key = _slot_key(slot)
+
+
+    @classmethod
+    def from_payload(cls, payload, deserialize):
+        if len(payload) != 1:
+            raise ValueError('define expects 1 payload, got %d' % len(payload))
+        return cls(payload[0])
+
+
+    def match(self, source, literals, result, specs=None):
+        if source is nil:
+            return (None, False)
+        head, tail = car(source), cdr(source)
+        if not is_symbol(head):
+            return (None, False)
+        result[self._key] = MatchResult(head, get_position(source))
+        if specs is not None:
+            specs[self._key] = self
+        return (tail, True)
+
+
+    def to_tuple(self):
+        return (_tag_define, symbol(self._key) if isinstance(self.slot, str) else self.slot)
+
+
+@matcher(_tag_value)
+class _ValueMatcher:
+    """
+    Capture one element; value fed in, not a scope region for hygiene
+    """
+
+    def __init__(self, slot):
+        self.slot = slot
+        self._key = _slot_key(slot)
+
+
+    @classmethod
+    def from_payload(cls, payload, deserialize):
+        if len(payload) != 1:
+            raise ValueError('value expects 1 payload, got %d' % len(payload))
+        return cls(payload[0])
+
+
+    def match(self, source, literals, result, specs=None):
+        if source is nil:
+            return (None, False)
+        head, tail = car(source), cdr(source)
+        result[self._key] = MatchResult(head, get_position(source))
+        if specs is not None:
+            specs[self._key] = self
+        return (tail, True)
+
+
+    def to_tuple(self):
+        return (_tag_value, symbol(self._key) if isinstance(self.slot, str) else self.slot)
 
 
 @matcher(_tag_rest)
@@ -261,7 +394,10 @@ class _RestMatcher:
 
 
     def match(self, source, literals, result, specs=None):
-        result[self._key] = source
+        if source is nil:
+            return (None, False)
+        pos = get_position(source) if is_pair(source) else None
+        result[self._key] = MatchResult(source, pos)
         if specs is not None:
             specs[self._key] = self
         return (nil, True)
@@ -296,7 +432,7 @@ class _PairMatcher:
         head, tail = car(source), cdr(source)
         if not is_pair(head):
             return (None, False)
-        result[self._key] = head
+        result[self._key] = MatchResult(head, get_position(source))
         if specs is not None:
             specs[self._key] = self
         return (tail, True)
@@ -328,7 +464,7 @@ class _ExprMatcher:
         if source is nil:
             return (None, False)
         head, tail = car(source), cdr(source)
-        result[self._key] = head
+        result[self._key] = MatchResult(head, get_position(source))
         if specs is not None:
             specs[self._key] = self
         return (tail, True)
@@ -404,7 +540,7 @@ class _MatchMatcher:
                         return (None, False)
                 if self.key is not None:
                     key = _slot_key(self.key)
-                    result[key] = elem
+                    result[key] = MatchResult(elem, get_position(source))
                     if specs is not None:
                         specs[key] = self
                 return (rest, True)
@@ -544,12 +680,23 @@ def SYMBOL(slot):
     return _SymbolMatcher(slot)
 
 
-def BIND_SYM(slot):
+def DEFINE(slot):
     """
-    Deprecated: use SYMBOL
+    Capture one element into slot only when it is a symbol; binder for hygiene
+
+    Single-introduced-name form like (define X Y). Does not declare scope
+    for its value slot.
     """
 
-    return SYMBOL(slot)
+    return _DefineMatcher(slot)
+
+
+def VALUE(slot):
+    """
+    Capture one element into slot; value fed in, not a scope region for hygiene
+    """
+
+    return _ValueMatcher(slot)
 
 
 def PAIR(slot):
@@ -560,17 +707,9 @@ def PAIR(slot):
     return _PairMatcher(slot)
 
 
-def BIND_PAIR(slot):
-    """
-    Deprecated: use PAIR
-    """
-
-    return PAIR(slot)
-
-
 def REST(slot):
     """
-    Capture remainder of list into slot
+    Capture remainder of list into slot; scope region for hygiene
     """
 
     return _RestMatcher(slot)
@@ -650,7 +789,7 @@ def match(
 
 def is_binder_spec(spec):
     """
-    True if spec is a binder matcher (SYMBOL, BINDINGS, FORMALS)
+    True if spec is a binder matcher (SYMBOL, BINDINGS, FORMALS, DEFINE)
 
     Used by hygiene discovery to identify captures that introduce bindings.
     """
@@ -658,7 +797,8 @@ def is_binder_spec(spec):
     if spec is None:
         return False
     name = type(spec).__name__
-    return name in ('_SymbolMatcher', '_BindingsMatcher', '_FormalsMatcher')
+    return name in ('_SymbolMatcher', '_BindingsMatcher', '_FormalsMatcher',
+                    '_DefineMatcher')
 
 
 def is_scope_region_spec(spec):
@@ -676,26 +816,41 @@ def is_scope_region_spec(spec):
 
 def extract_binder_symbols(spec, value):
     """
-    Given a binder spec and its matched value, yield symbol names introduced
+    Given a binder spec and its matched value, yield symbol names introduced.
+
+    Accepts MatchResult, FormalsResult, BindingsResult, or legacy tuples for
+    backward compatibility.
     """
 
     if spec is None or value is None:
         return
+    raw = value.source if hasattr(value, 'source') else value
     name = type(spec).__name__
     if name == '_SymbolMatcher':
-        if is_symbol(value):
-            yield value
+        if is_symbol(raw):
+            yield raw
+    elif name == '_DefineMatcher':
+        if is_symbol(raw):
+            yield raw
     elif name == '_BindingsMatcher':
-        if not isinstance(value, (tuple, list)) or len(value) != 2:
+        if hasattr(value, 'names'):
+            names = value.names
+        elif isinstance(value, (tuple, list)) and len(value) == 2:
+            names, _values = value
+        else:
             return
-        names, _values = value
-        for n in names or ():
+        for n in (names or ()):
             if is_symbol(n):
                 yield n
     elif name == '_FormalsMatcher':
-        if not isinstance(value, (tuple, list)) or len(value) != 5:
+        if hasattr(value, 'positional'):
+            positional = value.positional
+            star = value.star
+            starstar = value.starstar
+        elif isinstance(value, (tuple, list)) and len(value) == 5:
+            positional, _defaults, _kwonly, star, starstar = value
+        else:
             return
-        positional, _defaults, _kwonly, star, starstar = value
         for s in (positional or ()):
             if is_symbol(s):
                 yield s

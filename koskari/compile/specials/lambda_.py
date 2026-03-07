@@ -53,11 +53,17 @@ def special_lambda(
         raise SpecialError("lambda requires formals and body", source)
 
     named = matched.get("name", None)
-    pos, defaults, kwonly, star, starstar = matched["formals"]
-    body_src = matched["body"]
+    if named is not None:
+        named = named.source
 
-    if body_src is nil or not is_pair(body_src):
-        body_src = pair(body_src, nil)
+    formals = matched["formals"]
+    pos = formals.positional
+    defaults = formals.defaults
+    kwonly = formals.kwonly
+    star = formals.star
+    starstar = formals.starstar
+
+    body_src = matched["body"].source
 
     proper_name = str(named) if named else None
     fragment_name = proper_name or "<lambda>"

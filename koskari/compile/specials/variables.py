@@ -23,10 +23,11 @@ compile/delq, and compile/define.
 """
 
 
-from ...lib import nil, OpCode, symbol, cons
+from ...lib import cons, nil, OpCode, symbol
+from ...matcher import DEFINE, MATCH, REST, VALUE, match
 from ...types import is_pair
 from ...exceptions import CompilerError, SpecialError
-from ..helpers import is_symbolish, special
+from ..helpers import FORMALS, is_symbolish, special, special_forms
 from ..syntax import build_syntax_rules_transformer
 
 
@@ -133,6 +134,14 @@ def special_delq(compiler, source, tc=False):
     return frag
 
 
+_DEFINE_PATTERNS = [
+    MATCH(DEFINE("name"), FORMALS("formals", scope="body"), REST("body")),
+    MATCH(DEFINE("name"), VALUE("value")),
+    MATCH(DEFINE("name")),
+]
+
+
+@special_forms(_DEFINE_PATTERNS)
 @special(symbol("compile/define"))
 def special_define(compiler, source, tc=False):
     """
@@ -142,31 +151,35 @@ def special_define(compiler, source, tc=False):
     """
 
     called_by, rest = source
-    if rest is nil or not is_pair(rest):
+    matched = match(rest, _DEFINE_PATTERNS)
+    if matched is None:
         raise SpecialError("define requires a name", source)
 
-    X, rest_tail = rest
-    if not is_symbolish(X):
-        raise SpecialError("define name must be a symbol", source)
-
-    sym = str(X)
-
+    name_val = matched["name"]
+    sym = str(name_val.source if hasattr(name_val, 'source') else name_val)
     frag = compiler.fragment(called_by)
     frag.declare_var(sym)
 
-    if rest_tail is nil:
+    if "body" in matched:
+        formals_val = matched["formals"]
+        formals_raw = formals_val.source if hasattr(formals_val, 'source') else formals_val
+        body_val = matched["body"]
+        body_raw = body_val.source if hasattr(body_val, 'source') else body_val
+        name_val = matched["name"]
+        name_raw = name_val.source if hasattr(name_val, 'source') else name_val
+        val_expr = cons(symbol("compile/lambda"), name_raw,
+                        formals_raw, body_raw)
+
+    elif "value" in matched:
+        val_val = matched["value"]
+        val_expr = val_val.source if hasattr(val_val, 'source') else val_val
+
+    else:
         frag.instruction(OpCode.KOS_OP_CONST, None)
         return frag
 
-    val_expr, lbody = rest_tail
-
-    if is_pair(val_expr) and lbody is not nil:
-        val_expr = cons(symbol('compile/lambda'), X, val_expr, lbody)
-
-    elif lbody is not nil:
-        raise SpecialError(
-            "define with expression takes exactly two arguments",
-            source)
+    if not is_pair(val_expr):
+        frag.position_of(rest)
 
     frag.merge(compiler.full_compile(val_expr))
     frag.instruction(OpCode.KOS_OP_VAR_STORE, sym)

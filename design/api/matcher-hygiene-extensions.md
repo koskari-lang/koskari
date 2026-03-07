@@ -129,7 +129,7 @@ Binder visibility is inferred from the pattern. If a sibling `BINDINGS` or `FORM
 
 ### `BINDINGS(name, *, mode="parallel", scope=None, scopes=None)`
 
-Match a binding list structure and expose the identifiers introduced by that structure. Implemented in `koskari.compile.helpers`. Used by let, let*, letrec, etc.
+Match a binding list structure and expose the identifiers introduced by that structure. Binds `BindingsResult` with `source`, `source_pos`, `names`, and `values`; supports unpacking `names, values = matched["bindings"]`. Implemented in `koskari.compile.helpers`. Used by let, let*, letrec, etc.
 
 #### Parameters
 
@@ -148,9 +148,19 @@ Supported modes:
 
 Initial implementation supports `parallel`.
 
-### `FORMALS(name, *, mode=..., scope=None, scopes=None)` (planned)
+### `FORMALS(name, *, scope=None, scopes=None)`
 
-Match a formal-parameter structure. Similar to BINDINGS but for lambda/formals. Uses `scope`/`scopes` for body regions. Not yet implemented.
+Match a formal-parameter structure. Similar to BINDINGS but for lambda/formals. Uses `scope`/`scopes` for body regions. Binds `FormalsResult` with `source` (raw formals), `source_pos`, and unpackable `(positional, defaults, kwonly, star, starstar)`. Use `.source` when the raw formals pair or symbol is needed. Implemented in `koskari.compile.helpers`.
+
+### `DEFINE(name)`
+
+Match a single symbol that introduces a binding. Used for forms like `(define X Y)` or `(define X [args] body...)`. Implemented in `koskari.matcher`.
+
+**Important**: DEFINE does **not** indicate hygienic rewriting of its value slot. The name (X) is gensym'd; the value expression (Y) is a "value fed in" position and is not recursed into for DEFINE's binding. Use `VALUE` for the value slot.
+
+### `VALUE(name)`
+
+Capture one element; value fed in, not a scope region. Same structural behavior as BIND, but documents intent: the slot is a value expression that does not receive hygienic recursion from binders in the same pattern. Use for `(define X Y)` where Y must not be treated as a scope region. Implemented in `koskari.matcher`.
 
 ---
 
@@ -159,7 +169,6 @@ Match a formal-parameter structure. Similar to BINDINGS but for lambda/formals. 
 Not required for the current implementation, but reserved for extension:
 
 * `BINDING(name, allow_unnamed=False)` — single binding like `(with [(expr) as: x] ...)`; optional unnamed binding
-* `DEFINE` — single-introduced-name form like `(define X Y)`; gensym'd across template
 * `BIND_VALUES(...)` — destructuring / multiple-value binding
 * `INIT(...)` — explicitly marks initializer expressions outside body scope
 * `BODY_DEFINES(...)` — body region that supports internal defines

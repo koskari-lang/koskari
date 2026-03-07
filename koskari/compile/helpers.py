@@ -17,8 +17,11 @@ from ..types import is_keyword, is_pair, is_proper, is_symbol, unpack
 
 from .compiler import Compiler, Special, ByteCodeFragment
 from ..exceptions import ParametersError, SpecialError
+from ..types import get_position
 from ..matcher import (
+    BindingsResult,
     BIND,
+    FormalsResult,
     LITERAL,
     LITERAL_KW,
     MATCH,
@@ -167,7 +170,8 @@ class _BindingsMatcher:
         if not is_pair(head):
             return (None, False)
         names, values = gather_bindings(head, head)
-        result[self._key] = (names, values)
+        result[self._key] = BindingsResult(
+            head, get_position(source), names=names, values=values)
         if specs is not None:
             specs[self._key] = self
         return (tail, True)
@@ -203,7 +207,7 @@ _tag_formals = symbol('matcher/formals')
 class _FormalsMatcher:
     """
     Match formals (pair or symbol) and bind the result of gather_formals
-    as (positional, defaults, kwonly, star, starstar)
+    as FormalsResult (positional, defaults, kwonly, star, starstar)
     """
 
     def __init__(self, slot, *, scope=None, scopes=None):
@@ -231,7 +235,10 @@ class _FormalsMatcher:
             pos, defaults, kwonly, star, starstar = gather_formals(head, head)
         except SpecialError:
             return (None, False)
-        result[self._key] = (pos, defaults, kwonly, star, starstar)
+        result[self._key] = FormalsResult(
+            head, get_position(source),
+            positional=pos, defaults=defaults, kwonly=kwonly,
+            star=star, starstar=starstar)
         if specs is not None:
             specs[self._key] = self
         return (tail, True)
@@ -243,8 +250,8 @@ class _FormalsMatcher:
 
 def FORMALS(slot, *, scope=None, scopes=None):
     """
-    Match formals and bind (positional, defaults, kwonly, star, starstar)
-    from gather_formals
+    Match formals and bind FormalsResult (positional, defaults, kwonly, star,
+    starstar) from gather_formals. Use .source for raw formals (pair or symbol).
 
     :param slot: capture key
     :param scope: single scope region key
@@ -291,13 +298,16 @@ def helper_binding(source, required=True, allow_unnamed=False):
     if m is None:
         raise SpecialError(msg, source)
 
+    def _src(v):
+        return v.source if hasattr(v, 'source') else v
+
     if "sym" in m and "expr" in m:
-        return (m["sym"], m["expr"])
+        return (_src(m["sym"]), _src(m["expr"]))
 
     if "expr" in m:
         if allow_unnamed:
-            return (None, m["expr"])
-        return (required, m["expr"])
+            return (None, _src(m["expr"]))
+        return (required, _src(m["expr"]))
 
     raise SpecialError(msg, source)
 

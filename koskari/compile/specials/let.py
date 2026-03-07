@@ -58,8 +58,14 @@ def special_let(
         raise SpecialError("let requires bindings and body", source)
 
     name = matched.get("name", None)
-    args, vals = matched["bindings"]
-    body = matched["body"]
+    if name is not None:
+        name = name.source
+
+    bindings = matched["bindings"]
+    args = bindings.names
+    vals = bindings.values
+
+    body = matched["body"].source
 
     if name:
         return cons(_sym_call,
