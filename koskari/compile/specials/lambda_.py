@@ -23,12 +23,20 @@ Special form handler for compile/lambda.
 
 
 from ...lib import FormalsSpec, FunctionSpec, nil, OpCode, pair, symbol
-from ...types import is_pair, is_symbol
+from ...types import is_pair
 from ..compiler import ByteCodeFragment, Compiler, CompilerMode
 from ...exceptions import SpecialError
-from ..helpers import gather_formals, helper_begin, special
+from ...matcher import MATCH, REST, SYMBOL, match
+from ..helpers import FORMALS, helper_begin, special, special_forms
 
 
+_LAMBDA_PATTERNS = [
+    MATCH(SYMBOL("name"), FORMALS("formals", scope="body"), REST("body")),
+    MATCH(FORMALS("formals", scope="body"), REST("body")),
+]
+
+
+@special_forms(_LAMBDA_PATTERNS)
 @special(symbol("compile/lambda"))
 def special_lambda(
         compiler: Compiler,
@@ -40,29 +48,20 @@ def special_lambda(
     """
 
     called_by, rest = source
-    if rest is nil or not is_pair(rest):
+    matched = match(rest, _LAMBDA_PATTERNS)
+    if matched is None:
         raise SpecialError("lambda requires formals and body", source)
 
-    first, rest_tail = rest
-    if is_symbol(first):
-        named = first
-        if rest_tail is nil or not is_pair(rest_tail):
-            raise SpecialError(
-                "named lambda requires formals and body",
-                source)
-        formals_src, body_src = rest_tail
-    else:
-        named = None
-        formals_src, body_src = first, rest_tail
+    named = matched.get("name", None)
+    pos, defaults, kwonly, star, starstar = matched["formals"]
+    body_src = matched["body"]
 
     if body_src is nil or not is_pair(body_src):
         body_src = pair(body_src, nil)
 
-    proper_name = str(named) if named is not None else None
-    fragment_name = proper_name if proper_name is not None else "<lambda>"
+    proper_name = str(named) if named else None
+    fragment_name = proper_name or "<lambda>"
 
-    pos, defaults, kwonly, star, starstar = gather_formals(
-        formals_src, source=formals_src)
     kw = []
     pos = [str(k) for k in pos]
     star = str(star) if star else None
