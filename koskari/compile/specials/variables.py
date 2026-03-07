@@ -155,24 +155,20 @@ def special_define(compiler, source, tc=False):
     if matched is None:
         raise SpecialError("define requires a name", source)
 
-    name_val = matched["name"]
-    sym = str(name_val.source if hasattr(name_val, 'source') else name_val)
+    namesym = matched["name"].source
+    name = str(namesym)
+
     frag = compiler.fragment(called_by)
-    frag.declare_var(sym)
+    frag.declare_var(name)
 
     if "body" in matched:
-        formals_val = matched["formals"]
-        formals_raw = formals_val.source if hasattr(formals_val, 'source') else formals_val
-        body_val = matched["body"]
-        body_raw = body_val.source if hasattr(body_val, 'source') else body_val
-        name_val = matched["name"]
-        name_raw = name_val.source if hasattr(name_val, 'source') else name_val
-        val_expr = cons(symbol("compile/lambda"), name_raw,
-                        formals_raw, body_raw)
+        formals = matched["formals"]
+        body = matched["body"]
+        val_expr = cons(symbol("compile/lambda"), namesym,
+                        formals.source, body.source)
 
     elif "value" in matched:
-        val_val = matched["value"]
-        val_expr = val_val.source if hasattr(val_val, 'source') else val_val
+        val_expr = matched["value"].source
 
     else:
         frag.instruction(OpCode.KOS_OP_CONST, None)
@@ -182,7 +178,7 @@ def special_define(compiler, source, tc=False):
         frag.position_of(rest)
 
     frag.merge(compiler.full_compile(val_expr))
-    frag.instruction(OpCode.KOS_OP_VAR_STORE, sym)
+    frag.instruction(OpCode.KOS_OP_VAR_STORE, name)
     frag.instruction(OpCode.KOS_OP_CONST, None)
 
     return frag
