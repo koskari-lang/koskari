@@ -143,7 +143,7 @@ Examples:
 * `name`: capture key
 * `binds_in`: optional tuple/list of `BODY` capture names in which this binder is visible
 
-If `binds_in` is omitted, binder visibility is inferred from the selected pattern's body regions according to the special's normalized rule.
+If `binds_in` is omitted, binder visibility defaults to any EXPR or BODY region in the same matched pattern. A special that needs different behavior can override with explicit `scope` or `scopes`.
 
 ### `BIND_BINDINGS(name, *, mode="parallel", binds_in=None)`
 
@@ -155,7 +155,7 @@ This role is for forms like `let`, `let*`, `letrec`, etc.
 
 * `name`: capture key
 * `mode`: binding visibility across initializer expressions
-* `binds_in`: optional tuple/list of `BODY` capture names in which these binders are visible
+* `binds_in`: optional tuple/list of `BODY` capture names in which these binders are visible; if omitted, defaults to any EXPR or BODY in the same pattern
 
 Supported modes:
 
@@ -174,7 +174,7 @@ This role is for `lambda`, function shorthand define, macro lambda-like helpers,
 #### Parameters
 
 * `name`: capture key
-* `binds_in`: optional tuple/list of `BODY` capture names in which these formals are visible
+* `binds_in`: optional tuple/list of `BODY` capture names in which these formals are visible; if omitted, defaults to any EXPR or BODY in the same pattern
 
 Formal names bind only in the designated body regions, never in default-value expressions unless later explicitly specified.
 
@@ -322,11 +322,11 @@ For each binder discovered from `BIND_*` roles:
 * allocate a fresh symbol derived from the original printed name
 * store mapping from original binder node identity to fresh symbol
 
-Important: mapping is by **identifier occurrence identity / binder record**, not by printed name alone.
+**Binder vs reference identity**: The binder positions themselves are rewritten by node identity (the matched syntax node). References are rewritten by symbol-in-scope: any introduced identifier in the designated scope region that matches the binder's printed name is replaced with the gensym. Mapping is keyed by binder record, not by printed name alone, to support multiple binders with the same name in different scopes.
 
 #### Step 3: rewrite binder positions
 
-Rewrite the matched binder occurrences themselves to the fresh gensyms.
+Rewrite the matched binder occurrences themselves (by node) to the fresh gensyms.
 
 Examples:
 
@@ -341,7 +341,7 @@ Walk each `BODY` region designated for those binders.
 During the walk:
 
 * if subtree provenance is `substituted`: stop descending, leave as-is
-* if identifier occurrence resolves to one of the active introduced binders: replace with gensym
+* if identifier occurrence (by symbol-in-scope) resolves to one of the active introduced binders: replace with gensym
 * otherwise recurse normally
 
 #### Step 5: obey binding mode
