@@ -28,7 +28,7 @@ from ...lib import OpCode, nil, pair, symbol
 from ...matcher import MATCH, REST, match
 from ...types import is_pair
 from ..compiler import ByteCodeFragment, Compiler
-from ..helpers import (BINDING, gather_bindings, helper_begin, helper_binding,
+from ..helpers import (BINDING, gather_bindings, helper_begin,
                        special, special_forms)
 
 
