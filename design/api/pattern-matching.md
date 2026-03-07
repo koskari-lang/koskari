@@ -38,6 +38,66 @@ Matcher classes are registered via the `@matcher(tag)` decorator into a `MATCHER
 
 ---
 
+## Design Goals (Target Matcher Set)
+
+The following describes the intended unified design. Implementation may lag; see "Implementation (Current)" and the Tags tables for current state.
+
+### Unified Coverage
+
+All matchers follow a regex MatchObject-like model: forms bind by key in the result dict, and some have special unpacking semantics (e.g. BINDINGS yields `(names, values)`).
+
+**Core matchers (koskari.matcher):**
+
+| Matcher | Keyed? | Result | Notes |
+|---------|--------|--------|-------|
+| **BIND** | yes | `{slot: element}` | Any single element |
+| **SYMBOL** | yes | `{slot: symbol}` | Renamed from BIND_SYM |
+| **PAIR** | yes | `{slot: pair}` | Capture whole pair (BIND_PAIR renamed); type-constrained |
+| **REST** | yes | `{slot: remainder}` | Remainder of list |
+| **EXPR** | yes | `{slot: element}` | Single form; scope region for hygiene (to implement) |
+| **LITERAL** | no | — | Exact match, no capture |
+| **OPT** | structural | — | Optional sub-pattern |
+| **ANY_ORDER** | structural | — | Order-independent sequence |
+| **MATCH** | structural / optional key | — | Sequence match; see below |
+
+**Compile-specific matchers (koskari.compile.helpers):** BINDINGS, BINDING, FORMALS, DEFINE. These live in helpers (they depend on `gather_bindings` etc.) but register into MATCHERS. Each has special "get at insides" behavior (e.g. BINDINGS unpacks to `(names, values)`).
+
+### MATCH as Structural Form for Pairs
+
+MATCH always means "walk a sequence and match specs in order." The *source* varies by context:
+
+- **Top-level**: The sequence is the form being matched.
+- **Sub-expression**: The current element must be a **pair**. The pair `(car . cdr)` is treated as a 2-element sequence `[car, cdr]`, and MATCH's specs run against that.
+
+There is no separate structural `PAIR(car_spec, cdr_spec)`. Instead, MATCH itself serves that role when used as a sub-expression. Keyword clauses become nested MATCH:
+
+```python
+MATCH(
+    MATCH(LITERAL_KW("before:"), BIND("before_body")),
+    MATCH(LITERAL_KW("body:"), BIND("body")),
+    MATCH(LITERAL_KW("after:"), BIND("after_body")),
+)
+```
+
+The inner MATCHs receive a pair; they destructure it and match car/cdr.
+
+### MATCH Optional Key
+
+When MATCH is a sub-expression, an optional `key` captures the matched pair:
+
+```python
+MATCH(LITERAL_KW("before:"), BIND("before_body"), key="before_clause")
+```
+
+Then `result["before_clause"]` is the whole `(before: . ...)` pair and `result["before_body"]` is the cdr. Python requires keyword args last, so the key appears after the specs.
+
+### PAIR vs MATCH
+
+- **PAIR(slot)** — capture the whole pair into a slot. No destructuring.
+- **MATCH(...)** as sub-expr — element must be pair; destructure and match (car, cdr) against inner specs.
+
+---
+
 ## Tagged Tuple Representation
 
 ### Canonical Form
@@ -74,13 +134,14 @@ def match(self, source, literals, result, specs=None) -> Tuple[Optional[Any], bo
 
 | Tag | Payload | Meaning |
 |-----|---------|---------|
-| `matcher/match` | elem, elem, ... | Top-level sequence; elements must appear in order |
+| `matcher/match` | elem, elem, ... [, key] | Sequence match; when sub-expr, element must be pair, destructure (car, cdr). Optional key captures matched pair. |
 | `matcher/literal` | value | Match this value exactly (keyword or symbol) |
 | `matcher/bind` | slot | Capture one element into binding `slot` |
-| `matcher/bind-sym` | slot | Capture one element into `slot` only when it is a symbol |
-| `matcher/bind-pair` | slot | Capture one element into `slot` only when it is a pair |
+| `matcher/bind-sym` | slot | Capture symbol; target: tag `matcher/symbol` |
+| `matcher/bind-pair` | slot | Capture pair; target: tag `matcher/pair` (structural pair removed) |
 | `matcher/rest` | slot | Capture remainder of list into `slot` |
-| `matcher/pair` | car_spec, cdr_spec | Element must be pair; car matches car_spec, cdr bound per cdr_spec |
+| `matcher/expr` | slot | Capture single form; scope region (to implement) |
+| `matcher/pair` | car_spec, cdr_spec | *Current only*: element must be pair; car/cdr match. *Target*: removed; use MATCH as sub-expr for pair destructuring. |
 | `matcher/opt` | elem | Optionally match elem (succeed if absent) |
 | `matcher/any-order` | elem, elem, ... | All elements must match, in any order |
 
@@ -89,6 +150,9 @@ def match(self, source, literals, result, specs=None) -> Tuple[Optional[Any], bo
 | Tag | Payload | Meaning |
 |-----|---------|---------|
 | `matcher/bind-bindings` | slot | Element must be a list; apply `gather_bindings` and bind `(names, values)` tuple to `slot`. Accepts optional `mode`, `scope`, `scopes` for hygiene (see matcher-hygiene-extensions.md). |
+| `matcher/bind-binding` | slot | Single binding; `(name, value)`; optional `allow_unnamed` (planned) |
+| `matcher/formals` | slot | Formal parameters for lambda; uses `scope`/`scopes` (planned) |
+| `matcher/define` | slot | Single define-style name; gensym'd (planned) |
 
 ### Helpers
 
@@ -99,14 +163,14 @@ Keywords in the source are matched literally; only symbols are ambiguous (litera
 
 ### Clause Forms
 
-- **Keyword clause**: `PAIR(LITERAL_KW("before:"), BIND("before_body"))` — match a pair whose car is the keyword, bind cdr to `before_body`.
+- **Keyword clause** (target): `MATCH(LITERAL_KW("before:"), BIND("before_body"))` — when MATCH is a sub-expr, the element must be a pair; destructure and match. (Current: `PAIR(car_spec, cdr_spec)`.)
 - **Positional**: `BIND("body")` — capture one element.
 - **Rest**: `REST("tail")` — capture remainder of list.
-- **Type-constrained**: `BIND_SYM("name")` for symbols, `BIND_PAIR("bindings")` for pairs, `BINDINGS("bindings")` for binding lists (pre-parsed, with optional `mode`, `scope`, `scopes`).
+- **Type-constrained**: `SYMBOL("name")` for symbols (target; current BIND_SYM), `PAIR("bindings")` for whole pairs (target; current BIND_PAIR), `BINDINGS("bindings")` for binding lists (pre-parsed, with optional `mode`, `scope`, `scopes`).
 
 ### Example: let form (implemented)
 
-The let special uses `BIND_SYM`, `BINDINGS`, and `REST`:
+The let special uses `BIND_SYM` (target: SYMBOL), `BINDINGS`, and `REST`:
 
 ```python
 _LET_PATTERNS = [
@@ -118,36 +182,38 @@ matched = match(rest, _LET_PATTERNS)
 # REST("body") captures the remaining forms as the body region
 ```
 
-### Example: dyn-wind (proposed)
+### Example: dyn-wind (proposed, target syntax)
 
 ```python
-# Python API
+# Python API — target design: MATCH as sub-expr destructures pairs
 PATTERNS = [
     MATCH(
         ANY_ORDER(
-            PAIR(LITERAL_KW("before:"), BIND("before_body")),
-            PAIR(LITERAL_KW("body:"), BIND("body")),
-            PAIR(LITERAL_KW("after:"), BIND("after_body")),
+            MATCH(LITERAL_KW("before:"), BIND("before_body")),
+            MATCH(LITERAL_KW("body:"), BIND("body")),
+            MATCH(LITERAL_KW("after:"), BIND("after_body")),
         ),
     ),
     MATCH(
         ANY_ORDER(
-            PAIR(LITERAL_KW("body:"), BIND("body")),
-            PAIR(LITERAL_KW("after:"), BIND("after_body")),
+            MATCH(LITERAL_KW("body:"), BIND("body")),
+            MATCH(LITERAL_KW("after:"), BIND("after_body")),
         ),
     ),
     # ... other permutations
 ]
 ```
 
-Serialized (tagged tuple):
+Current implementation uses `PAIR(car_spec, cdr_spec)`; the target collapses that into MATCH-as-sub-expr.
+
+Serialized (tagged tuple, target):
 
 ```python
 (symbol("matcher/match"),
  (symbol("matcher/any-order"),
-  (symbol("matcher/pair"), (symbol("matcher/literal"), keyword("before:")), (symbol("matcher/bind"), symbol("before_body"))),
-  (symbol("matcher/pair"), (symbol("matcher/literal"), keyword("body:")), (symbol("matcher/bind"), symbol("body"))),
-  (symbol("matcher/pair"), (symbol("matcher/literal"), keyword("after:")), (symbol("matcher/bind"), symbol("after_body")))),
+  (symbol("matcher/match"), (symbol("matcher/literal"), keyword("before:")), (symbol("matcher/bind"), symbol("before_body"))),
+  (symbol("matcher/match"), (symbol("matcher/literal"), keyword("body:")), (symbol("matcher/bind"), symbol("body"))),
+  (symbol("matcher/match"), (symbol("matcher/literal"), keyword("after:")), (symbol("matcher/bind"), symbol("after_body")))),
 )
 ```
 
@@ -209,7 +275,7 @@ from koskari.matcher import LITERAL_KW, LITERAL_SYM, LITERAL
 from koskari.matcher import match, from_tuple, match_tuple
 from koskari.compile.helpers import BINDINGS
 
-# Build
+# Build (target: MATCH for pair destructuring; current uses PAIR)
 pattern = MATCH(
     PAIR(LITERAL_KW("before:"), BIND("before_body")),
     OPT(PAIR(LITERAL_KW("after:"), BIND("after_body"))),
@@ -317,10 +383,11 @@ Or as a list of (pattern, template) pairs for multiple clauses.
 Koskari could provide forms that construct tagged tuples:
 
 ```lisp
+;; Target: MATCH destructures pairs when sub-expr
 (syntax/pattern
   (syntax/match
-    (syntax/pair (syntax/literal-kw "before:") (syntax/bind 'before-body))
-    (syntax/opt (syntax/pair (syntax/literal-kw "after:") (syntax/bind 'after-body)))
+    (syntax/match (syntax/literal-kw "before:") (syntax/bind 'before-body))
+    (syntax/opt (syntax/match (syntax/literal-kw "after:") (syntax/bind 'after-body)))
     (syntax/rest 'body)))
 ```
 
@@ -362,7 +429,7 @@ Matcher classes register via `@matcher(tag)`. The `from_tuple()` function looks 
 
 ### Role Helpers (hygiene discovery)
 
-- `is_binder_spec(spec)` — True for BIND_SYM, BINDINGS, FORMALS
+- `is_binder_spec(spec)` — True for SYMBOL (BIND_SYM), BINDINGS, FORMALS
 - `is_scope_region_spec(spec)` — True for REST, EXPR (regions usable as bodies)
 - `extract_binder_symbols(spec, value)` — yield symbol names from a binder spec and its matched value
 
