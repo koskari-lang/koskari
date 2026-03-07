@@ -18,11 +18,9 @@ Tests for PARAM opcode
 :license: GNU General Public License v3
 """
 
-import unittest
-
 from koskari.lib import ParamRef
 from tests import make_callable
-from tests.lib.opcode import CevalTest, build_expr, run_to_completion
+from tests.lib.opcode import CevalTest, build_expr
 
 
 class TestParamOpcodes(CevalTest):
@@ -39,7 +37,7 @@ class TestParamOpcodes(CevalTest):
             ["PARAM", "x"],
             ["RETURN", 1],
         ])
-        result = run_to_completion(make_callable(code, ns)())
+        result = await make_callable(code, ns)()
         self.assertIsInstance(result, ParamRef)
         self.assertEqual(result.name, "x")
 
@@ -53,7 +51,7 @@ class TestParamOpcodes(CevalTest):
             ["PARAM", "foo"],
             ["RETURN", 1],
         ])
-        result = run_to_completion(make_callable(code, ns)())
+        result = await make_callable(code, ns)()
         self.assertIsInstance(result, ParamRef)
         self.assertEqual(result.name, "foo")
 
@@ -74,7 +72,7 @@ class TestParamOpcodes(CevalTest):
             ["POP_PARAM", 0],
             ["RETURN", 1],
         ], values={"f": check_x})
-        result = run_to_completion(make_callable(code, ns)())
+        result = await make_callable(code, ns)()
         self.assertEqual(result, 42)
 
 

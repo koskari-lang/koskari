@@ -21,7 +21,6 @@ run_asyncio_in_thread for tests under tests.lib.opcode.
 :license: GNU General Public License v3
 """
 
-import asyncio
 import unittest
 
 from koskari.lib import (
@@ -80,34 +79,6 @@ def build_expr(code, local_syms=None, values=None, name="expr"):
         for k, v in values.items():
             ns.store(k, v)
     return (c, ns)
-
-
-async def run_asyncio_in_thread(coro_fn):
-    """
-    Run coro_fn() via asyncio.run() in a thread. For use from async tests
-    when the code under test requires its own event loop.
-    """
-
-    def run():
-        return asyncio.run(coro_fn())
-
-    loop = asyncio.get_running_loop()
-    return await loop.run_in_executor(None, run)
-
-
-def run_to_completion(coro):
-    """
-    Drive the coroutine until StopIteration; return the yielded value
-
-    :param coro: Coroutine from make_callable(code, ns)() or similar
-    :return: The value passed to StopIteration
-    """
-
-    try:
-        while True:
-            coro.send(None)
-    except StopIteration as e:
-        return e.value
 
 
 class CevalTest(unittest.IsolatedAsyncioTestCase):

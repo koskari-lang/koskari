@@ -18,10 +18,8 @@ Tests for DUP and POP opcodes.
 :license: GNU General Public License v3
 """
 
-import unittest
-
 from tests import make_callable
-from tests.lib.opcode import CevalTest, build_expr, run_to_completion
+from tests.lib.opcode import CevalTest, build_expr
 
 
 class TestStackOpcodes(CevalTest):
@@ -39,7 +37,7 @@ class TestStackOpcodes(CevalTest):
             ["DUP", 1],
             ["RETURN", 2],
         ])
-        result = run_to_completion(make_callable(code, ns)())
+        result = await make_callable(code, ns)()
         self.assertEqual(result, (7, 7))
 
 
@@ -54,7 +52,7 @@ class TestStackOpcodes(CevalTest):
             ["POP", 1],
             ["RETURN", 1],
         ])
-        result = run_to_completion(make_callable(code, ns)())
+        result = await make_callable(code, ns)()
         self.assertEqual(result, 10)
 
 

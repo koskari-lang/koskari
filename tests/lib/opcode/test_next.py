@@ -18,11 +18,8 @@ Tests for NEXT, ITER_NEXT opcodes.
 :license: GNU General Public License v3
 """
 
-import unittest
-
-import asyncio
 from tests import make_callable
-from tests.lib.opcode import CevalTest, build_expr, run_asyncio_in_thread, run_to_completion
+from tests.lib.opcode import CevalTest, build_expr
 
 
 class TestNextOpcodes(CevalTest):
@@ -34,13 +31,14 @@ class TestNextOpcodes(CevalTest):
         """
         NEXT 1 on iterator pushes first value
         """
+
         code, ns = build_expr([
             ["CONST", [10]],
             ["OBJECT_ITER", 0],
             ["NEXT", 1],
             ["RETURN", 1],
         ])
-        result = run_to_completion(make_callable(code, ns)())
+        result = await make_callable(code, ns)()
         self.assertEqual(result, 10)
 
 
@@ -48,6 +46,7 @@ class TestNextOpcodes(CevalTest):
         """
         NEXT 1 on exhausted iterator raises StopIteration (or wraps it)
         """
+
         code, ns = build_expr([
             ["CONST", []],
             ["OBJECT_ITER", 0],
@@ -64,6 +63,7 @@ class TestNextOpcodes(CevalTest):
         """
         NEXT 2 on iterator pushes value; stack is [iterator, default]
         """
+
         code, ns = build_expr([
             ["CONST", [7]],
             ["OBJECT_ITER", 0],
@@ -71,7 +71,7 @@ class TestNextOpcodes(CevalTest):
             ["NEXT", 2],
             ["RETURN", 1],
         ])
-        result = run_to_completion(make_callable(code, ns)())
+        result = await make_callable(code, ns)()
         self.assertEqual(result, 7)
 
 
@@ -79,6 +79,7 @@ class TestNextOpcodes(CevalTest):
         """
         NEXT 2 on exhausted iterator pushes default
         """
+
         code, ns = build_expr([
             ["CONST", []],
             ["OBJECT_ITER", 0],
@@ -86,7 +87,7 @@ class TestNextOpcodes(CevalTest):
             ["NEXT", 2],
             ["RETURN", 1],
         ])
-        result = run_to_completion(make_callable(code, ns)())
+        result = await make_callable(code, ns)()
         self.assertEqual(result, 42)
 
 
@@ -94,6 +95,7 @@ class TestNextOpcodes(CevalTest):
         """
         NEXT on iterable (not iterator) calls PyObject_GetIter; yields first value
         """
+
         code, ns = build_expr([
             ["CONST", [100, 200]],
             ["NEXT", 1],
@@ -101,13 +103,14 @@ class TestNextOpcodes(CevalTest):
         ])
 
         with self.assertRaises(TypeError):
-            run_to_completion(make_callable(code, ns)())
+            await make_callable(code, ns)()
 
 
     async def test_next_arg_validation_rejects_invalid_args(self):
         """
         NEXT with arg other than 1 or 2 raises ValueError
         """
+
         for bad_arg in (0, 3):
             code, ns = build_expr([
                 ["CONST", []],
@@ -116,7 +119,7 @@ class TestNextOpcodes(CevalTest):
                 ["RETURN", 1],
             ])
             with self.assertRaises(ValueError) as cm:
-                run_to_completion(make_callable(code, ns)())
+                await make_callable(code, ns)()
             self.assertIn("NEXT arg must be 1 or 2", str(cm.exception))
 
 
@@ -124,19 +127,22 @@ class TestNextOpcodes(CevalTest):
         """
         NEXT on object that is neither iterable nor iterator raises TypeError
         """
+
         code, ns = build_expr([
             ["CONST", 42],
             ["NEXT", 1],
             ["RETURN", 1],
         ])
         with self.assertRaises(TypeError):
-            run_to_completion(make_callable(code, ns)())
+            await make_callable(code, ns)()
 
 
     async def test_next_accumulates_values_from_koskari_async_gen(self):
         """
-        NEXT 1 on a Koskari async gen yields 1, 2, 3; consumer accumulates and returns 3
+        NEXT 1 on a Koskari async gen yields 1, 2, 3; consumer accumulates and
+        returns 3
         """
+
         gen_code, gen_ns = build_expr([
             ["CONST", 1],
             ["YIELD", 1],
@@ -161,14 +167,16 @@ class TestNextOpcodes(CevalTest):
             ["VAR", "v3"],
             ["RETURN", 1],
         ], values={"gen": gen, "v1": None, "v2": None, "v3": None})
-        result = run_to_completion(make_callable(consumer_code, consumer_ns)())
+        result = await make_callable(consumer_code, consumer_ns)()
         self.assertEqual(result, 3)
 
 
     async def test_next_with_await_in_generator(self):
         """
-        Koskari async gen that AWAITs a Python async noop between yields; consumer still gets 1,2,3
+        Koskari async gen that AWAITs a Python async noop between yields;
+        consumer still gets 1,2,3
         """
+
         async def noop():
             return None
 
@@ -200,7 +208,7 @@ class TestNextOpcodes(CevalTest):
             ["VAR", "v3"],
             ["RETURN", 1],
         ], values={"gen": gen, "v1": None, "v2": None, "v3": None})
-        result = make_callable(consumer_code, consumer_ns)().run()
+        result = await make_callable(consumer_code, consumer_ns)()
         self.assertEqual(result, 3)
 
 
@@ -208,6 +216,7 @@ class TestNextOpcodes(CevalTest):
         """
         PUSH_FOREACH over a Koskari async gen; ITER_NEXT accumulates; last value is 3
         """
+
         gen_code, gen_ns = build_expr([
             ["CONST", 1],
             ["YIELD", 1],
@@ -239,7 +248,7 @@ class TestNextOpcodes(CevalTest):
             ["VAR", "last"],
             ["RETURN", 1],
         ], values={"gen": gen, "count": 0, "last": None})
-        result = run_to_completion(make_callable(consumer_code, consumer_ns)())
+        result = await make_callable(consumer_code, consumer_ns)()
         self.assertEqual(result, 3)
 
 
@@ -247,6 +256,7 @@ class TestNextOpcodes(CevalTest):
         """
         NEXT 1 on Koskari async gen after last value raises StopIteration
         """
+
         gen_code, gen_ns = build_expr([
             ["CONST", 1],
             ["YIELD", 1],
@@ -272,6 +282,7 @@ class TestNextOpcodes(CevalTest):
         """
         NEXT 2 on Koskari async gen that returns immediately pushes default
         """
+
         gen_code, gen_ns = build_expr([
             ["RETURN", 0],
             ["CONST", None],
@@ -285,14 +296,16 @@ class TestNextOpcodes(CevalTest):
             ["NEXT", 2],
             ["RETURN", 1],
         ], values={"gen": gen})
-        result = run_to_completion(make_callable(consumer_code, consumer_ns)())
+        result = await make_callable(consumer_code, consumer_ns)()
         self.assertEqual(result, 99)
 
 
     async def test_next_on_python_async_iterator(self):
         """
-        NEXT 1 on Python async iterator (async gen) yields values via GET_NEXT_SUSPEND
+        NEXT 1 on Python async iterator (async gen) yields values via
+        GET_NEXT_SUSPEND
         """
+
         async def async_gen():
             yield 10
             yield 20
@@ -313,7 +326,7 @@ class TestNextOpcodes(CevalTest):
             ], values={"aiter": aiter, "v1": None, "v2": None})
             return await make_callable(consumer_code, consumer_ns)()
 
-        result = await run_asyncio_in_thread(run)
+        result = await run()
         self.assertEqual(result, 30)
 
 
@@ -321,9 +334,10 @@ class TestNextOpcodes(CevalTest):
         """
         NEXT 2 on empty Python async iterator returns default
         """
+
         async def empty_async_gen():
-            return
-            yield
+            if False:
+                yield
 
         async def run():
             aiter = empty_async_gen()
@@ -333,9 +347,9 @@ class TestNextOpcodes(CevalTest):
                 ["NEXT", 2],
                 ["RETURN", 1],
             ], values={"aiter": aiter})
-            return run_to_completion(make_callable(consumer_code, consumer_ns)())
+            return await make_callable(consumer_code, consumer_ns)()
 
-        result = await run_asyncio_in_thread(run)
+        result = await run()
         self.assertEqual(result, 88)
 
 
@@ -343,6 +357,7 @@ class TestNextOpcodes(CevalTest):
         """
         NEXT 2 on Koskari async gen after consuming values then exhausting returns default
         """
+
         gen_code, gen_ns = build_expr([
             ["CONST", 1],
             ["YIELD", 1],
@@ -366,14 +381,16 @@ class TestNextOpcodes(CevalTest):
             ["NEXT", 2],
             ["RETURN", 1],
         ], values={"gen": gen})
-        result = run_to_completion(make_callable(consumer_code, consumer_ns)())
+        result = await make_callable(consumer_code, consumer_ns)()
         self.assertEqual(result, 77)
 
 
     async def test_next_2_on_python_async_iter_after_yields_then_exhausted_returns_default(self):
         """
-        NEXT 2 on Python async iterator after consuming values then exhausting returns default
+        NEXT 2 on Python async iterator after consuming values then exhausting
+        returns default
         """
+
         async def async_gen():
             yield 10
             yield 20
@@ -394,16 +411,18 @@ class TestNextOpcodes(CevalTest):
                 ["NEXT", 2],
                 ["RETURN", 1],
             ], values={"aiter": aiter})
-            return run_to_completion(make_callable(consumer_code, consumer_ns)())
+            return await make_callable(consumer_code, consumer_ns)()
 
-        result = await run_asyncio_in_thread(run)
+        result = await run()
         self.assertEqual(result, 66)
 
 
     async def test_next_on_iterator_that_raises_propagates_error(self):
         """
-        NEXT on iterator whose __next__ raises (not StopIteration) propagates GET_NEXT_ERROR
+        NEXT on iterator whose __next__ raises (not StopIteration) propagates
+        GET_NEXT_ERROR
         """
+
         class BadIterator(object):
             def __iter__(self):
                 return self
@@ -418,7 +437,7 @@ class TestNextOpcodes(CevalTest):
             ["RETURN", 1],
         ])
         with self.assertRaises(ValueError) as cm:
-            run_to_completion(make_callable(code, ns)())
+            await make_callable(code, ns)()
         self.assertIn("iterator raised", str(cm.exception))
 
 

@@ -18,10 +18,8 @@ Tests for OBJECT_EQ opcodes.
 :license: GNU General Public License v3
 """
 
-import unittest
-
 from tests import make_callable
-from tests.lib.opcode import CevalTest, build_expr, run_to_completion
+from tests.lib.opcode import CevalTest, build_expr
 
 
 class TestObjectComparisonOpcodes(CevalTest):
@@ -38,7 +36,7 @@ class TestObjectComparisonOpcodes(CevalTest):
             ["OBJECT_EQ", 0],
             ["RETURN", 1],
         ])
-        self.assertEqual(run_to_completion(make_callable(code, ns)()), True)
+        self.assertEqual(await make_callable(code, ns)(), True)
 
 
     async def test_object_ne(self):
@@ -48,7 +46,7 @@ class TestObjectComparisonOpcodes(CevalTest):
             ["OBJECT_NE", 0],
             ["RETURN", 1],
         ])
-        self.assertEqual(run_to_completion(make_callable(code, ns)()), True)
+        self.assertEqual(await make_callable(code, ns)(), True)
 
 
     async def test_object_lt(self):
@@ -58,7 +56,7 @@ class TestObjectComparisonOpcodes(CevalTest):
             ["OBJECT_LT", 0],
             ["RETURN", 1],
         ])
-        self.assertEqual(run_to_completion(make_callable(code, ns)()), True)
+        self.assertEqual(await make_callable(code, ns)(), True)
 
 
     async def test_object_le(self):
@@ -68,7 +66,7 @@ class TestObjectComparisonOpcodes(CevalTest):
             ["OBJECT_LE", 0],
             ["RETURN", 1],
         ])
-        self.assertEqual(run_to_completion(make_callable(code, ns)()), True)
+        self.assertEqual(await make_callable(code, ns)(), True)
 
 
     async def test_object_gt(self):
@@ -78,7 +76,7 @@ class TestObjectComparisonOpcodes(CevalTest):
             ["OBJECT_GT", 0],
             ["RETURN", 1],
         ])
-        self.assertEqual(run_to_completion(make_callable(code, ns)()), True)
+        self.assertEqual(await make_callable(code, ns)(), True)
 
 
     async def test_object_ge(self):
@@ -88,7 +86,7 @@ class TestObjectComparisonOpcodes(CevalTest):
             ["OBJECT_GE", 0],
             ["RETURN", 1],
         ])
-        self.assertEqual(run_to_completion(make_callable(code, ns)()), True)
+        self.assertEqual(await make_callable(code, ns)(), True)
 
 
     async def test_object_in(self):
@@ -98,7 +96,7 @@ class TestObjectComparisonOpcodes(CevalTest):
             ["OBJECT_IN", 0],
             ["RETURN", 1],
         ])
-        self.assertEqual(run_to_completion(make_callable(code, ns)()), True)
+        self.assertEqual(await make_callable(code, ns)(), True)
 
 
     async def test_object_not_in(self):
@@ -108,7 +106,7 @@ class TestObjectComparisonOpcodes(CevalTest):
             ["OBJECT_NOT_IN", 0],
             ["RETURN", 1],
         ])
-        self.assertEqual(run_to_completion(make_callable(code, ns)()), True)
+        self.assertEqual(await make_callable(code, ns)(), True)
 
 
     async def test_object_is(self):
@@ -118,7 +116,7 @@ class TestObjectComparisonOpcodes(CevalTest):
             ["OBJECT_IS", 0],
             ["RETURN", 1],
         ])
-        self.assertEqual(run_to_completion(make_callable(code, ns)()), True)
+        self.assertEqual(await make_callable(code, ns)(), True)
 
 
     async def test_object_is_not(self):
@@ -128,7 +126,7 @@ class TestObjectComparisonOpcodes(CevalTest):
             ["OBJECT_IS_NOT", 0],
             ["RETURN", 1],
         ])
-        self.assertEqual(run_to_completion(make_callable(code, ns)()), True)
+        self.assertEqual(await make_callable(code, ns)(), True)
 
 
     async def test_object_is_instance(self):
@@ -138,7 +136,7 @@ class TestObjectComparisonOpcodes(CevalTest):
             ["OBJECT_IS_INSTANCE", 1],
             ["RETURN", 1],
         ])
-        self.assertEqual(run_to_completion(make_callable(code, ns)()), True)
+        self.assertEqual(await make_callable(code, ns)(), True)
 
 
     async def test_object_is_subclass(self):
@@ -148,9 +146,7 @@ class TestObjectComparisonOpcodes(CevalTest):
             ["OBJECT_IS_SUBCLASS", 1],
             ["RETURN", 1],
         ])
-        self.assertEqual(run_to_completion(make_callable(code, ns)()), True)
+        self.assertEqual(await make_callable(code, ns)(), True)
 
-
-# The end.
 
 # The end.

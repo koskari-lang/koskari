@@ -18,17 +18,15 @@ Tests for YIELD_FROM opcode.
 :license: GNU General Public License v3
 """
 
-import asyncio
-import unittest
-
 from koskari.lib import AsyncGenerator
 from tests import make_callable
-from tests.lib.opcode import CevalTest, build_expr, run_asyncio_in_thread
+from tests.lib.opcode import CevalTest, build_expr
 
 
 try:
     anext
 except NameError:
+    # anext wasn't available until Python 3.10
     async def anext(agen):
         return await agen.__anext__()
 
@@ -45,6 +43,7 @@ class TestYieldFrom(CevalTest):
         that yield_from correctly propagates upward when the delegate is
         a Python iterable.
         """
+
         it = iter([10, 20, 30])
         code_obj, ns = build_expr([
             ["CONST", it],
@@ -66,7 +65,7 @@ class TestYieldFrom(CevalTest):
             final = self._stop_async_iteration_final(ctx)
             self.assertIs(final, None)
 
-        await run_asyncio_in_thread(run)
+        await run()
 
 
     async def test_yield_from_upward_into_koskari_from_koskari_delegate(self):
@@ -76,6 +75,7 @@ class TestYieldFrom(CevalTest):
         consumer. Validates that yield_from correctly propagates upward
         when the delegate is a Koskari async gen.
         """
+
         inner_code, inner_ns = build_expr([
             ["CONST", "a"],
             ["YIELD", 1],
@@ -103,13 +103,14 @@ class TestYieldFrom(CevalTest):
                 await anext(agen)
             self.assertEqual(self._stop_async_iteration_final(ctx), "c")
 
-        await run_asyncio_in_thread(run)
+        await run()
 
 
     async def test_yield_from_sync_iterator_values_and_final(self):
         """
         YIELD_FROM on a sync iterator yields each value then completes with final
         """
+
         it = iter([10, 20, 30])
         code_obj, ns = build_expr([
             ["CONST", it],
@@ -132,13 +133,14 @@ class TestYieldFrom(CevalTest):
             final = self._stop_async_iteration_final(ctx)
             self.assertIs(final, None)
 
-        await run_asyncio_in_thread(run)
+        await run()
 
 
     async def test_yield_from_sync_generator_values_and_return(self):
         """
         YIELD_FROM on a Python sync generator yields values and returns final
         """
+
         def py_gen():
             yield 1
             yield 2
@@ -164,7 +166,8 @@ class TestYieldFrom(CevalTest):
             final = self._stop_async_iteration_final(ctx)
             self.assertEqual(final, 99)
 
-        await run_asyncio_in_thread(run)
+        await run()
+
 
     async def test_yield_from_python_async_gen_values_and_return(self):
         """
@@ -176,6 +179,7 @@ class TestYieldFrom(CevalTest):
         The implementation does set an exception with .value (subclass or
         fallback); the failure is in interpreter async machinery.
         """
+
         async def py_agen():
             yield 1
             yield 2
@@ -198,7 +202,7 @@ class TestYieldFrom(CevalTest):
             with self.assertRaises(StopAsyncIteration):
                 await anext(agen)
 
-        await run_asyncio_in_thread(run)
+        await run()
 
 
     async def test_yield_from_koskari_async_gen_values_and_return(self):
@@ -239,7 +243,7 @@ class TestYieldFrom(CevalTest):
             final = self._stop_async_iteration_final(ctx)
             self.assertEqual(final, 42)
 
-        await run_asyncio_in_thread(run)
+        await run()
 
 
     async def test_yield_from_koskari_async_gen_empty(self):
@@ -267,7 +271,7 @@ class TestYieldFrom(CevalTest):
                 await anext(agen)
             self.assertIn("iterable", str(ctx.exception))
 
-        await run_asyncio_in_thread(run)
+        await run()
 
 
     async def test_yield_from_koskari_async_gen_with_await(self):
@@ -311,7 +315,7 @@ class TestYieldFrom(CevalTest):
             final = self._stop_async_iteration_final(ctx)
             self.assertEqual(final, "done")
 
-        await run_asyncio_in_thread(run)
+        await run()
 
 
     async def test_yield_from_sync_iterator_empty(self):
@@ -335,7 +339,7 @@ class TestYieldFrom(CevalTest):
             final = self._stop_async_iteration_final(ctx)
             self.assertIs(final, None)
 
-        await run_asyncio_in_thread(run)
+        await run()
 
 
     async def test_yield_from_sync_generator_empty_return_value(self):
@@ -365,7 +369,7 @@ class TestYieldFrom(CevalTest):
             final = self._stop_async_iteration_final(ctx)
             self.assertEqual(final, 7)
 
-        await run_asyncio_in_thread(run)
+        await run()
 
 
     async def test_yield_from_raises_type_error_on_non_iterable(self):
@@ -390,7 +394,7 @@ class TestYieldFrom(CevalTest):
             self.assertIn("iterable", msg, msg="exception should mention iterable requirement")
             self.assertIn("int", msg, msg="exception should mention the type received")
 
-        await run_asyncio_in_thread(run)
+        await run()
 
 
     async def test_yield_from_raises_type_error_on_none(self):
@@ -413,7 +417,7 @@ class TestYieldFrom(CevalTest):
             self.assertIn("iterable", str(ctx.exception))
             self.assertIn("NoneType", str(ctx.exception))
 
-        await run_asyncio_in_thread(run)
+        await run()
 
 
     async def test_yield_from_single_value_sync_iterator(self):
@@ -439,7 +443,7 @@ class TestYieldFrom(CevalTest):
             final = self._stop_async_iteration_final(ctx)
             self.assertIs(final, None)
 
-        await run_asyncio_in_thread(run)
+        await run()
 
 
     async def test_yield_from_aclose_closes_delegate(self):
@@ -473,7 +477,7 @@ class TestYieldFrom(CevalTest):
             with self.assertRaises(StopAsyncIteration):
                 await anext(agen)
 
-        await run_asyncio_in_thread(run)
+        await run()
 
 
     async def test_yield_from_sync_generator_raise_propagates(self):
@@ -502,7 +506,7 @@ class TestYieldFrom(CevalTest):
                 await anext(agen)
             self.assertIn("delegate raised", str(ctx.exception))
 
-        await run_asyncio_in_thread(run)
+        await run()
 
 
     async def test_yield_from_python_async_gen_final_value_when_available(self):
@@ -533,7 +537,7 @@ class TestYieldFrom(CevalTest):
             with self.assertRaises(StopAsyncIteration):
                 await anext(agen)
 
-        await run_asyncio_in_thread(run)
+        await run()
 
 
 # The end.

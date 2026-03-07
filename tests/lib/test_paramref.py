@@ -22,61 +22,87 @@ import unittest
 
 from koskari.lib import ParamRef, Ref
 from tests import make_callable
-from tests.lib.opcode import build_expr, run_to_completion
+from tests.lib.opcode import build_expr
 
 
-class TestParamRefCreate(unittest.IsolatedAsyncioTestCase):
-    """ParamRef creation and basic properties"""
+class TestParamRefCreate(unittest.TestCase):
+    """
+    ParamRef creation and basic properties
+    """
 
-    async def test_create_with_key_and_default(self):
-        """ParamRef can be created with key and default value"""
+    def test_create_with_key_and_default(self):
+        """
+        ParamRef can be created with key and default value
+        """
+
         p = ParamRef("x", 42)
         self.assertIsInstance(p, ParamRef)
         self.assertIsInstance(p, Ref)
         self.assertEqual(p.name, "x")
 
-    async def test_create_with_key_only(self):
-        """ParamRef can be created with key only"""
+    def test_create_with_key_only(self):
+        """
+        ParamRef can be created with key only
+        """
+
         p = ParamRef("foo")
         self.assertIsInstance(p, ParamRef)
         self.assertEqual(p.name, "foo")
 
 
-class TestParamRefNoDomain(unittest.IsolatedAsyncioTestCase):
-    """ParamRef behavior outside active domain (no koskari_eval)"""
+class TestParamRefNoDomain(unittest.TestCase):
+    """
+    ParamRef behavior outside active domain (no koskari_eval)
+    """
 
-    async def test_deref_no_domain_returns_default(self):
-        """deref outside domain returns default value"""
+    def test_deref_no_domain_returns_default(self):
+        """
+        deref outside domain returns default value
+        """
+
         p = ParamRef("x", 99)
         self.assertEqual(p.deref(), 99)
 
-    async def test_deref_no_domain_no_default_raises(self):
-        """deref outside domain with no default raises RuntimeError"""
+    def test_deref_no_domain_no_default_raises(self):
+        """
+        deref outside domain with no default raises RuntimeError
+        """
+
         p = ParamRef("x")
         with self.assertRaises(RuntimeError):
             p.deref()
 
-    async def test_store_no_domain_raises(self):
-        """store outside domain raises RuntimeError"""
+    def test_store_no_domain_raises(self):
+        """
+        store outside domain raises RuntimeError
+        """
+
         p = ParamRef("x", 0)
         with self.assertRaises(RuntimeError):
             p.store(42)
 
-    async def test_clear_no_domain_raises(self):
-        """clear outside domain raises RuntimeError"""
+    def test_clear_no_domain_raises(self):
+        """
+        clear outside domain raises RuntimeError
+        """
+
         p = ParamRef("x", 0)
         with self.assertRaises(RuntimeError):
             p.clear()
 
 
 class TestParamRefInsideScope(unittest.IsolatedAsyncioTestCase):
-    """ParamRef store/deref/clear inside active domain (Python callback during eval)"""
+    """
+    ParamRef store/deref/clear inside active domain (Python callback during
+    eval)
+    """
 
     async def test_store_and_deref_same_value(self):
         """
         Store value and deref during eval returns same value. Uses a Python
         callback invoked from bytecode; domain is active during the call.
         """
+
         p = ParamRef("test_key", None)
 
         def store_and_deref():
@@ -88,14 +114,16 @@ class TestParamRefInsideScope(unittest.IsolatedAsyncioTestCase):
             ["CALL", 0],
             ["RETURN", 1],
         ], values={"f": store_and_deref})
-        result = run_to_completion(make_callable(code, ns)())
+        result = await make_callable(code, ns)()
         self.assertEqual(result, 123)
+
 
     async def test_two_paramrefs_same_key_share_value(self):
         """
         Two ParamRefs with same key see the same value within a thread.
         One stores, the other derefs.
         """
+
         p1 = ParamRef("shared", 0)
         p2 = ParamRef("shared", 0)
 
@@ -108,8 +136,9 @@ class TestParamRefInsideScope(unittest.IsolatedAsyncioTestCase):
             ["CALL", 0],
             ["RETURN", 1],
         ], values={"f": store_via_p1_deref_via_p2})
-        result = run_to_completion(make_callable(code, ns)())
+        result = await make_callable(code, ns)()
         self.assertEqual(result, 777)
+
 
     async def test_clear_then_deref_returns_default(self):
         """
@@ -127,13 +156,15 @@ class TestParamRefInsideScope(unittest.IsolatedAsyncioTestCase):
             ["CALL", 0],
             ["RETURN", 1],
         ], values={"f": store_clear_deref})
-        result = run_to_completion(make_callable(code, ns)())
+        result = await make_callable(code, ns)()
         self.assertEqual(result, 88)
+
 
     async def test_deref_before_store_returns_default(self):
         """
         deref before any store returns default; after store returns stored value.
         """
+
         p = ParamRef("y", 99)
 
         def before_after_store():
@@ -147,9 +178,10 @@ class TestParamRefInsideScope(unittest.IsolatedAsyncioTestCase):
             ["CALL", 0],
             ["RETURN", 1],
         ], values={"f": before_after_store})
-        result = run_to_completion(make_callable(code, ns)())
+        result = await make_callable(code, ns)()
         self.assertEqual(result[0], 99)
         self.assertEqual(result[1], 1)
+
 
     async def test_store_overwrites_previous(self):
         """
@@ -168,7 +200,7 @@ class TestParamRefInsideScope(unittest.IsolatedAsyncioTestCase):
             ["CALL", 0],
             ["RETURN", 1],
         ], values={"f": overwrite})
-        result = run_to_completion(make_callable(code, ns)())
+        result = await make_callable(code, ns)()
         self.assertEqual(result, 30)
 
 

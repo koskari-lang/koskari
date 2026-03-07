@@ -18,10 +18,8 @@ Tests for NOOP, LABEL, POSITION opcodes (no-ops at runtime).
 :license: GNU General Public License v3
 """
 
-import unittest
-
 from tests import make_callable
-from tests.lib.opcode import CevalTest, build_expr, run_to_completion
+from tests.lib.opcode import CevalTest, build_expr
 
 
 class TestNoopLabelPositionOpcodes(CevalTest):
@@ -39,7 +37,7 @@ class TestNoopLabelPositionOpcodes(CevalTest):
             ["CONST", 1],
             ["RETURN", 1],
         ])
-        result = run_to_completion(make_callable(code, ns)())
+        result = await make_callable(code, ns)()
         self.assertEqual(result, 1)
 
 
@@ -53,7 +51,7 @@ class TestNoopLabelPositionOpcodes(CevalTest):
             ["CONST", 2],
             ["RETURN", 1],
         ])
-        result = run_to_completion(make_callable(code, ns)())
+        result = await make_callable(code, ns)()
         self.assertEqual(result, 2)
 
 
@@ -67,7 +65,7 @@ class TestNoopLabelPositionOpcodes(CevalTest):
             ["CONST", 3],
             ["RETURN", 1],
         ])
-        result = run_to_completion(make_callable(code, ns)())
+        result = await make_callable(code, ns)()
         self.assertEqual(result, 3)
 
 

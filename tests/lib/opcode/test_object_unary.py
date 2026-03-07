@@ -18,10 +18,8 @@ Tests for OBJECT_STR, OBJECT_LEN opcodes.
 :license: GNU General Public License v3
 """
 
-import unittest
-
 from tests import make_callable
-from tests.lib.opcode import CevalTest, build_expr, run_to_completion
+from tests.lib.opcode import CevalTest, build_expr
 
 
 class TestObjectUnaryOpcodes(CevalTest):
@@ -37,7 +35,7 @@ class TestObjectUnaryOpcodes(CevalTest):
             ["OBJECT_STR", 1],
             ["RETURN", 1],
         ])
-        self.assertEqual(run_to_completion(make_callable(code, ns)()), "hello")
+        self.assertEqual(await make_callable(code, ns)(), "hello")
 
 
     async def test_object_len(self):
@@ -46,7 +44,7 @@ class TestObjectUnaryOpcodes(CevalTest):
             ["OBJECT_LEN", 0],
             ["RETURN", 1],
         ])
-        self.assertEqual(run_to_completion(make_callable(code, ns)()), 3)
+        self.assertEqual(await make_callable(code, ns)(), 3)
 
 
     async def test_object_not(self):
@@ -55,7 +53,7 @@ class TestObjectUnaryOpcodes(CevalTest):
             ["OBJECT_NOT", 0],
             ["RETURN", 1],
         ])
-        self.assertEqual(run_to_completion(make_callable(code, ns)()), True)
+        self.assertEqual(await make_callable(code, ns)(), True)
 
 
     async def test_object_truth(self):
@@ -64,7 +62,7 @@ class TestObjectUnaryOpcodes(CevalTest):
             ["OBJECT_TRUTH", 0],
             ["RETURN", 1],
         ])
-        self.assertEqual(run_to_completion(make_callable(code, ns)()), False)
+        self.assertEqual(await make_callable(code, ns)(), False)
 
 
     async def test_object_type(self):
@@ -73,7 +71,7 @@ class TestObjectUnaryOpcodes(CevalTest):
             ["OBJECT_TYPE", 0],
             ["RETURN", 1],
         ])
-        self.assertIs(run_to_completion(make_callable(code, ns)()), int)
+        self.assertIs(await make_callable(code, ns)(), int)
 
 
     async def test_object_vars(self):
@@ -86,7 +84,7 @@ class TestObjectUnaryOpcodes(CevalTest):
             ["OBJECT_VARS", 0],
             ["RETURN", 1],
         ])
-        result = run_to_completion(make_callable(code, ns)())
+        result = await make_callable(code, ns)()
         self.assertEqual(result, {"x": 1})
 
 
@@ -101,7 +99,7 @@ class TestObjectUnaryOpcodes(CevalTest):
             ["OBJECT_AITER", 0],
             ["RETURN", 1],
         ])
-        result = run_to_completion(make_callable(code, ns)())
+        result = await make_callable(code, ns)()
         self.assertIsNotNone(result)
 
 
@@ -111,7 +109,7 @@ class TestObjectUnaryOpcodes(CevalTest):
             ["OBJECT_REPR", 0],
             ["RETURN", 1],
         ])
-        self.assertEqual(run_to_completion(make_callable(code, ns)()), "42")
+        self.assertEqual(await make_callable(code, ns)(), "42")
 
 
     async def test_object_iter(self):
@@ -120,7 +118,7 @@ class TestObjectUnaryOpcodes(CevalTest):
             ["OBJECT_ITER", 0],
             ["RETURN", 1],
         ])
-        result = run_to_completion(make_callable(code, ns)())
+        result = await make_callable(code, ns)()
         self.assertEqual(list(result), [1, 2])
 
 
@@ -130,7 +128,7 @@ class TestObjectUnaryOpcodes(CevalTest):
             ["OBJECT_BIT_INVERT", 0],
             ["RETURN", 1],
         ])
-        self.assertEqual(run_to_completion(make_callable(code, ns)()), -1)
+        self.assertEqual(await make_callable(code, ns)(), -1)
 
 
     async def test_object_dir(self):
@@ -139,8 +137,9 @@ class TestObjectUnaryOpcodes(CevalTest):
             ["OBJECT_DIR", 0],
             ["RETURN", 1],
         ])
-        result = run_to_completion(make_callable(code, ns)())
+        result = await make_callable(code, ns)()
         self.assertIsInstance(result, list)
         self.assertIn("real", result)
+
 
 # The end.

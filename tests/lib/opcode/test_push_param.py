@@ -18,11 +18,9 @@ Tests for PUSH_PARAM opcode
 :license: GNU General Public License v3
 """
 
-import unittest
-
 from koskari.lib import Domain, ParamRef
 from tests import make_callable
-from tests.lib.opcode import CevalTest, build_expr, run_to_completion
+from tests.lib.opcode import CevalTest, build_expr
 
 
 class TestPushParamOpcodes(CevalTest):
@@ -46,7 +44,7 @@ class TestPushParamOpcodes(CevalTest):
             ["POP_PARAM", 0],
             ["RETURN", 1],
         ], values={"f": check_x})
-        result = run_to_completion(make_callable(code, ns)())
+        result = await make_callable(code, ns)()
         self.assertEqual(result, 100)
 
 
@@ -67,7 +65,7 @@ class TestPushParamOpcodes(CevalTest):
             ["POP_PARAM", 0],
             ["RETURN", 1],
         ], values={"f": check_both})
-        result = run_to_completion(make_callable(code, ns)())
+        result = await make_callable(code, ns)()
         self.assertEqual(result, (1, 2))
 
 
@@ -92,7 +90,7 @@ class TestPushParamOpcodes(CevalTest):
             ["POP_PARAM", 0],
             ["RETURN", 1],
         ], values={"f": read_z})
-        result = run_to_completion(make_callable(code, ns)())
+        result = await make_callable(code, ns)()
         self.assertEqual(result, 1)
 
 
@@ -110,7 +108,7 @@ class TestPushParamOpcodes(CevalTest):
         ], values={"z": 1})
         with Domain():
             p.store(1)
-            result = run_to_completion(make_callable(code, ns)())
+            result = await make_callable(code, ns)()
             self.assertEqual(p.deref(), 1)
         self.assertIsNone(result)
 
@@ -136,7 +134,7 @@ class TestPushParamOpcodes(CevalTest):
         with Domain():
             p.store(1)
             with self.assertRaises(ValueError):
-                run_to_completion(make_callable(code, ns)())
+                await make_callable(code, ns)()
             self.assertEqual(p.deref(), 1)
 
 
@@ -157,7 +155,7 @@ class TestPushParamOpcodes(CevalTest):
             ["POP_PARAM", 0],
             ["RETURN", 1],
         ], values={"f": check_order})
-        result = run_to_completion(make_callable(code, ns)())
+        result = await make_callable(code, ns)()
         self.assertEqual(result, ("deep", "tos"))
 
 

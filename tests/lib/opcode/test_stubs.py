@@ -18,10 +18,8 @@ Tests for stub opcodes (no runtime implementation yet).
 :license: GNU General Public License v3
 """
 
-import unittest
-
 from tests import make_callable
-from tests.lib.opcode import CevalTest, build_expr, run_to_completion
+from tests.lib.opcode import CevalTest, build_expr
 
 
 class TestPushCollectPopCollectBuildClass(CevalTest):
@@ -44,7 +42,7 @@ class TestPushCollectPopCollectBuildClass(CevalTest):
             ["RETURN", 1],
         ])
         expr = make_callable(code_obj, ns)
-        result = run_to_completion(expr())
+        result = await expr()
         self.assertIsInstance(result, type)
         self.assertEqual(result.__name__, "C")
         KosType = __import__("koskari.lib", fromlist=["KosType"]).KosType
@@ -57,7 +55,7 @@ class TestStubOpcodes(CevalTest):
     Each test runs code that hits a stub opcode and expects RuntimeError.
     """
 
-    def _run_stub_opcode(self, opname, arg=0):
+    async def _run_stub_opcode(self, opname, arg=0):
         """
         Build and run bytecode that hits the given stub opcode
         """
@@ -67,7 +65,7 @@ class TestStubOpcodes(CevalTest):
             ["RETURN", 1],
         ])
         expr = make_callable(code_obj, ns)
-        return run_to_completion(expr())
+        return await expr()
 
 
     async def test_push_collect_raises_with_invalid_constant(self):
@@ -77,7 +75,7 @@ class TestStubOpcodes(CevalTest):
         """
 
         with self.assertRaises(RuntimeError):
-            self._run_stub_opcode("PUSH_COLLECT", 0)
+            await self._run_stub_opcode("PUSH_COLLECT", 0)
 
 
     async def test_theend_raises_unimpl(self):
@@ -86,7 +84,7 @@ class TestStubOpcodes(CevalTest):
         """
 
         with self.assertRaises(RuntimeError) as ctx:
-            self._run_stub_opcode("THEEND", 0)
+            await self._run_stub_opcode("THEEND", 0)
         self.assertIn("THEEND", str(ctx.exception))
         self.assertIn("no runtime implementation", str(ctx.exception))
 
@@ -97,7 +95,7 @@ class TestStubOpcodes(CevalTest):
         """
 
         with self.assertRaises(RuntimeError):
-            self._run_stub_opcode("BUILD_FUNCTION", 0)
+            await self._run_stub_opcode("BUILD_FUNCTION", 0)
 
 
     async def test_call_names_raises_not_implemented(self):
@@ -106,7 +104,7 @@ class TestStubOpcodes(CevalTest):
         """
 
         with self.assertRaises(RuntimeError):
-            self._run_stub_opcode("CALL_NAMES", 0)
+            await self._run_stub_opcode("CALL_NAMES", 0)
 
 
     async def test_call_star_raises_not_implemented(self):
@@ -115,7 +113,7 @@ class TestStubOpcodes(CevalTest):
         """
 
         with self.assertRaises(RuntimeError):
-            self._run_stub_opcode("CALL_STAR", 0)
+            await self._run_stub_opcode("CALL_STAR", 0)
 
 
     async def test_call_attr_raises_not_implemented(self):
@@ -124,7 +122,7 @@ class TestStubOpcodes(CevalTest):
         """
 
         with self.assertRaises(RuntimeError):
-            self._run_stub_opcode("CALL_ATTR", 0)
+            await self._run_stub_opcode("CALL_ATTR", 0)
 
 
     async def test_call_attr_names_raises_not_implemented(self):
@@ -133,7 +131,7 @@ class TestStubOpcodes(CevalTest):
         """
 
         with self.assertRaises(RuntimeError):
-            self._run_stub_opcode("CALL_ATTR_NAMES", 0)
+            await self._run_stub_opcode("CALL_ATTR_NAMES", 0)
 
 
     async def test_call_attr_star_raises_not_implemented(self):
@@ -142,7 +140,7 @@ class TestStubOpcodes(CevalTest):
         """
 
         with self.assertRaises(RuntimeError):
-            self._run_stub_opcode("CALL_ATTR_STAR", 0)
+            await self._run_stub_opcode("CALL_ATTR_STAR", 0)
 
 
     async def test_tail_call_names_raises_not_implemented(self):
@@ -151,7 +149,7 @@ class TestStubOpcodes(CevalTest):
         """
 
         with self.assertRaises(RuntimeError):
-            self._run_stub_opcode("TAIL_CALL_NAMES", 0)
+            await self._run_stub_opcode("TAIL_CALL_NAMES", 0)
 
 
     async def test_tail_call_star_raises_not_implemented(self):
@@ -160,7 +158,7 @@ class TestStubOpcodes(CevalTest):
         """
 
         with self.assertRaises(RuntimeError):
-            self._run_stub_opcode("TAIL_CALL_STAR", 0)
+            await self._run_stub_opcode("TAIL_CALL_STAR", 0)
 
 
     async def test_push_with_raises_not_implemented(self):
@@ -169,7 +167,7 @@ class TestStubOpcodes(CevalTest):
         """
 
         with self.assertRaises(RuntimeError):
-            self._run_stub_opcode("PUSH_WITH", "target")
+            await self._run_stub_opcode("PUSH_WITH", "target")
 
 
     async def test_push_ns_raises_not_implemented(self):
@@ -178,7 +176,7 @@ class TestStubOpcodes(CevalTest):
         """
 
         with self.assertRaises(RuntimeError):
-            self._run_stub_opcode("PUSH_NS", 0)
+            await self._run_stub_opcode("PUSH_NS", 0)
 
 
     async def test_pop_with_raises_not_implemented(self):
@@ -187,7 +185,7 @@ class TestStubOpcodes(CevalTest):
         """
 
         with self.assertRaises(RuntimeError):
-            self._run_stub_opcode("POP_WITH", 0)
+            await self._run_stub_opcode("POP_WITH", 0)
 
 
     async def test_pop_ns_raises_not_implemented(self):
@@ -196,7 +194,7 @@ class TestStubOpcodes(CevalTest):
         """
 
         with self.assertRaises(RuntimeError):
-            self._run_stub_opcode("POP_NS", 0)
+            await self._run_stub_opcode("POP_NS", 0)
 
 
 # The end.

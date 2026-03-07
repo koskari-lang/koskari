@@ -22,21 +22,27 @@ import unittest
 
 from koskari.lib import Domain, ParamRef
 from tests import make_callable
-from tests.lib.opcode import build_expr, run_to_completion
+from tests.lib.opcode import build_expr
 
 
 class TestDomainContextManager(unittest.IsolatedAsyncioTestCase):
-    """Domain as context manager (with Domain():)"""
+    """
+    Domain as context manager (with Domain():)
+    """
 
-    async def test_domain_context_manager_enter_exit(self):
-        """with Domain(): pass runs without error"""
+    def test_domain_context_manager_enter_exit(self):
+        """
+        with Domain(): pass runs without error
+        """
 
         with Domain():
             pass
 
 
-    async def test_domain_paramref_store_deref_from_python(self):
-        """ParamRef store and deref work from Python inside with Domain()"""
+    def test_domain_paramref_store_deref_from_python(self):
+        """
+        ParamRef store and deref work from Python inside with Domain()
+        """
 
         p = ParamRef("x", None)
         with Domain():
@@ -45,7 +51,9 @@ class TestDomainContextManager(unittest.IsolatedAsyncioTestCase):
 
 
     async def test_domain_paramref_after_koskari_return(self):
-        """ParamRef deref works after koskari returns while inside with Domain()"""
+        """
+        ParamRef deref works after koskari returns while inside with Domain()
+        """
 
         p = ParamRef("z", None)
         code, ns = build_expr([
@@ -54,13 +62,15 @@ class TestDomainContextManager(unittest.IsolatedAsyncioTestCase):
         ])
         with Domain():
             p.store(1)
-            result = run_to_completion(make_callable(code, ns)())
+            result = await make_callable(code, ns)()
             self.assertEqual(p.deref(), 1)
         self.assertEqual(result, 42)
 
 
-    async def test_domain_nested(self):
-        """Nested with Domain(): scopes; inner exits first, outer domain current again"""
+    def test_domain_nested(self):
+        """
+        Nested with Domain(): scopes; inner exits first, outer domain current again
+        """
 
         p = ParamRef("x", None)
         with Domain():
@@ -71,8 +81,10 @@ class TestDomainContextManager(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(p.deref(), 1)
 
 
-    async def test_domain_no_domain_outside_with(self):
-        """After with Domain(): pass, ParamRef with no default raises"""
+    def test_domain_no_domain_outside_with(self):
+        """
+        After with Domain(): pass, ParamRef with no default raises
+        """
 
         p = ParamRef("x")
         with Domain():

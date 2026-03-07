@@ -19,37 +19,14 @@ exception). Uses KOS_DYN_WITH on the dynamic chain. Supports async
 enter/exit (auto-await).
 """
 
-import asyncio
-import unittest
-
 from tests import make_callable
-from tests.lib.opcode import CevalTest, build_expr, run_to_completion
-
-
-async def run_to_completion_with_await(coro):
-    """
-    Drive the coroutine to completion, awaiting any yielded awaitables
-    (e.g. from async with enter/exit). Use for code that may suspend on
-    KOS_EV_AWAIT.
-    """
-
-    async def drive():
-        value = None
-        while True:
-            try:
-                result = coro.send(value)
-            except StopIteration as e:
-                return e.value
-            if hasattr(result, "__await__"):
-                value = await result
-            else:
-                value = result
-
-    return await drive()
+from tests.lib.opcode import CevalTest, build_expr
 
 
 class SimpleMgr:
-    """Python context manager for tests; tracks enter/exit."""
+    """
+    Python context manager for tests; tracks enter/exit
+    """
 
     def __init__(self, value=42):
         self.value = value
@@ -57,9 +34,11 @@ class SimpleMgr:
         self.exited = False
         self.exc_info = (None, None, None)
 
+
     def __enter__(self):
         self.entered = True
         return self.value
+
 
     def __exit__(self, typ, val, tb):
         self.exited = True
@@ -68,7 +47,9 @@ class SimpleMgr:
 
 
 class SwallowMgr(SimpleMgr):
-    """Context manager that swallows exceptions (exit returns True)."""
+    """
+    Context manager that swallows exceptions (exit returns True)
+    """
 
     def __exit__(self, typ, val, tb):
         self.exited = True
@@ -77,7 +58,9 @@ class SwallowMgr(SimpleMgr):
 
 
 class AsyncMgr:
-    """Async context manager: __aenter__/__aexit__ return awaitables."""
+    """
+    Async context manager: __aenter__/__aexit__ return awaitables
+    """
 
     def __init__(self, value=42):
         self.value = value
@@ -85,9 +68,11 @@ class AsyncMgr:
         self.exited = False
         self.exc_info = (None, None, None)
 
+
     async def __aenter__(self):
         self.entered = True
         return self.value
+
 
     async def __aexit__(self, typ, val, tb):
         self.exited = True
@@ -96,7 +81,9 @@ class AsyncMgr:
 
 
 class AsyncSwallowMgr(AsyncMgr):
-    """Async context manager that swallows exceptions."""
+    """
+    Async context manager that swallows exceptions
+    """
 
     async def __aexit__(self, typ, val, tb):
         self.exited = True
@@ -106,7 +93,7 @@ class AsyncSwallowMgr(AsyncMgr):
 
 class TestWithOpcodes(CevalTest):
     """
-    Tests for PUSH_WITH, POP_WITH opcodes.
+    Tests for PUSH_WITH, POP_WITH opcodes
     """
 
     async def test_push_with_pop_with_completes(self):
@@ -122,10 +109,11 @@ class TestWithOpcodes(CevalTest):
             ["POP_WITH", 0],
             ["RETURN", 1],
         ])
-        result = run_to_completion(make_callable(code, ns)())
+        result = await make_callable(code, ns)()
         self.assertIsNone(result)
         self.assertTrue(mgr.entered)
         self.assertTrue(mgr.exited)
+
 
     async def test_push_with_body_runs_enter_exit(self):
         """
@@ -141,10 +129,11 @@ class TestWithOpcodes(CevalTest):
             ["POP_WITH", 0],
             ["RETURN", 1],
         ])
-        result = run_to_completion(make_callable(code, ns)())
+        result = await make_callable(code, ns)()
         self.assertIsNone(result)
         self.assertTrue(mgr.entered)
         self.assertTrue(mgr.exited)
+
 
     async def test_exception_propagates_when_exit_does_not_swallow(self):
         """
@@ -165,11 +154,12 @@ class TestWithOpcodes(CevalTest):
             ["RETURN", 1],
         ], values={"raise_err": raise_err})
         with self.assertRaises(ValueError) as ctx:
-            run_to_completion(make_callable(code, ns)())
+            await make_callable(code, ns)()
         self.assertIn("oops", str(ctx.exception))
         self.assertTrue(mgr.entered)
         self.assertTrue(mgr.exited)
         self.assertEqual(mgr.exc_info[0], ValueError)
+
 
     async def test_exception_swallowed_when_exit_returns_true(self):
         """
@@ -198,12 +188,13 @@ class TestWithOpcodes(CevalTest):
             ["POP", 1],
             ["RETURN", 1],
         ], values={"raise_err": raise_err, "after_raise": after_raise})
-        result = run_to_completion(make_callable(code, ns)())
+        result = await make_callable(code, ns)()
         self.assertIsNone(result)
         self.assertTrue(mgr.entered)
         self.assertTrue(mgr.exited)
         self.assertEqual(mgr.exc_info[0], ValueError)
         self.assertEqual(state.get("after"), 1)
+
 
     async def test_with_async_enter_completes(self):
         """
@@ -218,14 +209,16 @@ class TestWithOpcodes(CevalTest):
             ["POP_WITH", 0],
             ["RETURN", 1],
         ])
-        result = await run_to_completion_with_await(make_callable(code, ns)())
+        result = await make_callable(code, ns)()
         self.assertIsNone(result)
         self.assertTrue(mgr.entered)
         self.assertTrue(mgr.exited)
 
+
     async def test_with_async_exit_normal(self):
         """
-        Async manager: normal exit; __aexit__ is awaited, then block and node pop.
+        Async manager: normal exit; __aexit__ is awaited, then block and node
+        pop
         """
 
         mgr = AsyncMgr(200)
@@ -237,11 +230,12 @@ class TestWithOpcodes(CevalTest):
             ["POP_WITH", 0],
             ["RETURN", 1],
         ])
-        result = await run_to_completion_with_await(make_callable(code, ns)())
+        result = await make_callable(code, ns)()
         self.assertIsNone(result)
         self.assertTrue(mgr.entered)
         self.assertTrue(mgr.exited)
         self.assertEqual(mgr.exc_info[0], None)
+
 
     async def test_with_async_exit_swallow(self):
         """
@@ -270,7 +264,7 @@ class TestWithOpcodes(CevalTest):
             ["POP", 1],
             ["RETURN", 1],
         ], values={"raise_err": raise_err, "after_raise": after_raise})
-        result = await run_to_completion_with_await(make_callable(code, ns)())
+        result = await make_callable(code, ns)()
         self.assertIsNone(result)
         self.assertTrue(mgr.entered)
         self.assertTrue(mgr.exited)

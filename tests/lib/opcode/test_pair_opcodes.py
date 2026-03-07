@@ -19,12 +19,10 @@ Tests for PROPER and PAIR_SPLICE opcodes.
 :ai-assistant: claude-4.6-sonnet-high via Cursor
 """
 
-import unittest
-
 from koskari.lib import nil, symbol
 
 from tests import make_callable
-from tests.lib.opcode import CevalTest, build_expr, run_to_completion
+from tests.lib.opcode import CevalTest, build_expr
 
 
 class TestProperOpcode(CevalTest):
@@ -41,7 +39,7 @@ class TestProperOpcode(CevalTest):
             ["PROPER", 0],
             ["RETURN", 1],
         ])
-        result = run_to_completion(make_callable(code, ns)())
+        result = await make_callable(code, ns)()
         self.assertIs(result, nil)
 
 
@@ -55,7 +53,7 @@ class TestProperOpcode(CevalTest):
             ["PROPER", 1],
             ["RETURN", 1],
         ])
-        result = run_to_completion(make_callable(code, ns)())
+        result = await make_callable(code, ns)()
         self.assertEqual([42], list(result.unpack()))
 
 
@@ -71,7 +69,7 @@ class TestProperOpcode(CevalTest):
             ["PROPER", 3],
             ["RETURN", 1],
         ])
-        result = run_to_completion(make_callable(code, ns)())
+        result = await make_callable(code, ns)()
         self.assertEqual([1, 2, 3], list(result.unpack()))
 
 
@@ -88,7 +86,7 @@ class TestProperOpcode(CevalTest):
             ["PROPER", 2],
             ["RETURN", 1],
         ])
-        result = run_to_completion(make_callable(code, ns)())
+        result = await make_callable(code, ns)()
         self.assertEqual([a, b], list(result.unpack()))
 
 
@@ -103,7 +101,7 @@ class TestProperOpcode(CevalTest):
             ["PROPER", 2],
             ["RETURN", 1],
         ])
-        result = run_to_completion(make_callable(code, ns)())
+        result = await make_callable(code, ns)()
         self.assertTrue(result.is_proper())
 
 
@@ -121,7 +119,7 @@ class TestPairSpliceOpcode(CevalTest):
             ["PAIR_SPLICE", 0],
             ["RETURN", 1],
         ])
-        result = run_to_completion(make_callable(code, ns)())
+        result = await make_callable(code, ns)()
         self.assertIs(result, nil)
 
 
@@ -137,7 +135,7 @@ class TestPairSpliceOpcode(CevalTest):
             ["PAIR_SPLICE", 1],
             ["RETURN", 1],
         ])
-        result = run_to_completion(make_callable(code, ns)())
+        result = await make_callable(code, ns)()
         self.assertEqual([1, 2], list(result.unpack()))
 
 
@@ -155,7 +153,7 @@ class TestPairSpliceOpcode(CevalTest):
             ["PAIR_SPLICE", 2],
             ["RETURN", 1],
         ])
-        result = run_to_completion(make_callable(code, ns)())
+        result = await make_callable(code, ns)()
         self.assertEqual([1, 2, 3, 4], list(result.unpack()))
 
 
@@ -171,7 +169,7 @@ class TestPairSpliceOpcode(CevalTest):
             ["PAIR_SPLICE", 1],
             ["RETURN", 1],
         ])
-        result = run_to_completion(make_callable(code, ns)())
+        result = await make_callable(code, ns)()
         self.assertEqual([a, b], list(result.unpack()))
 
 
@@ -191,7 +189,7 @@ class TestPairSpliceOpcode(CevalTest):
             ["PAIR_SPLICE", 2],
             ["RETURN", 1],
         ])
-        result = run_to_completion(make_callable(code, ns)())
+        result = await make_callable(code, ns)()
         self.assertEqual([a, b, c], list(result.unpack()))
 
 
@@ -208,7 +206,7 @@ class TestPairSpliceOpcode(CevalTest):
             ["PAIR_SPLICE", 2],
             ["RETURN", 1],
         ])
-        result = run_to_completion(make_callable(code, ns)())
+        result = await make_callable(code, ns)()
         self.assertEqual([1, 2], list(result.unpack()))
 
 
@@ -226,7 +224,7 @@ class TestPairSpliceOpcode(CevalTest):
             ["PAIR_SPLICE", 2],
             ["RETURN", 1],
         ])
-        result = run_to_completion(make_callable(code, ns)())
+        result = await make_callable(code, ns)()
         self.assertTrue(result.is_proper())
 
 
@@ -245,7 +243,7 @@ class TestPairSpliceOpcode(CevalTest):
             ["PAIR_SPLICE", 3],
             ["RETURN", 1],
         ])
-        result = run_to_completion(make_callable(code, ns)())
+        result = await make_callable(code, ns)()
         self.assertEqual([a, b, c], list(result.unpack()))
 
 
@@ -260,7 +258,7 @@ class TestPairSpliceOpcode(CevalTest):
             ["PAIR_SPLICE", 2],
             ["RETURN", 1],
         ])
-        result = run_to_completion(make_callable(code, ns)())
+        result = await make_callable(code, ns)()
         self.assertIs(result, nil)
 
 
