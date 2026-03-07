@@ -1,0 +1,7 @@
+
+
+(define explode [] (print "BOOM!"))
+
+(explode)
+
+; The end.

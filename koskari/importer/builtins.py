@@ -43,7 +43,7 @@ from ..lib import (
     gensym,
     setcar,
     setcdr,
-    build_unpack_pair,
+    apply,
     values,
 )
 from ..types import (
@@ -92,12 +92,13 @@ def make_builtins():
     _bind('cdr', cdr)
     _bind('set-car', setcar)
     _bind('set-cdr', setcdr)
-    _bind('build-unpack-pair', build_unpack_pair)
+    # _bind('build-unpack-pair', build_unpack_pair)
     _bind('proper?', is_proper)
     _bind('recursive?', is_recursive)
     _bind('build-proper', build_proper)
     _bind('unpack', unpack)
     _bind('deref', deref)
+    _bind('apply', apply)
 
     # atom types and operations
     _ty('symbol', symbol)
