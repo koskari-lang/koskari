@@ -18,8 +18,6 @@ Tests for ATTR, ATTR_STORE opcodes.
 :license: GNU General Public License v3
 """
 
-import unittest
-
 from tests import make_callable
 from tests.lib.opcode import CevalTest, build_expr, run_to_completion
 
@@ -33,6 +31,7 @@ class TestAttrOpcodes(CevalTest):
         """
         ATTR pushes getattr(TOS, name)
         """
+
         class Box(object):
             value = 3
         code, ns = build_expr([
@@ -40,7 +39,7 @@ class TestAttrOpcodes(CevalTest):
             ["ATTR", "value"],
             ["RETURN", 1],
         ])
-        result = run_to_completion(make_callable(code, ns)())
+        result = await make_callable(code, ns)()
         self.assertEqual(result, 3)
 
 
@@ -48,6 +47,7 @@ class TestAttrOpcodes(CevalTest):
         """
         ATTR_STORE sets attribute; ATTR loads it
         """
+
         class Box(object):
             pass
         obj = Box()
@@ -59,7 +59,7 @@ class TestAttrOpcodes(CevalTest):
             ["ATTR", "value"],
             ["RETURN", 1],
         ])
-        result = run_to_completion(make_callable(code, ns)())
+        result = await make_callable(code, ns)()
         self.assertEqual(result, 99)
         self.assertEqual(obj.value, 99)
 
@@ -68,6 +68,7 @@ class TestAttrOpcodes(CevalTest):
         """
         ATTR_CLEAR deletes attribute
         """
+
         class Box(object):
             pass
         obj = Box()
@@ -78,7 +79,7 @@ class TestAttrOpcodes(CevalTest):
             ["CONST", 42],
             ["RETURN", 1],
         ])
-        result = run_to_completion(make_callable(code, ns)())
+        result = await make_callable(code, ns)()
         self.assertEqual(result, 42)
         self.assertFalse(hasattr(obj, "x"))
 
@@ -87,6 +88,7 @@ class TestAttrOpcodes(CevalTest):
         """
         ATTR_REF pushes AttributeRef for TOS.attr
         """
+
         from koskari.lib import AttributeRef
         class Box(object):
             pass
@@ -97,7 +99,7 @@ class TestAttrOpcodes(CevalTest):
             ["ATTR_REF", "foo"],
             ["RETURN", 1],
         ])
-        result = run_to_completion(make_callable(code, ns)())
+        result = await make_callable(code, ns)()
         self.assertIsInstance(result, AttributeRef)
         self.assertEqual(result.deref(), "bar")
 

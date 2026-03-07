@@ -25,7 +25,7 @@ class TestLambdaAnonymous(SpecialsTestCase):
         src = "(lambda [x] x)"
         expr, mod = self.compile_expr(src)
         fn = await expr()
-        result = fn(42).run()
+        result = await fn(42)
         self.assertEqual(result, 42)
 
 

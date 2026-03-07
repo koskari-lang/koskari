@@ -18,10 +18,8 @@ Tests for CONST, CONST_ITEM opcodes.
 :license: GNU General Public License v3
 """
 
-import unittest
-
 from tests import make_callable
-from tests.lib.opcode import CevalTest, build_expr, run_to_completion
+from tests.lib.opcode import CevalTest, build_expr
 
 
 class TestConstOpcodes(CevalTest):
@@ -38,7 +36,7 @@ class TestConstOpcodes(CevalTest):
             ["CONST", 42],
             ["RETURN", 1],
         ])
-        result = run_to_completion(make_callable(code, ns)())
+        result = await make_callable(code, ns)()
         self.assertEqual(result, 42)
 
 
@@ -46,12 +44,13 @@ class TestConstOpcodes(CevalTest):
         """
         CONST_ITEM pushes TOS[key] with key from constant pool
         """
+
         code, ns = build_expr([
             ["CONST", {"a": 10, "b": 20}],
             ["CONST_ITEM", "b"],
             ["RETURN", 1],
         ])
-        result = run_to_completion(make_callable(code, ns)())
+        result = await make_callable(code, ns)()
         self.assertEqual(result, 20)
 
 
@@ -59,6 +58,7 @@ class TestConstOpcodes(CevalTest):
         """
         CONST_ITEM_STORE does TOS1[key] = TOS; key from constant pool
         """
+
         code, ns = build_expr([
             ["CONST", {}],
             ["DUP", 1],
@@ -67,7 +67,7 @@ class TestConstOpcodes(CevalTest):
             ["CONST_ITEM", "key"],
             ["RETURN", 1],
         ])
-        result = run_to_completion(make_callable(code, ns)())
+        result = await make_callable(code, ns)()
         self.assertEqual(result, "x")
 
 
@@ -75,6 +75,7 @@ class TestConstOpcodes(CevalTest):
         """
         CONST_ITEM_CLEAR deletes TOS[key]
         """
+
         d = {"z": 1}
         code, ns = build_expr([
             ["CONST", d],
@@ -82,7 +83,7 @@ class TestConstOpcodes(CevalTest):
             ["CONST", 42],
             ["RETURN", 1],
         ])
-        result = run_to_completion(make_callable(code, ns)())
+        result = await make_callable(code, ns)()
         self.assertEqual(result, 42)
         self.assertNotIn("z", d)
 
@@ -91,6 +92,7 @@ class TestConstOpcodes(CevalTest):
         """
         CONST_ITEM_REF pushes ItemRef for TOS[key]
         """
+
         from koskari.lib import ItemRef
         d = {"k": "v"}
         code, ns = build_expr([
@@ -98,8 +100,9 @@ class TestConstOpcodes(CevalTest):
             ["CONST_ITEM_REF", "k"],
             ["RETURN", 1],
         ])
-        result = run_to_completion(make_callable(code, ns)())
+        result = await make_callable(code, ns)()
         self.assertIsInstance(result, ItemRef)
         self.assertEqual(result.deref(), "v")
+
 
 # The end.

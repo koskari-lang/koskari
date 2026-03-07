@@ -18,10 +18,9 @@ Tests for CHECK_EQ, CHECK_NE, CHECK_IN, CHECK_IS, CHECK_IS_INSTANCE opcodes.
 :license: GNU General Public License v3
 """
 
-import unittest
 
 from tests import make_callable
-from tests.lib.opcode import CevalTest, build_expr, run_to_completion
+from tests.lib.opcode import CevalTest, build_expr
 
 
 class TestCheckOpcodes(CevalTest):
@@ -34,6 +33,7 @@ class TestCheckOpcodes(CevalTest):
         """
         CHECK_EQ jumps when left != right
         """
+
         code, ns = build_expr([
             ["CONST", 1],
             ["CONST", 2],
@@ -44,7 +44,7 @@ class TestCheckOpcodes(CevalTest):
             ["CONST", 0],
             ["RETURN", 1],
         ])
-        result = run_to_completion(make_callable(code, ns)())
+        result = await make_callable(code, ns)()
         self.assertEqual(result, 0)
 
 
@@ -52,6 +52,7 @@ class TestCheckOpcodes(CevalTest):
         """
         CHECK_EQ does not jump when left == right
         """
+
         code, ns = build_expr([
             ["CONST", 10],
             ["CONST", 10],
@@ -62,7 +63,7 @@ class TestCheckOpcodes(CevalTest):
             ["CONST", 0],
             ["RETURN", 1],
         ])
-        result = run_to_completion(make_callable(code, ns)())
+        result = await make_callable(code, ns)()
         self.assertEqual(result, 42)
 
 
@@ -70,6 +71,7 @@ class TestCheckOpcodes(CevalTest):
         """
         CHECK_IN jumps when value not in container
         """
+
         code, ns = build_expr([
             ["CONST", [1, 2, 3]],
             ["CONST", 99],
@@ -80,7 +82,7 @@ class TestCheckOpcodes(CevalTest):
             ["CONST", 0],
             ["RETURN", 1],
         ])
-        result = run_to_completion(make_callable(code, ns)())
+        result = await make_callable(code, ns)()
         self.assertEqual(result, 0)
 
 
@@ -88,6 +90,7 @@ class TestCheckOpcodes(CevalTest):
         """
         CHECK_IN does not jump when value in container
         """
+
         code, ns = build_expr([
             ["CONST", [1, 2, 3]],
             ["CONST", 2],
@@ -98,7 +101,7 @@ class TestCheckOpcodes(CevalTest):
             ["CONST", 0],
             ["RETURN", 1],
         ])
-        result = run_to_completion(make_callable(code, ns)())
+        result = await make_callable(code, ns)()
         self.assertEqual(result, 1)
 
 
@@ -106,6 +109,7 @@ class TestCheckOpcodes(CevalTest):
         """
         CHECK_IS jumps when left is not right
         """
+
         code, ns = build_expr([
             ["CONST", []],
             ["CONST", []],
@@ -116,7 +120,7 @@ class TestCheckOpcodes(CevalTest):
             ["CONST", 0],
             ["RETURN", 1],
         ])
-        result = run_to_completion(make_callable(code, ns)())
+        result = await make_callable(code, ns)()
         self.assertEqual(result, 0)
 
 
@@ -124,6 +128,7 @@ class TestCheckOpcodes(CevalTest):
         """
         CHECK_IS does not jump when left is right
         """
+
         code, ns = build_expr([
             ["CONST", None],
             ["CONST", None],
@@ -134,7 +139,7 @@ class TestCheckOpcodes(CevalTest):
             ["CONST", 0],
             ["RETURN", 1],
         ])
-        result = run_to_completion(make_callable(code, ns)())
+        result = await make_callable(code, ns)()
         self.assertEqual(result, 42)
 
 
@@ -142,6 +147,7 @@ class TestCheckOpcodes(CevalTest):
         """
         CHECK_IS_INSTANCE jumps when isinstance(value, cls) is False
         """
+
         code, ns = build_expr([
             ["CONST", 42],
             ["CONST", str],
@@ -152,7 +158,7 @@ class TestCheckOpcodes(CevalTest):
             ["CONST", 0],
             ["RETURN", 1],
         ])
-        result = run_to_completion(make_callable(code, ns)())
+        result = await make_callable(code, ns)()
         self.assertEqual(result, 0)
 
 
@@ -160,6 +166,7 @@ class TestCheckOpcodes(CevalTest):
         """
         CHECK_IS_INSTANCE does not jump when isinstance(value, cls) is True
         """
+
         code, ns = build_expr([
             ["CONST", 42],
             ["CONST", int],
@@ -170,13 +177,15 @@ class TestCheckOpcodes(CevalTest):
             ["CONST", 0],
             ["RETURN", 1],
         ])
-        result = run_to_completion(make_callable(code, ns)())
+        result = await make_callable(code, ns)()
         self.assertEqual(result, 1)
+
 
     async def test_check_is_same_identity_no_jump(self):
         """
         CHECK_IS does not jump when left and right are same object
         """
+
         same = []
         code, ns = build_expr([
             ["CONST", same],
@@ -188,13 +197,15 @@ class TestCheckOpcodes(CevalTest):
             ["CONST", 0],
             ["RETURN", 1],
         ])
-        result = run_to_completion(make_callable(code, ns)())
+        result = await make_callable(code, ns)()
         self.assertEqual(result, 42)
+
 
     async def test_check_is_not_same_identity_jumps(self):
         """
         CHECK_IS_NOT jumps when left and right are same object
         """
+
         same = []
         code, ns = build_expr([
             ["CONST", same],
@@ -206,8 +217,9 @@ class TestCheckOpcodes(CevalTest):
             ["CONST", 42],
             ["RETURN", 1],
         ])
-        result = run_to_completion(make_callable(code, ns)())
+        result = await make_callable(code, ns)()
         self.assertEqual(result, 42)
+
 
     async def test_check_not_in_jumps_when_contained(self):
         """
@@ -223,13 +235,15 @@ class TestCheckOpcodes(CevalTest):
             ["CONST", 42],
             ["RETURN", 1],
         ])
-        result = run_to_completion(make_callable(code, ns)())
+        result = await make_callable(code, ns)()
         self.assertEqual(result, 42)
+
 
     async def test_check_not_in_continues_when_not_contained(self):
         """
         CHECK_NOT_IN does not jump when value not in container
         """
+
         code, ns = build_expr([
             ["CONST", [1, 2, 3]],
             ["CONST", 99],
@@ -240,13 +254,15 @@ class TestCheckOpcodes(CevalTest):
             ["CONST", 0],
             ["RETURN", 1],
         ])
-        result = run_to_completion(make_callable(code, ns)())
+        result = await make_callable(code, ns)()
         self.assertEqual(result, 42)
+
 
     async def test_check_is_subclass_jumps_when_false(self):
         """
         CHECK_IS_SUBCLASS jumps when issubclass(x, cls) is False
         """
+
         code, ns = build_expr([
             ["CONST", int],
             ["CONST", str],
@@ -257,13 +273,15 @@ class TestCheckOpcodes(CevalTest):
             ["CONST", 0],
             ["RETURN", 1],
         ])
-        result = run_to_completion(make_callable(code, ns)())
+        result = await make_callable(code, ns)()
         self.assertEqual(result, 0)
+
 
     async def test_check_is_subclass_continues_when_true(self):
         """
         CHECK_IS_SUBCLASS does not jump when issubclass(x, cls) is True
         """
+
         code, ns = build_expr([
             ["CONST", bool],
             ["CONST", int],
@@ -274,13 +292,15 @@ class TestCheckOpcodes(CevalTest):
             ["CONST", 0],
             ["RETURN", 1],
         ])
-        result = run_to_completion(make_callable(code, ns)())
+        result = await make_callable(code, ns)()
         self.assertEqual(result, 42)
+
 
     async def test_check_exception_jumps_when_no_exception_set(self):
         """
         CHECK_EXCEPTION jumps to handler when no exception is set
         """
+
         code, ns = build_expr([
             ["CONST", ValueError],
             ["CHECK_EXCEPTION", "handler"],
@@ -290,7 +310,7 @@ class TestCheckOpcodes(CevalTest):
             ["CONST", 42],
             ["RETURN", 1],
         ])
-        result = run_to_completion(make_callable(code, ns)())
+        result = await make_callable(code, ns)()
         self.assertEqual(result, 42)
 
 

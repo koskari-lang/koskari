@@ -36,6 +36,7 @@ def _op(name):
     """
     Map string opcode name to OpCode enum (e.g. 'CONST' -> KOS_OP_CONST)
     """
+
     return getattr(OpCode, "KOS_OP_" + name)
 
 
@@ -48,10 +49,12 @@ def build_code(code, local_syms=None, name="expr"):
     :param name: Code name for debugging
     :return: Code instance
     """
+
     if local_syms is None:
         local_syms = ()
     elif not isinstance(local_syms, (tuple, list)):
         local_syms = (local_syms,)
+
     nspec = NamespaceSpec(None, tuple(local_syms), ())
     instr = tuple([_op(op), arg] for op, arg in code)
     return Code(nspec, instr, name)
@@ -68,9 +71,11 @@ def build_expr(code, local_syms=None, values=None, name="expr"):
     :param name: Code name
     :return: (code, ns) for use with make_callable(code, ns)()
     """
+
     if values:
         syms = set(local_syms or ()) | set(values.keys())
         local_syms = tuple(syms)
+
     c = build_code(code, local_syms=local_syms, name=name)
     nspec = NamespaceSpec(None, tuple(local_syms or ()), ())
     ns = nspec.get_namespace(None)
@@ -78,20 +83,6 @@ def build_expr(code, local_syms=None, values=None, name="expr"):
         for k, v in values.items():
             ns.store(k, v)
     return (c, ns)
-
-
-def run_to_completion(coro):
-    """
-    Drive the coroutine until StopIteration; return the yielded value.
-
-    :param coro: Coroutine from make_callable(code, ns)() or similar
-    :return: The value passed to StopIteration
-    """
-    try:
-        while True:
-            coro.send(None)
-    except StopIteration as e:
-        return e.value
 
 
 class TestExpression(unittest.IsolatedAsyncioTestCase):
@@ -103,19 +94,22 @@ class TestExpression(unittest.IsolatedAsyncioTestCase):
         """
         Calling an Expression returns an awaitable coroutine
         """
+
         code, ns = build_expr([["CONST", 42], ["RETURN", 1]])
         expr = make_callable(code, ns)
         coro = expr()
         self.assertTrue(hasattr(coro, 'send'))
         self.assertTrue(hasattr(coro, '__await__'))
 
+
     async def test_expression_call_completes_with_value(self):
         """
         Driving the coroutine from expr() yields StopIteration with value
         """
+
         code, ns = build_expr([["CONST", 42], ["RETURN", 1]])
         expr = make_callable(code, ns)
-        result = run_to_completion(expr())
+        result = await expr()
         self.assertEqual(result, 42)
 
 
@@ -128,8 +122,9 @@ class TestMakeCallableExpression(unittest.IsolatedAsyncioTestCase):
         """
         make_callable(code, ns)() runs and returns value
         """
+
         code, ns = build_expr([["CONST", 42], ["RETURN", 1]])
-        result = run_to_completion(make_callable(code, ns)())
+        result = await make_callable(code, ns)()
         self.assertEqual(result, 42)
 
 
@@ -144,8 +139,9 @@ class TestFunction(unittest.IsolatedAsyncioTestCase):
         """
         code, ns = build_expr([["CONST", 42], ["RETURN", 1]])
         fn = make_callable(code, ns)
-        result = run_to_completion(fn())
+        result = await fn()
         self.assertEqual(result, 42)
+
 
     async def test_make_callable_with_formals_binds_and_runs(self):
         """
@@ -154,7 +150,7 @@ class TestFunction(unittest.IsolatedAsyncioTestCase):
         code, base_ns = build_expr([["CONST", 42], ["RETURN", 1]])
         fspec = FormalsSpec(('x',), None, ('y',))
         fn = make_callable(code, base_ns, fspec)
-        result = run_to_completion(fn(1, y=2))
+        result = await fn(1, y=2)
         self.assertEqual(result, 42)
 
 
@@ -175,6 +171,7 @@ class TestCodeAssembly(unittest.IsolatedAsyncioTestCase):
         expr = code.expression(ns)
         self.assertIsInstance(expr, Expression)
 
+
     async def test_code_expression_call_returns_coroutine(self):
         """
         Calling the result of Code.expression(ns) returns a coroutine
@@ -185,14 +182,16 @@ class TestCodeAssembly(unittest.IsolatedAsyncioTestCase):
         self.assertTrue(hasattr(coro, 'send'))
         self.assertTrue(hasattr(coro, '__await__'))
 
+
     async def test_code_expression_run_to_completion(self):
         """
         Code.expression(ns)(); drive coroutine to completion
         """
         code, ns = build_expr([["CONST", 42], ["RETURN", 1]])
         expr = code.expression(ns)
-        result = run_to_completion(expr())
+        result = await expr()
         self.assertEqual(result, 42)
+
 
     async def test_code_function_formals_parent_returns_function(self):
         """
@@ -203,6 +202,7 @@ class TestCodeAssembly(unittest.IsolatedAsyncioTestCase):
         formals = fspec()  # FormalsSpec() => Formals with no defaults
         fn = code.function(formals, base_ns)
         self.assertIsInstance(fn, Function)
+
 
     async def test_code_function_call_returns_coroutine(self):
         """
@@ -216,6 +216,7 @@ class TestCodeAssembly(unittest.IsolatedAsyncioTestCase):
         self.assertTrue(hasattr(coro, 'send'))
         self.assertTrue(hasattr(coro, '__await__'))
 
+
     async def test_code_function_run_to_completion(self):
         """
         Code.function(formals, parent_ns)(*args, **kwargs); drive coroutine
@@ -224,8 +225,9 @@ class TestCodeAssembly(unittest.IsolatedAsyncioTestCase):
         fspec = FormalsSpec(('x',), None, ('y',))
         formals = fspec()
         fn = code.function(formals, base_ns)
-        result = run_to_completion(fn(1, y=2))
+        result = await fn(1, y=2)
         self.assertEqual(result, 42)
+
 
     async def test_return_two_values_sync(self):
         """
@@ -236,7 +238,7 @@ class TestCodeAssembly(unittest.IsolatedAsyncioTestCase):
             ["CONST", 52],
             ["RETURN", 2],
         ])
-        result = run_to_completion(make_callable(code, ns)())
+        result = await make_callable(code, ns)()
         self.assertEqual(result, (42, 52))
 
 
@@ -257,8 +259,7 @@ class TestAsyncAwait(unittest.IsolatedAsyncioTestCase):
             ["RETURN", 1],
         ])
         expr = make_callable(code, ns)
-        coro = expr()
-        result = coro.run()
+        result = await expr()
         self.assertEqual(result, 42)
 
 
@@ -274,8 +275,7 @@ class TestAsyncAwait(unittest.IsolatedAsyncioTestCase):
             ["RETURN", 1],
         ])
         expr = make_callable(code, ns)
-        coro = expr()
-        result = coro.run()
+        result = await expr()
         self.assertEqual(result, 42)
 
 
@@ -323,7 +323,7 @@ class TestAsyncAwait(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(capture, [])
         self.assertIsNotNone(coro)
 
-        result = coro.run()
+        result = await coro
         self.assertEqual(result, (42, 52))
         self.assertEqual(capture, [1, 2, 3])
 
@@ -337,6 +337,7 @@ class TestFunctionDescriptor(unittest.IsolatedAsyncioTestCase):
         """
         KosFunction.__get__(None, owner) returns the function (class access)
         """
+
         code, base_ns = build_expr([["CONST", 42], ["RETURN", 1]])
         fspec = FormalsSpec(('self',), None, ())
         formals = fspec()
@@ -344,10 +345,12 @@ class TestFunctionDescriptor(unittest.IsolatedAsyncioTestCase):
         result = fn.__get__(None, type(None))
         self.assertIs(result, fn)
 
+
     async def test_function_get_via_instance_returns_bound_method(self):
         """
         KosFunction.__get__(obj, owner) returns KosBoundMethod (instance access)
         """
+
         code, base_ns = build_expr([["CONST", 42], ["RETURN", 1]])
         fspec = FormalsSpec(('self',), None, ())
         formals = fspec()
@@ -358,10 +361,12 @@ class TestFunctionDescriptor(unittest.IsolatedAsyncioTestCase):
         self.assertIs(result.__self__, obj)
         self.assertIs(result.__func__, fn)
 
+
     async def test_bound_method_call_prepends_self(self):
         """
         Calling a bound method passes self as first argument
         """
+
         code, base_ns = build_expr([
             ["VAR", "self"],
             ["CONST", 1],
@@ -373,14 +378,16 @@ class TestFunctionDescriptor(unittest.IsolatedAsyncioTestCase):
         fn = code.function(formals, base_ns)
         obj = 41
         bm = fn.__get__(obj, type(obj))
-        result = run_to_completion(bm())
+        result = await bm()
         self.assertEqual(result, 42)
+
 
     async def test_bound_method_via_class_dict_and_instance_access(self):
         """
         KosFunction in class dict; access via instance triggers __get__,
         returns bound method that can be called.
         """
+
         code, base_ns = build_expr([
             ["VAR", "self"],
             ["CONST", 1],
@@ -402,13 +409,15 @@ class TestFunctionDescriptor(unittest.IsolatedAsyncioTestCase):
         bm = c.add_one
         self.assertIsInstance(bm, BoundMethod)
         self.assertIs(bm.__self__, c)
-        result = run_to_completion(bm())
+        result = await bm()
         self.assertEqual(result, 42)
+
 
     async def test_apply_with_bound_method_flattens(self):
         """
         apply(obj.method, args) flattens when method is KosFunction in class
         """
+
         code, base_ns = build_expr([
             ["VAR", "self"],
             ["VAR", "x"],
@@ -436,7 +445,7 @@ class TestFunctionDescriptor(unittest.IsolatedAsyncioTestCase):
             ["CALL", 2],
             ["RETURN", 1],
         ], values={"apply": lib.apply, "c": c})
-        result = run_to_completion(make_callable(apply_code, ns)())
+        result = await make_callable(apply_code, ns)()
         self.assertEqual(result, 42)
 
 

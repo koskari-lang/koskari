@@ -19,10 +19,8 @@ COMBINE_ARGS, COMBINE_KWDS.
 :license: GNU General Public License v3
 """
 
-import unittest
-
 from tests import make_callable
-from tests.lib.opcode import CevalTest, build_expr, run_to_completion
+from tests.lib.opcode import CevalTest, build_expr
 
 
 class TestBuildArgs(CevalTest):
@@ -33,8 +31,9 @@ class TestBuildArgs(CevalTest):
             ["RETURN", 1],
         ])
         fn = make_callable(code, ns)
-        result = run_to_completion(fn())
+        result = await fn()
         self.assertEqual(result, ())
+
 
     async def test_build_args_five_elements(self):
         code, ns = build_expr([
@@ -47,8 +46,9 @@ class TestBuildArgs(CevalTest):
             ["RETURN", 1],
         ])
         fn = make_callable(code, ns)
-        result = run_to_completion(fn())
+        result = await fn()
         self.assertEqual(result, (0, 1, 2, 3, 4))
+
 
     async def test_build_args_underrun_raises(self):
         code, ns = build_expr([
@@ -58,7 +58,7 @@ class TestBuildArgs(CevalTest):
         ])
         fn = make_callable(code, ns)
         with self.assertRaises(RuntimeError):
-            run_to_completion(fn())
+            await fn()
 
 
 class TestBuildKwds(CevalTest):
@@ -69,8 +69,9 @@ class TestBuildKwds(CevalTest):
             ["RETURN", 1],
         ])
         fn = make_callable(code, ns)
-        result = run_to_completion(fn())
+        result = await fn()
         self.assertEqual(result, {})
+
 
     async def test_build_kwds_two_pairs(self):
         code, ns = build_expr([
@@ -82,7 +83,7 @@ class TestBuildKwds(CevalTest):
             ["RETURN", 1],
         ])
         fn = make_callable(code, ns)
-        result = run_to_completion(fn())
+        result = await fn()
         self.assertEqual(result, {"foo": 1, "bar": 2})
 
 
@@ -95,8 +96,9 @@ class TestBuildKwdsNames(CevalTest):
             ["RETURN", 1],
         ])
         fn = make_callable(code, ns)
-        result = run_to_completion(fn())
+        result = await fn()
         self.assertEqual(result, {})
+
 
     async def test_build_kwds_names_two_names(self):
         code, ns = build_expr([
@@ -107,7 +109,7 @@ class TestBuildKwdsNames(CevalTest):
             ["RETURN", 1],
         ])
         fn = make_callable(code, ns)
-        result = run_to_completion(fn())
+        result = await fn()
         self.assertEqual(result, {"foo": 1, "bar": 2})
 
 
@@ -119,8 +121,9 @@ class TestCombineArgs(CevalTest):
             ["RETURN", 1],
         ])
         fn = make_callable(code, ns)
-        result = run_to_completion(fn())
+        result = await fn()
         self.assertEqual(result, ())
+
 
     async def test_combine_args_single_tuple(self):
         code, ns = build_expr([
@@ -129,8 +132,9 @@ class TestCombineArgs(CevalTest):
             ["RETURN", 1],
         ])
         fn = make_callable(code, ns)
-        result = run_to_completion(fn())
+        result = await fn()
         self.assertEqual(result, (0, 1, 2, 3, 4))
+
 
     async def test_combine_args_single_range(self):
         code, ns = build_expr([
@@ -139,8 +143,9 @@ class TestCombineArgs(CevalTest):
             ["RETURN", 1],
         ])
         fn = make_callable(code, ns)
-        result = run_to_completion(fn())
+        result = await fn()
         self.assertEqual(result, (0, 1, 2, 3, 4))
+
 
     async def test_combine_args_two_tuples(self):
         code, ns = build_expr([
@@ -150,8 +155,9 @@ class TestCombineArgs(CevalTest):
             ["RETURN", 1],
         ])
         fn = make_callable(code, ns)
-        result = run_to_completion(fn())
+        result = await fn()
         self.assertEqual(result, (0, 1, 2, 3))
+
 
     async def test_combine_args_tuple_and_range(self):
         code, ns = build_expr([
@@ -161,7 +167,7 @@ class TestCombineArgs(CevalTest):
             ["RETURN", 1],
         ])
         fn = make_callable(code, ns)
-        result = run_to_completion(fn())
+        result = await fn()
         self.assertEqual(result, (0, 1, 2, 3, 4, 9, 8))
 
 
@@ -173,8 +179,9 @@ class TestCombineKwds(CevalTest):
             ["RETURN", 1],
         ])
         fn = make_callable(code, ns)
-        result = run_to_completion(fn())
+        result = await fn()
         self.assertEqual(result, {})
+
 
     async def test_combine_kwds_single_dict(self):
         code, ns = build_expr([
@@ -183,8 +190,9 @@ class TestCombineKwds(CevalTest):
             ["RETURN", 1],
         ])
         fn = make_callable(code, ns)
-        result = run_to_completion(fn())
+        result = await fn()
         self.assertEqual(result, {"a": 1, "b": 2})
+
 
     async def test_combine_kwds_two_dicts_later_overwrites(self):
         code, ns = build_expr([
@@ -194,7 +202,7 @@ class TestCombineKwds(CevalTest):
             ["RETURN", 1],
         ])
         fn = make_callable(code, ns)
-        result = run_to_completion(fn())
+        result = await fn()
         self.assertEqual(result, {"a": 1, "b": 2, "c": 3})
 
 

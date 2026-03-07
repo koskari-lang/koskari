@@ -18,10 +18,8 @@ Tests for PUSH_LOOP, POP_LOOP, BREAK, CONTINUE opcodes.
 :license: GNU General Public License v3
 """
 
-import unittest
-
 from tests import make_callable
-from tests.lib.opcode import CevalTest, build_expr, run_to_completion
+from tests.lib.opcode import CevalTest, build_expr
 
 
 class TestLoopOpcodes(CevalTest):
@@ -51,7 +49,7 @@ class TestLoopOpcodes(CevalTest):
             ["CONST", 42],
             ["RETURN", 1],
         ])
-        result = run_to_completion(make_callable(code, ns)())
+        result = await make_callable(code, ns)()
         self.assertEqual(result, 42)
 
 
@@ -70,7 +68,7 @@ class TestLoopOpcodes(CevalTest):
             ["CONST", 42],
             ["RETURN", 1],
         ])
-        result = run_to_completion(make_callable(code, ns)())
+        result = await make_callable(code, ns)()
         self.assertEqual(result, 42)
 
 
@@ -99,7 +97,7 @@ class TestLoopOpcodes(CevalTest):
             ["VAR", "n"],
             ["RETURN", 1],
         ], values={"n": 0})
-        result = run_to_completion(make_callable(code, ns)())
+        result = await make_callable(code, ns)()
         self.assertEqual(result, 3)
 
 
@@ -146,7 +144,7 @@ class TestLoopOpcodes(CevalTest):
             ["VAR", "outer"],
             ["RETURN", 1],
         ], values={"outer": 0, "inner": 0})
-        result = run_to_completion(make_callable(code, ns)())
+        result = await make_callable(code, ns)()
         self.assertEqual(result, 2)
 
 
@@ -176,7 +174,7 @@ class TestLoopOpcodes(CevalTest):
             ["VAR", "x"],
             ["RETURN", 1],
         ], values={"x": 0})
-        result = run_to_completion(make_callable(code, ns)())
+        result = await make_callable(code, ns)()
         self.assertEqual(result, 1)
 
 
@@ -187,7 +185,7 @@ class TestLoopOpcodes(CevalTest):
 
         code_obj, ns = build_expr([["BREAK", 0], ["RETURN", 1]])
         with self.assertRaises(RuntimeError) as ctx:
-            run_to_completion(make_callable(code_obj, ns)())
+            await make_callable(code_obj, ns)()
         self.assertIn("break outside loop", str(ctx.exception))
 
 
@@ -198,7 +196,7 @@ class TestLoopOpcodes(CevalTest):
 
         code_obj, ns = build_expr([["CONTINUE", 0], ["RETURN", 1]])
         with self.assertRaises(RuntimeError) as ctx:
-            run_to_completion(make_callable(code_obj, ns)())
+            await make_callable(code_obj, ns)()
         self.assertIn("continue outside loop", str(ctx.exception))
 
 
@@ -209,7 +207,7 @@ class TestLoopOpcodes(CevalTest):
 
         code_obj, ns = build_expr([["CLEAR_LOOP", 0], ["RETURN", 1]])
         with self.assertRaises(RuntimeError):
-            run_to_completion(make_callable(code_obj, ns)())
+            await make_callable(code_obj, ns)()
 
 
     async def test_pop_loop_without_push_loop_raises(self):
@@ -220,6 +218,7 @@ class TestLoopOpcodes(CevalTest):
 
         with self.assertRaises(RuntimeError):
             code_obj, ns = build_expr([["POP_LOOP", 0], ["RETURN", 1]])
-            run_to_completion(make_callable(code_obj, ns)())
+            await make_callable(code_obj, ns)()
+
 
 # The end.

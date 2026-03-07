@@ -20,31 +20,8 @@ enter/exit (auto-await). Participates in transfer plans (exit on unwind,
 enter on wind).
 """
 
-import asyncio
-import unittest
-
 from tests import make_callable
-from tests.lib.opcode import CevalTest, build_expr, run_to_completion
-
-
-async def run_to_completion_with_await(coro):
-    """
-    Drive the coroutine to completion, awaiting any yielded awaitables
-    """
-
-    async def drive():
-        value = None
-        while True:
-            try:
-                result = coro.send(value)
-            except StopIteration as e:
-                return e.value
-            if hasattr(result, "__await__"):
-                value = await result
-            else:
-                value = result
-
-    return await drive()
+from tests.lib.opcode import CevalTest, build_expr
 
 
 class SimpleMgr:
@@ -112,10 +89,11 @@ class TestDynWithOpcodes(CevalTest):
             ["POP_DYN_WITH", 0],
             ["RETURN", 1],
         ])
-        result = run_to_completion(make_callable(code, ns)())
+        result = await make_callable(code, ns)()
         self.assertIsNone(result)
         self.assertTrue(mgr.entered)
         self.assertTrue(mgr.exited)
+
 
     async def test_push_dyn_with_body_runs_enter_exit(self):
         """
@@ -131,10 +109,11 @@ class TestDynWithOpcodes(CevalTest):
             ["POP_DYN_WITH", 0],
             ["RETURN", 1],
         ])
-        result = run_to_completion(make_callable(code, ns)())
+        result = await make_callable(code, ns)()
         self.assertIsNone(result)
         self.assertTrue(mgr.entered)
         self.assertTrue(mgr.exited)
+
 
     async def test_dyn_with_binding_entered_value(self):
         """
@@ -149,11 +128,12 @@ class TestDynWithOpcodes(CevalTest):
             ["POP_DYN_WITH", 0],
             ["RETURN", 1],
         ], local_syms=("x",))
-        result = run_to_completion(make_callable(code, ns)())
+        result = await make_callable(code, ns)()
         self.assertIsNone(result)
         self.assertEqual(300, mgr.value)
         self.assertTrue(mgr.entered)
         self.assertTrue(mgr.exited)
+
 
     async def test_dyn_with_exception_propagates(self):
         """
@@ -174,11 +154,12 @@ class TestDynWithOpcodes(CevalTest):
             ["RETURN", 1],
         ], values={"raise_err": raise_err})
         with self.assertRaises(ValueError) as ctx:
-            run_to_completion(make_callable(code, ns)())
+            await make_callable(code, ns)()
         self.assertIn("oops", str(ctx.exception))
         self.assertTrue(mgr.entered)
         self.assertTrue(mgr.exited)
         self.assertEqual(mgr.exc_info[0], ValueError)
+
 
     async def test_dyn_with_async_enter_completes(self):
         """
@@ -193,7 +174,7 @@ class TestDynWithOpcodes(CevalTest):
             ["POP_DYN_WITH", 0],
             ["RETURN", 1],
         ])
-        result = await run_to_completion_with_await(make_callable(code, ns)())
+        result = await make_callable(code, ns)()
         self.assertIsNone(result)
         self.assertTrue(mgr.entered)
         self.assertTrue(mgr.exited)

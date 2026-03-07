@@ -18,10 +18,8 @@ Tests for EXCEPTION, RAISE, PUSH_TRY opcodes.
 :license: GNU General Public License v3
 """
 
-import unittest
-
 from tests import make_callable
-from tests.lib.opcode import CevalTest, build_expr, run_to_completion
+from tests.lib.opcode import CevalTest, build_expr
 
 
 class TestExceptionOpcodes(CevalTest):
@@ -48,7 +46,7 @@ class TestExceptionOpcodes(CevalTest):
             ["POP_TRY", 0],
             ["RETURN", 1],
         ])
-        result = run_to_completion(make_callable(code, ns)())
+        result = await make_callable(code, ns)()
         self.assertEqual(result, 42)
 
 
@@ -72,7 +70,7 @@ class TestExceptionOpcodes(CevalTest):
             ["POP_TRY", 0],
             ["RETURN", 1],
         ])
-        result = run_to_completion(make_callable(code, ns)())
+        result = await make_callable(code, ns)()
         self.assertEqual(result, 42)
 
 
@@ -95,7 +93,7 @@ class TestExceptionOpcodes(CevalTest):
             ["NOOP", 0],
         ])
         with self.assertRaises(ValueError):
-            run_to_completion(make_callable(code, ns)())
+            await make_callable(code, ns)()
 
 
     async def test_exception_push_current_exception(self):
@@ -115,7 +113,7 @@ class TestExceptionOpcodes(CevalTest):
             ["POP_TRY", 0],
             ["RETURN", 1],
         ])
-        result = run_to_completion(make_callable(code, ns)())
+        result = await make_callable(code, ns)()
         self.assertEqual(result, 42)
 
 
@@ -130,7 +128,7 @@ class TestExceptionOpcodes(CevalTest):
             ["RAISE", 1],
         ])
         with self.assertRaises(TypeError) as ctx:
-            run_to_completion(make_callable(code, ns)())
+            await make_callable(code, ns)()
         self.assertIn("raised", str(ctx.exception))
 
 
@@ -149,7 +147,7 @@ class TestExceptionOpcodes(CevalTest):
             ["CONST", 42],
             ["RETURN", 1],
         ])
-        result = run_to_completion(make_callable(code, ns)())
+        result = await make_callable(code, ns)()
         self.assertEqual(result, 42)
 
 
@@ -167,7 +165,7 @@ class TestExceptionOpcodes(CevalTest):
             ["NOOP", 0],
             ["LABEL", "fin"],
         ])
-        result = run_to_completion(make_callable(code, ns)())
+        result = await make_callable(code, ns)()
         self.assertEqual(result, 42)
 
 
@@ -188,7 +186,7 @@ class TestExceptionOpcodes(CevalTest):
             ["POP_TRY", 0],
             ["RETURN", 1],
         ])
-        result = run_to_completion(make_callable(code, ns)())
+        result = await make_callable(code, ns)()
         self.assertEqual(result, 42)
 
 
@@ -209,7 +207,7 @@ class TestExceptionOpcodes(CevalTest):
             ["POP_TRY", 0],
             ["RETURN", 1],
         ])
-        result = run_to_completion(make_callable(code, ns)())
+        result = await make_callable(code, ns)()
         self.assertEqual(result, True)
 
 
@@ -227,7 +225,7 @@ class TestExceptionOpcodes(CevalTest):
             ["CONST", 42],
             ["RETURN", 1],
         ])
-        result = run_to_completion(make_callable(code, ns)())
+        result = await make_callable(code, ns)()
         self.assertEqual(result, 42)
 
 
@@ -251,7 +249,7 @@ class TestExceptionOpcodes(CevalTest):
             ["POP_TRY", 0],
             ["RETURN", 1],
         ])
-        result = run_to_completion(make_callable(code, ns)())
+        result = await make_callable(code, ns)()
         self.assertEqual(result, 42)
 
 
@@ -276,7 +274,7 @@ class TestExceptionOpcodes(CevalTest):
             ["NOOP", 0],
         ])
         with self.assertRaises(ValueError):
-            run_to_completion(make_callable(code, ns)())
+            await make_callable(code, ns)()
 
 
     async def test_try_normal_path_drops_block(self):
@@ -294,7 +292,7 @@ class TestExceptionOpcodes(CevalTest):
             ["CONST", 42],
             ["RETURN", 1],
         ])
-        result = run_to_completion(make_callable(code, ns)())
+        result = await make_callable(code, ns)()
         self.assertEqual(result, 42)
 
 
@@ -312,7 +310,7 @@ class TestExceptionOpcodes(CevalTest):
             ["NOOP", 0],
             ["LABEL", "fin"],
         ])
-        result = run_to_completion(make_callable(code, ns)())
+        result = await make_callable(code, ns)()
         self.assertEqual(result, 42)
 
 
@@ -336,7 +334,7 @@ class TestExceptionOpcodes(CevalTest):
             ["POP_TRY", 0],
             ["RETURN", 1],
         ])
-        result = run_to_completion(make_callable(code, ns)())
+        result = await make_callable(code, ns)()
         self.assertEqual(result, 42)
 
 
@@ -354,7 +352,7 @@ class TestExceptionOpcodes(CevalTest):
             ["POP_FINALLY", 0],
             ["RETURN", 1],
         ])
-        result = run_to_completion(make_callable(code, ns)())
+        result = await make_callable(code, ns)()
         self.assertEqual(result, 5)
 
 
@@ -380,7 +378,7 @@ class TestExceptionOpcodes(CevalTest):
             ["POP_LOOP", 0],
             ["RETURN", 1],
         ])
-        result = run_to_completion(make_callable(code, ns)())
+        result = await make_callable(code, ns)()
         self.assertEqual(result, 1)
 
 
@@ -408,6 +406,7 @@ class TestExceptionOpcodes(CevalTest):
             ["NOOP", 0],
         ])
         with self.assertRaises(ValueError):
-            run_to_completion(make_callable(code, ns)())
+            await make_callable(code, ns)()
+
 
 # The end.

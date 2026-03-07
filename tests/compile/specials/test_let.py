@@ -28,7 +28,7 @@ class TestLetSpecial(SpecialsTestCase):
 
         dis(expr.code)
 
-        result = expr().run()
+        result = await expr()
         self.assertEqual(42, result)
 
 
@@ -41,7 +41,7 @@ class TestLetSpecial(SpecialsTestCase):
 
         dis(expr.code)
 
-        result = expr().run()
+        result = await expr()
         self.assertEqual(3, result)
 
 
@@ -55,7 +55,7 @@ class TestLetSpecial(SpecialsTestCase):
 
         dis(expr.code)
 
-        result = expr().run()
+        result = await expr()
         self.assertEqual(20, result)
 
 
@@ -66,7 +66,7 @@ class TestLetSpecial(SpecialsTestCase):
           (compile/call + a b))
         """
         expr, mod = self.compile_expr(src_str, **{"+": lambda x, y: x + y})
-        result = expr().run()
+        result = await expr()
         self.assertEqual(30, result)
 
 

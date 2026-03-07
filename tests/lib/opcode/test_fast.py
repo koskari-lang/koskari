@@ -18,10 +18,8 @@ Tests for FAST, FAST_BIND, FAST_CLEAR opcodes.
 :license: GNU General Public License v3
 """
 
-import unittest
-
 from tests import make_callable
-from tests.lib.opcode import CevalTest, build_expr, run_to_completion
+from tests.lib.opcode import CevalTest, build_expr
 
 
 class TestFastOpcodes(CevalTest):
@@ -29,7 +27,7 @@ class TestFastOpcodes(CevalTest):
     Tests for FAST, FAST_BIND, FAST_CLEAR, FAST_REF, FAST_STORE
     """
 
-    def _run_fast_out_of_bounds(self, opname, arg=0):
+    async def _run_fast_out_of_bounds(self, opname, arg=0):
         """
         Run bytecode that hits the given FAST opcode with no fast slots
         """
@@ -40,7 +38,7 @@ class TestFastOpcodes(CevalTest):
             code_list = [[opname, arg], ["RETURN", 1]]
         code_obj, ns = build_expr(code_list)
         expr = make_callable(code_obj, ns)
-        return run_to_completion(expr())
+        return await expr()
 
 
     async def test_fast_raises_name_error_for_out_of_bounds_index(self):
@@ -49,7 +47,7 @@ class TestFastOpcodes(CevalTest):
         """
 
         with self.assertRaises(NameError):
-            self._run_fast_out_of_bounds("FAST", 0)
+            await self._run_fast_out_of_bounds("FAST", 0)
 
 
     async def test_fast_bind_raises_name_error_for_out_of_bounds_index(self):
@@ -58,7 +56,7 @@ class TestFastOpcodes(CevalTest):
         """
 
         with self.assertRaises(NameError):
-            self._run_fast_out_of_bounds("FAST_BIND", 0)
+            await self._run_fast_out_of_bounds("FAST_BIND", 0)
 
 
     async def test_fast_clear_raises_name_error_for_out_of_bounds_index(self):
@@ -67,7 +65,7 @@ class TestFastOpcodes(CevalTest):
         """
 
         with self.assertRaises(NameError):
-            self._run_fast_out_of_bounds("FAST_CLEAR", 0)
+            await self._run_fast_out_of_bounds("FAST_CLEAR", 0)
 
 
     async def test_fast_ref_raises_name_error_for_out_of_bounds_index(self):
@@ -76,7 +74,7 @@ class TestFastOpcodes(CevalTest):
         """
 
         with self.assertRaises(NameError):
-            self._run_fast_out_of_bounds("FAST_REF", 0)
+            await self._run_fast_out_of_bounds("FAST_REF", 0)
 
 
     async def test_fast_store_raises_name_error_for_out_of_bounds_index(self):
@@ -85,7 +83,7 @@ class TestFastOpcodes(CevalTest):
         """
 
         with self.assertRaises(NameError):
-            self._run_fast_out_of_bounds("FAST_STORE", 0)
+            await self._run_fast_out_of_bounds("FAST_STORE", 0)
 
 
     async def test_fast_on_dict_namespace_raises_runtime_error(self):
@@ -95,8 +93,9 @@ class TestFastOpcodes(CevalTest):
         code_obj, _ = build_expr([["FAST", 0], ["RETURN", 1]])
         ns = {}
         with self.assertRaises(RuntimeError) as ctx:
-            run_to_completion(make_callable(code_obj, ns)())
+            await make_callable(code_obj, ns)()
         self.assertIn("FAST invoked", str(ctx.exception))
+
 
     async def test_fast_bind_binds_slot(self):
         """
@@ -111,7 +110,8 @@ class TestFastOpcodes(CevalTest):
             ["RETURN", 1],
         ], local_syms=("x", "y"))
 
-        result = run_to_completion(make_callable(code, ns)())
+        result = await make_callable(code, ns)()
         self.assertEqual(result, 100)
+
 
 # The end.

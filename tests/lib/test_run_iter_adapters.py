@@ -54,7 +54,7 @@ class TestCoroutineRun(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(result, 42)
 
 
-    async def test_run_on_expression_result(self):
+    def test_run_on_expression_result(self):
         """
         expr().run() works for an expression that returns a constant
         """
@@ -109,7 +109,7 @@ class TestAsyncGeneratorIter(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(sync_values, async_values)
 
 
-    async def test_iter_single_value(self):
+    def test_iter_single_value(self):
         """
         list(agen.iter()) for a single yield returns one element
         """

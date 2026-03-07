@@ -18,11 +18,9 @@ Tests for BUILD_FUNCTION opcode.
 :license: GNU General Public License v3
 """
 
-import unittest
-
 from koskari.lib import FormalsSpec, Function
 from tests import make_callable
-from tests.lib.opcode import CevalTest, build_code, build_expr, run_to_completion
+from tests.lib.opcode import CevalTest, build_code, build_expr
 
 
 class TestBuildFunction(CevalTest):
@@ -34,6 +32,7 @@ class TestBuildFunction(CevalTest):
         """
         CONST fspec, BUILD_FUNCTION 0, RETURN 1 yields a Function
         """
+
         inner_code = build_code([["RETURN", 0]], name="inner")
         fspec = inner_code.function_spec(FormalsSpec())
         code_obj, ns = build_expr([
@@ -41,13 +40,15 @@ class TestBuildFunction(CevalTest):
             ["BUILD_FUNCTION", 0],
             ["RETURN", 1],
         ])
-        result = run_to_completion(make_callable(code_obj, ns)())
+        result = await make_callable(code_obj, ns)()
         self.assertIsInstance(result, Function)
+
 
     async def test_build_function_returned_function_is_callable(self):
         """
         Function built via BUILD_FUNCTION is callable and returns a coroutine
         """
+
         inner_code = build_code([
             ["CONST", 99],
             ["RETURN", 1],
@@ -58,10 +59,9 @@ class TestBuildFunction(CevalTest):
             ["BUILD_FUNCTION", 0],
             ["RETURN", 1],
         ])
-        fn = run_to_completion(make_callable(code_obj, ns)())
+        fn = await make_callable(code_obj, ns)()
         self.assertIsInstance(fn, Function)
-        coro = fn()
-        self.assertEqual(run_to_completion(coro), 99)
+        self.assertEqual(await fn(), 99)
 
 
 # The end.

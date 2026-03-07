@@ -35,7 +35,7 @@ class TestSetqSpecial(SpecialsTestCase):
             x))
         """
         expr, mod = self.compile_expr(src_str)
-        result = expr().run()
+        result = await expr()
         self.assertEqual(42, result)
 
 
@@ -50,7 +50,7 @@ class TestRefqSpecial(SpecialsTestCase):
           (compile/call deref (compile/refq x)))
         """
         expr, mod = self.compile_expr(src_str, deref=deref)
-        result = expr().run()
+        result = await expr()
         self.assertEqual(10, result)
 
 
@@ -64,7 +64,7 @@ class TestBindqSpecial(SpecialsTestCase):
         """
         obj = SimpleNamespace(value=99)
         expr, mod = self.compile_expr(src_str, obj=obj)
-        result = expr().run()
+        result = await expr()
         self.assertEqual(99, result)
 
 
@@ -76,7 +76,7 @@ class TestDelqSpecial(SpecialsTestCase):
           (compile/delq z))
         """
         expr, mod = self.compile_expr(src_str)
-        result = expr().run()
+        result = await expr()
         self.assertIsNone(result)
 
 

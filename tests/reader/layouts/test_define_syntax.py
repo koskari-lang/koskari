@@ -131,7 +131,7 @@ class TestLayoutDefineSyntax(IsolatedAsyncioTestCase):
         compiler = Compiler('<unittest>', module, filename=__file__)
         fragment = compiler.full_compile(source)
         expr = fragment.as_expression(vars(module))
-        expr().run()
+        await expr()
 
         use_src = """
         (double 21)
@@ -144,7 +144,7 @@ class TestLayoutDefineSyntax(IsolatedAsyncioTestCase):
 
         dis(use_expr.code)
 
-        result = use_expr().run()
+        result = await use_expr()
         self.assertEqual(42, result)
 
 
@@ -155,6 +155,7 @@ class TestLayoutDefineSyntax(IsolatedAsyncioTestCase):
             double x:
               (* x 2)
         """
+
         builtins = make_bootstrap()
         reader = LayoutReader(builtins)
         stream = source_str(src, __file__)
@@ -163,7 +164,7 @@ class TestLayoutDefineSyntax(IsolatedAsyncioTestCase):
         compiler = Compiler('<unittest>', module, filename=__file__)
         fragment = compiler.full_compile(source)
         expr = fragment.as_expression(vars(module))
-        expr().run()
+        await expr()
 
         use_src = "(double 21)"
         use_reader = LayoutReader(vars(module))
@@ -171,7 +172,7 @@ class TestLayoutDefineSyntax(IsolatedAsyncioTestCase):
         use_source = use_reader.read(use_stream)
         use_fragment = compiler.full_compile(use_source)
         use_expr = use_fragment.as_expression(vars(module))
-        result = use_expr().run()
+        result = await use_expr()
         self.assertEqual(42, result)
 
 
@@ -183,6 +184,7 @@ class TestLayoutDefineSyntax(IsolatedAsyncioTestCase):
               x
           (extra form)
         """
+
         with self.assertRaises(Exception):
             parse_layout(src)
 
