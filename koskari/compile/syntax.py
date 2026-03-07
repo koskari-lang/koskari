@@ -1,7 +1,24 @@
+# This library is free software; you can redistribute it and/or modify
+# it under the terms of the GNU General Public License as published by
+# the Free Software Foundation; either version 3 of the License, or
+# (at your option) any later version.
+#
+# This library is distributed in the hope that it will be useful, but
+# WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
+# General Public License for more details.
+#
+# You should have received a copy of the GNU General Public License
+# along with this library; if not, see <http://www.gnu.org/licenses/>.
+
 """
 koskari.compile.syntax
 
-Data-driven syntax-rule transformer objects used by define-syntax.
+Syntax rules transformer implementing (syntax-rules ...)
+
+:author: Christopher O'Brien <obriencj@preoccupied.net>
+:license: GNU General Public License v3
+:ai-assistant: claude-4.6-sonnet-high via Cursor
 """
 
 
@@ -9,12 +26,8 @@ from dataclasses import dataclass
 
 from ..exceptions import CompilerError
 from ..lib import car, cdr, cons, nil, symbol
-from ..matcher import (
-    extract_binder_symbols,
-    is_binder_spec,
-    is_scope_region_spec,
-    match,
-)
+from ..matcher import (extract_binder_symbols, is_binder_spec,
+                       is_scope_region_spec, match)
 from ..types import is_pair, is_proper, is_symbol, unpack
 
 
@@ -92,6 +105,7 @@ def _merge_bindings(dst, src):
                 return False
         else:
             dst[k] = v
+
     return True
 
 
@@ -99,6 +113,7 @@ def _collect_symbols(expr, out):
     if is_symbol(expr):
         out.add(expr)
         return
+
     if is_pair(expr):
         for elem in unpack(expr):
             _collect_symbols(elem, out)
@@ -108,14 +123,18 @@ def _scope_region_keys(matched, specs):
     """
     Return set of keys that are scope regions from specs and binder metadata
     """
+
     keys = set()
     for key, spec in (specs or {}).items():
         if spec is None:
             continue
+
         scope = getattr(spec, 'scope', None)
         scopes = getattr(spec, 'scopes', None)
+
         if scope is not None:
             keys.add(scope if isinstance(scope, str) else str(scope))
+
         if scopes is not None:
             for s in scopes:
                 keys.add(s if isinstance(s, str) else str(s))
@@ -135,8 +154,8 @@ def _collect_binding_symbols_matcher(template, find_compiled):
     out = set()
     if template is nil or not is_pair(template):
         return out
-    head = car(template)
-    rest = cdr(template)
+
+    head, rest = template
     if not is_symbol(head):
         for elem in (unpack(rest) if rest is not nil and is_pair(rest) else []):
             if elem is not None and elem is not nil:
@@ -336,8 +355,10 @@ class SyntaxRule:
     pattern: object
     template: object
 
+
     def to_tuple(self):
         return (_serialize_form(self.pattern), _serialize_form(self.template))
+
 
     @classmethod
     def from_tuple(cls, tup):
@@ -356,6 +377,7 @@ class SyntaxRulesTransformer:
         self.literals = frozenset(literals)
         self.rules = tuple(rules)
 
+
     def to_tuple(self):
         return (
             _tag_syntax_rules,
@@ -363,6 +385,7 @@ class SyntaxRulesTransformer:
             tuple(_serialize_form(x) for x in self.literals),
             tuple(r.to_tuple() for r in self.rules),
         )
+
 
     @classmethod
     def from_tuple(cls, tup):
@@ -373,6 +396,7 @@ class SyntaxRulesTransformer:
         literals = [_deserialize_form(x) for x in tup[2]]
         rules = [SyntaxRule.from_tuple(rt) for rt in tup[3]]
         return cls(name, literals, rules)
+
 
     def compile_impl(self, compiler, source_obj, tc=False):
         for rule in self.rules:
@@ -397,6 +421,7 @@ def build_syntax(name, tagged_tuple):
     """
     Runtime helper: deserialize a tagged syntax-rules tuple.
     """
+
     transformer = SyntaxRulesTransformer.from_tuple(tagged_tuple)
     if name is not None:
         transformer.name = name
@@ -437,3 +462,6 @@ def build_syntax_rules_transformer(name, spec):
         rules.append(SyntaxRule(pattern_expr, template_expr))
 
     return SyntaxRulesTransformer(name, literals, rules)
+
+
+# The end.

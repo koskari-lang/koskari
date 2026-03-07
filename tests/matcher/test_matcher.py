@@ -23,6 +23,7 @@ from koskari.types import unpack
 from koskari.matcher import (
     ANY_ORDER,
     BIND,
+    EXPR,
     LITERAL,
     LITERAL_KW,
     LITERAL_SYM,
@@ -30,6 +31,7 @@ from koskari.matcher import (
     OPT,
     PAIR,
     REST,
+    SYMBOL,
     match,
 )
 
@@ -87,24 +89,34 @@ class TestMatchRest(unittest.TestCase):
         self.assertEqual(list(unpack(result['tail'])), [b])
 
 
-class TestMatchPair(unittest.TestCase):
+class TestMatchPairDestructuring(unittest.TestCase):
 
-    def test_pair_keyword_bind(self):
+    def test_match_keyword_bind(self):
         kw = keyword('before:')
         body = cons(symbol('x'), nil)
         elem = cons(kw, body)
         src = cons(elem, nil)
-        result = match(src, MATCH(PAIR(LITERAL_KW('before:'), BIND('before_body'))))
+        result = match(src, MATCH(MATCH(LITERAL_KW('before:'), BIND('before_body'))))
         self.assertIsNotNone(result)
         self.assertEqual(result['before_body'], body)
 
-    def test_pair_wrong_keyword_fails(self):
+    def test_match_wrong_keyword_fails(self):
         kw = keyword('body:')
         body = cons(symbol('x'), nil)
         elem = cons(kw, body)
         src = cons(elem, nil)
-        result = match(src, MATCH(PAIR(LITERAL_KW('before:'), BIND('before_body'))))
+        result = match(src, MATCH(MATCH(LITERAL_KW('before:'), BIND('before_body'))))
         self.assertIsNone(result)
+
+
+class TestMatchPairCapture(unittest.TestCase):
+
+    def test_pair_captures_whole_pair(self):
+        p = cons(symbol('a'), symbol('b'))
+        src = cons(p, nil)
+        result = match(src, MATCH(PAIR('p')))
+        self.assertIsNotNone(result)
+        self.assertEqual(result['p'], p)
 
 
 class TestMatchOpt(unittest.TestCase):
@@ -116,13 +128,13 @@ class TestMatchOpt(unittest.TestCase):
         src = cons(elem, nil)
         result = match(
             src,
-            MATCH(OPT(PAIR(LITERAL_KW('after:'), BIND('after_body')))),
+            MATCH(OPT(MATCH(LITERAL_KW('after:'), BIND('after_body')))),
         )
         self.assertIsNotNone(result)
         self.assertEqual(result['after_body'], body)
 
     def test_opt_succeeds_when_absent(self):
-        result = match(nil, MATCH(OPT(PAIR(LITERAL_KW('after:'), BIND('after_body')))))
+        result = match(nil, MATCH(OPT(MATCH(LITERAL_KW('after:'), BIND('after_body')))))
         self.assertIsNotNone(result)
         self.assertNotIn('after_body', result)
 
@@ -135,9 +147,9 @@ class TestMatchAnyOrder(unittest.TestCase):
         after = cons(keyword('after:'), cons(symbol('a'), nil))
         src = cons(body, cons(before, cons(after, nil)))
         pat = MATCH(ANY_ORDER(
-            PAIR(LITERAL_KW('before:'), BIND('before_body')),
-            PAIR(LITERAL_KW('body:'), BIND('body')),
-            PAIR(LITERAL_KW('after:'), BIND('after_body')),
+            MATCH(LITERAL_KW('before:'), BIND('before_body')),
+            MATCH(LITERAL_KW('body:'), BIND('body')),
+            MATCH(LITERAL_KW('after:'), BIND('after_body')),
         ))
         result = match(src, pat)
         self.assertIsNotNone(result)
@@ -150,8 +162,8 @@ class TestMatchAnyOrder(unittest.TestCase):
         after = cons(keyword('after:'), cons(symbol('a'), nil))
         src = cons(body, cons(after, nil))
         pat = MATCH(ANY_ORDER(
-            PAIR(LITERAL_KW('body:'), BIND('body')),
-            PAIR(LITERAL_KW('after:'), BIND('after_body')),
+            MATCH(LITERAL_KW('body:'), BIND('body')),
+            MATCH(LITERAL_KW('after:'), BIND('after_body')),
         ))
         result = match(src, pat)
         self.assertIsNotNone(result)
@@ -167,9 +179,9 @@ class TestMatchDynWindPattern(unittest.TestCase):
         after = cons(keyword('after:'), cons(symbol('a'), nil))
         src = cons(before, cons(body, cons(after, nil)))
         pat = MATCH(ANY_ORDER(
-            PAIR(LITERAL_KW('before:'), BIND('before_body')),
-            PAIR(LITERAL_KW('body:'), BIND('body')),
-            PAIR(LITERAL_KW('after:'), BIND('after_body')),
+            MATCH(LITERAL_KW('before:'), BIND('before_body')),
+            MATCH(LITERAL_KW('body:'), BIND('body')),
+            MATCH(LITERAL_KW('after:'), BIND('after_body')),
         ))
         result = match(src, pat)
         self.assertIsNotNone(result)
@@ -185,7 +197,7 @@ class TestMatchFromTuple(unittest.TestCase):
         body = cons(symbol('x'), nil)
         elem = cons(kw, body)
         src = cons(elem, nil)
-        builder = MATCH(PAIR(LITERAL_KW('before:'), BIND('before_body')))
+        builder = MATCH(MATCH(LITERAL_KW('before:'), BIND('before_body')))
         tup = builder.to_tuple()
         result_builder = match(src, builder)
         result_tup = match(src, tup)
@@ -217,6 +229,31 @@ class TestMatchLiterals(unittest.TestCase):
         result = match(src, MATCH(BIND('val')), literals=frozenset())
         self.assertIsNotNone(result)
         self.assertEqual(result['val'], sym)
+
+
+class TestMatchExpr(unittest.TestCase):
+
+    def test_expr_captures_element(self):
+        x = symbol('x')
+        src = cons(x, nil)
+        result = match(src, MATCH(EXPR('expr')))
+        self.assertIsNotNone(result)
+        self.assertEqual(result['expr'], x)
+
+
+class TestMatchSymbol(unittest.TestCase):
+
+    def test_symbol_captures_symbol(self):
+        s = symbol('foo')
+        src = cons(s, nil)
+        result = match(src, MATCH(SYMBOL('name')))
+        self.assertIsNotNone(result)
+        self.assertEqual(result['name'], s)
+
+    def test_symbol_rejects_non_symbol(self):
+        src = cons(keyword('kw'), nil)
+        result = match(src, MATCH(SYMBOL('name')))
+        self.assertIsNone(result)
 
 
 class TestMatchWithSpecs(unittest.TestCase):

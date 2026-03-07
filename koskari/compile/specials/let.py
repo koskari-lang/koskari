@@ -23,7 +23,7 @@ Special form handler for compile/let.
 
 
 from ...lib import cons, nil, pair, symbol
-from ...matcher import BIND_SYM, MATCH, REST, match
+from ...matcher import MATCH, REST, SYMBOL, match
 from ..compiler import Compiler
 from ...exceptions import SpecialError
 from ..helpers import BINDINGS, helper_begin, special, special_forms
@@ -34,7 +34,7 @@ _sym_lambda = symbol('compile/lambda')
 
 
 _LET_PATTERNS = [
-    MATCH(BIND_SYM("name"), BINDINGS("bindings", mode="parallel", scope="body"), REST("body")),
+    MATCH(SYMBOL("name"), BINDINGS("bindings", mode="parallel", scope="body"), REST("body")),
     MATCH(BINDINGS("bindings", mode="parallel", scope="body"), REST("body")),
 ]
 

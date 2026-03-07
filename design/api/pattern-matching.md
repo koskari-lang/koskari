@@ -18,11 +18,13 @@ All pattern and template structures use **tagged tuples**: every element is `(ta
 The matcher lives in **koskari.matcher**. Builder functions and the `match()` entry point are imported from there:
 
 ```python
-from koskari.matcher import MATCH, BIND, BIND_SYM, BIND_PAIR, REST, PAIR, OPT, ANY_ORDER
+from koskari.matcher import MATCH, BIND, REST, PAIR, OPT, ANY_ORDER, SYMBOL, EXPR
 from koskari.matcher import LITERAL, LITERAL_KW, LITERAL_SYM
 from koskari.matcher import match, from_tuple, match_tuple
 from koskari.matcher import is_binder_spec, is_scope_region_spec, extract_binder_symbols
 ```
+
+`BIND_SYM` and `BIND_PAIR` are deprecated aliases for `SYMBOL` and `PAIR`.
 
 A compile-specific matcher, **BINDINGS**, lives in **koskari.compile.helpers** (it depends on `gather_bindings`):
 
@@ -54,7 +56,7 @@ All matchers follow a regex MatchObject-like model: forms bind by key in the res
 | **SYMBOL** | yes | `{slot: symbol}` | Renamed from BIND_SYM |
 | **PAIR** | yes | `{slot: pair}` | Capture whole pair (BIND_PAIR renamed); type-constrained |
 | **REST** | yes | `{slot: remainder}` | Remainder of list |
-| **EXPR** | yes | `{slot: element}` | Single form; scope region for hygiene (to implement) |
+| **EXPR** | yes | `{slot: element}` | Single form; scope region for hygiene |
 | **LITERAL** | no | — | Exact match, no capture |
 | **OPT** | structural | — | Optional sub-pattern |
 | **ANY_ORDER** | structural | — | Order-independent sequence |
@@ -79,7 +81,7 @@ MATCH(
 )
 ```
 
-The inner MATCHs receive a pair; they destructure it and match car/cdr.
+The inner MATCHs receive a pair; they destructure it and match car/cdr. Pair destructuring applies only when MATCH has 2+ specs; with 1 spec the element is passed through (e.g. PAIR captures the pair).
 
 ### MATCH Optional Key
 
@@ -137,11 +139,11 @@ def match(self, source, literals, result, specs=None) -> Tuple[Optional[Any], bo
 | `matcher/match` | elem, elem, ... [, key] | Sequence match; when sub-expr, element must be pair, destructure (car, cdr). Optional key captures matched pair. |
 | `matcher/literal` | value | Match this value exactly (keyword or symbol) |
 | `matcher/bind` | slot | Capture one element into binding `slot` |
-| `matcher/bind-sym` | slot | Capture symbol; target: tag `matcher/symbol` |
-| `matcher/bind-pair` | slot | Capture pair; target: tag `matcher/pair` (structural pair removed) |
+| `matcher/bind-sym` | slot | Capture symbol (SYMBOL) |
+| `matcher/bind-pair` | slot | Capture pair; same as `matcher/pair` |
 | `matcher/rest` | slot | Capture remainder of list into `slot` |
-| `matcher/expr` | slot | Capture single form; scope region (to implement) |
-| `matcher/pair` | car_spec, cdr_spec | *Current only*: element must be pair; car/cdr match. *Target*: removed; use MATCH as sub-expr for pair destructuring. |
+| `matcher/expr` | slot | Capture single form; scope region |
+| `matcher/pair` | slot | Capture whole pair; no structural form |
 | `matcher/opt` | elem | Optionally match elem (succeed if absent) |
 | `matcher/any-order` | elem, elem, ... | All elements must match, in any order |
 
@@ -166,15 +168,15 @@ Keywords in the source are matched literally; only symbols are ambiguous (litera
 - **Keyword clause** (target): `MATCH(LITERAL_KW("before:"), BIND("before_body"))` — when MATCH is a sub-expr, the element must be a pair; destructure and match. (Current: `PAIR(car_spec, cdr_spec)`.)
 - **Positional**: `BIND("body")` — capture one element.
 - **Rest**: `REST("tail")` — capture remainder of list.
-- **Type-constrained**: `SYMBOL("name")` for symbols (target; current BIND_SYM), `PAIR("bindings")` for whole pairs (target; current BIND_PAIR), `BINDINGS("bindings")` for binding lists (pre-parsed, with optional `mode`, `scope`, `scopes`).
+- **Type-constrained**: `SYMBOL("name")` for symbols, `PAIR("bindings")` for whole pairs, `BINDINGS("bindings")` for binding lists (pre-parsed, with optional `mode`, `scope`, `scopes`).
 
 ### Example: let form (implemented)
 
-The let special uses `BIND_SYM` (target: SYMBOL), `BINDINGS`, and `REST`:
+The let special uses `SYMBOL`, `BINDINGS`, and `REST`:
 
 ```python
 _LET_PATTERNS = [
-    MATCH(BIND_SYM("name"), BINDINGS("bindings", mode="parallel", scope="body"), REST("body")),
+    MATCH(SYMBOL("name"), BINDINGS("bindings", mode="parallel", scope="body"), REST("body")),
     MATCH(BINDINGS("bindings", mode="parallel", scope="body"), REST("body")),
 ]
 matched = match(rest, _LET_PATTERNS)
@@ -270,15 +272,15 @@ Serialized:
 Construct patterns ergonomically:
 
 ```python
-from koskari.matcher import MATCH, PAIR, BIND, BIND_SYM, BIND_PAIR, REST, OPT, ANY_ORDER
+from koskari.matcher import MATCH, PAIR, BIND, SYMBOL, REST, OPT, ANY_ORDER
 from koskari.matcher import LITERAL_KW, LITERAL_SYM, LITERAL
 from koskari.matcher import match, from_tuple, match_tuple
 from koskari.compile.helpers import BINDINGS
 
-# Build (target: MATCH for pair destructuring; current uses PAIR)
+# Build (MATCH destructures pairs when sub-expr)
 pattern = MATCH(
-    PAIR(LITERAL_KW("before:"), BIND("before_body")),
-    OPT(PAIR(LITERAL_KW("after:"), BIND("after_body"))),
+    MATCH(LITERAL_KW("before:"), BIND("before_body")),
+    OPT(MATCH(LITERAL_KW("after:"), BIND("after_body"))),
     REST("body"),
 )
 

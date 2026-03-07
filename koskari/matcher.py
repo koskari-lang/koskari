@@ -37,6 +37,7 @@ __all__ = (
     'BIND',
     'BIND_PAIR',
     'BIND_SYM',
+    'EXPR',
     'LITERAL',
     'LITERAL_KW',
     'LITERAL_SYM',
@@ -44,6 +45,7 @@ __all__ = (
     'OPT',
     'PAIR',
     'REST',
+    'SYMBOL',
     'extract_binder_symbols',
     'from_tuple',
     'is_binder_spec',
@@ -98,6 +100,7 @@ _tag_rest = symbol('matcher/rest')
 _tag_pair = symbol('matcher/pair')
 _tag_opt = symbol('matcher/opt')
 _tag_any_order = symbol('matcher/any-order')
+_tag_expr = symbol('matcher/expr')
 
 
 def _slot_key(slot):
@@ -206,7 +209,7 @@ class _BindMatcher:
 
 
 @matcher(_tag_bind_sym)
-class _BindSymMatcher:
+class _SymbolMatcher:
     """
     Capture one element only when it is a symbol
     """
@@ -239,40 +242,6 @@ class _BindSymMatcher:
         return (_tag_bind_sym, symbol(self._key) if isinstance(self.slot, str) else self.slot)
 
 
-@matcher(_tag_bind_pair)
-class _BindPairMatcher:
-    """
-    Capture one element only when it is a pair
-    """
-
-    def __init__(self, slot):
-        self.slot = slot
-        self._key = _slot_key(slot)
-
-
-    @classmethod
-    def from_payload(cls, payload, deserialize):
-        if len(payload) != 1:
-            raise ValueError('bind-pair expects 1 payload, got %d' % len(payload))
-        return cls(payload[0])
-
-
-    def match(self, source, literals, result, specs=None):
-        if source is nil:
-            return (None, False)
-        head, tail = car(source), cdr(source)
-        if not is_pair(head):
-            return (None, False)
-        result[self._key] = head
-        if specs is not None:
-            specs[self._key] = self
-        return (tail, True)
-
-
-    def to_tuple(self):
-        return (_tag_bind_pair, symbol(self._key) if isinstance(self.slot, str) else self.slot)
-
-
 @matcher(_tag_rest)
 class _RestMatcher:
     """
@@ -303,66 +272,70 @@ class _RestMatcher:
 
 
 @matcher(_tag_pair)
+@matcher(_tag_bind_pair)
 class _PairMatcher:
     """
-    Match pair; car against car_spec, cdr bound per cdr_spec
+    Capture one element only when it is a pair
     """
 
-    def __init__(self, car_spec, cdr_spec):
-        self.car_spec = car_spec
-        self.cdr_spec = cdr_spec
+    def __init__(self, slot):
+        self.slot = slot
+        self._key = _slot_key(slot)
 
 
     @classmethod
     def from_payload(cls, payload, deserialize):
-        if len(payload) != 2:
-            raise ValueError('pair expects 2 payload, got %d' % len(payload))
-        return cls(deserialize(payload[0]), deserialize(payload[1]))
+        if len(payload) != 1:
+            raise ValueError('pair expects 1 payload, got %d' % len(payload))
+        return cls(payload[0])
 
 
     def match(self, source, literals, result, specs=None):
         if source is nil:
             return (None, False)
-        elem = car(source)
-        tail = cdr(source)
-        if not is_pair(elem):
+        head, tail = car(source), cdr(source)
+        if not is_pair(head):
             return (None, False)
-
-        elem_car, elem_cdr = car(elem), cdr(elem)
-        car_matcher = _resolve_spec(self.car_spec, literals)
-        cdr_matcher = _resolve_spec(self.cdr_spec, literals)
-
-        if car_matcher is not None:
-            rem, ok = _do_match(car_matcher, cons(elem_car, nil), literals, result, specs)
-            if not ok or rem is not nil:
-                return (None, False)
-        else:
-            if elem_car != self.car_spec:
-                return (None, False)
-
-        if cdr_matcher is not None:
-            rem, ok = _do_match(cdr_matcher, cons(elem_cdr, nil), literals, result, specs)
-            if not ok:
-                return (None, False)
-
-        elif is_symbol(self.cdr_spec):
-            key = _slot_key(self.cdr_spec)
-            result[key] = elem_cdr
-            if specs is not None:
-                specs[key] = self
-
-        else:
-            return (None, False)
-
+        result[self._key] = head
+        if specs is not None:
+            specs[self._key] = self
         return (tail, True)
 
 
     def to_tuple(self):
-        car_t = (self.car_spec.to_tuple()
-                 if hasattr(self.car_spec, 'to_tuple') else (_tag_literal, self.car_spec))
-        cdr_t = (self.cdr_spec.to_tuple()
-                 if hasattr(self.cdr_spec, 'to_tuple') else (_tag_bind, self.cdr_spec))
-        return (_tag_pair, car_t, cdr_t)
+        return (_tag_pair, symbol(self._key) if isinstance(self.slot, str) else self.slot)
+
+
+@matcher(_tag_expr)
+class _ExprMatcher:
+    """
+    Capture one element (single form); scope region for hygiene
+    """
+
+    def __init__(self, slot):
+        self.slot = slot
+        self._key = _slot_key(slot)
+
+
+    @classmethod
+    def from_payload(cls, payload, deserialize):
+        if len(payload) != 1:
+            raise ValueError('expr expects 1 payload, got %d' % len(payload))
+        return cls(payload[0])
+
+
+    def match(self, source, literals, result, specs=None):
+        if source is nil:
+            return (None, False)
+        head, tail = car(source), cdr(source)
+        result[self._key] = head
+        if specs is not None:
+            specs[self._key] = self
+        return (tail, True)
+
+
+    def to_tuple(self):
+        return (_tag_expr, symbol(self._key) if isinstance(self.slot, str) else self.slot)
 
 
 @matcher(_tag_opt)
@@ -401,19 +374,40 @@ class _OptMatcher:
 @matcher(_tag_match)
 class _MatchMatcher:
     """
-    Sequence of specs in order
+    Sequence of specs in order. When sub-expr and element is a pair,
+    destructures (car, cdr) and matches against that.
     """
 
-    def __init__(self, *specs):
+    def __init__(self, *specs, key=None):
         self.specs = specs
+        self.key = key
 
 
     @classmethod
     def from_payload(cls, payload, deserialize):
-        return cls(*[deserialize(p) for p in payload])
+        specs = [deserialize(p) for p in payload]
+        return cls(*specs)
 
 
     def match(self, source, literals, result, specs=None):
+        if source is not nil:
+            elem, rest = car(source), cdr(source)
+            if rest is nil and is_pair(elem) and len(self.specs) >= 2:
+                pair_source = cons(car(elem), cons(cdr(elem), nil))
+                current = pair_source
+                for spec in self.specs:
+                    matcher = _resolve_spec(spec, literals)
+                    if matcher is None:
+                        return (None, False)
+                    current, ok = _do_match(matcher, current, literals, result, specs)
+                    if not ok:
+                        return (None, False)
+                if self.key is not None:
+                    key = _slot_key(self.key)
+                    result[key] = elem
+                    if specs is not None:
+                        specs[key] = self
+                return (rest, True)
         current = source
         for spec in self.specs:
             matcher = _resolve_spec(spec, literals)
@@ -542,20 +536,36 @@ def BIND(slot):
     return _BindMatcher(slot)
 
 
-def BIND_SYM(slot):
+def SYMBOL(slot):
     """
     Capture one element into slot only when it is a symbol
     """
 
-    return _BindSymMatcher(slot)
+    return _SymbolMatcher(slot)
 
 
-def BIND_PAIR(slot):
+def BIND_SYM(slot):
+    """
+    Deprecated: use SYMBOL
+    """
+
+    return SYMBOL(slot)
+
+
+def PAIR(slot):
     """
     Capture one element into slot only when it is a pair
     """
 
-    return _BindPairMatcher(slot)
+    return _PairMatcher(slot)
+
+
+def BIND_PAIR(slot):
+    """
+    Deprecated: use PAIR
+    """
+
+    return PAIR(slot)
 
 
 def REST(slot):
@@ -566,12 +576,12 @@ def REST(slot):
     return _RestMatcher(slot)
 
 
-def PAIR(car_spec, cdr_spec):
+def EXPR(slot):
     """
-    Match pair; car matches car_spec, cdr bound per cdr_spec
+    Capture one element (single form); scope region for hygiene
     """
 
-    return _PairMatcher(car_spec, cdr_spec)
+    return _ExprMatcher(slot)
 
 
 def OPT(elem):
@@ -582,12 +592,13 @@ def OPT(elem):
     return _OptMatcher(elem)
 
 
-def MATCH(*specs):
+def MATCH(*specs, key=None):
     """
-    Sequence of specs in order
+    Sequence of specs in order. When sub-expr and element is a pair,
+    destructures. Use key= to capture the matched pair.
     """
 
-    return _MatchMatcher(*specs)
+    return _MatchMatcher(*specs, key=key)
 
 
 def ANY_ORDER(*specs):
@@ -639,7 +650,7 @@ def match(
 
 def is_binder_spec(spec):
     """
-    True if spec is a binder matcher (BIND_SYM, BINDINGS, FORMALS)
+    True if spec is a binder matcher (SYMBOL, BINDINGS, FORMALS)
 
     Used by hygiene discovery to identify captures that introduce bindings.
     """
@@ -647,7 +658,7 @@ def is_binder_spec(spec):
     if spec is None:
         return False
     name = type(spec).__name__
-    return name in ('_BindSymMatcher', '_BindingsMatcher')
+    return name in ('_SymbolMatcher', '_BindingsMatcher')
 
 
 def is_scope_region_spec(spec):
@@ -671,7 +682,7 @@ def extract_binder_symbols(spec, value):
     if spec is None or value is None:
         return
     name = type(spec).__name__
-    if name == '_BindSymMatcher':
+    if name == '_SymbolMatcher':
         if is_symbol(value):
             yield value
     elif name == '_BindingsMatcher':

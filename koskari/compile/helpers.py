@@ -19,12 +19,11 @@ from .compiler import Compiler, Special, ByteCodeFragment
 from ..exceptions import ParametersError, SpecialError
 from ..matcher import (
     BIND,
-    BIND_SYM,
     LITERAL,
     LITERAL_KW,
     MATCH,
-    PAIR,
     Matcher,
+    SYMBOL,
     match,
     matcher,
 )
@@ -197,11 +196,11 @@ def BIND_BINDINGS(slot):
 
 
 _BINDING_PATTERNS_3 = [
-    MATCH(BIND("expr"), LITERAL_KW("as"), BIND_SYM("sym")),
+    MATCH(BIND("expr"), LITERAL_KW("as"), SYMBOL("sym")),
 ]
 _BINDING_PATTERNS_2 = [
-    MATCH(BIND("expr"), PAIR(LITERAL_KW("as"), PAIR(BIND_SYM("sym"), LITERAL(nil)))),
-    MATCH(BIND_SYM("sym"), BIND("expr")),
+    MATCH(BIND("expr"), MATCH(LITERAL_KW("as"), MATCH(SYMBOL("sym"), LITERAL(nil)))),
+    MATCH(SYMBOL("sym"), BIND("expr")),
 ]
 _BINDING_PATTERN_1 = MATCH(BIND("expr"))
 

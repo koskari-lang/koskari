@@ -117,7 +117,7 @@ Body-like regions are captured by existing structural matchers:
 
 These serve as scope regions when referenced by `scope` or `scopes` on binder matchers. Role helpers treat REST and EXPR as scope regions (`is_scope_region_spec`).
 
-### `BIND_SYM(name)`
+### `SYMBOL(name)`
 
 Match a single identifier that introduces a binding. Examples: function name in shorthand define, recursive name in named let.
 
@@ -176,7 +176,7 @@ Example:
 
 ```python
 _LET_PATTERNS = [
-    MATCH(BIND_SYM("name"), BINDINGS("bindings", mode="parallel", scope="body"), REST("body")),
+    MATCH(SYMBOL("name"), BINDINGS("bindings", mode="parallel", scope="body"), REST("body")),
     MATCH(BINDINGS("bindings", mode="parallel", scope="body"), REST("body")),
 ]
 ```
@@ -261,7 +261,7 @@ The pass does not guess lexical scope from symbol names or list shape alone.
 
 It uses:
 
-* `BIND_*` roles (BIND_SYM, BINDINGS, FORMALS) to discover newly introduced names
+* `BIND_*` roles (SYMBOL, BINDINGS, FORMALS) to discover newly introduced names
 * REST/EXPR slots (referenced by `scope`/`scopes`) to determine where those names may be rewritten
 * role `mode` to determine initializer behavior
 
@@ -410,7 +410,7 @@ If `x` was substituted syntax containing `t`, that subtree is not rewritten.
 Matcher:
 
 ```python
-MATCH(BIND_SYM("name"), BINDINGS("bindings", mode="parallel", scope="body"), REST("body"))
+MATCH(SYMBOL("name"), BINDINGS("bindings", mode="parallel", scope="body"), REST("body"))
 ```
 
 Template before hygiene:
@@ -539,9 +539,9 @@ The preferred behavior is explicit failure rather than unsafe broad rewriting.
 
 **Implemented**:
 
-* `BIND_SYM` — single-name binder
+* `SYMBOL` — single-name binder
 * `BINDINGS(slot, mode="parallel", scope=..., scopes=...)` — binding-list capture with scope
-* `REST`, `EXPR` — structural matchers used as scope regions
+* `REST`, `EXPR` — structural matchers; EXPR captures single form, scope region
 * `match(..., with_specs=True)` — returns `(result_dict, specs_dict)` for hygiene discovery
 * Role helpers: `is_binder_spec`, `is_scope_region_spec`, `extract_binder_symbols`
 * `_collect_binding_symbols_matcher(template, find_compiled)` — drives hygiene from special forms via matcher metadata
@@ -561,7 +561,7 @@ The preferred behavior is explicit failure rather than unsafe broad rewriting.
 
 The matcher language is extended with semantic roles describing:
 
-* **what introduces names**: `BIND_SYM`, `BINDINGS`, `FORMALS`
+* **what introduces names**: `SYMBOL`, `BINDINGS`, `FORMALS`
 * **where those names apply**: REST and EXPR slots referenced by `scope`/`scopes`
 * **how visibility behaves**: role modes such as `parallel`
 
