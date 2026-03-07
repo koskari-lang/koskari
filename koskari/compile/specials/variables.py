@@ -175,7 +175,7 @@ def special_define(compiler, source, tc=False):
     return frag
 
 
-@special(symbol("compile/define-syntax"), aliases=(symbol("define-syntax"),))
+@special(symbol("compile/define-syntax"))
 def special_define_syntax(compiler, source, tc=False):
     """
     Compile (define-syntax NAME (syntax-rules ...)). Registers a

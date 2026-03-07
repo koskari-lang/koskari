@@ -27,7 +27,7 @@ This document provides a high-level summary of all features identified from both
 
 ### Macros
 - **Reader Macros**: Character-based parse-time transformation
-- **Compile-time Macros**: defmacro, defalias
+- **Compile-time Macros**: define-syntax (syntax-rules), defmacro, defalias
 - **Expansion**: macroexpand-1
 
 ### Control Flow
@@ -125,14 +125,14 @@ There are no **partially** implemented opcodes; each handler is either full, a s
 - **Default syntax**: Indentation-based block syntax with colon-terminated headers; lowers into canonical s-expressions. See `design/language/layout-syntax.md` and `design/language/layout-syntax-formal.md`.
 - **Block parsing**: Header terminator is the final `:` at delimiter depth 0; `x:` and `x :` parse identically. Keywords like `as:`, `x:` remain intact inside headers.
 - **Probe pass + break marker**: Reader uses a two-step process to locate header end without lexer ambiguity (RecordingStream, MARK event).
-- **Layout heads**: Block heads resolve via `layout/<head>` lookup; handlers receive `(header . body)` and optional peer blocks. Implemented: layout/if (peers: elif, else), layout/try (peers: except, else, finally), layout/dyn-wind (peers: before, body, after). Fallback: `layout/block` for unknown heads.
+- **Layout heads**: Block heads resolve via `layout/<head>` lookup; handlers receive `(header . body)` and optional peer blocks. Implemented: layout/if (peers: elif, else), layout/try (peers: except, else, finally), layout/dyn-wind (peers: before, body, after), layout/define-syntax, layout/syntax-rules. Fallback: `layout/block` for unknown heads.
 - **Mixed mode**: Pure s-expr syntax embeddable anywhere; layout and s-expr alternate by context.
 
 ### Compiler
 - **Phases**: Parse → Expand → Compile → Optimize → Generate (full pipeline in progress)
 - **Components**: Compiler, CodeContext, ByteCodeFragment (implemented in `koskari.compile`)
 - **Optimization**: Constant folding, dead code elimination, fast paths (planned)
-- **Implemented specials**: compile/bytecode, compile/begin, compile/call, compile/class, compile/define, compile/lambda, compile/let, compile/parameterize, compile/cond, compile/if, compile/when, compile/unless, compile/and, compile/or, compile/while, compile/for-each, compile/break, compile/continue, compile/try, compile/raise, compile/check-exception, compile/clear-exception, compile/load-exception, compile/setq, compile/refq, compile/bindq, compile/delq, compile/attr, compile/del-attr, compile/set-attr, compile/ref-attr, compile/item, compile/ref-item, compile/del-item, compile/set-item, compile/quote, **compile/quasiquote, compile/unquote, compile/unquote-splicing**, compile/car, compile/cdr, compile/cons, compile/with, compile/dyn-with, compile/dyn-wind, **import**, **import-from**, **compile/= compile/!= compile/< compile/<= compile/> compile/>= compile/in compile/not-in compile/is compile/is-not compile/isinstance compile/issubclass compile/+ compile/- compile/* compile/** compile/& compile/| compile/^ compile/// compile// compile/@ compile/% compile/<< compile/>> compile/divmod compile/not compile/repr compile/truth compile/iter compile/~ compile/str compile/len compile/type compile/dir compile/vars compile/aiter** (see design/SPECIALS.md)
+- **Implemented specials**: compile/bytecode, compile/begin, compile/call, compile/class, compile/define, **compile/define-syntax**, compile/lambda, compile/let, compile/parameterize, compile/cond, compile/if, compile/when, compile/unless, compile/and, compile/or, compile/while, compile/for-each, compile/break, compile/continue, compile/try, compile/raise, compile/check-exception, compile/clear-exception, compile/load-exception, compile/setq, compile/refq, compile/bindq, compile/delq, compile/attr, compile/del-attr, compile/set-attr, compile/ref-attr, compile/item, compile/ref-item, compile/del-item, compile/set-item, compile/quote, **compile/quasiquote, compile/unquote, compile/unquote-splicing**, compile/car, compile/cdr, compile/cons, compile/with, compile/dyn-with, compile/dyn-wind, **import**, **import-from**, **compile/= compile/!= compile/< compile/<= compile/> compile/>= compile/in compile/not-in compile/is compile/is-not compile/isinstance compile/issubclass compile/+ compile/- compile/* compile/** compile/& compile/| compile/^ compile/// compile// compile/@ compile/% compile/<< compile/>> compile/divmod compile/not compile/repr compile/truth compile/iter compile/~ compile/str compile/len compile/type compile/dir compile/vars compile/aiter** (see design/SPECIALS.md)
 
 ### Evaluator
 - **Model**: Custom drive loop (`koskari_eval` in eval.c). Callable types Expression and Function (func.c) return a KosCoroutine (coro.c); driving the coroutine (await/send) runs the evaluator. Continuation invocation from Python raises `KoskariContinuationApply` for upwards transfer (does not return a coroutine).

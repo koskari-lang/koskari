@@ -889,6 +889,47 @@ value expression, then emits VAR_BIND to store it.
 **Tests:** `tests/compile/specials/test_define.py`
 
 
+## compile/define-syntax
+
+**Symbol:** `compile/define-syntax`
+
+**Syntax:** `(compile/define-syntax NAME (syntax-rules (LIT ...) ((PATTERN) TEMPLATE) ...))`
+
+**Use-case:** Define a compile-time syntax transformer. Registers a
+`syntax-rules`–based matcher under the given name. When the compiler
+encounters a form whose head matches the transformer name, it expands the
+form using the pattern/template rules before compiling.
+
+**Behaviour:** Takes exactly two arguments: a symbol (the macro name) and a
+`syntax-rules` form. Parses the syntax-rules spec (literals list and rules),
+builds a `SyntaxRulesTransformer`, and emits `(build-syntax-rules NAME tagged)`
+to produce the transformer at module load time. Binds the result to NAME in
+the module namespace. The transformer is invoked during the expand phase when
+forms matching any rule pattern are seen.
+
+**Syntax-rules form:** `(syntax-rules (LIT ...) ((PATTERN) TEMPLATE) ...)`.
+Each rule has a PATTERN (list matching the macro invocation shape) and a
+TEMPLATE (output form with pattern variables substituted). LIT symbols match
+literally. Template supports `...` for ellipsis repetition.
+
+**Examples:**
+
+```scheme
+;; Define a double macro: (double x) → (* x 2)
+(compile/define-syntax double
+  (syntax-rules ()
+    ((double x) (* x 2))))
+
+;; Use it
+(double 21)   ; → (* 21 2) → 42
+```
+
+Block syntax via `layout/define-syntax` and `layout/syntax-rules` produces
+this form; see [LAYOUTS.md](LAYOUTS.md).
+
+**Implementation:** `koskari/compile/specials/variables.special_define_syntax`
+
+
 ## compile/class
 
 **Symbol:** `compile/class`

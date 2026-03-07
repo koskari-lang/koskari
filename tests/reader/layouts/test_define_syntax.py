@@ -23,8 +23,7 @@ from unittest import TestCase
 from koskari.dis import dis
 from koskari.importer.builtins import make_builtins
 from koskari.reader import LayoutReader, source_str
-from koskari.compile import Compiler, CompilerMode
-from koskari.compile.syntax import build_syntax
+from koskari.compile import Compiler
 from koskari.types import Module, ModuleNamespace
 from koskari.types import is_pair, nil, symbol
 from koskari.compile.helpers import pycons

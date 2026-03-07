@@ -321,8 +321,10 @@ syntax-rules [x]:
 
 **Symbol:** `layout/define-syntax`
 
-**Use-case:** Block syntax for defining syntax transformers. Wraps a single
-`syntax-rules` block and lowers to `(compile/define-syntax NAME (syntax-rules ...))`.
+**Use-case:** Block syntax for defining syntax transformers (macros). Wraps a
+single `syntax-rules` block and lowers to
+`(compile/define-syntax NAME (syntax-rules ...))`. The resulting form is
+compiled by the `compile/define-syntax` special; see [SPECIALS.md](SPECIALS.md).
 
 **Behaviour:** Expects exactly one body form: a `syntax-rules` form (typically
 produced by `layout/syntax-rules`). Produces `(compile/define-syntax NAME
