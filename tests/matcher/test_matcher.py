@@ -219,4 +219,22 @@ class TestMatchLiterals(unittest.TestCase):
         self.assertEqual(result['val'], sym)
 
 
+class TestMatchWithSpecs(unittest.TestCase):
+
+    def test_with_specs_returns_tuple(self):
+        x = symbol('x')
+        src = cons(x, nil)
+        result = match(src, MATCH(BIND('val')), with_specs=True)
+        self.assertIsNotNone(result)
+        vals, specs = result
+        self.assertIn('val', vals)
+        self.assertEqual(vals['val'], x)
+        self.assertIn('val', specs)
+        self.assertIsNotNone(specs['val'])
+
+    def test_with_specs_no_match_returns_none(self):
+        result = match(nil, MATCH(BIND('x')), with_specs=True)
+        self.assertIsNone(result)
+
+
 # The end.

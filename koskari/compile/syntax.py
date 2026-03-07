@@ -9,6 +9,12 @@ from dataclasses import dataclass
 
 from ..exceptions import CompilerError
 from ..lib import car, cdr, cons, nil, symbol
+from ..matcher import (
+    extract_binder_symbols,
+    is_binder_spec,
+    is_scope_region_spec,
+    match,
+)
 from ..types import is_pair, is_proper, is_symbol, unpack
 
 
@@ -98,106 +104,97 @@ def _collect_symbols(expr, out):
             _collect_symbols(elem, out)
 
 
-def _form_head(expr):
+def _scope_region_keys(matched, specs):
     """
-    Return the base name of a form (let, lambda, etc.) for binding detection.
-    Handles both bare and compile/-prefixed symbols.
+    Return set of keys that are scope regions from specs and binder metadata
     """
-    if not is_symbol(expr):
-        return None
-    s = str(expr)
-    if s.startswith("compile/"):
-        return s[8:]
-    return s
+    keys = set()
+    for key, spec in (specs or {}).items():
+        if spec is None:
+            continue
+        scope = getattr(spec, 'scope', None)
+        scopes = getattr(spec, 'scopes', None)
+        if scope is not None:
+            keys.add(scope if isinstance(scope, str) else str(scope))
+        if scopes is not None:
+            for s in scopes:
+                keys.add(s if isinstance(s, str) else str(s))
+    if not keys:
+        for key, spec in (specs or {}).items():
+            if is_scope_region_spec(spec):
+                keys.add(key)
+    return keys
 
 
-def _collect_bindings_from_list(bindings_list, out, recurse):
+def _collect_binding_symbols_matcher(template, find_compiled):
     """
-    Extract binding names from a let-style bindings list ((VAR VAL) ...).
-    Only handles (SYM EXPR) pairs; (EXPR as: SYM) is deferred.
-    recurse is called on each VAL for nested binding forms.
-    """
-    if not is_pair(bindings_list):
-        return
-    for elem in unpack(bindings_list):
-        if is_pair(elem):
-            var, val_tail = elem
-            if is_pair(val_tail):
-                val = car(val_tail)
-                if is_symbol(var):
-                    out.add(var)
-                out |= recurse(val)
-
-
-def _collect_formals_symbols(args, out):
-    """
-    Extract parameter symbols from lambda formals (list or rest symbol).
-    """
-    if is_symbol(args):
-        out.add(args)
-        return
-    if is_pair(args):
-        for elem in unpack(args):
-            if is_symbol(elem):
-                out.add(elem)
-
-
-def _collect_binding_symbols(template):
-    """
-    Walk template and return set of symbols in binding position.
-    Recognizes let, lambda, let/cc, capture/cc (bare and compile/ prefixed).
+    Walk template and return set of symbols in binding position. Uses
+    find_compiled and special.forms matchers for metadata-driven discovery.
     """
 
     out = set()
-    if not is_pair(template):
+    if template is nil or not is_pair(template):
         return out
-    items = list(unpack(template))
-    if not items:
+    head = car(template)
+    rest = cdr(template)
+    if not is_symbol(head):
+        for elem in (unpack(rest) if rest is not nil and is_pair(rest) else []):
+            if elem is not None and elem is not nil:
+                out |= _collect_binding_symbols_matcher(
+                    elem if is_pair(elem) else cons(elem, nil),
+                    find_compiled)
         return out
-    head = items[0]
-    base = _form_head(head)
-    rest = items[1:]
-    if not rest:
+
+    special = find_compiled(head)
+    if special is None or not getattr(special, 'forms', None):
+        for elem in (unpack(rest) if rest is not nil and is_pair(rest) else []):
+            if elem is not None and elem is not nil:
+                out |= _collect_binding_symbols_matcher(
+                    elem if is_pair(elem) else cons(elem, nil),
+                    find_compiled)
         return out
 
-    if base == "let":
-        if len(rest) >= 3 and is_symbol(rest[0]):
-            name, bindings, body = rest[0], rest[1], rest[2]
-            out.add(name)
-            _collect_bindings_from_list(bindings, out, _collect_binding_symbols)
-            out |= _collect_binding_symbols(body)
-            for r in rest[3:]:
-                out |= _collect_binding_symbols(r)
-        else:
-            bindings, body = rest[0], rest[1]
-            _collect_bindings_from_list(bindings, out, _collect_binding_symbols)
-            out |= _collect_binding_symbols(body)
-            for r in rest[2:]:
-                out |= _collect_binding_symbols(r)
+    m = match(rest, special.forms, with_specs=True)
+    if m is None:
+        for elem in (unpack(rest) if rest is not nil and is_pair(rest) else []):
+            if elem is not None and elem is not nil:
+                out |= _collect_binding_symbols_matcher(
+                    elem if is_pair(elem) else cons(elem, nil),
+                    find_compiled)
+        return out
 
-    elif base == "lambda":
-        if len(rest) >= 3 and is_symbol(rest[0]):
-            name, formals, body = rest[0], rest[1], rest[2]
-            out.add(name)
-            _collect_formals_symbols(formals, out)
-            out |= _collect_binding_symbols(body)
-            for r in rest[3:]:
-                out |= _collect_binding_symbols(r)
-        else:
-            formals, body = rest[0], rest[1]
-            _collect_formals_symbols(formals, out)
-            out |= _collect_binding_symbols(body)
-            for r in rest[2:]:
-                out |= _collect_binding_symbols(r)
+    matched, specs = m
+    scope_keys = _scope_region_keys(matched, specs)
 
-    elif base in ("let/cc", "capture/cc") and len(rest) >= 1 and is_symbol(rest[0]):
-        out.add(rest[0])
-        for r in rest[1:]:
-            out |= _collect_binding_symbols(r)
+    for key, spec in specs.items():
+        if is_binder_spec(spec) and key in matched:
+            for sym in extract_binder_symbols(spec, matched[key]):
+                out.add(sym)
 
-    else:
-        for elem in rest:
-            out |= _collect_binding_symbols(elem)
+    for key in scope_keys:
+        if key in matched:
+            val = matched[key]
+            if val is not None:
+                if is_pair(val):
+                    for elem in unpack(val):
+                        out |= _collect_binding_symbols_matcher(
+                            elem if is_pair(elem) else cons(elem, nil),
+                            find_compiled)
+                else:
+                    out |= _collect_binding_symbols_matcher(
+                        val if is_pair(val) else cons(val, nil),
+                        find_compiled)
+
+    for key, spec in specs.items():
+        if is_binder_spec(spec) and key in matched:
+            val = matched[key]
+            if spec is not None and type(spec).__name__ == '_BindingsMatcher':
+                if isinstance(val, (tuple, list)) and len(val) == 2:
+                    _names, values = val
+                    for v in (values or ()):
+                        out |= _collect_binding_symbols_matcher(
+                            v if is_pair(v) else cons(v, nil),
+                            find_compiled)
 
     return out
 
@@ -383,7 +380,8 @@ class SyntaxRulesTransformer:
             if bindings is None:
                 continue
 
-            binding_symbols = _collect_binding_symbols(rule.template)
+            binding_symbols = _collect_binding_symbols_matcher(
+                rule.template, compiler.find_compiled)
             introduced = {}
             return _expand_template(
                 rule.template,

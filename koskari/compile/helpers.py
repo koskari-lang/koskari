@@ -32,6 +32,7 @@ from ..matcher import (
 
 __all__ = (
     "BIND_BINDINGS",
+    "BINDINGS",
     "const_only_expr",
     "convert_bindings",
     "gather_bindings",
@@ -134,18 +135,21 @@ def is_symbolish(thing):
     return is_symbol(thing) or is_lazygensym(thing)
 
 
-_tag_bind_bindings = symbol('matcher/bind-bindings')
+_tag_bindings = symbol('matcher/bind-bindings')
 
 
-@matcher(_tag_bind_bindings)
+@matcher(_tag_bindings)
 class _BindingsMatcher:
     """
     Match a list and bind the result of gather_bindings as (names, values)
     """
 
-    def __init__(self, slot):
+    def __init__(self, slot, mode='parallel', scope=None, scopes=None):
         self.slot = slot
         self._key = str(slot)
+        self.mode = mode
+        self.scope = scope
+        self.scopes = scopes
 
 
     @classmethod
@@ -155,7 +159,7 @@ class _BindingsMatcher:
         return cls(payload[0])
 
 
-    def match(self, source, literals, result):
+    def match(self, source, literals, result, specs=None):
         if source is nil:
             return (None, False)
         head = car(source)
@@ -164,19 +168,32 @@ class _BindingsMatcher:
             return (None, False)
         names, values = gather_bindings(head, head)
         result[self._key] = (names, values)
+        if specs is not None:
+            specs[self._key] = self
         return (tail, True)
 
 
     def to_tuple(self):
-        return (_tag_bind_bindings, symbol(self._key) if isinstance(self.slot, str) else self.slot)
+        return (_tag_bindings, symbol(self._key) if isinstance(self.slot, str) else self.slot)
 
+
+def BINDINGS(slot, *, mode='parallel', scope=None, scopes=None):
+    """
+    Match a list and bind (names, values) from gather_bindings
+
+    :param slot: capture key
+    :param mode: parallel, sequential, or recursive
+    :param scope: single scope region key
+    :param scopes: sequence of scope region keys
+    """
+    return _BindingsMatcher(slot, mode=mode, scope=scope, scopes=scopes)
 
 
 def BIND_BINDINGS(slot):
     """
-    Match a list and bind (names, values) from gather_bindings
+    Deprecated alias for BINDINGS(slot). Use BINDINGS(slot) instead.
     """
-    return _BindingsMatcher(slot)
+    return BINDINGS(slot)
 
 
 _BINDING_PATTERNS_3 = [

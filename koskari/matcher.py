@@ -44,7 +44,10 @@ __all__ = (
     'OPT',
     'PAIR',
     'REST',
+    'extract_binder_symbols',
     'from_tuple',
+    'is_binder_spec',
+    'is_scope_region_spec',
     'match',
     'match_tuple',
 )
@@ -67,17 +70,20 @@ def matcher(name):
 class Matcher(Protocol):
     """
     Protocol for matcher types. Accept source, optionally mutate result with
-    bindings, return (remainder, success).
+    bindings, return (remainder, success). When specs is provided, capturing
+    matchers record themselves in specs.
     """
 
     def match(
             self,
             source: Any,
             literals: frozenset,
-            result: Dict[str, Any]) -> Tuple[Optional[Any], bool]:
+            result: Dict[str, Any],
+            specs: Optional[Dict[str, Any]] = None) -> Tuple[Optional[Any], bool]:
         """
         Try to match source. On success: mutate result with bindings, return
-        (remainder, True). On failure: return (None, False).
+        (remainder, True). On failure: return (None, False). When specs is not
+        None, capturing matchers add specs[key] = self.
         """
         ...
 
@@ -154,7 +160,7 @@ class _LiteralMatcher:
         return cls(payload[0])
 
 
-    def match(self, source, literals, result):
+    def match(self, source, literals, result, specs=None):
         if source is nil:
             return (None, False)
         head, tail = car(source), cdr(source)
@@ -185,11 +191,13 @@ class _BindMatcher:
         return cls(payload[0])
 
 
-    def match(self, source, literals, result):
+    def match(self, source, literals, result, specs=None):
         if source is nil:
             return (None, False)
         head, tail = car(source), cdr(source)
         result[self._key] = head
+        if specs is not None:
+            specs[self._key] = self
         return (tail, True)
 
 
@@ -215,13 +223,15 @@ class _BindSymMatcher:
         return cls(payload[0])
 
 
-    def match(self, source, literals, result):
+    def match(self, source, literals, result, specs=None):
         if source is nil:
             return (None, False)
         head, tail = car(source), cdr(source)
         if not is_symbol(head):
             return (None, False)
         result[self._key] = head
+        if specs is not None:
+            specs[self._key] = self
         return (tail, True)
 
 
@@ -247,13 +257,15 @@ class _BindPairMatcher:
         return cls(payload[0])
 
 
-    def match(self, source, literals, result):
+    def match(self, source, literals, result, specs=None):
         if source is nil:
             return (None, False)
         head, tail = car(source), cdr(source)
         if not is_pair(head):
             return (None, False)
         result[self._key] = head
+        if specs is not None:
+            specs[self._key] = self
         return (tail, True)
 
 
@@ -279,8 +291,10 @@ class _RestMatcher:
         return cls(payload[0])
 
 
-    def match(self, source, literals, result):
+    def match(self, source, literals, result, specs=None):
         result[self._key] = source
+        if specs is not None:
+            specs[self._key] = self
         return (nil, True)
 
 
@@ -306,7 +320,7 @@ class _PairMatcher:
         return cls(deserialize(payload[0]), deserialize(payload[1]))
 
 
-    def match(self, source, literals, result):
+    def match(self, source, literals, result, specs=None):
         if source is nil:
             return (None, False)
         elem = car(source)
@@ -319,7 +333,7 @@ class _PairMatcher:
         cdr_matcher = _resolve_spec(self.cdr_spec, literals)
 
         if car_matcher is not None:
-            rem, ok = _do_match(car_matcher, cons(elem_car, nil), literals, result)
+            rem, ok = _do_match(car_matcher, cons(elem_car, nil), literals, result, specs)
             if not ok or rem is not nil:
                 return (None, False)
         else:
@@ -327,12 +341,15 @@ class _PairMatcher:
                 return (None, False)
 
         if cdr_matcher is not None:
-            rem, ok = _do_match(cdr_matcher, cons(elem_cdr, nil), literals, result)
+            rem, ok = _do_match(cdr_matcher, cons(elem_cdr, nil), literals, result, specs)
             if not ok:
                 return (None, False)
 
         elif is_symbol(self.cdr_spec):
-            result[_slot_key(self.cdr_spec)] = elem_cdr
+            key = _slot_key(self.cdr_spec)
+            result[key] = elem_cdr
+            if specs is not None:
+                specs[key] = self
 
         else:
             return (None, False)
@@ -365,11 +382,11 @@ class _OptMatcher:
         return cls(deserialize(payload[0]))
 
 
-    def match(self, source, literals, result):
+    def match(self, source, literals, result, specs=None):
         matcher = _resolve_spec(self.elem, literals)
         if matcher is None:
             return (source, True)
-        rem, ok = _do_match(matcher, source, literals, result)
+        rem, ok = _do_match(matcher, source, literals, result, specs)
         if ok:
             return (rem, True)
         return (source, True)
@@ -396,13 +413,13 @@ class _MatchMatcher:
         return cls(*[deserialize(p) for p in payload])
 
 
-    def match(self, source, literals, result):
+    def match(self, source, literals, result, specs=None):
         current = source
         for spec in self.specs:
             matcher = _resolve_spec(spec, literals)
             if matcher is None:
                 return (None, False)
-            current, ok = _do_match(matcher, current, literals, result)
+            current, ok = _do_match(matcher, current, literals, result, specs)
             if not ok:
                 return (None, False)
         return (current, True)
@@ -430,7 +447,7 @@ class _AnyOrderMatcher:
         return cls(*[deserialize(p) for p in payload])
 
 
-    def match(self, source, literals, result):
+    def match(self, source, literals, result, specs=None):
         elements = list(unpack(source)) if source is not nil else []
         pool = list(elements)
         for spec in self.specs:
@@ -440,7 +457,7 @@ class _AnyOrderMatcher:
             matched = False
             for i, elem in enumerate(pool):
                 elem_pair = cons(elem, nil)
-                rem, ok = _do_match(matcher, elem_pair, literals, result)
+                rem, ok = _do_match(matcher, elem_pair, literals, result, specs)
                 if ok and (rem is nil or (is_pair(rem) and cdr(rem) is nil)):
                     del pool[i]
                     matched = True
@@ -478,17 +495,17 @@ def from_tuple(tup):
     return cls.from_payload(payload, from_tuple)
 
 
-def _do_match(matcher, source, literals, result):
+def _do_match(matcher, source, literals, result, specs=None):
     """
     Dispatch to matcher object; deserialize tuple first if needed
     """
 
     if hasattr(matcher, 'match') and callable(getattr(matcher, 'match')):
-        return matcher.match(source, literals, result)
+        return matcher.match(source, literals, result, specs)
 
     if _is_tagged_tuple(matcher):
         obj = from_tuple(matcher)
-        return obj.match(source, literals, result)
+        return obj.match(source, literals, result, specs)
 
     return (None, False)
 
@@ -584,7 +601,8 @@ def ANY_ORDER(*specs):
 def match(
         source,
         patterns,
-        literals=None):
+        literals=None,
+        with_specs=False):
     """
     Try each pattern against source. Return dict of bindings on first match,
     else None
@@ -593,7 +611,9 @@ def match(
     :param patterns: single matcher, tagged tuple, or sequence of patterns
     :param literals: set or frozenset of symbols to match literally; default
         empty frozenset
-    :return: dict mapping slot names to values, or None
+    :param with_specs: if True, return (result_dict, specs_dict) on match
+    :return: dict mapping slot names to values; or (dict, dict) if with_specs
+        True; or None on no match
     """
 
     lit = frozenset(literals) if literals is not None else frozenset()
@@ -604,14 +624,63 @@ def match(
 
     for pat in patterns:
         result = {}
+        specs = {} if with_specs else None
         matcher = _resolve_spec(pat, lit)
         if matcher is None:
             continue
-        rem, ok = _do_match(matcher, src, lit, result)
+        rem, ok = _do_match(matcher, src, lit, result, specs)
         if ok:
+            if with_specs:
+                return (result, specs)
             return result
 
     return None
+
+
+def is_binder_spec(spec):
+    """
+    True if spec is a binder matcher (BIND_SYM, BINDINGS, FORMALS)
+
+    Used by hygiene discovery to identify captures that introduce bindings.
+    """
+
+    if spec is None:
+        return False
+    name = type(spec).__name__
+    return name in ('_BindSymMatcher', '_BindingsMatcher')
+
+
+def is_scope_region_spec(spec):
+    """
+    True if spec captures a region usable as a body (REST, EXPR)
+
+    Used by hygiene discovery for scope inference.
+    """
+
+    if spec is None:
+        return False
+    name = type(spec).__name__
+    return name in ('_RestMatcher', '_ExprMatcher')
+
+
+def extract_binder_symbols(spec, value):
+    """
+    Given a binder spec and its matched value, yield symbol names introduced
+    """
+
+    if spec is None or value is None:
+        return
+    name = type(spec).__name__
+    if name == '_BindSymMatcher':
+        if is_symbol(value):
+            yield value
+    elif name == '_BindingsMatcher':
+        if not isinstance(value, (tuple, list)) or len(value) != 2:
+            return
+        names, _values = value
+        for n in names or ():
+            if is_symbol(n):
+                yield n
 
 
 def match_tuple(
