@@ -22,74 +22,15 @@ tuple interpretation for future define-syntax integration.
 :license: GNU General Public License v3
 """
 
-
 from typing import Any, Dict, Optional, Protocol, Tuple
 
 from .lib import car, cdr, cons, keyword, nil, symbol
 from .types import get_position, is_pair, is_symbol, unpack
 
 
-class MatchResult:
-    """
-    Base result for simple captures. Every capture includes source (raw value)
-    and source_pos (position when source is a pair).
-    """
-
-    __slots__ = ('source', 'source_pos')
-
-    def __init__(self, source, source_pos=None):
-        self.source = source
-        self.source_pos = source_pos
-
-
-class FormalsResult(MatchResult):
-    """
-    Result for FORMALS: source, source_pos, plus positional, defaults, kwonly,
-    star, starstar. Supports unpacking for backward compat.
-    """
-
-    __slots__ = ('positional', 'defaults', 'kwonly', 'star', 'starstar')
-
-    def __init__(
-            self,
-            source,
-            source_pos=None,
-            positional=None,
-            defaults=None,
-            kwonly=None,
-            star=None,
-            starstar=None):
-        super().__init__(source, source_pos)
-        self.positional = positional if positional is not None else []
-        self.defaults = defaults if defaults is not None else []
-        self.kwonly = kwonly if kwonly is not None else []
-        self.star = star
-        self.starstar = starstar
-
-    def __iter__(self):
-        return iter((self.positional, self.defaults, self.kwonly,
-                     self.star, self.starstar))
-
-
-class BindingsResult(MatchResult):
-    """
-    Result for BINDINGS: source, source_pos, plus names, values. Supports
-    unpacking for backward compat.
-    """
-
-    __slots__ = ('names', 'values')
-
-    def __init__(self, source, source_pos=None, names=None, values=None):
-        super().__init__(source, source_pos)
-        self.names = names if names is not None else []
-        self.values = values if values is not None else []
-
-    def __iter__(self):
-        return iter((self.names, self.values))
-
-
 __all__ = (
     'BindingsResult',
+    'BindingResult',
     'FormalsResult',
     'MatchResult',
     'Matcher',
@@ -167,6 +108,79 @@ _tag_define = symbol('matcher/define')
 _tag_value = symbol('matcher/value')
 
 
+class MatchResult:
+    """
+    Base result for simple captures. Every capture includes source (raw value)
+    and source_pos (position when source is a pair).
+    """
+
+    __slots__ = ('source', 'source_pos')
+
+    def __init__(self, source, source_pos=None):
+        self.source = source
+        self.source_pos = source_pos
+
+
+class FormalsResult(MatchResult):
+    """
+    Result for FORMALS: source, source_pos, plus positional, defaults, kwonly,
+    star, starstar. Supports unpacking for backward compat.
+    """
+
+    __slots__ = ('positional', 'defaults', 'kwonly', 'star', 'starstar')
+
+    def __init__(
+            self,
+            source,
+            source_pos=None,
+            positional=None,
+            defaults=None,
+            kwonly=None,
+            star=None,
+            starstar=None):
+        super().__init__(source, source_pos)
+        self.positional = positional if positional is not None else []
+        self.defaults = defaults if defaults is not None else []
+        self.kwonly = kwonly if kwonly is not None else []
+        self.star = star
+        self.starstar = starstar
+
+    def __iter__(self):
+        return iter((self.positional, self.defaults, self.kwonly,
+                     self.star, self.starstar))
+
+
+class BindingsResult(MatchResult):
+    """
+    Result for BINDINGS: source, source_pos, plus names, values. Supports
+    unpacking for backward compat.
+    """
+
+    __slots__ = ('names', 'values')
+
+    def __init__(self, source, source_pos=None, names=None, values=None):
+        super().__init__(source, source_pos)
+        self.names = names if names is not None else []
+        self.values = values if values is not None else []
+
+    def __iter__(self):
+        return iter((self.names, self.values))
+
+
+class BindingResult(MatchResult):
+    """
+    Result for BINDING: source, source_pos, plus name (symbol or None),
+    value (the expression).
+    """
+
+    __slots__ = ('name', 'value')
+
+    def __init__(self, source, source_pos=None, name=None, value=None):
+        super().__init__(source, source_pos)
+        self.name = name
+        self.value = value
+
+
 def _slot_key(slot):
     """
     Return str key for a slot (symbol or str)
@@ -230,7 +244,7 @@ class _LiteralMatcher:
     def match(self, source, literals, result, specs=None):
         if source is nil:
             return (None, False)
-        head, tail = car(source), cdr(source)
+        head, tail = source
         if head == self.value:
             return (tail, True)
         return (None, False)
@@ -261,7 +275,7 @@ class _BindMatcher:
     def match(self, source, literals, result, specs=None):
         if source is nil:
             return (None, False)
-        head, tail = car(source), cdr(source)
+        head, tail = source
         result[self._key] = MatchResult(head, get_position(source))
         if specs is not None:
             specs[self._key] = self
@@ -293,7 +307,7 @@ class _SymbolMatcher:
     def match(self, source, literals, result, specs=None):
         if source is nil:
             return (None, False)
-        head, tail = car(source), cdr(source)
+        head, tail = source
         if not is_symbol(head):
             return (None, False)
         result[self._key] = MatchResult(head, get_position(source))
@@ -330,7 +344,7 @@ class _DefineMatcher:
     def match(self, source, literals, result, specs=None):
         if source is nil:
             return (None, False)
-        head, tail = car(source), cdr(source)
+        head, tail = source
         if not is_symbol(head):
             return (None, False)
         result[self._key] = MatchResult(head, get_position(source))
@@ -364,7 +378,7 @@ class _ValueMatcher:
     def match(self, source, literals, result, specs=None):
         if source is nil:
             return (None, False)
-        head, tail = car(source), cdr(source)
+        head, tail = source
         result[self._key] = MatchResult(head, get_position(source))
         if specs is not None:
             specs[self._key] = self
@@ -429,7 +443,7 @@ class _PairMatcher:
     def match(self, source, literals, result, specs=None):
         if source is nil:
             return (None, False)
-        head, tail = car(source), cdr(source)
+        head, tail = source
         if not is_pair(head):
             return (None, False)
         result[self._key] = MatchResult(head, get_position(source))
@@ -463,7 +477,7 @@ class _ExprMatcher:
     def match(self, source, literals, result, specs=None):
         if source is nil:
             return (None, False)
-        head, tail = car(source), cdr(source)
+        head, tail = source
         result[self._key] = MatchResult(head, get_position(source))
         if specs is not None:
             specs[self._key] = self
@@ -527,7 +541,7 @@ class _MatchMatcher:
 
     def match(self, source, literals, result, specs=None):
         if source is not nil:
-            elem, rest = car(source), cdr(source)
+            elem, rest = source
             if rest is nil and is_pair(elem) and len(self.specs) >= 2:
                 pair_source = cons(car(elem), cons(cdr(elem), nil))
                 current = pair_source
@@ -797,8 +811,8 @@ def is_binder_spec(spec):
     if spec is None:
         return False
     name = type(spec).__name__
-    return name in ('_SymbolMatcher', '_BindingsMatcher', '_FormalsMatcher',
-                    '_DefineMatcher')
+    return name in ('_SymbolMatcher', '_BindingsMatcher', '_BindingMatcher',
+                    '_FormalsMatcher', '_DefineMatcher')
 
 
 def is_scope_region_spec(spec):
@@ -858,6 +872,10 @@ def extract_binder_symbols(spec, value):
             yield star
         if starstar is not None and is_symbol(starstar):
             yield starstar
+    elif name == '_BindingMatcher':
+        if hasattr(value, 'name') and value.name is not None:
+            if is_symbol(value.name):
+                yield value.name
 
 
 def match_tuple(

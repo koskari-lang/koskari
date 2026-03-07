@@ -26,7 +26,8 @@ from dataclasses import dataclass
 
 from ..exceptions import CompilerError
 from ..lib import car, cdr, cons, nil, symbol
-from ..matcher import (BindingsResult, extract_binder_symbols, FormalsResult,
+from ..matcher import (BindingsResult, BindingResult, extract_binder_symbols,
+                       FormalsResult,
                        is_binder_spec, is_scope_region_spec, match)
 from ..types import is_pair, is_proper, is_symbol, unpack
 
@@ -130,6 +131,8 @@ def _recurse_target(val):
         return None
     if isinstance(val, BindingsResult):
         return val.values
+    if isinstance(val, BindingResult):
+        return [val.value] if val.value is not None else []
     if isinstance(val, FormalsResult):
         out = []
         for _kw, expr in (val.defaults or ()):
@@ -243,6 +246,13 @@ def _collect_binding_symbols_matcher(template, find_compiled):
                     val[1] if isinstance(val, (tuple, list)) and len(val) == 2
                     else ())
                 for v in (values or ()):
+                    out |= _collect_binding_symbols_matcher(
+                        v if is_pair(v) else cons(v, nil),
+                        find_compiled)
+            if spec is not None and type(spec).__name__ == '_BindingMatcher':
+                values = [val.value] if (isinstance(val, BindingResult) and
+                                         val.value is not None) else []
+                for v in values:
                     out |= _collect_binding_symbols_matcher(
                         v if is_pair(v) else cons(v, nil),
                         find_compiled)

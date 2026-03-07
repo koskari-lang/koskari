@@ -20,9 +20,10 @@ import unittest
 
 from koskari.types import cons, keyword, nil, symbol
 from koskari.exceptions import ParametersError, SpecialError
-from koskari.compile.helpers import FORMALS, gather_formals, gather_parameters_ng
-from koskari.compile.helpers import gather_parameters
+from koskari.compile.helpers import BINDING, FORMALS, gather_formals
+from koskari.compile.helpers import gather_parameters_ng, gather_parameters
 from koskari.matcher import (
+    BindingResult,
     DEFINE,
     MATCH,
     VALUE,
@@ -402,6 +403,62 @@ class TestFormalsMatcher(unittest.TestCase):
         src = cons(42, nil)
         result = match(src, MATCH(FORMALS('formals')))
         self.assertIsNone(result)
+
+
+class TestBindingMatcher(unittest.TestCase):
+
+    def test_binding_matcher_sym_expr(self):
+        a = symbol('a')
+        one = symbol('1')
+        binding_form = cons(a, cons(one, nil))
+        src = cons(binding_form, nil)
+        result = match(src, MATCH(BINDING('binding')))
+        self.assertIsNotNone(result)
+        br = result['binding']
+        self.assertEqual(br.name, a)
+        self.assertEqual(br.value, one)
+        self.assertEqual(br.source, binding_form)
+
+    def test_binding_matcher_expr_as_sym(self):
+        one = symbol('1')
+        kw = keyword('as')
+        a = symbol('a')
+        binding_form = cons(one, cons(kw, cons(a, nil)))
+        src = cons(binding_form, nil)
+        result = match(src, MATCH(BINDING('binding')))
+        self.assertIsNotNone(result)
+        br = result['binding']
+        self.assertEqual(br.name, a)
+        self.assertEqual(br.value, one)
+
+    def test_binding_matcher_allow_unnamed(self):
+        one = symbol('1')
+        binding_form = cons(one, nil)
+        src = cons(binding_form, nil)
+        result = match(src, MATCH(BINDING('binding', allow_unnamed=True)))
+        self.assertIsNotNone(result)
+        br = result['binding']
+        self.assertIsNone(br.name)
+        self.assertEqual(br.value, one)
+
+    def test_binding_matcher_non_pair_fails(self):
+        src = cons(42, nil)
+        result = match(src, MATCH(BINDING('binding')))
+        self.assertIsNone(result)
+
+    def test_is_binder_spec_binding(self):
+        m = BINDING('b')
+        self.assertTrue(is_binder_spec(m))
+
+    def test_extract_binder_symbols_binding(self):
+        a = symbol('a')
+        spec = BINDING('b')
+        br = BindingResult(nil, name=a, value=symbol('1'))
+        vals = list(extract_binder_symbols(spec, br))
+        self.assertEqual(vals, [a])
+
+
+class TestFormalsMatcherRoleHelpers(unittest.TestCase):
 
     def test_is_binder_spec_formals(self):
         m = FORMALS('f')

@@ -20,6 +20,7 @@ from ..exceptions import ParametersError, SpecialError
 from ..types import get_position
 from ..matcher import (
     BindingsResult,
+    BindingResult,
     BIND,
     FormalsResult,
     LITERAL,
@@ -33,7 +34,7 @@ from ..matcher import (
 
 
 __all__ = (
-    "BIND_BINDINGS",
+    "BINDING",
     "BINDINGS",
     "FORMALS",
     "const_only_expr",
@@ -193,12 +194,6 @@ def BINDINGS(slot, *, mode='parallel', scope=None, scopes=None):
     return _BindingsMatcher(slot, mode=mode, scope=scope, scopes=scopes)
 
 
-def BIND_BINDINGS(slot):
-    """
-    Deprecated alias for BINDINGS(slot). Use BINDINGS(slot) instead.
-    """
-    return BINDINGS(slot)
-
 
 _tag_formals = symbol('matcher/formals')
 
@@ -258,6 +253,88 @@ def FORMALS(slot, *, scope=None, scopes=None):
     :param scopes: sequence of scope region keys
     """
     return _FormalsMatcher(slot, scope=scope, scopes=scopes)
+
+
+_tag_binding = symbol('matcher/binding')
+
+
+@matcher(_tag_binding)
+class _BindingMatcher:
+    """
+    Match a single binding form (SYM EXPR), (EXPR as: SYM), or (EXPR)
+    when allow_unnamed is True
+    """
+
+    def __init__(self, slot, *, allow_unnamed=False, scope=None, scopes=None):
+        self.slot = slot
+        self._key = str(slot)
+        self.allow_unnamed = allow_unnamed
+        self.scope = scope
+        self.scopes = scopes
+
+
+    @classmethod
+    def from_payload(cls, payload, deserialize):
+        if len(payload) != 1:
+            raise ValueError('binding expects 1 payload, got %d' % len(payload))
+        return cls(payload[0])
+
+
+    def match(self, source, literals, result, specs=None):
+        if source is nil:
+            return (None, False)
+        head = car(source)
+        tail = cdr(source)
+        if not is_pair(head) or not is_proper(head):
+            return (None, False)
+        patterns = list(_BINDING_PATTERNS_3) + list(_BINDING_PATTERNS_2)
+        if self.allow_unnamed:
+            patterns = patterns + [_BINDING_PATTERN_1]
+        m = match(head, patterns)
+        if m is None:
+            return (None, False)
+
+        def _src(v):
+            return v.source if hasattr(v, 'source') else v
+
+        name = None
+        val = None
+        if "sym" in m and "expr" in m:
+            name = _src(m["sym"])
+            val = _src(m["expr"])
+        elif "expr" in m:
+            if self.allow_unnamed:
+                name = None
+            else:
+                name = True  # required fallback
+            val = _src(m["expr"])
+        else:
+            return (None, False)
+
+        result[self._key] = BindingResult(
+            head, get_position(source), name=name, value=val)
+        if specs is not None:
+            specs[self._key] = self
+        return (tail, True)
+
+
+    def to_tuple(self):
+        return (_tag_binding, symbol(self._key) if isinstance(self.slot, str)
+                else self.slot)
+
+
+def BINDING(slot, *, allow_unnamed=False, scope=None, scopes=None):
+    """
+    Match a single binding form (SYM EXPR), (EXPR as: SYM), or optionally
+    (EXPR) when allow_unnamed is True.
+
+    :param slot: capture key
+    :param allow_unnamed: if True, (EXPR) alone is allowed; name is None
+    :param scope: single scope region key
+    :param scopes: sequence of scope region keys
+    """
+    return _BindingMatcher(slot, allow_unnamed=allow_unnamed,
+                          scope=scope, scopes=scopes)
 
 
 _BINDING_PATTERNS_3 = [

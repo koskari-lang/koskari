@@ -82,6 +82,12 @@ def special_refq(compiler, source, tc=False):
     return frag
 
 
+_BINDQ_PATTERNS = [
+    MATCH(DEFINE("name"), VALUE("value")),
+]
+
+
+@special_forms(_BINDQ_PATTERNS)
 @special(symbol("compile/bindq"))
 def special_bindq(compiler, source, tc=False):
     """
@@ -89,22 +95,25 @@ def special_bindq(compiler, source, tc=False):
     it to EXPR
     """
 
-    called_by, (sym, body) = source
-    expr, rest = body
+    called_by, rest = source
+    matched = match(rest, _BINDQ_PATTERNS)
+    if matched is None:
+        raise SpecialError("bindq requires a name and value", source)
 
-    sym = str(sym)
+    namesym = matched["name"].source
+    name = str(namesym)
 
-    if rest is not nil:
-        raise SpecialError("bindq takes two arguments", source)
+    value = matched["value"]
 
     frag = compiler.fragment(called_by)
+    frag.declare_var(name)
 
-    if not is_pair(expr):
-        frag.position_of(body)
+    if not is_pair(value.source):
+        frag.position(value.source_pos)
+    frag.merge(compiler.full_compile(value.source))
 
-    frag.declare_var(sym)
-    frag.merge(compiler.full_compile(expr))
-    frag.instruction(OpCode.KOS_OP_VAR_BIND, sym)
+    frag.position_of(source)
+    frag.instruction(OpCode.KOS_OP_VAR_BIND, name)
     frag.instruction(OpCode.KOS_OP_CONST, None)
 
     return frag

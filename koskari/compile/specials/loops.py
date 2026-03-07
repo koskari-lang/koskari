@@ -25,7 +25,8 @@ Special form handlers for compile/while, compile/break, and compile/continue.
 from ...lib import nil, OpCode, symbol
 from ...types import is_pair
 from ...exceptions import SpecialError
-from ..helpers import helper_begin, helper_binding, helper_elsebody, special
+from ..helpers import BINDING, helper_begin, helper_elsebody, special, special_forms
+from ...matcher import MATCH, REST, match
 
 
 @special(symbol("compile/while"))
@@ -55,6 +56,12 @@ def special_while(compiler, source, tc=False):
     return fragment
 
 
+_FOREACH_PATTERNS = [
+    MATCH(BINDING("binding", scope="body"), REST("body")),
+]
+
+
+@special_forms(_FOREACH_PATTERNS)
 @special(symbol("compile/for-each"))
 def special_for_each(compiler, source, tc=False):
     """
@@ -66,16 +73,16 @@ def special_for_each(compiler, source, tc=False):
     """
 
     called_by, rest = source
-    if rest is nil or not is_pair(rest):
-        raise SpecialError("for-each requires [binding expr] and body", source)
+    matched = match(rest, _FOREACH_PATTERNS)
+    if matched is None:
+        raise SpecialError("for-each requires a binding and body", source)
 
-    spec, body = rest
-    if spec is nil or not is_pair(spec):
-        raise SpecialError("for-each requires [binding expr] list", source)
+    binding = matched["binding"]
+    if binding.name is None:
+        raise SpecialError("for-each requires a named binding", source)
 
-    binding, expr = helper_binding(spec)
+    body = matched["body"].source
     body, elsebody = helper_elsebody(body)
-
     has_elsebody = elsebody is not nil and elsebody is not None
 
     fragment = compiler.fragment(called_by)
@@ -83,10 +90,11 @@ def special_for_each(compiler, source, tc=False):
 
     loop_else = compiler.gen_label("foreach.else")
 
-    binding_name = str(binding)
+    binding_name = str(binding.name)
+    binding_expr = binding.value
 
     fragment.instruction(OpCode.KOS_OP_CONST, None)
-    fragment.merge(compiler.full_compile(expr, False))
+    fragment.merge(compiler.full_compile(binding_expr, False))
     fragment.instruction(OpCode.KOS_OP_PUSH_FOREACH, 0)
     fragment.instruction(OpCode.KOS_OP_ITER_NEXT, loop_else)
 
