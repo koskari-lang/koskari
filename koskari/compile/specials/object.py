@@ -124,6 +124,9 @@ def _reduce_op(op, py_fold, compiler, source):
             "%s requires at least one argument" % called_by,
             source)
 
+    if count == 1 and body is nil:
+        return frag
+
     frag.instruction(op, count)
     return frag
 

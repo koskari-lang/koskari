@@ -429,12 +429,9 @@ class Compiler:
         raise CompilerError(msg, source)
 
 
-    def find_compiled(self, name):
-        name = str(name)
-        if not name.startswith("compile/"):
-            name = "compile/" + name
-
+    def _find_compiled(self, name):
         ns = vars(self.module)
+
         try:
             r = ns.ref(name)
         except (KeyError, AttributeError, TypeError):
@@ -449,19 +446,26 @@ class Compiler:
         return None
 
 
-    def find_layout(self, name):
+    def find_compiled(self, name):
         """
-        Resolve layout/<head> in the module namespace
+        Resolve compile/<name> in the module namespace
 
-        :param name: symbol or string for the block head (e.g. if, begin)
-        :return: LayoutHandler instance, or None
+        :param name: symbol or string for the compile-time object (e.g. if, begin)
+        :return: Compiled instance, or None
         """
-
-        from ..reader.layouts.helpers import LayoutHandler
 
         name = str(name)
-        if not name.startswith('layout/'):
-            name = 'layout/' + name
+
+        found = self._find_compiled(name)
+        if found is None:
+            if not name.startswith("compile/"):
+                name = "compile/" + name
+                return self._find_compiled(name)
+        return found
+
+
+    def _find_layout(self, name):
+        from ..reader.layouts.helpers import LayoutHandler
 
         ns = vars(self.module)
         try:
@@ -476,6 +480,24 @@ class Compiler:
         if isinstance(v, LayoutHandler):
             return v
         return None
+
+
+    def find_layout(self, name):
+        """
+        Resolve layout/<head> in the module namespace
+
+        :param name: symbol or string for the block head (e.g. if, begin)
+        :return: LayoutHandler instance, or None
+        """
+
+        name = str(name)
+
+        found = self._find_layout(name)
+        if found is None:
+            if not name.startswith("layout/"):
+                name = "layout/" + name
+                return self.find_layout(name)
+        return found
 
 
     def fragment(self, name=None, mode=None):

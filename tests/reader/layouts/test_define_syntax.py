@@ -20,6 +20,7 @@ define-syntax and syntax-rules block syntax.
 
 from unittest import TestCase
 
+from koskari.dis import dis
 from koskari.importer.builtins import make_builtins
 from koskari.reader import LayoutReader, source_str
 from koskari.compile import Compiler, CompilerMode
@@ -46,20 +47,21 @@ class TestLayoutDefineSyntax(TestCase):
         """
         rule1 = (
             (symbol('do-something-with-x'),),
-            ((symbol('compile/begin'),
-              (symbol('print'), 'x and no args', symbol('x')),
-              symbol('x')),))
+            (symbol('compile/begin'),
+             (symbol('print'), 'x and no args', symbol('x')),
+             symbol('x'),),)
         rule2 = (
             (symbol('do-something-with-x'), symbol('y')),
-            ((symbol('compile/begin'),
-              (symbol('print'), 'x and one arg', symbol('x'), symbol('y')),
-              (symbol('+'), symbol('x'), symbol('y'))),))
+            (symbol('compile/begin'),
+             (symbol('print'), 'x and one arg', symbol('x'), symbol('y')),
+             (symbol('+'), symbol('x'), symbol('y'))))
         expected = pycons(
             (symbol('compile/define-syntax'),
              symbol('do-something-with-x'),
              (symbol('syntax-rules'),
               (symbol('x'),),
-              (rule1, rule2))))
+              rule1,
+              rule2)))
         result = parse_layout(src)
         print('result   :', result)
         print('expected :', expected)
@@ -75,13 +77,13 @@ class TestLayoutDefineSyntax(TestCase):
         """
         rule1 = (
             (symbol('m'), symbol('x')),
-            ((symbol('compile/begin'), symbol('x')),))
+            (symbol('compile/begin'), symbol('x'),))
         expected = pycons(
             (symbol('compile/define-syntax'),
              symbol('m'),
              (symbol('syntax-rules'),
               (),
-              (rule1,))))
+              rule1,)))
         result = parse_layout(src)
         print('result   :', result)
         print('expected :', expected)
@@ -93,7 +95,7 @@ class TestLayoutDefineSyntax(TestCase):
         define-syntax double:
           syntax-rules ():
             double x:
-              (* x 2)
+              (+ x x)
         """
         expected = pycons(
             (symbol('compile/define-syntax'),
@@ -102,7 +104,7 @@ class TestLayoutDefineSyntax(TestCase):
               (),
               ((symbol('double'), symbol('x')),
                (symbol('compile/begin'),
-                (symbol('*'), symbol('x'), symbol('2'))))))
+                (symbol('+'), symbol('x'), symbol('x'),)))))
         )
 
         result = parse_layout(src)
@@ -129,18 +131,47 @@ class TestLayoutDefineSyntax(TestCase):
         module = Module(ModuleNamespace('test', builtins))
         compiler = Compiler('<unittest>', module, filename=__file__)
         fragment = compiler.full_compile(source)
-        expr = fragment.as_expression(module.namespace)
+        expr = fragment.as_expression(vars(module))
         expr().run()
 
         use_src = """
         (double 21)
         """
-        builtins['*'] = lambda a, b: a * b
-        use_reader = LayoutReader(builtins)
+        use_reader = LayoutReader(vars(module))
         use_stream = source_str(use_src, __file__)
         use_source = use_reader.read(use_stream)
         use_fragment = compiler.full_compile(use_source)
-        use_expr = use_fragment.as_expression(module.namespace)
+        use_expr = use_fragment.as_expression(vars(module))
+
+        dis(use_expr.code)
+
+        result = use_expr().run()
+        self.assertEqual(42, result)
+
+
+    def test_define_syntax_template_with_literal_number(self):
+        src = """
+        define-syntax double:
+          syntax-rules ():
+            double x:
+              (* x 2)
+        """
+        builtins = make_builtins()
+        reader = LayoutReader(builtins)
+        stream = source_str(src, __file__)
+        source = reader.read(stream)
+        module = Module(ModuleNamespace('test', builtins))
+        compiler = Compiler('<unittest>', module, filename=__file__)
+        fragment = compiler.full_compile(source)
+        expr = fragment.as_expression(vars(module))
+        expr().run()
+
+        use_src = "(double 21)"
+        use_reader = LayoutReader(vars(module))
+        use_stream = source_str(use_src, __file__)
+        use_source = use_reader.read(use_stream)
+        use_fragment = compiler.full_compile(use_source)
+        use_expr = use_fragment.as_expression(vars(module))
         result = use_expr().run()
         self.assertEqual(42, result)
 

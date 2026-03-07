@@ -355,14 +355,13 @@ class TestObjectAdd(SpecialsTestCase):
 
 
     def test_add_const_fold_two_literals(self):
-        # (+ 1 2) folds to a single CONST 3; opcode emitted with count=1
+        # (+ 1 2) folds to a single CONST 3; no op needed
         code = self.compile_to_code("(compile/+ 1 2)")
         arg = _find_op(code, OpCode.KOS_OP_OBJECT_ADD)
 
         dis(code)
 
-        self.assertIsNotNone(arg)
-        self.assertEqual(1, arg)
+        self.assertIsNone(arg)
         consts = [
             code.constant(arg)
             for op, arg in _ops(code)
@@ -414,8 +413,7 @@ class TestObjectSubtract(SpecialsTestCase):
     def test_subtract_const_fold(self):
         code = self.compile_to_code("(compile/- 10 3)")
         arg = _find_op(code, OpCode.KOS_OP_OBJECT_SUBTRACT)
-        self.assertIsNotNone(arg)
-        self.assertEqual(1, arg)
+        self.assertIsNone(arg)
         consts = [
             code.constant(arg)
             for op, arg in _ops(code)
@@ -446,8 +444,7 @@ class TestObjectMultiply(SpecialsTestCase):
     def test_multiply_const_fold(self):
         code = self.compile_to_code("(compile/* 3 4)")
         arg = _find_op(code, OpCode.KOS_OP_OBJECT_MULTIPLY)
-        self.assertIsNotNone(arg)
-        self.assertEqual(1, arg)
+        self.assertIsNone(arg)
         consts = [
             code.constant(arg)
             for op, arg in _ops(code)
@@ -493,8 +490,7 @@ class TestObjectBitAnd(SpecialsTestCase):
     def test_bit_and_const_fold(self):
         code = self.compile_to_code("(compile/& 12 10)")
         arg = _find_op(code, OpCode.KOS_OP_OBJECT_BIT_AND)
-        self.assertIsNotNone(arg)
-        self.assertEqual(1, arg)
+        self.assertIsNone(arg)
         consts = [
             code.constant(arg)
             for op, arg in _ops(code)
@@ -520,8 +516,7 @@ class TestObjectBitOr(SpecialsTestCase):
     def test_bit_or_const_fold(self):
         code = self.compile_to_code("(compile/| 12 3)")
         arg = _find_op(code, OpCode.KOS_OP_OBJECT_BIT_OR)
-        self.assertIsNotNone(arg)
-        self.assertEqual(1, arg)
+        self.assertIsNone(arg)
         consts = [
             code.constant(arg)
             for op, arg in _ops(code)
@@ -547,8 +542,7 @@ class TestObjectBitXor(SpecialsTestCase):
     def test_bit_xor_const_fold(self):
         code = self.compile_to_code("(compile/^ 12 10)")
         arg = _find_op(code, OpCode.KOS_OP_OBJECT_BIT_XOR)
-        self.assertIsNotNone(arg)
-        self.assertEqual(1, arg)
+        self.assertIsNone(arg)
         consts = [
             code.constant(arg)
             for op, arg in _ops(code)
@@ -574,8 +568,7 @@ class TestObjectFloorDivide(SpecialsTestCase):
     def test_floor_divide_const_fold(self):
         code = self.compile_to_code("(compile/// 7 2)")
         arg = _find_op(code, OpCode.KOS_OP_OBJECT_FLOOR_DIVIDE)
-        self.assertIsNotNone(arg)
-        self.assertEqual(1, arg)
+        self.assertIsNone(arg)
         consts = [
             code.constant(arg)
             for op, arg in _ops(code)
@@ -619,8 +612,7 @@ class TestObjectTrueDivide(SpecialsTestCase):
     def test_true_divide_const_fold(self):
         code = self.compile_to_code("(compile// 7.0 2.0)")
         arg = _find_op(code, OpCode.KOS_OP_OBJECT_TRUE_DIVIDE)
-        self.assertIsNotNone(arg)
-        self.assertEqual(1, arg)
+        self.assertIsNone(arg)
         consts = [
             code.constant(arg)
             for op, arg in _ops(code)
