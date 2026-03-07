@@ -372,6 +372,7 @@ Matcher classes register via `@matcher(tag)`. The `from_tuple()` function looks 
 
 ## Related Documents
 
+- [matcher-hygiene-extensions.md](matcher-hygiene-extensions.md): Proposed MATCH role additions (`BODY`, `BIND_SYM`, `BIND_BINDINGS`, `BIND_FORMALS`) for generic hygiene discovery driven by special-declared matcher metadata
 - [archive/macros.md](../archive/macros.md): Macro system notes; define-syntax will supersede defmacro
 - [special-forms.md](../language/special-forms.md): Special form catalog
 - [types.md](types.md): symbol, keyword, pair — types used in patterns

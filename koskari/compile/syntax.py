@@ -121,8 +121,7 @@ def _collect_bindings_from_list(bindings_list, out, recurse):
         return
     for elem in unpack(bindings_list):
         if is_pair(elem):
-            var = car(elem)
-            val_tail = cdr(elem)
+            var, val_tail = elem
             if is_pair(val_tail):
                 val = car(val_tail)
                 if is_symbol(var):
@@ -148,6 +147,7 @@ def _collect_binding_symbols(template):
     Walk template and return set of symbols in binding position.
     Recognizes let, lambda, let/cc, capture/cc (bare and compile/ prefixed).
     """
+
     out = set()
     if not is_pair(template):
         return out
