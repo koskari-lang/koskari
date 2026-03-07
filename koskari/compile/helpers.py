@@ -17,21 +17,27 @@ from ..types import is_keyword, is_pair, is_proper, is_symbol, unpack
 
 from .compiler import Compiler, Special, ByteCodeFragment
 from ..exceptions import ParametersError, SpecialError
+from ..types import get_position
 from ..matcher import (
+    BindingsResult,
+    BindingMatcher,
+    BindingResult,
     BIND,
-    BIND_SYM,
+    FormalsResult,
     LITERAL,
     LITERAL_KW,
     MATCH,
-    PAIR,
     Matcher,
+    SYMBOL,
     match,
     matcher,
 )
 
 
 __all__ = (
-    "BIND_BINDINGS",
+    "BINDING",
+    "BINDINGS",
+    "FORMALS",
     "const_only_expr",
     "convert_bindings",
     "gather_bindings",
@@ -134,18 +140,21 @@ def is_symbolish(thing):
     return is_symbol(thing) or is_lazygensym(thing)
 
 
-_tag_bind_bindings = symbol('matcher/bind-bindings')
+_tag_bindings = symbol('matcher/bind-bindings')
 
 
-@matcher(_tag_bind_bindings)
-class _BindingsMatcher:
+@matcher(_tag_bindings)
+class _BindingsMatcher(BindingMatcher):
     """
     Match a list and bind the result of gather_bindings as (names, values)
     """
 
-    def __init__(self, slot):
+    def __init__(self, slot, mode='parallel', scope=None, scopes=None):
         self.slot = slot
         self._key = str(slot)
+        self.mode = mode
+        self.scope = scope
+        self.scopes = scopes
 
 
     @classmethod
@@ -155,7 +164,7 @@ class _BindingsMatcher:
         return cls(payload[0])
 
 
-    def match(self, source, literals, result):
+    def match(self, source, literals, result, specs=None):
         if source is nil:
             return (None, False)
         head = car(source)
@@ -163,28 +172,243 @@ class _BindingsMatcher:
         if not is_pair(head):
             return (None, False)
         names, values = gather_bindings(head, head)
-        result[self._key] = (names, values)
+        result[self._key] = BindingsResult(
+            head, get_position(source), names=names, values=values)
+        if specs is not None:
+            specs[self._key] = self
+        return (tail, True)
+
+
+    def extract_binder_symbols(self, value):
+        if hasattr(value, 'names'):
+            names = value.names
+        elif isinstance(value, (tuple, list)) and len(value) == 2:
+            names, _values = value
+        else:
+            return
+        for n in (names or ()):
+            if is_symbol(n):
+                yield n
+
+
+    def get_recurse_targets(self, value):
+        if hasattr(value, 'values'):
+            return value.values or ()
+        if isinstance(value, (tuple, list)) and len(value) == 2:
+            return value[1] or ()
+        return ()
+
+
+    def to_tuple(self):
+        return (_tag_bindings, symbol(self._key) if isinstance(self.slot, str) else self.slot)
+
+
+def BINDINGS(slot, *, mode='parallel', scope=None, scopes=None):
+    """
+    Match a list and bind (names, values) from gather_bindings
+
+    :param slot: capture key
+    :param mode: parallel, sequential, or recursive
+    :param scope: single scope region key
+    :param scopes: sequence of scope region keys
+    """
+    return _BindingsMatcher(slot, mode=mode, scope=scope, scopes=scopes)
+
+
+
+_tag_formals = symbol('matcher/formals')
+
+
+@matcher(_tag_formals)
+class _FormalsMatcher(BindingMatcher):
+    """
+    Match formals (pair or symbol) and bind the result of gather_formals
+    as FormalsResult (positional, defaults, kwonly, star, starstar)
+    """
+
+    def __init__(self, slot, *, scope=None, scopes=None):
+        self.slot = slot
+        self._key = str(slot)
+        self.scope = scope
+        self.scopes = scopes
+
+
+    @classmethod
+    def from_payload(cls, payload, deserialize):
+        if len(payload) != 1:
+            raise ValueError('formals expects 1 payload, got %d' % len(payload))
+        return cls(payload[0])
+
+
+    def match(self, source, literals, result, specs=None):
+        if source is nil:
+            return (None, False)
+        head = car(source)
+        tail = cdr(source)
+        if not (is_symbol(head) or is_pair(head)):
+            return (None, False)
+        try:
+            pos, defaults, kwonly, star, starstar = gather_formals(head, head)
+        except SpecialError:
+            return (None, False)
+        result[self._key] = FormalsResult(
+            head, get_position(source),
+            positional=pos, defaults=defaults, kwonly=kwonly,
+            star=star, starstar=starstar)
+        if specs is not None:
+            specs[self._key] = self
+        return (tail, True)
+
+
+    def extract_binder_symbols(self, value):
+        if hasattr(value, 'positional'):
+            positional = value.positional
+            star = value.star
+            starstar = value.starstar
+        elif isinstance(value, (tuple, list)) and len(value) == 5:
+            positional, _defaults, _kwonly, star, starstar = value
+        else:
+            return
+        for s in (positional or ()):
+            if is_symbol(s):
+                yield s
+        if star is not None and is_symbol(star):
+            yield star
+        if starstar is not None and is_symbol(starstar):
+            yield starstar
+
+
+    def get_recurse_targets(self, value):
+        out = []
+        if hasattr(value, 'defaults') and hasattr(value, 'kwonly'):
+            for _kw, expr in (value.defaults or ()):
+                out.append(expr)
+            for _kw, expr in (value.kwonly or ()):
+                out.append(expr)
+        elif isinstance(value, (tuple, list)) and len(value) == 5:
+            _pos, defaults, kwonly, _star, _starstar = value
+            for _kw, expr in (defaults or ()):
+                out.append(expr)
+            for _kw, expr in (kwonly or ()):
+                out.append(expr)
+        return out
+
+
+    def to_tuple(self):
+        return (_tag_formals, symbol(self._key) if isinstance(self.slot, str) else self.slot)
+
+
+def FORMALS(slot, *, scope=None, scopes=None):
+    """
+    Match formals and bind FormalsResult (positional, defaults, kwonly, star,
+    starstar) from gather_formals. Use .source for raw formals (pair or symbol).
+
+    :param slot: capture key
+    :param scope: single scope region key
+    :param scopes: sequence of scope region keys
+    """
+    return _FormalsMatcher(slot, scope=scope, scopes=scopes)
+
+
+_tag_binding = symbol('matcher/binding')
+
+
+@matcher(_tag_binding)
+class _BindingMatcher(BindingMatcher):
+    """
+    Match a single binding form (SYM EXPR), (EXPR as: SYM), or (EXPR)
+    when allow_unnamed is True
+    """
+
+    def __init__(self, slot, *, allow_unnamed=False, scope=None, scopes=None):
+        self.slot = slot
+        self._key = str(slot)
+        self.allow_unnamed = allow_unnamed
+        self.scope = scope
+        self.scopes = scopes
+
+
+    @classmethod
+    def from_payload(cls, payload, deserialize):
+        if len(payload) != 1:
+            raise ValueError('binding expects 1 payload, got %d' % len(payload))
+        return cls(payload[0])
+
+
+    def extract_binder_symbols(self, value):
+        if hasattr(value, 'name') and value.name is not None and is_symbol(value.name):
+            yield value.name
+
+
+    def get_recurse_targets(self, value):
+        if isinstance(value, BindingResult) and value.value is not None:
+            return [value.value]
+        return ()
+
+
+    def match(self, source, literals, result, specs=None):
+        if source is nil:
+            return (None, False)
+        head = car(source)
+        tail = cdr(source)
+        if not is_pair(head) or not is_proper(head):
+            return (None, False)
+        patterns = list(_BINDING_PATTERNS_3) + list(_BINDING_PATTERNS_2)
+        if self.allow_unnamed:
+            patterns = patterns + [_BINDING_PATTERN_1]
+        m = match(head, patterns)
+        if m is None:
+            return (None, False)
+
+        def _src(v):
+            return v.source if hasattr(v, 'source') else v
+
+        name = None
+        val = None
+        if "sym" in m and "expr" in m:
+            name = _src(m["sym"])
+            val = _src(m["expr"])
+        elif "expr" in m:
+            if self.allow_unnamed:
+                name = None
+            else:
+                name = True  # required fallback
+            val = _src(m["expr"])
+        else:
+            return (None, False)
+
+        result[self._key] = BindingResult(
+            head, get_position(source), name=name, value=val)
+        if specs is not None:
+            specs[self._key] = self
         return (tail, True)
 
 
     def to_tuple(self):
-        return (_tag_bind_bindings, symbol(self._key) if isinstance(self.slot, str) else self.slot)
+        return (_tag_binding, symbol(self._key) if isinstance(self.slot, str)
+                else self.slot)
 
 
-
-def BIND_BINDINGS(slot):
+def BINDING(slot, *, allow_unnamed=False, scope=None, scopes=None):
     """
-    Match a list and bind (names, values) from gather_bindings
+    Match a single binding form (SYM EXPR), (EXPR as: SYM), or optionally
+    (EXPR) when allow_unnamed is True.
+
+    :param slot: capture key
+    :param allow_unnamed: if True, (EXPR) alone is allowed; name is None
+    :param scope: single scope region key
+    :param scopes: sequence of scope region keys
     """
-    return _BindingsMatcher(slot)
+    return _BindingMatcher(slot, allow_unnamed=allow_unnamed,
+                           scope=scope, scopes=scopes)
 
 
 _BINDING_PATTERNS_3 = [
-    MATCH(BIND("expr"), LITERAL_KW("as"), BIND_SYM("sym")),
+    MATCH(BIND("expr"), LITERAL_KW("as"), SYMBOL("sym")),
 ]
 _BINDING_PATTERNS_2 = [
-    MATCH(BIND("expr"), PAIR(LITERAL_KW("as"), PAIR(BIND_SYM("sym"), LITERAL(nil)))),
-    MATCH(BIND_SYM("sym"), BIND("expr")),
+    MATCH(BIND("expr"), MATCH(LITERAL_KW("as"), MATCH(SYMBOL("sym"), LITERAL(nil)))),
+    MATCH(SYMBOL("sym"), BIND("expr")),
 ]
 _BINDING_PATTERN_1 = MATCH(BIND("expr"))
 
@@ -217,13 +441,16 @@ def helper_binding(source, required=True, allow_unnamed=False):
     if m is None:
         raise SpecialError(msg, source)
 
+    def _src(v):
+        return v.source if hasattr(v, 'source') else v
+
     if "sym" in m and "expr" in m:
-        return (m["sym"], m["expr"])
+        return (_src(m["sym"]), _src(m["expr"]))
 
     if "expr" in m:
         if allow_unnamed:
-            return (None, m["expr"])
-        return (required, m["expr"])
+            return (None, _src(m["expr"]))
+        return (required, _src(m["expr"]))
 
     raise SpecialError(msg, source)
 

@@ -15,4 +15,4 @@ This directory documents the runtime API of Koskari, including types, functions,
 - **import-system.md**: Import system and module resolution _(not yet written; import system design is pending)_
 - **lexer.md**: Lexer subpackage for lexical-only parsing, prompt_toolkit and LSP integration
 - **pattern-matching.md**: Pattern matching and template expansion API for special-form handlers and future define-syntax; tagged-tuple representation, Python and Koskari consumption
-- **matcher-hygiene-extensions.md**: Proposed MATCH role extensions (`BODY`, `BIND_SYM`, `BIND_BINDINGS`, `BIND_FORMALS`) for generic hygiene discovery driven by special-declared matcher metadata; replaces hardcoded binding-form knowledge in the expander
+- **matcher-hygiene-extensions.md**: MATCH role extensions for hygiene discovery; `BINDINGS` with `scope`/`scopes`; REST/EXPR as scope regions; `match(..., with_specs=True)` and role helpers; implemented `_collect_binding_symbols_matcher`

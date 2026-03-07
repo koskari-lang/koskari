@@ -22,21 +22,25 @@ tuple interpretation for future define-syntax integration.
 :license: GNU General Public License v3
 """
 
-
 from typing import Any, Dict, Optional, Protocol, Tuple
 
 from .lib import car, cdr, cons, keyword, nil, symbol
-from .types import is_pair, is_symbol, unpack
+from .types import get_position, is_pair, is_symbol, unpack
 
 
 __all__ = (
+    'BindingMatcher',
+    'BindingsResult',
+    'BindingResult',
+    'FormalsResult',
+    'MatchResult',
     'Matcher',
     'matcher',
 
     'ANY_ORDER',
     'BIND',
-    'BIND_PAIR',
-    'BIND_SYM',
+    'DEFINE',
+    'EXPR',
     'LITERAL',
     'LITERAL_KW',
     'LITERAL_SYM',
@@ -44,7 +48,12 @@ __all__ = (
     'OPT',
     'PAIR',
     'REST',
+    'SYMBOL',
+    'VALUE',
+    'extract_binder_symbols',
     'from_tuple',
+    'is_binder_spec',
+    'is_scope_region_spec',
     'match',
     'match_tuple',
 )
@@ -67,19 +76,60 @@ def matcher(name):
 class Matcher(Protocol):
     """
     Protocol for matcher types. Accept source, optionally mutate result with
-    bindings, return (remainder, success).
+    bindings, return (remainder, success). When specs is provided, capturing
+    matchers record themselves in specs.
     """
 
     def match(
             self,
             source: Any,
             literals: frozenset,
-            result: Dict[str, Any]) -> Tuple[Optional[Any], bool]:
+            result: Dict[str, Any],
+            specs: Optional[Dict[str, Any]] = None) -> Tuple[Optional[Any], bool]:
         """
         Try to match source. On success: mutate result with bindings, return
-        (remainder, True). On failure: return (None, False).
+        (remainder, True). On failure: return (None, False). When specs is not
+        None, capturing matchers add specs[key] = self.
         """
         ...
+
+
+    def to_tuple(self):
+        """
+        Return tagged tuple representation of matcher.
+        """
+        ...
+
+
+    @classmethod
+    def from_tuple(cls, tup):
+        """
+        Deserialize tagged tuple to matcher.
+        """
+        ...
+
+
+class BindingMatcher(Matcher):
+    """
+    Base for matchers that introduce bindings. Subclasses implement
+    extract_binder_symbols and get_recurse_targets for hygiene discovery.
+    """
+
+    def extract_binder_symbols(self, value):
+        """
+        Yield symbol names introduced by this binder. Override in subclasses.
+        """
+
+        yield from ()
+
+
+    def get_recurse_targets(self, value):
+        """
+        Return iterable of values to recurse into for nested binding discovery,
+        or None if none. Override in subclasses.
+        """
+
+        return None
 
 
 # Tag symbols for serialization
@@ -92,6 +142,86 @@ _tag_rest = symbol('matcher/rest')
 _tag_pair = symbol('matcher/pair')
 _tag_opt = symbol('matcher/opt')
 _tag_any_order = symbol('matcher/any-order')
+_tag_expr = symbol('matcher/expr')
+_tag_define = symbol('matcher/define')
+_tag_value = symbol('matcher/value')
+
+
+class MatchResult:
+    """
+    Base result for simple captures. Every capture includes source (raw value)
+    and source_pos (position when source is a pair).
+    """
+
+    __slots__ = ('source', 'source_pos')
+
+    def __init__(self, source, source_pos=None):
+        self.source = source
+        self.source_pos = source_pos
+
+
+class FormalsResult(MatchResult):
+    """
+    Result for FORMALS: source, source_pos, plus positional, defaults, kwonly,
+    star, starstar. Supports unpacking for backward compat.
+    """
+
+    __slots__ = ('positional', 'defaults', 'kwonly', 'star', 'starstar')
+
+    def __init__(
+            self,
+            source,
+            source_pos=None,
+            positional=None,
+            defaults=None,
+            kwonly=None,
+            star=None,
+            starstar=None):
+        super().__init__(source, source_pos)
+        self.positional = positional if positional is not None else []
+        self.defaults = defaults if defaults is not None else []
+        self.kwonly = kwonly if kwonly is not None else []
+        self.star = star
+        self.starstar = starstar
+
+
+    def __iter__(self):
+        return iter((self.positional, self.defaults, self.kwonly,
+                     self.star, self.starstar))
+
+
+class BindingsResult(MatchResult):
+    """
+    Result for BINDINGS: source, source_pos, plus names, values. Supports
+    unpacking for backward compat.
+    """
+
+    __slots__ = ('names', 'values')
+
+
+    def __init__(self, source, source_pos=None, names=None, values=None):
+        super().__init__(source, source_pos)
+        self.names = names if names is not None else []
+        self.values = values if values is not None else []
+
+
+    def __iter__(self):
+        return iter((self.names, self.values))
+
+
+class BindingResult(MatchResult):
+    """
+    Result for BINDING: source, source_pos, plus name (symbol or None),
+    value (the expression).
+    """
+
+    __slots__ = ('name', 'value')
+
+
+    def __init__(self, source, source_pos=None, name=None, value=None):
+        super().__init__(source, source_pos)
+        self.name = name
+        self.value = value
 
 
 def _slot_key(slot):
@@ -138,7 +268,7 @@ def _resolve_spec(spec, literals):
 
 
 @matcher(_tag_literal)
-class _LiteralMatcher:
+class _LiteralMatcher(Matcher):
     """
     Match exact value
     """
@@ -154,10 +284,10 @@ class _LiteralMatcher:
         return cls(payload[0])
 
 
-    def match(self, source, literals, result):
+    def match(self, source, literals, result, specs=None):
         if source is nil:
             return (None, False)
-        head, tail = car(source), cdr(source)
+        head, tail = source
         if head == self.value:
             return (tail, True)
         return (None, False)
@@ -168,7 +298,7 @@ class _LiteralMatcher:
 
 
 @matcher(_tag_bind)
-class _BindMatcher:
+class _BindMatcher(Matcher):
     """
     Capture one element
     """
@@ -185,11 +315,13 @@ class _BindMatcher:
         return cls(payload[0])
 
 
-    def match(self, source, literals, result):
+    def match(self, source, literals, result, specs=None):
         if source is nil:
             return (None, False)
-        head, tail = car(source), cdr(source)
-        result[self._key] = head
+        head, tail = source
+        result[self._key] = MatchResult(head, get_position(source))
+        if specs is not None:
+            specs[self._key] = self
         return (tail, True)
 
 
@@ -198,7 +330,7 @@ class _BindMatcher:
 
 
 @matcher(_tag_bind_sym)
-class _BindSymMatcher:
+class _SymbolMatcher(BindingMatcher):
     """
     Capture one element only when it is a symbol
     """
@@ -215,24 +347,35 @@ class _BindSymMatcher:
         return cls(payload[0])
 
 
-    def match(self, source, literals, result):
+    def match(self, source, literals, result, specs=None):
         if source is nil:
             return (None, False)
-        head, tail = car(source), cdr(source)
+        head, tail = source
         if not is_symbol(head):
             return (None, False)
-        result[self._key] = head
+        result[self._key] = MatchResult(head, get_position(source))
+        if specs is not None:
+            specs[self._key] = self
         return (tail, True)
+
+
+    def extract_binder_symbols(self, value):
+        raw = value.source if hasattr(value, 'source') else value
+        if is_symbol(raw):
+            yield raw
 
 
     def to_tuple(self):
         return (_tag_bind_sym, symbol(self._key) if isinstance(self.slot, str) else self.slot)
 
 
-@matcher(_tag_bind_pair)
-class _BindPairMatcher:
+@matcher(_tag_define)
+class _DefineMatcher(BindingMatcher):
     """
-    Capture one element only when it is a pair
+    Capture one element only when it is a symbol; binder for hygiene
+
+    Single-introduced-name form like (define X Y). Does not declare scope
+    for its value slot.
     """
 
     def __init__(self, slot):
@@ -243,29 +386,71 @@ class _BindPairMatcher:
     @classmethod
     def from_payload(cls, payload, deserialize):
         if len(payload) != 1:
-            raise ValueError('bind-pair expects 1 payload, got %d' % len(payload))
+            raise ValueError('define expects 1 payload, got %d' % len(payload))
         return cls(payload[0])
 
 
-    def match(self, source, literals, result):
+    def match(self, source, literals, result, specs=None):
         if source is nil:
             return (None, False)
-        head, tail = car(source), cdr(source)
-        if not is_pair(head):
+        head, tail = source
+        if not is_symbol(head):
             return (None, False)
-        result[self._key] = head
+        result[self._key] = MatchResult(head, get_position(source))
+        if specs is not None:
+            specs[self._key] = self
+        return (tail, True)
+
+
+    def extract_binder_symbols(self, value):
+        raw = value.source if hasattr(value, 'source') else value
+        if is_symbol(raw):
+            yield raw
+
+
+    def to_tuple(self):
+        return (_tag_define, symbol(self._key) if isinstance(self.slot, str) else self.slot)
+
+
+@matcher(_tag_value)
+class _ValueMatcher(Matcher):
+    """
+    Capture one element; value fed in, not a scope region for hygiene
+    """
+
+    def __init__(self, slot):
+        self.slot = slot
+        self._key = _slot_key(slot)
+
+
+    @classmethod
+    def from_payload(cls, payload, deserialize):
+        if len(payload) != 1:
+            raise ValueError('value expects 1 payload, got %d' % len(payload))
+        return cls(payload[0])
+
+
+    def match(self, source, literals, result, specs=None):
+        if source is nil:
+            return (None, False)
+        head, tail = source
+        result[self._key] = MatchResult(head, get_position(source))
+        if specs is not None:
+            specs[self._key] = self
         return (tail, True)
 
 
     def to_tuple(self):
-        return (_tag_bind_pair, symbol(self._key) if isinstance(self.slot, str) else self.slot)
+        return (_tag_value, symbol(self._key) if isinstance(self.slot, str) else self.slot)
 
 
 @matcher(_tag_rest)
-class _RestMatcher:
+class _RestMatcher(Matcher):
     """
     Capture remainder of list
     """
+
+    is_scope_region_spec = True
 
     def __init__(self, slot):
         self.slot = slot
@@ -279,8 +464,13 @@ class _RestMatcher:
         return cls(payload[0])
 
 
-    def match(self, source, literals, result):
-        result[self._key] = source
+    def match(self, source, literals, result, specs=None):
+        if source is nil:
+            return (None, False)
+        pos = get_position(source) if is_pair(source) else None
+        result[self._key] = MatchResult(source, pos)
+        if specs is not None:
+            specs[self._key] = self
         return (nil, True)
 
 
@@ -289,67 +479,76 @@ class _RestMatcher:
 
 
 @matcher(_tag_pair)
-class _PairMatcher:
+@matcher(_tag_bind_pair)
+class _PairMatcher(Matcher):
     """
-    Match pair; car against car_spec, cdr bound per cdr_spec
+    Capture one element only when it is a pair
     """
 
-    def __init__(self, car_spec, cdr_spec):
-        self.car_spec = car_spec
-        self.cdr_spec = cdr_spec
+    def __init__(self, slot):
+        self.slot = slot
+        self._key = _slot_key(slot)
 
 
     @classmethod
     def from_payload(cls, payload, deserialize):
-        if len(payload) != 2:
-            raise ValueError('pair expects 2 payload, got %d' % len(payload))
-        return cls(deserialize(payload[0]), deserialize(payload[1]))
+        if len(payload) != 1:
+            raise ValueError('pair expects 1 payload, got %d' % len(payload))
+        return cls(payload[0])
 
 
-    def match(self, source, literals, result):
+    def match(self, source, literals, result, specs=None):
         if source is nil:
             return (None, False)
-        elem = car(source)
-        tail = cdr(source)
-        if not is_pair(elem):
+        head, tail = source
+        if not is_pair(head):
             return (None, False)
-
-        elem_car, elem_cdr = car(elem), cdr(elem)
-        car_matcher = _resolve_spec(self.car_spec, literals)
-        cdr_matcher = _resolve_spec(self.cdr_spec, literals)
-
-        if car_matcher is not None:
-            rem, ok = _do_match(car_matcher, cons(elem_car, nil), literals, result)
-            if not ok or rem is not nil:
-                return (None, False)
-        else:
-            if elem_car != self.car_spec:
-                return (None, False)
-
-        if cdr_matcher is not None:
-            rem, ok = _do_match(cdr_matcher, cons(elem_cdr, nil), literals, result)
-            if not ok:
-                return (None, False)
-
-        elif is_symbol(self.cdr_spec):
-            result[_slot_key(self.cdr_spec)] = elem_cdr
-
-        else:
-            return (None, False)
-
+        result[self._key] = MatchResult(head, get_position(source))
+        if specs is not None:
+            specs[self._key] = self
         return (tail, True)
 
 
     def to_tuple(self):
-        car_t = (self.car_spec.to_tuple()
-                 if hasattr(self.car_spec, 'to_tuple') else (_tag_literal, self.car_spec))
-        cdr_t = (self.cdr_spec.to_tuple()
-                 if hasattr(self.cdr_spec, 'to_tuple') else (_tag_bind, self.cdr_spec))
-        return (_tag_pair, car_t, cdr_t)
+        return (_tag_pair, symbol(self._key) if isinstance(self.slot, str) else self.slot)
+
+
+@matcher(_tag_expr)
+class _ExprMatcher(Matcher):
+    """
+    Capture one element (single form); scope region for hygiene
+    """
+
+    is_scope_region_spec = True
+
+    def __init__(self, slot):
+        self.slot = slot
+        self._key = _slot_key(slot)
+
+
+    @classmethod
+    def from_payload(cls, payload, deserialize):
+        if len(payload) != 1:
+            raise ValueError('expr expects 1 payload, got %d' % len(payload))
+        return cls(payload[0])
+
+
+    def match(self, source, literals, result, specs=None):
+        if source is nil:
+            return (None, False)
+        head, tail = source
+        result[self._key] = MatchResult(head, get_position(source))
+        if specs is not None:
+            specs[self._key] = self
+        return (tail, True)
+
+
+    def to_tuple(self):
+        return (_tag_expr, symbol(self._key) if isinstance(self.slot, str) else self.slot)
 
 
 @matcher(_tag_opt)
-class _OptMatcher:
+class _OptMatcher(Matcher):
     """
     Optionally match elem
     """
@@ -365,11 +564,11 @@ class _OptMatcher:
         return cls(deserialize(payload[0]))
 
 
-    def match(self, source, literals, result):
+    def match(self, source, literals, result, specs=None):
         matcher = _resolve_spec(self.elem, literals)
         if matcher is None:
             return (source, True)
-        rem, ok = _do_match(matcher, source, literals, result)
+        rem, ok = _do_match(matcher, source, literals, result, specs)
         if ok:
             return (rem, True)
         return (source, True)
@@ -382,27 +581,48 @@ class _OptMatcher:
 
 
 @matcher(_tag_match)
-class _MatchMatcher:
+class _MatchMatcher(Matcher):
     """
-    Sequence of specs in order
+    Sequence of specs in order. When sub-expr and element is a pair,
+    destructures (car, cdr) and matches against that.
     """
 
-    def __init__(self, *specs):
+    def __init__(self, *specs, key=None):
         self.specs = specs
+        self.key = key
 
 
     @classmethod
     def from_payload(cls, payload, deserialize):
-        return cls(*[deserialize(p) for p in payload])
+        specs = [deserialize(p) for p in payload]
+        return cls(*specs)
 
 
-    def match(self, source, literals, result):
+    def match(self, source, literals, result, specs=None):
+        if source is not nil:
+            elem, rest = source
+            if rest is nil and is_pair(elem) and len(self.specs) >= 2:
+                pair_source = cons(car(elem), cons(cdr(elem), nil))
+                current = pair_source
+                for spec in self.specs:
+                    matcher = _resolve_spec(spec, literals)
+                    if matcher is None:
+                        return (None, False)
+                    current, ok = _do_match(matcher, current, literals, result, specs)
+                    if not ok:
+                        return (None, False)
+                if self.key is not None:
+                    key = _slot_key(self.key)
+                    result[key] = MatchResult(elem, get_position(source))
+                    if specs is not None:
+                        specs[key] = self
+                return (rest, True)
         current = source
         for spec in self.specs:
             matcher = _resolve_spec(spec, literals)
             if matcher is None:
                 return (None, False)
-            current, ok = _do_match(matcher, current, literals, result)
+            current, ok = _do_match(matcher, current, literals, result, specs)
             if not ok:
                 return (None, False)
         return (current, True)
@@ -416,7 +636,7 @@ class _MatchMatcher:
 
 
 @matcher(_tag_any_order)
-class _AnyOrderMatcher:
+class _AnyOrderMatcher(Matcher):
     """
     All specs must match, in any order
     """
@@ -430,7 +650,7 @@ class _AnyOrderMatcher:
         return cls(*[deserialize(p) for p in payload])
 
 
-    def match(self, source, literals, result):
+    def match(self, source, literals, result, specs=None):
         elements = list(unpack(source)) if source is not nil else []
         pool = list(elements)
         for spec in self.specs:
@@ -440,7 +660,7 @@ class _AnyOrderMatcher:
             matched = False
             for i, elem in enumerate(pool):
                 elem_pair = cons(elem, nil)
-                rem, ok = _do_match(matcher, elem_pair, literals, result)
+                rem, ok = _do_match(matcher, elem_pair, literals, result, specs)
                 if ok and (rem is nil or (is_pair(rem) and cdr(rem) is nil)):
                     del pool[i]
                     matched = True
@@ -478,17 +698,17 @@ def from_tuple(tup):
     return cls.from_payload(payload, from_tuple)
 
 
-def _do_match(matcher, source, literals, result):
+def _do_match(matcher, source, literals, result, specs=None):
     """
     Dispatch to matcher object; deserialize tuple first if needed
     """
 
     if hasattr(matcher, 'match') and callable(getattr(matcher, 'match')):
-        return matcher.match(source, literals, result)
+        return matcher.match(source, literals, result, specs)
 
     if _is_tagged_tuple(matcher):
         obj = from_tuple(matcher)
-        return obj.match(source, literals, result)
+        return obj.match(source, literals, result, specs)
 
     return (None, False)
 
@@ -525,36 +745,55 @@ def BIND(slot):
     return _BindMatcher(slot)
 
 
-def BIND_SYM(slot):
+def SYMBOL(slot):
     """
     Capture one element into slot only when it is a symbol
     """
 
-    return _BindSymMatcher(slot)
+    return _SymbolMatcher(slot)
 
 
-def BIND_PAIR(slot):
+def DEFINE(slot):
+    """
+    Capture one element into slot only when it is a symbol; binder for hygiene
+
+    Single-introduced-name form like (define X Y). Does not declare scope
+    for its value slot.
+    """
+
+    return _DefineMatcher(slot)
+
+
+def VALUE(slot):
+    """
+    Capture one element into slot; value fed in, not a scope region for hygiene
+    """
+
+    return _ValueMatcher(slot)
+
+
+def PAIR(slot):
     """
     Capture one element into slot only when it is a pair
     """
 
-    return _BindPairMatcher(slot)
+    return _PairMatcher(slot)
 
 
 def REST(slot):
     """
-    Capture remainder of list into slot
+    Capture remainder of list into slot; scope region for hygiene
     """
 
     return _RestMatcher(slot)
 
 
-def PAIR(car_spec, cdr_spec):
+def EXPR(slot):
     """
-    Match pair; car matches car_spec, cdr bound per cdr_spec
+    Capture one element (single form); scope region for hygiene
     """
 
-    return _PairMatcher(car_spec, cdr_spec)
+    return _ExprMatcher(slot)
 
 
 def OPT(elem):
@@ -565,12 +804,13 @@ def OPT(elem):
     return _OptMatcher(elem)
 
 
-def MATCH(*specs):
+def MATCH(*specs, key=None):
     """
-    Sequence of specs in order
+    Sequence of specs in order. When sub-expr and element is a pair,
+    destructures. Use key= to capture the matched pair.
     """
 
-    return _MatchMatcher(*specs)
+    return _MatchMatcher(*specs, key=key)
 
 
 def ANY_ORDER(*specs):
@@ -584,7 +824,8 @@ def ANY_ORDER(*specs):
 def match(
         source,
         patterns,
-        literals=None):
+        literals=None,
+        with_specs=False):
     """
     Try each pattern against source. Return dict of bindings on first match,
     else None
@@ -593,7 +834,9 @@ def match(
     :param patterns: single matcher, tagged tuple, or sequence of patterns
     :param literals: set or frozenset of symbols to match literally; default
         empty frozenset
-    :return: dict mapping slot names to values, or None
+    :param with_specs: if True, return (result_dict, specs_dict) on match
+    :return: dict mapping slot names to values; or (dict, dict) if with_specs
+        True; or None on no match
     """
 
     lit = frozenset(literals) if literals is not None else frozenset()
@@ -604,14 +847,51 @@ def match(
 
     for pat in patterns:
         result = {}
+        specs = {} if with_specs else None
         matcher = _resolve_spec(pat, lit)
         if matcher is None:
             continue
-        rem, ok = _do_match(matcher, src, lit, result)
+        rem, ok = _do_match(matcher, src, lit, result, specs)
         if ok:
+            if with_specs:
+                return (result, specs)
             return result
 
     return None
+
+
+def is_binder_spec(spec):
+    """
+    True if spec is a binder matcher (BindingMatcher subclasses)
+
+    Used by hygiene discovery to identify captures that introduce bindings.
+    """
+
+    return spec is not None and isinstance(spec, BindingMatcher)
+
+
+def is_scope_region_spec(spec):
+    """
+    True if spec captures a region usable as a body (REST, EXPR)
+
+    Used by hygiene discovery for scope inference.
+    """
+
+    return spec is not None and getattr(spec, 'is_scope_region_spec', False)
+
+
+def extract_binder_symbols(spec, value):
+    """
+    Given a binder spec and its matched value, yield symbol names introduced.
+
+    Delegates to spec.extract_binder_symbols(value) when spec is a
+    BindingMatcher.
+    """
+
+    if spec is None or value is None:
+        return
+    if isinstance(spec, BindingMatcher):
+        yield from spec.extract_binder_symbols(value)
 
 
 def match_tuple(

@@ -25,7 +25,7 @@ Koskari distinguishes two macro styles, each with a different hygiene strategy:
 
 Declarative macros with known structure. Hygiene is **automatic** and handled inside the expander:
 
-* The expander collects binding symbols from the template (via `_collect_binding_symbols` today; eventually matcher-driven).
+* The expander collects binding symbols from the template via `_collect_binding_symbols_matcher` (matcher-driven, using `match(..., with_specs=True)` and role helpers).
 * During expansion, introduced binders are renamed to fresh gensyms.
 * Substituted pattern variables replace whole nodes; the expander never descends into substituted content. No provenance tracking is required.
 * Template authors write normal names (`t`, `loop`); the expander handles freshening transparently.
@@ -106,56 +106,39 @@ The hygiene pass must never rewrite identifiers inside substituted subtrees. In 
 
 ## Matcher role additions
 
-The existing matcher system gains semantic roles for binding and scope.
+The existing matcher system gains semantic roles for binding and scope. Hygiene discovery uses `match(..., with_specs=True)` to obtain both match results and the matcher specs that produced each slot; role helpers (`is_binder_spec`, `is_scope_region_spec`, `extract_binder_symbols`) interpret those specs.
 
-### `BODY(name, *, mode="plain")`
+### Scope regions: `REST(name)` and `EXPR(name)`
 
-Match and bind a body region.
+Body-like regions are captured by existing structural matchers:
 
-A body region is a sequence or subtree within which names introduced by sibling `BIND_*` roles may become visible.
+* **REST(name)** — consumes remaining elements as a list; used for let body, lambda body, etc.
+* **EXPR(name)** — consumes a single form
 
-`BODY` is a hygiene annotation first and a structural matcher second.
+These serve as scope regions when referenced by `scope` or `scopes` on binder matchers. Role helpers treat REST and EXPR as scope regions (`is_scope_region_spec`).
 
-#### Parameters
+### `SYMBOL(name)`
 
-* `name`: capture key in the match dictionary
-* `mode`: scope-region behavior
-
-Initial supported modes:
-
-* `plain` — all bindings relevant to this body are visible throughout the region
-* `sequential` — body forms are processed in order and may accumulate definitions later if needed
-
-For the first implementation, only `plain` needs behavior. `sequential` may be parsed and stored without new semantics yet.
-
-### `BIND_SYM(name, *, binds_in=None)`
-
-Match a single identifier that introduces a binding.
-
-Examples:
-
-* function name in shorthand define
-* recursive name in named let
-* simple define binder
+Match a single identifier that introduces a binding. Examples: function name in shorthand define, recursive name in named let.
 
 #### Parameters
 
 * `name`: capture key
-* `binds_in`: optional tuple/list of `BODY` capture names in which this binder is visible
 
-If `binds_in` is omitted, binder visibility is inferred from the selected pattern's body regions according to the special's normalized rule.
+Binder visibility is inferred from the pattern. If a sibling `BINDINGS` or `FORMALS` uses `scope`/`scopes`, those slots define visibility; otherwise visibility defaults to any REST or EXPR key in the same pattern.
 
-### `BIND_BINDINGS(name, *, mode="parallel", binds_in=None)`
+### `BINDINGS(name, *, mode="parallel", scope=None, scopes=None)`
 
-Match a binding list structure and expose the identifiers introduced by that structure.
-
-This role is for forms like `let`, `let*`, `letrec`, etc.
+Match a binding list structure and expose the identifiers introduced by that structure. Binds `BindingsResult` with `source`, `source_pos`, `names`, and `values`; supports unpacking `names, values = matched["bindings"]`. Implemented in `koskari.compile.helpers`. Used by let, let*, letrec, etc.
 
 #### Parameters
 
 * `name`: capture key
 * `mode`: binding visibility across initializer expressions
-* `binds_in`: optional tuple/list of `BODY` capture names in which these binders are visible
+* `scope`: optional single result-slot name where these binders are in scope (e.g. `"body"`)
+* `scopes`: optional list of result-slot names; use when multiple regions share the scope
+
+**Scope inference**: If both `scope` and `scopes` are omitted, scope defaults to any REST or EXPR key in the same pattern. The let form uses `scope="body"` explicitly.
 
 Supported modes:
 
@@ -163,27 +146,29 @@ Supported modes:
 * `sequential` — each binding becomes visible to later initializers
 * `recursive` — all bindings are visible during all initializers and body
 
-Initial implementation only needs `parallel` and may reject or defer the others.
+Initial implementation supports `parallel`.
 
-### `BIND_FORMALS(name, *, binds_in=None)`
+### `FORMALS(name, *, scope=None, scopes=None)`
 
-Match a formal-parameter structure and expose the identifiers introduced by that structure.
+Match a formal-parameter structure. Similar to BINDINGS but for lambda/formals. Uses `scope`/`scopes` for body regions. Binds `FormalsResult` with `source` (raw formals), `source_pos`, and unpackable `(positional, defaults, kwonly, star, starstar)`. Use `.source` when the raw formals pair or symbol is needed. Implemented in `koskari.compile.helpers`.
 
-This role is for `lambda`, function shorthand define, macro lambda-like helpers, etc.
+### `DEFINE(name)`
 
-#### Parameters
+Match a single symbol that introduces a binding. Used for forms like `(define X Y)` or `(define X [args] body...)`. Implemented in `koskari.matcher`.
 
-* `name`: capture key
-* `binds_in`: optional tuple/list of `BODY` capture names in which these formals are visible
+**Important**: DEFINE does **not** indicate hygienic rewriting of its value slot. The name (X) is gensym'd; the value expression (Y) is a "value fed in" position and is not recursed into for DEFINE's binding. Use `VALUE` for the value slot.
 
-Formal names bind only in the designated body regions, never in default-value expressions unless later explicitly specified.
+### `VALUE(name)`
+
+Capture one element; value fed in, not a scope region. Same structural behavior as BIND, but documents intent: the slot is a value expression that does not receive hygienic recursion from binders in the same pattern. Use for `(define X Y)` where Y must not be treated as a scope region. Implemented in `koskari.matcher`.
 
 ---
 
 ## Optional later roles
 
-Not required for the first implementation, but reserved for extension:
+Not required for the current implementation, but reserved for extension:
 
+* `BINDING(name, allow_unnamed=False)` — single binding like `(with [(expr) as: x] ...)`; optional unnamed binding
 * `BIND_VALUES(...)` — destructuring / multiple-value binding
 * `INIT(...)` — explicitly marks initializer expressions outside body scope
 * `BODY_DEFINES(...)` — body region that supports internal defines
@@ -200,8 +185,8 @@ Example:
 
 ```python
 _LET_PATTERNS = [
-    MATCH(BIND_SYM("name"), BIND_BINDINGS("bindings", mode="parallel"), BODY("body")),
-    MATCH(BIND_BINDINGS("bindings", mode="parallel"), BODY("body")),
+    MATCH(SYMBOL("name"), BINDINGS("bindings", mode="parallel", scope="body"), REST("body")),
+    MATCH(BINDINGS("bindings", mode="parallel", scope="body"), REST("body")),
 ]
 ```
 
@@ -237,7 +222,7 @@ Binder(
     source_name=<printed symbol>,
     source_node=<matched syntax node>,
     binder_kind="sym" | "bindings" | "formals",
-    binds_in=("body", ...),
+    scopes=("body", ...),  # slot names where this binder is in scope
 )
 ```
 
@@ -250,6 +235,8 @@ BodyRegion(
     mode="plain" | "sequential",
 )
 ```
+
+Scope regions come from REST or EXPR slots when referenced by BINDINGS/FORMALS `scope` or `scopes`.
 
 The matcher engine may provide a helper that converts the winning match into these normalized records.
 
@@ -283,8 +270,8 @@ The pass does not guess lexical scope from symbol names or list shape alone.
 
 It uses:
 
-* `BIND_*` roles to discover newly introduced names
-* `BODY` roles to determine where those names may be rewritten
+* `BIND_*` roles (SYMBOL, BINDINGS, FORMALS) to discover newly introduced names
+* REST/EXPR slots (referenced by `scope`/`scopes`) to determine where those names may be rewritten
 * role `mode` to determine initializer behavior
 
 ### Note on provenance
@@ -322,11 +309,11 @@ For each binder discovered from `BIND_*` roles:
 * allocate a fresh symbol derived from the original printed name
 * store mapping from original binder node identity to fresh symbol
 
-Important: mapping is by **identifier occurrence identity / binder record**, not by printed name alone.
+**Binder vs reference identity**: The binder positions themselves are rewritten by node identity (the matched syntax node). References are rewritten by symbol-in-scope: any introduced identifier in the designated scope region that matches the binder's printed name is replaced with the gensym. Mapping is keyed by binder record, not by printed name alone, to support multiple binders with the same name in different scopes.
 
 #### Step 3: rewrite binder positions
 
-Rewrite the matched binder occurrences themselves to the fresh gensyms.
+Rewrite the matched binder occurrences themselves (by node) to the fresh gensyms.
 
 Examples:
 
@@ -334,21 +321,21 @@ Examples:
 * `lambda` parameters
 * named-let self name
 
-#### Step 4: rewrite body regions
+#### Step 4: rewrite scope regions
 
-Walk each `BODY` region designated for those binders.
+Walk each scope region (REST or EXPR slot designated by `scope`/`scopes`).
 
 During the walk:
 
 * if subtree provenance is `substituted`: stop descending, leave as-is
-* if identifier occurrence resolves to one of the active introduced binders: replace with gensym
+* if identifier occurrence (by symbol-in-scope) resolves to one of the active introduced binders: replace with gensym
 * otherwise recurse normally
 
 #### Step 5: obey binding mode
 
 When `mode="parallel"`:
 
-* initializer expressions inside `BIND_BINDINGS` are outside the active rename scope for those same binders
+* initializer expressions inside `BINDINGS` are outside the active rename scope for those same binders
 * only the declared body regions are rewritten
 
 When `mode="sequential"`:
@@ -386,7 +373,7 @@ This spec assumes template instantiation preserves a minimal provenance bit per 
 
 ### Consequence
 
-A `BODY` rewrite walk must never descend into `substituted` subtrees.
+A scope-region rewrite walk must never descend into `substituted` subtrees.
 
 This is the core rule that prevents user syntax from being accidentally rewritten as though it were macro-introduced syntax.
 
@@ -399,7 +386,7 @@ This is the core rule that prevents user syntax from being accidentally rewritte
 Matcher:
 
 ```python
-MATCH(BIND_BINDINGS("bindings", mode="parallel"), BODY("body"))
+MATCH(BINDINGS("bindings", mode="parallel", scope="body"), REST("body"))
 ```
 
 Template output before hygiene:
@@ -432,7 +419,7 @@ If `x` was substituted syntax containing `t`, that subtree is not rewritten.
 Matcher:
 
 ```python
-MATCH(BIND_SYM("name"), BIND_BINDINGS("bindings", mode="parallel"), BODY("body"))
+MATCH(SYMBOL("name"), BINDINGS("bindings", mode="parallel", scope="body"), REST("body"))
 ```
 
 Template before hygiene:
@@ -465,7 +452,7 @@ Later special expansion may still lower named let into lambda-call form; hygiene
 Matcher:
 
 ```python
-MATCH(BIND_FORMALS("formals"), BODY("body"))
+MATCH(FORMALS("formals", scope="body"), REST("body"))
 ```
 
 Before hygiene:
@@ -557,27 +544,25 @@ The preferred behavior is explicit failure rather than unsafe broad rewriting.
 
 ---
 
-## Initial implementation subset
+## Implemented vs planned
 
-The first working slice may be restricted to:
+**Implemented**:
 
-* `BIND_SYM`
-* `BIND_BINDINGS(mode="parallel")`
-* `BIND_FORMALS`
-* `BODY(mode="plain")`
+* `SYMBOL` — single-name binder
+* `BINDINGS(slot, mode="parallel", scope=..., scopes=...)` — binding-list capture with scope
+* `REST`, `EXPR` — structural matchers; EXPR captures single form, scope region
+* `match(..., with_specs=True)` — returns `(result_dict, specs_dict)` for hygiene discovery
+* Role helpers: `is_binder_spec`, `is_scope_region_spec`, `extract_binder_symbols`
+* `_collect_binding_symbols_matcher(template, find_compiled)` — drives hygiene from special forms via matcher metadata
+* Used by `compile/let` (named and plain)
 
-and to specials such as:
+**Planned**:
 
-* `compile/let`
-* `compile/lambda`
-* shorthand `compile/define` if desired
-
-This is sufficient to validate the architecture before adding:
-
-* sequential bindings
-* recursive bindings
-* internal-definition bodies
-* more exotic binding forms
+* `FORMALS` — for lambda and similar
+* `BINDING` — single binding with optional unnamed
+* `DEFINE` — single-name shorthand define
+* Sequential/recursive binding modes
+* Internal-definition bodies
 
 ---
 
@@ -585,8 +570,8 @@ This is sufficient to validate the architecture before adding:
 
 The matcher language is extended with semantic roles describing:
 
-* **what introduces names**: `BIND_SYM`, `BIND_BINDINGS`, `BIND_FORMALS`
-* **where those names apply**: `BODY`
+* **what introduces names**: `SYMBOL`, `BINDINGS`, `FORMALS`
+* **where those names apply**: REST and EXPR slots referenced by `scope`/`scopes`
 * **how visibility behaves**: role modes such as `parallel`
 
 Matchers serve a dual role: parsing (named dict for maintainability) and hygiene discovery (binding/scope metadata for generic freshening).

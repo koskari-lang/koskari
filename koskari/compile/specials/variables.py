@@ -23,10 +23,11 @@ compile/delq, and compile/define.
 """
 
 
-from ...lib import nil, OpCode, symbol, cons
+from ...lib import cons, nil, OpCode, symbol
+from ...matcher import DEFINE, MATCH, REST, VALUE, match
 from ...types import is_pair
 from ...exceptions import CompilerError, SpecialError
-from ..helpers import is_symbolish, special
+from ..helpers import FORMALS, is_symbolish, special, special_forms
 from ..syntax import build_syntax_rules_transformer
 
 
@@ -81,6 +82,12 @@ def special_refq(compiler, source, tc=False):
     return frag
 
 
+_BINDQ_PATTERNS = [
+    MATCH(DEFINE("name"), VALUE("value")),
+]
+
+
+@special_forms(_BINDQ_PATTERNS)
 @special(symbol("compile/bindq"))
 def special_bindq(compiler, source, tc=False):
     """
@@ -88,22 +95,25 @@ def special_bindq(compiler, source, tc=False):
     it to EXPR
     """
 
-    called_by, (sym, body) = source
-    expr, rest = body
+    called_by, rest = source
+    matched = match(rest, _BINDQ_PATTERNS)
+    if matched is None:
+        raise SpecialError("bindq requires a name and value", source)
 
-    sym = str(sym)
+    namesym = matched["name"].source
+    name = str(namesym)
 
-    if rest is not nil:
-        raise SpecialError("bindq takes two arguments", source)
+    value = matched["value"]
 
     frag = compiler.fragment(called_by)
+    frag.declare_var(name)
 
-    if not is_pair(expr):
-        frag.position_of(body)
+    if not is_pair(value.source):
+        frag.position(value.source_pos)
+    frag.merge(compiler.full_compile(value.source))
 
-    frag.declare_var(sym)
-    frag.merge(compiler.full_compile(expr))
-    frag.instruction(OpCode.KOS_OP_VAR_BIND, sym)
+    frag.position_of(source)
+    frag.instruction(OpCode.KOS_OP_VAR_BIND, name)
     frag.instruction(OpCode.KOS_OP_CONST, None)
 
     return frag
@@ -133,6 +143,14 @@ def special_delq(compiler, source, tc=False):
     return frag
 
 
+_DEFINE_PATTERNS = [
+    MATCH(DEFINE("name"), FORMALS("formals", scope="body"), REST("body")),
+    MATCH(DEFINE("name"), VALUE("value")),
+    MATCH(DEFINE("name")),
+]
+
+
+@special_forms(_DEFINE_PATTERNS)
 @special(symbol("compile/define"))
 def special_define(compiler, source, tc=False):
     """
@@ -142,34 +160,34 @@ def special_define(compiler, source, tc=False):
     """
 
     called_by, rest = source
-    if rest is nil or not is_pair(rest):
+    matched = match(rest, _DEFINE_PATTERNS)
+    if matched is None:
         raise SpecialError("define requires a name", source)
 
-    X, rest_tail = rest
-    if not is_symbolish(X):
-        raise SpecialError("define name must be a symbol", source)
-
-    sym = str(X)
+    namesym = matched["name"].source
+    name = str(namesym)
 
     frag = compiler.fragment(called_by)
-    frag.declare_var(sym)
+    frag.declare_var(name)
 
-    if rest_tail is nil:
+    if "body" in matched:
+        formals = matched["formals"]
+        body = matched["body"]
+        val_expr = cons(symbol("compile/lambda"), namesym,
+                        formals.source, body.source)
+
+    elif "value" in matched:
+        val_expr = matched["value"].source
+
+    else:
         frag.instruction(OpCode.KOS_OP_CONST, None)
         return frag
 
-    val_expr, lbody = rest_tail
-
-    if is_pair(val_expr) and lbody is not nil:
-        val_expr = cons(symbol('compile/lambda'), X, val_expr, lbody)
-
-    elif lbody is not nil:
-        raise SpecialError(
-            "define with expression takes exactly two arguments",
-            source)
+    if not is_pair(val_expr):
+        frag.position_of(rest)
 
     frag.merge(compiler.full_compile(val_expr))
-    frag.instruction(OpCode.KOS_OP_VAR_STORE, sym)
+    frag.instruction(OpCode.KOS_OP_VAR_STORE, name)
     frag.instruction(OpCode.KOS_OP_CONST, None)
 
     return frag
