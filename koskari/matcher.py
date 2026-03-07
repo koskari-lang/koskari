@@ -658,7 +658,7 @@ def is_binder_spec(spec):
     if spec is None:
         return False
     name = type(spec).__name__
-    return name in ('_SymbolMatcher', '_BindingsMatcher')
+    return name in ('_SymbolMatcher', '_BindingsMatcher', '_FormalsMatcher')
 
 
 def is_scope_region_spec(spec):
@@ -692,6 +692,17 @@ def extract_binder_symbols(spec, value):
         for n in names or ():
             if is_symbol(n):
                 yield n
+    elif name == '_FormalsMatcher':
+        if not isinstance(value, (tuple, list)) or len(value) != 5:
+            return
+        positional, _defaults, _kwonly, star, starstar = value
+        for s in (positional or ()):
+            if is_symbol(s):
+                yield s
+        if star is not None and is_symbol(star):
+            yield star
+        if starstar is not None and is_symbol(starstar):
+            yield starstar
 
 
 def match_tuple(

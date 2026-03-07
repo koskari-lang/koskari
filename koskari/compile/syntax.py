@@ -214,6 +214,17 @@ def _collect_binding_symbols_matcher(template, find_compiled):
                         out |= _collect_binding_symbols_matcher(
                             v if is_pair(v) else cons(v, nil),
                             find_compiled)
+            if spec is not None and type(spec).__name__ == '_FormalsMatcher':
+                if isinstance(val, (tuple, list)) and len(val) == 5:
+                    _pos, defaults, kwonly, _star, _starstar = val
+                    for _kw, expr in (defaults or ()):
+                        out |= _collect_binding_symbols_matcher(
+                            expr if is_pair(expr) else cons(expr, nil),
+                            find_compiled)
+                    for _kw, expr in (kwonly or ()):
+                        out |= _collect_binding_symbols_matcher(
+                            expr if is_pair(expr) else cons(expr, nil),
+                            find_compiled)
 
     return out
 

@@ -20,8 +20,9 @@ import unittest
 
 from koskari.types import cons, keyword, nil, symbol
 from koskari.exceptions import ParametersError, SpecialError
-from koskari.compile.helpers import gather_formals, gather_parameters_ng
+from koskari.compile.helpers import FORMALS, gather_formals, gather_parameters_ng
 from koskari.compile.helpers import gather_parameters
+from koskari.matcher import MATCH, is_binder_spec, extract_binder_symbols, match
 
 
 class TestGatherParameters(unittest.TestCase):
@@ -341,6 +342,71 @@ class TestGatherFormals(unittest.TestCase):
     def test_not_symbol_or_pair_raises(self):
         with self.assertRaises(SpecialError):
             gather_formals(42)
+
+
+class TestFormalsMatcher(unittest.TestCase):
+
+    def test_formals_matcher_positional(self):
+        a = symbol('a')
+        b = symbol('b')
+        formals_list = cons(a, cons(b, nil))
+        src = cons(formals_list, nil)
+        result = match(src, MATCH(FORMALS('formals')))
+        self.assertIsNotNone(result)
+        pos, defaults, kwonly, star, starstar = result['formals']
+        self.assertEqual(len(pos), 2)
+        self.assertEqual(pos[0], a)
+        self.assertEqual(pos[1], b)
+        self.assertEqual(defaults, [])
+        self.assertEqual(kwonly, [])
+        self.assertIsNone(star)
+        self.assertIsNone(starstar)
+
+    def test_formals_matcher_symbol_rest(self):
+        rest = symbol('rest')
+        src = cons(rest, nil)
+        result = match(src, MATCH(FORMALS('formals')))
+        self.assertIsNotNone(result)
+        pos, defaults, kwonly, star, starstar = result['formals']
+        self.assertEqual(pos, [])
+        self.assertEqual(defaults, [])
+        self.assertEqual(kwonly, [])
+        self.assertIs(star, rest)
+        self.assertIsNone(starstar)
+
+    def test_formals_matcher_with_keywords(self):
+        a = symbol('a')
+        k = keyword('k')
+        v = symbol('v')
+        formals_list = cons(a, cons(k, cons(v, nil)))
+        src = cons(formals_list, nil)
+        result = match(src, MATCH(FORMALS('formals')))
+        self.assertIsNotNone(result)
+        pos, defaults, kwonly, star, starstar = result['formals']
+        self.assertEqual(pos, [a])
+        self.assertEqual(len(defaults), 1)
+        self.assertEqual(defaults[0], (k, v))
+        self.assertEqual(kwonly, [])
+        self.assertIsNone(star)
+        self.assertIsNone(starstar)
+
+    def test_formals_matcher_non_formals_fails(self):
+        src = cons(42, nil)
+        result = match(src, MATCH(FORMALS('formals')))
+        self.assertIsNone(result)
+
+    def test_is_binder_spec_formals(self):
+        m = FORMALS('f')
+        self.assertTrue(is_binder_spec(m))
+
+    def test_extract_binder_symbols_formals(self):
+        a = symbol('a')
+        b = symbol('b')
+        rest = symbol('rest')
+        spec = FORMALS('x')
+        pos, defaults, kwonly, star, starstar = ([a, b], [], [], rest, None)
+        vals = list(extract_binder_symbols(spec, (pos, defaults, kwonly, star, starstar)))
+        self.assertEqual({str(s) for s in vals}, {'a', 'b', 'rest'})
 
 
 # The end.

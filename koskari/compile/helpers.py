@@ -32,6 +32,7 @@ from ..matcher import (
 __all__ = (
     "BIND_BINDINGS",
     "BINDINGS",
+    "FORMALS",
     "const_only_expr",
     "convert_bindings",
     "gather_bindings",
@@ -193,6 +194,63 @@ def BIND_BINDINGS(slot):
     Deprecated alias for BINDINGS(slot). Use BINDINGS(slot) instead.
     """
     return BINDINGS(slot)
+
+
+_tag_formals = symbol('matcher/formals')
+
+
+@matcher(_tag_formals)
+class _FormalsMatcher:
+    """
+    Match formals (pair or symbol) and bind the result of gather_formals
+    as (positional, defaults, kwonly, star, starstar)
+    """
+
+    def __init__(self, slot, *, scope=None, scopes=None):
+        self.slot = slot
+        self._key = str(slot)
+        self.scope = scope
+        self.scopes = scopes
+
+
+    @classmethod
+    def from_payload(cls, payload, deserialize):
+        if len(payload) != 1:
+            raise ValueError('formals expects 1 payload, got %d' % len(payload))
+        return cls(payload[0])
+
+
+    def match(self, source, literals, result, specs=None):
+        if source is nil:
+            return (None, False)
+        head = car(source)
+        tail = cdr(source)
+        if not (is_symbol(head) or is_pair(head)):
+            return (None, False)
+        try:
+            pos, defaults, kwonly, star, starstar = gather_formals(head, head)
+        except SpecialError:
+            return (None, False)
+        result[self._key] = (pos, defaults, kwonly, star, starstar)
+        if specs is not None:
+            specs[self._key] = self
+        return (tail, True)
+
+
+    def to_tuple(self):
+        return (_tag_formals, symbol(self._key) if isinstance(self.slot, str) else self.slot)
+
+
+def FORMALS(slot, *, scope=None, scopes=None):
+    """
+    Match formals and bind (positional, defaults, kwonly, star, starstar)
+    from gather_formals
+
+    :param slot: capture key
+    :param scope: single scope region key
+    :param scopes: sequence of scope region keys
+    """
+    return _FormalsMatcher(slot, scope=scope, scopes=scopes)
 
 
 _BINDING_PATTERNS_3 = [
