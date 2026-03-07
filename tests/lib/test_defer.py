@@ -25,16 +25,16 @@ from tests import make_callable
 from tests.lib.opcode import build_expr, run_to_completion
 
 
-class TestDeferType(unittest.TestCase):
+class TestDeferType(unittest.IsolatedAsyncioTestCase):
     """Tests for defer type registration and construction from Python."""
 
-    def test_defer_type_exists(self):
+    async def test_defer_type_exists(self):
         """defer type is registered in the module."""
 
         self.assertTrue(hasattr(lib, "defer"))
         self.assertEqual(lib.defer.__name__, "defer")
 
-    def test_defer_construct_positional(self):
+    async def test_defer_construct_positional(self):
         """defer(fn, a, b) creates a pending defer."""
 
         def fn(x, y):
@@ -43,7 +43,7 @@ class TestDeferType(unittest.TestCase):
         self.assertIsInstance(d, lib.defer)
         self.assertIn("pending", repr(d))
 
-    def test_defer_construct_with_kwds(self):
+    async def test_defer_construct_with_kwds(self):
         """defer(fn, a, key=val) creates a pending defer with kwds."""
 
         def fn(x, key=0):
@@ -52,7 +52,7 @@ class TestDeferType(unittest.TestCase):
         self.assertIsInstance(d, lib.defer)
         self.assertIn("pending", repr(d))
 
-    def test_defer_construct_single_arg(self):
+    async def test_defer_construct_single_arg(self):
         """defer(fn) creates a pending defer with no args."""
 
         def fn():
@@ -62,10 +62,10 @@ class TestDeferType(unittest.TestCase):
         self.assertIn("pending", repr(d))
 
 
-class TestDeferNoAutoAwait(unittest.TestCase):
+class TestDeferNoAutoAwait(unittest.IsolatedAsyncioTestCase):
     """Defer returned from a call is not auto-awaited; it is pushed as a value."""
 
-    def test_call_returns_defer_as_value(self):
+    async def test_call_returns_defer_as_value(self):
         """Calling (defer fn 42) returns a defer, not the result of fn(42)."""
 
         code, ns = build_expr([
@@ -80,10 +80,10 @@ class TestDeferNoAutoAwait(unittest.TestCase):
         self.assertIn("pending", repr(result))
 
 
-class TestDeferExplicitAwait(unittest.TestCase):
+class TestDeferExplicitAwait(unittest.IsolatedAsyncioTestCase):
     """Explicit (await (defer f a b)) runs f(a,b) once and returns the value."""
 
-    def test_await_defer_returns_value(self):
+    async def test_await_defer_returns_value(self):
         """await (defer identity 42) returns 42."""
 
         code, ns = build_expr([
@@ -97,7 +97,7 @@ class TestDeferExplicitAwait(unittest.TestCase):
         result = run_to_completion(make_callable(code, ns)())
         self.assertEqual(result, 42)
 
-    def test_await_defer_calls_fn_once(self):
+    async def test_await_defer_calls_fn_once(self):
         """Deferred function is invoked exactly once on first await."""
 
         calls = []
@@ -119,10 +119,10 @@ class TestDeferExplicitAwait(unittest.TestCase):
         self.assertEqual(calls, [21])
 
 
-class TestDeferOfDefer(unittest.TestCase):
+class TestDeferOfDefer(unittest.IsolatedAsyncioTestCase):
     """Defer-of-defer collapses; outer adopt inner, single handle."""
 
-    def test_await_defer_of_defer_returns_value(self):
+    async def test_await_defer_of_defer_returns_value(self):
         """(await (defer g (defer f 1))) runs g and f, returns final value."""
 
         def f(x):

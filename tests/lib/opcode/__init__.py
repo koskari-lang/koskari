@@ -14,13 +14,14 @@
 """
 Shared helpers and base class for opcode tests.
 
-Provides build_code, build_expr, run_to_completion, _op, and CevalTest
-for tests under tests.lib.opcode.
+Provides build_code, build_expr, run_to_completion, _op, CevalTest, and
+run_asyncio_in_thread for tests under tests.lib.opcode.
 
 :author: Christopher O'Brien <obriencj@preoccupied.net>
 :license: GNU General Public License v3
 """
 
+import asyncio
 import unittest
 
 from koskari.lib import (
@@ -81,6 +82,19 @@ def build_expr(code, local_syms=None, values=None, name="expr"):
     return (c, ns)
 
 
+async def run_asyncio_in_thread(coro_fn):
+    """
+    Run coro_fn() via asyncio.run() in a thread. For use from async tests
+    when the code under test requires its own event loop.
+    """
+
+    def run():
+        return asyncio.run(coro_fn())
+
+    loop = asyncio.get_running_loop()
+    return await loop.run_in_executor(None, run)
+
+
 def run_to_completion(coro):
     """
     Drive the coroutine until StopIteration; return the yielded value
@@ -96,7 +110,7 @@ def run_to_completion(coro):
         return e.value
 
 
-class CevalTest(unittest.TestCase):
+class CevalTest(unittest.IsolatedAsyncioTestCase):
     """
     Base class with assertion helpers for opcode tests
     """

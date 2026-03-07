@@ -18,16 +18,16 @@ class block syntax with optional superclass list.
 """
 
 
-from unittest import TestCase
+from unittest import IsolatedAsyncioTestCase
 
 from koskari.types import symbol
 from koskari.compile.helpers import pycons
 from .. import parse_layout
 
 
-class TestLayoutClass(TestCase):
+class TestLayoutClass(IsolatedAsyncioTestCase):
 
-    def test_class_omit_supers(self):
+    async def test_class_omit_supers(self):
         src = """
         class C:
           x
@@ -41,7 +41,7 @@ class TestLayoutClass(TestCase):
         self.assertEqual(result, expected)
 
 
-    def test_class_with_supers(self):
+    async def test_class_with_supers(self):
         src = """
         class C (Base):
           x
@@ -55,7 +55,7 @@ class TestLayoutClass(TestCase):
         self.assertEqual(result, expected)
 
 
-    def test_class_empty_supers(self):
+    async def test_class_empty_supers(self):
         src = """
         class C ():
           x

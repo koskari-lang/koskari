@@ -170,12 +170,12 @@ class TestEvalModuleIntegration(unittest.TestCase):
         self.assertTrue(callable(lib.iter_sync))
 
 
-class TestCoroutineRunIntegration(unittest.TestCase):
+class TestCoroutineRunIntegration(unittest.IsolatedAsyncioTestCase):
     """
     Integration tests for Coroutine.run() via run_sync
     """
 
-    def test_coroutine_run_uses_run_sync(self):
+    async def test_coroutine_run_uses_run_sync(self):
         """Coroutine.run() completes and returns value"""
 
         from tests import make_callable
@@ -186,7 +186,7 @@ class TestCoroutineRunIntegration(unittest.TestCase):
             ["RETURN", 1],
         ])
         expr = make_callable(code, ns)
-        result = expr().run()
+        result = await expr()
         self.assertEqual(result, 42)
 
 

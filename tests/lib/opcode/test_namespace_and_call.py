@@ -30,7 +30,7 @@ class TestNamespaceAndCall(CevalTest):
     Tests for VAR, GLOBALS, LOCALS, CALL, TAIL_CALL
     """
 
-    def test_var_loads_from_namespace(self):
+    async def test_var_loads_from_namespace(self):
         """
         VAR name loads value from namespace onto stack
         """
@@ -43,7 +43,7 @@ class TestNamespaceAndCall(CevalTest):
         self.assertEqual(result, 99)
 
 
-    def test_var_clear_raises_name_error_for_missing_name(self):
+    async def test_var_clear_raises_name_error_for_missing_name(self):
         """
         VAR_CLEAR raises NameError when name is not defined
         """
@@ -53,7 +53,7 @@ class TestNamespaceAndCall(CevalTest):
             run_to_completion(make_callable(code_obj, ns)())
 
 
-    def test_var_ref_raises_name_error_for_missing_name(self):
+    async def test_var_ref_raises_name_error_for_missing_name(self):
         """
         VAR_REF raises NameError when name is not defined
         """
@@ -63,7 +63,7 @@ class TestNamespaceAndCall(CevalTest):
             run_to_completion(make_callable(code_obj, ns)())
 
 
-    def test_var_store_with_empty_stack_raises(self):
+    async def test_var_store_with_empty_stack_raises(self):
         """
         VAR_STORE with empty stack raises (stack underrun or RuntimeError)
         """
@@ -73,7 +73,7 @@ class TestNamespaceAndCall(CevalTest):
             run_to_completion(make_callable(code_obj, ns)())
 
 
-    def test_globals_pushes_globals_dict(self):
+    async def test_globals_pushes_globals_dict(self):
         """
         GLOBALS pushes the frame globals (namespace) onto stack
         """
@@ -86,7 +86,7 @@ class TestNamespaceAndCall(CevalTest):
         self.assertIs(result, ns)
 
 
-    def test_locals_pushes_locals_dict(self):
+    async def test_locals_pushes_locals_dict(self):
         """
         LOCALS pushes the frame locals (namespace) onto stack
         """
@@ -99,7 +99,7 @@ class TestNamespaceAndCall(CevalTest):
         self.assertIs(result, ns)
 
 
-    def test_call_invokes_callable_zero_args(self):
+    async def test_call_invokes_callable_zero_args(self):
         """
         CALL 0 invokes callable on stack with no args
         """
@@ -114,7 +114,7 @@ class TestNamespaceAndCall(CevalTest):
         result = run_to_completion(make_callable(code, ns)())
         self.assertEqual(result, 42)
 
-    def test_call_invokes_callable_one_arg(self):
+    async def test_call_invokes_callable_one_arg(self):
         """
         CALL 1 invokes callable with one argument (vectorcall path)
         """
@@ -130,7 +130,7 @@ class TestNamespaceAndCall(CevalTest):
         self.assertEqual(result, 42)
 
 
-    def test_tail_call_replaces_frame_returns_result(self):
+    async def test_tail_call_replaces_frame_returns_result(self):
         """
         TAIL_CALL with KosFunction replaces current frame; callee return value
         is the result of the invocation
@@ -149,7 +149,7 @@ class TestNamespaceAndCall(CevalTest):
         self.assertEqual(result, 42)
 
 
-    def test_call_apply_helper_to_python_callable(self):
+    async def test_call_apply_helper_to_python_callable(self):
         """CALL apply delegates to python callable for normal objects."""
 
         def plus(a, b, c=0):
@@ -168,7 +168,7 @@ class TestNamespaceAndCall(CevalTest):
         self.assertEqual(result, 9)
 
 
-    def test_call_apply_helper_to_koskari_function(self):
+    async def test_call_apply_helper_to_koskari_function(self):
         """CALL apply with Koskari Function target executes and returns value."""
 
         import koskari.lib as lib

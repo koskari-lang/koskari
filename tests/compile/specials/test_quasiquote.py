@@ -39,33 +39,33 @@ class TestQuasiquoteAtoms(SpecialsTestCase):
     Quasi-quoting atomic values
     """
 
-    def test_quasiquote_symbol(self):
+    async def test_quasiquote_symbol(self):
         """
         `foo yields the symbol foo
         """
 
         expr, mod = self.compile_expr("`foo")
-        result = expr().run()
+        result = await expr()
         self.assertEqual(result, symbol("foo"))
 
 
-    def test_quasiquote_number(self):
+    async def test_quasiquote_number(self):
         """
         `42 yields the integer 42
         """
 
         expr, mod = self.compile_expr("`42")
-        result = expr().run()
+        result = await expr()
         self.assertEqual(result, 42)
 
 
-    def test_quasiquote_nil(self):
+    async def test_quasiquote_nil(self):
         """
         `() yields nil
         """
 
         expr, mod = self.compile_expr("`()")
-        result = expr().run()
+        result = await expr()
         self.assertIs(result, nil)
 
 
@@ -74,25 +74,25 @@ class TestQuasiquoteProperList(SpecialsTestCase):
     Quasi-quoting proper lists with no unquote (all-constant tuple path)
     """
 
-    def test_quasiquote_simple_list(self):
+    async def test_quasiquote_simple_list(self):
         """
         `(a b c) yields (a b c) as a proper list
         """
 
         expr, mod = self.compile_expr("`(a b c)")
-        result = expr().run()
+        result = await expr()
         self.assertEqual(
             [symbol("a"), symbol("b"), symbol("c")],
             list(result.unpack()))
 
 
-    def test_quasiquote_nested_list(self):
+    async def test_quasiquote_nested_list(self):
         """
         `(a (b c)) yields a nested proper list
         """
 
         expr, mod = self.compile_expr("`(a (b c))")
-        result = expr().run()
+        result = await expr()
         outer = list(result.unpack())
         self.assertEqual(symbol("a"), outer[0])
         self.assertEqual(
@@ -100,13 +100,13 @@ class TestQuasiquoteProperList(SpecialsTestCase):
             list(outer[1].unpack()))
 
 
-    def test_quasiquote_list_is_proper(self):
+    async def test_quasiquote_list_is_proper(self):
         """
         `(a b) produces a proper list
         """
 
         expr, mod = self.compile_expr("`(a b)")
-        result = expr().run()
+        result = await expr()
         self.assertTrue(result.is_proper())
 
 
@@ -115,59 +115,59 @@ class TestQuasiquoteUnquote(SpecialsTestCase):
     Quasi-quoting lists containing unquote (,expr)
     """
 
-    def test_unquote_single_element(self):
+    async def test_unquote_single_element(self):
         """
         `(,x) with x=99 yields (99)
         """
 
         expr, mod = self.compile_expr("`(,x)", x=99)
-        result = expr().run()
+        result = await expr()
         self.assertEqual([99], list(result.unpack()))
 
 
-    def test_unquote_head_of_list(self):
+    async def test_unquote_head_of_list(self):
         """
         `(,x b c) evaluates x and keeps b, c as symbols
         """
 
         expr, mod = self.compile_expr("`(,x b c)", x=1)
-        result = expr().run()
+        result = await expr()
         self.assertEqual(
             [1, symbol("b"), symbol("c")],
             list(result.unpack()))
 
 
-    def test_unquote_middle_of_list(self):
+    async def test_unquote_middle_of_list(self):
         """
         `(a ,x c) evaluates x in the middle position
         """
 
         expr, mod = self.compile_expr("`(a ,x c)", x=2)
-        result = expr().run()
+        result = await expr()
         self.assertEqual(
             [symbol("a"), 2, symbol("c")],
             list(result.unpack()))
 
 
-    def test_unquote_tail_of_list(self):
+    async def test_unquote_tail_of_list(self):
         """
         `(a b ,x) evaluates x as last element
         """
 
         expr, mod = self.compile_expr("`(a b ,x)", x=3)
-        result = expr().run()
+        result = await expr()
         self.assertEqual(
             [symbol("a"), symbol("b"), 3],
             list(result.unpack()))
 
 
-    def test_unquote_expression(self):
+    async def test_unquote_expression(self):
         """
         `(a ,(+ x 1)) evaluates the sub-expression at runtime
         """
 
         expr, mod = self.compile_expr("`(a ,(+ x 1))", x=10)
-        result = expr().run()
+        result = await expr()
         self.assertEqual(
             [symbol("a"), 11],
             list(result.unpack()))
@@ -185,57 +185,57 @@ class TestQuasiquoteSplice(SpecialsTestCase):
         return result
 
 
-    def test_splice_only(self):
+    async def test_splice_only(self):
         """
         `(,@lst) with lst=(1 2 3) yields (1 2 3)
         """
 
         lst = self._make_list(1, 2, 3)
         expr, mod = self.compile_expr("`(,@lst)", lst=lst)
-        result = expr().run()
+        result = await expr()
         self.assertEqual([1, 2, 3], list(result.unpack()))
 
 
-    def test_splice_at_front(self):
+    async def test_splice_at_front(self):
         """
         `(,@lst b c) prepends lst before b, c
         """
 
         lst = self._make_list(1, 2)
         expr, mod = self.compile_expr("`(,@lst b c)", lst=lst)
-        result = expr().run()
+        result = await expr()
         self.assertEqual(
             [1, 2, symbol("b"), symbol("c")],
             list(result.unpack()))
 
 
-    def test_splice_in_middle(self):
+    async def test_splice_in_middle(self):
         """
         `(a ,@lst c) inserts lst after a
         """
 
         lst = self._make_list(10, 20)
         expr, mod = self.compile_expr("`(a ,@lst c)", lst=lst)
-        result = expr().run()
+        result = await expr()
         self.assertEqual(
             [symbol("a"), 10, 20, symbol("c")],
             list(result.unpack()))
 
 
-    def test_splice_at_end(self):
+    async def test_splice_at_end(self):
         """
         `(a b ,@lst) appends lst after a, b
         """
 
         lst = self._make_list(3, 4)
         expr, mod = self.compile_expr("`(a b ,@lst)", lst=lst)
-        result = expr().run()
+        result = await expr()
         self.assertEqual(
             [symbol("a"), symbol("b"), 3, 4],
             list(result.unpack()))
 
 
-    def test_splice_two_sites(self):
+    async def test_splice_two_sites(self):
         """
         `(,@x ,@y) with x=(1 2) and y=(3 4) yields (1 2 3 4)
         """
@@ -243,43 +243,43 @@ class TestQuasiquoteSplice(SpecialsTestCase):
         x = self._make_list(1, 2)
         y = self._make_list(3, 4)
         expr, mod = self.compile_expr("`(,@x ,@y)", x=x, y=y)
-        result = expr().run()
+        result = await expr()
         self.assertEqual([1, 2, 3, 4], list(result.unpack()))
 
 
-    def test_splice_with_unquote(self):
+    async def test_splice_with_unquote(self):
         """
         `(a ,v ,@lst b) mixes unquote and splice
         """
 
         lst = self._make_list(10, 20)
         expr, mod = self.compile_expr("`(a ,v ,@lst b)", v=99, lst=lst)
-        result = expr().run()
+        result = await expr()
         self.assertEqual(
             [symbol("a"), 99, 10, 20, symbol("b")],
             list(result.unpack()))
 
 
-    def test_splice_empty_list(self):
+    async def test_splice_empty_list(self):
         """
         `(a ,@lst b) with lst=nil yields (a b)
         """
 
         expr, mod = self.compile_expr("`(a ,@lst b)", lst=nil)
-        result = expr().run()
+        result = await expr()
         self.assertEqual(
             [symbol("a"), symbol("b")],
             list(result.unpack()))
 
 
-    def test_splice_result_is_proper(self):
+    async def test_splice_result_is_proper(self):
         """
         Splice always produces a proper list
         """
 
         lst = self._make_list(1, 2)
         expr, mod = self.compile_expr("`(,@lst)", lst=lst)
-        result = expr().run()
+        result = await expr()
         self.assertTrue(result.is_proper())
 
 
@@ -293,37 +293,37 @@ class TestQuasiquoteDottedPair(SpecialsTestCase):
     dotted tails produce genuine improper pairs.
     """
 
-    def test_dotted_constant_tail(self):
+    async def test_dotted_constant_tail(self):
         """
         `(a . b) yields (a . b) as an improper pair
         """
 
         expr, mod = self.compile_expr("`(a . b)")
-        result = expr().run()
+        result = await expr()
         self.assertEqual(symbol("a"), result[0])
         self.assertEqual(symbol("b"), result[1])
         self.assertFalse(result.is_proper())
 
 
-    def test_dotted_number_tail(self):
+    async def test_dotted_number_tail(self):
         """
         `(a . 42) yields (a . 42) as an improper pair (atom tail)
         """
 
         expr, mod = self.compile_expr("`(a . 42)")
-        result = expr().run()
+        result = await expr()
         self.assertEqual(symbol("a"), result[0])
         self.assertEqual(42, result[1])
         self.assertFalse(result.is_proper())
 
 
-    def test_dotted_multi_element_constant_tail(self):
+    async def test_dotted_multi_element_constant_tail(self):
         """
         `(a b . c) yields the improper list (a b . c)
         """
 
         expr, mod = self.compile_expr("`(a b . c)")
-        result = expr().run()
+        result = await expr()
         self.assertEqual(symbol("a"), result[0])
         self.assertEqual(symbol("b"), result[1][0])
         self.assertEqual(symbol("c"), result[1][1])
@@ -336,14 +336,14 @@ class TestQuasiquoteNested(SpecialsTestCase):
     inner unquotes are not evaluated until the outer quasiquote is active
     """
 
-    def test_nested_quasiquote_inner_unquote_not_evaluated(self):
+    async def test_nested_quasiquote_inner_unquote_not_evaluated(self):
         """
         ``(a ,(+ 1 2)) at the outer level yields (compile/quasiquote (a (compile/unquote (+ 1 2))))
         as a literal data structure — the inner unquote is NOT evaluated
         """
 
         expr, mod = self.compile_expr("``(a ,(+ 1 2))")
-        result = expr().run()
+        result = await expr()
         # result is (compile/quasiquote (a (compile/unquote (+ 1 2))))
         self.assertEqual(symbol("compile/quasiquote"), result[0])
         inner = result[1][0]
@@ -352,13 +352,13 @@ class TestQuasiquoteNested(SpecialsTestCase):
         self.assertEqual(symbol("compile/unquote"), unquote_form[0])
 
 
-    def test_nested_quasiquote_level_tracking(self):
+    async def test_nested_quasiquote_level_tracking(self):
         """
         ``x yields (compile/quasiquote x) as a literal pair
         """
 
         expr, mod = self.compile_expr("``x")
-        result = expr().run()
+        result = await expr()
         self.assertEqual(symbol("compile/quasiquote"), result[0])
         self.assertEqual(symbol("x"), result[1][0])
 
@@ -368,7 +368,7 @@ class TestQuasiquoteErrors(SpecialsTestCase):
     Error cases: unquote and unquote-splicing outside quasiquote
     """
 
-    def test_unquote_outside_quasiquote_raises(self):
+    async def test_unquote_outside_quasiquote_raises(self):
         """
         (compile/unquote x) at top level raises SpecialError
         """
@@ -376,7 +376,7 @@ class TestQuasiquoteErrors(SpecialsTestCase):
         self.assertRaises(SpecialError, self.compile_expr, "(compile/unquote x)")
 
 
-    def test_unquote_splicing_outside_quasiquote_raises(self):
+    async def test_unquote_splicing_outside_quasiquote_raises(self):
         """
         (compile/unquote-splicing x) at top level raises SpecialError
         """
@@ -387,7 +387,7 @@ class TestQuasiquoteErrors(SpecialsTestCase):
             "(compile/unquote-splicing x)")
 
 
-    def test_unquote_splicing_outside_quasiquote_also_raises(self):
+    async def test_unquote_splicing_outside_quasiquote_also_raises(self):
         """
         (compile/unquote-splicing x) at top level raises SpecialError
         """
@@ -426,7 +426,7 @@ def _register_layouts(ns):
         ns.store(str(sym), handler)
 
 
-class QuasiquoteBlockTestCase(unittest.TestCase):
+class QuasiquoteBlockTestCase(unittest.IsolatedAsyncioTestCase):
     """
     Base for compile/quasiquote-block tests.
 
@@ -454,7 +454,7 @@ class QuasiquoteBlockTestCase(unittest.TestCase):
         return module, mod_ns, compiler
 
 
-    def compile_cons_to_source(self, source, **defns):
+    async def compile_cons_to_source(self, source, **defns):
         """
         Compile a cons source form and run it to obtain the intermediate
         source cons produced by compile/quasiquote-block.
@@ -467,11 +467,11 @@ class QuasiquoteBlockTestCase(unittest.TestCase):
         module, mod_ns, compiler = self.make_module(**defns)
         fragment = compiler.full_compile(source)
         expr = fragment.as_expression(mod_ns)
-        intermediate = expr().run()
+        intermediate = await expr()
         return intermediate, module, mod_ns, compiler
 
 
-    def compile_layout_src_to_source(self, src_str, **defns):
+    async def compile_layout_src_to_source(self, src_str, **defns):
         """
         Read a layout-syntax source string, compile it, and run it to obtain
         the intermediate source cons produced by compile/quasiquote-block.
@@ -491,11 +491,11 @@ class QuasiquoteBlockTestCase(unittest.TestCase):
         source = reader.read(stream)
         fragment = compiler.full_compile(source)
         expr = fragment.as_expression(mod_ns)
-        intermediate = expr().run()
+        intermediate = await expr()
         return intermediate, module, mod_ns, compiler
 
 
-    def run_source(self, intermediate, module, mod_ns, compiler):
+    async def run_source(self, intermediate, module, mod_ns, compiler):
         """
         Compile and run an intermediate source cons (the second phase).
 
@@ -508,7 +508,7 @@ class QuasiquoteBlockTestCase(unittest.TestCase):
 
         fragment2 = compiler.full_compile(intermediate)
         expr2 = fragment2.as_expression(mod_ns)
-        return expr2().run()
+        return await expr2()
 
 
 class TestQuasiquoteBlockShape(QuasiquoteBlockTestCase):
@@ -520,7 +520,7 @@ class TestQuasiquoteBlockShape(QuasiquoteBlockTestCase):
     (compile/apply-layout (:block: ...)) cons with unquote slots filled in.
     """
 
-    def test_static_begin_block_shape(self):
+    async def test_static_begin_block_shape(self):
         """
         Static block with no unquotes produces
         (compile/apply-layout (:block: (begin) (42)))
@@ -528,7 +528,7 @@ class TestQuasiquoteBlockShape(QuasiquoteBlockTestCase):
 
         block = _make_block((symbol('begin'),), (42,))
         source = cons(symbol('compile/quasiquote-block'), block, nil)
-        intermediate, _, _, _ = self.compile_cons_to_source(source)
+        intermediate, _, _, _ = await self.compile_cons_to_source(source)
 
         self.assertTrue(is_pair(intermediate))
         head, tail = intermediate
@@ -540,7 +540,7 @@ class TestQuasiquoteBlockShape(QuasiquoteBlockTestCase):
         self.assertIs(block_repr[0], _keyword_block)
 
 
-    def test_unquote_slot_filled(self):
+    async def test_unquote_slot_filled(self):
         """
         A ,x unquote site is filled with the runtime value of x in the
         intermediate source cons
@@ -549,7 +549,7 @@ class TestQuasiquoteBlockShape(QuasiquoteBlockTestCase):
         unquote_x = cons(symbol('compile/unquote'), symbol('x'), nil)
         block = _make_block((symbol('begin'),), (unquote_x,))
         source = cons(symbol('compile/quasiquote-block'), block, nil)
-        intermediate, _, _, _ = self.compile_cons_to_source(source, x=99)
+        intermediate, _, _, _ = await self.compile_cons_to_source(source, x=99)
 
         self.assertTrue(is_pair(intermediate))
         apply_sym, apply_tail = intermediate
@@ -562,7 +562,7 @@ class TestQuasiquoteBlockShape(QuasiquoteBlockTestCase):
         self.assertEqual(first_body_elem, 99)
 
 
-    def test_unquote_splicing_slot_filled(self):
+    async def test_unquote_splicing_slot_filled(self):
         """
         A ,@forms unquote-splicing site is spliced into the body list in the
         intermediate source cons
@@ -572,7 +572,7 @@ class TestQuasiquoteBlockShape(QuasiquoteBlockTestCase):
         block = _make_block((symbol('begin'),), (splice,))
         source = cons(symbol('compile/quasiquote-block'), block, nil)
         forms = cons(10, cons(20, nil))
-        intermediate, _, _, _ = self.compile_cons_to_source(source, forms=forms)
+        intermediate, _, _, _ = await self.compile_cons_to_source(source, forms=forms)
 
         self.assertTrue(is_pair(intermediate))
         apply_sym, apply_tail = intermediate
@@ -596,19 +596,19 @@ class TestQuasiquoteBlockTwoPhase(QuasiquoteBlockTestCase):
     Phase 2 compiles and runs that source cons to obtain the final value.
     """
 
-    def test_static_begin_block(self):
+    async def test_static_begin_block(self):
         """
         Static block with no unquotes; two-phase result is 42
         """
 
         block = _make_block((symbol('begin'),), (42,))
         source = cons(symbol('compile/quasiquote-block'), block, nil)
-        intermediate, module, mod_ns, compiler = self.compile_cons_to_source(source)
-        result = self.run_source(intermediate, module, mod_ns, compiler)
+        intermediate, module, mod_ns, compiler = await self.compile_cons_to_source(source)
+        result = await self.run_source(intermediate, module, mod_ns, compiler)
         self.assertEqual(result, 42)
 
 
-    def test_unquote_in_body(self):
+    async def test_unquote_in_body(self):
         """
         ,x unquote in body; with x=99 two-phase result is 99
         """
@@ -616,13 +616,13 @@ class TestQuasiquoteBlockTwoPhase(QuasiquoteBlockTestCase):
         unquote_x = cons(symbol('compile/unquote'), symbol('x'), nil)
         block = _make_block((symbol('begin'),), (unquote_x,))
         source = cons(symbol('compile/quasiquote-block'), block, nil)
-        intermediate, module, mod_ns, compiler = self.compile_cons_to_source(
+        intermediate, module, mod_ns, compiler = await self.compile_cons_to_source(
             source, x=99)
-        result = self.run_source(intermediate, module, mod_ns, compiler)
+        result = await self.run_source(intermediate, module, mod_ns, compiler)
         self.assertEqual(result, 99)
 
 
-    def test_unquote_splicing_in_body(self):
+    async def test_unquote_splicing_in_body(self):
         """
         ,@forms splice in body; with forms=(1 2 3) two-phase result is 3
         """
@@ -631,13 +631,13 @@ class TestQuasiquoteBlockTwoPhase(QuasiquoteBlockTestCase):
         block = _make_block((symbol('begin'),), (splice,))
         source = cons(symbol('compile/quasiquote-block'), block, nil)
         forms = cons(1, cons(2, cons(3, nil)))
-        intermediate, module, mod_ns, compiler = self.compile_cons_to_source(
+        intermediate, module, mod_ns, compiler = await self.compile_cons_to_source(
             source, forms=forms)
-        result = self.run_source(intermediate, module, mod_ns, compiler)
+        result = await self.run_source(intermediate, module, mod_ns, compiler)
         self.assertEqual(result, 3)
 
 
-    def test_if_else_peers_true_branch(self):
+    async def test_if_else_peers_true_branch(self):
         """
         begin block with if/else peer siblings; with cond=True result is 1
         """
@@ -647,13 +647,13 @@ class TestQuasiquoteBlockTwoPhase(QuasiquoteBlockTestCase):
         else_block = _make_block((symbol('else'),), (2,))
         outer = _make_block((symbol('begin'),), (if_block, else_block))
         source = cons(symbol('compile/quasiquote-block'), outer, nil)
-        intermediate, module, mod_ns, compiler = self.compile_cons_to_source(
+        intermediate, module, mod_ns, compiler = await self.compile_cons_to_source(
             source, cond=True)
-        result = self.run_source(intermediate, module, mod_ns, compiler)
+        result = await self.run_source(intermediate, module, mod_ns, compiler)
         self.assertEqual(result, 1)
 
 
-    def test_if_else_peers_false_branch(self):
+    async def test_if_else_peers_false_branch(self):
         """
         begin block with if/else peer siblings; with cond=False result is 2
         """
@@ -663,9 +663,9 @@ class TestQuasiquoteBlockTwoPhase(QuasiquoteBlockTestCase):
         else_block = _make_block((symbol('else'),), (2,))
         outer = _make_block((symbol('begin'),), (if_block, else_block))
         source = cons(symbol('compile/quasiquote-block'), outer, nil)
-        intermediate, module, mod_ns, compiler = self.compile_cons_to_source(
+        intermediate, module, mod_ns, compiler = await self.compile_cons_to_source(
             source, cond=False)
-        result = self.run_source(intermediate, module, mod_ns, compiler)
+        result = await self.run_source(intermediate, module, mod_ns, compiler)
         self.assertEqual(result, 2)
 
 
@@ -676,7 +676,7 @@ class TestQuasiquoteBlockFullStack(QuasiquoteBlockTestCase):
     again to obtain the final value.
     """
 
-    def test_static_begin_block(self):
+    async def test_static_begin_block(self):
         """
         `begin: 42 — two-phase result is 42
         """
@@ -685,12 +685,12 @@ class TestQuasiquoteBlockFullStack(QuasiquoteBlockTestCase):
         `begin:
           42
         """
-        intermediate, module, mod_ns, compiler = self.compile_layout_src_to_source(src)
-        result = self.run_source(intermediate, module, mod_ns, compiler)
+        intermediate, module, mod_ns, compiler = await self.compile_layout_src_to_source(src)
+        result = await self.run_source(intermediate, module, mod_ns, compiler)
         self.assertEqual(result, 42)
 
 
-    def test_unquote_body(self):
+    async def test_unquote_body(self):
         """
         `begin: ,x — with x=99 two-phase result is 99
         """
@@ -699,13 +699,13 @@ class TestQuasiquoteBlockFullStack(QuasiquoteBlockTestCase):
         `begin:
           ,x
         """
-        intermediate, module, mod_ns, compiler = self.compile_layout_src_to_source(
+        intermediate, module, mod_ns, compiler = await self.compile_layout_src_to_source(
             src, x=99)
-        result = self.run_source(intermediate, module, mod_ns, compiler)
+        result = await self.run_source(intermediate, module, mod_ns, compiler)
         self.assertEqual(result, 99)
 
 
-    def test_unquote_splicing_body(self):
+    async def test_unquote_splicing_body(self):
         """
         `begin: ,@forms — with forms=(1 2 3) two-phase result is 3
         """
@@ -715,13 +715,13 @@ class TestQuasiquoteBlockFullStack(QuasiquoteBlockTestCase):
           ,@forms
         """
         forms = cons(1, cons(2, cons(3, nil)))
-        intermediate, module, mod_ns, compiler = self.compile_layout_src_to_source(
+        intermediate, module, mod_ns, compiler = await self.compile_layout_src_to_source(
             src, forms=forms)
-        result = self.run_source(intermediate, module, mod_ns, compiler)
+        result = await self.run_source(intermediate, module, mod_ns, compiler)
         self.assertEqual(result, 3)
 
 
-    def test_if_else_unquote_true(self):
+    async def test_if_else_unquote_true(self):
         """
         `begin: if ,cond: ,yes else: ,no — with cond=True two-phase result is 1
         """
@@ -733,13 +733,13 @@ class TestQuasiquoteBlockFullStack(QuasiquoteBlockTestCase):
           else:
             ,no
         """
-        intermediate, module, mod_ns, compiler = self.compile_layout_src_to_source(
+        intermediate, module, mod_ns, compiler = await self.compile_layout_src_to_source(
             src, cond=True, yes=1, no=2)
-        result = self.run_source(intermediate, module, mod_ns, compiler)
+        result = await self.run_source(intermediate, module, mod_ns, compiler)
         self.assertEqual(result, 1)
 
 
-    def test_if_else_unquote_false(self):
+    async def test_if_else_unquote_false(self):
         """
         `begin: if ,cond: ,yes else: ,no — with cond=False two-phase result is 2
         """
@@ -751,9 +751,9 @@ class TestQuasiquoteBlockFullStack(QuasiquoteBlockTestCase):
           else:
             ,no
         """
-        intermediate, module, mod_ns, compiler = self.compile_layout_src_to_source(
+        intermediate, module, mod_ns, compiler = await self.compile_layout_src_to_source(
             src, cond=False, yes=1, no=2)
-        result = self.run_source(intermediate, module, mod_ns, compiler)
+        result = await self.run_source(intermediate, module, mod_ns, compiler)
         self.assertEqual(result, 2)
 
 

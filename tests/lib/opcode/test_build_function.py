@@ -30,7 +30,7 @@ class TestBuildFunction(CevalTest):
     Tests for BUILD_FUNCTION: CONST (FunctionSpec), BUILD_FUNCTION N, RETURN 1.
     """
 
-    def test_build_function_no_defaults_returns_function(self):
+    async def test_build_function_no_defaults_returns_function(self):
         """
         CONST fspec, BUILD_FUNCTION 0, RETURN 1 yields a Function
         """
@@ -44,7 +44,7 @@ class TestBuildFunction(CevalTest):
         result = run_to_completion(make_callable(code_obj, ns)())
         self.assertIsInstance(result, Function)
 
-    def test_build_function_returned_function_is_callable(self):
+    async def test_build_function_returned_function_is_callable(self):
         """
         Function built via BUILD_FUNCTION is callable and returns a coroutine
         """

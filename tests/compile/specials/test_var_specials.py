@@ -27,7 +27,7 @@ from . import SpecialsTestCase
 
 class TestSetqSpecial(SpecialsTestCase):
 
-    def test_setq_then_read(self):
+    async def test_setq_then_read(self):
         src_str = """
         (compile/let [[x 0]]
           (compile/begin
@@ -41,7 +41,7 @@ class TestSetqSpecial(SpecialsTestCase):
 
 class TestRefqSpecial(SpecialsTestCase):
 
-    def test_refq_deref(self):
+    async def test_refq_deref(self):
         def deref(r):
             return r.deref()
 
@@ -56,7 +56,7 @@ class TestRefqSpecial(SpecialsTestCase):
 
 class TestBindqSpecial(SpecialsTestCase):
 
-    def test_bindq_then_read(self):
+    async def test_bindq_then_read(self):
         src_str = """
         (compile/begin
           (compile/bindq y (compile/ref-attr obj value))
@@ -70,7 +70,7 @@ class TestBindqSpecial(SpecialsTestCase):
 
 class TestDelqSpecial(SpecialsTestCase):
 
-    def test_delq_returns_none(self):
+    async def test_delq_returns_none(self):
         src_str = """
         (compile/let [[z 1]]
           (compile/delq z))

@@ -31,7 +31,7 @@ class TestExceptionOpcodes(CevalTest):
     CHECK_EXCEPTION
     """
 
-    def test_push_try_pop_try_exception_handler(self):
+    async def test_push_try_pop_try_exception_handler(self):
         """
         PUSH_TRY, RAISE, EXCEPTION, POP, POP_TRY: catch and return 42
         """
@@ -52,7 +52,7 @@ class TestExceptionOpcodes(CevalTest):
         self.assertEqual(result, 42)
 
 
-    def test_eval_try_except_catch(self):
+    async def test_eval_try_except_catch(self):
         """
         Mirrors native test_eval_try_except_catch: same bytecode operations.
         PUSH_TRY 3, CONST (ValueError), RAISE 1, LABEL 3, EXCEPTION 0,
@@ -76,7 +76,7 @@ class TestExceptionOpcodes(CevalTest):
         self.assertEqual(result, 42)
 
 
-    def test_push_finally_pop_finally_runs_on_raise(self):
+    async def test_push_finally_pop_finally_runs_on_raise(self):
         """
         PUSH_FINALLY, RAISE, finally block runs, POP_FINALLY
         """
@@ -98,7 +98,7 @@ class TestExceptionOpcodes(CevalTest):
             run_to_completion(make_callable(code, ns)())
 
 
-    def test_exception_push_current_exception(self):
+    async def test_exception_push_current_exception(self):
         """
         EXCEPTION pushes current exception onto stack; handler pops and returns 42
         """
@@ -119,7 +119,7 @@ class TestExceptionOpcodes(CevalTest):
         self.assertEqual(result, 42)
 
 
-    def test_raise_propagates_exception(self):
+    async def test_raise_propagates_exception(self):
         """
         RAISE 1 raises the exception instance on stack
         """
@@ -134,7 +134,7 @@ class TestExceptionOpcodes(CevalTest):
         self.assertIn("raised", str(ctx.exception))
 
 
-    def test_clear_try_clears_try_region(self):
+    async def test_clear_try_clears_try_region(self):
         """
         CLEAR_TRY marks try region as cleared
         """
@@ -153,7 +153,7 @@ class TestExceptionOpcodes(CevalTest):
         self.assertEqual(result, 42)
 
 
-    def test_clear_finally_clears_finally_region(self):
+    async def test_clear_finally_clears_finally_region(self):
         """
         CLEAR_FINALLY marks finally region as cleared
         """
@@ -171,7 +171,7 @@ class TestExceptionOpcodes(CevalTest):
         self.assertEqual(result, 42)
 
 
-    def test_exception_clear(self):
+    async def test_exception_clear(self):
         """
         EXCEPTION_CLEAR clears current exception state
         """
@@ -192,7 +192,7 @@ class TestExceptionOpcodes(CevalTest):
         self.assertEqual(result, 42)
 
 
-    def test_exception_match(self):
+    async def test_exception_match(self):
         """
         EXCEPTION_MATCH checks if current exception matches type on stack
         """
@@ -213,7 +213,7 @@ class TestExceptionOpcodes(CevalTest):
         self.assertEqual(result, True)
 
 
-    def test_check_exception_jumps_if_no_exception(self):
+    async def test_check_exception_jumps_if_no_exception(self):
         """
         CHECK_EXCEPTION jumps to label if no exception set
         """
@@ -231,7 +231,7 @@ class TestExceptionOpcodes(CevalTest):
         self.assertEqual(result, 42)
 
 
-    def test_try_stack_block_isolated_on_exception(self):
+    async def test_try_stack_block_isolated_on_exception(self):
         """
         Body pushes values, raises; handler sees clean stack (block cleared)
         """
@@ -255,7 +255,7 @@ class TestExceptionOpcodes(CevalTest):
         self.assertEqual(result, 42)
 
 
-    def test_finally_stack_block_isolated_on_exception(self):
+    async def test_finally_stack_block_isolated_on_exception(self):
         """
         Body pushes values, raises; finally sees clean stack (block cleared)
         """
@@ -279,7 +279,7 @@ class TestExceptionOpcodes(CevalTest):
             run_to_completion(make_callable(code, ns)())
 
 
-    def test_try_normal_path_drops_block(self):
+    async def test_try_normal_path_drops_block(self):
         """
         No exception; body runs, CLEAR_TRY, POP_TRY, POP 1, then RETURN
         """
@@ -298,7 +298,7 @@ class TestExceptionOpcodes(CevalTest):
         self.assertEqual(result, 42)
 
 
-    def test_finally_normal_path_drops_block(self):
+    async def test_finally_normal_path_drops_block(self):
         """
         Normal path, CLEAR_FINALLY, POP_FINALLY
         """
@@ -316,7 +316,7 @@ class TestExceptionOpcodes(CevalTest):
         self.assertEqual(result, 42)
 
 
-    def test_try_stack_depth_on_handler_entry(self):
+    async def test_try_stack_depth_on_handler_entry(self):
         """
         Body pushes N values, raises; handler gets EXCEPTION (stack cleared)
         """
@@ -340,7 +340,7 @@ class TestExceptionOpcodes(CevalTest):
         self.assertEqual(result, 42)
 
 
-    def test_finally_runs_on_normal_exit(self):
+    async def test_finally_runs_on_normal_exit(self):
         """
         Body completes, CLEAR_FINALLY, jump to finally, POP_FINALLY
         """
@@ -358,7 +358,7 @@ class TestExceptionOpcodes(CevalTest):
         self.assertEqual(result, 5)
 
 
-    def test_break_through_try_drops_block(self):
+    async def test_break_through_try_drops_block(self):
         """
         PUSH_TRY inside PUSH_LOOP; BREAK unwinds through TRY (drops its block)
         """
@@ -384,7 +384,7 @@ class TestExceptionOpcodes(CevalTest):
         self.assertEqual(result, 1)
 
 
-    def test_nested_try_finally(self):
+    async def test_nested_try_finally(self):
         """
         Outer PUSH_FINALLY, inner PUSH_TRY; inner raises, handler re-raises; finally runs
         """

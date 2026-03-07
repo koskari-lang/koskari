@@ -32,7 +32,7 @@ class TestObjectBinaryOpcodes(CevalTest):
     OBJECT_DIVMOD, OBJECT_BIT_LEFT, OBJECT_BIT_RIGHT
     """
 
-    def test_object_add(self):
+    async def test_object_add(self):
         code, ns = build_expr([
             ["CONST", 10],
             ["CONST", 32],
@@ -42,7 +42,7 @@ class TestObjectBinaryOpcodes(CevalTest):
         self.assertEqual(run_to_completion(make_callable(code, ns)()), 42)
 
 
-    def test_object_subtract(self):
+    async def test_object_subtract(self):
         code, ns = build_expr([
             ["CONST", 50],
             ["CONST", 8],
@@ -52,7 +52,7 @@ class TestObjectBinaryOpcodes(CevalTest):
         self.assertEqual(run_to_completion(make_callable(code, ns)()), 42)
 
 
-    def test_object_multiply(self):
+    async def test_object_multiply(self):
         code, ns = build_expr([
             ["CONST", 6],
             ["CONST", 7],
@@ -62,7 +62,7 @@ class TestObjectBinaryOpcodes(CevalTest):
         self.assertEqual(run_to_completion(make_callable(code, ns)()), 42)
 
 
-    def test_object_floor_divide(self):
+    async def test_object_floor_divide(self):
         code, ns = build_expr([
             ["CONST", 85],
             ["CONST", 2],
@@ -72,7 +72,7 @@ class TestObjectBinaryOpcodes(CevalTest):
         self.assertEqual(run_to_completion(make_callable(code, ns)()), 42)
 
 
-    def test_object_true_divide(self):
+    async def test_object_true_divide(self):
         code, ns = build_expr([
             ["CONST", 84],
             ["CONST", 2],
@@ -82,7 +82,7 @@ class TestObjectBinaryOpcodes(CevalTest):
         self.assertEqual(run_to_completion(make_callable(code, ns)()), 42.0)
 
 
-    def test_object_bit_and(self):
+    async def test_object_bit_and(self):
         code, ns = build_expr([
             ["CONST", 0xFF],
             ["CONST", 0x0F],
@@ -92,7 +92,7 @@ class TestObjectBinaryOpcodes(CevalTest):
         self.assertEqual(run_to_completion(make_callable(code, ns)()), 15)
 
 
-    def test_object_bit_or(self):
+    async def test_object_bit_or(self):
         code, ns = build_expr([
             ["CONST", 32],
             ["CONST", 10],
@@ -102,7 +102,7 @@ class TestObjectBinaryOpcodes(CevalTest):
         self.assertEqual(run_to_completion(make_callable(code, ns)()), 42)
 
 
-    def test_object_bit_xor(self):
+    async def test_object_bit_xor(self):
         code, ns = build_expr([
             ["CONST", 63],
             ["CONST", 21],
@@ -112,7 +112,7 @@ class TestObjectBinaryOpcodes(CevalTest):
         self.assertEqual(run_to_completion(make_callable(code, ns)()), 42)
 
 
-    def test_object_matrix_multiply(self):
+    async def test_object_matrix_multiply(self):
         class MatMulResult(object):
             def __matmul__(self, other):
                 return 42
@@ -125,7 +125,7 @@ class TestObjectBinaryOpcodes(CevalTest):
         self.assertEqual(run_to_completion(make_callable(code, ns)()), 42)
 
 
-    def test_object_power(self):
+    async def test_object_power(self):
         code, ns = build_expr([
             ["CONST", 2],
             ["CONST", 5],
@@ -135,7 +135,7 @@ class TestObjectBinaryOpcodes(CevalTest):
         self.assertEqual(run_to_completion(make_callable(code, ns)()), 32)
 
 
-    def test_object_modulo(self):
+    async def test_object_modulo(self):
         code, ns = build_expr([
             ["CONST", 17],
             ["CONST", 5],
@@ -145,7 +145,7 @@ class TestObjectBinaryOpcodes(CevalTest):
         self.assertEqual(run_to_completion(make_callable(code, ns)()), 2)
 
 
-    def test_object_divmod(self):
+    async def test_object_divmod(self):
         code, ns = build_expr([
             ["CONST", 17],
             ["CONST", 5],
@@ -155,7 +155,7 @@ class TestObjectBinaryOpcodes(CevalTest):
         self.assertEqual(run_to_completion(make_callable(code, ns)()), (3, 2))
 
 
-    def test_object_bit_left(self):
+    async def test_object_bit_left(self):
         code, ns = build_expr([
             ["CONST", 1],
             ["CONST", 5],
@@ -165,7 +165,7 @@ class TestObjectBinaryOpcodes(CevalTest):
         self.assertEqual(run_to_completion(make_callable(code, ns)()), 32)
 
 
-    def test_object_bit_right(self):
+    async def test_object_bit_right(self):
         code, ns = build_expr([
             ["CONST", 64],
             ["CONST", 1],
@@ -174,7 +174,7 @@ class TestObjectBinaryOpcodes(CevalTest):
         ])
         self.assertEqual(run_to_completion(make_callable(code, ns)()), 32)
 
-    def test_object_add_three_values(self):
+    async def test_object_add_three_values(self):
         """
         OBJECT_ADD 3 reduces 1+2+3 => 6
         """
@@ -187,7 +187,7 @@ class TestObjectBinaryOpcodes(CevalTest):
         ])
         self.assertEqual(run_to_completion(make_callable(code, ns)()), 6)
 
-    def test_object_add_type_error(self):
+    async def test_object_add_type_error(self):
         """
         OBJECT_ADD with incompatible types raises TypeError
         """

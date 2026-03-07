@@ -30,12 +30,12 @@ from tests import make_callable
 from tests.lib.opcode import build_expr
 
 
-class TestCoroutineRun(unittest.TestCase):
+class TestCoroutineRun(unittest.IsolatedAsyncioTestCase):
     """
     KosCoroutine.run() behaves like asyncio.run(coro)
     """
 
-    def test_run_returns_same_as_asyncio_run(self):
+    async def test_run_returns_same_as_asyncio_run(self):
         """
         expr().run() returns the same value as asyncio.run(expr())
         """
@@ -49,10 +49,12 @@ class TestCoroutineRun(unittest.TestCase):
         expr = make_callable(code, ns)
         coro = expr()
         self.assertEqual(coro.run(), 42)
-        self.assertEqual(asyncio.run(expr()), 42)
+        loop = asyncio.get_running_loop()
+        result = await loop.run_in_executor(None, lambda: asyncio.run(expr()))
+        self.assertEqual(result, 42)
 
 
-    def test_run_on_expression_result(self):
+    async def test_run_on_expression_result(self):
         """
         expr().run() works for an expression that returns a constant
         """
@@ -66,12 +68,12 @@ class TestCoroutineRun(unittest.TestCase):
         self.assertEqual(coro.run(), 99)
 
 
-class TestAsyncGeneratorIter(unittest.TestCase):
+class TestAsyncGeneratorIter(unittest.IsolatedAsyncioTestCase):
     """
     KosPyAsyncGen.iter() yields the same values as async for
     """
 
-    def test_iter_matches_async_for(self):
+    async def test_iter_matches_async_for(self):
         """
         list(agen.iter()) matches the list from async for over a fresh agen
         """
@@ -92,19 +94,22 @@ class TestAsyncGeneratorIter(unittest.TestCase):
         sync_values = list(agen_sync.iter())
         self.assertEqual(sync_values, [1, 2, 3])
 
-        async def collect(gen):
-            out = []
-            async for x in gen:
-                out.append(x)
-            return out
+        def run_in_thread():
+            agen = expr()
+            async def collect(gen):
+                out = []
+                async for x in gen:
+                    out.append(x)
+                return out
+            return asyncio.run(collect(agen))
 
-        agen_async = expr()
-        async_values = asyncio.run(collect(agen_async))
+        loop = asyncio.get_running_loop()
+        async_values = await loop.run_in_executor(None, run_in_thread)
         self.assertEqual(async_values, [1, 2, 3])
         self.assertEqual(sync_values, async_values)
 
 
-    def test_iter_single_value(self):
+    async def test_iter_single_value(self):
         """
         list(agen.iter()) for a single yield returns one element
         """

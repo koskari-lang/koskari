@@ -22,28 +22,28 @@ from . import SpecialsTestCase
 
 class TestItemSpecial(SpecialsTestCase):
 
-    def test_item_constant_key(self):
+    async def test_item_constant_key(self):
         lst = [10, 20, 30]
         src_str = "(compile/item lst 0)"
         expr, mod = self.compile_expr(src_str, lst=lst)
-        result = expr().run()
+        result = await expr()
         self.assertEqual(10, result)
 
 
-    def test_item_variable_key(self):
+    async def test_item_variable_key(self):
         lst = [10, 20, 30]
         src_str = """
         (compile/let [[i 2]]
           (compile/item lst i))
         """
         expr, mod = self.compile_expr(src_str, lst=lst)
-        result = expr().run()
+        result = await expr()
         self.assertEqual(30, result)
 
 
 class TestSetItemSpecial(SpecialsTestCase):
 
-    def test_set_item_then_read(self):
+    async def test_set_item_then_read(self):
         lst = [1, 2, 3]
         src_str = """
         (compile/begin
@@ -51,14 +51,14 @@ class TestSetItemSpecial(SpecialsTestCase):
           (compile/item lst 1))
         """
         expr, mod = self.compile_expr(src_str, lst=lst)
-        result = expr().run()
+        result = await expr()
         self.assertEqual(99, result)
         self.assertEqual(99, lst[1])
 
 
 class TestRefItemSpecial(SpecialsTestCase):
 
-    def test_ref_item_deref(self):
+    async def test_ref_item_deref(self):
         def deref(r):
             return r.deref()
 
@@ -67,17 +67,17 @@ class TestRefItemSpecial(SpecialsTestCase):
         (compile/call deref (compile/ref-item d "k"))
         """
         expr, mod = self.compile_expr(src_str, d=d, deref=deref)
-        result = expr().run()
+        result = await expr()
         self.assertEqual("v", result)
 
 
 class TestDelItemSpecial(SpecialsTestCase):
 
-    def test_del_item_returns_none(self):
+    async def test_del_item_returns_none(self):
         d = {"remove_me": 1}
         src_str = '(compile/del-item d "remove_me")'
         expr, mod = self.compile_expr(src_str, d=d)
-        result = expr().run()
+        result = await expr()
         self.assertIsNone(result)
         self.assertNotIn("remove_me", d)
 

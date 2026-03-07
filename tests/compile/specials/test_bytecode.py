@@ -21,7 +21,7 @@ from . import SpecialsTestCase
 
 class TestBytecodeSpecial(SpecialsTestCase):
 
-    def test_bytecode_const_return(self):
+    async def test_bytecode_const_return(self):
         src_str = """
         (bytecode
           [CONST "Hello World"]
@@ -29,11 +29,11 @@ class TestBytecodeSpecial(SpecialsTestCase):
         )
         """
         expr, mod = self.compile_expr(src_str)
-        result = expr().run()
+        result = await expr()
         self.assertEqual("Hello World", result)
 
 
-    def test_bytecode_var_call(self):
+    async def test_bytecode_var_call(self):
         src_str = """
         (bytecode
           [VAR add]
@@ -49,7 +49,7 @@ class TestBytecodeSpecial(SpecialsTestCase):
             value_a="Hello",
             value_b=" World",
         )
-        result = expr().run()
+        result = await expr()
         self.assertEqual("Hello World", result)
 
 

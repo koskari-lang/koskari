@@ -26,7 +26,7 @@ from tests import make_callable
 from tests.lib.opcode import CevalTest, build_expr, run_to_completion
 
 
-def run_to_completion_with_await(coro):
+async def run_to_completion_with_await(coro):
     """
     Drive the coroutine to completion, awaiting any yielded awaitables
     (e.g. from async with enter/exit). Use for code that may suspend on
@@ -45,7 +45,7 @@ def run_to_completion_with_await(coro):
             else:
                 value = result
 
-    return asyncio.run(drive())
+    return await drive()
 
 
 class SimpleMgr:
@@ -109,7 +109,7 @@ class TestWithOpcodes(CevalTest):
     Tests for PUSH_WITH, POP_WITH opcodes.
     """
 
-    def test_push_with_pop_with_completes(self):
+    async def test_push_with_pop_with_completes(self):
         """
         PUSH_WITH with matching POP_WITH completes normally.
         Expression result is None.
@@ -127,7 +127,7 @@ class TestWithOpcodes(CevalTest):
         self.assertTrue(mgr.entered)
         self.assertTrue(mgr.exited)
 
-    def test_push_with_body_runs_enter_exit(self):
+    async def test_push_with_body_runs_enter_exit(self):
         """
         PUSH_WITH runs enter; body runs; POP_WITH runs exit.
         """
@@ -146,7 +146,7 @@ class TestWithOpcodes(CevalTest):
         self.assertTrue(mgr.entered)
         self.assertTrue(mgr.exited)
 
-    def test_exception_propagates_when_exit_does_not_swallow(self):
+    async def test_exception_propagates_when_exit_does_not_swallow(self):
         """
         Exception in body propagates after exit when exit returns False.
         """
@@ -171,7 +171,7 @@ class TestWithOpcodes(CevalTest):
         self.assertTrue(mgr.exited)
         self.assertEqual(mgr.exc_info[0], ValueError)
 
-    def test_exception_swallowed_when_exit_returns_true(self):
+    async def test_exception_swallowed_when_exit_returns_true(self):
         """
         When exit returns True, exception is swallowed; execution resumes
         after the with body; expression yields None.
@@ -205,7 +205,7 @@ class TestWithOpcodes(CevalTest):
         self.assertEqual(mgr.exc_info[0], ValueError)
         self.assertEqual(state.get("after"), 1)
 
-    def test_with_async_enter_completes(self):
+    async def test_with_async_enter_completes(self):
         """
         PUSH_WITH with async manager: enter returns awaitable, VM awaits it
         then binds and runs body; POP_WITH runs exit. Expression result None.
@@ -218,12 +218,12 @@ class TestWithOpcodes(CevalTest):
             ["POP_WITH", 0],
             ["RETURN", 1],
         ])
-        result = run_to_completion_with_await(make_callable(code, ns)())
+        result = await run_to_completion_with_await(make_callable(code, ns)())
         self.assertIsNone(result)
         self.assertTrue(mgr.entered)
         self.assertTrue(mgr.exited)
 
-    def test_with_async_exit_normal(self):
+    async def test_with_async_exit_normal(self):
         """
         Async manager: normal exit; __aexit__ is awaited, then block and node pop.
         """
@@ -237,13 +237,13 @@ class TestWithOpcodes(CevalTest):
             ["POP_WITH", 0],
             ["RETURN", 1],
         ])
-        result = run_to_completion_with_await(make_callable(code, ns)())
+        result = await run_to_completion_with_await(make_callable(code, ns)())
         self.assertIsNone(result)
         self.assertTrue(mgr.entered)
         self.assertTrue(mgr.exited)
         self.assertEqual(mgr.exc_info[0], None)
 
-    def test_with_async_exit_swallow(self):
+    async def test_with_async_exit_swallow(self):
         """
         Async manager: exception in body; __aexit__ returns True (swallow);
         execution resumes after with; expression yields None.
@@ -270,7 +270,7 @@ class TestWithOpcodes(CevalTest):
             ["POP", 1],
             ["RETURN", 1],
         ], values={"raise_err": raise_err, "after_raise": after_raise})
-        result = run_to_completion_with_await(make_callable(code, ns)())
+        result = await run_to_completion_with_await(make_callable(code, ns)())
         self.assertIsNone(result)
         self.assertTrue(mgr.entered)
         self.assertTrue(mgr.exited)

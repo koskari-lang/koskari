@@ -29,7 +29,7 @@ class TestControlOpcodes(CevalTest):
     Tests for RETURN, AWAIT.
     """
 
-    def test_return_multiple_values(self):
+    async def test_return_multiple_values(self):
         """
         RETURN n returns n values as a tuple
         """
@@ -44,7 +44,7 @@ class TestControlOpcodes(CevalTest):
         self.assertEqual(result, (1, 2, 3))
 
 
-    def test_await_suspends_and_resumes_with_value(self):
+    async def test_await_suspends_and_resumes_with_value(self):
         """
         AWAIT suspends on awaitable; resumes with result
         """

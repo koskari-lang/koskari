@@ -27,12 +27,12 @@ from tests import make_callable
 from tests.lib.opcode import build_expr, run_to_completion
 
 
-class TestReapply(unittest.TestCase):
+class TestReapply(unittest.IsolatedAsyncioTestCase):
     """
     Tests for the reapply function
     """
 
-    def test_reapply_zero_times(self):
+    async def test_reapply_zero_times(self):
         """
         reapply with count 0 returns original data
         """
@@ -40,7 +40,7 @@ class TestReapply(unittest.TestCase):
         result = lib.reapply(lambda x: x + 1, 5, 0)
         self.assertEqual(result, 5)
 
-    def test_reapply_once(self):
+    async def test_reapply_once(self):
         """
         reapply with count 1 applies function once
         """
@@ -48,7 +48,7 @@ class TestReapply(unittest.TestCase):
         result = lib.reapply(lambda x: x * 2, 5, 1)
         self.assertEqual(result, 10)
 
-    def test_reapply_multiple(self):
+    async def test_reapply_multiple(self):
         """
         reapply applies function count times
         """
@@ -56,7 +56,7 @@ class TestReapply(unittest.TestCase):
         result = lib.reapply(lambda x: x + 1, 0, 5)
         self.assertEqual(result, 5)
 
-    def test_reapply_with_list(self):
+    async def test_reapply_with_list(self):
         """
         reapply works with list transformations
         """
@@ -64,7 +64,7 @@ class TestReapply(unittest.TestCase):
         result = lib.reapply(lambda x: x + [len(x)], [], 4)
         self.assertEqual(result, [0, 1, 2, 3])
 
-    def test_reapply_exception_propagates(self):
+    async def test_reapply_exception_propagates(self):
         """
         reapply propagates exceptions from function
         """
@@ -78,12 +78,12 @@ class TestReapply(unittest.TestCase):
             lib.reapply(fail_on_3, 0, 5)
 
 
-class TestApply(unittest.TestCase):
+class TestApply(unittest.IsolatedAsyncioTestCase):
     """
     Tests for the apply function
     """
 
-    def test_apply_no_args(self):
+    async def test_apply_no_args(self):
         """
         apply with no args calls function
         """
@@ -91,7 +91,7 @@ class TestApply(unittest.TestCase):
         result = lib.apply(list)
         self.assertEqual(result, [])
 
-    def test_apply_tuple_args(self):
+    async def test_apply_tuple_args(self):
         """
         apply with tuple args unpacks them
         """
@@ -99,7 +99,7 @@ class TestApply(unittest.TestCase):
         result = lib.apply(max, (1, 5, 3))
         self.assertEqual(result, 5)
 
-    def test_apply_list_args(self):
+    async def test_apply_list_args(self):
         """
         apply with list args unpacks them
         """
@@ -107,7 +107,7 @@ class TestApply(unittest.TestCase):
         result = lib.apply(sum, [[1, 2, 3]])
         self.assertEqual(result, 6)
 
-    def test_apply_with_kwargs(self):
+    async def test_apply_with_kwargs(self):
         """
         apply with kwargs passes them
         """
@@ -118,7 +118,7 @@ class TestApply(unittest.TestCase):
         result = lib.apply(func, (1, 2), {'x': 10})
         self.assertEqual(result, ((1, 2), {'x': 10}))
 
-    def test_apply_pair_args(self):
+    async def test_apply_pair_args(self):
         """
         apply with pair args unpacks them
         """
@@ -127,7 +127,7 @@ class TestApply(unittest.TestCase):
         result = lib.apply(max, pair)
         self.assertEqual(result, 3)
 
-    def test_apply_none_args(self):
+    async def test_apply_none_args(self):
         """
         apply with None args treats as empty
         """
@@ -135,7 +135,7 @@ class TestApply(unittest.TestCase):
         result = lib.apply(list, None)
         self.assertEqual(result, [])
 
-    def test_apply_none_kwargs(self):
+    async def test_apply_none_kwargs(self):
         """
         apply with None kwargs ignores them
         """
@@ -143,12 +143,12 @@ class TestApply(unittest.TestCase):
         result = lib.apply(max, (1, 2, 3), None)
         self.assertEqual(result, 3)
 
-    def test_apply_is_callable_object(self):
+    async def test_apply_is_callable_object(self):
         """apply is exposed as a callable helper object."""
 
         self.assertTrue(callable(lib.apply))
 
-    def test_apply_python_to_koskari_function(self):
+    async def test_apply_python_to_koskari_function(self):
         """python caller can apply a Koskari function."""
 
         code, ns = build_expr([["CONST", 77], ["RETURN", 1]])
@@ -157,51 +157,51 @@ class TestApply(unittest.TestCase):
         self.assertEqual(result, 77)
 
 
-class TestIdentity(unittest.TestCase):
+class TestIdentity(unittest.IsolatedAsyncioTestCase):
     """Tests for the identity function"""
 
-    def test_identity_number(self):
+    async def test_identity_number(self):
         """identity returns number unchanged"""
 
         result = lib.identity(42)
         self.assertEqual(result, 42)
 
-    def test_identity_string(self):
+    async def test_identity_string(self):
         """identity returns string unchanged"""
 
         result = lib.identity("hello")
         self.assertEqual(result, "hello")
 
-    def test_identity_list(self):
+    async def test_identity_list(self):
         """identity returns same list object"""
 
         original = [1, 2, 3]
         result = lib.identity(original)
         self.assertIs(result, original)
 
-    def test_identity_none(self):
+    async def test_identity_none(self):
         """identity returns None unchanged"""
 
         result = lib.identity(None)
         self.assertIsNone(result)
 
 
-class TestConstantly(unittest.TestCase):
+class TestConstantly(unittest.IsolatedAsyncioTestCase):
     """Tests for the constantly function"""
 
-    def test_constantly_returns_callable(self):
+    async def test_constantly_returns_callable(self):
         """constantly returns a callable"""
 
         f = lib.constantly(42)
         self.assertTrue(callable(f))
 
-    def test_constantly_returns_value(self):
+    async def test_constantly_returns_value(self):
         """constantly callable returns its value"""
 
         f = lib.constantly(42)
         self.assertEqual(f(), 42)
 
-    def test_constantly_ignores_args(self):
+    async def test_constantly_ignores_args(self):
         """constantly callable ignores arguments"""
 
         f = lib.constantly("fixed")
@@ -209,7 +209,7 @@ class TestConstantly(unittest.TestCase):
         self.assertEqual(f(x=10, y=20), "fixed")
         self.assertEqual(f(1, 2, x=3), "fixed")
 
-    def test_constantly_same_value_each_time(self):
+    async def test_constantly_same_value_each_time(self):
         """constantly callable returns same value on multiple calls"""
 
         obj = object()
@@ -218,7 +218,7 @@ class TestConstantly(unittest.TestCase):
         self.assertIs(f(), obj)
         self.assertIs(f(), obj)
 
-    def test_constantly_repr(self):
+    async def test_constantly_repr(self):
         """constantly has meaningful repr"""
 
         f = lib.constantly(42)
@@ -227,150 +227,150 @@ class TestConstantly(unittest.TestCase):
         self.assertIn("42", r)
 
 
-class TestPass(unittest.TestCase):
+class TestPass(unittest.IsolatedAsyncioTestCase):
     """Tests for the _pass function"""
 
-    def test_pass_no_args(self):
+    async def test_pass_no_args(self):
         """_pass with no args returns None"""
 
         result = lib._pass()
         self.assertIsNone(result)
 
-    def test_pass_with_args(self):
+    async def test_pass_with_args(self):
         """_pass with args returns None"""
 
         result = lib._pass(1, 2, 3)
         self.assertIsNone(result)
 
-    def test_pass_with_kwargs(self):
+    async def test_pass_with_kwargs(self):
         """_pass with kwargs returns None"""
 
         result = lib._pass(x=1, y=2)
         self.assertIsNone(result)
 
-    def test_pass_with_both(self):
+    async def test_pass_with_both(self):
         """_pass with args and kwargs returns None"""
 
         result = lib._pass(1, 2, x=3, y=4)
         self.assertIsNone(result)
 
 
-class TestBuildTuple(unittest.TestCase):
+class TestBuildTuple(unittest.IsolatedAsyncioTestCase):
     """Tests for the build_tuple function"""
 
-    def test_build_tuple_empty(self):
+    async def test_build_tuple_empty(self):
         """build_tuple with no args returns empty tuple"""
 
         result = lib.build_tuple()
         self.assertEqual(result, ())
         self.assertIsInstance(result, tuple)
 
-    def test_build_tuple_single(self):
+    async def test_build_tuple_single(self):
         """build_tuple with one arg returns single-element tuple"""
 
         result = lib.build_tuple(42)
         self.assertEqual(result, (42,))
 
-    def test_build_tuple_multiple(self):
+    async def test_build_tuple_multiple(self):
         """build_tuple with multiple args returns tuple"""
 
         result = lib.build_tuple(1, 2, 3)
         self.assertEqual(result, (1, 2, 3))
 
-    def test_build_tuple_mixed_types(self):
+    async def test_build_tuple_mixed_types(self):
         """build_tuple handles mixed types"""
 
         result = lib.build_tuple(1, "two", [3], None)
         self.assertEqual(result, (1, "two", [3], None))
 
 
-class TestBuildList(unittest.TestCase):
+class TestBuildList(unittest.IsolatedAsyncioTestCase):
     """Tests for the build_list function"""
 
-    def test_build_list_empty(self):
+    async def test_build_list_empty(self):
         """build_list with no args returns empty list"""
 
         result = lib.build_list()
         self.assertEqual(result, [])
         self.assertIsInstance(result, list)
 
-    def test_build_list_single(self):
+    async def test_build_list_single(self):
         """build_list with one arg returns single-element list"""
 
         result = lib.build_list(42)
         self.assertEqual(result, [42])
 
-    def test_build_list_multiple(self):
+    async def test_build_list_multiple(self):
         """build_list with multiple args returns list"""
 
         result = lib.build_list(1, 2, 3)
         self.assertEqual(result, [1, 2, 3])
 
 
-class TestBuildSet(unittest.TestCase):
+class TestBuildSet(unittest.IsolatedAsyncioTestCase):
     """Tests for the build_set function"""
 
-    def test_build_set_empty(self):
+    async def test_build_set_empty(self):
         """build_set with no args returns empty set"""
 
         result = lib.build_set()
         self.assertEqual(result, set())
         self.assertIsInstance(result, set)
 
-    def test_build_set_single(self):
+    async def test_build_set_single(self):
         """build_set with one arg returns single-element set"""
 
         result = lib.build_set(42)
         self.assertEqual(result, {42})
 
-    def test_build_set_multiple(self):
+    async def test_build_set_multiple(self):
         """build_set with multiple args returns set"""
 
         result = lib.build_set(1, 2, 3)
         self.assertEqual(result, {1, 2, 3})
 
-    def test_build_set_deduplicates(self):
+    async def test_build_set_deduplicates(self):
         """build_set removes duplicates"""
 
         result = lib.build_set(1, 2, 1, 3, 2)
         self.assertEqual(result, {1, 2, 3})
 
 
-class TestBuildDict(unittest.TestCase):
+class TestBuildDict(unittest.IsolatedAsyncioTestCase):
     """Tests for the build_dict function"""
 
-    def test_build_dict_empty(self):
+    async def test_build_dict_empty(self):
         """build_dict with no args returns empty dict"""
 
         result = lib.build_dict()
         self.assertEqual(result, {})
         self.assertIsInstance(result, dict)
 
-    def test_build_dict_from_tuples(self):
+    async def test_build_dict_from_tuples(self):
         """build_dict from tuple pairs"""
 
         result = lib.build_dict(('a', 1), ('b', 2))
         self.assertEqual(result, {'a': 1, 'b': 2})
 
-    def test_build_dict_from_lists(self):
+    async def test_build_dict_from_lists(self):
         """build_dict from list pairs"""
 
         result = lib.build_dict(['a', 1], ['b', 2])
         self.assertEqual(result, {'a': 1, 'b': 2})
 
-    def test_build_dict_with_kwargs(self):
+    async def test_build_dict_with_kwargs(self):
         """build_dict merges keyword arguments"""
 
         result = lib.build_dict(('a', 1), b=2, c=3)
         self.assertEqual(result, {'a': 1, 'b': 2, 'c': 3})
 
-    def test_build_dict_kwargs_override(self):
+    async def test_build_dict_kwargs_override(self):
         """build_dict kwargs override positional pairs"""
 
         result = lib.build_dict(('a', 1), a=10)
         self.assertEqual(result, {'a': 10})
 
-    def test_build_dict_from_pairs(self):
+    async def test_build_dict_from_pairs(self):
         """build_dict from cons pairs"""
 
         pair1 = lib.cons('x', lib.cons(100, lib.nil))
@@ -378,7 +378,7 @@ class TestBuildDict(unittest.TestCase):
         result = lib.build_dict(pair1, pair2)
         self.assertEqual(result, {'x': 100, 'y': 200})
 
-    def test_build_dict_only_kwargs(self):
+    async def test_build_dict_only_kwargs(self):
         """build_dict with only kwargs"""
 
         result = lib.build_dict(x=1, y=2, z=3)

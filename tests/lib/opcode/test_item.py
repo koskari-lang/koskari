@@ -29,7 +29,7 @@ class TestItemOpcodes(CevalTest):
     Tests for ITEM, ITEM_CLEAR, ITEM_REF, ITEM_STORE
     """
 
-    def test_item_getitem(self):
+    async def test_item_getitem(self):
         """
         ITEM pushes TOS1[TOS]
         """
@@ -43,7 +43,7 @@ class TestItemOpcodes(CevalTest):
         self.assertEqual(result, 2)
 
 
-    def test_item_store_setitem(self):
+    async def test_item_store_setitem(self):
         """
         ITEM_STORE does TOS2[TOS1] = TOS (val, key, obj popped)
         """
@@ -61,7 +61,7 @@ class TestItemOpcodes(CevalTest):
         self.assertEqual(result, "v")
 
 
-    def test_item_clear_delitem(self):
+    async def test_item_clear_delitem(self):
         """
         ITEM_CLEAR deletes TOS1[TOS]
         """
@@ -78,7 +78,7 @@ class TestItemOpcodes(CevalTest):
         self.assertNotIn("x", d)
 
 
-    def test_item_ref_pushes_item_ref(self):
+    async def test_item_ref_pushes_item_ref(self):
         """
         ITEM_REF pushes ItemRef for TOS1[TOS]
         """

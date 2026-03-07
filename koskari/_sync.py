@@ -32,9 +32,6 @@ __all__ = ('as_coroutine', 'run_sync', 'iter_sync')
 
 _executor = None
 _executor_lock = threading.Lock()
-_FALLBACK = object()
-
-
 def _get_executor_loop():
     """
     Return the event loop for the dedicated executor thread.
@@ -88,51 +85,28 @@ async def as_coroutine(awaitable):
     return await awaitable
 
 
-def _run_sync_inline(loop, awaitable):
-    """
-    Drain the awaitable on the current loop by stepping _run_once until
-    the task completes. Used when a loop is already running in this thread
-    to avoid cross-thread execution (which can deadlock with C extensions).
-    Returns _FALLBACK if the loop lacks _run_once (e.g. uvloop).
-    """
-
-    print(f"Running sync inline on loop {loop}")
-
-    run_once = loop._run_once
-    task = loop.create_task(awaitable)
-    while not task.done():
-        run_once()
-    return task.result()
-
-
 def run_sync(awaitable):
     """
     Run an awaitable to completion from synchronous code.
 
     Accepts arbitrary awaitables; wraps non-coroutines via as_coroutine.
     If no event loop is running in the current thread, uses asyncio.run().
-    If a loop is already running, performs an inline drain on that loop
-    by stepping _run_once until the task completes, avoiding the executor
-    thread and potential cross-thread deadlocks in C extensions.
+    If a loop is already running, uses the executor. Inline drain is not used
+    because it deadlocks when run_sync is called from within an async task
+    (e.g. Box.new from VM, or import during load_module_async); in those
+    cases we are already inside a loop callback and nesting _run_once
+    deadlocks. Nested run_sync (sync -> run_sync -> async -> sync -> run_sync)
+    also uses the executor via the same path.
     """
-
-    print(f"Running sync for {awaitable}")
 
     if not asyncio.iscoroutine(awaitable):
         awaitable = as_coroutine(awaitable)
 
-    return _run_sync_inline(awaitable)
-
     if _active_loop():
-        loop = asyncio.get_running_loop()
-        result = _run_sync_inline(loop, awaitable)
-        if result is not _FALLBACK:
-            return result
         loop = _get_executor_loop()
         future = asyncio.run_coroutine_threadsafe(awaitable, loop)
         return future.result()
-    else:
-        return asyncio.run(awaitable)
+    return asyncio.run(awaitable)
 
 
 class SyncIterator:

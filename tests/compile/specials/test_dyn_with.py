@@ -22,7 +22,9 @@ from . import SpecialsTestCase
 
 
 class SimpleMgr:
-    """Python context manager for tests; tracks enter/exit."""
+    """
+    Python context manager for tests; tracks enter/exit
+    """
 
     def __init__(self, value=42):
         self.value = value
@@ -30,9 +32,11 @@ class SimpleMgr:
         self.exited = False
         self.exc_info = (None, None, None)
 
+
     def __enter__(self):
         self.entered = True
         return self.value
+
 
     def __exit__(self, typ, val, tb):
         self.exited = True
@@ -41,9 +45,15 @@ class SimpleMgr:
 
 
 class TestDynWithSpecial(SpecialsTestCase):
+    """
+    Tests for compile/dyn-with special form
+    """
 
-    def test_normal_enter_exit_expression_returns_none(self):
-        """dyn-with runs enter, body, exit; expression result is None."""
+    async def test_normal_enter_exit_expression_returns_none(self):
+        """
+        dyn-with runs enter, body, exit; expression result is None
+        """
+
         state = {}
 
         def set_y(val):
@@ -55,14 +65,18 @@ class TestDynWithSpecial(SpecialsTestCase):
           (compile/call set_y 1))
         """
         expr, mod = self.compile_expr(src, make_mgr=lambda: mgr, set_y=set_y)
-        result = expr().run()
+        result = await expr()
         self.assertIsNone(result)
         self.assertEqual(state.get("y"), 1)
         self.assertTrue(mgr.entered)
         self.assertTrue(mgr.exited)
 
-    def test_dyn_with_binding_entered_value(self):
-        """dyn-with [name expr] binds the enter result to name in body."""
+
+    async def test_dyn_with_binding_entered_value(self):
+        """
+        dyn-with [name expr] binds the enter result to name in body
+        """
+
         state = {}
         mgr = SimpleMgr(200)
 
@@ -74,14 +88,18 @@ class TestDynWithSpecial(SpecialsTestCase):
           (compile/call check x))
         """
         expr, mod = self.compile_expr(src, make_mgr=lambda: mgr, check=check)
-        result = expr().run()
+        result = await expr()
         self.assertIsNone(result)
         self.assertEqual(state.get("got"), 200)
         self.assertTrue(mgr.entered)
         self.assertTrue(mgr.exited)
 
-    def test_emits_push_dyn_with_pop_dyn_with(self):
-        """compile/dyn-with emits PUSH_DYN_WITH and POP_DYN_WITH opcodes."""
+
+    async def test_emits_push_dyn_with_pop_dyn_with(self):
+        """
+        compile/dyn-with emits PUSH_DYN_WITH and POP_DYN_WITH opcodes
+        """
+
         from koskari.lib import OpCode
 
         src = "(compile/dyn-with [x (compile/call make_mgr)] (compile/call noop x))"

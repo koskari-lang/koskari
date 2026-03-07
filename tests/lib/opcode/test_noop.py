@@ -29,7 +29,7 @@ class TestNoopLabelPositionOpcodes(CevalTest):
     Tests for NOOP, LABEL, POSITION (no-ops / compile-time only at runtime).
     """
 
-    def test_noop_advances_pc(self):
+    async def test_noop_advances_pc(self):
         """
         NOOP is a no-op; execution continues to next instruction
         """
@@ -43,7 +43,7 @@ class TestNoopLabelPositionOpcodes(CevalTest):
         self.assertEqual(result, 1)
 
 
-    def test_label_is_noop_at_runtime(self):
+    async def test_label_is_noop_at_runtime(self):
         """
         LABEL is compile-time only; at runtime it advances PC
         """
@@ -57,7 +57,7 @@ class TestNoopLabelPositionOpcodes(CevalTest):
         self.assertEqual(result, 2)
 
 
-    def test_position_is_noop_at_runtime(self):
+    async def test_position_is_noop_at_runtime(self):
         """
         POSITION is compile-time only; at runtime it advances PC
         """

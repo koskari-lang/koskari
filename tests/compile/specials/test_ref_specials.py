@@ -25,7 +25,7 @@ from . import SpecialsTestCase
 
 class TestRefSpecial(SpecialsTestCase):
 
-    def test_ref_symbol_expands_to_refq(self):
+    async def test_ref_symbol_expands_to_refq(self):
         src_str = """
         (compile/let [[x 10]]
           (compile/call deref (ref x)))
@@ -34,10 +34,11 @@ class TestRefSpecial(SpecialsTestCase):
             return r.deref()
 
         expr, mod = self.compile_expr(src_str, deref=deref)
-        result = expr().run()
+        result = await expr()
         self.assertEqual(10, result)
 
-    def test_ref_attr_expands_to_ref_attr(self):
+
+    async def test_ref_attr_expands_to_ref_attr(self):
         obj = SimpleNamespace(count=5)
         src_str = """
         (compile/call deref (ref (compile/attr obj count)))
@@ -46,10 +47,11 @@ class TestRefSpecial(SpecialsTestCase):
             return r.deref()
 
         expr, mod = self.compile_expr(src_str, obj=obj, deref=deref)
-        result = expr().run()
+        result = await expr()
         self.assertEqual(5, result)
 
-    def test_ampersand_dotted_expands_to_ref_attr(self):
+
+    async def test_ampersand_dotted_expands_to_ref_attr(self):
         obj = SimpleNamespace(count=7)
         src_str = """
         (compile/call deref &obj.count)
@@ -58,10 +60,11 @@ class TestRefSpecial(SpecialsTestCase):
             return r.deref()
 
         expr, mod = self.compile_expr(src_str, obj=obj, deref=deref)
-        result = expr().run()
+        result = await expr()
         self.assertEqual(7, result)
 
-    def test_ref_item_expands_to_ref_item(self):
+
+    async def test_ref_item_expands_to_ref_item(self):
         lst = [10, 20, 30]
         src_str = """
         (compile/call deref (ref (compile/item lst 1)))
@@ -70,23 +73,24 @@ class TestRefSpecial(SpecialsTestCase):
             return r.deref()
 
         expr, mod = self.compile_expr(src_str, lst=lst, deref=deref)
-        result = expr().run()
+        result = await expr()
         self.assertEqual(20, result)
 
 
 class TestDerefSpecial(SpecialsTestCase):
 
-    def test_deref_emits_deref_opcode(self):
+    async def test_deref_emits_deref_opcode(self):
         src_str = """
         (compile/let [[x 42]]
           (compile/let [[r (compile/refq x)]]
             (compile/deref r)))
         """
         expr, mod = self.compile_expr(src_str)
-        result = expr().run()
+        result = await expr()
         self.assertEqual(42, result)
 
-    def test_deref_uses_deref_opcode(self):
+
+    async def test_deref_uses_deref_opcode(self):
         code = self.compile_to_code("""
         (compile/let [[x 1]]
           (compile/let [[r (compile/refq x)]]
@@ -95,12 +99,16 @@ class TestDerefSpecial(SpecialsTestCase):
         ops = [code.oparg(i)[0] for i in range(code.length())]
         self.assertIn(OpCode.KOS_OP_DEREF, ops)
 
-    def test_deref_call_for_higher_order(self):
+
+    async def test_deref_call_for_higher_order(self):
         src_str = """
         (compile/let [[a 1] [b 2]]
           (compile/let [[ra (compile/refq a)] [rb (compile/refq b)]]
             (compile/call deref ra)))
         """
         expr, mod = self.compile_expr(src_str, deref=deref)
-        result = expr().run()
+        result = await expr()
         self.assertEqual(1, result)
+
+
+# The end.

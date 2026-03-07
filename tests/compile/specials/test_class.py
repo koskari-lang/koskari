@@ -22,19 +22,19 @@ from . import SpecialsTestCase
 
 class TestClassEmpty(SpecialsTestCase):
 
-    def test_empty_class_binds_and_is_type(self):
+    async def test_empty_class_binds_and_is_type(self):
         src_str = """
         (compile/begin
           (compile/class C () 5)
           C)
         """
         expr, mod = self.compile_expr(src_str)
-        result = expr().run()
+        result = await expr()
         self.assertIsInstance(result, type)
         self.assertEqual(result.__name__, "C")
 
 
-    def test_empty_class_is_kostype(self):
+    async def test_empty_class_is_kostype(self):
         from koskari.lib import KosType
 
         src_str = """
@@ -46,7 +46,7 @@ class TestClassEmpty(SpecialsTestCase):
 
         dis(expr.code)
 
-        result = expr().run()
+        result = await expr()
         self.assertIs(type(result), KosType)
 
         c = result.new()
@@ -55,7 +55,7 @@ class TestClassEmpty(SpecialsTestCase):
 
 class TestClassWithAttribute(SpecialsTestCase):
 
-    def test_class_with_define(self):
+    async def test_class_with_define(self):
         src_str = """
         (compile/begin
           (compile/class C ()
@@ -66,13 +66,13 @@ class TestClassWithAttribute(SpecialsTestCase):
 
         dis(expr.code)
 
-        result = expr().run()
+        result = await expr()
         self.assertEqual(42, result)
 
 
 class TestClassWithSuperclass(SpecialsTestCase):
 
-    def test_class_extends_object(self):
+    async def test_class_extends_object(self):
         src_str = """
         (compile/begin
           (compile/class C (object)
@@ -86,20 +86,18 @@ class TestClassWithSuperclass(SpecialsTestCase):
 
         dis(expr.code)
 
-        result = expr().run()
+        result = await expr()
         self.assertEqual(1, result)
 
 
 class TestClassWithInitAndMethods(SpecialsTestCase):
 
-    def test_class_init_getter_setter_and_direct_attr(self):
+    async def test_class_init_getter_setter_and_direct_attr(self):
         """
         Box has __init__(self, v), get_value(self), set_value(self, new_val).
         Create instance via Box.new(10), verify getter and direct attr, set
-        to 20, verify both track. Method calls return awaitables; use run_sync.
+        to 20, verify both track. Method calls return awaitables; use await.
         """
-        from koskari.lib import run_sync
-
         src_str = """
         (compile/begin
           (compile/class Box ()
@@ -115,17 +113,17 @@ class TestClassWithInitAndMethods(SpecialsTestCase):
           (compile/call (compile/attr Box new) 10))
         """
         expr, mod = self.compile_expr(src_str)
-        instance = expr().run()
-        self.assertEqual(run_sync(instance.get_value()), 10)
+        instance = await expr()
+        self.assertEqual(await instance.get_value(), 10)
         self.assertEqual(getattr(instance, "value"), 10)
-        run_sync(instance.set_value(20))
-        self.assertEqual(run_sync(instance.get_value()), 20)
+        await instance.set_value(20)
+        self.assertEqual(await instance.get_value(), 20)
         self.assertEqual(getattr(instance, "value"), 20)
 
 
 class TestClassBytecode(SpecialsTestCase):
 
-    def test_class_emits_push_pop_collect_build_class_and_var_bind(self):
+    async def test_class_emits_push_pop_collect_build_class_and_var_bind(self):
         src_str = """
         (compile/class C () (compile/define x 1))
         """

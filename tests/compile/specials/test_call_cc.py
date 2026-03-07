@@ -38,7 +38,7 @@ from . import SpecialsTestCase
 
 class TestCallCcSpecial(SpecialsTestCase):
 
-    def test_call_cc_invokes_continuation_with_value(self):
+    async def test_call_cc_invokes_continuation_with_value(self):
         """
         (call/cc (lambda [k] (k 42))) invokes the continuation with 42 and
         the result is 42
@@ -46,11 +46,11 @@ class TestCallCcSpecial(SpecialsTestCase):
 
         src_str = "(compile/call/cc (lambda [k] (compile/call k 42)))"
         expr, mod = self.compile_expr(src_str)
-        result = expr().run()
+        result = await expr()
         self.assertEqual(result, 42)
 
 
-    def test_call_cc_returns_normally_when_continuation_not_invoked(self):
+    async def test_call_cc_returns_normally_when_continuation_not_invoked(self):
         """
         (call/cc fn) where fn ignores k and returns 99 yields 99
         """
@@ -60,11 +60,11 @@ class TestCallCcSpecial(SpecialsTestCase):
 
         src_str = "(compile/call/cc fn)"
         expr, mod = self.compile_expr(src_str, fn=fn)
-        result = expr().run()
+        result = await expr()
         self.assertEqual(result, 99)
 
 
-    def test_call_cc_captures_callable_continuation(self):
+    async def test_call_cc_captures_callable_continuation(self):
         """
         (call/cc fn) where fn returns k unapplied yields a Continuation object
         """
@@ -74,12 +74,12 @@ class TestCallCcSpecial(SpecialsTestCase):
 
         src_str = "(compile/call/cc fn)"
         expr, mod = self.compile_expr(src_str, fn=fn)
-        result = expr().run()
+        result = await expr()
         self.assertIsNotNone(result)
         self.assertIsInstance(result, lib.Continuation)
 
 
-    def test_call_cc_python_callable_invokes_continuation_upward(self):
+    async def test_call_cc_python_callable_invokes_continuation_upward(self):
         """
         When a plain Python callable is passed to call/cc and calls k from
         within Python, the KoskariContinuationApply exception propagates up
@@ -92,11 +92,11 @@ class TestCallCcSpecial(SpecialsTestCase):
 
         src_str = "(compile/call/cc fn)"
         expr, mod = self.compile_expr(src_str, fn=fn)
-        result = expr().run()
+        result = await expr()
         self.assertEqual(result, 42)
 
 
-    def test_call_cc_wrong_arg_count_raises(self):
+    async def test_call_cc_wrong_arg_count_raises(self):
         """
         (call/cc) with no arguments raises SpecialError
         """
@@ -105,7 +105,7 @@ class TestCallCcSpecial(SpecialsTestCase):
             self.compile_expr("(compile/call/cc)")
 
 
-    def test_call_cc_too_many_args_raises(self):
+    async def test_call_cc_too_many_args_raises(self):
         """
         (call/cc f g) with two arguments raises SpecialError
         """
@@ -119,18 +119,18 @@ class TestCallCcSpecial(SpecialsTestCase):
 
 class TestLetCcSpecial(SpecialsTestCase):
 
-    def test_let_cc_runs_body_and_returns_value(self):
+    async def test_let_cc_runs_body_and_returns_value(self):
         """
         (let/cc k 42) binds k but does not invoke it; body returns 42
         """
 
         src_str = "(compile/let/cc k 42)"
         expr, mod = self.compile_expr(src_str)
-        result = expr().run()
+        result = await expr()
         self.assertEqual(result, 42)
 
 
-    def test_let_cc_invoke_continuation_escapes_body(self):
+    async def test_let_cc_invoke_continuation_escapes_body(self):
         """
         (let/cc k (k 7) 99) invokes k with 7, bypassing the rest of the body;
         result is 7
@@ -138,11 +138,11 @@ class TestLetCcSpecial(SpecialsTestCase):
 
         src_str = "(compile/let/cc k (compile/call k 7) 99)"
         expr, mod = self.compile_expr(src_str)
-        result = expr().run()
+        result = await expr()
         self.assertEqual(result, 7)
 
 
-    def test_let_cc_continuation_variable_must_be_symbol(self):
+    async def test_let_cc_continuation_variable_must_be_symbol(self):
         """
         (let/cc 42 body) raises SpecialError because 42 is not a symbol
         """
@@ -151,19 +151,19 @@ class TestLetCcSpecial(SpecialsTestCase):
             self.compile_expr("(compile/let/cc 42 0)")
 
 
-    def test_let_cc_k_is_continuation_instance(self):
+    async def test_let_cc_k_is_continuation_instance(self):
         """
         (let/cc k k) returns the captured continuation as a Continuation object
         """
 
         src_str = "(compile/let/cc k k)"
         expr, mod = self.compile_expr(src_str)
-        result = expr().run()
+        result = await expr()
         self.assertIsNotNone(result)
         self.assertIsInstance(result, lib.Continuation)
 
 
-    def test_let_cc_k_not_visible_outside(self):
+    async def test_let_cc_k_not_visible_outside(self):
         """
         k is scoped to the let/cc child namespace and is not visible in the
         enclosing scope after the form completes
@@ -176,12 +176,12 @@ class TestLetCcSpecial(SpecialsTestCase):
         """
         expr, mod = self.compile_expr(src_str)
         with self.assertRaises(Exception):
-            expr().run()
+            await expr()
 
 
 class TestCaptureCcSpecial(SpecialsTestCase):
 
-    def test_capture_cc_runs_body_and_returns_value(self):
+    async def test_capture_cc_runs_body_and_returns_value(self):
         """
         (let [[k 0]] (capture/cc k 42)) binds the continuation to k in the let
         namespace and the body yields 42
@@ -192,11 +192,11 @@ class TestCaptureCcSpecial(SpecialsTestCase):
           (compile/capture/cc k 42))
         """
         expr, mod = self.compile_expr(src_str)
-        result = expr().run()
+        result = await expr()
         self.assertEqual(result, 42)
 
 
-    def test_capture_cc_k_is_continuation_instance(self):
+    async def test_capture_cc_k_is_continuation_instance(self):
         """
         After (capture/cc k ...) the binding k holds a Continuation object
         """
@@ -213,12 +213,12 @@ class TestCaptureCcSpecial(SpecialsTestCase):
             (compile/call record k)))
         """
         expr, mod = self.compile_expr(src_str, record=record)
-        expr().run()
+        await expr()
         self.assertEqual(len(results), 1)
         self.assertIsInstance(results[0], lib.Continuation)
 
 
-    def test_capture_cc_invoke_continuation_escapes_body(self):
+    async def test_capture_cc_invoke_continuation_escapes_body(self):
         """
         Invoking k inside capture/cc body resumes after the CC block with the
         given value, bypassing the remainder of the body
@@ -231,11 +231,11 @@ class TestCaptureCcSpecial(SpecialsTestCase):
             99))
         """
         expr, mod = self.compile_expr(src_str)
-        result = expr().run()
+        result = await expr()
         self.assertEqual(result, 55)
 
 
-    def test_capture_cc_continuation_variable_must_be_symbol(self):
+    async def test_capture_cc_continuation_variable_must_be_symbol(self):
         """
         (capture/cc 42 body) raises SpecialError because 42 is not a symbol
         """

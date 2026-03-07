@@ -30,7 +30,7 @@ class TestPushParamOpcodes(CevalTest):
     Tests for PUSH_PARAM opcode (pop values, build param bindings, push extent)
     """
 
-    def test_push_param_single_binding(self):
+    async def test_push_param_single_binding(self):
         """
         PUSH_PARAM with one name pops one value and binds it
         """
@@ -50,7 +50,7 @@ class TestPushParamOpcodes(CevalTest):
         self.assertEqual(result, 100)
 
 
-    def test_push_param_two_bindings(self):
+    async def test_push_param_two_bindings(self):
         """
         PUSH_PARAM with two names pops two values and binds both
         """
@@ -71,7 +71,7 @@ class TestPushParamOpcodes(CevalTest):
         self.assertEqual(result, (1, 2))
 
 
-    def test_push_param_nested_restores_on_pop_param(self):
+    async def test_push_param_nested_restores_on_pop_param(self):
         """
         Nested PUSH_PARAM: inner shadows outer; POP_PARAM restores outer
         """
@@ -96,7 +96,7 @@ class TestPushParamOpcodes(CevalTest):
         self.assertEqual(result, 1)
 
 
-    def test_push_param_unwind_on_return_restores_value(self):
+    async def test_push_param_unwind_on_return_restores_value(self):
         """
         RETURN inside PUSH_PARAM extent unwinds; param value is restored
         """
@@ -115,7 +115,7 @@ class TestPushParamOpcodes(CevalTest):
         self.assertIsNone(result)
 
 
-    def test_push_param_unwind_on_raise_restores_value(self):
+    async def test_push_param_unwind_on_raise_restores_value(self):
         """
         Exception through PUSH_PARAM extent unwinds; param value is restored
         """
@@ -140,7 +140,7 @@ class TestPushParamOpcodes(CevalTest):
             self.assertEqual(p.deref(), 1)
 
 
-    def test_push_param_stack_order_val0_deepest(self):
+    async def test_push_param_stack_order_val0_deepest(self):
         """
         Stack: val for names[0] deepest, val for names[-1] at TOS
         """

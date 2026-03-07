@@ -17,21 +17,21 @@ tests.lexer.prompt_toolkit.test_lexer
 Unit tests for koskari.lexer.prompt_toolkit.
 """
 
-from unittest import TestCase
+from unittest import IsolatedAsyncioTestCase
 from prompt_toolkit.document import Document
 from koskari.lexer.prompt_toolkit import KoskariLexer, koskari_style
 
 
-class TestKoskariLexer(TestCase):
+class TestKoskariLexer(IsolatedAsyncioTestCase):
 
-    def test_lexer_returns_callable(self):
+    async def test_lexer_returns_callable(self):
         lexer = KoskariLexer()
         doc = Document('(foo 1)')
         get_line = lexer.lex_document(doc)
         self.assertTrue(callable(get_line))
 
 
-    def test_lexer_line_zero_has_tokens(self):
+    async def test_lexer_line_zero_has_tokens(self):
         lexer = KoskariLexer()
         doc = Document('(foo 42)')
         get_line = lexer.lex_document(doc)
@@ -42,7 +42,7 @@ class TestKoskariLexer(TestCase):
         self.assertEqual(text_joined, '(foo 42)')
 
 
-    def test_lexer_string_has_style(self):
+    async def test_lexer_string_has_style(self):
         lexer = KoskariLexer()
         doc = Document('"hello"')
         get_line = lexer.lex_document(doc)
@@ -52,7 +52,7 @@ class TestKoskariLexer(TestCase):
         self.assertTrue(has_string_style)
 
 
-    def test_lexer_keyword_has_style(self):
+    async def test_lexer_keyword_has_style(self):
         lexer = KoskariLexer()
         doc = Document(':foo')
         get_line = lexer.lex_document(doc)
@@ -62,9 +62,9 @@ class TestKoskariLexer(TestCase):
         self.assertTrue(has_keyword_style)
 
 
-class TestKoskariStyle(TestCase):
+class TestKoskariStyle(IsolatedAsyncioTestCase):
 
-    def test_style_is_not_none(self):
+    async def test_style_is_not_none(self):
         self.assertIsNotNone(koskari_style)
 
 

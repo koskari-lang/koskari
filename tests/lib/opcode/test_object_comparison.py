@@ -31,7 +31,7 @@ class TestObjectComparisonOpcodes(CevalTest):
     OBJECT_IS_NOT, OBJECT_IS_INSTANCE, OBJECT_IS_SUBCLASS
     """
 
-    def test_object_eq(self):
+    async def test_object_eq(self):
         code, ns = build_expr([
             ["CONST", 42],
             ["CONST", 42],
@@ -41,7 +41,7 @@ class TestObjectComparisonOpcodes(CevalTest):
         self.assertEqual(run_to_completion(make_callable(code, ns)()), True)
 
 
-    def test_object_ne(self):
+    async def test_object_ne(self):
         code, ns = build_expr([
             ["CONST", 1],
             ["CONST", 2],
@@ -51,7 +51,7 @@ class TestObjectComparisonOpcodes(CevalTest):
         self.assertEqual(run_to_completion(make_callable(code, ns)()), True)
 
 
-    def test_object_lt(self):
+    async def test_object_lt(self):
         code, ns = build_expr([
             ["CONST", 1],
             ["CONST", 2],
@@ -61,7 +61,7 @@ class TestObjectComparisonOpcodes(CevalTest):
         self.assertEqual(run_to_completion(make_callable(code, ns)()), True)
 
 
-    def test_object_le(self):
+    async def test_object_le(self):
         code, ns = build_expr([
             ["CONST", 2],
             ["CONST", 2],
@@ -71,7 +71,7 @@ class TestObjectComparisonOpcodes(CevalTest):
         self.assertEqual(run_to_completion(make_callable(code, ns)()), True)
 
 
-    def test_object_gt(self):
+    async def test_object_gt(self):
         code, ns = build_expr([
             ["CONST", 3],
             ["CONST", 2],
@@ -81,7 +81,7 @@ class TestObjectComparisonOpcodes(CevalTest):
         self.assertEqual(run_to_completion(make_callable(code, ns)()), True)
 
 
-    def test_object_ge(self):
+    async def test_object_ge(self):
         code, ns = build_expr([
             ["CONST", 2],
             ["CONST", 2],
@@ -91,7 +91,7 @@ class TestObjectComparisonOpcodes(CevalTest):
         self.assertEqual(run_to_completion(make_callable(code, ns)()), True)
 
 
-    def test_object_in(self):
+    async def test_object_in(self):
         code, ns = build_expr([
             ["CONST", 2],
             ["CONST", [1, 2, 3]],
@@ -101,7 +101,7 @@ class TestObjectComparisonOpcodes(CevalTest):
         self.assertEqual(run_to_completion(make_callable(code, ns)()), True)
 
 
-    def test_object_not_in(self):
+    async def test_object_not_in(self):
         code, ns = build_expr([
             ["CONST", 0],
             ["CONST", [1, 2, 3]],
@@ -111,7 +111,7 @@ class TestObjectComparisonOpcodes(CevalTest):
         self.assertEqual(run_to_completion(make_callable(code, ns)()), True)
 
 
-    def test_object_is(self):
+    async def test_object_is(self):
         code, ns = build_expr([
             ["CONST", None],
             ["CONST", None],
@@ -121,7 +121,7 @@ class TestObjectComparisonOpcodes(CevalTest):
         self.assertEqual(run_to_completion(make_callable(code, ns)()), True)
 
 
-    def test_object_is_not(self):
+    async def test_object_is_not(self):
         code, ns = build_expr([
             ["CONST", []],
             ["CONST", []],
@@ -131,7 +131,7 @@ class TestObjectComparisonOpcodes(CevalTest):
         self.assertEqual(run_to_completion(make_callable(code, ns)()), True)
 
 
-    def test_object_is_instance(self):
+    async def test_object_is_instance(self):
         code, ns = build_expr([
             ["CONST", 42],
             ["CONST", int],
@@ -141,7 +141,7 @@ class TestObjectComparisonOpcodes(CevalTest):
         self.assertEqual(run_to_completion(make_callable(code, ns)()), True)
 
 
-    def test_object_is_subclass(self):
+    async def test_object_is_subclass(self):
         code, ns = build_expr([
             ["CONST", bool],
             ["CONST", int],

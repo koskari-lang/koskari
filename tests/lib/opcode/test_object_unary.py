@@ -31,7 +31,7 @@ class TestObjectUnaryOpcodes(CevalTest):
     OBJECT_BIT_INVERT, OBJECT_DIR
     """
 
-    def test_object_str(self):
+    async def test_object_str(self):
         code, ns = build_expr([
             ["CONST", "hello"],
             ["OBJECT_STR", 1],
@@ -40,7 +40,7 @@ class TestObjectUnaryOpcodes(CevalTest):
         self.assertEqual(run_to_completion(make_callable(code, ns)()), "hello")
 
 
-    def test_object_len(self):
+    async def test_object_len(self):
         code, ns = build_expr([
             ["CONST", [1, 2, 3]],
             ["OBJECT_LEN", 0],
@@ -49,7 +49,7 @@ class TestObjectUnaryOpcodes(CevalTest):
         self.assertEqual(run_to_completion(make_callable(code, ns)()), 3)
 
 
-    def test_object_not(self):
+    async def test_object_not(self):
         code, ns = build_expr([
             ["CONST", False],
             ["OBJECT_NOT", 0],
@@ -58,7 +58,7 @@ class TestObjectUnaryOpcodes(CevalTest):
         self.assertEqual(run_to_completion(make_callable(code, ns)()), True)
 
 
-    def test_object_truth(self):
+    async def test_object_truth(self):
         code, ns = build_expr([
             ["CONST", []],
             ["OBJECT_TRUTH", 0],
@@ -67,7 +67,7 @@ class TestObjectUnaryOpcodes(CevalTest):
         self.assertEqual(run_to_completion(make_callable(code, ns)()), False)
 
 
-    def test_object_type(self):
+    async def test_object_type(self):
         code, ns = build_expr([
             ["CONST", 42],
             ["OBJECT_TYPE", 0],
@@ -76,7 +76,7 @@ class TestObjectUnaryOpcodes(CevalTest):
         self.assertIs(run_to_completion(make_callable(code, ns)()), int)
 
 
-    def test_object_vars(self):
+    async def test_object_vars(self):
         class ObjWithDict(object):
             pass
         obj = ObjWithDict()
@@ -90,7 +90,7 @@ class TestObjectUnaryOpcodes(CevalTest):
         self.assertEqual(result, {"x": 1})
 
 
-    def test_object_aiter(self):
+    async def test_object_aiter(self):
         class AsyncIterable(object):
             def __aiter__(self):
                 return self
@@ -105,7 +105,7 @@ class TestObjectUnaryOpcodes(CevalTest):
         self.assertIsNotNone(result)
 
 
-    def test_object_repr(self):
+    async def test_object_repr(self):
         code, ns = build_expr([
             ["CONST", 42],
             ["OBJECT_REPR", 0],
@@ -114,7 +114,7 @@ class TestObjectUnaryOpcodes(CevalTest):
         self.assertEqual(run_to_completion(make_callable(code, ns)()), "42")
 
 
-    def test_object_iter(self):
+    async def test_object_iter(self):
         code, ns = build_expr([
             ["CONST", [1, 2]],
             ["OBJECT_ITER", 0],
@@ -124,7 +124,7 @@ class TestObjectUnaryOpcodes(CevalTest):
         self.assertEqual(list(result), [1, 2])
 
 
-    def test_object_bit_invert(self):
+    async def test_object_bit_invert(self):
         code, ns = build_expr([
             ["CONST", 0],
             ["OBJECT_BIT_INVERT", 0],
@@ -133,7 +133,7 @@ class TestObjectUnaryOpcodes(CevalTest):
         self.assertEqual(run_to_completion(make_callable(code, ns)()), -1)
 
 
-    def test_object_dir(self):
+    async def test_object_dir(self):
         code, ns = build_expr([
             ["CONST", 42],
             ["OBJECT_DIR", 0],

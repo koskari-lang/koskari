@@ -22,7 +22,7 @@ import unittest
 
 import asyncio
 from tests import make_callable
-from tests.lib.opcode import CevalTest, build_expr
+from tests.lib.opcode import CevalTest, build_expr, run_asyncio_in_thread
 from koskari.lib import AsyncGenerator
 
 
@@ -38,7 +38,7 @@ class TestYieldOpcodes(CevalTest):
     Tests for YIELD opcode and async generators.
     """
 
-    def test_yielding_expression_returns_async_generator(self):
+    async def test_yielding_expression_returns_async_generator(self):
         """
         Calling an Expression whose code has YIELD returns AsyncGenerator
         """
@@ -52,7 +52,7 @@ class TestYieldOpcodes(CevalTest):
         self.assertIsInstance(agen, AsyncGenerator)
 
 
-    def test_yield_suspends_and_resumes(self):
+    async def test_yield_suspends_and_resumes(self):
         """
         Yielding code returns AsyncGenerator; anext() yields value then StopAsyncIteration
         """
@@ -73,7 +73,7 @@ class TestYieldOpcodes(CevalTest):
             with self.assertRaises(StopAsyncIteration):
                 await anext(agen)
 
-        asyncio.run(run())
+        await run_asyncio_in_thread(run)
 
 
 # The end.

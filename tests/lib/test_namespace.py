@@ -28,24 +28,26 @@ from koskari.lib import (
 )
 
 
-class TestNamespaceSpec(unittest.TestCase):
+class TestNamespaceSpec(unittest.IsolatedAsyncioTestCase):
     """Tests for the NamespaceSpec type"""
 
-    def test_create_empty(self):
+    async def test_create_empty(self):
         """NamespaceSpec can be created with empty sequences"""
         spec = NamespaceSpec(None, (), ())
         self.assertIsNone(spec.name)
         self.assertEqual(spec.local_syms, ())
         self.assertEqual(spec.closure_syms, ())
 
-    def test_create_with_values(self):
+
+    async def test_create_with_values(self):
         """NamespaceSpec stores name and symbol sequences"""
         spec = NamespaceSpec("foo", ("a", "b"), ("z",))
         self.assertEqual(spec.name, "foo")
         self.assertEqual(spec.local_syms, ("a", "b"))
         self.assertEqual(spec.closure_syms, ("z",))
 
-    def test_get_namespace(self):
+
+    async def test_get_namespace(self):
         """NamespaceSpec.get_namespace() creates a Namespace"""
         spec1 = NamespaceSpec(None, ("z",), ())
         self.assertIsNone(spec1.name)
@@ -63,7 +65,8 @@ class TestNamespaceSpec(unittest.TestCase):
         ns1["z"] = 123
         self.assertEqual(ns2["z"], 123)
 
-    def test_contains(self):
+
+    async def test_contains(self):
         """in operator works on NamespaceSpec"""
         spec = NamespaceSpec("test", ("a", "b"), ("z",))
         self.assertIn("a", spec)
@@ -71,7 +74,8 @@ class TestNamespaceSpec(unittest.TestCase):
         self.assertIn("z", spec)
         self.assertNotIn("missing", spec)
 
-    def test_repr(self):
+
+    async def test_repr(self):
         """repr shows name, closure_syms, and local_syms"""
         spec = NamespaceSpec(None, ("k",), ())
         self.assertEqual(repr(spec), "NamespaceSpec(None, (), ('k',))")
@@ -79,37 +83,43 @@ class TestNamespaceSpec(unittest.TestCase):
         self.assertEqual(repr(spec2), "NamespaceSpec('foo', ('z',), ('a', 'b'))")
 
 
-class TestNamespace(unittest.TestCase):
+class TestNamespace(unittest.IsolatedAsyncioTestCase):
     """Tests for the Namespace type"""
 
-    def test_type_name(self):
+
+    async def test_type_name(self):
         """Namespace type has correct name"""
         self.assertEqual(Namespace.__name__, "Namespace")
 
-    def test_create(self):
+
+    async def test_create(self):
         """Namespace can be created"""
         ns = Namespace("ns", None, (), ())
         self.assertIs(type(ns), Namespace)
 
-    def test_name_and_parent(self):
+
+    async def test_name_and_parent(self):
         """Namespace stores name and parent"""
         ns = Namespace("ns", None, ('a',))
         self.assertEqual(ns.name, "ns")
         self.assertIsNone(ns.parent)
 
-    def test_deref_empty_raises(self):
+
+    async def test_deref_empty_raises(self):
         """deref() on unbound symbol raises NameError"""
         ns = Namespace("ns", None, ('a',))
         with self.assertRaises(NameError):
             ns.deref('a')
 
-    def test_store_and_deref(self):
+
+    async def test_store_and_deref(self):
         """store() sets value, deref() retrieves it"""
         ns = Namespace("ns", None, ('a',))
         ns.store('a', 123)
         self.assertEqual(ns.deref('a'), 123)
 
-    def test_raw_binding(self):
+
+    async def test_raw_binding(self):
         """raw() returns True for fast bindings without ref"""
         ns = Namespace("ns", None, ('a',))
         ns.store('a', 123)
@@ -117,7 +127,8 @@ class TestNamespace(unittest.TestCase):
         self.assertEqual(ns.deref('a'), 123)
         self.assertTrue(ns.raw('a'))
 
-    def test_subscript_access(self):
+
+    async def test_subscript_access(self):
         """Namespace supports subscript access"""
         ns = Namespace("ns", None, ('a',))
         ns.store('a', 123)
@@ -127,7 +138,8 @@ class TestNamespace(unittest.TestCase):
         self.assertEqual(ns.deref('a'), 456)
         self.assertEqual(ns['a'], 456)
 
-    def test_ref_converts_raw(self):
+
+    async def test_ref_converts_raw(self):
         """ref() converts raw binding to reference"""
         ns = Namespace("ns", None, ('a',))
         ns['a'] = 456
@@ -137,7 +149,8 @@ class TestNamespace(unittest.TestCase):
         self.assertFalse(ns.raw('a'))
         self.assertEqual(r.deref(), 456)
 
-    def test_ref_clear(self):
+
+    async def test_ref_clear(self):
         """Clearing ref makes binding empty"""
         ns = Namespace("ns", None, ('a',))
         ns['a'] = 456
@@ -149,7 +162,8 @@ class TestNamespace(unittest.TestCase):
         with self.assertRaises(NameError):
             _ = ns['a']
 
-    def test_ref_store(self):
+
+    async def test_ref_store(self):
         """Storing via ref updates namespace"""
         ns = Namespace("ns", None, ('a',))
         ns['a'] = 456
@@ -160,7 +174,8 @@ class TestNamespace(unittest.TestCase):
         self.assertEqual(ns.deref('a'), 999)
         self.assertEqual(ns['a'], 999)
 
-    def test_clear_binding(self):
+
+    async def test_clear_binding(self):
         """clear() removes value from binding"""
         ns = Namespace("ns", None, ('a',))
         ns['a'] = 456
@@ -172,7 +187,8 @@ class TestNamespace(unittest.TestCase):
         with self.assertRaises(NameError):
             _ = ns['a']
 
-    def test_nested_namespaces(self):
+
+    async def test_nested_namespaces(self):
         """Nested namespaces share closure bindings"""
         ns1 = Namespace("ns1", None, ('foo',))
         self.assertTrue(ns1.raw('foo'))
@@ -189,7 +205,8 @@ class TestNamespace(unittest.TestCase):
         self.assertIsNone(ns1.parent)
         self.assertIs(ns2.parent, ns1)
 
-    def test_nested_isolation(self):
+
+    async def test_nested_isolation(self):
         """Child namespace bindings are isolated from parent"""
         ns1 = Namespace("ns1", None, ('foo',))
         ns2 = Namespace("ns2", ns1, ('bar',), ('foo',))
@@ -213,7 +230,8 @@ class TestNamespace(unittest.TestCase):
         with self.assertRaises(NameError):
             ns1.deref('bar')
 
-    def test_nested_closure_sharing(self):
+
+    async def test_nested_closure_sharing(self):
         """Parent and child share the same closure ref"""
         ns1 = Namespace("ns1", None, ('foo',))
         ns2 = Namespace("ns2", ns1, ('bar',), ('foo',))
@@ -227,7 +245,8 @@ class TestNamespace(unittest.TestCase):
         with self.assertRaises(NameError):
             ns1.deref('foo')
 
-    def test_bind_ref(self):
+
+    async def test_bind_ref(self):
         """bind() replaces the reference for a binding"""
         ns1 = Namespace("ns1", None, ('foo',))
         ns2 = Namespace("ns2", ns1, ('bar',), ('foo',))
@@ -246,7 +265,8 @@ class TestNamespace(unittest.TestCase):
         self.assertEqual(ns2.deref('foo'), 999)
         self.assertEqual(ns1.deref('foo'), 123)
 
-    def test_bind_local(self):
+
+    async def test_bind_local(self):
         """bind() works on local bindings"""
         ns1 = Namespace("ns1", None, ('foo',))
         ns2 = Namespace("ns2", ns1, ('bar',), ('foo',))
@@ -263,13 +283,15 @@ class TestNamespace(unittest.TestCase):
         with self.assertRaises(NameError):
             ns1.deref('bar')
 
-    def test_bind_requires_ref(self):
+
+    async def test_bind_requires_ref(self):
         """bind() raises TypeError if not given a ref"""
         ns = Namespace("ns", None, ('bar',))
         with self.assertRaises(TypeError):
             ns.bind('bar', 123)
 
-    def test_find(self):
+
+    async def test_find(self):
         """find() searches parent namespaces"""
         ns1 = Namespace("ns1", None, ('foo', 'bar', 'qux'))
         ns2 = Namespace("ns2", ns1, ('baz',), ('foo',))
@@ -293,13 +315,15 @@ class TestNamespace(unittest.TestCase):
         self.assertIs(ns2.find('baz'), ns2.ref('baz'))
         self.assertIs(ns2.find('qux'), ns1.ref('qux'))
 
-    def test_keys(self):
+
+    async def test_keys(self):
         """keys() returns list of binding names"""
         ns = Namespace("ns", None, ('a', 'b', 'c'))
         keys = ns.keys()
         self.assertEqual(sorted(keys), ['a', 'b', 'c'])
 
-    def test_items(self):
+
+    async def test_items(self):
         """items() returns list of (name, ref) pairs"""
         ns = Namespace("ns", None, ('a', 'b'))
         ns['a'] = 1
@@ -307,32 +331,38 @@ class TestNamespace(unittest.TestCase):
         items = ns.items()
         self.assertEqual(len(items), 2)
 
-    def test_bound(self):
+
+    async def test_bound(self):
         """bound() returns True if name is bound"""
         ns = Namespace("ns", None, ('a',))
         self.assertTrue(ns.bound('a'))
         self.assertEqual(ns.bound('missing'), 0)
 
-    def test_len(self):
+
+    async def test_len(self):
         """len() returns number of bindings"""
         ns = Namespace("ns", None, ('a', 'b', 'c'))
         self.assertEqual(len(ns), 3)
 
-    def test_default_name(self):
+
+    async def test_default_name(self):
         """Namespace without name gets default"""
         ns = Namespace()
         self.assertEqual(ns.name, "<namespace>")
 
 
-class TestModuleNamespace(unittest.TestCase):
-    """Tests for the ModuleNamespace type"""
+class TestModuleNamespace(unittest.IsolatedAsyncioTestCase):
+    """
+    Tests for the ModuleNamespace type
+    """
 
-    def test_type(self):
+    async def test_type(self):
         """ModuleNamespace is a subclass of Namespace"""
         self.assertTrue(issubclass(ModuleNamespace, Namespace))
         self.assertEqual(ModuleNamespace.__name__, "ModuleNamespace")
 
-    def test_create(self):
+
+    async def test_create(self):
         """ModuleNamespace can be created"""
         mn = ModuleNamespace("mn", {})
 
@@ -340,18 +370,20 @@ class TestModuleNamespace(unittest.TestCase):
         self.assertIsInstance(mn, ModuleNamespace)
         self.assertIsInstance(mn, Namespace)
 
-    def test_name_and_parent(self):
+
+    async def test_name_and_parent(self):
         """ModuleNamespace has name and no parent"""
         ns = ModuleNamespace("ns", {})
         self.assertEqual(ns.name, "ns")
         self.assertIsNone(ns.parent)
 
-    def test_builtins_fallback(self):
+    async def test_builtins_fallback(self):
         """ModuleNamespace falls back to builtins for undefined"""
         ns = ModuleNamespace("ns", {'b': 987})
         self.assertEqual(ns.deref('b'), 987)
 
-    def test_store_and_deref(self):
+
+    async def test_store_and_deref(self):
         """store() and deref() work on ModuleNamespace"""
         ns = ModuleNamespace("ns", {})
 
@@ -366,7 +398,8 @@ class TestModuleNamespace(unittest.TestCase):
         self.assertEqual(ns.deref('a'), 456)
         self.assertEqual(ns['a'], 456)
 
-    def test_ref_operations(self):
+
+    async def test_ref_operations(self):
         """ref operations work on ModuleNamespace"""
         ns = ModuleNamespace("ns", {})
         ns['a'] = 456
@@ -385,7 +418,8 @@ class TestModuleNamespace(unittest.TestCase):
         with self.assertRaises(NameError):
             ns.deref('a')
 
-    def test_builtins_separate_from_refs(self):
+
+    async def test_builtins_separate_from_refs(self):
         """Builtins dict is not modified by namespace operations"""
         glbl = {'a': 123, 'b': "hello"}
         mod = ModuleNamespace("mod", glbl)
@@ -397,7 +431,8 @@ class TestModuleNamespace(unittest.TestCase):
         # Original dict unchanged
         self.assertEqual(glbl['a'], 123)
 
-    def test_nested_with_namespace(self):
+
+    async def test_nested_with_namespace(self):
         """ModuleNamespace works as parent for Namespace"""
         ns1 = ModuleNamespace("ns1", {})
         ns2 = Namespace("ns2", ns1, ('bar',), ('foo',))
@@ -410,7 +445,8 @@ class TestModuleNamespace(unittest.TestCase):
         self.assertIs(ns1.ref('foo'), ns2.ref('foo'))
         self.assertIsNot(ns1.ref('bar'), ns2.ref('bar'))
 
-    def test_closure_from_module(self):
+
+    async def test_closure_from_module(self):
         """Closures from ModuleNamespace share refs"""
         ns1 = ModuleNamespace("ns1", {})
         ns2 = Namespace("ns2", ns1, ('bar',), ('foo',))
@@ -427,7 +463,8 @@ class TestModuleNamespace(unittest.TestCase):
         with self.assertRaises(NameError):
             ns1.deref('foo')
 
-    def test_recreate_namespace(self):
+
+    async def test_recreate_namespace(self):
         """Recreating ModuleNamespace reuses builtins values"""
         data = {'a': 1, 'b': 2}
 
@@ -446,21 +483,23 @@ class TestModuleNamespace(unittest.TestCase):
         # New ModuleNamespace sees original builtin value
         self.assertEqual(mod2.deref('a'), 1)
 
-    def test_default_name(self):
+
+    async def test_default_name(self):
         """ModuleNamespace without name gets default"""
         ns = ModuleNamespace(None, {})
         self.assertEqual(ns.name, "<module>")
 
 
-class TestCollectorNamespace(unittest.TestCase):
+class TestCollectorNamespace(unittest.IsolatedAsyncioTestCase):
     """Tests for the CollectorNamespace type"""
 
-    def test_type(self):
+    async def test_type(self):
         """CollectorNamespace is a subclass of Namespace"""
         self.assertTrue(issubclass(CollectorNamespace, Namespace))
         self.assertEqual(CollectorNamespace.__name__, "CollectorNamespace")
 
-    def test_create(self):
+
+    async def test_create(self):
         """CollectorNamespace can be created"""
         cn = CollectorNamespace("cn", None, (), ())
 
@@ -468,7 +507,8 @@ class TestCollectorNamespace(unittest.TestCase):
         self.assertIsInstance(cn, CollectorNamespace)
         self.assertIsInstance(cn, Namespace)
 
-    def test_blocks_closure(self):
+
+    async def test_blocks_closure(self):
         """CollectorNamespace prevents closures over its refs"""
         pn = Namespace("pn", None, ('a', 'b'))
         pn['a'] = 123
@@ -495,10 +535,10 @@ class TestCollectorNamespace(unittest.TestCase):
         self.assertIs(pn.deref('a'), ns.deref('a'))
 
 
-class TestModule(unittest.TestCase):
+class TestModule(unittest.IsolatedAsyncioTestCase):
     """Tests for the Module type"""
 
-    def test_create_with_namespace(self):
+    async def test_create_with_namespace(self):
         """Module can be created with a Namespace"""
         ns = Namespace("ns", None, ('a', 'b'))
         ns['a'] = 123
@@ -507,7 +547,8 @@ class TestModule(unittest.TestCase):
         m = Module(ns)
         self.assertIsInstance(m, Module)
 
-    def test_attribute_access(self):
+
+    async def test_attribute_access(self):
         """Module provides attribute access to namespace"""
         ns = Namespace("ns", None, ('a', 'b'))
         ns['a'] = 123
@@ -518,7 +559,8 @@ class TestModule(unittest.TestCase):
         self.assertEqual(m.a, 123)
         self.assertEqual(m.b, "hello")
 
-    def test_attribute_assignment(self):
+
+    async def test_attribute_assignment(self):
         """Module attribute assignment updates namespace"""
         ns = Namespace("ns", None, ('a', 'b'))
         ns['a'] = 123
@@ -530,7 +572,8 @@ class TestModule(unittest.TestCase):
         self.assertEqual(m.a, 456)
         self.assertEqual(ns['a'], 456)
 
-    def test_missing_attribute_raises(self):
+
+    async def test_missing_attribute_raises(self):
         """Accessing missing attribute raises AttributeError"""
         ns = Namespace("ns", None, ('a',))
         ns['a'] = 123
@@ -540,7 +583,8 @@ class TestModule(unittest.TestCase):
         with self.assertRaises(AttributeError):
             _ = m.z
 
-    def test_assign_missing_raises(self):
+
+    async def test_assign_missing_raises(self):
         """Assigning to missing attribute raises AttributeError"""
         ns = Namespace("ns", None, ('a',))
         ns['a'] = 123
@@ -550,14 +594,16 @@ class TestModule(unittest.TestCase):
         with self.assertRaises(AttributeError):
             m.z = None
 
-    def test_module_name(self):
+
+    async def test_module_name(self):
         """Module __name__ returns namespace name"""
         ns = Namespace("mymod", None, ())
         m = Module(ns)
 
         self.assertEqual(m.__name__, "mymod")
 
-    def test_module_dict(self):
+
+    async def test_module_dict(self):
         """Module __dict__ returns the namespace"""
         ns = Namespace("mymod", None, ())
         m = Module(ns)
@@ -565,7 +611,8 @@ class TestModule(unittest.TestCase):
         self.assertIs(m.__dict__, ns)
         self.assertIs(vars(m), ns)
 
-    def test_module_dir(self):
+
+    async def test_module_dir(self):
         """Module dir() returns namespace keys"""
         ns = Namespace("ns", None, ('a', 'b'))
         ns['a'] = 1
@@ -576,7 +623,8 @@ class TestModule(unittest.TestCase):
         d = dir(m)
         self.assertEqual(sorted(d), ['a', 'b'])
 
-    def test_with_module_namespace(self):
+
+    async def test_with_module_namespace(self):
         """Module works with ModuleNamespace"""
         glbl = {'a': 123, 'b': "hello"}
         mod = ModuleNamespace('mod', glbl)
@@ -587,7 +635,8 @@ class TestModule(unittest.TestCase):
         self.assertIs(m.__dict__, mod)
         self.assertIs(vars(m), mod)
 
-    def test_module_namespace_access(self):
+
+    async def test_module_namespace_access(self):
         """Module with ModuleNamespace accesses builtins"""
         glbl = {'a': 123, 'b': "hello"}
         mod = ModuleNamespace('mod', glbl)
@@ -604,7 +653,8 @@ class TestModule(unittest.TestCase):
         # Original dict unchanged
         self.assertEqual(glbl['a'], 123)
 
-    def test_dynamic_attribute(self):
+
+    async def test_dynamic_attribute(self):
         """Module supports dynamic attribute creation via namespace"""
         glbl = {}
         mod = ModuleNamespace('mod', glbl)
@@ -623,7 +673,8 @@ class TestModule(unittest.TestCase):
         self.assertEqual(r.deref(), 999)
         self.assertEqual(m.z, 999)
 
-    def test_dir_after_access(self):
+
+    async def test_dir_after_access(self):
         """dir() reflects accessed bindings"""
         glbl = {'a': 123, 'b': "hello"}
         mod = ModuleNamespace('mod', glbl)
@@ -641,7 +692,8 @@ class TestModule(unittest.TestCase):
         d = dir(m)
         self.assertEqual(sorted(d), ['a', 'b', 'z'])
 
-    def test_requires_namespace(self):
+
+    async def test_requires_namespace(self):
         """Module requires a Namespace instance"""
         with self.assertRaises(TypeError):
             Module("not a namespace")

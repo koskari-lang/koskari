@@ -29,7 +29,7 @@ class TestConstOpcodes(CevalTest):
     Tests for CONST, CONST_ITEM, CONST_ITEM_CLEAR, CONST_ITEM_REF, CONST_ITEM_STORE
     """
 
-    def test_const_return_single_value(self):
+    async def test_const_return_single_value(self):
         """
         CONST pushes value; RETURN 1 returns it
         """
@@ -42,7 +42,7 @@ class TestConstOpcodes(CevalTest):
         self.assertEqual(result, 42)
 
 
-    def test_const_item_getitem(self):
+    async def test_const_item_getitem(self):
         """
         CONST_ITEM pushes TOS[key] with key from constant pool
         """
@@ -55,7 +55,7 @@ class TestConstOpcodes(CevalTest):
         self.assertEqual(result, 20)
 
 
-    def test_const_item_store_setitem(self):
+    async def test_const_item_store_setitem(self):
         """
         CONST_ITEM_STORE does TOS1[key] = TOS; key from constant pool
         """
@@ -71,7 +71,7 @@ class TestConstOpcodes(CevalTest):
         self.assertEqual(result, "x")
 
 
-    def test_const_item_clear_delitem(self):
+    async def test_const_item_clear_delitem(self):
         """
         CONST_ITEM_CLEAR deletes TOS[key]
         """
@@ -87,7 +87,7 @@ class TestConstOpcodes(CevalTest):
         self.assertNotIn("z", d)
 
 
-    def test_const_item_ref_pushes_item_ref(self):
+    async def test_const_item_ref_pushes_item_ref(self):
         """
         CONST_ITEM_REF pushes ItemRef for TOS[key]
         """

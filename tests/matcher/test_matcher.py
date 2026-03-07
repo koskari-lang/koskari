@@ -38,42 +38,42 @@ from koskari.matcher import (
 )
 
 
-class TestMatchLiteral(unittest.TestCase):
+class TestMatchLiteral(unittest.IsolatedAsyncioTestCase):
 
-    def test_literal_matches(self):
+    async def test_literal_matches(self):
         src = cons(keyword('before:'), nil)
         result = match(src, MATCH(LITERAL_KW('before:')))
         self.assertIsNotNone(result)
         self.assertEqual(result, {})
 
-    def test_literal_fails(self):
+    async def test_literal_fails(self):
         src = cons(keyword('body:'), nil)
         result = match(src, MATCH(LITERAL_KW('before:')))
         self.assertIsNone(result)
 
-    def test_literal_sym(self):
+    async def test_literal_sym(self):
         src = cons(symbol('foo'), nil)
         result = match(src, MATCH(LITERAL_SYM('foo')))
         self.assertIsNotNone(result)
 
 
-class TestMatchBind(unittest.TestCase):
+class TestMatchBind(unittest.IsolatedAsyncioTestCase):
 
-    def test_bind_captures_element(self):
+    async def test_bind_captures_element(self):
         x = symbol('x')
         src = cons(x, nil)
         result = match(src, MATCH(BIND('val')))
         self.assertIsNotNone(result)
         self.assertEqual(result['val'].source, x)
 
-    def test_bind_empty_fails(self):
+    async def test_bind_empty_fails(self):
         result = match(nil, MATCH(BIND('val')))
         self.assertIsNone(result)
 
 
-class TestMatchRest(unittest.TestCase):
+class TestMatchRest(unittest.IsolatedAsyncioTestCase):
 
-    def test_rest_captures_remainder(self):
+    async def test_rest_captures_remainder(self):
         a = symbol('a')
         b = symbol('b')
         src = cons(a, cons(b, nil))
@@ -81,7 +81,7 @@ class TestMatchRest(unittest.TestCase):
         self.assertIsNotNone(result)
         self.assertEqual(list(unpack(result['tail'].source)), [a, b])
 
-    def test_rest_with_bind_before(self):
+    async def test_rest_with_bind_before(self):
         a = symbol('a')
         b = symbol('b')
         src = cons(a, cons(b, nil))
@@ -90,14 +90,14 @@ class TestMatchRest(unittest.TestCase):
         self.assertEqual(result['first'].source, a)
         self.assertEqual(list(unpack(result['tail'].source)), [b])
 
-    def test_rest_empty_fails(self):
+    async def test_rest_empty_fails(self):
         result = match(nil, MATCH(REST('tail')))
         self.assertIsNone(result)
 
 
-class TestMatchPairDestructuring(unittest.TestCase):
+class TestMatchPairDestructuring(unittest.IsolatedAsyncioTestCase):
 
-    def test_match_keyword_bind(self):
+    async def test_match_keyword_bind(self):
         kw = keyword('before:')
         body = cons(symbol('x'), nil)
         elem = cons(kw, body)
@@ -106,7 +106,7 @@ class TestMatchPairDestructuring(unittest.TestCase):
         self.assertIsNotNone(result)
         self.assertEqual(result['before_body'].source, body)
 
-    def test_match_wrong_keyword_fails(self):
+    async def test_match_wrong_keyword_fails(self):
         kw = keyword('body:')
         body = cons(symbol('x'), nil)
         elem = cons(kw, body)
@@ -115,9 +115,9 @@ class TestMatchPairDestructuring(unittest.TestCase):
         self.assertIsNone(result)
 
 
-class TestMatchPairCapture(unittest.TestCase):
+class TestMatchPairCapture(unittest.IsolatedAsyncioTestCase):
 
-    def test_pair_captures_whole_pair(self):
+    async def test_pair_captures_whole_pair(self):
         p = cons(symbol('a'), symbol('b'))
         src = cons(p, nil)
         result = match(src, MATCH(PAIR('p')))
@@ -125,9 +125,9 @@ class TestMatchPairCapture(unittest.TestCase):
         self.assertEqual(result['p'].source, p)
 
 
-class TestMatchOpt(unittest.TestCase):
+class TestMatchOpt(unittest.IsolatedAsyncioTestCase):
 
-    def test_opt_matches_when_present(self):
+    async def test_opt_matches_when_present(self):
         kw = keyword('after:')
         body = cons(symbol('y'), nil)
         elem = cons(kw, body)
@@ -139,15 +139,15 @@ class TestMatchOpt(unittest.TestCase):
         self.assertIsNotNone(result)
         self.assertEqual(result['after_body'].source, body)
 
-    def test_opt_succeeds_when_absent(self):
+    async def test_opt_succeeds_when_absent(self):
         result = match(nil, MATCH(OPT(MATCH(LITERAL_KW('after:'), BIND('after_body')))))
         self.assertIsNotNone(result)
         self.assertNotIn('after_body', result)
 
 
-class TestMatchAnyOrder(unittest.TestCase):
+class TestMatchAnyOrder(unittest.IsolatedAsyncioTestCase):
 
-    def test_any_order_matches_clauses(self):
+    async def test_any_order_matches_clauses(self):
         before = cons(keyword('before:'), cons(symbol('b'), nil))
         body = cons(keyword('body:'), cons(symbol('x'), nil))
         after = cons(keyword('after:'), cons(symbol('a'), nil))
@@ -163,7 +163,7 @@ class TestMatchAnyOrder(unittest.TestCase):
         self.assertEqual(result['body'].source, cons(symbol('x'), nil))
         self.assertEqual(result['after_body'].source, cons(symbol('a'), nil))
 
-    def test_any_order_body_and_after(self):
+    async def test_any_order_body_and_after(self):
         body = cons(keyword('body:'), cons(symbol('x'), nil))
         after = cons(keyword('after:'), cons(symbol('a'), nil))
         src = cons(body, cons(after, nil))
@@ -177,9 +177,9 @@ class TestMatchAnyOrder(unittest.TestCase):
         self.assertIn('after_body', result)
 
 
-class TestMatchDynWindPattern(unittest.TestCase):
+class TestMatchDynWindPattern(unittest.IsolatedAsyncioTestCase):
 
-    def test_dyn_wind_all_three_keywords(self):
+    async def test_dyn_wind_all_three_keywords(self):
         before = cons(keyword('before:'), cons(symbol('b'), nil))
         body = cons(keyword('body:'), cons(symbol('x'), nil))
         after = cons(keyword('after:'), cons(symbol('a'), nil))
@@ -196,9 +196,9 @@ class TestMatchDynWindPattern(unittest.TestCase):
         self.assertIn('after_body', result)
 
 
-class TestMatchFromTuple(unittest.TestCase):
+class TestMatchFromTuple(unittest.IsolatedAsyncioTestCase):
 
-    def test_tuple_same_as_builder(self):
+    async def test_tuple_same_as_builder(self):
         kw = keyword('before:')
         body = cons(symbol('x'), nil)
         elem = cons(kw, body)
@@ -213,9 +213,9 @@ class TestMatchFromTuple(unittest.TestCase):
         self.assertEqual(result_tup['before_body'].source, body)
 
 
-class TestMatchFailure(unittest.TestCase):
+class TestMatchFailure(unittest.IsolatedAsyncioTestCase):
 
-    def test_no_pattern_matches_returns_none(self):
+    async def test_no_pattern_matches_returns_none(self):
         src = cons(keyword('unknown:'), nil)
         result = match(src, [
             MATCH(LITERAL_KW('before:')),
@@ -223,14 +223,14 @@ class TestMatchFailure(unittest.TestCase):
         ])
         self.assertIsNone(result)
 
-    def test_empty_source_bind_fails(self):
+    async def test_empty_source_bind_fails(self):
         result = match(nil, MATCH(BIND('x')))
         self.assertIsNone(result)
 
 
-class TestMatchLiterals(unittest.TestCase):
+class TestMatchLiterals(unittest.IsolatedAsyncioTestCase):
 
-    def test_literals_param_accepted(self):
+    async def test_literals_param_accepted(self):
         sym = symbol('x')
         src = cons(sym, nil)
         result = match(src, MATCH(BIND('val')), literals=frozenset())
@@ -238,9 +238,9 @@ class TestMatchLiterals(unittest.TestCase):
         self.assertEqual(result['val'].source, sym)
 
 
-class TestMatchExpr(unittest.TestCase):
+class TestMatchExpr(unittest.IsolatedAsyncioTestCase):
 
-    def test_expr_captures_element(self):
+    async def test_expr_captures_element(self):
         x = symbol('x')
         src = cons(x, nil)
         result = match(src, MATCH(EXPR('expr')))
@@ -248,36 +248,36 @@ class TestMatchExpr(unittest.TestCase):
         self.assertEqual(result['expr'].source, x)
 
 
-class TestMatchSymbol(unittest.TestCase):
+class TestMatchSymbol(unittest.IsolatedAsyncioTestCase):
 
-    def test_symbol_captures_symbol(self):
+    async def test_symbol_captures_symbol(self):
         s = symbol('foo')
         src = cons(s, nil)
         result = match(src, MATCH(SYMBOL('name')))
         self.assertIsNotNone(result)
         self.assertEqual(result['name'].source, s)
 
-    def test_symbol_rejects_non_symbol(self):
+    async def test_symbol_rejects_non_symbol(self):
         src = cons(keyword('kw'), nil)
         result = match(src, MATCH(SYMBOL('name')))
         self.assertIsNone(result)
 
 
-class TestMatchDefine(unittest.TestCase):
+class TestMatchDefine(unittest.IsolatedAsyncioTestCase):
 
-    def test_define_captures_symbol(self):
+    async def test_define_captures_symbol(self):
         s = symbol('foo')
         src = cons(s, nil)
         result = match(src, MATCH(DEFINE('name')))
         self.assertIsNotNone(result)
         self.assertEqual(result['name'].source, s)
 
-    def test_define_rejects_non_symbol(self):
+    async def test_define_rejects_non_symbol(self):
         src = cons(keyword('kw'), nil)
         result = match(src, MATCH(DEFINE('name')))
         self.assertIsNone(result)
 
-    def test_define_with_value(self):
+    async def test_define_with_value(self):
         name = symbol('x')
         val = symbol('y')
         src = cons(name, cons(val, nil))
@@ -287,20 +287,20 @@ class TestMatchDefine(unittest.TestCase):
         self.assertEqual(result['value'].source, val)
 
 
-class TestMatchValue(unittest.TestCase):
+class TestMatchValue(unittest.IsolatedAsyncioTestCase):
 
-    def test_value_captures_element(self):
+    async def test_value_captures_element(self):
         x = symbol('x')
         src = cons(x, nil)
         result = match(src, MATCH(VALUE('val')))
         self.assertIsNotNone(result)
         self.assertEqual(result['val'].source, x)
 
-    def test_value_empty_fails(self):
+    async def test_value_empty_fails(self):
         result = match(nil, MATCH(VALUE('val')))
         self.assertIsNone(result)
 
-    def test_value_captures_pair(self):
+    async def test_value_captures_pair(self):
         p = cons(symbol('a'), symbol('b'))
         src = cons(p, nil)
         result = match(src, MATCH(VALUE('val')))
@@ -308,9 +308,9 @@ class TestMatchValue(unittest.TestCase):
         self.assertEqual(result['val'].source, p)
 
 
-class TestMatchWithSpecs(unittest.TestCase):
+class TestMatchWithSpecs(unittest.IsolatedAsyncioTestCase):
 
-    def test_with_specs_returns_tuple(self):
+    async def test_with_specs_returns_tuple(self):
         x = symbol('x')
         src = cons(x, nil)
         result = match(src, MATCH(BIND('val')), with_specs=True)
@@ -321,7 +321,7 @@ class TestMatchWithSpecs(unittest.TestCase):
         self.assertIn('val', specs)
         self.assertIsNotNone(specs['val'])
 
-    def test_with_specs_no_match_returns_none(self):
+    async def test_with_specs_no_match_returns_none(self):
         result = match(nil, MATCH(BIND('x')), with_specs=True)
         self.assertIsNone(result)
 

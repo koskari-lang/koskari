@@ -30,7 +30,7 @@ def _append(seq, x):
 
 class TestForEachSpecial(SpecialsTestCase):
 
-    def test_foreach_basic(self):
+    async def test_foreach_basic(self):
         col = []
         src = """
         (compile/for-each [i x]
@@ -39,12 +39,12 @@ class TestForEachSpecial(SpecialsTestCase):
         expr, mod = self.compile_expr(
             src, x=range(0, 5), col=col,
             append=_append, add=lambda a, b: a + b)
-        result = expr().run()
+        result = await expr()
         self.assertIsNone(result)
         self.assertEqual(col, [100, 101, 102, 103, 104])
 
 
-    def test_foreach_unused_else(self):
+    async def test_foreach_unused_else(self):
         col = []
         src = """
         (compile/for-each [i x]
@@ -54,12 +54,12 @@ class TestForEachSpecial(SpecialsTestCase):
         expr, mod = self.compile_expr(
             src, x=range(0, 5), col=col,
             append=_append, add=lambda a, b: a + b)
-        result = expr().run()
+        result = await expr()
         self.assertIsNone(result)
         self.assertEqual(col, [100, 101, 102, 103, 104])
 
 
-    def test_foreach_else_fires_on_exhaustion(self):
+    async def test_foreach_else_fires_on_exhaustion(self):
         col = []
         src = """
         (compile/for-each [i x]
@@ -72,12 +72,12 @@ class TestForEachSpecial(SpecialsTestCase):
             src, x=range(0, 4), col=col,
             gt=lambda a, b: a > b,
             append=_append, add=lambda a, b: a + b)
-        result = expr().run()
+        result = await expr()
         self.assertEqual(result, "unmatched")
         self.assertEqual(col, [100, 101, 102, 103])
 
 
-    def test_foreach_else_skipped_on_break(self):
+    async def test_foreach_else_skipped_on_break(self):
         col = []
         src = """
         (compile/for-each [i x]
@@ -90,12 +90,12 @@ class TestForEachSpecial(SpecialsTestCase):
             src, x=range(0, 10), col=col,
             gt=lambda a, b: a > b,
             append=_append, add=lambda a, b: a + b)
-        result = expr().run()
+        result = await expr()
         self.assertIsNone(result)
         self.assertEqual(col, [100, 101, 102, 103, 104])
 
 
-    def test_foreach_empty_iterable_returns_none(self):
+    async def test_foreach_empty_iterable_returns_none(self):
         col = []
         src = """
         (compile/for-each [i x]
@@ -103,12 +103,12 @@ class TestForEachSpecial(SpecialsTestCase):
         """
         expr, mod = self.compile_expr(
             src, x=[], col=col, append=_append)
-        result = expr().run()
+        result = await expr()
         self.assertIsNone(result)
         self.assertEqual(col, [])
 
 
-    def test_foreach_break_with_value(self):
+    async def test_foreach_break_with_value(self):
         src = """
         (compile/for-each [i x]
           (compile/cond
@@ -117,7 +117,7 @@ class TestForEachSpecial(SpecialsTestCase):
         """
         expr, mod = self.compile_expr(
             src, x=range(0, 10), gt=lambda a, b: a > b)
-        result = expr().run()
+        result = await expr()
         self.assertEqual(result, "found")
 
 

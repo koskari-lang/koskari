@@ -18,7 +18,7 @@ Unit tests for koskari.lexer.parser.
 """
 
 
-from unittest import TestCase
+from unittest import IsolatedAsyncioTestCase
 
 from koskari.types import symbol, car, cdr, is_pair
 from koskari.reader import LayoutReader
@@ -26,27 +26,27 @@ from koskari.reader import LayoutReader
 from koskari.lexer import default_layout_reader, parse, parse_all
 
 
-class TestDefaultLayoutReader(TestCase):
+class TestDefaultLayoutReader(IsolatedAsyncioTestCase):
 
-    def test_returns_layout_reader(self):
+    async def test_returns_layout_reader(self):
         reader = default_layout_reader()
         self.assertIsInstance(reader, LayoutReader)
 
 
-    def test_cached_same_instance(self):
+    async def test_cached_same_instance(self):
         r1 = default_layout_reader()
         r2 = default_layout_reader()
         self.assertIs(r1, r2)
 
 
-class TestParse(TestCase):
+class TestParse(IsolatedAsyncioTestCase):
 
-    def test_parse_atom_returns_symbol(self):
+    async def test_parse_atom_returns_symbol(self):
         result = parse('foo')
         self.assertEqual(result, symbol('foo'))
 
 
-    def test_parse_s_expr_returns_pair(self):
+    async def test_parse_s_expr_returns_pair(self):
         result = parse('(a b c)')
         self.assertTrue(is_pair(result))
         self.assertEqual(car(result), symbol('a'))
@@ -54,17 +54,17 @@ class TestParse(TestCase):
         self.assertEqual(car(cdr(cdr(result))), symbol('c'))
 
 
-    def test_parse_eof_returns_none(self):
+    async def test_parse_eof_returns_none(self):
         result = parse('')
         self.assertIsNone(result)
 
 
-    def test_parse_whitespace_only_returns_none(self):
+    async def test_parse_whitespace_only_returns_none(self):
         result = parse('   \n\t  ')
         self.assertIsNone(result)
 
 
-    def test_parse_layout_block(self):
+    async def test_parse_layout_block(self):
         src = """
         if True:
           x
@@ -74,19 +74,19 @@ class TestParse(TestCase):
         self.assertEqual(car(result), symbol('compile/cond'))
 
 
-class TestParseAll(TestCase):
+class TestParseAll(IsolatedAsyncioTestCase):
 
-    def test_parse_all_empty_yields_nothing(self):
+    async def test_parse_all_empty_yields_nothing(self):
         forms = list(parse_all(''))
         self.assertEqual(forms, [])
 
 
-    def test_parse_all_single_form(self):
+    async def test_parse_all_single_form(self):
         forms = list(parse_all('42'))
         self.assertEqual(forms, [42])
 
 
-    def test_parse_all_multiple_forms(self):
+    async def test_parse_all_multiple_forms(self):
         forms = list(parse_all('(define x 1) (define y 2) x'))
         self.assertEqual(len(forms), 3)
         self.assertTrue(is_pair(forms[0]))

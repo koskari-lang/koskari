@@ -29,7 +29,7 @@ class TestStackOpcodes(CevalTest):
     Tests for DUP, POP
     """
 
-    def test_dup_copies_stack_top(self):
+    async def test_dup_copies_stack_top(self):
         """
         DUP n duplicates top n values; RETURN 2 returns (a, a)
         """
@@ -43,7 +43,7 @@ class TestStackOpcodes(CevalTest):
         self.assertEqual(result, (7, 7))
 
 
-    def test_pop_discards_stack_values(self):
+    async def test_pop_discards_stack_values(self):
         """
         POP n discards top n values; remaining value is returned
         """

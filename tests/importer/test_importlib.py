@@ -27,7 +27,7 @@ from koskari.importer import install, is_installed, uninstall
 from koskari.importer.importlib import KoskariPathFinder, KoskariSourceFileLoader
 
 
-class TestInstallUninstall(unittest.TestCase):
+class TestInstallUninstall(unittest.IsolatedAsyncioTestCase):
 
     def setUp(self):
         uninstall()
@@ -35,35 +35,35 @@ class TestInstallUninstall(unittest.TestCase):
     def tearDown(self):
         uninstall()
 
-    def test_install_inserts_finder(self):
+    async def test_install_inserts_finder(self):
         self.assertFalse(is_installed())
         install()
         self.assertTrue(is_installed())
 
-    def test_install_at_front_of_meta_path(self):
+    async def test_install_at_front_of_meta_path(self):
         install()
         self.assertIs(sys.meta_path[0], KoskariPathFinder)
 
-    def test_double_install_is_noop(self):
+    async def test_double_install_is_noop(self):
         install()
         count_before = sys.meta_path.count(KoskariPathFinder)
         install()
         count_after = sys.meta_path.count(KoskariPathFinder)
         self.assertEqual(count_before, count_after)
 
-    def test_uninstall_removes_finder(self):
+    async def test_uninstall_removes_finder(self):
         install()
         self.assertTrue(is_installed())
         uninstall()
         self.assertFalse(is_installed())
 
-    def test_loader_class(self):
+    async def test_loader_class(self):
         install()
         finder = sys.meta_path[0]
         self.assertIs(finder, KoskariPathFinder)
 
 
-class TestKiImport(unittest.TestCase):
+class TestKiImport(unittest.IsolatedAsyncioTestCase):
     """
     Create a temporary .ki file and import it via importlib.import_module
     to verify that the whole pipeline works end-to-end.
@@ -75,6 +75,7 @@ class TestKiImport(unittest.TestCase):
         self._tmpdir = tempfile.mkdtemp(prefix='koskari_test_')
         self._prev_path = sys.path[:]
         sys.path.insert(0, self._tmpdir)
+
 
     def tearDown(self):
         uninstall()
@@ -92,29 +93,34 @@ class TestKiImport(unittest.TestCase):
         import shutil
         shutil.rmtree(self._tmpdir, ignore_errors=True)
 
+
     def _write_ki(self, modname, content):
         path = os.path.join(self._tmpdir, modname + '.ki')
         with open(path, 'w', encoding='utf-8') as fh:
             fh.write(content)
         return path
 
-    def test_import_empty_module(self):
+
+    async def test_import_empty_module(self):
         self._write_ki('ki_empty', '')
         mod = importlib.import_module('ki_empty')
         self.assertIsNotNone(mod)
 
-    def test_module_has_file_attribute(self):
+
+    async def test_module_has_file_attribute(self):
         path = self._write_ki('ki_filattr', '')
         mod = importlib.import_module('ki_filattr')
         self.assertTrue(hasattr(mod, '__file__'))
         self.assertEqual(path, mod.__file__)
 
-    def test_define_binding_visible(self):
+
+    async def test_define_binding_visible(self):
         self._write_ki('ki_defn', '(define answer 42)')
         mod = importlib.import_module('ki_defn')
         self.assertEqual(42, mod.answer)
 
-    def test_multiple_defines(self):
+
+    async def test_multiple_defines(self):
         self._write_ki('ki_multi', '(define x 1)\n(define y 2)')
         mod = importlib.import_module('ki_multi')
         self.assertEqual(1, mod.x)

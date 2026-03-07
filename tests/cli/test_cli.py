@@ -16,6 +16,7 @@ Tests for koskari.cli: run_file_async, repl_async, option_parser, main.
 """
 
 
+import asyncio
 import io
 import os
 import sys
@@ -42,14 +43,14 @@ def _script(name):
     return os.path.join(_SCRIPTS, name)
 
 
-class TestOptionParser(unittest.TestCase):
+class TestOptionParser(unittest.IsolatedAsyncioTestCase):
 
     def _parse(self, *args):
         parser = option_parser('koskari')
         return parser.parse_args(list(args))
 
 
-    def test_defaults(self):
+    async def test_defaults(self):
         opts = self._parse()
         self.assertIsNone(opts.filename)
         self.assertEqual([], opts.args)
@@ -58,32 +59,32 @@ class TestOptionParser(unittest.TestCase):
         self.assertIsNone(opts.histfile)
 
 
-    def test_filename_positional(self):
+    async def test_filename_positional(self):
         opts = self._parse('hello.ki')
         self.assertEqual('hello.ki', opts.filename)
 
 
-    def test_no_tweak_path(self):
+    async def test_no_tweak_path(self):
         opts = self._parse('--no-tweak-path')
         self.assertFalse(opts.tweakpath)
 
 
-    def test_interactive_short(self):
+    async def test_interactive_short(self):
         opts = self._parse('-i')
         self.assertTrue(opts.interactive)
 
 
-    def test_interactive_long(self):
+    async def test_interactive_long(self):
         opts = self._parse('--interactive')
         self.assertTrue(opts.interactive)
 
 
-    def test_histfile(self):
+    async def test_histfile(self):
         opts = self._parse('--histfile', '/tmp/koskari_hist')
         self.assertEqual('/tmp/koskari_hist', opts.histfile)
 
 
-    def test_args_remainder(self):
+    async def test_args_remainder(self):
         opts = self._parse('script.ki', 'arg1', 'arg2')
         self.assertEqual('script.ki', opts.filename)
         self.assertEqual(['arg1', 'arg2'], opts.args)
@@ -207,15 +208,15 @@ class TestRepl(unittest.IsolatedAsyncioTestCase):
         self.assertIn('Koskari dynchain', err)
 
 
-class TestREPLCodeBoundary(unittest.TestCase):
+class TestREPLCodeBoundary(unittest.IsolatedAsyncioTestCase):
 
-    def test_repl_code_boundary_exported(self):
+    async def test_repl_code_boundary_exported(self):
         self.assertTrue(issubclass(REPLCodeBoundary, Exception))
 
 
-class TestKoskariTracebackFormatting(unittest.TestCase):
+class TestKoskariTracebackFormatting(unittest.IsolatedAsyncioTestCase):
 
-    def test_formats_koskari_dynchain_from_synthetic_frame(self):
+    async def test_formats_koskari_dynchain_from_synthetic_frame(self):
         g = {
             '__name__': 'koskari.native',
             '__koskari_trace__': [
@@ -242,7 +243,7 @@ class TestKoskariTracebackFormatting(unittest.TestCase):
         self.assertIn('at inner-fn (example.ki:12:3) [pc=42]', rendered)
         self.assertIn('ZeroDivisionError', rendered)
 
-    def test_falls_back_to_standard_format_without_special_frame(self):
+    async def test_falls_back_to_standard_format_without_special_frame(self):
         try:
             1 / 0
         except Exception:
@@ -255,9 +256,9 @@ class TestKoskariTracebackFormatting(unittest.TestCase):
         self.assertEqual(standard, rendered)
 
 
-class TestFilterInfrastructureTb(unittest.TestCase):
+class TestFilterInfrastructureTb(unittest.IsolatedAsyncioTestCase):
 
-    def test_filters_infrastructure_frames(self):
+    async def test_filters_infrastructure_frames(self):
         ns = {'__name__': 'asyncio'}
         try:
             exec('raise ValueError("test")', ns)
@@ -271,7 +272,7 @@ class TestFilterInfrastructureTb(unittest.TestCase):
         filtered_count = len(list(traceback.walk_tb(result)))
         self.assertLess(filtered_count, original_count)
 
-    def test_preserves_non_infrastructure_frames(self):
+    async def test_preserves_non_infrastructure_frames(self):
         ns = {'__name__': '__main__'}
         try:
             exec('raise ValueError("test")', ns)
@@ -286,46 +287,60 @@ class TestFilterInfrastructureTb(unittest.TestCase):
         self.assertIn('test', formatted)
 
 
-class TestMain(unittest.TestCase):
+class TestMain(unittest.IsolatedAsyncioTestCase):
+    """
+    main() uses asyncio.run(); run it in a thread to avoid nested loop.
+    """
 
-    def _capture_main(self, *argv):
+    async def _capture_main(self, *argv):
         """
-        Call main() with the given arguments, capturing stdout.
+        Call main() with the given arguments in a thread, capturing stdout.
 
         Returns (exit_code, stdout_text).
         """
 
-        captured = io.StringIO()
-        orig = sys.stdout
-        sys.stdout = captured
-        try:
-            code = main(['koskari'] + list(argv))
-        finally:
-            sys.stdout = orig
-        return code, captured.getvalue()
+        def run():
+            captured = io.StringIO()
+            orig = sys.stdout
+            sys.stdout = captured
+            try:
+                return main(['koskari'] + list(argv)), captured.getvalue()
+            finally:
+                sys.stdout = orig
 
-    def test_main_run_hello_exits_zero(self):
-        code, out = self._capture_main(_script('hello.ki'))
+        loop = asyncio.get_running_loop()
+        return await loop.run_in_executor(None, run)
+
+    async def test_main_run_hello_exits_zero(self):
+        code, out = await self._capture_main(_script('hello.ki'))
         self.assertEqual(0, code)
         self.assertIn('Hello, koskari!', out)
 
-    def test_main_run_define_and_print(self):
-        code, out = self._capture_main(_script('define_and_print.ki'))
+    async def test_main_run_define_and_print(self):
+        code, out = await self._capture_main(_script('define_and_print.ki'))
         self.assertEqual(0, code)
         self.assertIn('42', out)
 
-    def test_main_exit_code_script_raises_system_exit(self):
-        with self.assertRaises(SystemExit) as ctx:
+    async def test_main_exit_code_script_raises_system_exit(self):
+        def run():
             main(['koskari', _script('exit_code.ki')])
+
+        loop = asyncio.get_running_loop()
+        with self.assertRaises(SystemExit) as ctx:
+            await loop.run_in_executor(None, run)
         self.assertEqual(42, ctx.exception.code)
 
-    def test_main_no_args_runs_repl_and_exits(self):
-        orig_stdin = sys.stdin
-        sys.stdin = io.StringIO('')
-        try:
-            code = main(['koskari'])
-        finally:
-            sys.stdin = orig_stdin
+    async def test_main_no_args_runs_repl_and_exits(self):
+        def run():
+            orig_stdin = sys.stdin
+            sys.stdin = io.StringIO('')
+            try:
+                return main(['koskari'])
+            finally:
+                sys.stdin = orig_stdin
+
+        loop = asyncio.get_running_loop()
+        code = await loop.run_in_executor(None, run)
         self.assertEqual(0, code)
 
 

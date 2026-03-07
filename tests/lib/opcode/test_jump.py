@@ -29,7 +29,7 @@ class TestJumpOpcodes(CevalTest):
     Tests for JUMP, JUMP_FALSE, JUMP_TRUE, JUMP_AND, JUMP_OR
     """
 
-    def test_jump_unconditional(self):
+    async def test_jump_unconditional(self):
         """
         JUMP branches to label; skips instructions in between
         """
@@ -45,7 +45,7 @@ class TestJumpOpcodes(CevalTest):
         self.assertEqual(result, 99)
 
 
-    def test_jump_false_jumps_when_falsy(self):
+    async def test_jump_false_jumps_when_falsy(self):
         """
         JUMP_FALSE jumps to label when TOS is false
         """
@@ -62,7 +62,7 @@ class TestJumpOpcodes(CevalTest):
         self.assertEqual(result, 1)
 
 
-    def test_jump_false_continues_when_truthy(self):
+    async def test_jump_false_continues_when_truthy(self):
         """
         JUMP_FALSE does not jump when TOS is true
         """
@@ -79,7 +79,7 @@ class TestJumpOpcodes(CevalTest):
         self.assertEqual(result, 42)
 
 
-    def test_jump_true_jumps_when_truthy(self):
+    async def test_jump_true_jumps_when_truthy(self):
         """
         JUMP_TRUE jumps to label when TOS is true
         """
@@ -96,7 +96,7 @@ class TestJumpOpcodes(CevalTest):
         self.assertEqual(result, 99)
 
 
-    def test_jump_true_continues_when_falsy(self):
+    async def test_jump_true_continues_when_falsy(self):
         """
         JUMP_TRUE does not jump when TOS is false
         """
@@ -113,7 +113,7 @@ class TestJumpOpcodes(CevalTest):
         self.assertEqual(result, 7)
 
 
-    def test_jump_and_short_circuit(self):
+    async def test_jump_and_short_circuit(self):
         """
         JUMP_AND leaves value and jumps when falsy; pops when truthy
         """
@@ -130,7 +130,7 @@ class TestJumpOpcodes(CevalTest):
         self.assertEqual(result, 0)
 
 
-    def test_jump_or_short_circuit(self):
+    async def test_jump_or_short_circuit(self):
         """
         JUMP_OR leaves value and jumps when truthy; pops when falsy
         """

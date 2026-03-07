@@ -27,7 +27,7 @@ from tests import make_callable
 from tests.lib.opcode import CevalTest, build_expr, run_to_completion
 
 
-def run_to_completion_with_await(coro):
+async def run_to_completion_with_await(coro):
     """
     Drive the coroutine to completion, awaiting any yielded awaitables
     """
@@ -44,7 +44,7 @@ def run_to_completion_with_await(coro):
             else:
                 value = result
 
-    return asyncio.run(drive())
+    return await drive()
 
 
 class SimpleMgr:
@@ -99,7 +99,7 @@ class TestDynWithOpcodes(CevalTest):
     Tests for PUSH_DYN_WITH, POP_DYN_WITH opcodes.
     """
 
-    def test_push_dyn_with_pop_dyn_with_completes(self):
+    async def test_push_dyn_with_pop_dyn_with_completes(self):
         """
         PUSH_DYN_WITH with matching POP_DYN_WITH completes normally.
         Expression result is None.
@@ -117,7 +117,7 @@ class TestDynWithOpcodes(CevalTest):
         self.assertTrue(mgr.entered)
         self.assertTrue(mgr.exited)
 
-    def test_push_dyn_with_body_runs_enter_exit(self):
+    async def test_push_dyn_with_body_runs_enter_exit(self):
         """
         PUSH_DYN_WITH runs enter; body runs; POP_DYN_WITH runs exit.
         """
@@ -136,7 +136,7 @@ class TestDynWithOpcodes(CevalTest):
         self.assertTrue(mgr.entered)
         self.assertTrue(mgr.exited)
 
-    def test_dyn_with_binding_entered_value(self):
+    async def test_dyn_with_binding_entered_value(self):
         """
         PUSH_DYN_WITH [name] binds enter result to name in body.
         """
@@ -155,7 +155,7 @@ class TestDynWithOpcodes(CevalTest):
         self.assertTrue(mgr.entered)
         self.assertTrue(mgr.exited)
 
-    def test_dyn_with_exception_propagates(self):
+    async def test_dyn_with_exception_propagates(self):
         """
         Exception in body propagates after exit when exit returns False.
         """
@@ -180,7 +180,7 @@ class TestDynWithOpcodes(CevalTest):
         self.assertTrue(mgr.exited)
         self.assertEqual(mgr.exc_info[0], ValueError)
 
-    def test_dyn_with_async_enter_completes(self):
+    async def test_dyn_with_async_enter_completes(self):
         """
         PUSH_DYN_WITH with async manager: enter returns awaitable, VM awaits
         then binds and runs body; POP_DYN_WITH runs exit.
@@ -193,7 +193,7 @@ class TestDynWithOpcodes(CevalTest):
             ["POP_DYN_WITH", 0],
             ["RETURN", 1],
         ])
-        result = run_to_completion_with_await(make_callable(code, ns)())
+        result = await run_to_completion_with_await(make_callable(code, ns)())
         self.assertIsNone(result)
         self.assertTrue(mgr.entered)
         self.assertTrue(mgr.exited)

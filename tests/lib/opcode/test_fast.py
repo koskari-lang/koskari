@@ -43,7 +43,7 @@ class TestFastOpcodes(CevalTest):
         return run_to_completion(expr())
 
 
-    def test_fast_raises_name_error_for_out_of_bounds_index(self):
+    async def test_fast_raises_name_error_for_out_of_bounds_index(self):
         """
         FAST raises NameError when slot index is out of bounds
         """
@@ -52,7 +52,7 @@ class TestFastOpcodes(CevalTest):
             self._run_fast_out_of_bounds("FAST", 0)
 
 
-    def test_fast_bind_raises_name_error_for_out_of_bounds_index(self):
+    async def test_fast_bind_raises_name_error_for_out_of_bounds_index(self):
         """
         FAST_BIND raises NameError when slot index is out of bounds
         """
@@ -61,7 +61,7 @@ class TestFastOpcodes(CevalTest):
             self._run_fast_out_of_bounds("FAST_BIND", 0)
 
 
-    def test_fast_clear_raises_name_error_for_out_of_bounds_index(self):
+    async def test_fast_clear_raises_name_error_for_out_of_bounds_index(self):
         """
         FAST_CLEAR raises NameError when slot index is out of bounds
         """
@@ -70,7 +70,7 @@ class TestFastOpcodes(CevalTest):
             self._run_fast_out_of_bounds("FAST_CLEAR", 0)
 
 
-    def test_fast_ref_raises_name_error_for_out_of_bounds_index(self):
+    async def test_fast_ref_raises_name_error_for_out_of_bounds_index(self):
         """
         FAST_REF raises NameError when slot index is out of bounds
         """
@@ -79,7 +79,7 @@ class TestFastOpcodes(CevalTest):
             self._run_fast_out_of_bounds("FAST_REF", 0)
 
 
-    def test_fast_store_raises_name_error_for_out_of_bounds_index(self):
+    async def test_fast_store_raises_name_error_for_out_of_bounds_index(self):
         """
         FAST_STORE raises NameError when slot index is out of bounds
         """
@@ -88,7 +88,7 @@ class TestFastOpcodes(CevalTest):
             self._run_fast_out_of_bounds("FAST_STORE", 0)
 
 
-    def test_fast_on_dict_namespace_raises_runtime_error(self):
+    async def test_fast_on_dict_namespace_raises_runtime_error(self):
         """
         FAST requires KosNamespace with fast slots; dict as frame ns => RuntimeError
         """
@@ -98,7 +98,7 @@ class TestFastOpcodes(CevalTest):
             run_to_completion(make_callable(code_obj, ns)())
         self.assertIn("FAST invoked", str(ctx.exception))
 
-    def test_fast_bind_binds_slot(self):
+    async def test_fast_bind_binds_slot(self):
         """
         FAST_BIND binds value to fast slot; subsequent FAST yields value
         """

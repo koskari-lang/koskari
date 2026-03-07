@@ -57,7 +57,7 @@ async def new_module(name, package=None):
     :return: koskari Module instance
     """
 
-    from .builtins import make_builtins
+    from .bootstrap import make_builtins
 
     bltns = await make_builtins()
     ns = ModuleNamespace(name, bltns)

@@ -25,17 +25,17 @@ from tests import make_callable
 from tests.lib.opcode import build_expr, run_to_completion
 
 
-class TestDomainContextManager(unittest.TestCase):
+class TestDomainContextManager(unittest.IsolatedAsyncioTestCase):
     """Domain as context manager (with Domain():)"""
 
-    def test_domain_context_manager_enter_exit(self):
+    async def test_domain_context_manager_enter_exit(self):
         """with Domain(): pass runs without error"""
 
         with Domain():
             pass
 
 
-    def test_domain_paramref_store_deref_from_python(self):
+    async def test_domain_paramref_store_deref_from_python(self):
         """ParamRef store and deref work from Python inside with Domain()"""
 
         p = ParamRef("x", None)
@@ -44,7 +44,7 @@ class TestDomainContextManager(unittest.TestCase):
             self.assertEqual(p.deref(), 1)
 
 
-    def test_domain_paramref_after_koskari_return(self):
+    async def test_domain_paramref_after_koskari_return(self):
         """ParamRef deref works after koskari returns while inside with Domain()"""
 
         p = ParamRef("z", None)
@@ -59,7 +59,7 @@ class TestDomainContextManager(unittest.TestCase):
         self.assertEqual(result, 42)
 
 
-    def test_domain_nested(self):
+    async def test_domain_nested(self):
         """Nested with Domain(): scopes; inner exits first, outer domain current again"""
 
         p = ParamRef("x", None)
@@ -71,7 +71,7 @@ class TestDomainContextManager(unittest.TestCase):
             self.assertEqual(p.deref(), 1)
 
 
-    def test_domain_no_domain_outside_with(self):
+    async def test_domain_no_domain_outside_with(self):
         """After with Domain(): pass, ParamRef with no default raises"""
 
         p = ParamRef("x")

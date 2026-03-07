@@ -27,21 +27,23 @@ class TestCallSpecialTailPosition(SpecialsTestCase):
     compile/call in tail position emits TAIL_CALL; otherwise CALL
     """
 
-    def test_lambda_body_tail_call_one_arg(self):
+    async def test_lambda_body_tail_call_one_arg(self):
         code = self.compile_to_code("(lambda [x] (f x))", tc=True)
         ops = self.call_ops(self.lambda_body_code(code))
         self.assertEqual(len(ops), 1)
         self.assertEqual(ops[0][1], OpCode.KOS_OP_TAIL_CALL)
         self.assertEqual(ops[0][2], 1)
 
-    def test_lambda_body_tail_call_zero_args(self):
+
+    async def test_lambda_body_tail_call_zero_args(self):
         code = self.compile_to_code("(lambda [] (f))", tc=True)
         ops = self.call_ops(self.lambda_body_code(code))
         self.assertEqual(len(ops), 1)
         self.assertEqual(ops[0][1], OpCode.KOS_OP_TAIL_CALL)
         self.assertEqual(ops[0][2], 0)
 
-    def test_lambda_begin_first_call_then_tail_call(self):
+
+    async def test_lambda_begin_first_call_then_tail_call(self):
         code = self.compile_to_code("(lambda [x] (begin (f 1) (g x)))", tc=True)
         ops = self.call_ops(self.lambda_body_code(code))
         self.assertEqual(len(ops), 2)
@@ -50,14 +52,16 @@ class TestCallSpecialTailPosition(SpecialsTestCase):
         self.assertEqual(ops[1][1], OpCode.KOS_OP_TAIL_CALL)
         self.assertEqual(ops[1][2], 1)
 
-    def test_begin_single_form_tail_call(self):
+
+    async def test_begin_single_form_tail_call(self):
         code = self.compile_to_code("(begin (f 1))", tc=True)
         ops = self.call_ops(code)
         self.assertEqual(len(ops), 1)
         self.assertEqual(ops[0][1], OpCode.KOS_OP_TAIL_CALL)
         self.assertEqual(ops[0][2], 1)
 
-    def test_begin_f_x_x_call_not_tail(self):
+
+    async def test_begin_f_x_x_call_not_tail(self):
         """
         (begin (f x) x) -> f is not in tail position -> CALL
         """
@@ -67,7 +71,8 @@ class TestCallSpecialTailPosition(SpecialsTestCase):
         self.assertEqual(ops[0][1], OpCode.KOS_OP_CALL)
         self.assertEqual(ops[0][2], 1)
 
-    def test_begin_x_f_x_tail_call(self):
+
+    async def test_begin_x_f_x_tail_call(self):
         """
         (begin x (f x)) -> f is in tail position -> TAIL_CALL
         """
@@ -83,7 +88,7 @@ class TestCallBytecodeShape(SpecialsTestCase):
     compile/call emits correct opcodes for positional, keyword, and star forms
     """
 
-    def test_positional_zero_args_emits_call_zero(self):
+    async def test_positional_zero_args_emits_call_zero(self):
         code = self.compile_to_code("(lambda [] (f))", tc=True)
         body = self.lambda_body_code(code)
         ops = self.call_ops(body)
@@ -91,7 +96,8 @@ class TestCallBytecodeShape(SpecialsTestCase):
         self.assertEqual(ops[0][1], OpCode.KOS_OP_TAIL_CALL)
         self.assertEqual(ops[0][2], 0)
 
-    def test_positional_three_args_emits_call_three(self):
+
+    async def test_positional_three_args_emits_call_three(self):
         code = self.compile_to_code("(lambda [] (f a b c))", tc=True)
         body = self.lambda_body_code(code)
         ops = self.call_ops(body)
@@ -99,7 +105,8 @@ class TestCallBytecodeShape(SpecialsTestCase):
         self.assertEqual(ops[0][1], OpCode.KOS_OP_TAIL_CALL)
         self.assertEqual(ops[0][2], 3)
 
-    def test_positional_no_call_names_or_call_star(self):
+
+    async def test_positional_no_call_names_or_call_star(self):
         code = self.compile_to_code("(lambda [] (f 1 2))", tc=True)
         body = self.lambda_body_code(code)
         ops = self.call_ops(body)
@@ -108,7 +115,8 @@ class TestCallBytecodeShape(SpecialsTestCase):
         self.assertNotIn(OpCode.KOS_OP_CALL_NAMES, [o[1] for o in ops])
         self.assertNotIn(OpCode.KOS_OP_CALL_STAR, [o[1] for o in ops])
 
-    def test_keyword_emits_call_names(self):
+
+    async def test_keyword_emits_call_names(self):
         code = self.compile_to_code("(lambda [] (f 1 name: 2))", tc=True)
         body = self.lambda_body_code(code)
         ops = self.call_ops(body)
@@ -116,7 +124,8 @@ class TestCallBytecodeShape(SpecialsTestCase):
         self.assertEqual(ops[0][1], OpCode.KOS_OP_TAIL_CALL_NAMES)
         self.assertEqual(ops[0][2], 1)
 
-    def test_keyword_names_tuple_before_call_names(self):
+
+    async def test_keyword_names_tuple_before_call_names(self):
         code = self.compile_to_code("(lambda [] (f 1 name: 2))", tc=True)
         body = self.lambda_body_code(code)
         call_idx = None
@@ -133,7 +142,8 @@ class TestCallBytecodeShape(SpecialsTestCase):
         self.assertIsNotNone(const_idx)
         self.assertLess(const_idx, call_idx)
 
-    def test_star_arg_emits_call_star(self):
+
+    async def test_star_arg_emits_call_star(self):
         code = self.compile_to_code("(lambda [] (f *: rest))", tc=True)
         body = self.lambda_body_code(code)
         ops = self.call_ops(body)
@@ -141,7 +151,8 @@ class TestCallBytecodeShape(SpecialsTestCase):
         self.assertEqual(ops[0][1], OpCode.KOS_OP_TAIL_CALL_STAR)
         self.assertEqual(ops[0][2], 1)
 
-    def test_star_arg_with_positional_emits_build_args_and_combine(self):
+
+    async def test_star_arg_with_positional_emits_build_args_and_combine(self):
         code = self.compile_to_code("(lambda [] (f a b *: more))", tc=True)
         body = self.lambda_body_code(code)
         arg_ops = self.arg_building_ops(body)
@@ -151,7 +162,8 @@ class TestCallBytecodeShape(SpecialsTestCase):
         self.assertIn(OpCode.KOS_OP_BUILD_ARGS, [o[1] for o in arg_ops])
         self.assertIn(OpCode.KOS_OP_COMBINE_ARGS, [o[1] for o in arg_ops])
 
-    def test_full_varargs_emits_call_star_with_positional_and_keywords(self):
+
+    async def test_full_varargs_emits_call_star_with_positional_and_keywords(self):
         """
         (fn a b *: more x: xval y: yval **: kwargs) uses CALL_STAR opa=3
         """
@@ -163,7 +175,8 @@ class TestCallBytecodeShape(SpecialsTestCase):
         self.assertEqual(ops[0][1], OpCode.KOS_OP_TAIL_CALL_STAR)
         self.assertEqual(ops[0][2], 3)
 
-    def test_interleaved_positional_and_star_emits_call_star(self):
+
+    async def test_interleaved_positional_and_star_emits_call_star(self):
         """
         (f a *: bargs c *: dargs) uses CALL_STAR with COMBINE_ARGS 4
         """
@@ -180,7 +193,8 @@ class TestCallBytecodeShape(SpecialsTestCase):
         self.assertEqual(len(combine_ops), 1)
         self.assertEqual(combine_ops[0][2], 4)
 
-    def test_interleaved_keyword_and_starstar_emits_call_star(self):
+
+    async def test_interleaved_keyword_and_starstar_emits_call_star(self):
         """
         (f x: 1 **: kw1 y: 2 **: kw2) uses CALL_STAR with COMBINE_KWDS 4
         """
@@ -197,7 +211,8 @@ class TestCallBytecodeShape(SpecialsTestCase):
         self.assertEqual(len(combine_ops), 1)
         self.assertEqual(combine_ops[0][2], 4)
 
-    def test_pure_positional_uses_call_not_call_star(self):
+
+    async def test_pure_positional_uses_call_not_call_star(self):
         """
         (f 1 2 3) uses CALL, not CALL_NAMES or CALL_STAR
         """
@@ -210,7 +225,8 @@ class TestCallBytecodeShape(SpecialsTestCase):
         self.assertNotIn(OpCode.KOS_OP_CALL_NAMES, all_ops)
         self.assertNotIn(OpCode.KOS_OP_CALL_STAR, all_ops)
 
-    def test_positional_and_keyword_uses_call_names_not_call_star(self):
+
+    async def test_positional_and_keyword_uses_call_names_not_call_star(self):
         """
         (f 1 name: 2) uses CALL_NAMES, not CALL_STAR
         """
@@ -228,7 +244,7 @@ class TestCallEvaluationOrder(SpecialsTestCase):
     Arguments are evaluated left-to-right; bytecode and runtime order
     """
 
-    def test_positional_args_precede_call(self):
+    async def test_positional_args_precede_call(self):
         code = self.compile_to_code("(lambda [] (f 1 2))", tc=True)
         body = self.lambda_body_code(code)
         call_idx = None
@@ -242,7 +258,8 @@ class TestCallEvaluationOrder(SpecialsTestCase):
         self.assertIsNotNone(call_idx)
         self.assertGreaterEqual(const_count, 2)
 
-    def test_evaluation_order_runtime(self):
+
+    async def test_evaluation_order_runtime(self):
         received = []
 
         def spy(*args, **kwargs):
@@ -255,7 +272,7 @@ class TestCallEvaluationOrder(SpecialsTestCase):
 
         src = '(compile/call f (compile/call tag "a") (compile/call tag "b"))'
         expr, mod = self.compile_expr(src, f=spy, tag=tag)
-        expr().run()
+        await expr()
         self.assertEqual(received[0], "a")
         self.assertEqual(received[1], "b")
         self.assertEqual(received[2], (["a", "b"], {}))
@@ -266,7 +283,7 @@ class TestCallEndToEnd(SpecialsTestCase):
     Compiled (compile/call f ...) runs and passes args/kwargs to callable
     """
 
-    def test_call_zero_args(self):
+    async def test_call_zero_args(self):
         got = []
 
         def spy(*args, **kwargs):
@@ -274,12 +291,13 @@ class TestCallEndToEnd(SpecialsTestCase):
             return 42
 
         expr, mod = self.compile_expr("(compile/call f)", f=spy)
-        result = expr().run()
+        result = await expr()
         self.assertEqual(result, 42)
         self.assertEqual(len(got), 1)
         self.assertEqual(got[0], ((), {}))
 
-    def test_call_one_arg(self):
+
+    async def test_call_one_arg(self):
         got = []
 
         def spy(*args, **kwargs):
@@ -287,10 +305,11 @@ class TestCallEndToEnd(SpecialsTestCase):
             return None
 
         expr, mod = self.compile_expr("(compile/call f 1)", f=spy)
-        expr().run()
+        await expr()
         self.assertEqual(got[0], ((1,), {}))
 
-    def test_call_three_args(self):
+
+    async def test_call_three_args(self):
         got = []
 
         def spy(*args, **kwargs):
@@ -298,10 +317,11 @@ class TestCallEndToEnd(SpecialsTestCase):
             return None
 
         expr, mod = self.compile_expr("(compile/call f 1 2 3)", f=spy)
-        expr().run()
+        await expr()
         self.assertEqual(got[0], ((1, 2, 3), {}))
 
-    def test_call_keyword_args(self):
+
+    async def test_call_keyword_args(self):
         got = []
 
         def spy(*args, **kwargs):
@@ -309,10 +329,11 @@ class TestCallEndToEnd(SpecialsTestCase):
             return None
 
         expr, mod = self.compile_expr("(compile/call f 1 name: 2)", f=spy)
-        expr().run()
+        await expr()
         self.assertEqual(got[0], ((1,), {"name": 2}))
 
-    def test_call_var_args(self):
+
+    async def test_call_var_args(self):
         got = []
 
         def spy(*args, **kwargs):
@@ -322,10 +343,11 @@ class TestCallEndToEnd(SpecialsTestCase):
         expr, mod = self.compile_expr(
             "(compile/call f *: more)",
             f=spy, more=(1, 2, 3))
-        expr().run()
+        await expr()
         self.assertEqual(got[0], ((1, 2, 3), {}))
 
-    def test_call_interleaved_positional_and_star_end_to_end(self):
+
+    async def test_call_interleaved_positional_and_star_end_to_end(self):
         got = []
 
         def spy(*args, **kwargs):
@@ -335,7 +357,7 @@ class TestCallEndToEnd(SpecialsTestCase):
         src = "(compile/call f 1 *: mid 2 *: end)"
         expr, mod = self.compile_expr(
             src, f=spy, mid=(10, 11), end=(20, 21))
-        expr().run()
+        await expr()
         self.assertEqual(got[0], ([1, 10, 11, 2, 20, 21], {}))
 
 

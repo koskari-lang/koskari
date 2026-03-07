@@ -1,4 +1,4 @@
-from unittest import TestCase
+from unittest import IsolatedAsyncioTestCase
 
 from koskari.types import keyword, symbol
 from koskari.compile.helpers import pycons
@@ -8,9 +8,9 @@ from .. import parse_layout
 _compile_cond = symbol('compile/cond')
 
 
-class TestLayoutIfPeers(TestCase):
+class TestLayoutIfPeers(IsolatedAsyncioTestCase):
 
-    def test_if_without_peers(self):
+    async def test_if_without_peers(self):
         src = """
         if x:
           y
@@ -29,7 +29,7 @@ class TestLayoutIfPeers(TestCase):
         self.assertEqual(result, expected)
 
 
-    def test_if_with_else_peer(self):
+    async def test_if_with_else_peer(self):
         src = """
         if x:
           y
@@ -51,7 +51,7 @@ class TestLayoutIfPeers(TestCase):
         self.assertEqual(result, expected)
 
 
-    def test_if_with_elif_then_else(self):
+    async def test_if_with_elif_then_else(self):
         src = """
         if x:
           a
@@ -76,7 +76,7 @@ class TestLayoutIfPeers(TestCase):
         self.assertEqual(result, expected)
 
 
-    def test_if_invalid_peer_order(self):
+    async def test_if_invalid_peer_order(self):
         src = """
         if x:
           a

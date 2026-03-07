@@ -29,7 +29,7 @@ from . import SpecialsTestCase
 
 class TestParameterizeSpecial(SpecialsTestCase):
 
-    def test_consumer_sees_parameterized_value(self):
+    async def test_consumer_sees_parameterized_value(self):
         """
         parameterize sets format; consumer called inside body sees that value
         """
@@ -42,11 +42,11 @@ class TestParameterizeSpecial(SpecialsTestCase):
           (compile/call pretty 100))
         """
         expr, mod = self.compile_expr(src_str, pretty=pretty)
-        result = expr().run()
+        result = await expr()
         self.assertEqual(result, "woot %r woot")
 
 
-    def test_multiple_parameters_visible_to_consumer(self):
+    async def test_multiple_parameters_visible_to_consumer(self):
         """
         parameterize sets several params; consumer reads both via ParamRef
         """
@@ -59,11 +59,11 @@ class TestParameterizeSpecial(SpecialsTestCase):
           (compile/call check_both))
         """
         expr, mod = self.compile_expr(src_str, check_both=check_both)
-        result = expr().run()
+        result = await expr()
         self.assertEqual(result, (100, 101))
 
 
-    def test_parameter_restored_after_block_exits(self):
+    async def test_parameter_restored_after_block_exits(self):
         """
         First call inside parameterize sees overridden value; second call
         outside sees default
@@ -82,7 +82,7 @@ class TestParameterizeSpecial(SpecialsTestCase):
           (compile/call pretty 1))
         """
         expr, mod = self.compile_expr(src_str, pretty=pretty, seq=seq)
-        result = expr().run()
+        result = await expr()
         self.assertEqual(result, ("inner", "default"))
 
 

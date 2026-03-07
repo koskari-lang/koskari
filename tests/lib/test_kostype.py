@@ -27,12 +27,12 @@ import asyncio
 import unittest
 import warnings
 
-from koskari.lib import KosType, run_sync
+from koskari.lib import KosType
 
 
-class TestKosTypeImport(unittest.TestCase):
+class TestKosTypeImport(unittest.IsolatedAsyncioTestCase):
 
-    def test_kostype_importable(self):
+    async def test_kostype_importable(self):
         """
         KosType is importable from koskari.lib
         """
@@ -42,7 +42,7 @@ class TestKosTypeImport(unittest.TestCase):
         self.assertTrue(callable(lib.KosType))
 
 
-    def test_kostype_is_metaclass(self):
+    async def test_kostype_is_metaclass(self):
         """
         KosType subclasses type and can be used as metaclass
         """
@@ -54,9 +54,9 @@ class TestKosTypeImport(unittest.TestCase):
         self.assertIs(type(C), KosType)
 
 
-class TestKosTypeSyncInit(unittest.TestCase):
+class TestKosTypeSyncInit(unittest.IsolatedAsyncioTestCase):
 
-    def test_call_returns_awaitable(self):
+    async def test_call_returns_awaitable(self):
         """
         C(...) returns an awaitable yielding the instance
         """
@@ -68,12 +68,12 @@ class TestKosTypeSyncInit(unittest.TestCase):
 
         aw = C(42)
         self.assertTrue(hasattr(aw, '__await__'))
-        instance = run_sync(aw)
+        instance = await aw
         self.assertIsInstance(instance, C)
         self.assertEqual(42, instance.x)
 
 
-    def test_new_returns_instance_sync(self):
+    async def test_new_returns_instance_sync(self):
         """
         C.new(...) synchronously constructs and returns the instance
         """
@@ -88,7 +88,7 @@ class TestKosTypeSyncInit(unittest.TestCase):
         self.assertEqual('sync', instance.tag)
 
 
-    def test_new_no_args(self):
+    async def test_new_no_args(self):
         """
         C.new() works with no-arg __init__
         """
@@ -103,9 +103,9 @@ class TestKosTypeSyncInit(unittest.TestCase):
         self.assertTrue(instance.ready)
 
 
-class TestKosTypeAsyncInit(unittest.TestCase):
+class TestKosTypeAsyncInit(unittest.IsolatedAsyncioTestCase):
 
-    def test_async_init_allowed(self):
+    async def test_async_init_allowed(self):
         """
         KosType allows async def __init__, which plain type does not
         """
@@ -118,12 +118,12 @@ class TestKosTypeAsyncInit(unittest.TestCase):
 
         aw = AsyncC(99)
         self.assertTrue(hasattr(aw, '__await__'))
-        instance = run_sync(aw)
+        instance = await aw
         self.assertIsInstance(instance, AsyncC)
         self.assertEqual(99, instance.value)
 
 
-    def test_async_init_via_new(self):
+    async def test_async_init_via_new(self):
         """
         C.new(...) runs async __init__ to completion and returns instance
         """
@@ -139,7 +139,7 @@ class TestKosTypeAsyncInit(unittest.TestCase):
         self.assertEqual(42, instance.sum)
 
 
-    def test_plain_type_rejects_async_init(self):
+    async def test_plain_type_rejects_async_init(self):
         """
         Plain type raises when __init__ returns a coroutine
         """
@@ -160,9 +160,9 @@ class TestKosTypeAsyncInit(unittest.TestCase):
         self.assertIn('None', str(ctx.exception))
 
 
-class TestKosTypeNoInit(unittest.TestCase):
+class TestKosTypeNoInit(unittest.IsolatedAsyncioTestCase):
 
-    def test_no_init_call_returns_awaitable(self):
+    async def test_no_init_call_returns_awaitable(self):
         """
         Class without __init__: C() returns awaitable yielding instance
         """
@@ -171,11 +171,11 @@ class TestKosTypeNoInit(unittest.TestCase):
             pass
 
         aw = C()
-        instance = run_sync(aw)
+        instance = await aw
         self.assertIsInstance(instance, C)
 
 
-    def test_no_init_new_returns_instance(self):
+    async def test_no_init_new_returns_instance(self):
         """
         Class without __init__: C.new() returns instance directly
         """

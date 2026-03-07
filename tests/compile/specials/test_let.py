@@ -22,7 +22,7 @@ from . import SpecialsTestCase
 
 class TestLetSpecial(SpecialsTestCase):
 
-    def test_let_single_binding(self):
+    async def test_let_single_binding(self):
         src_str = "(compile/let [[x 42]] x)"
         expr, mod = self.compile_expr(src_str)
 
@@ -32,7 +32,7 @@ class TestLetSpecial(SpecialsTestCase):
         self.assertEqual(42, result)
 
 
-    def test_let_multiple_bindings(self):
+    async def test_let_multiple_bindings(self):
         src_str = """
         (compile/let [[a 1] [b 2]]
           (compile/call + a b))
@@ -45,7 +45,7 @@ class TestLetSpecial(SpecialsTestCase):
         self.assertEqual(3, result)
 
 
-    def test_let_body_sequence(self):
+    async def test_let_body_sequence(self):
         src_str = """
         (compile/let [[x 10]]
           (compile/begin
@@ -59,7 +59,7 @@ class TestLetSpecial(SpecialsTestCase):
         self.assertEqual(20, result)
 
 
-    def test_named_let_invoked_lambda(self):
+    async def test_named_let_invoked_lambda(self):
         # (let foo [[a 1] [b 2]] ...body) -> ((lambda foo [a b] ...body) 1 2)
         src_str = """
         (compile/let foo [[a 10] [b 20]]

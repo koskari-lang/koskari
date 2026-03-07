@@ -22,7 +22,7 @@ import unittest
 
 import asyncio
 from tests import make_callable
-from tests.lib.opcode import CevalTest, build_expr, run_to_completion
+from tests.lib.opcode import CevalTest, build_expr, run_asyncio_in_thread, run_to_completion
 
 
 class TestForeachOpcodes(CevalTest):
@@ -35,7 +35,7 @@ class TestForeachOpcodes(CevalTest):
     POP_LOOP pushes region->result to the stack as the loop expression value.
     """
 
-    def test_iter_next_outside_foreach_fails(self):
+    async def test_iter_next_outside_foreach_fails(self):
         """
         ITER_NEXT outside PUSH_FOREACH fails at Code construction or runtime
         """
@@ -58,7 +58,7 @@ class TestForeachOpcodes(CevalTest):
         self.assertIn("PUSH_FOREACH", str(cm.exception))
 
 
-    def test_foreach_iterates_list(self):
+    async def test_foreach_iterates_list(self):
         """
         FOREACH over list returns first element
         """
@@ -83,7 +83,7 @@ class TestForeachOpcodes(CevalTest):
         self.assertEqual(result, 10)
 
 
-    def test_foreach_break_exits_early(self):
+    async def test_foreach_break_exits_early(self):
         """
         FOREACH BREAK exits when value equals 2. BREAK with arg=0 uses None
         as the result value.
@@ -115,7 +115,7 @@ class TestForeachOpcodes(CevalTest):
         self.assertEqual(result, 42)
 
 
-    def test_foreach_empty_exits_to_else(self):
+    async def test_foreach_empty_exits_to_else(self):
         """
         FOREACH over empty list exits to else target
         """
@@ -141,7 +141,7 @@ class TestForeachOpcodes(CevalTest):
         self.assertEqual(result, 99)
 
 
-    def test_push_foreach_with_iter_next_completes(self):
+    async def test_push_foreach_with_iter_next_completes(self):
         """
         PUSH_FOREACH with ITER_NEXT on empty list exits to else.
         POP_LOOP pushes the loop result (None in this case).
@@ -167,7 +167,7 @@ class TestForeachOpcodes(CevalTest):
         self.assertEqual(result, 42)
 
 
-    def test_foreach_iter_next_on_python_async_iterator(self):
+    async def test_foreach_iter_next_on_python_async_iterator(self):
         """
         PUSH_FOREACH over Python async iterator; ITER_NEXT yields values via GET_NEXT_SUSPEND
         """
@@ -196,11 +196,11 @@ class TestForeachOpcodes(CevalTest):
             ], values={"aiter": aiter, "last": None})
             return run_to_completion(make_callable(consumer_code, consumer_ns)())
 
-        result = asyncio.run(run())
+        result = await run_asyncio_in_thread(run)
         self.assertEqual(result, 25)
 
 
-    def test_foreach_iter_next_iterates_all_values(self):
+    async def test_foreach_iter_next_iterates_all_values(self):
         """
         PUSH_FOREACH with ITER_NEXT over list accumulates; else runs when exhausted
         """
@@ -228,7 +228,7 @@ class TestForeachOpcodes(CevalTest):
         self.assertEqual(result, 15)
 
 
-    def test_foreach_iter_next_on_empty_async_iterator_exits_to_else(self):
+    async def test_foreach_iter_next_on_empty_async_iterator_exits_to_else(self):
         """
         PUSH_FOREACH over empty Python async iterator exits to else
         """
@@ -255,11 +255,11 @@ class TestForeachOpcodes(CevalTest):
             ], values={"aiter": aiter})
             return run_to_completion(make_callable(consumer_code, consumer_ns)())
 
-        result = asyncio.run(run())
+        result = await run_asyncio_in_thread(run)
         self.assertEqual(result, 999)
 
 
-    def test_foreach_with_non_iterable_raises_type_error(self):
+    async def test_foreach_with_non_iterable_raises_type_error(self):
         """
         PUSH_FOREACH over non-iterable (e.g. int) raises TypeError
         """
@@ -282,7 +282,7 @@ class TestForeachOpcodes(CevalTest):
             run_to_completion(make_callable(code, ns)())
 
 
-    def test_foreach_iter_next_when_iterator_raises_propagates_error(self):
+    async def test_foreach_iter_next_when_iterator_raises_propagates_error(self):
         """
         ITER_NEXT when iterator raises on __next__ propagates GET_NEXT_ERROR
         """

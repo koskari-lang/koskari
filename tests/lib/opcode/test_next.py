@@ -22,7 +22,7 @@ import unittest
 
 import asyncio
 from tests import make_callable
-from tests.lib.opcode import CevalTest, build_expr, run_to_completion
+from tests.lib.opcode import CevalTest, build_expr, run_asyncio_in_thread, run_to_completion
 
 
 class TestNextOpcodes(CevalTest):
@@ -30,7 +30,7 @@ class TestNextOpcodes(CevalTest):
     Tests for NEXT (stack-based).
     """
 
-    def test_next_1_arg_pushes_value(self):
+    async def test_next_1_arg_pushes_value(self):
         """
         NEXT 1 on iterator pushes first value
         """
@@ -44,7 +44,7 @@ class TestNextOpcodes(CevalTest):
         self.assertEqual(result, 10)
 
 
-    def test_next_1_arg_stopiteration_raises(self):
+    async def test_next_1_arg_stopiteration_raises(self):
         """
         NEXT 1 on exhausted iterator raises StopIteration (or wraps it)
         """
@@ -60,7 +60,7 @@ class TestNextOpcodes(CevalTest):
                 coro.send(None)
 
 
-    def test_next_2_arg_pushes_value(self):
+    async def test_next_2_arg_pushes_value(self):
         """
         NEXT 2 on iterator pushes value; stack is [iterator, default]
         """
@@ -75,7 +75,7 @@ class TestNextOpcodes(CevalTest):
         self.assertEqual(result, 7)
 
 
-    def test_next_2_arg_exhausted_returns_default(self):
+    async def test_next_2_arg_exhausted_returns_default(self):
         """
         NEXT 2 on exhausted iterator pushes default
         """
@@ -90,7 +90,7 @@ class TestNextOpcodes(CevalTest):
         self.assertEqual(result, 42)
 
 
-    def test_next_on_iterable_calls_get_iter(self):
+    async def test_next_on_iterable_calls_get_iter(self):
         """
         NEXT on iterable (not iterator) calls PyObject_GetIter; yields first value
         """
@@ -104,7 +104,7 @@ class TestNextOpcodes(CevalTest):
             run_to_completion(make_callable(code, ns)())
 
 
-    def test_next_arg_validation_rejects_invalid_args(self):
+    async def test_next_arg_validation_rejects_invalid_args(self):
         """
         NEXT with arg other than 1 or 2 raises ValueError
         """
@@ -120,7 +120,7 @@ class TestNextOpcodes(CevalTest):
             self.assertIn("NEXT arg must be 1 or 2", str(cm.exception))
 
 
-    def test_next_on_non_iterable_raises_type_error(self):
+    async def test_next_on_non_iterable_raises_type_error(self):
         """
         NEXT on object that is neither iterable nor iterator raises TypeError
         """
@@ -133,7 +133,7 @@ class TestNextOpcodes(CevalTest):
             run_to_completion(make_callable(code, ns)())
 
 
-    def test_next_accumulates_values_from_koskari_async_gen(self):
+    async def test_next_accumulates_values_from_koskari_async_gen(self):
         """
         NEXT 1 on a Koskari async gen yields 1, 2, 3; consumer accumulates and returns 3
         """
@@ -165,7 +165,7 @@ class TestNextOpcodes(CevalTest):
         self.assertEqual(result, 3)
 
 
-    def test_next_with_await_in_generator(self):
+    async def test_next_with_await_in_generator(self):
         """
         Koskari async gen that AWAITs a Python async noop between yields; consumer still gets 1,2,3
         """
@@ -204,7 +204,7 @@ class TestNextOpcodes(CevalTest):
         self.assertEqual(result, 3)
 
 
-    def test_foreach_iter_next_over_koskari_async_gen(self):
+    async def test_foreach_iter_next_over_koskari_async_gen(self):
         """
         PUSH_FOREACH over a Koskari async gen; ITER_NEXT accumulates; last value is 3
         """
@@ -243,7 +243,7 @@ class TestNextOpcodes(CevalTest):
         self.assertEqual(result, 3)
 
 
-    def test_next_1_on_koskari_agen_exhausted_raises_stopiteration(self):
+    async def test_next_1_on_koskari_agen_exhausted_raises_stopiteration(self):
         """
         NEXT 1 on Koskari async gen after last value raises StopIteration
         """
@@ -268,7 +268,7 @@ class TestNextOpcodes(CevalTest):
                 coro.send(None)
 
 
-    def test_next_2_on_koskari_agen_exhausted_returns_default(self):
+    async def test_next_2_on_koskari_agen_exhausted_returns_default(self):
         """
         NEXT 2 on Koskari async gen that returns immediately pushes default
         """
@@ -289,7 +289,7 @@ class TestNextOpcodes(CevalTest):
         self.assertEqual(result, 99)
 
 
-    def test_next_on_python_async_iterator(self):
+    async def test_next_on_python_async_iterator(self):
         """
         NEXT 1 on Python async iterator (async gen) yields values via GET_NEXT_SUSPEND
         """
@@ -313,11 +313,11 @@ class TestNextOpcodes(CevalTest):
             ], values={"aiter": aiter, "v1": None, "v2": None})
             return await make_callable(consumer_code, consumer_ns)()
 
-        result = asyncio.run(run())
+        result = await run_asyncio_in_thread(run)
         self.assertEqual(result, 30)
 
 
-    def test_next_2_on_python_async_iterator_exhausted_returns_default(self):
+    async def test_next_2_on_python_async_iterator_exhausted_returns_default(self):
         """
         NEXT 2 on empty Python async iterator returns default
         """
@@ -335,11 +335,11 @@ class TestNextOpcodes(CevalTest):
             ], values={"aiter": aiter})
             return run_to_completion(make_callable(consumer_code, consumer_ns)())
 
-        result = asyncio.run(run())
+        result = await run_asyncio_in_thread(run)
         self.assertEqual(result, 88)
 
 
-    def test_next_2_on_koskari_agen_after_yields_then_exhausted_returns_default(self):
+    async def test_next_2_on_koskari_agen_after_yields_then_exhausted_returns_default(self):
         """
         NEXT 2 on Koskari async gen after consuming values then exhausting returns default
         """
@@ -370,7 +370,7 @@ class TestNextOpcodes(CevalTest):
         self.assertEqual(result, 77)
 
 
-    def test_next_2_on_python_async_iter_after_yields_then_exhausted_returns_default(self):
+    async def test_next_2_on_python_async_iter_after_yields_then_exhausted_returns_default(self):
         """
         NEXT 2 on Python async iterator after consuming values then exhausting returns default
         """
@@ -396,11 +396,11 @@ class TestNextOpcodes(CevalTest):
             ], values={"aiter": aiter})
             return run_to_completion(make_callable(consumer_code, consumer_ns)())
 
-        result = asyncio.run(run())
+        result = await run_asyncio_in_thread(run)
         self.assertEqual(result, 66)
 
 
-    def test_next_on_iterator_that_raises_propagates_error(self):
+    async def test_next_on_iterator_that_raises_propagates_error(self):
         """
         NEXT on iterator whose __next__ raises (not StopIteration) propagates GET_NEXT_ERROR
         """

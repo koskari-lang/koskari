@@ -18,18 +18,18 @@ Unit tests for koskari.lexer.lsp server.
 """
 
 
-from unittest import TestCase
+from unittest import IsolatedAsyncioTestCase
 from koskari.lexer.lsp import create_server
 
 
-class TestCreateServer(TestCase):
+class TestCreateServer(IsolatedAsyncioTestCase):
 
-    def test_returns_server(self):
+    async def test_returns_server(self):
         server = create_server()
         self.assertIsNotNone(server)
 
 
-    def test_server_has_diagnostics_attr(self):
+    async def test_server_has_diagnostics_attr(self):
         server = create_server()
         self.assertTrue(hasattr(server, 'diagnostics'))
 

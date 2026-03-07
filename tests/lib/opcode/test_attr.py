@@ -29,7 +29,7 @@ class TestAttrOpcodes(CevalTest):
     Tests for ATTR, ATTR_CLEAR, ATTR_REF, ATTR_STORE
     """
 
-    def test_attr_getattr(self):
+    async def test_attr_getattr(self):
         """
         ATTR pushes getattr(TOS, name)
         """
@@ -44,7 +44,7 @@ class TestAttrOpcodes(CevalTest):
         self.assertEqual(result, 3)
 
 
-    def test_attr_store_and_getattr(self):
+    async def test_attr_store_and_getattr(self):
         """
         ATTR_STORE sets attribute; ATTR loads it
         """
@@ -64,7 +64,7 @@ class TestAttrOpcodes(CevalTest):
         self.assertEqual(obj.value, 99)
 
 
-    def test_attr_clear_delattr(self):
+    async def test_attr_clear_delattr(self):
         """
         ATTR_CLEAR deletes attribute
         """
@@ -83,7 +83,7 @@ class TestAttrOpcodes(CevalTest):
         self.assertFalse(hasattr(obj, "x"))
 
 
-    def test_attr_ref_pushes_attribute_ref(self):
+    async def test_attr_ref_pushes_attribute_ref(self):
         """
         ATTR_REF pushes AttributeRef for TOS.attr
         """

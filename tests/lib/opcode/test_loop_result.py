@@ -38,7 +38,7 @@ class TestLoopResultOpcodes(CevalTest):
     POP_LOOP pushes region->result as the loop expression value.
     """
 
-    def test_break_with_single_value(self):
+    async def test_break_with_single_value(self):
         """
         BREAK 1 pops one value and uses it as the loop result
         """
@@ -57,7 +57,7 @@ class TestLoopResultOpcodes(CevalTest):
         self.assertEqual(result, 42)
 
 
-    def test_break_with_multiple_values_creates_tuple(self):
+    async def test_break_with_multiple_values_creates_tuple(self):
         """
         BREAK 3 pops three values and creates a tuple result
         """
@@ -78,7 +78,7 @@ class TestLoopResultOpcodes(CevalTest):
         self.assertEqual(result, (1, 2, 3))
 
 
-    def test_continue_with_single_value(self):
+    async def test_continue_with_single_value(self):
         """
         CONTINUE 1 pops one value and updates region->result
         """
@@ -108,7 +108,7 @@ class TestLoopResultOpcodes(CevalTest):
         self.assertEqual(result, 2)
 
 
-    def test_pop_loop_returns_loop_result(self):
+    async def test_pop_loop_returns_loop_result(self):
         """
         POP_LOOP pushes region->result (None when no break/continue)
         """
@@ -124,7 +124,7 @@ class TestLoopResultOpcodes(CevalTest):
         self.assertIsNone(result)
 
 
-    def test_foreach_break_with_value(self):
+    async def test_foreach_break_with_value(self):
         """
         FOREACH BREAK 1 uses the value as the loop result
         """

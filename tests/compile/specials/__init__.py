@@ -35,7 +35,7 @@ def _register_specials(ns, specials):
         ns.store(str(sym), fn)
 
 
-class SpecialsTestCase(unittest.TestCase):
+class SpecialsTestCase(unittest.IsolatedAsyncioTestCase):
     """
     TestCase subclass with helpers for compiling koskari lisp into expressions
     """

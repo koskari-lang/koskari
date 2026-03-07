@@ -101,7 +101,7 @@ def make_bootstrap():
     _bind('build-proper', build_proper)
     _bind('unpack', unpack)
     _bind('deref', deref)
-    # _bind('apply', apply)
+    _bind('apply', apply)
 
     # atom types and operations
     _ty('symbol', symbol)
@@ -213,17 +213,17 @@ async def make_builtins():
     basics_path = join(dirname(__file__), 'basics.ki')
     init_module(basics_module, basics_path)
 
-    print(f"Loading basics.ki")
     await load_module_async(basics_module)
-    print(f"Loaded basics.ki")
 
-    result = dict(bootstrap)
     for key, val in vars(basics_module).items():
         if not key.startswith('__'):
-            result[key] = val
+            try:
+                bootstrap[key] = val.deref()
+            except:
+                pass
 
-    _BUILTINS_CACHE = result
-    return result
+    _BUILTINS_CACHE = bootstrap
+    return bootstrap
 
 
 # The end.
