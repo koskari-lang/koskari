@@ -23,11 +23,13 @@ compile/dyn-with.
 """
 
 
-from ...lib import nil, OpCode, pair, symbol
+from ...exceptions import SpecialError
+from ...lib import OpCode, nil, pair, symbol
+from ...matcher import MATCH, REST, match
 from ...types import is_pair
 from ..compiler import ByteCodeFragment, Compiler
-from ...exceptions import SpecialError
-from ..helpers import gather_bindings, helper_begin, helper_binding, special
+from ..helpers import (BINDING, gather_bindings, helper_begin, helper_binding,
+                       special, special_forms)
 
 
 @special(symbol("compile/parameterize"))
@@ -64,6 +66,12 @@ def special_parameterize(
     return fragment
 
 
+_WITH_PATTERNS = [
+    MATCH(BINDING("binding", allow_unnamed=True, scope="body"), REST("body")),
+]
+
+
+@special_forms(_WITH_PATTERNS)
 @special(symbol("compile/with"))
 def special_with(compiler, source, tc=False):
     """
@@ -71,23 +79,24 @@ def special_with(compiler, source, tc=False):
     """
 
     called_by, rest = source
-    if rest is nil or not is_pair(rest):
+
+    matched = match(rest, _WITH_PATTERNS)
+    if matched is None:
         raise SpecialError("with requires [name? expr] and body", source)
 
-    spec, body = rest
-    if spec is nil or not is_pair(spec):
-        raise SpecialError("with requires [name? expr] list", source)
-
-    name, expr = helper_binding(spec, allow_unnamed=True)
+    binding = matched["binding"]
+    name = binding.name
+    expr = binding.value
+    body = matched["body"].source
 
     fragment = compiler.fragment(called_by)
-    fragment.position_of(source)
     fragment.merge(compiler.full_compile(expr, False))
 
     if name is not None:
         name = str(name)
         fragment.declare_var(name)
 
+    fragment.position_of(source)
     fragment.instruction(OpCode.KOS_OP_PUSH_WITH, name)
     helper_begin(fragment, body, False)
     fragment.instruction(OpCode.KOS_OP_POP_WITH, 0)
@@ -95,6 +104,7 @@ def special_with(compiler, source, tc=False):
     return fragment
 
 
+@special_forms(_WITH_PATTERNS)
 @special(symbol("compile/dyn-with"))
 def special_dyn_with(compiler, source, tc=False):
     """
@@ -103,23 +113,24 @@ def special_dyn_with(compiler, source, tc=False):
     """
 
     called_by, rest = source
-    if rest is nil or not is_pair(rest):
+
+    matched = match(rest, _WITH_PATTERNS)
+    if matched is None:
         raise SpecialError("dyn-with requires [name? expr] and body", source)
 
-    spec, body = rest
-    if spec is nil or not is_pair(spec):
-        raise SpecialError("dyn-with requires [name? expr] list", source)
-
-    name, expr = helper_binding(spec, allow_unnamed=True)
+    binding = matched["binding"]
+    name = binding.name
+    expr = binding.value
+    body = matched["body"].source
 
     fragment = compiler.fragment(called_by)
-    fragment.position_of(source)
     fragment.merge(compiler.full_compile(expr, False))
 
     if name is not None:
         name = str(name)
         fragment.declare_var(name)
 
+    fragment.position_of(source)
     fragment.instruction(OpCode.KOS_OP_PUSH_DYN_WITH, name)
     helper_begin(fragment, body, False)
     fragment.instruction(OpCode.KOS_OP_POP_DYN_WITH, 0)
