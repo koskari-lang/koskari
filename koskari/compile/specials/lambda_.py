@@ -22,8 +22,7 @@ Special form handler for compile/lambda.
 """
 
 
-from ...lib import FormalsSpec, FunctionSpec, nil, OpCode, pair, symbol
-from ...types import is_pair
+from ...lib import FormalsSpec, FunctionSpec, OpCode, pair, symbol
 from ..compiler import ByteCodeFragment, Compiler, CompilerMode
 from ...exceptions import SpecialError
 from ...matcher import MATCH, REST, SYMBOL, match

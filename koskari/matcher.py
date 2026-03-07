@@ -29,6 +29,7 @@ from .types import get_position, is_pair, is_symbol, unpack
 
 
 __all__ = (
+    'BindingMatcher',
     'BindingsResult',
     'BindingResult',
     'FormalsResult',
@@ -93,6 +94,44 @@ class Matcher(Protocol):
         ...
 
 
+    def to_tuple(self):
+        """
+        Return tagged tuple representation of matcher.
+        """
+        ...
+
+
+    @classmethod
+    def from_tuple(cls, tup):
+        """
+        Deserialize tagged tuple to matcher.
+        """
+        ...
+
+
+class BindingMatcher(Matcher):
+    """
+    Base for matchers that introduce bindings. Subclasses implement
+    extract_binder_symbols and get_recurse_targets for hygiene discovery.
+    """
+
+    def extract_binder_symbols(self, value):
+        """
+        Yield symbol names introduced by this binder. Override in subclasses.
+        """
+
+        yield from ()
+
+
+    def get_recurse_targets(self, value):
+        """
+        Return iterable of values to recurse into for nested binding discovery,
+        or None if none. Override in subclasses.
+        """
+
+        return None
+
+
 # Tag symbols for serialization
 _tag_match = symbol('matcher/match')
 _tag_literal = symbol('matcher/literal')
@@ -145,6 +184,7 @@ class FormalsResult(MatchResult):
         self.star = star
         self.starstar = starstar
 
+
     def __iter__(self):
         return iter((self.positional, self.defaults, self.kwonly,
                      self.star, self.starstar))
@@ -158,10 +198,12 @@ class BindingsResult(MatchResult):
 
     __slots__ = ('names', 'values')
 
+
     def __init__(self, source, source_pos=None, names=None, values=None):
         super().__init__(source, source_pos)
         self.names = names if names is not None else []
         self.values = values if values is not None else []
+
 
     def __iter__(self):
         return iter((self.names, self.values))
@@ -174,6 +216,7 @@ class BindingResult(MatchResult):
     """
 
     __slots__ = ('name', 'value')
+
 
     def __init__(self, source, source_pos=None, name=None, value=None):
         super().__init__(source, source_pos)
@@ -225,7 +268,7 @@ def _resolve_spec(spec, literals):
 
 
 @matcher(_tag_literal)
-class _LiteralMatcher:
+class _LiteralMatcher(Matcher):
     """
     Match exact value
     """
@@ -255,7 +298,7 @@ class _LiteralMatcher:
 
 
 @matcher(_tag_bind)
-class _BindMatcher:
+class _BindMatcher(Matcher):
     """
     Capture one element
     """
@@ -287,7 +330,7 @@ class _BindMatcher:
 
 
 @matcher(_tag_bind_sym)
-class _SymbolMatcher:
+class _SymbolMatcher(BindingMatcher):
     """
     Capture one element only when it is a symbol
     """
@@ -316,12 +359,18 @@ class _SymbolMatcher:
         return (tail, True)
 
 
+    def extract_binder_symbols(self, value):
+        raw = value.source if hasattr(value, 'source') else value
+        if is_symbol(raw):
+            yield raw
+
+
     def to_tuple(self):
         return (_tag_bind_sym, symbol(self._key) if isinstance(self.slot, str) else self.slot)
 
 
 @matcher(_tag_define)
-class _DefineMatcher:
+class _DefineMatcher(BindingMatcher):
     """
     Capture one element only when it is a symbol; binder for hygiene
 
@@ -353,12 +402,18 @@ class _DefineMatcher:
         return (tail, True)
 
 
+    def extract_binder_symbols(self, value):
+        raw = value.source if hasattr(value, 'source') else value
+        if is_symbol(raw):
+            yield raw
+
+
     def to_tuple(self):
         return (_tag_define, symbol(self._key) if isinstance(self.slot, str) else self.slot)
 
 
 @matcher(_tag_value)
-class _ValueMatcher:
+class _ValueMatcher(Matcher):
     """
     Capture one element; value fed in, not a scope region for hygiene
     """
@@ -390,10 +445,12 @@ class _ValueMatcher:
 
 
 @matcher(_tag_rest)
-class _RestMatcher:
+class _RestMatcher(Matcher):
     """
     Capture remainder of list
     """
+
+    is_scope_region_spec = True
 
     def __init__(self, slot):
         self.slot = slot
@@ -423,7 +480,7 @@ class _RestMatcher:
 
 @matcher(_tag_pair)
 @matcher(_tag_bind_pair)
-class _PairMatcher:
+class _PairMatcher(Matcher):
     """
     Capture one element only when it is a pair
     """
@@ -457,10 +514,12 @@ class _PairMatcher:
 
 
 @matcher(_tag_expr)
-class _ExprMatcher:
+class _ExprMatcher(Matcher):
     """
     Capture one element (single form); scope region for hygiene
     """
+
+    is_scope_region_spec = True
 
     def __init__(self, slot):
         self.slot = slot
@@ -489,7 +548,7 @@ class _ExprMatcher:
 
 
 @matcher(_tag_opt)
-class _OptMatcher:
+class _OptMatcher(Matcher):
     """
     Optionally match elem
     """
@@ -522,7 +581,7 @@ class _OptMatcher:
 
 
 @matcher(_tag_match)
-class _MatchMatcher:
+class _MatchMatcher(Matcher):
     """
     Sequence of specs in order. When sub-expr and element is a pair,
     destructures (car, cdr) and matches against that.
@@ -577,7 +636,7 @@ class _MatchMatcher:
 
 
 @matcher(_tag_any_order)
-class _AnyOrderMatcher:
+class _AnyOrderMatcher(Matcher):
     """
     All specs must match, in any order
     """
@@ -803,16 +862,12 @@ def match(
 
 def is_binder_spec(spec):
     """
-    True if spec is a binder matcher (SYMBOL, BINDINGS, FORMALS, DEFINE)
+    True if spec is a binder matcher (BindingMatcher subclasses)
 
     Used by hygiene discovery to identify captures that introduce bindings.
     """
 
-    if spec is None:
-        return False
-    name = type(spec).__name__
-    return name in ('_SymbolMatcher', '_BindingsMatcher', '_BindingMatcher',
-                    '_FormalsMatcher', '_DefineMatcher')
+    return spec is not None and isinstance(spec, BindingMatcher)
 
 
 def is_scope_region_spec(spec):
@@ -822,60 +877,21 @@ def is_scope_region_spec(spec):
     Used by hygiene discovery for scope inference.
     """
 
-    if spec is None:
-        return False
-    name = type(spec).__name__
-    return name in ('_RestMatcher', '_ExprMatcher')
+    return spec is not None and getattr(spec, 'is_scope_region_spec', False)
 
 
 def extract_binder_symbols(spec, value):
     """
     Given a binder spec and its matched value, yield symbol names introduced.
 
-    Accepts MatchResult, FormalsResult, BindingsResult, or legacy tuples for
-    backward compatibility.
+    Delegates to spec.extract_binder_symbols(value) when spec is a
+    BindingMatcher.
     """
 
     if spec is None or value is None:
         return
-    raw = value.source if hasattr(value, 'source') else value
-    name = type(spec).__name__
-    if name == '_SymbolMatcher':
-        if is_symbol(raw):
-            yield raw
-    elif name == '_DefineMatcher':
-        if is_symbol(raw):
-            yield raw
-    elif name == '_BindingsMatcher':
-        if hasattr(value, 'names'):
-            names = value.names
-        elif isinstance(value, (tuple, list)) and len(value) == 2:
-            names, _values = value
-        else:
-            return
-        for n in (names or ()):
-            if is_symbol(n):
-                yield n
-    elif name == '_FormalsMatcher':
-        if hasattr(value, 'positional'):
-            positional = value.positional
-            star = value.star
-            starstar = value.starstar
-        elif isinstance(value, (tuple, list)) and len(value) == 5:
-            positional, _defaults, _kwonly, star, starstar = value
-        else:
-            return
-        for s in (positional or ()):
-            if is_symbol(s):
-                yield s
-        if star is not None and is_symbol(star):
-            yield star
-        if starstar is not None and is_symbol(starstar):
-            yield starstar
-    elif name == '_BindingMatcher':
-        if hasattr(value, 'name') and value.name is not None:
-            if is_symbol(value.name):
-                yield value.name
+    if isinstance(spec, BindingMatcher):
+        yield from spec.extract_binder_symbols(value)
 
 
 def match_tuple(

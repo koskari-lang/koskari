@@ -20,6 +20,7 @@ from ..exceptions import ParametersError, SpecialError
 from ..types import get_position
 from ..matcher import (
     BindingsResult,
+    BindingMatcher,
     BindingResult,
     BIND,
     FormalsResult,
@@ -143,7 +144,7 @@ _tag_bindings = symbol('matcher/bind-bindings')
 
 
 @matcher(_tag_bindings)
-class _BindingsMatcher:
+class _BindingsMatcher(BindingMatcher):
     """
     Match a list and bind the result of gather_bindings as (names, values)
     """
@@ -178,6 +179,26 @@ class _BindingsMatcher:
         return (tail, True)
 
 
+    def extract_binder_symbols(self, value):
+        if hasattr(value, 'names'):
+            names = value.names
+        elif isinstance(value, (tuple, list)) and len(value) == 2:
+            names, _values = value
+        else:
+            return
+        for n in (names or ()):
+            if is_symbol(n):
+                yield n
+
+
+    def get_recurse_targets(self, value):
+        if hasattr(value, 'values'):
+            return value.values or ()
+        if isinstance(value, (tuple, list)) and len(value) == 2:
+            return value[1] or ()
+        return ()
+
+
     def to_tuple(self):
         return (_tag_bindings, symbol(self._key) if isinstance(self.slot, str) else self.slot)
 
@@ -199,7 +220,7 @@ _tag_formals = symbol('matcher/formals')
 
 
 @matcher(_tag_formals)
-class _FormalsMatcher:
+class _FormalsMatcher(BindingMatcher):
     """
     Match formals (pair or symbol) and bind the result of gather_formals
     as FormalsResult (positional, defaults, kwonly, star, starstar)
@@ -239,6 +260,40 @@ class _FormalsMatcher:
         return (tail, True)
 
 
+    def extract_binder_symbols(self, value):
+        if hasattr(value, 'positional'):
+            positional = value.positional
+            star = value.star
+            starstar = value.starstar
+        elif isinstance(value, (tuple, list)) and len(value) == 5:
+            positional, _defaults, _kwonly, star, starstar = value
+        else:
+            return
+        for s in (positional or ()):
+            if is_symbol(s):
+                yield s
+        if star is not None and is_symbol(star):
+            yield star
+        if starstar is not None and is_symbol(starstar):
+            yield starstar
+
+
+    def get_recurse_targets(self, value):
+        out = []
+        if hasattr(value, 'defaults') and hasattr(value, 'kwonly'):
+            for _kw, expr in (value.defaults or ()):
+                out.append(expr)
+            for _kw, expr in (value.kwonly or ()):
+                out.append(expr)
+        elif isinstance(value, (tuple, list)) and len(value) == 5:
+            _pos, defaults, kwonly, _star, _starstar = value
+            for _kw, expr in (defaults or ()):
+                out.append(expr)
+            for _kw, expr in (kwonly or ()):
+                out.append(expr)
+        return out
+
+
     def to_tuple(self):
         return (_tag_formals, symbol(self._key) if isinstance(self.slot, str) else self.slot)
 
@@ -259,7 +314,7 @@ _tag_binding = symbol('matcher/binding')
 
 
 @matcher(_tag_binding)
-class _BindingMatcher:
+class _BindingMatcher(BindingMatcher):
     """
     Match a single binding form (SYM EXPR), (EXPR as: SYM), or (EXPR)
     when allow_unnamed is True
@@ -278,6 +333,17 @@ class _BindingMatcher:
         if len(payload) != 1:
             raise ValueError('binding expects 1 payload, got %d' % len(payload))
         return cls(payload[0])
+
+
+    def extract_binder_symbols(self, value):
+        if hasattr(value, 'name') and value.name is not None and is_symbol(value.name):
+            yield value.name
+
+
+    def get_recurse_targets(self, value):
+        if isinstance(value, BindingResult) and value.value is not None:
+            return [value.value]
+        return ()
 
 
     def match(self, source, literals, result, specs=None):
@@ -334,7 +400,7 @@ def BINDING(slot, *, allow_unnamed=False, scope=None, scopes=None):
     :param scopes: sequence of scope region keys
     """
     return _BindingMatcher(slot, allow_unnamed=allow_unnamed,
-                          scope=scope, scopes=scopes)
+                           scope=scope, scopes=scopes)
 
 
 _BINDING_PATTERNS_3 = [

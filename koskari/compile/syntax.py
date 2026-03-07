@@ -241,36 +241,13 @@ def _collect_binding_symbols_matcher(template, find_compiled):
     for key, spec in specs.items():
         if is_binder_spec(spec) and key in matched:
             val = matched[key]
-            if spec is not None and type(spec).__name__ == '_BindingsMatcher':
-                values = val.values if isinstance(val, BindingsResult) else (
-                    val[1] if isinstance(val, (tuple, list)) and len(val) == 2
-                    else ())
-                for v in (values or ()):
-                    out |= _collect_binding_symbols_matcher(
-                        v if is_pair(v) else cons(v, nil),
-                        find_compiled)
-            if spec is not None and type(spec).__name__ == '_BindingMatcher':
-                values = [val.value] if (isinstance(val, BindingResult) and
-                                         val.value is not None) else []
-                for v in values:
-                    out |= _collect_binding_symbols_matcher(
-                        v if is_pair(v) else cons(v, nil),
-                        find_compiled)
-            if spec is not None and type(spec).__name__ == '_FormalsMatcher':
-                if isinstance(val, FormalsResult):
-                    defaults, kwonly = val.defaults, val.kwonly
-                elif isinstance(val, (tuple, list)) and len(val) == 5:
-                    _pos, defaults, kwonly, _star, _starstar = val
-                else:
-                    defaults, kwonly = (), ()
-                for _kw, expr in (defaults or ()):
-                    out |= _collect_binding_symbols_matcher(
-                        expr if is_pair(expr) else cons(expr, nil),
-                        find_compiled)
-                for _kw, expr in (kwonly or ()):
-                    out |= _collect_binding_symbols_matcher(
-                        expr if is_pair(expr) else cons(expr, nil),
-                        find_compiled)
+            targets = getattr(spec, 'get_recurse_targets', lambda v: None)(val)
+            if targets is not None:
+                for v in targets:
+                    if v is not None:
+                        out |= _collect_binding_symbols_matcher(
+                            v if is_pair(v) else cons(v, nil),
+                            find_compiled)
 
     return out
 
