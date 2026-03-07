@@ -16,7 +16,6 @@ Tests for koskari.cli: run_file_async, repl_async, option_parser, main.
 """
 
 
-import asyncio
 import io
 import os
 import sys
@@ -49,6 +48,7 @@ class TestOptionParser(unittest.TestCase):
         parser = option_parser('koskari')
         return parser.parse_args(list(args))
 
+
     def test_defaults(self):
         opts = self._parse()
         self.assertIsNone(opts.filename)
@@ -57,25 +57,31 @@ class TestOptionParser(unittest.TestCase):
         self.assertFalse(opts.interactive)
         self.assertIsNone(opts.histfile)
 
+
     def test_filename_positional(self):
         opts = self._parse('hello.ki')
         self.assertEqual('hello.ki', opts.filename)
+
 
     def test_no_tweak_path(self):
         opts = self._parse('--no-tweak-path')
         self.assertFalse(opts.tweakpath)
 
+
     def test_interactive_short(self):
         opts = self._parse('-i')
         self.assertTrue(opts.interactive)
+
 
     def test_interactive_long(self):
         opts = self._parse('--interactive')
         self.assertTrue(opts.interactive)
 
+
     def test_histfile(self):
         opts = self._parse('--histfile', '/tmp/koskari_hist')
         self.assertEqual('/tmp/koskari_hist', opts.histfile)
+
 
     def test_args_remainder(self):
         opts = self._parse('script.ki', 'arg1', 'arg2')
@@ -83,40 +89,45 @@ class TestOptionParser(unittest.TestCase):
         self.assertEqual(['arg1', 'arg2'], opts.args)
 
 
-class TestRunFile(unittest.TestCase):
+class TestRunFile(unittest.IsolatedAsyncioTestCase):
 
-    def test_hello_prints_to_stdout(self):
-        mod = new_module('__main__')
+    async def test_hello_prints_to_stdout(self):
+        mod = await new_module('__main__')
         captured = io.StringIO()
         orig = sys.stdout
         sys.stdout = captured
         try:
-            asyncio.run(run_file_async(mod, _script('hello.ki')))
+            await run_file_async(mod, _script('hello.ki'))
         finally:
             sys.stdout = orig
         self.assertIn('Hello, koskari!', captured.getvalue())
 
-    def test_define_and_print_produces_42(self):
-        mod = new_module('__main__')
+
+    async def test_define_and_print_produces_42(self):
+
+        mod = await new_module('__main__')
+
         captured = io.StringIO()
         orig = sys.stdout
         sys.stdout = captured
+
         try:
-            asyncio.run(run_file_async(mod, _script('define_and_print.ki')))
+            await run_file_async(mod, _script('define_and_print.ki'))
         finally:
             sys.stdout = orig
         self.assertIn('42', captured.getvalue())
 
-    def test_run_file_raises_system_exit(self):
-        mod = new_module('__main__')
+
+    async def test_run_file_raises_system_exit(self):
+        mod = await new_module('__main__')
         with self.assertRaises(SystemExit) as ctx:
-            asyncio.run(run_file_async(mod, _script('exit_code.ki')))
+            await run_file_async(mod, _script('exit_code.ki'))
         self.assertEqual(42, ctx.exception.code)
 
 
-class TestRepl(unittest.TestCase):
+class TestRepl(unittest.IsolatedAsyncioTestCase):
 
-    def _run_repl(self, lines):
+    async def _run_repl(self, lines):
         """
         Drive the REPL with a sequence of input lines.
 
@@ -133,55 +144,65 @@ class TestRepl(unittest.TestCase):
             except StopIteration:
                 raise EOFError
 
-        mod = new_module('__main__')
-        asyncio.run(repl_async(mod, prompter=prompter, stdout=stdout, stderr=stderr))
+        mod = await new_module('__main__')
+        await repl_async(mod, prompter=prompter, stdout=stdout, stderr=stderr)
         return stdout.getvalue(), stderr.getvalue()
 
-    def test_simple_expression_prints_result(self):
-        out, _ = self._run_repl(['(+ 1 2)'])
+
+    async def test_simple_expression_prints_result(self):
+        out, _ = await self._run_repl(['(+ 1 2)'])
         self.assertIn('3', out)
 
-    def test_none_result_not_printed(self):
-        out, _ = self._run_repl(['(define x 99)'])
+
+    async def test_none_result_not_printed(self):
+        out, _ = await self._run_repl(['(define x 99)'])
         self.assertNotIn('99', out)
 
-    def test_underscore_stores_last_result(self):
-        out, _ = self._run_repl(['(+ 3 4)', '_'])
+
+    async def test_underscore_stores_last_result(self):
+        out, _ = await self._run_repl(['(+ 3 4)', '_'])
         lines = [ln for ln in out.splitlines() if ln.strip()]
         self.assertIn('7', lines[0])
         self.assertIn('7', lines[1])
 
-    def test_empty_lines_ignored(self):
-        out, _ = self._run_repl(['', '   ', '(+ 1 1)'])
+
+    async def test_empty_lines_ignored(self):
+        out, _ = await self._run_repl(['', '   ', '(+ 1 1)'])
         self.assertIn('2', out)
 
-    def test_syntax_error_goes_to_stderr(self):
-        _, err = self._run_repl(['((('])
+
+    async def test_syntax_error_goes_to_stderr(self):
+        _, err = await self._run_repl(['((('])
         self.assertTrue(len(err) > 0)
 
-    def test_runtime_error_goes_to_stderr(self):
-        _, err = self._run_repl(['(/ 1 0)'])
+
+    async def test_runtime_error_goes_to_stderr(self):
+        _, err = await self._run_repl(['(/ 1 0)'])
         self.assertTrue(len(err) > 0)
 
-    def test_eof_exits_cleanly(self):
-        out, err = self._run_repl([])
+
+    async def test_eof_exits_cleanly(self):
+        out, err = await self._run_repl([])
         self.assertEqual(0, len(err.strip()))
 
-    def test_multiple_expressions_accumulate_state(self):
-        out, _ = self._run_repl(['(define n 10)', '(* n n)'])
+
+    async def test_multiple_expressions_accumulate_state(self):
+        out, _ = await self._run_repl(['(define n 10)', '(* n n)'])
         self.assertIn('100', out)
 
-    def test_repl_exception_traceback_trimmed(self):
-        _, err = self._run_repl(['(/ 1 0)'])
+
+    async def test_repl_exception_traceback_trimmed(self):
+        _, err = await self._run_repl(['(/ 1 0)'])
         self.assertIn('ZeroDivisionError', err)
         self.assertNotIn(' in repl\n', err)
         self.assertNotIn(' in repl ', err)
 
-    def test_repl_koskari_exception_shows_native_traceback(self):
+
+    async def test_repl_koskari_exception_shows_native_traceback(self):
         """
         Koskari exceptions via REPL show dynchain, not wrapper traceback.
         """
-        _, err = self._run_repl(['(/ 1 0)'])
+        _, err = await self._run_repl(['(/ 1 0)'])
         self.assertIn('ZeroDivisionError', err)
         self.assertIn('Koskari dynchain', err)
 

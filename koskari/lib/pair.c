@@ -27,6 +27,7 @@
 
 
 #include "lib.h"
+#include "debug.h"
 #include "tracing.h"
 
 
@@ -746,6 +747,7 @@ long KosPair_IsProper(PyObject *self) {
   for ( ; KosPair_CheckExact(self); self = KosPair_CDR(self)) {
     pair_id = PyLong_FromVoidPtr(self);
 
+    SAYF("KosPair_IsProper PySet_Contains checking CAR=%R", KosPair_CAR(self));
     if (PySet_Contains(seen, pair_id)) {
       /* seen it, therefore recursive */
       Py_DECREF(pair_id);

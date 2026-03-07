@@ -1,0 +1,21 @@
+;; koskari.importer.basics
+;;
+;; Koskari-defined builtins loaded on top of bootstrap.  This module is
+;; merged with bootstrap to form the full builtins environment for
+;; all .ki modules.  Add macros, helpers, and other builtin definitions
+;; here; they will be available in every module without import.
+
+
+(define foobar [] (print "foobar"))
+
+(define-syntax set!
+    (syntax-rules [item attr deref]
+        [(set! (item name) value)
+         (set-item name value)]
+        [(set! (attr name) value)
+         (set-attr name value)]
+        [(set! (deref name) value)
+         (set-ref name value)]))
+
+
+;; The end.
