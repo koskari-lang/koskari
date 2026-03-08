@@ -382,26 +382,35 @@ int KosStackBlock_PushRef(KosStackBlock **block, PyObject *val) {
 }
 
 
-static int KosStackBlock_PUSH(
+int KosStackBlock_PUSH(
     KosStackBlock **self,
     PyObject *val) {
 
-  if (KosStackBlock_EnsureExclusive(self))
+  if (KOS_STACK_TRACE) {
+    SAYF("[stack] PUSH block=%p len=%zu accepting %R",
+         (void *) *self, KosStackBlock_LEN(*self), val);
+  }
+
+  if (KosStackBlock_EnsureExclusive(self)) {
+    Py_DECREF(val);
     return -1;
+  }
 
   KosStackBlock *s = *self;
 
   /* grow if needed */
   while (s->len >= s->max) {
     s = KosStackBlock_Grow(s);
-    if (! s)
+    if (! s) {
+      Py_DECREF(val);
       return -1;
+    }
+    *self = s;
   }
 
   /* stolen reference */
   s->objs[s->len++] = val;
 
-  *self = s;
   return 0;
 }
 
@@ -425,6 +434,7 @@ static int KosStackBlock_ExtendPtr(
     s = KosStackBlock_Grow(s);
     if (! s)
       return -1;
+    *self = s;
   }
 
   size_t offset = s->len;
@@ -445,7 +455,6 @@ static int KosStackBlock_ExtendPtr(
   }
   s->len = offset;
 
-  *self = s;
   return 0;
 }
 
@@ -473,6 +482,7 @@ static int KosStackBlock_EXTENDPTR(
       }
       return -1;
     }
+    *self = s;
   }
 
   size_t offset = s->len;
@@ -488,7 +498,6 @@ static int KosStackBlock_EXTENDPTR(
   }
   s->len = offset;
 
-  *self = s;
   return 0;
 }
 
@@ -550,6 +559,7 @@ static int KosStackBlock_Pull(KosStackBlock **self, size_t count) {
     s = KosStackBlock_Grow(s);
     if (! s)
       return -1;
+    *self = s;
   }
 
   for (size_t i = parent->len - count; count--; i++) {
@@ -558,7 +568,6 @@ static int KosStackBlock_Pull(KosStackBlock **self, size_t count) {
     s->objs[s->len++] = val;
   }
 
-  *self = s;
   return 0;
 }
 

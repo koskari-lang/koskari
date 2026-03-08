@@ -152,6 +152,17 @@ int KosStackBlock_PushRef(KosStackBlock **block, PyObject *val);
 
 
 /**
+   Push val onto the block chain, stealing the reference. Saves an
+   incref/decref compared to PushRef when the caller already owns val.
+
+   On success, the block owns val. On failure (-1) will Py_DECREF val
+
+   :return: 0 on success, -1 on error
+ */
+int KosStackBlock_PUSH(KosStackBlock **block, PyObject *val);
+
+
+/**
    Pop one value from the block chain. Caller owns the returned reference.
 
    :return: value or NULL on underrun (sets exception)

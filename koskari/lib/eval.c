@@ -1163,15 +1163,9 @@ static PyObject *get_await_next(PyObject *val) {
    :return: 0 continue, -1 error
 */
 KOS_OP_INLINE int push_result(KosContext *ctx, PyObject *val) {
-
-  if (! val)
-    return -1;
-  if (KosStackBlock_PushRef(&CURRENT_STACK(ctx), val) < 0) {
-    Py_DECREF(val);
-    return -1;
-  }
-  Py_DECREF(val);
-  return 0;
+  if (likely(val))
+    return KosStackBlock_PUSH(&CURRENT_STACK(ctx), val);
+  return -1;
 }
 
 
@@ -1190,24 +1184,14 @@ static int push_or_await(KosContext *ctx, KosEvent *out_ev, PyObject *val) {
 
   /* Defer is not auto-awaited; push as plain value (explicit AWAIT drives it). */
   if (KosDefer_Check(val)) {
-    if (KosStackBlock_PushRef(&CURRENT_STACK(ctx), val) < 0) {
-      Py_DECREF(val);
-      return -1;
-    }
-    Py_DECREF(val);
-    return 0;
+    return KosStackBlock_PUSH(&CURRENT_STACK(ctx), val);
   }
 
   PyTypeObject *type = Py_TYPE(val);
   SAYF("[eval] push_or_await entry is_awaitable=%d\n",
        (type->tp_as_async && type->tp_as_async->am_await) ? 1 : 0);
   if (! type->tp_as_async || ! type->tp_as_async->am_await) {
-    if (KosStackBlock_PushRef(&CURRENT_STACK(ctx), val) < 0) {
-      Py_DECREF(val);
-      return -1;
-    }
-    Py_DECREF(val);
-    return 0;
+    return KosStackBlock_PUSH(&CURRENT_STACK(ctx), val);
   }
 
   int suspended = 0;
@@ -1216,12 +1200,7 @@ static int push_or_await(KosContext *ctx, KosEvent *out_ev, PyObject *val) {
   Py_DECREF(val);
 
   if (result) {
-    if (KosStackBlock_PushRef(&CURRENT_STACK(ctx), result) < 0) {
-      Py_DECREF(result);
-      return -1;
-    }
-    Py_DECREF(result);
-    return 0;
+    return KosStackBlock_PUSH(&CURRENT_STACK(ctx), result);
   }
 
   if (suspended && yielded) {
@@ -3350,8 +3329,9 @@ int koskari_eval(KosContext *ctx, KosEvent *out_ev, PyObject *send_val, PyObject
 
   /* Phase 2: transfer-plan synchronization (only when mode warrants it) */
   if (mode == KOS_MODE_NORMAL || mode == KOS_MODE_TRANSFER) {
-    if (eval_phase_transfer(ctx, out_ev) != KOS_STEP_CONTINUE)
-      goto koskari_eval_cleanup;
+    if (unlikely(KosContext_PLAN(ctx)))
+      if (eval_phase_transfer(ctx, out_ev) != KOS_STEP_CONTINUE)
+        goto koskari_eval_cleanup;
   }
 
 /* The optable and all TARGET_* labels must remain in koskari_eval because
@@ -3437,7 +3417,7 @@ int koskari_eval(KosContext *ctx, KosEvent *out_ev, PyObject *send_val, PyObject
 
 #if KOS_USE_COMPUTED_GOTO
       goto *optable[KosOp_OP(dc.insn)];
-#define OP(name, style) TARGET_##name: op_res = op_##name(ctx, out_ev, dc.insn); if (op_res != 0) goto handle_op_result; goto next_insn;
+#define OP(name, style) TARGET_##name: op_res = op_##name(ctx, out_ev, dc.insn); if (likely(! op_res)) goto next_insn; goto handle_op_result;
 #include "opcodes.incl"
 #undef OP
       handle_op_result:
