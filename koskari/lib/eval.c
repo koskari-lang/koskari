@@ -1875,6 +1875,8 @@ static int call_default_python_vcall(
     Py_ssize_t nargs,
     PyObject *kwnames) {
 
+  // TODO: remove the non-KosCallable support from kos_callable and family
+
   PyObject *result = PyObject_Vectorcall(callable, args, (size_t) nargs, kwnames);
   if (! result)
     return -1;
@@ -1920,10 +1922,14 @@ static PyObject *vcall_build_kwds_dict(
 }
 
 
-int kos_callable_vcall(KosContext *ctx, KosEvent *out_ev,
-                       PyObject *callable,
-                       PyObject *const *args, Py_ssize_t nargs,
-                       PyObject *kwnames) {
+int kos_callable_vcall(
+    KosContext *ctx,
+    KosEvent *out_ev,
+    PyObject *callable,
+    PyObject *const *args,
+    Py_ssize_t nargs,
+    PyObject *kwnames) {
+
   if (KosCallable_Check(callable)) {
     KosVectorInstallFunc vfn = KosCallableType_VINSTALL(Py_TYPE(callable));
     if (vfn)
@@ -1949,14 +1955,38 @@ int kos_callable_vcall(KosContext *ctx, KosEvent *out_ev,
       return r;
     }
   }
-  return call_default_python_vcall(ctx, out_ev, callable, args, nargs, kwnames);
+
+  // TODO: remove the non-KosCallable support from kos_callable and family
+  return call_default_python_vcall(
+    ctx,
+    out_ev,
+    callable,
+    args,
+    nargs,
+    kwnames);
 }
 
 
-int kos_callable_tail_vcall(KosContext *ctx, KosEvent *out_ev,
-                            PyObject *callable,
-                            PyObject *const *args, Py_ssize_t nargs,
-                            PyObject *kwnames) {
+/**
+   kos_callable_tail_vcall: dispatch to tail install for KosCallable,
+   else call_default_python_vcall.
+
+   STACK OWNERSHIP: When a tail install handler is invoked (tp_kos_tail_vinstall
+   or fallback tail paths), it takes ownership of the caller's stack. The handler
+   either frees the current frame (kos_tail_koscall) or resets it in place
+   (kos_dynframe_reset_for_tail). Callers must NOT call KosStackBlock_DropNoErr
+   after kos_callable_tail_vcall returns in the KosCallable path. Only the plain
+   Python path (call_default_python_vcall) leaves the caller's stack valid; in
+   that path the caller must DropNoErr before push_or_await.
+*/
+int kos_callable_tail_vcall(
+    KosContext *ctx,
+    KosEvent *out_ev,
+    PyObject *callable,
+    PyObject *const *args,
+    Py_ssize_t nargs,
+    PyObject *kwnames) {
+
   if (KosCallable_Check(callable)) {
     KosVectorInstallFunc vfn = KosCallableType_TAIL_VINSTALL(Py_TYPE(callable));
     if (vfn)
@@ -2012,7 +2042,15 @@ int kos_callable_tail_vcall(KosContext *ctx, KosEvent *out_ev,
       return r;
     }
   }
-  return call_default_python_vcall(ctx, out_ev, callable, args, nargs, kwnames);
+
+  // TODO: remove the non-KosCallable support from kos_callable and family
+  return call_default_python_vcall(
+    ctx,
+    out_ev,
+    callable,
+    args,
+    nargs,
+    kwnames);
 }
 
 

@@ -121,6 +121,8 @@ The context holds an active transfer plan (`KosContext_PLAN(ctx)`). At the top o
 
 The following describes how each Koskari callable type implements the install slots. This is the canonical unified interface for invoking Koskari-aware callables.
 
+**Stack ownership (tail_install)**: A tail_install handler (and any tail vinstall it uses) takes ownership of the caller's stack. The caller must not perform DropNoErr or any stack manipulation after the tail call returns. The handler clears or replaces the frame, invalidating the caller's stack reference.
+
 ### KosFunction
 
 - **install**: Push a new frame. Use `KosFunction_PrepareCallNamespace` to bind formals from `(args_tuple, kwds_dict)`. Set `frame->code` and `frame->ns`. Set `frame->native_handler = NULL` (bytecode execution). Return 0.

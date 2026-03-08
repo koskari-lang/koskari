@@ -16,9 +16,9 @@
 /**
    TAIL_CALL_NAMES: arg = N (number of positional arguments). Same
    stack layout as CALL_NAMES: [callable, pos_0, ..., pos_{N-1},
-   kwd_val_0, ..., kwd_val_{M-1}, names]. Pops everything, builds a
-   contiguous arg array from the popped-tuple items, and passes names
-   directly as kwnames to kos_callable_tail_vcall, avoiding a kwds dict.
+   kwd_val_0, ..., kwd_val_{M-1}, names]. TailPtr + vcall (no tuple).
+   KosCallable: kos_callable_tail_vcall; tail install takes stack ownership,
+   no DropNoErr. Plain Python: PyObject_Vectorcall, DropNoErr, kos_push_or_await.
 */
 
 KOS_OP_HANDLER(TAIL_CALL_NAMES) {
@@ -26,59 +26,40 @@ KOS_OP_HANDLER(TAIL_CALL_NAMES) {
 
   KosStackBlock **stack = &CURRENT_STACK(ctx);
 
-  PyObject *names = KosStackBlock_PopRef(stack);
+  PyObject *names = KosStackBlock_Peek(*stack);
   if (! names)
     return -1;
-
   if (! PyTuple_CheckExact(names)) {
     PyErr_Format(PyExc_RuntimeError, "TAIL_CALL_NAMES names must be tuple"
                  ", not %R", names);
-    Py_DECREF(names);
     return -1;
   }
 
-  Py_ssize_t nkwds = PyTuple_GET_SIZE(names);
   Py_ssize_t npos = (Py_ssize_t) opa;
+  Py_ssize_t nkwds = PyTuple_GET_SIZE(names);
   Py_ssize_t total = npos + nkwds;
+  size_t ntotal = (size_t)(total + 2);
 
-  PyObject *callable = NULL;
+  PyObject *const *ptr = KosStackBlock_TailPtr(*stack, ntotal);
+  if (! ptr)
+    return -1;
 
-  if (total == 0) {
-    Py_DECREF(names);
-    callable = KosStackBlock_PopRef(stack);
-    if (! callable)
-      return -1;
-    int r = kos_callable_tail_vcall(ctx, out_ev, callable, NULL, 0, NULL);
-    Py_DECREF(callable);
+  PyObject *kwnames = nkwds ? ptr[total + 1] : NULL;
+
+  if (KosCallable_Check(ptr[0])) {
+    int r = kos_callable_tail_vcall(ctx, out_ev, ptr[0], &ptr[1], npos,
+                                    kwnames);
+    /* No DropNoErr: tail install takes ownership of the stack. It either
+       frees the frame (kos_tail_koscall) or resets it (kos_dynframe_reset_for_tail).
+       Calling DropNoErr would be use-after-free or operate on NULL. */
     return r;
   }
 
-  /*
-     Pop all positional + keyword values into a single contiguous tuple.
-     The tuple layout is [pos_0, ..., pos_{N-1}, kwd_val_0, ..., kwd_val_{M-1}].
-     Pass its item array as args and npos as nargs, with names as kwnames.
-     This avoids building a dict while still transferring ownership out of
-     the stack before the call (no push_or_await ordering hazard).
-  */
-  PyObject *all_args = KosStackBlock_PopTail(stack, (size_t) total);
-  if (! all_args) {
-    Py_DECREF(names);
+  PyObject *result = PyObject_Vectorcall(ptr[0], &ptr[1], (size_t) npos,
+                                         kwnames);
+  if (! result)
     return -1;
-  }
 
-  callable = KosStackBlock_PopRef(stack);
-  if (! callable) {
-    Py_DECREF(all_args);
-    Py_DECREF(names);
-    return -1;
-  }
-
-  PyObject *const *argv = &PyTuple_GET_ITEM(all_args, 0);
-  int r = kos_callable_tail_vcall(ctx, out_ev, callable, argv, npos,
-                                  nkwds ? names : NULL);
-
-  Py_DECREF(callable);
-  Py_DECREF(all_args);
-  Py_DECREF(names);
-  return r;
+  KosStackBlock_DropNoErr(stack, ntotal);
+  return kos_push_or_await(ctx, out_ev, result);
 }

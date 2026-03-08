@@ -139,6 +139,16 @@ If a future path is introduced that touches the caller's stack during dispatch,
 that path must not use the TailPtr shortcut. The implementation should assert
 or document this invariant.
 
+#### Stack ownership for tail calls
+
+When an opcode invokes `kos_callable_tail_vcall` for a KosCallable, the tail
+install handler assumes full ownership of the caller's stack. The handler either
+frees the current frame via `kos_tail_koscall` or resets it via
+`kos_dynframe_reset_for_tail`. The opcode must NOT call
+`KosStackBlock_DropNoErr` after `kos_callable_tail_vcall` in the KosCallable
+branch. The plain Python path leaves the stack valid; the opcode must DropNoErr
+before `kos_push_or_await`.
+
 ### 2. New Dispatch Function: `kos_callable_vcall`
 
 Introduce a parallel dispatch entry point that carries the vectorcall signature

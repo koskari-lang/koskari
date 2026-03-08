@@ -98,15 +98,6 @@ class TestStubOpcodes(CevalTest):
             await self._run_stub_opcode("BUILD_FUNCTION", 0)
 
 
-    async def test_call_names_raises_not_implemented(self):
-        """
-        CALL_NAMES raises RuntimeError
-        """
-
-        with self.assertRaises(RuntimeError):
-            await self._run_stub_opcode("CALL_NAMES", 0)
-
-
     async def test_call_star_raises_not_implemented(self):
         """
         CALL_STAR raises RuntimeError
@@ -141,15 +132,6 @@ class TestStubOpcodes(CevalTest):
 
         with self.assertRaises(RuntimeError):
             await self._run_stub_opcode("CALL_ATTR_STAR", 0)
-
-
-    async def test_tail_call_names_raises_not_implemented(self):
-        """
-        TAIL_CALL_NAMES raises RuntimeError
-        """
-
-        with self.assertRaises(RuntimeError):
-            await self._run_stub_opcode("TAIL_CALL_NAMES", 0)
 
 
     async def test_tail_call_star_raises_not_implemented(self):

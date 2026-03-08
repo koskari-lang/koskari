@@ -74,6 +74,7 @@ int kos_callable_vcall(struct KosContext *ctx, struct KosEvent *out_ev,
                        PyObject *callable,
                        PyObject *const *args, Py_ssize_t nargs,
                        PyObject *kwnames);
+/* Tail vcall: KosCallable path takes stack ownership (no DropNoErr by caller). */
 int kos_callable_tail_vcall(struct KosContext *ctx, struct KosEvent *out_ev,
                             PyObject *callable,
                             PyObject *const *args, Py_ssize_t nargs,

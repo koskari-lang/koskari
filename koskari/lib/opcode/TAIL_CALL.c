@@ -15,9 +15,9 @@
 
 /**
    TAIL_CALL: arg = N. Same stack as CALL [callable, arg_0, ..., arg_{N-1}].
-   For KosExpression/KosFunction, replace current frame and continue in-place;
-   otherwise same semantics as CALL. Uses vectorcall convention via
-   kos_callable_tail_vcall, with args popped into a tuple for ref safety.
+   TailPtr + vcall (no tuple). KosCallable: kos_callable_tail_vcall; tail
+   install takes stack ownership, no DropNoErr. Plain Python: PyObject_Vectorcall,
+   DropNoErr, kos_push_or_await.
 */
 
 KOS_OP_HANDLER(TAIL_CALL) {
@@ -26,23 +26,26 @@ KOS_OP_HANDLER(TAIL_CALL) {
   KosDynFrame *frame_top = CURRENT_FRAME(ctx);
   KosStackBlock **stack = &KosDynFrame_STACK(frame_top);
 
-  PyObject *args = NULL;
-  if (n > 0) {
-    args = KosStackBlock_PopTail(stack, n);
-    if (! args)
-      return -1;
-  }
-
-  PyObject *callable = KosStackBlock_PopRef(stack);
-  if (! callable) {
-    Py_XDECREF(args);
+  PyObject *const *ptr = KosStackBlock_TailPtr(*stack, n + 1);
+  if (! ptr)
     return -1;
+
+  if (KosCallable_Check(ptr[0])) {
+    int r = kos_callable_tail_vcall(ctx, out_ev, ptr[0],
+                                    (n > 0) ? &ptr[1] : NULL,
+                                    (Py_ssize_t) n, NULL);
+    /* No DropNoErr: tail install takes ownership of the stack. It either
+       frees the frame (kos_tail_koscall) or resets it (kos_dynframe_reset_for_tail).
+       Calling DropNoErr would be use-after-free or operate on NULL. */
+    return r;
   }
 
-  PyObject *const *argv = args ? &PyTuple_GET_ITEM(args, 0) : NULL;
-  int r = kos_callable_tail_vcall(ctx, out_ev, callable, argv, (Py_ssize_t) n, NULL);
+  PyObject *result = PyObject_Vectorcall(ptr[0],
+                                         (n > 0) ? &ptr[1] : NULL,
+                                         (size_t) n, NULL);
+  if (! result)
+    return -1;
 
-  Py_DECREF(callable);
-  Py_XDECREF(args);
-  return r;
+  KosStackBlock_DropNoErr(stack, n + 1);
+  return kos_push_or_await(ctx, out_ev, result);
 }
