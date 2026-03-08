@@ -29,7 +29,7 @@ from .bytecode import special_bytecode
 from .call import special_call
 from .class_ import special_class
 from .conditionals import special_and, special_cond, special_if, special_or, special_unless, special_when
-from .continuations import special_call_cc, special_let_cc, special_capture_cc, special_reset, special_shift
+from .continuations import special_call_cc, special_let_cc, special_capture_cc, special_reset, special_return, special_shift
 from .context import special_dyn_with, special_parameterize, special_with
 from .dyn_wind import special_dyn_wind
 from .exceptions import (
@@ -185,6 +185,7 @@ __all__ = (
     "special_refq",
     "special_repr",
     "special_reset",
+    "special_return",
     "special_set_attr",
     "special_set_item",
     "special_setq",

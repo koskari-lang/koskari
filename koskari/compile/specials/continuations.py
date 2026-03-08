@@ -15,7 +15,7 @@
 koskari.compile.specials.continuations
 
 Special form handlers for compile/call/cc, compile/let/cc,
-compile/capture/cc, compile/reset, and compile/shift.
+compile/capture/cc, compile/reset, compile/shift, and compile/return.
 
 :author: Christopher O'Brien <obriencj@preoccupied.net>
 :license: GNU General Public License v3
@@ -165,6 +165,33 @@ def special_shift(compiler, source, tc=False):
     fragment.instruction(OpCode.KOS_OP_POP_SHIFT, 0)
 
     return fragment
+
+
+@special(symbol("compile/return"))
+def special_return(compiler, source, tc=False):
+    """
+    Compile (compile/return) or (compile/return VAL). Returns from function
+    """
+
+    called_by, rest = source
+
+    if rest is nil:
+        frag = compiler.fragment(called_by)
+        frag.position_of(source)
+        frag.instruction(OpCode.KOS_OP_RETURN, 0)
+        return frag
+
+    val, tail = rest
+    if not is_nil(tail):
+        raise SpecialError(
+            "return takes at most one argument",
+            source)
+
+    frag = compiler.fragment(called_by)
+    frag.position_of(source)
+    frag.merge(compiler.full_compile(val, False))
+    frag.instruction(OpCode.KOS_OP_RETURN, 1)
+    return frag
 
 
 # The end.
