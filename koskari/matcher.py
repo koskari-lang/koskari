@@ -25,7 +25,7 @@ tuple interpretation for future define-syntax integration.
 from typing import Any, Dict, Optional, Protocol, Tuple
 
 from .lib import car, cdr, cons, keyword, nil, symbol
-from .types import get_position, is_pair, is_symbol, unpack
+from .types import get_position, is_nil, is_pair, is_symbol, unpack
 
 
 __all__ = (
@@ -706,7 +706,8 @@ class _MatchMatcher(Matcher):
     def match(self, source, literals, result, specs=None):
         if source is not nil:
             elem, rest = source
-            if rest is nil and is_pair(elem) and len(self.specs) >= 2:
+            if (rest is nil and is_pair(elem) and not is_nil(elem)
+                    and len(self.specs) >= 2):
                 pair_source = cons(car(elem), cons(cdr(elem), nil))
                 current = pair_source
                 for spec in self.specs:

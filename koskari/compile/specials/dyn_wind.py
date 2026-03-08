@@ -23,11 +23,12 @@ Special form handler for compile/dyn-wind (dynamic-wind).
 
 
 from ...exceptions import SpecialError
-from ...lib import (FormalsSpec, FunctionSpec, OpCode, keyword, nil, pair,
+from ...lib import (FormalsSpec, FunctionSpec, OpCode, nil, pair,
                     symbol)
-from ...types import is_keyword, is_pair, is_nil, unpack
+from ...types import is_pair
+from ...matcher import ANY_ORDER, LITERAL_KW, MATCH, match, VALUE
 from ..compiler import ByteCodeFragment, Compiler, CompilerMode
-from ..helpers import helper_begin, special
+from ..helpers import helper_begin, special, special_forms
 
 
 def _compile_thunk(compiler, body_src, fragment):
@@ -44,10 +45,35 @@ def _compile_thunk(compiler, body_src, fragment):
     return fragment
 
 
-_kw_before = keyword('before:')
-_kw_body = keyword('body:')
-_kw_after = keyword('after:')
-_kw_segments = (_kw_before, _kw_body, _kw_after)
+_POSITIONAL_3 = MATCH(
+    VALUE("before"),
+    VALUE("body"),
+    VALUE("after"),
+)
+_POSITIONAL_2 = MATCH(
+    VALUE("body"),
+    VALUE("after"),
+)
+_KEYWORD_ALL = MATCH(ANY_ORDER(
+    MATCH(LITERAL_KW("before:"), VALUE("before")),
+    MATCH(LITERAL_KW("body:"), VALUE("body")),
+    MATCH(LITERAL_KW("after:"), VALUE("after")),
+))
+_KEYWORD_BEFORE_BODY = MATCH(ANY_ORDER(
+    MATCH(LITERAL_KW("before:"), VALUE("before")),
+    MATCH(LITERAL_KW("body:"), VALUE("body")),
+))
+_KEYWORD_BODY_AFTER = MATCH(ANY_ORDER(
+    MATCH(LITERAL_KW("body:"), VALUE("body")),
+    MATCH(LITERAL_KW("after:"), VALUE("after")),
+))
+_DYN_WIND_PATTERNS = [
+    _KEYWORD_ALL,
+    _KEYWORD_BEFORE_BODY,
+    _KEYWORD_BODY_AFTER,
+    _POSITIONAL_3,
+    _POSITIONAL_2,
+]
 
 
 def _find_segments(source):
@@ -55,52 +81,29 @@ def _find_segments(source):
     Find the before, body, and after segments in the source.
     """
 
-    found = []
-    seen = set()
+    matched = match(source, _DYN_WIND_PATTERNS)
+    if matched is None:
+        raise SpecialError(
+            "dyn-wind requires before, body, and after segments",
+            source)
 
-    for elem in unpack(source):
-        if not is_pair(elem):
-            raise SpecialError(
-                "dyn-wind segment must be a pair, not %r" % elem,
-                source)
+    before_src = matched.get("before")
+    before_src = before_src.source if before_src else nil
 
-        if not is_nil(elem):
-            head, tail = elem
-            if head in _kw_segments:
-                if head in seen:
-                    raise SpecialError("duplicate segment", source)
-                seen.add(head)
-                found.append((head, tail))
-            elif is_keyword(head):
-                raise SpecialError("unknown dyn-wind segment keyword %r", head)
-            else:
-                found.append((None, elem))
-        else:
-            found.append((None, elem))
+    body_src = matched["body"].source
 
-    if len(found) > 3:
-        raise SpecialError("too many dyn-wind segments", source)
+    after_src = matched.get("after")
+    after_src = after_src.source if after_src else nil
 
-    if len(found) < 2:
-        raise SpecialError("dyn-wind requires at least one of before, body, and after", source)
+    if before_src is nil and after_src is nil:
+        raise SpecialError(
+            "dyn-wind requires at least one of before, body, and after",
+            source)
 
-    if len(found) == 2:
-        if found[0][0] in (None, _kw_body):
-            if found[1][0] in (None, _kw_after):
-                return [nil, found[0][1], found[1][1]]
-            else:
-                raise SpecialError("misplaced dyn-wind segment keyword %r", found[1][0])
-        elif found[0][0] is not _kw_before:
-            raise SpecialError("misplaced dyn-wind segment keyword %r", found[0][0])
-        else:
-            if found[1][0] in (None, _kw_body):
-                return [found[0][1], found[1][1], nil]
-            else:
-                raise SpecialError("misplaced dyn-wind segment keyword %r", found[1][0])
-
-    return found[0][1], found[1][1], found[2][1]
+    return (before_src, body_src, after_src)
 
 
+@special_forms(_DYN_WIND_PATTERNS)
 @special(symbol("compile/dyn-wind"))
 def special_dyn_wind(
         compiler: Compiler,
