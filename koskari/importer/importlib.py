@@ -121,8 +121,10 @@ class KoskariSourceFileLoader(FileLoader):
     async def exec_module_async(self, module):
         filename = self.get_filename(module.__name__)
 
-        ki_mod = await new_module(module.__name__,
-                            package=getattr(module, '__package__', None))
+        ki_mod = await new_module(
+            module.__name__,
+            package=getattr(module, '__package__', None))
+
         init_module(ki_mod, filename, spec=getattr(module, '__spec__', None))
 
         await load_module_async(ki_mod)

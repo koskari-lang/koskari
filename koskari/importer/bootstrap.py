@@ -26,38 +26,15 @@ using bootstrap as its builtins, then merges both and caches the result.
 :ai-assistant: claude-4.6-sonnet-high via Cursor
 """
 
-
 from os.path import dirname, join
 
-from ..lib import (
-    Module,
-    ModuleNamespace,
-    car,
-    cdr,
-    cons,
-    deref,
-    nil,
-    pair,
-    symbol,
-    keyword,
-    gensym,
-    setcar,
-    setcdr,
-    apply,
-    values,
-)
-from ..types import (
-    TypePredicate,
-    is_nil,
-    is_proper,
-    is_recursive,
-    build_proper,
-    unpack,
-)
-
 from ..compile.specials import SPECIALS
-from ..reader.layouts import LAYOUTS
 from ..compile.syntax import build_syntax as build_syntax_rules
+from ..lib import (Module, ModuleNamespace, apply, car, cdr, cons, deref,
+                   gensym, keyword, nil, pair, setcar, setcdr, symbol, values)
+from ..reader.layouts import LAYOUTS
+from ..types import (TypePredicate, build_proper, is_nil, is_proper,
+                     is_recursive, unpack)
 
 
 __all__ = ('make_bootstrap', 'make_builtins')
@@ -202,8 +179,8 @@ async def make_builtins():
     if _BUILTINS_CACHE is not None:
         return _BUILTINS_CACHE
 
-    from .module import init_module, load_module_async
     from . import module as _mod
+    from .module import init_module, load_module_async
 
     bootstrap = make_bootstrap()
     ns = ModuleNamespace("koskari.basics", bootstrap)
@@ -220,7 +197,7 @@ async def make_builtins():
         if not key.startswith('__'):
             try:
                 bootstrap[key] = val.deref()
-            except:
+            except Exception:
                 pass
 
     _BUILTINS_CACHE = bootstrap

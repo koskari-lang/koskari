@@ -22,7 +22,6 @@ of whether an event loop is already running in the current thread.
 :license: GNU General Public License v3
 """
 
-
 import asyncio
 import threading
 
@@ -32,6 +31,8 @@ __all__ = ('as_coroutine', 'run_sync', 'iter_sync')
 
 _executor = None
 _executor_lock = threading.Lock()
+
+
 def _get_executor_loop():
     """
     Return the event loop for the dedicated executor thread.
