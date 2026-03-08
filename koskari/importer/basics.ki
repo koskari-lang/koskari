@@ -8,14 +8,16 @@
 
 (define foobar [] (print "foobar"))
 
-(define-syntax set!
-    (syntax-rules [item attr deref]
-        [(set! (item name) value)
-         (set-item name value)]
-        [(set! (attr name) value)
-         (set-attr name value)]
-        [(set! (deref name) value)
-         (set-ref name value)]))
+define-syntax compile/set!:
+    syntax-rules [item attr deref]:
+        set! (item obj name) value:
+         (set-item obj name value)
+        set! (attr obj name) value:
+         (set-attr obj name value)
+        set! (deref ref) value:
+         (set-ref ref value)
+        set! name value:
+         (setq name value)
 
 
 ;; The end.
