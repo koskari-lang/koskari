@@ -408,6 +408,13 @@ PyObject *KosStackBlock_PopTail(KosStackBlock **self, size_t count);
 
 
 /**
+   Block-level API for eval: steal last count elements into dest[0..count-1].
+   Block loses refs; caller owns them. Returns -1 on underrun.
+ */
+int KosStackBlock_PopTailPtr(KosStackBlock **self, size_t count, PyObject **dest);
+
+
+/**
    Block-level API for eval: pop count * 2 elements as key,val pairs;
    return a new dict. Stack layout: key_0, val_0, ..., key_{n-1}, val_{n-1}
    with val_{n-1} at TOS. Caller owns the returned reference.

@@ -896,7 +896,7 @@ int KosStackBlock_PopBlock(KosStackBlock **block, size_t count) {
 }
 
 
-static int KosStackBlock_PopTailPtr(
+int KosStackBlock_PopTailPtr(
     KosStackBlock **self,
     size_t count,
     PyObject **dest) {

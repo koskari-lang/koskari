@@ -15,37 +15,60 @@
 
 /**
    TAIL_CALL: arg = N. Same stack as CALL [callable, arg_0, ..., arg_{N-1}].
-   TailPtr + vcall (no tuple). KosCallable: kos_callable_tail_vcall; tail
-   install takes stack ownership, no DropNoErr. Plain Python: PyObject_Vectorcall,
-   DropNoErr, kos_push_or_await.
+   Extracts args via KosStackBlock_PopTail (n+1 > 17) or KosStackBlock_PopTailPtr
+   (n+1 <= 17) before vcall; opcode owns and cleans up the extracted storage.
+   KosCallable: kos_callable_tail_vcall. Plain Python: PyObject_Vectorcall,
+   kos_push_or_await.
 */
+
+#define TAIL_CALL_ARRAY_THRESHOLD 16
 
 KOS_OP_HANDLER(TAIL_CALL) {
   unsigned n = KosOp_ARG(insn);
+  size_t count = (size_t)(n + 1);
 
   KosDynFrame *frame_top = CURRENT_FRAME(ctx);
   KosStackBlock **stack = &KosDynFrame_STACK(frame_top);
 
-  PyObject *const *ptr = KosStackBlock_TailPtr(*stack, n + 1);
-  if (! ptr)
-    return -1;
+  PyObject *callable;
+  PyObject *const *args;
+  PyObject *tup = NULL;
+  PyObject *buf[TAIL_CALL_ARRAY_THRESHOLD];
+  int used_tuple = 0;
 
-  if (KosCallable_Check(ptr[0])) {
-    int r = kos_callable_tail_vcall(ctx, out_ev, ptr[0],
-                                    (n > 0) ? &ptr[1] : NULL,
-                                    (Py_ssize_t) n, NULL);
-    /* No DropNoErr: tail install takes ownership of the stack. It either
-       frees the frame (kos_tail_koscall) or resets it (kos_dynframe_reset_for_tail).
-       Calling DropNoErr would be use-after-free or operate on NULL. */
-    return r;
+  if (count > TAIL_CALL_ARRAY_THRESHOLD) {
+    tup = KosStackBlock_PopTail(stack, count);
+    if (! tup)
+      return -1;
+    used_tuple = 1;
+    callable = PyTuple_GET_ITEM(tup, 0);
+    args = (n > 0) ? (PyObject *const *)&PyTuple_GET_ITEM(tup, 1) : NULL;
+
+  } else {
+    if (KosStackBlock_PopTailPtr(stack, count, buf) < 0)
+      return -1;
+    callable = buf[0];
+    args = (n > 0) ? (PyObject *const *)&buf[1] : NULL;
   }
 
-  PyObject *result = PyObject_Vectorcall(ptr[0],
-                                         (n > 0) ? &ptr[1] : NULL,
-                                         (size_t) n, NULL);
-  if (! result)
-    return -1;
+  int res = 0;
+  if (KosCallable_Check(callable)) {
+    res = kos_callable_tail_vcall(ctx, out_ev, callable, args,
+                                  (Py_ssize_t) n, NULL);
+  } else {
 
-  KosStackBlock_DropNoErr(stack, n + 1);
-  return kos_push_or_await(ctx, out_ev, result);
+    // TODO: Remove the current frame
+
+    PyObject *result = PyObject_Vectorcall(callable, args, (size_t) n, NULL);
+    res = kos_push_or_await(ctx, out_ev, result);
+  }
+
+  if (used_tuple) {
+    Py_DECREF(tup);
+  } else {
+    while (count--)
+      Py_DECREF(buf[count]);
+  }
+
+  return res;
 }
