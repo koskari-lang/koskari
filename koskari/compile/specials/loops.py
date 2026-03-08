@@ -49,7 +49,8 @@ def special_while(compiler, source, tc=False):
         child.merge(compiler.full_compile(test, False))
         child.instruction(OpCode.KOS_OP_JUMP_FALSE, loop_exit)
         helper_begin(child, body, False)
-        child.instruction(OpCode.KOS_OP_JUMP, loop_head)
+
+        child.instruction(OpCode.KOS_OP_CONTINUE, 0)
         child.instruction(OpCode.KOS_OP_LABEL, loop_exit)
         child.instruction(OpCode.KOS_OP_CLEAR_LOOP, 0)
 
