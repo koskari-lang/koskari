@@ -616,15 +616,40 @@ def special_aiter(compiler, source, tc=False):
 
 _INPLACE_OP_MAP = {
     symbol('+'): OpCode.KOS_OP_VAR_OBJECT_ADD,
+    symbol('-'): OpCode.KOS_OP_VAR_OBJECT_SUBTRACT,
+    symbol('*'): OpCode.KOS_OP_VAR_OBJECT_MULTIPLY,
+    symbol('**'): OpCode.KOS_OP_VAR_OBJECT_POWER,
+    symbol('/'): OpCode.KOS_OP_VAR_OBJECT_TRUE_DIVIDE,
+    symbol('//'): OpCode.KOS_OP_VAR_OBJECT_FLOOR_DIVIDE,
+    symbol('%'): OpCode.KOS_OP_VAR_OBJECT_MODULO,
+    symbol('@'): OpCode.KOS_OP_VAR_OBJECT_MATRIX_MULTIPLY,
+    symbol('<<'): OpCode.KOS_OP_VAR_OBJECT_BIT_LEFT,
+    symbol('>>'): OpCode.KOS_OP_VAR_OBJECT_BIT_RIGHT,
     symbol('&'): OpCode.KOS_OP_VAR_OBJECT_BIT_AND,
+    symbol('^'): OpCode.KOS_OP_VAR_OBJECT_BIT_XOR,
+    symbol('|'): OpCode.KOS_OP_VAR_OBJECT_BIT_OR,
+    symbol('compile/+'): OpCode.KOS_OP_VAR_OBJECT_ADD,
+    symbol('compile/-'): OpCode.KOS_OP_VAR_OBJECT_SUBTRACT,
+    symbol('compile/*'): OpCode.KOS_OP_VAR_OBJECT_MULTIPLY,
+    symbol('compile/**'): OpCode.KOS_OP_VAR_OBJECT_POWER,
+    symbol('compile//'): OpCode.KOS_OP_VAR_OBJECT_TRUE_DIVIDE,
+    symbol('compile///'): OpCode.KOS_OP_VAR_OBJECT_FLOOR_DIVIDE,
+    symbol('compile/%'): OpCode.KOS_OP_VAR_OBJECT_MODULO,
+    symbol('compile/@'): OpCode.KOS_OP_VAR_OBJECT_MATRIX_MULTIPLY,
+    symbol('compile/<<'): OpCode.KOS_OP_VAR_OBJECT_BIT_LEFT,
+    symbol('compile/>>'): OpCode.KOS_OP_VAR_OBJECT_BIT_RIGHT,
+    symbol('compile/&'): OpCode.KOS_OP_VAR_OBJECT_BIT_AND,
+    symbol('compile/^'): OpCode.KOS_OP_VAR_OBJECT_BIT_XOR,
+    symbol('compile/|'): OpCode.KOS_OP_VAR_OBJECT_BIT_OR,
 }
 
 
 @special(symbol("compile/inplace"))
 def special_inplace(compiler, source, tc=False):
     """
-    Compile (compile/inplace OP VAR VALUE). In-place update: VAR += VALUE
-    or VAR &= VALUE. OP is + or & (or compile/+ or compile/&).
+    Compile (compile/inplace OP VAR VALUE). In-place update: VAR OP= VALUE.
+    OP is any numeric or bitwise operator (+, -, *, /, //, %, **, @, &, |, ^,
+    <<, >>) or its compile/ form.
     """
 
     called_by, body = source

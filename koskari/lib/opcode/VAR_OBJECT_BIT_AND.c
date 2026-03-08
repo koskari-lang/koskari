@@ -20,29 +20,29 @@
 */
 
 KOS_OP_HANDLER(VAR_OBJECT_BIT_AND) {
+  (void) out_ev;
+
   PyObject *name = get_name_from_insn(CURRENT_CODE(ctx), insn);
-  if (! name)
+  if (unlikely(! name))
     return -1;
-  PyObject *rhs = KosStackBlock_PopRef(&CURRENT_STACK(ctx));
-  if (! rhs)
-    return -1;
+
   PyObject *obj = frame_ns_deref(ctx, name);
-  if (! obj) {
-    Py_DECREF(rhs);
+  if (unlikely(! obj))
+    return -1;
+
+  PyObject *rhs = KosStackBlock_PopRef(&CURRENT_STACK(ctx));
+  if (unlikely(! rhs)) {
+    Py_DECREF(obj);
     return -1;
   }
+
   PyObject *result = PyNumber_InPlaceAnd(obj, rhs);
   Py_DECREF(obj);
   Py_DECREF(rhs);
-  if (! result)
+  if (unlikely(! result))
     return -1;
-  if (frame_ns_store(ctx, name, result) < 0) {
-    Py_DECREF(result);
-    return -1;
-  }
-  Py_DECREF(result);
-  (void) out_ev;
-  return 0;
-}
 
-// The end.
+  int res = frame_ns_store(ctx, name, result);
+  Py_DECREF(result);
+  return res;
+}

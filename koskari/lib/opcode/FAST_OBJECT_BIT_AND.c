@@ -19,38 +19,33 @@
 */
 
 KOS_OP_HANDLER(FAST_OBJECT_BIT_AND) {
+  (void) out_ev;
+
   PyObject *ns = CURRENT_NS(ctx);
-  if (! ns) {
+  if (unlikely(! ns)) {
     PyErr_SetString(PyExc_RuntimeError,
                     "FAST_OBJECT_BIT_AND invoked on NULL namespace");
     return -1;
   }
-  if (! KosNamespace_SupportsFast(ns)) {
-    PyErr_Format(PyExc_RuntimeError,
-                 "FAST_OBJECT_BIT_AND invoked on %R", ns);
-    return -1;
-  }
+
   size_t idx = (size_t) KosOp_ARG(insn);
-  PyObject *rhs = KosStackBlock_PopRef(&CURRENT_STACK(ctx));
-  if (! rhs)
-    return -1;
   PyObject *obj = KosNamespace_FastDeref(ns, idx);
-  if (! obj) {
-    Py_DECREF(rhs);
+  if (unlikely(! obj))
+    return -1;
+
+  PyObject *rhs = KosStackBlock_PopRef(&CURRENT_STACK(ctx));
+  if (unlikely(! rhs)) {
+    Py_DECREF(obj);
     return -1;
   }
+
   PyObject *result = PyNumber_InPlaceAnd(obj, rhs);
   Py_DECREF(obj);
   Py_DECREF(rhs);
-  if (! result)
+  if (unlikely(! result))
     return -1;
-  if (KosNamespace_FastStore(ns, idx, result) < 0) {
-    Py_DECREF(result);
-    return -1;
-  }
-  Py_DECREF(result);
-  (void) out_ev;
-  return 0;
-}
 
-// The end.
+  int res = KosNamespace_FastStore(ns, idx, result);
+  Py_DECREF(result);
+  return res;
+}

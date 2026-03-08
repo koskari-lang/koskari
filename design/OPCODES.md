@@ -2011,6 +2011,34 @@ Object protocol opcodes: single Python operation on TOS (and optionally below); 
 
 **Example (OBJECT_ADD):** Arg = number of operands (e.g. 2 for binary add). Pop N values, push result (or await). Pool: 0 = 1, 1 = 2.
 
+### 19.1 In-place variable update (VAR_OBJECT_* and FAST_OBJECT_*)
+
+In-place opcodes perform an augmented assignment: fetch the current value from a name (VAR) or slot (FAST), pop the rhs from the stack, apply the corresponding `PyNumber_InPlace*` operation, then store the result back. Stack effect: `[..., rhs] → [...]` (no value pushed; form evaluates to None).
+
+**VAR_OBJECT_* (style VAR):** Arg = constant pool index (name). Fetch obj from frame namespace, pop rhs, `PyNumber_InPlace*(obj, rhs)` (or `PyNumber_InPlacePower(obj, rhs, Py_None)` for POWER), store result back into name.
+
+**FAST_OBJECT_* (style FASTVAR):** Arg = slot index. Fetch obj from fast slot, pop rhs, same inplace operation, store result back into slot.
+
+These opcodes are lowered at compile time: VAR_OBJECT_* may be converted to FAST_OBJECT_* when the name has a fixed slot.
+
+| Opcode | PyNumber call |
+|--------|---------------|
+| VAR_OBJECT_ADD / FAST_OBJECT_ADD | PyNumber_InPlaceAdd |
+| VAR_OBJECT_SUBTRACT / FAST_OBJECT_SUBTRACT | PyNumber_InPlaceSubtract |
+| VAR_OBJECT_MULTIPLY / FAST_OBJECT_MULTIPLY | PyNumber_InPlaceMultiply |
+| VAR_OBJECT_POWER / FAST_OBJECT_POWER | PyNumber_InPlacePower(obj, rhs, Py_None) |
+| VAR_OBJECT_FLOOR_DIVIDE / FAST_OBJECT_FLOOR_DIVIDE | PyNumber_InPlaceFloorDivide |
+| VAR_OBJECT_TRUE_DIVIDE / FAST_OBJECT_TRUE_DIVIDE | PyNumber_InPlaceTrueDivide |
+| VAR_OBJECT_MODULO / FAST_OBJECT_MODULO | PyNumber_InPlaceRemainder |
+| VAR_OBJECT_MATRIX_MULTIPLY / FAST_OBJECT_MATRIX_MULTIPLY | PyNumber_InPlaceMatrixMultiply |
+| VAR_OBJECT_BIT_LEFT / FAST_OBJECT_BIT_LEFT | PyNumber_InPlaceLshift |
+| VAR_OBJECT_BIT_RIGHT / FAST_OBJECT_BIT_RIGHT | PyNumber_InPlaceRshift |
+| VAR_OBJECT_BIT_AND / FAST_OBJECT_BIT_AND | PyNumber_InPlaceAnd |
+| VAR_OBJECT_BIT_XOR / FAST_OBJECT_BIT_XOR | PyNumber_InPlaceXor |
+| VAR_OBJECT_BIT_OR / FAST_OBJECT_BIT_OR | PyNumber_InPlaceOr |
+
+**Example (VAR_OBJECT_ADD → FAST_OBJECT_ADD):** `(set! x (+ x 1))` compiles to value expr, VAR_OBJECT_ADD name, CONST None; VAR_OBJECT_ADD may lower to FAST_OBJECT_ADD if `x` has a slot.
+
 | index | opcode     | arg | arg view | comment |
 |------:|------------|-----|----------|---------|
 | 0     | CONST      | 0   | 0 (1)    | stack: [..., 1] |

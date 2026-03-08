@@ -774,12 +774,49 @@ None.
 **Behaviour:** Requests the variable name, compiles EXPR, emits VAR_STORE, then
 pushes CONST None so the form has a value.
 
+**Note:** The `set!` macro (in `basics.ki`) expands augmented-assignment forms
+like `(set! x (+ x 1))` to `(compile/inplace + x 1)`; plain assignments
+`(set! x value)` expand to `(compile/setq x value)`.
+
 **Examples:**
 
 ```scheme
 (compile/setq x 42)
 (compile/setq counter (compile/call + counter 1))
 ```
+
+
+## compile/inplace
+
+**Symbol:** `compile/inplace`
+
+**Syntax:** `(compile/inplace OP VAR VALUE)`
+
+**Use-case:** In-place update: compute `VAR OP VALUE` and store the result back
+into VAR. Equivalent to Python augmented assignment (`x += 1`, `x &= mask`, etc.).
+OP is any numeric or bitwise operator; VAR must be a symbol.
+
+**Behaviour:** Compiles VALUE, emits the corresponding VAR_OBJECT_* opcode (arg =
+name constant index), then CONST None. The compiler may lower VAR_OBJECT_* to
+FAST_OBJECT_* when VAR has a fixed slot.
+
+**Supported operators:** `+`, `-`, `*`, `/`, `//`, `%`, `**`, `@`, `<<`, `>>`,
+`&`, `^`, `|` (and their `compile/` forms, e.g. `compile/+`, `compile/-`, etc.).
+
+**Examples:**
+
+```scheme
+;; Via set! macro expansion
+(set! x (+ x 1))    ; x += 1
+(set! n (* n 2))    ; n *= 2
+(set! bits (| bits mask))  ; bits |= mask
+
+;; Direct use
+(compile/inplace + counter 1)
+(compile/inplace // total divisor)
+```
+
+**Implementation:** `koskari/compile/specials/object.py` — `special_inplace`
 
 
 ## compile/ref
