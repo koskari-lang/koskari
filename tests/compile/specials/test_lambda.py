@@ -21,17 +21,18 @@ from . import SpecialsTestCase
 
 class TestLambdaAnonymous(SpecialsTestCase):
 
-    def test_anonymous_lambda_identity(self):
+    async def test_anonymous_lambda_identity(self):
         src = "(lambda [x] x)"
         expr, mod = self.compile_expr(src)
-        fn = expr().run()
-        result = fn(42).run()
+        fn = await expr()
+        result = await fn(42)
         self.assertEqual(result, 42)
 
-    def test_anonymous_lambda_repr_has_debug_label(self):
+
+    async def test_anonymous_lambda_repr_has_debug_label(self):
         src = "(lambda [x] x)"
         expr, mod = self.compile_expr(src)
-        fn = expr().run()
+        fn = await expr()
         repr_str = repr(fn)
         self.assertIn("<lambda>", repr_str,
                       "anonymous lambda repr should show debug label")
@@ -39,19 +40,20 @@ class TestLambdaAnonymous(SpecialsTestCase):
 
 class TestLambdaNamed(SpecialsTestCase):
 
-    def test_named_lambda_repr_shows_name(self):
+    async def test_named_lambda_repr_shows_name(self):
         src = "(lambda fact [n] n)"
         expr, mod = self.compile_expr(src)
-        fn = expr().run()
+        fn = await expr()
         repr_str = repr(fn)
         self.assertIn("fact", repr_str,
                       "named lambda repr should show proper name")
 
-    def test_named_lambda_identity(self):
+
+    async def test_named_lambda_identity(self):
         src = "(lambda fact [n] n)"
         expr, mod = self.compile_expr(src)
-        fn = expr().run()
-        result = fn(10).run()
+        fn = await expr()
+        result = await fn(10)
         self.assertEqual(result, 10)
 
 

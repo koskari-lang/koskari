@@ -18,9 +18,6 @@ reset establishes a prompt; shift captures the continuation and runs a
 handler. Mirrors the semantics in design/language/control-flow.md.
 """
 
-
-import unittest
-
 from . import SpecialsTestCase
 from koskari.lib import ParamRef
 from koskari.dis import dis
@@ -28,7 +25,7 @@ from koskari.dis import dis
 
 class TestResetShiftSpecials(SpecialsTestCase):
 
-    def test_reset_shift_invoke(self):
+    async def test_reset_shift_invoke(self):
         """
         (compile/reset (+ 1 (compile/shift k (compile/call k 5)))) => 6
         """
@@ -38,11 +35,11 @@ class TestResetShiftSpecials(SpecialsTestCase):
         (compile/reset (+ 1 (compile/shift k (compile/call k 5))))
         """
         expr, mod = self.compile_expr(src_str, **{'+': add_fn})
-        result = expr().run()
+        result = await expr()
         self.assertEqual(result, 6)
 
 
-    def test_reset_shift_return_cont(self):
+    async def test_reset_shift_return_cont(self):
         """
         (compile/reset (compile/shift k k)) => continuation
         """
@@ -51,12 +48,12 @@ class TestResetShiftSpecials(SpecialsTestCase):
         (compile/reset (compile/shift k k))
         """
         expr, mod = self.compile_expr(src_str)
-        cont = expr().run()
+        cont = await expr()
         self.assertIsNotNone(cont)
         self.assertTrue(callable(cont))
 
 
-    def test_shift_stores_and_invokes(self):
+    async def test_shift_stores_and_invokes(self):
         """
         reset returns k via (shift k k); store in outer scope, then invoke k(42)
         """
@@ -67,11 +64,11 @@ class TestResetShiftSpecials(SpecialsTestCase):
           (compile/call k 42))
         """
         expr, mod = self.compile_expr(src_str)
-        result = expr().run()
+        result = await expr()
         self.assertEqual(result, 42)
 
 
-    def test_delimited_param_reset_shift_no_let(self):
+    async def test_delimited_param_reset_shift_no_let(self):
         """
         parameterize + reset + shift without let. Continuation resumes add(10)
         = 10 + 100 = 110.
@@ -88,11 +85,11 @@ class TestResetShiftSpecials(SpecialsTestCase):
 
         expr, mod = self.compile_expr(src_str, add=add)
 
-        result = expr().run()
+        result = await expr()
         self.assertEqual(result, 110)
 
 
-    def test_delimited_param_first_branch_only(self):
+    async def test_delimited_param_first_branch_only(self):
         """
         First branch only: parameterize amt=100, reset, shift stores k and
         invokes k(10). Continuation resumes add(10) = 10 + 100 = 110.
@@ -110,11 +107,11 @@ class TestResetShiftSpecials(SpecialsTestCase):
 
         expr, mod = self.compile_expr(src_str, add=add)
 
-        result = expr().run()
+        result = await expr()
         self.assertEqual(result, 110)
 
 
-    def test_delimited_let_reset_shift_no_param(self):
+    async def test_delimited_let_reset_shift_no_param(self):
         """
         let + reset + shift without parameterize. Sanity check.
         """
@@ -132,11 +129,11 @@ class TestResetShiftSpecials(SpecialsTestCase):
         expr, mod = self.compile_expr(src_str, add=add)
         dis(expr.code)
 
-        result = expr().run()
+        result = await expr()
         self.assertEqual(result, 11)
 
 
-    def test_delimited_param_outside_reset_not_captured(self):
+    async def test_delimited_param_outside_reset_not_captured(self):
         """
         Param outside reset is not captured; stolen k invoked in different
         param scope sees that scope's amt. Expected: (110, 209).
@@ -174,7 +171,7 @@ class TestResetShiftSpecials(SpecialsTestCase):
         self.assertIs(mod.add, add)
         self.assertIs(mod.seq, seq)
 
-        result = expr().run()
+        result = await expr()
         self.assertEqual(result, (None, 101, 110, 109, 102))
 
 

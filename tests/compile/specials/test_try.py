@@ -42,7 +42,7 @@ def make_raise_accumulator(excclass=Exception):
 
 class TestTrySpecial(SpecialsTestCase):
 
-    def test_try_noexc(self):
+    async def test_try_noexc(self):
         accu, good_guy = make_accumulator()
 
         src = """
@@ -50,12 +50,12 @@ class TestTrySpecial(SpecialsTestCase):
           (good_guy 567))
         """
         expr, mod = self.compile_expr(src, good_guy=good_guy)
-        res = expr().run()
+        res = await expr()
         self.assertEqual(res, 567)
         self.assertEqual(accu, [567])
 
 
-    def test_try_noexc_else(self):
+    async def test_try_noexc_else(self):
         accu, good_guy = make_accumulator()
 
         src = """
@@ -64,12 +64,12 @@ class TestTrySpecial(SpecialsTestCase):
           (else: (good_guy 888)))
         """
         expr, mod = self.compile_expr(src, good_guy=good_guy)
-        res = expr().run()
+        res = await expr()
         self.assertEqual(res, 888)
         self.assertEqual(accu, [567, 888])
 
 
-    def test_try_noexc_finally(self):
+    async def test_try_noexc_finally(self):
         accu, good_guy = make_accumulator()
 
         src = """
@@ -78,12 +78,12 @@ class TestTrySpecial(SpecialsTestCase):
           (finally: (good_guy 999)))
         """
         expr, mod = self.compile_expr(src, good_guy=good_guy)
-        res = expr().run()
+        res = await expr()
         self.assertEqual(res, 999)
         self.assertEqual(accu, [567, 999])
 
 
-    def test_try_noexc_else_finally(self):
+    async def test_try_noexc_else_finally(self):
         accu, good_guy = make_accumulator()
 
         src = """
@@ -93,12 +93,12 @@ class TestTrySpecial(SpecialsTestCase):
           (finally: (good_guy 999)))
         """
         expr, mod = self.compile_expr(src, good_guy=good_guy)
-        res = expr().run()
+        res = await expr()
         self.assertEqual(res, 999)
         self.assertEqual(accu, [567, 888, 999])
 
 
-    def test_try_nocatch(self):
+    async def test_try_nocatch(self):
         accu, bad_guy = make_raise_accumulator()
 
         src = """
@@ -107,11 +107,11 @@ class TestTrySpecial(SpecialsTestCase):
         """
         expr, mod = self.compile_expr(src, bad_guy=bad_guy)
         with self.assertRaises(Exception):
-            expr().run()
+            await expr()
         self.assertEqual(accu, [567])
 
 
-    def test_try_exc(self):
+    async def test_try_exc(self):
         accu1, bad_guy = make_raise_accumulator()
         accu2, good_guy = make_accumulator()
 
@@ -124,13 +124,13 @@ class TestTrySpecial(SpecialsTestCase):
 
         dis(expr.code)
 
-        res = expr().run()
+        res = await expr()
         self.assertEqual(res, -111)
         self.assertEqual(accu1, [567])
         self.assertEqual(accu2, [-111])
 
 
-    def test_bare_except(self):
+    async def test_bare_except(self):
         accu1, bad_guy = make_raise_accumulator()
         accu2, good_guy = make_accumulator()
 
@@ -140,13 +140,13 @@ class TestTrySpecial(SpecialsTestCase):
           (except: (good_guy -111)))
         """
         expr, mod = self.compile_expr(src, bad_guy=bad_guy, good_guy=good_guy)
-        res = expr().run()
+        res = await expr()
         self.assertEqual(res, -111)
         self.assertEqual(accu1, [567])
         self.assertEqual(accu2, [-111])
 
 
-    def test_bare_except_catches_base(self):
+    async def test_bare_except_catches_base(self):
         accu1, bad_guy = make_raise_accumulator(BaseException)
         accu2, good_guy = make_accumulator()
 
@@ -156,13 +156,13 @@ class TestTrySpecial(SpecialsTestCase):
           (except: (good_guy -222)))
         """
         expr, mod = self.compile_expr(src, bad_guy=bad_guy, good_guy=good_guy)
-        res = expr().run()
+        res = await expr()
         self.assertEqual(res, -222)
         self.assertEqual(accu1, [999])
         self.assertEqual(accu2, [-222])
 
 
-    def test_named_try_exc(self):
+    async def test_named_try_exc(self):
         accu1, bad_guy = make_raise_accumulator()
         accu2, good_guy = make_accumulator()
 
@@ -172,13 +172,13 @@ class TestTrySpecial(SpecialsTestCase):
           ((e Exception) (good_guy -111)))
         """
         expr, mod = self.compile_expr(src, bad_guy=bad_guy, good_guy=good_guy, Exception=Exception)
-        res = expr().run()
+        res = await expr()
         self.assertEqual(res, -111)
         self.assertEqual(accu1, [567])
         self.assertEqual(accu2, [-111])
 
 
-    def test_try_exc_miss(self):
+    async def test_try_exc_miss(self):
         accu1, bad_guy = make_raise_accumulator(BaseException)
         accu2, good_guy = make_accumulator()
 
@@ -189,12 +189,12 @@ class TestTrySpecial(SpecialsTestCase):
         """
         expr, mod = self.compile_expr(src, bad_guy=bad_guy, good_guy=good_guy, Exception=Exception)
         with self.assertRaises(BaseException):
-            expr().run()
+            await expr()
         self.assertEqual(accu1, [123])
         self.assertEqual(accu2, [])
 
 
-    def test_try_exc_else(self):
+    async def test_try_exc_else(self):
         accu1, bad_guy = make_raise_accumulator()
         accu2, good_guy = make_accumulator()
 
@@ -205,13 +205,13 @@ class TestTrySpecial(SpecialsTestCase):
           (else: (good_guy 987)))
         """
         expr, mod = self.compile_expr(src, bad_guy=bad_guy, good_guy=good_guy, Exception=Exception)
-        res = expr().run()
+        res = await expr()
         self.assertEqual(res, -111)
         self.assertEqual(accu1, [567])
         self.assertEqual(accu2, [-111])
 
 
-    def test_try_exc_finally(self):
+    async def test_try_exc_finally(self):
         accu1, bad_guy = make_raise_accumulator()
         accu2, good_guy = make_accumulator()
 
@@ -222,13 +222,13 @@ class TestTrySpecial(SpecialsTestCase):
           (finally: (good_guy 999)))
         """
         expr, mod = self.compile_expr(src, bad_guy=bad_guy, good_guy=good_guy, Exception=Exception)
-        res = expr().run()
+        res = await expr()
         self.assertEqual(res, 999)
         self.assertEqual(accu1, [567])
         self.assertEqual(accu2, [-111, 999])
 
 
-    def test_try_exc_else_finally(self):
+    async def test_try_exc_else_finally(self):
         accu1, bad_guy = make_raise_accumulator()
         accu2, good_guy = make_accumulator()
 
@@ -240,7 +240,7 @@ class TestTrySpecial(SpecialsTestCase):
           (finally: (good_guy 999)))
         """
         expr, mod = self.compile_expr(src, bad_guy=bad_guy, good_guy=good_guy, Exception=Exception)
-        res = expr().run()
+        res = await expr()
         self.assertEqual(res, 999)
         self.assertEqual(accu1, [567])
         self.assertEqual(accu2, [-111, 999])

@@ -29,21 +29,21 @@ import unittest
 from koskari.lib import Stack
 
 
-class TestStack(unittest.TestCase):
+class TestStack(unittest.IsolatedAsyncioTestCase):
     """Tests for the Stack type"""
 
-    def test_type_name(self):
+    async def test_type_name(self):
         """Stack type has correct name"""
 
         self.assertEqual(Stack.__name__, "Stack")
 
-    def test_create(self):
+    async def test_create(self):
         """Stack can be created without arguments"""
 
         s = Stack()
         self.assertIsInstance(s, Stack)
 
-    def test_create_no_args(self):
+    async def test_create_no_args(self):
         """Stack rejects arguments"""
 
         with self.assertRaises(TypeError):
@@ -52,7 +52,7 @@ class TestStack(unittest.TestCase):
         with self.assertRaises(TypeError):
             Stack(foo=1)
 
-    def test_duplicate(self):
+    async def test_duplicate(self):
         """duplicate() copies elements on top of stack"""
 
         s = Stack()
@@ -91,7 +91,7 @@ class TestStack(unittest.TestCase):
         self.assertEqual(s.length(), 3)
         self.assertRaises(RuntimeError, s.duplicate, 4)
 
-    def test_replace(self):
+    async def test_replace(self):
         """replace() updates element at index"""
 
         s = Stack()
@@ -108,7 +108,7 @@ class TestStack(unittest.TestCase):
         self.assertEqual(s.pop(), 101)
         self.assertRaises(RuntimeError, s.replace, 0, 999)
 
-    def test_pull(self):
+    async def test_pull(self):
         """pull() copies values from parent block to current block"""
 
         s = Stack()
@@ -134,7 +134,7 @@ class TestStack(unittest.TestCase):
         s.push_block()
         self.assertRaises(RuntimeError, s.pull, 1)
 
-    def test_pushpop(self):
+    async def test_pushpop(self):
         """push() and pop() work correctly"""
 
         s = Stack()
@@ -147,7 +147,7 @@ class TestStack(unittest.TestCase):
         self.assertRaises(RuntimeError, s.pop)
         self.assertRaises(RuntimeError, s.peek)
 
-    def test_poptail(self):
+    async def test_poptail(self):
         """pop_tail() removes and returns multiple elements"""
 
         s = Stack()
@@ -169,7 +169,7 @@ class TestStack(unittest.TestCase):
         self.assertRaises(RuntimeError, s.pop)
         self.assertRaises(RuntimeError, s.pop_tail, 1)
 
-    def test_poptaildict(self):
+    async def test_poptaildict(self):
         """pop_tail_dict() pops key/value pairs into a dict"""
 
         s = Stack()
@@ -185,7 +185,7 @@ class TestStack(unittest.TestCase):
         self.assertEqual(new, expect)
         self.assertEqual(s.total(), 0)
 
-    def test_pushblock_popblock(self):
+    async def test_pushblock_popblock(self):
         """push_block() and pop_block() manage block hierarchy"""
 
         s = Stack()
@@ -209,7 +209,7 @@ class TestStack(unittest.TestCase):
         self.assertRaises(RuntimeError, s.pop)
         self.assertRaises(RuntimeError, s.pop_block, 0)
 
-    def test_push_block_no_args(self):
+    async def test_push_block_no_args(self):
         """push_block() takes no arguments (style/labels moved to dynchain)"""
 
         s = Stack()
@@ -218,7 +218,7 @@ class TestStack(unittest.TestCase):
         s.pop_block(0)
         self.assertEqual(s.depth(), 1)
 
-    def test_push_overrun(self):
+    async def test_push_overrun(self):
         """Stack block has a maximum size limit"""
 
         s = Stack()
@@ -232,7 +232,7 @@ class TestStack(unittest.TestCase):
         self.assertEqual(s.peek(), 888)
         self.assertRaises(RuntimeError, s.push, 999)
 
-    def test_popblock_overrun(self):
+    async def test_popblock_overrun(self):
         """pop_block() respects parent block size limits"""
 
         s = Stack()
@@ -267,7 +267,7 @@ class TestStack(unittest.TestCase):
         self.assertEqual(s.total(), 256)
         self.assertEqual(s.length(), 256)
 
-    def test_peek_at(self):
+    async def test_peek_at(self):
         """peek_at() accesses elements by index"""
 
         s = Stack()
@@ -282,7 +282,7 @@ class TestStack(unittest.TestCase):
             self.assertEqual(s.peek_at(-i), 10 - i)
         self.assertRaises(RuntimeError, s.peek_at, -11)
 
-    def test_extend(self):
+    async def test_extend(self):
         """extend() adds multiple elements from a sequence"""
 
         s = Stack()
@@ -290,7 +290,7 @@ class TestStack(unittest.TestCase):
         self.assertEqual(s.length(), 3)
         self.assertEqual(s.pop_tail(3), (1, 2, 3))
 
-    def test_drop(self):
+    async def test_drop(self):
         """drop() removes elements without returning them"""
 
         s = Stack()
@@ -301,7 +301,7 @@ class TestStack(unittest.TestCase):
         self.assertEqual(s.length(), 1)
         self.assertEqual(s.pop(), 1)
 
-    def test_depth(self):
+    async def test_depth(self):
         """depth() returns the number of blocks"""
 
         s = Stack()
@@ -316,7 +316,7 @@ class TestStack(unittest.TestCase):
         s.pop_block(0)
         self.assertEqual(s.depth(), 2)
 
-    def test_total(self):
+    async def test_total(self):
         """total() returns sum of all block lengths"""
 
         s = Stack()
@@ -328,7 +328,7 @@ class TestStack(unittest.TestCase):
         self.assertEqual(s.total(), 3)
         self.assertEqual(s.length(), 1)
 
-    def test_view(self):
+    async def test_view(self):
         """view() returns tuple of current block's stack"""
 
         s = Stack()
@@ -338,7 +338,7 @@ class TestStack(unittest.TestCase):
 
         self.assertEqual(s.view(), (1, 2, 3))
 
-    def test_clear(self):
+    async def test_clear(self):
         """clear() empties all blocks except root"""
 
         s = Stack()
@@ -356,7 +356,7 @@ class TestStack(unittest.TestCase):
         self.assertEqual(s.total(), 0)
         self.assertEqual(s.length(), 0)
 
-    def test_drop_block(self):
+    async def test_drop_block(self):
         """drop_block() removes current block without transferring"""
 
         s = Stack()

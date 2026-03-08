@@ -18,9 +18,6 @@ Tests for YIELD and async gen opcodes.
 :license: GNU General Public License v3
 """
 
-import unittest
-
-import asyncio
 from tests import make_callable
 from tests.lib.opcode import CevalTest, build_expr
 from koskari.lib import AsyncGenerator
@@ -29,6 +26,7 @@ from koskari.lib import AsyncGenerator
 try:
     anext
 except NameError:
+    # anext wasn't available until Python 3.10
     async def anext(agen):
         return await agen.__anext__()
 
@@ -38,7 +36,7 @@ class TestYieldOpcodes(CevalTest):
     Tests for YIELD opcode and async generators.
     """
 
-    def test_yielding_expression_returns_async_generator(self):
+    async def test_yielding_expression_returns_async_generator(self):
         """
         Calling an Expression whose code has YIELD returns AsyncGenerator
         """
@@ -52,7 +50,7 @@ class TestYieldOpcodes(CevalTest):
         self.assertIsInstance(agen, AsyncGenerator)
 
 
-    def test_yield_suspends_and_resumes(self):
+    async def test_yield_suspends_and_resumes(self):
         """
         Yielding code returns AsyncGenerator; anext() yields value then StopAsyncIteration
         """
@@ -73,7 +71,7 @@ class TestYieldOpcodes(CevalTest):
             with self.assertRaises(StopAsyncIteration):
                 await anext(agen)
 
-        asyncio.run(run())
+        await run()
 
 
 # The end.

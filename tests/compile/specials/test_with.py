@@ -22,6 +22,7 @@ exception). Uses PUSH_WITH/POP_WITH. Covers sync and async __enter__/__exit__
 from . import SpecialsTestCase
 from koskari.dis import dis
 
+
 class SimpleMgr:
     """Python context manager for tests; tracks enter/exit and optional binding."""
 
@@ -31,9 +32,11 @@ class SimpleMgr:
         self.exited = False
         self.exc_info = (None, None, None)
 
+
     def __enter__(self):
         self.entered = True
         return self.value
+
 
     def __exit__(self, typ, val, tb):
         self.exited = True
@@ -42,7 +45,9 @@ class SimpleMgr:
 
 
 class SwallowMgr(SimpleMgr):
-    """Context manager that swallows exceptions (exit returns True)."""
+    """
+    Context manager that swallows exceptions (exit returns True)
+    """
 
     def __exit__(self, typ, val, tb):
         self.exited = True
@@ -51,7 +56,9 @@ class SwallowMgr(SimpleMgr):
 
 
 class AsyncMgr:
-    """Async context manager: __aenter__/__aexit__ return awaitables."""
+    """
+    Async context manager: __aenter__/__aexit__ return awaitables
+    """
 
     def __init__(self, value=42):
         self.value = value
@@ -59,9 +66,11 @@ class AsyncMgr:
         self.exited = False
         self.exc_info = (None, None, None)
 
+
     async def __aenter__(self):
         self.entered = True
         return self.value
+
 
     async def __aexit__(self, typ, val, tb):
         self.exited = True
@@ -70,7 +79,9 @@ class AsyncMgr:
 
 
 class AsyncSwallowMgr(AsyncMgr):
-    """Async context manager that swallows exceptions."""
+    """
+    Async context manager that swallows exceptions
+    """
 
     async def __aexit__(self, typ, val, tb):
         self.exited = True
@@ -80,8 +91,11 @@ class AsyncSwallowMgr(AsyncMgr):
 
 class TestWithSpecial(SpecialsTestCase):
 
-    def test_normal_enter_exit_expression_returns_none(self):
-        """With runs enter, body, exit; expression result is None."""
+    async def test_normal_enter_exit_expression_returns_none(self):
+        """
+        With runs enter, body, exit; expression result is None
+        """
+
         state = {}
 
         def set_y(val):
@@ -93,13 +107,14 @@ class TestWithSpecial(SpecialsTestCase):
           (compile/call set_y 1))
         """
         expr, mod = self.compile_expr(src, make_mgr=lambda: mgr, set_y=set_y)
-        result = expr().run()
+        result = await expr()
         self.assertIsNone(result)
         self.assertEqual(state.get("y"), 1)
         self.assertTrue(mgr.entered)
         self.assertTrue(mgr.exited)
 
-    def test_with_binding_entered_value(self):
+
+    async def test_with_binding_entered_value(self):
         """With [name expr] binds the enter result to name in body."""
         state = {}
         mgr = SimpleMgr(200)
@@ -112,13 +127,14 @@ class TestWithSpecial(SpecialsTestCase):
           (compile/call check x))
         """
         expr, mod = self.compile_expr(src, make_mgr=lambda: mgr, check=check)
-        result = expr().run()
+        result = await expr()
         self.assertIsNone(result)
         self.assertEqual(state.get("got"), 200)
         self.assertTrue(mgr.entered)
         self.assertTrue(mgr.exited)
 
-    def test_exception_propagates_when_exit_does_not_swallow(self):
+
+    async def test_exception_propagates_when_exit_does_not_swallow(self):
         """Exception in body propagates after exit when exit returns false."""
         mgr = SimpleMgr()
 
@@ -131,13 +147,14 @@ class TestWithSpecial(SpecialsTestCase):
         """
         expr, mod = self.compile_expr(src, make_mgr=lambda: mgr, raise_err=raise_err)
         with self.assertRaises(ValueError) as ctx:
-            expr().run()
+            await expr()
         self.assertIn("oops", str(ctx.exception))
         self.assertTrue(mgr.entered)
         self.assertTrue(mgr.exited)
         self.assertEqual(mgr.exc_info[0], ValueError)
 
-    def test_exception_swallowed_when_exit_returns_true(self):
+
+    async def test_exception_swallowed_when_exit_returns_true(self):
         """
         When exit returns true, exception is swallowed; execution resumes
         after the with body; expression yields None.
@@ -163,14 +180,15 @@ class TestWithSpecial(SpecialsTestCase):
             raise_err=raise_err,
             after_raise=after_raise,
         )
-        result = expr().run()
+        result = await expr()
         self.assertIsNone(result)
         self.assertTrue(mgr.entered)
         self.assertTrue(mgr.exited)
         self.assertEqual(mgr.exc_info[0], ValueError)
         self.assertEqual(state.get("after"), 1)
 
-    def test_async_enter_exit_expression_returns_none(self):
+
+    async def test_async_enter_exit_expression_returns_none(self):
         """
         compile/with with async manager: VM awaits enter then body then exit;
         expression result is None.
@@ -186,13 +204,14 @@ class TestWithSpecial(SpecialsTestCase):
           (compile/call set_y 1))
         """
         expr, mod = self.compile_expr(src, make_mgr=lambda: mgr, set_y=set_y)
-        result = expr().run()
+        result = await expr()
         self.assertIsNone(result)
         self.assertEqual(state.get("y"), 1)
         self.assertTrue(mgr.entered)
         self.assertTrue(mgr.exited)
 
-    def test_async_with_binding_entered_value(self):
+
+    async def test_async_with_binding_entered_value(self):
         """compile/with [name expr] with async manager binds enter result in body."""
         state = {}
         mgr = AsyncMgr(200)
@@ -205,13 +224,14 @@ class TestWithSpecial(SpecialsTestCase):
           (compile/call check x))
         """
         expr, mod = self.compile_expr(src, make_mgr=lambda: mgr, check=check)
-        result = expr().run()
+        result = await expr()
         self.assertIsNone(result)
         self.assertEqual(state.get("got"), 200)
         self.assertTrue(mgr.entered)
         self.assertTrue(mgr.exited)
 
-    def test_async_exit_swallow(self):
+
+    async def test_async_exit_swallow(self):
         """
         Async manager: exception in body; __aexit__ returns True (swallow);
         execution resumes after with; expression yields None.
@@ -238,7 +258,7 @@ class TestWithSpecial(SpecialsTestCase):
             after_raise=after_raise,
         )
         # dis(expr.code)
-        result = expr().run()
+        result = await expr()
         self.assertIsNone(result)
         self.assertTrue(mgr.entered)
         self.assertTrue(mgr.exited)

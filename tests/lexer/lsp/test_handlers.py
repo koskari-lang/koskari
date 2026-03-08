@@ -18,7 +18,7 @@ Unit tests for koskari.lexer.lsp handlers.
 """
 
 
-from unittest import TestCase
+from unittest import IsolatedAsyncioTestCase
 from lsprotocol.types import CompletionParams, HoverParams, Position
 from koskari.lexer.lsp.handlers import (
     collect_diagnostics,
@@ -47,28 +47,28 @@ class _FakeLS:
         self.workspace._docs = {}
 
 
-class TestCollectDiagnostics(TestCase):
+class TestCollectDiagnostics(IsolatedAsyncioTestCase):
 
-    def test_valid_source_no_diagnostics(self):
+    async def test_valid_source_no_diagnostics(self):
         diags = collect_diagnostics('(+ 1 2)', 'file:///test.ki')
         self.assertEqual(diags, [])
 
 
-    def test_invalid_source_emits_diagnostic(self):
+    async def test_invalid_source_emits_diagnostic(self):
         diags = collect_diagnostics('(unclosed', 'file:///test.ki')
         self.assertGreater(len(diags), 0)
         self.assertIn('eof', diags[0].message.lower())
 
 
-    def test_layout_error_emits_diagnostic(self):
+    async def test_layout_error_emits_diagnostic(self):
         diags = collect_diagnostics(
             'define foo []:\n  if:\n    x', 'file:///test.ki')
         self.assertGreater(len(diags), 0)
 
 
-class TestHandleCompletion(TestCase):
+class TestHandleCompletion(IsolatedAsyncioTestCase):
 
-    def test_completion_returns_items_for_prefix(self):
+    async def test_completion_returns_items_for_prefix(self):
         ls = _FakeLS()
         doc = _FakeDoc('if')
         ls.workspace._docs = {doc.uri: doc}
@@ -80,7 +80,7 @@ class TestHandleCompletion(TestCase):
         self.assertIn('if', labels)
 
 
-    def test_completion_includes_layout_heads(self):
+    async def test_completion_includes_layout_heads(self):
         ls = _FakeLS()
         doc = _FakeDoc('if ')
         ls.workspace._docs = {doc.uri: doc}
@@ -92,7 +92,7 @@ class TestHandleCompletion(TestCase):
         self.assertIn('if', labels)
 
 
-    def test_completion_filters_by_prefix(self):
+    async def test_completion_filters_by_prefix(self):
         ls = _FakeLS()
         doc = _FakeDoc('def')
         ls.workspace._docs = {doc.uri: doc}
@@ -106,9 +106,9 @@ class TestHandleCompletion(TestCase):
                 msg='Completion %r should start with def' % item.label)
 
 
-class TestHandleHover(TestCase):
+class TestHandleHover(IsolatedAsyncioTestCase):
 
-    def test_hover_on_layout_returns_content(self):
+    async def test_hover_on_layout_returns_content(self):
         ls = _FakeLS()
         doc = _FakeDoc('if True:\n  1')
         ls.workspace._docs = {doc.uri: doc}
@@ -120,7 +120,7 @@ class TestHandleHover(TestCase):
         self.assertIn('if', result.contents.value)
 
 
-    def test_hover_on_if_returns_content(self):
+    async def test_hover_on_if_returns_content(self):
         ls = _FakeLS()
         doc = _FakeDoc('if True:\n  1')
         ls.workspace._docs = {doc.uri: doc}

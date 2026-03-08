@@ -24,7 +24,7 @@ from . import SpecialsTestCase
 
 class TestDynWindSpecial(SpecialsTestCase):
 
-    def test_before_and_after_run_in_order(self):
+    async def test_before_and_after_run_in_order(self):
         """
         before runs on entry, body runs, after runs on exit
         """
@@ -43,12 +43,12 @@ class TestDynWindSpecial(SpecialsTestCase):
         expr, mod = self.compile_expr(src_str, record=record)
         dis(expr.code)
 
-        result = expr().run()
+        result = await expr()
         self.assertEqual(result, 42)
         self.assertEqual(log, ["before", "body", "after"])
 
 
-    def test_after_only(self):
+    async def test_after_only(self):
         """
         compile/dyn-wind with nil before and non-nil after
         """
@@ -67,12 +67,12 @@ class TestDynWindSpecial(SpecialsTestCase):
         expr, mod = self.compile_expr(src_str, record=record)
         dis(expr.code)
 
-        result = expr().run()
+        result = await expr()
         self.assertEqual(result, 1)
         self.assertEqual(log, ["body", "after"])
 
 
-    def test_before_only(self):
+    async def test_before_only(self):
         """
         compile/dyn-wind with non-nil before and nil after
         """
@@ -91,12 +91,12 @@ class TestDynWindSpecial(SpecialsTestCase):
         expr, mod = self.compile_expr(src_str, record=record)
         dis(expr.code)
 
-        result = expr().run()
+        result = await expr()
         self.assertEqual(result, 2)
         self.assertEqual(log, ["before", "body"])
 
 
-    def test_keyword_form_before_and_after(self):
+    async def test_keyword_form_before_and_after(self):
         """
         compile/dyn-wind keyword form with before, body, and after
         """
@@ -115,12 +115,12 @@ class TestDynWindSpecial(SpecialsTestCase):
         expr, mod = self.compile_expr(src_str, record=record)
         dis(expr.code)
 
-        result = expr().run()
+        result = await expr()
         self.assertEqual(result, 42)
         self.assertEqual(log, ["before", "body", "after"])
 
 
-    def test_keyword_form_after_only(self):
+    async def test_keyword_form_after_only(self):
         """
         compile/dyn-wind keyword form with body and after only
         """
@@ -138,12 +138,12 @@ class TestDynWindSpecial(SpecialsTestCase):
         expr, mod = self.compile_expr(src_str, record=record)
         dis(expr.code)
 
-        result = expr().run()
+        result = await expr()
         self.assertEqual(result, 1)
         self.assertEqual(log, ["body", "after"])
 
 
-    def test_keyword_form_before_only(self):
+    async def test_keyword_form_before_only(self):
         """
         compile/dyn-wind keyword form with before and body only
         """
@@ -161,12 +161,12 @@ class TestDynWindSpecial(SpecialsTestCase):
         expr, mod = self.compile_expr(src_str, record=record)
         dis(expr.code)
 
-        result = expr().run()
+        result = await expr()
         self.assertEqual(result, 2)
         self.assertEqual(log, ["before", "body"])
 
 
-    def test_positional_still_works(self):
+    async def test_positional_still_works(self):
         """
         Positional form continues to work after adding keyword form
         """
@@ -185,7 +185,7 @@ class TestDynWindSpecial(SpecialsTestCase):
         expr, mod = self.compile_expr(src_str, record=record)
         dis(expr.code)
 
-        result = expr().run()
+        result = await expr()
         self.assertEqual(result, 99)
         self.assertEqual(log, ["before", "body", "after"])
 

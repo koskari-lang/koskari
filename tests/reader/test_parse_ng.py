@@ -28,7 +28,7 @@ Tests focus on the new interface contracts introduced in parser_ng:
 """
 
 from io import StringIO
-from unittest import TestCase
+from unittest import IsolatedAsyncioTestCase
 
 from koskari.compile.helpers import pycons
 from koskari.reader.layouts import LAYOUTS
@@ -70,25 +70,25 @@ def _parse_layout_ng(src_str, **defns):
 # ===========================================================================
 
 
-class TestSourceStreamIsBaseSubclass(TestCase):
+class TestSourceStreamIsBaseSubclass(IsolatedAsyncioTestCase):
 
-    def test_source_stream_is_base_source_stream(self):
+    async def test_source_stream_is_base_source_stream(self):
         s = _stream("hello")
         self.assertIsInstance(s, BaseSourceStream)
 
-    def test_source_stream_type(self):
+    async def test_source_stream_type(self):
         s = _stream("hello")
         self.assertIsInstance(s, SourceStream)
 
-    def test_indent_stream_is_source_stream(self):
+    async def test_indent_stream_is_source_stream(self):
         s = _indent_stream("hello")
         self.assertIsInstance(s, SourceStream)
 
-    def test_indent_stream_is_base_source_stream(self):
+    async def test_indent_stream_is_base_source_stream(self):
         s = _indent_stream("hello")
         self.assertIsInstance(s, BaseSourceStream)
 
-    def test_indent_stream_is_not_just_object(self):
+    async def test_indent_stream_is_not_just_object(self):
         s = _indent_stream("hello")
         self.assertTrue(isinstance(s, IndentAwareStream))
 
@@ -98,21 +98,21 @@ class TestSourceStreamIsBaseSubclass(TestCase):
 # ===========================================================================
 
 
-class TestSourceStreamPushback(TestCase):
+class TestSourceStreamPushback(IsolatedAsyncioTestCase):
 
-    def test_pushback_restores_text(self):
+    async def test_pushback_restores_text(self):
         s = _stream("hello")
         s.read(3)
         s.pushback("hel", (1, 0))
         self.assertEqual(s.read(3), "hel")
 
-    def test_pushback_restores_position(self):
+    async def test_pushback_restores_position(self):
         s = _stream("hello")
         s.read(3)
         s.pushback("hel", (1, 0))
         self.assertEqual(s.position(), (1, 0))
 
-    def test_pushback_empty_string_is_noop(self):
+    async def test_pushback_empty_string_is_noop(self):
         s = _stream("hello")
         s.read(2)
         pos_before = s.position()
@@ -120,21 +120,21 @@ class TestSourceStreamPushback(TestCase):
         self.assertEqual(s.position(), pos_before)
         self.assertEqual(s.read(3), "llo")
 
-    def test_pushback_then_peek(self):
+    async def test_pushback_then_peek(self):
         s = _stream("hello")
         s.read(3)
         s.pushback("hel", (1, 0))
         self.assertEqual(s.peek(3), "hel")
         self.assertEqual(s.position(), (1, 0))
 
-    def test_pushback_drain_then_continues_from_stream(self):
+    async def test_pushback_drain_then_continues_from_stream(self):
         s = _stream("hello")
         s.read(2)
         s.pushback("he", (1, 0))
         self.assertEqual(s.read(2), "he")
         self.assertEqual(s.read(3), "llo")
 
-    def test_pushback_position_restored_after_drain(self):
+    async def test_pushback_position_restored_after_drain(self):
         s = _stream("hello")
         s.read(5)
         s.pushback("hello", (1, 0))
@@ -142,14 +142,14 @@ class TestSourceStreamPushback(TestCase):
         # Buffer is now empty; position comes from the underlying stream
         self.assertEqual(s.position(), (1, 5))
 
-    def test_pushback_multiple_calls_prepend(self):
+    async def test_pushback_multiple_calls_prepend(self):
         s = _stream("xyz")
         s.read(3)
         s.pushback("z", (1, 2))
         s.pushback("xy", (1, 0))
         self.assertEqual(s.read(3), "xyz")
 
-    def test_pushback_interacts_with_read_until_chars(self):
+    async def test_pushback_interacts_with_read_until_chars(self):
         s = _stream("hello world")
         s.read(5)
         s.pushback("hello", (1, 0))
@@ -158,7 +158,7 @@ class TestSourceStreamPushback(TestCase):
         # The space should now be next
         self.assertEqual(s.read(1), " ")
 
-    def test_pushback_peek_extends_into_underlying_stream(self):
+    async def test_pushback_peek_extends_into_underlying_stream(self):
         s = _stream("world")
         s.pushback("hel", (1, 0))
         # peek(6) should see "helwor"
@@ -173,42 +173,42 @@ class TestSourceStreamPushback(TestCase):
 # ===========================================================================
 
 
-class TestIndentAwareStreamDedented(TestCase):
+class TestIndentAwareStreamDedented(IsolatedAsyncioTestCase):
 
-    def test_dedented_false_initially(self):
+    async def test_dedented_false_initially(self):
         s = _indent_stream("  hello", max_indent=0)
         self.assertFalse(s.dedented)
 
-    def test_dedented_false_when_indented_enough(self):
+    async def test_dedented_false_when_indented_enough(self):
         # "  hello" has indent 2; max_indent=1 means content at col 2 is inside
         s = _indent_stream("  hello", max_indent=1)
         s.skip_whitespace()
         self.assertFalse(s.dedented)
 
-    def test_dedented_true_when_at_boundary(self):
+    async def test_dedented_true_when_at_boundary(self):
         # "\nhello" — next content at col 0; max_indent=0 means col 0 is outside
         s = _indent_stream("\nhello", max_indent=0)
         s.skip_whitespace()
         self.assertTrue(s.dedented)
 
-    def test_dedented_true_when_below_max_indent(self):
+    async def test_dedented_true_when_below_max_indent(self):
         # Content at col 2, max_indent=4 means col 2 is outside
         s = _indent_stream("\n  hello", max_indent=4)
         s.skip_whitespace()
         self.assertTrue(s.dedented)
 
-    def test_dedented_false_when_above_max_indent(self):
+    async def test_dedented_false_when_above_max_indent(self):
         # Content at col 6, max_indent=4 means col 6 is inside
         s = _indent_stream("\n      hello", max_indent=4)
         s.skip_whitespace()
         self.assertFalse(s.dedented)
 
-    def test_dedented_true_at_eof(self):
+    async def test_dedented_true_at_eof(self):
         s = _indent_stream("", max_indent=0)
         s.skip_whitespace()
         self.assertTrue(s.dedented)
 
-    def test_dedented_reset_on_each_call(self):
+    async def test_dedented_reset_on_each_call(self):
         s = _indent_stream("\nhello\n      world", max_indent=4)
         s.skip_whitespace()
         self.assertTrue(s.dedented)
@@ -219,19 +219,19 @@ class TestIndentAwareStreamDedented(TestCase):
         # Now content is at col 6 which is > 4
         self.assertFalse(s.dedented)
 
-    def test_no_max_indent_never_dedents(self):
+    async def test_no_max_indent_never_dedents(self):
         # With max_indent=None, native skip_whitespace runs; dedented stays False
         s = _indent_stream("\n  hello", max_indent=None)
         s.skip_whitespace()
         self.assertFalse(s.dedented)
 
-    def test_dedented_skips_blank_lines(self):
+    async def test_dedented_skips_blank_lines(self):
         # Blank line between; next real content is at col 0
         s = _indent_stream("\n\nhello", max_indent=2)
         s.skip_whitespace()
         self.assertTrue(s.dedented)
 
-    def test_dedented_does_not_consume_when_true(self):
+    async def test_dedented_does_not_consume_when_true(self):
         s = _indent_stream("\nhello", max_indent=0)
         s.skip_whitespace()
         self.assertTrue(s.dedented)
@@ -244,37 +244,37 @@ class TestIndentAwareStreamDedented(TestCase):
 # ===========================================================================
 
 
-class TestReaderWithSourceStreamNg(TestCase):
+class TestReaderWithSourceStreamNg(IsolatedAsyncioTestCase):
 
-    def test_read_symbol(self):
+    async def test_read_symbol(self):
         result = _parse_ng("hello")
         self.assertIs(result, symbol("hello"))
 
-    def test_read_integer(self):
+    async def test_read_integer(self):
         self.assertEqual(_parse_ng("42"), 42)
 
-    def test_read_string(self):
+    async def test_read_string(self):
         self.assertEqual(_parse_ng('"hello"'), "hello")
 
-    def test_read_list(self):
+    async def test_read_list(self):
         result = _parse_ng("(a b c)")
         self.assertEqual(result, cons(symbol("a"), symbol("b"), symbol("c"), nil))
 
-    def test_read_quote(self):
+    async def test_read_quote(self):
         result = _parse_ng("'foo")
         self.assertEqual(result, cons(symbol("compile/quote"), symbol("foo"), nil))
 
-    def test_read_quasiquote(self):
+    async def test_read_quasiquote(self):
         result = _parse_ng("`foo")
         self.assertEqual(result, cons(symbol("compile/quasiquote"), symbol("foo"), nil))
 
-    def test_read_ref_atom(self):
+    async def test_read_ref_atom(self):
         result = _parse_ng("&foo")
         self.assertEqual(
             result,
             cons(symbol("compile/ref"), symbol("foo"), nil))
 
-    def test_read_ref_atom_dotted(self):
+    async def test_read_ref_atom_dotted(self):
         result = _parse_ng("&foo.bar")
         expected = cons(
             symbol("compile/ref"),
@@ -282,12 +282,12 @@ class TestReaderWithSourceStreamNg(TestCase):
             nil)
         self.assertEqual(result, expected)
 
-    def test_read_ref_atom_bare_ampersand(self):
+    async def test_read_ref_atom_bare_ampersand(self):
         result = _parse_ng("(& 8 1)")
         expected = cons(symbol("&"), cons(8, cons(1, nil)))
         self.assertEqual(result, expected)
 
-    def test_read_ref_atom_dotted_multi(self):
+    async def test_read_ref_atom_dotted_multi(self):
         result = _parse_ng("&foo.bar.baz")
         expected = cons(
             symbol("compile/ref"),
@@ -299,13 +299,13 @@ class TestReaderWithSourceStreamNg(TestCase):
             nil)
         self.assertEqual(result, expected)
 
-    def test_read_dotted_attr_atom(self):
+    async def test_read_dotted_attr_atom(self):
         result = _parse_ng("foo.bar")
         self.assertEqual(
             result,
             cons(symbol("compile/attr"), symbol("foo"), symbol("bar"), nil))
 
-    def test_read_dotted_attr_atom_multi(self):
+    async def test_read_dotted_attr_atom_multi(self):
         result = _parse_ng("obj.foo.bar")
         expected = cons(
             symbol("compile/attr"),
@@ -314,14 +314,14 @@ class TestReaderWithSourceStreamNg(TestCase):
             nil)
         self.assertEqual(result, expected)
 
-    def test_read_eof_returns_none(self):
+    async def test_read_eof_returns_none(self):
         self.assertIsNone(_parse_ng(""))
 
-    def test_read_comment_skipped(self):
+    async def test_read_comment_skipped(self):
         result = _parse_ng("; comment\nhello")
         self.assertIs(result, symbol("hello"))
 
-    def test_read_keyword(self):
+    async def test_read_keyword(self):
         result = _parse_ng(":x")
         self.assertIs(result, keyword("x"))
 
@@ -331,9 +331,9 @@ class TestReaderWithSourceStreamNg(TestCase):
 # ===========================================================================
 
 
-class TestLayoutReaderNg(TestCase):
+class TestLayoutReaderNg(IsolatedAsyncioTestCase):
 
-    def test_simple_block(self):
+    async def test_simple_block(self):
         src = """
         foo x:
           y
@@ -346,7 +346,7 @@ class TestLayoutReaderNg(TestCase):
         result = _parse_layout_ng(src)
         self.assertEqual(result, expected)
 
-    def test_if_else_block(self):
+    async def test_if_else_block(self):
         src = """
         if x:
           1
@@ -361,7 +361,7 @@ class TestLayoutReaderNg(TestCase):
         result = _parse_layout_ng(src)
         self.assertEqual(result, expected)
 
-    def test_nested_blocks(self):
+    async def test_nested_blocks(self):
         src = """
         foo x:
           bar y:
@@ -378,7 +378,7 @@ class TestLayoutReaderNg(TestCase):
         result = _parse_layout_ng(src)
         self.assertEqual(result, expected)
 
-    def test_colon_no_space(self):
+    async def test_colon_no_space(self):
         src_a = """
         unknown x:
           (print x)
@@ -391,7 +391,7 @@ class TestLayoutReaderNg(TestCase):
         result_b = _parse_layout_ng(src_b)
         self.assertEqual(result_a, result_b)
 
-    def test_quote_block(self):
+    async def test_quote_block(self):
         src = """
         'begin:
           foo
@@ -407,7 +407,7 @@ class TestLayoutReaderNg(TestCase):
         result = _parse_layout_ng(src)
         self.assertEqual(result, expected)
 
-    def test_begin_colon_shorthand(self):
+    async def test_begin_colon_shorthand(self):
         src = """
         begin:
           x
@@ -421,7 +421,7 @@ class TestLayoutReaderNg(TestCase):
         result = _parse_layout_ng(src)
         self.assertEqual(result, expected)
 
-    def test_stream_is_indent_aware_no_getattr(self):
+    async def test_stream_is_indent_aware_no_getattr(self):
         # This test verifies that LayoutReader.read wraps a plain SourceStream
         # in an IndentAwareStream so that stream.dedented is always a real
         # attribute and not discovered through getattr.
@@ -445,9 +445,9 @@ class TestLayoutReaderNg(TestCase):
 # ===========================================================================
 
 
-class TestSourceStreamReadUntilCharsWithBuffer(TestCase):
+class TestSourceStreamReadUntilCharsWithBuffer(IsolatedAsyncioTestCase):
 
-    def test_read_until_chars_from_buffer(self):
+    async def test_read_until_chars_from_buffer(self):
         s = _stream("xyz")
         s.read(3)
         s.pushback("hello world", (1, 0))
@@ -455,13 +455,13 @@ class TestSourceStreamReadUntilCharsWithBuffer(TestCase):
         self.assertEqual(result, "hello")
         self.assertEqual(s.read(1), " ")
 
-    def test_read_until_chars_spanning_buffer_and_stream(self):
+    async def test_read_until_chars_spanning_buffer_and_stream(self):
         s = _stream(" world")
         s.pushback("hello", (1, 0))
         result = s.read_until_chars(" ")
         self.assertEqual(result, "hello")
 
-    def test_terminator_pushed_back_after_read_until(self):
+    async def test_terminator_pushed_back_after_read_until(self):
         s = _stream("hello world")
         s.read_until_chars(" ")
         # Terminator (space) must be next readable character

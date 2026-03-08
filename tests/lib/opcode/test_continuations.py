@@ -22,8 +22,6 @@ segmented transfer path (foreign-token KoskariContinuationApply handling).
 :ai-assistant: claude-4.6-sonnet-high via Cursor
 """
 
-import unittest
-
 from koskari.lib import Code, FormalsSpec, NamespaceSpec
 from tests import make_callable
 from tests.lib.opcode import CevalTest, _op, build_code, build_expr
@@ -34,7 +32,7 @@ class TestDelimitedContinuations(CevalTest):
     Tests for PUSH_PROMPT, PUSH_SHIFT, POP_SHIFT, INVOKE_K, POP_PROMPT
     """
 
-    def test_reset_shift_invoke(self):
+    async def test_reset_shift_invoke(self):
         """
         Program (+ 1 (shift k (k 5))) => 6. Validates PUSH_PROMPT,
         PUSH_SHIFT, INVOKE_K, POP_SHIFT, POP_PROMPT for continuation invocation
@@ -53,10 +51,11 @@ class TestDelimitedContinuations(CevalTest):
         ]
         code_obj, ns = build_expr(code)
         expr = make_callable(code_obj, ns)
-        result = expr().run()
+        result = await expr()
         self.assertEqual(result, 6)
 
-    def test_delimited_continuation_cannot_be_called_from_python(self):
+
+    async def test_delimited_continuation_cannot_be_called_from_python(self):
         """
         (reset (shift k k)) returns k; calling k from Python raises TypeError
         """
@@ -70,13 +69,14 @@ class TestDelimitedContinuations(CevalTest):
         ]
         code_obj, ns = build_expr(code)
         expr = make_callable(code_obj, ns)
-        cont = expr().run()
+        cont = await expr()
         self.assertIsNotNone(cont)
         with self.assertRaises(TypeError) as ctx:
             cont(42)
         self.assertIn("cannot be called from Python", str(ctx.exception))
 
-    def test_invoke_k_var_lookup_and_invoke(self):
+
+    async def test_invoke_k_var_lookup_and_invoke(self):
         """
         INVOKE_K_VAR: shift body stores cont in ns, then INVOKE_K_VAR name
         invokes it with value. (+ 1 (shift k (do (var-store k k) (invoke-k-var k 5)))) => 6
@@ -95,10 +95,11 @@ class TestDelimitedContinuations(CevalTest):
         ]
         code_obj, ns = build_expr(code, local_syms=("k",))
         expr = make_callable(code_obj, ns)
-        result = expr().run()
+        result = await expr()
         self.assertEqual(result, 6)
 
-    def test_invoke_k_with_non_continuation_raises_type_error(self):
+
+    async def test_invoke_k_with_non_continuation_raises_type_error(self):
         """
         INVOKE_K expects DelimitedContinuation at TOS-1; int => TypeError
         """
@@ -116,10 +117,11 @@ class TestDelimitedContinuations(CevalTest):
         code_obj, ns = build_expr(code)
         expr = make_callable(code_obj, ns)
         with self.assertRaises(TypeError) as ctx:
-            expr().run()
+            await expr()
         self.assertIn("DelimitedContinuation", str(ctx.exception))
 
-    def test_delimited_continuation_stored_and_invoked_outside_shift(self):
+
+    async def test_delimited_continuation_stored_and_invoked_outside_shift(self):
         """
         (reset (shift k (pop-shift k))) stores k; then (k 42) invokes from
         outside the shift body. Result 42 returns to call site.
@@ -137,10 +139,11 @@ class TestDelimitedContinuations(CevalTest):
         ]
         code_obj, ns = build_expr(code, local_syms=("k",))
         expr = make_callable(code_obj, ns)
-        result = expr().run()
+        result = await expr()
         self.assertEqual(result, 42)
 
-    def test_delimited_result_from_outside_shift(self):
+
+    async def test_delimited_result_from_outside_shift(self):
         """
         (reset (shift k (pop-shift k))) then (k 99) => 99. When invoking from
         outside (after POP_SHIFT), the continuation's first op is POP_SHIFT
@@ -159,10 +162,11 @@ class TestDelimitedContinuations(CevalTest):
         ]
         code_obj, ns = build_expr(code, local_syms=("k",))
         expr = make_callable(code_obj, ns)
-        result = expr().run()
+        result = await expr()
         self.assertEqual(result, 99)
 
-    def test_invoke_delimited_continuation_after_pop_prompt_returns_value(self):
+
+    async def test_invoke_delimited_continuation_after_pop_prompt_returns_value(self):
         """
         (reset (shift k k)) then (k 42): shift returns k via POP_SHIFT, then
         we invoke k(42) after the prompt is gone. Push model allows invoke
@@ -180,7 +184,7 @@ class TestDelimitedContinuations(CevalTest):
         ]
         code_obj, ns = build_expr(code)
         expr = make_callable(code_obj, ns)
-        result = expr().run()
+        result = await expr()
         self.assertEqual(result, 42)
 
 
@@ -189,7 +193,7 @@ class TestUndelimitedContinuations(CevalTest):
     Tests for PUSH_CC, POP_CC, CAPTURE_CC (undelimited call/cc block).
     """
 
-    def test_call_cc_capture_and_invoke(self):
+    async def test_call_cc_capture_and_invoke(self):
         """
         (call/cc [k] (k 42)) => 42.
         """
@@ -203,10 +207,11 @@ class TestUndelimitedContinuations(CevalTest):
         ]
         code_obj, ns = build_expr(code)
         expr = make_callable(code_obj, ns)
-        result = expr().run()
+        result = await expr()
         self.assertEqual(result, 42)
 
-    def test_call_cc_invoke_with_zero_args_resumes_with_none(self):
+
+    async def test_call_cc_invoke_with_zero_args_resumes_with_none(self):
         """
         (call/cc [k] (k)) => None.
         """
@@ -219,10 +224,11 @@ class TestUndelimitedContinuations(CevalTest):
         ]
         code_obj, ns = build_expr(code)
         expr = make_callable(code_obj, ns)
-        result = expr().run()
+        result = await expr()
         self.assertIsNone(result)
 
-    def test_call_cc_capture_returns_continuation(self):
+
+    async def test_call_cc_capture_returns_continuation(self):
         """
         PUSH_CC, CAPTURE_CC, POP_CC, return TOS. Result is the continuation.
         """
@@ -234,12 +240,13 @@ class TestUndelimitedContinuations(CevalTest):
         ]
         code_obj, ns = build_expr(code)
         expr = make_callable(code_obj, ns)
-        result = expr().run()
+        result = await expr()
         self.assertIsNotNone(result)
         import koskari.lib as lib
         self.assertIsInstance(result, lib.Continuation)
 
-    def test_capture_cc_without_push_cc_raises(self):
+
+    async def test_capture_cc_without_push_cc_raises(self):
         """
         CAPTURE_CC with no PUSH_CC on the dynamic chain raises RuntimeError.
         """
@@ -250,11 +257,12 @@ class TestUndelimitedContinuations(CevalTest):
         code_obj, ns = build_expr(code)
         expr = make_callable(code_obj, ns)
         with self.assertRaises(RuntimeError) as ctx:
-            expr().run()
+            await expr()
         self.assertIn("CAPTURE_CC", str(ctx.exception))
         self.assertIn("no CC block", str(ctx.exception))
 
-    def test_call_continuation_from_different_token_resumes_owner(self):
+
+    async def test_call_continuation_from_different_token_resumes_owner(self):
         """
         Invoking a continuation from a nested koskari context (different eval
         token) raises KoskariContinuationApply in the nested context, which
@@ -290,11 +298,11 @@ class TestUndelimitedContinuations(CevalTest):
         ], values={"bridge": bridge})
         bottom_expr = make_callable(bottom_code, bottom_ns)
 
-        result = bottom_expr().run()
+        result = await bottom_expr()
         self.assertEqual(result, 42)
 
 
-    def test_continuation_passes_through_intermediate_context_with_dyn_with_unwind(self):
+    async def test_continuation_passes_through_intermediate_context_with_dyn_with_unwind(self):
         """
         Four-level call stack: owner koskari -> python -> middle koskari
         (with an active dyn-with) -> python (invokes foreign continuation).
@@ -362,18 +370,20 @@ class TestUndelimitedContinuations(CevalTest):
         ], values={"python_bridge": python_bridge})
         bottom_expr = make_callable(bottom_code, bottom_ns)
 
-        result = bottom_expr().run()
+        result = await bottom_expr()
 
         self.assertEqual(result, 42)
         self.assertTrue(tracker.exited, "dyn-with __exit__ must be called during middle-context unwind")
         self.assertIsNone(tracker.exc_info[0], "dyn-with __exit__ must see no exception (hidden during segmented transfer)")
 
-    def test_invoking_continuation_after_eval_exits_raises_koskari_continuation_dead(self):
+
+    async def test_invoking_continuation_after_eval_exits_raises_koskari_continuation_dead(self):
         """
         Capture a continuation, fully exit the koskari eval, then invoke it
         from Python. The owning context is no longer alive; expect
         KoskariContinuationDead (a normal Exception).
         """
+
         import koskari.lib as lib
         code = [
             ["PUSH_CC", 0],
@@ -383,21 +393,26 @@ class TestUndelimitedContinuations(CevalTest):
         ]
         code_obj, ns = build_expr(code)
         expr = make_callable(code_obj, ns)
-        cont = expr().run()
+        cont = await expr()
         self.assertIsNotNone(cont)
+
         with self.assertRaises(lib.KoskariContinuationDead) as ctx:
             cont(42)
+
         self.assertIn("no longer alive", str(ctx.exception))
+
         try:
             raise ctx.exception
         except Exception:
             pass
 
-    def test_koskari_continuation_dead_is_normal_exception(self):
+
+    async def test_koskari_continuation_dead_is_normal_exception(self):
         """
         KoskariContinuationDead subclasses RuntimeError so it is a normal
         catchable exception, not a BaseException.
         """
+
         import koskari.lib as lib
         self.assertTrue(issubclass(lib.KoskariContinuationDead, RuntimeError))
         self.assertTrue(issubclass(lib.KoskariContinuationDead, Exception))
@@ -408,7 +423,7 @@ class TestEvaluatorToken(CevalTest):
     Tests for KosEvaluatorToken and exception types from evaluator-token model
     """
 
-    def test_evaluator_token_and_exceptions_exist_on_module(self):
+    async def test_evaluator_token_and_exceptions_exist_on_module(self):
         """
         koskari.lib exposes EvaluatorToken, DelimitedContinuation,
         Continuation, and exception types

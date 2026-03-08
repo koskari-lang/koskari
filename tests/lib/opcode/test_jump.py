@@ -18,10 +18,8 @@ Tests for JUMP, JUMP_FALSE, JUMP_TRUE, JUMP_AND, JUMP_OR opcodes.
 :license: GNU General Public License v3
 """
 
-import unittest
-
 from tests import make_callable
-from tests.lib.opcode import CevalTest, build_expr, run_to_completion
+from tests.lib.opcode import CevalTest, build_expr
 
 
 class TestJumpOpcodes(CevalTest):
@@ -29,10 +27,11 @@ class TestJumpOpcodes(CevalTest):
     Tests for JUMP, JUMP_FALSE, JUMP_TRUE, JUMP_AND, JUMP_OR
     """
 
-    def test_jump_unconditional(self):
+    async def test_jump_unconditional(self):
         """
         JUMP branches to label; skips instructions in between
         """
+
         code, ns = build_expr([
             ["JUMP", "target"],
             ["CONST", 0],
@@ -41,14 +40,15 @@ class TestJumpOpcodes(CevalTest):
             ["CONST", 99],
             ["RETURN", 1],
         ])
-        result = run_to_completion(make_callable(code, ns)())
+        result = await make_callable(code, ns)()
         self.assertEqual(result, 99)
 
 
-    def test_jump_false_jumps_when_falsy(self):
+    async def test_jump_false_jumps_when_falsy(self):
         """
         JUMP_FALSE jumps to label when TOS is false
         """
+
         code, ns = build_expr([
             ["CONST", False],
             ["JUMP_FALSE", "yes"],
@@ -58,14 +58,15 @@ class TestJumpOpcodes(CevalTest):
             ["CONST", 1],
             ["RETURN", 1],
         ])
-        result = run_to_completion(make_callable(code, ns)())
+        result = await make_callable(code, ns)()
         self.assertEqual(result, 1)
 
 
-    def test_jump_false_continues_when_truthy(self):
+    async def test_jump_false_continues_when_truthy(self):
         """
         JUMP_FALSE does not jump when TOS is true
         """
+
         code, ns = build_expr([
             ["CONST", True],
             ["JUMP_FALSE", "skip"],
@@ -75,14 +76,15 @@ class TestJumpOpcodes(CevalTest):
             ["CONST", 0],
             ["RETURN", 1],
         ])
-        result = run_to_completion(make_callable(code, ns)())
+        result = await make_callable(code, ns)()
         self.assertEqual(result, 42)
 
 
-    def test_jump_true_jumps_when_truthy(self):
+    async def test_jump_true_jumps_when_truthy(self):
         """
         JUMP_TRUE jumps to label when TOS is true
         """
+
         code, ns = build_expr([
             ["CONST", 1],
             ["JUMP_TRUE", "yes"],
@@ -92,14 +94,15 @@ class TestJumpOpcodes(CevalTest):
             ["CONST", 99],
             ["RETURN", 1],
         ])
-        result = run_to_completion(make_callable(code, ns)())
+        result = await make_callable(code, ns)()
         self.assertEqual(result, 99)
 
 
-    def test_jump_true_continues_when_falsy(self):
+    async def test_jump_true_continues_when_falsy(self):
         """
         JUMP_TRUE does not jump when TOS is false
         """
+
         code, ns = build_expr([
             ["CONST", None],
             ["JUMP_TRUE", "skip"],
@@ -109,14 +112,15 @@ class TestJumpOpcodes(CevalTest):
             ["CONST", 0],
             ["RETURN", 1],
         ])
-        result = run_to_completion(make_callable(code, ns)())
+        result = await make_callable(code, ns)()
         self.assertEqual(result, 7)
 
 
-    def test_jump_and_short_circuit(self):
+    async def test_jump_and_short_circuit(self):
         """
         JUMP_AND leaves value and jumps when falsy; pops when truthy
         """
+
         code, ns = build_expr([
             ["CONST", 0],
             ["JUMP_AND", "end"],
@@ -126,14 +130,15 @@ class TestJumpOpcodes(CevalTest):
             ["LABEL", "end"],
             ["RETURN", 1],
         ])
-        result = run_to_completion(make_callable(code, ns)())
+        result = await make_callable(code, ns)()
         self.assertEqual(result, 0)
 
 
-    def test_jump_or_short_circuit(self):
+    async def test_jump_or_short_circuit(self):
         """
         JUMP_OR leaves value and jumps when truthy; pops when falsy
         """
+
         code, ns = build_expr([
             ["CONST", 0],
             ["JUMP_OR", "next"],
@@ -143,7 +148,7 @@ class TestJumpOpcodes(CevalTest):
             ["LABEL", "next"],
             ["RETURN", 1],
         ])
-        result = run_to_completion(make_callable(code, ns)())
+        result = await make_callable(code, ns)()
         self.assertEqual(result, 42)
 
 

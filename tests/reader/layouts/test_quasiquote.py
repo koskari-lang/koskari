@@ -22,7 +22,7 @@ style parse and compile correctly.
 :license: GNU General Public License v3
 """
 
-from unittest import TestCase
+from unittest import IsolatedAsyncioTestCase
 
 from koskari.lib import nil
 from koskari.types import keyword, symbol
@@ -35,12 +35,12 @@ from .. import parse_layout
 _keyword_block = keyword(':block:')
 
 
-class TestQuasiquoteLayout(TestCase):
+class TestQuasiquoteLayout(IsolatedAsyncioTestCase):
     """
     Atoms and simple lists inside quasiquote via layout syntax
     """
 
-    def test_backtick_atom_in_layout_block(self):
+    async def test_backtick_atom_in_layout_block(self):
         """
         A backtick atom inside a define body compiles and evaluates correctly
         """
@@ -62,7 +62,7 @@ class TestQuasiquoteLayout(TestCase):
         self.assertEqual(result, expected)
 
 
-    def test_unquote_in_layout_block(self):
+    async def test_unquote_in_layout_block(self):
         src = """
         define get-name []:
           `(hello ,world)
@@ -83,7 +83,7 @@ class TestQuasiquoteLayout(TestCase):
         self.assertEqual(result, expected)
 
 
-    def test_unquote_splicing_in_layout_block(self):
+    async def test_unquote_splicing_in_layout_block(self):
         src = """
         define get-name []:
           `(hello ,@world)
@@ -104,7 +104,7 @@ class TestQuasiquoteLayout(TestCase):
         self.assertEqual(result, expected)
 
 
-    def test_quote_block_mid_heading(self):
+    async def test_quote_block_mid_heading(self):
         src = """
         define get-name []:
           without `(who ,@hello) we:
@@ -130,7 +130,7 @@ class TestQuasiquoteLayout(TestCase):
         self.assertEqual(result, expected)
 
 
-    def test_quote_block(self):
+    async def test_quote_block(self):
         src = """
         define get-name []:
           `begin:
@@ -155,7 +155,7 @@ class TestQuasiquoteLayout(TestCase):
         self.assertEqual(result, expected)
 
 
-    def test_quote_block_with_peers(self):
+    async def test_quote_block_with_peers(self):
         """
         A quasiquote-block whose body contains if/else sibling sub-blocks.
         Both sub-blocks appear as :block: siblings in the outer body.
@@ -195,12 +195,12 @@ class TestQuasiquoteLayout(TestCase):
         self.assertEqual(result, expected)
 
 
-class TestQuoteBlock(TestCase):
+class TestQuoteBlock(IsolatedAsyncioTestCase):
     """
     Tests for the 'head: raw block quote syntax that produces compile/quote-block forms
     """
 
-    def test_simple_quote_block(self):
+    async def test_simple_quote_block(self):
         """
         A leading ' before a block head reads the block as a :block: cons
         wrapped in compile/quote-block
@@ -226,7 +226,7 @@ class TestQuoteBlock(TestCase):
         self.assertEqual(result, expected)
 
 
-    def test_quote_block_empty_body(self):
+    async def test_quote_block_empty_body(self):
         """
         A quoted block with no body produces a :block: with nil body list
         """
@@ -254,7 +254,7 @@ class TestQuoteBlock(TestCase):
         self.assertTrue(is_nil(body_exprs))
 
 
-    def test_quote_block_nested_sub_block(self):
+    async def test_quote_block_nested_sub_block(self):
         """
         Sub-blocks inside a quoted block become nested :block: cons nodes
         rather than being expanded through layout handlers
@@ -282,7 +282,7 @@ class TestQuoteBlock(TestCase):
         self.assertEqual(result, expected)
 
 
-    def test_quote_block_inside_normal_block(self):
+    async def test_quote_block_inside_normal_block(self):
         """
         A quoted block used as a body element inside a normal define block
         is returned as a compile/quote-block form in the body

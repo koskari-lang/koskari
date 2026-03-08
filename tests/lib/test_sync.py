@@ -26,16 +26,16 @@ import unittest
 from koskari.lib import run_sync, iter_sync
 
 
-class TestRunSync(unittest.TestCase):
+class TestRunSync(unittest.IsolatedAsyncioTestCase):
     """Tests for run_sync"""
 
-    def test_run_sync_no_loop(self):
+    async def test_run_sync_no_loop(self):
         """run_sync(asyncio.sleep(0)) returns None when no loop in thread"""
 
         result = run_sync(asyncio.sleep(0))
         self.assertIsNone(result)
 
-    def test_run_sync_returns_value(self):
+    async def test_run_sync_returns_value(self):
         """run_sync returns the awaited value"""
 
         async def f():
@@ -43,7 +43,7 @@ class TestRunSync(unittest.TestCase):
 
         self.assertEqual(run_sync(f()), 42)
 
-    def test_run_sync_propagates_exception(self):
+    async def test_run_sync_propagates_exception(self):
         """run_sync propagates exception from awaitable"""
 
         async def f():
@@ -54,10 +54,10 @@ class TestRunSync(unittest.TestCase):
         self.assertIn("expected", str(cm.exception))
 
 
-class TestIterSync(unittest.TestCase):
+class TestIterSync(unittest.IsolatedAsyncioTestCase):
     """Tests for iter_sync"""
 
-    def test_iter_sync_no_loop(self):
+    async def test_iter_sync_no_loop(self):
         """iter_sync yields values from async generator when no loop"""
 
         async def gen():
@@ -67,7 +67,7 @@ class TestIterSync(unittest.TestCase):
 
         self.assertEqual(list(iter_sync(gen())), [1, 2, 3])
 
-    def test_iter_sync_empty(self):
+    async def test_iter_sync_empty(self):
         """iter_sync over empty async generator returns empty list"""
 
         async def gen():
@@ -76,7 +76,7 @@ class TestIterSync(unittest.TestCase):
 
         self.assertEqual(list(iter_sync(gen())), [])
 
-    def test_iter_sync_propagates_exception(self):
+    async def test_iter_sync_propagates_exception(self):
         """iter_sync propagates exception from async generator"""
 
         async def gen():

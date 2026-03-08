@@ -18,10 +18,8 @@ Tests for PUSH_LOOP, POP_LOOP, BREAK, CONTINUE opcodes.
 :license: GNU General Public License v3
 """
 
-import unittest
-
 from tests import make_callable
-from tests.lib.opcode import CevalTest, build_expr, run_to_completion
+from tests.lib.opcode import CevalTest, build_expr
 
 
 class TestLoopOpcodes(CevalTest):
@@ -33,7 +31,7 @@ class TestLoopOpcodes(CevalTest):
     POP_LOOP pushes region->result to the stack as the loop expression value.
     """
 
-    def test_simple_loop_break(self):
+    async def test_simple_loop_break(self):
         """
         PUSH_LOOP, body, BREAK, POP_LOOP returns value after loop.
         POP_LOOP pushes the loop result (None from BREAK 0).
@@ -51,11 +49,11 @@ class TestLoopOpcodes(CevalTest):
             ["CONST", 42],
             ["RETURN", 1],
         ])
-        result = run_to_completion(make_callable(code, ns)())
+        result = await make_callable(code, ns)()
         self.assertEqual(result, 42)
 
 
-    def test_push_loop_with_pop_loop_completes(self):
+    async def test_push_loop_with_pop_loop_completes(self):
         """
         PUSH_LOOP with matching POP_LOOP completes normally.
         POP_LOOP pushes the loop result (None) to the stack.
@@ -70,11 +68,11 @@ class TestLoopOpcodes(CevalTest):
             ["CONST", 42],
             ["RETURN", 1],
         ])
-        result = run_to_completion(make_callable(code, ns)())
+        result = await make_callable(code, ns)()
         self.assertEqual(result, 42)
 
 
-    def test_loop_continue(self):
+    async def test_loop_continue(self):
         """
         PUSH_LOOP with CONTINUE jumps back to loop head
         """
@@ -99,11 +97,11 @@ class TestLoopOpcodes(CevalTest):
             ["VAR", "n"],
             ["RETURN", 1],
         ], values={"n": 0})
-        result = run_to_completion(make_callable(code, ns)())
+        result = await make_callable(code, ns)()
         self.assertEqual(result, 3)
 
 
-    def test_nested_loops_break_inner(self):
+    async def test_nested_loops_break_inner(self):
         """
         Nested loops: inner BREAK exits inner loop only
         """
@@ -146,11 +144,11 @@ class TestLoopOpcodes(CevalTest):
             ["VAR", "outer"],
             ["RETURN", 1],
         ], values={"outer": 0, "inner": 0})
-        result = run_to_completion(make_callable(code, ns)())
+        result = await make_callable(code, ns)()
         self.assertEqual(result, 2)
 
 
-    def test_nested_loops_break_inner_then_outer(self):
+    async def test_nested_loops_break_inner_then_outer(self):
         """
         Nested loops: BREAK exits innermost loop; outer loop then breaks too
         """
@@ -176,43 +174,43 @@ class TestLoopOpcodes(CevalTest):
             ["VAR", "x"],
             ["RETURN", 1],
         ], values={"x": 0})
-        result = run_to_completion(make_callable(code, ns)())
+        result = await make_callable(code, ns)()
         self.assertEqual(result, 1)
 
 
-    def test_break_outside_loop_raises(self):
+    async def test_break_outside_loop_raises(self):
         """
         BREAK without LOOP/FOREACH raises RuntimeError
         """
 
         code_obj, ns = build_expr([["BREAK", 0], ["RETURN", 1]])
         with self.assertRaises(RuntimeError) as ctx:
-            run_to_completion(make_callable(code_obj, ns)())
+            await make_callable(code_obj, ns)()
         self.assertIn("break outside loop", str(ctx.exception))
 
 
-    def test_continue_outside_loop_raises(self):
+    async def test_continue_outside_loop_raises(self):
         """
         CONTINUE without LOOP/FOREACH raises RuntimeError
         """
 
         code_obj, ns = build_expr([["CONTINUE", 0], ["RETURN", 1]])
         with self.assertRaises(RuntimeError) as ctx:
-            run_to_completion(make_callable(code_obj, ns)())
+            await make_callable(code_obj, ns)()
         self.assertIn("continue outside loop", str(ctx.exception))
 
 
-    def test_clear_loop_outside_loop_raises(self):
+    async def test_clear_loop_outside_loop_raises(self):
         """
         CLEAR_LOOP without preceding PUSH_LOOP/PUSH_FOREACH raises RuntimeError
         """
 
         code_obj, ns = build_expr([["CLEAR_LOOP", 0], ["RETURN", 1]])
         with self.assertRaises(RuntimeError):
-            run_to_completion(make_callable(code_obj, ns)())
+            await make_callable(code_obj, ns)()
 
 
-    def test_pop_loop_without_push_loop_raises(self):
+    async def test_pop_loop_without_push_loop_raises(self):
         """
         POP_LOOP without preceding PUSH_LOOP/PUSH_FOREACH raises RuntimeError
         (at code build or run).
@@ -220,6 +218,7 @@ class TestLoopOpcodes(CevalTest):
 
         with self.assertRaises(RuntimeError):
             code_obj, ns = build_expr([["POP_LOOP", 0], ["RETURN", 1]])
-            run_to_completion(make_callable(code_obj, ns)())
+            await make_callable(code_obj, ns)()
+
 
 # The end.

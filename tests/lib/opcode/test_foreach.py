@@ -18,11 +18,8 @@ Tests for PUSH_FOREACH, ITER_NEXT opcodes.
 :license: GNU General Public License v3
 """
 
-import unittest
-
-import asyncio
 from tests import make_callable
-from tests.lib.opcode import CevalTest, build_expr, run_to_completion
+from tests.lib.opcode import CevalTest, build_expr
 
 
 class TestForeachOpcodes(CevalTest):
@@ -35,10 +32,11 @@ class TestForeachOpcodes(CevalTest):
     POP_LOOP pushes region->result to the stack as the loop expression value.
     """
 
-    def test_iter_next_outside_foreach_fails(self):
+    async def test_iter_next_outside_foreach_fails(self):
         """
         ITER_NEXT outside PUSH_FOREACH fails at Code construction or runtime
         """
+
         try:
             code, ns = build_expr([
                 ["CONST", [10]],
@@ -53,12 +51,12 @@ class TestForeachOpcodes(CevalTest):
             self.assertIn("PUSH_FOREACH", str(e))
             return
         with self.assertRaises(RuntimeError) as cm:
-            run_to_completion(make_callable(code, ns)())
+            await make_callable(code, ns)()
         self.assertIn("ITER_NEXT", str(cm.exception))
         self.assertIn("PUSH_FOREACH", str(cm.exception))
 
 
-    def test_foreach_iterates_list(self):
+    async def test_foreach_iterates_list(self):
         """
         FOREACH over list returns first element
         """
@@ -79,11 +77,11 @@ class TestForeachOpcodes(CevalTest):
             ["CONST", -1],
             ["RETURN", 1],
         ])
-        result = run_to_completion(make_callable(code, ns)())
+        result = await make_callable(code, ns)()
         self.assertEqual(result, 10)
 
 
-    def test_foreach_break_exits_early(self):
+    async def test_foreach_break_exits_early(self):
         """
         FOREACH BREAK exits when value equals 2. BREAK with arg=0 uses None
         as the result value.
@@ -111,11 +109,11 @@ class TestForeachOpcodes(CevalTest):
             ["CONST", 42],
             ["RETURN", 1],
         ])
-        result = run_to_completion(make_callable(code, ns)())
+        result = await make_callable(code, ns)()
         self.assertEqual(result, 42)
 
 
-    def test_foreach_empty_exits_to_else(self):
+    async def test_foreach_empty_exits_to_else(self):
         """
         FOREACH over empty list exits to else target
         """
@@ -137,11 +135,11 @@ class TestForeachOpcodes(CevalTest):
             ["CONST", 99],
             ["RETURN", 1],
         ])
-        result = run_to_completion(make_callable(code, ns)())
+        result = await make_callable(code, ns)()
         self.assertEqual(result, 99)
 
 
-    def test_push_foreach_with_iter_next_completes(self):
+    async def test_push_foreach_with_iter_next_completes(self):
         """
         PUSH_FOREACH with ITER_NEXT on empty list exits to else.
         POP_LOOP pushes the loop result (None in this case).
@@ -163,11 +161,11 @@ class TestForeachOpcodes(CevalTest):
             ["CONST", 42],
             ["RETURN", 1],
         ])
-        result = run_to_completion(make_callable(code, ns)())
+        result = await make_callable(code, ns)()
         self.assertEqual(result, 42)
 
 
-    def test_foreach_iter_next_on_python_async_iterator(self):
+    async def test_foreach_iter_next_on_python_async_iterator(self):
         """
         PUSH_FOREACH over Python async iterator; ITER_NEXT yields values via GET_NEXT_SUSPEND
         """
@@ -194,16 +192,17 @@ class TestForeachOpcodes(CevalTest):
                 ["VAR", "last"],
                 ["RETURN", 1],
             ], values={"aiter": aiter, "last": None})
-            return run_to_completion(make_callable(consumer_code, consumer_ns)())
+            return await make_callable(consumer_code, consumer_ns)()
 
-        result = asyncio.run(run())
+        result = await run()
         self.assertEqual(result, 25)
 
 
-    def test_foreach_iter_next_iterates_all_values(self):
+    async def test_foreach_iter_next_iterates_all_values(self):
         """
         PUSH_FOREACH with ITER_NEXT over list accumulates; else runs when exhausted
         """
+
         code, ns = build_expr([
             ["CONST", 0],
             ["VAR_STORE", "total"],
@@ -224,17 +223,18 @@ class TestForeachOpcodes(CevalTest):
             ["VAR", "total"],
             ["RETURN", 1],
         ], values={"total": 0})
-        result = run_to_completion(make_callable(code, ns)())
+        result = await make_callable(code, ns)()
         self.assertEqual(result, 15)
 
 
-    def test_foreach_iter_next_on_empty_async_iterator_exits_to_else(self):
+    async def test_foreach_iter_next_on_empty_async_iterator_exits_to_else(self):
         """
         PUSH_FOREACH over empty Python async iterator exits to else
         """
+
         async def empty_gen():
-            return
-            yield
+            if False:
+                yield
 
         async def run():
             aiter = empty_gen()
@@ -253,16 +253,17 @@ class TestForeachOpcodes(CevalTest):
                 ["CONST", 999],
                 ["RETURN", 1],
             ], values={"aiter": aiter})
-            return run_to_completion(make_callable(consumer_code, consumer_ns)())
+            return await make_callable(consumer_code, consumer_ns)()
 
-        result = asyncio.run(run())
+        result = await run()
         self.assertEqual(result, 999)
 
 
-    def test_foreach_with_non_iterable_raises_type_error(self):
+    async def test_foreach_with_non_iterable_raises_type_error(self):
         """
         PUSH_FOREACH over non-iterable (e.g. int) raises TypeError
         """
+
         code, ns = build_expr([
             ["CONST", None],
             ["CONST", 42],
@@ -279,13 +280,14 @@ class TestForeachOpcodes(CevalTest):
             ["RETURN", 1],
         ])
         with self.assertRaises(TypeError):
-            run_to_completion(make_callable(code, ns)())
+            await make_callable(code, ns)()
 
 
-    def test_foreach_iter_next_when_iterator_raises_propagates_error(self):
+    async def test_foreach_iter_next_when_iterator_raises_propagates_error(self):
         """
         ITER_NEXT when iterator raises on __next__ propagates GET_NEXT_ERROR
         """
+
         class BadIterator(object):
             def __iter__(self):
                 return self
@@ -309,7 +311,8 @@ class TestForeachOpcodes(CevalTest):
             ["RETURN", 1],
         ])
         with self.assertRaises(ValueError) as cm:
-            run_to_completion(make_callable(code, ns)())
+            await make_callable(code, ns)()
         self.assertIn("iterator raised in foreach", str(cm.exception))
+
 
 # The end.

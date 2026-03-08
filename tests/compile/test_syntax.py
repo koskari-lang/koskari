@@ -139,16 +139,16 @@ def assert_formal_renamed(test_case, lambda_form, original_name):
         'introduced formal must be gensym\'d')
 
 
-class TestSyntaxExpansion(unittest.TestCase):
+class TestSyntaxExpansion(unittest.IsolatedAsyncioTestCase):
 
-    def test_simple_expansion_pattern_var_substituted(self):
+    async def test_simple_expansion_pattern_var_substituted(self):
         transformer = rule('double', ('double', 'x'), ('+', 'x', 'x'))
         expanded = expand(transformer, form('double', 21))
         expected = form('+', 21, 21)
         assert_forms_equal(self, expanded, expected)
 
 
-    def test_let_hygiene_introduced_symbol_renamed(self):
+    async def test_let_hygiene_introduced_symbol_renamed(self):
         transformer = rule(
             'use-temp',
             ('use-temp', 'x'),
@@ -159,7 +159,7 @@ class TestSyntaxExpansion(unittest.TestCase):
         assert_binding_renamed(self, expanded, 't')
 
 
-    def test_lambda_hygiene_introduced_param_renamed(self):
+    async def test_lambda_hygiene_introduced_param_renamed(self):
         transformer = rule(
             'lambda-inc',
             ('lambda-inc',),
@@ -170,7 +170,7 @@ class TestSyntaxExpansion(unittest.TestCase):
         assert_formal_renamed(self, expanded, 'n')
 
 
-    def test_build_syntax_from_tagged_tuple_roundtrip(self):
+    async def test_build_syntax_from_tagged_tuple_roundtrip(self):
         transformer = rule('wrap', ('wrap', 'x'), ('list', 'x'))
         tagged = transformer.to_tuple()
         rebuilt = build_syntax(symbol('wrap'), tagged)

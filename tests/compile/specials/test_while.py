@@ -30,7 +30,7 @@ def append(seq, x):
 
 class TestWhileSpecial(SpecialsTestCase):
 
-    def test_while_simple(self):
+    async def test_while_simple(self):
         c = []
         src_str = """
         (compile/while x
@@ -39,12 +39,12 @@ class TestWhileSpecial(SpecialsTestCase):
         """
         expr, mod = self.compile_expr(src_str, x=5, c=c, append=append,
                                       sub=operator.sub)
-        expr().run()
+        await expr()
         self.assertEqual(c, [5, 4, 3, 2, 1])
         self.assertEqual(mod.x, 0)
 
 
-    def test_while_false_never_runs(self):
+    async def test_while_false_never_runs(self):
         trigger_called = []
 
         def trigger():
@@ -52,11 +52,11 @@ class TestWhileSpecial(SpecialsTestCase):
 
         src_str = "(compile/while False (compile/call trigger))"
         expr, mod = self.compile_expr(src_str, trigger=trigger)
-        expr().run()
+        await expr()
         self.assertEqual(trigger_called, [])
 
 
-    def test_while_break(self):
+    async def test_while_break(self):
         c = []
         src_str = """
         (compile/while True
@@ -67,19 +67,19 @@ class TestWhileSpecial(SpecialsTestCase):
         """
         expr, mod = self.compile_expr(src_str, x=5, c=c, append=append,
                                       sub=operator.sub)
-        result = expr().run()
+        result = await expr()
         self.assertEqual(result, "done")
         self.assertEqual(c, [5, 4, 3, 2, 1])
 
 
-    def test_while_break_value(self):
+    async def test_while_break_value(self):
         src_str = "(compile/while True (compile/break 99))"
         expr, mod = self.compile_expr(src_str)
-        result = expr().run()
+        result = await expr()
         self.assertEqual(result, 99)
 
 
-    def test_while_continue(self):
+    async def test_while_continue(self):
         c = []
         src_str = """
         (compile/while x
@@ -92,7 +92,7 @@ class TestWhileSpecial(SpecialsTestCase):
         expr, mod = self.compile_expr(
             src_str, x=11, c=c, append=append, sub=operator.sub,
             odd=lambda n: n % 2 == 1)
-        expr().run()
+        await expr()
         self.assertEqual(c, [10, 8, 6, 4, 2])
         self.assertEqual(mod.x, 0)
 

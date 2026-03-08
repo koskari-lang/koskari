@@ -18,7 +18,7 @@ try/except/else/finally block syntax parsing.
 """
 
 
-from unittest import TestCase
+from unittest import IsolatedAsyncioTestCase
 
 from koskari.types import cons, keyword, nil, symbol
 from koskari.compile.helpers import pycons
@@ -29,9 +29,9 @@ _symbol_try = symbol('try')
 _compile_begin = symbol('compile/begin')
 
 
-class TestLayoutTryExceptBindings(TestCase):
+class TestLayoutTryExceptBindings(IsolatedAsyncioTestCase):
 
-    def test_except_bare_type(self):
+    async def test_except_bare_type(self):
         src = """
         try:
           x
@@ -53,7 +53,7 @@ class TestLayoutTryExceptBindings(TestCase):
         self.assertEqual(result, expected)
 
 
-    def test_except_simple_binding(self):
+    async def test_except_simple_binding(self):
         src = """
         try:
           x
@@ -75,7 +75,7 @@ class TestLayoutTryExceptBindings(TestCase):
         self.assertEqual(result, expected)
 
 
-    def test_except_as_binding(self):
+    async def test_except_as_binding(self):
         src = """
         try:
           x
@@ -97,7 +97,7 @@ class TestLayoutTryExceptBindings(TestCase):
         self.assertEqual(result, expected)
 
 
-    def test_except_bare(self):
+    async def test_except_bare(self):
         src = """
         try:
           x
@@ -119,9 +119,9 @@ class TestLayoutTryExceptBindings(TestCase):
         self.assertEqual(result, expected)
 
 
-class TestLayoutTry(TestCase):
+class TestLayoutTry(IsolatedAsyncioTestCase):
 
-    def test_try_except_only(self):
+    async def test_try_except_only(self):
         src = """
         try:
           x
@@ -135,7 +135,7 @@ class TestLayoutTry(TestCase):
         self.assertEqual(result, expected)
 
 
-    def test_try_finally_only(self):
+    async def test_try_finally_only(self):
         src = """
         try:
           x
@@ -149,7 +149,7 @@ class TestLayoutTry(TestCase):
         self.assertEqual(result, expected)
 
 
-    def test_try_full_block(self):
+    async def test_try_full_block(self):
         src = """
         try:
           x
@@ -169,7 +169,7 @@ class TestLayoutTry(TestCase):
         self.assertEqual(result, expected)
 
 
-    def test_try_no_handlers_error(self):
+    async def test_try_no_handlers_error(self):
         src = """
         try:
           x
@@ -178,7 +178,7 @@ class TestLayoutTry(TestCase):
             parse_layout(src)
 
 
-    def test_try_multiple_else_error(self):
+    async def test_try_multiple_else_error(self):
         src = """
         try:
           x
@@ -193,7 +193,7 @@ class TestLayoutTry(TestCase):
             parse_layout(src)
 
 
-    def test_try_multiple_finally_error(self):
+    async def test_try_multiple_finally_error(self):
         src = """
         try:
           x

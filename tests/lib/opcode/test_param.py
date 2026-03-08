@@ -18,11 +18,9 @@ Tests for PARAM opcode
 :license: GNU General Public License v3
 """
 
-import unittest
-
 from koskari.lib import ParamRef
 from tests import make_callable
-from tests.lib.opcode import CevalTest, build_expr, run_to_completion
+from tests.lib.opcode import CevalTest, build_expr
 
 
 class TestParamOpcodes(CevalTest):
@@ -30,7 +28,7 @@ class TestParamOpcodes(CevalTest):
     Tests for PARAM opcode (load ParamRef by name from constant pool)
     """
 
-    def test_param_pushes_paramref_for_key(self):
+    async def test_param_pushes_paramref_for_key(self):
         """
         PARAM pushes ParamRef for the given key onto the stack
         """
@@ -39,12 +37,12 @@ class TestParamOpcodes(CevalTest):
             ["PARAM", "x"],
             ["RETURN", 1],
         ])
-        result = run_to_completion(make_callable(code, ns)())
+        result = await make_callable(code, ns)()
         self.assertIsInstance(result, ParamRef)
         self.assertEqual(result.name, "x")
 
 
-    def test_param_with_different_key(self):
+    async def test_param_with_different_key(self):
         """
         PARAM with different key produces ParamRef for that key
         """
@@ -53,12 +51,12 @@ class TestParamOpcodes(CevalTest):
             ["PARAM", "foo"],
             ["RETURN", 1],
         ])
-        result = run_to_completion(make_callable(code, ns)())
+        result = await make_callable(code, ns)()
         self.assertIsInstance(result, ParamRef)
         self.assertEqual(result.name, "foo")
 
 
-    def test_param_deref_returns_domain_value_when_set(self):
+    async def test_param_deref_returns_domain_value_when_set(self):
         """
         ParamRef from PARAM derefs to domain value when set via PUSH_PARAM
         """
@@ -74,7 +72,7 @@ class TestParamOpcodes(CevalTest):
             ["POP_PARAM", 0],
             ["RETURN", 1],
         ], values={"f": check_x})
-        result = run_to_completion(make_callable(code, ns)())
+        result = await make_callable(code, ns)()
         self.assertEqual(result, 42)
 
 

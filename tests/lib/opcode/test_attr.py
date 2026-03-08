@@ -18,10 +18,8 @@ Tests for ATTR, ATTR_STORE opcodes.
 :license: GNU General Public License v3
 """
 
-import unittest
-
 from tests import make_callable
-from tests.lib.opcode import CevalTest, build_expr, run_to_completion
+from tests.lib.opcode import CevalTest, build_expr
 
 
 class TestAttrOpcodes(CevalTest):
@@ -29,10 +27,11 @@ class TestAttrOpcodes(CevalTest):
     Tests for ATTR, ATTR_CLEAR, ATTR_REF, ATTR_STORE
     """
 
-    def test_attr_getattr(self):
+    async def test_attr_getattr(self):
         """
         ATTR pushes getattr(TOS, name)
         """
+
         class Box(object):
             value = 3
         code, ns = build_expr([
@@ -40,14 +39,15 @@ class TestAttrOpcodes(CevalTest):
             ["ATTR", "value"],
             ["RETURN", 1],
         ])
-        result = run_to_completion(make_callable(code, ns)())
+        result = await make_callable(code, ns)()
         self.assertEqual(result, 3)
 
 
-    def test_attr_store_and_getattr(self):
+    async def test_attr_store_and_getattr(self):
         """
         ATTR_STORE sets attribute; ATTR loads it
         """
+
         class Box(object):
             pass
         obj = Box()
@@ -59,15 +59,16 @@ class TestAttrOpcodes(CevalTest):
             ["ATTR", "value"],
             ["RETURN", 1],
         ])
-        result = run_to_completion(make_callable(code, ns)())
+        result = await make_callable(code, ns)()
         self.assertEqual(result, 99)
         self.assertEqual(obj.value, 99)
 
 
-    def test_attr_clear_delattr(self):
+    async def test_attr_clear_delattr(self):
         """
         ATTR_CLEAR deletes attribute
         """
+
         class Box(object):
             pass
         obj = Box()
@@ -78,15 +79,16 @@ class TestAttrOpcodes(CevalTest):
             ["CONST", 42],
             ["RETURN", 1],
         ])
-        result = run_to_completion(make_callable(code, ns)())
+        result = await make_callable(code, ns)()
         self.assertEqual(result, 42)
         self.assertFalse(hasattr(obj, "x"))
 
 
-    def test_attr_ref_pushes_attribute_ref(self):
+    async def test_attr_ref_pushes_attribute_ref(self):
         """
         ATTR_REF pushes AttributeRef for TOS.attr
         """
+
         from koskari.lib import AttributeRef
         class Box(object):
             pass
@@ -97,7 +99,7 @@ class TestAttrOpcodes(CevalTest):
             ["ATTR_REF", "foo"],
             ["RETURN", 1],
         ])
-        result = run_to_completion(make_callable(code, ns)())
+        result = await make_callable(code, ns)()
         self.assertIsInstance(result, AttributeRef)
         self.assertEqual(result.deref(), "bar")
 

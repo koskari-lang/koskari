@@ -21,7 +21,7 @@ from . import SpecialsTestCase
 
 class TestDefineDeclareOnly(SpecialsTestCase):
 
-    def test_define_then_setq_then_read(self):
+    async def test_define_then_setq_then_read(self):
         src_str = """
         (compile/begin
           (define x)
@@ -29,37 +29,37 @@ class TestDefineDeclareOnly(SpecialsTestCase):
           x)
         """
         expr, mod = self.compile_expr(src_str)
-        result = expr().run()
+        result = await expr()
         self.assertEqual(42, result)
 
 
 class TestDefineWithExpr(SpecialsTestCase):
 
-    def test_define_then_read(self):
+    async def test_define_then_read(self):
         src_str = """
         (compile/begin
           (define y 99)
           y)
         """
         expr, mod = self.compile_expr(src_str)
-        result = expr().run()
+        result = await expr()
         self.assertEqual(99, result)
 
 
 class TestDefineFunctionShorthand(SpecialsTestCase):
 
-    def test_define_double(self):
+    async def test_define_double(self):
         src_str = """
         (compile/begin
           (define double [x] (mul x 2))
           (double 5))
         """
         expr, mod = self.compile_expr(src_str, mul=lambda a, b: a * b)
-        result = expr().run()
+        result = await expr()
         self.assertEqual(10, result)
 
 
-    def test_define_fact(self):
+    async def test_define_fact(self):
         src_str = """
         (compile/begin
           (define fact [n]
@@ -73,7 +73,7 @@ class TestDefineFunctionShorthand(SpecialsTestCase):
             eq=lambda a, b: a == b,
             mul=lambda a, b: a * b,
             sub=lambda a, b: a - b)
-        result = expr().run()
+        result = await expr()
         self.assertEqual(120, result)
 
 

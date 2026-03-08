@@ -45,7 +45,7 @@ __all__ = (
 )
 
 
-def new_module(name, package=None):
+async def new_module(name, package=None):
     """
     Create a new koskari Module with an initialised ModuleNamespace.
 
@@ -57,9 +57,10 @@ def new_module(name, package=None):
     :return: koskari Module instance
     """
 
-    from .builtins import make_builtins
+    from .bootstrap import make_builtins
 
-    ns = ModuleNamespace(name, make_builtins())
+    bltns = await make_builtins()
+    ns = ModuleNamespace(name, bltns)
     module = Module(ns)
 
     _ns_store(ns, '__name__', name)

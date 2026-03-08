@@ -18,10 +18,8 @@ Tests for RETURN, AWAIT opcodes.
 :license: GNU General Public License v3
 """
 
-import unittest
-
 from tests import make_callable
-from tests.lib.opcode import CevalTest, build_expr, run_to_completion
+from tests.lib.opcode import CevalTest, build_expr
 
 
 class TestControlOpcodes(CevalTest):
@@ -29,7 +27,7 @@ class TestControlOpcodes(CevalTest):
     Tests for RETURN, AWAIT.
     """
 
-    def test_return_multiple_values(self):
+    async def test_return_multiple_values(self):
         """
         RETURN n returns n values as a tuple
         """
@@ -40,11 +38,11 @@ class TestControlOpcodes(CevalTest):
             ["CONST", 3],
             ["RETURN", 3],
         ])
-        result = run_to_completion(make_callable(code, ns)())
+        result = await make_callable(code, ns)()
         self.assertEqual(result, (1, 2, 3))
 
 
-    def test_await_suspends_and_resumes_with_value(self):
+    async def test_await_suspends_and_resumes_with_value(self):
         """
         AWAIT suspends on awaitable; resumes with result
         """
@@ -57,7 +55,7 @@ class TestControlOpcodes(CevalTest):
             ["AWAIT", 0],
             ["RETURN", 1],
         ], values={"f": return_five})
-        result = make_callable(code, ns)().run()
+        result = await make_callable(code, ns)()
         self.assertEqual(result, 5)
 
 # The end.

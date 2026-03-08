@@ -497,7 +497,7 @@ async def cli_async(options):
     if options.tweakpath:
         sys.path.insert(0, '.')
 
-    mod = new_module('__main__')
+    mod = await new_module('__main__')
 
     if filename:
         await run_file_async(mod, filename)

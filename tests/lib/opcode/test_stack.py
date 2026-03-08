@@ -18,10 +18,8 @@ Tests for DUP and POP opcodes.
 :license: GNU General Public License v3
 """
 
-import unittest
-
 from tests import make_callable
-from tests.lib.opcode import CevalTest, build_expr, run_to_completion
+from tests.lib.opcode import CevalTest, build_expr
 
 
 class TestStackOpcodes(CevalTest):
@@ -29,7 +27,7 @@ class TestStackOpcodes(CevalTest):
     Tests for DUP, POP
     """
 
-    def test_dup_copies_stack_top(self):
+    async def test_dup_copies_stack_top(self):
         """
         DUP n duplicates top n values; RETURN 2 returns (a, a)
         """
@@ -39,11 +37,11 @@ class TestStackOpcodes(CevalTest):
             ["DUP", 1],
             ["RETURN", 2],
         ])
-        result = run_to_completion(make_callable(code, ns)())
+        result = await make_callable(code, ns)()
         self.assertEqual(result, (7, 7))
 
 
-    def test_pop_discards_stack_values(self):
+    async def test_pop_discards_stack_values(self):
         """
         POP n discards top n values; remaining value is returned
         """
@@ -54,7 +52,7 @@ class TestStackOpcodes(CevalTest):
             ["POP", 1],
             ["RETURN", 1],
         ])
-        result = run_to_completion(make_callable(code, ns)())
+        result = await make_callable(code, ns)()
         self.assertEqual(result, 10)
 
 

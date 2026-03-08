@@ -84,17 +84,17 @@ def _make_fast_code():
     return Code(nspec, instr, "fast_fn", "file.ki")
 
 
-class TestGetCode(unittest.TestCase):
+class TestGetCode(unittest.IsolatedAsyncioTestCase):
 
-    def test_code_passthrough(self):
+    async def test_code_passthrough(self):
         code = _make_truthy_code()
         self.assertIs(_get_code(code), code)
 
-    def test_non_code_returns_none(self):
+    async def test_non_code_returns_none(self):
         self.assertIs(_get_code(42), None)
         self.assertIs(_get_code(type('NoCode', (), {})()), None)
 
-    def test_object_with_code_attr_not_accepted(self):
+    async def test_object_with_code_attr_not_accepted(self):
         """
         Only Code is accepted; .code attribute is not resolved
         """
@@ -104,15 +104,15 @@ class TestGetCode(unittest.TestCase):
         with self.assertRaises(TypeError):
             dis(wrapper)
 
-    def test_non_code_raises_from_dis(self):
+    async def test_non_code_raises_from_dis(self):
         from koskari.dis import dis
         with self.assertRaises(TypeError):
             dis(42)
 
 
-class TestDisOutput(unittest.TestCase):
+class TestDisOutput(unittest.IsolatedAsyncioTestCase):
 
-    def test_dis_truthy_yus(self):
+    async def test_dis_truthy_yus(self):
         code = _make_truthy_code()
         buf = io.StringIO()
         dis(code, file=buf)
@@ -132,7 +132,7 @@ class TestDisOutput(unittest.TestCase):
         self.assertIn('(-> 4)', text)
         self.assertIn('KOS_OP_RETURN', text)
 
-    def test_dis_with_locals_and_closures(self):
+    async def test_dis_with_locals_and_closures(self):
         local_syms = ('a', 'b')
         closure_syms = ('outer',)
         nspec = NamespaceSpec(None, local_syms, closure_syms)
@@ -150,7 +150,7 @@ class TestDisOutput(unittest.TestCase):
         self.assertIn('Closure refs (1):', text)
         self.assertIn("'outer'", text)
 
-    def test_nspec_in_constant_pool_is_expanded(self):
+    async def test_nspec_in_constant_pool_is_expanded(self):
         """
         NamespaceSpec entries in the constant pool are shown with ns# label
         and their locals/closures lines rather than a bare repr
@@ -166,7 +166,7 @@ class TestDisOutput(unittest.TestCase):
         self.assertIn("('x', 'y')", text)
         self.assertIn("('outer',)", text)
 
-    def test_push_ns_annotated_with_ns_id(self):
+    async def test_push_ns_annotated_with_ns_id(self):
         """
         PUSH_NS instructions show the ns# label and namespace name
         """
@@ -182,7 +182,7 @@ class TestDisOutput(unittest.TestCase):
         self.assertIn('ns#0', push_ns_line)
         self.assertIn("'let'", push_ns_line)
 
-    def test_const_nspec_shows_ns_inline(self):
+    async def test_const_nspec_shows_ns_inline(self):
         """
         CONST instructions that load a NamespaceSpec show the ns# inline label
         """
@@ -197,7 +197,7 @@ class TestDisOutput(unittest.TestCase):
         self.assertIn('ns#0', const_ns_line)
         self.assertIn("'let'", const_ns_line)
 
-    def test_fast_local_label(self):
+    async def test_fast_local_label(self):
         """
         FAST accessing a local slot shows 'local' prefix
         """
@@ -208,7 +208,7 @@ class TestDisOutput(unittest.TestCase):
         lines = [l for l in text.splitlines() if 'KOS_OP_FAST' in l]
         self.assertTrue(any("local 'a'" in l for l in lines))
 
-    def test_fast_closure_label(self):
+    async def test_fast_closure_label(self):
         """
         FAST accessing a closure slot shows 'closure' prefix
         """
@@ -220,9 +220,9 @@ class TestDisOutput(unittest.TestCase):
         self.assertTrue(any("closure 'outer'" in l for l in lines))
 
 
-class TestGetInstructionLines(unittest.TestCase):
+class TestGetInstructionLines(unittest.IsolatedAsyncioTestCase):
 
-    def test_instruction_lines_match_oparg(self):
+    async def test_instruction_lines_match_oparg(self):
         code = _make_truthy_code()
         lines = list(_get_instruction_lines(code))
         self.assertEqual(len(lines), 6)
@@ -233,7 +233,7 @@ class TestGetInstructionLines(unittest.TestCase):
         self.assertEqual(lines[1][1], 'KOS_OP_JUMP_TRUE')
         self.assertIn('(-> 4)', lines[1][2])
 
-    def test_push_ns_in_instruction_lines(self):
+    async def test_push_ns_in_instruction_lines(self):
         """
         _get_instruction_lines includes ns# annotation for PUSH_NS
         """
@@ -246,7 +246,7 @@ class TestGetInstructionLines(unittest.TestCase):
         self.assertIn('ns#0', push_ns[2])
         self.assertIn("'let'", push_ns[2])
 
-    def test_fast_local_in_instruction_lines(self):
+    async def test_fast_local_in_instruction_lines(self):
         """
         _get_instruction_lines shows 'local' for fast local slots
         """
@@ -255,7 +255,7 @@ class TestGetInstructionLines(unittest.TestCase):
         fast_lines = [(n, a) for _, n, a in lines if n == 'KOS_OP_FAST']
         self.assertTrue(any("local 'a'" in a for _, a in fast_lines))
 
-    def test_fast_closure_in_instruction_lines(self):
+    async def test_fast_closure_in_instruction_lines(self):
         """
         _get_instruction_lines shows 'closure' for fast closure slots
         """
@@ -265,34 +265,34 @@ class TestGetInstructionLines(unittest.TestCase):
         self.assertTrue(any("closure 'outer'" in a for _, a in fast_lines))
 
 
-class TestFormatConstant(unittest.TestCase):
+class TestFormatConstant(unittest.IsolatedAsyncioTestCase):
 
-    def test_short_repr_unchanged(self):
+    async def test_short_repr_unchanged(self):
         self.assertEqual(_format_constant(42), '42')
         self.assertEqual(_format_constant('x'), "'x'")
 
-    def test_long_repr_truncated(self):
+    async def test_long_repr_truncated(self):
         long_str = 'x' * 70
         out = _format_constant(long_str)
         self.assertEqual(len(out), 60)
         self.assertTrue(out.endswith('...'))
 
 
-class TestBuildNsConstMap(unittest.TestCase):
+class TestBuildNsConstMap(unittest.IsolatedAsyncioTestCase):
 
-    def test_push_ns_maps_to_preceding_nspec_const(self):
+    async def test_push_ns_maps_to_preceding_nspec_const(self):
         code = _make_push_ns_code()
         ns_map = _build_ns_const_map(code)
         # instruction index 1 is PUSH_NS; it follows CONST at index 0
         self.assertIn(1, ns_map)
         self.assertEqual(ns_map[1], 0)
 
-    def test_no_push_ns_gives_empty_map(self):
+    async def test_no_push_ns_gives_empty_map(self):
         code = _make_truthy_code()
         ns_map = _build_ns_const_map(code)
         self.assertEqual(ns_map, {})
 
-    def test_only_nspec_const_maps_to_push_ns(self):
+    async def test_only_nspec_const_maps_to_push_ns(self):
         """
         Only CONST instructions that load a NamespaceSpec contribute to
         the ns_const_map; other values do not produce a mapping entry
@@ -305,14 +305,14 @@ class TestBuildNsConstMap(unittest.TestCase):
             self.assertIsInstance(cpool[cpool_idx], NamespaceSpec)
 
 
-class TestFormatNspecInline(unittest.TestCase):
+class TestFormatNspecInline(unittest.IsolatedAsyncioTestCase):
 
-    def test_named_nspec(self):
+    async def test_named_nspec(self):
         nspec = NamespaceSpec('let', ('a',), ())
         result = _format_nspec_inline(5, nspec)
         self.assertEqual(result, "ns#5 'let'")
 
-    def test_none_named_nspec(self):
+    async def test_none_named_nspec(self):
         nspec = NamespaceSpec(None, (), ())
         result = _format_nspec_inline(0, nspec)
         self.assertEqual(result, 'ns#0 None')

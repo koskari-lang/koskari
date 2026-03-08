@@ -18,10 +18,8 @@ Tests for NOOP, LABEL, POSITION opcodes (no-ops at runtime).
 :license: GNU General Public License v3
 """
 
-import unittest
-
 from tests import make_callable
-from tests.lib.opcode import CevalTest, build_expr, run_to_completion
+from tests.lib.opcode import CevalTest, build_expr
 
 
 class TestNoopLabelPositionOpcodes(CevalTest):
@@ -29,7 +27,7 @@ class TestNoopLabelPositionOpcodes(CevalTest):
     Tests for NOOP, LABEL, POSITION (no-ops / compile-time only at runtime).
     """
 
-    def test_noop_advances_pc(self):
+    async def test_noop_advances_pc(self):
         """
         NOOP is a no-op; execution continues to next instruction
         """
@@ -39,11 +37,11 @@ class TestNoopLabelPositionOpcodes(CevalTest):
             ["CONST", 1],
             ["RETURN", 1],
         ])
-        result = run_to_completion(make_callable(code, ns)())
+        result = await make_callable(code, ns)()
         self.assertEqual(result, 1)
 
 
-    def test_label_is_noop_at_runtime(self):
+    async def test_label_is_noop_at_runtime(self):
         """
         LABEL is compile-time only; at runtime it advances PC
         """
@@ -53,11 +51,11 @@ class TestNoopLabelPositionOpcodes(CevalTest):
             ["CONST", 2],
             ["RETURN", 1],
         ])
-        result = run_to_completion(make_callable(code, ns)())
+        result = await make_callable(code, ns)()
         self.assertEqual(result, 2)
 
 
-    def test_position_is_noop_at_runtime(self):
+    async def test_position_is_noop_at_runtime(self):
         """
         POSITION is compile-time only; at runtime it advances PC
         """
@@ -67,7 +65,7 @@ class TestNoopLabelPositionOpcodes(CevalTest):
             ["CONST", 3],
             ["RETURN", 1],
         ])
-        result = run_to_completion(make_callable(code, ns)())
+        result = await make_callable(code, ns)()
         self.assertEqual(result, 3)
 
 

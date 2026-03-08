@@ -16,14 +16,10 @@ koskari.importer.builtins
 
 Builtin environment for Koskari modules.
 
-Provides make_builtins(), which assembles the initial Python dict that
-becomes the builtins layer of every ModuleNamespace created for a .ki
-module.  The dict contains the core koskari primitive types and functions
-that are available in every module without an explicit import.
-
-This is the bootstrap layer only.  Once defsyntax and a sufficient subset
-of the language are available, a basics.ki source file will be loaded on
-top of this dict to compose the full builtins environment.
+Provides make_bootstrap() (minimal Python-only layer) and make_builtins()
+(merge of bootstrap and basics.ki).  The full builtins dict is passed to
+ModuleNamespace for every .ki module.  make_builtins loads basics.ki
+using bootstrap as its builtins, then merges both and caches the result.
 
 :author: Christopher O'Brien <obriencj@preoccupied.net>
 :license: GNU General Public License v3
@@ -31,7 +27,11 @@ top of this dict to compose the full builtins environment.
 """
 
 
+from os.path import dirname, join
+
 from ..lib import (
+    Module,
+    ModuleNamespace,
     car,
     cdr,
     cons,
@@ -60,16 +60,20 @@ from ..reader.layouts import LAYOUTS
 from ..compile.syntax import build_syntax as build_syntax_rules
 
 
-__all__ = ('make_builtins',)
+__all__ = ('make_bootstrap', 'make_builtins')
 
 
-def make_builtins():
+_BUILTINS_CACHE = None
+
+
+def make_bootstrap():
     """
-    Assemble the initial builtins dict for a Koskari module namespace.
+    Assemble the minimal Python-only bootstrap builtins dict.
 
-    Returns a plain dict mapping name strings to values.  This dict is
-    passed to ModuleNamespace as its builtins layer, making these names
-    available in every .ki module without an explicit import.
+    Returns a plain dict of primitives, specials, layouts, and exceptions
+    used to bootstrap basics.ki.  This dict is sufficient to load and
+    execute .ki source; basics.ki is then loaded on top to compose the
+    full builtins.
 
     :return: dict of builtin name -> value
     """
@@ -92,7 +96,7 @@ def make_builtins():
     _bind('cdr', cdr)
     _bind('set-car', setcar)
     _bind('set-cdr', setcdr)
-    # _bind('build-unpack-pair', build_unpack_pair)
+
     _bind('proper?', is_proper)
     _bind('recursive?', is_recursive)
     _bind('build-proper', build_proper)
@@ -181,6 +185,46 @@ def make_builtins():
             _bind(_name, _val)
 
     return bltns
+
+
+async def make_builtins():
+    """
+    Assemble the full builtins dict (bootstrap + basics.ki).
+
+    Loads basics.ki using bootstrap as its builtins, merges both into a
+    single dict, caches the result, and returns it.  Subsequent calls
+    return the cached dict.
+
+    :return: dict of builtin name -> value
+    """
+
+    global _BUILTINS_CACHE
+    if _BUILTINS_CACHE is not None:
+        return _BUILTINS_CACHE
+
+    from .module import init_module, load_module_async
+    from . import module as _mod
+
+    bootstrap = make_bootstrap()
+    ns = ModuleNamespace("koskari.basics", bootstrap)
+    basics_module = Module(ns)
+
+    _mod._ns_store(ns, '__name__', 'koskari.basics')
+
+    basics_path = join(dirname(__file__), 'basics.ki')
+    init_module(basics_module, basics_path)
+
+    await load_module_async(basics_module)
+
+    for key, val in vars(basics_module).items():
+        if not key.startswith('__'):
+            try:
+                bootstrap[key] = val.deref()
+            except:
+                pass
+
+    _BUILTINS_CACHE = bootstrap
+    return bootstrap
 
 
 # The end.

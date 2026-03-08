@@ -18,10 +18,10 @@ define-syntax and syntax-rules block syntax.
 """
 
 
-from unittest import TestCase
+from unittest import IsolatedAsyncioTestCase
 
 from koskari.dis import dis
-from koskari.importer.builtins import make_builtins
+from koskari.importer.bootstrap import make_bootstrap
 from koskari.reader import LayoutReader, source_str
 from koskari.compile import Compiler
 from koskari.types import Module, ModuleNamespace
@@ -31,9 +31,9 @@ from koskari.compile.helpers import pycons
 from .. import parse_layout
 
 
-class TestLayoutDefineSyntax(TestCase):
+class TestLayoutDefineSyntax(IsolatedAsyncioTestCase):
 
-    def test_define_syntax_layout_parses(self):
+    async def test_define_syntax_layout_parses(self):
         src = """
         define-syntax do-something-with-x:
           syntax-rules [x]:
@@ -67,7 +67,7 @@ class TestLayoutDefineSyntax(TestCase):
         self.assertEqual(result, expected)
 
 
-    def test_syntax_rules_empty_literals(self):
+    async def test_syntax_rules_empty_literals(self):
         src = """
         define-syntax m:
           syntax-rules ():
@@ -89,7 +89,7 @@ class TestLayoutDefineSyntax(TestCase):
         self.assertEqual(result, expected)
 
 
-    def test_define_syntax_layout_compiles_and_runs(self):
+    async def test_define_syntax_layout_compiles_and_runs(self):
         src = """
         define-syntax double:
           syntax-rules ():
@@ -111,7 +111,7 @@ class TestLayoutDefineSyntax(TestCase):
         print('expected :', expected)
         self.assertEqual(result, expected)
 
-        builtins = make_builtins()
+        builtins = make_bootstrap()
         reader = LayoutReader(builtins)
         stream = source_str(src, __file__)
         source = reader.read(stream)
@@ -131,7 +131,7 @@ class TestLayoutDefineSyntax(TestCase):
         compiler = Compiler('<unittest>', module, filename=__file__)
         fragment = compiler.full_compile(source)
         expr = fragment.as_expression(vars(module))
-        expr().run()
+        await expr()
 
         use_src = """
         (double 21)
@@ -144,18 +144,19 @@ class TestLayoutDefineSyntax(TestCase):
 
         dis(use_expr.code)
 
-        result = use_expr().run()
+        result = await use_expr()
         self.assertEqual(42, result)
 
 
-    def test_define_syntax_template_with_literal_number(self):
+    async def test_define_syntax_template_with_literal_number(self):
         src = """
         define-syntax double:
           syntax-rules ():
             double x:
               (* x 2)
         """
-        builtins = make_builtins()
+
+        builtins = make_bootstrap()
         reader = LayoutReader(builtins)
         stream = source_str(src, __file__)
         source = reader.read(stream)
@@ -163,7 +164,7 @@ class TestLayoutDefineSyntax(TestCase):
         compiler = Compiler('<unittest>', module, filename=__file__)
         fragment = compiler.full_compile(source)
         expr = fragment.as_expression(vars(module))
-        expr().run()
+        await expr()
 
         use_src = "(double 21)"
         use_reader = LayoutReader(vars(module))
@@ -171,11 +172,11 @@ class TestLayoutDefineSyntax(TestCase):
         use_source = use_reader.read(use_stream)
         use_fragment = compiler.full_compile(use_source)
         use_expr = use_fragment.as_expression(vars(module))
-        result = use_expr().run()
+        result = await use_expr()
         self.assertEqual(42, result)
 
 
-    def test_define_syntax_requires_single_syntax_rules(self):
+    async def test_define_syntax_requires_single_syntax_rules(self):
         src = """
         define-syntax m:
           syntax-rules ():
@@ -183,6 +184,7 @@ class TestLayoutDefineSyntax(TestCase):
               x
           (extra form)
         """
+
         with self.assertRaises(Exception):
             parse_layout(src)
 

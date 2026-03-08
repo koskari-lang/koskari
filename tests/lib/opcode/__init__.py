@@ -14,8 +14,8 @@
 """
 Shared helpers and base class for opcode tests.
 
-Provides build_code, build_expr, run_to_completion, _op, and CevalTest
-for tests under tests.lib.opcode.
+Provides build_code, build_expr, run_to_completion, _op, CevalTest, and
+run_asyncio_in_thread for tests under tests.lib.opcode.
 
 :author: Christopher O'Brien <obriencj@preoccupied.net>
 :license: GNU General Public License v3
@@ -81,22 +81,7 @@ def build_expr(code, local_syms=None, values=None, name="expr"):
     return (c, ns)
 
 
-def run_to_completion(coro):
-    """
-    Drive the coroutine until StopIteration; return the yielded value
-
-    :param coro: Coroutine from make_callable(code, ns)() or similar
-    :return: The value passed to StopIteration
-    """
-
-    try:
-        while True:
-            coro.send(None)
-    except StopIteration as e:
-        return e.value
-
-
-class CevalTest(unittest.TestCase):
+class CevalTest(unittest.IsolatedAsyncioTestCase):
     """
     Base class with assertion helpers for opcode tests
     """

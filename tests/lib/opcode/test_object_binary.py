@@ -18,10 +18,8 @@ Tests for OBJECT_ADD opcodes.
 :license: GNU General Public License v3
 """
 
-import unittest
-
 from tests import make_callable
-from tests.lib.opcode import CevalTest, build_expr, run_to_completion
+from tests.lib.opcode import CevalTest, build_expr
 
 
 class TestObjectBinaryOpcodes(CevalTest):
@@ -32,87 +30,87 @@ class TestObjectBinaryOpcodes(CevalTest):
     OBJECT_DIVMOD, OBJECT_BIT_LEFT, OBJECT_BIT_RIGHT
     """
 
-    def test_object_add(self):
+    async def test_object_add(self):
         code, ns = build_expr([
             ["CONST", 10],
             ["CONST", 32],
             ["OBJECT_ADD", 2],
             ["RETURN", 1],
         ])
-        self.assertEqual(run_to_completion(make_callable(code, ns)()), 42)
+        self.assertEqual(await make_callable(code, ns)(), 42)
 
 
-    def test_object_subtract(self):
+    async def test_object_subtract(self):
         code, ns = build_expr([
             ["CONST", 50],
             ["CONST", 8],
             ["OBJECT_SUBTRACT", 2],
             ["RETURN", 1],
         ])
-        self.assertEqual(run_to_completion(make_callable(code, ns)()), 42)
+        self.assertEqual(await make_callable(code, ns)(), 42)
 
 
-    def test_object_multiply(self):
+    async def test_object_multiply(self):
         code, ns = build_expr([
             ["CONST", 6],
             ["CONST", 7],
             ["OBJECT_MULTIPLY", 2],
             ["RETURN", 1],
         ])
-        self.assertEqual(run_to_completion(make_callable(code, ns)()), 42)
+        self.assertEqual(await make_callable(code, ns)(), 42)
 
 
-    def test_object_floor_divide(self):
+    async def test_object_floor_divide(self):
         code, ns = build_expr([
             ["CONST", 85],
             ["CONST", 2],
             ["OBJECT_FLOOR_DIVIDE", 2],
             ["RETURN", 1],
         ])
-        self.assertEqual(run_to_completion(make_callable(code, ns)()), 42)
+        self.assertEqual(await make_callable(code, ns)(), 42)
 
 
-    def test_object_true_divide(self):
+    async def test_object_true_divide(self):
         code, ns = build_expr([
             ["CONST", 84],
             ["CONST", 2],
             ["OBJECT_TRUE_DIVIDE", 2],
             ["RETURN", 1],
         ])
-        self.assertEqual(run_to_completion(make_callable(code, ns)()), 42.0)
+        self.assertEqual(await make_callable(code, ns)(), 42.0)
 
 
-    def test_object_bit_and(self):
+    async def test_object_bit_and(self):
         code, ns = build_expr([
             ["CONST", 0xFF],
             ["CONST", 0x0F],
             ["OBJECT_BIT_AND", 2],
             ["RETURN", 1],
         ])
-        self.assertEqual(run_to_completion(make_callable(code, ns)()), 15)
+        self.assertEqual(await make_callable(code, ns)(), 15)
 
 
-    def test_object_bit_or(self):
+    async def test_object_bit_or(self):
         code, ns = build_expr([
             ["CONST", 32],
             ["CONST", 10],
             ["OBJECT_BIT_OR", 2],
             ["RETURN", 1],
         ])
-        self.assertEqual(run_to_completion(make_callable(code, ns)()), 42)
+        self.assertEqual(await make_callable(code, ns)(), 42)
 
 
-    def test_object_bit_xor(self):
+    async def test_object_bit_xor(self):
         code, ns = build_expr([
             ["CONST", 63],
             ["CONST", 21],
             ["OBJECT_BIT_XOR", 2],
             ["RETURN", 1],
         ])
-        self.assertEqual(run_to_completion(make_callable(code, ns)()), 42)
+        self.assertEqual(await make_callable(code, ns)(), 42)
 
 
-    def test_object_matrix_multiply(self):
+    async def test_object_matrix_multiply(self):
         class MatMulResult(object):
             def __matmul__(self, other):
                 return 42
@@ -122,62 +120,64 @@ class TestObjectBinaryOpcodes(CevalTest):
             ["OBJECT_MATRIX_MULTIPLY", 2],
             ["RETURN", 1],
         ])
-        self.assertEqual(run_to_completion(make_callable(code, ns)()), 42)
+        self.assertEqual(await make_callable(code, ns)(), 42)
 
 
-    def test_object_power(self):
+    async def test_object_power(self):
         code, ns = build_expr([
             ["CONST", 2],
             ["CONST", 5],
             ["OBJECT_POWER", 2],
             ["RETURN", 1],
         ])
-        self.assertEqual(run_to_completion(make_callable(code, ns)()), 32)
+        self.assertEqual(await make_callable(code, ns)(), 32)
 
 
-    def test_object_modulo(self):
+    async def test_object_modulo(self):
         code, ns = build_expr([
             ["CONST", 17],
             ["CONST", 5],
             ["OBJECT_MODULO", 2],
             ["RETURN", 1],
         ])
-        self.assertEqual(run_to_completion(make_callable(code, ns)()), 2)
+        self.assertEqual(await make_callable(code, ns)(), 2)
 
 
-    def test_object_divmod(self):
+    async def test_object_divmod(self):
         code, ns = build_expr([
             ["CONST", 17],
             ["CONST", 5],
             ["OBJECT_DIVMOD", 2],
             ["RETURN", 1],
         ])
-        self.assertEqual(run_to_completion(make_callable(code, ns)()), (3, 2))
+        self.assertEqual(await make_callable(code, ns)(), (3, 2))
 
 
-    def test_object_bit_left(self):
+    async def test_object_bit_left(self):
         code, ns = build_expr([
             ["CONST", 1],
             ["CONST", 5],
             ["OBJECT_BIT_LEFT", 0],
             ["RETURN", 1],
         ])
-        self.assertEqual(run_to_completion(make_callable(code, ns)()), 32)
+        self.assertEqual(await make_callable(code, ns)(), 32)
 
 
-    def test_object_bit_right(self):
+    async def test_object_bit_right(self):
         code, ns = build_expr([
             ["CONST", 64],
             ["CONST", 1],
             ["OBJECT_BIT_RIGHT", 0],
             ["RETURN", 1],
         ])
-        self.assertEqual(run_to_completion(make_callable(code, ns)()), 32)
+        self.assertEqual(await make_callable(code, ns)(), 32)
 
-    def test_object_add_three_values(self):
+
+    async def test_object_add_three_values(self):
         """
         OBJECT_ADD 3 reduces 1+2+3 => 6
         """
+
         code, ns = build_expr([
             ["CONST", 1],
             ["CONST", 2],
@@ -185,12 +185,14 @@ class TestObjectBinaryOpcodes(CevalTest):
             ["OBJECT_ADD", 3],
             ["RETURN", 1],
         ])
-        self.assertEqual(run_to_completion(make_callable(code, ns)()), 6)
+        self.assertEqual(await make_callable(code, ns)(), 6)
 
-    def test_object_add_type_error(self):
+
+    async def test_object_add_type_error(self):
         """
         OBJECT_ADD with incompatible types raises TypeError
         """
+
         code, ns = build_expr([
             ["CONST", "a"],
             ["CONST", 1],
@@ -198,7 +200,7 @@ class TestObjectBinaryOpcodes(CevalTest):
             ["RETURN", 1],
         ])
         with self.assertRaises(TypeError):
-            run_to_completion(make_callable(code, ns)())
+            await make_callable(code, ns)()
 
 
 # The end.

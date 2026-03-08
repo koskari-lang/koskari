@@ -19,12 +19,10 @@ Tests for PROPER and PAIR_SPLICE opcodes.
 :ai-assistant: claude-4.6-sonnet-high via Cursor
 """
 
-import unittest
-
 from koskari.lib import nil, symbol
 
 from tests import make_callable
-from tests.lib.opcode import CevalTest, build_expr, run_to_completion
+from tests.lib.opcode import CevalTest, build_expr
 
 
 class TestProperOpcode(CevalTest):
@@ -32,7 +30,7 @@ class TestProperOpcode(CevalTest):
     Tests for the PROPER opcode: build a proper list from N stack elements
     """
 
-    def test_proper_zero_pushes_nil(self):
+    async def test_proper_zero_pushes_nil(self):
         """
         PROPER 0 pushes nil (the empty proper list)
         """
@@ -41,11 +39,11 @@ class TestProperOpcode(CevalTest):
             ["PROPER", 0],
             ["RETURN", 1],
         ])
-        result = run_to_completion(make_callable(code, ns)())
+        result = await make_callable(code, ns)()
         self.assertIs(result, nil)
 
 
-    def test_proper_one_element(self):
+    async def test_proper_one_element(self):
         """
         PROPER 1 wraps a single element as (elem . nil)
         """
@@ -55,11 +53,11 @@ class TestProperOpcode(CevalTest):
             ["PROPER", 1],
             ["RETURN", 1],
         ])
-        result = run_to_completion(make_callable(code, ns)())
+        result = await make_callable(code, ns)()
         self.assertEqual([42], list(result.unpack()))
 
 
-    def test_proper_three_elements(self):
+    async def test_proper_three_elements(self):
         """
         PROPER 3 builds (1 . (2 . (3 . nil)))
         """
@@ -71,11 +69,11 @@ class TestProperOpcode(CevalTest):
             ["PROPER", 3],
             ["RETURN", 1],
         ])
-        result = run_to_completion(make_callable(code, ns)())
+        result = await make_callable(code, ns)()
         self.assertEqual([1, 2, 3], list(result.unpack()))
 
 
-    def test_proper_with_symbols(self):
+    async def test_proper_with_symbols(self):
         """
         PROPER works with symbol constants — the common quasi-quote case
         """
@@ -88,11 +86,11 @@ class TestProperOpcode(CevalTest):
             ["PROPER", 2],
             ["RETURN", 1],
         ])
-        result = run_to_completion(make_callable(code, ns)())
+        result = await make_callable(code, ns)()
         self.assertEqual([a, b], list(result.unpack()))
 
 
-    def test_proper_result_is_proper(self):
+    async def test_proper_result_is_proper(self):
         """
         PROPER always produces a list whose is_proper() is True
         """
@@ -103,7 +101,7 @@ class TestProperOpcode(CevalTest):
             ["PROPER", 2],
             ["RETURN", 1],
         ])
-        result = run_to_completion(make_callable(code, ns)())
+        result = await make_callable(code, ns)()
         self.assertTrue(result.is_proper())
 
 
@@ -112,7 +110,7 @@ class TestPairSpliceOpcode(CevalTest):
     Tests for the PAIR_SPLICE opcode: concatenate N pair/tuple segments
     """
 
-    def test_pair_splice_zero_pushes_nil(self):
+    async def test_pair_splice_zero_pushes_nil(self):
         """
         PAIR_SPLICE 0 pushes nil
         """
@@ -121,11 +119,11 @@ class TestPairSpliceOpcode(CevalTest):
             ["PAIR_SPLICE", 0],
             ["RETURN", 1],
         ])
-        result = run_to_completion(make_callable(code, ns)())
+        result = await make_callable(code, ns)()
         self.assertIs(result, nil)
 
 
-    def test_pair_splice_single_proper_pair(self):
+    async def test_pair_splice_single_proper_pair(self):
         """
         PAIR_SPLICE 1 with a single proper list returns that list
         """
@@ -137,11 +135,11 @@ class TestPairSpliceOpcode(CevalTest):
             ["PAIR_SPLICE", 1],
             ["RETURN", 1],
         ])
-        result = run_to_completion(make_callable(code, ns)())
+        result = await make_callable(code, ns)()
         self.assertEqual([1, 2], list(result.unpack()))
 
 
-    def test_pair_splice_two_pairs(self):
+    async def test_pair_splice_two_pairs(self):
         """
         PAIR_SPLICE 2 concatenates two proper lists
         """
@@ -155,11 +153,11 @@ class TestPairSpliceOpcode(CevalTest):
             ["PAIR_SPLICE", 2],
             ["RETURN", 1],
         ])
-        result = run_to_completion(make_callable(code, ns)())
+        result = await make_callable(code, ns)()
         self.assertEqual([1, 2, 3, 4], list(result.unpack()))
 
 
-    def test_pair_splice_tuple_segment(self):
+    async def test_pair_splice_tuple_segment(self):
         """
         PAIR_SPLICE accepts a tuple as a segment (the const-opt fast path)
         """
@@ -171,11 +169,11 @@ class TestPairSpliceOpcode(CevalTest):
             ["PAIR_SPLICE", 1],
             ["RETURN", 1],
         ])
-        result = run_to_completion(make_callable(code, ns)())
+        result = await make_callable(code, ns)()
         self.assertEqual([a, b], list(result.unpack()))
 
 
-    def test_pair_splice_tuple_and_pair(self):
+    async def test_pair_splice_tuple_and_pair(self):
         """
         PAIR_SPLICE handles a mix of a tuple segment and a pair segment
         """
@@ -191,11 +189,11 @@ class TestPairSpliceOpcode(CevalTest):
             ["PAIR_SPLICE", 2],
             ["RETURN", 1],
         ])
-        result = run_to_completion(make_callable(code, ns)())
+        result = await make_callable(code, ns)()
         self.assertEqual([a, b, c], list(result.unpack()))
 
 
-    def test_pair_splice_nil_segment_skipped(self):
+    async def test_pair_splice_nil_segment_skipped(self):
         """
         PAIR_SPLICE skips nil segments gracefully
         """
@@ -208,11 +206,11 @@ class TestPairSpliceOpcode(CevalTest):
             ["PAIR_SPLICE", 2],
             ["RETURN", 1],
         ])
-        result = run_to_completion(make_callable(code, ns)())
+        result = await make_callable(code, ns)()
         self.assertEqual([1, 2], list(result.unpack()))
 
 
-    def test_pair_splice_result_is_proper(self):
+    async def test_pair_splice_result_is_proper(self):
         """
         PAIR_SPLICE always produces a proper list
         """
@@ -226,11 +224,11 @@ class TestPairSpliceOpcode(CevalTest):
             ["PAIR_SPLICE", 2],
             ["RETURN", 1],
         ])
-        result = run_to_completion(make_callable(code, ns)())
+        result = await make_callable(code, ns)()
         self.assertTrue(result.is_proper())
 
 
-    def test_pair_splice_three_segments(self):
+    async def test_pair_splice_three_segments(self):
         """
         PAIR_SPLICE 3 concatenates three segments in order
         """
@@ -245,11 +243,11 @@ class TestPairSpliceOpcode(CevalTest):
             ["PAIR_SPLICE", 3],
             ["RETURN", 1],
         ])
-        result = run_to_completion(make_callable(code, ns)())
+        result = await make_callable(code, ns)()
         self.assertEqual([a, b, c], list(result.unpack()))
 
 
-    def test_pair_splice_empty_tuple_segments(self):
+    async def test_pair_splice_empty_tuple_segments(self):
         """
         PAIR_SPLICE with empty tuple segments produces nil
         """
@@ -260,7 +258,7 @@ class TestPairSpliceOpcode(CevalTest):
             ["PAIR_SPLICE", 2],
             ["RETURN", 1],
         ])
-        result = run_to_completion(make_callable(code, ns)())
+        result = await make_callable(code, ns)()
         self.assertIs(result, nil)
 
 

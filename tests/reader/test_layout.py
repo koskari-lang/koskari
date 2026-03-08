@@ -18,7 +18,7 @@ Unit tests for koskari.parse LayoutReader and block syntax.
 """
 
 
-from unittest import TestCase
+from unittest import IsolatedAsyncioTestCase
 
 from koskari.types import (
     car,
@@ -39,9 +39,9 @@ from . import parse_layout
 _layout_block = symbol('layout/block')
 
 
-class TestLayoutBlockSyntax(TestCase):
+class TestLayoutBlockSyntax(IsolatedAsyncioTestCase):
 
-    def test_simple_block(self):
+    async def test_simple_block(self):
         src = """
         foo x:
           y
@@ -58,7 +58,7 @@ class TestLayoutBlockSyntax(TestCase):
         self.assertEqual(result, expected)
 
 
-    def test_block_header_s_expr_spanning_lines(self):
+    async def test_block_header_s_expr_spanning_lines(self):
         src = """
         foo [[x 1000]
              [y 2000]]:
@@ -79,7 +79,7 @@ class TestLayoutBlockSyntax(TestCase):
         self.assertEqual(result, expected)
 
 
-    def test_block_header_keyword_inside_brackets(self):
+    async def test_block_header_keyword_inside_brackets(self):
         """
         A trailing-colon keyword inside brackets in the block header is not
         treated as the block-opening colon
@@ -100,7 +100,7 @@ class TestLayoutBlockSyntax(TestCase):
         self.assertEqual(result, expected)
 
 
-    def test_block_header_keyword_inside_parens(self):
+    async def test_block_header_keyword_inside_parens(self):
         """
         A trailing-colon keyword inside parentheses in the block header is not
         treated as the block-opening colon
@@ -121,7 +121,7 @@ class TestLayoutBlockSyntax(TestCase):
         self.assertEqual(result, expected)
 
 
-    def test_nested_block_inside_block(self):
+    async def test_nested_block_inside_block(self):
         src = """
         foo [[x 1]]:
           bar x:
@@ -141,7 +141,7 @@ class TestLayoutBlockSyntax(TestCase):
         self.assertEqual(result, expected)
 
 
-    def test_block_header_colon_no_space(self):
+    async def test_block_header_colon_no_space(self):
         """
         Both 'x:' and 'x :' parse identically
         """
@@ -169,7 +169,7 @@ class TestLayoutBlockSyntax(TestCase):
         self.assertEqual(result_no_space, result_with_space)
 
 
-    def test_dedent_ends_body(self):
+    async def test_dedent_ends_body(self):
         src = """
         foo x:
           a
@@ -189,7 +189,7 @@ class TestLayoutBlockSyntax(TestCase):
         self.assertEqual(result, expected)
 
 
-    def test_fallback_no_layout_head(self):
+    async def test_fallback_no_layout_head(self):
         src = """
         unknown x:
           (print x)
@@ -206,7 +206,7 @@ class TestLayoutBlockSyntax(TestCase):
         self.assertEqual(result, expected)
 
 
-    def test_single_forms(self):
+    async def test_single_forms(self):
         src = """
         if x:
           1
@@ -239,7 +239,7 @@ class TestLayoutBlockSyntax(TestCase):
         self.assertEqual(result, expected)
 
 
-    def test_prefix_symbol_not_mangled_in_begin_body(self):
+    async def test_prefix_symbol_not_mangled_in_begin_body(self):
         src = """
         begin:
           define double [x]:
@@ -286,9 +286,9 @@ def _parse_layout_all(src_str):
     return results
 
 
-class TestLayoutReaderComments(TestCase):
+class TestLayoutReaderComments(IsolatedAsyncioTestCase):
 
-    def test_comment_before_block_header(self):
+    async def test_comment_before_block_header(self):
         src = """
         ;; leading comment
         foo x:
@@ -305,7 +305,7 @@ class TestLayoutReaderComments(TestCase):
         self.assertEqual(result, expected)
 
 
-    def test_comment_after_colon(self):
+    async def test_comment_after_colon(self):
         src = """
         foo x: ;; trailing header comment
           y
@@ -321,7 +321,7 @@ class TestLayoutReaderComments(TestCase):
         self.assertEqual(result, expected)
 
 
-    def test_comment_as_first_body_line(self):
+    async def test_comment_as_first_body_line(self):
         src = """
         foo x:
           ;; first-body comment
@@ -338,7 +338,7 @@ class TestLayoutReaderComments(TestCase):
         self.assertEqual(result, expected)
 
 
-    def test_comment_between_body_lines(self):
+    async def test_comment_between_body_lines(self):
         src = """
         foo x:
           a
@@ -356,7 +356,7 @@ class TestLayoutReaderComments(TestCase):
         self.assertEqual(result, expected)
 
 
-    def test_comment_after_last_body_line(self):
+    async def test_comment_after_last_body_line(self):
         src = """
         foo x:
           a
@@ -374,7 +374,7 @@ class TestLayoutReaderComments(TestCase):
         self.assertEqual(result, expected)
 
 
-    def test_comment_in_multiline_formals(self):
+    async def test_comment_in_multiline_formals(self):
         src = """
         define foobar [
               a  ; the a value
@@ -395,7 +395,7 @@ class TestLayoutReaderComments(TestCase):
         self.assertEqual(result, expected)
 
 
-    def test_comment_only_input_returns_none(self):
+    async def test_comment_only_input_returns_none(self):
         src = """
         ;; just a comment
         ;; another comment
@@ -405,7 +405,7 @@ class TestLayoutReaderComments(TestCase):
         self.assertIsNone(result)
 
 
-    def test_comment_between_top_level_forms(self):
+    async def test_comment_between_top_level_forms(self):
         src = """
         (+ 1 2)
         ;; between forms
@@ -425,15 +425,15 @@ class TestLayoutReaderComments(TestCase):
         )
 
 
-class TestLayoutReaderNamespace(TestCase):
+class TestLayoutReaderNamespace(IsolatedAsyncioTestCase):
 
-    def test_accepts_module(self):
+    async def test_accepts_module(self):
         mod_ns = ModuleNamespace('test', {})
         module = Module(mod_ns)
         reader = LayoutReader(module)
         self.assertIsNotNone(reader._ns)
 
-    def test_accepts_dict(self):
+    async def test_accepts_dict(self):
         reader = LayoutReader({})
         self.assertIsNotNone(reader._ns)
 

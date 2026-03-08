@@ -18,11 +18,9 @@ Tests for PUSH_PARAM opcode
 :license: GNU General Public License v3
 """
 
-import unittest
-
 from koskari.lib import Domain, ParamRef
 from tests import make_callable
-from tests.lib.opcode import CevalTest, build_expr, run_to_completion
+from tests.lib.opcode import CevalTest, build_expr
 
 
 class TestPushParamOpcodes(CevalTest):
@@ -30,7 +28,7 @@ class TestPushParamOpcodes(CevalTest):
     Tests for PUSH_PARAM opcode (pop values, build param bindings, push extent)
     """
 
-    def test_push_param_single_binding(self):
+    async def test_push_param_single_binding(self):
         """
         PUSH_PARAM with one name pops one value and binds it
         """
@@ -46,11 +44,11 @@ class TestPushParamOpcodes(CevalTest):
             ["POP_PARAM", 0],
             ["RETURN", 1],
         ], values={"f": check_x})
-        result = run_to_completion(make_callable(code, ns)())
+        result = await make_callable(code, ns)()
         self.assertEqual(result, 100)
 
 
-    def test_push_param_two_bindings(self):
+    async def test_push_param_two_bindings(self):
         """
         PUSH_PARAM with two names pops two values and binds both
         """
@@ -67,11 +65,11 @@ class TestPushParamOpcodes(CevalTest):
             ["POP_PARAM", 0],
             ["RETURN", 1],
         ], values={"f": check_both})
-        result = run_to_completion(make_callable(code, ns)())
+        result = await make_callable(code, ns)()
         self.assertEqual(result, (1, 2))
 
 
-    def test_push_param_nested_restores_on_pop_param(self):
+    async def test_push_param_nested_restores_on_pop_param(self):
         """
         Nested PUSH_PARAM: inner shadows outer; POP_PARAM restores outer
         """
@@ -92,11 +90,11 @@ class TestPushParamOpcodes(CevalTest):
             ["POP_PARAM", 0],
             ["RETURN", 1],
         ], values={"f": read_z})
-        result = run_to_completion(make_callable(code, ns)())
+        result = await make_callable(code, ns)()
         self.assertEqual(result, 1)
 
 
-    def test_push_param_unwind_on_return_restores_value(self):
+    async def test_push_param_unwind_on_return_restores_value(self):
         """
         RETURN inside PUSH_PARAM extent unwinds; param value is restored
         """
@@ -110,12 +108,12 @@ class TestPushParamOpcodes(CevalTest):
         ], values={"z": 1})
         with Domain():
             p.store(1)
-            result = run_to_completion(make_callable(code, ns)())
+            result = await make_callable(code, ns)()
             self.assertEqual(p.deref(), 1)
         self.assertIsNone(result)
 
 
-    def test_push_param_unwind_on_raise_restores_value(self):
+    async def test_push_param_unwind_on_raise_restores_value(self):
         """
         Exception through PUSH_PARAM extent unwinds; param value is restored
         """
@@ -136,11 +134,11 @@ class TestPushParamOpcodes(CevalTest):
         with Domain():
             p.store(1)
             with self.assertRaises(ValueError):
-                run_to_completion(make_callable(code, ns)())
+                await make_callable(code, ns)()
             self.assertEqual(p.deref(), 1)
 
 
-    def test_push_param_stack_order_val0_deepest(self):
+    async def test_push_param_stack_order_val0_deepest(self):
         """
         Stack: val for names[0] deepest, val for names[-1] at TOS
         """
@@ -157,7 +155,7 @@ class TestPushParamOpcodes(CevalTest):
             ["POP_PARAM", 0],
             ["RETURN", 1],
         ], values={"f": check_order})
-        result = run_to_completion(make_callable(code, ns)())
+        result = await make_callable(code, ns)()
         self.assertEqual(result, ("deep", "tos"))
 
 

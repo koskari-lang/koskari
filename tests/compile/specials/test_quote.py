@@ -23,65 +23,78 @@ from . import SpecialsTestCase
 
 class TestQuoteSpecial(SpecialsTestCase):
 
-    def test_quote_atom_number(self):
+    async def test_quote_atom_number(self):
         src_str = "(compile/quote 42)"
         expr, mod = self.compile_expr(src_str)
-        result = expr().run()
+        result = await expr()
         self.assertEqual(42, result)
 
 
-    def test_quote_atom_symbol(self):
+    async def test_quote_atom_symbol(self):
         src_str = "(compile/quote x)"
         expr, mod = self.compile_expr(src_str)
-        result = expr().run()
+        result = await expr()
         self.assertEqual(result, symbol("x"))
 
 
-    def test_quote_list_expands_to_compile_cons(self):
+    async def test_quote_list_expands_to_compile_cons(self):
         """
         (compile/quote (1 2 3)) is rewritten to (compile/cons (compile/quote 1)
         ...) and compiles to CONST + CONS opcodes. Result is (1 . (2 . (3 .
         nil))); unpack to get [1, 2, 3].
         """
+
         src_str = "(compile/quote (1 2 3))"
         expr, mod = self.compile_expr(src_str)
-        result = expr().run()
+        result = await expr()
         self.assertIsNotNone(result)
         self.assertEqual([1, 2, 3], list(result.unpack()))
 
 
 class TestCompileConsCarCdr(SpecialsTestCase):
 
-    def test_compile_cons_two_elements(self):
-        """(compile/cons 1 2 nil) yields (1 . (2 . nil)), unpack to [1, 2]."""
+    async def test_compile_cons_two_elements(self):
+        """
+        (compile/cons 1 2 nil) yields (1 . (2 . nil)), unpack to [1, 2]
+        """
+
         src_str = "(compile/cons 1 2 nil)"
         expr, mod = self.compile_expr(src_str)
-        result = expr().run()
+        result = await expr()
         self.assertIsNotNone(result)
         self.assertEqual([1, 2], list(result.unpack()))
 
 
-    def test_compile_cons_three_elements(self):
-        """(compile/cons 1 2 3 nil) yields (1 . (2 . (3 . nil)))."""
+    async def test_compile_cons_three_elements(self):
+        """
+        (compile/cons 1 2 3 nil) yields (1 . (2 . (3 . nil)))
+        """
+
         src_str = "(compile/cons 1 2 3 nil)"
         expr, mod = self.compile_expr(src_str)
-        result = expr().run()
+        result = await expr()
         self.assertEqual([1, 2, 3], list(result.unpack()))
 
 
-    def test_compile_car(self):
-        """(compile/car (compile/cons 1 nil)) yields 1."""
+    async def test_compile_car(self):
+        """
+        (compile/car (compile/cons 1 nil)) yields 1
+        """
+
         src_str = "(compile/car (compile/cons 1 nil))"
         expr, mod = self.compile_expr(src_str)
-        result = expr().run()
+        result = await expr()
         self.assertEqual(1, result)
 
 
-    def test_compile_cdr(self):
-        """(compile/cdr (compile/cons 1 (compile/cons 2 nil))) yields (2 . nil)."""
+    async def test_compile_cdr(self):
+        """
+        (compile/cdr (compile/cons 1 (compile/cons 2 nil))) yields (2 . nil)
+        """
+
         src_str = "(compile/cdr (compile/cons 1 (compile/cons 2 nil)))"
         expr, mod = self.compile_expr(src_str)
-        result = expr().run()
+        result = await expr()
         self.assertEqual([2], list(result.unpack()))
 
 

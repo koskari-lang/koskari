@@ -33,7 +33,7 @@ class TestDefineSyntax(SpecialsTestCase):
         return super().compile_expr(src_str, **defns)
 
 
-    def test_define_syntax_unless_with_literal_else(self):
+    async def test_define_syntax_unless_with_literal_else(self):
         src_str = """
         (compile/define-syntax unless
           (syntax-rules (else:)
@@ -45,7 +45,7 @@ class TestDefineSyntax(SpecialsTestCase):
         expr, mod = self.compile_expr(src_str)
         dis(expr.code)
 
-        expr().run()
+        await expr()
         defn = {"compile/unless": vars(mod)["unless"]}
 
         src_str = """
@@ -56,11 +56,11 @@ class TestDefineSyntax(SpecialsTestCase):
         expr, mod = self.compile_expr(src_str, **defn)
         dis(expr.code)
 
-        result = expr().run()
+        result = await expr()
         self.assertEqual(40, result)
 
 
-    def test_hygienic_renaming_for_introduced_symbols(self):
+    async def test_hygienic_renaming_for_introduced_symbols(self):
         src_str = """
         (compile/define-syntax use-temp
           (syntax-rules ()
@@ -71,7 +71,7 @@ class TestDefineSyntax(SpecialsTestCase):
         expr, mod = self.compile_expr(src_str)
         dis(expr.code)
 
-        expr().run()
+        await expr()
         defn = {"compile/use-temp": vars(mod)["use-temp"]}
 
         src_str = """
@@ -83,18 +83,18 @@ class TestDefineSyntax(SpecialsTestCase):
         expr, mod = self.compile_expr(src_str, **defn)
         dis(expr.code)
 
-        result = expr().run()
+        result = await expr()
         self.assertEqual(2, result)
 
 
-    def test_rule_without_match_raises(self):
+    async def test_rule_without_match_raises(self):
         src_str = """
         (compile/define-syntax only-one
           (syntax-rules ()
             ((only-one x) x)))
         """
         expr, mod = self.compile_expr(src_str)
-        expr().run()
+        await expr()
         defn = {"compile/only-one": vars(mod)["only-one"]}
 
         src_str = """
@@ -104,7 +104,7 @@ class TestDefineSyntax(SpecialsTestCase):
             self.compile_expr(src_str, **defn)
 
 
-    def test_define_syntax_uses_tagged_tuple_constant(self):
+    async def test_define_syntax_uses_tagged_tuple_constant(self):
         code = self.compile_to_code(
             """
             (compile/define-syntax m

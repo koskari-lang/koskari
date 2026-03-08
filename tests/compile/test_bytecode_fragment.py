@@ -48,10 +48,10 @@ def example_bytecode_truthy_yus():
     return Code(nspec, instr, "truthy_yus", "something.ki")
 
 
-class TestCode(unittest.TestCase):
+class TestCode(unittest.IsolatedAsyncioTestCase):
     """Tests for the Code type and fragment-based construction."""
 
-    def test_fields(self):
+    async def test_fields(self):
         """Code stores name, filename, namespace_spec, and yields flag."""
         nspec = NamespaceSpec(None, (), ())
         instr = ([OpCode.KOS_OP_CONST, None], [OpCode.KOS_OP_RETURN, 1])
@@ -62,7 +62,7 @@ class TestCode(unittest.TestCase):
         self.assertEqual(len(code.constants_pool), 1)
         self.assertFalse(code.yields)
 
-    def test_transform(self):
+    async def test_transform(self):
         """Instruction fragments are resolved: labels, constants, opargs."""
         bc = example_bytecode_truthy_yus()
         self.assertEqual(bc.name, "truthy_yus")
@@ -78,7 +78,7 @@ class TestCode(unittest.TestCase):
         self.assertEqual(bc.constant(2), "YES")
         self.assertRaises(IndexError, bc.constant, 3)
 
-    def test_distinct_consts(self):
+    async def test_distinct_consts(self):
         """Constant pool deduplicates; VAR and CONST share by identity."""
         instr = (
             [OpCode.KOS_OP_VAR, "NO"],
@@ -120,7 +120,7 @@ class TestCode(unittest.TestCase):
         self.assertEqual(bc.constants_pool,
                          ("NO", "YES", -1, 1, True, None, False, 0))
 
-    def test_return_constant(self):
+    async def test_return_constant(self):
         """Simple Code: CONST 42, RETURN 1."""
         nspec = NamespaceSpec(None, (), ())
         instr = ([OpCode.KOS_OP_CONST, 42], [OpCode.KOS_OP_RETURN, 1])
@@ -130,21 +130,21 @@ class TestCode(unittest.TestCase):
         self.assertEqual(code.oparg(1), (OpCode.KOS_OP_RETURN, 1))
         self.assertEqual(code.constant(0), 42)
 
-    def test_return_none(self):
+    async def test_return_none(self):
         """Simple Code: CONST None, RETURN 1."""
         nspec = NamespaceSpec(None, (), ())
         instr = ([OpCode.KOS_OP_CONST, None], [OpCode.KOS_OP_RETURN, 1])
         code = Code(nspec, instr)
         self.assertEqual(code.constant(0), None)
 
-    def test_return_string(self):
+    async def test_return_string(self):
         """Simple Code: CONST string, RETURN 1."""
         nspec = NamespaceSpec(None, (), ())
         instr = ([OpCode.KOS_OP_CONST, "hello"], [OpCode.KOS_OP_RETURN, 1])
         code = Code(nspec, instr)
         self.assertEqual(code.constant(0), "hello")
 
-    def test_position(self):
+    async def test_position(self):
         """Code with POSITION instruction updates source position."""
         nspec = NamespaceSpec(None, (), ())
         instr = (
@@ -157,7 +157,7 @@ class TestCode(unittest.TestCase):
         line, col = code.position(0)
         self.assertEqual((line, col), (1, 1))
 
-    def test_var_instruction(self):
+    async def test_var_instruction(self):
         """Code with VAR instruction stores name in constant pool."""
         nspec = NamespaceSpec(None, (), ())
         instr = (
@@ -168,7 +168,7 @@ class TestCode(unittest.TestCase):
         self.assertEqual(code.oparg(0), (OpCode.KOS_OP_VAR, 0))
         self.assertEqual(code.constant(0), "x")
 
-    def test_backward_jump(self):
+    async def test_backward_jump(self):
         """Jump backward to earlier LABEL. LABEL opcodes become NOOP."""
         nspec = NamespaceSpec(None, (), ())
         instr = (
@@ -186,13 +186,13 @@ class TestCode(unittest.TestCase):
         self.assertEqual(code.oparg(2), (OpCode.KOS_OP_JUMP, 0))
         self.assertEqual(code.oparg(3), (OpCode.KOS_OP_RETURN, 1))
 
-    def test_empty_instructions_rejected(self):
+    async def test_empty_instructions_rejected(self):
         """Code with empty instructions raises ValueError."""
         nspec = NamespaceSpec(None, (), ())
         with self.assertRaises(ValueError):
             Code(nspec, [])
 
-    def test_undefined_label_raises(self):
+    async def test_undefined_label_raises(self):
         """Jump to undefined label raises RuntimeError."""
         nspec = NamespaceSpec(None, (), ())
         instr = (
@@ -202,7 +202,7 @@ class TestCode(unittest.TestCase):
         with self.assertRaises(RuntimeError):
             Code(nspec, instr)
 
-    def test_length_and_position_bounds(self):
+    async def test_length_and_position_bounds(self):
         """length() and position() respect instruction count."""
         nspec = NamespaceSpec(None, (), ())
         instr = ([OpCode.KOS_OP_CONST, 1], [OpCode.KOS_OP_RETURN, 1])
@@ -213,14 +213,14 @@ class TestCode(unittest.TestCase):
         with self.assertRaises(IndexError):
             code.constant(1)
 
-    def test_filename_default(self):
+    async def test_filename_default(self):
         """Code with no filename uses default."""
         nspec = NamespaceSpec(None, (), ())
         instr = ([OpCode.KOS_OP_CONST, 1], [OpCode.KOS_OP_RETURN, 1])
         code = Code(nspec, instr)
         self.assertEqual(code.filename, "<anon>")
 
-    def test_filename_explicit(self):
+    async def test_filename_explicit(self):
         """Code accepts explicit filename."""
         nspec = NamespaceSpec(None, (), ())
         instr = ([OpCode.KOS_OP_CONST, 1], [OpCode.KOS_OP_RETURN, 1])
@@ -229,19 +229,19 @@ class TestCode(unittest.TestCase):
         self.assertEqual(code.name, "fn")
 
 
-class TestCodeFunctionSpec(unittest.TestCase):
+class TestCodeFunctionSpec(unittest.IsolatedAsyncioTestCase):
     """
     Tests for Code.function_spec(formals_spec) and FunctionSpec type
     """
 
-    def test_function_spec_type_exists(self):
+    async def test_function_spec_type_exists(self):
         """FunctionSpec is registered from koskari.lib"""
 
         self.assertIsNotNone(FunctionSpec)
         self.assertEqual(FunctionSpec.__name__, "FunctionSpec")
         self.assertEqual(FunctionSpec.__module__, "koskari.lib")
 
-    def test_code_function_spec_returns_function_spec(self):
+    async def test_code_function_spec_returns_function_spec(self):
         """Code.function_spec(FormalsSpec()) returns a FunctionSpec"""
 
         nspec = NamespaceSpec(None, (), ())
@@ -253,7 +253,7 @@ class TestCodeFunctionSpec(unittest.TestCase):
         self.assertIs(result.code, code)
         self.assertIs(result.formals_spec, fspec)
 
-    def test_code_function_spec_requires_formals_spec(self):
+    async def test_code_function_spec_requires_formals_spec(self):
         """Code.function_spec(non-FormalsSpec) raises TypeError"""
 
         nspec = NamespaceSpec(None, (), ())
@@ -265,10 +265,10 @@ class TestCodeFunctionSpec(unittest.TestCase):
             code.function_spec("not a formals spec")
 
 
-class TestByteCodeFragment(unittest.TestCase):
+class TestByteCodeFragment(unittest.IsolatedAsyncioTestCase):
     """Tests for ByteCodeFragment: instructions, requests, declares."""
 
-    def test_init_defaults(self):
+    async def test_init_defaults(self):
         f = ByteCodeFragment()
         self.assertIsNone(f.name)
         self.assertIsNone(f.filename)
@@ -278,14 +278,14 @@ class TestByteCodeFragment(unittest.TestCase):
         self.assertEqual(f.requests, [])
         self.assertEqual(f.declares, [])
 
-    def test_init_args(self):
+    async def test_init_args(self):
         f = ByteCodeFragment(name="block", filename="x.ki", mode=1)
         self.assertEqual(f.name, "block")
         self.assertEqual(f.filename, "x.ki")
         self.assertEqual(f.mode, 1)
         self.assertIsNone(f.compiler)
 
-    def test_declare_var(self):
+    async def test_declare_var(self):
         f = ByteCodeFragment()
         f.declare_var("a")
         self.assertEqual(f.declares, ["a"])
@@ -294,14 +294,14 @@ class TestByteCodeFragment(unittest.TestCase):
         f.declare_var("a")
         self.assertEqual(f.declares, ["a", "b"])
 
-    def test_declare_vars(self):
+    async def test_declare_vars(self):
         f = ByteCodeFragment()
         f.declare_vars(("x", "y", "z"))
         self.assertEqual(f.declares, ["x", "y", "z"])
         f.declare_vars(["z", "w"])
         self.assertEqual(f.declares, ["x", "y", "z", "w"])
 
-    def test_request_var(self):
+    async def test_request_var(self):
         f = ByteCodeFragment()
         f.request_var("outer")
         self.assertEqual(f.requests, ["outer"])
@@ -310,14 +310,14 @@ class TestByteCodeFragment(unittest.TestCase):
         f.request_var("outer")
         self.assertEqual(f.requests, ["outer", "other"])
 
-    def test_request_var_skipped_if_declared(self):
+    async def test_request_var_skipped_if_declared(self):
         f = ByteCodeFragment()
         f.declare_var("local")
         f.request_var("local")
         self.assertEqual(f.declares, ["local"])
         self.assertEqual(f.requests, [])
 
-    def test_instruction(self):
+    async def test_instruction(self):
         f = ByteCodeFragment()
         f.instruction(OpCode.KOS_OP_CONST, 42)
         f.instruction(OpCode.KOS_OP_RETURN, 1)
@@ -326,7 +326,7 @@ class TestByteCodeFragment(unittest.TestCase):
             [(OpCode.KOS_OP_CONST, 42), (OpCode.KOS_OP_RETURN, 1)],
         )
 
-    def test_position(self):
+    async def test_position(self):
         f = ByteCodeFragment()
         f.position((3, 10), extra="line text")
         self.assertEqual(
@@ -334,12 +334,12 @@ class TestByteCodeFragment(unittest.TestCase):
             [(OpCode.KOS_OP_POSITION, (3, 10, "line text"))],
         )
 
-    def test_position_of_no_position(self):
+    async def test_position_of_no_position(self):
         f = ByteCodeFragment()
         f.position_of(object())
         self.assertEqual(f.instructions, [])
 
-    def test_as_namespace_spec(self):
+    async def test_as_namespace_spec(self):
         f = ByteCodeFragment(name="ns1")
         f.declare_var("a")
         f.declare_var("b")
@@ -350,7 +350,7 @@ class TestByteCodeFragment(unittest.TestCase):
         self.assertEqual(tuple(nspec.local_syms or ()), ("a", "b"))
         self.assertEqual(tuple(nspec.closure_syms or ()), ("up",))
 
-    def test_merge(self):
+    async def test_merge(self):
         a = ByteCodeFragment(name="a")
         a.declare_var("x")
         a.request_var("y")

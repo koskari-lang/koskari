@@ -18,11 +18,9 @@ Tests for VAR, GLOBALS, LOCALS, CALL, TAIL_CALL opcodes.
 :license: GNU General Public License v3
 """
 
-import unittest
-
 from koskari.lib import FormalsSpec
 from tests import make_callable
-from tests.lib.opcode import CevalTest, build_code, build_expr, run_to_completion
+from tests.lib.opcode import CevalTest, build_code, build_expr
 
 
 class TestNamespaceAndCall(CevalTest):
@@ -30,7 +28,7 @@ class TestNamespaceAndCall(CevalTest):
     Tests for VAR, GLOBALS, LOCALS, CALL, TAIL_CALL
     """
 
-    def test_var_loads_from_namespace(self):
+    async def test_var_loads_from_namespace(self):
         """
         VAR name loads value from namespace onto stack
         """
@@ -39,41 +37,41 @@ class TestNamespaceAndCall(CevalTest):
             ["VAR", "x"],
             ["RETURN", 1],
         ], values={"x": 99})
-        result = run_to_completion(make_callable(code, ns)())
+        result = await make_callable(code, ns)()
         self.assertEqual(result, 99)
 
 
-    def test_var_clear_raises_name_error_for_missing_name(self):
+    async def test_var_clear_raises_name_error_for_missing_name(self):
         """
         VAR_CLEAR raises NameError when name is not defined
         """
 
         code_obj, ns = build_expr([["VAR_CLEAR", "x"], ["RETURN", 1]])
         with self.assertRaises(NameError):
-            run_to_completion(make_callable(code_obj, ns)())
+            await make_callable(code_obj, ns)()
 
 
-    def test_var_ref_raises_name_error_for_missing_name(self):
+    async def test_var_ref_raises_name_error_for_missing_name(self):
         """
         VAR_REF raises NameError when name is not defined
         """
 
         code_obj, ns = build_expr([["VAR_REF", "x"], ["RETURN", 1]])
         with self.assertRaises(NameError):
-            run_to_completion(make_callable(code_obj, ns)())
+            await make_callable(code_obj, ns)()
 
 
-    def test_var_store_with_empty_stack_raises(self):
+    async def test_var_store_with_empty_stack_raises(self):
         """
         VAR_STORE with empty stack raises (stack underrun or RuntimeError)
         """
 
         code_obj, ns = build_expr([["VAR_STORE", "x"], ["RETURN", 1]])
         with self.assertRaises(RuntimeError):
-            run_to_completion(make_callable(code_obj, ns)())
+            await make_callable(code_obj, ns)()
 
 
-    def test_globals_pushes_globals_dict(self):
+    async def test_globals_pushes_globals_dict(self):
         """
         GLOBALS pushes the frame globals (namespace) onto stack
         """
@@ -82,11 +80,11 @@ class TestNamespaceAndCall(CevalTest):
             ["GLOBALS", 0],
             ["RETURN", 1],
         ])
-        result = run_to_completion(make_callable(code, ns)())
+        result = await make_callable(code, ns)()
         self.assertIs(result, ns)
 
 
-    def test_locals_pushes_locals_dict(self):
+    async def test_locals_pushes_locals_dict(self):
         """
         LOCALS pushes the frame locals (namespace) onto stack
         """
@@ -95,46 +93,51 @@ class TestNamespaceAndCall(CevalTest):
             ["LOCALS", 0],
             ["RETURN", 1],
         ])
-        result = run_to_completion(make_callable(code, ns)())
+        result = await make_callable(code, ns)()
         self.assertIs(result, ns)
 
 
-    def test_call_invokes_callable_zero_args(self):
+    async def test_call_invokes_callable_zero_args(self):
         """
         CALL 0 invokes callable on stack with no args
         """
 
         def forty_two():
             return 42
+
         code, ns = build_expr([
             ["VAR", "f"],
             ["CALL", 0],
             ["RETURN", 1],
         ], values={"f": forty_two})
-        result = run_to_completion(make_callable(code, ns)())
+        result = await make_callable(code, ns)()
         self.assertEqual(result, 42)
 
-    def test_call_invokes_callable_one_arg(self):
+
+    async def test_call_invokes_callable_one_arg(self):
         """
         CALL 1 invokes callable with one argument (vectorcall path)
         """
+
         def double(x):
             return x * 2
+
         code, ns = build_expr([
             ["VAR", "f"],
             ["CONST", 21],
             ["CALL", 1],
             ["RETURN", 1],
         ], values={"f": double})
-        result = run_to_completion(make_callable(code, ns)())
+        result = await make_callable(code, ns)()
         self.assertEqual(result, 42)
 
 
-    def test_tail_call_replaces_frame_returns_result(self):
+    async def test_tail_call_replaces_frame_returns_result(self):
         """
         TAIL_CALL with KosFunction replaces current frame; callee return value
         is the result of the invocation
         """
+
         inner_code = build_code([
             ["CONST", 42],
             ["RETURN", 1],
@@ -145,12 +148,14 @@ class TestNamespaceAndCall(CevalTest):
             ["BUILD_FUNCTION", 0],
             ["TAIL_CALL", 0],
         ])
-        result = run_to_completion(make_callable(code_obj, ns)())
+        result = await make_callable(code_obj, ns)()
         self.assertEqual(result, 42)
 
 
-    def test_call_apply_helper_to_python_callable(self):
-        """CALL apply delegates to python callable for normal objects."""
+    async def test_call_apply_helper_to_python_callable(self):
+        """
+        CALL apply delegates to python callable for normal objects
+        """
 
         def plus(a, b, c=0):
             return a + b + c
@@ -164,12 +169,14 @@ class TestNamespaceAndCall(CevalTest):
             ["CALL", 3],
             ["RETURN", 1],
         ], values={"apply": lib.apply, "f": plus})
-        result = run_to_completion(make_callable(code, ns)())
+        result = await make_callable(code, ns)()
         self.assertEqual(result, 9)
 
 
-    def test_call_apply_helper_to_koskari_function(self):
-        """CALL apply with Koskari Function target executes and returns value."""
+    async def test_call_apply_helper_to_koskari_function(self):
+        """
+        CALL apply with Koskari Function target executes and returns value
+        """
 
         import koskari.lib as lib
 
@@ -183,7 +190,7 @@ class TestNamespaceAndCall(CevalTest):
             ["BUILD_FUNCTION", 0],
             ["RETURN", 1],
         ], name="make_fn")
-        fn = run_to_completion(make_callable(fn_code, fn_ns)())
+        fn = await make_callable(fn_code, fn_ns)()
 
         code, ns = build_expr([
             ["VAR", "apply"],
@@ -191,7 +198,7 @@ class TestNamespaceAndCall(CevalTest):
             ["CALL", 1],
             ["RETURN", 1],
         ], values={"apply": lib.apply, "fn": fn})
-        result = run_to_completion(make_callable(code, ns)())
+        result = await make_callable(code, ns)()
         self.assertEqual(result, 42)
 
 

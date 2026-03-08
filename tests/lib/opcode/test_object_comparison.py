@@ -18,10 +18,8 @@ Tests for OBJECT_EQ opcodes.
 :license: GNU General Public License v3
 """
 
-import unittest
-
 from tests import make_callable
-from tests.lib.opcode import CevalTest, build_expr, run_to_completion
+from tests.lib.opcode import CevalTest, build_expr
 
 
 class TestObjectComparisonOpcodes(CevalTest):
@@ -31,126 +29,124 @@ class TestObjectComparisonOpcodes(CevalTest):
     OBJECT_IS_NOT, OBJECT_IS_INSTANCE, OBJECT_IS_SUBCLASS
     """
 
-    def test_object_eq(self):
+    async def test_object_eq(self):
         code, ns = build_expr([
             ["CONST", 42],
             ["CONST", 42],
             ["OBJECT_EQ", 0],
             ["RETURN", 1],
         ])
-        self.assertEqual(run_to_completion(make_callable(code, ns)()), True)
+        self.assertEqual(await make_callable(code, ns)(), True)
 
 
-    def test_object_ne(self):
+    async def test_object_ne(self):
         code, ns = build_expr([
             ["CONST", 1],
             ["CONST", 2],
             ["OBJECT_NE", 0],
             ["RETURN", 1],
         ])
-        self.assertEqual(run_to_completion(make_callable(code, ns)()), True)
+        self.assertEqual(await make_callable(code, ns)(), True)
 
 
-    def test_object_lt(self):
+    async def test_object_lt(self):
         code, ns = build_expr([
             ["CONST", 1],
             ["CONST", 2],
             ["OBJECT_LT", 0],
             ["RETURN", 1],
         ])
-        self.assertEqual(run_to_completion(make_callable(code, ns)()), True)
+        self.assertEqual(await make_callable(code, ns)(), True)
 
 
-    def test_object_le(self):
+    async def test_object_le(self):
         code, ns = build_expr([
             ["CONST", 2],
             ["CONST", 2],
             ["OBJECT_LE", 0],
             ["RETURN", 1],
         ])
-        self.assertEqual(run_to_completion(make_callable(code, ns)()), True)
+        self.assertEqual(await make_callable(code, ns)(), True)
 
 
-    def test_object_gt(self):
+    async def test_object_gt(self):
         code, ns = build_expr([
             ["CONST", 3],
             ["CONST", 2],
             ["OBJECT_GT", 0],
             ["RETURN", 1],
         ])
-        self.assertEqual(run_to_completion(make_callable(code, ns)()), True)
+        self.assertEqual(await make_callable(code, ns)(), True)
 
 
-    def test_object_ge(self):
+    async def test_object_ge(self):
         code, ns = build_expr([
             ["CONST", 2],
             ["CONST", 2],
             ["OBJECT_GE", 0],
             ["RETURN", 1],
         ])
-        self.assertEqual(run_to_completion(make_callable(code, ns)()), True)
+        self.assertEqual(await make_callable(code, ns)(), True)
 
 
-    def test_object_in(self):
+    async def test_object_in(self):
         code, ns = build_expr([
             ["CONST", 2],
             ["CONST", [1, 2, 3]],
             ["OBJECT_IN", 0],
             ["RETURN", 1],
         ])
-        self.assertEqual(run_to_completion(make_callable(code, ns)()), True)
+        self.assertEqual(await make_callable(code, ns)(), True)
 
 
-    def test_object_not_in(self):
+    async def test_object_not_in(self):
         code, ns = build_expr([
             ["CONST", 0],
             ["CONST", [1, 2, 3]],
             ["OBJECT_NOT_IN", 0],
             ["RETURN", 1],
         ])
-        self.assertEqual(run_to_completion(make_callable(code, ns)()), True)
+        self.assertEqual(await make_callable(code, ns)(), True)
 
 
-    def test_object_is(self):
+    async def test_object_is(self):
         code, ns = build_expr([
             ["CONST", None],
             ["CONST", None],
             ["OBJECT_IS", 0],
             ["RETURN", 1],
         ])
-        self.assertEqual(run_to_completion(make_callable(code, ns)()), True)
+        self.assertEqual(await make_callable(code, ns)(), True)
 
 
-    def test_object_is_not(self):
+    async def test_object_is_not(self):
         code, ns = build_expr([
             ["CONST", []],
             ["CONST", []],
             ["OBJECT_IS_NOT", 0],
             ["RETURN", 1],
         ])
-        self.assertEqual(run_to_completion(make_callable(code, ns)()), True)
+        self.assertEqual(await make_callable(code, ns)(), True)
 
 
-    def test_object_is_instance(self):
+    async def test_object_is_instance(self):
         code, ns = build_expr([
             ["CONST", 42],
             ["CONST", int],
             ["OBJECT_IS_INSTANCE", 1],
             ["RETURN", 1],
         ])
-        self.assertEqual(run_to_completion(make_callable(code, ns)()), True)
+        self.assertEqual(await make_callable(code, ns)(), True)
 
 
-    def test_object_is_subclass(self):
+    async def test_object_is_subclass(self):
         code, ns = build_expr([
             ["CONST", bool],
             ["CONST", int],
             ["OBJECT_IS_SUBCLASS", 1],
             ["RETURN", 1],
         ])
-        self.assertEqual(run_to_completion(make_callable(code, ns)()), True)
+        self.assertEqual(await make_callable(code, ns)(), True)
 
-
-# The end.
 
 # The end.

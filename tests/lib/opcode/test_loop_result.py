@@ -18,10 +18,8 @@ Tests for BREAK/CONTINUE result values opcodes.
 :license: GNU General Public License v3
 """
 
-import unittest
-
 from tests import make_callable
-from tests.lib.opcode import CevalTest, build_expr, run_to_completion
+from tests.lib.opcode import CevalTest, build_expr
 
 
 class TestLoopResultOpcodes(CevalTest):
@@ -38,7 +36,7 @@ class TestLoopResultOpcodes(CevalTest):
     POP_LOOP pushes region->result as the loop expression value.
     """
 
-    def test_break_with_single_value(self):
+    async def test_break_with_single_value(self):
         """
         BREAK 1 pops one value and uses it as the loop result
         """
@@ -53,11 +51,11 @@ class TestLoopResultOpcodes(CevalTest):
             # BREAK pushed the result (42)
             ["RETURN", 1],
         ])
-        result = run_to_completion(make_callable(code, ns)())
+        result = await make_callable(code, ns)()
         self.assertEqual(result, 42)
 
 
-    def test_break_with_multiple_values_creates_tuple(self):
+    async def test_break_with_multiple_values_creates_tuple(self):
         """
         BREAK 3 pops three values and creates a tuple result
         """
@@ -74,11 +72,11 @@ class TestLoopResultOpcodes(CevalTest):
             # BREAK pushed the result (1, 2, 3)
             ["RETURN", 1],
         ])
-        result = run_to_completion(make_callable(code, ns)())
+        result = await make_callable(code, ns)()
         self.assertEqual(result, (1, 2, 3))
 
 
-    def test_continue_with_single_value(self):
+    async def test_continue_with_single_value(self):
         """
         CONTINUE 1 pops one value and updates region->result
         """
@@ -103,12 +101,12 @@ class TestLoopResultOpcodes(CevalTest):
             # POP_LOOP pushed the last continue result
             ["RETURN", 1],
         ], values={"n": 0})
-        result = run_to_completion(make_callable(code, ns)())
+        result = await make_callable(code, ns)()
         # Loop runs 3 times: n=1, n=2, n=3; last continue was with n=2
         self.assertEqual(result, 2)
 
 
-    def test_pop_loop_returns_loop_result(self):
+    async def test_pop_loop_returns_loop_result(self):
         """
         POP_LOOP pushes region->result (None when no break/continue)
         """
@@ -120,11 +118,11 @@ class TestLoopResultOpcodes(CevalTest):
             # POP_LOOP pushed None (initial result)
             ["RETURN", 1],
         ])
-        result = run_to_completion(make_callable(code, ns)())
+        result = await make_callable(code, ns)()
         self.assertIsNone(result)
 
 
-    def test_foreach_break_with_value(self):
+    async def test_foreach_break_with_value(self):
         """
         FOREACH BREAK 1 uses the value as the loop result
         """
@@ -157,7 +155,8 @@ class TestLoopResultOpcodes(CevalTest):
             # BREAK or POP_LOOP pushed the result
             ["RETURN", 1],
         ])
-        result = run_to_completion(make_callable(code, ns)())
+        result = await make_callable(code, ns)()
         self.assertEqual(result, 99)
+
 
 # The end.

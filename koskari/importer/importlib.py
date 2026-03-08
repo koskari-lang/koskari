@@ -113,17 +113,19 @@ class KoskariSourceFileLoader(FileLoader):
     def create_module(self, spec):
         return None
 
+
     def get_source(self, fullname):
         return self.get_data(self.get_filename(fullname)).decode('utf-8')
 
-    def exec_module(self, module):
+
+    async def exec_module_async(self, module):
         filename = self.get_filename(module.__name__)
 
-        ki_mod = new_module(module.__name__,
+        ki_mod = await new_module(module.__name__,
                             package=getattr(module, '__package__', None))
         init_module(ki_mod, filename, spec=getattr(module, '__spec__', None))
 
-        run_sync(load_module_async(ki_mod))
+        await load_module_async(ki_mod)
 
         # Copy all non-dunder bindings from the koskari namespace back
         # to the Python module so that standard attribute access works.
@@ -134,6 +136,9 @@ class KoskariSourceFileLoader(FileLoader):
                 setattr(module, name, val)
             except AttributeError:
                 pass
+
+    def exec_module(self, module):
+        return run_sync(self.exec_module_async(module))
 
 
 class KoskariFileFinder(FileFinder):

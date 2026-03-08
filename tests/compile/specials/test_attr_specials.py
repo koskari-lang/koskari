@@ -24,17 +24,17 @@ from . import SpecialsTestCase
 
 class TestAttrSpecial(SpecialsTestCase):
 
-    def test_attr_loads_attribute(self):
+    async def test_attr_loads_attribute(self):
         obj = SimpleNamespace(value=10)
         src_str = "(compile/attr obj value)"
         expr, mod = self.compile_expr(src_str, obj=obj)
-        result = expr().run()
+        result = await expr()
         self.assertEqual(10, result)
 
 
 class TestSetAttrSpecial(SpecialsTestCase):
 
-    def test_set_attr_then_read(self):
+    async def test_set_attr_then_read(self):
         obj = SimpleNamespace(x=0)
         src_str = """
         (compile/begin
@@ -42,14 +42,14 @@ class TestSetAttrSpecial(SpecialsTestCase):
           (compile/attr obj x))
         """
         expr, mod = self.compile_expr(src_str, obj=obj)
-        result = expr().run()
+        result = await expr()
         self.assertEqual(42, result)
         self.assertEqual(42, obj.x)
 
 
 class TestRefAttrSpecial(SpecialsTestCase):
 
-    def test_ref_attr_deref(self):
+    async def test_ref_attr_deref(self):
         def deref(r):
             return r.deref()
 
@@ -58,52 +58,52 @@ class TestRefAttrSpecial(SpecialsTestCase):
         (compile/call deref (compile/ref-attr obj count))
         """
         expr, mod = self.compile_expr(src_str, obj=obj, deref=deref)
-        result = expr().run()
+        result = await expr()
         self.assertEqual(5, result)
 
 
 class TestDelAttrSpecial(SpecialsTestCase):
 
-    def test_del_attr_returns_none(self):
+    async def test_del_attr_returns_none(self):
         obj = SimpleNamespace(temporary=100)
         src_str = "(compile/del-attr obj temporary)"
         expr, mod = self.compile_expr(src_str, obj=obj)
-        result = expr().run()
+        result = await expr()
         self.assertIsNone(result)
         self.assertFalse(hasattr(obj, "temporary"))
 
 
 class TestDottedFormExpansion(SpecialsTestCase):
 
-    def test_dotted_symbol_loads_attribute(self):
+    async def test_dotted_symbol_loads_attribute(self):
         foo = SimpleNamespace(bar=42)
         src_str = "foo.bar"
         expr, mod = self.compile_expr(src_str, foo=foo)
-        result = expr().run()
+        result = await expr()
         self.assertEqual(42, result)
 
 
-    def test_dotted_symbol_multi_level(self):
+    async def test_dotted_symbol_multi_level(self):
         obj = SimpleNamespace(foo=SimpleNamespace(bar=99))
         src_str = "obj.foo.bar"
         expr, mod = self.compile_expr(src_str, obj=obj)
-        result = expr().run()
+        result = await expr()
         self.assertEqual(99, result)
 
 
-    def test_dotted_form_as_call(self):
+    async def test_dotted_form_as_call(self):
         foo = SimpleNamespace(bar=lambda a, b: a + b)
         src_str = "(foo.bar 1 2)"
         expr, mod = self.compile_expr(src_str, foo=foo)
-        result = expr().run()
+        result = await expr()
         self.assertEqual(3, result)
 
 
-    def test_simple_dotted_no_split(self):
+    async def test_simple_dotted_no_split(self):
         foo = 100
         src_str = "foo"
         expr, mod = self.compile_expr(src_str, foo=foo)
-        result = expr().run()
+        result = await expr()
         self.assertEqual(100, result)
 
 

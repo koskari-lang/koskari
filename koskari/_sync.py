@@ -32,8 +32,6 @@ __all__ = ('as_coroutine', 'run_sync', 'iter_sync')
 
 _executor = None
 _executor_lock = threading.Lock()
-
-
 def _get_executor_loop():
     """
     Return the event loop for the dedicated executor thread.
@@ -93,8 +91,12 @@ def run_sync(awaitable):
 
     Accepts arbitrary awaitables; wraps non-coroutines via as_coroutine.
     If no event loop is running in the current thread, uses asyncio.run().
-    If a loop is already running (e.g. in Jupyter or an async app), runs
-    the awaitable in a dedicated executor thread to avoid deadlock.
+    If a loop is already running, uses the executor. Inline drain is not used
+    because it deadlocks when run_sync is called from within an async task
+    (e.g. Box.new from VM, or import during load_module_async); in those
+    cases we are already inside a loop callback and nesting _run_once
+    deadlocks. Nested run_sync (sync -> run_sync -> async -> sync -> run_sync)
+    also uses the executor via the same path.
     """
 
     if not asyncio.iscoroutine(awaitable):
@@ -104,8 +106,7 @@ def run_sync(awaitable):
         loop = _get_executor_loop()
         future = asyncio.run_coroutine_threadsafe(awaitable, loop)
         return future.result()
-    else:
-        return asyncio.run(awaitable)
+    return asyncio.run(awaitable)
 
 
 class SyncIterator:
