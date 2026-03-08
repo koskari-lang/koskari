@@ -28,7 +28,9 @@ from ..exceptions import CompilerError
 from ..lib import car, cdr, cons, nil, symbol
 from ..matcher import (BindingsResult, BindingResult, extract_binder_symbols,
                        FormalsResult,
-                       is_binder_spec, is_scope_region_spec, match)
+                       is_binder_spec, is_scope_region_spec, match,
+                       BIND, LITERAL_SYM, MATCH, REPEAT, REST,
+                       RepeatResult)
 from ..types import is_pair, is_proper, is_symbol, unpack
 
 
@@ -36,6 +38,12 @@ _ellipsis = symbol("...")
 _tag_syntax_rules = symbol("syntax/rules")
 _tag_list = symbol("syntax/list")
 _tag_cons = symbol("syntax/cons")
+
+_SYNTAX_RULES_HEAD_PATTERN = MATCH(
+    LITERAL_SYM("syntax-rules"),
+    MATCH(BIND("literals"), REST("rules")))
+
+_SYNTAX_RULE_PATTERN = MATCH(REPEAT("rules", MATCH(BIND("rule"))))
 
 
 def _to_list(value):
@@ -139,6 +147,15 @@ def _recurse_target(val):
             out.append(expr)
         for _kw, expr in (val.kwonly or ()):
             out.append(expr)
+        return out
+    if isinstance(val, RepeatResult):
+        out = []
+        for res, _sp in val.matches:
+            for v in res.values():
+                if hasattr(v, 'source') and v.source is not None:
+                    out.append(v.source)
+                elif v is not None and not isinstance(v, (dict, list)):
+                    out.append(v)
         return out
     if hasattr(val, 'source'):
         return val.source
@@ -467,32 +484,32 @@ def build_syntax_rules_transformer(name, spec):
     Parse (syntax-rules (LIT ...) ((PATTERN) TEMPLATE) ...) into transformer.
     """
 
-    if not is_pair(spec):
+    head_m = match(spec, _SYNTAX_RULES_HEAD_PATTERN)
+    if head_m is None:
         raise CompilerError("define-syntax requires a syntax-rules form", spec)
 
-    head, tail = spec
-    if not (is_symbol(head) and str(head) == "syntax-rules"):
-        raise CompilerError("define-syntax supports syntax-rules only", spec)
+    literals_expr = head_m["literals"].source
+    rules_expr = head_m["rules"].source
 
-    if not is_pair(tail):
-        raise CompilerError("syntax-rules requires literals list", spec)
-
-    literals_expr, rules_expr = tail
     literals = frozenset(_to_list(literals_expr))
-    # Syntax name is implicitly a literal for pattern matching
     literals = literals | {name}
-    rules = []
 
-    if rules_expr is nil:
+    rules_m = match(rules_expr, _SYNTAX_RULE_PATTERN)
+    if rules_m is None or not rules_m["rules"].matches:
         raise CompilerError("syntax-rules requires at least one rule", spec)
 
-    for raw_rule in unpack(rules_expr):
+    rules = []
+    for res, _sp in rules_m["rules"].matches:
+        raw_rule = res["rule"].source
         if not is_pair(raw_rule):
             raise CompilerError("invalid syntax-rules rule", raw_rule)
-        pattern_expr, template_tail = raw_rule
-        if not is_pair(template_tail) or template_tail[1] is not nil:
-            raise CompilerError("syntax-rules rule must have pattern and template", raw_rule)
-        template_expr = template_tail[0]
+        pattern_expr = car(raw_rule)
+        template_tail = cdr(raw_rule)
+        if not is_proper(template_tail) or cdr(template_tail) is not nil:
+            raise CompilerError(
+                "syntax-rules rule must have pattern and template",
+                raw_rule)
+        template_expr = car(template_tail)
         rules.append(SyntaxRule(pattern_expr, template_expr))
 
     return SyntaxRulesTransformer(name, literals, rules)

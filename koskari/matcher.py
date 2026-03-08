@@ -36,6 +36,7 @@ __all__ = (
     'MatchResult',
     'Matcher',
     'matcher',
+    'RepeatResult',
 
     'ANY_ORDER',
     'BIND',
@@ -47,6 +48,7 @@ __all__ = (
     'MATCH',
     'OPT',
     'PAIR',
+    'REPEAT',
     'REST',
     'SYMBOL',
     'VALUE',
@@ -145,6 +147,7 @@ _tag_any_order = symbol('matcher/any-order')
 _tag_expr = symbol('matcher/expr')
 _tag_define = symbol('matcher/define')
 _tag_value = symbol('matcher/value')
+_tag_repeat = symbol('matcher/repeat')
 
 
 class MatchResult:
@@ -222,6 +225,19 @@ class BindingResult(MatchResult):
         super().__init__(source, source_pos)
         self.name = name
         self.value = value
+
+
+class RepeatResult(MatchResult):
+    """
+    Result for REPEAT: source (consumed list as pair), source_pos, matches.
+    matches: list of (result_dict, specs_dict) per repetition.
+    """
+
+    __slots__ = ('matches',)
+
+    def __init__(self, source, source_pos=None, matches=None):
+        super().__init__(source, source_pos)
+        self.matches = matches if matches is not None else []
 
 
 def _slot_key(slot):
@@ -580,6 +596,95 @@ class _OptMatcher(Matcher):
         return (_tag_opt, elem_t)
 
 
+@matcher(_tag_repeat)
+class _RepeatMatcher(BindingMatcher):
+    """
+    Match sub-matcher 1+ times (or min+), bind slot to RepeatResult with
+    list of (result_dict, specs_dict) per repetition.
+    """
+
+    def __init__(self, slot, elem, min_count=1):
+        self.slot = slot
+        self._key = _slot_key(slot)
+        self.elem = elem
+        self.min_count = min_count
+
+
+    @classmethod
+    def from_payload(cls, payload, deserialize):
+        if len(payload) < 2:
+            raise ValueError('repeat expects at least 2 payload, got %d' % len(payload))
+        slot = payload[0]
+        elem = deserialize(payload[1])
+        min_count = payload[2] if len(payload) >= 3 else 1
+        return cls(slot, elem, min_count)
+
+
+    def match(self, source, literals, result, specs=None):
+        if source is nil:
+            return (None, False)
+
+        matcher = _resolve_spec(self.elem, literals)
+        if matcher is None:
+            return (None, False)
+
+        matches = []
+        current = source
+
+        while current is not nil:
+            sub_result = {}
+            sub_specs = {}
+            rem, ok = _do_match(matcher, current, literals, sub_result, sub_specs)
+            if not ok:
+                break
+            matches.append((dict(sub_result), dict(sub_specs)))
+            current = rem
+
+        if len(matches) < self.min_count:
+            return (None, False)
+
+        elements = []
+        s = source
+        while s is not current and s is not nil:
+            elements.append(car(s))
+            s = cdr(s)
+        consumed_source = cons(*elements, nil) if elements else nil
+
+        pos = get_position(source) if is_pair(source) else None
+        result[self._key] = RepeatResult(consumed_source, pos, matches)
+        if specs is not None:
+            specs[self._key] = self
+        return (current, True)
+
+
+    def extract_binder_symbols(self, value):
+        for res, sp in value.matches:
+            for key, spec in sp.items():
+                if is_binder_spec(spec) and key in res:
+                    yield from extract_binder_symbols(spec, res[key])
+
+
+    def get_recurse_targets(self, value):
+        for res, sp in value.matches:
+            for key, spec in sp.items():
+                targets = getattr(spec, 'get_recurse_targets', lambda v: None)(res.get(key))
+                if targets is not None:
+                    yield from targets
+
+
+    def to_tuple(self):
+        elem_t = (self.elem.to_tuple()
+                  if hasattr(self.elem, 'to_tuple') else self.elem)
+        if self.min_count != 1:
+            return (_tag_repeat,
+                    symbol(self._key) if isinstance(self.slot, str) else self.slot,
+                    elem_t,
+                    self.min_count)
+        return (_tag_repeat,
+                symbol(self._key) if isinstance(self.slot, str) else self.slot,
+                elem_t)
+
+
 @matcher(_tag_match)
 class _MatchMatcher(Matcher):
     """
@@ -786,6 +891,15 @@ def REST(slot):
     """
 
     return _RestMatcher(slot)
+
+
+def REPEAT(slot, elem, min_count=1):
+    """
+    Match sub-matcher min_count or more times, bind slot to RepeatResult
+    with list of (result_dict, specs_dict) per repetition.
+    """
+
+    return _RepeatMatcher(slot, elem, min_count)
 
 
 def EXPR(slot):

@@ -31,9 +31,12 @@ from koskari.matcher import (
     MATCH,
     OPT,
     PAIR,
+    REPEAT,
     REST,
     SYMBOL,
     VALUE,
+    extract_binder_symbols,
+    from_tuple,
     match,
 )
 
@@ -324,6 +327,75 @@ class TestMatchWithSpecs(unittest.IsolatedAsyncioTestCase):
     async def test_with_specs_no_match_returns_none(self):
         result = match(nil, MATCH(BIND('x')), with_specs=True)
         self.assertIsNone(result)
+
+
+class TestMatchRepeat(unittest.IsolatedAsyncioTestCase):
+
+    async def test_repeat_one_or_more_matches(self):
+        a = symbol('a')
+        b = symbol('b')
+        c = symbol('c')
+        src = cons(a, cons(b, cons(c, nil)))
+        result = match(src, MATCH(REPEAT('items', MATCH(VALUE('x')))))
+        self.assertIsNotNone(result)
+        self.assertEqual(len(result['items'].matches), 3)
+        self.assertEqual(result['items'].matches[0][0]['x'].source, a)
+        self.assertEqual(result['items'].matches[1][0]['x'].source, b)
+        self.assertEqual(result['items'].matches[2][0]['x'].source, c)
+
+    async def test_repeat_single_match(self):
+        x_sym = symbol('x')
+        src = cons(x_sym, nil)
+        result = match(src, MATCH(REPEAT('items', MATCH(LITERAL_SYM('x')))))
+        self.assertIsNotNone(result)
+        self.assertEqual(len(result['items'].matches), 1)
+
+    async def test_repeat_fails_when_zero(self):
+        y_sym = symbol('y')
+        src = cons(y_sym, nil)
+        result = match(src, MATCH(REPEAT('items', MATCH(LITERAL_SYM('x')))))
+        self.assertIsNone(result)
+
+    async def test_repeat_with_binding(self):
+        from koskari.compile.helpers import BINDING
+
+        binding1 = cons(symbol('x'), cons(1, nil))
+        binding2 = cons(symbol('y'), cons(2, nil))
+        src = cons(binding1, cons(binding2, nil))
+        pat = MATCH(REPEAT('bindings', MATCH(BINDING('b'))))
+        result = match(src, pat)
+        self.assertIsNotNone(result)
+        self.assertEqual(len(result['bindings'].matches), 2)
+        b1 = result['bindings'].matches[0][0]['b']
+        b2 = result['bindings'].matches[1][0]['b']
+        self.assertEqual(b1.name, symbol('x'))
+        self.assertEqual(b2.name, symbol('y'))
+        syms = set(extract_binder_symbols(pat.specs[0], result['bindings']))
+        self.assertEqual({str(s) for s in syms}, {'x', 'y'})
+
+    async def test_repeat_to_tuple_roundtrip(self):
+        pat = REPEAT('x', MATCH(BIND('y')))
+        restored = from_tuple(pat.to_tuple())
+        x = symbol('x')
+        src = cons(x, nil)
+        result = match(src, MATCH(restored))
+        self.assertIsNotNone(result)
+        self.assertEqual(len(result['x'].matches), 1)
+        self.assertEqual(result['x'].matches[0][0]['y'].source, x)
+
+    async def test_repeat_consumes_until_fail(self):
+        one = symbol('1')
+        two = symbol('2')
+        foo = symbol('foo')
+        three = symbol('3')
+        src = cons(one, cons(two, cons(foo, cons(three, nil))))
+        result = match(src, MATCH(REPEAT('nums', MATCH(VALUE('n')))))
+        self.assertIsNotNone(result)
+        self.assertEqual(len(result['nums'].matches), 4)
+        self.assertEqual(result['nums'].matches[0][0]['n'].source, one)
+        self.assertEqual(result['nums'].matches[1][0]['n'].source, two)
+        self.assertEqual(result['nums'].matches[2][0]['n'].source, foo)
+        self.assertEqual(result['nums'].matches[3][0]['n'].source, three)
 
 
 # The end.
