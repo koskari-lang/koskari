@@ -42,14 +42,14 @@ async def main():
     t = bench_sync(churn_loop_p, 5_000_000, 1)
     announce("python churn_loop", t, t / RUNS)
 
-    t = bench_sync(churn_tree_p, 18, 1)
+    t = bench_sync(churn_tree_p, 18, 50)
     announce("python churn_tree", t, t / RUNS)
 
     # Koskari versions
     t = await bench_async(churn_loop_k, 5_000_000, 1)
     announce("koskari churn_loop", t, t / RUNS)
 
-    t = await bench_async(churn_tree_k, 18, 1)
+    t = await bench_async(churn_tree_k, 18, 50)
     announce("koskari churn_tree", t, t / RUNS)
 
 
