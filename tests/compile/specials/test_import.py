@@ -20,9 +20,7 @@ fully-built C extension, which is exercised by the importer integration tests
 in tests/importer/.
 """
 
-
-import unittest
-
+from koskari.dis import dis
 from koskari.lib import OpCode
 from koskari.exceptions import SpecialError
 
@@ -127,10 +125,14 @@ class TestSpecialImportAbsolute(_OpcodeHelper, SpecialsTestCase):
 
 
     async def test_simple_import_ends_with_const_none(self):
-        code = self.compile_to_code('(import os)')
+        # CONST(None),RETURN(1) is squished into RETURN(0) so we need to fake
+        # a CALL(1) to verify the CONST(None) is present
+
+        code = self.compile_to_code('(foo (import os))')
         instrs = self.instructions(code)
-        self.assertEqual(OpCode.KOS_OP_CONST, instrs[-1][0])
-        self.assertIsNone(instrs[-1][1])
+        dis(code)
+        self.assertEqual(OpCode.KOS_OP_CONST, instrs[-2][0])
+        self.assertEqual(None, instrs[-2][1])
 
 
     async def test_dotted_import_uses_full_name(self):
@@ -249,10 +251,14 @@ class TestSpecialImportFrom(_OpcodeHelper, SpecialsTestCase):
 
 
     async def test_import_from_ends_with_const_none(self):
-        code = self.compile_to_code('(import-from os path)')
+        # CONST(None),RETURN(1) is squished into RETURN(0) so we need to fake
+        # a CALL(1) to verify the CONST(None) is present
+
+        code = self.compile_to_code('(foo (import-from os path))')
         instrs = self.instructions(code)
-        self.assertEqual(OpCode.KOS_OP_CONST, instrs[-1][0])
-        self.assertIsNone(instrs[-1][1])
+        dis(code)
+        self.assertEqual(OpCode.KOS_OP_CONST, instrs[-2][0])
+        self.assertEqual(None, instrs[-2][1])
 
 
     async def test_import_from_with_alias(self):

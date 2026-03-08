@@ -269,6 +269,33 @@ def _is_tagged_tuple(tup):
     return is_symbol(tup[0])
 
 
+def _check_duplicate_slot(key, value, matcher_obj, result, specs):
+    """
+    Before writing to result[key], validate if key already exists from a prior
+    capture. Return True if OK to write; return False to fail the match; raise
+    if matcher type differs.
+    """
+
+    if key not in result:
+        return True
+    if specs is not None and key in specs:
+        if type(matcher_obj) != type(specs[key]):
+            raise ValueError(
+                "duplicate slot %r with differing matcher type: %s vs %s"
+                % (key,
+                   type(matcher_obj).__name__,
+                   type(specs[key]).__name__))
+    existing = result[key]
+    if hasattr(value, 'matches'):
+        if not (hasattr(existing, 'source') and hasattr(existing, 'matches')):
+            return False
+        if existing.source != value.source or existing.matches != value.matches:
+            return False
+    else:
+        existing_val = existing.source if hasattr(existing, 'source') else existing
+        if existing_val != value:
+            return False
+    return True
 
 
 def _capture_head(source, key, result, matcher_obj, specs=None, predicate=None):
@@ -280,6 +307,8 @@ def _capture_head(source, key, result, matcher_obj, specs=None, predicate=None):
         return (None, False)
     head, tail = source
     if predicate is not None and not predicate(head):
+        return (None, False)
+    if not _check_duplicate_slot(key, head, matcher_obj, result, specs):
         return (None, False)
     result[key] = MatchResult(head, get_position(source))
     if specs is not None:
@@ -474,6 +503,8 @@ class _RestMatcher(Matcher):
         if source is nil:
             return (None, False)
         pos = get_position(source) if is_pair(source) else None
+        if not _check_duplicate_slot(self._key, source, self, result, specs):
+            return (None, False)
         result[self._key] = MatchResult(source, pos)
         if specs is not None:
             specs[self._key] = self
@@ -627,7 +658,11 @@ class _RepeatMatcher(BindingMatcher):
         consumed_source = cons(*elements, nil) if elements else nil
 
         pos = get_position(source) if is_pair(source) else None
-        result[self._key] = RepeatResult(consumed_source, pos, matches)
+        repeat_result = RepeatResult(consumed_source, pos, matches)
+        if not _check_duplicate_slot(
+                self._key, repeat_result, self, result, specs):
+            return (None, False)
+        result[self._key] = repeat_result
         if specs is not None:
             specs[self._key] = self
         return (current, True)
@@ -695,7 +730,10 @@ class _MatchMatcher(Matcher):
                         return (None, False)
                 if self.key is not None:
                     key = _slot_key(self.key)
-                    result[key] = MatchResult(elem, get_position(source))
+                    match_result = MatchResult(elem, get_position(source))
+                    if not _check_duplicate_slot(key, elem, self, result, specs):
+                        return (None, False)
+                    result[key] = match_result
                     if specs is not None:
                         specs[key] = self
                 return (rest, True)
@@ -938,7 +976,7 @@ def match(
 
     for pat in patterns:
         result = {}
-        specs = {} if with_specs else None
+        specs = {}
         matcher = _resolve_spec(pat)
         if matcher is None:
             continue

@@ -32,7 +32,8 @@ import operator as _op
 
 from ...lib import nil, OpCode, symbol
 from ...exceptions import SpecialError
-from ..helpers import const_only_expr, special
+from ...types import is_pair
+from ..helpers import const_only_expr, is_symbolish, special
 
 
 def _reduce_fold(py_fold, compiler, frag, body):
@@ -611,6 +612,56 @@ def special_aiter(compiler, source, tc=False):
     """
 
     return _unary_op(OpCode.KOS_OP_OBJECT_AITER, compiler, source)
+
+
+_INPLACE_OP_MAP = {
+    symbol('+'): OpCode.KOS_OP_VAR_OBJECT_ADD,
+    symbol('&'): OpCode.KOS_OP_VAR_OBJECT_BIT_AND,
+}
+
+
+@special(symbol("compile/inplace"))
+def special_inplace(compiler, source, tc=False):
+    """
+    Compile (compile/inplace OP VAR VALUE). In-place update: VAR += VALUE
+    or VAR &= VALUE. OP is + or & (or compile/+ or compile/&).
+    """
+
+    called_by, body = source
+    if body is nil or not is_pair(body):
+        raise SpecialError("inplace requires op, var, and value", source)
+
+    op_sym, rest = body
+    if rest is nil or not is_pair(rest):
+        raise SpecialError("inplace requires op, var, and value", source)
+
+    var_sym, rest = rest
+    if rest is nil or not is_pair(rest):
+        raise SpecialError("inplace requires op, var, and value", source)
+
+    value_expr, rest = rest
+    if rest is not nil:
+        raise SpecialError("inplace takes exactly three arguments", source)
+
+    if not is_symbolish(var_sym):
+        raise SpecialError("inplace var must be a symbol", source)
+
+    opcode = _INPLACE_OP_MAP.get(op_sym)
+    if opcode is None:
+        raise SpecialError("unknown inplace operator", source)
+
+    name = str(var_sym)
+    frag = compiler.fragment(called_by)
+
+    if not is_pair(value_expr):
+        frag.position_of(body)
+
+    frag.request_var(name)
+    frag.merge(compiler.full_compile(value_expr))
+    frag.instruction(opcode, name)
+    frag.instruction(OpCode.KOS_OP_CONST, None)
+
+    return frag
 
 
 # The end.

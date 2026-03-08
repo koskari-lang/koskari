@@ -105,6 +105,24 @@ CONST_TYPES = (
 CONST_CONTAINER_TYPES = (tuple, frozenset)
 
 
+def _build_var_to_fast():
+    # Pre-compiled map: VAR opcode -> FAST opcode for convert_fast lowering.
+    # Built by finding each FAST_* opcode and resolving to a matching VAR_*
+    # opcode.
+
+    var_to_fast = {}
+    for opcode in OpCode:
+        opname = opcode.name
+        if not opname.startswith('KOS_OP_FAST'):
+            continue
+        varname = opname.replace('FAST', 'VAR', 1)
+        if hasattr(OpCode, varname):
+            var_to_fast[OpCode[varname]] = opcode
+    return var_to_fast
+
+VAR_TO_FAST = _build_var_to_fast()
+
+
 def _is_const_container(value):
     if not isinstance(value, CONST_CONTAINER_TYPES):
         return False
@@ -690,7 +708,11 @@ class Compiler:
             squished.append((op, arg))
 
         if squished[-1][0] != OpCode.KOS_OP_RETURN:
-            squished.append((OpCode.KOS_OP_RETURN, 1))
+            if squished[-1][0] == OpCode.KOS_OP_CONST \
+               and squished[-1][1] is None:
+                squished[-1] = (OpCode.KOS_OP_RETURN, 0)
+            else:
+                squished.append((OpCode.KOS_OP_RETURN, 1))
 
         return squished
 
@@ -724,8 +746,6 @@ class Compiler:
         if mode == CompilerMode.FUNCTION:
             push_nspec(base_nspec)
 
-        translate = OpCode.KOS_OP_FAST - OpCode.KOS_OP_VAR
-
         nspec = None
         for op, arg in instr:
             if op == OpCode.KOS_OP_CONST:
@@ -743,13 +763,13 @@ class Compiler:
             elif op in (OpCode.KOS_OP_POP_NS, OpCode.KOS_OP_POP_COLLECT):
                 pop_nspec()
 
-            elif nstack and (OpCode.KOS_OP_VAR <= op <= OpCode.KOS_OP_VAR_STORE):
+            elif nstack and op in VAR_TO_FAST:
                 try:
                     index = findex.index(arg)
                 except ValueError:
                     pass
                 else:
-                    op = OpCode(op + translate)
+                    op = VAR_TO_FAST[op]
                     arg = index
 
             result.append((op, arg))

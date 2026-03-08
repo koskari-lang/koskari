@@ -398,4 +398,52 @@ class TestMatchRepeat(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(result['nums'].matches[3][0]['n'].source, three)
 
 
+class TestDuplicateSlotValidation(unittest.IsolatedAsyncioTestCase):
+
+    async def test_duplicate_slot_same_value_succeeds(self):
+        a = symbol('a')
+        src = cons(a, cons(a, nil))
+        result = match(src, MATCH(BIND('x'), BIND('x')))
+        self.assertIsNotNone(result)
+        self.assertEqual(result['x'].source, a)
+
+    async def test_duplicate_slot_different_value_fails(self):
+        a = symbol('a')
+        b = symbol('b')
+        src = cons(a, cons(b, nil))
+        result = match(src, MATCH(BIND('x'), BIND('x')))
+        self.assertIsNone(result)
+
+    async def test_duplicate_slot_different_matcher_type_raises(self):
+        foo = symbol('foo')
+        bar = symbol('bar')
+        src = cons(foo, cons(bar, nil))
+        with self.assertRaises(ValueError) as ctx:
+            match(src, MATCH(BIND('x'), SYMBOL('x')))
+        self.assertIn('duplicate slot', str(ctx.exception))
+        self.assertIn('differing matcher type', str(ctx.exception))
+
+    async def test_any_order_duplicate_slot_same_value_succeeds(self):
+        x = symbol('x')
+        src = cons(x, cons(x, nil))
+        pat = MATCH(ANY_ORDER(
+            MATCH(BIND('v')),
+            MATCH(BIND('v')),
+        ))
+        result = match(src, pat)
+        self.assertIsNotNone(result)
+        self.assertEqual(result['v'].source, x)
+
+    async def test_any_order_duplicate_slot_different_value_fails(self):
+        a = symbol('a')
+        b = symbol('b')
+        src = cons(a, cons(b, nil))
+        pat = MATCH(ANY_ORDER(
+            MATCH(BIND('v')),
+            MATCH(BIND('v')),
+        ))
+        result = match(src, pat)
+        self.assertIsNone(result)
+
+
 # The end.

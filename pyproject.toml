@@ -1,7 +1,7 @@
 [project]
 name = "koskari"
 requires-python = ">=3.9"
-dynamic = ["version", "readme", "authors", "license", "classifiers", "optional-dependencies", "dependencies", "scripts", "description"]
+dynamic = ["authors", "classifiers", "dependencies", "description", "license", "optional-dependencies", "readme", "scripts", "version"]
 
 [build-system]
 requires = ["setuptools", "wheel"]

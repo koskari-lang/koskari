@@ -69,10 +69,6 @@
 #include <stdint.h>
 #include <frameobject.h>
 
-
-#define KOS_OP_HANDLER(name)                                            \
-  KOS_OP_INLINE int op_##name(KosContext *ctx, KosEvent *out_ev,        \
-                              KosOp *insn)
 /* Every handler has (ctx, out_ev, insn).  Cast unused parameters to (void)
    to silence warnings and make intent explicit, e.g. (void) out_ev; (void) insn; */
 
@@ -2870,6 +2866,14 @@ static int defer_drive(KosContext *ctx, KosEvent *out_ev, PyObject *defer_obj) {
 
 /*  Includes the implementation of all opcodes from the opcode/ directory.
 */
+
+#define KOS_OP_HANDLER(name)                                            \
+  KOS_OP_INLINE int op_##name(KosContext *ctx, KosEvent *out_ev,        \
+                              KosOp *insn)
+#define KOS_DROP_HANDLER(name)                                          \
+  KOS_OP_INLINE int op_DROP_##name(KosContext *ctx, KosEvent *out_ev,   \
+                                   KosOp *insn)
+#define KOS_DROP 0
 #include "handlers.incl"
 
 

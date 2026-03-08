@@ -64,6 +64,7 @@ from .imports import helper_import_from_sequence, special_import, special_import
 from .object import (
     special_add,
     special_aiter,
+    special_inplace,
     special_bit_and,
     special_bit_invert,
     special_bit_left,
@@ -152,6 +153,7 @@ __all__ = (
     "special_gt",
     "special_if",
     "special_in",
+    "special_inplace",
     "special_is",
     "special_is_not",
     "special_isinstance",
