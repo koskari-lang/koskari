@@ -269,7 +269,25 @@ def _is_tagged_tuple(tup):
     return is_symbol(tup[0])
 
 
-def _resolve_spec(spec, literals):
+
+
+def _capture_head(source, key, result, matcher_obj, specs=None, predicate=None):
+    """
+    Capture source head into result[key], optionally guarded by predicate.
+    """
+
+    if source is nil:
+        return (None, False)
+    head, tail = source
+    if predicate is not None and not predicate(head):
+        return (None, False)
+    result[key] = MatchResult(head, get_position(source))
+    if specs is not None:
+        specs[key] = matcher_obj
+    return (tail, True)
+
+
+def _resolve_spec(spec):
     """
     Resolve spec to matcher: object with match(), or tuple to interpret
     """
@@ -332,13 +350,7 @@ class _BindMatcher(Matcher):
 
 
     def match(self, source, literals, result, specs=None):
-        if source is nil:
-            return (None, False)
-        head, tail = source
-        result[self._key] = MatchResult(head, get_position(source))
-        if specs is not None:
-            specs[self._key] = self
-        return (tail, True)
+        return _capture_head(source, self._key, result, self, specs)
 
 
     def to_tuple(self):
@@ -364,15 +376,7 @@ class _SymbolMatcher(BindingMatcher):
 
 
     def match(self, source, literals, result, specs=None):
-        if source is nil:
-            return (None, False)
-        head, tail = source
-        if not is_symbol(head):
-            return (None, False)
-        result[self._key] = MatchResult(head, get_position(source))
-        if specs is not None:
-            specs[self._key] = self
-        return (tail, True)
+        return _capture_head(source, self._key, result, self, specs, is_symbol)
 
 
     def extract_binder_symbols(self, value):
@@ -407,15 +411,7 @@ class _DefineMatcher(BindingMatcher):
 
 
     def match(self, source, literals, result, specs=None):
-        if source is nil:
-            return (None, False)
-        head, tail = source
-        if not is_symbol(head):
-            return (None, False)
-        result[self._key] = MatchResult(head, get_position(source))
-        if specs is not None:
-            specs[self._key] = self
-        return (tail, True)
+        return _capture_head(source, self._key, result, self, specs, is_symbol)
 
 
     def extract_binder_symbols(self, value):
@@ -447,13 +443,7 @@ class _ValueMatcher(Matcher):
 
 
     def match(self, source, literals, result, specs=None):
-        if source is nil:
-            return (None, False)
-        head, tail = source
-        result[self._key] = MatchResult(head, get_position(source))
-        if specs is not None:
-            specs[self._key] = self
-        return (tail, True)
+        return _capture_head(source, self._key, result, self, specs)
 
 
     def to_tuple(self):
@@ -514,15 +504,7 @@ class _PairMatcher(Matcher):
 
 
     def match(self, source, literals, result, specs=None):
-        if source is nil:
-            return (None, False)
-        head, tail = source
-        if not is_pair(head):
-            return (None, False)
-        result[self._key] = MatchResult(head, get_position(source))
-        if specs is not None:
-            specs[self._key] = self
-        return (tail, True)
+        return _capture_head(source, self._key, result, self, specs, is_pair)
 
 
     def to_tuple(self):
@@ -550,13 +532,7 @@ class _ExprMatcher(Matcher):
 
 
     def match(self, source, literals, result, specs=None):
-        if source is nil:
-            return (None, False)
-        head, tail = source
-        result[self._key] = MatchResult(head, get_position(source))
-        if specs is not None:
-            specs[self._key] = self
-        return (tail, True)
+        return _capture_head(source, self._key, result, self, specs)
 
 
     def to_tuple(self):
@@ -581,7 +557,7 @@ class _OptMatcher(Matcher):
 
 
     def match(self, source, literals, result, specs=None):
-        matcher = _resolve_spec(self.elem, literals)
+        matcher = _resolve_spec(self.elem)
         if matcher is None:
             return (source, True)
         rem, ok = _do_match(matcher, source, literals, result, specs)
@@ -624,7 +600,7 @@ class _RepeatMatcher(BindingMatcher):
         if source is nil:
             return (None, False)
 
-        matcher = _resolve_spec(self.elem, literals)
+        matcher = _resolve_spec(self.elem)
         if matcher is None:
             return (None, False)
 
@@ -637,7 +613,7 @@ class _RepeatMatcher(BindingMatcher):
             rem, ok = _do_match(matcher, current, literals, sub_result, sub_specs)
             if not ok:
                 break
-            matches.append((dict(sub_result), dict(sub_specs)))
+            matches.append((sub_result, sub_specs))
             current = rem
 
         if len(matches) < self.min_count:
@@ -711,7 +687,7 @@ class _MatchMatcher(Matcher):
                 pair_source = cons(car(elem), cons(cdr(elem), nil))
                 current = pair_source
                 for spec in self.specs:
-                    matcher = _resolve_spec(spec, literals)
+                    matcher = _resolve_spec(spec)
                     if matcher is None:
                         return (None, False)
                     current, ok = _do_match(matcher, current, literals, result, specs)
@@ -725,7 +701,7 @@ class _MatchMatcher(Matcher):
                 return (rest, True)
         current = source
         for spec in self.specs:
-            matcher = _resolve_spec(spec, literals)
+            matcher = _resolve_spec(spec)
             if matcher is None:
                 return (None, False)
             current, ok = _do_match(matcher, current, literals, result, specs)
@@ -760,7 +736,7 @@ class _AnyOrderMatcher(Matcher):
         elements = list(unpack(source)) if source is not nil else []
         pool = list(elements)
         for spec in self.specs:
-            matcher = _resolve_spec(spec, literals)
+            matcher = _resolve_spec(spec)
             if matcher is None:
                 return (None, False)
             matched = False
@@ -963,7 +939,7 @@ def match(
     for pat in patterns:
         result = {}
         specs = {} if with_specs else None
-        matcher = _resolve_spec(pat, lit)
+        matcher = _resolve_spec(pat)
         if matcher is None:
             continue
         rem, ok = _do_match(matcher, src, lit, result, specs)
