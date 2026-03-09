@@ -1085,9 +1085,36 @@ static PyObject *weak_ref_get_empty(PyObject *self, void *_unused) {
   PyObject *wr = KosSymbolicRef_VALUE(self);
   if (! wr)
     Py_RETURN_TRUE;
-  if (PyWeakref_GetObject(wr) == Py_None)
-    Py_RETURN_TRUE;
-  Py_RETURN_FALSE;
+
+#if PY_VERSION_HEX >= 0x030D0000
+  {
+    PyObject *obj = NULL;
+    int res = PyWeakref_GetRef(wr, &obj);
+    if (! res) {
+      Py_CLEAR(KosSymbolicRef_VALUE(self));
+      Py_RETURN_TRUE;
+    } else if (res < 0) {
+      // error mode
+      return NULL;
+    } else {
+      Py_XDECREF(obj);
+      Py_RETURN_FALSE;
+    }
+  }
+#else
+  {
+    PyObject *obj = PyWeakref_GetObject(wr);
+    if (obj == Py_None) {
+      Py_CLEAR(KosSymbolicRef_VALUE(self));
+      Py_RETURN_TRUE;
+    } else if (! obj) {
+      // error mode
+      return NULL;
+    } else {
+      Py_RETURN_FALSE;
+    }
+  }
+#endif
 }
 
 
