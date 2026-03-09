@@ -42,7 +42,7 @@ def layout(head_symbol, peers=()):
     """
     Decorator that registers a function as a layout handler.
 
-    The handler must have signature (reader, source, peers) and return
+    The handler must have signature (source, peers) and return
     the parsed form. Optional ``peers`` declares peer block head symbols
     that the parser should gather contiguously after this block.
     """

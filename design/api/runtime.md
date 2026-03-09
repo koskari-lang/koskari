@@ -17,6 +17,8 @@
 
 ### Import System
 
+See [import-system.md](import-system.md) for the full implementation design.
+
 **Import Integration**:
 - Extends Python's `importlib`
 - Supports `.ki` file extension

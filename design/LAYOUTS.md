@@ -27,9 +27,9 @@ the indented body. Inside delimiters, layout mode is disabled and the base
 s-expression reader is used.
 
 **Resolution:** The reader looks up `layout/<head>` in the namespace. If found
-and it is a `LayoutHandler`, that handler's `read(reader, source, peers)` is
-invoked. If not found, the block is treated as a default block and routed
-through `layout/block`.
+and it is a `LayoutHandler`, that handler's `read(source, peers)` is invoked.
+If not found, the block is treated as a default block and routed through
+`layout/block`.
 
 
 ## layout/block (default)

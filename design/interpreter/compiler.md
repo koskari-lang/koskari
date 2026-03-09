@@ -91,9 +91,7 @@
 
 ### To Migrate
 
-- Macro expansion (reader macros, `defmacro`, `defalias`)
-- `try`/`catch`/`finally`, `quasiquote`/unquote
-- Operator infrastructure (arithmetic, comparison, logical operators)
+- Macro expansion (reader macros; `defmacro`, `defalias` — syntax-rules via compile/define-syntax is implemented)
 - Optimization passes (constant folding, dead code elimination, VAR→FAST conversion)
 
 ### To Reconsider

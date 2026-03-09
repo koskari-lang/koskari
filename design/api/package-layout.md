@@ -17,9 +17,12 @@ koskari/
 ├── compile/          # Compiler, ByteCodeFragment, special forms
 │   ├── __init__.py
 │   ├── compiler.py   # Compiler, ByteCodeFragment
-│   # (no exceptions.py; compiler errors live in koskari.exceptions)
 │   ├── helpers.py    # gather_formals, gather_parameters, helper_begin
-│   └── specials.py   # SPECIALS, special_bytecode, etc.
+│   └── specials/     # Special form handlers (conditionals, imports, etc.)
+├── importer/         # Import hooks for .ki files
+│   ├── importlib.py  # KoskariPathFinder, KoskariSourceFileLoader
+│   ├── module.py     # new_module, load_module_async
+│   └── bootstrap.py  # make_builtins
 └── lib/              # C extension (native types and runtime)
     ├── *.c, *.h     # atom, pair, namespace, formals, ref, values, bytecode, eval, ...
 ```
@@ -34,7 +37,7 @@ koskari/
 | Parse errors | `koskari.exceptions` | `ReaderError`, `ReaderSyntaxError`, `FormatStringSyntaxError`, `LayoutError` (subclass `KoskariSyntaxError`) |
 | Compiler errors | `koskari.exceptions` | `CompilerError`, `SpecialError`, `ParametersError`, `UncaughtCompilerError` |
 | Parsing | `koskari.reader` | `Reader`, `LayoutReader`, `SourceStream`, `source_str`, `source_open`, `default_reader` |
-| Compilation | `koskari.compile` | `Compiler`, `ByteCodeFragment`, `SPECIALS` (from compiler.py, specials.py) |
+| Compilation | `koskari.compile` | `Compiler`, `ByteCodeFragment`, `SPECIALS` (from compiler.py, specials/) |
 | Disassembly | `koskari.dis` | `dis`, and internal helpers |
 
 ## Import policy
