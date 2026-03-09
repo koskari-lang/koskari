@@ -79,11 +79,39 @@
          (list 2 font-lock-function-name-face)
          (list 3 font-lock-preprocessor-face))
    ;; Block control keywords (overrides custom names for define, when, etc.)
+   ;; Source: design/SPECIALS.md, design/LAYOUTS.md
    (list (concat "^\\([ \t]*\\)"
-                 "\\(if\\|elif\\|else\\|try\\|except\\|finally\\|begin\\|define\\|when\\)"
+                 "\\(if\\|elif\\|else\\|try\\|except\\|finally\\|begin\\|define\\|when\\|"
+                 "class\\|for-each\\|while\\|dyn-wind\\|with\\|dyn-with\\|"
+                 "define-syntax\\|syntax-rules\\)"
                  "\\b\\([^\n]*?\\)\\(:\\)")
          (list 2 font-lock-keyword-face)
          (list 4 font-lock-preprocessor-face))
+   ;; List-head special forms (first symbol in paren form)
+   (list (concat "(\\s-*\\("
+                 "define\\|if\\|cond\\|when\\|unless\\|and\\|or\\|begin\\|let\\|lambda\\|"
+                 "try\\|raise\\|while\\|for-each\\|break\\|continue\\|"
+                 "import\\|import-from\\|ref\\|attr\\|setq\\|bindq\\|delq\\|refq\\|"
+                 "class\\|define-syntax\\|with\\|dyn-with\\|dyn-wind\\|parameterize\\|"
+                 "call/cc\\|let/cc\\|capture/cc\\|reset\\|shift\\|"
+                 "compile/bytecode\\|compile/begin\\|compile/call\\|compile/lambda\\|"
+                 "compile/let\\|compile/cond\\|compile/if\\|compile/when\\|compile/unless\\|"
+                 "compile/and\\|compile/or\\|compile/try\\|compile/raise\\|"
+                 "compile/while\\|compile/for-each\\|compile/break\\|compile/continue\\|"
+                 "compile/parameterize\\|compile/dyn-wind\\|compile/setq\\|compile/inplace\\|"
+                 "compile/ref\\|compile/refq\\|compile/bindq\\|compile/define\\|"
+                 "compile/define-syntax\\|compile/class\\|compile/delq\\|"
+                 "compile/attr\\|compile/del-attr\\|compile/set-attr\\|compile/ref-attr\\|"
+                 "compile/item\\|compile/ref-item\\|compile/deref\\|compile/del-item\\|"
+                 "compile/set-item\\|compile/quote\\|compile/quasiquote\\|"
+                 "compile/quote-block\\|compile/quasiquote-block\\|compile/apply-layout\\|"
+                 "compile/unquote\\|compile/unquote-splicing\\|"
+                 "compile/car\\|compile/cdr\\|compile/cons\\|"
+                 "compile/call/cc\\|compile/let/cc\\|compile/capture/cc\\|"
+                 "compile/reset\\|compile/shift\\|compile/with\\|compile/dyn-with\\|"
+                 "compile/import\\|compile/import-from"
+                 "\\)\\>")
+         1 font-lock-keyword-face)
    ;; Leading colon keywords (:foo)
    (list ":\\([^ \t\n()\\[\\]{};\"'\x60]+\\)" 1 font-lock-builtin-face)
    ;; Trailing colon keywords (foo:)
