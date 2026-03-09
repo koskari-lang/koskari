@@ -23,7 +23,8 @@ KOS_OP_HANDLER(RETURN) {
   unsigned opa = KosOp_ARG(insn);
   PyObject *val = NULL;
 
-  /* PC already advanced: we are post-RETURN insn dispatch */
+  /* === Phase 1: Pop return value from stack ===
+     opa=0 => Py_None, opa=1 => single value, opa=N => tuple of N values */
   SAYF("[RETURN] opa=%u frame=%p stack=%p len=%zu (pc advanced to %u)",
        opa, (void *) CURRENT_FRAME(ctx), (void *) CURRENT_STACK(ctx),
        CURRENT_STACK(ctx) ? KosStackBlock_LEN(CURRENT_STACK(ctx)) : 0,
@@ -50,113 +51,21 @@ KOS_OP_HANDLER(RETURN) {
     }
   }
 
-  /* Wind thunk return: we were running a before/after thunk via normal call. */
-  if (KosContext_FLAGS(ctx) & KOS_CTX_IN_WIND_THUNK) {
-    KosContext_FLAGS(ctx) &= ~KOS_CTX_IN_WIND_THUNK;
-    KosDynNode *parent = KosDynNode_PARENT(CURRENT_FRAME(ctx));
-    if (parent && KosDynNode_IS_WIND(parent)) {
-      KosDynWind *wind = (KosDynWind *) parent;
-      if (KosDynWind_ENTERED(wind))
-        KosContext_FLAGS(ctx) |= KOS_CTX_WIND_AFTER_RAN;  /* after thunk just finished */
-      else
-        KosDynWind_ENTERED(wind) = 1;  /* before thunk just finished */
-    }
-    Py_DECREF(val);
-    {
-      KosDynFrame *detached = NULL;
-      if (kos_dyn_detach_top_frame(ctx, &detached) < 0)
-        return -1;
-    }
-    if (KosContext_UNWIND_TARGET_FRAME(ctx)) {
-      KosDynFrame *target = KosContext_UNWIND_TARGET_FRAME(ctx);
-      for (;;) {
-        int unw = kos_dyn_unwind_to_frame(ctx, target, out_ev);
-        if (unw == KOS_DYN_UNWIND_ASYNC_STARTED)
-          return 0;
-        KosContext_UNWIND_TARGET_FRAME(ctx) = NULL;
-        if (unw < 0)
-          return -1;
-        if (KosContext_PENDING_RETURN_VALUE(ctx)) {
-          PyObject *v = KosContext_PENDING_RETURN_VALUE(ctx);
-          KosContext_PENDING_RETURN_VALUE(ctx) = NULL;
-          if (KosContext_PENDING_RETURN_TO_PARENT(ctx)) {
-            KosContext_PENDING_RETURN_TO_PARENT(ctx) = 0;
-            if (kos_dyn_detach_top_frame(ctx, NULL) < 0) {
-              Py_DECREF(v);
-              return -1;
-            }
-            if (KosStackBlock_PushRef(&CURRENT_STACK(ctx), v) < 0) {
-              Py_DECREF(v);
-              return -1;
-            }
-            Py_DECREF(v);
-          } else if (KosContext_DELIMITED_RETURN_FRAME(ctx)
-                     && KosContext_DELIMITED_RETURN_PC(ctx) != (uint32_t) -1) {
-            KosContext_PENDING_RETURN_TO_PARENT(ctx) = 0;
-            if (KosStackBlock_PushRef(
-                    &KosDynFrame_STACK(KosContext_DELIMITED_RETURN_FRAME(ctx)),
-                    v) < 0) {
-              Py_DECREF(v);
-              return -1;
-            }
-            Py_DECREF(v);
-            KosDynFrame_PC(KosContext_DELIMITED_RETURN_FRAME(ctx)) =
-                KosContext_DELIMITED_RETURN_PC(ctx);
-            KosContext_FRAME_TOP(ctx) = KosContext_DELIMITED_RETURN_FRAME(ctx);
-            KosContext_INVOCATION_SEGMENT_TOP(ctx) = NULL;
-            KosContext_DELIMITED_RETURN_FRAME(ctx) = NULL;
-            KosContext_DELIMITED_RETURN_PC(ctx) = (uint32_t) -1;
-            KosContext_DELIMITED_RETURN_NODE(ctx) = NULL;
-          } else {
-            KosContext_PENDING_RETURN_TO_PARENT(ctx) = 0;
-            KosEvent_KIND(out_ev) = KOS_EV_RETURN;
-            KosEvent_PAYLOAD(out_ev) = v;
-            KosContext_FLAGS(ctx) &= ~KOS_CTX_RUNNING;
-            KosContext_FLAGS(ctx) |= KOS_CTX_DEAD;
-            return 1;
-          }
-        }
-        break;
-      }
-    } else if (KosContext_PLAN(ctx)) {
-      KosTransferPlan_ACTION_INDEX(KosContext_PLAN(ctx))++;
-      if (run_transfer_plan_to_completion(ctx, out_ev) < 0)
-        return -1;
-    }
-    return 0;
-  }
+  /* === Phase 2a: Delimited continuation return (k(value)) ===
+     When inside a reset/prompt, k(value) returns the value to the call site
+     of the continuation. This bypasses the normal parent chain. Rare path. */
+  if (unlikely(KosContext_RETURN_TARGET_CHAIN(ctx) != NULL
+               && KosContext_RETURN_TARGET_PC(ctx) != (uint32_t) -1))
+    return kos_return_delimited(ctx, val, out_ev);
 
-  /* Delimited k(value) return path: transfer back to invocation site. */
-  if (KosContext_RETURN_TARGET_CHAIN(ctx) != NULL
-      && KosContext_RETURN_TARGET_PC(ctx) != (uint32_t) -1) {
-    SAYF("[RETURN] taking return-target path: return_pc=%u", (unsigned) KosContext_RETURN_TARGET_PC(ctx));
-    KosTransferPlan *plan = NULL;
-    if (kos_build_return_plan(ctx, KosContext_RETURN_TARGET_CHAIN(ctx),
-                              val, 0, &plan) < 0) {
-      Py_DECREF(val);
-      return -1;
-    }
-    Py_DECREF(val);
-    KosTransferPlan_RESUME_PC(plan) = KosContext_RETURN_TARGET_PC(ctx);
-    KosTransferPlan_RESUME_FRAME(plan) = NULL;
-    KosTransferPlan_RESUME_STACK(plan) = NULL;
-    if (KosContext_PLAN(ctx))
-      kos_free_transfer_plan(KosContext_PLAN(ctx));
-    KosContext_PLAN(ctx) = plan;
-    KosContext_FLAGS(ctx) |= KOS_CTX_IN_TRANSFER;
-    KosTransferPlan_CONTINUATION_REF(plan) = NULL;
-    kos_dynchain_free(KosContext_RETURN_TARGET_CHAIN(ctx), NULL);
-    KosContext_RETURN_TARGET_CHAIN(ctx) = NULL;
-    KosContext_RETURN_TARGET_PC(ctx) = (uint32_t) -1;
-    if (run_transfer_plan_to_completion(ctx, out_ev) < 0)
-      return -1;
-    return 0;
-  }
-
-  /* Frame has parent: return into parent in same loop. */
+  /* === Phase 2b: Frame has parent (normal call return) ===
+     We are returning from a callee into its caller. Unwind (run wind/finally
+     etc), detach our frame, then deliver the value to the parent. */
   if (KosDynNode_PARENT(CURRENT_FRAME(ctx)) != NULL) {
     int was_pending_ctx = (KosContext_PENDING_AGEN(ctx) != NULL);
     KosDynFrame *detached_frame = NULL;
+
+    /* Unwind to current frame (run wind/after, finally, etc). */
     int unw = kos_dyn_unwind_to_frame(ctx, CURRENT_FRAME(ctx), out_ev);
     if (unw == KOS_DYN_UNWIND_ASYNC_STARTED) {
       KosContext_PENDING_RETURN_VALUE(ctx) = val;
@@ -167,17 +76,22 @@ KOS_OP_HANDLER(RETURN) {
       Py_DECREF(val);
       return -1;
     }
+
+    /* Detach our frame; parent becomes DYN_TOP. */
     if (kos_dyn_detach_top_frame(ctx, &detached_frame) < 0) {
       Py_DECREF(val);
       return -1;
     }
     KosPyAsyncGen *agen = was_pending_ctx ? (KosPyAsyncGen *) KosContext_PENDING_AGEN(ctx) : NULL;
 
-    if (was_pending_ctx && agen) {
+    /* Async gen special case: we were iterating with ITER_NEXT over an async
+       gen; it just exhausted. Feed the return value into the else branch or
+       default, or raise StopIteration. Rare path. */
+    if (unlikely(was_pending_ctx && agen)) {
       agen->closed = 1;
       agen->in_progress = 0;
       if (KosContext_PENDING_AGEN_N(ctx) == 0) {
-        /* ITER_NEXT case: exhausted; jump to else (region and else_pc on region) */
+        /* N=0: ITER_NEXT exhausted; jump to else branch (foreach else_pc) */
         KosDynNode *r = kos_find_node_for_loop(ctx);
         if (r) {
           KosDynForeach_EXHAUSTED((KosDynForeach *) r) = 1;
@@ -189,6 +103,7 @@ KOS_OP_HANDLER(RETURN) {
         return 0;
       }
       if (KosContext_PENDING_AGEN_N(ctx) == 2 && KosContext_PENDING_AGEN_DEFAULT(ctx)) {
+        /* N=2: had default arg; push it as result, discard our return value */
         if (KosStackBlock_PushRef(&CURRENT_STACK(ctx),
                                   KosContext_PENDING_AGEN_DEFAULT(ctx)) < 0) {
           Py_XDECREF(KosContext_PENDING_AGEN_DEFAULT(ctx));
@@ -200,6 +115,7 @@ KOS_OP_HANDLER(RETURN) {
         Py_XDECREF(KosContext_PENDING_AGEN_DEFAULT(ctx));
         Py_DECREF(val);
       } else if (KosContext_PENDING_AGEN_N(ctx) == 1) {
+        /* N=1: no default; raise StopIteration (caller will catch) */
         PyErr_SetNone(PyExc_StopIteration);
         Py_DECREF(val);
         KosContext_PENDING_AGEN(ctx) = NULL;
@@ -212,8 +128,11 @@ KOS_OP_HANDLER(RETURN) {
       KosContext_PENDING_AGEN_DEFAULT(ctx) = NULL;
       return 0;
     }
-    /* Normal CALL return: deliver to parent (native handler or push). */
-    if (KosDynFrame_NATIVE_HANDLER(CURRENT_FRAME(ctx)) != NULL) {
+
+    /* Deliver value to parent: native handler takes it, else push onto stack.
+       Returning KOS_OP_RES_CONTROL_RETURNED triggers post_opcode to run
+       kos_dynnode_on_control_returned (e.g. wind handler for thunk completion). */
+    if (unlikely(KosDynFrame_NATIVE_HANDLER(CURRENT_FRAME(ctx)) != NULL)) {
       typedef int (*NativeHandlerFn)(void *, void *, int, PyObject *);
       NativeHandlerFn fn =
           (NativeHandlerFn) KosDynFrame_NATIVE_HANDLER(CURRENT_FRAME(ctx));
@@ -226,9 +145,12 @@ KOS_OP_HANDLER(RETURN) {
       return -1;
     }
     Py_DECREF(val);
-    return 0;
+    return KOS_OP_RES_CONTROL_RETURNED;
   }
 
+  /* === Phase 2c: Top-level return (no parent) ===
+     We are the root frame; returning means the evaluator is done. Unwind,
+     then emit KOS_EV_RETURN so the caller receives the value. */
   int unw = kos_dyn_unwind_to_frame(ctx, CURRENT_FRAME(ctx), out_ev);
   if (unw == KOS_DYN_UNWIND_ASYNC_STARTED) {
     KosContext_PENDING_RETURN_VALUE(ctx) = val;
@@ -239,6 +161,8 @@ KOS_OP_HANDLER(RETURN) {
     Py_DECREF(val);
     return -1;
   }
+
+  /* Emit boundary event: eval is complete. */
   SAYF("[eval] RETURN count=%u -> KOS_EV_RETURN\n", opa);
   SAYF("[eval] RETURN payload: %R\n", val);
   KosEvent_KIND(out_ev) = KOS_EV_RETURN;

@@ -110,10 +110,25 @@ KOS_OP_HANDLER(CALL_STAR) {
     kwd = NULL;
   }
 
-  int r = kos_callable_call(ctx, out_ev, fun, pos, kwd);
+  int res = 0;
+  if (KosCallable_Check(fun)) {
+    res = kos_callable_call(ctx, out_ev, fun, pos, kwd);
+
+  } else {
+    PyObject *result = (! pos || PyTuple_GET_SIZE(pos) == 0)
+        ? PyObject_CallNoArgs(fun)
+        : PyObject_Call(fun, pos, kwd);
+
+    if (! result) {
+      res = -1;
+
+    } else {
+      res = kos_push_or_await(ctx, out_ev, result);
+    }
+  }
 
   Py_DECREF(fun);
   Py_DECREF(pos);
   Py_XDECREF(kwd);
-  return r;
+  return res;
 }

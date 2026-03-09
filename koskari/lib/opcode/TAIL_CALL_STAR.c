@@ -15,8 +15,12 @@
 
 /**
    TAIL_CALL_STAR: arg = bitflags (1 = has *args, 2 = has **kwargs).
-   Same stack layout as CALL_STAR: [callable, pos, kwd]. Call via
-   kos_callable_tail_call.
+   Same stack layout as CALL_STAR: [callable, pos, kwd]. Tail call: do not
+   push a new frame; remove or recycle the current one.
+
+   Both paths unify on frame handling (matching TAIL_CALL / TAIL_CALL_NAMES):
+   - KosCallable: kos_callable_tail_call recycles frame.
+   - Plain Python: kos_dyn_pop_frame when parent exists, then call, push.
 */
 
 
@@ -44,7 +48,8 @@ KOS_OP_HANDLER(TAIL_CALL_STAR) {
   PyObject *pos = NULL;
   PyObject *kwd = NULL;
 
-  KosStackBlock **stack = &CURRENT_STACK(ctx);
+  KosDynFrame *frame_top = CURRENT_FRAME(ctx);
+  KosStackBlock **stack = &KosDynFrame_STACK(frame_top);
 
   if ((opa & 3) == 3) {
     kwd = KosStackBlock_PopRef(stack);
@@ -109,10 +114,35 @@ KOS_OP_HANDLER(TAIL_CALL_STAR) {
     kwd = NULL;
   }
 
-  int r = kos_callable_tail_call(ctx, out_ev, fun, pos, kwd);
+  int res = 0;
+  if (KosCallable_Check(fun)) {
+    /* KosCallable: tail call recycles frame. */
+    res = kos_callable_tail_call(ctx, out_ev, fun, pos, kwd);
+
+  } else {
+    /* Plain Python: drop frame when parent exists, call, push. */
+    KosDynNode *parent = KosDynNode_PARENT((KosDynNode *) frame_top);
+    if (parent && kos_dyn_pop_frame(ctx) < 0) {
+      res = -1;
+
+    } else {
+      PyObject *result = (kwd || PyTuple_GET_SIZE(pos))
+        ? PyObject_Call(fun, pos, kwd)
+        : PyObject_CallNoArgs(fun);
+
+      if (! result) {
+        res = -1;
+
+      } else {
+        res = kos_push_or_await(ctx, out_ev, result);
+        if (res == 0)
+          res = KOS_OP_RES_CONTROL_RETURNED;
+      }
+    }
+  }
 
   Py_DECREF(fun);
   Py_DECREF(pos);
   Py_XDECREF(kwd);
-  return r;
+  return res;
 }

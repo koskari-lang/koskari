@@ -69,8 +69,6 @@ typedef enum KosContextFlags {
   KOS_CTX_FROZEN          = 0x02,
   KOS_CTX_DEAD            = 0x04,
   KOS_CTX_IN_TRANSFER     = 0x10,  /* executing a transfer plan */
-  KOS_CTX_IN_WIND_THUNK   = 0x20,  /* returning from a wind before/after thunk */
-  KOS_CTX_WIND_AFTER_RAN  = 0x40,  /* after thunk just finished; skip on next unwind */
 } KosContextFlags;
 
 
@@ -167,6 +165,13 @@ typedef enum KosEvalStep {
   KOS_STEP_STOP_EVENT,
   KOS_STEP_FATAL_ERROR,
 } KosEvalStep;
+
+
+/**
+  Opcode handler return values.  0 = normal continue; 1 = suspend or
+  WITH async rollback; 2 = control returned to awaiting dyn node.
+*/
+#define KOS_OP_RES_CONTROL_RETURNED 2
 
 
 /**

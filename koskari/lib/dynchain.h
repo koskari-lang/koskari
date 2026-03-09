@@ -108,11 +108,21 @@ typedef enum KosDynFlags {
 #define KOS_DYN_CAP_NEEDS_UNWIND_ACTION      (1u << 2)
 #define KOS_DYN_CAP_NEEDS_WIND_BEFORE_ACTION (1u << 3)
 #define KOS_DYN_CAP_NEEDS_INSTALL_WIND       (1u << 4)
+#define KOS_DYN_CAP_AWAITS_THUNK_RESULT      (1u << 5)
 #define KOS_DYN_CAP_BARRIER                  (1u << 7)
 #define KOS_DYN_CAP_HANDLES_EXCEPTIONS       (1u << 8)
 
 /* Alias for KOS_DYN_CAP_MAY_SWALLOW_EXCEPTION (unified API naming) */
 #define KOS_DYN_CAP_CATCH KOS_DYN_CAP_MAY_SWALLOW_EXCEPTION
+
+
+typedef enum KosDynWindPhase {
+  KOS_WIND_PHASE_IDLE,
+  KOS_WIND_PHASE_PRE_BEGIN,
+  KOS_WIND_PHASE_POST_BEGIN,
+  KOS_WIND_PHASE_PRE_AFTER,
+  KOS_WIND_PHASE_POST_AFTER,
+} KosDynWindPhase;
 
 
 typedef enum KosRegionStyle {
@@ -163,6 +173,7 @@ struct KosDynNode {
       PyObject *before_thunk;  /* callable (owned) or NULL */
       PyObject *after_thunk;   /* callable (owned) or NULL */
       uint8_t entered;
+      uint8_t phase;          /* KosDynWindPhase; WIND_IDLE until thunk invoked */
     } wind;
     struct { uint32_t handler_pc; uint8_t enabled; } try_;
     struct { uint32_t handler_pc; uint8_t enabled; uint8_t handling_raise; PyObject *handling_result; } finally_;
@@ -1101,6 +1112,8 @@ void kos_dyn_param_unwind(KosContext *ctx, KosDynParam *node);
 int kos_dyn_wind_wind(KosContext *ctx, KosDynWind *node);
 int kos_dyn_wind_unwind(KosContext *ctx, KosDynWind *node);
 
+int kos_dynnode_on_control_returned(KosContext *ctx, KosDynNode *node, struct KosEvent *out_ev);
+
 
 /**
    Generic dispatch functions for the seven dynchain operations.  Each
@@ -1598,6 +1611,7 @@ int kos_transferplan_traverse(
 #define KosDynWind_BEFORE_THUNK(w) (((KosDynNode *)(w))->u.wind.before_thunk)
 #define KosDynWind_AFTER_THUNK(w)  (((KosDynNode *)(w))->u.wind.after_thunk)
 #define KosDynWind_ENTERED(w)      (((KosDynNode *)(w))->u.wind.entered)
+#define KosDynWind_PHASE(w)        (((KosDynNode *)(w))->u.wind.phase)
 
 #define KosDynTry_HANDLER_PC(r)      (((KosDynNode *)(r))->u.try_.handler_pc)
 #define KosDynTry_ENABLED(r)         (((KosDynNode *)(r))->u.try_.enabled)

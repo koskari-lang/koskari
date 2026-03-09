@@ -15,10 +15,16 @@
 
 /**
    TAIL_CALL: arg = N. Same stack as CALL [callable, arg_0, ..., arg_{N-1}].
-   Extracts args via KosStackBlock_PopTail (n+1 > 17) or KosStackBlock_PopTailPtr
-   (n+1 <= 17) before vcall; opcode owns and cleans up the extracted storage.
-   KosCallable: kos_callable_tail_vcall. Plain Python: PyObject_Vectorcall,
-   kos_push_or_await.
+   Tail call: do not push a new frame; remove or recycle the current one.
+
+   Both paths unify on frame handling:
+   - KosCallable: kos_callable_tail_vcall recycles the frame (reset for tail).
+   - Plain Python: kos_dyn_pop_frame removes the frame when we have a parent;
+     at root (no parent) we keep the frame.
+
+   Extracts args via PopTail/PopTailPtr before vcall; opcode owns and DECREFs
+   the extracted storage. Returns KOS_OP_RES_CONTROL_RETURNED when we push
+   and continue (triggers kos_dynnode_on_control_returned for wind thunks).
 */
 
 #define TAIL_CALL_ARRAY_THRESHOLD 16
@@ -53,32 +59,25 @@ KOS_OP_HANDLER(TAIL_CALL) {
 
   int res = 0;
   if (KosCallable_Check(callable)) {
+    /* KosCallable: tail vcall recycles the frame (no explicit pop). */
     res = kos_callable_tail_vcall(ctx, out_ev, callable, args,
                                   (Py_ssize_t) n, NULL);
 
   } else {
-    SAYF("[TAIL_CALL] plain Python path: frame_top=%p kind=%s\n",
-         (void *) frame_top, kos_dynnode_kind_name(KosDynNode_KIND(frame_top)));
-
+    /* Plain Python: drop frame when we have a parent (tail call semantics). */
     KosDynNode *parent = KosDynNode_PARENT((KosDynNode *) frame_top);
-    if (parent) {
-      SAYF("[TAIL_CALL] plain Python path: parent=%p kind=%s\n",
-           (void *) parent, kos_dynnode_kind_name(KosDynNode_KIND(parent)));
-    } else {
-      SAY("[TAIL_CALL] plain Python path: parent=NULL (root frame)\n");
-    }
-    int drop_frame = (parent != NULL);
-    if (drop_frame && kos_dyn_pop_frame(ctx) < 0) {
-      SAY("[TAIL_CALL] plain Python path: failed to drop frame\n");
+    if (parent && kos_dyn_pop_frame(ctx) < 0) {
       res = -1;
-    } else {
-      SAY("[TAIL_CALL] plain Python path: dropped frame\n");
 
+    } else {
       PyObject *result = PyObject_Vectorcall(callable, args, (size_t) n, NULL);
       if (! result)
         res = -1;
-      else
+      else {
         res = kos_push_or_await(ctx, out_ev, result);
+        if (res == 0)
+          res = KOS_OP_RES_CONTROL_RETURNED;
+      }
     }
   }
 

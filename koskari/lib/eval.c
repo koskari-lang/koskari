@@ -153,6 +153,37 @@ static int run_transfer_plan_to_completion(
 
 
 /**
+   Handle delimited k(value) return: build plan, install it, run to completion.
+   Caller has popped val; we consume it. Return 0 on success, -1 on error.
+*/
+static int kos_return_delimited(KosContext *ctx, PyObject *val, KosEvent *out_ev) {
+  SAYF("[RETURN] taking return-target path: return_pc=%u",
+       (unsigned) KosContext_RETURN_TARGET_PC(ctx));
+  KosTransferPlan *plan = NULL;
+  if (kos_build_return_plan(ctx, KosContext_RETURN_TARGET_CHAIN(ctx),
+                            val, 0, &plan) < 0) {
+    Py_DECREF(val);
+    return -1;
+  }
+  Py_DECREF(val);
+  KosTransferPlan_RESUME_PC(plan) = KosContext_RETURN_TARGET_PC(ctx);
+  KosTransferPlan_RESUME_FRAME(plan) = NULL;
+  KosTransferPlan_RESUME_STACK(plan) = NULL;
+  if (KosContext_PLAN(ctx))
+    kos_free_transfer_plan(KosContext_PLAN(ctx));
+  KosContext_PLAN(ctx) = plan;
+  KosContext_FLAGS(ctx) |= KOS_CTX_IN_TRANSFER;
+  KosTransferPlan_CONTINUATION_REF(plan) = NULL;
+  kos_dynchain_free(KosContext_RETURN_TARGET_CHAIN(ctx), NULL);
+  KosContext_RETURN_TARGET_CHAIN(ctx) = NULL;
+  KosContext_RETURN_TARGET_PC(ctx) = (uint32_t) -1;
+  if (run_transfer_plan_to_completion(ctx, out_ev) < 0)
+    return -1;
+  return 0;
+}
+
+
+/**
    Unwind pending async gen on error. If ctx has a pending async gen (NEXT or
    ITER_NEXT), and the top frame is the gen frame, detach it, close the gen,
    and clear state. Call when propagating an exception so the gen is properly
@@ -3308,6 +3339,14 @@ static KosEvalStep eval_phase_post_opcode(
         int *loop_continue) {
 
   *loop_continue = 0;
+
+  if (op_res == KOS_OP_RES_CONTROL_RETURNED) {
+    int r = kos_dynnode_on_control_returned(ctx, KosContext_DYN_TOP(ctx), out_ev);
+    if (r == 0) {
+      *loop_continue = 1;
+      return KOS_STEP_CONTINUE;
+    }
+  }
 
   if (PyErr_Occurred()) {
     KosEvalMode raise_mode = process_raise(ctx, out_ev);

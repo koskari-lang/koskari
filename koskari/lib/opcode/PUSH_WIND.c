@@ -76,10 +76,8 @@ KOS_OP_HANDLER(PUSH_WIND) {
     Py_DECREF(a);
 
   int r = kos_dyn_wind(ctx, (KosDynNode *) wind);
-  if (r == KOS_DYN_UNWIND_ASYNC_STARTED) {
-    KosContext_FLAGS(ctx) |= KOS_CTX_IN_WIND_THUNK;
+  if (r == KOS_DYN_UNWIND_ASYNC_STARTED)
     return 0;
-  }
   if (r < 0)
     return -1;
   /* No before thunk or sync before: wind phase done, mark entered */

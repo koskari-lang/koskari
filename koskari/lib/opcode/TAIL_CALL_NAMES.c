@@ -14,17 +14,23 @@
 */
 
 /**
-   TAIL_CALL_NAMES: arg = N (number of positional arguments). Same
-   stack layout as CALL_NAMES: [callable, pos_0, ..., pos_{N-1},
-   kwd_val_0, ..., kwd_val_{M-1}, names]. TailPtr + vcall (no tuple).
-   KosCallable: kos_callable_tail_vcall; tail install takes stack ownership,
-   no DropNoErr. Plain Python: PyObject_Vectorcall, DropNoErr, kos_push_or_await.
+   TAIL_CALL_NAMES: arg = N (number of positional arguments). Same stack
+   layout as CALL_NAMES: [callable, pos_0, ..., pos_{N-1}, kwd_val_0, ...,
+   kwd_val_{M-1}, names]. Tail call: do not push a new frame; remove or
+   recycle the current one.
+
+   Mimics TAIL_CALL: extracts args via PopTailPtr/PopTail (opcode owns the
+   storage, DECREFs at end). Both paths then use the extracted storage.
+   - KosCallable: tail vcall recycles frame.
+   - Plain Python: kos_dyn_pop_frame when parent != NULL, call, push.
 */
+
+#define TAIL_CALL_NAMES_ARRAY_THRESHOLD 16
 
 KOS_OP_HANDLER(TAIL_CALL_NAMES) {
   unsigned opa = KosOp_ARG(insn);
-
-  KosStackBlock **stack = &CURRENT_STACK(ctx);
+  KosDynFrame *frame_top = CURRENT_FRAME(ctx);
+  KosStackBlock **stack = &KosDynFrame_STACK(frame_top);
 
   PyObject *names = KosStackBlock_Peek(*stack);
   if (! names)
@@ -40,26 +46,65 @@ KOS_OP_HANDLER(TAIL_CALL_NAMES) {
   Py_ssize_t total = npos + nkwds;
   size_t ntotal = (size_t)(total + 2);
 
-  PyObject *const *ptr = KosStackBlock_TailPtr(*stack, ntotal);
-  if (! ptr)
-    return -1;
+  PyObject *callable;
+  PyObject *const *args;
+  PyObject *tup = NULL;
+  PyObject *buf[TAIL_CALL_NAMES_ARRAY_THRESHOLD];
+  int used_tuple = 0;
 
-  PyObject *kwnames = nkwds ? ptr[total + 1] : NULL;
+  if (ntotal > TAIL_CALL_NAMES_ARRAY_THRESHOLD) {
+    tup = KosStackBlock_PopTail(stack, ntotal);
+    if (! tup)
+      return -1;
+    used_tuple = 1;
+    callable = PyTuple_GET_ITEM(tup, 0);
+    args = (PyObject *const *) &PyTuple_GET_ITEM(tup, 1);
 
-  if (KosCallable_Check(ptr[0])) {
-    int r = kos_callable_tail_vcall(ctx, out_ev, ptr[0], &ptr[1], npos,
-                                    kwnames);
-    /* No DropNoErr: tail install takes ownership of the stack. It either
-       frees the frame (kos_tail_koscall) or resets it (kos_dynframe_reset_for_tail).
-       Calling DropNoErr would be use-after-free or operate on NULL. */
-    return r;
+  } else {
+    if (KosStackBlock_PopTailPtr(stack, ntotal, buf) < 0)
+      return -1;
+    callable = buf[0];
+    args = (npos > 0) ? (PyObject *const *) &buf[1] : NULL;
   }
 
-  PyObject *result = PyObject_Vectorcall(ptr[0], &ptr[1], (size_t) npos,
-                                         kwnames);
-  if (! result)
-    return -1;
+  PyObject *kwnames_arg = NULL;
+  if (nkwds) {
+    if (used_tuple) {
+      kwnames_arg = PyTuple_GET_ITEM(tup, total + 1);
+    } else {
+      kwnames_arg = buf[total + 1];
+    }
+  }
 
-  KosStackBlock_DropNoErr(stack, ntotal);
-  return kos_push_or_await(ctx, out_ev, result);
+  int res = 0;
+  if (KosCallable_Check(callable)) {
+    /* KosCallable: tail vcall recycles frame. */
+    res = kos_callable_tail_vcall(ctx, out_ev, callable, args, npos, kwnames_arg);
+
+  } else {
+    /* Plain Python: drop frame when parent exists, call, push. */
+    KosDynNode *parent = KosDynNode_PARENT((KosDynNode *) frame_top);
+    if (parent && kos_dyn_pop_frame(ctx) < 0) {
+      res = -1;
+
+    } else {
+      PyObject *result = PyObject_Vectorcall(callable, args, (size_t) npos, kwnames_arg);
+      if (! result) {
+        res = -1;
+      } else {
+        res = kos_push_or_await(ctx, out_ev, result);
+        if (res == 0)
+          res = KOS_OP_RES_CONTROL_RETURNED;
+      }
+    }
+  }
+
+  if (used_tuple) {
+    Py_DECREF(tup);
+  } else {
+    while (ntotal--)
+      Py_DECREF(buf[ntotal]);
+  }
+
+  return res;
 }
