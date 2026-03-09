@@ -1181,30 +1181,6 @@ static int weak_ref_tp_init(PyObject *self, PyObject *args, PyObject *kwds) {
 }
 
 
-static int weak_ref_traverse(PyObject *self, visitproc visit, void *arg) {
-
-  Py_VISIT(KosRef_NAME(self));
-  Py_VISIT(KosSymbolicRef_VALUE(self));
-  return 0;
-}
-
-
-static int weak_ref_clear(PyObject *self) {
-
-  Py_CLEAR(KosRef_NAME(self));
-  Py_CLEAR(KosSymbolicRef_VALUE(self));
-  return 0;
-}
-
-
-static void weak_ref_dealloc(PyObject *self) {
-
-  Py_CLEAR(KosRef_NAME(self));
-  Py_CLEAR(KosSymbolicRef_VALUE(self));
-  Py_TYPE(self)->tp_free(self);
-}
-
-
 PyTypeObject KosWeakRefType = {
   PyVarObject_HEAD_INIT(NULL, 0)
 
@@ -1218,9 +1194,9 @@ PyTypeObject KosWeakRefType = {
   .tp_methods = weak_ref_methods,
   .tp_new = PyType_GenericNew,
   .tp_init = weak_ref_tp_init,
-  .tp_traverse = weak_ref_traverse,
-  .tp_clear = weak_ref_clear,
-  .tp_dealloc = weak_ref_dealloc,
+  .tp_traverse = sym_ref_traverse,
+  .tp_clear = sym_ref_clear,
+  .tp_dealloc = sym_ref_dealloc,
 };
 
 
