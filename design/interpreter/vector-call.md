@@ -141,13 +141,15 @@ or document this invariant.
 
 #### Stack ownership for tail calls
 
-When an opcode invokes `kos_callable_tail_vcall` for a KosCallable, the tail
-install handler assumes full ownership of the caller's stack. The handler either
-frees the current frame via `kos_tail_koscall` or resets it via
-`kos_dynframe_reset_for_tail`. The opcode must NOT call
-`KosStackBlock_DropNoErr` after `kos_callable_tail_vcall` in the KosCallable
-branch. The plain Python path leaves the stack valid; the opcode must DropNoErr
-before `kos_push_or_await`.
+TAIL_CALL and TAIL_CALL_NAMES use **extract-first**: PopTailPtr (small counts)
+or PopTail (large counts) before branching. The opcode owns the extracted
+storage and DECREFs it at the end for both KosCallable and Plain Python paths.
+This secures the stack segment before any call or frame manipulation. When an
+opcode invokes `kos_callable_tail_vcall` for a KosCallable, the tail install
+handler recycles the frame; the extracted args (tuple or buf) are used during
+the call and DECREFd after. For Plain Python: opcode does `kos_dyn_pop_frame`
+when parent exists, call, push; DECREF of extracted storage happens at the
+unified cleanup. No DropNoErr—extraction replaces the stack.
 
 ### 2. New Dispatch Function: `kos_callable_vcall`
 
@@ -511,8 +513,8 @@ follow-on concern and are left for a subsequent design pass.
 | `func.h` | Add `vectorcall` field to `KosFunction`; add `KosFunction_VECTORCALL_OFFSET`; declare `KosFunction_VectorCall` and `KosFunction_PrepareCallNamespaceFromVector` |
 | `func.c` | Implement `kos_function_vectorcall`, `kos_vinstall_function`, `kos_tail_vinstall_function`; set flag and offset in `KosFunctionType`; initialize `fn->vectorcall` in constructors |
 | `opcode/CALL.c` | Replace `PopTail` + `PopRef` with `TailPtr` + `PeekAt` + `vcall` + `Drop N+1` |
-| `opcode/TAIL_CALL.c` | Same, routing to `kos_callable_tail_vcall` |
+| `opcode/TAIL_CALL.c` | Extract via PopTailPtr/PopTail before vcall; KosCallable path + Plain Python (frame pop, call, push); return KOS_OP_RES_CONTROL_RETURNED when continuing |
 | `opcode/CALL_NAMES.c` | Replace tuple + dict allocation with `TailPtr` + kwnames passthrough |
-| `opcode/TAIL_CALL_NAMES.c` | Same |
-| `opcode/CALL_STAR.c` | No change |
-| `opcode/TAIL_CALL_STAR.c` | No change |
+| `opcode/TAIL_CALL_NAMES.c` | Extract via PopTailPtr/PopTail (mirrors TAIL_CALL); both paths use extracted storage; Plain Python path; return KOS_OP_RES_CONTROL_RETURNED when continuing |
+| `opcode/CALL_STAR.c` | No change (tuple path; uses kos_callable_call) |
+| `opcode/TAIL_CALL_STAR.c` | KosCallable path via kos_callable_tail_call; Plain Python path (frame pop, PyObject_Call, push) |

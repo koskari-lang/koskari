@@ -115,9 +115,9 @@ KOS_OP_HANDLER(CALL_STAR) {
     res = kos_callable_call(ctx, out_ev, fun, pos, kwd);
 
   } else {
-    PyObject *result = (! pos || PyTuple_GET_SIZE(pos) == 0)
-        ? PyObject_CallNoArgs(fun)
-        : PyObject_Call(fun, pos, kwd);
+    PyObject *result = (kwd || PyTuple_GET_SIZE(pos))
+        ? PyObject_Call(fun, pos, kwd)
+        : PyObject_CallNoArgs(fun);
 
     if (! result) {
       res = -1;

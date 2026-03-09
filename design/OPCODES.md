@@ -1695,7 +1695,7 @@ Pool: 0 = `"os"`, 1 = `"path"`, 2 = `"sep"`, 3 = None.
 
 - **Style**: COUNT. Arg = N (number of positional arguments).
 - **Status**: Implemented.
-- **Stack**: `[..., callable, pos_0, ..., pos_{N-1}, val_0, ..., val_{M-1}, names_tuple] → [..., result]`. TOS = names_tuple (tuple of M keyword names); below it the M keyword values in the same order as names; below that the N positional args; then callable. Pop names, validate tuple; PopTailDictFromNames for kwds; PopTail for args; PopRef for callable. Call via kos_callable_call(ctx, out_ev, callable, args, kwds).
+- **Stack**: `[..., callable, pos_0, ..., pos_{N-1}, val_0, ..., val_{M-1}, names_tuple] → [..., result]`. TOS = names_tuple (tuple of M keyword names); below it the M keyword values in the same order as names; below that the N positional args; then callable. TailPtr for callable + args + kwnames; validate names tuple; kos_callable_vcall; DropNoErr. No tuple or dict allocation.
 - **Invariants**: names_tuple must be a tuple; stack must have 1 + N + M + 1 elements (callable + N positionals + M keyword values + names).
 
 **Example:** Call with 1 positional and 1 keyword (x=42). Pool: 0 = fn, 1 = 10, 2 = 42, 3 = ("x",).
@@ -1743,8 +1743,8 @@ Pool: 0 = `"os"`, 1 = `"path"`, 2 = `"sep"`, 3 = None.
 
 - **Style**: COUNT. Arg = number of positional arguments.
 - **Status**: Implemented.
-- **Stack**: Same as CALL: `[..., callable, arg_1, ..., arg_n]`. For **KosExpression** or **KosFunction**: current frame is replaced (cleared and re-initialized) with the callee's code and namespace; execution continues in the same loop. For continuations/delimited continuations or other callables: same semantics as CALL (invoke or push/await result).
-- **Execution model**: When the callable is a KosExpression or KosFunction, the VM replaces the current frame: the current frame's namespace is decref'd, a new frame is created with the same parent and the callee's code and a **new** namespace (filled from formals for functions, or the expression's ns for expressions); the old frame is freed and the new frame becomes the top of the dynamic chain. This keeps the frame namespace safe for continuations (no COW). For all other callable types, behavior is identical to CALL.
+- **Stack**: Same as CALL: `[..., callable, arg_1, ..., arg_n]`. Extracts args via PopTailPtr (small counts) or PopTail (large) before branching; opcode owns storage, DECREFs at end. For KosCallable: tail install recycles the frame. For Plain Python: `kos_dyn_pop_frame` when parent exists, then PyObject_Vectorcall, kos_push_or_await. Returns KOS_OP_RES_CONTROL_RETURNED when continuing (triggers kos_dynnode_on_control_returned for wind thunks).
+- **Execution model**: When the callable is a KosExpression or KosFunction, the VM replaces the current frame (tail install). For all other callable types, the opcode drops the current frame when parent exists, calls the callable, and pushes the result.
 - **Invariants**: Stack has at least 1 + arg elements. KosExpression allows no arguments (arg must be 0); otherwise TypeError.
 - **Compiler form:** Emitted by the compile/call special when the call is in tail position (`tc` true).
 
@@ -1761,7 +1761,7 @@ Pool: 0 = `"os"`, 1 = `"path"`, 2 = `"sep"`, 3 = None.
 
 - **Style**: COUNT. Arg = N (number of positional arguments).
 - **Status**: Implemented.
-- **Stack**: Same layout as CALL_NAMES: `[..., callable, pos_0, ..., pos_{N-1}, val_0, ..., val_{M-1}, names_tuple]`. Pop order and validation as CALL_NAMES. Call via kos_callable_tail_call(ctx, out_ev, callable, args, kwds). Same replace-frame semantics as TAIL_CALL.
+- **Stack**: Same layout as CALL_NAMES: `[..., callable, pos_0, ..., pos_{N-1}, val_0, ..., val_{M-1}, names_tuple]`. Extracts via PopTailPtr (small) or PopTail (large); opcode owns storage, DECREFs at end. KosCallable: kos_callable_tail_vcall. Plain Python: kos_dyn_pop_frame when parent exists, PyObject_Vectorcall, kos_push_or_await. Returns KOS_OP_RES_CONTROL_RETURNED when continuing.
 
 ---
 
@@ -1769,7 +1769,7 @@ Pool: 0 = `"os"`, 1 = `"path"`, 2 = `"sep"`, 3 = None.
 
 - **Style**: STAR. Arg = bitflags (1 = has *args, 2 = has **kwargs).
 - **Status**: Implemented.
-- **Stack**: Same layout as CALL_STAR: `[..., callable, pos, kwd]`. Pop order and ensure_tuple as CALL_STAR. Call via kos_callable_tail_call(ctx, out_ev, callable, pos, kwd). Same replace-frame semantics as TAIL_CALL.
+- **Stack**: Same layout as CALL_STAR: `[..., callable, pos, kwd]`. Pop order and ensure_tuple as CALL_STAR. KosCallable: kos_callable_tail_call. Plain Python: kos_dyn_pop_frame when parent exists, PyObject_Call, kos_push_or_await. Returns KOS_OP_RES_CONTROL_RETURNED when continuing. Same replace-frame semantics as TAIL_CALL.
 
 ---
 

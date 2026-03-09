@@ -15,8 +15,8 @@ This document reflects the **Koskari revision**: defer cookies and dedicated nat
 
 **Partially implemented.**
 
-- **Implemented**: Install slots (`tp_kos_install`, `tp_kos_tail_install`) and unified invocation entry points (`kos_callable_call`, `kos_callable_tail_call`) as the canonical interface; single dispatch for CALL and TAIL_CALL; type-slot lookup; handler contract (signature, return 0/1/-1); install slots are the only path for KosCallable; non-KosCallable or KosCallable without install use default (Python call + push_or_await); KosFunction, KosExpression, DelimitedContinuation, Continuation, and apply all use install slots; native handler as frame evaluator; resume via `frame->pc` as native label; transfer plan model (context holds plan, eval loop drains it). Apply: 1/2/3-argument form, flattening when `fn` is KosFunction or KosExpression and `kwds` is NULL, else native frame with handler for `PyObject_Call` + push_or_await. AWAIT uses `kos_await_dispatch` (defer vs push_or_await).
-- **Not implemented**: CALL_NAMES, CALL_STAR, TAIL_CALL_NAMES, TAIL_CALL_STAR (still stubs); kos next protocol.
+- **Implemented**: Install slots (`tp_kos_install`, `tp_kos_tail_install`) and unified invocation entry points (`kos_callable_call`, `kos_callable_tail_call`) as the canonical interface; single dispatch for CALL, CALL_NAMES, CALL_STAR, TAIL_CALL, TAIL_CALL_NAMES, TAIL_CALL_STAR; type-slot lookup; handler contract (signature, return 0/1/-1); install slots are the only path for KosCallable; non-KosCallable or KosCallable without install use default (Python call + push_or_await); KosFunction, KosExpression, DelimitedContinuation, Continuation, and apply all use install slots; native handler as frame evaluator; resume via `frame->pc` as native label; transfer plan model (context holds plan, eval loop drains it). Apply: 1/2/3-argument form, flattening when `fn` is KosFunction or KosExpression and `kwds` is NULL, else native frame with handler for `PyObject_Call` + push_or_await. AWAIT uses `kos_await_dispatch` (defer vs push_or_await). TAIL_* opcodes have explicit Plain Python paths (frame pop when parent exists, call, push); they return KOS_OP_RES_CONTROL_RETURNED when continuing to trigger kos_dynnode_on_control_returned for wind thunks.
+- **Not implemented**: kos next protocol.
 
 ## Purpose
 
@@ -201,7 +201,7 @@ All CALL-family opcodes reduce to:
 
 There is no separate "begin argument" channel; argument handling is entirely the responsibility of the install function.
 
-**Current implementation**: CALL and TAIL_CALL use `kos_callable_call` / `kos_callable_tail_call`, which dispatch to `tp_kos_install` / `tp_kos_tail_install` when non-NULL, else use default (Python call + push_or_await). CALL_NAMES, CALL_STAR, and the TAIL_* variants are not yet wired to the unified path.
+**Current implementation**: CALL, CALL_NAMES, and CALL_STAR use `kos_callable_call`. TAIL_CALL, TAIL_CALL_NAMES, and TAIL_CALL_STAR use `kos_callable_tail_call` (or `kos_callable_tail_vcall` for vectorcall paths). TAIL_* opcodes branch on KosCallable vs Plain Python: KosCallable uses tail install; Plain Python path performs `kos_dyn_pop_frame` when parent exists, then call, push. When the Plain Python path pushes and continues, opcodes return KOS_OP_RES_CONTROL_RETURNED to trigger `kos_dynnode_on_control_returned`.
 
 ### Resume precedence — native handler is the frame evaluator (Tweak 2)
 
