@@ -9,6 +9,7 @@ This directory contains the design documentation for koskari, organized into thr
 - **[SPECIALS.md](SPECIALS.md)**: Reference for implemented compiler special forms (compile/bytecode, compile/begin, compile/call, compile/lambda, compile/try, compile/class, compile/define-syntax, import, import-from, and many more; see SPECIALS.md for full list), with use-cases and examples
 - **language/**: Language features, syntax, special forms, operators, and built-in constructs
 - **api/**: Runtime API, types, functions, interfaces, and [package layout and import policy](api/package-layout.md)
+- **[EVALUATOR.md](EVALUATOR.md)**: Evaluator operation—phase flow diagrams, opcode signaling, exceptions, transfer plans, tail calls, call installs, play-by-play scenarios
 - **interpreter/**: Interpreter architecture, bytecode format, compiler design,
   evaluation model, continuation application (including evaluator-token model),
   and [Koskari Domain](interpreter/domain.md) (ambient dynamic context, design proposal)

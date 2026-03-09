@@ -8,9 +8,11 @@ This directory documents the interpreter implementation, including bytecode form
 - **bytecode-metadata-tables.md**: Static metadata tables (location table, extent table with tagged-union KosExtentDesc); O(1) control targets, no forward scans; JUMP locality validation; **implemented** in bytecode.c
 - **compiler.md**: Compiler architecture and phases
 - **evaluator.md**: Evaluation model and drive loop (eval.c); KosCoroutine and run-code-as-coroutine (func.c)
+- **[EVALUATOR.md](../EVALUATOR.md)**: Evaluator operation diagrams, phase flow, opcode signaling, exceptions, transfer plans, tail calls, call installs, and play-by-play scenarios
 - **execution-invariants.md**: Koskari execution model invariants and design commitments
 - **yield-from-execution-model.md**: YIELD_FROM opcode execution model (delegation conduit, KOS_DYN_YIELD_FROM, delegate kinds, PC discipline)
 - **introspection-trace.md**: Read-only introspection and trace snapshot design (TraceView, KOS_OP_CAPTURE_FRAME, exception integration)
+- **ceval-exception-paths.md**: Exception paths in the C eval loop; where `inject_eval_frame_traceback` is called vs missing (run_transfer_plan_to_completion)
 - **callcc.md**: Call/cc implementation design
 - **dynamic-node-unified-api.md**: Dynamic node unified API redesign and migration specification (implementation prompt)
 - **evaluator-token-continuation.md**: Evaluator token + continuation application model (KosEvaluatorToken, KoskariContinuationApply)
