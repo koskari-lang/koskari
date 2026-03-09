@@ -101,6 +101,10 @@ static void clear_and_free_transfer_plan(KosContext *ctx) {
 }
 
 
+static void inject_eval_frame_traceback(KosContext *ctx,
+    PyObject **exc_type, PyObject **exc_val, PyObject **exc_tb);
+
+
 /**
    Run the current transfer plan to completion.  Returns 0 on success (plan
    cleared or was NULL).  Returns -1 if a step failed (out_ev set to RAISE,
@@ -124,6 +128,7 @@ static int run_transfer_plan_to_completion(
       {
         PyObject *exc_typ = NULL, *exc_val = NULL, *exc_tb = NULL;
         PyErr_Fetch(&exc_typ, &exc_val, &exc_tb);
+        inject_eval_frame_traceback(ctx, &exc_typ, &exc_val, &exc_tb);
         Py_XDECREF(exc_tb);
         KosEvent_EXC_TYPE(out_ev) = exc_typ;  /* caller owns */
         KosEvent_PAYLOAD(out_ev) = exc_val;   /* caller owns */
@@ -402,6 +407,11 @@ static void inject_eval_frame_traceback(
     return;
   }
 
+#if PY_VERSION_HEX < 0x030C0000
+  // python < 3.12
+  PyErr_NormalizeException(exc_type, exc_val, exc_tb);
+#endif
+
   decorate_exception_with_dynchain(ctx, *exc_val);
 
   KosDynFrame *frame_top = CURRENT_FRAME(ctx);
@@ -436,6 +446,7 @@ static void inject_eval_frame_traceback(
   PyFrameObject *pyframe = PyFrame_New(PyThreadState_Get(), faux, globals, NULL);
   Py_DECREF(globals);
   if (! pyframe) {
+    SAY("[eval] inject_eval_frame_traceback: PyFrame_New failed\n");
     PyErr_Clear();
     return;
   }
@@ -446,10 +457,21 @@ static void inject_eval_frame_traceback(
   *exc_tb = NULL;
 
   if (PyTraceBack_Here(pyframe) < 0) {
+    SAY("[eval] inject_eval_frame_traceback: PyTraceBack_Here failed\n");
     PyErr_Clear();
   }
   Py_DECREF(pyframe);
+
+  SAY("[eval] inject_eval_frame_traceback: PyTraceBack_Here succeeded\n");
   PyErr_Fetch(exc_type, exc_val, exc_tb);
+
+  /* PyTraceBack_Here updates the thread-state traceback only; the exception
+     value's __traceback__ is not updated. Attach the extended chain to the
+     value so it survives PyErr_SetObject in coro.c (which uses value as-is). */
+  if (*exc_val && *exc_tb && PyExceptionInstance_Check(*exc_val)) {
+    if (PyObject_SetAttrString(*exc_val, "__traceback__", *exc_tb) < 0)
+      PyErr_Clear();
+  }
 }
 
 /**

@@ -204,6 +204,9 @@ class TestRepl(unittest.IsolatedAsyncioTestCase):
         Koskari exceptions via REPL show dynchain, not wrapper traceback.
         """
         _, err = await self._run_repl(['(/ 1 0)'])
+
+        print(err)
+
         self.assertIn('ZeroDivisionError', err)
         self.assertIn('Koskari dynchain', err)
 

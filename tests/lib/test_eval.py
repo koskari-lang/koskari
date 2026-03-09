@@ -190,6 +190,184 @@ class TestCoroutineRunIntegration(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(result, 42)
 
 
+def _assert_exception_has_traceback_attrs(test_case, exc, expected_type=None):
+    """
+    Assert that a raised exception carries __traceback__ and __koskari_dynchain__
+    for traceback formatting, and that the dynchain is usable (has frame data with
+    code names). Optionally assert the exception type.
+    """
+
+    print("_assert_exception_has_traceback_attrs: exc=%r" % (exc,))
+
+    if expected_type is not None:
+        test_case.assertIsInstance(exc, expected_type)
+        print("  type: %s (ok)" % (type(exc).__name__,))
+
+    has_tb = hasattr(exc, "__traceback__")
+    print("  has __traceback__: %s" % (has_tb,))
+    test_case.assertTrue(has_tb, "exception must have __traceback__")
+
+    has_dyn = hasattr(exc, "__koskari_dynchain__")
+    print("  has __koskari_dynchain__: %s" % (has_dyn,))
+    test_case.assertTrue(has_dyn, "exception must have __koskari_dynchain__")
+
+    dynchain = getattr(exc, "__koskari_dynchain__", None)
+    print("  __koskari_dynchain__ value: %r" % (dynchain,))
+    test_case.assertIsNotNone(
+        dynchain,
+        "__koskari_dynchain__ must be set (decorated for native frame display)",
+    )
+
+    test_case.assertIsInstance(
+        dynchain, (list, tuple),
+        "__koskari_dynchain__ must be a list or tuple of frame metadata",
+    )
+    print("  dynchain len: %d" % (len(dynchain),))
+    test_case.assertGreater(
+        len(dynchain), 0,
+        "__koskari_dynchain__ must contain at least one frame",
+    )
+
+    frames_with_name = 0
+    for i, frame in enumerate(dynchain):
+        if isinstance(frame, dict) and frame.get("name") is not None:
+            frames_with_name += 1
+    print("  frames with 'name' (code): %d" % (frames_with_name,))
+    test_case.assertGreater(
+        frames_with_name, 0,
+        "__koskari_dynchain__ must have at least one frame with 'name' (code)",
+    )
+
+
+class TestExceptionFromKoskariCall(unittest.IsolatedAsyncioTestCase):
+    """
+    Test that exceptions raised from koskari code carry expected attributes
+    for traceback formatting under various conditions.
+    """
+
+    async def test_exception_from_called_function_has_inspectable_fields(self):
+        """
+        Exception from Python function called by koskari CALL: has traceback
+        and dynchain.
+        """
+
+        def boom():
+            raise ValueError("intentional test failure")
+
+        from tests import make_callable
+        from tests.lib.opcode import build_expr
+
+        code, ns = build_expr(
+            [
+                ["VAR", "boom"],
+                ["CALL", 0],
+                ["RETURN", 1],
+            ],
+            values={"boom": boom},
+        )
+        expr = make_callable(code, ns)
+
+        with self.assertRaises(ValueError) as ctx:
+            await expr()
+
+        exc = ctx.exception
+        self.assertEqual(exc.args, ("intentional test failure",))
+        _assert_exception_has_traceback_attrs(self, exc, ValueError)
+
+
+    async def test_pure_raise_opcode_has_traceback_attrs(self):
+        """
+        Pure RAISE opcode: exception carries __traceback__ and __koskari_dynchain__.
+        """
+
+        from tests import make_callable
+        from tests.lib.opcode import build_expr
+
+        code, ns = build_expr(
+            [
+                ["VAR", "exc"],
+                ["RAISE", 1],
+                ["RETURN", 0],
+            ],
+            values={"exc": ValueError("pure RAISE opcode")},
+        )
+        expr = make_callable(code, ns)
+
+        with self.assertRaises(ValueError) as ctx:
+            await expr()
+
+        exc = ctx.exception
+        self.assertEqual(exc.args, ("pure RAISE opcode",))
+        _assert_exception_has_traceback_attrs(self, exc, ValueError)
+
+
+    async def test_call_stack_underrun_has_traceback_attrs(self):
+        """
+        CALL 0 with empty stack: RuntimeError carries traceback attrs.
+        """
+
+        from tests import make_callable
+        from tests.lib.opcode import build_expr
+
+        code, ns = build_expr([
+            ["CALL", 0],
+            ["RETURN", 0],
+        ])
+        expr = make_callable(code, ns)
+
+        with self.assertRaises(RuntimeError) as ctx:
+            await expr()
+
+        exc = ctx.exception
+        _assert_exception_has_traceback_attrs(self, exc, RuntimeError)
+
+
+    async def test_object_add_stack_underrun_has_traceback_attrs(self):
+        """
+        OBJECT_ADD 2 with only one value: RuntimeError carries traceback attrs.
+        """
+
+        from tests import make_callable
+        from tests.lib.opcode import build_expr
+
+        code, ns = build_expr([
+            ["CONST", 1],
+            ["OBJECT_ADD", 2],
+            ["RETURN", 1],
+        ])
+        expr = make_callable(code, ns)
+
+        with self.assertRaises(RuntimeError) as ctx:
+            await expr()
+
+        exc = ctx.exception
+        _assert_exception_has_traceback_attrs(self, exc, RuntimeError)
+
+
+    async def test_div_by_zero_has_traceback_attrs(self):
+        """
+        Division by zero (OBJECT_FLOOR_DIVIDE 1/0): ZeroDivisionError carries
+        traceback attrs.
+        """
+
+        from tests import make_callable
+        from tests.lib.opcode import build_expr
+
+        code, ns = build_expr([
+            ["CONST", 1],
+            ["CONST", 0],
+            ["OBJECT_FLOOR_DIVIDE", 2],
+            ["RETURN", 1],
+        ])
+        expr = make_callable(code, ns)
+
+        with self.assertRaises(ZeroDivisionError) as ctx:
+            await expr()
+
+        exc = ctx.exception
+        _assert_exception_has_traceback_attrs(self, exc, ZeroDivisionError)
+
+
 class TestAsyncGeneratorIterIntegration(unittest.TestCase):
     """
     Integration tests for AsyncGenerator.iter() via iter_sync

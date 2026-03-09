@@ -47,6 +47,15 @@ from .lib import (
     Formals,
     FormalsSpec,
 
+    # reference types
+    Ref,
+    AttributeRef,
+    ItemRef,
+    DynamicRef,
+    ConstantRef,
+    MemoizedRef,
+    WeakRef,
+
     # values type
     values,
 
@@ -90,6 +99,15 @@ __all__ = (
     # formals types
     "Formals",
     "FormalsSpec",
+
+    # reference types
+    "Ref",
+    "AttributeRef",
+    "ItemRef",
+    "DynamicRef",
+    "ConstantRef",
+    "MemoizedRef",
+    "WeakRef",
 
     # values type
     "values",

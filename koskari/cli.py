@@ -160,18 +160,70 @@ def _render_koskari_dynchain(trace_data):
     return lines
 
 
-def format_exception_with_koskari_trace(exc_type, exc_val, tb):
+def _find_dynchain_in_chain(exc_val):
+    """
+    Walk the exception chain (exc_val, __cause__, __context__) and return
+    __koskari_dynchain__ from the first exception that has it.
+
+    :param exc_val: exception value to start from
+    :return: dynchain data or None
+    """
+    seen = set()
+    to_visit = [exc_val]
+    while to_visit:
+        current = to_visit.pop()
+        if current is None or id(current) in seen:
+            continue
+        seen.add(id(current))
+        if hasattr(current, '__koskari_dynchain__'):
+            trace_data = getattr(current, '__koskari_dynchain__', None)
+            if trace_data is not None:
+                return trace_data
+        for attr in ('__cause__', '__context__'):
+            link = getattr(current, attr, None)
+            if link is not None:
+                to_visit.append(link)
+    return None
+
+
+def format_exception_with_koskari_trace(exc_type, exc_val, tb, chain_root=None):
     """
     Format an exception traceback, interleaving koskari native dynchain data
     after synthetic native frames that carry ``__koskari_trace__`` in globals.
+    Falls back to exc_val.__koskari_dynchain__ when no such frame exists.
+    When chain_root is given, searches that exception chain for dynchain.
 
     Falls back to normal traceback formatting when no traceback is present.
 
+    :param chain_root: optional exception to walk (__cause__/__context__) for dynchain
     :return: list[str], matching traceback.format_exception style
     """
 
     if tb is None:
+        fallback = None
+        trace_data = _find_dynchain_in_chain(chain_root if chain_root is not None else exc_val)
+        if trace_data is not None:
+            fallback = _render_koskari_dynchain(trace_data)
+        if fallback:
+            out = ['Traceback (most recent call last):\n']
+            out.extend(fallback)
+            out.extend(format_exception_only(exc_type, exc_val))
+            return out
         return list(format_exception_only(exc_type, exc_val))
+
+    found_dynchain = False
+    for frame, _lineno in traceback.walk_tb(tb):
+        if frame.f_globals.get('__koskari_trace__') is not None:
+            found_dynchain = True
+            break
+
+    fallback_dynchain = None
+    trace_data = _find_dynchain_in_chain(chain_root if chain_root is not None else exc_val)
+    if not found_dynchain and trace_data is not None:
+        fallback_dynchain = _render_koskari_dynchain(trace_data)
+
+    if not found_dynchain and not fallback_dynchain:
+        return traceback.format_exception(exc_type, exc_val, tb)
 
     out = ['Traceback (most recent call last):\n']
     extracted = traceback.extract_tb(tb)
@@ -181,6 +233,9 @@ def format_exception_with_koskari_trace(exc_type, exc_val, tb):
         out.extend(traceback.format_list([summary]))
         trace_data = frame.f_globals.get('__koskari_trace__')
         out.extend(_render_koskari_dynchain(trace_data))
+
+    if fallback_dynchain:
+        out.extend(fallback_dynchain)
 
     out.extend(format_exception_only(exc_type, exc_val))
     return out
@@ -391,17 +446,7 @@ async def repl_async(mod, prompter=None, histfile=None, stdin=None, stdout=None,
             break
 
         except SyntaxError:
-            exc_type, exc_val, _ = sys.exc_info()
-            sys.last_type = exc_type
-            sys.last_value = exc_val
-            sys.last_traceback = None
-            msg = ''.join(format_exception_only(exc_type, exc_val))
-            print(msg, end='', file=stderr)
-            stderr.flush()
-            buffer = ''
-            prompt = '>>> '
-
-        except LayoutError:
+            # also catches LayoutError
             exc_type, exc_val, _ = sys.exc_info()
             sys.last_type = exc_type
             sys.last_value = exc_val
@@ -423,12 +468,11 @@ async def repl_async(mod, prompter=None, histfile=None, stdin=None, stdout=None,
                     msg = ''.join(format_exception_only(type(cause), cause))
                     sys.last_traceback = None
                 else:
-                    tb = _filter_infrastructure_tb(cause.__traceback__)
-                    sys.last_traceback = tb
-                    if tb is not None:
-                        msg = ''.join(format_exception_with_koskari_trace(type(cause), cause, tb))
-                    else:
-                        msg = ''.join(format_exception_only(type(cause), cause))
+                    tb_filtered = _filter_infrastructure_tb(cause.__traceback__)
+                    sys.last_traceback = tb_filtered
+                    tb_for_format = tb_filtered if tb_filtered is not None else cause.__traceback__
+                    msg = ''.join(format_exception_with_koskari_trace(
+                        type(cause), cause, tb_for_format, chain_root=exc_val))
             else:
                 sys.last_type = exc_type
                 sys.last_value = exc_val
