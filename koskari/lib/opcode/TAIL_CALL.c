@@ -55,12 +55,31 @@ KOS_OP_HANDLER(TAIL_CALL) {
   if (KosCallable_Check(callable)) {
     res = kos_callable_tail_vcall(ctx, out_ev, callable, args,
                                   (Py_ssize_t) n, NULL);
+
   } else {
+    SAYF("[TAIL_CALL] plain Python path: frame_top=%p kind=%s\n",
+         (void *) frame_top, kos_dynnode_kind_name(KosDynNode_KIND(frame_top)));
 
-    // TODO: Remove the current frame
+    KosDynNode *parent = KosDynNode_PARENT((KosDynNode *) frame_top);
+    if (parent) {
+      SAYF("[TAIL_CALL] plain Python path: parent=%p kind=%s\n",
+           (void *) parent, kos_dynnode_kind_name(KosDynNode_KIND(parent)));
+    } else {
+      SAY("[TAIL_CALL] plain Python path: parent=NULL (root frame)\n");
+    }
+    int drop_frame = (parent != NULL);
+    if (drop_frame && kos_dyn_pop_frame(ctx) < 0) {
+      SAY("[TAIL_CALL] plain Python path: failed to drop frame\n");
+      res = -1;
+    } else {
+      SAY("[TAIL_CALL] plain Python path: dropped frame\n");
 
-    PyObject *result = PyObject_Vectorcall(callable, args, (size_t) n, NULL);
-    res = kos_push_or_await(ctx, out_ev, result);
+      PyObject *result = PyObject_Vectorcall(callable, args, (size_t) n, NULL);
+      if (! result)
+        res = -1;
+      else
+        res = kos_push_or_await(ctx, out_ev, result);
+    }
   }
 
   if (used_tuple) {

@@ -652,17 +652,13 @@ void kos_dynwind_free(KosDynWind *wind) {
 
 
 int kos_dyn_wind_wind(KosContext *ctx, KosDynWind *node) {
-  PyObject *args;
   if (! node || ! KosDynWind_BEFORE_THUNK(node))
     return 0;
-  args = PyTuple_New(0);
-  if (! args)
-    return -1;
-  if (kos_callable_call(ctx, NULL, KosDynWind_BEFORE_THUNK(node), args, NULL) < 0) {
-    Py_DECREF(args);
+
+  if (kos_callable_vcall(ctx, NULL, KosDynWind_BEFORE_THUNK(node), NULL, 0, NULL) < 0) {
     return -1;
   }
-  Py_DECREF(args);
+
   KosContext_FLAGS(ctx) |= KOS_CTX_IN_WIND_THUNK;
   return KOS_DYN_UNWIND_ASYNC_STARTED;
 }
