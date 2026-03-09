@@ -43,6 +43,14 @@ class TestRunSync(unittest.IsolatedAsyncioTestCase):
 
         self.assertEqual(run_sync(f()), 42)
 
+    async def test_run_sync_eager_completion(self):
+        """run_sync uses eager path when coroutine completes without awaiting"""
+
+        async def f():
+            return 99
+
+        self.assertEqual(run_sync(f()), 99)
+
     async def test_run_sync_propagates_exception(self):
         """run_sync propagates exception from awaitable"""
 

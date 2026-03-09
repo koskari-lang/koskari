@@ -75,6 +75,37 @@ def _active_loop():
         return True
 
 
+def _eager_try_complete(awaitable):
+    """
+    Try one send(None) on the awaitable's iterator.
+
+    Returns (iterator, yielded_value) if suspended.  Raises StopIteration
+    with value if it completes immediately.
+    """
+
+    iterator = awaitable.__await__()
+    yielded = iterator.send(None)
+    return (iterator, yielded)
+
+
+async def _drive_await_iterator(iterator, first_yielded):
+    """
+    Drive a suspended await iterator from its first yielded value to completion.
+    Handles None yield (e.g. from asyncio.sleep) as reschedule.
+    """
+
+    value = first_yielded
+    while True:
+        if value is None:
+            result = await asyncio.sleep(0)
+        else:
+            result = await value
+        try:
+            value = iterator.send(result)
+        except StopIteration as e:
+            return e.value if e.value is not None else None
+
+
 async def as_coroutine(awaitable):
     """
     Return a coroutine that, when awaited, awaits the given awaitable
@@ -91,18 +122,22 @@ def run_sync(awaitable):
     Run an awaitable to completion from synchronous code.
 
     Accepts arbitrary awaitables; wraps non-coroutines via as_coroutine.
-    If no event loop is running in the current thread, uses asyncio.run().
-    If a loop is already running, uses the executor. Inline drain is not used
-    because it deadlocks when run_sync is called from within an async task
-    (e.g. Box.new from VM, or import during load_module_async); in those
-    cases we are already inside a loop callback and nesting _run_once
-    deadlocks. Nested run_sync (sync -> run_sync -> async -> sync -> run_sync)
-    also uses the executor via the same path.
+    Tries an eager step (one send(None)) first; if the awaitable completes
+    immediately, returns without involving the event loop.  If it suspends,
+    drives it via asyncio.run or the executor.  If a loop is already running
+    in the current thread, uses the executor to avoid deadlock (e.g. run_sync
+    from within an async task or nested run_sync).
     """
 
     if not asyncio.iscoroutine(awaitable):
         awaitable = as_coroutine(awaitable)
 
+    try:
+        iterator, first_yielded = _eager_try_complete(awaitable)
+    except StopIteration as e:
+        return e.value if e.value is not None else None
+
+    awaitable = _drive_await_iterator(iterator, first_yielded)
     if _active_loop():
         loop = _get_executor_loop()
         future = asyncio.run_coroutine_threadsafe(awaitable, loop)
