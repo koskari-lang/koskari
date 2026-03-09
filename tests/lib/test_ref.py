@@ -24,6 +24,7 @@ from unittest.mock import Mock
 
 from koskari.lib import (
     Ref, AttributeRef, ItemRef, DynamicRef, ConstantRef, MemoizedRef,
+    WeakRef,
 )
 
 
@@ -469,6 +470,76 @@ class TestMemoizedRef(unittest.IsolatedAsyncioTestCase):
             MemoizedRef(None, None)
 
 
+class TestWeakRef(unittest.IsolatedAsyncioTestCase):
+    """Tests for WeakRef type"""
+
+    async def test_create(self):
+        """WeakRef can be created"""
+        obj = Obj()
+        r = WeakRef(None, obj)
+        self.assertIsInstance(r, WeakRef)
+        self.assertIsInstance(r, Ref)
+
+    async def test_default_name(self):
+        """WeakRef without name gets default name"""
+        r = WeakRef(None, Obj())
+        self.assertEqual(r.name, "<WeakRef>")
+
+    async def test_empty_initially_when_no_value(self):
+        """WeakRef without value is empty"""
+        r = WeakRef()
+        self.assertTrue(r.empty)
+
+    async def test_deref_empty_raises(self):
+        """deref() on empty WeakRef raises NameError"""
+        r = WeakRef()
+        with self.assertRaises(NameError):
+            r.deref()
+
+    async def test_store_and_deref(self):
+        """store() and deref() work with weakly referenced object"""
+        obj = Obj()
+        r = WeakRef(None, obj)
+        self.assertFalse(r.empty)
+        self.assertIs(r.deref(), obj)
+
+    async def test_expired_deref_raises_and_clears(self):
+        """deref() on expired weakref raises NameError and clears slot"""
+        obj = Obj()
+        r = WeakRef(None, obj)
+        del obj
+        import gc
+        gc.collect()
+        with self.assertRaises(NameError):
+            r.deref()
+        self.assertTrue(r.empty)
+        with self.assertRaises(NameError):
+            r.deref()
+
+    async def test_store_overwrites(self):
+        """store() overwrites previous value"""
+        a, b = Obj(), Obj()
+        r = WeakRef(None, a)
+        self.assertIs(r.deref(), a)
+        r.store(b)
+        self.assertIs(r.deref(), b)
+
+    async def test_clear(self):
+        """clear() makes WeakRef empty"""
+        obj = Obj()
+        r = WeakRef(None, obj)
+        self.assertFalse(r.empty)
+        r.clear()
+        self.assertTrue(r.empty)
+        with self.assertRaises(NameError):
+            r.deref()
+
+    async def test_no_named_args(self):
+        """WeakRef rejects keyword arguments"""
+        with self.assertRaises(TypeError):
+            WeakRef(name="foo", value=Obj())
+
+
 class TestRefTypeHierarchy(unittest.IsolatedAsyncioTestCase):
     """Tests for ref type relationships"""
 
@@ -485,6 +556,7 @@ class TestRefTypeHierarchy(unittest.IsolatedAsyncioTestCase):
             DynamicRef(None, lambda: 1),
             ConstantRef(None, 42),
             MemoizedRef(None, lambda: 42),
+            WeakRef(None, o),
         ]
 
         for r in refs:

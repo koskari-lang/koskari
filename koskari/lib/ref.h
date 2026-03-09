@@ -164,6 +164,24 @@ PyObject *KosMemoizedRef_New(PyObject *name, PyObject *getfn);
   (((KosMemoizedRef *) r)->getfn)
 
 
+/* === WeakRef === */
+
+
+extern PyTypeObject KosWeakRefType;
+
+
+typedef struct KosWeakRef {
+  KosRef super;
+} KosWeakRef;
+
+
+#define KosWeakRef_VALUE(r)                      \
+  (KosSymbolicRef_VALUE(r))
+
+
+PyObject *KosWeakRef_New(PyObject *name, PyObject *value);
+
+
 /* === ParamRef === */
 
 
@@ -251,6 +269,9 @@ int KosRef_IsEmpty(PyObject *ref);
 
 #define KosMemoizedRef_CheckExact(obj)                  \
   ((obj) && ((obj)->ob_type == &KosMemoizedRefType))
+
+#define KosWeakRef_CheckExact(obj)                      \
+  ((obj) && ((obj)->ob_type == &KosWeakRefType))
 
 #define KosParamRef_CheckExact(obj)                     \
   ((obj) && ((obj)->ob_type == &KosParamRefType))

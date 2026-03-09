@@ -15,16 +15,18 @@
 
 
 /**
-   koskari.lib - ref module
+  koskari.lib - ref module
 
-   Reference types for Koskari
+  Reference types for Koskari
 
-   author: Christopher O'Brien <obriencj@gmail.com>
-   license: GPL v.3
+  author: Christopher O'Brien <obriencj@gmail.com>
+  license: GPL v.3
 */
 
 
 #include "lib.h"
+#include "hints.h"
+#include <weakrefobject.h>
 
 
 /* === String constants === */
@@ -37,6 +39,7 @@ static PyObject *_str_dyn_ref = NULL;    // "<DynamicRef>"
 static PyObject *_str_const_ref = NULL;  // "<ConstantRef>"
 static PyObject *_str_memo_ref = NULL;   // "<MemoizedRef>"
 static PyObject *_str_param_ref = NULL;  // "<ParamRef>"
+static PyObject *_str_weak_ref = NULL;   // "<WeakRef>"
 
 static PyObject *_str_deref = NULL;  // "deref"
 static PyObject *_str_store = NULL;  // "store"
@@ -1053,6 +1056,187 @@ PyObject *KosMemoizedRef_New(PyObject *name, PyObject *getfn) {
 }
 
 
+/* === WeakRef === */
+
+
+static int weak_ref_init(PyObject *self, PyObject *name, PyObject *value) {
+
+  KosRef_NAME(self) = NULL;
+  KosSymbolicRef_VALUE(self) = NULL;
+
+  if (! name || name == Py_None)
+    name = _str_weak_ref;
+  Py_INCREF(name);
+  KosRef_NAME(self) = name;
+
+  if (value) {
+    PyObject *wr = PyWeakref_NewRef(value, NULL);
+    if (! wr)
+      return -1;
+    KosSymbolicRef_VALUE(self) = wr;
+  }
+
+  return 0;
+}
+
+
+static PyObject *weak_ref_get_empty(PyObject *self, void *_unused) {
+
+  PyObject *wr = KosSymbolicRef_VALUE(self);
+  if (! wr)
+    Py_RETURN_TRUE;
+  if (PyWeakref_GetObject(wr) == Py_None)
+    Py_RETURN_TRUE;
+  Py_RETURN_FALSE;
+}
+
+
+static PyObject *weak_ref_m_deref(PyObject *self) {
+  PyObject *obj = NULL;
+  PyObject *wr = KosSymbolicRef_VALUE(self);
+
+#if PY_VERSION_HEX >= 0x030D0000
+  if (wr) {
+    int res = PyWeakref_GetRef(wr, &obj);
+    if (unlikely(! res)) {
+      Py_CLEAR(KosSymbolicRef_VALUE(self));
+    } else if (unlikely(res < 0)) {
+      // error mode
+      return NULL;
+    }
+  }
+#else
+  if (wr) {
+    obj = PyWeakref_GetObject(wr);
+    if (unlikely(obj == Py_None)) {
+      Py_CLEAR(KosSymbolicRef_VALUE(self));
+      obj = NULL;
+    } else if (unlikely(! obj)) {
+      // error mode
+      return NULL;
+    } else {
+      Py_INCREF(obj);
+    }
+  }
+#endif
+
+  if (! obj)
+    PyErr_Format(PyExc_NameError, "Empty reference: %S", KosRef_NAME(self));
+  return obj;
+}
+
+
+static PyObject *weak_ref_m_store(PyObject *self, PyObject *value) {
+
+  PyObject *wr = PyWeakref_NewRef(value, NULL);
+  if (! wr)
+    return NULL;
+  Py_XDECREF(KosSymbolicRef_VALUE(self));
+  KosSymbolicRef_VALUE(self) = wr;
+  Py_RETURN_NONE;
+}
+
+
+static PyMethodDef weak_ref_methods[] = {
+  { "deref", (PyCFunction) weak_ref_m_deref, METH_NOARGS,
+    "R.deref() => V" },
+
+  { "store", (PyCFunction) weak_ref_m_store, METH_O,
+    "R.store(V) => None" },
+
+  { "clear", (PyCFunction) sym_ref_m_clear, METH_NOARGS,
+    "R.clear() => None" },
+
+  { NULL, },
+};
+
+
+static PyGetSetDef weak_ref_getset[] = {
+  { "empty", weak_ref_get_empty, NULL,
+    "bool; whether this reference is empty",
+    NULL },
+
+  { "name", sym_ref_get_name, NULL,
+    "str; name of this reference",
+    NULL },
+
+  { NULL, },
+};
+
+
+static int weak_ref_tp_init(PyObject *self, PyObject *args, PyObject *kwds) {
+
+  PyObject *name = NULL;
+  PyObject *val = NULL;
+
+  if (kwds && PyDict_Size(kwds)) {
+    PyErr_SetString(PyExc_TypeError, "WeakRef takes no named arguments");
+    return -1;
+  }
+
+  if (! PyArg_ParseTuple(args, "|OO:WeakRef", &name, &val))
+    return -1;
+
+  return weak_ref_init(self, name, val);
+}
+
+
+static int weak_ref_traverse(PyObject *self, visitproc visit, void *arg) {
+
+  Py_VISIT(KosRef_NAME(self));
+  Py_VISIT(KosSymbolicRef_VALUE(self));
+  return 0;
+}
+
+
+static int weak_ref_clear(PyObject *self) {
+
+  Py_CLEAR(KosRef_NAME(self));
+  Py_CLEAR(KosSymbolicRef_VALUE(self));
+  return 0;
+}
+
+
+static void weak_ref_dealloc(PyObject *self) {
+
+  Py_CLEAR(KosRef_NAME(self));
+  Py_CLEAR(KosSymbolicRef_VALUE(self));
+  Py_TYPE(self)->tp_free(self);
+}
+
+
+PyTypeObject KosWeakRefType = {
+  PyVarObject_HEAD_INIT(NULL, 0)
+
+  "WeakRef",
+  sizeof(KosWeakRef),
+  0,
+
+  .tp_base = &KosRefType,
+  .tp_flags = Py_TPFLAGS_DEFAULT,
+  .tp_getset = weak_ref_getset,
+  .tp_methods = weak_ref_methods,
+  .tp_new = PyType_GenericNew,
+  .tp_init = weak_ref_tp_init,
+  .tp_traverse = weak_ref_traverse,
+  .tp_clear = weak_ref_clear,
+  .tp_dealloc = weak_ref_dealloc,
+};
+
+
+PyObject *KosWeakRef_New(PyObject *name, PyObject *value) {
+
+  PyObject *self = PyObject_New(PyObject, &KosWeakRefType);
+  if (! self)
+    return NULL;
+
+  if (weak_ref_init(self, name, value))
+    Py_CLEAR(self);
+
+  return self;
+}
+
+
 /* === ParamRef === */
 
 
@@ -1251,6 +1435,9 @@ PyObject *KosRef_Deref(PyObject *self) {
   } else if (tp == &KosDynamicRefType) {
     return dyn_ref_m_deref(self);
 
+  } else if (tp == &KosWeakRefType) {
+    return weak_ref_m_deref(self);
+
   } else if (tp == &KosParamRefType) {
     return param_ref_m_deref(self);
 
@@ -1280,6 +1467,9 @@ int KosRef_Store(PyObject *self, PyObject *value) {
   } else if (tp == &KosDynamicRefType) {
     res = dyn_ref_m_store(self, value);
 
+  } else if (tp == &KosWeakRefType) {
+    res = weak_ref_m_store(self, value);
+
   } else if (tp == &KosParamRefType) {
     res = param_ref_m_store(self, value);
 
@@ -1302,6 +1492,7 @@ int KosRef_Clear(PyObject *self) {
   PyTypeObject *tp = self->ob_type;
 
   if (tp == &KosRefType ||
+      tp == &KosWeakRefType ||
       tp == &KosMemoizedRefType) {
     res = sym_ref_m_clear(self);
 
@@ -1342,6 +1533,9 @@ int KosRef_IsEmpty(PyObject *self) {
       tp == &KosConstantRefType ||
       tp == &KosMemoizedRefType) {
     res = sym_ref_get_empty(self, NULL);
+
+  } else if (tp == &KosWeakRefType) {
+    res = weak_ref_get_empty(self, NULL);
 
   } else if (tp == &KosAttributeRefType) {
     res = attr_ref_get_empty(self, NULL);
@@ -1385,6 +1579,7 @@ int koskari_ref_init(PyObject *mod) {
       PyType_Ready(&KosDynamicRefType) ||
       PyType_Ready(&KosConstantRefType) ||
       PyType_Ready(&KosMemoizedRefType) ||
+      PyType_Ready(&KosWeakRefType) ||
       PyType_Ready(&KosParamRefType))
     return -1;
 
@@ -1395,6 +1590,7 @@ int koskari_ref_init(PyObject *mod) {
   STR_CONST(_str_const_ref, "<ConstantRef>");
   STR_CONST(_str_memo_ref, "<MemoizedRef>");
   STR_CONST(_str_param_ref, "<ParamRef>");
+  STR_CONST(_str_weak_ref, "<WeakRef>");
   STR_CONST(_str_deref, "deref");
   STR_CONST(_str_store, "store");
   STR_CONST(_str_clear, "clear");
@@ -1412,6 +1608,8 @@ int koskari_ref_init(PyObject *mod) {
                        (PyObject *) &KosConstantRefType);
   PyDict_SetItemString(dict, "MemoizedRef",
                        (PyObject *) &KosMemoizedRefType);
+  PyDict_SetItemString(dict, "WeakRef",
+                       (PyObject *) &KosWeakRefType);
   PyDict_SetItemString(dict, "ParamRef",
                        (PyObject *) &KosParamRefType);
 
@@ -1440,6 +1638,7 @@ int koskari_ref_clear(PyObject *mod) {
   Py_CLEAR(_str_const_ref);
   Py_CLEAR(_str_memo_ref);
   Py_CLEAR(_str_param_ref);
+  Py_CLEAR(_str_weak_ref);
   Py_CLEAR(_str_deref);
   Py_CLEAR(_str_store);
   Py_CLEAR(_str_clear);
