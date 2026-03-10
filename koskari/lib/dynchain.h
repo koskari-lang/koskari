@@ -1152,7 +1152,8 @@ int kos_dynnode_on_control_returned(KosContext *ctx, KosDynNode *node, struct Ko
    with inlined handlers rather than an indirect function-pointer call.
 
    kos_dyn_install: run install-phase setup when a node is pushed.
-   kos_dyn_wind: run wind (enter) for extent nodes during continuation transfer.
+   kos_dyn_wind: run wind (enter) for extent nodes during continuation transfer;
+     out_ev for async suspend.
    kos_dyn_unwind: run unwind (exit) for extent nodes; may start async.
    kos_dyn_exception_unwind: called when exception propagation reaches a
      HANDLES_EXCEPTIONS node; returns 0 to continue, 1 if swallowed,
@@ -1160,8 +1161,8 @@ int kos_dynnode_on_control_returned(KosContext *ctx, KosDynNode *node, struct Ko
    kos_dyn_clone: allocate a copy of the node; NULL return on error or if
      the type forbids cloning.
 */
-int kos_dyn_install(KosContext *ctx, KosDynNode *node);
-int kos_dyn_wind(KosContext *ctx, KosDynNode *node);
+int kos_dyn_install(KosContext *ctx, KosDynNode *node, struct KosEvent *out_ev);
+int kos_dyn_wind(KosContext *ctx, KosDynNode *node, struct KosEvent *out_ev);
 int kos_dyn_unwind(KosContext *ctx, KosDynNode *node,
                    struct KosEvent *out_ev);
 int kos_dyn_exception_unwind(KosContext *ctx, KosDynNode *node,

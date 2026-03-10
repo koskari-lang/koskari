@@ -503,11 +503,11 @@ void kos_yieldfrom_close_delegate(KosDynYieldFrom *node);
 
 
 /**
-   Run dyn-with enter (wind): call enter, bind result to name if present.
-   Used by transfer plan INSTALL when re-entering a captured dyn-with extent.
-   Sync only.
+   Run dyn-with enter (wind): call enter via kos_callable_vcall, bind result
+   to name if present. Used by transfer plan INSTALL and EXTENT_ACTION.
+   May return KOS_DYN_UNWIND_ASYNC_STARTED when enter suspends.
 */
-int kos_dyn_dyn_with_wind(KosContext *ctx, KosDynWith *node);
+int kos_dyn_dyn_with_wind(KosContext *ctx, KosDynWith *node, KosEvent *out_ev);
 
 int kos_with_exit_start_await(KosContext *ctx, KosEvent *out_ev, PyObject *awaitable);
 

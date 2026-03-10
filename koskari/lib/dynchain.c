@@ -1958,7 +1958,7 @@ int kos_dyn_push(KosContext *ctx, KosDynNode *node) {
   if (KosDynNode_IS_FRAME(node))
     KosContext_FRAME_TOP(ctx) = (KosDynFrame *) node;
 
-  if (kos_dyn_install(ctx, node) < 0)
+  if (kos_dyn_install(ctx, node, NULL) < 0)
     return -1;
   return 0;
 }
@@ -2010,11 +2010,12 @@ int kos_dyn_push_clone(KosContext *ctx, KosDynNode *node) {
 
 /**
    Run INSTALL-phase wind (enter) for a node with NEEDS_INSTALL_WIND.
-   Used by xfer_step_install.
-   :return: 0 on success, -1 on error
+   Used by xfer_step_install and xfer_step_push.
+   :return: 0 on success, -1 on error, KOS_DYN_UNWIND_ASYNC_STARTED when async
 */
-static int kos_dynnode_run_wind(KosContext *ctx, KosDynNode *node) {
-  return kos_dyn_wind(ctx, node);
+static int kos_dynnode_run_wind(KosContext *ctx, KosDynNode *node,
+                                KosEvent *out_ev) {
+  return kos_dyn_wind(ctx, node, out_ev);
 }
 
 
@@ -2042,9 +2043,9 @@ static int kos_dynnode_run_transfer_unwind(KosContext *ctx, KosDynNode *node,
    Run install-phase setup for a node that was just pushed.  Types with
    no install action return 0 immediately via the default case.
 
-   :return: 0 on success, -1 on error
+   :return: 0 on success, -1 on error, KOS_DYN_UNWIND_ASYNC_STARTED when async
 */
-int kos_dyn_install(KosContext *ctx, KosDynNode *node) {
+int kos_dyn_install(KosContext *ctx, KosDynNode *node, KosEvent *out_ev) {
   switch (KosDynNode_KIND(node)) {
     case KOS_DYN_PROMPT: {
       if (! KosContext_FRAME_TOP(ctx))
@@ -2068,7 +2069,7 @@ int kos_dyn_install(KosContext *ctx, KosDynNode *node) {
     case KOS_DYN_PARAM:
       return kos_dynparam_enter(ctx, (KosDynParam *) node);
     case KOS_DYN_DYN_WITH:
-      return kos_dyn_dyn_with_wind(ctx, (KosDynWith *) node);
+      return kos_dyn_dyn_with_wind(ctx, (KosDynWith *) node, out_ev);
     case KOS_DYN_COLLECT:
       /* PUSH_COLLECT handler installs collector as frame ns before pushing
          the node; no install action needed. */
@@ -2173,12 +2174,12 @@ static int kos_dyn_uninstall_handler(KosContext *ctx, KosDynNode *node, KosEvent
 
    :return: 0 on success, -1 on error, KOS_DYN_UNWIND_ASYNC_STARTED when async
 */
-int kos_dyn_wind(KosContext *ctx, KosDynNode *node) {
+int kos_dyn_wind(KosContext *ctx, KosDynNode *node, KosEvent *out_ev) {
   switch (KosDynNode_KIND(node)) {
     case KOS_DYN_PARAM:
       return kos_dyn_param_wind(ctx, (KosDynParam *) node);
     case KOS_DYN_DYN_WITH:
-      return kos_dyn_dyn_with_wind(ctx, (KosDynWith *) node);
+      return kos_dyn_dyn_with_wind(ctx, (KosDynWith *) node, out_ev);
     case KOS_DYN_WIND:
       return kos_dyn_wind_wind(ctx, (KosDynWind *) node);
     default:
@@ -3601,7 +3602,7 @@ static int xfer_step_extent_action(KosContext *ctx, KosTransferAction *action,
   int phase = KosTransferAction_EXTENT_PHASE(action);
 
   if (phase == KOS_XFER_EXTENT_PHASE_WIND)
-    return kos_dyn_wind(ctx, node);
+    return kos_dyn_wind(ctx, node, out_ev);
   return kos_dynnode_run_transfer_unwind(ctx, node, out_ev);
 }
 
@@ -3616,9 +3617,11 @@ static int xfer_step_extent_action(KosContext *ctx, KosTransferAction *action,
    in the new segment (outer to inner).  This "lands" the continuation:
    the context now runs in the captured segment.  On failure we decrement
    the plan's action index so the step can be retried or the caller can
-   handle it.  Returns 0 on success, -1 on error.
+   handle it.  Returns 0 on success, -1 on error,
+   KOS_DYN_UNWIND_ASYNC_STARTED when async wind started.
 */
-static int xfer_step_install(KosContext *ctx, KosTransferAction *action) {
+static int xfer_step_install(KosContext *ctx, KosTransferAction *action,
+                             KosEvent *out_ev) {
   KosTransferPlan *plan = KosContext_PLAN(ctx);
   KosDynNode *template_seg = KosTransferAction_INSTALL_SEGMENT(action);
   KosDynNode *template_bottom = template_seg;
@@ -3703,7 +3706,13 @@ static int xfer_step_install(KosContext *ctx, KosTransferAction *action) {
 
       /* Third pass: run wind in reverse order */
       for (size_t i = wind_count; i > 0; i--) {
-        if (kos_dynnode_run_wind(ctx, wind_nodes[i - 1]) < 0) {
+        int r = kos_dynnode_run_wind(ctx, wind_nodes[i - 1], out_ev);
+        if (r == KOS_DYN_UNWIND_ASYNC_STARTED) {
+          if (wind_nodes != stack_buf)
+            PyMem_Free(wind_nodes);
+          return KOS_DYN_UNWIND_ASYNC_STARTED;
+        }
+        if (r < 0) {
           if (wind_nodes != stack_buf)
             PyMem_Free(wind_nodes);
           if (KOS_XFER_TRACE)
@@ -3726,8 +3735,11 @@ static int xfer_step_install(KosContext *ctx, KosTransferAction *action) {
    Execute a PUSH step: append a clone of the segment to the current chain,
    grafting the segment bottom to dyn_top.  Does not free the current chain.
    Restores stack/PC from plan and runs param wind for pushed nodes.
+   Returns 0 on success, -1 on error,
+   KOS_DYN_UNWIND_ASYNC_STARTED when async wind started.
 */
-static int xfer_step_push(KosContext *ctx, KosTransferAction *action) {
+static int xfer_step_push(KosContext *ctx, KosTransferAction *action,
+                          KosEvent *out_ev) {
   KosTransferPlan *plan = KosContext_PLAN(ctx);
   KosDynNode *template_seg = KosTransferAction_INSTALL_SEGMENT(action);
   KosDynNode *template_bottom = template_seg;
@@ -3811,7 +3823,13 @@ static int xfer_step_push(KosContext *ctx, KosTransferAction *action) {
 
       /* Third pass: run wind in reverse order */
       for (size_t i = wind_count; i > 0; i--) {
-        if (kos_dynnode_run_wind(ctx, wind_nodes[i - 1]) < 0) {
+        int r = kos_dynnode_run_wind(ctx, wind_nodes[i - 1], out_ev);
+        if (r == KOS_DYN_UNWIND_ASYNC_STARTED) {
+          if (wind_nodes != stack_buf)
+            PyMem_Free(wind_nodes);
+          return KOS_DYN_UNWIND_ASYNC_STARTED;
+        }
+        if (r < 0) {
           if (wind_nodes != stack_buf)
             PyMem_Free(wind_nodes);
           if (KOS_XFER_TRACE)
@@ -4014,14 +4032,18 @@ int kos_run_transfer_step(KosContext *ctx, KosEvent *out_ev) {
     }
 
     case KOS_XFER_INSTALL: {
-      int res = xfer_step_install(ctx, action);
+      int res = xfer_step_install(ctx, action, out_ev);
+      if (res == KOS_DYN_UNWIND_ASYNC_STARTED)
+        return KOS_XFER_SUSPENDED_AWAIT;
       if (res < 0)
         return -1;
       break;
     }
 
     case KOS_XFER_PUSH: {
-      int res = xfer_step_push(ctx, action);
+      int res = xfer_step_push(ctx, action, out_ev);
+      if (res == KOS_DYN_UNWIND_ASYNC_STARTED)
+        return KOS_XFER_SUSPENDED_AWAIT;
       if (res < 0)
         return -1;
       break;

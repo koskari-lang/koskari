@@ -1442,9 +1442,15 @@ void kos_clear_pending_with_exit(KosContext *ctx) {
 }
 
 
-int kos_dyn_dyn_with_wind(KosContext *ctx, KosDynWith *node) {
+int kos_dyn_dyn_with_wind(KosContext *ctx, KosDynWith *node, KosEvent *out_ev) {
   PyObject *enter_fn = KosDynWith_ENTER(node);
-  PyObject *result = PyObject_CallNoArgs(enter_fn);
+  int r = kos_callable_vcall(ctx, out_ev, enter_fn, NULL, 0, NULL);
+  if (r == 1)
+    return KOS_DYN_UNWIND_ASYNC_STARTED;
+  if (r < 0)
+    return -1;
+
+  PyObject *result = KosStackBlock_PopRef(&CURRENT_STACK(ctx));
   if (! result)
     return -1;
 

@@ -1,7 +1,15 @@
 # Design Proposal: Unified Dynwind/With/Dyn-With API
 
-**Status:** Draft
+**Status:** Partially implemented (dyn-with enter call path unified 2025-03-10)
 **Date:** 2025-03-10
+
+## Implementation status (2025-03-10)
+
+- **kos_dyn_dyn_with_wind** now uses `kos_callable_vcall(ctx, out_ev, enter_fn, NULL, 0, NULL)`.
+  `out_ev` is threaded through `kos_dyn_wind`, `kos_dyn_install`, `xfer_step_install`, `xfer_step_push`, and `kos_run_transfer_step`.
+  Async enter during transfer (INSTALL or PUSH wind) propagates `KOS_DYN_UNWIND_ASYNC_STARTED` to `KOS_XFER_SUSPENDED_AWAIT`.
+- **PUSH_WITH / PUSH_DYN_WITH** already use `kos_callable_vcall` and provisional-node + `kos_dyn_with_on_enter_control_returned`.
+- **kos_dyn_with_unwind** uses `kos_callable_call`; exit pending state lives on the node.
 
 ## Summary
 
@@ -57,10 +65,10 @@ Thunk runs as a normal frame. When it returns, RETURN opcode returns `KOS_OP_RES
 
 | Component | Location | Behavior |
 |-----------|----------|----------|
-| PUSH_WITH / PUSH_DYN_WITH | `opcode/PUSH_WITH.c`, `PUSH_DYN_WITH.c` | `PyObject_CallNoArgs(enter)`. If awaitable, stashes `pending_with_enter` on context, calls `push_or_await`. |
-| kos_dyn_dyn_with_wind | `eval.c` | `PyObject_CallNoArgs(enter_fn)` for transfer-plan wind. |
-| Completion | `kos_complete_pending_with_enter` | Called when opcode re-dispatches with `KosContext_PENDING_WITH_ENTER_MGR(ctx)` set. Pops TOS (enter result), finalizes. |
-| State | Context | `pending_with_enter`: mgr, enter, exit, name, resume_pc, is_dyn_with. |
+| PUSH_WITH / PUSH_DYN_WITH | `opcode/PUSH_WITH.c`, `PUSH_DYN_WITH.c` | `kos_callable_vcall(ctx, out_ev, enter, NULL, 0, NULL)`. Provisional node in PENDING_ENTER_AWAIT; completion via `kos_dyn_with_on_enter_control_returned`. |
+| kos_dyn_dyn_with_wind | `eval.c` | `kos_callable_vcall(ctx, out_ev, enter_fn, NULL, 0, NULL)` for transfer-plan wind. Returns KOS_DYN_UNWIND_ASYNC_STARTED on suspend. out_ev threaded via kos_dyn_wind, kos_dyn_install, xfer_step_install, xfer_step_push. |
+| Completion | `kos_dyn_with_on_enter_control_returned` | Called from `kos_dynnode_on_control_returned` when frame parent is WITH in PENDING_ENTER_AWAIT. Pops TOS (enter result), stores to name, sets entered=1, phase=IDLE. |
+| State | Node | `KOS_WITH_PHASE_PENDING_ENTER_AWAIT` on provisional node; no context stash. |
 
 ### With exit (current)
 
