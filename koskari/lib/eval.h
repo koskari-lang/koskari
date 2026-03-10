@@ -291,19 +291,6 @@ struct KosContext {
   PyObject *pending_agen_default;  /* default value for 2-arg NEXT (or NULL) */
   int pending_agen_n;       /* 1 or 2 for NEXT; 0 for ITER_NEXT (ITER_NEXT exhausted path reads from region) */
 
-  /* Pending WITH: async enter/exit suspend (mgr != NULL or with_node != NULL when set) */
-  struct {
-    PyObject *mgr;
-    PyObject *enter;
-    PyObject *exit;
-    PyObject *name;
-    uint32_t resume_pc;
-    int is_dyn_with;   /* 1 for PUSH_DYN_WITH, 0 for PUSH_WITH */
-  } pending_with_enter;
-  struct {
-    KosDynWith *with_node;  /* node holds exc_typ, exc_val, exc_tb, normal_exit */
-  } pending_with_exit;
-
   uint32_t flags;            /* KosContextFlags */
 
   struct KosContext *context_freelist_next;  /* link when on context freelist only */
@@ -353,15 +340,6 @@ struct KosContext {
 #define KosContext_PENDING_AGEN(c)           (((KosContext *)(c))->pending_agen)
 #define KosContext_PENDING_AGEN_DEFAULT(c)   (((KosContext *)(c))->pending_agen_default)
 #define KosContext_PENDING_AGEN_N(c)         (((KosContext *)(c))->pending_agen_n)
-
-#define KosContext_PENDING_WITH_ENTER_MGR(c)   (((KosContext *)(c))->pending_with_enter.mgr)
-#define KosContext_PENDING_WITH_ENTER_ENTER(c) (((KosContext *)(c))->pending_with_enter.enter)
-#define KosContext_PENDING_WITH_ENTER_EXIT(c)  (((KosContext *)(c))->pending_with_enter.exit)
-#define KosContext_PENDING_WITH_ENTER_NAME(c)  (((KosContext *)(c))->pending_with_enter.name)
-#define KosContext_PENDING_WITH_ENTER_RESUME_PC(c) (((KosContext *)(c))->pending_with_enter.resume_pc)
-#define KosContext_PENDING_WITH_ENTER_IS_DYN(c)   (((KosContext *)(c))->pending_with_enter.is_dyn_with)
-
-#define KosContext_PENDING_WITH_EXIT_NODE(c)   (((KosContext *)(c))->pending_with_exit.with_node)
 
 #define KosContext_FLAGS(c)                  (((KosContext *)(c))->flags)
 #define KosContext_FREELIST_NEXT(c)          (((KosContext *)(c))->context_freelist_next)
@@ -525,31 +503,6 @@ void kos_yieldfrom_close_delegate(KosDynYieldFrom *node);
 
 
 /**
-  WITH enter: if result is awaitable stash and push_or_await (return 1 or -1);
-  else bind name, push block, push node (return 0). Consumes result and
-  takes ownership of mgr, enter, exit, name.
-
-  :param use_dyn_with: 1 for dyn-with (KOS_DYN_DYN_WITH), 0 for with (KOS_DYN_WITH)
-*/
-int kos_push_with_after_enter(
-    KosContext *ctx,
-    KosEvent *out_ev,
-    PyObject *result,
-    PyObject *mgr,
-    PyObject *enter,
-    PyObject *exit,
-    PyObject *name,
-    uint32_t resume_pc,
-    int use_dyn_with);
-
-
-/**
-   Complete pending WITH enter after await (TOS is the enter result).
-   Returns 0 if no pending state or on success, -1 on error.
-*/
-int kos_complete_pending_with_enter(KosContext *ctx, KosEvent *out_ev);
-
-/**
    Run dyn-with enter (wind): call enter, bind result to name if present.
    Used by transfer plan INSTALL when re-entering a captured dyn-with extent.
    Sync only.
@@ -566,9 +519,10 @@ int kos_dyn_with_on_control_returned(KosContext *ctx, KosDynWith *with_node,
                                      int do_pop_node);
 
 /**
-   Clear pending WITH enter stash. No-op if not set.
+   Complete provisional WITH enter when control returns (enter frame returned).
+   Pops result from stack, stores to name, sets entered=1 and phase=IDLE.
 */
-void kos_clear_pending_with_enter(KosContext *ctx);
+int kos_dyn_with_on_enter_control_returned(KosContext *ctx, KosDynWith *with_node);
 
 
 /* === Exception types === */

@@ -721,12 +721,15 @@ static int kos_dyn_wind_on_control_returned(KosContext *ctx, KosDynWind *wind) {
 
 int kos_dynnode_on_control_returned(KosContext *ctx, KosDynNode *node, KosEvent *out_ev) {
   (void) out_ev;
-  /* When node is a frame, check if parent is WITH in PENDING_EXIT_AWAIT. */
+  /* When node is a frame, check if parent is WITH in pending phase. */
   if (KosDynNode_IS_FRAME(node)) {
     KosDynNode *parent = KosDynNode_PARENT(node);
-    if (parent && KosDynNode_IS_WITH(parent)
-        && KosDynWith_PHASE((KosDynWith *) parent) == KOS_WITH_PHASE_PENDING_EXIT_AWAIT) {
-      return kos_dyn_with_on_control_returned(ctx, (KosDynWith *) parent, 1);
+    if (parent && KosDynNode_IS_WITH(parent)) {
+      uint8_t phase = KosDynWith_PHASE((KosDynWith *) parent);
+      if (phase == KOS_WITH_PHASE_PENDING_EXIT_AWAIT)
+        return kos_dyn_with_on_control_returned(ctx, (KosDynWith *) parent, 1);
+      if (phase == KOS_WITH_PHASE_PENDING_ENTER_AWAIT)
+        return kos_dyn_with_on_enter_control_returned(ctx, (KosDynWith *) parent);
     }
   }
   switch (KosDynNode_KIND(node)) {
@@ -1531,8 +1534,9 @@ static KosDynWith *kos_dyndynwith_new(
 KosDynWith *kos_dynwith_clone(KosDynWith *src) {
   if (! src)
     return NULL;
-  /* Invariant: do not clone a node in PENDING_EXIT_AWAIT */
-  if (KosDynWith_PHASE(src) == KOS_WITH_PHASE_PENDING_EXIT_AWAIT)
+  /* Invariant: do not clone a node in PENDING_EXIT_AWAIT or PENDING_ENTER_AWAIT */
+  if (KosDynWith_PHASE(src) == KOS_WITH_PHASE_PENDING_EXIT_AWAIT
+      || KosDynWith_PHASE(src) == KOS_WITH_PHASE_PENDING_ENTER_AWAIT)
     return NULL;
 
   KosDynWith *node = (KosDynWith *) kos_dynnode_alloc();
@@ -1565,8 +1569,9 @@ KosDynWith *kos_dynwith_clone(KosDynWith *src) {
 KosDynWith *kos_dyndynwith_clone(KosDynWith *src) {
   if (! src)
     return NULL;
-  /* Invariant: do not clone a node in PENDING_EXIT_AWAIT */
-  if (KosDynWith_PHASE(src) == KOS_WITH_PHASE_PENDING_EXIT_AWAIT)
+  /* Invariant: do not clone a node in PENDING_EXIT_AWAIT or PENDING_ENTER_AWAIT */
+  if (KosDynWith_PHASE(src) == KOS_WITH_PHASE_PENDING_EXIT_AWAIT
+      || KosDynWith_PHASE(src) == KOS_WITH_PHASE_PENDING_ENTER_AWAIT)
     return NULL;
 
   KosDynWith *node = (KosDynWith *) kos_dynnode_alloc();
@@ -1663,6 +1668,50 @@ KosDynWith *kos_dyn_push_dyn_with(
 }
 
 
+KosDynWith *kos_dyn_push_with_provisional(
+    KosContext *ctx,
+    PyObject *mgr,
+    PyObject *enter,
+    PyObject *exit,
+    PyObject *name,
+    uint32_t resume_pc) {
+
+  KosDynWith *node = kos_dynwith_new(
+      KosContext_DYN_TOP(ctx), mgr, enter, exit, name, resume_pc);
+  if (! node)
+    return NULL;
+
+  KosDynWith_ENTERED(node) = 0;
+  KosDynWith_PHASE(node) = KOS_WITH_PHASE_PENDING_ENTER_AWAIT;
+  KosContext_DYN_TOP(ctx) = (KosDynNode *) node;
+  KosContext_CHAIN_VERSION(ctx)++;
+
+  return node;
+}
+
+
+KosDynWith *kos_dyn_push_dyn_with_provisional(
+    KosContext *ctx,
+    PyObject *mgr,
+    PyObject *enter,
+    PyObject *exit,
+    PyObject *name,
+    uint32_t resume_pc) {
+
+  KosDynWith *node = kos_dyndynwith_new(
+      KosContext_DYN_TOP(ctx), mgr, enter, exit, name, resume_pc);
+  if (! node)
+    return NULL;
+
+  KosDynWith_ENTERED(node) = 0;
+  KosDynWith_PHASE(node) = KOS_WITH_PHASE_PENDING_ENTER_AWAIT;
+  KosContext_DYN_TOP(ctx) = (KosDynNode *) node;
+  KosContext_CHAIN_VERSION(ctx)++;
+
+  return node;
+}
+
+
 void kos_dyn_pop_with(KosContext *ctx, KosDynWith *node) {
   if (! KosContext_DYN_TOP(ctx) || KosContext_DYN_TOP(ctx) != (KosDynNode *) node) {
     return;
@@ -1709,13 +1758,12 @@ int kos_dyn_with_unwind(KosContext *ctx, KosDynWith *node,
   Py_DECREF(args);
 
   if (r == KOS_DYN_UNWIND_ASYNC_STARTED) {
-    /* Suspend occurred inside kos_callable_call. Stash pending state on node. */
+    /* Suspend occurred inside kos_callable_call. Pending state lives on node. */
     KosDynWith_PHASE(node) = KOS_WITH_PHASE_PENDING_EXIT_AWAIT;
     KosDynWith_EXC_TYP(node) = typ;
     KosDynWith_EXC_VAL(node) = val;
     KosDynWith_EXC_TB(node) = tb;
     KosDynWith_NORMAL_EXIT(node) = (typ == Py_None);
-    KosContext_PENDING_WITH_EXIT_NODE(ctx) = node;
     return KOS_DYN_UNWIND_ASYNC_STARTED;
   }
 

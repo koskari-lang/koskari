@@ -199,7 +199,7 @@ struct KosDynNode {
       PyObject *enter;     /* resolved enter callable (owned; NULL if not cached) */
       PyObject *exit;      /* resolved exit callable (owned) */
       uint8_t entered;     /* 1 after enter succeeded */
-      uint8_t phase;       /* KOS_WITH_PHASE_IDLE or KOS_WITH_PHASE_PENDING_EXIT_AWAIT */
+      uint8_t phase;       /* KOS_WITH_PHASE_IDLE, PENDING_EXIT_AWAIT, or PENDING_ENTER_AWAIT */
       PyObject *name;      /* binding name or NULL (owned) */
       uint32_t resume_pc;  /* PC to jump to after with body (pop_pc + 1) */
       PyObject *exc_typ;   /* owned; only when phase == PENDING_EXIT_AWAIT */
@@ -1029,6 +1029,32 @@ KosDynWith *kos_dyn_push_dyn_with(
 
 
 /**
+   Push a provisional WITH node (phase PENDING_ENTER_AWAIT) before calling
+   enter. Same ownership semantics as kos_dyn_push_with; entered = 0.
+*/
+KosDynWith *kos_dyn_push_with_provisional(
+    KosContext *ctx,
+    PyObject *mgr,
+    PyObject *enter,
+    PyObject *exit,
+    PyObject *name,
+    uint32_t resume_pc);
+
+
+/**
+   Push a provisional DYN_WITH node (phase PENDING_ENTER_AWAIT) before
+   calling enter. Same ownership semantics as kos_dyn_push_dyn_with.
+*/
+KosDynWith *kos_dyn_push_dyn_with_provisional(
+    KosContext *ctx,
+    PyObject *mgr,
+    PyObject *enter,
+    PyObject *exit,
+    PyObject *name,
+    uint32_t resume_pc);
+
+
+/**
    Clone a KOS_DYN_DYN_WITH node for continuation capture.
    Copies mgr, enter, exit, name with new references.
 
@@ -1650,8 +1676,9 @@ int kos_transferplan_traverse(
 #define KosDynCCRaise_EXC_TYPE(n)  (((KosDynNode *)(n))->u.cc_raise.exc_type)
 #define KosDynCCRaise_EXC_VAL(n)   (((KosDynNode *)(n))->u.cc_raise.exc_val)
 
-#define KOS_WITH_PHASE_IDLE               0
-#define KOS_WITH_PHASE_PENDING_EXIT_AWAIT 1
+#define KOS_WITH_PHASE_IDLE                0
+#define KOS_WITH_PHASE_PENDING_EXIT_AWAIT  1
+#define KOS_WITH_PHASE_PENDING_ENTER_AWAIT 2
 
 #define KosDynWith_MGR(n)          (((KosDynNode *)(n))->u.with.mgr)
 #define KosDynWith_ENTER(n)        (((KosDynNode *)(n))->u.with.enter)

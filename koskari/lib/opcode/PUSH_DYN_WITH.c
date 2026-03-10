@@ -15,15 +15,12 @@
 
 /**
    PUSH_DYN_WITH: arg = constant pool index (name or None). Multi-shot context
-   manager. Stack before: [..., mgr]. Pop mgr, resolve enter/exit, call enter
-   (auto-await if awaitable), bind result to name, push stack block, push
-   KOS_DYN_DYN_WITH node.
+   manager. Stack before: [..., mgr]. Pop mgr, resolve enter/exit, push block,
+   push provisional KOS_DYN_DYN_WITH node, call enter (auto-await if awaitable),
+   bind result to name.
 */
 
 KOS_OP_HANDLER(PUSH_DYN_WITH) {
-
-  if (KosContext_PENDING_WITH_ENTER_MGR(ctx))
-    return kos_complete_pending_with_enter(ctx, out_ev);
 
   PyObject *mgr = KosStackBlock_PopRef(&CURRENT_STACK(ctx));
   if (! mgr)
@@ -59,35 +56,44 @@ KOS_OP_HANDLER(PUSH_DYN_WITH) {
   PyObject *name_obj = get_name_from_insn(code, insn);
   Py_XINCREF(name_obj);
 
-  int r = kos_callable_vcall(ctx, out_ev, enter, NULL, 0, NULL);
-  if (r == 1) {
-    KosContext_PENDING_WITH_ENTER_MGR(ctx) = mgr;
-    KosContext_PENDING_WITH_ENTER_ENTER(ctx) = enter;
-    KosContext_PENDING_WITH_ENTER_EXIT(ctx) = exit;
-    KosContext_PENDING_WITH_ENTER_NAME(ctx) = name_obj;
-    KosContext_PENDING_WITH_ENTER_RESUME_PC(ctx) = resume_pc;
-    KosContext_PENDING_WITH_ENTER_IS_DYN(ctx) = 1;
-    return 1;
-  }
-  if (r < 0) {
+  if (KosStackBlock_PushBlock(&CURRENT_STACK(ctx)) < 0) {
     Py_DECREF(name_obj);
     Py_DECREF(exit);
     Py_DECREF(enter);
     Py_DECREF(mgr);
+    return -1;
+  }
+
+  KosDynWith *with_node = kos_dyn_push_dyn_with_provisional(ctx, mgr, enter,
+                                                            exit, name_obj,
+                                                            resume_pc);
+  if (! with_node) {
+    KosStackBlock_DropBlock(&CURRENT_STACK(ctx));
+    Py_DECREF(name_obj);
+    Py_DECREF(exit);
+    Py_DECREF(enter);
+    Py_DECREF(mgr);
+    return -1;
+  }
+
+  int r = kos_callable_vcall(ctx, out_ev, enter, NULL, 0, NULL);
+  if (r == 1)
+    return 1;
+
+  if (r < 0) {
+    kos_dyn_pop_with(ctx, with_node);
+    KosStackBlock_DropBlock(&CURRENT_STACK(ctx));
     return -1;
   }
 
   PyObject *result = KosStackBlock_PopRef(&CURRENT_STACK(ctx));
   if (! result) {
-    Py_DECREF(name_obj);
-    Py_DECREF(exit);
-    Py_DECREF(enter);
-    Py_DECREF(mgr);
+    kos_dyn_pop_with(ctx, with_node);
+    KosStackBlock_DropBlock(&CURRENT_STACK(ctx));
     return -1;
   }
 
-  return kos_push_with_after_enter(ctx, out_ev, result, mgr, enter, exit,
-                                   name_obj, resume_pc, 1);
+  return finalize_provisional_with_enter(ctx, result, with_node);
 }
 
 

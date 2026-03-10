@@ -277,6 +277,19 @@ static KosEvalMode raise_yield_from(KosContext *ctx) {
 
 
 /**
+   Walk chain from node toward root; return first WITH in PENDING_EXIT_AWAIT, or NULL.
+*/
+static KosDynWith *find_pending_exit_with(KosDynNode *node) {
+  for (; node; node = KosDynNode_PARENT(node)) {
+    if (KosDynNode_IS_WITH(node)
+        && KosDynWith_PHASE((KosDynWith *) node) == KOS_WITH_PHASE_PENDING_EXIT_AWAIT)
+      return (KosDynWith *) node;
+  }
+  return NULL;
+}
+
+
+/**
    Revive from AWAIT: push send_val or set throw_exc. Complete pending WITH exit if applicable.
 */
 static KosEvalMode revive_await(KosContext *ctx, PyObject *send_val, PyObject *throw_typ, PyObject *throw_exc) {
@@ -292,8 +305,9 @@ static KosEvalMode revive_await(KosContext *ctx, PyObject *send_val, PyObject *t
     if (KosStackBlock_PushRef(&CURRENT_STACK(ctx), send_val) < 0)
       return KOS_MODE_EXCEPTION;
   }
-  if (KosContext_PENDING_WITH_EXIT_NODE(ctx)) {
-    if (kos_complete_pending_with_exit(ctx) < 0)
+  {
+    KosDynWith *with_node = find_pending_exit_with(KosContext_DYN_TOP(ctx));
+    if (with_node && kos_dyn_with_on_control_returned(ctx, with_node, 1) < 0)
       return KOS_MODE_EXCEPTION;
   }
   return KOS_MODE_NORMAL;
@@ -949,15 +963,7 @@ void kos_context_free(KosContext *ctx) {
   Py_XDECREF(KosContext_DOMAIN(ctx));
   KosContext_DOMAIN(ctx) = NULL;
 
-  /* Clear pending WITH state */
-  Py_XDECREF(KosContext_PENDING_WITH_ENTER_MGR(ctx));
-  KosContext_PENDING_WITH_ENTER_MGR(ctx) = NULL;
-  Py_XDECREF(KosContext_PENDING_WITH_ENTER_ENTER(ctx));
-  KosContext_PENDING_WITH_ENTER_ENTER(ctx) = NULL;
-  Py_XDECREF(KosContext_PENDING_WITH_ENTER_EXIT(ctx));
-  KosContext_PENDING_WITH_ENTER_EXIT(ctx) = NULL;
-  Py_XDECREF(KosContext_PENDING_WITH_ENTER_NAME(ctx));
-  KosContext_PENDING_WITH_ENTER_NAME(ctx) = NULL;
+  /* Clear pending WITH state (exc_* on any WITH in PENDING_EXIT_AWAIT) */
   kos_clear_pending_with_exit(ctx);
   Py_XDECREF(KosContext_PLAN_RESUME_INJECT(ctx));
   KosContext_PLAN_RESUME_INJECT(ctx) = NULL;
@@ -996,21 +1002,6 @@ int kos_context_traverse(
   Py_VISIT(KosContext_INJECT_VALUE(ctx));
   Py_VISIT(KosContext_PENDING_AGEN_DEFAULT(ctx));
 
-  /* Traverse pending WITH state */
-  if (KosContext_PENDING_WITH_ENTER_MGR(ctx)) {
-    Py_VISIT(KosContext_PENDING_WITH_ENTER_MGR(ctx));
-    Py_VISIT(KosContext_PENDING_WITH_ENTER_ENTER(ctx));
-    Py_VISIT(KosContext_PENDING_WITH_ENTER_EXIT(ctx));
-    Py_VISIT(KosContext_PENDING_WITH_ENTER_NAME(ctx));
-  }
-  if (KosContext_PENDING_WITH_EXIT_NODE(ctx)) {
-    KosDynWith *wn = KosContext_PENDING_WITH_EXIT_NODE(ctx);
-    if (KosDynWith_PHASE(wn) == KOS_WITH_PHASE_PENDING_EXIT_AWAIT) {
-      Py_VISIT(KosDynWith_EXC_TYP(wn));
-      Py_VISIT(KosDynWith_EXC_VAL(wn));
-      Py_VISIT(KosDynWith_EXC_TB(wn));
-    }
-  }
   Py_VISIT(KosContext_PLAN_RESUME_INJECT(ctx));
   Py_VISIT(KosContext_PUSH_SHIFT_PENDING(ctx));
 
@@ -1279,143 +1270,61 @@ static int frame_ns_store(KosContext *ctx, PyObject *name, PyObject *val);
 
 
 /**
-   Use enter result: if awaitable stash and push_or_await; else store, push block, push node.
-   Consumes result and takes ownership of mgr, enter, exit, name.
+   Finalize provisional WITH node after enter completed synchronously.
+   Block and node already exist. Store result to name, set entered=1 and phase=IDLE.
+   Consumes result.
 */
-static int finalize_with_enter_result(
-    KosContext *ctx,
-    PyObject *result,
-    PyObject *mgr,
-    PyObject *enter,
-    PyObject *exit,
-    PyObject *name,
-    uint32_t resume_pc,
-    int use_dyn_with) {
+static int finalize_provisional_with_enter(KosContext *ctx, PyObject *result,
+                                           KosDynWith *with_node) {
 
+  PyObject *name = KosDynWith_NAME(with_node);
   if (name && name != Py_None) {
     if (frame_ns_store(ctx, name, result) < 0) {
       Py_DECREF(result);
-      Py_DECREF(exit);
-      Py_DECREF(enter);
-      Py_DECREF(mgr);
-      Py_XDECREF(name);
       return -1;
     }
   }
-  Py_XDECREF(result);
+  Py_DECREF(result);
 
-  if (KosStackBlock_PushBlock(&CURRENT_STACK(ctx)) < 0) {
-    Py_DECREF(exit);
-    Py_DECREF(enter);
-    Py_DECREF(mgr);
-    Py_XDECREF(name);
-    return -1;
-  }
-
-  {
-    KosDynWith *node = use_dyn_with
-        ? kos_dyn_push_dyn_with(ctx, mgr, enter, exit, name, resume_pc)
-        : kos_dyn_push_with(ctx, mgr, enter, exit, name, resume_pc);
-    if (! node) {
-      KosStackBlock_DropBlock(&CURRENT_STACK(ctx));
-      Py_DECREF(exit);
-      Py_DECREF(enter);
-      Py_DECREF(mgr);
-      Py_XDECREF(name);
-      return -1;
-    }
-  }
+  KosDynWith_ENTERED(with_node) = 1;
+  KosDynWith_PHASE(with_node) = KOS_WITH_PHASE_IDLE;
   return 0;
 }
 
 
-int kos_push_with_after_enter(
-    KosContext *ctx,
-    KosEvent *out_ev,
-    PyObject *result,
-    PyObject *mgr,
-    PyObject *enter,
-    PyObject *exit,
-    PyObject *name,
-    uint32_t resume_pc,
-    int use_dyn_with) {
-
-  PyTypeObject *type = result ? Py_TYPE(result) : NULL;
-  int is_awaitable = (type && type->tp_as_async && type->tp_as_async->am_await);
-
-  if (is_awaitable) {
-    KosContext_PENDING_WITH_ENTER_MGR(ctx) = mgr;
-    KosContext_PENDING_WITH_ENTER_ENTER(ctx) = enter;
-    KosContext_PENDING_WITH_ENTER_EXIT(ctx) = exit;
-    KosContext_PENDING_WITH_ENTER_NAME(ctx) = name;
-    KosContext_PENDING_WITH_ENTER_RESUME_PC(ctx) = resume_pc;
-    KosContext_PENDING_WITH_ENTER_IS_DYN(ctx) = use_dyn_with;
-    int r = push_or_await(ctx, out_ev, result);
-    if (r == 1)
-      return 1;
-    if (r < 0) {
-      kos_clear_pending_with_enter(ctx);
-      return -1;
-    }
-    /* r == 0: awaitable completed synchronously; result was pushed on stack.
-       Pop it and use stashed refs for the sync path below; clear stash pointers
-       without DECREF so we pass ownership to the sync path. */
-    result = KosStackBlock_PopRef(&CURRENT_STACK(ctx));
-    if (! result) {
-      kos_clear_pending_with_enter(ctx);
-      return -1;
-    }
-    mgr = KosContext_PENDING_WITH_ENTER_MGR(ctx);
-    enter = KosContext_PENDING_WITH_ENTER_ENTER(ctx);
-    exit = KosContext_PENDING_WITH_ENTER_EXIT(ctx);
-    name = KosContext_PENDING_WITH_ENTER_NAME(ctx);
-    KosContext_PENDING_WITH_ENTER_MGR(ctx) = NULL;
-    KosContext_PENDING_WITH_ENTER_ENTER(ctx) = NULL;
-    KosContext_PENDING_WITH_ENTER_EXIT(ctx) = NULL;
-    KosContext_PENDING_WITH_ENTER_NAME(ctx) = NULL;
-  }
-
-  return finalize_with_enter_result(
-      ctx, result, mgr, enter, exit, name, resume_pc, use_dyn_with);
-}
-
-
 /**
-   Complete pending WITH enter after await: TOS is the enter result.
+   Complete provisional WITH enter when enter frame returns (sync or after await).
+   Pops result from stack, stores to name, sets entered=1 and phase=IDLE.
 */
-int kos_complete_pending_with_enter(KosContext *ctx, KosEvent *out_ev) {
+int kos_dyn_with_on_enter_control_returned(KosContext *ctx, KosDynWith *with_node) {
 
-  if (! KosContext_PENDING_WITH_ENTER_MGR(ctx))
+  if (! with_node || KosDynWith_PHASE(with_node) != KOS_WITH_PHASE_PENDING_ENTER_AWAIT)
     return 0;
 
+  if (! KosContext_FRAME_TOP(ctx))
+    return -1;
+
   PyObject *result = KosStackBlock_PopRef(&CURRENT_STACK(ctx));
-  if (! result) {
-    kos_clear_pending_with_enter(ctx);
+  if (! result)
     return -1;
+
+  PyObject *name = KosDynWith_NAME(with_node);
+  if (name && name != Py_None) {
+    if (frame_ns_store(ctx, name, result) < 0) {
+      Py_DECREF(result);
+      return -1;
+    }
   }
+  Py_DECREF(result);
 
-  PyObject *mgr = KosContext_PENDING_WITH_ENTER_MGR(ctx);
-  PyObject *enter = KosContext_PENDING_WITH_ENTER_ENTER(ctx);
-  PyObject *exit = KosContext_PENDING_WITH_ENTER_EXIT(ctx);
-  PyObject *name = KosContext_PENDING_WITH_ENTER_NAME(ctx);
-  uint32_t resume_pc = KosContext_PENDING_WITH_ENTER_RESUME_PC(ctx);
-  int use_dyn_with = KosContext_PENDING_WITH_ENTER_IS_DYN(ctx);
-
-  KosContext_PENDING_WITH_ENTER_MGR(ctx) = NULL;
-  KosContext_PENDING_WITH_ENTER_ENTER(ctx) = NULL;
-  KosContext_PENDING_WITH_ENTER_EXIT(ctx) = NULL;
-  KosContext_PENDING_WITH_ENTER_NAME(ctx) = NULL;
-
-  if (finalize_with_enter_result(
-          ctx, result, mgr, enter, exit, name, resume_pc, use_dyn_with) < 0)
-    return -1;
-  (void) out_ev;
+  KosDynWith_ENTERED(with_node) = 1;
+  KosDynWith_PHASE(with_node) = KOS_WITH_PHASE_IDLE;
   return 0;
 }
 
 
 /**
-   Start awaiting WITH exit result. Stash already set by kos_dyn_with_unwind.
+   Start awaiting WITH exit result.
 */
 int kos_with_exit_start_await(KosContext *ctx, KosEvent *out_ev,
                               PyObject *awaitable) {
@@ -1443,10 +1352,8 @@ int kos_dyn_with_on_control_returned(KosContext *ctx, KosDynWith *with_node,
     return -1;
 
   PyObject *result = KosStackBlock_PopRef(&CURRENT_STACK(ctx));
-  if (! result) {
-    kos_clear_pending_with_exit(ctx);
+  if (! result)
     return -1;
-  }
 
   PyObject *typ = KosDynWith_EXC_TYP(with_node);
   PyObject *val = KosDynWith_EXC_VAL(with_node);
@@ -1455,9 +1362,6 @@ int kos_dyn_with_on_control_returned(KosContext *ctx, KosDynWith *with_node,
   KosDynWith_EXC_VAL(with_node) = NULL;
   KosDynWith_EXC_TB(with_node) = NULL;
   KosDynWith_PHASE(with_node) = KOS_WITH_PHASE_IDLE;
-
-  if (KosContext_PENDING_WITH_EXIT_NODE(ctx) == with_node)
-    KosContext_PENDING_WITH_EXIT_NODE(ctx) = NULL;
 
   int had_exception = (typ != Py_None);
 
@@ -1510,40 +1414,31 @@ int kos_dyn_with_on_control_returned(KosContext *ctx, KosDynWith *with_node,
 
 
 int kos_complete_pending_with_exit(KosContext *ctx) {
-  KosDynWith *node = KosContext_PENDING_WITH_EXIT_NODE(ctx);
+  KosDynWith *node = find_pending_exit_with(KosContext_DYN_TOP(ctx));
   return node ? kos_dyn_with_on_control_returned(ctx, node, 1) : 0;
 }
 
 
 int kos_complete_pending_with_exit_semantic(KosContext *ctx) {
-  KosDynWith *node = KosContext_PENDING_WITH_EXIT_NODE(ctx);
+  KosDynWith *node = find_pending_exit_with(KosContext_DYN_TOP(ctx));
   return node ? kos_dyn_with_on_control_returned(ctx, node, 0) : 0;
 }
 
 
 /**
-   Clear pending WITH exit stash. No-op if not set. Clears exc_* on node.
+   Clear exc_* on any WITH node in PENDING_EXIT_AWAIT on the chain.
 */
 void kos_clear_pending_with_exit(KosContext *ctx) {
-  KosDynWith *node = KosContext_PENDING_WITH_EXIT_NODE(ctx);
-  KosContext_PENDING_WITH_EXIT_NODE(ctx) = NULL;
-  if (node && KosDynWith_PHASE(node) == KOS_WITH_PHASE_PENDING_EXIT_AWAIT) {
-    Py_CLEAR(KosDynWith_EXC_TYP(node));
-    Py_CLEAR(KosDynWith_EXC_VAL(node));
-    Py_CLEAR(KosDynWith_EXC_TB(node));
-    KosDynWith_PHASE(node) = KOS_WITH_PHASE_IDLE;
+  KosDynNode *n = KosContext_DYN_TOP(ctx);
+  for (; n; n = KosDynNode_PARENT(n)) {
+    if (KosDynNode_IS_WITH(n)
+        && KosDynWith_PHASE((KosDynWith *) n) == KOS_WITH_PHASE_PENDING_EXIT_AWAIT) {
+      Py_CLEAR(KosDynWith_EXC_TYP((KosDynWith *) n));
+      Py_CLEAR(KosDynWith_EXC_VAL((KosDynWith *) n));
+      Py_CLEAR(KosDynWith_EXC_TB((KosDynWith *) n));
+      KosDynWith_PHASE((KosDynWith *) n) = KOS_WITH_PHASE_IDLE;
+    }
   }
-}
-
-
-/**
-   Clear pending WITH enter stash (release refs). No-op if not set.
-*/
-void kos_clear_pending_with_enter(KosContext *ctx) {
-  Py_CLEAR(KosContext_PENDING_WITH_ENTER_MGR(ctx));
-  Py_CLEAR(KosContext_PENDING_WITH_ENTER_ENTER(ctx));
-  Py_CLEAR(KosContext_PENDING_WITH_ENTER_EXIT(ctx));
-  Py_CLEAR(  KosContext_PENDING_WITH_ENTER_NAME(ctx));
 }
 
 
