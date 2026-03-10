@@ -254,8 +254,6 @@ struct KosContext {
   KosTransferPlan *plan;        /* active transfer plan (or NULL) */
   KosTransferPlan *plan_stack;  /* suspended plans stack */
   uint32_t chain_version;       /* incremented on chain modifications */
-  int plan_suspended_await;     /* 1 when plan step returned awaitable and we suspended */
-  PyObject *plan_resume_inject; /* inject value for suspended step on resume (owned) */
 
   /* Delimited continuation: top of installed segment when inside invoked k */
   KosDynNode *invocation_segment_top;
@@ -311,8 +309,6 @@ struct KosContext {
 #define KosContext_PLAN(c)                   (((KosContext *)(c))->plan)
 #define KosContext_PLAN_STACK(c)             (((KosContext *)(c))->plan_stack)
 #define KosContext_CHAIN_VERSION(c)          (((KosContext *)(c))->chain_version)
-#define KosContext_PLAN_SUSPENDED_AWAIT(c)  (((KosContext *)(c))->plan_suspended_await)
-#define KosContext_PLAN_RESUME_INJECT(c)     (((KosContext *)(c))->plan_resume_inject)
 #define KosContext_INVOCATION_SEGMENT_TOP(c) (((KosContext *)(c))->invocation_segment_top)
 #define KosContext_RETURN_TARGET_CHAIN(c)   (((KosContext *)(c))->return_target_chain)
 #define KosContext_RETURN_TARGET_PC(c)      (((KosContext *)(c))->return_target_pc)

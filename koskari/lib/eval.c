@@ -239,10 +239,6 @@ static KosEvalMode revive_plan(
       Py_XDECREF(KosTransferPlan_STEP_RESUME_INJECT(plan));
       KosTransferPlan_STEP_RESUME_INJECT(plan) = send_val;
     }
-
-    Py_XDECREF(KosContext_PLAN_RESUME_INJECT(ctx));
-    KosContext_PLAN_RESUME_INJECT(ctx) = send_val;
-    KosContext_PLAN_SUSPENDED_AWAIT(ctx) = 0;
   }
 
   return KOS_MODE_TRANSFER;
@@ -966,9 +962,6 @@ void kos_context_free(KosContext *ctx) {
 
   /* Clear pending WITH state (exc_* on any WITH in PENDING_EXIT_AWAIT) */
   kos_clear_pending_with_exit(ctx);
-  Py_XDECREF(KosContext_PLAN_RESUME_INJECT(ctx));
-  KosContext_PLAN_RESUME_INJECT(ctx) = NULL;
-  KosContext_PLAN_SUSPENDED_AWAIT(ctx) = 0;
 
   if (context_freecount < CONTEXT_MAX_FREE) {
     KOS_TRACE_FL_RETURN("context", 0);
@@ -1000,8 +993,6 @@ int kos_context_traverse(
   Py_VISIT(KosContext_INJECT_TYPE(ctx));
   Py_VISIT(KosContext_INJECT_VALUE(ctx));
   Py_VISIT(KosContext_PENDING_AGEN_DEFAULT(ctx));
-
-  Py_VISIT(KosContext_PLAN_RESUME_INJECT(ctx));
 
   /* Traverse the dynamic chain */
   int res = kos_dynchain_traverse(KosContext_DYN_TOP(ctx), NULL, visit, arg);

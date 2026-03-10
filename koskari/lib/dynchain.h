@@ -309,8 +309,8 @@ typedef enum KosTransferStep {
 
 /**
    Return value from kos_run_transfer_step: plan suspended on await.
-   Step set py_await_iter and plan_suspended_await; driver resumes then
-   feeds inject and runs plan again.
+   Step set step_awaitable on plan; driver resumes with send_val, which
+   revive_plan stores in step_resume_inject.
 */
 #define KOS_XFER_SUSPENDED_AWAIT 2
 
