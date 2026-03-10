@@ -1,0 +1,582 @@
+# Koskari Design Note: Freeze/Thaw Context Segments and C-Local Execution State
+
+## Purpose
+
+This document summarizes the design direction for improving Koskari's interpreter hot path by:
+
+1. Splitting persistent heap context from active execution state.
+2. Introducing explicit **freeze/thaw boundaries** between them.
+3. Moving frequently mutated execution state into **C-local structures** during evaluation.
+4. Adding a **fast inline stack block** used during active evaluation.
+5. Removing **copy-on-write (CoW) stack blocks** in favor of explicit snapshotting.
+
+The primary goal is to reduce indirection and conditional checks in the hot opcode path while preserving the ability to suspend, resume, and capture execution state.
+
+---
+
+# 1. Architectural Overview
+
+Koskari evaluation naturally divides runtime state into two categories:
+
+| Category                   | Lifetime                            | Storage                  |
+| -------------------------- | ----------------------------------- | ------------------------ |
+| Persistent execution state | Survives suspension/resume          | Heap (`KosContext`)      |
+| Active execution state     | Exists only during `koskari_eval()` | C-local (`KosEvalState`) |
+
+The interpreter therefore operates using a **freeze/thaw model**:
+
+```
+Heap Context
+   │
+   │ thaw
+   ▼
+C-local EvalState (fast execution representation)
+   │
+   │ freeze
+   ▼
+Heap Context
+```
+
+The heap context acts as the **persistent serialized form of execution**, while the C-local state acts as the **accelerated working representation**.
+
+---
+
+# 2. Persistent Context (Heap)
+
+`KosContext` remains heap-allocated and persists across evaluator drives.
+
+It owns state required for:
+
+* coroutine / generator suspension
+* async await suspension
+* continuation capture
+* transfer plan scheduling
+* wrapper lifecycle
+
+Examples of persistent elements:
+
+* dynchain head
+* frame chain
+* suspension metadata
+* transfer plans
+* resume tokens
+* frozen stack representation
+
+Importantly, persistent context **must never reference C-local memory**.
+
+---
+
+# 3. Resume Image (Freeze/Thaw Segment)
+
+Within `KosContext`, a dedicated sub-structure represents the **execution image required to resume evaluation**.
+
+Conceptually:
+
+```
+KosContext
+   ├─ runtime control state
+   └─ resume_state
+        ├─ current frame
+        ├─ program counter
+        ├─ active stack block (heap form)
+        └─ other resume-critical fields
+```
+
+This structure represents the minimal persistent information required to reconstruct the active evaluator state.
+
+This segment is the **boundary object between heap and C-local execution state**.
+
+---
+
+# 4. C-Local EvalState
+
+During active interpretation, `koskari_eval()` constructs a C-local execution state derived from the resume image.
+
+Example conceptual structure:
+
+```
+typedef struct KosEvalState {
+    KosContext *ctx;
+
+    /* cached execution state */
+    KosFrame   *frame;
+    KosCode    *code;
+    uint32_t    pc;
+
+    /* accelerated stack */
+    KosStackExec stack;
+
+    /* inline stack block */
+    KosStackBlock local_block;
+    PyObject *local_objs[FAST_STACK_SIZE];
+
+} KosEvalState;
+```
+
+This state exists **only during active execution**.
+
+Opcode handlers operate exclusively on this structure.
+
+Persistent context is updated only during freeze operations.
+
+---
+
+# 5. Fast Inline Stack Block
+
+A key performance feature of the design is an **inline stack block stored in C-local memory**.
+
+Characteristics:
+
+* Fixed small capacity (example: 32 entries).
+* Stored inside `KosEvalState`.
+* Used as the active block for most stack operations.
+
+Advantages:
+
+* avoids heap allocation in the hot path
+* reduces pointer indirection
+* improves cache locality
+
+The active stack pointer may reference either:
+
+* the inline block
+* a heap block
+
+---
+
+# 6. Stack Block Representation
+
+Stack blocks retain their segmented structure:
+
+```
+struct stackblock {
+    struct stackblock *parent;
+    uint refcount;
+    uint max;
+    uint len;
+    PyObject *objs[];
+}
+```
+
+However:
+
+* **Copy-on-write is removed.**
+* Blocks are assumed uniquely owned during execution.
+* Continuations use explicit cloning instead.
+
+This removes a conditional check from every stack write.
+
+---
+
+# 7. Stack Transitions
+
+### Local → Heap (overflow)
+
+If the inline block exceeds capacity:
+
+1. allocate or reuse heap block
+2. copy inline contents
+3. switch active block pointer to heap block
+
+### Push Block (extent entry)
+
+When creating a child stack block:
+
+1. allocate heap block
+2. copy current block into heap block
+3. reset inline block
+4. set parent pointer
+
+### Pop Block
+
+When removing a block:
+
+1. clear current block
+2. inspect parent
+3. if parent small → copy into inline block
+4. otherwise activate heap block
+
+---
+
+# 8. Freeze Operation
+
+Before any state escape, the active state must be committed to heap form.
+
+This is handled by:
+
+```
+ensure_heap_block()
+```
+
+Responsibilities:
+
+* detect if active block is inline
+* allocate heap block if needed
+* copy stack contents
+* update persistent context
+
+Freeze must occur before:
+
+* await suspension
+* yield suspension
+* continuation capture
+* iterator freezing
+* leaving `koskari_eval()` with resumable state
+
+---
+
+# 9. Thaw Operation
+
+When evaluation resumes, the runtime reconstructs active state.
+
+This may optionally accelerate the stack:
+
+```
+accelerate_block()
+```
+
+If the heap block is small enough:
+
+* copy into inline block
+* release heap block
+* activate inline stack
+
+Otherwise heap stack remains active.
+
+Acceleration is optional and purely a performance optimization.
+
+---
+
+# 10. Opcode Interface Changes
+
+Opcodes now operate on **eval-local execution state**, not on the heap context.
+
+Typical signature:
+
+```
+opcode_handler(KosEvalState *es, ...)
+```
+
+Stack operations become helpers:
+
+```
+kos_es_push(es, value)
+kos_es_pop(es)
+kos_es_push_block(es)
+kos_es_pop_block(es)
+```
+
+Opcodes no longer access:
+
+```
+ctx->frame->stack
+```
+
+This eliminates repeated pointer traversal.
+
+---
+
+# 11. Removal of Stack CoW
+
+The previous design used copy-on-write blocks to optimize continuation capture.
+
+Problems:
+
+* every stack write required a CoW check
+* hot path polluted by continuation logic
+
+New approach:
+
+* stack blocks are uniquely owned
+* continuation capture clones blocks explicitly
+
+This moves cost from:
+
+* every stack mutation
+
+To:
+
+* continuation capture
+
+Which is much rarer.
+
+---
+
+# 12. Design Goals
+
+Primary goals:
+
+* reduce stack mutation overhead
+* eliminate unnecessary pointer indirection
+* improve cache locality
+* isolate suspension logic from hot opcode paths
+* maintain clear ownership semantics
+
+Secondary goals:
+
+* make opcode implementations simpler
+* centralize stack transition logic
+* make continuation semantics explicit
+
+---
+
+# 13. Key Invariants
+
+1. C-local execution state never escapes `koskari_eval()`.
+2. Heap context never references C-local memory.
+3. Freeze operations commit execution state to heap.
+4. Thaw operations reconstruct active execution state.
+5. Stack blocks are uniquely owned during execution.
+
+These invariants maintain correctness while enabling aggressive hot-path optimizations.
+
+---
+
+# 14. Expected Performance Impact
+
+Improvements expected in:
+
+* push/pop heavy opcodes
+* arithmetic/object operations
+* stack shuffling instructions
+
+Reasons:
+
+* fewer pointer dereferences
+* removal of CoW checks
+* fewer heap allocations
+* better CPU cache locality
+
+The interpreter hot path becomes dominated by:
+
+```
+objs[len++] = value
+value = objs[--len]
+```
+
+with minimal surrounding overhead.
+
+---
+
+# 15. Future Optimization Opportunities
+
+Possible future extensions:
+
+* register caching of stack pointers
+* specialized fast opcode variants
+* block size tier freelists
+* improved DECREF clearing strategies
+
+These can be explored after measuring the new architecture.
+
+---
+
+# Summary
+
+This design introduces a **freeze/thaw execution model** separating persistent runtime state from accelerated C-local execution state.
+
+Combined with removal of stack CoW and the introduction of a **fast inline stack block**, this architecture significantly simplifies the interpreter hot path while preserving Koskari's advanced control-flow capabilities.
+
+---
+
+# Addendum: Codebase Findings, Sketch of Changes, and Implementation Plan
+
+*Addendum added after codebase exploration. Documents current-state findings, proposed change sketch, and phased implementation plan.*
+
+---
+
+## A. Current-State Findings
+
+### A.1 KosContext and Execution Flow
+
+**Location**: `koskari/lib/eval.h`, `eval.c`
+
+`KosContext` is a large (~90-line) heap-allocated struct holding all persistent VM state: dynchain, frame cache, transfer plans, delimited-continuation state, Python bridge (await/yield), exception injection, pending WITH/async-gen state, and flags. There is no separate resume-image sub-structure; resume-critical data is scattered across the context.
+
+`koskari_eval()` drives the interpreter. Opcodes receive `(ctx, out_ev, insn)` and access execution state via macros:
+
+```c
+#define CURRENT_FRAME(ctx)       KosContext_FRAME_TOP(ctx)
+#define CURRENT_STACK(ctx)       KosDynFrame_STACK(CURRENT_FRAME(ctx))
+#define CURRENT_CODE(ctx)        KosDynFrame_CODE(CURRENT_FRAME(ctx))
+#define CURRENT_PC(ctx)          KosDynFrame_PC(CURRENT_FRAME(ctx))
+```
+
+Every opcode dereferences `ctx → frame_top → stack` and then `stack → objs[len]`. The stack pointer lives in `KosDynFrame_STACK(frame)`, i.e., in the frame's union payload on the heap.
+
+### A.2 Stack and CoW
+
+**Location**: `koskari/lib/stack.c`, `stack.h`
+
+`KosStackBlock` has `back` (parent), `refcount`, `max`, `len`, and `objs[]`. `KosStackBlock_EnsureExclusive()` is called on every mutating operation; it checks `refcount == 1` and, if not, calls `KosStackBlock_CopyForWrite()`.
+
+**CoW call sites** (in `stack.c`): `Push`, `Pop`, `PushRef`, `PUSH`, `PopRef`, `Drop`, `Drop1`, `DropNoErr`, `PopTail`, `PopTailPtr`, `PopTailDict`, `PopTailDictNames`, `Replace`, `Duplicate`, `ClearBlock`, `PushBlock`, `PopBlock`, `DropBlock`, and several PyObject-facing `KosStack_*` wrappers.
+
+**Continuation capture** uses `KosStackBlock_COW()` (increment refcounts on the chain) rather than `KosStackBlock_DeepCopy()`. Call sites: `kos_dynframe_clone`, transfer-plan resume-stack handling, and several places in `dynchain.c` (e.g., `kos_dyn_install`, `kos_build_return_plan`, `handle_continuation_apply`).
+
+### A.3 Opcode Dispatch
+
+**Location**: `koskari/lib/eval.c` (phases 4–6), `opcodes.incl`
+
+Opcodes are dispatched via computed goto or switch. Each handler has signature:
+
+```c
+int op_<name>(KosContext *ctx, KosEvent *out_ev, KosOp *insn);
+```
+
+`KosDispatchCtx` (`code`, `pc`, `insn`) is filled by `eval_phase_prepare_dispatch` and used for post-opcode handling; it is not passed into opcodes. Opcodes read `CURRENT_*` macros and call `KosStackBlock_*` APIs directly.
+
+### A.4 DynChain and Frames
+
+**Location**: `koskari/lib/dynchain.h`, `dynchain.c`
+
+`KosDynFrame` (a `KosDynNode` variant) holds `code`, `pc`, `acting_pc`, `stack`, `ns`. The stack is a `KosStackBlock *` chain. Frames are pushed/popped via `kos_dyn_push_frame`, `kos_dyn_pop_frame`; chain structure drives prompts, wind, try/finally, loop/foreach, WITH, etc.
+
+**Block transitions** (push/pop block) occur in: `PUSH_TRY`, `PUSH_FINALLY`, `PUSH_LOOP`, `PUSH_FOREACH`, `PUSH_COLLECT`, `PUSH_PROMPT` (via `kos_dyn_install`), `PUSH_WITH`/`PUSH_DYN_WITH`, and their corresponding pop/drop opcodes.
+
+### A.5 Suspension and Resume Points
+
+State escapes at: AWAIT (pending `py_await_iter`), YIELD (gen boundary), YIELD_FROM (delegate stepping), WITH async enter/exit, transfer-plan await, and continuation capture (PUSH_CC, INVOKE_K, POP_PROMPT, transfer plans). All of these require heap-resident stack before leaving `koskari_eval()`.
+
+---
+
+## B. Sketch of Changes
+
+### B.1 Introduce KosEvalState
+
+Add `KosEvalState` (or `KosEvalLocal`) in `eval.h`:
+
+```c
+#define KOS_FAST_STACK_SIZE 32
+
+typedef struct KosEvalState {
+  KosContext *ctx;
+  KosDynFrame *frame;
+  KosCode *code;
+  uint32_t pc;
+
+  /* Active stack: either inline or heap */
+  int using_inline;           /* 1 = local_objs, 0 = heap_block */
+  KosStackBlock *heap_block;  /* when using heap */
+  PyObject *local_objs[KOS_FAST_STACK_SIZE];
+  size_t stack_len;
+  size_t stack_max;           /* KOS_FAST_STACK_SIZE or heap_block->max */
+} KosEvalState;
+```
+
+`koskari_eval()` allocates `KosEvalState es` on the stack (or as a local struct), populates it from `ctx` (thaw), and passes `&es` to the dispatch/opcode layer.
+
+### B.2 Thaw at Entry
+
+On `koskari_eval` entry (and after revive paths):
+
+- Set `es.ctx = ctx`, `es.frame = ctx->frame_top`, `es.code`, `es.pc` from frame.
+- If frame has a stack block and it is small enough: copy into `local_objs`, set `using_inline = 1`.
+- Else: set `using_inline = 0`, `heap_block = frame->stack`.
+
+### B.3 Freeze at Suspension
+
+Before any suspension path, call `ensure_heap_block(&es)`:
+
+- If `using_inline`, allocate heap block, copy `local_objs[0..stack_len-1]`, update `frame->stack` (or the active frame’s stack slot).
+- Ensure `ctx` / frame chain hold no pointers to `es.local_objs`.
+
+### B.4 Stack Helpers
+
+Introduce `kos_es_push`, `kos_es_pop`, `kos_es_peek`, `kos_es_drop`, etc., operating on `KosEvalState *`. These:
+
+- Use `local_objs` when `using_inline` and capacity allows.
+- On overflow: call `ensure_heap_block`, then push on heap.
+- Never call `KosStackBlock_EnsureExclusive` or `CopyForWrite`.
+
+### B.5 Opcode Signature Change
+
+Migrate opcodes from:
+
+```c
+int op_X(KosContext *ctx, KosEvent *out_ev, KosOp *insn);
+```
+
+to:
+
+```c
+int op_X(KosEvalState *es, KosEvent *out_ev, KosOp *insn);
+```
+
+`ctx` remains available as `es->ctx`. Replace `CURRENT_STACK(ctx)` with `kos_es_*` calls. `CURRENT_FRAME`, `CURRENT_CODE`, `CURRENT_PC` become `es->frame`, `es->code`, `es->pc` (or macros).
+
+### B.6 Remove CoW from Hot Path
+
+- Remove `KosStackBlock_EnsureExclusive` from all stack mutation paths used during normal evaluation.
+- Change continuation capture to use `KosStackBlock_DeepCopy` (or equivalent explicit clone) instead of `KosStackBlock_COW`. Update `kos_dynframe_clone` and all dynchain/transfer-plan sites that currently use COW.
+- Retire or repurpose `KosStackBlock_COW` and `KosStackBlock_CopyForWrite` for the new model (or remove once no longer used).
+
+### B.7 Block Push/Pop
+
+For PUSH_LOOP, PUSH_TRY, etc.:
+
+- `kos_es_push_block(es)`: freeze current block to heap if inline, allocate child block, set `es` to use it (either as new inline or heap).
+- `kos_es_pop_block(es, count)`: pop block, optionally copy parent back into inline if small.
+
+---
+
+## C. Proposed Implementation Plan
+
+### Phase 1: Prepare (Low Risk)
+
+1. **Audit CoW usage**: Enumerate all `KosStackBlock_COW` and `KosStackBlock_EnsureExclusive` call sites; document which serve continuation capture vs. normal eval.
+2. **Extract resume image**: Identify the minimal set of `KosContext` + frame fields needed to reconstruct execution. Optionally add a `KosResumeImage` sub-structure (or comments) to clarify the boundary.
+3. **Add `KosStackBlock_DeepCopy` usage for continuations**: Change `kos_dynframe_clone` and related continuation/transfer-plan paths to use `DeepCopy` instead of `COW`. Verify tests. This does not remove CoW from the hot path yet but aligns continuation semantics with the design.
+
+### Phase 2: Introduce KosEvalState (No Inline Stack Yet)
+
+1. Define `KosEvalState` with `ctx`, `frame`, `code`, `pc`, and a single `heap_block` pointer (no inline block yet).
+2. At `koskari_eval` entry, populate `es` from `ctx` and pass `&es` through dispatch.
+3. Change opcode signatures to `(KosEvalState *es, KosEvent *out_ev, KosOp *insn)` and replace `CURRENT_*` with `es->*` access. Keep using existing `KosStackBlock_*` APIs via `es->heap_block` (or `KosDynFrame_STACK(es->frame)` temporarily).
+4. Ensure all opcodes and dynchain helpers that touch the stack during eval go through `es`. Update `eval.c` phase helpers and any shared code.
+
+### Phase 3: Remove CoW from Eval Path
+
+1. Assert that during active eval, the current frame’s stack block is uniquely owned (no other continuation or snapshot holds it).
+2. Remove `KosStackBlock_EnsureExclusive` from all stack mutation paths used by the evaluator. Leave it only for legacy or non-eval paths if any remain.
+3. Run full test suite; fix any regressions.
+
+### Phase 4: Inline Stack Block
+
+1. Add `using_inline`, `local_objs[KOS_FAST_STACK_SIZE]`, `stack_len` to `KosEvalState`.
+2. Implement thaw logic: when resuming, if the frame’s heap block is small enough, copy into `local_objs` and set `using_inline = 1`.
+3. Implement `ensure_heap_block(es)` and call it before every suspension path.
+4. Implement `kos_es_push`, `kos_es_pop`, etc., to use inline block when possible.
+5. Migrate opcodes from `KosStackBlock_*` to `kos_es_*` gradually; ensure overflow and block push/pop are correct.
+
+### Phase 5: Block Transitions and Cleanup
+
+1. Implement `kos_es_push_block` / `kos_es_pop_block` with inline-awareness.
+2. Remove or deprecate `KosStackBlock_COW` and `KosStackBlock_CopyForWrite` if unused.
+3. Performance measurement and tuning (inline size, thaw acceleration heuristics).
+
+---
+
+## D. Risks and Mitigations
+
+| Risk | Mitigation |
+|------|------------|
+| Subtle continuation/transfer bugs when switching COW→DeepCopy | Phase 1: comprehensive tests before removing CoW; consider temporary debug asserts. |
+| Missing freeze before a suspension path | Audit all suspension branches; centralize freeze in a single “prepare to suspend” helper. |
+| Regressions in multi-frame or nested block scenarios | Add targeted tests for loop/foreach/try/finally, PUSH_CC, transfer plans. |
+| Increase in code size or complexity | Keep `KosEvalState` and helpers in a focused set of files; maintain clear freeze/thaw comments. |
+
+---
+
+## E. Files Requiring Modification (Preliminary)
+
+- `koskari/lib/eval.h`, `eval.c` — `KosEvalState`, thaw/freeze, dispatch changes
+- `koskari/lib/stack.c`, `stack.h` — CoW removal, possibly new `kos_es_*` helpers (or in eval.c)
+- `koskari/lib/dynchain.c` — continuation/transfer COW→DeepCopy, any stack access during eval
+- `koskari/lib/opcode/*.c` — all opcodes (signature and stack access)
+- `koskari/lib/object.c` — `CURRENT_*` usage if any
+- `design/interpreter/evaluator.md` — update to describe the new model
+
+---
+
+*End of addendum.*
