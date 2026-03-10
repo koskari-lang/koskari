@@ -301,11 +301,7 @@ struct KosContext {
     int is_dyn_with;   /* 1 for PUSH_DYN_WITH, 0 for PUSH_WITH */
   } pending_with_enter;
   struct {
-    KosDynWith *with_node;
-    PyObject *exc_typ;
-    PyObject *exc_val;
-    PyObject *exc_tb;
-    int normal_exit;  /* 1 = exit(None,None,None), 0 = exception */
+    KosDynWith *with_node;  /* node holds exc_typ, exc_val, exc_tb, normal_exit */
   } pending_with_exit;
 
   uint32_t flags;            /* KosContextFlags */
@@ -366,10 +362,6 @@ struct KosContext {
 #define KosContext_PENDING_WITH_ENTER_IS_DYN(c)   (((KosContext *)(c))->pending_with_enter.is_dyn_with)
 
 #define KosContext_PENDING_WITH_EXIT_NODE(c)   (((KosContext *)(c))->pending_with_exit.with_node)
-#define KosContext_PENDING_WITH_EXIT_TYP(c)    (((KosContext *)(c))->pending_with_exit.exc_typ)
-#define KosContext_PENDING_WITH_EXIT_VAL(c)    (((KosContext *)(c))->pending_with_exit.exc_val)
-#define KosContext_PENDING_WITH_EXIT_TB(c)     (((KosContext *)(c))->pending_with_exit.exc_tb)
-#define KosContext_PENDING_WITH_EXIT_NORMAL(c) (((KosContext *)(c))->pending_with_exit.normal_exit)
 
 #define KosContext_FLAGS(c)                  (((KosContext *)(c))->flags)
 #define KosContext_FREELIST_NEXT(c)          (((KosContext *)(c))->context_freelist_next)
@@ -569,6 +561,9 @@ int kos_with_exit_start_await(KosContext *ctx, KosEvent *out_ev, PyObject *await
 int kos_complete_pending_with_exit(KosContext *ctx);
 int kos_complete_pending_with_exit_semantic(KosContext *ctx);
 void kos_clear_pending_with_exit(KosContext *ctx);
+
+int kos_dyn_with_on_control_returned(KosContext *ctx, KosDynWith *with_node,
+                                     int do_pop_node);
 
 /**
    Clear pending WITH enter stash. No-op if not set.

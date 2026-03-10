@@ -1004,9 +1004,12 @@ int kos_context_traverse(
     Py_VISIT(KosContext_PENDING_WITH_ENTER_NAME(ctx));
   }
   if (KosContext_PENDING_WITH_EXIT_NODE(ctx)) {
-    Py_VISIT(KosContext_PENDING_WITH_EXIT_TYP(ctx));
-    Py_VISIT(KosContext_PENDING_WITH_EXIT_VAL(ctx));
-    Py_VISIT(KosContext_PENDING_WITH_EXIT_TB(ctx));
+    KosDynWith *wn = KosContext_PENDING_WITH_EXIT_NODE(ctx);
+    if (KosDynWith_PHASE(wn) == KOS_WITH_PHASE_PENDING_EXIT_AWAIT) {
+      Py_VISIT(KosDynWith_EXC_TYP(wn));
+      Py_VISIT(KosDynWith_EXC_VAL(wn));
+      Py_VISIT(KosDynWith_EXC_TB(wn));
+    }
   }
   Py_VISIT(KosContext_PLAN_RESUME_INJECT(ctx));
   Py_VISIT(KosContext_PUSH_SHIFT_PENDING(ctx));
@@ -1422,15 +1425,18 @@ int kos_with_exit_start_await(KosContext *ctx, KosEvent *out_ev,
 
 
 /**
-   Complete pending WITH exit after await: TOS is the exit result.
-   Apply swallow logic, drop block, optionally pop node, clear stash.
+   Complete WITH exit after control returned (await or RETURN). Pops result
+   from stack, applies swallow, drops block, optionally pops node. Reads
+   exc_* from the node. Called from revive (value on TOS) or
+   kos_dynnode_on_control_returned (value on frame stack).
 
    :param do_pop_node: If true, unlink and free the WITH node. If false,
                        only do semantic work (caller will unlink/free).
 */
-static int kos_complete_pending_with_exit_impl(KosContext *ctx, int do_pop_node) {
+int kos_dyn_with_on_control_returned(KosContext *ctx, KosDynWith *with_node,
+                                     int do_pop_node) {
 
-  if (! KosContext_PENDING_WITH_EXIT_NODE(ctx))
+  if (! with_node || KosDynWith_PHASE(with_node) != KOS_WITH_PHASE_PENDING_EXIT_AWAIT)
     return 0;
 
   if (! KosContext_FRAME_TOP(ctx))
@@ -1442,16 +1448,16 @@ static int kos_complete_pending_with_exit_impl(KosContext *ctx, int do_pop_node)
     return -1;
   }
 
-  KosDynWith *with_node = KosContext_PENDING_WITH_EXIT_NODE(ctx);
-  PyObject *typ = KosContext_PENDING_WITH_EXIT_TYP(ctx);
-  PyObject *val = KosContext_PENDING_WITH_EXIT_VAL(ctx);
-  PyObject *tb = KosContext_PENDING_WITH_EXIT_TB(ctx);
-  (void) KosContext_PENDING_WITH_EXIT_NORMAL(ctx);
+  PyObject *typ = KosDynWith_EXC_TYP(with_node);
+  PyObject *val = KosDynWith_EXC_VAL(with_node);
+  PyObject *tb = KosDynWith_EXC_TB(with_node);
+  KosDynWith_EXC_TYP(with_node) = NULL;
+  KosDynWith_EXC_VAL(with_node) = NULL;
+  KosDynWith_EXC_TB(with_node) = NULL;
+  KosDynWith_PHASE(with_node) = KOS_WITH_PHASE_IDLE;
 
-  KosContext_PENDING_WITH_EXIT_NODE(ctx) = NULL;
-  KosContext_PENDING_WITH_EXIT_TYP(ctx) = NULL;
-  KosContext_PENDING_WITH_EXIT_VAL(ctx) = NULL;
-  KosContext_PENDING_WITH_EXIT_TB(ctx) = NULL;
+  if (KosContext_PENDING_WITH_EXIT_NODE(ctx) == with_node)
+    KosContext_PENDING_WITH_EXIT_NODE(ctx) = NULL;
 
   int had_exception = (typ != Py_None);
 
@@ -1504,22 +1510,29 @@ static int kos_complete_pending_with_exit_impl(KosContext *ctx, int do_pop_node)
 
 
 int kos_complete_pending_with_exit(KosContext *ctx) {
-  return kos_complete_pending_with_exit_impl(ctx, 1);
+  KosDynWith *node = KosContext_PENDING_WITH_EXIT_NODE(ctx);
+  return node ? kos_dyn_with_on_control_returned(ctx, node, 1) : 0;
 }
 
 
 int kos_complete_pending_with_exit_semantic(KosContext *ctx) {
-  return kos_complete_pending_with_exit_impl(ctx, 0);
+  KosDynWith *node = KosContext_PENDING_WITH_EXIT_NODE(ctx);
+  return node ? kos_dyn_with_on_control_returned(ctx, node, 0) : 0;
 }
 
 
 /**
-   Clear pending WITH exit stash. No-op if not set.
+   Clear pending WITH exit stash. No-op if not set. Clears exc_* on node.
 */
 void kos_clear_pending_with_exit(KosContext *ctx) {
-  Py_CLEAR(KosContext_PENDING_WITH_EXIT_TYP(ctx));
-  Py_CLEAR(KosContext_PENDING_WITH_EXIT_VAL(ctx));
-  Py_CLEAR(KosContext_PENDING_WITH_EXIT_TB(ctx));
+  KosDynWith *node = KosContext_PENDING_WITH_EXIT_NODE(ctx);
+  KosContext_PENDING_WITH_EXIT_NODE(ctx) = NULL;
+  if (node && KosDynWith_PHASE(node) == KOS_WITH_PHASE_PENDING_EXIT_AWAIT) {
+    Py_CLEAR(KosDynWith_EXC_TYP(node));
+    Py_CLEAR(KosDynWith_EXC_VAL(node));
+    Py_CLEAR(KosDynWith_EXC_TB(node));
+    KosDynWith_PHASE(node) = KOS_WITH_PHASE_IDLE;
+  }
 }
 
 

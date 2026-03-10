@@ -36,19 +36,10 @@ KOS_OP_HANDLER(PUSH_DYN_WITH) {
     return -1;
   }
 
-  PyObject *result = PyObject_CallNoArgs(enter);
-  if (! result) {
-    Py_DECREF(exit);
-    Py_DECREF(enter);
-    Py_DECREF(mgr);
-    return -1;
-  }
-
   KosCode *code = CURRENT_CODE(ctx);
   uint32_t pc = CURRENT_ACTING_PC(ctx);
   uint32_t eid = kos_extent_find((PyObject *) code, pc, KOS_EXT_DYN_WITH);
   if (eid == KOS_EXTENT_NONE) {
-    Py_DECREF(result);
     Py_DECREF(exit);
     Py_DECREF(enter);
     Py_DECREF(mgr);
@@ -57,7 +48,6 @@ KOS_OP_HANDLER(PUSH_DYN_WITH) {
   }
   KosExtentDesc *ext = kos_extent_desc((PyObject *) code, eid);
   if (! ext) {
-    Py_DECREF(result);
     Py_DECREF(exit);
     Py_DECREF(enter);
     Py_DECREF(mgr);
@@ -68,6 +58,33 @@ KOS_OP_HANDLER(PUSH_DYN_WITH) {
 
   PyObject *name_obj = get_name_from_insn(code, insn);
   Py_XINCREF(name_obj);
+
+  int r = kos_callable_vcall(ctx, out_ev, enter, NULL, 0, NULL);
+  if (r == 1) {
+    KosContext_PENDING_WITH_ENTER_MGR(ctx) = mgr;
+    KosContext_PENDING_WITH_ENTER_ENTER(ctx) = enter;
+    KosContext_PENDING_WITH_ENTER_EXIT(ctx) = exit;
+    KosContext_PENDING_WITH_ENTER_NAME(ctx) = name_obj;
+    KosContext_PENDING_WITH_ENTER_RESUME_PC(ctx) = resume_pc;
+    KosContext_PENDING_WITH_ENTER_IS_DYN(ctx) = 1;
+    return 1;
+  }
+  if (r < 0) {
+    Py_DECREF(name_obj);
+    Py_DECREF(exit);
+    Py_DECREF(enter);
+    Py_DECREF(mgr);
+    return -1;
+  }
+
+  PyObject *result = KosStackBlock_PopRef(&CURRENT_STACK(ctx));
+  if (! result) {
+    Py_DECREF(name_obj);
+    Py_DECREF(exit);
+    Py_DECREF(enter);
+    Py_DECREF(mgr);
+    return -1;
+  }
 
   return kos_push_with_after_enter(ctx, out_ev, result, mgr, enter, exit,
                                    name_obj, resume_pc, 1);

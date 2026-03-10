@@ -567,9 +567,9 @@ static void kos_dyn_cc_raise_free(KosDynCCRaise *node) {
 
 
 static int cc_raise_unwind(KosContext *ctx, KosDynNode *node,
-                           PyObject **out_awaitable) {
+                           KosEvent *out_ev) {
   (void) ctx;
-  (void) out_awaitable;
+  (void) out_ev;
   PyObject *exc_type = KosDynCCRaise_EXC_TYPE(node);
   PyObject *exc_val = KosDynCCRaise_EXC_VAL(node);
   if (exc_type && exc_val) {
@@ -721,9 +721,22 @@ static int kos_dyn_wind_on_control_returned(KosContext *ctx, KosDynWind *wind) {
 
 int kos_dynnode_on_control_returned(KosContext *ctx, KosDynNode *node, KosEvent *out_ev) {
   (void) out_ev;
+  /* When node is a frame, check if parent is WITH in PENDING_EXIT_AWAIT. */
+  if (KosDynNode_IS_FRAME(node)) {
+    KosDynNode *parent = KosDynNode_PARENT(node);
+    if (parent && KosDynNode_IS_WITH(parent)
+        && KosDynWith_PHASE((KosDynWith *) parent) == KOS_WITH_PHASE_PENDING_EXIT_AWAIT) {
+      return kos_dyn_with_on_control_returned(ctx, (KosDynWith *) parent, 1);
+    }
+  }
   switch (KosDynNode_KIND(node)) {
     case KOS_DYN_WIND:
       return kos_dyn_wind_on_control_returned(ctx, (KosDynWind *) node);
+    case KOS_DYN_WITH:
+    case KOS_DYN_DYN_WITH:
+      if (KosDynWith_PHASE((KosDynWith *) node) == KOS_WITH_PHASE_PENDING_EXIT_AWAIT)
+        return kos_dyn_with_on_control_returned(ctx, (KosDynWith *) node, 1);
+      return 0;
     default:
       return 0;
   }
@@ -1475,8 +1488,12 @@ static KosDynWith *kos_dynwith_new(
   KosDynWith_ENTER(node) = enter;
   KosDynWith_EXIT(node) = exit;
   KosDynWith_ENTERED(node) = 0;
+  KosDynWith_PHASE(node) = KOS_WITH_PHASE_IDLE;
   KosDynWith_NAME(node) = name;
   KosDynWith_RESUME_PC(node) = resume_pc;
+  KosDynWith_EXC_TYP(node) = NULL;
+  KosDynWith_EXC_VAL(node) = NULL;
+  KosDynWith_EXC_TB(node) = NULL;
   return node;
 }
 
@@ -1501,14 +1518,21 @@ static KosDynWith *kos_dyndynwith_new(
   KosDynWith_ENTER(node) = enter;
   KosDynWith_EXIT(node) = exit;
   KosDynWith_ENTERED(node) = 0;
+  KosDynWith_PHASE(node) = KOS_WITH_PHASE_IDLE;
   KosDynWith_NAME(node) = name;
   KosDynWith_RESUME_PC(node) = resume_pc;
+  KosDynWith_EXC_TYP(node) = NULL;
+  KosDynWith_EXC_VAL(node) = NULL;
+  KosDynWith_EXC_TB(node) = NULL;
   return node;
 }
 
 
 KosDynWith *kos_dynwith_clone(KosDynWith *src) {
   if (! src)
+    return NULL;
+  /* Invariant: do not clone a node in PENDING_EXIT_AWAIT */
+  if (KosDynWith_PHASE(src) == KOS_WITH_PHASE_PENDING_EXIT_AWAIT)
     return NULL;
 
   KosDynWith *node = (KosDynWith *) kos_dynnode_alloc();
@@ -1526,16 +1550,23 @@ KosDynWith *kos_dynwith_clone(KosDynWith *src) {
   KosDynWith_EXIT(node) = KosDynWith_EXIT(src);
   Py_XINCREF(KosDynWith_EXIT(node));
   KosDynWith_ENTERED(node) = KosDynWith_ENTERED(src);
+  KosDynWith_PHASE(node) = KOS_WITH_PHASE_IDLE;
   KosDynWith_NAME(node) = KosDynWith_NAME(src);
   if (KosDynWith_NAME(node))
     Py_INCREF(KosDynWith_NAME(node));
   KosDynWith_RESUME_PC(node) = KosDynWith_RESUME_PC(src);
+  KosDynWith_EXC_TYP(node) = NULL;
+  KosDynWith_EXC_VAL(node) = NULL;
+  KosDynWith_EXC_TB(node) = NULL;
   return node;
 }
 
 
 KosDynWith *kos_dyndynwith_clone(KosDynWith *src) {
   if (! src)
+    return NULL;
+  /* Invariant: do not clone a node in PENDING_EXIT_AWAIT */
+  if (KosDynWith_PHASE(src) == KOS_WITH_PHASE_PENDING_EXIT_AWAIT)
     return NULL;
 
   KosDynWith *node = (KosDynWith *) kos_dynnode_alloc();
@@ -1553,10 +1584,14 @@ KosDynWith *kos_dyndynwith_clone(KosDynWith *src) {
   KosDynWith_EXIT(node) = KosDynWith_EXIT(src);
   Py_XINCREF(KosDynWith_EXIT(node));
   KosDynWith_ENTERED(node) = KosDynWith_ENTERED(src);
+  KosDynWith_PHASE(node) = KOS_WITH_PHASE_IDLE;
   KosDynWith_NAME(node) = KosDynWith_NAME(src);
   if (KosDynWith_NAME(node))
     Py_INCREF(KosDynWith_NAME(node));
   KosDynWith_RESUME_PC(node) = KosDynWith_RESUME_PC(src);
+  KosDynWith_EXC_TYP(node) = NULL;
+  KosDynWith_EXC_VAL(node) = NULL;
+  KosDynWith_EXC_TB(node) = NULL;
   return node;
 }
 
@@ -1573,6 +1608,14 @@ static void kos_dynwith_free(KosDynWith *node) {
   KosDynWith_EXIT(node) = NULL;
   Py_XDECREF(KosDynWith_NAME(node));
   KosDynWith_NAME(node) = NULL;
+  if (KosDynWith_PHASE(node) == KOS_WITH_PHASE_PENDING_EXIT_AWAIT) {
+    Py_XDECREF(KosDynWith_EXC_TYP(node));
+    KosDynWith_EXC_TYP(node) = NULL;
+    Py_XDECREF(KosDynWith_EXC_VAL(node));
+    KosDynWith_EXC_VAL(node) = NULL;
+    Py_XDECREF(KosDynWith_EXC_TB(node));
+    KosDynWith_EXC_TB(node) = NULL;
+  }
 
   kos_dynnode_return_to_freelist((KosDynNode *) node);
 }
@@ -1632,7 +1675,7 @@ void kos_dyn_pop_with(KosContext *ctx, KosDynWith *node) {
 
 
 int kos_dyn_with_unwind(KosContext *ctx, KosDynWith *node,
-                        PyObject **out_awaitable) {
+                        KosEvent *out_ev) {
 
   PyObject *exit_fn = KosDynWith_EXIT(node);
   PyObject *typ = NULL;
@@ -1654,23 +1697,50 @@ int kos_dyn_with_unwind(KosContext *ctx, KosDynWith *node,
     Py_INCREF(Py_None); tb  = Py_None;
   }
 
-  PyObject *result = PyObject_CallFunctionObjArgs(
-      exit_fn, typ, val, tb, NULL);
-
-  if (! result)
+  PyObject *args = PyTuple_Pack(3, typ, val, tb);
+  if (! args) {
+    Py_DECREF(typ);
+    Py_DECREF(val);
+    Py_DECREF(tb);
     return -1;
+  }
 
-  if (out_awaitable) {
-    PyTypeObject *type = Py_TYPE(result);
-    if (type->tp_as_async && type->tp_as_async->am_await) {
-      KosContext_PENDING_WITH_EXIT_NODE(ctx) = node;
-      KosContext_PENDING_WITH_EXIT_TYP(ctx) = typ;
-      KosContext_PENDING_WITH_EXIT_VAL(ctx) = val;
-      KosContext_PENDING_WITH_EXIT_TB(ctx) = tb;
-      KosContext_PENDING_WITH_EXIT_NORMAL(ctx) = (typ == Py_None);
-      *out_awaitable = result;
-      return KOS_DYN_UNWIND_ASYNC_STARTED;
-    }
+  int r = kos_callable_call(ctx, out_ev, exit_fn, args, NULL);
+  Py_DECREF(args);
+
+  if (r == KOS_DYN_UNWIND_ASYNC_STARTED) {
+    /* Suspend occurred inside kos_callable_call. Stash pending state on node. */
+    KosDynWith_PHASE(node) = KOS_WITH_PHASE_PENDING_EXIT_AWAIT;
+    KosDynWith_EXC_TYP(node) = typ;
+    KosDynWith_EXC_VAL(node) = val;
+    KosDynWith_EXC_TB(node) = tb;
+    KosDynWith_NORMAL_EXIT(node) = (typ == Py_None);
+    KosContext_PENDING_WITH_EXIT_NODE(ctx) = node;
+    return KOS_DYN_UNWIND_ASYNC_STARTED;
+  }
+
+  if (r < 0) {
+    Py_DECREF(typ);
+    Py_DECREF(val);
+    Py_DECREF(tb);
+    return -1;
+  }
+
+  /* r == 0: result is on stack */
+  KosDynFrame *frame = KosContext_FRAME_TOP(ctx);
+  if (! frame || ! KosDynFrame_STACK(frame)) {
+    Py_DECREF(typ);
+    Py_DECREF(val);
+    Py_DECREF(tb);
+    return -1;
+  }
+
+  PyObject *result = KosStackBlock_PopRef(&KosDynFrame_STACK(frame));
+  if (! result) {
+    Py_DECREF(typ);
+    Py_DECREF(val);
+    Py_DECREF(tb);
+    return -1;
   }
 
   if (typ != Py_None && PyObject_IsTrue(result)) {
@@ -1678,9 +1748,14 @@ int kos_dyn_with_unwind(KosContext *ctx, KosDynWith *node,
     Py_XDECREF(typ);
     Py_XDECREF(val);
     Py_XDECREF(tb);
-
-  } else if (typ != Py_None) {
+  }
+  else if (typ != Py_None) {
     PyErr_Restore(typ, val, tb);
+  }
+  else {
+    Py_XDECREF(typ);
+    Py_XDECREF(val);
+    Py_XDECREF(tb);
   }
 
   Py_DECREF(result);
@@ -1899,21 +1974,13 @@ static int kos_dynnode_run_wind(KosContext *ctx, KosDynNode *node) {
    Run transfer-plan unwind for a node with NEEDS_UNWIND_ACTION.
    Uses kos_dyn_unwind; teardown (drop block, pop) for nodes with
    NEEDS_TRANSFER_TEARDOWN. Used by kos_run_transfer_step for EXTENT_ACTION.
-   :return: 0 on success, -1 on error
+   :return: 0 on success, -1 on error, KOS_DYN_UNWIND_ASYNC_STARTED when async
 */
-static int kos_dynnode_run_transfer_unwind(KosContext *ctx, KosDynNode *node) {
-  PyObject *exit_awaitable = NULL;
-  int r = kos_dyn_unwind(ctx, node, &exit_awaitable);
-  if (r == KOS_DYN_UNWIND_ASYNC_STARTED) {
-    /* WIND after-thunk or WITH async exit: propagate for eval loop to run thunk */
-    if (exit_awaitable) {
-      Py_XDECREF(exit_awaitable);
-      PyErr_SetString(PyExc_RuntimeError,
-                      "async dyn-with exit during transfer not yet supported");
-      return -1;
-    }
+static int kos_dynnode_run_transfer_unwind(KosContext *ctx, KosDynNode *node,
+                                           KosEvent *out_ev) {
+  int r = kos_dyn_unwind(ctx, node, out_ev);
+  if (r == KOS_DYN_UNWIND_ASYNC_STARTED)
     return KOS_DYN_UNWIND_ASYNC_STARTED;
-  }
   if (r < 0)
     return -1;
   return 0;
@@ -1992,8 +2059,7 @@ static int kos_dyn_uninstall_handler(KosContext *ctx, KosDynNode *node, KosEvent
       return result;
     }
     case KOS_DYN_WIND:
-      (void) out_ev;
-      return kos_dyn_unwind(ctx, node, NULL);
+      return kos_dyn_unwind(ctx, node, out_ev);
     case KOS_DYN_TRY:
     case KOS_DYN_FINALLY:
     case KOS_DYN_LOOP:
@@ -2025,19 +2091,9 @@ static int kos_dyn_uninstall_handler(KosContext *ctx, KosDynNode *node, KosEvent
     case KOS_DYN_WITH:
     case KOS_DYN_DYN_WITH: {
       KosDynWith *with_node = (KosDynWith *) node;
-      PyObject *exit_awaitable = NULL;
-      int unw = kos_dyn_unwind(ctx, node, &exit_awaitable);
-      if (unw == KOS_DYN_UNWIND_ASYNC_STARTED) {
-        SAY("[dyn] with_pop: async unwind, kos_with_exit_start_await");
-        int r = kos_with_exit_start_await(ctx, out_ev, exit_awaitable);
-        if (r == 1) {
-          SAY("[dyn] with_pop: kos_with_exit_start_await returned 1 (suspend)");
-          return KOS_DYN_UNWIND_ASYNC_STARTED;
-        }
-        if (r < 0)
-          return -1;
-        return kos_complete_pending_with_exit_semantic(ctx) == 0 ? 0 : -1;
-      }
+      int unw = kos_dyn_unwind(ctx, node, out_ev);
+      if (unw == KOS_DYN_UNWIND_ASYNC_STARTED)
+        return KOS_DYN_UNWIND_ASYNC_STARTED;
       if (unw < 0)
         return -1;
       if (! PyErr_Occurred()) {
@@ -2089,32 +2145,31 @@ int kos_dyn_wind(KosContext *ctx, KosDynNode *node) {
 /**
    Run unwind (exit) for an extent node.  May start async for WITH/DYN_WITH.
 
-   :param out_awaitable: receives the awaitable when async; may be NULL
+   :param out_ev: event output; may be NULL for nodes that do not suspend
    :return: 0 on success, -1 on error, KOS_DYN_UNWIND_ASYNC_STARTED when async
 */
 int kos_dyn_unwind(
     KosContext *ctx,
     KosDynNode *node,
-    PyObject **out_awaitable) {
-
-  PyObject *dummy = NULL;
-  PyObject **out = (out_awaitable != NULL) ? out_awaitable : &dummy;
+    KosEvent *out_ev) {
 
   switch (KosDynNode_KIND(node)) {
     case KOS_DYN_SHIFT:
-      (void) out;
+      (void) out_ev;
       return 0;
     case KOS_DYN_PARAM:
-      (void) out;
+      (void) out_ev;
       kos_dyn_param_unwind(ctx, (KosDynParam *) node);
       return 0;
     case KOS_DYN_WIND:
+      (void) out_ev;
       return kos_dyn_wind_unwind(ctx, (KosDynWind *) node);
     case KOS_DYN_WITH:
     case KOS_DYN_DYN_WITH:
-      return kos_dyn_with_unwind(ctx, (KosDynWith *) node, out);
+      return kos_dyn_with_unwind(ctx, (KosDynWith *) node, out_ev);
     case KOS_DYN_CC_RAISE:
-      return cc_raise_unwind(ctx, node, out);
+      (void) out_ev;
+      return cc_raise_unwind(ctx, node, NULL);
     default:
       PyErr_Format(PyExc_RuntimeError,
                    "kos_dyn_unwind: node kind %u has no unwind",
@@ -3492,13 +3547,14 @@ void kos_free_transfer_plan(KosTransferPlan *plan) {
    kos_dynnode_run_transfer_unwind.  Returns 0 on sync completion, -1
    on error, or KOS_DYN_UNWIND_ASYNC_STARTED when async started.
 */
-static int xfer_step_extent_action(KosContext *ctx, KosTransferAction *action) {
+static int xfer_step_extent_action(KosContext *ctx, KosTransferAction *action,
+                                   KosEvent *out_ev) {
   KosDynNode *node = KosTransferAction_EXTENT_NODE(action);
   int phase = KosTransferAction_EXTENT_PHASE(action);
 
   if (phase == KOS_XFER_EXTENT_PHASE_WIND)
     return kos_dyn_wind(ctx, node);
-  return kos_dynnode_run_transfer_unwind(ctx, node);
+  return kos_dynnode_run_transfer_unwind(ctx, node, out_ev);
 }
 
 
@@ -3901,7 +3957,7 @@ int kos_run_transfer_step(KosContext *ctx, KosEvent *out_ev) {
 
   switch (KosTransferAction_STEP(action)) {
     case KOS_XFER_EXTENT_ACTION: {
-      int res = xfer_step_extent_action(ctx, action);
+      int res = xfer_step_extent_action(ctx, action, out_ev);
       if (res == KOS_DYN_UNWIND_ASYNC_STARTED)
         return KOS_XFER_SUSPENDED_AWAIT;
       if (res < 0)
@@ -4199,6 +4255,11 @@ static int dynnode_traverse_with(KosDynNode *node, visitproc visit, void *arg) {
   Py_VISIT(KosDynWith_ENTER(with_node));
   Py_VISIT(KosDynWith_EXIT(with_node));
   Py_VISIT(KosDynWith_NAME(with_node));
+  if (KosDynWith_PHASE(with_node) == KOS_WITH_PHASE_PENDING_EXIT_AWAIT) {
+    Py_VISIT(KosDynWith_EXC_TYP(with_node));
+    Py_VISIT(KosDynWith_EXC_VAL(with_node));
+    Py_VISIT(KosDynWith_EXC_TB(with_node));
+  }
   return 0;
 }
 

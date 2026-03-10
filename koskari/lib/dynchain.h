@@ -199,8 +199,13 @@ struct KosDynNode {
       PyObject *enter;     /* resolved enter callable (owned; NULL if not cached) */
       PyObject *exit;      /* resolved exit callable (owned) */
       uint8_t entered;     /* 1 after enter succeeded */
+      uint8_t phase;       /* KOS_WITH_PHASE_IDLE or KOS_WITH_PHASE_PENDING_EXIT_AWAIT */
       PyObject *name;      /* binding name or NULL (owned) */
       uint32_t resume_pc;  /* PC to jump to after with body (pop_pc + 1) */
+      PyObject *exc_typ;   /* owned; only when phase == PENDING_EXIT_AWAIT */
+      PyObject *exc_val;
+      PyObject *exc_tb;
+      int normal_exit;     /* 1 = exit(None,None,None); only when phase == PENDING_EXIT_AWAIT */
     } with;
     struct {
       /* shift: simple marker; PROMPT owns the stack block for the delimited region */
@@ -1050,15 +1055,14 @@ void kos_dyn_pop_with(KosContext *ctx, KosDynWith *node);
 
    :param ctx: execution context
    :param node: WITH node being unwound
+   :param out_ev: event output for suspend (required when exit may be async)
 
-   :param out_awaitable: if non-NULL and exit returns an awaitable,
-     set to the awaitable (new ref) and return KOS_DYN_UNWIND_ASYNC_STARTED
+   Uses kos_callable_call for exit. When exit returns an awaitable, suspend
+   happens inside kos_callable_call; pending state is stashed and this returns 1.
 
-   :return: 0 on success, -1 on error, KOS_DYN_UNWIND_ASYNC_STARTED if
-     exit returned awaitable (and *out_awaitable set)
+   :return: 0 on success, -1 on error, 1 when suspend occurred
 */
-int kos_dyn_with_unwind(KosContext *ctx, KosDynWith *node,
-                        PyObject **out_awaitable);
+int kos_dyn_with_unwind(KosContext *ctx, KosDynWith *node, struct KosEvent *out_ev);
 
 
 /**
@@ -1133,7 +1137,7 @@ int kos_dynnode_on_control_returned(KosContext *ctx, KosDynNode *node, struct Ko
 int kos_dyn_install(KosContext *ctx, KosDynNode *node);
 int kos_dyn_wind(KosContext *ctx, KosDynNode *node);
 int kos_dyn_unwind(KosContext *ctx, KosDynNode *node,
-                   PyObject **out_awaitable);
+                   struct KosEvent *out_ev);
 int kos_dyn_exception_unwind(KosContext *ctx, KosDynNode *node,
                                struct KosEvent *out_ev);
 KosDynNode *kos_dyn_clone(KosDynNode *node);
@@ -1646,12 +1650,20 @@ int kos_transferplan_traverse(
 #define KosDynCCRaise_EXC_TYPE(n)  (((KosDynNode *)(n))->u.cc_raise.exc_type)
 #define KosDynCCRaise_EXC_VAL(n)   (((KosDynNode *)(n))->u.cc_raise.exc_val)
 
+#define KOS_WITH_PHASE_IDLE               0
+#define KOS_WITH_PHASE_PENDING_EXIT_AWAIT 1
+
 #define KosDynWith_MGR(n)          (((KosDynNode *)(n))->u.with.mgr)
 #define KosDynWith_ENTER(n)        (((KosDynNode *)(n))->u.with.enter)
 #define KosDynWith_EXIT(n)         (((KosDynNode *)(n))->u.with.exit)
 #define KosDynWith_ENTERED(n)      (((KosDynNode *)(n))->u.with.entered)
+#define KosDynWith_PHASE(n)        (((KosDynNode *)(n))->u.with.phase)
 #define KosDynWith_NAME(n)         (((KosDynNode *)(n))->u.with.name)
 #define KosDynWith_RESUME_PC(n)    (((KosDynNode *)(n))->u.with.resume_pc)
+#define KosDynWith_EXC_TYP(n)      (((KosDynNode *)(n))->u.with.exc_typ)
+#define KosDynWith_EXC_VAL(n)      (((KosDynNode *)(n))->u.with.exc_val)
+#define KosDynWith_EXC_TB(n)       (((KosDynNode *)(n))->u.with.exc_tb)
+#define KosDynWith_NORMAL_EXIT(n)  (((KosDynNode *)(n))->u.with.normal_exit)
 
 
 /* === Unit lifecycle === */
