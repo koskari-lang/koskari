@@ -165,6 +165,7 @@ struct KosDynNode {
     struct {
       uint32_t prompt_id;
       KosStackBlock *stack;  /* prompt-owned operand stack; NULL if not used */
+      PyObject *pending_shift_wrapper;  /* KosPyDelimitedContinuation when PUSH_SHIFT plan completed; owned */
     } prompt;
     struct {
       uint32_t resume_pc;
@@ -1634,8 +1635,9 @@ int kos_transferplan_traverse(
 #define KosDynFrame_FLAGS(f)      (((KosDynNode *)(f))->u.frame.frame_flags)
 #define KosDynFrame_NATIVE_HANDLER(f) (((KosDynNode *)(f))->u.frame.native_handler)
 
-#define KosDynPrompt_ID(p)        (((KosDynNode *)(p))->u.prompt.prompt_id)
-#define KosDynPrompt_STACK(p)     (((KosDynNode *)(p))->u.prompt.stack)
+#define KosDynPrompt_ID(p)               (((KosDynNode *)(p))->u.prompt.prompt_id)
+#define KosDynPrompt_STACK(p)            (((KosDynNode *)(p))->u.prompt.stack)
+#define KosDynPrompt_PENDING_SHIFT_WRAPPER(p) (((KosDynNode *)(p))->u.prompt.pending_shift_wrapper)
 
 #define KosDynCC_RESUME_PC(c)     (((KosDynNode *)(c))->u.cc.resume_pc)
 

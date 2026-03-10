@@ -253,7 +253,6 @@ struct KosContext {
   /* Transfer plan state */
   KosTransferPlan *plan;        /* active transfer plan (or NULL) */
   KosTransferPlan *plan_stack;  /* suspended plans stack */
-  PyObject *push_shift_pending; /* wrapper to push after push_shift unwind (owned) */
   uint32_t chain_version;       /* incremented on chain modifications */
   int plan_suspended_await;     /* 1 when plan step returned awaitable and we suspended */
   PyObject *plan_resume_inject; /* inject value for suspended step on resume (owned) */
@@ -311,7 +310,6 @@ struct KosContext {
 #define KosContext_PENDING_RETURN_TO_PARENT(c) (((KosContext *)(c))->pending_return_to_parent)
 #define KosContext_PLAN(c)                   (((KosContext *)(c))->plan)
 #define KosContext_PLAN_STACK(c)             (((KosContext *)(c))->plan_stack)
-#define KosContext_PUSH_SHIFT_PENDING(c)     (((KosContext *)(c))->push_shift_pending)
 #define KosContext_CHAIN_VERSION(c)          (((KosContext *)(c))->chain_version)
 #define KosContext_PLAN_SUSPENDED_AWAIT(c)  (((KosContext *)(c))->plan_suspended_await)
 #define KosContext_PLAN_RESUME_INJECT(c)     (((KosContext *)(c))->plan_resume_inject)

@@ -84,8 +84,8 @@
    Clear the context's transfer plan and free it.  Plan pointer is nulled
    before freeing so any re-entrant eval (e.g. from Py_XDECREF(continuation_ref)
    triggering Python dealloc/__del__) does not see the plan while it is freed.
-   For PUSH_SHIFT unwind plans, transfers continuation_ref to push_shift_pending
-   so the opcode can push the handler frame on re-entry.
+   For PUSH_SHIFT unwind plans, transfers continuation_ref to the prompt's
+   pending_shift_wrapper so the opcode can push the handler on re-entry.
 */
 static void clear_and_free_transfer_plan(KosContext *ctx) {
   KosTransferPlan *p = KosContext_PLAN(ctx);
@@ -94,7 +94,8 @@ static void clear_and_free_transfer_plan(KosContext *ctx) {
   if (p && KosTransferPlan_CONTINUATION_REF(p)
       && KosTransferPlan_ORIGINAL_TARGET(p)
       && KosDynNode_IS_PROMPT(KosTransferPlan_ORIGINAL_TARGET(p))) {
-    KosContext_PUSH_SHIFT_PENDING(ctx) = KosTransferPlan_CONTINUATION_REF(p);
+    KosDynPrompt *prompt = (KosDynPrompt *) KosTransferPlan_ORIGINAL_TARGET(p);
+    KosDynPrompt_PENDING_SHIFT_WRAPPER(prompt) = KosTransferPlan_CONTINUATION_REF(p);
     KosTransferPlan_CONTINUATION_REF(p) = NULL;
   }
   kos_free_transfer_plan(p);
@@ -967,8 +968,6 @@ void kos_context_free(KosContext *ctx) {
   kos_clear_pending_with_exit(ctx);
   Py_XDECREF(KosContext_PLAN_RESUME_INJECT(ctx));
   KosContext_PLAN_RESUME_INJECT(ctx) = NULL;
-  Py_XDECREF(KosContext_PUSH_SHIFT_PENDING(ctx));
-  KosContext_PUSH_SHIFT_PENDING(ctx) = NULL;
   KosContext_PLAN_SUSPENDED_AWAIT(ctx) = 0;
 
   if (context_freecount < CONTEXT_MAX_FREE) {
@@ -1003,7 +1002,6 @@ int kos_context_traverse(
   Py_VISIT(KosContext_PENDING_AGEN_DEFAULT(ctx));
 
   Py_VISIT(KosContext_PLAN_RESUME_INJECT(ctx));
-  Py_VISIT(KosContext_PUSH_SHIFT_PENDING(ctx));
 
   /* Traverse the dynamic chain */
   int res = kos_dynchain_traverse(KosContext_DYN_TOP(ctx), NULL, visit, arg);

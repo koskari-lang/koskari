@@ -370,6 +370,7 @@ KosDynPrompt *kos_dynprompt_new(KosDynNode *parent, uint32_t prompt_id) {
                    | KOS_DYN_CAP_HANDLES_EXCEPTIONS);
   KosDynPrompt_ID(prompt) = prompt_id;
   KosDynPrompt_STACK(prompt) = NULL;
+  KosDynPrompt_PENDING_SHIFT_WRAPPER(prompt) = NULL;
   return prompt;
 }
 
@@ -387,6 +388,7 @@ static KosDynPrompt *kos_dynprompt_clone(KosDynPrompt *prompt) {
   KosDynNode_NODE_ID(clone) = KosDynNode_NODE_ID(prompt);
   KosDynPrompt_ID(clone) = KosDynPrompt_ID(prompt);
   KosDynPrompt_STACK(clone) = KosDynPrompt_STACK(prompt);  /* shared, do not free */
+  KosDynPrompt_PENDING_SHIFT_WRAPPER(clone) = NULL;
   return clone;
 }
 
@@ -395,6 +397,8 @@ void kos_dynprompt_free(KosDynPrompt *prompt) {
   if (! prompt)
     return;
 
+  Py_XDECREF(KosDynPrompt_PENDING_SHIFT_WRAPPER(prompt));
+  KosDynPrompt_PENDING_SHIFT_WRAPPER(prompt) = NULL;
   kos_dynnode_return_to_freelist(prompt);
 }
 
@@ -4351,6 +4355,8 @@ int kos_dynnode_traverse(KosDynNode *node, visitproc visit, void *arg) {
     case KOS_DYN_NS:
       return dynnode_traverse_ns(node, visit, arg);
     case KOS_DYN_PROMPT:
+      Py_VISIT(KosDynPrompt_PENDING_SHIFT_WRAPPER((KosDynPrompt *) node));
+      break;
     case KOS_DYN_CC:
     case KOS_DYN_SHIFT:
       break;
