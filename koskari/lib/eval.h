@@ -253,10 +253,7 @@ struct KosContext {
   /* Transfer plan state */
   KosTransferPlan *plan;        /* active transfer plan (or NULL) */
   KosTransferPlan *plan_stack;  /* suspended plans stack */
-  PyObject *push_shift_pending; /* wrapper to push after push_shift unwind (owned) */
   uint32_t chain_version;       /* incremented on chain modifications */
-  int plan_suspended_await;     /* 1 when plan step returned awaitable and we suspended */
-  PyObject *plan_resume_inject; /* inject value for suspended step on resume (owned) */
 
   /* Delimited continuation: top of installed segment when inside invoked k */
   KosDynNode *invocation_segment_top;
@@ -291,23 +288,6 @@ struct KosContext {
   PyObject *pending_agen_default;  /* default value for 2-arg NEXT (or NULL) */
   int pending_agen_n;       /* 1 or 2 for NEXT; 0 for ITER_NEXT (ITER_NEXT exhausted path reads from region) */
 
-  /* Pending WITH: async enter/exit suspend (mgr != NULL or with_node != NULL when set) */
-  struct {
-    PyObject *mgr;
-    PyObject *enter;
-    PyObject *exit;
-    PyObject *name;
-    uint32_t resume_pc;
-    int is_dyn_with;   /* 1 for PUSH_DYN_WITH, 0 for PUSH_WITH */
-  } pending_with_enter;
-  struct {
-    KosDynWith *with_node;
-    PyObject *exc_typ;
-    PyObject *exc_val;
-    PyObject *exc_tb;
-    int normal_exit;  /* 1 = exit(None,None,None), 0 = exception */
-  } pending_with_exit;
-
   uint32_t flags;            /* KosContextFlags */
 
   struct KosContext *context_freelist_next;  /* link when on context freelist only */
@@ -328,10 +308,7 @@ struct KosContext {
 #define KosContext_PENDING_RETURN_TO_PARENT(c) (((KosContext *)(c))->pending_return_to_parent)
 #define KosContext_PLAN(c)                   (((KosContext *)(c))->plan)
 #define KosContext_PLAN_STACK(c)             (((KosContext *)(c))->plan_stack)
-#define KosContext_PUSH_SHIFT_PENDING(c)     (((KosContext *)(c))->push_shift_pending)
 #define KosContext_CHAIN_VERSION(c)          (((KosContext *)(c))->chain_version)
-#define KosContext_PLAN_SUSPENDED_AWAIT(c)  (((KosContext *)(c))->plan_suspended_await)
-#define KosContext_PLAN_RESUME_INJECT(c)     (((KosContext *)(c))->plan_resume_inject)
 #define KosContext_INVOCATION_SEGMENT_TOP(c) (((KosContext *)(c))->invocation_segment_top)
 #define KosContext_RETURN_TARGET_CHAIN(c)   (((KosContext *)(c))->return_target_chain)
 #define KosContext_RETURN_TARGET_PC(c)      (((KosContext *)(c))->return_target_pc)
@@ -357,19 +334,6 @@ struct KosContext {
 #define KosContext_PENDING_AGEN(c)           (((KosContext *)(c))->pending_agen)
 #define KosContext_PENDING_AGEN_DEFAULT(c)   (((KosContext *)(c))->pending_agen_default)
 #define KosContext_PENDING_AGEN_N(c)         (((KosContext *)(c))->pending_agen_n)
-
-#define KosContext_PENDING_WITH_ENTER_MGR(c)   (((KosContext *)(c))->pending_with_enter.mgr)
-#define KosContext_PENDING_WITH_ENTER_ENTER(c) (((KosContext *)(c))->pending_with_enter.enter)
-#define KosContext_PENDING_WITH_ENTER_EXIT(c)  (((KosContext *)(c))->pending_with_enter.exit)
-#define KosContext_PENDING_WITH_ENTER_NAME(c)  (((KosContext *)(c))->pending_with_enter.name)
-#define KosContext_PENDING_WITH_ENTER_RESUME_PC(c) (((KosContext *)(c))->pending_with_enter.resume_pc)
-#define KosContext_PENDING_WITH_ENTER_IS_DYN(c)   (((KosContext *)(c))->pending_with_enter.is_dyn_with)
-
-#define KosContext_PENDING_WITH_EXIT_NODE(c)   (((KosContext *)(c))->pending_with_exit.with_node)
-#define KosContext_PENDING_WITH_EXIT_TYP(c)    (((KosContext *)(c))->pending_with_exit.exc_typ)
-#define KosContext_PENDING_WITH_EXIT_VAL(c)    (((KosContext *)(c))->pending_with_exit.exc_val)
-#define KosContext_PENDING_WITH_EXIT_TB(c)     (((KosContext *)(c))->pending_with_exit.exc_tb)
-#define KosContext_PENDING_WITH_EXIT_NORMAL(c) (((KosContext *)(c))->pending_with_exit.normal_exit)
 
 #define KosContext_FLAGS(c)                  (((KosContext *)(c))->flags)
 #define KosContext_FREELIST_NEXT(c)          (((KosContext *)(c))->context_freelist_next)
@@ -533,36 +497,11 @@ void kos_yieldfrom_close_delegate(KosDynYieldFrom *node);
 
 
 /**
-  WITH enter: if result is awaitable stash and push_or_await (return 1 or -1);
-  else bind name, push block, push node (return 0). Consumes result and
-  takes ownership of mgr, enter, exit, name.
-
-  :param use_dyn_with: 1 for dyn-with (KOS_DYN_DYN_WITH), 0 for with (KOS_DYN_WITH)
+   Run dyn-with enter (wind): call enter via kos_callable_vcall, bind result
+   to name if present. Used by transfer plan INSTALL and EXTENT_ACTION.
+   May return KOS_DYN_UNWIND_ASYNC_STARTED when enter suspends.
 */
-int kos_push_with_after_enter(
-    KosContext *ctx,
-    KosEvent *out_ev,
-    PyObject *result,
-    PyObject *mgr,
-    PyObject *enter,
-    PyObject *exit,
-    PyObject *name,
-    uint32_t resume_pc,
-    int use_dyn_with);
-
-
-/**
-   Complete pending WITH enter after await (TOS is the enter result).
-   Returns 0 if no pending state or on success, -1 on error.
-*/
-int kos_complete_pending_with_enter(KosContext *ctx, KosEvent *out_ev);
-
-/**
-   Run dyn-with enter (wind): call enter, bind result to name if present.
-   Used by transfer plan INSTALL when re-entering a captured dyn-with extent.
-   Sync only.
-*/
-int kos_dyn_dyn_with_wind(KosContext *ctx, KosDynWith *node);
+int kos_dyn_dyn_with_wind(KosContext *ctx, KosDynWith *node, KosEvent *out_ev);
 
 int kos_with_exit_start_await(KosContext *ctx, KosEvent *out_ev, PyObject *awaitable);
 
@@ -570,10 +509,14 @@ int kos_complete_pending_with_exit(KosContext *ctx);
 int kos_complete_pending_with_exit_semantic(KosContext *ctx);
 void kos_clear_pending_with_exit(KosContext *ctx);
 
+int kos_dyn_with_on_control_returned(KosContext *ctx, KosDynWith *with_node,
+                                     int do_pop_node);
+
 /**
-   Clear pending WITH enter stash. No-op if not set.
+   Complete provisional WITH enter when control returns (enter frame returned).
+   Pops result from stack, stores to name, sets entered=1 and phase=IDLE.
 */
-void kos_clear_pending_with_enter(KosContext *ctx);
+int kos_dyn_with_on_enter_control_returned(KosContext *ctx, KosDynWith *with_node);
 
 
 /* === Exception types === */

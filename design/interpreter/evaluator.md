@@ -41,8 +41,8 @@ for the capability model.
 
 - **Frame** (u.frame): code (borrowed), pc (next instruction), acting_pc (instruction currently being executed), stack (owned), ns (owned), frame_flags, native_handler (optional; when non-NULL, handler is frame evaluator; see [api/special-call-protocol.md](../api/special-call-protocol.md)).
   Macros: KosDynFrame_CODE, KosDynFrame_PC, KosDynFrame_ACTING_PC, KosDynFrame_STACK, KosDynFrame_NS, KosDynFrame_FLAGS, KosDynFrame_NATIVE_HANDLER.
-- **Prompt** (u.prompt): prompt_id, handler_code, handler_pc.
-  Macros: KosDynPrompt_ID, KosDynPrompt_HANDLER_CODE, KosDynPrompt_HANDLER_PC.
+- **Prompt** (u.prompt): prompt_id, handler_code, handler_pc, pending_shift_wrapper (KosPyDelimitedContinuation wrapper when PUSH_SHIFT plan completed; owned).
+  Macros: KosDynPrompt_ID, KosDynPrompt_HANDLER_CODE, KosDynPrompt_HANDLER_PC, KosDynPrompt_PENDING_SHIFT_WRAPPER.
 - **Wind** (u.wind): before_code, before_pc, after_code, after_pc, entered.
   Macros: KosDynWind_BEFORE_CODE, KosDynWind_BEFORE_PC, KosDynWind_AFTER_CODE, KosDynWind_AFTER_PC, KosDynWind_ENTERED.
 - **Try** (u.try_): handler_pc, enabled. Macros: KosDynTry_HANDLER_PC, KosDynTry_ENABLED.
@@ -78,10 +78,8 @@ struct KosContext {
   /* Transfer plan state */
   KosTransferPlan *plan;        /* active transfer plan (or NULL) */
   KosTransferPlan *plan_stack;  /* suspended plans stack */
-  PyObject *push_shift_pending; /* shift handler wrapper to push after PUSH_SHIFT unwind */
   uint32_t chain_version;       /* incremented on chain modifications */
-  int plan_suspended_await;     /* 1 when plan step returned awaitable and suspended */
-  PyObject *plan_resume_inject; /* inject value for suspended step on resume */
+  /* Plan resume state (step_resume_inject) lives on the plan; see KosTransferPlan. */
 
   /* Delimited continuation: top of installed segment when inside invoked k */
   KosDynNode *invocation_segment_top;

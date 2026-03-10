@@ -75,7 +75,7 @@ KOS_OP_HANDLER(PUSH_WIND) {
   if (a)
     Py_DECREF(a);
 
-  int r = kos_dyn_wind(ctx, (KosDynNode *) wind);
+  int r = kos_dyn_wind(ctx, (KosDynNode *) wind, out_ev);
   if (r == KOS_DYN_UNWIND_ASYNC_STARTED)
     return 0;
   if (r < 0)

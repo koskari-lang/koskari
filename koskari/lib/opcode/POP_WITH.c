@@ -29,21 +29,10 @@ KOS_OP_HANDLER(POP_WITH) {
     return -1;
   }
   KosDynWith *with_node = (KosDynWith *) top;
-  PyObject *exit_awaitable = NULL;
 
-  int unw = kos_dyn_with_unwind(ctx, with_node, &exit_awaitable);
-  SAYF("[eval] POP_WITH unw=%d exit_awaitable=%d\n", unw, exit_awaitable ? 1 : 0);
-  if (unw == KOS_DYN_UNWIND_ASYNC_STARTED) {
-    SAY("[eval] POP_WITH async exit started -> kos_with_exit_start_await");
-    int r = kos_with_exit_start_await(ctx, out_ev, exit_awaitable);
-    if (r == 1)
-      return 1;
-    if (r < 0)
-      return -1;
-    /* r == 0: exit completed synchronously; push_or_await already pushed
-       the exit result. Consume it and push None (design: with value is None). */
-    return kos_complete_pending_with_exit(ctx);
-  }
+  int unw = kos_dyn_with_unwind(ctx, with_node, out_ev);
+  if (unw == KOS_DYN_UNWIND_ASYNC_STARTED)
+    return KOS_DYN_UNWIND_ASYNC_STARTED;
   if (unw < 0)
     return -1;
 
