@@ -16,3 +16,5 @@ This directory documents the runtime API of Koskari, including types, functions,
 - **lexer.md**: Lexer subpackage for lexical-only parsing, prompt_toolkit and LSP integration
 - **pattern-matching.md**: Pattern matching and template expansion API for special-form handlers and future define-syntax; tagged-tuple representation, Python and Koskari consumption
 - **matcher-hygiene-extensions.md**: MATCH role extensions for hygiene discovery; `BINDINGS` with `scope`/`scopes`; REST/EXPR as scope regions; `match(..., with_specs=True)` and role helpers; implemented `_collect_binding_symbols_matcher`
+- **stack-no-cow-proposal.md**: Design proposal to remove copy-on-write semantics from KosStackBlock; full deep copy at capture; hot-path simplification; frame cloning and continuation flow changes
+- **dynwind-with-unified-api.md**: Design proposal to unify dynwind, with, and dyn-with: use kos_callable_* for enter/exit; move pending state onto the node; extend kos_dynnode_on_control_returned; preserve binding, exception swallowing, and auto-async
