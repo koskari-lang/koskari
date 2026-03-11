@@ -112,4 +112,51 @@ class TestRefMacro(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(20, result)
 
 
+class TestConditionalMacros(unittest.IsolatedAsyncioTestCase):
+    """
+    Tests for the compile/if, compile/when, compile/unless macros in basics.ki.
+    Requires make_builtins so the macros are present for expansion.
+    """
+
+    async def compile_expr(self, src_str, lineno=1, **defns):
+        bltns = dict(await make_builtins())
+        bltns.update(defns)
+        mod_ns = ModuleNamespace("test", bltns)
+        module = Module(mod_ns)
+        source = default_reader.read(source_str(src_str, __file__, line_no=lineno))
+        compiler = Compiler("<unittest>", module, filename=__file__)
+        fragment = compiler.full_compile(source)
+        return fragment.as_expression(mod_ns), module
+
+
+    async def test_if_then_else(self):
+        src_str_t = "(compile/if True 1 2)"
+        expr, mod = await self.compile_expr(src_str_t)
+        self.assertEqual(await expr(), 1)
+
+        src_str_f = "(compile/if False 1 2)"
+        expr, mod = await self.compile_expr(src_str_f)
+        self.assertEqual(await expr(), 2)
+
+
+    async def test_when(self):
+        src_str_t = "(compile/when True 42)"
+        expr, mod = await self.compile_expr(src_str_t)
+        self.assertEqual(await expr(), 42)
+
+        src_str_f = "(compile/when False 42)"
+        expr, mod = await self.compile_expr(src_str_f)
+        self.assertEqual(await expr(), None)
+
+
+    async def test_unless(self):
+        src_str_f = "(compile/unless False 42)"
+        expr, mod = await self.compile_expr(src_str_f)
+        self.assertEqual(await expr(), 42)
+
+        src_str_t = "(compile/unless True 42)"
+        expr, mod = await self.compile_expr(src_str_t)
+        self.assertEqual(await expr(), None)
+
+
 # The end.

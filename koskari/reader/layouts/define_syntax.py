@@ -23,7 +23,7 @@ Layout handlers for define-syntax and syntax-rules block syntax.
 
 from ...exceptions import LayoutError
 from ...matcher import DEFINE, LITERAL_SYM, LIST, MATCH, PAIR, REPEAT, VALUE, match, match1
-from ...types import car, cons, get_position, is_pair, is_proper, is_symbol, nil, symbol, unpack
+from ...types import car, cons, get_position, is_keyword, is_pair, is_proper, is_symbol, nil, symbol, unpack
 from .helpers import layout
 
 
@@ -61,9 +61,9 @@ def _literals_to_list(literals_expr, source):
             get_position(literals_expr))
     literals = list(unpack(literals_expr))
     for lit in literals:
-        if not is_symbol(lit):
+        if not (is_symbol(lit) or is_keyword(lit)):
             raise LayoutError(
-                'syntax-rules literals must be symbols',
+                'syntax-rules literals must be symbols or keywords',
                 get_position(literals_expr))
     return cons(*literals, nil)
 

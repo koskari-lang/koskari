@@ -244,62 +244,8 @@ None for the fall-through case.
   [else: 102])
 ```
 
-
-## compile/if
-
-**Symbol:** `compile/if`
-
-**Syntax:** `(compile/if COND THEN ELSE)` or `(compile/if COND then: THEN else: ELSE)`
-
-**Use-case:** Binary conditional. Expands to cond.
-
-**Behaviour:** Parses condition, then, and else (positional or keyword). Builds
-`(compile/cond (COND THEN) (else: ELSE))` and compiles that.
-
-**Examples:**
-
-```scheme
-(compile/if True 1 2)    ; → 1
-(compile/if False 1 2)   ; → 2
-```
-
-
-## compile/when
-
-**Symbol:** `compile/when`
-
-**Syntax:** `(compile/when COND BODY...)`
-
-**Use-case:** Conditional with no else; yields `None` when condition is false.
-Expands to cond.
-
-**Behaviour:** Builds `(compile/cond (COND BODY...) (else: None))` and compiles.
-
-**Examples:**
-
-```scheme
-(compile/when True 42)   ; → 42
-(compile/when False 42)  ; → None
-```
-
-
-## compile/unless
-
-**Symbol:** `compile/unless`
-
-**Syntax:** `(compile/unless COND BODY...)`
-
-**Use-case:** Execute body when condition is false; when true, yields `None`.
-Expands to cond (negated test).
-
-**Behaviour:** Builds `(compile/cond (COND None) (else: BODY...))` and compiles.
-
-**Examples:**
-
-```scheme
-(compile/unless False 42)  ; → 42
-(compile/unless True 42)   ; → None
-```
+**Note:** The higher-level forms `compile/if`, `compile/when`, and
+`compile/unless` are now macros in basics.ki (see [MACROS.md](MACROS.md)).
 
 
 ## compile/and

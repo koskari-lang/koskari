@@ -83,3 +83,70 @@ expand to `(compile/ref-item OBJ KEY)`.
 
 **Defined in:** `koskari/importer/basics.ki`
 
+
+## compile/if
+
+**Symbol:** `compile/if`
+
+**Syntax:** `(compile/if COND THEN ELSE)` or `(compile/if COND then: THEN else: ELSE)` or `(compile/if COND THEN)`
+
+**Use-case:** Binary conditional. Expands to `compile/cond`.
+
+**Behaviour:** Macro in basics.ki. Expands to
+`(compile/cond [COND THEN] [else: ELSE])` (or `[else: None]` when no else).
+
+**Examples:**
+
+```scheme
+(compile/if True 1 2)    ; → 1
+(compile/if False 1 2)   ; → 2
+```
+
+**Defined in:** `koskari/importer/basics.ki`
+
+
+## compile/when
+
+**Symbol:** `compile/when`
+
+**Syntax:** `(compile/when COND BODY...)`
+
+**Use-case:** Conditional with no else; yields `None` when condition is false.
+Expands to `compile/cond`.
+
+**Behaviour:** Macro in basics.ki. Expands to
+`(compile/cond [COND BODY...] [else: None])`.
+
+**Examples:**
+
+```scheme
+(compile/when True 42)   ; → 42
+(compile/when False 42)  ; → None
+```
+
+**Defined in:** `koskari/importer/basics.ki`
+
+
+## compile/unless
+
+**Symbol:** `compile/unless`
+
+**Syntax:** `(compile/unless COND BODY...)`
+
+**Use-case:** Execute body when condition is false; when true, yields `None`.
+Expands to `compile/cond` (negated test).
+
+**Behaviour:** Macro in basics.ki. Expands to
+`(compile/cond [COND None] [else: BODY...])`.
+
+**Examples:**
+
+```scheme
+(compile/unless False 42)  ; → 42
+(compile/unless True 42)   ; → None
+```
+
+**Defined in:** `koskari/importer/basics.ki`
+
+**Tests:** `tests/importer/test_basics.py` — `TestConditionalMacros`
+

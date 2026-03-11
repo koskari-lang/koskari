@@ -60,4 +60,36 @@ define-syntax compile/ref:
       (compile/refq name)
 
 
+define-syntax compile/if:
+  syntax-rules []:
+    match (if condition then: then else: else):
+      (compile/cond
+        [condition then]
+        [else: else])
+    match (if condition then else):
+      (compile/cond
+        [condition then]
+        [else: else])
+    match (if condition then):
+      (compile/cond
+        [condition then]
+        [else: None])
+
+
+define-syntax compile/when:
+  syntax-rules []:
+    match (when condition then):
+      (compile/cond
+        [condition then]
+        [else: None])
+
+
+define-syntax compile/unless:
+  syntax-rules []:
+    match (unless condition then):
+      (compile/cond
+        [condition None]
+        [else: then])
+
+
 ;; The end.

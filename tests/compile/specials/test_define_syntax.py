@@ -42,9 +42,9 @@ class TestDefineSyntax(SpecialsTestCase):
         (compile/define-syntax unless
           (syntax-rules (else:)
             ((unless test body ... else: alt)
-             (if test alt (compile/begin body ...)))
+             (compile/cond [test alt] [else: (compile/begin body ...)]))
             ((unless test body ...)
-             (if test None (compile/begin body ...)))))
+             (compile/cond [test None] [else: (compile/begin body ...)]))))
         """
         expr, mod = self.compile_expr(src_str)
         dis(expr.code)

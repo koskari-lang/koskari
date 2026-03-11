@@ -28,7 +28,7 @@ from .begin import special_begin
 from .bytecode import special_bytecode
 from .call import special_call
 from .class_ import special_class
-from .conditionals import special_and, special_cond, special_if, special_or, special_unless, special_when
+from .conditionals import special_and, special_cond, special_or
 from .continuations import special_call_cc, special_let_cc, special_capture_cc, special_reset, special_return, special_shift
 from .context import special_dyn_with, special_parameterize, special_with
 from .dyn_wind import special_dyn_wind
@@ -145,7 +145,6 @@ __all__ = (
     "special_for_each",
     "special_ge",
     "special_gt",
-    "special_if",
     "special_in",
     "special_inplace",
     "special_is",
@@ -191,11 +190,9 @@ __all__ = (
     "special_truth",
     "special_try",
     "special_type",
-    "special_unless",
     "special_unquote",
     "special_unquote_splicing",
     "special_vars",
-    "special_when",
     "special_while",
     "special_with",
 )
