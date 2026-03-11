@@ -32,6 +32,10 @@ from koskari.dis import (
     _format_nspec_inline,
 )
 
+import pytest
+
+pytestmark = pytest.mark.phase_infra
+
 
 def _make_truthy_code():
     """

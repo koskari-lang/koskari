@@ -19,6 +19,10 @@ Tests for koskari.compile compile/class special form.
 from koskari.dis import dis
 from . import SpecialsTestCase
 
+import pytest
+
+pytestmark = pytest.mark.phase_specials
+
 
 class TestClassEmpty(SpecialsTestCase):
 

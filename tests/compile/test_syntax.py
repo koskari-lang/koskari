@@ -41,6 +41,10 @@ from koskari.lib import car, cdr, symbol
 from koskari.types import Module, ModuleNamespace
 from koskari.types import is_symbol, unpack
 
+import pytest
+
+pytestmark = pytest.mark.phase_compile
+
 
 def _make_compiler():
     ns = ModuleNamespace('test', {})

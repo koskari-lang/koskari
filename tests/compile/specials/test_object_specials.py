@@ -32,6 +32,10 @@ from koskari.dis import dis
 
 from . import SpecialsTestCase
 
+import pytest
+
+pytestmark = pytest.mark.phase_specials
+
 
 def _ops(code):
     return [code.oparg(i) for i in range(code.length())]

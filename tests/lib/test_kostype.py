@@ -29,6 +29,10 @@ import warnings
 
 from koskari.lib import KosType
 
+import pytest
+
+pytestmark = pytest.mark.phase_lib
+
 
 class TestKosTypeImport(unittest.IsolatedAsyncioTestCase):
 

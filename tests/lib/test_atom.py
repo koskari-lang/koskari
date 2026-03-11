@@ -20,7 +20,12 @@ Unit tests for symbol and keyword atom types
 
 import unittest
 
+import pytest
+
 from koskari.lib import symbol, keyword, gensym
+
+
+pytestmark = pytest.mark.phase_lib
 
 
 class TestSymbol(unittest.IsolatedAsyncioTestCase):

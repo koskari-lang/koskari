@@ -22,6 +22,10 @@ import unittest
 
 from koskari.lib import values
 
+import pytest
+
+pytestmark = pytest.mark.phase_lib
+
 
 class TestValuesCreate(unittest.IsolatedAsyncioTestCase):
     """Tests for values creation"""

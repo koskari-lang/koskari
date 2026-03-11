@@ -21,6 +21,10 @@ Tests for JUMP, JUMP_FALSE, JUMP_TRUE, JUMP_AND, JUMP_OR opcodes.
 from tests import make_callable
 from tests.lib.opcode import CevalTest, build_expr
 
+import pytest
+
+pytestmark = pytest.mark.phase_lib
+
 
 class TestJumpOpcodes(CevalTest):
     """

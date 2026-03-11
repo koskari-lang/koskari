@@ -26,6 +26,10 @@ from koskari.lexer.lsp.handlers import (
     handle_hover,
 )
 
+import pytest
+
+pytestmark = pytest.mark.phase_infra
+
 
 class _FakeDoc:
     def __init__(self, source, uri='file:///test.ki'):

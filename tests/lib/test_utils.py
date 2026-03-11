@@ -26,6 +26,10 @@ import koskari.lib as lib
 from tests import make_callable
 from tests.lib.opcode import build_expr
 
+import pytest
+
+pytestmark = pytest.mark.phase_lib
+
 
 class TestReapply(unittest.IsolatedAsyncioTestCase):
     """

@@ -27,6 +27,10 @@ from unittest import IsolatedAsyncioTestCase
 from koskari.types import cons, symbol, keyword, nil, car, cdr, BaseSourceStream
 from koskari.reader import default_reader, source_str
 
+import pytest
+
+pytestmark = pytest.mark.phase_infra
+
 
 def parse_source(src_str):
     reader = default_reader

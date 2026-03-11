@@ -26,6 +26,10 @@ from koskari.lib import (
     Formals, FormalsSpec, Namespace, NamespaceSpec,
 )
 
+import pytest
+
+pytestmark = pytest.mark.phase_lib
+
 
 class TestFormalsSpec(unittest.IsolatedAsyncioTestCase):
     """

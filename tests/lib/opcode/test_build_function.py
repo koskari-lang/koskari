@@ -22,6 +22,10 @@ from koskari.lib import FormalsSpec, Function
 from tests import make_callable
 from tests.lib.opcode import CevalTest, build_code, build_expr
 
+import pytest
+
+pytestmark = pytest.mark.phase_lib
+
 
 class TestBuildFunction(CevalTest):
     """

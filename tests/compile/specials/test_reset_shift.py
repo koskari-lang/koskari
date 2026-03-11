@@ -22,6 +22,10 @@ from . import SpecialsTestCase
 from koskari.lib import ParamRef
 from koskari.dis import dis
 
+import pytest
+
+pytestmark = pytest.mark.phase_specials
+
 
 class TestResetShiftSpecials(SpecialsTestCase):
 

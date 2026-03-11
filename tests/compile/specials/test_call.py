@@ -21,6 +21,10 @@ from koskari.lib import OpCode
 
 from . import SpecialsTestCase
 
+import pytest
+
+pytestmark = pytest.mark.phase_specials
+
 
 class TestCallSpecialTailPosition(SpecialsTestCase):
     """

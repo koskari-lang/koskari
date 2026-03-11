@@ -33,6 +33,10 @@ from koskari.lib import cons, nil, symbol
 
 from . import SpecialsTestCase, _register_specials
 
+import pytest
+
+pytestmark = pytest.mark.phase_specials
+
 
 class TestQuasiquoteAtoms(SpecialsTestCase):
     """

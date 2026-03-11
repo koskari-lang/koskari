@@ -33,6 +33,10 @@ from koskari.matcher import (
     match,
 )
 
+import pytest
+
+pytestmark = pytest.mark.phase_compile
+
 
 class TestGatherParametersNg(unittest.IsolatedAsyncioTestCase):
 

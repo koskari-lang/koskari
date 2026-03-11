@@ -31,6 +31,10 @@ from koskari.compile import ByteCodeFragment
 from koskari.lib import Code, FunctionSpec, OpCode
 from koskari.types import FormalsSpec, NamespaceSpec
 
+import pytest
+
+pytestmark = pytest.mark.phase_compile
+
 
 def example_bytecode_truthy_yus():
     """Example Code: VAR YUS, jump-if-truthy to truthy, else NO, jump done."""

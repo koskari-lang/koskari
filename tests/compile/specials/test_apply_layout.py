@@ -35,6 +35,10 @@ from koskari.types import keyword, symbol, Module, ModuleNamespace
 
 from . import _register_specials
 
+import pytest
+
+pytestmark = pytest.mark.phase_specials
+
 
 _keyword_block = keyword(':block:')
 

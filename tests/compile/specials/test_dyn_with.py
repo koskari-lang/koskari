@@ -20,6 +20,10 @@ exception). Uses PUSH_DYN_WITH/POP_DYN_WITH. Participates in transfer plans.
 
 from . import SpecialsTestCase
 
+import pytest
+
+pytestmark = pytest.mark.phase_specials
+
 
 class SimpleMgr:
     """

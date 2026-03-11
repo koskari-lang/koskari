@@ -24,6 +24,9 @@ from koskari.types import cons, keyword, nil, symbol
 from koskari.compile.helpers import pycons
 from .. import parse_layout
 
+import pytest
+
+pytestmark = pytest.mark.phase_infra
 
 _symbol_try = symbol('try')
 _compile_begin = symbol('compile/begin')

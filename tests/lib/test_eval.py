@@ -31,6 +31,10 @@ import unittest
 
 from koskari.lib import Continuation, Coroutine, AsyncGenerator
 
+import pytest
+
+pytestmark = pytest.mark.phase_lib
+
 
 class TestContinuationType(unittest.TestCase):
     """Tests for the Continuation type"""

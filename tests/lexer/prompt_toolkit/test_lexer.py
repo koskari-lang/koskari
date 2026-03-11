@@ -21,6 +21,10 @@ from unittest import IsolatedAsyncioTestCase
 from prompt_toolkit.document import Document
 from koskari.lexer.prompt_toolkit import KoskariLexer, koskari_style
 
+import pytest
+
+pytestmark = pytest.mark.phase_infra
+
 
 class TestKoskariLexer(IsolatedAsyncioTestCase):
 

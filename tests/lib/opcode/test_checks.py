@@ -22,6 +22,10 @@ Tests for CHECK_EQ, CHECK_NE, CHECK_IN, CHECK_IS, CHECK_IS_INSTANCE opcodes.
 from tests import make_callable
 from tests.lib.opcode import CevalTest, build_expr
 
+import pytest
+
+pytestmark = pytest.mark.phase_lib
+
 
 class TestCheckOpcodes(CevalTest):
     """

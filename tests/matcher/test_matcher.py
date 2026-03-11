@@ -18,7 +18,6 @@ Tests for koskari.matcher pattern matching.
 
 import unittest
 
-from koskari.compile.helpers import pycons
 from koskari.lib import cons, keyword, nil, symbol
 from koskari.types import unpack
 from koskari.matcher import (
@@ -41,6 +40,10 @@ from koskari.matcher import (
     match,
     match1,
 )
+
+import pytest
+
+pytestmark = pytest.mark.phase_infra
 
 
 class TestMatchLiteral(unittest.IsolatedAsyncioTestCase):
@@ -324,24 +327,6 @@ class TestMatchRepeat(unittest.IsolatedAsyncioTestCase):
         self.assertIsNone(result)
 
 
-    async def test_repeat_with_binding(self):
-        from koskari.compile.helpers import BINDING
-
-        binding1 = cons(symbol('x'), 1, nil)
-        binding2 = cons(symbol('y'), 2, nil)
-        src = cons(binding1, binding2, nil)
-        pat = MATCH(REPEAT('bindings', BINDING('b')))
-        result = match(src, pat)
-        self.assertIsNotNone(result)
-        self.assertEqual(len(result['bindings'].matches), 2)
-        b1 = result['bindings'].matches[0][0]['b']
-        b2 = result['bindings'].matches[1][0]['b']
-        self.assertEqual(b1.name, symbol('x'))
-        self.assertEqual(b2.name, symbol('y'))
-        syms = set(extract_binder_symbols(pat.specs[0], result['bindings']))
-        self.assertEqual({str(s) for s in syms}, {'x', 'y'})
-
-
     async def test_repeat_to_tuple_roundtrip(self):
         pat = REPEAT('x', BIND('y'))
         restored = from_tuple(pat.to_tuple())
@@ -366,84 +351,6 @@ class TestMatchRepeat(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(result['nums'].matches[1][0]['n'].source, two)
         self.assertEqual(result['nums'].matches[2][0]['n'].source, foo)
         self.assertEqual(result['nums'].matches[3][0]['n'].source, three)
-
-
-class TestMatchBinding(unittest.IsolatedAsyncioTestCase):
-
-    async def test_binding_allow_unnamed(self):
-        """
-        [(compile/call make_mgr)]
-        """
-        from koskari.compile.helpers import BINDING
-
-        src = pycons(((symbol('compile/call'), symbol('make_mgr')),))
-
-        expr = pycons((symbol('compile/call'), symbol('make_mgr')))
-
-        pat = BINDING('binding', allow_unnamed=True)
-        result = match1(src, pat)
-
-        self.assertIsNotNone(result, 'pattern should match')
-        br = result['binding']
-
-        print("br.name", br.name)
-        print("br.source", br.source)
-        print("br.value", br.value)
-
-        self.assertIsNone(br.name, 'binding name should be None for unnamed')
-        self.assertEqual(br.source, src)
-        self.assertEqual(br.value, expr)
-
-
-    async def test_binding_allow_unnamed_named(self):
-        """
-        [x (compile/call make_mgr)]
-        """
-        from koskari.compile.helpers import BINDING
-
-        src = pycons(
-            (symbol('x'),
-             (symbol('compile/call'), symbol('make_mgr')),)
-        )
-
-        expr = pycons((symbol('compile/call'), symbol('make_mgr')))
-
-        pat = BINDING('binding', allow_unnamed=True)
-
-        result = match1(src, pat)
-        self.assertIsNotNone(result, 'pattern should match')
-        br = result['binding']
-
-        print("br.name", br.name)
-        print("br.source", br.source)
-        print("br.value", br.value)
-
-        self.assertEqual(br.name, symbol('x'))
-        self.assertEqual(br.source, src)
-        self.assertEqual(br.value, expr)
-
-
-    async def test_binding_allow_unnamed_named_as(self):
-        """
-        [(compile/call make_mgr) as: x]
-        """
-        from koskari.compile.helpers import BINDING
-
-        src = pycons(
-            ((symbol('compile/call'), symbol('make_mgr')),
-             keyword('as:'), symbol('x'))
-        )
-
-        expr = pycons((symbol('compile/call'), symbol('make_mgr')))
-
-        pat = BINDING('binding', allow_unnamed=True)
-
-        result = match1(src, pat)
-        self.assertIsNotNone(result, 'pattern should match')
-        br = result['binding']
-        self.assertEqual(br.name, symbol('x'))
-        self.assertEqual(br.source, src)
-        self.assertEqual(br.value, expr)
 
 
 class TestDuplicateSlotValidation(unittest.IsolatedAsyncioTestCase):

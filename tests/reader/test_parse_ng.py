@@ -36,6 +36,10 @@ from koskari.reader.parser import (IndentAwareStream, LayoutReader, Reader,
                                    SourceStream, default_reader, source_str)
 from koskari.types import BaseSourceStream, cons, keyword, nil, symbol
 
+import pytest
+
+pytestmark = pytest.mark.phase_infra
+
 
 def _stream(text, line_no=1, col_no=0):
     return SourceStream(StringIO(text), '<test>',

@@ -22,6 +22,10 @@ Tests for koskari.compile compile/for-each.
 
 from . import SpecialsTestCase
 
+import pytest
+
+pytestmark = pytest.mark.phase_specials
+
 
 def _append(seq, x):
     seq.append(x)

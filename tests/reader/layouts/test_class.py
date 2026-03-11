@@ -24,6 +24,10 @@ from koskari.types import symbol
 from koskari.compile.helpers import pycons
 from .. import parse_layout
 
+import pytest
+
+pytestmark = pytest.mark.phase_infra
+
 
 class TestLayoutClass(IsolatedAsyncioTestCase):
 
