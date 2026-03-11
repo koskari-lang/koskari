@@ -14,8 +14,7 @@
 """
 koskari.compile.specials.items
 
-Special form handlers for compile/item, compile/ref-item, compile/del-item,
-and compile/set-item.
+Special form handlers for compile/item, compile/del-item, and compile/set-item.
 
 :author: Christopher O'Brien <obriencj@preoccupied.net>
 :license: GNU General Public License v3
@@ -57,38 +56,6 @@ def special_item(compiler, source, tc=False):
     else:
         frag.merge(keyfrag)
         frag.instruction(OpCode.KOS_OP_ITEM, 0)
-
-    return frag
-
-
-@special(symbol("compile/ref-item"))
-def special_ref_item(compiler, source, tc=False):
-    """
-    Compile (compile/ref-item OBJ KEY). Produce a mutable reference to item at KEY in OBJ
-    """
-
-    called_by, body = source
-    if not is_pair(body):
-        raise SpecialError("ref-item requires two arguments", source)
-    obj, (key, rest) = body
-
-    if rest is not nil:
-        raise SpecialError("ref-item takes two arguments", source)
-
-    frag = compiler.fragment(called_by)
-
-    frag.position_of(body)
-    frag.merge(compiler.full_compile(obj))
-
-    keyfrag = compiler.full_compile(key)
-    is_const, key_val = const_only_expr(keyfrag)
-
-    if is_const:
-        frag.instruction(OpCode.KOS_OP_CONST_ITEM_REF, key_val)
-
-    else:
-        frag.merge(keyfrag)
-        frag.instruction(OpCode.KOS_OP_ITEM_REF, 0)
 
     return frag
 

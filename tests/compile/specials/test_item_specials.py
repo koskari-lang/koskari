@@ -12,8 +12,8 @@
 # along with this library; if not, see <http://www.gnu.org/licenses/>.
 
 """
-Tests for koskari.compile compile/item, compile/ref-item, compile/del-item,
-compile/set-item special forms.
+Tests for koskari.compile compile/item, compile/del-item, and compile/set-item
+special forms.
 """
 
 
@@ -58,21 +58,6 @@ class TestSetItemSpecial(SpecialsTestCase):
         result = await expr()
         self.assertEqual(99, result)
         self.assertEqual(99, lst[1])
-
-
-class TestRefItemSpecial(SpecialsTestCase):
-
-    async def test_ref_item_deref(self):
-        def deref(r):
-            return r.deref()
-
-        d = {"k": "v"}
-        src_str = """
-        (compile/call deref (compile/ref-item d "k"))
-        """
-        expr, mod = self.compile_expr(src_str, d=d, deref=deref)
-        result = await expr()
-        self.assertEqual("v", result)
 
 
 class TestDelItemSpecial(SpecialsTestCase):

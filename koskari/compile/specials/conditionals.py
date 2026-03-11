@@ -24,9 +24,8 @@ compile/when, and compile/unless.
 
 
 from ...lib import cons, keyword, nil, OpCode, symbol
-from ...types import is_keyword, is_pair
 from ...exceptions import SpecialError
-from ..helpers import helper_begin, pycons, special, special_forms
+from ..helpers import helper_begin, special, special_forms
 from ...matcher import MATCH, EXPR, VALUE, LITERAL_KW, match
 
 

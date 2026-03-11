@@ -14,8 +14,7 @@
 """
 koskari.compile.specials.slots
 
-Special form handlers for compile/attr, compile/del-attr, compile/set-attr,
-and compile/ref-attr.
+Special form handlers for compile/attr, compile/del-attr, and compile/set-attr.
 
 :author: Christopher O'Brien <obriencj@preoccupied.net>
 :license: GNU General Public License v3
@@ -97,52 +96,6 @@ def special_set_attr(compiler, source, tc=False):
     frag.merge(compiler.full_compile(val))
     frag.instruction(OpCode.KOS_OP_ATTR_STORE, str(sym))
     frag.instruction(OpCode.KOS_OP_CONST, None)
-
-    return frag
-
-
-@special(symbol("compile/deref"))
-def special_deref(compiler, source, tc=False):
-    """
-    Compile (compile/deref EXPR). Compile EXPR (produces ref on stack),
-    then emit DEREF to call ref.deref() and push result.
-    """
-
-    called_by, body = source
-    if not is_pair(body):
-        raise SpecialError("deref requires one argument", source)
-
-    arg, rest = body
-    if rest is not nil:
-        raise SpecialError("deref takes one argument", source)
-
-    frag = compiler.fragment(called_by)
-    frag.position_of(body)
-    frag.merge(compiler.full_compile(arg))
-    frag.instruction(OpCode.KOS_OP_DEREF, 0)
-
-    return frag
-
-
-@special(symbol("compile/ref-attr"))
-def special_ref_attr(compiler, source, tc=False):
-    """
-    Compile (compile/ref-attr OBJ SYM). Produce a mutable reference to attribute SYM on OBJ
-    """
-
-    called_by, body = source
-    if not is_pair(body):
-        raise SpecialError("ref-attr requires two arguments", source)
-    obj, (sym, rest) = body
-
-    if rest is not nil:
-        raise SpecialError("ref-attr takes two arguments", source)
-
-    frag = compiler.fragment(called_by)
-
-    frag.position_of(body)
-    frag.merge(compiler.full_compile(obj))
-    frag.instruction(OpCode.KOS_OP_ATTR_REF, str(sym))
 
     return frag
 

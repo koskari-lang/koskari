@@ -39,7 +39,7 @@ from .exceptions import (
     special_raise,
     special_try,
 )
-from .items import special_del_item, special_item, special_ref_item, special_set_item
+from .items import special_del_item, special_item, special_set_item
 from .lambda_ import special_lambda
 from .let import special_let
 from .loops import special_break, special_continue, special_for_each, special_while
@@ -52,13 +52,7 @@ from .quasiquote import (
     special_unquote,
     special_unquote_splicing,
 )
-from .slots import (
-    special_attr,
-    special_del_attr,
-    special_deref,
-    special_ref_attr,
-    special_set_attr,
-)
+from .slots import special_attr, special_del_attr, special_set_attr
 from .imports import helper_import_from_sequence, special_import, special_import_from
 from .object import (
     special_add,
@@ -100,7 +94,8 @@ from .object import (
     special_type,
     special_vars,
 )
-from .variables import special_bindq, special_define, special_define_syntax, special_delq, special_refq, special_setq
+from .refs import special_bindq, special_deref, special_ref_attr, special_ref_item, special_refq
+from .variables import special_define, special_define_syntax, special_delq, special_setq
 
 
 __all__ = (
