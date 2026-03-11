@@ -1122,6 +1122,10 @@ int kos_dyn_unwind_to_node(KosContext *ctx, KosDynNode *target,
 */
 #define KOS_DYN_UNWIND_ASYNC_STARTED 1
 
+/** When exception swallowed: unwind did full cleanup (DropBlock, pop_with,
+    push None); caller must return 0 without further action. */
+#define KOS_DYN_UNWIND_SWALLOWED 2
+
 
 /**
    Extent wind (enter) and unwind (exit) helpers.  Each dynamic extent

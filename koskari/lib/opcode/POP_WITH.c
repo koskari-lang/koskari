@@ -16,7 +16,8 @@
 /**
    POP_WITH: arg unused. Pop single-shot with context. Call exit(typ, val, tb);
    auto-await if exit returns awaitable. If exception and exit returns true,
-   swallow; else re-raise. Drop stack block, pop KOS_DYN_WITH node, push None.
+   swallow; else re-raise. Pop body value from block, drop block, pop
+   KOS_DYN_WITH node, push body value.
 */
 
 KOS_OP_HANDLER(POP_WITH) {
@@ -33,16 +34,25 @@ KOS_OP_HANDLER(POP_WITH) {
   int unw = kos_dyn_with_unwind(ctx, with_node, out_ev);
   if (unw == KOS_DYN_UNWIND_ASYNC_STARTED)
     return KOS_DYN_UNWIND_ASYNC_STARTED;
+  if (unw == KOS_DYN_UNWIND_SWALLOWED)
+    return 0;
   if (unw < 0)
     return -1;
 
-  /* Sync path: kos_dyn_with_unwind already applied swallow/restore and DECREF result. */
-  SAY("[eval] POP_WITH sync path: DropBlock then push None");
-  if (KosStackBlock_DropBlock(&CURRENT_STACK(ctx)) < 0)
+  /* Sync path: pop body value, drop block, pop with node, push body value. */
+  PyObject *body_val = KosStackBlock_PopRef(&CURRENT_STACK(ctx));
+  if (! body_val)
     return -1;
+  if (KosStackBlock_DropBlock(&CURRENT_STACK(ctx)) < 0) {
+    Py_DECREF(body_val);
+    return -1;
+  }
   kos_dyn_pop_with(ctx, with_node);
-  if (KosStackBlock_PushRef(&CURRENT_STACK(ctx), Py_None) < 0)
+  if (KosStackBlock_PushRef(&CURRENT_STACK(ctx), body_val) < 0) {
+    Py_DECREF(body_val);
     return -1;
+  }
+  Py_DECREF(body_val);
 
   SAY("[eval] POP_WITH sync path done -> return 0");
   (void) out_ev;

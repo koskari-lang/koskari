@@ -266,4 +266,39 @@ class TestWithSpecial(SpecialsTestCase):
         self.assertEqual(state.get("after"), 1)
 
 
+    async def test_with_body_value_is_expression_result(self):
+        """
+        with block evaluates to the body's final value (TDD: will fail until
+        POP_WITH preserves body value instead of pushing None)
+        """
+
+        mgr = SimpleMgr(100)
+        src = """
+        (compile/with [x (compile/call make_mgr)]
+          100)
+        """
+        expr, mod = self.compile_expr(src, make_mgr=lambda: mgr)
+        result = await expr()
+        self.assertEqual(result, 100)
+        self.assertTrue(mgr.entered)
+        self.assertTrue(mgr.exited)
+
+
+    async def test_with_return_from_nested_call_runs_exit_and_delivers_value(self):
+        """
+        When body calls a function that returns, exit runs and value is delivered
+        """
+
+        mgr = SimpleMgr(200)
+        src = """
+        (compile/with [x (compile/call make_mgr)]
+          (compile/call (compile/lambda [] 99)))
+        """
+        expr, mod = self.compile_expr(src, make_mgr=lambda: mgr)
+        result = await expr()
+        self.assertEqual(result, 99)
+        self.assertTrue(mgr.entered)
+        self.assertTrue(mgr.exited)
+
+
 # The end.

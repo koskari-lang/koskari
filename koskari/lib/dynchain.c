@@ -1800,6 +1800,18 @@ int kos_dyn_with_unwind(KosContext *ctx, KosDynWith *node,
     Py_XDECREF(typ);
     Py_XDECREF(val);
     Py_XDECREF(tb);
+    Py_DECREF(result);
+    /* Swallow: discard body value, drop block, push None. Caller pops node. */
+    PyObject *body_val = KosStackBlock_PopRef(&KosDynFrame_STACK(frame));
+    if (body_val)
+      Py_DECREF(body_val);
+    if (KosStackBlock_DropBlock(&KosDynFrame_STACK(frame)) < 0)
+      return -1;
+    if (frame)
+      KosDynFrame_PC(frame) = KosDynWith_RESUME_PC(node);
+    if (KosStackBlock_PushRef(&KosDynFrame_STACK(frame), Py_None) < 0)
+      return -1;
+    return KOS_DYN_UNWIND_SWALLOWED;
   }
   else if (typ != Py_None) {
     PyErr_Restore(typ, val, tb);
@@ -2147,6 +2159,8 @@ static int kos_dyn_uninstall_handler(KosContext *ctx, KosDynNode *node, KosEvent
       int unw = kos_dyn_unwind(ctx, node, out_ev);
       if (unw == KOS_DYN_UNWIND_ASYNC_STARTED)
         return KOS_DYN_UNWIND_ASYNC_STARTED;
+      if (unw == KOS_DYN_UNWIND_SWALLOWED)
+        return 0;
       if (unw < 0)
         return -1;
       if (! PyErr_Occurred()) {
@@ -2155,12 +2169,20 @@ static int kos_dyn_uninstall_handler(KosContext *ctx, KosDynNode *node, KosEvent
           KosDynFrame_PC(frame) = KosDynWith_RESUME_PC(with_node);
       }
       if (KosContext_FRAME_TOP(ctx)) {
-        if (KosStackBlock_DropBlock(&KosDynFrame_STACK(KosContext_FRAME_TOP(ctx))) < 0)
+        KosStackBlock **stack = &KosDynFrame_STACK(KosContext_FRAME_TOP(ctx));
+        PyObject *body_val = KosStackBlock_PopRef(stack);
+        if (! body_val)
           return -1;
+        if (KosStackBlock_DropBlock(stack) < 0) {
+          Py_DECREF(body_val);
+          return -1;
+        }
         if (! PyErr_Occurred() &&
-            KosStackBlock_PushRef(&KosDynFrame_STACK(KosContext_FRAME_TOP(ctx)),
-                                 Py_None) < 0)
+            KosStackBlock_PushRef(stack, body_val) < 0) {
+          Py_DECREF(body_val);
           return -1;
+        }
+        Py_DECREF(body_val);
       }
       return 0;
     }

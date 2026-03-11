@@ -719,7 +719,7 @@ class _MatchMatcher(Matcher):
             elem, rest = source
             if (rest is nil and is_pair(elem) and not is_nil(elem)
                     and len(self.specs) >= 2):
-                pair_source = cons(car(elem), cons(cdr(elem), nil))
+                pair_source = elem
                 current = pair_source
                 for spec in self.specs:
                     matcher = _resolve_spec(spec)

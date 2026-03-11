@@ -105,17 +105,29 @@ class TestMatchPairDestructuring(unittest.IsolatedAsyncioTestCase):
         body = cons(symbol('x'), nil)
         elem = cons(kw, body)
         src = cons(elem, nil)
-        result = match(src, MATCH(MATCH(LITERAL_KW('before:'), BIND('before_body'))))
+        result = match(src, MATCH(MATCH(LITERAL_KW('before:'), REST('before_body'))))
         self.assertIsNotNone(result)
-        self.assertEqual(result['before_body'].source, body)
+        self.assertEqual(result['before_body'].source, cons(symbol('x'), nil))
 
     async def test_match_wrong_keyword_fails(self):
         kw = keyword('body:')
         body = cons(symbol('x'), nil)
         elem = cons(kw, body)
         src = cons(elem, nil)
-        result = match(src, MATCH(MATCH(LITERAL_KW('before:'), BIND('before_body'))))
+        result = match(src, MATCH(MATCH(LITERAL_KW('before:'), REST('before_body'))))
         self.assertIsNone(result)
+
+    async def test_keyword_multi_form_not_unwrapped(self):
+        """
+        Multi-form keyword clause captures list, not single element
+        """
+        body = cons(keyword('body:'), cons(symbol('a'), cons(symbol('b'), nil)))
+        src = cons(body, nil)
+        result = match(src, MATCH(MATCH(LITERAL_KW('body:'), REST('body'))))
+        self.assertIsNotNone(result)
+        self.assertEqual(
+            result['body'].source,
+            cons(symbol('a'), cons(symbol('b'), nil)))
 
 
 class TestMatchPairCapture(unittest.IsolatedAsyncioTestCase):
@@ -137,13 +149,13 @@ class TestMatchOpt(unittest.IsolatedAsyncioTestCase):
         src = cons(elem, nil)
         result = match(
             src,
-            MATCH(OPT(MATCH(LITERAL_KW('after:'), BIND('after_body')))),
+            MATCH(OPT(MATCH(LITERAL_KW('after:'), REST('after_body')))),
         )
         self.assertIsNotNone(result)
-        self.assertEqual(result['after_body'].source, body)
+        self.assertEqual(result['after_body'].source, cons(symbol('y'), nil))
 
     async def test_opt_succeeds_when_absent(self):
-        result = match(nil, MATCH(OPT(MATCH(LITERAL_KW('after:'), BIND('after_body')))))
+        result = match(nil, MATCH(OPT(MATCH(LITERAL_KW('after:'), REST('after_body')))))
         self.assertIsNotNone(result)
         self.assertNotIn('after_body', result)
 
@@ -156,9 +168,9 @@ class TestMatchAnyOrder(unittest.IsolatedAsyncioTestCase):
         after = cons(keyword('after:'), cons(symbol('a'), nil))
         src = cons(body, cons(before, cons(after, nil)))
         pat = MATCH(ANY_ORDER(
-            MATCH(LITERAL_KW('before:'), BIND('before_body')),
-            MATCH(LITERAL_KW('body:'), BIND('body')),
-            MATCH(LITERAL_KW('after:'), BIND('after_body')),
+            MATCH(LITERAL_KW('before:'), REST('before_body')),
+            MATCH(LITERAL_KW('body:'), REST('body')),
+            MATCH(LITERAL_KW('after:'), REST('after_body')),
         ))
         result = match(src, pat)
         self.assertIsNotNone(result)
@@ -171,8 +183,8 @@ class TestMatchAnyOrder(unittest.IsolatedAsyncioTestCase):
         after = cons(keyword('after:'), cons(symbol('a'), nil))
         src = cons(body, cons(after, nil))
         pat = MATCH(ANY_ORDER(
-            MATCH(LITERAL_KW('body:'), BIND('body')),
-            MATCH(LITERAL_KW('after:'), BIND('after_body')),
+            MATCH(LITERAL_KW('body:'), REST('body')),
+            MATCH(LITERAL_KW('after:'), REST('after_body')),
         ))
         result = match(src, pat)
         self.assertIsNotNone(result)
@@ -188,9 +200,9 @@ class TestMatchDynWindPattern(unittest.IsolatedAsyncioTestCase):
         after = cons(keyword('after:'), cons(symbol('a'), nil))
         src = cons(before, cons(body, cons(after, nil)))
         pat = MATCH(ANY_ORDER(
-            MATCH(LITERAL_KW('before:'), BIND('before_body')),
-            MATCH(LITERAL_KW('body:'), BIND('body')),
-            MATCH(LITERAL_KW('after:'), BIND('after_body')),
+            MATCH(LITERAL_KW('before:'), REST('before_body')),
+            MATCH(LITERAL_KW('body:'), REST('body')),
+            MATCH(LITERAL_KW('after:'), REST('after_body')),
         ))
         result = match(src, pat)
         self.assertIsNotNone(result)
@@ -206,14 +218,14 @@ class TestMatchFromTuple(unittest.IsolatedAsyncioTestCase):
         body = cons(symbol('x'), nil)
         elem = cons(kw, body)
         src = cons(elem, nil)
-        builder = MATCH(MATCH(LITERAL_KW('before:'), BIND('before_body')))
+        builder = MATCH(MATCH(LITERAL_KW('before:'), REST('before_body')))
         tup = builder.to_tuple()
         result_builder = match(src, builder)
         result_tup = match(src, tup)
         self.assertIsNotNone(result_tup)
         self.assertEqual(result_builder['before_body'].source,
                          result_tup['before_body'].source)
-        self.assertEqual(result_tup['before_body'].source, body)
+        self.assertEqual(result_tup['before_body'].source, cons(symbol('x'), nil))
 
 
 class TestMatchFailure(unittest.IsolatedAsyncioTestCase):
