@@ -42,7 +42,6 @@ __all__ = (
     "gather_bindings",
     "gather_formals",
     "gather_parameters_ng",
-    "gather_parameters",
     "helper_begin",
     "helper_binding",
     "helper_elsebody",
@@ -51,7 +50,6 @@ __all__ = (
     "list_star",
     "pycons",
     "requote",
-    "simple_parameters",
     "special",
     "special_form",
     "SPECIALS",
@@ -137,86 +135,6 @@ def is_symbolish(thing):
     """
 
     return is_symbol(thing) or is_lazygensym(thing)
-
-
-_tag_bindings = symbol('matcher/bind-bindings')
-
-
-@matcher(_tag_bindings)
-class _BindingsMatcher(BindingMatcher):
-    """
-    Match a list and bind the result of gather_bindings as (names, values)
-    """
-
-    def __init__(self, slot, mode='parallel', scope=None, scopes=None):
-        self.slot = slot
-        self._key = str(slot)
-        self.mode = mode
-        self.scope = scope
-        self.scopes = scopes
-
-
-    @classmethod
-    def from_payload(cls, payload, deserialize):
-        if len(payload) != 1:
-            raise ValueError('bind-bindings expects 1 payload, got %d' % len(payload))
-        return cls(payload[0])
-
-
-    def matches_element(self, value, literals, result, specs=None, source=None):
-        return False
-
-
-    def consume(self, source, literals, result, specs=None):
-        if source is nil:
-            return (None, False)
-        head = car(source)
-        tail = cdr(source)
-        if not is_pair(head):
-            return (None, False)
-        names, values = gather_bindings(head, head)
-        result[self._key] = BindingsResult(
-            head, get_position(source), names=names, values=values)
-        if specs is not None:
-            specs[self._key] = self
-        return (tail, True)
-
-
-    def extract_binder_symbols(self, value):
-        if hasattr(value, 'names'):
-            names = value.names
-        elif isinstance(value, (tuple, list)) and len(value) == 2:
-            names, _values = value
-        else:
-            return
-        for n in (names or ()):
-            if is_symbol(n):
-                yield n
-
-
-    def get_recurse_targets(self, value):
-        if hasattr(value, 'values'):
-            return value.values or ()
-        if isinstance(value, (tuple, list)) and len(value) == 2:
-            return value[1] or ()
-        return ()
-
-
-    def to_tuple(self):
-        return (_tag_bindings, symbol(self._key) if isinstance(self.slot, str) else self.slot)
-
-
-def BINDINGS(slot, *, mode='parallel', scope=None, scopes=None):
-    """
-    Match a list and bind (names, values) from gather_bindings
-
-    :param slot: capture key
-    :param mode: parallel, sequential, or recursive
-    :param scope: single scope region key
-    :param scopes: sequence of scope region keys
-    """
-    return _BindingsMatcher(slot, mode=mode, scope=scope, scopes=scopes)
-
 
 
 _tag_formals = symbol('matcher/formals')
@@ -450,98 +368,84 @@ def helper_binding(source, allow_unnamed=False):
     return (name.source if name else None, value.source)
 
 
-def gather_parameters(args, source=None):
-    """
-    Parse call-site argument list into five values.
+_tag_bindings = symbol('matcher/bind-bindings')
 
-    :param args: pair, improper list, or single symbol (rest arg)
-    :param source: optional source form for error context
-    :return: (positional, keywords, values, stararg, starstararg)
-        - positional: list of expressions for positional arguments
-        - keywords: list of keyword objects for keyword argument names
-        - values: list of expressions (one per keyword)
-        - stararg: symbol or None for *args
-        - starstararg: symbol or None for **kwargs
-    :raises ParametersError: on invalid parameter list
+
+@matcher(_tag_bindings)
+class _BindingsMatcher(BindingMatcher):
+    """
+    Match a list and bind the result of gather_bindings as (names, values)
     """
 
-    undefined = object()
+    def __init__(self, slot, mode='parallel', scope=None, scopes=None):
+        self.slot = slot
+        self._key = str(slot)
+        self.mode = mode
+        self.scope = scope
+        self.scopes = scopes
 
-    if is_symbol(args) or is_lazygensym(args):
-        return ([], [], [], args, None)
 
-    elif isinstance(args, (list, tuple)):
-        improper = False
-        args = cons(*args, nil) if args else nil
+    @classmethod
+    def from_payload(cls, payload, deserialize):
+        if len(payload) != 1:
+            raise ValueError('bind-bindings expects 1 payload, got %d' % len(payload))
+        return cls(payload[0])
 
-    elif is_proper(args):
-        improper = False
 
-    elif is_pair(args):
-        improper = True
+    def matches_element(self, value, literals, result, specs=None, source=None):
+        return False
 
-    else:
-        raise ParametersError("parameters must be symbol or pair, not %r" % args, source)
 
-    positional = []
+    def consume(self, source, literals, result, specs=None):
+        if source is nil:
+            return (None, False)
 
-    iargs = iter(unpack(args))
-    for arg in iargs:
-        if is_keyword(arg):
-            break
+        head, tail = source
+        if not is_pair(head):
+            return (None, False)
+
+        names, values = gather_bindings(head, head)
+        result[self._key] = BindingsResult(
+            head, get_position(source), names=names, values=values)
+        if specs is not None:
+            specs[self._key] = self
+        return (tail, True)
+
+
+    def extract_binder_symbols(self, value):
+        if hasattr(value, 'names'):
+            names = value.names
+        elif isinstance(value, (tuple, list)) and len(value) == 2:
+            names, _values = value
         else:
-            positional.append(arg)
-    else:
-        if improper:
-            return (positional[:-1], [], [], positional[-1], None)
-        else:
-            return (positional, [], [], None, None)
+            return
+        for n in (names or ()):
+            if is_symbol(n):
+                yield n
 
-    keywords = []
-    defaults = []
 
-    while arg not in (_keyword_star, _keyword_starstar):
-        keywords.append(arg)
+    def get_recurse_targets(self, value):
+        if hasattr(value, 'values'):
+            return value.values or ()
+        if isinstance(value, (tuple, list)) and len(value) == 2:
+            return value[1] or ()
+        return ()
 
-        value = next(iargs, undefined)
-        if value is undefined:
-            raise ParametersError("missing value for keyword parameter %s" % arg, source)
-        else:
-            defaults.append(value)
 
-        arg = next(iargs, undefined)
-        if arg is undefined:
-            break
-        elif is_keyword(arg):
-            continue
-        else:
-            raise ParametersError(
-                "keyword parameters must be alternating keywords and"
-                " values, not %r" % arg,
-                source)
+    def to_tuple(self):
+        return (_tag_bindings, symbol(self._key) if isinstance(self.slot, str) else self.slot)
 
-    star = None
-    starstar = None
 
-    if arg is undefined:
-        return (positional, keywords, defaults, None, None)
+def BINDINGS(slot, *, mode='parallel', scope=None, scopes=None):
+    """
+    Match a list and bind (names, values) from gather_bindings
 
-    if arg is _keyword_star:
-        star = next(iargs, undefined)
-        if star is undefined:
-            raise ParametersError("* keyword parameter needs value", source)
-        arg = next(iargs, undefined)
-
-    if arg is _keyword_starstar:
-        starstar = next(iargs, undefined)
-        if starstar is undefined:
-            raise ParametersError("** keyword parameter needs value", source)
-        arg = next(iargs, undefined)
-
-    if arg is not undefined:
-        raise ParametersError("leftover parameters %r" % arg, source)
-
-    return (positional, keywords, defaults, star, starstar)
+    :param slot: capture key
+    :param mode: parallel, sequential, or recursive
+    :param scope: single scope region key
+    :param scopes: sequence of scope region keys
+    """
+    return _BindingsMatcher(slot, mode=mode, scope=scope, scopes=scopes)
 
 
 def gather_parameters_ng(args, source=None):
@@ -762,25 +666,6 @@ def gather_formals(args, source=None):
         raise SpecialError("leftover formals %r" % arg, source)
 
     return (positional, defaults, kwonly, star, starstar)
-
-
-def simple_parameters(source_args, source=None):
-    """
-    Convenience view of gather_parameters: positional list and keyword dict.
-
-    Callers that need star/starstar must use gather_parameters directly.
-
-    :param source_args: same as gather_parameters args
-    :param source: optional source form for error context
-    :return: (pos_list, kw_dict) where kw_dict maps keyword name (str) to value expr
-    :raises ParametersError: on invalid parameter list
-    """
-
-    pos, keywords, values, star, starstar = gather_parameters(
-        source_args, source)
-    kw_dict = {} if not keywords else dict(
-        (k, v) for k, v in zip(keywords, values))
-    return (pos, kw_dict)
 
 
 def gather_bindings(bindings_source, source=None):

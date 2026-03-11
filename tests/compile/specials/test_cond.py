@@ -19,6 +19,7 @@ Tests for koskari.compile cond, if, when, unless special forms.
 """
 
 
+from koskari.dis import dis
 from . import SpecialsTestCase
 
 
@@ -98,10 +99,12 @@ class TestCondSpecial(SpecialsTestCase):
     async def test_if_then_else(self):
         src_str_t = "(compile/if True 1 2)"
         expr, mod = self.compile_expr(src_str_t)
+        dis(expr.code)
         self.assertEqual(await expr(), 1)
 
         src_str_f = "(compile/if False 1 2)"
         expr, mod = self.compile_expr(src_str_f)
+        dis(expr.code)
         self.assertEqual(await expr(), 2)
 
 

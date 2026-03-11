@@ -21,7 +21,7 @@ import unittest
 from koskari.types import cons, keyword, nil, symbol
 from koskari.exceptions import ParametersError, SpecialError
 from koskari.compile.helpers import BINDING, FORMALS, gather_formals
-from koskari.compile.helpers import gather_parameters_ng, gather_parameters
+from koskari.compile.helpers import gather_parameters_ng
 from koskari.matcher import (
     BindingResult,
     DEFINE,
@@ -32,109 +32,6 @@ from koskari.matcher import (
     is_scope_region_spec,
     match,
 )
-
-
-class TestGatherParameters(unittest.IsolatedAsyncioTestCase):
-
-    async def test_positional_only(self):
-        args = cons(symbol("a"), cons(symbol("b"), nil))
-        pos, kwds, values, star, starstar = gather_parameters(args)
-        self.assertEqual(len(pos), 2)
-        self.assertEqual(str(pos[0]), "a")
-        self.assertEqual(str(pos[1]), "b")
-        self.assertEqual(kwds, [])
-        self.assertEqual(values, [])
-        self.assertIsNone(star)
-        self.assertIsNone(starstar)
-
-    async def test_empty_list(self):
-        pos, kwds, values, star, starstar = gather_parameters(nil)
-        self.assertEqual(pos, [])
-        self.assertEqual(kwds, [])
-        self.assertEqual(values, [])
-        self.assertIsNone(star)
-        self.assertIsNone(starstar)
-
-    async def test_single_symbol_rest(self):
-        rest = symbol("args")
-        pos, kwds, values, star, starstar = gather_parameters(rest)
-        self.assertEqual(pos, [])
-        self.assertEqual(kwds, [])
-        self.assertEqual(values, [])
-        self.assertIs(star, rest)
-        self.assertIsNone(starstar)
-
-    async def test_keywords(self):
-        k1 = keyword("k1")
-        k2 = keyword("k2")
-        v1 = symbol("v1")
-        v2 = symbol("v2")
-        args = cons(k1, cons(v1, cons(k2, cons(v2, nil))))
-        pos, kwds, values, star, starstar = gather_parameters(args)
-        self.assertEqual(pos, [])
-        self.assertEqual(kwds, [k1, k2])
-        self.assertEqual(values, [v1, v2])
-        self.assertIsNone(star)
-        self.assertIsNone(starstar)
-
-    async def test_positional_then_keywords(self):
-        a = symbol("a")
-        b = symbol("b")
-        k = keyword("x")
-        v = symbol("v")
-        args = cons(a, cons(b, cons(k, cons(v, nil))))
-        pos, kwds, values, star, starstar = gather_parameters(args)
-        self.assertEqual(len(pos), 2)
-        self.assertEqual(pos[0], a)
-        self.assertEqual(pos[1], b)
-        self.assertEqual(kwds, [k])
-        self.assertEqual(values, [v])
-        self.assertIsNone(star)
-        self.assertIsNone(starstar)
-
-    async def test_improper_list_rest(self):
-        a = symbol("a")
-        rest = symbol("rest")
-        args = cons(a, rest)
-        pos, kwds, values, star, starstar = gather_parameters(args)
-        self.assertEqual(pos, [a])
-        self.assertEqual(kwds, [])
-        self.assertEqual(values, [])
-        self.assertIs(star, rest)
-        self.assertIsNone(starstar)
-
-    async def test_star_starstar(self):
-        star_sym = symbol("args")
-        starstar_sym = symbol("kwargs")
-        k = keyword("*")
-        kk = keyword("**")
-        args = cons(k, cons(star_sym, cons(kk, cons(starstar_sym, nil))))
-        pos, kwds, values, star, starstar = gather_parameters(args)
-        self.assertEqual(pos, [])
-        self.assertEqual(kwds, [])
-        self.assertEqual(values, [])
-        self.assertIs(star, star_sym)
-        self.assertIs(starstar, starstar_sym)
-
-    async def test_missing_value_for_keyword_raises(self):
-        args = cons(keyword("a"), nil)
-        with self.assertRaises(ParametersError) as ctx:
-            gather_parameters(args)
-        self.assertIn("keyword", str(ctx.exception).lower())
-
-    async def test_leftover_parameters_raises(self):
-        a = symbol("a")
-        b = symbol("b")
-        k = keyword("*")
-        star_sym = symbol("s")
-        extra = symbol("extra")
-        args = cons(k, cons(star_sym, cons(extra, nil)))
-        with self.assertRaises(ParametersError):
-            gather_parameters(args)
-
-    async def test_not_symbol_or_pair_raises(self):
-        with self.assertRaises(ParametersError):
-            gather_parameters(42)
 
 
 class TestGatherParametersNg(unittest.IsolatedAsyncioTestCase):

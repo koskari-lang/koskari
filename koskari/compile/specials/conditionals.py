@@ -26,7 +26,8 @@ compile/when, and compile/unless.
 from ...lib import cons, keyword, nil, OpCode, symbol
 from ...types import is_keyword, is_pair
 from ...exceptions import SpecialError
-from ..helpers import helper_begin, pycons, simple_parameters, special
+from ..helpers import helper_begin, pycons, special, special_forms
+from ...matcher import MATCH, EXPR, VALUE, LITERAL_KW, match
 
 
 _keyword_else = keyword("else")
@@ -58,7 +59,10 @@ def special_cond(compiler, source, tc=False):
 
         test, body = element
 
-        if is_keyword(test) and str(test) == "else":
+        if test is _keyword_else:
+            if cl:
+                raise SpecialError("else: must be last clause", source)
+
             helper_begin(fragment, body, tc)
             break
 
@@ -75,65 +79,15 @@ def special_cond(compiler, source, tc=False):
     return fragment
 
 
-def _expand_if_to_cond(rest, source):
-    """
-    Parse (compile/if COND THEN ELSE) or (compile/if COND then: THEN else: ELSE).
-    Return a cond form suitable for full_compile.
-    """
-
-    pos, kw_dict = simple_parameters(rest, source)
-
-    if kw_dict:
-        cond_expr = pos[0] if pos else nil
-        then_expr = kw_dict.get("then")
-        else_expr = kw_dict.get("else")
-        if then_expr is None or else_expr is None:
-            raise SpecialError(
-                "if requires both then: and else: when using keywords",
-                source)
-    else:
-        if len(pos) < 3:
-            raise SpecialError(
-                "if requires condition, then, and else",
-                source)
-
-        cond_expr, then_expr, else_expr = pos[0], pos[1], pos[2]
-
-    return pycons((symbol("compile/cond"),
-                  (cond_expr, then_expr),
-                  (_keyword_else, else_expr)))
+_IF_FORMS = [
+    MATCH(VALUE("test"), EXPR("then"), EXPR("else")),
+    MATCH(VALUE("test"),
+          LITERAL_KW("then"), EXPR("then"),
+          LITERAL_KW("else"), EXPR("else")),
+]
 
 
-def _expand_when_to_cond(rest, source):
-    """
-    Parse (compile/when COND BODY...). Return a cond form.
-    """
-
-    if rest is nil or not is_pair(rest):
-        raise SpecialError("when requires condition and body", source)
-
-    cond_expr, body = rest
-    # body_tuple = tuple(unpack(body)) if is_pair(body) else (body,)
-    return pycons((symbol("compile/cond"),
-                   cons(cond_expr, body),
-                   (_keyword_else, None)))
-
-
-def _expand_unless_to_cond(rest, source):
-    """
-    Parse (compile/unless COND BODY...). Return a cond form.
-    """
-
-    if rest is nil or not is_pair(rest):
-        raise SpecialError("unless requires condition and body", source)
-
-    cond_expr, body = rest
-    # body_tuple = tuple(unpack(body)) if is_pair(body) else (body,)
-    return pycons((symbol("compile/cond"),
-                   (cond_expr, None),
-                   cons(_keyword_else, body)))
-
-
+@special_forms(_IF_FORMS)
 @special(symbol("compile/if"))
 def special_if(compiler, source, tc=False):
     """
@@ -142,10 +96,26 @@ def special_if(compiler, source, tc=False):
     """
 
     called_by, rest = source
-    expanded = _expand_if_to_cond(rest, source)
-    return compiler.full_compile(expanded, tc)
+
+    m = match(rest, _IF_FORMS)
+    if m is None:
+        raise SpecialError("invalid if form", source)
+
+    test_src = m["test"].source
+    then_src = m["then"].source
+    else_src = m["else"].source
+
+    return cons(symbol("compile/cond"),
+               cons(test_src, then_src, nil),
+               cons(_keyword_else, else_src, nil),
+               nil)
 
 
+_WHEN_FORMS = [
+    MATCH(VALUE("test"), EXPR("body")),
+]
+
+@special_forms(_WHEN_FORMS)
 @special(symbol("compile/when"))
 def special_when(compiler, source, tc=False):
     """
@@ -153,10 +123,21 @@ def special_when(compiler, source, tc=False):
     """
 
     called_by, rest = source
-    expanded = _expand_when_to_cond(rest, source)
-    return compiler.full_compile(expanded, tc)
+
+    m = match(rest, _WHEN_FORMS)
+    if m is None:
+        raise SpecialError("invalid if form", source)
+
+    test_src = m["test"].source
+    body_src = m["body"].source
+
+    return cons(symbol("compile/cond"),
+               cons(test_src, body_src, nil),
+               cons(_keyword_else, None, nil),
+               nil)
 
 
+@special_forms(_WHEN_FORMS)
 @special(symbol("compile/unless"))
 def special_unless(compiler, source, tc=False):
     """
@@ -164,8 +145,18 @@ def special_unless(compiler, source, tc=False):
     """
 
     called_by, rest = source
-    expanded = _expand_unless_to_cond(rest, source)
-    return compiler.full_compile(expanded, tc)
+
+    m = match(rest, _WHEN_FORMS)
+    if m is None:
+        raise SpecialError("invalid if form", source)
+
+    test_src = m["test"].source
+    body_src = m["body"].source
+
+    return cons(symbol("compile/cond"),
+               cons(test_src, None, nil),
+               cons(_keyword_else, body_src, nil),
+               nil)
 
 
 @special(symbol("compile/and"))
