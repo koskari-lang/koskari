@@ -44,4 +44,20 @@ define-syntax compile/set!:
       (setq name value)
 
 
+define-syntax compile/ref:
+  syntax-rules [item compile/item attr compile/attr]:
+    ref (item obj name):
+      (compile/ref-item obj name)
+    ref (compile/item obj name):
+      (compile/ref-item obj name)
+
+    ref (attr obj name):
+      (compile/ref-attr obj name)
+    ref (compile/attr obj name):
+      (compile/ref-attr obj name)
+
+    ref name:
+      (compile/refq name)
+
+
 ;; The end.

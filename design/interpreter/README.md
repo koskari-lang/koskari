@@ -12,7 +12,6 @@ This directory documents the interpreter implementation, including bytecode form
 - **execution-invariants.md**: Koskari execution model invariants and design commitments
 - **yield-from-execution-model.md**: YIELD_FROM opcode execution model (delegation conduit, KOS_DYN_YIELD_FROM, delegate kinds, PC discipline)
 - **introspection-trace.md**: Read-only introspection and trace snapshot design (TraceView, KOS_OP_CAPTURE_FRAME, exception integration)
-- **ceval-exception-paths.md**: Exception paths in the C eval loop; where `inject_eval_frame_traceback` is called vs missing (run_transfer_plan_to_completion)
 - **callcc.md**: Call/cc implementation design
 - **dynamic-node-unified-api.md**: Dynamic node unified API redesign and migration specification (implementation prompt)
 - **evaluator-token-continuation.md**: Evaluator token + continuation application model (KosEvaluatorToken, KoskariContinuationApply)

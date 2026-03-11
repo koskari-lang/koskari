@@ -17,7 +17,7 @@ The existing `koskari.reader` already parses source into s-expressions. The lexe
 2. **Token-level output** for consumers that need a token stream (e.g. syntax highlighters) rather than s-expressions.
 3. **Name sets** (specials, layouts) for highlighting and completion, without invoking the compiler.
 
-The abstract reader reuses `LayoutReader` with a static namespace (LAYOUTS or `make_builtins()`). Token emission may be implemented by walking parsed s-expressions or by a separate tokenizer.
+The abstract reader reuses `LayoutReader` with a static namespace (LAYOUTS or `koskari.importer.bootstrap.make_builtins()`). Token emission may be implemented by walking parsed s-expressions or by a separate tokenizer.
 
 ## Package Structure
 
@@ -43,7 +43,7 @@ koskari/
 
 **`default_layout_reader()`**
 
-Returns a `LayoutReader` instance configured with default atoms, reader macros, and layouts. No module, no execution. Uses a static namespace built from `koskari.reader.layouts.LAYOUTS` (or `koskari.importer.builtins.make_builtins()` if layout set should match runtime exactly).
+Returns a `LayoutReader` instance configured with default atoms, reader macros, and layouts. No module, no execution. Uses a static namespace built from `koskari.reader.layouts.LAYOUTS` (or `koskari.importer.bootstrap.make_builtins()` if layout set should match runtime exactly).
 
 ```python
 def default_layout_reader():

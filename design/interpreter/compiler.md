@@ -1,6 +1,8 @@
 # Compiler Architecture
 
-## From python-sibilant
+## From python-sibilant (historical; CPython bytecode target abandoned)
+
+Koskari uses custom bytecode and a custom C evaluator, not CPython bytecode. The following describes the original python-sibilant pipeline for reference.
 
 ### Compilation Phases
 

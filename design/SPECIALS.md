@@ -774,9 +774,7 @@ None.
 **Behaviour:** Requests the variable name, compiles EXPR, emits VAR_STORE, then
 pushes CONST None so the form has a value.
 
-**Note:** The `set!` macro (in `basics.ki`) expands augmented-assignment forms
-like `(set! x (+ x 1))` to `(compile/inplace + x 1)`; plain assignments
-`(set! x value)` expand to `(compile/setq x value)`.
+**Note:** The `set!` macro expands to this form or `compile/inplace`; see [MACROS.md](MACROS.md).
 
 **Examples:**
 
@@ -806,7 +804,7 @@ FAST_OBJECT_* when VAR has a fixed slot.
 **Examples:**
 
 ```scheme
-;; Via set! macro expansion
+;; Via set! macro (see MACROS.md)
 (set! x (+ x 1))    ; x += 1
 (set! n (* n 2))    ; n *= 2
 (set! bits (| bits mask))  ; bits |= mask
@@ -817,34 +815,6 @@ FAST_OBJECT_* when VAR has a fixed slot.
 ```
 
 **Implementation:** `koskari/compile/specials/object.py` — `special_inplace`
-
-
-## compile/ref
-
-**Symbol:** `compile/ref` (alias: `ref`)
-
-**Syntax:** `(compile/ref ARG)` or `(ref ARG)`
-
-**Use-case:** Selective expansion to yield a mutable reference. Dispatches on its
-single argument form: plain symbol → refq; (attr obj name) → ref-attr;
-(item coll key) → ref-item. The `&expr` reader macro expands to `(ref expr)`.
-
-**Behaviour:** Inspects ARG. If symbol: expand to `(compile/refq ARG)`. If
-`(attr OBJ NAME)` or `(compile/attr OBJ NAME)`: expand to
-`(compile/ref-attr OBJ NAME)`. If `(item COLL KEY)` or `(compile/item COLL KEY)`:
-expand to `(compile/ref-item COLL KEY)`. Otherwise raise SpecialError. Dotted
-forms like `foo.bar` are expanded at read-time to `(attr foo bar)`, so
-`&foo.bar` reads as `(ref (attr foo bar))` and expands to ref-attr.
-
-**Examples:**
-
-```scheme
-(ref x)                    ; → (compile/refq x)
-(ref (attr obj count))     ; → (compile/ref-attr obj count)
-(ref (item lst 0))         ; → (compile/ref-item lst 0)
-&foo                       ; reader: (ref foo) → refq
-&foo.bar                   ; reader: (ref (attr foo bar)) → ref-attr
-```
 
 
 ## compile/refq

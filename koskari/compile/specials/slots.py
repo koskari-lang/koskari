@@ -14,8 +14,8 @@
 """
 koskari.compile.specials.slots
 
-Special form handlers for compile/ref, compile/attr, compile/del-attr,
-compile/set-attr, and compile/ref-attr.
+Special form handlers for compile/attr, compile/del-attr, compile/set-attr,
+and compile/ref-attr.
 
 :author: Christopher O'Brien <obriencj@preoccupied.net>
 :license: GNU General Public License v3
@@ -23,72 +23,10 @@ compile/set-attr, and compile/ref-attr.
 """
 
 
-from ...lib import cons, nil, OpCode, symbol
-from ...types import is_pair, is_symbol
+from ...lib import nil, OpCode, symbol
+from ...types import is_pair
 from ...exceptions import SpecialError
-from ..helpers import is_symbolish, special
-
-
-_sym_attr = symbol("attr")
-_sym_compile_attr = symbol("compile/attr")
-_sym_compile_ref_attr = symbol("compile/ref-attr")
-_sym_compile_ref_item = symbol("compile/ref-item")
-_sym_compile_refq = symbol("compile/refq")
-_sym_item = symbol("item")
-_sym_compile_item = symbol("compile/item")
-
-
-@special(symbol("compile/ref"), aliases=(symbol("ref"),))
-def special_ref(compiler, source, tc=False):
-    """
-    Compile (ref ARG) or (compile/ref ARG). Selective expansion:
-    - sym -> (compile/refq sym)
-    - (attr obj name) or (compile/attr obj name) -> (compile/ref-attr obj name)
-    - (item coll key) or (compile/item coll key) -> (compile/ref-item coll key)
-    """
-
-    called_by, body = source
-    if not is_pair(body):
-        raise SpecialError("ref requires one argument", source)
-
-    arg, rest = body
-    if rest is not nil:
-        raise SpecialError("ref takes one argument", source)
-
-    frag = compiler.fragment(called_by)
-    frag.position_of(body)
-
-    if is_symbol(arg) or is_symbolish(arg):
-        expanded = cons(_sym_compile_refq, arg, nil)
-    elif is_pair(arg):
-        head, tail = arg
-        head_str = str(head) if head else ""
-        if head_str in ("attr", "compile/attr"):
-            if not is_pair(tail):
-                raise SpecialError("ref attr form requires two arguments", source)
-            obj, (name, name_rest) = tail
-            if name_rest is not nil:
-                raise SpecialError("ref attr form takes two arguments", source)
-            expanded = cons(_sym_compile_ref_attr, obj, cons(name, nil))
-        elif head_str in ("item", "compile/item"):
-            if not is_pair(tail):
-                raise SpecialError("ref item form requires two arguments", source)
-            coll, (key, key_rest) = tail
-            if key_rest is not nil:
-                raise SpecialError("ref item form takes two arguments", source)
-            expanded = cons(_sym_compile_ref_item, coll, cons(key, nil))
-        else:
-            raise SpecialError(
-                "ref argument must be symbol, (attr obj name), or (item coll key)",
-                source)
-    else:
-        raise SpecialError(
-            "ref argument must be symbol, (attr obj name), or (item coll key)",
-            source)
-
-    if hasattr(source, "set_position") and hasattr(expanded, "set_position"):
-        expanded.set_position(source.get_position())
-    return compiler.compile_pair(frag, expanded, tc)
+from ..helpers import special
 
 
 @special(symbol("compile/attr"))

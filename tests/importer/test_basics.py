@@ -14,15 +14,20 @@
 """
 Tests for koskari.importer.basics (koskari-written builtins in basics.ki)
 
-Placeholder phase for tests of compile/set!, future compile/if, compile/when,
-compile/unless macros and other koskari-implemented builtins.
+Tests for compile/set!, compile/ref (and other macros) that require the
+full builtins (make_builtins) to be loaded.
 """
 
 
+from types import SimpleNamespace
+
+from koskari.compile import Compiler
+from koskari.importer.bootstrap import make_builtins
+from koskari.lib import Module, ModuleNamespace
+from koskari.reader import default_reader, source_str
+
 import pytest
 import unittest
-
-from koskari.importer.bootstrap import make_builtins
 
 
 pytestmark = pytest.mark.phase_basics
@@ -36,6 +41,75 @@ class TestBasicsModuleLoads(unittest.IsolatedAsyncioTestCase):
         """
         builtins = await make_builtins()
         self.assertIn('compile/set!', builtins, 'compile/set! from basics.ki should be in builtins')
+
+
+class TestRefMacro(unittest.IsolatedAsyncioTestCase):
+    """
+    Tests for the compile/ref macro in basics.ki. Requires make_builtins
+    so the macro is present for expansion.
+    """
+
+    async def compile_expr(self, src_str, lineno=1, **defns):
+        bltns = dict(await make_builtins())
+        bltns.update(defns)
+        mod_ns = ModuleNamespace("test", bltns)
+        module = Module(mod_ns)
+        source = default_reader.read(source_str(src_str, __file__, line_no=lineno))
+        compiler = Compiler("<unittest>", module, filename=__file__)
+        fragment = compiler.full_compile(source)
+        return fragment.as_expression(mod_ns), module
+
+
+    async def test_ref_symbol_expands_to_refq(self):
+        src_str = """
+        (let [[x 10]]
+          (compile/call deref (ref x)))
+        """
+        def deref(r):
+            return r.deref()
+
+        expr, mod = await self.compile_expr(src_str, deref=deref)
+        result = await expr()
+        self.assertEqual(10, result)
+
+
+    async def test_ref_attr_expands_to_ref_attr(self):
+        obj = SimpleNamespace(count=5)
+        src_str = """
+        (compile/call deref (ref (attr obj count)))
+        """
+        def deref(r):
+            return r.deref()
+
+        expr, mod = await self.compile_expr(src_str, obj=obj, deref=deref)
+        result = await expr()
+        self.assertEqual(5, result)
+
+
+    async def test_ampersand_dotted_expands_to_ref_attr(self):
+        obj = SimpleNamespace(count=7)
+        src_str = """
+        (compile/call deref &obj.count)
+        """
+        def deref(r):
+            return r.deref()
+
+        expr, mod = await self.compile_expr(src_str, obj=obj, deref=deref)
+        result = await expr()
+        self.assertEqual(7, result)
+
+
+    async def test_ref_item_expands_to_ref_item(self):
+        lst = [10, 20, 30]
+        src_str = """
+        (compile/call deref (ref (item lst 1)))
+        """
+        def deref(r):
+            return r.deref()
+
+        expr, mod = await self.compile_expr(src_str, lst=lst, deref=deref)
+        result = await expr()
+        self.assertEqual(20, result)
 
 
 # The end.

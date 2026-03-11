@@ -56,7 +56,6 @@ from .slots import (
     special_attr,
     special_del_attr,
     special_deref,
-    special_ref,
     special_ref_attr,
     special_set_attr,
 )
@@ -181,7 +180,6 @@ __all__ = (
     "special_quote",
     "special_quote_block",
     "special_raise",
-    "special_ref",
     "special_ref_attr",
     "special_ref_item",
     "special_refq",
