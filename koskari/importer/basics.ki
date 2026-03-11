@@ -7,13 +7,23 @@
 
 
 define-syntax compile/set!:
-  syntax-rules [item attr deref + - * / // % ** @ << >> & ^ |]:
+  syntax-rules [item attr deref compile/item compile/attr compile/deref
+                + - * / // % ** @ << >> & ^ |]:
     match (set! (item obj name) value):
-      (set-item obj name value)
+      (compile/set-item obj name value)
+    match (set! (compile/item obj name) value):
+      (compile/set-item obj name value)
+
     match (set! (attr obj name) value):
-      (set-attr obj name value)
+      (compile/set-attr obj name value)
+    match (set! (compile/attr obj name) value):
+      (compile/set-attr obj name value)
+
     match (set! (deref ref) value):
-      (set-ref ref value)
+      (compile/set-ref ref value)
+    match (set! (compile/deref ref) value):
+      (compile/set-ref ref value)
+
     match (set! name (+ name value)):
       (compile/inplace + name value)
     match (set! name (- name value)):
@@ -40,6 +50,7 @@ define-syntax compile/set!:
       (compile/inplace ^ name value)
     match (set! name (| name value)):
       (compile/inplace | name value)
+
     match (set! name value):
       (setq name value)
 

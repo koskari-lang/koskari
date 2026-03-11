@@ -25,9 +25,16 @@ Special form handlers for compile/attr, compile/del-attr, and compile/set-attr.
 from ...lib import nil, OpCode, symbol
 from ...types import is_pair
 from ...exceptions import SpecialError
-from ..helpers import special
+from ..helpers import special, special_forms
+from ...matcher import MATCH, VALUE, SYMBOL, match
 
 
+_ATTR_FORMS = [
+    MATCH(VALUE('obj'), SYMBOL('sym')),
+]
+
+
+@special_forms(_ATTR_FORMS)
 @special(symbol("compile/attr"))
 def special_attr(compiler, source, tc=False):
     """
@@ -35,12 +42,13 @@ def special_attr(compiler, source, tc=False):
     """
 
     called_by, body = source
-    if not is_pair(body):
-        raise SpecialError("attr requires two arguments", source)
-    obj, (sym, rest) = body
 
-    if rest is not nil:
-        raise SpecialError("attr takes two arguments", source)
+    m = match(body, _ATTR_FORMS)
+    if m is None:
+        raise SpecialError("compile/attr requires OBJ SYM", source)
+
+    obj = m.get('obj').source
+    sym = m.get('sym').source
 
     frag = compiler.fragment(called_by)
 
@@ -51,6 +59,12 @@ def special_attr(compiler, source, tc=False):
     return frag
 
 
+_DEL_ATTR_FORMS = [
+    MATCH(VALUE('obj'), SYMBOL('sym')),
+]
+
+
+@special_forms(_DEL_ATTR_FORMS)
 @special(symbol("compile/del-attr"))
 def special_del_attr(compiler, source, tc=False):
     """
@@ -58,12 +72,13 @@ def special_del_attr(compiler, source, tc=False):
     """
 
     called_by, body = source
-    if not is_pair(body):
-        raise SpecialError("del-attr requires two arguments", source)
-    obj, (sym, rest) = body
 
-    if rest is not nil:
-        raise SpecialError("del-attr takes two arguments", source)
+    m = match(body, _DEL_ATTR_FORMS)
+    if m is None:
+        raise SpecialError("compile/del-attr requires OBJ SYM", source)
+
+    obj = m.get('obj').source
+    sym = m.get('sym').source
 
     frag = compiler.fragment(called_by)
 
@@ -75,6 +90,12 @@ def special_del_attr(compiler, source, tc=False):
     return frag
 
 
+_SET_ATTR_FORMS = [
+    MATCH(VALUE('obj'), SYMBOL('sym'), VALUE('val')),
+]
+
+
+@special_forms(_SET_ATTR_FORMS)
 @special(symbol("compile/set-attr"))
 def special_set_attr(compiler, source, tc=False):
     """
@@ -82,12 +103,14 @@ def special_set_attr(compiler, source, tc=False):
     """
 
     called_by, body = source
-    if not is_pair(body):
-        raise SpecialError("set-attr requires three arguments", source)
-    obj, (sym, (val, rest)) = body
 
-    if rest is not nil:
-        raise SpecialError("set-attr takes three arguments", source)
+    m = match(body, _SET_ATTR_FORMS)
+    if m is None:
+        raise SpecialError("compile/set-attr requires OBJ SYM VAL", source)
+
+    obj = m.get('obj').source
+    sym = m.get('sym').source
+    val = m.get('val').source
 
     frag = compiler.fragment(called_by)
 

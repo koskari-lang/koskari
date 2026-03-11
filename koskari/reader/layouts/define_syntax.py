@@ -22,8 +22,10 @@ Layout handlers for define-syntax and syntax-rules block syntax.
 
 
 from ...exceptions import LayoutError
-from ...matcher import DEFINE, LITERAL_SYM, LIST, MATCH, PAIR, REPEAT, VALUE, match, match1
-from ...types import car, cons, get_position, is_keyword, is_pair, is_proper, is_symbol, nil, symbol, unpack
+from ...matcher import (DEFINE, LIST, LITERAL_SYM, MATCH, PAIR, REPEAT, VALUE,
+                        match, match1)
+from ...types import (car, cons, get_position, is_keyword, is_proper,
+                      is_symbol, nil, symbol, unpack)
 from .helpers import layout
 
 

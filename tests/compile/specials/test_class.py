@@ -107,13 +107,13 @@ class TestClassWithInitAndMethods(SpecialsTestCase):
           (compile/class Box ()
             (compile/define __init__
               (compile/lambda [self v]
-                (compile/set-attr self "value" v)))
+                (compile/set-attr self value v)))
             (compile/define get_value
               (compile/lambda [self]
-                (compile/attr self "value")))
+                (compile/attr self value)))
             (compile/define set_value
               (compile/lambda [self new_val]
-                (compile/set-attr self "value" new_val))))
+                (compile/set-attr self value new_val))))
           (compile/call (compile/attr Box new) 10))
         """
         expr, mod = self.compile_expr(src_str)
