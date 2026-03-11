@@ -18,6 +18,10 @@ Tests for koskari.compile lambda special (named and unnamed).
 
 from . import SpecialsTestCase
 
+import pytest
+
+pytestmark = pytest.mark.phase_specials
+
 
 class TestLambdaAnonymous(SpecialsTestCase):
 

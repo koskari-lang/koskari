@@ -26,6 +26,10 @@ from koskari.lib import ParamRef
 
 from . import SpecialsTestCase
 
+import pytest
+
+pytestmark = pytest.mark.phase_specials
+
 
 class TestParameterizeSpecial(SpecialsTestCase):
 

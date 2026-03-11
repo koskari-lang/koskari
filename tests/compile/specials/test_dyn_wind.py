@@ -21,6 +21,10 @@ Dynamic-wind runs before/after thunks on extent entry and exit.
 from koskari.dis import dis
 from . import SpecialsTestCase
 
+import pytest
+
+pytestmark = pytest.mark.phase_specials
+
 
 class TestDynWindSpecial(SpecialsTestCase):
 

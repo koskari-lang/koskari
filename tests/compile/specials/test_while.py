@@ -22,6 +22,10 @@ import operator
 
 from . import SpecialsTestCase
 
+import pytest
+
+pytestmark = pytest.mark.phase_specials
+
 
 def append(seq, x):
     seq.append(x)

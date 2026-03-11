@@ -22,6 +22,10 @@ from koskari.lib import OpCode, deref
 
 from . import SpecialsTestCase
 
+import pytest
+
+pytestmark = pytest.mark.phase_specials
+
 
 class TestRefSpecial(SpecialsTestCase):
 

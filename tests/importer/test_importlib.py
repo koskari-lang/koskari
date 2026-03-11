@@ -26,6 +26,10 @@ import unittest
 from koskari.importer import install, is_installed, uninstall
 from koskari.importer.importlib import KoskariPathFinder, KoskariSourceFileLoader
 
+import pytest
+
+pytestmark = pytest.mark.phase_importer
+
 
 class TestInstallUninstall(unittest.IsolatedAsyncioTestCase):
 

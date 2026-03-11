@@ -21,6 +21,10 @@ Unit tests for koskari.lexer.lsp server.
 from unittest import IsolatedAsyncioTestCase
 from koskari.lexer.lsp import create_server
 
+import pytest
+
+pytestmark = pytest.mark.phase_infra
+
 
 class TestCreateServer(IsolatedAsyncioTestCase):
 

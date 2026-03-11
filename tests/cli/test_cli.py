@@ -34,6 +34,10 @@ from koskari.cli import (
 )
 from koskari.importer.module import new_module
 
+import pytest
+
+pytestmark = pytest.mark.phase_cli
+
 
 # Absolute path to the scripts directory next to this test file.
 _SCRIPTS = os.path.join(os.path.dirname(__file__), 'scripts')

@@ -25,6 +25,10 @@ from koskari.lib import (
     make_recursive, break_recursive,
 )
 
+import pytest
+
+pytestmark = pytest.mark.phase_lib
+
 
 class TestPair(unittest.IsolatedAsyncioTestCase):
     """Tests for the pair type"""

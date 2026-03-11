@@ -25,6 +25,10 @@ import unittest
 
 from koskari.lib import run_sync, iter_sync
 
+import pytest
+
+pytestmark = pytest.mark.phase_lib
+
 
 class TestRunSync(unittest.IsolatedAsyncioTestCase):
     """Tests for run_sync"""

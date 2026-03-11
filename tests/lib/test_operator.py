@@ -25,6 +25,10 @@ import unittest
 
 import koskari.lib as lib
 
+import pytest
+
+pytestmark = pytest.mark.phase_lib
+
 
 class TestOperatorAdd(unittest.IsolatedAsyncioTestCase):
     """Tests for the + reducing operator"""

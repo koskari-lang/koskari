@@ -18,6 +18,10 @@ Tests for koskari.compile compile/define special form.
 
 from . import SpecialsTestCase
 
+import pytest
+
+pytestmark = pytest.mark.phase_specials
+
 
 class TestDefineDeclareOnly(SpecialsTestCase):
 

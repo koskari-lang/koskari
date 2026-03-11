@@ -28,6 +28,10 @@ from koskari.lexer import (
     LAYOUT_HEAD_NAMES,
 )
 
+import pytest
+
+pytestmark = pytest.mark.phase_infra
+
 
 class TestToken(IsolatedAsyncioTestCase):
 

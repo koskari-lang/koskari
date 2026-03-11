@@ -27,6 +27,10 @@ from koskari.lib import (
     WeakRef,
 )
 
+import pytest
+
+pytestmark = pytest.mark.phase_lib
+
 
 class TestSymbolicRef(unittest.IsolatedAsyncioTestCase):
     """Tests for the base Ref type"""

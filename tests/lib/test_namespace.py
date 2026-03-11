@@ -24,8 +24,12 @@ from operator import itemgetter
 
 from koskari.lib import (
     CollectorNamespace, Module, ModuleNamespace,
-    Namespace, NamespaceSpec, Ref,
+    Namespace, NamespaceSpec,     Ref,
 )
+
+import pytest
+
+pytestmark = pytest.mark.phase_lib
 
 
 class TestNamespaceSpec(unittest.IsolatedAsyncioTestCase):

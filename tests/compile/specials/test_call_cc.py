@@ -35,6 +35,10 @@ from koskari.exceptions import SpecialError
 
 from . import SpecialsTestCase
 
+import pytest
+
+pytestmark = pytest.mark.phase_specials
+
 
 class TestCallCcSpecial(SpecialsTestCase):
 

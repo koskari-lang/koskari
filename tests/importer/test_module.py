@@ -21,6 +21,10 @@ import unittest
 from koskari.importer.module import init_module, new_module
 from koskari.lib import Module
 
+import pytest
+
+pytestmark = pytest.mark.phase_importer
+
 
 class TestNewModule(unittest.IsolatedAsyncioTestCase):
 

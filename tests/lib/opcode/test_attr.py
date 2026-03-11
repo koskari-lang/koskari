@@ -21,6 +21,10 @@ Tests for ATTR, ATTR_STORE opcodes.
 from tests import make_callable
 from tests.lib.opcode import CevalTest, build_expr
 
+import pytest
+
+pytestmark = pytest.mark.phase_lib
+
 
 class TestAttrOpcodes(CevalTest):
     """

@@ -22,6 +22,10 @@ Tests for koskari.compile cond, if, when, unless special forms.
 from koskari.dis import dis
 from . import SpecialsTestCase
 
+import pytest
+
+pytestmark = pytest.mark.phase_specials
+
 
 class TestCondSpecial(SpecialsTestCase):
 

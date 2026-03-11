@@ -19,6 +19,10 @@ compile/set-item special forms.
 
 from . import SpecialsTestCase
 
+import pytest
+
+pytestmark = pytest.mark.phase_specials
+
 
 class TestItemSpecial(SpecialsTestCase):
 

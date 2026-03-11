@@ -29,6 +29,10 @@ from koskari.types import (
     get_position, set_position, fill_position,
 )
 
+import pytest
+
+pytestmark = pytest.mark.phase_lib
+
 
 class TestTypePredicate(unittest.IsolatedAsyncioTestCase):
     """Tests for the TypePredicate class"""

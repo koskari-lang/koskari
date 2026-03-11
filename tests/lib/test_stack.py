@@ -28,6 +28,10 @@ import unittest
 
 from koskari.lib import Stack
 
+import pytest
+
+pytestmark = pytest.mark.phase_lib
+
 
 class TestStack(unittest.IsolatedAsyncioTestCase):
     """Tests for the Stack type"""

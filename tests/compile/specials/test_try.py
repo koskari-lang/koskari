@@ -19,6 +19,10 @@ Tests for koskari.compile try/except/finally special form.
 from . import SpecialsTestCase
 from koskari.dis import dis
 
+import pytest
+
+pytestmark = pytest.mark.phase_specials
+
 
 def make_accumulator():
     accu = []

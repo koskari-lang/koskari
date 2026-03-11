@@ -25,6 +25,10 @@ from koskari.reader import LayoutReader
 
 from koskari.lexer import default_layout_reader, parse, parse_all
 
+import pytest
+
+pytestmark = pytest.mark.phase_infra
+
 
 class TestDefaultLayoutReader(IsolatedAsyncioTestCase):
 

@@ -22,6 +22,10 @@ from tests import make_callable
 from tests.lib.opcode import CevalTest, build_expr
 from koskari.lib import AsyncGenerator
 
+import pytest
+
+pytestmark = pytest.mark.phase_lib
+
 
 try:
     anext

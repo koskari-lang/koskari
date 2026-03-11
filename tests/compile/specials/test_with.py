@@ -22,6 +22,10 @@ exception). Uses PUSH_WITH/POP_WITH. Covers sync and async __enter__/__exit__
 from . import SpecialsTestCase
 from koskari.dis import dis
 
+import pytest
+
+pytestmark = pytest.mark.phase_specials
+
 
 class SimpleMgr:
     """Python context manager for tests; tracks enter/exit and optional binding."""

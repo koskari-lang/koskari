@@ -26,6 +26,10 @@ from koskari.lib import Code, FormalsSpec, NamespaceSpec
 from tests import make_callable
 from tests.lib.opcode import CevalTest, _op, build_code, build_expr
 
+import pytest
+
+pytestmark = pytest.mark.phase_lib
+
 
 class TestDelimitedContinuations(CevalTest):
     """

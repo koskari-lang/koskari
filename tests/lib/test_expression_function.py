@@ -31,6 +31,10 @@ from koskari.lib import BoundMethod, Code, Expression, Function
 from koskari.types import FormalsSpec, NamespaceSpec, OpCode
 from tests import make_callable
 
+import pytest
+
+pytestmark = pytest.mark.phase_lib
+
 
 def _op(name):
     """

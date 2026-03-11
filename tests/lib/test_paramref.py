@@ -24,6 +24,10 @@ from koskari.lib import ParamRef, Ref
 from tests import make_callable
 from tests.lib.opcode import build_expr
 
+import pytest
+
+pytestmark = pytest.mark.phase_lib
+
 
 class TestParamRefCreate(unittest.TestCase):
     """

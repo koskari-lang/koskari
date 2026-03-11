@@ -18,6 +18,10 @@ Tests for koskari.compile #bytecode special form.
 
 from . import SpecialsTestCase
 
+import pytest
+
+pytestmark = pytest.mark.phase_specials
+
 
 class TestBytecodeSpecial(SpecialsTestCase):
 

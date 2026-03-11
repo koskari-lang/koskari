@@ -31,6 +31,9 @@ from koskari.compile.helpers import pycons
 
 from .. import parse_layout
 
+import pytest
+
+pytestmark = pytest.mark.phase_infra
 
 _keyword_block = keyword(':block:')
 
