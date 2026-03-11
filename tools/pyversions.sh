@@ -12,7 +12,7 @@
 set -e
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-REPO_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
+REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 ENGINE="${1:-$(which podman 2>/dev/null || which docker 2>/dev/null || echo podman)}"
 VERSION_FILTER="${2:-}"
 shift 2 2>/dev/null || true
@@ -36,10 +36,10 @@ for ver in $VERSIONS; do
 
   echo "=== Building $tag (Python $ver) ==="
   "$ENGINE" build -q --build-arg PYTHON_VERSION="$ver" \
-    -t "$tag" -f "$SCRIPT_DIR/Containerfile" "$SCRIPT_DIR"
+    -t "$tag" -f "$SCRIPT_DIR/Containerfile.pyver" "$SCRIPT_DIR"
 
   echo "=== Running tests for Python $ver ==="
-  echo "$ENGINE" run -t --rm -v "$REPO_ROOT:/src:z" "$tag" "${EXTRA_RUN_ARGS[@]}"
+  # echo "$ENGINE" run -t --rm -v "$REPO_ROOT:/src:z" "$tag" "${EXTRA_RUN_ARGS[@]}"
   "$ENGINE" run -t --rm -v "$REPO_ROOT:/src:z" "$tag" "${EXTRA_RUN_ARGS[@]}"
 done
 

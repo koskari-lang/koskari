@@ -418,8 +418,7 @@ static void inject_eval_frame_traceback(
     return;
   }
 
-#if PY_VERSION_HEX < 0x030C0000
-  // python < 3.12
+#if PY_MINOR_VERSION < 12
   PyErr_NormalizeException(exc_type, exc_val, exc_tb);
 #endif
 

@@ -112,31 +112,31 @@ RUN_ARGS ?=  ## Extra args for tox (e.g. make test-py312 RUN_ARGS="-it")
 
 test-pyversions: handlers  ## Run tests in containers for all Python versions
 	@$(call checkfor,$(CONTAINER_ENGINE))
-	@tests/pyversions/run.sh $(CONTAINER_ENGINE) "" $(RUN_ARGS)
+	@tools/pyversions.sh $(CONTAINER_ENGINE) "" $(RUN_ARGS)
 
 test-py39: handlers  ## Run tests in container for Python 3.9
 	@$(call checkfor,$(CONTAINER_ENGINE))
-	@tests/pyversions/run.sh $(CONTAINER_ENGINE) 3.9 $(RUN_ARGS)
+	@tools/pyversions.sh $(CONTAINER_ENGINE) 3.9 $(RUN_ARGS)
 
 test-py310: handlers  ## Run tests in container for Python 3.10
 	@$(call checkfor,$(CONTAINER_ENGINE))
-	@tests/pyversions/run.sh $(CONTAINER_ENGINE) 3.10 $(RUN_ARGS)
+	@tools/pyversions.sh $(CONTAINER_ENGINE) 3.10 $(RUN_ARGS)
 
 test-py311: handlers  ## Run tests in container for Python 3.11
 	@$(call checkfor,$(CONTAINER_ENGINE))
-	@tests/pyversions/run.sh $(CONTAINER_ENGINE) 3.11 $(RUN_ARGS)
+	@tools/pyversions.sh $(CONTAINER_ENGINE) 3.11 $(RUN_ARGS)
 
 test-py312: handlers  ## Run tests in container for Python 3.12
 	@$(call checkfor,$(CONTAINER_ENGINE))
-	@tests/pyversions/run.sh $(CONTAINER_ENGINE) 3.12 $(RUN_ARGS)
+	@tools/pyversions.sh $(CONTAINER_ENGINE) 3.12 $(RUN_ARGS)
 
 test-py313: handlers  ## Run tests in container for Python 3.13
 	@$(call checkfor,$(CONTAINER_ENGINE))
-	@tests/pyversions/run.sh $(CONTAINER_ENGINE) 3.13 $(RUN_ARGS)
+	@tools/pyversions.sh $(CONTAINER_ENGINE) 3.13 $(RUN_ARGS)
 
 test-py314: handlers  ## Run tests in container for Python 3.14
 	@$(call checkfor,$(CONTAINER_ENGINE))
-	@tests/pyversions/run.sh $(CONTAINER_ENGINE) 3.14 $(RUN_ARGS)
+	@tools/pyversions.sh $(CONTAINER_ENGINE) 3.14 $(RUN_ARGS)
 
 
 ##@ Code Quality

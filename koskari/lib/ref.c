@@ -1086,7 +1086,7 @@ static PyObject *weak_ref_get_empty(PyObject *self, void *_unused) {
   if (! wr)
     Py_RETURN_TRUE;
 
-#if PY_VERSION_HEX >= 0x030D0000
+#if PY_MINOR_VERSION >= 13
   {
     PyObject *obj = NULL;
     int res = PyWeakref_GetRef(wr, &obj);
@@ -1122,7 +1122,7 @@ static PyObject *weak_ref_m_deref(PyObject *self) {
   PyObject *obj = NULL;
   PyObject *wr = KosSymbolicRef_VALUE(self);
 
-#if PY_VERSION_HEX >= 0x030D0000
+#if PY_MINOR_VERSION >= 13
   if (wr) {
     int res = PyWeakref_GetRef(wr, &obj);
     if (unlikely(! res)) {
