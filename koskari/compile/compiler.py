@@ -120,6 +120,7 @@ def _build_var_to_fast():
             var_to_fast[OpCode[varname]] = opcode
     return var_to_fast
 
+
 VAR_TO_FAST = _build_var_to_fast()
 
 

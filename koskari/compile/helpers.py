@@ -23,15 +23,11 @@ from ..matcher import (
     BindingsResult,
     BindingMatcher,
     BindingResult,
-    BIND,
     FormalsResult,
-    LITERAL,
     LITERAL_KW,
     LIST,
-    MATCH,
     Matcher,
     SYMBOL,
-    match,
     match1,
     matcher,
 )
@@ -378,8 +374,6 @@ class _BindingMatcher(BindingMatcher):
         head, remainder = source
         if not is_pair(head):
             return (None, False)
-
-        print("head", head)
 
         if self.allow_unnamed:
             patterns = _BINDING_FORMS_ALLOW_UNNAMED
