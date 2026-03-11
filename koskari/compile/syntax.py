@@ -43,7 +43,7 @@ _SYNTAX_RULES_HEAD_PATTERN = MATCH(
     LITERAL_SYM("syntax-rules"),
     MATCH(BIND("literals"), REST("rules")))
 
-_SYNTAX_RULE_PATTERN = MATCH(REPEAT("rules", MATCH(BIND("rule"))))
+_SYNTAX_RULE_PATTERN = MATCH(REPEAT("rules", BIND("rule")))
 
 
 def _to_list(value):

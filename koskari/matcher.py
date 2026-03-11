@@ -585,16 +585,21 @@ class _RepeatMatcher(BindingMatcher):
 
 
     def match(self, source, literals, result, specs=None):
+        print("RepeatMatcher source", source)
         if source is nil:
             return (None, False)
 
         matches = []
         current = source
+        iter_num = 0
 
         while current is not nil:
             sub_result = {}
             sub_specs = {}
+            iter_num += 1
+            print("RepeatMatcher iter %d current" % iter_num, current)
             rem, ok = self.elem.match(current, literals, sub_result, sub_specs)
+            print("RepeatMatcher iter %d elem.match rem=" % iter_num, rem, "ok=", ok)
             if not ok:
                 break
             matches.append((sub_result, sub_specs))
