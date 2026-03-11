@@ -23,25 +23,12 @@ Special form handler for compile/dyn-wind (dynamic-wind).
 
 
 from ...exceptions import SpecialError
-from ...lib import (FormalsSpec, FunctionSpec, OpCode, car, cons, nil, pair,
+from ...lib import (FormalsSpec, FunctionSpec, OpCode, cons, nil, pair,
                     symbol)
 from ...types import is_pair
-from ...matcher import ANY_ORDER, LITERAL_KW, MATCH, match, REST, VALUE
+from ...matcher import ANY_ORDER, LITERAL_KW, LIST, MATCH, match, REST, VALUE
 from ..compiler import ByteCodeFragment, Compiler, CompilerMode
-from ..helpers import helper_begin, special, special_forms
-
-
-def _to_body_list(maybe_form):
-    """
-    Normalize to a list of forms for helper_begin.
-    Single form (positional) becomes (form . nil).
-    List of forms (keyword REST) returned as-is.
-    """
-    if maybe_form is nil:
-        return nil
-    if is_pair(maybe_form) and is_pair(car(maybe_form)):
-        return maybe_form
-    return cons(maybe_form, nil)
+from ..helpers import special, special_forms
 
 
 def _compile_thunk(compiler, body_src, fragment):
@@ -105,17 +92,17 @@ _POSITIONAL_2 = MATCH(
     VALUE("after_single"),
 )
 _KEYWORD_ALL = MATCH(ANY_ORDER(
-    MATCH(LITERAL_KW("before:"), REST("before")),
-    MATCH(LITERAL_KW("body:"), REST("body")),
-    MATCH(LITERAL_KW("after:"), REST("after")),
+    LIST(LITERAL_KW("before:"), REST("before")),
+    LIST(LITERAL_KW("body:"), REST("body")),
+    LIST(LITERAL_KW("after:"), REST("after")),
 ))
 _KEYWORD_BEFORE_BODY = MATCH(ANY_ORDER(
-    MATCH(LITERAL_KW("before:"), REST("before")),
-    MATCH(LITERAL_KW("body:"), REST("body")),
+    LIST(LITERAL_KW("before:"), REST("before")),
+    LIST(LITERAL_KW("body:"), REST("body")),
 ))
 _KEYWORD_BODY_AFTER = MATCH(ANY_ORDER(
-    MATCH(LITERAL_KW("body:"), REST("body")),
-    MATCH(LITERAL_KW("after:"), REST("after")),
+    LIST(LITERAL_KW("body:"), REST("body")),
+    LIST(LITERAL_KW("after:"), REST("after")),
 ))
 _DYN_WIND_PATTERNS = [
     _KEYWORD_ALL,

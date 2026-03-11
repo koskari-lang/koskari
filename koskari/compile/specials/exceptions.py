@@ -74,7 +74,7 @@ def _collect_catches(compiler, catches):
             normal_catches.append(ex_pair)
 
         elif is_pair(ex) and ex.is_proper():
-            ex_binding, ex_expr = helper_binding(ex, required=True, allow_unnamed=False)
+            ex_binding, ex_expr = helper_binding(ex, allow_unnamed=False)
             ex_pair = cons(cons(ex_binding, ex_expr), act)
             pos = get_position(ca)
             if pos:

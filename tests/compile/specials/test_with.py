@@ -257,7 +257,9 @@ class TestWithSpecial(SpecialsTestCase):
             raise_err=raise_err,
             after_raise=after_raise,
         )
-        # dis(expr.code)
+
+        dis(expr.code)
+
         result = await expr()
         self.assertIsNone(result)
         self.assertTrue(mgr.entered)

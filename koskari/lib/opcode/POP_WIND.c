@@ -15,8 +15,9 @@
 
 /**
    POP_WIND: arg unused. Pop the top wind node from the dynamic chain.
-   Invokes the after thunk if entered and non-null; may return
-   KOS_DYN_UNWIND_ASYNC_STARTED when the thunk pushes a frame.
+   Stores TOS (body result) in the wind node before uninstall. Invokes the
+   after thunk if entered and non-null; may return KOS_DYN_UNWIND_ASYNC_STARTED
+   when the thunk pushes a frame.
 */
 
 KOS_OP_HANDLER(POP_WIND) {
@@ -25,11 +26,23 @@ KOS_OP_HANDLER(POP_WIND) {
     return -1;
   }
 
+  KosDynWind *wind = (KosDynWind *) KosContext_DYN_TOP(ctx);
+  PyObject *body_result = KosStackBlock_PopRef(&CURRENT_STACK(ctx));
+  if (! body_result)
+    return -1;
+  KosDynWind_BODY_RESULT(wind) = body_result;
+
   int r = kos_dyn_pop_top(ctx, out_ev);
   if (r == KOS_DYN_UNWIND_ASYNC_STARTED) {
-    KosDynNode *wind = KosDynNode_PARENT(CURRENT_FRAME(ctx));
-    KosContext_UNWIND_TARGET_FRAME(ctx) = (KosDynFrame *) KosDynNode_PARENT(wind);
+    KosContext_UNWIND_TARGET_FRAME(ctx) =
+        (KosDynFrame *) KosDynNode_PARENT((KosDynNode *) wind);
     return 0;  /* eval continues in thunk frame; RETURN will resume unwinding */
+  }
+  if (r < 0) {
+    KosDynWind_BODY_RESULT(wind) = NULL;
+    if (KosStackBlock_PushRef(&CURRENT_STACK(ctx), body_result) < 0)
+      Py_DECREF(body_result);
+    return -1;
   }
   return r;
 }
