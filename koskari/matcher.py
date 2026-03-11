@@ -57,6 +57,7 @@ __all__ = (
     'is_binder_spec',
     'is_scope_region_spec',
     'match',
+    'match1',
     'match_tuple',
 )
 
@@ -78,21 +79,36 @@ def matcher(name):
 @runtime_checkable
 class Matcher(Protocol):
     """
-    Protocol for matcher types. Accept source, optionally mutate result with
-    bindings, return (remainder, success). When specs is provided, capturing
-    matchers record themselves in specs.
+    Protocol for matcher types. Element matchers implement matches_element and
+    use default consume (take head, test identity, return tail). Structural
+    matchers override consume to consume more (REST, REPEAT, LIST, MATCH).
     """
 
-    def match(
+    def matches_element(
+            self,
+            value: Any,
+            literals: frozenset,
+            result: Dict[str, Any],
+            specs: Optional[Dict[str, Any]] = None,
+            source: Optional[Any] = None) -> bool:
+        """
+        Does this single value match? Mutates result on success. source is
+        the pair (value . rest) when called from consume, for position.
+        Optional; structural matchers omit.
+        """
+        ...
+
+
+    def consume(
             self,
             source: Any,
             literals: frozenset,
             result: Dict[str, Any],
             specs: Optional[Dict[str, Any]] = None) -> Tuple[Optional[Any], bool]:
         """
-        Try to match source. On success: mutate result with bindings, return
-        (remainder, True). On failure: return (None, False). When specs is not
-        None, capturing matchers add specs[key] = self.
+        Consume from source list. Return (remainder, True) on success,
+        (None, False) on failure. Default: take head; if matches_element(head)
+        return (tail, True).
         """
         ...
 
@@ -299,22 +315,18 @@ def _check_duplicate_slot(key, value, matcher_obj, result, specs):
     return True
 
 
-def _capture_head(source, key, result, matcher_obj, specs=None, predicate=None):
+def _element_consume(matcher, source, literals, result, specs=None):
     """
-    Capture source head into result[key], optionally guarded by predicate.
+    Default consume for element matchers: take head, if matches_element
+    return tail.
     """
 
     if source is nil:
         return (None, False)
     head, tail = source
-    if predicate is not None and not predicate(head):
-        return (None, False)
-    if not _check_duplicate_slot(key, head, matcher_obj, result, specs):
-        return (None, False)
-    result[key] = MatchResult(head, get_position(source))
-    if specs is not None:
-        specs[key] = matcher_obj
-    return (tail, True)
+    if matcher.matches_element(head, literals, result, specs, source):
+        return (tail, True)
+    return (None, False)
 
 
 @matcher(_tag_literal)
@@ -334,14 +346,13 @@ class _LiteralMatcher(Matcher):
         return cls(payload[0])
 
 
-    def match(self, source, literals, result, specs=None):
+    def matches_element(self, value, literals, result, specs=None, source=None):
+        return value == self.value
+
+
+    def consume(self, source, literals, result, specs=None):
         print("LiteralMatcher source", source)
-        if source is nil:
-            return (None, False)
-        head, tail = source
-        if head == self.value:
-            return (tail, True)
-        return (None, False)
+        return _element_consume(self, source, literals, result, specs)
 
 
     def to_tuple(self):
@@ -366,8 +377,18 @@ class _BindMatcher(Matcher):
         return cls(payload[0])
 
 
-    def match(self, source, literals, result, specs=None):
-        return _capture_head(source, self._key, result, self, specs)
+    def matches_element(self, value, literals, result, specs=None, source=None):
+        if not _check_duplicate_slot(self._key, value, self, result, specs):
+            return False
+        pos = get_position(source) if source is not None and is_pair(source) else None
+        result[self._key] = MatchResult(value, pos)
+        if specs is not None:
+            specs[self._key] = self
+        return True
+
+
+    def consume(self, source, literals, result, specs=None):
+        return _element_consume(self, source, literals, result, specs)
 
 
     def to_tuple(self):
@@ -392,9 +413,21 @@ class _SymbolMatcher(BindingMatcher):
         return cls(payload[0])
 
 
-    def match(self, source, literals, result, specs=None):
+    def matches_element(self, value, literals, result, specs=None, source=None):
+        if not is_symbol(value):
+            return False
+        if not _check_duplicate_slot(self._key, value, self, result, specs):
+            return False
+        pos = get_position(source) if source is not None and is_pair(source) else None
+        result[self._key] = MatchResult(value, pos)
+        if specs is not None:
+            specs[self._key] = self
+        return True
+
+
+    def consume(self, source, literals, result, specs=None):
         print("SymbolMatcher source", source)
-        return _capture_head(source, self._key, result, self, specs, is_symbol)
+        return _element_consume(self, source, literals, result, specs)
 
 
     def extract_binder_symbols(self, value):
@@ -428,8 +461,20 @@ class _DefineMatcher(BindingMatcher):
         return cls(payload[0])
 
 
-    def match(self, source, literals, result, specs=None):
-        return _capture_head(source, self._key, result, self, specs, is_symbol)
+    def matches_element(self, value, literals, result, specs=None, source=None):
+        if not is_symbol(value):
+            return False
+        if not _check_duplicate_slot(self._key, value, self, result, specs):
+            return False
+        pos = get_position(source) if source is not None and is_pair(source) else None
+        result[self._key] = MatchResult(value, pos)
+        if specs is not None:
+            specs[self._key] = self
+        return True
+
+
+    def consume(self, source, literals, result, specs=None):
+        return _element_consume(self, source, literals, result, specs)
 
 
     def extract_binder_symbols(self, value):
@@ -460,9 +505,17 @@ class _ValueMatcher(Matcher):
         return cls(payload[0])
 
 
-    def match(self, source, literals, result, specs=None):
+    def matches_element(self, value, literals, result, specs=None, source=None):
+        if not _check_duplicate_slot(self._key, value, self, result, specs):
+            return False
+        pos = get_position(source) if source is not None and is_pair(source) else None
+        result[self._key] = MatchResult(value, pos)
+        return True
+
+
+    def consume(self, source, literals, result, specs=None):
         print("ValueMatcher source", source)
-        return _capture_head(source, self._key, result, self, specs)
+        return _element_consume(self, source, literals, result, specs)
 
 
     def to_tuple(self):
@@ -489,7 +542,11 @@ class _RestMatcher(Matcher):
         return cls(payload[0])
 
 
-    def match(self, source, literals, result, specs=None):
+    def matches_element(self, value, literals, result, specs=None, source=None):
+        return False
+
+
+    def consume(self, source, literals, result, specs=None):
         if source is nil:
             return (None, False)
         pos = get_position(source) if is_pair(source) else None
@@ -524,8 +581,20 @@ class _PairMatcher(Matcher):
         return cls(payload[0])
 
 
-    def match(self, source, literals, result, specs=None):
-        return _capture_head(source, self._key, result, self, specs, is_pair)
+    def matches_element(self, value, literals, result, specs=None, source=None):
+        if not is_pair(value):
+            return False
+        if not _check_duplicate_slot(self._key, value, self, result, specs):
+            return False
+        pos = get_position(source) if source is not None and is_pair(source) else None
+        result[self._key] = MatchResult(value, pos)
+        if specs is not None:
+            specs[self._key] = self
+        return True
+
+
+    def consume(self, source, literals, result, specs=None):
+        return _element_consume(self, source, literals, result, specs)
 
 
     def to_tuple(self):
@@ -552,8 +621,18 @@ class _ExprMatcher(Matcher):
         return cls(payload[0])
 
 
-    def match(self, source, literals, result, specs=None):
-        return _capture_head(source, self._key, result, self, specs)
+    def matches_element(self, value, literals, result, specs=None, source=None):
+        if not _check_duplicate_slot(self._key, value, self, result, specs):
+            return False
+        pos = get_position(source) if source is not None and is_pair(source) else None
+        result[self._key] = MatchResult(value, pos)
+        if specs is not None:
+            specs[self._key] = self
+        return True
+
+
+    def consume(self, source, literals, result, specs=None):
+        return _element_consume(self, source, literals, result, specs)
 
 
     def to_tuple(self):
@@ -584,7 +663,11 @@ class _RepeatMatcher(BindingMatcher):
         return cls(slot, elem, min_count)
 
 
-    def match(self, source, literals, result, specs=None):
+    def matches_element(self, value, literals, result, specs=None, source=None):
+        return False
+
+
+    def consume(self, source, literals, result, specs=None):
         print("RepeatMatcher source", source)
         if source is nil:
             return (None, False)
@@ -598,8 +681,8 @@ class _RepeatMatcher(BindingMatcher):
             sub_specs = {}
             iter_num += 1
             print("RepeatMatcher iter %d current" % iter_num, current)
-            rem, ok = self.elem.match(current, literals, sub_result, sub_specs)
-            print("RepeatMatcher iter %d elem.match rem=" % iter_num, rem, "ok=", ok)
+            rem, ok = self.elem.consume(current, literals, sub_result, sub_specs)
+            print("RepeatMatcher iter %d elem.consume rem=" % iter_num, rem, "ok=", ok)
             if not ok:
                 break
             matches.append((sub_result, sub_specs))
@@ -671,11 +754,15 @@ class _MatchMatcher(Matcher):
         return cls(*specs)
 
 
-    def match(self, source, literals, result, specs=None):
+    def matches_element(self, value, literals, result, specs=None, source=None):
+        return False
+
+
+    def consume(self, source, literals, result, specs=None):
         print("MatchMatcher source", source)
         current = source
         for spec in self.specs:
-            current, ok = spec.match(current, literals, result, specs)
+            current, ok = spec.consume(current, literals, result, specs)
             print(f"  {spec.__class__.__name__} ok:", ok)
             if not ok:
                 return (None, False)
@@ -709,14 +796,18 @@ class _ListMatcher(Matcher):
         return cls(*specs)
 
 
-    def match(self, source, literals, result, specs=None):
+    def matches_element(self, value, literals, result, specs=None, source=None):
+        return False
+
+
+    def consume(self, source, literals, result, specs=None):
         print("ListMatcher source", source)
         if source is nil:
             return (None, False)
         head, rest = source
         if not is_pair(head):
             return (None, False)
-        rem, ok = self.matcher.match(head, literals, result, specs)
+        rem, ok = self.matcher.consume(head, literals, result, specs)
         if not ok or rem is not nil:
             return (None, False)
         return (rest, True)
@@ -744,14 +835,18 @@ class _AnyOrderMatcher(Matcher):
         return cls(*[deserialize(p) for p in payload])
 
 
-    def match(self, source, literals, result, specs=None):
+    def matches_element(self, value, literals, result, specs=None, source=None):
+        return False
+
+
+    def consume(self, source, literals, result, specs=None):
         elements = list(unpack(source)) if source is not nil else []
         pool = list(elements)
         for spec in self.specs:
             matched = False
             for i, elem in enumerate(pool):
                 elem_pair = cons(elem, nil)
-                rem, ok = spec.match(elem_pair, literals, result, specs)
+                rem, ok = spec.consume(elem_pair, literals, result, specs)
                 if ok and (rem is nil or (is_pair(rem) and cdr(rem) is nil)):
                     del pool[i]
                     matched = True
@@ -937,13 +1032,33 @@ def match(
         result = {}
         specs = {}
         print("match pat", pat)
-        rem, ok = pat.match(src, lit, result, specs)
+        rem, ok = pat.consume(src, lit, result, specs)
         if ok:
             if with_specs:
                 return (result, specs)
             return result
 
     return None
+
+
+def match1(
+        value,
+        patterns,
+        literals=None,
+        with_specs=False):
+    """
+    Does this single element match? Wraps value in cons(val, nil) and defers
+    to match.
+
+    :param value: single value (atom or pair)
+    :param patterns: single matcher or sequence of patterns
+    :param literals: set or frozenset of symbols to match literally
+    :param with_specs: if True, return (result_dict, specs_dict) on match
+    :return: dict of bindings; or (dict, dict) if with_specs; or None
+    """
+
+    return match(cons(value, nil), patterns, literals=literals,
+                 with_specs=with_specs)
 
 
 def is_binder_spec(spec):

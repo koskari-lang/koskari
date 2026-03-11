@@ -39,6 +39,7 @@ from koskari.matcher import (
     extract_binder_symbols,
     from_tuple,
     match,
+    match1,
 )
 
 
@@ -157,6 +158,20 @@ class TestMatchAnyOrder(unittest.IsolatedAsyncioTestCase):
         self.assertIsNotNone(result)
         self.assertIn('x', result)
         self.assertIn('y', result)
+
+
+class TestMatch1(unittest.IsolatedAsyncioTestCase):
+
+    async def test_match1_wraps_value_and_defers_to_match(self):
+        x = symbol('x')
+        result = match1(x, MATCH(BIND('val')))
+        self.assertIsNotNone(result)
+        self.assertEqual(result['val'].source, x)
+
+
+    async def test_match1_no_match_returns_none(self):
+        result = match1(symbol('x'), MATCH(LITERAL_KW('before:')))
+        self.assertIsNone(result)
 
 
 class TestMatchFailure(unittest.IsolatedAsyncioTestCase):
@@ -366,7 +381,7 @@ class TestMatchBinding(unittest.IsolatedAsyncioTestCase):
         expr = pycons((symbol('compile/call'), symbol('make_mgr')))
 
         pat = BINDING('binding', allow_unnamed=True)
-        result = match(cons(src, nil), pat)
+        result = match1(src, pat)
 
         self.assertIsNotNone(result, 'pattern should match')
         br = result['binding']
@@ -395,7 +410,7 @@ class TestMatchBinding(unittest.IsolatedAsyncioTestCase):
 
         pat = BINDING('binding', allow_unnamed=True)
 
-        result = match(cons(src, nil), pat)
+        result = match1(src, pat)
         self.assertIsNotNone(result, 'pattern should match')
         br = result['binding']
 
@@ -423,7 +438,7 @@ class TestMatchBinding(unittest.IsolatedAsyncioTestCase):
 
         pat = BINDING('binding', allow_unnamed=True)
 
-        result = match(cons(src, nil), pat)
+        result = match1(src, pat)
         self.assertIsNotNone(result, 'pattern should match')
         br = result['binding']
         self.assertEqual(br.name, symbol('x'))

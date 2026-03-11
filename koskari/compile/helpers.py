@@ -32,6 +32,7 @@ from ..matcher import (
     Matcher,
     SYMBOL,
     match,
+    match1,
     matcher,
 )
 
@@ -166,7 +167,11 @@ class _BindingsMatcher(BindingMatcher):
         return cls(payload[0])
 
 
-    def match(self, source, literals, result, specs=None):
+    def matches_element(self, value, literals, result, specs=None, source=None):
+        return False
+
+
+    def consume(self, source, literals, result, specs=None):
         if source is nil:
             return (None, False)
         head = car(source)
@@ -242,7 +247,11 @@ class _FormalsMatcher(BindingMatcher):
         return cls(payload[0])
 
 
-    def match(self, source, literals, result, specs=None):
+    def matches_element(self, value, literals, result, specs=None, source=None):
+        return False
+
+
+    def consume(self, source, literals, result, specs=None):
         if source is nil:
             return (None, False)
         head = car(source)
@@ -316,12 +325,12 @@ _tag_binding = symbol('matcher/binding')
 
 
 _BINDING_FORMS = [
-    MATCH(VALUE("expr"), LITERAL_KW("as"), SYMBOL("name")),
-    MATCH(SYMBOL("name"), VALUE("expr")),
+    LIST(VALUE("expr"), LITERAL_KW("as"), SYMBOL("name")),
+    LIST(SYMBOL("name"), VALUE("expr")),
 ]
 _BINDING_FORMS_ALLOW_UNNAMED = [
     *_BINDING_FORMS,
-    MATCH(VALUE("expr")),
+    LIST(VALUE("expr")),
 ]
 
 
@@ -358,7 +367,11 @@ class _BindingMatcher(BindingMatcher):
         return ()
 
 
-    def match(self, source, literals, result, specs=None):
+    def matches_element(self, value, literals, result, specs=None, source=None):
+        return False
+
+
+    def consume(self, source, literals, result, specs=None):
         if source is nil:
             return (None, False)
 
@@ -373,7 +386,7 @@ class _BindingMatcher(BindingMatcher):
         else:
             patterns = _BINDING_FORMS
 
-        m = match(head, patterns)
+        m = match1(head, patterns)
         if m is None:
             return (None, False)
 
@@ -433,7 +446,7 @@ def helper_binding(source, allow_unnamed=False):
     else:
         patterns = _BINDING_FORMS
 
-    m = match(source, patterns)
+    m = match1(source, patterns)
     if m is None:
         raise SpecialError(msg, source)
 
