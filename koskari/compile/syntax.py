@@ -18,7 +18,6 @@ Syntax rules transformer implementing (syntax-rules ...)
 
 :author: Christopher O'Brien <obriencj@preoccupied.net>
 :license: GNU General Public License v3
-:ai-assistant: claude-4.6-sonnet-high via Cursor
 """
 
 
@@ -43,7 +42,7 @@ _SYNTAX_RULES_HEAD_PATTERN = MATCH(
     LITERAL_SYM("syntax-rules"),
     MATCH(BIND("literals"), REST("rules")))
 
-_SYNTAX_RULE_PATTERN = MATCH(REPEAT("rules", MATCH(BIND("rule"))))
+_SYNTAX_RULE_PATTERN = MATCH(REPEAT("rules", BIND("rule")))
 
 
 def _to_list(value):

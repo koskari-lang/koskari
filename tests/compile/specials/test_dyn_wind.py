@@ -166,6 +166,29 @@ class TestDynWindSpecial(SpecialsTestCase):
         self.assertEqual(log, ["before", "body"])
 
 
+    async def test_keyword_single_form_body(self):
+        """
+        Keyword form with single-form body (no extra list wrapper)
+        """
+        log = []
+
+        def record(s):
+            log.append(s)
+
+        src_str = """
+        (compile/dyn-wind
+          (before: (compile/call record "before"))
+          (body: (compile/begin (compile/call record "body") 77))
+          (after: (compile/call record "after")))
+        """
+        expr, mod = self.compile_expr(src_str, record=record)
+        dis(expr.code)
+
+        result = await expr()
+        self.assertEqual(result, 77)
+        self.assertEqual(log, ["before", "body", "after"])
+
+
     async def test_positional_still_works(self):
         """
         Positional form continues to work after adding keyword form
@@ -188,6 +211,54 @@ class TestDynWindSpecial(SpecialsTestCase):
         result = await expr()
         self.assertEqual(result, 99)
         self.assertEqual(log, ["before", "body", "after"])
+
+
+    async def test_dyn_wind_body_value_is_expression_result(self):
+        """
+        dyn-wind expression evaluates to the body's final value
+        """
+
+        log = []
+
+        def record(s):
+            log.append(s)
+
+        src_str = """
+        (compile/dyn-wind
+          (compile/begin (compile/call record "before"))
+          (compile/begin (compile/call record "body") 999)
+          (compile/begin (compile/call record "after")))
+        """
+        expr, mod = self.compile_expr(src_str, record=record)
+        dis(expr.code)
+
+        result = await expr()
+        self.assertEqual(result, 999)
+        self.assertEqual(log, ["before", "body", "after"])
+
+
+    async def test_dyn_wind_return_from_nested_call_cleans_up_and_delivers_value(self):
+        """
+        When body calls a function that returns, after-thunk runs and value is delivered
+        """
+
+        log = []
+
+        def record(s):
+            log.append(s)
+
+        src_str = """
+        (compile/dyn-wind
+          (compile/begin (compile/call record "before"))
+          (compile/call (compile/lambda [] 99))
+          (compile/begin (compile/call record "after")))
+        """
+        expr, mod = self.compile_expr(src_str, record=record)
+        dis(expr.code)
+
+        result = await expr()
+        self.assertEqual(result, 99)
+        self.assertEqual(log, ["before", "after"])
 
 
 # The end.

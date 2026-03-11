@@ -642,6 +642,7 @@ KosDynWind *kos_dynwind_clone(KosDynWind *wind) {
   KosDynWind_AFTER_THUNK(clone) = KosDynWind_AFTER_THUNK(wind);
   if (KosDynWind_AFTER_THUNK(clone))
     Py_INCREF(KosDynWind_AFTER_THUNK(clone));
+  KosDynWind_BODY_RESULT(clone) = NULL;
   KosDynWind_ENTERED(clone) = KosDynWind_ENTERED(wind);
   KosDynWind_PHASE(clone) = KosDynWind_PHASE(wind);
   return clone;
@@ -656,6 +657,8 @@ void kos_dynwind_free(KosDynWind *wind) {
   KosDynWind_BEFORE_THUNK(wind) = NULL;
   Py_XDECREF(KosDynWind_AFTER_THUNK(wind));
   KosDynWind_AFTER_THUNK(wind) = NULL;
+  Py_XDECREF(KosDynWind_BODY_RESULT(wind));
+  KosDynWind_BODY_RESULT(wind) = NULL;
   kos_dynnode_return_to_freelist(wind);
 }
 
@@ -674,8 +677,24 @@ int kos_dyn_wind_wind(KosContext *ctx, KosDynWind *node) {
 
 
 int kos_dyn_wind_unwind(KosContext *ctx, KosDynWind *node) {
-  if (! node || ! KosDynWind_ENTERED(node) || ! KosDynWind_AFTER_THUNK(node))
+  if (! node || ! KosDynWind_ENTERED(node))
     return 0;
+
+  if (! KosDynWind_AFTER_THUNK(node)) {
+    /* No after-thunk: push stored body result and finish uninstall */
+    KosDynFrame *frame_below = (KosDynFrame *) KosDynNode_PARENT(node);
+    PyObject *body_result = KosDynWind_BODY_RESULT(node);
+    KosDynWind_BODY_RESULT(node) = NULL;
+    if (frame_below && KosDynFrame_STACK(frame_below) && body_result) {
+      if (KosStackBlock_PushRef(&KosDynFrame_STACK(frame_below), body_result) < 0) {
+        KosDynWind_BODY_RESULT(node) = body_result;
+        return -1;
+      }
+    }
+    if (body_result)
+      Py_DECREF(body_result);
+    return 0;
+  }
 
   KosDynWind_PHASE(node) = KOS_WIND_PHASE_PRE_AFTER;
   {
@@ -697,17 +716,22 @@ static int kos_dyn_wind_on_control_returned(KosContext *ctx, KosDynWind *wind) {
   if (! frame_below || ! KosDynFrame_STACK(frame_below))
     return 0;
 
-  PyObject *val = KosStackBlock_PopRef(&KosDynFrame_STACK(frame_below));
-  if (! val)
-    return 0;
-
   if (KosDynWind_PHASE(wind) == KOS_WIND_PHASE_PRE_BEGIN) {
     KosDynWind_PHASE(wind) = KOS_WIND_PHASE_POST_BEGIN;
     KosDynWind_ENTERED(wind) = 1;
-    Py_DECREF(val);
+    PyObject *val = KosStackBlock_PopRef(&KosDynFrame_STACK(frame_below));
+    if (val)
+      Py_DECREF(val);
     return 0;
   }
   if (KosDynWind_PHASE(wind) == KOS_WIND_PHASE_PRE_AFTER) {
+    PyObject *thunk_ret = KosStackBlock_PopRef(&KosDynFrame_STACK(frame_below));
+    if (thunk_ret)
+      Py_DECREF(thunk_ret);
+
+    PyObject *body_result = KosDynWind_BODY_RESULT(wind);
+    KosDynWind_BODY_RESULT(wind) = NULL;
+
     KosDynWind_PHASE(wind) = KOS_WIND_PHASE_POST_AFTER;
     KosContext_UNWIND_TARGET_FRAME(ctx) = NULL;
     KosContext_DYN_TOP(ctx) = KosDynNode_PARENT(wind);
@@ -715,10 +739,16 @@ static int kos_dyn_wind_on_control_returned(KosContext *ctx, KosDynWind *wind) {
     KosDynNode_PARENT(wind) = NULL;
     kos_dynwind_free(wind);
     kos_update_frame_top(ctx);
-    Py_DECREF(val);
+
+    if (body_result) {
+      if (KosStackBlock_PushRef(&KosDynFrame_STACK(frame_below), body_result) < 0) {
+        Py_DECREF(body_result);
+        return -1;
+      }
+      Py_DECREF(body_result);
+    }
     return 0;
   }
-  Py_DECREF(val);
   return 0;
 }
 
@@ -1800,6 +1830,18 @@ int kos_dyn_with_unwind(KosContext *ctx, KosDynWith *node,
     Py_XDECREF(typ);
     Py_XDECREF(val);
     Py_XDECREF(tb);
+    Py_DECREF(result);
+    /* Swallow: discard body value, drop block, push None. Caller pops node. */
+    PyObject *body_val = KosStackBlock_PopRef(&KosDynFrame_STACK(frame));
+    if (body_val)
+      Py_DECREF(body_val);
+    if (KosStackBlock_DropBlock(&KosDynFrame_STACK(frame)) < 0)
+      return -1;
+    if (frame)
+      KosDynFrame_PC(frame) = KosDynWith_RESUME_PC(node);
+    if (KosStackBlock_PushRef(&KosDynFrame_STACK(frame), Py_None) < 0)
+      return -1;
+    return KOS_DYN_UNWIND_SWALLOWED;
   }
   else if (typ != Py_None) {
     PyErr_Restore(typ, val, tb);
@@ -2147,6 +2189,8 @@ static int kos_dyn_uninstall_handler(KosContext *ctx, KosDynNode *node, KosEvent
       int unw = kos_dyn_unwind(ctx, node, out_ev);
       if (unw == KOS_DYN_UNWIND_ASYNC_STARTED)
         return KOS_DYN_UNWIND_ASYNC_STARTED;
+      if (unw == KOS_DYN_UNWIND_SWALLOWED)
+        return 0;
       if (unw < 0)
         return -1;
       if (! PyErr_Occurred()) {
@@ -2155,12 +2199,20 @@ static int kos_dyn_uninstall_handler(KosContext *ctx, KosDynNode *node, KosEvent
           KosDynFrame_PC(frame) = KosDynWith_RESUME_PC(with_node);
       }
       if (KosContext_FRAME_TOP(ctx)) {
-        if (KosStackBlock_DropBlock(&KosDynFrame_STACK(KosContext_FRAME_TOP(ctx))) < 0)
+        KosStackBlock **stack = &KosDynFrame_STACK(KosContext_FRAME_TOP(ctx));
+        PyObject *body_val = KosStackBlock_PopRef(stack);
+        if (! body_val)
           return -1;
+        if (KosStackBlock_DropBlock(stack) < 0) {
+          Py_DECREF(body_val);
+          return -1;
+        }
         if (! PyErr_Occurred() &&
-            KosStackBlock_PushRef(&KosDynFrame_STACK(KosContext_FRAME_TOP(ctx)),
-                                 Py_None) < 0)
+            KosStackBlock_PushRef(stack, body_val) < 0) {
+          Py_DECREF(body_val);
           return -1;
+        }
+        Py_DECREF(body_val);
       }
       return 0;
     }
@@ -4258,12 +4310,14 @@ static int dynnode_traverse_frame(KosDynNode *node, visitproc visit, void *arg) 
 
 
 /**
-   GC traverse a KOS_DYN_WIND: visit the before and after thunk callables.
+   GC traverse a KOS_DYN_WIND: visit the before and after thunk callables,
+   and the stored body result.
 */
 static int dynnode_traverse_wind(KosDynNode *node, visitproc visit, void *arg) {
   KosDynWind *wind = (KosDynWind *) node;
   Py_VISIT(KosDynWind_BEFORE_THUNK(wind));
   Py_VISIT(KosDynWind_AFTER_THUNK(wind));
+  Py_VISIT(KosDynWind_BODY_RESULT(wind));
   return 0;
 }
 

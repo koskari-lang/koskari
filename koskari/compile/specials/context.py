@@ -89,6 +89,11 @@ def special_with(compiler, source, tc=False):
     expr = binding.value
     body = matched["body"].source
 
+    # print(f"binding: {binding.source}")
+    # print(f"name: {name}")
+    # print(f"expr: {expr}")
+    # print(f"body: {body}")
+
     fragment = compiler.fragment(called_by)
     fragment.merge(compiler.full_compile(expr, False))
 

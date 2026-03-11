@@ -79,13 +79,14 @@ class TestDynWithOpcodes(CevalTest):
     async def test_push_dyn_with_pop_dyn_with_completes(self):
         """
         PUSH_DYN_WITH with matching POP_DYN_WITH completes normally.
-        Expression result is None.
+        Expression result is the body value (None here).
         """
 
         mgr = SimpleMgr(100)
         code, ns = build_expr([
             ["CONST", mgr],
             ["PUSH_DYN_WITH", None],
+            ["CONST", None],
             ["POP_DYN_WITH", 0],
             ["RETURN", 1],
         ])
@@ -98,6 +99,7 @@ class TestDynWithOpcodes(CevalTest):
     async def test_push_dyn_with_body_runs_enter_exit(self):
         """
         PUSH_DYN_WITH runs enter; body runs; POP_DYN_WITH runs exit.
+        Expression result is the body value (99).
         """
 
         mgr = SimpleMgr(200)
@@ -105,12 +107,11 @@ class TestDynWithOpcodes(CevalTest):
             ["CONST", mgr],
             ["PUSH_DYN_WITH", None],
             ["CONST", 99],
-            ["POP", 1],
             ["POP_DYN_WITH", 0],
             ["RETURN", 1],
         ])
         result = await make_callable(code, ns)()
-        self.assertIsNone(result)
+        self.assertEqual(result, 99)
         self.assertTrue(mgr.entered)
         self.assertTrue(mgr.exited)
 
@@ -118,6 +119,7 @@ class TestDynWithOpcodes(CevalTest):
     async def test_dyn_with_binding_entered_value(self):
         """
         PUSH_DYN_WITH [name] binds enter result to name in body.
+        Body uses VAR_REF x to verify binding, then CONST 300 as result.
         """
 
         mgr = SimpleMgr(300)
@@ -125,11 +127,13 @@ class TestDynWithOpcodes(CevalTest):
             ["CONST", mgr],
             ["PUSH_DYN_WITH", "x"],
             ["VAR_REF", "x"],
+            ["POP", 1],
+            ["CONST", 300],
             ["POP_DYN_WITH", 0],
             ["RETURN", 1],
         ], local_syms=("x",))
         result = await make_callable(code, ns)()
-        self.assertIsNone(result)
+        self.assertEqual(result, 300)
         self.assertEqual(300, mgr.value)
         self.assertTrue(mgr.entered)
         self.assertTrue(mgr.exited)
@@ -171,6 +175,7 @@ class TestDynWithOpcodes(CevalTest):
         code, ns = build_expr([
             ["CONST", mgr],
             ["PUSH_DYN_WITH", None],
+            ["CONST", None],
             ["POP_DYN_WITH", 0],
             ["RETURN", 1],
         ])

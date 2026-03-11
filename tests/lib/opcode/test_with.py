@@ -99,13 +99,14 @@ class TestWithOpcodes(CevalTest):
     async def test_push_with_pop_with_completes(self):
         """
         PUSH_WITH with matching POP_WITH completes normally.
-        Expression result is None.
+        Body leaves None on stack; expression result is None.
         """
 
         mgr = SimpleMgr(100)
         code, ns = build_expr([
             ["CONST", mgr],
             ["PUSH_WITH", None],
+            ["CONST", None],
             ["POP_WITH", 0],
             ["RETURN", 1],
         ])
@@ -117,7 +118,7 @@ class TestWithOpcodes(CevalTest):
 
     async def test_push_with_body_runs_enter_exit(self):
         """
-        PUSH_WITH runs enter; body runs; POP_WITH runs exit.
+        PUSH_WITH runs enter; body runs; POP_WITH promotes body value.
         """
 
         mgr = SimpleMgr(200)
@@ -125,12 +126,11 @@ class TestWithOpcodes(CevalTest):
             ["CONST", mgr],
             ["PUSH_WITH", None],
             ["CONST", 99],
-            ["POP", 1],
             ["POP_WITH", 0],
             ["RETURN", 1],
         ])
         result = await make_callable(code, ns)()
-        self.assertIsNone(result)
+        self.assertEqual(result, 99)
         self.assertTrue(mgr.entered)
         self.assertTrue(mgr.exited)
 
@@ -199,13 +199,14 @@ class TestWithOpcodes(CevalTest):
     async def test_with_async_enter_completes(self):
         """
         PUSH_WITH with async manager: enter returns awaitable, VM awaits it
-        then binds and runs body; POP_WITH runs exit. Expression result None.
+        then binds and runs body; POP_WITH promotes body value. Body is None.
         """
 
         mgr = AsyncMgr(100)
         code, ns = build_expr([
             ["CONST", mgr],
             ["PUSH_WITH", None],
+            ["CONST", None],
             ["POP_WITH", 0],
             ["RETURN", 1],
         ])
@@ -218,7 +219,7 @@ class TestWithOpcodes(CevalTest):
     async def test_with_async_exit_normal(self):
         """
         Async manager: normal exit; __aexit__ is awaited, then block and node
-        pop
+        pop; body value 99 is promoted.
         """
 
         mgr = AsyncMgr(200)
@@ -226,12 +227,11 @@ class TestWithOpcodes(CevalTest):
             ["CONST", mgr],
             ["PUSH_WITH", None],
             ["CONST", 99],
-            ["POP", 1],
             ["POP_WITH", 0],
             ["RETURN", 1],
         ])
         result = await make_callable(code, ns)()
-        self.assertIsNone(result)
+        self.assertEqual(result, 99)
         self.assertTrue(mgr.entered)
         self.assertTrue(mgr.exited)
         self.assertEqual(mgr.exc_info[0], None)

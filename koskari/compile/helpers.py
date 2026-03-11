@@ -19,17 +19,16 @@ from .compiler import Compiler, Special, ByteCodeFragment
 from ..exceptions import ParametersError, SpecialError
 from ..types import get_position
 from ..matcher import (
+    VALUE,
     BindingsResult,
     BindingMatcher,
     BindingResult,
-    BIND,
     FormalsResult,
-    LITERAL,
     LITERAL_KW,
-    MATCH,
+    LIST,
     Matcher,
     SYMBOL,
-    match,
+    match1,
     matcher,
 )
 
@@ -164,7 +163,11 @@ class _BindingsMatcher(BindingMatcher):
         return cls(payload[0])
 
 
-    def match(self, source, literals, result, specs=None):
+    def matches_element(self, value, literals, result, specs=None, source=None):
+        return False
+
+
+    def consume(self, source, literals, result, specs=None):
         if source is nil:
             return (None, False)
         head = car(source)
@@ -240,7 +243,11 @@ class _FormalsMatcher(BindingMatcher):
         return cls(payload[0])
 
 
-    def match(self, source, literals, result, specs=None):
+    def matches_element(self, value, literals, result, specs=None, source=None):
+        return False
+
+
+    def consume(self, source, literals, result, specs=None):
         if source is nil:
             return (None, False)
         head = car(source)
@@ -313,6 +320,16 @@ def FORMALS(slot, *, scope=None, scopes=None):
 _tag_binding = symbol('matcher/binding')
 
 
+_BINDING_FORMS = [
+    LIST(VALUE("expr"), LITERAL_KW("as"), SYMBOL("name")),
+    LIST(SYMBOL("name"), VALUE("expr")),
+]
+_BINDING_FORMS_ALLOW_UNNAMED = [
+    *_BINDING_FORMS,
+    LIST(VALUE("expr")),
+]
+
+
 @matcher(_tag_binding)
 class _BindingMatcher(BindingMatcher):
     """
@@ -346,42 +363,39 @@ class _BindingMatcher(BindingMatcher):
         return ()
 
 
-    def match(self, source, literals, result, specs=None):
+    def matches_element(self, value, literals, result, specs=None, source=None):
+        return False
+
+
+    def consume(self, source, literals, result, specs=None):
         if source is nil:
             return (None, False)
-        head = car(source)
-        tail = cdr(source)
-        if not is_pair(head) or not is_proper(head):
+
+        head, remainder = source
+        if not is_pair(head):
             return (None, False)
-        patterns = list(_BINDING_PATTERNS_3) + list(_BINDING_PATTERNS_2)
+
         if self.allow_unnamed:
-            patterns = patterns + [_BINDING_PATTERN_1]
-        m = match(head, patterns)
+            patterns = _BINDING_FORMS_ALLOW_UNNAMED
+        else:
+            patterns = _BINDING_FORMS
+
+        m = match1(head, patterns)
         if m is None:
             return (None, False)
 
-        def _src(v):
-            return v.source if hasattr(v, 'source') else v
-
-        name = None
-        val = None
-        if "sym" in m and "expr" in m:
-            name = _src(m["sym"])
-            val = _src(m["expr"])
-        elif "expr" in m:
-            if self.allow_unnamed:
-                name = None
-            else:
-                name = True  # required fallback
-            val = _src(m["expr"])
-        else:
-            return (None, False)
+        name = m.get("name")
+        if name:
+            name = name.source
+        value = m.get("expr").source
 
         result[self._key] = BindingResult(
-            head, get_position(source), name=name, value=val)
+            head, get_position(source), name=name, value=value)
+
         if specs is not None:
             specs[self._key] = self
-        return (tail, True)
+
+        return (remainder, True)
 
 
     def to_tuple(self):
@@ -403,24 +417,12 @@ def BINDING(slot, *, allow_unnamed=False, scope=None, scopes=None):
                            scope=scope, scopes=scopes)
 
 
-_BINDING_PATTERNS_3 = [
-    MATCH(BIND("expr"), LITERAL_KW("as"), SYMBOL("sym")),
-]
-_BINDING_PATTERNS_2 = [
-    MATCH(BIND("expr"), MATCH(LITERAL_KW("as"), MATCH(SYMBOL("sym"), LITERAL(nil)))),
-    MATCH(SYMBOL("sym"), BIND("expr")),
-]
-_BINDING_PATTERN_1 = MATCH(BIND("expr"))
-
-
-def helper_binding(source, required=True, allow_unnamed=False):
+def helper_binding(source, allow_unnamed=False):
     """
     Parse a single binding form (SYM EXPR), (EXPR as: SYM), or when
     allow_unnamed True then (EXPR) alone.
 
     :param source: pair representing one binding
-    :param required: if False and source has one element (and not allow_unnamed),
-        treat as (EXPR) with binding name given by required
     :param allow_unnamed: if True, a single element (EXPR) is allowed and
         returns (None, expr)
     :return: (name, expr) where name is the bound name or None if unnamed
@@ -433,26 +435,19 @@ def helper_binding(source, required=True, allow_unnamed=False):
     if not is_proper(source):
         raise SpecialError(msg, source)
 
-    patterns = list(_BINDING_PATTERNS_3) + list(_BINDING_PATTERNS_2)
-    if allow_unnamed or not required:
-        patterns.append(_BINDING_PATTERN_1)
+    if allow_unnamed:
+        patterns = _BINDING_FORMS_ALLOW_UNNAMED
+    else:
+        patterns = _BINDING_FORMS
 
-    m = match(source, patterns)
+    m = match1(source, patterns)
     if m is None:
         raise SpecialError(msg, source)
 
-    def _src(v):
-        return v.source if hasattr(v, 'source') else v
+    name = m.get("name")
+    value = m.get("expr")
 
-    if "sym" in m and "expr" in m:
-        return (_src(m["sym"]), _src(m["expr"]))
-
-    if "expr" in m:
-        if allow_unnamed:
-            return (None, _src(m["expr"]))
-        return (required, _src(m["expr"]))
-
-    raise SpecialError(msg, source)
+    return (name.source if name else None, value.source)
 
 
 def gather_parameters(args, source=None):

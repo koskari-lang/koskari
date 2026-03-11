@@ -18,6 +18,7 @@ Tests for koskari.matcher pattern matching.
 
 import unittest
 
+from koskari.compile.helpers import pycons
 from koskari.lib import cons, keyword, nil, symbol
 from koskari.types import unpack
 from koskari.matcher import (
@@ -28,8 +29,8 @@ from koskari.matcher import (
     LITERAL,
     LITERAL_KW,
     LITERAL_SYM,
+    LIST,
     MATCH,
-    OPT,
     PAIR,
     REPEAT,
     REST,
@@ -38,6 +39,7 @@ from koskari.matcher import (
     extract_binder_symbols,
     from_tuple,
     match,
+    match1,
 )
 
 
@@ -49,10 +51,12 @@ class TestMatchLiteral(unittest.IsolatedAsyncioTestCase):
         self.assertIsNotNone(result)
         self.assertEqual(result, {})
 
+
     async def test_literal_fails(self):
         src = cons(keyword('body:'), nil)
         result = match(src, MATCH(LITERAL_KW('before:')))
         self.assertIsNone(result)
+
 
     async def test_literal_sym(self):
         src = cons(symbol('foo'), nil)
@@ -69,6 +73,7 @@ class TestMatchBind(unittest.IsolatedAsyncioTestCase):
         self.assertIsNotNone(result)
         self.assertEqual(result['val'].source, x)
 
+
     async def test_bind_empty_fails(self):
         result = match(nil, MATCH(BIND('val')))
         self.assertIsNone(result)
@@ -79,42 +84,24 @@ class TestMatchRest(unittest.IsolatedAsyncioTestCase):
     async def test_rest_captures_remainder(self):
         a = symbol('a')
         b = symbol('b')
-        src = cons(a, cons(b, nil))
+        src = cons(a, b, nil)
         result = match(src, MATCH(REST('tail')))
         self.assertIsNotNone(result)
         self.assertEqual(list(unpack(result['tail'].source)), [a, b])
 
+
     async def test_rest_with_bind_before(self):
         a = symbol('a')
         b = symbol('b')
-        src = cons(a, cons(b, nil))
+        src = cons(a, b, nil)
         result = match(src, MATCH(BIND('first'), REST('tail')))
         self.assertIsNotNone(result)
         self.assertEqual(result['first'].source, a)
         self.assertEqual(list(unpack(result['tail'].source)), [b])
 
+
     async def test_rest_empty_fails(self):
         result = match(nil, MATCH(REST('tail')))
-        self.assertIsNone(result)
-
-
-class TestMatchPairDestructuring(unittest.IsolatedAsyncioTestCase):
-
-    async def test_match_keyword_bind(self):
-        kw = keyword('before:')
-        body = cons(symbol('x'), nil)
-        elem = cons(kw, body)
-        src = cons(elem, nil)
-        result = match(src, MATCH(MATCH(LITERAL_KW('before:'), BIND('before_body'))))
-        self.assertIsNotNone(result)
-        self.assertEqual(result['before_body'].source, body)
-
-    async def test_match_wrong_keyword_fails(self):
-        kw = keyword('body:')
-        body = cons(symbol('x'), nil)
-        elem = cons(kw, body)
-        src = cons(elem, nil)
-        result = match(src, MATCH(MATCH(LITERAL_KW('before:'), BIND('before_body'))))
         self.assertIsNone(result)
 
 
@@ -128,92 +115,63 @@ class TestMatchPairCapture(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(result['p'].source, p)
 
 
-class TestMatchOpt(unittest.IsolatedAsyncioTestCase):
+class TestMatchList(unittest.IsolatedAsyncioTestCase):
 
-    async def test_opt_matches_when_present(self):
-        kw = keyword('after:')
-        body = cons(symbol('y'), nil)
-        elem = cons(kw, body)
-        src = cons(elem, nil)
-        result = match(
-            src,
-            MATCH(OPT(MATCH(LITERAL_KW('after:'), BIND('after_body')))),
-        )
+    async def test_list_matches_nested_list(self):
+        a = symbol('a')
+        b = symbol('b')
+        inner = cons(a, cons(b, nil))
+        src = cons(inner, nil)
+        result = match(src, MATCH(LIST(BIND('x'), BIND('y'))))
         self.assertIsNotNone(result)
-        self.assertEqual(result['after_body'].source, body)
+        self.assertEqual(result['x'].source, a)
+        self.assertEqual(result['y'].source, b)
 
-    async def test_opt_succeeds_when_absent(self):
-        result = match(nil, MATCH(OPT(MATCH(LITERAL_KW('after:'), BIND('after_body')))))
-        self.assertIsNotNone(result)
-        self.assertNotIn('after_body', result)
+
+    async def test_list_rejects_non_pair_head(self):
+        a = symbol('a')
+        src = cons(a, nil)
+        result = match(src, MATCH(LIST(BIND('x'))))
+        self.assertIsNone(result)
+
+
+    async def test_list_requires_full_consumption(self):
+        a = symbol('a')
+        b = symbol('b')
+        inner = cons(a, cons(b, nil))
+        src = cons(inner, nil)
+        result = match(src, MATCH(LIST(BIND('x'))))
+        self.assertIsNone(result)
 
 
 class TestMatchAnyOrder(unittest.IsolatedAsyncioTestCase):
 
-    async def test_any_order_matches_clauses(self):
-        before = cons(keyword('before:'), cons(symbol('b'), nil))
-        body = cons(keyword('body:'), cons(symbol('x'), nil))
-        after = cons(keyword('after:'), cons(symbol('a'), nil))
-        src = cons(body, cons(before, cons(after, nil)))
+    async def test_any_order_matches_multiple_binds(self):
+        a = symbol('a')
+        b = symbol('b')
+        src = cons(a, b, nil)
         pat = MATCH(ANY_ORDER(
-            MATCH(LITERAL_KW('before:'), BIND('before_body')),
-            MATCH(LITERAL_KW('body:'), BIND('body')),
-            MATCH(LITERAL_KW('after:'), BIND('after_body')),
+            MATCH(BIND('x')),
+            MATCH(BIND('y')),
         ))
         result = match(src, pat)
         self.assertIsNotNone(result)
-        self.assertEqual(result['before_body'].source, cons(symbol('b'), nil))
-        self.assertEqual(result['body'].source, cons(symbol('x'), nil))
-        self.assertEqual(result['after_body'].source, cons(symbol('a'), nil))
+        self.assertIn('x', result)
+        self.assertIn('y', result)
 
-    async def test_any_order_body_and_after(self):
-        body = cons(keyword('body:'), cons(symbol('x'), nil))
-        after = cons(keyword('after:'), cons(symbol('a'), nil))
-        src = cons(body, cons(after, nil))
-        pat = MATCH(ANY_ORDER(
-            MATCH(LITERAL_KW('body:'), BIND('body')),
-            MATCH(LITERAL_KW('after:'), BIND('after_body')),
-        ))
-        result = match(src, pat)
+
+class TestMatch1(unittest.IsolatedAsyncioTestCase):
+
+    async def test_match1_wraps_value_and_defers_to_match(self):
+        x = symbol('x')
+        result = match1(x, MATCH(BIND('val')))
         self.assertIsNotNone(result)
-        self.assertIn('body', result)
-        self.assertIn('after_body', result)
+        self.assertEqual(result['val'].source, x)
 
 
-class TestMatchDynWindPattern(unittest.IsolatedAsyncioTestCase):
-
-    async def test_dyn_wind_all_three_keywords(self):
-        before = cons(keyword('before:'), cons(symbol('b'), nil))
-        body = cons(keyword('body:'), cons(symbol('x'), nil))
-        after = cons(keyword('after:'), cons(symbol('a'), nil))
-        src = cons(before, cons(body, cons(after, nil)))
-        pat = MATCH(ANY_ORDER(
-            MATCH(LITERAL_KW('before:'), BIND('before_body')),
-            MATCH(LITERAL_KW('body:'), BIND('body')),
-            MATCH(LITERAL_KW('after:'), BIND('after_body')),
-        ))
-        result = match(src, pat)
-        self.assertIsNotNone(result)
-        self.assertIn('before_body', result)
-        self.assertIn('body', result)
-        self.assertIn('after_body', result)
-
-
-class TestMatchFromTuple(unittest.IsolatedAsyncioTestCase):
-
-    async def test_tuple_same_as_builder(self):
-        kw = keyword('before:')
-        body = cons(symbol('x'), nil)
-        elem = cons(kw, body)
-        src = cons(elem, nil)
-        builder = MATCH(MATCH(LITERAL_KW('before:'), BIND('before_body')))
-        tup = builder.to_tuple()
-        result_builder = match(src, builder)
-        result_tup = match(src, tup)
-        self.assertIsNotNone(result_tup)
-        self.assertEqual(result_builder['before_body'].source,
-                         result_tup['before_body'].source)
-        self.assertEqual(result_tup['before_body'].source, body)
+    async def test_match1_no_match_returns_none(self):
+        result = match1(symbol('x'), MATCH(LITERAL_KW('before:')))
+        self.assertIsNone(result)
 
 
 class TestMatchFailure(unittest.IsolatedAsyncioTestCase):
@@ -225,6 +183,7 @@ class TestMatchFailure(unittest.IsolatedAsyncioTestCase):
             MATCH(LITERAL_KW('body:')),
         ])
         self.assertIsNone(result)
+
 
     async def test_empty_source_bind_fails(self):
         result = match(nil, MATCH(BIND('x')))
@@ -260,6 +219,7 @@ class TestMatchSymbol(unittest.IsolatedAsyncioTestCase):
         self.assertIsNotNone(result)
         self.assertEqual(result['name'].source, s)
 
+
     async def test_symbol_rejects_non_symbol(self):
         src = cons(keyword('kw'), nil)
         result = match(src, MATCH(SYMBOL('name')))
@@ -275,15 +235,17 @@ class TestMatchDefine(unittest.IsolatedAsyncioTestCase):
         self.assertIsNotNone(result)
         self.assertEqual(result['name'].source, s)
 
+
     async def test_define_rejects_non_symbol(self):
         src = cons(keyword('kw'), nil)
         result = match(src, MATCH(DEFINE('name')))
         self.assertIsNone(result)
 
+
     async def test_define_with_value(self):
         name = symbol('x')
         val = symbol('y')
-        src = cons(name, cons(val, nil))
+        src = cons(name, val, nil)
         result = match(src, MATCH(DEFINE('name'), VALUE('value')))
         self.assertIsNotNone(result)
         self.assertEqual(result['name'].source, name)
@@ -299,9 +261,11 @@ class TestMatchValue(unittest.IsolatedAsyncioTestCase):
         self.assertIsNotNone(result)
         self.assertEqual(result['val'].source, x)
 
+
     async def test_value_empty_fails(self):
         result = match(nil, MATCH(VALUE('val')))
         self.assertIsNone(result)
+
 
     async def test_value_captures_pair(self):
         p = cons(symbol('a'), symbol('b'))
@@ -324,6 +288,7 @@ class TestMatchWithSpecs(unittest.IsolatedAsyncioTestCase):
         self.assertIn('val', specs)
         self.assertIsNotNone(specs['val'])
 
+
     async def test_with_specs_no_match_returns_none(self):
         result = match(nil, MATCH(BIND('x')), with_specs=True)
         self.assertIsNone(result)
@@ -335,34 +300,37 @@ class TestMatchRepeat(unittest.IsolatedAsyncioTestCase):
         a = symbol('a')
         b = symbol('b')
         c = symbol('c')
-        src = cons(a, cons(b, cons(c, nil)))
-        result = match(src, MATCH(REPEAT('items', MATCH(VALUE('x')))))
+        src = cons(a, b, c, nil)
+        result = match(src, MATCH(REPEAT('items', VALUE('x'))))
         self.assertIsNotNone(result)
         self.assertEqual(len(result['items'].matches), 3)
         self.assertEqual(result['items'].matches[0][0]['x'].source, a)
         self.assertEqual(result['items'].matches[1][0]['x'].source, b)
         self.assertEqual(result['items'].matches[2][0]['x'].source, c)
 
+
     async def test_repeat_single_match(self):
         x_sym = symbol('x')
         src = cons(x_sym, nil)
-        result = match(src, MATCH(REPEAT('items', MATCH(LITERAL_SYM('x')))))
+        result = match(src, MATCH(REPEAT('items', LITERAL_SYM('x'))))
         self.assertIsNotNone(result)
         self.assertEqual(len(result['items'].matches), 1)
+
 
     async def test_repeat_fails_when_zero(self):
         y_sym = symbol('y')
         src = cons(y_sym, nil)
-        result = match(src, MATCH(REPEAT('items', MATCH(LITERAL_SYM('x')))))
+        result = match(src, MATCH(REPEAT('items', LITERAL_SYM('x'))))
         self.assertIsNone(result)
+
 
     async def test_repeat_with_binding(self):
         from koskari.compile.helpers import BINDING
 
-        binding1 = cons(symbol('x'), cons(1, nil))
-        binding2 = cons(symbol('y'), cons(2, nil))
-        src = cons(binding1, cons(binding2, nil))
-        pat = MATCH(REPEAT('bindings', MATCH(BINDING('b'))))
+        binding1 = cons(symbol('x'), 1, nil)
+        binding2 = cons(symbol('y'), 2, nil)
+        src = cons(binding1, binding2, nil)
+        pat = MATCH(REPEAT('bindings', BINDING('b')))
         result = match(src, pat)
         self.assertIsNotNone(result)
         self.assertEqual(len(result['bindings'].matches), 2)
@@ -373,8 +341,9 @@ class TestMatchRepeat(unittest.IsolatedAsyncioTestCase):
         syms = set(extract_binder_symbols(pat.specs[0], result['bindings']))
         self.assertEqual({str(s) for s in syms}, {'x', 'y'})
 
+
     async def test_repeat_to_tuple_roundtrip(self):
-        pat = REPEAT('x', MATCH(BIND('y')))
+        pat = REPEAT('x', BIND('y'))
         restored = from_tuple(pat.to_tuple())
         x = symbol('x')
         src = cons(x, nil)
@@ -383,13 +352,14 @@ class TestMatchRepeat(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(len(result['x'].matches), 1)
         self.assertEqual(result['x'].matches[0][0]['y'].source, x)
 
+
     async def test_repeat_consumes_until_fail(self):
         one = symbol('1')
         two = symbol('2')
         foo = symbol('foo')
         three = symbol('3')
-        src = cons(one, cons(two, cons(foo, cons(three, nil))))
-        result = match(src, MATCH(REPEAT('nums', MATCH(VALUE('n')))))
+        src = cons(one, two, foo, three, nil)
+        result = match(src, MATCH(REPEAT('nums', VALUE('n'))))
         self.assertIsNotNone(result)
         self.assertEqual(len(result['nums'].matches), 4)
         self.assertEqual(result['nums'].matches[0][0]['n'].source, one)
@@ -398,34 +368,115 @@ class TestMatchRepeat(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(result['nums'].matches[3][0]['n'].source, three)
 
 
+class TestMatchBinding(unittest.IsolatedAsyncioTestCase):
+
+    async def test_binding_allow_unnamed(self):
+        """
+        [(compile/call make_mgr)]
+        """
+        from koskari.compile.helpers import BINDING
+
+        src = pycons(((symbol('compile/call'), symbol('make_mgr')),))
+
+        expr = pycons((symbol('compile/call'), symbol('make_mgr')))
+
+        pat = BINDING('binding', allow_unnamed=True)
+        result = match1(src, pat)
+
+        self.assertIsNotNone(result, 'pattern should match')
+        br = result['binding']
+
+        print("br.name", br.name)
+        print("br.source", br.source)
+        print("br.value", br.value)
+
+        self.assertIsNone(br.name, 'binding name should be None for unnamed')
+        self.assertEqual(br.source, src)
+        self.assertEqual(br.value, expr)
+
+
+    async def test_binding_allow_unnamed_named(self):
+        """
+        [x (compile/call make_mgr)]
+        """
+        from koskari.compile.helpers import BINDING
+
+        src = pycons(
+            (symbol('x'),
+             (symbol('compile/call'), symbol('make_mgr')),)
+        )
+
+        expr = pycons((symbol('compile/call'), symbol('make_mgr')))
+
+        pat = BINDING('binding', allow_unnamed=True)
+
+        result = match1(src, pat)
+        self.assertIsNotNone(result, 'pattern should match')
+        br = result['binding']
+
+        print("br.name", br.name)
+        print("br.source", br.source)
+        print("br.value", br.value)
+
+        self.assertEqual(br.name, symbol('x'))
+        self.assertEqual(br.source, src)
+        self.assertEqual(br.value, expr)
+
+
+    async def test_binding_allow_unnamed_named_as(self):
+        """
+        [(compile/call make_mgr) as: x]
+        """
+        from koskari.compile.helpers import BINDING
+
+        src = pycons(
+            ((symbol('compile/call'), symbol('make_mgr')),
+             keyword('as:'), symbol('x'))
+        )
+
+        expr = pycons((symbol('compile/call'), symbol('make_mgr')))
+
+        pat = BINDING('binding', allow_unnamed=True)
+
+        result = match1(src, pat)
+        self.assertIsNotNone(result, 'pattern should match')
+        br = result['binding']
+        self.assertEqual(br.name, symbol('x'))
+        self.assertEqual(br.source, src)
+        self.assertEqual(br.value, expr)
+
+
 class TestDuplicateSlotValidation(unittest.IsolatedAsyncioTestCase):
 
     async def test_duplicate_slot_same_value_succeeds(self):
         a = symbol('a')
-        src = cons(a, cons(a, nil))
+        src = cons(a, a, nil)
         result = match(src, MATCH(BIND('x'), BIND('x')))
         self.assertIsNotNone(result)
         self.assertEqual(result['x'].source, a)
 
+
     async def test_duplicate_slot_different_value_fails(self):
         a = symbol('a')
         b = symbol('b')
-        src = cons(a, cons(b, nil))
+        src = cons(a, b, nil)
         result = match(src, MATCH(BIND('x'), BIND('x')))
         self.assertIsNone(result)
+
 
     async def test_duplicate_slot_different_matcher_type_raises(self):
         foo = symbol('foo')
         bar = symbol('bar')
-        src = cons(foo, cons(bar, nil))
+        src = cons(foo, bar, nil)
         with self.assertRaises(ValueError) as ctx:
             match(src, MATCH(BIND('x'), SYMBOL('x')))
         self.assertIn('duplicate slot', str(ctx.exception))
         self.assertIn('differing matcher type', str(ctx.exception))
 
+
     async def test_any_order_duplicate_slot_same_value_succeeds(self):
         x = symbol('x')
-        src = cons(x, cons(x, nil))
+        src = cons(x, x, nil)
         pat = MATCH(ANY_ORDER(
             MATCH(BIND('v')),
             MATCH(BIND('v')),
@@ -434,10 +485,11 @@ class TestDuplicateSlotValidation(unittest.IsolatedAsyncioTestCase):
         self.assertIsNotNone(result)
         self.assertEqual(result['v'].source, x)
 
+
     async def test_any_order_duplicate_slot_different_value_fails(self):
         a = symbol('a')
         b = symbol('b')
-        src = cons(a, cons(b, nil))
+        src = cons(a, b, nil)
         pat = MATCH(ANY_ORDER(
             MATCH(BIND('v')),
             MATCH(BIND('v')),
