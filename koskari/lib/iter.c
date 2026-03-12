@@ -86,7 +86,7 @@ static PyObject *asyncgen_anext(PyObject *self) {
     return NULL;
   }
 
-  return KosPyAsyncGenASend_New(agen, Py_None);
+  return KosPyAsyncGenASend_New(agen, NULL);
 }
 
 
@@ -165,6 +165,7 @@ static void asyncgenasend_dealloc(PyObject *self) {
 
   Py_XDECREF(asend->agen);
   Py_XDECREF(asend->send_value);
+  Py_XDECREF(asend->throw_typ);
   Py_XDECREF(asend->throw_exc);
 
   Py_TYPE(self)->tp_free(self);
@@ -180,6 +181,7 @@ static int asyncgenasend_traverse(
 
   Py_VISIT(asend->agen);
   Py_VISIT(asend->send_value);
+  Py_VISIT(asend->throw_typ);
   Py_VISIT(asend->throw_exc);
 
   return 0;
@@ -192,6 +194,7 @@ static int asyncgenasend_clear(PyObject *self) {
 
   Py_CLEAR(asend->agen);
   Py_CLEAR(asend->send_value);
+  Py_CLEAR(asend->throw_typ);
   Py_CLEAR(asend->throw_exc);
 
   return 0;
@@ -229,9 +232,23 @@ static PyObject *asyncgenasend_iternext(PyObject *self) {
 
   agen->in_progress = 1;
 
+  PyObject *send_val = asend->send_value;
+  PyObject *throw_typ = asend->throw_typ;
+  PyObject *throw_exc = asend->throw_exc;
+  asend->send_value = NULL;
+  asend->throw_typ = NULL;
+  asend->throw_exc = NULL;
+
   /* Drive the context */
   KosEvent ev = {0};
-  int res = koskari_eval(agen->ctx, &ev, NULL, NULL, NULL);
+  int res = koskari_eval(agen->ctx, &ev,
+                        send_val,
+                        throw_typ,
+                        throw_exc);
+
+  Py_XDECREF(send_val);
+  Py_XDECREF(throw_typ);
+  Py_XDECREF(throw_exc);
 
   agen->in_progress = 0;
 
@@ -305,7 +322,15 @@ static PyObject *asyncgenasend_iternext(PyObject *self) {
 
 static PyObject *asyncgenasend_send(PyObject *self, PyObject *value) {
 
-  /* For now, just delegate to iternext */
+  KosPyAsyncGenASend *asend = (KosPyAsyncGenASend *) self;
+
+  Py_XINCREF(value);
+  Py_CLEAR(asend->send_value);
+  asend->send_value = value;
+  asend->is_throw = 0;
+  Py_CLEAR(asend->throw_typ);
+  Py_CLEAR(asend->throw_exc);
+
   return asyncgenasend_iternext(self);
 }
 
@@ -314,16 +339,23 @@ static PyObject *asyncgenasend_throw(PyObject *self, PyObject *args) {
 
   KosPyAsyncGenASend *asend = (KosPyAsyncGenASend *) self;
 
-  /* Mark as throw and delegate */
   asend->is_throw = 1;
+  Py_CLEAR(asend->send_value);
 
-  PyObject *typ = NULL;
-  if (! PyArg_ParseTuple(args, "O:throw", &typ))
+  PyObject *typ = NULL, *val = NULL, *tb = NULL;
+  if (! PyArg_ParseTuple(args, "O|OO:throw", &typ, &val, &tb))
     return NULL;
 
-  Py_XINCREF(typ);
-  Py_XDECREF(asend->throw_exc);
-  asend->throw_exc = typ;
+  PyErr_NormalizeException(&typ, &val, &tb);
+  PyObject *exc = val;
+  if (! exc)
+    exc = typ;
+  Py_INCREF(typ);
+  Py_INCREF(exc);
+  Py_CLEAR(asend->throw_typ);
+  Py_CLEAR(asend->throw_exc);
+  asend->throw_typ = typ;
+  asend->throw_exc = exc;
 
   return asyncgenasend_iternext(self);
 }
@@ -401,6 +433,7 @@ PyObject *KosPyAsyncGenASend_New(
   asend->send_value = send_value;
 
   asend->is_throw = 0;
+  asend->throw_typ = NULL;
   asend->throw_exc = NULL;
 
   PyObject_GC_Track((PyObject *) asend);

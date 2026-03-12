@@ -68,8 +68,9 @@ typedef struct {
   PyObject_HEAD
   KosPyAsyncGen *agen;
   PyObject *send_value;   /* value to send into generator */
-  int is_throw;           /* if true, throw send_value as exception */
-  PyObject *throw_exc;    /* exception to throw (if is_throw) */
+  int is_throw;           /* if true, throw into generator */
+  PyObject *throw_typ;    /* exception type (if is_throw) */
+  PyObject *throw_exc;    /* exception value (if is_throw) */
 } KosPyAsyncGenASend;
 
 

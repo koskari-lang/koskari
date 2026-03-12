@@ -77,5 +77,70 @@ class TestYieldOpcodes(CevalTest):
 
         await run()
 
+    async def test_asend_send_propagates_value(self):
+        """
+        asend.send(value) passes value into the generator.
+        """
+        code = [
+            ["CONST", 1],
+            ["YIELD", 1],
+            ["YIELD", 1],
+            ["RETURN", 0],
+        ]
+        code_obj, ns = build_expr(code)
+        expr = make_callable(code_obj, ns)
+        agen = expr()
+        v1 = await anext(agen)
+        self.assertEqual(v1, 1)
+        asend = agen.__anext__()
+        try:
+            v2 = await asend.send(123)
+        except StopIteration as e:
+            v2 = e.value
+        self.assertEqual(v2, 123)
+        with self.assertRaises(StopAsyncIteration):
+            await anext(agen)
+
+    async def test_asend_throw_propagates_exception(self):
+        """
+        asend.throw(typ, val) injects exception into the generator.
+        """
+        code = [
+            ["CONST", 1],
+            ["YIELD", 1],
+            ["RETURN", 0],
+        ]
+        code_obj, ns = build_expr(code)
+        expr = make_callable(code_obj, ns)
+        agen = expr()
+        v1 = await anext(agen)
+        self.assertEqual(v1, 1)
+        asend = agen.__anext__()
+        with self.assertRaises(ValueError) as ctx:
+            await asend.throw(ValueError, "thrown")
+        self.assertIn("thrown", str(ctx.exception))
+
+    async def test_asend_eval_error_propagates(self):
+        """
+        Gen that triggers TypeError on second step; documents current
+        behavior (exception may be converted to StopAsyncIteration).
+        """
+        code = [
+            ["CONST", 1],
+            ["YIELD", 1],
+            ["CONST", 1],
+            ["CONST", "bad"],
+            ["OBJECT_ADD", 2],
+            ["RETURN", 0],
+        ]
+        code_obj, ns = build_expr(code)
+        expr = make_callable(code_obj, ns)
+        agen = expr()
+        v1 = await anext(agen)
+        self.assertEqual(v1, 1)
+        asend = agen.__anext__()
+        with self.assertRaises((TypeError, StopAsyncIteration)):
+            await asend.send(None)
+
 
 # The end.
