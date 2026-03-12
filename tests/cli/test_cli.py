@@ -176,9 +176,14 @@ class TestRepl(unittest.IsolatedAsyncioTestCase):
         self.assertIn('2', out)
 
 
+    async def test_incomplete_s_expr_continues_on_next_line(self):
+        out, _ = await self._run_repl(['(+ 1', '2)'])
+        self.assertIn('3', out)
+
+
     async def test_syntax_error_goes_to_stderr(self):
-        _, err = await self._run_repl(['((('])
-        self.assertTrue(len(err) > 0)
+        _, err = await self._run_repl(['( 1 2 ]'])
+        self.assertIn('mismatched', err.lower())
 
 
     async def test_runtime_error_goes_to_stderr(self):

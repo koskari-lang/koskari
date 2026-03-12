@@ -33,7 +33,7 @@ from argparse import ArgumentParser, REMAINDER
 from os.path import basename
 from traceback import format_exception_only
 
-from koskari.exceptions import LayoutError
+from koskari.exceptions import LayoutError, ReaderError
 
 
 __all__ = (
@@ -461,6 +461,12 @@ async def repl_async(mod, prompter=None, histfile=None, stdin=None, stdout=None,
             exc_type, exc_val, tb = sys.exc_info()
             if isinstance(exc_val, REPLCodeBoundary) and exc_val.__cause__ is not None:
                 cause = exc_val.__cause__
+                if isinstance(cause, ReaderError):
+                    msg_str = getattr(cause, 'message', str(cause))
+                    if msg_str and 'unexpected' in msg_str.lower() and 'eof' in msg_str.lower():
+                        prompt = '... '
+                        stdout.flush()
+                        continue
                 sys.last_type = type(cause)
                 sys.last_value = cause
 
