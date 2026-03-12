@@ -128,6 +128,149 @@ static PyMemberDef expression_members[] = {
 };
 
 
+/* === KosExpression install slots === */
+
+
+static int kos_install_expression(
+    KosContext *ctx,
+    KosEvent *out_ev,
+    PyObject *callable,
+    PyObject *args_tuple,
+    PyObject *kwds_dict) {
+
+  if (args_tuple && PyTuple_GET_SIZE(args_tuple) != 0) {
+    PyErr_SetString(PyExc_TypeError, "Expression takes no arguments");
+    return -1;
+  }
+  if (kwds_dict && PyDict_Size(kwds_dict) != 0) {
+    PyErr_SetString(PyExc_TypeError, "Expression takes no named arguments");
+    return -1;
+  }
+  PyObject *code = KosExpression_CODE(callable);
+  PyObject *ns = KosExpression_NS(callable);
+  Py_INCREF(ns);
+  if (kos_dyn_push_frame(ctx, (KosCode *) code, ns) == NULL) {
+    Py_DECREF(ns);
+    return -1;
+  }
+  (void) out_ev;
+  return 0;
+}
+
+
+static int kos_tail_install_expression(
+    KosContext *ctx,
+    KosEvent *out_ev,
+    PyObject *callable,
+    PyObject *args_tuple,
+    PyObject *kwds_dict) {
+
+  if (args_tuple && PyTuple_GET_SIZE(args_tuple) != 0) {
+    PyErr_SetString(PyExc_TypeError, "Expression takes no arguments");
+    return -1;
+  }
+  if (kwds_dict && PyDict_Size(kwds_dict) != 0) {
+    PyErr_SetString(PyExc_TypeError, "Expression takes no named arguments");
+    return -1;
+  }
+  PyObject *code = KosExpression_CODE(callable);
+  PyObject *ns = KosExpression_NS(callable);
+  Py_INCREF(ns);
+  int r = kos_tail_koscall(ctx, (KosCode *) code, ns);
+  if (r < 0)
+    Py_DECREF(ns);
+  (void) out_ev;
+  return r;
+}
+
+
+/* === KosFunction install slots === */
+
+
+static int kos_install_function(
+    KosContext *ctx,
+    KosEvent *out_ev,
+    PyObject *callable,
+    PyObject *args_tuple,
+    PyObject *kwds_dict) {
+
+  PyObject *frame_ns = KosFunction_PrepareCallNamespace(
+      callable, args_tuple, kwds_dict);
+  if (! frame_ns)
+    return -1;
+  PyObject *fn_code = KosFunction_CODE(callable);
+  if (kos_dyn_push_frame(ctx, (KosCode *) fn_code, frame_ns) == NULL) {
+    Py_DECREF(frame_ns);
+    return -1;
+  }
+  (void) out_ev;
+  return 0;
+}
+
+
+static int kos_tail_install_function(
+    KosContext *ctx,
+    KosEvent *out_ev,
+    PyObject *callable,
+    PyObject *args_tuple,
+    PyObject *kwds_dict) {
+
+  PyObject *frame_ns = KosFunction_PrepareCallNamespace(
+      callable, args_tuple, kwds_dict);
+  if (! frame_ns)
+    return -1;
+  int r = kos_tail_koscall(ctx, (KosCode *) KosFunction_CODE(callable),
+                          frame_ns);
+  if (r < 0)
+    Py_DECREF(frame_ns);
+  (void) out_ev;
+  return r;
+}
+
+
+static int kos_vinstall_function(
+    KosContext *ctx,
+    KosEvent *out_ev,
+    PyObject *callable,
+    PyObject *const *args,
+    Py_ssize_t nargs,
+    PyObject *kwnames) {
+
+  PyObject *frame_ns = KosFunction_PrepareCallNamespaceFromVector(
+      callable, args, nargs, kwnames);
+  if (! frame_ns)
+    return -1;
+  PyObject *fn_code = KosFunction_CODE(callable);
+  if (kos_dyn_push_frame(ctx, (KosCode *) fn_code, frame_ns) == NULL) {
+    Py_DECREF(frame_ns);
+    return -1;
+  }
+  (void) out_ev;
+  return 0;
+}
+
+
+static int kos_tail_vinstall_function(
+    KosContext *ctx,
+    KosEvent *out_ev,
+    PyObject *callable,
+    PyObject *const *args,
+    Py_ssize_t nargs,
+    PyObject *kwnames) {
+
+  PyObject *frame_ns = KosFunction_PrepareCallNamespaceFromVector(
+      callable, args, nargs, kwnames);
+  if (! frame_ns)
+    return -1;
+  int r = kos_tail_koscall(ctx, (KosCode *) KosFunction_CODE(callable),
+                          frame_ns);
+  if (r < 0)
+    Py_DECREF(frame_ns);
+  (void) out_ev;
+  return r;
+}
+
+
 KosCallableTypeObject KosExpressionType = {
   .type = {
     PyVarObject_HEAD_INIT(NULL, 0)

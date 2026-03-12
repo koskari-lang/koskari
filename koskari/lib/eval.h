@@ -532,31 +532,11 @@ extern PyObject *KoskariContinuationError;
 
 
 
-/* === KosCallable install slot implementations === */
-
-
-int kos_install_function(KosContext *ctx, KosEvent *out_ev,
-                         PyObject *callable, PyObject *args_tuple, PyObject *kwds_dict);
-int kos_tail_install_function(KosContext *ctx, KosEvent *out_ev,
-                              PyObject *callable, PyObject *args_tuple, PyObject *kwds_dict);
-int kos_vinstall_function(KosContext *ctx, KosEvent *out_ev,
-                          PyObject *callable,
-                          PyObject *const *args, Py_ssize_t nargs,
-                          PyObject *kwnames);
-int kos_tail_vinstall_function(KosContext *ctx, KosEvent *out_ev,
-                               PyObject *callable,
-                               PyObject *const *args, Py_ssize_t nargs,
-                               PyObject *kwnames);
-int kos_install_expression(KosContext *ctx, KosEvent *out_ev,
-                           PyObject *callable, PyObject *args_tuple, PyObject *kwds_dict);
-int kos_tail_install_expression(KosContext *ctx, KosEvent *out_ev,
-                                PyObject *callable, PyObject *args_tuple, PyObject *kwds_dict);
-int kos_install_continuation(KosContext *ctx, KosEvent *out_ev,
-                             PyObject *callable, PyObject *args_tuple, PyObject *kwds_dict);
-int kos_install_apply(KosContext *ctx, KosEvent *out_ev,
-                      PyObject *callable, PyObject *args_tuple, PyObject *kwds_dict);
-int kos_tail_install_apply(KosContext *ctx, KosEvent *out_ev,
-                           PyObject *callable, PyObject *args_tuple, PyObject *kwds_dict);
+/**
+   Replace the current frame with a new one (code, ns). Used for tail calls.
+   Caller owns ns; refcount unchanged on success.
+*/
+int kos_tail_koscall(KosContext *ctx, KosCode *code, PyObject *ns);
 
 
 /**
