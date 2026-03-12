@@ -3339,14 +3339,24 @@ int kos_build_delimited_push_plan(
 }
 
 
-/**
-   Build a transfer plan that skips all unwind actions (direct install).
-   Use when the path from current to target crosses a barrier (e.g. PROMPT)
-   that kos_dyn_pop_top cannot traverse.  Plan has: INSTALL, wind before
-   hooks (if any), INJECT.  Caller must set RESUME_PC, RESUME_FRAME,
-   RESUME_STACK on the plan after this returns.
-   Returns 0 on success, -1 on error.
-*/
+/*
+ * ============================================================================
+ * RESERVED: NOT YET WIRED IN - NO CALLERS
+ * ============================================================================
+ *
+ * Build a transfer plan that skips unwind (INSTALL + wind + INJECT only).
+ * Use when the path from current to target crosses a PROMPT barrier that
+ * kos_dyn_pop_top cannot traverse.
+ *
+ * Current code uses kos_build_transfer_plan, kos_build_delimited_push_plan,
+ * kos_build_return_plan instead. When adding control operators that need to
+ * transfer to an ancestor across a barrier without unwinding, call this and
+ * wire the result into the transfer-plan execution path.
+ *
+ * Caller must set RESUME_PC, RESUME_FRAME, RESUME_STACK on the plan.
+ * Returns 0 on success, -1 on error.
+ * ============================================================================
+ */
 int kos_build_direct_install_plan(
     KosContext *ctx,
     KosDynNode *target,
@@ -4143,6 +4153,24 @@ int kos_run_transfer_step(KosContext *ctx, KosEvent *out_ev) {
 }
 
 
+/*
+ * ============================================================================
+ * RESERVED: NOT YET WIRED IN - NO CALLERS
+ * ============================================================================
+ *
+ * Suspend the current transfer plan for nested transfer. Pushes active plan
+ * onto ctx->plan_stack and clears KosContext_PLAN(ctx).
+ *
+ * MUST be called when a wind thunk (EXTENT_ACTION during transfer) invokes
+ * another continuation. Without this, the inner invoke would clobber the
+ * outer plan and the outer transfer would be lost.
+ *
+ * Call kos_suspend_transfer_plan(ctx) before building/running the inner plan,
+ * then call kos_resume_transfer_plan(ctx) when the inner plan completes.
+ *
+ * See design/interpreter/callcc.md "When a hook invokes another continuation".
+ * ============================================================================
+ */
 void kos_suspend_transfer_plan(KosContext *ctx) {
   if (! KosContext_PLAN(ctx))
     return;
@@ -4153,6 +4181,20 @@ void kos_suspend_transfer_plan(KosContext *ctx) {
 }
 
 
+/*
+ * ============================================================================
+ * RESERVED: NOT YET WIRED IN - NO CALLERS
+ * ============================================================================
+ *
+ * Resume a suspended transfer plan after nested transfer completes. Pops from
+ * ctx->plan_stack and restores it as KosContext_PLAN(ctx).
+ *
+ * Must be called after the inner continuation transfer finishes, to continue
+ * the outer plan. Pairs with kos_suspend_transfer_plan.
+ *
+ * Returns 0 on success, 0 when nothing to resume (plan_stack empty).
+ * ============================================================================
+ */
 int kos_resume_transfer_plan(KosContext *ctx) {
   if (! KosContext_PLAN_STACK(ctx))
     return 0;  /* nothing to resume */

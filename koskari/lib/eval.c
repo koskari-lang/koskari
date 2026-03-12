@@ -1409,18 +1409,6 @@ int kos_dyn_with_on_control_returned(KosContext *ctx, KosDynWith *with_node,
 }
 
 
-int kos_complete_pending_with_exit(KosContext *ctx) {
-  KosDynWith *node = find_pending_exit_with(KosContext_DYN_TOP(ctx));
-  return node ? kos_dyn_with_on_control_returned(ctx, node, 1) : 0;
-}
-
-
-int kos_complete_pending_with_exit_semantic(KosContext *ctx) {
-  KosDynWith *node = find_pending_exit_with(KosContext_DYN_TOP(ctx));
-  return node ? kos_dyn_with_on_control_returned(ctx, node, 0) : 0;
-}
-
-
 /**
    Clear exc_* on any WITH node in PENDING_EXIT_AWAIT on the chain.
 */

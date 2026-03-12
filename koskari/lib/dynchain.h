@@ -1383,9 +1383,9 @@ int kos_build_transfer_plan(
 
 
 /**
-   Build a transfer plan with no unwind actions (direct install).
-   Use when the path crosses a barrier (e.g. PROMPT) that cannot be
-   popped.  Caller sets RESUME_PC etc. after return.
+   RESERVED - NOT YET WIRED IN.  Build a transfer plan with no unwind
+   (direct install across barrier).  Use when path crosses PROMPT.
+   Caller sets RESUME_PC, RESUME_FRAME, RESUME_STACK after return.
 
    :param graft_point_id: node_id for LCA fallback when chains disjoint; 0 = none
 
@@ -1488,9 +1488,9 @@ void kos_free_transfer_plan(KosTransferPlan *plan);
 
 
 /**
-   Suspend the current transfer plan for nested transfer.
-
-   Pushes the active plan onto the suspended stack and clears it.
+   RESERVED - NOT YET WIRED IN.  Suspend current plan for nested transfer.
+   MUST be called before inner continuation invoke when wind thunk invokes k.
+   Pushes active plan onto plan_stack, clears it.
 
    :param ctx: execution context
 */
@@ -1498,14 +1498,12 @@ void kos_suspend_transfer_plan(KosContext *ctx);
 
 
 /**
-   Resume a suspended transfer plan.
-
-   Pops from the suspended stack and checks for chain changes.
-   If the chain has changed, replans the remaining actions.
+   RESERVED - NOT YET WIRED IN.  Resume suspended plan after nested
+   transfer completes.  Pairs with kos_suspend_transfer_plan.
 
    :param ctx: execution context
 
-   :return: 0 on success, -1 on error
+   :return: 0 on success, 0 when nothing to resume
 */
 int kos_resume_transfer_plan(KosContext *ctx);
 
