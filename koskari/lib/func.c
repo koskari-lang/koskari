@@ -38,6 +38,9 @@ static PyObject *kos_function_vectorcall(
     size_t nargsf,
     PyObject *kwnames);
 
+static PyObject *func_build_template_ns(PyObject *code, PyObject *formals,
+                                        PyObject *parent_ns);
+
 
 /* === KosExpression: callable (code, ns) -> coroutine on __call__ === */
 
@@ -637,7 +640,7 @@ PyObject *KosBoundMethod_New(PyObject *func, PyObject *self) {
 }
 
 
-/* === KosFunction: callable (code, formals, base_ns) -> coroutine on __call__ === */
+/* === KosFunction: callable (code, formals, template_ns) -> coroutine on __call__ === */
 
 
 static int function_init(
@@ -680,8 +683,10 @@ static int function_init(
   Py_INCREF(code);
   KosFunction_CODE(self) = code;
 
-  Py_INCREF(base_ns);
-  KosFunction_BASE_NS(self) = base_ns;
+  PyObject *template = func_build_template_ns(code, formals, base_ns);
+  if (! template)
+    return -1;
+  KosFunction_BASE_NS(self) = template;
 
   self->vectorcall = kos_function_vectorcall;
 
@@ -699,18 +704,29 @@ static void function_dealloc(PyObject *self) {
 
 
 /**
-   Obtain the call namespace for a function: formals' namespace spec
-   (with code's nspec as base so code-local names like named-lambda self
-   are in scope) applied to base_ns.  Returns new reference or NULL on error.
+   Build the template namespace for a function at creation time.  Returns
+   namespace with formals slots and closure refs; parent points to base_ns.
 */
-static PyObject *func_obtain_call_namespace(KosFunction *fn) {
-  PyObject *base_nspec = KosCode_NSPEC(KosFunction_CODE(fn));
-  PyObject *nspec = KosFormals_NamespaceSpec(KosFunction_FORMALS(fn), base_nspec);
+static PyObject *func_build_template_ns(PyObject *code, PyObject *formals,
+                                        PyObject *parent_ns) {
+
+  PyObject *base_nspec = KosCode_NSPEC(code);
+  PyObject *nspec = KosFormals_NamespaceSpec(formals, base_nspec);
   if (! nspec)
     return NULL;
-  PyObject *frame_ns = KosNamespace_FromSpec(nspec, KosFunction_BASE_NS(fn));
+  PyObject *template = KosNamespace_FromSpec(nspec, parent_ns);
   Py_DECREF(nspec);
-  return frame_ns;
+  return template;
+}
+
+
+/**
+   Obtain the call namespace for a function: copy the template (stored in
+   base_ns), apply formals and name in caller.  Returns new reference or
+   NULL on error.
+*/
+static PyObject *func_obtain_call_namespace(KosFunction *fn) {
+  return KosNamespace_Copy(KosFunction_BASE_NS(fn));
 }
 
 
@@ -980,8 +996,12 @@ PyObject *KosFunction_NewFromFormals(
   Py_INCREF(formals);
   KosFunction_FORMALS(self) = formals;
 
-  Py_INCREF(parent_ns);
-  KosFunction_BASE_NS(self) = parent_ns;
+  PyObject *template = func_build_template_ns(code, formals, parent_ns);
+  if (! template) {
+    Py_DECREF(self);
+    return NULL;
+  }
+  KosFunction_BASE_NS(self) = template;
 
   KosFunction_NAME(self) = NULL;
   ((KosFunction *) self)->vectorcall = kos_function_vectorcall;

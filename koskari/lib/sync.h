@@ -26,6 +26,15 @@ int koskari_sync_clear(PyObject *mod);
 
 PyObject *Koskari_RunSync(PyObject *awaitable);
 PyObject *Koskari_IterSync(PyObject *async_iterable);
+PyObject *Koskari_DemandSync(PyObject *callable, PyObject *args, PyObject *kwargs);
+
+/**
+   Like Koskari_DemandSync but stores result in out_result and returns int.
+   0 = success, 1 = suspension (no exception; caller raises own), -1 = error
+   (exception set).
+ */
+int Koskari_DemandSyncEx(PyObject *callable, PyObject *args, PyObject *kwargs,
+                         PyObject **out_result);
 
 
 #endif

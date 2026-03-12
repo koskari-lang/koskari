@@ -14,7 +14,8 @@
 """
 koskari.lexer.prompt_toolkit.key_bindings
 
-Key bindings for Koskari REPL: Tab inserts 4-space indent when at line start.
+Key bindings for Koskari REPL: Tab inserts 4-space indent when at line start;
+Shift+Tab removes up to 4 spaces (dedent) when in leading whitespace.
 """
 
 # This file was entirely generated via prompt, as the basis for the
@@ -46,6 +47,14 @@ def load_koskari_key_bindings():
     @kb.add(Keys.Tab, filter=Condition(_whitespace_before_cursor))
     def _insert_indent(event):
         event.current_buffer.insert_text('    ')
+
+    @kb.add(Keys.BackTab, filter=Condition(_whitespace_before_cursor))
+    def _dedent(event):
+        doc = event.current_buffer.document
+        before = doc.current_line_before_cursor
+        to_remove = min(4, len(before))
+        if to_remove:
+            event.current_buffer.delete_before_cursor(to_remove)
 
     return kb
 

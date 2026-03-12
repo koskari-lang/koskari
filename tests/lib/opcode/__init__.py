@@ -39,12 +39,14 @@ def _op(name):
     return getattr(OpCode, "KOS_OP_" + name)
 
 
-def build_code(code, local_syms=None, name="expr"):
+def build_code(code, local_syms=None, closure_syms=None, name="expr"):
     """
     Build Code from a list of [opname, arg] with string opcode names
 
     :param code: Sequence of [op, arg] (e.g. [["CONST", 42], ["RETURN", 1]])
     :param local_syms: Optional sequence of local names for the namespace spec
+    :param closure_syms: Optional sequence of closure names (slot indices after
+        local_syms)
     :param name: Code name for debugging
     :return: Code instance
     """
@@ -53,27 +55,33 @@ def build_code(code, local_syms=None, name="expr"):
         local_syms = ()
     elif not isinstance(local_syms, (tuple, list)):
         local_syms = (local_syms,)
-    nspec = NamespaceSpec(None, tuple(local_syms), ())
+    if closure_syms is None:
+        closure_syms = ()
+    elif not isinstance(closure_syms, (tuple, list)):
+        closure_syms = (closure_syms,)
+    nspec = NamespaceSpec(None, tuple(local_syms), tuple(closure_syms))
     instr = tuple([_op(op), arg] for op, arg in code)
     return Code(nspec, instr, name)
 
 
-def build_expr(code, local_syms=None, values=None, name="expr"):
+def build_expr(code, local_syms=None, closure_syms=None, values=None, name="expr"):
     """
     Build Code and namespace; optionally bind names (for VAR) via values
 
     :param code: Sequence of [op, arg] as in build_code
     :param local_syms: Optional sequence of local names
+    :param closure_syms: Optional sequence of closure names (passed to build_code)
     :param values: Optional dict of name -> value to store in the namespace
     :param name: Code name
     :return: (code, ns) for use with make_callable(code, ns)()
     """
 
     if values:
-        syms = set(local_syms or ()) | set(values.keys())
+        syms = set(local_syms or ()) | set(closure_syms or ()) | set(values.keys())
         local_syms = tuple(syms)
-    c = build_code(code, local_syms=local_syms, name=name)
-    nspec = NamespaceSpec(None, tuple(local_syms or ()), ())
+    c = build_code(code, local_syms=local_syms, closure_syms=closure_syms, name=name)
+    closure = tuple(closure_syms or ())
+    nspec = NamespaceSpec(None, tuple(local_syms or ()), closure)
     ns = nspec.get_namespace(None)
     if values:
         for k, v in values.items():

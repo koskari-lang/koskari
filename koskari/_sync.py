@@ -26,7 +26,7 @@ import asyncio
 import threading
 
 
-__all__ = ('as_coroutine', 'run_sync', 'iter_sync')
+__all__ = ('as_coroutine', 'iter_sync', 'run_sync')
 
 
 _executor = None

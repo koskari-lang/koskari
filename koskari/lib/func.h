@@ -138,7 +138,7 @@ extern KosCallableTypeObject KosFunctionType;
 typedef struct {
   PyObject_HEAD
   PyObject *code;
-  PyObject *base_ns;
+  PyObject *base_ns;   /* template namespace; parent chain via template->parent */
   PyObject *formals;
   PyObject *name;           /* proper name for self-reference and repr, or NULL */
   vectorcallfunc vectorcall; /* for Py_TPFLAGS_HAVE_VECTORCALL; always set */

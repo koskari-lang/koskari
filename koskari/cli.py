@@ -88,7 +88,11 @@ def _make_prompter(histfile=None, get_namespace=None):
             style=koskari_style,
             auto_suggest=AutoSuggestFromHistory(),
             key_bindings=load_koskari_key_bindings())
-        return session.prompt
+
+        def _prompt(prompt, **kwargs):
+            return session.prompt(prompt, reserve_space_for_menu=False, **kwargs)
+
+        return _prompt
 
     except ImportError:
         pass
@@ -108,7 +112,10 @@ def _make_prompter(histfile=None, get_namespace=None):
     except ImportError:
         pass
 
-    return input
+    def _input_prompt(prompt, **kwargs):
+        return input(prompt)
+
+    return _input_prompt
 
 
 # ---------------------------------------------------------------------------
@@ -345,6 +352,34 @@ def _in_block_body(buffer):
     return False
 
 
+def _continuation_indent(buffer):
+    """
+    Return leading whitespace for the next continuation line.
+
+    When buffer ends with a block header (colon), return indent of that
+    line plus 4 spaces.  When in block body, return indent of last
+    non-empty line (same level).  Otherwise return empty string.
+    """
+
+    if not buffer:
+        return ''
+    lines = buffer.splitlines()
+    if not lines:
+        return ''
+    rstripped = buffer.rstrip()
+    if rstripped.endswith(':'):
+        last = lines[-1]
+        indent_len = len(last) - len(last.lstrip())
+        return ' ' * (indent_len + 4)
+    if _in_block_body(buffer):
+        for i in range(len(lines) - 1, -1, -1):
+            ln = lines[i]
+            if ln.strip():
+                indent_len = len(ln) - len(ln.lstrip())
+                return ' ' * indent_len
+    return ''
+
+
 async def repl_async(mod, prompter=None, histfile=None, stdin=None, stdout=None,
                      stderr=None):
     """
@@ -393,7 +428,10 @@ async def repl_async(mod, prompter=None, histfile=None, stdin=None, stdout=None,
 
     while True:
         try:
-            line = await loop.run_in_executor(None, lambda: prompter(prompt))
+            indent = _continuation_indent(buffer) if prompt == '... ' else ''
+            line = await loop.run_in_executor(
+                None,
+                lambda p=prompt, d=indent: prompter(p, default=d))
 
         except KeyboardInterrupt:
             print('', file=stderr)
