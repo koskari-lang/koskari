@@ -45,6 +45,21 @@ class TestStackOpcodes(CevalTest):
         self.assertEqual(result, (7, 7))
 
 
+    async def test_dup_preserves_order_for_multiple_values(self):
+        """
+        DUP n duplicates top n values in original order
+        """
+
+        code, ns = build_expr([
+            ["CONST", 1],
+            ["CONST", 2],
+            ["DUP", 2],
+            ["RETURN", 4],
+        ])
+        result = await make_callable(code, ns)()
+        self.assertEqual(result, (1, 2, 1, 2))
+
+
     async def test_pop_discards_stack_values(self):
         """
         POP n discards top n values; remaining value is returned
