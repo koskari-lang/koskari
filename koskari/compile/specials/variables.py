@@ -14,8 +14,8 @@
 """
 koskari.compile.specials.variables
 
-Special form handlers for compile/setq, compile/refq, compile/bindq,
-compile/delq, and compile/define.
+Special form handlers for compile/setq, compile/delq, compile/define,
+and compile/define-syntax.
 
 :author: Christopher O'Brien <obriencj@preoccupied.net>
 :license: GNU General Public License v3
@@ -54,66 +54,6 @@ def special_setq(compiler, source, tc=False):
     frag.request_var(sym)
     frag.merge(compiler.full_compile(expr))
     frag.instruction(OpCode.KOS_OP_VAR_STORE, sym)
-    frag.instruction(OpCode.KOS_OP_CONST, None)
-
-    return frag
-
-
-@special(symbol("compile/refq"))
-def special_refq(compiler, source, tc=False):
-    """
-    Compile (compile/refq SYM). Load the value of the binding named SYM
-    """
-
-    called_by, body = source
-    sym, rest = body
-
-    sym = str(sym)
-
-    if rest is not nil:
-        raise SpecialError("refq takes one argument", source)
-
-    frag = compiler.fragment(called_by)
-
-    frag.position_of(body)
-    frag.request_var(sym)
-    frag.instruction(OpCode.KOS_OP_VAR_REF, sym)
-
-    return frag
-
-
-_BINDQ_PATTERNS = [
-    MATCH(DEFINE("name"), VALUE("value")),
-]
-
-
-@special_forms(_BINDQ_PATTERNS)
-@special(symbol("compile/bindq"))
-def special_bindq(compiler, source, tc=False):
-    """
-    Compile (compile/bindq SYM EXPR). Declare a new binding SYM and initialize
-    it to EXPR
-    """
-
-    called_by, rest = source
-    matched = match(rest, _BINDQ_PATTERNS)
-    if matched is None:
-        raise SpecialError("bindq requires a name and value", source)
-
-    namesym = matched["name"].source
-    name = str(namesym)
-
-    value = matched["value"]
-
-    frag = compiler.fragment(called_by)
-    frag.declare_var(name)
-
-    if not is_pair(value.source):
-        frag.position(value.source_pos)
-    frag.merge(compiler.full_compile(value.source))
-
-    frag.position_of(source)
-    frag.instruction(OpCode.KOS_OP_VAR_BIND, name)
     frag.instruction(OpCode.KOS_OP_CONST, None)
 
     return frag

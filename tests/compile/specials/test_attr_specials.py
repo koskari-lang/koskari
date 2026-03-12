@@ -12,8 +12,8 @@
 # along with this library; if not, see <http://www.gnu.org/licenses/>.
 
 """
-Tests for koskari.compile compile/attr, compile/del-attr, compile/set-attr,
-compile/ref-attr special forms.
+Tests for koskari.compile compile/attr, compile/del-attr, and compile/set-attr
+special forms.
 """
 
 
@@ -49,21 +49,6 @@ class TestSetAttrSpecial(SpecialsTestCase):
         result = await expr()
         self.assertEqual(42, result)
         self.assertEqual(42, obj.x)
-
-
-class TestRefAttrSpecial(SpecialsTestCase):
-
-    async def test_ref_attr_deref(self):
-        def deref(r):
-            return r.deref()
-
-        obj = SimpleNamespace(count=5)
-        src_str = """
-        (compile/call deref (compile/ref-attr obj count))
-        """
-        expr, mod = self.compile_expr(src_str, obj=obj, deref=deref)
-        result = await expr()
-        self.assertEqual(5, result)
 
 
 class TestDelAttrSpecial(SpecialsTestCase):

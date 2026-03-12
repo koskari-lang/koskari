@@ -87,6 +87,106 @@ static PyObject *delimited_continuation_repr(PyObject *self) {
 }
 
 
+/* === KosContinuation install slot === */
+
+
+/**
+   call_call_continuation: callable and args are borrowed. First element of
+   args is resume_val for the continuation (we INCREF it; we own that ref only).
+   Plan INCREFs callable on same-evaluator path; handler releases callable and args.
+*/
+static int call_call_continuation(
+    KosContext *ctx,
+    PyObject *callable,
+    PyObject *args,
+    KosEvent *out_ev,
+    KosOp *insn) {
+
+  KosContinuation *k = KosPyDelimitedContinuation_Check(callable)
+      ? KosPyDelimitedContinuation_CAPTURED((KosPyDelimitedContinuation *) callable)
+      : KosPyContinuation_CAPTURED((KosPyContinuation *) callable);
+
+  Py_ssize_t n = args ? PyTuple_GET_SIZE(args) : 0;
+  PyObject *resume_val = (n > 0) ? PyTuple_GET_ITEM(args, 0) : Py_None;
+  Py_INCREF(resume_val);
+
+  /* Defensive: wrappers are only created with non-NULL k at capture time. */
+  if (! k) {
+    PyErr_SetString(PyExc_RuntimeError,
+                    "continuation has no captured state");
+    Py_DECREF(resume_val);
+    return -1;
+  }
+
+  /* Undelimited: check liveness before apply or raise. */
+  if (KosContinuation_PROMPT_ID(k) == KOS_PROMPT_ID_UNDELIMITED) {
+    PyObject *token_ref = KosContinuation_TOKEN_REF(k);
+    int target_dead = 0;
+    if (! token_ref) {
+      target_dead = 1;
+    } else if (PyObject_TypeCheck(token_ref, &KosEvaluatorTokenType)) {
+      KosEvaluatorToken *token = (KosEvaluatorToken *) token_ref;
+      if (token->live_depth == 0)
+        target_dead = 1;
+    }
+    if (target_dead) {
+      if (KoskariContinuationDead)
+        PyErr_SetString(KoskariContinuationDead,
+                        "continuation target context is no longer alive");
+      else
+        PyErr_SetString(PyExc_RuntimeError,
+                        "continuation target context is no longer alive");
+      Py_DECREF(resume_val);
+      return -1;
+    }
+  }
+
+  /* Delimited: prompt need not be in chain; push model grafts onto current
+   * chain and returns to call site on POP_PROMPT. */
+
+  if (KosContinuation_TOKEN_REF(k) == (PyObject *) KosContext_TOKEN(ctx)
+      || (KosContinuation_PROMPT_ID(k) == KOS_PROMPT_ID_UNDELIMITED && ! KosContinuation_TOKEN_REF(k))) {
+    if (kos_invoke_continuation(ctx, k, resume_val, 0, callable) < 0) {
+      Py_DECREF(resume_val);
+      return -1;
+    }
+    Py_DECREF(resume_val);
+    (void) out_ev;
+    (void) insn;
+    return 0;
+  }
+
+  {
+    PyObject *exc = PyObject_CallNoArgs(KoskariContinuationApply);
+    if (exc) {
+      PyObject_SetAttrString(exc, "target", KosContinuation_TOKEN_REF(k));
+      PyObject_SetAttrString(exc, "continuation", callable);
+      PyObject *args_tup = PyTuple_Pack(1, resume_val);
+      if (args_tup) {
+        PyObject_SetAttrString(exc, "args", args_tup);
+        Py_DECREF(args_tup);
+      }
+      PyErr_SetObject(KoskariContinuationApply, exc);
+      Py_DECREF(exc);
+    }
+  }
+  Py_DECREF(resume_val);
+  return -1;
+}
+
+
+static int kos_install_continuation(
+    KosContext *ctx,
+    KosEvent *out_ev,
+    PyObject *callable,
+    PyObject *args_tuple,
+    PyObject *kwds_dict) {
+
+  (void) kwds_dict;
+  return call_call_continuation(ctx, callable, args_tuple, out_ev, NULL);
+}
+
+
 KosCallableTypeObject KosPyDelimitedContinuationType = {
   .type = {
     PyVarObject_HEAD_INIT(NULL, 0)

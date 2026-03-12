@@ -50,11 +50,15 @@ koskari/
 
 Tests mirror the package by use case:
 
-- **tests/lib/** — Native extension: `test_atom`, `test_pair`, `test_formals`, `test_ref`, `test_namespace`, `test_values`, `test_stack`, `test_eval`, `test_ceval`, `test_utils`, `test_operator`, `test_expression_function`
-- **tests/compile/** — Compiler: `test_bytecode` (#bytecode special form), `test_bytecode_fragment` (ByteCodeFragment/Code API)
-- **tests/parse/** — Parser: `test_parse`
+- **tests/lib/** — Native extension: `test_atom`, `test_pair`, `test_formals`, `test_ref`, `test_namespace`, `test_values`, `test_stack`, `test_eval`, `test_ceval`, `test_utils`, `test_operator`, `test_expression_function`; `lib/opcode/` for opcode-specific tests (with, wind, yield_from, etc.)
+- **tests/compile/** — Compiler: `test_bytecode` (#bytecode special form), `test_bytecode_fragment` (ByteCodeFragment/Code API), `specials/` for special form tests
+- **tests/reader/** — Parser: `test_parse`, `test_parse_ng`, `test_layout`; `layouts/` for layout handler tests
 - **tests/dis/** — Disassembler: `test_dis`
 - **tests/types/** — Python type layer: `test_predicates`
-- **tests/native/** — C harness and memory tests (unchanged)
+- **tests/importer/** — Import system: `test_basics`, `test_importlib`, `test_module`
+- **tests/lexer/** — Lexer and LSP tests
+- **tests/matcher/** — Matcher tests
+- **tests/cli/** — CLI tests
+- **tests/native/** — C harness and memory tests
 
 Test helpers (e.g. `make_callable`) live in `tests/__init__.py` and import from `koskari.lib` and `koskari.types` as needed.

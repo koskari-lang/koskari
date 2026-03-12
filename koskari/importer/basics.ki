@@ -7,41 +7,100 @@
 
 
 define-syntax compile/set!:
-  syntax-rules [item attr deref + - * / // % ** @ << >> & ^ |]:
-    set! (item obj name) value:
-      (set-item obj name value)
-    set! (attr obj name) value:
-      (set-attr obj name value)
-    set! (deref ref) value:
-      (set-ref ref value)
-    set! name (+ name value):
+  syntax-rules [item attr deref compile/item compile/attr compile/deref
+                + - * / // % ** @ << >> & ^ |]:
+    match (set! (item obj name) value):
+      (compile/set-item obj name value)
+    match (set! (compile/item obj name) value):
+      (compile/set-item obj name value)
+
+    match (set! (attr obj name) value):
+      (compile/set-attr obj name value)
+    match (set! (compile/attr obj name) value):
+      (compile/set-attr obj name value)
+
+    match (set! (deref ref) value):
+      (compile/set-ref ref value)
+    match (set! (compile/deref ref) value):
+      (compile/set-ref ref value)
+
+    match (set! name (+ name value)):
       (compile/inplace + name value)
-    set! name (- name value):
+    match (set! name (- name value)):
       (compile/inplace - name value)
-    set! name (* name value):
+    match (set! name (* name value)):
       (compile/inplace * name value)
-    set! name (/ name value):
+    match (set! name (/ name value)):
       (compile/inplace / name value)
-    set! name (// name value):
+    match (set! name (// name value)):
       (compile/inplace // name value)
-    set! name (% name value):
+    match (set! name (% name value)):
       (compile/inplace % name value)
-    set! name (** name value):
+    match (set! name (** name value)):
       (compile/inplace ** name value)
-    set! name (@ name value):
+    match (set! name (@ name value)):
       (compile/inplace @ name value)
-    set! name (<< name value):
+    match (set! name (<< name value)):
       (compile/inplace << name value)
-    set! name (>> name value):
+    match (set! name (>> name value)):
       (compile/inplace >> name value)
-    set! name (& name value):
+    match (set! name (& name value)):
       (compile/inplace & name value)
-    set! name (^ name value):
+    match (set! name (^ name value)):
       (compile/inplace ^ name value)
-    set! name (| name value):
+    match (set! name (| name value)):
       (compile/inplace | name value)
-    set! name value:
+
+    match (set! name value):
       (setq name value)
+
+
+define-syntax compile/ref:
+  syntax-rules [item compile/item attr compile/attr]:
+    match (ref (item obj name)):
+      (compile/ref-item obj name)
+    match (ref (compile/item obj name)):
+      (compile/ref-item obj name)
+
+    match (ref (attr obj name)):
+      (compile/ref-attr obj name)
+    match (ref (compile/attr obj name)):
+      (compile/ref-attr obj name)
+
+    match (ref name):
+      (compile/refq name)
+
+
+define-syntax compile/if:
+  syntax-rules []:
+    match (if condition then: then else: else):
+      (compile/cond
+        [condition then]
+        [else: else])
+    match (if condition then else):
+      (compile/cond
+        [condition then]
+        [else: else])
+    match (if condition then):
+      (compile/cond
+        [condition then]
+        [else: None])
+
+
+define-syntax compile/when:
+  syntax-rules []:
+    match (when condition then):
+      (compile/cond
+        [condition then]
+        [else: None])
+
+
+define-syntax compile/unless:
+  syntax-rules []:
+    match (unless condition then):
+      (compile/cond
+        [condition None]
+        [else: then])
 
 
 ;; The end.

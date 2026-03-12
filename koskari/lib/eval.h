@@ -496,25 +496,9 @@ int kos_context_traverse(KosContext *ctx, visitproc visit, void *arg);
 void kos_yieldfrom_close_delegate(KosDynYieldFrom *node);
 
 
-/**
-   Run dyn-with enter (wind): call enter via kos_callable_vcall, bind result
-   to name if present. Used by transfer plan INSTALL and EXTENT_ACTION.
-   May return KOS_DYN_UNWIND_ASYNC_STARTED when enter suspends.
-*/
-int kos_dyn_dyn_with_wind(KosContext *ctx, KosDynWith *node, KosEvent *out_ev);
-
-int kos_with_exit_start_await(KosContext *ctx, KosEvent *out_ev, PyObject *awaitable);
-
+int kos_complete_pending_with_exit(KosContext *ctx);
+int kos_complete_pending_with_exit_semantic(KosContext *ctx);
 void kos_clear_pending_with_exit(KosContext *ctx);
-
-int kos_dyn_with_on_control_returned(KosContext *ctx, KosDynWith *with_node,
-                                     int do_pop_node);
-
-/**
-   Complete provisional WITH enter when control returns (enter frame returned).
-   Pops result from stack, stores to name, sets entered=1 and phase=IDLE.
-*/
-int kos_dyn_with_on_enter_control_returned(KosContext *ctx, KosDynWith *with_node);
 
 
 /* === Exception types === */
@@ -530,31 +514,11 @@ extern PyObject *KoskariContinuationError;
 
 
 
-/* === KosCallable install slot implementations === */
-
-
-int kos_install_function(KosContext *ctx, KosEvent *out_ev,
-                         PyObject *callable, PyObject *args_tuple, PyObject *kwds_dict);
-int kos_tail_install_function(KosContext *ctx, KosEvent *out_ev,
-                              PyObject *callable, PyObject *args_tuple, PyObject *kwds_dict);
-int kos_vinstall_function(KosContext *ctx, KosEvent *out_ev,
-                          PyObject *callable,
-                          PyObject *const *args, Py_ssize_t nargs,
-                          PyObject *kwnames);
-int kos_tail_vinstall_function(KosContext *ctx, KosEvent *out_ev,
-                               PyObject *callable,
-                               PyObject *const *args, Py_ssize_t nargs,
-                               PyObject *kwnames);
-int kos_install_expression(KosContext *ctx, KosEvent *out_ev,
-                           PyObject *callable, PyObject *args_tuple, PyObject *kwds_dict);
-int kos_tail_install_expression(KosContext *ctx, KosEvent *out_ev,
-                                PyObject *callable, PyObject *args_tuple, PyObject *kwds_dict);
-int kos_install_continuation(KosContext *ctx, KosEvent *out_ev,
-                             PyObject *callable, PyObject *args_tuple, PyObject *kwds_dict);
-int kos_install_apply(KosContext *ctx, KosEvent *out_ev,
-                      PyObject *callable, PyObject *args_tuple, PyObject *kwds_dict);
-int kos_tail_install_apply(KosContext *ctx, KosEvent *out_ev,
-                           PyObject *callable, PyObject *args_tuple, PyObject *kwds_dict);
+/**
+   Replace the current frame with a new one (code, ns). Used for tail calls.
+   Caller owns ns; refcount unchanged on success.
+*/
+int kos_tail_koscall(KosContext *ctx, KosCode *code, PyObject *ns);
 
 
 /**

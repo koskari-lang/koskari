@@ -71,6 +71,29 @@ class TestLayoutDefineSyntax(IsolatedAsyncioTestCase):
         self.assertEqual(result, expected)
 
 
+    async def test_syntax_rules_match_form(self):
+        """
+        match (FORM): unwraps to same output as FORM: for s-expr patterns
+        """
+        src = """
+        define-syntax m:
+          syntax-rules [item compile/item]:
+            match (ref (item obj name)):
+              (compile/ref-item obj name)
+        """
+        rule1 = (
+            (symbol('ref'), (symbol('item'), symbol('obj'), symbol('name')),),
+            (symbol('compile/begin'), (symbol('compile/ref-item'), symbol('obj'), symbol('name')),),)
+        expected = pycons(
+            (symbol('compile/define-syntax'),
+             symbol('m'),
+             (symbol('syntax-rules'),
+              (symbol('item'), symbol('compile/item')),
+              rule1)))
+        result = parse_layout(src)
+        self.assertEqual(result, expected)
+
+
     async def test_syntax_rules_empty_literals(self):
         src = """
         define-syntax m:

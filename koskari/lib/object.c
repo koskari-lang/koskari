@@ -287,40 +287,41 @@ static PyObject *kostype_tp_new(PyTypeObject *metaclass, PyObject *args,
 }
 
 
-/* === kostype_init_done_handler === */
+/* === kostype_deliver_handler === */
 
 
 /**
-   Runs when a KosCallable __init__ (e.g. compiled Koskari function) has
-   completed. Pops the instance, detaches the frame, and delivers the
-   instance to the parent via push_or_await.
+   Native handler for KostType construction. Pops the value (instance or
+   awaitable) from the frame stack, detaches the frame, and delivers it to
+   the parent via push_or_await. Used for no-init, plain-Python-init, and
+   KosCallable-init-done paths.
 */
 typedef int (*KosNativeHandlerFn)(void *, void *, int, PyObject *);
 
 
-static int kostype_init_done_handler(KosContext *ctx, KosEvent *out_ev,
-                                     int is_resume, PyObject *delivered_value) {
+static int kostype_deliver_handler(KosContext *ctx, KosEvent *out_ev,
+                                   int is_resume, PyObject *delivered_value) {
 
   (void) is_resume;
   (void) delivered_value;
   KosDynFrame *frame = CURRENT_FRAME(ctx);
   KosStackBlock **stack = &KosDynFrame_STACK(frame);
-  PyObject *instance = KosStackBlock_PopRef(stack);
-  if (! instance)
+  PyObject *val = KosStackBlock_PopRef(stack);
+  if (! val)
     return -1;
   KosDynFrame_NATIVE_HANDLER(frame) = NULL;
   KosDynFrame *detached = NULL;
   if (kos_dyn_unwind_to_frame(ctx, frame, out_ev) < 0) {
-    Py_DECREF(instance);
+    Py_DECREF(val);
     return -1;
   }
   if (kos_dyn_detach_top_frame(ctx, &detached) < 0) {
-    Py_DECREF(instance);
+    Py_DECREF(val);
     return -1;
   }
   if (detached)
     kos_dynframe_free(detached);
-  return kos_push_or_await(ctx, out_ev, instance);
+  return kos_push_or_await(ctx, out_ev, val);
 }
 
 
@@ -346,9 +347,18 @@ int kostype_install(KosContext *ctx, KosEvent *out_ev,
     init = PyDict_GetItemString(cls->tp_dict, "__init__");
 
   if (! init) {
-    int r = kos_push_or_await(ctx, out_ev, instance);
+    KosDynFrame *frame = kos_dyn_push_frame_empty(ctx);
+    if (! frame) {
+      Py_DECREF(instance);
+      return -1;
+    }
+    KosDynFrame_NATIVE_HANDLER(frame) = (KosNativeHandlerFn) kostype_deliver_handler;
+    if (KosStackBlock_PushRef(&KosDynFrame_STACK(frame), instance) < 0) {
+      Py_DECREF(instance);
+      return -1;
+    }
     Py_DECREF(instance);
-    return r;
+    return 0;
   }
 
   if (KosCallable_Check(init)) {
@@ -364,7 +374,7 @@ int kostype_install(KosContext *ctx, KosEvent *out_ev,
       Py_DECREF(instance);
       return -1;
     }
-    KosDynFrame_NATIVE_HANDLER(frame) = (KosNativeHandlerFn) kostype_init_done_handler;
+    KosDynFrame_NATIVE_HANDLER(frame) = (KosNativeHandlerFn) kostype_deliver_handler;
     if (KosStackBlock_PushRef(&KosDynFrame_STACK(frame), instance) < 0) {
       Py_DECREF(instance);
       Py_DECREF(full_args);
@@ -397,10 +407,34 @@ int kostype_install(KosContext *ctx, KosEvent *out_ev,
       Py_DECREF(instance);
       return -1;
     }
-    return kos_push_or_await(ctx, out_ev, aw);
+    KosDynFrame *frame = kos_dyn_push_frame_empty(ctx);
+    if (! frame) {
+      Py_DECREF(aw);
+      return -1;
+    }
+    KosDynFrame_NATIVE_HANDLER(frame) = (KosNativeHandlerFn) kostype_deliver_handler;
+    if (KosStackBlock_PushRef(&KosDynFrame_STACK(frame), aw) < 0) {
+      Py_DECREF(aw);
+      return -1;
+    }
+    Py_DECREF(aw);
+    return 0;
   }
   Py_DECREF(result);
-  return kos_push_or_await(ctx, out_ev, instance);
+  {
+    KosDynFrame *frame = kos_dyn_push_frame_empty(ctx);
+    if (! frame) {
+      Py_DECREF(instance);
+      return -1;
+    }
+    KosDynFrame_NATIVE_HANDLER(frame) = (KosNativeHandlerFn) kostype_deliver_handler;
+    if (KosStackBlock_PushRef(&KosDynFrame_STACK(frame), instance) < 0) {
+      Py_DECREF(instance);
+      return -1;
+    }
+    Py_DECREF(instance);
+    return 0;
+  }
 }
 
 

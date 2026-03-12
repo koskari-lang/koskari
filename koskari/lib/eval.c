@@ -275,19 +275,6 @@ static KosEvalMode raise_yield_from(KosContext *ctx) {
 
 
 /**
-   Walk chain from node toward root; return first WITH in PENDING_EXIT_AWAIT, or NULL.
-*/
-static KosDynWith *find_pending_exit_with(KosDynNode *node) {
-  for (; node; node = KosDynNode_PARENT(node)) {
-    if (KosDynNode_IS_WITH(node)
-        && KosDynWith_PHASE((KosDynWith *) node) == KOS_WITH_PHASE_PENDING_EXIT_AWAIT)
-      return (KosDynWith *) node;
-  }
-  return NULL;
-}
-
-
-/**
    Revive from AWAIT: push send_val or set throw_exc. Complete pending WITH exit if applicable.
 */
 static KosEvalMode revive_await(KosContext *ctx, PyObject *send_val, PyObject *throw_typ, PyObject *throw_exc) {
@@ -304,8 +291,7 @@ static KosEvalMode revive_await(KosContext *ctx, PyObject *send_val, PyObject *t
       return KOS_MODE_EXCEPTION;
   }
   {
-    KosDynWith *with_node = find_pending_exit_with(KosContext_DYN_TOP(ctx));
-    if (with_node && kos_dyn_with_on_control_returned(ctx, with_node, 1) < 0)
+    if (kos_dyn_complete_pending_exit(ctx, 1) < 0)
       return KOS_MODE_EXCEPTION;
   }
   return KOS_MODE_NORMAL;
@@ -1031,7 +1017,7 @@ int kos_stackblock_traverse(
 /* === Koskari call operations === */
 
 
-static int kos_tail_koscall(
+int kos_tail_koscall(
     KosContext *ctx,
     KosCode *code,
     PyObject *ns) {
@@ -1254,202 +1240,18 @@ int kos_push_or_await(KosContext *ctx, KosEvent *out_ev, PyObject *val) {
 }
 
 
-/* Forward declaration for WITH helpers (frame_ns_store is defined later). */
-static int frame_ns_store(KosContext *ctx, PyObject *name, PyObject *val);
-
-
-/**
-   Finalize provisional WITH node after enter completed synchronously.
-   Block and node already exist. Store result to name, set entered=1 and phase=IDLE.
-   Consumes result.
-*/
-static int finalize_provisional_with_enter(KosContext *ctx, PyObject *result,
-                                           KosDynWith *with_node) {
-
-  PyObject *name = KosDynWith_NAME(with_node);
-  if (name && name != Py_None) {
-    if (frame_ns_store(ctx, name, result) < 0) {
-      Py_DECREF(result);
-      return -1;
-    }
-  }
-  Py_DECREF(result);
-
-  KosDynWith_ENTERED(with_node) = 1;
-  KosDynWith_PHASE(with_node) = KOS_WITH_PHASE_IDLE;
-  return 0;
+int kos_complete_pending_with_exit(KosContext *ctx) {
+  return kos_dyn_complete_pending_exit(ctx, 1);
 }
 
 
-/**
-   Complete provisional WITH enter when enter frame returns (sync or after await).
-   Pops result from stack, stores to name, sets entered=1 and phase=IDLE.
-*/
-int kos_dyn_with_on_enter_control_returned(KosContext *ctx, KosDynWith *with_node) {
-
-  if (! with_node || KosDynWith_PHASE(with_node) != KOS_WITH_PHASE_PENDING_ENTER_AWAIT)
-    return 0;
-
-  if (! KosContext_FRAME_TOP(ctx))
-    return -1;
-
-  PyObject *result = KosStackBlock_PopRef(&CURRENT_STACK(ctx));
-  if (! result)
-    return -1;
-
-  PyObject *name = KosDynWith_NAME(with_node);
-  if (name && name != Py_None) {
-    if (frame_ns_store(ctx, name, result) < 0) {
-      Py_DECREF(result);
-      return -1;
-    }
-  }
-  Py_DECREF(result);
-
-  KosDynWith_ENTERED(with_node) = 1;
-  KosDynWith_PHASE(with_node) = KOS_WITH_PHASE_IDLE;
-  return 0;
+int kos_complete_pending_with_exit_semantic(KosContext *ctx) {
+  return kos_dyn_complete_pending_exit(ctx, 0);
 }
 
 
-/**
-   Start awaiting WITH exit result.
-*/
-int kos_with_exit_start_await(KosContext *ctx, KosEvent *out_ev,
-                              PyObject *awaitable) {
-
-  return push_or_await(ctx, out_ev, awaitable);
-}
-
-
-/**
-   Complete WITH exit after control returned (await or RETURN). Pops result
-   from stack, applies swallow, drops block, optionally pops node. Reads
-   exc_* from the node. Called from revive (value on TOS) or
-   kos_dynnode_on_control_returned (value on frame stack).
-
-   :param do_pop_node: If true, unlink and free the WITH node. If false,
-                       only do semantic work (caller will unlink/free).
-*/
-int kos_dyn_with_on_control_returned(KosContext *ctx, KosDynWith *with_node,
-                                     int do_pop_node) {
-
-  if (! with_node || KosDynWith_PHASE(with_node) != KOS_WITH_PHASE_PENDING_EXIT_AWAIT)
-    return 0;
-
-  if (! KosContext_FRAME_TOP(ctx))
-    return -1;
-
-  PyObject *result = KosStackBlock_PopRef(&CURRENT_STACK(ctx));
-  if (! result)
-    return -1;
-
-  PyObject *typ = KosDynWith_EXC_TYP(with_node);
-  PyObject *val = KosDynWith_EXC_VAL(with_node);
-  PyObject *tb = KosDynWith_EXC_TB(with_node);
-  KosDynWith_EXC_TYP(with_node) = NULL;
-  KosDynWith_EXC_VAL(with_node) = NULL;
-  KosDynWith_EXC_TB(with_node) = NULL;
-  KosDynWith_PHASE(with_node) = KOS_WITH_PHASE_IDLE;
-
-  int had_exception = (typ != Py_None);
-
-  if (had_exception && PyObject_IsTrue(result)) {
-    PyErr_Clear();
-    Py_DECREF(result);
-    Py_XDECREF(typ);
-    Py_XDECREF(val);
-    Py_XDECREF(tb);
-    if (KosStackBlock_DropBlock(&CURRENT_STACK(ctx)) < 0)
-      return -1;
-    if (KosContext_FRAME_TOP(ctx))
-      KosDynFrame_PC(KosContext_FRAME_TOP(ctx)) = KosDynWith_RESUME_PC(with_node);
-    if (do_pop_node) {
-      kos_dyn_pop_with(ctx, with_node);
-    }
-    if (KosStackBlock_PushRef(&CURRENT_STACK(ctx), Py_None) < 0)
-      return -1;
-    return 0;
-  }
-
-  if (had_exception) {
-    Py_DECREF(result);
-    if (KosStackBlock_DropBlock(&CURRENT_STACK(ctx)) < 0) {
-      PyErr_Restore(typ, val, tb);
-      return -1;
-    }
-    if (do_pop_node) {
-      kos_dyn_pop_with(ctx, with_node);
-    }
-    PyErr_Restore(typ, val, tb);
-    return -1;
-  }
-
-  Py_DECREF(result);
-  Py_XDECREF(typ);
-  Py_XDECREF(val);
-  Py_XDECREF(tb);
-  PyObject *body_val = KosStackBlock_PopRef(&CURRENT_STACK(ctx));
-  if (! body_val)
-    return -1;
-  if (KosStackBlock_DropBlock(&CURRENT_STACK(ctx)) < 0) {
-    Py_DECREF(body_val);
-    return -1;
-  }
-  if (KosContext_FRAME_TOP(ctx))
-    KosDynFrame_PC(KosContext_FRAME_TOP(ctx)) = KosDynWith_RESUME_PC(with_node);
-  if (do_pop_node) {
-    kos_dyn_pop_with(ctx, with_node);
-  }
-  if (KosStackBlock_PushRef(&CURRENT_STACK(ctx), body_val) < 0) {
-    Py_DECREF(body_val);
-    return -1;
-  }
-  Py_DECREF(body_val);
-  return 0;
-}
-
-
-/**
-   Clear exc_* on any WITH node in PENDING_EXIT_AWAIT on the chain.
-*/
 void kos_clear_pending_with_exit(KosContext *ctx) {
-  KosDynNode *n = KosContext_DYN_TOP(ctx);
-  for (; n; n = KosDynNode_PARENT(n)) {
-    if (KosDynNode_IS_WITH(n)
-        && KosDynWith_PHASE((KosDynWith *) n) == KOS_WITH_PHASE_PENDING_EXIT_AWAIT) {
-      Py_CLEAR(KosDynWith_EXC_TYP((KosDynWith *) n));
-      Py_CLEAR(KosDynWith_EXC_VAL((KosDynWith *) n));
-      Py_CLEAR(KosDynWith_EXC_TB((KosDynWith *) n));
-      KosDynWith_PHASE((KosDynWith *) n) = KOS_WITH_PHASE_IDLE;
-    }
-  }
-}
-
-
-int kos_dyn_dyn_with_wind(KosContext *ctx, KosDynWith *node, KosEvent *out_ev) {
-  PyObject *enter_fn = KosDynWith_ENTER(node);
-  int r = kos_callable_vcall(ctx, out_ev, enter_fn, NULL, 0, NULL);
-  if (r == 1)
-    return KOS_DYN_UNWIND_ASYNC_STARTED;
-  if (r < 0)
-    return -1;
-
-  PyObject *result = KosStackBlock_PopRef(&CURRENT_STACK(ctx));
-  if (! result)
-    return -1;
-
-  PyObject *name = KosDynWith_NAME(node);
-  if (name && name != Py_None) {
-    if (frame_ns_store(ctx, name, result) < 0) {
-      Py_DECREF(result);
-      return -1;
-    }
-  }
-  Py_DECREF(result);
-
-  KosDynWith_ENTERED(node) = 1;
-  return 0;
+  kos_dyn_clear_pending_exit(ctx);
 }
 
 
@@ -1564,183 +1366,6 @@ static int op_unimplemented_stub(KosContext *ctx, KosEvent *out_ev, KosOp *insn)
  */
 
 /**
-   call_call_continuation: callable and args are borrowed. First element of
-   args is resume_val for the continuation (we INCREF it; we own that ref only).
-   Plan INCREFs callable on same-evaluator path; handler releases callable and args.
-*/
-static int call_call_continuation(
-    KosContext *ctx,
-    PyObject *callable,
-    PyObject *args,
-    KosEvent *out_ev,
-    KosOp *insn) {
-
-  KosContinuation *k = KosPyDelimitedContinuation_Check(callable)
-      ? ((KosPyDelimitedContinuation *) callable)->captured
-      : ((KosPyContinuation *) callable)->captured;
-
-  Py_ssize_t n = args ? PyTuple_GET_SIZE(args) : 0;
-  PyObject *resume_val = (n > 0) ? PyTuple_GET_ITEM(args, 0) : Py_None;
-  Py_INCREF(resume_val);
-
-  /* Defensive: wrappers are only created with non-NULL k at capture time. */
-  if (! k) {
-    PyErr_SetString(PyExc_RuntimeError,
-                    "continuation has no captured state");
-    Py_DECREF(resume_val);
-    return -1;
-  }
-
-  /* Undelimited: check liveness before apply or raise. */
-  if (KosContinuation_PROMPT_ID(k) == KOS_PROMPT_ID_UNDELIMITED) {
-    PyObject *token_ref = KosContinuation_TOKEN_REF(k);
-    int target_dead = 0;
-    if (! token_ref) {
-      target_dead = 1;
-    } else if (PyObject_TypeCheck(token_ref, &KosEvaluatorTokenType)) {
-      KosEvaluatorToken *token = (KosEvaluatorToken *) token_ref;
-      if (token->live_depth == 0)
-        target_dead = 1;
-    }
-    if (target_dead) {
-      if (KoskariContinuationDead)
-        PyErr_SetString(KoskariContinuationDead,
-                        "continuation target context is no longer alive");
-      else
-        PyErr_SetString(PyExc_RuntimeError,
-                        "continuation target context is no longer alive");
-      Py_DECREF(resume_val);
-      return -1;
-    }
-  }
-
-  /* Delimited: prompt need not be in chain; push model grafts onto current
-   * chain and returns to call site on POP_PROMPT. */
-
-  if (KosContinuation_TOKEN_REF(k) == (PyObject *) KosContext_TOKEN(ctx)
-      || (KosContinuation_PROMPT_ID(k) == KOS_PROMPT_ID_UNDELIMITED && ! KosContinuation_TOKEN_REF(k))) {
-    if (kos_invoke_continuation(ctx, k, resume_val, 0, callable) < 0) {
-      Py_DECREF(resume_val);
-      return -1;
-    }
-    Py_DECREF(resume_val);
-    (void) out_ev;
-    (void) insn;
-    return 0;
-  }
-
-  {
-    PyObject *exc = PyObject_CallNoArgs(KoskariContinuationApply);
-    if (exc) {
-      PyObject_SetAttrString(exc, "target", KosContinuation_TOKEN_REF(k));
-      PyObject_SetAttrString(exc, "continuation", callable);
-      PyObject *args_tup = PyTuple_Pack(1, resume_val);
-      if (args_tup) {
-        PyObject_SetAttrString(exc, "args", args_tup);
-        Py_DECREF(args_tup);
-      }
-      PyErr_SetObject(KoskariContinuationApply, exc);
-      Py_DECREF(exc);
-    }
-  }
-  Py_DECREF(resume_val);
-  return -1;
-}
-
-
-/**
-   call_native_flattened_expr: callable is borrowed (KosExpression, n is 0).
-   Push a new frame for that expression's code/ns. Handler releases callable.
-*/
-static int call_native_flattened_expr(
-    KosContext *ctx,
-    PyObject *callable,
-    KosEvent *out_ev) {
-
-  PyObject *code = KosExpression_CODE(callable);
-  PyObject *ns = KosExpression_NS(callable);
-  Py_INCREF(ns);
-  if (kos_dyn_push_frame(ctx, (KosCode *) code, ns) == NULL) {
-    Py_DECREF(ns);
-    return -1;
-  }
-  (void) out_ev;
-  return 0;
-}
-
-
-/**
-   call_native_flattened_function: callable, args, and kwds are borrowed.
-   Pass args and kwds to PrepareCallNamespace, push frame.
-*/
-static int call_native_flattened_function(
-    KosContext *ctx,
-    PyObject *callable,
-    PyObject *args,
-    PyObject *kwds,
-    KosEvent *out_ev) {
-
-  PyObject *frame_ns = KosFunction_PrepareCallNamespace(
-      callable, args, kwds);
-  if (! frame_ns)
-    return -1;
-  PyObject *fn_code = KosFunction_CODE(callable);
-  if (kos_dyn_push_frame(ctx, (KosCode *) fn_code, frame_ns) == NULL) {
-    Py_DECREF(frame_ns);
-    return -1;
-  }
-  (void) out_ev;
-  return 0;
-}
-
-
-/**
-   call_tail_flattened_expr: callable is borrowed (KosExpression, n is 0).
-   Replace current frame with expression's code/ns via kos_tail_koscall.
-*/
-static int call_tail_flattened_expr(
-    KosContext *ctx,
-    PyObject *callable,
-    KosEvent *out_ev) {
-
-  PyObject *code = KosExpression_CODE(callable);
-  PyObject *ns = KosExpression_NS(callable);
-  Py_INCREF(ns);
-  int r = kos_tail_koscall(ctx, (KosCode *) code, ns);
-  if (r < 0)
-    Py_DECREF(ns);
-  (void) out_ev;
-  return r;
-}
-
-
-/**
-   call_tail_flattened_function: callable, args, and kwds are borrowed.
-   Prepare call namespace from formals, replace frame via kos_tail_koscall.
-*/
-static int call_tail_flattened_function(
-    KosContext *ctx,
-    PyObject *callable,
-    PyObject *args,
-    PyObject *kwds,
-    KosEvent *out_ev) {
-
-  PyObject *frame_ns = KosFunction_PrepareCallNamespace(
-      callable, args, kwds);
-  if (! frame_ns)
-    return -1;
-  int r = kos_tail_koscall(ctx, (KosCode *) KosFunction_CODE(callable),
-                          frame_ns);
-  if (r < 0) {
-    Py_DECREF(frame_ns);
-    return -1;
-  }
-  (void) out_ev;
-  return 0;
-}
-
-
-/**
    Default path for callables without install: Python call + push_or_await.
    Used when the callable is not KosCallable or has no install slot.
    callable, args_tuple, kwds_dict are borrowed.
@@ -1761,33 +1386,9 @@ static int call_default_python_call(
 }
 
 
-static int kos_apply_build_args_tuple(PyObject *arglist, PyObject **out_args) {
-  if (! arglist || arglist == Py_None) {
-    *out_args = PyTuple_New(0);
-  } else if (KosPair_Check(arglist)) {
-    PyObject *iter = KosPair_Unpack(arglist);
-    if (! iter)
-      return -1;
-    *out_args = PySequence_Tuple(iter);
-    Py_DECREF(iter);
-  } else if (PyTuple_Check(arglist)) {
-    *out_args = arglist;
-    Py_INCREF(*out_args);
-  } else if (PyList_Check(arglist)) {
-    *out_args = PyList_AsTuple(arglist);
-  } else {
-    *out_args = PySequence_Tuple(arglist);
-  }
-
-  if (! *out_args)
-    return -1;
-  return 0;
-}
-
-
 int kos_callable_call(KosContext *ctx, KosEvent *out_ev,
                       PyObject *callable, PyObject *args_tuple, PyObject *kwds_dict) {
-  if (KosCallable_Check(callable)) {
+  if (KosCallableOrKosType_Check(callable)) {
     KosInstallFunc fn = KosCallableType_INSTALL(Py_TYPE(callable));
     if (fn)
       return fn(ctx, out_ev, callable, args_tuple, kwds_dict);
@@ -1798,7 +1399,7 @@ int kos_callable_call(KosContext *ctx, KosEvent *out_ev,
 
 int kos_callable_tail_call(KosContext *ctx, KosEvent *out_ev,
                            PyObject *callable, PyObject *args_tuple, PyObject *kwds_dict) {
-  if (KosCallable_Check(callable)) {
+  if (KosCallableOrKosType_Check(callable)) {
     KosInstallFunc fn = KosCallableType_TAIL_INSTALL(Py_TYPE(callable));
     if (fn)
       return fn(ctx, out_ev, callable, args_tuple, kwds_dict);
@@ -1882,7 +1483,7 @@ int kos_callable_vcall(
     Py_ssize_t nargs,
     PyObject *kwnames) {
 
-  if (KosCallable_Check(callable)) {
+  if (KosCallableOrKosType_Check(callable)) {
     KosVectorInstallFunc vfn = KosCallableType_VINSTALL(Py_TYPE(callable));
     if (vfn)
       return vfn(ctx, out_ev, callable, args, nargs, kwnames);
@@ -1939,7 +1540,7 @@ int kos_callable_tail_vcall(
     Py_ssize_t nargs,
     PyObject *kwnames) {
 
-  if (KosCallable_Check(callable)) {
+  if (KosCallableOrKosType_Check(callable)) {
     KosVectorInstallFunc vfn = KosCallableType_TAIL_VINSTALL(Py_TYPE(callable));
     if (vfn)
       return vfn(ctx, out_ev, callable, args, nargs, kwnames);
@@ -2003,269 +1604,6 @@ int kos_callable_tail_vcall(
     args,
     nargs,
     kwnames);
-}
-
-
-/* === Install slot implementations === */
-
-
-int kos_install_function(
-    KosContext *ctx,
-    KosEvent *out_ev,
-    PyObject *callable,
-    PyObject *args_tuple,
-    PyObject *kwds_dict) {
-
-  return call_native_flattened_function(
-      ctx, callable, args_tuple, kwds_dict, out_ev);
-}
-
-
-int kos_tail_install_function(
-    KosContext *ctx,
-    KosEvent *out_ev,
-    PyObject *callable,
-    PyObject *args_tuple,
-    PyObject *kwds_dict) {
-
-  return call_tail_flattened_function(
-      ctx, callable, args_tuple, kwds_dict, out_ev);
-}
-
-
-int kos_vinstall_function(
-    KosContext *ctx,
-    KosEvent *out_ev,
-    PyObject *callable,
-    PyObject *const *args,
-    Py_ssize_t nargs,
-    PyObject *kwnames) {
-
-  PyObject *frame_ns = KosFunction_PrepareCallNamespaceFromVector(
-      callable, args, nargs, kwnames);
-  if (! frame_ns)
-    return -1;
-  PyObject *fn_code = KosFunction_CODE(callable);
-  if (kos_dyn_push_frame(ctx, (KosCode *) fn_code, frame_ns) == NULL) {
-    Py_DECREF(frame_ns);
-    return -1;
-  }
-  (void) out_ev;
-  return 0;
-}
-
-
-int kos_tail_vinstall_function(
-    KosContext *ctx,
-    KosEvent *out_ev,
-    PyObject *callable,
-    PyObject *const *args,
-    Py_ssize_t nargs,
-    PyObject *kwnames) {
-
-  PyObject *frame_ns = KosFunction_PrepareCallNamespaceFromVector(
-      callable, args, nargs, kwnames);
-  if (! frame_ns)
-    return -1;
-  int r = kos_tail_koscall(ctx, (KosCode *) KosFunction_CODE(callable),
-                           frame_ns);
-  if (r < 0)
-    Py_DECREF(frame_ns);
-  (void) out_ev;
-  return r;
-}
-
-
-int kos_install_expression(
-    KosContext *ctx,
-    KosEvent *out_ev,
-    PyObject *callable,
-    PyObject *args_tuple,
-    PyObject *kwds_dict) {
-
-  if (args_tuple && PyTuple_GET_SIZE(args_tuple) != 0) {
-    PyErr_SetString(PyExc_TypeError, "Expression takes no arguments");
-    return -1;
-  }
-  if (kwds_dict && PyDict_Size(kwds_dict) != 0) {
-    PyErr_SetString(PyExc_TypeError, "Expression takes no named arguments");
-    return -1;
-  }
-  return call_native_flattened_expr(ctx, callable, out_ev);
-}
-
-
-int kos_tail_install_expression(
-    KosContext *ctx,
-    KosEvent *out_ev,
-    PyObject *callable,
-    PyObject *args_tuple,
-    PyObject *kwds_dict) {
-
-  if (args_tuple && PyTuple_GET_SIZE(args_tuple) != 0) {
-    PyErr_SetString(PyExc_TypeError, "Expression takes no arguments");
-    return -1;
-  }
-  if (kwds_dict && PyDict_Size(kwds_dict) != 0) {
-    PyErr_SetString(PyExc_TypeError, "Expression takes no named arguments");
-    return -1;
-  }
-  return call_tail_flattened_expr(ctx, callable, out_ev);
-}
-
-
-int kos_install_continuation(
-    KosContext *ctx,
-    KosEvent *out_ev,
-    PyObject *callable,
-    PyObject *args_tuple,
-    PyObject *kwds_dict) {
-
-  (void) kwds_dict;
-  return call_call_continuation(ctx, callable, args_tuple, out_ev, NULL);
-}
-
-
-/**
-   Native handler for apply (non-flattening path). Stack has [fn, seq_args, kwds]
-   (kwds may be Py_None). Pops them, PyObject_Call, then pops the apply frame,
-   pushes result onto parent stack, and push_or_await. The apply frame has
-   code=NULL so we must detach it before continuing; otherwise the eval loop
-   would segfault in prepare_dispatch.
-*/
-static int apply_native_handler(
-    KosContext *ctx,
-    KosEvent *out_ev,
-    int is_resume,
-    PyObject *delivered_value) {
-
-  (void) delivered_value;
-  if (unlikely(is_resume != 0)) {
-    PyErr_SetString(PyExc_RuntimeError, "apply native handler resume not implemented");
-    return -1;
-  }
-
-  PyObject *kwds = KosStackBlock_PopRef(&CURRENT_STACK(ctx));
-  PyObject *seq_args = KosStackBlock_PopRef(&CURRENT_STACK(ctx));
-  PyObject *fn = KosStackBlock_PopRef(&CURRENT_STACK(ctx));
-  if (! fn || ! seq_args) {
-    Py_XDECREF(kwds);
-    Py_XDECREF(seq_args);
-    Py_XDECREF(fn);
-    return -1;
-  }
-  if (kwds == Py_None)
-    kwds = NULL;
-
-  KosDynFrame_NATIVE_HANDLER(CURRENT_FRAME(ctx)) = NULL;
-  PyObject *result = PyObject_Call(fn, seq_args, kwds);
-  Py_DECREF(fn);
-  Py_DECREF(seq_args);
-  Py_XDECREF(kwds);
-  if (! result)
-    return -1;
-
-  /* Pop apply frame (code=NULL) and deliver result to parent. */
-  KosDynFrame *detached = NULL;
-  if (kos_dyn_unwind_to_frame(ctx, CURRENT_FRAME(ctx), out_ev) < 0) {
-    Py_DECREF(result);
-    return -1;
-  }
-  if (kos_dyn_detach_top_frame(ctx, &detached) < 0) {
-    Py_DECREF(result);
-    return -1;
-  }
-  if (detached)
-    kos_dynframe_free(detached);
-
-  return push_or_await(ctx, out_ev, result);
-}
-
-
-static int kos_install_apply_impl(
-    KosContext *ctx,
-    KosEvent *out_ev,
-    PyObject *callable,
-    PyObject *args_tuple,
-    int is_tail) {
-
-  (void) callable;
-  Py_ssize_t n = args_tuple ? PyTuple_GET_SIZE(args_tuple) : 0;
-  if (n < 1 || n > 3) {
-    PyErr_SetString(PyExc_TypeError, "apply expects 1, 2, or 3 arguments");
-    return -1;
-  }
-
-  PyObject *fn = PyTuple_GET_ITEM(args_tuple, 0);
-  PyObject *arglist = (n >= 2) ? PyTuple_GET_ITEM(args_tuple, 1) : NULL;
-  PyObject *kwds = (n >= 3) ? PyTuple_GET_ITEM(args_tuple, 2) : NULL;
-  PyObject *seq_args = NULL;
-
-  if (kos_apply_build_args_tuple(arglist, &seq_args) < 0)
-    return -1;
-
-  if (kwds == Py_None)
-    kwds = NULL;
-
-  if (kwds && ! PyDict_Check(kwds)) {
-    PyErr_SetString(PyExc_TypeError, "apply kwargs must be a dict or None");
-    Py_DECREF(seq_args);
-    return -1;
-  }
-
-  /* Flattening: delegate to inner callable's install */
-  if (KosCallable_Check(fn)) {
-    KosInstallFunc inner = is_tail
-        ? KosCallableType_TAIL_INSTALL(Py_TYPE(fn))
-        : KosCallableType_INSTALL(Py_TYPE(fn));
-    if (inner) {
-      int r = inner(ctx, out_ev, fn, seq_args, kwds);
-      Py_DECREF(seq_args);
-      return r;
-    }
-  }
-
-  /* Non-flattening: push native frame with fn, seq_args, kwds on stack */
-  if (is_tail) {
-    kos_dynframe_reset_for_tail(CURRENT_FRAME(ctx));
-  } else {
-    KosDynFrame *frame = kos_dyn_push_frame_empty(ctx);
-    if (! frame) {
-      Py_DECREF(seq_args);
-      return -1;
-    }
-  }
-
-  KosDynFrame *frame = CURRENT_FRAME(ctx);
-  typedef int (*NativeHandlerFn)(void *, void *, int, PyObject *);
-  KosDynFrame_NATIVE_HANDLER(frame) = (NativeHandlerFn) apply_native_handler;
-
-  if (KosStackBlock_PushRef(&CURRENT_STACK(ctx), fn) < 0
-      || KosStackBlock_PushRef(&CURRENT_STACK(ctx), seq_args) < 0) {
-    Py_DECREF(seq_args);
-    return -1;
-  }
-  PyObject *kwds_push = kwds ? kwds : Py_None;
-  Py_INCREF(kwds_push);
-  if (KosStackBlock_PushRef(&CURRENT_STACK(ctx), kwds_push) < 0) {
-    Py_DECREF(kwds_push);
-    return -1;
-  }
-  return 0;
-}
-
-
-int kos_install_apply(KosContext *ctx, KosEvent *out_ev,
-                      PyObject *callable, PyObject *args_tuple, PyObject *kwds_dict) {
-  (void) kwds_dict;
-  return kos_install_apply_impl(ctx, out_ev, callable, args_tuple, 0);
-}
-
-
-int kos_tail_install_apply(KosContext *ctx, KosEvent *out_ev,
-                           PyObject *callable, PyObject *args_tuple, PyObject *kwds_dict) {
-  (void) kwds_dict;
-  return kos_install_apply_impl(ctx, out_ev, callable, args_tuple, 1);
 }
 
 

@@ -23,11 +23,9 @@ compile/when, and compile/unless.
 """
 
 
-from ...lib import cons, keyword, nil, OpCode, symbol
-from ...types import is_keyword, is_pair
+from ...lib import keyword, OpCode, symbol
 from ...exceptions import SpecialError
-from ..helpers import helper_begin, pycons, special, special_forms
-from ...matcher import MATCH, EXPR, VALUE, LITERAL_KW, match
+from ..helpers import helper_begin, special
 
 
 _keyword_else = keyword("else")
@@ -77,86 +75,6 @@ def special_cond(compiler, source, tc=False):
 
     fragment.instruction(OpCode.KOS_OP_LABEL, done)
     return fragment
-
-
-_IF_FORMS = [
-    MATCH(VALUE("test"), EXPR("then"), EXPR("else")),
-    MATCH(VALUE("test"),
-          LITERAL_KW("then"), EXPR("then"),
-          LITERAL_KW("else"), EXPR("else")),
-]
-
-
-@special_forms(_IF_FORMS)
-@special(symbol("compile/if"))
-def special_if(compiler, source, tc=False):
-    """
-    Compile (compile/if COND THEN ELSE) or (compile/if COND then: THEN else: ELSE).
-    Expands to cond and compiles.
-    """
-
-    called_by, rest = source
-
-    m = match(rest, _IF_FORMS)
-    if m is None:
-        raise SpecialError("invalid if form", source)
-
-    test_src = m["test"].source
-    then_src = m["then"].source
-    else_src = m["else"].source
-
-    return cons(symbol("compile/cond"),
-               cons(test_src, then_src, nil),
-               cons(_keyword_else, else_src, nil),
-               nil)
-
-
-_WHEN_FORMS = [
-    MATCH(VALUE("test"), EXPR("body")),
-]
-
-@special_forms(_WHEN_FORMS)
-@special(symbol("compile/when"))
-def special_when(compiler, source, tc=False):
-    """
-    Compile (compile/when COND BODY...). Expands to cond; no else yields None.
-    """
-
-    called_by, rest = source
-
-    m = match(rest, _WHEN_FORMS)
-    if m is None:
-        raise SpecialError("invalid if form", source)
-
-    test_src = m["test"].source
-    body_src = m["body"].source
-
-    return cons(symbol("compile/cond"),
-               cons(test_src, body_src, nil),
-               cons(_keyword_else, None, nil),
-               nil)
-
-
-@special_forms(_WHEN_FORMS)
-@special(symbol("compile/unless"))
-def special_unless(compiler, source, tc=False):
-    """
-    Compile (compile/unless COND BODY...). Expands to cond; negated test.
-    """
-
-    called_by, rest = source
-
-    m = match(rest, _WHEN_FORMS)
-    if m is None:
-        raise SpecialError("invalid if form", source)
-
-    test_src = m["test"].source
-    body_src = m["body"].source
-
-    return cons(symbol("compile/cond"),
-               cons(test_src, None, nil),
-               cons(_keyword_else, body_src, nil),
-               nil)
 
 
 @special(symbol("compile/and"))

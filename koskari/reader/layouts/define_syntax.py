@@ -22,12 +22,30 @@ Layout handlers for define-syntax and syntax-rules block syntax.
 
 
 from ...exceptions import LayoutError
-from ...types import cons, get_position, is_pair, is_proper, is_symbol, nil, symbol, unpack
+from ...matcher import (DEFINE, LIST, LITERAL_SYM, MATCH, PAIR, REPEAT, VALUE,
+                        match, match1)
+from ...types import (car, cons, get_position, is_keyword, is_proper,
+                      is_symbol, nil, symbol, unpack)
 from .helpers import layout
 
 
+_DEFINE_SYNTAX_FORMS = [
+    MATCH(
+        LIST(LITERAL_SYM('define-syntax'), DEFINE('name')),
+        PAIR('transformer')),
+    MATCH(
+        LIST(LITERAL_SYM('compile/define-syntax'), DEFINE('name')),
+        PAIR('transformer')),
+]
+
+_MATCH_FORM_PATTERN = LIST(LITERAL_SYM('match'), VALUE('inner'))
+
+_SYNTAX_RULES_FORM = MATCH(
+    LIST(LITERAL_SYM('syntax-rules'), VALUE('literals_expr')),
+    REPEAT('rules', PAIR('rule'), min_count=1))
+
+
 _symbol_syntax_rules = symbol('syntax-rules')
-_symbol_compile_begin = symbol('compile/begin')
 _symbol_compile_define_syntax = symbol('compile/define-syntax')
 
 
@@ -45,9 +63,9 @@ def _literals_to_list(literals_expr, source):
             get_position(literals_expr))
     literals = list(unpack(literals_expr))
     for lit in literals:
-        if not is_symbol(lit):
+        if not (is_symbol(lit) or is_keyword(lit)):
             raise LayoutError(
-                'syntax-rules literals must be symbols',
+                'syntax-rules literals must be symbols or keywords',
                 get_position(literals_expr))
     return cons(*literals, nil)
 
@@ -66,46 +84,25 @@ def layout_syntax_rules(source, peers):
             'syntax-rules block does not take peers',
             get_position(source))
 
-    header, body = source
-    header_parts = list(unpack(header))
-
-    if len(header_parts) < 2:
+    m = match(source, _SYNTAX_RULES_FORM)
+    if m is None:
         raise LayoutError(
-            'syntax-rules requires a literals list',
+            'syntax-rules requires literals list and at least one rule',
             get_position(source))
 
-    if str(header_parts[0]) != 'syntax-rules':
-        raise LayoutError(
-            'expected syntax-rules block',
-            get_position(source))
-
-    literals_expr = header_parts[1]
-    if len(header_parts) > 2:
-        raise LayoutError(
-            'syntax-rules takes only one literals argument',
-            get_position(source))
-
-    literals = _literals_to_list(literals_expr, source)
-    rule_forms = list(unpack(body))
-
-    if not rule_forms:
-        raise LayoutError(
-            'syntax-rules requires at least one rule',
-            get_position(source))
-
+    literals = _literals_to_list(m['literals_expr'].source, source)
     rules = []
-    for raw_rule in rule_forms:
-        if not is_pair(raw_rule):
-            raise LayoutError(
-                'invalid syntax-rules rule',
-                get_position(raw_rule))
-        parts = list(unpack(raw_rule))
-        if len(parts) < 2:
+    for sub_res, _ in m['rules'].matches:
+        rule_parts = list(unpack(sub_res['rule'].source))
+        if len(rule_parts) < 2:
             raise LayoutError(
                 'syntax-rules rule must have pattern and template',
-                get_position(raw_rule))
-        pattern = cons(*parts[:-1], nil)
-        template = parts[-1]
+                get_position(sub_res['rule'].source))
+        pattern = cons(*rule_parts[:-1], nil)
+        template = rule_parts[-1]
+        match_m = match1(pattern, [_MATCH_FORM_PATTERN])
+        if match_m is not None:
+            pattern = match_m['inner'].source
         rules.append(cons(pattern, cons(template, nil)))
 
     return cons(
@@ -126,39 +123,15 @@ def layout_define_syntax(source, peers):
             'define-syntax block does not take peers',
             get_position(source))
 
-    header, body = source
-    header_parts = list(unpack(header))
-
-    if len(header_parts) != 2:
+    m = match(source, _DEFINE_SYNTAX_FORMS)
+    if m is None:
         raise LayoutError(
-            'define-syntax requires a name',
+            'define-syntax block requires name and single syntax-rules form',
             get_position(source))
 
-    if str(header_parts[0]) not in ('define-syntax', 'compile/define-syntax'):
-        raise LayoutError(
-            'expected define-syntax block',
-            get_position(source))
-
-    name = header_parts[1]
-    if not is_symbol(name):
-        raise LayoutError(
-            'define-syntax name must be a symbol',
-            get_position(source))
-
-    body_forms = list(unpack(body))
-    if len(body_forms) != 1:
-        raise LayoutError(
-            'define-syntax requires exactly one syntax-rules form',
-            get_position(source))
-
-    transformer_spec = body_forms[0]
-    if not is_pair(transformer_spec):
-        raise LayoutError(
-            'define-syntax body must be a syntax-rules form',
-            get_position(transformer_spec))
-
-    head = transformer_spec[0]
-    if not is_symbol(head) or str(head) != 'syntax-rules':
+    name = m['name'].source
+    transformer_spec = m['transformer'].source
+    if not is_symbol(car(transformer_spec)) or str(car(transformer_spec)) != 'syntax-rules':
         raise LayoutError(
             'define-syntax requires a syntax-rules form',
             get_position(transformer_spec))

@@ -12,14 +12,13 @@
 # along with this library; if not, see <http://www.gnu.org/licenses/>.
 
 """
-Tests for koskari.compile cond, if, when, unless special forms.
+Tests for koskari.compile cond, and, or special forms.
 
 :author: Christopher O'Brien <obriencj@preoccupied.net>
 :license: GNU General Public License v3
 """
 
 
-from koskari.dis import dis
 from . import SpecialsTestCase
 
 import pytest
@@ -98,38 +97,6 @@ class TestCondSpecial(SpecialsTestCase):
         expr, mod = self.compile_expr(src_str)
         result = await expr()
         self.assertEqual(result, 103)
-
-
-    async def test_if_then_else(self):
-        src_str_t = "(compile/if True 1 2)"
-        expr, mod = self.compile_expr(src_str_t)
-        dis(expr.code)
-        self.assertEqual(await expr(), 1)
-
-        src_str_f = "(compile/if False 1 2)"
-        expr, mod = self.compile_expr(src_str_f)
-        dis(expr.code)
-        self.assertEqual(await expr(), 2)
-
-
-    async def test_when(self):
-        src_str_t = "(compile/when True 42)"
-        expr, mod = self.compile_expr(src_str_t)
-        self.assertEqual(await expr(), 42)
-
-        src_str_f = "(compile/when False 42)"
-        expr, mod = self.compile_expr(src_str_f)
-        self.assertEqual(await expr(), None)
-
-
-    async def test_unless(self):
-        src_str_f = "(compile/unless False 42)"
-        expr, mod = self.compile_expr(src_str_f)
-        self.assertEqual(await expr(), 42)
-
-        src_str_t = "(compile/unless True 42)"
-        expr, mod = self.compile_expr(src_str_t)
-        self.assertEqual(await expr(), None)
 
 
 class TestAndSpecial(SpecialsTestCase):

@@ -97,27 +97,36 @@ koskari/
 ├── koskari/             # Main package (import from submodules; see design/api/package-layout.md)
 │   ├── __init__.py      # Minimal; no re-exports
 │   ├── exceptions.py    # All exceptions (Koskari*, Reader*, Layout*, Compiler*, etc.)
-│   ├── types.py        # Value types from lib + Python predicates/helpers
-│   ├── parse.py        # S-expression parser (Reader, SourceStream, ...)
-│   ├── dis.py          # Disassembler for Code objects
-│   ├── compile/        # Compiler, ByteCodeFragment, special forms
-│   └── lib/            # C extension sources
-│       ├── atom.c      # Symbol/keyword implementation
-│       ├── pair.c     # Cons cell implementation
-│       ├── namespace.c # Namespace implementation
-│       ├── formals.c   # Parameter binding
-│       ├── ref.c       # Reference cells
-│       ├── values.c    # Multi-value returns
-│       ├── operator.c  # Operator helpers
-│       ├── parse.c     # Native stream I/O
+│   ├── types.py         # Value types from lib + Python predicates/helpers
+│   ├── reader/          # S-expression parser, layout block syntax, reader macros
+│   │   ├── parser.py    # Reader, SourceStream, LayoutReader, parse errors
+│   │   └── layouts/     # Layout handlers (conditionals, try, class, define-syntax, etc.)
+│   ├── lexer/           # Lexical parsing, prompt_toolkit, LSP integration
+│   ├── matcher.py       # Pattern matching for special forms
+│   ├── importer/        # Import hooks for .ki files
+│   ├── dis.py           # Disassembler for Code objects
+│   ├── compile/         # Compiler, ByteCodeFragment, special forms
+│   └── lib/             # C extension sources
+│       ├── atom.c       # Symbol/keyword implementation
+│       ├── pair.c       # Cons cell implementation
+│       ├── namespace.c  # Namespace implementation
+│       ├── formals.c    # Parameter binding
+│       ├── ref.c        # Reference cells
+│       ├── values.c     # Multi-value returns
+│       ├── operator.c   # Operator helpers
+│       ├── parse.c      # Native stream I/O
 │       └── ...
 ├── tests/               # Test suite (see design/api/package-layout.md)
-│   ├── lib/            # Native extension and ceval tests
-│   ├── compile/        # Compiler and bytecode fragment tests
-│   ├── parse/          # Parser tests
-│   ├── dis/            # Disassembler tests
-│   ├── types/          # Type predicate/helper tests
-│   └── native/         # Native memory tests (ASan, Valgrind)
+│   ├── lib/             # Native extension and ceval tests
+│   ├── compile/         # Compiler and bytecode fragment tests
+│   ├── reader/          # Parser and layout tests
+│   ├── dis/             # Disassembler tests
+│   ├── types/           # Type predicate/helper tests
+│   ├── importer/        # Import system tests
+│   ├── lexer/           # Lexer tests
+│   ├── matcher/         # Matcher tests
+│   ├── cli/             # CLI tests
+│   └── native/          # Native memory tests (ASan, Valgrind)
 └── examples/            # Example koskari code (.ki files)
 ```
 

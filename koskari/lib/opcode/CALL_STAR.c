@@ -111,7 +111,7 @@ KOS_OP_HANDLER(CALL_STAR) {
   }
 
   int res = 0;
-  if (KosCallable_Check(fun)) {
+  if (KosCallableOrKosType_Check(fun)) {
     res = kos_callable_call(ctx, out_ev, fun, pos, kwd);
 
   } else {

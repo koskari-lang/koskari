@@ -146,7 +146,7 @@ There are no **partially** implemented opcodes; each handler is either full, a s
 - **Call flow**: Calling an Expression or Function returns a **Coroutine**. Driving the coroutine (Python `await`, or `send(None)`/`send(value)`) invokes `koskari_eval()` until a boundary event (RETURN, RAISE, YIELD, AWAIT). For AWAIT, the VM suspends and the driver steps the Python awaitable; on completion the result is injected and evaluation resumes. Koskari-to-Koskari calls (CALL opcode) replace the current frame with the callee and continue in the same drive loop.
 
 ### Runtime
-- **Modules**: Module creation and loading via `koskari.importer.module` (`new_module`, `init_module`, `load_module_async`). Each module gets a `ModuleNamespace` backed by a builtins layer assembled by `koskari.importer.builtins.make_builtins()`.
+- **Modules**: Module creation and loading via `koskari.importer.module` (`new_module`, `init_module`, `load_module_async`). Each module gets a `ModuleNamespace` backed by a builtins layer assembled by `koskari.importer.bootstrap.make_builtins()`.
 - **Import**: Import system integration via `koskari.importer`. A custom `KoskariPathFinder` is inserted at the front of `sys.meta_path` so that Python's `import` machinery can discover `.ki` files. `KoskariSourceFileLoader.exec_module` calls `load_module_async` through `koskari._sync.run_sync` to bridge the async VM into Python's synchronous import protocol. Install/uninstall is handled by `koskari.importer.install()` / `koskari.importer.uninstall()`; the hook is auto-installed at `koskari` package import time (respects `KOSKARI_NOIMPORTER` environment variable). Koskari code uses the `import` and `import-from` compiler specials, which emit the native `IMPORT`, `IMPORT_REL`, and `IMPORT_FROM` opcodes backed by `PyImport_ImportModuleLevelObject`.
 - **Tracebacks**: Line number support
 
@@ -222,7 +222,7 @@ There are no **partially** implemented opcodes; each handler is either full, a s
 
 ### Ready to Migrate
 - Most special forms from python-sibilant (beyond what is already implemented)
-- Macro system (reader macros, defmacro, defalias)
+- Macro system: defmacro, defalias (reader macros and compile/define-syntax are implemented)
 - Remaining control flow constructs (class blocks)
 - Compiler: remaining specials (yield, await, define-values, setq-values), macro expansion, optimization passes
 - Remaining opcode handlers: CALL_ATTR* (PUSH_WIND, POP_WIND, PUSH_COLLECT, POP_COLLECT, BUILD_CLASS, BUILD_ARGS, BUILD_KWDS, BUILD_KWDS_NAMES, COMBINE_ARGS, COMBINE_KWDS, PUSH_WITH, POP_WITH, PUSH_DYN_WITH, POP_DYN_WITH, CALL_NAMES, CALL_STAR, TAIL_CALL_NAMES, TAIL_CALL_STAR implemented; see "Opcodes: implementation status" above; with/dyn-with design in design/interpreter/with-dyn-with.md)
