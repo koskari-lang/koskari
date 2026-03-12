@@ -144,17 +144,6 @@ PyObject *KosNamespace_Copy(PyObject *template_ns) {
     }
   }
 
-  /* Sanity: verify closure slots can be dereferenced */
-  for (size_t i = 0; i < count; i++) {
-    KosNameBind *dst = KosNamespace_GET_FAST(self, i);
-    if (! KosNameBind_RAW(dst)) {
-      PyObject *val = KosNamespace_FastDeref(self, i);
-      SAYF("[KosNamespace_Copy] verify slot %zu deref -> %R",
-           (unsigned long) i, val);
-      Py_XDECREF(val);
-    }
-  }
-
   SAYF("[KosNamespace_Copy] done self=%R", self);
   return self;
 
