@@ -11,6 +11,7 @@ This directory documents the runtime API of Koskari, including types, functions,
 - **special-call-protocol.md**: Special call protocol (kos call) — install and tail_install slots, invocation entry points (kos_callable_call, kos_callable_tail_call), per-type behavior (Function, Expression, Continuation, Apply), native handler as frame evaluator, transfer plan model, flattening apply
 - **runtime.md**: Runtime system and module loading
 - **OBJECT-MODEL.md**: Koskari object model (KosType, KosObject, class creation, awaitable construction, C.new sync adapter)
+- **dunder-adapter.md**: Dunder adapter design — demand_sync and demand_next for Python slot interop, no-suspend sync bridge, slot wiring for KosType, internal push_or_await for OBJECT_* opcodes
 - **NAMESPACE-AND-REFS.md**: Namespace, Ref types, and related special forms
 - **import-system.md**: Import system for `.ki` files (meta_path, KoskariPathFinder, load_module_async)
 - **lexer.md**: Lexer subpackage for lexical-only parsing, prompt_toolkit and LSP integration

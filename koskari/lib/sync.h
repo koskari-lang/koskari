@@ -26,6 +26,7 @@ int koskari_sync_clear(PyObject *mod);
 
 PyObject *Koskari_RunSync(PyObject *awaitable);
 PyObject *Koskari_IterSync(PyObject *async_iterable);
+PyObject *Koskari_DemandSync(PyObject *callable, PyObject *args, PyObject *kwargs);
 
 
 #endif
