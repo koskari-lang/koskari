@@ -21,8 +21,9 @@ Unit tests for koskari.dis (disassembler).
 import io
 import unittest
 
-from koskari.lib import Code, OpCode
-from koskari.types import NamespaceSpec
+from koskari.lib import Code, Function, OpCode
+from koskari.types import FormalsSpec, NamespaceSpec
+from tests import make_callable
 from koskari.dis import (
     dis,
     _get_code,
@@ -86,6 +87,19 @@ def _make_fast_code():
         [OpCode.KOS_OP_RETURN, 1],
     )
     return Code(nspec, instr, "fast_fn", "file.ki")
+
+
+def _make_function():
+    """
+    Function with (x, y) formals, base_ns with a closure binding.
+    """
+    from tests import make_callable
+
+    code = _make_truthy_code()
+    nspec = NamespaceSpec(None, ('outer',), ())
+    base_ns = nspec.get_namespace(None)
+    base_ns.store('outer', 99)
+    return make_callable(code, base_ns, FormalsSpec(('x',), None, ('y',)))
 
 
 class TestGetCode(unittest.IsolatedAsyncioTestCase):
@@ -222,6 +236,56 @@ class TestDisOutput(unittest.IsolatedAsyncioTestCase):
         text = buf.getvalue()
         lines = [l for l in text.splitlines() if 'KOS_OP_FAST' in l]
         self.assertTrue(any("closure 'outer'" in l for l in lines))
+
+
+class TestDisFunction(unittest.IsolatedAsyncioTestCase):
+
+    async def test_dis_function_adds_leading_section(self):
+        """
+        Function input prints Function instance section (name, formals,
+        base_ns) before KosCode disassembly
+        """
+        fn = _make_function()
+        buf = io.StringIO()
+        dis(fn, file=buf)
+        text = buf.getvalue()
+        self.assertIn('Function instance:', text)
+        self.assertIn('  name:', text)
+        self.assertIn('  formals:', text)
+        self.assertIn('  base_ns (closures):', text)
+        self.assertIn('KosCode', text)
+        self.assertIn('truthy_yus', text)
+        self.assertIn('KOS_OP_VAR', text)
+
+    async def test_dis_function_then_code(self):
+        """
+        Dis of Function includes leading block; dis of same Code does not
+        """
+        code = _make_truthy_code()
+        nspec = NamespaceSpec(None, (), ())
+        base_ns = nspec.get_namespace(None)
+        fn = make_callable(code, base_ns, FormalsSpec())
+        buf_fn = io.StringIO()
+        dis(fn, file=buf_fn)
+        buf_code = io.StringIO()
+        dis(code, file=buf_code)
+        fn_text = buf_fn.getvalue()
+        code_text = buf_code.getvalue()
+        self.assertIn('Function instance:', fn_text)
+        self.assertNotIn('Function instance:', code_text)
+        self.assertIn('KosCode', fn_text)
+        self.assertIn('KosCode', code_text)
+        self.assertIn('truthy_yus', fn_text)
+        self.assertIn('truthy_yus', code_text)
+
+    async def test_dis_non_code_raises(self):
+        """
+        dis() raises TypeError for non-Code, non-Function input
+        """
+        with self.assertRaises(TypeError):
+            dis(42)
+        with self.assertRaises(TypeError):
+            dis('not code')
 
 
 class TestGetInstructionLines(unittest.IsolatedAsyncioTestCase):

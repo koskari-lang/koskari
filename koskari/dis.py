@@ -25,7 +25,7 @@ indices).
 :ai-assistant: claude-4.6-sonnet-high via Cursor
 """
 
-from koskari.lib import Code, OpCode, OpStyle
+from koskari.lib import Code, Function, OpCode, OpStyle
 from koskari.types import NamespaceSpec
 
 
@@ -71,6 +71,43 @@ def _format_constant(val):
     if len(r) > 60:
         r = r[:57] + '...'
     return r
+
+
+def _write_function_instance_section(file, fn):
+    """
+    Write a leading section for a Function instance: name, formals,
+    base_ns (closures).
+
+    :param file: file-like object to write to
+    :param fn: Function instance (KosFunction)
+    """
+
+    name = fn.name
+    name_repr = repr(name) if name is not None else 'None'
+    file.write('Function instance:\n')
+    file.write('  name: %s\n' % name_repr)
+    file.write('  formals:\n')
+    formals = fn.formals
+    if formals is not None:
+        for attr in ('pos', 'pos_only', 'kwd', 'kwd_only', 'star', 'starstar',
+                     'defaults'):
+            val = getattr(formals, attr, None)
+            file.write('    %s: %s\n' % (attr, repr(val)))
+    else:
+        file.write('    (none)\n')
+    base_ns = fn.base_ns
+    file.write('  base_ns (closures):\n')
+    if base_ns is not None:
+        try:
+            items = base_ns.items()
+        except (AttributeError, TypeError):
+            file.write('    (unable to iterate)\n')
+        else:
+            for k, v in items:
+                file.write('    %s: %s\n' % (repr(k), _format_constant(v)))
+    else:
+        file.write('    (none)\n')
+    file.write('\n')
 
 
 def _format_nspec_inline(cpool_idx, nspec):
@@ -224,22 +261,33 @@ def _local_and_closure_syms(code):
 
 def dis(x, file=None):
     """
-    Print a disassembly of a Koskari Code object.
+    Print a disassembly of a Koskari Code or Function object.
 
-    Output includes constant pool (with NamespaceSpec entries expanded to
-    show their locals and closures), vars (local_syms from namespace_spec),
-    closure refs (closure_syms from namespace_spec), and indexed instructions
-    with decoded arguments. FAST_* instructions show whether the slot is a
-    local or closure. PUSH_NS and PUSH_CLASS instructions are annotated with
-    the namespace ID (ns#K) and name of the NamespaceSpec they push.
+    For Function: prints a leading section with function instance details
+    (name, formals, base_ns closures), then the disassembly of its code.
 
-    :param x: Code instance
+    For Code: output includes constant pool (with NamespaceSpec entries
+    expanded to show their locals and closures), vars (local_syms from
+    namespace_spec), closure refs (closure_syms from namespace_spec),
+    and indexed instructions with decoded arguments. FAST_* instructions
+    show whether the slot is a local or closure. PUSH_NS and PUSH_CLASS
+    instructions are annotated with the namespace ID (ns#K) and name of
+    the NamespaceSpec they push.
+
+    :param x: Code or Function instance
     :param file: file-like object to print to (default: stdout)
     """
 
-    code = _get_code(x)
-    if code is None:
-        raise TypeError('expected Code, got %s' % type(x).__name__)
+    if isinstance(x, Function):
+        code = x.code
+        if file is None:
+            import sys
+            file = sys.stdout
+        _write_function_instance_section(file, x)
+    else:
+        code = _get_code(x)
+        if code is None:
+            raise TypeError('expected Code or Function, got %s' % type(x).__name__)
     if file is None:
         import sys
         file = sys.stdout
