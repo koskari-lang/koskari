@@ -192,6 +192,28 @@ class TestNamespace(unittest.IsolatedAsyncioTestCase):
             _ = ns['a']
 
 
+    async def test_copy(self):
+        """copy() returns a new top-level namespace with same shape and closures"""
+        parent = Namespace("parent", None, ('x',))
+        parent['x'] = 100
+
+        spec = NamespaceSpec("child", ('y',), ('x',))
+        child = spec.get_namespace(parent)
+        child['y'] = 42
+
+        cp = child.copy()
+        self.assertIsNot(cp, child)
+        self.assertIs(cp.parent, parent)
+        self.assertEqual(cp['x'], 100)
+        self.assertIn('y', cp)
+        with self.assertRaises(NameError):
+            _ = cp['y']
+
+        cp['y'] = 99
+        self.assertEqual(cp['y'], 99)
+        self.assertEqual(child['y'], 42)
+
+
     async def test_nested_namespaces(self):
         """Nested namespaces share closure bindings"""
         ns1 = Namespace("ns1", None, ('foo',))

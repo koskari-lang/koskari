@@ -21,8 +21,9 @@ Tests for demand_sync: invoke Koskari callables synchronously without suspension
 import unittest
 
 from koskari.lib import KoskariSyncViolation, demand_sync
+from koskari.types import FormalsSpec
 from tests import make_callable
-from tests.lib.opcode import build_expr
+from tests.lib.opcode import build_code, build_expr
 
 import pytest
 
@@ -77,6 +78,49 @@ class TestDemandSyncExpression(unittest.TestCase):
         with self.assertRaises(KoskariSyncViolation) as ctx:
             demand_sync(expr)
         self.assertIn("suspension", str(ctx.exception))
+
+
+
+class TestDemandSyncFunctionClosure(unittest.IsolatedAsyncioTestCase):
+    """
+    demand_sync on Function with closures (reproducer for closure-slot bug)
+
+    Simpler case: no args, one closure. Slot 0 = closure 'x'.
+    (define later [] (+ x 5))-style with x in enclosing scope.
+    """
+
+    def _make_closure_fn_no_args(self):
+        """Return fn() -> x with x=100, no parameters"""
+        _, base_ns = build_expr(
+            [["CONST", 0], ["RETURN", 1]],
+            local_syms=('x',),
+            values={'x': 100},
+        )
+        code = build_code(
+            [["FAST", 0], ["RETURN", 1]],
+            local_syms=(),
+            closure_syms=('x',),
+            name='closure_fn',
+        )
+        fn = make_callable(code, base_ns, FormalsSpec())
+        return fn
+
+
+    async def test_function_closure_no_args_via_await(self):
+        """
+        Function closing over x (no args) returns 100 via await
+        """
+        fn = self._make_closure_fn_no_args()
+        result = await fn()
+        self.assertEqual(result, 100)
+
+
+    def test_function_closure_no_args_via_demand_sync(self):
+        """
+        demand_sync on Function with closure; fn() -> 100 (reproducer)
+        """
+        fn = self._make_closure_fn_no_args()
+        self.assertEqual(demand_sync(fn), 100)
 
 
 

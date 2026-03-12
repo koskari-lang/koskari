@@ -27,6 +27,7 @@
 
 
 #include "lib.h"
+#include "debug.h"
 
 
 /* === KoskariSyncViolation === */
@@ -134,12 +135,23 @@ static PyObject *demand_sync_impl(PyObject *callable, PyObject *args,
       Py_DECREF(kw);
     if (! frame_ns)
       goto fail_args;
+    SAYF("[demand_sync] frame_ns from PrepareCallNamespace: ptr=%p type=%s "
+         "repr=%R is_namespace=%d",
+         (void *) frame_ns,
+         frame_ns ? Py_TYPE(frame_ns)->tp_name : "NULL",
+         frame_ns,
+         frame_ns ? KosNamespace_Check(frame_ns) : 0);
     PyObject *code = KosFunction_CODE(callable);
     frame = kos_dynframe_new(NULL, (KosCode *) code, frame_ns, NULL);
-    Py_DECREF(frame_ns);
-    frame_ns = NULL;
     if (! frame)
       goto fail_args;
+    SAYF("[demand_sync] frame=%p KosDynFrame_NS(frame): ptr=%p type=%s "
+         "repr=%R is_namespace=%d",
+         (void *) frame,
+         (void *) KosDynFrame_NS(frame),
+         KosDynFrame_NS(frame) ? Py_TYPE(KosDynFrame_NS(frame))->tp_name : "NULL",
+         KosDynFrame_NS(frame),
+         KosDynFrame_NS(frame) ? KosNamespace_Check(KosDynFrame_NS(frame)) : 0);
     goto run_eval;
   }
 

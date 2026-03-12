@@ -73,6 +73,98 @@ PyObject *KosNamespace_FromSpec(PyObject *nspec, PyObject *parent) {
 }
 
 
+PyObject *KosNamespace_Copy(PyObject *template_ns) {
+
+  if (! KosNamespace_SupportsFast(template_ns)) {
+    PyErr_Format(PyExc_TypeError, "KosNamespace_Copy requires Namespace or"
+                 " CollectorNamespace, not %R", template_ns);
+    return NULL;
+  }
+
+  size_t count = KosNamespace_FAST_COUNT(template_ns);
+  PyObject *parent = KosNamespace_PARENT(template_ns);
+
+  SAYF("[KosNamespace_Copy] template=%R count=%zu parent=%R",
+       template_ns, (unsigned long) count, parent);
+
+  PyObject *binds = PyDict_New();
+  if (! binds)
+    return NULL;
+
+  PyObject *self = PyObject_NewVar(PyObject, &KosNamespaceType, count);
+  if (! self) {
+    Py_DECREF(binds);
+    return NULL;
+  }
+
+  Py_INCREF(KosNamespace_NAME(template_ns));
+  KosNamespace_NAME(self) = KosNamespace_NAME(template_ns);
+
+  Py_XINCREF(parent);
+  KosNamespace_PARENT(self) = parent;
+
+  KosNamespace_BINDS(self) = binds;
+  KosNamespace_FAST_COUNT(self) = count;
+
+  for (size_t i = 0; i < count; i++) {
+    KosNameBind *src = KosNamespace_GET_FAST(template_ns, i);
+    KosNameBind *dst = KosNamespace_GET_FAST(self, i);
+    PyObject *ref_name = KosNameBind_NAME(src);
+
+    if (! ref_name) {
+      SAYF("[KosNamespace_Copy] slot %zu: ref_name is NULL", (unsigned long) i);
+      goto fail;
+    }
+
+    SAYF("[KosNamespace_Copy] slot %zu: name=%S raw=%d",
+         (unsigned long) i, ref_name, KosNameBind_RAW(src));
+
+    Py_INCREF(ref_name);
+    KosNameBind_NAME(dst) = ref_name;
+
+    if (KosNameBind_RAW(src)) {
+      KosNameBind_HELD(dst) = NULL;
+      KosNameBind_RAW(dst) = 1;
+      if (PyDict_SetItem(binds, ref_name, Py_None) < 0)
+        goto fail;
+    } else {
+      PyObject *ref = KosNameBind_HELD(src);
+      if (! ref) {
+        SAYF("[KosNamespace_Copy] slot %zu: closure ref is NULL", (unsigned long) i);
+        goto fail;
+      }
+      Py_INCREF(ref);
+      KosNameBind_HELD(dst) = ref;
+      KosNameBind_RAW(dst) = 0;
+      if (PyDict_SetItem(binds, ref_name, ref) < 0) {
+        Py_DECREF(ref);
+        goto fail;
+      }
+      SAYF("[KosNamespace_Copy] slot %zu: ref=%R", (unsigned long) i, ref);
+    }
+  }
+
+  /* Sanity: verify closure slots can be dereferenced */
+  for (size_t i = 0; i < count; i++) {
+    KosNameBind *dst = KosNamespace_GET_FAST(self, i);
+    if (! KosNameBind_RAW(dst)) {
+      PyObject *val = KosNamespace_FastDeref(self, i);
+      SAYF("[KosNamespace_Copy] verify slot %zu deref -> %R",
+           (unsigned long) i, val);
+      Py_XDECREF(val);
+    }
+  }
+
+  SAYF("[KosNamespace_Copy] done self=%R", self);
+  return self;
+
+ fail:
+  SAY("[KosNamespace_Copy] fail");
+  Py_DECREF(self);
+  return NULL;
+}
+
+
 static PyObject *nspec_m_namespace(PyObject *self, PyObject *parent) {
 
   return KosNamespace_FromSpec(self, parent);
@@ -629,6 +721,11 @@ static PyObject *ns_m_find(PyObject *self, PyObject *key) {
 }
 
 
+static PyObject *ns_m_copy(PyObject *self) {
+  return KosNamespace_Copy(self);
+}
+
+
 static PyMethodDef ns_methods[] = {
   { "ref", (PyCFunction) ns_m_ref, METH_O,
     "NS.ref(K) -> R\n"
@@ -676,6 +773,10 @@ static PyMethodDef ns_methods[] = {
     "NS.find(K) => R\n"
     "traverses this namespace and its parents to find and return a"
     " reference, or returns None if no binding is found" },
+
+  { "copy", (PyCFunction) ns_m_copy, METH_NOARGS,
+    "NS.copy() => Namespace\n"
+    "copy the top-level namespace only (parent chain not copied)" },
 
   { NULL },
 };

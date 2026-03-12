@@ -109,6 +109,14 @@ PyObject *KosNamespace_FromSpec(PyObject *nspec, PyObject *parent);
 
 
 /**
+   Copy the top-level namespace only. Does not copy the parent chain.
+   Returns a new namespace with the same shape and closure refs; local
+   slots are left empty. New reference or NULL on error.
+*/
+PyObject *KosNamespace_Copy(PyObject *template_ns);
+
+
+/**
    Looks up Ref matching key.
 
    Borrowed reference, or NULL with error set
