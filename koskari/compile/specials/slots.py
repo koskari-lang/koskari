@@ -22,8 +22,7 @@ Special form handlers for compile/attr, compile/del-attr, and compile/set-attr.
 """
 
 
-from ...lib import nil, OpCode, symbol
-from ...types import is_pair
+from ...lib import OpCode, symbol
 from ...exceptions import SpecialError
 from ..helpers import special, special_forms
 from ...matcher import MATCH, VALUE, SYMBOL, match
