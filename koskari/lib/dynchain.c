@@ -4466,6 +4466,7 @@ int kos_dynnode_traverse(KosDynNode *node, visitproc visit, void *arg) {
     case KOS_DYN_WIND:
       return dynnode_traverse_wind(node, visit, arg);
     case KOS_DYN_CC_RAISE:
+      Py_VISIT(KosDynCCRaise_EXC_TYPE(node));
       Py_VISIT(KosDynCCRaise_EXC_VAL(node));
       break;
     case KOS_DYN_TRY:
