@@ -177,7 +177,7 @@ KosDynFrame *kos_dynframe_clone(KosDynFrame *frame) {
   if (! frame)
     return NULL;
 
-  KosStackBlock *cloned_stack = KosStackBlock_COW(KosDynFrame_STACK(frame));
+  KosStackBlock *cloned_stack = KosStackBlock_DeepCopy(KosDynFrame_STACK(frame));
 
   KosDynFrame *clone = kos_dynnode_alloc();
   if (! clone) {
@@ -2569,7 +2569,7 @@ static int kos_validate_capture_cc(KosContext *ctx, KosDynCC *cc) {
 
 /**
    Allocate and initialize a continuation. Takes ownership of captured_chain.
-   resume_stack is stored as-is (caller must have taken COW ref if needed).
+   resume_stack is stored as-is (caller must pass the stack to store; ownership transfers).
    token_ref is INCREF'd. Returns NULL on alloc failure (PyErr_NoMemory set);
    caller must free captured_chain on failure.
 */
@@ -2699,7 +2699,7 @@ int kos_shift_capture(
   }
 
   KosStackBlock *resume_stack = resume_frame
-      ? KosStackBlock_COW(KosDynFrame_STACK(resume_frame)) : NULL;
+      ? KosDynFrame_STACK(resume_frame) : NULL;
   uint32_t pc = resume_frame ? resume_pc : 0;
   uint32_t graft_point_id = stop ? KosDynNode_NODE_ID(stop) : 0;
   KosContinuation *k = kos_continuation_create(
@@ -2775,7 +2775,7 @@ int kos_capture_cc(KosContext *ctx, KosContinuation **out_k) {
       captured_chain,
       resume_frame,
       KosDynCC_RESUME_PC(cc),
-      KosStackBlock_COW(KosDynFrame_STACK(resume_frame)),
+      KosDynFrame_STACK(resume_frame),
       KOS_PROMPT_ID_UNDELIMITED,
       0,  /* graft_point_id: capture-cc captures to root */
       0,  /* multi-shot */
@@ -2804,14 +2804,18 @@ void kos_continuation_free_exclude(KosContinuation *k, PyObject *exclude_from_st
   KosContinuation_TOKEN_REF(k) = NULL;
 
   /* Release the stack reference before freeing the captured chain. The
-   * frames in the chain may share stack blocks with KosContinuation_RESUME_STACK(k) (COW);
-   * freeing the chain would release those blocks and DECREF slot values,
+   * captured chain's resume frame holds KosContinuation_RESUME_STACK(k);
+   * freeing the chain would release frame stacks and DECREF slot values,
    * which can re-enter the continuation wrapper's dealloc if the wrapper
    * was on the stack at capture time. Releasing with exclude first avoids
    * that. */
   if (KosContinuation_RESUME_STACK(k)) {
     KosStackBlock_ReleaseChainExclude(KosContinuation_RESUME_STACK(k), exclude_from_stack);
     KosContinuation_RESUME_STACK(k) = NULL;
+    /* Resume frame in the chain also points to this stack; clear to avoid
+     * double-free when kos_dynframe_free runs. */
+    if (KosContinuation_RESUME_FRAME(k))
+      KosDynFrame_STACK(KosContinuation_RESUME_FRAME(k)) = NULL;
   }
 
   /* Free the captured chain (frame stacks may still be non-NULL but are
@@ -2862,7 +2866,7 @@ KosContinuation *kos_continuation_clone(KosContinuation *k) {
       cloned_chain,
       resume_frame,
       KosContinuation_RESUME_PC(k),
-      KosStackBlock_COW(KosContinuation_RESUME_STACK(k)),
+      KosStackBlock_DeepCopy(KosContinuation_RESUME_STACK(k)),
       KosContinuation_PROMPT_ID(k),
       KosContinuation_GRAFT_POINT_ID(k),
       KosContinuation_ONE_SHOT(k),
@@ -3705,9 +3709,10 @@ static int xfer_step_install(KosContext *ctx, KosTransferAction *action,
   KosContext_GLOBALS_FRAME(ctx) = KosContext_FRAME_TOP(ctx);
   KosContext_GLOBALS_CACHE_VERSION(ctx) = KosContext_CHAIN_VERSION(ctx) + 1;
   if (KosContext_FRAME_TOP(ctx) && KosTransferPlan_RESUME_STACK(plan)) {
-    KosStackBlock *new_stack = KosStackBlock_COW(KosTransferPlan_RESUME_STACK(plan));
+    KosStackBlock *new_stack = KosTransferPlan_RESUME_STACK(plan);
     KosStackBlock *old_stack = KosDynFrame_STACK(KosContext_FRAME_TOP(ctx));
     KosDynFrame_STACK(KosContext_FRAME_TOP(ctx)) = new_stack;
+    KosTransferPlan_RESUME_STACK(plan) = NULL;  /* ownership transferred */
     if (old_stack && old_stack != new_stack) {
       KosStackBlock_ReleaseChainExclude(old_stack,
                                         KosTransferPlan_CONTINUATION_REF(plan));
@@ -3828,11 +3833,11 @@ static int xfer_step_push(KosContext *ctx, KosTransferAction *action,
   KosContext_GLOBALS_CACHE_VERSION(ctx) = KosContext_CHAIN_VERSION(ctx) + 1;
 
   if (KosContext_FRAME_TOP(ctx) && KosTransferPlan_RESUME_STACK(plan)) {
-    KosStackBlock *new_stack =
-        KosStackBlock_COW(KosTransferPlan_RESUME_STACK(plan));
+    KosStackBlock *new_stack = KosTransferPlan_RESUME_STACK(plan);
     KosStackBlock *old_stack =
         KosDynFrame_STACK(KosContext_FRAME_TOP(ctx));
     KosDynFrame_STACK(KosContext_FRAME_TOP(ctx)) = new_stack;
+    KosTransferPlan_RESUME_STACK(plan) = NULL;  /* ownership transferred */
     if (old_stack && old_stack != new_stack) {
       KosStackBlock_ReleaseChainExclude(old_stack,
                                         KosTransferPlan_CONTINUATION_REF(plan));
@@ -4258,9 +4263,9 @@ int kos_invoke_continuation(
 
   KosTransferPlan_RESUME_PC(plan) = KosContinuation_RESUME_PC(k);
   KosTransferPlan_RESUME_FRAME(plan) = to_use->resume_frame;  /* template; INSTALL uses fresh */
-  /* COW ref to template stack for this invoke; released in kos_free_transfer_plan. */
+  /* DeepCopy of template stack for this invoke; released in kos_free_transfer_plan. */
   KosTransferPlan_RESUME_STACK(plan) = to_use->resume_stack
-      ? KosStackBlock_COW(to_use->resume_stack) : NULL;
+      ? KosStackBlock_DeepCopy(to_use->resume_stack) : NULL;
   if (KOS_XFER_TRACE)
     SAYF("[xfer] plan resume_frame=%p resume_stack=%p",
          (void *) KosTransferPlan_RESUME_FRAME(plan), (void *) KosTransferPlan_RESUME_STACK(plan));

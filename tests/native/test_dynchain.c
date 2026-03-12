@@ -52,7 +52,7 @@ static int test_dynframe_new_free(void) {
 
 
 static int test_dynframe_clone(void) {
-    /* Test frame cloning with COW stack */
+    /* Test frame cloning with DeepCopy stack */
     PyObject *ns = PyDict_New();
     TEST_ASSERT_NOT_NULL(ns, "create namespace dict");
 

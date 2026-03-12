@@ -388,7 +388,7 @@ KosFrame *kos_frame_new(
 /**
   Clone a frame for continuation capture.
 
-  Clones the frame's stack using COW semantics.
+  Clones the frame's stack using DeepCopy semantics.
 
   :param frame: frame to clone
 

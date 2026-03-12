@@ -37,14 +37,6 @@
 
 
 
-static inline int KosStackBlock_EnsureExclusive(KosStackBlock **block) {
-  KosStackBlock *b = *block;
-  if (likely(b && KosStackBlock_REFCOUNT(b) == 1))
-    return 0;
-  return KosStackBlock_CopyForWrite(block);
-}
-
-
 /* === StackBlock === */
 
 
@@ -84,51 +76,9 @@ static KosStackBlock *KosStackBlock_New(KosStackBlock *parent) {
   }
 
   KosStackBlock_PARENT(self) = parent;
-  KosStackBlock_REFCOUNT(self) = 1;
   KosStackBlock_LEN(self) = 0;
 
   SAYF("KosStackBlock_New() -> %p", (void *) self);
-  return self;
-}
-
-
-static KosStackBlock *KosStackBlock_NewSized(
-    KosStackBlock *parent,
-    size_t max) {
-
-  SAY("KosStackBlock_NewSized()");
-
-  KosStackBlock *self = block_freelist;
-  if (self) {
-    block_freelist = KosStackBlock_PARENT(self);
-    block_freecount -= 1;
-    KOS_TRACE_FL_ALLOC("stack_block", 1);
-    SAYF(" found free, new block_freecount: %zu", block_freecount);
-
-    if (self->max < max) {
-      self = PyMem_Realloc(self, KosStackBlock_NEEDED_SIZE(max));
-      if (! self) {
-        PyErr_SetString(PyExc_RuntimeError, "block realloc failed");
-        return NULL;
-      }
-      KosStackBlock_MAX(self) = max;
-    }
-
-  } else {
-    KOS_TRACE_FL_ALLOC("stack_block", 0);
-    self = PyMem_Malloc(KosStackBlock_NEEDED_SIZE(max));
-    if (! self) {
-      PyErr_SetString(PyExc_RuntimeError, "block malloc failed");
-      return NULL;
-    }
-    KosStackBlock_MAX(self) = max;
-  }
-
-  KosStackBlock_PARENT(self) = parent;
-  KosStackBlock_REFCOUNT(self) = 1;
-  KosStackBlock_LEN(self) = 0;
-
-  SAYF("KosStackBlock_NewSized() -> %p", (void *) self);
   return self;
 }
 
@@ -155,55 +105,7 @@ static KosStackBlock *KosStackBlock_Grow(KosStackBlock *self) {
 }
 
 
-int KosStackBlock_CopyForWrite(KosStackBlock **block) {
-  KosStackBlock *b = *block;
-
-  SAYF("KosStackBlock_CopyForWrite(%p)", (void *) *block);
-
-  if (! b) {
-    b = KosStackBlock_New(NULL);
-    if (! b)
-      return -1;
-    *block = b;
-    SAY("  allocated new block for NULL stack");
-    return 0;
-  }
-
-  if (likely(KosStackBlock_REFCOUNT(b) == 1)) {
-    SAY("  only 1 ref, no copy needed");
-    return 0;
-
-  } else {
-    SAYF("  refcount %zu, making a copy", KosStackBlock_REFCOUNT(b));
-
-    KosStackBlock *new = KosStackBlock_NewSized(KosStackBlock_PARENT(b),
-                                                KosStackBlock_MAX(b));
-    if (! new)
-      return -1;
-
-    for (size_t i = KosStackBlock_LEN(b); i--; ) {
-      PyObject *v = b->objs[i];
-      Py_INCREF(v);
-      new->objs[i] = v;
-    }
-    KosStackBlock_LEN(new) = KosStackBlock_LEN(b);
-
-    *block = new;
-    KosStackBlock_REFCOUNT(b)--;
-    SAYF("  new refcount of %p is %zu", (void *) b, KosStackBlock_REFCOUNT(b));
-    SAYF("  copy is %p with refcount %zu",
-         (void *) new, KosStackBlock_REFCOUNT(new));
-
-    SAY("KosStackBlock_CopyForWrite -> 0");
-    return 0;
-  }
-}
-
-
 int KosStackBlock_ClearBlock(KosStackBlock **block) {
-
-  if (KosStackBlock_EnsureExclusive(block))
-    return -1;
 
   KosStackBlock *s = *block;
 
@@ -225,43 +127,36 @@ void KosStackBlock_Release(KosStackBlock *self) {
 void KosStackBlock_ReleaseExclude(KosStackBlock *self, PyObject *exclude) {
   SAYF("KosStackBlock_Release(%p)", (void *) self);
 
-  if (self->refcount > 1) {
-    KosStackBlock_REFCOUNT(self)--;
-    SAYF(" refcount remaining: %zu", KosStackBlock_REFCOUNT(self));
+  for (size_t i = self->len; i--; ) {
+    PyObject *o = self->objs[i];
+    if (exclude && o == exclude) {
+      self->objs[i] = NULL;
+      continue;
+    }
+    Py_DECREF(o);
+  }
+
+  /* Grown blocks (max > BLOCK_NEW_SIZE) are from KosStackBlock_Grow via
+     PyMem_Realloc. Do not cache them: Valgrind reports them as indirectly
+     lost when the freelist chain crosses Python-allocated memory. */
+  if (self->max > BLOCK_NEW_SIZE) {
+    KOS_TRACE_FL_RETURN("stack_block", 1);
+    PyMem_Free(self);
+    SAY(" grown block, dealloced");
+  } else if (block_freecount < BLOCK_MAX_FREE) {
+    KOS_TRACE_FL_RETURN("stack_block", 0);
+    KosStackBlock_LEN(self) = 0;
+
+    block_freecount += 1;
+    KosStackBlock_PARENT(self) = block_freelist;
+    block_freelist = self;
+    SAYF(" deposited into freelist, new block_freecount: %zu",
+         block_freecount);
 
   } else {
-    for (size_t i = self->len; i--; ) {
-      PyObject *o = self->objs[i];
-      if (exclude && o == exclude) {
-        self->objs[i] = NULL;
-        continue;
-      }
-      Py_DECREF(o);
-    }
-
-    /* Grown blocks (max > BLOCK_NEW_SIZE) are from KosStackBlock_Grow via
-       PyMem_Realloc. Do not cache them: Valgrind reports them as indirectly
-       lost when the freelist chain crosses Python-allocated memory. */
-    if (self->max > BLOCK_NEW_SIZE) {
-      KOS_TRACE_FL_RETURN("stack_block", 1);
-      PyMem_Free(self);
-      SAY(" grown block, dealloced");
-    } else if (block_freecount < BLOCK_MAX_FREE) {
-      KOS_TRACE_FL_RETURN("stack_block", 0);
-      KosStackBlock_REFCOUNT(self) = 0;
-      KosStackBlock_LEN(self) = 0;
-
-      block_freecount += 1;
-      KosStackBlock_PARENT(self) = block_freelist;
-      block_freelist = self;
-      SAYF(" deposited into freelist, new block_freecount: %zu",
-           block_freecount);
-
-    } else {
-      KOS_TRACE_FL_RETURN("stack_block", 1);
-      PyMem_Free(self);
-      SAY(" at max freelist size, dealloced");
-    }
+    KOS_TRACE_FL_RETURN("stack_block", 1);
+    PyMem_Free(self);
+    SAY(" at max freelist size, dealloced");
   }
 
   SAY("KosStackBlock_Release -> void");
@@ -275,24 +170,6 @@ void KosStackBlock_ReleaseChainExclude(KosStackBlock *block, PyObject *exclude) 
     KosStackBlock_ReleaseExclude(b, exclude);
     b = p;
   }
-}
-
-
-KosStackBlock *KosStackBlock_COW(KosStackBlock *block) {
-  SAYF("KosStackBlock_COW(%p)", (void *) block);
-
-  if (! block)
-    return NULL;
-
-  KosStackBlock *b = block;
-  while (b) {
-    KosStackBlock_REFCOUNT(b)++;
-    SAYF("  block %p refcount now %zu", (void *) b, KosStackBlock_REFCOUNT(b));
-    b = KosStackBlock_PARENT(b);
-  }
-
-  SAYF("KosStackBlock_COW() -> %p", (void *) block);
-  return block;
 }
 
 
@@ -354,13 +231,16 @@ static int KosStackBlock_Push(
 
   if (KOS_STACK_TRACE) {
     SAYF("[stack] Push block=%p len=%zu accepting %R",
-         (void *) *self, KosStackBlock_LEN(*self), val);
+         (void *) *self, *self ? KosStackBlock_LEN(*self) : 0, val);
   }
 
-  if (KosStackBlock_EnsureExclusive(self))
-    return -1;
-
   KosStackBlock *s = *self;
+  if (! s) {
+    s = KosStackBlock_New(NULL);
+    if (! s)
+      return -1;
+    *self = s;
+  }
 
   /* grow if needed */
   while (s->len >= s->max) {
@@ -388,15 +268,18 @@ int KosStackBlock_PUSH(
 
   if (KOS_STACK_TRACE) {
     SAYF("[stack] PUSH block=%p len=%zu accepting %R",
-         (void *) *self, KosStackBlock_LEN(*self), val);
-  }
-
-  if (KosStackBlock_EnsureExclusive(self)) {
-    Py_DECREF(val);
-    return -1;
+         (void *) *self, *self ? KosStackBlock_LEN(*self) : 0, val);
   }
 
   KosStackBlock *s = *self;
+  if (! s) {
+    s = KosStackBlock_New(NULL);
+    if (! s) {
+      Py_DECREF(val);
+      return -1;
+    }
+    *self = s;
+  }
 
   /* grow if needed */
   while (s->len >= s->max) {
@@ -423,9 +306,6 @@ static int KosStackBlock_ExtendPtr(
 
   if (! count)
     return 0;
-
-  if (KosStackBlock_EnsureExclusive(self))
-    return -1;
 
   KosStackBlock *s = *self;
 
@@ -467,9 +347,6 @@ static int KosStackBlock_EXTENDPTR(
 
   if (! count)
     return 0;
-
-  if (KosStackBlock_EnsureExclusive(self))
-    return -1;
 
   KosStackBlock *s = *self;
 
@@ -552,9 +429,6 @@ static int KosStackBlock_Pull(KosStackBlock **self, size_t count) {
     return -1;
   }
 
-  if (unlikely(KosStackBlock_EnsureExclusive(&s)))
-    return -1;
-
   while (s->len + count >= s->max) {
     s = KosStackBlock_Grow(s);
     if (! s)
@@ -590,9 +464,6 @@ static PyObject *KosStackBlock_Pop(KosStackBlock **self) {
     return NULL;
   }
 
-  if (unlikely(KosStackBlock_EnsureExclusive(&s)))
-    return NULL;
-
   s->len = --len;
   *self = s;
 
@@ -616,9 +487,6 @@ int KosStackBlock_Drop1(KosStackBlock **self) {
     return -1;
   }
 
-  if(unlikely(KosStackBlock_EnsureExclusive(&s)))
-    return -1;
-
   Py_DECREF(s->objs[--(KosStackBlock_LEN(s))]);
   *self = s;
 
@@ -641,9 +509,6 @@ int KosStackBlock_Drop(KosStackBlock **self, size_t count) {
     PyErr_SetString(PyExc_RuntimeError, "stack drop underrun");
     return -1;
   }
-
-  if (unlikely(KosStackBlock_EnsureExclusive(&s)))
-    return -1;
 
   while (count--) {
     Py_DECREF(s->objs[--len]);
@@ -671,9 +536,6 @@ int KosStackBlock_DropNoErr(KosStackBlock **self, size_t count) {
     res = -1;
   }
 
-  if (KosStackBlock_EnsureExclusive(&s))
-    return -1;
-
   while (count--) {
     Py_DECREF(s->objs[--len]);
   }
@@ -699,9 +561,6 @@ int KosStackBlock_Duplicate(KosStackBlock **self, size_t count) {
     PyErr_SetString(PyExc_RuntimeError, "stack dup underrun");
     return -1;
   }
-
-  if (KosStackBlock_EnsureExclusive(&s))
-    return -1;
 
   /* grow if needed */
   while (s->len + count >= s->max) {
@@ -738,9 +597,6 @@ static int KosStackBlock_Replace(
     return -1;
   }
 
-  if (KosStackBlock_EnsureExclusive(&s))
-    return -1;
-
   Py_INCREF(value);
   Py_DECREF(s->objs[index]);
   s->objs[index] = value;
@@ -775,11 +631,6 @@ PyObject *KosStackBlock_PopTail(
   PyObject *ret = PyTuple_New(count);
   if (! ret)
     return NULL;
-
-  if (KosStackBlock_EnsureExclusive(&s)) {
-    Py_DECREF(ret);
-    return NULL;
-  }
 
   while (count--) {
     PyTuple_SET_ITEM(ret, count, s->objs[--len]);
@@ -872,9 +723,6 @@ int KosStackBlock_PopBlock(KosStackBlock **block, size_t count) {
       return -1;
     }
 
-    if (KosStackBlock_EnsureExclusive(&back))
-      return -1;
-
     size_t nlen = back->len + count;
     while (nlen > back->max) {
       back = KosStackBlock_Grow(back);
@@ -922,9 +770,6 @@ int KosStackBlock_PopTailPtr(
     dest[count] = s->objs[--len];
   }
 
-  if (KosStackBlock_EnsureExclusive(&s))
-    return -1;
-
   s->len = len;
   *self = s;
 
@@ -955,11 +800,6 @@ PyObject *KosStackBlock_PopTailDict(
   PyObject *ret = PyDict_NewPresized(count);
   if (! ret)
     return NULL;
-
-  if (KosStackBlock_EnsureExclusive(&s)) {
-    Py_DECREF(ret);
-    return NULL;
-  }
 
   s->len -= tcount;
 
@@ -1074,11 +914,6 @@ PyObject *KosStackBlock_PopTailDictFromNames(
   ret = PyDict_NewPresized(count);
   if (! ret)
     return NULL;
-
-  if (KosStackBlock_EnsureExclusive(&s)) {
-    Py_DECREF(ret);
-    return NULL;
-  }
 
   size_t base = s->len - count;
   for (size_t j = 0; j < count; j++) {
@@ -1397,7 +1232,7 @@ static PyMethodDef stack_methods[] = {
     "S.clear() => None" },
 
   { "copy", (PyCFunction) stack_m_copy, METH_NOARGS,
-    "Creates a copy-on-write clone of this stack\n"
+    "Creates a deep copy of this stack; the result is independent of the original.\n"
     "S.copy() => Stack" },
 
   { NULL, NULL, 0, NULL },
@@ -1502,13 +1337,13 @@ PyObject *KosStack_Copy(PyObject *original) {
   if (! self)
     return NULL;
 
-  KosStackBlock *b = KosStack_BLOCK(original);
-  KosStack_BLOCK(self) = b;
-
-  while (b) {
-    KosStackBlock_REFCOUNT(b)++;
-    b = KosStackBlock_PARENT(b);
+  KosStackBlock *orig = KosStack_BLOCK(original);
+  KosStackBlock *copy = KosStackBlock_DeepCopy(orig);
+  if (! copy && orig) {
+    Py_DECREF(self);
+    return NULL;
   }
+  KosStack_BLOCK(self) = copy ? copy : KosStackBlock_New(NULL);
 
   SAYF("KosStack_Copy() -> %p", (void *) self);
   return self;
@@ -1807,9 +1642,6 @@ int KosStack_PopBlock(PyObject *self, size_t count) {
       PyErr_SetString(PyExc_RuntimeError, "pop block underrun");
       return -1;
     }
-
-    if (KosStackBlock_EnsureExclusive(&back))
-      return -1;
 
     size_t nlen = back->len + count;
     while (nlen > back->max) {

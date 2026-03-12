@@ -257,7 +257,7 @@ struct KosContinuation {
   KosDynNode *captured_chain;   /* cloned chain segment */
   KosDynFrame *resume_frame;    /* frame to resume into */
   uint32_t resume_pc;           /* pc to resume at */
-  KosStackBlock *resume_stack;  /* stack state (COW reference) */
+  KosStackBlock *resume_stack;  /* stack state; continuation owns exclusively */
   uint32_t prompt_id;           /* target prompt tag */
   uint32_t graft_point_id;      /* node_id of graft point for ID fallback; 0 = none */
   uint8_t one_shot;             /* 0 = multi-shot, 1 = one-shot */
@@ -474,7 +474,7 @@ KosDynFrame *kos_dynframe_new(
 /**
    Clone a frame node for continuation capture.
 
-   Clones the frame's stack using COW semantics. Does NOT clone
+   Clones the frame's stack using DeepCopy. Does NOT clone
    the parent chain; use kos_clone_chain_segment for that.
 
    :param frame: frame to clone

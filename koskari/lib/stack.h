@@ -31,14 +31,12 @@
    moved to KosDynRegion nodes in the dynamic chain. See dynchain.h.
 
    The stack is organized as a linked list of blocks. Each block holds
-   a flexible array of PyObject pointers. Blocks support copy-on-write
-   via the refcount field.
+   a flexible array of PyObject pointers. Each block chain has a single
+   owner; no sharing.
 */
 
 struct KosStackBlock {
   KosStackBlock *back;    /* previous block (toward bottom) */
-
-  size_t refcount;        /* for copy-on-write */
 
   size_t max;             /* allocated count of objs */
   size_t len;             /* used objs */
@@ -79,19 +77,11 @@ typedef struct KosStack {
 #define KosStackBlock_PARENT(sb)                \
   (((KosStackBlock *) sb)->back)
 
-#define KosStackBlock_REFCOUNT(sb)              \
-  (((KosStackBlock *) sb)->refcount)
-
 #define KosStackBlock_MAX(sb)                   \
   (((KosStackBlock *) sb)->max)
 
 #define KosStackBlock_LEN(sb)                   \
   (((KosStackBlock *) sb)->len)
-
-
-/* === copy-on-write (internal; use EnsureExclusive for hot path) === */
-
-int KosStackBlock_CopyForWrite(KosStackBlock **block);
 
 
 /* === public API === */
@@ -101,21 +91,14 @@ PyObject *KosStack_New(void);
 
 
 /**
-   Produces a new copy of stack. This is copy-on-write optimized to
-   point to the same stack blocks.
+   Produces a new copy of stack. Performs a full deep copy; the result
+   is independent of the original.
  */
 PyObject *KosStack_Copy(PyObject *original);
 
 
 /**
-   Obtain a COW reference to a stack block chain. Increments refcount
-   on all blocks in the chain.
- */
-KosStackBlock *KosStackBlock_COW(KosStackBlock *block);
-
-
-/**
-   Release a stack block (decrement refcount, free if zero).
+   Release a stack block. Caller must hold exclusive ownership.
  */
 void KosStackBlock_Release(KosStackBlock *block);
 
@@ -144,7 +127,7 @@ KosStackBlock *KosStackBlock_DeepCopy(KosStackBlock *block);
 
 /**
    Push val onto the block chain (increments ref). For use by eval/dynchain
-   on frame stacks. Copy-on-write and grow as needed.
+   on frame stacks. Grows as needed.
 
    :return: 0 on success, -1 on error
  */
@@ -470,8 +453,8 @@ int KosStackBlock_PopBlock(KosStackBlock **block, size_t count);
 
 
 /**
-   Clear the current block in place (COW): drop refs to all elements
-   and set length to 0. Does not drop or push blocks.
+   Clear the current block in place: drop refs to all elements and set
+   length to 0. Does not drop or push blocks.
 
    :return: 0 on success, -1 on error
  */
