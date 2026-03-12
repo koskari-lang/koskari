@@ -80,7 +80,6 @@ class TestDemandSyncExpression(unittest.TestCase):
         self.assertIn("suspension", str(ctx.exception))
 
 
-
 class TestDemandSyncFunctionClosure(unittest.IsolatedAsyncioTestCase):
     """
     demand_sync on Function with closures (reproducer for closure-slot bug)
@@ -122,6 +121,96 @@ class TestDemandSyncFunctionClosure(unittest.IsolatedAsyncioTestCase):
         fn = self._make_closure_fn_no_args()
         self.assertEqual(demand_sync(fn), 100)
 
+
+class TestDemandSyncGenerator(unittest.TestCase):
+    """
+    demand_sync on yielding KosFunction returns DemandSyncGenerator
+    """
+
+    def test_yielding_function_returns_generator(self):
+        """
+        demand_sync(yielding_fn) returns a generator, not KoskariSyncViolation
+        """
+        _, base_ns = build_expr(
+            [["CONST", 0], ["RETURN", 1]],
+            values={},
+        )
+        code = build_code(
+            [
+                ["CONST", 1],
+                ["YIELD", 1],
+                ["RETURN", 0],
+            ],
+            name='yielding_fn',
+        )
+        fn = make_callable(code, base_ns, FormalsSpec())
+        result = demand_sync(fn)
+        self.assertIsNotNone(result)
+        self.assertTrue(hasattr(result, '__next__'))
+        self.assertIs(iter(result), result)
+        self.assertEqual(next(result), 1)
+
+
+    def test_yielding_function_list(self):
+        """
+        list(demand_sync(yielding_fn)) yields expected values
+        """
+        _, base_ns = build_expr(
+            [["CONST", 0], ["RETURN", 1]],
+            values={},
+        )
+        code = build_code(
+            [
+                ["CONST", 1],
+                ["YIELD", 1],
+                ["CONST", 2],
+                ["YIELD", 1],
+                ["RETURN", 0],
+            ],
+            name='yielding_fn',
+        )
+        fn = make_callable(code, base_ns, FormalsSpec())
+        result = demand_sync(fn)
+        self.assertEqual(list(result), [1, 2])
+
+
+    def test_await_in_demand_generator_raises_violation(self):
+        """
+        Generator that awaits raises KoskariSyncViolation when the await
+        suspends. Uses a custom awaitable that yields on first send.
+        """
+
+        def _suspending_iter():
+            yield
+            return None
+
+        class SuspendingAwaitable:
+            def __await__(self):
+                return _suspending_iter()
+
+        awaitable = SuspendingAwaitable()
+        _, base_ns = build_expr(
+            [["CONST", 0], ["RETURN", 1]],
+            local_syms=('a',),
+            values={'a': awaitable},
+        )
+        code = build_code(
+            [
+                ["FAST", 0],
+                ["AWAIT", 0],
+                ["CONST", 1],
+                ["YIELD", 1],
+                ["RETURN", 0],
+            ],
+            local_syms=(),
+            closure_syms=('a',),
+            name='await_then_yield',
+        )
+        fn = make_callable(code, base_ns, FormalsSpec())
+        gen = demand_sync(fn)
+        with self.assertRaises(KoskariSyncViolation) as ctx:
+            next(gen)
+        self.assertIn('suspension', str(ctx.exception))
 
 
 class TestDemandSyncPlainPython(unittest.TestCase):
