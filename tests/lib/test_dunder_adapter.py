@@ -81,6 +81,97 @@ class TestDunderAdapterAdd(unittest.TestCase):
         self.assertEqual(str(obj), 'Strable<x>')
 
 
+class TestDunderAdapterRichCompare(unittest.TestCase):
+    """
+    __eq__, __lt__ via tp_richcompare: obj == x, obj < x use demand_sync
+    """
+
+    def test_eq_plain_python_dunder(self):
+        """
+        KosType class with Python __eq__: obj == x returns correct value
+        """
+        class Equatable(metaclass=KosType):
+
+            def __init__(self, val):
+                self.val = val
+
+            def __eq__(self, other):
+                if isinstance(other, Equatable):
+                    return self.val == other.val
+                return self.val == other
+
+        obj = Equatable(42)
+        self.assertEqual(obj == 42, True)
+        self.assertEqual(obj == 0, False)
+        self.assertEqual(obj != 42, False)
+        self.assertEqual(obj != 0, True)
+
+
+    def test_lt_plain_python_dunder(self):
+        """
+        KosType class with Python __lt__: obj < x returns correct value
+        """
+        class LessThan(metaclass=KosType):
+
+            def __init__(self, val):
+                self.val = val
+
+            def __lt__(self, other):
+                if isinstance(other, LessThan):
+                    return self.val < other.val
+                return self.val < other
+
+        obj = LessThan(10)
+        self.assertEqual(obj < 20, True)
+        self.assertEqual(obj < 5, False)
+
+
+class TestDunderAdapterLen(unittest.TestCase):
+    """
+    __len__ via sq_length: len(obj) uses demand_sync
+    """
+
+    def test_len_plain_python_dunder(self):
+        """
+        KosType class with Python __len__: len(obj) returns correct value
+        """
+        class Lenable(metaclass=KosType):
+
+            def __init__(self, n):
+                self.n = n
+
+            def __len__(self):
+                return self.n
+
+        obj = Lenable(7)
+        self.assertEqual(len(obj), 7)
+
+
+class TestDunderAdapterBool(unittest.TestCase):
+    """
+    __bool__ via nb_bool: bool(obj) uses demand_sync
+    """
+
+    def test_bool_plain_python_dunder(self):
+        """
+        KosType class with Python __bool__: bool(obj) and if obj work
+        """
+        class Boolable(metaclass=KosType):
+
+            def __init__(self, flag):
+                self.flag = flag
+
+            def __bool__(self):
+                return self.flag
+
+        t = Boolable(True)
+        f = Boolable(False)
+        self.assertEqual(bool(t), True)
+        self.assertEqual(bool(f), False)
+        self.assertTrue(t)
+        self.assertFalse(f)
+
+
 class TestDunderAdapterKoskariSyncViolation(unittest.TestCase):
     """
     KoskariSyncViolation raised when Koskari dunder suspends (AWAIT/YIELD)
@@ -116,4 +207,103 @@ class TestDunderAdapterKoskariSyncViolation(unittest.TestCase):
         obj = BadAdd()
         with self.assertRaises(KoskariSyncViolation) as ctx:
             _ = obj + 1
+        self.assertIn('suspension', str(ctx.exception))
+
+
+    def test_eq_koskari_yield_raises_violation(self):
+        """
+        KosType class with Koskari __eq__ that yields raises KoskariSyncViolation
+        """
+        code = build_code(
+            [
+                ['CONST', 0],
+                ['YIELD', 1],
+                ['RETURN', 1],
+            ],
+            local_syms=('self', 'other'),
+            name='__eq__',
+        )
+        _, ns = build_expr(
+            [['CONST', 0], ['RETURN', 1]],
+            local_syms=('self', 'other'),
+        )
+        formals = FormalsSpec(('self', 'other'))
+        yielding_eq = make_callable(code, ns, formals)
+
+        class BadEq(metaclass=KosType):
+
+            def __init__(self):
+                pass
+
+            __eq__ = yielding_eq
+
+        obj = BadEq()
+        with self.assertRaises(KoskariSyncViolation) as ctx:
+            _ = obj == 1
+        self.assertIn('suspension', str(ctx.exception))
+
+
+    def test_len_koskari_yield_raises_violation(self):
+        """
+        KosType class with Koskari __len__ that yields raises KoskariSyncViolation
+        """
+        code = build_code(
+            [
+                ['CONST', 0],
+                ['YIELD', 1],
+                ['RETURN', 1],
+            ],
+            local_syms=('self',),
+            name='__len__',
+        )
+        _, ns = build_expr(
+            [['CONST', 0], ['RETURN', 1]],
+            local_syms=('self',),
+        )
+        formals = FormalsSpec(('self',))
+        yielding_len = make_callable(code, ns, formals)
+
+        class BadLen(metaclass=KosType):
+
+            def __init__(self):
+                pass
+
+            __len__ = yielding_len
+
+        obj = BadLen()
+        with self.assertRaises(KoskariSyncViolation) as ctx:
+            _ = len(obj)
+        self.assertIn('suspension', str(ctx.exception))
+
+
+    def test_bool_koskari_yield_raises_violation(self):
+        """
+        KosType class with Koskari __bool__ that yields raises KoskariSyncViolation
+        """
+        code = build_code(
+            [
+                ['CONST', 1],
+                ['YIELD', 1],
+                ['RETURN', 1],
+            ],
+            local_syms=('self',),
+            name='__bool__',
+        )
+        _, ns = build_expr(
+            [['CONST', 0], ['RETURN', 1]],
+            local_syms=('self',),
+        )
+        formals = FormalsSpec(('self',))
+        yielding_bool = make_callable(code, ns, formals)
+
+        class BadBool(metaclass=KosType):
+
+            def __init__(self):
+                pass
+
+            __bool__ = yielding_bool
+
+        obj = BadBool()
+        with self.assertRaises(KoskariSyncViolation) as ctx:
+            _ = bool(obj)
         self.assertIn('suspension', str(ctx.exception))

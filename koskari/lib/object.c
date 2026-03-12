@@ -105,6 +105,7 @@ typedef enum {
   SLOT_UNARY,
   SLOT_BINARY,
   SLOT_RICHCMP,
+  SLOT_LEN,
 } slot_kind_t;
 
 
@@ -118,6 +119,14 @@ static const slot_def_t slot_defs[] = {
   {"__add__", SLOT_BINARY},
   {"__repr__", SLOT_UNARY},
   {"__str__", SLOT_UNARY},
+  {"__eq__", SLOT_RICHCMP},
+  {"__ne__", SLOT_RICHCMP},
+  {"__lt__", SLOT_RICHCMP},
+  {"__le__", SLOT_RICHCMP},
+  {"__gt__", SLOT_RICHCMP},
+  {"__ge__", SLOT_RICHCMP},
+  {"__len__", SLOT_LEN},
+  {"__bool__", SLOT_UNARY},
 };
 
 
@@ -196,6 +205,56 @@ static PyObject *dunder_slot_nb_add_shim(PyObject *a, PyObject *b) {
 }
 
 
+static const char *richcmp_op_to_dunder(int op) {
+
+  switch (op) {
+    case Py_EQ: return "__eq__";
+    case Py_NE: return "__ne__";
+    case Py_LT: return "__lt__";
+    case Py_LE: return "__le__";
+    case Py_GT: return "__gt__";
+    case Py_GE: return "__ge__";
+    default: return NULL;
+  }
+}
+
+
+static PyObject *dunder_slot_richcompare(PyObject *self, PyObject *other,
+                                         int op) {
+
+  const char *dunder = richcmp_op_to_dunder(op);
+  if (! dunder)
+    return Py_NotImplemented;
+  PyObject *result = dunder_slot_binary(self, other, dunder);
+  if (! result)
+    return NULL;
+  return result;
+}
+
+
+static Py_ssize_t dunder_slot_sq_length(PyObject *self) {
+
+  PyObject *result = dunder_slot_unary(self, "__len__");
+  if (! result) {
+    return -1;
+  }
+  Py_ssize_t len = PyLong_AsSsize_t(result);
+  Py_DECREF(result);
+  return len;
+}
+
+
+static int dunder_slot_nb_bool_shim(PyObject *self) {
+
+  PyObject *result = dunder_slot_unary(self, "__bool__");
+  if (! result)
+    return -1;
+  int truth = PyObject_IsTrue(result);
+  Py_DECREF(result);
+  return truth;
+}
+
+
 static PyObject *dunder_lookup_in_mro(PyTypeObject *type,
                                       const char *dunder) {
 
@@ -241,15 +300,38 @@ static int koskari_update_one_slot(PyTypeObject *type,
       type->tp_str = dunder_slot_str_shim;
       return 0;
     }
+    if (strcmp(dunder, "__bool__") == 0) {
+      static PyNumberMethods number_methods_both = {
+        .nb_add = dunder_slot_nb_add_shim,
+        .nb_bool = dunder_slot_nb_bool_shim,
+      };
+      type->tp_as_number = &number_methods_both;
+      return 0;
+    }
     return 0;
   }
 
   if (kind == SLOT_BINARY) {
     if (strcmp(dunder, "__add__") == 0) {
-      static PyNumberMethods number_methods = { .nb_add = dunder_slot_nb_add_shim };
-      type->tp_as_number = &number_methods;
+      static PyNumberMethods number_methods_add = {
+        .nb_add = dunder_slot_nb_add_shim,
+      };
+      type->tp_as_number = &number_methods_add;
       return 0;
     }
+    return 0;
+  }
+
+  if (kind == SLOT_RICHCMP) {
+    type->tp_richcompare = dunder_slot_richcompare;
+    return 0;
+  }
+
+  if (kind == SLOT_LEN) {
+    static PySequenceMethods seq_methods = {
+      .sq_length = dunder_slot_sq_length,
+    };
+    type->tp_as_sequence = &seq_methods;
     return 0;
   }
 
