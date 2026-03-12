@@ -2,7 +2,10 @@
 
 This document unifies the design for bridging Koskari's async-capable evaluator with Python's synchronous object protocol (dunder methods, type slots, iteration).
 
-**Implementation status**: Design only; not yet implemented.
+**Implementation status**: Core design implemented. Host path (demand_sync, slot
+wiring, KoskariSyncViolation) and `__init__` as demand dunder are done. Deferred:
+demand_next, full slot coverage, tp_setattro refresh, __radd__ fallback,
+OBJECT_* push_or_await.
 
 ---
 
@@ -141,6 +144,8 @@ Installation happens in `kostype_tp_new` (or equivalent) when a KosType class is
 
 ### 5.1 Slot Coverage
 
+**Implemented**: `__add__` (nb_add), `__repr__` (tp_repr), `__str__` (tp_str). **Deferred**: remaining slots below.
+
 | Category    | Slots                                  | Dunder mapping (non-exhaustive)      |
 | ----------- | -------------------------------------- | ------------------------------------ |
 | Number      | nb_add, nb_subtract, nb_multiply, …    | __add__, __sub__, __mul__, …         |
@@ -232,7 +237,7 @@ The adapter discards the temporary evaluator context before raising.
 | `demand_sync`        | Host path: drives dunder calls without suspension    |
 | `demand_next`        | Host path: drives sync iteration without suspension  |
 | `Koskari_RunSync`    | **Not** used for dunders. Runs coroutines via event loop; dunder adapter forbids suspension instead. |
-| `C.new` (KosType)    | Already provides sync construction; same “no suspend” idea could align with demand_sync if __init__ is driven that way, but construction semantics are separate. |
+| `__init__` (KosType) | demand dunder: kostype_tp_call uses Koskari_DemandSyncEx(__init__, ...). C() returns instance directly; C.new removed. |
 
 ---
 
@@ -257,10 +262,12 @@ The adapter discards the temporary evaluator context before raising.
 
 Implementation steps:
 
-1. Add `demand_sync` and `demand_next` to the C evaluator.
-2. Add `KoskariSyncViolation` exception type.
-3. Implement shared Koskari shims (one per slot category) that look up dunder, build call, invoke demand_sync.
-4. Implement `koskari_fixup_slot_dispatchers` and per-slot `update_one_slot` equivalent; maintain slot-definition table (dunder name → slot).
-5. Call `koskari_fixup_slot_dispatchers(type)` from `kostype_tp_new` after PyType_Ready.
-6. Wire KosType `tp_setattro` (or equivalent) to trigger slot refresh when a dunder attribute is set.
-7. Change OBJECT_* opcodes to use `push_or_await` instead of `push_result` where results may be awaitable.
+1. Add `demand_sync` and `demand_next` to the C evaluator. — **demand_sync done** (Koskari_DemandSyncEx); demand_next deferred.
+2. Add `KoskariSyncViolation` exception type. — **done** (cached in object.c).
+3. Implement shared Koskari shims (one per slot category) that look up dunder, build call, invoke demand_sync. — **done** (dunder_slot_unary, dunder_slot_binary, shims for nb_add, tp_repr, tp_str).
+4. Implement `koskari_fixup_slot_dispatchers` and per-slot `update_one_slot` equivalent; maintain slot-definition table (dunder name → slot). — **done** (koskari_update_one_slot, koskari_fixup_slot_dispatchers).
+5. Call `koskari_fixup_slot_dispatchers(type)` from `kostype_tp_new` after PyType_Ready. — **done**.
+6. Wire KosType `tp_setattro` (or equivalent) to trigger slot refresh when a dunder attribute is set. — **deferred**.
+7. Change OBJECT_* opcodes to use `push_or_await` instead of `push_result` where results may be awaitable. — **deferred**; current slot shims return concrete values via demand_sync.
+
+Additionally: `__init__` is a demand dunder. `kostype_tp_call` uses alloc + Koskari_DemandSyncEx(__init__, ...); C() returns the instance directly. KosType no longer extends KosCallable; (Foo 1 2) and C(...) both use the default PyObject_Call path.
