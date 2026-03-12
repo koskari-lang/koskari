@@ -143,7 +143,7 @@ class TestRepl(unittest.IsolatedAsyncioTestCase):
         stderr = io.StringIO()
         line_iter = iter(lines)
 
-        def prompter(prompt):
+        def prompter(prompt, **kwargs):
             try:
                 return next(line_iter)
             except StopIteration:
