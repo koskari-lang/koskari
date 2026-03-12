@@ -33,6 +33,12 @@
 #define CURRENT_STACK(ctx)  KosDynFrame_STACK(CURRENT_FRAME(ctx))
 
 
+/* === Dunder adapter (KoskariSyncViolation cache) === */
+
+
+static PyObject *KoskariSyncViolation = NULL;
+
+
 /* === Helpers for init invocation === */
 
 
@@ -257,6 +263,174 @@ static PyObject *kostype_new_classmethod(PyObject *cls, PyObject *args,
 }
 
 
+/* === Dunder adapter: slot table and shims === */
+
+
+typedef enum {
+  SLOT_UNARY,
+  SLOT_BINARY,
+  SLOT_RICHCMP,
+} slot_kind_t;
+
+
+typedef struct {
+  const char *dunder;
+  slot_kind_t kind;
+} slot_def_t;
+
+
+static const slot_def_t slot_defs[] = {
+  {"__add__", SLOT_BINARY},
+  {"__repr__", SLOT_UNARY},
+  {"__str__", SLOT_UNARY},
+};
+
+
+static PyObject *dunder_slot_unary(PyObject *self, const char *dunder) {
+
+  PyObject *method = PyObject_GetAttrString(self, dunder);
+  if (! method)
+    return NULL;
+  /* method is bound (self already); call with no args */
+  PyObject *args = PyTuple_New(0);
+  if (! args) {
+    Py_DECREF(method);
+    return NULL;
+  }
+  PyObject *result = NULL;
+  int r = Koskari_DemandSyncEx(method, args, NULL, &result);
+  Py_DECREF(args);
+  Py_DECREF(method);
+  if (r == 1) {
+    if (KoskariSyncViolation)
+      PyErr_Format(KoskariSyncViolation,
+                   "async suspension is not allowed in Python %s for Koskari type",
+                   dunder);
+    return NULL;
+  }
+  if (r < 0)
+    return NULL;
+  return result;
+}
+
+
+static PyObject *dunder_slot_binary(PyObject *a, PyObject *b,
+                                    const char *dunder) {
+
+  PyObject *method = PyObject_GetAttrString(a, dunder);
+  if (! method)
+    return NULL;
+  /* method is bound to a; call with (b,) only */
+  PyObject *args = PyTuple_Pack(1, b);
+  if (! args) {
+    Py_DECREF(method);
+    return NULL;
+  }
+  PyObject *result = NULL;
+  int r = Koskari_DemandSyncEx(method, args, NULL, &result);
+  Py_DECREF(args);
+  Py_DECREF(method);
+  if (r == 1) {
+    if (KoskariSyncViolation)
+      PyErr_Format(KoskariSyncViolation,
+                   "async suspension is not allowed in Python %s for Koskari type",
+                   dunder);
+    return NULL;
+  }
+  if (r < 0)
+    return NULL;
+  return result;
+}
+
+
+static PyObject *dunder_slot_repr_shim(PyObject *self) {
+
+  return dunder_slot_unary(self, "__repr__");
+}
+
+
+static PyObject *dunder_slot_str_shim(PyObject *self) {
+
+  return dunder_slot_unary(self, "__str__");
+}
+
+
+static PyObject *dunder_slot_nb_add_shim(PyObject *a, PyObject *b) {
+
+  return dunder_slot_binary(a, b, "__add__");
+}
+
+
+static PyObject *dunder_lookup_in_mro(PyTypeObject *type,
+                                      const char *dunder) {
+
+  PyObject *mro = type->tp_mro;
+  if (! mro || ! PyTuple_Check(mro))
+    return NULL;
+  Py_ssize_t n = PyTuple_GET_SIZE(mro);
+  for (Py_ssize_t i = 0; i < n; i++) {
+    PyObject *base = PyTuple_GET_ITEM(mro, i);
+    if (! PyType_Check(base))
+      continue;
+    PyTypeObject *base_type = (PyTypeObject *) base;
+    if (! base_type->tp_dict)
+      continue;
+    PyObject *attr = PyDict_GetItemString(base_type->tp_dict, dunder);
+    if (attr) {
+      Py_INCREF(attr);
+      return attr;
+    }
+  }
+  return NULL;
+}
+
+
+static int koskari_update_one_slot(PyTypeObject *type,
+                                   const char *dunder,
+                                   slot_kind_t kind) {
+
+  PyObject *attr = dunder_lookup_in_mro(type, dunder);
+  if (! attr)
+    return 0;
+  int is_callable = PyCallable_Check(attr);
+  Py_DECREF(attr);
+  if (! is_callable)
+    return 0;
+
+  if (kind == SLOT_UNARY) {
+    if (strcmp(dunder, "__repr__") == 0) {
+      type->tp_repr = dunder_slot_repr_shim;
+      return 0;
+    }
+    if (strcmp(dunder, "__str__") == 0) {
+      type->tp_str = dunder_slot_str_shim;
+      return 0;
+    }
+    return 0;
+  }
+
+  if (kind == SLOT_BINARY) {
+    if (strcmp(dunder, "__add__") == 0) {
+      static PyNumberMethods number_methods = { .nb_add = dunder_slot_nb_add_shim };
+      type->tp_as_number = &number_methods;
+      return 0;
+    }
+    return 0;
+  }
+
+  return 0;
+}
+
+
+static void koskari_fixup_slot_dispatchers(PyTypeObject *type) {
+
+  for (size_t i = 0; i < sizeof(slot_defs) / sizeof(slot_defs[0]); i++) {
+    const slot_def_t *def = &slot_defs[i];
+    koskari_update_one_slot(type, def->dunder, def->kind);
+  }
+}
+
+
 /* === kostype_tp_new === */
 
 
@@ -283,6 +457,8 @@ static PyObject *kostype_tp_new(PyTypeObject *metaclass, PyObject *args,
       Py_DECREF(new_cm);
     Py_DECREF(new_cm);
   }
+
+  koskari_fixup_slot_dispatchers((PyTypeObject *) cls);
   return cls;
 }
 
@@ -497,12 +673,18 @@ int koskari_object_init(PyObject *mod) {
   if (PyDict_SetItemString(dict, "KosType",
                            (PyObject *) KOS_CALLABLE_PYTYPE(KosTypeType)) < 0)
     return -1;
+
+  /* Cache KoskariSyncViolation for dunder slot shims (sync_init runs first) */
+  KoskariSyncViolation = PyDict_GetItemString(dict, "KoskariSyncViolation");
+  Py_XINCREF(KoskariSyncViolation);
+
   return 0;
 }
 
 
 int koskari_object_clear(PyObject *mod) {
 
+  Py_CLEAR(KoskariSyncViolation);
   (void) mod;
   return 0;
 }
