@@ -429,7 +429,7 @@ static int KosStackBlock_Pull(KosStackBlock **self, size_t count) {
     return -1;
   }
 
-  while (s->len + count >= s->max) {
+  while (s->len + count > s->max) {
     s = KosStackBlock_Grow(s);
     if (! s)
       return -1;
@@ -563,14 +563,15 @@ int KosStackBlock_Duplicate(KosStackBlock **self, size_t count) {
   }
 
   /* grow if needed */
-  while (s->len + count >= s->max) {
+  while (s->len + count > s->max) {
     s = KosStackBlock_Grow(s);
     if (! s)
       return -1;
   }
 
-  for (size_t i = count; i--; ) {
-    PyObject *val = s->objs[s->len - count];
+  size_t base = s->len - count;
+  for (size_t i = 0; i < count; i++) {
+    PyObject *val = s->objs[base + i];
     Py_INCREF(val);
     s->objs[s->len++] = val;
   }
