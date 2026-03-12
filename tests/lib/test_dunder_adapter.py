@@ -172,6 +172,65 @@ class TestDunderAdapterBool(unittest.TestCase):
         self.assertFalse(f)
 
 
+class TestDunderAdapterIter(unittest.TestCase):
+    """
+    __iter__ via tp_iter: iter(obj), list(obj) use demand_sync
+    """
+
+    def test_iter_returns_value(self):
+        """
+        KosType class with Python __iter__ returning iter([1, 2, 3]);
+        iter(obj) and list(obj) work
+        """
+        class Iterable(metaclass=KosType):
+
+            def __init__(self, items):
+                self.items = items
+
+            def __iter__(self):
+                return iter(self.items)
+
+        obj = Iterable([1, 2, 3])
+        self.assertEqual(list(iter(obj)), [1, 2, 3])
+        self.assertEqual(list(obj), [1, 2, 3])
+
+
+    def test_iter_koskari_yielding_returns_generator(self):
+        """
+        KosType class with Koskari __iter__ that yields; iter(obj) returns
+        iterator, list(obj) consumes it
+        """
+        _, ns = build_expr(
+            [['CONST', 0], ['RETURN', 1]],
+            local_syms=('self',),
+        )
+        code = build_code(
+            [
+                ['CONST', 1],
+                ['YIELD', 1],
+                ['CONST', 2],
+                ['YIELD', 1],
+                ['RETURN', 0],
+            ],
+            local_syms=('self',),
+            name='__iter__',
+        )
+        formals = FormalsSpec(('self',))
+        yielding_iter = make_callable(code, ns, formals)
+
+        class YieldingIterable(metaclass=KosType):
+
+            def __init__(self):
+                pass
+
+            __iter__ = yielding_iter
+
+        obj = YieldingIterable()
+        it = iter(obj)
+        self.assertTrue(hasattr(it, '__next__'))
+        self.assertEqual(list(obj), [1, 2])
+
+
 class TestDunderAdapterKoskariSyncViolation(unittest.TestCase):
     """
     KoskariSyncViolation raised when Koskari dunder suspends (AWAIT/YIELD)

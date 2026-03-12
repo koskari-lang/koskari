@@ -6,8 +6,10 @@ This document unifies the design for bridging Koskari's async-capable evaluator 
 wiring, KoskariSyncViolation) and `__init__` as demand dunder are done.
 Implemented dunder slots: `__add__` (nb_add), `__repr__` (tp_repr), `__str__`
 (tp_str), `tp_richcompare` (__eq__, __lt__, __le__, __gt__, __ge__, __ne__),
-`__len__` (sq_length), `__bool__` (nb_bool). Deferred: demand_next, remaining
-slot coverage, tp_setattro refresh, __radd__ fallback, OBJECT_* push_or_await.
+`__len__` (sq_length), `__bool__` (nb_bool), `__iter__` (tp_iter). For
+yielding `__iter__`, DemandSyncEx returns DemandSyncGenerator (sync iterator).
+Deferred: demand_next, remaining slot coverage, tp_setattro refresh, __radd__
+fallback, OBJECT_* push_or_await.
 
 ---
 
@@ -148,7 +150,8 @@ Installation happens in `kostype_tp_new` (or equivalent) when a KosType class is
 
 **Implemented**: `__add__` (nb_add), `__repr__` (tp_repr), `__str__` (tp_str),
 tp_richcompare (__eq__, __lt__, __le__, __gt__, __ge__, __ne__), __len__
-(sq_length), __bool__ (nb_bool). **Deferred**: remaining slots below.
+(sq_length), __bool__ (nb_bool), __iter__ (tp_iter). **Deferred**: remaining
+slots below.
 
 | Category    | Slots                                  | Dunder mapping (non-exhaustive)      | Status   |
 | ----------- | -------------------------------------- | ------------------------------------ | -------- |
@@ -159,7 +162,7 @@ tp_richcompare (__eq__, __lt__, __le__, __gt__, __ge__, __ne__), __len__
 | Sequence    | sq_length, sq_item, sq_contains        | __len__, __getitem__, __contains__   | sq_length ✓ |
 | Mapping     | mp_subscript, mp_length                | __getitem__, __len__                 | deferred |
 | Other       | tp_repr, tp_str, tp_hash               | __repr__, __str__, __hash__          | tp_repr ✓, tp_str ✓ |
-| Iteration   | tp_iter, tp_iternext                   | __iter__, __next__ (via demand_next) | deferred |
+| Iteration   | tp_iter, tp_iternext                   | __iter__, __next__ (via demand_next) | tp_iter ✓ |
 
 Slot implementations follow a uniform pattern: lookup dunder, build call, demand_sync, return.
 
@@ -269,7 +272,7 @@ Implementation steps:
 
 1. Add `demand_sync` and `demand_next` to the C evaluator. — **demand_sync done** (Koskari_DemandSyncEx); demand_next deferred.
 2. Add `KoskariSyncViolation` exception type. — **done** (cached in object.c).
-3. Implement shared Koskari shims (one per slot category) that look up dunder, build call, invoke demand_sync. — **done** (dunder_slot_unary, dunder_slot_binary, dunder_slot_richcompare, dunder_slot_sq_length, dunder_slot_nb_bool_shim; nb_add, tp_repr, tp_str, tp_richcompare, sq_length, nb_bool).
+3. Implement shared Koskari shims (one per slot category) that look up dunder, build call, invoke demand_sync. — **done** (dunder_slot_unary, dunder_slot_binary, dunder_slot_richcompare, dunder_slot_sq_length, dunder_slot_nb_bool_shim, dunder_slot_iter_shim; nb_add, tp_repr, tp_str, tp_richcompare, sq_length, nb_bool, tp_iter).
 4. Implement `koskari_fixup_slot_dispatchers` and per-slot `update_one_slot` equivalent; maintain slot-definition table (dunder name → slot). — **done** (koskari_update_one_slot, koskari_fixup_slot_dispatchers).
 5. Call `koskari_fixup_slot_dispatchers(type)` from `kostype_tp_new` after PyType_Ready. — **done**.
 6. Wire KosType `tp_setattro` (or equivalent) to trigger slot refresh when a dunder attribute is set. — **deferred**.

@@ -106,6 +106,7 @@ typedef enum {
   SLOT_BINARY,
   SLOT_RICHCMP,
   SLOT_LEN,
+  SLOT_ITER,
 } slot_kind_t;
 
 
@@ -127,6 +128,7 @@ static const slot_def_t slot_defs[] = {
   {"__ge__", SLOT_RICHCMP},
   {"__len__", SLOT_LEN},
   {"__bool__", SLOT_UNARY},
+  {"__iter__", SLOT_ITER},
 };
 
 
@@ -255,6 +257,12 @@ static int dunder_slot_nb_bool_shim(PyObject *self) {
 }
 
 
+static PyObject *dunder_slot_iter_shim(PyObject *self) {
+
+  return dunder_slot_unary(self, "__iter__");
+}
+
+
 static PyObject *dunder_lookup_in_mro(PyTypeObject *type,
                                       const char *dunder) {
 
@@ -332,6 +340,11 @@ static int koskari_update_one_slot(PyTypeObject *type,
       .sq_length = dunder_slot_sq_length,
     };
     type->tp_as_sequence = &seq_methods;
+    return 0;
+  }
+
+  if (kind == SLOT_ITER) {
+    type->tp_iter = dunder_slot_iter_shim;
     return 0;
   }
 
