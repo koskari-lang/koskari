@@ -4205,11 +4205,11 @@ int kos_resume_transfer_plan(KosContext *ctx) {
   KosContext_PLAN_STACK(ctx) = KosContext_PLAN(ctx)->suspended;
   KosContext_PLAN(ctx)->suspended = NULL;
 
-  /* Check if chain has changed */
-  if (KosContext_CHAIN_VERSION(ctx) != KosContext_PLAN(ctx)->chain_version) {
-    /* Chain changed during nested transfer - would need to replan */
-    /* For now, just continue with existing plan */
-    /* TODO: implement replanning */
+  if (KosContext_CHAIN_VERSION(ctx) != KosTransferPlan_CHAIN_VERSION(KosContext_PLAN(ctx))) {
+    PyErr_SetString(PyExc_RuntimeError,
+                    "chain version changed during nested transfer; "
+                    "replanning not yet implemented");
+    return -1;
   }
 
   return 0;
