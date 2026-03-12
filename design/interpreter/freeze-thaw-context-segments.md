@@ -8,7 +8,7 @@ This document summarizes the design direction for improving Koskari's interprete
 2. Introducing explicit **freeze/thaw boundaries** between them.
 3. Moving frequently mutated execution state into **C-local structures** during evaluation.
 4. Adding a **fast inline stack block** used during active evaluation.
-5. Removing **copy-on-write (CoW) stack blocks** in favor of explicit snapshotting.
+5. Removing **copy-on-write (CoW) stack blocks** in favor of explicit snapshotting (see `design/api/stack-no-cow-proposal.md`).
 
 The primary goal is to reduce indirection and conditional checks in the hot opcode path while preserving the ability to suspend, resume, and capture execution state.
 
@@ -142,6 +142,10 @@ The active stack pointer may reference either:
 * the inline block
 * a heap block
 
+**Segmented stack natural fit**: KosStackBlock is already a linked list of blocks. Freeze copies one block (the current one) to heap; thaw copies one block from heap into the cursor. The block boundary is the natural copy unit—no new segmentation concept is required.
+
+**Block nesting (PUSH_LOOP, PUSH_TRY, etc.)**: PushBlock and DropBlock are rarer than plain push/pop. When we PushBlock we spill the inline block to heap, allocate a child block, and either use a fresh inline block or point at the heap block. Most stack ops operate on a single block and never cross block boundaries, so the single-block fast path dominates.
+
 ---
 
 # 6. Stack Block Representation
@@ -222,6 +226,8 @@ Freeze must occur before:
 * continuation capture
 * iterator freezing
 * leaving `koskari_eval()` with resumable state
+
+**Scope: suspension vs. frame switch**: The critical design choice is *when* freeze/thaw runs. If freeze/thaw is scoped **only to suspension boundaries** (eval entry/exit, AWAIT, YIELD, RETURN, RAISE), then thaw happens once per `koskari_eval` call and freeze once per suspend. A typical run of 10,000+ instructions amortizes the copy cost over many stack ops—a clear win. If freeze/thaw runs on **every frame switch** (CALL/RETURN), we do 2 block copies per function call. For call-heavy code, that frequency could erode gains. The recommended approach: scope freeze/thaw to suspension only. On CALL we must persist the caller’s stack to its frame; the callee’s stack may start empty and stay in the cursor. The complexity is ensuring the caller’s frame holds a valid heap block before we run the callee—which we already need for correct suspension anyway.
 
 ---
 
@@ -366,8 +372,54 @@ Possible future extensions:
 * specialized fast opcode variants
 * block size tier freelists
 * improved DECREF clearing strategies
+* inline unions on `KosContext` for state-specific fields (suspension payload, delimited-return path) to clarify invariants and reduce effective size when only a subset of fields is active
 
 These can be explored after measuring the new architecture.
+
+---
+
+# 16. Freeze/Thaw Cost-Benefit Analysis
+
+A natural concern: **does the overhead of freeze/thaw exceed the savings?**
+
+### Cost of freeze/thaw
+
+Each block copy is roughly:
+
+* 8 slots → 64 bytes
+* 16 slots → 128 bytes
+
+On a modern CPU with warm caches, that is on the order of ~10–30 cycles per `memcpy`. Two copies (freeze + thaw) per suspension is ~20–60 cycles.
+
+### Benefit of the inline cursor
+
+Per stack operation, we eliminate:
+
+* function call overhead (`KosStackBlock_PUSH` → direct store)
+* indirection through `frame->stack->objs[i]`
+* CoW check (after removal)
+* grow check (until inline capacity is reached)
+
+Roughly 10–20 cycles saved per stack op. With 2–3 stack ops per instruction average, that is ~20–60 cycles saved per instruction.
+
+### When it pays off
+
+* **Long runs between suspends** (e.g. 10,000 instructions): 1 thaw + 1 freeze. Copy cost ~50 cycles vs. savings ~200,000–600,000 cycles. Net win is large.
+* **Call-heavy code**: If freeze/thaw is scoped to suspension only (section 8), we avoid per-call copies. If we instead froze/thawed on every CALL, we might spend ~40 cycles per call; with 50 instructions per call we would still save ~1,000–3,000 cycles per call. The margin narrows for very shallow call depths.
+
+### Mitigation if cost is a concern
+
+1. **Scope freeze/thaw to suspension only** — avoid per-frame copies.
+2. **Measure first** — add instrumentation to count freeze/thaw frequency and cycles before and after.
+3. **Skip thaw when stack does not fit** — if the heap block is larger than inline capacity, leave it on the heap; no copy.
+4. **Implement in phases** — remove CoW first and measure. Add the cursor and measure again. If the cursor does not show clear improvement, we can stop at no-CoW.
+
+### Recommended order
+
+1. Remove CoW (see `design/api/stack-no-cow-proposal.md`). Simpler, independent win; no freeze/thaw yet.
+2. Measure.
+3. Introduce `KosEvalState` and inline stack. Measure again.
+4. Tune (inline size, thaw heuristics) based on results.
 
 ---
 
@@ -375,7 +427,9 @@ These can be explored after measuring the new architecture.
 
 This design introduces a **freeze/thaw execution model** separating persistent runtime state from accelerated C-local execution state.
 
-Combined with removal of stack CoW and the introduction of a **fast inline stack block**, this architecture significantly simplifies the interpreter hot path while preserving Koskari's advanced control-flow capabilities.
+Combined with removal of stack CoW (see `design/api/stack-no-cow-proposal.md`) and the introduction of a **fast inline stack block**, this architecture significantly simplifies the interpreter hot path while preserving Koskari's advanced control-flow capabilities.
+
+Section 16 addresses the concern that freeze/thaw overhead may exceed savings; the analysis concludes that with suspension-scoped freeze/thaw and typical instruction counts, the net win is large. Mitigations are documented if measurement suggests otherwise.
 
 ---
 
@@ -522,6 +576,8 @@ For PUSH_LOOP, PUSH_TRY, etc.:
 
 ## C. Proposed Implementation Plan
 
+**Order of optimizations**: Remove CoW first (Phases 1 and 3). Measure. Add the cursor and inline stack (Phases 2 and 4). Measure again. This isolates the contribution of each change and avoids sinking effort into the cursor if no-CoW alone achieves the goal.
+
 ### Phase 1: Prepare (Low Risk)
 
 1. **Audit CoW usage**: Enumerate all `KosStackBlock_COW` and `KosStackBlock_EnsureExclusive` call sites; document which serve continuation capture vs. normal eval.
@@ -565,6 +621,7 @@ For PUSH_LOOP, PUSH_TRY, etc.:
 | Missing freeze before a suspension path | Audit all suspension branches; centralize freeze in a single “prepare to suspend” helper. |
 | Regressions in multi-frame or nested block scenarios | Add targeted tests for loop/foreach/try/finally, PUSH_CC, transfer plans. |
 | Increase in code size or complexity | Keep `KosEvalState` and helpers in a focused set of files; maintain clear freeze/thaw comments. |
+| Freeze/thaw overhead exceeds savings | Scope freeze/thaw to suspension only (not per CALL); measure before and after; skip thaw when stack exceeds inline capacity; implement no-CoW first and validate that win before adding cursor. |
 
 ---
 
