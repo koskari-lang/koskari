@@ -207,6 +207,7 @@ static void clear_pending_agen_on_error(KosContext *ctx) {
   if (kos_dyn_detach_top_frame(ctx, &detached_frame) == 0 && detached_frame) {
     agen->closed = 1;
     agen->in_progress = 0;
+    kos_dynframe_free(detached_frame);
   }
 
   KosContext_PENDING_AGEN(ctx) = NULL;
