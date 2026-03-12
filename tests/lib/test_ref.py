@@ -26,6 +26,9 @@ from koskari.lib import (
     Ref, AttributeRef, ItemRef, DynamicRef, ConstantRef, MemoizedRef,
     WeakRef,
 )
+from koskari.types import FormalsSpec
+from tests import make_callable
+from tests.lib.opcode import build_code, build_expr
 
 import pytest
 
@@ -349,6 +352,53 @@ class TestDynamicRef(unittest.IsolatedAsyncioTestCase):
         self.assertFalse(r.empty)
         is_empty[0] = True
         self.assertTrue(r.empty)
+
+    def test_deref_with_koskari_expression_getter(self):
+        """deref via demand_sync when getter is Koskari Expression"""
+        code, ns = build_expr([
+            ['CONST', 42],
+            ['RETURN', 1],
+        ])
+        getter = make_callable(code, ns)
+        r = DynamicRef(None, getter)
+        self.assertEqual(r.deref(), 42)
+
+    def test_deref_with_koskari_function_getter(self):
+        """deref via demand_sync when getter is Koskari Function"""
+        _, base_ns = build_expr(
+            [['CONST', 0], ['RETURN', 1]],
+            local_syms=('x',),
+            values={'x': 100},
+        )
+        code = build_code(
+            [['FAST', 0], ['RETURN', 1]],
+            local_syms=(),
+            closure_syms=('x',),
+            name='getter',
+        )
+        getter = make_callable(code, base_ns, FormalsSpec())
+        r = DynamicRef(None, getter)
+        self.assertEqual(r.deref(), 100)
+
+    def test_store_with_koskari_function_setter(self):
+        """store via demand_sync when setter is Koskari Function"""
+        box = [0]
+        _, base_ns = build_expr(
+            [['CONST', 0], ['RETURN', 1]],
+            local_syms=('box',),
+            values={'box': box},
+        )
+        code = build_code(
+            [['FAST', 1], ['CONST', 0], ['FAST', 0], ['ITEM_STORE', 0],
+             ['CONST', None], ['RETURN', 1]],
+            local_syms=('v',),
+            closure_syms=('box',),
+            name='setter',
+        )
+        setter = make_callable(code, base_ns, FormalsSpec(('v',)))
+        r = DynamicRef(None, lambda: box[0], setter)
+        r.store(99)
+        self.assertEqual(r.deref(), 99)
 
 
 class TestConstantRef(unittest.IsolatedAsyncioTestCase):

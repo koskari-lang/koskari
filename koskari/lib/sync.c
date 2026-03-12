@@ -56,20 +56,25 @@ static int register_koskari_sync_exception(PyObject *mod,
 /* === demand_sync === */
 
 
-static PyObject *demand_sync_impl(PyObject *callable, PyObject *args,
-                                  PyObject *kwargs) {
+/**
+   Base implementation: returns 0 (success), 1 (suspension, no exception),
+   or -1 (error, exception set). Never sets exception for suspension.
+ */
+static int demand_sync_ex(PyObject *callable, PyObject *args,
+                          PyObject *kwargs, PyObject **out_result) {
 
   PyObject *frame_ns = NULL;
   KosDynFrame *frame = NULL;
   KosContext *ctx = NULL;
   KosEvent ev = { 0 };
   int r;
+  int suspended = 0;
   PyObject *result = NULL;
 
   if (! args) {
     args = PyTuple_New(0);
     if (! args)
-      return NULL;
+      goto ret_fail;
   }
 
   /* KosBoundMethod: unwrap and prepend self to args */
@@ -78,11 +83,11 @@ static PyObject *demand_sync_impl(PyObject *callable, PyObject *args,
     PyObject *self = KosBoundMethod_SELF(callable);
     PyObject *new_args = PyTuple_Pack(1, self);
     if (! new_args)
-      goto fail_args;
+      goto ret_fail;
     PyObject *cat = PySequence_Concat(new_args, args);
     Py_DECREF(new_args);
     if (! cat)
-      goto fail_args;
+      goto ret_fail;
     Py_DECREF(args);
     args = cat;
     callable = fn;
@@ -92,15 +97,13 @@ static PyObject *demand_sync_impl(PyObject *callable, PyObject *args,
   if (! KosCallable_Check(callable)) {
     result = PyObject_Call(callable, args, kwargs);
     if (! result)
-      goto fail_args;
+      goto ret_fail;
     {
       PyTypeObject *res_type = Py_TYPE(result);
       if (res_type->tp_as_async && res_type->tp_as_async->am_await) {
         Py_DECREF(result);
-        PyErr_Format(KoskariSyncViolation,
-                     "plain Python callable returned awaitable; "
-                     "suspension not allowed in demand_sync");
         result = NULL;
+        suspended = 1;
       }
     }
     goto done;
@@ -112,7 +115,7 @@ static PyObject *demand_sync_impl(PyObject *callable, PyObject *args,
         || (kwargs && PyDict_Size(kwargs) != 0)) {
       PyErr_SetString(PyExc_TypeError,
                       "Expression takes no arguments");
-      goto fail_args;
+      goto ret_fail;
     }
     PyObject *code = KosExpression_CODE(callable);
     PyObject *ns = KosExpression_NS(callable);
@@ -120,7 +123,7 @@ static PyObject *demand_sync_impl(PyObject *callable, PyObject *args,
     frame = kos_dynframe_new(NULL, (KosCode *) code, ns, NULL);
     if (! frame) {
       Py_DECREF(ns);
-      goto fail_args;
+      goto ret_fail;
     }
     goto run_eval;
   }
@@ -129,12 +132,12 @@ static PyObject *demand_sync_impl(PyObject *callable, PyObject *args,
   if (KosFunction_CheckExact(callable)) {
     PyObject *kw = kwargs ? kwargs : PyDict_New();
     if (! kw)
-      goto fail_args;
+      goto ret_fail;
     frame_ns = KosFunction_PrepareCallNamespace(callable, args, kw);
     if (kw != kwargs)
       Py_DECREF(kw);
     if (! frame_ns)
-      goto fail_args;
+      goto ret_fail;
     SAYF("[demand_sync] frame_ns from PrepareCallNamespace: ptr=%p type=%s "
          "repr=%R is_namespace=%d",
          (void *) frame_ns,
@@ -144,7 +147,7 @@ static PyObject *demand_sync_impl(PyObject *callable, PyObject *args,
     PyObject *code = KosFunction_CODE(callable);
     frame = kos_dynframe_new(NULL, (KosCode *) code, frame_ns, NULL);
     if (! frame)
-      goto fail_args;
+      goto ret_fail;
     SAYF("[demand_sync] frame=%p KosDynFrame_NS(frame): ptr=%p type=%s "
          "repr=%R is_namespace=%d",
          (void *) frame,
@@ -159,7 +162,7 @@ static PyObject *demand_sync_impl(PyObject *callable, PyObject *args,
   PyErr_Format(PyExc_TypeError,
                "demand_sync does not support %s",
                Py_TYPE(callable)->tp_name);
-  goto fail_args;
+  goto ret_fail;
 
 run_eval:
   ctx = kos_context_new(frame);
@@ -167,7 +170,7 @@ run_eval:
   if (! ctx) {
     if (frame)
       kos_dynframe_free(frame);
-    goto fail_args;
+    goto ret_fail;
   }
 
   r = koskari_eval(ctx, &ev, NULL, NULL, NULL);
@@ -175,7 +178,7 @@ run_eval:
   ctx = NULL;
 
   if (r < 0)
-    goto fail_args;
+    goto ret_fail;
 
   switch (KosEvent_KIND(&ev)) {
     case KOS_EV_RETURN:
@@ -205,8 +208,7 @@ run_eval:
     case KOS_EV_YIELD:
       if (KosEvent_PAYLOAD(&ev))
         Py_DECREF(KosEvent_PAYLOAD(&ev));
-      PyErr_Format(KoskariSyncViolation,
-                   "async suspension is not allowed in demand_sync");
+      suspended = 1;
       break;
 
     default:
@@ -215,10 +217,36 @@ run_eval:
   }
   goto done;
 
-fail_args:
-  (void) 0;
+ret_fail:
+  Py_DECREF(args);
+  *out_result = NULL;
+  return -1;
+
 done:
   Py_DECREF(args);
+  *out_result = result;
+  return result ? 0 : suspended ? 1 : -1;
+}
+
+
+int Koskari_DemandSyncEx(PyObject *callable, PyObject *args,
+                         PyObject *kwargs, PyObject **out_result) {
+
+  return demand_sync_ex(callable, args, kwargs, out_result);
+}
+
+
+static PyObject *demand_sync_impl(PyObject *callable, PyObject *args,
+                                  PyObject *kwargs) {
+
+  PyObject *result = NULL;
+  int r = demand_sync_ex(callable, args, kwargs, &result);
+
+  if (r == 1) {
+    PyErr_Format(KoskariSyncViolation,
+                 "async suspension is not allowed in demand_sync");
+    // return NULL;
+  }
   return result;
 }
 
