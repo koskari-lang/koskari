@@ -37,6 +37,15 @@ extern KosCallableTypeObject KosTypeType;
   ((obj) && PyType_Check(obj) &&                                     \
    (Py_TYPE(obj) == KOS_CALLABLE_PYTYPE(KosTypeType)))
 
+/**
+   True if obj should use the KosCallable install path (kos_callable_vcall etc).
+   Includes both KosCallable types and KosType instances (Koskari classes).
+   Workaround: PyType_IsSubtype(KosType, KosCallableType) may be false in some
+   build/load contexts, so we explicitly allow KosType as well.
+*/
+#define KosCallableOrKosType_Check(obj)                              \
+  (KosCallable_Check(obj) || KosType_Check(obj))
+
 
 /**
    Return the default metaclass for Koskari-defined classes (KosType).
@@ -85,6 +94,19 @@ PyObject *kos_construct_awaitable_new(PyObject *instance,
 
 int koskari_object_init(PyObject *mod);
 int koskari_object_clear(PyObject *mod);
+
+
+struct KosContext;
+struct KosEvent;
+
+
+/**
+   Invoke a KosType (class) to construct an instance. Used when KosType
+   is not recognized as KosCallable (e.g. tp_bases MRO not incorporated).
+*/
+int kostype_install(struct KosContext *ctx, struct KosEvent *out_ev,
+                    PyObject *callable, PyObject *args_tuple,
+                    PyObject *kwds_dict);
 
 
 #endif

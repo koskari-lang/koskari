@@ -58,6 +58,14 @@ class TestKosTypeImport(unittest.IsolatedAsyncioTestCase):
         self.assertIs(type(C), KosType)
 
 
+    async def test_kostype_mro_includes_type(self):
+        """
+        KosType MRO includes type
+        """
+
+        self.assertIn(type, KosType.__mro__)
+
+
 class TestKosTypeSyncInit(unittest.IsolatedAsyncioTestCase):
 
     async def test_call_returns_awaitable(self):

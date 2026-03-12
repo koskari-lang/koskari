@@ -125,6 +125,119 @@ class TestClassWithInitAndMethods(SpecialsTestCase):
         self.assertEqual(getattr(instance, "value"), 20)
 
 
+class TestClassKosCallable(SpecialsTestCase):
+
+    async def test_class_identity(self):
+        """
+        Koskari-defined class is a type with KosType metaclass and correct name
+        """
+
+        from koskari.lib import KosType
+
+        src_str = """
+        (compile/begin
+          (compile/class Foo () 1)
+          Foo)
+        """
+        expr, mod = self.compile_expr(src_str)
+        result = await expr()
+        self.assertIsInstance(result, type)
+        self.assertIs(type(result), KosType)
+        self.assertEqual(result.__name__, "Foo")
+
+
+    async def test_class_mro_metaclass_is_kostype(self):
+        """
+        Koskari-defined class has KosType as metaclass
+        """
+
+        from koskari.lib import KosType
+
+        src_str = """
+        (compile/begin
+          (compile/class C () 1)
+          C)
+        """
+        expr, mod = self.compile_expr(src_str)
+        result = await expr()
+        self.assertIs(type(result), KosType)
+
+
+    async def test_call_returns_instance_not_class(self):
+        """
+        Invoking (Foo) returns an instance, not the class
+        """
+
+        src_str = """
+        (compile/begin
+          (compile/class Foo () 1)
+          (Foo))
+        """
+        expr, mod = self.compile_expr(src_str)
+        result = await expr()
+        self.assertFalse(isinstance(result, type),
+                         "(Foo) should return instance, not class")
+        self.assertEqual(result.__class__.__name__, "Foo")
+
+
+    async def test_define_f_call_returns_instance(self):
+        """
+        (define f (Foo)) binds f to an instance, not the class
+        """
+
+        src_str = """
+        (compile/begin
+          (compile/class Foo () 1)
+          (compile/define f (Foo))
+          f)
+        """
+        expr, mod = self.compile_expr(src_str)
+        result = await expr()
+        self.assertFalse(isinstance(result, type),
+                         "f should be instance, not class")
+        self.assertEqual(result.__class__.__name__, "Foo")
+
+
+    async def test_instance_method_is_bound_and_callable(self):
+        """
+        Instance method access returns bound method; calling it works
+        """
+
+        from koskari.lib import BoundMethod
+
+        src_str = """
+        (compile/begin
+          (compile/class Foo ()
+            (compile/define greet (compile/lambda [self] "hello")))
+          (compile/define inst (Foo))
+          inst)
+        """
+        expr, mod = self.compile_expr(src_str)
+        inst = await expr()
+        self.assertIsInstance(inst.greet, BoundMethod)
+        self.assertIs(inst.greet.__self__, inst)
+        result = await inst.greet()
+        self.assertEqual(result, "hello")
+
+
+    async def test_bound_method_receives_self(self):
+        """
+        Bound method receives self as first argument
+        """
+
+        src_str = """
+        (compile/begin
+          (compile/class Foo ()
+            (compile/define id_self (compile/lambda [self] self)))
+          (compile/define inst (Foo))
+          inst)
+        """
+        expr, mod = self.compile_expr(src_str)
+        inst = await expr()
+        result = await inst.id_self()
+        self.assertIs(result, inst)
+
+
 class TestClassBytecode(SpecialsTestCase):
 
     async def test_class_emits_push_pop_collect_build_class_and_var_bind(self):

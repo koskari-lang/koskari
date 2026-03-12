@@ -1798,7 +1798,7 @@ static int kos_apply_build_args_tuple(PyObject *arglist, PyObject **out_args) {
 
 int kos_callable_call(KosContext *ctx, KosEvent *out_ev,
                       PyObject *callable, PyObject *args_tuple, PyObject *kwds_dict) {
-  if (KosCallable_Check(callable)) {
+  if (KosCallableOrKosType_Check(callable)) {
     KosInstallFunc fn = KosCallableType_INSTALL(Py_TYPE(callable));
     if (fn)
       return fn(ctx, out_ev, callable, args_tuple, kwds_dict);
@@ -1809,7 +1809,7 @@ int kos_callable_call(KosContext *ctx, KosEvent *out_ev,
 
 int kos_callable_tail_call(KosContext *ctx, KosEvent *out_ev,
                            PyObject *callable, PyObject *args_tuple, PyObject *kwds_dict) {
-  if (KosCallable_Check(callable)) {
+  if (KosCallableOrKosType_Check(callable)) {
     KosInstallFunc fn = KosCallableType_TAIL_INSTALL(Py_TYPE(callable));
     if (fn)
       return fn(ctx, out_ev, callable, args_tuple, kwds_dict);
@@ -1893,7 +1893,7 @@ int kos_callable_vcall(
     Py_ssize_t nargs,
     PyObject *kwnames) {
 
-  if (KosCallable_Check(callable)) {
+  if (KosCallableOrKosType_Check(callable)) {
     KosVectorInstallFunc vfn = KosCallableType_VINSTALL(Py_TYPE(callable));
     if (vfn)
       return vfn(ctx, out_ev, callable, args, nargs, kwnames);
@@ -1950,7 +1950,7 @@ int kos_callable_tail_vcall(
     Py_ssize_t nargs,
     PyObject *kwnames) {
 
-  if (KosCallable_Check(callable)) {
+  if (KosCallableOrKosType_Check(callable)) {
     KosVectorInstallFunc vfn = KosCallableType_TAIL_VINSTALL(Py_TYPE(callable));
     if (vfn)
       return vfn(ctx, out_ev, callable, args, nargs, kwnames);
@@ -2225,7 +2225,7 @@ static int kos_install_apply_impl(
   }
 
   /* Flattening: delegate to inner callable's install */
-  if (KosCallable_Check(fn)) {
+  if (KosCallableOrKosType_Check(fn)) {
     KosInstallFunc inner = is_tail
         ? KosCallableType_TAIL_INSTALL(Py_TYPE(fn))
         : KosCallableType_INSTALL(Py_TYPE(fn));

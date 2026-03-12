@@ -77,7 +77,7 @@ KOS_OP_HANDLER(TAIL_CALL_NAMES) {
   }
 
   int res = 0;
-  if (KosCallable_Check(callable)) {
+  if (KosCallableOrKosType_Check(callable)) {
     /* KosCallable: tail vcall recycles frame. */
     res = kos_callable_tail_vcall(ctx, out_ev, callable, args, npos, kwnames_arg);
 

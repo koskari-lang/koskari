@@ -115,7 +115,7 @@ KOS_OP_HANDLER(TAIL_CALL_STAR) {
   }
 
   int res = 0;
-  if (KosCallable_Check(fun)) {
+  if (KosCallableOrKosType_Check(fun)) {
     /* KosCallable: tail call recycles frame. */
     res = kos_callable_tail_call(ctx, out_ev, fun, pos, kwd);
 

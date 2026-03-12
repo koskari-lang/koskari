@@ -4,7 +4,7 @@ alwaysApply: true
 
 # Tox Usage Rule
 
-This repository uses tox to manage Python virtual environments and dependencies. The `tox.ini` file is always present in the repository root.
+This repository uses tox to manage Python virtual environments and dependencies. The `setup.cfg` file is always present in the repository root.
 
 ## Rule: Always Use Tox
 
@@ -16,11 +16,11 @@ Instead, always use `tox -e <envname>` to run commands. Tox creates isolated vir
 
 - Running scripts (e.g., `tools/regen.py`): Use the appropriate tox environment (e.g., `tox -e regen-common`)
 - Running tests: Use tox test environments (e.g., `tox -e py312`)
-- Any Python execution: Find or use the relevant tox environment from `tox.ini`
+- Any Python execution: Find or use the relevant tox environment from `setup.cfg`
 
 ## Before Running Python Commands
 
-1. Check `tox.ini` for available environments
+1. Check `setup.cfg` for available environments
 2. Use the appropriate `tox -e <envname>` command
 3. If no suitable environment exists, suggest creating one rather than using Python directly
 
@@ -38,3 +38,11 @@ Instead, always use `tox -e <envname>` to run commands. Tox creates isolated vir
 ## Exception
 
 The only acceptable use of `python` or `python3` is for checking the system Python version (e.g., `python3 --version`) when determining compatibility, not for execution.
+
+
+## Useful Targets
+
+`tox -qe py` :  runs all tests in phase order, this is the default
+`tox -qe test -- tests/<...>` : use the 'test' env to run specific tests
+`tox -qe gdb -- tests/<...>` : use the 'gdb' env to run specific tests with native debugging output enabled and stracktraces enabled
+`make test-valgrind` : run containerized native tests with valgrind
