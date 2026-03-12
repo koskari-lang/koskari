@@ -39,6 +39,8 @@
 static void kos_update_frame_top(KosContext *ctx);
 static int kos_dyn_uninstall_handler(KosContext *ctx, KosDynNode *node, KosEvent *out_ev);
 static int kos_dyn_wind_on_control_returned(KosContext *ctx, KosDynWind *wind);
+static int kos_dyn_with_on_control_returned(KosContext *ctx, KosDynWith *with_node, int do_pop_node);
+static int kos_dyn_with_on_enter_control_returned(KosContext *ctx, KosDynWith *with_node);
 int kos_dyn_push(KosContext *ctx, KosDynNode *node);
 
 
@@ -1754,6 +1756,214 @@ void kos_dyn_pop_with(KosContext *ctx, KosDynWith *node) {
   KosContext_DYN_TOP(ctx) = KosDynNode_PARENT(node);
   KosContext_CHAIN_VERSION(ctx)++;
   kos_dynwith_free(node);
+}
+
+
+#define CURRENT_FRAME(ctx)  KosContext_FRAME_TOP(ctx)
+#define CURRENT_STACK(ctx)  KosDynFrame_STACK(CURRENT_FRAME(ctx))
+
+
+static int frame_ns_store(KosContext *ctx, PyObject *name, PyObject *val) {
+  KosDynFrame *frame = CURRENT_FRAME(ctx);
+  if (! frame)
+    return -1;
+  PyObject *ns = KosDynFrame_NS(frame);
+  if (KosNamespace_Check(ns))
+    return KosNamespace_Store(ns, name, val);
+  PyErr_Format(PyExc_TypeError,
+               "frame namespace must be Namespace, got %R", ns);
+  return -1;
+}
+
+
+static int kos_dyn_with_on_enter_control_returned(KosContext *ctx, KosDynWith *with_node) {
+
+  if (! with_node || KosDynWith_PHASE(with_node) != KOS_WITH_PHASE_PENDING_ENTER_AWAIT)
+    return 0;
+
+  if (! KosContext_FRAME_TOP(ctx))
+    return -1;
+
+  PyObject *result = KosStackBlock_PopRef(&CURRENT_STACK(ctx));
+  if (! result)
+    return -1;
+
+  PyObject *name = KosDynWith_NAME(with_node);
+  if (name && name != Py_None) {
+    if (frame_ns_store(ctx, name, result) < 0) {
+      Py_DECREF(result);
+      return -1;
+    }
+  }
+  Py_DECREF(result);
+
+  KosDynWith_ENTERED(with_node) = 1;
+  KosDynWith_PHASE(with_node) = KOS_WITH_PHASE_IDLE;
+  return 0;
+}
+
+
+static int kos_dyn_with_on_control_returned(KosContext *ctx, KosDynWith *with_node,
+                                            int do_pop_node) {
+
+  if (! with_node || KosDynWith_PHASE(with_node) != KOS_WITH_PHASE_PENDING_EXIT_AWAIT)
+    return 0;
+
+  if (! KosContext_FRAME_TOP(ctx))
+    return -1;
+
+  PyObject *result = KosStackBlock_PopRef(&CURRENT_STACK(ctx));
+  if (! result)
+    return -1;
+
+  PyObject *typ = KosDynWith_EXC_TYP(with_node);
+  PyObject *val = KosDynWith_EXC_VAL(with_node);
+  PyObject *tb = KosDynWith_EXC_TB(with_node);
+  KosDynWith_EXC_TYP(with_node) = NULL;
+  KosDynWith_EXC_VAL(with_node) = NULL;
+  KosDynWith_EXC_TB(with_node) = NULL;
+  KosDynWith_PHASE(with_node) = KOS_WITH_PHASE_IDLE;
+
+  int had_exception = (typ != Py_None);
+
+  if (had_exception && PyObject_IsTrue(result)) {
+    PyErr_Clear();
+    Py_DECREF(result);
+    Py_XDECREF(typ);
+    Py_XDECREF(val);
+    Py_XDECREF(tb);
+    if (KosStackBlock_DropBlock(&CURRENT_STACK(ctx)) < 0)
+      return -1;
+    if (KosContext_FRAME_TOP(ctx))
+      KosDynFrame_PC(KosContext_FRAME_TOP(ctx)) = KosDynWith_RESUME_PC(with_node);
+    if (do_pop_node) {
+      kos_dyn_pop_with(ctx, with_node);
+    }
+    if (KosStackBlock_PushRef(&CURRENT_STACK(ctx), Py_None) < 0)
+      return -1;
+    return 0;
+  }
+
+  if (had_exception) {
+    Py_DECREF(result);
+    if (KosStackBlock_DropBlock(&CURRENT_STACK(ctx)) < 0) {
+      PyErr_Restore(typ, val, tb);
+      return -1;
+    }
+    if (do_pop_node) {
+      kos_dyn_pop_with(ctx, with_node);
+    }
+    PyErr_Restore(typ, val, tb);
+    return -1;
+  }
+
+  Py_DECREF(result);
+  Py_XDECREF(typ);
+  Py_XDECREF(val);
+  Py_XDECREF(tb);
+  PyObject *body_val = KosStackBlock_PopRef(&CURRENT_STACK(ctx));
+  if (! body_val)
+    return -1;
+  if (KosStackBlock_DropBlock(&CURRENT_STACK(ctx)) < 0) {
+    Py_DECREF(body_val);
+    return -1;
+  }
+  if (KosContext_FRAME_TOP(ctx))
+    KosDynFrame_PC(KosContext_FRAME_TOP(ctx)) = KosDynWith_RESUME_PC(with_node);
+  if (do_pop_node) {
+    kos_dyn_pop_with(ctx, with_node);
+  }
+  if (KosStackBlock_PushRef(&CURRENT_STACK(ctx), body_val) < 0) {
+    Py_DECREF(body_val);
+    return -1;
+  }
+  Py_DECREF(body_val);
+  return 0;
+}
+
+
+static int kos_dyn_dyn_with_wind(KosContext *ctx, KosDynWith *node, KosEvent *out_ev) {
+  PyObject *enter_fn = KosDynWith_ENTER(node);
+  int r = kos_callable_vcall(ctx, out_ev, enter_fn, NULL, 0, NULL);
+  if (r == 1)
+    return KOS_DYN_UNWIND_ASYNC_STARTED;
+  if (r < 0)
+    return -1;
+
+  PyObject *result = KosStackBlock_PopRef(&CURRENT_STACK(ctx));
+  if (! result)
+    return -1;
+
+  PyObject *name = KosDynWith_NAME(node);
+  if (name && name != Py_None) {
+    if (frame_ns_store(ctx, name, result) < 0) {
+      Py_DECREF(result);
+      return -1;
+    }
+  }
+  Py_DECREF(result);
+
+  KosDynWith_ENTERED(node) = 1;
+  return 0;
+}
+
+
+int finalize_provisional_with_enter(KosContext *ctx, PyObject *result,
+                                    KosDynWith *with_node) {
+
+  PyObject *name = KosDynWith_NAME(with_node);
+  if (name && name != Py_None) {
+    if (frame_ns_store(ctx, name, result) < 0) {
+      Py_DECREF(result);
+      return -1;
+    }
+  }
+  Py_DECREF(result);
+
+  KosDynWith_ENTERED(with_node) = 1;
+  KosDynWith_PHASE(with_node) = KOS_WITH_PHASE_IDLE;
+  return 0;
+}
+
+
+/* === Generic pending-exit APIs === */
+
+
+static KosDynWith *find_pending_exit_with(KosDynNode *node) {
+  for (; node; node = KosDynNode_PARENT(node)) {
+    if (KosDynNode_IS_WITH(node)
+        && KosDynWith_PHASE((KosDynWith *) node) == KOS_WITH_PHASE_PENDING_EXIT_AWAIT)
+      return (KosDynWith *) node;
+  }
+  return NULL;
+}
+
+
+KosDynNode *kos_dyn_find_pending_exit(KosDynNode *node) {
+  KosDynWith *w = find_pending_exit_with(node);
+  return w ? (KosDynNode *) w : NULL;
+}
+
+
+int kos_dyn_complete_pending_exit(KosContext *ctx, int do_pop_node) {
+  KosDynNode *n = kos_dyn_find_pending_exit(KosContext_DYN_TOP(ctx));
+  if (! n)
+    return 0;
+  return kos_dyn_with_on_control_returned(ctx, (KosDynWith *) n, do_pop_node);
+}
+
+
+void kos_dyn_clear_pending_exit(KosContext *ctx) {
+  KosDynNode *n = KosContext_DYN_TOP(ctx);
+  for (; n; n = KosDynNode_PARENT(n)) {
+    if (KosDynNode_IS_WITH(n)
+        && KosDynWith_PHASE((KosDynWith *) n) == KOS_WITH_PHASE_PENDING_EXIT_AWAIT) {
+      Py_CLEAR(KosDynWith_EXC_TYP((KosDynWith *) n));
+      Py_CLEAR(KosDynWith_EXC_VAL((KosDynWith *) n));
+      Py_CLEAR(KosDynWith_EXC_TB((KosDynWith *) n));
+      KosDynWith_PHASE((KosDynWith *) n) = KOS_WITH_PHASE_IDLE;
+    }
+  }
 }
 
 

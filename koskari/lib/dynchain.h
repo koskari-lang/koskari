@@ -1150,6 +1150,13 @@ int kos_dyn_wind_unwind(KosContext *ctx, KosDynWind *node);
 
 int kos_dynnode_on_control_returned(KosContext *ctx, KosDynNode *node, struct KosEvent *out_ev);
 
+KosDynNode *kos_dyn_find_pending_exit(KosDynNode *node);
+int kos_dyn_complete_pending_exit(KosContext *ctx, int do_pop_node);
+void kos_dyn_clear_pending_exit(KosContext *ctx);
+
+int finalize_provisional_with_enter(KosContext *ctx, PyObject *result,
+                                   KosDynWith *with_node);
+
 
 /**
    Generic dispatch functions for the seven dynchain operations.  Each
