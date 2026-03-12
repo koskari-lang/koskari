@@ -3626,8 +3626,10 @@ void kos_free_transfer_plan(KosTransferPlan *plan) {
     KosTransferAction *a = &KosTransferPlan_ACTIONS(plan)[i];
     if (KosTransferAction_STEP(a) == KOS_XFER_INJECT) {
       Py_XDECREF(KosTransferAction_INJECT_VALUE(a));
+      Py_XDECREF(KosTransferAction_INJECT_TYPE(a));
     } else if (KosTransferAction_STEP(a) == KOS_XFER_TRUNCATE_AND_INJECT) {
       Py_XDECREF(KosTransferAction_TRUNCATE_VALUE(a));
+      Py_XDECREF(KosTransferAction_TRUNCATE_TYPE(a));
     }
   }
   xfer_plan_release_invoke_clone(plan);
@@ -4535,8 +4537,13 @@ int kos_transferplan_traverse(
   Py_VISIT(KosTransferPlan_STEP_RESUME_INJECT(plan));
 
   for (size_t i = KosTransferPlan_ACTION_INDEX(plan); i < KosTransferPlan_ACTION_COUNT(plan); i++) {
-    if (KosTransferPlan_ACTIONS(plan)[i].step == KOS_XFER_INJECT) {
-      Py_VISIT(KosTransferPlan_ACTIONS(plan)[i].data.inject.value);
+    KosTransferAction *a = &KosTransferPlan_ACTIONS(plan)[i];
+    if (KosTransferAction_STEP(a) == KOS_XFER_INJECT) {
+      Py_VISIT(KosTransferAction_INJECT_VALUE(a));
+      Py_VISIT(KosTransferAction_INJECT_TYPE(a));
+    } else if (KosTransferAction_STEP(a) == KOS_XFER_TRUNCATE_AND_INJECT) {
+      Py_VISIT(KosTransferAction_TRUNCATE_VALUE(a));
+      Py_VISIT(KosTransferAction_TRUNCATE_TYPE(a));
     }
   }
 

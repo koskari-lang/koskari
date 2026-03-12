@@ -336,6 +336,39 @@ static int test_transfer_plan_free_null(void) {
 }
 
 
+static int test_transfer_plan_free_with_inject_exc_type(void) {
+    /*
+       Build a transfer plan with INJECT action where exc_type is set
+       (is_throw=1), then free before completion. Verifies exc_type
+       is DECREF'd and no leak.
+    */
+    PyObject *ns = PyDict_New();
+    TEST_ASSERT_NOT_NULL(ns, "create namespace dict");
+
+    KosDynFrame *frame = kos_dynframe_new(NULL, NULL, ns, NULL);
+    TEST_ASSERT_NOT_NULL(frame, "create frame");
+
+    KosContext *ctx = kos_context_new(frame);
+    TEST_ASSERT_NOT_NULL(ctx, "create context");
+
+    PyObject *value = PyLong_FromLong(42);
+    TEST_ASSERT_NOT_NULL(value, "create value for throw");
+
+    KosTransferPlan *plan = NULL;
+    int res = kos_build_transfer_plan(ctx, (KosDynNode *) frame, value, 1, 0,
+                                      &plan);
+    Py_DECREF(value);
+    TEST_ASSERT(res == 0, "kos_build_transfer_plan succeeded");
+    TEST_ASSERT_NOT_NULL(plan, "plan allocated");
+
+    kos_free_transfer_plan(plan);
+
+    kos_context_free(ctx);
+
+    return 0;
+}
+
+
 /* === Test runner === */
 
 
@@ -372,6 +405,7 @@ int run_dynchain_tests(void) {
 
     /* Transfer plan tests */
     RUN_TEST(test_transfer_plan_free_null);
+    RUN_TEST(test_transfer_plan_free_with_inject_exc_type);
 
     return 0;
 }
