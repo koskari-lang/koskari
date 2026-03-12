@@ -14,18 +14,16 @@
 """
 Unit tests for KosType metaclass from koskari.lib.
 
-Validates that KosType works from Python: C(...) returns an awaitable,
-C.new() provides synchronous construction, and async __init__ is supported
-(not normally allowed with plain type).
+Validates that KosType works from Python: C(...) returns the instance
+directly. Async __init__ is not supported; use a classmethod for async
+setup.
 
 :author: Christopher O'Brien <obriencj@preoccupied.net>
 :license: GNU General Public License v3
 """
 
 
-import asyncio
 import unittest
-import warnings
 
 from koskari.lib import KosType
 
@@ -68,9 +66,9 @@ class TestKosTypeImport(unittest.IsolatedAsyncioTestCase):
 
 class TestKosTypeSyncInit(unittest.IsolatedAsyncioTestCase):
 
-    async def test_call_returns_awaitable(self):
+    async def test_call_returns_instance(self):
         """
-        C(...) returns an awaitable yielding the instance
+        C(...) returns the instance directly
         """
 
         class C(metaclass=KosType):
@@ -78,124 +76,22 @@ class TestKosTypeSyncInit(unittest.IsolatedAsyncioTestCase):
             def __init__(self, x=0):
                 self.x = x
 
-        aw = C(42)
-        self.assertTrue(hasattr(aw, '__await__'))
-        instance = await aw
+        instance = C(42)
         self.assertIsInstance(instance, C)
         self.assertEqual(42, instance.x)
 
 
-    async def test_new_returns_instance_sync(self):
-        """
-        C.new(...) synchronously constructs and returns the instance
-        """
-
-        class C(metaclass=KosType):
-
-            def __init__(self, tag):
-                self.tag = tag
-
-        instance = C.new('sync')
-        self.assertIsInstance(instance, C)
-        self.assertEqual('sync', instance.tag)
-
-
-    async def test_new_no_args(self):
-        """
-        C.new() works with no-arg __init__
-        """
-
-        class C(metaclass=KosType):
-
-            def __init__(self):
-                self.ready = True
-
-        instance = C.new()
-        self.assertIsInstance(instance, C)
-        self.assertTrue(instance.ready)
-
-
-class TestKosTypeAsyncInit(unittest.IsolatedAsyncioTestCase):
-
-    async def test_async_init_allowed(self):
-        """
-        KosType allows async def __init__, which plain type does not
-        """
-
-        class AsyncC(metaclass=KosType):
-
-            async def __init__(self, value):
-                await asyncio.sleep(0)
-                self.value = value
-
-        aw = AsyncC(99)
-        self.assertTrue(hasattr(aw, '__await__'))
-        instance = await aw
-        self.assertIsInstance(instance, AsyncC)
-        self.assertEqual(99, instance.value)
-
-
-    async def test_async_init_via_new(self):
-        """
-        C.new(...) runs async __init__ to completion and returns instance
-        """
-
-        class AsyncC(metaclass=KosType):
-
-            async def __init__(self, x, y):
-                await asyncio.sleep(0)
-                self.sum = x + y
-
-        instance = AsyncC.new(10, 32)
-        self.assertIsInstance(instance, AsyncC)
-        self.assertEqual(42, instance.sum)
-
-
-    async def test_plain_type_rejects_async_init(self):
-        """
-        Plain type raises when __init__ returns a coroutine
-        """
-
-        class Bad(metaclass=type):
-
-            async def __init__(self):
-                await asyncio.sleep(0)
-
-        with warnings.catch_warnings():
-            # the default type does *not* like an async __init__
-            warnings.simplefilter('ignore', RuntimeWarning)
-
-            with self.assertRaises(TypeError) as ctx:
-                # which is fine, we're expecting it to break
-                Bad()
-
-        self.assertIn('None', str(ctx.exception))
-
-
 class TestKosTypeNoInit(unittest.IsolatedAsyncioTestCase):
 
-    async def test_no_init_call_returns_awaitable(self):
+    async def test_no_init_call_returns_instance(self):
         """
-        Class without __init__: C() returns awaitable yielding instance
-        """
-
-        class C(metaclass=KosType):
-            pass
-
-        aw = C()
-        instance = await aw
-        self.assertIsInstance(instance, C)
-
-
-    async def test_no_init_new_returns_instance(self):
-        """
-        Class without __init__: C.new() returns instance directly
+        Class without __init__: C() returns instance directly
         """
 
         class C(metaclass=KosType):
             pass
 
-        instance = C.new()
+        instance = C()
         self.assertIsInstance(instance, C)
 
 

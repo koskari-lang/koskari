@@ -45,7 +45,7 @@ class TestDunderAdapterAdd(unittest.TestCase):
             def __add__(self, other):
                 return self.x + other
 
-        obj = Addable.new(10)
+        obj = Addable(10)
         self.assertEqual(obj + 5, 15)
 
 
@@ -61,7 +61,7 @@ class TestDunderAdapterAdd(unittest.TestCase):
             def __repr__(self):
                 return 'Reprable(%r)' % self.tag
 
-        obj = Reprable.new('foo')
+        obj = Reprable('foo')
         self.assertEqual(repr(obj), "Reprable('foo')")
 
 
@@ -77,7 +77,7 @@ class TestDunderAdapterAdd(unittest.TestCase):
             def __str__(self):
                 return 'Strable<%s>' % self.label
 
-        obj = Strable.new('x')
+        obj = Strable('x')
         self.assertEqual(str(obj), 'Strable<x>')
 
 
@@ -113,7 +113,7 @@ class TestDunderAdapterKoskariSyncViolation(unittest.TestCase):
 
             __add__ = yielding_add
 
-        obj = BadAdd.new()
+        obj = BadAdd()
         with self.assertRaises(KoskariSyncViolation) as ctx:
             _ = obj + 1
         self.assertIn('suspension', str(ctx.exception))

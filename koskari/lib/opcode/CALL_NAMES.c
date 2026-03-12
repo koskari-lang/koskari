@@ -45,7 +45,7 @@ KOS_OP_HANDLER(CALL_NAMES) {
 
   PyObject *kwnames = nkwds ? ptr[total + 1] : NULL;
 
-  if (KosCallableOrKosType_Check(ptr[0])) {
+  if (KosCallable_Check(ptr[0])) {
     int r = kos_callable_vcall(ctx, out_ev, ptr[0], &ptr[1], npos, kwnames);
     KosStackBlock_DropNoErr(stack, ntotal);
     return r;

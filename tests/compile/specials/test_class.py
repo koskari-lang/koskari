@@ -53,7 +53,7 @@ class TestClassEmpty(SpecialsTestCase):
         result = await expr()
         self.assertIs(type(result), KosType)
 
-        c = result.new()
+        c = result()
         self.assertIsInstance(c, result)
 
 
@@ -99,7 +99,7 @@ class TestClassWithInitAndMethods(SpecialsTestCase):
     async def test_class_init_getter_setter_and_direct_attr(self):
         """
         Box has __init__(self, v), get_value(self), set_value(self, new_val).
-        Create instance via Box.new(10), verify getter and direct attr, set
+        Create instance via (Box 10), verify getter and direct attr, set
         to 20, verify both track. Method calls return awaitables; use await.
         """
         src_str = """
@@ -114,7 +114,7 @@ class TestClassWithInitAndMethods(SpecialsTestCase):
             (compile/define set_value
               (compile/lambda [self new_val]
                 (compile/set-attr self value new_val))))
-          (compile/call (compile/attr Box new) 10))
+          (Box 10))
         """
         expr, mod = self.compile_expr(src_str)
         instance = await expr()

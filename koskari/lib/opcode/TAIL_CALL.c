@@ -58,7 +58,7 @@ KOS_OP_HANDLER(TAIL_CALL) {
   }
 
   int res = 0;
-  if (KosCallableOrKosType_Check(callable)) {
+  if (KosCallable_Check(callable)) {
     /* KosCallable: tail vcall recycles the frame (no explicit pop). */
     res = kos_callable_tail_vcall(ctx, out_ev, callable, args,
                                   (Py_ssize_t) n, NULL);

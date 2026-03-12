@@ -68,19 +68,18 @@ static PyObject *make_instr_int(int op, int arg) {
 }
 
 
-/* === Test: KosType is KosCallable subtype (for KosCallable_Check) === */
+/* === Test: KosType is not KosCallable (uses default PyObject_Call path) === */
 
 
-static int test_kostype_is_koscallable_subtype(void) {
+static int test_kostype_is_not_koscallable(void) {
     /*
-      KosCallable_Check uses PyType_IsSubtype(obj->ob_type, KosCallableType).
-      For a class Foo with metaclass KosType, obj is Foo, so we need
-      PyType_IsSubtype(KosType, KosCallableType) to be true.
+      KosType is not a KosCallable. (Foo) uses the default PyObject_Call path
+      which invokes kostype_tp_call.
     */
-    PyTypeObject *kostype = KOS_CALLABLE_PYTYPE(KosTypeType);
+    PyTypeObject *kostype = KOS_TYPETYPE_PYTYPE(KosTypeType);
     PyTypeObject *koscallable = KOS_CALLABLE_PYTYPE(KosCallableType);
-    TEST_ASSERT(PyType_IsSubtype(kostype, koscallable),
-                "KosType must be subtype of KosCallableType for (Foo) to use install path");
+    TEST_ASSERT(! PyType_IsSubtype(kostype, koscallable),
+                "KosType must not be KosCallable; (Foo) uses default PyCall path");
     return 0;
 }
 
@@ -1644,7 +1643,7 @@ int run_eval_tests(void) {
 
     BEGIN_TEST_SUITE("Eval Tests");
 
-    RUN_TEST(test_kostype_is_koscallable_subtype);
+    RUN_TEST(test_kostype_is_not_koscallable);
     RUN_TEST(test_eval_object_add_return);
     RUN_TEST(test_domain_non_null);
     RUN_TEST(test_domain_fresh_when_no_tls);

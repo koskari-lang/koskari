@@ -182,7 +182,7 @@ static int kos_install_apply_impl(
   }
 
   /* Flattening: delegate to inner callable's install */
-  if (KosCallableOrKosType_Check(fn)) {
+  if (KosCallable_Check(fn)) {
     KosInstallFunc inner = is_tail
         ? KosCallableType_TAIL_INSTALL(Py_TYPE(fn))
         : KosCallableType_INSTALL(Py_TYPE(fn));

@@ -17,8 +17,8 @@
 /**
    koskari/lib/object.c
 
-   KosType native metaclass: awaitable tp_call, C.new sync adapter,
-   and KosCallable install slot for (C ...) in Koskari bytecode.
+   KosType native metaclass: tp_call uses alloc + demand_sync(__init__).
+   (C ...) in Koskari bytecode uses the default PyCall path.
 
    :author: Christopher O'Brien <obriencj@preoccupied.net>
    :license: GNU General Public License v3
@@ -39,45 +39,20 @@
 static PyObject *KoskariSyncViolation = NULL;
 
 
-/* === Helpers for init invocation === */
+/* === kostype_tp_call === */
 
 
-/**
-   Build (instance, *args). Caller owns instance; refcount unchanged.
-*/
-static PyObject *build_full_init_args(PyObject *instance, PyObject *args) {
+static PyObject *kostype_tp_call(PyObject *cls, PyObject *args,
+                                 PyObject *kwargs) {
 
-  PyObject *init_args = PyTuple_Pack(1, instance);
-  if (! init_args)
-    return NULL;
-  PyObject *full = PySequence_Concat(init_args, args ? args : PyTuple_New(0));
-  Py_DECREF(init_args);
-  return full;
-}
-
-
-/**
-   Build (instance, *args) and call init(instance, *args, **kwargs).
-   Returns init result or NULL on error. Caller owns instance; refcount
-   unchanged on success, DECREF on error.
-*/
-static PyObject *call_init_with_instance(PyObject *init, PyObject *instance,
-                                         PyObject *args, PyObject *kwargs) {
-
-  PyObject *full_args = build_full_init_args(instance, args);
-  if (! full_args)
-    return NULL;
-  PyObject *result = PyObject_Call(init, full_args, kwargs);
-  Py_DECREF(full_args);
-  return result;
-}
-
-
-/* === kos_construct === */
-
-
-PyObject *kos_construct(PyObject *cls, PyObject *args, PyObject *kwargs,
-                       int mode) {
+  /* 3-arg form (name, bases, namespace) is class creation; delegate
+     to type's tp_call. Instance construction: alloc + demand_sync(__init__). */
+  if (args && PyTuple_GET_SIZE(args) == 3
+      && PyUnicode_Check(PyTuple_GET_ITEM(args, 0))
+      && PyTuple_Check(PyTuple_GET_ITEM(args, 1))
+      && PyDict_Check(PyTuple_GET_ITEM(args, 2))) {
+    return PyType_Type.tp_call(cls, args, kwargs);
+  }
 
   PyTypeObject *type = (PyTypeObject *) cls;
   PyObject *instance = type->tp_alloc(type, 0);
@@ -88,178 +63,38 @@ PyObject *kos_construct(PyObject *cls, PyObject *args, PyObject *kwargs,
   if (type->tp_dict)
     init = PyDict_GetItemString(type->tp_dict, "__init__");
 
-  if (! init) {
-    if (mode == KOS_CONSTRUCT_MODE_SYNC)
-      return instance;
-    /* MODE_ASYNC: wrap in awaitable that yields immediately */
-    return kos_construct_awaitable_new(instance, NULL);
-  }
-
-  PyObject *result = call_init_with_instance(init, instance, args, kwargs);
-  if (! result) {
-    Py_DECREF(instance);
-    return NULL;
-  }
-
-  if (mode == KOS_CONSTRUCT_MODE_SYNC) {
-    PyTypeObject *res_type = Py_TYPE(result);
-    if (res_type->tp_as_async && res_type->tp_as_async->am_await) {
-      PyObject *done = Koskari_RunSync(result);
-      Py_DECREF(result);
-      if (! done) {
-        Py_DECREF(instance);
-        return NULL;
-      }
-      Py_DECREF(done);
-    }
-    else {
-      Py_DECREF(result);
-    }
+  if (! init)
     return instance;
-  }
 
-  /* MODE_ASYNC: wrap (instance, result) in awaitable */
-  PyObject *awaitable = kos_construct_awaitable_new(instance, result);
-  Py_DECREF(result);
-  if (! awaitable) {
+  PyObject *init_args = PyTuple_Pack(1, instance);
+  if (! init_args) {
     Py_DECREF(instance);
     return NULL;
   }
-  return awaitable;
-}
-
-
-/* === KosTypeConstructAwaitable === */
-
-
-typedef struct {
-  PyObject_HEAD
-  PyObject *instance;
-  PyObject *init_result;
-} KosTypeConstructAwaitable;
-
-
-static void construct_awaitable_dealloc(PyObject *self) {
-  Py_CLEAR(((KosTypeConstructAwaitable *) self)->instance);
-  Py_CLEAR(((KosTypeConstructAwaitable *) self)->init_result);
-  Py_TYPE(self)->tp_free(self);
-}
-
-
-static PyObject *construct_awaitable_iter(PyObject *self) {
-  Py_INCREF(self);
-  return self;
-}
-
-
-static PyObject *construct_awaitable_iternext(PyObject *self) {
-  KosTypeConstructAwaitable *a = (KosTypeConstructAwaitable *) self;
-  PyObject *instance = a->instance;
-  PyObject *init_result = a->init_result;
-
-  if (! instance)
-    return NULL;
-
-  if (! init_result) {
-    a->instance = NULL;
-    Py_INCREF(instance);
-    PyErr_SetObject(PyExc_StopIteration, instance);
+  PyObject *full_args = PySequence_Concat(init_args,
+      args ? args : PyTuple_New(0));
+  Py_DECREF(init_args);
+  if (! full_args) {
+    Py_DECREF(instance);
     return NULL;
   }
 
-  PyTypeObject *res_type = Py_TYPE(init_result);
-  if (! res_type->tp_as_async || ! res_type->tp_as_async->am_await) {
-    a->instance = NULL;
-    Py_CLEAR(a->init_result);
-    Py_INCREF(instance);
-    PyErr_SetObject(PyExc_StopIteration, instance);
+  PyObject *init_result = NULL;
+  int r = Koskari_DemandSyncEx(init, full_args, kwargs, &init_result);
+  Py_DECREF(full_args);
+  if (r == 1) {
+    Py_DECREF(instance);
+    if (KoskariSyncViolation)
+      PyErr_Format(KoskariSyncViolation,
+          "async suspension is not allowed in Python __init__ for Koskari type");
     return NULL;
   }
-
-  PyObject *iter = res_type->tp_as_async->am_await(init_result);
-  if (! iter)
+  if (r < 0) {
+    Py_DECREF(instance);
     return NULL;
-  PyObject *next_val = PyIter_Next(iter);
-  Py_DECREF(iter);
-  if (next_val)
-    return next_val;
-  if (PyErr_Occurred())
-    return NULL;
-  /* init coroutine exhausted; return instance via StopIteration */
-  a->instance = NULL;
-  Py_CLEAR(a->init_result);
-  Py_INCREF(instance);
-  PyErr_SetObject(PyExc_StopIteration, instance);
-  return NULL;
-}
-
-
-static PyObject *construct_awaitable_am_await(PyObject *self) {
-  Py_INCREF(self);
-  return self;
-}
-
-
-static PyAsyncMethods construct_awaitable_async = {
-  .am_await = construct_awaitable_am_await,
-};
-
-
-static PyTypeObject KosTypeConstructAwaitableType = {
-  PyVarObject_HEAD_INIT(NULL, 0)
-  .tp_name = "koskari.lib._KosTypeConstructAwaitable",
-  .tp_basicsize = sizeof(KosTypeConstructAwaitable),
-  .tp_dealloc = construct_awaitable_dealloc,
-  .tp_flags = Py_TPFLAGS_DEFAULT,
-  .tp_iter = construct_awaitable_iter,
-  .tp_iternext = construct_awaitable_iternext,
-  .tp_as_async = &construct_awaitable_async,
-};
-
-
-PyObject *kos_construct_awaitable_new(PyObject *instance,
-                                       PyObject *init_coroutine) {
-
-  if (PyType_Ready(&KosTypeConstructAwaitableType) < 0)
-    return NULL;
-  KosTypeConstructAwaitable *a = (KosTypeConstructAwaitable *)
-      KosTypeConstructAwaitableType.tp_alloc(&KosTypeConstructAwaitableType, 0);
-  if (! a)
-    return NULL;
-  Py_INCREF(instance);
-  a->instance = instance;
-  a->init_result = init_coroutine;
-  if (init_coroutine)
-    Py_INCREF(init_coroutine);
-  return (PyObject *) a;
-}
-
-
-/* === kostype_tp_call === */
-
-
-static PyObject *kostype_tp_call(PyObject *cls, PyObject *args,
-                                 PyObject *kwargs) {
-
-  /* 3-arg form (name, bases, namespace) is class creation; delegate
-     to type's tp_call. Instance construction uses kos_construct. */
-  if (args && PyTuple_GET_SIZE(args) == 3
-      && PyUnicode_Check(PyTuple_GET_ITEM(args, 0))
-      && PyTuple_Check(PyTuple_GET_ITEM(args, 1))
-      && PyDict_Check(PyTuple_GET_ITEM(args, 2))) {
-    return PyType_Type.tp_call(cls, args, kwargs);
   }
-  return kos_construct(cls, args, kwargs, KOS_CONSTRUCT_MODE_ASYNC);
-}
-
-
-/* === C.new classmethod === */
-
-
-static PyObject *kostype_new_classmethod(PyObject *cls, PyObject *args,
-                                         PyObject *kwargs) {
-
-  return kos_construct(cls, args, kwargs, KOS_CONSTRUCT_MODE_SYNC);
+  Py_XDECREF(init_result);
+  return instance;
 }
 
 
@@ -434,14 +269,6 @@ static void koskari_fixup_slot_dispatchers(PyTypeObject *type) {
 /* === kostype_tp_new === */
 
 
-static PyMethodDef kostype_new_method_def = {
-  .ml_name = "new",
-  .ml_meth = (PyCFunction) kostype_new_classmethod,
-  .ml_flags = METH_VARARGS | METH_KEYWORDS,
-  .ml_doc = "Synchronous constructor. Use when __init__ is async.",
-};
-
-
 static PyObject *kostype_tp_new(PyTypeObject *metaclass, PyObject *args,
                                 PyObject *kwds) {
 
@@ -449,168 +276,8 @@ static PyObject *kostype_tp_new(PyTypeObject *metaclass, PyObject *args,
   if (! cls)
     return NULL;
 
-  /* Best-effort injection of C.new; class remains usable if this fails. */
-  PyObject *new_cm = PyDescr_NewClassMethod(
-      (PyTypeObject *) cls, &kostype_new_method_def);
-  if (new_cm) {
-    if (PyDict_SetItemString(((PyTypeObject *) cls)->tp_dict, "new", new_cm) < 0)
-      Py_DECREF(new_cm);
-    Py_DECREF(new_cm);
-  }
-
   koskari_fixup_slot_dispatchers((PyTypeObject *) cls);
   return cls;
-}
-
-
-/* === kostype_deliver_handler === */
-
-
-/**
-   Native handler for KostType construction. Pops the value (instance or
-   awaitable) from the frame stack, detaches the frame, and delivers it to
-   the parent via push_or_await. Used for no-init, plain-Python-init, and
-   KosCallable-init-done paths.
-*/
-typedef int (*KosNativeHandlerFn)(void *, void *, int, PyObject *);
-
-
-static int kostype_deliver_handler(KosContext *ctx, KosEvent *out_ev,
-                                   int is_resume, PyObject *delivered_value) {
-
-  (void) is_resume;
-  (void) delivered_value;
-  KosDynFrame *frame = CURRENT_FRAME(ctx);
-  KosStackBlock **stack = &KosDynFrame_STACK(frame);
-  PyObject *val = KosStackBlock_PopRef(stack);
-  if (! val)
-    return -1;
-  KosDynFrame_NATIVE_HANDLER(frame) = NULL;
-  KosDynFrame *detached = NULL;
-  if (kos_dyn_unwind_to_frame(ctx, frame, out_ev) < 0) {
-    Py_DECREF(val);
-    return -1;
-  }
-  if (kos_dyn_detach_top_frame(ctx, &detached) < 0) {
-    Py_DECREF(val);
-    return -1;
-  }
-  if (detached)
-    kos_dynframe_free(detached);
-  return kos_push_or_await(ctx, out_ev, val);
-}
-
-
-/* === kostype_install === */
-
-
-int kostype_install(KosContext *ctx, KosEvent *out_ev,
-                    PyObject *callable, PyObject *args_tuple,
-                    PyObject *kwds_dict) {
-
-  if (! KosType_Check(callable)) {
-    PyErr_SetString(PyExc_TypeError, "kostype_install requires KosType");
-    return -1;
-  }
-
-  PyTypeObject *cls = (PyTypeObject *) callable;
-  PyObject *instance = cls->tp_alloc(cls, 0);
-  if (! instance)
-    return -1;
-
-  PyObject *init = NULL;
-  if (cls->tp_dict)
-    init = PyDict_GetItemString(cls->tp_dict, "__init__");
-
-  if (! init) {
-    KosDynFrame *frame = kos_dyn_push_frame_empty(ctx);
-    if (! frame) {
-      Py_DECREF(instance);
-      return -1;
-    }
-    KosDynFrame_NATIVE_HANDLER(frame) = (KosNativeHandlerFn) kostype_deliver_handler;
-    if (KosStackBlock_PushRef(&KosDynFrame_STACK(frame), instance) < 0) {
-      Py_DECREF(instance);
-      return -1;
-    }
-    Py_DECREF(instance);
-    return 0;
-  }
-
-  if (KosCallable_Check(init)) {
-    PyObject *full_args = build_full_init_args(instance,
-        args_tuple ? args_tuple : NULL);
-    if (! full_args) {
-      Py_DECREF(instance);
-      return -1;
-    }
-    KosDynFrame *frame = kos_dyn_push_frame_empty(ctx);
-    if (! frame) {
-      Py_DECREF(full_args);
-      Py_DECREF(instance);
-      return -1;
-    }
-    KosDynFrame_NATIVE_HANDLER(frame) = (KosNativeHandlerFn) kostype_deliver_handler;
-    if (KosStackBlock_PushRef(&KosDynFrame_STACK(frame), instance) < 0) {
-      Py_DECREF(instance);
-      Py_DECREF(full_args);
-      return -1;
-    }
-    Py_DECREF(instance);
-    KosInstallFunc inner = KosCallableType_INSTALL(Py_TYPE(init));
-    if (inner) {
-      int r = inner(ctx, out_ev, init, full_args, kwds_dict);
-      Py_DECREF(full_args);
-      return r;
-    }
-    Py_DECREF(full_args);
-    PyErr_SetString(PyExc_TypeError, "KosCallable __init__ has no install slot");
-    return -1;
-  }
-
-  /* Plain Python callable */
-  PyObject *result = call_init_with_instance(init, instance,
-      args_tuple ? args_tuple : NULL, kwds_dict);
-  if (! result) {
-    Py_DECREF(instance);
-    return -1;
-  }
-  PyTypeObject *res_type = Py_TYPE(result);
-  if (res_type->tp_as_async && res_type->tp_as_async->am_await) {
-    PyObject *aw = kos_construct_awaitable_new(instance, result);
-    Py_DECREF(result);
-    if (! aw) {
-      Py_DECREF(instance);
-      return -1;
-    }
-    KosDynFrame *frame = kos_dyn_push_frame_empty(ctx);
-    if (! frame) {
-      Py_DECREF(aw);
-      return -1;
-    }
-    KosDynFrame_NATIVE_HANDLER(frame) = (KosNativeHandlerFn) kostype_deliver_handler;
-    if (KosStackBlock_PushRef(&KosDynFrame_STACK(frame), aw) < 0) {
-      Py_DECREF(aw);
-      return -1;
-    }
-    Py_DECREF(aw);
-    return 0;
-  }
-  Py_DECREF(result);
-  {
-    KosDynFrame *frame = kos_dyn_push_frame_empty(ctx);
-    if (! frame) {
-      Py_DECREF(instance);
-      return -1;
-    }
-    KosDynFrame_NATIVE_HANDLER(frame) = (KosNativeHandlerFn) kostype_deliver_handler;
-    if (KosStackBlock_PushRef(&KosDynFrame_STACK(frame), instance) < 0) {
-      Py_DECREF(instance);
-      return -1;
-    }
-    Py_DECREF(instance);
-    return 0;
-  }
 }
 
 
@@ -618,7 +285,7 @@ int kostype_install(KosContext *ctx, KosEvent *out_ev,
 
 
 PyObject *kos_get_default_metaclass(void) {
-  PyObject *meta = (PyObject *) KOS_CALLABLE_PYTYPE(KosTypeType);
+  PyObject *meta = (PyObject *) KOS_TYPETYPE_PYTYPE(KosTypeType);
   Py_INCREF(meta);
   return meta;
 }
@@ -627,23 +294,19 @@ PyObject *kos_get_default_metaclass(void) {
 /* === KosTypeType === */
 
 
-KosCallableTypeObject KosTypeType = {
+KosTypeTypeObject KosTypeType = {
   .type = {
     PyVarObject_HEAD_INIT(NULL, 0)
     .tp_name = "koskari.lib.KosType",
     .tp_basicsize = sizeof(PyHeapTypeObject),
     .tp_flags = Py_TPFLAGS_DEFAULT,
     .tp_doc = "Metaclass for Koskari classes. Instances are classes. "
-              "Calling C(...) returns an awaitable yielding the instance.",
+              "Calling C(...) returns the instance directly.",
     .tp_new = kostype_tp_new,
     .tp_call = kostype_tp_call,
     .tp_base = &PyType_Type,
     .tp_bases = NULL,
   },
-  .tp_kos_install = kostype_install,
-  .tp_kos_tail_install = NULL,
-  .tp_kos_vinstall = NULL,
-  .tp_kos_tail_vinstall = NULL,
 };
 
 
@@ -652,15 +315,10 @@ KosCallableTypeObject KosTypeType = {
 
 int koskari_object_init(PyObject *mod) {
 
-  if (PyType_Ready(&KosTypeConstructAwaitableType) < 0)
-    return -1;
-
-  PyObject *bases = PyTuple_Pack(2,
-      (PyObject *) &PyType_Type,
-      (PyObject *) KOS_CALLABLE_PYTYPE(KosCallableType));
+  PyObject *bases = PyTuple_Pack(1, (PyObject *) &PyType_Type);
   if (! bases)
     return -1;
-  PyTypeObject *kt = KOS_CALLABLE_PYTYPE(KosTypeType);
+  PyTypeObject *kt = KOS_TYPETYPE_PYTYPE(KosTypeType);
   kt->tp_base = &PyType_Type;
   kt->tp_bases = bases;
   if (PyType_Ready(kt) < 0) {
@@ -671,7 +329,7 @@ int koskari_object_init(PyObject *mod) {
   if (! dict)
     return -1;
   if (PyDict_SetItemString(dict, "KosType",
-                           (PyObject *) KOS_CALLABLE_PYTYPE(KosTypeType)) < 0)
+                           (PyObject *) KOS_TYPETYPE_PYTYPE(KosTypeType)) < 0)
     return -1;
 
   /* Cache KoskariSyncViolation for dunder slot shims (sync_init runs first) */

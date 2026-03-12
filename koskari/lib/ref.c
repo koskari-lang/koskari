@@ -669,7 +669,7 @@ static PyObject *dyn_ref_get_empty(PyObject *self, void *_unused) {
       PyObject *args = PyTuple_New(0);
       if (! args)
         return NULL;
-      if (KosCallableOrKosType_Check(fn)) {
+      if (KosCallable_Check(fn)) {
         return Koskari_DemandSync(fn, args, NULL);
       }
       Py_DECREF(args);
@@ -696,7 +696,7 @@ static PyGetSetDef dyn_ref_getset[] = {
 static PyObject *dyn_ref_m_deref(PyObject *self) {
   PyObject *fn = KosDynamicRef_GETFN(self);
   if (fn) {
-    if (KosCallableOrKosType_Check(fn)) {
+    if (KosCallable_Check(fn)) {
       PyObject *args = PyTuple_New(0);
       if (! args)
         return NULL;
@@ -715,7 +715,7 @@ static PyObject *dyn_ref_m_deref(PyObject *self) {
 static PyObject *dyn_ref_m_store(PyObject *self, PyObject *value) {
   PyObject *fn = KosDynamicRef_SETFN(self);
   if (fn) {
-    if (KosCallableOrKosType_Check(fn)) {
+    if (KosCallable_Check(fn)) {
       PyObject *args = PyTuple_Pack(1, value);
       if (! args)
         return NULL;
@@ -734,7 +734,7 @@ static PyObject *dyn_ref_m_store(PyObject *self, PyObject *value) {
 static PyObject *dyn_ref_m_clear(PyObject *self) {
   PyObject *fn = KosDynamicRef_DELFN(self);
   if (fn) {
-    if (KosCallableOrKosType_Check(fn)) {
+    if (KosCallable_Check(fn)) {
       PyObject *args = PyTuple_New(0);
       if (! args)
         return NULL;
