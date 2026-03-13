@@ -45,11 +45,11 @@ KOS_OP_HANDLER(POP_PROMPT) {
       if (KosContext_DELIMITED_RETURN_NODE(ctx) != NULL) {
         unw = kos_dyn_unwind_to_node(ctx,
                                      KosContext_DELIMITED_RETURN_NODE(ctx),
-                                     out_ev);
+                                     KOS_XFER_EVENT_SHIFT, out_ev);
       } else {
         unw = kos_dyn_unwind_to_frame(ctx,
                                       KosContext_DELIMITED_RETURN_FRAME(ctx),
-                                      out_ev);
+                                      KOS_XFER_EVENT_SHIFT, out_ev);
       }
       if (unw == KOS_DYN_UNWIND_ASYNC_STARTED) {
         KosContext_PENDING_RETURN_VALUE(ctx) = val;

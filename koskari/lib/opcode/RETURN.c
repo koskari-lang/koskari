@@ -66,7 +66,8 @@ KOS_OP_HANDLER(RETURN) {
     KosDynFrame *detached_frame = NULL;
 
     /* Unwind to current frame (run wind/after, finally, etc). */
-    int unw = kos_dyn_unwind_to_frame(ctx, CURRENT_FRAME(ctx), out_ev);
+    int unw = kos_dyn_unwind_to_frame(ctx, CURRENT_FRAME(ctx),
+                                      KOS_XFER_EVENT_RETURN, out_ev);
     if (unw == KOS_DYN_UNWIND_ASYNC_STARTED) {
       KosContext_PENDING_RETURN_VALUE(ctx) = val;
       KosContext_PENDING_RETURN_TO_PARENT(ctx) = 1;
@@ -151,7 +152,8 @@ KOS_OP_HANDLER(RETURN) {
   /* === Phase 2c: Top-level return (no parent) ===
      We are the root frame; returning means the evaluator is done. Unwind,
      then emit KOS_EV_RETURN so the caller receives the value. */
-  int unw = kos_dyn_unwind_to_frame(ctx, CURRENT_FRAME(ctx), out_ev);
+  int unw = kos_dyn_unwind_to_frame(ctx, CURRENT_FRAME(ctx),
+                                    KOS_XFER_EVENT_RETURN, out_ev);
   if (unw == KOS_DYN_UNWIND_ASYNC_STARTED) {
     KosContext_PENDING_RETURN_VALUE(ctx) = val;
     KosContext_PENDING_RETURN_TO_PARENT(ctx) = 0;

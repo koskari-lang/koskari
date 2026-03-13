@@ -37,7 +37,8 @@
 
 
 static void kos_update_frame_top(KosContext *ctx);
-static int kos_dyn_uninstall_handler(KosContext *ctx, KosDynNode *node, KosEvent *out_ev);
+static int kos_dyn_uninstall_handler(KosContext *ctx, KosDynNode *node,
+                                     KosXferEvent event, KosEvent *out_ev);
 static int kos_dyn_wind_on_control_returned(KosContext *ctx, KosDynWind *wind);
 static int kos_dyn_with_on_control_returned(KosContext *ctx, KosDynWith *with_node, int do_pop_node);
 static int kos_dyn_with_on_enter_control_returned(KosContext *ctx, KosDynWith *with_node);
@@ -425,7 +426,8 @@ void kos_dyn_pop_prompt(KosContext *ctx, KosDynPrompt *prompt) {
     return;
   }
 
-  kos_dyn_uninstall_handler(ctx, (KosDynNode *) prompt, NULL);
+  kos_dyn_uninstall_handler(ctx, (KosDynNode *) prompt,
+                            KOS_XFER_EVENT_NONE, NULL);
 
   KosContext_DYN_TOP(ctx) = KosDynNode_PARENT(prompt);
   KosContext_CHAIN_VERSION(ctx)++;
@@ -2222,7 +2224,8 @@ int kos_dyn_push(KosContext *ctx, KosDynNode *node) {
 }
 
 
-int kos_dyn_uninstall(KosContext *ctx, KosDynNode *node, KosEvent *out_ev) {
+int kos_dyn_uninstall(KosContext *ctx, KosDynNode *node, KosXferEvent event,
+                      KosEvent *out_ev) {
   if (! node || KosContext_DYN_TOP(ctx) != node) {
     PyErr_SetString(PyExc_RuntimeError, "kos_dyn_uninstall: node is not dyn_top");
     return -1;
@@ -2233,7 +2236,7 @@ int kos_dyn_uninstall(KosContext *ctx, KosDynNode *node, KosEvent *out_ev) {
     return -1;
   }
 
-  int r = kos_dyn_uninstall_handler(ctx, node, out_ev);
+  int r = kos_dyn_uninstall_handler(ctx, node, event, out_ev);
   if (r == KOS_DYN_UNWIND_ASYNC_STARTED)
     return KOS_DYN_UNWIND_ASYNC_STARTED;
   if (r < 0)
@@ -2284,8 +2287,9 @@ static int kos_dynnode_run_wind(KosContext *ctx, KosDynNode *node,
    :return: 0 on success, -1 on error, KOS_DYN_UNWIND_ASYNC_STARTED when async
 */
 static int kos_dynnode_run_transfer_unwind(KosContext *ctx, KosDynNode *node,
+                                           KosXferEvent event,
                                            KosEvent *out_ev) {
-  int r = kos_dyn_unwind(ctx, node, out_ev);
+  int r = kos_dyn_unwind(ctx, node, event, out_ev);
   if (r == KOS_DYN_UNWIND_ASYNC_STARTED)
     return KOS_DYN_UNWIND_ASYNC_STARTED;
   if (r < 0)
@@ -2344,7 +2348,8 @@ int kos_dyn_install(KosContext *ctx, KosDynNode *node, KosEvent *out_ev) {
 
    :return: 0 on success, -1 on error, KOS_DYN_UNWIND_ASYNC_STARTED when async
 */
-static int kos_dyn_uninstall_handler(KosContext *ctx, KosDynNode *node, KosEvent *out_ev) {
+static int kos_dyn_uninstall_handler(KosContext *ctx, KosDynNode *node,
+                                     KosXferEvent event, KosEvent *out_ev) {
   switch (KosDynNode_KIND(node)) {
     case KOS_DYN_PROMPT: {
       if (! KosContext_FRAME_TOP(ctx))
@@ -2366,7 +2371,7 @@ static int kos_dyn_uninstall_handler(KosContext *ctx, KosDynNode *node, KosEvent
       return result;
     }
     case KOS_DYN_WIND:
-      return kos_dyn_unwind(ctx, node, out_ev);
+      return kos_dyn_unwind(ctx, node, event, out_ev);
     case KOS_DYN_TRY:
     case KOS_DYN_FINALLY:
     case KOS_DYN_LOOP:
@@ -2398,7 +2403,7 @@ static int kos_dyn_uninstall_handler(KosContext *ctx, KosDynNode *node, KosEvent
     case KOS_DYN_WITH:
     case KOS_DYN_DYN_WITH: {
       KosDynWith *with_node = (KosDynWith *) node;
-      int unw = kos_dyn_unwind(ctx, node, out_ev);
+      int unw = kos_dyn_unwind(ctx, node, event, out_ev);
       if (unw == KOS_DYN_UNWIND_ASYNC_STARTED)
         return KOS_DYN_UNWIND_ASYNC_STARTED;
       if (unw == KOS_DYN_UNWIND_SWALLOWED)
@@ -2462,13 +2467,12 @@ int kos_dyn_wind(KosContext *ctx, KosDynNode *node, KosEvent *out_ev) {
 /**
    Run unwind (exit) for an extent node.  May start async for WITH/DYN_WITH.
 
+   :param event: transfer event; nodes can distinguish RETURN, RAISE, etc.
    :param out_ev: event output; may be NULL for nodes that do not suspend
    :return: 0 on success, -1 on error, KOS_DYN_UNWIND_ASYNC_STARTED when async
 */
-int kos_dyn_unwind(
-    KosContext *ctx,
-    KosDynNode *node,
-    KosEvent *out_ev) {
+int kos_dyn_unwind(KosContext *ctx, KosDynNode *node, KosXferEvent event,
+                   KosEvent *out_ev) {
 
   switch (KosDynNode_KIND(node)) {
     case KOS_DYN_SHIFT:
@@ -2580,7 +2584,7 @@ KosDynNode *kos_dyn_clone(KosDynNode *node) {
    BARRIER nodes (PROMPT) return -1.  Used for unwinding
    (e.g. exception handling) and normal scope exit.
 */
-int kos_dyn_pop_top(KosContext *ctx, KosEvent *out_ev) {
+int kos_dyn_pop_top(KosContext *ctx, KosXferEvent event, KosEvent *out_ev) {
 
   KosDynNode *top = KosContext_DYN_TOP(ctx);
   if (! top) {
@@ -2593,12 +2597,12 @@ int kos_dyn_pop_top(KosContext *ctx, KosEvent *out_ev) {
     return -1;
   }
 
-  return kos_dyn_uninstall(ctx, top, out_ev);
+  return kos_dyn_uninstall(ctx, top, event, out_ev);
 }
 
 
 int kos_dyn_unwind_to_node(KosContext *ctx, KosDynNode *target,
-                           KosEvent *out_ev) {
+                           KosXferEvent event, KosEvent *out_ev) {
 
   if (KOS_XFER_TRACE)
     SAYF("[xfer] unwind_to_node: target=%p kind=%s",
@@ -2615,7 +2619,7 @@ int kos_dyn_unwind_to_node(KosContext *ctx, KosDynNode *target,
       kos_dyn_pop_prompt(ctx, (KosDynPrompt *) top);
       pop_res = 0;
     } else {
-      pop_res = kos_dyn_pop_top(ctx, out_ev);
+      pop_res = kos_dyn_pop_top(ctx, event, out_ev);
       if (pop_res == KOS_DYN_UNWIND_ASYNC_STARTED)
         return pop_res;
     }
@@ -2629,7 +2633,7 @@ int kos_dyn_unwind_to_node(KosContext *ctx, KosDynNode *target,
 
 
 int kos_dyn_unwind_to_frame(KosContext *ctx, KosDynFrame *frame,
-                            KosEvent *out_ev) {
+                            KosXferEvent event, KosEvent *out_ev) {
 
   if (KOS_XFER_TRACE)
     SAYF("[xfer] unwind_to_frame: target frame=%p", (void *) frame);
@@ -2645,7 +2649,7 @@ int kos_dyn_unwind_to_frame(KosContext *ctx, KosDynFrame *frame,
       kos_dyn_pop_prompt(ctx, (KosDynPrompt *) top);
       pop_res = 0;
     } else {
-      pop_res = kos_dyn_pop_top(ctx, out_ev);
+      pop_res = kos_dyn_pop_top(ctx, event, out_ev);
       if (pop_res == KOS_DYN_UNWIND_ASYNC_STARTED) {
         KosContext_UNWIND_TARGET_FRAME(ctx) = frame;
         return pop_res;
@@ -3887,7 +3891,8 @@ static int xfer_step_extent_action(KosContext *ctx, KosTransferAction *action,
 
   if (phase == KOS_XFER_EXTENT_PHASE_WIND)
     return kos_dyn_wind(ctx, node, out_ev);
-  return kos_dynnode_run_transfer_unwind(ctx, node, out_ev);
+  return kos_dynnode_run_transfer_unwind(ctx, node, KOS_XFER_EVENT_NONE,
+                                         out_ev);
 }
 
 
@@ -4191,7 +4196,7 @@ static int xfer_step_pop_one(KosContext *ctx, KosEvent *out_ev) {
     PyErr_SetString(PyExc_RuntimeError, "POP_ONE: cannot pop barrier node");
     return -1;
   }
-  return kos_dyn_uninstall(ctx, top, out_ev);
+  return kos_dyn_uninstall(ctx, top, KOS_XFER_EVENT_NONE, out_ev);
 }
 
 

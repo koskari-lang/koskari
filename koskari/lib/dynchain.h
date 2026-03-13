@@ -133,6 +133,23 @@ typedef enum KosRegionStyle {
 } KosRegionStyle;
 
 
+/**
+   KosXferEvent indicates why an unwind is occurring.  Passed to
+   kos_dyn_unwind and propagated through the unwind path so nodes
+   can react appropriately (e.g. dynamic-wind after-thunk runs
+   regardless; event is for diagnostics or future use).
+*/
+typedef enum KosXferEvent {
+  KOS_XFER_EVENT_NONE = 0,
+  KOS_XFER_EVENT_RETURN,
+  KOS_XFER_EVENT_RAISE,
+  KOS_XFER_EVENT_YIELD,
+  KOS_XFER_EVENT_BREAK,
+  KOS_XFER_EVENT_CONTINUE,
+  KOS_XFER_EVENT_SHIFT,
+} KosXferEvent;
+
+
 /* === KosDynNode: tagged union for all chain node kinds === */
 
 
@@ -664,10 +681,13 @@ int kos_dyn_push(KosContext *ctx, KosDynNode *node);
    :param node: node to pop (must be dyn_top)
    :param out_ev: event output for async suspend
 
+   :param event: transfer event (RETURN, RAISE, etc.); KOS_XFER_EVENT_NONE if unknown
+
    :return: 0 on success, -1 on error or BARRIER, KOS_DYN_UNWIND_ASYNC_STARTED
      when async
 */
-int kos_dyn_uninstall(KosContext *ctx, KosDynNode *node, struct KosEvent *out_ev);
+int kos_dyn_uninstall(KosContext *ctx, KosDynNode *node, KosXferEvent event,
+                      struct KosEvent *out_ev);
 #define kos_dyn_pop kos_dyn_uninstall
 
 
@@ -1102,18 +1122,21 @@ int kos_dyn_with_unwind(KosContext *ctx, KosDynWith *node, struct KosEvent *out_
 
    :param out_ev: event output for suspend (required when WITH may have async exit)
 
+   :param event: transfer event; KOS_XFER_EVENT_NONE if unknown
+
    :return: 0 on success, -1 on error or if top is PROMPT,
      KOS_DYN_UNWIND_ASYNC_STARTED when async extent action started (resume later)
 */
-int kos_dyn_pop_top(KosContext *ctx, struct KosEvent *out_ev);
+int kos_dyn_pop_top(KosContext *ctx, KosXferEvent event,
+                    struct KosEvent *out_ev);
 
 
 int kos_dyn_unwind_to_frame(KosContext *ctx, KosDynFrame *frame,
-                           struct KosEvent *out_ev);
+                            KosXferEvent event, struct KosEvent *out_ev);
 
 
 int kos_dyn_unwind_to_node(KosContext *ctx, KosDynNode *target,
-                           struct KosEvent *out_ev);
+                           KosXferEvent event, struct KosEvent *out_ev);
 
 
 /**
@@ -1177,7 +1200,7 @@ int finalize_provisional_with_enter(KosContext *ctx, PyObject *result,
 */
 int kos_dyn_install(KosContext *ctx, KosDynNode *node, struct KosEvent *out_ev);
 int kos_dyn_wind(KosContext *ctx, KosDynNode *node, struct KosEvent *out_ev);
-int kos_dyn_unwind(KosContext *ctx, KosDynNode *node,
+int kos_dyn_unwind(KosContext *ctx, KosDynNode *node, KosXferEvent event,
                    struct KosEvent *out_ev);
 int kos_dyn_exception_unwind(KosContext *ctx, KosDynNode *node,
                                struct KosEvent *out_ev);

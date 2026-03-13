@@ -135,7 +135,8 @@ static int apply_native_handler(
 
   /* Pop apply frame (code=NULL) and deliver result to parent. */
   KosDynFrame *detached = NULL;
-  if (kos_dyn_unwind_to_frame(ctx, CURRENT_FRAME(ctx), out_ev) < 0) {
+  if (kos_dyn_unwind_to_frame(ctx, CURRENT_FRAME(ctx), KOS_XFER_EVENT_RETURN,
+                               out_ev) < 0) {
     Py_DECREF(result);
     return -1;
   }

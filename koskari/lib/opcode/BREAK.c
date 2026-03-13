@@ -65,7 +65,7 @@ KOS_OP_HANDLER(BREAK) {
           return -1;
         }
       } else {
-        int pop_res = kos_dyn_pop_top(ctx, out_ev);
+        int pop_res = kos_dyn_pop_top(ctx, KOS_XFER_EVENT_BREAK, out_ev);
         if (pop_res == KOS_DYN_UNWIND_ASYNC_STARTED)
           return 0;
         if (pop_res < 0) {
@@ -74,7 +74,7 @@ KOS_OP_HANDLER(BREAK) {
         }
       }
     } else {
-      int pop_res = kos_dyn_pop_top(ctx, out_ev);
+      int pop_res = kos_dyn_pop_top(ctx, KOS_XFER_EVENT_BREAK, out_ev);
       if (pop_res == KOS_DYN_UNWIND_ASYNC_STARTED)
         return 0;
       if (pop_res < 0) {

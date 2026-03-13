@@ -67,14 +67,14 @@ KOS_OP_HANDLER(CONTINUE) {
         if (KosStackBlock_DropBlock(&CURRENT_STACK(ctx)) < 0)
           return -1;
       } else {
-        int pop_res = kos_dyn_pop_top(ctx, out_ev);
+        int pop_res = kos_dyn_pop_top(ctx, KOS_XFER_EVENT_CONTINUE, out_ev);
         if (pop_res == KOS_DYN_UNWIND_ASYNC_STARTED)
           return 0;
         if (pop_res < 0)
           return -1;
       }
     } else {
-      int pop_res = kos_dyn_pop_top(ctx, out_ev);
+      int pop_res = kos_dyn_pop_top(ctx, KOS_XFER_EVENT_CONTINUE, out_ev);
       if (pop_res == KOS_DYN_UNWIND_ASYNC_STARTED)
         return 0;
       if (pop_res < 0)
