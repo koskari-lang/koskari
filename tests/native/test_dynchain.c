@@ -181,6 +181,7 @@ static int test_dynfinally_new_free(void) {
     TEST_ASSERT_EQ(KosDynFinally_HANDLER_PC(node), 100, "handler_pc is set");
     TEST_ASSERT_EQ(KosDynFinally_ENABLED(node), 1, "enabled by default");
     TEST_ASSERT_EQ(KosDynFinally_HANDLING_RAISE(node), 0, "handling_raise is 0");
+    TEST_ASSERT_EQ(KosDynFinally_HANDLING_RETURN(node), 0, "handling_return is 0");
     TEST_ASSERT_NULL(KosDynFinally_HANDLING_RESULT(node), "handling_result is NULL");
 
     kos_dynfinally_free(node);

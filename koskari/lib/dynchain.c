@@ -862,6 +862,7 @@ KosDynFinally *kos_dynfinally_new(KosDynNode *parent, uint32_t handler_pc) {
   KosDynFinally_HANDLER_PC(node) = handler_pc;
   KosDynFinally_ENABLED(node) = 1;
   KosDynFinally_HANDLING_RAISE(node) = 0;
+  KosDynFinally_HANDLING_RETURN(node) = 0;
   KosDynFinally_HANDLING_RESULT(node) = NULL;
   return node;
 }
@@ -919,6 +920,7 @@ KosDynFinally *kos_dynfinally_clone(KosDynFinally *node) {
   KosDynFinally_HANDLER_PC(clone) = KosDynFinally_HANDLER_PC(node);
   KosDynFinally_ENABLED(clone) = KosDynFinally_ENABLED(node);
   KosDynFinally_HANDLING_RAISE(clone) = KosDynFinally_HANDLING_RAISE(node);
+  KosDynFinally_HANDLING_RETURN(clone) = KosDynFinally_HANDLING_RETURN(node);
   KosDynFinally_HANDLING_RESULT(clone) = KosDynFinally_HANDLING_RESULT(node);
   Py_XINCREF(KosDynFinally_HANDLING_RESULT(clone));
   return clone;
@@ -2577,7 +2579,9 @@ KosHandleResult kos_dyn_handle(KosContext *ctx, KosDynNode *node,
       if (event == KOS_XFER_EVENT_RAISE
           && KosDynFinally_ENABLED((KosDynFinally *) node))
         return KOS_HANDLE_CONSUMED;
-      /* RETURN: PASS for now; extension point for running finally before return */
+      if (event == KOS_XFER_EVENT_RETURN
+          && KosDynFinally_ENABLED((KosDynFinally *) node))
+        return KOS_HANDLE_CONSUMED;
       return KOS_HANDLE_PASS;
     case KOS_DYN_GEN:
       if (event == KOS_XFER_EVENT_YIELD)
@@ -2750,6 +2754,83 @@ int kos_dyn_unwind_to_node(KosContext *ctx, KosDynNode *target,
 }
 
 
+int kos_dyn_walk_return_to_frame(KosContext *ctx, KosDynFrame *frame,
+                                  PyObject *val, KosEvent *out_ev) {
+
+  if (KOS_XFER_TRACE)
+    SAYF("[xfer] walk_return_to_frame: target frame=%p", (void *) frame);
+
+  while (KosContext_DYN_TOP(ctx) != NULL
+         && KosContext_DYN_TOP(ctx) != (KosDynNode *) frame) {
+    KosDynNode *top = KosContext_DYN_TOP(ctx);
+
+    /* Handle phase: offer RETURN before unwind */
+    {
+      KosHandleResult hr = kos_dyn_handle(ctx, top, KOS_XFER_EVENT_RETURN,
+                                          out_ev);
+      if (hr == KOS_HANDLE_CONSUMED) {
+        if (KosDynNode_IS_FINALLY(top)) {
+          /* Deliver to finally block: clear stack, push value, set PC */
+          KosDynFinally *fin = (KosDynFinally *) top;
+          if (KosStackBlock_ClearBlock(&CURRENT_STACK(ctx)) < 0) {
+            Py_DECREF(val);
+            return -1;
+          }
+          if (KosStackBlock_PushRef(&CURRENT_STACK(ctx), val) < 0) {
+            Py_DECREF(val);
+            return -1;
+          }
+          Py_DECREF(val);
+          if (KosContext_FRAME_TOP(ctx))
+            KosDynFrame_PC(KosContext_FRAME_TOP(ctx)) =
+                KosDynFinally_HANDLER_PC(fin);
+          KosDynFinally_ENABLED(fin) = 0;
+          KosDynFinally_HANDLING_RETURN(fin) = 1;
+          if (KOS_XFER_TRACE)
+            SAYF("[xfer] walk_return: delivered to FINALLY, pc=%u",
+                 (unsigned) KosDynFinally_HANDLER_PC(fin));
+          return KOS_DYN_UNWIND_FINALLY_TAKING_RETURN;
+        }
+        /* Other CONSUMED (e.g. GEN) not expected for RETURN walk */
+        PyErr_SetString(PyExc_RuntimeError,
+                        "handle(CONSUMED) during return walk: unexpected node");
+        Py_DECREF(val);
+        return -1;
+      }
+      if (hr == KOS_HANDLE_ERROR) {
+        Py_DECREF(val);
+        return -1;
+      }
+    }
+
+    if (KOS_XFER_TRACE)
+      SAYF("[xfer] walk_return: popping node=%p kind=%s",
+           (void *) top, kos_dynnode_kind_name(KosDynNode_KIND(top)));
+    int pop_res;
+    if (KosDynNode_IS_PROMPT(top)) {
+      kos_dyn_pop_prompt(ctx, (KosDynPrompt *) top);
+      pop_res = 0;
+    } else {
+      pop_res = kos_dyn_pop_top(ctx, KOS_XFER_EVENT_RETURN, out_ev);
+      if (pop_res == KOS_DYN_UNWIND_ASYNC_STARTED) {
+        KosContext_UNWIND_TARGET_FRAME(ctx) = frame;
+        Py_DECREF(val);
+        return pop_res;
+      }
+    }
+    if (pop_res != 0) {
+      Py_DECREF(val);
+      return -1;
+    }
+  }
+  KosContext_UNWIND_TARGET_FRAME(ctx) = NULL;
+  if (KOS_XFER_TRACE)
+    SAYF("[xfer] walk_return: done, dyn_top=%p",
+         (void *) KosContext_DYN_TOP(ctx));
+  return 0;
+}
+
+
 int kos_dyn_unwind_to_frame(KosContext *ctx, KosDynFrame *frame,
                             KosXferEvent event, KosEvent *out_ev) {
 
@@ -2764,7 +2845,7 @@ int kos_dyn_unwind_to_frame(KosContext *ctx, KosDynFrame *frame,
     {
       KosHandleResult hr = kos_dyn_handle(ctx, top, event, out_ev);
       if (hr == KOS_HANDLE_CONSUMED) {
-        /* Node consumed; caller must deliver.  Not used for RETURN yet. */
+        /* RETURN: use kos_dyn_walk_return_to_frame. RAISE: use try_local. */
         PyErr_SetString(PyExc_RuntimeError,
                         "handle(CONSUMED) during unwind_to_frame not implemented");
         return -1;

@@ -133,10 +133,20 @@ static int apply_native_handler(
   if (! result)
     return -1;
 
-  /* Pop apply frame (code=NULL) and deliver result to parent. */
+  /* Walk RETURN to frame (FINALLY may consume). */
   KosDynFrame *detached = NULL;
-  if (kos_dyn_unwind_to_frame(ctx, CURRENT_FRAME(ctx), KOS_XFER_EVENT_RETURN,
-                               out_ev) < 0) {
+  int unw = kos_dyn_walk_return_to_frame(ctx, CURRENT_FRAME(ctx), result,
+                                          out_ev);
+  if (unw == KOS_DYN_UNWIND_FINALLY_TAKING_RETURN) {
+    /* Delivered to finally; eval continues at finally block */
+    return 0;
+  }
+  if (unw == KOS_DYN_UNWIND_ASYNC_STARTED) {
+    KosContext_PENDING_RETURN_VALUE(ctx) = result;
+    KosContext_PENDING_RETURN_TO_PARENT(ctx) = 1;
+    return 0;
+  }
+  if (unw < 0) {
     Py_DECREF(result);
     return -1;
   }

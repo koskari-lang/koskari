@@ -38,6 +38,8 @@ KOS_OP_HANDLER(POP_FINALLY) {
     PyErr_SetExcInfo(NULL, NULL, NULL);
     KosDynFinally_HANDLING_RAISE((KosDynFinally *) region) = 0;
   }
+  if (KosDynFinally_HANDLING_RETURN((KosDynFinally *) region))
+    KosDynFinally_HANDLING_RETURN((KosDynFinally *) region) = 0;
   if (KosStackBlock_PopBlock(&CURRENT_STACK(ctx), 1) < 0)
     return -1;
   if (KosDynNode_IS_TRY(region)) kos_dyn_pop_try(ctx, (KosDynTry *) region); else if (KosDynNode_IS_FINALLY(region)) kos_dyn_pop_finally(ctx, (KosDynFinally *) region); else if (KosDynNode_IS_LOOP(region)) kos_dyn_pop_loop(ctx, (KosDynLoop *) region); else if (KosDynNode_IS_FOREACH(region)) kos_dyn_pop_foreach(ctx, (KosDynForeach *) region);

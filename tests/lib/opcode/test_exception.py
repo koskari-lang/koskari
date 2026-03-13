@@ -413,4 +413,87 @@ class TestExceptionOpcodes(CevalTest):
             await make_callable(code, ns)()
 
 
+    async def test_return_in_finally_overwrites_try_return(self):
+        """
+        try: return 1; finally: return 2 — function returns 2 (Python semantics)
+        """
+
+        code, ns = build_expr([
+            ["PUSH_FINALLY", "fin"],
+            ["CONST", 1],
+            ["RETURN", 1],
+            ["LABEL", "fin"],
+            ["CONST", 2],
+            ["RETURN", 1],
+            ["POP_FINALLY", 0],
+            ["NOOP", 0],
+        ])
+        result = await make_callable(code, ns)()
+        self.assertEqual(result, 2)
+
+
+    async def test_finally_pass_through_when_try_returns(self):
+        """
+        try: return 1; finally: pass — function returns 1 (pass-through)
+        """
+
+        code, ns = build_expr([
+            ["PUSH_FINALLY", "fin"],
+            ["CONST", 1],
+            ["RETURN", 1],
+            ["LABEL", "fin"],
+            ["POP_FINALLY", 0],
+            ["RETURN", 1],
+            ["NOOP", 0],
+        ])
+        result = await make_callable(code, ns)()
+        self.assertEqual(result, 1)
+
+
+    async def test_nested_finally_multiple_return_overwrites(self):
+        """
+        Nested try/finally: inner returns 1, inner finally returns 2, outer finally
+        returns 3 — function returns 3 (Python semantics)
+        """
+
+        code, ns = build_expr([
+            ["PUSH_FINALLY", "outer_fin"],
+            ["PUSH_FINALLY", "inner_fin"],
+            ["CONST", 1],
+            ["RETURN", 1],
+            ["LABEL", "inner_fin"],
+            ["CONST", 2],
+            ["RETURN", 1],
+            ["POP_FINALLY", 0],
+            ["LABEL", "outer_fin"],
+            ["CONST", 3],
+            ["RETURN", 1],
+            ["POP_FINALLY", 0],
+            ["NOOP", 0],
+        ])
+        result = await make_callable(code, ns)()
+        self.assertEqual(result, 3)
+
+
+    async def test_finally_raise_propagates(self):
+        """
+        try: return 1; finally: raise — exception propagates (suppresses return)
+        """
+
+        exc_inst = ValueError("from finally")
+        code, ns = build_expr([
+            ["PUSH_FINALLY", "fin"],
+            ["CONST", 1],
+            ["RETURN", 1],
+            ["LABEL", "fin"],
+            ["CONST", exc_inst],
+            ["RAISE", 1],
+            ["POP_FINALLY", 0],
+            ["NOOP", 0],
+        ])
+        with self.assertRaises(ValueError) as ctx:
+            await make_callable(code, ns)()
+        self.assertEqual(str(ctx.exception), "from finally")
+
+
 # The end.

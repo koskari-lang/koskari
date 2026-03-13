@@ -214,7 +214,13 @@ struct KosDynNode {
       uint8_t phase;          /* KosDynWindPhase; WIND_IDLE until thunk invoked */
     } wind;
     struct { uint32_t handler_pc; uint8_t enabled; } try_;
-    struct { uint32_t handler_pc; uint8_t enabled; uint8_t handling_raise; PyObject *handling_result; } finally_;
+    struct {
+      uint32_t handler_pc;
+      uint8_t enabled;
+      uint8_t handling_raise;
+      uint8_t handling_return;
+      PyObject *handling_result;
+    } finally_;
     struct { uint32_t break_pc; uint32_t continue_pc; uint8_t enabled; PyObject *result; } loop;
     struct { uint32_t break_pc; uint32_t continue_pc; uint8_t enabled; PyObject *result; PyObject *iter; uint8_t exhausted; uint32_t iter_next_else_pc; } foreach;
     struct {
@@ -1173,6 +1179,22 @@ int kos_dyn_unwind_to_frame(KosContext *ctx, KosDynFrame *frame,
                             KosXferEvent event, struct KosEvent *out_ev);
 
 
+/**
+   Walk RETURN to frame, offering handle(RETURN) to each node. When FINALLY
+   consumes, deliver (push value to block, set PC to finally), set
+   handling_return, and return KOS_DYN_UNWIND_FINALLY_TAKING_RETURN. Caller
+   must return 0; eval continues at finally. When finally does return,
+   inner RETURN completes; when finally falls through, POP_FINALLY promotes
+   value and bytecode continues (typically RETURN pops it).
+
+   :param val: return value; ownership transferred when FINALLY_TAKING
+   :return: 0 (walk done), KOS_DYN_UNWIND_ASYNC_STARTED, -1, or
+     KOS_DYN_UNWIND_FINALLY_TAKING_RETURN
+*/
+int kos_dyn_walk_return_to_frame(KosContext *ctx, KosDynFrame *frame,
+                                  PyObject *val, struct KosEvent *out_ev);
+
+
 int kos_dyn_unwind_to_node(KosContext *ctx, KosDynNode *target,
                            KosXferEvent event, struct KosEvent *out_ev);
 
@@ -1188,6 +1210,10 @@ int kos_dyn_unwind_to_node(KosContext *ctx, KosDynNode *target,
 /** When exception swallowed: unwind did full cleanup (DropBlock, pop_with,
     push None); caller must return 0 without further action. */
 #define KOS_DYN_UNWIND_SWALLOWED 2
+
+/** When FINALLY consumed handle(RETURN): delivered to finally block, value
+    pushed to block. Caller must return 0 (eval continues at finally). */
+#define KOS_DYN_UNWIND_FINALLY_TAKING_RETURN 3
 
 
 /**
@@ -1778,6 +1804,7 @@ int kos_transferplan_traverse(
 #define KosDynFinally_HANDLER_PC(r)  (((KosDynNode *)(r))->u.finally_.handler_pc)
 #define KosDynFinally_ENABLED(r)     (((KosDynNode *)(r))->u.finally_.enabled)
 #define KosDynFinally_HANDLING_RAISE(r) (((KosDynNode *)(r))->u.finally_.handling_raise)
+#define KosDynFinally_HANDLING_RETURN(r) (((KosDynNode *)(r))->u.finally_.handling_return)
 #define KosDynFinally_HANDLING_RESULT(r) (((KosDynNode *)(r))->u.finally_.handling_result)
 #define KosDynLoop_BREAK_PC(r)       (((KosDynNode *)(r))->u.loop.break_pc)
 #define KosDynLoop_CONTINUE_PC(r)    (((KosDynNode *)(r))->u.loop.continue_pc)
