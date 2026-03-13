@@ -15,7 +15,7 @@ This directory documents the interpreter implementation, including bytecode form
 - **callcc.md**: Call/cc implementation design
 - **dynamic-node-unified-api.md**: Dynamic node unified API redesign and migration specification (implementation prompt)
 - **generic-dynnode-protocol.md**: Generic DynNode interface design, API reference, and type-specific bypass cases (when opcodes use type-named APIs)
-- **dynnode-event-model.md**: Event-oriented model for dynamic nodes — lifecycle events (push, wind, resume, handle, unwind, pop, free), evaluator event composition (RETURN/RAISE/YIELD/AWAIT transits), and node behavior categories (working draft)
+- **dynnode-event-model.md**: Event-oriented model for dynamic nodes — lifecycle events (push, wind, resume, handle, unwind, pop, free), evaluator event composition (RETURN/RAISE/YIELD/AWAIT transits), and node behavior categories — **implemented** (see plan/00-gap-analysis.md)
 - **evaluator-token-continuation.md**: Evaluator token + continuation application model (KosEvaluatorToken, KoskariContinuationApply)
 - **domain.md**: Koskari Domain (ambient dynamic context) — design proposal for parameters and dynamic-extent scoping across AWAIT, boundaries, and continuations
 - **kio-format.md**: `.kio` compiled cache format — binary file layout, softened/hardened serialization levels, constant pool policy, `TaggedTuple`, cache invalidation, and loader algorithm

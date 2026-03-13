@@ -344,13 +344,11 @@ and detach rather than being popped. They also act as boundaries: handle(SHIFT) 
 
 ---
 
-# Future Node Types (Under Consideration)
+# Implemented Node Types
 
-Two node types are under consideration and would need to be created or refactored to live within this event model:
+**Generator node (KOS_DYN_GEN)** — Indicates that the child frame is operating as a generator in the current context. Yields from the child are sent *up* to this node (the generator boundary), not *out* past it. Implements handle(YIELD), handle(RETURN), handle(RAISE); denies handle(SHIFT).
 
-**Generator node** — Indicates that the child frame is operating as a generator in the current context. Yields from the child are sent *up* to this node (the generator boundary), not *out* past it. This node would implement the Generator Boundary Node behavior described above.
-
-**YieldFrom node** — Assistant to the YIELD_FROM super-op. Would take over the delegation features (phase, pending action, drive logic) that currently live on the context, allowing the super-op to act purely through the node's generic API (resume, handle) without context-level special cases.
+**YieldFrom node (KOS_DYN_YIELD_FROM)** — Assistant to the YIELD_FROM super-op. Holds phase (DRIVING, EXPECT_SEND, EXPECT_AWAIT), pending action, and drive logic. Emits only YIELD or AWAIT; uses revive_yield / revive_await for resume. No context-level KOS_SUSP_YIELD_FROM.
 
 ---
 
@@ -382,3 +380,22 @@ Inbound signaling from the caller takes two forms:
 **Value push**: Push value to TOS, then trigger resume(node). The node consumes from TOS and continues. Used for send value (yield resume) and await result. An inbound indicator may be needed to distinguish cases (e.g. resume-from-yield vs. resume-from-await) so the node knows how to interpret TOS.
 
 **Exception raised**: Simulate the exception at the current point. The exception propagates through the normal RAISE transit machinery (handle, unwind, pop). Throw-in and close (GeneratorExit) both use this path — no separate inbound mechanism. Acting as a normal exception is the correct behavior.
+
+---
+
+# Implementation Notes
+
+This design has been implemented. Key implementation artifacts:
+
+- **KosXferEvent** — Enum for unwind/handle events (RETURN, RAISE, YIELD, BREAK, CONTINUE, SHIFT)
+- **KosHandleResult** — handle() outcome (PASS, CONSUME, DENY)
+- **kos_dyn_handle()** — Offers event to nodes before unwind; used for RETURN, RAISE, YIELD, SHIFT
+- **kos_dyn_unwind(ctx, node, event, out_ev)** — Unwind with event parameter
+- **kos_dyn_transfer_to_loop()** — Targeted BREAK/CONTINUE; finds loop, walks unwind, handle on loop
+- **KOS_DYN_GEN** — Generator boundary node; intercepts YIELD, denies SHIFT
+- **KosYfPhase** — YieldFrom node phases (DRIVING, EXPECT_SEND, EXPECT_AWAIT)
+- **kos_dyn_walk_return_to_frame**, **kos_dyn_walk_handle_yield** — RETURN and YIELD transit walks
+
+YieldFrom emits only YIELD or AWAIT; there is no KOS_SUSP_YIELD_FROM or revive_yield_from.
+
+See `plan/00-gap-analysis.md` and `plan/README.md` for full status; `koskari/lib/dynchain.c`, `koskari/lib/dynchain.h`, and `koskari/lib/eval.c` for implementation.
