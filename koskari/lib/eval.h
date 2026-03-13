@@ -124,14 +124,12 @@ typedef enum KosEventKind {
   KosSuspensionEvent records why the evaluator last suspended.
   Set when koskari_eval returns with KOS_EV_AWAIT, KOS_EV_YIELD, or
   YIELD_FROM boundary; cleared when execution starts or context is not suspended.
-  Used at entry to choose revive path (revive_plan, revive_await, revive_yield,
-  revive_yield_from).
+  Used at entry to choose revive path (revive_plan, revive_await, revive_yield).
 */
 typedef enum KosSuspensionEvent {
-  KOS_SUSP_NONE      = 0,
-  KOS_SUSP_AWAIT     = 1,
-  KOS_SUSP_YIELD     = 2,
-  KOS_SUSP_YIELD_FROM = 3,
+  KOS_SUSP_NONE   = 0,
+  KOS_SUSP_AWAIT  = 1,
+  KOS_SUSP_YIELD  = 2,
 } KosSuspensionEvent;
 
 

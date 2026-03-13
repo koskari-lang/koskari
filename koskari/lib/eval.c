@@ -266,28 +266,27 @@ static KosEvalMode raise_yield(KosContext *ctx) {
 
 
 /**
-   Set up VM for "resume with no value" after YIELD_FROM suspend.
-*/
-static KosEvalMode raise_yield_from(KosContext *ctx) {
-  (void) ctx;
-  return KOS_MODE_NORMAL;
-}
-
-
-/**
-   Revive from AWAIT: push send_val or set throw_exc. Complete pending WITH exit if applicable.
+   Revive from AWAIT: push await result or set throw_exc. Use PY_RESUME_INJECT
+   when set (driver pre-stored await result, e.g. coro.c throw-into-awaitable),
+   else send_val. Complete pending WITH exit if applicable.
 */
 static KosEvalMode revive_await(KosContext *ctx, PyObject *send_val, PyObject *throw_typ, PyObject *throw_exc) {
   if (throw_exc != NULL) {
     PyErr_SetObject(throw_typ, throw_exc);
     return KOS_MODE_EXCEPTION;
   }
-  if (KosContext_PENDING_DEFER(ctx) && send_val != NULL) {
-    KosDefer_FeedResult((KosDefer *) KosContext_PENDING_DEFER(ctx), send_val);
+  PyObject *to_push = KosContext_PY_RESUME_INJECT(ctx);
+  if (to_push != NULL) {
+    KosContext_PY_RESUME_INJECT(ctx) = NULL;
+  } else if (send_val != NULL) {
+    to_push = send_val;
+  }
+  if (KosContext_PENDING_DEFER(ctx) && to_push != NULL) {
+    KosDefer_FeedResult((KosDefer *) KosContext_PENDING_DEFER(ctx), to_push);
     Py_CLEAR(KosContext_PENDING_DEFER(ctx));
   }
-  if (send_val != NULL && CURRENT_FRAME(ctx)) {
-    if (KosStackBlock_PushRef(&CURRENT_STACK(ctx), send_val) < 0)
+  if (to_push != NULL && CURRENT_FRAME(ctx)) {
+    if (KosStackBlock_PushRef(&CURRENT_STACK(ctx), to_push) < 0)
       return KOS_MODE_EXCEPTION;
   }
   {
@@ -302,22 +301,6 @@ static KosEvalMode revive_await(KosContext *ctx, PyObject *send_val, PyObject *t
    Revive from YIELD: push send_val or set throw_exc.
 */
 static KosEvalMode revive_yield(KosContext *ctx, PyObject *send_val, PyObject *throw_typ, PyObject *throw_exc) {
-  if (throw_exc != NULL) {
-    PyErr_SetObject(throw_typ, throw_exc);
-    return KOS_MODE_EXCEPTION;
-  }
-  if (send_val != NULL && CURRENT_FRAME(ctx)) {
-    if (KosStackBlock_PushRef(&CURRENT_STACK(ctx), send_val) < 0)
-      return KOS_MODE_EXCEPTION;
-  }
-  return KOS_MODE_NORMAL;
-}
-
-
-/**
-   Revive from YIELD_FROM: push send_val or set throw_exc.
-*/
-static KosEvalMode revive_yield_from(KosContext *ctx, PyObject *send_val, PyObject *throw_typ, PyObject *throw_exc) {
   if (throw_exc != NULL) {
     PyErr_SetObject(throw_typ, throw_exc);
     return KOS_MODE_EXCEPTION;
@@ -2376,9 +2359,6 @@ static KosEvalStep eval_phase_entry(
       case KOS_SUSP_YIELD:
         mode = raise_yield(ctx);
         break;
-      case KOS_SUSP_YIELD_FROM:
-        mode = raise_yield_from(ctx);
-        break;
       default:
         mode = KOS_MODE_NORMAL;
         break;
@@ -2390,9 +2370,6 @@ static KosEvalStep eval_phase_entry(
         break;
       case KOS_SUSP_YIELD:
         mode = revive_yield(ctx, send_val, throw_typ, throw_exc);
-        break;
-      case KOS_SUSP_YIELD_FROM:
-        mode = revive_yield_from(ctx, send_val, throw_typ, throw_exc);
         break;
       default:
         mode = revive_await(ctx, send_val, throw_typ, throw_exc);

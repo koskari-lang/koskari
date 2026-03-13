@@ -188,6 +188,7 @@ struct KosDynNode {
       PyObject *delegate;
       uint8_t kind;
       uint8_t pending_action;
+      uint8_t phase;  /* KosYfPhase: DRIVING, EXPECT_SEND, EXPECT_AWAIT */
       PyObject *pending_arg;
       PyObject *pending_arg_type;  /* for KOS_YF_THROW: exception type */
       PyObject *inflight;
@@ -1677,8 +1678,17 @@ int kos_transferplan_traverse(
 
 #define KosDynNs_SAVED_NS(n)      (((KosDynNode *)(n))->u.ns.saved_ns)
 
+/* KosYfPhase: state machine for stack-based resume inject consumption */
+typedef enum KosYfPhase {
+  KOS_YF_PHASE_DRIVING = 0,
+  KOS_YF_PHASE_EXPECT_SEND,
+  KOS_YF_PHASE_EXPECT_AWAIT,
+} KosYfPhase;
+
 #define KosDynYieldFrom_DELEGATE(n)     (((KosDynNode *)(n))->u.yield_from.delegate)
 #define KosDynYieldFrom_KIND(n)         (((KosDynNode *)(n))->u.yield_from.kind)
+#define KosDynYieldFrom_PHASE(n)        (((KosDynNode *)(n))->u.yield_from.phase)
+#define KosDynYieldFrom_PHASE_SET(n, v) (((KosDynNode *)(n))->u.yield_from.phase = (v))
 #define KosDynYieldFrom_PENDING_ACTION(n) (((KosDynNode *)(n))->u.yield_from.pending_action)
 #define KosDynYieldFrom_PENDING_ARG(n) (((KosDynNode *)(n))->u.yield_from.pending_arg)
 #define KosDynYieldFrom_PENDING_ARG_TYPE(n) (((KosDynNode *)(n))->u.yield_from.pending_arg_type)

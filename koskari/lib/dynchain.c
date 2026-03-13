@@ -1198,6 +1198,7 @@ KosDynYieldFrom *kos_dynyieldfrom_new(
   KosDynYieldFrom_DELEGATE(node) = delegate;
   KosDynYieldFrom_KIND(node) = kind;
   KosDynYieldFrom_PENDING_ACTION(node) = 0;
+  KosDynYieldFrom_PHASE_SET(node, KOS_YF_PHASE_DRIVING);
   KosDynYieldFrom_PENDING_ARG(node) = NULL;
   KosDynYieldFrom_PENDING_ARG_TYPE(node) = NULL;
   KosDynYieldFrom_INFLIGHT(node) = NULL;
@@ -1234,6 +1235,7 @@ static KosDynYieldFrom *kos_dynyieldfrom_clone(KosDynYieldFrom *node) {
 
   KosDynYieldFrom_KIND(clone) = KosDynYieldFrom_KIND(node);
   KosDynYieldFrom_PENDING_ACTION(clone) = KosDynYieldFrom_PENDING_ACTION(node);
+  KosDynYieldFrom_PHASE_SET(clone, KosDynYieldFrom_PHASE(node));
   KosDynYieldFrom_PENDING_ARG(clone) = KosDynYieldFrom_PENDING_ARG(node);
   KosDynYieldFrom_PENDING_ARG_TYPE(clone) = KosDynYieldFrom_PENDING_ARG_TYPE(node);
 
