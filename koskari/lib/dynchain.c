@@ -1908,6 +1908,7 @@ static int kos_dyn_dyn_with_wind(KosContext *ctx, KosDynWith *node, KosEvent *ou
   Py_DECREF(result);
 
   KosDynWith_ENTERED(node) = 1;
+  KosDynWith_PHASE(node) = KOS_WITH_PHASE_IDLE;
   return 0;
 }
 
@@ -2330,8 +2331,11 @@ int kos_dyn_install(KosContext *ctx, KosDynNode *node, KosEvent *out_ev) {
     }
     case KOS_DYN_PARAM:
       return kos_dynparam_enter(ctx, (KosDynParam *) node);
+    case KOS_DYN_WITH:
     case KOS_DYN_DYN_WITH:
-      return kos_dyn_dyn_with_wind(ctx, (KosDynWith *) node, out_ev);
+      /* Push = link + local setup only.  Wind (enter) is invoked explicitly
+         by opcodes or transfer plan after push, never in install. */
+      return 0;
     case KOS_DYN_COLLECT:
       /* PUSH_COLLECT handler installs collector as frame ns before pushing
          the node; no install action needed. */
@@ -2451,6 +2455,7 @@ int kos_dyn_wind(KosContext *ctx, KosDynNode *node, KosEvent *out_ev) {
   switch (KosDynNode_KIND(node)) {
     case KOS_DYN_PARAM:
       return kos_dyn_param_wind(ctx, (KosDynParam *) node);
+    case KOS_DYN_WITH:
     case KOS_DYN_DYN_WITH:
       return kos_dyn_dyn_with_wind(ctx, (KosDynWith *) node, out_ev);
     case KOS_DYN_WIND:
