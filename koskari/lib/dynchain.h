@@ -1259,6 +1259,21 @@ int kos_dyn_exception_unwind(KosContext *ctx, KosDynNode *node,
 KosHandleResult kos_dyn_handle(KosContext *ctx, KosDynNode *node,
                                KosXferEvent event, struct KosEvent *out_ev);
 
+
+/**
+   Walk the dynamic chain from DYN_TOP upward, offering handle(YIELD) to
+   each node. Stops when a node returns CONSUMED (generator boundary).
+   Used for YIELD transit: the value is in out_ev; GEN intercepts and
+   suspends.
+
+   :param ctx: execution context
+   :param out_ev: event with KOS_EV_YIELD and payload already set
+
+   :return: 0 when GEN consumed (valid yield; caller may return),
+     -1 on error or if no generator boundary found
+*/
+int kos_dyn_walk_handle_yield(KosContext *ctx, struct KosEvent *out_ev);
+
 KosDynNode *kos_dyn_clone(KosDynNode *node);
 
 void kos_dyn_ns_unwind(KosContext *ctx, KosDynNs *node);

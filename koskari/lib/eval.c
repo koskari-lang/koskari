@@ -2625,6 +2625,9 @@ static KosEvalStep eval_phase_post_opcode(
   if (KosEvent_KIND(out_ev) == KOS_EV_AWAIT) {
     KosContext_SUSPENSION_EVENT(ctx) = KOS_SUSP_AWAIT;
   } else if (KosEvent_KIND(out_ev) == KOS_EV_YIELD) {
+    /* YIELD transit: walk chain with handle(YIELD); GEN intercepts */
+    if (kos_dyn_walk_handle_yield(ctx, out_ev) < 0)
+      return KOS_STEP_FATAL_ERROR;
     KosContext_SUSPENSION_EVENT(ctx) = KOS_SUSP_YIELD;
   }
 

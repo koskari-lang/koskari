@@ -2592,9 +2592,31 @@ KosHandleResult kos_dyn_handle(KosContext *ctx, KosDynNode *node,
         return KOS_HANDLE_ERROR;
       }
       return KOS_HANDLE_PASS;
+    case KOS_DYN_PROMPT:
+      if (event == KOS_XFER_EVENT_SHIFT)
+        return KOS_HANDLE_CONSUMED;
+      return KOS_HANDLE_PASS;
     default:
       return KOS_HANDLE_PASS;
   }
+}
+
+
+int kos_dyn_walk_handle_yield(KosContext *ctx, KosEvent *out_ev) {
+
+  KosDynNode *node = KosContext_DYN_TOP(ctx);
+  while (node) {
+    KosHandleResult hr = kos_dyn_handle(ctx, node, KOS_XFER_EVENT_YIELD,
+                                        out_ev);
+    if (hr == KOS_HANDLE_CONSUMED)
+      return 0;
+    if (hr == KOS_HANDLE_ERROR)
+      return -1;
+    node = KosDynNode_PARENT(node);
+  }
+  PyErr_SetString(PyExc_RuntimeError,
+                  "yield outside generator: no generator boundary on chain");
+  return -1;
 }
 
 
@@ -2952,6 +2974,49 @@ int kos_validate_capture(KosContext *ctx, KosDynPrompt *prompt) {
 }
 
 
+/**
+   Walk from DYN_TOP toward the given prompt, offering handle(SHIFT) to
+   each node. GEN denies (returns -1); PROMPT consumes (success).
+   Call before building a PUSH_SHIFT unwind plan.
+
+   :return: 0 when we reach prompt and it consumes, -1 on error (GEN denies)
+*/
+static int kos_dyn_walk_handle_shift_to_prompt(KosContext *ctx,
+                                               KosDynPrompt *prompt) {
+
+  KosDynNode *node = KosContext_DYN_TOP(ctx);
+  KosDynNode *prompt_node = (KosDynNode *) prompt;
+
+  while (node && node != prompt_node) {
+    KosHandleResult hr = kos_dyn_handle(ctx, node, KOS_XFER_EVENT_SHIFT, NULL);
+    if (hr == KOS_HANDLE_ERROR)
+      return -1;
+    if (hr == KOS_HANDLE_CONSUMED) {
+      PyErr_SetString(PyExc_RuntimeError,
+                      "handle(SHIFT) consumed before reaching prompt");
+      return -1;
+    }
+    node = KosDynNode_PARENT(node);
+  }
+
+  if (! node) {
+    PyErr_SetString(PyExc_RuntimeError, "prompt not found in chain");
+    return -1;
+  }
+
+  {
+    KosHandleResult hr = kos_dyn_handle(ctx, prompt_node,
+                                        KOS_XFER_EVENT_SHIFT, NULL);
+    if (hr != KOS_HANDLE_CONSUMED) {
+      PyErr_SetString(PyExc_RuntimeError,
+                      "prompt did not consume handle(SHIFT)");
+      return -1;
+    }
+  }
+  return 0;
+}
+
+
 KosDynCC *kos_find_cc(KosContext *ctx) {
   KosDynNode *node = KosContext_DYN_TOP(ctx);
 
@@ -3052,6 +3117,10 @@ int kos_shift_capture(
 
   /* Validate no Python boundaries in the way */
   if (kos_validate_capture(ctx, prompt) < 0)
+    return -1;
+
+  /* handle(SHIFT) walk: GEN denies; must reach PROMPT which consumes */
+  if (kos_dyn_walk_handle_shift_to_prompt(ctx, prompt) < 0)
     return -1;
 
   /* Clone the chain segment that will be restored on invoke: the prompt and

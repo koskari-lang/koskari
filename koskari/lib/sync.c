@@ -381,10 +381,27 @@ static int demand_sync_ex(PyObject *callable, PyObject *args,
     PyObject *code = KosExpression_CODE(callable);
     PyObject *ns = KosExpression_NS(callable);
     Py_INCREF(ns);
-    frame = kos_dynframe_new(NULL, (KosCode *) code, ns, NULL);
-    if (! frame) {
-      Py_DECREF(ns);
-      goto ret_fail;
+    if (KosCode_YIELDS((KosCode *) code)) {
+      KosDynGen *gen_node = kos_dyngen_new(NULL);
+      if (! gen_node) {
+        Py_DECREF(ns);
+        goto ret_fail;
+      }
+      frame = kos_dynframe_new(
+          (KosDynNode *) gen_node, (KosCode *) code, ns, NULL);
+      if (! frame) {
+        kos_dyngen_free(gen_node);
+        Py_DECREF(ns);
+        goto ret_fail;
+      }
+      KosDynGen_OWNER(gen_node) = NULL;  /* demand_sync: no owner; yield = violation */
+    }
+    else {
+      frame = kos_dynframe_new(NULL, (KosCode *) code, ns, NULL);
+      if (! frame) {
+        Py_DECREF(ns);
+        goto ret_fail;
+      }
     }
     goto run_eval;
   }
