@@ -18,9 +18,10 @@ Tests for YIELD and async gen opcodes.
 :license: GNU General Public License v3
 """
 
+from koskari.lib import AsyncGenerator, demand_sync
+from koskari.types import FormalsSpec
 from tests import make_callable
-from tests.lib.opcode import CevalTest, build_expr
-from koskari.lib import AsyncGenerator
+from tests.lib.opcode import CevalTest, build_code, build_expr
 
 import pytest
 
@@ -141,6 +142,104 @@ class TestYieldOpcodes(CevalTest):
         asend = agen.__anext__()
         with self.assertRaises((TypeError, StopAsyncIteration)):
             await asend.send(None)
+
+
+class TestYieldKoskariCallPath(CevalTest):
+    """
+    Tests for yielding functions invoked via Koskari CALL opcode.
+    """
+
+    @pytest.mark.skip(reason="generators are broken")
+    def test_yielding_function_call_returns_async_generator(self):
+        """
+        Calling a yielding Function via CALL returns AsyncGenerator
+        """
+        _, base_ns = build_expr([["CONST", 0], ["RETURN", 1]], values={})
+        yielding_code = build_code(
+            [
+                ["FAST", 0],
+                ["YIELD", 1],
+                ["POP", 1],
+                ["FAST", 0],
+                ["CONST", 1],
+                ["OBJECT_ADD", 2],
+                ["YIELD", 1],
+                ["RETURN", 0],
+            ],
+            local_syms=("x",),
+            name="yielding_fn",
+        )
+        yielding_fn = make_callable(yielding_code, base_ns, FormalsSpec(("x",)))
+        caller_code, caller_ns = build_expr(
+            [
+                ["VAR", "foo"],
+                ["CONST", 6],
+                ["CALL", 1],
+                ["RETURN", 1],
+            ],
+            values={"foo": yielding_fn},
+        )
+        caller = make_callable(caller_code, caller_ns)
+        result = demand_sync(caller)
+        self.assertIsInstance(result, AsyncGenerator)
+        self.assertEqual(list(result.iter()), [6, 7])
+
+
+    @pytest.mark.skip(reason="generators are broken")
+    def test_yielding_expression_call_returns_async_generator(self):
+        """
+        Calling a yielding Expression via CALL returns AsyncGenerator
+        """
+        gen_code, gen_ns = build_expr(
+            [
+                ["CONST", 42],
+                ["YIELD", 1],
+                ["RETURN", 0],
+            ],
+        )
+        yielding_expr = make_callable(gen_code, gen_ns)
+        caller_code, caller_ns = build_expr(
+            [
+                ["VAR", "expr"],
+                ["CALL", 0],
+                ["RETURN", 1],
+            ],
+            values={"expr": yielding_expr},
+        )
+        caller = make_callable(caller_code, caller_ns)
+        result = demand_sync(caller)
+        self.assertIsInstance(result, AsyncGenerator)
+        self.assertEqual(list(result.iter()), [42])
+
+
+    def test_non_yielding_function_call_returns_value(self):
+        """
+        Calling a non-yielding Function via CALL returns computed value
+        """
+        _, base_ns = build_expr([["CONST", 0], ["RETURN", 1]], values={})
+        normal_code = build_code(
+            [
+                ["FAST", 0],
+                ["CONST", 41],
+                ["OBJECT_ADD", 2],
+                ["RETURN", 1],
+            ],
+            local_syms=("x",),
+            name="normal_fn",
+        )
+        normal_fn = make_callable(normal_code, base_ns, FormalsSpec(("x",)))
+        caller_code, caller_ns = build_expr(
+            [
+                ["VAR", "bar"],
+                ["CONST", 1],
+                ["CALL", 1],
+                ["RETURN", 1],
+            ],
+            values={"bar": normal_fn},
+        )
+        caller = make_callable(caller_code, caller_ns)
+        result = demand_sync(caller)
+        self.assertEqual(result, 42)
 
 
 # The end.

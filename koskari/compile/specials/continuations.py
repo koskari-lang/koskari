@@ -194,4 +194,31 @@ def special_return(compiler, source, tc=False):
     return frag
 
 
+@special(symbol("compile/yield"))
+def special_yield(compiler, source, tc=False):
+    """
+    Compile (compile/yield) or (compile/yield VAL). Yields from function
+    """
+
+    called_by, rest = source
+
+    if rest is nil:
+        frag = compiler.fragment(called_by)
+        frag.position_of(source)
+        frag.instruction(OpCode.KOS_OP_YIELD, 0)
+        return frag
+
+    val, tail = rest
+    if not is_nil(tail):
+        raise SpecialError(
+            "return takes at most one argument",
+            source)
+
+    frag = compiler.fragment(called_by)
+    frag.position_of(source)
+    frag.merge(compiler.full_compile(val, False))
+    frag.instruction(OpCode.KOS_OP_YIELD, 1)
+    return frag
+
+
 # The end.
