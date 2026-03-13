@@ -2688,6 +2688,97 @@ KosDynNode *kos_find_node_for_loop(KosContext *ctx) {
 }
 
 
+int kos_dyn_transfer_to_loop(KosContext *ctx, KosXferEvent event,
+                             PyObject *result, KosEvent *out_ev) {
+
+  KosDynNode *region = kos_find_node_for_loop(ctx);
+  if (! region) {
+    PyErr_SetString(PyExc_RuntimeError,
+                    (event == KOS_XFER_EVENT_BREAK)
+                        ? "break outside loop"
+                        : "continue outside loop");
+    return -1;
+  }
+
+  /* Same-frame check: loop must be in current frame (frame is ancestor) */
+  {
+    KosDynFrame *frame = KosContext_FRAME_TOP(ctx);
+    int in_frame = 0;
+    for (KosDynNode *n = region; n; n = KosDynNode_PARENT(n)) {
+      if (n == (KosDynNode *) frame) {
+        in_frame = 1;
+        break;
+      }
+    }
+    if (! frame || ! in_frame) {
+      PyErr_SetString(PyExc_RuntimeError,
+                      (event == KOS_XFER_EVENT_BREAK)
+                          ? "break outside loop"
+                          : "continue outside loop");
+      return -1;
+    }
+  }
+
+  /* Walk from DYN_TOP toward region; unwind each node with event */
+  while (KosContext_DYN_TOP(ctx) != (KosDynNode *) region) {
+    int pop_res = kos_dyn_pop_top(ctx, event, out_ev);
+    if (pop_res == KOS_DYN_UNWIND_ASYNC_STARTED) {
+      KosContext_UNWIND_TARGET_FRAME(ctx) = KosContext_FRAME_TOP(ctx);
+      Py_DECREF(result);
+      return KOS_DYN_UNWIND_ASYNC_STARTED;
+    }
+    if (pop_res < 0)
+      return -1;
+  }
+
+  if (event == KOS_XFER_EVENT_CONTINUE) {
+    /* Update region result with continue value */
+    if (KosDynNode_IS_LOOP(region)) {
+      Py_XDECREF(KosDynLoop_RESULT((KosDynLoop *) region));
+      KosDynLoop_RESULT((KosDynLoop *) region) = result;
+    } else {
+      Py_XDECREF(KosDynForeach_RESULT((KosDynForeach *) region));
+      KosDynForeach_RESULT((KosDynForeach *) region) = result;
+    }
+
+    uint32_t continue_pc = (KosDynNode_IS_LOOP(region))
+        ? KosDynLoop_CONTINUE_PC((KosDynLoop *) region)
+        : KosDynForeach_CONTINUE_PC((KosDynForeach *) region);
+
+    if (KosStackBlock_ClearBlock(&CURRENT_STACK(ctx)) < 0)
+      return -1;
+
+    KosDynFrame_PC(KosContext_FRAME_TOP(ctx)) = continue_pc;
+    return 0;
+  }
+
+  /* KOS_XFER_EVENT_BREAK: read break_pc before popping, then pop, drop block,
+     push result */
+  uint32_t break_pc = (KosDynNode_IS_LOOP(region))
+      ? KosDynLoop_BREAK_PC((KosDynLoop *) region)
+      : KosDynForeach_BREAK_PC((KosDynForeach *) region);
+
+  if (KosDynNode_IS_LOOP(region))
+    kos_dyn_pop_loop(ctx, (KosDynLoop *) region);
+  else
+    kos_dyn_pop_foreach(ctx, (KosDynForeach *) region);
+
+  if (KosStackBlock_DropBlock(&CURRENT_STACK(ctx)) < 0) {
+    Py_DECREF(result);
+    return -1;
+  }
+
+  if (KosStackBlock_PushRef(&CURRENT_STACK(ctx), result) < 0) {
+    Py_DECREF(result);
+    return -1;
+  }
+  Py_DECREF(result);
+
+  KosDynFrame_PC(KosContext_FRAME_TOP(ctx)) = break_pc;
+  return 0;
+}
+
+
 KosDynYieldFrom *kos_dyn_push_yield_from(
     KosContext *ctx,
     PyObject *delegate,

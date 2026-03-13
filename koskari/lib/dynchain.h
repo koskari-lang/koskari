@@ -1236,6 +1236,25 @@ KosDynNode *kos_find_node_for_loop(KosContext *ctx);
 
 
 /**
+   Transfer control to the innermost loop for BREAK or CONTINUE.
+   Pops nodes from dyn_top toward the loop with unwind(event), delivers
+   the event to the loop, and resumes at break_pc (BREAK) or
+   continue_pc (CONTINUE).
+
+   :param ctx: execution context
+   :param event: KOS_XFER_EVENT_BREAK or KOS_XFER_EVENT_CONTINUE
+   :param result: loop result value (transferred; caller loses ownership)
+   :param out_ev: event output for suspend
+
+   :return: 0 on success, -1 on error (break/continue outside loop,
+     same-frame check failed), KOS_DYN_UNWIND_ASYNC_STARTED when async
+     unwind started
+*/
+int kos_dyn_transfer_to_loop(KosContext *ctx, KosXferEvent event,
+                             PyObject *result, struct KosEvent *out_ev);
+
+
+/**
    Push a YIELD_FROM delegation node onto the context's dynamic chain.
 
    Does not update frame_top (the frame remains the topmost frame).

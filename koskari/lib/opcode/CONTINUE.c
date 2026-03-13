@@ -24,7 +24,6 @@ KOS_OP_HANDLER(CONTINUE) {
   unsigned opa = KosOp_ARG(insn);
   PyObject *result = NULL;
 
-  /* Pop result value(s) from stack before any unwinding */
   if (opa == 0) {
     result = Py_None;
     Py_INCREF(result);
@@ -42,51 +41,6 @@ KOS_OP_HANDLER(CONTINUE) {
     }
   }
 
-  KosDynNode *region = kos_find_node_for_loop(ctx);
-  if (! region) {
-    Py_DECREF(result);
-    PyErr_SetString(PyExc_RuntimeError, "continue outside loop");
-    return -1;
-  }
-
-  /* Update region result with continue value */
-  if (KosDynNode_IS_LOOP(region)) Py_XDECREF(KosDynLoop_RESULT((KosDynLoop *) region)); else Py_XDECREF(KosDynForeach_RESULT((KosDynForeach *) region));
-  if (KosDynNode_IS_LOOP(region)) KosDynLoop_RESULT((KosDynLoop *) region) = result; else KosDynForeach_RESULT((KosDynForeach *) region) = result;
-
-  uint32_t continue_pc = (KosDynNode_IS_LOOP(region) ? KosDynLoop_CONTINUE_PC((KosDynLoop *) region) : KosDynForeach_CONTINUE_PC((KosDynForeach *) region));
-
-  /* Unwind inner regions until we reach the target loop region */
-  while (KosContext_DYN_TOP(ctx) != (KosDynNode *) region) {
-    KosDynNode *top = KosContext_DYN_TOP(ctx);
-    if (KosDynNode_IS_REGION(top)) {
-      KosDynNode *r = (KosDynNode *) top;
-      if (KosDynNode_IS_LOOP(r)) {
-        kos_dyn_pop_loop(ctx, (KosDynLoop *) r);
-      } else if (KosDynNode_IS_FOREACH(r)) {
-        kos_dyn_pop_foreach(ctx, (KosDynForeach *) r);
-        if (KosStackBlock_DropBlock(&CURRENT_STACK(ctx)) < 0)
-          return -1;
-      } else {
-        int pop_res = kos_dyn_pop_top(ctx, KOS_XFER_EVENT_CONTINUE, out_ev);
-        if (pop_res == KOS_DYN_UNWIND_ASYNC_STARTED)
-          return 0;
-        if (pop_res < 0)
-          return -1;
-      }
-    } else {
-      int pop_res = kos_dyn_pop_top(ctx, KOS_XFER_EVENT_CONTINUE, out_ev);
-      if (pop_res == KOS_DYN_UNWIND_ASYNC_STARTED)
-        return 0;
-      if (pop_res < 0)
-        return -1;
-    }
-  }
-
-  /* Clear the loop stack block contents for next iteration */
-  if (KosStackBlock_ClearBlock(&CURRENT_STACK(ctx)) < 0)
-    return -1;
-
-  CURRENT_PC(ctx) = continue_pc;
-  (void) out_ev;
-  return 0;
+  return kos_dyn_transfer_to_loop(ctx, KOS_XFER_EVENT_CONTINUE, result,
+                                  out_ev);
 }
