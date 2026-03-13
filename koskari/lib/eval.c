@@ -2213,6 +2213,19 @@ static int try_local_exception_handler(KosContext *ctx, KosEvent *out_ev) {
     {
       KosHandleResult hr = kos_dyn_handle(ctx, top, KOS_XFER_EVENT_RAISE, out_ev);
       if (hr == KOS_HANDLE_CONSUMED) {
+        if (KosDynNode_IS_GEN(top)) {
+          PyObject *typ = NULL, *val = NULL, *tb = NULL;
+          PyErr_Fetch(&typ, &val, &tb);
+          inject_eval_frame_traceback(ctx, &typ, &val, &tb);
+          PyErr_Clear();
+          KosEvent_KIND(out_ev) = KOS_EV_RAISE;
+          KosEvent_EXC_TYPE(out_ev) = typ;
+          KosEvent_PAYLOAD(out_ev) = val;
+          Py_XDECREF(tb);
+          KosContext_FLAGS(ctx) &= ~KOS_CTX_RUNNING;
+          KosContext_FLAGS(ctx) |= KOS_CTX_DEAD;
+          return 0;
+        }
         KosDynNode *region = top;
         uint32_t handler_pc = KosDynNode_IS_TRY(region)
             ? KosDynTry_HANDLER_PC((KosDynTry *) region)

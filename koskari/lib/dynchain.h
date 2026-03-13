@@ -60,6 +60,8 @@
    KOS_DYN_CC_RAISE  - Sentinel node holding a KoskariContinuationApply exception
                        for the foreign-token transfer path; its unwind re-raises the
                        stored exception so the eval loop exits with KOS_EV_RAISE
+   KOS_DYN_GEN       - Generator boundary; intercepts handle(YIELD/RETURN/RAISE),
+                       denies handle(SHIFT)
 */
 
 typedef enum KosDynKind {
@@ -79,6 +81,7 @@ typedef enum KosDynKind {
   KOS_DYN_DYN_WITH,
   KOS_DYN_SHIFT,
   KOS_DYN_CC_RAISE,
+  KOS_DYN_GEN,
   /* sentinel value */
   KOS_DYN_UNKNOWN,
 } KosDynKind;
@@ -250,6 +253,9 @@ struct KosDynNode {
       PyObject *exc_type;  /* exception type from PyErr_Fetch */
       PyObject *exc_val;   /* exception value */
     } cc_raise;
+    struct {
+      PyObject *owner;     /* owning generator object (borrowed) or NULL */
+    } gen;
   } u;
 };
 
@@ -268,6 +274,7 @@ typedef struct KosDynNode KosDynParam;
 typedef struct KosDynNode KosDynWith;
 typedef struct KosDynNode KosDynShift;
 typedef struct KosDynNode KosDynCCRaise;
+typedef struct KosDynNode KosDynGen;
 
 
 /* === KosContinuation: captured delimited continuation === */
@@ -746,6 +753,21 @@ KosDynFrame *kos_dyn_push_frame_empty(KosContext *ctx);
 
 
 void kos_dynframe_reset_for_tail(KosDynFrame *frame);
+
+
+/**
+   Create a generator boundary node.  The generator object owns the node;
+   the dynchain borrows it during execution.  Caller links the frame under
+   it (frame->parent = gen) before passing the frame to kos_context_new.
+
+   :param owner: owning generator object (borrowed) or NULL
+
+   :return: new GEN node with parent=NULL, or NULL on error
+*/
+KosDynGen *kos_dyngen_new(PyObject *owner);
+
+
+void kos_dyngen_free(KosDynGen *gen);
 
 
 /**
@@ -1710,6 +1732,9 @@ int kos_transferplan_traverse(
   (KosDynNode_IS_WITH(n) || KosDynNode_IS_DYN_WITH(n))
 #define KosDynNode_IS_SHIFT(n)    (KosDynNode_KIND(n) == KOS_DYN_SHIFT)
 #define KosDynNode_IS_CC_RAISE(n) (KosDynNode_KIND(n) == KOS_DYN_CC_RAISE)
+#define KosDynNode_IS_GEN(n)      (KosDynNode_KIND(n) == KOS_DYN_GEN)
+
+#define KosDynGen_OWNER(n)        (((KosDynNode *)(n))->u.gen.owner)
 
 #define KosDynCollect_SAVED_NS(n) (((KosDynNode *)(n))->u.ns.saved_ns)
 

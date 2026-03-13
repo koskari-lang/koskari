@@ -65,6 +65,7 @@ static const char *kos_dynnode_kind_names[] = {
   "DYN_WITH",
   "SHIFT",
   "CC_RAISE",
+  "GEN",
   "UNKNOWN",
 };
 
@@ -571,6 +572,30 @@ static void kos_dyn_cc_raise_free(KosDynCCRaise *node) {
   Py_XDECREF(KosDynCCRaise_EXC_VAL(node));
   KosDynCCRaise_EXC_VAL(node) = NULL;
   kos_dynnode_return_to_freelist(node);
+}
+
+
+/* === KosDynGen implementation === */
+
+
+KosDynGen *kos_dyngen_new(PyObject *owner) {
+  KosDynGen *gen = (KosDynGen *) kos_dynnode_alloc();
+  if (! gen)
+    return NULL;
+
+  kos_dynnode_init((KosDynNode *) gen, KOS_DYN_GEN, NULL, 0);
+  KosDynNode_FLAGS(gen) = KOS_DYNF_BOUNDARY;
+  KosDynGen_OWNER(gen) = owner;  /* borrowed */
+  return gen;
+}
+
+
+void kos_dyngen_free(KosDynGen *gen) {
+  if (! gen)
+    return;
+
+  KosDynGen_OWNER(gen) = NULL;
+  kos_dynnode_return_to_freelist((KosDynNode *) gen);
 }
 
 
@@ -2123,6 +2148,9 @@ void kos_dynnode_free(KosDynNode *node) {
     case KOS_DYN_CC_RAISE:
       kos_dyn_cc_raise_free((KosDynCCRaise *) node);
       break;
+    case KOS_DYN_GEN:
+      kos_dyngen_free((KosDynGen *) node);
+      break;
     case KOS_DYN_COLLECT:
       kos_dyncollect_free((KosDynCollect *) node);
       break;
@@ -2340,6 +2368,8 @@ int kos_dyn_install(KosContext *ctx, KosDynNode *node, KosEvent *out_ev) {
       /* PUSH_COLLECT handler installs collector as frame ns before pushing
          the node; no install action needed. */
       return 0;
+    case KOS_DYN_GEN:
+      return 0;
     default:
       return 0;
   }
@@ -2496,6 +2526,9 @@ int kos_dyn_unwind(KosContext *ctx, KosDynNode *node, KosXferEvent event,
     case KOS_DYN_CC_RAISE:
       (void) out_ev;
       return cc_raise_unwind(ctx, node, NULL);
+    case KOS_DYN_GEN:
+      (void) out_ev;
+      return 0;
     default:
       PyErr_Format(PyExc_RuntimeError,
                    "kos_dyn_unwind: node kind %u has no unwind",
@@ -2545,6 +2578,19 @@ KosHandleResult kos_dyn_handle(KosContext *ctx, KosDynNode *node,
           && KosDynFinally_ENABLED((KosDynFinally *) node))
         return KOS_HANDLE_CONSUMED;
       /* RETURN: PASS for now; extension point for running finally before return */
+      return KOS_HANDLE_PASS;
+    case KOS_DYN_GEN:
+      if (event == KOS_XFER_EVENT_YIELD)
+        return KOS_HANDLE_CONSUMED;
+      if (event == KOS_XFER_EVENT_RETURN)
+        return KOS_HANDLE_CONSUMED;
+      if (event == KOS_XFER_EVENT_RAISE)
+        return KOS_HANDLE_CONSUMED;
+      if (event == KOS_XFER_EVENT_SHIFT) {
+        PyErr_SetString(PyExc_RuntimeError,
+                        "shift cannot cross generator boundary");
+        return KOS_HANDLE_ERROR;
+      }
       return KOS_HANDLE_PASS;
     default:
       return KOS_HANDLE_PASS;
@@ -2613,6 +2659,10 @@ KosDynNode *kos_dyn_clone(KosDynNode *node) {
     case KOS_DYN_CC_RAISE:
       PyErr_SetString(PyExc_RuntimeError,
                       "cannot clone CC_RAISE sentinel node");
+      return NULL;
+    case KOS_DYN_GEN:
+      PyErr_SetString(PyExc_RuntimeError,
+                      "cannot clone generator boundary node");
       return NULL;
     case KOS_DYN_COLLECT:
       return (KosDynNode *) kos_dyncollect_clone((KosDynCollect *) node);
@@ -4836,6 +4886,9 @@ int kos_dynnode_traverse(KosDynNode *node, visitproc visit, void *arg) {
     case KOS_DYN_CC_RAISE:
       Py_VISIT(KosDynCCRaise_EXC_TYPE(node));
       Py_VISIT(KosDynCCRaise_EXC_VAL(node));
+      break;
+    case KOS_DYN_GEN:
+      Py_VISIT(KosDynGen_OWNER((KosDynGen *) node));
       break;
     case KOS_DYN_TRY:
     case KOS_DYN_FINALLY:
