@@ -2511,6 +2511,47 @@ int kos_dyn_unwind(KosContext *ctx, KosDynNode *node, KosXferEvent event,
    the exception was swallowed and execution should resume,
    KOS_DYN_UNWIND_ASYNC_STARTED if async, or -1 on error.
 */
+/**
+   Offer a control transit to a node.  Does not unlink; only decides
+   whether the node consumes, passes through, defers, or errors.
+
+   For TRY: returns CONSUMED when event is RAISE, TRY is enabled,
+   PyErr_Occurred(), and extent table has an except handler.
+
+   For FINALLY: returns CONSUMED when event is RAISE or RETURN and
+   FINALLY is enabled.
+*/
+KosHandleResult kos_dyn_handle(KosContext *ctx, KosDynNode *node,
+                               KosXferEvent event, KosEvent *out_ev) {
+
+  (void) out_ev;
+
+  switch (KosDynNode_KIND(node)) {
+    case KOS_DYN_TRY:
+      if (event == KOS_XFER_EVENT_RAISE && KosDynTry_ENABLED((KosDynTry *) node)
+          && PyErr_Occurred()) {
+        KosDynFrame *frame = KosContext_FRAME_TOP(ctx);
+        if (frame) {
+          KosTryHandler th;
+          if (kos_try_handler_for((PyObject *) KosDynFrame_CODE(frame),
+                                  KosDynFrame_ACTING_PC(frame), &th) == 0
+              && th.except_pc != KOS_EXTENT_NONE)
+            return KOS_HANDLE_CONSUMED;
+        }
+      }
+      return KOS_HANDLE_PASS;
+    case KOS_DYN_FINALLY:
+      if (event == KOS_XFER_EVENT_RAISE
+          && KosDynFinally_ENABLED((KosDynFinally *) node))
+        return KOS_HANDLE_CONSUMED;
+      /* RETURN: PASS for now; extension point for running finally before return */
+      return KOS_HANDLE_PASS;
+    default:
+      return KOS_HANDLE_PASS;
+  }
+}
+
+
 int kos_dyn_exception_unwind(
     KosContext *ctx,
     KosDynNode *node,
@@ -2646,6 +2687,20 @@ int kos_dyn_unwind_to_frame(KosContext *ctx, KosDynFrame *frame,
   while (KosContext_DYN_TOP(ctx) != NULL
          && KosContext_DYN_TOP(ctx) != (KosDynNode *) frame) {
     KosDynNode *top = KosContext_DYN_TOP(ctx);
+
+    /* Handle phase: offer event before unwind */
+    {
+      KosHandleResult hr = kos_dyn_handle(ctx, top, event, out_ev);
+      if (hr == KOS_HANDLE_CONSUMED) {
+        /* Node consumed; caller must deliver.  Not used for RETURN yet. */
+        PyErr_SetString(PyExc_RuntimeError,
+                        "handle(CONSUMED) during unwind_to_frame not implemented");
+        return -1;
+      }
+      if (hr == KOS_HANDLE_ERROR)
+        return -1;
+    }
+
     if (KOS_XFER_TRACE)
       SAYF("[xfer] unwind_to_frame: popping node=%p kind=%s",
            (void *) top, kos_dynnode_kind_name(KosDynNode_KIND(top)));

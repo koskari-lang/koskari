@@ -150,6 +150,22 @@ typedef enum KosXferEvent {
 } KosXferEvent;
 
 
+/**
+   KosHandleResult indicates how a node responded to handle(node, event).
+
+   KOS_HANDLE_PASS     - node passed through; continue walk
+   KOS_HANDLE_CONSUMED - node consumed; stop walk, caller delivers to handler
+   KOS_HANDLE_DEFERRED - node deferred (e.g. async); return to caller
+   KOS_HANDLE_ERROR    - error; return -1
+*/
+typedef enum KosHandleResult {
+  KOS_HANDLE_PASS = 0,
+  KOS_HANDLE_CONSUMED,
+  KOS_HANDLE_DEFERRED,
+  KOS_HANDLE_ERROR,
+} KosHandleResult;
+
+
 /* === KosDynNode: tagged union for all chain node kinds === */
 
 
@@ -1204,6 +1220,23 @@ int kos_dyn_unwind(KosContext *ctx, KosDynNode *node, KosXferEvent event,
                    struct KosEvent *out_ev);
 int kos_dyn_exception_unwind(KosContext *ctx, KosDynNode *node,
                                struct KosEvent *out_ev);
+
+/**
+   Offer a control transit to a node.  Does not unlink; only decides
+   whether the node consumes, passes through, defers, or errors.
+
+   :param ctx: execution context
+   :param node: node to offer the event to
+   :param event: transfer event (RETURN, RAISE, etc.)
+   :param out_ev: event output (for transformed events; may be NULL)
+
+   :return: KOS_HANDLE_PASS (unwind then pop), KOS_HANDLE_CONSUMED
+     (deliver to node, stop walk), KOS_HANDLE_DEFERRED, or
+     KOS_HANDLE_ERROR (-1)
+*/
+KosHandleResult kos_dyn_handle(KosContext *ctx, KosDynNode *node,
+                               KosXferEvent event, struct KosEvent *out_ev);
+
 KosDynNode *kos_dyn_clone(KosDynNode *node);
 
 void kos_dyn_ns_unwind(KosContext *ctx, KosDynNs *node);
