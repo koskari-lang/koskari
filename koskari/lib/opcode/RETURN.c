@@ -60,16 +60,24 @@ KOS_OP_HANDLER(RETURN) {
 
   /* === Phase 2b: Frame has parent (normal call return) ===
      We are returning from a callee into its caller. Unwind (run wind/finally
-     etc), detach our frame, then deliver the value to the parent. */
-  if (KosDynNode_PARENT(CURRENT_FRAME(ctx)) != NULL) {
+     etc), detach our frame, then deliver the value to the parent.
+     Skip when parent is GEN (generator boundary): treat as top-level return. */
+  {
+    KosDynNode *parent = KosDynNode_PARENT(CURRENT_FRAME(ctx));
+    if (parent != NULL && ! KosDynNode_IS_GEN(parent)) {
     int was_pending_ctx = (KosContext_PENDING_AGEN(ctx) != NULL);
     KosDynFrame *detached_frame = NULL;
 
-    /* Unwind to current frame (run wind/after, finally, etc). */
-    int unw = kos_dyn_unwind_to_frame(ctx, CURRENT_FRAME(ctx), out_ev);
+    /* Walk RETURN to frame (handle phase: FINALLY may consume and run). */
+    int unw = kos_dyn_walk_return_to_frame(ctx, CURRENT_FRAME(ctx), val,
+                                            out_ev);
     if (unw == KOS_DYN_UNWIND_ASYNC_STARTED) {
       KosContext_PENDING_RETURN_VALUE(ctx) = val;
       KosContext_PENDING_RETURN_TO_PARENT(ctx) = 1;
+      return 0;
+    }
+    if (unw == KOS_DYN_UNWIND_FINALLY_TAKING_RETURN) {
+      /* Delivered to finally block; eval continues at finally (val on block) */
       return 0;
     }
     if (unw < 0) {
@@ -147,14 +155,18 @@ KOS_OP_HANDLER(RETURN) {
     Py_DECREF(val);
     return KOS_OP_RES_CONTROL_RETURNED;
   }
+  }
 
-  /* === Phase 2c: Top-level return (no parent) ===
-     We are the root frame; returning means the evaluator is done. Unwind,
-     then emit KOS_EV_RETURN so the caller receives the value. */
-  int unw = kos_dyn_unwind_to_frame(ctx, CURRENT_FRAME(ctx), out_ev);
+  /* === Phase 2c: Top-level return (no parent or parent is GEN) ===
+     We are the root frame; returning means the evaluator is done. */
+  int unw = kos_dyn_walk_return_to_frame(ctx, CURRENT_FRAME(ctx), val,
+                                          out_ev);
   if (unw == KOS_DYN_UNWIND_ASYNC_STARTED) {
     KosContext_PENDING_RETURN_VALUE(ctx) = val;
     KosContext_PENDING_RETURN_TO_PARENT(ctx) = 0;
+    return 0;
+  }
+  if (unw == KOS_DYN_UNWIND_FINALLY_TAKING_RETURN) {
     return 0;
   }
   if (unw < 0) {

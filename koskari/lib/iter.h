@@ -51,6 +51,17 @@ typedef struct {
 PyObject *KosPyAsyncGen_New(KosContext *ctx);
 
 
+/**
+   Create a KosPyAsyncGen from code and namespace. Requires KosCode_YIELDS(code).
+   Caller owns the returned reference.
+
+   :param code: KosCode with yield opcodes
+   :param ns: frame namespace (new ref consumed)
+   :return: new KosPyAsyncGen or NULL on error
+*/
+PyObject *KosAsyncGen_NewFromCodeAndNs(KosCode *code, PyObject *ns);
+
+
 /* === KosPyAsyncGenASend === */
 
 

@@ -60,6 +60,8 @@
    KOS_DYN_CC_RAISE  - Sentinel node holding a KoskariContinuationApply exception
                        for the foreign-token transfer path; its unwind re-raises the
                        stored exception so the eval loop exits with KOS_EV_RAISE
+   KOS_DYN_GEN       - Generator boundary; intercepts handle(YIELD/RETURN/RAISE),
+                       denies handle(SHIFT)
 */
 
 typedef enum KosDynKind {
@@ -79,6 +81,7 @@ typedef enum KosDynKind {
   KOS_DYN_DYN_WITH,
   KOS_DYN_SHIFT,
   KOS_DYN_CC_RAISE,
+  KOS_DYN_GEN,
   /* sentinel value */
   KOS_DYN_UNKNOWN,
 } KosDynKind;
@@ -133,6 +136,39 @@ typedef enum KosRegionStyle {
 } KosRegionStyle;
 
 
+/**
+   KosXferEvent indicates why an unwind is occurring.  Passed to
+   kos_dyn_unwind and propagated through the unwind path so nodes
+   can react appropriately (e.g. dynamic-wind after-thunk runs
+   regardless; event is for diagnostics or future use).
+*/
+typedef enum KosXferEvent {
+  KOS_XFER_EVENT_NONE = 0,
+  KOS_XFER_EVENT_RETURN,
+  KOS_XFER_EVENT_RAISE,
+  KOS_XFER_EVENT_YIELD,
+  KOS_XFER_EVENT_BREAK,
+  KOS_XFER_EVENT_CONTINUE,
+  KOS_XFER_EVENT_SHIFT,
+} KosXferEvent;
+
+
+/**
+   KosHandleResult indicates how a node responded to handle(node, event).
+
+   KOS_HANDLE_PASS     - node passed through; continue walk
+   KOS_HANDLE_CONSUMED - node consumed; stop walk, caller delivers to handler
+   KOS_HANDLE_DEFERRED - node deferred (e.g. async); return to caller
+   KOS_HANDLE_ERROR    - error; return -1
+*/
+typedef enum KosHandleResult {
+  KOS_HANDLE_PASS = 0,
+  KOS_HANDLE_CONSUMED,
+  KOS_HANDLE_DEFERRED,
+  KOS_HANDLE_ERROR,
+} KosHandleResult;
+
+
 /* === KosDynNode: tagged union for all chain node kinds === */
 
 
@@ -178,7 +214,13 @@ struct KosDynNode {
       uint8_t phase;          /* KosDynWindPhase; WIND_IDLE until thunk invoked */
     } wind;
     struct { uint32_t handler_pc; uint8_t enabled; } try_;
-    struct { uint32_t handler_pc; uint8_t enabled; uint8_t handling_raise; PyObject *handling_result; } finally_;
+    struct {
+      uint32_t handler_pc;
+      uint8_t enabled;
+      uint8_t handling_raise;
+      uint8_t handling_return;
+      PyObject *handling_result;
+    } finally_;
     struct { uint32_t break_pc; uint32_t continue_pc; uint8_t enabled; PyObject *result; } loop;
     struct { uint32_t break_pc; uint32_t continue_pc; uint8_t enabled; PyObject *result; PyObject *iter; uint8_t exhausted; uint32_t iter_next_else_pc; } foreach;
     struct {
@@ -188,6 +230,7 @@ struct KosDynNode {
       PyObject *delegate;
       uint8_t kind;
       uint8_t pending_action;
+      uint8_t phase;  /* KosYfPhase: DRIVING, EXPECT_SEND, EXPECT_AWAIT */
       PyObject *pending_arg;
       PyObject *pending_arg_type;  /* for KOS_YF_THROW: exception type */
       PyObject *inflight;
@@ -216,6 +259,9 @@ struct KosDynNode {
       PyObject *exc_type;  /* exception type from PyErr_Fetch */
       PyObject *exc_val;   /* exception value */
     } cc_raise;
+    struct {
+      PyObject *owner;     /* owning generator object (borrowed) or NULL */
+    } gen;
   } u;
 };
 
@@ -234,6 +280,7 @@ typedef struct KosDynNode KosDynParam;
 typedef struct KosDynNode KosDynWith;
 typedef struct KosDynNode KosDynShift;
 typedef struct KosDynNode KosDynCCRaise;
+typedef struct KosDynNode KosDynGen;
 
 
 /* === KosContinuation: captured delimited continuation === */
@@ -663,10 +710,13 @@ int kos_dyn_push(KosContext *ctx, KosDynNode *node);
    :param node: node to pop (must be dyn_top)
    :param out_ev: event output for async suspend
 
+   :param event: transfer event (RETURN, RAISE, etc.); KOS_XFER_EVENT_NONE if unknown
+
    :return: 0 on success, -1 on error or BARRIER, KOS_DYN_UNWIND_ASYNC_STARTED
      when async
 */
-int kos_dyn_uninstall(KosContext *ctx, KosDynNode *node, struct KosEvent *out_ev);
+int kos_dyn_uninstall(KosContext *ctx, KosDynNode *node, KosXferEvent event,
+                      struct KosEvent *out_ev);
 #define kos_dyn_pop kos_dyn_uninstall
 
 
@@ -709,6 +759,21 @@ KosDynFrame *kos_dyn_push_frame_empty(KosContext *ctx);
 
 
 void kos_dynframe_reset_for_tail(KosDynFrame *frame);
+
+
+/**
+   Create a generator boundary node.  The generator object owns the node;
+   the dynchain borrows it during execution.  Caller links the frame under
+   it (frame->parent = gen) before passing the frame to kos_context_new.
+
+   :param owner: owning generator object (borrowed) or NULL
+
+   :return: new GEN node with parent=NULL, or NULL on error
+*/
+KosDynGen *kos_dyngen_new(PyObject *owner);
+
+
+void kos_dyngen_free(KosDynGen *gen);
 
 
 /**
@@ -1085,8 +1150,8 @@ void kos_dyn_pop_with(KosContext *ctx, KosDynWith *node);
    :param node: WITH node being unwound
    :param out_ev: event output for suspend (required when exit may be async)
 
-   Uses kos_callable_call for exit. When exit returns an awaitable, suspend
-   happens inside kos_callable_call; pending state is stashed and this returns 1.
+   Uses KosContext_CallArgs for exit. When exit returns an awaitable, suspend
+   happens inside KosContext_CallArgs; pending state is stashed and this returns 1.
 
    :return: 0 on success, -1 on error, 1 when suspend occurred
 */
@@ -1101,18 +1166,37 @@ int kos_dyn_with_unwind(KosContext *ctx, KosDynWith *node, struct KosEvent *out_
 
    :param out_ev: event output for suspend (required when WITH may have async exit)
 
+   :param event: transfer event; KOS_XFER_EVENT_NONE if unknown
+
    :return: 0 on success, -1 on error or if top is PROMPT,
      KOS_DYN_UNWIND_ASYNC_STARTED when async extent action started (resume later)
 */
-int kos_dyn_pop_top(KosContext *ctx, struct KosEvent *out_ev);
+int kos_dyn_pop_top(KosContext *ctx, KosXferEvent event,
+                    struct KosEvent *out_ev);
 
 
 int kos_dyn_unwind_to_frame(KosContext *ctx, KosDynFrame *frame,
-                           struct KosEvent *out_ev);
+                            KosXferEvent event, struct KosEvent *out_ev);
+
+
+/**
+   Walk RETURN to frame, offering handle(RETURN) to each node. When FINALLY
+   consumes, deliver (push value to block, set PC to finally), set
+   handling_return, and return KOS_DYN_UNWIND_FINALLY_TAKING_RETURN. Caller
+   must return 0; eval continues at finally. When finally does return,
+   inner RETURN completes; when finally falls through, POP_FINALLY promotes
+   value and bytecode continues (typically RETURN pops it).
+
+   :param val: return value; ownership transferred when FINALLY_TAKING
+   :return: 0 (walk done), KOS_DYN_UNWIND_ASYNC_STARTED, -1, or
+     KOS_DYN_UNWIND_FINALLY_TAKING_RETURN
+*/
+int kos_dyn_walk_return_to_frame(KosContext *ctx, KosDynFrame *frame,
+                                  PyObject *val, struct KosEvent *out_ev);
 
 
 int kos_dyn_unwind_to_node(KosContext *ctx, KosDynNode *target,
-                           struct KosEvent *out_ev);
+                           KosXferEvent event, struct KosEvent *out_ev);
 
 
 /**
@@ -1126,6 +1210,10 @@ int kos_dyn_unwind_to_node(KosContext *ctx, KosDynNode *target,
 /** When exception swallowed: unwind did full cleanup (DropBlock, pop_with,
     push None); caller must return 0 without further action. */
 #define KOS_DYN_UNWIND_SWALLOWED 2
+
+/** When FINALLY consumed handle(RETURN): delivered to finally block, value
+    pushed to block. Caller must return 0 (eval continues at finally). */
+#define KOS_DYN_UNWIND_FINALLY_TAKING_RETURN 3
 
 
 /**
@@ -1154,6 +1242,10 @@ KosDynNode *kos_dyn_find_pending_exit(KosDynNode *node);
 int kos_dyn_complete_pending_exit(KosContext *ctx, int do_pop_node);
 void kos_dyn_clear_pending_exit(KosContext *ctx);
 
+/**
+   result: ownership is transferred. Caller must not use result after
+   the call.
+*/
 int finalize_provisional_with_enter(KosContext *ctx, PyObject *result,
                                    KosDynWith *with_node);
 
@@ -1176,10 +1268,42 @@ int finalize_provisional_with_enter(KosContext *ctx, PyObject *result,
 */
 int kos_dyn_install(KosContext *ctx, KosDynNode *node, struct KosEvent *out_ev);
 int kos_dyn_wind(KosContext *ctx, KosDynNode *node, struct KosEvent *out_ev);
-int kos_dyn_unwind(KosContext *ctx, KosDynNode *node,
+int kos_dyn_unwind(KosContext *ctx, KosDynNode *node, KosXferEvent event,
                    struct KosEvent *out_ev);
 int kos_dyn_exception_unwind(KosContext *ctx, KosDynNode *node,
                                struct KosEvent *out_ev);
+
+/**
+   Offer a control transit to a node.  Does not unlink; only decides
+   whether the node consumes, passes through, defers, or errors.
+
+   :param ctx: execution context
+   :param node: node to offer the event to
+   :param event: transfer event (RETURN, RAISE, etc.)
+   :param out_ev: event output (for transformed events; may be NULL)
+
+   :return: KOS_HANDLE_PASS (unwind then pop), KOS_HANDLE_CONSUMED
+     (deliver to node, stop walk), KOS_HANDLE_DEFERRED, or
+     KOS_HANDLE_ERROR (-1)
+*/
+KosHandleResult kos_dyn_handle(KosContext *ctx, KosDynNode *node,
+                               KosXferEvent event, struct KosEvent *out_ev);
+
+
+/**
+   Walk the dynamic chain from DYN_TOP upward, offering handle(YIELD) to
+   each node. Stops when a node returns CONSUMED (generator boundary).
+   Used for YIELD transit: the value is in out_ev; GEN intercepts and
+   suspends.
+
+   :param ctx: execution context
+   :param out_ev: event with KOS_EV_YIELD and payload already set
+
+   :return: 0 when GEN consumed (valid yield; caller may return),
+     -1 on error or if no generator boundary found
+*/
+int kos_dyn_walk_handle_yield(KosContext *ctx, struct KosEvent *out_ev);
+
 KosDynNode *kos_dyn_clone(KosDynNode *node);
 
 void kos_dyn_ns_unwind(KosContext *ctx, KosDynNs *node);
@@ -1209,6 +1333,25 @@ KosDynNode *kos_find_node_for_raise(KosContext *ctx);
    :return: the topmost LOOP or FOREACH region, or NULL if none found
  */
 KosDynNode *kos_find_node_for_loop(KosContext *ctx);
+
+
+/**
+   Transfer control to the innermost loop for BREAK or CONTINUE.
+   Pops nodes from dyn_top toward the loop with unwind(event), delivers
+   the event to the loop, and resumes at break_pc (BREAK) or
+   continue_pc (CONTINUE).
+
+   :param ctx: execution context
+   :param event: KOS_XFER_EVENT_BREAK or KOS_XFER_EVENT_CONTINUE
+   :param result: loop result value (transferred; caller loses ownership)
+   :param out_ev: event output for suspend
+
+   :return: 0 on success, -1 on error (break/continue outside loop,
+     same-frame check failed), KOS_DYN_UNWIND_ASYNC_STARTED when async
+     unwind started
+*/
+int kos_dyn_transfer_to_loop(KosContext *ctx, KosXferEvent event,
+                             PyObject *result, struct KosEvent *out_ev);
 
 
 /**
@@ -1634,6 +1777,9 @@ int kos_transferplan_traverse(
   (KosDynNode_IS_WITH(n) || KosDynNode_IS_DYN_WITH(n))
 #define KosDynNode_IS_SHIFT(n)    (KosDynNode_KIND(n) == KOS_DYN_SHIFT)
 #define KosDynNode_IS_CC_RAISE(n) (KosDynNode_KIND(n) == KOS_DYN_CC_RAISE)
+#define KosDynNode_IS_GEN(n)      (KosDynNode_KIND(n) == KOS_DYN_GEN)
+
+#define KosDynGen_OWNER(n)        (((KosDynNode *)(n))->u.gen.owner)
 
 #define KosDynCollect_SAVED_NS(n) (((KosDynNode *)(n))->u.ns.saved_ns)
 
@@ -1662,6 +1808,7 @@ int kos_transferplan_traverse(
 #define KosDynFinally_HANDLER_PC(r)  (((KosDynNode *)(r))->u.finally_.handler_pc)
 #define KosDynFinally_ENABLED(r)     (((KosDynNode *)(r))->u.finally_.enabled)
 #define KosDynFinally_HANDLING_RAISE(r) (((KosDynNode *)(r))->u.finally_.handling_raise)
+#define KosDynFinally_HANDLING_RETURN(r) (((KosDynNode *)(r))->u.finally_.handling_return)
 #define KosDynFinally_HANDLING_RESULT(r) (((KosDynNode *)(r))->u.finally_.handling_result)
 #define KosDynLoop_BREAK_PC(r)       (((KosDynNode *)(r))->u.loop.break_pc)
 #define KosDynLoop_CONTINUE_PC(r)    (((KosDynNode *)(r))->u.loop.continue_pc)
@@ -1677,8 +1824,17 @@ int kos_transferplan_traverse(
 
 #define KosDynNs_SAVED_NS(n)      (((KosDynNode *)(n))->u.ns.saved_ns)
 
+/* KosYfPhase: state machine for stack-based resume inject consumption */
+typedef enum KosYfPhase {
+  KOS_YF_PHASE_DRIVING = 0,
+  KOS_YF_PHASE_EXPECT_SEND,
+  KOS_YF_PHASE_EXPECT_AWAIT,
+} KosYfPhase;
+
 #define KosDynYieldFrom_DELEGATE(n)     (((KosDynNode *)(n))->u.yield_from.delegate)
 #define KosDynYieldFrom_KIND(n)         (((KosDynNode *)(n))->u.yield_from.kind)
+#define KosDynYieldFrom_PHASE(n)        (((KosDynNode *)(n))->u.yield_from.phase)
+#define KosDynYieldFrom_PHASE_SET(n, v) (((KosDynNode *)(n))->u.yield_from.phase = (v))
 #define KosDynYieldFrom_PENDING_ACTION(n) (((KosDynNode *)(n))->u.yield_from.pending_action)
 #define KosDynYieldFrom_PENDING_ARG(n) (((KosDynNode *)(n))->u.yield_from.pending_arg)
 #define KosDynYieldFrom_PENDING_ARG_TYPE(n) (((KosDynNode *)(n))->u.yield_from.pending_arg_type)

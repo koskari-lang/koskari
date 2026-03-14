@@ -24,14 +24,27 @@
 int koskari_sync_init(PyObject *mod);
 int koskari_sync_clear(PyObject *mod);
 
+/**
+   awaitable is borrowed. Caller retains ownership.
+*/
 PyObject *Koskari_RunSync(PyObject *awaitable);
+
+/**
+   async_iterable is borrowed. Caller retains ownership.
+*/
 PyObject *Koskari_IterSync(PyObject *async_iterable);
+
+/**
+   callable, args, kwargs are borrowed. Caller retains ownership.
+*/
 PyObject *Koskari_DemandSync(PyObject *callable, PyObject *args, PyObject *kwargs);
 
 /**
    Like Koskari_DemandSync but stores result in out_result and returns int.
    0 = success, 1 = suspension (no exception; caller raises own), -1 = error
    (exception set).
+
+   callable, args, and kwargs are borrowed. Caller retains ownership.
  */
 int Koskari_DemandSyncEx(PyObject *callable, PyObject *args, PyObject *kwargs,
                          PyObject **out_result);

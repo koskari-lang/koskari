@@ -234,12 +234,10 @@ static KosEvalMode revive_plan(
     return KOS_MODE_EXCEPTION;
   }
 
-  if (send_val != NULL) {
+  if (send_val != NULL && plan) {
     Py_XINCREF(send_val);
-    if (plan) {
-      Py_XDECREF(KosTransferPlan_STEP_RESUME_INJECT(plan));
-      KosTransferPlan_STEP_RESUME_INJECT(plan) = send_val;
-    }
+    Py_XDECREF(KosTransferPlan_STEP_RESUME_INJECT(plan));
+    KosTransferPlan_STEP_RESUME_INJECT(plan) = send_val;
   }
 
   return KOS_MODE_TRANSFER;
@@ -266,28 +264,27 @@ static KosEvalMode raise_yield(KosContext *ctx) {
 
 
 /**
-   Set up VM for "resume with no value" after YIELD_FROM suspend.
-*/
-static KosEvalMode raise_yield_from(KosContext *ctx) {
-  (void) ctx;
-  return KOS_MODE_NORMAL;
-}
-
-
-/**
-   Revive from AWAIT: push send_val or set throw_exc. Complete pending WITH exit if applicable.
+   Revive from AWAIT: push await result or set throw_exc. Use PY_RESUME_INJECT
+   when set (driver pre-stored await result, e.g. coro.c throw-into-awaitable),
+   else send_val. Complete pending WITH exit if applicable.
 */
 static KosEvalMode revive_await(KosContext *ctx, PyObject *send_val, PyObject *throw_typ, PyObject *throw_exc) {
   if (throw_exc != NULL) {
     PyErr_SetObject(throw_typ, throw_exc);
     return KOS_MODE_EXCEPTION;
   }
-  if (KosContext_PENDING_DEFER(ctx) && send_val != NULL) {
-    KosDefer_FeedResult((KosDefer *) KosContext_PENDING_DEFER(ctx), send_val);
+  PyObject *to_push = KosContext_PY_RESUME_INJECT(ctx);
+  if (to_push != NULL) {
+    KosContext_PY_RESUME_INJECT(ctx) = NULL;
+  } else if (send_val != NULL) {
+    to_push = send_val;
+  }
+  if (KosContext_PENDING_DEFER(ctx) && to_push != NULL) {
+    KosDefer_FeedResult((KosDefer *) KosContext_PENDING_DEFER(ctx), to_push);
     Py_CLEAR(KosContext_PENDING_DEFER(ctx));
   }
-  if (send_val != NULL && CURRENT_FRAME(ctx)) {
-    if (KosStackBlock_PushRef(&CURRENT_STACK(ctx), send_val) < 0)
+  if (to_push != NULL && CURRENT_FRAME(ctx)) {
+    if (KosStackBlock_PushRef(&CURRENT_STACK(ctx), to_push) < 0)
       return KOS_MODE_EXCEPTION;
   }
   {
@@ -300,30 +297,16 @@ static KosEvalMode revive_await(KosContext *ctx, PyObject *send_val, PyObject *t
 
 /**
    Revive from YIELD: push send_val or set throw_exc.
+   When send_val is NULL (e.g. __anext__), push Py_None per async gen protocol.
 */
 static KosEvalMode revive_yield(KosContext *ctx, PyObject *send_val, PyObject *throw_typ, PyObject *throw_exc) {
   if (throw_exc != NULL) {
     PyErr_SetObject(throw_typ, throw_exc);
     return KOS_MODE_EXCEPTION;
   }
-  if (send_val != NULL && CURRENT_FRAME(ctx)) {
-    if (KosStackBlock_PushRef(&CURRENT_STACK(ctx), send_val) < 0)
-      return KOS_MODE_EXCEPTION;
-  }
-  return KOS_MODE_NORMAL;
-}
-
-
-/**
-   Revive from YIELD_FROM: push send_val or set throw_exc.
-*/
-static KosEvalMode revive_yield_from(KosContext *ctx, PyObject *send_val, PyObject *throw_typ, PyObject *throw_exc) {
-  if (throw_exc != NULL) {
-    PyErr_SetObject(throw_typ, throw_exc);
-    return KOS_MODE_EXCEPTION;
-  }
-  if (send_val != NULL && CURRENT_FRAME(ctx)) {
-    if (KosStackBlock_PushRef(&CURRENT_STACK(ctx), send_val) < 0)
+  if (CURRENT_FRAME(ctx)) {
+    PyObject *to_push = (send_val != NULL) ? send_val : Py_None;
+    if (KosStackBlock_PushRef(&CURRENT_STACK(ctx), to_push) < 0)
       return KOS_MODE_EXCEPTION;
   }
   return KOS_MODE_NORMAL;
@@ -1365,248 +1348,6 @@ static int op_unimplemented_stub(KosContext *ctx, KosEvent *out_ev, KosOp *insn)
    SHIFT, INVOKE_K, prompt - continuations
  */
 
-/**
-   Default path for callables without install: Python call + push_or_await.
-   Used when the callable is not KosCallable or has no install slot.
-   callable, args_tuple, kwds_dict are borrowed.
-*/
-static int call_default_python_call(
-    KosContext *ctx,
-    KosEvent *out_ev,
-    PyObject *callable,
-    PyObject *args_tuple,
-    PyObject *kwds_dict) {
-
-  PyObject *result = (! args_tuple || PyTuple_GET_SIZE(args_tuple) == 0)
-      ? PyObject_CallNoArgs(callable)
-      : PyObject_Call(callable, args_tuple, kwds_dict ? kwds_dict : NULL);
-  if (! result)
-    return -1;
-  return push_or_await(ctx, out_ev, result);
-}
-
-
-int kos_callable_call(KosContext *ctx, KosEvent *out_ev,
-                      PyObject *callable, PyObject *args_tuple, PyObject *kwds_dict) {
-  if (KosCallable_Check(callable)) {
-    KosInstallFunc fn = KosCallableType_INSTALL(Py_TYPE(callable));
-    if (fn)
-      return fn(ctx, out_ev, callable, args_tuple, kwds_dict);
-  }
-  return call_default_python_call(ctx, out_ev, callable, args_tuple, kwds_dict);
-}
-
-
-int kos_callable_tail_call(KosContext *ctx, KosEvent *out_ev,
-                           PyObject *callable, PyObject *args_tuple, PyObject *kwds_dict) {
-  if (KosCallable_Check(callable)) {
-    KosInstallFunc fn = KosCallableType_TAIL_INSTALL(Py_TYPE(callable));
-    if (fn)
-      return fn(ctx, out_ev, callable, args_tuple, kwds_dict);
-    fn = KosCallableType_INSTALL(Py_TYPE(callable));
-    if (fn) {
-      KosDynFrame *frame = kos_dyn_push_frame_empty(ctx);
-      if (! frame)
-        return -1;
-      return fn(ctx, out_ev, callable, args_tuple, kwds_dict);
-    }
-  }
-  return call_default_python_call(ctx, out_ev, callable, args_tuple, kwds_dict);
-}
-
-
-/**
-   Vectorcall fallback for plain Python callables. Passes the C array directly
-   to PyObject_Vectorcall, avoiding any tuple construction.
-   callable, args, and kwnames are all borrowed.
-*/
-static int call_default_python_vcall(
-    KosContext *ctx,
-    KosEvent *out_ev,
-    PyObject *callable,
-    PyObject *const *args,
-    Py_ssize_t nargs,
-    PyObject *kwnames) {
-
-  // TODO: remove the non-KosCallable support from kos_callable and family
-
-  PyObject *result = PyObject_Vectorcall(callable, args, (size_t) nargs, kwnames);
-  if (! result)
-    return -1;
-  return push_or_await(ctx, out_ev, result);
-}
-
-
-/**
-   Build a tuple from a C args array. Used as a fallback in kos_callable_vcall
-   when a KosCallable type has only the legacy install slot, not the vector one.
-*/
-static PyObject *vcall_build_args_tuple(PyObject *const *args, Py_ssize_t nargs) {
-  PyObject *tup = PyTuple_New(nargs);
-  if (! tup)
-    return NULL;
-  for (Py_ssize_t i = 0; i < nargs; i++) {
-    Py_INCREF(args[i]);
-    PyTuple_SET_ITEM(tup, i, args[i]);
-  }
-  return tup;
-}
-
-
-/**
-   Build a kwds dict from a C args slice and a kwnames tuple. Used as a
-   fallback when a KosCallable type has only the legacy install slot.
-*/
-static PyObject *vcall_build_kwds_dict(
-    PyObject *const *kw_vals,
-    PyObject *kwnames) {
-
-  Py_ssize_t nkw = PyTuple_GET_SIZE(kwnames);
-  PyObject *kwds = PyDict_New();
-  if (! kwds)
-    return NULL;
-  for (Py_ssize_t i = 0; i < nkw; i++) {
-    if (PyDict_SetItem(kwds, PyTuple_GET_ITEM(kwnames, i), kw_vals[i]) < 0) {
-      Py_DECREF(kwds);
-      return NULL;
-    }
-  }
-  return kwds;
-}
-
-
-int kos_callable_vcall(
-    KosContext *ctx,
-    KosEvent *out_ev,
-    PyObject *callable,
-    PyObject *const *args,
-    Py_ssize_t nargs,
-    PyObject *kwnames) {
-
-  if (KosCallable_Check(callable)) {
-    KosVectorInstallFunc vfn = KosCallableType_VINSTALL(Py_TYPE(callable));
-    if (vfn)
-      return vfn(ctx, out_ev, callable, args, nargs, kwnames);
-
-    /* fallback: build tuple (and dict) for the legacy install slot */
-    KosInstallFunc fn = KosCallableType_INSTALL(Py_TYPE(callable));
-    if (fn) {
-      PyObject *tup = (nargs > 0) ? vcall_build_args_tuple(args, nargs) : NULL;
-      if (nargs > 0 && ! tup)
-        return -1;
-      PyObject *kwds = NULL;
-      if (kwnames) {
-        kwds = vcall_build_kwds_dict(args + nargs, kwnames);
-        if (! kwds) {
-          Py_XDECREF(tup);
-          return -1;
-        }
-      }
-      int r = fn(ctx, out_ev, callable, tup, kwds);
-      Py_XDECREF(tup);
-      Py_XDECREF(kwds);
-      return r;
-    }
-  }
-
-  // TODO: remove the non-KosCallable support from kos_callable and family
-  return call_default_python_vcall(
-    ctx,
-    out_ev,
-    callable,
-    args,
-    nargs,
-    kwnames);
-}
-
-
-/**
-   kos_callable_tail_vcall: dispatch to tail install for KosCallable,
-   else call_default_python_vcall.
-
-   STACK OWNERSHIP: When a tail install handler is invoked (tp_kos_tail_vinstall
-   or fallback tail paths), it takes ownership of the caller's stack. The handler
-   either frees the current frame (kos_tail_koscall) or resets it in place
-   (kos_dynframe_reset_for_tail). Callers must NOT call KosStackBlock_DropNoErr
-   after kos_callable_tail_vcall returns in the KosCallable path. Only the plain
-   Python path (call_default_python_vcall) leaves the caller's stack valid; in
-   that path the caller must DropNoErr before push_or_await.
-*/
-int kos_callable_tail_vcall(
-    KosContext *ctx,
-    KosEvent *out_ev,
-    PyObject *callable,
-    PyObject *const *args,
-    Py_ssize_t nargs,
-    PyObject *kwnames) {
-
-  if (KosCallable_Check(callable)) {
-    KosVectorInstallFunc vfn = KosCallableType_TAIL_VINSTALL(Py_TYPE(callable));
-    if (vfn)
-      return vfn(ctx, out_ev, callable, args, nargs, kwnames);
-
-    /* fallback: try the non-tail vector slot, pushing an empty frame */
-    vfn = KosCallableType_VINSTALL(Py_TYPE(callable));
-    if (vfn) {
-      KosDynFrame *frame = kos_dyn_push_frame_empty(ctx);
-      if (! frame)
-        return -1;
-      return vfn(ctx, out_ev, callable, args, nargs, kwnames);
-    }
-
-    /* fallback: build tuple (and dict) for legacy install slots */
-    KosInstallFunc fn = KosCallableType_TAIL_INSTALL(Py_TYPE(callable));
-    if (fn) {
-      PyObject *tup = (nargs > 0) ? vcall_build_args_tuple(args, nargs) : NULL;
-      if (nargs > 0 && ! tup)
-        return -1;
-      PyObject *kwds = NULL;
-      if (kwnames) {
-        kwds = vcall_build_kwds_dict(args + nargs, kwnames);
-        if (! kwds) {
-          Py_XDECREF(tup);
-          return -1;
-        }
-      }
-      int r = fn(ctx, out_ev, callable, tup, kwds);
-      Py_XDECREF(tup);
-      Py_XDECREF(kwds);
-      return r;
-    }
-    fn = KosCallableType_INSTALL(Py_TYPE(callable));
-    if (fn) {
-      KosDynFrame *frame = kos_dyn_push_frame_empty(ctx);
-      if (! frame)
-        return -1;
-      PyObject *tup = (nargs > 0) ? vcall_build_args_tuple(args, nargs) : NULL;
-      if (nargs > 0 && ! tup)
-        return -1;
-      PyObject *kwds = NULL;
-      if (kwnames) {
-        kwds = vcall_build_kwds_dict(args + nargs, kwnames);
-        if (! kwds) {
-          Py_XDECREF(tup);
-          return -1;
-        }
-      }
-      int r = fn(ctx, out_ev, callable, tup, kwds);
-      Py_XDECREF(tup);
-      Py_XDECREF(kwds);
-      return r;
-    }
-  }
-
-  // TODO: remove the non-KosCallable support from kos_callable and family
-  return call_default_python_vcall(
-    ctx,
-    out_ev,
-    callable,
-    args,
-    nargs,
-    kwnames);
-}
-
-
 static int defer_drive(KosContext *ctx, KosEvent *out_ev, PyObject *defer_obj);
 
 
@@ -2216,127 +1957,140 @@ static int defer_drive(KosContext *ctx, KosEvent *out_ev, PyObject *defer_obj) {
             0 if no handler (out_ev set to KOS_EV_RAISE, caller should return)
 */
 static int try_local_exception_handler(KosContext *ctx, KosEvent *out_ev) {
-  KosDynNode *region = kos_find_node_for_raise(ctx);
-  SAYF("[try_local] region=%p dyn_top=%p acting_pc=%u stack_len=%zu",
-       (void *) region, (void *) KosContext_DYN_TOP(ctx),
+  SAYF("[try_local] dyn_top=%p acting_pc=%u stack_len=%zu",
+       (void *) KosContext_DYN_TOP(ctx),
        (unsigned) CURRENT_ACTING_PC(ctx),
        (size_t) (CURRENT_STACK(ctx) ? KosStackBlock_LEN(CURRENT_STACK(ctx)) : 0));
-  if (! region) {
-    if (CURRENT_FRAME(ctx)) {
-      while (KosContext_DYN_TOP(ctx) != NULL
-             && KosContext_DYN_TOP(ctx) != (KosDynNode *) CURRENT_FRAME(ctx)) {
-        KosDynNode *top = KosContext_DYN_TOP(ctx);
-        int top_may_swallow = (top && KosDynNode_HAS_CAP(top, KOS_DYN_CAP_CATCH));
-        uint32_t catch_resume_pc = (uint32_t) -1;
-        if (top && top_may_swallow) {
-          if (KosDynNode_IS_CC(top))
-            catch_resume_pc = KosDynCC_RESUME_PC((KosDynCC *) top);
-          else if (KosDynNode_IS_WITH_OR_DYN_WITH(top))
-            catch_resume_pc = KosDynWith_RESUME_PC((KosDynWith *) top);
-        }
-        /* Some nodes' pop can call PyErr_Clear(); preserve exception across pop.
-           Barrier nodes return an error from kos_dyn_pop_top, so also preserve
-           across that call to keep the original exception available for
-           unwind_on_exception dispatch. */
-        PyObject *saved_typ = NULL, *saved_val = NULL, *saved_tb = NULL;
-        int needs_preserve = (top && KosDynNode_HAS_CAP(top, KOS_DYN_CAP_PRESERVE_ERR_ACROSS_POP))
-            || (top && KosDynNode_HAS_CAP(top, KOS_DYN_CAP_BARRIER));
-        if (needs_preserve && PyErr_Occurred())
-          PyErr_Fetch(&saved_typ, &saved_val, &saved_tb);
-        int pop_res = kos_dyn_pop_top(ctx, out_ev);
-        if (saved_typ != NULL)
-          PyErr_Restore(saved_typ, saved_val, saved_tb);
-        if (pop_res == KOS_DYN_UNWIND_ASYNC_STARTED) {
-          KosContext_UNWIND_TARGET_FRAME(ctx) = CURRENT_FRAME(ctx);
-          return 1;
-        }
-        if (pop_res != 0) {
-          /* Node refused to pop (e.g. a BARRIER node). Dispatch to the
-             node's exception handler if it has the HANDLES_EXCEPTIONS cap. */
-          if (top && KosDynNode_HAS_CAP(top, KOS_DYN_CAP_HANDLES_EXCEPTIONS)) {
-            int exc_res = kos_dyn_exception_unwind(ctx, top, out_ev);
-            if (exc_res == KOS_DYN_UNWIND_ASYNC_STARTED) {
-              KosContext_UNWIND_TARGET_FRAME(ctx) = CURRENT_FRAME(ctx);
-              return 1;
-            }
-            if (exc_res == 1) {
-              return 1;
-            }
-            if (exc_res == 0) {
-              continue;
-            }
-          }
-          {
-            PyObject *typ = NULL, *val = NULL, *tb = NULL;
-            PyErr_Fetch(&typ, &val, &tb);
-            inject_eval_frame_traceback(ctx, &typ, &val, &tb);
-            PyErr_Clear();
-            KosEvent_KIND(out_ev) = KOS_EV_RAISE;
-            KosEvent_EXC_TYPE(out_ev) = typ;
-            KosEvent_PAYLOAD(out_ev) = val;
-            Py_XDECREF(tb);
-          }
+
+  while (CURRENT_FRAME(ctx) && KosContext_DYN_TOP(ctx) != NULL
+         && KosContext_DYN_TOP(ctx) != (KosDynNode *) CURRENT_FRAME(ctx)) {
+    KosDynNode *top = KosContext_DYN_TOP(ctx);
+
+    /* Handle phase: offer RAISE to node before unwind.  If consumed,
+       deliver to handler and return.  Otherwise pop and continue. */
+    {
+      KosHandleResult hr = kos_dyn_handle(ctx, top, KOS_XFER_EVENT_RAISE, out_ev);
+      if (hr == KOS_HANDLE_CONSUMED) {
+        if (KosDynNode_IS_GEN(top)) {
+          PyObject *typ = NULL, *val = NULL, *tb = NULL;
+          PyErr_Fetch(&typ, &val, &tb);
+          inject_eval_frame_traceback(ctx, &typ, &val, &tb);
+          PyErr_Clear();
+          KosEvent_KIND(out_ev) = KOS_EV_RAISE;
+          KosEvent_EXC_TYPE(out_ev) = typ;
+          KosEvent_PAYLOAD(out_ev) = val;
+          Py_XDECREF(tb);
           KosContext_FLAGS(ctx) &= ~KOS_CTX_RUNNING;
           KosContext_FLAGS(ctx) |= KOS_CTX_DEAD;
           return 0;
         }
-        /* Only continue when a node with may-swallow swallowed; other nodes
-           may clear PyErr in their teardown (e.g. delegate close). */
-        if (top_may_swallow && ! PyErr_Occurred()) {
-          if (catch_resume_pc != (uint32_t) -1 && CURRENT_FRAME(ctx))
-            CURRENT_PC(ctx) = catch_resume_pc;
-          return 1;
+        KosDynNode *region = top;
+        uint32_t handler_pc = KosDynNode_IS_TRY(region)
+            ? KosDynTry_HANDLER_PC((KosDynTry *) region)
+            : KosDynFinally_HANDLER_PC((KosDynFinally *) region);
+        {
+          KosTryHandler th;
+          if (kos_try_handler_for((PyObject *) CURRENT_CODE(ctx),
+                                  CURRENT_ACTING_PC(ctx), &th) == 0) {
+            if (KosDynNode_IS_FINALLY(region) && th.finally_pc != KOS_EXTENT_NONE)
+              handler_pc = th.finally_pc;
+            else if (th.except_pc != KOS_EXTENT_NONE)
+              handler_pc = th.except_pc;
+          }
         }
+        if (KosDynNode_IS_TRY(region) || KosDynNode_IS_FINALLY(region)) {
+          if (KosStackBlock_ClearBlock(&CURRENT_STACK(ctx)) < 0)
+            return -1;
+        }
+        CURRENT_PC(ctx) = handler_pc;
+        if (KosDynNode_IS_TRY(region))
+          KosDynTry_ENABLED((KosDynTry *) region) = 0;
+        else
+          KosDynFinally_ENABLED((KosDynFinally *) region) = 0;
+        {
+          PyObject *typ = NULL, *val = NULL, *tb = NULL;
+          PyErr_Fetch(&typ, &val, &tb);
+          PyErr_SetExcInfo(typ, val, tb);
+          PyErr_Clear();
+        }
+        if (KosDynNode_IS_FINALLY(region))
+          KosDynFinally_HANDLING_RAISE((KosDynFinally *) region) = 1;
+        return 1;
       }
+      if (hr == KOS_HANDLE_ERROR)
+        return -1;
     }
+
+    /* PASS: unwind and pop */
     {
-      PyObject *typ = NULL, *val = NULL, *tb = NULL;
-      PyErr_Fetch(&typ, &val, &tb);
-      inject_eval_frame_traceback(ctx, &typ, &val, &tb);
-      PyErr_Clear();
-      KosEvent_KIND(out_ev) = KOS_EV_RAISE;
-      KosEvent_EXC_TYPE(out_ev) = typ;
-      KosEvent_PAYLOAD(out_ev) = val;
-      Py_XDECREF(tb);
-      KosContext_FLAGS(ctx) &= ~KOS_CTX_RUNNING;
-      KosContext_FLAGS(ctx) |= KOS_CTX_DEAD;
-      return 0;
+      int top_may_swallow = (top && KosDynNode_HAS_CAP(top, KOS_DYN_CAP_CATCH));
+      uint32_t catch_resume_pc = (uint32_t) -1;
+      if (top && top_may_swallow) {
+        if (KosDynNode_IS_CC(top))
+          catch_resume_pc = KosDynCC_RESUME_PC((KosDynCC *) top);
+        else if (KosDynNode_IS_WITH_OR_DYN_WITH(top))
+          catch_resume_pc = KosDynWith_RESUME_PC((KosDynWith *) top);
+      }
+      PyObject *saved_typ = NULL, *saved_val = NULL, *saved_tb = NULL;
+      int needs_preserve = (top && KosDynNode_HAS_CAP(top, KOS_DYN_CAP_PRESERVE_ERR_ACROSS_POP))
+          || (top && KosDynNode_HAS_CAP(top, KOS_DYN_CAP_BARRIER));
+      if (needs_preserve && PyErr_Occurred())
+        PyErr_Fetch(&saved_typ, &saved_val, &saved_tb);
+      int pop_res = kos_dyn_pop_top(ctx, KOS_XFER_EVENT_RAISE, out_ev);
+      if (saved_typ != NULL)
+        PyErr_Restore(saved_typ, saved_val, saved_tb);
+      if (pop_res == KOS_DYN_UNWIND_ASYNC_STARTED) {
+        KosContext_UNWIND_TARGET_FRAME(ctx) = CURRENT_FRAME(ctx);
+        return 1;
+      }
+      if (pop_res != 0) {
+        if (top && KosDynNode_HAS_CAP(top, KOS_DYN_CAP_HANDLES_EXCEPTIONS)) {
+          int exc_res = kos_dyn_exception_unwind(ctx, top, out_ev);
+          if (exc_res == KOS_DYN_UNWIND_ASYNC_STARTED) {
+            KosContext_UNWIND_TARGET_FRAME(ctx) = CURRENT_FRAME(ctx);
+            return 1;
+          }
+          if (exc_res == 1)
+            return 1;
+          if (exc_res == 0)
+            continue;
+        }
+        {
+          PyObject *typ = NULL, *val = NULL, *tb = NULL;
+          PyErr_Fetch(&typ, &val, &tb);
+          inject_eval_frame_traceback(ctx, &typ, &val, &tb);
+          PyErr_Clear();
+          KosEvent_KIND(out_ev) = KOS_EV_RAISE;
+          KosEvent_EXC_TYPE(out_ev) = typ;
+          KosEvent_PAYLOAD(out_ev) = val;
+          Py_XDECREF(tb);
+        }
+        KosContext_FLAGS(ctx) &= ~KOS_CTX_RUNNING;
+        KosContext_FLAGS(ctx) |= KOS_CTX_DEAD;
+        return 0;
+      }
+      if (top_may_swallow && ! PyErr_Occurred()) {
+        if (catch_resume_pc != (uint32_t) -1 && CURRENT_FRAME(ctx))
+          CURRENT_PC(ctx) = catch_resume_pc;
+        return 1;
+      }
     }
   }
 
-  uint32_t handler_pc = KosDynNode_IS_TRY(region) ? KosDynTry_HANDLER_PC((KosDynTry *) region) : KosDynFinally_HANDLER_PC((KosDynFinally *) region);
-  {
-    KosTryHandler th = {0};
-    if (kos_try_handler_for((PyObject *) CURRENT_CODE(ctx), CURRENT_ACTING_PC(ctx), &th) == 0) {
-      if (KosDynNode_IS_FINALLY(region) && th.finally_pc != KOS_EXTENT_NONE) {
-        handler_pc = th.finally_pc;
-      }
-      else if (th.except_pc != KOS_EXTENT_NONE) {
-        handler_pc = th.except_pc;
-      }
-    }
-  }
-
-  if (KosDynNode_IS_TRY(region) || KosDynNode_IS_FINALLY(region)) {
-    if (KosStackBlock_ClearBlock(&CURRENT_STACK(ctx)) < 0)
-      return -1;
-  }
-
-  CURRENT_PC(ctx) = handler_pc;
-  if (KosDynNode_IS_TRY(region)) KosDynTry_ENABLED((KosDynTry *) region) = 0; else KosDynFinally_ENABLED((KosDynFinally *) region) = 0;
-
-  /* Set aside exception in excinfo and clear so handler runs without PyErr set */
+  /* No handler found */
   {
     PyObject *typ = NULL, *val = NULL, *tb = NULL;
     PyErr_Fetch(&typ, &val, &tb);
-    PyErr_SetExcInfo(typ, val, tb);
+    inject_eval_frame_traceback(ctx, &typ, &val, &tb);
     PyErr_Clear();
+    KosEvent_KIND(out_ev) = KOS_EV_RAISE;
+    KosEvent_EXC_TYPE(out_ev) = typ;
+    KosEvent_PAYLOAD(out_ev) = val;
+    Py_XDECREF(tb);
+    KosContext_FLAGS(ctx) &= ~KOS_CTX_RUNNING;
+    KosContext_FLAGS(ctx) |= KOS_CTX_DEAD;
+    return 0;
   }
-
-  if (KosDynNode_IS_FINALLY(region))
-    KosDynFinally_HANDLING_RAISE((KosDynFinally *) region) = 1;
-
-  return 1;
 }
 
 
@@ -2376,9 +2130,6 @@ static KosEvalStep eval_phase_entry(
       case KOS_SUSP_YIELD:
         mode = raise_yield(ctx);
         break;
-      case KOS_SUSP_YIELD_FROM:
-        mode = raise_yield_from(ctx);
-        break;
       default:
         mode = KOS_MODE_NORMAL;
         break;
@@ -2390,9 +2141,6 @@ static KosEvalStep eval_phase_entry(
         break;
       case KOS_SUSP_YIELD:
         mode = revive_yield(ctx, send_val, throw_typ, throw_exc);
-        break;
-      case KOS_SUSP_YIELD_FROM:
-        mode = revive_yield_from(ctx, send_val, throw_typ, throw_exc);
         break;
       default:
         mode = revive_await(ctx, send_val, throw_typ, throw_exc);
@@ -2635,6 +2383,9 @@ static KosEvalStep eval_phase_post_opcode(
   if (KosEvent_KIND(out_ev) == KOS_EV_AWAIT) {
     KosContext_SUSPENSION_EVENT(ctx) = KOS_SUSP_AWAIT;
   } else if (KosEvent_KIND(out_ev) == KOS_EV_YIELD) {
+    /* YIELD transit: walk chain with handle(YIELD); GEN intercepts */
+    if (kos_dyn_walk_handle_yield(ctx, out_ev) < 0)
+      return KOS_STEP_FATAL_ERROR;
     KosContext_SUSPENSION_EVENT(ctx) = KOS_SUSP_YIELD;
   }
 

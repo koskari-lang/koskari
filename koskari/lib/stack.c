@@ -777,6 +777,76 @@ int KosStackBlock_PopTailPtr(
 }
 
 
+/* === KosStackSteal === */
+
+
+int KosStackSteal_Tail(
+    KosStackSteal *s,
+    size_t count,
+    KosStackBlock **block) {
+
+  if (! count) {
+    s->len = 0;
+    s->vals = s->fast;
+    return 0;
+  }
+
+  KosStackBlock *b = *block;
+  if (! b) {
+    PyErr_Format(PyExc_RuntimeError, "stack steal tail underrun."
+                 " requested: %zu, available: 0", count);
+    s->len = 0;
+    s->vals = s->fast;
+    return -1;
+  }
+
+  size_t len = b->len;
+  if (count > len) {
+    PyErr_Format(PyExc_RuntimeError, "stack steal tail underrun."
+                 " requested: %zu, available: %zu", count, len);
+    s->len = 0;
+    s->vals = s->fast;
+    return -1;
+  }
+
+  s->len = count;
+
+  if (count > KOS_STACK_STEAL_FAST_SIZE) {
+    s->vals = PyMem_Malloc(count * sizeof(PyObject *));
+    if (! s->vals) {
+      PyErr_NoMemory();
+      s->len = 0;
+      s->vals = s->fast;
+      return -1;
+    }
+  } else {
+    s->vals = s->fast;
+  }
+
+  while (count--) {
+    s->vals[count] = b->objs[--len];
+  }
+
+  b->len = len;
+  *block = b;
+
+  return 0;
+}
+
+
+void KosStackSteal_Free(KosStackSteal *s) {
+
+  for (size_t i = s->len; i--; )
+    Py_DECREF(s->vals[i]);
+
+  if (s->vals != s->fast)
+    PyMem_Free(s->vals);
+
+  s->len = 0;
+  s->vals = s->fast;
+}
+
+
 PyObject *KosStackBlock_PopTailDict(
     KosStackBlock **self,
     size_t count) {

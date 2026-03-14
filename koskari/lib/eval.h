@@ -124,14 +124,12 @@ typedef enum KosEventKind {
   KosSuspensionEvent records why the evaluator last suspended.
   Set when koskari_eval returns with KOS_EV_AWAIT, KOS_EV_YIELD, or
   YIELD_FROM boundary; cleared when execution starts or context is not suspended.
-  Used at entry to choose revive path (revive_plan, revive_await, revive_yield,
-  revive_yield_from).
+  Used at entry to choose revive path (revive_plan, revive_await, revive_yield).
 */
 typedef enum KosSuspensionEvent {
-  KOS_SUSP_NONE      = 0,
-  KOS_SUSP_AWAIT     = 1,
-  KOS_SUSP_YIELD     = 2,
-  KOS_SUSP_YIELD_FROM = 3,
+  KOS_SUSP_NONE   = 0,
+  KOS_SUSP_AWAIT  = 1,
+  KOS_SUSP_YIELD  = 2,
 } KosSuspensionEvent;
 
 
@@ -425,6 +423,10 @@ void kos_frame_free(KosFrame *frame);
   :param send_val: resume value when resuming from AWAIT/YIELD/YIELD_FROM; NULL on first call or when N/A
   :param throw_exc: exception to inject when resuming with throw (e.g. coroutine.throw()); NULL when resuming with value or on first call
 
+  When non-NULL, send_val and throw_typ/throw_exc are consumed (ownership
+  transferred). Caller must not use them after the call. Pass NULL to
+  borrow nothing.
+
   :return: 0 on success, -1 on internal error
 */
 int koskari_eval(KosContext *ctx, KosEvent *out_ev, PyObject *send_val, PyObject *throw_typ, PyObject *throw_exc);
@@ -509,9 +511,53 @@ extern PyObject *KoskariContinuationApply;
 extern PyObject *KoskariContinuationError;
 
 
+/* === KosContext_Call* : context-oriented call entry points === */
+
+/**
+   KosContext_Call: generic call entry point with vectorcall-style args.
+
+   Accepts any PyObject* callable. Performs KosCallable_Check; if true,
+   dispatches to KosCallable_Call after applying frame behavior per
+   wants_frame and tail_call. If false, invokes PyObject_Vectorcall and
+   kos_push_or_await.
+
+   Frame matrix (when KosCallable): wants_frame+tail -> reset; wants_frame+!tail
+   -> create; !wants_frame+tail -> drop; !wants_frame+!tail -> no change.
+
+   Caller must ensure stack is clear before calling when tail_call is true
+   (use KosStackSteal). callable, args, kwnames are borrowed.
+
+   Returns 0 continue, 1 suspend, -1 error. On tail_call success, may return
+   KOS_OP_RES_CONTROL_RETURNED to signal control returned (wind thunks).
+*/
+int KosContext_Call(KosContext *ctx, KosEvent *out_ev,
+    PyObject *callable,
+    PyObject *const *args, Py_ssize_t nargs, PyObject *kwnames,
+    int tail_call);
+
+/**
+   KosContext_CallArgs: generic call entry point with tuple+dict args.
+
+   Same semantics as KosContext_Call but for tuple+dict form. Use for
+   CALL_STAR, TAIL_CALL_STAR, wind after-thunk, dyn_with exit.
+
+   callable, args_tuple, kwds_dict are borrowed.
+*/
+int KosContext_CallArgs(KosContext *ctx, KosEvent *out_ev,
+    PyObject *callable, PyObject *args_tuple, PyObject *kwds_dict,
+    int tail_call);
+
+/**
+   KosContext_CallNoArgs: fast path for zero-argument calls.
+
+   Same semantics as KosContext_Call. Uses PyObject_CallNoArgs for
+   non-KosCallable path. callable is borrowed.
+*/
+int KosContext_CallNoArgs(KosContext *ctx, KosEvent *out_ev,
+    PyObject *callable, int tail_call);
+
+
 /* === Unit lifecycle === */
-
-
 
 
 /**
@@ -524,6 +570,9 @@ int kos_tail_koscall(KosContext *ctx, KosCode *code, PyObject *ns);
 /**
    Push val onto the current frame stack, or if val is awaitable run one step
    and either push the result or suspend with KOS_EV_AWAIT.
+
+   val is consumed (ownership transferred). Internal helper; stolen refs
+   are acceptable here.
 
    :return: 0 continue, 1 stop (AWAIT), -1 error
 */

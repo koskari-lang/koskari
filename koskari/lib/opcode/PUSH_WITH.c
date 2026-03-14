@@ -16,8 +16,8 @@
 /**
    PUSH_WITH: arg = constant pool index (name or None). Single-shot context
    manager. Stack before: [..., mgr]. Pop mgr, resolve enter/exit, push block,
-   push provisional KOS_DYN_WITH node, call enter (auto-await if awaitable),
-   bind result to name.
+   push provisional KOS_DYN_WITH node (push = link only), then wind (enter).
+   Wind may suspend (async enter); otherwise result is bound to name.
 */
 
 KOS_OP_HANDLER(PUSH_WITH) {
@@ -75,8 +75,8 @@ KOS_OP_HANDLER(PUSH_WITH) {
     return -1;
   }
 
-  int r = kos_callable_vcall(ctx, out_ev, enter, NULL, 0, NULL);
-  if (r == 1)
+  int r = kos_dyn_wind(ctx, (KosDynNode *) with_node, out_ev);
+  if (r == KOS_DYN_UNWIND_ASYNC_STARTED)
     return 1;
 
   if (r < 0) {
@@ -85,14 +85,7 @@ KOS_OP_HANDLER(PUSH_WITH) {
     return -1;
   }
 
-  PyObject *result = KosStackBlock_PopRef(&CURRENT_STACK(ctx));
-  if (! result) {
-    kos_dyn_pop_with(ctx, with_node);
-    KosStackBlock_DropBlock(&CURRENT_STACK(ctx));
-    return -1;
-  }
-
-  return finalize_provisional_with_enter(ctx, result, with_node);
+  return 0;
 }
 
 

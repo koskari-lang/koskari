@@ -17,7 +17,7 @@
    CALL_STAR: arg = bitflags (1 = has *args, 2 = has **kwargs). Stack:
    [callable, pos, kwd] with kwd at TOS. pos = *args (tuple or
    iterable); kwd = **kwargs (dict). Pop per opa bits, ensure pos is
-   tuple, call via kos_callable_call.
+   tuple, call via KosContext_CallArgs.
 */
 
 
@@ -110,22 +110,7 @@ KOS_OP_HANDLER(CALL_STAR) {
     kwd = NULL;
   }
 
-  int res = 0;
-  if (KosCallable_Check(fun)) {
-    res = kos_callable_call(ctx, out_ev, fun, pos, kwd);
-
-  } else {
-    PyObject *result = (kwd || PyTuple_GET_SIZE(pos))
-        ? PyObject_Call(fun, pos, kwd)
-        : PyObject_CallNoArgs(fun);
-
-    if (! result) {
-      res = -1;
-
-    } else {
-      res = kos_push_or_await(ctx, out_ev, result);
-    }
-  }
+  int res = KosContext_CallArgs(ctx, out_ev, fun, pos, kwd, 0);
 
   Py_DECREF(fun);
   Py_DECREF(pos);

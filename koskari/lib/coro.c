@@ -38,6 +38,34 @@ static PyObject *coro_str_close = NULL;
 /* === Run code as coroutine === */
 
 
+PyObject *KosAsyncGen_NewFromCodeAndNs(KosCode *code, PyObject *ns) {
+
+  KosDynGen *gen = kos_dyngen_new(NULL);
+  if (! gen) {
+    Py_DECREF(ns);
+    return NULL;
+  }
+  KosDynFrame *frame = kos_dynframe_new(
+      (KosDynNode *) gen, code, ns, NULL);
+  if (! frame) {
+    kos_dyngen_free(gen);
+    Py_DECREF(ns);
+    return NULL;
+  }
+  KosContext *ctx = kos_context_new(frame);
+  if (! ctx) {
+    kos_dynframe_free(frame);
+    kos_dyngen_free(gen);
+    return NULL;
+  }
+  PyObject *agen = KosPyAsyncGen_New(ctx);
+  if (! agen)
+    return NULL;
+  KosDynGen_OWNER(gen) = (PyObject *) agen;
+  return agen;
+}
+
+
 PyObject *KosCoroutine_NewFromCode(PyObject *code, PyObject *ns) {
 
   if (! KosCode_Check(code)) {
@@ -52,6 +80,10 @@ PyObject *KosCoroutine_NewFromCode(PyObject *code, PyObject *ns) {
   }
 
   Py_INCREF(ns);
+
+  if (KosCode_YIELDS((KosCode *) code))
+    return KosAsyncGen_NewFromCodeAndNs((KosCode *) code, ns);
+
   KosDynFrame *frame = kos_dynframe_new(NULL, (KosCode *) code, ns, NULL);
   if (! frame)
     return NULL;
@@ -61,9 +93,6 @@ PyObject *KosCoroutine_NewFromCode(PyObject *code, PyObject *ns) {
     kos_dynframe_free(frame);
     return NULL;
   }
-
-  if (KosCode_YIELDS((KosCode *) code))
-    return KosPyAsyncGen_New(ctx);
   return KosCoroutine_New(ctx);
 }
 

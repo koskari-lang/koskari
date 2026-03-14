@@ -180,9 +180,11 @@ static int kos_install_continuation(
     KosEvent *out_ev,
     PyObject *callable,
     PyObject *args_tuple,
-    PyObject *kwds_dict) {
+    PyObject *kwds_dict,
+    int tail_call) {
 
   (void) kwds_dict;
+  (void) tail_call;
   return call_call_continuation(ctx, callable, args_tuple, out_ev, NULL);
 }
 
@@ -204,7 +206,9 @@ KosCallableTypeObject KosPyDelimitedContinuationType = {
     .tp_base = KOS_CALLABLE_PYTYPE(KosCallableType),
   },
   .tp_kos_install = kos_install_continuation,
-  .tp_kos_tail_install = NULL,
+  .tp_kos_vinstall = NULL,
+  .tp_kos_wants_frame = 0,
+  .tp_kos_wants_frame_fn = NULL,
 };
 
 
@@ -373,7 +377,9 @@ KosCallableTypeObject KosPyContinuationType = {
     .tp_base = KOS_CALLABLE_PYTYPE(KosCallableType),
   },
   .tp_kos_install = kos_install_continuation,
-  .tp_kos_tail_install = NULL,
+  .tp_kos_vinstall = NULL,
+  .tp_kos_wants_frame = 0,
+  .tp_kos_wants_frame_fn = NULL,
 };
 
 

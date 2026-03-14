@@ -318,11 +318,16 @@ static PyObject *KosDemandSyncGenerator_New(KosContext *ctx) {
 
 
 /**
-   Base implementation: returns 0 (success), 1 (suspension, no exception),
-   or -1 (error, exception set). Never sets exception for suspension.
+  Base implementation: returns 0 (success), 1 (suspension, no exception),
+  or -1 (error, exception set). Never sets exception for suspension.
+
+  callable, args, kwargs are borrowed. Never decref them.
  */
-static int demand_sync_ex(PyObject *callable, PyObject *args,
-                          PyObject *kwargs, PyObject **out_result) {
+static int demand_sync_ex(
+    PyObject *callable,
+    PyObject *args,
+    PyObject *kwargs,
+    PyObject **out_result) {
 
   PyObject *frame_ns = NULL;
   KosDynFrame *frame = NULL;
@@ -349,12 +354,10 @@ static int demand_sync_ex(PyObject *callable, PyObject *args,
     SAYF("[demand_sync] kwargs = %R", kwargs);
 
     result = PyObject_Call(callable, args, kwargs);
-    if (! result)
-      goto ret_fail;
-
     *out_result = result;
-    return 0;
+    return result? 0: -1;
   }
+
   /* KosBoundMethod: unwrap and prepend self to args */
   if (KosBoundMethod_CheckExact(callable)) {
     PyObject *fn = KosBoundMethod_FUNC(callable);
@@ -385,10 +388,27 @@ static int demand_sync_ex(PyObject *callable, PyObject *args,
     PyObject *code = KosExpression_CODE(callable);
     PyObject *ns = KosExpression_NS(callable);
     Py_INCREF(ns);
-    frame = kos_dynframe_new(NULL, (KosCode *) code, ns, NULL);
-    if (! frame) {
-      Py_DECREF(ns);
-      goto ret_fail;
+    if (KosCode_YIELDS((KosCode *) code)) {
+      KosDynGen *gen_node = kos_dyngen_new(NULL);
+      if (! gen_node) {
+        Py_DECREF(ns);
+        goto ret_fail;
+      }
+      frame = kos_dynframe_new(
+          (KosDynNode *) gen_node, (KosCode *) code, ns, NULL);
+      if (! frame) {
+        kos_dyngen_free(gen_node);
+        Py_DECREF(ns);
+        goto ret_fail;
+      }
+      KosDynGen_OWNER(gen_node) = NULL;  /* demand_sync: no owner; yield = violation */
+    }
+    else {
+      frame = kos_dynframe_new(NULL, (KosCode *) code, ns, NULL);
+      if (! frame) {
+        Py_DECREF(ns);
+        goto ret_fail;
+      }
     }
     goto run_eval;
   }
@@ -406,18 +426,17 @@ static int demand_sync_ex(PyObject *callable, PyObject *args,
          frame_ns ? KosNamespace_Check(frame_ns) : 0);
 
     PyObject *code = KosFunction_CODE(callable);
-    frame = kos_dynframe_new(NULL, (KosCode *) code, frame_ns, NULL);
-    if (! frame)
-      goto ret_fail;
-    SAYF("[demand_sync] frame=%p KosDynFrame_NS(frame): ptr=%p type=%s "
-         "repr=%R is_namespace=%d",
-         (void *) frame,
-         (void *) KosDynFrame_NS(frame),
-         KosDynFrame_NS(frame) ? Py_TYPE(KosDynFrame_NS(frame))->tp_name : "NULL",
-         KosDynFrame_NS(frame),
-         KosDynFrame_NS(frame) ? KosNamespace_Check(KosDynFrame_NS(frame)) : 0);
 
     if (KosCode_YIELDS((KosCode *) code)) {
+      KosDynGen *gen_node = kos_dyngen_new(NULL);
+      if (! gen_node)
+        goto ret_fail;
+      frame = kos_dynframe_new(
+          (KosDynNode *) gen_node, (KosCode *) code, frame_ns, NULL);
+      if (! frame) {
+        kos_dyngen_free(gen_node);
+        goto ret_fail;
+      }
       ctx = kos_context_new(frame);
       frame = NULL;
       if (! ctx) {
@@ -430,10 +449,22 @@ static int demand_sync_ex(PyObject *callable, PyObject *args,
         kos_context_free(ctx);
         goto ret_fail;
       }
-      // Py_DECREF(args);
+      KosDynGen_OWNER(gen_node) = gen;
+      Py_XDECREF(call_args);
       *out_result = gen;
       return 0;
     }
+
+    frame = kos_dynframe_new(NULL, (KosCode *) code, frame_ns, NULL);
+    if (! frame)
+      goto ret_fail;
+    SAYF("[demand_sync] frame=%p KosDynFrame_NS(frame): ptr=%p type=%s "
+         "repr=%R is_namespace=%d",
+         (void *) frame,
+         (void *) KosDynFrame_NS(frame),
+         KosDynFrame_NS(frame) ? Py_TYPE(KosDynFrame_NS(frame))->tp_name : "NULL",
+         KosDynFrame_NS(frame),
+         KosDynFrame_NS(frame) ? KosNamespace_Check(KosDynFrame_NS(frame)) : 0);
 
     goto run_eval;
   }
@@ -498,12 +529,12 @@ run_eval:
   goto done;
 
 ret_fail:
-  Py_DECREF(call_args);
+  Py_XDECREF(call_args);
   *out_result = NULL;
   return -1;
 
 done:
-  Py_DECREF(call_args);
+  Py_XDECREF(call_args);
   *out_result = result;
   return result ? 0 : suspended ? 1 : -1;
 }

@@ -1,8 +1,8 @@
 # Koskari Evaluator: Operation and Control Flow
 
-This document describes the operation of the koskari eval loop in `koskari/lib/eval.c`: its stages, how opcodes are invoked and signal back, exception handling, transfer plans, tail calls, call installs, and resumption paths.
+This document describes the operation of the koskari eval loop in `koskari/lib/eval.c`: its stages, how opcodes are invoked and signal back, exception handling, control transit (event-driven handle/unwind model), transfer plans, tail calls, call installs, and resumption paths.
 
-Implementation reference: `koskari/lib/eval.c`, `koskari/lib/eval.h`, `koskari/lib/dynchain.h`, and `design/interpreter/evaluator.md`.
+Implementation reference: `koskari/lib/eval.c`, `koskari/lib/eval.h`, `koskari/lib/dynchain.h`, `design/interpreter/evaluator.md`, and `design/interpreter/dynnode-event-model.md`.
 
 ---
 
@@ -69,8 +69,8 @@ flowchart TD
     plan_check{"plan active?"}
     send_check{"send/throw<br/>NULL?"}
     revive_plan["revive_plan()<br/>→ EXCEPTION / TRANSFER / NORMAL"]
-    raise_xyz["raise_await / raise_yield /<br/>raise_yield_from<br/>resume w/o value"]
-    revive_xyz["revive_await / revive_yield /<br/>revive_yield_from<br/>→ EXCEPTION or NORMAL"]
+    raise_xyz["raise_await / raise_yield<br/>resume w/o value"]
+    revive_xyz["revive_await / revive_yield<br/>→ EXCEPTION or NORMAL"]
 
     entry --> plan_check
     plan_check -->|yes| revive_plan
@@ -81,7 +81,7 @@ flowchart TD
 
 **Revive paths:**
 - **revive_plan**: Resume a suspended transfer plan. If `throw_exc` set → `KOS_MODE_EXCEPTION`. Else inject `send_val` into plan → `KOS_MODE_TRANSFER`.
-- **revive_await / revive_yield / revive_yield_from**: If `throw_exc` → `PyErr_SetObject`, `KOS_MODE_EXCEPTION`. Else push `send_val` onto stack (if non-NULL), then `KOS_MODE_NORMAL`.
+- **revive_await / revive_yield**: If `throw_exc` → `PyErr_SetObject`, `KOS_MODE_EXCEPTION`. Else push `send_val` onto stack (if non-NULL), then `KOS_MODE_NORMAL`. YIELD_FROM uses these same revive paths (its phase selects AWAIT or YIELD); there is no separate `revive_yield_from` or `KOS_SUSP_YIELD_FROM`.
 
 **Mode dispatch outcomes:**
 - `KOS_MODE_EXCEPTION` → `try_local_exception_handler`; on success → `KOS_STEP_CONTINUE` or `KOS_STEP_STOP_EVENT` (AWAIT); on failure → `out_ev = KOS_EV_RAISE`, `KOS_STEP_STOP_EVENT`.
@@ -295,9 +295,40 @@ flowchart TD
 
 ---
 
-## 5. Transfer Plans
+## 5. Control Transit (Event-Driven Model)
 
-### 5.1 Transfer Plan Overview
+Control transits (RETURN, RAISE, YIELD, BREAK, CONTINUE, SHIFT) use a two-phase model: **handle()** then **unwind()**. Nodes are offered the event via `kos_dyn_handle` before being unwound. See `design/interpreter/dynnode-event-model.md` for the full design.
+
+### 5.1 handle(node, event)
+
+`kos_dyn_handle(ctx, node, event)` offers a control transit to each node. The node may:
+- **PASS** — pass through unchanged
+- **CONSUME** — handle the event (e.g. TRY catches RAISE, FINALLY consumes RETURN)
+- **DENY** — reject (e.g. generator boundary denies SHIFT)
+
+### 5.2 unwind(node, event)
+
+`kos_dyn_unwind` takes a `KosXferEvent` (RETURN, RAISE, YIELD, BREAK, CONTINUE, SHIFT) so nodes know *why* they are being torn down. Transfer-aware nodes (e.g. `dynamic-wind`) use this for after-thunks.
+
+### 5.3 Transit Types
+
+| Transit | Walk | Key functions |
+|---------|------|----------------|
+| RETURN | handle(RETURN) per node; FINALLY may overwrite value | `kos_dyn_walk_return_to_frame` |
+| RAISE | handle(RAISE); TRY/FINALLY catch | `process_raise` → `try_local_exception_handler`; `kos_dyn_handle` on unwind path |
+| YIELD | handle(YIELD) per node; generator boundary intercepts | `kos_dyn_walk_handle_yield` |
+| BREAK / CONTINUE | transfer_to_loop; unwind(node, event); handle on loop | `kos_dyn_transfer_to_loop` |
+| SHIFT | handle(SHIFT); prompt consumes; generator boundary denies | `kos_dyn_walk_handle_shift_to_prompt` |
+
+### 5.4 Generator Boundary Node
+
+`KOS_DYN_GEN` marks the generator boundary. It intercepts `handle(YIELD)` (captures dynchain, detaches, suspends) and denies `handle(SHIFT)` (cannot shift across generator).
+
+---
+
+## 6. Transfer Plans
+
+### 6.1 Transfer Plan Overview
 
 A **KosTransferPlan** is a list of actions that orchestrate continuation invocation, delimited return, or foreign-token unwind. The loop drains it via `run_transfer_plan_to_completion` → `kos_run_transfer_step`.
 
@@ -314,7 +345,7 @@ flowchart LR
     plan["KosTransferPlan"] --> steps
 ```
 
-### 5.2 Transfer Step Types
+### 6.2 Transfer Step Types
 
 | Step | Description |
 |------|-------------|
@@ -325,7 +356,7 @@ flowchart LR
 | `KOS_XFER_PUSH` | Append segment to current chain (graft). Used for delimited invoke. |
 | `KOS_XFER_TRUNCATE_AND_INJECT` | Free from top through node, set dyn_top to parent, push value. |
 
-### 5.3 kos_run_transfer_step Return Values
+### 6.3 kos_run_transfer_step Return Values
 
 | Value | Meaning |
 |-------|---------|
@@ -334,7 +365,7 @@ flowchart LR
 | **KOS_XFER_SUSPENDED_AWAIT** (2) | Step suspended on await; plan stays; driver resumes and feeds inject. |
 | **< 0** | Error; PyErr set; plan fails, `run_transfer_plan_to_completion` fills out_ev with KOS_EV_RAISE. |
 
-### 5.4 Call Sites for run_transfer_plan_to_completion
+### 6.4 Call Sites for run_transfer_plan_to_completion
 
 1. **eval_phase_transfer** — at loop start when plan is active.
 2. **Inside dispatch loop** — at each iteration top before phase 3.
@@ -342,14 +373,14 @@ flowchart LR
 
 ---
 
-## 6. Tail Calls and Call Installs
+## 7. Tail Calls and Call Installs
 
-### 6.1 Invocation Entry Points
+### 7.1 Invocation Entry Points
 
 - `kos_callable_call` — non-tail: look up `tp_kos_install`, invoke.
 - `kos_callable_tail_call` — tail: look up `tp_kos_tail_install`; if NULL, push empty frame + `tp_kos_install`.
 
-### 6.2 Install Slot Contract
+### 7.2 Install Slot Contract
 
 ```c
 int (*KosInstallFunc)(KosContext *ctx, KosEvent *out_ev,
@@ -362,7 +393,7 @@ int (*KosInstallFunc)(KosContext *ctx, KosEvent *out_ev,
 
 The install owns all frame setup: push new frame (non-tail) or reset current frame (tail). It does **not** recurse into `koskari_eval`; execution continues in the same loop.
 
-### 6.3 Tail Call Behavior
+### 7.3 Tail Call Behavior
 
 For `kos_callable_tail_call`:
 - If `tp_kos_tail_install` exists: it resets the current frame (code, ns, stack, pc) and returns 0.
@@ -370,54 +401,52 @@ For `kos_callable_tail_call`:
 
 TAIL_CALL opcodes return `KOS_OP_RES_CONTROL_RETURNED` when they install a new frame; `eval_phase_post_opcode` invokes `kos_dynnode_on_control_returned` for wind thunks.
 
-### 6.4 Transfer Plan Integration
+### 7.4 Transfer Plan Integration
 
 An install that invokes a continuation builds a transfer plan and sets `KosContext_PLAN(ctx) = plan`. The eval loop drains it on the next iteration. No recursion.
 
 ---
 
-## 7. Resume Paths
+## 8. Resume Paths
 
 ```mermaid
 flowchart LR
     subgraph events["SUSPENSION_EVENT"]
         AWAIT
         YIELD
-        YIELD_FROM
         NONE
     end
     subgraph revives["Revive function"]
         revive_await["revive_await"]
         revive_yield["revive_yield"]
-        revive_yield_from["revive_yield_from"]
         no_revive["—"]
     end
     AWAIT --> revive_await
     YIELD --> revive_yield
-    YIELD_FROM --> revive_yield_from
     NONE --> no_revive
 ```
 
-### 7.1 Suspension Event → Revive
+### 8.1 Suspension Event → Revive
 
 | `SUSPENSION_EVENT` | Revive function | Behavior |
 |--------------------|-----------------|----------|
 | `KOS_SUSP_AWAIT` | `revive_await` | Push send_val, complete pending WITH exit if applicable. |
 | `KOS_SUSP_YIELD` | `revive_yield` | Push send_val onto stack. |
-| `KOS_SUSP_YIELD_FROM` | `revive_yield_from` | Push send_val onto stack. |
 | `KOS_SUSP_NONE` | — | Fresh start or no-op resume. |
+
+YIELD_FROM emits only YIELD or AWAIT; its phase (KosYfPhase) selects which. There is no `KOS_SUSP_YIELD_FROM` or `revive_yield_from`.
 
 If `throw_typ`/`throw_exc` are set, any revive path calls `PyErr_SetObject` and yields `KOS_MODE_EXCEPTION`, which triggers `process_raise` at entry.
 
-### 7.2 Native Frame Handler
+### 8.2 Native Frame Handler
 
 When `CURRENT_FRAME(ctx)` has `native_handler != NULL`, the loop runs that handler as the frame evaluator instead of bytecode dispatch. On resume with `send_val`, entry delivers the value to the handler via `fn(ctx, out_ev, 1, val)`.
 
 ---
 
-## 8. Play-by-Play Scenarios
+## 9. Play-by-Play Scenarios
 
-### 8.1 Scenario: Simple Call and Return
+### 9.1 Scenario: Simple Call and Return
 
 1. Entry: `send_val == NULL`, `SUSPENSION_EVENT == NONE` → `KOS_MODE_NORMAL`.
 2. Transfer: no plan → skip.
@@ -427,7 +456,7 @@ When `CURRENT_FRAME(ctx)` has `native_handler != NULL`, the loop runs that handl
 6. Eventually RETURN in callee. Frame has parent → detach frame, push value onto parent, return 0. Loop continues in caller.
 7. Caller runs until top-level RETURN → `out_ev = KOS_EV_RETURN`, return 1 from opcode → STOP_EVENT.
 
-### 8.2 Scenario: Exception and Local Handler
+### 9.2 Scenario: Exception and Local Handler
 
 1. Opcode fails, sets PyErr. `op_res == -1`.
 2. Post-opcode: `PyErr_Occurred()` → `process_raise`.
@@ -435,7 +464,7 @@ When `CURRENT_FRAME(ctx)` has `native_handler != NULL`, the loop runs that handl
 4. `process_raise` returns `KOS_MODE_NORMAL`. Post-opcode sets `loop_continue = 1`, returns CONTINUE.
 5. Loop continues; next instruction is the except block.
 
-### 8.3 Scenario: Continuation Invoke (Own Token)
+### 9.3 Scenario: Continuation Invoke (Own Token)
 
 1. Python calls `cont(value)`. Cont raises `KoskariContinuationApply` targeting this context.
 2. `PyErr_Occurred()` at next loop top (or after opcode). `process_raise` runs.
@@ -444,7 +473,7 @@ When `CURRENT_FRAME(ctx)` has `native_handler != NULL`, the loop runs that handl
 5. Loop continues (or entry yields TRANSFER). `run_transfer_plan_to_completion` drains plan: unwind extents, install captured chain, inject value.
 6. Execution resumes at captured PC with value on stack.
 
-### 8.4 Scenario: AWAIT Suspend and Resume
+### 9.4 Scenario: AWAIT Suspend and Resume
 
 1. AWAIT opcode yields awaitable. Sets `out_ev = KOS_EV_AWAIT`, `py_await_iter = iter`, returns 1.
 2. Post-opcode tags `SUSPENSION_EVENT = AWAIT`, returns STOP_EVENT. Evaluator exits.
@@ -454,7 +483,7 @@ When `CURRENT_FRAME(ctx)` has `native_handler != NULL`, the loop runs that handl
 6. `revive_await` pushes result onto stack. If `PENDING_WITH_EXIT_NODE`, completes pending WITH exit.
 7. Mode = NORMAL. Loop continues; next instruction consumes the awaited value.
 
-### 8.5 Scenario: Tail Call
+### 9.5 Scenario: Tail Call
 
 1. TAIL_CALL opcode calls `kos_callable_tail_call`. Callable has `tp_kos_tail_install`.
 2. Install resets current frame (code, ns, stack, pc) for the new function, returns 0.
@@ -462,7 +491,7 @@ When `CURRENT_FRAME(ctx)` has `native_handler != NULL`, the loop runs that handl
 4. Post-opcode: `kos_dynnode_on_control_returned` runs (wind thunks if any). `loop_continue = 1`, CONTINUE.
 5. Loop continues; next instruction is first instruction of the new function (same frame, new content).
 
-### 8.6 Scenario: Transfer Plan Step Fails
+### 9.6 Scenario: Transfer Plan Step Fails
 
 1. Plan is draining. `kos_run_transfer_step` returns < 0 (e.g. exception in extent action).
 2. `run_transfer_plan_to_completion` fetches PyErr, calls `inject_eval_frame_traceback`, fills `out_ev` with KOS_EV_RAISE, sets context DEAD, returns -1.
@@ -470,7 +499,7 @@ When `CURRENT_FRAME(ctx)` has `native_handler != NULL`, the loop runs that handl
 
 ---
 
-## 9. Summary Table: Modes and Outcomes
+## 10. Summary Table: Modes and Outcomes
 
 | KosEvalMode | Source | Outcome |
 |-------------|--------|---------|
@@ -478,7 +507,7 @@ When `CURRENT_FRAME(ctx)` has `native_handler != NULL`, the loop runs that handl
 | TRANSFER | revive_plan, handle_continuation_apply | Drain plan, then dispatch |
 | EXCEPTION | throw on resume, revive_plan throw | process_raise → handler or RAISE |
 | RAISE | Stored KOS_EV_RAISE at entry | Fill out_ev, STOP_EVENT |
-| AWAIT / YIELD / YIELD_FROM | (Used internally for resume routing) | — |
+| AWAIT / YIELD | (Used internally for resume routing) | — |
 
 | KosEvalStep | Meaning |
 |-------------|---------|
@@ -488,9 +517,10 @@ When `CURRENT_FRAME(ctx)` has `native_handler != NULL`, the loop runs that handl
 
 ---
 
-## 10. Related Documentation
+## 11. Related Documentation
 
 - [design/interpreter/evaluator.md](interpreter/evaluator.md) — VM structures, C API reference
+- [design/interpreter/dynnode-event-model.md](interpreter/dynnode-event-model.md) — Event-driven handle/unwind model
 - [design/interpreter/ceval-exception-paths.md](interpreter/ceval-exception-paths.md) — Exception paths and trace injection
 - [design/api/special-call-protocol.md](api/special-call-protocol.md) — Install slots and invocation
 - [design/interpreter/execution-invariants.md](interpreter/execution-invariants.md) — Execution invariants

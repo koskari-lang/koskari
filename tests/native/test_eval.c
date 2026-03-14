@@ -1338,8 +1338,22 @@ static int make_simple_ctx(
     PyObject *ns = PyDict_New();
     if (! ns) { Py_DECREF(*code_obj_out); return -1; }
 
-    /* kos_dynframe_new steals the ns reference; do not Py_DECREF ns after this. */
-    KosDynFrame *frame = kos_dynframe_new(NULL, (KosCode *) *code_obj_out, ns, NULL);
+    KosDynFrame *frame;
+    if (KosCode_YIELDS((KosCode *) *code_obj_out)) {
+        KosDynGen *gen = kos_dyngen_new(NULL);
+        if (! gen) { Py_DECREF(*code_obj_out); return -1; }
+        frame = kos_dynframe_new(
+            (KosDynNode *) gen, (KosCode *) *code_obj_out, ns, NULL);
+        if (! frame) {
+            kos_dyngen_free(gen);
+            Py_DECREF(*code_obj_out);
+            return -1;
+        }
+        KosDynGen_OWNER(gen) = NULL;
+    }
+    else {
+        frame = kos_dynframe_new(NULL, (KosCode *) *code_obj_out, ns, NULL);
+    }
     if (! frame) { Py_DECREF(*code_obj_out); return -1; }
 
     *ctx_out = kos_context_new(frame);
