@@ -428,16 +428,6 @@ PyObject *kos_get_default_metaclass(void) {
 }
 
 
-/* === kostype_tp_dealloc === */
-
-
-static void kostype_tp_dealloc(PyObject *self) {
-  const char *name = ((PyTypeObject *) self)->tp_name;
-  SAYF("[KosType] dealloc: %s", name ? name : "<unknown>");
-  PyType_Type.tp_dealloc(self);
-}
-
-
 /* === KosTypeType === */
 
 
@@ -452,7 +442,7 @@ PyTypeObject KosTypeType = {
 
   .tp_new = kostype_tp_new,
   .tp_call = kostype_tp_call,
-  .tp_dealloc = kostype_tp_dealloc,
+  // .tp_dealloc = kostype_tp_dealloc,
   .tp_base = &PyType_Type,
   .tp_bases = NULL,
 };
