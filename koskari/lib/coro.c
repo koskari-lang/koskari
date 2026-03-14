@@ -52,6 +52,7 @@ PyObject *KosAsyncGen_NewFromCodeAndNs(KosCode *code, PyObject *ns) {
     Py_DECREF(ns);
     return NULL;
   }
+  KosDynGen_ACTIVE(gen) = (struct KosDynNode *) frame;
   KosContext *ctx = kos_context_new(frame);
   if (! ctx) {
     kos_dynframe_free(frame);
@@ -62,6 +63,8 @@ PyObject *KosAsyncGen_NewFromCodeAndNs(KosCode *code, PyObject *ns) {
   if (! agen)
     return NULL;
   KosDynGen_OWNER(gen) = (PyObject *) agen;
+  ((KosPyAsyncGen *) agen)->gen = (void *) gen;
+  kos_dyngen_acquire(gen);
   return agen;
 }
 

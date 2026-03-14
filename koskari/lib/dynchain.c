@@ -586,6 +586,8 @@ KosDynGen *kos_dyngen_new(PyObject *owner) {
   kos_dynnode_init((KosDynNode *) gen, KOS_DYN_GEN, NULL, 0);
   KosDynNode_FLAGS(gen) = KOS_DYNF_BOUNDARY;
   KosDynGen_OWNER(gen) = owner;  /* borrowed */
+  KosDynGen_ACTIVE(gen) = NULL;
+  KosDynGen_REFCOUNT(gen) = 1;
   return gen;
 }
 
@@ -595,7 +597,111 @@ void kos_dyngen_free(KosDynGen *gen) {
     return;
 
   KosDynGen_OWNER(gen) = NULL;
+  KosDynGen_ACTIVE(gen) = NULL;
   kos_dynnode_return_to_freelist((KosDynNode *) gen);
+}
+
+
+void kos_dyngen_acquire(KosDynGen *gen) {
+  if (gen)
+    KosDynGen_REFCOUNT(gen)++;
+}
+
+
+void kos_dyngen_release(KosDynGen *gen) {
+  if (! gen)
+    return;
+  if (KosDynGen_REFCOUNT(gen) == 0) {
+    PyErr_SetString(PyExc_RuntimeError,
+                    "kos_dyngen_release: refcount underflow");
+    return;
+  }
+  KosDynGen_REFCOUNT(gen)--;
+  if (KosDynGen_REFCOUNT(gen) == 0)
+    kos_dyngen_free(gen);
+}
+
+
+int kos_dyn_gen_install(KosContext *ctx, KosDynGen *gen) {
+  KosDynNode *active;
+  KosDynNode *n;
+
+  SAYF("[gen] install ENTER ctx=%p gen=%p dyn_top=%p ctx_dyn_top_kind=%s "
+       "active=%p",
+       (void *) ctx, (void *) gen,
+       (void *) KosContext_DYN_TOP(ctx),
+       KosContext_DYN_TOP(ctx)
+           ? kos_dynnode_kind_name(KosDynNode_KIND(KosContext_DYN_TOP(ctx)))
+           : "NULL",
+       (void *) KosDynGen_ACTIVE(gen));
+  if (KosDynGen_ACTIVE(gen)) {
+    SAY("[gen] install chain from active: ");
+    for (n = (KosDynNode *) KosDynGen_ACTIVE(gen); n; n = KosDynNode_PARENT(n))
+      SAYF("  %p %s -> ", (void *) n,
+           kos_dynnode_kind_name(KosDynNode_KIND(n)));
+    SAY("(end)");
+  }
+  if (! gen || ! ctx) {
+    PyErr_SetString(PyExc_RuntimeError, "NULL ctx or gen for gen_install");
+    return -1;
+  }
+  active = (KosDynNode *) KosDynGen_ACTIVE(gen);
+  if (! active) {
+    PyErr_SetString(PyExc_RuntimeError,
+                    "kos_dyn_gen_install: GEN has no active frame");
+    return -1;
+  }
+
+  /* 1. GEN's parent = current ctx's active node */
+  KosDynNode_PARENT(gen) = KosContext_DYN_TOP(ctx);
+  /* 2. Incref GEN */
+  kos_dyngen_acquire(gen);
+  /* 3. Put GEN's active onto ctx's active; 4. NULL GEN's active.
+   * Do NOT overwrite active->parent: the stored chain active -> ... -> gen
+   * is already intact (e.g. YIELD_FROM -> FRAME -> GEN). Overwriting
+   * would sever links when active is not a direct child of gen. */
+  KosContext_DYN_TOP(ctx) = active;
+  KosDynGen_ACTIVE(gen) = NULL;
+  KosContext_CHAIN_VERSION(ctx)++;
+  kos_update_frame_top(ctx);
+
+  if (KosStackBlock_PushRef(&KosDynFrame_STACK(KosContext_FRAME_TOP(ctx)),
+                            Py_None) < 0)
+    return -1;
+
+  SAYF("[gen] install DONE dyn_top=%p (%s) frame_top=%p chain: ",
+       (void *) KosContext_DYN_TOP(ctx),
+       KosContext_DYN_TOP(ctx)
+           ? kos_dynnode_kind_name(KosDynNode_KIND(KosContext_DYN_TOP(ctx)))
+           : "NULL",
+       (void *) KosContext_FRAME_TOP(ctx));
+  for (n = KosContext_DYN_TOP(ctx); n; n = KosDynNode_PARENT(n))
+    SAYF("%p %s -> ", (void *) n, kos_dynnode_kind_name(KosDynNode_KIND(n)));
+  SAY("(end)");
+  return 0;
+}
+
+
+/**
+   Unwind an exhausted gen from the consumer chain. Call when the gen's
+   frame does RETURN and parent is GEN (top-level return of generator).
+   Assumes ctx->dyn_top is the gen's frame, frame->parent is gen.
+   Frees the chain from frame down to gen, restores consumer, releases gen.
+*/
+int kos_dyn_gen_unwind_exhausted(KosContext *ctx) {
+  KosDynNode *frame = KosContext_DYN_TOP(ctx);
+  if (! frame || ! KosDynNode_IS_FRAME(frame))
+    return -1;
+  KosDynGen *gen = (KosDynGen *) KosDynNode_PARENT(frame);
+  if (! gen || ! KosDynNode_IS_GEN((KosDynNode *) gen))
+    return -1;
+  KosDynNode *consumer = KosDynNode_PARENT(gen);
+  kos_dynchain_free(frame, (KosDynNode *) gen);
+  KosContext_DYN_TOP(ctx) = consumer;
+  KosContext_CHAIN_VERSION(ctx)++;
+  kos_update_frame_top(ctx);
+  kos_dyngen_release(gen);
+  return 0;
 }
 
 
@@ -2151,7 +2257,7 @@ void kos_dynnode_free(KosDynNode *node) {
       kos_dyn_cc_raise_free((KosDynCCRaise *) node);
       break;
     case KOS_DYN_GEN:
-      kos_dyngen_free((KosDynGen *) node);
+      kos_dyngen_release((KosDynGen *) node);
       break;
     case KOS_DYN_COLLECT:
       kos_dyncollect_free((KosDynCollect *) node);
@@ -2229,14 +2335,19 @@ KosDynNode *kos_clone_chain_segment(KosDynNode *top, KosDynNode *stop) {
 */
 static void kos_update_frame_top(KosContext *ctx) {
   KosDynNode *node = KosContext_DYN_TOP(ctx);
+  KosContext_FRAME_TOP(ctx) = NULL;
   while (node) {
     if (KosDynNode_IS_FRAME(node)) {
       KosContext_FRAME_TOP(ctx) = (KosDynFrame *) node;
+      SAYF("[gen] update_frame_top dyn_top=%p -> frame_top=%p (%s)\n",
+           (void *) KosContext_DYN_TOP(ctx), (void *) node,
+           kos_dynnode_kind_name(KosDynNode_KIND(node)));
       return;
     }
     node = KosDynNode_PARENT(node);
   }
-  KosContext_FRAME_TOP(ctx) = NULL;
+  SAYF("[gen] update_frame_top dyn_top=%p -> frame_top=NULL (no frame in chain)\n",
+       (void *) KosContext_DYN_TOP(ctx));
 }
 
 
@@ -2606,14 +2717,100 @@ KosHandleResult kos_dyn_handle(KosContext *ctx, KosDynNode *node,
 }
 
 
-int kos_dyn_walk_handle_yield(KosContext *ctx, KosEvent *out_ev) {
+static int kos_dyn_gen_freeze_and_release(KosContext *ctx, KosDynGen *gen,
+                                          KosEvent *out_ev) {
+  KosDynNode *saved_parent;
+  KosDynNode *ctx_active;
+  KosDynNode *node;
+  KosDynNode *n;
+  PyObject *owner;
 
+  SAYF("[gen] freeze ENTER ctx=%p gen=%p dyn_top=%p (%s) gen_parent=%p\n",
+       (void *) ctx, (void *) gen,
+       (void *) KosContext_DYN_TOP(ctx),
+       KosContext_DYN_TOP(ctx)
+           ? kos_dynnode_kind_name(KosDynNode_KIND(KosContext_DYN_TOP(ctx)))
+           : "NULL",
+       (void *) KosDynNode_PARENT(gen));
+  if (KosContext_DYN_TOP(ctx)) {
+    SAY("[gen] freeze chain from dyn_top: ");
+    for (n = KosContext_DYN_TOP(ctx); n; n = KosDynNode_PARENT(n))
+      SAYF("%p %s -> ", (void *) n, kos_dynnode_kind_name(KosDynNode_KIND(n)));
+    SAY("(end)");
+  }
+  if (! KosContext_DYN_TOP(ctx)) {
+    PyErr_SetString(PyExc_RuntimeError,
+                    "kos_dyn_gen_freeze: no dyn_top");
+    return -1;
+  }
+  for (node = KosContext_DYN_TOP(ctx); node; node = KosDynNode_PARENT(node)) {
+    if (node == (KosDynNode *) gen)
+      break;
+  }
+  if (! node) {
+    PyErr_SetString(PyExc_RuntimeError,
+                    "kos_dyn_gen_freeze: gen not in chain from dyn_top");
+    return -1;
+  }
+
+  (void) out_ev;
+
+  /* 1. Record GEN's parent, then remove the GEN->parent link */
+  saved_parent = KosDynNode_PARENT(gen);
+  KosDynNode_PARENT(gen) = NULL;
+
+  /* 2. Remove ctx's active node and store it in GEN */
+  ctx_active = KosContext_DYN_TOP(ctx);
+  KosDynGen_ACTIVE(gen) = ctx_active;
+  SAY("[gen] freeze storing in gen->active: chain ");
+  for (n = ctx_active; n; n = KosDynNode_PARENT(n))
+    SAYF("%p %s -> ", (void *) n, kos_dynnode_kind_name(KosDynNode_KIND(n)));
+  SAY("(end)");
+
+  /* 3. Put GEN's old parent onto ctx's active */
+  KosContext_DYN_TOP(ctx) = saved_parent;
+  KosContext_CHAIN_VERSION(ctx)++;
+  kos_update_frame_top(ctx);
+
+  owner = KosDynGen_OWNER(gen);
+  if (owner) {
+    if (KosPyAsyncGen_Check(owner))
+      ((KosPyAsyncGen *) owner)->gen = (void *) gen;
+    KosContext_RESUME_GEN(ctx) = gen;
+  }
+
+  kos_dyngen_release(gen);
+  SAYF("[gen] freeze DONE ctx->dyn_top=%p (%s) frame_top=%p resume_gen=%p "
+       "owner=%p\n",
+       (void *) KosContext_DYN_TOP(ctx),
+       KosContext_DYN_TOP(ctx)
+           ? kos_dynnode_kind_name(KosDynNode_KIND(KosContext_DYN_TOP(ctx)))
+           : "NULL",
+       (void *) KosContext_FRAME_TOP(ctx),
+       (void *) KosContext_RESUME_GEN(ctx),
+       (void *) owner);
+  return 0;
+}
+
+
+int kos_dyn_walk_handle_yield(KosContext *ctx, KosEvent *out_ev) {
   KosDynNode *node = KosContext_DYN_TOP(ctx);
+
+  SAYF("[gen] walk_handle_yield ENTER dyn_top=%p\n", (void *) node);
   while (node) {
     KosHandleResult hr = kos_dyn_handle(ctx, node, KOS_XFER_EVENT_YIELD,
                                         out_ev);
-    if (hr == KOS_HANDLE_CONSUMED)
+    SAYF("[gen] walk_handle_yield node=%p kind=%s hr=%d\n",
+         (void *) node, kos_dynnode_kind_name(KosDynNode_KIND(node)),
+         (int) hr);
+    if (hr == KOS_HANDLE_CONSUMED) {
+      if (KosDynNode_IS_GEN(node)) {
+        SAYF("[gen] walk_handle_yield -> freeze at gen %p\n", (void *) node);
+        return kos_dyn_gen_freeze_and_release(ctx, (KosDynGen *) node, out_ev);
+      }
+      SAY("[gen] walk_handle_yield -> consumed (non-GEN), return 0");
       return 0;
+    }
     if (hr == KOS_HANDLE_ERROR)
       return -1;
     node = KosDynNode_PARENT(node);
@@ -3004,18 +3201,32 @@ KosDynYieldFrom *kos_dyn_push_yield_from(
 
   KosContext_DYN_TOP(ctx) = (KosDynNode *) node;
   KosContext_CHAIN_VERSION(ctx)++;
+  kos_update_frame_top(ctx);
+  SAYF("[gen] push_yield_from done dyn_top=%p parent=%p (%s) frame_top=%p\n",
+       (void *) node, (void *) KosDynNode_PARENT(node),
+       KosDynNode_PARENT(node)
+           ? kos_dynnode_kind_name(KosDynNode_KIND(KosDynNode_PARENT(node)))
+           : "NULL",
+       (void *) KosContext_FRAME_TOP(ctx));
   return node;
 }
 
 
 void kos_dyn_pop_yield_from(KosContext *ctx, KosDynYieldFrom *node) {
-
+  SAYF("[gen] pop_yield_from node=%p dyn_top=%p\n",
+       (void *) node, (void *) KosContext_DYN_TOP(ctx));
   if (! KosContext_DYN_TOP(ctx) || KosContext_DYN_TOP(ctx) != (KosDynNode *) node) {
+    SAY("[gen] pop_yield_from no-op (mismatch or null)");
     return;
   }
   KosContext_DYN_TOP(ctx) = KosDynNode_PARENT(node);
   KosContext_CHAIN_VERSION(ctx)++;
   kos_dynyieldfrom_free(node);
+  SAYF("[gen] pop_yield_from done dyn_top=%p (%s)\n",
+       (void *) KosContext_DYN_TOP(ctx),
+       KosContext_DYN_TOP(ctx)
+           ? kos_dynnode_kind_name(KosDynNode_KIND(KosContext_DYN_TOP(ctx)))
+           : "NULL");
 }
 
 
@@ -5037,9 +5248,13 @@ int kos_dynnode_traverse(KosDynNode *node, visitproc visit, void *arg) {
       Py_VISIT(KosDynCCRaise_EXC_TYPE(node));
       Py_VISIT(KosDynCCRaise_EXC_VAL(node));
       break;
-    case KOS_DYN_GEN:
+    case KOS_DYN_GEN: {
       Py_VISIT(KosDynGen_OWNER((KosDynGen *) node));
+      if (KosDynGen_ACTIVE((KosDynGen *) node))
+        return dynnode_traverse_frame(
+            KosDynGen_ACTIVE((KosDynGen *) node), visit, arg);
       break;
+    }
     case KOS_DYN_TRY:
     case KOS_DYN_FINALLY:
     case KOS_DYN_LOOP:

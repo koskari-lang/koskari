@@ -32,12 +32,120 @@
 /* === KosPyAsyncGen type === */
 
 
+/**
+   Teardown a frozen async generator: throw GeneratorExit, run to completion,
+   or fall back to pure cleanup if the gen attempts to suspend (yield/await).
+
+   Assumes agen is frozen: agen->gen set, GEN.active holds chain,
+   KosContext_DYN_TOP(agen->ctx) == NULL.
+
+   On success (primary path): chain unwound, gen released, ctx ready for free.
+   On fallback: chain freed, gen released, ctx ready for free.
+   Does not free ctx; caller does that.  For clear, caller also sets
+   agen->gen = NULL and agen->ctx = NULL.
+*/
+static void asyncgen_teardown_frozen(KosPyAsyncGen *agen) {
+  KosDynGen *gen = (KosDynGen *) agen->gen;
+  KosContext *ctx = agen->ctx;
+  KosDynNode *active;
+  PyObject *throw_exc = NULL;
+  KosEvent ev = {0};
+  int res;
+
+  if (! gen || ! KosDynGen_ACTIVE(gen)) {
+    /* No active chain; release and let caller free ctx */
+    if (gen)
+      kos_dyngen_release(gen);
+    agen->gen = NULL;
+    return;
+  }
+
+  throw_exc = PyObject_CallNoArgs(PyExc_GeneratorExit);
+  if (! throw_exc) {
+    PyErr_Clear();
+    goto fallback;
+  }
+
+  res = koskari_eval(ctx, &ev, NULL, PyExc_GeneratorExit, throw_exc);
+  Py_DECREF(throw_exc);
+
+  if (res < 0) {
+    /* Exception path: clear GeneratorExit or StopIteration (success) */
+    if (PyErr_ExceptionMatches(PyExc_GeneratorExit)
+        || PyErr_ExceptionMatches(PyExc_StopIteration)) {
+      PyErr_Clear();
+      goto primary_success;
+    }
+    PyErr_Clear();
+    goto fallback;
+  }
+
+  if (KosEvent_KIND(&ev) == KOS_EV_AWAIT || KosEvent_KIND(&ev) == KOS_EV_YIELD) {
+    /* Suspend attempt during close; cannot honor */
+    if (KosEvent_PAYLOAD(&ev))
+      Py_DECREF(KosEvent_PAYLOAD(&ev));
+    if (KosEvent_EXC_TYPE(&ev))
+      Py_DECREF(KosEvent_EXC_TYPE(&ev));
+    goto fallback;
+  }
+
+  if (KosEvent_KIND(&ev) == KOS_EV_RETURN) {
+    if (KosEvent_PAYLOAD(&ev))
+      Py_DECREF(KosEvent_PAYLOAD(&ev));
+    goto primary_success;
+  }
+
+  if (KosEvent_KIND(&ev) == KOS_EV_RAISE) {
+    if (PyErr_ExceptionMatches(PyExc_GeneratorExit)
+        || PyErr_ExceptionMatches(PyExc_StopIteration)) {
+      PyErr_Clear();
+    } else {
+      PyErr_Clear();
+    }
+    if (KosEvent_PAYLOAD(&ev))
+      Py_DECREF(KosEvent_PAYLOAD(&ev));
+    if (KosEvent_EXC_TYPE(&ev))
+      Py_DECREF(KosEvent_EXC_TYPE(&ev));
+    goto primary_success;
+  }
+
+  /* Unexpected event */
+  if (KosEvent_PAYLOAD(&ev))
+    Py_DECREF(KosEvent_PAYLOAD(&ev));
+  if (KosEvent_EXC_TYPE(&ev))
+    Py_DECREF(KosEvent_EXC_TYPE(&ev));
+  goto fallback;
+
+primary_success:
+  if (kos_dyn_gen_unwind_exhausted(ctx) < 0) {
+    goto fallback;
+  }
+  agen->gen = NULL;
+  return;
+
+fallback:
+  PyErr_Clear();
+  active = (KosDynNode *) KosDynGen_ACTIVE(gen);
+  KosDynGen_ACTIVE(gen) = NULL;
+  if (active)
+    kos_dynchain_free(active, (KosDynNode *) gen);
+  kos_dyngen_release(gen);
+  agen->gen = NULL;
+}
+
+
 static void asyncgen_dealloc(PyObject *self) {
 
   PyObject_GC_UnTrack(self);
 
   KosPyAsyncGen *agen = (KosPyAsyncGen *) self;
 
+  if (agen->gen && agen->ctx && ! KosContext_DYN_TOP(agen->ctx)) {
+    asyncgen_teardown_frozen(agen);
+  } else if (agen->gen) {
+    kos_dyngen_release((KosDynGen *) agen->gen);
+    agen->gen = NULL;
+  }
   if (agen->ctx)
     kos_context_free(agen->ctx);
 
@@ -48,10 +156,15 @@ static void asyncgen_dealloc(PyObject *self) {
 static int asyncgen_traverse(PyObject *self, visitproc visit, void *arg) {
 
   KosPyAsyncGen *agen = (KosPyAsyncGen *) self;
+  int res;
 
-  if (agen->ctx) {
-    return kos_context_traverse(agen->ctx, visit, arg);
+  if (agen->gen && agen->ctx && ! KosContext_DYN_TOP(agen->ctx)) {
+    res = kos_dynnode_traverse((KosDynNode *) agen->gen, visit, arg);
+    if (res)
+      return res;
   }
+  if (agen->ctx)
+    return kos_context_traverse(agen->ctx, visit, arg);
 
   return 0;
 }
@@ -61,6 +174,12 @@ static int asyncgen_clear(PyObject *self) {
 
   KosPyAsyncGen *agen = (KosPyAsyncGen *) self;
 
+  if (agen->gen && agen->ctx && ! KosContext_DYN_TOP(agen->ctx)) {
+    asyncgen_teardown_frozen(agen);
+  } else if (agen->gen) {
+    kos_dyngen_release((KosDynGen *) agen->gen);
+    agen->gen = NULL;
+  }
   if (agen->ctx) {
     kos_context_free(agen->ctx);
     agen->ctx = NULL;

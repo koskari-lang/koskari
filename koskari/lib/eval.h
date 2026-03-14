@@ -286,6 +286,9 @@ struct KosContext {
   PyObject *pending_agen_default;  /* default value for 2-arg NEXT (or NULL) */
   int pending_agen_n;       /* 1 or 2 for NEXT; 0 for ITER_NEXT (ITER_NEXT exhausted path reads from region) */
 
+  /* --- Resume from YIELD: GEN to install when reviving (agen path) --- */
+  KosDynGen *resume_gen;     /* set during freeze; cleared after install on revive */
+
   uint32_t flags;            /* KosContextFlags */
 
   struct KosContext *context_freelist_next;  /* link when on context freelist only */
@@ -332,6 +335,7 @@ struct KosContext {
 #define KosContext_PENDING_AGEN(c)           (((KosContext *)(c))->pending_agen)
 #define KosContext_PENDING_AGEN_DEFAULT(c)   (((KosContext *)(c))->pending_agen_default)
 #define KosContext_PENDING_AGEN_N(c)         (((KosContext *)(c))->pending_agen_n)
+#define KosContext_RESUME_GEN(c)             (((KosContext *)(c))->resume_gen)
 
 #define KosContext_FLAGS(c)                  (((KosContext *)(c))->flags)
 #define KosContext_FREELIST_NEXT(c)          (((KosContext *)(c))->context_freelist_next)

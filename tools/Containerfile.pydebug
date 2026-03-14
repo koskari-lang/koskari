@@ -1,0 +1,18 @@
+# Use a Debian base for building
+FROM debian:bookworm-slim AS builder
+
+RUN apt-get update && apt-get install -y \
+    gcc make zlib1g-dev libffi-dev libssl-dev wget
+
+# Download and build Python with debug flags
+RUN wget https://www.python.org/ftp/python/3.12.2/Python-3.12.2.tgz \
+    && tar -xf Python-3.12.2.tgz \
+    && cd Python-3.12.2 \
+    && ./configure --with-py-debug \
+    && make -j$(nproc) \
+    && make install
+
+FROM debian:bookworm-slim
+COPY --from=builder /usr/local /usr/local
+RUN ldconfig
+CMD ["python3"]
