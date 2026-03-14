@@ -328,51 +328,55 @@ static int demand_sync_ex(PyObject *callable, PyObject *args,
   KosDynFrame *frame = NULL;
   KosContext *ctx = NULL;
   KosEvent ev = { 0 };
-  int r;
+  int r = 0;
   int suspended = 0;
   PyObject *result = NULL;
 
-  if (! args) {
-    args = PyTuple_New(0);
-    if (! args)
-      goto ret_fail;
-  }
+  PyObject *call_args = NULL;
 
+  // if (! args) {
+  //   args = PyTuple_New(0);
+  //   if (! args)
+  //     goto ret_fail;
+  // }
+
+  SAYF("[demand_sync] callable = %R", callable);
+
+  /* Plain Python (not KosCallable): direct call, reject awaitable */
+  if (! KosCallable_Check(callable)) {
+    SAYF("[demand_sync] Plain Python (not KosCallable): callable = %R", callable);
+    SAYF("[demand_sync] args = %R", args);
+    SAYF("[demand_sync] kwargs = %R", kwargs);
+
+    result = PyObject_Call(callable, args, kwargs);
+    if (! result)
+      goto ret_fail;
+
+    *out_result = result;
+    return 0;
+  }
   /* KosBoundMethod: unwrap and prepend self to args */
   if (KosBoundMethod_CheckExact(callable)) {
     PyObject *fn = KosBoundMethod_FUNC(callable);
     PyObject *self = KosBoundMethod_SELF(callable);
-    PyObject *new_args = PyTuple_Pack(1, self);
-    if (! new_args)
+    PyObject *tmp = PyTuple_Pack(1, self);
+    if (! tmp)
       goto ret_fail;
-    PyObject *cat = PySequence_Concat(new_args, args);
-    Py_DECREF(new_args);
-    if (! cat)
-      goto ret_fail;
-    Py_DECREF(args);
-    args = cat;
-    callable = fn;
-  }
 
-  /* Plain Python (not KosCallable): direct call, reject awaitable */
-  if (! KosCallable_Check(callable)) {
-    result = PyObject_Call(callable, args, kwargs);
-    if (! result)
+    call_args = PySequence_Concat(tmp, args);
+    Py_DECREF(tmp);
+    if (! call_args)
       goto ret_fail;
-    {
-      PyTypeObject *res_type = Py_TYPE(result);
-      if (res_type->tp_as_async && res_type->tp_as_async->am_await) {
-        Py_DECREF(result);
-        result = NULL;
-        suspended = 1;
-      }
-    }
-    goto done;
+    callable = fn;
+
+  } else {
+    call_args = args;
+    Py_INCREF(call_args);
   }
 
   /* KosExpression */
   if (KosExpression_CheckExact(callable)) {
-    if (PyTuple_GET_SIZE(args) != 0
+    if (PyTuple_GET_SIZE(call_args) != 0
         || (kwargs && PyDict_Size(kwargs) != 0)) {
       PyErr_SetString(PyExc_TypeError,
                       "Expression takes no arguments");
@@ -408,12 +412,7 @@ static int demand_sync_ex(PyObject *callable, PyObject *args,
 
   /* KosFunction */
   if (KosFunction_CheckExact(callable)) {
-    PyObject *kw = kwargs ? kwargs : PyDict_New();
-    if (! kw)
-      goto ret_fail;
-    frame_ns = KosFunction_PrepareCallNamespace(callable, args, kw);
-    if (kw != kwargs)
-      Py_DECREF(kw);
+    frame_ns = KosFunction_PrepareCallNamespace(callable, call_args, kwargs);
     if (! frame_ns)
       goto ret_fail;
     SAYF("[demand_sync] frame_ns from PrepareCallNamespace: ptr=%p type=%s "
@@ -422,6 +421,7 @@ static int demand_sync_ex(PyObject *callable, PyObject *args,
          frame_ns ? Py_TYPE(frame_ns)->tp_name : "NULL",
          frame_ns,
          frame_ns ? KosNamespace_Check(frame_ns) : 0);
+
     PyObject *code = KosFunction_CODE(callable);
 
     if (KosCode_YIELDS((KosCode *) code)) {
@@ -447,7 +447,7 @@ static int demand_sync_ex(PyObject *callable, PyObject *args,
         goto ret_fail;
       }
       KosDynGen_OWNER(gen_node) = gen;
-      Py_DECREF(args);
+      // Py_DECREF(args);
       *out_result = gen;
       return 0;
     }
@@ -526,12 +526,12 @@ run_eval:
   goto done;
 
 ret_fail:
-  Py_DECREF(args);
+  Py_DECREF(call_args);
   *out_result = NULL;
   return -1;
 
 done:
-  Py_DECREF(args);
+  Py_DECREF(call_args);
   *out_result = result;
   return result ? 0 : suspended ? 1 : -1;
 }
@@ -553,7 +553,7 @@ static PyObject *demand_sync_impl(PyObject *callable, PyObject *args,
   if (r == 1) {
     PyErr_Format(KoskariSyncViolation,
                  "async suspension is not allowed in demand_sync");
-    // return NULL;
+    // fall-through to return result
   }
   return result;
 }
@@ -643,7 +643,7 @@ int koskari_sync_init(PyObject *mod) {
   if (PyType_Ready(&KosDemandSyncGeneratorType) < 0)
     return -1;
 
-  demand_sync_func = PyCFunction_New(&demand_sync_methoddef, NULL);
+  demand_sync_func = PyCFunction_New(&demand_sync_methoddef, mod);
   if (! demand_sync_func)
     return -1;
   if (PyDict_SetItemString(dict, "demand_sync", demand_sync_func) < 0) {
@@ -666,23 +666,18 @@ int koskari_sync_init(PyObject *mod) {
   if (! sync_mod)
     return -1;
 
-  as_coroutine_func = PyObject_GetAttrString(sync_mod, "as_coroutine");
   run_sync_func = PyObject_GetAttrString(sync_mod, "run_sync");
   iter_sync_func = PyObject_GetAttrString(sync_mod, "iter_sync");
   Py_DECREF(sync_mod);
 
-  if (! as_coroutine_func || ! run_sync_func || ! iter_sync_func) {
-    Py_XDECREF(as_coroutine_func);
+  if (! run_sync_func || ! iter_sync_func) {
     Py_XDECREF(run_sync_func);
     Py_XDECREF(iter_sync_func);
-    as_coroutine_func = NULL;
     run_sync_func = NULL;
     iter_sync_func = NULL;
     return -1;
   }
 
-  if (PyDict_SetItemString(dict, "as_coroutine", as_coroutine_func))
-    return -1;
   if (PyDict_SetItemString(dict, "run_sync", run_sync_func))
     return -1;
   if (PyDict_SetItemString(dict, "iter_sync", iter_sync_func))

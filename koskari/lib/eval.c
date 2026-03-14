@@ -2734,7 +2734,7 @@ int koskari_eval(KosContext *ctx, KosEvent *out_ev, PyObject *send_val, PyObject
 #if KOS_STACK_TRACE
     trace_stack("  before", CURRENT_STACK(ctx));
 #endif
-    KosDispatchCtx dc;
+    KosDispatchCtx dc = {0};
     {
       KosEvalStep pds = eval_phase_prepare_dispatch(ctx, out_ev, &dc);
       if (pds == KOS_STEP_FATAL_ERROR) {
