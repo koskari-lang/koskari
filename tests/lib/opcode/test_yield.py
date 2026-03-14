@@ -240,4 +240,61 @@ class TestYieldKoskariCallPath(CevalTest):
         self.assertEqual(result, 42)
 
 
+class TestAgenDeallocWhenFrozen(CevalTest):
+    """
+    Phase 8: Agen freed while suspended runs GeneratorExit teardown
+    """
+
+    async def test_drop_agen_at_yield_gc_no_crash(self):
+        """
+        Create agen, advance to first yield, drop all refs, gc collects.
+        No crash; proper cleanup.
+        """
+        import gc
+
+        code, ns = build_expr([
+            ["CONST", 42],
+            ["YIELD", 1],
+            ["RETURN", 0],
+        ])
+        expr = make_callable(code, ns)
+        agen = expr()
+        self.assertIsInstance(agen, AsyncGenerator)
+        v = await anext(agen)
+        self.assertEqual(v, 42)
+        del agen
+        gc.collect()
+
+    async def test_agen_try_finally_runs_on_close(self):
+        """
+        Agen with try/finally in body; advance to yield; drop refs.
+        Verify finally runs during GeneratorExit teardown.
+        """
+        import gc
+
+        ran = {}
+        code, ns = build_expr([
+            ["PUSH_FINALLY", "fin"],
+            ["CONST", 1],
+            ["YIELD", 1],
+            ["LABEL", "fin"],
+            ["VAR", "ran"],
+            ["CONST", True],
+            ["CONST_ITEM_STORE", "done"],
+            ["EXCEPTION", 0],
+            ["POP_FINALLY", 0],
+            ["RAISE", 1],
+        ], values={"ran": ran})
+        expr = make_callable(code, ns)
+        agen = expr()
+        self.assertIsInstance(agen, AsyncGenerator)
+        v = await anext(agen)
+        self.assertEqual(v, 1)
+        self.assertNotIn("done", ran)
+        del agen
+        gc.collect()
+        self.assertIn("done", ran)
+        self.assertIs(ran["done"], True)
+
+
 # The end.
