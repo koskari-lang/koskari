@@ -166,7 +166,9 @@ static int kos_install_expression(
     PyObject *kwds_dict,
     int tail_call) {
 
+  (void) out_ev;
   (void) tail_call;
+
   if (args_tuple && PyTuple_GET_SIZE(args_tuple) != 0) {
     PyErr_SetString(PyExc_TypeError, "Expression takes no arguments");
     return -1;
@@ -175,27 +177,26 @@ static int kos_install_expression(
     PyErr_SetString(PyExc_TypeError, "Expression takes no named arguments");
     return -1;
   }
+
   KosCode *code = (KosCode *) KosExpression_CODE(callable);
   if (code && KosCode_YIELDS(code)) {
     PyObject *ns = KosExpression_NS(callable);
-    Py_INCREF(ns);
+    Py_INCREF(ns);  // NewFromCodeAndNs steals a reference
     PyObject *agen = KosAsyncGen_NewFromCodeAndNs(code, ns);
     if (! agen)
       return -1;
-    if (KosStackBlock_PushRef(&CURRENT_STACK(ctx), agen) < 0) {
-      Py_DECREF(agen);
-      return -1;
-    }
-    (void) out_ev;
-    return 0;
+
+    // PUSH steals the agen reference
+    return KosStackBlock_PUSH(&CURRENT_STACK(ctx), agen);
   }
+
   KosDynFrame *frame = CURRENT_FRAME(ctx);
   PyObject *ns = KosExpression_NS(callable);
   Py_INCREF(ns);
   Py_DECREF(KosDynFrame_NS(frame));
   KosDynFrame_NS(frame) = ns;
   KosDynFrame_CODE(frame) = code;
-  (void) out_ev;
+
   return 0;
 }
 

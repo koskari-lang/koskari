@@ -181,8 +181,12 @@ int KosContext_Call(KosContext *ctx, KosEvent *out_ev,
 }
 
 
-int KosContext_CallArgs(KosContext *ctx, KosEvent *out_ev,
-    PyObject *callable, PyObject *args_tuple, PyObject *kwds_dict,
+int KosContext_CallArgs(
+    KosContext *ctx,
+    KosEvent *out_ev,
+    PyObject *callable,
+    PyObject *args_tuple,
+    PyObject *kwds_dict,
     int tail_call) {
 
   if (! KosCallable_Check(callable)) {
@@ -192,14 +196,29 @@ int KosContext_CallArgs(KosContext *ctx, KosEvent *out_ev,
       if (parent && kos_dyn_pop_frame(ctx) < 0)
         return -1;
     }
-    PyObject *result = (! args_tuple || PyTuple_GET_SIZE(args_tuple) == 0)
-        ? PyObject_CallNoArgs(callable)
-        : PyObject_Call(callable, args_tuple, kwds_dict ? kwds_dict : NULL);
+    PyObject *result = NULL;
+
+    if (args_tuple) {
+      result = PyObject_Call(callable, args_tuple, kwds_dict);
+
+    } else if (kwds_dict) {
+      PyObject *empty_args = PyTuple_New(0);
+      if (! empty_args)
+        return -1;
+      result = PyObject_Call(callable, empty_args, kwds_dict);
+      Py_DECREF(empty_args);
+
+    } else {
+      result = PyObject_CallNoArgs(callable);
+    }
+
     if (! result)
       return -1;
+
     int r = kos_push_or_await(ctx, out_ev, result);
     if (r == 0 && tail_call)
       r = KOS_OP_RES_CONTROL_RETURNED;
+
     return r;
   }
 
