@@ -38,6 +38,11 @@ static void asyncgen_dealloc(PyObject *self) {
 
   KosPyAsyncGen *agen = (KosPyAsyncGen *) self;
 
+  /* If chain is empty (we froze), GEN is on agen->gen; release it. */
+  if (agen->gen && agen->ctx && ! KosContext_DYN_TOP(agen->ctx)) {
+    kos_dyngen_release((KosDynGen *) agen->gen);
+    agen->gen = NULL;
+  }
   if (agen->ctx)
     kos_context_free(agen->ctx);
 
@@ -48,10 +53,15 @@ static void asyncgen_dealloc(PyObject *self) {
 static int asyncgen_traverse(PyObject *self, visitproc visit, void *arg) {
 
   KosPyAsyncGen *agen = (KosPyAsyncGen *) self;
+  int res;
 
-  if (agen->ctx) {
-    return kos_context_traverse(agen->ctx, visit, arg);
+  if (agen->gen && agen->ctx && ! KosContext_DYN_TOP(agen->ctx)) {
+    res = kos_dynnode_traverse((KosDynNode *) agen->gen, visit, arg);
+    if (res)
+      return res;
   }
+  if (agen->ctx)
+    return kos_context_traverse(agen->ctx, visit, arg);
 
   return 0;
 }
@@ -61,6 +71,10 @@ static int asyncgen_clear(PyObject *self) {
 
   KosPyAsyncGen *agen = (KosPyAsyncGen *) self;
 
+  if (agen->gen && agen->ctx && ! KosContext_DYN_TOP(agen->ctx)) {
+    kos_dyngen_release((KosDynGen *) agen->gen);
+    agen->gen = NULL;
+  }
   if (agen->ctx) {
     kos_context_free(agen->ctx);
     agen->ctx = NULL;

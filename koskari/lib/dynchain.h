@@ -261,6 +261,8 @@ struct KosDynNode {
     } cc_raise;
     struct {
       PyObject *owner;     /* owning generator object (borrowed) or NULL */
+      struct KosDynNode *active; /* suspended frame when released; NULL when running */
+      uintptr_t refcount;  /* reference count; init 1; release decrements; free when 0 */
     } gen;
   } u;
 };
@@ -774,6 +776,27 @@ KosDynGen *kos_dyngen_new(PyObject *owner);
 
 
 void kos_dyngen_free(KosDynGen *gen);
+
+
+void kos_dyngen_acquire(KosDynGen *gen);
+
+
+void kos_dyngen_release(KosDynGen *gen);
+
+
+/**
+   Install GEN's active frame onto the context's chain for execution.
+
+   Takes frame from GEN.active, links GEN and frame into the chain
+   (caller_chain -> GEN -> frame), pushes Py_None for YIELD resume, and
+   sets frame as the execution top. Requires GEN.active != NULL.
+
+   :param ctx: execution context (may have empty or non-empty chain)
+   :param gen: GEN node with active frame set
+
+   :return: 0 on success, -1 on error
+*/
+int kos_dyn_gen_install(KosContext *ctx, KosDynGen *gen);
 
 
 /**
@@ -1780,6 +1803,8 @@ int kos_transferplan_traverse(
 #define KosDynNode_IS_GEN(n)      (KosDynNode_KIND(n) == KOS_DYN_GEN)
 
 #define KosDynGen_OWNER(n)        (((KosDynNode *)(n))->u.gen.owner)
+#define KosDynGen_ACTIVE(n)       (((KosDynNode *)(n))->u.gen.active)
+#define KosDynGen_REFCOUNT(n)     (((KosDynNode *)(n))->u.gen.refcount)
 
 #define KosDynCollect_SAVED_NS(n) (((KosDynNode *)(n))->u.ns.saved_ns)
 

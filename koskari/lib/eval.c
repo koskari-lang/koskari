@@ -255,15 +255,6 @@ static KosEvalMode raise_await(KosContext *ctx) {
 
 
 /**
-   Set up VM for "resume with no value" after YIELD suspend.
-*/
-static KosEvalMode raise_yield(KosContext *ctx) {
-  (void) ctx;
-  return KOS_MODE_NORMAL;
-}
-
-
-/**
    Revive from AWAIT: push await result or set throw_exc. Use PY_RESUME_INJECT
    when set (driver pre-stored await result, e.g. coro.c throw-into-awaitable),
    else send_val. Complete pending WITH exit if applicable.
@@ -300,12 +291,23 @@ static KosEvalMode revive_await(KosContext *ctx, PyObject *send_val, PyObject *t
    When send_val is NULL (e.g. __anext__), push Py_None per async gen protocol.
 */
 static KosEvalMode revive_yield(KosContext *ctx, PyObject *send_val, PyObject *throw_typ, PyObject *throw_exc) {
+  KosDynGen *gen;
+  PyObject *to_push;
+
   if (throw_exc != NULL) {
     PyErr_SetObject(throw_typ, throw_exc);
     return KOS_MODE_EXCEPTION;
   }
+  gen = KosContext_RESUME_GEN(ctx);
+  if (gen) {
+    KosContext_RESUME_GEN(ctx) = NULL;
+    if (kos_dyn_gen_install(ctx, gen) < 0)
+      return KOS_MODE_EXCEPTION;
+    /* install pushed Py_None; replace with send value */
+    (void) KosStackBlock_PopRef(&CURRENT_STACK(ctx));
+  }
   if (CURRENT_FRAME(ctx)) {
-    PyObject *to_push = (send_val != NULL) ? send_val : Py_None;
+    to_push = (send_val != NULL) ? send_val : Py_None;
     if (KosStackBlock_PushRef(&CURRENT_STACK(ctx), to_push) < 0)
       return KOS_MODE_EXCEPTION;
   }
@@ -883,6 +885,7 @@ KosContext *kos_context_new(KosDynFrame *top) {
   KosContext_PENDING_AGEN(ctx) = NULL;
   KosContext_PENDING_AGEN_DEFAULT(ctx) = NULL;
   KosContext_PENDING_AGEN_N(ctx) = 0;
+  KosContext_RESUME_GEN(ctx) = NULL;
 
   KosContext_FLAGS(ctx) = 0;
 
@@ -897,6 +900,11 @@ void kos_context_free(KosContext *ctx) {
 
   Py_XDECREF(KosContext_TOKEN(ctx));
   KosContext_TOKEN(ctx) = NULL;
+
+  if (KosContext_RESUME_GEN(ctx)) {
+    kos_dyngen_release(KosContext_RESUME_GEN(ctx));
+    KosContext_RESUME_GEN(ctx) = NULL;
+  }
 
   /* Free the dynamic chain */
   kos_dynchain_free(KosContext_DYN_TOP(ctx), NULL);
@@ -962,6 +970,13 @@ int kos_context_traverse(
   Py_VISIT(KosContext_INJECT_TYPE(ctx));
   Py_VISIT(KosContext_INJECT_VALUE(ctx));
   Py_VISIT(KosContext_PENDING_AGEN_DEFAULT(ctx));
+
+  if (KosContext_RESUME_GEN(ctx)) {
+    int res = kos_dynnode_traverse((KosDynNode *) KosContext_RESUME_GEN(ctx),
+                                   visit, arg);
+    if (res)
+      return res;
+  }
 
   /* Traverse the dynamic chain */
   int res = kos_dynchain_traverse(KosContext_DYN_TOP(ctx), NULL, visit, arg);
@@ -2128,7 +2143,8 @@ static KosEvalStep eval_phase_entry(
         mode = raise_await(ctx);
         break;
       case KOS_SUSP_YIELD:
-        mode = raise_yield(ctx);
+        /* anext() passes NULL for send; treat as Py_None per async gen protocol */
+        mode = revive_yield(ctx, Py_None, throw_typ, throw_exc);
         break;
       default:
         mode = KOS_MODE_NORMAL;

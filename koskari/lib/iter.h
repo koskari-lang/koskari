@@ -36,6 +36,7 @@ extern PyTypeObject KosPyAsyncGenType;
 typedef struct {
   PyObject_HEAD
   KosContext *ctx;
+  void *gen;         /* KosDynGen * when set; agen holds ref when GEN released from chain */
   int in_progress;   /* anext in progress */
   int closed;        /* generator closed */
 } KosPyAsyncGen;
