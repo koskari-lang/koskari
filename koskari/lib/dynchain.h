@@ -1242,6 +1242,10 @@ KosDynNode *kos_dyn_find_pending_exit(KosDynNode *node);
 int kos_dyn_complete_pending_exit(KosContext *ctx, int do_pop_node);
 void kos_dyn_clear_pending_exit(KosContext *ctx);
 
+/**
+   result: ownership is transferred. Caller must not use result after
+   the call.
+*/
 int finalize_provisional_with_enter(KosContext *ctx, PyObject *result,
                                    KosDynWith *with_node);
 

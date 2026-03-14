@@ -25,6 +25,11 @@ struct KosContext;
 struct KosEvent;
 
 
+/**
+   Install functions receive borrowed references. callable, args_tuple,
+   kwds_dict (or args, kwnames for vector) must not be DECREF'd by the
+   implementation.
+*/
 typedef int (*KosInstallFunc)(
     struct KosContext *ctx,
     struct KosEvent *out_ev,
@@ -65,16 +70,30 @@ extern KosCallableTypeObject KosCallableType;
 #define KosCallableType_TAIL_VINSTALL(typ)      (((KosCallableTypeObject *) (typ))->tp_kos_tail_vinstall)
 
 
+/**
+   callable, args_tuple, kwds_dict are borrowed.
+*/
 int kos_callable_call(struct KosContext *ctx, struct KosEvent *out_ev,
                       PyObject *callable, PyObject *args_tuple, PyObject *kwds_dict);
+
+/**
+   callable, args_tuple, kwds_dict are borrowed.
+*/
 int kos_callable_tail_call(struct KosContext *ctx, struct KosEvent *out_ev,
                            PyObject *callable, PyObject *args_tuple, PyObject *kwds_dict);
 
+/**
+   callable, args, kwnames are borrowed.
+*/
 int kos_callable_vcall(struct KosContext *ctx, struct KosEvent *out_ev,
                        PyObject *callable,
                        PyObject *const *args, Py_ssize_t nargs,
                        PyObject *kwnames);
-/* Tail vcall: KosCallable path takes stack ownership (no DropNoErr by caller). */
+
+/**
+   callable, args, kwnames are borrowed. KosCallable path takes stack
+   ownership (no DropNoErr by caller).
+*/
 int kos_callable_tail_vcall(struct KosContext *ctx, struct KosEvent *out_ev,
                             PyObject *callable,
                             PyObject *const *args, Py_ssize_t nargs,

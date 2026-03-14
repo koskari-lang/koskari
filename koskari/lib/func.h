@@ -222,6 +222,7 @@ PyObject *KosFunction_Call(
 /**
    Prepare the call namespace for a KosFunction with args/kwds applied.
    Used by the evaluator to flatten Koskari calls without creating a coroutine.
+   func, args, kwds are borrowed.
    Returns new reference to frame namespace, or NULL on error.
 */
 PyObject *KosFunction_PrepareCallNamespace(
@@ -234,6 +235,7 @@ PyObject *KosFunction_PrepareCallNamespace(
    Prepare the call namespace using the vectorcall convention. args is a
    C array of nargs positional arguments followed by keyword argument values;
    kwnames is a tuple of keyword names (may be NULL for positional-only).
+   func, args, kwnames are borrowed.
    Returns new reference to frame namespace, or NULL on error.
 */
 PyObject *KosFunction_PrepareCallNamespaceFromVector(

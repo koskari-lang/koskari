@@ -423,6 +423,10 @@ void kos_frame_free(KosFrame *frame);
   :param send_val: resume value when resuming from AWAIT/YIELD/YIELD_FROM; NULL on first call or when N/A
   :param throw_exc: exception to inject when resuming with throw (e.g. coroutine.throw()); NULL when resuming with value or on first call
 
+  When non-NULL, send_val and throw_typ/throw_exc are consumed (ownership
+  transferred). Caller must not use them after the call. Pass NULL to
+  borrow nothing.
+
   :return: 0 on success, -1 on internal error
 */
 int koskari_eval(KosContext *ctx, KosEvent *out_ev, PyObject *send_val, PyObject *throw_typ, PyObject *throw_exc);
@@ -522,6 +526,9 @@ int kos_tail_koscall(KosContext *ctx, KosCode *code, PyObject *ns);
 /**
    Push val onto the current frame stack, or if val is awaitable run one step
    and either push the result or suspend with KOS_EV_AWAIT.
+
+   val is consumed (ownership transferred). Internal helper; stolen refs
+   are acceptable here.
 
    :return: 0 continue, 1 stop (AWAIT), -1 error
 */

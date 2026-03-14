@@ -75,6 +75,10 @@ typedef struct {
   ((obj) && ((obj)->ob_type == &KosCoroutineType))
 
 
+/**
+   ctx: ownership is transferred to the coroutine. Caller must not use
+   or free ctx after the call.
+*/
 PyObject *KosCoroutine_New(KosContext *ctx);
 
 

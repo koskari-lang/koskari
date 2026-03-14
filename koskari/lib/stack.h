@@ -126,8 +126,9 @@ KosStackBlock *KosStackBlock_DeepCopy(KosStackBlock *block);
 
 
 /**
-   Push val onto the block chain (increments ref). For use by eval/dynchain
-   on frame stacks. Grows as needed.
+   Push val onto the block chain (increments ref). val is borrowed; stack
+   gains a new reference. For use by eval/dynchain on frame stacks.
+   Grows as needed.
 
    :return: 0 on success, -1 on error
  */
@@ -135,10 +136,10 @@ int KosStackBlock_PushRef(KosStackBlock **block, PyObject *val);
 
 
 /**
-   Push val onto the block chain, stealing the reference. Saves an
-   incref/decref compared to PushRef when the caller already owns val.
-
-   On success, the block owns val. On failure (-1) will Py_DECREF val
+   Push val onto the block chain, stealing the reference. val is consumed
+   (ownership transferred). Saves an incref/decref compared to PushRef
+   when the caller already owns val. On success, the block owns val.
+   On failure (-1) will Py_DECREF val.
 
    :return: 0 on success, -1 on error
  */

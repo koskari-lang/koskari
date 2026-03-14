@@ -234,12 +234,10 @@ static KosEvalMode revive_plan(
     return KOS_MODE_EXCEPTION;
   }
 
-  if (send_val != NULL) {
+  if (send_val != NULL && plan) {
     Py_XINCREF(send_val);
-    if (plan) {
-      Py_XDECREF(KosTransferPlan_STEP_RESUME_INJECT(plan));
-      KosTransferPlan_STEP_RESUME_INJECT(plan) = send_val;
-    }
+    Py_XDECREF(KosTransferPlan_STEP_RESUME_INJECT(plan));
+    KosTransferPlan_STEP_RESUME_INJECT(plan) = send_val;
   }
 
   return KOS_MODE_TRANSFER;

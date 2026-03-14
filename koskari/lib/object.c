@@ -81,6 +81,7 @@ static PyObject *kostype_tp_call(PyObject *cls, PyObject *args,
     Py_DECREF(instance);
     return NULL;
   }
+
   if (args) {
     PyObject *full_args = PySequence_Concat(init_args, args);
     Py_DECREF(init_args);
@@ -95,7 +96,7 @@ static PyObject *kostype_tp_call(PyObject *cls, PyObject *args,
 
   PyObject *init_result = NULL;
   int r = Koskari_DemandSyncEx(init, init_args, kwargs, &init_result);
-  /* demand_sync_ex consumes init_args */
+  Py_DECREF(init_args);
 
   SAYF("kostype_tp_call: r = %d, init_result = %R", r, init_result);
 
@@ -164,7 +165,7 @@ static PyObject *dunder_slot_unary(PyObject *self, const char *dunder) {
   }
   PyObject *result = NULL;
   int r = Koskari_DemandSyncEx(method, args, NULL, &result);
-  /* demand_sync_ex consumes args */
+  Py_DECREF(args);
   Py_DECREF(method);
   if (r == 1) {
     if (KoskariSyncViolation)

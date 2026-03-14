@@ -318,11 +318,16 @@ static PyObject *KosDemandSyncGenerator_New(KosContext *ctx) {
 
 
 /**
-   Base implementation: returns 0 (success), 1 (suspension, no exception),
-   or -1 (error, exception set). Never sets exception for suspension.
+  Base implementation: returns 0 (success), 1 (suspension, no exception),
+  or -1 (error, exception set). Never sets exception for suspension.
+
+  callable, args, kwargs are borrowed. Never decref them.
  */
-static int demand_sync_ex(PyObject *callable, PyObject *args,
-                          PyObject *kwargs, PyObject **out_result) {
+static int demand_sync_ex(
+    PyObject *callable,
+    PyObject *args,
+    PyObject *kwargs,
+    PyObject **out_result) {
 
   PyObject *frame_ns = NULL;
   KosDynFrame *frame = NULL;
@@ -349,12 +354,10 @@ static int demand_sync_ex(PyObject *callable, PyObject *args,
     SAYF("[demand_sync] kwargs = %R", kwargs);
 
     result = PyObject_Call(callable, args, kwargs);
-    if (! result)
-      goto ret_fail;
-
     *out_result = result;
-    return 0;
+    return result? 0: -1;
   }
+
   /* KosBoundMethod: unwrap and prepend self to args */
   if (KosBoundMethod_CheckExact(callable)) {
     PyObject *fn = KosBoundMethod_FUNC(callable);
@@ -447,7 +450,7 @@ static int demand_sync_ex(PyObject *callable, PyObject *args,
         goto ret_fail;
       }
       KosDynGen_OWNER(gen_node) = gen;
-      // Py_DECREF(args);
+      Py_XDECREF(call_args);
       *out_result = gen;
       return 0;
     }
@@ -526,12 +529,12 @@ run_eval:
   goto done;
 
 ret_fail:
-  Py_DECREF(call_args);
+  Py_XDECREF(call_args);
   *out_result = NULL;
   return -1;
 
 done:
-  Py_DECREF(call_args);
+  Py_XDECREF(call_args);
   *out_result = result;
   return result ? 0 : suspended ? 1 : -1;
 }
