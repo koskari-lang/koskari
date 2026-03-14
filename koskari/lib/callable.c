@@ -192,9 +192,23 @@ int KosContext_CallArgs(KosContext *ctx, KosEvent *out_ev,
       if (parent && kos_dyn_pop_frame(ctx) < 0)
         return -1;
     }
-    PyObject *result = (! args_tuple || PyTuple_GET_SIZE(args_tuple) == 0)
-        ? PyObject_CallNoArgs(callable)
-        : PyObject_Call(callable, args_tuple, kwds_dict ? kwds_dict : NULL);
+    PyObject *result = NULL;
+    PyObject *empty_args = NULL;
+    int has_no_args = (! args_tuple || PyTuple_GET_SIZE(args_tuple) == 0);
+
+    if (has_no_args && ! kwds_dict) {
+      result = PyObject_CallNoArgs(callable);
+    } else {
+      PyObject *call_args = args_tuple;
+      if (! call_args) {
+        empty_args = PyTuple_New(0);
+        if (! empty_args)
+          return -1;
+        call_args = empty_args;
+      }
+      result = PyObject_Call(callable, call_args, kwds_dict ? kwds_dict : NULL);
+    }
+    Py_XDECREF(empty_args);
     if (! result)
       return -1;
     int r = kos_push_or_await(ctx, out_ev, result);

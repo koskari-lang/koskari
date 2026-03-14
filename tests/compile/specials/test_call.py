@@ -337,6 +337,18 @@ class TestCallEndToEnd(SpecialsTestCase):
         self.assertEqual(got[0], ((1,), {"name": 2}))
 
 
+    async def test_call_keyword_only_args(self):
+        got = []
+
+        def spy(*args, **kwargs):
+            got.append((args, kwargs))
+            return None
+
+        expr, mod = self.compile_expr("(compile/call f name: 2)", f=spy)
+        await expr()
+        self.assertEqual(got[0], ((), {"name": 2}))
+
+
     async def test_call_var_args(self):
         got = []
 
