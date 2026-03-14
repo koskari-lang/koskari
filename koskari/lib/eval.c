@@ -297,14 +297,16 @@ static KosEvalMode revive_await(KosContext *ctx, PyObject *send_val, PyObject *t
 
 /**
    Revive from YIELD: push send_val or set throw_exc.
+   When send_val is NULL (e.g. __anext__), push Py_None per async gen protocol.
 */
 static KosEvalMode revive_yield(KosContext *ctx, PyObject *send_val, PyObject *throw_typ, PyObject *throw_exc) {
   if (throw_exc != NULL) {
     PyErr_SetObject(throw_typ, throw_exc);
     return KOS_MODE_EXCEPTION;
   }
-  if (send_val != NULL && CURRENT_FRAME(ctx)) {
-    if (KosStackBlock_PushRef(&CURRENT_STACK(ctx), send_val) < 0)
+  if (CURRENT_FRAME(ctx)) {
+    PyObject *to_push = (send_val != NULL) ? send_val : Py_None;
+    if (KosStackBlock_PushRef(&CURRENT_STACK(ctx), to_push) < 0)
       return KOS_MODE_EXCEPTION;
   }
   return KOS_MODE_NORMAL;

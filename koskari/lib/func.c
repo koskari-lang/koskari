@@ -32,6 +32,27 @@
 
 
 #define CURRENT_FRAME(ctx)  KosContext_FRAME_TOP(ctx)
+#define CURRENT_STACK(ctx)  KosDynFrame_STACK(CURRENT_FRAME(ctx))
+
+
+static int kos_expression_wants_frame(PyObject *callable) {
+
+  KosCode *code = (KosCode *) KosExpression_CODE(callable);
+  return (code && KosCode_YIELDS(code)) ? 0 : 1;
+}
+
+
+static int kos_function_wants_frame(PyObject *callable) {
+
+  KosCode *code = (KosCode *) KosFunction_CODE(callable);
+  return (code && KosCode_YIELDS(code)) ? 0 : 1;
+}
+
+
+static int kos_boundmethod_wants_frame(PyObject *callable) {
+
+  return kos_function_wants_frame(KosBoundMethod_FUNC(callable));
+}
 
 
 /* forward declaration; defined below before KosFunctionType */
@@ -154,12 +175,26 @@ static int kos_install_expression(
     PyErr_SetString(PyExc_TypeError, "Expression takes no named arguments");
     return -1;
   }
+  KosCode *code = (KosCode *) KosExpression_CODE(callable);
+  if (code && KosCode_YIELDS(code)) {
+    PyObject *ns = KosExpression_NS(callable);
+    Py_INCREF(ns);
+    PyObject *agen = KosAsyncGen_NewFromCodeAndNs(code, ns);
+    if (! agen)
+      return -1;
+    if (KosStackBlock_PushRef(&CURRENT_STACK(ctx), agen) < 0) {
+      Py_DECREF(agen);
+      return -1;
+    }
+    (void) out_ev;
+    return 0;
+  }
   KosDynFrame *frame = CURRENT_FRAME(ctx);
   PyObject *ns = KosExpression_NS(callable);
   Py_INCREF(ns);
   Py_DECREF(KosDynFrame_NS(frame));
   KosDynFrame_NS(frame) = ns;
-  KosDynFrame_CODE(frame) = (KosCode *) KosExpression_CODE(callable);
+  KosDynFrame_CODE(frame) = code;
   (void) out_ev;
   return 0;
 }
@@ -177,14 +212,26 @@ static int kos_install_function(
     int tail_call) {
 
   (void) tail_call;
+  KosCode *code = (KosCode *) KosFunction_CODE(callable);
   PyObject *frame_ns = KosFunction_PrepareCallNamespace(
       callable, args_tuple, kwds_dict);
   if (! frame_ns)
     return -1;
+  if (code && KosCode_YIELDS(code)) {
+    PyObject *agen = KosAsyncGen_NewFromCodeAndNs(code, frame_ns);
+    if (! agen)
+      return -1;
+    if (KosStackBlock_PushRef(&CURRENT_STACK(ctx), agen) < 0) {
+      Py_DECREF(agen);
+      return -1;
+    }
+    (void) out_ev;
+    return 0;
+  }
   KosDynFrame *frame = CURRENT_FRAME(ctx);
   Py_DECREF(KosDynFrame_NS(frame));
   KosDynFrame_NS(frame) = frame_ns;
-  KosDynFrame_CODE(frame) = (KosCode *) KosFunction_CODE(callable);
+  KosDynFrame_CODE(frame) = code;
   (void) out_ev;
   return 0;
 }
@@ -200,14 +247,26 @@ static int kos_vinstall_function(
     int tail_call) {
 
   (void) tail_call;
+  KosCode *code = (KosCode *) KosFunction_CODE(callable);
   PyObject *frame_ns = KosFunction_PrepareCallNamespaceFromVector(
       callable, args, nargs, kwnames);
   if (! frame_ns)
     return -1;
+  if (code && KosCode_YIELDS(code)) {
+    PyObject *agen = KosAsyncGen_NewFromCodeAndNs(code, frame_ns);
+    if (! agen)
+      return -1;
+    if (KosStackBlock_PushRef(&CURRENT_STACK(ctx), agen) < 0) {
+      Py_DECREF(agen);
+      return -1;
+    }
+    (void) out_ev;
+    return 0;
+  }
   KosDynFrame *frame = CURRENT_FRAME(ctx);
   Py_DECREF(KosDynFrame_NS(frame));
   KosDynFrame_NS(frame) = frame_ns;
-  KosDynFrame_CODE(frame) = (KosCode *) KosFunction_CODE(callable);
+  KosDynFrame_CODE(frame) = code;
   (void) out_ev;
   return 0;
 }
@@ -231,6 +290,7 @@ KosCallableTypeObject KosExpressionType = {
   .tp_kos_install = kos_install_expression,
   .tp_kos_vinstall = NULL,
   .tp_kos_wants_frame = 1,
+  .tp_kos_wants_frame_fn = kos_expression_wants_frame,
 };
 
 
@@ -508,6 +568,7 @@ KosCallableTypeObject KosBoundMethodType = {
   .tp_kos_install = kos_install_boundmethod,
   .tp_kos_vinstall = kos_vinstall_boundmethod,
   .tp_kos_wants_frame = 1,
+  .tp_kos_wants_frame_fn = kos_boundmethod_wants_frame,
 };
 
 
@@ -822,6 +883,7 @@ KosCallableTypeObject KosFunctionType = {
   .tp_kos_install = kos_install_function,
   .tp_kos_vinstall = kos_vinstall_function,
   .tp_kos_wants_frame = 1,
+  .tp_kos_wants_frame_fn = kos_function_wants_frame,
 };
 
 

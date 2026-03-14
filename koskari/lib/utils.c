@@ -259,6 +259,7 @@ static KosCallableTypeObject KosApplyType = {
   .tp_kos_install = kos_install_apply,
   .tp_kos_vinstall = NULL,
   .tp_kos_wants_frame = 1,
+  .tp_kos_wants_frame_fn = NULL,
 };
 
 

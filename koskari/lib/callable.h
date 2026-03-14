@@ -52,11 +52,20 @@ typedef int (*KosVectorInstallFunc)(
     int tail_call);
 
 
+/**
+   Optional per-instance wants_frame. If non-NULL, called with the callable
+   instance; return 1 if the call needs a frame (push or reset), 0 if not.
+   Overrides tp_kos_wants_frame when present.
+*/
+typedef int (*KosCallableWantsFrameFunc)(PyObject *callable);
+
+
 typedef struct {
   PyTypeObject type;
   KosInstallFunc tp_kos_install;        /* tuple+dict; may be NULL */
   KosVectorInstallFunc tp_kos_vinstall; /* vectorcall; may be NULL */
-  int tp_kos_wants_frame;                     /* 1: context preps frame; 0: no frame prep */
+  int tp_kos_wants_frame;               /* default when wants_frame_fn is NULL */
+  KosCallableWantsFrameFunc tp_kos_wants_frame_fn;  /* if non-NULL, overrides */
 } KosCallableTypeObject;
 
 
@@ -71,6 +80,7 @@ extern KosCallableTypeObject KosCallableType;
 #define KosCallableType_INSTALL(typ)        (((KosCallableTypeObject *) (typ))->tp_kos_install)
 #define KosCallableType_VINSTALL(typ)       (((KosCallableTypeObject *) (typ))->tp_kos_vinstall)
 #define KosCallableType_WANTS_FRAME(typ)    (((KosCallableTypeObject *) (typ))->tp_kos_wants_frame)
+#define KosCallableType_WANTS_FRAME_FN(typ) (((KosCallableTypeObject *) (typ))->tp_kos_wants_frame_fn)
 
 
 /* === KosCallable_* : KosCallable-only invocation (no type check, no frame prep) === */

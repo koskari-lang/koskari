@@ -56,8 +56,18 @@ static PyObject *vcall_build_kwds_dict(
 /* === Frame prep helpers (context-owned) === */
 
 
-static int do_frame_prep(KosContext *ctx, PyTypeObject *typ, int tail_call) {
-  int wants = KosCallableType_WANTS_FRAME(typ);
+static int get_effective_wants_frame(PyObject *callable, PyTypeObject *typ) {
+  KosCallableTypeObject *ctyp = (KosCallableTypeObject *) typ;
+  if (ctyp->tp_kos_wants_frame_fn)
+    return ctyp->tp_kos_wants_frame_fn(callable);
+  return ctyp->tp_kos_wants_frame;
+}
+
+
+static int do_frame_prep(KosContext *ctx, PyObject *callable, PyTypeObject *typ,
+                         int tail_call) {
+
+  int wants = get_effective_wants_frame(callable, typ);
   KosDynFrame *frame = CURRENT_FRAME(ctx);
   KosDynNode *parent = KosDynNode_PARENT((KosDynNode *) frame);
 
@@ -160,7 +170,7 @@ int KosContext_Call(KosContext *ctx, KosEvent *out_ev,
   }
 
   PyTypeObject *typ = Py_TYPE(callable);
-  if (do_frame_prep(ctx, typ, tail_call) < 0)
+  if (do_frame_prep(ctx, callable, typ, tail_call) < 0)
     return -1;
 
   int r = KosCallable_Call(ctx, out_ev, callable, args, nargs, kwnames,
@@ -194,7 +204,7 @@ int KosContext_CallArgs(KosContext *ctx, KosEvent *out_ev,
   }
 
   PyTypeObject *typ = Py_TYPE(callable);
-  if (do_frame_prep(ctx, typ, tail_call) < 0)
+  if (do_frame_prep(ctx, callable, typ, tail_call) < 0)
     return -1;
 
   int r = KosCallable_CallArgs(ctx, out_ev, callable, args_tuple, kwds_dict,
@@ -225,7 +235,7 @@ int KosContext_CallNoArgs(KosContext *ctx, KosEvent *out_ev,
   }
 
   PyTypeObject *typ = Py_TYPE(callable);
-  if (do_frame_prep(ctx, typ, tail_call) < 0)
+  if (do_frame_prep(ctx, callable, typ, tail_call) < 0)
     return -1;
 
   int r = KosCallable_CallNoArgs(ctx, out_ev, callable, tail_call);
@@ -250,6 +260,7 @@ KosCallableTypeObject KosCallableType = {
   .tp_kos_install = NULL,
   .tp_kos_vinstall = NULL,
   .tp_kos_wants_frame = 0,
+  .tp_kos_wants_frame_fn = NULL,
 };
 
 

@@ -208,6 +208,7 @@ KosCallableTypeObject KosPyDelimitedContinuationType = {
   .tp_kos_install = kos_install_continuation,
   .tp_kos_vinstall = NULL,
   .tp_kos_wants_frame = 0,
+  .tp_kos_wants_frame_fn = NULL,
 };
 
 
@@ -378,6 +379,7 @@ KosCallableTypeObject KosPyContinuationType = {
   .tp_kos_install = kos_install_continuation,
   .tp_kos_vinstall = NULL,
   .tp_kos_wants_frame = 0,
+  .tp_kos_wants_frame_fn = NULL,
 };
 
 
