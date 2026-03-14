@@ -437,6 +437,7 @@ static int demand_sync_ex(
         kos_dyngen_free(gen_node);
         goto ret_fail;
       }
+      KosDynGen_ACTIVE(gen_node) = (struct KosDynNode *) frame;
       ctx = kos_context_new(frame);
       frame = NULL;
       if (! ctx) {
@@ -450,6 +451,7 @@ static int demand_sync_ex(
         goto ret_fail;
       }
       KosDynGen_OWNER(gen_node) = gen;
+      kos_dyngen_acquire(gen_node);
       Py_XDECREF(call_args);
       *out_result = gen;
       return 0;

@@ -289,28 +289,38 @@ static KosEvalMode revive_await(KosContext *ctx, PyObject *send_val, PyObject *t
 /**
    Revive from YIELD: push send_val or set throw_exc.
    When send_val is NULL (e.g. __anext__), push Py_None per async gen protocol.
+   Must install the gen first even when throwing, so frame and chain are restored.
 */
 static KosEvalMode revive_yield(KosContext *ctx, PyObject *send_val, PyObject *throw_typ, PyObject *throw_exc) {
   KosDynGen *gen;
   PyObject *to_push;
 
-  if (throw_exc != NULL) {
-    PyErr_SetObject(throw_typ, throw_exc);
-    return KOS_MODE_EXCEPTION;
-  }
+  SAYF("[gen] revive_yield ENTER suspend=%d resume_gen=%p send_val=%p "
+       "throw_typ=%p throw_exc=%p dyn_top=%p frame_top=%p\n",
+       KosContext_SUSPENSION_EVENT(ctx), (void *) KosContext_RESUME_GEN(ctx),
+       (void *) send_val, (void *) throw_typ, (void *) throw_exc,
+       (void *) KosContext_DYN_TOP(ctx), (void *) KosContext_FRAME_TOP(ctx));
   gen = KosContext_RESUME_GEN(ctx);
   if (gen) {
     KosContext_RESUME_GEN(ctx) = NULL;
+    SAYF("[gen] revive_yield calling install for gen=%p\n", (void *) gen);
     if (kos_dyn_gen_install(ctx, gen) < 0)
       return KOS_MODE_EXCEPTION;
-    /* install pushed Py_None; replace with send value */
+    /* install pushed Py_None; replace with send value or leave for throw */
     (void) KosStackBlock_PopRef(&CURRENT_STACK(ctx));
+  }
+  if (throw_exc != NULL) {
+    PyErr_SetObject(throw_typ, throw_exc);
+    return KOS_MODE_EXCEPTION;
   }
   if (CURRENT_FRAME(ctx)) {
     to_push = (send_val != NULL) ? send_val : Py_None;
     if (KosStackBlock_PushRef(&CURRENT_STACK(ctx), to_push) < 0)
       return KOS_MODE_EXCEPTION;
   }
+  SAYF("[gen] revive_yield DONE frame_top=%p dyn_top=%p throw=%d\n",
+       (void *) KosContext_FRAME_TOP(ctx), (void *) KosContext_DYN_TOP(ctx),
+       throw_exc != NULL);
   return KOS_MODE_NORMAL;
 }
 
@@ -2135,6 +2145,8 @@ static KosEvalStep eval_phase_entry(
     if (mode != KOS_MODE_NORMAL && mode != KOS_MODE_TRANSFER)
       goto entry_mode_dispatch;
   } else if (send_val == NULL && throw_typ == NULL && throw_exc == NULL) {
+    SAYF("[eval] phase_entry branch: send/throw all NULL, suspend=%d\n",
+         KosContext_SUSPENSION_EVENT(ctx));
     switch (KosContext_SUSPENSION_EVENT(ctx)) {
       case KOS_SUSP_NONE:
         mode = KOS_MODE_NORMAL;
@@ -2144,6 +2156,7 @@ static KosEvalStep eval_phase_entry(
         break;
       case KOS_SUSP_YIELD:
         /* anext() passes NULL for send; treat as Py_None per async gen protocol */
+        SAY("[eval] phase_entry -> revive_yield(Py_None)");
         mode = revive_yield(ctx, Py_None, throw_typ, throw_exc);
         break;
       default:
@@ -2151,11 +2164,16 @@ static KosEvalStep eval_phase_entry(
         break;
     }
   } else {
+    SAYF("[eval] phase_entry branch: send_val=%p throw_typ=%p throw_exc=%p "
+         "suspend=%d\n",
+         (void *) send_val, (void *) throw_typ, (void *) throw_exc,
+         KosContext_SUSPENSION_EVENT(ctx));
     switch (KosContext_SUSPENSION_EVENT(ctx)) {
       case KOS_SUSP_AWAIT:
         mode = revive_await(ctx, send_val, throw_typ, throw_exc);
         break;
       case KOS_SUSP_YIELD:
+        SAY("[eval] phase_entry -> revive_yield(send_val)");
         mode = revive_yield(ctx, send_val, throw_typ, throw_exc);
         break;
       default:
@@ -2400,6 +2418,8 @@ static KosEvalStep eval_phase_post_opcode(
     KosContext_SUSPENSION_EVENT(ctx) = KOS_SUSP_AWAIT;
   } else if (KosEvent_KIND(out_ev) == KOS_EV_YIELD) {
     /* YIELD transit: walk chain with handle(YIELD); GEN intercepts */
+    SAYF("[eval] post_opcode KOS_EV_YIELD -> walk_handle_yield dyn_top=%p\n",
+         (void *) KosContext_DYN_TOP(ctx));
     if (kos_dyn_walk_handle_yield(ctx, out_ev) < 0)
       return KOS_STEP_FATAL_ERROR;
     KosContext_SUSPENSION_EVENT(ctx) = KOS_SUSP_YIELD;

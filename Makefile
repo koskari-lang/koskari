@@ -71,7 +71,7 @@ uninstall:  ## Uninstall package
 test: handlers  ## Run tests on current Python version via tox
 	@$(call checkfor,tox)
 	@echo "Running tests..."
-	@tox -qe py
+	@tox -qe test
 
 tox: handlers  ## Run full tox suite (tests + lint + typecheck)
 	@$(call checkfor,tox)

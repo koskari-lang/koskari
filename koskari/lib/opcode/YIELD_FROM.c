@@ -199,6 +199,9 @@ static int yield_from_emit_yield(
     KosEvent_PAYLOAD(out_ev) = tos ? *tos : NULL;
     Py_XINCREF(KosEvent_PAYLOAD(out_ev));
   }
+  SAYF("[yf] emit_yield dyn_top=%p frame=%p payload=%p -> KOS_EV_YIELD\n",
+       (void *) KosContext_DYN_TOP(ctx), (void *) frame,
+       (void *) KosEvent_PAYLOAD(out_ev));
 
   KosContext_FLAGS(ctx) &= ~KOS_CTX_RUNNING;
   KosContext_FLAGS(ctx) |= KOS_CTX_DEAD;
