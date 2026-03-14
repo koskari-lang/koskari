@@ -2306,7 +2306,7 @@ static int try_local_exception_handler(KosContext *ctx, KosEvent *out_ev) {
 
   uint32_t handler_pc = KosDynNode_IS_TRY(region) ? KosDynTry_HANDLER_PC((KosDynTry *) region) : KosDynFinally_HANDLER_PC((KosDynFinally *) region);
   {
-    KosTryHandler th;
+    KosTryHandler th = {0};
     if (kos_try_handler_for((PyObject *) CURRENT_CODE(ctx), CURRENT_ACTING_PC(ctx), &th) == 0) {
       if (KosDynNode_IS_FINALLY(region) && th.finally_pc != KOS_EXTENT_NONE) {
         handler_pc = th.finally_pc;
@@ -2741,7 +2741,7 @@ int koskari_eval(KosContext *ctx, KosEvent *out_ev, PyObject *send_val, PyObject
 #if KOS_STACK_TRACE
     trace_stack("  before", CURRENT_STACK(ctx));
 #endif
-    KosDispatchCtx dc;
+    KosDispatchCtx dc = {0};
     {
       KosEvalStep pds = eval_phase_prepare_dispatch(ctx, out_ev, &dc);
       if (pds == KOS_STEP_FATAL_ERROR) {

@@ -24,24 +24,16 @@
 /* === KosType === */
 
 
-typedef struct {
-  PyTypeObject type;
-} KosTypeTypeObject;
-
-
-extern KosTypeTypeObject KosTypeType;
-
-
-#define KOS_TYPETYPE_PYTYPE(o)  (&((o).type))
+extern PyTypeObject KosTypeType;
 
 
 #define KosType_Check(obj)                                           \
   ((obj) && PyType_Check(obj) &&                                     \
-   PyType_IsSubtype(Py_TYPE(obj), KOS_TYPETYPE_PYTYPE(KosTypeType)))
+   PyType_IsSubtype(Py_TYPE(obj), &KosTypeType))
 
 #define KosType_CheckExact(obj)                                      \
   ((obj) && PyType_Check(obj) &&                                     \
-   (Py_TYPE(obj) == KOS_TYPETYPE_PYTYPE(KosTypeType)))
+   (Py_TYPE(obj) == &KosTypeType))
 
 
 /**

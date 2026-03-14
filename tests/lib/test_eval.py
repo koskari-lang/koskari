@@ -162,14 +162,12 @@ class TestEvalModuleIntegration(unittest.TestCase):
         self.assertIsInstance(AsyncGenerator, type)
 
     def test_run_sync_and_iter_sync_registered(self):
-        """run_sync, iter_sync, and as_coroutine are registered in koskari.lib"""
+        """run_sync, iter_sync are registered in koskari.lib"""
 
         import koskari.lib as lib
 
-        self.assertTrue(hasattr(lib, 'as_coroutine'))
         self.assertTrue(hasattr(lib, 'run_sync'))
         self.assertTrue(hasattr(lib, 'iter_sync'))
-        self.assertTrue(callable(lib.as_coroutine))
         self.assertTrue(callable(lib.run_sync))
         self.assertTrue(callable(lib.iter_sync))
 

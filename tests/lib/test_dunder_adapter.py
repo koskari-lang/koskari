@@ -18,7 +18,7 @@ protocols (obj + 1, repr(obj), str(obj)).
 
 import unittest
 
-from koskari.lib import KoskariSyncViolation, KosType
+from koskari.lib import KosType
 from koskari.types import FormalsSpec
 from tests import make_callable
 from tests.lib.opcode import build_code, build_expr
@@ -46,7 +46,11 @@ class TestDunderAdapterAdd(unittest.TestCase):
                 return self.x + other
 
         obj = Addable(10)
-        self.assertEqual(obj + 5, 15)
+        print("[pytest] obj =", obj)
+        res = obj + 5
+        print("[pytest] res =", res)
+        self.assertEqual(res, 15)
+        print("[pytest] leaving test_add_plain_python_dunder")
 
 
     def test_repr_plain_python_dunder(self):
