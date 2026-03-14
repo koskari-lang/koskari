@@ -16,9 +16,8 @@
 
 /**
   CALL: arg = number of positional arguments N. Stack has [callable, arg_0,
-  ..., arg_{N-1}] (callable oldest). KosCallable: steal then kos_callable_vcall
-  (stack clear before install, enabling push). Plain Python: TailPtr +
-  PyObject_Vectorcall + DropNoErr.
+  ..., arg_{N-1}] (callable oldest). KosCallable: steal then KosContext_Call.
+  Plain Python: TailPtr + PyObject_Vectorcall + DropNoErr (fast path).
 */
 KOS_OP_HANDLER(CALL) {
   unsigned n = KosOp_ARG(insn);
@@ -31,12 +30,12 @@ KOS_OP_HANDLER(CALL) {
     return -1;
 
   if (KosCallable_Check(ptr[0])) {
-    KosStackSteal steal;
+    KosStackSteal steal = { 0 };
     if (KosStackSteal_Tail(&steal, (size_t)(n + 1), stack) < 0)
       return -1;
-    int r = kos_callable_vcall(ctx, out_ev, steal.vals[0],
-                               (n > 0) ? &steal.vals[1] : NULL,
-                               (Py_ssize_t) n, NULL);
+    int r = KosContext_Call(ctx, out_ev, steal.vals[0],
+                            (n > 0) ? &steal.vals[1] : NULL,
+                            (Py_ssize_t) n, NULL, 0);
     KosStackSteal_Free(&steal);
     return r;
   }

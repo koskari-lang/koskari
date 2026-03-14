@@ -19,15 +19,13 @@
    kwd_val_{M-1}, names]. Tail call: do not push a new frame; remove or
    recycle the current one.
 
-   Extracts args via KosStackSteal before vcall; KosStackSteal_Free at end.
-   - KosCallable: tail vcall recycles frame.
-   - Plain Python: kos_dyn_pop_frame when parent != NULL, call, push.
+   Extracts args via KosStackSteal before call; KosContext_Call handles frame
+   behavior and dispatch.
 */
 
 KOS_OP_HANDLER(TAIL_CALL_NAMES) {
   unsigned opa = KosOp_ARG(insn);
-  KosDynFrame *frame_top = CURRENT_FRAME(ctx);
-  KosStackBlock **stack = &KosDynFrame_STACK(frame_top);
+  KosStackBlock **stack = &CURRENT_STACK(ctx);
 
   PyObject *names = KosStackBlock_Peek(*stack);
   if (! names)
@@ -43,7 +41,7 @@ KOS_OP_HANDLER(TAIL_CALL_NAMES) {
   Py_ssize_t total = npos + nkwds;
   size_t ntotal = (size_t)(total + 2);
 
-  KosStackSteal steal;
+  KosStackSteal steal = { 0 };
   if (KosStackSteal_Tail(&steal, ntotal, stack) < 0)
     return -1;
 
@@ -52,30 +50,8 @@ KOS_OP_HANDLER(TAIL_CALL_NAMES) {
     (npos > 0) ? (PyObject *const *)&steal.vals[1] : NULL;
   PyObject *kwnames_arg = nkwds ? steal.vals[total + 1] : NULL;
 
-  int res = 0;
-  if (KosCallable_Check(callable)) {
-    /* KosCallable: tail vcall recycles frame. */
-    res = kos_callable_tail_vcall(ctx, out_ev, callable, args,
-                                  npos, kwnames_arg);
-
-  } else {
-    /* Plain Python: drop frame when parent exists, call, push. */
-    KosDynNode *parent = KosDynNode_PARENT((KosDynNode *) frame_top);
-    if (parent && kos_dyn_pop_frame(ctx) < 0) {
-      res = -1;
-
-    } else {
-      PyObject *result =
-        PyObject_Vectorcall(callable, args, (size_t) npos, kwnames_arg);
-      if (! result) {
-        res = -1;
-      } else {
-        res = kos_push_or_await(ctx, out_ev, result);
-        if (res == 0)
-          res = KOS_OP_RES_CONTROL_RETURNED;
-      }
-    }
-  }
+  int res = KosContext_Call(ctx, out_ev, callable, args,
+                            npos, kwnames_arg, 1);
 
   KosStackSteal_Free(&steal);
   return res;

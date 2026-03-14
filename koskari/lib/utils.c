@@ -161,12 +161,13 @@ static int apply_native_handler(
 }
 
 
-static int kos_install_apply_impl(
+static int kos_install_apply(
     KosContext *ctx,
     KosEvent *out_ev,
     PyObject *callable,
     PyObject *args_tuple,
-    int is_tail) {
+    PyObject *kwds_dict,
+    int tail_call) {
 
   (void) callable;
   Py_ssize_t n = args_tuple ? PyTuple_GET_SIZE(args_tuple) : 0;
@@ -194,27 +195,15 @@ static int kos_install_apply_impl(
 
   /* Flattening: delegate to inner callable's install */
   if (KosCallable_Check(fn)) {
-    KosInstallFunc inner = is_tail
-        ? KosCallableType_TAIL_INSTALL(Py_TYPE(fn))
-        : KosCallableType_INSTALL(Py_TYPE(fn));
+    KosInstallFunc inner = KosCallableType_INSTALL(Py_TYPE(fn));
     if (inner) {
-      int r = inner(ctx, out_ev, fn, seq_args, kwds);
+      int r = inner(ctx, out_ev, fn, seq_args, kwds, tail_call);
       Py_DECREF(seq_args);
       return r;
     }
   }
 
-  /* Non-flattening: push native frame with fn, seq_args, kwds on stack */
-  if (is_tail) {
-    kos_dynframe_reset_for_tail(CURRENT_FRAME(ctx));
-  } else {
-    KosDynFrame *frame = kos_dyn_push_frame_empty(ctx);
-    if (! frame) {
-      Py_DECREF(seq_args);
-      return -1;
-    }
-  }
-
+  /* Non-flattening: configure frame with native handler, fn, seq_args, kwds */
   KosDynFrame *frame = CURRENT_FRAME(ctx);
   typedef int (*NativeHandlerFn)(void *, void *, int, PyObject *);
   KosDynFrame_NATIVE_HANDLER(frame) = (NativeHandlerFn) apply_native_handler;
@@ -231,20 +220,6 @@ static int kos_install_apply_impl(
     return -1;
   }
   return 0;
-}
-
-
-static int kos_install_apply(KosContext *ctx, KosEvent *out_ev,
-                             PyObject *callable, PyObject *args_tuple, PyObject *kwds_dict) {
-  (void) kwds_dict;
-  return kos_install_apply_impl(ctx, out_ev, callable, args_tuple, 0);
-}
-
-
-static int kos_tail_install_apply(KosContext *ctx, KosEvent *out_ev,
-                                  PyObject *callable, PyObject *args_tuple, PyObject *kwds_dict) {
-  (void) kwds_dict;
-  return kos_install_apply_impl(ctx, out_ev, callable, args_tuple, 1);
 }
 
 
@@ -282,7 +257,8 @@ static KosCallableTypeObject KosApplyType = {
     .tp_base = KOS_CALLABLE_PYTYPE(KosCallableType),
   },
   .tp_kos_install = kos_install_apply,
-  .tp_kos_tail_install = kos_tail_install_apply,
+  .tp_kos_vinstall = NULL,
+  .tp_kos_wants_frame = 1,
 };
 
 

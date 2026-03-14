@@ -17,38 +17,10 @@
 #include "lib.h"
 
 
-/* === Default Python call paths (non-KosCallable or no install slot) === */
+#define CURRENT_FRAME(ctx)  KosContext_FRAME_TOP(ctx)
 
 
-static int call_default_python_call(
-    KosContext *ctx,
-    KosEvent *out_ev,
-    PyObject *callable,
-    PyObject *args_tuple,
-    PyObject *kwds_dict) {
-
-  PyObject *result = (! args_tuple || PyTuple_GET_SIZE(args_tuple) == 0)
-      ? PyObject_CallNoArgs(callable)
-      : PyObject_Call(callable, args_tuple, kwds_dict ? kwds_dict : NULL);
-  if (! result)
-    return -1;
-  return kos_push_or_await(ctx, out_ev, result);
-}
-
-
-static int call_default_python_vcall(
-    KosContext *ctx,
-    KosEvent *out_ev,
-    PyObject *callable,
-    PyObject *const *args,
-    Py_ssize_t nargs,
-    PyObject *kwnames) {
-
-  PyObject *result = PyObject_Vectorcall(callable, args, (size_t) nargs, kwnames);
-  if (! result)
-    return -1;
-  return kos_push_or_await(ctx, out_ev, result);
-}
+/* === Helpers === */
 
 
 static PyObject *vcall_build_args_tuple(PyObject *const *args, Py_ssize_t nargs) {
@@ -81,138 +53,185 @@ static PyObject *vcall_build_kwds_dict(
 }
 
 
-/* === kos_callable_* public API === */
+/* === Frame prep helpers (context-owned) === */
 
 
-int kos_callable_call(KosContext *ctx, KosEvent *out_ev,
-                      PyObject *callable, PyObject *args_tuple, PyObject *kwds_dict) {
-  if (KosCallable_Check(callable)) {
-    KosInstallFunc fn = KosCallableType_INSTALL(Py_TYPE(callable));
-    if (fn)
-      return fn(ctx, out_ev, callable, args_tuple, kwds_dict);
+static int do_frame_prep(KosContext *ctx, PyTypeObject *typ, int tail_call) {
+  int wants = KosCallableType_WANTS_FRAME(typ);
+  KosDynFrame *frame = CURRENT_FRAME(ctx);
+  KosDynNode *parent = KosDynNode_PARENT((KosDynNode *) frame);
+
+  if (wants && tail_call) {
+    kos_dynframe_reset_for_tail(frame);
+    return 0;
   }
-  return call_default_python_call(ctx, out_ev, callable, args_tuple, kwds_dict);
+  if (wants && ! tail_call) {
+    if (kos_dyn_push_frame_empty(ctx) == NULL)
+      return -1;
+    return 0;
+  }
+  if (! wants && tail_call && parent) {
+    return kos_dyn_pop_frame(ctx);
+  }
+  return 0;
 }
 
 
-int kos_callable_tail_call(KosContext *ctx, KosEvent *out_ev,
-                           PyObject *callable, PyObject *args_tuple, PyObject *kwds_dict) {
-  if (KosCallable_Check(callable)) {
-    KosInstallFunc fn = KosCallableType_TAIL_INSTALL(Py_TYPE(callable));
-    if (fn)
-      return fn(ctx, out_ev, callable, args_tuple, kwds_dict);
-    fn = KosCallableType_INSTALL(Py_TYPE(callable));
-    if (fn) {
-      KosDynFrame *frame = kos_dyn_push_frame_empty(ctx);
-      if (! frame)
-        return -1;
-      return fn(ctx, out_ev, callable, args_tuple, kwds_dict);
-    }
-  }
-  return call_default_python_call(ctx, out_ev, callable, args_tuple, kwds_dict);
-}
+/* === KosCallable_* : KosCallable-only (no type check, no frame prep) === */
 
 
-int kos_callable_vcall(
-    KosContext *ctx,
-    KosEvent *out_ev,
+int KosCallable_Call(KosContext *ctx, KosEvent *out_ev,
     PyObject *callable,
-    PyObject *const *args,
-    Py_ssize_t nargs,
-    PyObject *kwnames) {
+    PyObject *const *args, Py_ssize_t nargs, PyObject *kwnames,
+    int tail_call) {
 
-  if (KosCallable_Check(callable)) {
-    KosVectorInstallFunc vfn = KosCallableType_VINSTALL(Py_TYPE(callable));
-    if (vfn)
-      return vfn(ctx, out_ev, callable, args, nargs, kwnames);
+  PyTypeObject *typ = Py_TYPE(callable);
+  KosVectorInstallFunc vfn = KosCallableType_VINSTALL(typ);
+  if (vfn)
+    return vfn(ctx, out_ev, callable, args, nargs, kwnames, tail_call);
 
-    KosInstallFunc fn = KosCallableType_INSTALL(Py_TYPE(callable));
-    if (fn) {
-      PyObject *tup = (nargs > 0) ? vcall_build_args_tuple(args, nargs) : NULL;
-      if (nargs > 0 && ! tup)
-        return -1;
-      PyObject *kwds = NULL;
-      if (kwnames) {
-        kwds = vcall_build_kwds_dict(args + nargs, kwnames);
-        if (! kwds) {
-          Py_XDECREF(tup);
-          return -1;
-        }
-      }
-      int r = fn(ctx, out_ev, callable, tup, kwds);
+  KosInstallFunc fn = KosCallableType_INSTALL(typ);
+  if (! fn)
+    return -1;
+
+  PyObject *tup = (nargs > 0) ? vcall_build_args_tuple(args, nargs) : NULL;
+  if (nargs > 0 && ! tup)
+    return -1;
+  PyObject *kwds = NULL;
+  if (kwnames) {
+    kwds = vcall_build_kwds_dict(args + nargs, kwnames);
+    if (! kwds) {
       Py_XDECREF(tup);
-      Py_XDECREF(kwds);
-      return r;
+      return -1;
     }
   }
-
-  return call_default_python_vcall(ctx, out_ev, callable, args, nargs, kwnames);
+  int r = fn(ctx, out_ev, callable, tup, kwds, tail_call);
+  Py_XDECREF(tup);
+  Py_XDECREF(kwds);
+  return r;
 }
 
 
-int kos_callable_tail_vcall(
-    KosContext *ctx,
-    KosEvent *out_ev,
+int KosCallable_CallArgs(KosContext *ctx, KosEvent *out_ev,
+    PyObject *callable, PyObject *args_tuple, PyObject *kwds_dict,
+    int tail_call) {
+
+  KosInstallFunc fn = KosCallableType_INSTALL(Py_TYPE(callable));
+  if (! fn)
+    return -1;
+  return fn(ctx, out_ev, callable, args_tuple, kwds_dict, tail_call);
+}
+
+
+int KosCallable_CallNoArgs(KosContext *ctx, KosEvent *out_ev,
+    PyObject *callable, int tail_call) {
+
+  KosInstallFunc fn = KosCallableType_INSTALL(Py_TYPE(callable));
+  if (! fn)
+    return -1;
+  return fn(ctx, out_ev, callable, NULL, NULL, tail_call);
+}
+
+
+/* === KosContext_Call* : generic entry points === */
+
+
+int KosContext_Call(KosContext *ctx, KosEvent *out_ev,
     PyObject *callable,
-    PyObject *const *args,
-    Py_ssize_t nargs,
-    PyObject *kwnames) {
+    PyObject *const *args, Py_ssize_t nargs, PyObject *kwnames,
+    int tail_call) {
 
-  if (KosCallable_Check(callable)) {
-    KosVectorInstallFunc vfn = KosCallableType_TAIL_VINSTALL(Py_TYPE(callable));
-    if (vfn)
-      return vfn(ctx, out_ev, callable, args, nargs, kwnames);
-
-    vfn = KosCallableType_VINSTALL(Py_TYPE(callable));
-    if (vfn) {
-      KosDynFrame *frame = kos_dyn_push_frame_empty(ctx);
-      if (! frame)
+  if (! KosCallable_Check(callable)) {
+    if (tail_call) {
+      KosDynFrame *frame = CURRENT_FRAME(ctx);
+      KosDynNode *parent = KosDynNode_PARENT((KosDynNode *) frame);
+      if (parent && kos_dyn_pop_frame(ctx) < 0)
         return -1;
-      return vfn(ctx, out_ev, callable, args, nargs, kwnames);
     }
-
-    KosInstallFunc fn = KosCallableType_TAIL_INSTALL(Py_TYPE(callable));
-    if (fn) {
-      PyObject *tup = (nargs > 0) ? vcall_build_args_tuple(args, nargs) : NULL;
-      if (nargs > 0 && ! tup)
-        return -1;
-      PyObject *kwds = NULL;
-      if (kwnames) {
-        kwds = vcall_build_kwds_dict(args + nargs, kwnames);
-        if (! kwds) {
-          Py_XDECREF(tup);
-          return -1;
-        }
-      }
-      int r = fn(ctx, out_ev, callable, tup, kwds);
-      Py_XDECREF(tup);
-      Py_XDECREF(kwds);
-      return r;
-    }
-    fn = KosCallableType_INSTALL(Py_TYPE(callable));
-    if (fn) {
-      KosDynFrame *frame = kos_dyn_push_frame_empty(ctx);
-      if (! frame)
-        return -1;
-      PyObject *tup = (nargs > 0) ? vcall_build_args_tuple(args, nargs) : NULL;
-      if (nargs > 0 && ! tup)
-        return -1;
-      PyObject *kwds = NULL;
-      if (kwnames) {
-        kwds = vcall_build_kwds_dict(args + nargs, kwnames);
-        if (! kwds) {
-          Py_XDECREF(tup);
-          return -1;
-        }
-      }
-      int r = fn(ctx, out_ev, callable, tup, kwds);
-      Py_XDECREF(tup);
-      Py_XDECREF(kwds);
-      return r;
-    }
+    PyObject *result = (nargs == 0 && ! kwnames)
+        ? PyObject_CallNoArgs(callable)
+        : PyObject_Vectorcall(callable, args, (size_t) nargs, kwnames);
+    if (! result)
+      return -1;
+    int r = kos_push_or_await(ctx, out_ev, result);
+    if (r == 0 && tail_call)
+      r = KOS_OP_RES_CONTROL_RETURNED;
+    return r;
   }
 
-  return call_default_python_vcall(ctx, out_ev, callable, args, nargs, kwnames);
+  PyTypeObject *typ = Py_TYPE(callable);
+  if (do_frame_prep(ctx, typ, tail_call) < 0)
+    return -1;
+
+  int r = KosCallable_Call(ctx, out_ev, callable, args, nargs, kwnames,
+                           tail_call);
+  if (r == 0 && tail_call)
+    r = KOS_OP_RES_CONTROL_RETURNED;
+  return r;
+}
+
+
+int KosContext_CallArgs(KosContext *ctx, KosEvent *out_ev,
+    PyObject *callable, PyObject *args_tuple, PyObject *kwds_dict,
+    int tail_call) {
+
+  if (! KosCallable_Check(callable)) {
+    if (tail_call) {
+      KosDynFrame *frame = CURRENT_FRAME(ctx);
+      KosDynNode *parent = KosDynNode_PARENT((KosDynNode *) frame);
+      if (parent && kos_dyn_pop_frame(ctx) < 0)
+        return -1;
+    }
+    PyObject *result = (! args_tuple || PyTuple_GET_SIZE(args_tuple) == 0)
+        ? PyObject_CallNoArgs(callable)
+        : PyObject_Call(callable, args_tuple, kwds_dict ? kwds_dict : NULL);
+    if (! result)
+      return -1;
+    int r = kos_push_or_await(ctx, out_ev, result);
+    if (r == 0 && tail_call)
+      r = KOS_OP_RES_CONTROL_RETURNED;
+    return r;
+  }
+
+  PyTypeObject *typ = Py_TYPE(callable);
+  if (do_frame_prep(ctx, typ, tail_call) < 0)
+    return -1;
+
+  int r = KosCallable_CallArgs(ctx, out_ev, callable, args_tuple, kwds_dict,
+                               tail_call);
+  if (r == 0 && tail_call)
+    r = KOS_OP_RES_CONTROL_RETURNED;
+  return r;
+}
+
+
+int KosContext_CallNoArgs(KosContext *ctx, KosEvent *out_ev,
+    PyObject *callable, int tail_call) {
+
+  if (! KosCallable_Check(callable)) {
+    if (tail_call) {
+      KosDynFrame *frame = CURRENT_FRAME(ctx);
+      KosDynNode *parent = KosDynNode_PARENT((KosDynNode *) frame);
+      if (parent && kos_dyn_pop_frame(ctx) < 0)
+        return -1;
+    }
+    PyObject *result = PyObject_CallNoArgs(callable);
+    if (! result)
+      return -1;
+    int r = kos_push_or_await(ctx, out_ev, result);
+    if (r == 0 && tail_call)
+      r = KOS_OP_RES_CONTROL_RETURNED;
+    return r;
+  }
+
+  PyTypeObject *typ = Py_TYPE(callable);
+  if (do_frame_prep(ctx, typ, tail_call) < 0)
+    return -1;
+
+  int r = KosCallable_CallNoArgs(ctx, out_ev, callable, tail_call);
+  if (r == 0 && tail_call)
+    r = KOS_OP_RES_CONTROL_RETURNED;
+  return r;
 }
 
 
@@ -229,9 +248,8 @@ KosCallableTypeObject KosCallableType = {
     .tp_new = NULL,
   },
   .tp_kos_install = NULL,
-  .tp_kos_tail_install = NULL,
   .tp_kos_vinstall = NULL,
-  .tp_kos_tail_vinstall = NULL,
+  .tp_kos_wants_frame = 0,
 };
 
 

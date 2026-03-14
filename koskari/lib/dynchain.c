@@ -697,7 +697,7 @@ int kos_dyn_wind_wind(KosContext *ctx, KosDynWind *node) {
     return 0;
 
   KosDynWind_PHASE(node) = KOS_WIND_PHASE_PRE_BEGIN;
-  if (kos_callable_vcall(ctx, NULL, KosDynWind_BEFORE_THUNK(node), NULL, 0, NULL) < 0) {
+  if (KosContext_CallNoArgs(ctx, NULL, KosDynWind_BEFORE_THUNK(node), 0) < 0) {
     return -1;
   }
 
@@ -730,7 +730,7 @@ int kos_dyn_wind_unwind(KosContext *ctx, KosDynWind *node) {
     PyObject *args = PyTuple_New(0);
     if (! args)
       return -1;
-    if (kos_callable_call(ctx, NULL, KosDynWind_AFTER_THUNK(node), args, NULL) < 0) {
+    if (KosContext_CallArgs(ctx, NULL, KosDynWind_AFTER_THUNK(node), args, NULL, 0) < 0) {
       Py_DECREF(args);
       return -1;
     }
@@ -1915,7 +1915,7 @@ static int kos_dyn_with_on_control_returned(KosContext *ctx, KosDynWith *with_no
 
 static int kos_dyn_dyn_with_wind(KosContext *ctx, KosDynWith *node, KosEvent *out_ev) {
   PyObject *enter_fn = KosDynWith_ENTER(node);
-  int r = kos_callable_vcall(ctx, out_ev, enter_fn, NULL, 0, NULL);
+  int r = KosContext_CallNoArgs(ctx, out_ev, enter_fn, 0);
   if (r == 1)
     return KOS_DYN_UNWIND_ASYNC_STARTED;
   if (r < 0)
@@ -2030,11 +2030,11 @@ int kos_dyn_with_unwind(KosContext *ctx, KosDynWith *node,
     return -1;
   }
 
-  int r = kos_callable_call(ctx, out_ev, exit_fn, args, NULL);
+  int r = KosContext_CallArgs(ctx, out_ev, exit_fn, args, NULL, 0);
   Py_DECREF(args);
 
   if (r == KOS_DYN_UNWIND_ASYNC_STARTED) {
-    /* Suspend occurred inside kos_callable_call. Pending state lives on node. */
+    /* Suspend occurred inside KosContext_CallArgs. Pending state lives on node. */
     KosDynWith_PHASE(node) = KOS_WITH_PHASE_PENDING_EXIT_AWAIT;
     KosDynWith_EXC_TYP(node) = typ;
     KosDynWith_EXC_VAL(node) = val;

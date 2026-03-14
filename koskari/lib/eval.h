@@ -511,9 +511,53 @@ extern PyObject *KoskariContinuationApply;
 extern PyObject *KoskariContinuationError;
 
 
+/* === KosContext_Call* : context-oriented call entry points === */
+
+/**
+   KosContext_Call: generic call entry point with vectorcall-style args.
+
+   Accepts any PyObject* callable. Performs KosCallable_Check; if true,
+   dispatches to KosCallable_Call after applying frame behavior per
+   wants_frame and tail_call. If false, invokes PyObject_Vectorcall and
+   kos_push_or_await.
+
+   Frame matrix (when KosCallable): wants_frame+tail -> reset; wants_frame+!tail
+   -> create; !wants_frame+tail -> drop; !wants_frame+!tail -> no change.
+
+   Caller must ensure stack is clear before calling when tail_call is true
+   (use KosStackSteal). callable, args, kwnames are borrowed.
+
+   Returns 0 continue, 1 suspend, -1 error. On tail_call success, may return
+   KOS_OP_RES_CONTROL_RETURNED to signal control returned (wind thunks).
+*/
+int KosContext_Call(KosContext *ctx, KosEvent *out_ev,
+    PyObject *callable,
+    PyObject *const *args, Py_ssize_t nargs, PyObject *kwnames,
+    int tail_call);
+
+/**
+   KosContext_CallArgs: generic call entry point with tuple+dict args.
+
+   Same semantics as KosContext_Call but for tuple+dict form. Use for
+   CALL_STAR, TAIL_CALL_STAR, wind after-thunk, dyn_with exit.
+
+   callable, args_tuple, kwds_dict are borrowed.
+*/
+int KosContext_CallArgs(KosContext *ctx, KosEvent *out_ev,
+    PyObject *callable, PyObject *args_tuple, PyObject *kwds_dict,
+    int tail_call);
+
+/**
+   KosContext_CallNoArgs: fast path for zero-argument calls.
+
+   Same semantics as KosContext_Call. Uses PyObject_CallNoArgs for
+   non-KosCallable path. callable is borrowed.
+*/
+int KosContext_CallNoArgs(KosContext *ctx, KosEvent *out_ev,
+    PyObject *callable, int tail_call);
+
+
 /* === Unit lifecycle === */
-
-
 
 
 /**

@@ -1150,8 +1150,8 @@ void kos_dyn_pop_with(KosContext *ctx, KosDynWith *node);
    :param node: WITH node being unwound
    :param out_ev: event output for suspend (required when exit may be async)
 
-   Uses kos_callable_call for exit. When exit returns an awaitable, suspend
-   happens inside kos_callable_call; pending state is stashed and this returns 1.
+   Uses KosContext_CallArgs for exit. When exit returns an awaitable, suspend
+   happens inside KosContext_CallArgs; pending state is stashed and this returns 1.
 
    :return: 0 on success, -1 on error, 1 when suspend occurred
 */

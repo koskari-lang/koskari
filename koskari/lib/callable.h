@@ -29,13 +29,17 @@ struct KosEvent;
    Install functions receive borrowed references. callable, args_tuple,
    kwds_dict (or args, kwnames for vector) must not be DECREF'd by the
    implementation.
+
+   tail_call: 1 if this is a tail call; 0 otherwise. Most implementations
+   ignore this; frame behavior is handled by the caller (KosContext_Call*).
 */
 typedef int (*KosInstallFunc)(
     struct KosContext *ctx,
     struct KosEvent *out_ev,
     PyObject *callable,
     PyObject *args_tuple,
-    PyObject *kwds_dict);   /* may be NULL */
+    PyObject *kwds_dict,
+    int tail_call);
 
 
 typedef int (*KosVectorInstallFunc)(
@@ -44,15 +48,15 @@ typedef int (*KosVectorInstallFunc)(
     PyObject *callable,
     PyObject *const *args,
     Py_ssize_t nargs,
-    PyObject *kwnames);     /* may be NULL */
+    PyObject *kwnames,
+    int tail_call);
 
 
 typedef struct {
   PyTypeObject type;
-  KosInstallFunc tp_kos_install;            /* non-tail; may be NULL */
-  KosInstallFunc tp_kos_tail_install;       /* tail; may be NULL; NULL => no TCO */
-  KosVectorInstallFunc tp_kos_vinstall;     /* vectorcall non-tail; may be NULL */
-  KosVectorInstallFunc tp_kos_tail_vinstall; /* vectorcall tail; may be NULL */
+  KosInstallFunc tp_kos_install;        /* tuple+dict; may be NULL */
+  KosVectorInstallFunc tp_kos_vinstall; /* vectorcall; may be NULL */
+  int tp_kos_wants_frame;                     /* 1: context preps frame; 0: no frame prep */
 } KosCallableTypeObject;
 
 
@@ -64,40 +68,53 @@ extern KosCallableTypeObject KosCallableType;
 #define KosCallable_Check(obj)                                           \
   ((obj) && PyType_IsSubtype((obj)->ob_type, KOS_CALLABLE_PYTYPE(KosCallableType)))
 
-#define KosCallableType_INSTALL(typ)            (((KosCallableTypeObject *) (typ))->tp_kos_install)
-#define KosCallableType_TAIL_INSTALL(typ)       (((KosCallableTypeObject *) (typ))->tp_kos_tail_install)
-#define KosCallableType_VINSTALL(typ)           (((KosCallableTypeObject *) (typ))->tp_kos_vinstall)
-#define KosCallableType_TAIL_VINSTALL(typ)      (((KosCallableTypeObject *) (typ))->tp_kos_tail_vinstall)
+#define KosCallableType_INSTALL(typ)        (((KosCallableTypeObject *) (typ))->tp_kos_install)
+#define KosCallableType_VINSTALL(typ)       (((KosCallableTypeObject *) (typ))->tp_kos_vinstall)
+#define KosCallableType_WANTS_FRAME(typ)    (((KosCallableTypeObject *) (typ))->tp_kos_wants_frame)
 
 
-/**
-   callable, args_tuple, kwds_dict are borrowed.
-*/
-int kos_callable_call(struct KosContext *ctx, struct KosEvent *out_ev,
-                      PyObject *callable, PyObject *args_tuple, PyObject *kwds_dict);
+/* === KosCallable_* : KosCallable-only invocation (no type check, no frame prep) === */
 
 /**
-   callable, args_tuple, kwds_dict are borrowed.
+   KosCallable_Call: invoke a KosCallable with vectorcall-style args.
+
+   callable MUST be a KosCallable; no type check is performed. Caller is
+   responsible for frame/stack state; this function only dispatches to the
+   install slot. Prefers tp_kos_vinstall when present; otherwise builds
+   tuple+dict and uses tp_kos_install.
+
+   callable, args, kwnames are borrowed. Returns 0 continue, 1 suspend, -1 error.
 */
-int kos_callable_tail_call(struct KosContext *ctx, struct KosEvent *out_ev,
-                           PyObject *callable, PyObject *args_tuple, PyObject *kwds_dict);
+int KosCallable_Call(struct KosContext *ctx, struct KosEvent *out_ev,
+    PyObject *callable,
+    PyObject *const *args, Py_ssize_t nargs, PyObject *kwnames,
+    int tail_call);
 
 /**
-   callable, args, kwnames are borrowed.
+   KosCallable_CallArgs: invoke a KosCallable with tuple+dict args.
+
+   callable MUST be a KosCallable; no type check is performed. Caller is
+   responsible for frame/stack state; this function only dispatches to
+   tp_kos_install.
+
+   callable, args_tuple, kwds_dict are borrowed. Returns 0 continue, 1 suspend, -1 error.
 */
-int kos_callable_vcall(struct KosContext *ctx, struct KosEvent *out_ev,
-                       PyObject *callable,
-                       PyObject *const *args, Py_ssize_t nargs,
-                       PyObject *kwnames);
+int KosCallable_CallArgs(struct KosContext *ctx, struct KosEvent *out_ev,
+    PyObject *callable, PyObject *args_tuple, PyObject *kwds_dict,
+    int tail_call);
 
 /**
-   callable, args, kwnames are borrowed. KosCallable path takes stack
-   ownership (no DropNoErr by caller).
+   KosCallable_CallNoArgs: invoke a KosCallable with no arguments.
+
+   callable MUST be a KosCallable; no type check is performed. Caller is
+   responsible for frame/stack state; this function only dispatches to
+   tp_kos_install with NULL args_tuple and NULL kwds_dict.
+
+   callable is borrowed. Returns 0 continue, 1 suspend, -1 error.
 */
-int kos_callable_tail_vcall(struct KosContext *ctx, struct KosEvent *out_ev,
-                            PyObject *callable,
-                            PyObject *const *args, Py_ssize_t nargs,
-                            PyObject *kwnames);
+int KosCallable_CallNoArgs(struct KosContext *ctx, struct KosEvent *out_ev,
+    PyObject *callable, int tail_call);
+
 
 int koskari_callable_init(PyObject *mod);
 int koskari_callable_clear(PyObject *mod);

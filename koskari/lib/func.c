@@ -31,6 +31,9 @@
 #include "debug.h"
 
 
+#define CURRENT_FRAME(ctx)  KosContext_FRAME_TOP(ctx)
+
+
 /* forward declaration; defined below before KosFunctionType */
 static PyObject *kos_function_vectorcall(
     PyObject *self,
@@ -139,8 +142,10 @@ static int kos_install_expression(
     KosEvent *out_ev,
     PyObject *callable,
     PyObject *args_tuple,
-    PyObject *kwds_dict) {
+    PyObject *kwds_dict,
+    int tail_call) {
 
+  (void) tail_call;
   if (args_tuple && PyTuple_GET_SIZE(args_tuple) != 0) {
     PyErr_SetString(PyExc_TypeError, "Expression takes no arguments");
     return -1;
@@ -149,41 +154,14 @@ static int kos_install_expression(
     PyErr_SetString(PyExc_TypeError, "Expression takes no named arguments");
     return -1;
   }
-  PyObject *code = KosExpression_CODE(callable);
+  KosDynFrame *frame = CURRENT_FRAME(ctx);
   PyObject *ns = KosExpression_NS(callable);
   Py_INCREF(ns);
-  if (kos_dyn_push_frame(ctx, (KosCode *) code, ns) == NULL) {
-    Py_DECREF(ns);
-    return -1;
-  }
+  Py_DECREF(KosDynFrame_NS(frame));
+  KosDynFrame_NS(frame) = ns;
+  KosDynFrame_CODE(frame) = (KosCode *) KosExpression_CODE(callable);
   (void) out_ev;
   return 0;
-}
-
-
-static int kos_tail_install_expression(
-    KosContext *ctx,
-    KosEvent *out_ev,
-    PyObject *callable,
-    PyObject *args_tuple,
-    PyObject *kwds_dict) {
-
-  if (args_tuple && PyTuple_GET_SIZE(args_tuple) != 0) {
-    PyErr_SetString(PyExc_TypeError, "Expression takes no arguments");
-    return -1;
-  }
-  if (kwds_dict && PyDict_Size(kwds_dict) != 0) {
-    PyErr_SetString(PyExc_TypeError, "Expression takes no named arguments");
-    return -1;
-  }
-  PyObject *code = KosExpression_CODE(callable);
-  PyObject *ns = KosExpression_NS(callable);
-  Py_INCREF(ns);
-  int r = kos_tail_koscall(ctx, (KosCode *) code, ns);
-  if (r < 0)
-    Py_DECREF(ns);
-  (void) out_ev;
-  return r;
 }
 
 
@@ -195,39 +173,20 @@ static int kos_install_function(
     KosEvent *out_ev,
     PyObject *callable,
     PyObject *args_tuple,
-    PyObject *kwds_dict) {
+    PyObject *kwds_dict,
+    int tail_call) {
 
+  (void) tail_call;
   PyObject *frame_ns = KosFunction_PrepareCallNamespace(
       callable, args_tuple, kwds_dict);
   if (! frame_ns)
     return -1;
-  PyObject *fn_code = KosFunction_CODE(callable);
-  if (kos_dyn_push_frame(ctx, (KosCode *) fn_code, frame_ns) == NULL) {
-    Py_DECREF(frame_ns);
-    return -1;
-  }
+  KosDynFrame *frame = CURRENT_FRAME(ctx);
+  Py_DECREF(KosDynFrame_NS(frame));
+  KosDynFrame_NS(frame) = frame_ns;
+  KosDynFrame_CODE(frame) = (KosCode *) KosFunction_CODE(callable);
   (void) out_ev;
   return 0;
-}
-
-
-static int kos_tail_install_function(
-    KosContext *ctx,
-    KosEvent *out_ev,
-    PyObject *callable,
-    PyObject *args_tuple,
-    PyObject *kwds_dict) {
-
-  PyObject *frame_ns = KosFunction_PrepareCallNamespace(
-      callable, args_tuple, kwds_dict);
-  if (! frame_ns)
-    return -1;
-  int r = kos_tail_koscall(ctx, (KosCode *) KosFunction_CODE(callable),
-                          frame_ns);
-  if (r < 0)
-    Py_DECREF(frame_ns);
-  (void) out_ev;
-  return r;
 }
 
 
@@ -237,40 +196,20 @@ static int kos_vinstall_function(
     PyObject *callable,
     PyObject *const *args,
     Py_ssize_t nargs,
-    PyObject *kwnames) {
+    PyObject *kwnames,
+    int tail_call) {
 
+  (void) tail_call;
   PyObject *frame_ns = KosFunction_PrepareCallNamespaceFromVector(
       callable, args, nargs, kwnames);
   if (! frame_ns)
     return -1;
-  PyObject *fn_code = KosFunction_CODE(callable);
-  if (kos_dyn_push_frame(ctx, (KosCode *) fn_code, frame_ns) == NULL) {
-    Py_DECREF(frame_ns);
-    return -1;
-  }
+  KosDynFrame *frame = CURRENT_FRAME(ctx);
+  Py_DECREF(KosDynFrame_NS(frame));
+  KosDynFrame_NS(frame) = frame_ns;
+  KosDynFrame_CODE(frame) = (KosCode *) KosFunction_CODE(callable);
   (void) out_ev;
   return 0;
-}
-
-
-static int kos_tail_vinstall_function(
-    KosContext *ctx,
-    KosEvent *out_ev,
-    PyObject *callable,
-    PyObject *const *args,
-    Py_ssize_t nargs,
-    PyObject *kwnames) {
-
-  PyObject *frame_ns = KosFunction_PrepareCallNamespaceFromVector(
-      callable, args, nargs, kwnames);
-  if (! frame_ns)
-    return -1;
-  int r = kos_tail_koscall(ctx, (KosCode *) KosFunction_CODE(callable),
-                          frame_ns);
-  if (r < 0)
-    Py_DECREF(frame_ns);
-  (void) out_ev;
-  return r;
 }
 
 
@@ -290,7 +229,8 @@ KosCallableTypeObject KosExpressionType = {
     .tp_base = KOS_CALLABLE_PYTYPE(KosCallableType),
   },
   .tp_kos_install = kos_install_expression,
-  .tp_kos_tail_install = kos_tail_install_expression,
+  .tp_kos_vinstall = NULL,
+  .tp_kos_wants_frame = 1,
 };
 
 
@@ -447,7 +387,8 @@ static int kos_install_boundmethod(
     KosEvent *out_ev,
     PyObject *callable,
     PyObject *args_tuple,
-    PyObject *kwds_dict) {
+    PyObject *kwds_dict,
+    int tail_call) {
 
   PyObject *func = KosBoundMethod_FUNC(callable);
   PyObject *self = KosBoundMethod_SELF(callable);
@@ -462,33 +403,8 @@ static int kos_install_boundmethod(
     Py_INCREF(item);
     PyTuple_SET_ITEM(bound_args, 1 + i, item);
   }
-  int r = kos_install_function(ctx, out_ev, func, bound_args, kwds_dict);
-  Py_DECREF(bound_args);
-  return r;
-}
-
-
-static int kos_tail_install_boundmethod(
-    KosContext *ctx,
-    KosEvent *out_ev,
-    PyObject *callable,
-    PyObject *args_tuple,
-    PyObject *kwds_dict) {
-
-  PyObject *func = KosBoundMethod_FUNC(callable);
-  PyObject *self = KosBoundMethod_SELF(callable);
-  Py_ssize_t n = args_tuple ? PyTuple_GET_SIZE(args_tuple) : 0;
-  PyObject *bound_args = PyTuple_New(1 + n);
-  if (! bound_args)
-    return -1;
-  Py_INCREF(self);
-  PyTuple_SET_ITEM(bound_args, 0, self);
-  for (Py_ssize_t i = 0; i < n; i++) {
-    PyObject *item = PyTuple_GET_ITEM(args_tuple, i);
-    Py_INCREF(item);
-    PyTuple_SET_ITEM(bound_args, 1 + i, item);
-  }
-  int r = kos_tail_install_function(ctx, out_ev, func, bound_args, kwds_dict);
+  int r = kos_install_function(ctx, out_ev, func, bound_args, kwds_dict,
+                               tail_call);
   Py_DECREF(bound_args);
   return r;
 }
@@ -500,7 +416,8 @@ static int kos_vinstall_boundmethod(
     PyObject *callable,
     PyObject *const *args,
     Py_ssize_t nargs,
-    PyObject *kwnames) {
+    PyObject *kwnames,
+    int tail_call) {
 
   PyObject *func = KosBoundMethod_FUNC(callable);
   PyObject *self = KosBoundMethod_SELF(callable);
@@ -510,30 +427,8 @@ static int kos_vinstall_boundmethod(
   new_args[0] = self;
   for (Py_ssize_t i = 0; i < nargs; i++)
     new_args[1 + i] = args[i];
-  int r = kos_vinstall_function(ctx, out_ev, func, new_args, nargs + 1, kwnames);
-  PyMem_Del(new_args);
-  return r;
-}
-
-
-static int kos_tail_vinstall_boundmethod(
-    KosContext *ctx,
-    KosEvent *out_ev,
-    PyObject *callable,
-    PyObject *const *args,
-    Py_ssize_t nargs,
-    PyObject *kwnames) {
-
-  PyObject *func = KosBoundMethod_FUNC(callable);
-  PyObject *self = KosBoundMethod_SELF(callable);
-  PyObject **new_args = PyMem_New(PyObject *, (size_t) (nargs + 1));
-  if (! new_args)
-    return -1;
-  new_args[0] = self;
-  for (Py_ssize_t i = 0; i < nargs; i++)
-    new_args[1 + i] = args[i];
-  int r = kos_tail_vinstall_function(
-      ctx, out_ev, func, new_args, nargs + 1, kwnames);
+  int r = kos_vinstall_function(ctx, out_ev, func, new_args, nargs + 1,
+                                kwnames, tail_call);
   PyMem_Del(new_args);
   return r;
 }
@@ -611,9 +506,8 @@ KosCallableTypeObject KosBoundMethodType = {
     .tp_base = KOS_CALLABLE_PYTYPE(KosCallableType),
   },
   .tp_kos_install = kos_install_boundmethod,
-  .tp_kos_tail_install = kos_tail_install_boundmethod,
   .tp_kos_vinstall = kos_vinstall_boundmethod,
-  .tp_kos_tail_vinstall = kos_tail_vinstall_boundmethod,
+  .tp_kos_wants_frame = 1,
 };
 
 
@@ -926,9 +820,8 @@ KosCallableTypeObject KosFunctionType = {
     .tp_base = KOS_CALLABLE_PYTYPE(KosCallableType),
   },
   .tp_kos_install = kos_install_function,
-  .tp_kos_tail_install = kos_tail_install_function,
   .tp_kos_vinstall = kos_vinstall_function,
-  .tp_kos_tail_vinstall = kos_tail_vinstall_function,
+  .tp_kos_wants_frame = 1,
 };
 
 
