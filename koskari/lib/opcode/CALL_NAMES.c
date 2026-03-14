@@ -16,9 +16,8 @@
 /**
   CALL_NAMES: arg = N (number of positional arguments). Stack:
   [callable, pos_0, ..., pos_{N-1}, kwd_val_0, ..., kwd_val_{M-1}, names]
-  with names at TOS. TailPtr + vcall + DropNoErr (no tuple). KosCallable:
-  kos_callable_vcall. Plain Python: PyObject_Vectorcall, DropNoErr,
-  kos_push_or_await.
+  with names at TOS. KosCallable: steal then kos_callable_vcall (stack clear
+  before install). Plain Python: TailPtr + PyObject_Vectorcall + DropNoErr.
 */
 KOS_OP_HANDLER(CALL_NAMES) {
   unsigned opa = KosOp_ARG(insn);
@@ -46,8 +45,13 @@ KOS_OP_HANDLER(CALL_NAMES) {
   PyObject *kwnames = nkwds ? ptr[total + 1] : NULL;
 
   if (KosCallable_Check(ptr[0])) {
-    int r = kos_callable_vcall(ctx, out_ev, ptr[0], &ptr[1], npos, kwnames);
-    KosStackBlock_DropNoErr(stack, ntotal);
+    KosStackSteal steal;
+    if (KosStackSteal_Tail(&steal, ntotal, stack) < 0)
+      return -1;
+    PyObject *kwnames_arg = nkwds ? steal.vals[total + 1] : NULL;
+    int r = kos_callable_vcall(ctx, out_ev, steal.vals[0],
+                               &steal.vals[1], npos, kwnames_arg);
+    KosStackSteal_Free(&steal);
     return r;
   }
 

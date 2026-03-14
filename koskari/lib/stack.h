@@ -398,6 +398,46 @@ PyObject *KosStackBlock_PopTail(KosStackBlock **self, size_t count);
 int KosStackBlock_PopTailPtr(KosStackBlock **self, size_t count, PyObject **dest);
 
 
+/* === KosStackSteal: fast-path tail extraction for call sites === */
+
+
+#define KOS_STACK_STEAL_FAST_SIZE 16
+
+
+/**
+   KosStackSteal holds stolen tail elements from a stack block. Uses an
+   embedded array for small counts; allocates for larger. Caller must
+   invoke KosStackSteal_Free when done.
+*/
+typedef struct KosStackSteal {
+  PyObject *fast[KOS_STACK_STEAL_FAST_SIZE];
+  size_t len;
+  PyObject **vals;   /* points to fast or malloc'd array */
+} KosStackSteal;
+
+
+/**
+   Steal the last count elements from the block into s. Copies refs
+   (no incref/decref); block loses ownership. Block len is reduced.
+   Use when the caller must clear the stack before invoking code that
+   may push (e.g. KosCallable install). On failure, s is left safe for
+   KosStackSteal_Free (len 0, vals = fast).
+
+   :return: 0 on success, -1 on underrun or alloc failure
+ */
+int KosStackSteal_Tail(
+    KosStackSteal *s,
+    size_t count,
+    KosStackBlock **block);
+
+
+/**
+   Release all references in s and free the array if malloc'd. Safe to
+   call on a failed or partially initialized KosStackSteal.
+ */
+void KosStackSteal_Free(KosStackSteal *s);
+
+
 /**
    Block-level API for eval: pop count * 2 elements as key,val pairs;
    return a new dict. Stack layout: key_0, val_0, ..., key_{n-1}, val_{n-1}

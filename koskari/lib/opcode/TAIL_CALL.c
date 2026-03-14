@@ -22,12 +22,10 @@
    - Plain Python: kos_dyn_pop_frame removes the frame when we have a parent;
      at root (no parent) we keep the frame.
 
-   Extracts args via PopTail/PopTailPtr before vcall; opcode owns and DECREFs
-   the extracted storage. Returns KOS_OP_RES_CONTROL_RETURNED when we push
-   and continue (triggers kos_dynnode_on_control_returned for wind thunks).
+   Extracts args via KosStackSteal before vcall; KosStackSteal_Free at end.
+   Returns KOS_OP_RES_CONTROL_RETURNED when we push and continue
+   (triggers kos_dynnode_on_control_returned for wind thunks).
 */
-
-#define TAIL_CALL_ARRAY_THRESHOLD 16
 
 KOS_OP_HANDLER(TAIL_CALL) {
   unsigned n = KosOp_ARG(insn);
@@ -36,26 +34,13 @@ KOS_OP_HANDLER(TAIL_CALL) {
   KosDynFrame *frame_top = CURRENT_FRAME(ctx);
   KosStackBlock **stack = &KosDynFrame_STACK(frame_top);
 
-  PyObject *callable;
-  PyObject *const *args;
-  PyObject *tup = NULL;
-  PyObject *buf[TAIL_CALL_ARRAY_THRESHOLD];
-  int used_tuple = 0;
+  KosStackSteal steal;
+  if (KosStackSteal_Tail(&steal, count, stack) < 0)
+    return -1;
 
-  if (count > TAIL_CALL_ARRAY_THRESHOLD) {
-    tup = KosStackBlock_PopTail(stack, count);
-    if (! tup)
-      return -1;
-    used_tuple = 1;
-    callable = PyTuple_GET_ITEM(tup, 0);
-    args = (n > 0) ? (PyObject *const *)&PyTuple_GET_ITEM(tup, 1) : NULL;
-
-  } else {
-    if (KosStackBlock_PopTailPtr(stack, count, buf) < 0)
-      return -1;
-    callable = buf[0];
-    args = (n > 0) ? (PyObject *const *)&buf[1] : NULL;
-  }
+  PyObject *callable = steal.vals[0];
+  PyObject *const *args =
+    (n > 0) ? (PyObject *const *)&steal.vals[1] : NULL;
 
   int res = 0;
   if (KosCallable_Check(callable)) {
@@ -81,12 +66,6 @@ KOS_OP_HANDLER(TAIL_CALL) {
     }
   }
 
-  if (used_tuple) {
-    Py_DECREF(tup);
-  } else {
-    while (count--)
-      Py_DECREF(buf[count]);
-  }
-
+  KosStackSteal_Free(&steal);
   return res;
 }
