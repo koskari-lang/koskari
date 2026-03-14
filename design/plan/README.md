@@ -82,3 +82,5 @@ tox -e lldb -- -v -s tests/lib/opcode/test_yield.py
 | 5     | Install helper                   | 1          |
 | 6     | Revive integration (agen path)   | 4, 5       |
 | 7     | Koskari flatten (NEXT/ITER_NEXT) | 4, 5       |
+| 8     | Agen dealloc when frozen         | 7          |
+| 9     | Gen wind/unwind (dyn-wind at install/freeze) | 7   |
