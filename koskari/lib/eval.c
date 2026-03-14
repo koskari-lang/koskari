@@ -1731,11 +1731,12 @@ static KosGetNextResult op_get_next_from_iter(
 
 
 /**
-   Performs gen_frame validation, push Py_None, kos_dyn_attach_frame.
+   Install GEN onto consumer ctx (Koskari flatten). Clears agen->ctx chain
+   so state lives only in GEN. kos_dyn_gen_install pushes Py_None.
    Caller must have already: checked in_progress, handled closed/ctx.
-   Caller must have set KosContext_PENDING_AGEN(ctx) and mode-specific fields before
-   calling. On error: clears pending_agen, resets in_progress; for NEXT
-   mode also DECREFs iter and default_val.
+   Caller must have set KosContext_PENDING_AGEN(ctx) and mode-specific fields.
+   On error: clears pending_agen, resets in_progress; for NEXT mode also
+   DECREFs iter and default_val.
 */
 static int op_attach_koskari_agen_frame(
     KosContext *ctx,
@@ -1743,28 +1744,21 @@ static int op_attach_koskari_agen_frame(
     PyObject *iter,
     PyObject *default_val) {
 
-  KosDynFrame *gen_frame = KosContext_FRAME_TOP(agen->ctx);
-  if (! gen_frame) {
+  KosDynGen *gen = (KosDynGen *) agen->gen;
+  if (! gen || ! KosDynGen_ACTIVE(gen)) {
     KosContext_PENDING_AGEN(ctx) = NULL;
     Py_XDECREF(KosContext_PENDING_AGEN_DEFAULT(ctx));
     KosContext_PENDING_AGEN_DEFAULT(ctx) = NULL;
     Py_DECREF(iter);
     Py_DECREF(default_val);
     agen->in_progress = 0;
-    PyErr_SetString(PyExc_RuntimeError, "async generator has no frame");
+    PyErr_SetString(PyExc_RuntimeError, "async generator has no active frame");
     return -1;
   }
-  if (KosStackBlock_PushRef(&KosDynFrame_STACK(gen_frame), Py_None) < 0) {
-    KosContext_PENDING_AGEN(ctx) = NULL;
-    Py_XDECREF(KosContext_PENDING_AGEN_DEFAULT(ctx));
-    KosContext_PENDING_AGEN_DEFAULT(ctx) = NULL;
-    Py_DECREF(iter);
-    Py_DECREF(default_val);
-    agen->in_progress = 0;
-    return -1;
-  }
-  if (kos_dyn_attach_frame(ctx, gen_frame) < 0) {
-    (void) KosStackBlock_PopRef(&KosDynFrame_STACK(gen_frame));
+  /* Clear agen->ctx so chain lives only in GEN; we are moving it to consumer */
+  KosContext_DYN_TOP(agen->ctx) = NULL;
+  KosContext_FRAME_TOP(agen->ctx) = NULL;
+  if (kos_dyn_gen_install(ctx, gen) < 0) {
     KosContext_PENDING_AGEN(ctx) = NULL;
     Py_XDECREF(KosContext_PENDING_AGEN_DEFAULT(ctx));
     KosContext_PENDING_AGEN_DEFAULT(ctx) = NULL;
@@ -1778,25 +1772,24 @@ static int op_attach_koskari_agen_frame(
 
 
 /**
-   ITER_NEXT variant: attach gen frame; on error clear context pending_agen.
+   ITER_NEXT variant: install GEN onto consumer ctx. On error clear
+   context pending_agen.
 */
 static int op_attach_koskari_agen_frame_for_iter_next(
     KosContext *ctx,
     KosPyAsyncGen *agen,
     KosDynNode *region) {
 
-  KosDynFrame *gen_frame = KosContext_FRAME_TOP(agen->ctx);
-  if (! gen_frame) {
+  (void) region;
+  KosDynGen *gen = (KosDynGen *) agen->gen;
+  if (! gen || ! KosDynGen_ACTIVE(gen)) {
     agen->in_progress = 0;
-    PyErr_SetString(PyExc_RuntimeError, "async generator has no frame");
+    PyErr_SetString(PyExc_RuntimeError, "async generator has no active frame");
     return -1;
   }
-  if (KosStackBlock_PushRef(&KosDynFrame_STACK(gen_frame), Py_None) < 0) {
-    agen->in_progress = 0;
-    return -1;
-  }
-  if (kos_dyn_attach_frame(ctx, gen_frame) < 0) {
-    (void) KosStackBlock_PopRef(&KosDynFrame_STACK(gen_frame));
+  KosContext_DYN_TOP(agen->ctx) = NULL;
+  KosContext_FRAME_TOP(agen->ctx) = NULL;
+  if (kos_dyn_gen_install(ctx, gen) < 0) {
     agen->in_progress = 0;
     return -1;
   }
@@ -2422,7 +2415,68 @@ static KosEvalStep eval_phase_post_opcode(
          (void *) KosContext_DYN_TOP(ctx));
     if (kos_dyn_walk_handle_yield(ctx, out_ev) < 0)
       return KOS_STEP_FATAL_ERROR;
+    /* Koskari flatten: GEN was on consumer chain; freeze restored caller.
+       Push value onto caller stack and continue (no event return). */
+    if (KosContext_PENDING_AGEN(ctx)) {
+      KosPyAsyncGen *agen = (KosPyAsyncGen *) KosContext_PENDING_AGEN(ctx);
+      PyObject *payload = KosEvent_PAYLOAD(out_ev);
+      if (KosStackBlock_PushRef(&CURRENT_STACK(ctx), payload) < 0) {
+        Py_XDECREF(payload);
+        return KOS_STEP_FATAL_ERROR;
+      }
+      Py_DECREF(payload);
+      KosContext_PENDING_AGEN(ctx) = NULL;
+      Py_XDECREF(KosContext_PENDING_AGEN_DEFAULT(ctx));
+      KosContext_PENDING_AGEN_DEFAULT(ctx) = NULL;
+      agen->in_progress = 0;
+      *loop_continue = 1;
+      return KOS_STEP_CONTINUE;
+    }
     KosContext_SUSPENSION_EVENT(ctx) = KOS_SUSP_YIELD;
+  } else if (KosEvent_KIND(out_ev) == KOS_EV_RETURN && KosContext_PENDING_AGEN(ctx)) {
+    /* Koskari flatten: gen exhausted; unwind and deliver to consumer */
+    KosPyAsyncGen *agen = (KosPyAsyncGen *) KosContext_PENDING_AGEN(ctx);
+    PyObject *val = KosEvent_PAYLOAD(out_ev);
+    if (kos_dyn_gen_unwind_exhausted(ctx) < 0) {
+      Py_DECREF(val);
+      return KOS_STEP_FATAL_ERROR;
+    }
+    agen->closed = 1;
+    agen->in_progress = 0;
+    if (KosContext_PENDING_AGEN_N(ctx) == 0) {
+      KosDynNode *r = kos_find_node_for_loop(ctx);
+      if (r) {
+        KosDynForeach_EXHAUSTED((KosDynForeach *) r) = 1;
+        CURRENT_PC(ctx) = KosDynForeach_ITER_NEXT_ELSE_PC((KosDynForeach *) r);
+      }
+      KosContext_PENDING_AGEN(ctx) = NULL;
+      KosContext_PENDING_AGEN_DEFAULT(ctx) = NULL;
+      Py_DECREF(val);
+    } else if (KosContext_PENDING_AGEN_N(ctx) == 2
+               && KosContext_PENDING_AGEN_DEFAULT(ctx)) {
+      if (KosStackBlock_PushRef(&CURRENT_STACK(ctx),
+                                KosContext_PENDING_AGEN_DEFAULT(ctx)) < 0) {
+        Py_XDECREF(KosContext_PENDING_AGEN_DEFAULT(ctx));
+        KosContext_PENDING_AGEN_DEFAULT(ctx) = NULL;
+        KosContext_PENDING_AGEN(ctx) = NULL;
+        Py_DECREF(val);
+        return KOS_STEP_FATAL_ERROR;
+      }
+      Py_XDECREF(KosContext_PENDING_AGEN_DEFAULT(ctx));
+      Py_DECREF(val);
+    } else if (KosContext_PENDING_AGEN_N(ctx) == 1) {
+      Py_DECREF(val);
+      KosContext_PENDING_AGEN(ctx) = NULL;
+      KosContext_PENDING_AGEN_DEFAULT(ctx) = NULL;
+      PyErr_SetNone(PyExc_StopIteration);
+      return KOS_STEP_FATAL_ERROR;
+    } else {
+      Py_DECREF(val);
+    }
+    KosContext_PENDING_AGEN(ctx) = NULL;
+    KosContext_PENDING_AGEN_DEFAULT(ctx) = NULL;
+    *loop_continue = 1;
+    return KOS_STEP_CONTINUE;
   }
 
   /* op_res < 0 with no PyErr and no suspension event is a fatal internal error */

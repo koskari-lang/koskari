@@ -682,6 +682,29 @@ int kos_dyn_gen_install(KosContext *ctx, KosDynGen *gen) {
 }
 
 
+/**
+   Unwind an exhausted gen from the consumer chain. Call when the gen's
+   frame does RETURN and parent is GEN (top-level return of generator).
+   Assumes ctx->dyn_top is the gen's frame, frame->parent is gen.
+   Frees the chain from frame down to gen, restores consumer, releases gen.
+*/
+int kos_dyn_gen_unwind_exhausted(KosContext *ctx) {
+  KosDynNode *frame = KosContext_DYN_TOP(ctx);
+  if (! frame || ! KosDynNode_IS_FRAME(frame))
+    return -1;
+  KosDynGen *gen = (KosDynGen *) KosDynNode_PARENT(frame);
+  if (! gen || ! KosDynNode_IS_GEN((KosDynNode *) gen))
+    return -1;
+  KosDynNode *consumer = KosDynNode_PARENT(gen);
+  kos_dynchain_free(frame, (KosDynNode *) gen);
+  KosContext_DYN_TOP(ctx) = consumer;
+  KosContext_CHAIN_VERSION(ctx)++;
+  kos_update_frame_top(ctx);
+  kos_dyngen_release(gen);
+  return 0;
+}
+
+
 static int cc_raise_unwind(KosContext *ctx, KosDynNode *node,
                            KosEvent *out_ev) {
   (void) ctx;

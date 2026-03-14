@@ -800,6 +800,13 @@ int kos_dyn_gen_install(KosContext *ctx, KosDynGen *gen);
 
 
 /**
+   Unwind an exhausted gen from the chain. Call when gen's frame returns
+   (parent is GEN). Frees frame and restores consumer.
+*/
+int kos_dyn_gen_unwind_exhausted(KosContext *ctx);
+
+
+/**
    Pop the top frame from the context's dynamic chain.
 
    Frees the frame and updates dyn_top to the frame's parent.

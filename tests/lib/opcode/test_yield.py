@@ -149,7 +149,6 @@ class TestYieldKoskariCallPath(CevalTest):
     Tests for yielding functions invoked via Koskari CALL opcode.
     """
 
-    @pytest.mark.skip(reason="generators are broken")
     def test_yielding_function_call_returns_async_generator(self):
         """
         Calling a yielding Function via CALL returns AsyncGenerator
@@ -185,7 +184,6 @@ class TestYieldKoskariCallPath(CevalTest):
         self.assertEqual(list(result.iter()), [6, 7])
 
 
-    @pytest.mark.skip(reason="generators are broken")
     def test_yielding_expression_call_returns_async_generator(self):
         """
         Calling a yielding Expression via CALL returns AsyncGenerator
