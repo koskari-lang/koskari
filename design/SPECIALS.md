@@ -400,6 +400,31 @@ emits RAISE 1 (raise the value as exception).
 ```
 
 
+## compile/return
+
+**Symbol:** `compile/return`
+
+**Syntax:** `(compile/return)` or `(compile/return VAL)`
+
+**Use-case:** Return a value from the current function and transfer control back to
+the caller. With no argument, returns `None`.
+
+**Behaviour:** With no arg, emits `RETURN 0` (return None). With one argument,
+compiles VAL and emits `RETURN 1`. At runtime, when the frame has a parent (e.g.
+normal CALL), RETURN walks the dynamic chain with handle(RETURN), runs FINALLY
+if present, detaches the frame, and delivers the value to the parent (opcode
+returns `KOS_OP_RES_CONTROL_RETURNED` or 0). When the frame has no parent or
+its parent is the generator node (KOS_DYN_GEN), RETURN produces a boundary
+event `KOS_EV_RETURN` and the evaluator exits.
+
+**Examples:**
+
+```scheme
+(compile/return)
+(compile/return result)
+```
+
+
 ## compile/check-exception
 
 **Symbol:** `compile/check-exception`
@@ -562,6 +587,35 @@ ITER_NEXT for for-each).
 ```
 
 **Tests:** `tests/compile/specials/test_cond.py`, `tests/compile/specials/test_while.py`
+
+
+## compile/yield
+
+**Symbol:** `compile/yield`
+
+**Syntax:** `(compile/yield)` or `(compile/yield VAL)`
+
+**Use-case:** Yield a value from a generator (or coroutine). Suspends the
+current frame and returns the value to the driver; resumption is via
+`send(value)` or `throw()`. With no argument, yields `None`.
+
+**Behaviour:** With no arg, emits `YIELD 0` (yield None). With one argument,
+compiles VAL and emits `YIELD 1`. At runtime, when the frame has a parent that
+is **not** the generator node (e.g. a nested CALL inside a generator), YIELD
+detaches the frame, pushes the value onto the parent stack, and returns 0 so
+the loop continues in the caller. When the frame's parent is the generator node
+(KOS_DYN_GEN) or there is no parent, the opcode sets `KOS_EV_YIELD` and returns
+1; the evaluator then runs `kos_dyn_walk_handle_yield`, the generator node
+consumes the event (freezes the dynamic chain and suspends), sets
+`SUSPENSION_EVENT = YIELD`, and exits. On resume, `revive_yield` pushes
+`send_val` onto the stack.
+
+**Examples:**
+
+```scheme
+(compile/yield)
+(compile/yield (compile/call compute-next))
+```
 
 
 ## compile/parameterize
@@ -1903,11 +1957,6 @@ that keeps IMPORT_FROM's stack invariant sound.
 The following specials are implemented but are not given full sections above.
 See the cited modules for behaviour and examples.
 
-- **compile/return** — Return a value from the current function; emits `RETURN`.
-  Implementation: `koskari/compile/specials/continuations.py`.
-- **compile/yield** — Yield a value from a generator; `(compile/yield)` or
-  `(compile/yield VAL)`. Emits `YIELD`. Implementation:
-  `koskari/compile/specials/continuations.py`.
 - **compile/with** — Single-shot context manager; `(compile/with EXPR BODY ...)`.
   Emits `PUSH_WITH` / `POP_WITH`. Implementation:
   `koskari/compile/specials/context.py`.

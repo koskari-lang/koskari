@@ -44,7 +44,6 @@ from os import getcwd
 
 from .module import (init_module, load_module_async, load_module_demand,
                      new_module, new_module_demand)
-from .._sync import run_sync
 
 
 __all__ = (

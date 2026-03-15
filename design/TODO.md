@@ -17,7 +17,8 @@ needed.
 - **CALL_ATTR_NAMES** — `koskari/lib/opcode/CALL_ATTR_NAMES.c`
 - **CALL_ATTR_STAR** — `koskari/lib/opcode/CALL_ATTR_STAR.c`
 
-Ref: [FEATURES.md](FEATURES.md) § Opcodes: implementation status.
+Ref: [FEATURES.md](FEATURES.md) § Opcodes: implementation status;
+[OPCODES.md](OPCODES.md) (per-opcode reference); [interpreter/bytecode.md](interpreter/bytecode.md) (format, layout).
 
 ---
 
@@ -30,8 +31,10 @@ performance impact; no implementation planned until resolved.
 
 Decide whether to run dynamic-wind (and param/dyn-with) enter/exit at
 generator install and freeze (so `(dynamic-wind before body after)` that
-spans a yield runs `after` on yield and `before` on resume). Design in
-[plan/09-phase-gen-wind-unwind.md](plan/09-phase-gen-wind-unwind.md).
+spans a yield runs `after` on yield and `before` on resume).
+
+Ref: [plan/09-phase-gen-wind-unwind.md](plan/09-phase-gen-wind-unwind.md);
+[interpreter/extent-wind-unwind.md](interpreter/extent-wind-unwind.md) (wind/unwind semantics).
 
 ---
 
@@ -44,7 +47,9 @@ interrupted (e.g. by an exception or a new transfer being triggered), resumption
 should use `kos_build_direct_install_plan` to rebuild or complete the plan; this
 path is not yet connected.
 
-Ref: `koskari/lib/dynchain.c` — `kos_build_direct_install_plan`.
+Ref: `koskari/lib/dynchain.c` — `kos_build_direct_install_plan`;
+[EVALUATOR.md](EVALUATOR.md) (transfer plans, revive_plan);
+[interpreter/callcc.md](interpreter/callcc.md) (continuation invoke, plan build).
 
 ---
 
@@ -72,7 +77,7 @@ name lookup), and/or a dedicated fast operand stack (e.g. linear array for
 current frame). Compiler optimization passes (constant folding, dead code
 elimination, VAR→FAST) are still to migrate.
 
-Ref: [archive/compiler-python-sibilant-historical.md](archive/compiler-python-sibilant-historical.md) § Optimization; [FEATURES.md](FEATURES.md) § Optimization (planned).
+Ref: [interpreter/freeze-thaw-context-segments.md](interpreter/freeze-thaw-context-segments.md).
 
 ---
 
@@ -84,6 +89,20 @@ Add profiling support via compile-time options and runtime hooks. Goals:
 timing information for opcodes, the eval loop, and usage of freelists (and
 related allocator caches). Design and implement the knobs and hook points so
 we can measure where time is spent and how freelists behave.
+
+Ref: [api/tracing.md](api/tracing.md).
+
+---
+
+## Runtime / execution
+
+### Run and iter use demand
+
+Replace the `run` and `iter` methods of **KosFunction** and **KosPyAsyncGenerator**
+with calls to the demand execution path rather than the sync path.
+
+Ref: [api/dunder-adapter.md](api/dunder-adapter.md) (demand_sync, demand path);
+[api/import-system.md](api/import-system.md) (demand path for module loading).
 ---
 
 ## Compiler
@@ -93,7 +112,9 @@ we can measure where time is spent and how freelists behave.
 - **await** — language/compile-level support for await (AWAIT opcode exists).
 - **define-values** / **setq-values** — multi-value definition and assignment.
 
-Ref: [FEATURES.md](FEATURES.md) § Ready to Migrate.
+Ref: [FEATURES.md](FEATURES.md) § Ready to Migrate;
+[language/async.md](language/async.md) (await syntax/semantics);
+[language/special-forms.md](language/special-forms.md) (define-values, setq-values).
 
 ### Macro expansion and optimization
 
@@ -102,7 +123,9 @@ Ref: [FEATURES.md](FEATURES.md) § Ready to Migrate.
 - Optimization passes: constant folding, dead code elimination, VAR→FAST
   conversion.
 
-Ref: [archive/compiler-python-sibilant-historical.md](archive/compiler-python-sibilant-historical.md) § To Migrate.
+Ref: [interpreter/compiler.md](interpreter/compiler.md) (current compiler);
+[language/special-forms.md](language/special-forms.md) (special forms catalog);
+[archive/compiler-python-sibilant-historical.md](archive/compiler-python-sibilant-historical.md) § To Migrate.
 
 ---
 
@@ -134,7 +157,7 @@ Add a feature flag (e.g. environment variable or loader knob) to choose at
 runtime between demand imports and run_sync imports, instead of editing
 `exec_module` in code.
 
-Ref: [ideas.md](ideas.md).
+Ref: [ideas.md](ideas.md); [api/import-system.md](api/import-system.md) (async vs demand path).
 
 ---
 
@@ -146,6 +169,10 @@ A **help** builtin that extends the core Pythonic `help` function: special-form
 and layout aware, and dispatching to object-specific help data via a `__help__`
 method when present. Design and implement the builtin, layout integration, and
 the `__help__` protocol.
+
+Ref: [api/builtins.md](api/builtins.md) (builtin catalog);
+[api/dunder-adapter.md](api/dunder-adapter.md) (dunder/slot pattern for `__help__`);
+[LAYOUTS.md](LAYOUTS.md) (layout syntax for layout-aware help).
 
 ---
 
@@ -159,6 +186,8 @@ From [FEATURES.md](FEATURES.md) and related docs:
 - Stack block cloning for full continuation semantics
 - Lazy frame COW optimization
 - Stack: remove COW semantics? See [api/stack-no-cow-proposal.md](api/stack-no-cow-proposal.md)
+- Pattern matching: [api/pattern-matching.md](api/pattern-matching.md)
+- Control flow (comprehensions, etc.): [language/control-flow.md](language/control-flow.md)
 
 ---
 

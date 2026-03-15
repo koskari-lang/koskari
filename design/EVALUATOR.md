@@ -179,6 +179,7 @@ flowchart TD
     process["process_raise<br/>→ STOP_EVENT or loop_continue"]
     suspend{"op_res == 1<br/>(suspend)?"}
     with_rollback["WITH rollback? (PUSH_WITH/POP_WITH/etc.)<br/>roll back pc for resume"]
+    yield_walk["KOS_EV_YIELD?<br/>kos_dyn_walk_handle_yield<br/>(GEN consumes, freeze)"]
     tag["Tag suspension:<br/>AWAIT → SUSPENSION_EVENT<br/>YIELD → SUSPENSION_EVENT"]
 
     control -->|Yes| ctrl_returned
@@ -186,8 +187,13 @@ flowchart TD
     pyerr -->|Yes| process
     pyerr -->|No| suspend
     suspend -->|Yes| with_rollback
-    suspend -->|No| tag
+    suspend -->|No| yield_walk
+    yield_walk --> tag
 ```
+
+For **YIELD** (op_res == 1, `out_ev` == KOS_EV_YIELD): before tagging suspension, the evaluator calls `kos_dyn_walk_handle_yield(ctx, out_ev)`. The dynamic chain is walked from dyn_top toward the frame; each node is offered handle(YIELD). The **generator node** (KOS_DYN_GEN) **consumes** the event: it freezes the chain and releases (e.g. `kos_dyn_gen_freeze_and_release`), so the context suspends with the yielded value. Then `SUSPENSION_EVENT = KOS_SUSP_YIELD` and the loop exits (STOP_EVENT). On resume, `revive_yield` pushes `send_val` onto the stack.
+
+For **RETURN** that reaches top-level or GEN: the RETURN opcode itself performs `kos_dyn_walk_return_to_frame` (handle phase; FINALLY may consume and run). It then sets `out_ev = KOS_EV_RETURN` and returns 1. Post-opcode does not run a separate walk for RETURN; the boundary is emitted by the opcode.
 
 ---
 
@@ -219,21 +225,21 @@ flowchart TD
 
 ### 3.2 What Opcodes Can Signal
 
-- **Continue** (0): No boundary; next instruction runs.
-- **Suspend** (1): `out_ev` holds `KOS_EV_YIELD` or `KOS_EV_AWAIT`. Loop exits to caller.
-- **Control returned** (2): Used by RETURN, TAIL_CALL when control returns through wind/unwind thunks.
+- **Continue** (0): No boundary; next instruction runs. RETURN and YIELD use this when delivering a value to a parent frame (e.g. returning from a nested CALL, or yielding inside a nested call within a generator).
+- **Suspend** (1): `out_ev` holds `KOS_EV_YIELD` or `KOS_EV_AWAIT`. Loop exits to caller. YIELD returns 1 only when the frame's parent is the generator node (KOS_DYN_GEN) or there is no parent; otherwise YIELD detaches and pushes onto the parent and returns 0.
+- **Control returned** (2): Used by RETURN and TAIL_CALL when control returns through wind/unwind thunks. RETURN returns `KOS_OP_RES_CONTROL_RETURNED` when it delivers a value to a non-generator parent (after `kos_dyn_walk_return_to_frame`, detach, push value onto parent stack).
 - **Exception** (-1): Opcode or callee sets `PyErr`; post-opcode runs `process_raise`.
 
-### 3.3 Boundary Events (top-level only)
+### 3.3 Boundary Events and Parent Frame
 
-When the current frame has **no parent** (top-level):
+Boundary events occur when the current frame has **no parent** or its parent is the **generator node** (KOS_DYN_GEN):
 
-- **RETURN** → `KOS_EV_RETURN`, payload = value
+- **RETURN** → `KOS_EV_RETURN`, payload = value (top-level or parent is GEN)
 - **RAISE**  → `KOS_EV_RAISE`, payload = exception value
-- **YIELD**  → `KOS_EV_YIELD`, payload = yielded value
+- **YIELD**  → `KOS_EV_YIELD`, payload = yielded value (parent is GEN or no parent)
 - **AWAIT**  → `KOS_EV_AWAIT`, payload = awaitable
 
-When the frame **has a parent** (callee or attached async gen): YIELD and RETURN do **not** produce boundary events; they detach the frame, push value onto the parent stack, and return 0 so the loop continues.
+When the frame **has a parent that is not the generator node** (e.g. normal CALL, or async gen stepping): YIELD and RETURN do **not** produce boundary events. They walk the dynamic chain (handle phase), detach the frame, push the value onto the parent stack, and return 0 (YIELD) or `KOS_OP_RES_CONTROL_RETURNED` (RETURN) so the loop continues in the caller. DELIMITED return (RETURN_TARGET_CHAIN set) is handled separately and may build a transfer plan.
 
 ---
 
@@ -322,7 +328,11 @@ Control transits (RETURN, RAISE, YIELD, BREAK, CONTINUE, SHIFT) use a two-phase 
 
 ### 5.4 Generator Boundary Node
 
-`KOS_DYN_GEN` marks the generator boundary. It intercepts `handle(YIELD)` (captures dynchain, detaches, suspends) and denies `handle(SHIFT)` (cannot shift across generator).
+`KOS_DYN_GEN` marks the generator boundary. It is pushed when a generator or coroutine is **installed** (e.g. when Python drives a Koskari generator via `send`/`throw`); the frame's parent is then the GEN node.
+
+- **handle(YIELD)**: GEN **consumes** the event. The evaluator calls `kos_dyn_walk_handle_yield` after the YIELD opcode sets `KOS_EV_YIELD` and returns 1. GEN's handler runs (e.g. `kos_dyn_gen_freeze_and_release`): the current dynchain is captured/frozen, the context is marked suspended, and the loop exits. No other node above GEN sees the yield. Resumption is via `revive_yield`, which pushes `send_val` onto the stack and continues at the next instruction.
+- **handle(SHIFT)**: GEN **denies**; shift cannot cross the generator boundary.
+- **RETURN** when the frame's parent is GEN (or there is no parent) produces a boundary event `KOS_EV_RETURN` and the evaluator exits; the driver receives the return value (e.g. StopIteration for sync generators).
 
 ---
 
@@ -483,7 +493,16 @@ When `CURRENT_FRAME(ctx)` has `native_handler != NULL`, the loop runs that handl
 6. `revive_await` pushes result onto stack. If `PENDING_WITH_EXIT_NODE`, completes pending WITH exit.
 7. Mode = NORMAL. Loop continues; next instruction consumes the awaited value.
 
-### 9.5 Scenario: Tail Call
+### 9.5 Scenario: YIELD Suspend and Resume
+
+1. Generator is running; frame's parent is GEN. YIELD opcode pops value, sets `out_ev = KOS_EV_YIELD`, sets payload, marks context DEAD, returns 1.
+2. Post-opcode: `KosEvent_KIND(out_ev) == KOS_EV_YIELD` → `kos_dyn_walk_handle_yield(ctx, out_ev)`. Chain is walked; GEN receives handle(YIELD) and **consumes** it (e.g. `kos_dyn_gen_freeze_and_release`): dynchain is frozen, context suspended.
+3. Post-opcode sets `SUSPENSION_EVENT = KOS_SUSP_YIELD`, returns STOP_EVENT. Evaluator exits.
+4. Driver (e.g. Python generator `send`) receives KOS_EV_YIELD and payload; later calls `koskari_eval(ctx, &ev, send_val, NULL, NULL)`.
+5. Entry: `SUSPENSION_EVENT == YIELD`, `send_val` provided → `revive_yield(send_val, ...)`.
+6. `revive_yield` pushes `send_val` onto the stack. Mode = NORMAL. Loop continues; next instruction runs with the sent value on the stack.
+
+### 9.6 Scenario: Tail Call
 
 1. TAIL_CALL opcode calls `kos_callable_tail_call`. Callable has `tp_kos_tail_install`.
 2. Install resets current frame (code, ns, stack, pc) for the new function, returns 0.
@@ -491,7 +510,7 @@ When `CURRENT_FRAME(ctx)` has `native_handler != NULL`, the loop runs that handl
 4. Post-opcode: `kos_dynnode_on_control_returned` runs (wind thunks if any). `loop_continue = 1`, CONTINUE.
 5. Loop continues; next instruction is first instruction of the new function (same frame, new content).
 
-### 9.6 Scenario: Transfer Plan Step Fails
+### 9.7 Scenario: Transfer Plan Step Fails
 
 1. Plan is draining. `kos_run_transfer_step` returns < 0 (e.g. exception in extent action).
 2. `run_transfer_plan_to_completion` fetches PyErr, calls `inject_eval_frame_traceback`, fills `out_ev` with KOS_EV_RAISE, sets context DEAD, returns -1.
