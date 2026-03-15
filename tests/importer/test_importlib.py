@@ -18,9 +18,11 @@ of temporary .ki files.
 
 
 import importlib
+import importlib.util
 import os
 import sys
 import tempfile
+import types
 import unittest
 
 from koskari.importer import install, is_installed, uninstall
@@ -129,6 +131,47 @@ class TestKiImport(unittest.IsolatedAsyncioTestCase):
         mod = importlib.import_module('ki_multi')
         self.assertEqual(1, mod.x)
         self.assertEqual(2, mod.y)
+
+
+class TestExecModuleDemand(unittest.TestCase):
+    """
+    Test exec_module_demand directly (loader runs .ki via demand path).
+    """
+
+    def setUp(self):
+        uninstall()
+        install()
+        self._tmpdir = tempfile.mkdtemp(prefix='koskari_test_')
+        self._prev_path = sys.path[:]
+        sys.path.insert(0, self._tmpdir)
+
+    def tearDown(self):
+        uninstall()
+        sys.path[:] = self._prev_path
+        to_remove = [
+            name for name, mod in list(sys.modules.items())
+            if hasattr(mod, '__file__')
+            and mod.__file__
+            and mod.__file__.startswith(self._tmpdir)
+        ]
+        for name in to_remove:
+            del sys.modules[name]
+        import shutil
+        shutil.rmtree(self._tmpdir, ignore_errors=True)
+
+    def test_exec_module_demand_binds_define(self):
+        path = os.path.join(self._tmpdir, 'demand_loader.ki')
+        with open(path, 'w', encoding='utf-8') as fh:
+            fh.write('(define result 42)\n')
+        loader = KoskariSourceFileLoader('demand_loader', path)
+        spec = importlib.util.spec_from_file_location(
+            'demand_loader', path, loader=loader)
+        module = types.ModuleType('demand_loader')
+        module.__name__ = 'demand_loader'
+        module.__package__ = None
+        module.__spec__ = spec
+        loader.exec_module_demand(module)
+        self.assertEqual(42, module.result)
 
 
 # The end.

@@ -37,7 +37,7 @@ from ..types import (TypePredicate, build_proper, is_nil, is_proper,
                      is_recursive, unpack)
 
 
-__all__ = ('make_bootstrap', 'make_builtins')
+__all__ = ('make_bootstrap', 'make_builtins', 'make_builtins_demand')
 
 
 _BUILTINS_CACHE = None
@@ -192,6 +192,46 @@ async def make_builtins():
     init_module(basics_module, basics_path)
 
     await load_module_async(basics_module)
+
+    for key, val in vars(basics_module).items():
+        if not key.startswith('__'):
+            try:
+                bootstrap[key] = val.deref()
+            except Exception:
+                pass
+
+    _BUILTINS_CACHE = bootstrap
+    return bootstrap
+
+
+def make_builtins_demand():
+    """
+    Assemble the full builtins dict (bootstrap + basics.ki) via the demand path.
+
+    Same as make_builtins but uses load_module_demand to load basics.ki so no
+    event loop or await is required.  Shares _BUILTINS_CACHE with make_builtins;
+    whichever path runs first populates the cache.
+
+    :return: dict of builtin name -> value
+    """
+
+    global _BUILTINS_CACHE
+    if _BUILTINS_CACHE is not None:
+        return _BUILTINS_CACHE
+
+    from . import module as _mod
+    from .module import init_module, load_module_demand
+
+    bootstrap = make_bootstrap()
+    ns = ModuleNamespace("koskari.basics", bootstrap)
+    basics_module = Module(ns)
+
+    _mod._ns_store(ns, '__name__', 'koskari.basics')
+
+    basics_path = join(dirname(__file__), 'basics.ki')
+    init_module(basics_module, basics_path)
+
+    load_module_demand(basics_module)
 
     for key, val in vars(basics_module).items():
         if not key.startswith('__'):

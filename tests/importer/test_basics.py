@@ -22,7 +22,7 @@ full builtins (make_builtins) to be loaded.
 from types import SimpleNamespace
 
 from koskari.compile import Compiler
-from koskari.importer.bootstrap import make_builtins
+from koskari.importer.bootstrap import make_builtins, make_builtins_demand
 from koskari.lib import Module, ModuleNamespace
 from koskari.reader import default_reader, source_str
 
@@ -41,6 +41,21 @@ class TestBasicsModuleLoads(unittest.IsolatedAsyncioTestCase):
         """
         builtins = await make_builtins()
         self.assertIn('compile/set!', builtins, 'compile/set! from basics.ki should be in builtins')
+
+
+class TestMakeBuiltinsDemand(unittest.IsolatedAsyncioTestCase):
+    """Tests for make_builtins_demand (demand path, shares cache with make_builtins)."""
+
+    def test_make_builtins_demand_returns_builtins_dict(self):
+        builtins = make_builtins_demand()
+        self.assertIn('cons', builtins)
+        self.assertIn('compile/set!', builtins)
+
+    async def test_shared_cache_with_make_builtins(self):
+        demand_builtins = make_builtins_demand()
+        async_builtins = await make_builtins()
+        self.assertIs(demand_builtins, async_builtins,
+                      'make_builtins and make_builtins_demand share _BUILTINS_CACHE')
 
 
 class TestRefMacro(unittest.IsolatedAsyncioTestCase):

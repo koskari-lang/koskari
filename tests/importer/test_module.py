@@ -12,13 +12,17 @@
 # along with this library; if not, see <http://www.gnu.org/licenses/>.
 
 """
-Tests for koskari.importer.module: new_module, init_module.
+Tests for koskari.importer.module: new_module, init_module, load_module_demand,
+new_module_demand.
 """
 
 
+import os
+import tempfile
 import unittest
 
-from koskari.importer.module import init_module, new_module
+from koskari.importer.module import (init_module, load_module_demand,
+                                     new_module, new_module_demand)
 from koskari.lib import Module
 
 import pytest
@@ -98,6 +102,48 @@ class TestInitModule(unittest.IsolatedAsyncioTestCase):
         init_module(mod, '/some/path/mymod.ki', spec=FakeSpec())
         self.assertIsInstance(getattr(mod, '__spec__', None), FakeSpec)
         self.assertIsInstance(getattr(mod, '__loader__', None), FakeLoader)
+
+
+class TestNewModuleDemand(unittest.TestCase):
+    """Sync tests for new_module_demand (demand path)."""
+
+    def test_returns_module_instance(self):
+        mod = new_module_demand('mymod')
+        self.assertIsInstance(mod, Module)
+
+    def test_name_stored_in_namespace(self):
+        mod = new_module_demand('mymod')
+        self.assertEqual('mymod', getattr(mod, '__name__', None))
+
+    def test_package_stored_when_given(self):
+        mod = new_module_demand('mypkg.mymod', package='mypkg')
+        self.assertEqual('mypkg', getattr(mod, '__package__', None))
+
+    def test_builtins_present(self):
+        mod = new_module_demand('mymod')
+        ns = vars(mod)
+        for name in ('cons', 'car', 'cdr', 'nil', 'pair', 'symbol'):
+            self.assertFalse(ns.ref(name).empty,
+                             "builtin %r missing from new module namespace" % name)
+
+
+class TestLoadModuleDemand(unittest.TestCase):
+    """Tests for load_module_demand (demand path)."""
+
+    def test_load_module_demand_executes_and_binds(self):
+        tmpdir = tempfile.mkdtemp(prefix='koskari_test_')
+        try:
+            path = os.path.join(tmpdir, 'demand_mod.ki')
+            with open(path, 'w', encoding='utf-8') as fh:
+                fh.write('(define answer 99)\n')
+            mod = new_module_demand('demand_mod')
+            init_module(mod, path)
+            load_module_demand(mod)
+            ns = vars(mod)
+            self.assertEqual(99, ns.ref('answer').deref())
+        finally:
+            import shutil
+            shutil.rmtree(tmpdir, ignore_errors=True)
 
 
 # The end.

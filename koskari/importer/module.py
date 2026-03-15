@@ -16,12 +16,16 @@ koskari.importer.module
 
 Module lifecycle for Koskari source files.
 
-Provides new_module, init_module, and load_module_async which together
-implement the read-compile-execute loop for .ki source files.  Each
-top-level expression is read, compiled to a Code object, executed as a
-koskari expression coroutine, and awaited in sequence.  This allows
-each expression to mutate the module namespace for subsequent expressions,
-e.g. by adding new bindings or special forms.
+Provides new_module, init_module, load_module_async, and a parallel demand
+chain (new_module_demand, load_module_demand) which drive execution via
+demand_sync instead of coroutines.  The loader may use either path; swapping
+is a one-line change in exec_module.
+
+Each top-level expression is read, compiled to a Code object, executed as a
+koskari expression coroutine (async path) or via demand_sync (demand path),
+and run in sequence.  This allows each expression to mutate the module
+namespace for subsequent expressions, e.g. by adding new bindings or
+special forms.
 
 This is the koskari analogue of sibilant.module from python-sibilant.
 
@@ -34,7 +38,7 @@ This is the koskari analogue of sibilant.module from python-sibilant.
 from os.path import split
 
 from ..compile import Compiler
-from ..lib import Module, ModuleNamespace
+from ..lib import Module, ModuleNamespace, demand_sync
 from ..reader import IndentAwareStream, LayoutReader, source_open
 
 
@@ -42,6 +46,8 @@ __all__ = (
     'new_module',
     'init_module',
     'load_module_async',
+    'load_module_demand',
+    'new_module_demand',
 )
 
 
@@ -60,6 +66,31 @@ async def new_module(name, package=None):
     from .bootstrap import make_builtins
 
     bltns = await make_builtins()
+    ns = ModuleNamespace(name, bltns)
+    module = Module(ns)
+
+    _ns_store(ns, '__name__', name)
+    if package is not None:
+        _ns_store(ns, '__package__', package)
+
+    return module
+
+
+def new_module_demand(name, package=None):
+    """
+    Create a new koskari Module with an initialised ModuleNamespace (demand path).
+
+    Same as new_module but uses make_builtins_demand() so no event loop or
+    await is required.  Used by the loader's exec_module_demand path.
+
+    :param name: fully-qualified module name string
+    :param package: parent package name string, or None
+    :return: koskari Module instance
+    """
+
+    from .bootstrap import make_builtins_demand
+
+    bltns = make_builtins_demand()
     ns = ModuleNamespace(name, bltns)
     module = Module(ns)
 
@@ -142,6 +173,48 @@ async def load_module_async(module):
             expr = fragment.as_expression(ns)
             coro = expr()
             await coro
+
+
+def load_module_demand(module):
+    """
+    Execute a koskari module by reading, compiling, and running each
+    top-level expression in order via demand_sync.
+
+    Same structure as load_module_async but each expression is run with
+    demand_sync(expr) instead of awaiting a coroutine.  No async
+    suspension is allowed.  Used by the loader's exec_module_demand path.
+
+    :param module: koskari Module instance with __file__ set
+    """
+
+    filename = getattr(module, '__file__', '<unknown>')
+    ns = vars(module)
+
+    with source_open(filename) as source_stream:
+
+        compiler = Compiler(
+            getattr(module, '__name__', '<module>'),
+            module,
+            filename=filename)
+
+        reader = LayoutReader(module)
+        stream = IndentAwareStream(
+            source_stream.stream,
+            source_stream.filename,
+            auto_skip_exec=False,
+            line_no=source_stream.lin,
+            col_no=source_stream.col,
+            max_indent=None)
+
+        while True:
+            source_expr = reader.read(stream)
+
+            if source_expr is None:
+                break
+
+            fragment = compiler.full_compile(source_expr)
+            expr = fragment.as_expression(ns)
+            demand_sync(expr)
 
 
 # ---------------------------------------------------------------------------

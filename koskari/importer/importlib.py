@@ -27,9 +27,10 @@ it contains no __init__.py, refusing to give us the chance to find
 __init__.ki.  By going first we can find koskari packages and decline
 gracefully on everything else.
 
-The loader (KoskariSourceFileLoader) uses koskari._sync.run_sync to drive
-the async load_module_async coroutine from the synchronous exec_module
-entry point required by importlib.
+The loader (KoskariSourceFileLoader) can use either run_sync(exec_module_async)
+or exec_module_demand to satisfy the synchronous exec_module entry point
+required by importlib.  Swap between them by changing the single return
+line in exec_module.
 
 :author: Christopher O'Brien <obriencj@preoccupied.net>
 :license: GNU General Public License v3
@@ -41,7 +42,8 @@ from importlib.abc import FileLoader
 from importlib.machinery import FileFinder, PathFinder
 from os import getcwd
 
-from .module import init_module, load_module_async, new_module
+from .module import (init_module, load_module_async, load_module_demand,
+                     new_module, new_module_demand)
 from .._sync import run_sync
 
 
@@ -105,9 +107,8 @@ class KoskariSourceFileLoader(FileLoader):
     """
     FileLoader for .ki source files.
 
-    Drives the koskari read-compile-execute loop synchronously by using
-    run_sync() from koskari._sync to await load_module_async.  This works
-    whether or not an event loop is already running in the calling thread.
+    exec_module can use either run_sync(exec_module_async) or exec_module_demand.
+    Swap by changing the single return line in exec_module.
     """
 
     def create_module(self, spec):
@@ -139,8 +140,33 @@ class KoskariSourceFileLoader(FileLoader):
             except AttributeError:
                 pass
 
+    def exec_module_demand(self, module):
+        """
+        Execute the module synchronously via the demand path (demand_sync).
+
+        Same steps as exec_module_async but uses new_module_demand and
+        load_module_demand so no event loop or await is required.
+        """
+        filename = self.get_filename(module.__name__)
+
+        ki_mod = new_module_demand(
+            module.__name__,
+            package=getattr(module, '__package__', None))
+
+        init_module(ki_mod, filename, spec=getattr(module, '__spec__', None))
+
+        load_module_demand(ki_mod)
+
+        ki_ns = vars(ki_mod)
+        for name in list(ki_ns.keys()):
+            try:
+                val = getattr(ki_mod, name)
+                setattr(module, name, val)
+            except AttributeError:
+                pass
+
     def exec_module(self, module):
-        return run_sync(self.exec_module_async(module))
+        return self.exec_module_demand(module)
 
 
 class KoskariFileFinder(FileFinder):
