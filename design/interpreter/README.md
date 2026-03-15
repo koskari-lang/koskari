@@ -6,7 +6,7 @@ This directory documents the interpreter implementation, including bytecode form
 
 - **bytecode.md**: Bytecode format and opcodes (implemented in `koskari/lib/bytecode.c`)
 - **bytecode-metadata-tables.md**: Static metadata tables (location table, extent table with tagged-union KosExtentDesc); O(1) control targets, no forward scans; JUMP locality validation; **implemented** in bytecode.c
-- **compiler.md**: Compiler architecture and phases
+- **compiler.md**: Compiler architecture; points to `koskari/compile/` and [SPECIALS.md](../SPECIALS.md). Historical (python-sibilant / CPython bytecode) content is in [archive/compiler-python-sibilant-historical.md](../archive/compiler-python-sibilant-historical.md)
 - **evaluator.md**: Evaluation model and drive loop (eval.c); KosCoroutine and run-code-as-coroutine (func.c)
 - **[EVALUATOR.md](../EVALUATOR.md)**: Evaluator operation diagrams, phase flow, opcode signaling, exceptions, transfer plans, tail calls, call installs, and play-by-play scenarios
 - **execution-invariants.md**: Koskari execution model invariants and design commitments
@@ -31,5 +31,5 @@ This directory documents the interpreter implementation, including bytecode form
 | KosCoroutine / run-code-as-coroutine | Implemented | `func.c`, `func.h` |
 | Opcode dispatch | Implemented | `eval.c` (most opcodes implemented; CALL_ATTR* stubs remain) |
 | Continuation support | Implemented | `eval.c`, `dynchain.c` |
-| Compiler | In progress — see [SPECIALS.md](../SPECIALS.md) | `koskari/compile/compiler.py`, `koskari/compile/specials/` |
+| Compiler | Substantially implemented — see [SPECIALS.md](../SPECIALS.md) | `koskari/compile/compiler.py`, `koskari/compile/specials/` |
 | `.kio` cache format | Design only | `design/interpreter/kio-format.md` |

@@ -224,7 +224,7 @@ There are no **partially** implemented opcodes; each handler is either full, a s
 - Most special forms from python-sibilant (beyond what is already implemented)
 - Macro system: defmacro, defalias (reader macros and compile/define-syntax are implemented)
 - Remaining control flow constructs (class blocks)
-- Compiler: remaining specials (yield, await, define-values, setq-values), macro expansion, optimization passes
+- Compiler: remaining specials (await, define-values, setq-values), macro expansion, optimization passes
 - Remaining opcode handlers: CALL_ATTR* (PUSH_WIND, POP_WIND, PUSH_COLLECT, POP_COLLECT, BUILD_CLASS, BUILD_ARGS, BUILD_KWDS, BUILD_KWDS_NAMES, COMBINE_ARGS, COMBINE_KWDS, PUSH_WITH, POP_WITH, PUSH_DYN_WITH, POP_DYN_WITH, CALL_NAMES, CALL_STAR, TAIL_CALL_NAMES, TAIL_CALL_STAR implemented; see "Opcodes: implementation status" above; with/dyn-with design in design/interpreter/with-dyn-with.md)
 
 ### Needs Reconsideration

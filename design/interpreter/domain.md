@@ -255,7 +255,7 @@ Opcodes must be added to opcode tables, docs, and assembler/disassembler paths.
 ## Compiler Lowering
 
 - **`(use-param X)`**: Expand to binding local `X` to `(PARAM "X")` (i.e. load ParamRef for key `"X"` and bind in current scope). Not yet implemented.
-- **`(compile/parameterize [[X v] [Y w]] body...)`** (implemented in `koskari/compile/specials.py`):
+- **`(compile/parameterize [[X v] [Y w]] body...)`** (implemented in `koskari/compile/specials/context.py`):
   - Compile each value expression onto the stack in order (first binding deepest, last at TOS).
   - Emit `PUSH_PARAM` with constant index of names tuple `(str(X), str(Y), ...)`.
   - Compile body.

@@ -7,7 +7,7 @@ and sibilant-ceval), see [language/special-forms.md](language/special-forms.md).
 
 Specials are registered in the compiler's module namespace; the compiler
 dispatches on the head symbol of a list form. The forms below are implemented in
-`koskari/compile/specials.py` and use helpers from `koskari/compile/helpers.py`
+`koskari/compile/specials/` and use helpers from `koskari/compile/helpers.py`
 where applicable.
 
 
@@ -1896,6 +1896,24 @@ that keeps IMPORT_FROM's stack invariant sound.
 ```
 
 **Tests:** `tests/compile/specials/test_import.py`
+
+
+## Other implemented specials
+
+The following specials are implemented but are not given full sections above.
+See the cited modules for behaviour and examples.
+
+- **compile/return** — Return a value from the current function; emits `RETURN`.
+  Implementation: `koskari/compile/specials/continuations.py`.
+- **compile/yield** — Yield a value from a generator; `(compile/yield)` or
+  `(compile/yield VAL)`. Emits `YIELD`. Implementation:
+  `koskari/compile/specials/continuations.py`.
+- **compile/with** — Single-shot context manager; `(compile/with EXPR BODY ...)`.
+  Emits `PUSH_WITH` / `POP_WITH`. Implementation:
+  `koskari/compile/specials/context.py`.
+- **compile/dyn-with** — Multi-shot dynamic context manager; async enter/exit.
+  Emits `PUSH_DYN_WITH` / `POP_DYN_WITH`. Implementation:
+  `koskari/compile/specials/context.py`.
 
 
 ## Adding New Specials

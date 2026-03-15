@@ -10,11 +10,16 @@
 
 4. **Refcount on GEN**: Manual acquire/release. On freeze we unlink (do not pop); release balances install's acquire. Owner holds ref between yields.
 
-## Current State (Broken)
+## Current State
 
-- Koskari-to-koskari: attaches frame directly; GEN never on consumer chain; inconsistent `agen->ctx` after attach.
-- Python-to-koskari: works (chain stays intact).
-- No `active` field; no freeze/release; no install helper.
+Phases 1–8 are implemented. Koskari-to-koskari and Python-to-koskari both use
+`kos_dyn_gen_install`; GEN is on the consumer chain; freeze/release and the
+install helper are in place. Agen dealloc when frozen (Phase 8) is implemented
+in `koskari/lib/iter.c`.
+
+Phase 9 (gen wind/unwind at install/freeze) is **under consideration**. It may
+turn out to be a bad idea or cause too great a performance impact; no
+implementation is planned until that is resolved.
 
 ## Architecture Overview
 
@@ -73,14 +78,14 @@ tox -e lldb -- -v -s tests/lib/opcode/test_yield.py
 
 ## Phase Index
 
-| Phase | Focus                            | Depends On |
-|-------|----------------------------------|------------|
-| 1     | GEN structure (active, refcount) | —          |
-| 2     | Refcount machinery               | 1          |
-| 3     | Agen ownership of GEN            | 1          |
-| 4     | Freeze behavior on yield         | 2, 3       |
-| 5     | Install helper                   | 1          |
-| 6     | Revive integration (agen path)   | 4, 5       |
-| 7     | Koskari flatten (NEXT/ITER_NEXT) | 4, 5       |
-| 8     | Agen dealloc when frozen         | 7          |
-| 9     | Gen wind/unwind (dyn-wind at install/freeze) | 7   |
+| Phase | Focus                            | Depends On | Status        |
+|-------|----------------------------------|------------|---------------|
+| 1     | GEN structure (active, refcount) | —          | Implemented   |
+| 2     | Refcount machinery               | 1          | Implemented   |
+| 3     | Agen ownership of GEN            | 1          | Implemented   |
+| 4     | Freeze behavior on yield         | 2, 3       | Implemented   |
+| 5     | Install helper                   | 1          | Implemented   |
+| 6     | Revive integration (agen path)   | 4, 5       | Implemented   |
+| 7     | Koskari flatten (NEXT/ITER_NEXT) | 4, 5       | Implemented   |
+| 8     | Agen dealloc when frozen         | 7          | Implemented   |
+| 9     | Gen wind/unwind (dyn-wind at install/freeze) | 7   | Under consideration |

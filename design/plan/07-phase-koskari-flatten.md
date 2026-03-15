@@ -1,5 +1,7 @@
 # Phase 7: Koskari Flatten
 
+**Status:** Implemented.
+
 ## Objective
 
 NEXT and ITER_NEXT on KosPyAsyncGen install GEN (with active) onto the consumer's chain instead of attaching only the frame. Reuse `kos_dyn_gen_install`. On yield, same freeze path; value is pushed to consumer and loop continues.

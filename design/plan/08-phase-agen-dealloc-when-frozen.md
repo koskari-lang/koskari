@@ -1,5 +1,7 @@
 # Phase 8: Agen Dealloc When Frozen
 
+**Status:** Implemented.
+
 ## Objective
 
 When an async generator is freed (GC/dealloc) while frozen (agen->gen set, GEN.active holds the suspended chain, agen->ctx chain empty), emulate Python's close behavior. We do not create a new context; we use agen->ctx, install GEN onto it like normal, then drive it via demand with GeneratorExit injected as a throw.

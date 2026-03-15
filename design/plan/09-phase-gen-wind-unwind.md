@@ -1,5 +1,9 @@
 # Phase 9: Gen Wind/Unwind (dynamic-wind at install/freeze)
 
+**Status:** Under consideration. This phase may turn out to be a bad idea or
+cause too great a performance impact; no implementation is planned until that
+is resolved.
+
 ## Objective
 
 When installing a generator onto a chain (resume) or freezing it (yield), run the same wind/unwind semantics as the transfer plan uses for continuations. Treat yield as a delimited continuation: leaving the gen extent must run after-thunks; entering (install/resume) must run before-thunks. This ensures `dynamic-wind` regions in generator bodies behave correctly across suspend/resume.
