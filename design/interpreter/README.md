@@ -18,6 +18,7 @@ This directory documents the interpreter implementation, including bytecode form
 - **dynnode-event-model.md**: Event-oriented model for dynamic nodes — lifecycle events (push, wind, resume, handle, unwind, pop, free), evaluator event composition (RETURN/RAISE/YIELD/AWAIT transits), and node behavior categories — **implemented** (see plan/00-gap-analysis.md)
 - **evaluator-token-continuation.md**: Evaluator token + continuation application model (KosEvaluatorToken, KoskariContinuationApply)
 - **domain.md**: Koskari Domain (ambient dynamic context) — design proposal for parameters and dynamic-extent scoping across AWAIT, boundaries, and continuations
+- **gil-cooperation.md**: GIL cooperation design — domain-TLS counter + timer, maybe_cooperate/ensure_gil, candidate call sites, and cost–benefit of options
 - **kio-format.md**: `.kio` compiled cache format — binary file layout, softened/hardened serialization levels, constant pool policy, `TaggedTuple`, cache invalidation, and loader algorithm
 
 ## Implementation Status

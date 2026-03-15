@@ -40,9 +40,11 @@ KOS_OP_HANDLER(CALL) {
     return r;
   }
 
-  PyObject *result = PyObject_Vectorcall(ptr[0],
-                                         (n > 0) ? &ptr[1] : NULL,
-                                         (size_t) n, NULL);
+  PyObject *result;
+  result = PyObject_Vectorcall(ptr[0],
+                               (n > 0) ? &ptr[1] : NULL,
+                               (size_t) n, NULL);
+
   if (! result)
     return -1;
 
