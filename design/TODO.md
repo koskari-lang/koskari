@@ -1,0 +1,170 @@
+# Koskari design TODO
+
+Centralized list of open design and implementation work. See the referenced
+design docs for detail.
+
+---
+
+## VM / opcodes
+
+### Unimplemented opcodes (stubs)
+
+These opcodes currently delegate to `op_unimplemented_stub` and raise at
+runtime. Implement when method-call-style `obj.method(...)` from bytecode is
+needed.
+
+- **CALL_ATTR** — `koskari/lib/opcode/CALL_ATTR.c`
+- **CALL_ATTR_NAMES** — `koskari/lib/opcode/CALL_ATTR_NAMES.c`
+- **CALL_ATTR_STAR** — `koskari/lib/opcode/CALL_ATTR_STAR.c`
+
+Ref: [FEATURES.md](FEATURES.md) § Opcodes: implementation status.
+
+---
+
+## Generator / yield
+
+### Dynamic wind-unwind at yield (Phase 9)
+
+**Status:** Under consideration. May be a bad idea or cause too great a
+performance impact; no implementation planned until resolved.
+
+Decide whether to run dynamic-wind (and param/dyn-with) enter/exit at
+generator install and freeze (so `(dynamic-wind before body after)` that
+spans a yield runs `after` on yield and `before` on resume). Design in
+[plan/09-phase-gen-wind-unwind.md](plan/09-phase-gen-wind-unwind.md).
+
+---
+
+## Continuations / transfer plans
+
+### Interrupted transfer plans
+
+Interrupted transfer plans are not wired in yet. When a transfer plan is
+interrupted (e.g. by an exception or a new transfer being triggered), resumption
+should use `kos_build_direct_install_plan` to rebuild or complete the plan; this
+path is not yet connected.
+
+Ref: `koskari/lib/dynchain.c` — `kos_build_direct_install_plan`.
+
+---
+
+## GIL
+
+### Safe GIL unlocking
+
+Investigate and implement safe voluntary GIL release in the evaluator. Current
+code uses a simple opcode-interval counter (every 255 dispatches) and on-exit
+release. Design proposal: domain-TLS counter + timer, `maybe_cooperate()` /
+`ensure_gil()`, with care for Py_BEGIN_ALLOW_THREADS / Py_END_ALLOW_THREADS
+pairing (see design note on cross-block release/reacquire).
+
+Ref: [interpreter/gil-cooperation.md](interpreter/gil-cooperation.md).
+
+---
+
+## Evaluator performance
+
+### Fast local stack
+
+Explore a fast local stack (or stack layout) to speed up the evaluator. Ideas
+include: VAR→FAST conversion in the compiler (indexed locals instead of
+name lookup), and/or a dedicated fast operand stack (e.g. linear array for
+current frame). Compiler optimization passes (constant folding, dead code
+elimination, VAR→FAST) are still to migrate.
+
+Ref: [archive/compiler-python-sibilant-historical.md](archive/compiler-python-sibilant-historical.md) § Optimization; [FEATURES.md](FEATURES.md) § Optimization (planned).
+
+---
+
+## Profiling / instrumentation
+
+### Profiling compile-time options and runtime hooks
+
+Add profiling support via compile-time options and runtime hooks. Goals:
+timing information for opcodes, the eval loop, and usage of freelists (and
+related allocator caches). Design and implement the knobs and hook points so
+we can measure where time is spent and how freelists behave.
+---
+
+## Compiler
+
+### Remaining specials
+
+- **await** — language/compile-level support for await (AWAIT opcode exists).
+- **define-values** / **setq-values** — multi-value definition and assignment.
+
+Ref: [FEATURES.md](FEATURES.md) § Ready to Migrate.
+
+### Macro expansion and optimization
+
+- Macro expansion: reader macros; defmacro, defalias (compile/define-syntax
+  is implemented).
+- Optimization passes: constant folding, dead code elimination, VAR→FAST
+  conversion.
+
+Ref: [archive/compiler-python-sibilant-historical.md](archive/compiler-python-sibilant-historical.md) § To Migrate.
+
+---
+
+## Domain / parameters
+
+### bind-param and use-param
+
+- **bind-param** — bind a parameter name in scope (currently consumers use
+  ParamRef(name).deref()).
+- **use-param** — `(use-param X)` expansion to bind X to `(PARAM "X")` (not
+  yet implemented).
+
+Ref: [interpreter/domain.md](interpreter/domain.md); [SPECIALS.md](SPECIALS.md) § compile/parameterize.
+
+---
+
+## Import / loader
+
+### .kio compiled cache
+
+Suffix and loader for `.kio` compiled cache are not yet integrated. Design in
+[interpreter/kio-format.md](interpreter/kio-format.md).
+
+Ref: [api/import-system.md](api/import-system.md).
+
+### Import path selection
+
+Add a feature flag (e.g. environment variable or loader knob) to choose at
+runtime between demand imports and run_sync imports, instead of editing
+`exec_module` in code.
+
+Ref: [ideas.md](ideas.md).
+
+---
+
+## Builtins
+
+### help builtin
+
+A **help** builtin that extends the core Pythonic `help` function: special-form
+and layout aware, and dispatching to object-specific help data via a `__help__`
+method when present. Design and implement the builtin, layout integration, and
+the `__help__` protocol.
+
+---
+
+## To design (broader)
+
+From [FEATURES.md](FEATURES.md) and related docs:
+
+- JIT integration
+- Additional language features (e.g. comprehensions, pattern matching, let*)
+- Performance optimizations (general)
+- Stack block cloning for full continuation semantics
+- Lazy frame COW optimization
+- Stack: remove COW semantics? See [api/stack-no-cow-proposal.md](api/stack-no-cow-proposal.md)
+
+---
+
+## Reference
+
+- **Implemented specials:** [SPECIALS.md](SPECIALS.md)
+- **Feature catalog and status:** [FEATURES.md](FEATURES.md)
+- **Generator plan (phases 1–8 done, 9 under consideration):** [plan/README.md](plan/README.md)
+- **Ideas (uncommitted):** [ideas.md](ideas.md)

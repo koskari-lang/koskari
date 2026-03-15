@@ -4,6 +4,8 @@ This directory contains the design documentation for koskari, organized into thr
 
 **For teaching another system** (human or agent) about what has been done and what must hold, see **[INVARIANTS-AND-CLARIFICATIONS.md](INVARIANTS-AND-CLARIFICATIONS.md)**. It summarizes execution invariants, type and data invariants, C structures, implementation status, and clarifications in one place.
 
+**For open work** (unimplemented opcodes, GIL, generator wind/unwind, compiler and evaluator todos), see **[TODO.md](TODO.md)**.
+
 ## Structure
 
 - **[SPECIALS.md](SPECIALS.md)**: Reference for implemented compiler special forms (compile/bytecode, compile/begin, compile/call, compile/lambda, compile/try, compile/class, compile/define-syntax, import, import-from, and many more; see SPECIALS.md for full list), with use-cases and examples
