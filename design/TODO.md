@@ -176,6 +176,16 @@ Ref: [interpreter/domain.md](interpreter/domain.md); [SPECIALS.md](SPECIALS.md) 
 
 ## Import / loader
 
+### Python AST loader (transformative parser)
+
+Load Python modules as Koskari modules at import time by using a special reader
+that transforms Python AST into equivalent Koskari expression trees; the
+existing Compiler and specials consume those forms unchanged. The new piece is
+the transformative parser (AST → form tree); no compiler or special-form
+changes required.
+
+Ref: [python-ast-loader.md](python-ast-loader.md); [api/import-system.md](api/import-system.md) (module lifecycle, load path).
+
 ### .kio compiled cache
 
 Suffix and loader for `.kio` compiled cache are not yet integrated. Design in
