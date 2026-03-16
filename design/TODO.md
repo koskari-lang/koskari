@@ -107,6 +107,15 @@ Ref: [api/dunder-adapter.md](api/dunder-adapter.md) (demand_sync, demand path);
 
 ## Compiler
 
+### BIND and USE specifiers
+
+Differentiate bracket specifiers into **BIND** (target-first: formals, let,
+define) and **USE** (expression-first: exception matching, with, dyn-with).
+Implement `parse_bind_spec` / `parse_use_spec` and consume normalized
+BindSpec/UseSpec in the relevant constructs.
+
+Ref: [language/bind-use-specifiers.md](language/bind-use-specifiers.md).
+
 ### Remaining specials
 
 - **await** — language/compile-level support for await (AWAIT opcode exists).
@@ -126,6 +135,29 @@ Ref: [FEATURES.md](FEATURES.md) § Ready to Migrate;
 Ref: [interpreter/compiler.md](interpreter/compiler.md) (current compiler);
 [language/special-forms.md](language/special-forms.md) (special forms catalog);
 [archive/compiler-python-sibilant-historical.md](archive/compiler-python-sibilant-historical.md) § To Migrate.
+
+### Fenced foreign literal
+
+Add a compile-time fenced foreign-literal mechanism: the reader recognizes
+triple-backtick fence syntax and lowers it to `compile/apply-fence`; that
+special resolves a handler (e.g. `fence/json`) which transliterates raw fenced
+source into Koskari source. V1 scope is reader support, the special, metadata
+plumbing, and one built-in JSON fence with narrow extensions (bare identifiers
+in value position only).
+
+Ref: [fenced-foreign-literal.md](fenced-foreign-literal.md).
+
+### Bundles and namespace facets
+
+Introduce **bundles** as first-class namespace facet objects: a namespace of
+implementation bindings, an exports list, and a scoped activation mechanism
+(e.g. `with-bundle`). Exports act as forwarding facades that activate the
+bundle and redispatch to bundle-local implementations. Bundles participate in
+both compile-time resolution (specials, operators, fence/layout handlers) and
+runtime name lookup, so features can ship as cohesive namespaces without
+polluting the module.
+
+Ref: [bundles-and-namespace-facets.md](bundles-and-namespace-facets.md).
 
 ---
 
@@ -186,7 +218,8 @@ From [FEATURES.md](FEATURES.md) and related docs:
 - Stack block cloning for full continuation semantics
 - Lazy frame COW optimization
 - Stack: remove COW semantics? See [api/stack-no-cow-proposal.md](api/stack-no-cow-proposal.md)
-- Pattern matching: [api/pattern-matching.md](api/pattern-matching.md)
+- Pattern matching: [api/pattern-matching.md](api/pattern-matching.md); bracket
+  specifiers (BIND vs USE): [language/bind-use-specifiers.md](language/bind-use-specifiers.md)
 - Control flow (comprehensions, etc.): [language/control-flow.md](language/control-flow.md)
 
 ---
