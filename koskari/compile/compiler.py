@@ -258,8 +258,9 @@ class ByteCodeFragment:
         :param extra: optional extra position data (e.g. source text)
         """
 
-        line, col = linecol[:2]
-        self.instruction(OpCode.KOS_OP_POSITION, (line, col, extra))
+        if linecol:
+            line, col = linecol[:2]
+            self.instruction(OpCode.KOS_OP_POSITION, (line, col, extra))
 
 
     def instruction(self, op, opa):
@@ -404,6 +405,24 @@ class ByteCodeFragment:
 class CompilerMode(IntEnum):
     FUNCTION = auto()
     EXPRESSION = auto()
+
+
+_CHECK_SQUASHES = {
+    OpCode.KOS_OP_OBJECT_GE: OpCode.KOS_OP_CHECK_GE,
+    OpCode.KOS_OP_OBJECT_LE: OpCode.KOS_OP_CHECK_LE,
+    OpCode.KOS_OP_OBJECT_LT: OpCode.KOS_OP_CHECK_LT,
+    OpCode.KOS_OP_OBJECT_GT: OpCode.KOS_OP_CHECK_GT,
+    OpCode.KOS_OP_OBJECT_EQ: OpCode.KOS_OP_CHECK_EQ,
+    OpCode.KOS_OP_OBJECT_NE: OpCode.KOS_OP_CHECK_NE,
+    OpCode.KOS_OP_OBJECT_IN: OpCode.KOS_OP_CHECK_IN,
+    OpCode.KOS_OP_OBJECT_NOT_IN: OpCode.KOS_OP_CHECK_NOT_IN,
+    OpCode.KOS_OP_OBJECT_IS: OpCode.KOS_OP_CHECK_IS,
+    OpCode.KOS_OP_OBJECT_IS_NOT: OpCode.KOS_OP_CHECK_IS_NOT,
+    OpCode.KOS_OP_OBJECT_IS_INSTANCE: OpCode.KOS_OP_CHECK_IS_INSTANCE,
+    OpCode.KOS_OP_OBJECT_IS_SUBCLASS: OpCode.KOS_OP_CHECK_IS_SUBCLASS,
+    OpCode.KOS_OP_OBJECT_NOT: OpCode.KOS_OP_JUMP_TRUE,
+    # OpCode.KOS_OP_EXCEPTION_MATCH: OpCode.KOS_OP_CHECK_EXCEPTION,
+}
 
 
 class Compiler:
@@ -664,6 +683,13 @@ class Compiler:
                 del squished[-1]
                 continue
 
+            elif (op == OpCode.KOS_OP_OBJECT_NOT):
+                prior = squished[-1][0]
+                if prior == OpCode.KOS_OP_CONST:
+                    val = squished[-1][1]
+                    squished[-1] = (OpCode.KOS_OP_CONST, not val)
+                    continue
+
             elif (op == OpCode.KOS_OP_JUMP_TRUE
                   and squished[-1][0] == OpCode.KOS_OP_CONST):
                 truthy = bool(squished[-1][1])
@@ -673,16 +699,26 @@ class Compiler:
                 else:
                     continue
 
-            elif (op == OpCode.KOS_OP_JUMP_FALSE
-                  and squished[-1][0] == OpCode.KOS_OP_CONST):
-                truthy = not squished[-1][1]
-                del squished[-1]
-                if truthy:
-                    op = OpCode.KOS_OP_JUMP
-                else:
-                    continue
+            elif (op == OpCode.KOS_OP_JUMP_FALSE):
+                prior = squished[-1][0]
+                if prior == OpCode.KOS_OP_CONST:
+                    # jumping based on a constant value
+                    truthy = not squished[-1][1]
+                    del squished[-1]
+                    if truthy:
+                        op = OpCode.KOS_OP_JUMP
+                    else:
+                        continue
+
+                elif prior in _CHECK_SQUASHES:
+                    # here we're combining an object operand with a jump
+                    # into a single check jump
+                    del squished[-1]
+                    op = _CHECK_SQUASHES[prior]
 
             elif op == OpCode.KOS_OP_LABEL:
+                # omit useless jump when the jump target is the next instruction
+                # JUMP foo, LABEL foo -> NOOP
                 prior = squished[-1]
                 if prior[0] == OpCode.KOS_OP_JUMP and prior[1] == arg:
                     del squished[-1]
@@ -703,6 +739,7 @@ class Compiler:
                    and arg == 1
                    and squished[-1][0] == OpCode.KOS_OP_CONST
                    and squished[-1][1] is None)):
+                # CONST None, RETURN 1 -> RETURN 0
                 del squished[-1]
                 arg = 0
 
