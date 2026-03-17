@@ -326,16 +326,21 @@ static PyObject *formals_nspec_impl(PyObject *pos, PyObject *pos_only,
   if (! lcls)
     return NULL;
 
+  /* note: order of copying is important -- the KosFormals_ApplyFast and
+  KosFormals_VectorApplyFast functions will use positional storage for pos,
+  pos_only, kwd, and star -- kwd_only and starstar are stored at the end */
   size_t offset = 0;
   COPY_OVER(lcls, pos, offset);
   COPY_OVER(lcls, pos_only, offset);
   COPY_OVER(lcls, kwd, offset);
-  COPY_OVER(lcls, kwd_only, offset);
 
   if (star) {
     Py_INCREF(star);
     PyList_SET_ITEM(lcls, offset++, star);
   }
+
+  COPY_OVER(lcls, kwd_only, offset);
+
   if (starstar) {
     Py_INCREF(starstar);
     PyList_SET_ITEM(lcls, offset++, starstar);
@@ -806,6 +811,145 @@ static int apply_formals_kwargs_phase(
 }
 
 
+int KosFormals_ApplyFast(
+    PyObject *formals,
+    PyObject *namespace,
+    PyObject *args,
+    PyObject *kwargs) {
+
+  SAYF("in KosFormals_ApplyFast(%R, %R, %R, %R)",
+       formals, namespace, args, kwargs);
+
+  if (! KosNamespace_Check(namespace)) {
+    PyErr_Format(PyExc_TypeError, "namespace must be a Namespace instance,"
+                 " not %R", namespace);
+    return -1;
+  }
+
+  PyObject *pos = KosFormals_POS(formals);
+  PyObject *pos_only = KosFormals_POS_ONLY(formals);
+  PyObject *kwd = KosFormals_KWD(formals);
+  PyObject *kwd_only = KosFormals_KWD_ONLY(formals);
+  PyObject *star = KosFormals_STAR(formals);
+  PyObject *starstar = KosFormals_STARSTAR(formals);
+  PyObject *defaults = KosFormals_DEFAULTS(formals);
+
+  SAYF("  pos      : %R", pos);
+  SAYF("  pos_only : %R", pos_only);
+  SAYF("  kwd      : %R", kwd);
+  SAYF("  kwd_only : %R", kwd_only);
+  SAYF("  star     : %R", star);
+  SAYF("  starstar : %R", starstar);
+  SAYF("  defaults : %R", defaults);
+
+  ssize_t i, ipos = 0, ipos_only = 0, ikwd = 0, ikwd_only = 0;
+  ssize_t l = args? PyTuple_GET_SIZE(args): 0;
+
+  for (i = 0; i < l; i++) {
+    SAYF("applying positional %i", i);
+
+    if (pos) {
+      if (KosNamespace_FastStore(
+          namespace,
+          i,
+          PyTuple_GET_ITEM(args, i)))
+        return -1;
+      if (++ipos >= PyTuple_GET_SIZE(pos))
+        pos = NULL;
+
+    } else if (pos_only) {
+      if (KosNamespace_FastStore(
+          namespace,
+          i,
+          PyTuple_GET_ITEM(args, i)))
+        return -1;
+      if (++ipos_only >= PyTuple_GET_SIZE(pos_only))
+        pos_only = NULL;
+
+    } else if (kwd) {
+      if (KosNamespace_FastStore(
+          namespace,
+          i,
+          PyTuple_GET_ITEM(args, i)))
+        return -1;
+      if (++ikwd >= PyTuple_GET_SIZE(kwd))
+        kwd = NULL;
+
+    } else if (star) {
+      PyObject *sl = PyTuple_GetSlice(args, i, l);
+      if (KosNamespace_FastStore(namespace, i, sl)) {
+        Py_DECREF(sl);
+        return -1;
+      }
+      Py_DECREF(sl);
+      star = NULL;
+      break;
+
+    } else {
+      PyErr_SetString(PyExc_TypeError, "too many positional arguments");
+      return -1;
+    }
+  }
+
+  if (pos_only) {
+    PyObject *key = PyTuple_GET_ITEM(pos_only, ipos_only);
+    PyErr_Format(PyExc_TypeError, "missing positional-only argument: %S",
+                 key);
+    return -1;
+  }
+
+  if (star) {
+    // we've run out of positional args but are expecting a star arg,
+    // so let's provide an empty one
+    PyObject *sl = PyTuple_New(0);
+    if (! sl)
+      return -1;
+    if (KosNamespace_Store(namespace, star, sl)) {
+      Py_DECREF(sl);
+      return -1;
+    }
+    Py_DECREF(sl);
+    star = NULL;
+  }
+
+  if (! kwargs) {
+    if (pos) {
+      PyObject *key = PyTuple_GET_ITEM(pos, ipos);
+      PyErr_Format(PyExc_TypeError, "missing positional argument: %S", key);
+      return -1;
+
+    } else if (kwd && ! defaults) {
+      PyObject *key = PyTuple_GET_ITEM(kwd, ikwd);
+      PyErr_Format(PyExc_TypeError, "missing keyword argument: %S", key);
+      return -1;
+
+    } else if (kwd_only && ! defaults) {
+      PyObject *key = PyTuple_GET_ITEM(kwd_only, ikwd_only);
+      PyErr_Format(PyExc_TypeError, "missing keyword-only argument: %S", key);
+      return -1;
+    }
+  }
+
+  if (kwargs) {
+    kwargs = PyDict_Copy(kwargs);
+    if (! kwargs)
+      return -1;
+  }
+
+  if (apply_formals_kwargs_phase(namespace, pos, pos_only, kwd, kwd_only,
+                                 starstar, defaults, kwargs,
+                                 ipos, ipos_only, ikwd, ikwd_only) < 0) {
+    SAY("KosFormals_ApplyFast -> fail_kwargs (-1)");
+    Py_XDECREF(kwargs);
+    return -1;
+  }
+
+  SAY("KosFormals_ApplyFast -> 0");
+  Py_XDECREF(kwargs);
+  return 0;
+}
+
+
 int KosFormals_Apply(
     PyObject *formals,
     PyObject *namespace,
@@ -844,25 +988,28 @@ int KosFormals_Apply(
     SAYF("applying positional %i", i);
 
     if (pos) {
-      if (KosNamespace_Store(namespace,
-                             PyTuple_GET_ITEM(pos, ipos++),
-                             PyTuple_GET_ITEM(args, i)))
+      if (KosNamespace_Store(
+          namespace,
+          PyTuple_GET_ITEM(pos, ipos++),
+          PyTuple_GET_ITEM(args, i)))
         return -1;
       if (ipos >= PyTuple_GET_SIZE(pos))
         pos = NULL;
 
     } else if (pos_only) {
-      if (KosNamespace_Store(namespace,
-                             PyTuple_GET_ITEM(pos_only, ipos_only++),
-                             PyTuple_GET_ITEM(args, i)))
+      if (KosNamespace_Store(
+          namespace,
+          PyTuple_GET_ITEM(pos_only, ipos_only++),
+          PyTuple_GET_ITEM(args, i)))
         return -1;
       if (ipos_only >= PyTuple_GET_SIZE(pos_only))
         pos_only = NULL;
 
     } else if (kwd) {
-      if (KosNamespace_Store(namespace,
-                             PyTuple_GET_ITEM(kwd, ikwd++),
-                             PyTuple_GET_ITEM(args, i)))
+      if (KosNamespace_Store(
+          namespace,
+          PyTuple_GET_ITEM(kwd, ikwd++),
+          PyTuple_GET_ITEM(args, i)))
         return -1;
       if (ikwd >= PyTuple_GET_SIZE(kwd))
         kwd = NULL;
@@ -981,25 +1128,28 @@ int KosFormals_VectorApply(
     SAYF("applying positional %i", i);
 
     if (pos) {
-      if (KosNamespace_Store(namespace,
-                             PyTuple_GET_ITEM(pos, ipos++),
-                             args[i]))
+      if (KosNamespace_Store(
+          namespace,
+          PyTuple_GET_ITEM(pos, ipos++),
+          args[i]))
         return -1;
       if (ipos >= PyTuple_GET_SIZE(pos))
         pos = NULL;
 
     } else if (pos_only) {
-      if (KosNamespace_Store(namespace,
-                             PyTuple_GET_ITEM(pos_only, ipos_only++),
-                             args[i]))
+      if (KosNamespace_Store(
+          namespace,
+          PyTuple_GET_ITEM(pos_only, ipos_only++),
+          args[i]))
         return -1;
       if (ipos_only >= PyTuple_GET_SIZE(pos_only))
         pos_only = NULL;
 
     } else if (kwd) {
-      if (KosNamespace_Store(namespace,
-                             PyTuple_GET_ITEM(kwd, ikwd++),
-                             args[i]))
+      if (KosNamespace_Store(
+          namespace,
+          PyTuple_GET_ITEM(kwd, ikwd++),
+          args[i]))
         return -1;
       if (ikwd >= PyTuple_GET_SIZE(kwd))
         kwd = NULL;
@@ -1099,6 +1249,172 @@ int KosFormals_VectorApply(
   }
 
   SAY(" -> 0");
+  Py_XDECREF(kwargs);
+  return 0;
+}
+
+
+int KosFormals_VectorApplyFast(
+    PyObject *formals,
+    PyObject *namespace,
+    PyObject *const *args,
+    size_t nargs,
+    PyObject *names) {
+
+  SAYF("in KosFormals_VectorApplyFast(%R, %R, %p, %i, %R)",
+       formals, namespace, args, nargs, names);
+
+  if (! KosNamespace_Check(namespace)) {
+    PyErr_Format(PyExc_TypeError, "namespace must be a Namespace instance,"
+                 " not %R", namespace);
+    return -1;
+  }
+
+  PyObject *pos = KosFormals_POS(formals);
+  PyObject *pos_only = KosFormals_POS_ONLY(formals);
+  PyObject *kwd = KosFormals_KWD(formals);
+  PyObject *kwd_only = KosFormals_KWD_ONLY(formals);
+  PyObject *star = KosFormals_STAR(formals);
+  PyObject *starstar = KosFormals_STARSTAR(formals);
+  PyObject *defaults = KosFormals_DEFAULTS(formals);
+
+  SAYF("  pos      : %R", pos);
+  SAYF("  pos_only : %R", pos_only);
+  SAYF("  kwd      : %R", kwd);
+  SAYF("  kwd_only : %R", kwd_only);
+  SAYF("  star     : %R", star);
+  SAYF("  starstar : %R", starstar);
+  SAYF("  defaults : %R", defaults);
+
+  ssize_t i, ipos = 0, ipos_only = 0, ikwd = 0, ikwd_only = 0;
+  ssize_t l = PyVectorcall_NARGS(nargs);
+
+  for (i = 0; i < l; i++) {
+    SAYF("applying positional %i", i);
+
+    if (pos) {
+      if (KosNamespace_FastStore(
+          namespace,
+          i,
+          args[i]))
+        return -1;
+      if (++ipos >= PyTuple_GET_SIZE(pos))
+        pos = NULL;
+
+    } else if (pos_only) {
+      if (KosNamespace_FastStore(
+          namespace,
+          i,
+          args[i]))
+        return -1;
+      if (++ipos_only >= PyTuple_GET_SIZE(pos_only))
+        pos_only = NULL;
+
+    } else if (kwd) {
+      if (KosNamespace_FastStore(
+          namespace,
+          i,
+          args[i]))
+        return -1;
+      if (++ikwd >= PyTuple_GET_SIZE(kwd))
+        kwd = NULL;
+
+    } else if (star) {
+      size_t nstar = l - i;
+      size_t fast_i = i;
+      PyObject *sl = PyTuple_New(nstar);
+      if (! sl)
+        return -1;
+      for (size_t istar = 0; istar < nstar; istar++) {
+        PyObject *a = args[i++];
+        Py_INCREF(a);
+        PyTuple_SET_ITEM(sl, istar, a);
+      }
+
+      if (KosNamespace_FastStore(namespace, fast_i, sl)) {
+        Py_DECREF(sl);
+        return -1;
+      }
+      Py_DECREF(sl);
+      star = NULL;
+      break;
+
+    } else {
+      PyErr_SetString(PyExc_TypeError, "too many positional arguments");
+      return -1;
+    }
+  }
+
+  if (pos_only) {
+    PyObject *key = PyTuple_GET_ITEM(pos_only, ipos_only);
+    PyErr_Format(PyExc_TypeError, "missing positional-only argument: %S",
+                 key);
+    return -1;
+  }
+
+  if (star) {
+    // we've run out of positional args but are expecting a star arg,
+    // so let's provide an empty one
+    PyObject *sl = PyTuple_New(0);
+    if (! sl)
+      return -1;
+    if (KosNamespace_FastStore(namespace, l, sl)) {
+      Py_DECREF(sl);
+      return -1;
+    }
+    Py_DECREF(sl);
+    star = NULL;
+  }
+
+  ssize_t k = names? PyTuple_GET_SIZE(names): 0;
+  if (! k)
+    names = NULL;
+
+  if (! names) {
+    if (pos) {
+      PyObject *key = PyTuple_GET_ITEM(pos, ipos);
+      PyErr_Format(PyExc_TypeError, "missing positional argument: %S", key);
+      return -1;
+
+    } else if (kwd && ! defaults) {
+      PyObject *key = PyTuple_GET_ITEM(kwd, ikwd);
+      PyErr_Format(PyExc_TypeError, "missing keyword argument: %S", key);
+      return -1;
+
+    } else if (kwd_only && ! defaults) {
+      PyObject *key = PyTuple_GET_ITEM(kwd_only, ikwd_only);
+      PyErr_Format(PyExc_TypeError, "missing keyword-only argument: %S", key);
+      return -1;
+    }
+  }
+
+  // TODO: optimize this to not create the intermediary kwargs dict except
+  // when there's a star arg
+  PyObject *kwargs = NULL;
+  if (names) {
+    kwargs = PyDict_NewPresized(k);
+    if (! kwargs)
+      return -1;
+    for (i = 0; i < k; i++) {
+      PyObject *name = PyTuple_GET_ITEM(names, i);
+      PyObject *v = args[l + i];
+      SAYF(" VEC NAME %i, %i, %R, %R", i, l + i, name, v);
+      if (PyDict_SetItem(kwargs, name, v) < 0) {
+        Py_DECREF(kwargs);
+        return -1;
+      }
+    }
+  }
+
+  if (apply_formals_kwargs_phase(namespace, pos, pos_only, kwd, kwd_only,
+                                 starstar, defaults, kwargs,
+                                 ipos, ipos_only, ikwd, ikwd_only) < 0) {
+    SAY("KosFormals_VectorApplyFast -> -1");
+    Py_XDECREF(kwargs);
+    return -1;
+  }
+
+  SAY("KosFormals_VectorApplyFast -> 0");
   Py_XDECREF(kwargs);
   return 0;
 }
