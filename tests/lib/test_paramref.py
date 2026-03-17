@@ -21,6 +21,7 @@ Unit tests for ParamRef
 import unittest
 
 from koskari.lib import ParamRef, Ref
+from koskari.lib import symbol
 from tests import make_callable
 from tests.lib.opcode import build_expr
 
@@ -52,6 +53,22 @@ class TestParamRefCreate(unittest.TestCase):
         p = ParamRef("foo")
         self.assertIsInstance(p, ParamRef)
         self.assertEqual(p.name, "foo")
+
+    def test_create_with_symbol_key(self):
+        """
+        ParamRef can be created with a symbol key and normalizes to string name
+        """
+
+        p = ParamRef(symbol("x"))
+        self.assertEqual(p.name, "x")
+
+    def test_create_with_invalid_key_raises_typeerror(self):
+        """
+        ParamRef rejects non-string non-symbol keys
+        """
+
+        with self.assertRaises(TypeError):
+            ParamRef(123)
 
 
 class TestParamRefNoDomain(unittest.TestCase):

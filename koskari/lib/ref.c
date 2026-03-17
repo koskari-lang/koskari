@@ -52,9 +52,14 @@ static PyObject *_str_empty = NULL;  // "empty"
 
 static int sym_ref_init(PyObject *self, PyObject *name, PyObject *value) {
 
-  if ((! name) || Py_None == name)
+  if ((! name) || Py_None == name) {
     name = _str_ref;
-  Py_INCREF(name);
+    Py_INCREF(name);
+  } else {
+    name = kos_key_to_str(name);
+    if (! name)
+      return -1;
+  }
   KosRef_NAME(self) = name;
 
   Py_XINCREF(value);
@@ -233,9 +238,14 @@ static int attr_ref_init(PyObject *self, PyObject *name,
     return -1;
   }
 
-  if (! name || name == Py_None)
+  if (! name || name == Py_None) {
     name = _str_attr_ref;
-  Py_INCREF(name);
+    Py_INCREF(name);
+  } else {
+    name = kos_key_to_str(name);
+    if (! name)
+      return -1;
+  }
   KosRef_NAME(self) = name;
 
   Py_INCREF(obj);
@@ -421,9 +431,14 @@ static int item_ref_init(PyObject *self, PyObject *name,
   KosItemRef_OBJ(self) = NULL;
   KosItemRef_KEY(self) = NULL;
 
-  if (! name || name == Py_None)
+  if (! name || name == Py_None) {
     name = _str_item_ref;
-  Py_INCREF(name);
+    Py_INCREF(name);
+  } else {
+    name = kos_key_to_str(name);
+    if (! name)
+      return -1;
+  }
   KosRef_NAME(self) = name;
 
   Py_INCREF(obj);
@@ -625,9 +640,14 @@ static int dyn_ref_init(
 
   KosSymbolicRef_VALUE(self) = NULL;
 
-  if (! name || name == Py_None)
+  if (! name || name == Py_None) {
     name = _str_dyn_ref;
-  Py_INCREF(name);
+    Py_INCREF(name);
+  } else {
+    name = kos_key_to_str(name);
+    if (! name)
+      return -1;
+  }
   KosRef_NAME(self) = name;
 
   if (getfn == Py_None) {
@@ -866,9 +886,14 @@ static int const_ref_init(PyObject *self, PyObject *name, PyObject *value) {
     return -1;
   }
 
-  if ((! name) || Py_None == name)
+  if ((! name) || Py_None == name) {
     name = _str_const_ref;
-  Py_INCREF(name);
+    Py_INCREF(name);
+  } else {
+    name = kos_key_to_str(name);
+    if (! name)
+      return -1;
+  }
   KosRef_NAME(self) = name;
 
   Py_INCREF(value);
@@ -965,9 +990,14 @@ static int memo_ref_init(PyObject *self, PyObject *name, PyObject *getfn) {
     return -1;
   }
 
-  if (! name || name == Py_None)
+  if (! name || name == Py_None) {
     name = _str_memo_ref;
-  Py_INCREF(name);
+    Py_INCREF(name);
+  } else {
+    name = kos_key_to_str(name);
+    if (! name)
+      return -1;
+  }
   KosRef_NAME(self) = name;
 
   Py_INCREF(getfn);
@@ -1089,9 +1119,14 @@ static int weak_ref_init(PyObject *self, PyObject *name, PyObject *value) {
   KosRef_NAME(self) = NULL;
   KosSymbolicRef_VALUE(self) = NULL;
 
-  if (! name || name == Py_None)
+  if (! name || name == Py_None) {
     name = _str_weak_ref;
-  Py_INCREF(name);
+    Py_INCREF(name);
+  } else {
+    name = kos_key_to_str(name);
+    if (! name)
+      return -1;
+  }
   KosRef_NAME(self) = name;
 
   if (value) {
@@ -1276,7 +1311,9 @@ static int param_ref_init(PyObject *self, PyObject *key, PyObject *default_value
     PyErr_SetString(PyExc_ValueError, "ParamRef requires a key (name)");
     return -1;
   }
-  Py_INCREF(key);
+  key = kos_key_to_str(key);
+  if (! key)
+    return -1;
   KosRef_NAME(self) = key;
 
   Py_XINCREF(default_value);

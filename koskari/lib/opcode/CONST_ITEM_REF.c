@@ -25,7 +25,7 @@ KOS_OP_HANDLER(CONST_ITEM_REF) {
   PyObject *obj = KosStackBlock_PopRef(&CURRENT_STACK(ctx));
   if (! obj)
     return -1;
-  PyObject *ref = KosItemRef_New(key, obj, key);
+  PyObject *ref = KosItemRef_New(NULL, obj, key);
   Py_DECREF(obj);
   if (! ref)
     return -1;

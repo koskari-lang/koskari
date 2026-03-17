@@ -95,6 +95,23 @@ int koskari_lib_clear(PyObject *mod);
       (which) = PyUnicode_FromString(val);      \
   }
 
+static inline PyObject *kos_key_to_str(PyObject *key) {
+  if (PyUnicode_Check(key)) {
+    Py_INCREF(key);
+    return key;
+  }
+
+  if (KosSymbol_Check(key)) {
+    PyObject *name = KosInternedAtom_NAME(key);
+    Py_INCREF(name);
+    return name;
+  }
+
+  PyErr_Format(PyExc_TypeError, "expected str or symbol, not '%.200s'",
+               key ? Py_TYPE(key)->tp_name : "NULL");
+  return NULL;
+}
+
 
 #endif
 

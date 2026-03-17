@@ -25,6 +25,7 @@ from unittest.mock import Mock
 from koskari.lib import (
     Ref, AttributeRef, ItemRef, DynamicRef, ConstantRef, MemoizedRef,
     WeakRef,
+    symbol,
 )
 from koskari.types import FormalsSpec
 from tests import make_callable
@@ -52,6 +53,16 @@ class TestSymbolicRef(unittest.IsolatedAsyncioTestCase):
         """Ref with name argument uses that name"""
         r = Ref("foo")
         self.assertEqual(r.name, "foo")
+
+    async def test_custom_symbol_name(self):
+        """Ref accepts symbol for name and normalizes to string"""
+        r = Ref(symbol("foo"))
+        self.assertEqual(r.name, "foo")
+
+    async def test_invalid_name_type_raises_typeerror(self):
+        """Ref rejects non-string non-symbol names"""
+        with self.assertRaises(TypeError):
+            Ref(123)
 
     async def test_empty_initially(self):
         """Ref without value is empty"""
@@ -131,6 +142,13 @@ class TestAttributeRef(unittest.IsolatedAsyncioTestCase):
         r = AttributeRef(None, o, "foo")
         self.assertEqual(r.name, "<AttributeRef>")
 
+    async def test_custom_symbol_name(self):
+        """AttributeRef accepts symbol for name and normalizes to string"""
+        o = Obj()
+        o.foo = "bar"
+        r = AttributeRef(symbol("myattr"), o, "foo")
+        self.assertEqual(r.name, "myattr")
+
     async def test_deref(self):
         """deref() returns the attribute value"""
         o = Obj()
@@ -206,6 +224,12 @@ class TestItemRef(unittest.IsolatedAsyncioTestCase):
         d = {"key": "value"}
         r = ItemRef(None, d, "key")
         self.assertEqual(r.name, "<ItemRef>")
+
+    async def test_custom_symbol_name(self):
+        """ItemRef accepts symbol for name and normalizes to string"""
+        d = {"key": "value"}
+        r = ItemRef(symbol("myitem"), d, "key")
+        self.assertEqual(r.name, "myitem")
 
     async def test_deref_dict(self):
         """deref() works with dict"""
@@ -292,6 +316,11 @@ class TestDynamicRef(unittest.IsolatedAsyncioTestCase):
         """DynamicRef without name gets default name"""
         r = DynamicRef(None, lambda: 1)
         self.assertEqual(r.name, "<DynamicRef>")
+
+    async def test_custom_symbol_name(self):
+        """DynamicRef accepts symbol for name and normalizes to string"""
+        r = DynamicRef(symbol("mydyn"), lambda: 1)
+        self.assertEqual(r.name, "mydyn")
 
     async def test_deref_calls_getfn(self):
         """deref() calls the getter function"""
@@ -415,6 +444,11 @@ class TestConstantRef(unittest.IsolatedAsyncioTestCase):
         r = ConstantRef(None, 101)
         self.assertEqual(r.name, "<ConstantRef>")
 
+    async def test_custom_symbol_name(self):
+        """ConstantRef accepts symbol for name and normalizes to string"""
+        r = ConstantRef(symbol("myconst"), 101)
+        self.assertEqual(r.name, "myconst")
+
     async def test_deref(self):
         """deref() returns the constant value"""
         r = ConstantRef(None, 101)
@@ -460,6 +494,11 @@ class TestMemoizedRef(unittest.IsolatedAsyncioTestCase):
         """MemoizedRef without name gets default name"""
         r = MemoizedRef(None, lambda: 42)
         self.assertEqual(r.name, "<MemoizedRef>")
+
+    async def test_custom_symbol_name(self):
+        """MemoizedRef accepts symbol for name and normalizes to string"""
+        r = MemoizedRef(symbol("mymemo"), lambda: 42)
+        self.assertEqual(r.name, "mymemo")
 
     async def test_initially_empty(self):
         """MemoizedRef is empty before first deref"""
@@ -538,6 +577,11 @@ class TestWeakRef(unittest.IsolatedAsyncioTestCase):
         """WeakRef without name gets default name"""
         r = WeakRef(None, Obj())
         self.assertEqual(r.name, "<WeakRef>")
+
+    async def test_custom_symbol_name(self):
+        """WeakRef accepts symbol for name and normalizes to string"""
+        r = WeakRef(symbol("myweak"), Obj())
+        self.assertEqual(r.name, "myweak")
 
     async def test_empty_initially_when_no_value(self):
         """WeakRef without value is empty"""

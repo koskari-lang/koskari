@@ -26,7 +26,7 @@ KOS_OP_HANDLER(ITEM_REF) {
     Py_DECREF(key);
     return -1;
   }
-  PyObject *ref = KosItemRef_New(key, obj, key);
+  PyObject *ref = KosItemRef_New(NULL, obj, key);
   Py_DECREF(obj);
   Py_DECREF(key);
   if (! ref)
