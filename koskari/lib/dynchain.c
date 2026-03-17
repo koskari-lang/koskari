@@ -248,10 +248,7 @@ KosDynFrame *kos_dyn_push_frame(
 
 
 KosDynFrame *kos_dyn_push_frame_empty(KosContext *ctx) {
-  PyObject *ns = PyDict_New();
-  if (! ns)
-    return NULL;
-  return kos_dyn_push_frame(ctx, NULL, ns);
+  return kos_dyn_push_frame(ctx, NULL, NULL);
 }
 
 
@@ -270,7 +267,7 @@ void kos_dynframe_reset_for_tail(KosDynFrame *frame) {
 
   /* Replace ns with empty dict */
   Py_XDECREF(KosDynFrame_NS(frame));
-  KosDynFrame_NS(frame) = PyDict_New();
+  KosDynFrame_NS(frame) = NULL;
 
   KosDynFrame_CODE(frame) = NULL;
   KosDynFrame_PC(frame) = 0;

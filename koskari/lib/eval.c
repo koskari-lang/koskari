@@ -2631,7 +2631,7 @@ int koskari_eval(KosContext *ctx, KosEvent *out_ev, PyObject *send_val, PyObject
           continue;
       }
 
-#if !KOS_USE_COMPUTED_GOTO
+#if KOS_USE_COMPUTED_GOTO
       goto next_insn;
 #endif
     }

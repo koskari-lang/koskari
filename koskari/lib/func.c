@@ -193,7 +193,7 @@ static int kos_install_expression(
   KosDynFrame *frame = CURRENT_FRAME(ctx);
   PyObject *ns = KosExpression_NS(callable);
   Py_INCREF(ns);
-  Py_DECREF(KosDynFrame_NS(frame));
+  Py_XDECREF(KosDynFrame_NS(frame));
   KosDynFrame_NS(frame) = ns;
   KosDynFrame_CODE(frame) = code;
 
@@ -230,7 +230,7 @@ static int kos_install_function(
     return 0;
   }
   KosDynFrame *frame = CURRENT_FRAME(ctx);
-  Py_DECREF(KosDynFrame_NS(frame));
+  Py_XDECREF(KosDynFrame_NS(frame));
   KosDynFrame_NS(frame) = frame_ns;
   KosDynFrame_CODE(frame) = code;
   (void) out_ev;
@@ -265,7 +265,7 @@ static int kos_vinstall_function(
     return 0;
   }
   KosDynFrame *frame = CURRENT_FRAME(ctx);
-  Py_DECREF(KosDynFrame_NS(frame));
+  Py_XDECREF(KosDynFrame_NS(frame));
   KosDynFrame_NS(frame) = frame_ns;
   KosDynFrame_CODE(frame) = code;
   (void) out_ev;
