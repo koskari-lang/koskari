@@ -2311,7 +2311,7 @@ static KosEvalStep eval_phase_prepare_dispatch(
 
   (void) out_ev;
 
-  if (! CURRENT_FRAME(ctx)) {
+  if (unlikely(! CURRENT_FRAME(ctx))) {
     PyErr_SetString(PyExc_RuntimeError, "eval loop: no active frame");
     return KOS_STEP_FATAL_ERROR;
   }
@@ -2373,6 +2373,10 @@ static KosEvalStep eval_phase_post_opcode(
         int *loop_continue) {
 
   *loop_continue = 0;
+
+  /* Clear resume kind when handling non-zero result so next iteration (if we
+     continue) has it clean. Keeps the hot path (tail-dispatch) from touching it. */
+  KosContext_PY_RESUME_KIND(ctx) = KOS_RESUME_NONE;
 
   if (op_res == KOS_OP_RES_CONTROL_RETURNED) {
     int r = kos_dynnode_on_control_returned(ctx, KosContext_DYN_TOP(ctx), out_ev);
@@ -2515,6 +2519,10 @@ int koskari_eval(KosContext *ctx, KosEvent *out_ev, PyObject *send_val, PyObject
         goto koskari_eval_cleanup;
   }
 
+  /* Clear resume kind once before loop; post_opcode clears it when handling
+     non-zero results so the hot path (tail-dispatch) never touches it. */
+  KosContext_PY_RESUME_KIND(ctx) = KOS_RESUME_NONE;
+
 /* The optable and all TARGET_* labels must remain in koskari_eval because
    GCC/Clang computed-goto requires label addresses (&&TARGET_name) and the
    indirect goto (goto *optable[op]) to be in the same function body. */
@@ -2529,9 +2537,6 @@ int koskari_eval(KosContext *ctx, KosEvent *out_ev, PyObject *send_val, PyObject
   /* Opcode dispatch loop; tail-dispatch: normal path jumps to next_insn. */
   for (;;) {
     next_insn:
-    /* Clear resume kind from previous op (YIELD_FROM clears when it consumes; others leave it set). */
-    if (unlikely(KosContext_PY_RESUME_KIND(ctx) != KOS_RESUME_NONE))
-      KosContext_PY_RESUME_KIND(ctx) = KOS_RESUME_NONE;
 #if KOS_STACK_TRACE
     trace_stack("  after ", CURRENT_STACK(ctx));
 #endif
