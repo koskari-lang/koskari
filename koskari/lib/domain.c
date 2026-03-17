@@ -213,12 +213,71 @@ static PyObject *domain_exit(PyObject *self, PyObject *args) {
 }
 
 
+static PyObject *m_parameter(PyObject *mod, PyObject *args) {
+  PyObject *key = NULL;
+  PyObject *key_str = NULL;
+  PyObject *default_val = NULL;
+  PyObject *domain;
+  PyObject *value;
+
+  (void) mod;
+  if (! PyArg_ParseTuple(args, "O|O:parameter", &key, &default_val))
+    return NULL;
+
+  if (! key || key == Py_None) {
+    PyErr_SetString(PyExc_ValueError, "parameter requires a key (name)");
+    return NULL;
+  }
+
+  key_str = kos_key_to_str(key);
+  if (! key_str)
+    return NULL;
+
+  domain = kos_domain_current();
+  if (! domain) {
+    if (default_val) {
+      Py_DECREF(key_str);
+      Py_INCREF(default_val);
+      return default_val;
+    }
+
+    Py_DECREF(key_str);
+    PyErr_SetString(PyExc_RuntimeError,
+                    "parameter outside active domain and no default");
+    return NULL;
+  }
+
+  value = kos_domain_get_param(domain, key_str);
+  Py_DECREF(key_str);
+  if (value)
+    return value;
+
+  if (default_val) {
+    Py_INCREF(default_val);
+    return default_val;
+  }
+
+  PyErr_Format(PyExc_NameError, "Param %S has no binding and no default", key);
+  return NULL;
+}
+
+
 static PyMethodDef domain_methods[] = {
   {"__enter__", (PyCFunction) domain_enter, METH_NOARGS,
    "Push this domain onto the per-thread scope stack"},
   {"__exit__", (PyCFunction) domain_exit, METH_VARARGS,
    "Pop this domain from the per-thread scope stack"},
   {NULL, NULL, 0, NULL},
+};
+
+
+static PyMethodDef domain_mod_methods[] = {
+  { "parameter", (PyCFunction) m_parameter, METH_VARARGS,
+    "parameter(name, default=...) => value\n"
+    "Fetch the current domain parameter binding for name.\n"
+    "If unbound, return default when provided, otherwise raise NameError.\n"
+    "If no active domain, return default when provided, otherwise raise RuntimeError." },
+  { NULL, },
 };
 
 
@@ -325,6 +384,18 @@ int koskari_domain_init(PyObject *mod) {
   }
   if (PyThread_tss_create(&tls_state_key) != 0)
     return -1;
+
+  for (PyMethodDef *mdef = domain_mod_methods; mdef->ml_name; mdef++) {
+    PyObject *func = PyCFunction_New(mdef, mod);
+    if (! func)
+      return -1;
+
+    if (PyModule_AddObject(mod, mdef->ml_name, func) < 0) {
+      Py_DECREF(func);
+      return -1;
+    }
+  }
+
   return 0;
 }
 

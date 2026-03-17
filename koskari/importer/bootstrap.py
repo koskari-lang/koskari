@@ -30,12 +30,14 @@ from os.path import dirname, join
 
 from ..compile.specials import SPECIALS
 from ..compile.syntax import build_syntax as build_syntax_rules
-from ..lib import (Module, ModuleNamespace, apply, car, cdr, cons, deref,
-                   gensym, keyword, nil, pair, setcar, setcdr, symbol, values)
+from ..lib import (AttributeRef, ConstantRef, DynamicRef, ItemRef, MemoizedRef,
+                   Module, ModuleNamespace, ParamRef, Ref, apply, build_dict,
+                   build_list, build_set, build_tuple, car, cdr, cons, deref,
+                   gensym, keyword, nil, pair, parameter, setcar, setcdr,
+                   symbol, values)
 from ..reader.layouts import LAYOUTS
 from ..types import (TypePredicate, build_proper, is_nil, is_proper,
                      is_recursive, unpack)
-
 
 __all__ = ('make_bootstrap', 'make_builtins', 'make_builtins_demand')
 
@@ -64,6 +66,15 @@ def make_bootstrap():
         _bind(name, typeobj)
         _bind(name + '?', TypePredicate(name + '?', typeobj))
 
+    _ty('Ref', Ref)
+    _ty('AttributeRef', AttributeRef)
+    _ty('ItemRef', ItemRef)
+    _ty('DynamicRef', DynamicRef)
+    _ty('ConstantRef', ConstantRef)
+    _ty('MemoizedRef', MemoizedRef)
+    _ty('ParamRef', ParamRef)
+    _bind('ref?', TypePredicate('ref?', Ref))
+
     # pair types and operations
     _ty('pair', pair)
     _bind('nil', nil)
@@ -74,12 +85,18 @@ def make_bootstrap():
     _bind('set-car', setcar)
     _bind('set-cdr', setcdr)
 
+    _bind('#list', build_list)
+    _bind('#tuple', build_tuple)
+    _bind('#set', build_set)
+    _bind('#dict', build_dict)
+
     _bind('proper?', is_proper)
     _bind('recursive?', is_recursive)
     _bind('build-proper', build_proper)
     _bind('unpack', unpack)
     _bind('deref', deref)
     _bind('apply', apply)
+    _bind('parameter', parameter)
 
     # atom types and operations
     _ty('symbol', symbol)
