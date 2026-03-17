@@ -697,7 +697,7 @@ PyObject *KosFunction_Call(PyObject *self,
   if (! frame_ns)
     goto fail;
 
-  if (KosFormals_Apply(KosFunction_FORMALS(fn), frame_ns, args, kwds) < 0)
+  if (KosFormals_ApplyFast(KosFunction_FORMALS(fn), frame_ns, args, kwds) < 0)
     goto fail;
 
   if (KosFunction_NAME(fn) != NULL) {
@@ -725,7 +725,7 @@ PyObject *KosFunction_PrepareCallNamespace(
   if (! frame_ns)
     return NULL;
 
-  if (KosFormals_Apply(KosFunction_FORMALS(fn), frame_ns, args, kwds) < 0) {
+  if (KosFormals_ApplyFast(KosFunction_FORMALS(fn), frame_ns, args, kwds) < 0) {
     Py_DECREF(frame_ns);
     return NULL;
   }
@@ -750,8 +750,8 @@ PyObject *KosFunction_PrepareCallNamespaceFromVector(
   if (! frame_ns)
     return NULL;
 
-  if (KosFormals_VectorApply(KosFunction_FORMALS(fn), frame_ns,
-                             args, (size_t) nargs, kwnames) < 0) {
+  if (KosFormals_VectorApplyFast(KosFunction_FORMALS(fn), frame_ns,
+                                 args, (size_t) nargs, kwnames) < 0) {
     Py_DECREF(frame_ns);
     return NULL;
   }
@@ -780,8 +780,8 @@ PyObject *KosFunction_VectorCall(
     goto fail;
 
   Py_ssize_t nargs = (Py_ssize_t) PyVectorcall_NARGS(nargsf);
-  if (KosFormals_VectorApply(KosFunction_FORMALS(fn), frame_ns,
-                             args, (size_t) nargs, kwnames) < 0)
+  if (KosFormals_VectorApplyFast(KosFunction_FORMALS(fn), frame_ns,
+                                 args, (size_t) nargs, kwnames) < 0)
     goto fail;
 
   if (KosFunction_NAME(fn) != NULL) {

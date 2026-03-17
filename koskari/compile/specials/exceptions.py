@@ -23,7 +23,7 @@ clear-exception, load-exception, and raise.
 """
 
 
-from ...lib import car, cdr, cons, keyword, nil, OpCode, symbol
+from ...lib import cons, keyword, nil, OpCode, symbol
 from ...types import fill_position, get_position, is_keyword, is_pair, unpack
 from ...exceptions import SpecialError
 from ..helpers import helper_begin, helper_binding, pycons, special

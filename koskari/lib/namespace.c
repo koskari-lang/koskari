@@ -539,11 +539,11 @@ static int ns_bind_ref(PyObject *self, PyObject *key, PyObject *ref) {
     KosNameBind *nb = KosNamespace_GET_FAST(self, fast);
 
     Py_INCREF(key);
-    Py_CLEAR(KosNameBind_NAME(nb));
+    Py_XDECREF(KosNameBind_NAME(nb));
     KosNameBind_NAME(nb) = key;
 
     Py_INCREF(ref);
-    Py_CLEAR(KosNameBind_HELD(nb));
+    Py_XDECREF(KosNameBind_HELD(nb));
     KosNameBind_HELD(nb) = ref;
 
     KosNameBind_RAW(nb) = 0;
@@ -1205,7 +1205,7 @@ int KosNamespace_FastStore(
   KosNameBind *nb = KosNamespace_GET_FAST(namespace, index);
   if (KosNameBind_RAW(nb)) {
     Py_INCREF(value);
-    Py_CLEAR(KosNameBind_HELD(nb));
+    Py_XDECREF(KosNameBind_HELD(nb));
     KosNameBind_HELD(nb) = value;
     return 0;
 
@@ -1253,7 +1253,7 @@ int KosNamespace_FastBind(
   KosNameBind *nb = KosNamespace_GET_FAST(namespace, index);
 
   Py_INCREF(ref);
-  Py_CLEAR(KosNameBind_HELD(nb));
+  Py_XDECREF(KosNameBind_HELD(nb));
   KosNameBind_HELD(nb) = ref;
   KosNameBind_RAW(nb) = 0;
 
