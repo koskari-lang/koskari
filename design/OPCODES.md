@@ -251,7 +251,7 @@ When adding or changing an opcode:
 | CAPTURE_FRAME | COUNT | Push TraceView snapshot | [§10](#kos_op_capture_frame) |
 | EXCEPTION | NOARG | Push current exception | [§11](#kos_op_exception) |
 | EXCEPTION_CLEAR | NOARG | Clear exception state | [§11](#kos_op_exception_clear) |
-| EXCEPTION_MATCH | COUNT | Match exception, push result | [§11](#kos_op_exception_match) |
+| EXCEPTION_MATCH | NOARG | Pop type(s), push match result | [§11](#kos_op_exception_match) |
 | VAR | VAR | Load by name | [§12](#kos_op_var) |
 | VAR_BIND | VAR | BIND: use TOS ref to resolve name | [§12](#kos_op_var_bind) |
 | VAR_STORE | VAR | STORE: write TOS value into name | [§12](#kos_op_var_store) |
@@ -989,19 +989,19 @@ Check jumps: if the predicate does **not** hold, jump to `arg`. All take LABEL; 
 
 - **Style**: LABEL. Arg = target pc (post-compile).
 - **Status**: Implemented.
-- **Stack**: Used in exception handler; match current exception against type(s). Jump if no match.
+- **Stack**: Pop TOS (exception type or tuple of types). If current exception matches that value, leave PC unchanged; else set PC to arg (branch to next handler).
 - **Invariants**: Jump locality for target. Used inside exception handling path.
 - **Compiler form:** Pre-compile arg = string label (next handler or re-raise); post-compile arg = pc.
 
-**Example:** In except block: if exception not matching type, jump to next handler.
+**Example:** In except block: type(s) on stack; pop and match; jump if no match.
 
-| index | opcode        | arg | arg view | comment |
-|------:|---------------|-----|----------|---------|
-| 3     | EXCEPTION     | 0   | 0        | stack: [..., exc] |
-| 4     | CHECK_EXCEPTION | 7 | 7 (-> 7) | if exc not isinstance(typ) → pc=7 |
-| 5     | POP           | 1   | 1        | consume exc |
-| 6     | RETURN        | 1   | 1        | handle |
-| 7     | LABEL         | —   | —        | re-raise or next handler |
+| index | opcode          | arg | arg view | comment |
+|------:|-----------------|-----|----------|---------|
+| 3     | CONST           | 0   | 0 (typ)  | stack: [..., typ] |
+| 4     | CHECK_EXCEPTION | 7   | 7 (-> 7) | pop typ; if exc not match → pc=7 |
+| 5     | POP             | 1   | 1        | consume exc |
+| 6     | RETURN          | 1   | 1        | handle |
+| 7     | LABEL           | —   | —        | re-raise or next handler |
 
 
 ## 10. Introspection
@@ -1203,19 +1203,18 @@ Pool: 0 = `"os"`, 1 = `"path"`, 2 = `"sep"`, 3 = None.
 
 ### KOS_OP_EXCEPTION_MATCH
 
-- **Style**: COUNT. Arg = count of type(s) to match.
+- **Style**: NOARG.
 - **Status**: Implemented.
-- **Stack**: Pops exception and type(s); pushes match result (e.g. bool).
-- **Invariants**: Used in handler.
+- **Stack**: Pop TOS (exception type or tuple of types). Push True if current exception matches that value, else False.
+- **Invariants**: Used in handler. Compiler typically emits BUILD_ARGS before this to pack multiple types into one tuple.
 
 **Example:** Match current exception against one type; push True/False.
 
-| index | opcode        | arg | arg view | comment |
-|------:|---------------|-----|----------|---------|
-| 2     | EXCEPTION     | 0   | 0        | stack: [..., exc] |
-| 3     | CONST         | 0   | 0 (ValueError) | stack: [..., exc, typ] |
-| 4     | EXCEPTION_MATCH | 1  | 1        | stack: [..., result] |
-| 5     | JUMP_FALSE    | 8   | 8 (-> 8)  | if no match, next handler |
+| index | opcode          | arg | arg view | comment |
+|------:|-----------------|-----|----------|---------|
+| 2     | CONST           | 0   | 0 (ValueError) | stack: [..., typ] |
+| 3     | EXCEPTION_MATCH | 0   | 0        | stack: [..., result] |
+| 4     | JUMP_FALSE      | 7   | 7 (-> 7) | if no match, next handler |
 
 
 ## 12. Variables by name

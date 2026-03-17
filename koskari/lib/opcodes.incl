@@ -108,7 +108,7 @@ OP(IMPORT_FROM, CONST)  // arg = cpool str; PEEK-NOT-POP module at TOS, push nam
 // exception handling
 OP(EXCEPTION, NOARG)
 OP(EXCEPTION_CLEAR, NOARG)
-OP(EXCEPTION_MATCH, COUNT)
+OP(EXCEPTION_MATCH, NOARG)
 
 // variables by name reference
 OP(VAR, VAR)

@@ -125,6 +125,19 @@ class TestCompress(unittest.TestCase):
         ])
         self.assertEqual(out[:1], [(OpCode.KOS_OP_JUMP_TRUE, "L1")])
 
+    def test_check_squash_exception_match_to_check_exception(self):
+        """
+        EXCEPTION_MATCH then JUMP_FALSE squashes to CHECK_EXCEPTION
+        """
+        out = compress_ops([
+            (OpCode.KOS_OP_EXCEPTION_MATCH, 0),
+            (OpCode.KOS_OP_JUMP_FALSE, "handler"),
+            (OpCode.KOS_OP_CONST, "matched"),
+            (OpCode.KOS_OP_LABEL, "handler"),
+            (OpCode.KOS_OP_CONST, "no_match"),
+        ])
+        self.assertEqual(out[:1], [(OpCode.KOS_OP_CHECK_EXCEPTION, "handler")])
+
     def test_check_squash_object_ops(self):
         for prior, squashed in _CHECK_SQUASHES.items():
             if prior == OpCode.KOS_OP_OBJECT_NOT:

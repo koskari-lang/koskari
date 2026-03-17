@@ -14,51 +14,33 @@
 */
 
 /**
-   EXCEPTION_MATCH: arg = number of exception types on stack. Pop that many
-   types; if the current exception matches any of them, push True, else False.
+   EXCEPTION_MATCH: noarg. Pop TOS (exception type). If current exception
+   matches that type, push True, else False.
 */
 
 KOS_OP_HANDLER(EXCEPTION_MATCH) {
-  int opa = (int) KosOp_ARG(insn);
-  if (opa < 1) {
-    PyErr_Format(PyExc_RuntimeError, "EXCEPTION_MATCH with non-positive"
-                 " count, %i", opa);
-    return -1;
-  }
+  (void) out_ev;
 
-  PyObject *ret = Py_False;
+  PyObject *match = KosStackBlock_PopRef(&CURRENT_STACK(ctx));
+  if (! match)
+    return -1;
+
+  int ret = 0;
+  PyObject *res = Py_False;
   PyObject *typ = NULL, *val = NULL, *tb = NULL;
   PyErr_GetExcInfo(&typ, &val, &tb);
 
-  if (! typ) {
-    if (KosStackBlock_Drop(&CURRENT_STACK(ctx), (size_t) opa) < 0)
-      return -1;
-    Py_INCREF(ret);
-    return push_result(ctx, ret);
-  }
+  if (typ)
+    ret = PyErr_GivenExceptionMatches(typ, match);
 
-  PyObject *const *checks = KosStackBlock_TailPtr(CURRENT_STACK(ctx),
-                                                  (size_t) opa);
-  if (! checks) {
-    Py_DECREF(typ);
-    Py_XDECREF(val);
-    Py_XDECREF(tb);
-    return -1;
-  }
-
-  for (int i = 0; i < opa; i++) {
-    if (PyErr_GivenExceptionMatches(typ, checks[i])) {
-      ret = Py_True;
-      break;
-    }
-  }
-
-  KosStackBlock_DropNoErr(&CURRENT_STACK(ctx), (size_t) opa);
-
-  Py_DECREF(typ);
+  Py_XDECREF(typ);
   Py_XDECREF(val);
   Py_XDECREF(tb);
+  Py_DECREF(match);
 
-  Py_INCREF(ret);
-  return push_result(ctx, ret);
+  if (ret)
+    res = Py_True;
+
+  Py_INCREF(res);
+  return push_result(ctx, res);
 }

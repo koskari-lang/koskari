@@ -116,7 +116,8 @@ def special_check_exception(compiler, source, tc=False):
         fragment.merge(compiler.full_compile(expr, False))
         count += 1
 
-    fragment.instruction(OpCode.KOS_OP_EXCEPTION_MATCH, count)
+    fragment.instruction(OpCode.KOS_OP_BUILD_ARGS, count)
+    fragment.instruction(OpCode.KOS_OP_EXCEPTION_MATCH, 0)
     return fragment
 
 
@@ -262,8 +263,7 @@ def _except(compiler, catches):
 
     for ca in catches:
         key_match, act = ca
-        key = car(key_match)
-        match = cdr(key_match)
+        key, match = key_match
 
         pos = get_position(ca)
 
