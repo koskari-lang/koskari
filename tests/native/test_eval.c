@@ -76,7 +76,7 @@ static int test_kostype_is_not_koscallable(void) {
       KosType is not a KosCallable. (Foo) uses the default PyObject_Call path
       which invokes kostype_tp_call.
     */
-    PyTypeObject *kostype = KOS_TYPETYPE_PYTYPE(KosTypeType);
+    PyTypeObject *kostype = &KosTypeType;
     PyTypeObject *koscallable = KOS_CALLABLE_PYTYPE(KosCallableType);
     TEST_ASSERT(! PyType_IsSubtype(kostype, koscallable),
                 "KosType must not be KosCallable; (Foo) uses default PyCall path");
@@ -1322,6 +1322,11 @@ static int test_eval_build_function_no_defaults(void) {
   Helper: build a minimal nspec+code+frame+context.
   Returns 0 on success; -1 on failure (PyErr set).
   Caller owns code_obj_out and ctx_out references; ns is owned by the frame.
+
+  For yielding code (KosCode_YIELDS), the frame is created under a KosDynGen
+  (Generator node) with owner NULL (standalone). Yield uses the same GEN
+  freeze/install path as Python generators; RESUME_GEN is set on freeze so
+  the next koskari_eval can revive via revive_yield.
 */
 static int make_simple_ctx(
     PyObject *instr,
@@ -1363,14 +1368,20 @@ static int make_simple_ctx(
 
 
 /* === Test: YIELD empty resume (NULL/NULL) => RETURN with next CONST === */
+/*
+  These yield tests use the GEN-based path: make_simple_ctx builds a context
+  with a KosDynGen (owner NULL). On YIELD, walk_handle_yield freezes the GEN
+  and sets SUSPENSION_EVENT; next eval revive_yield installs the gen and
+  pushes send value (or sets throw), then execution continues.
+*/
 
 
 static int test_eval_yield_empty_resume(void) {
     /*
       Bytecode: CONST 42, YIELD 1, CONST 99, RETURN 1.
-      First eval (NULL, NULL): expect KOS_EV_YIELD(42).
-      Second eval (NULL, NULL): raise_yield returns KOS_MODE_NORMAL;
-      execution resumes at CONST 99, RETURN 1 => KOS_EV_RETURN(99).
+      First eval (NULL, NULL): KOS_EV_YIELD(42); GEN frozen, RESUME_GEN set.
+      Second eval (NULL, NULL): revive_yield(Py_None) installs gen, pushes
+      Py_None; execution resumes at CONST 99, RETURN 1 => KOS_EV_RETURN(99).
     */
     PyObject *forty_two = PyLong_FromLong(42);
     PyObject *ninety_nine = PyLong_FromLong(99);
@@ -1665,6 +1676,9 @@ static int test_eval_yield_throw_caught(void) {
 
 
 /* === Test: exception from opcode (op_res != 0) caught by TRY handler === */
+/*
+  Uses same GEN-based context as other yield tests (make_simple_ctx with YIELDS).
+*/
 
 
 static int test_eval_opcode_error_caught_by_try(void) {
