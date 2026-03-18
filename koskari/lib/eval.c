@@ -530,6 +530,7 @@ static KosEvalMode handle_continuation_apply(
 
       if (k && kos_invoke_continuation(ctx, k, resume_val, 0, cont_obj) == 0) {
         Py_DECREF(resume_val);
+        Py_DECREF(typ);
         Py_DECREF(val);
         Py_DECREF(cont_obj);
         return KOS_MODE_TRANSFER;
@@ -539,8 +540,9 @@ static KosEvalMode handle_continuation_apply(
       Py_XDECREF(args_obj);
     }
 
-    Py_XDECREF(cont_obj);
+    Py_DECREF(typ);
     Py_DECREF(val);
+    Py_XDECREF(cont_obj);
 
     if (! PyErr_Occurred())
       PyErr_SetString(PyExc_RuntimeError,
@@ -1750,7 +1752,7 @@ static int op_attach_koskari_agen_frame(
     Py_XDECREF(KosContext_PENDING_AGEN_DEFAULT(ctx));
     KosContext_PENDING_AGEN_DEFAULT(ctx) = NULL;
     Py_DECREF(iter);
-    Py_DECREF(default_val);
+    Py_XDECREF(default_val);
     agen->in_progress = 0;
     PyErr_SetString(PyExc_RuntimeError, "async generator has no active frame");
     return -1;
@@ -1763,7 +1765,7 @@ static int op_attach_koskari_agen_frame(
     Py_XDECREF(KosContext_PENDING_AGEN_DEFAULT(ctx));
     KosContext_PENDING_AGEN_DEFAULT(ctx) = NULL;
     Py_DECREF(iter);
-    Py_DECREF(default_val);
+    Py_XDECREF(default_val);
     agen->in_progress = 0;
     return -1;
   }
