@@ -266,11 +266,17 @@ static int test_code_position_delta(void) {
         Py_DECREF(nspec);
         return -1;
     }
-    PyList_SET_ITEM(instr, 0, make_instr(KOS_OP_POSITION, make_position(1, 0)));
+    PyObject *pos = make_position(1, 0);
+    PyList_SET_ITEM(instr, 0, make_instr(KOS_OP_POSITION, pos));
+    Py_XDECREF(pos);
     PyList_SET_ITEM(instr, 1, make_instr_int(KOS_OP_CONST, 0));
-    PyList_SET_ITEM(instr, 2, make_instr(KOS_OP_POSITION, make_position(1, 0)));
+    pos = make_position(1, 0);
+    PyList_SET_ITEM(instr, 2, make_instr(KOS_OP_POSITION, pos));
+    Py_XDECREF(pos);
     PyList_SET_ITEM(instr, 3, make_instr_int(KOS_OP_CONST, 0));
-    PyList_SET_ITEM(instr, 4, make_instr(KOS_OP_POSITION, make_position(2, 5)));
+    pos = make_position(2, 5);
+    PyList_SET_ITEM(instr, 4, make_instr(KOS_OP_POSITION, pos));
+    Py_XDECREF(pos);
     PyList_SET_ITEM(instr, 5, make_instr_int(KOS_OP_RETURN, 1));
 
     const_list = PyList_New(7);
@@ -279,11 +285,17 @@ static int test_code_position_delta(void) {
     const_val = PyLong_FromLong(100);
     if (! const_val)
         goto cleanup;
-    PyList_SET_ITEM(const_list, 0, make_instr(KOS_OP_POSITION, make_position(1, 0)));
+    pos = make_position(1, 0);
+    PyList_SET_ITEM(const_list, 0, make_instr(KOS_OP_POSITION, pos));
+    Py_XDECREF(pos);
     PyList_SET_ITEM(const_list, 1, make_instr(KOS_OP_CONST, const_val));
-    PyList_SET_ITEM(const_list, 2, make_instr(KOS_OP_POSITION, make_position(1, 0)));
+    pos = make_position(1, 0);
+    PyList_SET_ITEM(const_list, 2, make_instr(KOS_OP_POSITION, pos));
+    Py_XDECREF(pos);
     PyList_SET_ITEM(const_list, 3, make_instr(KOS_OP_CONST, const_val));
-    PyList_SET_ITEM(const_list, 4, make_instr(KOS_OP_POSITION, make_position(2, 5)));
+    pos = make_position(2, 5);
+    PyList_SET_ITEM(const_list, 4, make_instr(KOS_OP_POSITION, pos));
+    Py_XDECREF(pos);
     PyList_SET_ITEM(const_list, 5, make_instr(KOS_OP_CONST, const_val));
     PyList_SET_ITEM(const_list, 6, make_instr_int(KOS_OP_RETURN, 1));
 

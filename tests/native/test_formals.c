@@ -207,7 +207,11 @@ static int test_formals_create_full(void) {
     if (! pos || ! kwd || ! star || ! defaults)
         goto cleanup;
 
-    PyDict_SetItemString(defaults, "bar", PyLong_FromLong(42));
+    PyObject *default_bar = PyLong_FromLong(42);
+    if (! default_bar)
+        goto cleanup;
+    PyDict_SetItemString(defaults, "bar", default_bar);
+    Py_DECREF(default_bar);
 
     formals = KosFormals_NewFull(pos, NULL, kwd, NULL,
                                 star, NULL, defaults);
@@ -401,7 +405,11 @@ static int test_formals_apply_with_defaults(void) {
     defaults = PyDict_New();
     if (! pos || ! kwd || ! defaults)
         goto cleanup;
-    PyDict_SetItemString(defaults, "b", PyLong_FromLong(999));
+    PyObject *default_b = PyLong_FromLong(999);
+    if (! default_b)
+        goto cleanup;
+    PyDict_SetItemString(defaults, "b", default_b);
+    Py_DECREF(default_b);
 
     local_syms = Py_BuildValue("(ss)", "a", "b");
     if (! local_syms)
