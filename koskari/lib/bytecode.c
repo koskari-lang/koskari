@@ -1256,6 +1256,7 @@ static int code_traverse(PyObject *self, visitproc visit, void *arg) {
   Py_VISIT(KosCode_NAME(self));
   Py_VISIT(KosCode_FILENAME(self));
   Py_VISIT(KosCode_NSPEC(self));
+  Py_VISIT(KosCode_FAUX(self));
   Py_VISIT(KosCode_EXTRAS(self));
 
   for (uint32_t i = KosCode_CPOOL_LEN(self); i--; ) {
@@ -1271,6 +1272,7 @@ static int code_clear(PyObject *self) {
   Py_CLEAR(KosCode_NAME(self));
   Py_CLEAR(KosCode_FILENAME(self));
   Py_CLEAR(KosCode_NSPEC(self));
+  Py_CLEAR(KosCode_FAUX(self));
   Py_CLEAR(KosCode_EXTRAS(self));
 
   for (uint32_t i = KosCode_CPOOL_LEN(self); i--; ) {
@@ -1311,6 +1313,7 @@ static void code_dealloc(PyObject *self) {
   Py_CLEAR(KosCode_NAME(self));
   Py_CLEAR(KosCode_FILENAME(self));
   Py_CLEAR(KosCode_NSPEC(self));
+  Py_CLEAR(KosCode_FAUX(self));
   Py_CLEAR(KosCode_EXTRAS(self));
 
   for (uint32_t i = KosCode_CPOOL_LEN(self); i--; ) {

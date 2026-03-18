@@ -304,6 +304,8 @@ ASan's leak detector is disabled (`detect_leaks=0`) because Python's allocator p
 
 Python's internal allocations appear as "leaks" to Valgrind but are expected behavior (type objects, interned strings, module dicts persist for interpreter lifetime). The `valgrind-python.supp` file suppresses these.
 
+We also use the Python allocator: the harness and koskari allocate PyObjects (dicts, lists, tuples, longs, etc.) via PyDict_New, PyList_New, PyTuple_New, and similar. Those allocations go through the same pymalloc and PyDict_*/PyList_*/PyTuple_* paths, so the broad suppressions in `valgrind-python.supp` can hide leaks that are our fault (e.g. missing Py_DECREF). To check for our own leaks, run Valgrind occasionally with the broad pymalloc/dict/list/tuple suppressions commented out, or rely on refcount discipline and Python refcount debugging builds.
+
 ## Troubleshooting
 
 ### "Module not found" errors

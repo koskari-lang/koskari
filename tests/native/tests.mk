@@ -77,6 +77,7 @@ VALGRIND_OPTS := --leak-check=full \
                  --show-leak-kinds=definite,indirect \
                  --track-origins=yes \
                  --error-exitcode=1 \
+                 --num-callers=40 \
                  --suppressions=valgrind-python.supp
 
 ##@ Build Targets

@@ -190,6 +190,10 @@ static int initialize_types(void) {
 }
 
 
+/**
+   Release module refs and finalize Python so Valgrind leak reports
+   reflect our code rather than interpreter shutdown.
+*/
 static void cleanup(void) {
     if (kos_lib_module) {
         koskari_lib_clear(kos_lib_module);
@@ -234,6 +238,7 @@ int main(int argc, char *argv[]) {
 
     /* Initialize Python and our types */
     if (initialize_python() != 0) {
+        cleanup();
         return 1;
     }
 
