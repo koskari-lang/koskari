@@ -146,7 +146,7 @@ test-valgrind: $(TARGET)  ## Run tests under Valgrind
 	@if [ ! -f valgrind-python.supp ]; then \
 		echo "Warning: valgrind-python.supp not found, expect false positives"; \
 	fi
-	$(VALGRIND) $(VALGRIND_OPTS) $(TARGET)
+	PYTHONMALLOC=malloc $(VALGRIND) $(VALGRIND_OPTS) $(TARGET)
 
 ##@ Development
 
