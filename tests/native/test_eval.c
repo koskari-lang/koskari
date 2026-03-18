@@ -131,6 +131,7 @@ static int test_eval_object_add_return(void) {
     TEST_ASSERT_EQ(PyLong_AsLong(ev.payload), 6, "result is 6");
 
     Py_XDECREF(ev.payload);
+    Py_XDECREF(ev.exc_type);
     kos_context_free(ctx);
     Py_DECREF(code_obj);
 
@@ -254,6 +255,7 @@ static int test_eval_ctx_current_outside_eval(void) {
     TEST_ASSERT(kos_ctx_current() == NULL, "no current context after eval");
 
     Py_XDECREF(ev.payload);
+    Py_XDECREF(ev.exc_type);
     kos_context_free(ctx);
     Py_DECREF(code_obj);
 
@@ -317,6 +319,7 @@ static int test_eval_try_except_catch(void) {
     TEST_ASSERT_EQ(PyLong_AsLong(ev.payload), 42, "result is 42");
 
     Py_XDECREF(ev.payload);
+    Py_XDECREF(ev.exc_type);
     kos_context_free(ctx);
     Py_DECREF(code_obj);
 
@@ -381,6 +384,7 @@ static int test_eval_try_finally_rerase(void) {
     TEST_ASSERT(PyExceptionInstance_Check(ev.payload), "payload is exception");
 
     Py_XDECREF(ev.payload);
+    Py_XDECREF(ev.exc_type);
     kos_context_free(ctx);
     Py_DECREF(code_obj);
 
@@ -456,6 +460,7 @@ static int test_eval_reset_shift_invoke(void) {
     TEST_ASSERT_EQ(PyLong_AsLong(ev.payload), 6, "result is 6");
 
     Py_XDECREF(ev.payload);
+    Py_XDECREF(ev.exc_type);
     kos_context_free(ctx);
     Py_DECREF(code_obj);
 
@@ -507,6 +512,7 @@ static int test_eval_push_cc_capture_cc_pop_cc_returns_continuation(void) {
                 "result is Continuation");
 
     Py_XDECREF(ev.payload);
+    Py_XDECREF(ev.exc_type);
     kos_context_free(ctx);
     Py_DECREF(code_obj);
 
@@ -580,6 +586,7 @@ static int test_eval_call_continuation_underrun(void) {
     TEST_ASSERT(PyExceptionInstance_Check(ev.payload), "payload is exception");
 
     Py_XDECREF(ev.payload);
+    Py_XDECREF(ev.exc_type);
     kos_context_free(ctx);
     Py_DECREF(code_obj);
 
@@ -632,6 +639,7 @@ static int test_eval_call_wrong_type(void) {
                 "exception is TypeError");
 
     Py_XDECREF(ev.payload);
+    Py_XDECREF(ev.exc_type);
     kos_context_free(ctx);
     Py_DECREF(code_obj);
 
@@ -679,6 +687,7 @@ static int test_eval_object_add_underrun(void) {
     TEST_ASSERT_NOT_NULL(ev.payload, "payload not NULL");
 
     Py_XDECREF(ev.payload);
+    Py_XDECREF(ev.exc_type);
     kos_context_free(ctx);
     Py_DECREF(code_obj);
 
@@ -726,6 +735,7 @@ static int test_eval_return_underrun(void) {
     TEST_ASSERT_NOT_NULL(ev.payload, "payload not NULL");
 
     Py_XDECREF(ev.payload);
+    Py_XDECREF(ev.exc_type);
     kos_context_free(ctx);
     Py_DECREF(code_obj);
 
@@ -770,6 +780,7 @@ static int test_eval_dup_underrun(void) {
     TEST_ASSERT_NOT_NULL(ev.payload, "payload not NULL");
 
     Py_XDECREF(ev.payload);
+    Py_XDECREF(ev.exc_type);
     kos_context_free(ctx);
     Py_DECREF(code_obj);
 
@@ -814,6 +825,7 @@ static int test_eval_call_empty_stack(void) {
     TEST_ASSERT_NOT_NULL(ev.payload, "payload not NULL");
 
     Py_XDECREF(ev.payload);
+    Py_XDECREF(ev.exc_type);
     kos_context_free(ctx);
     Py_DECREF(code_obj);
 
@@ -968,6 +980,7 @@ static int test_eval_push_collect_pop_collect_build_class_empty(void) {
                 "__name__ is C");
     Py_DECREF(cname);
     Py_XDECREF(ev.payload);
+    Py_XDECREF(ev.exc_type);
     kos_context_free(ctx);
     Py_DECREF(code_obj);
 
@@ -1017,6 +1030,7 @@ static int test_eval_push_collect_empty_stack_raises(void) {
                 "exception is RuntimeError");
 
     Py_XDECREF(ev.payload);
+    Py_XDECREF(ev.exc_type);
     kos_context_free(ctx);
     Py_DECREF(code_obj);
 
@@ -1092,6 +1106,7 @@ static int test_eval_invoke_k_underrun(void) {
     TEST_ASSERT_NOT_NULL(ev.payload, "payload not NULL");
 
     Py_XDECREF(ev.payload);
+    Py_XDECREF(ev.exc_type);
     kos_context_free(ctx);
     Py_DECREF(code_obj);
 
@@ -1147,6 +1162,7 @@ static int test_eval_invoke_k_wrong_type(void) {
                 "exception is TypeError");
 
     Py_XDECREF(ev.payload);
+    Py_XDECREF(ev.exc_type);
     kos_context_free(ctx);
     Py_DECREF(code_obj);
 
@@ -1196,6 +1212,7 @@ static int test_eval_call_zero_args(void) {
     TEST_ASSERT(ev.payload != NULL && Py_IsNone(ev.payload), "result is None");
 
     Py_XDECREF(ev.payload);
+    Py_XDECREF(ev.exc_type);
     kos_context_free(ctx);
     Py_DECREF(code_obj);
 
@@ -1240,6 +1257,7 @@ static int test_eval_fast_on_dict_ns(void) {
     TEST_ASSERT_NOT_NULL(ev.payload, "payload not NULL");
 
     Py_XDECREF(ev.payload);
+    Py_XDECREF(ev.exc_type);
     kos_context_free(ctx);
     Py_DECREF(code_obj);
 
@@ -1308,6 +1326,7 @@ static int test_eval_build_function_no_defaults(void) {
                 "result is Function");
 
     Py_XDECREF(ev.payload);
+    Py_XDECREF(ev.exc_type);
     kos_context_free(ctx);
     Py_DECREF(code_obj);
 
@@ -1411,6 +1430,7 @@ static int test_eval_yield_empty_resume(void) {
 
     ev.kind = KOS_EV_RETURN;
     ev.payload = NULL;
+    ev.exc_type = NULL;
     res = koskari_eval(ctx, &ev, NULL, NULL, NULL);
     TEST_ASSERT(res == 0, "second koskari_eval succeeded");
     TEST_ASSERT(ev.kind == KOS_EV_RETURN, "second event is RETURN");
@@ -1418,6 +1438,7 @@ static int test_eval_yield_empty_resume(void) {
     TEST_ASSERT_EQ(PyLong_AsLong(ev.payload), 99, "resumed result is 99");
 
     Py_XDECREF(ev.payload);
+    Py_XDECREF(ev.exc_type);
     kos_context_free(ctx);
     Py_DECREF(code_obj);
 
@@ -1460,6 +1481,7 @@ static int test_eval_yield_send_resume(void) {
     PyObject *send_val = PyLong_FromLong(7);
     ev.kind = KOS_EV_RETURN;
     ev.payload = NULL;
+    ev.exc_type = NULL;
     res = koskari_eval(ctx, &ev, send_val, NULL, NULL);
     Py_DECREF(send_val);
     TEST_ASSERT(res == 0, "second koskari_eval succeeded");
@@ -1468,6 +1490,7 @@ static int test_eval_yield_send_resume(void) {
     TEST_ASSERT_EQ(PyLong_AsLong(ev.payload), 7, "returned sent value 7");
 
     Py_XDECREF(ev.payload);
+    Py_XDECREF(ev.exc_type);
     kos_context_free(ctx);
     Py_DECREF(code_obj);
 
@@ -1512,6 +1535,7 @@ static int test_eval_yield_throw_resume(void) {
 
     ev.kind = KOS_EV_RETURN;
     ev.payload = NULL;
+    ev.exc_type = NULL;
     res = koskari_eval(ctx, &ev, NULL, (PyObject *) Py_TYPE(throw_exc), throw_exc);
     Py_DECREF(throw_exc);
     TEST_ASSERT(res == 0, "second koskari_eval succeeded");
@@ -1523,6 +1547,7 @@ static int test_eval_yield_throw_resume(void) {
                 "exception is ValueError");
 
     Py_XDECREF(ev.payload);
+    Py_XDECREF(ev.exc_type);
     kos_context_free(ctx);
     Py_DECREF(code_obj);
 
@@ -1588,6 +1613,7 @@ static int test_eval_yield_throw_caught(void) {
 
     ev.kind = KOS_EV_RETURN;
     ev.payload = NULL;
+    ev.exc_type = NULL;
     res = koskari_eval(ctx, &ev, NULL, (PyObject *) Py_TYPE(throw_exc), throw_exc);
     Py_DECREF(throw_exc);
     TEST_ASSERT(res == 0, "second koskari_eval succeeded");
@@ -1597,6 +1623,7 @@ static int test_eval_yield_throw_caught(void) {
     TEST_ASSERT_EQ(PyLong_AsLong(ev.payload), 55, "handler result is 55");
 
     Py_XDECREF(ev.payload);
+    Py_XDECREF(ev.exc_type);
     kos_context_free(ctx);
     Py_DECREF(code_obj);
 
@@ -1729,6 +1756,7 @@ static int test_eval_opcode_error_caught_by_try(void) {
     TEST_ASSERT_EQ(PyLong_AsLong(ev.payload), 77, "handler result is 77");
 
     Py_XDECREF(ev.payload);
+    Py_XDECREF(ev.exc_type);
     kos_context_free(ctx);
     Py_DECREF(code_obj);
 
