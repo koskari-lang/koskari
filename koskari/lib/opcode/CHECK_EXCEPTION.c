@@ -20,6 +20,8 @@
 */
 
 KOS_OP_HANDLER(CHECK_EXCEPTION) {
+  (void) out_ev;
+
   PyObject *match = KosStackBlock_PopRef(&CURRENT_STACK(ctx));
   if (! match)
     return -1;
@@ -36,11 +38,8 @@ KOS_OP_HANDLER(CHECK_EXCEPTION) {
   Py_XDECREF(tb);
   Py_DECREF(match);
 
-  if (ret) {
-    (void) out_ev;
-    return 0;
-  }
-  CURRENT_PC(ctx) = KosOp_ARG(insn);
-  (void) out_ev;
+  if (! ret)
+    CURRENT_PC(ctx) = KosOp_ARG(insn);
+
   return 0;
 }

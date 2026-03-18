@@ -76,8 +76,12 @@ KOS_OP_HANDLER(PUSH_WITH) {
   }
 
   int r = kos_dyn_wind(ctx, (KosDynNode *) with_node, out_ev);
-  if (r == KOS_DYN_UNWIND_ASYNC_STARTED)
+  if (r == KOS_DYN_UNWIND_ASYNC_STARTED) {
+    uint32_t same_pc = CURRENT_ACTING_PC(ctx);
+    CURRENT_PC(ctx) = same_pc;
+    KosDynFrame_ACTING_PC(CURRENT_FRAME(ctx)) = same_pc;
     return 1;
+  }
 
   if (r < 0) {
     kos_dyn_pop_with(ctx, with_node);

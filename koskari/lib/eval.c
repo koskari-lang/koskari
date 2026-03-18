@@ -2333,8 +2333,8 @@ static KosEvalStep eval_phase_prepare_dispatch(
   /* Record acting_pc (instruction we are executing) before advance. */
   KosDynFrame_ACTING_PC(CURRENT_FRAME(ctx)) = pc;
 
-  /* Advance PC before dispatch so normal path advances. If handler returns 1
-     (suspend, e.g. WITH enter/exit await) we roll back so next eval is same insn. */
+  /* Advance PC before dispatch so normal path advances. Handlers that need
+     same-insn resume (e.g. WITH async enter/exit) perform rollback themselves. */
   CURRENT_PC(ctx) = pc + 1;
 
   if (unlikely((KosOpCode) KosOp_OP(insn) > KOS_OP_THEEND)) {
@@ -2354,10 +2354,9 @@ static KosEvalStep eval_phase_prepare_dispatch(
    Phase 6: post-opcode result handling.
 
    Called when an opcode handler returns a non-zero op_res.  Handles the
-   exception path (via try_local_exception_handler), the WITH-family PC
-   rollback for async enter/exit suspend, and suspension-event tagging for
-   AWAIT and YIELD events.  Sets *loop_continue when an exception was locally
-   handled and the loop should continue without stopping.
+   exception path (via try_local_exception_handler) and suspension-event
+   tagging for AWAIT and YIELD events.  Sets *loop_continue when an exception
+   was locally handled and the loop should continue without stopping.
 
    :param op_res: The non-zero return value from the opcode handler.
    :param loop_continue: Set to 1 when exception was handled and loop should continue.
@@ -2396,18 +2395,6 @@ static KosEvalStep eval_phase_post_opcode(
     }
     *loop_continue = 1;
     return KOS_STEP_CONTINUE;
-  }
-
-  if (op_res == 1) {
-    /* WITH enter/exit await: do not advance PC so resume dispatches
-       the same opcode. Other opcodes (e.g. YIELD) use 1 for suspend
-       but resume at the next instruction. */
-    KosOpCode op = (KosOpCode) KosOp_OP(dc->insn);
-    if (op == KOS_OP_PUSH_WITH || op == KOS_OP_POP_WITH
-        || op == KOS_OP_PUSH_DYN_WITH || op == KOS_OP_POP_DYN_WITH) {
-      CURRENT_PC(ctx) = dc->pc;
-      KosDynFrame_ACTING_PC(CURRENT_FRAME(ctx)) = dc->pc;
-    }
   }
 
   /* Record why we suspended so next entry can choose revive path */

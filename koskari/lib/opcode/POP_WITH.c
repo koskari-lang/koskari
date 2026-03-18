@@ -32,8 +32,12 @@ KOS_OP_HANDLER(POP_WITH) {
   KosDynWith *with_node = (KosDynWith *) top;
 
   int unw = kos_dyn_with_unwind(ctx, with_node, out_ev);
-  if (unw == KOS_DYN_UNWIND_ASYNC_STARTED)
+  if (unw == KOS_DYN_UNWIND_ASYNC_STARTED) {
+    uint32_t same_pc = CURRENT_ACTING_PC(ctx);
+    CURRENT_PC(ctx) = same_pc;
+    KosDynFrame_ACTING_PC(CURRENT_FRAME(ctx)) = same_pc;
     return KOS_DYN_UNWIND_ASYNC_STARTED;
+  }
   if (unw == KOS_DYN_UNWIND_SWALLOWED)
     return 0;
   if (unw < 0)
