@@ -300,9 +300,20 @@ static int test_namespace_nested(void) {
     */
     PyObject *name1 = PyUnicode_FromString("parent");
     PyObject *name2 = PyUnicode_FromString("child");
-    PyObject *local1 = PyTuple_Pack(1, PyUnicode_FromString("foo"));
-    PyObject *local2 = PyTuple_Pack(1, PyUnicode_FromString("bar"));
-    PyObject *closure2 = PyTuple_Pack(1, PyUnicode_FromString("foo"));
+    PyObject *s_foo = PyUnicode_FromString("foo");
+    PyObject *s_bar = PyUnicode_FromString("bar");
+    PyObject *local1 = NULL;
+    PyObject *local2 = NULL;
+    PyObject *closure2 = NULL;
+
+    if (s_foo)
+        local1 = PyTuple_Pack(1, s_foo);
+    if (s_bar)
+        local2 = PyTuple_Pack(1, s_bar);
+    if (s_foo)
+        closure2 = PyTuple_Pack(1, s_foo);
+    Py_XDECREF(s_foo);
+    Py_XDECREF(s_bar);
 
     TEST_ASSERT_NOT_NULL(name1, "create name1");
     TEST_ASSERT_NOT_NULL(name2, "create name2");
@@ -455,9 +466,22 @@ static int test_collector_blocks_closure(void) {
     PyObject *name_p = PyUnicode_FromString("parent");
     PyObject *name_c = PyUnicode_FromString("collector");
     PyObject *name_n = PyUnicode_FromString("child");
-    PyObject *local_p = PyTuple_Pack(1, PyUnicode_FromString("foo"));
-    PyObject *local_c = PyTuple_Pack(1, PyUnicode_FromString("foo"));  /* foo is LOCAL in collector */
-    PyObject *closure_n = PyTuple_Pack(1, PyUnicode_FromString("foo"));
+    PyObject *s_foo_p = PyUnicode_FromString("foo");
+    PyObject *s_foo_c = PyUnicode_FromString("foo");
+    PyObject *s_foo_n = PyUnicode_FromString("foo");
+    PyObject *local_p = NULL;
+    PyObject *local_c = NULL;
+    PyObject *closure_n = NULL;
+
+    if (s_foo_p)
+        local_p = PyTuple_Pack(1, s_foo_p);
+    if (s_foo_c)
+        local_c = PyTuple_Pack(1, s_foo_c);
+    if (s_foo_n)
+        closure_n = PyTuple_Pack(1, s_foo_n);
+    Py_XDECREF(s_foo_p);
+    Py_XDECREF(s_foo_c);
+    Py_XDECREF(s_foo_n);
 
     TEST_ASSERT_NOT_NULL(name_p, "create name_p");
     TEST_ASSERT_NOT_NULL(name_c, "create name_c");
@@ -752,7 +776,9 @@ static int test_namespace_nested_deep(void) {
     TEST_ASSERT_NOT_NULL(closure, "create closure");
 
     /* Create root namespace */
-    PyObject *root = KosNamespace_NewFull(PyUnicode_FromString("root"), NULL, local, NULL);
+    PyObject *root_name = PyUnicode_FromString("root");
+    PyObject *root = KosNamespace_NewFull(root_name, NULL, local, NULL);
+    Py_XDECREF(root_name);
     TEST_ASSERT_NOT_NULL(root, "create root");
 
     /* Store initial value */

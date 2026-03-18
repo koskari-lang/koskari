@@ -32,6 +32,21 @@
 }
 
 
+# === Test harness: initialize_types ===
+#
+# Leaks whose stack includes our initialize_types() (koskari_*_init calls).
+# Module-init allocates types, enums, and module dict entries that are not
+# torn down before process exit; we ignore these so Valgrind focuses on
+# runtime leaks in tests and eval.
+
+{
+   test-harness-initialize-types
+   Memcheck:Leak
+   ...
+   fun:initialize_types
+}
+
+
 # === Python initialization ===
 #
 # Memory allocated during Py_Initialize that persists until Py_Finalize.
