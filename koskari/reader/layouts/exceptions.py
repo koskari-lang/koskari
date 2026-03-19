@@ -19,7 +19,7 @@ Layout handlers for try/except/else/finally block syntax.
 
 
 from ...exceptions import LayoutError
-from ...compile.helpers import helper_binding
+from ...compile.helpers import helper_using
 from ...types import car, cdr, cons, get_position, is_pair, keyword, nil, symbol, unpack
 from .helpers import layout
 
@@ -57,20 +57,28 @@ def layout_try(source, peers):
             has_except = True
             if not ppargs:
                 except_clauses.append(cons(_keyword_except, pbody))
-            elif len(ppargs) == 1 and not is_pair(ppargs[0]):
-                except_clauses.append(cons(ppargs[0], pbody))
             else:
+                if len(ppargs) != 1:
+                    raise LayoutError(
+                        'except requires exactly one bracketed USE form, '
+                        'e.g. [Exception] or [Exception as: e]',
+                        get_position(peer))
+                if not is_pair(ppargs[0]):
+                    raise LayoutError(
+                        'except requires a bracketed USE form, '
+                        'e.g. [Exception] or [Exception as: e], not %r'
+                        % ppargs[0],
+                        get_position(peer))
                 try:
-                    bind_source = (
-                        ppargs[0]
-                        if len(ppargs) == 1 and is_pair(ppargs[0])
-                        else cons(*ppargs, nil))
-                    binding, ex_type = helper_binding(bind_source, allow_unnamed=False)
+                    name, ex_type = helper_using(ppargs[0])
                 except Exception as e:
                     raise LayoutError(
-                        'invalid except binding: %s' % e,
+                        'invalid except USE form: %s' % e,
                         get_position(peer))
-                except_clauses.append(cons(cons(binding, ex_type, nil), pbody))
+                if name is not None:
+                    except_clauses.append(cons(cons(name, ex_type), pbody))
+                else:
+                    except_clauses.append(cons(ex_type, pbody))
 
         elif phead is _symbol_else:
             if act_else is not None:
