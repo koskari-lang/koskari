@@ -168,7 +168,7 @@ Capture one element; value fed in, not a scope region. Same structural behavior 
 
 Not required for the current implementation, but reserved for extension:
 
-* `BINDING(name, allow_unnamed=False)` — single binding like `(with [(expr) as: x] ...)`; optional unnamed binding
+* `BINDING(name)` — single binding like `(with [(expr) as: x] ...)`
 * `BIND_VALUES(...)` — destructuring / multiple-value binding
 * `INIT(...)` — explicitly marks initializer expressions outside body scope
 * `BODY_DEFINES(...)` — body region that supports internal defines
@@ -559,7 +559,7 @@ The preferred behavior is explicit failure rather than unsafe broad rewriting.
 **Planned**:
 
 * `FORMALS` — for lambda and similar
-* `BINDING` — single binding with optional unnamed
+* `BINDING` — single binding
 * `DEFINE` — single-name shorthand define
 * Sequential/recursive binding modes
 * Internal-definition bodies

@@ -152,7 +152,7 @@ def match(self, source, literals, result, specs=None) -> Tuple[Optional[Any], bo
 | Tag | Payload | Meaning |
 |-----|---------|---------|
 | `matcher/bind-bindings` | slot | Element must be a list; apply `gather_bindings`; bind BindingsResult (names, values, source, source_pos). Accepts optional `mode`, `scope`, `scopes` for hygiene (see matcher-hygiene-extensions.md). |
-| `matcher/bind-binding` | slot | Single binding; `(name, value)`; optional `allow_unnamed` (planned) |
+| `matcher/bind-binding` | slot | Single binding; `(name, value)` |
 | `matcher/formals` | slot | Formal parameters for lambda; bind FormalsResult (positional, defaults, kwonly, star, starstar, source, source_pos). Use `scope`/`scopes` for hygiene. |
 | `matcher/define` | slot | Single define-style name; gensym'd (planned) |
 

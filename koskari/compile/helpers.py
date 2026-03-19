@@ -257,14 +257,12 @@ _USING_FORMS = _BINDING_FORMS_ALLOW_UNNAMED
 @matcher(_tag_binding)
 class _BindingMatcher(BindingMatcher):
     """
-    Match a single binding form (SYM EXPR), (EXPR as: SYM), or (EXPR)
-    when allow_unnamed is True
+    Match a single binding form (SYM EXPR) or (EXPR as: SYM).
     """
 
-    def __init__(self, slot, *, allow_unnamed=False, scope=None, scopes=None):
+    def __init__(self, slot, *, scope=None, scopes=None):
         self.slot = slot
         self._key = str(slot)
-        self.allow_unnamed = allow_unnamed
         self.scope = scope
         self.scopes = scopes
 
@@ -299,12 +297,7 @@ class _BindingMatcher(BindingMatcher):
         if not is_pair(head):
             return (None, False)
 
-        if self.allow_unnamed:
-            patterns = _BINDING_FORMS_ALLOW_UNNAMED
-        else:
-            patterns = _BINDING_FORMS
-
-        m = match1(head, patterns)
+        m = match1(head, _BINDING_FORMS)
         if m is None:
             return (None, False)
 
@@ -327,18 +320,15 @@ class _BindingMatcher(BindingMatcher):
                 else self.slot)
 
 
-def BINDING(slot, *, allow_unnamed=False, scope=None, scopes=None):
+def BINDING(slot, *, scope=None, scopes=None):
     """
-    Match a single binding form (SYM EXPR), (EXPR as: SYM), or optionally
-    (EXPR) when allow_unnamed is True.
+    Match a single binding form (SYM EXPR) or (EXPR as: SYM).
 
     :param slot: capture key
-    :param allow_unnamed: if True, (EXPR) alone is allowed; name is None
     :param scope: single scope region key
     :param scopes: sequence of scope region keys
     """
-    return _BindingMatcher(slot, allow_unnamed=allow_unnamed,
-                           scope=scope, scopes=scopes)
+    return _BindingMatcher(slot, scope=scope, scopes=scopes)
 
 
 @matcher(_tag_using)
@@ -408,15 +398,12 @@ def USING(slot, *, scope=None, scopes=None):
     return _UsingMatcher(slot, scope=scope, scopes=scopes)
 
 
-def helper_binding(source, allow_unnamed=False):
+def helper_binding(source):
     """
-    Parse a single binding form (SYM EXPR), (EXPR as: SYM), or when
-    allow_unnamed True then (EXPR) alone.
+    Parse a single binding form (SYM EXPR) or (EXPR as: SYM).
 
     :param source: pair representing one binding
-    :param allow_unnamed: if True, a single element (EXPR) is allowed and
-        returns (None, expr)
-    :return: (name, expr) where name is the bound name or None if unnamed
+    :return: (name, expr) where name is the bound name
     :raises SpecialError: when the binding form is invalid
     """
 
@@ -426,12 +413,7 @@ def helper_binding(source, allow_unnamed=False):
     if not is_proper(source):
         raise SpecialError(msg, source)
 
-    if allow_unnamed:
-        patterns = _BINDING_FORMS_ALLOW_UNNAMED
-    else:
-        patterns = _BINDING_FORMS
-
-    m = match1(source, patterns)
+    m = match1(source, _BINDING_FORMS)
     if m is None:
         raise SpecialError(msg, source)
 
