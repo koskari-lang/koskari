@@ -66,6 +66,14 @@ static void asyncgen_teardown_frozen(KosPyAsyncGen *agen) {
     goto fallback;
   }
 
+  /* Install gen onto ctx so chain is restored before eval; in flatten path
+     the chain lived in GEN->active and agen->ctx was never the running ctx. */
+  if (kos_dyn_gen_install(ctx, gen) < 0) {
+    PyErr_Clear();
+    Py_DECREF(throw_exc);
+    goto fallback;
+  }
+
   res = koskari_eval(ctx, &ev, NULL, PyExc_GeneratorExit, throw_exc);
   Py_DECREF(throw_exc);
 

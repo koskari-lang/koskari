@@ -1977,10 +1977,20 @@ static int defer_drive(KosContext *ctx, KosEvent *out_ev, PyObject *defer_obj) {
             0 if no handler (out_ev set to KOS_EV_RAISE, caller should return)
 */
 static int try_local_exception_handler(KosContext *ctx, KosEvent *out_ev) {
-  SAYF("[try_local] dyn_top=%p acting_pc=%u stack_len=%zu",
-       (void *) KosContext_DYN_TOP(ctx),
-       (unsigned) CURRENT_ACTING_PC(ctx),
-       (size_t) (CURRENT_STACK(ctx) ? KosStackBlock_LEN(CURRENT_STACK(ctx)) : 0));
+  #if VERBOSE_DEBUG
+  if (! ctx) {
+    SAY("[try_local] ctx=NULL");
+
+  } else if (ctx && CURRENT_FRAME(ctx)) {
+    SAYF("[try_local] dyn_top=%p acting_pc=%u stack_len=%zu",
+          (void *) KosContext_DYN_TOP(ctx),
+          (unsigned) CURRENT_ACTING_PC(ctx),
+          (size_t) (CURRENT_STACK(ctx) ? KosStackBlock_LEN(CURRENT_STACK(ctx)) : 0));
+
+  } else {
+    SAYF("[try_local] dyn_top=%p, frame_top=NULL", (void *) KosContext_DYN_TOP(ctx));
+  }
+  #endif
 
   while (CURRENT_FRAME(ctx) && KosContext_DYN_TOP(ctx) != NULL
          && KosContext_DYN_TOP(ctx) != (KosDynNode *) CURRENT_FRAME(ctx)) {

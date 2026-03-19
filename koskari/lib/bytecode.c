@@ -1701,12 +1701,18 @@ PyCodeObject *KosCode_Faux(PyObject *self) {
 
   tmp = KosCode_FILENAME(self);
   Py_CLEAR(faux->co_filename);
-  Py_INCREF(tmp);
+  if (tmp)
+    Py_INCREF(tmp);
+  else
+    tmp = PyUnicode_FromString("<unknown>");
   faux->co_filename = tmp;
 
   tmp = KosCode_NAME(self);
   Py_CLEAR(faux->co_name);
-  Py_INCREF(tmp);
+  if (tmp)
+    Py_INCREF(tmp);
+  else
+    tmp = PyUnicode_FromString("<lambda>");
   faux->co_name = tmp;
 
   KosCode_FAUX(self) = faux;
