@@ -242,5 +242,3 @@ There are no **partially** implemented opcodes; each handler is either full, a s
 - JIT integration
 - Additional language features
 - Performance optimizations
-- Stack block cloning for full continuation semantics
-- Lazy frame COW optimization

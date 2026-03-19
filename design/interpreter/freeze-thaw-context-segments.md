@@ -8,7 +8,7 @@ This document summarizes the design direction for improving Koskari's interprete
 2. Introducing explicit **freeze/thaw boundaries** between them.
 3. Moving frequently mutated execution state into **C-local structures** during evaluation.
 4. Adding a **fast inline stack block** used during active evaluation.
-5. Removing **copy-on-write (CoW) stack blocks** in favor of explicit snapshotting (see `design/api/stack-no-cow-proposal.md`).
+5. Removing **copy-on-write (CoW) stack blocks** in favor of explicit snapshotting (see `design/archive/stack-no-cow-proposal.md`).
 
 The primary goal is to reduce indirection and conditional checks in the hot opcode path while preserving the ability to suspend, resume, and capture execution state.
 
@@ -416,7 +416,7 @@ Roughly 10–20 cycles saved per stack op. With 2–3 stack ops per instruction 
 
 ### Recommended order
 
-1. Remove CoW (see `design/api/stack-no-cow-proposal.md`). Simpler, independent win; no freeze/thaw yet.
+1. Remove CoW (see `design/archive/stack-no-cow-proposal.md`). Simpler, independent win; no freeze/thaw yet.
 2. Measure.
 3. Introduce `KosEvalState` and inline stack. Measure again.
 4. Tune (inline size, thaw heuristics) based on results.
@@ -427,7 +427,7 @@ Roughly 10–20 cycles saved per stack op. With 2–3 stack ops per instruction 
 
 This design introduces a **freeze/thaw execution model** separating persistent runtime state from accelerated C-local execution state.
 
-Combined with removal of stack CoW (see `design/api/stack-no-cow-proposal.md`) and the introduction of a **fast inline stack block**, this architecture significantly simplifies the interpreter hot path while preserving Koskari's advanced control-flow capabilities.
+Combined with removal of stack CoW (see `design/archive/stack-no-cow-proposal.md`) and the introduction of a **fast inline stack block**, this architecture significantly simplifies the interpreter hot path while preserving Koskari's advanced control-flow capabilities.
 
 Section 16 addresses the concern that freeze/thaw overhead may exceed savings; the analysis concludes that with suspension-scoped freeze/thaw and typical instruction counts, the net win is large. Mitigations are documented if measurement suggests otherwise.
 

@@ -107,15 +107,6 @@ Ref: [api/dunder-adapter.md](api/dunder-adapter.md) (demand_sync, demand path);
 
 ## Compiler
 
-### BIND and USE specifiers
-
-Differentiate bracket specifiers into **BIND** (target-first: formals, let,
-define) and **USE** (expression-first: exception matching, with, dyn-with).
-Implement `parse_bind_spec` / `parse_use_spec` and consume normalized
-BindSpec/UseSpec in the relevant constructs.
-
-Ref: [language/bind-use-specifiers.md](language/bind-use-specifiers.md).
-
 ### Remaining specials
 
 - **await** — language/compile-level support for await (AWAIT opcode exists).
@@ -227,9 +218,7 @@ From [FEATURES.md](FEATURES.md) and related docs:
 - Performance optimizations (general)
 - Stack block cloning for full continuation semantics
 - Lazy frame COW optimization
-- Stack: remove COW semantics? See [api/stack-no-cow-proposal.md](api/stack-no-cow-proposal.md)
-- Pattern matching: [api/pattern-matching.md](api/pattern-matching.md); bracket
-  specifiers (BIND vs USE): [language/bind-use-specifiers.md](language/bind-use-specifiers.md)
+- Pattern matching: [api/pattern-matching.md](api/pattern-matching.md)
 - Control flow (comprehensions, etc.): [language/control-flow.md](language/control-flow.md)
 
 ---
