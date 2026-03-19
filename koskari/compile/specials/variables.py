@@ -24,13 +24,17 @@ and compile/define-syntax.
 
 
 from ...lib import cons, nil, OpCode, symbol
-from ...matcher import DEFINE, MATCH, REST, VALUE, match
+from ...matcher import DEFINE, MATCH, REST, SYMBOL, VALUE, match
 from ...types import is_pair
 from ...exceptions import CompilerError, SpecialError
-from ..helpers import FORMALS, is_symbolish, special, special_forms
+from ..helpers import FORMALS, special, special_forms
 from ..syntax import build_syntax_rules_transformer
 
 
+_SETQ_PATTERNS = [MATCH(SYMBOL("sym"), VALUE("expr"))]
+
+
+@special_forms(_SETQ_PATTERNS)
 @special(symbol("compile/setq"))
 def special_setq(compiler, source, tc=False):
     """
@@ -38,18 +42,18 @@ def special_setq(compiler, source, tc=False):
     binding SYM
     """
 
-    called_by, (sym, body) = source
-    expr, rest = body
-
-    sym = str(sym)
-
-    if rest is not nil:
+    called_by, rest = source
+    matched = match(rest, _SETQ_PATTERNS)
+    if matched is None:
         raise SpecialError("setq takes two arguments", source)
+
+    sym = str(matched["sym"].source)
+    expr = matched["expr"].source
 
     frag = compiler.fragment(called_by)
 
     if not is_pair(expr):
-        frag.position_of(body)
+        frag.position_of(rest)
 
     frag.request_var(sym)
     frag.merge(compiler.full_compile(expr))
@@ -59,23 +63,26 @@ def special_setq(compiler, source, tc=False):
     return frag
 
 
+_DELQ_PATTERNS = [MATCH(SYMBOL("sym"))]
+
+
+@special_forms(_DELQ_PATTERNS)
 @special(symbol("compile/delq"))
 def special_delq(compiler, source, tc=False):
     """
     Compile (compile/delq SYM). Clear the binding SYM, resetting it to unset
     """
 
-    called_by, body = source
-    sym, rest = body
-
-    sym = str(sym)
-
-    if rest is not nil:
+    called_by, rest = source
+    matched = match(rest, _DELQ_PATTERNS)
+    if matched is None:
         raise SpecialError("delq takes one argument", source)
+
+    sym = str(matched["sym"].source)
 
     frag = compiler.fragment(called_by)
 
-    frag.position_of(body)
+    frag.position_of(rest)
     frag.request_var(sym)
     frag.instruction(OpCode.KOS_OP_VAR_CLEAR, sym)
     frag.instruction(OpCode.KOS_OP_CONST, None)
@@ -133,6 +140,10 @@ def special_define(compiler, source, tc=False):
     return frag
 
 
+_DEFINE_SYNTAX_PATTERNS = [MATCH(DEFINE("name"), VALUE("transformer"))]
+
+
+@special_forms(_DEFINE_SYNTAX_PATTERNS)
 @special(symbol("compile/define-syntax"))
 def special_define_syntax(compiler, source, tc=False):
     """
@@ -141,31 +152,26 @@ def special_define_syntax(compiler, source, tc=False):
     """
 
     called_by, rest = source
-    if rest is nil or not is_pair(rest):
+    matched = match(rest, _DEFINE_SYNTAX_PATTERNS)
+    if matched is None:
         raise SpecialError("define-syntax requires a name and transformer", source)
 
-    name, rest_tail = rest
-    if not is_symbolish(name):
-        raise SpecialError("define-syntax name must be a symbol", source)
-
-    if rest_tail is nil or not is_pair(rest_tail) or rest_tail[1] is not nil:
-        raise SpecialError("define-syntax takes exactly two arguments", source)
-
-    transformer_spec = rest_tail[0]
+    namesym = matched["name"].source
+    transformer_spec = matched["transformer"].source
 
     try:
-        transformer = build_syntax_rules_transformer(name, transformer_spec)
+        transformer = build_syntax_rules_transformer(namesym, transformer_spec)
     except CompilerError as ex:
         raise SpecialError(str(ex), source) from ex
 
     tagged = transformer.to_tuple()
-    build_call = cons(symbol("build-syntax-rules"), str(name), tagged, nil)
+    build_call = cons(symbol("build-syntax-rules"), str(namesym), tagged, nil)
 
     frag = compiler.fragment(called_by)
-    frag.declare_var(str(name))
+    frag.declare_var(str(namesym))
 
     frag.merge(compiler.full_compile(build_call))
-    frag.instruction(OpCode.KOS_OP_VAR_STORE, str(name))
+    frag.instruction(OpCode.KOS_OP_VAR_STORE, str(namesym))
     frag.instruction(OpCode.KOS_OP_CONST, None)
 
     return frag
