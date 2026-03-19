@@ -118,25 +118,60 @@ static int test_code_create_minimal_return_none(void) {
       Test minimal valid Code: single RETURN 0 (return None).
       Code must have at least one instruction.
     */
-    PyObject *nspec = create_test_nspec();
-    TEST_ASSERT_NOT_NULL(nspec, "create nspec");
+    PyObject *nspec = NULL;
+    PyObject *instr = NULL;
+    PyObject *code = NULL;
+    int result = 0;
 
-    PyObject *instr = PyList_New(2);
+    nspec = create_test_nspec();
+    if (! nspec) {
+        fprintf(stderr, "  FAIL: create nspec (got NULL)\n");
+        return -1;
+    }
+
+    instr = PyList_New(2);
+    if (! instr) {
+        Py_DECREF(nspec);
+        return -1;
+    }
     PyList_SET_ITEM(instr, 0, make_instr(KOS_OP_CONST, Py_None));
     PyList_SET_ITEM(instr, 1, make_instr_int(KOS_OP_RETURN, 1));
 
-    PyObject *code = KosCode_New(nspec, instr, NULL, NULL);
-    TEST_ASSERT_NOT_NULL(code, "create minimal Code");
-    TEST_ASSERT(KosCode_CheckExact(code), "code type check");
-    TEST_ASSERT_EQ(KosCode_CODE_LEN(code), 2, "two instructions");
-    TEST_ASSERT_EQ(KosCode_CPOOL_LEN(code), 1, "one constant (None)");
-    TEST_ASSERT_EQ(KosCode_GET_OP(code, 0), KOS_OP_CONST, "first op is CONST");
-    TEST_ASSERT_EQ(KosCode_GET_OP(code, 1), KOS_OP_RETURN, "second op is RETURN");
+    code = KosCode_New(nspec, instr, NULL, NULL);
+    if (! code)
+        goto cleanup;
+    if (! KosCode_CheckExact(code)) {
+        fprintf(stderr, "  FAIL: code type check\n");
+        result = -1;
+        goto cleanup;
+    }
+    if (KosCode_CODE_LEN(code) != 2) {
+        fprintf(stderr, "  FAIL: two instructions (expected 2, got %u)\n",
+                (unsigned) KosCode_CODE_LEN(code));
+        result = -1;
+        goto cleanup;
+    }
+    if (KosCode_CPOOL_LEN(code) != 1) {
+        fprintf(stderr, "  FAIL: one constant (None)\n");
+        result = -1;
+        goto cleanup;
+    }
+    if (KosCode_GET_OP(code, 0) != KOS_OP_CONST) {
+        fprintf(stderr, "  FAIL: first op is CONST\n");
+        result = -1;
+        goto cleanup;
+    }
+    if (KosCode_GET_OP(code, 1) != KOS_OP_RETURN) {
+        fprintf(stderr, "  FAIL: second op is RETURN\n");
+        result = -1;
+        goto cleanup;
+    }
 
-    Py_DECREF(code);
-    Py_DECREF(instr);
-    Py_DECREF(nspec);
-    return 0;
+ cleanup:
+    Py_XDECREF(code);
+    Py_XDECREF(instr);
+    Py_XDECREF(nspec);
+    return result;
 }
 
 
@@ -212,56 +247,98 @@ static int test_code_position_delta(void) {
     /*
       Test that position table uses delta encoding - only records changes.
     */
-    PyObject *nspec = create_test_nspec();
-    TEST_ASSERT_NOT_NULL(nspec, "create nspec");
+    PyObject *nspec = NULL;
+    PyObject *instr = NULL;
+    PyObject *const_list = NULL;
+    PyObject *const_val = NULL;
+    PyObject *code = NULL;
+    uint16_t line, col;
+    int result = 0;
 
-    /* Create instructions with position changes */
-    PyObject *instr = PyList_New(6);
-    PyList_SET_ITEM(instr, 0, make_instr(KOS_OP_POSITION, make_position(1, 0)));
+    nspec = create_test_nspec();
+    if (! nspec) {
+        fprintf(stderr, "  FAIL: create nspec (got NULL)\n");
+        return -1;
+    }
+
+    instr = PyList_New(6);
+    if (! instr) {
+        Py_DECREF(nspec);
+        return -1;
+    }
+    PyObject *pos = make_position(1, 0);
+    PyList_SET_ITEM(instr, 0, make_instr(KOS_OP_POSITION, pos));
+    Py_XDECREF(pos);
     PyList_SET_ITEM(instr, 1, make_instr_int(KOS_OP_CONST, 0));
-    PyList_SET_ITEM(instr, 2, make_instr(KOS_OP_POSITION, make_position(1, 0)));  /* same - not recorded */
+    pos = make_position(1, 0);
+    PyList_SET_ITEM(instr, 2, make_instr(KOS_OP_POSITION, pos));
+    Py_XDECREF(pos);
     PyList_SET_ITEM(instr, 3, make_instr_int(KOS_OP_CONST, 0));
-    PyList_SET_ITEM(instr, 4, make_instr(KOS_OP_POSITION, make_position(2, 5)));  /* different - recorded */
+    pos = make_position(2, 5);
+    PyList_SET_ITEM(instr, 4, make_instr(KOS_OP_POSITION, pos));
+    Py_XDECREF(pos);
     PyList_SET_ITEM(instr, 5, make_instr_int(KOS_OP_RETURN, 1));
 
-    /* Need to add a constant for CONST ops to reference */
-    PyObject *const_list = PyList_New(7);
-    PyList_SET_ITEM(const_list, 0, make_instr(KOS_OP_POSITION, make_position(1, 0)));
-    PyObject *const_val = PyLong_FromLong(100);
+    const_list = PyList_New(7);
+    if (! const_list)
+        goto cleanup;
+    const_val = PyLong_FromLong(100);
+    if (! const_val)
+        goto cleanup;
+    pos = make_position(1, 0);
+    PyList_SET_ITEM(const_list, 0, make_instr(KOS_OP_POSITION, pos));
+    Py_XDECREF(pos);
     PyList_SET_ITEM(const_list, 1, make_instr(KOS_OP_CONST, const_val));
-    PyList_SET_ITEM(const_list, 2, make_instr(KOS_OP_POSITION, make_position(1, 0)));  /* same */
+    pos = make_position(1, 0);
+    PyList_SET_ITEM(const_list, 2, make_instr(KOS_OP_POSITION, pos));
+    Py_XDECREF(pos);
     PyList_SET_ITEM(const_list, 3, make_instr(KOS_OP_CONST, const_val));
-    PyList_SET_ITEM(const_list, 4, make_instr(KOS_OP_POSITION, make_position(2, 5)));  /* different */
+    pos = make_position(2, 5);
+    PyList_SET_ITEM(const_list, 4, make_instr(KOS_OP_POSITION, pos));
+    Py_XDECREF(pos);
     PyList_SET_ITEM(const_list, 5, make_instr(KOS_OP_CONST, const_val));
     PyList_SET_ITEM(const_list, 6, make_instr_int(KOS_OP_RETURN, 1));
 
-    PyObject *code = KosCode_New(nspec, const_list, NULL, NULL);
-    TEST_ASSERT_NOT_NULL(code, "create Code");
+    code = KosCode_New(nspec, const_list, NULL, NULL);
+    if (! code)
+        goto cleanup;
 
-    /* Position table should only have 2 entries (initial + change) */
-    TEST_ASSERT_EQ(KosCode_POS_LEN(code), 2, "two position entries");
-
-    /* Verify position lookup */
-    uint16_t line, col;
+    if (KosCode_POS_LEN(code) != 2) {
+        fprintf(stderr, "  FAIL: two position entries (got %u)\n",
+                (unsigned) KosCode_POS_LEN(code));
+        result = -1;
+        goto cleanup;
+    }
 
     KosCode_GetPosition(code, 0, &line, &col);
-    TEST_ASSERT_EQ(line, 1, "line at index 0");
-    TEST_ASSERT_EQ(col, 0, "col at index 0");
-
+    if (line != 1 || col != 0) {
+        fprintf(stderr, "  FAIL: line at index 0 (got %u, %u)\n",
+                (unsigned) line, (unsigned) col);
+        result = -1;
+        goto cleanup;
+    }
     KosCode_GetPosition(code, 1, &line, &col);
-    TEST_ASSERT_EQ(line, 1, "line at index 1");
-    TEST_ASSERT_EQ(col, 0, "col at index 1");
-
+    if (line != 1 || col != 0) {
+        fprintf(stderr, "  FAIL: line at index 1 (got %u, %u)\n",
+                (unsigned) line, (unsigned) col);
+        result = -1;
+        goto cleanup;
+    }
     KosCode_GetPosition(code, 2, &line, &col);
-    TEST_ASSERT_EQ(line, 2, "line at index 2");
-    TEST_ASSERT_EQ(col, 5, "col at index 2");
+    if (line != 2 || col != 5) {
+        fprintf(stderr, "  FAIL: line at index 2 (got %u, %u)\n",
+                (unsigned) line, (unsigned) col);
+        result = -1;
+        goto cleanup;
+    }
 
-    Py_DECREF(code);
-    Py_DECREF(const_val);
-    Py_DECREF(const_list);
-    Py_DECREF(instr);
-    Py_DECREF(nspec);
-    return 0;
+ cleanup:
+    Py_XDECREF(code);
+    Py_XDECREF(const_val);
+    Py_XDECREF(const_list);
+    Py_XDECREF(instr);
+    Py_XDECREF(nspec);
+    return result;
 }
 
 

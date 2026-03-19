@@ -73,10 +73,10 @@ Opcode sequences produced
 """
 
 
-from ...lib import nil, OpCode, symbol, keyword
+from ...lib import nil, OpCode, symbol
 from ...types import is_keyword, is_pair, is_symbol, unpack
 from ...exceptions import SpecialError
-from ..helpers import is_symbolish, special
+from ..helpers import helper_using, is_symbolish, special
 
 
 __all__ = (
@@ -84,9 +84,6 @@ __all__ = (
     'special_import',
     'special_import_from',
 )
-
-
-_keyword_as = keyword('as')
 
 
 def _attr_form_to_dotted(form, source):
@@ -230,19 +227,33 @@ def _parse_member(elem, source):
         return (name, name)
 
     if is_pair(elem):
-        parts = list(elem.unpack())
-        if len(parts) == 3 and is_keyword(parts[1]) and str(parts[1]) == 'as':
-            attr_sym, _, bind_sym = parts
+        try:
+            name, value = helper_using(elem)
+        except SpecialError:
+            raise SpecialError(
+                "import-from member must be a symbol or [ATTR as: BIND], not %r"
+                % (elem,),
+                source) from None
 
-            if is_symbolish(attr_sym) and is_symbolish(bind_sym):
-                return (str(bind_sym), str(attr_sym))
+        if name is None:
+            if not is_symbolish(value):
+                raise SpecialError(
+                    "import-from member must be a symbol or [ATTR as: BIND],"
+                    " not %r" % (elem,),
+                    source)
+            s = str(value)
+            return (s, s)
 
-        if len(parts) == 1 and is_symbolish(parts[0]):
-            name = str(parts[0])
-            return (name, name)
+        if not is_symbolish(name) or not is_symbolish(value):
+            raise SpecialError(
+                "import-from member [ATTR as: BIND] requires symbols, not %r"
+                % (elem,),
+                source)
+        return (str(name), str(value))
 
     raise SpecialError(
-        "import-from member must be a symbol or [ATTR as: BIND], not %r" % (elem,),
+        "import-from member must be a symbol or [ATTR as: BIND], not %r"
+        % (elem,),
         source)
 
 

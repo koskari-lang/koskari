@@ -30,6 +30,7 @@ from ..matcher import (
     SYMBOL,
     match1,
     matcher,
+    UsingResult,
 )
 
 
@@ -37,6 +38,7 @@ __all__ = (
     "BINDING",
     "BINDINGS",
     "FORMALS",
+    "USING",
     "const_only_expr",
     "convert_bindings",
     "gather_bindings",
@@ -44,6 +46,7 @@ __all__ = (
     "gather_parameters_ng",
     "helper_begin",
     "helper_binding",
+    "helper_using",
     "helper_elsebody",
     "is_lazygensym",
     "is_symbolish",
@@ -236,6 +239,7 @@ def FORMALS(slot, *, scope=None, scopes=None):
 
 
 _tag_binding = symbol('matcher/binding')
+_tag_using = symbol('matcher/using')
 
 
 _BINDING_FORMS = [
@@ -247,18 +251,18 @@ _BINDING_FORMS_ALLOW_UNNAMED = [
     LIST(VALUE("expr")),
 ]
 
+_USING_FORMS = _BINDING_FORMS_ALLOW_UNNAMED
+
 
 @matcher(_tag_binding)
 class _BindingMatcher(BindingMatcher):
     """
-    Match a single binding form (SYM EXPR), (EXPR as: SYM), or (EXPR)
-    when allow_unnamed is True
+    Match a single binding form (SYM EXPR) or (EXPR as: SYM).
     """
 
-    def __init__(self, slot, *, allow_unnamed=False, scope=None, scopes=None):
+    def __init__(self, slot, *, scope=None, scopes=None):
         self.slot = slot
         self._key = str(slot)
-        self.allow_unnamed = allow_unnamed
         self.scope = scope
         self.scopes = scopes
 
@@ -293,12 +297,7 @@ class _BindingMatcher(BindingMatcher):
         if not is_pair(head):
             return (None, False)
 
-        if self.allow_unnamed:
-            patterns = _BINDING_FORMS_ALLOW_UNNAMED
-        else:
-            patterns = _BINDING_FORMS
-
-        m = match1(head, patterns)
+        m = match1(head, _BINDING_FORMS)
         if m is None:
             return (None, False)
 
@@ -321,29 +320,90 @@ class _BindingMatcher(BindingMatcher):
                 else self.slot)
 
 
-def BINDING(slot, *, allow_unnamed=False, scope=None, scopes=None):
+def BINDING(slot, *, scope=None, scopes=None):
     """
-    Match a single binding form (SYM EXPR), (EXPR as: SYM), or optionally
-    (EXPR) when allow_unnamed is True.
+    Match a single binding form (SYM EXPR) or (EXPR as: SYM).
 
     :param slot: capture key
-    :param allow_unnamed: if True, (EXPR) alone is allowed; name is None
     :param scope: single scope region key
     :param scopes: sequence of scope region keys
     """
-    return _BindingMatcher(slot, allow_unnamed=allow_unnamed,
-                           scope=scope, scopes=scopes)
+    return _BindingMatcher(slot, scope=scope, scopes=scopes)
 
 
-def helper_binding(source, allow_unnamed=False):
+@matcher(_tag_using)
+class _UsingMatcher(BindingMatcher):
     """
-    Parse a single binding form (SYM EXPR), (EXPR as: SYM), or when
-    allow_unnamed True then (EXPR) alone.
+    Match a single using form (EXPR), (EXPR as: SYM), or (SYM EXPR).
+    """
+
+    def __init__(self, slot, *, scope=None, scopes=None):
+        self.slot = slot
+        self._key = str(slot)
+        self.scope = scope
+        self.scopes = scopes
+
+    @classmethod
+    def from_payload(cls, payload, deserialize):
+        if len(payload) != 1:
+            raise ValueError('using expects 1 payload, got %d' % len(payload))
+        return cls(payload[0])
+
+    def extract_binder_symbols(self, value):
+        if hasattr(value, 'name') and value.name is not None and is_symbol(value.name):
+            yield value.name
+
+    def get_recurse_targets(self, value):
+        if isinstance(value, BindingResult) and value.value is not None:
+            return [value.value]
+        return ()
+
+    def matches_element(self, value, literals, result, specs=None, source=None):
+        return False
+
+    def consume(self, source, literals, result, specs=None):
+        if source is nil:
+            return (None, False)
+
+        head, remainder = source
+        if not is_pair(head):
+            return (None, False)
+
+        m = match1(head, _USING_FORMS)
+        if m is None:
+            return (None, False)
+
+        name = m.get("name")
+        if name:
+            name = name.source
+        value = m.get("expr").source
+
+        result[self._key] = UsingResult(
+            head, get_position(source), name=name, value=value)
+
+        if specs is not None:
+            specs[self._key] = self
+
+        return (remainder, True)
+
+    def to_tuple(self):
+        return (_tag_using, symbol(self._key) if isinstance(self.slot, str)
+                else self.slot)
+
+
+def USING(slot, *, scope=None, scopes=None):
+    """
+    Match a single using form (EXPR), (EXPR as: NAME), or (NAME EXPR).
+    """
+    return _UsingMatcher(slot, scope=scope, scopes=scopes)
+
+
+def helper_binding(source):
+    """
+    Parse a single binding form (SYM EXPR) or (EXPR as: SYM).
 
     :param source: pair representing one binding
-    :param allow_unnamed: if True, a single element (EXPR) is allowed and
-        returns (None, expr)
-    :return: (name, expr) where name is the bound name or None if unnamed
+    :return: (name, expr) where name is the bound name
     :raises SpecialError: when the binding form is invalid
     """
 
@@ -353,12 +413,31 @@ def helper_binding(source, allow_unnamed=False):
     if not is_proper(source):
         raise SpecialError(msg, source)
 
-    if allow_unnamed:
-        patterns = _BINDING_FORMS_ALLOW_UNNAMED
-    else:
-        patterns = _BINDING_FORMS
+    m = match1(source, _BINDING_FORMS)
+    if m is None:
+        raise SpecialError(msg, source)
 
-    m = match1(source, patterns)
+    name = m.get("name")
+    value = m.get("expr")
+
+    return (name.source if name else None, value.source)
+
+
+def helper_using(source):
+    """
+    Parse a single using form (EXPR), (EXPR as: SYM), or (SYM EXPR).
+
+    :param source: pair representing one using
+    :return: (name, expr) where name is the bound name or None if unnamed
+    :raises SpecialError: when the using form is invalid
+    """
+    msg = ("a using must be in the form of (EXPR), (SYM EXPR), or"
+           " (EXPR as: SYM), not %s" % source)
+
+    if not is_proper(source):
+        raise SpecialError(msg, source)
+
+    m = match1(source, _USING_FORMS)
     if m is None:
         raise SpecialError(msg, source)
 

@@ -2770,13 +2770,13 @@ static int kos_dyn_gen_freeze_and_release(KosContext *ctx, KosDynGen *gen,
   kos_update_frame_top(ctx);
 
   owner = KosDynGen_OWNER(gen);
-  if (owner) {
-    if (KosPyAsyncGen_Check(owner))
-      ((KosPyAsyncGen *) owner)->gen = (void *) gen;
-    KosContext_RESUME_GEN(ctx) = gen;
-  }
+  if (owner && KosPyAsyncGen_Check(owner))
+    ((KosPyAsyncGen *) owner)->gen = (void *) gen;
+  KosContext_RESUME_GEN(ctx) = gen;
 
-  kos_dyngen_release(gen);
+  /* Release only when owner holds the gen; standalone gen is kept for resume */
+  if (owner)
+    kos_dyngen_release(gen);
   SAYF("[gen] freeze DONE ctx->dyn_top=%p (%s) frame_top=%p resume_gen=%p "
        "owner=%p\n",
        (void *) KosContext_DYN_TOP(ctx),

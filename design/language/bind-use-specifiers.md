@@ -16,8 +16,8 @@ clear foundation for declarations, parameters, and association constructs.
 
 Bracketed specifiers in Koskari serve two distinct semantic roles:
 
-* **BIND** — target-first declaration syntax
-* **USE** — expression-first association syntax
+* **BIND** — target-focused declaration syntax
+* **USE** — expression-focused association syntax
 
 Although both use the same bracket container (`[...]`), they are parsed and
 interpreted differently.
@@ -36,24 +36,28 @@ A **BIND** specifier describes a binding target and optional metadata.
 Canonical structure:
 
 ```
-[target ...attributes... expr: VALUE]
+[target ...attributes... value: VALUE]
 ```
 
 Where:
 
-* `target` is the binding target
+* `target` is the symbolic binding target
 * optional attributes may include type annotations or flags
-* `expr:` represents the associated expression for the binding
+* `value:` represents the associated expression for the binding
 
-The meaning of `expr:` depends on the enclosing construct.
+The meaning of `value:` depends on the enclosing construct.
 
 Examples:
 
 ```
-[a]
-[a :: int]
-[a expr: 5]
-[a :: int expr: 5]
+a                        ;; a with no value
+[a]                      ;; a with no value
+[a :: int]               ;; a with no value, type decl int
+[a type: int]            ;; a with no value, type decl int (synonymous to above)
+[a 5]                    ;; simple name and value
+[5 as: a]                ;; convenience sugar
+[a value: 5]             ;; fully expanded with value
+[a type: int value: 5]   ;; fully expanded with type
 ```
 
 ---
@@ -95,15 +99,15 @@ A list of BIND specifiers is referred to as **BINDINGS**.
 Example:
 
 ```
-(let [[a expr: 1]
-      [b expr: 2]]
+(let [[a 1]
+      [a 2]]
   ...)
 ```
 
 Function parameters also form BINDINGS:
 
 ```
-(lambda [a b [c expr: 5]] ...)
+(lambda [a b [c 5]] ...)
 ```
 
 Conceptually:
@@ -130,21 +134,24 @@ A **USE** specifier is expression-first and optionally introduces a binding.
 Canonical structure:
 
 ```
-[EXPR as: TARGET]
+[EXPR as: target]
 ```
 
 Where:
 
 * `EXPR` is an expression that produces a value
-* `as:` optionally binds that value to a target
+* `target` is an optional symbolic binding
+
 
 Examples:
 
 ```
-[Exception]
-[Exception as: e]
-[resource]
-[resource as: r]
+[Exception]           ;; bare expression
+[Exception as: e]     ;; expression bound to name
+[e Exception]         ;; expression bound to name, synonymous to above
+[(resource)]          ;; bare expression
+[(resource) as: r]    ;; expression bound to name
+[r (resource)]        ;; expression bound to name, synonymous to above
 ```
 
 ---
@@ -159,8 +166,8 @@ already be list forms.
 For example:
 
 ```
-(with x ...)
-(with (x) ...)
+(with EXPR ...)     ;; incorrect
+(with [EXPR] ...)   ;; correct
 ```
 
 Without brackets it would be impossible to distinguish between:
@@ -171,8 +178,8 @@ Without brackets it would be impossible to distinguish between:
 Therefore USE specifiers must always be written explicitly:
 
 ```
-(with [resource] ...)
-(with [resource as: r] ...)
+(with [(resource)] ...)
+(with [(resource) as: r] ...)
 
 (except [Exception] ...)
 (except [Exception as: e] ...)
@@ -200,8 +207,13 @@ Different constructs expect different specifier types.
 | `with` contexts     | USE            |
 | `except` matchers   | USE            |
 
-Each construct consumes the normalized specifier and interprets fields such as
-`expr:` according to its own semantics.
+Each construct consumes the normalized specifier and interprets fields
+according to its own semantics.
+
+BIND and USE intentionally allow very similar conventions. Their difference
+comes entirely in what aspect is optional -- for a BIND the name is mandatory,
+but the value is not. For a USE the expression is mandatory, but the name is
+not.
 
 ---
 
@@ -225,15 +237,15 @@ Example structures:
 ```
 BindSpec
     target
-    type
-    expr
-    attributes
+    type?
+    attributes?
+    value?
 ```
 
 ```
 UseSpec
     expr
-    bind_target?
+    target?
 ```
 
 Constructs then consume these normalized structures.
@@ -261,11 +273,11 @@ Koskari bracket specifiers now follow two distinct patterns:
 
 ## BIND
 
-Target-first declaration form.
+Target-focused declaration form.
 
 ```
 a == [a]
-[a expr: X]
+[a value: X]
 [a :: T]
 ```
 
@@ -273,7 +285,7 @@ Supports shorthand and forms the basis of declaration syntax.
 
 ## USE
 
-Expression-first association form.
+Expression-focused association form.
 
 ```
 [EXPR]

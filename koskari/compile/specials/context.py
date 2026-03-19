@@ -28,7 +28,7 @@ from ...lib import OpCode, nil, pair, symbol
 from ...matcher import MATCH, REST, match
 from ...types import is_pair
 from ..compiler import ByteCodeFragment, Compiler
-from ..helpers import (BINDING, gather_bindings, helper_begin,
+from ..helpers import (USING, gather_bindings, helper_begin,
                        special, special_forms)
 
 
@@ -67,7 +67,7 @@ def special_parameterize(
 
 
 _WITH_PATTERNS = [
-    MATCH(BINDING("binding", allow_unnamed=True, scope="body"), REST("body")),
+    MATCH(USING("binding", scope="body"), REST("body")),
 ]
 
 

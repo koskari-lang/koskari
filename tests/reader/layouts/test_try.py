@@ -20,6 +20,7 @@ try/except/else/finally block syntax parsing.
 
 from unittest import IsolatedAsyncioTestCase
 
+from koskari.exceptions import LayoutError
 from koskari.types import cons, keyword, nil, symbol
 from koskari.compile.helpers import pycons
 from .. import parse_layout
@@ -38,7 +39,7 @@ class TestLayoutTryExceptBindings(IsolatedAsyncioTestCase):
         src = """
         try:
           x
-        except Exception:
+        except [Exception]:
           y
         """
 
@@ -67,7 +68,7 @@ class TestLayoutTryExceptBindings(IsolatedAsyncioTestCase):
         expected = pycons(
           (symbol('try'),
            (_compile_begin, symbol('x')),
-           ((symbol('e'), symbol('Exception')), symbol('y')))
+           (cons(symbol('e'), symbol('Exception')), symbol('y')))
         )
 
         result = parse_layout(src)
@@ -89,7 +90,7 @@ class TestLayoutTryExceptBindings(IsolatedAsyncioTestCase):
         expected = pycons(
           (symbol('try'),
            (_compile_begin, symbol('x')),
-           ((symbol('e'), symbol('Exception')), symbol('y')))
+           (cons(symbol('e'), symbol('Exception')), symbol('y')))
         )
 
         result = parse_layout(src)
@@ -98,6 +99,21 @@ class TestLayoutTryExceptBindings(IsolatedAsyncioTestCase):
         print(f"expected: {expected}")
 
         self.assertEqual(result, expected)
+
+
+    async def test_except_bare_type_rejects_unnamed_atom(self):
+        """
+        except Exception: (no brackets) must raise LayoutError.
+        """
+        src = """
+        try:
+          x
+        except Exception:
+          y
+        """
+        with self.assertRaises(LayoutError) as ctx:
+            parse_layout(src)
+        self.assertIn('bracketed', str(ctx.exception))
 
 
     async def test_except_bare(self):
@@ -128,7 +144,7 @@ class TestLayoutTry(IsolatedAsyncioTestCase):
         src = """
         try:
           x
-        except Exception:
+        except [Exception]:
           y
         """
         try_body = cons(_compile_begin, symbol('x'), nil)
@@ -156,7 +172,7 @@ class TestLayoutTry(IsolatedAsyncioTestCase):
         src = """
         try:
           x
-        except Exception:
+        except [Exception]:
           y
         else:
           a
@@ -185,7 +201,7 @@ class TestLayoutTry(IsolatedAsyncioTestCase):
         src = """
         try:
           x
-        except Exception:
+        except [Exception]:
           y
         else:
           a

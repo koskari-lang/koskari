@@ -37,6 +37,8 @@ from koskari.matcher import (
     VALUE,
     extract_binder_symbols,
     from_tuple,
+    is_binder_spec,
+    is_scope_region_spec,
     match,
     match1,
 )
@@ -403,6 +405,23 @@ class TestDuplicateSlotValidation(unittest.IsolatedAsyncioTestCase):
         ))
         result = match(src, pat)
         self.assertIsNone(result)
+
+
+class TestBinderSpecInfrastructure(unittest.IsolatedAsyncioTestCase):
+
+    async def test_is_binder_spec_define(self):
+        m = DEFINE('name')
+        self.assertTrue(is_binder_spec(m))
+
+    async def test_extract_binder_symbols_define(self):
+        x = symbol('x')
+        spec = DEFINE('name')
+        vals = list(extract_binder_symbols(spec, x))
+        self.assertEqual(vals, [x])
+
+    async def test_is_scope_region_spec_value_false(self):
+        m = VALUE('val')
+        self.assertFalse(is_scope_region_spec(m))
 
 
 # The end.

@@ -193,34 +193,50 @@ static int test_formals_create_full(void) {
     /*
       Test creating Formals with all fields.
     */
-    PyObject *pos = Py_BuildValue("(s)", "foo");
-    PyObject *kwd = Py_BuildValue("(s)", "bar");
-    PyObject *star = PyUnicode_FromString("args");
-    PyObject *defaults = PyDict_New();
+    PyObject *pos = NULL;
+    PyObject *kwd = NULL;
+    PyObject *star = NULL;
+    PyObject *defaults = NULL;
+    PyObject *formals = NULL;
+    int result = 0;
 
-    TEST_ASSERT_NOT_NULL(pos, "create pos");
-    TEST_ASSERT_NOT_NULL(kwd, "create kwd");
-    TEST_ASSERT_NOT_NULL(star, "create star");
-    TEST_ASSERT_NOT_NULL(defaults, "create defaults");
+    pos = Py_BuildValue("(s)", "foo");
+    kwd = Py_BuildValue("(s)", "bar");
+    star = PyUnicode_FromString("args");
+    defaults = PyDict_New();
+    if (! pos || ! kwd || ! star || ! defaults)
+        goto cleanup;
 
-    PyDict_SetItemString(defaults, "bar", PyLong_FromLong(42));
+    PyObject *default_bar = PyLong_FromLong(42);
+    if (! default_bar)
+        goto cleanup;
+    PyDict_SetItemString(defaults, "bar", default_bar);
+    Py_DECREF(default_bar);
 
-    PyObject *formals = KosFormals_NewFull(pos, NULL, kwd, NULL,
-                                           star, NULL, defaults);
-    TEST_ASSERT_NOT_NULL(formals, "create Formals");
+    formals = KosFormals_NewFull(pos, NULL, kwd, NULL,
+                                star, NULL, defaults);
+    if (! formals)
+        goto cleanup;
 
-    TEST_ASSERT(KosFormals_Check(formals), "Formals type check");
-    TEST_ASSERT_NOT_NULL(KosFormals_POS(formals), "pos not NULL");
-    TEST_ASSERT_NOT_NULL(KosFormals_KWD(formals), "kwd not NULL");
-    TEST_ASSERT_NOT_NULL(KosFormals_STAR(formals), "star not NULL");
-    TEST_ASSERT_NOT_NULL(KosFormals_DEFAULTS(formals), "defaults not NULL");
+    if (! KosFormals_Check(formals)) {
+        fprintf(stderr, "  FAIL: Formals type check\n");
+        result = -1;
+        goto cleanup;
+    }
+    if (! KosFormals_POS(formals) || ! KosFormals_KWD(formals)
+        || ! KosFormals_STAR(formals) || ! KosFormals_DEFAULTS(formals)) {
+        fprintf(stderr, "  FAIL: formals fields not NULL\n");
+        result = -1;
+        goto cleanup;
+    }
 
-    Py_DECREF(formals);
-    Py_DECREF(defaults);
-    Py_DECREF(star);
-    Py_DECREF(kwd);
-    Py_DECREF(pos);
-    return 0;
+ cleanup:
+    Py_XDECREF(formals);
+    Py_XDECREF(defaults);
+    Py_XDECREF(star);
+    Py_XDECREF(kwd);
+    Py_XDECREF(pos);
+    return result;
 }
 
 
@@ -371,55 +387,101 @@ static int test_formals_apply_with_defaults(void) {
     /*
       Test applying formals with default values.
     */
-    PyObject *pos = Py_BuildValue("(s)", "a");
-    PyObject *kwd = Py_BuildValue("(s)", "b");
-    PyObject *defaults = PyDict_New();
-    PyDict_SetItemString(defaults, "b", PyLong_FromLong(999));
+    PyObject *pos = NULL;
+    PyObject *kwd = NULL;
+    PyObject *defaults = NULL;
+    PyObject *local_syms = NULL;
+    PyObject *formals = NULL;
+    PyObject *ns = NULL;
+    PyObject *args = NULL;
+    PyObject *a_name = NULL;
+    PyObject *b_name = NULL;
+    PyObject *a_val = NULL;
+    PyObject *b_val = NULL;
+    int result = 0;
 
-    TEST_ASSERT_NOT_NULL(pos, "create pos");
-    TEST_ASSERT_NOT_NULL(kwd, "create kwd");
-    TEST_ASSERT_NOT_NULL(defaults, "create defaults");
+    pos = Py_BuildValue("(s)", "a");
+    kwd = Py_BuildValue("(s)", "b");
+    defaults = PyDict_New();
+    if (! pos || ! kwd || ! defaults)
+        goto cleanup;
+    PyObject *default_b = PyLong_FromLong(999);
+    if (! default_b)
+        goto cleanup;
+    PyDict_SetItemString(defaults, "b", default_b);
+    Py_DECREF(default_b);
 
-    PyObject *local_syms = Py_BuildValue("(ss)", "a", "b");
-    TEST_ASSERT_NOT_NULL(local_syms, "create local_syms");
+    local_syms = Py_BuildValue("(ss)", "a", "b");
+    if (! local_syms)
+        goto cleanup;
 
-    PyObject *formals = KosFormals_NewFull(pos, NULL, kwd, NULL,
-                                           NULL, NULL, defaults);
-    TEST_ASSERT_NOT_NULL(formals, "create Formals");
+    formals = KosFormals_NewFull(pos, NULL, kwd, NULL,
+                                NULL, NULL, defaults);
+    if (! formals)
+        goto cleanup;
 
-    PyObject *ns = KosNamespace_NewFull(NULL, NULL, local_syms, NULL);
-    TEST_ASSERT_NOT_NULL(ns, "create Namespace");
+    ns = KosNamespace_NewFull(NULL, NULL, local_syms, NULL);
+    if (! ns)
+        goto cleanup;
 
-    /* Only provide 'a', let 'b' use default */
-    PyObject *args = Py_BuildValue("(i)", 42);
-    TEST_ASSERT_NOT_NULL(args, "create args");
+    args = Py_BuildValue("(i)", 42);
+    if (! args)
+        goto cleanup;
 
-    int result = KosFormals_Apply(formals, ns, args, NULL);
-    TEST_ASSERT_EQ(result, 0, "apply succeeds");
+    if (KosFormals_Apply(formals, ns, args, NULL) != 0) {
+        fprintf(stderr, "  FAIL: apply succeeds\n");
+        result = -1;
+        goto cleanup;
+    }
 
-    PyObject *a_name = PyUnicode_FromString("a");
-    PyObject *b_name = PyUnicode_FromString("b");
+    a_name = PyUnicode_FromString("a");
+    b_name = PyUnicode_FromString("b");
+    if (! a_name || ! b_name)
+        goto cleanup;
 
-    PyObject *a_val = KosNamespace_Deref(ns, a_name);
-    TEST_ASSERT_NOT_NULL(a_val, "get a value");
-    TEST_ASSERT_EQ(PyLong_AsLong(a_val), 42, "a == 42");
+    a_val = KosNamespace_Deref(ns, a_name);
+    if (! a_val) {
+        fprintf(stderr, "  FAIL: get a value\n");
+        result = -1;
+        goto cleanup;
+    }
+    if (PyLong_AsLong(a_val) != 42) {
+        fprintf(stderr, "  FAIL: a == 42\n");
+        result = -1;
+        Py_DECREF(a_val);
+        goto cleanup;
+    }
     Py_DECREF(a_val);
+    a_val = NULL;
 
-    PyObject *b_val = KosNamespace_Deref(ns, b_name);
-    TEST_ASSERT_NOT_NULL(b_val, "get b value");
-    TEST_ASSERT_EQ(PyLong_AsLong(b_val), 999, "b == 999 (default)");
+    b_val = KosNamespace_Deref(ns, b_name);
+    if (! b_val) {
+        fprintf(stderr, "  FAIL: get b value\n");
+        result = -1;
+        goto cleanup;
+    }
+    if (PyLong_AsLong(b_val) != 999) {
+        fprintf(stderr, "  FAIL: b == 999 (default)\n");
+        result = -1;
+        Py_DECREF(b_val);
+        goto cleanup;
+    }
     Py_DECREF(b_val);
+    b_val = NULL;
 
-    Py_DECREF(b_name);
-    Py_DECREF(a_name);
-    Py_DECREF(args);
-    Py_DECREF(ns);
-    Py_DECREF(formals);
-    Py_DECREF(local_syms);
-    Py_DECREF(defaults);
-    Py_DECREF(kwd);
-    Py_DECREF(pos);
-    return 0;
+ cleanup:
+    Py_XDECREF(b_val);
+    Py_XDECREF(a_val);
+    Py_XDECREF(b_name);
+    Py_XDECREF(a_name);
+    Py_XDECREF(args);
+    Py_XDECREF(ns);
+    Py_XDECREF(formals);
+    Py_XDECREF(local_syms);
+    Py_XDECREF(defaults);
+    Py_XDECREF(kwd);
+    Py_XDECREF(pos);
+    return result;
 }
 
 

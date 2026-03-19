@@ -328,10 +328,9 @@ term).
 
 where each `CLAUSE` is `(EXCEPTMATCH BODY...)` and `EXCEPTMATCH` is one of:
 
+- `[TYPEEXPR]`, `[SYM TYPEEXPR]`, or `[TYPEEXPR as: SYM]` — USE form; type-only
+  or binding.
 - `except:` — bare catch-all; catches any exception without a type check or binding
-- `TYPEEXPR` — type-only; catches any exception that is an instance of TYPEEXPR
-- `(SYM TYPEEXPR)` or `(TYPEEXPR as: SYM)` — binding form; catches the type
-  and binds the exception value to SYM
 
 In addition, two keyword-head clauses are accepted:
 
@@ -355,26 +354,26 @@ between CLEAR_TRY and POP_TRY; `finally:` runs after cleanup.
 ```scheme
 ;; Type-only catch
 (try (risky-call)
-  (Exception (handle-exception)))
+  [[Exception] (handle-exception)])
 
 ;; Named binding
 (try (parse input)
-  ((e ValueError) (compile/call log e)))
+  [[e ValueError] (compile/call log e)])
 
 ;; Bare catch-all
 (try (risky-call)
-  (except: (handle-anything)))
+  [except: (handle-anything)])
 
 ;; Try/else/finally
 (try (do-work)
-  (else: (success))
-  (finally: (cleanup)))
+  [else: (success)]
+  [finally: (cleanup)])
 
 ;; Full form
 (try (do-work)
-  (Exception (handle-exc))
-  (else: (on-success))
-  (finally: (cleanup)))
+  [[Exception] (handle-exc)]
+  [else: (on-success)]
+  [finally: (cleanup)])
 ```
 
 **Tests:** `tests/compile/specials/test_try.py`

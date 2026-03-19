@@ -43,8 +43,8 @@
 ### From python-sibilant
 
 **`try`**: Exception handling
-- Syntax: `(try EXPR (except: TYPE BODY...) ... [else: BODY...] [finally: BODY...])`
-- Exception binding: `((BINDING TYPE) BODY...)`
+- Syntax: `(try EXPR (except: BODY...) (TYPEEXPR BODY...) ((SYM TYPEEXPR) BODY...) ... [else: BODY...] [finally: BODY...])`
+- Layout: `except:` (bare), `except [TYPEEXPR]:` (type-only), `except [SYM TYPEEXPR]:` or `except [TYPEEXPR as: SYM]:` (binding). All typed/binding forms use bracketed USE specifiers.
 - Multiple exception handlers
 - `else:` executes if no exception
 - `finally:` always executes

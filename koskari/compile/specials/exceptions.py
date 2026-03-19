@@ -26,7 +26,7 @@ clear-exception, load-exception, and raise.
 from ...lib import cons, keyword, nil, OpCode, symbol
 from ...types import fill_position, get_position, is_keyword, is_pair, unpack
 from ...exceptions import SpecialError
-from ..helpers import helper_begin, helper_binding, pycons, special
+from ..helpers import helper_begin, helper_using, pycons, special
 
 
 _keyword_except = keyword("except")
@@ -42,7 +42,7 @@ def _collect_catches(compiler, catches):
 
     - keyword("except") — bare catch-all, no type check, no binding
     - TYPEEXPR (any non-keyword, non-pair atom) — type-only, no binding
-    - (SYM TYPEEXPR) or (TYPEEXPR as: SYM) — binding form
+    - (TYPEEXPR), (SYM TYPEEXPR), or (TYPEEXPR as: SYM) — USE form
 
     Normal catches are normalised to (HEAD . BODY) where HEAD is a pair:
 
@@ -74,7 +74,7 @@ def _collect_catches(compiler, catches):
             normal_catches.append(ex_pair)
 
         elif is_pair(ex) and ex.is_proper():
-            ex_binding, ex_expr = helper_binding(ex, allow_unnamed=False)
+            ex_binding, ex_expr = helper_using(ex)
             ex_pair = cons(cons(ex_binding, ex_expr), act)
             pos = get_position(ca)
             if pos:
