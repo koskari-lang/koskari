@@ -292,7 +292,7 @@ PyObject *KosDefer_Start(KosDefer *self, int *suspended, PyObject **yielded) {
       Py_INCREF(exc_typ);
       self->u.failed.exc = exc_val ? exc_val : exc_typ;
       Py_INCREF(self->u.failed.exc);
-      Py_XDECREF(exc_tb);
+      PyErr_Restore(exc_typ, exc_val, exc_tb);
       return NULL;
     }
 
@@ -353,6 +353,130 @@ void KosDefer_FeedResult(KosDefer *self, PyObject *result) {
 }
 
 
+void KosDefer_FeedException(KosDefer *self, PyObject *exc_type, PyObject *exc_val) {
+  if (self->state != KOS_DEFER_DELEGATING) {
+    PyErr_SetString(PyExc_RuntimeError,
+                    "FeedException only valid when delegating");
+    return;
+  }
+  Py_CLEAR(self->u.inner);
+  self->state = KOS_DEFER_FAILED;
+  self->u.failed.exc_type = exc_type;
+  Py_XINCREF(exc_type);
+  self->u.failed.exc = exc_val ? exc_val : exc_type;
+  Py_INCREF(self->u.failed.exc);
+}
+
+
+/* === KosDeferValueIterator ===
+
+   Trivial iterator for the non-awaitable (DONE) case: first __next__
+   raises StopIteration(value). Created when defer.__await__() is called
+   and fn returns a plain value.
+*/
+
+
+typedef struct KosDeferValueIterator {
+  PyObject_HEAD
+  PyObject *value;
+} KosDeferValueIterator;
+
+
+static PyTypeObject KosDeferValueIteratorType;
+
+
+static void defer_valiter_dealloc(PyObject *self) {
+  PyObject_GC_UnTrack(self);
+  KosDeferValueIterator *it = (KosDeferValueIterator *) self;
+  Py_CLEAR(it->value);
+  PyObject_GC_Del(self);
+}
+
+
+static int defer_valiter_traverse(PyObject *self, visitproc visit, void *arg) {
+  KosDeferValueIterator *it = (KosDeferValueIterator *) self;
+  Py_VISIT(it->value);
+  return 0;
+}
+
+
+static int defer_valiter_clear(PyObject *self) {
+  KosDeferValueIterator *it = (KosDeferValueIterator *) self;
+  Py_CLEAR(it->value);
+  return 0;
+}
+
+
+static PyObject *defer_valiter_iternext(PyObject *self) {
+  KosDeferValueIterator *it = (KosDeferValueIterator *) self;
+  PyObject *value = it->value;
+  it->value = NULL;
+  if (! value)
+    Py_RETURN_NONE;
+  PyErr_SetObject(PyExc_StopIteration, value);
+  Py_DECREF(value);
+  return NULL;
+}
+
+
+static PyTypeObject KosDeferValueIteratorType = {
+  PyVarObject_HEAD_INIT(NULL, 0)
+  "defer_value_iterator",
+  sizeof(KosDeferValueIterator),
+  0,
+  .tp_flags = Py_TPFLAGS_DEFAULT | Py_TPFLAGS_HAVE_GC,
+  .tp_dealloc = defer_valiter_dealloc,
+  .tp_traverse = defer_valiter_traverse,
+  .tp_clear = defer_valiter_clear,
+  .tp_iter = PyObject_SelfIter,
+  .tp_iternext = defer_valiter_iternext,
+};
+
+
+/**
+   defer.__await__(): invoke fn at iterator-creation time. If fn returns
+   a non-awaitable value, create a trivial iterator that StopIterations
+   with it. If fn returns an awaitable, return its __await__() directly.
+*/
+static PyObject *defer_await(PyObject *self) {
+  KosDefer *defer = (KosDefer *) self;
+  int suspended = 0;
+  PyObject *yielded = NULL;
+  PyObject *result = KosDefer_Start(defer, &suspended, &yielded);
+
+  if (result) {
+    KosDeferValueIterator *it = PyObject_GC_New(KosDeferValueIterator,
+                                                 &KosDeferValueIteratorType);
+    if (! it) {
+      Py_DECREF(result);
+      return NULL;
+    }
+    PyObject_Init((PyObject *) it, &KosDeferValueIteratorType);
+    it->value = result;
+    PyObject_GC_Track((PyObject *) it);
+    return (PyObject *) it;
+  }
+
+  if (PyErr_Occurred())
+    return NULL;
+
+  if (suspended && yielded) {
+    PyObject *inner_iter = PyObject_GetAwaitable(yielded);
+    Py_DECREF(yielded);
+    return inner_iter;
+  }
+
+  PyErr_SetString(PyExc_RuntimeError,
+                  "defer Start returned without value or suspend");
+  return NULL;
+}
+
+
+static PyAsyncMethods defer_async_methods = {
+  .am_await = defer_await,
+};
+
+
 /* === type object === */
 
 
@@ -367,6 +491,7 @@ PyTypeObject KosDeferType = {
   .tp_traverse = defer_traverse,
   .tp_clear = defer_clear,
   .tp_repr = defer_repr,
+  .tp_as_async = &defer_async_methods,
 };
 
 
@@ -383,6 +508,9 @@ int koskari_defer_init(PyObject *mod) {
     return -1;
 
   if (PyType_Ready(&KosDeferType) < 0)
+    return -1;
+
+  if (PyType_Ready(&KosDeferValueIteratorType) < 0)
     return -1;
 
   if (PyDict_SetItemString(dict, "defer", (PyObject *) &KosDeferType) < 0)

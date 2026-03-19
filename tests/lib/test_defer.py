@@ -148,6 +148,53 @@ class TestDeferExplicitAwait(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(calls, [21])
 
 
+class TestDeferPythonAwait(unittest.IsolatedAsyncioTestCase):
+    """
+    Python can await a defer directly (tp_as_async / am_await)
+    """
+
+    async def test_python_await_defer_returns_value(self):
+        """
+        await defer(fn, 1, 2) from Python returns the result
+        """
+
+        def fn(x, y):
+            return x + y
+        d = lib.defer(fn, 1, 2)
+        result = await d
+        self.assertEqual(result, 3)
+
+
+    async def test_python_await_defer_inner_raises(self):
+        """
+        When inner raises, exception propagates to Python caller
+        """
+
+        def fn_raises():
+            raise ValueError("oops")
+        d = lib.defer(fn_raises)
+        with self.assertRaises(ValueError) as ctx:
+            await d
+        self.assertIn("oops", str(ctx.exception))
+
+
+    async def test_python_await_defer_of_defer(self):
+        """
+        await defer(g, defer(f, 1)) works from Python
+        """
+
+        def f(x):
+            return x + 10
+
+        def g(d):
+            return lib.defer(lambda: 99)
+
+        inner = lib.defer(f, 1)
+        outer = lib.defer(g, inner)
+        result = await outer
+        self.assertEqual(result, 99)
+
+
 class TestDeferOfDefer(unittest.IsolatedAsyncioTestCase):
     """
     Defer-of-defer collapses; outer adopt inner, single handle

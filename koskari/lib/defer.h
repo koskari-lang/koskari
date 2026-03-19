@@ -95,6 +95,12 @@ PyObject *KosDefer_Start(KosDefer *self, int *suspended, PyObject **yielded);
 */
 void KosDefer_FeedResult(KosDefer *self, PyObject *result);
 
+/**
+   Transition DELEGATING to FAILED(exc). Only valid when state is
+   KOS_DEFER_DELEGATING. Call when inner awaitable raised.
+*/
+void KosDefer_FeedException(KosDefer *self, PyObject *exc_type, PyObject *exc_val);
+
 
 /* === unit lifecycle === */
 

@@ -216,8 +216,6 @@ From [FEATURES.md](FEATURES.md) and related docs:
 - JIT integration
 - Additional language features (e.g. comprehensions, pattern matching, let*)
 - Performance optimizations (general)
-- Stack block cloning for full continuation semantics
-- Lazy frame COW optimization
 - Pattern matching: [api/pattern-matching.md](api/pattern-matching.md)
 - Control flow (comprehensions, etc.): [language/control-flow.md](language/control-flow.md)
 
