@@ -20,8 +20,15 @@ import pytest
 import unittest
 
 from koskari.lib import cons, keyword, nil, symbol
-from koskari.compile.helpers import BINDING, pycons
-from koskari.matcher import MATCH, REPEAT, extract_binder_symbols, match, match1
+from koskari.compile.helpers import BINDING, USING, helper_using, pycons
+from koskari.matcher import (
+    MATCH,
+    REPEAT,
+    UsingResult,
+    extract_binder_symbols,
+    match,
+    match1,
+)
 
 
 pytestmark = pytest.mark.phase_compile
@@ -102,6 +109,72 @@ class TestRepeatWithBinding(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(b2.name, symbol('y'))
         syms = set(extract_binder_symbols(pat.specs[0], result['bindings']))
         self.assertEqual({str(s) for s in syms}, {'x', 'y'})
+
+
+class TestUsingMatcher(unittest.IsolatedAsyncioTestCase):
+
+    async def test_using_unnamed(self):
+        """
+        [(compile/call make_mgr)]
+        """
+        src = pycons(((symbol('compile/call'), symbol('make_mgr')),))
+        expr = pycons((symbol('compile/call'), symbol('make_mgr')))
+        pat = USING('binding')
+        result = match1(src, pat)
+
+        self.assertIsNotNone(result, 'pattern should match')
+        br = result['binding']
+        self.assertIsInstance(br, UsingResult)
+        self.assertIsNone(br.name, 'using name should be None for unnamed')
+        self.assertEqual(br.source, src)
+        self.assertEqual(br.value, expr)
+
+        name, parsed_expr = helper_using(src)
+        self.assertIsNone(name)
+        self.assertEqual(parsed_expr, expr)
+
+    async def test_using_unnamed_named_as(self):
+        """
+        [(compile/call make_mgr) as: x]
+        """
+        src = pycons(
+            ((symbol('compile/call'), symbol('make_mgr')),
+             keyword('as:'), symbol('x'))
+        )
+        expr = pycons((symbol('compile/call'), symbol('make_mgr')))
+        pat = USING('binding')
+        result = match1(src, pat)
+
+        self.assertIsNotNone(result, 'pattern should match')
+        br = result['binding']
+        self.assertIsInstance(br, UsingResult)
+        self.assertEqual(br.name, symbol('x'))
+        self.assertEqual(br.source, src)
+        self.assertEqual(br.value, expr)
+
+        name, parsed_expr = helper_using(src)
+        self.assertEqual(name, symbol('x'))
+        self.assertEqual(parsed_expr, expr)
+
+    async def test_using_named_expr_as_first(self):
+        """
+        [x (compile/call make_mgr)]
+        """
+        src = pycons((symbol('x'), (symbol('compile/call'), symbol('make_mgr'))))
+        expr = pycons((symbol('compile/call'), symbol('make_mgr')))
+        pat = USING('binding')
+        result = match1(src, pat)
+
+        self.assertIsNotNone(result, 'pattern should match')
+        br = result['binding']
+        self.assertIsInstance(br, UsingResult)
+        self.assertEqual(br.name, symbol('x'))
+        self.assertEqual(br.source, src)
+        self.assertEqual(br.value, expr)
+
+        name, parsed_expr = helper_using(src)
+        self.assertEqual(name, symbol('x'))
+        self.assertEqual(parsed_expr, expr)
 
 
 # The end.

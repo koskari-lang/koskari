@@ -32,6 +32,7 @@ __all__ = (
     'BindingMatcher',
     'BindingsResult',
     'BindingResult',
+    'UsingResult',
     'FormalsResult',
     'MatchResult',
     'Matcher',
@@ -247,6 +248,15 @@ class BindingResult(MatchResult):
         super().__init__(source, source_pos)
         self.name = name
         self.value = value
+
+
+class UsingResult(BindingResult):
+    """
+    Result for USING: source, source_pos, plus name (symbol or None), and
+    value (the expression).
+    """
+
+    __slots__ = ()
 
 
 class RepeatResult(MatchResult):
