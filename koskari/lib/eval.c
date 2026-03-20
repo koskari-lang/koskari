@@ -1287,24 +1287,14 @@ static int descr_is_data(PyObject *descr) {
 
 
 /**
-   Get instance dict pointer from obj. Returns NULL if no instance dict.
-   Follows tp_dictoffset; handles negative offset for variable-size objects.
+   Get instance dict from obj. Returns NULL if no instance dict.
+   Uses _PyObject_GetDictPtr (Python C API) for correct layout handling
+   across versions (e.g. Py_TPFLAGS_MANAGED_DICT, inline values).
 */
 static PyObject *instance_dict_get(PyObject *obj) {
-  PyTypeObject *tp = Py_TYPE(obj);
-  Py_ssize_t offset = tp->tp_dictoffset;
-
-  if (offset == 0)
+  PyObject **dictptr = _PyObject_GetDictPtr(obj);
+  if (! dictptr)
     return NULL;
-
-  PyObject **dictptr;
-  if (offset < 0) {
-    Py_ssize_t size = Py_SIZE(obj);
-    if (size < 0)
-      return NULL;
-    offset += (Py_ssize_t) sizeof(PyObject *) * size + (Py_ssize_t) tp->tp_basicsize;
-  }
-  dictptr = (PyObject **) ((char *) obj + offset);
   return *dictptr;
 }
 
@@ -1317,7 +1307,8 @@ static PyObject *instance_dict_get(PyObject *obj) {
    :param name: Attribute name (borrowed, PyUnicode).
    :param cache: Optional per-call-site cache (NULL = always full lookup).
    :param out: Output: resolved attribute (new ref on success).
-   :return: 0 on success, -1 on error (exception set).
+   :return: -1 on error (exception set); 0 = send self (unbound class method);
+     1 = omit self (bound, instance dict, etc.).
 */
 static int kos_resolve_named_attr(
     PyObject *obj,
@@ -1325,16 +1316,7 @@ static int kos_resolve_named_attr(
     void *cache,
     PyObject **out) {
 
-  /* TODO: cache hit/miss, type version check, instance shadow check */
   (void) cache;
-
-  /* Validate name; PyType_Lookup and PyDict_GetItem expect string keys. */
-  if (! PyUnicode_Check(name)) {
-    PyErr_Format(PyExc_TypeError,
-        "attribute name must be string, not '%.200s'",
-        Py_TYPE(name)->tp_name);
-    return -1;
-  }
 
   PyTypeObject *tp = Py_TYPE(obj);
 
@@ -1346,8 +1328,23 @@ static int kos_resolve_named_attr(
   */
   if (tp->tp_getattro != PyObject_GenericGetAttr) {
     *out = PyObject_GetAttr(obj, name);
-    return (*out != NULL) ? 0 : -1;
+    if (! *out)
+      return -1;
+    return is_plain_instance_method(*out) ? 0 : 1;
   }
+
+  /*
+     CACHE CHECK AND INVALIDATION (design/interpreter/attr-lookup-cache.md)
+     Insert here, before resolution below. When cache != NULL:
+     1. Check cache presence — UNCACHED → fall through.
+     2. Check cache validity — type match and type_version match; else fall through.
+     3. Instance shadow check — if instance __dict__ contains name, fall through
+        (instance overrules cached class result). Applies to DIRECT_OBJECT_GUARDED.
+     4. Use cached result if guards pass; else fall through.
+     On fall-through, resolution below runs (data descriptor → instance dict →
+     non-data descriptor → __getattr__). On successful return from resolution,
+     populate cache. On eviction: Py_XDECREF(entry->resolved).
+  */
 
   PyObject *descr;
   PyObject *mro;
@@ -1372,7 +1369,7 @@ static int kos_resolve_named_attr(
           descr, obj, (PyObject *) tp);
       if (res) {
         *out = res;
-        return 0;
+        return 1;
       }
       return -1;
     }
@@ -1391,7 +1388,7 @@ static int kos_resolve_named_attr(
       if (val) {
         Py_INCREF(val);
         *out = val;
-        return 0;
+        return 1;
       }
     }
   }
@@ -1420,13 +1417,13 @@ static int kos_resolve_named_attr(
             descr, obj, (PyObject *) tp);
         if (res) {
           *out = res;
-          return 0;
+          return 1;
         }
         return -1;
       }
       Py_INCREF(descr);
       *out = descr;
-      return 0;
+      return 1;
     }
   }
 
@@ -1461,7 +1458,7 @@ static int kos_resolve_named_attr(
       Py_DECREF(bound);
       if (res) {
         *out = res;
-        return 0;
+        return is_plain_instance_method(res) ? 0 : 1;
       }
       return -1;
     }
