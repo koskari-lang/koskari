@@ -198,7 +198,10 @@ On cache eviction (miss, overwrite, or teardown): `Py_XDECREF(entry->resolved)`.
    :param name: Attribute name (borrowed, PyUnicode).
    :param cache: Optional per-call-site cache (NULL = always full lookup).
    :param out: Output: resolved attribute (new ref on success).
-   :return: 0 on success, -1 on error (exception set).
+   :return: -1 on error (exception set); 0 = send self (unbound class method:
+     KosFunction or PyFunction; caller invokes fn(obj, *args)); 1 = omit self
+     (bound, instance dict, data descriptor result, etc.; caller invokes
+     callable(*args)).
 */
 int kos_resolve_named_attr(
     PyObject *obj,
@@ -209,6 +212,8 @@ int kos_resolve_named_attr(
 
 When `cache == NULL`, the function skips all cache logic and performs full
 resolution only.
+
+**Implementation** (eval.c): Static helpers `is_plain_instance_method` (KosFunction/PyFunction), `descr_is_data` (tp_descr_set != NULL), `instance_dict_get` (via `_PyObject_GetDictPtr`). Resolution order: custom tp_getattro → data descriptor → instance dict → non-data descriptor / class attribute → __getattr__.
 
 
 ## Caller (CALL_ATTR*) Invocation

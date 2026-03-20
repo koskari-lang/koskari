@@ -1738,6 +1738,18 @@ Pool: 0 = `"os"`, 1 = `"path"`, 2 = `"sep"`, 3 = None.
 - **Invariants**: Stack has at least 2 + N elements (name, obj, N args). Resolved attribute must be callable or TypeError.
 - **Design**: [design/interpreter/attr-lookup-cache.md](interpreter/attr-lookup-cache.md)
 
+**Implementation notes** (koskari/lib/opcode/CALL_ATTR.c, eval.c):
+
+- **Stack arrangement**: `ptr = KosStackBlock_TailPtr(*stack, count)` where `count = n + 2`. Index layout: `ptr[0]` = name, `ptr[1]` = obj, `ptr[2..count-1]` = positional args. Stack is consumed via `KosStackSteal_Tail` (KosCallable path) or `KosStackBlock_DropNoErr` (plain Python path).
+
+- **`kos_resolve_named_attr` return value**: -1 = error (exception set); 0 = send self (unbound class method — caller invokes `fn(obj, *args)`); 1 = omit self (bound method, instance dict, data descriptor result, etc. — caller invokes `callable(*args)`).
+
+- **Invocation paths**:
+  - **KosCallable** (KosFunction, KosBoundMethod, etc.): `KosStackSteal_Tail(&steal, count, stack)` to own args; if `send_self == 0` then `args = &steal.vals[1]`, `nargs = n + 1`; else `args = (n > 0) ? &steal.vals[2] : NULL`, `nargs = n`. Then `KosContext_Call(ctx, out_ev, resolved, args, nargs, NULL, 0)`; `KosStackSteal_Free(&steal)`.
+  - **Plain Python**: `PyObject_Vectorcall(resolved, ...)` with same arg layout; then `kos_push_or_await(ctx, out_ev, result)`.
+
+- **Implemented functions** (eval.c): `kos_resolve_named_attr` (static; full resolution, cache placeholder for Phase 3); `is_plain_instance_method` (KosFunction/PyFunction); `descr_is_data` (tp_descr_set != NULL); `instance_dict_get` (via `_PyObject_GetDictPtr`). Invocation: `KosContext_Call`, `kos_push_or_await`, `KosStackSteal_Tail` / `KosStackSteal_Free` (stack.h/stack.c).
+
 **Example:** `"hello".upper()` (0 args). Pool: 0 = "upper", 1 = "hello".
 
 | index | opcode   | arg | arg view | comment |
