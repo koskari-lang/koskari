@@ -268,6 +268,7 @@ When adding or changing an opcode:
 | CALL | COUNT | Call with N positional args | [§17](#kos_op_call) |
 | CALL_NAMES | COUNT | Call with keyword names on stack | [§17](#kos_op_call_names) |
 | CALL_STAR | STAR | Call with *args and/or **kwargs | [§17](#kos_op_call_star) |
+| CALL_ATTR | COUNT | Call obj.name with N positional args | [§17](#kos_op_call_attr) |
 | TAIL_CALL | COUNT | Tail call (replace frame) | [§17](#kos_op_tail_call) |
 | TAIL_CALL_NAMES | COUNT | Tail call with keyword names | [§17](#kos_op_tail_call_names) |
 | TAIL_CALL_STAR | STAR | Tail call with *args and/or **kwargs | [§17](#kos_op_tail_call_star) |
@@ -1729,12 +1730,40 @@ Pool: 0 = `"os"`, 1 = `"path"`, 2 = `"sep"`, 3 = None.
 
 ---
 
-### KOS_OP_CALL_ATTR, KOS_OP_CALL_ATTR_NAMES, KOS_OP_CALL_ATTR_STAR
+### KOS_OP_CALL_ATTR {#kos_op_call_attr}
 
-- **Style**: COUNT, COUNT, STAR.
+- **Style**: COUNT. Arg = N (number of positional arguments).
+- **Status**: Implemented.
+- **Stack**: `[..., name, obj, arg_0, ..., arg_{N-1}] → [..., result]`. Name underneath obj (name = TOS‑(N+1), obj = TOS‑N). Resolve `obj.name` via `kos_resolve_named_attr`; then invoke. Unbound class method (plain PyFunction/KosFunction from MRO): call `fn(obj, *args)`. Bound or instance-dict callable: call `callable(*args)`. Resolver return: -1 err, 0 = send self, 1 = omit self.
+- **Invariants**: Stack has at least 2 + N elements (name, obj, N args). Resolved attribute must be callable or TypeError.
+- **Design**: [design/interpreter/attr-lookup-cache.md](interpreter/attr-lookup-cache.md)
+
+**Example:** `"hello".upper()` (0 args). Pool: 0 = "upper", 1 = "hello".
+
+| index | opcode   | arg | arg view | comment |
+|------:|----------|-----|----------|---------|
+| 0     | CONST    | 0   | 0 ("upper") | stack: [..., name] |
+| 1     | CONST    | 1   | 1 ("hello") | stack: [..., name, obj] |
+| 2     | CALL_ATTR| 0   | 0        | resolve obj.name; call; push result. stack: [..., "HELLO"] |
+| 3     | RETURN   | 1   | 1        | |
+
+**Example:** `c.add_one(41)` (1 arg, unbound method). Pool: 0 = "add_one", 1 = c, 2 = 41.
+
+| index | opcode   | arg | arg view | comment |
+|------:|----------|-----|----------|---------|
+| 0     | CONST    | 0   | 0 ("add_one") | stack: [..., name] |
+| 1     | CONST    | 1   | 1 (c)    | stack: [..., name, obj] |
+| 2     | CONST    | 2   | 2 (41)   | stack: [..., name, obj, 41] |
+| 3     | CALL_ATTR| 1   | 1        | resolve; call add_one(c, 41); push 42. stack: [..., 42] |
+| 4     | RETURN   | 1   | 1        | |
+
+---
+
+### KOS_OP_CALL_ATTR_NAMES, KOS_OP_CALL_ATTR_STAR {#kos_op_call_attr_names}
+
+- **Style**: COUNT, STAR.
 - **Status**: Stub.
-- **Stack**: (Intended: method call: obj, method_name, args.)
-- **Example:** (Stub; no runtime table.)
+- **Stack**: (Intended: CALL_ATTR_NAMES = `obj.name(..., **kwds)`; CALL_ATTR_STAR = `obj.name(*args, ...)`.)
 
 ---
 

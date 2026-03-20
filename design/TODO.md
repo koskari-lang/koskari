@@ -13,7 +13,6 @@ These opcodes currently delegate to `op_unimplemented_stub` and raise at
 runtime. Implement when method-call-style `obj.method(...)` from bytecode is
 needed.
 
-- **CALL_ATTR** — `koskari/lib/opcode/CALL_ATTR.c`
 - **CALL_ATTR_NAMES** — `koskari/lib/opcode/CALL_ATTR_NAMES.c`
 - **CALL_ATTR_STAR** — `koskari/lib/opcode/CALL_ATTR_STAR.c`
 

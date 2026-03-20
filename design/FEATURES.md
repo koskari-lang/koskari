@@ -90,7 +90,7 @@ The VM in `eval.c` uses a jump table; every opcode has a handler. Handlers are e
 - **Pair construction and access**: CAR, CDR, CONS (CAR/CDR pop one value and push car/cdr; CONS arg = count, stack bottom-to-top = first element … tail; TailPtr + ConsFromPtr + Drop + push result), PROPER (like CONS but pushes nil as implicit tail; PROPER n builds proper list from N elements without requiring a preceding CONST nil), PAIR_SPLICE (arg = N segments; each segment may be nil, a pair, a tuple, or an iterable; all elements are flattened in order into a single proper list; tuples accepted for the CONST-tuple constant-folding optimization)
 - **Argument production**: BUILD_ARGS, BUILD_KWDS, BUILD_KWDS_NAMES, COMBINE_ARGS, COMBINE_KWDS (build args/kwds for CALL_NAMES/CALL_STAR), BUILD_FUNCTION (build Function from FunctionSpec; stack [fspec, ...kw_defaults, names_tuple] → [function])
 - **Control**: RETURN, AWAIT, YIELD (suspend with value; resumption via send; async gen support), YIELD_FROM (delegate to sub-iterator/gen; KOS_DYN_YIELD_FROM; send/throw/close; handler in koskari/lib/opcode/yield_from.c)
-- **Calls**: CALL (arg = N; stack [callable, arg_0, ..., arg_{N-1}]; Continuation/DelimitedContinuation → call_call_continuation; KosExpression/KosFunction → new frame in same loop; other callables → PyObject_Call then push_or_await; **defer** return values are not auto-awaited — pushed as plain values), CALL_NAMES (arg = N; stack [callable, pos_0..pos_{N-1}, kwdv_0..kwdv_{M-1}, names] with names tuple at TOS; kos_callable_call), CALL_STAR (arg = bitflags 1=*args 2=**kwargs; stack [callable, pos, kwd]; kos_callable_call), TAIL_CALL (arg = N; same stack layout as CALL; replaces current frame with callee frame for proper tail-call semantics; compiler emits when call is in tail position), TAIL_CALL_NAMES (arg = N; same stack as CALL_NAMES; kos_callable_tail_call), TAIL_CALL_STAR (arg = bitflags; same stack as CALL_STAR; kos_callable_tail_call)
+- **Calls**: CALL (arg = N; stack [callable, arg_0, ..., arg_{N-1}]; Continuation/DelimitedContinuation → call_call_continuation; KosExpression/KosFunction → new frame in same loop; other callables → PyObject_Call then push_or_await; **defer** return values are not auto-awaited — pushed as plain values), CALL_NAMES (arg = N; stack [callable, pos_0..pos_{N-1}, kwdv_0..kwdv_{M-1}, names] with names tuple at TOS; kos_callable_call), CALL_STAR (arg = bitflags 1=*args 2=**kwargs; stack [callable, pos, kwd]; kos_callable_call), CALL_ATTR (arg = N; stack [name, obj, arg_0, ..., arg_{N-1}]; resolve obj.name via kos_resolve_named_attr; unbound class method → fn(obj, *args), bound/instance-dict → callable(*args)), TAIL_CALL (arg = N; same stack layout as CALL; replaces current frame with callee frame for proper tail-call semantics; compiler emits when call is in tail position), TAIL_CALL_NAMES (arg = N; same stack as CALL_NAMES; kos_callable_tail_call), TAIL_CALL_STAR (arg = bitflags; same stack as CALL_STAR; kos_callable_tail_call)
 - **Introspection**: GLOBALS, LOCALS
 - **Module import**: IMPORT (absolute dotted import; arg = cpool str; pushes leaf module via `_import_fromlist` sentinel), IMPORT_REL (relative import; arg = cpool `(level:int, name:str|None)` tuple; uses outermost frame globals as anchor), IMPORT_FROM (**PEEK-NOT-POP**: arg = cpool str; reads named attr from TOS module without consuming TOS; every use site must be followed by `POP 1` — structurally guaranteed by `helper_import_from_sequence()`)
 - **Variables by name**: VAR (load), VAR_BIND (bind), VAR_CLEAR (delete), VAR_REF (closure ref), VAR_STORE (store TOS to name)
@@ -117,7 +117,7 @@ The VM in `eval.c` uses a jump table; every opcode has a handler. Handlers are e
 - **THEEND**: End-of-code sentinel; if execution reaches it, raises RuntimeError with a fixed message ("THEEND has no runtime implementation"). Never has a runtime implementation.
 
 **Not implemented (stubs)** — hitting these at runtime raises "unimplemented opcode":
-- **Calls**: CALL_ATTR, CALL_ATTR_NAMES, CALL_ATTR_STAR
+- **Calls**: CALL_ATTR_NAMES, CALL_ATTR_STAR
 
 There are no **partially** implemented opcodes; each handler is either full, a stub, or a dedicated "no runtime implementation" handler (THEEND). The authoritative list is the set of handlers in `koskari/lib/eval.c` that do not call `op_unimplemented_stub`.
 
@@ -225,7 +225,7 @@ There are no **partially** implemented opcodes; each handler is either full, a s
 - Macro system: defmacro, defalias (reader macros and compile/define-syntax are implemented)
 - Remaining control flow constructs (class blocks)
 - Compiler: remaining specials (await, define-values, setq-values), macro expansion, optimization passes
-- Remaining opcode handlers: CALL_ATTR* (PUSH_WIND, POP_WIND, PUSH_COLLECT, POP_COLLECT, BUILD_CLASS, BUILD_ARGS, BUILD_KWDS, BUILD_KWDS_NAMES, COMBINE_ARGS, COMBINE_KWDS, PUSH_WITH, POP_WITH, PUSH_DYN_WITH, POP_DYN_WITH, CALL_NAMES, CALL_STAR, TAIL_CALL_NAMES, TAIL_CALL_STAR implemented; see "Opcodes: implementation status" above; with/dyn-with design in design/interpreter/with-dyn-with.md)
+- Remaining opcode handlers: CALL_ATTR_NAMES, CALL_ATTR_STAR. See "Opcodes: implementation status" above.
 
 ### Needs Reconsideration
 - CPython bytecode target (abandoned)

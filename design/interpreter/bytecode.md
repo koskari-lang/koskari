@@ -253,7 +253,7 @@ Handlers live in `koskari/lib/eval.c` and opcode fragments under `koskari/lib/op
 
 - **Fully implemented**: Stack (NOOP, LABEL, POSITION as no-ops; DUP, POP, CONST); RETURN, AWAIT; YIELD; YIELD_FROM (handler in koskari/lib/opcode/yield_from.c); CALL (simple call); TAIL_CALL; BUILD_FUNCTION; GLOBALS, LOCALS; variables (VAR, VAR_BIND, VAR_CLEAR, VAR_REF, VAR_STORE); fast locals (FAST, FAST_BIND, FAST_REF, FAST_STORE); namespace scope (PUSH_NS, POP_NS); class scope (PUSH_COLLECT, POP_COLLECT, BUILD_CLASS; KOS_DYN_COLLECT; CollectorNamespace); exception ops (EXCEPTION, EXCEPTION_CLEAR, EXCEPTION_MATCH, RAISE, CHECK_EXCEPTION); try/finally (PUSH_TRY, PUSH_FINALLY, POP_TRY, POP_FINALLY, CLEAR_TRY, CLEAR_FINALLY; TRY and FINALLY each push their own stack block; handler dispatch clears it; POP_* drops it); loop control (PUSH_LOOP, PUSH_FOREACH, POP_LOOP, CLEAR_LOOP, BREAK, CONTINUE); context managers (PUSH_WITH, POP_WITH, PUSH_DYN_WITH, POP_DYN_WITH); delimited continuations (PUSH_PROMPT, POP_PROMPT, PUSH_SHIFT, POP_SHIFT; PROMPT owns COW stack block; SHIFT is a simple marker); INVOKE_K, INVOKE_K_VAR; undelimited continuations (PUSH_CC, CAPTURE_CC, POP_CC); all OBJECT_* opcodes; ITER_NEXT, NEXT; parameterize (PARAM, PUSH_PARAM, POP_PARAM); END_WIND (terminates hook block; see extent-wind-unwind.md).
 - **No runtime implementation (hardcoded error)**: THEEND.
-- **Stubs (unimplemented)**: CALL_ATTR*, RECUR*, TAIL_RECUR*; PUSH_WIND, POP_WIND.
+- **Stubs (unimplemented)**: CALL_ATTR_NAMES, CALL_ATTR_STAR.
 
 For the full categorized list, see [FEATURES.md](../FEATURES.md) § "Opcodes: implementation status".
 
