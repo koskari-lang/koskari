@@ -97,8 +97,6 @@ class TestCallAttr(CevalTest):
         self.assertIn("nonexistent", str(ctx.exception))
 
 
-
-
     async def test_call_attr_non_callable_raises(self):
         """
         CALL_ATTR when resolved attr is not callable raises TypeError.
@@ -185,7 +183,7 @@ class TestCallAttrGetattr(CevalTest):
         class C:
             def __getattr__(self, name):
                 if name == "dynamic":
-                    return lambda self, x: x * 2
+                    return lambda x: x * 2
                 raise AttributeError(name)
 
         c = C()
@@ -265,3 +263,31 @@ class TestCallAttrCustomGetattribute(CevalTest):
         fn = make_callable(code, ns)
         result = await fn()
         self.assertEqual(result, 456)
+
+
+    async def test_call_attr_custom_getattribute_plain_function(self):
+        """
+        If custom __getattribute__ returns a plain function object, CALL_ATTR
+        must not inject self again.
+        """
+
+        class C:
+            def __getattribute__(self, name):
+                if name == "f":
+                    return lambda x: x + 1
+                return object.__getattribute__(self, name)
+
+        c = C()
+        code, ns = build_expr([
+            ["CONST", "f"],
+            ["CONST", c],
+            ["CONST", 41],
+            ["CALL_ATTR", 1],
+            ["RETURN", 1],
+        ])
+        fn = make_callable(code, ns)
+        result = await fn()
+        self.assertEqual(result, 42)
+
+
+# The end.

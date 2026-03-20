@@ -1330,7 +1330,13 @@ static int kos_resolve_named_attr(
     *out = PyObject_GetAttr(obj, name);
     if (! *out)
       return -1;
-    return is_plain_instance_method(*out) ? 0 : 1;
+    // return is_plain_instance_method(*out) ? 0 : 1;
+    /*
+      PyObject_GetAttr already performed the type's lookup/binding semantics.
+      Even if the result is a plain function object, it is now just the resolved
+      attribute value and must be called as-is (no implicit self injection).
+    */
+    return 1;
   }
 
   /*
@@ -1346,33 +1352,22 @@ static int kos_resolve_named_attr(
      populate cache. On eviction: Py_XDECREF(entry->resolved).
   */
 
-  PyObject *descr;
-  PyObject *mro;
-  Py_ssize_t i, n;
-
-  mro = tp->tp_mro;
-  if (! mro)
-    return -1;
-  n = PyTuple_GET_SIZE(mro);
+  PyObject *descr = PyType_Lookup(tp, name);
 
   /*
-     Mode: DATA_DESCRIPTOR (MRO search)
+     Mode: DATA_DESCRIPTOR (type lookup)
      Data descriptors (have __set__ or __delete__) override instance dict.
      Must call __get__(obj, type) — the value is computed per access (e.g.
-     property). Order matters: first base in MRO that defines the descriptor wins.
+     property). PyType_Lookup already applies MRO precedence.
   */
-  for (i = 0; i < n; i++) {
-    PyTypeObject *base = (PyTypeObject *) PyTuple_GET_ITEM(mro, i);
-    descr = PyType_Lookup(base, name);
-    if (descr && descr_is_data(descr)) {
-      PyObject *res = Py_TYPE(descr)->tp_descr_get(
-          descr, obj, (PyObject *) tp);
-      if (res) {
-        *out = res;
-        return 1;
-      }
-      return -1;
+  if (descr && descr_is_data(descr)) {
+    PyObject *res = Py_TYPE(descr)->tp_descr_get(
+        descr, obj, (PyObject *) tp);
+    if (res) {
+      *out = res;
+      return 1;
     }
+    return -1;
   }
 
   /*
@@ -1394,8 +1389,8 @@ static int kos_resolve_named_attr(
   }
 
   /*
-     Mode: NON_DATA_DESCRIPTOR / CLASS_ATTRIBUTE (MRO search)
-     Not in instance dict; search MRO for class-side attribute. Three cases:
+     Mode: NON_DATA_DESCRIPTOR / CLASS_ATTRIBUTE (type lookup)
+     Not in instance dict; use class-side attribute. Three cases:
      (a) Plain instance method (KosFunction, PyFunction): return descriptor
          without calling __get__. Caller invokes fn(obj, *args) — avoids
          allocating KosBoundMethod or types.MethodType.
@@ -1403,28 +1398,24 @@ static int kos_resolve_named_attr(
          must call __get__(obj, type); behaviour depends on descriptor.
      (c) Plain attribute (no __get__): return as-is, INCREF.
   */
-  for (i = 0; i < n; i++) {
-    PyTypeObject *base = (PyTypeObject *) PyTuple_GET_ITEM(mro, i);
-    descr = PyType_Lookup(base, name);
-    if (descr) {
-      if (is_plain_instance_method(descr)) {
-        Py_INCREF(descr);
-        *out = descr;
-        return 0;
-      }
-      if (Py_TYPE(descr)->tp_descr_get != NULL) {
-        PyObject *res = Py_TYPE(descr)->tp_descr_get(
-            descr, obj, (PyObject *) tp);
-        if (res) {
-          *out = res;
-          return 1;
-        }
-        return -1;
-      }
+  if (descr) {
+    if (is_plain_instance_method(descr)) {
       Py_INCREF(descr);
       *out = descr;
-      return 1;
+      return 0;
     }
+    if (Py_TYPE(descr)->tp_descr_get != NULL) {
+      PyObject *res = Py_TYPE(descr)->tp_descr_get(
+          descr, obj, (PyObject *) tp);
+      if (res) {
+        *out = res;
+        return 1;
+      }
+      return -1;
+    }
+    Py_INCREF(descr);
+    *out = descr;
+    return 1;
   }
 
   /*
@@ -1434,13 +1425,15 @@ static int kos_resolve_named_attr(
      AttributeError if no __getattr__ or if it does not provide the attribute.
   */
   {
-    PyObject *getattr_name = PyUnicode_FromString("__getattr__");
+    static PyObject *getattr_name = NULL;
     PyObject *getattr_descr;
 
-    if (! getattr_name)
-      return -1;
+    if (! getattr_name) {
+      getattr_name = PyUnicode_InternFromString("__getattr__");
+      if (! getattr_name)
+        return -1;
+    }
     getattr_descr = PyType_Lookup(tp, getattr_name);
-    Py_DECREF(getattr_name);
     if (getattr_descr) {
       PyObject *bound;
       PyObject *res;
@@ -1458,7 +1451,9 @@ static int kos_resolve_named_attr(
       Py_DECREF(bound);
       if (res) {
         *out = res;
-        return is_plain_instance_method(res) ? 0 : 1;
+        // return is_plain_instance_method(res) ? 0 : 1;
+        /* __getattr__ returns the final attribute value; call it as-is. */
+        return 1;
       }
       return -1;
     }
