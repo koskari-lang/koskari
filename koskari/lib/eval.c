@@ -1265,6 +1265,218 @@ void kos_clear_pending_with_exit(KosContext *ctx) {
 }
 
 
+/* === Attribute resolution for CALL_ATTR* === */
+
+
+/**
+   True if descr is a plain instance-method descriptor (KosFunction or
+   PyFunction) that we can return without calling __get__.
+*/
+static int is_plain_instance_method(PyObject *descr) {
+  return KosFunction_CheckExact(descr) || PyFunction_Check(descr);
+}
+
+
+/**
+   True if descr has __set__ or __delete__ (data descriptor).
+*/
+static int descr_is_data(PyObject *descr) {
+  PyTypeObject *tp = Py_TYPE(descr);
+  return tp->tp_descr_set != NULL;
+}
+
+
+/**
+   Get instance dict pointer from obj. Returns NULL if no instance dict.
+   Follows tp_dictoffset; handles negative offset for variable-size objects.
+*/
+static PyObject *instance_dict_get(PyObject *obj) {
+  PyTypeObject *tp = Py_TYPE(obj);
+  Py_ssize_t offset = tp->tp_dictoffset;
+
+  if (offset == 0)
+    return NULL;
+
+  PyObject **dictptr;
+  if (offset < 0) {
+    Py_ssize_t size = Py_SIZE(obj);
+    if (size < 0)
+      return NULL;
+    offset += (Py_ssize_t) sizeof(PyObject *) * size + (Py_ssize_t) tp->tp_basicsize;
+  }
+  dictptr = (PyObject **) ((char *) obj + offset);
+  return *dictptr;
+}
+
+
+/**
+   Resolve attribute by name on an object. Uses cache when provided and
+   valid. When cache is NULL, performs full resolution only.
+
+   :param obj: Object to resolve attribute on (borrowed).
+   :param name: Attribute name (borrowed, PyUnicode).
+   :param cache: Optional per-call-site cache (NULL = always full lookup).
+   :param out: Output: resolved attribute (new ref on success).
+   :return: 0 on success, -1 on error (exception set).
+*/
+static int kos_resolve_named_attr(
+    PyObject *obj,
+    PyObject *name,
+    void *cache,
+    PyObject **out) {
+
+  /* TODO: cache hit/miss, type version check, instance shadow check */
+  (void) cache;
+
+  /* Validate name; PyType_Lookup and PyDict_GetItem expect string keys. */
+  if (! PyUnicode_Check(name)) {
+    PyErr_Format(PyExc_TypeError,
+        "attribute name must be string, not '%.200s'",
+        Py_TYPE(name)->tp_name);
+    return -1;
+  }
+
+  PyTypeObject *tp = Py_TYPE(obj);
+
+  /*
+     Mode: CUSTOM_GETATTRIBUTE (fallback)
+     The type overrides __getattribute__ (tp_getattro != PyObject_GenericGetAttr).
+     We cannot safely replicate the type's custom lookup; delegate to
+     PyObject_GetAttr which invokes the type's tp_getattro slot.
+  */
+  if (tp->tp_getattro != PyObject_GenericGetAttr) {
+    *out = PyObject_GetAttr(obj, name);
+    return (*out != NULL) ? 0 : -1;
+  }
+
+  PyObject *descr;
+  PyObject *mro;
+  Py_ssize_t i, n;
+
+  mro = tp->tp_mro;
+  if (! mro)
+    return -1;
+  n = PyTuple_GET_SIZE(mro);
+
+  /*
+     Mode: DATA_DESCRIPTOR (MRO search)
+     Data descriptors (have __set__ or __delete__) override instance dict.
+     Must call __get__(obj, type) — the value is computed per access (e.g.
+     property). Order matters: first base in MRO that defines the descriptor wins.
+  */
+  for (i = 0; i < n; i++) {
+    PyTypeObject *base = (PyTypeObject *) PyTuple_GET_ITEM(mro, i);
+    descr = PyType_Lookup(base, name);
+    if (descr && descr_is_data(descr)) {
+      PyObject *res = Py_TYPE(descr)->tp_descr_get(
+          descr, obj, (PyObject *) tp);
+      if (res) {
+        *out = res;
+        return 0;
+      }
+      return -1;
+    }
+  }
+
+  /*
+     Mode: INSTANCE_DICT
+     No data descriptor in MRO; check instance __dict__. If the name is present,
+     return it. No descriptor protocol — the value is stored directly. Instance
+     dict shadows class attributes (non-data descriptors) by Python semantics.
+  */
+  {
+    PyObject *dict = instance_dict_get(obj);
+    if (dict) {
+      PyObject *val = PyDict_GetItem(dict, name);
+      if (val) {
+        Py_INCREF(val);
+        *out = val;
+        return 0;
+      }
+    }
+  }
+
+  /*
+     Mode: NON_DATA_DESCRIPTOR / CLASS_ATTRIBUTE (MRO search)
+     Not in instance dict; search MRO for class-side attribute. Three cases:
+     (a) Plain instance method (KosFunction, PyFunction): return descriptor
+         without calling __get__. Caller invokes fn(obj, *args) — avoids
+         allocating KosBoundMethod or types.MethodType.
+     (b) Descriptor with tp_descr_get (slot wrapper, staticmethod, classmethod):
+         must call __get__(obj, type); behaviour depends on descriptor.
+     (c) Plain attribute (no __get__): return as-is, INCREF.
+  */
+  for (i = 0; i < n; i++) {
+    PyTypeObject *base = (PyTypeObject *) PyTuple_GET_ITEM(mro, i);
+    descr = PyType_Lookup(base, name);
+    if (descr) {
+      if (is_plain_instance_method(descr)) {
+        Py_INCREF(descr);
+        *out = descr;
+        return 0;
+      }
+      if (Py_TYPE(descr)->tp_descr_get != NULL) {
+        PyObject *res = Py_TYPE(descr)->tp_descr_get(
+            descr, obj, (PyObject *) tp);
+        if (res) {
+          *out = res;
+          return 0;
+        }
+        return -1;
+      }
+      Py_INCREF(descr);
+      *out = descr;
+      return 0;
+    }
+  }
+
+  /*
+     Mode: __getattr__ (fallback)
+     Attribute not found by standard lookup. If the type defines __getattr__,
+     call it with (name); it is invoked only when normal lookup fails. Raises
+     AttributeError if no __getattr__ or if it does not provide the attribute.
+  */
+  {
+    PyObject *getattr_name = PyUnicode_FromString("__getattr__");
+    PyObject *getattr_descr;
+
+    if (! getattr_name)
+      return -1;
+    getattr_descr = PyType_Lookup(tp, getattr_name);
+    Py_DECREF(getattr_name);
+    if (getattr_descr) {
+      PyObject *bound;
+      PyObject *res;
+
+      if (Py_TYPE(getattr_descr)->tp_descr_get != NULL) {
+        bound = Py_TYPE(getattr_descr)->tp_descr_get(
+            getattr_descr, obj, (PyObject *) tp);
+      } else {
+        bound = getattr_descr;
+        Py_INCREF(bound);
+      }
+      if (! bound)
+        return -1;
+      res = PyObject_CallFunctionObjArgs(bound, name, NULL);
+      Py_DECREF(bound);
+      if (res) {
+        *out = res;
+        return 0;
+      }
+      return -1;
+    }
+  }
+
+  /*
+     Not found in any mode. Raise AttributeError per Python semantics.
+  */
+  PyErr_Format(PyExc_AttributeError,
+      "'%.100s' object has no attribute '%R'",
+      tp->tp_name, name);
+  return -1;
+}
+
+
 /* === Frame namespace helpers (for VAR_* opcodes) === */
 
 
