@@ -654,6 +654,7 @@ static PyObject *str_exit = NULL;
 static PyObject *str_aenter = NULL;
 static PyObject *str_aexit = NULL;
 static PyObject *str_class = NULL;
+static PyObject *str_getattr = NULL;
 
 
 /**
@@ -1425,15 +1426,7 @@ static int kos_resolve_named_attr(
      AttributeError if no __getattr__ or if it does not provide the attribute.
   */
   {
-    static PyObject *getattr_name = NULL;
-    PyObject *getattr_descr;
-
-    if (! getattr_name) {
-      getattr_name = PyUnicode_InternFromString("__getattr__");
-      if (! getattr_name)
-        return -1;
-    }
-    getattr_descr = PyType_Lookup(tp, getattr_name);
+    PyObject *getattr_descr = PyType_Lookup(tp, str_getattr);
     if (getattr_descr) {
       PyObject *bound;
       PyObject *res;
@@ -2907,6 +2900,8 @@ int koskari_eval_init(PyObject *mod) {
   STR_CONST(str_aenter, "__aenter__");
   STR_CONST(str_aexit, "__aexit__");
   STR_CONST(str_class, "__class__");
+  STR_CONST(str_getattr, "__getattr__");
+  // STR_CONST(str_getattribute, "__getattribute__");
 
   /* Initialize KosEvaluatorToken type */
   if (PyType_Ready(&KosEvaluatorTokenType) < 0)
@@ -2962,6 +2957,7 @@ int koskari_eval_clear(PyObject *mod) {
   Py_CLEAR(str_aenter);
   Py_CLEAR(str_aexit);
   Py_CLEAR(str_class);
+  Py_CLEAR(str_getattr);
 
   /* Null out exception type pointers (module dict owns the refs) */
   KoskariContinuationDead = NULL;
