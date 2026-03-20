@@ -68,4 +68,18 @@ class TestBuildFunction(CevalTest):
         self.assertEqual(await fn(), 99)
 
 
+    async def test_build_function_stack_underrun_raises(self):
+        """
+        BUILD_FUNCTION with no fspec on stack raises (stack underrun)
+        """
+
+        code_obj, ns = build_expr([
+            ["BUILD_FUNCTION", 0],
+            ["RETURN", 1],
+        ])
+        expr = make_callable(code_obj, ns)
+        with self.assertRaises(RuntimeError):
+            await expr()
+
+
 # The end.
