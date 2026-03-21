@@ -6,6 +6,7 @@ This directory documents the interpreter implementation, including bytecode form
 
 - **bytecode.md**: Bytecode format and opcodes (implemented in `koskari/lib/bytecode.c`)
 - **bytecode-metadata-tables.md**: Static metadata tables (location table, extent table with tagged-union KosExtentDesc); O(1) control targets, no forward scans; JUMP locality validation; **implemented** in bytecode.c
+- **bytecode-finalization.md**: Final form phase design — collect/size/allocate/emit pipeline, identity-based cpool dedup, unified block with extra table; **design proposal**
 - **compiler.md**: Compiler architecture; points to `koskari/compile/` and [SPECIALS.md](../SPECIALS.md). Historical (python-sibilant / CPython bytecode) content is in [archive/compiler-python-sibilant-historical.md](../archive/compiler-python-sibilant-historical.md)
 - **evaluator.md**: Evaluation model and drive loop (eval.c); KosCoroutine and run-code-as-coroutine (func.c)
 - **[EVALUATOR.md](../EVALUATOR.md)**: Evaluator operation diagrams, phase flow, opcode signaling, exceptions, transfer plans, tail calls, call installs, and play-by-play scenarios
