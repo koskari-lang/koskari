@@ -21,6 +21,7 @@ enter/exit (auto-await).
 
 from tests import make_callable
 from tests.lib.opcode import CevalTest, build_expr
+from koskari.dis import dis
 
 import pytest
 
@@ -157,6 +158,8 @@ class TestWithOpcodes(CevalTest):
             ["POP_WITH", 0],
             ["RETURN", 1],
         ], values={"raise_err": raise_err})
+        dis(code)
+
         with self.assertRaises(ValueError) as ctx:
             await make_callable(code, ns)()
         self.assertIn("oops", str(ctx.exception))
