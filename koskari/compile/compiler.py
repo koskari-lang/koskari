@@ -113,7 +113,8 @@ def _build_var_to_fast():
     var_to_fast = {}
     for opcode in OpCode:
         opname = opcode.name
-        if not (opname.startswith('KOS_OP_FAST') or opname.startswith('KOS_OP_CALL_FAST')):
+        if not (opname.startswith('KOS_OP_FAST')
+                or opname.startswith('KOS_OP_CALL_FAST')):
             continue
         varname = opname.replace('FAST', 'VAR', 1)
         if hasattr(OpCode, varname):

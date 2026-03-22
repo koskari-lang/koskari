@@ -15,11 +15,61 @@
 
 /**
    CALL_FAST: arg = extra index. Schema FASTVAR (slot), COUNT (arg count).
-   Call callable from fast local slot; not yet implemented.
+   Call callable from fast local slot. Stack [arg_0, ..., arg_{N-1}].
+   KosCallable: steal args then KosContext_Call. Plain Python: TailPtr +
+   PyObject_Vectorcall + DropNoErr.
 */
 
 KOS_OP_HANDLER(CALL_FAST) {
-  return op_unimplemented_stub(ctx, out_ev, insn);
+  KosCode *code = CURRENT_CODE(ctx);
+  KosExtra row = KosCode_GetExtra(code, KosOp_ARG(insn));
+  uint32_t slot_idx = row.a0;
+  unsigned n = row.a1;
+
+  PyObject *ns = CURRENT_NS(ctx);
+  if (! ns) {
+    PyErr_SetString(PyExc_RuntimeError, "CALL_FAST on NULL namespace");
+    return -1;
+  }
+  if (! KosNamespace_SupportsFast(ns)) {
+    PyErr_Format(PyExc_RuntimeError, "CALL_FAST on %R", ns);
+    return -1;
+  }
+
+  PyObject *callable = KosNamespace_FastDeref(ns, (size_t) slot_idx);
+  if (! callable)
+    return -1;
+
+  KosStackBlock **stack = &CURRENT_STACK(ctx);
+  PyObject *const *ptr = KosStackBlock_TailPtr(*stack, n);
+  if (! ptr) {
+    Py_DECREF(callable);
+    return -1;
+  }
+
+  if (KosCallable_Check(callable)) {
+    KosStackSteal steal = { 0 };
+    if (KosStackSteal_Tail(&steal, (size_t) n, stack) < 0) {
+      Py_DECREF(callable);
+      return -1;
+    }
+    int r = KosContext_Call(ctx, out_ev, callable,
+                            (n > 0) ? steal.vals : NULL,
+                            (Py_ssize_t) n, NULL, 0);
+    Py_DECREF(callable);
+    KosStackSteal_Free(&steal);
+    return r;
+  }
+
+  PyObject *result = PyObject_Vectorcall(callable,
+                                         (n > 0) ? ptr : NULL,
+                                         (size_t) n, NULL);
+  Py_DECREF(callable);
+  if (! result)
+    return -1;
+
+  KosStackBlock_DropNoErr(stack, n);
+  return kos_push_or_await(ctx, out_ev, result);
 }
 
 
