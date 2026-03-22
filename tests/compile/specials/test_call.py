@@ -18,6 +18,7 @@ Bytecode shape for positional, keyword, star; evaluation order; end-to-end.
 
 
 from koskari.lib import OpCode
+from koskari.dis import dis
 
 from . import SpecialsTestCase
 
@@ -51,8 +52,8 @@ class TestCallSpecialTailPosition(SpecialsTestCase):
         code = self.compile_to_code("(lambda [x] (begin (f 1) (g x)))", tc=True)
         ops = self.call_ops(self.lambda_body_code(code))
         self.assertEqual(len(ops), 2)
-        self.assertEqual(ops[0][1], OpCode.KOS_OP_CALL)
-        self.assertEqual(ops[0][2], 1)
+        self.assertIn(ops[0][1], (OpCode.KOS_OP_CALL, OpCode.KOS_OP_CALL_VAR,
+                                  OpCode.KOS_OP_CALL_FAST))
         self.assertEqual(ops[1][1], OpCode.KOS_OP_TAIL_CALL)
         self.assertEqual(ops[1][2], 1)
 
@@ -67,13 +68,13 @@ class TestCallSpecialTailPosition(SpecialsTestCase):
 
     async def test_begin_f_x_x_call_not_tail(self):
         """
-        (begin (f x) x) -> f is not in tail position -> CALL
+        (begin (f x) x) -> f is not in tail position -> CALL or CALL_VAR/FAST
         """
         code = self.compile_to_code("(begin (f x) x)", tc=True)
         ops = self.call_ops(code)
         self.assertEqual(len(ops), 1)
-        self.assertEqual(ops[0][1], OpCode.KOS_OP_CALL)
-        self.assertEqual(ops[0][2], 1)
+        self.assertIn(ops[0][1], (OpCode.KOS_OP_CALL, OpCode.KOS_OP_CALL_VAR,
+                                  OpCode.KOS_OP_CALL_FAST))
 
 
     async def test_begin_x_f_x_tail_call(self):
@@ -243,6 +244,91 @@ class TestCallBytecodeShape(SpecialsTestCase):
         self.assertNotIn(OpCode.KOS_OP_CALL_STAR, all_ops)
 
 
+class TestCallVarPath(SpecialsTestCase):
+    """
+    When callable is a simple symbol and not in tail position, emit CALL_VAR*
+    """
+
+    async def test_symbol_callable_non_tail_emits_call_var(self):
+        """
+        (begin (f 1) 2) with tc: f is symbol, not tail -> CALL_VAR or CALL_FAST
+        """
+        code = self.compile_to_code("(lambda [] (begin (f 1) 2))", tc=True)
+        body = self.lambda_body_code(code)
+        ops = self.call_ops(body)
+        self.assertEqual(len(ops), 1)
+        self.assertIn(
+            ops[0][1],
+            (OpCode.KOS_OP_CALL_VAR, OpCode.KOS_OP_CALL_FAST),
+            "non-tail symbol call should use CALL_VAR or CALL_FAST")
+
+
+    async def test_symbol_callable_positional_no_tc_emits_call_var(self):
+        """
+        (begin (f 1 2) 2): f not in tail -> CALL_VAR or CALL_FAST
+        """
+        code = self.compile_to_code("(lambda [] (begin (f 1 2) 2))", tc=True)
+        body = self.lambda_body_code(code)
+        ops = self.call_ops(body)
+        self.assertEqual(len(ops), 1)
+        self.assertIn(
+            ops[0][1],
+            (OpCode.KOS_OP_CALL_VAR, OpCode.KOS_OP_CALL_FAST))
+
+
+    async def test_symbol_callable_keyword_no_tc_emits_call_var_names(self):
+        """
+        (begin (f 1 name: 2) 2): f not in tail -> CALL_VAR_NAMES or CALL_FAST_NAMES
+        """
+        code = self.compile_to_code(
+            "(lambda [] (begin (f 1 name: 2) 2))", tc=True)
+        body = self.lambda_body_code(code)
+        ops = self.call_ops(body)
+        self.assertEqual(len(ops), 1)
+        self.assertIn(
+            ops[0][1],
+            (OpCode.KOS_OP_CALL_VAR_NAMES, OpCode.KOS_OP_CALL_FAST_NAMES))
+
+
+    async def test_symbol_callable_star_no_tc_emits_call_var_star(self):
+        """
+        (begin (f *: rest) 2): f not in tail -> CALL_VAR_STAR or CALL_FAST_STAR
+        """
+        code = self.compile_to_code("(lambda [] (begin (f *: rest) 2))", tc=True)
+        body = self.lambda_body_code(code)
+        ops = self.call_ops(body)
+        self.assertEqual(len(ops), 1)
+        self.assertIn(
+            ops[0][1],
+            (OpCode.KOS_OP_CALL_VAR_STAR, OpCode.KOS_OP_CALL_FAST_STAR))
+
+
+    async def test_tail_position_still_emits_tail_call(self):
+        """
+        Symbol in tail position with tc=True -> TAIL_CALL, not CALL_VAR
+        """
+        code = self.compile_to_code("(lambda [] (f 1))", tc=True)
+        body = self.lambda_body_code(code)
+        ops = self.call_ops(body)
+        self.assertEqual(len(ops), 1)
+        self.assertEqual(ops[0][1], OpCode.KOS_OP_TAIL_CALL)
+
+
+    async def test_complex_callable_emits_call_not_call_var(self):
+        """
+        (attr obj meth)(args) -> CALL_ATTR or CALL, not CALL_VAR
+        """
+        code = self.compile_to_code(
+            "(lambda [] ((compile/attr obj upper) \"hi\"))", tc=False)
+        body = self.lambda_body_code(code)
+        ops = self.call_ops(body)
+        self.assertEqual(len(ops), 1)
+        self.assertNotIn(
+            ops[0][1],
+            (OpCode.KOS_OP_CALL_VAR, OpCode.KOS_OP_CALL_FAST),
+            "complex callable should not use CALL_VAR or CALL_FAST")
+
+
 class TestCallEvaluationOrder(SpecialsTestCase):
     """
     Arguments are evaluated left-to-right; bytecode and runtime order
@@ -295,6 +381,8 @@ class TestCallEndToEnd(SpecialsTestCase):
             return 42
 
         expr, mod = self.compile_expr("(compile/call f)", f=spy)
+        dis(expr.code)
+
         result = await expr()
         self.assertEqual(result, 42)
         self.assertEqual(len(got), 1)

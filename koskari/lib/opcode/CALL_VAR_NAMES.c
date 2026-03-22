@@ -58,8 +58,6 @@ KOS_OP_HANDLER(CALL_VAR_NAMES) {
     return -1;
   }
 
-  PyObject *kwnames = nkwds ? names : NULL;
-
   if (KosCallable_Check(callable)) {
     KosStackSteal steal = { 0 };
     if (KosStackSteal_Tail(&steal, ntotal, stack) < 0) {
@@ -67,20 +65,18 @@ KOS_OP_HANDLER(CALL_VAR_NAMES) {
       return -1;
     }
     int r = KosContext_Call(ctx, out_ev, callable, steal.vals,
-                            npos, kwnames, 0);
+                            npos, names, 0);
     Py_DECREF(callable);
     KosStackSteal_Free(&steal);
     return r;
   }
 
   PyObject *result = PyObject_Vectorcall(callable, ptr, (size_t) npos,
-                                         kwnames);
-  Py_DECREF(callable);
-  if (! result)
-    return -1;
-
+                                         names);
   KosStackBlock_DropNoErr(stack, ntotal);
-  return kos_push_or_await(ctx, out_ev, result);
+  Py_DECREF(callable);
+
+  return result ? kos_push_or_await(ctx, out_ev, result) : -1;
 }
 
 

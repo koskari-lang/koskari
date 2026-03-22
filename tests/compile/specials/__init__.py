@@ -94,6 +94,12 @@ class SpecialsTestCase(unittest.IsolatedAsyncioTestCase):
         OpCode.KOS_OP_TAIL_CALL_NAMES,
         OpCode.KOS_OP_CALL_STAR,
         OpCode.KOS_OP_TAIL_CALL_STAR,
+        OpCode.KOS_OP_CALL_VAR,
+        OpCode.KOS_OP_CALL_VAR_NAMES,
+        OpCode.KOS_OP_CALL_VAR_STAR,
+        OpCode.KOS_OP_CALL_FAST,
+        OpCode.KOS_OP_CALL_FAST_NAMES,
+        OpCode.KOS_OP_CALL_FAST_STAR,
     )
 
 

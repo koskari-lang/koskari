@@ -27,6 +27,7 @@ from ..compiler import ByteCodeFragment, Compiler
 from ..helpers import gather_parameters_ng, special, special_forms
 from ...matcher import LIST, LITERAL_SYM, MATCH, REST, SYMBOL, VALUE, match
 from ...exceptions import SpecialError
+from ...types import is_symbol
 
 
 def _partition_args(args_seq):
@@ -114,10 +115,16 @@ def special_call(
     callable = matched["callable"].source
     rest = matched["args"].source if "args" in matched else nil
 
+    use_var_path = is_symbol(callable) and not tc
+    name = str(callable) if use_var_path else None
+
     fragment = compiler.fragment(called_by)
+    if use_var_path:
+        fragment.request_var(name)
 
     fragment.position_of(body)
-    fragment.merge(compiler.full_compile(callable))
+    if not use_var_path:
+        fragment.merge(compiler.full_compile(callable))
 
     args_seq, kwds_seq = gather_parameters_ng(rest, source=rest)
     has_star = any(x[0] == "*" for x in args_seq)
@@ -128,7 +135,10 @@ def special_call(
             for _, expr in args_seq:
                 fragment.merge(compiler.full_compile(expr, False))
             fragment.position_of(source)
-            if tc:
+            if use_var_path:
+                fragment.instruction(
+                    OpCode.KOS_OP_CALL_VAR, (name, len(args_seq), 0, 0))
+            elif tc:
                 fragment.instruction(OpCode.KOS_OP_TAIL_CALL, len(args_seq))
             else:
                 fragment.instruction(OpCode.KOS_OP_CALL, len(args_seq))
@@ -144,9 +154,14 @@ def special_call(
                 fragment.merge(compiler.full_compile(expr, False))
             for expr in kw_values:
                 fragment.merge(compiler.full_compile(expr, False))
-            fragment.instruction(OpCode.KOS_OP_CONST, tuple(kw_names))
+            if not use_var_path:
+                fragment.instruction(OpCode.KOS_OP_CONST, tuple(kw_names))
             fragment.position_of(source)
-            if tc:
+            if use_var_path:
+                fragment.instruction(
+                    OpCode.KOS_OP_CALL_VAR_NAMES,
+                    (name, tuple(kw_names), opa, 0))
+            elif tc:
                 fragment.instruction(OpCode.KOS_OP_TAIL_CALL_NAMES, opa)
             else:
                 fragment.instruction(OpCode.KOS_OP_CALL_NAMES, opa)
@@ -183,7 +198,10 @@ def special_call(
                 fragment.instruction(OpCode.KOS_OP_COMBINE_KWDS, len(kwd_chunks))
 
         fragment.position_of(source)
-        if tc:
+        if use_var_path:
+            fragment.instruction(
+                OpCode.KOS_OP_CALL_VAR_STAR, (name, opa, 0, 0))
+        elif tc:
             fragment.instruction(OpCode.KOS_OP_TAIL_CALL_STAR, opa)
         else:
             fragment.instruction(OpCode.KOS_OP_CALL_STAR, opa)

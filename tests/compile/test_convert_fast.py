@@ -106,4 +106,65 @@ class TestConvertFastVarToFast(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(arg, ("obj", "upper", (), 0))
 
 
+class TestConvertFastCallVar(unittest.IsolatedAsyncioTestCase):
+    """
+    convert_fast lowers CALL_VAR* to CALL_FAST* when name is local
+    """
+
+    async def test_call_var_with_local_converts_to_call_fast(self):
+        """
+        CALL_VAR with local name converts to CALL_FAST
+        """
+        compiler = Compiler("<test>", None)
+        nspec = NamespaceSpec(None, ("f",), ())
+        instr = [(OpCode.KOS_OP_CALL_VAR, ("f", 2, 0, 0))]
+        result = compiler.convert_fast(nspec, instr, mode=CompilerMode.FUNCTION)
+        self.assertEqual(len(result), 1)
+        op, arg = result[0]
+        self.assertEqual(op, OpCode.KOS_OP_CALL_FAST)
+        self.assertEqual(arg, (0, 2, 0, 0))
+
+
+    async def test_call_var_names_with_local_converts_to_call_fast_names(self):
+        """
+        CALL_VAR_NAMES with local name converts to CALL_FAST_NAMES
+        """
+        compiler = Compiler("<test>", None)
+        nspec = NamespaceSpec(None, ("f",), ())
+        instr = [(OpCode.KOS_OP_CALL_VAR_NAMES, ("f", ("name",), 1, 0))]
+        result = compiler.convert_fast(nspec, instr, mode=CompilerMode.FUNCTION)
+        self.assertEqual(len(result), 1)
+        op, arg = result[0]
+        self.assertEqual(op, OpCode.KOS_OP_CALL_FAST_NAMES)
+        self.assertEqual(arg, (0, ("name",), 1, 0))
+
+
+    async def test_call_var_star_with_local_converts_to_call_fast_star(self):
+        """
+        CALL_VAR_STAR with local name converts to CALL_FAST_STAR
+        """
+        compiler = Compiler("<test>", None)
+        nspec = NamespaceSpec(None, ("f",), ())
+        instr = [(OpCode.KOS_OP_CALL_VAR_STAR, ("f", 3, 0, 0))]
+        result = compiler.convert_fast(nspec, instr, mode=CompilerMode.FUNCTION)
+        self.assertEqual(len(result), 1)
+        op, arg = result[0]
+        self.assertEqual(op, OpCode.KOS_OP_CALL_FAST_STAR)
+        self.assertEqual(arg, (0, 3, 0, 0))
+
+
+    async def test_call_var_with_non_local_remains_unchanged(self):
+        """
+        CALL_VAR with non-local name remains CALL_VAR
+        """
+        compiler = Compiler("<test>", None)
+        nspec = NamespaceSpec(None, ("a", "b"), ())
+        instr = [(OpCode.KOS_OP_CALL_VAR, ("other", 1, 0, 0))]
+        result = compiler.convert_fast(nspec, instr, mode=CompilerMode.FUNCTION)
+        self.assertEqual(len(result), 1)
+        op, arg = result[0]
+        self.assertEqual(op, OpCode.KOS_OP_CALL_VAR)
+        self.assertEqual(arg, ("other", 1, 0, 0))
+
+
 # The end.

@@ -41,11 +41,6 @@ KOS_OP_HANDLER(CALL_FAST) {
     return -1;
 
   KosStackBlock **stack = &CURRENT_STACK(ctx);
-  PyObject *const *ptr = KosStackBlock_TailPtr(*stack, n);
-  if (! ptr) {
-    Py_DECREF(callable);
-    return -1;
-  }
 
   if (KosCallable_Check(callable)) {
     KosStackSteal steal = { 0 };
@@ -61,15 +56,23 @@ KOS_OP_HANDLER(CALL_FAST) {
     return r;
   }
 
-  PyObject *result = PyObject_Vectorcall(callable,
-                                         (n > 0) ? ptr : NULL,
-                                         (size_t) n, NULL);
-  Py_DECREF(callable);
-  if (! result)
-    return -1;
+  PyObject *result = NULL;
+  if (n == 0) {
+    result = PyObject_CallNoArgs(callable);
 
-  KosStackBlock_DropNoErr(stack, n);
-  return kos_push_or_await(ctx, out_ev, result);
+  } else {
+    PyObject *const *ptr = KosStackBlock_TailPtr(*stack, n);
+    if (! ptr) {
+      Py_DECREF(callable);
+      return -1;
+    }
+
+    result = PyObject_Vectorcall(callable, ptr, (size_t) n, NULL);
+    KosStackBlock_DropNoErr(stack, n);
+  }
+
+  Py_DECREF(callable);
+  return result ? kos_push_or_await(ctx, out_ev, result) : -1;
 }
 
 

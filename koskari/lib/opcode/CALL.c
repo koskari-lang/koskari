@@ -29,6 +29,8 @@ KOS_OP_HANDLER(CALL) {
   if (! ptr)
     return -1;
 
+  SAYF("CALL: callable=%R", ptr[0]);
+
   if (KosCallable_Check(ptr[0])) {
     KosStackSteal steal = { 0 };
     if (KosStackSteal_Tail(&steal, (size_t)(n + 1), stack) < 0)
@@ -38,16 +40,18 @@ KOS_OP_HANDLER(CALL) {
                             (Py_ssize_t) n, NULL, 0);
     KosStackSteal_Free(&steal);
     return r;
+
+  } else {
+    PyObject *result;
+
+    if (n == 0) {
+      result = PyObject_CallNoArgs(ptr[0]);
+    } else {
+      result = PyObject_Vectorcall(ptr[0], &ptr[1], (size_t) n, NULL);
+    }
+
+    SAYF("CALL: result=%R", result);
+    KosStackBlock_DropNoErr(stack, n + 1);
+    return result ? kos_push_or_await(ctx, out_ev, result) : -1;
   }
-
-  PyObject *result;
-  result = PyObject_Vectorcall(ptr[0],
-                               (n > 0) ? &ptr[1] : NULL,
-                               (size_t) n, NULL);
-
-  if (! result)
-    return -1;
-
-  KosStackBlock_DropNoErr(stack, n + 1);
-  return kos_push_or_await(ctx, out_ev, result);
 }

@@ -649,7 +649,15 @@ class Compiler:
             comp = self.find_compiled(head)
             if comp:
                 return self.compile_special(fragment, comp, source_obj, tc)
-            head = self.compile_raw_symbol(fragment, head, False)
+
+            if comp is symbol('compile/call'):
+                raise CompilerError("compile/call not found", source_obj)
+
+            expr = cons(symbol('compile/call'), head, tail)
+            if hasattr(source_obj, 'set_position'):
+                expr.set_position(source_obj.get_position())
+            return expr
+
         else:
             head = self.compile(head)
 
