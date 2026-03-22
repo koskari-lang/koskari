@@ -71,7 +71,54 @@ typedef enum KosOpStyle {
   /** opcode argument is a fast variable index */
   KOSTYLE_FASTVAR,
 
+  /** opcode argument is an index into the extra table */
+  KOSTYLE_EXTRA,
+
+  /* Aliases for EXTRA_* schema styles; all map to KOSTYLE_EXTRA */
+  KOSTYLE_EXTRA_FAST_CONST_CONST_COUNT = KOSTYLE_EXTRA,
+
 } KosOpStyle;
+
+
+/* === Extra operand table === */
+
+
+/**
+   Field kind for a slot in a KosExtra row. Matches internalization
+   behavior of inline styles.
+*/
+typedef enum KosExtraFieldKind {
+  KOS_EXTRA_FIELD_NONE,
+  KOS_EXTRA_FIELD_CONST,
+  KOS_EXTRA_FIELD_VAR,
+  KOS_EXTRA_FIELD_FAST,
+  KOS_EXTRA_FIELD_COUNT,
+  KOS_EXTRA_FIELD_LABEL,
+} KosExtraFieldKind;
+
+
+/**
+   Schema describing how the four slots of a KosExtra row are
+   interpreted for a given EXTRA opcode.
+*/
+typedef struct KosExtraSchema {
+  uint8_t f0;
+  uint8_t f1;
+  uint8_t f2;
+  uint8_t f3;
+} KosExtraSchema;
+
+
+/**
+   Extended operand row. For EXTRA opcodes, arg is an index into
+   KosExtra[]. Interpretation of a0..a3 is opcode-specific.
+*/
+typedef struct KosExtra {
+  uint16_t a0;
+  uint16_t a1;
+  uint16_t a2;
+  uint16_t a3;
+} KosExtra;
 
 
 /* === Opcode enum === */
@@ -216,10 +263,12 @@ struct KosCode {
   uint32_t cpool_len;   /* constant pool size */
   PyObject **cpool;     /* constant pool */
 
+  uint32_t extra_len;   /* extra operand table size */
+  KosExtra *extra;      /* extra operand table */
+
   uint32_t extent_len;
   KosExtentDesc *extents;
   uint16_t *top_extent_id;
-  size_t extent_allocation;
 
   PyCodeObject *faux;   /* faux code object for tracebacks */
   PyObject *extras;     /* extra metadata (PyDict) */
@@ -366,6 +415,17 @@ KosOpStyle kos_opcode_style(KosOpCode op);
 const char *kos_opcode_name(KosOpCode op);
 
 
+/**
+   Get the extra operand schema for a given opcode.
+
+   :param op: opcode enum value
+
+   :return: KosExtraSchema (f0..f3 as KosExtraFieldKind); all NONE for
+     non-EXTRA opcodes
+*/
+KosExtraSchema kos_op_extra_schema(KosOpCode op);
+
+
 /* === Accessor macros === */
 
 
@@ -413,6 +473,15 @@ const char *kos_opcode_name(KosOpCode op);
 
 #define KosCode_GET_CONST(c, i)                 \
   (KosCode_CPOOL(c)[i])
+
+#define KosCode_EXTRA_LEN(c)                     \
+  (((KosCode *) c)->extra_len)
+
+#define KosCode_EXTRA(c)                         \
+  (((KosCode *) c)->extra)
+
+#define KosCode_GetExtra(c, idx)                 \
+  (KosCode_EXTRA(c)[idx])
 
 #define KosCode_EXTENT_LEN(c)                    \
   (((KosCode *) c)->extent_len)

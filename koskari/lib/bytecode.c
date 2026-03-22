@@ -83,6 +83,34 @@ const char *kos_opcode_name(KosOpCode op) {
 }
 
 
+/* Extent helpers (defined after extent_pairs) */
+static inline int is_push_op(KosOpCode op);
+static inline int is_pop_op(KosOpCode op);
+static inline KosOpCode pop_for_push(KosOpCode push_op);
+static inline KosExtentKind kind_for_push(KosOpCode push_op);
+
+
+/* === Extra operand schema === */
+
+
+static const KosExtraSchema extra_schemas[KOS_OP_THEEND + 1] = {
+  [KOS_OP_CALL_FAST_ATTR_NAMES] = {
+    KOS_EXTRA_FIELD_FAST, KOS_EXTRA_FIELD_CONST, KOS_EXTRA_FIELD_CONST,
+    KOS_EXTRA_FIELD_COUNT
+  },
+};
+
+
+KosExtraSchema kos_op_extra_schema(KosOpCode op) {
+
+  if (op <= KOS_OP_THEEND) {
+    return extra_schemas[op];
+  }
+  return (KosExtraSchema){ KOS_EXTRA_FIELD_NONE, KOS_EXTRA_FIELD_NONE,
+      KOS_EXTRA_FIELD_NONE, KOS_EXTRA_FIELD_NONE };
+}
+
+
 /* === KosCode getset === */
 
 
@@ -294,6 +322,31 @@ static PyObject *code_m_function_spec(PyObject *self, PyObject *formals_spec) {
 }
 
 
+static PyObject *code_m_extra_tuple(PyObject *self, PyObject *index) {
+
+  if (! PyLong_Check(index)) {
+    PyErr_Format(PyExc_TypeError, "Code extra_tuple index must be int,"
+                 " not %R", index);
+    return NULL;
+  }
+
+  long i = PyLong_AsLong(index);
+  uint32_t extra_len = KosCode_EXTRA_LEN(self);
+
+  if (i < 0 || (uint32_t) i >= extra_len) {
+    PyErr_Format(PyExc_IndexError, "Code extra index out of bounds: %ld",
+                 i);
+    return NULL;
+  }
+
+  KosExtra row = KosCode_GetExtra(self, (uint32_t) i);
+  return Py_BuildValue("(HHHH)", (unsigned short) row.a0,
+                       (unsigned short) row.a1,
+                       (unsigned short) row.a2,
+                       (unsigned short) row.a3);
+}
+
+
 static PyMethodDef code_methods[] = {
 
   { "constant", (PyCFunction) code_m_constant, METH_O,
@@ -317,54 +370,84 @@ static PyMethodDef code_methods[] = {
   { "function_spec", (PyCFunction) code_m_function_spec, METH_O,
     "C.function_spec(formals_spec) => FunctionSpec" },
 
+  { "extra_tuple", (PyCFunction) code_m_extra_tuple, METH_O,
+    "C.extra_tuple(index) => (a0, a1, a2, a3) for EXTRA opcode operand row" },
+
   { NULL, },
 };
 
 
-/* === Constant pool helpers === */
+/* === Phase 1: Collect === */
+/*
+   Transform compiler output into sealed readonly bytecode. Four phases:
+   Collect (size everything, build label map + cpool + extra) -> Allocate
+   (single block) -> Emit (write into block) -> Finalize (extents, validate,
+   mprotect). Sizing is exact: no over-allocation. Cpool uses identity
+   dedup (PyList linear scan) so 1 and True stay distinct.
+*/
 
 
-static uint32_t collect_const(
-    PyObject **cpool,
-    uint32_t len,
-    PyObject *value) {
+/**
+   Collection state for the finalization pipeline. Built during the
+   collect phase; used for sizing and by the emit phase. Lifetime:
+   from code_collect through code_emit.
+*/
+typedef struct {
+  PyObject *cpool_list;       /* PyList: identity-based const internment (no dict) */
+  PyObject *labels;           /* PyDict: label_name -> output_pc for jump resolution */
+  KosExtra *extra_rows;       /* growable array of KosExtra; CONST/VAR interned */
+  uint32_t extra_len;
+  uint32_t extra_cap;
+  KosPosition *pos_entries;   /* delta-encoded positions; index where (line,col) changes */
+  uint32_t pos_count;
+  uint32_t pos_cap;
+  uint32_t code_len;          /* instruction count after squashing LABEL/POSITION */
+  uint32_t cpool_len;         /* unique constants by identity */
+  uint32_t extent_count;      /* PUSH_* count for extent table sizing */
+  uint16_t line;
+  uint16_t col;
+  uint16_t last_line;
+  uint16_t last_col;
+  /* LABEL slots in EXTRA rows deferred until emit: (extra_idx, slot, label_name) */
+  PyObject *pending_labels;
+} CodeCollect;
 
-  uint32_t i = 0;
 
-  for (; i < len; i++) {
-    if (! cpool[i]) {
-      Py_INCREF(value);
-      cpool[i] = value;
-      break;
+/**
+   Intern a constant into the cpool using object identity.
 
-    } else if (cpool[i] == value) {
-      break;
+   Must use identity (pointer equality), not hash/equality, because
+   Python's 1 == True and 0 == False would incorrectly merge distinct
+   constants. Linear scan of cpool_list; append if not found.
+*/
+static uint32_t intern_const(CodeCollect *coll, PyObject *value) {
+
+  PyObject *list = coll->cpool_list;
+  Py_ssize_t n = PyList_GET_SIZE(list);
+
+  /* Linear scan by identity; do not use dict (1==True, 0==False would merge) */
+  for (Py_ssize_t i = 0; i < n; i++) {
+    if (PyList_GET_ITEM(list, i) == value) {
+      return (uint32_t) i;
     }
   }
 
-  return i;
-}
-
-
-static uint32_t count_const(
-    PyObject **cpool,
-    uint32_t maxlen) {
-
-  uint32_t i = 0;
-
-  for (; i < maxlen; i++) {
-    if (! cpool[i]) {
-      return i;
-    }
+  if (PyList_Append(list, value) < 0) {
+    return (uint32_t) -1;
   }
-
-  return i;
+  Py_INCREF(value);
+  coll->cpool_len = (uint32_t) (n + 1);
+  return (uint32_t) n;
 }
 
 
 /* === Label helpers === */
 
 
+/**
+   Record label definition: labels[name] = output_pc. Used in pass 1 so
+   JUMP-style opcodes can resolve target pc in emit phase.
+*/
 static int collect_label(
     PyObject *labels,
     PyObject *name,
@@ -380,6 +463,10 @@ static int collect_label(
 /* === Position unpacking === */
 
 
+/**
+   Parse POSITION instruction arg: (line, col) or (line,) or (line, col, extra).
+   Extracts line and col into out params. Returns -1 on invalid format.
+*/
 static int unpack_position(
     PyObject *entry,
     uint16_t *line,
@@ -429,257 +516,565 @@ static int unpack_position(
 }
 
 
-/* === Storage allocation === */
-
-
 /**
-   Allocate page-aligned storage for code, positions, and constant pool.
-
-   Layout: [code array][padding][positions array][padding][cpool array]
-
-   All sections are aligned to pointer size for the constant pool.
+   Collect phase: walk input instructions, simulate squashing, build
+   label map, intern constants (identity-based), build extra rows.
+   Fills CodeCollect with exact sizes for allocation.
 */
-static int code_alloc_storage(
-    uint32_t instr_count,
-    void **out_code,
-    uint32_t pos_count,
-    void **out_pos,
-    uint32_t cpool_count,
-    void **out_cpool,
-    size_t *out_len) {
+static int code_collect(PyObject *self, PyObject *instr, CodeCollect *coll) {
 
-  size_t code_bytes = sizeof(KosOp) * instr_count;
-  size_t pos_bytes = sizeof(KosPosition) * pos_count;
-  size_t cpool_bytes = sizeof(PyObject *) * cpool_count;
-
-  /* Align code section to pointer size */
-  size_t ptr_size = sizeof(PyObject *);
-  size_t code_offset = 0;
-  size_t pos_offset = ((code_bytes + ptr_size - 1) / ptr_size) * ptr_size;
-  size_t cpool_offset = pos_offset +
-    ((pos_bytes + ptr_size - 1) / ptr_size) * ptr_size;
-  size_t total = cpool_offset + cpool_bytes;
-
-  /* Round up to page size */
-  size_t page_size = sysconf(_SC_PAGE_SIZE);
-  total = ((total + page_size - 1) / page_size) * page_size;
-
-  void *data = NULL;
-  if (posix_memalign(&data, page_size, total)) {
-    PyErr_SetString(PyExc_MemoryError, "Failed to allocate bytecode storage");
+  Py_ssize_t instr_l = PySequence_Fast_GET_SIZE(instr);
+  if (instr_l < 0) {
     return -1;
   }
 
-  *out_code = data + code_offset;
-  *out_pos = data + pos_offset;
-  *out_cpool = data + cpool_offset;
-  *out_len = total;
-
-  return 0;
-}
-
-
-/* === Instruction processing === */
-
-
-static int process_instr(
-    PyObject *self,
-    PyObject *instr,
-    uint32_t *instr_l,
-    KosOp *code,
-    uint32_t *pos_l,
-    KosPosition *pos,
-    uint32_t *const_l,
-    PyObject **cpool) {
-
-  SAYF("in process_instr(%R, %R, %u, %p, %u, %p, %u, %p)",
-       self, instr, *instr_l, code, *pos_l, pos, *const_l, cpool);
-
-  PyObject *pair = NULL;
-  PyObject *labels = PyDict_New();
-
-  if (! labels) {
+  coll->cpool_list = PyList_New(0);
+  coll->labels = PyDict_New();
+  coll->pending_labels = PyList_New(0);
+  if (! coll->cpool_list || ! coll->labels || ! coll->pending_labels) {
+    Py_CLEAR(coll->cpool_list);
+    Py_CLEAR(coll->labels);
+    Py_CLEAR(coll->pending_labels);
     return -1;
   }
 
-  uint16_t line = 0, col = 0;
-  uint16_t last_line = 0, last_col = 0;
-  uint32_t di = 0;  /* destination instruction index */
-  uint32_t pi = 0;  /* position index */
+  coll->extra_rows = NULL;
+  coll->extra_len = 0;
+  coll->extra_cap = 0;
+  coll->pos_entries = PyMem_New(KosPosition, 64);
+  coll->pos_count = 0;
+  coll->pos_cap = 64;
+  if (! coll->pos_entries) {
+    goto failure;
+  }
 
-  for (uint32_t i = 0; i < *instr_l; i++) {
-    pair = PySequence_Fast_GET_ITEM(instr, i);
-    pair = PySequence_Fast(pair, "instruction pairs must be sequences");
-    if (! pair) {
-      goto failure;
-    }
+  coll->code_len = 0;
+  coll->cpool_len = 0;
+  coll->extent_count = 0;
+  coll->line = 0;
+  coll->col = 0;
+  coll->last_line = 0;
+  coll->last_col = 0;
 
-    Py_ssize_t pl = PySequence_Fast_GET_SIZE(pair);
-    if (pl < 2) {
-      PyErr_SetString(PyExc_RuntimeError, "Code instructions"
-                      " and arguments must be pairs of 2");
+  /* Pass 1: Simulate squashing of LABEL/POSITION so we know output sizes.
+     di = destination instruction index (count of instructions that survive).
+     LABEL and POSITION are dropped from the final stream; their data goes
+     into labels dict and pos_entries. */
+  uint32_t di = 0;
+  for (Py_ssize_t i = 0; i < instr_l; i++) {
+    PyObject *pair = PySequence_Fast_GET_ITEM(instr, i);
+    if (! PySequence_Check(pair) || PySequence_Fast_GET_SIZE(pair) < 2) {
+      PyErr_SetString(PyExc_RuntimeError,
+                      "Code instructions must be pairs of 2");
       goto failure;
     }
 
     PyObject *a = PySequence_Fast_GET_ITEM(pair, 0);
     PyObject *b = PySequence_Fast_GET_ITEM(pair, 1);
-
     if (! PyLong_Check(a)) {
-      PyErr_Format(PyExc_RuntimeError, "Code instruction undefined"
-                   " %R:%R", a, b);
+      PyErr_Format(PyExc_RuntimeError, "Code instruction undefined %R:%R",
+                   a, b);
       goto failure;
     }
 
     long lop = PyLong_AsLong(a);
-    if ((lop < (long) KOS_OP_NOOP) || (lop > (long) KOS_OP_THEEND)) {
-      PyErr_Format(PyExc_RuntimeError, "Code instruction undefined"
-                   " %R:%R", a, b);
+    if (lop < (long) KOS_OP_NOOP || lop > (long) KOS_OP_THEEND) {
+      PyErr_Format(PyExc_RuntimeError, "Code instruction undefined %R:%R",
+                   a, b);
       goto failure;
     }
 
-    code[di].op = (uint16_t) lop;
-    code[di].arg = 0;
+    KosOpCode op = (KosOpCode) lop;
 
-    KosOpStyle style = opcode_styles[(KosOpCode) lop];
-
-    switch (style) {
-    case KOSTYLE_CONST:
-      code[di].arg = (uint16_t) collect_const(cpool, *const_l, b);
-      break;
-
-    case KOSTYLE_VAR:
-      {
-        /* Collect variable name into constants pool */
-        PyObject *name = PyObject_Str(b);
-        if (! name) {
-          goto failure;
-        }
-        code[di].arg = (uint16_t) collect_const(cpool, *const_l, name);
-        Py_DECREF(name);
-      }
-      break;
-
-    case KOSTYLE_LABEL:
-      /* Store index for second pass label resolution */
-      {
-        PyObject *index = PyLong_FromLong(di);
-        if (! index) {
-          goto failure;
-        }
-        int res = PyDict_SetItem(labels, index, b);
-        Py_DECREF(index);
-        if (res) {
-          goto failure;
-        }
-      }
-      break;
-
-    case KOSTYLE_COMPILE:
-      /* Handled specially below */
-      break;
-
-    default:
-      /* Everything else should be a number */
-      if (! PyLong_Check(b)) {
-        PyErr_Format(PyExc_RuntimeError, "Code instruction expects int"
-                     " argument, got %R:%R", a, b);
+    if (op == KOS_OP_LABEL) {
+      /* Record label name -> output pc; LABEL itself is not emitted */
+      if (collect_label(coll->labels, b, di)) {
         goto failure;
       }
-      code[di].arg = (uint16_t) PyLong_AsLong(b);
+      continue;   /* do not advance di */
     }
 
-    /* Handle special opcodes */
-    switch ((KosOpCode) lop) {
-    case KOS_OP_LABEL:
-      /* Store the label's destination index */
-      if (collect_label(labels, b, di)) {
-        goto failure;
-      }
-      code[di].op = KOS_OP_NOOP;
-      break;
-
-    case KOS_OP_POSITION:
-      /* Update position state, record if changed */
+    if (op == KOS_OP_POSITION) {
+      uint16_t line = 0, col = 0;
       if (unpack_position(b, &line, &col)) {
         goto failure;
       }
-      if (line != last_line || col != last_col) {
-        pos[pi].index = (uint16_t) di;
-        pos[pi].line = line;
-        pos[pi].col = col;
-        pi++;
-        last_line = line;
-        last_col = col;
+      coll->line = line;
+      coll->col = col;
+      /* Emit position entry only when line/col changes (delta encoding) */
+      if (line != coll->last_line || col != coll->last_col) {
+        if (coll->pos_count >= coll->pos_cap) {
+          KosPosition *n = PyMem_Resize(coll->pos_entries, KosPosition,
+                                        coll->pos_cap * 2);
+          if (! n) {
+            PyErr_NoMemory();
+            goto failure;
+          }
+          coll->pos_entries = n;
+          coll->pos_cap *= 2;
+        }
+        coll->pos_entries[coll->pos_count].index = (uint16_t) di;
+        coll->pos_entries[coll->pos_count].line = line;
+        coll->pos_entries[coll->pos_count].col = col;
+        coll->pos_count++;
+        coll->last_line = line;
+        coll->last_col = col;
       }
-      code[di].op = KOS_OP_NOOP;
-      break;
-
-    case KOS_OP_THEEND:
-      /* Emit THEEND as-is so evaluator can raise; do not rewrite to NOOP */
-      di++;
-      break;
-
-    case KOS_OP_NOOP:
-      break;
-
-    case KOS_OP_YIELD:
-    case KOS_OP_YIELD_FROM:
-      KosCode_FLAGS(self) |= KOS_CODE_YIELDS;
-      di++;
-      break;
-
-    default:
-      di++;
-      break;
+      continue;   /* POSITION not emitted as instruction */
     }
 
-    Py_CLEAR(pair);
+    /* Count PUSH_* for extent table sizing; each PUSH_* becomes one extent */
+    if (is_push_op(op)) {
+      coll->extent_count++;
+    }
+
+    di++;
   }
 
-  /* Second pass: resolve jump labels */
-  for (uint32_t i = di; i--; ) {
-    if (opcode_styles[code[i].op] == KOSTYLE_LABEL) {
+  coll->code_len = di;
 
-      PyObject *index = PyLong_FromLong(i);
+  /* Pass 2: Intern constants (identity-based dedup) and build extra rows.
+     Walk input again; for each surviving instruction, process CONST/VAR/EXTRA
+     into cpool_list and extra_rows. LABEL-style opcodes store pc->name in
+     labels for later resolution. */
+  di = 0;
+  uint32_t extra_idx = 0;
+  for (Py_ssize_t i = 0; i < instr_l; i++) {
+    PyObject *pair = PySequence_Fast_GET_ITEM(instr, i);
+    PyObject *a = PySequence_Fast_GET_ITEM(pair, 0);
+    PyObject *b = PySequence_Fast_GET_ITEM(pair, 1);
+    KosOpCode op = (KosOpCode) PyLong_AsLong(a);
+    KosOpStyle style = opcode_styles[op];
 
-      /* borrowed */
-      PyObject *key = PyDict_GetItem(labels, index);
-      Py_CLEAR(index);
+    if (op == KOS_OP_LABEL || op == KOS_OP_POSITION) {
+      continue;   /* skipped in pass 2; already processed in pass 1 */
+    }
 
-      if (! key) {
-        PyErr_Format(PyExc_RuntimeError, "opcode jump not seen before at"
-                     " index %u", i);
+    /* EXTRA opcodes: arg is 4-tuple (a0,a1,a2,a3). Schema dictates how
+       each slot is interpreted: CONST/VAR -> intern into cpool; LABEL ->
+       defer until emit; FAST/COUNT -> store raw. */
+    if (style == KOSTYLE_EXTRA) {
+      KosExtraSchema schema = kos_op_extra_schema(op);
+      if (! PyTuple_Check(b)) {
+        PyErr_Format(PyExc_RuntimeError,
+                     "EXTRA opcode expects tuple argument, got %R", b);
+        goto failure;
+      }
+      Py_ssize_t tlen = PyTuple_GET_SIZE(b);
+      if (tlen < 4) {
+        PyErr_Format(PyExc_RuntimeError,
+                     "EXTRA opcode tuple must have 4 elements, got %zd",
+                     tlen);
         goto failure;
       }
 
-      /* borrowed */
-      PyObject *dest = PyDict_GetItem(labels, key);
-      if (! dest) {
-        PyErr_Format(PyExc_RuntimeError, "opcode jump label missing %R",
-                     key);
-        goto failure;
+      KosExtra row = { 0, 0, 0, 0 };
+      for (int slot = 0; slot < 4; slot++) {
+        uint8_t fk = (slot == 0) ? schema.f0 : (slot == 1) ? schema.f1 :
+            (slot == 2) ? schema.f2 : schema.f3;
+        PyObject *elem = PyTuple_GET_ITEM(b, slot);
+
+        if (fk == KOS_EXTRA_FIELD_NONE) {
+          continue;
+        }
+        /* CONST: intern value, store cpool index in row slot */
+        if (fk == KOS_EXTRA_FIELD_CONST) {
+          uint32_t idx = intern_const(coll, elem);
+          if (idx == (uint32_t) -1) {
+            goto failure;
+          }
+          if (slot == 0) {
+            row.a0 = (uint16_t) idx;
+          } else if (slot == 1) {
+            row.a1 = (uint16_t) idx;
+          } else if (slot == 2) {
+            row.a2 = (uint16_t) idx;
+          } else {
+            row.a3 = (uint16_t) idx;
+          }
+          continue;
+        }
+        /* VAR: stringify, intern, store cpool index (same as KOSTYLE_VAR) */
+        if (fk == KOS_EXTRA_FIELD_VAR) {
+          PyObject *name = PyObject_Str(elem);
+          if (! name) {
+            goto failure;
+          }
+          uint32_t idx = intern_const(coll, name);
+          Py_DECREF(name);
+          if (idx == (uint32_t) -1) {
+            goto failure;
+          }
+          if (slot == 0) {
+            row.a0 = (uint16_t) idx;
+          } else if (slot == 1) {
+            row.a1 = (uint16_t) idx;
+          } else if (slot == 2) {
+            row.a2 = (uint16_t) idx;
+          } else {
+            row.a3 = (uint16_t) idx;
+          }
+          continue;
+        }
+        /* LABEL: cannot resolve until pass 1 labels are complete; defer */
+        if (fk == KOS_EXTRA_FIELD_LABEL) {
+          PyObject *pending = PyTuple_Pack(3,
+              PyLong_FromLong(extra_idx),
+              PyLong_FromLong(slot),
+              elem);
+          if (! pending || PyList_Append(coll->pending_labels, pending) < 0) {
+            Py_XDECREF(pending);
+            goto failure;
+          }
+          Py_DECREF(pending);
+          continue;
+        }
+        /* FAST, COUNT: store raw integer (local slot index, argc, etc.) */
+        if (fk == KOS_EXTRA_FIELD_COUNT || fk == KOS_EXTRA_FIELD_FAST) {
+          if (! PyLong_Check(elem)) {
+            PyErr_Format(PyExc_RuntimeError,
+                         "EXTRA field expects int, got %R", elem);
+            goto failure;
+          }
+          long val = PyLong_AsLong(elem);
+          if (val < 0 || val > 65535) {
+            PyErr_Format(PyExc_RuntimeError,
+                         "EXTRA field value out of range: %ld", val);
+            goto failure;
+          }
+          uint16_t v = (uint16_t) val;
+          if (slot == 0) {
+            row.a0 = v;
+          } else if (slot == 1) {
+            row.a1 = v;
+          } else if (slot == 2) {
+            row.a2 = v;
+          } else {
+            row.a3 = v;
+          }
+        }
       }
 
-      code[i].arg = (uint16_t) PyLong_AsLong(dest);
+      /* Grow extra_rows if needed; append this row */
+      if (coll->extra_len >= coll->extra_cap) {
+        uint32_t new_cap = coll->extra_cap ? coll->extra_cap * 2 : 16;
+        KosExtra *n = PyMem_Resize(coll->extra_rows, KosExtra, new_cap);
+        if (! n) {
+          PyErr_NoMemory();
+          goto failure;
+        }
+        coll->extra_rows = n;
+        coll->extra_cap = new_cap;
+      }
+      coll->extra_rows[coll->extra_len] = row;
+      coll->extra_len++;
+      extra_idx++;
+      di++;
+      continue;
     }
+
+    /* CONST: intern arg into cpool; emit phase will look up index */
+    if (style == KOSTYLE_CONST) {
+      uint32_t idx = intern_const(coll, b);
+      if (idx == (uint32_t) -1) {
+        goto failure;
+      }
+      di++;
+      continue;
+    }
+
+    /* VAR: stringify name, intern into cpool (identity-based) */
+    if (style == KOSTYLE_VAR) {
+      PyObject *name = PyObject_Str(b);
+      if (! name) {
+        goto failure;
+      }
+      uint32_t idx = intern_const(coll, name);
+      Py_DECREF(name);
+      if (idx == (uint32_t) -1) {
+        goto failure;
+      }
+      di++;
+      continue;
+    }
+
+    /* LABEL-style (JUMP etc): record instruction index -> label name so emit
+       can resolve target pc from labels dict (name -> pc) */
+    if (style == KOSTYLE_LABEL) {
+      PyObject *key = PyLong_FromLong(di);
+      if (! key || PyDict_SetItem(coll->labels, key, b) < 0) {
+        Py_XDECREF(key);
+        goto failure;
+      }
+      Py_DECREF(key);
+      di++;
+      continue;
+    }
+
+    di++;
   }
 
-  *const_l = count_const(cpool, *const_l);
-  *instr_l = di;
-  *pos_l = pi;
-
-  Py_CLEAR(labels);
-  return PyErr_Occurred() ? -1 : 0;
+  coll->cpool_len = (uint32_t) PyList_GET_SIZE(coll->cpool_list);
+  return 0;
 
  failure:
-  Py_XDECREF(labels);
-  Py_XDECREF(pair);
+  PyMem_Del(coll->pos_entries);
+  coll->pos_entries = NULL;
+  PyMem_Del(coll->extra_rows);
+  coll->extra_rows = NULL;
+  Py_CLEAR(coll->cpool_list);
+  Py_CLEAR(coll->labels);
+  Py_CLEAR(coll->pending_labels);
   return -1;
 }
 
 
+/**
+   Release collect-phase resources. Call after code_emit or on failure.
+   Does not free the CodeCollect struct itself.
+*/
+static void code_collect_clear(CodeCollect *coll) {
+
+  Py_CLEAR(coll->cpool_list);
+  Py_CLEAR(coll->labels);
+  Py_CLEAR(coll->pending_labels);
+  PyMem_Del(coll->pos_entries);
+  coll->pos_entries = NULL;
+  PyMem_Del(coll->extra_rows);
+  coll->extra_rows = NULL;
+}
+
+
+/* === Phase 2: Allocate === */
+
+
+/**
+   Allocate a single page-aligned block for the entire bytecode object.
+   Sizes come from CodeCollect; no over-allocation. Layout (with alignment
+   padding between regions):
+
+     [code][pad][positions][pad][cpool][pad][extra][pad][extents][top_extent_id]
+
+   All offsets use natural alignment: pointer size for cpool, 4-byte for
+   KosExtra. Total is rounded up to page size for mprotect.
+*/
+static int code_alloc_unified(
+    CodeCollect *coll,
+    void **out_base,
+    size_t *out_len,
+    KosOp **out_code,
+    KosPosition **out_pos,
+    PyObject ***out_cpool,
+    KosExtra **out_extra,
+    KosExtentDesc **out_extents,
+    uint16_t **out_top_extent_id) {
+
+  /* Compute region sizes from collect-phase counts (all exact, no oversizing) */
+  size_t ptr_size = sizeof(PyObject *);
+  size_t code_bytes = sizeof(KosOp) * coll->code_len;
+  size_t pos_bytes = sizeof(KosPosition) * coll->pos_count;
+  size_t cpool_bytes = sizeof(PyObject *) * coll->cpool_len;
+  size_t extra_bytes = sizeof(KosExtra) * coll->extra_len;
+  size_t extent_bytes = sizeof(KosExtentDesc) * coll->extent_count;
+  size_t top_bytes = sizeof(uint16_t) * coll->code_len;
+
+  /* Compute aligned offsets; each region starts at aligned boundary */
+  size_t code_offset = 0;
+  size_t pos_offset = ((code_bytes + ptr_size - 1) / ptr_size) * ptr_size;
+  size_t cpool_offset = pos_offset +
+    ((pos_bytes + ptr_size - 1) / ptr_size) * ptr_size;
+  size_t extra_offset = cpool_offset +
+    ((cpool_bytes + ptr_size - 1) / ptr_size) * ptr_size;
+  size_t extent_offset = extra_offset +
+    ((extra_bytes + sizeof(uint32_t) - 1) / sizeof(uint32_t)) * sizeof(uint32_t);
+  size_t top_offset = extent_offset + extent_bytes;
+
+  size_t total = top_offset + top_bytes;
+  size_t page_size = (size_t) sysconf(_SC_PAGE_SIZE);
+  total = ((total + page_size - 1) / page_size) * page_size;
+
+  /* Single allocation for entire block; later mprotect(PROT_READ) once */
+  void *base = NULL;
+  if (posix_memalign(&base, page_size, total)) {
+    PyErr_SetString(PyExc_MemoryError,
+                    "Failed to allocate bytecode storage");
+    return -1;
+  }
+
+  memset(base, 0, total);
+
+  *out_base = base;
+  *out_len = total;
+  *out_code = (KosOp *) ((char *) base + code_offset);
+  *out_pos = (KosPosition *) ((char *) base + pos_offset);
+  *out_cpool = (PyObject **) ((char *) base + cpool_offset);
+  *out_extra = coll->extra_len ? (KosExtra *) ((char *) base + extra_offset)
+      : NULL;
+  *out_extents = coll->extent_count
+      ? (KosExtentDesc *) ((char *) base + extent_offset) : NULL;
+  *out_top_extent_id = coll->extent_count
+      ? (uint16_t *) ((char *) base + top_offset) : NULL;
+
+  return 0;
+}
+
+
+/* === Phase 3: Emit === */
+
+
+/**
+   Emit instructions and tables into pre-allocated regions. Walk input
+   again; for each instruction, write op/arg to code[]. LABEL and POSITION
+   are skipped. Resolve label targets for KOSTYLE_LABEL and pending_labels.
+   Copy cpool_list -> cpool, extra_rows -> extra, pos_entries -> pos.
+*/
+static int code_emit(
+    PyObject *self,
+    PyObject *instr,
+    CodeCollect *coll,
+    KosOp *code,
+    KosPosition *pos,
+    PyObject **cpool,
+    KosExtra *extra) {
+
+  Py_ssize_t instr_l = PySequence_Fast_GET_SIZE(instr);
+  uint32_t di = 0;
+  uint32_t pi = 0;
+  uint32_t extra_idx = 0;
+  uint16_t last_line = 0, last_col = 0;
+
+  /* Walk input; di = output instruction index, pi = position entry index */
+  for (Py_ssize_t i = 0; i < instr_l; i++) {
+    PyObject *pair = PySequence_Fast_GET_ITEM(instr, i);
+    PyObject *a = PySequence_Fast_GET_ITEM(pair, 0);
+    PyObject *b = PySequence_Fast_GET_ITEM(pair, 1);
+    KosOpCode op = (KosOpCode) PyLong_AsLong(a);
+    KosOpStyle style = opcode_styles[op];
+
+    /* LABEL/POSITION were squashed in collect; skip them here */
+    if (op == KOS_OP_LABEL || op == KOS_OP_POSITION) {
+      if (op == KOS_OP_POSITION) {
+        uint16_t l = 0, c = 0;
+        unpack_position(b, &l, &c);
+        if (l != last_line || c != last_col) {
+          last_line = l;
+          last_col = c;
+        }
+      }
+      continue;
+    }
+
+    code[di].op = (uint16_t) op;
+    code[di].arg = 0;
+
+    /* Resolve arg from collect-phase data: cpool index, label pc, or raw */
+    if (style == KOSTYLE_CONST) {
+      Py_ssize_t n = PyList_GET_SIZE(coll->cpool_list);
+      for (Py_ssize_t j = 0; j < n; j++) {
+        if (PyList_GET_ITEM(coll->cpool_list, j) == b) {
+          code[di].arg = (uint16_t) j;
+          break;
+        }
+      }
+    } else if (style == KOSTYLE_VAR) {
+      PyObject *name = PyObject_Str(b);
+      if (! name) {
+        return -1;
+      }
+      Py_ssize_t n = PyList_GET_SIZE(coll->cpool_list);
+      for (Py_ssize_t j = 0; j < n; j++) {
+        if (PyList_GET_ITEM(coll->cpool_list, j) == name) {
+          code[di].arg = (uint16_t) j;
+          break;
+        }
+      }
+      Py_DECREF(name);
+    } else if (style == KOSTYLE_LABEL) {
+      /* Look up target pc from labels dict (label_name -> pc) */
+      PyObject *dest = PyDict_GetItem(coll->labels, b);
+      if (! dest) {
+        PyErr_Format(PyExc_RuntimeError, "opcode jump label missing %R", b);
+        return -1;
+      }
+      code[di].arg = (uint16_t) PyLong_AsLong(dest);
+    } else if (style == KOSTYLE_EXTRA) {
+      /* Arg is index into extra table; copy row from collect */
+      code[di].arg = (uint16_t) extra_idx;
+      if (extra) {
+        memcpy(&extra[extra_idx], &coll->extra_rows[extra_idx],
+               sizeof(KosExtra));
+      }
+      extra_idx++;
+    } else {
+      /* COUNT, NOARG, etc: use raw integer from b */
+      if (PyLong_Check(b)) {
+        code[di].arg = (uint16_t) PyLong_AsLong(b);
+      }
+    }
+
+    /* Record YIELDS flag for generators */
+    if (op == KOS_OP_YIELD || op == KOS_OP_YIELD_FROM) {
+      KosCode_FLAGS(self) |= KOS_CODE_YIELDS;
+    }
+
+    /* Emit position entry when this instruction has a position change */
+    if (pi < coll->pos_count && coll->pos_entries[pi].index == di) {
+      pos[pi] = coll->pos_entries[pi];
+      pi++;
+    }
+
+    di++;
+  }
+
+  /* Transfer cpool: INCREF each item, store in pre-allocated array */
+  Py_ssize_t cpool_n = PyList_GET_SIZE(coll->cpool_list);
+  for (Py_ssize_t j = 0; j < cpool_n; j++) {
+    PyObject *val = PyList_GET_ITEM(coll->cpool_list, j);
+    Py_INCREF(val);
+    cpool[j] = val;
+  }
+
+  /* Resolve LABEL placeholders in extra rows: replace name with target pc */
+  if (extra) {
+    Py_ssize_t n_pending = PyList_GET_SIZE(coll->pending_labels);
+    for (Py_ssize_t k = 0; k < n_pending; k++) {
+      PyObject *pending = PyList_GET_ITEM(coll->pending_labels, k);
+      long eidx = PyLong_AsLong(PyTuple_GET_ITEM(pending, 0));
+      long slot = PyLong_AsLong(PyTuple_GET_ITEM(pending, 1));
+      PyObject *label_name = PyTuple_GET_ITEM(pending, 2);
+      PyObject *dest = PyDict_GetItem(coll->labels, label_name);
+      if (! dest) {
+        PyErr_Format(PyExc_RuntimeError, "opcode jump label missing %R",
+                     label_name);
+        return -1;
+      }
+      uint16_t pc = (uint16_t) PyLong_AsLong(dest);
+      KosExtra *row = &extra[eidx];
+      if (slot == 0) {
+        row->a0 = pc;
+      } else if (slot == 1) {
+        row->a1 = pc;
+      } else if (slot == 2) {
+        row->a2 = pc;
+      } else {
+        row->a3 = pc;
+      }
+    }
+  }
+
+  return 0;
+}
+
+
+
+
 /* === Extent derivation === */
 
+/*
+   Extent table: maps PUSH/POP block structure to a flat table.
+   Each PUSH_* opens an extent; matching POP_* closes it. top_extent_id[pc]
+   gives the innermost extent id at each instruction for jump locality checks.
+*/
 
 #define DERIVE_EXTENT_STACK_MAX 64
 
@@ -691,6 +1086,7 @@ typedef struct {
 } ExtentOpPair;
 
 
+/* PUSH_* -> POP_* and extent kind; source of truth for extent op classification */
 static const ExtentOpPair extent_pairs[] = {
   { KOS_OP_PUSH_TRY,      KOS_OP_POP_TRY,      KOS_EXT_TRY },
   { KOS_OP_PUSH_LOOP,     KOS_OP_POP_LOOP,     KOS_EXT_LOOP },
@@ -712,37 +1108,51 @@ static const ExtentOpPair extent_pairs[] = {
   (sizeof extent_pairs / sizeof extent_pairs[0])
 
 
-/*
-   O(1) extent lookup tables indexed by opcode. Filled from extent_pairs
-   in init_extent_tables() at bytecode module init. Used by derive_extents
-   and is_jump_op to classify PUSH_* / POP_* and map push opcodes to their
-   matching pop and extent kind without scanning extent_pairs.
-*/
-static KosOpCode push_to_pop_table[KOS_OP_THEEND + 1];  /* PUSH_* -> matching POP_*; 0 for non-push */
-static KosExtentKind push_to_kind_table[KOS_OP_THEEND + 1];  /* PUSH_* -> KOS_EXT_*; 0 for non-push */
-static unsigned char is_pop_op_table[KOS_OP_THEEND + 1];  /* 1 for POP_*, 0 otherwise */
-
-
-/**
-   Initialize push_to_pop_table, push_to_kind_table, and is_pop_op_table
-   from extent_pairs. Call once from koskari_bytecode_init before any
-   Code is created.
-*/
-static void init_extent_tables(void) {
-
-  memset(push_to_pop_table, 0, sizeof push_to_pop_table);
-  memset(push_to_kind_table, 0, sizeof push_to_kind_table);
-  memset(is_pop_op_table, 0, sizeof is_pop_op_table);
+static inline int is_push_op(KosOpCode op) {
 
   for (size_t i = 0; i < N_EXTENT_PAIRS; i++) {
-    KosOpCode push_op = extent_pairs[i].push_op;
-    push_to_pop_table[push_op] = extent_pairs[i].pop_op;
-    push_to_kind_table[push_op] = extent_pairs[i].kind;
-    is_pop_op_table[extent_pairs[i].pop_op] = 1;
+    if (extent_pairs[i].push_op == op) {
+      return 1;
+    }
   }
+  return 0;
 }
 
 
+static inline int is_pop_op(KosOpCode op) {
+
+  for (size_t i = 0; i < N_EXTENT_PAIRS; i++) {
+    if (extent_pairs[i].pop_op == op) {
+      return 1;
+    }
+  }
+  return 0;
+}
+
+
+static inline KosOpCode pop_for_push(KosOpCode push_op) {
+
+  for (size_t i = 0; i < N_EXTENT_PAIRS; i++) {
+    if (extent_pairs[i].push_op == push_op) {
+      return extent_pairs[i].pop_op;
+    }
+  }
+  return KOS_OP_NOOP;
+}
+
+
+static inline KosExtentKind kind_for_push(KosOpCode push_op) {
+
+  for (size_t i = 0; i < N_EXTENT_PAIRS; i++) {
+    if (extent_pairs[i].push_op == push_op) {
+      return extent_pairs[i].kind;
+    }
+  }
+  return 0;
+}
+
+
+/* Stack entry for simulating PUSH/POP during extent derivation */
 typedef struct {
   uint32_t push_pc;
   uint32_t extent_id;
@@ -751,71 +1161,102 @@ typedef struct {
 
 
 /**
-   Derive extent table from finalized instruction stream.
-   Allocates extents and top_extent_id; caller stores in KosCode.
+   Validate extent structure (push/pop matching) without allocating.
+   Catches POP with no PUSH, extent mismatch, unclosed extent.
+   Call when extent_count == 0 to reject code that has POP_* but no PUSH_*.
 */
-static int derive_extents(
-    KosOp *code,
-    uint32_t code_len,
-    KosExtentDesc **out_extents,
-    uint32_t *out_extent_len,
-    uint16_t **out_top_extent_id,
-    size_t *out_allocation) {
+static int validate_extents(KosOp *code, uint32_t code_len) {
 
   ExtentStackEntry stack[DERIVE_EXTENT_STACK_MAX];
   uint32_t stack_top = 0;
 
-  KosExtentDesc *extents = NULL;
-  uint32_t extent_count = 0;
-  uint32_t extent_cap = 32;
+  /* Simulate PUSH/POP stack; error on POP with empty stack or mismatch */
+  for (uint32_t pc = 0; pc < code_len; pc++) {
+    KosOpCode op = (KosOpCode) code[pc].op;
 
-  uint16_t *top_extent_id = NULL;
+    if (is_push_op(op)) {
+      /* PUSH: push onto stack */
+      if (stack_top >= DERIVE_EXTENT_STACK_MAX) {
+        PyErr_SetString(PyExc_RuntimeError, "extent nesting too deep");
+        return -1;
+      }
+      stack[stack_top].push_pc = pc;
+      stack[stack_top].push_op = op;
+      stack_top++;
+    }
+    else if (is_pop_op(op)) {
+      /* POP: must match top of stack */
+      if (stack_top == 0) {
+        PyErr_Format(PyExc_RuntimeError,
+                     "POP at pc %u with no matching PUSH", pc);
+        return -1;
+      }
+      KosOpCode expected_pop = pop_for_push(stack[stack_top - 1].push_op);
+      if (op != expected_pop) {
+        PyErr_Format(PyExc_RuntimeError,
+                     "extent mismatch at pc %u: expected %d, got %d",
+                     pc, (int) expected_pop, (int) op);
+        return -1;
+      }
+      stack_top--;
+    }
+  }
 
-  extents = PyMem_New(KosExtentDesc, extent_cap);
-  if (! extents) {
-    PyErr_NoMemory();
+  if (stack_top != 0) {
+    PyErr_Format(PyExc_RuntimeError, "unclosed extent at pc %u",
+                 stack[stack_top - 1].push_pc);
     return -1;
   }
 
-  top_extent_id = PyMem_New(uint16_t, code_len);
-  if (! top_extent_id) {
-    PyMem_Del(extents);
-    PyErr_NoMemory();
-    return -1;
-  }
+  return 0;
+}
 
+
+/**
+   Fill extent table and top_extent_id from instruction stream. Walk code;
+   on PUSH_* allocate extent descriptor, push onto stack; on POP_* close
+   extent, propagate top_extent_id to all pcs inside the block.
+   Call when extent_count > 0; buffers are pre-allocated in unified block.
+*/
+static int derive_extents_fill(
+    KosOp *code,
+    uint32_t code_len,
+    KosExtentDesc *extents_out,
+    uint32_t extent_count,
+    uint16_t *top_extent_id_out) {
+
+  ExtentStackEntry stack[DERIVE_EXTENT_STACK_MAX];
+  uint32_t stack_top = 0;
+  uint32_t extent_idx = 0;
+
+  /* Initialize all pcs to "no extent" */
   for (uint32_t i = 0; i < code_len; i++) {
-    top_extent_id[i] = KOS_EXTENT_NONE;
+    top_extent_id_out[i] = KOS_EXTENT_NONE;
   }
 
   for (uint32_t pc = 0; pc < code_len; pc++) {
     KosOpCode op = (KosOpCode) code[pc].op;
     uint16_t arg = code[pc].arg;
 
-    if (push_to_pop_table[op] != KOS_OP_NOOP) {
+    if (is_push_op(op)) {
       if (stack_top >= DERIVE_EXTENT_STACK_MAX) {
         PyErr_SetString(PyExc_RuntimeError,
                         "extent nesting too deep");
-        goto failure;
+        return -1;
+      }
+      if (extent_idx >= extent_count) {
+        PyErr_SetString(PyExc_RuntimeError, "extent count mismatch");
+        return -1;
       }
 
-      if (extent_count >= extent_cap) {
-        KosExtentDesc *n = PyMem_Resize(extents, KosExtentDesc, extent_cap * 2);
-        if (! n) {
-          PyErr_NoMemory();
-          goto failure;
-        }
-        extents = n;
-        extent_cap *= 2;
-      }
-
+      /* Build extent descriptor; parent is current stack top */
       uint32_t parent_id = KOS_EXTENT_NONE;
       if (stack_top > 0) {
         parent_id = stack[stack_top - 1].extent_id;
       }
 
-      KosExtentDesc *e = &extents[extent_count];
-      e->kind = push_to_kind_table[op];
+      KosExtentDesc *e = &extents_out[extent_idx];
+      e->kind = kind_for_push(op);
       e->push_pc = pc;
       e->pop_pc = 0;
       e->parent_extent_id = parent_id;
@@ -825,71 +1266,64 @@ static int derive_extents(
       e->u.try_finally.finally_pc = KOS_EXTENT_NONE;
       e->u.try_finally.exit_pc = KOS_EXTENT_NONE;
 
+      /* Fill kind-specific handler targets from instruction arg */
       switch (e->kind) {
       case KOS_EXT_TRY:
       case KOS_EXT_FINALLY:
         e->u.try_finally.except_pc = arg;
-        e->u.try_finally.finally_pc = (e->kind == KOS_EXT_FINALLY) ? arg : KOS_EXTENT_NONE;
+        e->u.try_finally.finally_pc =
+            (e->kind == KOS_EXT_FINALLY) ? arg : KOS_EXTENT_NONE;
         break;
       case KOS_EXT_LOOP:
-        e->u.loop.continue_pc = pc + 1;
-        /* break_pc = pop_pc + 1; derived at runtime */
-        break;
       case KOS_EXT_FOREACH:
         e->u.loop.continue_pc = pc + 1;
-        /* break_pc is derived at runtime as pop_pc + 1 */
         break;
       case KOS_EXT_WITH:
       case KOS_EXT_DYN_WITH:
         e->u.exit_only.exit_pc = arg;
-        break;
-      case KOS_EXT_PROMPT:
-      case KOS_EXT_SHIFT:
         break;
       default:
         break;
       }
 
       stack[stack_top].push_pc = pc;
-      stack[stack_top].extent_id = extent_count;
+      stack[stack_top].extent_id = extent_idx;
       stack[stack_top].push_op = op;
-      /* So PUSH_CC (and other PUSH) can look up their extent at runtime */
-      top_extent_id[pc] = (uint16_t) extent_count;
+      top_extent_id_out[pc] = (uint16_t) extent_idx;  /* PUSH pc is inside */
       stack_top++;
-      extent_count++;
+      extent_idx++;
     }
-    else if (is_pop_op_table[op]) {
+    else if (is_pop_op(op)) {
       if (stack_top == 0) {
         PyErr_Format(PyExc_RuntimeError,
                      "POP at pc %u with no matching PUSH", pc);
-        goto failure;
+        return -1;
       }
 
-      KosOpCode expected_pop = push_to_pop_table[stack[stack_top - 1].push_op];
+      KosOpCode expected_pop = pop_for_push(stack[stack_top - 1].push_op);
       if (op != expected_pop) {
         PyErr_Format(PyExc_RuntimeError,
                      "extent mismatch at pc %u: expected %d, got %d",
                      pc, (int) expected_pop, (int) op);
-        goto failure;
+        return -1;
       }
 
       uint32_t eid = stack[stack_top - 1].extent_id;
-      extents[eid].pop_pc = pc;
+      extents_out[eid].pop_pc = pc;
 
-      if (extents[eid].push_pc >= extents[eid].pop_pc) {
+      /* Sanity: push must precede pop */
+      if (extents_out[eid].push_pc >= extents_out[eid].pop_pc) {
         PyErr_Format(PyExc_RuntimeError,
                      "invalid extent range: push_pc %u >= pop_pc %u",
-                     extents[eid].push_pc, extents[eid].pop_pc);
-        goto failure;
+                     extents_out[eid].push_pc, extents_out[eid].pop_pc);
+        return -1;
       }
 
-      /* Extent range is [push_pc, pop_pc): push_pc and body are inside; pop_pc
-       * is outside (executing the POP exits the extent).  Do not set
-       * top_extent_id[pc]; kos_extent_top at pop_pc returns KOS_EXTENT_NONE. */
-      uint32_t enter_pc = extents[eid].push_pc + 1;
+      /* Propagate extent id to all pcs inside [push_pc+1, pop_pc) */
+      uint32_t enter_pc = extents_out[eid].push_pc + 1;
       for (uint32_t j = enter_pc; j < pc; j++) {
-        if (top_extent_id[j] == KOS_EXTENT_NONE) {
-          top_extent_id[j] = (uint16_t) eid;
+        if (top_extent_id_out[j] == KOS_EXTENT_NONE) {
+          top_extent_id_out[j] = (uint16_t) eid;
         }
       }
 
@@ -901,51 +1335,10 @@ static int derive_extents(
     PyErr_Format(PyExc_RuntimeError,
                  "unclosed extent at pc %u",
                  stack[stack_top - 1].push_pc);
-    goto failure;
-  }
-
-  if (extent_count == 0) {
-    PyMem_Del(extents);
-    PyMem_Del(top_extent_id);
-    *out_extents = NULL;
-    *out_extent_len = 0;
-    *out_top_extent_id = NULL;
-    *out_allocation = 0;
-    return 0;
-  }
-
-  size_t extent_bytes = extent_count * sizeof(KosExtentDesc);
-  size_t top_bytes = code_len * sizeof(uint16_t);
-  size_t block_size = extent_bytes + top_bytes;
-  size_t page_size = (size_t) sysconf(_SC_PAGE_SIZE);
-  block_size = ((block_size + page_size - 1) / page_size) * page_size;
-
-  void *block = NULL;
-  if (posix_memalign(&block, page_size, block_size)) {
-    PyMem_Del(extents);
-    PyMem_Del(top_extent_id);
-    PyErr_SetString(PyExc_MemoryError,
-                    "Failed to allocate extent table storage");
     return -1;
   }
 
-  memcpy(block, extents, extent_bytes);
-  memcpy((char *) block + extent_bytes, top_extent_id, top_bytes);
-
-  PyMem_Del(extents);
-  PyMem_Del(top_extent_id);
-
-  *out_extents = block;
-  *out_extent_len = extent_count;
-  *out_top_extent_id = (uint16_t *) ((char *) block + extent_bytes);
-  *out_allocation = block_size;
-
   return 0;
-
- failure:
-  PyMem_Del(extents);
-  PyMem_Del(top_extent_id);
-  return -1;
 }
 
 
@@ -957,7 +1350,7 @@ static int derive_extents(
 static int is_jump_op(KosOpCode op) {
 
   return (kos_opcode_style(op) == KOSTYLE_LABEL
-          && push_to_pop_table[op] == KOS_OP_NOOP);
+          && !is_push_op(op));
 }
 
 
@@ -977,6 +1370,9 @@ static int validate_jump_locality(
     return 0;
   }
 
+  /* For each control-flow jump, target must be inside or at boundary of
+     source extent. PUSH_* handler args may jump out; JUMP/JUMP_TRUE etc
+     must stay local. */
   for (uint32_t src_pc = 0; src_pc < code_len; src_pc++) {
     if (! is_jump_op((KosOpCode) code[src_pc].op)) {
       continue;
@@ -1036,6 +1432,7 @@ static int validate_iter_next_in_foreach(
     return 0;
   }
 
+  /* ITER_NEXT must be inside a PUSH_FOREACH; walk parent chain to find */
   for (uint32_t pc = 0; pc < code_len; pc++) {
     if ((KosOpCode) code[pc].op != KOS_OP_ITER_NEXT) {
       continue;
@@ -1064,163 +1461,134 @@ static int validate_iter_next_in_foreach(
 /* === Code initialization === */
 
 
+/**
+   Initialize KosCode from instruction stream. Pipeline:
+   1. Collect: simulate squashing, build label map, intern constants,
+      build extra rows. Yields exact sizes (code_len, pos_count, cpool_len,
+      extra_len, extent_count).
+   2. Allocate: single posix_memalign block for all regions.
+   3. Emit: write instructions, positions, cpool, extra into block.
+   4. Finalize: derive_extents_fill or validate_extents; validate jumps;
+      mprotect(PROT_READ); set KosCode fields.
+*/
 static int code_instr_init(PyObject *self, PyObject *instr) {
 
   SAYF("in code_instr_init(%R, %R)", self, instr);
-
-  KosOp *code = NULL;
-  KosPosition *pos = NULL;
-  PyObject **cpool = NULL;
-
-  uint32_t instr_l = 0;
-  uint32_t pos_count = 0;
-  uint32_t const_count = 0;
-  size_t alloc_size = 0;
 
   Py_ssize_t _instr_l = PySequence_Fast_GET_SIZE(instr);
   if (_instr_l < 0) {
     return -1;
   }
-  instr_l = (uint32_t) _instr_l;
-
-  if (instr_l == 0) {
+  if (_instr_l == 0) {
     PyErr_SetString(PyExc_ValueError,
                     "Code must have at least one instruction"
                     " (e.g. RETURN to return None)");
     return -1;
   }
 
-  /* First pass: count constants and position changes (worst case) */
-  for (uint32_t i = instr_l; i--; ) {
-    PyObject *pair = PySequence_Fast_GET_ITEM(instr, i);
-    PyObject *a = PySequence_Fast_GET_ITEM(pair, 0);
-
-    if (! PyLong_Check(a)) {
-      PyErr_Format(PyExc_RuntimeError, "Code instruction undefined"
-                   " %R", a);
-      return -1;
-    }
-
-    long lop = PyLong_AsLong(a);
-    if ((lop < (long) KOS_OP_NOOP) || (lop > (long) KOS_OP_THEEND)) {
-      PyErr_Format(PyExc_RuntimeError, "Code instruction undefined"
-                   " %R", a);
-      return -1;
-    }
-
-    KosOpStyle style = opcode_styles[(KosOpCode) lop];
-    if (style == KOSTYLE_CONST || style == KOSTYLE_VAR) {
-      const_count++;
-    }
-
-    if ((KosOpCode) lop == KOS_OP_POSITION) {
-      pos_count++;
-    }
-  }
-
-  /* Allocate storage */
-  if (code_alloc_storage(instr_l, (void **) &code,
-                         pos_count, (void **) &pos,
-                         const_count, (void **) &cpool,
-                         &alloc_size)) {
+  PyObject *instr_fast = PySequence_Fast(instr, "instructions must be sequence");
+  if (! instr_fast) {
     return -1;
   }
 
-  SAYF("allocated %zu bytes of storage: %p, %p, %p",
-       alloc_size, code, pos, cpool);
-  KosCode_ALLOCATION(self) = alloc_size;
-
-  /* Initialize code array */
-  for (uint32_t i = instr_l; i--; ) {
-    code[i].op = KOS_OP_NOOP;
-    code[i].arg = 0;
+  /* Phase 1: Collect — derive exact sizes, build label map, cpool, extra rows */
+  CodeCollect coll = { 0 };
+  if (code_collect(self, instr_fast, &coll)) {
+    Py_DECREF(instr_fast);
+    return -1;
   }
 
-  /* Initialize positions array */
-  for (uint32_t i = pos_count; i--; ) {
-    pos[i].index = 0;
-    pos[i].line = 0;
-    pos[i].col = 0;
-  }
+  uint32_t code_len = coll.code_len;
+  uint32_t pos_count = coll.pos_count;
+  uint32_t cpool_len = coll.cpool_len;
+  uint32_t extra_len = coll.extra_len;
+  uint32_t extent_count = coll.extent_count;
 
-  /* Initialize constant pool */
-  for (uint32_t i = const_count; i--; ) {
-    cpool[i] = NULL;
-  }
-
-  /* Process instructions */
-  if (process_instr(self, instr, &instr_l, code,
-                    &pos_count, pos,
-                    &const_count, cpool)) {
-    goto failure;
-  }
-
-  /* Derive extent table */
+  /* Phase 2: Allocate — single block for all regions */
+  void *base = NULL;
+  size_t alloc_size = 0;
+  KosOp *code = NULL;
+  KosPosition *pos = NULL;
+  PyObject **cpool = NULL;
+  KosExtra *extra = NULL;
   KosExtentDesc *extents = NULL;
-  uint32_t extent_len = 0;
   uint16_t *top_extent_id = NULL;
-  size_t extent_alloc = 0;
 
-  if (derive_extents(code, instr_l, &extents, &extent_len,
-                     &top_extent_id, &extent_alloc)) {
-    goto failure;
+  if (code_alloc_unified(&coll, &base, &alloc_size,
+                         &code, &pos, &cpool, &extra,
+                         &extents, &top_extent_id)) {
+    code_collect_clear(&coll);
+    Py_DECREF(instr_fast);
+    return -1;
+  }
+
+  /* Phase 3: Emit — write instructions and tables into block */
+  if (code_emit(self, instr_fast, &coll, code, pos, cpool, extra)) {
+    code_collect_clear(&coll);
+    mprotect(base, alloc_size, PROT_WRITE);
+    free(base);
+    Py_DECREF(instr_fast);
+    return -1;
+  }
+
+  code_collect_clear(&coll);
+  Py_DECREF(instr_fast);
+
+  /* Phase 4: Finalize — fill extent table, validate, mprotect */
+  if (extent_count > 0) {
+    if (derive_extents_fill(code, code_len, extents, extent_count,
+                            top_extent_id)) {
+      mprotect(base, alloc_size, PROT_WRITE);
+      free(base);
+      return -1;
+    }
+  }
+  else if (validate_extents(code, code_len)) {
+    /* No PUSH_* but has POP_*: reject malformed bytecode */
+    mprotect(base, alloc_size, PROT_WRITE);
+    free(base);
+    return -1;
   }
 
   if (extents && top_extent_id &&
-      validate_jump_locality(code, instr_l, extents, extent_len,
+      validate_jump_locality(code, code_len, extents, extent_count,
                              top_extent_id)) {
-    if (extents) {
-      free(extents);
-    }
-    goto failure;
+    mprotect(base, alloc_size, PROT_WRITE);
+    free(base);
+    return -1;
   }
 
   if (extents && top_extent_id &&
-      validate_iter_next_in_foreach(code, instr_l, extents, extent_len,
-                                    top_extent_id)) {
-    if (extents) {
-      free(extents);
-    }
-    goto failure;
+      validate_iter_next_in_foreach(code, code_len, extents,
+                                    extent_count, top_extent_id)) {
+    mprotect(base, alloc_size, PROT_WRITE);
+    free(base);
+    return -1;
   }
 
-  /* Make storage read-only */
-  if (mprotect(code, alloc_size, PROT_READ)) {
-    if (extents) {
-      mprotect(extents, extent_alloc, PROT_WRITE);
-      free(extents);
-    }
+  /* Seal block read-only; single mprotect for entire allocation */
+  if (mprotect(base, alloc_size, PROT_READ)) {
+    mprotect(base, alloc_size, PROT_WRITE);
+    free(base);
     PyErr_SetFromErrno(PyExc_OSError);
-    goto failure;
+    return -1;
   }
 
-  if (extents && extent_alloc) {
-    if (mprotect(extents, extent_alloc, PROT_READ)) {
-      mprotect(extents, extent_alloc, PROT_WRITE);
-      free(extents);
-      PyErr_SetFromErrno(PyExc_OSError);
-      goto failure;
-    }
-  }
-
-  KosCode_CODE_LEN(self) = instr_l;
+  /* Attach block sub-regions to KosCode */
+  KosCode_ALLOCATION(self) = alloc_size;
+  KosCode_CODE_LEN(self) = code_len;
   KosCode_CODE(self) = code;
   KosCode_POS_LEN(self) = pos_count;
   KosCode_POS(self) = pos;
-  KosCode_CPOOL_LEN(self) = const_count;
+  KosCode_CPOOL_LEN(self) = cpool_len;
   KosCode_CPOOL(self) = cpool;
-  KosCode_EXTENT_LEN(self) = extent_len;
+  KosCode_EXTRA_LEN(self) = extra_len;
+  KosCode_EXTRA(self) = extra;
+  KosCode_EXTENT_LEN(self) = extent_count;
   KosCode_EXTENTS(self) = extents;
   KosCode_TOP_EXTENT_ID(self) = top_extent_id;
-  ((KosCode *) self)->extent_allocation = extent_alloc;
 
   return 0;
-
- failure:
-  if (code) {
-    free(code);
-  }
-  return -1;
 }
 
 
@@ -1279,17 +1647,10 @@ static int code_clear(PyObject *self) {
     Py_DECREF(KosCode_GET_CONST(self, i));
   }
 
-  void *data = KosCode_CODE(self);
-  if (data) {
-    mprotect(data, KosCode_ALLOCATION(self), PROT_WRITE);
-    free(data);
-  }
-
-  KosExtentDesc *exts = KosCode_EXTENTS(self);
-  size_t ext_alloc = ((KosCode *) self)->extent_allocation;
-  if (exts && ext_alloc) {
-    mprotect(exts, ext_alloc, PROT_WRITE);
-    free(exts);
+  void *base = KosCode_CODE(self);
+  if (base) {
+    mprotect(base, KosCode_ALLOCATION(self), PROT_WRITE);
+    free(base);
   }
 
   KosCode_ALLOCATION(self) = 0;
@@ -1299,10 +1660,11 @@ static int code_clear(PyObject *self) {
   KosCode_POS(self) = NULL;
   KosCode_CPOOL_LEN(self) = 0;
   KosCode_CPOOL(self) = NULL;
+  KosCode_EXTRA_LEN(self) = 0;
+  KosCode_EXTRA(self) = NULL;
   KosCode_EXTENT_LEN(self) = 0;
   KosCode_EXTENTS(self) = NULL;
   KosCode_TOP_EXTENT_ID(self) = NULL;
-  ((KosCode *) self)->extent_allocation = 0;
 
   return 0;
 }
@@ -1320,17 +1682,10 @@ static void code_dealloc(PyObject *self) {
     Py_DECREF(KosCode_GET_CONST(self, i));
   }
 
-  void *data = KosCode_CODE(self);
-  if (data) {
-    mprotect(data, KosCode_ALLOCATION(self), PROT_WRITE);
-    free(data);
-  }
-
-  KosExtentDesc *exts = KosCode_EXTENTS(self);
-  size_t ext_alloc = ((KosCode *) self)->extent_allocation;
-  if (exts && ext_alloc) {
-    mprotect(exts, ext_alloc, PROT_WRITE);
-    free(exts);
+  void *base = KosCode_CODE(self);
+  if (base) {
+    mprotect(base, KosCode_ALLOCATION(self), PROT_WRITE);
+    free(base);
   }
 
   KosCode_ALLOCATION(self) = 0;
@@ -1340,10 +1695,11 @@ static void code_dealloc(PyObject *self) {
   KosCode_POS(self) = NULL;
   KosCode_CPOOL_LEN(self) = 0;
   KosCode_CPOOL(self) = NULL;
+  KosCode_EXTRA_LEN(self) = 0;
+  KosCode_EXTRA(self) = NULL;
   KosCode_EXTENT_LEN(self) = 0;
   KosCode_EXTENTS(self) = NULL;
   KosCode_TOP_EXTENT_ID(self) = NULL;
-  ((KosCode *) self)->extent_allocation = 0;
 
   Py_TYPE(self)->tp_free(self);
 }
@@ -1449,7 +1805,9 @@ PyObject *KosCode_New(
   KosCode_EXTENT_LEN(self) = 0;
   KosCode_EXTENTS(self) = NULL;
   KosCode_TOP_EXTENT_ID(self) = NULL;
-  ((KosCode *) self)->extent_allocation = 0;
+
+  KosCode_EXTRA_LEN(self) = 0;
+  KosCode_EXTRA(self) = NULL;
 
   KosCode_FAUX(self) = NULL;
   KosCode_EXTRAS(self) = PyDict_New();
@@ -1771,6 +2129,7 @@ static PyObject *create_opstyle_enum(void) {
   int_enum(enum_dict, KOSTYLE_CONST);
   int_enum(enum_dict, KOSTYLE_VAR);
   int_enum(enum_dict, KOSTYLE_FASTVAR);
+  int_enum(enum_dict, KOSTYLE_EXTRA);
 
   return create_int_enum("OpStyle", enum_dict);
 }
@@ -1814,8 +2173,6 @@ static PyObject *create_opcode_enum(void) {
 
 
 int koskari_bytecode_init(PyObject *mod) {
-
-  init_extent_tables();
 
   PyObject *dict = PyModule_GetDict(mod);
   if (! dict) {

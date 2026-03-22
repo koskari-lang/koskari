@@ -47,6 +47,11 @@ _OPCODE_NAMES, _OPCODE_STYLES = _opcode_maps()
 
 _PUSH_NS_OPS = frozenset(('KOS_OP_PUSH_NS', 'KOS_OP_PUSH_COLLECT'))
 
+# EXTRA opcode schema: op_name -> (f0, f1, f2, f3) field kinds
+_EXTRA_SCHEMAS = {
+    'KOS_OP_CALL_FAST_ATTR_NAMES': ('fast', 'const', 'const', 'count'),
+}
+
 
 def _get_code(x):
     """
@@ -191,7 +196,8 @@ def _format_arg(
         cpool,
         local_names,
         closure_names,
-        ns_label=None):
+        ns_label=None,
+        op_int=None):
     """
     Format an opcode argument for display. Uses constant pool, local
     names, and closure names when the argument is an index into them.
@@ -206,8 +212,52 @@ def _format_arg(
     :param local_names: sequence of local sym names from nspec
     :param closure_names: sequence of closure sym names from nspec
     :param ns_label: optional inline namespace label for PUSH_NS / PUSH_CLASS
+    :param op_int: opcode int (for KOSTYLE_EXTRA schema lookup)
     :return: string description of the argument
     """
+
+    if op_style == OpStyle.KOSTYLE_EXTRA:
+        if op_int is not None:
+            op_name = _OPCODE_NAMES.get(op_int, '')
+            schema = _EXTRA_SCHEMAS.get(op_name)
+            if schema:
+                try:
+                    a0, a1, a2, a3 = code.extra_tuple(arg)
+                except (IndexError, TypeError):
+                    return str(arg)
+                parts = []
+                for slot, (val, fk) in enumerate(((a0, schema[0]),
+                                                  (a1, schema[1]),
+                                                  (a2, schema[2]),
+                                                  (a3, schema[3]))):
+                    if fk == 'const' or fk == 'var':
+                        if 0 <= val < len(cpool):
+                            parts.append('%s#%d (%s)' % (
+                                'c' if fk == 'const' else 'v',
+                                val, _format_constant(cpool[val])))
+                        else:
+                            parts.append('%d' % val)
+                    elif fk == 'fast':
+                        n_local = len(local_names) if local_names else 0
+                        if val < n_local:
+                            name = (local_names[val]
+                                    if local_names else 'local[%d]' % val)
+                            parts.append('fast %d (%s)' % (val, repr(name)))
+                        else:
+                            idx = val - n_local
+                            if closure_names and 0 <= idx < len(closure_names):
+                                parts.append('fast %d (closure %s)' % (
+                                    val, repr(closure_names[idx])))
+                            else:
+                                parts.append('fast %d' % val)
+                    elif fk == 'count':
+                        parts.append(str(val))
+                    elif fk == 'label':
+                        parts.append('-> %d' % val)
+                    else:
+                        parts.append(str(val))
+                return '%d (%s)' % (arg, ', '.join(parts))
+        return str(arg)
 
     if op_style == OpStyle.KOSTYLE_CONST:
         if 0 <= arg < len(cpool):
@@ -345,6 +395,7 @@ def dis(x, file=None):
         arg_str = _format_arg(
             code, op_style, arg, cpool, local_syms, closure_syms,
             ns_label=ns_label,
+            op_int=op_int,
         )
         pos_str = ''
         try:
@@ -375,6 +426,7 @@ def _get_instruction_lines(code):
         arg_str = _format_arg(
             code, op_style, arg, cpool, local_syms, closure_syms,
             ns_label=ns_label,
+            op_int=op_int,
         )
         yield i, op_name, arg_str
 
