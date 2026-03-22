@@ -12,8 +12,9 @@
 # along with this library; if not, see <http://www.gnu.org/licenses/>.
 
 """
-Tests for CALL_ATTR opcode. Stack [name, obj, arg_0, ..., arg_{N-1}].
-Resolves obj.name and invokes with (obj, *args) for unbound fn, else (*args).
+Tests for CALL_ATTR opcode. EXTRA schema CONST (attr name), COUNT (arg count).
+Stack [obj, arg_0, ..., arg_{N-1}]. Resolves obj.name and invokes with
+(obj, *args) for unbound fn, else (*args).
 """
 
 from tests import make_callable
@@ -28,14 +29,13 @@ class TestCallAttr(CevalTest):
 
     async def test_call_attr_zero_args_str_upper(self):
         """
-        CALL_ATTR 0: "hello".upper() -> "HELLO"
-        Stack: [name="upper", obj="hello"]
+        CALL_ATTR ("upper", 0): "hello".upper() -> "HELLO"
+        Stack: [obj="hello"]
         """
 
         code, ns = build_expr([
-            ["CONST", "upper"],
             ["CONST", "hello"],
-            ["CALL_ATTR", 0],
+            ["CALL_ATTR", ("upper", 0, 0, 0)],
             ["RETURN", 1],
         ])
         fn = make_callable(code, ns)
@@ -45,15 +45,14 @@ class TestCallAttr(CevalTest):
 
     async def test_call_attr_one_arg_str_split(self):
         """
-        CALL_ATTR 1: "a-b-c".split("-") -> ["a", "b", "c"]
-        Stack: [name, obj, arg_0]
+        CALL_ATTR ("split", 1): "a-b-c".split("-") -> ["a", "b", "c"]
+        Stack: [obj, arg_0]
         """
 
         code, ns = build_expr([
-            ["CONST", "split"],
             ["CONST", "a-b-c"],
             ["CONST", "-"],
-            ["CALL_ATTR", 1],
+            ["CALL_ATTR", ("split", 1, 0, 0)],
             ["RETURN", 1],
         ])
         fn = make_callable(code, ns)
@@ -63,15 +62,14 @@ class TestCallAttr(CevalTest):
 
     async def test_call_attr_two_args_str_replace(self):
         """
-        CALL_ATTR 2: "hello".replace("l", "L") -> "heLLo"
+        CALL_ATTR ("replace", 2): "hello".replace("l", "L") -> "heLLo"
         """
 
         code, ns = build_expr([
-            ["CONST", "replace"],
             ["CONST", "hello"],
             ["CONST", "l"],
             ["CONST", "L"],
-            ["CALL_ATTR", 2],
+            ["CALL_ATTR", ("replace", 2, 0, 0)],
             ["RETURN", 1],
         ])
         fn = make_callable(code, ns)
@@ -85,9 +83,8 @@ class TestCallAttr(CevalTest):
         """
 
         code, ns = build_expr([
-            ["CONST", "nonexistent"],
             ["CONST", 42],
-            ["CALL_ATTR", 0],
+            ["CALL_ATTR", ("nonexistent", 0, 0, 0)],
             ["RETURN", 1],
         ])
         fn = make_callable(code, ns)
@@ -104,9 +101,8 @@ class TestCallAttr(CevalTest):
         """
 
         code, ns = build_expr([
-            ["CONST", "numerator"],
             ["CONST", 1],
-            ["CALL_ATTR", 0],
+            ["CALL_ATTR", ("numerator", 0, 0, 0)],
             ["RETURN", 1],
         ])
         fn = make_callable(code, ns)
@@ -133,10 +129,9 @@ class TestCallAttrUnboundPath(CevalTest):
 
         c = C()
         code, ns = build_expr([
-            ["CONST", "add_one"],
             ["CONST", c],
             ["CONST", 41],
-            ["CALL_ATTR", 1],
+            ["CALL_ATTR", ("add_one", 1, 0, 0)],
             ["RETURN", 1],
         ])
         fn = make_callable(code, ns)
@@ -160,9 +155,8 @@ class TestCallAttrInstanceDictShadow(CevalTest):
         c = C()
         c.m = lambda: 99
         code, ns = build_expr([
-            ["CONST", "m"],
             ["CONST", c],
-            ["CALL_ATTR", 0],
+            ["CALL_ATTR", ("m", 0, 0, 0)],
             ["RETURN", 1],
         ])
         fn = make_callable(code, ns)
@@ -188,10 +182,9 @@ class TestCallAttrGetattr(CevalTest):
 
         c = C()
         code, ns = build_expr([
-            ["CONST", "dynamic"],
             ["CONST", c],
             ["CONST", 21],
-            ["CALL_ATTR", 1],
+            ["CALL_ATTR", ("dynamic", 1, 0, 0)],
             ["RETURN", 1],
         ])
         fn = make_callable(code, ns)
@@ -221,9 +214,8 @@ class TestCallAttrProperty(CevalTest):
 
         c = C()
         code, ns = build_expr([
-            ["CONST", "getter"],
             ["CONST", c],
-            ["CALL_ATTR", 0],
+            ["CALL_ATTR", ("getter", 0, 0, 0)],
             ["RETURN", 1],
         ])
         fn = make_callable(code, ns)
@@ -255,9 +247,8 @@ class TestCallAttrCustomGetattribute(CevalTest):
 
         c = C()
         code, ns = build_expr([
-            ["CONST", "custom"],
             ["CONST", c],
-            ["CALL_ATTR", 0],
+            ["CALL_ATTR", ("custom", 0, 0, 0)],
             ["RETURN", 1],
         ])
         fn = make_callable(code, ns)
@@ -279,10 +270,9 @@ class TestCallAttrCustomGetattribute(CevalTest):
 
         c = C()
         code, ns = build_expr([
-            ["CONST", "f"],
             ["CONST", c],
             ["CONST", 41],
-            ["CALL_ATTR", 1],
+            ["CALL_ATTR", ("f", 1, 0, 0)],
             ["RETURN", 1],
         ])
         fn = make_callable(code, ns)

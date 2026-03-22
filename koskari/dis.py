@@ -29,30 +29,6 @@ from koskari.lib import Code, Function, OpCode, OpStyle
 from koskari.types import NamespaceSpec
 
 
-def _opcode_maps():
-    """
-    Build opcode int -> name and opcode int -> style from OpCode enum
-    """
-
-    names = {}
-    styles = {}
-    for op in OpCode:
-        names[op.value] = op.name
-        style = op.style
-        styles[op.value] = getattr(style, 'value', style)
-    return names, styles
-
-
-_OPCODE_NAMES, _OPCODE_STYLES = _opcode_maps()
-
-_PUSH_NS_OPS = frozenset(('KOS_OP_PUSH_NS', 'KOS_OP_PUSH_COLLECT'))
-
-# EXTRA opcode schema: op_name -> (f0, f1, f2, f3) field kinds
-_EXTRA_SCHEMAS = {
-    'KOS_OP_CALL_FAST_ATTR_NAMES': ('fast', 'const', 'const', 'count'),
-}
-
-
 def _get_code(x):
     """
     Return x if it is a Code instance, else None.
@@ -170,17 +146,17 @@ def _build_ns_const_map(code):
     last_nspec_cpool_idx = None
     for i in range(code.length()):
         op_int, arg = code.oparg(i)
-        op_name = _OPCODE_NAMES.get(op_int)
-        if op_name == 'KOS_OP_CONST':
+        op = OpCode(op_int)
+        if op == OpCode.KOS_OP_CONST:
             if 0 <= arg < len(cpool) and isinstance(cpool[arg], NamespaceSpec):
                 last_nspec_cpool_idx = arg
             else:
                 last_nspec_cpool_idx = None
-        elif op_name == 'KOS_OP_PUSH_NS':
+        elif op == OpCode.KOS_OP_PUSH_NS:
             if last_nspec_cpool_idx is not None:
                 result[i] = last_nspec_cpool_idx
             last_nspec_cpool_idx = None
-        elif op_name == 'KOS_OP_PUSH_COLLECT':
+        elif op == OpCode.KOS_OP_PUSH_COLLECT:
             if 0 <= arg < len(cpool) and isinstance(cpool[arg], NamespaceSpec):
                 result[i] = arg
             last_nspec_cpool_idx = None
@@ -197,7 +173,7 @@ def _format_arg(
         local_names,
         closure_names,
         ns_label=None,
-        op_int=None):
+        extra_schema=None):
     """
     Format an opcode argument for display. Uses constant pool, local
     names, and closure names when the argument is an index into them.
@@ -212,32 +188,29 @@ def _format_arg(
     :param local_names: sequence of local sym names from nspec
     :param closure_names: sequence of closure sym names from nspec
     :param ns_label: optional inline namespace label for PUSH_NS / PUSH_CLASS
-    :param op_int: opcode int (for KOSTYLE_EXTRA schema lookup)
+    :param extra_schema: optional 4-tuple (f0, f1, f2, f3) for KOSTYLE_EXTRA
     :return: string description of the argument
     """
 
     if op_style == OpStyle.KOSTYLE_EXTRA:
-        if op_int is not None:
-            op_name = _OPCODE_NAMES.get(op_int, '')
-            schema = _EXTRA_SCHEMAS.get(op_name)
+        if extra_schema is not None:
+            schema = extra_schema
             if schema:
                 try:
                     a0, a1, a2, a3 = code.extra_tuple(arg)
                 except (IndexError, TypeError):
                     return str(arg)
                 parts = []
-                for slot, (val, fk) in enumerate(((a0, schema[0]),
-                                                  (a1, schema[1]),
-                                                  (a2, schema[2]),
-                                                  (a3, schema[3]))):
-                    if fk == 'const' or fk == 'var':
+                for val, fk in ((a0, schema[0]), (a1, schema[1]),
+                                (a2, schema[2]), (a3, schema[3])):
+                    if fk == OpStyle.KOSTYLE_CONST or fk == OpStyle.KOSTYLE_VAR:
                         if 0 <= val < len(cpool):
                             parts.append('%s#%d (%s)' % (
-                                'c' if fk == 'const' else 'v',
+                                'c' if fk == OpStyle.KOSTYLE_CONST else 'v',
                                 val, _format_constant(cpool[val])))
                         else:
                             parts.append('%d' % val)
-                    elif fk == 'fast':
+                    elif fk == OpStyle.KOSTYLE_FASTVAR:
                         n_local = len(local_names) if local_names else 0
                         if val < n_local:
                             name = (local_names[val]
@@ -250,9 +223,9 @@ def _format_arg(
                                     val, repr(closure_names[idx])))
                             else:
                                 parts.append('fast %d' % val)
-                    elif fk == 'count':
+                    elif fk == OpStyle.KOSTYLE_COUNT:
                         parts.append(str(val))
-                    elif fk == 'label':
+                    elif fk == OpStyle.KOSTYLE_LABEL:
                         parts.append('-> %d' % val)
                     else:
                         parts.append(str(val))
@@ -387,15 +360,16 @@ def dis(x, file=None):
     file.write('Instructions (%d):\n' % n)
     for i in range(n):
         op_int, arg = code.oparg(i)
-        op_name = _OPCODE_NAMES.get(op_int, 'OP_%d' % op_int)
-        op_style = _OPCODE_STYLES.get(op_int, OpStyle.KOSTYLE_NOARG)
+        op = OpCode(op_int)
+        op_style = getattr(op.style, 'value', op.style)
+        extra_schema = tuple(op.extra) if getattr(op, 'extra', None) else None
         ns_label = None
         if i in ns_const_map:
             ns_label = _format_nspec_inline(ns_const_map[i], cpool[ns_const_map[i]])
         arg_str = _format_arg(
             code, op_style, arg, cpool, local_syms, closure_syms,
             ns_label=ns_label,
-            op_int=op_int,
+            extra_schema=extra_schema,
         )
         pos_str = ''
         try:
@@ -403,7 +377,7 @@ def dis(x, file=None):
             pos_str = '  # line %d, col %d' % (line, col)
         except (IndexError, TypeError):
             pass
-        file.write('  %3d  %-24s %s%s\n' % (i, op_name, arg_str, pos_str))
+        file.write('  %3d  %-24s %s%s\n' % (i, op.name, arg_str, pos_str))
     file.write('\n')
 
 
@@ -418,17 +392,18 @@ def _get_instruction_lines(code):
     n = code.length()
     for i in range(n):
         op_int, arg = code.oparg(i)
-        op_name = _OPCODE_NAMES.get(op_int, 'OP_%d' % op_int)
-        op_style = _OPCODE_STYLES.get(op_int, OpStyle.KOSTYLE_NOARG)
+        op = OpCode(op_int)
+        op_style = getattr(op.style, 'value', op.style)
+        extra_schema = tuple(op.extra) if getattr(op, 'extra', None) else None
         ns_label = None
         if i in ns_const_map:
             ns_label = _format_nspec_inline(ns_const_map[i], cpool[ns_const_map[i]])
         arg_str = _format_arg(
             code, op_style, arg, cpool, local_syms, closure_syms,
             ns_label=ns_label,
-            op_int=op_int,
+            extra_schema=extra_schema,
         )
-        yield i, op_name, arg_str
+        yield i, op.name, arg_str
 
 
 # The end.

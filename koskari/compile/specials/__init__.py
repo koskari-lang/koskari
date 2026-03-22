@@ -27,6 +27,7 @@ from ..helpers import SPECIALS, special
 from .begin import special_begin
 from .bytecode import special_bytecode
 from .call import special_call
+from .call_attr import special_call_attr
 from .class_ import special_class
 from .conditionals import special_and, special_cond, special_or
 from .continuations import special_call_cc, special_let_cc, special_capture_cc, special_reset, special_return, special_shift
@@ -120,6 +121,7 @@ __all__ = (
     "special_break",
     "special_bytecode",
     "special_call",
+    "special_call_attr",
     "special_class",
     "special_call_cc",
     "special_capture_cc",

@@ -255,6 +255,27 @@ class TestCode(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(code.constant(a2), kw_names)
         self.assertEqual(a3, 0)
 
+    async def test_extra_opcode_call_attr(self):
+        """EXTRA opcode CALL_ATTR: arg indexes extra table row (attr, count)."""
+        nspec = NamespaceSpec(None, (), ())
+        attr_name = "upper"
+        instr = (
+            [OpCode.KOS_OP_CONST, "hello"],
+            [OpCode.KOS_OP_CALL_ATTR, (attr_name, 0, 0, 0)],
+            [OpCode.KOS_OP_RETURN, 1],
+        )
+        code = Code(nspec, instr)
+        self.assertEqual(code.length(), 3)
+        op, arg = code.oparg(1)
+        self.assertEqual(op, OpCode.KOS_OP_CALL_ATTR)
+        self.assertEqual(arg, 0)
+        a0, a1, a2, a3 = code.extra_tuple(0)
+        self.assertIn(a0, range(len(code.constants_pool)))
+        self.assertEqual(code.constant(a0), attr_name)
+        self.assertEqual(a1, 0)
+        self.assertEqual(a2, 0)
+        self.assertEqual(a3, 0)
+
     async def test_precise_sizing_duplicate_constants(self):
         """cpool_len equals unique identity count; duplicates share slot."""
         nspec = NamespaceSpec(None, (), ())

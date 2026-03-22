@@ -15,13 +15,20 @@
 
 
 /**
-   CALL_ATTR: arg = N (positional args). Stack [name, obj, arg_0, ..., arg_{N-1}]
-   (name underneath obj). Resolve obj.name, then call. Unbound fn: fn(obj, *args).
-   Bound/other: callable(*args).
+   CALL_ATTR: arg = extra index. Schema CONST (attr name), COUNT (arg count).
+   Stack [obj, arg_0, ..., arg_{N-1}]. Resolve obj.name, then call.
+   Unbound fn: fn(obj, *args). Bound/other: callable(*args).
 */
 KOS_OP_HANDLER(CALL_ATTR) {
-  unsigned n = KosOp_ARG(insn);
-  unsigned count = n + 2;
+  KosCode *code = CURRENT_CODE(ctx);
+  KosExtra row = KosCode_GetExtra(code, KosOp_ARG(insn));
+  uint32_t attr_cpool_idx = row.a0;
+  unsigned n = row.a1;
+  unsigned count = n + 1;
+
+  PyObject *name = KosCode_GetConstant((PyObject *) code, attr_cpool_idx);
+  if (! name)
+    return -1;
 
   KosDynFrame *frame_top = CURRENT_FRAME(ctx);
   KosStackBlock **stack = &KosDynFrame_STACK(frame_top);
@@ -30,8 +37,7 @@ KOS_OP_HANDLER(CALL_ATTR) {
   if (! ptr)
     return -1;
 
-  PyObject *name = ptr[0];
-  PyObject *obj = ptr[1];
+  PyObject *obj = ptr[0];
 
   PyObject *resolved;
   int send_self = kos_resolve_named_attr(obj, name, NULL, &resolved);
@@ -48,10 +54,10 @@ KOS_OP_HANDLER(CALL_ATTR) {
     PyObject *const *args;
     Py_ssize_t nargs;
     if (send_self == 0) {
-      args = &steal.vals[1];
+      args = &steal.vals[0];
       nargs = (Py_ssize_t) n + 1;
     } else {
-      args = (n > 0) ? &steal.vals[2] : NULL;
+      args = (n > 0) ? &steal.vals[1] : NULL;
       nargs = (Py_ssize_t) n;
     }
     int r = KosContext_Call(ctx, out_ev, resolved, args, nargs, NULL, 0);
@@ -61,10 +67,10 @@ KOS_OP_HANDLER(CALL_ATTR) {
   }
 
   if (send_self == 0) {
-    result = PyObject_Vectorcall(resolved, &ptr[1], (size_t) n + 1, NULL);
+    result = PyObject_Vectorcall(resolved, &ptr[0], (size_t) n + 1, NULL);
   } else {
     result = PyObject_Vectorcall(resolved,
-        (n > 0) ? &ptr[2] : NULL, (size_t) n, NULL);
+        (n > 0) ? &ptr[1] : NULL, (size_t) n, NULL);
   }
   Py_DECREF(resolved);
   if (! result)

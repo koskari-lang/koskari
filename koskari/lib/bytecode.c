@@ -48,17 +48,40 @@ static PyObject *_str_anon = NULL;
 /* === Opcode styles table === */
 
 
-static const KosOpStyle opcode_styles[] = {
-  #define OP(name, style) KOSTYLE_##style ,
+typedef struct {
+  KosOpStyle style;
+  KosExtraSchema extra;
+} OpStyleEntry;
+
+
+#define OP_NARGS(_1, _2, _3, _4, _5, _6, _7, N, ...)  N
+#define OP_CONCAT(a, b)  a ## b
+#define OP_INNER(N, ...)  OP_CONCAT(OP_, N)(__VA_ARGS__)
+#define OP(...)  OP_INNER(OP_NARGS(__VA_ARGS__, 7, 6, 5, 4, 3, 2, 1), __VA_ARGS__)
+
+#define OP_2(name, style)  { KOSTYLE_##style, { \
+    KOSTYLE_NOARG, KOSTYLE_NOARG, \
+    KOSTYLE_NOARG, KOSTYLE_NOARG } },
+#define OP_6(name, EXTRA, f0, f1, f2, f3)  { KOSTYLE_EXTRA, { \
+    KOSTYLE_##f0, KOSTYLE_##f1, \
+    KOSTYLE_##f2, KOSTYLE_##f3 } },
+
+static const OpStyleEntry opcode_styles[] = {
   #include "opcodes.incl"
-  #undef OP
 };
+
+#undef OP
+#undef OP_2
+#undef OP_6
+#undef OP_INNER
+#undef OP_CONCAT
+#undef OP_NARGS
 
 
 KosOpStyle kos_opcode_style(KosOpCode op) {
 
   if (op <= KOS_OP_THEEND) {
-    return opcode_styles[op];
+    return opcode_styles[op].style;
   }
   return (KosOpStyle) -1;
 }
@@ -67,11 +90,13 @@ KosOpStyle kos_opcode_style(KosOpCode op) {
 /* === Opcode names table === */
 
 
+#define OP(name, ...)  #name ,
+
 static const char *const opcode_names[] = {
-  #define OP(name, style) #name ,
   #include "opcodes.incl"
-  #undef OP
 };
+
+#undef OP
 
 
 const char *kos_opcode_name(KosOpCode op) {
@@ -93,21 +118,13 @@ static inline KosExtentKind kind_for_push(KosOpCode push_op);
 /* === Extra operand schema === */
 
 
-static const KosExtraSchema extra_schemas[KOS_OP_THEEND + 1] = {
-  [KOS_OP_CALL_FAST_ATTR_NAMES] = {
-    KOS_EXTRA_FIELD_FAST, KOS_EXTRA_FIELD_CONST, KOS_EXTRA_FIELD_CONST,
-    KOS_EXTRA_FIELD_COUNT
-  },
-};
-
-
-KosExtraSchema kos_op_extra_schema(KosOpCode op) {
+KosExtraSchema kos_opcode_extra_schema(KosOpCode op) {
 
   if (op <= KOS_OP_THEEND) {
-    return extra_schemas[op];
+    return opcode_styles[op].extra;
   }
-  return (KosExtraSchema){ KOS_EXTRA_FIELD_NONE, KOS_EXTRA_FIELD_NONE,
-      KOS_EXTRA_FIELD_NONE, KOS_EXTRA_FIELD_NONE };
+  return (KosExtraSchema){ KOSTYLE_NOARG, KOSTYLE_NOARG,
+      KOSTYLE_NOARG, KOSTYLE_NOARG };
 }
 
 
@@ -644,7 +661,7 @@ static int code_collect(PyObject *self, PyObject *instr, CodeCollect *coll) {
     PyObject *a = PySequence_Fast_GET_ITEM(pair, 0);
     PyObject *b = PySequence_Fast_GET_ITEM(pair, 1);
     KosOpCode op = (KosOpCode) PyLong_AsLong(a);
-    KosOpStyle style = opcode_styles[op];
+    KosOpStyle style = opcode_styles[op].style;
 
     if (op == KOS_OP_LABEL || op == KOS_OP_POSITION) {
       continue;   /* skipped in pass 2; already processed in pass 1 */
@@ -654,7 +671,7 @@ static int code_collect(PyObject *self, PyObject *instr, CodeCollect *coll) {
        each slot is interpreted: CONST/VAR -> intern into cpool; LABEL ->
        defer until emit; FAST/COUNT -> store raw. */
     if (style == KOSTYLE_EXTRA) {
-      KosExtraSchema schema = kos_op_extra_schema(op);
+      KosExtraSchema schema = kos_opcode_extra_schema(op);
       if (! PyTuple_Check(b)) {
         PyErr_Format(PyExc_RuntimeError,
                      "EXTRA opcode expects tuple argument, got %R", b);
@@ -670,15 +687,15 @@ static int code_collect(PyObject *self, PyObject *instr, CodeCollect *coll) {
 
       KosExtra row = { 0, 0, 0, 0 };
       for (int slot = 0; slot < 4; slot++) {
-        uint8_t fk = (slot == 0) ? schema.f0 : (slot == 1) ? schema.f1 :
+        KosOpStyle fk = (slot == 0) ? schema.f0 : (slot == 1) ? schema.f1 :
             (slot == 2) ? schema.f2 : schema.f3;
         PyObject *elem = PyTuple_GET_ITEM(b, slot);
 
-        if (fk == KOS_EXTRA_FIELD_NONE) {
+        if (fk == KOSTYLE_NOARG) {
           continue;
         }
         /* CONST: intern value, store cpool index in row slot */
-        if (fk == KOS_EXTRA_FIELD_CONST) {
+        if (fk == KOSTYLE_CONST) {
           uint32_t idx = intern_const(coll, elem);
           if (idx == (uint32_t) -1) {
             goto failure;
@@ -695,7 +712,7 @@ static int code_collect(PyObject *self, PyObject *instr, CodeCollect *coll) {
           continue;
         }
         /* VAR: stringify, intern, store cpool index (same as KOSTYLE_VAR) */
-        if (fk == KOS_EXTRA_FIELD_VAR) {
+        if (fk == KOSTYLE_VAR) {
           PyObject *name = PyObject_Str(elem);
           if (! name) {
             goto failure;
@@ -717,7 +734,7 @@ static int code_collect(PyObject *self, PyObject *instr, CodeCollect *coll) {
           continue;
         }
         /* LABEL: cannot resolve until pass 1 labels are complete; defer */
-        if (fk == KOS_EXTRA_FIELD_LABEL) {
+        if (fk == KOSTYLE_LABEL) {
           PyObject *pending = PyTuple_Pack(3,
               PyLong_FromLong(extra_idx),
               PyLong_FromLong(slot),
@@ -729,8 +746,8 @@ static int code_collect(PyObject *self, PyObject *instr, CodeCollect *coll) {
           Py_DECREF(pending);
           continue;
         }
-        /* FAST, COUNT: store raw integer (local slot index, argc, etc.) */
-        if (fk == KOS_EXTRA_FIELD_COUNT || fk == KOS_EXTRA_FIELD_FAST) {
+        /* FASTVAR, COUNT: store raw integer (local slot index, argc, etc.) */
+        if (fk == KOSTYLE_COUNT || fk == KOSTYLE_FASTVAR) {
           if (! PyLong_Check(elem)) {
             PyErr_Format(PyExc_RuntimeError,
                          "EXTRA field expects int, got %R", elem);
@@ -949,7 +966,7 @@ static int code_emit(
     PyObject *a = PySequence_Fast_GET_ITEM(pair, 0);
     PyObject *b = PySequence_Fast_GET_ITEM(pair, 1);
     KosOpCode op = (KosOpCode) PyLong_AsLong(a);
-    KosOpStyle style = opcode_styles[op];
+    KosOpStyle style = opcode_styles[op].style;
 
     /* LABEL/POSITION were squashed in collect; skip them here */
     if (op == KOS_OP_LABEL || op == KOS_OP_POSITION) {
@@ -2137,7 +2154,7 @@ static PyObject *create_opcode_enum(void) {
   if (! enum_dict)
     return NULL;
 
-#define OP(name, style) int_enum(enum_dict, KOS_OP_##name);
+#define OP(name, ...)  int_enum(enum_dict, KOS_OP_##name);
 #include "opcodes.incl"
 #undef OP
 
@@ -2145,18 +2162,29 @@ static PyObject *create_opcode_enum(void) {
   if (! res)
     return NULL;
 
-  /* Attach style attribute to each opcode */
-#define OP(name, style)                                           \
-  do {                                                            \
-    PyObject *_en = PyObject_GetAttrString(res, "KOS_OP_" #name); \
-    PyObject *_fl = PyLong_FromLong(KOSTYLE_##style);             \
-    PyObject_SetAttrString(_en, "style", _fl);                    \
-    Py_DECREF(_fl);                                               \
-    Py_DECREF(_en);                                               \
-  } while (0);
-
-#include "opcodes.incl"
-#undef OP
+  /* Attach style and optional extra schema to each opcode */
+  for (KosOpCode op = 0; op <= KOS_OP_THEEND; op++) {
+    char buf[64];
+    int n = PyOS_snprintf(buf, sizeof buf, "KOS_OP_%s", opcode_names[op]);
+    if (n < 0 || (size_t) n >= sizeof buf)
+      continue;
+    PyObject *_en = PyObject_GetAttrString(res, buf);
+    if (! _en)
+      continue;
+    KosOpStyle style = opcode_styles[op].style;
+    PyObject *_fl = PyLong_FromLong((long) style);
+    PyObject_SetAttrString(_en, "style", _fl);
+    Py_DECREF(_fl);
+    if (style == KOSTYLE_EXTRA) {
+      KosExtraSchema ex = opcode_styles[op].extra;
+      PyObject *_ex = Py_BuildValue("(iiii)", ex.f0, ex.f1, ex.f2, ex.f3);
+      if (_ex) {
+        PyObject_SetAttrString(_en, "extra", _ex);
+        Py_DECREF(_ex);
+      }
+    }
+    Py_DECREF(_en);
+  }
 
   return res;
 }

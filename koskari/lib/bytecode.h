@@ -74,9 +74,6 @@ typedef enum KosOpStyle {
   /** opcode argument is an index into the extra table */
   KOSTYLE_EXTRA,
 
-  /* Aliases for EXTRA_* schema styles; all map to KOSTYLE_EXTRA */
-  KOSTYLE_EXTRA_FAST_CONST_CONST_COUNT = KOSTYLE_EXTRA,
-
 } KosOpStyle;
 
 
@@ -84,28 +81,14 @@ typedef enum KosOpStyle {
 
 
 /**
-   Field kind for a slot in a KosExtra row. Matches internalization
-   behavior of inline styles.
-*/
-typedef enum KosExtraFieldKind {
-  KOS_EXTRA_FIELD_NONE,
-  KOS_EXTRA_FIELD_CONST,
-  KOS_EXTRA_FIELD_VAR,
-  KOS_EXTRA_FIELD_FAST,
-  KOS_EXTRA_FIELD_COUNT,
-  KOS_EXTRA_FIELD_LABEL,
-} KosExtraFieldKind;
-
-
-/**
    Schema describing how the four slots of a KosExtra row are
    interpreted for a given EXTRA opcode.
 */
 typedef struct KosExtraSchema {
-  uint8_t f0;
-  uint8_t f1;
-  uint8_t f2;
-  uint8_t f3;
+  KosOpStyle f0;
+  KosOpStyle f1;
+  KosOpStyle f2;
+  KosOpStyle f3;
 } KosExtraSchema;
 
 
@@ -129,8 +112,7 @@ extern PyObject *KosOpCodeEnum;
 
 typedef enum KosOpCode {
 
-#define OP(name, style)   \
-  KOS_OP_##name ,
+#define OP(name, ...)  KOS_OP_##name ,
 
 #include "opcodes.incl"
 #undef OP
@@ -401,10 +383,10 @@ const char *kos_opcode_name(KosOpCode op);
 
    :param op: opcode enum value
 
-   :return: KosExtraSchema (f0..f3 as KosExtraFieldKind); all NONE for
+   :return: KosExtraSchema (f0..f3 as KosOpStyle); all NOARG for
      non-EXTRA opcodes
 */
-KosExtraSchema kos_op_extra_schema(KosOpCode op);
+KosExtraSchema kos_opcode_extra_schema(KosOpCode op);
 
 
 /* === Accessor macros === */

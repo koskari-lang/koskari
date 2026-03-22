@@ -2724,7 +2724,7 @@ int koskari_eval(KosContext *ctx, KosEvent *out_ev, PyObject *send_val, PyObject
    indirect goto (goto *optable[op]) to be in the same function body. */
 #if KOS_USE_COMPUTED_GOTO
   static const void *const optable[] = {
-#define OP(name, style) &&TARGET_##name,
+#define OP(name, ...)  &&TARGET_##name,
 #include "opcodes.incl"
 #undef OP
   };
@@ -2799,13 +2799,13 @@ int koskari_eval(KosContext *ctx, KosEvent *out_ev, PyObject *send_val, PyObject
 
 #if KOS_USE_COMPUTED_GOTO
       goto *optable[KosOp_OP(dc.insn)];
-#define OP(name, style) TARGET_##name: op_res = op_##name(ctx, out_ev, dc.insn); if (likely(! op_res)) goto next_insn; goto handle_op_result;
+#define OP(name, ...)  TARGET_##name: op_res = op_##name(ctx, out_ev, dc.insn); if (likely(! op_res)) goto next_insn; goto handle_op_result;
 #include "opcodes.incl"
 #undef OP
       handle_op_result:
 #else
       switch (KosOp_OP(dc.insn)) {
-#define OP(name, style) case KOS_OP_##name: op_res = op_##name(ctx, out_ev, dc.insn); break;
+#define OP(name, ...)  case KOS_OP_##name: op_res = op_##name(ctx, out_ev, dc.insn); break;
 #include "opcodes.incl"
 #undef OP
       default:
