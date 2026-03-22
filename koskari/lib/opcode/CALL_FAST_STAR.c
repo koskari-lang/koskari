@@ -14,13 +14,112 @@
 */
 
 /**
-   CALL_FAST_STAR: arg = extra index. Schema FASTVAR (slot), STAR
-   (unpacked args and kwargs). Call callable from fast local slot with
-   unpacked args and-or kwargs; not yet implemented.
+   CALL_FAST_STAR: arg = extra index. Schema FASTVAR (slot), STAR (bitflags).
+   Call callable from fast local slot. Stack [pos, kwd] or subsets per
+   flags (1 = *args, 2 = **kwargs). Pop per flags, ensure pos is tuple,
+   call via KosContext_CallArgs.
 */
 
+
+static int ensure_tuple_fast_star(PyObject **val) {
+  if (! (val && *val))
+    return -1;
+
+  if (! PyTuple_CheckExact(*val)) {
+    PyObject *fixed = PySequence_Tuple(*val);
+    Py_DECREF(*val);
+    *val = fixed;
+
+    if (! fixed)
+      return -1;
+  }
+
+  return 0;
+}
+
+
 KOS_OP_HANDLER(CALL_FAST_STAR) {
-  return op_unimplemented_stub(ctx, out_ev, insn);
+  KosCode *code = CURRENT_CODE(ctx);
+  KosExtra row = KosCode_GetExtra(code, KosOp_ARG(insn));
+  uint32_t slot_idx = row.a0;
+  unsigned opa = row.a1;
+
+  PyObject *ns = CURRENT_NS(ctx);
+  if (! ns) {
+    PyErr_SetString(PyExc_RuntimeError, "CALL_FAST_STAR on NULL namespace");
+    return -1;
+  }
+  if (! KosNamespace_SupportsFast(ns)) {
+    PyErr_Format(PyExc_RuntimeError, "CALL_FAST_STAR on %R", ns);
+    return -1;
+  }
+
+  PyObject *callable = KosNamespace_FastDeref(ns, (size_t) slot_idx);
+  if (! callable)
+    return -1;
+
+  PyObject *pos = NULL;
+  PyObject *kwd = NULL;
+
+  KosStackBlock **stack = &CURRENT_STACK(ctx);
+
+  if ((opa & 3) == 3) {
+    kwd = KosStackBlock_PopRef(stack);
+    if (! kwd) {
+      Py_DECREF(callable);
+      return -1;
+    }
+    pos = KosStackBlock_PopRef(stack);
+    if (! pos) {
+      Py_DECREF(callable);
+      Py_DECREF(kwd);
+      return -1;
+    }
+    if (ensure_tuple_fast_star(&pos)) {
+      Py_DECREF(callable);
+      Py_DECREF(pos);
+      Py_DECREF(kwd);
+      return -1;
+    }
+  } else if (opa & 2) {
+    kwd = KosStackBlock_PopRef(stack);
+    if (! kwd) {
+      Py_DECREF(callable);
+      return -1;
+    }
+    pos = PyTuple_New(0);
+    if (! pos) {
+      Py_DECREF(callable);
+      Py_DECREF(kwd);
+      return -1;
+    }
+  } else if (opa & 1) {
+    pos = KosStackBlock_PopRef(stack);
+    if (! pos) {
+      Py_DECREF(callable);
+      return -1;
+    }
+    if (ensure_tuple_fast_star(&pos)) {
+      Py_DECREF(callable);
+      Py_DECREF(pos);
+      return -1;
+    }
+    kwd = NULL;
+  } else {
+    pos = PyTuple_New(0);
+    if (! pos) {
+      Py_DECREF(callable);
+      return -1;
+    }
+    kwd = NULL;
+  }
+
+  int res = KosContext_CallArgs(ctx, out_ev, callable, pos, kwd, 0);
+
+  Py_DECREF(callable);
+  Py_DECREF(pos);
+  Py_XDECREF(kwd);
+  return res;
 }
 
 
