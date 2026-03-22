@@ -2176,10 +2176,8 @@ int kos_dyn_with_unwind(KosContext *ctx, KosDynWith *node,
     Py_XDECREF(val);
     Py_XDECREF(tb);
     Py_DECREF(result);
-    /* Swallow: discard body value, drop block, push None. Caller pops node. */
-    PyObject *body_val = KosStackBlock_PopRef(&KosDynFrame_STACK(frame));
-    if (body_val)
-      Py_DECREF(body_val);
+    /* Swallow: discard body value if any (body raised so stack may be empty),
+       drop block, push None. Caller pops node. */
     if (KosStackBlock_DropBlock(&KosDynFrame_STACK(frame)) < 0)
       return -1;
     if (frame)
@@ -2561,19 +2559,26 @@ static int kos_dyn_uninstall_handler(KosContext *ctx, KosDynNode *node,
       }
       if (KosContext_FRAME_TOP(ctx)) {
         KosStackBlock **stack = &KosDynFrame_STACK(KosContext_FRAME_TOP(ctx));
-        PyObject *body_val = KosStackBlock_PopRef(stack);
-        if (! body_val)
-          return -1;
-        if (KosStackBlock_DropBlock(stack) < 0) {
-          Py_DECREF(body_val);
-          return -1;
+        if (PyErr_Occurred()) {
+          /* Exception propagating: body did not complete, no body value.
+             Just drop the with block. */
+          if (KosStackBlock_DropBlock(stack) < 0)
+            return -1;
         }
-        if (! PyErr_Occurred() &&
-            KosStackBlock_PushRef(stack, body_val) < 0) {
+        else {
+          PyObject *body_val = KosStackBlock_PopRef(stack);
+          if (! body_val)
+            return -1;
+          if (KosStackBlock_DropBlock(stack) < 0) {
+            Py_DECREF(body_val);
+            return -1;
+          }
+          if (KosStackBlock_PushRef(stack, body_val) < 0) {
+            Py_DECREF(body_val);
+            return -1;
+          }
           Py_DECREF(body_val);
-          return -1;
         }
-        Py_DECREF(body_val);
       }
       return 0;
     }
