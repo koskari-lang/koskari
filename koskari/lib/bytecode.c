@@ -1236,7 +1236,6 @@ static int derive_extents_fill(
 
   for (uint32_t pc = 0; pc < code_len; pc++) {
     KosOpCode op = (KosOpCode) code[pc].op;
-    uint16_t arg = code[pc].arg;
 
     if (is_push_op(op)) {
       if (stack_top >= DERIVE_EXTENT_STACK_MAX) {
@@ -1261,30 +1260,6 @@ static int derive_extents_fill(
       e->pop_pc = 0;
       e->parent_extent_id = parent_id;
       e->flags = 0;
-      e->u.try_finally.except_pc = KOS_EXTENT_NONE;
-      e->u.try_finally.else_pc = KOS_EXTENT_NONE;
-      e->u.try_finally.finally_pc = KOS_EXTENT_NONE;
-      e->u.try_finally.exit_pc = KOS_EXTENT_NONE;
-
-      /* Fill kind-specific handler targets from instruction arg */
-      switch (e->kind) {
-      case KOS_EXT_TRY:
-      case KOS_EXT_FINALLY:
-        e->u.try_finally.except_pc = arg;
-        e->u.try_finally.finally_pc =
-            (e->kind == KOS_EXT_FINALLY) ? arg : KOS_EXTENT_NONE;
-        break;
-      case KOS_EXT_LOOP:
-      case KOS_EXT_FOREACH:
-        e->u.loop.continue_pc = pc + 1;
-        break;
-      case KOS_EXT_WITH:
-      case KOS_EXT_DYN_WITH:
-        e->u.exit_only.exit_pc = arg;
-        break;
-      default:
-        break;
-      }
 
       stack[stack_top].push_pc = pc;
       stack[stack_top].extent_id = extent_idx;
@@ -2010,9 +1985,27 @@ int kos_try_handler_for(PyObject *code, uint32_t pc, KosTryHandler *out) {
   }
 
   out->extent_id = eid;
-  out->except_pc = e->u.try_finally.except_pc;
-  out->finally_pc = e->u.try_finally.finally_pc;
-  out->exit_pc = e->u.try_finally.exit_pc;
+  out->exit_pc = KOS_EXTENT_NONE;
+
+  if (e->push_pc >= KosCode_CODE_LEN(code)) {
+    out->except_pc = KOS_EXTENT_NONE;
+    out->finally_pc = KOS_EXTENT_NONE;
+    return 0;
+  }
+
+  uint32_t handler_pc = (uint32_t) KosCode_CODE(code)[e->push_pc].arg;
+  if (e->kind == KOS_EXT_TRY) {
+    out->except_pc = handler_pc;
+    out->finally_pc = KOS_EXTENT_NONE;
+  }
+  else if (e->kind == KOS_EXT_FINALLY) {
+    out->except_pc = KOS_EXTENT_NONE;
+    out->finally_pc = handler_pc;
+  }
+  else {
+    out->except_pc = KOS_EXTENT_NONE;
+    out->finally_pc = KOS_EXTENT_NONE;
+  }
 
   return 0;
 }

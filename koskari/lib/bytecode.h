@@ -205,9 +205,9 @@ typedef enum KosExtentKind {
 
 
 /**
-   Static extent descriptor. Describes a block extent with push_pc,
-   pop_pc, and kind-specific handler/control targets. Use the union
-   member that matches kind; other members are undefined for that kind.
+   Static extent descriptor. Describes a block extent with push_pc and
+   pop_pc. Handler and jump target PCs are derived on demand from
+   code[push_pc] and pop_pc as needed.
 */
 typedef struct KosExtentDesc {
   KosExtentKind kind;
@@ -216,25 +216,6 @@ typedef struct KosExtentDesc {
   uint32_t parent_extent_id;
 
   uint32_t flags;
-
-  union {
-    struct {
-      uint32_t except_pc;
-      uint32_t else_pc;
-      uint32_t finally_pc;
-      uint32_t exit_pc;
-    } try_finally;   /* KOS_EXT_TRY, KOS_EXT_FINALLY */
-    struct {
-      uint32_t break_pc;
-      uint32_t continue_pc;
-    } loop;          /* KOS_EXT_LOOP, KOS_EXT_FOREACH */
-    struct {
-      uint32_t exit_pc;
-    } exit_only;     /* KOS_EXT_WITH, KOS_EXT_DYN_WITH, KOS_EXT_CALLCC_BIND */
-    struct {
-      uint32_t ic_pc;
-    } shift;         /* KOS_EXT_SHIFT_BODY */
-  } u;
 } KosExtentDesc;
 
 
