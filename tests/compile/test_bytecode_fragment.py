@@ -276,6 +276,47 @@ class TestCode(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(a2, 0)
         self.assertEqual(a3, 0)
 
+    async def test_extra_opcode_var_attr(self):
+        """EXTRA opcode VAR_ATTR: arg indexes extra table row (var, attr)."""
+        nspec = NamespaceSpec(None, ("obj",), ())
+        var_name = "obj"
+        attr_name = "value"
+        instr = (
+            [OpCode.KOS_OP_VAR_ATTR, (var_name, attr_name, 0, 0)],
+            [OpCode.KOS_OP_RETURN, 1],
+        )
+        code = Code(nspec, instr)
+        self.assertEqual(code.length(), 2)
+        op, arg = code.oparg(0)
+        self.assertEqual(op, OpCode.KOS_OP_VAR_ATTR)
+        self.assertEqual(arg, 0)
+        a0, a1, a2, a3 = code.extra_tuple(0)
+        self.assertIn(a0, range(len(code.constants_pool)))
+        self.assertEqual(code.constant(a0), var_name)
+        self.assertIn(a1, range(len(code.constants_pool)))
+        self.assertEqual(code.constant(a1), attr_name)
+        self.assertEqual(a2, 0)
+        self.assertEqual(a3, 0)
+
+    async def test_extra_opcode_fast_attr(self):
+        """EXTRA opcode FAST_ATTR: arg indexes extra table row (slot, attr)."""
+        nspec = NamespaceSpec(None, ("obj",), ())
+        instr = (
+            [OpCode.KOS_OP_FAST_ATTR, (0, "value", 0, 0)],
+            [OpCode.KOS_OP_RETURN, 1],
+        )
+        code = Code(nspec, instr)
+        self.assertEqual(code.length(), 2)
+        op, arg = code.oparg(0)
+        self.assertEqual(op, OpCode.KOS_OP_FAST_ATTR)
+        self.assertEqual(arg, 0)
+        a0, a1, a2, a3 = code.extra_tuple(0)
+        self.assertEqual(a0, 0)
+        self.assertIn(a1, range(len(code.constants_pool)))
+        self.assertEqual(code.constant(a1), "value")
+        self.assertEqual(a2, 0)
+        self.assertEqual(a3, 0)
+
     async def test_precise_sizing_duplicate_constants(self):
         """cpool_len equals unique identity count; duplicates share slot."""
         nspec = NamespaceSpec(None, (), ())
