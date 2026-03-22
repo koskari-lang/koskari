@@ -113,7 +113,7 @@ def _build_var_to_fast():
     var_to_fast = {}
     for opcode in OpCode:
         opname = opcode.name
-        if not opname.startswith('KOS_OP_FAST'):
+        if not (opname.startswith('KOS_OP_FAST') or opname.startswith('KOS_OP_CALL_FAST')):
             continue
         varname = opname.replace('FAST', 'VAR', 1)
         if hasattr(OpCode, varname):
@@ -802,13 +802,14 @@ class Compiler:
                 pop_nspec()
 
             elif nstack and op in VAR_TO_FAST:
+                var_name = arg[0] if (isinstance(arg, tuple) and len(arg) == 4) else arg
                 try:
-                    index = findex.index(arg)
+                    index = findex.index(var_name)
                 except ValueError:
                     pass
                 else:
                     op = VAR_TO_FAST[op]
-                    arg = index
+                    arg = (index, arg[1], arg[2], arg[3]) if isinstance(arg, tuple) else index
 
             result.append((op, arg))
 

@@ -1,5 +1,12 @@
 # `CALL_FAST*` — Fused Fast-Local Call Opcodes
 
+**OBSOLETE.** This document described a packed-encoding approach
+(slot/count in a single 16-bit arg). The implementation uses EXTRA opcode
+style instead (CALL_VAR\* / CALL_FAST\* with operand rows in the extra table).
+Archived for historical reference.
+
+---
+
 **Status: Design proposal — not a mandate; open for discussion.**
 
 This document describes a potential optimization: fusing a fast-local slot
@@ -254,6 +261,21 @@ FAST slot; <push star payload>; CALL_STAR flags
 
 Tail-call variants follow the same patterns replacing `CALL*` with
 `TAIL_CALL*` and `CALL_FAST*` with `TAIL_CALL_FAST*`.
+
+### Interaction with CALL_ATTR*
+
+`CALL_FAST_ATTR_NAMES` and `CALL_VAR_ATTR_NAMES` are distinct from the
+`CALL_FAST*` opcodes described above:
+
+- **CALL_FAST_ATTR_NAMES** loads obj from a fast slot and invokes `CALL_ATTR_NAMES`
+  semantics. The *receiver* (obj) is from the slot; the callable is the resolved
+  attribute `obj.name`. Stack: `[pos..., kw...]` — obj is not on the stack.
+- **CALL_VAR_ATTR_NAMES** does the same but loads obj from a VAR (name lookup).
+- **CALL_FAST** (above) fuses callable-from-slot with `CALL`. The *callable*
+  is in the fast slot; obj is irrelevant. Stack: `[arg_0, ..., arg_n]`.
+
+The compiler does not emit these opcodes; they are available for manual bytecode
+construction (e.g. `build_expr` / `build_code`) or future lowering passes.
 
 ### Implementation: backward-scan heuristic in the compression pass
 

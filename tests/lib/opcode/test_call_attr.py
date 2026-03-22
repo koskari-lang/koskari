@@ -17,8 +17,9 @@ Stack [obj, arg_0, ..., arg_{N-1}]. Resolves obj.name and invokes with
 (obj, *args) for unbound fn, else (*args).
 """
 
+from koskari.types import FormalsSpec, NamespaceSpec
 from tests import make_callable
-from tests.lib.opcode import CevalTest, build_expr
+from tests.lib.opcode import CevalTest, build_code, build_expr
 
 import pytest
 
@@ -278,6 +279,155 @@ class TestCallAttrCustomGetattribute(CevalTest):
         fn = make_callable(code, ns)
         result = await fn()
         self.assertEqual(result, 42)
+
+
+class TestCallFastAttrNames(CevalTest):
+    """
+    CALL_FAST_ATTR_NAMES: obj from fast slot, stack [pos..., kw...]
+    """
+
+    async def test_call_fast_attr_names_zero_args(self):
+        """
+        obj.upper() with obj in slot 0
+        """
+
+        code, ns = build_expr([
+            ["CONST", "hello"],
+            ["FAST_STORE", 0],
+            ["CALL_FAST_ATTR_NAMES", (0, "upper", (), 0)],
+            ["RETURN", 1],
+        ], local_syms=("obj",))
+        fn = make_callable(code, ns)
+        result = await fn()
+        self.assertEqual(result, "HELLO")
+
+
+    async def test_call_fast_attr_names_one_pos(self):
+        """
+        obj.split(sep) with obj in slot 0
+        """
+
+        code, ns = build_expr([
+            ["CONST", "a-b-c"],
+            ["FAST_STORE", 0],
+            ["CONST", "-"],
+            ["CALL_FAST_ATTR_NAMES", (0, "split", (), 1)],
+            ["RETURN", 1],
+        ], local_syms=("obj",))
+        fn = make_callable(code, ns)
+        result = await fn()
+        self.assertEqual(result, ["a", "b", "c"])
+
+
+    async def test_call_fast_attr_names_with_kw(self):
+        """
+        obj.m(1, name: 2) with obj in slot 0
+        """
+
+        received = []
+
+        def recorder(self, x, name=0):
+            received.append((x, name))
+            return None
+
+        obj = type('Obj', (), {'m': recorder})()
+        code, ns = build_expr([
+            ["CONST", obj],
+            ["FAST_STORE", 0],
+            ["CONST", 99],
+            ["CONST", 42],
+            ["CALL_FAST_ATTR_NAMES", (0, "m", ("name",), 1)],
+            ["RETURN", 1],
+        ], local_syms=("obj",))
+        fn = make_callable(code, ns)
+        await fn()
+        self.assertEqual(received, [(99, 42)])
+
+
+    async def test_call_fast_attr_names_unbound_method(self):
+        """
+        Unbound Python method path (send_self=0)
+        """
+
+        class C:
+            def add_one(self, x):
+                return x + 1
+
+        c = C()
+        code, ns = build_expr([
+            ["CONST", c],
+            ["FAST_STORE", 0],
+            ["CONST", 41],
+            ["CALL_FAST_ATTR_NAMES", (0, "add_one", (), 1)],
+            ["RETURN", 1],
+        ], local_syms=("obj",))
+        fn = make_callable(code, ns)
+        result = await fn()
+        self.assertEqual(result, 42)
+
+
+class TestCallVarAttrNames(CevalTest):
+    """
+    CALL_VAR_ATTR_NAMES: obj from VAR (name lookup), stack [pos..., kw...]
+    Uses a Function with formals so the namespace has the obj binding.
+    """
+
+    async def test_call_var_attr_names_zero_args(self):
+        """
+        obj.upper() with obj looked up by name (function param)
+        """
+
+        code = build_code([
+            ["CALL_VAR_ATTR_NAMES", ("obj", "upper", (), 0)],
+            ["RETURN", 1],
+        ], local_syms=("obj",))
+        nspec = NamespaceSpec(None, ("obj",), ())
+        ns = nspec.get_namespace(None)
+        fn = make_callable(code, ns, FormalsSpec(("obj",)))
+        result = await fn("hello")
+        self.assertEqual(result, "HELLO")
+
+
+    async def test_call_var_attr_names_one_pos(self):
+        """
+        obj.split(sep) with obj by name
+        """
+
+        code = build_code([
+            ["CONST", "-"],
+            ["CALL_VAR_ATTR_NAMES", ("obj", "split", (), 1)],
+            ["RETURN", 1],
+        ], local_syms=("obj",))
+        nspec = NamespaceSpec(None, ("obj",), ())
+        ns = nspec.get_namespace(None)
+        fn = make_callable(code, ns, FormalsSpec(("obj",)))
+        result = await fn("a-b-c")
+        self.assertEqual(result, ["a", "b", "c"])
+
+
+    async def test_call_var_attr_names_with_kw(self):
+        """
+        obj.m(1, name: 2) with obj by name
+        """
+
+        received = []
+
+        def recorder(self, x, name=0):
+            received.append((x, name))
+            return None
+
+        obj = type('Obj', (), {'m': recorder})()
+        code = build_code([
+            ["CONST", 99],
+            ["CONST", 42],
+            ["CALL_VAR_ATTR_NAMES", ("obj", "m", ("name",), 1)],
+            ["RETURN", 1],
+        ], local_syms=("obj",))
+        nspec = NamespaceSpec(None, ("obj",), ())
+        ns = nspec.get_namespace(None)
+        fn = make_callable(code, ns, FormalsSpec(("obj",)))
+        await fn(obj)
+        self.assertEqual(received, [(99, 42)])
 
 
 # The end.

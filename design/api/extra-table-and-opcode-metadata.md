@@ -11,8 +11,8 @@ introducing variable-length instructions or globally widening every opcode.
 **See also:** [bytecode-metadata-tables.md](../interpreter/bytecode-metadata-tables.md)
 (constant pool, extents, code object layout), [bytecode-finalization.md](../interpreter/bytecode-finalization.md)
 (collect/size/allocate/emit pipeline, cpool from EXTRA CONST/VAR), [OPCODES.md](../OPCODES.md)
-(opcode reference), [call-fast-opcodes.md](../interpreter/call-fast-opcodes.md)
-(example use case: fused call opcodes).
+(opcode reference), [call-fast-opcodes.md](../archive/call-fast-opcodes.md)
+(archived: superseded by EXTRA-based CALL_VAR\* / CALL_FAST\* opcodes).
 
 ---
 

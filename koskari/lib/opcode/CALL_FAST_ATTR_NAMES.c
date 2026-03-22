@@ -14,10 +14,112 @@
 */
 
 /**
-   CALL_FAST_ATTR_NAMES: arg = extra index. Fused fast-local load + attr
-   call with keyword names. Schema FAST_CONST_CONST_COUNT. Stub.
+   CALL_FAST_ATTR_NAMES: arg = extra index. Schema FASTVAR (slot), CONST (attr),
+   CONST (kw names tuple), COUNT (npos). Stack [pos_0, ..., pos_{N-1},
+   kwd_val_0, ..., kwd_val_{M-1}]. Obj from fast slot; resolve obj.name, call.
 */
 
 KOS_OP_HANDLER(CALL_FAST_ATTR_NAMES) {
-  return op_unimplemented_stub(ctx, out_ev, insn);
+  KosCode *code = CURRENT_CODE(ctx);
+  KosExtra row = KosCode_GetExtra(code, KosOp_ARG(insn));
+  uint32_t slot_idx = row.a0;
+  uint32_t attr_cpool_idx = row.a1;
+  uint32_t names_cpool_idx = row.a2;
+  unsigned opa = row.a3;
+
+  PyObject *ns = CURRENT_NS(ctx);
+  if (! ns) {
+    PyErr_SetString(PyExc_RuntimeError, "CALL_FAST_ATTR_NAMES on NULL namespace");
+    return -1;
+  }
+  if (! KosNamespace_SupportsFast(ns)) {
+    PyErr_Format(PyExc_RuntimeError, "CALL_FAST_ATTR_NAMES on %R", ns);
+    return -1;
+  }
+
+  PyObject *obj = KosNamespace_FastDeref(ns, (size_t) slot_idx);
+  if (! obj)
+    return -1;
+
+  PyObject *name = KosCode_GetConstant((PyObject *) code, attr_cpool_idx);
+  if (! name)
+    return -1;
+
+  PyObject *names = KosCode_GetConstant((PyObject *) code, names_cpool_idx);
+  if (! names)
+    return -1;
+
+  if (! PyTuple_CheckExact(names)) {
+    PyErr_Format(PyExc_RuntimeError, "CALL_FAST_ATTR_NAMES names must be tuple"
+                 ", not %R", names);
+    return -1;
+  }
+
+  Py_ssize_t npos = (Py_ssize_t) opa;
+  Py_ssize_t nkwds = PyTuple_GET_SIZE(names);
+  KosStackBlock **stack = &CURRENT_STACK(ctx);
+
+  if (npos + nkwds > 0 &&
+      KosStackBlock_TailPtr(*stack, (size_t)(npos + nkwds)) == NULL)
+    return -1;
+
+  Py_ssize_t total = npos + nkwds;
+  size_t ntotal = (size_t) total;
+
+  PyObject *resolved;
+  int send_self = kos_resolve_named_attr(obj, name, NULL, &resolved);
+  if (send_self < 0)
+    return -1;
+
+  if (KosCallable_Check(resolved)) {
+    KosStackSteal steal = { 0 };
+    int steal_ok;
+    if (send_self == 0) {
+      steal_ok = KosStackSteal_TailPrepend(&steal, obj, ntotal, stack);
+    } else {
+      steal_ok = KosStackSteal_Tail(&steal, ntotal, stack);
+    }
+    if (steal_ok < 0) {
+      Py_DECREF(resolved);
+      return -1;
+    }
+    PyObject *const *args;
+    Py_ssize_t nargs;
+    if (send_self == 0) {
+      args = steal.vals;
+      nargs = npos + 1;
+    } else {
+      args = (npos > 0) ? steal.vals : NULL;
+      nargs = npos;
+    }
+    int r = KosContext_Call(ctx, out_ev, resolved, args, nargs, names, 0);
+    KosStackSteal_Free(&steal);
+    Py_DECREF(resolved);
+    return r;
+  }
+
+  KosStackSteal steal = { 0 };
+  int steal_ok;
+  if (send_self == 0) {
+    steal_ok = KosStackSteal_TailPrepend(&steal, obj, ntotal, stack);
+  } else {
+    steal_ok = KosStackSteal_Tail(&steal, ntotal, stack);
+  }
+  if (steal_ok < 0) {
+    Py_DECREF(resolved);
+    return -1;
+  }
+  PyObject *result;
+  if (send_self == 0) {
+    result = PyObject_Vectorcall(resolved, steal.vals,
+                                 (size_t)(npos + 1), names);
+  } else {
+    result = PyObject_Vectorcall(resolved,
+        (npos > 0) ? steal.vals : NULL, (size_t) npos, names);
+  }
+  KosStackSteal_Free(&steal);
+  Py_DECREF(resolved);
+  if (! result)
+    return -1;
+  return kos_push_or_await(ctx, out_ev, result);
 }

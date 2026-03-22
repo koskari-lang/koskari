@@ -408,11 +408,15 @@ int KosStackBlock_PopTailPtr(KosStackBlock **self, size_t count, PyObject **dest
    KosStackSteal holds stolen tail elements from a stack block. Uses an
    embedded array for small counts; allocates for larger. Caller must
    invoke KosStackSteal_Free when done.
+
+   owned_start: indices [0, owned_start) are borrowed (not DECREF'd by Free).
+   Default 0 (own all). TailPrepend sets 1 so vals[0] (prefix) is skipped.
 */
 typedef struct KosStackSteal {
   PyObject *fast[KOS_STACK_STEAL_FAST_SIZE];
   size_t len;
-  PyObject **vals;   /* points to fast or malloc'd array */
+  size_t owned_start;   /* skip DECREF for indices < this */
+  PyObject **vals;      /* points to fast or malloc'd array */
 } KosStackSteal;
 
 
@@ -427,6 +431,20 @@ typedef struct KosStackSteal {
  */
 int KosStackSteal_Tail(
     KosStackSteal *s,
+    size_t count,
+    KosStackBlock **block);
+
+
+/**
+   Steal the last count elements from the block into s, with prefix
+   prepended as vals[0]. prefix is borrowed (never DECREF'd by Free).
+   s->len = count + 1, s->owned_start = 1.
+
+   :return: 0 on success, -1 on underrun or alloc failure
+ */
+int KosStackSteal_TailPrepend(
+    KosStackSteal *s,
+    PyObject *prefix,
     size_t count,
     KosStackBlock **block);
 

@@ -270,6 +270,8 @@ When adding or changing an opcode:
 | CALL_STAR | STAR | Call with *args and/or **kwargs | [§17](#kos_op_call_star) |
 | CALL_ATTR | EXTRA | Call obj.name with N positional args | [§17](#kos_op_call_attr) |
 | CALL_ATTR_NAMES | EXTRA | Call obj.name with positional + keyword args | [§17](#kos_op_call_attr_names) |
+| CALL_FAST_ATTR_NAMES | EXTRA | Call obj.name with obj from fast slot | [§17](#kos_op_call_fast_attr_names) |
+| CALL_VAR_ATTR_NAMES | EXTRA | Call obj.name with obj from VAR | [§17](#kos_op_call_var_attr_names) |
 | CALL_ATTR_STAR | EXTRA | Call obj.name with *args/**kwargs | [§17](#kos_op_call_attr_star) |
 | TAIL_CALL | COUNT | Tail call (replace frame) | [§17](#kos_op_tail_call) |
 | TAIL_CALL_NAMES | COUNT | Tail call with keyword names | [§17](#kos_op_tail_call_names) |
@@ -1777,6 +1779,24 @@ Pool: 0 = `"os"`, 1 = `"path"`, 2 = `"sep"`, 3 = None.
 - **Status**: Implemented.
 - **Stack**: `[..., obj, pos_0, ..., pos_{N-1}, kwd_val_0, ..., kwd_val_{M-1}] → [..., result]`. Resolve `obj.name` via `kos_resolve_named_attr`; then call like CALL_NAMES. The kwarg names tuple and attr name are in the constant pool (EXTRA row), not on the stack.
 - **Compiler form:** Emitted by `compile/call-attr` when the call has keyword arguments and no `*:` or `**:`.
+
+---
+
+### KOS_OP_CALL_FAST_ATTR_NAMES {#kos_op_call_fast_attr_names}
+
+- **Style**: EXTRA. Schema: FASTVAR (slot index for obj), CONST (attr name), CONST (kwarg names tuple), COUNT (npos).
+- **Status**: Implemented.
+- **Stack**: `[..., pos_0, ..., pos_{N-1}, kwd_val_0, ..., kwd_val_{M-1}] → [..., result]`. Obj is loaded from fast slot `a0` via `KosNamespace_FastDeref`; not on stack. One fewer element than CALL_ATTR_NAMES. Resolve and call like CALL_ATTR_NAMES. When `send_self=0` (unbound method), uses `KosStackSteal_TailPrepend` to prepend obj to args; when `send_self=1`, uses `KosStackSteal_Tail`.
+- **Compiler form:** Not emitted by the compiler; available for manual bytecode construction.
+
+---
+
+### KOS_OP_CALL_VAR_ATTR_NAMES {#kos_op_call_var_attr_names}
+
+- **Style**: EXTRA. Schema: VAR (name/cpool for obj), CONST (attr name), CONST (kwarg names tuple), COUNT (npos).
+- **Status**: Implemented.
+- **Stack**: Same as CALL_FAST_ATTR_NAMES. Obj is loaded from frame namespace by name (`frame_ns_deref`) instead of fast slot.
+- **Compiler form:** Not emitted by the compiler; available for manual bytecode construction.
 
 ---
 

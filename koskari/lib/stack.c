@@ -787,6 +787,7 @@ int KosStackSteal_Tail(
 
   if (! count) {
     s->len = 0;
+    s->owned_start = 0;
     s->vals = s->fast;
     return 0;
   }
@@ -796,6 +797,7 @@ int KosStackSteal_Tail(
     PyErr_Format(PyExc_RuntimeError, "stack steal tail underrun."
                  " requested: %zu, available: 0", count);
     s->len = 0;
+    s->owned_start = 0;
     s->vals = s->fast;
     return -1;
   }
@@ -805,17 +807,20 @@ int KosStackSteal_Tail(
     PyErr_Format(PyExc_RuntimeError, "stack steal tail underrun."
                  " requested: %zu, available: %zu", count, len);
     s->len = 0;
+    s->owned_start = 0;
     s->vals = s->fast;
     return -1;
   }
 
   s->len = count;
+  s->owned_start = 0;
 
   if (count > KOS_STACK_STEAL_FAST_SIZE) {
     s->vals = PyMem_Malloc(count * sizeof(PyObject *));
     if (! s->vals) {
       PyErr_NoMemory();
       s->len = 0;
+      s->owned_start = 0;
       s->vals = s->fast;
       return -1;
     }
@@ -836,14 +841,78 @@ int KosStackSteal_Tail(
 
 void KosStackSteal_Free(KosStackSteal *s) {
 
-  for (size_t i = s->len; i--; )
-    Py_DECREF(s->vals[i]);
+  for (size_t i = s->len; i > s->owned_start; i--)
+    Py_DECREF(s->vals[i - 1]);
 
   if (s->vals != s->fast)
     PyMem_Free(s->vals);
 
   s->len = 0;
+  s->owned_start = 0;
   s->vals = s->fast;
+}
+
+
+int KosStackSteal_TailPrepend(
+    KosStackSteal *s,
+    PyObject *prefix,
+    size_t count,
+    KosStackBlock **block) {
+
+  if (! count) {
+    s->len = 1;
+    s->owned_start = 1;
+    s->vals = s->fast;
+    s->fast[0] = prefix;
+    return 0;
+  }
+
+  KosStackBlock *b = *block;
+  if (! b) {
+    PyErr_Format(PyExc_RuntimeError, "stack steal tail underrun."
+                 " requested: %zu, available: 0", count);
+    s->len = 0;
+    s->owned_start = 0;
+    s->vals = s->fast;
+    return -1;
+  }
+
+  size_t len = b->len;
+  if (count > len) {
+    PyErr_Format(PyExc_RuntimeError, "stack steal tail underrun."
+                 " requested: %zu, available: %zu", count, len);
+    s->len = 0;
+    s->owned_start = 0;
+    s->vals = s->fast;
+    return -1;
+  }
+
+  size_t total = count + 1;
+  s->len = total;
+  s->owned_start = 1;
+
+  if (total > KOS_STACK_STEAL_FAST_SIZE) {
+    s->vals = PyMem_Malloc(total * sizeof(PyObject *));
+    if (! s->vals) {
+      PyErr_NoMemory();
+      s->len = 0;
+      s->owned_start = 0;
+      s->vals = s->fast;
+      return -1;
+    }
+  } else {
+    s->vals = s->fast;
+  }
+
+  s->vals[0] = prefix;
+  while (count--) {
+    s->vals[count + 1] = b->objs[--len];
+  }
+
+  b->len = len;
+  *block = b;
+
+  return 0;
 }
 
 

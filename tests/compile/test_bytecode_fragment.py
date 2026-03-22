@@ -255,6 +255,28 @@ class TestCode(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(code.constant(a2), kw_names)
         self.assertEqual(a3, 0)
 
+    async def test_extra_opcode_call_var_attr_names(self):
+        """EXTRA opcode CALL_VAR_ATTR_NAMES: arg indexes extra table row."""
+        nspec = NamespaceSpec(None, ("obj",), ())
+        kw_names = ()
+        instr = (
+            [OpCode.KOS_OP_CALL_VAR_ATTR_NAMES, ("obj", "bar", kw_names, 0)],
+            [OpCode.KOS_OP_RETURN, 1],
+        )
+        code = Code(nspec, instr)
+        self.assertEqual(code.length(), 2)
+        op, arg = code.oparg(0)
+        self.assertEqual(op, OpCode.KOS_OP_CALL_VAR_ATTR_NAMES)
+        self.assertEqual(arg, 0)
+        a0, a1, a2, a3 = code.extra_tuple(0)
+        self.assertIn(a0, range(len(code.constants_pool)))
+        self.assertEqual(code.constant(a0), "obj")
+        self.assertIn(a1, range(len(code.constants_pool)))
+        self.assertEqual(code.constant(a1), "bar")
+        self.assertIn(a2, range(len(code.constants_pool)))
+        self.assertEqual(code.constant(a2), kw_names)
+        self.assertEqual(a3, 0)
+
     async def test_extra_opcode_call_attr(self):
         """EXTRA opcode CALL_ATTR: arg indexes extra table row (attr, count)."""
         nspec = NamespaceSpec(None, (), ())
