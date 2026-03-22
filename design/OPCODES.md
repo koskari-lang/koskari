@@ -268,6 +268,12 @@ When adding or changing an opcode:
 | CALL | COUNT | Call with N positional args | [§17](#kos_op_call) |
 | CALL_NAMES | COUNT | Call with keyword names on stack | [§17](#kos_op_call_names) |
 | CALL_STAR | STAR | Call with *args and/or **kwargs | [§17](#kos_op_call_star) |
+| CALL_VAR | EXTRA | Call callable from namespace by name | [§17](#kos_op_call_var) |
+| CALL_FAST | EXTRA | Call callable from fast local slot | [§17](#kos_op_call_fast) |
+| CALL_VAR_NAMES | EXTRA | Call by name with keyword args | [§17](#kos_op_call_var_names) |
+| CALL_FAST_NAMES | EXTRA | Call from fast slot with keyword args | [§17](#kos_op_call_fast_names) |
+| CALL_VAR_STAR | EXTRA | Call by name with *args/**kwargs | [§17](#kos_op_call_var_star) |
+| CALL_FAST_STAR | EXTRA | Call from fast slot with *args/**kwargs | [§17](#kos_op_call_fast_star) |
 | CALL_ATTR | EXTRA | Call obj.name with N positional args | [§17](#kos_op_call_attr) |
 | CALL_ATTR_NAMES | EXTRA | Call obj.name with positional + keyword args | [§17](#kos_op_call_attr_names) |
 | CALL_FAST_ATTR_NAMES | EXTRA | Call obj.name with obj from fast slot | [§17](#kos_op_call_fast_attr_names) |
@@ -1731,6 +1737,60 @@ Pool: 0 = `"os"`, 1 = `"path"`, 2 = `"sep"`, 3 = None.
 | 2     | CONST   | 2   | 2 (kwd)  | stack: [..., callable, pos, kwd] |
 | 3     | CALL_STAR | 3 | 3 (bits) | stack: [..., result] |
 | 4     | RETURN  | 1   | 1        | |
+
+---
+
+### KOS_OP_CALL_VAR {#kos_op_call_var}
+
+- **Style**: EXTRA. Schema: VAR (name cpool idx), COUNT (npos), NOARG, NOARG.
+- **Status**: Implemented.
+- **Stack**: `[..., pos_0, ..., pos_{N-1}] → [..., result]`. Callable is loaded from frame namespace by name (`frame_ns_deref`); not on stack. KosCallable: steal args then KosContext_Call. Plain Python: TailPtr + PyObject_Vectorcall + DropNoErr.
+- **Compiler form:** Not emitted by the compiler; available for manual bytecode construction.
+
+---
+
+### KOS_OP_CALL_FAST {#kos_op_call_fast}
+
+- **Style**: EXTRA. Schema: FASTVAR (slot index), COUNT (npos), NOARG, NOARG.
+- **Status**: Implemented.
+- **Stack**: Same as CALL_VAR. Callable is loaded from fast local slot via `KosNamespace_FastDeref`; not on stack.
+- **Compiler form:** Not emitted by the compiler; available for manual bytecode construction.
+
+---
+
+### KOS_OP_CALL_VAR_NAMES {#kos_op_call_var_names}
+
+- **Style**: EXTRA. Schema: VAR (name cpool idx), CONST (kw names tuple cpool idx), COUNT (npos), NOARG.
+- **Status**: Implemented.
+- **Stack**: `[..., pos_0, ..., pos_{N-1}, kwd_val_0, ..., kwd_val_{M-1}] → [..., result]`. Callable from namespace by name; kw names tuple from constant pool. Same call semantics as CALL_NAMES.
+- **Compiler form:** Not emitted by the compiler; available for manual bytecode construction.
+
+---
+
+### KOS_OP_CALL_FAST_NAMES {#kos_op_call_fast_names}
+
+- **Style**: EXTRA. Schema: FASTVAR (slot index), CONST (kw names tuple cpool idx), COUNT (npos), NOARG.
+- **Status**: Implemented.
+- **Stack**: Same as CALL_VAR_NAMES. Callable from fast slot via `KosNamespace_FastDeref`.
+- **Compiler form:** Not emitted by the compiler; available for manual bytecode construction.
+
+---
+
+### KOS_OP_CALL_VAR_STAR {#kos_op_call_var_star}
+
+- **Style**: EXTRA. Schema: VAR (name cpool idx), STAR (bitflags: 1 = *args, 2 = **kwargs), NOARG, NOARG.
+- **Status**: Implemented.
+- **Stack**: Same as CALL_STAR minus callable. `[..., pos, kwd]` or subsets per flags. Callable from namespace by name. Pop per flags, ensure pos is tuple, call via KosContext_CallArgs.
+- **Compiler form:** Not emitted by the compiler; available for manual bytecode construction.
+
+---
+
+### KOS_OP_CALL_FAST_STAR {#kos_op_call_fast_star}
+
+- **Style**: EXTRA. Schema: FASTVAR (slot index), STAR (bitflags), NOARG, NOARG.
+- **Status**: Implemented.
+- **Stack**: Same as CALL_VAR_STAR. Callable from fast slot via `KosNamespace_FastDeref`.
+- **Compiler form:** Not emitted by the compiler; available for manual bytecode construction.
 
 ---
 
