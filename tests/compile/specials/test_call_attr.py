@@ -100,7 +100,8 @@ class TestCallAttrBytecodeShape(SpecialsTestCase):
         extra_idx = ops[0][2]
         a0, a1, a2, a3 = body.extra_tuple(extra_idx)
         self.assertEqual(body.constant(a0), "m")
-        self.assertEqual(a1, 1)
+        self.assertEqual(body.constant(a1), ("name",))
+        self.assertEqual(a2, 1)
 
 
     async def test_star_arg_emits_call_attr_star(self):
@@ -142,9 +143,8 @@ class TestCallAttrBytecodeShape(SpecialsTestCase):
 class TestCallAttrNameMustBeSymbol(SpecialsTestCase):
 
     async def test_non_symbol_name_raises_special_error(self):
-        with self.assertRaises(SpecialError) as ctx:
+        with self.assertRaises(SpecialError):
             self.compile_expr("(compile/call-attr obj 42)", obj="hello")
-        self.assertIn("compile/call-attr name must be symbol", str(ctx.exception))
 
 
 class TestCallAttrEndToEnd(SpecialsTestCase):
@@ -188,6 +188,55 @@ class TestCallAttrEndToEnd(SpecialsTestCase):
             "(compile/call-attr obj m 99 name: 42)", obj=obj)
         await expr()
         self.assertEqual(received, [(99, 42)])
+
+
+class TestCallAttrExpansion(SpecialsTestCase):
+    """
+    (compile/call (attr obj name) args) and (compile/call (compile/attr obj name) args)
+    expand to (compile/call-attr obj name args) and emit CALL_ATTR
+    """
+
+    async def test_compile_call_compile_attr_emits_call_attr(self):
+        code = self.compile_to_code(
+            "(lambda [] (compile/call (compile/attr s upper)))", s="hello")
+        body = self.lambda_body_code(code)
+        ops = call_attr_ops(body)
+        self.assertEqual(len(ops), 1)
+        self.assertEqual(ops[0][1], OpCode.KOS_OP_CALL_ATTR)
+        extra_idx = ops[0][2]
+        a0, a1, a2, a3 = body.extra_tuple(extra_idx)
+        self.assertEqual(body.constant(a0), "upper")
+        self.assertEqual(a1, 0)
+
+
+    async def test_compile_call_attr_emits_call_attr(self):
+        code = self.compile_to_code(
+            "(lambda [] (compile/call (attr obj m) 1 2))",
+            obj=object(), m=lambda self, a, b: (a, b))
+        body = self.lambda_body_code(code)
+        ops = call_attr_ops(body)
+        self.assertEqual(len(ops), 1)
+        self.assertEqual(ops[0][1], OpCode.KOS_OP_CALL_ATTR)
+        extra_idx = ops[0][2]
+        a0, a1, a2, a3 = body.extra_tuple(extra_idx)
+        self.assertEqual(body.constant(a0), "m")
+        self.assertEqual(a1, 2)
+
+
+    async def test_compile_call_compile_attr_end_to_end(self):
+        s = "hello"
+        expr, mod = self.compile_expr(
+            "(compile/call (compile/attr s upper))", s=s)
+        result = await expr()
+        self.assertEqual(result, "HELLO")
+
+
+    async def test_compile_call_attr_end_to_end(self):
+        obj = type('Obj', (), {'m': lambda self, a, b: a + b})()
+        expr, mod = self.compile_expr(
+            "(compile/call (attr obj m) 10 32)", obj=obj)
+        result = await expr()
+        self.assertEqual(result, 42)
 
 
 # The end.

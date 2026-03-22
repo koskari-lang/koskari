@@ -15,25 +15,28 @@
 
 
 /**
-   CALL_ATTR_NAMES: arg = extra index. Schema CONST (attr name), COUNT (npos).
-   Stack [obj, pos_0, ..., pos_{N-1}, kwd_val_0, ..., kwd_val_{M-1}, names].
+   CALL_ATTR_NAMES: arg = extra index. Schema CONST (attr name),
+   CONST (kwarg names tuple), COUNT (npos).
+   Stack [obj, pos_0, ..., pos_{N-1}, kwd_val_0, ..., kwd_val_{M-1}].
    Resolve obj.name, then call like CALL_NAMES.
 */
 KOS_OP_HANDLER(CALL_ATTR_NAMES) {
   KosCode *code = CURRENT_CODE(ctx);
   KosExtra row = KosCode_GetExtra(code, KosOp_ARG(insn));
   uint32_t attr_cpool_idx = row.a0;
-  unsigned opa = row.a1;
+  uint32_t names_cpool_idx = row.a1;
+  unsigned opa = row.a2;
 
   PyObject *name = KosCode_GetConstant((PyObject *) code, attr_cpool_idx);
   if (! name)
     return -1;
 
-  KosStackBlock **stack = &CURRENT_STACK(ctx);
-
-  PyObject *names = KosStackBlock_Peek(*stack);
+  PyObject *names = KosCode_GetConstant((PyObject *) code, names_cpool_idx);
   if (! names)
     return -1;
+
+  KosStackBlock **stack = &CURRENT_STACK(ctx);
+
   if (! PyTuple_CheckExact(names)) {
     PyErr_Format(PyExc_RuntimeError, "CALL_ATTR_NAMES names must be tuple"
                  ", not %R", names);
@@ -43,14 +46,13 @@ KOS_OP_HANDLER(CALL_ATTR_NAMES) {
   Py_ssize_t npos = (Py_ssize_t) opa;
   Py_ssize_t nkwds = PyTuple_GET_SIZE(names);
   Py_ssize_t total = npos + nkwds;
-  size_t ntotal = (size_t)(total + 2);
+  size_t ntotal = (size_t)(total + 1);
 
   PyObject *const *ptr = KosStackBlock_TailPtr(*stack, ntotal);
   if (! ptr)
     return -1;
 
   PyObject *obj = ptr[0];
-  PyObject *kwnames = nkwds ? ptr[total + 1] : NULL;
 
   PyObject *resolved;
   int send_self = kos_resolve_named_attr(obj, name, NULL, &resolved);
@@ -64,7 +66,6 @@ KOS_OP_HANDLER(CALL_ATTR_NAMES) {
       Py_DECREF(resolved);
       return -1;
     }
-    PyObject *kwnames_arg = nkwds ? steal.vals[total + 1] : NULL;
     PyObject *const *args;
     Py_ssize_t nargs;
     if (send_self == 0) {
@@ -75,7 +76,7 @@ KOS_OP_HANDLER(CALL_ATTR_NAMES) {
       nargs = npos;
     }
     int r = KosContext_Call(ctx, out_ev, resolved, args, nargs,
-                            kwnames_arg, 0);
+                            names, 0);
     KosStackSteal_Free(&steal);
     Py_DECREF(resolved);
     return r;
@@ -83,10 +84,10 @@ KOS_OP_HANDLER(CALL_ATTR_NAMES) {
 
   if (send_self == 0) {
     result = PyObject_Vectorcall(resolved, &ptr[0], (size_t)(npos + 1),
-                                  kwnames);
+                                 names);
   } else {
     result = PyObject_Vectorcall(resolved,
-        (npos > 0) ? &ptr[1] : NULL, (size_t) npos, kwnames);
+        (npos > 0) ? &ptr[1] : NULL, (size_t) npos, names);
   }
   Py_DECREF(resolved);
   if (! result)

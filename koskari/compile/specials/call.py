@@ -22,9 +22,11 @@ Special form handler for compile/call.
 """
 
 
-from ...lib import OpCode, pair, symbol
+from ...lib import OpCode, cons, nil, pair, symbol
 from ..compiler import ByteCodeFragment, Compiler
-from ..helpers import gather_parameters_ng, special
+from ..helpers import gather_parameters_ng, special, special_forms
+from ...matcher import LIST, LITERAL_SYM, MATCH, REST, SYMBOL, VALUE, match
+from ...exceptions import SpecialError
 
 
 def _partition_args(args_seq):
@@ -69,6 +71,25 @@ def _partition_kwds(kwds_seq):
     return chunks
 
 
+_CALL_PATTERNS = [
+    # call (attr obj attr)
+    MATCH(LIST(LITERAL_SYM("attr"), VALUE("obj"), SYMBOL("attr"))),
+    MATCH(LIST(LITERAL_SYM("compile/attr"), VALUE("obj"), SYMBOL("attr"))),
+
+    # call (attr obj attr args...)
+    MATCH(
+        LIST(LITERAL_SYM("attr"), VALUE("obj"), SYMBOL("attr")),
+        REST("args")),
+    MATCH(
+        LIST(LITERAL_SYM("compile/attr"), VALUE("obj"), SYMBOL("attr")),
+        REST("args")),
+
+    MATCH(VALUE("callable")),
+    MATCH(VALUE("callable"), REST("args")),
+]
+
+
+@special_forms(_CALL_PATTERNS)
 @special(symbol("compile/call"))
 def special_call(
         compiler: Compiler,
@@ -77,11 +98,26 @@ def special_call(
 
     called_by, body = source
 
+    matched = match(body, _CALL_PATTERNS)
+    if matched is None:
+        raise SpecialError("compile/call requires at least a callable", source)
+
+    if "attr" in matched:
+        obj = matched["obj"]
+        attr = matched["attr"]
+        args_src = matched["args"].source if "args" in matched else nil
+        new_form = cons(
+            symbol("compile/call-attr"),
+            obj.source, attr.source, args_src)
+        return new_form
+
+    callable = matched["callable"].source
+    rest = matched["args"].source if "args" in matched else nil
+
     fragment = compiler.fragment(called_by)
 
     fragment.position_of(body)
-    obj, rest = body
-    fragment.merge(compiler.full_compile(obj))
+    fragment.merge(compiler.full_compile(callable))
 
     args_seq, kwds_seq = gather_parameters_ng(rest, source=rest)
     has_star = any(x[0] == "*" for x in args_seq)
@@ -151,6 +187,99 @@ def special_call(
             fragment.instruction(OpCode.KOS_OP_TAIL_CALL_STAR, opa)
         else:
             fragment.instruction(OpCode.KOS_OP_CALL_STAR, opa)
+
+    return fragment
+
+
+_CALL_ATTR_PATTERNS = [
+    MATCH(VALUE("obj"), SYMBOL("attr")),
+    MATCH(VALUE("obj"), SYMBOL("attr"), REST("args")),
+]
+
+
+@special_forms(_CALL_ATTR_PATTERNS)
+@special(symbol("compile/call-attr"))
+def special_call_attr(
+        compiler: Compiler,
+        source: pair,
+        tc: bool = False) -> ByteCodeFragment:
+
+    called_by, body = source
+
+    fragment = compiler.fragment(called_by)
+
+    matched = match(body, _CALL_ATTR_PATTERNS)
+    if matched is None:
+        raise SpecialError("compile/call-attr requires obj, attr, and optionally args", source)
+
+    obj = matched["obj"].source
+    attr = matched["attr"].source
+    args_src = matched["args"].source if "args" in matched else nil
+
+    fragment.position_of(body)
+    fragment.merge(compiler.full_compile(obj))
+
+    args_seq, kwds_seq = gather_parameters_ng(args_src, source=args_src)
+    has_star = any(x[0] == "*" for x in args_seq)
+    has_starstar = any(x[0] == "**" for x in kwds_seq)
+
+    if not has_star and not has_starstar:
+        if not kwds_seq:
+            for _, expr in args_seq:
+                fragment.merge(compiler.full_compile(expr, False))
+            fragment.position_of(source)
+            fragment.instruction(
+                OpCode.KOS_OP_CALL_ATTR, (str(attr), len(args_seq), 0, 0))
+        else:
+            pos_exprs = [expr for (idx, expr) in args_seq]
+            kw_names = []
+            kw_values = []
+            for item in kwds_seq:
+                kw_names.append(item[0])
+                kw_values.append(item[1])
+            opa = len(pos_exprs)
+            for expr in pos_exprs:
+                fragment.merge(compiler.full_compile(expr, False))
+            for expr in kw_values:
+                fragment.merge(compiler.full_compile(expr, False))
+            fragment.position_of(source)
+            fragment.instruction(
+                OpCode.KOS_OP_CALL_ATTR_NAMES, (str(attr), tuple(kw_names), opa, 0))
+    else:
+        opa = 0
+        if args_seq:
+            opa = opa | 1
+        if kwds_seq:
+            opa = opa | 2
+
+        if args_seq:
+            arg_chunks = _partition_args(args_seq)
+            for kind, data in arg_chunks:
+                if kind == "pos":
+                    for _, expr in data:
+                        fragment.merge(compiler.full_compile(expr, False))
+                    fragment.instruction(OpCode.KOS_OP_BUILD_ARGS, len(data))
+                else:
+                    fragment.merge(compiler.full_compile(data, False))
+            if len(arg_chunks) > 1:
+                fragment.instruction(OpCode.KOS_OP_COMBINE_ARGS, len(arg_chunks))
+
+        if kwds_seq:
+            kwd_chunks = _partition_kwds(kwds_seq)
+            for kind, data in kwd_chunks:
+                if kind == "kw":
+                    names = tuple(n for n, _ in data)
+                    for _, expr in data:
+                        fragment.merge(compiler.full_compile(expr, False))
+                    fragment.instruction(OpCode.KOS_OP_BUILD_KWDS_NAMES, names)
+                else:
+                    fragment.merge(compiler.full_compile(data, False))
+            if len(kwd_chunks) > 1:
+                fragment.instruction(OpCode.KOS_OP_COMBINE_KWDS, len(kwd_chunks))
+
+        fragment.position_of(source)
+        fragment.instruction(
+            OpCode.KOS_OP_CALL_ATTR_STAR, (str(attr), opa, 0, 0))
 
     return fragment
 

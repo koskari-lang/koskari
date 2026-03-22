@@ -110,11 +110,14 @@ are equivalent to `fn(a, *bargs, c, *dargs)` and
 argument, then emits CALL (positional only), CALL_NAMES (positional + keywords),
 or CALL_STAR (any use of `*:` or `**:`).
 
-**Behaviour:** Compiles the first subform (the callee), then parses the
-remaining forms with `gather_parameters_ng` into positionals and star-args
-(interleaved) and keywords and starstar-args (interleaved). Positional-only
-calls emit `CALL n`; keyword calls emit `CALL_NAMES`; any star or starstar use
-emits `CALL_STAR`. Tail-call mode (`tc`) is respected when set by the compiler.
+**Behaviour:** If the callee is `(attr OBJ SYM)` or `(compile/attr OBJ SYM)`,
+the form expands to `(compile/call-attr OBJ SYM ARGS...)` and that form is
+compiled instead. Otherwise, compiles the first subform (the callee), then
+parses the remaining forms with `gather_parameters_ng` into positionals and
+star-args (interleaved) and keywords and starstar-args (interleaved).
+Positional-only calls emit `CALL n`; keyword calls emit `CALL_NAMES`; any star
+or starstar use emits `CALL_STAR`. Tail-call mode (`tc`) is respected when set
+by the compiler.
 
 **Examples:**
 
@@ -134,7 +137,47 @@ emits `CALL_STAR`. Tail-call mode (`tc`) is respected when set by the compiler.
 ;; Interleaved (Python 3.5+ style)
 (compile/call fn a *: bargs c *: dargs)
 (compile/call fn x: 1 **: kw1 y: 2 **: kw2)
+
+;; Method call via attr expansion: (compile/call (attr obj m) args) → compile/call-attr
+(compile/call (attr s upper))
+(compile/call (compile/attr obj split sep) "-")
 ```
+
+
+## compile/call-attr
+
+**Symbol:** `compile/call-attr`
+
+**Syntax:** `(compile/call-attr OBJ SYM [ARG ...])`
+
+**Use-case:** Call a method by name: resolve `obj.sym`, then invoke with the
+given arguments. Equivalent to `obj.sym(arg...)` in Python. Supports positional
+args, keyword args (`KEY: VAL`), and `*:` / `**:` (emits CALL_ATTR_STAR).
+
+**Behaviour:** Compiles OBJ, then parses ARGS with `gather_parameters_ng`.
+Positional-only emits `CALL_ATTR`; positional + keywords emits `CALL_ATTR_NAMES`;
+any `*:` or `**:` emits `CALL_ATTR_STAR`. SYM must be a symbol (the attribute
+name).
+
+**Note:** `(compile/call (attr obj name) args)` and `(compile/call (compile/attr obj name) args)`
+expand to this form before compilation.
+
+**Examples:**
+
+```scheme
+;; Positional only
+(compile/call-attr s upper)
+(compile/call-attr s split sep)
+(compile/call-attr s replace "l" "L")
+
+;; With keywords
+(compile/call-attr obj m 99 name: 42)
+
+;; Star args (emits CALL_ATTR_STAR)
+(compile/call-attr obj fn *: args **: kwargs)
+```
+
+**Tests:** `tests/compile/specials/test_call_attr.py`
 
 
 ## compile/lambda
