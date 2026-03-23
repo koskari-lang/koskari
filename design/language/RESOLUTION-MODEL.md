@@ -18,7 +18,7 @@ implicit closures and global reads.
 
 - **Reads:** Walk the namespace chain (local → closure → … → module). Implicit global if not found.
 - **Writes (setq):** Same as reads — walk up, implicit global if not found.
-- **Defines:** Promoted to front; create local binding.
+- **Defines:** Create local binding; "effective" promotion via cleanup (see below).
 - **Problem:** A typo in `(setq x 1)` creates a new global variable silently.
 
 ### Python's Behavior
@@ -61,6 +61,18 @@ implicit closures and global reads.
 | `request_for_write` | declares, request_global, or closure chain only (never implicit global) |
 | `request` | declares, request_global, closure chain, or implicit global (module) |
 
+The **read** path (`request`) walks the namespace chain and crosses into the
+module, same as today. Only the **write** path (`request_for_write`) is bounded
+to non-globals (chain only; module only via explicit `request_global`).
+
+### Effective Promotion (Not Literal Reordering)
+
+When `declare_var(x)` or `request_global(x)` runs, cleanup removes `x` from
+other buckets. A define or define-global that appears "later" in source order
+thus re-homes any prior requests for that name into the declare or global
+bucket. No literal reordering of expressions is needed; the bucket cleanup
+rules achieve the desired effect.
+
 ---
 
 ## Architectural Changes
@@ -78,6 +90,11 @@ implicit closures and global reads.
 - Module-level code runs in the module's namespace; functions receive their
   namespace with a typed parent (function → function → …; module is not in the
   chain for resolution semantics).
+
+A new API is needed: resolution that walks the parent chain but **stops when it
+hits a ModuleNamespace**. This is used for satisfying `request_for_write`
+(closure chain only). The existing resolution continues into the module for
+reads.
 
 **References:**
 
@@ -111,8 +128,11 @@ when walking the parent chain.
 
 **Proposed:** Add `request_global` bucket and `define-global` special form.
 
-- `define-global x` (and optionally `define-global x value`) explicitly pulls
-  a ref from the module and makes it available for read and write.
+- `define-global` mirrors `define` structure: `(define-global x)`,
+  `(define-global x value)`, or `(define-global x (lambda ...))`. Same optional
+  value and function forms.
+- Explicitly pulls a ref from the module and makes it available for read and
+  write.
 - When adding to `request_global(x)`: remove x from `request` and
   `request_for_write`; error if x is in `declares`.
 - `request_global` does not propagate to outer (inner gets the global directly).
@@ -156,27 +176,38 @@ NamespaceSpec(name, local_syms, closure_syms, global_syms)
 - `koskari/lib/namespace.h` — `KosNamespaceSpec` struct
 - `koskari/types.py` or equivalent — `NamespaceSpec` Python type
 
-### 6. Compilation Resolution Order
+### 6. Compilation Resolution Order and Completion Hook
 
-**Proposed pass order:**
+When completing a fragment (e.g. in `compiler.complete`):
 
-1. **Local declarations** — Process all `declare_var` (including define promotion).
-2. **Explicit globals** — Process `request_global` / define-global; add to
-   `global_syms`; treat as handled.
-3. **Write validation** — For each `request_for_write`: must be in handled names
-   or resolvable in the namespace chain (not module). Error if not.
-4. **Read resolution** — For each `request`: resolve from handled, chain, or
-   module (implicit global for reads).
+1. **Cpool scan** — Scan the constant pool for `FunctionSpec` values. For each,
+   merge the inner `Code`'s `request` and `request_for_write` into the current
+   fragment. This requires storing the inner fragment's request buckets on the
+   `Code` (or equivalent) when building it from a fragment.
+2. **Write validation** — For each `request_for_write`: must be in declares,
+   `request_global`, or resolvable in the namespace chain (using the new
+   "walk until ModuleNamespace" API). Error if not.
+3. **Read resolution** — For each `request`: resolve from declares,
+   `request_global`, chain, or module (implicit global for reads). Same as today.
+
+Effective promotion is handled by bucket cleanup when `declare_var` or
+`request_global` runs; no separate define pass is needed.
 
 ---
 
 ## Propagation and Closure Aggregation
 
-### Inner → Outer Propagation
+### Inner → Outer Propagation (Cpool Scan)
 
-When compiling a nested function, merge its `request` and `request_for_write`
-into the outer fragment. The outer must satisfy these before its own body is
-fully resolved.
+Propagation happens at **end of compilation**, when completing a fragment. Scan
+the constant pool for `FunctionSpec` values; each wraps a `Code` built from an
+inner fragment. Merge the inner's `request` and `request_for_write` into the
+current (outer) fragment.
+
+To support this, the `Code` object (or equivalent) must store the inner
+fragment's `request` and `request_for_write` when the Code is built from that
+fragment. The completion pass then iterates over CONST instructions, extracts
+`FunctionSpec` → inner `Code`, and merges the stored buckets into the outer.
 
 - **request** propagates: outer must provide the name (declare, closure, or
   eventually global for reads).
@@ -206,8 +237,16 @@ for writes.
 | `self.requests = []` | Add `self.request_for_write = []`, `self.request_global = []` |
 | `request_var(name)` — add to requests if not in declares | Split: `request_var(name)` for reads; `request_for_write(name)` for writes |
 | `declare_var(name)` — append to declares | Add cleanup: remove name from requests, request_for_write, request_global |
-| `merge(other)` — merge declares, requests | Merge request_for_write; do not merge request_global |
+| `merge(other)` — merge declares, requests | Merge request, request_for_write; do not merge request_global |
 | `as_namespace_spec()` → `(declares, requests)` | → `(declares, closure_syms, global_syms)` where closure_syms from requests (minus global resolution), global_syms from request_global |
+
+### Code / FunctionSpec (for cpool propagation)
+
+When a `Code` is built from a `ByteCodeFragment`, store the fragment's
+`request` and `request_for_write` on the Code (or on a FunctionSpec wrapping
+it). The completion pass iterates CONST args, extracts FunctionSpec → inner
+Code, and merges these stored buckets into the outer fragment before
+validation.
 
 ### Special Forms (variables.py)
 
@@ -217,7 +256,7 @@ for writes.
 | delq | `frag.request_var(sym)` | Same as setq |
 | define | `frag.declare_var(name)` | Unchanged; declare_var gains pruning |
 | bindq | `frag.declare_var(name)` | Unchanged |
-| (new) define-global | — | `frag.request_global(name)`; optional init value; error if name in declares |
+| (new) define-global | — | `frag.request_global(name)`; mirrors define: optional value or `(lambda ...)`; error if name in declares |
 
 ### compile_raw_symbol (compiler.py, lines 603-631)
 
@@ -230,7 +269,7 @@ for writes.
 | Current | Proposed |
 |---------|----------|
 | `ns_init_syms(self, parent, local_syms, closure_syms)` | Add `global_syms`; resolve from module reference instead of parent for those |
-| Closure lookup via `KosNamespace_FindRef(parent, …)` | Chain stops at module boundary; global_syms resolved via separate module ref |
+| Closure lookup via `KosNamespace_FindRef(parent, …)` | Add new API: walk until ModuleNamespace (for writes); chain stops at module boundary; global_syms resolved via separate module ref |
 
 ### Function Creation (func.c)
 
@@ -248,20 +287,24 @@ for writes.
    - Update `merge` to propagate `request_for_write` and `request` only.
 
 2. **Phase 2 — Special form updates**
-   - Change setq/delq to use `request_for_write` and validate before emit.
-   - Add `compile/define-global` special form.
-   - Ensure define promotion runs before write validation.
+   - Change setq/delq/inplace to use `request_for_write`.
+   - Add `compile/define-global` special form (mirrors define: optional value or
+     function form).
+   - Effective promotion is handled by bucket cleanup; no separate pass needed.
 
 3. **Phase 3 — NamespaceSpec and C runtime**
-   - Add `global_syms` to `NamespaceSpec`.
+   - Add `global_syms` to `NamespaceSpec` (reshape API: 4-arg constructor).
    - Update `ns_init_syms` to handle global_syms with module lookup.
+   - Add new API: resolution that walks parent chain until ModuleNamespace (for
+     write validation; does not cross into module).
    - Adjust function/namespace creation to pass module and use typed parent chain.
 
 4. **Phase 4 — Propagation and resolution**
-   - Update `merge` and child scope handling so inner requests propagate correctly.
-   - Implement resolution order: declares → request_global → validate
-     request_for_write → resolve request (with module fallback for reads).
-   - Add compile-time error for unsatisfied request_for_write.
+   - Store fragment's request/request_for_write on Code when building from fragment.
+   - Implement cpool scan at fragment completion: extract FunctionSpec from CONST
+     args, merge inner's request/request_for_write into outer.
+   - Validate request_for_write after cpool merge (using Phase 3 API); add
+     compile-time error if unsatisfied.
 
 5. **Phase 5 — Tests**
    - Typo-in-assignment produces compile error.
