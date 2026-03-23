@@ -295,9 +295,13 @@ line is consumed as an additional peer block at the same nesting level.
 
 | Head symbol     | Peer heads allowed (in order)              |
 |---|---|
-| *(default)*     | none — any unknown head falls back to the default block handler |
+| *(default)*     | none — any unknown head falls back to layout/block |
 | `begin`         | none |
+| `class`         | none |
+| `define-syntax` | none |
+| `dyn-wind`      | `before`, `body`, `after` |
 | `if`            | `elif`\*, `else`? |
+| `syntax-rules`  | none |
 | `try`           | `except`+, `else`?, `finally`? |
 
 (`*` = zero or more, `?` = zero or one, `+` = one or more)

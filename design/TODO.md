@@ -9,15 +9,8 @@ design docs for detail.
 
 ### Unimplemented opcodes (stubs)
 
-These opcodes currently delegate to `op_unimplemented_stub` and raise at
-runtime. Implement when method-call-style `obj.method(...)` from bytecode is
-needed.
-
-- **CALL_ATTR_NAMES** — `koskari/lib/opcode/CALL_ATTR_NAMES.c`
-- **CALL_ATTR_STAR** — `koskari/lib/opcode/CALL_ATTR_STAR.c`
-
-Ref: [FEATURES.md](FEATURES.md) § Opcodes: implementation status;
-[OPCODES.md](OPCODES.md) (per-opcode reference); [interpreter/bytecode.md](interpreter/bytecode.md) (format, layout).
+See [OPCODES.md](OPCODES.md) §1.6 for the authoritative list of stub opcodes.
+That document is the single reference for implementation status.
 
 ---
 

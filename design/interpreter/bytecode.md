@@ -207,13 +207,12 @@ quick lookup.
 
 ### Delimited Continuations
 - `KOS_OP_PUSH_PROMPT`: Push prompt delimiter; also pushes a COW stack block for the delimited region (arg = prompt_id constant index)
-- `KOS_OP_SET_PROMPT_HANDLER`: Set handler for prompt (arg = handler pc label)
 - `KOS_OP_POP_PROMPT`: Drop PROMPT's stack block, pop prompt, push result to outer stack (normal path); or unwind to invocation site (continuation-return path)
 - `KOS_OP_PUSH_SHIFT`: Capture continuation, unwind to prompt, enter shift block with k on stack (arg = prompt_id constant index); SHIFT is a simple marker, no stack block
 - `KOS_OP_POP_SHIFT`: Pop TOS as result; TRUNCATE_AND_INJECT unwinds through SHIFT+PROMPT, drops stack block, injects result onto outer stack
 
 ### Dynamic Wind
-- `KOS_OP_PUSH_WIND`: Push wind extent (arg = after_block label)
+- `KOS_OP_PUSH_WIND`: Push wind extent (arg = COUNT: 1 = before only, 2 = both thunks)
 - `KOS_OP_POP_WIND`: Pop wind from dynamic chain
 - `KOS_OP_END_WIND`: Sentinel that terminates hook block execution
 
@@ -249,13 +248,8 @@ quick lookup.
 
 ## Opcode implementation status
 
-Handlers live in `koskari/lib/eval.c` and opcode fragments under `koskari/lib/opcode/`. Each opcode has a handler; it is either **fully implemented**, a **stub** that calls `op_unimplemented_stub` (runtime error if executed), or a **dedicated unimpl** (THEEND: hardcoded "no runtime implementation" error). There are no partially implemented opcodes.
-
-- **Fully implemented**: Stack (NOOP, LABEL, POSITION as no-ops; DUP, POP, CONST); RETURN, AWAIT; YIELD; YIELD_FROM (handler in koskari/lib/opcode/yield_from.c); CALL (simple call); TAIL_CALL; BUILD_FUNCTION; GLOBALS, LOCALS; variables (VAR, VAR_BIND, VAR_CLEAR, VAR_REF, VAR_STORE); fast locals (FAST, FAST_BIND, FAST_REF, FAST_STORE); namespace scope (PUSH_NS, POP_NS); class scope (PUSH_COLLECT, POP_COLLECT, BUILD_CLASS; KOS_DYN_COLLECT; CollectorNamespace); exception ops (EXCEPTION, EXCEPTION_CLEAR, EXCEPTION_MATCH, RAISE, CHECK_EXCEPTION); try/finally (PUSH_TRY, PUSH_FINALLY, POP_TRY, POP_FINALLY, CLEAR_TRY, CLEAR_FINALLY; TRY and FINALLY each push their own stack block; handler dispatch clears it; POP_* drops it); loop control (PUSH_LOOP, PUSH_FOREACH, POP_LOOP, CLEAR_LOOP, BREAK, CONTINUE); context managers (PUSH_WITH, POP_WITH, PUSH_DYN_WITH, POP_DYN_WITH); delimited continuations (PUSH_PROMPT, POP_PROMPT, PUSH_SHIFT, POP_SHIFT; PROMPT owns COW stack block; SHIFT is a simple marker); INVOKE_K, INVOKE_K_VAR; undelimited continuations (PUSH_CC, CAPTURE_CC, POP_CC); all OBJECT_* opcodes; ITER_NEXT, NEXT; parameterize (PARAM, PUSH_PARAM, POP_PARAM); END_WIND (terminates hook block; see extent-wind-unwind.md).
-- **No runtime implementation (hardcoded error)**: THEEND.
-- **Stubs (unimplemented)**: CALL_ATTR_NAMES, CALL_ATTR_STAR.
-
-For the full categorized list, see [FEATURES.md](../FEATURES.md) § "Opcodes: implementation status".
+See [OPCODES.md](../OPCODES.md) §1.6. That document is the authoritative
+reference for which opcodes are implemented, stubs, or have no runtime.
 
 ## Creating and calling code (expressions and functions)
 
