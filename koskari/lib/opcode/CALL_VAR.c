@@ -14,10 +14,10 @@
 */
 
 /**
-   CALL_VAR: arg = extra index. Schema VAR (name), COUNT (arg count).
-   Call callable from namespace by name. Stack [arg_0, ..., arg_{N-1}].
-   KosCallable: steal args then KosContext_Call. Plain Python: TailPtr +
-   PyObject_Vectorcall + DropNoErr.
+  CALL_VAR: arg = extra index. Schema VAR (name), COUNT (arg count).
+  Call callable from namespace by name. Stack [arg_0, ..., arg_{N-1}].
+  KosCallable: steal args then KosContext_Call. Plain Python: TailPtr +
+  PyObject_Vectorcall + DropNoErr.
 */
 
 KOS_OP_HANDLER(CALL_VAR) {

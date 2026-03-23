@@ -64,7 +64,8 @@ class TestCallAttrBytecodeShape(SpecialsTestCase):
 
     async def test_positional_one_arg_emits_call_attr(self):
         code = self.compile_to_code(
-            "(lambda [] (compile/call-attr s split sep))", s="a-b-c", sep="-")
+            "(lambda [] (compile/call-attr s split sep))",
+            s="a-b-c", sep="-")
         body = self.lambda_body_code(code)
         ops = call_attr_ops(body)
         self.assertEqual(len(ops), 1)
@@ -188,6 +189,29 @@ class TestCallAttrEndToEnd(SpecialsTestCase):
             "(compile/call-attr obj m 99 name: 42)", obj=obj)
         await expr()
         self.assertEqual(received, [(99, 42)])
+
+
+    async def test_star_args_str_join(self):
+        sep = ", "
+        rest = (["a", "b", "c"],)
+        expr, mod = self.compile_expr(
+            "(compile/call-attr sep join *: rest)",
+            sep=sep, rest=rest)
+        result = await expr()
+        self.assertEqual(result, "a, b, c")
+
+
+    async def test_starstar_kwargs(self):
+        def m(self, **kw):
+            return kw
+
+        obj = type('Obj', (), {'m': m})()
+        kwargs = {'x': 1, 'y': 2}
+        expr, mod = self.compile_expr(
+            "(compile/call-attr obj m **: kwargs)",
+            obj=obj, kwargs=kwargs)
+        result = await expr()
+        self.assertEqual(result, {'x': 1, 'y': 2})
 
 
 class TestCallAttrExpansion(SpecialsTestCase):

@@ -13,12 +13,12 @@
   along with this library; if not, see <http://www.gnu.org/licenses/>.
 */
 
-
 /**
   CALL: arg = number of positional arguments N. Stack has [callable, arg_0,
   ..., arg_{N-1}] (callable oldest). KosCallable: steal then KosContext_Call.
   Plain Python: TailPtr + PyObject_Vectorcall + DropNoErr (fast path).
 */
+
 KOS_OP_HANDLER(CALL) {
   unsigned n = KosOp_ARG(insn);
 

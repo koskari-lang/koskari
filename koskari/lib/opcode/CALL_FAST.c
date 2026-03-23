@@ -14,10 +14,10 @@
 */
 
 /**
-   CALL_FAST: arg = extra index. Schema FASTVAR (slot), COUNT (arg count).
-   Call callable from fast local slot. Stack [arg_0, ..., arg_{N-1}].
-   KosCallable: steal args then KosContext_Call. Plain Python: TailPtr +
-   PyObject_Vectorcall + DropNoErr.
+  CALL_FAST: arg = extra index. Schema FASTVAR (slot), COUNT (arg count).
+  Call callable from fast local slot. Stack [arg_0, ..., arg_{N-1}].
+  KosCallable: steal args then KosContext_Call. Plain Python: TailPtr +
+  PyObject_Vectorcall + DropNoErr.
 */
 
 KOS_OP_HANDLER(CALL_FAST) {
