@@ -191,8 +191,8 @@ When adding or changing an opcode:
 - [9. Check jumps](#9-check-jumps) — CHECK_EQ, CHECK_GE, CHECK_GT, CHECK_LE, CHECK_LT, CHECK_NE, CHECK_IN, CHECK_NOT_IN, CHECK_IS, CHECK_IS_NOT, CHECK_IS_INSTANCE, CHECK_IS_SUBCLASS, CHECK_EXCEPTION
 - [10. Introspection](#10-introspection) — GLOBALS, LOCALS, IMPORT, IMPORT_REL, IMPORT_FROM, CAPTURE_FRAME
 - [11. Exception handling](#11-exception-handling) — EXCEPTION, EXCEPTION_CLEAR, EXCEPTION_MATCH
-- [12. Variables by name](#12-variables-by-name) — VAR, VAR_BIND, VAR_CLEAR, VAR_REF, VAR_STORE
-- [13. Fast variables](#13-fast-variables) — FAST, FAST_BIND, FAST_CLEAR, FAST_REF, FAST_STORE
+- [12. Variables by name](#12-variables-by-name) — VAR, VAR_BIND, VAR_CLEAR, VAR_REF, VAR_STORE, VAR_ATTR*
+- [13. Fast variables](#13-fast-variables) — FAST, FAST_BIND, FAST_CLEAR, FAST_REF, FAST_STORE, FAST_ATTR*
 - [14. Attributes](#14-attributes) — ATTR, ATTR_CLEAR, ATTR_REF, ATTR_STORE
 - [15. Items](#15-items) — ITEM, CONST_ITEM, and variants
 - [15.1 Reference dereference](#151-reference-dereference) — DEREF
@@ -297,7 +297,7 @@ When adding or changing an opcode:
 | INVOKE_K_VAR | CONST | Invoke continuation by name | [§20](#kos_op_invoke_k_var) |
 | THEEND | NOARG | Unreachable; no runtime | [§25](#kos_op_theend) |
 
-Other opcodes (PROPER, PAIR_SPLICE, CHECK_LT/LE/GT/GE, CHECK_IS_INSTANCE/IS_SUBCLASS, VAR_CLEAR, VAR_REF, FAST_BIND/CLEAR/REF, ATTR_CLEAR/REF, ITEM_CLEAR/REF, CONST_ITEM_*, DEREF, BUILD_*, CALL_ATTR*, PUSH_FINALLY/POP_*, CLEAR_*, OBJECT_*, PUSH_WITH/POP_WITH/PUSH_DYN_WITH/POP_DYN_WITH, PUSH_CC/POP_CC/CAPTURE_CC, PUSH_WIND/POP_WIND/END_WIND, PUSH_PARAM/PARAM/POP_PARAM) are listed under their category sections above; use the category index to jump to the section, then scan for the opcode name.
+Other opcodes (PROPER, PAIR_SPLICE, CHECK_LT/LE/GT/GE, CHECK_IS_INSTANCE/IS_SUBCLASS, VAR_CLEAR, VAR_REF, VAR_ATTR*/FAST_ATTR*, FAST_BIND/CLEAR/REF, ATTR_CLEAR/REF, ITEM_CLEAR/REF, CONST_ITEM_*, DEREF, BUILD_*, CALL_ATTR*, PUSH_FINALLY/POP_*, CLEAR_*, OBJECT_*, PUSH_WITH/POP_WITH/PUSH_DYN_WITH/POP_DYN_WITH, PUSH_CC/POP_CC/CAPTURE_CC, PUSH_WIND/POP_WIND/END_WIND, PUSH_PARAM/PARAM/POP_PARAM) are listed under their category sections above; use the category index to jump to the section, then scan for the opcode name.
 
 
 ## 3. No-op and compile-time
@@ -1314,6 +1314,19 @@ Pool: 0 = `"os"`, 1 = `"path"`, 2 = `"sep"`, 3 = None.
 | 1     | VAR_STORE | 1   | 1 ('x')  | STORE: write 10 into name "x"; stack: [...] |
 
 
+### 12.1 Attribute access on variables (VAR_ATTR_*)
+
+These opcodes perform attribute get, set, clear, or reference on an object fetched from the frame namespace by name. The object is not on the stack; it is resolved via `frame_ns_deref(var_name)`. Each uses EXTRA schema: VAR (obj name), CONST (attr name).
+
+**VAR_ATTR**: Get attribute. `[...] → [..., value]`. Equivalent to ATTR but obj from namespace.
+**VAR_ATTR_STORE**: Set attribute. `[..., value] → [...]`. Equivalent to ATTR_STORE but obj from namespace.
+**VAR_ATTR_CLEAR**: Delete attribute. No stack effect (obj from namespace). Equivalent to ATTR_CLEAR.
+**VAR_ATTR_REF**: Push attribute reference. `[...] → [..., attr_ref]`. Equivalent to ATTR_REF but obj from namespace.
+
+- **Status**: Implemented.
+- **Compiler form:** Emitted by attr/del-attr/set-attr specials when the object expression is a symbol (variable reference). May be lowered to FAST_ATTR_* when the name has a fixed slot.
+
+
 ## 13. Fast variables
 
 ### KOS_OP_FAST
@@ -1398,6 +1411,19 @@ Pool: 0 = `"os"`, 1 = `"path"`, 2 = `"sep"`, 3 = None.
 |------:|------------|-----|----------|---------|
 | 0     | CONST      | 0   | 0 (99)   | stack: [..., 99] |
 | 1     | FAST_STORE | 0   | 0 (a)    | STORE: write 99 into slot 0; stack: [...] |
+
+
+### 13.1 Attribute access on fast locals (FAST_ATTR_*)
+
+These opcodes perform attribute get, set, clear, or reference on an object fetched from the fast local slot. The object is not on the stack; it is resolved via `KosNamespace_FastDeref(ns, slot)`. Each uses EXTRA schema: FASTVAR (slot), CONST (attr name).
+
+**FAST_ATTR**: Get attribute. `[...] → [..., value]`. Equivalent to ATTR but obj from slot.
+**FAST_ATTR_STORE**: Set attribute. `[..., value] → [...]`. Equivalent to ATTR_STORE but obj from slot.
+**FAST_ATTR_CLEAR**: Delete attribute. No stack effect (obj from slot). Equivalent to ATTR_CLEAR.
+**FAST_ATTR_REF**: Push attribute reference. `[...] → [..., attr_ref]`. Equivalent to ATTR_REF but obj from slot.
+
+- **Status**: Implemented.
+- **Compiler form:** Emitted when VAR_ATTR_* is lowered (name has fixed slot).
 
 
 ## 14. Attributes
@@ -1863,8 +1889,9 @@ Pool: 0 = `"os"`, 1 = `"path"`, 2 = `"sep"`, 3 = None.
 ### KOS_OP_CALL_ATTR_STAR {#kos_op_call_attr_star}
 
 - **Style**: EXTRA. Schema: CONST (attr name), COUNT (opa bitflags: 1 = has *args, 2 = has **kwargs), NOARG, NOARG.
-- **Status**: Stub.
-- **Stack**: (Intended: `obj.name(*args, **kwargs)`; same layout as CALL_STAR for args/kwargs.)
+- **Status**: Implemented.
+- **Stack**: `obj.name(*args, **kwargs)`. Stack layout per opa flags: opa=0 → `[obj]`; opa=1 → `[obj, pos]`; opa=2 → `[obj, kwd]`; opa=3 → `[obj, pos, kwd]`. Pop in reverse order. `pos` is ensured to be a tuple (coerced via PySequence_Tuple if needed). Resolve obj.name via kos_resolve_named_attr; if send_self, prepend obj to args. Call via KosContext_CallArgs.
+- **Invariants**: attr name in constant pool. opa bits: 1 = has *args, 2 = has **kwargs.
 
 ---
 
