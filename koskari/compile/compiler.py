@@ -761,6 +761,11 @@ class Compiler:
             else:
                 squished.append((OpCode.KOS_OP_RETURN, 1))
 
+        if len(squished) > 1:
+            # if we actually had ops, we'll have a leading NOOP that we can
+            # remove
+            squished = squished[1:]
+
         return squished
 
 

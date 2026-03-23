@@ -35,10 +35,7 @@ def make_compiler():
 
 
 def compress_ops(instr):
-    # compress always prefixes a NOOP sentinel; drop it for readability.
-    out = make_compiler().compress(instr)
-    assert out[0][0] == OpCode.KOS_OP_NOOP
-    return out[1:]
+    return make_compiler().compress(instr)
 
 
 class TestCompress(unittest.TestCase):
