@@ -124,9 +124,11 @@ def _write_nspec_cpool_entry(file, cpool_idx, nspec):
     name_repr = repr(ns_name) if ns_name is not None else 'None'
     local_syms = nspec.local_syms or ()
     closure_syms = nspec.closure_syms or ()
+    global_syms = nspec.global_syms if nspec.global_syms is not None else ()
+    all_captured = tuple(closure_syms) + tuple(global_syms)
     file.write('  ns#%d: NamespaceSpec %s\n' % (cpool_idx, name_repr))
     file.write('          locals:   %r\n' % (tuple(local_syms),))
-    file.write('          closures: %r\n' % (tuple(closure_syms),))
+    file.write('          closures: %r\n' % (tuple(all_captured),))
 
 
 def _build_ns_const_map(code):
@@ -270,7 +272,8 @@ def _format_arg(
 
 def _local_and_closure_syms(code):
     """
-    Return (local_syms tuple, closure_syms tuple) from code.namespace_spec
+    Return (local_syms tuple, closure_syms tuple) from code.namespace_spec.
+    Closure syms include both closure_syms and global_syms (all captured refs).
     """
 
     nspec = code.namespace_spec
@@ -279,7 +282,9 @@ def _local_and_closure_syms(code):
 
     locals_seq = nspec.local_syms or ()
     closure_seq = nspec.closure_syms or ()
-    return locals_seq, closure_seq
+    global_seq = nspec.global_syms if nspec.global_syms is not None else ()
+    all_captured = tuple(closure_seq) + tuple(global_seq)
+    return locals_seq, all_captured
 
 
 def dis(x, file=None):

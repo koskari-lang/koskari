@@ -54,7 +54,7 @@ static PyObject *create_minimal_code(void) {
     PyObject *locals = PyTuple_New(0);
     PyObject *closures = PyTuple_New(0);
 
-    PyObject *nspec = KosNamespaceSpec_New(name, locals, closures);
+    PyObject *nspec = KosNamespaceSpec_New(name, locals, closures, NULL, NULL);
     Py_DECREF(name);
     Py_DECREF(locals);
     Py_DECREF(closures);

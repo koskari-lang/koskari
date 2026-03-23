@@ -681,7 +681,7 @@ def special_inplace(compiler, source, tc=False):
     if not is_pair(value_expr):
         frag.position_of(body)
 
-    frag.request_var(name)
+    frag.request_for_write(name)
     frag.merge(compiler.full_compile(value_expr))
     frag.instruction(opcode, name)
     frag.instruction(OpCode.KOS_OP_CONST, None)

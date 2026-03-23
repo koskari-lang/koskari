@@ -47,7 +47,7 @@ static int test_nspec_create(void) {
     TEST_ASSERT_NOT_NULL(local, "create local_syms");
     TEST_ASSERT_NOT_NULL(closure, "create closure_syms");
 
-    PyObject *spec = KosNamespaceSpec_New(name, local, closure);
+    PyObject *spec = KosNamespaceSpec_New(name, local, closure, NULL, NULL);
     TEST_ASSERT_NOT_NULL(spec, "create NamespaceSpec");
     TEST_ASSERT(KosNamespaceSpec_CheckExact(spec), "spec type check");
 
@@ -68,7 +68,7 @@ static int test_nspec_none_values(void) {
     /*
       Test NamespaceSpec with None values.
     */
-    PyObject *spec = KosNamespaceSpec_New(Py_None, Py_None, Py_None);
+    PyObject *spec = KosNamespaceSpec_New(Py_None, Py_None, Py_None, NULL, NULL);
     TEST_ASSERT_NOT_NULL(spec, "create NamespaceSpec with None");
 
     /* None values become NULL internally */
@@ -95,7 +95,7 @@ static int test_nspec_refcount(void) {
 
     Py_ssize_t name_initial = Py_REFCNT(name);
 
-    PyObject *spec = KosNamespaceSpec_New(name, local, closure);
+    PyObject *spec = KosNamespaceSpec_New(name, local, closure, NULL, NULL);
     TEST_ASSERT_NOT_NULL(spec, "create spec");
 
     /* Name refcount should be incremented */
@@ -127,7 +127,7 @@ static int test_namespace_create(void) {
     TEST_ASSERT_NOT_NULL(name, "create name");
     TEST_ASSERT_NOT_NULL(local, "create local");
 
-    PyObject *ns = KosNamespace_NewFull(name, NULL, local, NULL);
+    PyObject *ns = KosNamespace_NewFull(name, NULL, local, NULL, NULL);
     TEST_ASSERT_NOT_NULL(ns, "create Namespace");
     TEST_ASSERT(KosNamespace_CheckExact(ns), "namespace type check");
 
@@ -157,7 +157,7 @@ static int test_namespace_store_deref(void) {
     TEST_ASSERT_NOT_NULL(key, "create key");
     TEST_ASSERT_NOT_NULL(value, "create value");
 
-    PyObject *ns = KosNamespace_NewFull(name, NULL, local, NULL);
+    PyObject *ns = KosNamespace_NewFull(name, NULL, local, NULL, NULL);
     TEST_ASSERT_NOT_NULL(ns, "create namespace");
 
     /* Store value */
@@ -195,7 +195,7 @@ static int test_namespace_store_refcount(void) {
 
     Py_ssize_t val_initial = Py_REFCNT(value);
 
-    PyObject *ns = KosNamespace_NewFull(name, NULL, local, NULL);
+    PyObject *ns = KosNamespace_NewFull(name, NULL, local, NULL, NULL);
     TEST_ASSERT_NOT_NULL(ns, "create namespace");
 
     /* Store increments refcount (raw mode) */
@@ -229,7 +229,7 @@ static int test_namespace_ref(void) {
     TEST_ASSERT_NOT_NULL(key, "create key");
     TEST_ASSERT_NOT_NULL(value, "create value");
 
-    PyObject *ns = KosNamespace_NewFull(name, NULL, local, NULL);
+    PyObject *ns = KosNamespace_NewFull(name, NULL, local, NULL, NULL);
     TEST_ASSERT_NOT_NULL(ns, "create namespace");
 
     /* Store value */
@@ -269,7 +269,7 @@ static int test_namespace_bind(void) {
     TEST_ASSERT_NOT_NULL(key, "create key");
     TEST_ASSERT_NOT_NULL(value, "create value");
 
-    PyObject *ns = KosNamespace_NewFull(name, NULL, local, NULL);
+    PyObject *ns = KosNamespace_NewFull(name, NULL, local, NULL, NULL);
     TEST_ASSERT_NOT_NULL(ns, "create namespace");
 
     /* Create a ref */
@@ -322,7 +322,7 @@ static int test_namespace_nested(void) {
     TEST_ASSERT_NOT_NULL(closure2, "create closure2");
 
     /* Create parent namespace */
-    PyObject *ns1 = KosNamespace_NewFull(name1, NULL, local1, NULL);
+    PyObject *ns1 = KosNamespace_NewFull(name1, NULL, local1, NULL, NULL);
     TEST_ASSERT_NOT_NULL(ns1, "create parent namespace");
 
     /* Store value in parent */
@@ -331,7 +331,7 @@ static int test_namespace_nested(void) {
     KosNamespace_Store(ns1, key_foo, value);
 
     /* Create child namespace with closure over foo */
-    PyObject *ns2 = KosNamespace_NewFull(name2, ns1, local2, closure2);
+    PyObject *ns2 = KosNamespace_NewFull(name2, ns1, local2, closure2, NULL);
     TEST_ASSERT_NOT_NULL(ns2, "create child namespace");
 
     /* Parent should be set */
@@ -370,7 +370,7 @@ static int test_namespace_fast_index(void) {
     TEST_ASSERT_NOT_NULL(name, "create name");
     TEST_ASSERT_NOT_NULL(local, "create local");
 
-    PyObject *ns = KosNamespace_NewFull(name, NULL, local, NULL);
+    PyObject *ns = KosNamespace_NewFull(name, NULL, local, NULL, NULL);
     TEST_ASSERT_NOT_NULL(ns, "create namespace");
 
     PyObject *key_a = PyUnicode_FromString("a");
@@ -411,7 +411,7 @@ static int test_namespace_fast_store_deref(void) {
     TEST_ASSERT_NOT_NULL(local, "create local");
     TEST_ASSERT_NOT_NULL(value, "create value");
 
-    PyObject *ns = KosNamespace_NewFull(name, NULL, local, NULL);
+    PyObject *ns = KosNamespace_NewFull(name, NULL, local, NULL, NULL);
     TEST_ASSERT_NOT_NULL(ns, "create namespace");
 
     /* Fast store at index 0 */
@@ -445,7 +445,7 @@ static int test_collector_create(void) {
     TEST_ASSERT_NOT_NULL(name, "create name");
     TEST_ASSERT_NOT_NULL(local, "create local");
 
-    PyObject *cn = KosCollectorNamespace_NewFull(name, NULL, local, NULL);
+    PyObject *cn = KosCollectorNamespace_NewFull(name, NULL, local, NULL, NULL);
     TEST_ASSERT_NOT_NULL(cn, "create CollectorNamespace");
     TEST_ASSERT(KosCollectorNamespace_CheckExact(cn), "collector type check");
     TEST_ASSERT(KosNamespace_Check(cn), "is a Namespace");
@@ -491,7 +491,7 @@ static int test_collector_blocks_closure(void) {
     TEST_ASSERT_NOT_NULL(closure_n, "create closure_n");
 
     /* Create parent with local foo */
-    PyObject *parent = KosNamespace_NewFull(name_p, NULL, local_p, NULL);
+    PyObject *parent = KosNamespace_NewFull(name_p, NULL, local_p, NULL, NULL);
     TEST_ASSERT_NOT_NULL(parent, "create parent");
 
     PyObject *key_foo = PyUnicode_FromString("foo");
@@ -499,14 +499,14 @@ static int test_collector_blocks_closure(void) {
     KosNamespace_Store(parent, key_foo, value_p);
 
     /* Create collector with its own local foo (not closure) */
-    PyObject *collector = KosCollectorNamespace_NewFull(name_c, parent, local_c, NULL);
+    PyObject *collector = KosCollectorNamespace_NewFull(name_c, parent, local_c, NULL, NULL);
     TEST_ASSERT_NOT_NULL(collector, "create collector");
 
     PyObject *value_c = PyLong_FromLong(456);
     KosNamespace_Store(collector, key_foo, value_c);
 
     /* Child takes closure over foo - should skip collector's local and find parent's */
-    PyObject *child = KosNamespace_NewFull(name_n, collector, NULL, closure_n);
+    PyObject *child = KosNamespace_NewFull(name_n, collector, NULL, closure_n, NULL);
     TEST_ASSERT_NOT_NULL(child, "create child");
 
     /* Parent's foo ref and child's foo ref should be same (collector's local skipped) */
@@ -644,7 +644,7 @@ static int test_module_create(void) {
     TEST_ASSERT_NOT_NULL(name, "create name");
     TEST_ASSERT_NOT_NULL(local, "create local");
 
-    PyObject *ns = KosNamespace_NewFull(name, NULL, local, NULL);
+    PyObject *ns = KosNamespace_NewFull(name, NULL, local, NULL, NULL);
     TEST_ASSERT_NOT_NULL(ns, "create namespace");
 
     PyObject *mod = KosModule_New(ns);
@@ -672,7 +672,7 @@ static int test_module_refcount(void) {
     TEST_ASSERT_NOT_NULL(name, "create name");
     TEST_ASSERT_NOT_NULL(local, "create local");
 
-    PyObject *ns = KosNamespace_NewFull(name, NULL, local, NULL);
+    PyObject *ns = KosNamespace_NewFull(name, NULL, local, NULL, NULL);
     TEST_ASSERT_NOT_NULL(ns, "create namespace");
 
     Py_ssize_t ns_initial = Py_REFCNT(ns);
@@ -734,7 +734,7 @@ static int test_namespace_stress_bindings(void) {
         PyTuple_SET_ITEM(local, i, syms[i]);
     }
 
-    PyObject *ns = KosNamespace_NewFull(name, NULL, local, NULL);
+    PyObject *ns = KosNamespace_NewFull(name, NULL, local, NULL, NULL);
     TEST_ASSERT_NOT_NULL(ns, "create namespace");
     TEST_ASSERT_EQ(KosNamespace_FAST_COUNT(ns), 100, "100 bindings");
 
@@ -777,7 +777,7 @@ static int test_namespace_nested_deep(void) {
 
     /* Create root namespace */
     PyObject *root_name = PyUnicode_FromString("root");
-    PyObject *root = KosNamespace_NewFull(root_name, NULL, local, NULL);
+    PyObject *root = KosNamespace_NewFull(root_name, NULL, local, NULL, NULL);
     Py_XDECREF(root_name);
     TEST_ASSERT_NOT_NULL(root, "create root");
 
@@ -795,7 +795,7 @@ static int test_namespace_nested_deep(void) {
         snprintf(buf, sizeof(buf), "ns%d", i);
         PyObject *name = PyUnicode_FromString(buf);
 
-        PyObject *child = KosNamespace_NewFull(name, current, NULL, closure);
+        PyObject *child = KosNamespace_NewFull(name, current, NULL, closure, NULL);
         TEST_ASSERT_NOT_NULL(child, "create child");
 
         Py_DECREF(name);

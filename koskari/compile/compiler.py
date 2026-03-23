@@ -188,21 +188,35 @@ class ByteCodeFragment:
         self.compiler = compiler
         self.instructions = []
         self.requests = []
+        self.requests_for_write = []
+        self._request_global = []
         self.declares = []
 
 
     def as_namespace_spec(self):
         """
         Build a NamespaceSpec from this fragment's name and declarations.
-        Local names are declares; closure names are requests.
+        Local names are declares; closure names are requests plus
+        requests_for_write (minus request_global); global_syms from
+        request_global.
 
-        :return: NamespaceSpec(name, declares, requests)
+        :return: NamespaceSpec(name, declares, closure_syms, global_syms)
         """
 
+        seen = set(self._request_global)
+        closure = []
+        for n in self.requests + self.requests_for_write:
+            if n not in seen:
+                seen.add(n)
+                closure.append(n)
+        global_syms = tuple(self._request_global) if self._request_global else ()
+        request_for_write_syms = tuple(self.requests_for_write)
         return NamespaceSpec(
             self.name,
             tuple(self.declares),
-            tuple(self.requests),
+            tuple(closure),
+            global_syms,
+            request_for_write_syms,
         )
 
 
@@ -218,6 +232,39 @@ class ByteCodeFragment:
             unique_append(self.requests, var_name)
 
 
+    def request_for_write(self, var_name):
+        """
+        Record that var_name must be writable (setq, delq, inplace).
+        Not added if already declared or in request_global.
+
+        :param var_name: name that must be writable
+        """
+
+        var_name = str(var_name)
+        if var_name not in self.declares and var_name not in self._request_global:
+            unique_append(self.requests_for_write, var_name)
+
+
+    def request_global(self, var_name):
+        """
+        Record explicit need from module (define-global).
+        Raises if var_name is already declared.
+
+        :param var_name: name to pull from module
+        """
+
+        var_name = str(var_name)
+        if var_name in self.declares:
+            raise CompilerError(
+                '%r cannot be both local (define) and global (define-global).'
+                % (var_name,),
+                var_name)
+        for bucket in (self.requests, self.requests_for_write):
+            if var_name in bucket:
+                bucket.remove(var_name)
+        unique_append(self._request_global, var_name)
+
+
     def declare_var(self, var_name):
         """
         Record a name declared in this fragment's namespace
@@ -225,7 +272,11 @@ class ByteCodeFragment:
         :param var_name: name to declare
         """
 
-        unique_append(self.declares, str(var_name))
+        var_name = str(var_name)
+        for bucket in (self.requests, self.requests_for_write, self._request_global):
+            if var_name in bucket:
+                bucket.remove(var_name)
+        unique_append(self.declares, var_name)
 
 
     def declare_vars(self, var_names):
@@ -236,7 +287,7 @@ class ByteCodeFragment:
         """
 
         for var_name in var_names:
-            unique_append(self.declares, str(var_name))
+            self.declare_var(var_name)
 
 
     def position_of(self, source):
@@ -277,16 +328,24 @@ class ByteCodeFragment:
 
     def merge(self, other):
         """
-        Merge another fragment into this one: adopt its declarations and
-        requests, then append its instructions
+        Merge another fragment into this one: adopt its declarations,
+        requests, requests_for_write, and request_global, then append
+        its instructions.
 
-        :param other: ByteCodeFragment to merge in
+        Used when combining forms in the same scope (e.g. begin body);
+        request_global must propagate so that (define-global x) followed
+        by (setq x 1) in the same block works.
         """
 
         for name in other.declares:
             self.declare_var(name)
         for name in other.requests:
             self.request_var(name)
+        for name in other.requests_for_write:
+            self.request_for_write(name)
+        for name in other._request_global:
+            if name not in self.declares:
+                self.request_global(name)
         self.instructions.extend(other.instructions)
 
 
@@ -780,20 +839,18 @@ class Compiler:
         def push_nspec(n):
             nstack.append(n)
             findex.clear()
-            locals_syms = getattr(n, 'local_syms', None) or ()
-            closure_syms = getattr(n, 'closure_syms', None) or ()
-            findex.extend(locals_syms)
-            findex.extend(closure_syms)
+            findex.extend(n.local_syms or ())
+            findex.extend(n.closure_syms or ())
+            findex.extend(n.global_syms or ())
 
         def pop_nspec():
             nstack.pop()
             findex.clear()
             if nstack:
                 n = nstack[-1]
-                locals_syms = getattr(n, 'local_syms', None) or ()
-                closure_syms = getattr(n, 'closure_syms', None) or ()
-                findex.extend(locals_syms)
-                findex.extend(closure_syms)
+                findex.extend(n.local_syms or ())
+                findex.extend(n.closure_syms or ())
+                findex.extend(n.global_syms or ())
 
         if mode == CompilerMode.FUNCTION:
             push_nspec(base_nspec)
@@ -830,10 +887,70 @@ class Compiler:
         return result
 
 
-    def complete(self, fragment, mode=None):
-        instr = self.compress(fragment.instructions)
-        base_nspec = fragment.as_namespace_spec()
+    def _cpool_scan_merge(self, fragment, instr):
+        """
+        Scan instructions for CONST (FunctionSpec) and merge inner Code's
+        closure_syms and request_for_write_syms into the fragment.
+        Reads from code.namespace_spec; no cache.
+        """
 
+        for op, arg in instr:
+            if op == OpCode.KOS_OP_CONST and isinstance(arg, FunctionSpec):
+                code = getattr(arg, 'code', None)
+                if code is None:
+                    continue
+                nspec = code.namespace_spec
+                if nspec is None:
+                    continue
+                closure_syms = nspec.closure_syms or ()
+                request_for_write_syms = nspec.request_for_write_syms or ()
+                for name in closure_syms:
+                    fragment.request_var(name)
+                for name in request_for_write_syms:
+                    fragment.request_for_write(name)
+
+
+    def _validate_request_for_write_tree(
+            self, code, ancestor_nspecs, mode, is_root=False):
+        """
+        Recursively validate requests_for_write for nested function Codes.
+        Root (module-level) Code skips validation to allow implicit global.
+        Uses NamespaceSpec data from the Code tree; no compiler state.
+        """
+
+        if mode != CompilerMode.FUNCTION:
+            return
+        nspec = code.namespace_spec
+        if nspec is None:
+            return
+        satisfied = set(nspec.local_syms or ()) | set(nspec.global_syms or ())
+        for ans in ancestor_nspecs:
+            satisfied |= set(ans.local_syms or ()) | set(ans.global_syms or ())
+        if not is_root:
+            request_for_write_syms = nspec.request_for_write_syms or ()
+            for name in request_for_write_syms:
+                if name not in satisfied:
+                    raise CompilerError(
+                        'Cannot write to %r: not declared in this scope or'
+                        ' any enclosing scope. Use define for a local or'
+                        ' define-global for a global.' % (name,),
+                        name)
+        cpool_nspecs = tuple(
+            c for c in (code.constants_pool or ())
+            if isinstance(c, NamespaceSpec))
+        next_ancestors = ancestor_nspecs + (nspec,) + cpool_nspecs
+        for const in (code.constants_pool or ()):
+            if isinstance(const, FunctionSpec) and const.code is not None:
+                self._validate_request_for_write_tree(
+                    const.code, next_ancestors, mode, is_root=False)
+
+
+    def complete(self, fragment, mode=None, _validate=True):
+        if mode is None:
+            mode = self.mode
+        instr = self.compress(fragment.instructions)
+        self._cpool_scan_merge(fragment, instr)
+        base_nspec = fragment.as_namespace_spec()
         instr = self.convert_fast(base_nspec, instr, mode=mode)
 
         filename = (fragment.filename
@@ -841,7 +958,11 @@ class Compiler:
                     or self.filename
                     or None)
 
-        return Code(base_nspec, instr, fragment.name, filename)
+        code = Code(base_nspec, instr, fragment.name, filename)
+        if _validate:
+            self._validate_request_for_write_tree(
+                code, (), CompilerMode.FUNCTION, is_root=True)
+        return code
 
 
 # The end.

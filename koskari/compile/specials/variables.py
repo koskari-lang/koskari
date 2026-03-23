@@ -55,7 +55,7 @@ def special_setq(compiler, source, tc=False):
     if not is_pair(expr):
         frag.position_of(rest)
 
-    frag.request_var(sym)
+    frag.request_for_write(sym)
     frag.merge(compiler.full_compile(expr))
     frag.instruction(OpCode.KOS_OP_VAR_STORE, sym)
     frag.instruction(OpCode.KOS_OP_CONST, None)
@@ -83,7 +83,7 @@ def special_delq(compiler, source, tc=False):
     frag = compiler.fragment(called_by)
 
     frag.position_of(rest)
-    frag.request_var(sym)
+    frag.request_for_write(sym)
     frag.instruction(OpCode.KOS_OP_VAR_CLEAR, sym)
     frag.instruction(OpCode.KOS_OP_CONST, None)
 
@@ -116,6 +116,61 @@ def special_define(compiler, source, tc=False):
 
     frag = compiler.fragment(called_by)
     frag.declare_var(name)
+
+    if "body" in matched:
+        formals = matched["formals"]
+        body = matched["body"]
+        val_expr = cons(symbol("compile/lambda"), namesym,
+                        formals.source, body.source)
+
+    elif "value" in matched:
+        val_expr = matched["value"].source
+
+    else:
+        frag.instruction(OpCode.KOS_OP_CONST, None)
+        return frag
+
+    if not is_pair(val_expr):
+        frag.position_of(rest)
+
+    frag.merge(compiler.full_compile(val_expr))
+    frag.instruction(OpCode.KOS_OP_VAR_STORE, name)
+    frag.instruction(OpCode.KOS_OP_CONST, None)
+
+    return frag
+
+
+_DEFINE_GLOBAL_PATTERNS = [
+    MATCH(DEFINE("name"), FORMALS("formals", scope="body"), REST("body")),
+    MATCH(DEFINE("name"), VALUE("value")),
+    MATCH(DEFINE("name")),
+]
+
+
+@special_forms(_DEFINE_GLOBAL_PATTERNS)
+@special(symbol("compile/define-global"))
+def special_define_global(compiler, source, tc=False):
+    """
+    Compile (define-global X), (define-global X EXPR), or
+    (define-global X [Y Z] BODY...). Explicit module binding for read and write.
+    """
+
+    called_by, rest = source
+    matched = match(rest, _DEFINE_GLOBAL_PATTERNS)
+    if matched is None:
+        raise SpecialError("define-global requires a name", source)
+
+    namesym = matched["name"].source
+    name = str(namesym)
+
+    frag = compiler.fragment(called_by)
+    try:
+        frag.request_global(name)
+    except CompilerError:
+        raise SpecialError(
+            '%r cannot be both local (define) and global (define-global).'
+            % (name,),
+            source) from None
 
     if "body" in matched:
         formals = matched["formals"]

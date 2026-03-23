@@ -55,6 +55,14 @@ static PyMemberDef nspec_members[] = {
     offsetof(KosNamespaceSpec, closure_syms), READONLY,
     " " },
 
+  { "global_syms", T_OBJECT,
+    offsetof(KosNamespaceSpec, global_syms), READONLY,
+    " " },
+
+  { "request_for_write_syms", T_OBJECT,
+    offsetof(KosNamespaceSpec, request_for_write_syms), READONLY,
+    " " },
+
   { NULL },
 };
 
@@ -64,7 +72,8 @@ PyObject *KosNamespace_FromSpec(PyObject *nspec, PyObject *parent) {
   PyObject *res = KosNamespace_NewFull(KosNamespaceSpec_NAME(nspec),
                                         parent,
                                         KosNamespaceSpec_LOCAL_SYMS(nspec),
-                                        KosNamespaceSpec_CLOSURE_SYMS(nspec));
+                                        KosNamespaceSpec_CLOSURE_SYMS(nspec),
+                                        KosNamespaceSpec_GLOBAL_SYMS(nspec));
 
   if (PyErr_Occurred())
     Py_CLEAR(res);
@@ -169,8 +178,16 @@ static PyMethodDef nspec_methods[] = {
 
 
 static int nspec_contains(PyObject *self, PyObject *key) {
-  return (PySequence_Contains(KosNamespaceSpec_LOCAL_SYMS(self), key) ||
-          PySequence_Contains(KosNamespaceSpec_CLOSURE_SYMS(self), key));
+  PyObject *loc = KosNamespaceSpec_LOCAL_SYMS(self);
+  PyObject *clsr = KosNamespaceSpec_CLOSURE_SYMS(self);
+  PyObject *glbl = KosNamespaceSpec_GLOBAL_SYMS(self);
+  if (loc && PySequence_Contains(loc, key))
+    return 1;
+  if (clsr && PySequence_Contains(clsr, key))
+    return 1;
+  if (glbl && PySequence_Contains(glbl, key))
+    return 1;
+  return 0;
 }
 
 
@@ -185,12 +202,16 @@ static PyObject *nspec_new(PyTypeObject *type,
   PyObject *name = NULL;
   PyObject *local_syms = NULL;
   PyObject *closure_syms = NULL;
+  PyObject *global_syms = NULL;
+  PyObject *request_for_write_syms = NULL;
 
-  if (! PyArg_ParseTuple(args, "OOO:NamespaceSpec", &name,
-                         &local_syms, &closure_syms))
+  if (! PyArg_ParseTuple(args, "OOO|OO:NamespaceSpec", &name,
+                         &local_syms, &closure_syms, &global_syms,
+                         &request_for_write_syms))
     return NULL;
 
-  return KosNamespaceSpec_New(name, local_syms, closure_syms);
+  return KosNamespaceSpec_New(name, local_syms, closure_syms, global_syms,
+                             request_for_write_syms);
 }
 
 
@@ -198,6 +219,8 @@ static void nspec_dealloc(PyObject *self) {
   Py_CLEAR(KosNamespaceSpec_NAME(self));
   Py_CLEAR(KosNamespaceSpec_LOCAL_SYMS(self));
   Py_CLEAR(KosNamespaceSpec_CLOSURE_SYMS(self));
+  Py_CLEAR(KosNamespaceSpec_GLOBAL_SYMS(self));
+  Py_CLEAR(KosNamespaceSpec_REQUEST_FOR_WRITE_SYMS(self));
 
   Py_TYPE(self)->tp_free(self);
 }
@@ -207,6 +230,8 @@ static int nspec_traverse(PyObject *self, visitproc visit, void *arg) {
   Py_VISIT(KosNamespaceSpec_NAME(self));
   Py_VISIT(KosNamespaceSpec_LOCAL_SYMS(self));
   Py_VISIT(KosNamespaceSpec_CLOSURE_SYMS(self));
+  Py_VISIT(KosNamespaceSpec_GLOBAL_SYMS(self));
+  Py_VISIT(KosNamespaceSpec_REQUEST_FOR_WRITE_SYMS(self));
   return 0;
 }
 
@@ -215,6 +240,8 @@ static int nspec_clear(PyObject *self) {
   Py_CLEAR(KosNamespaceSpec_NAME(self));
   Py_CLEAR(KosNamespaceSpec_LOCAL_SYMS(self));
   Py_CLEAR(KosNamespaceSpec_CLOSURE_SYMS(self));
+  Py_CLEAR(KosNamespaceSpec_GLOBAL_SYMS(self));
+  Py_CLEAR(KosNamespaceSpec_REQUEST_FOR_WRITE_SYMS(self));
   return 0;
 }
 
@@ -241,13 +268,44 @@ static PyObject *nspec_repr(PyObject *self) {
     }
   }
 
-  result = PyUnicode_FromFormat("NamespaceSpec(%R, %R, %R)",
-                               name, closures, locals);
+  PyObject *globals = KosNamespaceSpec_GLOBAL_SYMS(self);
+  if (! globals) {
+    globals = PyTuple_New(0);
+    if (! globals) {
+      if (! KosNamespaceSpec_CLOSURE_SYMS(self))
+        Py_DECREF(closures);
+      if (! KosNamespaceSpec_LOCAL_SYMS(self))
+        Py_DECREF(locals);
+      return NULL;
+    }
+  } else {
+    Py_INCREF(globals);
+  }
+
+  PyObject *req_write = KosNamespaceSpec_REQUEST_FOR_WRITE_SYMS(self);
+  if (! req_write) {
+    req_write = PyTuple_New(0);
+    if (! req_write) {
+      if (! KosNamespaceSpec_CLOSURE_SYMS(self))
+        Py_DECREF(closures);
+      if (! KosNamespaceSpec_LOCAL_SYMS(self))
+        Py_DECREF(locals);
+      Py_DECREF(globals);
+      return NULL;
+    }
+  } else {
+    Py_INCREF(req_write);
+  }
+
+  result = PyUnicode_FromFormat("NamespaceSpec(%R, %R, %R, %R, %R)",
+                               name, closures, locals, globals, req_write);
 
   if (! KosNamespaceSpec_CLOSURE_SYMS(self))
     Py_DECREF(closures);
   if (! KosNamespaceSpec_LOCAL_SYMS(self))
     Py_DECREF(locals);
+  Py_DECREF(globals);
+  Py_DECREF(req_write);
 
   return result;
 }
@@ -275,10 +333,12 @@ PyTypeObject KosNamespaceSpecType = {
 PyObject *KosNamespaceSpec_New(
     PyObject *name,
     PyObject *local_syms,
-    PyObject *closure_syms) {
+    PyObject *closure_syms,
+    PyObject *global_syms,
+    PyObject *request_for_write_syms) {
 
-  // SAYF("KosNamespaceSpec_New(%R, %R, %R)",
-  //      name, local_syms, closure_syms);
+  // SAYF("KosNamespaceSpec_New(%R, %R, %R, %R, %R)",
+  //      name, local_syms, closure_syms, global_syms, request_for_write_syms);
 
   if (name == Py_None)
     name = NULL;
@@ -308,16 +368,47 @@ PyObject *KosNamespaceSpec_New(
     }
   }
 
+  if (global_syms == Py_None) {
+    global_syms = NULL;
+
+  } else if (global_syms) {
+    global_syms = PySequence_Tuple(global_syms);
+    if (! global_syms) {
+      Py_XDECREF(local_syms);
+      Py_XDECREF(closure_syms);
+      return NULL;
+    }
+  }
+
+  if (request_for_write_syms == Py_None) {
+    request_for_write_syms = NULL;
+
+  } else if (request_for_write_syms) {
+    request_for_write_syms = PySequence_Tuple(request_for_write_syms);
+    if (! request_for_write_syms) {
+      Py_XDECREF(local_syms);
+      Py_XDECREF(closure_syms);
+      Py_XDECREF(global_syms);
+      return NULL;
+    }
+  }
+
   PyObject *self = PyObject_New(PyObject, &KosNamespaceSpecType);
-  if (! self)
+  if (! self) {
+    Py_XDECREF(local_syms);
+    Py_XDECREF(closure_syms);
+    Py_XDECREF(global_syms);
+    Py_XDECREF(request_for_write_syms);
     return NULL;
+  }
 
   Py_XINCREF(name);
   KosNamespaceSpec_NAME(self) = name;
 
-  // both are new references or NULL
   KosNamespaceSpec_LOCAL_SYMS(self) = local_syms;
   KosNamespaceSpec_CLOSURE_SYMS(self) = closure_syms;
+  KosNamespaceSpec_GLOBAL_SYMS(self) = global_syms;
+  KosNamespaceSpec_REQUEST_FOR_WRITE_SYMS(self) = request_for_write_syms;
 
   // SAYF("KosNamespaceSpec_New -> %R", self);
   return self;
@@ -374,11 +465,24 @@ static PyObject *ns_borrow_ref(PyObject *namespace, PyObject *key) {
 }
 
 
-static int ns_init_syms(PyObject *self, PyObject *parent,
-                        PyObject *local_syms, PyObject *closure_syms) {
+static PyObject *find_module_in_chain(PyObject *ns) {
+  while (ns) {
+    if (KosModuleNamespace_CheckExact(ns))
+      return ns;
+    if (! KosNamespace_Check(ns))
+      return NULL;
+    ns = KosNamespace_PARENT(ns);
+  }
+  return NULL;
+}
 
-  // SAYF("ns_init_syms(%R, %R, %R, %R",
-  //      self, parent, local_syms, closure_syms);
+
+static int ns_init_syms(PyObject *self, PyObject *parent,
+                        PyObject *local_syms, PyObject *closure_syms,
+                        PyObject *global_syms) {
+
+  // SAYF("ns_init_syms(%R, %R, %R, %R, %R",
+  //      self, parent, local_syms, closure_syms, global_syms);
 
   if (! self)
     return -1;
@@ -386,7 +490,6 @@ static int ns_init_syms(PyObject *self, PyObject *parent,
   size_t count = 0;
   PyObject *binds = KosNamespace_BINDS(self);
 
-  // SAYF("  processing local_syms %R", local_syms);
   if (local_syms) {
     size_t target = PySequence_Fast_GET_SIZE(local_syms);
     for(size_t i = 0; i < target; i++) {
@@ -404,18 +507,57 @@ static int ns_init_syms(PyObject *self, PyObject *parent,
     }
   }
 
-  // SAYF("  processing closure_syms %R", closure_syms);
   if(closure_syms) {
     size_t target = PySequence_Fast_GET_SIZE(closure_syms);
     for(size_t i = 0; i < target; i++) {
       PyObject *ref_name = PySequence_Fast_GET_ITEM(closure_syms, i);
       PyObject *ref = NULL;
 
-      if (KosNamespace_FindRef(parent, ref_name, &ref)) {
+      if (KosNamespace_FindRefChain(parent, ref_name, &ref)) {
         return -1;
 
-      } else if (! ref) {
-        PyErr_Format(PyExc_NameError, "So such reference: %S", ref_name);
+      } else if (! ref && parent) {
+        /* Fallback: implicit global read - resolve from module when
+         * FindRefChain does not find in enclosing scopes. */
+        PyObject *module_ns = find_module_in_chain(parent);
+        if (module_ns) {
+          ref = mdl_ns_borrow_ref(module_ns, ref_name);
+        }
+      }
+
+      if (! ref) {
+        PyErr_Format(PyExc_NameError, "No such reference: %S", ref_name);
+        return -1;
+      }
+
+      int res = PyDict_SetItem(binds, ref_name, ref);
+      if (res)
+        return res;
+
+      KosNameBind *nb = KosNamespace_GET_FAST(self, count++);
+      Py_INCREF(ref_name);
+      KosNameBind_NAME(nb) = ref_name;
+      Py_INCREF(ref);
+      KosNameBind_HELD(nb) = ref;
+      KosNameBind_RAW(nb) = 0;
+    }
+  }
+
+  if (global_syms && parent) {
+    PyObject *module_ns = find_module_in_chain(parent);
+    if (! module_ns) {
+      PyErr_Format(PyExc_RuntimeError,
+                   "global_syms require module in parent chain");
+      return -1;
+    }
+
+    size_t target = PySequence_Fast_GET_SIZE(global_syms);
+    for (size_t i = 0; i < target; i++) {
+      PyObject *ref_name = PySequence_Fast_GET_ITEM(global_syms, i);
+      PyObject *ref = mdl_ns_borrow_ref(module_ns, ref_name);
+      if (! ref) {
+        PyErr_Format(PyExc_NameError, "No such reference in module: %S",
+                     ref_name);
         return -1;
       }
 
@@ -787,7 +929,8 @@ static PyObject *ns_newfull_type(
     PyObject *name,
     PyObject *parent,
     PyObject *local_syms,
-    PyObject *closure_syms) {
+    PyObject *closure_syms,
+    PyObject *global_syms) {
 
   if (! name || name == Py_None)
     name = _namespace_str;
@@ -829,10 +972,23 @@ static PyObject *ns_newfull_type(
     count += PySequence_Fast_GET_SIZE(closure_syms);
   }
 
+  if (global_syms) {
+    global_syms = PySequence_Fast(global_syms, "global_syms must"
+                                  " be a sequence");
+    if (! global_syms) {
+      Py_XDECREF(local_syms);
+      Py_XDECREF(closure_syms);
+      return NULL;
+    }
+
+    count += PySequence_Fast_GET_SIZE(global_syms);
+  }
+
   PyObject *binds = PyDict_New();
   if (! binds) {
     Py_XDECREF(local_syms);
     Py_XDECREF(closure_syms);
+    Py_XDECREF(global_syms);
     return NULL;
   }
 
@@ -840,6 +996,7 @@ static PyObject *ns_newfull_type(
   if (! self) {
     Py_XDECREF(local_syms);
     Py_XDECREF(closure_syms);
+    Py_XDECREF(global_syms);
     Py_DECREF(binds);
     return NULL;
   }
@@ -850,12 +1007,10 @@ static PyObject *ns_newfull_type(
   Py_XINCREF(parent);
   KosNamespace_PARENT(self) = parent;
 
-  // stolen ref
   KosNamespace_BINDS(self) = binds;
 
   KosNamespace_FAST_COUNT(self) = count;
 
-  // safety zero the fast namebinds
   for (size_t i = count; i--; ) {
     KosNameBind *nb = KosNamespace_GET_FAST(self, i);
     KosNameBind_NAME(nb) = NULL;
@@ -863,11 +1018,12 @@ static PyObject *ns_newfull_type(
     KosNameBind_RAW(nb) = 1;
   }
 
-  if(ns_init_syms(self, parent, local_syms, closure_syms))
+  if (ns_init_syms(self, parent, local_syms, closure_syms, global_syms))
     Py_CLEAR(self);
 
   Py_XDECREF(local_syms);
   Py_XDECREF(closure_syms);
+  Py_XDECREF(global_syms);
 
   return self;
 }
@@ -880,14 +1036,16 @@ static PyObject *ns_new(PyTypeObject *type,
   PyObject *parent = NULL;
   PyObject *local_syms = NULL;
   PyObject *closure_syms = NULL;
+  PyObject *global_syms = NULL;
 
   if (kwds && PyDict_Size(kwds)) {
     PyErr_SetString(PyExc_TypeError, "Namespace takes no named arguments");
     return NULL;
   }
 
-  if (! PyArg_ParseTuple(args, "|OOOO:Namespace",
-                         &name, &parent, &local_syms, &closure_syms))
+  if (! PyArg_ParseTuple(args, "|OOOOO:Namespace",
+                         &name, &parent, &local_syms, &closure_syms,
+                         &global_syms))
     return NULL;
 
   if (!name || name == Py_None) {
@@ -907,7 +1065,8 @@ static PyObject *ns_new(PyTypeObject *type,
     return NULL;
   }
 
-  return ns_newfull_type(type, name, parent, local_syms, closure_syms);
+  return ns_newfull_type(type, name, parent, local_syms, closure_syms,
+                         global_syms);
 }
 
 
@@ -986,7 +1145,8 @@ PyObject *KosNamespace_New(PyObject *parent, PyObject *spec) {
   return KosNamespace_NewFull(KosNamespaceSpec_NAME(spec),
                               parent,
                               KosNamespaceSpec_LOCAL_SYMS(spec),
-                              KosNamespaceSpec_CLOSURE_SYMS(spec));
+                              KosNamespaceSpec_CLOSURE_SYMS(spec),
+                              KosNamespaceSpec_GLOBAL_SYMS(spec));
 }
 
 
@@ -994,11 +1154,12 @@ PyObject *KosNamespace_NewFull(
     PyObject *name,
     PyObject *parent,
     PyObject *local_syms,
-    PyObject *closure_syms) {
+    PyObject *closure_syms,
+    PyObject *global_syms) {
 
   return ns_newfull_type(&KosNamespaceType,
                          name, parent,
-                         local_syms, closure_syms);
+                         local_syms, closure_syms, global_syms);
 }
 
 
@@ -1076,6 +1237,38 @@ int KosNamespace_FindRef(PyObject *namespace, PyObject *key,
   }
 
   // SAYF("KosNamespace_FindRef -> %R", result);
+  return 0;
+}
+
+
+int KosNamespace_FindRefChain(PyObject *namespace, PyObject *key,
+                               PyObject **found) {
+
+  while (namespace) {
+    if (! KosNamespace_Check(namespace)) {
+      PyErr_Format(PyExc_TypeError, "expected Namespace instance,"
+                   " found %R", namespace);
+      return -1;
+    }
+
+    if (KosModuleNamespace_CheckExact(namespace)) {
+      return 0;
+    }
+
+    if (! KosCollectorNamespace_Check(namespace)) {
+      PyObject *seek = KosNamespace_REF(namespace, key);
+      if (! seek) {
+        if (PyErr_Occurred())
+          return -1;
+      } else {
+        *found = seek;
+        return 0;
+      }
+    }
+
+    namespace = KosNamespace_PARENT(namespace);
+  }
+
   return 0;
 }
 
@@ -1285,7 +1478,8 @@ PyObject *KosCollectorNamespace_New(
   return KosCollectorNamespace_NewFull(KosNamespaceSpec_NAME(spec),
                                        parent,
                                        KosNamespaceSpec_LOCAL_SYMS(spec),
-                                       KosNamespaceSpec_CLOSURE_SYMS(spec));
+                                       KosNamespaceSpec_CLOSURE_SYMS(spec),
+                              KosNamespaceSpec_GLOBAL_SYMS(spec));
 }
 
 
@@ -1293,11 +1487,12 @@ PyObject *KosCollectorNamespace_NewFull(
     PyObject *name,
     PyObject *parent,
     PyObject *local_syms,
-    PyObject *closure_syms) {
+    PyObject *closure_syms,
+    PyObject *global_syms) {
 
   return ns_newfull_type(&KosCollectorNamespaceType,
                          name, parent,
-                         local_syms, closure_syms);
+                         local_syms, closure_syms, global_syms);
 }
 
 

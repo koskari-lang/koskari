@@ -95,7 +95,13 @@ from .object import (
     special_vars,
 )
 from .refs import special_bindq, special_deref, special_ref_attr, special_ref_item, special_refq
-from .variables import special_define, special_define_syntax, special_delq, special_setq
+from .variables import (
+    special_define,
+    special_define_global,
+    special_define_syntax,
+    special_delq,
+    special_setq,
+)
 
 
 __all__ = (
@@ -133,6 +139,7 @@ __all__ = (
     "special_deref",
     "special_del_item",
     "special_define",
+    "special_define_global",
     "special_define_syntax",
     "special_delq",
     "special_dir",
