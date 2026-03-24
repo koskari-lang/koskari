@@ -111,7 +111,7 @@ class CevalTest(unittest.IsolatedAsyncioTestCase):
 
     def assertStubRaises(self, *args, **kwds):
         """
-        Assert stub opcode raises RuntimeError (op_unimplemented_stub)
+        Assert stub opcode raises RuntimeError
         """
 
         self.assertRaises(RuntimeError, *args, **kwds)

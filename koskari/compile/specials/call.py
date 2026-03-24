@@ -234,8 +234,11 @@ def special_call_attr(
     attr = matched["attr"].source
     args_src = matched["args"].source if "args" in matched else nil
 
+    use_var_path = is_symbol(obj) and not tc
+
     fragment.position_of(body)
-    fragment.merge(compiler.full_compile(obj))
+    if not use_var_path:
+        fragment.merge(compiler.full_compile(obj))
 
     args_seq, kwds_seq = gather_parameters_ng(args_src, source=args_src)
     has_star = any(x[0] == "*" for x in args_seq)
@@ -246,8 +249,12 @@ def special_call_attr(
             for _, expr in args_seq:
                 fragment.merge(compiler.full_compile(expr, False))
             fragment.position_of(source)
-            fragment.instruction(
-                OpCode.KOS_OP_CALL_ATTR, (str(attr), len(args_seq), 0, 0))
+            if use_var_path:
+                fragment.instruction(
+                    OpCode.KOS_OP_CALL_VAR_ATTR, (str(obj), str(attr), len(args_seq), 0))
+            else:
+                fragment.instruction(
+                    OpCode.KOS_OP_CALL_ATTR, (str(attr), len(args_seq), 0, 0))
         else:
             pos_exprs = [expr for (idx, expr) in args_seq]
             kw_names = []
@@ -261,8 +268,12 @@ def special_call_attr(
             for expr in kw_values:
                 fragment.merge(compiler.full_compile(expr, False))
             fragment.position_of(source)
-            fragment.instruction(
-                OpCode.KOS_OP_CALL_ATTR_NAMES, (str(attr), tuple(kw_names), opa, 0))
+            if use_var_path:
+                fragment.instruction(
+                    OpCode.KOS_OP_CALL_VAR_ATTR_NAMES, (str(obj),str(attr), tuple(kw_names), opa))
+            else:
+                fragment.instruction(
+                    OpCode.KOS_OP_CALL_ATTR_NAMES, (str(attr), tuple(kw_names), opa, 0))
     else:
         opa = 0
         if args_seq:
@@ -296,8 +307,12 @@ def special_call_attr(
                 fragment.instruction(OpCode.KOS_OP_COMBINE_KWDS, len(kwd_chunks))
 
         fragment.position_of(source)
-        fragment.instruction(
-            OpCode.KOS_OP_CALL_ATTR_STAR, (str(attr), opa, 0, 0))
+        if use_var_path:
+            fragment.instruction(
+                OpCode.KOS_OP_CALL_VAR_ATTR_STAR, (str(obj), str(attr), opa, 0))
+        else:
+            fragment.instruction(
+                OpCode.KOS_OP_CALL_ATTR_STAR, (str(attr), opa, 0, 0))
 
     return fragment
 

@@ -72,10 +72,8 @@ KOS_OP_HANDLER(CALL_ATTR) {
     result = PyObject_Vectorcall(resolved,
         (n > 0) ? &ptr[1] : NULL, (size_t) n, NULL);
   }
-  Py_DECREF(resolved);
-  if (! result)
-    return -1;
-
   KosStackBlock_DropNoErr(stack, count);
-  return kos_push_or_await(ctx, out_ev, result);
+  Py_DECREF(resolved);
+
+  return result ? kos_push_or_await(ctx, out_ev, result) : -1;
 }

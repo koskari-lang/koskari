@@ -1548,6 +1548,8 @@ static PyObject *frame_ns_ref(KosContext *ctx, PyObject *name) {
 /* === Opcode handlers (always inlined; return 0=continue 1=stop -1=error) === */
 
 
+// uncomment the following when we need this stub again.
+/*
 static int op_unimplemented_stub(KosContext *ctx, KosEvent *out_ev, KosOp *insn) {
   (void) ctx;
   (void) out_ev;
@@ -1555,6 +1557,7 @@ static int op_unimplemented_stub(KosContext *ctx, KosEvent *out_ev, KosOp *insn)
                (unsigned) KosOp_OP(insn));
   return -1;
 }
+*/
 
 
 /*

@@ -106,11 +106,8 @@ builds).
 
 **This document is the single authoritative reference for opcode implementation
 status.** Each opcode section below notes: **Implemented**, **Stub**
-(unimplemented; delegates to `op_unimplemented_stub`; runtime error if
-executed), or **No runtime** (e.g. THEEND; hardcoded error; compile-time only).
-
-**Stub opcodes** (as of this writing): CALL_FAST_ATTR, CALL_FAST_ATTR_STAR,
-CALL_VAR_ATTR, CALL_VAR_ATTR_STAR.
+(unimplemented; runtime error if executed), or **No runtime** (e.g. THEEND;
+hardcoded error; compile-time only).
 
 **No runtime:** THEEND (end-of-code sentinel; always raises if executed).
 
@@ -288,9 +285,13 @@ When adding or changing an opcode:
 | CALL_FAST_STAR | EXTRA | Call from fast slot with *args/**kwargs | [§17](#kos_op_call_fast_star) |
 | CALL_ATTR | EXTRA | Call obj.name with N positional args | [§17](#kos_op_call_attr) |
 | CALL_ATTR_NAMES | EXTRA | Call obj.name with positional + keyword args | [§17](#kos_op_call_attr_names) |
-| CALL_FAST_ATTR_NAMES | EXTRA | Call obj.name with obj from fast slot | [§17](#kos_op_call_fast_attr_names) |
-| CALL_VAR_ATTR_NAMES | EXTRA | Call obj.name with obj from VAR | [§17](#kos_op_call_var_attr_names) |
+| CALL_FAST_ATTR | EXTRA | Call obj.name with N positional args; obj from fast slot | [§17](#kos_op_call_fast_attr) |
+| CALL_VAR_ATTR | EXTRA | Call obj.name with N positional args; obj from VAR | [§17](#kos_op_call_var_attr) |
+| CALL_FAST_ATTR_NAMES | EXTRA | Call obj.name with positional + keyword args; obj from fast slot | [§17](#kos_op_call_fast_attr_names) |
+| CALL_VAR_ATTR_NAMES | EXTRA | Call obj.name with positional + keyword args; obj from VAR | [§17](#kos_op_call_var_attr_names) |
 | CALL_ATTR_STAR | EXTRA | Call obj.name with *args/**kwargs | [§17](#kos_op_call_attr_star) |
+| CALL_VAR_ATTR_STAR | EXTRA | Call obj.name with *args/**kwargs; obj from VAR | [§17](#kos_op_call_var_attr_star) |
+| CALL_FAST_ATTR_STAR | EXTRA | Call obj.name with *args/**kwargs; obj from fast slot | [§17](#kos_op_call_fast_attr_star) |
 | TAIL_CALL | COUNT | Tail call (replace frame) | [§17](#kos_op_tail_call) |
 | TAIL_CALL_NAMES | COUNT | Tail call with keyword names | [§17](#kos_op_tail_call_names) |
 | TAIL_CALL_STAR | STAR | Tail call with *args and/or **kwargs | [§17](#kos_op_tail_call_star) |
@@ -1880,6 +1881,26 @@ These opcodes perform attribute get, set, clear, or reference on an object fetch
 
 ---
 
+### KOS_OP_CALL_FAST_ATTR {#kos_op_call_fast_attr}
+
+- **Style**: EXTRA. Schema: FASTVAR (slot index for `obj`), CONST (attr name), COUNT (npos), NOARG.
+- **Status**: Implemented.
+- **Stack**: `[..., arg_0, ..., arg_{N-1}] → [..., result]`. Same resolution and invocation rules as [`KOS_OP_CALL_ATTR`](#kos_op_call_attr), but `obj` is **not** on the stack: it is loaded from the current frame namespace via `KosNamespace_FastDeref` (slot `a0`). Requires a namespace that supports fast locals (`KosNamespace_SupportsFast`). When `send_self=0` (unbound method), uses `KosStackSteal_TailPrepend` to prepend `obj` to the stolen args; when `send_self=1`, uses `KosStackSteal_Tail` for `N` args only.
+- **Implementation** (koskari/lib/opcode/CALL_FAST_ATTR.c): Borrowed `obj` from fast slot — no `Py_DECREF(obj)` on control paths (contrast `KOS_OP_CALL_VAR_ATTR`).
+- **Compiler form:** Not emitted by the compiler; available for manual bytecode construction.
+
+---
+
+### KOS_OP_CALL_VAR_ATTR {#kos_op_call_var_attr}
+
+- **Style**: EXTRA. Schema: VAR (name cpool index for `obj`), CONST (attr name), COUNT (npos), NOARG.
+- **Status**: Implemented.
+- **Stack**: Same as `KOS_OP_CALL_FAST_ATTR`. `obj` is obtained with `frame_ns_deref(ctx, var_name)` (owned reference); the handler balances refcounts with `Py_DECREF(obj)` on exit paths.
+- **Implementation** (koskari/lib/opcode/CALL_VAR_ATTR.c): Otherwise identical control flow to `KOS_OP_CALL_FAST_ATTR` / `KOS_OP_CALL_ATTR` (resolve via `kos_resolve_named_attr`, KosCallable vs plain Python, `TailPrepend` when `send_self=0`).
+- **Compiler form:** Not emitted by the compiler; available for manual bytecode construction.
+
+---
+
 ### KOS_OP_CALL_FAST_ATTR_NAMES {#kos_op_call_fast_attr_names}
 
 - **Style**: EXTRA. Schema: FASTVAR (slot index for obj), CONST (attr name), CONST (kwarg names tuple), COUNT (npos).
@@ -1902,8 +1923,30 @@ These opcodes perform attribute get, set, clear, or reference on an object fetch
 
 - **Style**: EXTRA. Schema: CONST (attr name), COUNT (opa bitflags: 1 = has *args, 2 = has **kwargs), NOARG, NOARG.
 - **Status**: Implemented.
-- **Stack**: `obj.name(*args, **kwargs)`. Stack layout per opa flags: opa=0 → `[obj]`; opa=1 → `[obj, pos]`; opa=2 → `[obj, kwd]`; opa=3 → `[obj, pos, kwd]`. Pop in reverse order. `pos` is ensured to be a tuple (coerced via PySequence_Tuple if needed). Resolve obj.name via kos_resolve_named_attr; if send_self, prepend obj to args. Call via KosContext_CallArgs.
+- **Stack**: `obj.name(*args, **kwargs)`. Stack layout per opa flags (bottom … TOS): opa=0 → `[obj]`; opa=1 → `[obj, pos]` (pos = *args); opa=2 → `[obj, kwd]` (kwd = **kwargs); opa=3 → `[obj, pos, kwd]`. Pop in reverse order (kwd then pos then obj when both star forms are present). `pos` is ensured to be a tuple (coerced via PySequence_Tuple if needed). Resolve obj.name via `kos_resolve_named_attr`; when `send_self=0`, prepend `obj` to the positional tuple before the call. Call via `KosContext_CallArgs`.
 - **Invariants**: attr name in constant pool. opa bits: 1 = has *args, 2 = has **kwargs.
+
+---
+
+### KOS_OP_CALL_VAR_ATTR_STAR {#kos_op_call_var_attr_star}
+
+- **Style**: EXTRA. Schema: VAR (name cpool index for `obj`), CONST (attr name), COUNT (opa bitflags: 1 = has *args, 2 = has **kwargs), NOARG.
+- **Status**: Implemented.
+- **Stack**: Same semantics as [`KOS_OP_CALL_ATTR_STAR`](#kos_op_call_attr_star), but `obj` is **not** on the stack; it is loaded with `frame_ns_deref(ctx, var_name)` (owned reference; handler decrements on exit paths). Stack layout per opa (bottom … TOS): opa=0 → `[]`; opa=1 → `[pos]`; opa=2 → `[kwd]`; opa=3 → `[pos, kwd]` with `kwd` at TOS (same relative order as CALL_ATTR_STAR without the receiver). Pop order and `opa` handling match [`KOS_OP_CALL_VAR_STAR`](#kos_op_call_var_star) combined with CALL_ATTR_STAR; resolve via `kos_resolve_named_attr`, prepend `obj` to tuple args when `send_self=0`, call via `KosContext_CallArgs`.
+- **Invariants**: `var_name` and attr name in constant pool; same opa bit meanings as CALL_ATTR_STAR.
+- **Implementation** (koskari/lib/opcode/CALL_VAR_ATTR_STAR.c): Parallel to CALL_ATTR_STAR with VAR receiver semantics (see [`KOS_OP_CALL_VAR_ATTR`](#kos_op_call_var_attr)).
+- **Compiler form:** Not emitted by the compiler; available for manual bytecode construction.
+
+---
+
+### KOS_OP_CALL_FAST_ATTR_STAR {#kos_op_call_fast_attr_star}
+
+- **Style**: EXTRA. Schema: FASTVAR (slot index for `obj`), CONST (attr name), COUNT (opa bitflags), NOARG.
+- **Status**: Implemented.
+- **Stack**: Same stack layout and `opa` behavior as [`KOS_OP_CALL_VAR_ATTR_STAR`](#kos_op_call_var_attr_star). `obj` comes from `KosNamespace_FastDeref(ns, slot)` (slot `a0`); requires `KosNamespace_SupportsFast`. Pop/resolve/call semantics match CALL_ATTR_STAR. Same refcount convention as [`KOS_OP_CALL_FAST_ATTR`](#kos_op_call_fast_attr): no `Py_DECREF(obj)` on control paths (contrast [`KOS_OP_CALL_VAR_ATTR_STAR`](#kos_op_call_var_attr_star)).
+- **Invariants**: Same opa and tuple/`pos` rules as CALL_ATTR_STAR; fast slot must be in range and bound.
+- **Implementation** (koskari/lib/opcode/CALL_FAST_ATTR_STAR.c): Parallel to CALL_FAST_ATTR / CALL_ATTR_STAR.
+- **Compiler form:** Not emitted by the compiler; available for manual bytecode construction.
 
 ---
 
