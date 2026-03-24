@@ -12,7 +12,7 @@ This directory documents the interpreter implementation, including bytecode form
 - **[EVALUATOR.md](../EVALUATOR.md)**: Evaluator operation diagrams, phase flow, opcode signaling, exceptions, transfer plans, tail calls, call installs, and play-by-play scenarios
 - **execution-invariants.md**: Koskari execution model invariants and design commitments
 - **yield-from-execution-model.md**: YIELD_FROM opcode execution model (delegation conduit, KOS_DYN_YIELD_FROM, delegate kinds, PC discipline)
-- **introspection-trace.md**: Read-only introspection and trace snapshot design (TraceView, KOS_OP_CAPTURE_FRAME, exception integration)
+- **introspection-trace.md**: Read-only introspection and trace snapshot design (TraceView; proposed CAPTURE_FRAME opcode is design-only, see that doc §5)
 - **callcc.md**: Call/cc implementation design
 - **dynamic-node-unified-api.md**: Dynamic node unified API redesign and migration specification (implementation prompt)
 - **generic-dynnode-protocol.md**: Generic DynNode interface design, API reference, and type-specific bypass cases (when opcodes use type-named APIs)

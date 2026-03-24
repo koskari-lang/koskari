@@ -5,8 +5,9 @@ and their order are defined in `koskari/lib/opcodes.incl`; any new opcode must b
 added there first, then documented here. This document defines semantics and
 invariants; the evaluator and compiler are expected to follow it.
 
-**Implementation status:** This document is the **authoritative reference** for
-which opcodes exist and whether each is implemented, a stub, or has no runtime.
+**Implementation status:** The opcode set is defined in `koskari/lib/opcodes.incl`.
+This document is the **authoritative reference** for which of those opcodes exist
+in shipped bytecode and whether each is implemented, a stub, or has no runtime.
 See §1.6. Other design docs should refer here instead of duplicating status.
 
 **See also:** [interpreter/bytecode.md](interpreter/bytecode.md) (format, layout,
@@ -180,10 +181,10 @@ When adding or changing an opcode:
    there are authoritative.
 2. **Implement or stub** the handler in `koskari/lib/eval.c` (or mark as
    no-runtime for THEEND / compile-time for LABEL, POSITION).
-3. **Add or update** the opcode's section in this document: category, stack
-   effect, invariants, compiler form (if pre ≠ post), and at least one
-   disassembly table (post-compile). For stubs, add **Intended** (design) and
-   **Current** (stub/error) if helpful.
+3. **Add or update** the opcode's section in this document: a `### KOS_OP_*`
+   heading with stable anchor, category, stack effect, invariants, compiler form
+   (if pre ≠ post), and at least one disassembly table (post-compile) when
+   helpful. For stubs, add **Intended** (design) and **Current** (stub/error) if helpful.
 4. **Add or extend tests** that match the documented behaviour; consider adding a
    "Covered by …" line in the doc (e.g. `tests/lib/test_ceval.py`).
 
@@ -198,7 +199,7 @@ When adding or changing an opcode:
 - [7. Iteration](#7-iteration) — ITER_NEXT, NEXT
 - [8. Jumps](#8-jumps) — JUMP, JUMP_FALSE, JUMP_TRUE, JUMP_AND, JUMP_OR
 - [9. Check jumps](#9-check-jumps) — CHECK_EQ, CHECK_GE, CHECK_GT, CHECK_LE, CHECK_LT, CHECK_NE, CHECK_IN, CHECK_NOT_IN, CHECK_IS, CHECK_IS_NOT, CHECK_IS_INSTANCE, CHECK_IS_SUBCLASS, CHECK_EXCEPTION
-- [10. Introspection](#10-introspection) — GLOBALS, LOCALS, IMPORT, IMPORT_REL, IMPORT_FROM, CAPTURE_FRAME
+- [10. Introspection](#10-introspection) — GLOBALS, LOCALS, IMPORT, IMPORT_REL, IMPORT_FROM
 - [11. Exception handling](#11-exception-handling) — EXCEPTION, EXCEPTION_CLEAR, EXCEPTION_MATCH
 - [12. Variables by name](#12-variables-by-name) — VAR, VAR_BIND, VAR_CLEAR, VAR_REF, VAR_STORE, VAR_ATTR*
 - [13. Fast variables](#13-fast-variables) — FAST, FAST_BIND, FAST_CLEAR, FAST_REF, FAST_STORE, FAST_ATTR*
@@ -212,7 +213,7 @@ When adding or changing an opcode:
 - [19. Object protocol](#19-object-protocol) — OBJECT_* (comparisons, predicates, numeric, general)
 - [20. Delimited continuations](#20-delimited-continuations) — PUSH_PROMPT, PUSH_SHIFT, POP_SHIFT, POP_PROMPT, INVOKE_K, INVOKE_K_VAR
 - [21. Undelimited continuations (call/cc)](#21-undelimited-continuations-callcc) — PUSH_CC, POP_CC, CAPTURE_CC
-- [22. Dynamic wind](#22-dynamic-wind) — PUSH_WIND, POP_WIND, END_WIND
+- [22. Dynamic wind](#22-dynamic-wind) — PUSH_WIND, POP_WIND
 - [23. Parameterize extent](#23-parameterize-extent) — PUSH_PARAM, PARAM, POP_PARAM
 - [24. Sentinel](#24-sentinel) — THEEND
 
@@ -257,7 +258,6 @@ When adding or changing an opcode:
 | IMPORT | CONST | Absolute import; push leaf module | [§10.1](#kos_op_import) |
 | IMPORT_REL | CONST | Relative import; push leaf module | [§10.1](#kos_op_import_rel) |
 | IMPORT_FROM | CONST | **PEEK-NOT-POP** module at TOS; push named attr | [§10.1](#kos_op_import_from) |
-| CAPTURE_FRAME | COUNT | Push TraceView snapshot | [§10](#kos_op_capture_frame) |
 | EXCEPTION | NOARG | Push current exception | [§11](#kos_op_exception) |
 | EXCEPTION_CLEAR | NOARG | Clear exception state | [§11](#kos_op_exception_clear) |
 | EXCEPTION_MATCH | NOARG | Pop type(s), push match result | [§11](#kos_op_exception_match) |
@@ -308,9 +308,9 @@ When adding or changing an opcode:
 | POP_PROMPT | NOARG | Pop prompt | [§20](#kos_op_pop_prompt) |
 | INVOKE_K | NOARG | Pop value, pop k; invoke k(value) | [§20](#kos_op_invoke_k) |
 | INVOKE_K_VAR | CONST | Invoke continuation by name | [§20](#kos_op_invoke_k_var) |
-| THEEND | NOARG | Unreachable; no runtime | [§25](#kos_op_theend) |
+| THEEND | NOARG | Unreachable; no runtime | [§24](#kos_op_theend) |
 
-Other opcodes (PROPER, PAIR_SPLICE, CHECK_LT/LE/GT/GE, CHECK_IS_INSTANCE/IS_SUBCLASS, VAR_CLEAR, VAR_REF, VAR_ATTR*/FAST_ATTR*, FAST_BIND/CLEAR/REF, ATTR_CLEAR/REF, ITEM_CLEAR/REF, CONST_ITEM_*, DEREF, BUILD_*, CALL_ATTR*, PUSH_FINALLY/POP_*, CLEAR_*, OBJECT_*, PUSH_WITH/POP_WITH/PUSH_DYN_WITH/POP_DYN_WITH, PUSH_CC/POP_CC/CAPTURE_CC, PUSH_WIND/POP_WIND/END_WIND, PUSH_PARAM/PARAM/POP_PARAM) are listed under their category sections above; use the category index to jump to the section, then scan for the opcode name.
+**Completeness:** Every member of the `KosOpCode` enum in `koskari/lib/opcodes.incl` has a dedicated `### KOS_OP_*` heading in this document (some sections group related opcodes under one narrative first, then list each name). Search for `### KOS_OP_` to enumerate. Design-only or future opcodes belong in design notes, not here, until they are added to `opcodes.incl`.
 
 
 ## 3. No-op and compile-time
@@ -446,7 +446,7 @@ Other opcodes (PROPER, PAIR_SPLICE, CHECK_LT/LE/GT/GE, CHECK_IS_INSTANCE/IS_SUBC
 
 ### 5.1 Pair construction and access
 
-#### KOS_OP_CAR
+### KOS_OP_CAR {#kos_op_car}
 
 - **Style**: NOARG.
 - **Status**: Implemented.
@@ -454,7 +454,7 @@ Other opcodes (PROPER, PAIR_SPLICE, CHECK_LT/LE/GT/GE, CHECK_IS_INSTANCE/IS_SUBC
   is nil, sets TypeError and returns -1. Otherwise pushes car (INCREF).
 
 
-#### KOS_OP_CDR
+### KOS_OP_CDR {#kos_op_cdr}
 
 - **Style**: NOARG.
 - **Status**: Implemented.
@@ -462,7 +462,7 @@ Other opcodes (PROPER, PAIR_SPLICE, CHECK_LT/LE/GT/GE, CHECK_IS_INSTANCE/IS_SUBC
   is nil, sets TypeError and returns -1. Otherwise pushes cdr (INCREF).
 
 
-#### KOS_OP_CONS
+### KOS_OP_CONS {#kos_op_cons}
 
 - **Style**: COUNT. Arg = number of values on stack (bottom = first element,
   top = tail).
@@ -473,7 +473,7 @@ Other opcodes (PROPER, PAIR_SPLICE, CHECK_LT/LE/GT/GE, CHECK_IS_INSTANCE/IS_SUBC
   nil (INCREF).
 
 
-#### KOS_OP_PROPER
+### KOS_OP_PROPER {#kos_op_proper}
 
 - **Style**: COUNT. Arg = number of element values on stack.
 - **Status**: Implemented. (`koskari/lib/opcode/PROPER.c`)
@@ -495,7 +495,7 @@ Other opcodes (PROPER, PAIR_SPLICE, CHECK_LT/LE/GT/GE, CHECK_IS_INSTANCE/IS_SUBC
 | 3     | PROPER | 3   | 3          | stack: [..., (a b c)] |
 
 
-#### KOS_OP_PAIR_SPLICE
+### KOS_OP_PAIR_SPLICE {#kos_op_pair_splice}
 
 - **Style**: COUNT. Arg = number of segments on stack (bottom = first segment,
   top = last segment).
@@ -885,11 +885,41 @@ Check jumps: if the predicate does **not** hold, jump to `arg`. All take LABEL; 
 
 ---
 
-### KOS_OP_CHECK_LT, KOS_OP_CHECK_LE, KOS_OP_CHECK_GT, KOS_OP_CHECK_GE
+### KOS_OP_CHECK_LT {#kos_op_check_lt}
 
 - **Style**: LABEL. Arg = target pc (post-compile).
 - **Status**: Implemented.
-- **Stack**: `[..., left, right]` (right = TOS). Pops both; if comparison fails (e.g. CHECK_LT: left >= right), jump to `arg`; else fall through. Stack after: `[...]`.
+- **Stack**: `[..., left, right]` (right = TOS). Pops both; if **not** `left < right`, jump to `arg`; else fall through. Stack after: `[...]`.
+- **Invariants**: Jump locality for target.
+- **Compiler form:** Pre-compile arg = string label; post-compile arg = pc.
+
+---
+
+### KOS_OP_CHECK_LE {#kos_op_check_le}
+
+- **Style**: LABEL. Arg = target pc (post-compile).
+- **Status**: Implemented.
+- **Stack**: `[..., left, right]` (right = TOS). Pops both; if **not** `left <= right`, jump to `arg`; else fall through. Stack after: `[...]`.
+- **Invariants**: Jump locality for target.
+- **Compiler form:** Pre-compile arg = string label; post-compile arg = pc.
+
+---
+
+### KOS_OP_CHECK_GT {#kos_op_check_gt}
+
+- **Style**: LABEL. Arg = target pc (post-compile).
+- **Status**: Implemented.
+- **Stack**: `[..., left, right]` (right = TOS). Pops both; if **not** `left > right`, jump to `arg`; else fall through. Stack after: `[...]`.
+- **Invariants**: Jump locality for target.
+- **Compiler form:** Pre-compile arg = string label; post-compile arg = pc.
+
+---
+
+### KOS_OP_CHECK_GE {#kos_op_check_ge}
+
+- **Style**: LABEL. Arg = target pc (post-compile).
+- **Status**: Implemented.
+- **Stack**: `[..., left, right]` (right = TOS). Pops both; if **not** `left >= right`, jump to `arg`; else fall through. Stack after: `[...]`.
 - **Invariants**: Jump locality for target.
 - **Compiler form:** Pre-compile arg = string label; post-compile arg = pc.
 
@@ -1070,7 +1100,7 @@ extracts named attributes from the module. See `koskari/compile/specials/imports
 (`helper_import_from_sequence`, `special_import`, `special_import_from`) for
 the compiler special forms that emit these opcodes.
 
-#### KOS_OP_IMPORT {#kos_op_import}
+### KOS_OP_IMPORT {#kos_op_import}
 
 - **Style**: CONST. Arg = constant pool index of module name string (post-compile).
 - **Status**: Implemented.
@@ -1099,7 +1129,7 @@ Pool: 0 = `"os.path"`, 1 = `"path"`, 2 = None.
 
 ---
 
-#### KOS_OP_IMPORT_REL {#kos_op_import_rel}
+### KOS_OP_IMPORT_REL {#kos_op_import_rel}
 
 - **Style**: CONST. Arg = constant pool index of a `(level:int, name:str|None)` tuple
   (post-compile).
@@ -1131,7 +1161,7 @@ Pool: 0 = `(1, "foo")`, 1 = `"foo"`, 2 = None.
 
 ---
 
-#### KOS_OP_IMPORT_FROM {#kos_op_import_from}
+### KOS_OP_IMPORT_FROM {#kos_op_import_from}
 
 - **Style**: CONST. Arg = constant pool index of attribute name string
   (post-compile).
@@ -1174,21 +1204,7 @@ Pool: 0 = `"os"`, 1 = `"path"`, 2 = `"sep"`, 3 = None.
 
 ---
 
-### KOS_OP_CAPTURE_FRAME {#kos_op_capture_frame}
-
-- **Style**: COUNT.
-- **Status**: Design; not yet implemented.
-- **Stack**: `[...] → [..., traceview]`. Pushes a read-only TraceView snapshot onto the stack.
-- **Invariants**: Does not alter evaluator state; produces stable snapshot; cannot embed Python/C stack; cannot expose mutable VM internals.
-- **Argument meaning**: 0 → capture current frame only; 1 → capture full frame chain; N → capture N frames upward.
-- **Design**: See [interpreter/introspection-trace.md](interpreter/introspection-trace.md) for full specification. This opcode is debugging-only and may be gated behind build flags if desired.
-
-**Example:** Capture full frame chain (arg = 1).
-
-| index | opcode        | arg | arg view | comment |
-|------:|---------------|-----|----------|---------|
-| 0     | CAPTURE_FRAME | 1   | 1        | stack: [..., traceview] |
-| 1     | RETURN        | 1   | 1        | |
+**Trace snapshots (design only):** Read-only stack/frame introspection for debugging is discussed in [interpreter/introspection-trace.md](interpreter/introspection-trace.md). There is **no** `KOS_OP_CAPTURE_FRAME` (or similar) in `koskari/lib/opcodes.incl`; a future opcode would be added there first, then documented here.
 
 
 ## 11. Exception handling
@@ -1331,13 +1347,32 @@ Pool: 0 = `"os"`, 1 = `"path"`, 2 = `"sep"`, 3 = None.
 
 These opcodes perform attribute get, set, clear, or reference on an object fetched from the frame namespace by name. The object is not on the stack; it is resolved via `frame_ns_deref(var_name)`. Each uses EXTRA schema: VAR (obj name), CONST (attr name).
 
-**VAR_ATTR**: Get attribute. `[...] → [..., value]`. Equivalent to ATTR but obj from namespace.
-**VAR_ATTR_STORE**: Set attribute. `[..., value] → [...]`. Equivalent to ATTR_STORE but obj from namespace.
-**VAR_ATTR_CLEAR**: Delete attribute. No stack effect (obj from namespace). Equivalent to ATTR_CLEAR.
-**VAR_ATTR_REF**: Push attribute reference. `[...] → [..., attr_ref]`. Equivalent to ATTR_REF but obj from namespace.
-
 - **Status**: Implemented.
 - **Compiler form:** Emitted by attr/del-attr/set-attr specials when the object expression is a symbol (variable reference). May be lowered to FAST_ATTR_* when the name has a fixed slot.
+
+### KOS_OP_VAR_ATTR {#kos_op_var_attr}
+
+- **Style**: EXTRA (VAR, CONST, NOARG, NOARG).
+- **Stack**: `[...] → [..., value]`. Get attribute on object held in namespace by name. Equivalent to ATTR but the object is loaded from the frame namespace, not from TOS.
+- **Implementation**: `koskari/lib/opcode/VAR_ATTR.c`
+
+### KOS_OP_VAR_ATTR_STORE {#kos_op_var_attr_store}
+
+- **Style**: EXTRA (VAR, CONST, NOARG, NOARG).
+- **Stack**: `[..., value] → [...]`. Set attribute. Equivalent to ATTR_STORE with object from namespace.
+- **Implementation**: `koskari/lib/opcode/VAR_ATTR_STORE.c`
+
+### KOS_OP_VAR_ATTR_CLEAR {#kos_op_var_attr_clear}
+
+- **Style**: EXTRA (VAR, CONST, NOARG, NOARG).
+- **Stack**: No stack effect. Delete attribute on object from namespace. Equivalent to ATTR_CLEAR with object from namespace.
+- **Implementation**: `koskari/lib/opcode/VAR_ATTR_CLEAR.c`
+
+### KOS_OP_VAR_ATTR_REF {#kos_op_var_attr_ref}
+
+- **Style**: EXTRA (VAR, CONST, NOARG, NOARG).
+- **Stack**: `[...] → [..., attr_ref]`. Push attribute reference. Equivalent to ATTR_REF with object from namespace.
+- **Implementation**: `koskari/lib/opcode/VAR_ATTR_REF.c`
 
 
 ## 13. Fast variables
@@ -1430,13 +1465,32 @@ These opcodes perform attribute get, set, clear, or reference on an object fetch
 
 These opcodes perform attribute get, set, clear, or reference on an object fetched from the fast local slot. The object is not on the stack; it is resolved via `KosNamespace_FastDeref(ns, slot)`. Each uses EXTRA schema: FASTVAR (slot), CONST (attr name).
 
-**FAST_ATTR**: Get attribute. `[...] → [..., value]`. Equivalent to ATTR but obj from slot.
-**FAST_ATTR_STORE**: Set attribute. `[..., value] → [...]`. Equivalent to ATTR_STORE but obj from slot.
-**FAST_ATTR_CLEAR**: Delete attribute. No stack effect (obj from slot). Equivalent to ATTR_CLEAR.
-**FAST_ATTR_REF**: Push attribute reference. `[...] → [..., attr_ref]`. Equivalent to ATTR_REF but obj from slot.
-
 - **Status**: Implemented.
 - **Compiler form:** Emitted when VAR_ATTR_* is lowered (name has fixed slot).
+
+### KOS_OP_FAST_ATTR {#kos_op_fast_attr}
+
+- **Style**: EXTRA (FASTVAR, CONST, NOARG, NOARG).
+- **Stack**: `[...] → [..., value]`. Get attribute on object in fast slot. Equivalent to ATTR but object from slot.
+- **Implementation**: `koskari/lib/opcode/FAST_ATTR.c`
+
+### KOS_OP_FAST_ATTR_STORE {#kos_op_fast_attr_store}
+
+- **Style**: EXTRA (FASTVAR, CONST, NOARG, NOARG).
+- **Stack**: `[..., value] → [...]`. Set attribute on object in fast slot.
+- **Implementation**: `koskari/lib/opcode/FAST_ATTR_STORE.c`
+
+### KOS_OP_FAST_ATTR_CLEAR {#kos_op_fast_attr_clear}
+
+- **Style**: EXTRA (FASTVAR, CONST, NOARG, NOARG).
+- **Stack**: No stack effect. Delete attribute on object in fast slot.
+- **Implementation**: `koskari/lib/opcode/FAST_ATTR_CLEAR.c`
+
+### KOS_OP_FAST_ATTR_REF {#kos_op_fast_attr_ref}
+
+- **Style**: EXTRA (FASTVAR, CONST, NOARG, NOARG).
+- **Stack**: `[...] → [..., attr_ref]`. Push attribute reference for object in fast slot.
+- **Implementation**: `koskari/lib/opcode/FAST_ATTR_REF.c`
 
 
 ## 14. Attributes
@@ -2015,7 +2069,7 @@ These opcodes perform attribute get, set, clear, or reference on an object fetch
 
 Full design: [interpreter/with-dyn-with.md](interpreter/with-dyn-with.md). Summary below.
 
-#### KOS_OP_PUSH_WITH
+### KOS_OP_PUSH_WITH {#kos_op_push_with}
 
 - **Style**: CONST. Arg = constant pool index of binding name (symbol/string) or sentinel for no binding.
 - **Status**: Implemented (single-shot with; sync and async __enter__/__exit__; VM auto-awaits when enter returns awaitable).
@@ -2024,7 +2078,7 @@ Full design: [interpreter/with-dyn-with.md](interpreter/with-dyn-with.md). Summa
 - **Pushes:** KOS_DYN_WITH (single-shot; transfer barrier). Node stores `resume_pc` (instruction after POP_WITH) for use when exit swallows an exception.
 - **Invariants:** Node owns one operand stack block; stack restoration is structural (block pop), not height-mark. A WITH extent must exist at the PUSH_WITH PC; otherwise RuntimeError.
 
-#### KOS_OP_POP_WITH
+### KOS_OP_POP_WITH {#kos_op_pop_with}
 
 - **Style**: NOARG (or COUNT per existing opcodes.incl; design assumes no arg).
 - **Status**: Implemented (sync and async exit; VM auto-awaits when exit returns awaitable).
@@ -2032,14 +2086,14 @@ Full design: [interpreter/with-dyn-with.md](interpreter/with-dyn-with.md). Summa
 - **Invariants:** Top of chain must be KOS_DYN_WITH. With-expression value is always `None`; exit return is used only for swallow logic and is never the value seen by RETURN.
 - **Covered by:** `tests/lib/opcode/test_with.py`, `tests/compile/specials/test_with.py` (sync and async).
 
-#### KOS_OP_PUSH_DYN_WITH
+### KOS_OP_PUSH_DYN_WITH {#kos_op_push_dyn_with}
 
 - **Style**: CONST. Arg = constant pool index of binding name or sentinel for no binding (same as PUSH_WITH).
 - **Status**: Implemented (multi-shot dyn-with; sync and async enter/exit; VM auto-awaits when enter returns awaitable).
 - **Stack / behaviour:** Same as PUSH_WITH except pushes KOS_DYN_DYN_WITH. Node participates in continuation transfer plans (wind/unwind on non-local transfer).
 - **Pushes:** KOS_DYN_DYN_WITH.
 
-#### KOS_OP_POP_DYN_WITH
+### KOS_OP_POP_DYN_WITH {#kos_op_pop_dyn_with}
 
 - **Style**: NOARG.
 - **Status**: Implemented (sync and async exit; VM auto-awaits when exit returns awaitable).
@@ -2178,38 +2232,75 @@ Full design: [interpreter/with-dyn-with.md](interpreter/with-dyn-with.md). Summa
 
 ---
 
-### KOS_OP_CLEAR_FINALLY, KOS_OP_CLEAR_LOOP, KOS_OP_CLEAR_TRY
+### KOS_OP_CLEAR_FINALLY {#kos_op_clear_finally}
 
-- **Status**: Implemented. Used for cleanup on non-local exit (break/continue/exception).
-- **Stack**: Clear region state; do not pop (POP_* does that at target). CLEAR_TRY and CLEAR_FINALLY do not touch the stack block (only disable the region); the block is dropped by POP_* or by region unwind.
-- **Example:** On break: CLEAR_LOOP (and possibly CLEAR_TRY) then jump to break_pc; POP_LOOP at target.
+- **Style**: NOARG.
+- **Status**: Implemented.
+- **Stack**: No stack effect. Clears FINALLY region state on non-local exit; does not pop the region (POP_FINALLY does at target). Does not touch the stack block (only disables the region); the block is dropped by POP_FINALLY or unwind.
+- **Example:** Exception or unwind path before transferring to a finally handler.
 
 ---
 
-### KOS_OP_POP_LOOP, KOS_OP_POP_NS, KOS_OP_POP_TRY, KOS_OP_POP_FINALLY
+### KOS_OP_CLEAR_LOOP {#kos_op_clear_loop}
 
-- **Style**: All NOARG. Argument unused (or 0).
+- **Style**: NOARG.
 - **Status**: Implemented.
-- **Stack**:
-  - **POP_TRY**: Promote one value (TOS) from try block to parent via PopBlock(1), then drop the block and pop the region. Block must have exactly one value. Clear exception state before pop.
-  - **POP_FINALLY**: Same as POP_TRY for the finally block.
-  - **POP_LOOP**: Drop stack block (no promotion); pop LOOP/FOREACH region; push loop/foreach result from the region (stored on the region, not from the block).
-  - **POP_NS**: Restore frame namespace from saved_ns; pop NS node. No stack block.
-- **Invariants**: Top of chain must match the POP kind. pc == pop_pc is outside block.
+- **Stack**: No stack effect. Clears LOOP region state on non-local exit (e.g. break); POP_LOOP runs at the break target.
+- **Example:** On `break`: CLEAR_LOOP (and possibly CLEAR_TRY) then jump to break_pc; POP_LOOP at target.
 
-**Example:** POP_NS. Pool: N/A.
+---
+
+### KOS_OP_CLEAR_TRY {#kos_op_clear_try}
+
+- **Style**: NOARG.
+- **Status**: Implemented.
+- **Stack**: No stack effect. Clears TRY region state on non-local exit; does not touch the stack block; POP_TRY drops the block at the target.
+- **Invariants**: Used with structured exception and non-local control flow.
+
+---
+
+### KOS_OP_POP_TRY {#kos_op_pop_try}
+
+- **Style**: NOARG. Argument unused (or 0).
+- **Status**: Implemented.
+- **Stack**: Promote one value (TOS) from try block to parent via PopBlock(1), then drop the block and pop the region. Block must have exactly one value. Clear exception state before pop.
+- **Invariants**: Top of chain must be KOS_DYN_TRY.
+
+---
+
+### KOS_OP_POP_FINALLY {#kos_op_pop_finally}
+
+- **Style**: NOARG.
+- **Status**: Implemented.
+- **Stack**: Same structural behaviour as POP_TRY for the finally block: promote one value via PopBlock(1), drop block, pop region.
+- **Invariants**: Top of chain must be KOS_DYN_FINALLY.
+
+---
+
+### KOS_OP_POP_LOOP {#kos_op_pop_loop}
+
+- **Style**: NOARG.
+- **Status**: Implemented.
+- **Stack**: Drop stack block (no promotion); pop LOOP/FOREACH region; push loop/foreach result from the region (stored on the region, not from the block).
+- **Invariants**: Top of chain must match LOOP/FOREACH.
+
+---
+
+### KOS_OP_POP_NS {#kos_op_pop_ns}
+
+- **Style**: NOARG.
+- **Status**: Implemented.
+- **Stack**: Restore frame namespace from saved_ns; pop NS node. No stack block.
+
+**Example:** Pool: N/A.
 
 | index | opcode | arg | arg view | comment |
 |------:|--------|-----|----------|---------|
 | 2     | POP_NS | 0   | 0        | pop KosDynNs; restore saved namespace |
 
+- **Invariants**: Top of chain must be KOS_DYN_NS.
+
 ---
-
-### KOS_OP_POP_WITH
-
-- **Status**: PUSH_WITH and POP_WITH implemented (single-shot with; sync and async). PUSH_DYN_WITH and POP_DYN_WITH implemented (multi-shot dyn-with).
-- **Example:** (See 18.1 for PUSH_WITH/POP_WITH.)
-
 
 ## 19. Object protocol
 
@@ -2220,7 +2311,266 @@ Object protocol opcodes: single Python operation on TOS (and optionally below); 
 - **Numeric**: OBJECT_ADD, OBJECT_SUBTRACT, OBJECT_MULTIPLY, OBJECT_POWER, OBJECT_FLOOR_DIVIDE, OBJECT_TRUE_DIVIDE, OBJECT_MODULO, OBJECT_* (bit ops, matrix multiply).
 - **General**: OBJECT_ITER, OBJECT_AITER, OBJECT_LEN, OBJECT_NOT, OBJECT_REPR, OBJECT_STR, OBJECT_TYPE, OBJECT_DIR, OBJECT_VARS, OBJECT_TRUTH, OBJECT_DIVMOD, OBJECT_BIT_INVERT, OBJECT_BIT_LEFT, OBJECT_BIT_RIGHT.
 
-**Example (OBJECT_ADD):** Arg = number of operands (e.g. 2 for binary add). Pop N values, push result (or await). Pool: 0 = 1, 1 = 2.
+Each `OBJECT_*` opcode in `opcodes.incl` has its own subsection below.
+
+### KOS_OP_OBJECT_EQ {#kos_op_object_eq}
+
+- **Style**: NOARG.
+- **Status**: Implemented.
+- **Semantics**: See [§19 Object protocol](#19-object-protocol) overview.
+- **Implementation**: `koskari/lib/opcode/OBJECT_EQ.c`
+
+### KOS_OP_OBJECT_GE {#kos_op_object_ge}
+
+- **Style**: NOARG.
+- **Status**: Implemented.
+- **Semantics**: See [§19 Object protocol](#19-object-protocol) overview.
+- **Implementation**: `koskari/lib/opcode/OBJECT_GE.c`
+
+### KOS_OP_OBJECT_GT {#kos_op_object_gt}
+
+- **Style**: NOARG.
+- **Status**: Implemented.
+- **Semantics**: See [§19 Object protocol](#19-object-protocol) overview.
+- **Implementation**: `koskari/lib/opcode/OBJECT_GT.c`
+
+### KOS_OP_OBJECT_LE {#kos_op_object_le}
+
+- **Style**: NOARG.
+- **Status**: Implemented.
+- **Semantics**: See [§19 Object protocol](#19-object-protocol) overview.
+- **Implementation**: `koskari/lib/opcode/OBJECT_LE.c`
+
+### KOS_OP_OBJECT_LT {#kos_op_object_lt}
+
+- **Style**: NOARG.
+- **Status**: Implemented.
+- **Semantics**: See [§19 Object protocol](#19-object-protocol) overview.
+- **Implementation**: `koskari/lib/opcode/OBJECT_LT.c`
+
+### KOS_OP_OBJECT_NE {#kos_op_object_ne}
+
+- **Style**: NOARG.
+- **Status**: Implemented.
+- **Semantics**: See [§19 Object protocol](#19-object-protocol) overview.
+- **Implementation**: `koskari/lib/opcode/OBJECT_NE.c`
+
+### KOS_OP_OBJECT_IN {#kos_op_object_in}
+
+- **Style**: NOARG.
+- **Status**: Implemented.
+- **Semantics**: See [§19 Object protocol](#19-object-protocol) overview.
+- **Implementation**: `koskari/lib/opcode/OBJECT_IN.c`
+
+### KOS_OP_OBJECT_NOT_IN {#kos_op_object_not_in}
+
+- **Style**: NOARG.
+- **Status**: Implemented.
+- **Semantics**: See [§19 Object protocol](#19-object-protocol) overview.
+- **Implementation**: `koskari/lib/opcode/OBJECT_NOT_IN.c`
+
+### KOS_OP_OBJECT_IS {#kos_op_object_is}
+
+- **Style**: NOARG.
+- **Status**: Implemented.
+- **Semantics**: See [§19 Object protocol](#19-object-protocol) overview.
+- **Implementation**: `koskari/lib/opcode/OBJECT_IS.c`
+
+### KOS_OP_OBJECT_IS_NOT {#kos_op_object_is_not}
+
+- **Style**: NOARG.
+- **Status**: Implemented.
+- **Semantics**: See [§19 Object protocol](#19-object-protocol) overview.
+- **Implementation**: `koskari/lib/opcode/OBJECT_IS_NOT.c`
+
+### KOS_OP_OBJECT_IS_INSTANCE {#kos_op_object_is_instance}
+
+- **Style**: COUNT.
+- **Status**: Implemented.
+- **Semantics**: See [§19 Object protocol](#19-object-protocol) overview.
+- **Implementation**: `koskari/lib/opcode/OBJECT_IS_INSTANCE.c`
+
+### KOS_OP_OBJECT_IS_SUBCLASS {#kos_op_object_is_subclass}
+
+- **Style**: COUNT.
+- **Status**: Implemented.
+- **Semantics**: See [§19 Object protocol](#19-object-protocol) overview.
+- **Implementation**: `koskari/lib/opcode/OBJECT_IS_SUBCLASS.c`
+
+### KOS_OP_OBJECT_ADD {#kos_op_object_add}
+
+- **Style**: COUNT.
+- **Status**: Implemented.
+- **Semantics**: See [§19 Object protocol](#19-object-protocol) overview.
+- **Implementation**: `koskari/lib/opcode/OBJECT_ADD.c`
+
+### KOS_OP_OBJECT_BIT_AND {#kos_op_object_bit_and}
+
+- **Style**: COUNT.
+- **Status**: Implemented.
+- **Semantics**: See [§19 Object protocol](#19-object-protocol) overview.
+- **Implementation**: `koskari/lib/opcode/OBJECT_BIT_AND.c`
+
+### KOS_OP_OBJECT_BIT_INVERT {#kos_op_object_bit_invert}
+
+- **Style**: NOARG.
+- **Status**: Implemented.
+- **Semantics**: See [§19 Object protocol](#19-object-protocol) overview.
+- **Implementation**: `koskari/lib/opcode/OBJECT_BIT_INVERT.c`
+
+### KOS_OP_OBJECT_BIT_LEFT {#kos_op_object_bit_left}
+
+- **Style**: NOARG.
+- **Status**: Implemented.
+- **Semantics**: See [§19 Object protocol](#19-object-protocol) overview.
+- **Implementation**: `koskari/lib/opcode/OBJECT_BIT_LEFT.c`
+
+### KOS_OP_OBJECT_BIT_OR {#kos_op_object_bit_or}
+
+- **Style**: COUNT.
+- **Status**: Implemented.
+- **Semantics**: See [§19 Object protocol](#19-object-protocol) overview.
+- **Implementation**: `koskari/lib/opcode/OBJECT_BIT_OR.c`
+
+### KOS_OP_OBJECT_BIT_RIGHT {#kos_op_object_bit_right}
+
+- **Style**: NOARG.
+- **Status**: Implemented.
+- **Semantics**: See [§19 Object protocol](#19-object-protocol) overview.
+- **Implementation**: `koskari/lib/opcode/OBJECT_BIT_RIGHT.c`
+
+### KOS_OP_OBJECT_BIT_XOR {#kos_op_object_bit_xor}
+
+- **Style**: COUNT.
+- **Status**: Implemented.
+- **Semantics**: See [§19 Object protocol](#19-object-protocol) overview.
+- **Implementation**: `koskari/lib/opcode/OBJECT_BIT_XOR.c`
+
+### KOS_OP_OBJECT_FLOOR_DIVIDE {#kos_op_object_floor_divide}
+
+- **Style**: COUNT.
+- **Status**: Implemented.
+- **Semantics**: See [§19 Object protocol](#19-object-protocol) overview.
+- **Implementation**: `koskari/lib/opcode/OBJECT_FLOOR_DIVIDE.c`
+
+### KOS_OP_OBJECT_MATRIX_MULTIPLY {#kos_op_object_matrix_multiply}
+
+- **Style**: COUNT.
+- **Status**: Implemented.
+- **Semantics**: See [§19 Object protocol](#19-object-protocol) overview.
+- **Implementation**: `koskari/lib/opcode/OBJECT_MATRIX_MULTIPLY.c`
+
+### KOS_OP_OBJECT_MODULO {#kos_op_object_modulo}
+
+- **Style**: NOARG.
+- **Status**: Implemented.
+- **Semantics**: See [§19 Object protocol](#19-object-protocol) overview.
+- **Implementation**: `koskari/lib/opcode/OBJECT_MODULO.c`
+
+### KOS_OP_OBJECT_MULTIPLY {#kos_op_object_multiply}
+
+- **Style**: COUNT.
+- **Status**: Implemented.
+- **Semantics**: See [§19 Object protocol](#19-object-protocol) overview.
+- **Implementation**: `koskari/lib/opcode/OBJECT_MULTIPLY.c`
+
+### KOS_OP_OBJECT_POWER {#kos_op_object_power}
+
+- **Style**: COUNT.
+- **Status**: Implemented.
+- **Semantics**: See [§19 Object protocol](#19-object-protocol) overview.
+- **Implementation**: `koskari/lib/opcode/OBJECT_POWER.c`
+
+### KOS_OP_OBJECT_SUBTRACT {#kos_op_object_subtract}
+
+- **Style**: COUNT.
+- **Status**: Implemented.
+- **Semantics**: See [§19 Object protocol](#19-object-protocol) overview.
+- **Implementation**: `koskari/lib/opcode/OBJECT_SUBTRACT.c`
+
+### KOS_OP_OBJECT_TRUE_DIVIDE {#kos_op_object_true_divide}
+
+- **Style**: NOARG.
+- **Status**: Implemented.
+- **Semantics**: See [§19 Object protocol](#19-object-protocol) overview.
+- **Implementation**: `koskari/lib/opcode/OBJECT_TRUE_DIVIDE.c`
+
+### KOS_OP_OBJECT_AITER {#kos_op_object_aiter}
+
+- **Style**: NOARG.
+- **Status**: Implemented.
+- **Semantics**: See [§19 Object protocol](#19-object-protocol) overview.
+- **Implementation**: `koskari/lib/opcode/OBJECT_AITER.c`
+
+### KOS_OP_OBJECT_DIR {#kos_op_object_dir}
+
+- **Style**: NOARG.
+- **Status**: Implemented.
+- **Semantics**: See [§19 Object protocol](#19-object-protocol) overview.
+- **Implementation**: `koskari/lib/opcode/OBJECT_DIR.c`
+
+### KOS_OP_OBJECT_DIVMOD {#kos_op_object_divmod}
+
+- **Style**: NOARG.
+- **Status**: Implemented.
+- **Semantics**: See [§19 Object protocol](#19-object-protocol) overview.
+- **Implementation**: `koskari/lib/opcode/OBJECT_DIVMOD.c`
+
+### KOS_OP_OBJECT_ITER {#kos_op_object_iter}
+
+- **Style**: NOARG.
+- **Status**: Implemented.
+- **Semantics**: See [§19 Object protocol](#19-object-protocol) overview.
+- **Implementation**: `koskari/lib/opcode/OBJECT_ITER.c`
+
+### KOS_OP_OBJECT_LEN {#kos_op_object_len}
+
+- **Style**: NOARG.
+- **Status**: Implemented.
+- **Semantics**: See [§19 Object protocol](#19-object-protocol) overview.
+- **Implementation**: `koskari/lib/opcode/OBJECT_LEN.c`
+
+### KOS_OP_OBJECT_NOT {#kos_op_object_not}
+
+- **Style**: NOARG.
+- **Status**: Implemented.
+- **Semantics**: See [§19 Object protocol](#19-object-protocol) overview.
+- **Implementation**: `koskari/lib/opcode/OBJECT_NOT.c`
+
+### KOS_OP_OBJECT_REPR {#kos_op_object_repr}
+
+- **Style**: NOARG.
+- **Status**: Implemented.
+- **Semantics**: See [§19 Object protocol](#19-object-protocol) overview.
+- **Implementation**: `koskari/lib/opcode/OBJECT_REPR.c`
+
+### KOS_OP_OBJECT_STR {#kos_op_object_str}
+
+- **Style**: NOARG.
+- **Status**: Implemented.
+- **Semantics**: See [§19 Object protocol](#19-object-protocol) overview.
+- **Implementation**: `koskari/lib/opcode/OBJECT_STR.c`
+
+### KOS_OP_OBJECT_TRUTH {#kos_op_object_truth}
+
+- **Style**: NOARG.
+- **Status**: Implemented.
+- **Semantics**: See [§19 Object protocol](#19-object-protocol) overview.
+- **Implementation**: `koskari/lib/opcode/OBJECT_TRUTH.c`
+
+### KOS_OP_OBJECT_TYPE {#kos_op_object_type}
+
+- **Style**: NOARG.
+- **Status**: Implemented.
+- **Semantics**: See [§19 Object protocol](#19-object-protocol) overview.
+- **Implementation**: `koskari/lib/opcode/OBJECT_TYPE.c`
+
+### KOS_OP_OBJECT_VARS {#kos_op_object_vars}
+
+- **Style**: NOARG.
+- **Status**: Implemented.
+- **Semantics**: See [§19 Object protocol](#19-object-protocol) overview.
+- **Implementation**: `koskari/lib/opcode/OBJECT_VARS.c`
 
 ### 19.1 In-place variable update (VAR_OBJECT_* and FAST_OBJECT_*)
 
@@ -2247,6 +2597,189 @@ These opcodes are lowered at compile time: VAR_OBJECT_* may be converted to FAST
 | VAR_OBJECT_BIT_AND / FAST_OBJECT_BIT_AND | PyNumber_InPlaceAnd |
 | VAR_OBJECT_BIT_XOR / FAST_OBJECT_BIT_XOR | PyNumber_InPlaceXor |
 | VAR_OBJECT_BIT_OR / FAST_OBJECT_BIT_OR | PyNumber_InPlaceOr |
+
+
+### KOS_OP_VAR_OBJECT_ADD {#kos_op_var_object_add}
+
+- **Style**: VAR.
+- **Status**: Implemented.
+- **Semantics**: See §19.1 above (table maps each opcode to `PyNumber_InPlace*`).
+- **Implementation**: `koskari/lib/opcode/VAR_OBJECT_ADD.c`
+
+### KOS_OP_VAR_OBJECT_BIT_AND {#kos_op_var_object_bit_and}
+
+- **Style**: VAR.
+- **Status**: Implemented.
+- **Semantics**: See §19.1 above (table maps each opcode to `PyNumber_InPlace*`).
+- **Implementation**: `koskari/lib/opcode/VAR_OBJECT_BIT_AND.c`
+
+### KOS_OP_VAR_OBJECT_BIT_LEFT {#kos_op_var_object_bit_left}
+
+- **Style**: VAR.
+- **Status**: Implemented.
+- **Semantics**: See §19.1 above (table maps each opcode to `PyNumber_InPlace*`).
+- **Implementation**: `koskari/lib/opcode/VAR_OBJECT_BIT_LEFT.c`
+
+### KOS_OP_VAR_OBJECT_BIT_OR {#kos_op_var_object_bit_or}
+
+- **Style**: VAR.
+- **Status**: Implemented.
+- **Semantics**: See §19.1 above (table maps each opcode to `PyNumber_InPlace*`).
+- **Implementation**: `koskari/lib/opcode/VAR_OBJECT_BIT_OR.c`
+
+### KOS_OP_VAR_OBJECT_BIT_RIGHT {#kos_op_var_object_bit_right}
+
+- **Style**: VAR.
+- **Status**: Implemented.
+- **Semantics**: See §19.1 above (table maps each opcode to `PyNumber_InPlace*`).
+- **Implementation**: `koskari/lib/opcode/VAR_OBJECT_BIT_RIGHT.c`
+
+### KOS_OP_VAR_OBJECT_BIT_XOR {#kos_op_var_object_bit_xor}
+
+- **Style**: VAR.
+- **Status**: Implemented.
+- **Semantics**: See §19.1 above (table maps each opcode to `PyNumber_InPlace*`).
+- **Implementation**: `koskari/lib/opcode/VAR_OBJECT_BIT_XOR.c`
+
+### KOS_OP_VAR_OBJECT_FLOOR_DIVIDE {#kos_op_var_object_floor_divide}
+
+- **Style**: VAR.
+- **Status**: Implemented.
+- **Semantics**: See §19.1 above (table maps each opcode to `PyNumber_InPlace*`).
+- **Implementation**: `koskari/lib/opcode/VAR_OBJECT_FLOOR_DIVIDE.c`
+
+### KOS_OP_VAR_OBJECT_MATRIX_MULTIPLY {#kos_op_var_object_matrix_multiply}
+
+- **Style**: VAR.
+- **Status**: Implemented.
+- **Semantics**: See §19.1 above (table maps each opcode to `PyNumber_InPlace*`).
+- **Implementation**: `koskari/lib/opcode/VAR_OBJECT_MATRIX_MULTIPLY.c`
+
+### KOS_OP_VAR_OBJECT_MODULO {#kos_op_var_object_modulo}
+
+- **Style**: VAR.
+- **Status**: Implemented.
+- **Semantics**: See §19.1 above (table maps each opcode to `PyNumber_InPlace*`).
+- **Implementation**: `koskari/lib/opcode/VAR_OBJECT_MODULO.c`
+
+### KOS_OP_VAR_OBJECT_MULTIPLY {#kos_op_var_object_multiply}
+
+- **Style**: VAR.
+- **Status**: Implemented.
+- **Semantics**: See §19.1 above (table maps each opcode to `PyNumber_InPlace*`).
+- **Implementation**: `koskari/lib/opcode/VAR_OBJECT_MULTIPLY.c`
+
+### KOS_OP_VAR_OBJECT_POWER {#kos_op_var_object_power}
+
+- **Style**: VAR.
+- **Status**: Implemented.
+- **Semantics**: See §19.1 above (table maps each opcode to `PyNumber_InPlace*`).
+- **Implementation**: `koskari/lib/opcode/VAR_OBJECT_POWER.c`
+
+### KOS_OP_VAR_OBJECT_SUBTRACT {#kos_op_var_object_subtract}
+
+- **Style**: VAR.
+- **Status**: Implemented.
+- **Semantics**: See §19.1 above (table maps each opcode to `PyNumber_InPlace*`).
+- **Implementation**: `koskari/lib/opcode/VAR_OBJECT_SUBTRACT.c`
+
+### KOS_OP_VAR_OBJECT_TRUE_DIVIDE {#kos_op_var_object_true_divide}
+
+- **Style**: VAR.
+- **Status**: Implemented.
+- **Semantics**: See §19.1 above (table maps each opcode to `PyNumber_InPlace*`).
+- **Implementation**: `koskari/lib/opcode/VAR_OBJECT_TRUE_DIVIDE.c`
+
+### KOS_OP_FAST_OBJECT_ADD {#kos_op_fast_object_add}
+
+- **Style**: FASTVAR.
+- **Status**: Implemented.
+- **Semantics**: See §19.1 above (table maps each opcode to `PyNumber_InPlace*`).
+- **Implementation**: `koskari/lib/opcode/FAST_OBJECT_ADD.c`
+
+### KOS_OP_FAST_OBJECT_BIT_AND {#kos_op_fast_object_bit_and}
+
+- **Style**: FASTVAR.
+- **Status**: Implemented.
+- **Semantics**: See §19.1 above (table maps each opcode to `PyNumber_InPlace*`).
+- **Implementation**: `koskari/lib/opcode/FAST_OBJECT_BIT_AND.c`
+
+### KOS_OP_FAST_OBJECT_BIT_LEFT {#kos_op_fast_object_bit_left}
+
+- **Style**: FASTVAR.
+- **Status**: Implemented.
+- **Semantics**: See §19.1 above (table maps each opcode to `PyNumber_InPlace*`).
+- **Implementation**: `koskari/lib/opcode/FAST_OBJECT_BIT_LEFT.c`
+
+### KOS_OP_FAST_OBJECT_BIT_OR {#kos_op_fast_object_bit_or}
+
+- **Style**: FASTVAR.
+- **Status**: Implemented.
+- **Semantics**: See §19.1 above (table maps each opcode to `PyNumber_InPlace*`).
+- **Implementation**: `koskari/lib/opcode/FAST_OBJECT_BIT_OR.c`
+
+### KOS_OP_FAST_OBJECT_BIT_RIGHT {#kos_op_fast_object_bit_right}
+
+- **Style**: FASTVAR.
+- **Status**: Implemented.
+- **Semantics**: See §19.1 above (table maps each opcode to `PyNumber_InPlace*`).
+- **Implementation**: `koskari/lib/opcode/FAST_OBJECT_BIT_RIGHT.c`
+
+### KOS_OP_FAST_OBJECT_BIT_XOR {#kos_op_fast_object_bit_xor}
+
+- **Style**: FASTVAR.
+- **Status**: Implemented.
+- **Semantics**: See §19.1 above (table maps each opcode to `PyNumber_InPlace*`).
+- **Implementation**: `koskari/lib/opcode/FAST_OBJECT_BIT_XOR.c`
+
+### KOS_OP_FAST_OBJECT_FLOOR_DIVIDE {#kos_op_fast_object_floor_divide}
+
+- **Style**: FASTVAR.
+- **Status**: Implemented.
+- **Semantics**: See §19.1 above (table maps each opcode to `PyNumber_InPlace*`).
+- **Implementation**: `koskari/lib/opcode/FAST_OBJECT_FLOOR_DIVIDE.c`
+
+### KOS_OP_FAST_OBJECT_MATRIX_MULTIPLY {#kos_op_fast_object_matrix_multiply}
+
+- **Style**: FASTVAR.
+- **Status**: Implemented.
+- **Semantics**: See §19.1 above (table maps each opcode to `PyNumber_InPlace*`).
+- **Implementation**: `koskari/lib/opcode/FAST_OBJECT_MATRIX_MULTIPLY.c`
+
+### KOS_OP_FAST_OBJECT_MODULO {#kos_op_fast_object_modulo}
+
+- **Style**: FASTVAR.
+- **Status**: Implemented.
+- **Semantics**: See §19.1 above (table maps each opcode to `PyNumber_InPlace*`).
+- **Implementation**: `koskari/lib/opcode/FAST_OBJECT_MODULO.c`
+
+### KOS_OP_FAST_OBJECT_MULTIPLY {#kos_op_fast_object_multiply}
+
+- **Style**: FASTVAR.
+- **Status**: Implemented.
+- **Semantics**: See §19.1 above (table maps each opcode to `PyNumber_InPlace*`).
+- **Implementation**: `koskari/lib/opcode/FAST_OBJECT_MULTIPLY.c`
+
+### KOS_OP_FAST_OBJECT_POWER {#kos_op_fast_object_power}
+
+- **Style**: FASTVAR.
+- **Status**: Implemented.
+- **Semantics**: See §19.1 above (table maps each opcode to `PyNumber_InPlace*`).
+- **Implementation**: `koskari/lib/opcode/FAST_OBJECT_POWER.c`
+
+### KOS_OP_FAST_OBJECT_SUBTRACT {#kos_op_fast_object_subtract}
+
+- **Style**: FASTVAR.
+- **Status**: Implemented.
+- **Semantics**: See §19.1 above (table maps each opcode to `PyNumber_InPlace*`).
+- **Implementation**: `koskari/lib/opcode/FAST_OBJECT_SUBTRACT.c`
+
+### KOS_OP_FAST_OBJECT_TRUE_DIVIDE {#kos_op_fast_object_true_divide}
+
+- **Style**: FASTVAR.
+- **Status**: Implemented.
+- **Semantics**: See §19.1 above (table maps each opcode to `PyNumber_InPlace*`).
+- **Implementation**: `koskari/lib/opcode/FAST_OBJECT_TRUE_DIVIDE.c`
 
 **Example (VAR_OBJECT_ADD → FAST_OBJECT_ADD):** `(set! x (+ x 1))` compiles to value expr, VAR_OBJECT_ADD name, CONST None; VAR_OBJECT_ADD may lower to FAST_OBJECT_ADD if `x` has a slot.
 

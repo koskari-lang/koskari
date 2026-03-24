@@ -77,13 +77,11 @@ _CALL_PATTERNS = [
     MATCH(LIST(LITERAL_SYM("attr"), VALUE("obj"), SYMBOL("attr"))),
     MATCH(LIST(LITERAL_SYM("compile/attr"), VALUE("obj"), SYMBOL("attr"))),
 
-    # call (attr obj attr args...)
-    MATCH(
-        LIST(LITERAL_SYM("attr"), VALUE("obj"), SYMBOL("attr")),
-        REST("args")),
-    MATCH(
-        LIST(LITERAL_SYM("compile/attr"), VALUE("obj"), SYMBOL("attr")),
-        REST("args")),
+    # call (attr obj attr) args...
+    MATCH(LIST(LITERAL_SYM("attr"), VALUE("obj"), SYMBOL("attr")),
+          REST("args")),
+    MATCH(LIST(LITERAL_SYM("compile/attr"), VALUE("obj"), SYMBOL("attr")),
+          REST("args")),
 
     MATCH(VALUE("callable")),
     MATCH(VALUE("callable"), REST("args")),

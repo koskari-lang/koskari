@@ -13,7 +13,10 @@
 
 """
 Tests for compile/call-attr special form. Emits CALL_ATTR for positional-only,
-CALL_ATTR_NAMES for keyword args, CALL_ATTR_STAR for *args/**kwargs.
+CALL_ATTR_NAMES for keyword args, CALL_ATTR_STAR for *args/**kwargs when the
+receiver is compiled as an expression. When the receiver is a bare symbol that
+is a fast local (e.g. lambda formal), the compiler emits CALL_VAR_ATTR* first,
+then convert_fast lowers matching opcodes to CALL_FAST_ATTR* in the final Code.
 """
 
 
@@ -33,6 +36,15 @@ CALL_ATTR_OPCODES = (
     OpCode.KOS_OP_CALL_ATTR_STAR,
 )
 
+CALL_ATTR_OR_FAST_OPCODES = CALL_ATTR_OPCODES + (
+    OpCode.KOS_OP_CALL_VAR_ATTR,
+    OpCode.KOS_OP_CALL_VAR_ATTR_NAMES,
+    OpCode.KOS_OP_CALL_VAR_ATTR_STAR,
+    OpCode.KOS_OP_CALL_FAST_ATTR,
+    OpCode.KOS_OP_CALL_FAST_ATTR_NAMES,
+    OpCode.KOS_OP_CALL_FAST_ATTR_STAR,
+)
+
 
 def call_attr_ops(code):
     """
@@ -42,6 +54,17 @@ def call_attr_ops(code):
     return [(i, op, arg) for i in range(code.length())
             for op, arg in [code.oparg(i)]
             if op in CALL_ATTR_OPCODES]
+
+
+def call_attr_family_ops(code):
+    """
+    List of (index, opcode, arg) for CALL_ATTR / CALL_VAR_ATTR / CALL_FAST_ATTR
+    family opcodes in code
+    """
+
+    return [(i, op, arg) for i in range(code.length())
+            for op, arg in [code.oparg(i)]
+            if op in CALL_ATTR_OR_FAST_OPCODES]
 
 
 class TestCallAttrBytecodeShape(SpecialsTestCase):
@@ -261,6 +284,78 @@ class TestCallAttrExpansion(SpecialsTestCase):
             "(compile/call (attr obj m) 10 32)", obj=obj)
         result = await expr()
         self.assertEqual(result, 42)
+
+
+class TestCallAttrLocalReceiverLowersToFast(SpecialsTestCase):
+    """
+    Lambda formals are fast locals; attribute calls on a formal symbol should
+    appear as CALL_FAST_ATTR* after compile (VAR path + convert_fast).
+
+    The call form must not be the lambda body's tail expression: the body is
+    compiled with tail-call tracking, which forces the stack path for
+    compile/call-attr. Wrap in begin with a trailing value so the attr call is
+    compiled with tc=False and the VAR path (then convert_fast) applies.
+    """
+
+    async def test_local_receiver_positional_emits_call_fast_attr(self):
+        code = self.compile_to_code(
+            "(lambda [obj] (begin (compile/call-attr obj upper) 0))")
+        body = self.lambda_body_code(code)
+        ops = call_attr_family_ops(body)
+        self.assertEqual(len(ops), 1)
+        self.assertEqual(ops[0][1], OpCode.KOS_OP_CALL_FAST_ATTR)
+        extra_idx = ops[0][2]
+        a0, a1, a2, a3 = body.extra_tuple(extra_idx)
+        self.assertEqual(a0, 0)
+        self.assertEqual(body.constant(a1), "upper")
+        self.assertEqual(a2, 0)
+
+
+    async def test_local_receiver_via_compile_call_attr_emits_call_fast_attr(self):
+        code = self.compile_to_code(
+            "(lambda [obj] (begin (compile/call (attr obj m) 1 2) 0))",
+            m=lambda self, a, b: (a, b))
+        body = self.lambda_body_code(code)
+        ops = call_attr_family_ops(body)
+        self.assertEqual(len(ops), 1)
+        self.assertEqual(ops[0][1], OpCode.KOS_OP_CALL_FAST_ATTR)
+        extra_idx = ops[0][2]
+        a0, a1, a2, a3 = body.extra_tuple(extra_idx)
+        self.assertEqual(a0, 0)
+        self.assertEqual(body.constant(a1), "m")
+        self.assertEqual(a2, 2)
+
+
+    async def test_local_receiver_keyword_emits_call_fast_attr_names(self):
+        code = self.compile_to_code(
+            "(lambda [obj] (begin (compile/call-attr obj m 1 name: 2) 0))",
+            m=lambda self, x, name=0: (x, name))
+        body = self.lambda_body_code(code)
+        ops = call_attr_family_ops(body)
+        self.assertEqual(len(ops), 1)
+        self.assertEqual(ops[0][1], OpCode.KOS_OP_CALL_FAST_ATTR_NAMES)
+        extra_idx = ops[0][2]
+        a0, a1, a2, a3 = body.extra_tuple(extra_idx)
+        self.assertEqual(a0, 0)
+        self.assertEqual(body.constant(a1), "m")
+        self.assertEqual(body.constant(a2), ("name",))
+        self.assertEqual(a3, 1)
+
+
+    async def test_local_receiver_starstar_emits_call_fast_attr_star(self):
+        code = self.compile_to_code(
+            "(lambda [obj] (begin (compile/call-attr obj m **: kw) 0))",
+            m=lambda self, **kw: kw,
+            kw={'x': 1})
+        body = self.lambda_body_code(code)
+        ops = call_attr_family_ops(body)
+        self.assertEqual(len(ops), 1)
+        self.assertEqual(ops[0][1], OpCode.KOS_OP_CALL_FAST_ATTR_STAR)
+        extra_idx = ops[0][2]
+        a0, a1, a2, a3 = body.extra_tuple(extra_idx)
+        self.assertEqual(a0, 0)
+        self.assertEqual(body.constant(a1), "m")
+        self.assertEqual(a2, 2)
 
 
 # The end.

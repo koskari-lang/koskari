@@ -167,4 +167,93 @@ class TestConvertFastCallVar(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(arg, ("other", 1, 0, 0))
 
 
+    async def test_call_var_attr_with_local_converts_to_call_fast_attr(self):
+        """
+        CALL_VAR_ATTR with local receiver converts to CALL_FAST_ATTR
+        """
+        compiler = Compiler("<test>", None)
+        nspec = NamespaceSpec(None, ("obj",), ())
+        instr = [(OpCode.KOS_OP_CALL_VAR_ATTR, ("obj", "upper", 0, 0))]
+        result = compiler.convert_fast(nspec, instr, mode=CompilerMode.FUNCTION)
+        self.assertEqual(len(result), 1)
+        op, arg = result[0]
+        self.assertEqual(op, OpCode.KOS_OP_CALL_FAST_ATTR)
+        self.assertEqual(arg, (0, "upper", 0, 0))
+
+
+    async def test_call_var_attr_with_non_local_remains_unchanged(self):
+        """
+        CALL_VAR_ATTR with receiver not in findex remains unchanged
+        """
+        compiler = Compiler("<test>", None)
+        nspec = NamespaceSpec(None, ("obj",), ())
+        instr = [(OpCode.KOS_OP_CALL_VAR_ATTR, ("other", "upper", 0, 0))]
+        result = compiler.convert_fast(nspec, instr, mode=CompilerMode.FUNCTION)
+        self.assertEqual(len(result), 1)
+        op, arg = result[0]
+        self.assertEqual(op, OpCode.KOS_OP_CALL_VAR_ATTR)
+        self.assertEqual(arg, ("other", "upper", 0, 0))
+
+
+    async def test_call_var_attr_star_with_local_converts_to_call_fast_attr_star(self):
+        """
+        CALL_VAR_ATTR_STAR with local receiver converts to CALL_FAST_ATTR_STAR
+        """
+        compiler = Compiler("<test>", None)
+        nspec = NamespaceSpec(None, ("obj",), ())
+        instr = [(OpCode.KOS_OP_CALL_VAR_ATTR_STAR, ("obj", "m", 3, 0))]
+        result = compiler.convert_fast(nspec, instr, mode=CompilerMode.FUNCTION)
+        self.assertEqual(len(result), 1)
+        op, arg = result[0]
+        self.assertEqual(op, OpCode.KOS_OP_CALL_FAST_ATTR_STAR)
+        self.assertEqual(arg, (0, "m", 3, 0))
+
+
+    async def test_call_var_attr_with_closure_receiver(self):
+        """
+        CALL_VAR_ATTR with closure receiver converts to CALL_FAST_ATTR
+        """
+        compiler = Compiler("<test>", None)
+        nspec = NamespaceSpec(None, (), ("obj",))
+        instr = [(OpCode.KOS_OP_CALL_VAR_ATTR, ("obj", "add_one", 1, 0))]
+        result = compiler.convert_fast(nspec, instr, mode=CompilerMode.FUNCTION)
+        self.assertEqual(len(result), 1)
+        op, arg = result[0]
+        self.assertEqual(op, OpCode.KOS_OP_CALL_FAST_ATTR)
+        self.assertEqual(arg, (0, "add_one", 1, 0))
+
+
+    async def test_call_var_attr_star_with_closure_receiver(self):
+        """
+        CALL_VAR_ATTR_STAR with closure receiver converts to CALL_FAST_ATTR_STAR
+        """
+        compiler = Compiler("<test>", None)
+        nspec = NamespaceSpec(None, (), ("obj",))
+        instr = [(OpCode.KOS_OP_CALL_VAR_ATTR_STAR, ("obj", "m", 2, 0))]
+        result = compiler.convert_fast(nspec, instr, mode=CompilerMode.FUNCTION)
+        self.assertEqual(len(result), 1)
+        op, arg = result[0]
+        self.assertEqual(op, OpCode.KOS_OP_CALL_FAST_ATTR_STAR)
+        self.assertEqual(arg, (0, "m", 2, 0))
+
+
+    async def test_call_var_attr_no_conversion_in_expression_mode(self):
+        """
+        CALL_VAR_ATTR and CALL_VAR_ATTR_STAR are not converted when nstack is empty
+        """
+        compiler = Compiler("<test>", None)
+        nspec = NamespaceSpec(None, ("obj",), ())
+        for op_in, arg_in in (
+                (OpCode.KOS_OP_CALL_VAR_ATTR, ("obj", "upper", 0, 0)),
+                (OpCode.KOS_OP_CALL_VAR_ATTR_STAR, ("obj", "m", 3, 0)),
+        ):
+            instr = [(op_in, arg_in)]
+            result = compiler.convert_fast(
+                nspec, instr, mode=CompilerMode.EXPRESSION)
+            self.assertEqual(len(result), 1)
+            op, arg = result[0]
+            self.assertEqual(op, op_in)
+            self.assertEqual(arg, arg_in)
+
+
 # The end.

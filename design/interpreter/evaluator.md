@@ -504,7 +504,7 @@ This matches Scheme's `dynamic-wind` semantics.
 - [../archive/evaluator-restructure.md](../archive/evaluator-restructure.md) — Design document for
   the DynNode chain restructure (implemented; archived)
 - [introspection-trace.md](introspection-trace.md) — Read-only introspection
-  and trace snapshot design (TraceView, KOS_OP_CAPTURE_FRAME)
+  and trace snapshot design (TraceView; proposed CAPTURE_FRAME in introspection-trace.md §5)
 - [callcc.md](callcc.md) — Delimited continuation implementation details
 - [execution-invariants.md](execution-invariants.md) — Execution model invariants
 - [bytecode.md](bytecode.md) — Bytecode format and opcodes

@@ -108,9 +108,13 @@ All fields are read-only.
 
 ---
 
-## 5. New Opcode: KOS_OP_CAPTURE_FRAME
+## 5. Proposed opcode: KOS_OP_CAPTURE_FRAME (not in opcodes.incl)
 
-Add a new opcode:
+This section records a **design** for a possible future opcode. It is **not**
+part of the live `KosOpCode` enum until added to `koskari/lib/opcodes.incl` and
+implemented; [OPCODES.md](../OPCODES.md) documents only opcodes that exist there.
+
+Proposed mnemonic:
 
 ```
 KOS_OP_CAPTURE_FRAME
@@ -136,8 +140,8 @@ Requirements:
 
 This opcode is debugging-only and may be gated behind build flags if desired.
 
-See [OPCODES.md § KOS_OP_CAPTURE_FRAME](../OPCODES.md#kos_op_capture_frame) for
-detailed opcode specification.
+If the opcode is added to the tree, follow the checklist in [OPCODES.md](../OPCODES.md) §1.10
+(Maintaining this document: incl, evaluator, tests, documentation).
 
 ---
 
@@ -211,4 +215,4 @@ It formalizes the principle:
 
 * [evaluator.md](evaluator.md) — Evaluation model and VM structures
 * [execution-invariants.md](execution-invariants.md) — Execution model invariants
-* [../OPCODES.md](../OPCODES.md) — Opcode reference including KOS_OP_CAPTURE_FRAME
+* [../OPCODES.md](../OPCODES.md) — Opcode reference for implemented opcodes (`koskari/lib/opcodes.incl`)
