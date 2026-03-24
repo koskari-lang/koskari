@@ -440,6 +440,494 @@ PyObject *KosFunctionSpec_New(PyObject *name, PyObject *formals_spec,
 }
 
 
+/* === inspect.Signature interop (KosFunction / KosBoundMethod) ===
+   See design/api/inspect-interop-kos-callables.md. KosFormals_ApplyFast
+   consumes positionals in order pos, pos_only, kwd, *star, then kwargs
+   phase for kwd_only and **starstar. If that ordering is invalid for
+   inspect.Signature (e.g. POSITIONAL_ONLY after POSITIONAL_OR_KEYWORD),
+   we retry with positional-only names emitted as POSITIONAL_OR_KEYWORD.
+*/
+
+
+static PyObject *kos_inspect_module = NULL;
+static PyObject *kos_inspect_Parameter = NULL;
+static PyObject *kos_inspect_Signature = NULL;
+static PyObject *kos_inspect_Parameter_empty = NULL;
+
+
+static int
+kos_inspect_load(void) {
+
+  if (kos_inspect_Signature)
+    return 0;
+
+  kos_inspect_module = PyImport_ImportModule("inspect");
+  if (! kos_inspect_module)
+    return -1;
+
+  kos_inspect_Parameter = PyObject_GetAttrString(kos_inspect_module,
+                                                 "Parameter");
+  kos_inspect_Signature = PyObject_GetAttrString(kos_inspect_module,
+                                                 "Signature");
+  if (! kos_inspect_Parameter || ! kos_inspect_Signature)
+    return -1;
+
+  kos_inspect_Parameter_empty = PyObject_GetAttrString(kos_inspect_Parameter,
+                                                       "empty");
+  if (! kos_inspect_Parameter_empty)
+    return -1;
+
+  return 0;
+}
+
+
+static PyObject *
+kos_formal_name_str(PyObject *sym) {
+
+  if (PyUnicode_Check(sym)) {
+    Py_INCREF(sym);
+    return sym;
+  }
+  if (KosSymbol_Check(sym)) {
+    PyObject *n = KosInternedAtom_NAME(sym);
+    Py_INCREF(n);
+    return n;
+  }
+  return PyObject_Str(sym);
+}
+
+
+static PyObject *
+kos_formals_default_for(PyObject *defaults, PyObject *name_sym,
+                        PyObject *name_str, PyObject *param_empty) {
+
+  PyObject *val = NULL;
+
+  if (! defaults)
+    goto use_empty;
+
+  val = PyDict_GetItemWithError(defaults, name_sym);
+  if (! val && PyErr_Occurred())
+    return NULL;
+  if (! val && name_str != name_sym) {
+    val = PyDict_GetItemWithError(defaults, name_str);
+    if (! val && PyErr_Occurred())
+      return NULL;
+  }
+  if (! val) {
+ use_empty:
+    Py_INCREF(param_empty);
+    return param_empty;
+  }
+  Py_INCREF(val);
+  return val;
+}
+
+
+static int
+kos_append_inspect_parameter(
+    PyObject *param_list,
+    PyObject *name_obj,
+    int kind,
+    PyObject *defaults,
+    PyObject *param_empty) {
+
+  PyObject *name_str = kos_formal_name_str(name_obj);
+  if (! name_str)
+    return -1;
+
+  PyObject *def = kos_formals_default_for(defaults, name_obj, name_str,
+                                          param_empty);
+  if (! def) {
+    Py_DECREF(name_str);
+    return -1;
+  }
+
+  PyObject *kind_obj = PyLong_FromLong(kind);
+  if (! kind_obj) {
+    Py_DECREF(def);
+    Py_DECREF(name_str);
+    return -1;
+  }
+
+  PyObject *args = PyTuple_Pack(2, name_str, kind_obj);
+  Py_DECREF(kind_obj);
+  Py_DECREF(name_str);
+  if (! args) {
+    Py_DECREF(def);
+    return -1;
+  }
+
+  PyObject *kwargs = Py_BuildValue("{sO,sO}", "default", def, "annotation",
+                                   param_empty);
+  Py_DECREF(def);
+  if (! kwargs) {
+    Py_DECREF(args);
+    return -1;
+  }
+
+  PyObject *param = PyObject_Call(kos_inspect_Parameter, args, kwargs);
+  Py_DECREF(args);
+  Py_DECREF(kwargs);
+  if (! param)
+    return -1;
+
+  if (PyList_Append(param_list, param) < 0) {
+    Py_DECREF(param);
+    return -1;
+  }
+  Py_DECREF(param);
+  return 0;
+}
+
+
+static int
+kos_append_tuple_params(
+    PyObject *param_list,
+    PyObject *tuple,
+    int kind,
+    PyObject *defaults,
+    PyObject *param_empty) {
+
+  Py_ssize_t i;
+  Py_ssize_t n;
+
+  if (! tuple)
+    return 0;
+
+  n = PyTuple_GET_SIZE(tuple);
+  for (i = 0; i < n; i++) {
+    PyObject *name = PyTuple_GET_ITEM(tuple, i);
+    if (kos_append_inspect_parameter(param_list, name, kind, defaults,
+                                    param_empty) < 0)
+      return -1;
+  }
+  return 0;
+}
+
+
+static int
+kos_append_var_param(
+    PyObject *param_list,
+    PyObject *name_unicode,
+    int kind,
+    PyObject *param_empty) {
+
+  PyObject *kind_obj;
+  PyObject *args;
+  PyObject *kwargs;
+  PyObject *param;
+
+  if (! name_unicode)
+    return 0;
+
+  Py_INCREF(name_unicode);
+
+  kind_obj = PyLong_FromLong(kind);
+  if (! kind_obj) {
+    Py_DECREF(name_unicode);
+    return -1;
+  }
+
+  args = PyTuple_Pack(2, name_unicode, kind_obj);
+  Py_DECREF(kind_obj);
+  Py_DECREF(name_unicode);
+  if (! args)
+    return -1;
+
+  kwargs = Py_BuildValue("{sO,sO}", "default", param_empty, "annotation",
+                         param_empty);
+  if (! kwargs) {
+    Py_DECREF(args);
+    return -1;
+  }
+
+  param = PyObject_Call(kos_inspect_Parameter, args, kwargs);
+  Py_DECREF(args);
+  Py_DECREF(kwargs);
+  if (! param)
+    return -1;
+
+  if (PyList_Append(param_list, param) < 0) {
+    Py_DECREF(param);
+    return -1;
+  }
+  Py_DECREF(param);
+  return 0;
+}
+
+
+enum {
+  KOS_PARAM_PO = 0,
+  KOS_PARAM_POK = 1,
+  KOS_PARAM_VAR_POS = 2,
+  KOS_PARAM_KO = 3,
+  KOS_PARAM_VAR_KW = 4
+};
+
+
+static PyObject *
+kos_formals_build_param_list(PyObject *formals, int pos_only_as_pok) {
+
+  PyObject *param_list = NULL;
+  PyObject *defaults = NULL;
+  int po_kind;
+
+  if (! KosFormals_Check(formals)) {
+    PyErr_SetString(PyExc_TypeError, "expected Formals");
+    return NULL;
+  }
+
+  if (kos_inspect_load() < 0)
+    return NULL;
+
+  param_list = PyList_New(0);
+  if (! param_list)
+    return NULL;
+
+  defaults = KosFormals_DEFAULTS(formals);
+  po_kind = pos_only_as_pok ? KOS_PARAM_POK : KOS_PARAM_PO;
+
+  if (kos_append_tuple_params(param_list, KosFormals_POS(formals),
+                              KOS_PARAM_POK, defaults,
+                              kos_inspect_Parameter_empty) < 0)
+    goto fail;
+
+  if (kos_append_tuple_params(param_list, KosFormals_POS_ONLY(formals),
+                              po_kind, defaults,
+                              kos_inspect_Parameter_empty) < 0)
+    goto fail;
+
+  if (kos_append_tuple_params(param_list, KosFormals_KWD(formals),
+                              KOS_PARAM_POK, defaults,
+                              kos_inspect_Parameter_empty) < 0)
+    goto fail;
+
+  if (kos_append_var_param(param_list, KosFormals_STAR(formals),
+                           KOS_PARAM_VAR_POS, kos_inspect_Parameter_empty) < 0)
+    goto fail;
+
+  if (kos_append_tuple_params(param_list, KosFormals_KWD_ONLY(formals),
+                              KOS_PARAM_KO, defaults,
+                              kos_inspect_Parameter_empty) < 0)
+    goto fail;
+
+  if (kos_append_var_param(param_list, KosFormals_STARSTAR(formals),
+                           KOS_PARAM_VAR_KW, kos_inspect_Parameter_empty) < 0)
+    goto fail;
+
+  return param_list;
+
+ fail:
+  Py_DECREF(param_list);
+  return NULL;
+}
+
+
+static PyObject *
+kos_formals_to_signature(PyObject *formals) {
+
+  PyObject *param_list = NULL;
+  PyObject *sig = NULL;
+
+  param_list = kos_formals_build_param_list(formals, 0);
+  if (! param_list)
+    return NULL;
+
+  sig = PyObject_CallOneArg(kos_inspect_Signature, param_list);
+  Py_DECREF(param_list);
+  if (! sig && PyErr_ExceptionMatches(PyExc_ValueError)) {
+    PyErr_Clear();
+    param_list = kos_formals_build_param_list(formals, 1);
+    if (! param_list)
+      return NULL;
+    sig = PyObject_CallOneArg(kos_inspect_Signature, param_list);
+    Py_DECREF(param_list);
+  }
+
+  return sig;
+}
+
+
+static PyObject *
+kos_signature_drop_first(PyObject *sig) {
+
+  PyObject *params_map = NULL;
+  PyObject *vals = NULL;
+  PyObject *lst = NULL;
+  PyObject *sig2 = NULL;
+  Py_ssize_t n;
+
+  params_map = PyObject_GetAttrString(sig, "parameters");
+  if (! params_map)
+    return NULL;
+
+  {
+    PyObject *vmeth = PyObject_GetAttrString(params_map, "values");
+    Py_DECREF(params_map);
+    if (! vmeth)
+      return NULL;
+    vals = PyObject_CallObject(vmeth, NULL);
+    Py_DECREF(vmeth);
+  }
+  if (! vals)
+    return NULL;
+
+  lst = PySequence_List(vals);
+  Py_DECREF(vals);
+  if (! lst)
+    return NULL;
+
+  n = PyList_GET_SIZE(lst);
+  if (n <= 1) {
+    Py_DECREF(lst);
+    {
+      PyObject *empty = PyTuple_New(0);
+      if (! empty)
+        return NULL;
+      sig2 = PyObject_CallOneArg(kos_inspect_Signature, empty);
+      Py_DECREF(empty);
+    }
+    return sig2;
+  }
+
+  {
+    PyObject *rest = PyList_GetSlice(lst, 1, n);
+    Py_DECREF(lst);
+    lst = NULL;
+    if (! rest)
+      return NULL;
+    sig2 = PyObject_CallOneArg(kos_inspect_Signature, rest);
+    Py_DECREF(rest);
+  }
+
+  return sig2;
+}
+
+
+static PyObject *
+kos_function_compute_signature(PyObject *self) {
+
+  PyObject *formals = KosFunction_FORMALS(self);
+
+  if (kos_inspect_load() < 0)
+    return NULL;
+
+  return kos_formals_to_signature(formals);
+}
+
+
+static PyObject *
+function_get_signature(PyObject *self, void *closure) {
+
+  KosFunction *fn = (KosFunction *) self;
+
+  (void) closure;
+
+  if (! fn->inspect_signature) {
+    PyObject *sig = kos_function_compute_signature(self);
+    if (! sig)
+      return NULL;
+    fn->inspect_signature = sig;
+  }
+
+  Py_INCREF(fn->inspect_signature);
+  return fn->inspect_signature;
+}
+
+
+static PyObject *
+function_get_annotations(PyObject *self, void *closure) {
+
+  (void) self;
+  (void) closure;
+
+  return PyDict_New();
+}
+
+
+static PyObject *
+function_get_name_dunder(PyObject *self, void *closure) {
+
+  KosFunction *fn = (KosFunction *) self;
+  PyObject *name = KosFunction_NAME(fn);
+  PyObject *cn;
+
+  (void) closure;
+
+  if (name != NULL) {
+    Py_INCREF(name);
+    return name;
+  }
+
+  cn = KosCode_NAME(KosFunction_CODE(fn));
+  if (cn != NULL) {
+    Py_INCREF(cn);
+    return cn;
+  }
+
+  return PyUnicode_FromString("<lambda>");
+}
+
+
+static PyObject *
+function_get_qualname_dunder(PyObject *self, void *closure) {
+
+  return function_get_name_dunder(self, closure);
+}
+
+
+static PyObject *
+function_get_module_dunder(PyObject *self, void *closure) {
+
+  (void) self;
+  (void) closure;
+
+  Py_INCREF(Py_None);
+  return Py_None;
+}
+
+
+static PyGetSetDef function_getsets[] = {
+  { "__signature__", (getter) function_get_signature, NULL, NULL, NULL },
+  { "__annotations__", (getter) function_get_annotations, NULL, NULL, NULL },
+  { "__name__", (getter) function_get_name_dunder, NULL, NULL, NULL },
+  { "__qualname__", (getter) function_get_qualname_dunder, NULL, NULL, NULL },
+  { "__module__", (getter) function_get_module_dunder, NULL, NULL, NULL },
+  { NULL, }
+};
+
+
+static PyObject *
+boundmethod_get_signature(PyObject *self, void *closure) {
+
+  PyObject *func = KosBoundMethod_FUNC(self);
+  PyObject *full = NULL;
+  PyObject *out = NULL;
+
+  (void) closure;
+
+  full = function_get_signature(func, NULL);
+  if (! full)
+    return NULL;
+
+  if (kos_inspect_load() < 0) {
+    Py_DECREF(full);
+    return NULL;
+  }
+
+  out = kos_signature_drop_first(full);
+  Py_DECREF(full);
+  return out;
+}
+
+
+static PyGetSetDef boundmethod_getsets[] = {
+  { "__signature__", (getter) boundmethod_get_signature, NULL, NULL, NULL },
+  { NULL, }
+};
+
+
 /* === KosBoundMethod: bound method (func, self) via descriptor protocol === */
 
 
@@ -564,6 +1052,7 @@ KosCallableTypeObject KosBoundMethodType = {
     .tp_doc = "Bound method wrapper. Implements KosCallable by prepending"
               " self to call arguments.",
     .tp_members = boundmethod_members,
+    .tp_getset = boundmethod_getsets,
     .tp_base = KOS_CALLABLE_PYTYPE(KosCallableType),
   },
   .tp_kos_install = kos_install_boundmethod,
@@ -645,16 +1134,40 @@ static int function_init(
   KosFunction_BASE_NS(self) = template;
 
   self->vectorcall = kos_function_vectorcall;
+  self->inspect_signature = NULL;
 
   return 0;
 }
 
 
+static int
+function_traverse(PyObject *self, visitproc visit, void *arg) {
+
+  Py_VISIT(KosFunction_NAME(self));
+  Py_VISIT(KosFunction_CODE(self));
+  Py_VISIT(KosFunction_BASE_NS(self));
+  Py_VISIT(KosFunction_FORMALS(self));
+  Py_VISIT(((KosFunction *) self)->inspect_signature);
+  return 0;
+}
+
+
+static int
+function_clear(PyObject *self) {
+
+  Py_CLEAR(((KosFunction *) self)->inspect_signature);
+  return 0;
+}
+
+
 static void function_dealloc(PyObject *self) {
+
+  PyObject_GC_UnTrack(self);
   Py_CLEAR(KosFunction_NAME(self));
   Py_CLEAR(KosFunction_CODE(self));
   Py_CLEAR(KosFunction_BASE_NS(self));
   Py_CLEAR(KosFunction_FORMALS(self));
+  Py_CLEAR(((KosFunction *) self)->inspect_signature);
   Py_TYPE(self)->tp_free(self);
 }
 
@@ -872,13 +1385,16 @@ KosCallableTypeObject KosFunctionType = {
   .tp_repr = function_repr,
   .tp_descr_get = function_descr_get,
   .tp_call = function_call,
-  .tp_flags = Py_TPFLAGS_DEFAULT | Py_TPFLAGS_HAVE_VECTORCALL,
+  .tp_flags = Py_TPFLAGS_DEFAULT | Py_TPFLAGS_HAVE_VECTORCALL | Py_TPFLAGS_HAVE_GC,
   .tp_vectorcall_offset = KosFunction_VECTORCALL_OFFSET,
   .tp_doc = "Callable(Code, base_namespace, FormalsSpec). Calling with "
              "(*args, **kwargs) binds formals and returns a Coroutine.",
+  .tp_traverse = function_traverse,
+  .tp_clear = function_clear,
   .tp_init = (initproc) function_init,
   .tp_new = PyType_GenericNew,
   .tp_members = function_members,
+  .tp_getset = function_getsets,
     .tp_base = KOS_CALLABLE_PYTYPE(KosCallableType),
   },
   .tp_kos_install = kos_install_function,
@@ -961,6 +1477,7 @@ PyObject *KosFunction_NewFromFormals(
 
   KosFunction_NAME(self) = NULL;
   ((KosFunction *) self)->vectorcall = kos_function_vectorcall;
+  ((KosFunction *) self)->inspect_signature = NULL;
 
   return self;
 }
@@ -1035,6 +1552,12 @@ int koskari_func_init(PyObject *mod) {
 int koskari_func_clear(PyObject *mod) {
 
   (void) mod;
+
+  Py_CLEAR(kos_inspect_module);
+  Py_CLEAR(kos_inspect_Parameter);
+  Py_CLEAR(kos_inspect_Signature);
+  Py_CLEAR(kos_inspect_Parameter_empty);
+
   return 0;
 }
 

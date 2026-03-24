@@ -345,11 +345,13 @@ static int demand_sync_ex(
   //     goto ret_fail;
   // }
 
-  SAYF("[demand_sync] callable = %R", callable);
+  // DO NOT USE %R HERE. It will infinitely recurse into the demand_sync_ex
+  // for the __repr__
+  SAYF("[demand_sync] callable = %p", callable);
 
   /* Plain Python (not KosCallable): direct call, reject awaitable */
   if (! KosCallable_Check(callable)) {
-    SAYF("[demand_sync] Plain Python (not KosCallable): callable = %R", callable);
+    SAYF("[demand_sync] Plain Python (not KosCallable): callable = %p", callable);
     SAYF("[demand_sync] args = %R", args);
     SAYF("[demand_sync] kwargs = %R", kwargs);
 

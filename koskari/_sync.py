@@ -24,6 +24,7 @@ of whether an event loop is already running in the current thread.
 
 import asyncio
 import threading
+import functools
 
 
 __all__ = ('as_coroutine', 'iter_sync', 'run_sync')
@@ -106,7 +107,7 @@ async def _drive_await_iterator(iterator, first_yielded):
             return e.value if e.value is not None else None
 
 
-async def as_coroutine(awaitable):
+def as_coroutine(awaitable):
     """
     Return a coroutine that, when awaited, awaits the given awaitable
     and returns its result. Accepts arbitrary awaitables (e.g. custom
@@ -114,7 +115,26 @@ async def as_coroutine(awaitable):
     so use this to adapt before passing to run_sync or asyncio.run.
     """
 
-    return await awaitable
+    @functools.wraps(awaitable)
+    async def _as_coroutine(*args, **kwargs):
+        return await awaitable(*args, **kwargs)
+    return _as_coroutine
+
+
+def as_demand(awaitable):
+    """
+    Return a demand that, when called, awaits the given awaitable
+    and returns its result. Accepts arbitrary awaitables (e.g. custom
+    __await__), not just coroutines. asyncio.run requires a coroutine,
+    so use this to adapt before passing to run_sync or asyncio.run.
+    """
+
+    from koskari.lib import demand_sync
+
+    @functools.wraps(awaitable)
+    def _as_demand(*args, **kwargs):
+        return demand_sync(awaitable, *args, **kwargs)
+    return _as_demand
 
 
 def run_sync(awaitable):

@@ -143,16 +143,6 @@ define-syntax compile/unless:
         [else: then])
 
 
-define-syntax define-global:
-  syntax-rules []:
-    match (define-global name):
-      (compile/define-global name)
-    match (define-global name value):
-      (compile/define-global name value)
-    match (define-global name formals body ...):
-      (compile/define-global name formals body ...)
-
-
 define-syntax compile/define-parameter:
   syntax-rules []:
     match (use-parameter name):
@@ -174,6 +164,19 @@ define-syntax compile/None?:
 
 define None? [value]:
   (compile/None? value)
+
+
+define-syntax define-coroutine:
+  syntax-rules []:
+    match (define-coroutine name args body...):
+      (define name (as-coroutine (lambda name args body...)))
+
+
+define-syntax when-main:
+  syntax-rules []:
+    match (when-main body...):
+      when (eq? __name__ "__main__"):
+        body...
 
 
 ;; The end.

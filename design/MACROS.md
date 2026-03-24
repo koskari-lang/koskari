@@ -18,18 +18,21 @@ ease future migration of purely transformative forms from specials to macros.
 - Plain assignment: `(set! SYM EXPR)`
 - Augmented assignment: `(set! SYM (OP SYM EXPR))` where OP is `+`, `-`, `*`,
   `/`, `//`, `%`, `**`, `@`, `<<`, `>>`, `&`, `^`, or `|`
-- Item assignment: `(set! (item OBJ KEY) VAL)`
-- Attribute assignment: `(set! (attr OBJ NAME) VAL)`
-- Ref assignment: `(set! (deref REF) VAL)`
+- Item assignment: `(set! (item OBJ KEY) VAL)` or
+  `(set! (compile/item OBJ KEY) VAL)`
+- Attribute assignment: `(set! (attr OBJ NAME) VAL)` or
+  `(set! (compile/attr OBJ NAME) VAL)`
+- Ref assignment: `(set! (deref REF) VAL)` or `(set! (compile/deref REF) VAL)`
 
 **Use-case:** User-facing assignment syntax. Covers variable store, augmented
 assignment, subscript store, attribute store, and mutable reference store.
 
 **Behaviour:** Expands via syntax-rules. Plain assignment expands to
-`(compile/setq SYM EXPR)`. Augmented forms like `(set! x (+ x 1))` expand to
-`(compile/inplace OP SYM EXPR)`. Item, attribute, and deref forms expand to
-`(compile/set-item ...)`, `(compile/set-attr ...)`, and `(compile/set-ref ...)` respectively. The first
-match in the syntax-rules wins.
+`(setq NAME VALUE)`. Augmented forms like `(set! x (+ x 1))` expand to
+`(compile/inplace OP NAME VALUE)`. Item, attribute, and deref forms (including
+`compile/item`, `compile/attr`, `compile/deref` variants) expand to
+`(compile/set-item ...)`, `(compile/set-attr ...)`, and `(compile/set-ref ...)`
+respectively. The first match in the syntax-rules wins.
 
 **Examples:**
 
@@ -62,6 +65,7 @@ match in the syntax-rules wins.
 - Variable reference: `(ref SYM)`
 - Attribute reference: `(ref (attr OBJ NAME))` or `(ref (compile/attr OBJ NAME))`
 - Item reference: `(ref (item OBJ KEY))` or `(ref (compile/item OBJ KEY))`
+- Parameter reference: `(ref (parameter NAME))` → `(ParamRef 'NAME)`
 
 **Use-case:** User-facing syntax for obtaining a mutable reference. The `&expr`
 reader macro expands to `(compile/ref expr)`.
@@ -69,7 +73,8 @@ reader macro expands to `(compile/ref expr)`.
 **Behaviour:** Expands via syntax-rules. Plain symbol expands to
 `(compile/refq SYM)`. `(attr OBJ NAME)` and `(compile/attr OBJ NAME)` expand to
 `(compile/ref-attr OBJ NAME)`. `(item OBJ KEY)` and `(compile/item OBJ KEY)`
-expand to `(compile/ref-item OBJ KEY)`.
+expand to `(compile/ref-item OBJ KEY)`. `(parameter NAME)` expands to
+`(ParamRef 'NAME)` (symbol `NAME` is quoted in the expansion).
 
 **Examples:**
 
@@ -115,7 +120,7 @@ expand to `(compile/ref-item OBJ KEY)`.
 Expands to `compile/cond`.
 
 **Behaviour:** Macro in basics.ki. Expands to
-`(compile/cond [COND BODY...] [else: None])`.
+`(compile/cond [COND THEN] [else: None])` (single consequent form `THEN`).
 
 **Examples:**
 
@@ -131,13 +136,13 @@ Expands to `compile/cond`.
 
 **Symbol:** `compile/unless`
 
-**Syntax:** `(compile/unless COND BODY...)`
+**Syntax:** `(compile/unless COND THEN)`
 
-**Use-case:** Execute body when condition is false; when true, yields `None`.
+**Use-case:** Execute `THEN` when condition is false; when true, yields `None`.
 Expands to `compile/cond` (negated test).
 
 **Behaviour:** Macro in basics.ki. Expands to
-`(compile/cond [COND None] [else: THEN])` (single then form).
+`(compile/cond [COND None] [else: THEN])` (single consequent form `THEN`).
 
 **Examples:**
 
@@ -155,10 +160,16 @@ Expands to `compile/cond` (negated test).
 
 **Symbol:** `compile/bind!`
 
-**Syntax:** `(bind! NAME VALUE)` or `(bind! NAME (item OBJ KEY))` or
-`(bind! NAME (attr OBJ NAME))` or `(bind! NAME (dynamic r ...))` or
-`(bind! NAME (constant value))` or `(bind! NAME (memoized getfn))` or
-`(bind! NAME (parameter name ...))`
+**Syntax:**
+
+- `(bind! NAME VALUE)` — plain value
+- `(bind! NAME (item OBJ KEY))` or `(bind! NAME (compile/item OBJ KEY))`
+- `(bind! NAME (attr OBJ NAME))` or `(bind! NAME (compile/attr OBJ NAME))`
+- `(bind! NAME (dynamic r ...))`
+- `(bind! NAME (constant VALUE))`
+- `(bind! NAME (memoized GETFN))`
+- `(bind! NAME (parameterq PARAM-NAME r ...))` — `ParamRef` with quoted name
+- `(bind! NAME (parameter PARAM-NAME r ...))` — `ParamRef` with `PARAM-NAME` as given
 
 **Use-case:** User-facing binding syntax. Expands to `compile/bindq` with the
 appropriate Ref type for item/attr/dynamic/constant/memoized/parameter forms.
@@ -176,6 +187,78 @@ appropriate Ref type for item/attr/dynamic/constant/memoized/parameter forms.
 
 **Behaviour:** Expands to `(compile/define NAME)` and
 `(compile/bindq NAME (ParamRef 'NAME))`.
+
+**Defined in:** `koskari/importer/basics.ki`
+
+
+## compile/parameterq
+
+**Symbol:** `compile/parameterq`
+
+**Syntax:** `(parameterq NAME)`
+
+**Use-case:** Construct a dynamic-parameter object with a quoted name symbol.
+
+**Behaviour:** Expands to `(parameter 'NAME)`.
+
+**Defined in:** `koskari/importer/basics.ki`
+
+
+## compile/None?
+
+**Symbol:** `compile/None?`
+
+**Syntax:** `(None? VALUE)`
+
+**Use-case:** Test whether a value is `None` at compile time via `compile/is`.
+
+**Behaviour:** Expands to `(compile/is None VALUE)`.
+
+**Defined in:** `koskari/importer/basics.ki`
+
+
+## None?
+
+**Symbol:** `None?` (function, not only the macro pattern above)
+
+**Syntax:** `(None? VALUE)` in expression position uses the macro; the prelude
+also defines a callable:
+
+`(define None? [value]: (compile/None? value))`
+
+**Use-case:** Predicate usable as a function value or in macro-expanded calls.
+
+**Defined in:** `koskari/importer/basics.ki`
+
+
+## define-coroutine
+
+**Symbol:** `define-coroutine`
+
+**Syntax:** `(define-coroutine NAME ARGS BODY ...)`
+
+**Use-case:** Define `NAME` as a Python coroutine function for interop (e.g.
+`inspect.iscoroutinefunction`), by wrapping a Koskari lambda with `as-coroutine`
+from bootstrap.
+
+**Behaviour:** Expands to
+`(define NAME (as-coroutine (lambda NAME ARGS BODY ...)))`.
+
+**Defined in:** `koskari/importer/basics.ki`
+
+
+## when-main
+
+**Symbol:** `when-main`
+
+**Syntax:** `(when-main BODY ...)`
+
+**Use-case:** Run `BODY ...` only when the module is executed as `__main__`
+(typical entry-point guard).
+
+**Behaviour:** Expands to
+
+`when (eq? __name__ "__main__"): BODY ...`
 
 **Defined in:** `koskari/importer/basics.ki`
 

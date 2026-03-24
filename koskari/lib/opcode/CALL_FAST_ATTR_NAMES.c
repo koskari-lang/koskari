@@ -89,7 +89,7 @@ KOS_OP_HANDLER(CALL_FAST_ATTR_NAMES) {
       args = steal.vals;
       nargs = npos + 1;
     } else {
-      args = (npos > 0) ? steal.vals : NULL;
+      args = (total > 0) ? steal.vals : NULL;
       nargs = npos;
     }
     int r = KosContext_Call(ctx, out_ev, resolved, args, nargs, names, 0);
@@ -115,7 +115,7 @@ KOS_OP_HANDLER(CALL_FAST_ATTR_NAMES) {
                                  (size_t)(npos + 1), names);
   } else {
     result = PyObject_Vectorcall(resolved,
-        (npos > 0) ? steal.vals : NULL, (size_t) npos, names);
+        (total > 0) ? steal.vals : NULL, (size_t) npos, names);
   }
   KosStackSteal_Free(&steal);
   Py_DECREF(resolved);

@@ -72,7 +72,7 @@ KOS_OP_HANDLER(CALL_ATTR_NAMES) {
       args = &steal.vals[0];
       nargs = npos + 1;
     } else {
-      args = (npos > 0) ? &steal.vals[1] : NULL;
+      args = (total > 0) ? &steal.vals[1] : NULL;
       nargs = npos;
     }
     int r = KosContext_Call(ctx, out_ev, resolved, args, nargs,
@@ -87,7 +87,7 @@ KOS_OP_HANDLER(CALL_ATTR_NAMES) {
                                  names);
   } else {
     result = PyObject_Vectorcall(resolved,
-        (npos > 0) ? &ptr[1] : NULL, (size_t) npos, names);
+        (total > 0) ? &ptr[1] : NULL, (size_t) npos, names);
   }
   Py_DECREF(resolved);
   if (! result)

@@ -38,6 +38,7 @@ from ..lib import (AttributeRef, ConstantRef, DynamicRef, ItemRef, MemoizedRef,
 from ..reader.layouts import LAYOUTS
 from ..types import (TypePredicate, build_proper, is_nil, is_proper,
                      is_recursive, unpack)
+from .._sync import as_coroutine
 
 __all__ = ('make_bootstrap', 'make_builtins', 'make_builtins_demand')
 
@@ -97,6 +98,8 @@ def make_bootstrap():
     _bind('deref', deref)
     _bind('apply', apply)
     _bind('parameter', parameter)
+
+    _bind('as-coroutine', as_coroutine)
 
     # atom types and operations
     _ty('symbol', symbol)

@@ -97,7 +97,7 @@ KOS_OP_HANDLER(CALL_VAR_ATTR_NAMES) {
       args = steal.vals;
       nargs = npos + 1;
     } else {
-      args = (npos > 0) ? steal.vals : NULL;
+      args = (total > 0) ? steal.vals : NULL;
       nargs = npos;
     }
     int r = KosContext_Call(ctx, out_ev, resolved, args, nargs, names, 0);
