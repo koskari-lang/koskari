@@ -32,7 +32,7 @@ import operator as _op
 
 from ...lib import nil, OpCode, symbol
 from ...exceptions import SpecialError
-from ...types import is_pair
+from ...types import get_position, is_pair
 from ..helpers import const_only_expr, is_symbolish, special
 
 
@@ -681,7 +681,8 @@ def special_inplace(compiler, source, tc=False):
     if not is_pair(value_expr):
         frag.position_of(body)
 
-    frag.request_for_write(name)
+    pos = get_position(body)
+    frag.request_for_write(name, position=pos)
     frag.merge(compiler.full_compile(value_expr))
     frag.instruction(opcode, name)
     frag.instruction(OpCode.KOS_OP_CONST, None)

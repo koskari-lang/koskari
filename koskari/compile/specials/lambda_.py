@@ -91,7 +91,8 @@ def special_lambda(
     if proper_name is not None:
         lamb.declare_var(proper_name)
 
-    lamb = helper_begin(lamb, body_src, True)
+    with compiler.pragma_scope():
+        lamb = helper_begin(lamb, body_src, True)
     code = compiler.complete(lamb, CompilerMode.FUNCTION)
     fspec = FunctionSpec(proper_name, FormalsSpec(
         tuple(pos), (), tuple(kw), tuple(str(k) for k, _ in kwonly),

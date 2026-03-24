@@ -96,7 +96,11 @@ class CompilerError(KoskariException):
     Base class for compile-phase errors
     """
 
-    pass
+    def __init__(self, message, source=None, position=None):
+        super().__init__(message)
+        self.message = message
+        self.source = source
+        self.position = position
 
 
 class SpecialError(CompilerError):

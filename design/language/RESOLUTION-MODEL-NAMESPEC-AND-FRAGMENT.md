@@ -18,6 +18,9 @@ in various compilation scenarios.
 - **ByteCodeFragment** is a compile-time accumulator. It holds instructions and
   bucket state (declares, requests, requests_for_write, _request_global) while
   compiling a scope. It is transient; it does not persist beyond `complete()`.
+  All resolution decisions (what goes into each bucket) are owned by a
+  pluggable **ResolutionPragma**; the Fragment delegates to the pragma for
+  request_for_write, declare_var, and request_global.
 
 - **NamespaceSpec** is the persistent description of a scope. It is emitted into
   the constant pool and attached to `Code`. It is used at runtime to build

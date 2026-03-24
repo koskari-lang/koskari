@@ -25,7 +25,7 @@ and compile/define-syntax.
 
 from ...lib import cons, nil, OpCode, symbol
 from ...matcher import DEFINE, MATCH, REST, SYMBOL, VALUE, match
-from ...types import is_pair
+from ...types import get_position, is_pair
 from ...exceptions import CompilerError, SpecialError
 from ..helpers import FORMALS, special, special_forms
 from ..syntax import build_syntax_rules_transformer
@@ -55,7 +55,8 @@ def special_setq(compiler, source, tc=False):
     if not is_pair(expr):
         frag.position_of(rest)
 
-    frag.request_for_write(sym)
+    pos = matched["sym"].source_pos if hasattr(matched["sym"], "source_pos") else get_position(rest)
+    frag.request_for_write(sym, position=pos)
     frag.merge(compiler.full_compile(expr))
     frag.instruction(OpCode.KOS_OP_VAR_STORE, sym)
     frag.instruction(OpCode.KOS_OP_CONST, None)
@@ -83,7 +84,8 @@ def special_delq(compiler, source, tc=False):
     frag = compiler.fragment(called_by)
 
     frag.position_of(rest)
-    frag.request_for_write(sym)
+    pos = matched["sym"].source_pos if hasattr(matched["sym"], "source_pos") else get_position(rest)
+    frag.request_for_write(sym, position=pos)
     frag.instruction(OpCode.KOS_OP_VAR_CLEAR, sym)
     frag.instruction(OpCode.KOS_OP_CONST, None)
 
@@ -115,7 +117,8 @@ def special_define(compiler, source, tc=False):
     name = str(namesym)
 
     frag = compiler.fragment(called_by)
-    frag.declare_var(name)
+    pos = matched["name"].source_pos if hasattr(matched["name"], "source_pos") else get_position(rest)
+    frag.declare_var(name, position=pos)
 
     if "body" in matched:
         formals = matched["formals"]
@@ -164,8 +167,9 @@ def special_define_global(compiler, source, tc=False):
     name = str(namesym)
 
     frag = compiler.fragment(called_by)
+    pos = matched["name"].source_pos if hasattr(matched["name"], "source_pos") else get_position(rest)
     try:
-        frag.request_global(name)
+        frag.request_global(name, position=pos)
     except CompilerError:
         raise SpecialError(
             '%r cannot be both local (define) and global (define-global).'
@@ -223,7 +227,8 @@ def special_define_syntax(compiler, source, tc=False):
     build_call = cons(symbol("build-syntax-rules"), str(namesym), tagged, nil)
 
     frag = compiler.fragment(called_by)
-    frag.declare_var(str(namesym))
+    pos = matched["name"].source_pos
+    frag.declare_var(str(namesym), position=pos)
 
     frag.merge(compiler.full_compile(build_call))
     frag.instruction(OpCode.KOS_OP_VAR_STORE, str(namesym))

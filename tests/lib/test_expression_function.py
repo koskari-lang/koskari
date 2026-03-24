@@ -81,7 +81,7 @@ def build_expr(code, local_syms=None, values=None, name="expr"):
         local_syms = tuple(syms)
 
     c = build_code(code, local_syms=local_syms, name=name)
-    nspec = NamespaceSpec(None, tuple(local_syms or ()), ())
+    nspec = NamespaceSpec(None, local_syms, ())
     ns = nspec.get_namespace(None)
     if values:
         for k, v in values.items():

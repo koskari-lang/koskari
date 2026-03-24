@@ -196,4 +196,10 @@ user-level customizations.
 * `compiler_pass_convert_fast` — enables or disables the `convert-fast`
   compression pass.
 
+### Future: resolution_mode
+
+* `resolution_mode` — selects resolution semantics: Koskari (strict), Scheme
+  (unsatisfied writes promote to global), or Python (implicit local on first
+  write unless explicit global). Implemented via pluggable `ResolutionPragma`.
+
 The pragma model is intentionally minimal, forward-only, and module-local.

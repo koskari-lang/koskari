@@ -348,47 +348,60 @@ PyObject *KosNamespaceSpec_New(
     return NULL;
   }
 
-  if (local_syms == Py_None) {
-    local_syms = NULL;
-
-  } else if (local_syms) {
+  if (local_syms == Py_None || ! local_syms) {
+    local_syms = PyTuple_New(0);
+    if (! local_syms)
+      return NULL;
+  } else {
     local_syms = PySequence_Tuple(local_syms);
     if (! local_syms)
       return NULL;
   }
 
-  if (closure_syms == Py_None) {
-    closure_syms = NULL;
-
-  } else if (closure_syms) {
+  if (closure_syms == Py_None || ! closure_syms) {
+    closure_syms = PyTuple_New(0);
+    if (! closure_syms) {
+      Py_DECREF(local_syms);
+      return NULL;
+    }
+  } else {
     closure_syms = PySequence_Tuple(closure_syms);
     if (! closure_syms) {
-      Py_XDECREF(local_syms);
+      Py_DECREF(local_syms);
       return NULL;
     }
   }
 
-  if (global_syms == Py_None) {
-    global_syms = NULL;
-
-  } else if (global_syms) {
+  if (global_syms == Py_None || ! global_syms) {
+    global_syms = PyTuple_New(0);
+    if (! global_syms) {
+      Py_DECREF(local_syms);
+      Py_DECREF(closure_syms);
+      return NULL;
+    }
+  } else {
     global_syms = PySequence_Tuple(global_syms);
     if (! global_syms) {
-      Py_XDECREF(local_syms);
-      Py_XDECREF(closure_syms);
+      Py_DECREF(local_syms);
+      Py_DECREF(closure_syms);
       return NULL;
     }
   }
 
-  if (request_for_write_syms == Py_None) {
-    request_for_write_syms = NULL;
-
-  } else if (request_for_write_syms) {
+  if (request_for_write_syms == Py_None || ! request_for_write_syms) {
+    request_for_write_syms = PyTuple_New(0);
+    if (! request_for_write_syms) {
+      Py_DECREF(local_syms);
+      Py_DECREF(closure_syms);
+      Py_DECREF(global_syms);
+      return NULL;
+    }
+  } else {
     request_for_write_syms = PySequence_Tuple(request_for_write_syms);
     if (! request_for_write_syms) {
-      Py_XDECREF(local_syms);
-      Py_XDECREF(closure_syms);
-      Py_XDECREF(global_syms);
+      Py_DECREF(local_syms);
+      Py_DECREF(closure_syms);
+      Py_DECREF(global_syms);
       return NULL;
     }
   }
@@ -543,7 +556,7 @@ static int ns_init_syms(PyObject *self, PyObject *parent,
     }
   }
 
-  if (global_syms && parent) {
+  if (global_syms && PyTuple_GET_SIZE(global_syms) > 0 && parent) {
     PyObject *module_ns = find_module_in_chain(parent);
     if (! module_ns) {
       PyErr_Format(PyExc_RuntimeError,

@@ -80,8 +80,7 @@ def build_expr(code, local_syms=None, closure_syms=None, values=None, name="expr
         syms = set(local_syms or ()) | set(closure_syms or ()) | set(values.keys())
         local_syms = tuple(syms)
     c = build_code(code, local_syms=local_syms, closure_syms=closure_syms, name=name)
-    closure = tuple(closure_syms or ())
-    nspec = NamespaceSpec(None, tuple(local_syms or ()), closure)
+    nspec = NamespaceSpec(None, local_syms, closure_syms)
     ns = nspec.get_namespace(None)
     if values:
         for k, v in values.items():

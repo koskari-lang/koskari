@@ -189,11 +189,11 @@ class TestResolutionModelNamespaceSpec(SpecialsTestCase):
         lambdas = list(_find_lambda_codes(code))
         self.assertGreaterEqual(len(lambdas), 1, 'expected at least one lambda')
         inner = lambdas[0]
-        closure = set(inner.namespace_spec.closure_syms or ())
+        closure = set(inner.namespace_spec.closure_syms)
         self.assertIn('a', closure, 'lambda should close over a')
         self.assertIn('b', closure, 'lambda should close over b')
         self.assertEqual(
-            inner.namespace_spec.request_for_write_syms or (),
+            inner.namespace_spec.request_for_write_syms,
             (),
             'lambda is read-only over a,b')
 
@@ -210,14 +210,14 @@ class TestResolutionModelNamespaceSpec(SpecialsTestCase):
         lambdas = list(_find_lambda_codes(code))
         self.assertGreaterEqual(len(lambdas), 2, 'outer and setter lambda')
         setter = next((c for c in lambdas
-                       if 'v' in (c.namespace_spec.local_syms or ())), None)
+                       if 'v' in c.namespace_spec.local_syms), None)
         self.assertIsNotNone(setter, 'expected setter lambda with param v')
         self.assertEqual(
-            set(setter.namespace_spec.closure_syms or ()),
+            set(setter.namespace_spec.closure_syms),
             {'x'},
             'setter should close over x')
         self.assertEqual(
-            set(setter.namespace_spec.request_for_write_syms or ()),
+            set(setter.namespace_spec.request_for_write_syms),
             {'x'},
             'setter writes to x')
 
@@ -232,7 +232,7 @@ class TestResolutionModelNamespaceSpec(SpecialsTestCase):
         """
         code = self.compile_to_code(src_str)
         nspec = code.namespace_spec
-        self.assertIn('x', nspec.global_syms or (),
+        self.assertIn('x', nspec.global_syms,
                       'x should be in global_syms')
 
 

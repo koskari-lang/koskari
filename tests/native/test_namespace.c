@@ -71,10 +71,17 @@ static int test_nspec_none_values(void) {
     PyObject *spec = KosNamespaceSpec_New(Py_None, Py_None, Py_None, NULL, NULL);
     TEST_ASSERT_NOT_NULL(spec, "create NamespaceSpec with None");
 
-    /* None values become NULL internally */
+    /* None values become empty tuple internally */
     TEST_ASSERT_NULL(KosNamespaceSpec_NAME(spec), "name is NULL");
-    TEST_ASSERT_NULL(KosNamespaceSpec_LOCAL_SYMS(spec), "local_syms is NULL");
-    TEST_ASSERT_NULL(KosNamespaceSpec_CLOSURE_SYMS(spec), "closure_syms is NULL");
+    TEST_ASSERT_NOT_NULL(KosNamespaceSpec_LOCAL_SYMS(spec), "local_syms not NULL");
+    TEST_ASSERT(PyTuple_Check(KosNamespaceSpec_LOCAL_SYMS(spec)), "local_syms is tuple");
+    TEST_ASSERT(PyTuple_GET_SIZE(KosNamespaceSpec_LOCAL_SYMS(spec)) == 0,
+                "local_syms is empty");
+    TEST_ASSERT_NOT_NULL(KosNamespaceSpec_CLOSURE_SYMS(spec), "closure_syms not NULL");
+    TEST_ASSERT(PyTuple_Check(KosNamespaceSpec_CLOSURE_SYMS(spec)),
+                "closure_syms is tuple");
+    TEST_ASSERT(PyTuple_GET_SIZE(KosNamespaceSpec_CLOSURE_SYMS(spec)) == 0,
+                "closure_syms is empty");
 
     Py_DECREF(spec);
     return 0;

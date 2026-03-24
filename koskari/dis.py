@@ -122,9 +122,9 @@ def _write_nspec_cpool_entry(file, cpool_idx, nspec):
 
     ns_name = nspec.name
     name_repr = repr(ns_name) if ns_name is not None else 'None'
-    local_syms = nspec.local_syms or ()
-    closure_syms = nspec.closure_syms or ()
-    global_syms = nspec.global_syms if nspec.global_syms is not None else ()
+    local_syms = nspec.local_syms
+    closure_syms = nspec.closure_syms
+    global_syms = nspec.global_syms
     all_captured = tuple(closure_syms) + tuple(global_syms)
     file.write('  ns#%d: NamespaceSpec %s\n' % (cpool_idx, name_repr))
     file.write('          locals:   %r\n' % (tuple(local_syms),))
@@ -280,9 +280,9 @@ def _local_and_closure_syms(code):
     if nspec is None:
         return (), ()
 
-    locals_seq = nspec.local_syms or ()
-    closure_seq = nspec.closure_syms or ()
-    global_seq = nspec.global_syms if nspec.global_syms is not None else ()
+    locals_seq = nspec.local_syms
+    closure_seq = nspec.closure_syms
+    global_seq = nspec.global_syms
     all_captured = tuple(closure_seq) + tuple(global_seq)
     return locals_seq, all_captured
 
