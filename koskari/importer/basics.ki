@@ -143,16 +143,6 @@ define-syntax compile/unless:
         [else: then])
 
 
-define-syntax define-global:
-  syntax-rules []:
-    match (define-global name):
-      (compile/define-global name)
-    match (define-global name value):
-      (compile/define-global name value)
-    match (define-global name formals body ...):
-      (compile/define-global name formals body ...)
-
-
 define-syntax compile/define-parameter:
   syntax-rules []:
     match (use-parameter name):
