@@ -121,6 +121,22 @@ def as_coroutine(awaitable):
     return _as_coroutine
 
 
+def as_demand(awaitable):
+    """
+    Return a demand that, when called, awaits the given awaitable
+    and returns its result. Accepts arbitrary awaitables (e.g. custom
+    __await__), not just coroutines. asyncio.run requires a coroutine,
+    so use this to adapt before passing to run_sync or asyncio.run.
+    """
+
+    from koskari.lib import demand_sync
+
+    @functools.wraps(awaitable)
+    def _as_demand(*args, **kwargs):
+        return demand_sync(awaitable, *args, **kwargs)
+    return _as_demand
+
+
 def run_sync(awaitable):
     """
     Run an awaitable to completion from synchronous code.

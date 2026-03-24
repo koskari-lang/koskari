@@ -7,8 +7,8 @@
 define-syntax define-route:
     syntax-rules []:
         match (define-route path name args body...):
-            (define-coroutine name args body...)
-            (app.add_api_route path name
+            (define name args body...)
+            (app.add_api_route path (as-coroutine name)
                 methods: #["GET"])
 
 
