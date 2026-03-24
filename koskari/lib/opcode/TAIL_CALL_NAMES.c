@@ -47,7 +47,7 @@ KOS_OP_HANDLER(TAIL_CALL_NAMES) {
 
   PyObject *callable = steal.vals[0];
   PyObject *const *args =
-    (npos > 0) ? (PyObject *const *)&steal.vals[1] : NULL;
+    (total > 0) ? (PyObject *const *)&steal.vals[1] : NULL;
   PyObject *kwnames_arg = nkwds ? steal.vals[total + 1] : NULL;
 
   int res = KosContext_Call(ctx, out_ev, callable, args,

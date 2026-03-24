@@ -142,6 +142,7 @@ typedef struct {
   PyObject *formals;
   PyObject *name;           /* proper name for self-reference and repr, or NULL */
   vectorcallfunc vectorcall; /* for Py_TPFLAGS_HAVE_VECTORCALL; always set */
+  PyObject *inspect_signature; /* lazily built inspect.Signature, or NULL */
 } KosFunction;
 
 

@@ -12,11 +12,14 @@
 # along with this library; if not, see <http://www.gnu.org/licenses/>.
 
 """
-Tests for VAR, GLOBALS, LOCALS, CALL, TAIL_CALL opcodes.
+Tests for VAR, GLOBALS, LOCALS, CALL, TAIL_CALL, CALL_NAMES, TAIL_CALL_NAMES
+opcodes.
 
 :author: Christopher O'Brien <obriencj@preoccupied.net>
 :license: GNU General Public License v3
 """
+
+import builtins
 
 from koskari.lib import FormalsSpec
 from tests import make_callable
@@ -29,7 +32,7 @@ pytestmark = pytest.mark.phase_lib
 
 class TestNamespaceAndCall(CevalTest):
     """
-    Tests for VAR, GLOBALS, LOCALS, CALL, TAIL_CALL
+    Tests for VAR, GLOBALS, LOCALS, CALL, TAIL_CALL, CALL_NAMES, TAIL_CALL_NAMES
     """
 
     async def test_var_loads_from_namespace(self):
@@ -204,6 +207,39 @@ class TestNamespaceAndCall(CevalTest):
         ], values={"apply": lib.apply, "fn": fn})
         result = await make_callable(code, ns)()
         self.assertEqual(result, 42)
+
+
+    async def test_tail_call_names_keyword_only_python_dict(self):
+        """
+        TAIL_CALL_NAMES opa=0: plain Python dict(...) with keywords only
+        (no positionals). Regression for vectorcall args/count with kwnames.
+        """
+
+        code, ns = build_expr([
+            ["CONST", builtins.dict],
+            ["CONST", 1],
+            ["CONST", ("foo",)],
+            ["TAIL_CALL_NAMES", 0],
+            ["RETURN", 1],
+        ])
+        result = await make_callable(code, ns)()
+        self.assertEqual(result, {"foo": 1})
+
+
+    async def test_call_names_keyword_only_python_dict(self):
+        """
+        CALL_NAMES opa=0: same stack as TAIL_CALL_NAMES; non-tail path.
+        """
+
+        code, ns = build_expr([
+            ["CONST", builtins.dict],
+            ["CONST", 1],
+            ["CONST", ("foo",)],
+            ["CALL_NAMES", 0],
+            ["RETURN", 1],
+        ])
+        result = await make_callable(code, ns)()
+        self.assertEqual(result, {"foo": 1})
 
 
 # The end.

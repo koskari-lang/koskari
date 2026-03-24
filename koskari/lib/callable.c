@@ -158,6 +158,8 @@ int KosContext_Call(KosContext *ctx, KosEvent *out_ev,
       if (parent && kos_dyn_pop_frame(ctx) < 0)
         return -1;
     }
+    /* nargs matches KosCallable_Call: positional count only. PEP 590:
+       keyword values follow args[nargs .. nargs + nkw - 1]. */
     PyObject *result = (nargs == 0 && ! kwnames)
         ? PyObject_CallNoArgs(callable)
         : PyObject_Vectorcall(callable, args, (size_t) nargs, kwnames);

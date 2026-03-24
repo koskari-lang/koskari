@@ -176,4 +176,17 @@ define None? [value]:
   (compile/None? value)
 
 
+define-syntax define-coroutine:
+  syntax-rules []:
+    match (define-coroutine name args body...):
+      (define name (as-coroutine (lambda name args body...)))
+
+
+define-syntax when-main:
+  syntax-rules []:
+    match (when-main body...):
+      when (eq? __name__ "__main__"):
+        body...
+
+
 ;; The end.

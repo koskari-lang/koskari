@@ -179,6 +179,16 @@ Many tools use:
 
 ---
 
+## Implementation status (native)
+
+Implemented in [`koskari/lib/func.c`](../../koskari/lib/func.c) and [`koskari/lib/func.h`](../../koskari/lib/func.h):
+
+- **`KosFunction`**: `__signature__` (lazy cache on the instance), `__annotations__` (fresh empty `dict` per access), `__name__` / `__qualname__` (from `name` or `KosCode` name or `"<lambda>"`), `__module__` (`None`). `KosFormals` is mapped to `inspect.Parameter` in runtime positional order (`pos`, `pos_only`, `kwd`, `*`, `kwd_only`, `**`); if `inspect.Signature` rejects the kind order (e.g. `POSITIONAL_ONLY` after `POSITIONAL_OR_KEYWORD`), the build is retried with positional-only names emitted as `POSITIONAL_OR_KEYWORD` (introspection may over-report keyword acceptance for those names).
+- **`KosBoundMethod`**: `__signature__` by taking the unbound function’s signature and dropping the first parameter (receiver), matching bound method call semantics.
+- **Tests**: [`tests/lib/test_inspect_kos_function.py`](../../tests/lib/test_inspect_kos_function.py).
+
+---
+
 ## Summary
 
 The **highest-value** interoperability step is a correct, cached **`__signature__`** derived from **`KosFormals`**, plus **bound-method** behavior matching **`types.MethodType`** for signature visibility. **`__annotations__`** and presentation dunders (**`__name__`**, **`__module__`**, **`__doc__`**) layer on top for full ecosystem parity; **`inspect.isfunction`** and **source introspection** are explicit non-goals for the first pass unless separately designed.
