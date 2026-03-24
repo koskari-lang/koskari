@@ -80,11 +80,12 @@ class TestNamespaceSpec(unittest.IsolatedAsyncioTestCase):
 
 
     async def test_repr(self):
-        """repr shows name, closure_syms, and local_syms"""
-        spec = NamespaceSpec(None, ("k",), ())
-        self.assertEqual(repr(spec), "NamespaceSpec(None, (), ('k',))")
-        spec2 = NamespaceSpec("foo", ("a", "b"), ("z",))
-        self.assertEqual(repr(spec2), "NamespaceSpec('foo', ('z',), ('a', 'b'))")
+        """repr shows name, closure_syms, local_syms, and global_syms"""
+        spec = NamespaceSpec(None, ("k",), (), ())
+        self.assertEqual(repr(spec), "NamespaceSpec(None, (), ('k',), ())")
+        spec2 = NamespaceSpec("foo", ("a", "b"), ("z",), ())
+        self.assertEqual(
+            repr(spec2), "NamespaceSpec('foo', ('z',), ('a', 'b'), ())")
 
 
 class TestNamespace(unittest.IsolatedAsyncioTestCase):
@@ -461,7 +462,7 @@ class TestModuleNamespace(unittest.IsolatedAsyncioTestCase):
     async def test_nested_with_namespace(self):
         """ModuleNamespace works as parent for Namespace"""
         ns1 = ModuleNamespace("ns1", {})
-        ns2 = Namespace("ns2", ns1, ('bar',), ('foo',))
+        ns2 = Namespace("ns2", ns1, ('bar',), (), ('foo',))
 
         self.assertEqual(ns1.name, "ns1")
         self.assertIsNone(ns1.parent)
@@ -475,7 +476,7 @@ class TestModuleNamespace(unittest.IsolatedAsyncioTestCase):
     async def test_closure_from_module(self):
         """Closures from ModuleNamespace share refs"""
         ns1 = ModuleNamespace("ns1", {})
-        ns2 = Namespace("ns2", ns1, ('bar',), ('foo',))
+        ns2 = Namespace("ns2", ns1, ('bar',), (), ('foo',))
 
         ns2.store('foo', 987)
         self.assertEqual(ns2.deref('foo'), 987)
@@ -497,7 +498,7 @@ class TestModuleNamespace(unittest.IsolatedAsyncioTestCase):
         mod1 = ModuleNamespace("mod1", data)
         self.assertEqual(mod1.deref('a'), 1)
 
-        ns1 = Namespace("ns1", mod1, ('z',), ('a',))
+        ns1 = Namespace("ns1", mod1, ('z',), (), ('a',))
         self.assertEqual(ns1.deref('a'), 1)
         ns1.store('a', 5)
         self.assertEqual(mod1.deref('a'), 5)

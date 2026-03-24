@@ -251,7 +251,7 @@ static int test_formals_apply_simple(void) {
                                            NULL, NULL, NULL);
     TEST_ASSERT_NOT_NULL(formals, "create Formals");
 
-    PyObject *ns = KosNamespace_NewFull(NULL, NULL, pos, NULL);
+    PyObject *ns = KosNamespace_NewFull(NULL, NULL, pos, NULL, NULL);
     TEST_ASSERT_NOT_NULL(ns, "create Namespace");
 
     PyObject *args = Py_BuildValue("(ii)", 1, 2);
@@ -294,7 +294,7 @@ static int test_formals_apply_with_kwargs(void) {
                                            NULL, NULL, NULL);
     TEST_ASSERT_NOT_NULL(formals, "create Formals");
 
-    PyObject *ns = KosNamespace_NewFull(NULL, NULL, local_syms, NULL);
+    PyObject *ns = KosNamespace_NewFull(NULL, NULL, local_syms, NULL, NULL);
     TEST_ASSERT_NOT_NULL(ns, "create Namespace");
 
     PyObject *args = Py_BuildValue("(i)", 100);
@@ -348,7 +348,7 @@ static int test_formals_apply_with_star(void) {
                                            star, NULL, NULL);
     TEST_ASSERT_NOT_NULL(formals, "create Formals");
 
-    PyObject *ns = KosNamespace_NewFull(NULL, NULL, local_syms, NULL);
+    PyObject *ns = KosNamespace_NewFull(NULL, NULL, local_syms, NULL, NULL);
     TEST_ASSERT_NOT_NULL(ns, "create Namespace");
 
     PyObject *args = Py_BuildValue("(iiii)", 1, 2, 3, 4);
@@ -420,7 +420,7 @@ static int test_formals_apply_with_defaults(void) {
     if (! formals)
         goto cleanup;
 
-    ns = KosNamespace_NewFull(NULL, NULL, local_syms, NULL);
+    ns = KosNamespace_NewFull(NULL, NULL, local_syms, NULL, NULL);
     if (! ns)
         goto cleanup;
 
@@ -496,7 +496,7 @@ static int test_formals_apply_missing_arg_error(void) {
                                            NULL, NULL, NULL);
     TEST_ASSERT_NOT_NULL(formals, "create Formals");
 
-    PyObject *ns = KosNamespace_NewFull(NULL, NULL, pos, NULL);
+    PyObject *ns = KosNamespace_NewFull(NULL, NULL, pos, NULL, NULL);
     TEST_ASSERT_NOT_NULL(ns, "create Namespace");
 
     /* Only provide one argument when two are required */
@@ -528,7 +528,7 @@ static int test_formals_apply_too_many_args_error(void) {
                                            NULL, NULL, NULL);
     TEST_ASSERT_NOT_NULL(formals, "create Formals");
 
-    PyObject *ns = KosNamespace_NewFull(NULL, NULL, pos, NULL);
+    PyObject *ns = KosNamespace_NewFull(NULL, NULL, pos, NULL, NULL);
     TEST_ASSERT_NOT_NULL(ns, "create Namespace");
 
     /* Provide too many arguments */

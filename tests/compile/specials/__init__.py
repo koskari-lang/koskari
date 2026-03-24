@@ -51,7 +51,8 @@ class SpecialsTestCase(unittest.IsolatedAsyncioTestCase):
         return default_reader.read(stream)
 
 
-    def compile_expr(self, src_str, lineno=1, specials=SPECIALS, **defns):
+    def compile_expr(self, src_str, lineno=1, specials=SPECIALS,
+                     resolution_pragma_class=None, **defns):
         """
         Compile source to an expression; specials=None uses SPECIALS
         """
@@ -64,13 +65,18 @@ class SpecialsTestCase(unittest.IsolatedAsyncioTestCase):
 
         source = self.parse_source(src_str, lineno=lineno)
 
-        compiler = Compiler("<unittest>", module, filename=__file__)
+        kwargs = {}
+        if resolution_pragma_class is not None:
+            kwargs['resolution_pragma_class'] = resolution_pragma_class
+        compiler = Compiler("<unittest>", module, filename=__file__, **kwargs)
         fragment = compiler.full_compile(source)
         expr = fragment.as_expression(mod_ns)
         return expr, module
 
 
-    def compile_to_code(self, src_str, lineno=1, tc=False, **defns):
+    def compile_to_code(self, src_str, lineno=1, tc=False,
+                        resolution_pragma_class=None, resolution_pragma=None,
+                        **defns):
         """
         Compile source to a Code object for opcode inspection; tc=True enables
         tail-call tracking
@@ -82,7 +88,12 @@ class SpecialsTestCase(unittest.IsolatedAsyncioTestCase):
         _register_specials(ns, SPECIALS)
 
         source = self.parse_source(src_str, lineno=lineno)
-        compiler = Compiler("<unittest>", module, filename=__file__)
+        kwargs = {}
+        if resolution_pragma_class is not None:
+            kwargs['resolution_pragma_class'] = resolution_pragma_class
+        if resolution_pragma is not None:
+            kwargs['resolution_pragma'] = resolution_pragma
+        compiler = Compiler("<unittest>", module, filename=__file__, **kwargs)
         fragment = compiler.full_compile(source, tc=tc)
         return compiler.complete(fragment, mode=CompilerMode.EXPRESSION)
 

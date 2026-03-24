@@ -9,15 +9,8 @@ design docs for detail.
 
 ### Unimplemented opcodes (stubs)
 
-These opcodes currently delegate to `op_unimplemented_stub` and raise at
-runtime. Implement when method-call-style `obj.method(...)` from bytecode is
-needed.
-
-- **CALL_ATTR_NAMES** — `koskari/lib/opcode/CALL_ATTR_NAMES.c`
-- **CALL_ATTR_STAR** — `koskari/lib/opcode/CALL_ATTR_STAR.c`
-
-Ref: [FEATURES.md](FEATURES.md) § Opcodes: implementation status;
-[OPCODES.md](OPCODES.md) (per-opcode reference); [interpreter/bytecode.md](interpreter/bytecode.md) (format, layout).
+See [OPCODES.md](OPCODES.md) §1.6 for the authoritative list of stub opcodes.
+That document is the single reference for implementation status.
 
 ---
 
@@ -149,6 +142,17 @@ polluting the module.
 
 Ref: [bundles-and-namespace-facets.md](bundles-and-namespace-facets.md).
 
+### Variable resolution model (read vs write, define-global)
+
+Redesign variable resolution to eliminate the "typo creates a variable"
+problem: require writes (setq, delq, inplace) to target only declared or
+closure names, never implicit globals. Add `define-global` for explicit global
+writes. Separate `request_for_write` and `request_global` buckets; propagate
+inner requests to outer; add `global_syms` to NamespaceSpec; separate module
+from the namespace chain by type.
+
+Ref: [language/RESOLUTION-MODEL.md](language/RESOLUTION-MODEL.md).
+
 ---
 
 ## Domain / parameters
@@ -226,3 +230,4 @@ From [FEATURES.md](FEATURES.md) and related docs:
 - **Feature catalog and status:** [FEATURES.md](FEATURES.md)
 - **Generator plan (phases 1–8 done, 9 under consideration):** [plan/README.md](plan/README.md)
 - **Ideas (uncommitted):** [ideas.md](ideas.md)
+- **Variable resolution model (proposed):** [language/RESOLUTION-MODEL.md](language/RESOLUTION-MODEL.md)

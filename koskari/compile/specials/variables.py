@@ -25,7 +25,7 @@ and compile/define-syntax.
 
 from ...lib import cons, nil, OpCode, symbol
 from ...matcher import DEFINE, MATCH, REST, SYMBOL, VALUE, match
-from ...types import is_pair
+from ...types import get_position, is_pair
 from ...exceptions import CompilerError, SpecialError
 from ..helpers import FORMALS, special, special_forms
 from ..syntax import build_syntax_rules_transformer
@@ -55,7 +55,8 @@ def special_setq(compiler, source, tc=False):
     if not is_pair(expr):
         frag.position_of(rest)
 
-    frag.request_var(sym)
+    pos = matched["sym"].source_pos if hasattr(matched["sym"], "source_pos") else get_position(rest)
+    frag.request_for_write(sym, position=pos)
     frag.merge(compiler.full_compile(expr))
     frag.instruction(OpCode.KOS_OP_VAR_STORE, sym)
     frag.instruction(OpCode.KOS_OP_CONST, None)
@@ -83,7 +84,8 @@ def special_delq(compiler, source, tc=False):
     frag = compiler.fragment(called_by)
 
     frag.position_of(rest)
-    frag.request_var(sym)
+    pos = matched["sym"].source_pos if hasattr(matched["sym"], "source_pos") else get_position(rest)
+    frag.request_for_write(sym, position=pos)
     frag.instruction(OpCode.KOS_OP_VAR_CLEAR, sym)
     frag.instruction(OpCode.KOS_OP_CONST, None)
 
@@ -115,7 +117,64 @@ def special_define(compiler, source, tc=False):
     name = str(namesym)
 
     frag = compiler.fragment(called_by)
-    frag.declare_var(name)
+    pos = matched["name"].source_pos if hasattr(matched["name"], "source_pos") else get_position(rest)
+    frag.declare_var(name, position=pos)
+
+    if "body" in matched:
+        formals = matched["formals"]
+        body = matched["body"]
+        val_expr = cons(symbol("compile/lambda"), namesym,
+                        formals.source, body.source)
+
+    elif "value" in matched:
+        val_expr = matched["value"].source
+
+    else:
+        frag.instruction(OpCode.KOS_OP_CONST, None)
+        return frag
+
+    if not is_pair(val_expr):
+        frag.position_of(rest)
+
+    frag.merge(compiler.full_compile(val_expr))
+    frag.instruction(OpCode.KOS_OP_VAR_STORE, name)
+    frag.instruction(OpCode.KOS_OP_CONST, None)
+
+    return frag
+
+
+_DEFINE_GLOBAL_PATTERNS = [
+    MATCH(DEFINE("name"), FORMALS("formals", scope="body"), REST("body")),
+    MATCH(DEFINE("name"), VALUE("value")),
+    MATCH(DEFINE("name")),
+]
+
+
+@special_forms(_DEFINE_GLOBAL_PATTERNS)
+@special(symbol("compile/define-global"))
+def special_define_global(compiler, source, tc=False):
+    """
+    Compile (define-global X), (define-global X EXPR), or
+    (define-global X [Y Z] BODY...). Explicit module binding for read and write.
+    """
+
+    called_by, rest = source
+    matched = match(rest, _DEFINE_GLOBAL_PATTERNS)
+    if matched is None:
+        raise SpecialError("define-global requires a name", source)
+
+    namesym = matched["name"].source
+    name = str(namesym)
+
+    frag = compiler.fragment(called_by)
+    pos = matched["name"].source_pos if hasattr(matched["name"], "source_pos") else get_position(rest)
+    try:
+        frag.request_global(name, position=pos)
+    except CompilerError:
+        raise SpecialError(
+            '%r cannot be both local (define) and global (define-global).'
+            % (name,),
+            source) from None
 
     if "body" in matched:
         formals = matched["formals"]
@@ -168,7 +227,8 @@ def special_define_syntax(compiler, source, tc=False):
     build_call = cons(symbol("build-syntax-rules"), str(namesym), tagged, nil)
 
     frag = compiler.fragment(called_by)
-    frag.declare_var(str(namesym))
+    pos = matched["name"].source_pos
+    frag.declare_var(str(namesym), position=pos)
 
     frag.merge(compiler.full_compile(build_call))
     frag.instruction(OpCode.KOS_OP_VAR_STORE, str(namesym))

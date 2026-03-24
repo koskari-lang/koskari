@@ -39,7 +39,7 @@ static PyObject *create_test_nspec(void) {
     PyObject *locals = PyTuple_New(0);
     PyObject *closures = PyTuple_New(0);
 
-    PyObject *nspec = KosNamespaceSpec_New(name, locals, closures);
+    PyObject *nspec = KosNamespaceSpec_New(name, locals, closures, NULL);
 
     Py_DECREF(name);
     Py_DECREF(locals);

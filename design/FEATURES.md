@@ -76,55 +76,21 @@ This document provides a high-level summary of all features identified from both
 
 ### Bytecode
 - **Format**: Custom compact bytecode (4 bytes per instruction)
-- **Opcodes**: Comprehensive opcode set for all operations; see "Opcodes: implementation status" below for which are implemented in the VM.
-- **Structure**: Code (with NamespaceSpec), position table, constant pool, extent table
+- **Opcodes**: Comprehensive opcode set for all operations. **Implementation
+  status** (which opcodes are implemented, stubs, or no-runtime) is documented
+  in [OPCODES.md](OPCODES.md) §1.6; that document is the authoritative
+  reference.
+- **Structure**: Code (with NamespaceSpec), position table, constant pool,
+  extent table
 - **Position**: Delta-encoded line/column tracking
-- **Extent table**: Derived from PUSH/POP pairs; O(1) block membership and handler lookup; JUMP locality validation at construction
+- **Extent table**: Derived from PUSH/POP pairs; O(1) block membership and
+  handler lookup; JUMP locality validation at construction
 - **Security**: Read-only memory protection after initialization
-
-### Opcodes: implementation status
-The VM in `eval.c` uses a jump table; every opcode has a handler. Handlers are either **fully implemented** or **stubs** (delegate to `op_unimplemented_stub`, which raises at runtime). Status is as of the current koskari implementation.
-
-**Fully implemented** (handler does real work; no stub):
-- **Pseudo / stack**: NOOP, LABEL, POSITION (no-op at runtime: advance PC only; no effect), DUP, POP, CONST
-- **Pair construction and access**: CAR, CDR, CONS (CAR/CDR pop one value and push car/cdr; CONS arg = count, stack bottom-to-top = first element … tail; TailPtr + ConsFromPtr + Drop + push result), PROPER (like CONS but pushes nil as implicit tail; PROPER n builds proper list from N elements without requiring a preceding CONST nil), PAIR_SPLICE (arg = N segments; each segment may be nil, a pair, a tuple, or an iterable; all elements are flattened in order into a single proper list; tuples accepted for the CONST-tuple constant-folding optimization)
-- **Argument production**: BUILD_ARGS, BUILD_KWDS, BUILD_KWDS_NAMES, COMBINE_ARGS, COMBINE_KWDS (build args/kwds for CALL_NAMES/CALL_STAR), BUILD_FUNCTION (build Function from FunctionSpec; stack [fspec, ...kw_defaults, names_tuple] → [function])
-- **Control**: RETURN, AWAIT, YIELD (suspend with value; resumption via send; async gen support), YIELD_FROM (delegate to sub-iterator/gen; KOS_DYN_YIELD_FROM; send/throw/close; handler in koskari/lib/opcode/yield_from.c)
-- **Calls**: CALL (arg = N; stack [callable, arg_0, ..., arg_{N-1}]; Continuation/DelimitedContinuation → call_call_continuation; KosExpression/KosFunction → new frame in same loop; other callables → PyObject_Call then push_or_await; **defer** return values are not auto-awaited — pushed as plain values), CALL_NAMES (arg = N; stack [callable, pos_0..pos_{N-1}, kwdv_0..kwdv_{M-1}, names] with names tuple at TOS; kos_callable_call), CALL_STAR (arg = bitflags 1=*args 2=**kwargs; stack [callable, pos, kwd]; kos_callable_call), CALL_ATTR (arg = N; stack [name, obj, arg_0, ..., arg_{N-1}]; resolve obj.name via kos_resolve_named_attr; unbound class method → fn(obj, *args), bound/instance-dict → callable(*args)), TAIL_CALL (arg = N; same stack layout as CALL; replaces current frame with callee frame for proper tail-call semantics; compiler emits when call is in tail position), TAIL_CALL_NAMES (arg = N; same stack as CALL_NAMES; kos_callable_tail_call), TAIL_CALL_STAR (arg = bitflags; same stack as CALL_STAR; kos_callable_tail_call)
-- **Introspection**: GLOBALS, LOCALS
-- **Module import**: IMPORT (absolute dotted import; arg = cpool str; pushes leaf module via `_import_fromlist` sentinel), IMPORT_REL (relative import; arg = cpool `(level:int, name:str|None)` tuple; uses outermost frame globals as anchor), IMPORT_FROM (**PEEK-NOT-POP**: arg = cpool str; reads named attr from TOS module without consuming TOS; every use site must be followed by `POP 1` — structurally guaranteed by `helper_import_from_sequence()`)
-- **Variables by name**: VAR (load), VAR_BIND (bind), VAR_CLEAR (delete), VAR_REF (closure ref), VAR_STORE (store TOS to name)
-- **Variables by index (fast locals)**: FAST, FAST_BIND, FAST_CLEAR, FAST_REF, FAST_STORE
-- **Jumps**: JUMP, JUMP_FALSE, JUMP_TRUE, JUMP_AND, JUMP_OR
-- **Check jumps**: CHECK_EQ, CHECK_NE, CHECK_LT, CHECK_LE, CHECK_GT, CHECK_GE, CHECK_IN, CHECK_NOT_IN, CHECK_IS, CHECK_IS_NOT, CHECK_IS_INSTANCE, CHECK_IS_SUBCLASS
-- **Attributes / items**: ATTR, ATTR_CLEAR, ATTR_REF, ATTR_STORE; ITEM, ITEM_CLEAR, ITEM_REF, ITEM_STORE; CONST_ITEM, CONST_ITEM_CLEAR, CONST_ITEM_REF, CONST_ITEM_STORE
-- **Namespace scope**: PUSH_NS, POP_NS (creates child namespace from NamespaceSpec; supports value binding; uses KosDynNs on dynamic chain)
-- **Class scope**: PUSH_COLLECT, POP_COLLECT, BUILD_CLASS (COUNT-style NSPEC; KOS_DYN_COLLECT; installs CollectorNamespace for class body; POP_COLLECT pushes ns; BUILD_CLASS consumes pos+ns, calls metaclass; default metaclass KosType)
-- **Exceptions**: EXCEPTION, EXCEPTION_CLEAR, EXCEPTION_MATCH, RAISE, CHECK_EXCEPTION
-- **Try/finally**: PUSH_TRY, PUSH_FINALLY, POP_TRY, POP_FINALLY, CLEAR_TRY, CLEAR_FINALLY (each PUSH_TRY and PUSH_FINALLY pushes its own KosStackBlock; exception dispatch clears the block before jumping to the handler; POP_TRY and POP_FINALLY drop the block, with PopBlock(count) to preserve handler/finally results; region unwind drops the block when BREAK/CONTINUE passes through)
-- **Delimited continuations**: PUSH_PROMPT (pushes COW stack block + KOS_DYN_PROMPT), PUSH_SHIFT (captures continuation, unwinds to prompt, enters shift block; SHIFT is a simple marker), POP_SHIFT (pops result; TRUNCATE_AND_INJECT unwinds through SHIFT+PROMPT and injects value onto outer stack), POP_PROMPT (normal: drops stack block, pops prompt, pushes result; continuation-return: unwinds to invocation site via DELIMITED_RETURN_FRAME)
-- **Undelimited continuations**: PUSH_CC, CAPTURE_CC, POP_CC (capture); invocation via CALL 0 or CALL 1 with stack [callable, arg_0, ...]. Continuation carries token_ref (KosEvaluatorToken); same-token invoke applies directly, different-token raises KoskariContinuationApply (propagated to caller).
-- **Continuation invocation**: INVOKE_K (delimited: stack-based), INVOKE_K_VAR (delimited: name-based); undelimited via CALL as above
-- **Context managers**: PUSH_WITH, POP_WITH (sync and async single-shot `with`; KOS_DYN_WITH; `__aexit__` truthy return swallows exception). PUSH_DYN_WITH, POP_DYN_WITH (multi-shot `dyn-with`; async enter/exit; cloneable; KOS_DYN_DYN_WITH). Both use KOS_DYN_CAP_CATCH for exception swallow. See design/interpreter/with-dyn-with.md.
-- **Object protocol**: All OBJECT_* opcodes (comparisons, arithmetic, predicates, len/type/iter/str/repr/vars/dir, bitwise, in/not in, is/is not, isinstance/issubclass, etc.)
-- **Iteration**: ITER_NEXT (region-only, must be inside PUSH_FOREACH; uses region->iter; arg = else label; auto-await), NEXT (stack-based; arg = 1 or 2; 1-arg: StopIteration raises; 2-arg: StopIteration pushes default; auto-await for sync iter, Python async iter, Koskari async gen)
-- **Loop control**: PUSH_LOOP, PUSH_FOREACH, POP_LOOP, CLEAR_LOOP, BREAK, CONTINUE (use KOS_DYN_LOOP/KOS_DYN_FOREACH on dynamic chain; each pushes a stack block; PUSH_TRY and PUSH_FINALLY also push their own stack blocks; BREAK/CONTINUE unwind via kos_find_node_for_loop; unwind drops TRY/FINALLY blocks when control passes through; ITER_NEXT at loop head for foreach)
-
-- **Dynamic wind**: Fully implemented. PUSH_WIND (arg=1 or 2) and POP_WIND run before/after thunks via kos_callable_call (normal call path); thunk return handling in RETURN opcode resumes unwind or transfer plan. Unified extent wind/unwind helpers (`kos_dyn_wind_wind`, `kos_dyn_wind_unwind`, etc.) are used by both simple pop and transfer plans; see design/interpreter/extent-wind-unwind.md.
-- **YIELD_FROM**: Fully implemented for all supported delegate kinds (sync iterator, sync generator, Python async iterator/async generator, Koskari async generator); see `koskari/lib/opcode/YIELD_FROM.c`. The handler file contains a final safety fallthrough to `op_unimplemented_stub` for unrecognised delegate kinds, but all real delegate kinds are handled.
-
-**No runtime implementation** (hardcoded error; not a stub to be implemented later):
-- **THEEND**: End-of-code sentinel; if execution reaches it, raises RuntimeError with a fixed message ("THEEND has no runtime implementation"). Never has a runtime implementation.
-
-**Not implemented (stubs)** — hitting these at runtime raises "unimplemented opcode":
-- **Calls**: CALL_ATTR_NAMES, CALL_ATTR_STAR
-
-There are no **partially** implemented opcodes; each handler is either full, a stub, or a dedicated "no runtime implementation" handler (THEEND). The authoritative list is the set of handlers in `koskari/lib/eval.c` that do not call `op_unimplemented_stub`.
 
 ### Reader (Koskari Layout Syntax)
 - **Default syntax**: Indentation-based block syntax with colon-terminated headers; lowers into canonical s-expressions. See `design/language/layout-syntax.md` and `design/language/layout-syntax-formal.md`.
 - **Block parsing**: Header terminator is the final `:` at delimiter depth 0; `x:` and `x :` parse identically. Keywords like `as:`, `x:` remain intact inside headers.
-- **Probe pass + break marker**: Reader uses a two-step process to locate header end without lexer ambiguity (RecordingStream, MARK event).
+- **Block header parsing**: Single forward pass; `:` is a terminating event at depth 0. No probe or replay; the first bare `:` at delimiter depth 0 ends the header.
 - **Layout heads**: Block heads resolve via `layout/<head>` lookup; handlers receive `(header . body)` and optional peer blocks. Implemented: layout/if (peers: elif, else), layout/try (peers: except, else, finally), layout/dyn-wind (peers: before, body, after), layout/define-syntax, layout/syntax-rules. Fallback: `layout/block` for unknown heads.
 - **Mixed mode**: Pure s-expr syntax embeddable anywhere; layout and s-expr alternate by context.
 
@@ -225,7 +191,7 @@ There are no **partially** implemented opcodes; each handler is either full, a s
 - Macro system: defmacro, defalias (reader macros and compile/define-syntax are implemented)
 - Remaining control flow constructs (class blocks)
 - Compiler: remaining specials (await, define-values, setq-values), macro expansion, optimization passes
-- Remaining opcode handlers: CALL_ATTR_NAMES, CALL_ATTR_STAR. See "Opcodes: implementation status" above.
+- Remaining opcode handlers: see [OPCODES.md](OPCODES.md) §1.6 for stub opcodes.
 
 ### Needs Reconsideration
 - CPython bytecode target (abandoned)

@@ -28,7 +28,7 @@ assignment, subscript store, attribute store, and mutable reference store.
 **Behaviour:** Expands via syntax-rules. Plain assignment expands to
 `(compile/setq SYM EXPR)`. Augmented forms like `(set! x (+ x 1))` expand to
 `(compile/inplace OP SYM EXPR)`. Item, attribute, and deref forms expand to
-`(set-item ...)`, `(set-attr ...)`, and `(set-ref ...)` respectively. The first
+`(compile/set-item ...)`, `(compile/set-attr ...)`, and `(compile/set-ref ...)` respectively. The first
 match in the syntax-rules wins.
 
 **Examples:**
@@ -109,7 +109,7 @@ expand to `(compile/ref-item OBJ KEY)`.
 
 **Symbol:** `compile/when`
 
-**Syntax:** `(compile/when COND BODY...)`
+**Syntax:** `(compile/when COND THEN)`
 
 **Use-case:** Conditional with no else; yields `None` when condition is false.
 Expands to `compile/cond`.
@@ -137,7 +137,7 @@ Expands to `compile/cond`.
 Expands to `compile/cond` (negated test).
 
 **Behaviour:** Macro in basics.ki. Expands to
-`(compile/cond [COND None] [else: BODY...])`.
+`(compile/cond [COND None] [else: THEN])` (single then form).
 
 **Examples:**
 
@@ -149,4 +149,33 @@ Expands to `compile/cond` (negated test).
 **Defined in:** `koskari/importer/basics.ki`
 
 **Tests:** `tests/importer/test_basics.py` — `TestConditionalMacros`
+
+
+## compile/bind!
+
+**Symbol:** `compile/bind!`
+
+**Syntax:** `(bind! NAME VALUE)` or `(bind! NAME (item OBJ KEY))` or
+`(bind! NAME (attr OBJ NAME))` or `(bind! NAME (dynamic r ...))` or
+`(bind! NAME (constant value))` or `(bind! NAME (memoized getfn))` or
+`(bind! NAME (parameter name ...))`
+
+**Use-case:** User-facing binding syntax. Expands to `compile/bindq` with the
+appropriate Ref type for item/attr/dynamic/constant/memoized/parameter forms.
+
+**Defined in:** `koskari/importer/basics.ki`
+
+
+## compile/define-parameter
+
+**Symbol:** `compile/define-parameter`
+
+**Syntax:** `(use-parameter NAME)`
+
+**Use-case:** Define a name and bind it to a ParamRef for parameterize scope.
+
+**Behaviour:** Expands to `(compile/define NAME)` and
+`(compile/bindq NAME (ParamRef 'NAME))`.
+
+**Defined in:** `koskari/importer/basics.ki`
 

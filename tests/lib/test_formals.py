@@ -107,8 +107,8 @@ class TestFormalsSpec(unittest.IsolatedAsyncioTestCase):
         nspec = fspec.namespace_spec(None)
         self.assertIsInstance(nspec, NamespaceSpec)
         self.assertIsNone(nspec.name)
-        self.assertIsNone(nspec.local_syms)
-        self.assertIsNone(nspec.closure_syms)
+        self.assertEqual(nspec.local_syms, ())
+        self.assertEqual(nspec.closure_syms, ())
 
     async def test_namespace_spec_with_formals(self):
         """FormalsSpec.namespace_spec() includes formals as locals"""

@@ -938,6 +938,49 @@ value expression, then emits VAR_BIND to store it.
 **Tests:** `tests/compile/specials/test_define.py`
 
 
+## compile/define-global
+
+**Symbol:** `compile/define-global`
+
+**Syntax:**
+- Declaration only: `(compile/define-global X)`
+- Declare and store: `(compile/define-global X EXPR)`
+- Function shorthand: `(compile/define-global X [Y Z] BODY ...)`
+
+**Use-case:** Explicit module binding for read and write. When using strict
+resolution (KoskariPragma), writes to undeclared names raise at compile time;
+`compile/define-global` opts a name into the module scope so that setq/delq
+target the module binding rather than requiring a local declaration.
+Mirrors `compile/define` structure but pulls the ref from the module instead
+of the local or closure chain.
+
+**Behaviour:** Calls `request_global(name)` to record an explicit need from the
+module. For declaration-only: emits CONST None. For declare-and-store or
+function shorthand: compiles the value expression and emits VAR_STORE. Conflicts
+with local declaration; raises if the name is already in `declares` (e.g. from
+`compile/define`).
+
+**Examples:**
+
+```scheme
+;; Explicit global; setq writes to module
+(compile/define-global x 1)
+(compile/setq x 42)
+
+;; Shared counter across nested closures
+((lambda ()
+   (compile/define-global counter 0)
+   (define inc (lambda []
+     (compile/setq counter (compile/call + counter 1))
+     counter))
+   (compile/call inc)))
+```
+
+**Tests:** `tests/compile/specials/test_resolution_model.py`
+
+**Implementation:** `koskari/compile/specials/variables.special_define_global`
+
+
 ## compile/define-syntax
 
 **Symbol:** `compile/define-syntax`

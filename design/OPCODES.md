@@ -5,12 +5,16 @@ and their order are defined in `koskari/lib/opcodes.incl`; any new opcode must b
 added there first, then documented here. This document defines semantics and
 invariants; the evaluator and compiler are expected to follow it.
 
+**Implementation status:** This document is the **authoritative reference** for
+which opcodes exist and whether each is implemented, a stub, or has no runtime.
+See §1.6. Other design docs should refer here instead of duplicating status.
+
 **See also:** [interpreter/bytecode.md](interpreter/bytecode.md) (format, layout,
 metadata tables), [interpreter/execution-invariants.md](interpreter/execution-invariants.md)
 (execution model), [interpreter/bytecode-metadata-tables.md](interpreter/bytecode-metadata-tables.md)
 (extents, jump locality), [interpreter/evaluator.md](interpreter/evaluator.md)
 (evaluation loop), [interpreter/with-dyn-with.md](interpreter/with-dyn-with.md)
-(context managers), [FEATURES.md](FEATURES.md) (implementation status).
+(context managers).
 
 
 ## 1. Overview and conventions
@@ -100,12 +104,20 @@ builds).
 
 ### 1.6 Implementation status
 
-Implementation status is summarized in [interpreter/bytecode.md](interpreter/bytecode.md)
-§ "Opcode implementation status" and in [FEATURES.md](FEATURES.md). In this
-document, each opcode section notes: **Implemented**, **Stub** (unimplemented;
-runtime error if executed), or **No runtime** (e.g. THEEND, compile-time only).
-Status is maintained manually; when adding or changing opcodes, update both the
-implementation and this document.
+**This document is the single authoritative reference for opcode implementation
+status.** Each opcode section below notes: **Implemented**, **Stub**
+(unimplemented; delegates to `op_unimplemented_stub`; runtime error if
+executed), or **No runtime** (e.g. THEEND; hardcoded error; compile-time only).
+
+**Stub opcodes** (as of this writing): CALL_FAST_ATTR, CALL_FAST_ATTR_STAR,
+CALL_VAR_ATTR, CALL_VAR_ATTR_STAR.
+
+**No runtime:** THEEND (end-of-code sentinel; always raises if executed).
+
+**Compile-time only (no-op at runtime):** LABEL, POSITION.
+
+All other opcodes are implemented. When adding or changing opcodes, update both
+the implementation and this document.
 
 ### 1.7 Compilation: pre-compile vs post-compile
 

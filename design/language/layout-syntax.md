@@ -95,15 +95,13 @@ with [(foo) as: x]:
 
 Here `as:` is a keyword; the trailing `:` opens the block.
 
-### Implementation: Probe Pass + Break Marker
+### Implementation: Single-Pass Header Parsing
 
-The reader uses a two-step process to locate the header end without lexer ambiguity:
-
-1. **Probe pass** — Wrap the stream in a `RecordingStream`, add `:` as a terminator, and parse forward (discarding forms). Track the last bare `:` seen at depth 0. Record all characters consumed.
-2. **Break marker** — Set an internal marker at that position. When `_read` reaches the marker, emit `MARK` and stop.
-3. **Read pass** — Create a fresh stream from the recording, read forms until `MARK`. The colon is never tokenized as part of the header; it is the structural boundary.
-
-This ensures `x:` and `x :` behave the same and that keywords elsewhere in the header are preserved.
+The reader uses a single forward pass. With `:` installed as a terminating event
+macro at delimiter depth 0, the first colon encountered at the top level fires
+the COLON event and ends the header. No probe or replay is needed. This ensures
+`x:` and `x :` behave the same and that keywords elsewhere in the header are
+preserved.
 
 ## 2.3 Block Parsing Flow and Source Structure
 

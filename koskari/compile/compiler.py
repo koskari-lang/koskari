@@ -48,6 +48,7 @@ from ..types import (
 )
 
 from ..exceptions import CompilerError, UncaughtCompilerError
+from .pragma import KoskariPragma
 
 
 class Compiled(Protocol):
@@ -174,36 +175,34 @@ class ByteCodeFragment:
     closure requests and name declarations for the namespace
     """
 
-    def __init__(self, compiler=None, name=None, filename=None, mode=None):
+    def __init__(self, compiler=None, name=None, filename=None, mode=None,
+                 pragma=None):
         """
         :param compiler: the compiler/builder used to complete this fragment
         :param name: optional fragment name (e.g. for a block or loop)
         :param filename: optional source filename
         :param mode: optional compilation mode
+        :param pragma: resolution pragma; default KoskariPragma when omitted
         """
 
         self.name = name
         self.filename = filename
         self.mode = mode
         self.compiler = compiler
+        self.pragma = pragma if pragma is not None else KoskariPragma()
         self.instructions = []
         self.requests = []
+        self.requests_for_write = []
+        self._request_global = []
         self.declares = []
 
 
     def as_namespace_spec(self):
         """
         Build a NamespaceSpec from this fragment's name and declarations.
-        Local names are declares; closure names are requests.
-
-        :return: NamespaceSpec(name, declares, requests)
         """
 
-        return NamespaceSpec(
-            self.name,
-            tuple(self.declares),
-            tuple(self.requests),
-        )
+        return self.pragma.build_namespace_spec(self)
 
 
     def request_var(self, var_name):
@@ -213,19 +212,40 @@ class ByteCodeFragment:
         :param var_name: name to request from enclosing scope
         """
 
-        var_name = str(var_name)
-        if var_name not in self.declares:
-            unique_append(self.requests, var_name)
+        self.pragma.on_request_var(self, str(var_name))
 
 
-    def declare_var(self, var_name):
+    def request_for_write(self, var_name, position=None):
         """
-        Record a name declared in this fragment's namespace
+        Record that var_name must be writable (setq, delq, inplace).
+
+        :param var_name: name that must be writable
+        :param position: optional (line, col) for error reporting
+        """
+
+        self.pragma.on_write(self, str(var_name), position=position)
+
+
+    def request_global(self, var_name, position=None):
+        """
+        Record explicit need from module (define-global).
+
+        :param var_name: name to pull from module
+        :param position: optional (line, col) for error reporting
+        """
+
+        self.pragma.on_explicit_global(self, str(var_name), position=position)
+
+
+    def declare_var(self, var_name, position=None):
+        """
+        Record a name declared in this fragment's namespace.
 
         :param var_name: name to declare
+        :param position: optional (line, col) for error reporting
         """
 
-        unique_append(self.declares, str(var_name))
+        self.pragma.on_declare(self, str(var_name), position=position)
 
 
     def declare_vars(self, var_names):
@@ -236,7 +256,7 @@ class ByteCodeFragment:
         """
 
         for var_name in var_names:
-            unique_append(self.declares, str(var_name))
+            self.declare_var(var_name)
 
 
     def position_of(self, source):
@@ -277,16 +297,24 @@ class ByteCodeFragment:
 
     def merge(self, other):
         """
-        Merge another fragment into this one: adopt its declarations and
-        requests, then append its instructions
+        Merge another fragment into this one: adopt its declarations,
+        requests, requests_for_write, and request_global, then append
+        its instructions.
 
-        :param other: ByteCodeFragment to merge in
+        Used when combining forms in the same scope (e.g. begin body);
+        request_global must propagate so that (define-global x) followed
+        by (setq x 1) in the same block works.
         """
 
         for name in other.declares:
             self.declare_var(name)
         for name in other.requests:
             self.request_var(name)
+        for name in other.requests_for_write:
+            self.request_for_write(name)
+        for name in other._request_global:
+            if name not in self.declares:
+                self.request_global(name)
         self.instructions.extend(other.instructions)
 
 
@@ -304,33 +332,34 @@ class ByteCodeFragment:
         """
 
         compiler = self.compiler
-        ns_name = str(ns_name)
-        child = compiler.fragment(ns_name)
+        with compiler.pragma_scope():
+            ns_name = str(ns_name)
+            child = compiler.fragment(ns_name)
 
-        names = tuple(map(str, names))
-        if len(names) != len(values):
-            raise CompilerError(
-                "mismatch between names and values",
-                (names, values))
+            names = tuple(map(str, names))
+            if len(names) != len(values):
+                raise CompilerError(
+                    "mismatch between names and values",
+                    (names, values))
 
-        if names:
-            for name in names:
-                child.declare_var(name)
-            valfrag = compiler.fragment(ns_name)
-            for val in values:
-                valfrag.merge(compiler.full_compile(val, False))
+            if names:
+                for name in names:
+                    child.declare_var(name)
+                valfrag = compiler.fragment(ns_name)
+                for val in values:
+                    valfrag.merge(compiler.full_compile(val, False))
 
-        yield child
-        nspec = child.as_namespace_spec()
-        self.instruction(OpCode.KOS_OP_CONST, nspec)
+            yield child
+            nspec = child.as_namespace_spec()
+            self.instruction(OpCode.KOS_OP_CONST, nspec)
 
-        if names:
-            self.merge(valfrag)
-            self.instruction(OpCode.KOS_OP_CONST, names)
+            if names:
+                self.merge(valfrag)
+                self.instruction(OpCode.KOS_OP_CONST, names)
 
-        self.instruction(OpCode.KOS_OP_PUSH_NS, len(names))
-        self.instructions.extend(child.instructions)
-        self.instruction(OpCode.KOS_OP_POP_NS, 0)
+            self.instruction(OpCode.KOS_OP_PUSH_NS, len(names))
+            self.instructions.extend(child.instructions)
+            self.instruction(OpCode.KOS_OP_POP_NS, 0)
 
 
     @contextmanager
@@ -346,15 +375,16 @@ class ByteCodeFragment:
         """
 
         compiler = self.compiler
-        ns_name = str(ns_name)
-        child = compiler.fragment(ns_name)
+        with compiler.pragma_scope():
+            ns_name = str(ns_name)
+            child = compiler.fragment(ns_name)
 
-        yield child
-        nspec = child.as_namespace_spec()
+            yield child
+            nspec = child.as_namespace_spec()
 
-        self.instruction(OpCode.KOS_OP_PUSH_COLLECT, nspec)
-        self.instructions.extend(child.instructions)
-        self.instruction(OpCode.KOS_OP_POP_COLLECT, 0)
+            self.instruction(OpCode.KOS_OP_PUSH_COLLECT, nspec)
+            self.instructions.extend(child.instructions)
+            self.instruction(OpCode.KOS_OP_POP_COLLECT, 0)
 
 
     @contextmanager
@@ -379,7 +409,7 @@ class ByteCodeFragment:
     def as_bytecode(self):
         if self.compiler is None:
             raise TypeError("ByteCodeFragment has no compiler")
-        return self.compiler.complete(self)
+        return self.compiler.complete(self, is_root=True)
 
 
     def as_function_spec(self, formals_spec=((), ())):
@@ -399,7 +429,8 @@ class ByteCodeFragment:
     def as_expression(self, parent):
         if self.compiler is None:
             raise TypeError("ByteCodeFragment has no compiler")
-        code = self.compiler.complete(self, mode=CompilerMode.EXPRESSION)
+        code = self.compiler.complete(
+            self, mode=CompilerMode.EXPRESSION, is_root=True)
         return code.expression(parent)
 
 
@@ -428,8 +459,11 @@ _CHECK_SQUASHES = {
 
 class Compiler:
 
-    def __init__(self, name, module, filename=None, tco_enabled=True):
+    def __init__(self, name, module, filename=None, tco_enabled=True,
+                 resolution_pragma_class=None, resolution_pragma=None):
         self.name = name
+        self.resolution_pragma_class = resolution_pragma_class or KoskariPragma
+        self._current_pragma = resolution_pragma
 
         if module is None:
             module = Module(ModuleNamespace(name, {}))
@@ -466,6 +500,18 @@ class Compiler:
 
     def error(self, msg, source):
         raise CompilerError(msg, source)
+
+
+    @contextmanager
+    def pragma_scope(self):
+        pragma = self._current_pragma
+        if pragma is not None:
+            pragma.enter_scope()
+        try:
+            yield
+        finally:
+            if pragma is not None:
+                pragma.exit_scope()
 
 
     def _find_compiled(self, name):
@@ -540,22 +586,40 @@ class Compiler:
 
 
     def fragment(self, name=None, mode=None):
-        return ByteCodeFragment(self, str(name), self.filename, mode=mode)
+        pragma = self._current_pragma
+        if pragma is None:
+            pragma = self.resolution_pragma_class()
+        return ByteCodeFragment(
+            self, str(name), self.filename, mode=mode, pragma=pragma)
 
 
     def compile(self, source_obj, tc=False):
         if isinstance(source_obj, ByteCodeFragment):
             return source_obj
 
-        fragment = self.fragment(self.name)
-        return self.compile_expr(fragment, source_obj, tc)
+        allocated = self._current_pragma is None
+        if allocated:
+            self._current_pragma = self.resolution_pragma_class()
+        try:
+            fragment = self.fragment(self.name)
+            return self.compile_expr(fragment, source_obj, tc) or fragment
+        finally:
+            if allocated:
+                self._current_pragma = None
 
 
     def full_compile(self, source_obj, tc=False):
-        res = source_obj
-        while not isinstance(res, ByteCodeFragment):
-            res = self.compile(res, tc)
-        return res
+        allocated = self._current_pragma is None
+        if allocated:
+            self._current_pragma = self.resolution_pragma_class()
+        try:
+            res = source_obj
+            while not isinstance(res, ByteCodeFragment):
+                res = self.compile(res, tc)
+            return res
+        finally:
+            if allocated:
+                self._current_pragma = None
 
 
     def compile_expr(self, fragment, source_obj, tc):
@@ -761,6 +825,11 @@ class Compiler:
             else:
                 squished.append((OpCode.KOS_OP_RETURN, 1))
 
+        if len(squished) > 1:
+            # if we actually had ops, we'll have a leading NOOP that we can
+            # remove
+            squished = squished[1:]
+
         return squished
 
 
@@ -775,20 +844,18 @@ class Compiler:
         def push_nspec(n):
             nstack.append(n)
             findex.clear()
-            locals_syms = getattr(n, 'local_syms', None) or ()
-            closure_syms = getattr(n, 'closure_syms', None) or ()
-            findex.extend(locals_syms)
-            findex.extend(closure_syms)
+            findex.extend(n.local_syms)
+            findex.extend(n.closure_syms)
+            findex.extend(n.global_syms)
 
         def pop_nspec():
             nstack.pop()
             findex.clear()
             if nstack:
                 n = nstack[-1]
-                locals_syms = getattr(n, 'local_syms', None) or ()
-                closure_syms = getattr(n, 'closure_syms', None) or ()
-                findex.extend(locals_syms)
-                findex.extend(closure_syms)
+                findex.extend(n.local_syms)
+                findex.extend(n.closure_syms)
+                findex.extend(n.global_syms)
 
         if mode == CompilerMode.FUNCTION:
             push_nspec(base_nspec)
@@ -825,18 +892,57 @@ class Compiler:
         return result
 
 
-    def complete(self, fragment, mode=None):
-        instr = self.compress(fragment.instructions)
-        base_nspec = fragment.as_namespace_spec()
+    def _cpool_scan_merge(self, fragment, instr):
+        """
+        Scan instructions for CONST (FunctionSpec) and merge inner Code's
+        closure_syms and request_for_write_syms into the fragment.
+        """
 
+        pragma = fragment.pragma
+        for op, arg in instr:
+            if op == OpCode.KOS_OP_CONST and isinstance(arg, FunctionSpec):
+                code = arg.code
+                if code is None:
+                    continue
+                nspec = code.namespace_spec
+                if nspec is None:
+                    continue
+                request_for_write_syms = pragma.get_request_for_write_syms(code)
+                pragma.cpool_merge(fragment, nspec, request_for_write_syms)
+
+
+    def complete(self, fragment, mode=None, _validate=True, is_root=False):
+        if mode is None:
+            mode = self.mode
+        # Flatten position/label instructions and merge closure/write syms
+        # from inner FunctionSpecs into the fragment
+        instr = self.compress(fragment.instructions)
+        self._cpool_scan_merge(fragment, instr)
+
+        # Build NamespaceSpec from fragment buckets (local, closure, global)
+        pragma = fragment.pragma
+        base_nspec = pragma.build_namespace_spec(fragment)
+
+        # Lower VAR/request ops to FAST where possible
         instr = self.convert_fast(base_nspec, instr, mode=mode)
 
-        filename = (fragment.filename
-                    or getattr(self.module, '__path__', None)
-                    or self.filename
-                    or None)
+        # Resolve filename for Code metadata
+        try:
+            path = self.module.__path__
+        except AttributeError:
+            path = None
+        filename = (fragment.filename or path or self.filename or None)
 
-        return Code(base_nspec, instr, fragment.name, filename)
+        # Build Code and register with pragma for position lookup on errors
+        code = Code(base_nspec, instr, fragment.name, filename)
+        pragma.register_code_fragment(code, fragment)
+        # Recursively validate that all writes are satisfied.
+        # Only validate from root complete(); inner complete() calls skip so
+        # nested functions get validated with proper ancestor context.
+        if _validate and is_root:
+            pragma.validate_tree(
+                code, (), CompilerMode.FUNCTION, is_root=True)
+        return code
 
 
 # The end.

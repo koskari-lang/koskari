@@ -33,13 +33,15 @@ typedef struct KosNamespaceSpec {
   PyObject *ns_name;
   PyObject *local_syms;
   PyObject *closure_syms;
+  PyObject *global_syms;
 } KosNamespaceSpec;
 
 
 PyObject *KosNamespaceSpec_New(
     PyObject *name,
     PyObject *local_syms,
-    PyObject *closure_syms);
+    PyObject *closure_syms,
+    PyObject *global_syms);
 
 
 #define KosNamespaceSpec_NAME(nspec)            \
@@ -50,6 +52,9 @@ PyObject *KosNamespaceSpec_New(
 
 #define KosNamespaceSpec_CLOSURE_SYMS(nspec)    \
   (((KosNamespaceSpec *) nspec)->closure_syms)
+
+#define KosNamespaceSpec_GLOBAL_SYMS(nspec)     \
+  (((KosNamespaceSpec *) nspec)->global_syms)
 
 #define KosNamespaceSpec_CheckExact(obj)                \
   ((obj) && ((obj)->ob_type == &KosNamespaceSpecType))
@@ -98,7 +103,8 @@ PyObject *KosNamespace_NewFull(
     PyObject *name,
     PyObject *parent,
     PyObject *local_syms,
-    PyObject *closure_syms);
+    PyObject *closure_syms,
+    PyObject *global_syms);
 
 
 /**
@@ -296,7 +302,8 @@ PyObject *KosCollectorNamespace_NewFull(
     PyObject *name,
     PyObject *parent,
     PyObject *local_syms,
-    PyObject *closure_syms);
+    PyObject *closure_syms,
+    PyObject *global_syms);
 
 
 #define KosCollectorNamespace_Check(obj)                                \
@@ -347,11 +354,11 @@ typedef struct KosModule {
 
 
 /**
-   A Module is an object whose attributes are backed by lookups in a
-   KosNamespace instance (including KosModuleNamespace)
+  A Module is an object whose attributes are backed by lookups in a
+  KosNamespace instance (including KosModuleNamespace)
 
-   A Module has one additional attribute, __dict__, which is the
-   underlying KosNamespace
+  A Module has one additional attribute, __dict__, which is the
+  underlying KosNamespace
  */
 PyObject *KosModule_New(PyObject *namespace);
 

@@ -15,3 +15,4 @@ This directory documents the language-level features of Koskari, including synta
 - **functions.md**: Function definition and calling conventions
 - **async.md**: Async/await and coroutine features
 - **generators.md**: Generator and yield features
+- **RESOLUTION-MODEL.md**: Variable resolution model (proposed) — read vs write semantics, define-global, typo safety
