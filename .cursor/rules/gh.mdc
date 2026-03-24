@@ -2,9 +2,20 @@
 description: when using gh to create a pull-request
 alwaysApply: false
 ---
+
 # GitHub CLI Rules
 
+The AI agent is forbidden, in all cases, even when asked explicitly by the user, from ever pushing in git. This is illegal.
+As per @git.mdc
+
+
 ## PR Creation
+
+If the current branch has not been pushed in git the AI agent *MUST*
+
+EXPLICITLY RESPOND TO USER stating that the pull request cannot be completed.
+COME TO A FULL STOP. Do not attempt to push, under any circumstances. The user and only the user may push.
+
 
 ### PR Body Formatting
 When creating pull requests with `gh pr create`, use command substitution with a quoted heredoc to prevent bash interpolation issues:
