@@ -19,7 +19,7 @@ Tests for the resolution pragma system: KoskariPragma, PythonPragma, SchemePragm
 from . import SpecialsTestCase
 
 from koskari.compile.pragma import KoskariPragma, PythonPragma, SchemePragma
-from koskari.exceptions import CompilerError, UncaughtCompilerError
+from koskari.exceptions import CompilerError
 
 import pytest
 
@@ -85,19 +85,31 @@ class TestPythonPragma(SpecialsTestCase):
 
 class TestSchemePragma(SpecialsTestCase):
 
-    async def test_scheme_stub_raises_on_unsatisfied_write(self):
-        """SchemePragma: validate_tree is a stub; raises NotImplementedError"""
+    async def test_unsatisfied_write_promotes_to_global(self):
+        """SchemePragma: setq to undeclared name in lambda compiles and runs"""
         src_str = """
         ((lambda ()
-           (compile/setq x 1)))
+           (compile/setq x 1)
+           x))
         """
-        with self.assertRaises((NotImplementedError, UncaughtCompilerError)) as ctx:
-            self.compile_expr(src_str, resolution_pragma_class=SchemePragma)
-        msg = str(ctx.exception)
-        cause = ctx.exception.__cause__
-        if cause is not None:
-            msg += ' ' + str(cause)
-        self.assertIn('SchemePragma', msg)
+        expr, mod = self.compile_expr(
+            src_str, resolution_pragma_class=SchemePragma)
+        result = await expr()
+        self.assertEqual(1, result)
+
+
+    async def test_implicit_global_write_leaks_to_module(self):
+        """SchemePragma: unsatisfied write in lambda creates module binding"""
+        src_str = """
+        ((lambda ()
+           (compile/setq scheme_global 42)
+           scheme_global))
+        """
+        expr, mod = self.compile_expr(
+            src_str, resolution_pragma_class=SchemePragma)
+        result = await expr()
+        self.assertEqual(42, result)
+        self.assertEqual(42, vars(mod).deref('scheme_global'))
 
 
 # The end.

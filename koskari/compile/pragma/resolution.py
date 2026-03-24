@@ -311,15 +311,37 @@ class KoskariPragma:
 
 class SchemePragma(KoskariPragma):
     """
-    Scheme-like: unsatisfied writes promote to global (not yet implemented)
+    Scheme-like: unsatisfied writes promote to global.
+    No compile-time error on undeclared writes; runtime resolves from module.
     """
 
     def validate_tree(self, code, ancestor_nspecs, mode, is_root=False):
         """
-        Stub: full Scheme semantics not yet implemented
+        Scheme-like: allow unsatisfied writes; runtime promotes to global.
         """
 
-        raise NotImplementedError('SchemePragma.validate_tree is a stub')
+        from ..compiler import CompilerMode
+
+        if mode != CompilerMode.FUNCTION:
+            return
+
+        nspec = code.namespace_spec
+        if nspec is None:
+            return
+
+        # No strict validation: unsatisfied writes resolve as implicit global
+        # at runtime via ns_init_syms fallback to mdl_ns_borrow_ref
+
+        # Recurse into nested function Codes
+        cpool_nspecs = tuple(
+            c for c in (code.constants_pool or ())
+            if isinstance(c, NamespaceSpec))
+        next_ancestors = ancestor_nspecs + (nspec,) + cpool_nspecs
+
+        for const in (code.constants_pool or ()):
+            if isinstance(const, FunctionSpec) and const.code is not None:
+                self.validate_tree(
+                    const.code, next_ancestors, mode, is_root=False)
 
 
 class PythonPragma(KoskariPragma):
