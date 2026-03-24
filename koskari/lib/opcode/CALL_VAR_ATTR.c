@@ -99,8 +99,7 @@ KOS_OP_HANDLER(CALL_VAR_ATTR) {
     KosStackSteal_Free(&steal);
 
   } else {
-    result = PyObject_Vectorcall(resolved,
-        (n > 0) ? ptr : NULL, (size_t) n, NULL);
+    result = PyObject_Vectorcall(resolved, ptr, (size_t) n, NULL);
     KosStackBlock_DropNoErr(stack, (size_t) n);
   }
 
