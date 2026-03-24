@@ -19,6 +19,7 @@ implicit global reads, define-global, and typo detection.
 
 from . import SpecialsTestCase
 
+from koskari.compile.pragma import KoskariPragma
 from koskari.exceptions import CompilerError
 from koskari.lib import FunctionSpec
 
@@ -180,12 +181,14 @@ class TestResolutionModelNamespaceSpec(SpecialsTestCase):
 
     async def test_nested_let_closure_lambda_has_closure_syms(self):
         """Lambda in nested let closing over a,b has closure_syms=('a','b')"""
+        pragma = KoskariPragma()
         src_str = """
         (compile/let [[a 1]]
           (compile/let [[b 2]]
             (lambda () (compile/call + a b))))
         """
-        code = self.compile_to_code(src_str, **{'+': lambda x, y: x + y})
+        code = self.compile_to_code(
+            src_str, resolution_pragma=pragma, **{'+': lambda x, y: x + y})
         lambdas = list(_find_lambda_codes(code))
         self.assertGreaterEqual(len(lambdas), 1, 'expected at least one lambda')
         inner = lambdas[0]
@@ -193,20 +196,21 @@ class TestResolutionModelNamespaceSpec(SpecialsTestCase):
         self.assertIn('a', closure, 'lambda should close over a')
         self.assertIn('b', closure, 'lambda should close over b')
         self.assertEqual(
-            inner.namespace_spec.request_for_write_syms,
+            pragma.get_request_for_write_syms(inner),
             (),
             'lambda is read-only over a,b')
 
 
     async def test_closure_setter_has_request_for_write_syms(self):
         """Setter lambda closing over x has request_for_write_syms=('x',)"""
+        pragma = KoskariPragma()
         src_str = """
         ((lambda ()
            (compile/define x 101)
            (compile/define setter (lambda [v] (compile/setq x v)))
            (compile/call setter 42)))
         """
-        code = self.compile_to_code(src_str)
+        code = self.compile_to_code(src_str, resolution_pragma=pragma)
         lambdas = list(_find_lambda_codes(code))
         self.assertGreaterEqual(len(lambdas), 2, 'outer and setter lambda')
         setter = next((c for c in lambdas
@@ -217,7 +221,7 @@ class TestResolutionModelNamespaceSpec(SpecialsTestCase):
             {'x'},
             'setter should close over x')
         self.assertEqual(
-            set(setter.namespace_spec.request_for_write_syms),
+            set(pragma.get_request_for_write_syms(setter)),
             {'x'},
             'setter writes to x')
 

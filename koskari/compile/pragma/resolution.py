@@ -112,6 +112,14 @@ class ResolutionPragma(Protocol):
         ...
 
 
+    def get_request_for_write_syms(self, code) -> Tuple:
+        """
+        Return names that require write capability for the given Code.
+        Compile-time only; tracked by pragma keyed by Code id.
+        """
+        ...
+
+
 class KoskariPragma:
     """
     Strict resolution: explicit declaration required before write.
@@ -124,6 +132,9 @@ class KoskariPragma:
 
         # Map code_id -> source fragment for validation-time position lookup
         self._code_to_fragment = {}
+
+        # Map code_id -> tuple of names requiring write (compile-time only)
+        self._code_request_for_write = {}
 
 
     def on_write(self, fragment, name: str, *, position=None):
@@ -217,13 +228,11 @@ class KoskariPragma:
                 closure.append(n)
 
         global_syms = tuple(fragment._request_global)
-        request_for_write_syms = tuple(fragment.requests_for_write)
         return NamespaceSpec(
             fragment.name,
             tuple(fragment.declares),
             tuple(closure),
             global_syms,
-            request_for_write_syms,
         )
 
 
@@ -252,7 +261,7 @@ class KoskariPragma:
         satisfied = set(accum)
 
         if not is_root:
-            request_for_write_syms = nspec.request_for_write_syms
+            request_for_write_syms = self.get_request_for_write_syms(code)
             for name in request_for_write_syms:
                 if name not in satisfied:
                     source_frag = self._code_to_fragment.get(id(code))
@@ -301,12 +310,22 @@ class KoskariPragma:
         return self._write_positions.get((id(fragment), name))
 
 
+    def get_request_for_write_syms(self, code) -> Tuple:
+        """
+        Return names that require write capability for the given Code.
+        Compile-time only; tracked by pragma keyed by Code id.
+        """
+
+        return self._code_request_for_write.get(id(code), ())
+
+
     def register_code_fragment(self, code, fragment):
         """
         Register source fragment for a Code (position lookup during validation)
         """
 
         self._code_to_fragment[id(code)] = fragment
+        self._code_request_for_write[id(code)] = tuple(fragment.requests_for_write)
 
 
 class SchemePragma(KoskariPragma):

@@ -34,7 +34,6 @@ typedef struct KosNamespaceSpec {
   PyObject *local_syms;
   PyObject *closure_syms;
   PyObject *global_syms;
-  PyObject *request_for_write_syms;
 } KosNamespaceSpec;
 
 
@@ -42,8 +41,7 @@ PyObject *KosNamespaceSpec_New(
     PyObject *name,
     PyObject *local_syms,
     PyObject *closure_syms,
-    PyObject *global_syms,
-    PyObject *request_for_write_syms);
+    PyObject *global_syms);
 
 
 #define KosNamespaceSpec_NAME(nspec)            \
@@ -57,9 +55,6 @@ PyObject *KosNamespaceSpec_New(
 
 #define KosNamespaceSpec_GLOBAL_SYMS(nspec)     \
   (((KosNamespaceSpec *) nspec)->global_syms)
-
-#define KosNamespaceSpec_REQUEST_FOR_WRITE_SYMS(nspec)  \
-  (((KosNamespaceSpec *) nspec)->request_for_write_syms)
 
 #define KosNamespaceSpec_CheckExact(obj)                \
   ((obj) && ((obj)->ob_type == &KosNamespaceSpecType))
@@ -178,13 +173,6 @@ PyObject *KosNamespace_Deref(PyObject *ns, PyObject *key);
    returns -1 if an error occurs, 0 otherwise.
  */
 int KosNamespace_FindRef(PyObject *ns, PyObject *key, PyObject **found);
-
-
-/**
-   Like KosNamespace_FindRef but stops when parent is ModuleNamespace.
-   Used for closure resolution (write path); does not cross into module.
- */
-int KosNamespace_FindRefChain(PyObject *ns, PyObject *key, PyObject **found);
 
 
 /**
@@ -366,11 +354,11 @@ typedef struct KosModule {
 
 
 /**
-   A Module is an object whose attributes are backed by lookups in a
-   KosNamespace instance (including KosModuleNamespace)
+  A Module is an object whose attributes are backed by lookups in a
+  KosNamespace instance (including KosModuleNamespace)
 
-   A Module has one additional attribute, __dict__, which is the
-   underlying KosNamespace
+  A Module has one additional attribute, __dict__, which is the
+  underlying KosNamespace
  */
 PyObject *KosModule_New(PyObject *namespace);
 

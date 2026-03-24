@@ -59,10 +59,6 @@ static PyMemberDef nspec_members[] = {
     offsetof(KosNamespaceSpec, global_syms), READONLY,
     " " },
 
-  { "request_for_write_syms", T_OBJECT,
-    offsetof(KosNamespaceSpec, request_for_write_syms), READONLY,
-    " " },
-
   { NULL },
 };
 
@@ -203,15 +199,12 @@ static PyObject *nspec_new(PyTypeObject *type,
   PyObject *local_syms = NULL;
   PyObject *closure_syms = NULL;
   PyObject *global_syms = NULL;
-  PyObject *request_for_write_syms = NULL;
 
-  if (! PyArg_ParseTuple(args, "OOO|OO:NamespaceSpec", &name,
-                         &local_syms, &closure_syms, &global_syms,
-                         &request_for_write_syms))
+  if (! PyArg_ParseTuple(args, "OOO|O:NamespaceSpec", &name,
+                         &local_syms, &closure_syms, &global_syms))
     return NULL;
 
-  return KosNamespaceSpec_New(name, local_syms, closure_syms, global_syms,
-                             request_for_write_syms);
+  return KosNamespaceSpec_New(name, local_syms, closure_syms, global_syms);
 }
 
 
@@ -220,7 +213,6 @@ static void nspec_dealloc(PyObject *self) {
   Py_CLEAR(KosNamespaceSpec_LOCAL_SYMS(self));
   Py_CLEAR(KosNamespaceSpec_CLOSURE_SYMS(self));
   Py_CLEAR(KosNamespaceSpec_GLOBAL_SYMS(self));
-  Py_CLEAR(KosNamespaceSpec_REQUEST_FOR_WRITE_SYMS(self));
 
   Py_TYPE(self)->tp_free(self);
 }
@@ -231,7 +223,6 @@ static int nspec_traverse(PyObject *self, visitproc visit, void *arg) {
   Py_VISIT(KosNamespaceSpec_LOCAL_SYMS(self));
   Py_VISIT(KosNamespaceSpec_CLOSURE_SYMS(self));
   Py_VISIT(KosNamespaceSpec_GLOBAL_SYMS(self));
-  Py_VISIT(KosNamespaceSpec_REQUEST_FOR_WRITE_SYMS(self));
   return 0;
 }
 
@@ -241,7 +232,6 @@ static int nspec_clear(PyObject *self) {
   Py_CLEAR(KosNamespaceSpec_LOCAL_SYMS(self));
   Py_CLEAR(KosNamespaceSpec_CLOSURE_SYMS(self));
   Py_CLEAR(KosNamespaceSpec_GLOBAL_SYMS(self));
-  Py_CLEAR(KosNamespaceSpec_REQUEST_FOR_WRITE_SYMS(self));
   return 0;
 }
 
@@ -282,30 +272,14 @@ static PyObject *nspec_repr(PyObject *self) {
     Py_INCREF(globals);
   }
 
-  PyObject *req_write = KosNamespaceSpec_REQUEST_FOR_WRITE_SYMS(self);
-  if (! req_write) {
-    req_write = PyTuple_New(0);
-    if (! req_write) {
-      if (! KosNamespaceSpec_CLOSURE_SYMS(self))
-        Py_DECREF(closures);
-      if (! KosNamespaceSpec_LOCAL_SYMS(self))
-        Py_DECREF(locals);
-      Py_DECREF(globals);
-      return NULL;
-    }
-  } else {
-    Py_INCREF(req_write);
-  }
-
-  result = PyUnicode_FromFormat("NamespaceSpec(%R, %R, %R, %R, %R)",
-                               name, closures, locals, globals, req_write);
+  result = PyUnicode_FromFormat("NamespaceSpec(%R, %R, %R, %R)",
+                               name, closures, locals, globals);
 
   if (! KosNamespaceSpec_CLOSURE_SYMS(self))
     Py_DECREF(closures);
   if (! KosNamespaceSpec_LOCAL_SYMS(self))
     Py_DECREF(locals);
   Py_DECREF(globals);
-  Py_DECREF(req_write);
 
   return result;
 }
@@ -334,11 +308,10 @@ PyObject *KosNamespaceSpec_New(
     PyObject *name,
     PyObject *local_syms,
     PyObject *closure_syms,
-    PyObject *global_syms,
-    PyObject *request_for_write_syms) {
+    PyObject *global_syms) {
 
-  // SAYF("KosNamespaceSpec_New(%R, %R, %R, %R, %R)",
-  //      name, local_syms, closure_syms, global_syms, request_for_write_syms);
+  // SAYF("KosNamespaceSpec_New(%R, %R, %R, %R)",
+  //      name, local_syms, closure_syms, global_syms);
 
   if (name == Py_None)
     name = NULL;
@@ -388,30 +361,11 @@ PyObject *KosNamespaceSpec_New(
     }
   }
 
-  if (request_for_write_syms == Py_None || ! request_for_write_syms) {
-    request_for_write_syms = PyTuple_New(0);
-    if (! request_for_write_syms) {
-      Py_DECREF(local_syms);
-      Py_DECREF(closure_syms);
-      Py_DECREF(global_syms);
-      return NULL;
-    }
-  } else {
-    request_for_write_syms = PySequence_Tuple(request_for_write_syms);
-    if (! request_for_write_syms) {
-      Py_DECREF(local_syms);
-      Py_DECREF(closure_syms);
-      Py_DECREF(global_syms);
-      return NULL;
-    }
-  }
-
   PyObject *self = PyObject_New(PyObject, &KosNamespaceSpecType);
   if (! self) {
     Py_XDECREF(local_syms);
     Py_XDECREF(closure_syms);
     Py_XDECREF(global_syms);
-    Py_XDECREF(request_for_write_syms);
     return NULL;
   }
 
@@ -421,7 +375,6 @@ PyObject *KosNamespaceSpec_New(
   KosNamespaceSpec_LOCAL_SYMS(self) = local_syms;
   KosNamespaceSpec_CLOSURE_SYMS(self) = closure_syms;
   KosNamespaceSpec_GLOBAL_SYMS(self) = global_syms;
-  KosNamespaceSpec_REQUEST_FOR_WRITE_SYMS(self) = request_for_write_syms;
 
   // SAYF("KosNamespaceSpec_New -> %R", self);
   return self;
@@ -526,16 +479,8 @@ static int ns_init_syms(PyObject *self, PyObject *parent,
       PyObject *ref_name = PySequence_Fast_GET_ITEM(closure_syms, i);
       PyObject *ref = NULL;
 
-      if (KosNamespace_FindRefChain(parent, ref_name, &ref)) {
+      if (KosNamespace_FindRef(parent, ref_name, &ref)) {
         return -1;
-
-      } else if (! ref && parent) {
-        /* Fallback: implicit global read - resolve from module when
-         * FindRefChain does not find in enclosing scopes. */
-        PyObject *module_ns = find_module_in_chain(parent);
-        if (module_ns) {
-          ref = mdl_ns_borrow_ref(module_ns, ref_name);
-        }
       }
 
       if (! ref) {
@@ -1250,38 +1195,6 @@ int KosNamespace_FindRef(PyObject *namespace, PyObject *key,
   }
 
   // SAYF("KosNamespace_FindRef -> %R", result);
-  return 0;
-}
-
-
-int KosNamespace_FindRefChain(PyObject *namespace, PyObject *key,
-                               PyObject **found) {
-
-  while (namespace) {
-    if (! KosNamespace_Check(namespace)) {
-      PyErr_Format(PyExc_TypeError, "expected Namespace instance,"
-                   " found %R", namespace);
-      return -1;
-    }
-
-    if (KosModuleNamespace_CheckExact(namespace)) {
-      return 0;
-    }
-
-    if (! KosCollectorNamespace_Check(namespace)) {
-      PyObject *seek = KosNamespace_REF(namespace, key);
-      if (! seek) {
-        if (PyErr_Occurred())
-          return -1;
-      } else {
-        *found = seek;
-        return 0;
-      }
-    }
-
-    namespace = KosNamespace_PARENT(namespace);
-  }
-
   return 0;
 }
 

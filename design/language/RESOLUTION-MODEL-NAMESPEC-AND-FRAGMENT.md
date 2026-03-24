@@ -79,23 +79,16 @@ When `fragment.merge(other)` runs, the outer fragment adopts:
 | `local_syms` | tuple | Names declared in this scope | Validation (satisfied set) | ns_init_syms: allocate fast slots |
 | `closure_syms` | tuple | Names from enclosing scope(s) | Cpool merge (propagate to parent) | ns_init_syms: resolve from parent, allocate fast slots |
 | `global_syms` | tuple | Names from module (define-global) | Validation (satisfied set) | ns_init_syms: resolve from module |
-| `request_for_write_syms` | tuple | Subset of closure_syms that require write | Validation, cpool merge | Not used |
+
+Request-for-write is not on NamespaceSpec. The pragma tracks `request_for_write_syms` by Code id via `get_request_for_write_syms(code)`. NamespaceSpec is a pure runtime descriptor: `KosNamespace_FromSpec` and `ns_init_syms` use only `local_syms`, `closure_syms`, and `global_syms`.
 
 ### Field Derivation
 
-Built by `ByteCodeFragment.as_namespace_spec()`:
+Built by `ByteCodeFragment.as_namespace_spec()` (via pragma):
 
 - `local_syms` = `tuple(declares)`
 - `closure_syms` = unique union of `requests` and `requests_for_write`, excluding `_request_global`
 - `global_syms` = `tuple(_request_global)`
-- `request_for_write_syms` = `tuple(requests_for_write)` *(proposed addition)*
-
-### Runtime-Only Fields
-
-`KosNamespace_FromSpec` and `ns_init_syms` use only `local_syms`, `closure_syms`, and
-`global_syms` to build the runtime namespace. The slot layout is: locals, then closure
-refs, then globals. `request_for_write_syms` is compile-time metadata only; it is
-carried on the spec but ignored at runtime.
 
 ### Where NamespaceSpec Appears
 
@@ -110,13 +103,13 @@ carried on the spec but ignored at runtime.
 `_cpool_scan_merge(fragment, instr)` iterates over compressed instructions. For each
 `CONST FunctionSpec` where `FunctionSpec.code` is not None:
 
-1. Read `closure_syms` and `request_for_write_syms` from `code.namespace_spec`.
+1. Read `closure_syms` from `code.namespace_spec`, and `request_for_write_syms` from
+   `pragma.get_request_for_write_syms(code)`.
 2. For each name in `closure_syms`, call `fragment.request_var(name)`.
 3. For each name in `request_for_write_syms`, call `fragment.request_for_write(name)`.
 
-No cache. The data lives on the Code's NamespaceSpec. The inner Code was built by a
-prior `complete()` of an inner fragment; that fragment's `as_namespace_spec()` produced
-a NamespaceSpec with `request_for_write_syms = tuple(requests_for_write)`.
+The pragma stores request-for-write by Code id in `register_code_fragment` when each
+Code is built from a fragment.
 
 ---
 
@@ -126,7 +119,7 @@ a NamespaceSpec with `request_for_write_syms = tuple(requests_for_write)`.
 the Code tree. For each nested function Code:
 
 1. Build `satisfied` = union of `local_syms` and `global_syms` from `ancestor_nspecs`.
-2. If not `is_root`, read `request_for_write_syms` from `code.namespace_spec`. For each
+2. If not `is_root`, read `request_for_write_syms` from `pragma.get_request_for_write_syms(code)`. For each
    name, if not in `satisfied`, raise CompilerError.
 3. Build `next_ancestors` = `ancestor_nspecs` + `(code.namespace_spec,)` + all
    NamespaceSpecs in `code.constants_pool`.
@@ -147,10 +140,10 @@ between the current Code and nested functions; they contribute their
 | Phase | ByteCodeFragment | NamespaceSpec |
 |-------|------------------|---------------|
 | Compiling a scope | Receives request_var, request_for_write, declare_var, request_global; accumulates instructions | Not yet created |
-| Cpool scan (during complete) | Receives propagated requests from inner FunctionSpecs | Read from inner Code.namespace_spec: closure_syms, request_for_write_syms |
-| as_namespace_spec | Buckets → NamespaceSpec | Created from fragment |
+| Cpool scan (during complete) | Receives propagated requests from inner FunctionSpecs | Read closure_syms from inner Code.namespace_spec; request_for_write_syms from pragma |
+| as_namespace_spec | Buckets → NamespaceSpec | Created from fragment (local, closure, global only) |
 | convert_fast | — | Read local_syms, closure_syms, global_syms for VAR→FAST lowering |
-| Validation | — | Read from Code tree: local_syms, global_syms, request_for_write_syms |
+| Validation | — | Read local_syms, global_syms from Code tree; request_for_write_syms from pragma |
 
 ### Runtime
 
@@ -168,7 +161,7 @@ between the current Code and nested functions; they contribute their
 
 - **Scope:** Module-level. No enclosing function.
 - **Fragment:** Single fragment for the begin body. `requests_for_write = ['x']`, `requests = ['x']`, `declares = []`.
-- **NamespaceSpec:** Built with `local_syms = ()`, `closure_syms = ('x',)`, `global_syms = ()`, `request_for_write_syms = ('x',)`.
+- **NamespaceSpec:** Built with `local_syms = ()`, `closure_syms = ('x',)`, `global_syms = ()`. Pragma tracks `request_for_write_syms = ('x',)` for this Code.
 - **Code:** Created with that NamespaceSpec. Compiled as EXPRESSION mode.
 - **Validation:** Root Code (`is_root=True`) skips request_for_write validation. Module-level allows implicit global for writes.
 - **Runtime:** Expression runs in module namespace. `x` resolves implicitly.
@@ -181,8 +174,8 @@ between the current Code and nested functions; they contribute their
 
 - **Outer:** Expression scope. Root Code.
 - **Inner:** Lambda body. Fragment has `requests_for_write = ['x']`, `requests = ['x']`, `declares = []`. `x` is not in scope.
-- **Complete(inner):** NamespaceSpec has `closure_syms = ('x',)`, `request_for_write_syms = ('x',)`. Code created. FunctionSpec wraps it.
-- **Complete(outer):** Cpool scan finds FunctionSpec(inner_code). Reads inner_code.namespace_spec.closure_syms and request_for_write_syms. Merges into outer fragment. Outer is root → no validation. Inner is nested → validation runs: `x` not in satisfied (ancestor has no local_syms or global_syms). **Compile error.**
+- **Complete(inner):** NamespaceSpec has `closure_syms = ('x',)`. Pragma stores `request_for_write_syms = ('x',)` for inner Code. FunctionSpec wraps it.
+- **Complete(outer):** Cpool scan finds FunctionSpec(inner_code). Reads closure_syms from nspec, request_for_write_syms from pragma. Merges into outer fragment. Outer is root → no validation. Inner is nested → validation runs: `x` not in satisfied (ancestor has no local_syms or global_syms). **Compile error.**
 
 ---
 
@@ -192,8 +185,8 @@ between the current Code and nested functions; they contribute their
 
 - **Outer lambda:** Fragment accumulates `(define x 0)` → declares += ['x']; `(define setter ...)` → declares += ['setter']. Body compiles setter's lambda.
 - **Inner lambda (setter):** Fragment has `requests_for_write = ['x']`, `requests = ['x']`, `declares = ['v']`. `x` comes from outer.
-- **Complete(setter):** NamespaceSpec has `local_syms = ('v',)`, `closure_syms = ('x',)`, `request_for_write_syms = ('x',)`. Code created. FunctionSpec wraps it.
-- **Complete(outer):** Cpool scan finds FunctionSpec(setter_code). Merges setter's closure_syms and request_for_write_syms into outer fragment. Outer now has requests including 'x' (already satisfied by declares). Build outer NamespaceSpec with `local_syms = ('x','setter',...)`, etc. Validation: traverse Code tree. For setter Code, ancestor_nspecs = (outer_nspec,). Satisfied = outer.local_syms ∪ outer.global_syms = {'x','setter',...}. `request_for_write_syms = ('x',)`. `x` in satisfied. **OK.**
+- **Complete(setter):** NamespaceSpec has `local_syms = ('v',)`, `closure_syms = ('x',)`. Pragma stores `request_for_write_syms = ('x',)` for setter Code. FunctionSpec wraps it.
+- **Complete(outer):** Cpool scan finds FunctionSpec(setter_code). Merges setter's closure_syms and request_for_write_syms (from pragma) into outer fragment. Outer now has requests including 'x' (already satisfied by declares). Build outer NamespaceSpec with `local_syms = ('x','setter',...)`, etc. Validation: traverse Code tree. For setter Code, ancestor_nspecs = (outer_nspec,). Satisfied = outer.local_syms ∪ outer.global_syms = {'x','setter',...}. Pragma returns `request_for_write_syms = ('x',)`. `x` in satisfied. **OK.**
 
 ---
 
@@ -204,7 +197,7 @@ between the current Code and nested functions; they contribute their
 - **Outer (let):** Fragment for let. Uses `child_namespace(called_by, ['x'], [0])`.
 - **Child fragment:** Receives `declare_var('x')` for the binding. Body is `(compile/begin ((lambda () (set! x 1))) x)`.
 - **Inner lambda:** Fragment has `requests_for_write = ['x']`, `requests = ['x']`. `x` is in the let scope.
-- **Complete(inner):** NamespaceSpec has `closure_syms = ('x',)`, `request_for_write_syms = ('x',)`. Code created.
+- **Complete(inner):** NamespaceSpec has `closure_syms = ('x',)`. Pragma stores `request_for_write_syms = ('x',)`. Code created.
 - **Child fragment:** After body compiles, has instructions including CONST FunctionSpec(inner_code). `as_namespace_spec()` → child NamespaceSpec with `local_syms = ('x',)` (from the let binding), `closure_syms = ()`, etc.
 - **child_namespace exit:** Emits CONST nspec (child's NamespaceSpec), PUSH_NS, child.instructions, POP_NS. Parent (let) fragment gets these instructions.
 - **Complete(let):** The let fragment's instructions include CONST child_nspec, PUSH_NS, ... The constant pool contains both the child NamespaceSpec and the FunctionSpec(inner_code). Cpool scan: finds FunctionSpec(inner_code). Merges inner's closure_syms and request_for_write_syms into the let fragment. But the let fragment is the *parent* of the child—the child's instructions are inlined. The let fragment does not have a Code of its own in the same way; it becomes part of the expression Code. The Code's constants_pool has: child_nspec (NamespaceSpec with local_syms=('x',)), FunctionSpec(inner_code). Validation: root Code. Recurse into FunctionSpec(inner_code). For inner, ancestor_nspecs = (root_nspec, child_nspec). Child_nspec has local_syms = ('x',). Satisfied includes 'x'. **OK.**

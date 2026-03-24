@@ -82,10 +82,10 @@ class TestNamespaceSpec(unittest.IsolatedAsyncioTestCase):
     async def test_repr(self):
         """repr shows name, closure_syms, local_syms, and global_syms"""
         spec = NamespaceSpec(None, ("k",), (), ())
-        self.assertEqual(repr(spec), "NamespaceSpec(None, (), ('k',), (), ())")
+        self.assertEqual(repr(spec), "NamespaceSpec(None, (), ('k',), ())")
         spec2 = NamespaceSpec("foo", ("a", "b"), ("z",), ())
         self.assertEqual(
-            repr(spec2), "NamespaceSpec('foo', ('z',), ('a', 'b'), (), ())")
+            repr(spec2), "NamespaceSpec('foo', ('z',), ('a', 'b'), ())")
 
 
 class TestNamespace(unittest.IsolatedAsyncioTestCase):

@@ -319,7 +319,7 @@ static PyObject *formals_nspec_impl(PyObject *pos, PyObject *pos_only,
       Py_INCREF(base_nspec);
       return base_nspec;
     }
-    return KosNamespaceSpec_New(NULL, NULL, NULL, NULL, NULL);
+    return KosNamespaceSpec_New(NULL, NULL, NULL, NULL);
   }
 
   PyObject *lcls = PyList_New(c);
@@ -356,17 +356,15 @@ static PyObject *formals_nspec_impl(PyObject *pos, PyObject *pos_only,
   PyObject *name = NULL;
   PyObject *clsr = NULL;
   PyObject *glbl = NULL;
-  PyObject *req_write = NULL;
 
   if (base_nspec) {
     list_unique_extend(lcls, KosNamespaceSpec_LOCAL_SYMS(base_nspec));
     name = KosNamespaceSpec_NAME(base_nspec);
     clsr = KosNamespaceSpec_CLOSURE_SYMS(base_nspec);
     glbl = KosNamespaceSpec_GLOBAL_SYMS(base_nspec);
-    req_write = KosNamespaceSpec_REQUEST_FOR_WRITE_SYMS(base_nspec);
   }
 
-  PyObject *result = KosNamespaceSpec_New(name, lcls, clsr, glbl, req_write);
+  PyObject *result = KosNamespaceSpec_New(name, lcls, clsr, glbl);
   Py_DECREF(lcls);
   return result;
 }

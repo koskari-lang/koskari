@@ -91,10 +91,8 @@ rules achieve the desired effect.
   namespace with a typed parent (function → function → …; module is not in the
   chain for resolution semantics).
 
-A new API is needed: resolution that walks the parent chain but **stops when it
-hits a ModuleNamespace**. This is used for satisfying `request_for_write`
-(closure chain only). The existing resolution continues into the module for
-reads.
+Closure resolution uses `KosNamespace_FindRef(parent, …)`, which walks the full
+parent chain including the module. There is no separate "closure chain only" API.
 
 **References:**
 
@@ -269,7 +267,7 @@ validation.
 | Current | Proposed |
 |---------|----------|
 | `ns_init_syms(self, parent, local_syms, closure_syms)` | Add `global_syms`; resolve from module reference instead of parent for those |
-| Closure lookup via `KosNamespace_FindRef(parent, …)` | Add new API: walk until ModuleNamespace (for writes); chain stops at module boundary; global_syms resolved via separate module ref |
+| Closure lookup via `KosNamespace_FindRef(parent, …)` | Add `global_syms`; closure uses FindRef (walks full chain including module); global_syms resolved via separate module ref |
 
 ### Function Creation (func.c)
 

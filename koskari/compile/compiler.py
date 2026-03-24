@@ -409,7 +409,7 @@ class ByteCodeFragment:
     def as_bytecode(self):
         if self.compiler is None:
             raise TypeError("ByteCodeFragment has no compiler")
-        return self.compiler.complete(self)
+        return self.compiler.complete(self, is_root=True)
 
 
     def as_function_spec(self, formals_spec=((), ())):
@@ -429,7 +429,8 @@ class ByteCodeFragment:
     def as_expression(self, parent):
         if self.compiler is None:
             raise TypeError("ByteCodeFragment has no compiler")
-        code = self.compiler.complete(self, mode=CompilerMode.EXPRESSION)
+        code = self.compiler.complete(
+            self, mode=CompilerMode.EXPRESSION, is_root=True)
         return code.expression(parent)
 
 
@@ -459,10 +460,10 @@ _CHECK_SQUASHES = {
 class Compiler:
 
     def __init__(self, name, module, filename=None, tco_enabled=True,
-                 resolution_pragma_class=None):
+                 resolution_pragma_class=None, resolution_pragma=None):
         self.name = name
         self.resolution_pragma_class = resolution_pragma_class or KoskariPragma
-        self._current_pragma = None
+        self._current_pragma = resolution_pragma
 
         if module is None:
             module = Module(ModuleNamespace(name, {}))
@@ -608,10 +609,17 @@ class Compiler:
 
 
     def full_compile(self, source_obj, tc=False):
-        res = source_obj
-        while not isinstance(res, ByteCodeFragment):
-            res = self.compile(res, tc)
-        return res
+        allocated = self._current_pragma is None
+        if allocated:
+            self._current_pragma = self.resolution_pragma_class()
+        try:
+            res = source_obj
+            while not isinstance(res, ByteCodeFragment):
+                res = self.compile(res, tc)
+            return res
+        finally:
+            if allocated:
+                self._current_pragma = None
 
 
     def compile_expr(self, fragment, source_obj, tc):
@@ -899,11 +907,11 @@ class Compiler:
                 nspec = code.namespace_spec
                 if nspec is None:
                     continue
-                request_for_write_syms = nspec.request_for_write_syms
+                request_for_write_syms = pragma.get_request_for_write_syms(code)
                 pragma.cpool_merge(fragment, nspec, request_for_write_syms)
 
 
-    def complete(self, fragment, mode=None, _validate=True):
+    def complete(self, fragment, mode=None, _validate=True, is_root=False):
         if mode is None:
             mode = self.mode
         # Flatten position/label instructions and merge closure/write syms
@@ -928,8 +936,10 @@ class Compiler:
         # Build Code and register with pragma for position lookup on errors
         code = Code(base_nspec, instr, fragment.name, filename)
         pragma.register_code_fragment(code, fragment)
-        # Recursively validate that all writes are satisfied
-        if _validate:
+        # Recursively validate that all writes are satisfied.
+        # Only validate from root complete(); inner complete() calls skip so
+        # nested functions get validated with proper ancestor context.
+        if _validate and is_root:
             pragma.validate_tree(
                 code, (), CompilerMode.FUNCTION, is_root=True)
         return code

@@ -75,7 +75,8 @@ class SpecialsTestCase(unittest.IsolatedAsyncioTestCase):
 
 
     def compile_to_code(self, src_str, lineno=1, tc=False,
-                        resolution_pragma_class=None, **defns):
+                        resolution_pragma_class=None, resolution_pragma=None,
+                        **defns):
         """
         Compile source to a Code object for opcode inspection; tc=True enables
         tail-call tracking
@@ -90,6 +91,8 @@ class SpecialsTestCase(unittest.IsolatedAsyncioTestCase):
         kwargs = {}
         if resolution_pragma_class is not None:
             kwargs['resolution_pragma_class'] = resolution_pragma_class
+        if resolution_pragma is not None:
+            kwargs['resolution_pragma'] = resolution_pragma
         compiler = Compiler("<unittest>", module, filename=__file__, **kwargs)
         fragment = compiler.full_compile(source, tc=tc)
         return compiler.complete(fragment, mode=CompilerMode.EXPRESSION)

@@ -238,19 +238,19 @@ try:
   x
 except [Exception]:
   y
-;; → (try (compile/begin x) ((Exception y)))
+;; → (try (compile/begin x) [[Exception] y])
 
 try:
   x
 except [e Exception]:
   y
-;; → (try (compile/begin x) (((e . Exception) y)))
+;; → (try (compile/begin x) [[e Exception] y])
 
 try:
   x
 except [Exception as: e]:
   y
-;; → (try (compile/begin x) (((e . Exception) y)))
+;; → (try (compile/begin x) [[e  Exception] y])
 
 try:
   x
@@ -272,7 +272,7 @@ else:
   a
 finally:
   z
-;; → (try (compile/begin x) ((Exception y) (else: a) (finally: z)))
+;; → (try (compile/begin x) [[Exception] y] [else: a] [finally: z])
 ```
 
 **Implementation:** `koskari/reader/layouts/exceptions.layout_try`

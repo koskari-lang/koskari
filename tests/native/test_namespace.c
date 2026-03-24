@@ -47,7 +47,7 @@ static int test_nspec_create(void) {
     TEST_ASSERT_NOT_NULL(local, "create local_syms");
     TEST_ASSERT_NOT_NULL(closure, "create closure_syms");
 
-    PyObject *spec = KosNamespaceSpec_New(name, local, closure, NULL, NULL);
+    PyObject *spec = KosNamespaceSpec_New(name, local, closure, NULL);
     TEST_ASSERT_NOT_NULL(spec, "create NamespaceSpec");
     TEST_ASSERT(KosNamespaceSpec_CheckExact(spec), "spec type check");
 
@@ -68,7 +68,7 @@ static int test_nspec_none_values(void) {
     /*
       Test NamespaceSpec with None values.
     */
-    PyObject *spec = KosNamespaceSpec_New(Py_None, Py_None, Py_None, NULL, NULL);
+    PyObject *spec = KosNamespaceSpec_New(Py_None, Py_None, Py_None, NULL);
     TEST_ASSERT_NOT_NULL(spec, "create NamespaceSpec with None");
 
     /* None values become empty tuple internally */
@@ -102,7 +102,7 @@ static int test_nspec_refcount(void) {
 
     Py_ssize_t name_initial = Py_REFCNT(name);
 
-    PyObject *spec = KosNamespaceSpec_New(name, local, closure, NULL, NULL);
+    PyObject *spec = KosNamespaceSpec_New(name, local, closure, NULL);
     TEST_ASSERT_NOT_NULL(spec, "create spec");
 
     /* Name refcount should be incremented */
