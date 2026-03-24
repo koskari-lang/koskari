@@ -1,0 +1,27 @@
+(import fastapi as: fastapi)
+(import uvicorn as: uvicorn)
+
+(define app (fastapi.FastAPI title: "Koskari Demo"))
+
+(define home []
+  #{"ok" True
+    "message" "hello from Koskari"
+    "routes" #["/" "/healthz" "/echo/{name}"]})
+
+(define healthz []
+  #{"ok" True})
+
+(define echo [name]
+  #{"ok" True
+    "echo" name})
+
+; Route registration without Python decorator syntax.
+; This is the least magical path for a Lisp surface.
+(app.add_api_route "/" home methods: #["GET"])
+(app.add_api_route "/healthz" healthz methods: #["GET"])
+(app.add_api_route "/echo/{name}" echo methods: #["GET"])
+
+(define main []
+  (uvicorn.run app host: "127.0.0.1" port: 8000))
+
+(main)

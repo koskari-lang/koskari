@@ -13,6 +13,7 @@ This directory documents the runtime API of Koskari, including types, functions,
 - **OBJECT-MODEL.md**: Koskari object model (KosType, KosObject, class creation, awaitable construction, C.new sync adapter)
 - **dunder-adapter.md**: Dunder adapter design — demand_sync and demand_next for Python slot interop, no-suspend sync bridge, slot wiring for KosType, internal push_or_await for OBJECT_* opcodes
 - **NAMESPACE-AND-REFS.md**: Namespace, Ref types, and related special forms
+- **inspect-interop-kos-callables.md**: Python `inspect` (and related typing) interoperability for `KosFunction` and `KosBoundMethod` — `__signature__`, bound-method semantics, annotations, non-goals
 - **import-system.md**: Import system for `.ki` files (meta_path, KoskariPathFinder, load_module_async)
 - **lexer.md**: Lexer subpackage for lexical-only parsing, prompt_toolkit and LSP integration
 - **pattern-matching.md**: Pattern matching and template expansion API for special-form handlers and future define-syntax; tagged-tuple representation, Python and Koskari consumption
