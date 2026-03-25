@@ -1,0 +1,148 @@
+version: 1
+
+# Layout block heads (specialty-defined layouts) that appear as `NAME:` at the
+# start of a line. Peer heads are listed separately under layout_peers.
+layout_heads:
+  - if
+  - try
+  - begin
+  - define
+  - when
+  - when-main
+  - class
+  - for-each
+  - while
+  - dyn-wind
+  - with
+  - dyn-with
+  - define-syntax
+  - syntax-rules
+
+# Peer block heads for layouts that declare peers. These are not necessarily
+# special forms, but they do appear as `NAME:` block headers.
+layout_peers:
+  if:
+    - elif
+    - else
+  try:
+    - except
+    - else
+    - finally
+
+# Literal constants reserved for future editor highlighting. The first
+# iteration keeps these in the spec but does not wire them into grammars yet.
+constants:
+  - True
+  - False
+  - None
+  - nil
+
+# Paren-list first-symbol tokens to highlight as keyword.control (TextMate),
+# keyword.control (Helix), and font-lock-keyword-face (Emacs). One ordered list
+# for all three; adjust order here if you care about alternation precedence.
+list_head_specials:
+  - define
+  - if
+  - cond
+  - when
+  - unless
+  - and
+  - or
+  - begin
+  - let
+  - lambda
+  - try
+  - raise
+  - while
+  - for-each
+  - break
+  - continue
+  - import
+  - import-from
+  - ref
+  - attr
+  - setq
+  - bindq
+  - delq
+  - refq
+  - class
+  - define-syntax
+  - with
+  - dyn-with
+  - dyn-wind
+  - parameterize
+  - call/cc
+  - let/cc
+  - capture/cc
+  - reset
+  - shift
+  - compile/bytecode
+  - compile/begin
+  - compile/call
+  - compile/lambda
+  - compile/let
+  - compile/cond
+  - compile/if
+  - compile/when
+  - compile/unless
+  - compile/and
+  - compile/or
+  - compile/try
+  - compile/raise
+  - compile/while
+  - compile/for-each
+  - compile/break
+  - compile/continue
+  - compile/parameterize
+  - compile/dyn-wind
+  - compile/setq
+  - compile/inplace
+  - compile/ref
+  - compile/refq
+  - compile/bindq
+  - compile/define
+  - compile/define-syntax
+  - compile/class
+  - compile/delq
+  - compile/attr
+  - compile/del-attr
+  - compile/set-attr
+  - compile/ref-attr
+  - compile/item
+  - compile/ref-item
+  - compile/deref
+  - compile/del-item
+  - compile/set-item
+  - compile/quote
+  - compile/quasiquote
+  - compile/quote-block
+  - compile/quasiquote-block
+  - compile/apply-layout
+  - compile/unquote
+  - compile/unquote-splicing
+  - compile/car
+  - compile/cdr
+  - compile/cons
+  - compile/call/cc
+  - compile/let/cc
+  - compile/capture/cc
+  - compile/reset
+  - compile/shift
+  - compile/with
+  - compile/dyn-with
+  - compile/import
+  - compile/import-from
+  - compile/set!
+  - compile/bind!
+  - compile/define-parameter
+  - compile/parameterq
+  - compile/None?
+  - set!
+  - bind!
+  - use-parameter
+  - parameterq
+  - None?
+  - define-coroutine
+  - when-main
+
+# The end.
