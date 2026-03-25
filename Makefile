@@ -40,6 +40,28 @@ koskari/lib/handlers.incl: koskari/lib/opcodes.incl
 
 handlers: koskari/lib/handlers.incl
 
+# Editor highlighting assets: each output is rebuilt only when spec, its
+# template, or the generator script is newer than the output.
+EDITOR_SPEC := tools/editor-tokens/spec.yml
+EDITOR_REGEN := tools/editor-tokens/regen_editors_assets.py
+
+editors/textmate/syntaxes/koskari.tmLanguage.json: $(EDITOR_SPEC) editors/textmate/syntaxes/koskari.tmLanguage.json.j2 $(EDITOR_REGEN)
+	@$(call checkfor,tox)
+	@echo "Re-generating koskari.tmLanguage.json..."
+	@tox -qe regen-editors -- $(EDITOR_SPEC) editors/textmate/syntaxes/koskari.tmLanguage.json.j2 editors/textmate/syntaxes/koskari.tmLanguage.json
+
+editors/helix/tree-sitter-koskari/queries/highlights.scm: $(EDITOR_SPEC) editors/helix/tree-sitter-koskari/queries/highlights.scm.j2 $(EDITOR_REGEN)
+	@$(call checkfor,tox)
+	@echo "Re-generating highlights.scm..."
+	@tox -qe regen-editors -- $(EDITOR_SPEC) editors/helix/tree-sitter-koskari/queries/highlights.scm.j2 editors/helix/tree-sitter-koskari/queries/highlights.scm
+
+editors/emacs/koskari-mode.el: $(EDITOR_SPEC) editors/emacs/koskari-mode.el.j2 $(EDITOR_REGEN)
+	@$(call checkfor,tox)
+	@echo "Re-generating koskari-mode.el..."
+	@tox -qe regen-editors -- $(EDITOR_SPEC) editors/emacs/koskari-mode.el.j2 editors/emacs/koskari-mode.el
+
+regen-editors: editors/textmate/syntaxes/koskari.tmLanguage.json editors/helix/tree-sitter-koskari/queries/highlights.scm editors/emacs/koskari-mode.el  ## Regenerate editor syntax-highlighting assets (incremental)
+
 build: handlers clean-built report-python  ## Build wheel package using uv via tox
 	@$(call checkfor,tox)
 	@echo "Building $(PROJECT) $(VERSION)..."
@@ -210,6 +232,7 @@ python:  ## Show Python executable
 	project \
 	purge \
 	python \
+	regen-editors \
 	report-python \
 	test \
 	test-asan \

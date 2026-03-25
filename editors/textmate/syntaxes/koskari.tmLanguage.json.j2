@@ -1,0 +1,302 @@
+{
+  "scopeName": "source.koskari",
+  "name": "Koskari",
+  "patterns": [
+    { "include": "#shebang" },
+    { "include": "#comment" },
+    { "include": "#string-triple-raw" },
+    { "include": "#string-triple" },
+    { "include": "#string-raw" },
+    { "include": "#format-string-triple" },
+    { "include": "#format-string" },
+    { "include": "#string" },
+    { "include": "#number" },
+    { "include": "#collection-tuple" },
+    { "include": "#collection-list" },
+    { "include": "#collection-dict" },
+    { "include": "#paren-list" },
+    { "include": "#bracket-list" },
+    { "include": "#brace-block" },
+    { "include": "#quote-form" },
+    { "include": "#quasiquote-form" },
+    { "include": "#block-header" },
+    { "include": "#keyword" },
+    { "include": "#symbol" }
+  ],
+  "repository": {
+    "shebang": {
+      "begin": "^(#!)",
+      "end": "$",
+      "name": "comment.line.shebang.koskari"
+    },
+    "comment": {
+      "begin": ";",
+      "end": "$",
+      "name": "comment.line.koskari"
+    },
+    "string": {
+      "begin": "\"",
+      "end": "\"",
+      "name": "string.quoted.double.koskari",
+      "patterns": [
+        { "include": "#escape-sequence" }
+      ]
+    },
+    "string-triple": {
+      "begin": "\"\"\"",
+      "end": "\"\"\"",
+      "name": "string.quoted.triple.koskari",
+      "patterns": [
+        { "include": "#escape-sequence" }
+      ]
+    },
+    "string-raw": {
+      "begin": "r\"",
+      "end": "\"",
+      "name": "string.quoted.double.raw.koskari"
+    },
+    "string-triple-raw": {
+      "begin": "r\"\"\"",
+      "end": "\"\"\"",
+      "name": "string.quoted.triple.raw.koskari"
+    },
+    "format-string": {
+      "begin": "f\"",
+      "end": "\"",
+      "name": "string.quoted.double.format.koskari",
+      "patterns": [
+        { "include": "#escape-sequence" },
+        { "include": "#format-literal" },
+        { "include": "#format-interpolation" }
+      ]
+    },
+    "format-string-triple": {
+      "begin": "f\"\"\"",
+      "end": "\"\"\"",
+      "name": "string.quoted.triple.format.koskari",
+      "patterns": [
+        { "include": "#escape-sequence" },
+        { "include": "#format-literal" },
+        { "include": "#format-interpolation" }
+      ]
+    },
+    "escape-sequence": {
+      "match": "\\\\[\\\\'\"abfnrtv0-7]|\\\\x[0-9a-fA-F]{2}|\\\\u[0-9a-fA-F]{4}|\\\\U[0-9a-fA-F]{8}",
+      "name": "constant.character.escape.koskari"
+    },
+    "format-interpolation": {
+      "begin": "\\{(?!\\{)",
+      "end": "\\}(?!\\})",
+      "name": "meta.interpolation.koskari",
+      "patterns": [
+        { "include": "$self" }
+      ]
+    },
+    "format-literal": {
+      "match": "\\{\\{|\\}\\}",
+      "name": "constant.character.escape.koskari"
+    },
+    "number": {
+      "patterns": [
+        {
+          "match": "\\b0x[0-9a-fA-F]+\\b",
+          "name": "constant.numeric.hex.koskari"
+        },
+        {
+          "match": "\\b0o[0-7]+\\b",
+          "name": "constant.numeric.octal.koskari"
+        },
+        {
+          "match": "\\b0b[01]+\\b",
+          "name": "constant.numeric.binary.koskari"
+        },
+        {
+          "match": "-?\\d+/\\d+\\b",
+          "name": "constant.numeric.fraction.koskari"
+        },
+        {
+          "match": "-?(?:\\d+\\.\\d*|\\.\\d+)(?:[eE]-?\\d+)?[fd]?\\b",
+          "name": "constant.numeric.float.koskari"
+        },
+        {
+          "match": "-?\\d+[eE]-?\\d+[fd]?\\b",
+          "name": "constant.numeric.float.koskari"
+        },
+        {
+          "match": "-?\\d+(?:\\.\\d+)?[+-](?:\\d*\\.?\\d*)[ij]\\b",
+          "name": "constant.numeric.complex.koskari"
+        },
+        {
+          "match": "-?\\d+(?:\\.\\d*|\\d*)\\.?d\\b",
+          "name": "constant.numeric.decimal.koskari"
+        },
+        {
+          "match": "-?\\d+\\b",
+          "name": "constant.numeric.integer.koskari"
+        }
+      ]
+    },
+    "collection-tuple": {
+      "begin": "#\\(",
+      "end": "\\)",
+      "beginCaptures": {
+        "0": { "name": "punctuation.definition.collection.begin.koskari" }
+      },
+      "endCaptures": {
+        "0": { "name": "punctuation.definition.collection.end.koskari" }
+      },
+      "name": "meta.collection.tuple.koskari",
+      "patterns": [
+        { "include": "$self" }
+      ]
+    },
+    "collection-list": {
+      "begin": "#\\[",
+      "end": "\\]",
+      "beginCaptures": {
+        "0": { "name": "punctuation.definition.collection.begin.koskari" }
+      },
+      "endCaptures": {
+        "0": { "name": "punctuation.definition.collection.end.koskari" }
+      },
+      "name": "meta.collection.list.koskari",
+      "patterns": [
+        { "include": "$self" }
+      ]
+    },
+    "collection-dict": {
+      "begin": "#\\{",
+      "end": "\\}",
+      "beginCaptures": {
+        "0": { "name": "punctuation.definition.collection.begin.koskari" }
+      },
+      "endCaptures": {
+        "0": { "name": "punctuation.definition.collection.end.koskari" }
+      },
+      "name": "meta.collection.dict.koskari",
+      "patterns": [
+        { "include": "$self" }
+      ]
+    },
+    "paren-list": {
+      "begin": "\\(",
+      "end": "\\)",
+      "beginCaptures": {
+        "0": { "name": "punctuation.section.expression.begin.koskari" }
+      },
+      "endCaptures": {
+        "0": { "name": "punctuation.section.expression.end.koskari" }
+      },
+      "name": "meta.expression.paren.koskari",
+      "patterns": [
+        { "include": "#list-head-special" },
+        { "include": "$self" }
+      ]
+    },
+    "bracket-list": {
+      "begin": "\\[",
+      "end": "\\]",
+      "beginCaptures": {
+        "0": { "name": "punctuation.section.bracket.begin.koskari" }
+      },
+      "endCaptures": {
+        "0": { "name": "punctuation.section.bracket.end.koskari" }
+      },
+      "name": "meta.expression.bracket.koskari",
+      "patterns": [
+        { "include": "$self" }
+      ]
+    },
+    "brace-block": {
+      "begin": "\\{",
+      "end": "\\}",
+      "beginCaptures": {
+        "0": { "name": "punctuation.section.block.begin.koskari" }
+      },
+      "endCaptures": {
+        "0": { "name": "punctuation.section.block.end.koskari" }
+      },
+      "name": "meta.expression.block.koskari",
+      "patterns": [
+        { "include": "$self" }
+      ]
+    },
+    "quote-form": {
+      "begin": "(['])",
+      "end": "(?=[\\s;()\\[\\]{\"'`]|$)",
+      "beginCaptures": {
+        "1": { "name": "punctuation.definition.quote.koskari" }
+      },
+      "name": "meta.quoted.koskari",
+      "patterns": [
+        { "include": "$self" }
+      ]
+    },
+    "quasiquote-form": {
+      "begin": "(`)",
+      "end": "(?=[\\s;()\\[\\]{\"'`]|$)",
+      "beginCaptures": {
+        "1": { "name": "punctuation.definition.quasiquote.koskari" }
+      },
+      "name": "meta.quasiquote.koskari",
+      "patterns": [
+        { "include": "#unquote" },
+        { "include": "$self" }
+      ]
+    },
+    "unquote": {
+      "patterns": [
+        {
+          "match": ",@(?=[^\\s;\"'`()\\[\\]{},])",
+          "name": "keyword.operator.unquote-splicing.koskari"
+        },
+        {
+          "match": ",(?=[^@\\s;\"'`()\\[\\]{},]|$)",
+          "name": "keyword.operator.unquote.koskari"
+        }
+      ]
+    },
+    "list-head-special": {
+      "match": "\\s*({{ list_head_specials | regex_alternation | json_string_escape }})(?=(?:\\s|\\)|\\]|\\}|$))",
+      "captures": {
+        "1": { "name": "keyword.control.koskari" }
+      }
+    },
+    "block-header": {
+      "patterns": [
+        {
+          "match": "^(\\s*)({{ block_header_tokens(layout_heads, layout_peers) | regex_alternation | json_string_escape }})\\b([^\\n]*?)(:)\\s*(;.*)?$",
+          "captures": {
+            "2": { "name": "keyword.control.koskari" },
+            "3": { "name": "meta.block-header-args.koskari" },
+            "4": { "name": "punctuation.terminator.block.koskari" }
+          }
+        },
+        {
+          "match": "^(\\s*)([a-zA-Z_][a-zA-Z0-9_?!-]*)\\b([^\\n]*?)(:)\\s*(;.*)?$",
+          "captures": {
+            "2": { "name": "entity.name.function.koskari" },
+            "3": { "name": "meta.block-header-args.koskari" },
+            "4": { "name": "punctuation.terminator.block.koskari" }
+          }
+        }
+      ]
+    },
+    "keyword": {
+      "patterns": [
+        {
+          "match": ":(?:[^\\s()\\[\\]{};\"'`]|\\\\[\"'\\\\abfnrtv]|[0-7]{1,3}|x[0-9a-fA-F]{2}|u[0-9a-fA-F]{4}|U[0-9a-fA-F]{8})+(?=[\\s()\\[\\]{};\"'`]|$)",
+          "name": "constant.other.keyword.koskari"
+        },
+        {
+          "match": "(?:[^\\s()\\[\\]{};\"'`]|\\\\[\"'\\\\abfnrtv]|[0-7]{1,3}|x[0-9a-fA-F]{2}|u[0-9a-fA-F]{4}|U[0-9a-fA-F]{8})+:(?=[\\s()\\[\\]{};\"'`]|$)",
+          "name": "constant.other.keyword.koskari"
+        }
+      ]
+    },
+    "symbol": {
+      "match": "[a-zA-Z_][a-zA-Z0-9_?!*+<=>-]*|[!$%&*+\\-./:<=>?@^_~]",
+      "name": "meta.symbol.koskari"
+    }
+  }
+}

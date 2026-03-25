@@ -1,0 +1,38 @@
+; Koskari syntax highlighting for Helix
+
+(comment) @comment
+
+(string) @string
+
+(number) @constant.numeric
+
+(keyword) @constant.other.keyword
+
+; Layout block heads and special forms
+((_layout_header
+  (symbol) @keyword.control))
+
+; List head: treat known specials and layout heads as keyword
+; Source: design/SPECIALS.md, design/LAYOUTS.md
+((list (symbol) @keyword.control)
+ (#any-of? @keyword.control
+{% for tok in list_head_specials %}
+   "{{ tok }}"{% if loop.last %})){% endif %}
+{% endfor %}
+
+; General symbols
+(symbol) @variable.other
+
+; Punctuation and operators
+["(" ")" "[" "]" "{" "}"] @punctuation.bracket
+
+["." "," "'" "`"] @keyword.operator
+
+(unquote_splicing
+  ["," "@"] @keyword.operator)
+
+(unquote
+  [","] @keyword.operator)
+
+; Collection markers
+["#(" "#[" "#{"] @punctuation.definition.collection
