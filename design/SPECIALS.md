@@ -931,8 +931,17 @@ pushes CONST None.
 
 **Symbol:** `compile/define`
 
-**Syntax:** The first argument is always a **DECL** — a binding-shaped form with
-no value:
+**Syntax:** The name and optional return type can be written in either of two
+ways:
+
+**Inline type** (preferred; same `::` / `type:` placement as `compile/lambda`):
+
+- Declaration only: `(compile/define NAME :: TYPE)` or `(compile/define NAME type: TYPE)`
+- Declare and store: `(compile/define NAME :: TYPE EXPR)` (or `type: TYPE`)
+- Function shorthand:
+  `(compile/define NAME :: TYPE FORMALS BODY ...)` (or `type: TYPE`)
+
+**DECL** as the first argument (single binding-shaped form, no value):
 
 - Declaration only: `(compile/define DECL)`
 - Declare and store: `(compile/define DECL EXPR)`
@@ -950,20 +959,22 @@ no value:
 Declaration-only leaves the ref in scope but empty (reading before assignment
 raises). Declare-and-store evaluates EXPR and stores the result in the slot
 (equivalent to compile/bindq). Function shorthand lowers to a named
-`compile/lambda`: if `DECL` includes a type, the expansion is
-`(compile/lambda NAME :: TYPE FORMALS BODY ...)` (using the `::` keyword); if
-not, `(compile/lambda NAME FORMALS BODY ...)`.
+`compile/lambda`: if a return type is present (inline or in `DECL`), the
+expansion is `(compile/lambda NAME :: TYPE FORMALS BODY ...)` (using the `::`
+keyword); if not, `(compile/lambda NAME FORMALS BODY ...)`.
 
-For declaration-only or value binding with a typed DECL (e.g.
-`(compile/define [x :: int])`), the type is accepted by the parser but is not
-stored on the variable binding in the current compiler (parse-only / metadata
-for tooling).
+For declaration-only or value binding with a type (e.g.
+`(compile/define [x :: int])` or `(compile/define x :: int 99)`), the type is
+accepted by the parser but is not stored on the variable binding in the current
+compiler (parse-only / metadata for tooling), except that function shorthand
+passes the type through to `compile/lambda` as the return annotation.
 
-**Behaviour:** Parses the first argument with `parse_decl`, declares the
-introduced name. For declaration-only: emits CONST None. For declare-and-store:
-compiles EXPR, emits `VAR_STORE` to store the value, then CONST None. For
-function shorthand: builds the `compile/lambda` form as above and compiles it,
-then emits `VAR_STORE`.
+**Behaviour:** With **DECL**, parses the first argument with `parse_decl`. With
+**inline type**, the matcher binds `NAME`, `::` or `type:`, and `TYPE`. Declares
+the introduced name. For declaration-only: emits CONST None. For
+declare-and-store: compiles EXPR, emits `VAR_STORE` to store the value, then
+CONST None. For function shorthand: builds the `compile/lambda` form as above and
+compiles it, then emits `VAR_STORE`.
 
 **Examples:**
 
@@ -973,6 +984,7 @@ then emits `VAR_STORE`.
 (compile/setq x 42)
 
 ;; Typed declaration (parse-only on the binding; assign later as usual)
+(compile/define x :: int)
 (compile/define [x :: int])
 
 ;; Declare and store
@@ -980,6 +992,7 @@ then emits `VAR_STORE`.
 
 ;; Function shorthand
 (compile/define double [x] (* x 2))
+(compile/define f :: int [x] 5)
 (compile/define [f :: int] [x] 5)
 (compile/define fact [n]
   (compile/cond [(eq n 0) 1]
@@ -993,16 +1006,17 @@ then emits `VAR_STORE`.
 
 **Symbol:** `compile/define-global`
 
-**Syntax:** Same three arities as `compile/define`, with **DECL** as the first
-argument:
+**Syntax:** Same arities and spellings as `compile/define`: **inline type**
+(`NAME :: TYPE` / `NAME type: TYPE`) or **DECL** as the first argument:
 
-- `(compile/define-global DECL)`
-- `(compile/define-global DECL EXPR)`
-- `(compile/define-global DECL FORMALS BODY ...)`
+- `(compile/define-global NAME :: TYPE)` … (and `type:`), or `(compile/define-global DECL)`
+- `(compile/define-global NAME :: TYPE EXPR)` or `(compile/define-global DECL EXPR)`
+- `(compile/define-global NAME :: TYPE FORMALS BODY ...)` or
+  `(compile/define-global DECL FORMALS BODY ...)`
 
 See **compile/define** for the meaning of **DECL** and function-shorthand
-lowering to `compile/lambda` (including `NAME :: TYPE` when the declaration
-carries a type).
+lowering to `compile/lambda` (including `NAME :: TYPE` when a return type is
+present).
 
 **Use-case:** Explicit module binding for read and write. When using strict
 resolution (KoskariPragma), writes to undeclared names raise at compile time;

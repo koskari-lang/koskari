@@ -43,8 +43,8 @@ def default_layout_reader():
 
     global _default_reader
     if _default_reader is None:
-        from koskari.reader.layouts import LAYOUTS
         from koskari.reader import LayoutReader
+        from koskari.reader.layouts import LAYOUTS
         ns = {str(k): v for k, v in LAYOUTS.items()}
         _default_reader = LayoutReader(ns)
     return _default_reader

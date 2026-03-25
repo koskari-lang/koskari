@@ -206,9 +206,10 @@ keywords as the base grammar. They are called out here because they affect how
 `compile/define`, `compile/define-global`, and `compile/lambda` are written and
 what metadata the compiler records.
 
-### DECL (first argument to `compile/define` and `compile/define-global`)
+### DECL (alternative first argument to `compile/define` and `compile/define-global`)
 
-The first subform must be a **declaration** — a name with no value:
+The first subform may be a **declaration** — a name with no value — as a single
+list or symbol:
 
 - A **symbol** (`x`), or
 - A **bracket (or parenthesis) list** with a name and optional **type**
@@ -216,8 +217,21 @@ The first subform must be a **declaration** — a name with no value:
   spelling for types.
 
 **Not allowed** in a DECL: `value:`, or a two-element `(SYM EXPR)` default
-(same “no RHS” rules as valueful bindings). Full behaviour and
-examples: [SPECIALS.md](SPECIALS.md) § compile/define.
+(same “no RHS” rules as valueful bindings). Full behaviour and examples:
+[SPECIALS.md](SPECIALS.md) (compile/define).
+
+### Inline return type on `compile/define` and `compile/define-global`
+
+Optional **return** type may appear **after the name** and **before** formals,
+the value expression, or nothing (declare-only), using the same keywords as
+`compile/lambda`:
+
+- `NAME :: RET` or `NAME type: RET`
+
+`RET` is one expression. For function shorthand it becomes
+`__annotations__['return']` on the defined function. For declare-only or
+non-function bindings the compiler currently treats the type as parse-only
+(metadata); see [SPECIALS.md](SPECIALS.md) (compile/define).
 
 ### Return type on `compile/lambda`
 
@@ -229,7 +243,7 @@ Optional **return** type appears after an optional function **name** and before
 
 `RET` is one expression; it is **not** a formal parameter. It becomes
 `__annotations__['return']` on the function (and `code.extras['return']` on the
-`Code` object). See [SPECIALS.md](SPECIALS.md) § compile/lambda.
+`Code` object). See [SPECIALS.md](SPECIALS.md) (compile/lambda).
 
 Lexically, `::` and `type:` are **keyword atoms** in s-expression mode (see
 [Two Lexical Modes](#two-lexical-modes) and `<keyword-atom>`).

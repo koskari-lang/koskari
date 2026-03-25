@@ -24,11 +24,40 @@ and compile/define-syntax.
 
 
 from ...lib import cons, keyword, nil, OpCode, symbol
-from ...matcher import DECL, DEFINE, MATCH, REST, SYMBOL, VALUE, match
+from ...matcher import (
+    DECL,
+    DEFINE,
+    LITERAL_KW,
+    MATCH,
+    REST,
+    SYMBOL,
+    VALUE,
+    match,
+)
 from ...types import get_position, is_pair
 from ...exceptions import CompilerError, SpecialError
 from ..helpers import FORMALS, special, special_forms
 from ..syntax import build_syntax_rules_transformer
+
+
+def _define_name_type_pos_from_match(matched, rest):
+    """
+    Resolve name symbol, optional type expression, and position from a
+    define match (inline DEFINE with ``::`` / ``type:`` or DECL).
+    """
+
+    if "decl" in matched:
+        decl = matched["decl"]
+        namesym = decl.name
+        type_expr = decl.type
+        pos = decl.source_pos if decl.source_pos is not None else get_position(rest)
+    else:
+        name_mr = matched["name"]
+        namesym = name_mr.source
+        rt = matched.get("return_type")
+        type_expr = rt.source if rt is not None else None
+        pos = name_mr.source_pos if name_mr.source_pos is not None else get_position(rest)
+    return namesym, type_expr, pos
 
 
 _SETQ_PATTERNS = [MATCH(SYMBOL("sym"), VALUE("expr"))]
@@ -92,20 +121,56 @@ def special_delq(compiler, source, tc=False):
     return frag
 
 
-_DEFINE_PATTERNS = [
+_DEFINE_INLINE_PATTERNS = [
+    MATCH(
+        DEFINE("name"),
+        LITERAL_KW("::"),
+        VALUE("return_type"),
+        FORMALS("formals", scope="body"),
+        REST("body")),
+    MATCH(
+        DEFINE("name"),
+        LITERAL_KW("type:"),
+        VALUE("return_type"),
+        FORMALS("formals", scope="body"),
+        REST("body")),
+    MATCH(
+        DEFINE("name"),
+        LITERAL_KW("::"),
+        VALUE("return_type"),
+        VALUE("value")),
+    MATCH(
+        DEFINE("name"),
+        LITERAL_KW("type:"),
+        VALUE("return_type"),
+        VALUE("value")),
+    MATCH(
+        DEFINE("name"),
+        LITERAL_KW("::"),
+        VALUE("return_type")),
+    MATCH(
+        DEFINE("name"),
+        LITERAL_KW("type:"),
+        VALUE("return_type")),
+]
+
+_DEFINE_DECL_PATTERNS = [
     MATCH(DECL("decl"), FORMALS("formals", scope="body"), REST("body")),
     MATCH(DECL("decl"), VALUE("value")),
     MATCH(DECL("decl")),
 ]
+
+_DEFINE_PATTERNS = _DEFINE_INLINE_PATTERNS + _DEFINE_DECL_PATTERNS
 
 
 @special_forms(_DEFINE_PATTERNS)
 @special(symbol("compile/define"))
 def special_define(compiler, source, tc=False):
     """
-    Compile (define X), (define X EXPR), or (define X [Y Z] BODY...).
-    Declaration-only; declare-and-store; or function shorthand equivalent
-    to (define X (lambda X [Y Z] BODY...)).
+    Compile (define X), (define X EXPR), (define X [Y Z] BODY...), or
+    typed variants with ``X :: T`` / ``X type: T`` before formals, value,
+    or alone (declare-only). Function shorthand is equivalent to
+    (define X (lambda X [Y Z] BODY...)).
     """
 
     called_by, rest = source
@@ -113,23 +178,21 @@ def special_define(compiler, source, tc=False):
     if matched is None:
         raise SpecialError("define requires a name", source)
 
-    decl = matched["decl"]
-    namesym = decl.name
+    namesym, type_expr, pos = _define_name_type_pos_from_match(matched, rest)
     name = str(namesym)
 
     frag = compiler.fragment(called_by)
-    pos = decl.source_pos if decl.source_pos is not None else get_position(rest)
     frag.declare_var(name, position=pos)
 
     if "body" in matched:
         formals = matched["formals"]
         body = matched["body"]
-        if decl.type is not None:
+        if type_expr is not None:
             val_expr = cons(
                 symbol("compile/lambda"),
                 namesym,
                 keyword("::"),
-                decl.type,
+                type_expr,
                 formals.source,
                 body.source)
         else:
@@ -153,32 +216,24 @@ def special_define(compiler, source, tc=False):
     return frag
 
 
-_DEFINE_GLOBAL_PATTERNS = [
-    MATCH(DECL("decl"), FORMALS("formals", scope="body"), REST("body")),
-    MATCH(DECL("decl"), VALUE("value")),
-    MATCH(DECL("decl")),
-]
-
-
-@special_forms(_DEFINE_GLOBAL_PATTERNS)
+@special_forms(_DEFINE_PATTERNS)
 @special(symbol("compile/define-global"))
 def special_define_global(compiler, source, tc=False):
     """
-    Compile (define-global X), (define-global X EXPR), or
-    (define-global X [Y Z] BODY...). Explicit module binding for read and write.
+    Compile (define-global X), (define-global X EXPR),
+    (define-global X [Y Z] BODY...), or typed ``X :: T`` / ``X type: T``
+    variants. Explicit module binding for read and write.
     """
 
     called_by, rest = source
-    matched = match(rest, _DEFINE_GLOBAL_PATTERNS)
+    matched = match(rest, _DEFINE_PATTERNS)
     if matched is None:
         raise SpecialError("define-global requires a name", source)
 
-    decl = matched["decl"]
-    namesym = decl.name
+    namesym, type_expr, pos = _define_name_type_pos_from_match(matched, rest)
     name = str(namesym)
 
     frag = compiler.fragment(called_by)
-    pos = decl.source_pos if decl.source_pos is not None else get_position(rest)
     try:
         frag.request_global(name, position=pos)
     except CompilerError:
@@ -190,12 +245,12 @@ def special_define_global(compiler, source, tc=False):
     if "body" in matched:
         formals = matched["formals"]
         body = matched["body"]
-        if decl.type is not None:
+        if type_expr is not None:
             val_expr = cons(
                 symbol("compile/lambda"),
                 namesym,
                 keyword("::"),
-                decl.type,
+                type_expr,
                 formals.source,
                 body.source)
         else:

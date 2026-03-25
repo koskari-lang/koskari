@@ -43,7 +43,7 @@ from re import UNICODE, VERBOSE
 from re import compile as regex
 
 from ..exceptions import FormatStringSyntaxError, ReaderSyntaxError
-from ..types import (BaseSourceStream, Module, cons, is_pair,
+from ..types import (BaseSourceStream, Module, cons, is_pair, is_symbol,
                      keyword, nil, setcdr, symbol, unpack)
 from .layouts import LayoutHandler
 
@@ -1379,6 +1379,70 @@ class Reader(object):
 
 
 # ===========================================================================
+# Layout block header helpers
+# ===========================================================================
+
+
+class HeaderCommitDetector:
+    """
+    Decide whether the current header head should commit to header parsing.
+
+    Commit rule:
+    - After consuming the head atom, if the next non-horizontal-whitespace
+      character is:
+        - `;` (comment start) => do NOT commit
+        - `\\n` or `\\r` or EOF => do NOT commit
+      then commit only if there is any other token character present.
+    """
+
+    def __init__(self, *, hot_peek=2, fallback_peek=2048):
+        self._hot_peek = hot_peek
+        self._fallback_peek = fallback_peek
+
+    def should_commit(self, stream):
+        ahead = stream.peek(self._hot_peek) or ''
+        i = 0
+        while i < len(ahead) and ahead[i] in ' \t':
+            i += 1
+
+        if i >= len(ahead):
+            # Undecidable from the hot peek alone; inspect a larger window.
+            ahead = stream.peek(self._fallback_peek) or ''
+            i = 0
+            while i < len(ahead) and ahead[i] in ' \t':
+                i += 1
+
+            if i >= len(ahead):
+                return False
+            ch = ahead[i]
+        else:
+            ch = ahead[i]
+
+        if ch == ';' or ch in '\n\r':
+            return False
+        return True
+
+
+class LogicalLineScanner:
+    """
+    Minimal logical-line boundary helper for header-mode logic.
+
+    A newline ends the logical line only at delimiter depth 0.
+    """
+
+    def __init__(self, reader):
+        self._reader = reader
+
+    def at_logical_eol(self, stream):
+        if self._reader._layout_depth != 0:
+            return False
+        nxt = stream.peek(1)
+        if not nxt:
+            return True
+        return nxt in '\n\r'
+
+
+# ===========================================================================
 # LayoutReader
 # ===========================================================================
 
@@ -1390,6 +1454,12 @@ class LayoutReader(Reader):
     Subclasses Reader and adds indent-aware block reading. Resolves
     layout heads via namespace (layout/<head>). Requires a namespace
     for layout resolution, like the compiler.
+
+    Block headers use contextual structural `:` terminators: `:` ends the
+    header only when followed by whitespace and then comment, EOL, or EOF,
+    so keyword atoms like `as:` can appear in header arguments at delimiter
+    depth 0. When a top-level head commits to a block header, a missing
+    structural trailing `:` is a syntax error rather than a silent fallback.
 
     Stream interface contract: LayoutReader expects its stream arguments
     to be SourceStream instances (for pushback support). Body reads always
@@ -1422,33 +1492,138 @@ class LayoutReader(Reader):
         if not nodefaults:
             self._add_default_block_macros()
 
+        # Reader does not install a depth-0 `:` macro; structural `:` is
+        # emitted only while parsing headers (see _header_mode / _read_default).
+        self._header_scan = False
+        self._commit_detector = HeaderCommitDetector()
+        self._line_scanner = LogicalLineScanner(self)
+
 
     def _add_default_block_macros(self):
         self._block_macros.update({
             "'": self._read_quote_block,
             "`": self._read_quasiquote_block,
         })
-        self.set_event_macro(':', self._layout_colon_macro, terminating=True)
 
 
-    def _layout_colon_macro(self, stream, c):
+    @contextmanager
+    def _header_mode(self):
         """
-        Depth-aware colon macro for layout block mode
-
-        At depth 0 (outside all delimiters) a bare colon is the block
-        opener, so this fires the COLON event. At depth > 0 (inside
-        parentheses, brackets, or braces) the colon is part of normal
-        s-expression syntax, so it falls through to _read_default which
-        reassembles it into a keyword atom.
-
-        :param stream: the source stream
-        :param c: the ':' character
-        :return: tuple of (event, value)
+        Enable header terminator handling for `:` within atom scans.
         """
+        old = self._header_scan
+        self._header_scan = True
+        try:
+            yield
+        finally:
+            self._header_scan = old
 
-        if self._layout_depth == 0:
-            return COLON, symbol(':')
-        return self._read_default(stream, c)
+
+    def _read_default(self, stream, c):
+        """
+        Atom scanning override to support maybe-interrupting `:`.
+
+        In header scan mode at delimiter depth 0:
+        - structural `:` emits COLON and is not part of the atom
+        - non-structural `:` becomes part of the atom (for keyword atoms)
+        """
+        if self._header_scan and self._layout_depth == 0:
+            if c == ':' and self._is_structural_colon_after_consumed(stream):
+                return COLON, symbol(':')
+
+            terms_with_colon = self._terms + ':'
+            atom_parts = [c]
+            while True:
+                chunk = stream.read_until_chars(terms_with_colon)
+                if chunk:
+                    atom_parts.append(chunk)
+
+                if stream.peek(1) != ':':
+                    break
+
+                if self._is_structural_colon_at_next(stream):
+                    break
+
+                # Non-structural ':' becomes part of this atom.
+                stream.read(1)
+                atom_parts.append(':')
+
+            atom = ''.join(atom_parts)
+            if atom == '.':
+                return DOT, None
+            return ATOM, atom
+
+        return super()._read_default(stream, c)
+
+
+    def _is_structural_colon_in_ahead(self, ahead, colon_index):
+        """
+        Apply the structural rule to a ':' inside `ahead`.
+        """
+        j = colon_index + 1
+        while j < len(ahead) and ahead[j] in ' \t':
+            j += 1
+        if j >= len(ahead):
+            return True
+        ch = ahead[j]
+        return ch == ';' or ch in '\n\r'
+
+
+    def _is_structural_colon_after_consumed(self, stream):
+        """
+        Decide whether a header-terminator `:` is structural.
+
+        Assumes the `:` has already been consumed and the stream is positioned
+        right after it.
+        """
+        hot = stream.peek(2) or ''
+        i = 0
+        while i < len(hot) and hot[i] in ' \t':
+            i += 1
+
+        if i < len(hot):
+            ch = hot[i]
+            return ch == ';' or ch in '\n\r'
+
+        # Undecidable from the hot peek window; fall back to a larger peek.
+        ahead = stream.peek(2048) or ''
+        j = 0
+        while j < len(ahead) and ahead[j] in ' \t':
+            j += 1
+        if j >= len(ahead):
+            return True
+        ch = ahead[j]
+        return ch == ';' or ch in '\n\r'
+
+
+    def _is_structural_colon_at_next(self, stream):
+        """
+        Decide whether the next `:` is a structural header terminator.
+
+        Assumes the current stream position begins with `:`.
+        """
+        hot = stream.peek(2) or ''
+        if not hot or hot[0] != ':':
+            return False
+
+        i = 1
+        while i < len(hot) and hot[i] in ' \t':
+            i += 1
+        if i < len(hot):
+            ch = hot[i]
+            return ch == ';' or ch in '\n\r'
+
+        # Undecidable from the hot peek window; fall back.
+        ahead = stream.peek(2048) or ''
+        if not ahead or ahead[0] != ':':
+            return False
+        j = 1
+        while j < len(ahead) and ahead[j] in ' \t':
+            j += 1
+        if j >= len(ahead):
+            return True
+        ch = ahead[j]
+        return ch == ';' or ch in '\n\r'
 
 
     def find_layout(self, name):
@@ -1479,41 +1654,33 @@ class LayoutReader(Reader):
 
     def _has_block_colon_ahead(self, stream):
         """
-        Peek ahead to determine whether a bare colon at depth 0 exists ahead
+        Probe ahead for a structural header-terminator ':'.
 
-        Scans raw characters without consuming any, tracking bracket depth.
-        Newlines and semicolons stop the scan only when depth is 0; inside
-        delimiters they are transparent so that multi-line s-expressions in
-        block headers are handled correctly.
+        Scans a limited window and tracks delimiter depth so ':' within
+        parentheses/brackets/braces does not count.
 
         :param stream: the source stream
-        :return: True if a bare block-opener colon exists ahead
+        :return: True if a structural block-opener colon exists ahead
         """
 
-        ahead = stream.peek(512) or ''
+        ahead = stream.peek(2048) or ''
         depth = 0
-        for ch in ahead:
-            if depth == 0 and ch in '\n;':
+        for i, ch in enumerate(ahead):
+            if depth == 0 and ch in '\n\r;':
                 return False
             if ch in '([{':
                 depth += 1
             elif ch in ')]}':
                 depth -= 1
             elif ch == ':' and depth == 0:
-                return True
+                if self._is_structural_colon_in_ahead(ahead, i):
+                    return True
         return False
 
 
     def _read_header_args(self, stream):
         """
-        Read header argument forms until a COLON event or end-of-line
-
-        Called after the block head has already been read. Collects any
-        remaining argument forms up to the block-opener colon. Returns
-        early (found_colon=False) if the line ends without a colon.
-
-        :param stream: the source stream, an IndentAwareStream
-        :return: (args, found_colon) where args is a list of parsed forms
+        Read header argument forms until a structural COLON or end-of-line.
         """
 
         args = []
@@ -1521,12 +1688,15 @@ class LayoutReader(Reader):
             stream.skip_whitespace()
             if stream.dedented:
                 return args, False
+
             peek = stream.peek(1)
-            if not peek or peek == '\n':
+            if not peek or peek in '\n\r':
                 return args, False
             if peek == ';':
                 return args, False
-            event, pos, value = super()._read(stream)
+
+            with self._header_mode():
+                event, pos, value = super()._read(stream)
             if event is COLON:
                 return args, True
             if event is EOF:
@@ -1536,12 +1706,10 @@ class LayoutReader(Reader):
 
     def read_block_header(self, stream):
         """
-        Read the block head and arguments up to the block-opener colon
+        Read the block head and arguments up to a structural header ':'.
 
-        A single forward pass. With ':' installed as a terminating event
-        macro at depth 0, the first colon encountered at the top level
-        fires the COLON event and ends the header. No probe or replay is
-        needed.
+        Uses header-mode atom parsing so peer heads like `else:` are read as
+        symbols, not keyword atoms.
 
         :param stream: the source stream positioned at the first header token
         :return: (head, args, opener) where head is the first form, args are
@@ -1549,7 +1717,9 @@ class LayoutReader(Reader):
         :raises ReaderSyntaxError: on EOF or missing colon
         """
 
-        event, pos, head = super()._read(stream)
+        with self._header_mode():
+            event, pos, head = super()._read(stream)
+
         if event is COLON:
             raise stream.error('block header must have a head', pos)
         if event is EOF:
@@ -1560,6 +1730,19 @@ class LayoutReader(Reader):
             raise stream.error('block header must end with colon', pos)
 
         return head, args, symbol(':')
+
+
+    def read_header_until_terminator(self, stream, *, head_pos, head):
+        """
+        Read header argument forms until a structural header terminator ':'.
+
+        Assumes the stream is positioned right after the already-consumed
+        header head atom.
+        """
+        args, found_colon = self._read_header_args(stream)
+        if not found_colon:
+            raise stream.error('block header must end with colon', head_pos)
+        return args
 
 
     def read_block_body(self, stream, outer_indent):
@@ -1847,21 +2030,13 @@ class LayoutReader(Reader):
 
         At layout depth > 0 (inside delimiters), delegates to the base _read.
 
-        At depth 0, three cases:
-
+        At depth 0:
         1. c in '([{' -- parenthesised s-expression, read directly via _read.
-
-        2. c in _block_macros -- a prefix character introducing a raw block
-           (e.g. ' for compile/quote-block, backtick for quasiquote-block).
-           Consume the prefix, call the registered block-macro handler.
-           If the next char is a paren or EOF, restore the prefix and fall
-           through to plain _read instead.
-
-        3. Bare atom -- read it with super()._read (so the COLON macro fires
-           immediately if the first character is ':'). Then call
-           _read_header_args; if a colon was found, dispatch to
-           read_layout_block or read_block. Otherwise return the atom as a
-           plain form.
+        2. c in _block_macros -- quote/quasiquote raw block when a structural
+           header colon exists ahead; otherwise fall through to _read.
+        3. Bare atom -- read under header atom rules; if the head commits as
+           a block header, read args until structural `:` or raise on missing
+           terminator.
 
         :param stream: source stream positioned at the start of the next form
         :return: (event, position, value)
@@ -1883,6 +2058,12 @@ class LayoutReader(Reader):
             if c == ';':
                 stream.read(1)
                 stream.read_until_chars('\n')
+                if stream.peek(1) == '\n':
+                    stream.read(1)
+                continue
+
+            # Tolerate CRLF by consuming a stray leading '\r'.
+            if c == '\r':
                 stream.read(1)
                 continue
 
@@ -1891,13 +2072,8 @@ class LayoutReader(Reader):
 
             outer_indent = position[1]
 
-            # Case 2: block-macro prefix character (e.g. ' or `)
-            # Only invoke the block macro when a bare colon follows on this
-            # line at depth 0; otherwise restore the prefix and fall through
-            # to the plain reader so that e.g. `hello reads as a quasiquote.
             if c in self._block_macros:
                 next_c = stream.peek(2)[1:2]
-
                 if next_c and next_c not in '([{' and self._has_block_colon_ahead(stream):
                     stream.read(1)
                     block_macro = self._block_macros[c]
@@ -1906,10 +2082,10 @@ class LayoutReader(Reader):
                         result.set_position(position)
                     return VALUE, position, result
 
-                return self._read(stream)
+                return super()._read(stream)
 
-            # Case 3: bare atom, possibly followed by a colon block opener.
-            event, pos, form1 = super()._read(stream)
+            with self._header_mode():
+                event, pos, form1 = super()._read(stream)
             if event is COLON:
                 raise stream.error('block header must have a head', pos)
             if event is EOF:
@@ -1917,14 +2093,15 @@ class LayoutReader(Reader):
 
             header_indent = pos[1]
 
-            if self._has_block_colon_ahead(stream):
-                args, found_colon = self._read_header_args(stream)
-                if found_colon:
-                    if self._block_mode:
-                        block = self.read_block(stream, header_indent, form1, args)
-                    else:
-                        block = self.read_layout_block(stream, header_indent, form1, args)
-                    return VALUE, position, block
+            if is_symbol(form1) and self._commit_detector.should_commit(stream):
+                args = self.read_header_until_terminator(
+                    stream, head_pos=pos, head=form1)
+
+                if self._block_mode:
+                    block = self.read_block(stream, header_indent, form1, args)
+                else:
+                    block = self.read_layout_block(stream, header_indent, form1, args)
+                return VALUE, position, block
 
             return VALUE, pos, form1
 
