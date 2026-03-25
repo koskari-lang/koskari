@@ -15,15 +15,30 @@ koskari.reader.layout_ng
 
 Strict layout_ng reader.
 
-This reader is implemented as a sibling of the existing LayoutReader and
-LayoutNdReader. Pass 1 introduces strict commit + error-on-missing-terminator
-behaviour (see tests/reader/test_layout_ng.py).
+This reader implements two behaviors:
+
+1. Context-sensitive `:` terminators in block header parsing: `:` is treated
+   as a structural header terminator only when followed by whitespace and
+   then comment/EOL/EOF (so keyword atoms like `as:` can form at delimiter
+   depth 0 inside header arguments).
+2. Strict header commitment: when a top-level head is committed as a block
+   header, a missing structural trailing `:` is a syntax error rather than a
+   silent fallback to evaluating the would-be header parts as ordinary
+   expressions.
 """
 
-from .layout_nd import LayoutNdReader
+from contextlib import contextmanager
 
 from ..types import is_pair, is_symbol
-from .parser import COLON, EOF, VALUE
+from .parser import (
+    ATOM,
+    COLON,
+    DOT,
+    EOF,
+    LayoutReader,
+    VALUE,
+    symbol,
+)
 
 
 class HeaderCommitDetector:
@@ -85,15 +100,150 @@ class LogicalLineScanner:
         return nxt in '\n\r'
 
 
-class LayoutNgReader(LayoutNdReader):
+class LayoutNgReader(LayoutReader):
     """
     Strict layout_ng reader.
     """
 
     def __init__(self, namespace, nodefaults=False):
         super().__init__(namespace, nodefaults=nodefaults)
+
+        # LayoutReader installs ':' as a terminating macro at layout depth 0.
+        # We clear it and re-emit COLON contextually while parsing header
+        # forms.
+        if ':' in self.reader_macros:
+            self.clear_event_macro(':')
+
+        self._header_scan = False
         self._commit_detector = HeaderCommitDetector()
         self._line_scanner = LogicalLineScanner(self)
+
+    @contextmanager
+    def _header_mode(self):
+        """
+        Enable header terminator handling for `:` within atom scans.
+        """
+        old = self._header_scan
+        self._header_scan = True
+        try:
+            yield
+        finally:
+            self._header_scan = old
+
+    def _read_default(self, stream, c):
+        """
+        Atom scanning override to support maybe-interrupting `:`.
+
+        In header scan mode at delimiter depth 0:
+        - structural `:` emits COLON and is not part of the atom
+        - non-structural `:` becomes part of the atom (for keyword atoms)
+        """
+        if self._header_scan and self._layout_depth == 0:
+            if c == ':' and self._is_structural_colon_after_consumed(stream):
+                return COLON, symbol(':')
+
+            terms_with_colon = self._terms + ':'
+            atom_parts = [c]
+            while True:
+                chunk = stream.read_until_chars(terms_with_colon)
+                if chunk:
+                    atom_parts.append(chunk)
+
+                if stream.peek(1) != ':':
+                    break
+
+                if self._is_structural_colon_at_next(stream):
+                    break
+
+                # Non-structural ':' becomes part of this atom.
+                stream.read(1)
+                atom_parts.append(':')
+
+            atom = ''.join(atom_parts)
+            if atom == '.':
+                return DOT, None
+            return ATOM, atom
+
+        return super()._read_default(stream, c)
+
+    def _is_structural_colon_in_ahead(self, ahead, colon_index):
+        """
+        Apply the structural rule to a ':' inside `ahead`.
+        """
+        j = colon_index + 1
+        while j < len(ahead) and ahead[j] in ' \t':
+            j += 1
+        if j >= len(ahead):
+            return True
+        ch = ahead[j]
+        return ch == ';' or ch in '\n\r'
+
+    def _has_block_colon_ahead(self, stream):
+        """
+        Probe ahead for a structural header-terminator ':'.
+
+        Scans a limited window and tracks delimiter depth so ':' within
+        parentheses/brackets/braces does not count.
+        """
+        ahead = stream.peek(2048) or ''
+        depth = 0
+        for i, ch in enumerate(ahead):
+            if depth == 0 and ch in '\n\r;':
+                return False
+            if ch in '([{':
+                depth += 1
+            elif ch in ')]}':
+                depth -= 1
+            elif ch == ':' and depth == 0:
+                if self._is_structural_colon_in_ahead(ahead, i):
+                    return True
+        return False
+
+    def _read_header_args(self, stream):
+        """
+        Read header argument forms until a structural COLON or end-of-line.
+        """
+        args = []
+        while True:
+            stream.skip_whitespace()
+            if stream.dedented:
+                return args, False
+
+            peek = stream.peek(1)
+            if not peek or peek in '\n\r':
+                return args, False
+            if peek == ';':
+                return args, False
+
+            with self._header_mode():
+                event, pos, value = super()._read(stream)
+            if event is COLON:
+                return args, True
+            if event is EOF:
+                return args, False
+            args.append(value)
+
+    def read_block_header(self, stream):
+        """
+        Override LayoutReader.read_block_header to use header-mode atom
+        parsing so keyword atoms like `else:` are not mangled into the header
+        head.
+
+        Consumes the structural header terminator ':'.
+        """
+        with self._header_mode():
+            event, pos, head = super()._read(stream)
+
+        if event is COLON:
+            raise stream.error('block header must have a head', pos)
+        if event is EOF:
+            raise stream.error('unexpected EOF in block header', pos)
+
+        args, found_colon = self._read_header_args(stream)
+        if not found_colon:
+            raise stream.error('block header must end with colon', pos)
+
+        return head, args, symbol(':')
 
     def read_header_until_terminator(self, stream, *, head_pos, head):
         """
