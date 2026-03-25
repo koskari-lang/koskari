@@ -184,23 +184,46 @@ expand to this form before compilation.
 
 **Symbol:** `compile/lambda`
 
-**Syntax:**
-- Anonymous: `(compile/lambda FORMALS BODY ...)`
-- Named: `(compile/lambda NAME FORMALS BODY ...)`
+**Syntax** (most specific forms first; `NAME` is optional in all groups):
+
+| Shape | Form |
+| ----- | ---- |
+| Named + return | `(compile/lambda NAME :: RET FORMALS BODY ...)` |
+| Named + return (`type:`) | `(compile/lambda NAME type: RET FORMALS BODY ...)` |
+| Anonymous + return | `(compile/lambda :: RET FORMALS BODY ...)` |
+| Anonymous + return (`type:`) | `(compile/lambda type: RET FORMALS BODY ...)` |
+| Named, no return | `(compile/lambda NAME FORMALS BODY ...)` |
+| Anonymous, no return | `(compile/lambda FORMALS BODY ...)` |
+
+`RET` is a single expression (not a formal parameter). It is recorded as compiler
+metadata on the resulting `Code` (`code.extras['return']`) and exposed on the
+callable as `__annotations__['return']` (via `kos_typehint_to_dunder_annotation`
+in the runtime — same string rules as parameter annotations, e.g. simple
+symbols become their name strings).
 
 **Formals:** A list or improper list of parameter names, optionally with keyword
 parameters and defaults, e.g. `[a b]`, `[a b c: default-c]`, or a single symbol
 for rest. Supports `*` and `**` in formals (see `gather_formals` in helpers).
+Parameter types may use `::` / `type:` on individual parameters (see formals
+helpers).
+
+**Docstring:** If the first form in `BODY` is a string literal, it is taken as
+the function docstring (`discover_docstring` in helpers). It is attached to the
+fragment, stored on `Code` as `code.extras['doc']`, and appears on the callable
+as `__doc__`. A leading `(compile/begin ...)` in the body is peeled only for
+docstring discovery; the body is still compiled in full.
 
 **Use-case:** Create an anonymous or named function value. Named lambdas bind the
 given name in the function's scope so the function can refer to itself (e.g. for
 recursion).
 
-**Behaviour:** Parses formals with `gather_formals`, builds a fragment that
-declares the parameter names, compiles the body with `helper_begin`, and
-completes it as a function. Pushes a `FunctionSpec` constant and emits
-`BUILD_FUNCTION`. Default values for keyword parameters are compiled in the
-enclosing scope and passed in via the constant tuple for defaulted keywords.
+**Behaviour:** Matches one of the shapes above, parses formals with
+`gather_formals`, builds a fragment that declares the parameter names, compiles
+the body with `helper_begin`, and completes it as a function. If a return type
+was present, sets `code.extras['return']` from the `RET` form after `complete`.
+Pushes a `FunctionSpec` constant and emits `BUILD_FUNCTION`. Default values for
+keyword parameters are compiled in the enclosing scope and passed in via the
+constant tuple for defaulted keywords.
 
 **Examples:**
 
@@ -217,6 +240,13 @@ enclosing scope and passed in via the constant tuple for defaulted keywords.
 
 ;; Keyword parameter with default
 (compile/lambda [x flag: true] ...)
+
+;; Return type (named and anonymous)
+(compile/lambda f :: int [x] x)
+(compile/lambda :: str [x] "hi")
+
+;; Docstring + return type
+(compile/lambda g :: int [x] "doc for g" x)
 ```
 
 
@@ -901,22 +931,39 @@ pushes CONST None.
 
 **Symbol:** `compile/define`
 
-**Syntax:**
-- Declaration only: `(compile/define X)`
-- Declare and store: `(compile/define X EXPR)`
-- Function shorthand: `(compile/define X [Y Z] BODY ...)`
+**Syntax:** The first argument is always a **DECL** — a binding-shaped form with
+no value:
+
+- Declaration only: `(compile/define DECL)`
+- Declare and store: `(compile/define DECL EXPR)`
+- Function shorthand: `(compile/define DECL FORMALS BODY ...)`
+
+**DECL** may be:
+
+- A **symbol** (e.g. `x`), or
+- A **proper list** introducing a name with optional **type** attributes only:
+  e.g. `[x]`, `[x :: int]`, `[x type: int]`, or `(TYPE as: NAME)` for the
+  type-as-name spelling. **`value:`** and two-element **`(SYM EXPR)`** defaults
+  are rejected (declarations do not carry a value).
 
 **Use-case:** Variable and function definition for module-level loading.
 Declaration-only leaves the ref in scope but empty (reading before assignment
 raises). Declare-and-store evaluates EXPR and stores the result in the slot
-(equivalent to compile/bindq). Function shorthand expands to
-`(define X (lambda X [Y Z] BODY ...))`, storing a named function in the slot.
+(equivalent to compile/bindq). Function shorthand lowers to a named
+`compile/lambda`: if `DECL` includes a type, the expansion is
+`(compile/lambda NAME :: TYPE FORMALS BODY ...)` (using the `::` keyword); if
+not, `(compile/lambda NAME FORMALS BODY ...)`.
 
-**Behaviour:** Declares the variable name. For declaration-only: emits CONST
-None. For declare-and-store: compiles EXPR, emits VAR_BIND to store the value,
-then CONST None. For function shorthand (second element is a pair and a body
-follows): builds `(compile/lambda X FORMALS BODY...)` and compiles it as the
-value expression, then emits VAR_BIND to store it.
+For declaration-only or value binding with a typed DECL (e.g.
+`(compile/define [x :: int])`), the type is accepted by the parser but is not
+stored on the variable binding in the current compiler (parse-only / metadata
+for tooling).
+
+**Behaviour:** Parses the first argument with `parse_decl`, declares the
+introduced name. For declaration-only: emits CONST None. For declare-and-store:
+compiles EXPR, emits `VAR_STORE` to store the value, then CONST None. For
+function shorthand: builds the `compile/lambda` form as above and compiles it,
+then emits `VAR_STORE`.
 
 **Examples:**
 
@@ -925,11 +972,15 @@ value expression, then emits VAR_BIND to store it.
 (compile/define x)
 (compile/setq x 42)
 
+;; Typed declaration (parse-only on the binding; assign later as usual)
+(compile/define [x :: int])
+
 ;; Declare and store
 (compile/define y 99)
 
 ;; Function shorthand
 (compile/define double [x] (* x 2))
+(compile/define [f :: int] [x] 5)
 (compile/define fact [n]
   (compile/cond [(eq n 0) 1]
                 [else: (* n (fact (sub n 1)))]))
@@ -942,10 +993,16 @@ value expression, then emits VAR_BIND to store it.
 
 **Symbol:** `compile/define-global`
 
-**Syntax:**
-- Declaration only: `(compile/define-global X)`
-- Declare and store: `(compile/define-global X EXPR)`
-- Function shorthand: `(compile/define-global X [Y Z] BODY ...)`
+**Syntax:** Same three arities as `compile/define`, with **DECL** as the first
+argument:
+
+- `(compile/define-global DECL)`
+- `(compile/define-global DECL EXPR)`
+- `(compile/define-global DECL FORMALS BODY ...)`
+
+See **compile/define** for the meaning of **DECL** and function-shorthand
+lowering to `compile/lambda` (including `NAME :: TYPE` when the declaration
+carries a type).
 
 **Use-case:** Explicit module binding for read and write. When using strict
 resolution (KoskariPragma), writes to undeclared names raise at compile time;

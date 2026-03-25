@@ -81,4 +81,16 @@ class TestDefineFunctionShorthand(SpecialsTestCase):
         self.assertEqual(120, result)
 
 
+    async def test_define_function_shorthand_decl_return_annotation(self):
+        src_str = """
+        (compile/begin
+          (define [f :: int] [x] (mul x 2))
+          f)
+        """
+        expr, mod = self.compile_expr(src_str, mul=lambda a, b: a * b)
+        f = await expr()
+        self.assertEqual(f.__annotations__['return'], 'int')
+        self.assertEqual(await f(5), 10)
+
+
 # The end.

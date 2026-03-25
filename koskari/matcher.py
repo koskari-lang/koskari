@@ -32,6 +32,7 @@ __all__ = (
     'BindingMatcher',
     'BindingsResult',
     'BindingResult',
+    'DeclResult',
     'UsingResult',
     'FormalsResult',
     'MatchResult',
@@ -41,6 +42,7 @@ __all__ = (
 
     'ANY_ORDER',
     'BIND',
+    'DECL',
     'DEFINE',
     'EXPR',
     'LITERAL',
@@ -168,6 +170,7 @@ _tag_any_order = symbol('matcher/any-order')
 _tag_list = symbol('matcher/list')
 _tag_expr = symbol('matcher/expr')
 _tag_define = symbol('matcher/define')
+_tag_decl = symbol('matcher/decl')
 _tag_value = symbol('matcher/value')
 _tag_repeat = symbol('matcher/repeat')
 _tag_key = symbol('matcher/key')
@@ -189,10 +192,11 @@ class MatchResult:
 class FormalsResult(MatchResult):
     """
     Result for FORMALS: source, source_pos, plus positional, defaults, kwonly,
-    star, starstar. Supports unpacking for backward compat.
+    star, starstar, annotations. Unpacking yields five values for backward compat.
     """
 
-    __slots__ = ('positional', 'defaults', 'kwonly', 'star', 'starstar')
+    __slots__ = (
+        'positional', 'defaults', 'kwonly', 'star', 'starstar', 'annotations')
 
     def __init__(
             self,
@@ -202,13 +206,15 @@ class FormalsResult(MatchResult):
             defaults=None,
             kwonly=None,
             star=None,
-            starstar=None):
+            starstar=None,
+            annotations=None):
         super().__init__(source, source_pos)
         self.positional = positional if positional is not None else []
         self.defaults = defaults if defaults is not None else []
         self.kwonly = kwonly if kwonly is not None else []
         self.star = star
         self.starstar = starstar
+        self.annotations = annotations if annotations is not None else {}
 
 
     def __iter__(self):
@@ -248,6 +254,28 @@ class BindingResult(MatchResult):
         super().__init__(source, source_pos)
         self.name = name
         self.value = value
+
+
+class DeclResult(MatchResult):
+    """
+    Result for DECL: binding-shaped first argument with no value; optional
+    type expression and raw source_form for debugging
+    """
+
+    __slots__ = ('name', 'type', 'source_form')
+
+
+    def __init__(
+            self,
+            source,
+            source_pos=None,
+            name=None,
+            type=None,
+            source_form=None):
+        super().__init__(source, source_pos)
+        self.name = name
+        self.type = type
+        self.source_form = source_form if source_form is not None else source
 
 
 class UsingResult(BindingResult):
@@ -490,6 +518,54 @@ class _DefineMatcher(BindingMatcher):
 
     def to_tuple(self):
         return (_tag_define, symbol(self._key) if isinstance(self.slot, str) else self.slot)
+
+
+@matcher(_tag_decl)
+class _DeclMatcher(BindingMatcher):
+    """
+    Capture one element as a declaration (binding-shaped, no value)
+    """
+
+    def __init__(self, slot):
+        self.slot = slot
+        self._key = _slot_key(slot)
+
+
+    @classmethod
+    def from_payload(cls, payload, deserialize):
+        if len(payload) != 1:
+            raise ValueError('decl expects 1 payload, got %d' % len(payload))
+        return cls(payload[0])
+
+
+    def consume(self, source, literals, result, specs=None):
+        if source is nil:
+            return (None, False)
+        head, tail = source
+        from koskari.compile.helpers import parse_decl
+        from koskari.exceptions import SpecialError
+        try:
+            name_sym, type_expr = parse_decl(head, source=head)
+        except SpecialError:
+            return (None, False)
+        pos = get_position(source) if is_pair(source) else None
+        decl_res = DeclResult(
+            head, pos, name=name_sym, type=type_expr, source_form=head)
+        if not _check_duplicate_slot(self._key, decl_res, self, result, specs):
+            return (None, False)
+        result[self._key] = decl_res
+        if specs is not None:
+            specs[self._key] = self
+        return (tail, True)
+
+
+    def extract_binder_symbols(self, value):
+        if isinstance(value, DeclResult):
+            yield value.name
+
+
+    def to_tuple(self):
+        return (_tag_decl, symbol(self._key) if isinstance(self.slot, str) else self.slot)
 
 
 @matcher(_tag_value)
@@ -958,6 +1034,15 @@ def DEFINE(slot):
     """
 
     return _DefineMatcher(slot)
+
+
+def DECL(slot):
+    """
+    Capture one element as a declaration (symbol or typed binding list, no
+    value)
+    """
+
+    return _DeclMatcher(slot)
 
 
 def VALUE(slot):

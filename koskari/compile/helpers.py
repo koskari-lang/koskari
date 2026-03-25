@@ -26,7 +26,9 @@ from ..matcher import (
     FormalsResult,
     LITERAL_KW,
     LIST,
+    MATCH,
     Matcher,
+    REST,
     SYMBOL,
     match1,
     matcher,
@@ -48,6 +50,7 @@ __all__ = (
     "helper_begin",
     "helper_binding",
     "helper_using",
+    "parse_decl",
     "helper_elsebody",
     "is_lazygensym",
     "is_symbolish",
@@ -148,7 +151,8 @@ _tag_formals = symbol('matcher/formals')
 class _FormalsMatcher(BindingMatcher):
     """
     Match formals (pair or symbol) and bind the result of gather_formals
-    as FormalsResult (positional, defaults, kwonly, star, starstar)
+    as FormalsResult (positional, defaults, kwonly, star, starstar,
+    annotations on .annotations)
     """
 
     def __init__(self, slot, *, scope=None, scopes=None):
@@ -177,13 +181,14 @@ class _FormalsMatcher(BindingMatcher):
         if not (is_symbol(head) or is_pair(head)):
             return (None, False)
         try:
-            pos, defaults, kwonly, star, starstar = gather_formals(head, head)
+            pos, defaults, kwonly, star, starstar, ann = gather_formals(
+                head, head)
         except SpecialError:
             return (None, False)
         result[self._key] = FormalsResult(
             head, get_position(source),
             positional=pos, defaults=defaults, kwonly=kwonly,
-            star=star, starstar=starstar)
+            star=star, starstar=starstar, annotations=ann)
         if specs is not None:
             specs[self._key] = self
         return (tail, True)
@@ -214,6 +219,11 @@ class _FormalsMatcher(BindingMatcher):
                 out.append(expr)
             for _kw, expr in (value.kwonly or ()):
                 out.append(expr)
+            ann = getattr(value, 'annotations', None) or {}
+            for bundle in ann.values():
+                t = bundle.get('type')
+                if t is not None:
+                    out.append(t)
         elif isinstance(value, (tuple, list)) and len(value) == 5:
             _pos, defaults, kwonly, _star, _starstar = value
             for _kw, expr in (defaults or ()):
@@ -621,25 +631,245 @@ def gather_parameters_ng(args, source=None):
     return (args_seq, kwds_seq)
 
 
+def _formal_kw_tag_to_key(kw):
+    """
+    Map keyword atom to annotation key; empty keyword (``::`` sugar) is type
+    """
+
+    raw = str(kw)
+    if raw.endswith(':'):
+        raw = raw[:-1]
+    if raw == '':
+        return 'type'
+    return raw
+
+
+def _parse_formal_tail(tail, source):
+    """
+    Parse REST tail after formal name: keyword/value pairs or lone default.
+
+    :return: (ann_bundle, default_expr) where ann_bundle may include type
+    """
+
+    if tail is nil:
+        return {}, None
+    head = car(tail)
+    rest = cdr(tail)
+    if not is_keyword(head):
+        if rest is not nil:
+            raise SpecialError(
+                "malformed formal tail after name, not %r" % tail,
+                source)
+        return {}, head
+
+    ann = {}
+    default = None
+    cur = tail
+    while cur is not nil:
+        kw = car(cur)
+        cur = cdr(cur)
+        if not is_keyword(kw):
+            raise SpecialError(
+                "expected keyword in formal attribute list, not %r"
+                % kw,
+                source)
+        if cur is nil:
+            raise SpecialError(
+                "missing value for formal attribute %r" % kw,
+                source)
+        val = car(cur)
+        cur = cdr(cur)
+        key = _formal_kw_tag_to_key(kw)
+        if key == 'value':
+            default = val
+        elif key == 'type':
+            ann['type'] = val
+        else:
+            raise SpecialError(
+                "unknown formal attribute %r" % head,
+                source)
+    return ann, default
+
+
+def parse_formal_parameter(form, source=None):
+    """
+    Parse one formal parameter: bare symbol, or list with name and attributes.
+
+    :return: (name_symbol, annotation_bundle, default_expr)
+    """
+
+    if is_symbol(form) or is_lazygensym(form):
+        return (form, {}, None)
+    if not is_pair(form):
+        raise SpecialError(
+            "formal must be symbol or proper list, not %r" % form,
+            source)
+    if not is_proper(form):
+        raise SpecialError(
+            "formal list must be proper, not %r" % form,
+            source)
+
+    elems = tuple(unpack(form))
+    if len(elems) == 1 and is_symbolish(elems[0]):
+        return (elems[0], {}, None)
+
+    _sym_expr = (LIST(SYMBOL("name"), VALUE("expr")),)
+    m_sv = match1(form, _sym_expr)
+    if m_sv is not None:
+        return (m_sv["name"].source, {}, m_sv["expr"].source)
+
+    _expr_as_name = (
+        LIST(VALUE("type_expr"), LITERAL_KW("as"), SYMBOL("name")),
+    )
+    m_as = match1(form, _expr_as_name)
+    if m_as is not None:
+        return (
+            m_as["name"].source,
+            {"type": m_as["type_expr"].source},
+            None)
+
+    _FORMAL_HEAD = (LIST(MATCH(SYMBOL("name"), REST("tail"))),)
+    m = match1(form, _FORMAL_HEAD)
+    if m is None:
+        raise SpecialError("invalid formal parameter form %r" % form, source)
+
+    name = m["name"].source
+    tail = m["tail"].source
+    ann, default = _parse_formal_tail(tail, source)
+    return (name, ann, default)
+
+
+def _parse_decl_tail(tail, source):
+    """
+    Parse REST after a declaration name: only keyword attributes, no value
+    position and no value:.
+
+    :return: annotation bundle (may include type)
+    """
+
+    if tail is nil:
+        return {}
+    head = car(tail)
+    if not is_keyword(head):
+        raise SpecialError(
+            "declaration cannot include a value",
+            source)
+
+    ann = {}
+    cur = tail
+    while cur is not nil:
+        kw = car(cur)
+        cur = cdr(cur)
+        if not is_keyword(kw):
+            raise SpecialError(
+                "expected keyword in declaration attribute list, not %r"
+                % kw,
+                source)
+        if cur is nil:
+            raise SpecialError(
+                "missing value for declaration attribute %r" % kw,
+                source)
+        val = car(cur)
+        cur = cdr(cur)
+        key = _formal_kw_tag_to_key(kw)
+        if key == 'value':
+            raise SpecialError(
+                "value: is not allowed in declaration",
+                source)
+        elif key == 'type':
+            ann['type'] = val
+        else:
+            raise SpecialError(
+                "unknown declaration attribute %r" % kw,
+                source)
+    return ann
+
+
+def parse_decl(form, source=None):
+    """
+    Parse a binding-shaped declaration with no value: bare symbol, or list
+    with name and optional type attributes (``::`` / ``type:``), or
+    ``(TYPE as: NAME)``.
+
+    :return: (name_symbol, type_expr_or_None)
+    """
+
+    if is_symbol(form) or is_lazygensym(form):
+        return (form, None)
+    if not is_pair(form):
+        raise SpecialError(
+            "declaration must be symbol or proper list, not %r" % form,
+            source)
+    if not is_proper(form):
+        raise SpecialError(
+            "declaration list must be proper, not %r" % form,
+            source)
+
+    elems = tuple(unpack(form))
+    if len(elems) == 1 and is_symbolish(elems[0]):
+        return (elems[0], None)
+
+    _sym_expr = (LIST(SYMBOL("name"), VALUE("expr")),)
+    m_sv = match1(form, _sym_expr)
+    if m_sv is not None:
+        raise SpecialError(
+            "declaration cannot include a value",
+            source)
+
+    _expr_as_name = (
+        LIST(VALUE("type_expr"), LITERAL_KW("as"), SYMBOL("name")),
+    )
+    m_as = match1(form, _expr_as_name)
+    if m_as is not None:
+        return (m_as["name"].source, m_as["type_expr"].source)
+
+    _FORMAL_HEAD = (LIST(MATCH(SYMBOL("name"), REST("tail"))),)
+    m = match1(form, _FORMAL_HEAD)
+    if m is None:
+        raise SpecialError("invalid declaration form %r" % form, source)
+
+    name = m["name"].source
+    tail = m["tail"].source
+    ann = _parse_decl_tail(tail, source)
+    type_expr = ann.get('type')
+    return (name, type_expr)
+
+
+def _merge_formal_annotations(annotations, name_sym, ann_bundle):
+    """
+    Merge ann_bundle into annotations dict keyed by str(name_sym).
+    """
+
+    if not ann_bundle:
+        return
+    key = str(name_sym)
+    if key in annotations:
+        annotations[key].update(ann_bundle)
+    else:
+        annotations[key] = dict(ann_bundle)
+
+
 def gather_formals(args, source=None):
     """
-    Parse definition-site formals into five values.
+    Parse definition-site formals into six values.
 
     :param args: pair, improper list, or single symbol (rest arg)
     :param source: optional source form for error context
-    :return: (positional, defaults, kwonly, star, starstar)
+    :return: (positional, defaults, kwonly, star, starstar, annotations)
         - positional: list of symbols for positional parameters
         - defaults: list of (keyword, default_expr) for keyword params
         - kwonly: list of (keyword, default_expr) for keyword-only params
         - star: symbol or None for *args
         - starstar: symbol or None for **kwargs
+        - annotations: dict name str -> {type: expr, ...} per parameter
     :raises SpecialError: on invalid formals list
     """
 
     undefined = object()
+    annotations = {}
 
     if is_symbol(args):
-        return ([], [], [], args, None)
+        return ([], [], [], args, None, annotations)
 
     elif isinstance(args, (list, tuple)):
         improper = False
@@ -655,6 +885,7 @@ def gather_formals(args, source=None):
         raise SpecialError("formals must be symbol or pair, not %r" % args, source)
 
     positional = []
+    defaults = []
 
     iargs = iter(unpack(args))
     for arg in iargs:
@@ -666,14 +897,23 @@ def gather_formals(args, source=None):
         elif is_symbol(arg) or is_lazygensym(arg):
             positional.append(arg)
         else:
-            raise SpecialError("positional formals must be symbols, not %r" % arg, source)
+            try:
+                name, ann, default = parse_formal_parameter(arg, source)
+            except SpecialError as err:
+                raise SpecialError(
+                    "positional formals must be symbols or bracket forms, not %r"
+                    % arg,
+                    source) from err
+            positional.append(name)
+            _merge_formal_annotations(annotations, name, ann)
+            if default is not None:
+                defaults.append((keyword(str(name)), default))
     else:
         if improper:
-            return (positional[:-1], [], [], positional[-1], None)
+            return (positional[:-1], defaults, [], positional[-1], None, annotations)
         else:
-            return (positional, [], [], None, None)
+            return (positional, defaults, [], None, None, annotations)
 
-    defaults = []
     kwonly = []
 
     while arg not in (_keyword_star, _keyword_starstar):
@@ -699,7 +939,7 @@ def gather_formals(args, source=None):
     starstar = None
 
     if arg is undefined:
-        return (positional, defaults, kwonly, None, None)
+        return (positional, defaults, kwonly, None, None, annotations)
 
     if arg is _keyword_star:
         star = next(iargs, undefined)
@@ -712,7 +952,7 @@ def gather_formals(args, source=None):
         arg = next(iargs, undefined)
 
     if arg is undefined:
-        return (positional, defaults, kwonly, star, starstar)
+        return (positional, defaults, kwonly, star, starstar, annotations)
 
     if not is_keyword(arg):
         raise SpecialError("expected keyword in formals, got %r" % arg, source)
@@ -745,7 +985,7 @@ def gather_formals(args, source=None):
     if arg is not undefined:
         raise SpecialError("leftover formals %r" % arg, source)
 
-    return (positional, defaults, kwonly, star, starstar)
+    return (positional, defaults, kwonly, star, starstar, annotations)
 
 
 def gather_bindings(bindings_source, source=None):

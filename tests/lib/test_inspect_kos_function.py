@@ -23,6 +23,7 @@ import unittest
 
 import pytest
 
+from koskari.lib import symbol
 from koskari.types import FormalsSpec
 
 from tests.lib.test_expression_function import build_expr
@@ -63,6 +64,24 @@ class TestInspectKosFunction(unittest.TestCase):
         fn = code.function(fspec(), base_ns)
         self.assertEqual(fn.__annotations__, {})
 
+    def test_annotations_from_formals_type_bundles(self):
+        code, base_ns = build_expr([["CONST", 42], ["RETURN", 1]])
+        meta = {'a': {'type': symbol('int')}, 'b': {'type': symbol('str')}}
+        fspec = FormalsSpec(
+            ('a',), None, ('b',), None, None, None, meta)
+        fn = code.function(fspec(), base_ns)
+        self.assertEqual(
+            fn.__annotations__,
+            {'a': 'int', 'b': 'str'})
+
+    def test_annotations_merge_return_from_code_extras(self):
+        code, base_ns = build_expr([["CONST", 42], ["RETURN", 1]])
+        code.extras['return'] = symbol('int')
+        fspec = FormalsSpec(('x',), None, ())
+        fn = code.function(fspec(), base_ns)
+        self.assertEqual(fn.__annotations__, {'return': 'int'})
+        self.assertEqual(fn.__annotations__['return'], 'int')
+
     def test_dunder_name_from_code(self):
         code, base_ns = build_expr(
             [["CONST", 42], ["RETURN", 1]], name="myfn")
@@ -100,6 +119,14 @@ class TestInspectBoundMethod(unittest.TestCase):
         bm = fn.__get__(object(), type(None))
         sig_bound = inspect.signature(bm)
         self.assertEqual(list(sig_bound.parameters.keys()), ['x'])
+
+    def test_bound_method_annotations_match_function(self):
+        code, base_ns = build_expr([["CONST", 42], ["RETURN", 1]])
+        meta = {'x': {'type': symbol('int')}}
+        fspec = FormalsSpec(('self',), None, ('x',), None, None, None, meta)
+        fn = code.function(fspec(), base_ns)
+        bm = fn.__get__(object(), type(None))
+        self.assertEqual(bm.__annotations__, {'x': 'int'})
 
 
 # The end.

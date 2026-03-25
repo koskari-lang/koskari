@@ -46,6 +46,7 @@ class TestFormalsSpec(unittest.IsolatedAsyncioTestCase):
         self.assertIsNone(fspec.kwd_only)
         self.assertIsNone(fspec.star)
         self.assertIsNone(fspec.starstar)
+        self.assertIsNone(fspec.annotations)
 
     async def test_create_with_pos(self):
         """FormalsSpec accepts positional symbols"""
@@ -82,6 +83,14 @@ class TestFormalsSpec(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(fspec.star, "args")
         self.assertEqual(fspec.starstar, "kwargs")
 
+    async def test_create_with_annotations(self):
+        """FormalsSpec stores per-parameter annotation bundles"""
+
+        ann = {'a': {'type': 'int'}}
+        fspec = FormalsSpec(
+            ("a",), None, None, None, None, None, ann)
+        self.assertEqual(fspec.annotations, ann)
+
     async def test_call_creates_formals(self):
         """Calling FormalsSpec creates a Formals instance"""
 
@@ -90,6 +99,7 @@ class TestFormalsSpec(unittest.IsolatedAsyncioTestCase):
         self.assertIsInstance(formals, Formals)
         self.assertEqual(formals.pos, ("a", "b"))
         self.assertIsNone(formals.defaults)
+        self.assertIsNone(formals.annotations)
 
     async def test_call_with_defaults(self):
         """Calling FormalsSpec with defaults creates Formals with defaults"""
@@ -99,6 +109,15 @@ class TestFormalsSpec(unittest.IsolatedAsyncioTestCase):
         formals = fspec(defaults)
         self.assertIsInstance(formals, Formals)
         self.assertEqual(formals.defaults, {'b': 42})
+        self.assertIsNone(formals.annotations)
+
+    async def test_spec_annotations_copied_to_formals(self):
+        """KosFormals_New copies FormalsSpec.annotations onto Formals"""
+
+        ann = {'x': {'type': 1}}
+        fspec = FormalsSpec(("x",), None, None, None, None, None, ann)
+        formals = fspec()
+        self.assertEqual(formals.annotations, ann)
 
     async def test_namespace_spec_empty(self):
         """FormalsSpec.namespace_spec() with empty spec"""
@@ -153,7 +172,7 @@ class TestFormals(unittest.IsolatedAsyncioTestCase):
     async def test_create_direct(self):
         """Formals can be created directly with all arguments"""
 
-        formals = Formals(("a",), (), ("b",), (), None, None, None)
+        formals = Formals(("a",), (), ("b",), (), None, None, None, None)
         self.assertEqual(formals.pos, ("a",))
         self.assertIsNone(formals.pos_only)
         self.assertEqual(formals.kwd, ("b",))
@@ -161,12 +180,14 @@ class TestFormals(unittest.IsolatedAsyncioTestCase):
         self.assertIsNone(formals.star)
         self.assertIsNone(formals.starstar)
         self.assertIsNone(formals.defaults)
+        self.assertIsNone(formals.annotations)
 
     async def test_fields(self):
         """Formals stores all field types correctly"""
 
         formals = Formals(
-            ("a",), ("b",), ("c",), ("d",), "args", "kwargs", {'c': 99}
+            ("a",), ("b",), ("c",), ("d",), "args", "kwargs", {'c': 99},
+            None,
         )
         self.assertEqual(formals.pos, ("a",))
         self.assertEqual(formals.pos_only, ("b",))
@@ -175,6 +196,7 @@ class TestFormals(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(formals.star, "args")
         self.assertEqual(formals.starstar, "kwargs")
         self.assertEqual(formals.defaults, {'c': 99})
+        self.assertIsNone(formals.annotations)
 
 
 class TestFormalsApply(unittest.IsolatedAsyncioTestCase):
@@ -185,7 +207,7 @@ class TestFormalsApply(unittest.IsolatedAsyncioTestCase):
     async def test_apply_simple_positional(self):
         """apply() binds positional arguments"""
 
-        formals = Formals(("foo", "bar"), (), (), (), None, None, None)
+        formals = Formals(("foo", "bar"), (), (), (), None, None, None, None)
         ns = Namespace("ns", None, ("foo", "bar"))
 
         formals.apply(ns, (1, 2))
@@ -195,7 +217,7 @@ class TestFormalsApply(unittest.IsolatedAsyncioTestCase):
     async def test_apply_with_kwargs(self):
         """apply() binds keyword arguments"""
 
-        formals = Formals(("foo",), (), ("bar",), (), None, None, None)
+        formals = Formals(("foo",), (), ("bar",), (), None, None, None, None)
         ns = Namespace("ns", None, ("foo", "bar"))
 
         formals.apply(ns, (100,), {"bar": 200})
@@ -205,7 +227,7 @@ class TestFormalsApply(unittest.IsolatedAsyncioTestCase):
     async def test_apply_with_star(self):
         """apply() collects extra positional args in star"""
 
-        formals = Formals(("foo",), (), ("bar",), (), "args", None, None)
+        formals = Formals(("foo",), (), ("bar",), (), "args", None, None, None)
         ns = Namespace("ns", None, ("foo", "bar", "args"))
 
         formals.apply(ns, (1, 2, 3, 4))
@@ -216,7 +238,7 @@ class TestFormalsApply(unittest.IsolatedAsyncioTestCase):
     async def test_apply_with_starstar(self):
         """apply() collects extra keyword args in starstar"""
 
-        formals = Formals(("foo",), (), (), (), None, "kwargs", None)
+        formals = Formals(("foo",), (), (), (), None, "kwargs", None, None)
         ns = Namespace("ns", None, ("foo", "kwargs"))
 
         formals.apply(ns, (1,), {"extra": 42, "more": 99})
@@ -227,7 +249,7 @@ class TestFormalsApply(unittest.IsolatedAsyncioTestCase):
         """apply() uses defaults for missing keyword arguments"""
 
         formals = Formals(
-            ("foo",), (), ("bar",), (), None, None, {"bar": 999}
+            ("foo",), (), ("bar",), (), None, None, {"bar": 999}, None,
         )
         ns = Namespace("ns", None, ("foo", "bar"))
 
@@ -239,7 +261,7 @@ class TestFormalsApply(unittest.IsolatedAsyncioTestCase):
         """apply() allows overriding defaults"""
 
         formals = Formals(
-            ("foo",), (), ("bar",), (), None, None, {"bar": 999}
+            ("foo",), (), ("bar",), (), None, None, {"bar": 999}, None,
         )
         ns = Namespace("ns", None, ("foo", "bar"))
 
@@ -250,7 +272,7 @@ class TestFormalsApply(unittest.IsolatedAsyncioTestCase):
     async def test_apply_missing_positional_raises(self):
         """apply() raises TypeError for missing positional argument"""
 
-        formals = Formals(("foo", "bar"), (), (), (), None, None, None)
+        formals = Formals(("foo", "bar"), (), (), (), None, None, None, None)
         ns = Namespace("ns", None, ("foo", "bar"))
 
         with self.assertRaises(TypeError):
@@ -259,7 +281,7 @@ class TestFormalsApply(unittest.IsolatedAsyncioTestCase):
     async def test_apply_too_many_positional_raises(self):
         """apply() raises TypeError for too many positional arguments"""
 
-        formals = Formals(("foo",), (), (), (), None, None, None)
+        formals = Formals(("foo",), (), (), (), None, None, None, None)
         ns = Namespace("ns", None, ("foo",))
 
         with self.assertRaises(TypeError):
@@ -268,7 +290,7 @@ class TestFormalsApply(unittest.IsolatedAsyncioTestCase):
     async def test_apply_missing_keyword_raises(self):
         """apply() raises TypeError for missing keyword argument"""
 
-        formals = Formals(("foo",), (), ("bar",), (), None, None, None)
+        formals = Formals(("foo",), (), ("bar",), (), None, None, None, None)
         ns = Namespace("ns", None, ("foo", "bar"))
 
         with self.assertRaises(TypeError):
@@ -277,7 +299,7 @@ class TestFormalsApply(unittest.IsolatedAsyncioTestCase):
     async def test_apply_unexpected_keyword_raises(self):
         """apply() raises TypeError for unexpected keyword arguments"""
 
-        formals = Formals(("foo",), (), (), (), None, None, None)
+        formals = Formals(("foo",), (), (), (), None, None, None, None)
         ns = Namespace("ns", None, ("foo",))
 
         with self.assertRaises(TypeError):
@@ -286,7 +308,7 @@ class TestFormalsApply(unittest.IsolatedAsyncioTestCase):
     async def test_apply_empty_star(self):
         """apply() handles empty star args"""
 
-        formals = Formals(("foo",), (), (), (), "args", None, None)
+        formals = Formals(("foo",), (), (), (), "args", None, None, None)
         ns = Namespace("ns", None, ("foo", "args"))
 
         formals.apply(ns, (1,))
@@ -296,7 +318,7 @@ class TestFormalsApply(unittest.IsolatedAsyncioTestCase):
     async def test_apply_empty_starstar(self):
         """apply() handles empty starstar kwargs"""
 
-        formals = Formals(("foo",), (), (), (), None, "kwargs", None)
+        formals = Formals(("foo",), (), (), (), None, "kwargs", None, None)
         ns = Namespace("ns", None, ("foo", "kwargs"))
 
         formals.apply(ns, (1,))
@@ -306,7 +328,7 @@ class TestFormalsApply(unittest.IsolatedAsyncioTestCase):
     async def test_callable_interface(self):
         """Formals can be called directly with (ns, args) or (ns, args, kwargs)"""
 
-        formals = Formals(("foo", "bar"), (), (), (), None, None, None)
+        formals = Formals(("foo", "bar"), (), (), (), None, None, None, None)
         ns = Namespace("ns", None, ("foo", "bar"))
 
         result = formals(ns, (10, 20))
@@ -324,7 +346,7 @@ class TestFormalsKwdOnly(unittest.IsolatedAsyncioTestCase):
         """Keyword-only arguments work with defaults"""
 
         formals = Formals(
-            ("a",), (), (), ("b",), None, None, {"b": 100}
+            ("a",), (), (), ("b",), None, None, {"b": 100}, None,
         )
         ns = Namespace("ns", None, ("a", "b"))
 
@@ -336,7 +358,7 @@ class TestFormalsKwdOnly(unittest.IsolatedAsyncioTestCase):
         """Keyword-only arguments can be provided"""
 
         formals = Formals(
-            ("a",), (), (), ("b",), None, None, {"b": 100}
+            ("a",), (), (), ("b",), None, None, {"b": 100}, None,
         )
         ns = Namespace("ns", None, ("a", "b"))
 
@@ -348,7 +370,7 @@ class TestFormalsKwdOnly(unittest.IsolatedAsyncioTestCase):
         """Missing keyword-only argument without default raises"""
 
         formals = Formals(
-            ("a",), (), (), ("b",), None, None, None
+            ("a",), (), (), ("b",), None, None, None, None,
         )
         ns = Namespace("ns", None, ("a", "b"))
 
@@ -365,7 +387,7 @@ class TestFormals_PosOnly(unittest.IsolatedAsyncioTestCase):
         """Positional-only arguments are applied correctly"""
 
         formals = Formals(
-            ("a",), ("b",), (), (), None, None, None
+            ("a",), ("b",), (), (), None, None, None, None,
         )
         ns = Namespace("ns", None, ("a", "b"))
 
@@ -377,7 +399,7 @@ class TestFormals_PosOnly(unittest.IsolatedAsyncioTestCase):
         """Missing positional-only argument raises"""
 
         formals = Formals(
-            ("a",), ("b",), (), (), None, None, None
+            ("a",), ("b",), (), (), None, None, None, None,
         )
         ns = Namespace("ns", None, ("a", "b"))
 

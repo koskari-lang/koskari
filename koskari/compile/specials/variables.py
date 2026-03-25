@@ -23,8 +23,8 @@ and compile/define-syntax.
 """
 
 
-from ...lib import cons, nil, OpCode, symbol
-from ...matcher import DEFINE, MATCH, REST, SYMBOL, VALUE, match
+from ...lib import cons, keyword, nil, OpCode, symbol
+from ...matcher import DECL, DEFINE, MATCH, REST, SYMBOL, VALUE, match
 from ...types import get_position, is_pair
 from ...exceptions import CompilerError, SpecialError
 from ..helpers import FORMALS, special, special_forms
@@ -93,9 +93,9 @@ def special_delq(compiler, source, tc=False):
 
 
 _DEFINE_PATTERNS = [
-    MATCH(DEFINE("name"), FORMALS("formals", scope="body"), REST("body")),
-    MATCH(DEFINE("name"), VALUE("value")),
-    MATCH(DEFINE("name")),
+    MATCH(DECL("decl"), FORMALS("formals", scope="body"), REST("body")),
+    MATCH(DECL("decl"), VALUE("value")),
+    MATCH(DECL("decl")),
 ]
 
 
@@ -113,18 +113,28 @@ def special_define(compiler, source, tc=False):
     if matched is None:
         raise SpecialError("define requires a name", source)
 
-    namesym = matched["name"].source
+    decl = matched["decl"]
+    namesym = decl.name
     name = str(namesym)
 
     frag = compiler.fragment(called_by)
-    pos = matched["name"].source_pos if hasattr(matched["name"], "source_pos") else get_position(rest)
+    pos = decl.source_pos if decl.source_pos is not None else get_position(rest)
     frag.declare_var(name, position=pos)
 
     if "body" in matched:
         formals = matched["formals"]
         body = matched["body"]
-        val_expr = cons(symbol("compile/lambda"), namesym,
-                        formals.source, body.source)
+        if decl.type is not None:
+            val_expr = cons(
+                symbol("compile/lambda"),
+                namesym,
+                keyword("::"),
+                decl.type,
+                formals.source,
+                body.source)
+        else:
+            val_expr = cons(symbol("compile/lambda"), namesym,
+                            formals.source, body.source)
 
     elif "value" in matched:
         val_expr = matched["value"].source
@@ -144,9 +154,9 @@ def special_define(compiler, source, tc=False):
 
 
 _DEFINE_GLOBAL_PATTERNS = [
-    MATCH(DEFINE("name"), FORMALS("formals", scope="body"), REST("body")),
-    MATCH(DEFINE("name"), VALUE("value")),
-    MATCH(DEFINE("name")),
+    MATCH(DECL("decl"), FORMALS("formals", scope="body"), REST("body")),
+    MATCH(DECL("decl"), VALUE("value")),
+    MATCH(DECL("decl")),
 ]
 
 
@@ -163,11 +173,12 @@ def special_define_global(compiler, source, tc=False):
     if matched is None:
         raise SpecialError("define-global requires a name", source)
 
-    namesym = matched["name"].source
+    decl = matched["decl"]
+    namesym = decl.name
     name = str(namesym)
 
     frag = compiler.fragment(called_by)
-    pos = matched["name"].source_pos if hasattr(matched["name"], "source_pos") else get_position(rest)
+    pos = decl.source_pos if decl.source_pos is not None else get_position(rest)
     try:
         frag.request_global(name, position=pos)
     except CompilerError:
@@ -179,8 +190,17 @@ def special_define_global(compiler, source, tc=False):
     if "body" in matched:
         formals = matched["formals"]
         body = matched["body"]
-        val_expr = cons(symbol("compile/lambda"), namesym,
-                        formals.source, body.source)
+        if decl.type is not None:
+            val_expr = cons(
+                symbol("compile/lambda"),
+                namesym,
+                keyword("::"),
+                decl.type,
+                formals.source,
+                body.source)
+        else:
+            val_expr = cons(symbol("compile/lambda"), namesym,
+                            formals.source, body.source)
 
     elif "value" in matched:
         val_expr = matched["value"].source

@@ -16,6 +16,8 @@ Tests for koskari.compile lambda special (named and unnamed).
 """
 
 
+from koskari.lib import symbol
+
 from . import SpecialsTestCase
 
 import pytest
@@ -67,6 +69,49 @@ class TestLambdaNamed(SpecialsTestCase):
         fn = await expr()
         self.assertEqual(fn.__doc__, 'module doc line')
         self.assertEqual(fn.code.extras.get('doc'), 'module doc line')
+
+    async def test_lambda_formals_carry_type_annotations(self):
+        src = "(lambda [(a :: int)] a)"
+        expr, mod = self.compile_expr(src)
+        fn = await expr()
+        self.assertIsNotNone(fn.formals.annotations)
+        self.assertEqual(fn.formals.annotations["a"]["type"], symbol("int"))
+        self.assertEqual(fn.__annotations__, {"a": "int"})
+
+
+class TestLambdaReturnType(SpecialsTestCase):
+
+    async def test_named_lambda_double_colon_return(self):
+        src = "(lambda f :: int [x] x)"
+        expr, mod = self.compile_expr(src)
+        fn = await expr()
+        self.assertEqual(fn.__annotations__['return'], 'int')
+        self.assertEqual(await fn(7), 7)
+
+    async def test_named_lambda_type_kw_return(self):
+        src = "(lambda f type: int [x] x)"
+        expr, mod = self.compile_expr(src)
+        fn = await expr()
+        self.assertEqual(fn.__annotations__['return'], 'int')
+
+    async def test_anonymous_lambda_double_colon_return(self):
+        src = "(lambda :: int [x] x)"
+        expr, mod = self.compile_expr(src)
+        fn = await expr()
+        self.assertEqual(fn.__annotations__['return'], 'int')
+        self.assertEqual(await fn(3), 3)
+
+    async def test_anonymous_lambda_type_kw_return(self):
+        src = "(lambda type: int [x] x)"
+        expr, mod = self.compile_expr(src)
+        fn = await expr()
+        self.assertEqual(fn.__annotations__['return'], 'int')
+
+    async def test_untyped_lambda_still_works(self):
+        src = "(lambda [x] x)"
+        expr, mod = self.compile_expr(src)
+        fn = await expr()
+        self.assertNotIn('return', fn.__annotations__)
 
 
 # The end.

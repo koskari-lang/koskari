@@ -25,12 +25,41 @@ Special form handler for compile/lambda.
 from ...lib import FormalsSpec, FunctionSpec, OpCode, pair, symbol
 from ..compiler import ByteCodeFragment, Compiler, CompilerMode
 from ...exceptions import SpecialError
-from ...matcher import MATCH, REST, SYMBOL, match
+from ...matcher import (
+    LITERAL_KW,
+    MATCH,
+    REST,
+    SYMBOL,
+    VALUE,
+    match,
+)
 from ..helpers import (
     FORMALS, discover_docstring, helper_begin, special, special_forms)
 
 
 _LAMBDA_PATTERNS = [
+    MATCH(
+        SYMBOL("name"),
+        LITERAL_KW("::"),
+        VALUE("return_type"),
+        FORMALS("formals", scope="body"),
+        REST("body")),
+    MATCH(
+        SYMBOL("name"),
+        LITERAL_KW("type:"),
+        VALUE("return_type"),
+        FORMALS("formals", scope="body"),
+        REST("body")),
+    MATCH(
+        LITERAL_KW("::"),
+        VALUE("return_type"),
+        FORMALS("formals", scope="body"),
+        REST("body")),
+    MATCH(
+        LITERAL_KW("type:"),
+        VALUE("return_type"),
+        FORMALS("formals", scope="body"),
+        REST("body")),
     MATCH(SYMBOL("name"), FORMALS("formals", scope="body"), REST("body")),
     MATCH(FORMALS("formals", scope="body"), REST("body")),
 ]
@@ -56,12 +85,16 @@ def special_lambda(
     if named is not None:
         named = named.source
 
+    return_type_mr = matched.get("return_type")
+    return_type_src = return_type_mr.source if return_type_mr is not None else None
+
     formals = matched["formals"]
     pos = formals.positional
     defaults = formals.defaults
     kwonly = formals.kwonly
     star = formals.star
     starstar = formals.starstar
+    ann = formals.annotations or None
 
     body_src = matched["body"].source
 
@@ -97,9 +130,11 @@ def special_lambda(
     with compiler.pragma_scope():
         lamb = helper_begin(lamb, body_src, True)
     code = compiler.complete(lamb, CompilerMode.FUNCTION)
+    if return_type_src is not None:
+        code.extras['return'] = return_type_src
     fspec = FunctionSpec(proper_name, FormalsSpec(
         tuple(pos), (), tuple(kw), tuple(str(k) for k, _ in kwonly),
-        star, starstar), code)
+        star, starstar, ann), code)
     frag.instruction(OpCode.KOS_OP_CONST, fspec)
     frag.instruction(OpCode.KOS_OP_BUILD_FUNCTION, len(kw))
 

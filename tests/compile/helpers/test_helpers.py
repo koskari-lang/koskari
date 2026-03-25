@@ -20,7 +20,7 @@ import unittest
 
 from koskari.types import cons, keyword, nil, symbol
 from koskari.exceptions import ParametersError, SpecialError
-from koskari.compile.helpers import gather_formals, gather_parameters_ng
+from koskari.compile.helpers import gather_formals, gather_parameters_ng, parse_decl
 
 import pytest
 
@@ -149,7 +149,8 @@ class TestGatherFormals(unittest.TestCase):
 
     def test_positional_only(self):
         args = cons(symbol("a"), cons(symbol("b"), nil))
-        pos, defaults, kwonly, star, starstar = gather_formals(args)
+        pos, defaults, kwonly, star, starstar, annotations = gather_formals(
+            args)
         self.assertEqual(len(pos), 2)
         self.assertEqual(str(pos[0]), "a")
         self.assertEqual(str(pos[1]), "b")
@@ -157,39 +158,46 @@ class TestGatherFormals(unittest.TestCase):
         self.assertEqual(kwonly, [])
         self.assertIsNone(star)
         self.assertIsNone(starstar)
+        self.assertEqual(annotations, {})
 
     def test_single_symbol_rest(self):
         rest = symbol("rest")
-        pos, defaults, kwonly, star, starstar = gather_formals(rest)
+        pos, defaults, kwonly, star, starstar, annotations = gather_formals(
+            rest)
         self.assertEqual(pos, [])
         self.assertEqual(defaults, [])
         self.assertEqual(kwonly, [])
         self.assertIs(star, rest)
         self.assertIsNone(starstar)
+        self.assertEqual(annotations, {})
 
     def test_keyword_formals_with_defaults(self):
         a = symbol("a")
         k = keyword("k")
         v = symbol("v")
         args = cons(a, cons(k, cons(v, nil)))
-        pos, defaults, kwonly, star, starstar = gather_formals(args)
+        pos, defaults, kwonly, star, starstar, annotations = gather_formals(
+            args)
         self.assertEqual(pos, [a])
         self.assertEqual(len(defaults), 1)
         self.assertEqual(defaults[0], (k, v))
         self.assertEqual(kwonly, [])
         self.assertIsNone(star)
         self.assertIsNone(starstar)
+        self.assertEqual(annotations, {})
 
     def test_improper_list_rest(self):
         a = symbol("a")
         rest = symbol("rest")
         args = cons(a, rest)
-        pos, defaults, kwonly, star, starstar = gather_formals(args)
+        pos, defaults, kwonly, star, starstar, annotations = gather_formals(
+            args)
         self.assertEqual(pos, [a])
         self.assertEqual(defaults, [])
         self.assertEqual(kwonly, [])
         self.assertIs(star, rest)
         self.assertIsNone(starstar)
+        self.assertEqual(annotations, {})
 
     def test_star_then_keyword_only(self):
         a = symbol("a")
@@ -199,13 +207,15 @@ class TestGatherFormals(unittest.TestCase):
         k_star = keyword("*")
         kk = keyword("**")
         args = cons(a, cons(k_star, cons(star_sym, cons(k, cons(v, nil)))))
-        pos, defaults, kwonly, star, starstar = gather_formals(args)
+        pos, defaults, kwonly, star, starstar, annotations = gather_formals(
+            args)
         self.assertEqual(pos, [a])
         self.assertEqual(defaults, [])
         self.assertIs(star, star_sym)
         self.assertIsNone(starstar)
         self.assertEqual(len(kwonly), 1)
         self.assertEqual(kwonly[0], (k, v))
+        self.assertEqual(annotations, {})
 
     def test_starstar(self):
         star_sym = symbol("args")
@@ -213,12 +223,14 @@ class TestGatherFormals(unittest.TestCase):
         k_star = keyword("*")
         kk = keyword("**")
         args = cons(k_star, cons(star_sym, cons(kk, cons(starstar_sym, nil))))
-        pos, defaults, kwonly, star, starstar = gather_formals(args)
+        pos, defaults, kwonly, star, starstar, annotations = gather_formals(
+            args)
         self.assertEqual(pos, [])
         self.assertEqual(defaults, [])
         self.assertEqual(kwonly, [])
         self.assertIs(star, star_sym)
         self.assertIs(starstar, starstar_sym)
+        self.assertEqual(annotations, {})
 
     def test_improper_with_keywords_raises(self):
         a = symbol("a")
@@ -241,6 +253,85 @@ class TestGatherFormals(unittest.TestCase):
     def test_not_symbol_or_pair_raises(self):
         with self.assertRaises(SpecialError):
             gather_formals(42)
+
+    def test_bracket_formal_type_double_colon(self):
+        a = symbol("a")
+        colon = keyword("::")
+        t = symbol("int")
+        bracket = cons(a, cons(colon, cons(t, nil)))
+        args = cons(bracket, nil)
+        pos, defaults, kwonly, star, starstar, annotations = gather_formals(
+            args)
+        self.assertEqual(pos, [a])
+        self.assertEqual(defaults, [])
+        self.assertEqual(annotations["a"]["type"], t)
+
+    def test_bracket_formal_type_keyword(self):
+        a = symbol("a")
+        t = symbol("int")
+        bracket = cons(a, cons(keyword("type:"), cons(t, nil)))
+        args = cons(bracket, nil)
+        pos, defaults, kwonly, star, starstar, annotations = gather_formals(
+            args)
+        self.assertEqual(pos, [a])
+        self.assertEqual(annotations["a"]["type"], t)
+
+    def test_bracket_formal_value_default(self):
+        a = symbol("a")
+        dv = symbol("dv")
+        bracket = cons(a, cons(keyword("value:"), cons(dv, nil)))
+        args = cons(bracket, nil)
+        pos, defaults, kwonly, star, starstar, annotations = gather_formals(
+            args)
+        self.assertEqual(pos, [a])
+        self.assertEqual(defaults, [(keyword("a"), dv)])
+        self.assertEqual(annotations, {})
+
+
+class TestParseDecl(unittest.TestCase):
+
+    def test_bare_symbol(self):
+        x = symbol("x")
+        n, t = parse_decl(x)
+        self.assertIs(n, x)
+        self.assertIsNone(t)
+
+    def test_bracket_name_only(self):
+        x = symbol("x")
+        bracket = cons(x, nil)
+        n, t = parse_decl(bracket)
+        self.assertIs(n, x)
+        self.assertIsNone(t)
+
+    def test_bracket_name_type_double_colon(self):
+        x = symbol("x")
+        t = symbol("int")
+        bracket = cons(x, cons(keyword("::"), cons(t, nil)))
+        n, ty = parse_decl(bracket)
+        self.assertIs(n, x)
+        self.assertIs(ty, t)
+
+    def test_rejects_value_default(self):
+        x = symbol("x")
+        dv = symbol("dv")
+        bracket = cons(x, cons(keyword("value:"), cons(dv, nil)))
+        with self.assertRaises(SpecialError):
+            parse_decl(bracket)
+
+    def test_rejects_sym_expr_pair(self):
+        x = symbol("x")
+        e = symbol("expr")
+        bracket = cons(x, cons(e, nil))
+        with self.assertRaises(SpecialError):
+            parse_decl(bracket)
+
+    def test_type_as_name(self):
+        t = symbol("int")
+        x = symbol("x")
+        form = cons(t, cons(keyword("as"), cons(x, nil)))
+        n, ty = parse_decl(form)
+        self.assertIs(n, x)
+        self.assertIs(ty, t)
 
 
 # The end.

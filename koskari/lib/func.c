@@ -836,13 +836,107 @@ function_get_signature(PyObject *self, void *closure) {
 }
 
 
+/* Map a type form to __annotations__ values: symbol/keyword -> name str. */
+static PyObject *
+kos_typehint_to_dunder_annotation(PyObject *typehint) {
+
+  if (typehint == NULL)
+    return NULL;
+
+  if (PyUnicode_Check(typehint)) {
+    Py_INCREF(typehint);
+    return typehint;
+  }
+
+  if (KosSymbol_Check(typehint) || KosKeyword_Check(typehint)) {
+    PyObject *name = KosInternedAtom_NAME(typehint);
+    Py_INCREF(name);
+    return name;
+  }
+
+  return PyObject_Str(typehint);
+}
+
+
 static PyObject *
 function_get_annotations(PyObject *self, void *closure) {
 
-  (void) self;
+  KosFunction *fn = (KosFunction *) self;
+  PyObject *formals = KosFunction_FORMALS((PyObject *) fn);
+  PyObject *raw = NULL;
+  PyObject *out = NULL;
+  PyObject *key = NULL;
+  PyObject *bundle = NULL;
+  PyObject *typehint = NULL;
+  PyObject *ann_val = NULL;
+  Py_ssize_t pos = 0;
+  PyObject *code = NULL;
+  PyObject *extras = NULL;
+  PyObject *ret_hint = NULL;
+
   (void) closure;
 
-  return PyDict_New();
+  out = PyDict_New();
+  if (! out)
+    return NULL;
+
+  if (formals && KosFormals_Check(formals)) {
+    raw = KosFormals_ANNOTATIONS(formals);
+    if (raw) {
+      while (PyDict_Next(raw, &pos, &key, &bundle)) {
+        if (! PyDict_Check(bundle))
+          continue;
+        typehint = PyDict_GetItemString(bundle, "type");
+        if (typehint == NULL)
+          continue;
+        ann_val = kos_typehint_to_dunder_annotation(typehint);
+        if (ann_val == NULL) {
+          Py_DECREF(out);
+          return NULL;
+        }
+        if (PyDict_SetItem(out, key, ann_val) < 0) {
+          Py_DECREF(ann_val);
+          Py_DECREF(out);
+          return NULL;
+        }
+        Py_DECREF(ann_val);
+      }
+    }
+  }
+
+  code = KosFunction_CODE(fn);
+  if (code && KosCode_Check(code)) {
+    extras = KosCode_EXTRAS(code);
+    if (extras && PyDict_Check(extras)) {
+      ret_hint = PyDict_GetItemString(extras, "return");
+      if (ret_hint != NULL) {
+        ann_val = kos_typehint_to_dunder_annotation(ret_hint);
+        if (ann_val == NULL) {
+          Py_DECREF(out);
+          return NULL;
+        }
+        if (PyDict_SetItemString(out, "return", ann_val) < 0) {
+          Py_DECREF(ann_val);
+          Py_DECREF(out);
+          return NULL;
+        }
+        Py_DECREF(ann_val);
+      }
+    }
+  }
+
+  return out;
+}
+
+
+static PyObject *
+boundmethod_get_annotations(PyObject *self, void *closure) {
+
+  PyObject *func = KosBoundMethod_FUNC(self);
+
+  (void) closure;
+
+  return function_get_annotations(func, NULL);
 }
 
 
@@ -924,6 +1018,7 @@ boundmethod_get_signature(PyObject *self, void *closure) {
 
 static PyGetSetDef boundmethod_getsets[] = {
   { "__signature__", (getter) boundmethod_get_signature, NULL, NULL, NULL },
+  { "__annotations__", (getter) boundmethod_get_annotations, NULL, NULL, NULL },
   { NULL, }
 };
 

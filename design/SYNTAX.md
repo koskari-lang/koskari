@@ -199,6 +199,52 @@ Inside `<list>`, a single `.` token separates the car side from the cdr:
 
 ---
 
+## Declarations, return types, and function docstrings
+
+These are not separate reader forms: they use the same atoms, lists, and
+keywords as the base grammar. They are called out here because they affect how
+`compile/define`, `compile/define-global`, and `compile/lambda` are written and
+what metadata the compiler records.
+
+### DECL (first argument to `compile/define` and `compile/define-global`)
+
+The first subform must be a **declaration** — a name with no value:
+
+- A **symbol** (`x`), or
+- A **bracket (or parenthesis) list** with a name and optional **type**
+  attributes only: `[x]`, `[x :: T]`, `[x type: T]`, or the `(EXPR as: NAME)`
+  spelling for types.
+
+**Not allowed** in a DECL: `value:`, or a two-element `(SYM EXPR)` default
+(same “no RHS” rules as valueful bindings). Full behaviour and
+examples: [SPECIALS.md](SPECIALS.md) § compile/define.
+
+### Return type on `compile/lambda`
+
+Optional **return** type appears after an optional function **name** and before
+**formals**:
+
+- `NAME :: RET` or `NAME type: RET` when the lambda is named
+- `:: RET` or `type: RET` when the lambda is anonymous (no name)
+
+`RET` is one expression; it is **not** a formal parameter. It becomes
+`__annotations__['return']` on the function (and `code.extras['return']` on the
+`Code` object). See [SPECIALS.md](SPECIALS.md) § compile/lambda.
+
+Lexically, `::` and `type:` are **keyword atoms** in s-expression mode (see
+[Two Lexical Modes](#two-lexical-modes) and `<keyword-atom>`).
+
+### Function docstrings (`compile/lambda`)
+
+If the **first** form in the lambda body is a **string literal**, the compiler
+treats it as the function’s docstring (`discover_docstring` in
+`koskari/compile/helpers.py`). That string is stored as `code.extras['doc']` and
+exposed on the callable as `__doc__`. If the body begins with
+`(compile/begin ...)`, the implementation may peel that wrapper **only** to look
+for a leading string; the body is still compiled in full.
+
+---
+
 ## Layout Block Grammar
 
 Recognised by `LayoutReader` **only at depth 0** (outside all delimiters).
