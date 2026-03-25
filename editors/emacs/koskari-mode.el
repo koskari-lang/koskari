@@ -81,7 +81,7 @@
    ;; Block control keywords (overrides custom names for define, when, etc.)
    ;; Source: design/SPECIALS.md, design/LAYOUTS.md
    (list (concat "^\\([ \t]*\\)"
-                 "\\(if\\|elif\\|else\\|try\\|except\\|finally\\|begin\\|define\\|when\\|"
+                 "\\(if\\|elif\\|else\\|try\\|except\\|finally\\|begin\\|define\\|when\\|when-main\\|"
                  "class\\|for-each\\|while\\|dyn-wind\\|with\\|dyn-with\\|"
                  "define-syntax\\|syntax-rules\\)"
                  "\\b\\([^\n]*?\\)\\(:\\)")
@@ -91,14 +91,15 @@
    (list (concat "(\\s-*\\("
                  "define\\|if\\|cond\\|when\\|unless\\|and\\|or\\|begin\\|let\\|lambda\\|"
                  "try\\|raise\\|while\\|for-each\\|break\\|continue\\|"
-                 "import\\|import-from\\|ref\\|attr\\|setq\\|bindq\\|delq\\|refq\\|"
-                 "class\\|define-syntax\\|with\\|dyn-with\\|dyn-wind\\|parameterize\\|"
+                 "import\\|import-from\\|ref\\|attr\\|setq\\|set!\\|bind!\\|use-parameter\\|parameterq\\|None\\?\\|"
+                 "bindq\\|delq\\|refq\\|class\\|define-syntax\\|define-coroutine\\|when-main\\|"
+                 "with\\|dyn-with\\|dyn-wind\\|parameterize\\|"
                  "call/cc\\|let/cc\\|capture/cc\\|reset\\|shift\\|"
                  "compile/bytecode\\|compile/begin\\|compile/call\\|compile/lambda\\|"
                  "compile/let\\|compile/cond\\|compile/if\\|compile/when\\|compile/unless\\|"
                  "compile/and\\|compile/or\\|compile/try\\|compile/raise\\|"
                  "compile/while\\|compile/for-each\\|compile/break\\|compile/continue\\|"
-                 "compile/parameterize\\|compile/dyn-wind\\|compile/setq\\|compile/inplace\\|"
+                 "compile/parameterize\\|compile/dyn-wind\\|compile/setq\\|compile/inplace\\|compile/set!\\|compile/bind!\\|compile/define-parameter\\|compile/parameterq\\|compile/None\\?\\|"
                  "compile/ref\\|compile/refq\\|compile/bindq\\|compile/define\\|"
                  "compile/define-syntax\\|compile/class\\|compile/delq\\|"
                  "compile/attr\\|compile/del-attr\\|compile/set-attr\\|compile/ref-attr\\|"

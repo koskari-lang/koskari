@@ -21,8 +21,11 @@
    "begin" "let" "lambda" "try" "raise"
    "while" "for-each" "break" "continue"
    ; Variables and bindings
-   "import" "import-from" "ref" "attr" "setq" "bindq" "delq" "refq"
-   "class" "define-syntax"
+   "import" "import-from"
+   "ref" "attr" "setq"
+   "set!" "bind!" "use-parameter" "parameterq" "None?"
+   "bindq" "delq" "refq"
+   "class" "define-syntax" "define-coroutine" "when-main"
    ; Context and continuations
    "with" "dyn-with" "dyn-wind" "parameterize"
    "call/cc" "let/cc" "capture/cc" "reset" "shift"
@@ -33,6 +36,8 @@
    "compile/while" "compile/for-each" "compile/break" "compile/continue"
    "compile/parameterize" "compile/dyn-wind" "compile/setq" "compile/inplace"
    "compile/ref" "compile/refq" "compile/bindq" "compile/define"
+   "compile/set!" "compile/bind!" "compile/define-parameter" "compile/parameterq"
+   "compile/None?"
    "compile/define-syntax" "compile/class" "compile/delq"
    "compile/attr" "compile/del-attr" "compile/set-attr" "compile/ref-attr"
    "compile/item" "compile/ref-item" "compile/deref" "compile/del-item"
