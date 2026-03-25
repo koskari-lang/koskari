@@ -81,7 +81,19 @@ class TestDefineFunctionShorthand(SpecialsTestCase):
         self.assertEqual(120, result)
 
 
-    async def test_define_function_shorthand_decl_return_annotation(self):
+    async def test_define_function_shorthand_inline_return_annotation(self):
+        src_str = """
+        (compile/begin
+          (define f :: int [x] (mul x 2))
+          f)
+        """
+        expr, mod = self.compile_expr(src_str, mul=lambda a, b: a * b)
+        f = await expr()
+        self.assertEqual(f.__annotations__['return'], 'int')
+        self.assertEqual(await f(5), 10)
+
+
+    async def test_define_function_shorthand_decl_bracket_still_works(self):
         src_str = """
         (compile/begin
           (define [f :: int] [x] (mul x 2))
@@ -91,6 +103,31 @@ class TestDefineFunctionShorthand(SpecialsTestCase):
         f = await expr()
         self.assertEqual(f.__annotations__['return'], 'int')
         self.assertEqual(await f(5), 10)
+
+
+    async def test_define_function_shorthand_type_colon_return_annotation(self):
+        src_str = """
+        (compile/begin
+          (define g type: int [x] (mul x 2))
+          g)
+        """
+        expr, mod = self.compile_expr(src_str, mul=lambda a, b: a * b)
+        g = await expr()
+        self.assertEqual(g.__annotations__['return'], 'int')
+        self.assertEqual(await g(5), 10)
+
+
+class TestDefineInlineTypedValue(SpecialsTestCase):
+
+    async def test_define_inline_typed_value(self):
+        src_str = """
+        (compile/begin
+          (define z :: int 100)
+          z)
+        """
+        expr, mod = self.compile_expr(src_str)
+        result = await expr()
+        self.assertEqual(100, result)
 
 
 # The end.
