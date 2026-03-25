@@ -21,8 +21,8 @@ from unittest import IsolatedAsyncioTestCase
 from koskari.exceptions import ReaderSyntaxError
 from koskari.compile.helpers import pycons
 from koskari.reader import source_str
+from koskari.reader import LayoutReader
 from koskari.reader.layouts import LAYOUTS
-from koskari.reader.layout_ng import LayoutNgReader
 from koskari.types import cons, keyword, nil, symbol
 
 import pytest
@@ -33,7 +33,7 @@ pytestmark = pytest.mark.phase_infra
 def parse_layout_ng(src_str, **defns):
     builtins = {str(name): value for name, value in LAYOUTS.items()}
     builtins.update(defns)
-    reader = LayoutNgReader(builtins)
+    reader = LayoutReader(builtins)
     stream = source_str(src_str, '<unittest>')
     return reader.read(stream)
 
