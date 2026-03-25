@@ -143,6 +143,7 @@ typedef struct {
   PyObject *name;           /* proper name for self-reference and repr, or NULL */
   vectorcallfunc vectorcall; /* for Py_TPFLAGS_HAVE_VECTORCALL; always set */
   PyObject *inspect_signature; /* lazily built inspect.Signature, or NULL */
+  PyObject *doc;            /* __doc__ from Code.extras["doc"] if unicode; NULL */
 } KosFunction;
 
 
@@ -154,6 +155,8 @@ typedef struct {
 #define KosFunction_BASE_NS(func) (((KosFunction *) (func))->base_ns)
 
 #define KosFunction_FORMALS(func) (((KosFunction *) (func))->formals)
+
+#define KosFunction_DOC(func) (((KosFunction *) (func))->doc)
 
 #define KosFunction_VECTORCALL_OFFSET offsetof(KosFunction, vectorcall)
 

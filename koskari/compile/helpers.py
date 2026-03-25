@@ -41,6 +41,7 @@ __all__ = (
     "USING",
     "const_only_expr",
     "convert_bindings",
+    "discover_docstring",
     "gather_bindings",
     "gather_formals",
     "gather_parameters_ng",
@@ -897,6 +898,62 @@ def requote(source,
         col.append(elem)
 
     return list_star(cons_sym, *col, nil)
+
+
+_SYM_BEGIN = symbol('begin')
+_SYM_COMPILE_BEGIN = symbol('compile/begin')
+_BEGIN_HEADS = frozenset((_SYM_BEGIN, _SYM_COMPILE_BEGIN))
+
+
+def _is_begin_form(head):
+    """
+    Return True if head is a (begin ...) or (compile/begin ...) pair form
+    """
+
+    if head is nil or not is_pair(head):
+        return False
+    op, _ = head
+    if not is_symbol(op):
+        return False
+    return op in _BEGIN_HEADS
+
+
+def _splice_proper(inner, tail):
+    """
+    Concatenate proper list inner with proper list tail using a fresh spine
+    """
+
+    if inner is nil:
+        return tail
+    head, rest = inner
+    return cons(head, _splice_proper(rest, tail))
+
+
+def discover_docstring(body):
+    """
+    Return the leading docstring str from a body list, or None.
+
+    Does not mutate body. Leading ``begin`` forms are peeled for discovery
+    only; the body is still compiled in full elsewhere
+
+    :param body: proper list of forms (pair or nil)
+    :return: str or None
+    """
+
+    return _discover_docstring(body)
+
+
+def _discover_docstring(body):
+    if body is nil:
+        return None
+    head, tail = body
+    if isinstance(head, str):
+        return head
+    if _is_begin_form(head):
+        _, inner = head
+        combined = _splice_proper(inner, tail)
+        return _discover_docstring(combined)
+    return None
 
 
 def helper_begin(

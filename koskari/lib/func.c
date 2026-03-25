@@ -1088,6 +1088,33 @@ PyObject *KosBoundMethod_New(PyObject *func, PyObject *self) {
 /* === KosFunction: callable (code, formals, template_ns) -> coroutine on __call__ === */
 
 
+/**
+   Return a new reference to Code.extras["doc"] if that value is unicode.
+
+   :param code: KosCode instance
+   :return: new str ref, or NULL if missing or invalid
+*/
+static PyObject *
+doc_from_code(PyObject *code) {
+
+  PyObject *extras;
+  PyObject *raw;
+
+  if (! KosCode_Check(code))
+    return NULL;
+  extras = KosCode_EXTRAS(code);
+  if (! extras || ! PyDict_Check(extras))
+    return NULL;
+  raw = PyDict_GetItemString(extras, "doc");
+  if (! raw)
+    return NULL;
+  if (! PyUnicode_Check(raw))
+    return NULL;
+  Py_INCREF(raw);
+  return raw;
+}
+
+
 static int function_init(
     KosFunction *self,
     PyObject *args,
@@ -1136,6 +1163,8 @@ static int function_init(
   self->vectorcall = kos_function_vectorcall;
   self->inspect_signature = NULL;
 
+  KosFunction_DOC(self) = doc_from_code(code);
+
   return 0;
 }
 
@@ -1147,6 +1176,7 @@ function_traverse(PyObject *self, visitproc visit, void *arg) {
   Py_VISIT(KosFunction_CODE(self));
   Py_VISIT(KosFunction_BASE_NS(self));
   Py_VISIT(KosFunction_FORMALS(self));
+  Py_VISIT(KosFunction_DOC(self));
   Py_VISIT(((KosFunction *) self)->inspect_signature);
   return 0;
 }
@@ -1155,6 +1185,7 @@ function_traverse(PyObject *self, visitproc visit, void *arg) {
 static int
 function_clear(PyObject *self) {
 
+  Py_CLEAR(KosFunction_DOC(self));
   Py_CLEAR(((KosFunction *) self)->inspect_signature);
   return 0;
 }
@@ -1167,6 +1198,7 @@ static void function_dealloc(PyObject *self) {
   Py_CLEAR(KosFunction_CODE(self));
   Py_CLEAR(KosFunction_BASE_NS(self));
   Py_CLEAR(KosFunction_FORMALS(self));
+  Py_CLEAR(KosFunction_DOC(self));
   Py_CLEAR(((KosFunction *) self)->inspect_signature);
   Py_TYPE(self)->tp_free(self);
 }
@@ -1372,6 +1404,7 @@ static PyMemberDef function_members[] = {
   { "base_ns", T_OBJECT, offsetof(KosFunction, base_ns), READONLY, NULL },
   { "formals", T_OBJECT, offsetof(KosFunction, formals), READONLY, NULL },
   { "name", T_OBJECT, offsetof(KosFunction, name), READONLY, NULL },
+  { "__doc__", T_OBJECT, offsetof(KosFunction, doc), READONLY, NULL },
   { NULL, 0, 0, 0, NULL },
 };
 
@@ -1478,6 +1511,8 @@ PyObject *KosFunction_NewFromFormals(
   KosFunction_NAME(self) = NULL;
   ((KosFunction *) self)->vectorcall = kos_function_vectorcall;
   ((KosFunction *) self)->inspect_signature = NULL;
+
+  KosFunction_DOC(self) = doc_from_code(code);
 
   return self;
 }

@@ -157,6 +157,7 @@ def make_bootstrap():
     _bind('dir', dir)
     _bind('open', open)
     _bind('range', range)
+    _bind('help', help)
 
     # syntax-rule constructor for define-syntax lowering
     _bind('build-syntax-rules', build_syntax_rules)

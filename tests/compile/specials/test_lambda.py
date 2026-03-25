@@ -61,4 +61,12 @@ class TestLambdaNamed(SpecialsTestCase):
         self.assertEqual(result, 10)
 
 
+    async def test_lambda_docstring_from_leading_str(self):
+        src = '(lambda [x] "module doc line" x)'
+        expr, mod = self.compile_expr(src)
+        fn = await expr()
+        self.assertEqual(fn.__doc__, 'module doc line')
+        self.assertEqual(fn.code.extras.get('doc'), 'module doc line')
+
+
 # The end.

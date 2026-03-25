@@ -1,0 +1,35 @@
+---
+alwaysApply: true
+---
+
+# Splitting a koskari `pair` into head and tail
+
+This is the wrong way:
+
+```
+  head, tail = car(body), cdr(body)
+```
+
+This is the right way:
+
+```
+  head, tail = body
+```
+
+
+# Creating a koskari `pair` list using `cons`
+
+`cons` is variadic in koskari. Do not nest `cons` calls in the tail slot.
+
+This is the wrong way:
+
+```
+  lst = cons(1, cons(2, cons(3, nil)))
+```
+
+This is the right way:
+
+```
+  lst = cons(1, 2, 3, nil)
+```
+

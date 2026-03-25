@@ -187,6 +187,10 @@ static PyMemberDef code_members[] = {
     offsetof(KosCode, nspec), READONLY,
     "The baseline NamespaceSpec required for this Code" },
 
+  { "extras", T_OBJECT,
+    offsetof(KosCode, extras), READONLY,
+    "Mutable dict for compiler/runtime metadata; update in place" },
+
   { NULL },
 };
 

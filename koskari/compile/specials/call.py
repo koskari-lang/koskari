@@ -268,7 +268,7 @@ def special_call_attr(
             fragment.position_of(source)
             if use_var_path:
                 fragment.instruction(
-                    OpCode.KOS_OP_CALL_VAR_ATTR_NAMES, (str(obj),str(attr), tuple(kw_names), opa))
+                    OpCode.KOS_OP_CALL_VAR_ATTR_NAMES, (str(obj), str(attr), tuple(kw_names), opa))
             else:
                 fragment.instruction(
                     OpCode.KOS_OP_CALL_ATTR_NAMES, (str(attr), tuple(kw_names), opa, 0))

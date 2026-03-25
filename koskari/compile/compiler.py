@@ -195,6 +195,7 @@ class ByteCodeFragment:
         self.requests_for_write = []
         self._request_global = []
         self.declares = []
+        self.doc = None
 
 
     def as_namespace_spec(self):
@@ -935,6 +936,8 @@ class Compiler:
 
         # Build Code and register with pragma for position lookup on errors
         code = Code(base_nspec, instr, fragment.name, filename)
+        if fragment.doc is not None:
+            code.extras['doc'] = fragment.doc
         pragma.register_code_fragment(code, fragment)
         # Recursively validate that all writes are satisfied.
         # Only validate from root complete(); inner complete() calls skip so

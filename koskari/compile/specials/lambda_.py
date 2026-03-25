@@ -26,7 +26,8 @@ from ...lib import FormalsSpec, FunctionSpec, OpCode, pair, symbol
 from ..compiler import ByteCodeFragment, Compiler, CompilerMode
 from ...exceptions import SpecialError
 from ...matcher import MATCH, REST, SYMBOL, match
-from ..helpers import FORMALS, helper_begin, special, special_forms
+from ..helpers import (
+    FORMALS, discover_docstring, helper_begin, special, special_forms)
 
 
 _LAMBDA_PATTERNS = [
@@ -90,6 +91,8 @@ def special_lambda(
         lamb.declare_var(starstar)
     if proper_name is not None:
         lamb.declare_var(proper_name)
+
+    lamb.doc = discover_docstring(body_src)
 
     with compiler.pragma_scope():
         lamb = helper_begin(lamb, body_src, True)

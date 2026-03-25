@@ -103,6 +103,8 @@ Ref: [api/dunder-adapter.md](api/dunder-adapter.md) (demand_sync, demand path);
 
 - **await** — language/compile-level support for await (AWAIT opcode exists).
 - **define-values** / **setq-values** — multi-value definition and assignment.
+- **Variadic ordering checks** — variadic `>`, `>=`, `<`, `<=` that assert
+  strict/non-strict chain (e.g. `(> 9 2 0)`, `(<= 0 0 3 4 5 5 8)`).
 
 Ref: [FEATURES.md](FEATURES.md) § Ready to Migrate;
 [language/async.md](language/async.md) (await syntax/semantics);

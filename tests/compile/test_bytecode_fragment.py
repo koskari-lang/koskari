@@ -391,6 +391,16 @@ class TestCodeFunctionSpec(unittest.IsolatedAsyncioTestCase):
         with self.assertRaises(TypeError):
             code.function_spec("not a formals spec")
 
+    async def test_code_extras_is_mutable_dict(self):
+        """Code.extras is a dict; compiler may set doc metadata"""
+
+        nspec = NamespaceSpec(None, (), ())
+        instr = ([OpCode.KOS_OP_RETURN, 0],)
+        code = Code(nspec, instr, "inner")
+        self.assertIsInstance(code.extras, dict)
+        code.extras['doc'] = 'stored'
+        self.assertEqual(code.extras['doc'], 'stored')
+
 
 class TestByteCodeFragment(unittest.IsolatedAsyncioTestCase):
     """Tests for ByteCodeFragment: instructions, requests, declares."""
