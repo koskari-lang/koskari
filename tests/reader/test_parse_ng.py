@@ -32,8 +32,9 @@ from unittest import IsolatedAsyncioTestCase
 
 from koskari.compile.helpers import pycons
 from koskari.reader.layouts import LAYOUTS
-from koskari.reader.parser import (IndentAwareStream, LayoutReader, Reader,
-                                   SourceStream, default_reader, source_str)
+from koskari.reader.parser import (READ_EOF, IndentAwareStream, LayoutReader,
+                                   Reader, SourceStream, default_reader,
+                                   source_str)
 from koskari.types import BaseSourceStream, cons, keyword, nil, symbol
 
 import pytest
@@ -318,8 +319,8 @@ class TestReaderWithSourceStreamNg(IsolatedAsyncioTestCase):
             nil)
         self.assertEqual(result, expected)
 
-    async def test_read_eof_returns_none(self):
-        self.assertIsNone(_parse_ng(""))
+    async def test_read_eof_returns_sentinel(self):
+        self.assertIs(_parse_ng(""), READ_EOF)
 
     async def test_read_comment_skipped(self):
         result = _parse_ng("; comment\nhello")

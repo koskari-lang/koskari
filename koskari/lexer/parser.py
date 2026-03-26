@@ -27,6 +27,8 @@ into s-expressions without compilation or evaluation.
 # This file was entirely generated via prompt, as the basis for the
 # prompt_toolkit REPL enhancements.
 
+from koskari.reader.parser import READ_EOF
+
 
 _default_reader = None
 
@@ -55,11 +57,11 @@ def parse(source, filename='<string>'):
     Parse a single top-level form from source.
 
     Uses default_layout_reader and source_str. Returns the parsed
-    s-expression or None at EOF.
+    s-expression or READ_EOF when there is no form (empty or whitespace only).
 
     :param source: source string
     :param filename: filename for error reporting
-    :return: parsed form or None at EOF
+    :return: parsed form or READ_EOF at EOF
     :raises ReaderSyntaxError: on syntax errors
     """
 
@@ -86,7 +88,7 @@ def parse_all(source, filename='<string>'):
     stream = source_str(source, filename)
     while True:
         form = reader.read(stream)
-        if form is None:
+        if form is READ_EOF:
             break
         yield form
 
@@ -95,6 +97,7 @@ __all__ = (
     'default_layout_reader',
     'parse',
     'parse_all',
+    'READ_EOF',
 )
 
 

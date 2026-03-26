@@ -34,6 +34,7 @@ from os.path import basename
 from traceback import format_exception_only
 
 from koskari.exceptions import LayoutError, ReaderError
+from koskari.reader import READ_EOF
 
 
 __all__ = (
@@ -328,7 +329,7 @@ async def _eval_expression_async(compiler, source, ns):
     from koskari.lexer import parse
 
     source_expr = parse(source, '<stdin>')
-    if source_expr is None:
+    if source_expr is READ_EOF:
         return _INCOMPLETE
     fragment = compiler.full_compile(source_expr)
     expr = fragment.as_expression(ns)

@@ -63,7 +63,24 @@ __all__ = (
     "Reader",
     "LayoutReader",
     "default_reader",
+    "READ_EOF",
 )
+
+
+class ReadEOFType(object):
+    """
+    Sentinel returned by Reader.read at end of stream.
+
+    Distinct from the Python None literal, which may appear as a parsed value.
+    """
+
+    __slots__ = ()
+
+    def __repr__(self):
+        return '<read EOF>'
+
+
+READ_EOF = ReadEOFType()
 
 
 _symbol__str = symbol("compile/str")
@@ -108,6 +125,7 @@ _dotted_attr_atom_re = regex(
     r"^[a-zA-Z_][a-zA-Z0-9_-]*(\.[a-zA-Z_][a-zA-Z0-9_-]*)+$").match
 _ref_atom_re = regex(r"^&\S+$").match
 _ellipsis_atom_re = regex(r"^\.\.\.$").match
+_py_singleton_atom_re = regex(r"^(None|True|False)$").match
 
 
 _as_integer = int
@@ -122,6 +140,18 @@ def _as_ellipsis(_s):
     """
 
     return ...
+
+
+def _as_py_singleton(s):
+    """
+    Reader literals for Python None and bool singletons
+    """
+
+    if s == "None":
+        return None
+    if s == "True":
+        return True
+    return False
 
 
 def _as_float(s):
@@ -676,11 +706,11 @@ class Reader(object):
         """
         Read a single s-expression from the stream
 
-        Returns a cons cell, symbol, or numeric value. Returns None if
+        Returns a cons cell, symbol, or numeric value. Returns READ_EOF if
         no data remains in the stream.
 
         :param reader_stream: the source stream to read from
-        :return: the parsed value, or None at EOF
+        :return: the parsed value, or READ_EOF at EOF
         :raises ReaderSyntaxError: on syntax errors
         """
 
@@ -689,7 +719,7 @@ class Reader(object):
         if event is VALUE:
             return value
         elif event is EOF:
-            return None
+            return READ_EOF
         else:
             raise reader_stream.error("invalid syntax", pos)
 
@@ -701,7 +731,7 @@ class Reader(object):
         Returns a cons cell, or an unprocessed atomic value
 
         :param reader_stream: the source stream to read from
-        :return: the parsed value, or None at EOF
+        :return: the parsed value, or READ_EOF at EOF
         :raises ReaderSyntaxError: on syntax errors
         """
 
@@ -712,7 +742,7 @@ class Reader(object):
         elif event is ATOM:
             return Atom(value)
         elif event is EOF:
-            return None
+            return READ_EOF
         else:
             raise reader_stream.error("invalid syntax", pos)
 
@@ -722,7 +752,8 @@ class Reader(object):
         Read a single s-expression and return its position
 
         :param reader_stream: the source stream to read from
-        :return: a tuple of (value, position) where position is (line, col)
+        :return: a tuple of (value, position) where position is (line, col);
+            value is READ_EOF at EOF
         :raises ReaderSyntaxError: on syntax errors
         """
 
@@ -731,7 +762,7 @@ class Reader(object):
         if event is VALUE:
             return value, pos
         elif event is EOF:
-            return None, pos
+            return READ_EOF, pos
         else:
             raise reader_stream.error("invalid syntax", pos)
 
@@ -973,6 +1004,7 @@ class Reader(object):
         ap(symbol("compile/attr"), _dotted_attr_atom_re, _as_dotted_attr_atom)
         ap(symbol("keyword"), _keyword_re, keyword)
         ap(symbol("ellipsis"), _ellipsis_atom_re, _as_ellipsis)
+        ap(symbol("py_singleton"), _py_singleton_atom_re, _as_py_singleton)
         ap(symbol("int"), _integer_re, _as_integer)
         ap(symbol("float"), _float_re, _as_float)
         ap(symbol("hex"), _hex_re, _as_hex)
@@ -2125,6 +2157,9 @@ class LayoutReader(Reader):
         constraint) if it is not already one, then delegates to
         read_form. This ensures stream.dedented is always available
         throughout the layout read without any getattr guards.
+
+        At EOF returns READ_EOF (same as Reader.read), not None, so callers
+        can distinguish end-of-stream from a parsed Python None literal.
         """
 
         if not isinstance(reader_stream, IndentAwareStream):
@@ -2140,7 +2175,7 @@ class LayoutReader(Reader):
         if event is VALUE:
             return value
         elif event is EOF:
-            return None
+            return READ_EOF
         else:
             raise reader_stream.error('invalid syntax', pos)
 

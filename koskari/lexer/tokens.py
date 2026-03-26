@@ -113,8 +113,8 @@ _NUMBER_MATCHERS = (
 
 def _atom_type(text, special_names):
     """
-    Classify an atom string as number, keyword, ellipsis, special, layout, or
-    symbol.
+    Classify an atom string as number, keyword, ellipsis, py_singleton,
+    special, layout, or symbol.
 
     :param text: the atom string
     :param special_names: set of names to treat as compiler specials
@@ -128,6 +128,8 @@ def _atom_type(text, special_names):
         return 'keyword'
     if text == '...':
         return 'ellipsis'
+    if text in ("None", "True", "False"):
+        return 'py_singleton'
     if text in special_names:
         return 'special'
     if text in LAYOUT_HEAD_NAMES:

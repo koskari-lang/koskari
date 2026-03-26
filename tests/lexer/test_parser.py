@@ -23,7 +23,7 @@ from unittest import IsolatedAsyncioTestCase
 from koskari.types import symbol, car, cdr, is_pair
 from koskari.reader import LayoutReader
 
-from koskari.lexer import default_layout_reader, parse, parse_all
+from koskari.lexer import READ_EOF, default_layout_reader, parse, parse_all
 
 import pytest
 
@@ -58,14 +58,14 @@ class TestParse(IsolatedAsyncioTestCase):
         self.assertEqual(car(cdr(cdr(result))), symbol('c'))
 
 
-    async def test_parse_eof_returns_none(self):
+    async def test_parse_eof_returns_read_eof(self):
         result = parse('')
-        self.assertIsNone(result)
+        self.assertIs(result, READ_EOF)
 
 
-    async def test_parse_whitespace_only_returns_none(self):
+    async def test_parse_whitespace_only_returns_read_eof(self):
         result = parse('   \n\t  ')
-        self.assertIsNone(result)
+        self.assertIs(result, READ_EOF)
 
 
     async def test_parse_layout_block(self):

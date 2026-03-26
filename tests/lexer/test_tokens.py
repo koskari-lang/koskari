@@ -96,6 +96,17 @@ class TestTokenize(IsolatedAsyncioTestCase):
         self.assertEqual(toks[0].text, '...')
 
 
+    async def test_tokenize_py_singleton(self):
+        for word, typ in (
+                ("None", "py_singleton"),
+                ("True", "py_singleton"),
+                ("False", "py_singleton")):
+            toks = list(tokenize(word))
+            self.assertEqual(len(toks), 1, word)
+            self.assertEqual(toks[0].type, typ, word)
+            self.assertEqual(toks[0].text, word, word)
+
+
     async def test_tokenize_parens(self):
         toks = list(tokenize('( )'))
         self.assertEqual(len(toks), 2)

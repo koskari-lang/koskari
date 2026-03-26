@@ -25,7 +25,7 @@ from io import StringIO
 from unittest import IsolatedAsyncioTestCase
 
 from koskari.types import cons, symbol, keyword, nil, car, cdr, BaseSourceStream
-from koskari.reader import default_reader, source_str
+from koskari.reader import READ_EOF, default_reader, source_str
 
 import pytest
 
@@ -43,7 +43,7 @@ class TestAtomics(IsolatedAsyncioTestCase):
     async def test_nothing(self):
         src = ""
         col = parse_source(src)
-        self.assertIs(col, None)
+        self.assertIs(col, READ_EOF)
 
     async def test_symbol(self):
         src = "lambda"
@@ -53,18 +53,6 @@ class TestAtomics(IsolatedAsyncioTestCase):
         src = "Number123"
         col = parse_source(src)
         self.assertIs(col, symbol("Number123"))
-
-        src = "None"
-        col = parse_source(src)
-        self.assertIs(col, symbol("None"))
-
-        src = "True"
-        col = parse_source(src)
-        self.assertIs(col, symbol("True"))
-
-        src = "False"
-        col = parse_source(src)
-        self.assertIs(col, symbol("False"))
 
         src = "nil"
         col = parse_source(src)
@@ -105,6 +93,30 @@ class TestAtomics(IsolatedAsyncioTestCase):
         self.assertIs(car(col), symbol("list"))
         self.assertIs(car(cdr(col)), ...)
         self.assertIs(cdr(cdr(col)), nil)
+
+    async def test_py_singleton_literals(self):
+        src = "None"
+        col = parse_source(src)
+        self.assertIs(col, None)
+
+        src = "True"
+        col = parse_source(src)
+        self.assertIs(col, True)
+
+        src = "False"
+        col = parse_source(src)
+        self.assertIs(col, False)
+
+        src = "(list None True False)"
+        col = parse_source(src)
+        self.assertIs(car(col), symbol("list"))
+        rest = cdr(col)
+        self.assertIs(car(rest), None)
+        rest = cdr(rest)
+        self.assertIs(car(rest), True)
+        rest = cdr(rest)
+        self.assertIs(car(rest), False)
+        self.assertIs(cdr(rest), nil)
 
     async def test_integer(self):
         src = "123"

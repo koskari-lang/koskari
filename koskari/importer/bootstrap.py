@@ -124,10 +124,15 @@ def make_bootstrap():
     _ty('type', type)
     _ty('slice', slice)
 
-    # common builtins
+    # These are parsed as literals, not as named references, similar
+    # to numbers and strings.
     _bind('None', None)
     _bind('True', True)
     _bind('False', False)
+    _bind('Ellipsis', Ellipsis)
+    _bind('...', ...)
+
+    # common builtins
     _bind('len', len)
     _bind('repr', repr)
     _bind('str', str)
@@ -158,6 +163,8 @@ def make_bootstrap():
     _bind('dir', dir)
     _bind('open', open)
     _bind('range', range)
+
+    # todo: replace me with a better help built-in
     _bind('help', help)
 
     # syntax-rule constructor for define-syntax lowering

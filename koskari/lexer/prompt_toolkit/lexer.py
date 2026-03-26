@@ -34,6 +34,7 @@ _TOKEN_TYPE_TO_CLASS = {
     'symbol': 'class:koskari.symbol',
     'keyword': 'class:koskari.keyword',
     'ellipsis': 'class:koskari.ellipsis',
+    'py_singleton': 'class:koskari.py_singleton',
     'string': 'class:koskari.string',
     'number': 'class:koskari.number',
     'comment': 'class:koskari.comment',
@@ -162,6 +163,7 @@ def _make_style():
     return Style.from_dict({
         'koskari.keyword': '#859900',
         'koskari.ellipsis': '#2aa198',
+        'koskari.py_singleton': '#2aa198',
         'koskari.string': '#b58900',
         'koskari.number': '#2aa198',
         'koskari.comment': '#93a1a1',

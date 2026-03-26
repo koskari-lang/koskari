@@ -33,6 +33,7 @@ from .parser import (
     Reader,
     LayoutReader,
     default_reader,
+    READ_EOF,
 )
 
 
@@ -48,6 +49,7 @@ __all__ = (
     "Reader",
     "LayoutReader",
     "default_reader",
+    "READ_EOF",
 )
 
 

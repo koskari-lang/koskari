@@ -39,7 +39,12 @@ from os.path import split
 
 from ..compile import Compiler
 from ..lib import Module, ModuleNamespace, demand_sync
-from ..reader import IndentAwareStream, LayoutReader, source_open
+from ..reader import (
+    IndentAwareStream,
+    LayoutReader,
+    READ_EOF,
+    source_open,
+)
 
 
 __all__ = (
@@ -166,7 +171,7 @@ async def load_module_async(module):
             source_expr = reader.read(stream)
             # print(f"source_expr: {source_expr}")
 
-            if source_expr is None:
+            if source_expr is READ_EOF:
                 break
 
             fragment = compiler.full_compile(source_expr)
@@ -209,7 +214,7 @@ def load_module_demand(module):
         while True:
             source_expr = reader.read(stream)
 
-            if source_expr is None:
+            if source_expr is READ_EOF:
                 break
 
             fragment = compiler.full_compile(source_expr)

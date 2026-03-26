@@ -25,15 +25,25 @@ from dataclasses import dataclass
 
 from ..exceptions import CompilerError
 from ..lib import car, cdr, cons, nil, symbol
-from ..matcher import (BindingsResult, BindingResult, extract_binder_symbols,
-                       FormalsResult,
-                       is_binder_spec, is_scope_region_spec, match,
-                       BIND, LITERAL_SYM, MATCH, REPEAT, REST,
-                       RepeatResult)
+from ..matcher import (BIND, LITERAL_SYM, MATCH, REPEAT, REST, BindingResult,
+                       BindingsResult, FormalsResult, RepeatResult,
+                       extract_binder_symbols, is_binder_spec,
+                       is_scope_region_spec, match)
 from ..types import is_pair, is_proper, is_symbol, unpack
 
 
 _ellipsis = symbol("...")
+
+
+def _is_syntax_ellipsis(obj):
+    """
+    True for the syntax-rules repetition marker (symbol ... or reader
+    Ellipsis)
+    """
+
+    return obj is _ellipsis or obj is Ellipsis
+
+
 _tag_syntax_rules = symbol("syntax/rules")
 _tag_list = symbol("syntax/list")
 _tag_cons = symbol("syntax/cons")
@@ -269,9 +279,9 @@ def _collect_binding_symbols_matcher(template, find_compiled):
 
 
 def _match_pattern(pattern, expr, literals):
+    if _is_syntax_ellipsis(pattern):
+        return None
     if is_symbol(pattern):
-        if pattern is _ellipsis:
-            return None
         if pattern in literals:
             return {} if pattern == expr else None
         return {pattern: expr}
@@ -293,7 +303,7 @@ def _match_sequence(p_items, e_items, literals):
             return bindings if ei == len(e_items) else None
 
         pat = p_items[pi]
-        rep = (pi + 1 < len(p_items) and p_items[pi + 1] is _ellipsis)
+        rep = (pi + 1 < len(p_items) and _is_syntax_ellipsis(p_items[pi + 1]))
 
         if not rep:
             if ei >= len(e_items):
@@ -368,7 +378,7 @@ def _expand_template(template, bindings, binding_symbols, compiler, introduced, 
                 return val[index]
             return val
 
-        if template is _ellipsis:
+        if _is_syntax_ellipsis(template):
             return template
 
         if template in binding_symbols:
@@ -386,7 +396,7 @@ def _expand_template(template, bindings, binding_symbols, compiler, introduced, 
     i = 0
     while i < len(items):
         elem = items[i]
-        rep = (i + 1 < len(items) and items[i + 1] is _ellipsis)
+        rep = (i + 1 < len(items) and _is_syntax_ellipsis(items[i + 1]))
         if not rep:
             out.append(_expand_template(elem, bindings, binding_symbols, compiler, introduced, index=index))
             i += 1

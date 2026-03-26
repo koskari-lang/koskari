@@ -30,7 +30,7 @@ from koskari.types import (
     Module,
     ModuleNamespace,
 )
-from koskari.reader import LayoutReader, source_str
+from koskari.reader import READ_EOF, LayoutReader, source_str
 from koskari.reader.layouts import LAYOUTS
 from koskari.compile.helpers import pycons
 
@@ -284,7 +284,7 @@ def _parse_layout_all(src_str):
     results = []
     while True:
         form = reader.read(stream)
-        if form is None:
+        if form is READ_EOF:
             break
         results.append(form)
     return results
@@ -399,14 +399,14 @@ class TestLayoutReaderComments(IsolatedAsyncioTestCase):
         self.assertEqual(result, expected)
 
 
-    async def test_comment_only_input_returns_none(self):
+    async def test_comment_only_input_returns_read_eof(self):
         src = """
         ;; just a comment
         ;; another comment
         """
 
         result = parse_layout(src)
-        self.assertIsNone(result)
+        self.assertIs(result, READ_EOF)
 
 
     async def test_comment_between_top_level_forms(self):
