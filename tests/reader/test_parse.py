@@ -70,10 +70,6 @@ class TestAtomics(IsolatedAsyncioTestCase):
         col = parse_source(src)
         self.assertIs(col, symbol("nil"))
 
-        src = "..."
-        col = parse_source(src)
-        self.assertIs(col, symbol("..."))
-
         src = "taco:bell"
         col = parse_source(src)
         self.assertIs(col, symbol("taco:bell"))
@@ -98,6 +94,17 @@ class TestAtomics(IsolatedAsyncioTestCase):
         src = "number-1:"
         col = parse_source(src)
         self.assertIs(col, keyword("number-1"))
+
+    async def test_ellipsis(self):
+        src = "..."
+        col = parse_source(src)
+        self.assertIs(col, ...)
+
+        src = "(list ...)"
+        col = parse_source(src)
+        self.assertIs(car(col), symbol("list"))
+        self.assertIs(car(cdr(col)), ...)
+        self.assertIs(cdr(cdr(col)), nil)
 
     async def test_integer(self):
         src = "123"

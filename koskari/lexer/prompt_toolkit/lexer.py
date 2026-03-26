@@ -33,6 +33,7 @@ from ..tokens import SPECIAL_NAMES, tokenize
 _TOKEN_TYPE_TO_CLASS = {
     'symbol': 'class:koskari.symbol',
     'keyword': 'class:koskari.keyword',
+    'ellipsis': 'class:koskari.ellipsis',
     'string': 'class:koskari.string',
     'number': 'class:koskari.number',
     'comment': 'class:koskari.comment',
@@ -160,6 +161,7 @@ def _make_style():
     from prompt_toolkit.styles import Style
     return Style.from_dict({
         'koskari.keyword': '#859900',
+        'koskari.ellipsis': '#2aa198',
         'koskari.string': '#b58900',
         'koskari.number': '#2aa198',
         'koskari.comment': '#93a1a1',

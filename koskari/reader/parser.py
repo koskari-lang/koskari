@@ -107,11 +107,21 @@ _keyword_re = regex(r"^(:.+|.+:)$").match
 _dotted_attr_atom_re = regex(
     r"^[a-zA-Z_][a-zA-Z0-9_-]*(\.[a-zA-Z_][a-zA-Z0-9_-]*)+$").match
 _ref_atom_re = regex(r"^&\S+$").match
+_ellipsis_atom_re = regex(r"^\.\.\.$").match
+
 
 _as_integer = int
 _as_bin = partial(int, base=2)
 _as_oct = partial(int, base=8)
 _as_hex = partial(int, base=16)
+
+
+def _as_ellipsis(_s):
+    """
+    Reader literal for the Python Ellipsis singleton
+    """
+
+    return ...
 
 
 def _as_float(s):
@@ -962,6 +972,7 @@ class Reader(object):
         ap(symbol("compile/refq"), _ref_atom_re, self._as_ref_atom)
         ap(symbol("compile/attr"), _dotted_attr_atom_re, _as_dotted_attr_atom)
         ap(symbol("keyword"), _keyword_re, keyword)
+        ap(symbol("ellipsis"), _ellipsis_atom_re, _as_ellipsis)
         ap(symbol("int"), _integer_re, _as_integer)
         ap(symbol("float"), _float_re, _as_float)
         ap(symbol("hex"), _hex_re, _as_hex)

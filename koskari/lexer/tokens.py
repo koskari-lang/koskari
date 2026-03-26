@@ -113,7 +113,8 @@ _NUMBER_MATCHERS = (
 
 def _atom_type(text, special_names):
     """
-    Classify an atom string as number, keyword, special, layout, or symbol.
+    Classify an atom string as number, keyword, ellipsis, special, layout, or
+    symbol.
 
     :param text: the atom string
     :param special_names: set of names to treat as compiler specials
@@ -125,6 +126,8 @@ def _atom_type(text, special_names):
             return 'number'
     if _keyword_re(text):
         return 'keyword'
+    if text == '...':
+        return 'ellipsis'
     if text in special_names:
         return 'special'
     if text in LAYOUT_HEAD_NAMES:
@@ -210,6 +213,16 @@ def tokenize(source, filename='<string>', special_names=None):
             continue
 
         if ch == '.':
+            if i + 1 < n and sl[i] == '.' and sl[i + 1] == '.':
+                i += 2
+                line, col = _advance_pos(line, col, '..')
+                yield Token(
+                    'ellipsis',
+                    '...',
+                    start_line,
+                    start_col,
+                    line, col)
+                continue
             yield Token('dot', ch, start_line, start_col, line, col)
             continue
 

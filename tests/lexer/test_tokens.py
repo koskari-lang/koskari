@@ -89,6 +89,13 @@ class TestTokenize(IsolatedAsyncioTestCase):
         self.assertEqual(toks[0].text, ':foo')
 
 
+    async def test_tokenize_ellipsis(self):
+        toks = list(tokenize('...'))
+        self.assertEqual(len(toks), 1)
+        self.assertEqual(toks[0].type, 'ellipsis')
+        self.assertEqual(toks[0].text, '...')
+
+
     async def test_tokenize_parens(self):
         toks = list(tokenize('( )'))
         self.assertEqual(len(toks), 2)
