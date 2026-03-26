@@ -257,7 +257,7 @@
       ]
     },
     "list-head-special": {
-      "match": "\\s*(define|if|cond|when|unless|and|or|begin|let|lambda|try|raise|while|for-each|break|continue|import|import-from|ref|attr|setq|bindq|delq|refq|class|define-syntax|with|dyn-with|dyn-wind|parameterize|call/cc|let/cc|capture/cc|reset|shift|compile/bytecode|compile/begin|compile/call|compile/lambda|compile/let|compile/cond|compile/if|compile/when|compile/unless|compile/and|compile/or|compile/try|compile/raise|compile/while|compile/for-each|compile/break|compile/continue|compile/parameterize|compile/dyn-wind|compile/setq|compile/inplace|compile/ref|compile/refq|compile/bindq|compile/define|compile/define-syntax|compile/class|compile/delq|compile/attr|compile/del-attr|compile/set-attr|compile/ref-attr|compile/item|compile/ref-item|compile/deref|compile/del-item|compile/set-item|compile/quote|compile/quasiquote|compile/quote-block|compile/quasiquote-block|compile/apply-layout|compile/unquote|compile/unquote-splicing|compile/car|compile/cdr|compile/cons|compile/call/cc|compile/let/cc|compile/capture/cc|compile/reset|compile/shift|compile/with|compile/dyn-with|compile/import|compile/import-from|compile/set!|compile/bind!|compile/define-parameter|compile/parameterq|compile/None\\?|set!|bind!|use-parameter|parameterq|None\\?|define-coroutine|when-main)(?=(?:\\s|\\)|\\]|\\}|$))",
+      "match": "\\s*(with|while|when-main|when|use-parameter|unless|try|shift|setq|set!|reset|refq|ref|raise|parameterq|parameterize|or|let/cc|let|lambda|import-from|import|if|for-each|dyn-with|dyn-wind|delq|define-syntax|define-coroutine|define|continue|cond|class|capture/cc|call/cc|break|bindq|bind!|begin|attr|and|None\\?)(?=(?:\\s|\\)|\\]|\\}|$))",
       "captures": {
         "1": { "name": "keyword.control.koskari" }
       }
@@ -265,7 +265,7 @@
     "block-header": {
       "patterns": [
         {
-          "match": "^(\\s*)(if|elif|else|try|except|else|finally|begin|define|when|when-main|class|for-each|while|dyn-wind|with|dyn-with|define-syntax|syntax-rules)\\b([^\\n]*?)(:)\\s*(;.*)?$",
+          "match": "^(\\s*)(with|while|when-main|when|try|syntax-rules|if|for-each|finally|except|else|elif|dyn-with|dyn-wind|define-syntax|define|class|begin)\\b([^\\n]*?)(:)\\s*(;.*)?$",
           "captures": {
             "2": { "name": "keyword.control.koskari" },
             "3": { "name": "meta.block-header-args.koskari" },

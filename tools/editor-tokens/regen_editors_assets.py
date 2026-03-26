@@ -45,10 +45,8 @@ def expand_block_header_tokens(layout_heads, layout_peers):
     out = []
     for head in layout_heads:
         out.append(head)
-        peers = layout_peers.get(head)
-        if peers:
-            out.extend(peers)
-    return out
+        out.extend(layout_peers.get(head, ()))
+    return sorted(set(out), reverse=True)
 
 
 def escape_regex_token(token):
@@ -171,17 +169,16 @@ def render(spec_path, template_path, output_path):
     """
 
     spec_path = Path(spec_path).resolve()
-    template_path = Path(template_path).resolve()
-    output_path = Path(output_path).resolve()
-
-    templates_dir = template_path.parent
-    template_name = template_path.name
-
     spec =  yaml.safe_load(spec_path.read_text())
-    env = jinja_env(templates_dir)
-    template = env.get_template(template_name)
+    lhs_specials = spec["list_head_specials"]
+    spec["list_head_specials"] = sorted(lhs_specials, reverse=True)
+
+    template_path = Path(template_path).resolve()
+    env = jinja_env(template_path.parent)
+    template = env.get_template(template_path.name)
     rendered = template.render(**spec)
 
+    output_path = Path(output_path).resolve()
     output_path.parent.mkdir(parents=True, exist_ok=True)
     output_path.write_text(rendered)
 
