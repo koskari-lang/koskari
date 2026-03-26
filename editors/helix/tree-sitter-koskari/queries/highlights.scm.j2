@@ -18,7 +18,7 @@
  (#any-of? @keyword.control
 {% for tok in list_head_specials %}
    "{{ tok }}"{% if loop.last %})){% endif %}
-{% endfor %}
+{%- endfor %}
 
 ; General symbols
 (symbol) @variable.other
@@ -36,3 +36,5 @@
 
 ; Collection markers
 ["#(" "#[" "#{"] @punctuation.definition.collection
+
+; The end.

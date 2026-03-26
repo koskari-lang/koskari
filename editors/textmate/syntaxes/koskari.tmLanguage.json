@@ -265,7 +265,7 @@
     "block-header": {
       "patterns": [
         {
-          "match": "^(\\s*)(if|elif|else|try|except|finally|begin|define|when|when-main|class|for-each|while|dyn-wind|with|dyn-with|define-syntax|syntax-rules)\\b([^\\n]*?)(:)\\s*(;.*)?$",
+          "match": "^(\\s*)(if|elif|else|try|except|else|finally|begin|define|when|when-main|class|for-each|while|dyn-wind|with|dyn-with|define-syntax|syntax-rules)\\b([^\\n]*?)(:)\\s*(;.*)?$",
           "captures": {
             "2": { "name": "keyword.control.koskari" },
             "3": { "name": "meta.block-header-args.koskari" },
