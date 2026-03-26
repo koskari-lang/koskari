@@ -250,7 +250,7 @@ def tokenize(source, filename='<string>'):
                         break
                     elif not triple:
                         break
-            line, col = _advance_pos(line, col, text[3:] if triple else text[1:])
+            line, col = _advance_pos(line, col, text[1:])
             yield Token('string', text, start_line, start_col, line, col)
             continue
 
@@ -280,7 +280,7 @@ def tokenize(source, filename='<string>'):
                         i += 1
                     elif c == '"':
                         break
-            line, col = _advance_pos(line, col, text[2:])
+            line, col = _advance_pos(line, col, text[1:])
             yield Token('string', text, start_line, start_col, line, col)
             continue
 

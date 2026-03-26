@@ -63,6 +63,18 @@ class TestTokenize(IsolatedAsyncioTestCase):
         self.assertEqual(toks[0].text, '"hello"')
 
 
+    async def test_tokenize_triple_string_end_position(self):
+        toks = list(tokenize('"""a"""'))
+        self.assertEqual(len(toks), 1)
+        t = toks[0]
+        self.assertEqual(t.type, 'string')
+        self.assertEqual(t.text, '"""a"""')
+        self.assertEqual(t.start_line, 1)
+        self.assertEqual(t.start_col, 1)
+        self.assertEqual(t.end_line, 1)
+        self.assertEqual(t.end_col, 8)
+
+
     async def test_tokenize_number(self):
         toks = list(tokenize('42'))
         self.assertEqual(len(toks), 1)

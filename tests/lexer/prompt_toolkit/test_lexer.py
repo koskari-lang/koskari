@@ -65,6 +65,24 @@ class TestKoskariLexer(IsolatedAsyncioTestCase):
             s and 'koskari.keyword' in str(s) for s, _ in parts)
         self.assertTrue(has_keyword_style)
 
+    async def test_lexer_multiline_triple_string_reconstructs_lines(self):
+        """
+        Multi-line string tokens must be sliced per line; using full tok.text
+        on the first line only corrupts the display (phantom characters).
+        """
+
+        text = (
+            'define foobar []:\n'
+            '    """ this is a docstring\n'
+            '    """\n')
+        lexer = KoskariLexer()
+        doc = Document(text)
+        get_line = lexer.lex_document(doc)
+        for lineno in range(len(doc.lines)):
+            parts = get_line(lineno)
+            joined = ''.join(t for _, t in parts)
+            self.assertEqual(joined, doc.lines[lineno])
+
 
 class TestKoskariStyle(IsolatedAsyncioTestCase):
 

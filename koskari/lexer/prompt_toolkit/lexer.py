@@ -25,8 +25,6 @@ Koskari syntax highlighting for prompt_toolkit.
 # prompt_toolkit REPL enhancements.
 
 
-from collections import defaultdict
-
 from prompt_toolkit.lexers import Lexer
 
 from ..tokens import tokenize
@@ -59,6 +57,40 @@ def _style_class(tok_type):
     return _TOKEN_TYPE_TO_CLASS.get(tok_type, 'class:koskari.symbol')
 
 
+def _slice_token_on_line(tok, line_no, raw_line):
+    """
+    Return (start_idx, end_idx) 0-based half-open indices into raw_line for
+    the portion of tok that lies on line_no. end_idx is exclusive.
+
+    :param tok: Token from tokenize()
+    :param line_no: 1-based line number
+    :param raw_line: text of that line only
+    :return: (start_idx, end_idx) or None if tok does not intersect line_no
+    """
+
+    if not (tok.start_line <= line_no <= tok.end_line):
+        return None
+    n = len(raw_line)
+    if tok.start_line == tok.end_line:
+        return (tok.start_col - 1, tok.end_col - 1)
+    if line_no == tok.start_line:
+        return (tok.start_col - 1, n)
+    if line_no == tok.end_line:
+        return (0, tok.end_col - 1)
+    return (0, n)
+
+
+def _sort_key_token_on_line(tok, line_no):
+    """
+    Column order for tokens on a line (1-based). Continuation of a multi-line
+    token starts at column 1.
+    """
+
+    if tok.start_line == line_no:
+        return tok.start_col
+    return 1
+
+
 class KoskariLexer(Lexer):
     """
     prompt_toolkit Lexer for Koskari source.
@@ -80,27 +112,33 @@ class KoskariLexer(Lexer):
         except Exception:
             tokens = []
 
-        line_to_tokens = defaultdict(list)
-        for tok in tokens:
-            line_to_tokens[tok.start_line].append(tok)
-
         def get_line(lineno):
             lines = document.lines
             if lineno < 0 or lineno >= len(lines):
                 return []
             line_no = lineno + 1
             raw = lines[lineno]
-            toks = sorted(line_to_tokens.get(line_no, []), key=lambda t: t.start_col)
             default_style = ''
-            if not toks:
+            line_toks = [
+                t for t in tokens
+                if t.start_line <= line_no <= t.end_line]
+            line_toks.sort(key=lambda t: _sort_key_token_on_line(t, line_no))
+            if not line_toks:
                 return [(default_style, raw)]
             parts = []
             col = 1
-            for tok in toks:
-                if tok.start_col > col:
-                    parts.append((default_style, raw[col - 1:tok.start_col - 1]))
-                parts.append((_style_class(tok.type), tok.text))
-                col = tok.end_col
+            for tok in line_toks:
+                bounds = _slice_token_on_line(tok, line_no, raw)
+                if bounds is None:
+                    continue
+                start_idx, end_idx = bounds
+                line_start_col = start_idx + 1
+                if line_start_col > col:
+                    parts.append((default_style, raw[col - 1:line_start_col - 1]))
+                parts.append((
+                    _style_class(tok.type),
+                    raw[start_idx:end_idx]))
+                col = end_idx + 1
             if col <= len(raw):
                 parts.append((default_style, raw[col - 1:]))
             return parts
