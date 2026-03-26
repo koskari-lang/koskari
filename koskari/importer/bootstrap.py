@@ -122,6 +122,7 @@ def make_bootstrap():
     _ty('set', set)
     _ty('frozenset', frozenset)
     _ty('type', type)
+    _ty('slice', slice)
 
     # common builtins
     _bind('None', None)

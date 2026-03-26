@@ -1,0 +1,485 @@
+;; koskari.dis_ng
+;;
+;; Experimental koskari-native disassembler aiming for parity with
+;; koskari.dis output shape.
+
+(import-from koskari.lib Code Function OpCode OpStyle)
+(import-from koskari.types NamespaceSpec)
+
+
+(define __all__
+  #("dis"
+    "_get_code"
+    "_get_instruction_lines"
+    "_format_constant"
+    "_build_ns_const_map"
+    "_format_nspec_inline"))
+
+
+define _get_code [x]:
+  """
+  Return x if it is a Code instance, else None.
+
+  :param x: value to check
+  :return: Code instance or None
+  """
+  if (isinstance x Code):
+    x
+  else:
+    None
+
+
+define _format_constant [val]:
+  """
+  Repr suitable for constant pool display (bounded length)
+
+  :param val: constant pool value
+  :return: string representation of the value
+  """
+  (define r (repr val))
+  if (> (len r) 60):
+    (+ (item r (slice None 57)) "...")
+  else:
+    r
+
+
+define _write_function_instance_section [file fn]:
+  """
+  Write a leading section for a Function instance: name, formals,
+  base_ns (closures).
+
+  :param file: file-like object to write to
+  :param fn: Function instance (KosFunction)
+  """
+  (define name fn.name)
+  (define name_repr (if (None? name) "None" (repr name)))
+
+  (file.write (+ "Function instance:\n"))
+  (file.write (+ "  name: " name_repr "\n"))
+  (file.write (+ "  formals:\n"))
+
+  (define formals fn.formals)
+  if (is-not formals None):
+    for-each [attr_name #("pos" "pos_only" "kwd" "kwd_only" "star" "starstar" "defaults")]:
+      (define val (getattr formals attr_name None))
+      (file.write (+ "    " attr_name ": " (repr val) "\n"))
+  else:
+    (file.write "    (none)\n")
+
+  (define base_ns fn.base_ns)
+  (file.write "  base_ns (closures):\n")
+  if (is-not base_ns None):
+    try:
+      (define items (base_ns.items))
+    except [Exception]:
+      ;; EXPERIMENT-ISSUE: Exception tuple granularity differs from dis.py
+      ;; fallback catches all Exception instead of (AttributeError, TypeError)
+      (file.write "    (unable to iterate)\n")
+    else:
+      for-each [kv items]:
+        (define k (item kv 0))
+        (define v (item kv 1))
+        (file.write (+ "    " (repr k) ": " (_format_constant v) "\n"))
+  else:
+    (file.write "    (none)\n")
+  (file.write "\n")
+
+
+define _format_nspec_inline [cpool_idx nspec]:
+  """
+  Short inline label for a NamespaceSpec used in instruction annotations.
+
+  Returns a string of the form "ns#K 'name'" where K is the constant
+  pool index and name is the namespace name.
+
+  :param cpool_idx: integer index into the constant pool
+  :param nspec: NamespaceSpec instance
+  :return: inline annotation string
+  """
+  (define ns_name nspec.name)
+  (define name_repr (if (None? ns_name) "None" (repr ns_name)))
+  (+ "ns#" (str cpool_idx) " " name_repr)
+
+
+define _write_nspec_cpool_entry [file cpool_idx nspec]:
+  """
+  Write an expanded constant pool entry for a NamespaceSpec.
+
+  Emits the ns# label line followed by indented locals and closures
+  lines, so the reader can see all names available in the namespace.
+
+  :param file: file-like object to write to
+  :param cpool_idx: integer index into the constant pool
+  :param nspec: NamespaceSpec instance
+  """
+  (define ns_name nspec.name)
+  (define name_repr (if (None? ns_name) "None" (repr ns_name)))
+  (define local_syms nspec.local_syms)
+  (define closure_syms nspec.closure_syms)
+  (define global_syms nspec.global_syms)
+  (define all_captured (+ (tuple closure_syms) (tuple global_syms)))
+
+  (file.write
+    (+ "  ns#" (str cpool_idx) ": NamespaceSpec " name_repr "\n"))
+  (file.write
+    (+ "          locals:   " (repr (tuple local_syms)) "\n"))
+  (file.write
+    (+ "          closures: " (repr (tuple all_captured)) "\n"))
+
+
+define _build_ns_const_map [code]:
+  """
+  Pre-scan instructions and return a mapping from PUSH_NS / PUSH_COLLECT
+  instruction index to the constant pool index of the NamespaceSpec.
+
+  PUSH_NS: compiler emits CONST <nspec> immediately before; the direct
+  predecessor is used. PUSH_COLLECT: arg is the constant pool index.
+
+  :param code: Code instance
+  :return: dict mapping instruction index -> constant pool index
+  """
+  (define result (dict))
+  (define cpool code.constants_pool)
+  (define last_nspec_cpool_idx None)
+  (define i 0)
+  (define n (code.length))
+
+  while (< i n):
+    (define oparg (code.oparg i))
+    (define op_int (item oparg 0))
+    (define arg (item oparg 1))
+    (define op (OpCode op_int))
+
+    if (eq? op OpCode.KOS_OP_CONST):
+      if (and (<= 0 arg) (< arg (len cpool)) (isinstance (item cpool arg) NamespaceSpec)):
+        (set! last_nspec_cpool_idx arg)
+      else:
+        (set! last_nspec_cpool_idx None)
+    else:
+      if (eq? op OpCode.KOS_OP_PUSH_NS):
+        when (is-not last_nspec_cpool_idx None):
+          (set-item result i last_nspec_cpool_idx)
+        (set! last_nspec_cpool_idx None)
+      else:
+        if (eq? op OpCode.KOS_OP_PUSH_COLLECT):
+          if (and (<= 0 arg) (< arg (len cpool))
+                  (isinstance (item cpool arg) NamespaceSpec)):
+            (set-item result i arg)
+          (set! last_nspec_cpool_idx None)
+        else:
+          (set! last_nspec_cpool_idx None)
+
+    (set! i (+ i 1))
+
+  result
+
+
+define _format_fast_part [val local_names closure_names]:
+  """
+  Format FAST slot display as local or closure
+  """
+  (define n_local (if local_names (len local_names) 0))
+
+  if (< val n_local):
+    (define name
+      (if local_names
+       then: (item local_names val)
+       else: (+ "local[" (str val) "]")))
+    (+ "fast " (str val) " (" (repr name) ")")
+  else:
+    (define idx (- val n_local))
+    if (and closure_names (<= 0 idx) (< idx (len closure_names))):
+      (+ "fast " (str val) " (closure " (repr (item closure_names idx)) ")")
+    else:
+      (+ "fast " (str val))
+
+
+define _format_arg [code op_style arg cpool local_names closure_names
+                    ns_label: None extra_schema: None]:
+  """
+  Format an opcode argument for display. Uses constant pool, local
+  names, and closure names when the argument is an index into them.
+
+  For PUSH_NS and PUSH_CLASS, the optional ns_label string is appended
+  to annotate which namespace is being pushed.
+
+  :param code: Koskari Code
+  :param op_style: OpStyle value (from OpCode.style or OpStyle enum)
+  :param arg: raw argument value
+  :param cpool: code.constants_pool (sequence)
+  :param local_names: sequence of local sym names from nspec
+  :param closure_names: sequence of closure sym names from nspec
+  :param ns_label: optional inline namespace label for PUSH_NS / PUSH_CLASS
+  :param extra_schema: optional 4-tuple (f0, f1, f2, f3) for KOSTYLE_EXTRA
+  :return: string description of the argument
+  """
+
+  if (eq? op_style OpStyle.KOSTYLE_EXTRA):
+    if (is-not extra_schema None):
+      (define schema extra_schema)
+      if schema:
+        try:
+          (define ext (code.extra_tuple arg))
+          (define a0 (item ext 0))
+          (define a1 (item ext 1))
+          (define a2 (item ext 2))
+          (define a3 (item ext 3))
+        except [Exception]:
+          ;; EXPERIMENT-ISSUE: Keep broad exception fallback for interop safety
+          (return (str arg))
+
+        (define parts (list))
+        for-each [entry #[#(a0 (item schema 0))
+                         #(a1 (item schema 1))
+                         #(a2 (item schema 2))
+                         #(a3 (item schema 3))]]:
+          (define val (item entry 0))
+          (define fk (item entry 1))
+
+          if (or (eq? fk OpStyle.KOSTYLE_CONST) (eq? fk OpStyle.KOSTYLE_VAR)):
+            if (and (<= 0 val) (< val (len cpool))):
+              (define prefix
+                (if (eq? fk OpStyle.KOSTYLE_CONST) "c" "v"))
+              (parts.append
+                (+ prefix "#" (str val) " (" (_format_constant (item cpool val)) ")"))
+            else:
+              (parts.append (str val))
+          else:
+            if (eq? fk OpStyle.KOSTYLE_FASTVAR):
+              (parts.append (_format_fast_part val local_names closure_names))
+            else:
+              if (eq? fk OpStyle.KOSTYLE_COUNT):
+                (parts.append (str val))
+              else:
+                if (eq? fk OpStyle.KOSTYLE_LABEL):
+                  (parts.append (+ "-> " (str val)))
+                else:
+                  (parts.append (str val))
+
+        (return (+ (str arg) " (" (str.join ", " parts) ")"))
+      else:
+        (return (str arg))
+    else:
+      (return (str arg))
+
+  if (eq? op_style OpStyle.KOSTYLE_CONST):
+    if (and (<= 0 arg) (< arg (len cpool))):
+      (define val (item cpool arg))
+      if (isinstance val NamespaceSpec):
+        (return (+ (str arg) " (" (_format_nspec_inline arg val) ")"))
+      else:
+        (return (+ (str arg) " (" (_format_constant val) ")"))
+    (return (str arg))
+
+  if (eq? op_style OpStyle.KOSTYLE_VAR):
+    if (and (<= 0 arg) (< arg (len cpool))):
+      (define name (item cpool arg))
+      (return (+ (str arg) " (" (repr name) ")"))
+    (return (str arg))
+
+  if (eq? op_style OpStyle.KOSTYLE_FASTVAR):
+    (define n_local
+      (if local_names
+        (len local_names)
+        0))
+    if (< arg n_local):
+      (define name
+        (if local_names
+          (item local_names arg)
+          (+ "local[" (str arg) "]")))
+      (return (+ (str arg) " (local " (repr name) ")"))
+
+    (define idx (- arg n_local))
+    if (and closure_names (<= 0 idx) (< idx (len closure_names))):
+      (return (+ (str arg) " (closure " (repr (item closure_names idx)) ")"))
+    (return (str arg))
+
+  if (eq? op_style OpStyle.KOSTYLE_LABEL):
+    (return (+ (str arg) " (-> " (str arg) ")"))
+
+  if (or (eq? op_style OpStyle.KOSTYLE_COUNT)
+         (eq? op_style OpStyle.KOSTYLE_PAIR_COUNT)
+         (eq? op_style OpStyle.KOSTYLE_STAR)):
+    if (is-not ns_label None):
+      (return (+ (str arg) " (" ns_label ")"))
+    (return (str arg))
+
+  (return (str arg))
+
+
+define _local_and_closure_syms [code]:
+  """
+  Return (local_syms tuple, closure_syms tuple) from code.namespace_spec.
+  Closure syms include both closure_syms and global_syms (all captured refs).
+  """
+  (define nspec code.namespace_spec)
+  if (is nspec None):
+    (values #() #())
+  else:
+    (define locals_seq nspec.local_syms)
+    (define closure_seq nspec.closure_syms)
+    (define global_seq nspec.global_syms)
+    (define all_captured (+ (tuple closure_seq) (tuple global_seq)))
+    (values locals_seq all_captured)
+
+
+define _resolve_file [file]:
+  """
+  Resolve output file, defaulting to sys.stdout
+  """
+
+  (import sys)
+  (or file sys.stdout)
+
+
+define dis [x file: None]:
+  """
+  Print a disassembly of a Koskari Code or Function object.
+
+  For Function: prints a leading section with function instance details
+  (name, formals, base_ns closures), then the disassembly of its code.
+
+  For Code: output includes constant pool (with NamespaceSpec entries
+  expanded to show their locals and closures), vars (local_syms from
+  namespace_spec), closure refs (closure_syms from namespace_spec),
+  and indexed instructions with decoded arguments. FAST_* instructions
+  show whether the slot is a local or closure. PUSH_NS and PUSH_CLASS
+  instructions are annotated with the namespace ID (ns#K) and name of
+  the NamespaceSpec they push.
+
+  :param x: Code or Function instance
+  :param file: file-like object to print to (default: stdout)
+  """
+  (define code None)
+  (define out file)
+
+  if (isinstance x Function):
+    (set! code x.code)
+    (set! out (_resolve_file out))
+    (_write_function_instance_section out x)
+  else:
+    (set! code (_get_code x))
+    when (is code None):
+      (raise (TypeError (+ "expected Code or Function, got "
+                           (attr (type x) __name__))))
+
+  (set! out (_resolve_file out))
+  (define cpool code.constants_pool)
+  (define lcs (_local_and_closure_syms code))
+  (define local_syms (item lcs 0))
+  (define closure_syms (item lcs 1))
+  (define ns_const_map (_build_ns_const_map code))
+
+  (define name code.name)
+  (define filename code.filename)
+  (define yields code.yields)
+  (out.write (+ "KosCode " (repr name) "\n"))
+  (out.write (+ "  filename: " (repr filename) "\n"))
+  (out.write (+ "  yields: " (str yields) "\n"))
+  (out.write "\n")
+
+  (out.write (+ "Constant pool (" (str (len cpool)) "):\n"))
+  (define i 0)
+  while (< i (len cpool)):
+    (define val (item cpool i))
+    if (isinstance val NamespaceSpec):
+      (_write_nspec_cpool_entry out i val)
+    else:
+      (out.write
+        (+ "  " (% "%3d: %s\n" #(i (_format_constant val)))))
+    (set! i (+ i 1))
+  (out.write "\n")
+
+  (out.write
+    (+ "Vars (local_syms, " (str (len local_syms)) "):\n"))
+  if local_syms:
+    (define i 0)
+    while (< i (len local_syms)):
+      (out.write
+        (+ "  " (% "%3d: %s\n" #(i (repr (item local_syms i))))))
+      (set! i (+ i 1))
+  else:
+    (out.write "  (none)\n")
+  (out.write "\n")
+
+  (out.write (+ "Closure refs (" (str (len closure_syms)) "):\n"))
+  if closure_syms:
+    (define i 0)
+    while (< i (len closure_syms)):
+      (out.write
+        (+ "  " (% "%3d: %s\n" #(i (repr (item closure_syms i))))))
+      (set! i (+ i 1))
+  else:
+    (out.write "  (none)\n")
+  (out.write "\n")
+
+  (define n (code.length))
+  (out.write (+ "Instructions (" (str n) "):\n"))
+  (define i 0)
+  while (< i n):
+    (define oparg (code.oparg i))
+    (define op_int (item oparg 0))
+    (define arg (item oparg 1))
+    (define op (OpCode op_int))
+    (define op_style (getattr op.style "value" op.style))
+    (define extra_schema (if (getattr op "extra" None) (tuple op.extra) None))
+    (define ns_label None)
+
+    ;; marker for (in) operator
+    when (in ns_const_map i):
+      (define ns_idx (item ns_const_map i))
+      (set! ns_label (_format_nspec_inline ns_idx (item cpool ns_idx)))
+    (define arg_str
+      (_format_arg code op_style arg cpool local_syms closure_syms
+                   ns_label: ns_label
+                   extra_schema: extra_schema))
+    (define pos_str "")
+    try:
+      (define pos (code.position i))
+      (define line (item pos 0))
+      (define col (item pos 1))
+      (set! pos_str (+ "  # line " (str line) ", col " (str col)))
+    except [Exception]:
+      ;; EXPERIMENT-ISSUE: Broad catch here mirrors practical fallback behavior
+      None
+
+    (out.write
+      (% "  %3d  %-24s %s%s\n" #(i op.name arg_str pos_str)))
+    (set! i (+ i 1))
+  (out.write "\n")
+
+
+define _get_instruction_lines [code]:
+  """
+  Yield (index, op_name, arg_str) for each instruction (for tests/API)
+  """
+  (define cpool code.constants_pool)
+  (define lcs (_local_and_closure_syms code))
+  (define local_syms (item lcs 0))
+  (define closure_syms (item lcs 1))
+  (define ns_const_map (_build_ns_const_map code))
+  (define n (code.length))
+
+  (define i 0)
+  while (< i n):
+    (define oparg (code.oparg i))
+    (define op_int (item oparg 0))
+    (define arg (item oparg 1))
+    (define op (OpCode op_int))
+    (define op_style (getattr op.style "value" op.style))
+    (define extra_schema (if (getattr op "extra" None) (tuple op.extra) None))
+    (define ns_label None)
+
+    ;; marker for (in) operator
+    when (in ns_const_map i):
+      (define ns_idx (item ns_const_map i))
+      (set! ns_label (_format_nspec_inline ns_idx (item cpool ns_idx)))
+    (define arg_str
+      (_format_arg code op_style arg cpool local_syms closure_syms
+                   ns_label: ns_label
+                   extra_schema: extra_schema))
+    (yield #(i op.name arg_str))
+    (set! i (+ i 1))
+
+
+;; The end.
