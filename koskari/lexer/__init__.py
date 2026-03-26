@@ -28,6 +28,10 @@ for editor integration (syntax highlighting, completion).
 # prompt_toolkit REPL enhancements.
 
 
+from .discovery import (
+    collect_special_like_names_from_builtins,
+    special_names_for_repl,
+)
 from .parser import default_layout_reader, parse, parse_all
 from .tokens import (
     Token,
@@ -39,9 +43,11 @@ from .tokens import (
 
 
 __all__ = (
+    'collect_special_like_names_from_builtins',
     'default_layout_reader',
     'parse',
     'parse_all',
+    'special_names_for_repl',
     'Token',
     'tokenize',
     'SPECIAL_NAMES',

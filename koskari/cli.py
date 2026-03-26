@@ -72,6 +72,7 @@ def _make_prompter(histfile=None, get_namespace=None):
         from prompt_toolkit.auto_suggest import AutoSuggestFromHistory
         from prompt_toolkit.history import FileHistory
 
+        from koskari.lexer.discovery import special_names_for_repl
         from koskari.lexer.prompt_toolkit import (
             KoskariCompleter,
             KoskariLexer,
@@ -79,11 +80,14 @@ def _make_prompter(histfile=None, get_namespace=None):
             load_koskari_key_bindings,
         )
 
+        repl_special_names = special_names_for_repl()
         history = FileHistory(histfile) if histfile else None
-        completer = KoskariCompleter(get_namespace=get_namespace)
+        completer = KoskariCompleter(
+            get_namespace=get_namespace,
+            special_names=repl_special_names)
         session = PromptSession(
             history=history,
-            lexer=KoskariLexer(),
+            lexer=KoskariLexer(special_names=repl_special_names),
             completer=completer,
             style=koskari_style,
             auto_suggest=AutoSuggestFromHistory(),

@@ -27,7 +27,7 @@ Koskari syntax highlighting for prompt_toolkit.
 
 from prompt_toolkit.lexers import Lexer
 
-from ..tokens import tokenize
+from ..tokens import SPECIAL_NAMES, tokenize
 
 
 _TOKEN_TYPE_TO_CLASS = {
@@ -99,6 +99,15 @@ class KoskariLexer(Lexer):
     by returning highlighting for tokens produced before any error.
     """
 
+    def __init__(self, special_names=None):
+        """
+        :param special_names: optional set of compiler special names for
+            atom classification; defaults to ``SPECIAL_NAMES``
+        """
+
+        self._special_names = (
+            special_names if special_names is not None else SPECIAL_NAMES)
+
     def lex_document(self, document):
         """
         Return a callable that maps line numbers to style tuples.
@@ -108,7 +117,8 @@ class KoskariLexer(Lexer):
         """
 
         try:
-            tokens = list(tokenize(document.text, '<stdin>'))
+            tokens = list(tokenize(
+                document.text, '<stdin>', special_names=self._special_names))
         except Exception:
             tokens = []
 

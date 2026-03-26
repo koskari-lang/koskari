@@ -30,6 +30,15 @@ from prompt_toolkit.completion import Completion, Completer
 from ..tokens import LAYOUT_HEAD_NAMES, SPECIAL_NAMES
 
 
+def _completion_candidates_sorted(candidates):
+    """
+    Longest strings first so a prefix matches more specific names before
+    shorter ones (e.g. ``compile/foo-bar`` before ``compile/foo``).
+    """
+
+    return sorted(candidates, reverse=True)
+
+
 def _namespace_keys(ns):
     """
     Extract completion candidate keys from a namespace.
@@ -52,16 +61,19 @@ class KoskariCompleter(Completer):
     Completer for Koskari special forms, layout heads, and namespace symbols.
     """
 
-    def __init__(self, get_namespace=None):
+    def __init__(self, get_namespace=None, special_names=None):
         """
         Initialize the completer.
 
         :param get_namespace: callable() -> namespace or None; invoked on each
             completion request to get current REPL namespace for symbol completion
+        :param special_names: optional frozenset of special-form names; defaults
+            to ``SPECIAL_NAMES``
         """
 
         self.get_namespace = get_namespace
-        self._static = frozenset(SPECIAL_NAMES | LAYOUT_HEAD_NAMES)
+        sn = special_names if special_names is not None else SPECIAL_NAMES
+        self._static = frozenset(sn | LAYOUT_HEAD_NAMES)
 
     def get_completions(self, document, complete_event):
         """
@@ -88,7 +100,7 @@ class KoskariCompleter(Completer):
             except Exception:
                 pass
 
-        for cand in sorted(candidates):
+        for cand in _completion_candidates_sorted(candidates):
             if cand.startswith(word):
                 yield Completion(cand, start_position=-prefix_len)
 

@@ -111,11 +111,12 @@ _NUMBER_MATCHERS = (
 )
 
 
-def _atom_type(text):
+def _atom_type(text, special_names):
     """
     Classify an atom string as number, keyword, special, layout, or symbol.
 
     :param text: the atom string
+    :param special_names: set of names to treat as compiler specials
     :return: token type string
     """
 
@@ -124,7 +125,7 @@ def _atom_type(text):
             return 'number'
     if _keyword_re(text):
         return 'keyword'
-    if text in SPECIAL_NAMES:
+    if text in special_names:
         return 'special'
     if text in LAYOUT_HEAD_NAMES:
         return 'layout'
@@ -159,7 +160,7 @@ def _scan_atom_end(source, start, n):
     return i
 
 
-def tokenize(source, filename='<string>'):
+def tokenize(source, filename='<string>', special_names=None):
     """
     Yield Token instances for the given source.
 
@@ -168,11 +169,15 @@ def tokenize(source, filename='<string>'):
 
     :param source: source string
     :param filename: filename for error context (unused for now)
+    :param special_names: optional set of special-form names; defaults to
+        ``SPECIAL_NAMES`` from the compiler registry
     :yield: Token instances
     """
 
     # TODO: Look at this with human eyes, it seems like a lot of code
     # that is probably duplicating the original reader, but slower
+
+    sn = special_names if special_names is not None else SPECIAL_NAMES
 
     line = 1
     col = 1
@@ -300,7 +305,8 @@ def tokenize(source, filename='<string>'):
                 text = sl[i - 1:end]
                 i = end
                 line, col = _advance_pos(line, col, text[1:])
-                tok_type = _atom_type(text) if text != '#' else 'symbol'
+                tok_type = (
+                    _atom_type(text, sn) if text != '#' else 'symbol')
                 yield Token(tok_type, text, start_line, start_col, line, col)
             continue
 
@@ -308,7 +314,7 @@ def tokenize(source, filename='<string>'):
         text = sl[i - 1:end]
         i = end
         line, col = _advance_pos(line, col, text[1:])
-        tok_type = _atom_type(text)
+        tok_type = _atom_type(text, sn)
         yield Token(tok_type, text, start_line, start_col, line, col)
 
 
