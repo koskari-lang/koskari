@@ -20,6 +20,8 @@ Base exception classes for Koskari.
 :license: GNU General Public License v3
 """
 
+import linecache
+
 
 class KoskariException(Exception):
     """
@@ -96,11 +98,142 @@ class CompilerError(KoskariException):
     Base class for compile-phase errors
     """
 
-    def __init__(self, message, source=None, position=None):
+    def __init__(self, message, source=None, position=None, filename=None):
         super().__init__(message)
         self.message = message
         self.source = source
-        self.position = position
+        self.position = position if position is not None else self._position_from_source(source)
+        self.line, self.column = self._normalize_position(self.position)
+        self.filename = filename if filename is not None else self._filename_from_source(source)
+
+
+    @staticmethod
+    def _position_from_source(source):
+        """
+        Best-effort source-position extraction from source object
+        """
+
+        if source is None:
+            return None
+
+        if hasattr(source, "get_position"):
+            try:
+                return source.get_position()
+            except Exception:
+                return None
+
+        return None
+
+
+    @staticmethod
+    def _normalize_position(position):
+        """
+        Return (line, column) or (None, None) from a position value
+        """
+
+        if isinstance(position, (tuple, list)) and len(position) >= 2:
+            return position[0], position[1]
+        return None, None
+
+
+    @staticmethod
+    def _filename_from_source(source):
+        """
+        Best-effort source-filename extraction from source object
+        """
+
+        if source is None:
+            return None
+
+        for attr in ("source_filename", "filename", "__file__"):
+            if hasattr(source, attr):
+                try:
+                    val = getattr(source, attr)
+                except Exception:
+                    continue
+                if isinstance(val, str) and val:
+                    return val
+
+        return None
+
+
+    def _format_message(self):
+        """
+        Produce stable, readable message text
+        """
+
+        if isinstance(self.message, Exception):
+            msg = str(self.message)
+            prefix = type(self.message).__name__
+            return "%s: %s" % (prefix, msg) if msg else prefix
+        return str(self.message)
+
+
+    def _format_source(self):
+        """
+        Truncated repr of source object for diagnostics
+        """
+
+        if self.source is None:
+            return None
+
+        try:
+            rendered = repr(self.source)
+        except Exception:
+            return "<unrenderable source>"
+
+        if len(rendered) > 180:
+            rendered = rendered[:177] + "..."
+        return rendered
+
+
+    def _format_source_line(self):
+        """
+        Return a caret-annotated source-line block when available
+        """
+
+        if not self.filename or self.line is None:
+            return None
+
+        try:
+            line_text = linecache.getline(self.filename, int(self.line))
+        except Exception:
+            return None
+
+        if not line_text:
+            return None
+
+        line_text = line_text.rstrip("\n")
+        col = int(self.column) if self.column is not None else 0
+        if col < 0:
+            col = 0
+        caret = (" " * col) + "^"
+
+        return "-> %s:%s\n   %s\n   %s" % (
+            self.filename, self.line, line_text, caret)
+
+
+    def __str__(self):
+        base = self._format_message()
+
+        details = []
+        if self.line is not None and self.column is not None:
+            details.append("line %s, col %s" % (self.line, self.column))
+
+        source_repr = self._format_source()
+        if source_repr is not None:
+            details.append("source %s" % source_repr)
+
+        source_line = self._format_source_line()
+        if details:
+            rendered = "%s (%s)" % (base, "; ".join(details))
+        else:
+            rendered = base
+
+        if source_line is not None:
+            return rendered + "\n" + source_line
+
+        return rendered
 
 
 class SpecialError(CompilerError):
