@@ -99,16 +99,41 @@ Ref: [api/dunder-adapter.md](api/dunder-adapter.md) (demand_sync, demand path);
 
 ## Compiler
 
+### Layout call semantics (bare calls + dot escape)
+
+Evaluate the proposed layout call surface where symbol-headed non-block lines
+lower to implicit calls (including zero-arg forms), while `. expr` serves as a
+strict raw-expression escape with exactly one following expression. Confirm
+parser/reader feasibility, compatibility with existing layout rules, and
+diagnostic behavior for invalid dot usage.
+
+Ref: [language/layout-call-semantics.md](language/layout-call-semantics.md);
+[LAYOUTS.md](LAYOUTS.md); [language/layout-syntax.md](language/layout-syntax.md).
+
 ### Remaining specials
 
 - **await** — language/compile-level support for await (AWAIT opcode exists).
 - **define-values** / **setq-values** — multi-value definition and assignment.
 - **Variadic ordering checks** — variadic `>`, `>=`, `<`, `<=` that assert
   strict/non-strict chain (e.g. `(> 9 2 0)`, `(<= 0 0 3 4 5 5 8)`).
+- **f-strings** — migrate formatted string interpolation support from
+  python-sibilant (including embedded expression interpolation and formatting
+  behavior parity).
 
 Ref: [FEATURES.md](FEATURES.md) § Ready to Migrate;
 [language/async.md](language/async.md) (await syntax/semantics);
 [language/special-forms.md](language/special-forms.md) (define-values, setq-values).
+
+### Slice atom and slice syntax
+
+Bring over Python-sibilant slicing support in both forms:
+
+- **Slice atom form** — a first-class slice object form (atom-level) that can be
+  used in expression trees and lowered consistently.
+- **Slice surface syntax** — reader/compiler support for bracket slicing syntax
+  (start/stop/step variants) so user code can write slices directly.
+
+Ref: [archive/compiler-python-sibilant-historical.md](archive/compiler-python-sibilant-historical.md) § To Migrate.
 
 ### Macro expansion and optimization
 
