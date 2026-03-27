@@ -163,6 +163,7 @@ def make_bootstrap():
     _bind('dir', dir)
     _bind('open', open)
     _bind('range', range)
+    _bind('format', format)
 
     # todo: replace me with a better help built-in
     _bind('help', help)
