@@ -44,9 +44,9 @@ class TestLayoutTryExceptBindings(IsolatedAsyncioTestCase):
         """
 
         expected = pycons(
-          (symbol('try'),
-           (_compile_begin, symbol('x')),
-           (symbol('Exception'), symbol('y')))
+            (symbol('try'),
+             (_compile_begin, (symbol('x'),)),
+             (symbol('Exception'), (symbol('y'),)))
         )
 
         result = parse_layout(src)
@@ -66,9 +66,9 @@ class TestLayoutTryExceptBindings(IsolatedAsyncioTestCase):
         """
 
         expected = pycons(
-          (symbol('try'),
-           (_compile_begin, symbol('x')),
-           (cons(symbol('e'), symbol('Exception')), symbol('y')))
+            (symbol('try'),
+             (_compile_begin, (symbol('x'),)),
+             (cons(symbol('e'), symbol('Exception')), (symbol('y'),)))
         )
 
         result = parse_layout(src)
@@ -88,9 +88,9 @@ class TestLayoutTryExceptBindings(IsolatedAsyncioTestCase):
         """
 
         expected = pycons(
-          (symbol('try'),
-           (_compile_begin, symbol('x')),
-           (cons(symbol('e'), symbol('Exception')), symbol('y')))
+            (symbol('try'),
+             (_compile_begin, (symbol('x'),)),
+             (cons(symbol('e'), symbol('Exception')), (symbol('y'),)))
         )
 
         result = parse_layout(src)
@@ -125,9 +125,9 @@ class TestLayoutTryExceptBindings(IsolatedAsyncioTestCase):
         """
 
         expected = pycons(
-          (symbol('try'),
-           (_compile_begin, symbol('x')),
-           (keyword('except'), symbol('y')))
+            (symbol('try'),
+             (_compile_begin, (symbol('x'),)),
+             (keyword('except'), (symbol('y'),)))
         )
 
         result = parse_layout(src)
@@ -147,8 +147,8 @@ class TestLayoutTry(IsolatedAsyncioTestCase):
         except [Exception]:
           y
         """
-        try_body = cons(_compile_begin, symbol('x'), nil)
-        except_clause = cons(symbol('Exception'), symbol('y'), nil)
+        try_body = cons(_compile_begin, cons(symbol('x'), nil), nil)
+        except_clause = cons(symbol('Exception'), cons(symbol('y'), nil), nil)
         expected = cons(_symbol_try, try_body, except_clause, nil)
         result = parse_layout(src)
         self.assertEqual(result, expected)
@@ -161,8 +161,8 @@ class TestLayoutTry(IsolatedAsyncioTestCase):
         finally:
           z
         """
-        try_body = cons(_compile_begin, symbol('x'), nil)
-        finally_clause = cons(keyword('finally'), symbol('z'), nil)
+        try_body = cons(_compile_begin, cons(symbol('x'), nil), nil)
+        finally_clause = cons(keyword('finally'), cons(symbol('z'), nil), nil)
         expected = cons(_symbol_try, try_body, finally_clause, nil)
         result = parse_layout(src)
         self.assertEqual(result, expected)
@@ -179,10 +179,10 @@ class TestLayoutTry(IsolatedAsyncioTestCase):
         finally:
           z
         """
-        try_body = cons(_compile_begin, symbol('x'), nil)
-        except_clause = cons(symbol('Exception'), symbol('y'), nil)
-        else_clause = cons(keyword('else'), symbol('a'), nil)
-        finally_clause = cons(keyword('finally'), symbol('z'), nil)
+        try_body = cons(_compile_begin, cons(symbol('x'), nil), nil)
+        except_clause = cons(symbol('Exception'), cons(symbol('y'), nil), nil)
+        else_clause = cons(keyword('else'), cons(symbol('a'), nil), nil)
+        finally_clause = cons(keyword('finally'), cons(symbol('z'), nil), nil)
         expected = cons(_symbol_try, try_body, except_clause, else_clause, finally_clause, nil)
         result = parse_layout(src)
         self.assertEqual(result, expected)

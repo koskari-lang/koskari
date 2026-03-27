@@ -24,7 +24,7 @@ define _get_code [x]:
   :return: Code instance or None
   """
   when (isinstance x Code):
-    x
+    . x
 
 
 define _format_constant [val]:
@@ -38,7 +38,7 @@ define _format_constant [val]:
   if (> (len r) 60):
     f"{(item r (slice None 57))}..."
   else:
-    r
+    . r
 
 
 define _write_function_instance_section [file fn]:
@@ -166,7 +166,7 @@ define _build_ns_const_map [code]:
 
     (set! i (+ i 1))
 
-  result
+  . result
 
 
 define _format_fast_part [val local_names closure_names]:
@@ -431,7 +431,7 @@ define dis [x file: None]:
       (set! pos_str f"  # line {line}, col {col}")
     except [Exception]:
       ;; EXPERIMENT-ISSUE: Broad catch here mirrors practical fallback behavior
-      None
+      . None
 
     (out.write f"""  {i "3d"}  {op.name "24s"} {arg_str}{pos_str}\n""")
     (set! i (+ i 1))

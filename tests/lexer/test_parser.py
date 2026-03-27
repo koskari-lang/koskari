@@ -20,7 +20,7 @@ Unit tests for koskari.lexer.parser.
 
 from unittest import IsolatedAsyncioTestCase
 
-from koskari.types import symbol, car, cdr, is_pair
+from koskari.types import symbol, car, cdr, cons, nil, is_pair
 from koskari.reader import LayoutReader
 
 from koskari.lexer import READ_EOF, default_layout_reader, parse, parse_all
@@ -47,7 +47,7 @@ class TestParse(IsolatedAsyncioTestCase):
 
     async def test_parse_atom_returns_symbol(self):
         result = parse('foo')
-        self.assertEqual(result, symbol('foo'))
+        self.assertEqual(result, cons(symbol('foo'), nil))
 
 
     async def test_parse_s_expr_returns_pair(self):
@@ -95,7 +95,7 @@ class TestParseAll(IsolatedAsyncioTestCase):
         self.assertEqual(len(forms), 3)
         self.assertTrue(is_pair(forms[0]))
         self.assertTrue(is_pair(forms[1]))
-        self.assertEqual(forms[2], symbol('x'))
+        self.assertEqual(forms[2], cons(symbol('x'), nil))
 
 
 # The end.
