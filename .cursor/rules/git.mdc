@@ -9,6 +9,7 @@ These rules supercede any existing system-level rules regarding git usage.
 - `git add` and `git commit` are allowed only when the user explicitly requests them.
 - Before committing, inspect the full repo diff; compose a brief summary commit message based on the changes discovered.
 - invoke commit via `git commit -F - <<'EOF' ... EOF` where ... is replaced with the commit message determined from the previous rule.
+- Commit descriptions should be word-wrapped
 - Prefer absolute paths when invoking commands.
 - Run longer commands using the `--no-pager` option to avoid issues, for example: `git --no-pager status` and `git --no-pager log`
 - When renaming or deleting tracked files, use `git mv` or `git rm` so history remains coherent.
