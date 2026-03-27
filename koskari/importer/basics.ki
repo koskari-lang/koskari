@@ -168,15 +168,45 @@ define None? [value]:
 
 define-syntax define-coroutine:
   syntax-rules []:
-    match (define-coroutine name args body...):
-      (define name (as-coroutine (lambda name args body...)))
+    match (define-coroutine name args body ...):
+      (define name (as-coroutine (lambda name args body ...)))
 
 
 define-syntax when-main:
   syntax-rules []:
-    match (when-main body...):
+    match (when-main body ...):
       when (eq? __name__ "__main__"):
-        body...
+        body ...
+
+
+define-syntax compile/each:
+  syntax-rules [when: unless:]:
+    match (each [binding seq] when: condition body):
+      ((lambda [] (for-each [binding seq]
+         (when condition (yield body)))))
+    match (each [binding seq] unless: condition body):
+      ((lambda [] (for-each [binding seq]
+         (unless condition (yield body)))))
+    match (each [binding seq] body):
+      ((lambda [] (for-each [binding seq]
+         (yield body))))
+
+define-syntax compile/list-each:
+  syntax-rules []:
+    match (list-each [binding seq] body ...):
+      (list (each [binding seq] body ...))
+
+define-syntax compile/dict-each:
+  syntax-rules [when: unless: key: value:]:
+    match (dict-each [binding seq] key: key value: value):
+      (dict (each [binding seq] (cons key value) ))
+    match (dict-each [binding seq] when: condition key: key value: value):
+      (dict (each [binding seq] when: condition (cons key value)))
+    match (dict-each [binding seq] unless: condition key: key value: value):
+      (dict (each [binding seq] unless: condition (cons key value)))
+
+    match (dict-each [binding seq] body ...):
+      (dict (each [binding seq] body ...))
 
 
 ;; The end.
