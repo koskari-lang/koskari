@@ -116,29 +116,10 @@ Ref: [language/layout-call-semantics.md](language/layout-call-semantics.md);
 - **define-values** / **setq-values** — multi-value definition and assignment.
 - **Variadic ordering checks** — variadic `>`, `>=`, `<`, `<=` that assert
   strict/non-strict chain (e.g. `(> 9 2 0)`, `(<= 0 0 3 4 5 5 8)`).
-- **f-strings** — migrate formatted string interpolation support from
-  python-sibilant (including embedded expression interpolation and formatting
-  behavior parity).
 
 Ref: [FEATURES.md](FEATURES.md) § Ready to Migrate;
 [language/async.md](language/async.md) (await syntax/semantics);
 [language/special-forms.md](language/special-forms.md) (define-values, setq-values).
-
-### Koskari `format` (dedicated builtin, special form, opcodes)
-
-Add a Koskari-dedicated **format** callable that takes a value and a **symbolic**
-second argument for the format (not a runtime string only). Add a **format**
-special form that lowers to dedicated VM support:
-
-- **OBJECT_FORMAT** — consumes one or two stack operands (value, and format
-  when the format is not a constant string).
-- **OBJECT_FORMAT_CONST** — consumes one stack operand (value) and a **CONST**
-  operand carrying the format string when the format is known at compile time.
-
-Design the surface syntax, compile rules (when to emit which opcode), and
-Python `str.format`-style or agreed semantics for the format string.
-
-Ref: [OPCODES.md](OPCODES.md); [language/special-forms.md](language/special-forms.md).
 
 ### Variadic compiled object ops (`*` keyword form)
 
