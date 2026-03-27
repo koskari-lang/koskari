@@ -144,7 +144,7 @@ def special_gensym_partial(
         rest = _transform(pos_map, rest)
     formals = _build_formals(pos_map, source)
 
-    return cons(symbol("compile/lambda"), formals, rest)
+    return cons(symbol("compile/lambda"), formals, rest, nil)
 
 
 # The end.
