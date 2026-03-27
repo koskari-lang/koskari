@@ -125,7 +125,7 @@ depth 0 in `LayoutReader` when no block-header colon is found on the line.
                   | <format-string>
                   | <list>
                   | <bracket-list>
-                  | <begin-block>
+                  | <thunk-form>
                   | <collection>
                   | <quote-form>
                   | <quasiquote-form>
@@ -148,8 +148,9 @@ depth 0 in `LayoutReader` when no block-header colon is found on the line.
 <list>          ::= "(" <form>* ( "." <form> )? ")"
                   | "[" <form>* ( "." <form> )? "]"
 
-<begin-block>   ::= "{" <form>* "}"
-                  ; desugars to: (compile/begin <form>*)
+<thunk-form>    ::= "{" <form>* "}"
+                  ; desugars to: (compile/gensym-partial <form>*)
+                  ; see "Thunk syntax" below
 
 <collection>    ::= "#(" <form>* ")"        ; desugars to: (#tuple <form>*)
                   | "#[" <form>* "]"        ; desugars to: (#list  <form>*)
@@ -162,6 +163,17 @@ depth 0 in `LayoutReader` when no block-header colon is found on the line.
 <unquote-splice-form>   ::= ",@" <form>     ; desugars to: (compile/unquote-splicing <form>)
 
 ```
+
+### Thunk syntax
+
+**Thunk syntax** is the curly-brace reader macro `{` … `}` in the base
+s-expression grammar (`<thunk-block>` above). It desugars to
+`(compile/gensym-partial BODY …)`, which infers parameters from
+placeholders (`%1`, `%2`, … and `...` for rest) and lowers to
+`compile/lambda`. Nested `{…}` forms read as nested `(compile/gensym-partial …)`.
+
+See [SPECIALS.md](SPECIALS.md) (`compile/gensym-partial`) and
+[archive/brace-lambdas-gensym-partial.md](archive/brace-lambdas-gensym-partial.md).
 
 ### Reader macros and atom expansions
 
@@ -275,7 +287,8 @@ indent column is **strictly greater than** the indent column of the block head.
                   | <colon-block>           ; bare atom followed by ":"
                   | <form>                  ; fallthrough — any base s-expression form
 
-<paren-form>    ::= <list> | <bracket-list> | <begin-block>
+<paren-form>    ::= <list> | <bracket-list> | <thunk-block>
+                  ; thunk syntax: see "Thunk syntax" under Base S-Expression Grammar
 ```
 
 ### Colon block

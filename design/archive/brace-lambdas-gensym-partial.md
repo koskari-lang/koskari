@@ -1,5 +1,13 @@
 # Koskari Brace Lambdas (gensym-partial)
 
+> **Implementation:** **Complete.** This document describes the semantics that
+> shipped as **thunk syntax** (also called **the thunk form**): `{...}` reads as
+> `(compile/gensym-partial BODY ...)` (`koskari/reader/parser.py`); the
+> `compile/gensym-partial` special (`koskari/compile/specials/partial.py`) performs
+> placeholder rewrite and lowers to `compile/lambda`. User-facing syntax and
+> special-form details are in [SYNTAX.md](../SYNTAX.md) and
+> [SPECIALS.md](../SPECIALS.md).
+
 ## Overview
 
 Brace forms `{...}` provide a concise syntax for constructing anonymous callable closures.
