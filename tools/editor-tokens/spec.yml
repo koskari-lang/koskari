@@ -40,6 +40,10 @@ constants:
 # Paren-list first-symbol tokens to highlight as keyword.control (TextMate),
 # keyword.control (Helix), and font-lock-keyword-face (Emacs). One ordered list
 # for all three; adjust order here if you care about alternation precedence.
+#
+# TextMate: editors/textmate/syntaxes/koskari.tmLanguage.json duplicates this
+# word set in #list-head-special and #bare-line-call-head (same alternation);
+# keep those patterns aligned when adding or renaming entries here.
 list_head_specials:
   - and
   - attr
