@@ -32,8 +32,9 @@ import operator as _op
 
 from ...lib import nil, OpCode, symbol
 from ...exceptions import SpecialError
-from ...types import get_position, is_pair
-from ..helpers import const_only_expr, is_symbolish, special
+from ...matcher import MATCH, VALUE, match
+from ...types import get_position, is_pair, is_symbol
+from ..helpers import const_only_expr, is_symbolish, special, special_forms
 
 
 def _reduce_fold(py_fold, compiler, frag, body):
@@ -199,6 +200,64 @@ def _unary_op(op, compiler, source):
             source)
 
     frag.instruction(op, 0)
+    return frag
+
+
+_FORMAT_PATTERNS = [
+    MATCH(VALUE("obj")),
+    MATCH(VALUE("obj"), VALUE("rules")),
+]
+
+
+@special_forms(_FORMAT_PATTERNS)
+@special(symbol("compile/format"))
+def special_format(compiler, source, tc=False):
+    """
+    Compile (compile/format OBJ [RULES]). Rules may be dynamic, constant str,
+    or quoted symbol constant. Constant cases may fold to CONST.
+    """
+
+    called_by, body = source
+    matched = match(body, _FORMAT_PATTERNS)
+    if matched is None:
+        raise SpecialError(
+            "compile/format requires one or two arguments",
+            source)
+
+    obj_expr = matched["obj"].source
+    obj_frag = compiler.full_compile(obj_expr)
+    obj_is_const, obj_const = const_only_expr(obj_frag)
+
+    if "rules" in matched:
+        rules_expr = matched["rules"].source
+        rules_frag = compiler.full_compile(rules_expr)
+        rules_is_const, rules_const = const_only_expr(rules_frag)
+        if is_symbol(rules_const):
+            rules_const = str(rules_const)
+    else:
+        rules_expr = None
+
+    frag = compiler.fragment(called_by)
+    frag.position_of(source)
+
+    if rules_expr:
+        if obj_is_const and rules_is_const:
+            frag.instruction(OpCode.KOS_OP_CONST, format(obj_const, rules_const))
+        elif rules_is_const:
+            frag.merge(obj_frag)
+            frag.instruction(OpCode.KOS_OP_OBJECT_FORMAT_CONST, rules_const)
+        else:
+            frag.merge(obj_frag)
+            frag.merge(rules_frag)
+            frag.instruction(OpCode.KOS_OP_OBJECT_FORMAT, 2)
+
+    else:
+        if obj_is_const:
+            frag.instruction(OpCode.KOS_OP_CONST, format(obj_const))
+        else:
+            frag.merge(obj_frag)
+            frag.instruction(OpCode.KOS_OP_OBJECT_FORMAT, 1)
+
     return frag
 
 
@@ -566,7 +625,10 @@ def special_str(compiler, source, tc=False):
     """
 
     return _reduce_op(
-        OpCode.KOS_OP_OBJECT_STR, None, compiler, source)
+        OpCode.KOS_OP_OBJECT_STR,
+        lambda a, b: str(a) + str(b),
+        compiler,
+        source)
 
 
 @special(symbol("compile/len"))

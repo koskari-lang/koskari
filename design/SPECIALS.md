@@ -1875,6 +1875,8 @@ Each requires exactly one argument.
 | `(compile/iter OBJ)` | `OBJECT_ITER` | `iter(OBJ)` |
 | `(compile/~ OBJ)` | `OBJECT_BIT_INVERT` | `~OBJ` |
 | `(compile/str OBJ ...)` | `OBJECT_STR` | `str(OBJ)` / f-string join |
+| `(compile/format OBJ)` | `OBJECT_FORMAT` | `format(OBJ)` |
+| `(compile/format OBJ RULES)` | `OBJECT_FORMAT` or `OBJECT_FORMAT_CONST` | `format(OBJ, RULES)` |
 | `(compile/len OBJ)` | `OBJECT_LEN` | `len(OBJ)` |
 | `(compile/type OBJ)` | `OBJECT_TYPE` | `type(OBJ)` |
 | `(compile/dir OBJ)` | `OBJECT_DIR` | `dir(OBJ)` |
@@ -1885,6 +1887,20 @@ Note: `compile/str` is variadic (COUNT) at the C level — it uses
 `KosOperator_BuildStr` / `obj_op_reducing` — useful for f-string style
 multi-part concatenation. The compile-time special accepts one or more
 arguments.
+
+`compile/format` lowering matrix:
+- `(compile/format OBJ)`:
+  - constant `OBJ` -> folds to `CONST` string via compile-time `format`
+  - non-constant `OBJ` -> emits `OBJECT_FORMAT` with arg=1
+- `(compile/format OBJ RULES)`:
+  - constant-normalized `RULES` (string or `(compile/quote SYMBOL)`) and
+    constant `OBJ` -> folds to `CONST` string via compile-time `format`
+  - constant-normalized `RULES` and non-constant `OBJ` -> emits
+    `OBJECT_FORMAT_CONST`
+  - dynamic `RULES` -> emits `OBJECT_FORMAT` with arg=2
+
+Quoted-symbol convenience: `(compile/quote foo)` in RULES position is treated
+as constant `"foo"` for lowering/folding decisions.
 
 **Tests:** `tests/compile/specials/test_object_specials.py`
 

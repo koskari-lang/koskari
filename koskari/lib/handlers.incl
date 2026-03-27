@@ -183,6 +183,8 @@
 #include "opcode/OBJECT_NOT.c"
 #include "opcode/OBJECT_REPR.c"
 #include "opcode/OBJECT_STR.c"
+#include "opcode/OBJECT_FORMAT.c"
+#include "opcode/OBJECT_FORMAT_CONST.c"
 #include "opcode/OBJECT_TRUTH.c"
 #include "opcode/OBJECT_TYPE.c"
 #include "opcode/OBJECT_VARS.c"

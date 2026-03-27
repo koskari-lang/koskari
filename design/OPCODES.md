@@ -2309,7 +2309,7 @@ Object protocol opcodes: single Python operation on TOS (and optionally below); 
 - **Comparisons**: OBJECT_EQ, OBJECT_NE, OBJECT_LT, OBJECT_LE, OBJECT_GT, OBJECT_GE — stack `[..., a, b] → [..., result]`.
 - **Predicates**: OBJECT_IN, OBJECT_NOT_IN, OBJECT_IS, OBJECT_IS_NOT; OBJECT_IS_INSTANCE (COUNT), OBJECT_IS_SUBCLASS (COUNT).
 - **Numeric**: OBJECT_ADD, OBJECT_SUBTRACT, OBJECT_MULTIPLY, OBJECT_POWER, OBJECT_FLOOR_DIVIDE, OBJECT_TRUE_DIVIDE, OBJECT_MODULO, OBJECT_* (bit ops, matrix multiply).
-- **General**: OBJECT_ITER, OBJECT_AITER, OBJECT_LEN, OBJECT_NOT, OBJECT_REPR, OBJECT_STR, OBJECT_TYPE, OBJECT_DIR, OBJECT_VARS, OBJECT_TRUTH, OBJECT_DIVMOD, OBJECT_BIT_INVERT, OBJECT_BIT_LEFT, OBJECT_BIT_RIGHT.
+- **General**: OBJECT_ITER, OBJECT_AITER, OBJECT_LEN, OBJECT_NOT, OBJECT_REPR, OBJECT_STR, OBJECT_FORMAT, OBJECT_FORMAT_CONST, OBJECT_TYPE, OBJECT_DIR, OBJECT_VARS, OBJECT_TRUTH, OBJECT_DIVMOD, OBJECT_BIT_INVERT, OBJECT_BIT_LEFT, OBJECT_BIT_RIGHT.
 
 Each `OBJECT_*` opcode in `opcodes.incl` has its own subsection below.
 
@@ -2546,10 +2546,30 @@ Each `OBJECT_*` opcode in `opcodes.incl` has its own subsection below.
 
 ### KOS_OP_OBJECT_STR {#kos_op_object_str}
 
-- **Style**: NOARG.
+- **Style**: COUNT.
 - **Status**: Implemented.
 - **Semantics**: See [§19 Object protocol](#19-object-protocol) overview.
 - **Implementation**: `koskari/lib/opcode/OBJECT_STR.c`
+
+### KOS_OP_OBJECT_FORMAT {#kos_op_object_format}
+
+- **Style**: COUNT.
+- **Status**: Implemented.
+- **Semantics**: format operation. Arg must be 1 or 2.
+  - arg=1: pop object, call `PyObject_Format(obj, NULL)`.
+  - arg=2: pop rules then object, call `PyObject_Format(obj, rules)`.
+  Stack effect: `[..., obj] -> [..., str]` or `[..., obj, rules] -> [..., str]`.
+- **Implementation**: `koskari/lib/opcode/OBJECT_FORMAT.c`
+
+### KOS_OP_OBJECT_FORMAT_CONST {#kos_op_object_format_const}
+
+- **Style**: CONST.
+- **Status**: Implemented.
+- **Semantics**: format operation with constant rules from cpool.
+  Pop object, fetch format rules string from constant pool arg, call
+  `PyObject_Format(obj, rules_const)`, push resulting string.
+  Stack effect: `[..., obj] -> [..., str]`.
+- **Implementation**: `koskari/lib/opcode/OBJECT_FORMAT_CONST.c`
 
 ### KOS_OP_OBJECT_TRUTH {#kos_op_object_truth}
 

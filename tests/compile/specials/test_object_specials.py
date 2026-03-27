@@ -27,7 +27,7 @@ compile/aiter.
 
 
 from koskari.exceptions import SpecialError
-from koskari.lib import OpCode
+from koskari.lib import OpCode, OpStyle
 from koskari.dis import dis
 
 from . import SpecialsTestCase
@@ -921,6 +921,75 @@ class TestObjectAiter(SpecialsTestCase):
     async def test_aiter_rejects_two_args(self):
         with self.assertRaises(SpecialError):
             self.compile_to_code("(compile/aiter a b)")
+
+
+class TestObjectFormat(SpecialsTestCase):
+
+    async def test_format_no_rules_emits_object_format_arg_one(self):
+        code = self.compile_to_code("(compile/format a)")
+        arg = _find_op(code, OpCode.KOS_OP_OBJECT_FORMAT)
+        self.assertIsNotNone(arg)
+        self.assertEqual(1, arg)
+
+
+    async def test_format_const_rules_emits_const_opcode(self):
+        code = self.compile_to_code('(compile/format a "04d")')
+        arg = _find_op(code, OpCode.KOS_OP_OBJECT_FORMAT_CONST)
+        self.assertIsNotNone(arg)
+        self.assertEqual("04d", code.constant(arg))
+
+
+    async def test_format_quoted_symbol_rules_emits_const_opcode(self):
+        code = self.compile_to_code("(compile/format a (compile/quote z))")
+        arg = _find_op(code, OpCode.KOS_OP_OBJECT_FORMAT_CONST)
+        self.assertIsNotNone(arg)
+        self.assertEqual("z", code.constant(arg))
+
+
+    async def test_format_dynamic_rules_emits_object_format_arg_two(self):
+        code = self.compile_to_code("(compile/format a r)")
+        arg = _find_op(code, OpCode.KOS_OP_OBJECT_FORMAT)
+        self.assertIsNotNone(arg)
+        self.assertEqual(2, arg)
+
+
+    async def test_format_const_fold_without_rules(self):
+        code = self.compile_to_code("(compile/format 99)")
+        self.assertNotIn(OpCode.KOS_OP_OBJECT_FORMAT, _opcodes(code))
+        consts = [
+            code.constant(arg)
+            for op, arg in _ops(code)
+            if op == OpCode.KOS_OP_CONST
+        ]
+        self.assertIn("99", consts)
+
+
+    async def test_format_const_fold_with_const_rules(self):
+        code = self.compile_to_code('(compile/format 7 "04d")')
+        self.assertNotIn(OpCode.KOS_OP_OBJECT_FORMAT, _opcodes(code))
+        self.assertNotIn(OpCode.KOS_OP_OBJECT_FORMAT_CONST, _opcodes(code))
+        consts = [
+            code.constant(arg)
+            for op, arg in _ops(code)
+            if op == OpCode.KOS_OP_CONST
+        ]
+        self.assertIn("0007", consts)
+
+
+    async def test_format_requires_at_least_one_arg(self):
+        with self.assertRaises(SpecialError):
+            self.compile_to_code("(compile/format)")
+
+
+    async def test_format_rejects_three_args(self):
+        with self.assertRaises(SpecialError):
+            self.compile_to_code("(compile/format a b c)")
+
+
+    async def test_object_str_opcode_style_is_count(self):
+        self.assertEqual(
+            OpStyle.KOSTYLE_COUNT,
+            OpCode.KOS_OP_OBJECT_STR.style)
 
 
 # The end.

@@ -12,7 +12,7 @@
 # along with this library; if not, see <http://www.gnu.org/licenses/>.
 
 """
-Tests for OBJECT_STR, OBJECT_LEN opcodes.
+Tests for OBJECT_STR, OBJECT_FORMAT, OBJECT_FORMAT_CONST, OBJECT_LEN opcodes.
 
 :author: Christopher O'Brien <obriencj@preoccupied.net>
 :license: GNU General Public License v3
@@ -28,7 +28,8 @@ pytestmark = pytest.mark.phase_lib
 
 class TestObjectUnaryOpcodes(CevalTest):
     """
-    Tests for OBJECT_STR, OBJECT_LEN, OBJECT_NOT, OBJECT_TRUTH,
+    Tests for OBJECT_STR, OBJECT_FORMAT, OBJECT_FORMAT_CONST, OBJECT_LEN,
+    OBJECT_NOT, OBJECT_TRUTH,
     OBJECT_TYPE, OBJECT_VARS, OBJECT_AITER, OBJECT_REPR, OBJECT_ITER,
     OBJECT_BIT_INVERT, OBJECT_DIR
     """
@@ -40,6 +41,44 @@ class TestObjectUnaryOpcodes(CevalTest):
             ["RETURN", 1],
         ])
         self.assertEqual(await make_callable(code, ns)(), "hello")
+
+
+    async def test_object_format_unary(self):
+        code, ns = build_expr([
+            ["CONST", 99],
+            ["OBJECT_FORMAT", 1],
+            ["RETURN", 1],
+        ])
+        self.assertEqual(await make_callable(code, ns)(), "99")
+
+
+    async def test_object_format_binary(self):
+        code, ns = build_expr([
+            ["CONST", 7],
+            ["CONST", "04d"],
+            ["OBJECT_FORMAT", 2],
+            ["RETURN", 1],
+        ])
+        self.assertEqual(await make_callable(code, ns)(), "0007")
+
+
+    async def test_object_format_const(self):
+        code, ns = build_expr([
+            ["CONST", 7],
+            ["OBJECT_FORMAT_CONST", "04d"],
+            ["RETURN", 1],
+        ])
+        self.assertEqual(await make_callable(code, ns)(), "0007")
+
+
+    async def test_object_format_invalid_arg_raises_runtime_error(self):
+        code, ns = build_expr([
+            ["CONST", 9],
+            ["OBJECT_FORMAT", 3],
+            ["RETURN", 1],
+        ])
+        with self.assertRaises(RuntimeError):
+            await make_callable(code, ns)()
 
 
     async def test_object_len(self):

@@ -23,10 +23,8 @@ define _get_code [x]:
   :param x: value to check
   :return: Code instance or None
   """
-  if (isinstance x Code):
+  when (isinstance x Code):
     x
-  else:
-    None
 
 
 define _format_constant [val]:
