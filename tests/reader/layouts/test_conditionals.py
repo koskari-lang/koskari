@@ -22,7 +22,7 @@ class TestLayoutIfPeers(IsolatedAsyncioTestCase):
 
         expected = pycons(
             (_compile_cond,
-             (symbol('x'), (symbol('y'),)))
+             (symbol('x'), symbol('y')))
         )
 
         result = parse_layout(src)
@@ -43,8 +43,8 @@ class TestLayoutIfPeers(IsolatedAsyncioTestCase):
 
         expected = pycons(
             (_compile_cond,
-             (symbol('x'), (symbol('y'),)),
-             (keyword('else'), (symbol('z'),)))
+             (symbol('x'), symbol('y')),
+             (keyword('else'), symbol('z')))
         )
 
         result = parse_layout(src)
@@ -67,9 +67,9 @@ class TestLayoutIfPeers(IsolatedAsyncioTestCase):
 
         expected = pycons(
             (_compile_cond,
-             (symbol('x'), (symbol('a'),)),
-             (symbol('y'), (symbol('b'),)),
-             (keyword('else'), (symbol('c'),)))
+             (symbol('x'), symbol('a')),
+             (symbol('y'), symbol('b')),
+             (keyword('else'), symbol('c')))
         )
 
         result = parse_layout(src)

@@ -165,7 +165,7 @@ class TestRepl(unittest.IsolatedAsyncioTestCase):
 
 
     async def test_underscore_stores_last_result(self):
-        out, _ = await self._run_repl(['(+ 3 4)', '. _'])
+        out, _ = await self._run_repl(['(+ 3 4)', '_'])
         lines = [ln for ln in out.splitlines() if ln.strip()]
         self.assertIn('7', lines[0])
         self.assertIn('7', lines[1])

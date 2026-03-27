@@ -1,9 +1,9 @@
-# Koskari layout call semantics (bare calls + dot escape)
+# Koskari layout call semantics (single-symbol values)
 
 ## Overview
 
-Layout bodies support a call-oriented surface syntax where symbol-headed lines
-implicitly form calls, with an explicit escape for raw expressions.
+Layout bodies support a call-oriented surface syntax where multi-form
+symbol-headed lines implicitly form calls.
 
 A layout line is only eligible for implicit call lowering if it begins with a
 bare symbol. Otherwise it is treated as a normal expression line.
@@ -14,48 +14,20 @@ bare symbol. Otherwise it is treated as a normal expression line.
 
 For a non-block layout line (that is, no trailing `:` at depth 0):
 
-### 1. Symbol-headed: implicit call
+### 1. Symbol-headed
 
 If the first top-level form is a bare symbol:
 
 ```scheme
 foo bar baz   -> (foo bar baz)
-foo           -> (foo)
+foo           -> foo
 ```
 
-- All top-level forms on the line are collected into a list
-- Zero-arg calls are allowed (`foo` lowers to `(foo)`)
+- If the line has more than one top-level form, it lowers to a call
+- A single symbol remains a value expression
+### 2. Non-symbol-headed: ordinary expression
 
-### 2. Dot-prefixed: raw expression escape
-
-If the line begins with `.`:
-
-```scheme
-. x           -> x
-. (foo bar)   -> (foo bar)
-. [a b c]     -> [a b c]
-```
-
-Rules:
-
-- `.` suppresses implicit call formation
-- Exactly one expression must follow
-- This is the only way to express a bare symbol value in layout mode
-
-```scheme
-x     -> (x)
-. x   -> x
-```
-
-Invalid:
-
-```scheme
-. foo bar   ; error (more than one expression)
-```
-
-### 3. Non-symbol-headed: ordinary expression
-
-If the line does not start with a symbol or `.`:
+If the line does not start with a symbol:
 
 ```scheme
 (foo bar)   -> (foo bar)
@@ -95,15 +67,14 @@ A layout line must be one of:
 
 1. Block line: `symbol ... :`
 2. Implicit call line: `symbol ...`
-3. Raw expression escape: `. expr`
-4. Single expression line (non-symbol-headed): `expr`
+3. Single expression line (non-symbol-headed): `expr`
 
 ---
 
 ## Design invariant
 
-Only symbol-headed lines participate in implicit call formation. All other
-forms remain structurally unchanged unless explicitly escaped with `.`.
+Only multi-form symbol-headed lines participate in implicit call formation.
+All other forms remain structurally unchanged.
 
 This keeps layout semantics:
 
@@ -119,7 +90,7 @@ This keeps layout semantics:
 define foo [x]:
   print x
   + x 1
-  . x
+  x
   (bar x)
 ```
 
@@ -138,9 +109,7 @@ Lowers to:
 
 ## Notes
 
-- Bare symbol lines are treated as zero-argument calls by default
-- The dot escape is intentionally minimal and strict to avoid introducing a
-  secondary grammar
+- Bare symbol lines are treated as value expressions by default
 - This model keeps layout as a reader-level transformation while preserving
   core s-expression semantics
 

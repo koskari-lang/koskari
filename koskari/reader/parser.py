@@ -1511,8 +1511,7 @@ class LayoutReader(Reader):
     """
 
     def __init__(self, namespace, nodefaults=False,
-                 layout_enabled=True, layout_implicit_calls=True,
-                 layout_dot_escape=True):
+                 layout_enabled=True, layout_implicit_calls=True):
         """
         Initialize the layout reader
 
@@ -1522,8 +1521,6 @@ class LayoutReader(Reader):
             parse using base s-expression semantics
         :param layout_implicit_calls: if True, symbol-headed non-block
             lines lower to implicit calls
-        :param layout_dot_escape: if True, `. expr` is enabled as a strict
-            raw-expression escape for layout lines
         """
 
         super().__init__(nodefaults=nodefaults)
@@ -1541,7 +1538,6 @@ class LayoutReader(Reader):
         self._block_macros = {}
         self.layout_enabled = layout_enabled
         self.layout_implicit_calls = layout_implicit_calls
-        self.layout_dot_escape = layout_dot_escape
 
         if not nodefaults:
             self._add_default_block_macros()
@@ -1553,8 +1549,7 @@ class LayoutReader(Reader):
         self._line_scanner = LogicalLineScanner(self)
 
 
-    def set_layout_modes(self, *, layout_enabled=None, layout_implicit_calls=None,
-                         layout_dot_escape=None):
+    def set_layout_modes(self, *, layout_enabled=None, layout_implicit_calls=None):
         """
         Update layout-mode feature switches on this reader.
 
@@ -1566,8 +1561,6 @@ class LayoutReader(Reader):
             self.layout_enabled = bool(layout_enabled)
         if layout_implicit_calls is not None:
             self.layout_implicit_calls = bool(layout_implicit_calls)
-        if layout_dot_escape is not None:
-            self.layout_dot_escape = bool(layout_dot_escape)
 
 
     def reload_pragma(self, pragma):
@@ -1583,8 +1576,7 @@ class LayoutReader(Reader):
 
         self.set_layout_modes(
             layout_enabled=getattr(pragma, 'layout_enabled', None),
-            layout_implicit_calls=getattr(pragma, 'layout_implicit_calls', None),
-            layout_dot_escape=getattr(pragma, 'layout_dot_escape', None))
+            layout_implicit_calls=getattr(pragma, 'layout_implicit_calls', None))
 
 
     def _add_default_block_macros(self):
@@ -1868,40 +1860,6 @@ class LayoutReader(Reader):
                 raise stream.error('invalid syntax', pos)
 
             forms.append(value)
-
-
-    def _require_logical_eol_after_single_expr(self, stream, pos):
-        """
-        Require that only optional spaces/tab/comment remain on this line
-        """
-
-        self._skip_horizontal_whitespace(stream)
-        c = stream.peek(1)
-        if not c or c in '\n\r;':
-            return
-        raise stream.error('dot escape accepts exactly one expression', pos)
-
-
-    def _read_dot_escape_expr(self, stream, position):
-        """
-        Read `. expr` and enforce exactly one expression on the line
-        """
-
-        self._skip_horizontal_whitespace(stream)
-        c = stream.peek(1)
-        if not c or c in '\n\r;':
-            raise stream.error('dot escape requires one expression', position)
-
-        event, pos, value = self._read(stream)
-        if event is EOF:
-            raise stream.error('dot escape requires one expression', position)
-        if event is DOT:
-            raise stream.error('dot escape requires one expression', position)
-        if event is not VALUE:
-            raise stream.error('invalid syntax', pos)
-
-        self._require_logical_eol_after_single_expr(stream, position)
-        return value
 
 
     def read_block_body(self, stream, outer_indent):
@@ -2226,7 +2184,21 @@ class LayoutReader(Reader):
                 stream.read(1)
                 continue
 
-            if c in '([{':
+            if c in '([':
+                event, pos, form1 = self._read(stream)
+                if event is not VALUE:
+                    return event, pos, form1
+                if is_pair(form1):
+                    self._skip_horizontal_whitespace(stream)
+                    nxt = stream.peek(1)
+                    if nxt in '([{':
+                        return VALUE, pos, form1
+                    tail = self._read_line_tail_forms(stream)
+                    if tail:
+                        return VALUE, pos, cons(form1, *tail, nil)
+                return VALUE, pos, form1
+
+            if c == '{':
                 return self._read(stream)
 
             outer_indent = position[1]
@@ -2250,9 +2222,6 @@ class LayoutReader(Reader):
             if event is EOF:
                 return EOF, pos, None
             if event is DOT:
-                if self.layout_dot_escape:
-                    value = self._read_dot_escape_expr(stream, pos)
-                    return VALUE, pos, value
                 raise stream.error('invalid syntax', pos)
 
             header_indent = pos[1]
@@ -2270,7 +2239,18 @@ class LayoutReader(Reader):
 
             if is_symbol(form1) and self.layout_implicit_calls:
                 tail = self._read_line_tail_forms(stream)
-                return VALUE, pos, cons(form1, *tail, nil)
+                if tail:
+                    return VALUE, pos, cons(form1, *tail, nil)
+                return VALUE, pos, form1
+
+            if is_pair(form1):
+                self._skip_horizontal_whitespace(stream)
+                nxt = stream.peek(1)
+                if nxt in '([{':
+                    return VALUE, pos, form1
+                tail = self._read_line_tail_forms(stream)
+                if tail:
+                    return VALUE, pos, cons(form1, *tail, nil)
 
             return VALUE, pos, form1
 

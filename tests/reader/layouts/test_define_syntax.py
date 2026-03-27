@@ -52,7 +52,7 @@ class TestLayoutDefineSyntax(IsolatedAsyncioTestCase):
             (symbol('do-something-with-x'),),
             (symbol('compile/begin'),
              (symbol('print'), 'x and no args', symbol('x')),
-             (symbol('x'),),),)
+             symbol('x'),),)
         rule2 = (
             (symbol('do-something-with-x'), symbol('y')),
             (symbol('compile/begin'),
@@ -103,7 +103,7 @@ class TestLayoutDefineSyntax(IsolatedAsyncioTestCase):
         """
         rule1 = (
             (symbol('m'), symbol('x')),
-            (symbol('compile/begin'), (symbol('x'),),))
+            (symbol('compile/begin'), symbol('x'),))
         expected = pycons(
             (symbol('compile/define-syntax'),
              symbol('m'),

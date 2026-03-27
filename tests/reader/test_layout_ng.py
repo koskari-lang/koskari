@@ -71,8 +71,8 @@ class TestLayoutNgStrictHeaders(IsolatedAsyncioTestCase):
 
         expected = pycons(
             (symbol("compile/begin"),
-             (symbol("x"),),
-             (symbol("y"),))
+             symbol("x"),
+             symbol("y"))
         )
 
         result = parse_layout_ng(src)
@@ -85,7 +85,7 @@ class TestLayoutNgStrictHeaders(IsolatedAsyncioTestCase):
         """
 
         result = parse_layout_ng(src)
-        self.assertEqual(result, cons(symbol('begin'), nil))
+        self.assertEqual(result, symbol('begin'))
 
     async def test_head_comment_disappears_from_commit_decision(self):
         src = """
@@ -94,7 +94,7 @@ class TestLayoutNgStrictHeaders(IsolatedAsyncioTestCase):
         """
 
         result = parse_layout_ng(src)
-        self.assertEqual(result, cons(symbol('begin'), nil))
+        self.assertEqual(result, symbol('begin'))
 
     async def test_committing_to_header_requires_structural_colon(self):
         src = """
@@ -121,7 +121,7 @@ class TestLayoutNgReaderParity(IsolatedAsyncioTestCase):
         expected = pycons(
             (symbol('foo'),
              symbol('x'),
-             (symbol('compile/begin'), (symbol('y'),)),
+             (symbol('compile/begin'), symbol('y')),
              )
         )
 
@@ -137,7 +137,7 @@ class TestLayoutNgReaderParity(IsolatedAsyncioTestCase):
         expected = pycons(
             (symbol('unknown'),
              symbol('x'),
-             (symbol('compile/begin'), (symbol('y'),)),
+             (symbol('compile/begin'), symbol('y')),
              )
         )
 
@@ -154,7 +154,7 @@ class TestLayoutNgReaderParity(IsolatedAsyncioTestCase):
             (symbol('unknown'),
              keyword('as'),
              symbol('x'),
-             (symbol('compile/begin'), (symbol('y'),)),
+             (symbol('compile/begin'), symbol('y')),
              )
         )
 
@@ -171,7 +171,7 @@ class TestLayoutNgReaderParity(IsolatedAsyncioTestCase):
             (symbol('unknown'),
              keyword('x'),
              symbol('y'),
-             (symbol('compile/begin'), (symbol('z'),)),
+             (symbol('compile/begin'), symbol('z')),
              )
         )
 
@@ -187,7 +187,7 @@ class TestLayoutNgReaderParity(IsolatedAsyncioTestCase):
         expected = pycons(
             (symbol('unknown'),
              keyword('x'),
-             (symbol('compile/begin'), (symbol('z'),)),
+             (symbol('compile/begin'), symbol('z')),
              )
         )
 
@@ -200,7 +200,7 @@ class TestLayoutNgReaderParity(IsolatedAsyncioTestCase):
         expected = pycons(
             (symbol('unknown'),
              symbol('x'),
-             (symbol('compile/begin'), (symbol('y'),)),
+             (symbol('compile/begin'), symbol('y')),
              )
         )
 
@@ -216,7 +216,7 @@ class TestLayoutNgReaderParity(IsolatedAsyncioTestCase):
         expected = pycons(
             (symbol('unknown'),
              ((symbol('foo'),), keyword('as'), symbol('x')),
-             (symbol('compile/begin'), (symbol('y'),)),
+             (symbol('compile/begin'), symbol('y')),
              )
         )
 
@@ -231,12 +231,8 @@ class TestLayoutNgReaderParity(IsolatedAsyncioTestCase):
           y
         """
 
-        try_body = cons(symbol('compile/begin'),
-                        cons(symbol('x'), nil),
-                        nil)
-        except_clause = cons(symbol('Exception'),
-                             cons(symbol('y'), nil),
-                             nil)
+        try_body = cons(symbol('compile/begin'), symbol('x'), nil)
+        except_clause = cons(symbol('Exception'), symbol('y'), nil)
         expected = cons(symbol('try'), try_body, except_clause, nil)
 
         result = parse_layout_ng(src)
@@ -254,20 +250,17 @@ class TestLayoutNgReaderParity(IsolatedAsyncioTestCase):
           z
         """
 
-        try_body = cons(symbol('compile/begin'),
-                        cons(symbol('x'), nil),
-                        nil)
-        except_clause = cons(symbol('Exception'),
-                             cons(symbol('y'), nil),
-                             nil)
-        else_clause = cons(keyword('else'),
-                           cons(symbol('a'), nil),
-                           nil)
-        finally_clause = cons(keyword('finally'),
-                              cons(symbol('z'), nil),
-                              nil)
-        expected = cons(symbol('try'), try_body, except_clause,
-                         else_clause, finally_clause, nil)
+        try_body = cons(symbol('compile/begin'), symbol('x'), nil)
+        except_clause = cons(symbol('Exception'), symbol('y'), nil)
+        else_clause = cons(keyword('else'), symbol('a'), nil)
+        finally_clause = cons(keyword('finally'), symbol('z'), nil)
+        expected = cons(
+            symbol('try'),
+            try_body,
+            except_clause,
+            else_clause,
+            finally_clause,
+            nil)
 
         result = parse_layout_ng(src)
         self.assertEqual(result, expected)
@@ -283,13 +276,12 @@ class TestLayoutNgHeaderNestingParity(IsolatedAsyncioTestCase):
         """
 
         expected = pycons(
-          (symbol('foo'),
-           ((symbol('x'), 1000),
-            (symbol('y'), 2000),),
-           (symbol('compile/begin'),
-            (symbol('do_something'), symbol('x'), symbol('y')),
-           )
-          )
+            (symbol('foo'),
+             ((symbol('x'), 1000),
+              (symbol('y'), 2000),),
+             (symbol('compile/begin'),
+              (symbol('do_something'), symbol('x'), symbol('y')))
+            )
         )
 
         result = parse_layout_ng(src)
@@ -302,9 +294,9 @@ class TestLayoutNgHeaderNestingParity(IsolatedAsyncioTestCase):
         """
 
         expected = pycons(
-          (symbol('unknown'),
-           ((symbol('foo'),), keyword('as'), symbol('x')),
-           (symbol('compile/begin'), (symbol('y'),)))
+            (symbol('unknown'),
+             ((symbol('foo'),), keyword('as'), symbol('x')),
+             (symbol('compile/begin'), symbol('y')))
         )
 
         result = parse_layout_ng(src)
@@ -317,9 +309,9 @@ class TestLayoutNgHeaderNestingParity(IsolatedAsyncioTestCase):
         """
 
         expected = pycons(
-          (symbol('unknown'),
-           (symbol('foo'), keyword('as'), symbol('x')),
-           (symbol('compile/begin'), (symbol('y'),)))
+            (symbol('unknown'),
+             (symbol('foo'), keyword('as'), symbol('x')),
+             (symbol('compile/begin'), symbol('y')))
         )
 
         result = parse_layout_ng(src)
@@ -328,9 +320,9 @@ class TestLayoutNgHeaderNestingParity(IsolatedAsyncioTestCase):
 
 class TestLayoutCallSemantics(IsolatedAsyncioTestCase):
 
-    async def test_symbol_headed_line_becomes_implicit_call(self):
+    async def test_single_symbol_line_is_value(self):
         result = parse_layout_ng('foo')
-        self.assertEqual(result, cons(symbol('foo'), nil))
+        self.assertEqual(result, symbol('foo'))
 
 
     async def test_symbol_headed_line_with_args_becomes_call(self):
@@ -338,24 +330,53 @@ class TestLayoutCallSemantics(IsolatedAsyncioTestCase):
         self.assertEqual(result, cons(symbol('foo'), symbol('x'), symbol('y'), nil))
 
 
-    async def test_dot_escape_symbol_value(self):
-        result = parse_layout_ng('. x')
+    async def test_explicit_list_form_remains_call(self):
+        result = parse_layout_ng('(foo)')
+        self.assertEqual(result, cons(symbol('foo'), nil))
+
+
+    async def test_single_symbol_value_without_dot(self):
+        result = parse_layout_ng('x')
         self.assertEqual(result, symbol('x'))
 
 
-    async def test_dot_escape_parenthesized_expr(self):
-        result = parse_layout_ng('. (foo x)')
+    async def test_parenthesized_expr_without_dot(self):
+        result = parse_layout_ng('(foo x)')
         self.assertEqual(result, cons(symbol('foo'), symbol('x'), nil))
 
 
-    async def test_dot_escape_requires_expression(self):
+    async def test_bare_dot_is_invalid(self):
         with self.assertRaises(ReaderSyntaxError):
             parse_layout_ng('.')
 
 
-    async def test_dot_escape_rejects_multiple_expressions(self):
-        with self.assertRaises(ReaderSyntaxError):
-            parse_layout_ng('. foo bar')
+    async def test_multi_symbol_line_is_implicit_call(self):
+        result = parse_layout_ng('foo bar')
+        self.assertEqual(result, cons(symbol('foo'), symbol('bar'), nil))
+
+
+    async def test_pair_head_line_with_arg_becomes_call(self):
+        result = parse_layout_ng('(foo bar) 123')
+        self.assertEqual(
+            result,
+            cons(cons(symbol('foo'), symbol('bar'), nil), 123, nil))
+
+
+    async def test_pair_head_line_with_multiple_args_becomes_call(self):
+        result = parse_layout_ng('(get-callee) a b')
+        self.assertEqual(
+            result,
+            cons(cons(symbol('get-callee'), nil), symbol('a'), symbol('b'), nil))
+
+
+    async def test_number_head_line_does_not_become_call(self):
+        result = parse_layout_ng('123 456')
+        self.assertEqual(result, 123)
+
+
+    async def test_string_head_line_does_not_become_call(self):
+        result = parse_layout_ng('"x" 1')
+        self.assertEqual(result, "x")
 
 
 class TestLayoutCompatibilityModes(IsolatedAsyncioTestCase):
@@ -371,4 +392,3 @@ class TestLayoutCompatibilityModes(IsolatedAsyncioTestCase):
 
 
 # The end.
-

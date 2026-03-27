@@ -7,7 +7,7 @@ class FunTimes []:
         (self.set_x x)
 
     define get_x [self]:
-        . self.real_x
+        self.real_x
 
     define set_x [self x]:
         (set-attr self real_x x)

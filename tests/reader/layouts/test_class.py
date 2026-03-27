@@ -40,7 +40,7 @@ class TestLayoutClass(IsolatedAsyncioTestCase):
             (symbol('compile/class'),
              symbol('C'),
              (),
-             (symbol('compile/begin'), (symbol('x'),))))
+             (symbol('compile/begin'), symbol('x'))))
         result = parse_layout(src)
         self.assertEqual(result, expected)
 
@@ -54,7 +54,7 @@ class TestLayoutClass(IsolatedAsyncioTestCase):
             (symbol('compile/class'),
              symbol('C'),
              (symbol('Base'),),
-             (symbol('compile/begin'), (symbol('x'),))))
+             (symbol('compile/begin'), symbol('x'))))
         result = parse_layout(src)
         self.assertEqual(result, expected)
 
@@ -68,7 +68,7 @@ class TestLayoutClass(IsolatedAsyncioTestCase):
             (symbol('compile/class'),
              symbol('C'),
              (),
-             (symbol('compile/begin'), (symbol('x'),))))
+             (symbol('compile/begin'), symbol('x'))))
         result = parse_layout(src)
         self.assertEqual(result, expected)
 

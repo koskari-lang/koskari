@@ -123,7 +123,7 @@ class TestQuasiquoteLayout(IsolatedAsyncioTestCase):
                (symbol("compile/unquote-splicing"), symbol("hello")))),
              symbol("we"),
              (symbol("compile/begin"),
-              ((symbol("sing"),))))))
+              (symbol("sing"))))))
         )
 
         result = parse_layout(src)
@@ -219,7 +219,7 @@ class TestQuoteBlock(IsolatedAsyncioTestCase):
             (symbol("compile/quote"),
              (_keyword_block,
               (symbol("begin"),),
-              ((symbol("foo"),), (symbol("bar"),))))
+              (symbol("foo"), symbol("bar"))))
         )
 
         result = parse_layout(src)
@@ -275,7 +275,7 @@ class TestQuoteBlock(IsolatedAsyncioTestCase):
               (symbol("begin"),),
               ((_keyword_block,
                 (symbol("if"), symbol("x")),
-                ((symbol("foo"),),)),)))
+                (symbol("foo"),)),)))
         )
 
         result = parse_layout(src)
@@ -304,7 +304,7 @@ class TestQuoteBlock(IsolatedAsyncioTestCase):
               (symbol("compile/quote"),
                (_keyword_block,
                 (symbol("begin"),),
-                ((symbol("foo"),), (symbol("bar"),))))))
+                (symbol("foo"), symbol("bar"))))))
         )
 
         result = parse_layout(src)
