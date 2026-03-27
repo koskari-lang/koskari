@@ -1132,10 +1132,21 @@ def requote(source,
         quote_sym = symbol("compile/quote")
 
     col = []
-    while source:
-        element, source = source
-        elem = cons(quote_sym, element, nil)
-        col.append(elem)
+    while True:
+        element, rest = source
+        col.append(cons(quote_sym, element, nil))
+
+        if rest is nil:
+            # end of proper list
+            col.append(nil)
+            break
+        elif not is_pair(rest):
+            # end of improper list
+            col.append(cons(quote_sym, rest, nil))
+            break
+
+        # continue with next element
+        source = rest
 
     return list_star(cons_sym, *col, nil)
 
