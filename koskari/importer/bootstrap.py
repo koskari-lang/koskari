@@ -39,6 +39,9 @@ from ..reader.layouts import LAYOUTS
 from ..types import (TypePredicate, build_proper, is_nil, is_proper,
                      is_recursive, unpack)
 from .._sync import as_coroutine
+from fractions import Fraction as fraction
+from decimal import Decimal as decimal
+
 
 __all__ = ('make_bootstrap', 'make_builtins', 'make_builtins_demand')
 
@@ -123,6 +126,8 @@ def make_bootstrap():
     _ty('frozenset', frozenset)
     _ty('type', type)
     _ty('slice', slice)
+    _ty('fraction', fraction)
+    _ty('decimal', decimal)
 
     # These are parsed as literals, not as named references, similar
     # to numbers and strings.

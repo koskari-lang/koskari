@@ -232,7 +232,7 @@ def special_format(compiler, source, tc=False):
         rules_expr = matched["rules"].source
         rules_frag = compiler.full_compile(rules_expr)
         rules_is_const, rules_const = const_only_expr(rules_frag)
-        if is_symbol(rules_const):
+        if rules_is_const and is_symbol(rules_const):
             rules_const = str(rules_const)
     else:
         rules_expr = None

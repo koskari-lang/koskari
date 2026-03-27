@@ -36,7 +36,7 @@ define _format_constant [val]:
   """
   (define r (repr val))
   if (> (len r) 60):
-    (+ (item r (slice None 57)) "...")
+    f"{(item r (slice None 57))}..."
   else:
     r
 
@@ -52,15 +52,15 @@ define _write_function_instance_section [file fn]:
   (define name fn.name)
   (define name_repr (if (None? name) "None" (repr name)))
 
-  (file.write (+ "Function instance:\n"))
-  (file.write (+ "  name: " name_repr "\n"))
-  (file.write (+ "  formals:\n"))
+  (file.write "Function instance:\n")
+  (file.write f"  name: {name_repr}\n")
+  (file.write "  formals:\n")
 
   (define formals fn.formals)
   if (is-not formals None):
     for-each [attr_name #("pos" "pos_only" "kwd" "kwd_only" "star" "starstar" "defaults")]:
       (define val (getattr formals attr_name None))
-      (file.write (+ "    " attr_name ": " (repr val) "\n"))
+      (file.write f"    {attr_name}: {(repr val)}\n")
   else:
     (file.write "    (none)\n")
 
@@ -77,7 +77,7 @@ define _write_function_instance_section [file fn]:
       for-each [kv items]:
         (define k (item kv 0))
         (define v (item kv 1))
-        (file.write (+ "    " (repr k) ": " (_format_constant v) "\n"))
+        (file.write f"    {(repr k)}: {(_format_constant v)}\n")
   else:
     (file.write "    (none)\n")
   (file.write "\n")
@@ -96,7 +96,7 @@ define _format_nspec_inline [cpool_idx nspec]:
   """
   (define ns_name nspec.name)
   (define name_repr (if (None? ns_name) "None" (repr ns_name)))
-  (+ "ns#" (str cpool_idx) " " name_repr)
+  f"ns#{cpool_idx} {name_repr}"
 
 
 define _write_nspec_cpool_entry [file cpool_idx nspec]:
@@ -117,12 +117,9 @@ define _write_nspec_cpool_entry [file cpool_idx nspec]:
   (define global_syms nspec.global_syms)
   (define all_captured (+ (tuple closure_syms) (tuple global_syms)))
 
-  (file.write
-    (+ "  ns#" (str cpool_idx) ": NamespaceSpec " name_repr "\n"))
-  (file.write
-    (+ "          locals:   " (repr (tuple local_syms)) "\n"))
-  (file.write
-    (+ "          closures: " (repr (tuple all_captured)) "\n"))
+  (file.write f"  ns#{cpool_idx}: NamespaceSpec {name_repr}\n")
+  (file.write f"          locals:   {(repr (tuple local_syms))}\n")
+  (file.write f"          closures: {(repr (tuple all_captured))}\n")
 
 
 define _build_ns_const_map [code]:
@@ -182,14 +179,14 @@ define _format_fast_part [val local_names closure_names]:
     (define name
       (if local_names
        then: (item local_names val)
-       else: (+ "local[" (str val) "]")))
-    (+ "fast " (str val) " (" (repr name) ")")
+       else: f"local[{val}]"))
+    f"fast {val} ({(repr name)})"
   else:
     (define idx (- val n_local))
     if (and closure_names (<= 0 idx) (< idx (len closure_names))):
-      (+ "fast " (str val) " (closure " (repr (item closure_names idx)) ")")
+      f"fast {val} (closure {(repr (item closure_names idx))})"
     else:
-      (+ "fast " (str val))
+      f"fast {val}"
 
 
 define _format_arg [code op_style arg cpool local_names closure_names
@@ -239,7 +236,7 @@ define _format_arg [code op_style arg cpool local_names closure_names
               (define prefix
                 (if (eq? fk OpStyle.KOSTYLE_CONST) "c" "v"))
               (parts.append
-                (+ prefix "#" (str val) " (" (_format_constant (item cpool val)) ")"))
+                f"{prefix}#{val} ({(_format_constant (item cpool val))})")
             else:
               (parts.append (str val))
           else:
@@ -250,11 +247,11 @@ define _format_arg [code op_style arg cpool local_names closure_names
                 (parts.append (str val))
               else:
                 if (eq? fk OpStyle.KOSTYLE_LABEL):
-                  (parts.append (+ "-> " (str val)))
+                  (parts.append f"-> {val}")
                 else:
                   (parts.append (str val))
 
-        (return (+ (str arg) " (" (str.join ", " parts) ")"))
+        (return f"{arg} ({(str.join ', ' parts)})")
       else:
         (return (str arg))
     else:
@@ -264,15 +261,15 @@ define _format_arg [code op_style arg cpool local_names closure_names
     if (and (<= 0 arg) (< arg (len cpool))):
       (define val (item cpool arg))
       if (isinstance val NamespaceSpec):
-        (return (+ (str arg) " (" (_format_nspec_inline arg val) ")"))
+        (return f"{arg} ({(_format_nspec_inline arg val)})")
       else:
-        (return (+ (str arg) " (" (_format_constant val) ")"))
+        (return f"{arg} ({(_format_constant val)})")
     (return (str arg))
 
   if (eq? op_style OpStyle.KOSTYLE_VAR):
     if (and (<= 0 arg) (< arg (len cpool))):
       (define name (item cpool arg))
-      (return (+ (str arg) " (" (repr name) ")"))
+      (return f"{arg} ({(repr name)})")
     (return (str arg))
 
   if (eq? op_style OpStyle.KOSTYLE_FASTVAR):
@@ -284,22 +281,22 @@ define _format_arg [code op_style arg cpool local_names closure_names
       (define name
         (if local_names
           (item local_names arg)
-          (+ "local[" (str arg) "]")))
-      (return (+ (str arg) " (local " (repr name) ")"))
+          f"local[{arg}]"))
+      (return f"{arg} (local {(repr name)})")
 
     (define idx (- arg n_local))
     if (and closure_names (<= 0 idx) (< idx (len closure_names))):
-      (return (+ (str arg) " (closure " (repr (item closure_names idx)) ")"))
+      (return f"{arg} (closure {(repr (item closure_names idx))})")
     (return (str arg))
 
   if (eq? op_style OpStyle.KOSTYLE_LABEL):
-    (return (+ (str arg) " (-> " (str arg) ")"))
+    (return f"{arg} (-> {arg})")
 
   if (or (eq? op_style OpStyle.KOSTYLE_COUNT)
          (eq? op_style OpStyle.KOSTYLE_PAIR_COUNT)
          (eq? op_style OpStyle.KOSTYLE_STAR)):
     if (is-not ns_label None):
-      (return (+ (str arg) " (" ns_label ")"))
+      (return f"{arg} ({ns_label})")
     (return (str arg))
 
   (return (str arg))
@@ -358,8 +355,7 @@ define dis [x file: None]:
   else:
     (set! code (_get_code x))
     when (is code None):
-      (raise (TypeError (+ "expected Code or Function, got "
-                           (attr (type x) __name__))))
+      (raise (TypeError f"expected Code or Function, got {(attr (type x) __name__)}"))
 
   (set! out (_resolve_file out))
   (define cpool code.constants_pool)
@@ -371,48 +367,44 @@ define dis [x file: None]:
   (define name code.name)
   (define filename code.filename)
   (define yields code.yields)
-  (out.write (+ "KosCode " (repr name) "\n"))
-  (out.write (+ "  filename: " (repr filename) "\n"))
-  (out.write (+ "  yields: " (str yields) "\n"))
+  (out.write f"KosCode {(repr name)}\n")
+  (out.write f"  filename: {(repr filename)}\n")
+  (out.write f"  yields: {yields}\n")
   (out.write "\n")
 
-  (out.write (+ "Constant pool (" (str (len cpool)) "):\n"))
+  (out.write f"Constant pool ({(len cpool)}):\n")
   (define i 0)
   while (< i (len cpool)):
     (define val (item cpool i))
     if (isinstance val NamespaceSpec):
       (_write_nspec_cpool_entry out i val)
     else:
-      (out.write
-        (+ "  " (% "%3d: %s\n" #(i (_format_constant val)))))
+      (out.write f"""  {i "3d"}: {(_format_constant val)}\n""")
     (set! i (+ i 1))
   (out.write "\n")
 
-  (out.write
-    (+ "Vars (local_syms, " (str (len local_syms)) "):\n"))
+  (out.write f"Vars (local_syms, {(len local_syms)}):\n")
   if local_syms:
     (define i 0)
     while (< i (len local_syms)):
-      (out.write
-        (+ "  " (% "%3d: %s\n" #(i (repr (item local_syms i))))))
+      (out.write f"""  {i "3d"}: {(repr (item local_syms i))}\n""")
       (set! i (+ i 1))
   else:
     (out.write "  (none)\n")
   (out.write "\n")
 
-  (out.write (+ "Closure refs (" (str (len closure_syms)) "):\n"))
+  (out.write f"Closure refs ({(len closure_syms)}):\n")
   if closure_syms:
     (define i 0)
     while (< i (len closure_syms)):
-      (out.write
-        (+ "  " (% "%3d: %s\n" #(i (repr (item closure_syms i))))))
+      (out.write f"""  {i "3d"}: {(repr (item closure_syms i))}\n""")
       (set! i (+ i 1))
   else:
     (out.write "  (none)\n")
   (out.write "\n")
 
   (define n (code.length))
-  (out.write (+ "Instructions (" (str n) "):\n"))
+  (out.write f"Instructions ({n}):\n")
   (define i 0)
   while (< i n):
     (define oparg (code.oparg i))
@@ -436,13 +428,12 @@ define dis [x file: None]:
       (define pos (code.position i))
       (define line (item pos 0))
       (define col (item pos 1))
-      (set! pos_str (+ "  # line " (str line) ", col " (str col)))
+      (set! pos_str f"  # line {line}, col {col}")
     except [Exception]:
       ;; EXPERIMENT-ISSUE: Broad catch here mirrors practical fallback behavior
       None
 
-    (out.write
-      (% "  %3d  %-24s %s%s\n" #(i op.name arg_str pos_str)))
+    (out.write f"""  {i "3d"}  {op.name "24s"} {arg_str}{pos_str}\n""")
     (set! i (+ i 1))
   (out.write "\n")
 
