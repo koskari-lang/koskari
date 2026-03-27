@@ -43,10 +43,13 @@
    On fallback: chain freed, gen released, ctx ready for free.
    Does not free ctx; caller does that.  For clear, caller also sets
    agen->gen = NULL and agen->ctx = NULL.
+
+   For demand __iter__, chain_ctx is the dedicated demand context instead of
+   agen->ctx
 */
-static void asyncgen_teardown_frozen(KosPyAsyncGen *agen) {
+static void asyncgen_teardown_chain_on_ctx(KosPyAsyncGen *agen, KosContext *ctx) {
+
   KosDynGen *gen = (KosDynGen *) agen->gen;
-  KosContext *ctx = agen->ctx;
   KosDynNode *active;
   PyObject *throw_exc = NULL;
   KosEvent ev = {0};
@@ -142,15 +145,35 @@ fallback:
 }
 
 
+static void asyncgen_teardown_frozen(KosPyAsyncGen *agen) {
+
+  asyncgen_teardown_chain_on_ctx(agen, agen->ctx);
+}
+
+
+void KosAsyncGen_TeardownDemandContext(KosPyAsyncGen *agen, KosContext *dctx) {
+
+  asyncgen_teardown_chain_on_ctx(agen, dctx);
+}
+
+
 static void asyncgen_dealloc(PyObject *self) {
 
   PyObject_GC_UnTrack(self);
 
   KosPyAsyncGen *agen = (KosPyAsyncGen *) self;
 
-  if (agen->gen && agen->ctx && ! KosContext_DYN_TOP(agen->ctx)) {
+  if (agen->sync_demand_active) {
+    /* Execution chain is on DemandSyncGenerator ctx; only free empty agen ctx */
+    if (agen->ctx) {
+      kos_context_free(agen->ctx);
+      agen->ctx = NULL;
+    }
+  }
+  else if (agen->gen && agen->ctx && ! KosContext_DYN_TOP(agen->ctx)) {
     asyncgen_teardown_frozen(agen);
-  } else if (agen->gen) {
+  }
+  else if (agen->gen) {
     kos_dyngen_release((KosDynGen *) agen->gen);
     agen->gen = NULL;
   }
@@ -165,6 +188,12 @@ static int asyncgen_traverse(PyObject *self, visitproc visit, void *arg) {
 
   KosPyAsyncGen *agen = (KosPyAsyncGen *) self;
   int res;
+
+  if (agen->sync_demand_active) {
+    if (agen->ctx)
+      return kos_context_traverse(agen->ctx, visit, arg);
+    return 0;
+  }
 
   if (agen->gen && agen->ctx && ! KosContext_DYN_TOP(agen->ctx)) {
     res = kos_dynnode_traverse((KosDynNode *) agen->gen, visit, arg);
@@ -182,9 +211,18 @@ static int asyncgen_clear(PyObject *self) {
 
   KosPyAsyncGen *agen = (KosPyAsyncGen *) self;
 
+  if (agen->sync_demand_active) {
+    if (agen->ctx) {
+      kos_context_free(agen->ctx);
+      agen->ctx = NULL;
+    }
+    return 0;
+  }
+
   if (agen->gen && agen->ctx && ! KosContext_DYN_TOP(agen->ctx)) {
     asyncgen_teardown_frozen(agen);
-  } else if (agen->gen) {
+  }
+  else if (agen->gen) {
     kos_dyngen_release((KosDynGen *) agen->gen);
     agen->gen = NULL;
   }
@@ -233,6 +271,12 @@ static PyObject *asyncgen_iter(PyObject *self) {
   return Koskari_IterSync(self);
 }
 
+
+static PyObject *asyncgen_tp_iter(PyObject *self) {
+
+  return KosDemandSyncGenerator_FromAsyncGen((KosPyAsyncGen *) self);
+}
+
 static PyMethodDef asyncgen_methods[] = {
   { "iter", (PyCFunction) asyncgen_iter, METH_NOARGS,
     "Return a synchronous iterator that drives this async generator. "
@@ -260,6 +304,7 @@ PyTypeObject KosPyAsyncGenType = {
   .tp_doc = "Koskari async generator wrapper",
   .tp_traverse = asyncgen_traverse,
   .tp_clear = asyncgen_clear,
+  .tp_iter = asyncgen_tp_iter,
   .tp_methods = asyncgen_methods,
 };
 
@@ -275,6 +320,7 @@ PyObject *KosPyAsyncGen_New(KosContext *ctx) {
   agen->ctx = ctx;
   agen->in_progress = 0;
   agen->closed = 0;
+  agen->sync_demand_active = 0;
 
   PyObject_GC_Track((PyObject *) agen);
   return (PyObject *) agen;
