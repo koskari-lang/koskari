@@ -124,6 +124,12 @@ Ref: [FEATURES.md](FEATURES.md) § Ready to Migrate;
 [language/async.md](language/async.md) (await syntax/semantics);
 [language/special-forms.md](language/special-forms.md) (define-values, setq-values).
 
+### Variadic compiled object ops (`*` keyword form)
+
+Variadic compiled object ops need to support the `*` keyword form. In that case
+they should lower left-most first, then expand to the run-time form of the
+operation.
+
 ### Slice atom and slice syntax
 
 Bring over Python-sibilant slicing support in both forms:
