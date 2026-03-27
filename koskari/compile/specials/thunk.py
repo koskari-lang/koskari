@@ -12,9 +12,9 @@
 # along with this library; if not, see <http://www.gnu.org/licenses/>.
 
 """
-koskari.compile.specials.partial
+koskari.compile.specials.thunk
 
-Special form compile/gensym-partial: placeholder-driven partial lambda sugar.
+Special form compile/gensym-thunk: placeholder-driven thunk lambda sugar.
 
 :author: Christopher O'Brien <obriencj@preoccupied.net>
 :license: GNU General Public License v3
@@ -31,7 +31,7 @@ from ..helpers import special
 
 
 _keyword_star = keyword("*")
-_monitor = (symbol("gensym-partial"), symbol("compile/gensym-partial"))
+_monitor = (symbol("gensym-thunk"), symbol("compile/gensym-thunk"))
 
 
 _thunksym = re.compile("^%[1-9][0-9]*$").match
@@ -39,7 +39,7 @@ _thunksym = re.compile("^%[1-9][0-9]*$").match
 
 def _transform(pos_map, form):
     """
-    Copy form with %N and Ellipsis rewritten; skip nested gensym-partial forms
+    Copy form with %N and Ellipsis rewritten; skip nested gensym-thunk forms
     """
 
     if form is nil:
@@ -66,7 +66,7 @@ def _transform(pos_map, form):
 
         elif is_pair(head):
             if head[0] in _monitor:
-                # don't descend into gensym-partial forms
+                # don't descend into gensym-thunk forms
                 val = cons(head, nil)
             else:
                 val = cons(_transform(pos_map, head), nil)
@@ -76,7 +76,7 @@ def _transform(pos_map, form):
                 if head in pos_map:
                     head = pos_map[head]
                 else:
-                    pos_map[head] = gensym("thunk")
+                    pos_map[head] = gensym(str(head))
                     head = pos_map[head]
             val = cons(head, nil)
 
@@ -84,7 +84,7 @@ def _transform(pos_map, form):
             if head in pos_map:
                 head = pos_map[head]
             else:
-                pos_map[head] = gensym("thunk")
+                pos_map[head] = gensym("star")
                 head = pos_map[head]
 
             append(cons(_keyword_star, nil))
@@ -112,7 +112,7 @@ def _build_formals(pos_map, source):
         keys = [int(str(k).strip("%")) for k in keysyms]
         if keys[0] != 1 or keys[-1] != len(keys):
             raise SpecialError(
-                "gensym-partial placeholders must be contiguous"
+                "gensym-thunk placeholders must be contiguous"
                 f" from %1 to %{len(keys)}",
                 source)
 
@@ -124,13 +124,13 @@ def _build_formals(pos_map, source):
         return cons(*[pos_map[k] for k in keysyms], nil)
 
 
-@special(symbol("compile/gensym-partial"))
-def special_gensym_partial(
+@special(symbol("compile/gensym-thunk"))
+def special_gensym_thunk(
         compiler: Compiler,
         source,
         tc: bool = False) -> ByteCodeFragment:
     """
-    Compile (compile/gensym-partial BODY...) to a lambda with inferred formals.
+    Compile (compile/gensym-thunk BODY...) to a lambda with inferred formals.
 
     This is the form which handles thunk-expressions.
 
@@ -144,7 +144,7 @@ def special_gensym_partial(
         rest = _transform(pos_map, rest)
     formals = _build_formals(pos_map, source)
 
-    return cons(symbol("compile/lambda"), formals, rest, nil)
+    return cons(symbol("compile/lambda"), formals, rest)
 
 
 # The end.

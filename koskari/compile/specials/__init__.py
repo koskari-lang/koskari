@@ -23,87 +23,48 @@ Special form handlers for the Koskari compiler.
 
 
 from ..helpers import SPECIALS, special
-
+from .apply_layout import special_apply_layout
 from .begin import special_begin
 from .bytecode import special_bytecode
 from .call import special_call, special_call_attr
 from .class_ import special_class
 from .conditionals import special_and, special_cond, special_or
-from .continuations import special_call_cc, special_let_cc, special_capture_cc, special_reset, special_return, special_shift
 from .context import special_dyn_with, special_parameterize, special_with
+from .continuations import (special_call_cc, special_capture_cc,
+                            special_let_cc, special_reset, special_return,
+                            special_shift)
 from .dyn_wind import special_dyn_wind
-from .exceptions import (
-    special_check_exception,
-    special_clear_exception,
-    special_load_exception,
-    special_raise,
-    special_try,
-)
+from .exceptions import (special_check_exception, special_clear_exception,
+                         special_load_exception, special_raise, special_try)
+from .imports import (helper_import_from_sequence, special_import,
+                      special_import_from)
 from .items import special_del_item, special_item, special_set_item
 from .lambda_ import special_lambda
 from .let import special_let
-from .loops import special_break, special_continue, special_for_each, special_while
-from .partial import special_gensym_partial
+from .loops import (special_break, special_continue, special_for_each,
+                    special_while)
+from .object import (special_add, special_aiter, special_bit_and,
+                     special_bit_invert, special_bit_left, special_bit_or,
+                     special_bit_right, special_bit_xor, special_dir,
+                     special_divmod, special_eq, special_floor_divide,
+                     special_ge, special_gt, special_in, special_inplace,
+                     special_is, special_is_not, special_isinstance,
+                     special_issubclass, special_iter, special_le, special_len,
+                     special_lt, special_matrix_multiply, special_modulo,
+                     special_multiply, special_ne, special_not, special_not_in,
+                     special_power, special_repr, special_str,
+                     special_subtract, special_true_divide, special_truth,
+                     special_type, special_vars)
 from .pairs import special_car, special_cdr, special_cons, special_quote
-from .apply_layout import special_apply_layout
-from .quasiquote import (
-    special_quasiquote,
-    special_quasiquote_block,
-    special_quote_block,
-    special_unquote,
-    special_unquote_splicing,
-)
+from .quasiquote import (special_quasiquote, special_quasiquote_block,
+                         special_quote_block, special_unquote,
+                         special_unquote_splicing)
+from .refs import (special_bindq, special_deref, special_ref_attr,
+                   special_ref_item, special_refq)
 from .slots import special_attr, special_del_attr, special_set_attr
-from .imports import helper_import_from_sequence, special_import, special_import_from
-from .object import (
-    special_add,
-    special_aiter,
-    special_inplace,
-    special_bit_and,
-    special_bit_invert,
-    special_bit_left,
-    special_bit_or,
-    special_bit_right,
-    special_bit_xor,
-    special_dir,
-    special_divmod,
-    special_eq,
-    special_floor_divide,
-    special_ge,
-    special_gt,
-    special_in,
-    special_is,
-    special_is_not,
-    special_isinstance,
-    special_issubclass,
-    special_iter,
-    special_le,
-    special_len,
-    special_lt,
-    special_matrix_multiply,
-    special_modulo,
-    special_multiply,
-    special_ne,
-    special_not,
-    special_not_in,
-    special_power,
-    special_repr,
-    special_str,
-    special_subtract,
-    special_truth,
-    special_true_divide,
-    special_type,
-    special_vars,
-)
-from .refs import special_bindq, special_deref, special_ref_attr, special_ref_item, special_refq
-from .variables import (
-    special_define,
-    special_define_global,
-    special_define_syntax,
-    special_delq,
-    special_setq,
-)
-
+from .thunk import special_gensym_thunk
+from .variables import (special_define, special_define_global,
+                        special_define_syntax, special_delq, special_setq)
 
 __all__ = (
     "SPECIALS",
@@ -153,7 +114,7 @@ __all__ = (
     "special_floor_divide",
     "special_for_each",
     "special_ge",
-    "special_gensym_partial",
+    "special_gensym_thunk",
     "special_gt",
     "special_in",
     "special_inplace",

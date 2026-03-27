@@ -1,6 +1,7 @@
 # Koskari
 
-Koskari is a LISP dialect for Python - a playground language designed for joyful expression and exploration.
+Koskari is a LISP dialect for Python
+
 
 ## Overview
 
@@ -9,28 +10,16 @@ Koskari is the fourth iteration of the Sibilant idea, learning from the experien
 - **python-sibilant**: CPython bytecode target (abandoned due to version churn)
 - **sibilant-ceval**: Custom bytecode evaluator (blocked on call/cc implementation)
 
-This version aims to be a "perfect playground" - a language with all the useful features of Python but significantly fewer restrictions, designed to make writing code "a joyous expression of will upon a computer."
+This version aims to be a perfect playground - a language with all the useful features of Python but significantly fewer restrictions, designed to make writing code a joyous expression of will upon the computer.
 
-## Features (Planned)
-
-- **Flexible bind/ref model**: Runtime rebinding of references with executable evaluators
-- **Macros**: Reader macros and compile-time macros for metaprogramming
-- **Values type**: Multi-value returns for flexible composition
-- **Call/CC**: Continuations for control flow experimentation (bounded and unbounded)
-- **Tail-call optimization**: Efficient recursion
-- **Async/await**: Full coroutine support
-- **Generators**: Lazy evaluation
-- **And more**: See [design documentation](design/) for complete feature catalog
 
 ## Implementation Status
-
-### Completed (with native C extensions)
 
 **Core Types:**
 - `symbol`, `keyword`: Interned atom types
 - `pair`, `nil`: Cons cells and empty list
 - `values`: Multi-value return objects
-- `gensym()`: Unique symbol generation
+- `defer`: Coroutine deferral
 
 **Runtime Infrastructure:**
 - `Namespace`, `ModuleNamespace`, `CollectorNamespace`: Lexical scopes
@@ -42,13 +31,22 @@ This version aims to be a "perfect playground" - a language with all the useful 
 - `SourceStream`: Python stream wrapper with error handling
 - `Reader`: Extensible s-expression reader with macro support
 
+**Compiler:**
+- many special forms implemented; see [design/SPECIALS.md](design/SPECIALS.md) for the current list
+- squishing and compounding passes to convert into super-ops
+
 **Evaluator:**
 - Custom bytecode evaluator (`koskari_eval`): coroutines, async generators, continuations, dynamic wind/unwind, parameterize, with/dyn-with
+- Stackless (where possible), tail-call optimizing
+- Ambiently async: awaitable results are automatically awaited when they do not have an immediate result. The evaluator context suspends at once and resume in-place.
+- Bounded and unbounded continuations.
+- CLI with REPL
 
-### In Progress
 
-- Compiler (many special forms implemented; see [design/SPECIALS.md](design/SPECIALS.md) for the current list; macro expansion and remaining special forms continue)
-- REPL and CLI
+## TODO
+
+Many ideas are under evaluation, see [design/TODO.md](design/TODO.md) for what's on the table.
+
 
 ## Quick Start
 
@@ -67,7 +65,8 @@ make install
 Or for development:
 
 ```bash
-make install-dev
+uv install -e .[prompt_toolkit]
+uv run koskari
 ```
 
 ### Development
@@ -88,6 +87,7 @@ make lint
 # Clean build artifacts
 make clean
 ```
+
 
 ## Project Structure
 
@@ -130,6 +130,7 @@ koskari/
 └── examples/            # Example koskari code (.ki files)
 ```
 
+
 ## Design Documentation
 
 Comprehensive design documentation is available in the [design/](design/) directory, including:
@@ -137,6 +138,7 @@ Comprehensive design documentation is available in the [design/](design/) direct
 - API documentation (types, builtins, runtime)
 - Interpreter architecture (bytecode, compiler, evaluator)
 - Call/CC design considerations
+
 
 ## Testing
 
@@ -153,10 +155,12 @@ make test-native-valgrind  # Valgrind memcheck
 make container-test        # All native tests in container
 ```
 
+
 ## License
 
 GPL v3 - See [LICENSE](LICENSE) for details.
 
+
 ## Author
 
-Christopher O'Brien <obriencj@gmail.com>
+Christopher O'Brien <obriencj@preoccupied.net>

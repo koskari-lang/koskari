@@ -84,7 +84,7 @@ READ_EOF = ReadEOFType()
 
 
 _symbol__str = symbol("compile/str")
-_symbol_gensym_partial = symbol("compile/gensym-partial")
+_symbol_gensym_thunk = symbol("compile/gensym-thunk")
 _symbol_decimal = symbol("decimal")
 _symbol_format = symbol("format")
 _symbol_fraction = symbol("fraction")
@@ -920,7 +920,7 @@ class Reader(object):
         sm('[', partial(self._read_pair, ']'), True)
         sm(']', self._close_pair, True)
 
-        sm('{', partial(self._read_begin, '}'), True)
+        sm('{', partial(self._read_thunk, '}'), True)
         sm('}', self._close_pair, True)
 
         sm('"', self._read_string, True)
@@ -1143,9 +1143,9 @@ class Reader(object):
         return VALUE, result
 
 
-    def _read_begin(self, closer, stream, char):
+    def _read_thunk(self, closer, stream, char):
         """
-        Read a curly-brace block as (compile/gensym-partial . BODY)
+        Read a thunk block as (compile/gensym-thunk . BODY)
 
         :param closer: the expected closing character
         :param stream: the source stream
@@ -1156,7 +1156,7 @@ class Reader(object):
         event, result = self._read_pair(closer, stream, char)
 
         if event is VALUE:
-            new_result = cons(_symbol_gensym_partial, result)
+            new_result = cons(_symbol_gensym_thunk, result)
             new_result.set_position(result.get_position())
             result = new_result
 

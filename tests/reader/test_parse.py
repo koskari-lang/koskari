@@ -403,10 +403,10 @@ class TestLists(IsolatedAsyncioTestCase):
 
 class TestConsPairs(IsolatedAsyncioTestCase):
 
-    async def test_curly_brace_is_gensym_partial(self):
+    async def test_curly_brace_is_gensym_thunk(self):
         src = "{testing a thing}"
         col = parse_source(src)
-        self.assertEqual(col, cons(symbol("compile/gensym-partial"),
+        self.assertEqual(col, cons(symbol("compile/gensym-thunk"),
                                    symbol("testing"),
                                    symbol("a"),
                                    symbol("thing"),

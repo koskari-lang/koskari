@@ -149,7 +149,7 @@ depth 0 in `LayoutReader` when no block-header colon is found on the line.
                   | "[" <form>* ( "." <form> )? "]"
 
 <thunk-form>    ::= "{" <form>* "}"
-                  ; desugars to: (compile/gensym-partial <form>*)
+                  ; desugars to: (compile/gensym-thunk <form>*)
                   ; see "Thunk syntax" below
 
 <collection>    ::= "#(" <form>* ")"        ; desugars to: (#tuple <form>*)
@@ -167,12 +167,12 @@ depth 0 in `LayoutReader` when no block-header colon is found on the line.
 ### Thunk syntax
 
 **Thunk syntax** is the curly-brace reader macro `{` … `}` in the base
-s-expression grammar (`<thunk-block>` above). It desugars to
-`(compile/gensym-partial BODY …)`, which infers parameters from
+s-expression grammar (`<thunk-form>` above). It desugars to
+`(compile/gensym-thunk BODY …)`, which infers parameters from
 placeholders (`%1`, `%2`, … and `...` for rest) and lowers to
-`compile/lambda`. Nested `{…}` forms read as nested `(compile/gensym-partial …)`.
+`compile/lambda`. Nested `{…}` forms read as nested `(compile/gensym-thunk …)`.
 
-See [SPECIALS.md](SPECIALS.md) (`compile/gensym-partial`) and
+See [SPECIALS.md](SPECIALS.md) (`compile/gensym-thunk`) and
 [archive/brace-lambdas-gensym-partial.md](archive/brace-lambdas-gensym-partial.md).
 
 ### Reader macros and atom expansions

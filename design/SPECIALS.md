@@ -620,14 +620,14 @@ parent stack.
 
 ## compile/gensym-partial
 
-**Symbol:** `compile/gensym-partial`
+**Symbol:** `compile/gensym-thunk`
 
-**Syntax:** `(compile/gensym-partial BODY ...)`
+**Syntax:** `(compile/gensym-thunk BODY ...)`
 
 **Reader — thunk syntax:** In s-expression mode, `{BODY ...}` is **thunk syntax**
-(also called **the thunk form**). It reads as `(compile/gensym-partial BODY ...)`
+(also called **the thunk form**). It reads as `(compile/gensym-thunk BODY ...)`
 — the same special with no extra macro. Nested `{...}` inside `BODY` read as
-nested `(compile/gensym-partial ...)`. The head `gensym-partial` also resolves
+nested `(compile/gensym-thunk ...)`. The head `gensym-partial` also resolves
 to this special via the usual `compile/` prefix. See
 [archive/brace-lambdas-gensym-partial.md](archive/brace-lambdas-gensym-partial.md)
 for the full language design.
@@ -643,8 +643,8 @@ hand.
 Symbols matching `%` + a positive integer (no leading zeros) are replaced by
 fresh gensyms; repeated `%n` shares one binding. `...` is replaced by `*:`
 list segments (`keyword("*")` and the rest gensym) for interop with
-`compile/call`. Subtrees whose head is `gensym-partial` or
-`compile/gensym-partial` are left unchanged (no recursion into the cdr).
+`compile/call`. Subtrees whose head is `gensym-thunk` or
+`compile/gensym-thunk` are left unchanged (no recursion into the cdr).
 After rewriting, placeholders must be contiguous `%1` … `%N`; otherwise
 `SpecialError`. Builds inferred **formals** for `compile/lambda` (positionals in
 order, then `*` and rest if `...` appeared) and returns the source form
@@ -655,16 +655,19 @@ pattern as other macros that expand to a lambda).
 
 ```scheme
 ;; Unary: { (+ %1 1) }  =>  thunk taking one argument
-(compile/gensym-partial (compile/+ %1 1))
+(compile/gensym-thunk (+ %1 1))
 
 ;; Thunk syntax in source
-{ (compile/call print "hello") }
+{ (print "hello") }
+
+;; Thunk returning 99
+{ 99 }
 
 ;; Variadic rest: ... in the body becomes * and a rest formal
-(compile/gensym-partial (compile/call f ...))
+(compile/gensym-thunk (f ...))
 ```
 
-**Tests:** `tests/compile/specials/test_partial.py`
+**Tests:** `tests/compile/specials/test_thunk.py`
 
 
 ## compile/break
