@@ -43,6 +43,7 @@ from .items import special_del_item, special_item, special_set_item
 from .lambda_ import special_lambda
 from .let import special_let
 from .loops import special_break, special_continue, special_for_each, special_while
+from .partial import special_gensym_partial
 from .pairs import special_car, special_cdr, special_cons, special_quote
 from .apply_layout import special_apply_layout
 from .quasiquote import (
@@ -152,6 +153,7 @@ __all__ = (
     "special_floor_divide",
     "special_for_each",
     "special_ge",
+    "special_gensym_partial",
     "special_gt",
     "special_in",
     "special_inplace",

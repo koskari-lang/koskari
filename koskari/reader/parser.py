@@ -84,7 +84,7 @@ READ_EOF = ReadEOFType()
 
 
 _symbol__str = symbol("compile/str")
-_symbol_begin = symbol("compile/begin")
+_symbol_gensym_partial = symbol("compile/gensym-partial")
 _symbol_decimal = symbol("decimal")
 _symbol_format = symbol("format")
 _symbol_fraction = symbol("fraction")
@@ -1145,7 +1145,7 @@ class Reader(object):
 
     def _read_begin(self, closer, stream, char):
         """
-        Read a begin block (curly braces)
+        Read a curly-brace block as (compile/gensym-partial . BODY)
 
         :param closer: the expected closing character
         :param stream: the source stream
@@ -1156,7 +1156,7 @@ class Reader(object):
         event, result = self._read_pair(closer, stream, char)
 
         if event is VALUE:
-            new_result = cons(_symbol_begin, result)
+            new_result = cons(_symbol_gensym_partial, result)
             new_result.set_position(result.get_position())
             result = new_result
 

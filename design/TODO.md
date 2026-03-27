@@ -99,17 +99,6 @@ Ref: [api/dunder-adapter.md](api/dunder-adapter.md) (demand_sync, demand path);
 
 ## Compiler
 
-### Brace lambdas (`gensym-partial`)
-
-**Status:** Design only. Investigate implementation: repurpose the `{` reader
-macro from its current `begin` role to `(gensym-partial BODY)` so brace forms
-always denote anonymous closures with placeholder-driven arity (`%n`, `...`,
-thunks when no placeholders). Reader, compile-time transform, diagnostics for
-invalid positional gaps, and interaction with nested brace scopes need
-to be worked through against the spec.
-
-Ref: [language/brace-lambdas-gensym-partial.md](language/brace-lambdas-gensym-partial.md).
-
 ### Layout call semantics (bare calls + dot escape)
 
 Evaluate the proposed layout call surface where symbol-headed non-block lines

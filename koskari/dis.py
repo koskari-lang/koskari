@@ -25,19 +25,23 @@ indices).
 :ai-assistant: claude-4.6-sonnet-high via Cursor
 """
 
-from koskari.lib import Code, Function, OpCode, OpStyle
+from koskari.lib import Code, Expression, Function, OpCode, OpStyle
 from koskari.types import NamespaceSpec
 
 
 def _get_code(x):
     """
-    Return x if it is a Code instance, else None.
+    Return Code for disassembly targets: Code, or Expression (unwrap .code).
 
     :param x: value to check
     :return: Code instance or None
     """
 
-    return x if isinstance(x, Code) else None
+    if isinstance(x, Code):
+        return x
+    if isinstance(x, Expression):
+        return x.code
+    return None
 
 
 def _format_constant(val):
@@ -302,7 +306,7 @@ def dis(x, file=None):
     instructions are annotated with the namespace ID (ns#K) and name of
     the NamespaceSpec they push.
 
-    :param x: Code or Function instance
+    :param x: Code, Expression (unwraps to Code), or Function instance
     :param file: file-like object to print to (default: stdout)
     """
 
