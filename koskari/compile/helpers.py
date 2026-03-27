@@ -54,7 +54,6 @@ __all__ = (
     "helper_elsebody",
     "is_lazygensym",
     "is_symbolish",
-    "list_star",
     "pycons",
     "requote",
     "special",
@@ -1059,24 +1058,6 @@ def pycons(val):
     raise TypeError("cannot pycons %r" % (val,))
 
 
-def list_star(*args):
-    """
-    Build a chain of pairs (a . (b . (c . tail))) from list_star(a, b, c, tail).
-    Variadic: the last argument is the final cdr; all others are elements.
-    Requires at least one argument.
-
-    :param args: one or more values; the last is the tail of the result list
-    :return: (args[0] . (args[1] . ... . (args[-2] . args[-1])))
-    """
-
-    if not args:
-        raise TypeError("list_star requires at least one argument")
-    tail = args[-1]
-    for elem in reversed(args[:-1]):
-        tail = pair(elem, tail)
-    return tail
-
-
 def const_only_expr(fragment):
     """
     Check whether a ByteCodeFragment consists only of a single CONST value.
@@ -1148,7 +1129,7 @@ def requote(source,
         # continue with next element
         source = rest
 
-    return list_star(cons_sym, *col, nil)
+    return cons(cons_sym, *col, nil)
 
 
 _SYM_BEGIN = symbol('begin')
