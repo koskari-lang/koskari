@@ -55,6 +55,36 @@ class TestQuoteSpecial(SpecialsTestCase):
         self.assertEqual([1, 2, 3], list(result.unpack()))
 
 
+    async def test_quote_improper_list(self):
+        """
+        (compile/quote (1 2 . 3)) yields an improper list.
+        """
+
+        src_str = "(compile/quote (1 2 . 3))"
+        expr, mod = self.compile_expr(src_str)
+        result = await expr()
+        head, tail = result
+        second, tail = tail
+        self.assertEqual(1, head)
+        self.assertEqual(2, second)
+        self.assertEqual(3, tail)
+        self.assertFalse(result.is_proper())
+
+
+    async def test_quote_improper_pair(self):
+        """
+        (compile/quote (1 . 2)) yields an improper pair.
+        """
+
+        src_str = "(compile/quote (1 . 2))"
+        expr, mod = self.compile_expr(src_str)
+        result = await expr()
+        head, tail = result
+        self.assertEqual(1, head)
+        self.assertEqual(2, tail)
+        self.assertFalse(result.is_proper())
+
+
 class TestCompileConsCarCdr(SpecialsTestCase):
 
     async def test_compile_cons_two_elements(self):
