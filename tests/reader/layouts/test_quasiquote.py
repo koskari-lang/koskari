@@ -123,7 +123,7 @@ class TestQuasiquoteLayout(IsolatedAsyncioTestCase):
                (symbol("compile/unquote-splicing"), symbol("hello")))),
              symbol("we"),
              (symbol("compile/begin"),
-               (symbol("sing"))))))
+              (symbol("sing"))))))
         )
 
         result = parse_layout(src)

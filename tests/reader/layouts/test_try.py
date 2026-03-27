@@ -44,9 +44,9 @@ class TestLayoutTryExceptBindings(IsolatedAsyncioTestCase):
         """
 
         expected = pycons(
-          (symbol('try'),
-           (_compile_begin, symbol('x')),
-           (symbol('Exception'), symbol('y')))
+            (symbol('try'),
+             (_compile_begin, symbol('x')),
+             (symbol('Exception'), symbol('y')))
         )
 
         result = parse_layout(src)
@@ -66,9 +66,9 @@ class TestLayoutTryExceptBindings(IsolatedAsyncioTestCase):
         """
 
         expected = pycons(
-          (symbol('try'),
-           (_compile_begin, symbol('x')),
-           (cons(symbol('e'), symbol('Exception')), symbol('y')))
+            (symbol('try'),
+             (_compile_begin, symbol('x')),
+             (cons(symbol('e'), symbol('Exception')), symbol('y')))
         )
 
         result = parse_layout(src)
@@ -88,9 +88,9 @@ class TestLayoutTryExceptBindings(IsolatedAsyncioTestCase):
         """
 
         expected = pycons(
-          (symbol('try'),
-           (_compile_begin, symbol('x')),
-           (cons(symbol('e'), symbol('Exception')), symbol('y')))
+            (symbol('try'),
+             (_compile_begin, symbol('x')),
+             (cons(symbol('e'), symbol('Exception')), symbol('y')))
         )
 
         result = parse_layout(src)
@@ -125,9 +125,9 @@ class TestLayoutTryExceptBindings(IsolatedAsyncioTestCase):
         """
 
         expected = pycons(
-          (symbol('try'),
-           (_compile_begin, symbol('x')),
-           (keyword('except'), symbol('y')))
+            (symbol('try'),
+             (_compile_begin, symbol('x')),
+             (keyword('except'), symbol('y')))
         )
 
         result = parse_layout(src)

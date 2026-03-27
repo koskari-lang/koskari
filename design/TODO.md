@@ -99,13 +99,13 @@ Ref: [api/dunder-adapter.md](api/dunder-adapter.md) (demand_sync, demand path);
 
 ## Compiler
 
-### Layout call semantics (bare calls + dot escape)
+### Layout call semantics (single-symbol values)
 
 Evaluate the proposed layout call surface where symbol-headed non-block lines
-lower to implicit calls (including zero-arg forms), while `. expr` serves as a
-strict raw-expression escape with exactly one following expression. Confirm
-parser/reader feasibility, compatibility with existing layout rules, and
-diagnostic behavior for invalid dot usage.
+lower to implicit calls only when multiple top-level forms are present; a
+single symbol remains a value expression. Confirm parser/reader feasibility,
+compatibility with existing layout rules, and diagnostics for invalid leading
+dot usage.
 
 Ref: [language/layout-call-semantics.md](language/layout-call-semantics.md);
 [LAYOUTS.md](LAYOUTS.md); [language/layout-syntax.md](language/layout-syntax.md).

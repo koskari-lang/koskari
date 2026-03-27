@@ -128,4 +128,28 @@ class TestAsyncGeneratorIter(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(list(agen.iter()), [42])
 
 
+class TestAsyncGeneratorDemandIter(unittest.TestCase):
+    """
+    __iter__ returns a native DemandSyncGenerator (no asyncio iter_sync)
+    """
+
+    def test_iter_builtin_matches_iter_method(self):
+        """
+        list(agen) uses tp_iter and matches list(agen.iter())
+        """
+
+        code, ns = build_expr([
+            ["CONST", 1],
+            ["YIELD", 1],
+            ["CONST", 2],
+            ["YIELD", 1],
+            ["RETURN", 0],
+        ])
+        expr = make_callable(code, ns)
+        agen_demand = expr()
+        agen_loop = expr()
+        self.assertIsInstance(agen_demand, AsyncGenerator)
+        self.assertEqual(list(agen_demand), list(agen_loop.iter()))
+
+
 # The end.

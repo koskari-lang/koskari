@@ -1510,12 +1510,17 @@ class LayoutReader(Reader):
     the stream.dedented attribute rather than getattr guards.
     """
 
-    def __init__(self, namespace, nodefaults=False):
+    def __init__(self, namespace, nodefaults=False,
+                 layout_enabled=True, layout_implicit_calls=True):
         """
         Initialize the layout reader
 
         :param namespace: Module, Namespace, or dict for layout lookup
         :param nodefaults: if True, do not add default macros and patterns
+        :param layout_enabled: if False, disable layout/block parsing and
+            parse using base s-expression semantics
+        :param layout_implicit_calls: if True, symbol-headed non-block
+            lines lower to implicit calls
         """
 
         super().__init__(nodefaults=nodefaults)
@@ -1531,6 +1536,8 @@ class LayoutReader(Reader):
         self._layout_depth = 0
         self._block_mode = False
         self._block_macros = {}
+        self.layout_enabled = layout_enabled
+        self.layout_implicit_calls = layout_implicit_calls
 
         if not nodefaults:
             self._add_default_block_macros()
@@ -1540,6 +1547,36 @@ class LayoutReader(Reader):
         self._header_scan = False
         self._commit_detector = HeaderCommitDetector()
         self._line_scanner = LogicalLineScanner(self)
+
+
+    def set_layout_modes(self, *, layout_enabled=None, layout_implicit_calls=None):
+        """
+        Update layout-mode feature switches on this reader.
+
+        Intended as the stable hook for future pragma-driven reader reload.
+        Any None parameter leaves the current setting unchanged.
+        """
+
+        if layout_enabled is not None:
+            self.layout_enabled = bool(layout_enabled)
+        if layout_implicit_calls is not None:
+            self.layout_implicit_calls = bool(layout_implicit_calls)
+
+
+    def reload_pragma(self, pragma):
+        """
+        Apply pragma-controlled reader switches when present.
+
+        This is intentionally permissive: unknown pragma objects are ignored,
+        while known attributes are mapped to the layout mode switches.
+        """
+
+        if pragma is None:
+            return
+
+        self.set_layout_modes(
+            layout_enabled=getattr(pragma, 'layout_enabled', None),
+            layout_implicit_calls=getattr(pragma, 'layout_implicit_calls', None))
 
 
     def _add_default_block_macros(self):
@@ -1786,6 +1823,43 @@ class LayoutReader(Reader):
         if not found_colon:
             raise stream.error('block header must end with colon', head_pos)
         return args
+
+
+    def _skip_horizontal_whitespace(self, stream):
+        """
+        Consume horizontal whitespace only (space and tab)
+        """
+
+        consumed = []
+        while True:
+            c = stream.peek(1)
+            if c not in (' ', '\t'):
+                break
+            consumed.append(stream.read(1))
+        return ''.join(consumed)
+
+
+    def _read_line_tail_forms(self, stream):
+        """
+        Read remaining top-level forms on the current logical line
+        """
+
+        forms = []
+        while True:
+            self._skip_horizontal_whitespace(stream)
+            c = stream.peek(1)
+            if not c or c in '\n\r;':
+                return forms
+
+            event, pos, value = self._read(stream)
+            if event is EOF:
+                return forms
+            if event is DOT:
+                raise stream.error('invalid use of dot in layout line', pos)
+            if event is not VALUE:
+                raise stream.error('invalid syntax', pos)
+
+            forms.append(value)
 
 
     def read_block_body(self, stream, outer_indent):
@@ -2085,7 +2159,7 @@ class LayoutReader(Reader):
         :return: (event, position, value)
         """
 
-        if self._layout_depth > 0:
+        if self._layout_depth > 0 or not self.layout_enabled:
             return self._read(stream)
 
         while True:
@@ -2110,7 +2184,21 @@ class LayoutReader(Reader):
                 stream.read(1)
                 continue
 
-            if c in '([{':
+            if c in '([':
+                event, pos, form1 = self._read(stream)
+                if event is not VALUE:
+                    return event, pos, form1
+                if is_pair(form1):
+                    self._skip_horizontal_whitespace(stream)
+                    nxt = stream.peek(1)
+                    if nxt in '([{':
+                        return VALUE, pos, form1
+                    tail = self._read_line_tail_forms(stream)
+                    if tail:
+                        return VALUE, pos, cons(form1, *tail, nil)
+                return VALUE, pos, form1
+
+            if c == '{':
                 return self._read(stream)
 
             outer_indent = position[1]
@@ -2133,10 +2221,13 @@ class LayoutReader(Reader):
                 raise stream.error('block header must have a head', pos)
             if event is EOF:
                 return EOF, pos, None
+            if event is DOT:
+                raise stream.error('invalid syntax', pos)
 
             header_indent = pos[1]
 
-            if is_symbol(form1) and self._commit_detector.should_commit(stream):
+            if (is_symbol(form1) and self._commit_detector.should_commit(stream)
+                    and self._has_block_colon_ahead(stream)):
                 args = self.read_header_until_terminator(
                     stream, head_pos=pos, head=form1)
 
@@ -2145,6 +2236,21 @@ class LayoutReader(Reader):
                 else:
                     block = self.read_layout_block(stream, header_indent, form1, args)
                 return VALUE, position, block
+
+            if is_symbol(form1) and self.layout_implicit_calls:
+                tail = self._read_line_tail_forms(stream)
+                if tail:
+                    return VALUE, pos, cons(form1, *tail, nil)
+                return VALUE, pos, form1
+
+            if is_pair(form1):
+                self._skip_horizontal_whitespace(stream)
+                nxt = stream.peek(1)
+                if nxt in '([{':
+                    return VALUE, pos, form1
+                tail = self._read_line_tail_forms(stream)
+                if tail:
+                    return VALUE, pos, cons(form1, *tail, nil)
 
             return VALUE, pos, form1
 

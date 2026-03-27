@@ -61,7 +61,8 @@ typedef struct {
   PyObject_HEAD
   KosContext *ctx;
   int closed;    /* 0=running, 1=done or broken (ctx freed) */
-  int in_send;   /* re-entrancy guard */
+  int in_send;   /* re-entrancy guard (demand_sync-owned ctx only) */
+  PyObject *async_agen;  /* KosPyAsyncGen when built from tp_iter; else NULL */
 } KosDemandSyncGenerator;
 
 
@@ -74,7 +75,20 @@ static void demand_gen_dealloc(PyObject *self) {
 
   KosDemandSyncGenerator *gen = (KosDemandSyncGenerator *) self;
 
-  if (gen->ctx) {
+  if (gen->async_agen) {
+    KosPyAsyncGen *agen = (KosPyAsyncGen *) gen->async_agen;
+    KosContext *dctx = gen->ctx;
+    gen->ctx = NULL;
+    agen->sync_demand_active = 0;
+    if (dctx) {
+      if (! gen->closed)
+        KosAsyncGen_TeardownDemandContext(agen, dctx);
+      kos_context_free(dctx);
+    }
+    Py_DECREF(gen->async_agen);
+    gen->async_agen = NULL;
+  }
+  else if (gen->ctx) {
     kos_context_free(gen->ctx);
     gen->ctx = NULL;
   }
@@ -87,7 +101,9 @@ static int demand_gen_traverse(PyObject *self, visitproc visit, void *arg) {
 
   KosDemandSyncGenerator *gen = (KosDemandSyncGenerator *) self;
 
-  if (gen->ctx)
+  if (gen->async_agen)
+    Py_VISIT(gen->async_agen);
+  else if (gen->ctx)
     return kos_context_traverse(gen->ctx, visit, arg);
 
   return 0;
@@ -98,7 +114,19 @@ static int demand_gen_clear(PyObject *self) {
 
   KosDemandSyncGenerator *gen = (KosDemandSyncGenerator *) self;
 
-  if (gen->ctx) {
+  if (gen->async_agen) {
+    KosPyAsyncGen *agen = (KosPyAsyncGen *) gen->async_agen;
+    KosContext *dctx = gen->ctx;
+    gen->ctx = NULL;
+    agen->sync_demand_active = 0;
+    if (dctx) {
+      if (! gen->closed)
+        KosAsyncGen_TeardownDemandContext(agen, dctx);
+      kos_context_free(dctx);
+    }
+    Py_CLEAR(gen->async_agen);
+  }
+  else if (gen->ctx) {
     kos_context_free(gen->ctx);
     gen->ctx = NULL;
   }
@@ -115,6 +143,19 @@ static PyObject *demand_gen_iter(PyObject *self) {
 
 
 static void demand_gen_close_ctx(KosDemandSyncGenerator *gen) {
+
+  if (gen->async_agen) {
+    KosPyAsyncGen *agen = (KosPyAsyncGen *) gen->async_agen;
+    agen->sync_demand_active = 0;
+    KosContext *dctx = gen->ctx;
+    gen->ctx = NULL;
+    gen->closed = 1;
+    if (dctx)
+      kos_context_free(dctx);
+    agen->gen = NULL;
+    agen->closed = 1;
+    return;
+  }
 
   if (gen->ctx) {
     kos_context_free(gen->ctx);
@@ -135,18 +176,31 @@ static PyObject *demand_gen_step(
     return NULL;
   }
 
-  if (gen->in_send) {
-    PyErr_SetString(PyExc_RuntimeError,
-                    "demand generator already being iterated");
-    return NULL;
+  if (gen->async_agen) {
+    KosPyAsyncGen *borrow = (KosPyAsyncGen *) gen->async_agen;
+    if (borrow->in_progress) {
+      PyErr_SetString(PyExc_RuntimeError,
+                      "async generator already being iterated");
+      return NULL;
+    }
+    borrow->in_progress = 1;
   }
-
-  gen->in_send = 1;
+  else {
+    if (gen->in_send) {
+      PyErr_SetString(PyExc_RuntimeError,
+                      "demand generator already being iterated");
+      return NULL;
+    }
+    gen->in_send = 1;
+  }
 
   KosEvent ev = { 0 };
   int res = koskari_eval(gen->ctx, &ev, send_val, throw_typ, throw_exc);
 
-  gen->in_send = 0;
+  if (gen->async_agen)
+    ((KosPyAsyncGen *) gen->async_agen)->in_progress = 0;
+  else
+    gen->in_send = 0;
 
   if (res < 0) {
     demand_gen_close_ctx(gen);
@@ -308,9 +362,76 @@ static PyObject *KosDemandSyncGenerator_New(KosContext *ctx) {
   gen->ctx = ctx;
   gen->closed = 0;
   gen->in_send = 0;
+  gen->async_agen = NULL;
 
   PyObject_GC_Track((PyObject *) gen);
   return (PyObject *) gen;
+}
+
+
+PyObject *KosDemandSyncGenerator_FromAsyncGen(KosPyAsyncGen *agen) {
+
+  KosDynGen *dgen;
+  KosContext *ctx;
+  KosDemandSyncGenerator *dsg;
+
+  if (! agen->ctx || agen->closed) {
+    PyErr_SetString(PyExc_RuntimeError, "async generator is closed");
+    return NULL;
+  }
+
+  if (agen->sync_demand_active) {
+    PyErr_SetString(PyExc_RuntimeError,
+                    "async generator already being iterated");
+    return NULL;
+  }
+
+  if (agen->in_progress) {
+    PyErr_SetString(PyExc_RuntimeError,
+                    "async generator already being iterated");
+    return NULL;
+  }
+
+  dgen = (KosDynGen *) agen->gen;
+  if (! dgen) {
+    PyErr_SetString(PyExc_RuntimeError, "async generator is closed");
+    return NULL;
+  }
+
+  if (! KosDynGen_ACTIVE(dgen)) {
+    PyErr_SetString(PyExc_RuntimeError,
+                    "async generator has no active frame");
+    return NULL;
+  }
+
+  ctx = kos_context_new(NULL);
+  if (! ctx)
+    return NULL;
+
+  KosContext_DYN_TOP(agen->ctx) = NULL;
+  KosContext_FRAME_TOP(agen->ctx) = NULL;
+
+  if (kos_dyn_gen_install(ctx, dgen) < 0) {
+    kos_context_free(ctx);
+    return NULL;
+  }
+
+  dsg = (KosDemandSyncGenerator *)
+      PyObject_GC_New(KosDemandSyncGenerator, &KosDemandSyncGeneratorType);
+  if (! dsg) {
+    kos_context_free(ctx);
+    return NULL;
+  }
+
+  dsg->ctx = ctx;
+  dsg->closed = 0;
+  dsg->in_send = 0;
+  Py_INCREF(agen);
+  dsg->async_agen = (PyObject *) agen;
+  agen->sync_demand_active = 1;
+
+  PyObject_GC_Track((PyObject *) dsg);
+  return (PyObject *) dsg;
 }
 
 

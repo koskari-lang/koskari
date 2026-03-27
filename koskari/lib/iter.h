@@ -33,13 +33,16 @@
 extern PyTypeObject KosPyAsyncGenType;
 
 
-typedef struct {
+struct KosPyAsyncGen {
   PyObject_HEAD
   KosContext *ctx;
   void *gen;         /* KosDynGen * when set; agen holds ref when GEN released from chain */
   int in_progress;   /* anext in progress */
   int closed;        /* generator closed */
-} KosPyAsyncGen;
+  int sync_demand_active;  /* DemandSyncGenerator from __iter__ holds the gen chain */
+};
+
+typedef struct KosPyAsyncGen KosPyAsyncGen;
 
 
 #define KosPyAsyncGen_Check(obj)                                        \
@@ -50,6 +53,14 @@ typedef struct {
 
 
 PyObject *KosPyAsyncGen_New(KosContext *ctx);
+
+
+/**
+   Tear down a demand-iterator context: same contract as frozen teardown, but
+   the running chain lives on dctx (not agen->ctx). Does not free dctx; caller
+   does. Clears agen->gen when finished
+*/
+void KosAsyncGen_TeardownDemandContext(KosPyAsyncGen *agen, KosContext *dctx);
 
 
 /**
