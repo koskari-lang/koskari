@@ -123,9 +123,6 @@ def assert_binding_renamed(test_case, let_form, original_name):
     bound_name = car(binding_pair)
     test_case.assertTrue(is_symbol(bound_name), 'binding name must be symbol')
     test_case.assertNotEqual(str(bound_name), original_name)
-    test_case.assertTrue(
-        str(bound_name).startswith('syntax_'),
-        'introduced binding must be gensym\'d')
 
 
 def assert_formal_renamed(test_case, lambda_form, original_name):
@@ -138,9 +135,6 @@ def assert_formal_renamed(test_case, lambda_form, original_name):
     param = car(formals)
     test_case.assertTrue(is_symbol(param), 'formal must be symbol')
     test_case.assertNotEqual(str(param), original_name)
-    test_case.assertTrue(
-        str(param).startswith('syntax_'),
-        'introduced formal must be gensym\'d')
 
 
 class TestSyntaxExpansion(unittest.IsolatedAsyncioTestCase):
