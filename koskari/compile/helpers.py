@@ -1340,9 +1340,12 @@ def discover_docstring(body):
         if head is nil or not is_pair(head):
             return None
 
-        head, tail = head
-        if head in _BEGIN_HEADS:
-            body = tail
+        ihead, itail = head
+        if ihead in _BEGIN_HEADS:
+            if itail is nil:
+                body = tail
+            else:
+                body = itail
         else:
             return None
 
