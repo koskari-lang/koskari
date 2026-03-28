@@ -135,6 +135,11 @@ KOS_OP_HANDLER(NEXT) {
         }
       }
       if (KosStackBlock_PushRef(&CURRENT_STACK(ctx), iter) < 0) {
+        if (n == 2) {
+          PyObject *rollback_default = KosStackBlock_PopRef(&CURRENT_STACK(ctx));
+          Py_XDECREF(rollback_default);
+          Py_DECREF(default_val);
+        }
         Py_DECREF(iter);
         return -1;
       }
