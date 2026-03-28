@@ -1924,7 +1924,8 @@ class LayoutReader(Reader):
         Temporarily installs outer_indent as the stream's max_indent so that
         skip_whitespace correctly detects the dedent at the peer line's column.
         If a dedent is detected, peeks far enough ahead to read the next
-        line's leading token.
+        line's leading token, skipping empty and whitespace-only lines and
+        full-line comments in the peek window.
 
         :param stream: IndentAwareStream positioned at end of current block
         :param outer_indent: column of the enclosing block head
@@ -1944,16 +1945,38 @@ class LayoutReader(Reader):
         if not ahead or ahead[0] != '\n':
             return None
 
-        indent = 0
         i = 1
-        while i < len(ahead) and ahead[i] in ' \t':
-            indent += 1
-            i += 1
+        while i < len(ahead):
+            indent = 0
+            while i < len(ahead) and ahead[i] in ' \t':
+                indent += 1
+                i += 1
+            if i >= len(ahead):
+                return None
+            if ahead[i] == '\n':
+                i += 1
+                continue
+            if ahead[i] == '\r':
+                i += 1
+                if i < len(ahead) and ahead[i] == '\n':
+                    i += 1
+                continue
+            if ahead[i] == ';':
+                while i < len(ahead) and ahead[i] not in '\n\r':
+                    i += 1
+                if i < len(ahead) and ahead[i] == '\r':
+                    i += 1
+                if i < len(ahead) and ahead[i] == '\n':
+                    i += 1
+                continue
+            if indent != outer_indent:
+                return None
 
-        if indent != outer_indent or i >= len(ahead):
+            text = ahead[i:]
+            break
+        else:
             return None
 
-        text = ahead[i:]
         token = []
         for ch in text:
             if ch in ' \t\r\n':
@@ -1973,6 +1996,50 @@ class LayoutReader(Reader):
             return None
 
         return symbol(head)
+
+
+    def _consume_through_blank_lines_to_peer_column(self, stream, outer_indent):
+        """
+        Consume from the newline ending the prior line across blank lines and
+        comment-only lines until the stream sits at the first content character
+        on a line indented to outer_indent (the peer block header).
+
+        :param stream: IndentAwareStream with peek(1) the newline that ends the
+            previous logical line
+        :param outer_indent: column of the peer head line's leading spaces
+        :return: True if a peer header line was reached, False otherwise
+        """
+
+        if stream.peek(1) != '\n':
+            return False
+        stream.read(1)
+
+        while True:
+            indent = 0
+            while stream.peek(1) in ' \t':
+                stream.read(1)
+                indent += 1
+
+            pk = stream.peek(1)
+            if pk == '\n':
+                stream.read(1)
+                continue
+            if pk == '\r':
+                stream.read(1)
+                if stream.peek(1) == '\n':
+                    stream.read(1)
+                continue
+            if pk == ';':
+                stream.read(1)
+                stream.read_until_chars('\n')
+                if stream.peek(1) == '\n':
+                    stream.read(1)
+                continue
+            if not pk:
+                return False
+            if indent != outer_indent:
+                return False
+            return True
 
 
     def _collect_peer_blocks(self, stream, outer_indent, layout_obj):
@@ -1998,8 +2065,10 @@ class LayoutReader(Reader):
             if head is None or str(head) not in declared_set:
                 break
 
-            stream.read(1)
-            stream.read(outer_indent)
+            if not self._consume_through_blank_lines_to_peer_column(
+                    stream, outer_indent):
+                break
+
             phead, pargs, _opener = self.read_block_header(stream)
             peers.append(self._read_block_source(stream, outer_indent, phead, pargs))
 

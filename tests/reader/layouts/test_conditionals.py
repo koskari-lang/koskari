@@ -55,6 +55,57 @@ class TestLayoutIfPeers(IsolatedAsyncioTestCase):
         self.assertEqual(result, expected)
 
 
+    async def test_if_with_else_peer_blank_line_before_else(self):
+        """
+        A blank line between the if body and a declared else: peer should not
+        prevent peer gathering. Expected shape matches a normal if/else layout.
+        """
+
+        src = """
+        if True:
+          1
+
+        else:
+          2
+        """
+
+        expected = pycons(
+            (_compile_cond,
+             (True, 1),
+             (keyword('else'), 2))
+        )
+
+        result = parse_layout(src)
+
+        self.assertEqual(result, expected)
+
+
+    async def test_if_with_else_peer_blank_line_and_comment_before_else(self):
+        """
+        Blank lines and comment-only lines before a declared else: peer should
+        not prevent peer gathering.
+        """
+
+        src = """
+        if True:
+          1
+
+        ;; this is a comment
+        else:
+          2
+        """
+
+        expected = pycons(
+            (_compile_cond,
+             (True, 1),
+             (keyword('else'), 2))
+        )
+
+        result = parse_layout(src)
+
+        self.assertEqual(result, expected)
+
+
     async def test_if_with_elif_then_else(self):
         src = """
         if x:
