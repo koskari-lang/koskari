@@ -127,6 +127,49 @@ class TestRefMacro(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(20, result)
 
 
+class TestLetStarMacro(unittest.IsolatedAsyncioTestCase):
+    """
+    Tests for compile/let* from basics.ki (nested let expansion). Requires
+    make_builtins so the macro is present for expansion.
+    """
+
+    async def compile_expr(self, src_str, lineno=1, **defns):
+        bltns = dict(await make_builtins())
+        bltns.update(defns)
+        mod_ns = ModuleNamespace("test", bltns)
+        module = Module(mod_ns)
+        source = default_reader.read(source_str(src_str, __file__, line_no=lineno))
+        compiler = Compiler("<unittest>", module, filename=__file__)
+        fragment = compiler.full_compile(source)
+        return fragment.as_expression(mod_ns), module
+
+    async def test_let_star_single_binding(self):
+        src_str = """
+        (let* [[a 1]]
+          (compile/call add a 0))
+        """
+
+        def add(x, y):
+            return x + y
+
+        expr, mod = await self.compile_expr(src_str, add=add)
+        result = await expr()
+        self.assertEqual(1, result)
+
+    async def test_let_star_sequential_bindings(self):
+        src_str = """
+        (let* [[a 1] [b (compile/+ a 1)]]
+          (compile/call add b 0))
+        """
+
+        def add(x, y):
+            return x + y
+
+        expr, mod = await self.compile_expr(src_str, add=add)
+        result = await expr()
+        self.assertEqual(2, result)
+
+
 class TestConditionalMacros(unittest.IsolatedAsyncioTestCase):
     """
     Tests for the compile/if, compile/when, compile/unless macros in basics.ki.

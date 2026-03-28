@@ -79,10 +79,10 @@ visible only in `body ...`.
 **Use-case:** Lexical multi-value binding: introduce fresh names from a single
 evaluated value for a local scope.
 
-**Behaviour:** Expands to
-`(let [] (compile/define-values PATTERN VALUE) body ...)` — an empty `let`
-binder list, with `compile/define-values` sequenced before the body forms. See
-[SPECIALS.md](SPECIALS.md) § compile/define-values for the special form.
+**Behaviour:** Expands to a `let` that evaluates the value expression once,
+binds it to `resolved`, then `(compile/define-values PATTERN resolved)` before
+`body ...`. See [SPECIALS.md](SPECIALS.md) § compile/define-values for the
+special form.
 
 **Examples:**
 
@@ -92,6 +92,36 @@ binder list, with `compile/define-values` sequenced before the body forms. See
 
 (let-values [(x *: ys z) seq]
   (frobnicate x ys z))
+```
+
+**Defined in:** `koskari/importer/basics.ki`
+
+
+## let*
+
+**Symbol:** `let*` (defined as `compile/let*`)
+
+**Syntax:** `(let* [[NAME INIT] ...] body ...)`
+
+Each INIT is evaluated in order; later bindings see earlier names. Same binding
+shape as `compile/let` (see [SPECIALS.md](SPECIALS.md) § compile/let).
+
+**Use-case:** Sequential `let`: nested scope where each RHS may use prior
+bound names.
+
+**Behaviour:** Expands by syntax-rules to nested `let`. Empty bindings:
+`(let [] body ...)`. A single binding: `(let [first] body ...)` (avoids a
+redundant inner `(let [] ...)`). Two or more:
+`(let [first] (let* [rest ...] body ...))`.
+
+**Examples:**
+
+```scheme
+(let* [] 1)
+
+(let* [[x 1]] x)
+
+(let* [[x 1] [y (+ x 1)]] y)
 ```
 
 **Defined in:** `koskari/importer/basics.ki`

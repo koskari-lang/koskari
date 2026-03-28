@@ -61,7 +61,18 @@ define-syntax compile/set!:
 define-syntax compile/let-values:
   syntax-rules []:
     match (let-values [pattern value] body ...):
-      (let [] (compile/define-values pattern value) body ...)
+      (let [[resolved value]]
+        (compile/define-values pattern resolved) body ...)
+
+
+define-syntax compile/let*:
+  syntax-rules [let let*]:
+    match (let* [] body ...):
+      (let [] body ...)
+    match (let* [first] body ...):
+      (let [first] body ...)
+    match (let* [first rest ...] body ...):
+      (let [first] (let* [rest ...] body ...))
 
 
 define-syntax compile/ref:

@@ -23,8 +23,8 @@ Syntax rules transformer implementing (syntax-rules ...)
 
 from dataclasses import dataclass
 
-from ..exceptions import CompilerError
-from ..lib import car, cdr, cons, nil, symbol
+from ..exceptions import CompilerError, SpecialError
+from ..lib import car, cdr, cons, nil, symbol, gensym
 from ..matcher import (BIND, LITERAL_SYM, MATCH, REPEAT, REST, BindingResult,
                        BindingsResult, FormalsResult, RepeatResult,
                        extract_binder_symbols, is_binder_spec,
@@ -225,7 +225,10 @@ def _collect_binding_symbols_matcher(template, find_compiled):
                     find_compiled)
         return out
 
-    m = match(rest, special.forms, with_specs=True)
+    try:
+        m = match(rest, special.forms, with_specs=True)
+    except SpecialError:
+        m = None
     if m is None:
         for elem in (unpack(rest) if rest is not nil and is_pair(rest) else []):
             if elem is not None and elem is not nil:
@@ -383,7 +386,7 @@ def _expand_template(template, bindings, binding_symbols, compiler, introduced, 
 
         if template in binding_symbols:
             if template not in introduced:
-                introduced[template] = symbol(compiler.gen_label("syntax_%s" % str(template)))
+                introduced[template] = gensym(str(template))
             return introduced[template]
 
         return template
