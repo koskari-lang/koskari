@@ -15,8 +15,8 @@
 koskari.compile.specials.variables
 
 Special form handlers for compile/setq, compile/setq-values,
-compile/define-values, compile/delq, compile/define, and
-compile/define-syntax.
+compile/define-values, compile/delq, compile/define,
+compile/define-syntax, compile/globals, and compile/locals.
 
 :author: Christopher O'Brien <obriencj@preoccupied.net>
 :license: GNU General Public License v3
@@ -309,6 +309,36 @@ def special_define(compiler, source, tc=False):
     frag.instruction(OpCode.KOS_OP_VAR_STORE, name)
     frag.instruction(OpCode.KOS_OP_CONST, None)
 
+    return frag
+
+
+@special(symbol("compile/globals"))
+def special_globals(compiler, source, tc=False):
+    """
+    Compile (compile/globals). Push the outermost frame namespace (globals)
+    """
+
+    called_by, body = source
+    if body is not nil:
+        raise SpecialError("%s takes no arguments" % called_by, source)
+
+    frag = compiler.fragment(called_by)
+    frag.instruction(OpCode.KOS_OP_GLOBALS, 0)
+    return frag
+
+
+@special(symbol("compile/locals"))
+def special_locals(compiler, source, tc=False):
+    """
+    Compile (compile/locals). Push the current frame namespace (locals)
+    """
+
+    called_by, body = source
+    if body is not nil:
+        raise SpecialError("%s takes no arguments" % called_by, source)
+
+    frag = compiler.fragment(called_by)
+    frag.instruction(OpCode.KOS_OP_LOCALS, 0)
     return frag
 
 

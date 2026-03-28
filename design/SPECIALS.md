@@ -618,6 +618,55 @@ parent stack.
 **Tests:** `tests/compile/specials/test_for_each.py`
 
 
+## compile/globals
+
+**Symbol:** `compile/globals`
+
+**Syntax:** `(compile/globals)`
+
+**Use-case:** Obtain the namespace of the outermost frame on the dynamic chain
+(the globals namespace), analogous to Python's `globals()`. Useful for
+reflection, explicit binding into the module namespace, or passing the globals
+dict to APIs that expect it.
+
+**Behaviour:** Emits `GLOBALS` (argument 0). Pushes that namespace onto the
+stack as the expression's value. Any arguments are rejected with `SpecialError`.
+
+**Examples:**
+
+```scheme
+;; Namespace object for the outermost frame
+(compile/globals)
+```
+
+**Implementation:** `koskari/compile/specials/variables.special_globals`
+
+**Tests:** `tests/compile/specials/test_namespace_specials.py`
+
+
+## compile/locals
+
+**Symbol:** `compile/locals`
+
+**Syntax:** `(compile/locals)`
+
+**Use-case:** Obtain the current frame's namespace (locals), analogous to
+Python's `locals()`.
+
+**Behaviour:** Emits `LOCALS` (argument 0). Pushes the current frame's namespace
+onto the stack. Any arguments are rejected with `SpecialError`.
+
+**Examples:**
+
+```scheme
+(compile/locals)
+```
+
+**Implementation:** `koskari/compile/specials/variables.special_locals`
+
+**Tests:** `tests/compile/specials/test_namespace_specials.py`
+
+
 ## compile/gensym-partial
 
 **Symbol:** `compile/gensym-thunk`

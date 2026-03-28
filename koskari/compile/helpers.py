@@ -1209,7 +1209,7 @@ def gather_formals(args, source=None):
         elif star is nil:
             pass
         elif not (is_symbol(star) or is_lazygensym(star)):
-            raise SpecialError("* keyword requires symbol binding, not %r" % star, source)
+            raise SpecialError(f"* keyword requires symbol binding, not {star!r}", source)
         arg = next(iargs, undefined)
 
     if arg is undefined:
@@ -1221,7 +1221,7 @@ def gather_formals(args, source=None):
     while arg not in (_keyword_star, _keyword_starstar):
         value = next(iargs, undefined)
         if value is undefined:
-            raise SpecialError("missing value for keyword-only formal %s" % arg, source)
+            raise SpecialError(f"missing value for keyword-only formal {arg}", source)
         else:
             kwonly.append((arg, value))
 
@@ -1233,14 +1233,14 @@ def gather_formals(args, source=None):
         else:
             raise SpecialError(
                 "keyword-only formals must be alternating keywords"
-                " and values, not %r" % arg)
+                f" and values, not {arg!r}")
 
     if arg is _keyword_starstar:
         starstar = next(iargs, undefined)
         if starstar is undefined:
             raise SpecialError("** keyword requires symbol binding", source)
         elif not (is_symbol(starstar) or is_lazygensym(starstar)):
-            raise SpecialError("** keyword requires symbol binding, not %r" % starstar, source)
+            raise SpecialError(f"** keyword requires symbol binding, not {starstar!r}", source)
         arg = next(iargs, undefined)
 
     if arg is not undefined:
@@ -1271,7 +1271,7 @@ def gather_bindings(bindings_source, source=None):
         name, val = helper_binding(elem)
         if name in names:
             raise SpecialError(
-                "duplicate declarations for %s in bindings" % name,
+                f"duplicate declarations for {name} in bindings",
                 source if source is not None else bindings_source)
         names.append(name)
         values.append(val)
@@ -1317,7 +1317,7 @@ def pycons(val):
         if not val:
             return nil
         return cons(*map(pycons, val), nil)
-    raise TypeError("cannot pycons %r" % (val,))
+    raise TypeError(f"cannot pycons {val!r}")
 
 
 def const_only_expr(fragment):

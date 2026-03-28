@@ -47,15 +47,15 @@ from .object import (special_add, special_aiter, special_bit_and,
                      special_bit_invert, special_bit_left, special_bit_or,
                      special_bit_right, special_bit_xor, special_dir,
                      special_divmod, special_eq, special_floor_divide,
-                     special_format,
-                     special_ge, special_gt, special_in, special_inplace,
-                     special_is, special_is_not, special_isinstance,
-                     special_issubclass, special_iter, special_le, special_len,
-                     special_lt, special_matrix_multiply, special_modulo,
-                     special_multiply, special_ne, special_not, special_not_in,
-                     special_power, special_repr, special_str,
-                     special_subtract, special_true_divide, special_truth,
-                     special_type, special_vars)
+                     special_format, special_ge, special_gt, special_in,
+                     special_inplace, special_is, special_is_not,
+                     special_isinstance, special_issubclass, special_iter,
+                     special_le, special_len, special_lt,
+                     special_matrix_multiply, special_modulo, special_multiply,
+                     special_ne, special_not, special_not_in, special_power,
+                     special_repr, special_str, special_subtract,
+                     special_true_divide, special_truth, special_type,
+                     special_vars)
 from .pairs import special_car, special_cdr, special_cons, special_quote
 from .quasiquote import (special_quasiquote, special_quasiquote_block,
                          special_quote_block, special_unquote,
@@ -66,7 +66,8 @@ from .slots import special_attr, special_del_attr, special_set_attr
 from .thunk import special_gensym_thunk
 from .variables import (special_define, special_define_global,
                         special_define_syntax, special_define_values,
-                        special_delq, special_setq, special_setq_values)
+                        special_delq, special_globals, special_locals,
+                        special_setq, special_setq_values)
 
 __all__ = (
     "SPECIALS",
@@ -119,6 +120,7 @@ __all__ = (
     "special_for_each",
     "special_ge",
     "special_gensym_thunk",
+    "special_globals",
     "special_gt",
     "special_in",
     "special_inplace",
@@ -134,6 +136,7 @@ __all__ = (
     "special_let",
     "special_load_exception",
     "special_let_cc",
+    "special_locals",
     "special_lt",
     "special_matrix_multiply",
     "special_modulo",
