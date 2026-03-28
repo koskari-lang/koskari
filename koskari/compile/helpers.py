@@ -28,6 +28,7 @@ from ..matcher import (
     LIST,
     MATCH,
     Matcher,
+    PAIR,
     REST,
     SYMBOL,
     match1,
@@ -41,6 +42,7 @@ __all__ = (
     "BINDINGS",
     "FORMALS",
     "USING",
+    "USING_UNPACK",
     "const_only_expr",
     "convert_bindings",
     "discover_docstring",
@@ -50,6 +52,7 @@ __all__ = (
     "helper_begin",
     "helper_binding",
     "helper_using",
+    "using_unpack_helper",
     "parse_decl",
     "helper_elsebody",
     "is_lazygensym",
@@ -147,7 +150,7 @@ _tag_formals = symbol('matcher/formals')
 
 
 @matcher(_tag_formals)
-class _FormalsMatcher(BindingMatcher):
+class FormalsMatcher(BindingMatcher):
     """
     Match formals (pair or symbol) and bind the result of gather_formals
     as FormalsResult (positional, defaults, kwonly, star, starstar,
@@ -245,11 +248,12 @@ def FORMALS(slot, *, scope=None, scopes=None):
     :param scope: single scope region key
     :param scopes: sequence of scope region keys
     """
-    return _FormalsMatcher(slot, scope=scope, scopes=scopes)
+    return FormalsMatcher(slot, scope=scope, scopes=scopes)
 
 
 _tag_binding = symbol('matcher/binding')
 _tag_using = symbol('matcher/using')
+_tag_using_unpack = symbol('matcher/using-unpack')
 
 
 _BINDING_FORMS = [
@@ -261,11 +265,19 @@ _BINDING_FORMS_ALLOW_UNNAMED = [
     LIST(VALUE("expr")),
 ]
 
-_USING_FORMS = _BINDING_FORMS_ALLOW_UNNAMED
+# Binding forms before LIST(VALUE) so (EXPR as: SYM) wins over unnamed (EXPR)
+_USING_FORMS = (
+    *_BINDING_FORMS,
+    LIST(VALUE("expr")),
+)
+
+_USING_UNPACK_FORMS = (
+    LIST(PAIR("lhs"), VALUE("expr")),
+)
 
 
 @matcher(_tag_binding)
-class _BindingMatcher(BindingMatcher):
+class BindingMatcher(BindingMatcher):
     """
     Match a single binding form (SYM EXPR) or (EXPR as: SYM).
     """
@@ -338,11 +350,11 @@ def BINDING(slot, *, scope=None, scopes=None):
     :param scope: single scope region key
     :param scopes: sequence of scope region keys
     """
-    return _BindingMatcher(slot, scope=scope, scopes=scopes)
+    return BindingMatcher(slot, scope=scope, scopes=scopes)
 
 
 @matcher(_tag_using)
-class _UsingMatcher(BindingMatcher):
+class UsingMatcher(BindingMatcher):
     """
     Match a single using form (EXPR), (EXPR as: SYM), or (SYM EXPR).
     """
@@ -360,7 +372,8 @@ class _UsingMatcher(BindingMatcher):
         return cls(payload[0])
 
     def extract_binder_symbols(self, value):
-        if hasattr(value, 'name') and value.name is not None and is_symbol(value.name):
+        if hasattr(value, 'name') and value.name is not None \
+                and is_symbolish(value.name):
             yield value.name
 
     def get_recurse_targets(self, value):
@@ -383,13 +396,13 @@ class _UsingMatcher(BindingMatcher):
         if m is None:
             return (None, False)
 
-        name = m.get("name")
-        if name:
-            name = name.source
-        value = m.get("expr").source
+        name_m = m.get("name")
+        expr_m = m.get("expr")
+        value = expr_m.source
+        name = name_m.source if name_m else None
 
         result[self._key] = UsingResult(
-            head, get_position(source), name=name, value=value)
+            head, get_position(source), name=name, value=value, lhs=None)
 
         if specs is not None:
             specs[self._key] = self
@@ -405,7 +418,75 @@ def USING(slot, *, scope=None, scopes=None):
     """
     Match a single using form (EXPR), (EXPR as: NAME), or (NAME EXPR).
     """
-    return _UsingMatcher(slot, scope=scope, scopes=scopes)
+    return UsingMatcher(slot, scope=scope, scopes=scopes)
+
+
+@matcher(_tag_using_unpack)
+class UsingUnpackMatcher(BindingMatcher):
+    """
+    Match ((PATTERN...) EXPR) only; for compile/for-each unpack binding.
+    """
+
+    def __init__(self, slot, *, scope=None, scopes=None):
+        self.slot = slot
+        self._key = str(slot)
+        self.scope = scope
+        self.scopes = scopes
+
+    @classmethod
+    def from_payload(cls, payload, deserialize):
+        if len(payload) != 1:
+            raise ValueError(
+                'using-unpack expects 1 payload, got %d' % len(payload))
+        return cls(payload[0])
+
+    def extract_binder_symbols(self, value):
+        yield from unpack_lhs_bind_symbols(value.lhs, value.source)
+
+    def get_recurse_targets(self, value):
+        if isinstance(value, BindingResult) and value.value is not None:
+            return [value.value]
+        return ()
+
+    def matches_element(self, value, literals, result, specs=None, source=None):
+        return False
+
+    def consume(self, source, literals, result, specs=None):
+        if source is nil:
+            return (None, False)
+
+        head, remainder = source
+        if not is_pair(head):
+            return (None, False)
+
+        m = match1(head, _USING_UNPACK_FORMS)
+        if m is None:
+            return (None, False)
+
+        lhs_m = m.get("lhs")
+        expr_m = m.get("expr")
+        result[self._key] = UsingResult(
+            head,
+            get_position(source),
+            name=None,
+            value=expr_m.source,
+            lhs=lhs_m.source)
+
+        if specs is not None:
+            specs[self._key] = self
+
+        return (remainder, True)
+
+    def to_tuple(self):
+        return (_tag_using_unpack, symbol(self._key) if isinstance(
+            self.slot, str) else self.slot)
+
+
+def USING_UNPACK(slot, *, scope=None, scopes=None):
+    """
+    Match ((PATTERN...) EXPR) for unpack patterns (e.g. for-each).
+    """
+    return UsingUnpackMatcher(slot, scope=scope, scopes=scopes)
 
 
 def helper_binding(source):
@@ -438,11 +519,12 @@ def helper_using(source):
     Parse a single using form (EXPR), (EXPR as: SYM), or (SYM EXPR).
 
     :param source: pair representing one using
-    :return: (name, expr) where name is the bound name or None if unnamed
+    :return: (name, expr) where name is the bound symbol or None, and expr is
+        the value form
     :raises SpecialError: when the using form is invalid
     """
-    msg = ("a using must be in the form of (EXPR), (SYM EXPR), or"
-           " (EXPR as: SYM), not %s" % source)
+    msg = ("a using must be in the form of (EXPR), (SYM EXPR),"
+           " or (EXPR as: SYM), not %s" % source)
 
     if not is_proper(source):
         raise SpecialError(msg, source)
@@ -451,10 +533,180 @@ def helper_using(source):
     if m is None:
         raise SpecialError(msg, source)
 
-    name = m.get("name")
+    name_m = m.get("name")
     value = m.get("expr")
 
-    return (name.source if name else None, value.source)
+    name = name_m.source if name_m else None
+
+    return (name, value.source)
+
+
+def unpack_lhs_bind_symbols(lhs, source=None):
+    """
+    Yield each symbol introduced by an unpack LHS (same shapes as
+    using_unpack_helper)
+
+    :param lhs: bare symbol or proper list pattern with optional *
+    :param source: optional form for SpecialError context
+    :yields: each bound symbol in VAR_STORE order
+    :raises SpecialError: when lhs is not a valid unpack pattern
+    """
+
+    ctx = source if source is not None else lhs
+
+    def fail(msg):
+        raise SpecialError(msg, ctx)
+
+    if is_symbolish(lhs):
+        yield lhs
+        return
+
+    if not is_proper(lhs):
+        fail('unpack pattern must be a symbol or a proper list')
+
+    items = list(unpack(lhs))
+    if not items:
+        fail('empty unpack pattern')
+
+    star_idx = [
+        i for i, elt in enumerate(items)
+        if is_keyword(elt) and elt is _keyword_star]
+
+    if len(star_idx) > 1:
+        fail('at most one * is allowed in an unpack pattern')
+
+    if not star_idx:
+        for elt in items:
+            if not is_symbolish(elt):
+                fail('unpack pattern list elements must be symbols')
+        for elt in items:
+            yield elt
+        return
+
+    si = star_idx[0]
+    prefix = items[:si]
+    after_star = items[si + 1:]
+    if not after_star:
+        fail('* in unpack pattern must be followed by a binding name')
+
+    star_name = after_star[0]
+    suffix = after_star[1:]
+    if not is_symbolish(star_name):
+        fail('name after * in unpack pattern must be a symbol')
+
+    for elt in prefix + suffix:
+        if not is_symbolish(elt):
+            fail('unpack pattern list elements must be symbols')
+
+    if not prefix and not suffix:
+        yield star_name
+        return
+
+    for elt in prefix:
+        yield elt
+    yield star_name
+    for elt in suffix:
+        yield elt
+
+
+def using_unpack_helper(compiler, lhs, source=None, declare=True):
+    """
+    Build bytecode to bind names from TOS without compiling an RHS
+
+    Caller must leave the sequence value on the stack (TOS). The returned
+    fragment records declare_var for each bound name when declare is True
+    and emits UNPACK, UNPACK_STAR, and VAR_STORE as needed. It never calls
+    full_compile
+
+    :param compiler: active Compiler
+    :param lhs: bare symbol, or proper list of symbols with optional one *
+    :param source: optional form for SpecialError context
+    :param declare: when False, omit declare_var (assignment to existing names)
+    :return: ByteCodeFragment with declares and store instructions
+    :raises SpecialError: when lhs is not a valid unpack pattern
+    """
+
+    ctx = source if source is not None else lhs
+
+    def fail(msg):
+        raise SpecialError(msg, ctx)
+
+    def maybe_declare(var_name):
+        if declare:
+            frag.declare_var(var_name)
+
+    frag = compiler.fragment('using.unpack')
+    if source is not None:
+        frag.position_of(source)
+
+    if is_symbolish(lhs):
+        name = str(lhs)
+        maybe_declare(name)
+        frag.instruction(OpCode.KOS_OP_VAR_STORE, name)
+        return frag
+
+    if not is_proper(lhs):
+        fail('unpack pattern must be a symbol or a proper list')
+
+    items = list(unpack(lhs))
+    if not items:
+        fail('empty unpack pattern')
+
+    star_idx = [
+        i for i, elt in enumerate(items)
+        if is_keyword(elt) and elt is _keyword_star]
+
+    if len(star_idx) > 1:
+        fail('at most one * is allowed in an unpack pattern')
+
+    if not star_idx:
+        for elt in items:
+            if not is_symbolish(elt):
+                fail('unpack pattern list elements must be symbols')
+        for elt in items:
+            maybe_declare(str(elt))
+        n = len(items)
+        frag.instruction(OpCode.KOS_OP_UNPACK, n)
+        for elt in items:
+            frag.instruction(OpCode.KOS_OP_VAR_STORE, str(elt))
+        return frag
+
+    si = star_idx[0]
+    prefix = items[:si]
+    after_star = items[si + 1:]
+    if not after_star:
+        fail('* in unpack pattern must be followed by a binding name')
+
+    star_name = after_star[0]
+    suffix = after_star[1:]
+    if not is_symbolish(star_name):
+        fail('name after * in unpack pattern must be a symbol')
+
+    for elt in prefix + suffix:
+        if not is_symbolish(elt):
+            fail('unpack pattern list elements must be symbols')
+
+    star_s = str(star_name)
+    for elt in prefix:
+        maybe_declare(str(elt))
+    maybe_declare(star_s)
+    for elt in suffix:
+        maybe_declare(str(elt))
+
+    if not prefix and not suffix:
+        frag.instruction(OpCode.KOS_OP_VAR_STORE, star_s)
+        return frag
+
+    left = len(prefix)
+    right = len(suffix)
+    frag.instruction(OpCode.KOS_OP_UNPACK_STAR, (left, right, 0, 0))
+    for elt in prefix:
+        frag.instruction(OpCode.KOS_OP_VAR_STORE, str(elt))
+    frag.instruction(OpCode.KOS_OP_VAR_STORE, star_s)
+    for elt in suffix:
+        frag.instruction(OpCode.KOS_OP_VAR_STORE, str(elt))
+
+    return frag
 
 
 _tag_bindings = symbol('matcher/bind-bindings')
@@ -1093,9 +1345,10 @@ def const_only_expr(fragment):
     return (found, value)
 
 
-def requote(source,
-            cons_sym=None,
-            quote_sym=None):
+def requote(
+        source,
+        cons_sym=None,
+        quote_sym=None):
     """
     Rewrite a list form so each element is wrapped in (quote_sym ELEMENT).
     Builds (cons_sym (quote e1) (quote e2) ...). Used by compile/quote when
@@ -1134,31 +1387,7 @@ def requote(source,
 
 _SYM_BEGIN = symbol('begin')
 _SYM_COMPILE_BEGIN = symbol('compile/begin')
-_BEGIN_HEADS = frozenset((_SYM_BEGIN, _SYM_COMPILE_BEGIN))
-
-
-def _is_begin_form(head):
-    """
-    Return True if head is a (begin ...) or (compile/begin ...) pair form
-    """
-
-    if head is nil or not is_pair(head):
-        return False
-    op, _ = head
-    if not is_symbol(op):
-        return False
-    return op in _BEGIN_HEADS
-
-
-def _splice_proper(inner, tail):
-    """
-    Concatenate proper list inner with proper list tail using a fresh spine
-    """
-
-    if inner is nil:
-        return tail
-    head, rest = inner
-    return cons(head, _splice_proper(rest, tail))
+_BEGIN_HEADS = (_SYM_BEGIN, _SYM_COMPILE_BEGIN)
 
 
 def discover_docstring(body):
@@ -1172,19 +1401,23 @@ def discover_docstring(body):
     :return: str or None
     """
 
-    return _discover_docstring(body)
+    while body is not nil:
+        head, tail = body
+        if isinstance(head, str):
+            return head
 
+        if head is nil or not is_pair(head):
+            return None
 
-def _discover_docstring(body):
-    if body is nil:
-        return None
-    head, tail = body
-    if isinstance(head, str):
-        return head
-    if _is_begin_form(head):
-        _, inner = head
-        combined = _splice_proper(inner, tail)
-        return _discover_docstring(combined)
+        ihead, itail = head
+        if ihead in _BEGIN_HEADS:
+            if itail is nil:
+                body = tail
+            else:
+                body = itail
+        else:
+            return None
+
     return None
 
 

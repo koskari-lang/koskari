@@ -14,8 +14,8 @@
 """
 koskari.compile.specials.variables
 
-Special form handlers for compile/setq, compile/delq, compile/define,
-and compile/define-syntax.
+Special form handlers for compile/setq, compile/unpack-setq, compile/delq,
+compile/define, and compile/define-syntax.
 
 :author: Christopher O'Brien <obriencj@preoccupied.net>
 :license: GNU General Public License v3
@@ -29,6 +29,7 @@ from ...matcher import (
     DEFINE,
     LITERAL_KW,
     MATCH,
+    PAIR,
     REST,
     SYMBOL,
     VALUE,
@@ -36,7 +37,13 @@ from ...matcher import (
 )
 from ...types import get_position, is_pair
 from ...exceptions import CompilerError, SpecialError
-from ..helpers import FORMALS, special, special_forms
+from ..helpers import (
+    FORMALS,
+    special,
+    special_forms,
+    unpack_lhs_bind_symbols,
+    using_unpack_helper,
+)
 from ..syntax import build_syntax_rules_transformer
 
 
@@ -88,6 +95,58 @@ def special_setq(compiler, source, tc=False):
     frag.request_for_write(sym, position=pos)
     frag.merge(compiler.full_compile(expr))
     frag.instruction(OpCode.KOS_OP_VAR_STORE, sym)
+    frag.instruction(OpCode.KOS_OP_CONST, None)
+
+    return frag
+
+
+_UNPACK_SETQ_PATTERNS = [
+    MATCH(SYMBOL("sym"), VALUE("expr")),
+    MATCH(PAIR("lhs"), VALUE("expr")),
+]
+
+
+@special_forms(_UNPACK_SETQ_PATTERNS)
+@special(symbol("compile/unpack-setq"))
+def special_unpack_setq(compiler, source, tc=False):
+    """
+    Compile (compile/unpack-setq PATTERN VALUE). Evaluate VALUE, then store
+    into existing bindings given by PATTERN (symbol or unpack list, same as
+    compile/for-each unpack binding)
+    """
+
+    called_by, rest = source
+    matched = match(rest, _UNPACK_SETQ_PATTERNS)
+    if matched is None:
+        raise SpecialError(
+            "unpack-setq takes a pattern and a value expression", source)
+
+    frag = compiler.fragment(called_by)
+    frag.position_of(rest)
+
+    if "sym" in matched:
+        lhs = matched["sym"].source
+        pattern_mr = matched["sym"]
+    else:
+        lhs = matched["lhs"].source
+        pattern_mr = matched["lhs"]
+
+    expr = matched["expr"].source
+
+    pos = (
+        pattern_mr.source_pos
+        if pattern_mr.source_pos is not None
+        else get_position(rest))
+
+    for namesym in unpack_lhs_bind_symbols(lhs, source=rest):
+        frag.request_for_write(str(namesym), position=pos)
+
+    if not is_pair(expr):
+        frag.position_of(rest)
+
+    frag.merge(compiler.full_compile(expr))
+    frag.merge(
+        using_unpack_helper(compiler, lhs, source=rest, declare=False))
     frag.instruction(OpCode.KOS_OP_CONST, None)
 
     return frag

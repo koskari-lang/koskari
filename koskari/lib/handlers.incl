@@ -202,6 +202,10 @@
 #include "opcode/PUSH_PARAM.c"
 #include "opcode/PARAM.c"
 #include "opcode/POP_PARAM.c"
+#include "opcode/UNPACK.c"
+#include "opcode/UNPACK_STAR.c"
+#include "opcode/UNPACK_VAR.c"
+#include "opcode/UNPACK_FAST.c"
 #include "opcode/THEEND.c"
 
 /* The end. */

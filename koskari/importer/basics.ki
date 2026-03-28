@@ -24,6 +24,9 @@ define-syntax compile/set!:
     match (set! (compile/deref ref) value):
       (compile/set-ref ref value)
 
+    match (set! (values pattern ...) value):
+      (compile/unpack-setq [pattern ...] value)
+
     match (set! name (+ name value)):
       (compile/inplace + name value)
     match (set! name (- name value)):

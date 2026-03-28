@@ -37,6 +37,50 @@ class TestSetqSpecial(SpecialsTestCase):
         self.assertEqual(42, result)
 
 
+class TestUnpackSetqSpecial(SpecialsTestCase):
+
+    async def test_unpack_setq_pair_pattern(self):
+        src_str = """
+        (compile/let [[a 0] [b 0]]
+          (compile/begin
+            (compile/unpack-setq [a b] (compile/call pair 1 2))
+            (compile/call add a b)))
+        """
+        expr, mod = self.compile_expr(
+            src_str,
+            pair=lambda u, v: (u, v),
+            add=lambda p, q: p + q)
+        result = await expr()
+        self.assertEqual(3, result)
+
+    async def test_unpack_setq_three_element_pattern(self):
+        src_str = """
+        (compile/let [[a 0] [b 0] [c 0]]
+          (compile/begin
+            (compile/unpack-setq [a b c] seq)
+            (compile/call triple a b c)))
+        """
+        expr, mod = self.compile_expr(
+            src_str,
+            seq=(1, 2, 3),
+            triple=lambda x, y, z: (x, y, z))
+        result = await expr()
+        self.assertEqual((1, 2, 3), result)
+
+    async def test_unpack_setq_star_element_pattern(self):
+        src_str = """
+        (compile/let [[a 0] [b 0] [c 0]]
+          (compile/begin
+            (compile/unpack-setq [a *: b c] seq)
+            (compile/call triple a b c)))
+        """
+        expr, mod = self.compile_expr(
+            src_str,
+            seq=(1, 2, 3, 4, 5, 6),
+            triple=lambda x, y, z: (x, y, z))
+        result = await expr()
+        self.assertEqual((1, (2, 3, 4, 5), 6), result)
+
 class TestDelqSpecial(SpecialsTestCase):
 
     async def test_delq_returns_none(self):

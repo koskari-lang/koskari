@@ -74,8 +74,6 @@ class ReadEOFType(object):
     Distinct from the Python None literal, which may appear as a parsed value.
     """
 
-    __slots__ = ()
-
     def __repr__(self):
         return '<read EOF>'
 

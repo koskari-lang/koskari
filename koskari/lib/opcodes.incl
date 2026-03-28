@@ -313,6 +313,12 @@ OP(PUSH_PARAM, CONST)          // arg = constant index of names tuple
 OP(PARAM, CONST)               // arg = constant index of name (ParamRef key)
 OP(POP_PARAM, NOARG)           // pop KOS_DYN_PARAM from chain
 
+// sequence unpack (realize TOS to PySequence, then peel or assign)
+OP(UNPACK, COUNT)
+OP(UNPACK_STAR, EXTRA, COUNT, COUNT, NOARG, NOARG)
+OP(UNPACK_VAR, EXTRA, VAR, VAR, NOARG, NOARG)
+OP(UNPACK_FAST, EXTRA, FASTVAR, FASTVAR, NOARG, NOARG)
+
 // THEEND must always be last
 OP(THEEND, NOARG)
 
