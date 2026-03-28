@@ -25,7 +25,15 @@ Special form handlers for compile/while, compile/break, and compile/continue.
 from ...lib import nil, OpCode, symbol
 from ...types import is_pair
 from ...exceptions import SpecialError
-from ..helpers import BINDING, helper_begin, helper_elsebody, special, special_forms
+from ..helpers import (
+    BINDING,
+    USING_UNPACK,
+    helper_begin,
+    helper_elsebody,
+    special,
+    special_forms,
+    using_unpack_helper,
+)
 from ...matcher import MATCH, REST, match
 
 
@@ -59,6 +67,7 @@ def special_while(compiler, source, tc=False):
 
 _FOREACH_PATTERNS = [
     MATCH(BINDING("binding", scope="body"), REST("body")),
+    MATCH(USING_UNPACK("binding", scope="body"), REST("body")),
 ]
 
 
@@ -66,8 +75,9 @@ _FOREACH_PATTERNS = [
 @special(symbol("compile/for-each"))
 def special_for_each(compiler, source, tc=False):
     """
-    Compile (compile/for-each [BINDING EXPR] BODY... [else: ELSEBODY]).
-    Iterates EXPR, binding each element to BINDING and running BODY.
+    Compile (compile/for-each [BINDING EXPR] BODY... [else: ELSEBODY]) or
+    (compile/for-each [[PATTERN...] EXPR] BODY... [else: ELSEBODY]).
+    Iterates EXPR, binding each element to BINDING or unpacking via PATTERN.
     On natural exhaustion, runs ELSEBODY if provided.
     Break exits the loop early without running the else clause.
     The loop expression value is None unless break or else provides a value.
@@ -79,8 +89,10 @@ def special_for_each(compiler, source, tc=False):
         raise SpecialError("for-each requires a binding and body", source)
 
     binding = matched["binding"]
-    if binding.name is None:
-        raise SpecialError("for-each requires a named binding", source)
+    lhs = getattr(binding, "lhs", None)
+    if lhs is None and binding.name is None:
+        raise SpecialError(
+            "for-each requires a named binding or unpack pattern", source)
 
     body = matched["body"].source
     body, elsebody = helper_elsebody(body)
@@ -91,7 +103,6 @@ def special_for_each(compiler, source, tc=False):
 
     loop_else = compiler.gen_label("foreach.else")
 
-    binding_name = str(binding.name)
     binding_expr = binding.value
 
     fragment.instruction(OpCode.KOS_OP_CONST, None)
@@ -99,8 +110,13 @@ def special_for_each(compiler, source, tc=False):
     fragment.instruction(OpCode.KOS_OP_PUSH_FOREACH, 0)
     fragment.instruction(OpCode.KOS_OP_ITER_NEXT, loop_else)
 
-    fragment.declare_var(binding_name)
-    fragment.instruction(OpCode.KOS_OP_VAR_STORE, binding_name)
+    if lhs is not None:
+        fragment.merge(
+            using_unpack_helper(compiler, lhs, binding.source))
+    else:
+        binding_name = str(binding.name)
+        fragment.declare_var(binding_name)
+        fragment.instruction(OpCode.KOS_OP_VAR_STORE, binding_name)
 
     helper_begin(fragment, body, False)
     fragment.instruction(OpCode.KOS_OP_CONTINUE, 1)

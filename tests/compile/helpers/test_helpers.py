@@ -410,5 +410,18 @@ class TestUsingUnpackHelper(unittest.TestCase):
         with self.assertRaises(SpecialError):
             using_unpack_helper(self.compiler, lhs)
 
+    def test_declare_false_omits_declares(self):
+        a, b = symbol("a"), symbol("b")
+        lhs = cons(a, cons(b, nil))
+        frag = using_unpack_helper(self.compiler, lhs, declare=False)
+        self.assertEqual(frag.declares, [])
+        self.assertEqual(
+            frag.instructions,
+            [
+                (OpCode.KOS_OP_UNPACK, 2),
+                (OpCode.KOS_OP_VAR_STORE, "a"),
+                (OpCode.KOS_OP_VAR_STORE, "b"),
+            ])
+
 
 # The end.

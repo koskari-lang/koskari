@@ -266,9 +266,10 @@ class DeclResult(MatchResult):
 
 class UsingResult(BindingResult):
     """
-    Result for USING: source, source_pos, name (symbol or None), lhs (unpack
-    pattern cons tree or None), and value (the expression). When lhs is set,
-    name is None for the structured ((pattern...) expr) form.
+    Result for USING or USING_UNPACK: source, source_pos, name (symbol or
+    None), lhs (unpack pattern cons tree or None), and value (the expression).
+    USING sets lhs to None; USING_UNPACK sets name to None and lhs to the
+    pattern for ((pattern...) expr).
     """
 
     def __init__(self, source, source_pos=None, name=None, value=None,

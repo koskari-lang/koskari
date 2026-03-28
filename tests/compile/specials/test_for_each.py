@@ -48,6 +48,23 @@ class TestForEachSpecial(SpecialsTestCase):
         self.assertEqual(col, [100, 101, 102, 103, 104])
 
 
+    async def test_foreach_unpack_pair(self):
+        sums = []
+        src = """
+        (compile/for-each [[a b] pairs]
+          (compile/call append sums (compile/call add a b)))
+        """
+        expr, mod = self.compile_expr(
+            src,
+            pairs=[(1, 2), (3, 4), (10, 20)],
+            sums=sums,
+            append=_append,
+            add=lambda a, b: a + b)
+        result = await expr()
+        self.assertIsNone(result)
+        self.assertEqual(sums, [3, 7, 30])
+
+
     async def test_foreach_unused_else(self):
         col = []
         src = """

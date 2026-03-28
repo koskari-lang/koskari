@@ -65,7 +65,8 @@ from .refs import (special_bindq, special_deref, special_ref_attr,
 from .slots import special_attr, special_del_attr, special_set_attr
 from .thunk import special_gensym_thunk
 from .variables import (special_define, special_define_global,
-                        special_define_syntax, special_delq, special_setq)
+                        special_define_syntax, special_delq, special_setq,
+                        special_unpack_setq)
 
 __all__ = (
     "SPECIALS",
@@ -156,6 +157,7 @@ __all__ = (
     "special_set_attr",
     "special_set_item",
     "special_setq",
+    "special_unpack_setq",
     "special_shift",
     "special_str",
     "special_subtract",

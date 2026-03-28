@@ -42,6 +42,7 @@ __all__ = (
     "BINDINGS",
     "FORMALS",
     "USING",
+    "USING_UNPACK",
     "const_only_expr",
     "convert_bindings",
     "discover_docstring",
@@ -252,6 +253,7 @@ def FORMALS(slot, *, scope=None, scopes=None):
 
 _tag_binding = symbol('matcher/binding')
 _tag_using = symbol('matcher/using')
+_tag_using_unpack = symbol('matcher/using-unpack')
 
 
 _BINDING_FORMS = [
@@ -263,13 +265,14 @@ _BINDING_FORMS_ALLOW_UNNAMED = [
     LIST(VALUE("expr")),
 ]
 
-# Structured ((PATTERN...) EXPR) must be tried before LIST(VALUE) alone, or a
-# single-element list whose sole element is ((PATTERN...) EXPR) would match
-# the unnamed form incorrectly
+# Binding forms before LIST(VALUE) so (EXPR as: SYM) wins over unnamed (EXPR)
 _USING_FORMS = (
     *_BINDING_FORMS,
-    LIST(PAIR("lhs"), VALUE("expr")),
     LIST(VALUE("expr")),
+)
+
+_USING_UNPACK_FORMS = (
+    LIST(PAIR("lhs"), VALUE("expr")),
 )
 
 
@@ -353,8 +356,7 @@ def BINDING(slot, *, scope=None, scopes=None):
 @matcher(_tag_using)
 class UsingMatcher(BindingMatcher):
     """
-    Match a single using form (EXPR), (EXPR as: SYM), (SYM EXPR), or
-    ((PATTERN...) EXPR) with structured lhs in the lhs slot.
+    Match a single using form (EXPR), (EXPR as: SYM), or (SYM EXPR).
     """
 
     def __init__(self, slot, *, scope=None, scopes=None):
@@ -370,9 +372,7 @@ class UsingMatcher(BindingMatcher):
         return cls(payload[0])
 
     def extract_binder_symbols(self, value):
-        if getattr(value, 'lhs', None) is not None:
-            yield from unpack_lhs_bind_symbols(value.lhs, value.source)
-        elif hasattr(value, 'name') and value.name is not None \
+        if hasattr(value, 'name') and value.name is not None \
                 and is_symbolish(value.name):
             yield value.name
 
@@ -396,15 +396,13 @@ class UsingMatcher(BindingMatcher):
         if m is None:
             return (None, False)
 
-        lhs_m = m.get("lhs")
         name_m = m.get("name")
         expr_m = m.get("expr")
         value = expr_m.source
-        lhs = lhs_m.source if lhs_m else None
         name = name_m.source if name_m else None
 
         result[self._key] = UsingResult(
-            head, get_position(source), name=name, value=value, lhs=lhs)
+            head, get_position(source), name=name, value=value, lhs=None)
 
         if specs is not None:
             specs[self._key] = self
@@ -418,10 +416,77 @@ class UsingMatcher(BindingMatcher):
 
 def USING(slot, *, scope=None, scopes=None):
     """
-    Match a single using form (EXPR), (EXPR as: NAME), (NAME EXPR), or
-    ((PATTERN...) EXPR) for unpack LHS in PATTERN.
+    Match a single using form (EXPR), (EXPR as: NAME), or (NAME EXPR).
     """
     return UsingMatcher(slot, scope=scope, scopes=scopes)
+
+
+@matcher(_tag_using_unpack)
+class UsingUnpackMatcher(BindingMatcher):
+    """
+    Match ((PATTERN...) EXPR) only; for compile/for-each unpack binding.
+    """
+
+    def __init__(self, slot, *, scope=None, scopes=None):
+        self.slot = slot
+        self._key = str(slot)
+        self.scope = scope
+        self.scopes = scopes
+
+    @classmethod
+    def from_payload(cls, payload, deserialize):
+        if len(payload) != 1:
+            raise ValueError(
+                'using-unpack expects 1 payload, got %d' % len(payload))
+        return cls(payload[0])
+
+    def extract_binder_symbols(self, value):
+        yield from unpack_lhs_bind_symbols(value.lhs, value.source)
+
+    def get_recurse_targets(self, value):
+        if isinstance(value, BindingResult) and value.value is not None:
+            return [value.value]
+        return ()
+
+    def matches_element(self, value, literals, result, specs=None, source=None):
+        return False
+
+    def consume(self, source, literals, result, specs=None):
+        if source is nil:
+            return (None, False)
+
+        head, remainder = source
+        if not is_pair(head):
+            return (None, False)
+
+        m = match1(head, _USING_UNPACK_FORMS)
+        if m is None:
+            return (None, False)
+
+        lhs_m = m.get("lhs")
+        expr_m = m.get("expr")
+        result[self._key] = UsingResult(
+            head,
+            get_position(source),
+            name=None,
+            value=expr_m.source,
+            lhs=lhs_m.source)
+
+        if specs is not None:
+            specs[self._key] = self
+
+        return (remainder, True)
+
+    def to_tuple(self):
+        return (_tag_using_unpack, symbol(self._key) if isinstance(
+            self.slot, str) else self.slot)
+
+
+def USING_UNPACK(slot, *, scope=None, scopes=None):
+    """
+    Match ((PATTERN...) EXPR) for unpack patterns (e.g. for-each).
+    """
+    return UsingUnpackMatcher(slot, scope=scope, scopes=scopes)
 
 
 def helper_binding(source):
@@ -451,16 +516,15 @@ def helper_binding(source):
 
 def helper_using(source):
     """
-    Parse a single using form (EXPR), (EXPR as: SYM), (SYM EXPR), or
-    ((PATTERN...) EXPR).
+    Parse a single using form (EXPR), (EXPR as: SYM), or (SYM EXPR).
 
     :param source: pair representing one using
-    :return: (name, lhs, expr) where name is the bound symbol or None, lhs is
-        the unpack pattern cons list or None, and expr is the value form
+    :return: (name, expr) where name is the bound symbol or None, and expr is
+        the value form
     :raises SpecialError: when the using form is invalid
     """
     msg = ("a using must be in the form of (EXPR), (SYM EXPR),"
-           " (EXPR as: SYM), or ((PATTERN...) EXPR), not %s" % source)
+           " or (EXPR as: SYM), not %s" % source)
 
     if not is_proper(source):
         raise SpecialError(msg, source)
@@ -469,14 +533,12 @@ def helper_using(source):
     if m is None:
         raise SpecialError(msg, source)
 
-    lhs_m = m.get("lhs")
     name_m = m.get("name")
     value = m.get("expr")
 
-    lhs = lhs_m.source if lhs_m else None
     name = name_m.source if name_m else None
 
-    return (name or lhs, value.source)
+    return (name, value.source)
 
 
 def unpack_lhs_bind_symbols(lhs, source=None):
@@ -547,17 +609,19 @@ def unpack_lhs_bind_symbols(lhs, source=None):
         yield elt
 
 
-def using_unpack_helper(compiler, lhs, source=None):
+def using_unpack_helper(compiler, lhs, source=None, declare=True):
     """
     Build bytecode to bind names from TOS without compiling an RHS
 
     Caller must leave the sequence value on the stack (TOS). The returned
-    fragment records declare_var for each bound name and emits UNPACK,
-    UNPACK_STAR, and VAR_STORE as needed. It never calls full_compile
+    fragment records declare_var for each bound name when declare is True
+    and emits UNPACK, UNPACK_STAR, and VAR_STORE as needed. It never calls
+    full_compile
 
     :param compiler: active Compiler
     :param lhs: bare symbol, or proper list of symbols with optional one *
     :param source: optional form for SpecialError context
+    :param declare: when False, omit declare_var (assignment to existing names)
     :return: ByteCodeFragment with declares and store instructions
     :raises SpecialError: when lhs is not a valid unpack pattern
     """
@@ -567,13 +631,17 @@ def using_unpack_helper(compiler, lhs, source=None):
     def fail(msg):
         raise SpecialError(msg, ctx)
 
+    def maybe_declare(var_name):
+        if declare:
+            frag.declare_var(var_name)
+
     frag = compiler.fragment('using.unpack')
     if source is not None:
         frag.position_of(source)
 
     if is_symbolish(lhs):
         name = str(lhs)
-        frag.declare_var(name)
+        maybe_declare(name)
         frag.instruction(OpCode.KOS_OP_VAR_STORE, name)
         return frag
 
@@ -596,7 +664,7 @@ def using_unpack_helper(compiler, lhs, source=None):
             if not is_symbolish(elt):
                 fail('unpack pattern list elements must be symbols')
         for elt in items:
-            frag.declare_var(str(elt))
+            maybe_declare(str(elt))
         n = len(items)
         frag.instruction(OpCode.KOS_OP_UNPACK, n)
         for elt in items:
@@ -620,10 +688,10 @@ def using_unpack_helper(compiler, lhs, source=None):
 
     star_s = str(star_name)
     for elt in prefix:
-        frag.declare_var(str(elt))
-    frag.declare_var(star_s)
+        maybe_declare(str(elt))
+    maybe_declare(star_s)
     for elt in suffix:
-        frag.declare_var(str(elt))
+        maybe_declare(str(elt))
 
     if not prefix and not suffix:
         frag.instruction(OpCode.KOS_OP_VAR_STORE, star_s)
@@ -1277,9 +1345,10 @@ def const_only_expr(fragment):
     return (found, value)
 
 
-def requote(source,
-            cons_sym=None,
-            quote_sym=None):
+def requote(
+        source,
+        cons_sym=None,
+        quote_sym=None):
     """
     Rewrite a list form so each element is wrapped in (quote_sym ELEMENT).
     Builds (cons_sym (quote e1) (quote e2) ...). Used by compile/quote when

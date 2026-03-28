@@ -12,7 +12,8 @@
 # along with this library; if not, see <http://www.gnu.org/licenses/>.
 
 """
-Tests for matchers from koskari.compile.helpers (BINDING, BINDINGS, USING, FORMALS).
+Tests for matchers from koskari.compile.helpers (BINDING, BINDINGS, USING,
+USING_UNPACK, FORMALS).
 """
 
 
@@ -20,7 +21,15 @@ import pytest
 import unittest
 
 from koskari.types import cons, keyword, nil, symbol
-from koskari.compile.helpers import BINDING, FORMALS, USING, helper_using, pycons
+from koskari.exceptions import SpecialError
+from koskari.compile.helpers import (
+    BINDING,
+    FORMALS,
+    USING,
+    USING_UNPACK,
+    helper_using,
+    pycons,
+)
 from koskari.matcher import (
     BindingResult,
     MATCH,
@@ -208,6 +217,45 @@ class TestUsingMatcher(unittest.TestCase):
         name, parsed_expr = helper_using(src)
         self.assertEqual(name, symbol('x'))
         self.assertEqual(parsed_expr, expr)
+
+    def test_using_rejects_structured_lhs(self):
+        a, b = symbol('a'), symbol('b')
+        it = symbol('items')
+        lhs = cons(a, cons(b, nil))
+        cell = cons(lhs, cons(it, nil))
+        pat = USING('binding')
+        self.assertIsNone(match1(cell, pat))
+
+        with self.assertRaises(SpecialError):
+            helper_using(cell)
+
+
+class TestUsingUnpackMatcher(unittest.TestCase):
+
+    def test_using_unpack_pair_and_expr(self):
+        a, b = symbol('a'), symbol('b')
+        it = symbol('items')
+        lhs = cons(a, cons(b, nil))
+        cell = cons(lhs, cons(it, nil))
+        src = cons(cell, nil)
+        pat = MATCH(USING_UNPACK('binding'))
+        result = match(src, pat)
+        self.assertIsNotNone(result)
+        br = result['binding']
+        self.assertIsInstance(br, UsingResult)
+        self.assertIsNone(br.name)
+        self.assertIs(br.lhs, lhs)
+        self.assertEqual(br.value, it)
+        self.assertEqual(br.source, cell)
+
+    def test_extract_binder_symbols_using_unpack(self):
+        a, b = symbol('a'), symbol('b')
+        lhs = cons(a, cons(b, nil))
+        cell = cons(lhs, cons(symbol('x'), nil))
+        spec = USING_UNPACK('binding')
+        br = UsingResult(cell, name=None, value=symbol('x'), lhs=lhs)
+        vals = list(extract_binder_symbols(spec, br))
+        self.assertEqual(vals, [a, b])
 
 
 class TestRepeatWithBinding(unittest.TestCase):
