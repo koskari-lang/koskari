@@ -33,8 +33,8 @@ store, and mutable reference store.
 
 **Behaviour:** Expands via syntax-rules. Plain assignment expands to
 `(setq NAME VALUE)`. `(set! (values pattern ...) value)` expands to
-`(compile/unpack-setq [pattern ...] value)` (documented in
-[SPECIALS.md](SPECIALS.md) as compile/unpack-setq). Augmented forms like `(set! x (+ x 1))` expand to
+`(compile/setq-values [pattern ...] value)` (documented in
+[SPECIALS.md](SPECIALS.md) as compile/setq-values). Augmented forms like `(set! x (+ x 1))` expand to
 `(compile/inplace OP NAME VALUE)`. Item, attribute, and deref forms (including
 `compile/item`, `compile/attr`, `compile/deref` variants) expand to
 `(compile/set-item ...)`, `(compile/set-attr ...)`, and `(compile/set-ref ...)`
@@ -61,6 +61,37 @@ respectively. The first match in the syntax-rules wins.
 
 ;; Mutable reference
 (set! (deref r) 100)
+```
+
+**Defined in:** `koskari/importer/basics.ki`
+
+
+## let-values
+
+**Symbol:** `let-values` (defined as `compile/let-values`)
+
+**Syntax:** `(let-values [PATTERN VALUE] body ...)`
+
+PATTERN is a symbol or list unpack pattern (same shapes as `set!` with
+`values`, including `*:` rest segments). VALUE is evaluated once; bindings are
+visible only in `body ...`.
+
+**Use-case:** Lexical multi-value binding: introduce fresh names from a single
+evaluated value for a local scope.
+
+**Behaviour:** Expands to
+`(let [] (compile/define-values PATTERN VALUE) body ...)` — an empty `let`
+binder list, with `compile/define-values` sequenced before the body forms. See
+[SPECIALS.md](SPECIALS.md) § compile/define-values for the special form.
+
+**Examples:**
+
+```scheme
+(let-values [[a b] pair]
+  (use a b))
+
+(let-values [(x *: ys z) seq]
+  (frobnicate x ys z))
 ```
 
 **Defined in:** `koskari/importer/basics.ki`
@@ -270,4 +301,3 @@ from bootstrap.
 `when (eq? __name__ "__main__"): BODY ...`
 
 **Defined in:** `koskari/importer/basics.ki`
-

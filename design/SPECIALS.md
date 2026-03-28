@@ -899,7 +899,7 @@ None.
 pushes CONST None so the form has a value.
 
 **Note:** The `set!` macro expands symbol assignment to this form; multi-value
-assignment uses `compile/unpack-setq`. Other `set!` shapes use `compile/inplace`,
+assignment uses `compile/setq-values`. Other `set!` shapes use `compile/inplace`,
 item/attr/ref stores, etc. See [MACROS.md](MACROS.md).
 
 **Examples:**
@@ -910,11 +910,11 @@ item/attr/ref stores, etc. See [MACROS.md](MACROS.md).
 ```
 
 
-## compile/unpack-setq
+## compile/setq-values
 
-**Symbol:** `compile/unpack-setq`
+**Symbol:** `compile/setq-values`
 
-**Syntax:** `(compile/unpack-setq PATTERN VALUE)`
+**Syntax:** `(compile/setq-values PATTERN VALUE)`
 
 PATTERN is either a symbol (single store) or a list pattern in the same shape as
 `compile/for-each` unpack bindings (including `*:` rest segments).
@@ -928,19 +928,52 @@ VALUE, then emits unpack store bytecode via the same helper as unpack-style
 `using` bindings (`declare=False`). The form evaluates to None.
 
 **Note:** The `set!` macro expands `(set! (values pattern ...) value)` to
-`(compile/unpack-setq [pattern ...] value)`; see [MACROS.md](MACROS.md).
+`(compile/setq-values [pattern ...] value)`; see [MACROS.md](MACROS.md).
 
 **Examples:**
 
 ```scheme
-(compile/unpack-setq [a b] (compile/call pair 1 2))
-(compile/unpack-setq [a *: b c] seq)
+(compile/setq-values [a b] (compile/call pair 1 2))
+(compile/setq-values [a *: b c] seq)
 
 ;; Via set! (see MACROS.md)
 (set! (values x y) point)
 ```
 
-**Implementation:** `koskari/compile/specials/variables.py` — `special_unpack_setq`
+**Implementation:** `koskari/compile/specials/variables.py` — `special_setq_values`
+
+**Tests:** `tests/compile/specials/test_var_specials.py`
+
+
+## compile/define-values
+
+**Symbol:** `compile/define-values`
+
+**Syntax:** `(compile/define-values PATTERN VALUE)`
+
+Same PATTERN shapes as `compile/setq-values`.
+
+**Use-case:** Introduce new bindings and assign by unpacking the value of VALUE
+according to PATTERN (parallel to `compile/define` for a single name).
+
+**Behaviour:** Compiles VALUE, then emits unpack store bytecode with
+`declare=True` for each binder (same helper as `compile/setq-values`, without
+prior `request_for_write`). The form evaluates to None.
+
+**Note:** The `let-values` macro sequences this form inside `let`; see
+[MACROS.md](MACROS.md).
+
+**Examples:**
+
+```scheme
+(compile/define-values [a b] (compile/call pair 1 2))
+(compile/define-values [a *: b c] seq)
+
+;; Via let-values (see MACROS.md)
+(let-values [(x y) point] (use x y))
+```
+
+**Implementation:** `koskari/compile/specials/variables.py` — `special_define_values`
 
 **Tests:** `tests/compile/specials/test_var_specials.py`
 

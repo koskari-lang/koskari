@@ -69,7 +69,9 @@ Special forms are compile-time constructs that have no runtime representation. T
 ### Values and Unpacking
 
 - **`define-values`**: Multi-value definition with nested binding structure
+  (implemented as `compile/define-values`; see [SPECIALS.md](../SPECIALS.md))
 - **`setq-values`**: Multi-value assignment with nested binding structure
+  (implemented as `compile/setq-values`; see [SPECIALS.md](../SPECIALS.md))
 - Supports `*` keyword for rest arguments in bindings
 
 ### Documentation

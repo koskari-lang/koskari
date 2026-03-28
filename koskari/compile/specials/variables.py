@@ -14,8 +14,9 @@
 """
 koskari.compile.specials.variables
 
-Special form handlers for compile/setq, compile/unpack-setq, compile/delq,
-compile/define, and compile/define-syntax.
+Special form handlers for compile/setq, compile/setq-values,
+compile/define-values, compile/delq, compile/define, and
+compile/define-syntax.
 
 :author: Christopher O'Brien <obriencj@preoccupied.net>
 :license: GNU General Public License v3
@@ -100,26 +101,26 @@ def special_setq(compiler, source, tc=False):
     return frag
 
 
-_UNPACK_SETQ_PATTERNS = [
+_VALUES_BIND_PATTERNS = [
     MATCH(SYMBOL("sym"), VALUE("expr")),
     MATCH(PAIR("lhs"), VALUE("expr")),
 ]
 
 
-@special_forms(_UNPACK_SETQ_PATTERNS)
-@special(symbol("compile/unpack-setq"))
-def special_unpack_setq(compiler, source, tc=False):
+@special_forms(_VALUES_BIND_PATTERNS)
+@special(symbol("compile/setq-values"))
+def special_setq_values(compiler, source, tc=False):
     """
-    Compile (compile/unpack-setq PATTERN VALUE). Evaluate VALUE, then store
+    Compile (compile/setq-values PATTERN VALUE). Evaluate VALUE, then store
     into existing bindings given by PATTERN (symbol or unpack list, same as
     compile/for-each unpack binding)
     """
 
     called_by, rest = source
-    matched = match(rest, _UNPACK_SETQ_PATTERNS)
+    matched = match(rest, _VALUES_BIND_PATTERNS)
     if matched is None:
         raise SpecialError(
-            "unpack-setq takes a pattern and a value expression", source)
+            "setq-values takes a pattern and a value expression", source)
 
     frag = compiler.fragment(called_by)
     frag.position_of(rest)
@@ -147,6 +148,42 @@ def special_unpack_setq(compiler, source, tc=False):
     frag.merge(compiler.full_compile(expr))
     frag.merge(
         using_unpack_helper(compiler, lhs, source=rest, declare=False))
+    frag.instruction(OpCode.KOS_OP_CONST, None)
+
+    return frag
+
+
+@special_forms(_VALUES_BIND_PATTERNS)
+@special(symbol("compile/define-values"))
+def special_define_values(compiler, source, tc=False):
+    """
+    Compile (compile/define-values PATTERN VALUE). Evaluate VALUE, then bind
+    fresh names from PATTERN (symbol or unpack list, same shape as
+    compile/setq-values)
+    """
+
+    called_by, rest = source
+    matched = match(rest, _VALUES_BIND_PATTERNS)
+    if matched is None:
+        raise SpecialError(
+            "define-values takes a pattern and a value expression", source)
+
+    frag = compiler.fragment(called_by)
+    frag.position_of(rest)
+
+    if "sym" in matched:
+        lhs = matched["sym"].source
+    else:
+        lhs = matched["lhs"].source
+
+    expr = matched["expr"].source
+
+    if not is_pair(expr):
+        frag.position_of(rest)
+
+    frag.merge(compiler.full_compile(expr))
+    frag.merge(
+        using_unpack_helper(compiler, lhs, source=rest, declare=True))
     frag.instruction(OpCode.KOS_OP_CONST, None)
 
     return frag

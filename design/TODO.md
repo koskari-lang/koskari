@@ -99,27 +99,15 @@ Ref: [api/dunder-adapter.md](api/dunder-adapter.md) (demand_sync, demand path);
 
 ## Compiler
 
-### Layout call semantics (single-symbol values)
-
-Evaluate the proposed layout call surface where symbol-headed non-block lines
-lower to implicit calls only when multiple top-level forms are present; a
-single symbol remains a value expression. Confirm parser/reader feasibility,
-compatibility with existing layout rules, and diagnostics for invalid leading
-dot usage.
-
-Ref: [language/layout-call-semantics.md](language/layout-call-semantics.md);
-[LAYOUTS.md](LAYOUTS.md); [language/layout-syntax.md](language/layout-syntax.md).
-
 ### Remaining specials
 
 - **await** — language/compile-level support for await (AWAIT opcode exists).
-- **define-values** / **setq-values** — multi-value definition and assignment.
 - **Variadic ordering checks** — variadic `>`, `>=`, `<`, `<=` that assert
   strict/non-strict chain (e.g. `(> 9 2 0)`, `(<= 0 0 3 4 5 5 8)`).
 
 Ref: [FEATURES.md](FEATURES.md) § Ready to Migrate;
 [language/async.md](language/async.md) (await syntax/semantics);
-[language/special-forms.md](language/special-forms.md) (define-values, setq-values).
+[language/special-forms.md](language/special-forms.md).
 
 ### Variadic compiled object ops (`*` keyword form)
 
@@ -172,16 +160,6 @@ polluting the module.
 
 Ref: [bundles-and-namespace-facets.md](bundles-and-namespace-facets.md).
 
-### Variable resolution model (read vs write, define-global)
-
-Redesign variable resolution to eliminate the "typo creates a variable"
-problem: require writes (setq, delq, inplace) to target only declared or
-closure names, never implicit globals. Add `define-global` for explicit global
-writes. Separate `request_for_write` and `request_global` buckets; propagate
-inner requests to outer; add `global_syms` to NamespaceSpec; separate module
-from the namespace chain by type.
-
-Ref: [language/RESOLUTION-MODEL.md](language/RESOLUTION-MODEL.md).
 
 ---
 
