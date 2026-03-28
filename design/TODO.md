@@ -12,6 +12,16 @@ design docs for detail.
 See [OPCODES.md](OPCODES.md) §1.6 for the authoritative list of stub opcodes.
 That document is the single reference for implementation status.
 
+### Switch / equality dispatch (SWITCH_EQ family)
+
+Proposal: opcodes **SWITCH_EQ** (stack key + discriminant) and compressed
+variants (**SWITCH_EQ_CONST**, **SWITCH_EQ_VAR**, **SWITCH_EQ_FAST**,
+**SWITCH_EQ_VAR_ATTR**, **SWITCH_EQ_FAST_ATTR**) for multi-way equality branching
+without re-pushing the discriminant after each failed arm. Possible compiler
+special **compile/switch** mirroring **compile/cond** syntax.
+
+Ref: [switch-eq-opcodes.md](switch-eq-opcodes.md).
+
 ---
 
 ## Generator / yield
