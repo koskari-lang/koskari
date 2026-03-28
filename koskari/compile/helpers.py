@@ -147,7 +147,7 @@ _tag_formals = symbol('matcher/formals')
 
 
 @matcher(_tag_formals)
-class _FormalsMatcher(BindingMatcher):
+class FormalsMatcher(BindingMatcher):
     """
     Match formals (pair or symbol) and bind the result of gather_formals
     as FormalsResult (positional, defaults, kwonly, star, starstar,
@@ -245,7 +245,7 @@ def FORMALS(slot, *, scope=None, scopes=None):
     :param scope: single scope region key
     :param scopes: sequence of scope region keys
     """
-    return _FormalsMatcher(slot, scope=scope, scopes=scopes)
+    return FormalsMatcher(slot, scope=scope, scopes=scopes)
 
 
 _tag_binding = symbol('matcher/binding')
@@ -265,7 +265,7 @@ _USING_FORMS = _BINDING_FORMS_ALLOW_UNNAMED
 
 
 @matcher(_tag_binding)
-class _BindingMatcher(BindingMatcher):
+class BindingMatcher(BindingMatcher):
     """
     Match a single binding form (SYM EXPR) or (EXPR as: SYM).
     """
@@ -338,11 +338,11 @@ def BINDING(slot, *, scope=None, scopes=None):
     :param scope: single scope region key
     :param scopes: sequence of scope region keys
     """
-    return _BindingMatcher(slot, scope=scope, scopes=scopes)
+    return BindingMatcher(slot, scope=scope, scopes=scopes)
 
 
 @matcher(_tag_using)
-class _UsingMatcher(BindingMatcher):
+class UsingMatcher(BindingMatcher):
     """
     Match a single using form (EXPR), (EXPR as: SYM), or (SYM EXPR).
     """
@@ -405,7 +405,7 @@ def USING(slot, *, scope=None, scopes=None):
     """
     Match a single using form (EXPR), (EXPR as: NAME), or (NAME EXPR).
     """
-    return _UsingMatcher(slot, scope=scope, scopes=scopes)
+    return UsingMatcher(slot, scope=scope, scopes=scopes)
 
 
 def helper_binding(source):
