@@ -182,8 +182,6 @@ class MatchResult:
     and source_pos (position when source is a pair).
     """
 
-    __slots__ = ('source', 'source_pos')
-
     def __init__(self, source, source_pos=None):
         self.source = source
         self.source_pos = source_pos
@@ -194,9 +192,6 @@ class FormalsResult(MatchResult):
     Result for FORMALS: source, source_pos, plus positional, defaults, kwonly,
     star, starstar, annotations. Unpacking yields five values for backward compat.
     """
-
-    __slots__ = (
-        'positional', 'defaults', 'kwonly', 'star', 'starstar', 'annotations')
 
     def __init__(
             self,
@@ -228,9 +223,6 @@ class BindingsResult(MatchResult):
     unpacking for backward compat.
     """
 
-    __slots__ = ('names', 'values')
-
-
     def __init__(self, source, source_pos=None, names=None, values=None):
         super().__init__(source, source_pos)
         self.names = names if names is not None else []
@@ -247,9 +239,6 @@ class BindingResult(MatchResult):
     value (the expression).
     """
 
-    __slots__ = ('name', 'value')
-
-
     def __init__(self, source, source_pos=None, name=None, value=None):
         super().__init__(source, source_pos)
         self.name = name
@@ -261,9 +250,6 @@ class DeclResult(MatchResult):
     Result for DECL: binding-shaped first argument with no value; optional
     type expression and raw source_form for debugging
     """
-
-    __slots__ = ('name', 'type', 'source_form')
-
 
     def __init__(
             self,
@@ -280,11 +266,15 @@ class DeclResult(MatchResult):
 
 class UsingResult(BindingResult):
     """
-    Result for USING: source, source_pos, plus name (symbol or None), and
-    value (the expression).
+    Result for USING: source, source_pos, name (symbol or None), lhs (unpack
+    pattern cons tree or None), and value (the expression). When lhs is set,
+    name is None for the structured ((pattern...) expr) form.
     """
 
-    __slots__ = ()
+    def __init__(self, source, source_pos=None, name=None, value=None,
+                 lhs=None):
+        super().__init__(source, source_pos, name=name, value=value)
+        self.lhs = lhs
 
 
 class RepeatResult(MatchResult):
@@ -292,8 +282,6 @@ class RepeatResult(MatchResult):
     Result for REPEAT: source (consumed list as pair), source_pos, matches.
     matches: list of (result_dict, specs_dict) per repetition.
     """
-
-    __slots__ = ('matches',)
 
     def __init__(self, source, source_pos=None, matches=None):
         super().__init__(source, source_pos)

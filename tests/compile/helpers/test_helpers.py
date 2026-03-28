@@ -18,9 +18,16 @@ Tests for koskari.compile.helpers (gather_parameters, gather_formals).
 
 import unittest
 
+from koskari.lib import OpCode
 from koskari.types import cons, keyword, nil, symbol
 from koskari.exceptions import ParametersError, SpecialError
-from koskari.compile.helpers import gather_formals, gather_parameters_ng, parse_decl
+from koskari.compile.compiler import Compiler
+from koskari.compile.helpers import (
+    gather_formals,
+    gather_parameters_ng,
+    parse_decl,
+    using_unpack_helper,
+)
 
 import pytest
 
@@ -332,6 +339,76 @@ class TestParseDecl(unittest.TestCase):
         n, ty = parse_decl(form)
         self.assertIs(n, x)
         self.assertIs(ty, t)
+
+
+class TestUsingUnpackHelper(unittest.TestCase):
+
+    def setUp(self):
+        self.compiler = Compiler("<test>", None)
+
+    def test_bare_symbol(self):
+        x = symbol("x")
+        frag = using_unpack_helper(self.compiler, x)
+        self.assertEqual(frag.declares, ["x"])
+        self.assertEqual(
+            frag.instructions,
+            [(OpCode.KOS_OP_VAR_STORE, "x")])
+
+    def test_fixed_arity_list(self):
+        a, b, c = symbol("a"), symbol("b"), symbol("c")
+        lhs = cons(a, cons(b, cons(c, nil)))
+        frag = using_unpack_helper(self.compiler, lhs)
+        self.assertEqual(frag.declares, ["a", "b", "c"])
+        self.assertEqual(
+            frag.instructions,
+            [
+                (OpCode.KOS_OP_UNPACK, 3),
+                (OpCode.KOS_OP_VAR_STORE, "a"),
+                (OpCode.KOS_OP_VAR_STORE, "b"),
+                (OpCode.KOS_OP_VAR_STORE, "c"),
+            ])
+
+    def test_star_pattern(self):
+        a, rest, b = symbol("a"), symbol("rest"), symbol("b")
+        star = keyword("*")
+        lhs = cons(a, cons(star, cons(rest, cons(b, nil))))
+        frag = using_unpack_helper(self.compiler, lhs)
+        self.assertEqual(frag.declares, ["a", "rest", "b"])
+        self.assertEqual(
+            frag.instructions,
+            [
+                (OpCode.KOS_OP_UNPACK_STAR, (1, 1, 0, 0)),
+                (OpCode.KOS_OP_VAR_STORE, "a"),
+                (OpCode.KOS_OP_VAR_STORE, "rest"),
+                (OpCode.KOS_OP_VAR_STORE, "b"),
+            ])
+
+    def test_whole_sequence_star_only(self):
+        whole = symbol("whole")
+        star = keyword("*")
+        lhs = cons(star, cons(whole, nil))
+        frag = using_unpack_helper(self.compiler, lhs)
+        self.assertEqual(frag.declares, ["whole"])
+        self.assertEqual(
+            frag.instructions,
+            [(OpCode.KOS_OP_VAR_STORE, "whole")])
+
+    def test_non_symbol_element_raises(self):
+        lhs = cons(symbol("a"), cons(42, nil))
+        with self.assertRaises(SpecialError):
+            using_unpack_helper(self.compiler, lhs)
+
+    def test_empty_pattern_raises(self):
+        with self.assertRaises(SpecialError):
+            using_unpack_helper(self.compiler, nil)
+
+    def test_double_star_raises(self):
+        star = keyword("*")
+        lhs = cons(
+            symbol("a"),
+            cons(star, cons(symbol("b"), cons(star, cons(symbol("c"), nil)))))
+        with self.assertRaises(SpecialError):
+            using_unpack_helper(self.compiler, lhs)
 
 
 # The end.

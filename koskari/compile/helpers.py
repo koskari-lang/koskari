@@ -28,6 +28,7 @@ from ..matcher import (
     LIST,
     MATCH,
     Matcher,
+    PAIR,
     REST,
     SYMBOL,
     match1,
@@ -50,6 +51,7 @@ __all__ = (
     "helper_begin",
     "helper_binding",
     "helper_using",
+    "using_unpack_helper",
     "parse_decl",
     "helper_elsebody",
     "is_lazygensym",
@@ -261,7 +263,14 @@ _BINDING_FORMS_ALLOW_UNNAMED = [
     LIST(VALUE("expr")),
 ]
 
-_USING_FORMS = _BINDING_FORMS_ALLOW_UNNAMED
+# Structured ((PATTERN...) EXPR) must be tried before LIST(VALUE) alone, or a
+# single-element list whose sole element is ((PATTERN...) EXPR) would match
+# the unnamed form incorrectly
+_USING_FORMS = (
+    *_BINDING_FORMS,
+    LIST(PAIR("lhs"), VALUE("expr")),
+    LIST(VALUE("expr")),
+)
 
 
 @matcher(_tag_binding)
@@ -344,7 +353,8 @@ def BINDING(slot, *, scope=None, scopes=None):
 @matcher(_tag_using)
 class UsingMatcher(BindingMatcher):
     """
-    Match a single using form (EXPR), (EXPR as: SYM), or (SYM EXPR).
+    Match a single using form (EXPR), (EXPR as: SYM), (SYM EXPR), or
+    ((PATTERN...) EXPR) with structured lhs in the lhs slot.
     """
 
     def __init__(self, slot, *, scope=None, scopes=None):
@@ -360,7 +370,10 @@ class UsingMatcher(BindingMatcher):
         return cls(payload[0])
 
     def extract_binder_symbols(self, value):
-        if hasattr(value, 'name') and value.name is not None and is_symbol(value.name):
+        if getattr(value, 'lhs', None) is not None:
+            yield from unpack_lhs_bind_symbols(value.lhs, value.source)
+        elif hasattr(value, 'name') and value.name is not None \
+                and is_symbolish(value.name):
             yield value.name
 
     def get_recurse_targets(self, value):
@@ -383,13 +396,15 @@ class UsingMatcher(BindingMatcher):
         if m is None:
             return (None, False)
 
-        name = m.get("name")
-        if name:
-            name = name.source
-        value = m.get("expr").source
+        lhs_m = m.get("lhs")
+        name_m = m.get("name")
+        expr_m = m.get("expr")
+        value = expr_m.source
+        lhs = lhs_m.source if lhs_m else None
+        name = name_m.source if name_m else None
 
         result[self._key] = UsingResult(
-            head, get_position(source), name=name, value=value)
+            head, get_position(source), name=name, value=value, lhs=lhs)
 
         if specs is not None:
             specs[self._key] = self
@@ -403,7 +418,8 @@ class UsingMatcher(BindingMatcher):
 
 def USING(slot, *, scope=None, scopes=None):
     """
-    Match a single using form (EXPR), (EXPR as: NAME), or (NAME EXPR).
+    Match a single using form (EXPR), (EXPR as: NAME), (NAME EXPR), or
+    ((PATTERN...) EXPR) for unpack LHS in PATTERN.
     """
     return UsingMatcher(slot, scope=scope, scopes=scopes)
 
@@ -435,14 +451,16 @@ def helper_binding(source):
 
 def helper_using(source):
     """
-    Parse a single using form (EXPR), (EXPR as: SYM), or (SYM EXPR).
+    Parse a single using form (EXPR), (EXPR as: SYM), (SYM EXPR), or
+    ((PATTERN...) EXPR).
 
     :param source: pair representing one using
-    :return: (name, expr) where name is the bound name or None if unnamed
+    :return: (name, lhs, expr) where name is the bound symbol or None, lhs is
+        the unpack pattern cons list or None, and expr is the value form
     :raises SpecialError: when the using form is invalid
     """
-    msg = ("a using must be in the form of (EXPR), (SYM EXPR), or"
-           " (EXPR as: SYM), not %s" % source)
+    msg = ("a using must be in the form of (EXPR), (SYM EXPR),"
+           " (EXPR as: SYM), or ((PATTERN...) EXPR), not %s" % source)
 
     if not is_proper(source):
         raise SpecialError(msg, source)
@@ -451,10 +469,176 @@ def helper_using(source):
     if m is None:
         raise SpecialError(msg, source)
 
-    name = m.get("name")
+    lhs_m = m.get("lhs")
+    name_m = m.get("name")
     value = m.get("expr")
 
-    return (name.source if name else None, value.source)
+    lhs = lhs_m.source if lhs_m else None
+    name = name_m.source if name_m else None
+
+    return (name or lhs, value.source)
+
+
+def unpack_lhs_bind_symbols(lhs, source=None):
+    """
+    Yield each symbol introduced by an unpack LHS (same shapes as
+    using_unpack_helper)
+
+    :param lhs: bare symbol or proper list pattern with optional *
+    :param source: optional form for SpecialError context
+    :yields: each bound symbol in VAR_STORE order
+    :raises SpecialError: when lhs is not a valid unpack pattern
+    """
+
+    ctx = source if source is not None else lhs
+
+    def fail(msg):
+        raise SpecialError(msg, ctx)
+
+    if is_symbolish(lhs):
+        yield lhs
+        return
+
+    if not is_proper(lhs):
+        fail('unpack pattern must be a symbol or a proper list')
+
+    items = list(unpack(lhs))
+    if not items:
+        fail('empty unpack pattern')
+
+    star_idx = [
+        i for i, elt in enumerate(items)
+        if is_keyword(elt) and elt is _keyword_star]
+
+    if len(star_idx) > 1:
+        fail('at most one * is allowed in an unpack pattern')
+
+    if not star_idx:
+        for elt in items:
+            if not is_symbolish(elt):
+                fail('unpack pattern list elements must be symbols')
+        for elt in items:
+            yield elt
+        return
+
+    si = star_idx[0]
+    prefix = items[:si]
+    after_star = items[si + 1:]
+    if not after_star:
+        fail('* in unpack pattern must be followed by a binding name')
+
+    star_name = after_star[0]
+    suffix = after_star[1:]
+    if not is_symbolish(star_name):
+        fail('name after * in unpack pattern must be a symbol')
+
+    for elt in prefix + suffix:
+        if not is_symbolish(elt):
+            fail('unpack pattern list elements must be symbols')
+
+    if not prefix and not suffix:
+        yield star_name
+        return
+
+    for elt in prefix:
+        yield elt
+    yield star_name
+    for elt in suffix:
+        yield elt
+
+
+def using_unpack_helper(compiler, lhs, source=None):
+    """
+    Build bytecode to bind names from TOS without compiling an RHS
+
+    Caller must leave the sequence value on the stack (TOS). The returned
+    fragment records declare_var for each bound name and emits UNPACK,
+    UNPACK_STAR, and VAR_STORE as needed. It never calls full_compile
+
+    :param compiler: active Compiler
+    :param lhs: bare symbol, or proper list of symbols with optional one *
+    :param source: optional form for SpecialError context
+    :return: ByteCodeFragment with declares and store instructions
+    :raises SpecialError: when lhs is not a valid unpack pattern
+    """
+
+    ctx = source if source is not None else lhs
+
+    def fail(msg):
+        raise SpecialError(msg, ctx)
+
+    frag = compiler.fragment('using.unpack')
+    if source is not None:
+        frag.position_of(source)
+
+    if is_symbolish(lhs):
+        name = str(lhs)
+        frag.declare_var(name)
+        frag.instruction(OpCode.KOS_OP_VAR_STORE, name)
+        return frag
+
+    if not is_proper(lhs):
+        fail('unpack pattern must be a symbol or a proper list')
+
+    items = list(unpack(lhs))
+    if not items:
+        fail('empty unpack pattern')
+
+    star_idx = [
+        i for i, elt in enumerate(items)
+        if is_keyword(elt) and elt is _keyword_star]
+
+    if len(star_idx) > 1:
+        fail('at most one * is allowed in an unpack pattern')
+
+    if not star_idx:
+        for elt in items:
+            if not is_symbolish(elt):
+                fail('unpack pattern list elements must be symbols')
+        for elt in items:
+            frag.declare_var(str(elt))
+        n = len(items)
+        frag.instruction(OpCode.KOS_OP_UNPACK, n)
+        for elt in items:
+            frag.instruction(OpCode.KOS_OP_VAR_STORE, str(elt))
+        return frag
+
+    si = star_idx[0]
+    prefix = items[:si]
+    after_star = items[si + 1:]
+    if not after_star:
+        fail('* in unpack pattern must be followed by a binding name')
+
+    star_name = after_star[0]
+    suffix = after_star[1:]
+    if not is_symbolish(star_name):
+        fail('name after * in unpack pattern must be a symbol')
+
+    for elt in prefix + suffix:
+        if not is_symbolish(elt):
+            fail('unpack pattern list elements must be symbols')
+
+    star_s = str(star_name)
+    for elt in prefix:
+        frag.declare_var(str(elt))
+    frag.declare_var(star_s)
+    for elt in suffix:
+        frag.declare_var(str(elt))
+
+    if not prefix and not suffix:
+        frag.instruction(OpCode.KOS_OP_VAR_STORE, star_s)
+        return frag
+
+    left = len(prefix)
+    right = len(suffix)
+    frag.instruction(OpCode.KOS_OP_UNPACK_STAR, (left, right, 0, 0))
+    for elt in prefix:
+        frag.instruction(OpCode.KOS_OP_VAR_STORE, str(elt))
+    frag.instruction(OpCode.KOS_OP_VAR_STORE, star_s)
+    for elt in suffix:
+        frag.instruction(OpCode.KOS_OP_VAR_STORE, str(elt))
+
+    return frag
 
 
 _tag_bindings = symbol('matcher/bind-bindings')
