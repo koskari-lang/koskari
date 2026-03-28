@@ -38,6 +38,7 @@ from ..lib import (
     Namespace,
     NamespaceSpec,
     OpCode,
+    OpStyle,
 )
 
 from ..types import (
@@ -120,6 +121,8 @@ def _build_var_to_fast():
         varname = opname.replace('FAST', 'VAR', 1)
         if hasattr(OpCode, varname):
             var_to_fast[OpCode[varname]] = opcode
+
+    var_to_fast[OpCode.KOS_OP_UNPACK_VAR] = OpCode.KOS_OP_UNPACK_FAST
     return var_to_fast
 
 
@@ -879,14 +882,25 @@ class Compiler:
                 pop_nspec()
 
             elif nstack and op in VAR_TO_FAST:
-                var_name = arg[0] if (isinstance(arg, tuple) and len(arg) == 4) else arg
+                # If opcode style is EXTRA, use op.extra as the schema tuple
+                # (opcodes.incl field kinds). Zip with the operand 4-tuple; each
+                # KOSTYLE_VAR slot is lowered to a fast index. Scalar KOSTYLE_VAR
+                # opargs use findex on the whole arg. Any failure skips lowering.
                 try:
-                    index = findex.index(var_name)
-                except ValueError:
+                    new_op = VAR_TO_FAST[op]
+                    if op.style == OpStyle.KOSTYLE_EXTRA:
+                        new_arg = tuple([
+                            findex.index(v)
+                            if fk == OpStyle.KOSTYLE_VAR
+                            else v
+                            for v, fk in zip(arg, op.extra)])
+                    else:
+                        new_arg = findex.index(arg)
+                except Exception:
                     pass
                 else:
-                    op = VAR_TO_FAST[op]
-                    arg = (index, arg[1], arg[2], arg[3]) if isinstance(arg, tuple) else index
+                    arg = new_arg
+                    op = new_op
 
             result.append((op, arg))
 
