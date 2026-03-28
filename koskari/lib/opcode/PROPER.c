@@ -24,7 +24,7 @@ KOS_OP_HANDLER(PROPER) {
   size_t count = (size_t) KosOp_ARG(insn);
 
   /* Push nil onto the stack as the implicit proper tail. */
-  if (unlikely(KosStackBlock_PUSH(&CURRENT_STACK(ctx), KosNil)))
+  if (unlikely(KosStackBlock_PushRef(&CURRENT_STACK(ctx), KosNil)))
     return -1;
 
   /* PROPER 0 just returns nil, which we already pushed */
