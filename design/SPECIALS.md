@@ -898,7 +898,9 @@ None.
 **Behaviour:** Requests the variable name, compiles EXPR, emits VAR_STORE, then
 pushes CONST None so the form has a value.
 
-**Note:** The `set!` macro expands to this form or `compile/inplace`; see [MACROS.md](MACROS.md).
+**Note:** The `set!` macro expands symbol assignment to this form; multi-value
+assignment uses `compile/unpack-setq`. Other `set!` shapes use `compile/inplace`,
+item/attr/ref stores, etc. See [MACROS.md](MACROS.md).
 
 **Examples:**
 
@@ -906,6 +908,41 @@ pushes CONST None so the form has a value.
 (compile/setq x 42)
 (compile/setq counter (compile/call + counter 1))
 ```
+
+
+## compile/unpack-setq
+
+**Symbol:** `compile/unpack-setq`
+
+**Syntax:** `(compile/unpack-setq PATTERN VALUE)`
+
+PATTERN is either a symbol (single store) or a list pattern in the same shape as
+`compile/for-each` unpack bindings (including `*:` rest segments).
+
+**Use-case:** Store into existing variables by unpacking the value of VALUE
+according to PATTERN. Evaluates VALUE once, then assigns components (or the
+whole value for a symbol pattern).
+
+**Behaviour:** Requests write access for every binder in the pattern, compiles
+VALUE, then emits unpack store bytecode via the same helper as unpack-style
+`using` bindings (`declare=False`). The form evaluates to None.
+
+**Note:** The `set!` macro expands `(set! (values pattern ...) value)` to
+`(compile/unpack-setq [pattern ...] value)`; see [MACROS.md](MACROS.md).
+
+**Examples:**
+
+```scheme
+(compile/unpack-setq [a b] (compile/call pair 1 2))
+(compile/unpack-setq [a *: b c] seq)
+
+;; Via set! (see MACROS.md)
+(set! (values x y) point)
+```
+
+**Implementation:** `koskari/compile/specials/variables.py` — `special_unpack_setq`
+
+**Tests:** `tests/compile/specials/test_var_specials.py`
 
 
 ## compile/inplace

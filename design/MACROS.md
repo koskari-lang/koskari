@@ -16,6 +16,9 @@ ease future migration of purely transformative forms from specials to macros.
 
 **Syntax:**
 - Plain assignment: `(set! SYM EXPR)`
+- Multi-value / unpack assignment: `(set! (values PATTERN ...) VALUE)` — same
+  pattern shapes as `compile/for-each` unpack bindings (including `*:`
+  segments)
 - Augmented assignment: `(set! SYM (OP SYM EXPR))` where OP is `+`, `-`, `*`,
   `/`, `//`, `%`, `**`, `@`, `<<`, `>>`, `&`, `^`, or `|`
 - Item assignment: `(set! (item OBJ KEY) VAL)` or
@@ -24,11 +27,14 @@ ease future migration of purely transformative forms from specials to macros.
   `(set! (compile/attr OBJ NAME) VAL)`
 - Ref assignment: `(set! (deref REF) VAL)` or `(set! (compile/deref REF) VAL)`
 
-**Use-case:** User-facing assignment syntax. Covers variable store, augmented
-assignment, subscript store, attribute store, and mutable reference store.
+**Use-case:** User-facing assignment syntax. Covers variable store, unpack into
+several existing variables, augmented assignment, subscript store, attribute
+store, and mutable reference store.
 
 **Behaviour:** Expands via syntax-rules. Plain assignment expands to
-`(setq NAME VALUE)`. Augmented forms like `(set! x (+ x 1))` expand to
+`(setq NAME VALUE)`. `(set! (values pattern ...) value)` expands to
+`(compile/unpack-setq [pattern ...] value)` (documented in
+[SPECIALS.md](SPECIALS.md) as compile/unpack-setq). Augmented forms like `(set! x (+ x 1))` expand to
 `(compile/inplace OP NAME VALUE)`. Item, attribute, and deref forms (including
 `compile/item`, `compile/attr`, `compile/deref` variants) expand to
 `(compile/set-item ...)`, `(compile/set-attr ...)`, and `(compile/set-ref ...)`
@@ -40,6 +46,9 @@ respectively. The first match in the syntax-rules wins.
 ;; Plain assignment
 (set! x 42)
 (set! counter (add counter 1))
+
+;; Unpack into existing variables
+(set! (values a b) pair)
 
 ;; Augmented assignment
 (set! x (+ x 1))      ; x += 1
