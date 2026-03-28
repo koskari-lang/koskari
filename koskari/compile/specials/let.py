@@ -22,10 +22,11 @@ Special form handler for compile/let.
 """
 
 
-from ...lib import cons, nil, pair, symbol
+from ...lib import OpCode, cons, nil, pair, symbol
 from ...matcher import MATCH, REST, SYMBOL, match
 from ..compiler import Compiler
 from ...exceptions import SpecialError
+from ...types import get_position, is_pair
 from ..helpers import BINDINGS, helper_begin, special, special_forms
 
 
@@ -35,6 +36,11 @@ _sym_lambda = symbol('compile/lambda')
 
 _LET_PATTERNS = [
     MATCH(SYMBOL("name"), BINDINGS("bindings", mode="parallel", scope="body"), REST("body")),
+    MATCH(BINDINGS("bindings", mode="parallel", scope="body"), REST("body")),
+]
+
+
+_LETREC_PATTERNS = [
     MATCH(BINDINGS("bindings", mode="parallel", scope="body"), REST("body")),
 ]
 
@@ -81,6 +87,49 @@ def special_let(
         fragment.position_of(source)
         with fragment.child_namespace(called_by, args, vals) as frag:
             helper_begin(frag, body, tc)
+
+    return fragment
+
+
+@special_forms(_LETREC_PATTERNS)
+@special(symbol("compile/letrec"))
+def special_letrec(
+        compiler: Compiler,
+        source: pair,
+        tc: bool = False):
+    """
+    Compile (compile/letrec BINDINGS BODY...). Each name is declared in a
+    single child scope without initial values, then each RHS is evaluated and
+    stored left-to-right with KOS_OP_VAR_STORE (same effect as compile/setq)
+    so lambdas may close over the same bindings before body runs.
+    """
+
+    called_by, rest = source
+
+    matched = match(rest, _LETREC_PATTERNS)
+    if matched is None:
+        raise SpecialError("letrec requires bindings and body", source)
+
+    bindings = matched["bindings"]
+    args = bindings.names
+    vals = bindings.values
+
+    body = matched["body"].source
+
+    if len(args) != len(vals):
+        raise SpecialError("letrec binding name/value mismatch", source)
+
+    fragment = compiler.fragment(called_by)
+    fragment.position_of(source)
+    with fragment.child_namespace(called_by, [], []) as frag:
+        for name, expr in zip(args, vals):
+            if not is_pair(expr):
+                frag.position_of(expr)
+            pos = get_position(expr, get_position(source))
+            frag.declare_var(str(name), position=pos)
+            frag.merge(compiler.full_compile(expr))
+            frag.instruction(OpCode.KOS_OP_VAR_STORE, str(name))
+        helper_begin(frag, body, tc)
 
     return fragment
 

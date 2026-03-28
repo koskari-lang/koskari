@@ -12,7 +12,7 @@
 # along with this library; if not, see <http://www.gnu.org/licenses/>.
 
 """
-Tests for koskari.compile compile/let special form.
+Tests for koskari.compile compile/let and compile/letrec special forms.
 """
 
 
@@ -72,6 +72,42 @@ class TestLetSpecial(SpecialsTestCase):
         expr, mod = self.compile_expr(src_str, **{"+": lambda x, y: x + y})
         result = await expr()
         self.assertEqual(30, result)
+
+
+class TestLetrecSpecial(SpecialsTestCase):
+
+    async def test_letrec_rhs_sees_prior_binding_left_to_right(self):
+        # Second binding RHS runs after first VAR_STORE; b resolves to a's value.
+        src_str = """
+        (compile/letrec [[a 1] [b a]]
+          (compile/call + a b))
+        """
+        expr, mod = self.compile_expr(src_str, **{"+": lambda x, y: x + y})
+        result = await expr()
+        self.assertEqual(2, result)
+
+    async def test_letrec_closure_calls_bound_lambda(self):
+        src_str = """
+        (compile/letrec [[f (compile/lambda [] 99)]]
+          (compile/call f))
+        """
+        expr, mod = self.compile_expr(src_str)
+        result = await expr()
+        self.assertEqual(99, result)
+
+    async def test_letrec_recursive_factorial(self):
+        src_str = """
+        (compile/letrec [[fact (compile/lambda [n]
+                          (compile/cond
+                            [(compile/= n 0) 1]
+                            [else:
+                              (compile/* n
+                                (compile/call fact (compile/- n 1)))]))]]
+          (compile/call fact 5))
+        """
+        expr, mod = self.compile_expr(src_str)
+        result = await expr()
+        self.assertEqual(120, result)
 
 
 # The end.
