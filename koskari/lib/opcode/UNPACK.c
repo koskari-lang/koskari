@@ -14,8 +14,8 @@
 */
 
 /**
-   UNPACK: arg = n (COUNT). Pop TOS, realize as a list, require len == n,
-   push n elements so index 0 is TOS (push indices n-1 .. 0).
+   UNPACK: arg = n (COUNT). Pop TOS, materialize as fast sequence, require
+   len == n, push n elements so index 0 is TOS (push indices n-1 .. 0).
 */
 
 KOS_OP_HANDLER(UNPACK) {
@@ -26,12 +26,12 @@ KOS_OP_HANDLER(UNPACK) {
   if (! raw)
     return -1;
 
-  PyObject *seq = PySequence_List(raw);
+  PyObject *seq = PySequence_Fast(raw, NULL);
   Py_DECREF(raw);
   if (! seq)
     return -1;
 
-  Py_ssize_t slen = PyList_GET_SIZE(seq);
+  Py_ssize_t slen = PySequence_Fast_GET_SIZE(seq);
   if (slen != n) {
     Py_DECREF(seq);
     PyErr_Format(PyExc_ValueError,
@@ -42,7 +42,7 @@ KOS_OP_HANDLER(UNPACK) {
 
   Py_ssize_t j = n;
   while (j--) {
-    PyObject *item = PyList_GET_ITEM(seq, j);
+    PyObject *item = PySequence_Fast_GET_ITEM(seq, j);
 
     if (KosStackBlock_PushRef(&CURRENT_STACK(ctx), item) < 0) {
       Py_DECREF(seq);

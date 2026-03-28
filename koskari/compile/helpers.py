@@ -1318,31 +1318,7 @@ def requote(source,
 
 _SYM_BEGIN = symbol('begin')
 _SYM_COMPILE_BEGIN = symbol('compile/begin')
-_BEGIN_HEADS = frozenset((_SYM_BEGIN, _SYM_COMPILE_BEGIN))
-
-
-def _is_begin_form(head):
-    """
-    Return True if head is a (begin ...) or (compile/begin ...) pair form
-    """
-
-    if head is nil or not is_pair(head):
-        return False
-    op, _ = head
-    if not is_symbol(op):
-        return False
-    return op in _BEGIN_HEADS
-
-
-def _splice_proper(inner, tail):
-    """
-    Concatenate proper list inner with proper list tail using a fresh spine
-    """
-
-    if inner is nil:
-        return tail
-    head, rest = inner
-    return cons(head, _splice_proper(rest, tail))
+_BEGIN_HEADS = (_SYM_BEGIN, _SYM_COMPILE_BEGIN)
 
 
 def discover_docstring(body):
@@ -1356,19 +1332,20 @@ def discover_docstring(body):
     :return: str or None
     """
 
-    return _discover_docstring(body)
+    while body is not nil:
+        head, tail = body
+        if isinstance(head, str):
+            return head
 
+        if head is nil or not is_pair(head):
+            return None
 
-def _discover_docstring(body):
-    if body is nil:
-        return None
-    head, tail = body
-    if isinstance(head, str):
-        return head
-    if _is_begin_form(head):
-        _, inner = head
-        combined = _splice_proper(inner, tail)
-        return _discover_docstring(combined)
+        head, tail = head
+        if head in _BEGIN_HEADS:
+            body = tail
+        else:
+            return None
+
     return None
 
 

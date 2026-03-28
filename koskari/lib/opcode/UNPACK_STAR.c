@@ -15,9 +15,9 @@
 
 /**
   UNPACK_STAR: arg = extra index. Schema COUNT left, COUNT right. Pop TOS,
-  realize as list, require len >= left + right and left + right > 0. Push
-  suffix scalars (len-1 .. len-right), then middle as tuple, then prefix
-  (left-1 .. 0) so first prefix is TOS.
+  materialize as fast sequence, require len >= left + right and left + right
+  > 0. Push suffix scalars (len-1 .. len-right), then middle as tuple, then
+  prefix (left-1 .. 0) so first prefix is TOS.
 */
 
 KOS_OP_HANDLER(UNPACK_STAR) {
@@ -37,12 +37,12 @@ KOS_OP_HANDLER(UNPACK_STAR) {
   if (! raw)
     return -1;
 
-  PyObject *seq = PySequence_List(raw);
+  PyObject *seq = PySequence_Fast(raw, NULL);
   Py_DECREF(raw);
   if (! seq)
     return -1;
 
-  Py_ssize_t slen = PyList_GET_SIZE(seq);
+  Py_ssize_t slen = PySequence_Fast_GET_SIZE(seq);
   if (slen < (Py_ssize_t) (left + right)) {
     Py_DECREF(seq);
     PyErr_Format(PyExc_ValueError,
@@ -54,7 +54,7 @@ KOS_OP_HANDLER(UNPACK_STAR) {
   Py_ssize_t k;
   /* suffix: deepest first (len-1 .. len-right) */
   for (k = slen - 1; k >= slen - (Py_ssize_t) right; k--) {
-    PyObject *item = PyList_GET_ITEM(seq, k);
+    PyObject *item = PySequence_Fast_GET_ITEM(seq, k);
     if (KosStackBlock_PushRef(&CURRENT_STACK(ctx), item) < 0) {
       Py_DECREF(seq);
       return -1;
@@ -81,7 +81,7 @@ KOS_OP_HANDLER(UNPACK_STAR) {
   }
 
   for (k = (Py_ssize_t) left - 1; k >= 0; k--) {
-    PyObject *item = PyList_GET_ITEM(seq, k);
+    PyObject *item = PySequence_Fast_GET_ITEM(seq, k);
     if (KosStackBlock_PushRef(&CURRENT_STACK(ctx), item) < 0) {
       Py_DECREF(seq);
       return -1;

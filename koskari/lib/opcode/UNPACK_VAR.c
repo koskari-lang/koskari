@@ -15,8 +15,8 @@
 
 /**
    UNPACK_VAR: arg = extra index. Schema VAR, VAR for two cpool name indices.
-   Pop TOS, realize as list, require len == 2, store seq[0] and seq[1] into
-   the two names (VAR_STORE semantics).
+   Pop TOS, materialize as fast sequence, require len == 2, store seq[0] and
+   seq[1] into the two names (VAR_STORE semantics).
 */
 
 KOS_OP_HANDLER(UNPACK_VAR) {
@@ -38,12 +38,12 @@ KOS_OP_HANDLER(UNPACK_VAR) {
   if (! raw)
     return -1;
 
-  PyObject *seq = PySequence_List(raw);
+  PyObject *seq = PySequence_Fast(raw, NULL);
   Py_DECREF(raw);
   if (! seq)
     return -1;
 
-  Py_ssize_t slen = PyList_GET_SIZE(seq);
+  Py_ssize_t slen = PySequence_Fast_GET_SIZE(seq);
   if (slen != 2) {
     Py_DECREF(seq);
     PyErr_Format(PyExc_ValueError,
@@ -52,8 +52,8 @@ KOS_OP_HANDLER(UNPACK_VAR) {
     return -1;
   }
 
-  if (frame_ns_store(ctx, name0, PyList_GET_ITEM(seq, 0)) ||
-      frame_ns_store(ctx, name1, PyList_GET_ITEM(seq, 1))) {
+  if (frame_ns_store(ctx, name0, PySequence_Fast_GET_ITEM(seq, 0)) ||
+      frame_ns_store(ctx, name1, PySequence_Fast_GET_ITEM(seq, 1))) {
     Py_DECREF(seq);
     return -1;
   }

@@ -15,7 +15,8 @@
 
 /**
    UNPACK_FAST: arg = extra index. Schema FASTVAR, FASTVAR for two slot indices.
-   Pop TOS, realize as list, require len == 2, FastStore seq[0] and seq[1].
+   Pop TOS, materialize as fast sequence, require len == 2, FastStore seq[0]
+   and seq[1].
 */
 
 KOS_OP_HANDLER(UNPACK_FAST) {
@@ -47,12 +48,12 @@ KOS_OP_HANDLER(UNPACK_FAST) {
   if (! raw)
     return -1;
 
-  PyObject *seq = PySequence_List(raw);
+  PyObject *seq = PySequence_Fast(raw, NULL);
   Py_DECREF(raw);
   if (! seq)
     return -1;
 
-  Py_ssize_t slen = PyList_GET_SIZE(seq);
+  Py_ssize_t slen = PySequence_Fast_GET_SIZE(seq);
   if (slen != 2) {
     Py_DECREF(seq);
     PyErr_Format(PyExc_ValueError,
@@ -61,8 +62,8 @@ KOS_OP_HANDLER(UNPACK_FAST) {
     return -1;
   }
 
-  if (KosNamespace_FastStore(ns, idx0, PyList_GET_ITEM(seq, 0)) ||
-      KosNamespace_FastStore(ns, idx1, PyList_GET_ITEM(seq, 1))) {
+  if (KosNamespace_FastStore(ns, idx0, PySequence_Fast_GET_ITEM(seq, 0)) ||
+      KosNamespace_FastStore(ns, idx1, PySequence_Fast_GET_ITEM(seq, 1))) {
     Py_DECREF(seq);
     return -1;
   }
