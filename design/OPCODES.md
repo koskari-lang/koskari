@@ -192,7 +192,7 @@ When adding or changing an opcode:
 ## 2. Opcode categories (index)
 
 - [3. No-op and compile-time](#3-no-op-and-compile-time) — NOOP, LABEL, POSITION
-- [4. Stack](#4-stack) — DUP, POP
+- [4. Stack](#4-stack) — DUP, POP, UNPACK, UNPACK_STAR, UNPACK_VAR, UNPACK_FAST
 - [5. Constants](#5-constants) — CONST
 - [5.1 Pair construction and access](#51-pair-construction-and-access) — CAR, CDR, CONS, PROPER, PAIR_SPLICE
 - [6. Mode control](#6-mode-control) — AWAIT, BREAK, CONTINUE, RAISE, RETURN, YIELD, YIELD_FROM
@@ -226,6 +226,10 @@ When adding or changing an opcode:
 | POSITION | COMPILE | Source position; stripped post-compile | [§3](#kos_op_position) |
 | DUP | COUNT | Duplicate top N stack elements | [§4](#kos_op_dup) |
 | POP | COUNT | Pop N elements | [§4](#kos_op_pop) |
+| UNPACK | COUNT | Realize TOS as list; push N scalars (seq[0] is TOS) | [§4](#kos_op_unpack) |
+| UNPACK_STAR | EXTRA | Prefix / middle / suffix unpack (two COUNT fields) | [§4](#kos_op_unpack_star) |
+| UNPACK_VAR | EXTRA | STORE seq[0], seq[1] into two VAR names | [§4](#kos_op_unpack_var) |
+| UNPACK_FAST | EXTRA | STORE seq[0], seq[1] into two fast slots | [§4](#kos_op_unpack_fast) |
 | CONST | CONST | Push constant from pool | [§5](#kos_op_const) |
 | CAR | NOARG | Pop pair; push car | [§5.1](#kos_op_car) |
 | CDR | NOARG | Pop pair; push cdr | [§5.1](#kos_op_cdr) |
@@ -423,6 +427,105 @@ When adding or changing an opcode:
 | 2     | POP    | 1   | 1        | stack: [..., 1] |
 | 3     | RETURN | 1   | 1        | |
 
+
+### KOS_OP_UNPACK {#kos_op_unpack}
+
+- **Style**: COUNT. Arg = `n` (number of values to push).
+- **Status**: Implemented. (`koskari/lib/opcode/UNPACK.c`)
+- **Stack**: `[..., raw] → [..., v_{n-1}, ..., v_1, v_0]` where `v_i` is the
+  `i`-th element of the realized sequence and **TOS = v_0 = seq[0]** (so the
+  first binding in source order can use `VAR_STORE` / `FAST_STORE` on TOS
+  first). Implementation: pop TOS, `PySequence_List(raw)` (new list), require
+  `len(seq) == n`, then `KosStackBlock_PushRef` for indices `n-1` down to `0`,
+  then `Py_DECREF(seq)`.
+- **Invariants**: `n >= 0`. For `n == 0`, TOS must be an empty sequence after
+  realization.
+- **Errors**: `ValueError` if length ≠ `n`; `TypeError` or other error if
+  `PySequence_List` fails.
+- **Compiler form:** Pre-compile / post-compile arg = `n` (uint16).
+
+**Example:** Unpack `(1, 2, 3)` so TOS is `1`, then return three values (stack
+bottom to top matches push order).
+
+| index | opcode  | arg | arg view | comment |
+|------:|---------|-----|----------|---------|
+| 0     | CONST   | 0   | 0 ((1,2,3)) | stack: [..., (1,2,3)] |
+| 1     | UNPACK  | 3   | 3        | stack: [..., 3, 2, 1]; TOS = 1 |
+| 2     | RETURN  | 3   | 3        | |
+
+---
+
+### KOS_OP_UNPACK_STAR {#kos_op_unpack_star}
+
+- **Style**: EXTRA (`COUNT`, `COUNT`, `NOARG`, `NOARG`). Instruction arg =
+  index into the code object's **extra** table; that row has `a0 = left`,
+  `a1 = right` (both non-negative counts).
+- **Status**: Implemented. (`koskari/lib/opcode/UNPACK_STAR.c`)
+- **Semantics**: Pop TOS, `PySequence_List(raw)`. Require `left + right > 0`
+  and `len(seq) >= left + right`. Let `L = len(seq)`. The **middle** slice is
+  `seq[left : L - right]` (inclusive start, exclusive end), materialized as a
+  **tuple** (new reference). Pushes are ordered so that after all pushes,
+  **TOS is the first prefix element** `seq[0]` (when `left > 0`):
+  1. **Suffix** scalars: indices `L-1, L-2, ..., L-right` (each via
+     `KosStackBlock_PushRef`).
+  2. **Middle**: one value — the tuple — via `KosStackBlock_PUSH` (**stolen**
+     reference from `PySequence_Tuple`).
+  3. **Prefix** scalars: indices `left-1, ..., 0` (each via `PushRef`).
+- **Stack (TOS right)**: `[..., raw] → [..., seq[L-1], ..., seq[L-right],
+  middle, seq[left-1], ..., seq[0]]` when all parts are non-empty; adjust when
+  `left` or `right` is zero (no prefix or suffix pushes for that side).
+- **Invariants**: Extra row matches schema; `left + right` fits in uint16;
+  realized value must be a valid sequence for `PySequence_List` / slicing.
+- **Errors**: `ValueError` if `left + right == 0` or `len(seq) < left + right`.
+- **Compiler form:** Pre-compile extra operand is a 4-tuple
+  `(left, right, 0, 0)`; `NOARG` slots are ignored by the assembler. Same
+  pattern as other `EXTRA` opcodes (see §1.7).
+
+**Example:** `left=2`, `right=1`, seq `(1,2,3,4)`: suffix `[4]`, middle
+`(3,)`, prefix `2, 1` with TOS `1`.
+
+| index | opcode       | arg | arg view   | comment |
+|------:|--------------|-----|------------|---------|
+| 0     | CONST        | 0   | 0 ((1,2,3,4)) | |
+| 1     | UNPACK_STAR  | 0   | 0 (2, 1, …) | extra row: left=2, right=1 |
+| 2     | RETURN       | 4   | 4          | stack bottom..top: 4, (3,), 2, 1 |
+
+---
+
+### KOS_OP_UNPACK_VAR {#kos_op_unpack_var}
+
+- **Style**: EXTRA (`VAR`, `VAR`, `NOARG`, `NOARG`). Row: `a0`, `a1` = constant
+  pool indices of the two names (strings).
+- **Status**: Implemented. (`koskari/lib/opcode/UNPACK_VAR.c`)
+- **Stack**: `[..., raw] → [...]`. No values pushed; **STORE** semantics only
+  (same as `VAR_STORE` / `KosNamespace_Store` through `frame_ns_store`): `seq[0]`
+  into the first name, `seq[1]` into the second. Pop TOS, `PySequence_List`,
+  require `len == 2`, then store; release the temporary list.
+- **Invariants**: Both names must already be bound in the frame namespace (see
+  §1.9 STORE vs BIND).
+- **Errors**: `ValueError` if length ≠ 2.
+- **Compiler form:** Pre-compile extra tuple `(name0, name1, 0, 0)`; names
+  intern to cpool like other `VAR` extra fields.
+
+---
+
+### KOS_OP_UNPACK_FAST {#kos_op_unpack_fast}
+
+- **Style**: EXTRA (`FASTVAR`, `FASTVAR`, `NOARG`, `NOARG`). Row: `a0`, `a1` =
+  fast local slot indices.
+- **Status**: Implemented. (`koskari/lib/opcode/UNPACK_FAST.c`)
+- **Stack**: `[..., raw] → [...]`. Pop TOS, `PySequence_List`, require `len == 2`,
+  then `KosNamespace_FastStore` for slot `a0` with `seq[0]` and slot `a1` with
+  `seq[1]` (same ownership rules as `FAST_STORE`: namespace increments ref as
+  needed).
+- **Invariants**: Frame namespace supports fast locals; both indices in range
+  (same as `FAST_STORE`).
+- **Errors**: `ValueError` if length ≠ 2; `RuntimeError` / `NameError` if fast
+  namespace invalid or index out of bounds.
+- **Compiler form:** Pre-compile extra tuple `(slot0, slot1, 0, 0)` with
+  integer slot indices.
+
+---
 
 ## 5. Constants
 
