@@ -111,6 +111,14 @@ class TestParamRefNoDomain(unittest.TestCase):
         with self.assertRaises(RuntimeError):
             p.clear()
 
+    def test_empty_no_domain_is_true(self):
+        """
+        ParamRef.empty is always True outside an active domain.
+        """
+
+        self.assertTrue(ParamRef("x").empty)
+        self.assertTrue(ParamRef("x", 123).empty)
+
 
 class TestParamRefInsideScope(unittest.IsolatedAsyncioTestCase):
     """
@@ -223,6 +231,29 @@ class TestParamRefInsideScope(unittest.IsolatedAsyncioTestCase):
         ], values={"f": overwrite})
         result = await make_callable(code, ns)()
         self.assertEqual(result, 30)
+
+    async def test_empty_tracks_binding_state(self):
+        """
+        ParamRef.empty follows active-domain binding state.
+        """
+
+        p = ParamRef("emptiness", 0)
+
+        def check_empty_flow():
+            before = p.empty
+            p.store(5)
+            after_store = p.empty
+            p.clear()
+            after_clear = p.empty
+            return (before, after_store, after_clear)
+
+        code, ns = build_expr([
+            ["VAR", "f"],
+            ["CALL", 0],
+            ["RETURN", 1],
+        ], values={"f": check_empty_flow})
+        result = await make_callable(code, ns)()
+        self.assertEqual(result, (True, False, True))
 
 
 # The end.
