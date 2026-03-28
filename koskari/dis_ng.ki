@@ -215,22 +215,12 @@ define _format_arg [code op_style arg cpool local_names closure_names
       if schema:
         try:
           define ext (code.extra_tuple arg)
-          define a0 (item ext 0)
-          define a1 (item ext 1)
-          define a2 (item ext 2)
-          define a3 (item ext 3)
         except [Exception]:
           ;; EXPERIMENT-ISSUE: Keep broad exception fallback for interop safety
           return (str arg)
 
         define parts #[]
-        for-each [entry #[#(a0 (item schema 0))
-                          #(a1 (item schema 1))
-                          #(a2 (item schema 2))
-                          #(a3 (item schema 3))]]:
-          define val (item entry 0)
-          define fk (item entry 1)
-
+        for-each [[val fk] (zip ext schema)]:
           if (or (eq? fk OpStyle.KOSTYLE_CONST) (eq? fk OpStyle.KOSTYLE_VAR)):
             if (and (<= 0 val) (< val (len cpool))):
               (define prefix
@@ -241,7 +231,7 @@ define _format_arg [code op_style arg cpool local_names closure_names
               parts.append (str val)
           else:
             if (eq? fk OpStyle.KOSTYLE_FASTVAR):
-              (parts.append (_format_fast_part val local_names closure_names))
+              parts.append (_format_fast_part val local_names closure_names)
             else:
               if (eq? fk OpStyle.KOSTYLE_COUNT):
                 parts.append (str val)
@@ -345,130 +335,130 @@ define dis [x file: None]:
   :param x: Code or Function instance
   :param file: file-like object to print to (default: stdout)
   """
-  (define code None)
-  (define out file)
+  define code None
+  define out file
 
   if (isinstance x Function):
-    (set! code x.code)
-    (set! out (_resolve_file out))
-    (_write_function_instance_section out x)
+    set! code x.code
+    set! out (_resolve_file out)
+    _write_function_instance_section out x
   else:
-    (set! code (_get_code x))
+    set! code (_get_code x)
     when (is code None):
       (raise (TypeError f"expected Code or Function, got {(attr (type x) __name__)}"))
 
-  (set! out (_resolve_file out))
-  (define cpool code.constants_pool)
-  (define lcs (_local_and_closure_syms code))
-  (define local_syms (item lcs 0))
-  (define closure_syms (item lcs 1))
-  (define ns_const_map (_build_ns_const_map code))
+  set! out (_resolve_file out)
+  define cpool code.constants_pool
+  define lcs (_local_and_closure_syms code)
+  define local_syms (item lcs 0)
+  define closure_syms (item lcs 1)
+  define ns_const_map (_build_ns_const_map code)
 
-  (define name code.name)
-  (define filename code.filename)
-  (define yields code.yields)
-  (out.write f"KosCode {(repr name)}\n")
-  (out.write f"  filename: {(repr filename)}\n")
-  (out.write f"  yields: {yields}\n")
-  (out.write "\n")
+  define name code.name
+  define filename code.filename
+  define yields code.yields
+  out.write f"KosCode {(repr name)}\n"
+  out.write f"  filename: {(repr filename)}\n"
+  out.write f"  yields: {yields}\n"
+  out.write "\n"
 
-  (out.write f"Constant pool ({(len cpool)}):\n")
-  (define i 0)
+  out.write f"Constant pool ({(len cpool)}):\n"
+  define i 0
   while (< i (len cpool)):
-    (define val (item cpool i))
+    define val (item cpool i)
     if (isinstance val NamespaceSpec):
-      (_write_nspec_cpool_entry out i val)
+      _write_nspec_cpool_entry out i val
     else:
-      (out.write f"""  {i "3d"}: {(_format_constant val)}\n""")
-    (set! i (+ i 1))
-  (out.write "\n")
+      out.write f"""  {i "3d"}: {(_format_constant val)}\n"""
+    set! i (+ i 1)
+  out.write "\n"
 
-  (out.write f"Vars (local_syms, {(len local_syms)}):\n")
+  out.write f"Vars (local_syms, {(len local_syms)}):\n"
   if local_syms:
-    (define i 0)
+    define i 0
     while (< i (len local_syms)):
-      (out.write f"""  {i "3d"}: {(repr (item local_syms i))}\n""")
-      (set! i (+ i 1))
+      out.write f"""  {i "3d"}: {(repr (item local_syms i))}\n"""
+      set! i (+ i 1)
   else:
-    (out.write "  (none)\n")
-  (out.write "\n")
+    out.write "  (none)\n"
+  out.write "\n"
 
-  (out.write f"Closure refs ({(len closure_syms)}):\n")
+  out.write f"Closure refs ({(len closure_syms)}):\n"
   if closure_syms:
-    (define i 0)
+    define i 0
     while (< i (len closure_syms)):
-      (out.write f"""  {i "3d"}: {(repr (item closure_syms i))}\n""")
-      (set! i (+ i 1))
+      out.write f"""  {i "3d"}: {(repr (item closure_syms i))}\n"""
+      set! i (+ i 1)
   else:
-    (out.write "  (none)\n")
-  (out.write "\n")
+    out.write "  (none)\n"
+  out.write "\n"
 
-  (define n (code.length))
-  (out.write f"Instructions ({n}):\n")
-  (define i 0)
+  define n (code.length)
+  out.write f"Instructions ({n}):\n"
+  define i 0
   while (< i n):
-    (define oparg (code.oparg i))
-    (define op_int (item oparg 0))
-    (define arg (item oparg 1))
-    (define op (OpCode op_int))
-    (define op_style (getattr op.style "value" op.style))
-    (define extra_schema (if (getattr op "extra" None) (tuple op.extra) None))
-    (define ns_label None)
+    define oparg (code.oparg i)
+    define op_int (item oparg 0)
+    define arg (item oparg 1)
+    define op (OpCode op_int)
+    define op_style (getattr op.style "value" op.style)
+    define extra_schema (if (getattr op "extra" None) (tuple op.extra) None)
+    define ns_label None
 
     ;; marker for (in) operator
     when (in ns_const_map i):
-      (define ns_idx (item ns_const_map i))
-      (set! ns_label (_format_nspec_inline ns_idx (item cpool ns_idx)))
+      define ns_idx (item ns_const_map i)
+      set! ns_label (_format_nspec_inline ns_idx (item cpool ns_idx))
     (define arg_str
       (_format_arg code op_style arg cpool local_syms closure_syms
                    ns_label: ns_label
                    extra_schema: extra_schema))
-    (define pos_str "")
+    define pos_str ""
     try:
-      (define pos (code.position i))
-      (define line (item pos 0))
-      (define col (item pos 1))
-      (set! pos_str f"  # line {line}, col {col}")
+      define pos (code.position i)
+      define line (item pos 0)
+      define col (item pos 1)
+      set! pos_str f"  # line {line}, col {col}"
     except [Exception]:
       ;; EXPERIMENT-ISSUE: Broad catch here mirrors practical fallback behavior
       None
 
-    (out.write f"""  {i "3d"}  {op.name "24s"} {arg_str}{pos_str}\n""")
-    (set! i (+ i 1))
-  (out.write "\n")
+    out.write f"""  {i "3d"}  {op.name "24s"} {arg_str}{pos_str}\n"""
+    set! i (+ i 1)
+  out.write "\n"
 
 
 define _get_instruction_lines [code]:
   """
   Yield (index, op_name, arg_str) for each instruction (for tests/API)
   """
-  (define cpool code.constants_pool)
-  (define lcs (_local_and_closure_syms code))
-  (define local_syms (item lcs 0))
-  (define closure_syms (item lcs 1))
-  (define ns_const_map (_build_ns_const_map code))
-  (define n (code.length))
+  define cpool code.constants_pool
+  define lcs (_local_and_closure_syms code)
+  define local_syms (item lcs 0)
+  define closure_syms (item lcs 1)
+  define ns_const_map (_build_ns_const_map code)
+  define n (code.length)
 
-  (define i 0)
+  define i 0
   while (< i n):
-    (define oparg (code.oparg i))
-    (define op_int (item oparg 0))
-    (define arg (item oparg 1))
-    (define op (OpCode op_int))
-    (define op_style (getattr op.style "value" op.style))
-    (define extra_schema (if (getattr op "extra" None) (tuple op.extra) None))
-    (define ns_label None)
+    define oparg (code.oparg i)
+    define op_int (item oparg 0)
+    define arg (item oparg 1)
+    define op (OpCode op_int)
+    define op_style (getattr op.style "value" op.style)
+    define extra_schema (if (getattr op "extra" None) (tuple op.extra) None)
+    define ns_label None
 
     ;; marker for (in) operator
     when (in ns_const_map i):
-      (define ns_idx (item ns_const_map i))
-      (set! ns_label (_format_nspec_inline ns_idx (item cpool ns_idx)))
+      define ns_idx (item ns_const_map i)
+      set! ns_label (_format_nspec_inline ns_idx (item cpool ns_idx))
     (define arg_str
       (_format_arg code op_style arg cpool local_syms closure_syms
                    ns_label: ns_label
                    extra_schema: extra_schema))
-    (yield #(i op.name arg_str))
-    (set! i (+ i 1))
+    yield #(i op.name arg_str)
+    set! i (+ i 1)
 
 
 ;; The end.
