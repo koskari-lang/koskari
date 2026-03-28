@@ -686,13 +686,14 @@ static PyObject *dyn_ref_get_empty(PyObject *self, void *_unused) {
   PyObject *fn = KosDynamicRef_EMPTYFN(self);
   if (fn) {
     if (PyCallable_Check(fn)) {
-      PyObject *args = PyTuple_New(0);
-      if (! args)
-        return NULL;
       if (KosCallable_Check(fn)) {
-        return Koskari_DemandSync(fn, args, NULL);
+        PyObject *args = PyTuple_New(0);
+        if (! args)
+          return NULL;
+        PyObject *res = Koskari_DemandSync(fn, args, NULL);
+        Py_DECREF(args);
+        return res;
       }
-      Py_DECREF(args);
       return PyObject_CallObject(fn, NULL);
     } else {
       Py_INCREF(fn);
@@ -720,7 +721,9 @@ static PyObject *dyn_ref_m_deref(PyObject *self) {
       PyObject *args = PyTuple_New(0);
       if (! args)
         return NULL;
-      return Koskari_DemandSync(fn, args, NULL);
+      PyObject *res = Koskari_DemandSync(fn, args, NULL);
+      Py_DECREF(args);
+      return res;
     }
     return PyObject_CallObject(fn, NULL);
   } else {
@@ -739,7 +742,9 @@ static PyObject *dyn_ref_m_store(PyObject *self, PyObject *value) {
       PyObject *args = PyTuple_Pack(1, value);
       if (! args)
         return NULL;
-      return Koskari_DemandSync(fn, args, NULL);
+      PyObject *res = Koskari_DemandSync(fn, args, NULL);
+      Py_DECREF(args);
+      return res;
     }
     return PyObject_CallFunctionObjArgs(fn, value, NULL);
   } else {
@@ -758,7 +763,9 @@ static PyObject *dyn_ref_m_clear(PyObject *self) {
       PyObject *args = PyTuple_New(0);
       if (! args)
         return NULL;
-      return Koskari_DemandSync(fn, args, NULL);
+      PyObject *res = Koskari_DemandSync(fn, args, NULL);
+      Py_DECREF(args);
+      return res;
     }
     return PyObject_CallObject(fn, NULL);
   } else {
