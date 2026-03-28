@@ -1397,8 +1397,24 @@ static PyObject *param_ref_m_is_empty(PyObject *self) {
   if (! domain)
     return PyBool_FromLong(1);
   value = kos_domain_get_param(domain, KosParamRef_KEY(self));
-  return PyBool_FromLong(! value);
+  if (! value)
+    return PyBool_FromLong(1);
+  Py_DECREF(value);
+  return PyBool_FromLong(0);
 }
+
+
+static PyGetSetDef param_ref_getset[] = {
+  { "empty", (getter) param_ref_m_is_empty, NULL,
+    "bool; whether this reference is empty in the active domain",
+    NULL },
+
+  { "name", sym_ref_get_name, NULL,
+    "str; name of this reference",
+    NULL },
+
+  { NULL, },
+};
 
 
 static PyMethodDef param_ref_methods[] = {
@@ -1461,7 +1477,7 @@ PyTypeObject KosParamRefType = {
 
   .tp_base = &KosRefType,
   .tp_flags = Py_TPFLAGS_DEFAULT,
-  .tp_getset = sym_ref_getset,
+  .tp_getset = param_ref_getset,
   .tp_methods = param_ref_methods,
   .tp_new = PyType_GenericNew,
   .tp_init = param_ref_tp_init,
