@@ -403,25 +403,37 @@ class TestUsingUnpackHelper(unittest.TestCase):
             using_unpack_helper(self.compiler, nil)
 
     def test_double_star_raises(self):
-        star = keyword("*")
         lhs = cons(
             symbol("a"),
-            cons(star, cons(symbol("b"), cons(star, cons(symbol("c"), nil)))))
+            keyword("*"),
+            symbol("b"),
+            keyword("*"),
+            symbol("c"),
+            nil)
         with self.assertRaises(SpecialError):
             using_unpack_helper(self.compiler, lhs)
 
     def test_declare_false_omits_declares(self):
-        a, b = symbol("a"), symbol("b")
-        lhs = cons(a, cons(b, nil))
+        lhs = cons(symbol("a"), symbol("b"), symbol("c"), nil)
         frag = using_unpack_helper(self.compiler, lhs, declare=False)
         self.assertEqual(frag.declares, [])
         self.assertEqual(
             frag.instructions,
             [
-                (OpCode.KOS_OP_UNPACK, 2),
+                (OpCode.KOS_OP_UNPACK, 3),
                 (OpCode.KOS_OP_VAR_STORE, "a"),
                 (OpCode.KOS_OP_VAR_STORE, "b"),
+                (OpCode.KOS_OP_VAR_STORE, "c"),
             ])
 
+    def test_declare_var_2(self):
+        lhs = cons(symbol("a"), cons(symbol("b"), nil))
+        frag = using_unpack_helper(self.compiler, lhs, declare=False)
+        self.assertEqual(frag.declares, [])
+        self.assertEqual(
+            frag.instructions,
+            [
+                (OpCode.KOS_OP_UNPACK_VAR, ("a", "b", 0, 0)),
+            ])
 
 # The end.

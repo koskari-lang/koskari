@@ -652,6 +652,16 @@ def using_unpack_helper(compiler, lhs, source=None, declare=True):
     if not items:
         fail('empty unpack pattern')
 
+    if len(items) == 2 \
+       and is_symbolish(items[0]) \
+       and is_symbolish(items[1]):
+        name1 = str(items[0])
+        name2 = str(items[1])
+        maybe_declare(name1)
+        maybe_declare(name2)
+        frag.instruction(OpCode.KOS_OP_UNPACK_VAR, (name1, name2, 0, 0))
+        return frag
+
     star_idx = [
         i for i, elt in enumerate(items)
         if is_keyword(elt) and elt is _keyword_star]
