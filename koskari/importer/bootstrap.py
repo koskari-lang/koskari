@@ -169,6 +169,8 @@ def make_bootstrap():
     _bind('open', open)
     _bind('range', range)
     _bind('format', format)
+    _bind('chr', chr)
+    _bind('ord', ord)
 
     _bind('dir', dir)
 

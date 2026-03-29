@@ -1,0 +1,233 @@
+;; examples/siblife/curse.ki
+;;
+;; Curses front-end for siblife. Ported from python-sibilant sibilant-life.
+;;
+;; :author: Christopher O'Brien <obriencj@preoccupied.net>
+;; :license: GNU General Public License v3
+
+
+(import-from sys stderr)
+(import-from curses ERR KEY_UP KEY_DOWN KEY_LEFT KEY_RIGHT)
+(import-from itertools product)
+(import-from asyncio sleep)
+(import-from .life LifeBoard)
+
+
+define smilies:
+  #("\U0001f615"
+    "\U0001f610"
+    "\U0001f642"
+    "\U0001f600"
+    "\U0001f60e")
+
+define digits "1234567890"
+
+
+define smilie-renderer [cell]:
+  if cell:
+    #((item smilies (% cell (len smilies))) 0)
+  else:
+    #(" " 0)
+
+
+define make-char-renderer [alive: "O" dead: " "]:
+  define alive-ch (item alive 0)
+  define dead-ch (item dead 0)
+  lambda [cell]:
+    if cell:
+      #(alive-ch 0)
+    else:
+      #(dead-ch 0)
+
+
+define digit-renderer [cell]:
+  when (< 9 cell):
+    (set! cell 9)
+  #((if cell (str cell) " ") 0)
+
+
+define get-renderer [by-name]:
+  if (eq? by-name "smilies"):
+    smilie-renderer
+  elif (eq? by-name "digits"):
+    digit-renderer
+  else:
+    (make-char-renderer)
+
+
+class LifeScreen []:
+
+    define __init__ [self screen rw: False rend: None]:
+        when (None? rend):
+          (set! rend (make-char-renderer))
+        (define-values [scr-h scr-w] (screen.getmaxyx))
+
+        (set! self.renderer rend)
+        (set! self.width (- scr-w 2))
+        (set! self.height (- scr-h 2))
+        (set! self.screen screen)
+        (set! self.board (LifeBoard self.width self.height rw))
+        (set! self.age self.board.age)
+        (set! self.clear self.board.clear)
+        (set! self.randomize self.board.randomize)
+        (set! self.toggle self.board.toggle)
+
+
+    define display [self]:
+        define board self.board
+        define render self.renderer
+        define screen self.screen
+
+        for-each [item (board.tracked cleanup: True)]:
+            define-values [xy val] item
+            define-values [cell style] (render val)
+            (screen.attrset style)
+
+            try:
+              define-values [x y] xy
+              (screen.addch (+ 1 y) (+ 1 x) cell)
+            except [Exception]:
+              raise (Exception f"x: {(repr x)}, y: {(repr y)}, cell: {(repr cell)}")
+
+        (screen.refresh)
+
+
+define erase-menu [stdscr menu-y]:
+  (stdscr.move menu-y 0)
+  (stdscr.clrtoeol)
+  (stdscr.move (+ menu-y 1) 0)
+  (stdscr.clrtoeol)
+  None
+
+
+define display-menu [stdscr menu-y]:
+  (erase-menu stdscr menu-y)
+  (stdscr.addstr menu-y 4 "Use the cursor keys to move, space or Enter to toggle cells")
+  (stdscr.addstr (+ menu-y 1) 4 "E)rase the board, R)andom fill, S)tep, C)ontinuous, Q)uit")
+  (stdscr.attrset 0)
+  None
+
+
+define step [stdscr board]:
+  (stdscr.addstr 0 0 "/")
+  (stdscr.refresh)
+  (board.age)
+  (board.display)
+  (stdscr.addstr 0 0 "\\")
+  (stdscr.refresh)
+  None
+
+
+define multi-step [stdscr board menu-y counter]:
+  (erase-menu stdscr menu-y)
+  (stdscr.addstr menu-y 6 " Hit any key to stop and redraw ")
+  (stdscr.refresh)
+  (stdscr.nodelay 1)
+
+  for-each [index (range 1 (+ 1 counter))]:
+    (stdscr.addstr 0 0 (str index))
+    (stdscr.refresh)
+    (board.age)
+    unless (eq? -1 (stdscr.getch)):
+      (break)
+
+  (board.display)
+  (stdscr.nodelay 0)
+  (display-menu stdscr menu-y)
+  None
+
+
+define continuous-mode [stdscr board menu-y]:
+  (erase-menu stdscr menu-y)
+  (stdscr.addstr menu-y 6 " Hit any key to stop ")
+  (stdscr.refresh)
+  (stdscr.nodelay 1)
+
+  while (eq? -1 (stdscr.getch)):
+    (step stdscr board)
+    (sleep 0.1)
+
+  (stdscr.nodelay 0)
+  (display-menu stdscr menu-y)
+  None
+
+
+define curses-main [stdscr options]:
+  (stdscr.clear)
+  (define-values [term-h term-w] (stdscr.getmaxyx))
+
+  define menu-y (- term-h 2)
+  define board-window (stdscr.subwin (- term-h 1) term-w 0 0)
+  define renderer (get-renderer options.renderer)
+  define board (LifeScreen board-window options.wrap renderer)
+  define y-pos (// term-h 2)
+  define x-pos (// term-w 2)
+
+  (display-menu stdscr menu-y)
+  (board.display)
+
+  while True:
+    (set! y-pos (% y-pos board.height))
+    (set! x-pos (% x-pos board.width))
+    (stdscr.move (+ 1 y-pos) (+ 1 x-pos))
+    define event (stdscr.getch)
+
+    if (eq? event ERR):
+      sleep(0.1)
+
+    elif (and (< 0 event) (< event 256)):
+      (define echar (chr event))
+      if (in " \n" echar):
+        (board.toggle x-pos y-pos)
+        (board.display)
+      elif (in "Cc" echar):
+        (continuous-mode stdscr board menu-y)
+      elif (in "Ee" echar):
+        (board.clear)
+        (board.display)
+      elif (in "Qq" echar):
+        (break)
+      elif (in "Rr" echar):
+        (board.randomize)
+        (board.display)
+      elif (in "Ss" echar):
+        (step stdscr board)
+      elif (in digits echar):
+        (multi-step stdscr board menu-y (** 10 (digits.index echar)))
+
+    elif (eq? event KEY_UP):
+      (set! y-pos (- y-pos 1))
+    elif (eq? event KEY_DOWN):
+      (set! y-pos (+ y-pos 1))
+    elif (eq? event KEY_LEFT):
+      (set! x-pos (- x-pos 1))
+    elif (eq? event KEY_RIGHT):
+      (set! x-pos (+ x-pos 1))
+    None
+  None
+
+
+define cli [options]:
+  import-from curses initscr noecho cbreak echo nocbreak endwin start_color
+
+  try:
+    (define stdscr (initscr))
+    (noecho)
+    (cbreak)
+    (stdscr.keypad 1)
+
+    try:
+      (start_color)
+    except:
+      None
+
+    (curses-main stdscr options)
+
+  finally:
+    (stdscr.keypad 0)
+    (echo)
+    (nocbreak)
+    (endwin)
+
+
+;; The end.

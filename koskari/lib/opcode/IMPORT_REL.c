@@ -23,10 +23,10 @@
    module name after the dots, or None for a bare relative import
    (e.g. "(import .)" which imports the enclosing package itself).
 
-   The globals namespace of the outermost frame is passed to
-   PyImport_ImportModuleLevelObject so that Python can read __name__ and
-   __package__ to resolve the anchor package.  This is the same namespace
-   consulted by Python's own relative import mechanism.
+   The outermost frame namespace supplies __name__; a temporary dict
+   holding that key is passed to PyImport_ImportModuleLevelObject (which
+   requires dict or NULL, not KosNamespace) so Python can resolve the anchor
+   package for relative imports.
 
    Like IMPORT, the leaf module is pushed (not the root package) by
    passing _import_fromlist as the fromlist sentinel.
@@ -78,8 +78,37 @@ KOS_OP_HANDLER(IMPORT_REL) {
 
   PyObject *globals_ns = KosDynFrame_NS(KosContext_GLOBALS_FRAME(ctx));
 
+
+  PyObject *name_val = KosNamespace_Deref(globals_ns, str_name);
+  if (! name_val) {
+    return -1;
+  }
+  PyObject *package_val = KosNamespace_Deref(globals_ns, str_package);
+  if (! package_val) {
+    Py_DECREF(name_val);
+    return -1;
+  }
+
+  PyObject *globals_dict = PyDict_New();
+  if (! globals_dict) {
+    Py_DECREF(name_val);
+    Py_DECREF(package_val);
+    return -1;
+  }
+
+  if (PyDict_SetItem(globals_dict, str_name, name_val) ||
+      PyDict_SetItem(globals_dict, str_package, package_val)) {
+    Py_DECREF(name_val);
+    Py_DECREF(package_val);
+    Py_DECREF(globals_dict);
+    return -1;
+  }
+  Py_DECREF(name_val);
+  Py_DECREF(package_val);
+
   PyObject *mod = PyImport_ImportModuleLevelObject(
-    name, globals_ns, NULL, _import_fromlist, (int) level);
+    name, globals_dict, NULL, _import_fromlist, (int) level);
+  Py_DECREF(globals_dict);
   if (! mod)
     return -1;
 

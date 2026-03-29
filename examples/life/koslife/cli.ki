@@ -1,0 +1,69 @@
+;; examples/siblife/cli.ki
+;;
+;; Entry point for the siblife example. Ported from python-sibilant
+;; sibilant-life (LGPL-3); this koskari example under the project GPLv3.
+;;
+;; :author: Christopher O'Brien <obriencj@preoccupied.net>
+;; :license: GNU General Public License v3
+
+
+(import sys)
+(import-from argparse ArgumentParser)
+(import-from os.path basename)
+(import-from .curse cli)
+
+
+define create-option-parser [name]:
+  """
+  Argument parser for siblife
+  """
+
+  define parser (ArgumentParser prog: (basename name) description: "This is siblife")
+
+  (parser.add_argument "--wrap" action: "store_true" default: False
+                       help: "Game board wraps at edges")
+
+  define g (parser.add_mutually_exclusive_group)
+
+  (g.add_argument "--smilies" action: "store_const" dest: "renderer"
+                  const: "smilies"
+                  help: "use the smilies renderer")
+
+  (g.add_argument "--digits" action: "store_const" dest: "renderer"
+                  const: "digits"
+                  help: "use the digits renderer")
+
+  (g.add_argument "--default" action: "store_const" dest: "renderer"
+                  const: "default" default: "default"
+                  help: "use the default renderer")
+
+  parser
+
+
+define main [argv: None]:
+  """
+  siblife CLI entry
+  """
+
+  when (None? argv):
+    (set! argv sys.argv)
+
+  (define-values [prog *: args] argv)
+
+  define parser (create-option-parser prog)
+  define options (parser.parse_args args)
+
+  try:
+    (cli options)
+  except [KeyboardInterrupt]:
+    (print file: sys.stderr)
+    130
+  else:
+    0
+
+
+when-main:
+  (sys.exit (main))
+
+
+;; The end.

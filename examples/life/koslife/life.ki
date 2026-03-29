@@ -1,0 +1,149 @@
+;; examples/siblife/life.ki
+;;
+;; Conway's Game of Life board (sparse dict). Ported from python-sibilant
+;; sibilant-life (LGPL-3); this koskari example under the project GPLv3.
+;;
+;; :author: Christopher O'Brien <obriencj@preoccupied.net>
+;; :license: GNU General Public License v3
+
+
+(import-from copy copy)
+(import-from itertools product starmap)
+(import-from random random seed)
+
+
+class LifeBoard []:
+
+    define __init__ [self width height wrap: False]:
+        (set! self.width width)
+        (set! self.height height)
+        (set! self.wrap wrap)
+        (set! self.data (dict))
+        (self.clear)
+
+
+    define clear [self]:
+        """
+        Clear the board to dead; keeps keys so UIs can turn cells off
+        """
+
+        define dat self.data
+        for-each [key (list (dat.keys))]:
+            (set! (item dat key) 0)
+
+
+    define randomize [self threshold: 0.5]:
+        """
+        Random fill: cell lives when (random) > threshold
+        """
+
+        (self.clear)
+        (seed)
+        define all-coords (product (range 0 self.width) (range 0 self.height))
+        for-each [[x y] all-coords]:
+            when (< threshold (random)):
+                (self.set-cell x y 1)
+
+
+    define tracked [self cleanup: True]:
+        """
+        Yield (coord, value) for live and recently dead cells
+        """
+
+        define data self.data
+        if cleanup:
+            for-each [item (list (data.items))]:
+                (define-values [coord cell] item)
+                (yield item)
+                unless cell:
+                    (del-item data coord)
+        else:
+            (yield-from (data.items))
+
+
+    define toggle [self x y]:
+        define coord #(x y)
+        define cell (self.data.get coord None)
+        (set! (item self.data coord) (if cell 0 1))
+
+
+    define coord-key [self x y]:
+        define w self.width
+        define h self.height
+        unless self.wrap:
+            unless (and (<= 0 x) (< x w) (<= 0 y) (< y h)):
+                return None
+        #((% x w) (% y h))
+
+
+    define get-cell [self x y]:
+        define key (self.coord-key x y)
+        if (None? key) 0 (self.data.get key 0)
+
+
+    define set-cell [self x y value]:
+        define key (self.coord-key x y)
+        unless (None? key):
+            (set! (item self.data key) value)
+
+
+    define group-coord [self x y]:
+        (product #((- x 1) x (+ x 1)) #((- y 1) y (+ y 1)))
+
+
+    define get-group [self x y]:
+        (starmap self.get-cell (self.group-coord x y))
+
+
+    define get-all-groups [self]:
+        (starmap self.get-group (product (range 0 self.width) (range 0 self.height)))
+
+
+    define age [self]:
+        define dat (dict)
+        define followup (set)
+        define key None
+        define x 0
+        define y 0
+
+        for-each [[key value] (self.tracked cleanup: False)]:
+            (set! (values x y) key)
+            (set! (item dat key) (life-rule (self.get-group x y)))
+            (followup.update (self.group-coord x y))
+
+        (followup.difference_update (list (self.data.keys)))
+
+        for-each [[x y] followup]:
+            (set! key (self.coord-key x y))
+            unless (None? key):
+                (set! (item dat key) (life-rule (self.get-group x y)))
+
+        (set! self.data dat)
+        self
+
+
+    define child [self]:
+        (define clone (copy self))
+        (clone.age)
+
+
+define life-rule [group]:
+    """
+    Next state for center cell from nine cells (3x3), Conway rules
+    """
+
+    set! group (tuple group)
+    define center (item group 4)
+    define living 0
+
+    for-each [val group]:
+        when val:
+            (set! living (+ living 1))
+
+    if center:
+        if (and (<= 3 living) (< living 5)) (min (+ center 1) 9) 0
+    else:
+        if (eq? living 3) 1 0
+
+
+;; The end.
