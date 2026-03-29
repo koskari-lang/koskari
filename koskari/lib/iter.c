@@ -427,7 +427,10 @@ static PyObject *asyncgenasend_iternext(PyObject *self) {
 
   if (res < 0) {
     agen->closed = 1;
-    PyErr_SetNone(PyExc_StopAsyncIteration);
+    /* Preserve eval errors (e.g. stack underrun); only synthesize completion
+       when eval failed without setting an exception. */
+    if (! PyErr_Occurred())
+      PyErr_SetNone(PyExc_StopAsyncIteration);
     return NULL;
   }
 
@@ -486,6 +489,10 @@ static PyObject *asyncgenasend_iternext(PyObject *self) {
       /* Need to suspend on Python awaitable */
       /* Return the awaitable for the caller to await */
       return KosEvent_PAYLOAD(&ev);
+
+    case KOS_EV_NONE:
+      PyErr_SetString(PyExc_RuntimeError, "unexpected event kind");
+      return NULL;
   }
 
   PyErr_SetString(PyExc_RuntimeError, "unexpected event kind");

@@ -98,22 +98,28 @@ typedef KosDynFrame KosFrame;
 /* === KosEvent: boundary events === */
 
 /**
-  KosEventKind enumerates the boundary conditions that can cause
-  koskari_eval to suspend and return control to the caller.
+  KosEventKind tags what kind of boundary the current instruction reported
+  in the eval out_ev buffer.
 
-  These events are produced only when the current frame has no parent
-  (top-level completion). When the frame has a parent (e.g. callee or
-  attached async gen), YIELD/RETURN are handled in-loop by detaching
-  and pushing onto the parent.
+  Opcode handlers set kind and payload when an instruction must signal
+  return, yield, await, or raise.  The main loop and eval_phase_post_opcode
+  then either stop the eval and return to the koskari_eval caller
+  (KOS_STEP_STOP_EVENT), or handle the boundary inside the loop without
+  leaving (detach and deliver to a parent frame, push yielded values for
+  flattened async iteration, run unwind handlers, and similar).  Nested
+  calls and non-top frames use the same kinds; framing is not limited to
+  top-level completion.
 
   KOS_EV_RETURN - normal completion with a value
   KOS_EV_RAISE  - exception propagation
   KOS_EV_YIELD  - generator yield
   KOS_EV_AWAIT  - suspension on Python awaitable
+  KOS_EV_NONE   - out_ev cleared after an in-loop consume; not a driver-facing
+                   boundary
 */
-
 typedef enum KosEventKind {
-  KOS_EV_RETURN = 0,
+  KOS_EV_NONE = 0,  // no event, or event cleared
+  KOS_EV_RETURN,
   KOS_EV_RAISE,
   KOS_EV_YIELD,
   KOS_EV_AWAIT,
@@ -185,12 +191,24 @@ typedef struct KosDispatchCtx {
 
 
 /**
-  KosEvent carries the result of a koskari_eval call.
+  KosEvent is the out_ev buffer passed into koskari_eval for the whole run.
 
-  The kind field indicates what boundary was reached.
-  The payload field holds the associated value (return value,
-  exception, yielded value, or awaitable).
-  For KOS_EV_RAISE, exc_type holds the exception type (from PyErr_Fetch).
+  Handlers and post_opcode write kind, payload, and exc_type as each
+  instruction reports a boundary.  The same struct holds in-flight and
+  in-loop state; not every kind/payload pair becomes the final reason the
+  outer eval returns.  When evaluation stops with a boundary, the caller
+  reads the fields by kind.
+
+  payload holds the return value, yielded value, awaitable, or exception
+  value as appropriate.  For KOS_EV_RAISE, exc_type is the exception type
+  (from PyErr_Fetch).  payload and exc_type are owned references where set.
+
+  Invariant: any code that assigns payload (or exc_type for RAISE) must set
+  kind in the same boundary; do not leave a non-NULL payload with a stale or
+  unspecified kind.
+
+  Stack-local buffers: use KosEvent ev = {0}; aggregate init zeros the struct
+  (kind is KOS_EV_NONE, pointers NULL).
 */
 
 typedef struct KosEvent {

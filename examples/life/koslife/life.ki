@@ -58,7 +58,9 @@ class LifeBoard []:
                 unless cell:
                     (del-item data coord)
         else:
-            (yield-from (data.items))
+            for-each [item (data.items)]:
+                (yield item)
+            ;;(yield-from (data.items))
 
 
     define toggle [self x y]:
@@ -111,7 +113,7 @@ class LifeBoard []:
             (set! (item dat key) (life-rule (self.get-group x y)))
             (followup.update (self.group-coord x y))
 
-        (followup.difference_update (list (self.data.keys)))
+        (followup.difference_update (self.data.keys))
 
         for-each [[x y] followup]:
             (set! key (self.coord-key x y))

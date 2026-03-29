@@ -40,6 +40,7 @@ KOS_OP_HANDLER(RETURN) {
       SAYF("[RETURN] pop underrun: stack=%p len=%zu",
            (void *) CURRENT_STACK(ctx),
            CURRENT_STACK(ctx) ? (unsigned long) KosStackBlock_LEN(CURRENT_STACK(ctx)) : 0UL);
+      PyErr_SetString(PyExc_RuntimeError, "RETURN: stack underrun");
       return -1;
     }
 
@@ -47,6 +48,7 @@ KOS_OP_HANDLER(RETURN) {
     val = KosStackBlock_PopTail(&CURRENT_STACK(ctx), (size_t) opa);
     if (! val) {
       SAY("[eval] RETURN PopTail underrun\n");
+      PyErr_SetString(PyExc_RuntimeError, "RETURN: stack underrun");
       return -1;
     }
   }

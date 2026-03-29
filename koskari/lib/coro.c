@@ -227,7 +227,7 @@ static PyObject *coroutine_send(PyObject *self, PyObject *value) {
   coro->in_send = 1;
   coro->state = KOS_CORO_RUNNING;
 
-  KosEvent ev = {.kind = KOS_EV_RETURN, .payload = NULL};
+  KosEvent ev = {0};
   int res = koskari_eval(coro->ctx, &ev, send_val,
                         throw_exc ? (PyObject *) Py_TYPE(throw_exc) : NULL,
                         throw_exc);
@@ -298,6 +298,10 @@ static PyObject *coroutine_send(PyObject *self, PyObject *value) {
       return KosEvent_PAYLOAD(&ev);  /* transfer ownership to caller (asyncio) */
     }
 
+    case KOS_EV_NONE:
+      PyErr_SetString(PyExc_RuntimeError, "unexpected event kind");
+      return NULL;
+
     default:
       PyErr_SetString(PyExc_RuntimeError, "unexpected event kind");
       return NULL;
@@ -356,7 +360,7 @@ static PyObject *coroutine_throw(PyObject *self, PyObject *args) {
 
   coro->in_send = 1;
   coro->state = KOS_CORO_RUNNING;
-  KosEvent ev = {.kind = KOS_EV_RETURN, .payload = NULL};
+  KosEvent ev = {0};
   int res = koskari_eval(coro->ctx, &ev, NULL, typ, exc);
   Py_DECREF(exc);
   coro->in_send = 0;
@@ -401,6 +405,9 @@ static PyObject *coroutine_throw(PyObject *self, PyObject *args) {
       }
       coro->state = KOS_CORO_WAITING_PY;
       return KosEvent_PAYLOAD(&ev);
+    case KOS_EV_NONE:
+      PyErr_SetString(PyExc_RuntimeError, "unexpected event kind");
+      return NULL;
     default:
       PyErr_SetString(PyExc_RuntimeError, "unexpected event kind");
       return NULL;

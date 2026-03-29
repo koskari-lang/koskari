@@ -242,4 +242,35 @@ class TestNamespaceAndCall(CevalTest):
         self.assertEqual(result, {"foo": 1})
 
 
+    async def test_call_names_bound_kos_method_keyword_only(self):
+        """
+        CALL_NAMES with KosBoundMethod and keywords uses kos_vinstall_boundmethod.
+        Regression: keyword values must be copied after prepended self (PEP 590 tail).
+        """
+
+        inner_code = build_code([
+            ["VAR", "y"],
+            ["RETURN", 1],
+        ], name="inner")
+        fspec = inner_code.function_spec(
+            FormalsSpec(('self',), None, ('y',)))
+        fn_code, fn_ns = build_expr([
+            ["CONST", fspec],
+            ["BUILD_FUNCTION", 0],
+            ["RETURN", 1],
+        ], name="make_fn")
+        fn = await make_callable(fn_code, fn_ns)()
+        bm = fn.__get__(object(), type(None))
+
+        code, ns = build_expr([
+            ["CONST", bm],
+            ["CONST", 7],
+            ["CONST", ("y",)],
+            ["CALL_NAMES", 0],
+            ["RETURN", 1],
+        ])
+        result = await make_callable(code, ns)()
+        self.assertEqual(result, 7)
+
+
 # The end.

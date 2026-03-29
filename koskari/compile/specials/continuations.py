@@ -243,4 +243,26 @@ def special_await(compiler, source, tc=False):
     return frag
 
 
+@special(symbol("compile/yield-from"))
+def special_yield_from(compiler, source, tc=False):
+    """
+    Compile (compile/yield-from EXPR). Evaluates EXPR, then yields from TOS via
+    YIELD_FROM.
+    """
+
+    called_by, rest = source
+    if rest is nil or not is_pair(rest):
+        raise SpecialError("yield-from requires a single argument", source)
+
+    expr, tail = rest
+    if not is_nil(tail):
+        raise SpecialError("yield-from requires a single argument", source)
+
+    frag = compiler.fragment(called_by)
+    frag.position_of(source)
+    frag.merge(compiler.full_compile(expr, False))
+    frag.instruction(OpCode.KOS_OP_YIELD_FROM, 0)
+    return frag
+
+
 # The end.

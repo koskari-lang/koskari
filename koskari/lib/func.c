@@ -1065,12 +1065,18 @@ static int kos_vinstall_boundmethod(
 
   PyObject *func = KosBoundMethod_FUNC(callable);
   PyObject *self = KosBoundMethod_SELF(callable);
-  PyObject **new_args = PyMem_New(PyObject *, (size_t) (nargs + 1));
-  if (! new_args)
+  Py_ssize_t nkw = kwnames ? PyTuple_GET_SIZE(kwnames) : 0;
+  Py_ssize_t total_slots = 1 + nargs + nkw;
+  PyObject **new_args = PyMem_New(PyObject *, (size_t) total_slots);
+  if (! new_args) {
+    PyErr_NoMemory();
     return -1;
+  }
   new_args[0] = self;
   for (Py_ssize_t i = 0; i < nargs; i++)
     new_args[1 + i] = args[i];
+  for (Py_ssize_t i = 0; i < nkw; i++)
+    new_args[1 + nargs + i] = args[nargs + i];
   int r = kos_vinstall_function(ctx, out_ev, func, new_args, nargs + 1,
                                 kwnames, tail_call);
   PyMem_Del(new_args);

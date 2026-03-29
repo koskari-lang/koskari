@@ -194,7 +194,7 @@ static PyObject *demand_gen_step(
     gen->in_send = 1;
   }
 
-  KosEvent ev = { 0 };
+  KosEvent ev = {0};
   int res = koskari_eval(gen->ctx, &ev, send_val, throw_typ, throw_exc);
 
   if (gen->async_agen)
@@ -263,6 +263,11 @@ static PyObject *demand_gen_step(
                    "async suspension is not allowed in demand generator");
       return NULL;
     }
+
+    case KOS_EV_NONE:
+      demand_gen_close_ctx(gen);
+      PyErr_SetString(PyExc_RuntimeError, "unexpected event kind");
+      return NULL;
 
     default:
       demand_gen_close_ctx(gen);
@@ -453,7 +458,7 @@ static int demand_sync_ex(
   PyObject *frame_ns = NULL;
   KosDynFrame *frame = NULL;
   KosContext *ctx = NULL;
-  KosEvent ev = { 0 };
+  KosEvent ev = {0};
   int r = 0;
   int suspended = 0;
   PyObject *result = NULL;
@@ -645,6 +650,10 @@ run_eval:
       if (KosEvent_PAYLOAD(&ev))
         Py_DECREF(KosEvent_PAYLOAD(&ev));
       suspended = 1;
+      break;
+
+    case KOS_EV_NONE:
+      PyErr_SetString(PyExc_RuntimeError, "unexpected event kind");
       break;
 
     default:

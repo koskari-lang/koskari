@@ -18,9 +18,9 @@ Tests for YIELD_FROM opcode.
 :license: GNU General Public License v3
 """
 
-from koskari.lib import AsyncGenerator
+from koskari.lib import AsyncGenerator, FormalsSpec
 from tests import make_callable
-from tests.lib.opcode import CevalTest, build_expr
+from tests.lib.opcode import CevalTest, build_code, build_expr
 
 import pytest
 
@@ -52,7 +52,7 @@ class TestYieldFrom(CevalTest):
         code_obj, ns = build_expr([
             ["CONST", it],
             ["YIELD_FROM", 0],
-            ["RETURN", 1],
+            ["RETURN", 0],
         ])
         expr = make_callable(code_obj, ns)
         agen = expr()
@@ -92,7 +92,7 @@ class TestYieldFrom(CevalTest):
         code_obj, ns = build_expr([
             ["CONST", inner_gen],
             ["YIELD_FROM", 0],
-            ["RETURN", 1],
+            ["RETURN", 0],
         ])
         expr = make_callable(code_obj, ns)
         agen = expr()
@@ -105,7 +105,7 @@ class TestYieldFrom(CevalTest):
             self.assertEqual(await anext(agen), "b")
             with self.assertRaises(StopAsyncIteration) as ctx:
                 await anext(agen)
-            self.assertEqual(self._stop_async_iteration_final(ctx), "c")
+            self.assertIs(self._stop_async_iteration_final(ctx), None)
 
         await run()
 
@@ -119,7 +119,7 @@ class TestYieldFrom(CevalTest):
         code_obj, ns = build_expr([
             ["CONST", it],
             ["YIELD_FROM", 0],
-            ["RETURN", 1],
+            ["RETURN", 0],
         ])
         expr = make_callable(code_obj, ns)
         agen = expr()
@@ -142,7 +142,8 @@ class TestYieldFrom(CevalTest):
 
     async def test_yield_from_sync_generator_values_and_return(self):
         """
-        YIELD_FROM on a Python sync generator yields values and returns final
+        YIELD_FROM on a Python sync generator yields values; sync generator
+        return value is not surfaced on the hosting stack or StopAsyncIteration.
         """
 
         def py_gen():
@@ -154,7 +155,7 @@ class TestYieldFrom(CevalTest):
         code_obj, ns = build_expr([
             ["CONST", gen],
             ["YIELD_FROM", 0],
-            ["RETURN", 1],
+            ["RETURN", 0],
         ])
         expr = make_callable(code_obj, ns)
         agen = expr()
@@ -168,7 +169,7 @@ class TestYieldFrom(CevalTest):
             with self.assertRaises(StopAsyncIteration) as ctx:
                 await anext(agen)
             final = self._stop_async_iteration_final(ctx)
-            self.assertEqual(final, 99)
+            self.assertIs(final, None)
 
         await run()
 
@@ -192,7 +193,7 @@ class TestYieldFrom(CevalTest):
         code_obj, ns = build_expr([
             ["CONST", a],
             ["YIELD_FROM", 0],
-            ["RETURN", 1],
+            ["RETURN", 0],
         ])
         expr = make_callable(code_obj, ns)
         agen = expr()
@@ -211,8 +212,8 @@ class TestYieldFrom(CevalTest):
 
     async def test_yield_from_koskari_async_gen_values_and_return(self):
         """
-        YIELD_FROM on a Koskari async gen yields each value then completes
-        with the delegate RETURN value.
+        YIELD_FROM on a Koskari async gen yields each value; inner RETURN
+        payload is not left on the hosting stack (not surfaced as SAI .value).
         """
 
         inner_code, inner_ns = build_expr([
@@ -229,7 +230,7 @@ class TestYieldFrom(CevalTest):
         code_obj, ns = build_expr([
             ["CONST", inner_gen],
             ["YIELD_FROM", 0],
-            ["RETURN", 1],
+            ["RETURN", 0],
         ])
         expr = make_callable(code_obj, ns)
         agen = expr()
@@ -245,7 +246,7 @@ class TestYieldFrom(CevalTest):
             with self.assertRaises(StopAsyncIteration) as ctx:
                 await anext(agen)
             final = self._stop_async_iteration_final(ctx)
-            self.assertEqual(final, 42)
+            self.assertIs(final, None)
 
         await run()
 
@@ -264,7 +265,7 @@ class TestYieldFrom(CevalTest):
         code_obj, ns = build_expr([
             ["CONST", inner_coro],
             ["YIELD_FROM", 0],
-            ["RETURN", 1],
+            ["RETURN", 0],
         ])
         expr = make_callable(code_obj, ns)
         agen = expr()
@@ -303,7 +304,7 @@ class TestYieldFrom(CevalTest):
         code_obj, ns = build_expr([
             ["CONST", inner_gen],
             ["YIELD_FROM", 0],
-            ["RETURN", 1],
+            ["RETURN", 0],
         ])
         expr = make_callable(code_obj, ns)
         agen = expr()
@@ -316,8 +317,7 @@ class TestYieldFrom(CevalTest):
             self.assertEqual(v2, 2)
             with self.assertRaises(StopAsyncIteration) as ctx:
                 await anext(agen)
-            final = self._stop_async_iteration_final(ctx)
-            self.assertEqual(final, "done")
+            self.assertIs(self._stop_async_iteration_final(ctx), None)
 
         await run()
 
@@ -329,9 +329,9 @@ class TestYieldFrom(CevalTest):
         """
 
         code_obj, ns = build_expr([
-            ["CONST", iter([])],
+            ["CONST", []],
             ["YIELD_FROM", 0],
-            ["RETURN", 1],
+            ["RETURN", 0],
         ])
         expr = make_callable(code_obj, ns)
         agen = expr()
@@ -346,10 +346,92 @@ class TestYieldFrom(CevalTest):
         await run()
 
 
+    async def test_yield_from_dict_obtains_iterator_from_tos(self):
+        """
+        YIELD_FROM must call iter() on the TOS delegate; a dict on the stack
+        is not pre-wrapped as an iterator in the test harness.
+        """
+
+        d = {"first": 1, "second": 2, "third": 3}
+        code_obj, ns = build_expr([
+            ["CONST", d],
+            ["YIELD_FROM", 0],
+            ["RETURN", 0],
+        ])
+        expr = make_callable(code_obj, ns)
+        agen = expr()
+        self.assertIsInstance(agen, AsyncGenerator)
+
+        async def run():
+            keys = []
+            for _ in range(3):
+                keys.append(await anext(agen))
+            self.assertEqual(keys, ["first", "second", "third"])
+            with self.assertRaises(StopAsyncIteration) as ctx:
+                await anext(agen)
+            self.assertIs(self._stop_async_iteration_final(ctx), None)
+
+        await run()
+
+
+    async def test_yield_from_set_obtains_iterator_from_tos(self):
+        """
+        YIELD_FROM obtains an iterator from a set on TOS; iteration order is
+        undefined, so compare the multiset of yielded values.
+        """
+
+        s = {11, 22, 33}
+        code_obj, ns = build_expr([
+            ["CONST", s],
+            ["YIELD_FROM", 0],
+            ["RETURN", 0],
+        ])
+        expr = make_callable(code_obj, ns)
+        agen = expr()
+        self.assertIsInstance(agen, AsyncGenerator)
+
+        async def run():
+            got = {await anext(agen), await anext(agen), await anext(agen)}
+            self.assertEqual(got, s)
+            with self.assertRaises(StopAsyncIteration) as ctx:
+                await anext(agen)
+            self.assertIs(self._stop_async_iteration_final(ctx), None)
+
+        await run()
+
+
+    async def test_yield_from_range_obtains_iterator_from_tos(self):
+        """
+        YIELD_FROM must iterate a range object placed on TOS without the test
+        calling iter() first.
+        """
+
+        r = range(5, 8)
+        code_obj, ns = build_expr([
+            ["CONST", r],
+            ["YIELD_FROM", 0],
+            ["RETURN", 0],
+        ])
+        expr = make_callable(code_obj, ns)
+        agen = expr()
+        self.assertIsInstance(agen, AsyncGenerator)
+
+        async def run():
+            self.assertEqual(await anext(agen), 5)
+            self.assertEqual(await anext(agen), 6)
+            self.assertEqual(await anext(agen), 7)
+            with self.assertRaises(StopAsyncIteration) as ctx:
+                await anext(agen)
+            self.assertIs(self._stop_async_iteration_final(ctx), None)
+
+        await run()
+
+
     async def test_yield_from_sync_generator_empty_return_value(self):
         """
         YIELD_FROM on a sync generator that returns without yielding
-        completes with the return value.
+        completes without surfacing the generator return value on the
+        hosting frame (StopAsyncIteration final is None).
         """
 
         def empty_gen():
@@ -361,7 +443,7 @@ class TestYieldFrom(CevalTest):
         code_obj, ns = build_expr([
             ["CONST", g],
             ["YIELD_FROM", 0],
-            ["RETURN", 1],
+            ["RETURN", 0],
         ])
         expr = make_callable(code_obj, ns)
         agen = expr()
@@ -370,8 +452,30 @@ class TestYieldFrom(CevalTest):
         async def run():
             with self.assertRaises(StopAsyncIteration) as ctx:
                 await anext(agen)
-            final = self._stop_async_iteration_final(ctx)
-            self.assertEqual(final, 7)
+            self.assertIs(self._stop_async_iteration_final(ctx), None)
+
+        await run()
+
+
+    async def test_yield_from_completion_then_return_underrun(self):
+        """
+        After YIELD_FROM completes on an exhausted delegate, the hosting
+        frame stack must not hold a value for RETURN 1 to pop; doing so
+        must raise stack underrun.
+        """
+
+        code_obj, ns = build_expr([
+            ["CONST", iter(())],
+            ["YIELD_FROM", 0],
+            ["RETURN", 1],
+        ])
+        expr = make_callable(code_obj, ns)
+        agen = expr()
+
+        async def run():
+            with self.assertRaises(RuntimeError) as ctx:
+                await anext(agen)
+            self.assertIn("stack underrun", str(ctx.exception).lower())
 
         await run()
 
@@ -385,7 +489,7 @@ class TestYieldFrom(CevalTest):
         code_obj, ns = build_expr([
             ["CONST", 7],
             ["YIELD_FROM", 0],
-            ["RETURN", 1],
+            ["RETURN", 0],
         ])
         expr = make_callable(code_obj, ns)
         agen = expr()
@@ -409,7 +513,7 @@ class TestYieldFrom(CevalTest):
         code_obj, ns = build_expr([
             ["CONST", None],
             ["YIELD_FROM", 0],
-            ["RETURN", 1],
+            ["RETURN", 0],
         ])
         expr = make_callable(code_obj, ns)
         agen = expr()
@@ -433,7 +537,7 @@ class TestYieldFrom(CevalTest):
         code_obj, ns = build_expr([
             ["CONST", iter([100])],
             ["YIELD_FROM", 0],
-            ["RETURN", 1],
+            ["RETURN", 0],
         ])
         expr = make_callable(code_obj, ns)
         agen = expr()
@@ -467,7 +571,7 @@ class TestYieldFrom(CevalTest):
         code_obj, ns = build_expr([
             ["CONST", inner_gen],
             ["YIELD_FROM", 0],
-            ["RETURN", 1],
+            ["RETURN", 0],
         ])
         expr = make_callable(code_obj, ns)
         agen = expr()
@@ -497,7 +601,7 @@ class TestYieldFrom(CevalTest):
         code_obj, ns = build_expr([
             ["CONST", g],
             ["YIELD_FROM", 0],
-            ["RETURN", 1],
+            ["RETURN", 0],
         ])
         expr = make_callable(code_obj, ns)
         agen = expr()
@@ -527,7 +631,7 @@ class TestYieldFrom(CevalTest):
         code_obj, ns = build_expr([
             ["CONST", a],
             ["YIELD_FROM", 0],
-            ["RETURN", 1],
+            ["RETURN", 0],
         ])
         expr = make_callable(code_obj, ns)
         agen = expr()
@@ -542,6 +646,94 @@ class TestYieldFrom(CevalTest):
                 await anext(agen)
 
         await run()
+
+
+    async def test_yield_from_inside_kos_function_outer_foreach_sums(self):
+        """
+        Inner Koskari Function body uses YIELD_FROM; an outer Koskari frame
+        CALLs that function, then PUSH_FOREACH / ITER_NEXT / CONTINUE sums
+        values from the returned async generator.
+        """
+
+        inner = build_code([
+            ["CONST", [7, 8, 9]],
+            ["YIELD_FROM", 0],
+            ["RETURN", 0],
+        ], name="test_gen")
+        fspec = inner.function_spec(FormalsSpec())
+        factory_code, factory_ns = build_expr([
+            ["CONST", fspec],
+            ["BUILD_FUNCTION", 0],
+            ["RETURN", 1],
+        ], name="make_test_gen")
+        test_gen = await make_callable(factory_code, factory_ns)()
+
+        consumer_code, consumer_ns = build_expr([
+            ["CONST", 0],
+            ["VAR_STORE", "total"],
+            ["CONST", None],
+            ["VAR", "test_gen"],
+            ["CALL", 0],
+            ["PUSH_FOREACH", 0],
+            ["ITER_NEXT", "else_lbl"],
+            ["VAR", "total"],
+            ["OBJECT_ADD", 2],
+            ["VAR_STORE", "total"],
+            ["CONTINUE", 0],
+            ["LABEL", "else_lbl"],
+            ["CLEAR_LOOP", 0],
+            ["LABEL", "break_lbl"],
+            ["POP_LOOP", 0],
+            ["POP", 1],
+            ["VAR", "total"],
+            ["RETURN", 1],
+        ], values={"test_gen": test_gen, "total": 0})
+        result = await make_callable(consumer_code, consumer_ns)()
+        self.assertEqual(result, 24)
+
+
+    async def test_yield_from_range_inside_kos_function_outer_foreach(self):
+        """
+        Same as test_yield_from_inside_kos_function_outer_foreach_sums but the
+        inner function YIELD_FROMs a range on TOS (no iter() in the test
+        harness).
+        """
+
+        inner = build_code([
+            ["CONST", range(2, 5)],
+            ["YIELD_FROM", 0],
+            ["RETURN", 0],
+        ], name="test_gen")
+        fspec = inner.function_spec(FormalsSpec())
+        factory_code, factory_ns = build_expr([
+            ["CONST", fspec],
+            ["BUILD_FUNCTION", 0],
+            ["RETURN", 1],
+        ], name="make_test_gen")
+        test_gen = await make_callable(factory_code, factory_ns)()
+
+        consumer_code, consumer_ns = build_expr([
+            ["CONST", 0],
+            ["VAR_STORE", "total"],
+            ["CONST", None],
+            ["VAR", "test_gen"],
+            ["CALL", 0],
+            ["PUSH_FOREACH", 0],
+            ["ITER_NEXT", "else_lbl"],
+            ["VAR", "total"],
+            ["OBJECT_ADD", 2],
+            ["VAR_STORE", "total"],
+            ["CONTINUE", 0],
+            ["LABEL", "else_lbl"],
+            ["CLEAR_LOOP", 0],
+            ["LABEL", "break_lbl"],
+            ["POP_LOOP", 0],
+            ["POP", 1],
+            ["VAR", "total"],
+            ["RETURN", 1],
+        ], values={"test_gen": test_gen, "total": 0})
+        result = await make_callable(consumer_code, consumer_ns)()
+        self.assertEqual(result, 9)
 
 
 # The end.

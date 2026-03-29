@@ -2593,7 +2593,9 @@ static KosEvalStep eval_phase_post_opcode(
 
   if (op_res == KOS_OP_RES_CONTROL_RETURNED) {
     int r = kos_dynnode_on_control_returned(ctx, KosContext_DYN_TOP(ctx), out_ev);
-    if (r == 0) {
+    if (r == 0 || r == KOS_DYN_UNWIND_ASYNC_STARTED) {
+      /* 0: thunk/wind advanced; 1: async extent started (same numeric value as
+         a normal opcode "suspend" but only returned from dyn helpers). */
       *loop_continue = 1;
       return KOS_STEP_CONTINUE;
     }
@@ -2611,7 +2613,14 @@ static KosEvalStep eval_phase_post_opcode(
     return KOS_STEP_CONTINUE;
   }
 
-  /* Record why we suspended so next entry can choose revive path */
+  /* Record why we suspended so next entry can choose revive path.
+     post_opcode is only called for non-zero op_res; a handler that stops
+     or suspends must set kind. Uninitialized {0} must not masquerade here. */
+  if (KosEvent_KIND(out_ev) == KOS_EV_NONE) {
+    PyErr_SetString(PyExc_RuntimeError,
+                    "eval post_opcode: KOS_EV_NONE with non-zero opcode result");
+    return KOS_STEP_FATAL_ERROR;
+  }
   if (KosEvent_KIND(out_ev) == KOS_EV_AWAIT) {
     KosContext_SUSPENSION_EVENT(ctx) = KOS_SUSP_AWAIT;
   } else if (KosEvent_KIND(out_ev) == KOS_EV_YIELD) {
@@ -2630,6 +2639,8 @@ static KosEvalStep eval_phase_post_opcode(
         return KOS_STEP_FATAL_ERROR;
       }
       Py_DECREF(payload);
+      KosEvent_PAYLOAD(out_ev) = NULL;
+      KosEvent_KIND(out_ev) = KOS_EV_NONE;
       KosContext_PENDING_AGEN(ctx) = NULL;
       Py_XDECREF(KosContext_PENDING_AGEN_DEFAULT(ctx));
       KosContext_PENDING_AGEN_DEFAULT(ctx) = NULL;
@@ -2680,6 +2691,8 @@ static KosEvalStep eval_phase_post_opcode(
     }
     KosContext_PENDING_AGEN(ctx) = NULL;
     KosContext_PENDING_AGEN_DEFAULT(ctx) = NULL;
+    KosEvent_PAYLOAD(out_ev) = NULL;
+    KosEvent_KIND(out_ev) = KOS_EV_NONE;
     *loop_continue = 1;
     return KOS_STEP_CONTINUE;
   }
