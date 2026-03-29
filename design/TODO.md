@@ -111,7 +111,6 @@ Ref: [api/dunder-adapter.md](api/dunder-adapter.md) (demand_sync, demand path);
 
 ### Remaining specials
 
-- **await** — language/compile-level support for await (AWAIT opcode exists).
 - **Variadic ordering checks** — variadic `>`, `>=`, `<`, `<=` that assert
   strict/non-strict chain (e.g. `(> 9 2 0)`, `(<= 0 0 3 4 5 5 8)`).
 
