@@ -791,6 +791,39 @@ consumes the event (freezes the dynamic chain and suspends), sets
 ```
 
 
+## compile/await
+
+**Symbol:** `compile/await`
+
+**Syntax:** `(compile/await EXPR)` — exactly one argument.
+
+**Use-case:** Koskari runs code under an async evaluator: ordinary Python calls
+that return a coroutine or awaitable are **auto-awaited** at the CALL boundary,
+so their final value is what you usually see on the stack. You rarely need an
+explicit await for those paths. `compile/await` exists for values that are
+**not** eagerly awaited—most importantly values produced by the **`defer`**
+builtin (`defer(fn, *args, **kwds)` in Python; see `design/api/types.md` and
+`design/api/defer-coroutine.md`). A defer is a single-shot continuation handle:
+it wraps a pending call so the VM does **not** run it immediately, which lets you
+pass the handle around as a first-class value and choose **when** to drive it.
+Use `(compile/await EXPR)` when `EXPR` evaluates to such a defer (or any other
+awaitable you need to await explicitly at this program point).
+
+**Behaviour:** Compiles `EXPR` onto the stack, then emits `AWAIT` (operand
+unused at runtime). The opcode pops TOS, dispatches the awaitable, and may
+suspend with `KOS_EV_AWAIT` or push the resolved value. See
+`design/OPCODES.md` (KOS_OP_AWAIT) and `koskari/lib/opcode/AWAIT.c`.
+
+**Examples:**
+
+```scheme
+;; Await a defer stored in d (defer was used so d is not auto-awaited)
+(compile/await d)
+```
+
+**Tests:** `tests/compile/specials/test_await_special.py`
+
+
 ## compile/parameterize
 
 **Symbol:** `compile/parameterize`
@@ -870,7 +903,7 @@ See `tests/compile/specials/test_parameterize.py` for full consumer-style tests.
 
 ## with
 
-**Symbol:** `with`
+**Symbol:** `compile/with`
 
 **Syntax:** `(with [name? expr] body ...)`
 
@@ -910,7 +943,7 @@ enter/exit, normal completion, and exception propagation/swallow.
 
 ## dyn-with
 
-**Symbol:** `dyn-with`
+**Symbol:** `compile/dyn-with`
 
 **Syntax:** `(dyn-with [name? expr] body ...)`
 

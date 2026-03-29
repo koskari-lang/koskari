@@ -30,9 +30,9 @@ from .call import special_call, special_call_attr
 from .class_ import special_class
 from .conditionals import special_and, special_cond, special_or
 from .context import special_dyn_with, special_parameterize, special_with
-from .continuations import (special_call_cc, special_capture_cc,
-                            special_let_cc, special_reset, special_return,
-                            special_shift)
+from .continuations import (special_await, special_call_cc,
+                            special_capture_cc, special_let_cc, special_reset,
+                            special_return, special_shift)
 from .dyn_wind import special_dyn_wind
 from .exceptions import (special_check_exception, special_clear_exception,
                          special_load_exception, special_raise, special_try)
@@ -76,6 +76,7 @@ __all__ = (
     "special_and",
     "special_apply_layout",
     "special_aiter",
+    "special_await",
     "special_attr",
     "special_begin",
     "special_bit_and",

@@ -26,22 +26,21 @@ using bootstrap as its builtins, then merges both and caches the result.
 :ai-assistant: claude-4.6-sonnet-high via Cursor
 """
 
+from decimal import Decimal as decimal
+from fractions import Fraction as fraction
 from os.path import dirname, join
 
+from .._sync import as_coroutine
 from ..compile.specials import SPECIALS
 from ..compile.syntax import build_syntax as build_syntax_rules
 from ..lib import (AttributeRef, ConstantRef, DynamicRef, ItemRef, MemoizedRef,
                    Module, ModuleNamespace, ParamRef, Ref, apply, build_dict,
-                   build_list, build_set, build_tuple, car, cdr, cons, deref,
-                   gensym, keyword, nil, pair, parameter, setcar, setcdr,
-                   symbol, values)
+                   build_list, build_set, build_tuple, car, cdr, cons, defer,
+                   demand_sync, deref, gensym, keyword, nil, pair, parameter,
+                   setcar, setcdr, symbol, values)
 from ..reader.layouts import LAYOUTS
 from ..types import (TypePredicate, build_proper, is_nil, is_proper,
                      is_recursive, unpack)
-from .._sync import as_coroutine
-from fractions import Fraction as fraction
-from decimal import Decimal as decimal
-
 
 __all__ = ('make_bootstrap', 'make_builtins', 'make_builtins_demand')
 
@@ -101,6 +100,7 @@ def make_bootstrap():
     _bind('deref', deref)
     _bind('apply', apply)
     _bind('parameter', parameter)
+    _bind('demand-sync', demand_sync)
 
     _bind('as-coroutine', as_coroutine)
 
@@ -111,6 +111,7 @@ def make_bootstrap():
 
     # values type (multiple return values)
     _ty('values', values)
+    _ty('defer', defer)
 
     # Python standard types available by default
     _ty('bool', bool)
@@ -165,10 +166,11 @@ def make_bootstrap():
     _bind('hash', hash)
     _bind('id', id)
     _bind('vars', vars)
-    _bind('dir', dir)
     _bind('open', open)
     _bind('range', range)
     _bind('format', format)
+
+    _bind('dir', dir)
 
     # todo: replace me with a better help built-in
     _bind('help', help)
