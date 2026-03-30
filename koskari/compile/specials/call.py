@@ -14,7 +14,7 @@
 """
 koskari.compile.specials.call
 
-Special form handler for compile/call.
+Special form handler for compile/call and compile/call-attr
 
 :author: Christopher O'Brien <obriencj@preoccupied.net>
 :license: GNU General Public License v3
@@ -22,16 +22,18 @@ Special form handler for compile/call.
 """
 
 
+from ...exceptions import SpecialError
 from ...lib import OpCode, cons, nil, pair, symbol
+from ...matcher import LIST, LITERAL_SYM, MATCH, REST, SYMBOL, VALUE, match
+from ...types import is_symbol
 from ..compiler import ByteCodeFragment, Compiler
 from ..helpers import gather_parameters_ng, special, special_forms
-from ...matcher import LIST, LITERAL_SYM, MATCH, REST, SYMBOL, VALUE, match
-from ...exceptions import SpecialError
-from ...types import is_symbol
 
 
 def _partition_args(args_seq):
-    """Partition args_seq into chunks: (pos, [items]) or (star, symbol)."""
+    """
+    Partition args_seq into chunks: (pos, [items]) or (star, symbol)
+    """
 
     chunks = []
     current_pos = []
@@ -52,7 +54,9 @@ def _partition_args(args_seq):
 
 
 def _partition_kwds(kwds_seq):
-    """Partition kwds_seq into chunks: (kw, [(name,expr)...]) or (starstar, sym)."""
+    """
+    Partition kwds_seq into chunks: (kw, [(name,expr)...]) or (starstar, sym)
+    """
 
     chunks = []
     current_kw = []
@@ -88,6 +92,9 @@ _CALL_PATTERNS = [
 ]
 
 
+_sym_call_attr = symbol("compile/call-attr")
+
+
 @special_forms(_CALL_PATTERNS)
 @special(symbol("compile/call"))
 def special_call(
@@ -101,20 +108,29 @@ def special_call(
     if matched is None:
         raise SpecialError("compile/call requires at least a callable", source)
 
+    rest = matched["args"].source if "args" in matched else nil
+
+    # rewriting ((attr obj a) args...) to
+    # (compile/call-attr obj a args...)
     if "attr" in matched:
         obj = matched["obj"]
         attr = matched["attr"]
-        args_src = matched["args"].source if "args" in matched else nil
-        new_form = cons(
-            symbol("compile/call-attr"),
-            obj.source, attr.source, args_src)
-        return new_form
+        return cons(
+            _sym_call_attr,
+            obj.source, attr.source, rest)
 
     callable = matched["callable"].source
-    rest = matched["args"].source if "args" in matched else nil
 
     use_var_path = is_symbol(callable) and not tc
-    name = str(callable) if use_var_path else None
+    name = str(callable) if is_symbol(callable) else None
+
+    # rewriting (.foo obj args...) to
+    # (compile/call-attr obj foo args...)
+    if name and rest and name.startswith("."):
+        obj, rest = rest
+        return cons(
+            _sym_call_attr,
+            obj, symbol(name[1:]), rest)
 
     fragment = compiler.fragment(called_by)
     if use_var_path:
@@ -214,7 +230,7 @@ _CALL_ATTR_PATTERNS = [
 
 
 @special_forms(_CALL_ATTR_PATTERNS)
-@special(symbol("compile/call-attr"))
+@special(_sym_call_attr)
 def special_call_attr(
         compiler: Compiler,
         source: pair,

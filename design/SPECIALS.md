@@ -10,7 +10,6 @@ dispatches on the head symbol of a list form. The forms below are implemented in
 `koskari/compile/specials/` and use helpers from `koskari/compile/helpers.py`
 where applicable.
 
-
 ## compile/bytecode
 
 **Symbol:** `compile/bytecode`
@@ -22,8 +21,8 @@ code. Each element of the body is a pair (or list) `[OP ARG]` where `OP` is an
 opcode name (e.g. `CONST`, `RETURN`) or integer, and `ARG` is the instruction
 argument (optional; defaults to 0).
 
-**Behaviour:** Compiles to a single fragment that emits the given instructions in
-order. No constant-pool or label resolution is done inside the form; the
+**Behaviour:** Compiles to a single fragment that emits the given instructions in  
+order. No constant-pool or label resolution is done inside the form; the  
 compiler's normal `complete` pass handles that. Opcode names may be given with
 or without the `KOS_OP_` prefix.
 
@@ -43,7 +42,6 @@ or without the `KOS_OP_` prefix.
   [CALL 2]
   [RETURN 1])
 ```
-
 
 ## compile/begin
 
@@ -72,7 +70,6 @@ body compiles to pushing `None` and returning it.
   (compile/call compute-result))
 ```
 
-
 ## compile/call
 
 **Symbol:** `compile/call`
@@ -81,12 +78,14 @@ body compiles to pushing `None` and returning it.
 
 Argument specifiers (order matters; analogous to Python 3.5+):
 
-| Form        | Syntax        | Example                | Pythonic equivalent   |
-| ----------- | ------------- | ---------------------- | --------------------- |
-| Positional  | `EXPR ...`    | `(f a b c)`            | `f(a, b, c)`          |
-| Keyword     | `KEY: VAL`    | `(f x: 1 y: 2)`        | `f(x=1, y=2)`         |
-| Star args   | `*: EXPR`     | `(f *: more)`          | `f(*more)`            |
-| Star kwargs | `**: EXPR`    | `(f **: kwargs)`       | `f(**kwargs)`         |
+
+| Form        | Syntax     | Example          | Pythonic equivalent |
+| ----------- | ---------- | ---------------- | ------------------- |
+| Positional  | `EXPR ...` | `(f a b c)`      | `f(a, b, c)`        |
+| Keyword     | `KEY: VAL` | `(f x: 1 y: 2)`  | `f(x=1, y=2)`       |
+| Star args   | `*: EXPR`  | `(f *: more)`    | `f(*more)`          |
+| Star kwargs | `**: EXPR` | `(f **: kwargs)` | `f(**kwargs)`       |
+
 
 Positionals may interleave with `*:` (star args); keywords may interleave with
 `**:` (star kwargs). All positionals and `*:` must come before any keywords or
@@ -112,8 +111,14 @@ or CALL_STAR (any use of `*:` or `**:`).
 
 **Behaviour:** If the callee is `(attr OBJ SYM)` or `(compile/attr OBJ SYM)`,
 the form expands to `(compile/call-attr OBJ SYM ARGS...)` and that form is
-compiled instead. Otherwise, compiles the first subform (the callee), then
-parses the remaining forms with `gather_parameters_ng` into positionals and
+compiled instead. If the callee is a symbol whose name begins with `.` and
+there is at least one argument, the first argument is treated as the receiver
+`OBJ` and the remainder as `ARGS...`; the leading dot is stripped from the
+callee symbol to obtain `SYM`, and the form expands to
+`(compile/call-attr OBJ SYM ARGS...)` the same way.
+
+Otherwise, compiles the first subform (the callee), then parses the remaining
+forms with `gather_parameters_ng` into positionals and
 star-args (interleaved) and keywords and starstar-args (interleaved).
 Positional-only calls emit `CALL n`; keyword calls emit `CALL_NAMES`; any star
 or starstar use emits `CALL_STAR`. Tail-call mode (`tc`) is respected when set
@@ -141,8 +146,11 @@ by the compiler.
 ;; Method call via attr expansion: (compile/call (attr obj m) args) → compile/call-attr
 (compile/call (attr s upper))
 (compile/call (compile/attr obj split sep) "-")
-```
 
+;; Dot-prefix callee: (compile/call .m obj args...) → compile/call-attr (same as attr)
+(compile/call .upper s)
+(compile/call .split s "-")
+```
 
 ## compile/call-attr
 
@@ -160,7 +168,9 @@ any `*:` or `**:` emits `CALL_ATTR_STAR`. SYM must be a symbol (the attribute
 name).
 
 **Note:** `(compile/call (attr obj name) args)` and `(compile/call (compile/attr obj name) args)`
-expand to this form before compilation.
+expand to this form before compilation. So does `(compile/call .name obj args...)` when `.name`
+is a symbol whose text starts with `.` and at least `obj` is present (the dotted callee is not
+used as a variable).
 
 **Examples:**
 
@@ -179,21 +189,22 @@ expand to this form before compilation.
 
 **Tests:** `tests/compile/specials/test_call_attr.py`
 
-
 ## compile/lambda
 
 **Symbol:** `compile/lambda`
 
 **Syntax** (most specific forms first; `NAME` is optional in all groups):
 
-| Shape | Form |
-| ----- | ---- |
-| Named + return | `(compile/lambda NAME :: RET FORMALS BODY ...)` |
-| Named + return (`type:`) | `(compile/lambda NAME type: RET FORMALS BODY ...)` |
-| Anonymous + return | `(compile/lambda :: RET FORMALS BODY ...)` |
-| Anonymous + return (`type:`) | `(compile/lambda type: RET FORMALS BODY ...)` |
-| Named, no return | `(compile/lambda NAME FORMALS BODY ...)` |
-| Anonymous, no return | `(compile/lambda FORMALS BODY ...)` |
+
+| Shape                        | Form                                               |
+| ---------------------------- | -------------------------------------------------- |
+| Named + return               | `(compile/lambda NAME :: RET FORMALS BODY ...)`    |
+| Named + return (`type:`)     | `(compile/lambda NAME type: RET FORMALS BODY ...)` |
+| Anonymous + return           | `(compile/lambda :: RET FORMALS BODY ...)`         |
+| Anonymous + return (`type:`) | `(compile/lambda type: RET FORMALS BODY ...)`      |
+| Named, no return             | `(compile/lambda NAME FORMALS BODY ...)`           |
+| Anonymous, no return         | `(compile/lambda FORMALS BODY ...)`                |
+
 
 `RET` is a single expression (not a formal parameter). It is recorded as compiler
 metadata on the resulting `Code` (`code.extras['return']`) and exposed on the
@@ -249,12 +260,12 @@ constant tuple for defaulted keywords.
 (compile/lambda g :: int [x] "doc for g" x)
 ```
 
-
 ## compile/let
 
 **Symbol:** `compile/let`
 
 **Syntax:**
+
 - Unnamed: `(compile/let BINDINGS BODY ...)`
 - Named: `(compile/let NAME BINDINGS BODY ...)`
 
@@ -281,7 +292,6 @@ expressions; body compiled with `helper_begin`. Named: rewrite to
 (compile/let loop [[n 10]]
   (compile/call loop ...))
 ```
-
 
 ## compile/cond
 
@@ -320,7 +330,6 @@ None for the fall-through case.
 **Note:** The higher-level forms `compile/if`, `compile/when`, and
 `compile/unless` are now macros in basics.ki (see [MACROS.md](MACROS.md)).
 
-
 ## compile/and
 
 **Symbol:** `compile/and`
@@ -355,7 +364,6 @@ term).
 ```
 
 **Tests:** `tests/compile/specials/test_cond.py`
-
 
 ## compile/or
 
@@ -392,7 +400,6 @@ term).
 
 **Tests:** `tests/compile/specials/test_cond.py`
 
-
 ## compile/try
 
 **Symbol:** `compile/try`
@@ -402,7 +409,7 @@ term).
 where each `CLAUSE` is `(EXCEPTMATCH BODY...)` and `EXCEPTMATCH` is one of:
 
 - `[TYPEEXPR]`, `[SYM TYPEEXPR]`, or `[TYPEEXPR as: SYM]` — USE form; type-only
-  or binding.
+or binding.
 - `except:` — bare catch-all; catches any exception without a type check or binding
 
 In addition, two keyword-head clauses are accepted:
@@ -451,7 +458,6 @@ between CLEAR_TRY and POP_TRY; `finally:` runs after cleanup.
 
 **Tests:** `tests/compile/specials/test_try.py`
 
-
 ## compile/raise
 
 **Symbol:** `compile/raise`
@@ -470,7 +476,6 @@ emits RAISE 1 (raise the value as exception).
 (compile/raise)
 (compile/raise (ValueError "invalid"))
 ```
-
 
 ## compile/return
 
@@ -496,7 +501,6 @@ event `KOS_EV_RETURN` and the evaluator exits.
 (compile/return result)
 ```
 
-
 ## compile/check-exception
 
 **Symbol:** `compile/check-exception`
@@ -512,7 +516,6 @@ Used inside the cond built by _except.
 
 **Examples:** Internal use only; not normally written by users.
 
-
 ## compile/clear-exception
 
 **Symbol:** `compile/clear-exception`
@@ -522,7 +525,6 @@ Used inside the cond built by _except.
 **Use-case:** Internal form. Clears the current exception state.
 
 **Behaviour:** Emits EXCEPTION_CLEAR. No arguments.
-
 
 ## compile/load-exception
 
@@ -534,7 +536,6 @@ Used inside the cond built by _except.
 value onto the stack (e.g. for binding with as: NAME).
 
 **Behaviour:** Emits EXCEPTION. No arguments.
-
 
 ## compile/while
 
@@ -563,7 +564,6 @@ Evaluates to the loop result (from break, continue, or None on normal exit).
   (compile/cond [done (compile/break result)]
                 [else: (compile/call step)]))
 ```
-
 
 ## compile/for-each
 
@@ -617,7 +617,6 @@ parent stack.
 
 **Tests:** `tests/compile/specials/test_for_each.py`
 
-
 ## compile/globals
 
 **Symbol:** `compile/globals`
@@ -643,7 +642,6 @@ stack as the expression's value. Any arguments are rejected with `SpecialError`.
 
 **Tests:** `tests/compile/specials/test_namespace_specials.py`
 
-
 ## compile/locals
 
 **Symbol:** `compile/locals`
@@ -665,7 +663,6 @@ onto the stack. Any arguments are rejected with `SpecialError`.
 **Implementation:** `koskari/compile/specials/variables.special_locals`
 
 **Tests:** `tests/compile/specials/test_namespace_specials.py`
-
 
 ## compile/gensym-partial
 
@@ -718,7 +715,6 @@ pattern as other macros that expand to a lambda).
 
 **Tests:** `tests/compile/specials/test_thunk.py`
 
-
 ## compile/break
 
 **Symbol:** `compile/break`
@@ -737,7 +733,6 @@ optionally with a result value.
 (compile/break)
 (compile/break 99)
 ```
-
 
 ## compile/continue
 
@@ -760,7 +755,6 @@ ITER_NEXT for for-each).
 ```
 
 **Tests:** `tests/compile/specials/test_cond.py`, `tests/compile/specials/test_while.py`
-
 
 ## compile/yield
 
@@ -789,7 +783,6 @@ consumes the event (freezes the dynamic chain and suspends), sets
 (compile/yield)
 (compile/yield (compile/call compute-next))
 ```
-
 
 ## compile/yield-from
 
@@ -826,7 +819,6 @@ with `KOS_CODE_YIELDS`. Full stack and suspension details are in
 **Tests:** `tests/compile/specials/test_yield_from_special.py`,
 `tests/lib/opcode/test_yield_from.py`
 
-
 ## compile/await
 
 **Symbol:** `compile/await`
@@ -858,7 +850,6 @@ suspend with `KOS_EV_AWAIT` or push the resolved value. See
 ```
 
 **Tests:** `tests/compile/specials/test_await_special.py`
-
 
 ## compile/parameterize
 
@@ -893,7 +884,6 @@ restore on exit (and on unwind) is handled by the evaluator.
 ```
 
 See `tests/compile/specials/test_parameterize.py` for full consumer-style tests.
-
 
 ## compile/dyn-wind
 
@@ -936,7 +926,6 @@ See `tests/compile/specials/test_parameterize.py` for full consumer-style tests.
 
 **Tests:** `tests/compile/specials/test_dyn_wind.py`
 
-
 ## with
 
 **Symbol:** `compile/with`
@@ -976,7 +965,6 @@ enter/exit, normal completion, and exception propagation/swallow.
   (compile/call do-work))
 ```
 
-
 ## dyn-with
 
 **Symbol:** `compile/dyn-with`
@@ -1002,7 +990,6 @@ Expression value is always `None`. See
   (compile/call k (compile/refq r)))
 ```
 
-
 ## compile/setq
 
 **Symbol:** `compile/setq`
@@ -1026,7 +1013,6 @@ item/attr/ref stores, etc. See [MACROS.md](MACROS.md).
 (compile/setq x 42)
 (compile/setq counter (compile/call + counter 1))
 ```
-
 
 ## compile/setq-values
 
@@ -1062,7 +1048,6 @@ VALUE, then emits unpack store bytecode via the same helper as unpack-style
 
 **Tests:** `tests/compile/specials/test_var_specials.py`
 
-
 ## compile/define-values
 
 **Symbol:** `compile/define-values`
@@ -1094,7 +1079,6 @@ prior `request_for_write`). The form evaluates to None.
 **Implementation:** `koskari/compile/specials/variables.py` — `special_define_values`
 
 **Tests:** `tests/compile/specials/test_var_specials.py`
-
 
 ## compile/inplace
 
@@ -1128,7 +1112,6 @@ FAST_OBJECT_* when VAR has a fixed slot.
 
 **Implementation:** `koskari/compile/specials/object.py` — `special_inplace`
 
-
 ## compile/refq
 
 **Symbol:** `compile/refq`
@@ -1146,7 +1129,6 @@ stack is a Ref for that name.
 ```scheme
 (compile/refq my-var)
 ```
-
 
 ## compile/bindq
 
@@ -1166,7 +1148,6 @@ pushes CONST None.
 (compile/bindq local 10)
 ```
 
-
 ## compile/define
 
 **Symbol:** `compile/define`
@@ -1179,7 +1160,7 @@ ways:
 - Declaration only: `(compile/define NAME :: TYPE)` or `(compile/define NAME type: TYPE)`
 - Declare and store: `(compile/define NAME :: TYPE EXPR)` (or `type: TYPE`)
 - Function shorthand:
-  `(compile/define NAME :: TYPE FORMALS BODY ...)` (or `type: TYPE`)
+`(compile/define NAME :: TYPE FORMALS BODY ...)` (or `type: TYPE`)
 
 **DECL** as the first argument (single binding-shaped form, no value):
 
@@ -1191,9 +1172,9 @@ ways:
 
 - A **symbol** (e.g. `x`), or
 - A **proper list** introducing a name with optional **type** attributes only:
-  e.g. `[x]`, `[x :: int]`, `[x type: int]`, or `(TYPE as: NAME)` for the
-  type-as-name spelling. **`value:`** and two-element **`(SYM EXPR)`** defaults
-  are rejected (declarations do not carry a value).
+e.g. `[x]`, `[x :: int]`, `[x type: int]`, or `(TYPE as: NAME)` for the
+type-as-name spelling. **`value:`** and two-element **`(SYM EXPR)`** defaults
+are rejected (declarations do not carry a value).
 
 **Use-case:** Variable and function definition for module-level loading.
 Declaration-only leaves the ref in scope but empty (reading before assignment
@@ -1241,7 +1222,6 @@ compiles it, then emits `VAR_STORE`.
 
 **Tests:** `tests/compile/specials/test_define.py`
 
-
 ## compile/define-global
 
 **Symbol:** `compile/define-global`
@@ -1252,7 +1232,7 @@ compiles it, then emits `VAR_STORE`.
 - `(compile/define-global NAME :: TYPE)` … (and `type:`), or `(compile/define-global DECL)`
 - `(compile/define-global NAME :: TYPE EXPR)` or `(compile/define-global DECL EXPR)`
 - `(compile/define-global NAME :: TYPE FORMALS BODY ...)` or
-  `(compile/define-global DECL FORMALS BODY ...)`
+`(compile/define-global DECL FORMALS BODY ...)`
 
 See **compile/define** for the meaning of **DECL** and function-shorthand
 lowering to `compile/lambda` (including `NAME :: TYPE` when a return type is
@@ -1290,7 +1270,6 @@ with local declaration; raises if the name is already in `declares` (e.g. from
 **Tests:** `tests/compile/specials/test_resolution_model.py`
 
 **Implementation:** `koskari/compile/specials/variables.special_define_global`
-
 
 ## compile/define-syntax
 
@@ -1332,7 +1311,6 @@ this form; see [LAYOUTS.md](LAYOUTS.md).
 
 **Implementation:** `koskari/compile/specials/variables.special_define_syntax`
 
-
 ## compile/class
 
 **Symbol:** `compile/class`
@@ -1342,7 +1320,7 @@ this form; see [LAYOUTS.md](LAYOUTS.md).
 - **NAME**: symbol — the class name and binding target
 - **SUPERS**: list of superclass expressions and optional `meta: Metaclass` keyword
 - **BODY**: forms compiled in sequence inside the CollectorNamespace (e.g.
-  `compile/define` for class attributes and methods)
+`compile/define` for class attributes and methods)
 
 **Use-case:** Create a Koskari class via PUSH_COLLECT/POP_COLLECT/BUILD_CLASS,
 run body in CollectorNamespace, bind the resulting class to NAME. Default
@@ -1376,7 +1354,6 @@ reach BUILD_CLASS. Returns None (matches compile/define).
 
 **Tests:** `tests/compile/specials/test_class.py`
 
-
 ## compile/delq
 
 **Symbol:** `compile/delq`
@@ -1394,7 +1371,6 @@ None.
 ```scheme
 (compile/delq temp)
 ```
-
 
 ## compile/attr
 
@@ -1414,7 +1390,6 @@ pushed on the stack.
 (compile/attr thing count)
 ```
 
-
 ## compile/del-attr
 
 **Symbol:** `compile/del-attr`
@@ -1430,7 +1405,6 @@ pushed on the stack.
 ```scheme
 (compile/del-attr obj x)
 ```
-
 
 ## compile/set-attr
 
@@ -1450,7 +1424,6 @@ name, then pushes CONST None.
 (compile/set-attr obj "value" 42)
 ```
 
-
 ## compile/ref-attr
 
 **Symbol:** `compile/ref-attr`
@@ -1467,7 +1440,6 @@ SYM on OBJ. The reference can be deref'd or stored into.
 ```scheme
 (compile/ref-attr obj count)
 ```
-
 
 ## compile/item
 
@@ -1490,7 +1462,6 @@ key fragment and emits ITEM 0.
 (compile/item tbl (compile/call compute-key))
 ```
 
-
 ## compile/ref-item
 
 **Symbol:** `compile/ref-item`
@@ -1507,7 +1478,6 @@ constant-key optimization as compile/item.
 ```scheme
 (compile/ref-item lst i)
 ```
-
 
 ## compile/deref
 
@@ -1531,7 +1501,6 @@ The runtime `deref` builtin remains available for higher-order use (e.g.
 (deref r)           ; runtime call; use when passing deref as first-class fn
 ```
 
-
 ## compile/del-item
 
 **Symbol:** `compile/del-item`
@@ -1549,7 +1518,6 @@ ITEM_CLEAR, then CONST None.
 ```scheme
 (compile/del-item d "key")
 ```
-
 
 ## compile/set-item
 
@@ -1569,7 +1537,6 @@ ITEM_STORE 0. Then CONST None.
 ```scheme
 (compile/set-item vec 0 99)
 ```
-
 
 ## compile/quote
 
@@ -1595,12 +1562,11 @@ compiles it. Otherwise emit CONST FORM.
 (compile/quote (a b c))
 ```
 
-
 ## compile/quasiquote
 
 **Symbol:** `compile/quasiquote`
 
-**Syntax:** `` `EXPR `` (reader shorthand) or `(compile/quasiquote EXPR)`
+**Syntax:** ``EXPR` (reader shorthand) or `(compile/quasiquote EXPR)`
 
 **Use-case:** Quasi-quotation: construct a pair structure at compile time with
 selected sub-expressions evaluated at runtime. Inside the body, `,EXPR`
@@ -1608,42 +1574,43 @@ selected sub-expressions evaluated at runtime. Inside the body, `,EXPR`
 flattens a list into the surrounding list.
 
 **Reader shorthands:**
-- `` `EXPR `` → `(compile/quasiquote EXPR)`
+
+- ``EXPR` → `(compile/quasiquote EXPR)`
 - `,EXPR` → `(compile/unquote EXPR)` (only valid inside a quasiquote body)
 - `,@EXPR` → `(compile/unquote-splicing EXPR)` (only valid inside a quasiquote body)
-- `` `HEAD: BODY `` → `(compile/quasiquote-block (:block: ...))` (block quasiquote; see below)
+- ``HEAD: BODY` → `(compile/quasiquote-block (:block: ...))` (block quasiquote; see below)
 
 **Behaviour:** One argument required. The compiler walks the expression
 recursively at a nesting *level* (starting at 0):
 
 - **Atoms and constants** (symbols, keywords, numbers, nil): emitted as `CONST`.
-- **`(compile/unquote INNER)`** at level 0: `INNER` is compiled normally
-  (evaluated at runtime); its result becomes that position's value.
-- **`(compile/unquote INNER)`** at level > 0: the unquote form is reconstructed
-  literally as a pair — `CONST compile/unquote`, recurse on INNER at level − 1,
-  `PROPER 2`.
-- **`(compile/quasiquote INNER)`** at any level: reconstructed literally at
-  level + 1.
+- `**(compile/unquote INNER)`** at level 0: `INNER` is compiled normally
+(evaluated at runtime); its result becomes that position's value.
+- `**(compile/unquote INNER)**` at level > 0: the unquote form is reconstructed
+literally as a pair — `CONST compile/unquote`, recurse on INNER at level − 1,
+`PROPER 2`.
+- `**(compile/quasiquote INNER)**` at any level: reconstructed literally at
+level + 1.
 - **Proper lists**: walked element by element. Consecutive non-splice elements
-  are accumulated into *segments*:
+are accumulated into *segments*:
   - If no `unquote-splicing` site is present anywhere in the list, each segment
-    is emitted individually with `PROPER n`.
+  is emitted individually with `PROPER n`.
   - If any splice is present, constant-only segments are folded into a single
-    `CONST (e0, e1, ...)` tuple (which `PAIR_SPLICE` accepts natively); mixed
-    segments use `PROPER n`. Each splice site compiles its inner expression
-    directly (must produce an iterable pair or nil). All segments and splices are
-    gathered then combined with `PAIR_SPLICE count`.
+  `CONST (e0, e1, ...)` tuple (which `PAIR_SPLICE` accepts natively); mixed
+  segments use `PROPER n`. Each splice site compiles its inner expression
+  directly (must produce an iterable pair or nil). All segments and splices are
+  gathered then combined with `PAIR_SPLICE count`.
 - **Dotted (improper) pairs**: like a proper list but the non-nil tail is emitted
-  after all elements and the whole thing is closed with `CONS count+1` (the tail
-  is explicit). Splice in dotted-tail position raises `SpecialError`.
+after all elements and the whole thing is closed with `CONS count+1` (the tail
+is explicit). Splice in dotted-tail position raises `SpecialError`.
 
-**Nesting:** Each additional `` ` `` increments the level; each `,` decrements
+**Nesting:** Each additional ``` increments the level; each `,` decrements
 it. At level > 0, unquote forms are data, not escapes.
 
 **Note on dotted tails with unquote:** `(a . ,x)` is parsed by the reader as the
 three-element proper list `(a compile/unquote x)` (because `(a . (unquote x))`
 collapses to a proper list). Only atomic tails produce genuine improper pairs
-(e.g. `` `(a . 42) `` or `` `(a . b) ``).
+(e.g. ``(a . 42)` or ``(a . b)`).
 
 **Opcodes emitted:** `CONST`, `PROPER`, `CONS`, `PAIR_SPLICE` (see OPCODES.md §5.1).
 
@@ -1674,7 +1641,6 @@ collapses to a proper list). Only atomic tails produce genuine improper pairs
 
 **Tests:** `tests/compile/specials/test_quasiquote.py`
 
-
 ## compile/quote-block
 
 **Symbol:** `compile/quote-block`
@@ -1687,8 +1653,7 @@ sub-blocks) is captured as a `:block:` cons without invoking any layout
 handler. Useful for passing block structure as data to macros or other
 compile-time code.
 
-**Reader shorthand:** A `'` immediately preceding a block head (e.g. `'begin:
-...`) causes the reader to read the entire block as a raw `:block:` cons and
+**Reader shorthand:** A `'` immediately preceding a block head (e.g. `'begin: ...`) causes the reader to read the entire block as a raw `:block:` cons and
 wrap it in `(compile/quote-block ...)`. Sub-blocks in the body are recursively
 read as `:block:` nodes without layout expansion.
 
@@ -1712,19 +1677,18 @@ treated as opaque data — no layout expansion takes place.
 
 **Tests:** `tests/compile/specials/test_quasiquote.py`, `tests/reader/layouts/test_quasiquote.py`
 
-
 ## compile/quasiquote-block
 
 **Symbol:** `compile/quasiquote-block`
 
-**Syntax:** `` `HEAD: BODY `` (reader shorthand) or `(compile/quasiquote-block BLOCK-REPR)`
+**Syntax:** ``HEAD: BODY` (reader shorthand) or `(compile/quasiquote-block BLOCK-REPR)`
 
 **Use-case:** The block-syntax analogue of `compile/quasiquote`. Captures an
 entire indented block (including nested peer blocks such as `if`/`else`) as a
 `:block:` cons with `,EXPR` and `,@EXPR` unquote sites active throughout the
 header and body. The primary tool for writing macros in block syntax.
 
-**Reader shorthand:** A `` ` `` immediately preceding a block head causes the
+**Reader shorthand:** A ``` immediately preceding a block head causes the
 reader to read the entire block as a raw `:block:` cons with `,`/`,@` unquote
 reader macros active for all header arguments, body forms, and nested
 sub-block headers and bodies.
@@ -1785,7 +1749,6 @@ and reconstructs it as literal data, exactly like nested `compile/quasiquote`.
 `TestQuasiquoteBlockTwoPhase`, `TestQuasiquoteBlockFullStack`),
 `tests/reader/layouts/test_quasiquote.py`
 
-
 ## compile/apply-layout
 
 **Symbol:** `compile/apply-layout`
@@ -1801,17 +1764,17 @@ when `compile/quasiquote-block` is used.
 **Behaviour:**
 
 1. Each argument must be a `:block:` cons; a non-block argument raises
-   `SpecialError`.
+  `SpecialError`.
 2. Recursively expands any nested `:block:` elements in the body of each block
-   before invoking its layout handler.
+  before invoking its layout handler.
 3. Looks up the layout handler for the block head via `compiler.find_layout`
-   (resolves `layout/<head>` in the module namespace). Falls back to
+  (resolves `layout/<head>` in the module namespace). Falls back to
    `layout/block` (the generic handler) if no specific handler is found.
 4. Scans the following sibling arguments for declared peer blocks (e.g. `else`
-   after `if`), consuming them.
+  after `if`), consuming them.
 5. Calls `layout_obj.read(source, peers)` with the expanded source cons.
 6. If multiple top-level results remain after peer consumption, wraps them in
-   `(compile/begin ...)`.
+  `(compile/begin ...)`.
 7. Compiles and returns the final form.
 
 **Examples:**
@@ -1835,7 +1798,6 @@ when `compile/quasiquote-block` is used.
 **Tests:** `tests/compile/specials/test_apply_layout.py`,
 `tests/compile/specials/test_quasiquote.py`
 
-
 ## compile/unquote
 
 **Symbol:** `compile/unquote`
@@ -1856,7 +1818,6 @@ raises `SpecialError`. Inside quasiquote, this form is handled directly by the
 `(a ,x b)    ; x is evaluated
 `(a ,(+ 1 2) b)  ; (+ 1 2) is evaluated, giving 3
 ```
-
 
 ## compile/unquote-splicing
 
@@ -1883,7 +1844,6 @@ cdr (dotted tail) position of an improper list; the quasiquote compiler raises
 `(,@xs ,@ys)     ; two lists concatenated
 ```
 
-
 ## compile/car
 
 **Symbol:** `compile/car`
@@ -1903,7 +1863,6 @@ pushed.
 (compile/car (compile/cons 1 nil))   ; → 1
 ```
 
-
 ## compile/cdr
 
 **Symbol:** `compile/cdr`
@@ -1922,7 +1881,6 @@ is pushed.
 ```scheme
 (compile/cdr (compile/cons 1 (compile/cons 2 nil)))   ; → (2 . nil)
 ```
-
 
 ## compile/cons
 
@@ -1944,7 +1902,6 @@ push result. count 0 pushes nil.
 (compile/cons 1 2 nil)                    ; → (1 . (2 . nil))
 (compile/cons (compile/quote a) (compile/quote (b c)) nil)  ; → (a b c)
 ```
-
 
 ## Object operator specials
 
@@ -1975,14 +1932,16 @@ the first non-constant argument to preserve dunder dispatch semantics.
 All comparison specials require exactly 2 arguments and emit a NOARG opcode
 (the arg value is ignored by the C handler).
 
-| Special | Opcode | Python |
-| --- | --- | --- |
-| `(compile/= A B)` | `OBJECT_EQ` | `A == B` |
+
+| Special            | Opcode      | Python   |
+| ------------------ | ----------- | -------- |
+| `(compile/= A B)`  | `OBJECT_EQ` | `A == B` |
 | `(compile/!= A B)` | `OBJECT_NE` | `A != B` |
-| `(compile/< A B)` | `OBJECT_LT` | `A < B` |
+| `(compile/< A B)`  | `OBJECT_LT` | `A < B`  |
 | `(compile/<= A B)` | `OBJECT_LE` | `A <= B` |
-| `(compile/> A B)` | `OBJECT_GT` | `A > B` |
+| `(compile/> A B)`  | `OBJECT_GT` | `A > B`  |
 | `(compile/>= A B)` | `OBJECT_GE` | `A >= B` |
+
 
 ---
 
@@ -1990,12 +1949,14 @@ All comparison specials require exactly 2 arguments and emit a NOARG opcode
 
 **Binary (NOARG, exactly 2 args):**
 
-| Special | Opcode | Python |
-| --- | --- | --- |
-| `(compile/in ITEM COLLECTION)` | `OBJECT_IN` | `ITEM in COLLECTION` |
+
+| Special                            | Opcode          | Python                   |
+| ---------------------------------- | --------------- | ------------------------ |
+| `(compile/in ITEM COLLECTION)`     | `OBJECT_IN`     | `ITEM in COLLECTION`     |
 | `(compile/not-in ITEM COLLECTION)` | `OBJECT_NOT_IN` | `ITEM not in COLLECTION` |
-| `(compile/is A B)` | `OBJECT_IS` | `A is B` |
-| `(compile/is-not A B)` | `OBJECT_IS_NOT` | `A is not B` |
+| `(compile/is A B)`                 | `OBJECT_IS`     | `A is B`                 |
+| `(compile/is-not A B)`             | `OBJECT_IS_NOT` | `A is not B`             |
+
 
 **Type checks (COUNT, at least 2 args):**
 
@@ -2010,10 +1971,12 @@ The opcode argument encodes the number of type arguments. With a single type
 the C handler pops value and type individually (arg=1). With multiple types it
 collects them into a tuple via `PopTail(N)` (arg=N).
 
-| Special | Opcode |
-| --- | --- |
+
+| Special              | Opcode               |
+| -------------------- | -------------------- |
 | `compile/isinstance` | `OBJECT_IS_INSTANCE` |
 | `compile/issubclass` | `OBJECT_IS_SUBCLASS` |
+
 
 ---
 
@@ -2022,18 +1985,20 @@ collects them into a tuple via `PopTail(N)` (arg=N).
 These accept one or more arguments. The opcode arg is the total number of
 values on the stack after any constant folding.
 
-| Special | Opcode | Python fold |
-| --- | --- | --- |
-| `(compile/+ A ...)` | `OBJECT_ADD` | `operator.add` |
-| `(compile/- A ...)` | `OBJECT_SUBTRACT` | `operator.sub` |
-| `(compile/* A ...)` | `OBJECT_MULTIPLY` | `operator.mul` |
-| `(compile/** BASE EXP [MOD])` | `OBJECT_POWER` | no fold |
-| `(compile/& A ...)` | `OBJECT_BIT_AND` | `operator.and_` |
-| `(compile/\| A ...)` | `OBJECT_BIT_OR` | `operator.or_` |
-| `(compile/^ A ...)` | `OBJECT_BIT_XOR` | `operator.xor` |
-| `(compile/// A ...)` | `OBJECT_FLOOR_DIVIDE` | `operator.floordiv` |
-| `(compile// A ...)` | `OBJECT_TRUE_DIVIDE` | `operator.truediv` |
-| `(compile/@ A ...)` | `OBJECT_MATRIX_MULTIPLY` | `operator.matmul` |
+
+| Special                       | Opcode                   | Python fold         |
+| ----------------------------- | ------------------------ | ------------------- |
+| `(compile/+ A ...)`           | `OBJECT_ADD`             | `operator.add`      |
+| `(compile/- A ...)`           | `OBJECT_SUBTRACT`        | `operator.sub`      |
+| `(compile/* A ...)`           | `OBJECT_MULTIPLY`        | `operator.mul`      |
+| `(compile/** BASE EXP [MOD])` | `OBJECT_POWER`           | no fold             |
+| `(compile/& A ...)`           | `OBJECT_BIT_AND`         | `operator.and_`     |
+| `(compile/| A ...)`           | `OBJECT_BIT_OR`          | `operator.or_`      |
+| `(compile/^ A ...)`           | `OBJECT_BIT_XOR`         | `operator.xor`      |
+| `(compile/// A ...)`          | `OBJECT_FLOOR_DIVIDE`    | `operator.floordiv` |
+| `(compile// A ...)`           | `OBJECT_TRUE_DIVIDE`     | `operator.truediv`  |
+| `(compile/@ A ...)`           | `OBJECT_MATRIX_MULTIPLY` | `operator.matmul`   |
+
 
 ---
 
@@ -2042,12 +2007,14 @@ values on the stack after any constant folding.
 These always require exactly 2 arguments. The C handler ignores the opcode
 arg for `BIT_LEFT`, `BIT_RIGHT`, but `MODULO` and `DIVMOD` require arg=2.
 
-| Special | Opcode | Python |
-| --- | --- | --- |
-| `(compile/% A B)` | `OBJECT_MODULO` | `A % B` |
-| `(compile/<< A B)` | `OBJECT_BIT_LEFT` | `A << B` |
-| `(compile/>> A B)` | `OBJECT_BIT_RIGHT` | `A >> B` |
-| `(compile/divmod A B)` | `OBJECT_DIVMOD` | `divmod(A, B)` |
+
+| Special                | Opcode             | Python         |
+| ---------------------- | ------------------ | -------------- |
+| `(compile/% A B)`      | `OBJECT_MODULO`    | `A % B`        |
+| `(compile/<< A B)`     | `OBJECT_BIT_LEFT`  | `A << B`       |
+| `(compile/>> A B)`     | `OBJECT_BIT_RIGHT` | `A >> B`       |
+| `(compile/divmod A B)` | `OBJECT_DIVMOD`    | `divmod(A, B)` |
+
 
 ---
 
@@ -2055,21 +2022,23 @@ arg for `BIT_LEFT`, `BIT_RIGHT`, but `MODULO` and `DIVMOD` require arg=2.
 
 Each requires exactly one argument.
 
-| Special | Opcode | Python |
-| --- | --- | --- |
-| `(compile/not OBJ)` | `OBJECT_NOT` | `not OBJ` |
-| `(compile/repr OBJ)` | `OBJECT_REPR` | `repr(OBJ)` |
-| `(compile/truth OBJ)` | `OBJECT_TRUTH` | `bool(OBJ)` |
-| `(compile/iter OBJ)` | `OBJECT_ITER` | `iter(OBJ)` |
-| `(compile/~ OBJ)` | `OBJECT_BIT_INVERT` | `~OBJ` |
-| `(compile/str OBJ ...)` | `OBJECT_STR` | `str(OBJ)` / f-string join |
-| `(compile/format OBJ)` | `OBJECT_FORMAT` | `format(OBJ)` |
-| `(compile/format OBJ RULES)` | `OBJECT_FORMAT` or `OBJECT_FORMAT_CONST` | `format(OBJ, RULES)` |
-| `(compile/len OBJ)` | `OBJECT_LEN` | `len(OBJ)` |
-| `(compile/type OBJ)` | `OBJECT_TYPE` | `type(OBJ)` |
-| `(compile/dir OBJ)` | `OBJECT_DIR` | `dir(OBJ)` |
-| `(compile/vars OBJ)` | `OBJECT_VARS` | `vars(OBJ)` |
-| `(compile/aiter OBJ)` | `OBJECT_AITER` | `aiter(OBJ)` |
+
+| Special                      | Opcode                                   | Python                     |
+| ---------------------------- | ---------------------------------------- | -------------------------- |
+| `(compile/not OBJ)`          | `OBJECT_NOT`                             | `not OBJ`                  |
+| `(compile/repr OBJ)`         | `OBJECT_REPR`                            | `repr(OBJ)`                |
+| `(compile/truth OBJ)`        | `OBJECT_TRUTH`                           | `bool(OBJ)`                |
+| `(compile/iter OBJ)`         | `OBJECT_ITER`                            | `iter(OBJ)`                |
+| `(compile/~ OBJ)`            | `OBJECT_BIT_INVERT`                      | `~OBJ`                     |
+| `(compile/str OBJ ...)`      | `OBJECT_STR`                             | `str(OBJ)` / f-string join |
+| `(compile/format OBJ)`       | `OBJECT_FORMAT`                          | `format(OBJ)`              |
+| `(compile/format OBJ RULES)` | `OBJECT_FORMAT` or `OBJECT_FORMAT_CONST` | `format(OBJ, RULES)`       |
+| `(compile/len OBJ)`          | `OBJECT_LEN`                             | `len(OBJ)`                 |
+| `(compile/type OBJ)`         | `OBJECT_TYPE`                            | `type(OBJ)`                |
+| `(compile/dir OBJ)`          | `OBJECT_DIR`                             | `dir(OBJ)`                 |
+| `(compile/vars OBJ)`         | `OBJECT_VARS`                            | `vars(OBJ)`                |
+| `(compile/aiter OBJ)`        | `OBJECT_AITER`                           | `aiter(OBJ)`               |
+
 
 Note: `compile/str` is variadic (COUNT) at the C level — it uses
 `KosOperator_BuildStr` / `obj_op_reducing` — useful for f-string style
@@ -2077,14 +2046,15 @@ multi-part concatenation. The compile-time special accepts one or more
 arguments.
 
 `compile/format` lowering matrix:
+
 - `(compile/format OBJ)`:
   - constant `OBJ` -> folds to `CONST` string via compile-time `format`
   - non-constant `OBJ` -> emits `OBJECT_FORMAT` with arg=1
 - `(compile/format OBJ RULES)`:
   - constant-normalized `RULES` (string or `(compile/quote SYMBOL)`) and
-    constant `OBJ` -> folds to `CONST` string via compile-time `format`
+  constant `OBJ` -> folds to `CONST` string via compile-time `format`
   - constant-normalized `RULES` and non-constant `OBJ` -> emits
-    `OBJECT_FORMAT_CONST`
+  `OBJECT_FORMAT_CONST`
   - dynamic `RULES` -> emits `OBJECT_FORMAT` with arg=2
 
 Quoted-symbol convenience: `(compile/quote foo)` in RULES position is treated
@@ -2134,7 +2104,6 @@ a different eval context triggers the segmented-transfer path.
 
 **Tests:** `tests/compile/specials/test_call_cc.py`
 
-
 ## compile/let/cc
 
 **Symbol:** `compile/let/cc`
@@ -2167,7 +2136,6 @@ namespace. `K` is not visible after the `compile/let/cc` form.
 
 **Tests:** `tests/compile/specials/test_call_cc.py`
 
-
 ## compile/capture/cc
 
 **Symbol:** `compile/capture/cc`
@@ -2196,7 +2164,6 @@ continuation), `VAR_STORE K` (stores into the current namespace's slot for
 
 **Tests:** `tests/compile/specials/test_call_cc.py`
 
-
 ## compile/reset
 
 **Symbol:** `compile/reset`
@@ -2220,7 +2187,6 @@ emits `POP_PROMPT 0`.
     1
     (compile/shift k (compile/call k 5))))
 ```
-
 
 ## compile/shift
 
@@ -2246,12 +2212,12 @@ Koskari eval loop via `INVOKE_K` or `INVOKE_K_VAR`).
     (compile/call k "value")))
 ```
 
-
 ## import
 
 **Symbol:** `import`
 
 **Syntax:**
+
 - Absolute: `(import MODULE)` or `(import MODULE as: ALIAS)`
 - Relative: `(import .MODULE)` or `(import ..MODULE)` (leading dots, optional alias)
 - Dotted: `(import foo.bar.baz)` or `(import foo.bar.baz as: baz)`
@@ -2266,13 +2232,12 @@ name (e.g. `baz` for `foo.bar.baz`) unless overridden with `as:`.
 **Behaviour:**
 
 - Absolute import (no leading dot): emits `IMPORT cpool["dotted.name"]`, then
-  `VAR_BIND cpool["leaf"]` (or the alias name), then `CONST None` (statement
-  result).
-- Relative import (one or more leading dots): emits `IMPORT_REL cpool[(level,
-  name)]`, then `VAR_BIND cpool["leaf_or_alias"]`, then `CONST None`.
+`VAR_BIND cpool["leaf"]` (or the alias name), then `CONST None` (statement
+result).
+- Relative import (one or more leading dots): emits `IMPORT_REL cpool[(level, name)]`, then `VAR_BIND cpool["leaf_or_alias"]`, then `CONST None`.
 - Bare relative import (only dots, no module name, e.g. `(import .)`): name
-  portion is `None` in the pool tuple; binds the package under the leaf of the
-  dots (or an explicit alias).
+portion is `None` in the pool tuple; binds the package under the leaf of the
+dots (or an explicit alias).
 - `as:` keyword overrides the binding name.
 
 **Opcodes emitted:** `IMPORT` (absolute) or `IMPORT_REL` (relative), followed
@@ -2304,12 +2269,12 @@ by `VAR_BIND` and `CONST None`.
 
 **Tests:** `tests/compile/specials/test_import.py`
 
-
 ## import-from
 
 **Symbol:** `import-from`
 
 **Syntax:**
+
 - `(import-from MODULE NAME ...)` — import named attributes from MODULE
 - `(import-from MODULE (NAME as: ALIAS) ...)` — with per-name aliases
 - `(import-from .MODULE NAME ...)` — relative module, named attributes
@@ -2325,11 +2290,11 @@ Mirrors Python's `from MODULE import NAME [as ALIAS], ...`.
 **Behaviour:**
 
 1. Emit `IMPORT cpool["name"]` (absolute) or `IMPORT_REL cpool[(level, name)]`
-   (relative) to push the module onto the stack.
+  (relative) to push the module onto the stack.
 2. For each `(attr, binding)` pair, emit `IMPORT_FROM cpool["attr"]` (PEEK TOS;
-   push attribute value), then `VAR_BIND cpool["binding"]` (bind and pop).
+  push attribute value), then `VAR_BIND cpool["binding"]` (bind and pop).
 3. Emit `POP 1` to discard the module (compensating for IMPORT_FROM's
-   peek-not-pop behaviour).
+  peek-not-pop behaviour).
 4. Emit `CONST None` (statement result).
 
 The `POP 1` at step 3 is **always** emitted by `helper_import_from_sequence()`
@@ -2337,7 +2302,8 @@ regardless of how many names are imported. This is the structural guarantee
 that keeps IMPORT_FROM's stack invariant sound.
 
 **Opcodes emitted:** `IMPORT` or `IMPORT_REL`, then for each name: `IMPORT_FROM`
-+ `VAR_BIND`, then `POP 1`, then `CONST None`.
+
+- `VAR_BIND`, then `POP 1`, then `CONST None`.
 
 **Implementation:** `koskari/compile/specials/imports.py` — `special_import_from`,
 `helper_import_from_sequence`
@@ -2363,32 +2329,31 @@ that keeps IMPORT_FROM's stack invariant sound.
 
 **Tests:** `tests/compile/specials/test_import.py`
 
-
 ## Other implemented specials
 
 The following specials are implemented but are not given full sections above.
 See the cited modules for behaviour and examples.
 
 - **compile/with** — Single-shot context manager; `(compile/with EXPR BODY ...)`.
-  Emits `PUSH_WITH` / `POP_WITH`. Implementation:
-  `koskari/compile/specials/context.py`.
+Emits `PUSH_WITH` / `POP_WITH`. Implementation:
+`koskari/compile/specials/context.py`.
 - **compile/dyn-with** — Multi-shot dynamic context manager; async enter/exit.
-  Emits `PUSH_DYN_WITH` / `POP_DYN_WITH`. Implementation:
-  `koskari/compile/specials/context.py`.
-
+Emits `PUSH_DYN_WITH` / `POP_DYN_WITH`. Implementation:
+`koskari/compile/specials/context.py`.
 
 ## Adding New Specials
 
 When implementing a new special form:
 
 1. Add a handler function in the appropriate module under
-   `koskari/compile/specials/` and decorate it with `@special(symbol("name"))`.
+  `koskari/compile/specials/` and decorate it with `@special(symbol("name"))`.
    The specials package (`koskari/compile/specials/__init__.py`) imports and
    re-exports all handlers.
 2. If the form needs parameter or formals parsing, use `gather_parameters` or
-   `gather_formals` from `koskari/compile/helpers.py`; add new helpers there if
+  `gather_formals` from `koskari/compile/helpers.py`; add new helpers there if
    needed.
 3. Add the handler to the import line and `__all__` in
-   `koskari/compile/specials/__init__.py`.
+  `koskari/compile/specials/__init__.py`.
 4. Add a section to this document: symbol, syntax, use-case, behaviour, and at
-   least one simple example.
+  least one simple example.
+

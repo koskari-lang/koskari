@@ -82,6 +82,7 @@ flowchart TD
 **Revive paths:**
 - **revive_plan**: Resume a suspended transfer plan. If `throw_exc` set → `KOS_MODE_EXCEPTION`. Else inject `send_val` into plan → `KOS_MODE_TRANSFER`.
 - **revive_await / revive_yield**: If `throw_exc` → `PyErr_SetObject`, `KOS_MODE_EXCEPTION`. Else push `send_val` onto stack (if non-NULL), then `KOS_MODE_NORMAL`. YIELD_FROM uses these same revive paths (its phase selects AWAIT or YIELD); there is no separate `revive_yield_from` or `KOS_SUSP_YIELD_FROM`.
+  - From the caller's perspective, both plain `YIELD` and `YIELD_FROM` suspensions surface as the same boundary kinds (`KOS_EV_YIELD` or `KOS_EV_AWAIT`), so resume routing is identical.
 
 **Mode dispatch outcomes:**
 - `KOS_MODE_EXCEPTION` → `try_local_exception_handler`; on success → `KOS_STEP_CONTINUE` or `KOS_STEP_STOP_EVENT` (AWAIT); on failure → `out_ev = KOS_EV_RAISE`, `KOS_STEP_STOP_EVENT`.
@@ -191,7 +192,13 @@ flowchart TD
     yield_walk --> tag
 ```
 
-For **YIELD** (op_res == 1, `out_ev` == KOS_EV_YIELD): before tagging suspension, the evaluator calls `kos_dyn_walk_handle_yield(ctx, out_ev)`. The dynamic chain is walked from dyn_top toward the frame; each node is offered handle(YIELD). The **generator node** (KOS_DYN_GEN) **consumes** the event: it freezes the chain and releases (e.g. `kos_dyn_gen_freeze_and_release`), so the context suspends with the yielded value. Then `SUSPENSION_EVENT = KOS_SUSP_YIELD` and the loop exits (STOP_EVENT). On resume, `revive_yield` pushes `send_val` onto the stack.
+For **YIELD** and **YIELD_FROM** (op_res == 1, `out_ev` == KOS_EV_YIELD): before tagging suspension, the evaluator calls `kos_dyn_walk_handle_yield(ctx, out_ev)`. The dynamic chain is walked from dyn_top toward the frame; each node is offered handle(YIELD). The **generator node** (KOS_DYN_GEN) **consumes** the event and freezes the chain (e.g. `kos_dyn_gen_freeze_and_release`).
+
+Whether `koskari_eval()` actually *returns* this yield to its caller depends on flattening mode:
+- **Flattened koskati-to-koskari (NEXT/ITER_NEXT over `KosPyAsyncGen`)**: if `KosContext_PENDING_AGEN(ctx)` is set, `eval_phase_post_opcode` treats the yielded payload as an internal step result. After `kos_dyn_walk_handle_yield`, it pushes the payload onto the current frame stack, clears `out_ev` back to `KOS_EV_NONE` (and drops the payload), and continues the dispatch loop (`*loop_continue = 1`, `KOS_STEP_CONTINUE`). In this mode, the caller never observes a suspension boundary.
+- **Regular python-to-koskari boundary**: if `KosContext_PENDING_AGEN(ctx)` is not set, `eval_phase_post_opcode` sets `SUSPENSION_EVENT = KOS_SUSP_YIELD` and exits with STOP_EVENT. The caller observes `out_ev.kind == KOS_EV_YIELD` and later resumes the generator via `revive_yield(send_val)`.
+
+In both cases (plain `YIELD` or `YIELD_FROM`), resume inject uses the same `revive_yield` path when the driver does resume the evaluator.
 
 For **RETURN** that reaches top-level or GEN: the RETURN opcode itself performs `kos_dyn_walk_return_to_frame` (handle phase; FINALLY may consume and run). It then sets `out_ev = KOS_EV_RETURN` and returns 1. Post-opcode does not run a separate walk for RETURN; the boundary is emitted by the opcode.
 
@@ -330,7 +337,11 @@ Control transits (RETURN, RAISE, YIELD, BREAK, CONTINUE, SHIFT) use a two-phase 
 
 `KOS_DYN_GEN` marks the generator boundary. It is pushed when a generator or coroutine is **installed** (e.g. when Python drives a Koskari generator via `send`/`throw`); the frame's parent is then the GEN node.
 
-- **handle(YIELD)**: GEN **consumes** the event. The evaluator calls `kos_dyn_walk_handle_yield` after the YIELD opcode sets `KOS_EV_YIELD` and returns 1. GEN's handler runs (e.g. `kos_dyn_gen_freeze_and_release`): the current dynchain is captured/frozen, the context is marked suspended, and the loop exits. No other node above GEN sees the yield. Resumption is via `revive_yield`, which pushes `send_val` onto the stack and continues at the next instruction.
+- **handle(YIELD)**: GEN **consumes** the event. The evaluator calls `kos_dyn_walk_handle_yield` after an opcode (plain `YIELD` or `YIELD_FROM`) sets `out_ev.kind = KOS_EV_YIELD`. GEN's handler runs (e.g. `kos_dyn_gen_freeze_and_release`): the current dynchain is captured/frozen. Resumption is via `revive_yield`, which pushes `send_val` onto the stack and continues at the next instruction.
+
+Whether control returns to the caller depends on evaluator flattening:
+- In the regular case, `eval_phase_post_opcode` sets `SUSPENSION_EVENT = KOS_SUSP_YIELD` and returns STOP_EVENT; the caller resumes via `revive_yield`.
+- In flattened async-gen stepping (`KosContext_PENDING_AGEN(ctx)`), `eval_phase_post_opcode` clears `out_ev` and continues dispatch; the yield does not escape as a boundary event.
 - **handle(SHIFT)**: GEN **denies**; shift cannot cross the generator boundary.
 - **RETURN** when the frame's parent is GEN (or there is no parent) produces a boundary event `KOS_EV_RETURN` and the evaluator exits; the driver receives the return value (e.g. StopIteration for sync generators).
 
@@ -495,10 +506,10 @@ When `CURRENT_FRAME(ctx)` has `native_handler != NULL`, the loop runs that handl
 
 ### 9.5 Scenario: YIELD Suspend and Resume
 
-1. Generator is running; frame's parent is GEN. YIELD opcode pops value, sets `out_ev = KOS_EV_YIELD`, sets payload, marks context DEAD, returns 1.
+1. Generator is running; frame's parent is GEN. Plain `YIELD` or `YIELD_FROM` sets `out_ev = KOS_EV_YIELD`, sets payload, marks context DEAD, returns 1.
 2. Post-opcode: `KosEvent_KIND(out_ev) == KOS_EV_YIELD` → `kos_dyn_walk_handle_yield(ctx, out_ev)`. Chain is walked; GEN receives handle(YIELD) and **consumes** it (e.g. `kos_dyn_gen_freeze_and_release`): dynchain is frozen, context suspended.
-3. Post-opcode sets `SUSPENSION_EVENT = KOS_SUSP_YIELD`, returns STOP_EVENT. Evaluator exits.
-4. Driver (e.g. Python generator `send`) receives KOS_EV_YIELD and payload; later calls `koskari_eval(ctx, &ev, send_val, NULL, NULL)`.
+3. Post-opcode sets `SUSPENSION_EVENT = KOS_SUSP_YIELD` and returns STOP_EVENT in the regular boundary case. If `KosContext_PENDING_AGEN(ctx)` is set (flattened async-gen stepping), `eval_phase_post_opcode` instead clears `out_ev` and continues dispatch (no external suspension).
+4. Driver (e.g. Python generator `send`) receives `KOS_EV_YIELD` and payload in the regular boundary case; later calls `koskari_eval(ctx, &ev, send_val, NULL, NULL)`.
 5. Entry: `SUSPENSION_EVENT == YIELD`, `send_val` provided → `revive_yield(send_val, ...)`.
 6. `revive_yield` pushes `send_val` onto the stack. Mode = NORMAL. Loop continues; next instruction runs with the sent value on the stack.
 
@@ -543,3 +554,4 @@ When `CURRENT_FRAME(ctx)` has `native_handler != NULL`, the loop runs that handl
 - [design/interpreter/ceval-exception-paths.md](interpreter/ceval-exception-paths.md) — Exception paths and trace injection
 - [design/api/special-call-protocol.md](api/special-call-protocol.md) — Install slots and invocation
 - [design/interpreter/execution-invariants.md](interpreter/execution-invariants.md) — Execution invariants
+- [design/interpreter/iteration-yield-boundaries.md](interpreter/iteration-yield-boundaries.md) — Iteration vs yield-from vs for-each: implementation map and consolidation proposals
