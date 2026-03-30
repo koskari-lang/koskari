@@ -262,6 +262,7 @@ def special_yield_from(compiler, source, tc=False):
     frag.position_of(source)
     frag.merge(compiler.full_compile(expr, False))
     frag.instruction(OpCode.KOS_OP_YIELD_FROM, 0)
+    frag.instruction(OpCode.KOS_OP_CONST, None)
     return frag
 
 
