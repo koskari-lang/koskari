@@ -100,7 +100,7 @@ def make_bootstrap():
     _bind('deref', deref)
     _bind('apply', apply)
     _bind('parameter', parameter)
-    _bind('demand-sync', demand_sync)
+    _bind('demand', demand_sync)
 
     _bind('as-coroutine', as_coroutine)
 
