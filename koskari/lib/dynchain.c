@@ -2676,16 +2676,35 @@ KosHandleResult kos_dyn_handle(KosContext *ctx, KosDynNode *node,
 
   switch (KosDynNode_KIND(node)) {
     case KOS_DYN_TRY:
-      if (event == KOS_XFER_EVENT_RAISE && KosDynTry_ENABLED((KosDynTry *) node)
-          && PyErr_Occurred()) {
+      if (event == KOS_XFER_EVENT_RAISE) {
+        int en = KosDynTry_ENABLED((KosDynTry *) node);
+        int py = PyErr_Occurred() ? 1 : 0;
         KosDynFrame *frame = KosContext_FRAME_TOP(ctx);
-        if (frame) {
+        if (! en || ! py || ! frame) {
+          SAYF("[xfer] kos_dyn_handle TRY RAISE skip enabled=%d pyerr=%d frame=%p\n",
+               en, py, (void *) frame);
+          return KOS_HANDLE_PASS;
+        }
+        {
           KosTryHandler th;
-          if (kos_try_handler_for((PyObject *) KosDynFrame_CODE(frame),
-                                  KosDynFrame_ACTING_PC(frame), &th) == 0
-              && th.except_pc != KOS_EXTENT_NONE)
+          int kh = kos_try_handler_for((PyObject *) KosDynFrame_CODE(frame),
+                                       KosDynFrame_ACTING_PC(frame), &th);
+          #if VERBOSE_DEBUG
+          unsigned exc_pc_u = (unsigned) KOS_EXTENT_NONE;
+          if (kh == 0)
+            exc_pc_u = (unsigned) th.except_pc;
+          SAYF("[xfer] kos_dyn_handle TRY kos_try_handler_for code=%p "
+               "acting_pc=%u ret=%d except_pc=%u\n",
+               (void *) KosDynFrame_CODE(frame),
+               (unsigned) KosDynFrame_ACTING_PC(frame),
+               kh,
+               exc_pc_u);
+          #endif
+
+          if (kh == 0 && th.except_pc != KOS_EXTENT_NONE)
             return KOS_HANDLE_CONSUMED;
         }
+        SAY("[xfer] kos_dyn_handle TRY -> PASS (not consumed)\n");
       }
       return KOS_HANDLE_PASS;
     case KOS_DYN_FINALLY:

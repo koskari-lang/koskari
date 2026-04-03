@@ -213,6 +213,98 @@ class TestDemandSyncGenerator(unittest.TestCase):
         self.assertIn('suspension', str(ctx.exception))
 
 
+class TestDemandSyncTryExceptAwaitInject(unittest.TestCase):
+    """
+    Reproducer: demand_sync injects KoskariSyncViolation via a second
+    koskari_eval; an enclosing PUSH_TRY handler should catch it and return.
+
+    Currently try_local_exception_handler does not deliver the raise to TRY
+    when DYN_TOP is the current frame (e.g. after CALL left the callee frame
+    on top), so demand_sync surfaces KoskariSyncViolation instead of the
+    handler result. This test asserts the desired behavior and fails until
+    that is fixed.
+    """
+
+    def test_try_except_catches_injected_violation_under_demand_sync(self):
+        """
+        Suspending await under PUSH_TRY; except body should run and return
+        a sentinel. demand_sync currently raises KoskariSyncViolation.
+        """
+
+        def _suspending_iter():
+            yield
+            return None
+
+        class SuspendingAwaitable:
+            def __await__(self):
+                return _suspending_iter()
+
+        awaitable = SuspendingAwaitable()
+        _, base_ns = build_expr(
+            [["CONST", 0], ["RETURN", 1]],
+            local_syms=('a',),
+            values={'a': awaitable},
+        )
+        code = build_code(
+            [
+                ["PUSH_TRY", "handler"],
+                ["VAR", "a"],
+                ["AWAIT", 0],
+                ["CLEAR_TRY", 0],
+                ["JUMP", "end"],
+                ["LABEL", "handler"],
+                ["EXCEPTION", 0],
+                ["POP", 1],
+                ["CONST", "caught"],
+                ["JUMP", "end"],
+                ["LABEL", "end"],
+                ["POP_TRY", 0],
+                ["RETURN", 1],
+            ],
+            local_syms=(),
+            closure_syms=('a',),
+            name='demand_try_await_inject_repro',
+        )
+        fn = make_callable(code, base_ns, FormalsSpec())
+        self.assertEqual(demand_sync(fn), "caught")
+
+    def test_await_iter_receives_throw_before_vm_except_path(self):
+        """
+        Resume with throw calls iterator.throw first. If the __await__ iterator
+        catches KoskariSyncViolation and returns, await completes with that
+        value (no local TRY needed).
+        """
+
+        def _it():
+            try:
+                yield 1
+            except KoskariSyncViolation:
+                return "from_iter"
+
+        class SwallowsViolation:
+            def __await__(self):
+                return _it()
+
+        awaitable = SwallowsViolation()
+        _, base_ns = build_expr(
+            [["CONST", 0], ["RETURN", 1]],
+            local_syms=('a',),
+            values={'a': awaitable},
+        )
+        code = build_code(
+            [
+                ["VAR", "a"],
+                ["AWAIT", 0],
+                ["RETURN", 1],
+            ],
+            local_syms=(),
+            closure_syms=('a',),
+            name='demand_await_iter_throw_swallow',
+        )
+        fn = make_callable(code, base_ns, FormalsSpec())
+        self.assertEqual(demand_sync(fn), "from_iter")
+
+
 class TestDemandSyncPlainPython(unittest.TestCase):
     """
     demand_sync on plain Python callables

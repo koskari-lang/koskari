@@ -450,6 +450,92 @@ class TestExceptionOpcodes(CevalTest):
         self.assertEqual(result, 1)
 
 
+    async def test_finally_pass_through_when_try_returns_after_finally_expr(self):
+        """
+        Try ``return 1``; ``finally`` runs ``CONST 100 POP`` then ``POP_FINALLY``
+        — result is still 1 (bare finally expr must not replace pending return).
+        """
+
+        code, ns = build_expr([
+            ["PUSH_FINALLY", "fin"],
+            ["CONST", 1],
+            ["RETURN", 1],
+            ["LABEL", "fin"],
+            ["CONST", 100],
+            ["POP", 1],
+            ["POP_FINALLY", 0],
+            ["RETURN", 1],
+            ["NOOP", 0],
+        ])
+        result = await make_callable(code, ns)()
+        self.assertEqual(result, 1)
+
+
+    async def test_finally_pass_through_when_except_handler_returns(self):
+        """
+        try: raise; except: return 999; finally: pass — function returns 999.
+        Pending return from the handler runs finally, then restores 999.
+        """
+
+        exc_inst = ValueError("for handler")
+        code, ns = build_expr([
+            ["PUSH_FINALLY", "cleanup"],
+            ["PUSH_TRY", "handler"],
+            ["CONST", exc_inst],
+            ["RAISE", 1],
+            ["CLEAR_TRY", 0],
+            ["JUMP", "end"],
+            ["LABEL", "handler"],
+            ["EXCEPTION", 0],
+            ["POP", 1],
+            ["CONST", 999],
+            ["RETURN", 1],
+            ["LABEL", "end"],
+            ["POP_TRY", 1],
+            ["CLEAR_FINALLY", 0],
+            ["LABEL", "cleanup"],
+            ["POP_FINALLY", 0],
+            ["RETURN", 1],
+            ["NOOP", 0],
+        ])
+        result = await make_callable(code, ns)()
+        self.assertEqual(result, 999)
+
+
+    async def test_finally_pass_through_when_except_returns_after_finally_expr(self):
+        """
+        Except ``return 999``; ``finally`` evaluates a discarded expression
+        (``CONST 100 POP``) then ``POP_FINALLY`` — result is still 999.
+        Mirrors compile ``_finally_body`` lowering for a bare finally expr.
+        """
+
+        exc_inst = ValueError("for handler")
+        code, ns = build_expr([
+            ["PUSH_FINALLY", "cleanup"],
+            ["PUSH_TRY", "handler"],
+            ["CONST", exc_inst],
+            ["RAISE", 1],
+            ["CLEAR_TRY", 0],
+            ["JUMP", "end"],
+            ["LABEL", "handler"],
+            ["EXCEPTION", 0],
+            ["POP", 1],
+            ["CONST", 999],
+            ["RETURN", 1],
+            ["LABEL", "end"],
+            ["POP_TRY", 1],
+            ["CLEAR_FINALLY", 0],
+            ["LABEL", "cleanup"],
+            ["CONST", 100],
+            ["POP", 1],
+            ["POP_FINALLY", 0],
+            ["RETURN", 1],
+            ["NOOP", 0],
+        ])
+        result = await make_callable(code, ns)()
+        self.assertEqual(result, 999)
+
+
     async def test_nested_finally_multiple_return_overwrites(self):
         """
         Nested try/finally: inner returns 1, inner finally returns 2, outer finally

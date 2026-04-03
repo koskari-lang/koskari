@@ -33,6 +33,34 @@ _keyword_except = keyword("except")
 _keyword_finally = keyword("finally")
 
 
+def _finally_body(compiler, fragment, body):
+    """
+    Compile ``finally:`` body for side effects only
+
+    ``POP_FINALLY`` promotes one stack slot stashed under the finally block;
+    discarding each expression's value keeps that slot as the try/except/else
+    outcome or pending ``compile/return`` payload
+
+    :param compiler: active Compiler
+    :param fragment: bytecode fragment to merge into
+    :param body: pair-list of finally expressions, or ``nil`` if empty
+    :return: ``fragment``
+    """
+
+    if body is nil:
+        return fragment
+
+    while True:
+        fragment.position_of(body)
+        expr, body = body
+        fragment.merge(compiler.full_compile(expr, False))
+        fragment.instruction(OpCode.KOS_OP_POP, 1)
+        if body is nil:
+            break
+
+    return fragment
+
+
 def _collect_catches(compiler, catches):
     """
     Parse try catch list into normal_catches, act_else, act_finally.
@@ -226,7 +254,7 @@ def _try_finally(compiler, try_expr, catches, fin_exprs, tc):
 
     frag.instruction(OpCode.KOS_OP_CLEAR_FINALLY, 0)
     frag.instruction(OpCode.KOS_OP_LABEL, cleanup)
-    helper_begin(frag, fin_exprs, False)
+    _finally_body(compiler, frag, fin_exprs)
 
     frag.instruction(OpCode.KOS_OP_POP_FINALLY, 1)
 
@@ -250,7 +278,7 @@ def _try_else_finally(
 
     frag.instruction(OpCode.KOS_OP_CLEAR_FINALLY, 0)
     frag.instruction(OpCode.KOS_OP_LABEL, cleanup)
-    helper_begin(frag, fin_exprs, False)
+    _finally_body(compiler, frag, fin_exprs)
 
     frag.instruction(OpCode.KOS_OP_POP_FINALLY, 1)
 

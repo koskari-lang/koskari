@@ -98,6 +98,21 @@ Ref: [api/tracing.md](api/tracing.md).
 
 ## Runtime / execution
 
+### In-eval KoskariSyncViolation at await site (demand path)
+
+**Status**: Proposal only; evaluate whether to implement.
+
+When execution runs under a no-suspend demand context (`demand_sync`,
+`DemandSyncGenerator`, `Koskari_DemandSyncEx`), consider raising
+`KoskariSyncViolation` **inside** the evaluator at the await site (including
+auto-await after `CALL`), using normal `TRY`/unwind, so callees can run cleanup,
+`finally`, or a sync fallback. Uncaught, propagation should still reach the
+host call site similarly to today.
+
+Ref: [api/demand-sync-await-violation-at-site.md](api/demand-sync-await-violation-at-site.md).
+
+---
+
 ### Run and iter use demand
 
 Replace the `run` and `iter` methods of **KosFunction** and **KosPyAsyncGenerator**

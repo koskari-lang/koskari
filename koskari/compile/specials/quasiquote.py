@@ -72,9 +72,10 @@ def _qq_expr(compiler, frag, expr, level):
         frag.instruction(OpCode.KOS_OP_CONST, expr)
         return
 
-    if is_nil(expr):
-        frag.instruction(OpCode.KOS_OP_CONST, nil)
-        return
+    # redundant with _is_const(expr)
+    # if is_nil(expr):
+    #     frag.instruction(OpCode.KOS_OP_CONST, nil)
+    #     return
 
     if not is_pair(expr):
         frag.instruction(OpCode.KOS_OP_CONST, expr)

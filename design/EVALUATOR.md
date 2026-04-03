@@ -81,10 +81,11 @@ flowchart TD
 
 **Revive paths:**
 - **revive_plan**: Resume a suspended transfer plan. If `throw_exc` set → `KOS_MODE_EXCEPTION`. Else inject `send_val` into plan → `KOS_MODE_TRANSFER`.
-- **revive_await / revive_yield**: If `throw_exc` → `PyErr_SetObject`, `KOS_MODE_EXCEPTION`. Else push `send_val` onto stack (if non-NULL), then `KOS_MODE_NORMAL`. YIELD_FROM uses these same revive paths (its phase selects AWAIT or YIELD); there is no separate `revive_yield_from` or `KOS_SUSP_YIELD_FROM`.
+- **revive_await / revive_yield**: If `throw_exc` and `revive_yield` → `PyErr_SetObject`, `KOS_MODE_EXCEPTION`. If `throw_exc` and `revive_await` with `py_await_iter` set → `iterator.throw(typ, val, tb)` first (same idea as `coroutine_throw` when waiting on a Python await iterator): on `StopIteration`, the await completes and the normal inject/send path runs; on non-NULL `throw` result, `out_ev` is `KOS_EV_AWAIT` again and `eval_phase_entry` returns `STOP_EVENT` with `KOS_MODE_AWAIT` (re-suspend); if there is no iterator, or `throw` leaves another error, `KOS_MODE_EXCEPTION`. If no `throw_exc`, `revive_await` pushes `send_val` / `py_resume_inject` onto stack (if non-NULL), then `KOS_MODE_NORMAL`. YIELD_FROM uses these same revive paths (its phase selects AWAIT or YIELD); there is no separate `revive_yield_from` or `KOS_SUSP_YIELD_FROM`.
   - From the caller's perspective, both plain `YIELD` and `YIELD_FROM` suspensions surface as the same boundary kinds (`KOS_EV_YIELD` or `KOS_EV_AWAIT`), so resume routing is identical.
 
 **Mode dispatch outcomes:**
+- `KOS_MODE_AWAIT` (re-suspend after `throw` into `py_await_iter` yielded again) → `SUSPENSION_EVENT = AWAIT`, clear `KOS_CTX_RUNNING`, `KOS_STEP_STOP_EVENT` (same suspend shape as opcode AWAIT).
 - `KOS_MODE_EXCEPTION` → `try_local_exception_handler`; on success → `KOS_STEP_CONTINUE` or `KOS_STEP_STOP_EVENT` (AWAIT); on failure → `out_ev = KOS_EV_RAISE`, `KOS_STEP_STOP_EVENT`.
 - `KOS_MODE_RAISE` → fetch exception, decorate, fill `out_ev`, `KOS_STEP_STOP_EVENT`.
 
@@ -503,6 +504,8 @@ When `CURRENT_FRAME(ctx)` has `native_handler != NULL`, the loop runs that handl
 5. Entry: `SUSPENSION_EVENT == AWAIT`, `send_val != NULL` → `revive_await(result, ...)`.
 6. `revive_await` pushes result onto stack. If `PENDING_WITH_EXIT_NODE`, completes pending WITH exit.
 7. Mode = NORMAL. Loop continues; next instruction consumes the awaited value.
+
+**Throw resume (`throw_typ` / `throw_exc` non-NULL):** When `py_await_iter` is set, `revive_await` calls `throw` on that iterator before installing `PyErr` for the VM. If the iterator completes (`StopIteration`), the completion value is staged like a normal send resume (inject / stack push). If `throw` returns a new object, `out_ev` is `KOS_EV_AWAIT` again and eval stops (second suspend). If `throw` fails or leaves an exception, `KOS_MODE_EXCEPTION` runs `try_local` as usual. If there is no `py_await_iter`, behavior matches the old path (`PyErr_SetObject` only).
 
 ### 9.5 Scenario: YIELD Suspend and Resume
 

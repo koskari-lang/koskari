@@ -1988,22 +1988,31 @@ KosExtentDesc *kos_extent_desc(PyObject *code, uint32_t extent_id) {
 int kos_try_handler_for(PyObject *code, uint32_t pc, KosTryHandler *out) {
 
   if (! code || ! KosCode_Check(code) || ! out) {
+    SAY("[extent] kos_try_handler_for bad args\n");
     return -1;
   }
 
-  uint32_t eid = kos_extent_find(code, pc, KOS_EXT_TRY);
+  uint32_t eid_try = kos_extent_find(code, pc, KOS_EXT_TRY);
+  uint32_t eid = eid_try;
   if (eid == KOS_EXTENT_NONE) {
     eid = kos_extent_find(code, pc, KOS_EXT_FINALLY);
   }
 
   if (eid == KOS_EXTENT_NONE) {
+    SAYF("[extent] kos_try_handler_for pc=%u eid_try=%u no extent\n",
+         (unsigned) pc, (unsigned) eid_try);
     return -1;
   }
 
   KosExtentDesc *e = kos_extent_desc(code, eid);
   if (! e) {
+    SAYF("[extent] kos_try_handler_for pc=%u eid=%u desc NULL\n",
+         (unsigned) pc, (unsigned) eid);
     return -1;
   }
+
+  SAYF("[extent] kos_try_handler_for pc=%u eid_try=%u eid=%u kind=%d\n",
+       (unsigned) pc, (unsigned) eid_try, (unsigned) eid, (int) e->kind);
 
   out->extent_id = eid;
   out->exit_pc = KOS_EXTENT_NONE;
@@ -2011,6 +2020,8 @@ int kos_try_handler_for(PyObject *code, uint32_t pc, KosTryHandler *out) {
   if (e->push_pc >= KosCode_CODE_LEN(code)) {
     out->except_pc = KOS_EXTENT_NONE;
     out->finally_pc = KOS_EXTENT_NONE;
+    SAYF("[extent] kos_try_handler_for pc=%u push_pc out of range\n",
+         (unsigned) pc);
     return 0;
   }
 
@@ -2027,6 +2038,11 @@ int kos_try_handler_for(PyObject *code, uint32_t pc, KosTryHandler *out) {
     out->except_pc = KOS_EXTENT_NONE;
     out->finally_pc = KOS_EXTENT_NONE;
   }
+
+  SAYF("[extent] kos_try_handler_for pc=%u except_pc=%u finally_pc=%u\n",
+       (unsigned) pc,
+       (unsigned) out->except_pc,
+       (unsigned) out->finally_pc);
 
   return 0;
 }

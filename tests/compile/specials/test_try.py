@@ -83,7 +83,7 @@ class TestTrySpecial(SpecialsTestCase):
         """
         expr, mod = self.compile_expr(src, good_guy=good_guy)
         res = await expr()
-        self.assertEqual(res, 999)
+        self.assertEqual(res, 567)
         self.assertEqual(accu, [567, 999])
 
 
@@ -98,7 +98,7 @@ class TestTrySpecial(SpecialsTestCase):
         """
         expr, mod = self.compile_expr(src, good_guy=good_guy)
         res = await expr()
-        self.assertEqual(res, 999)
+        self.assertEqual(res, 888)
         self.assertEqual(accu, [567, 888, 999])
 
 
@@ -227,7 +227,7 @@ class TestTrySpecial(SpecialsTestCase):
         """
         expr, mod = self.compile_expr(src, bad_guy=bad_guy, good_guy=good_guy, Exception=Exception)
         res = await expr()
-        self.assertEqual(res, 999)
+        self.assertEqual(res, -111)
         self.assertEqual(accu1, [567])
         self.assertEqual(accu2, [-111, 999])
 
@@ -245,9 +245,88 @@ class TestTrySpecial(SpecialsTestCase):
         """
         expr, mod = self.compile_expr(src, bad_guy=bad_guy, good_guy=good_guy, Exception=Exception)
         res = await expr()
-        self.assertEqual(res, 999)
+        self.assertEqual(res, -111)
         self.assertEqual(accu1, [567])
         self.assertEqual(accu2, [-111, 999])
+
+
+    async def test_try_finally_preserves_compile_return_in_try(self):
+        """
+        ``finally`` runs for side effects; try ``compile/return`` value is not
+        replaced by a bare finally expression
+        """
+
+        src = """
+        ((lambda []
+          (try
+            (compile/return 5)
+            [[Exception] (compile/return 9)]
+            [finally: 100])))
+        """
+        expr, mod = self.compile_expr(src)
+        res = await expr()
+        self.assertEqual(res, 5)
+
+
+    async def test_try_finally_preserves_compile_return_in_except_when_raised(self):
+        """
+        When the handler runs, ``compile/return`` from except is not replaced
+        by a bare ``finally`` expression
+        """
+
+        accu, bad_guy = make_raise_accumulator()
+
+        src = """
+        ((lambda []
+          (try
+            (bad_guy 1)
+            [[Exception] (compile/return 9)]
+            [finally: 100])))
+        """
+        expr, mod = self.compile_expr(
+            src, bad_guy=bad_guy, Exception=Exception)
+        res = await expr()
+        self.assertEqual(res, 9)
+        self.assertEqual(accu, [1])
+
+
+    async def test_try_finally_compile_return_in_finally_overwrites_try_return(self):
+        """
+        Explicit ``compile/return`` in ``finally`` replaces a pending try return
+        """
+
+        src = """
+        ((lambda []
+          (try
+            (compile/return 5)
+            [[Exception] (compile/return 9)]
+            [finally: (compile/return 2)])))
+        """
+        expr, mod = self.compile_expr(src)
+        res = await expr()
+        self.assertEqual(res, 2)
+
+
+    async def test_try_finally_compile_return_in_finally_overwrites_except_return(self):
+        """
+        Explicit ``compile/return`` in ``finally`` replaces a pending except
+        return
+        """
+
+        accu, bad_guy = make_raise_accumulator()
+
+        src = """
+        ((lambda []
+          (try
+            (bad_guy 1)
+            [[Exception] (compile/return 9)]
+            [finally: (compile/return -3)])))
+        """
+        expr, mod = self.compile_expr(
+            src, bad_guy=bad_guy, Exception=Exception)
+        res = await expr()
+        self.assertEqual(res, -3)
+        self.assertEqual(accu, [1])
 
 
 # The end.

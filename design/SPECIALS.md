@@ -427,7 +427,10 @@ Exception handlers use EXCEPTION_MATCH, EXCEPTION_CLEAR, EXCEPTION opcodes.
 The bare `except:` form is lowered to an `else:` clause in the internal
 `compile/cond` dispatch so no EXCEPTION_MATCH is emitted; uncaught exceptions
 re-raise via compile/raise unless a bare handler is present. `else:` runs
-between CLEAR_TRY and POP_TRY; `finally:` runs after cleanup.
+between CLEAR_TRY and POP_TRY; `finally:` runs after cleanup.  Expressions in
+`finally:` are compiled for side effects only; they do not replace the value
+of the try form (including a pending `compile/return` from the try or except
+paths).
 
 **Examples:**
 

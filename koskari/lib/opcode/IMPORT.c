@@ -32,10 +32,6 @@
        importlib.import_module("foo.bar")   # returns foo.bar, not foo
 */
 
-/* _import_fromlist is defined and initialised in eval.c */
-extern PyObject *_import_fromlist;
-
-
 KOS_OP_HANDLER(IMPORT) {
   PyObject *name = get_name_from_insn(CURRENT_CODE(ctx), insn);
   if (! name)
