@@ -238,8 +238,9 @@ Expands to `compile/cond` (negated test).
 - `(bind! NAME (dynamic r ...))`
 - `(bind! NAME (constant VALUE))`
 - `(bind! NAME (memoized GETFN))`
-- `(bind! NAME (parameterq PARAM-NAME r ...))` — `ParamRef` with quoted name
-- `(bind! NAME (parameter PARAM-NAME r ...))` — `ParamRef` with `PARAM-NAME` as given
+- `(bind! NAME (parameter PARAM-NAME r ...))` — `ParamRef` with quoted
+  `PARAM-NAME` and optional tail arguments (e.g. default); there is no
+  separate `parameterq` pattern here
 
 **Use-case:** User-facing binding syntax. Expands to `compile/bindq` with the
 appropriate Ref type for item/attr/dynamic/constant/memoized/parameter forms.
@@ -251,12 +252,15 @@ appropriate Ref type for item/attr/dynamic/constant/memoized/parameter forms.
 
 **Symbol:** `compile/define-parameter`
 
-**Syntax:** `(use-parameter NAME)`
+**Syntax:**
+- `(define-parameter NAME)` — bind `NAME` to `(ParamRef 'NAME)`
+- `(define-parameter NAME DEFAULT)` — bind `NAME` to `(ParamRef 'NAME DEFAULT)`
 
-**Use-case:** Define a name and bind it to a ParamRef for parameterize scope.
+**Use-case:** Define a name and bind it to a `ParamRef` for `parameterize`
+scope, optionally with a default.
 
 **Behaviour:** Expands to `(compile/define NAME)` and
-`(compile/bindq NAME (ParamRef 'NAME))`.
+`(compile/bindq NAME (ParamRef 'NAME ...))` (with `DEFAULT` when present).
 
 **Defined in:** `koskari/importer/basics.ki`
 
@@ -265,11 +269,14 @@ appropriate Ref type for item/attr/dynamic/constant/memoized/parameter forms.
 
 **Symbol:** `compile/parameterq`
 
-**Syntax:** `(parameterq NAME)`
+**Syntax:**
+- `(parameterq NAME)` — `(parameter 'NAME)`
+- `(parameterq NAME DEFAULT)` — `(parameter 'NAME DEFAULT)`
 
-**Use-case:** Construct a dynamic-parameter object with a quoted name symbol.
+**Use-case:** Construct a dynamic-parameter object with a quoted name symbol,
+optionally with a default value.
 
-**Behaviour:** Expands to `(parameter 'NAME)`.
+**Behaviour:** Expands to `(parameter 'NAME)` or `(parameter 'NAME DEFAULT)`.
 
 **Defined in:** `koskari/importer/basics.ki`
 

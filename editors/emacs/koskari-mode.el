@@ -90,10 +90,11 @@
          (list 4 font-lock-preprocessor-face))
    ;; List-head special forms (first symbol in paren form)
    (list (concat "(\\s-*\\("
-                 "with\\|while\\|when-main\\|when\\|use-parameter\\|unless\\|try\\|shift\\|setq\\|"
-                 "set!\\|reset\\|refq\\|ref\\|raise\\|parameterq\\|parameterize\\|or\\|let/cc\\|"
-                 "let\\|lambda\\|import-from\\|import\\|if\\|for-each\\|dyn-with\\|dyn-wind\\|"
-                 "delq\\|define-syntax\\|define-coroutine\\|define\\|continue\\|cond\\|class\\|"
+                 "with\\|while\\|when-main\\|when\\|unless\\|try\\|shift\\|setq\\|set!\\|reset\\|"
+                 "refq\\|ref\\|raise\\|parameterq\\|parameterize\\|or\\|list-each\\|letrec\\|"
+                 "let/cc\\|let-values\\|let\\*\\|let\\|lambda\\|import-from\\|import\\|if\\|"
+                 "for-each\\|each\\|dyn-with\\|dyn-wind\\|dict-each\\|delq\\|define-syntax\\|"
+                 "define-parameter\\|define-coroutine\\|define\\|continue\\|cond\\|class\\|"
                  "capture/cc\\|call/cc\\|break\\|bindq\\|bind!\\|begin\\|attr\\|and\\|None\\?"
 
                  "\\)\\>")

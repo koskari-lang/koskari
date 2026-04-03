@@ -41,6 +41,12 @@ constants:
 # keyword.control (Helix), and font-lock-keyword-face (Emacs). One ordered list
 # for all three; adjust order here if you care about alternation precedence.
 #
+# Entries are short names for compiler specials registered as compile/... (see
+# design/SPECIALS.md and koskari/lexer/discovery.py: both the prefixed and
+# stripped names resolve for highlighting) plus short names for macros from
+# koskari/importer/basics.ki (design/MACROS.md; define-syntax compile/NAME
+# registers NAME without the compile/ prefix).
+#
 # TextMate: editors/textmate/syntaxes/koskari.tmLanguage.json duplicates this
 # word set in #list-head-special and #bare-line-call-head (same alternation);
 # keep those patterns aligned when adding or renaming entries here.
@@ -57,18 +63,25 @@ list_head_specials:
   - cond
   - continue
   - define-coroutine
+  - define-parameter
   - define-syntax
   - define
   - delq
+  - dict-each
   - dyn-wind
   - dyn-with
+  - each
   - for-each
   - if
-  - import-from
   - import
+  - import-from
   - lambda
   - let
+  - let*
+  - let-values
   - let/cc
+  - letrec
+  - list-each
   - None?
   - or
   - parameterq
@@ -82,7 +95,6 @@ list_head_specials:
   - shift
   - try
   - unless
-  - use-parameter
   - when
   - when-main
   - while

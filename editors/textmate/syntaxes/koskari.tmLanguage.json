@@ -20,7 +20,6 @@
     { "include": "#quote-form" },
     { "include": "#quasiquote-form" },
     { "include": "#block-header" },
-    { "include": "#bare-line-call-head" },
     { "include": "#keyword" },
     { "include": "#symbol" }
   ],
@@ -258,7 +257,7 @@
       ]
     },
     "list-head-special": {
-      "match": "\\s*(with|while|when-main|when|use-parameter|unless|try|shift|setq|set!|reset|refq|ref|raise|parameterq|parameterize|or|let/cc|let|lambda|import-from|import|if|for-each|dyn-with|dyn-wind|delq|define-syntax|define-coroutine|define|continue|cond|class|capture/cc|call/cc|break|bindq|bind!|begin|attr|and|None\\?)(?=(?:\\s|\\)|\\]|\\}|$))",
+      "match": "\\s*(with|while|when-main|when|unless|try|shift|setq|set!|reset|refq|ref|raise|parameterq|parameterize|or|list-each|letrec|let/cc|let-values|let\\*|let|lambda|import-from|import|if|for-each|each|dyn-with|dyn-wind|dict-each|delq|define-syntax|define-parameter|define-coroutine|define|continue|cond|class|capture/cc|call/cc|break|bindq|bind!|begin|attr|and|None\\?)(?=(?:\\s|\\)|\\]|\\}|$))",
       "captures": {
         "1": { "name": "keyword.control.koskari" }
       }
@@ -282,13 +281,6 @@
           }
         }
       ]
-    },
-    "bare-line-call-head": {
-      "match": "^(\\s*)(with|while|when-main|when|use-parameter|unless|try|shift|setq|set!|reset|refq|ref|raise|parameterq|parameterize|or|let/cc|let|lambda|import-from|import|if|for-each|dyn-with|dyn-wind|delq|define-syntax|define-coroutine|define|continue|cond|class|capture/cc|call/cc|break|bindq|bind!|begin|attr|and|None\\?)\\b(?!.*:\\s*(?:;.*)?$)([^\\n]*)$",
-      "captures": {
-        "2": { "name": "keyword.control.koskari" },
-        "3": { "name": "meta.block-header-args.koskari" }
-      }
     },
     "keyword": {
       "patterns": [
