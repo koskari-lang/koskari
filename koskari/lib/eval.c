@@ -261,6 +261,8 @@ static KosEvalMode raise_await(KosContext *ctx) {
 */
 static KosEvalMode revive_await(KosContext *ctx, PyObject *send_val, PyObject *throw_typ, PyObject *throw_exc) {
   if (throw_exc != NULL) {
+    SAYF("[await] revive_await throw typ=%p exc=%p\n",
+         (void *) throw_typ, (void *) throw_exc);
     PyErr_SetObject(throw_typ, throw_exc);
     return KOS_MODE_EXCEPTION;
   }
@@ -2155,17 +2157,14 @@ static int defer_drive(KosContext *ctx, KosEvent *out_ev, PyObject *defer_obj) {
 }
 
 
-/*  Includes the implementation of all opcodes from the opcode/ directory.
+/*
+  Includes the implementation of all opcodes from the opcode/ directory.
 */
-
 #define KOS_OP_HANDLER(name)                                            \
   KOS_OP_INLINE int op_##name(KosContext *ctx, KosEvent *out_ev,        \
                               KosOp *insn)
-#define KOS_DROP_HANDLER(name)                                          \
-  KOS_OP_INLINE int op_DROP_##name(KosContext *ctx, KosEvent *out_ev,   \
-                                   KosOp *insn)
-#define KOS_DROP 0
 #include "handlers.incl"
+#undef KOS_OP_HANDLER
 
 
 /**
@@ -2181,16 +2180,24 @@ static int defer_drive(KosContext *ctx, KosEvent *out_ev, PyObject *defer_obj) {
 static int try_local_exception_handler(KosContext *ctx, KosEvent *out_ev) {
   #if VERBOSE_DEBUG
   if (! ctx) {
-    SAY("[try_local] ctx=NULL");
+    SAY("[try_local] ctx=NULL\n");
+  }
+  else if (CURRENT_FRAME(ctx)) {
+    SAYF("[try_local] enter dyn_top=%p frame_top=%p acting_pc=%u stack_len=%zu\n",
+         (void *) KosContext_DYN_TOP(ctx),
+         (void *) CURRENT_FRAME(ctx),
+         (unsigned) CURRENT_ACTING_PC(ctx),
+         (size_t) (CURRENT_STACK(ctx) ? KosStackBlock_LEN(CURRENT_STACK(ctx)) : 0));
+  }
+  else {
+    SAYF("[try_local] enter dyn_top=%p frame_top=NULL\n",
+         (void *) KosContext_DYN_TOP(ctx));
+  }
 
-  } else if (ctx && CURRENT_FRAME(ctx)) {
-    SAYF("[try_local] dyn_top=%p acting_pc=%u stack_len=%zu",
-          (void *) KosContext_DYN_TOP(ctx),
-          (unsigned) CURRENT_ACTING_PC(ctx),
-          (size_t) (CURRENT_STACK(ctx) ? KosStackBlock_LEN(CURRENT_STACK(ctx)) : 0));
-
-  } else {
-    SAYF("[try_local] dyn_top=%p, frame_top=NULL", (void *) KosContext_DYN_TOP(ctx));
+  if (CURRENT_FRAME(ctx) && KosContext_DYN_TOP(ctx) != NULL
+      && KosContext_DYN_TOP(ctx) == (KosDynNode *) CURRENT_FRAME(ctx)) {
+    SAYF("[try_local] skip_search dyn_top==frame_top %p\n",
+         (void *) KosContext_DYN_TOP(ctx));
   }
   #endif
 
@@ -2198,10 +2205,20 @@ static int try_local_exception_handler(KosContext *ctx, KosEvent *out_ev) {
          && KosContext_DYN_TOP(ctx) != (KosDynNode *) CURRENT_FRAME(ctx)) {
     KosDynNode *top = KosContext_DYN_TOP(ctx);
 
+    SAYF("[try_local] walk top=%p kind=%s\n",
+         (void *) top,
+         kos_dynnode_kind_name(KosDynNode_KIND(top)));
+
     /* Handle phase: offer RAISE to node before unwind.  If consumed,
        deliver to handler and return.  Otherwise pop and continue. */
     {
       KosHandleResult hr = kos_dyn_handle(ctx, top, KOS_XFER_EVENT_RAISE, out_ev);
+      SAYF("[try_local] kos_dyn_handle RAISE hr=%d (%s)\n",
+           (int) hr,
+           hr == KOS_HANDLE_CONSUMED ? "CONSUMED"
+             : hr == KOS_HANDLE_PASS ? "PASS"
+             : hr == KOS_HANDLE_DEFERRED ? "DEFERRED"
+             : hr == KOS_HANDLE_ERROR ? "ERROR" : "?");
       if (hr == KOS_HANDLE_CONSUMED) {
         if (KosDynNode_IS_GEN(top)) {
           PyObject *typ = NULL, *val = NULL, *tb = NULL;
@@ -2234,6 +2251,9 @@ static int try_local_exception_handler(KosContext *ctx, KosEvent *out_ev) {
           if (KosStackBlock_ClearBlock(&CURRENT_STACK(ctx)) < 0)
             return -1;
         }
+        SAYF("[try_local] CONSUMED region=%s handler_pc=%u\n",
+             KosDynNode_IS_TRY(region) ? "TRY" : "FINALLY",
+             (unsigned) handler_pc);
         CURRENT_PC(ctx) = handler_pc;
         if (KosDynNode_IS_TRY(region))
           KosDynTry_ENABLED((KosDynTry *) region) = 0;
@@ -2297,6 +2317,7 @@ static int try_local_exception_handler(KosContext *ctx, KosEvent *out_ev) {
           KosEvent_PAYLOAD(out_ev) = val;
           Py_XDECREF(tb);
         }
+        SAY("[try_local] pop/unwind path -> KOS_EV_RAISE\n");
         KosContext_FLAGS(ctx) &= ~KOS_CTX_RUNNING;
         KosContext_FLAGS(ctx) |= KOS_CTX_DEAD;
         return 0;
@@ -2311,6 +2332,7 @@ static int try_local_exception_handler(KosContext *ctx, KosEvent *out_ev) {
 
   /* No handler found */
   {
+    SAY("[try_local] no handler found -> KOS_EV_RAISE\n");
     PyObject *typ = NULL, *val = NULL, *tb = NULL;
     PyErr_Fetch(&typ, &val, &tb);
     inject_eval_frame_traceback(ctx, &typ, &val, &tb);
@@ -2392,15 +2414,24 @@ static KosEvalStep eval_phase_entry(
 
 entry_mode_dispatch:
   if (mode == KOS_MODE_EXCEPTION) {
+    int tl;
     clear_pending_agen_on_error(ctx);
-    if (try_local_exception_handler(ctx, out_ev)) {
+    tl = try_local_exception_handler(ctx, out_ev);
+    SAYF("[eval] phase_entry try_local ret=%d out_kind=%d\n",
+         tl, (int) KosEvent_KIND(out_ev));
+    if (tl > 0) {
       if (KosEvent_KIND(out_ev) == KOS_EV_AWAIT) {
-        KosContext_SUSPENSION_EVENT(ctx) = KOS_SUSP_AWAIT;
-        return KOS_STEP_STOP_EVENT;
+        Py_XDECREF(KosEvent_PAYLOAD(out_ev));
+        KosEvent_PAYLOAD(out_ev) = NULL;
+        Py_XDECREF(KosEvent_EXC_TYPE(out_ev));
+        KosEvent_EXC_TYPE(out_ev) = NULL;
+        KosEvent_KIND(out_ev) = KOS_EV_NONE;
       }
       *mode_out = KOS_MODE_NORMAL;
       return KOS_STEP_CONTINUE;
     }
+    if (tl < 0)
+      return KOS_STEP_FATAL_ERROR;
     /* try_local_exception_handler returning 0 has already filled out_ev with
        KOS_EV_RAISE and the exception payload, and cleared PyErr.  Just mark
        the context dead and stop; do not call PyErr_Fetch again. */
@@ -2723,8 +2754,15 @@ int koskari_eval(KosContext *ctx, KosEvent *out_ev, PyObject *send_val, PyObject
 
   /* Phase 1: entry/revive normalization */
   KosEvalMode mode = KOS_MODE_NORMAL;
-  if (eval_phase_entry(ctx, out_ev, send_val, throw_typ, throw_exc, &mode) != KOS_STEP_CONTINUE)
-    goto koskari_eval_cleanup;
+  {
+    KosEvalStep pe = eval_phase_entry(ctx, out_ev, send_val, throw_typ, throw_exc, &mode);
+    if (pe == KOS_STEP_FATAL_ERROR) {
+      eval_ret = -1;
+      goto koskari_eval_cleanup;
+    }
+    if (pe != KOS_STEP_CONTINUE)
+      goto koskari_eval_cleanup;
+  }
 
   /* Phase 2: transfer-plan synchronization (only when mode warrants it) */
   if (mode == KOS_MODE_NORMAL || mode == KOS_MODE_TRANSFER) {

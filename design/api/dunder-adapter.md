@@ -226,6 +226,11 @@ For dynamic attribute changes (e.g. `Foo.__add__ = fn`), `type_setattro` or a Ko
 
 A new exception type, `KoskariSyncViolation`, is raised when a sync adapter receives an AWAIT (or YIELD, for demand_sync) event. It indicates that the invoked code attempted to suspend, which is not allowed in the sync bridge.
 
+**Proposal (not implemented)**: surface await denial as an in-evaluator raise at
+the await site (shared with auto-await after `CALL`) so demand-scoped code can
+use `TRY`/cleanup/fallback; see
+[demand-sync-await-violation-at-site.md](demand-sync-await-violation-at-site.md).
+
 **Subclass of**: `TypeError` (or a dedicated `KoskariError` base if one exists).
 
 **Use cases**:
