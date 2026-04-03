@@ -258,13 +258,89 @@ static KosEvalMode raise_await(KosContext *ctx) {
    Revive from AWAIT: push await result or set throw_exc. Use PY_RESUME_INJECT
    when set (driver pre-stored await result, e.g. coro.c throw-into-awaitable),
    else send_val. Complete pending WITH exit if applicable.
+
+   When throw_exc is set and py_await_iter is non-NULL, forwards via
+   iterator.throw(typ, val, tb) before the VM exception path (align with
+   coroutine_throw WAITING_PY). On StopIteration, completes the await like a
+   normal resume. On non-NULL throw result, fills out_ev with KOS_EV_AWAIT
+   (re-suspend). out_ev must be non-NULL whenever throw_exc is non-NULL.
 */
-static KosEvalMode revive_await(KosContext *ctx, PyObject *send_val, PyObject *throw_typ, PyObject *throw_exc) {
+static KosEvalMode revive_await(
+        KosContext *ctx,
+        PyObject *send_val,
+        PyObject *throw_typ,
+        PyObject *throw_exc,
+        KosEvent *out_ev) {
+
   if (throw_exc != NULL) {
     SAYF("[await] revive_await throw typ=%p exc=%p\n",
          (void *) throw_typ, (void *) throw_exc);
-    PyErr_SetObject(throw_typ, throw_exc);
-    return KOS_MODE_EXCEPTION;
+    if (! out_ev) {
+      PyErr_SetString(PyExc_RuntimeError,
+                      "revive_await: throw_exc set but out_ev is NULL");
+      return KOS_MODE_EXCEPTION;
+    }
+    Py_XDECREF(KosEvent_EXC_TYPE(out_ev));
+    KosEvent_EXC_TYPE(out_ev) = NULL;
+    Py_XDECREF(KosEvent_PAYLOAD(out_ev));
+    KosEvent_PAYLOAD(out_ev) = NULL;
+    KosEvent_KIND(out_ev) = KOS_EV_NONE;
+
+    if (! KosContext_PY_AWAIT_ITER(ctx)) {
+      PyErr_SetObject(throw_typ ? throw_typ : (PyObject *) Py_TYPE(throw_exc),
+                      throw_exc);
+      return KOS_MODE_EXCEPTION;
+    }
+    {
+      PyObject *typ = throw_typ ? throw_typ
+          : (PyObject *) Py_TYPE(throw_exc);
+      PyObject *val = throw_exc;
+      PyObject *tb = Py_None;
+      PyObject *res;
+      Py_INCREF(typ);
+      Py_INCREF(val);
+      Py_INCREF(tb);
+      PyErr_NormalizeException(&typ, &val, &tb);
+      /* Single-arg throw(exc) avoids deprecated (typ, val, tb) on generators */
+      res = PyObject_CallMethod(KosContext_PY_AWAIT_ITER(ctx), "throw", "O", val);
+      Py_DECREF(typ);
+      Py_DECREF(val);
+      Py_XDECREF(tb);
+      if (res) {
+        KosEvent_KIND(out_ev) = KOS_EV_AWAIT;
+        KosEvent_PAYLOAD(out_ev) = res;
+        PyErr_Clear();
+        return KOS_MODE_AWAIT;
+      }
+      if (PyErr_ExceptionMatches(PyExc_StopIteration)) {
+        PyObject *await_result = NULL;
+        if (PyGen_FetchStopIterationValue(&await_result) < 0) {
+          Py_CLEAR(KosContext_PY_AWAIT_ITER(ctx));
+          return KOS_MODE_EXCEPTION;
+        }
+        if (! await_result) {
+          await_result = Py_None;
+          Py_INCREF(await_result);
+        }
+        Py_CLEAR(KosContext_PY_AWAIT_ITER(ctx));
+        Py_XDECREF(KosContext_PY_RESUME_INJECT(ctx));
+        KosContext_PY_RESUME_INJECT(ctx) = await_result;
+        KosContext_PY_RESUME_KIND(ctx) = KOS_RESUME_AWAIT;
+        PyErr_Clear();
+        /* Fall through: push inject like a normal successful resume */
+      }
+      else if (PyErr_ExceptionMatches(PyExc_AttributeError)) {
+        PyErr_Clear();
+        Py_CLEAR(KosContext_PY_AWAIT_ITER(ctx));
+        PyErr_SetObject(throw_typ ? throw_typ : (PyObject *) Py_TYPE(throw_exc),
+                        throw_exc);
+        return KOS_MODE_EXCEPTION;
+      }
+      else {
+        Py_CLEAR(KosContext_PY_AWAIT_ITER(ctx));
+        return KOS_MODE_EXCEPTION;
+      }
+    }
   }
   PyObject *to_push = KosContext_PY_RESUME_INJECT(ctx);
   if (to_push != NULL) {
@@ -2399,20 +2475,25 @@ static KosEvalStep eval_phase_entry(
          KosContext_SUSPENSION_EVENT(ctx));
     switch (KosContext_SUSPENSION_EVENT(ctx)) {
       case KOS_SUSP_AWAIT:
-        mode = revive_await(ctx, send_val, throw_typ, throw_exc);
+        mode = revive_await(ctx, send_val, throw_typ, throw_exc, out_ev);
         break;
       case KOS_SUSP_YIELD:
         SAY("[eval] phase_entry -> revive_yield(send_val)");
         mode = revive_yield(ctx, send_val, throw_typ, throw_exc);
         break;
       default:
-        mode = revive_await(ctx, send_val, throw_typ, throw_exc);
+        mode = revive_await(ctx, send_val, throw_typ, throw_exc, out_ev);
         break;
     }
   }
   KosContext_SUSPENSION_EVENT(ctx) = KOS_SUSP_NONE;
 
 entry_mode_dispatch:
+  if (mode == KOS_MODE_AWAIT) {
+    KosContext_SUSPENSION_EVENT(ctx) = KOS_SUSP_AWAIT;
+    KosContext_FLAGS(ctx) &= ~KOS_CTX_RUNNING;
+    return KOS_STEP_STOP_EVENT;
+  }
   if (mode == KOS_MODE_EXCEPTION) {
     int tl;
     clear_pending_agen_on_error(ctx);

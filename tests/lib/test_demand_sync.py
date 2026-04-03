@@ -268,6 +268,42 @@ class TestDemandSyncTryExceptAwaitInject(unittest.TestCase):
         fn = make_callable(code, base_ns, FormalsSpec())
         self.assertEqual(demand_sync(fn), "caught")
 
+    def test_await_iter_receives_throw_before_vm_except_path(self):
+        """
+        Resume with throw calls iterator.throw first. If the __await__ iterator
+        catches KoskariSyncViolation and returns, await completes with that
+        value (no local TRY needed).
+        """
+
+        def _it():
+            try:
+                yield 1
+            except KoskariSyncViolation:
+                return "from_iter"
+
+        class SwallowsViolation:
+            def __await__(self):
+                return _it()
+
+        awaitable = SwallowsViolation()
+        _, base_ns = build_expr(
+            [["CONST", 0], ["RETURN", 1]],
+            local_syms=('a',),
+            values={'a': awaitable},
+        )
+        code = build_code(
+            [
+                ["VAR", "a"],
+                ["AWAIT", 0],
+                ["RETURN", 1],
+            ],
+            local_syms=(),
+            closure_syms=('a',),
+            name='demand_await_iter_throw_swallow',
+        )
+        fn = make_callable(code, base_ns, FormalsSpec())
+        self.assertEqual(demand_sync(fn), "from_iter")
+
 
 class TestDemandSyncPlainPython(unittest.TestCase):
     """

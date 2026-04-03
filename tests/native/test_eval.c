@@ -1628,6 +1628,175 @@ static int test_eval_yield_send_resume(void) {
 /* === Test: YIELD throw resume => RAISE event (no handler) === */
 
 
+static int test_eval_await_throw_completes_iterator(void) {
+    /*
+      __await__ iterator catches ValueError after first yield and returns 99
+      (StopIteration). Second koskari_eval(throw) must call iterator.throw
+      first so the await completes without VM-only PyErr.
+    */
+    PyObject *pre = PyDict_New();
+    TEST_ASSERT_NOT_NULL(pre, "prelude dict");
+    if (PyRun_String(
+            "def _it():\n"
+            "    try:\n"
+            "        yield 1\n"
+            "    except ValueError:\n"
+            "        return 99\n"
+            "class AW:\n"
+            "    def __await__(self):\n"
+            "        return _it()\n",
+            Py_file_input, pre, pre) < 0) {
+        Py_DECREF(pre);
+        return -1;
+    }
+
+    PyObject *aw_class = PyDict_GetItemString(pre, "AW");
+    TEST_ASSERT_NOT_NULL(aw_class, "AW class");
+    PyObject *aw = PyObject_CallNoArgs(aw_class);
+    TEST_ASSERT_NOT_NULL(aw, "AW instance");
+
+    PyObject *name_test = PyUnicode_FromString("test");
+    PyObject *sym_a = PyUnicode_FromString("a");
+    PyObject *locals = PyTuple_Pack(1, sym_a);
+    PyObject *closures = PyTuple_New(0);
+    PyObject *nspec = KosNamespaceSpec_New(name_test, locals, closures, NULL);
+    Py_DECREF(name_test);
+    Py_DECREF(locals);
+    Py_DECREF(closures);
+
+    PyObject *instr = PyList_New(3);
+    PyList_SET_ITEM(instr, 0, make_instr(KOS_OP_VAR, sym_a));
+    PyList_SET_ITEM(instr, 1, make_instr_int(KOS_OP_AWAIT, 0));
+    PyList_SET_ITEM(instr, 2, make_instr_int(KOS_OP_RETURN, 1));
+
+    PyObject *code_obj = KosCode_New(nspec, instr, NULL, NULL);
+    Py_DECREF(instr);
+    TEST_ASSERT_NOT_NULL(code_obj, "code");
+
+    PyObject *ns = KosNamespace_FromSpec(nspec, NULL);
+    TEST_ASSERT_NOT_NULL(ns, "namespace");
+    TEST_ASSERT(KosNamespace_Store(ns, sym_a, aw) == 0, "store a");
+    Py_DECREF(nspec);
+    Py_DECREF(aw);
+
+    KosDynFrame *frame = kos_dynframe_new(NULL, (KosCode *) code_obj, ns, NULL);
+    TEST_ASSERT_NOT_NULL(frame, "frame");
+    KosContext *ctx = kos_context_new(frame);
+    TEST_ASSERT_NOT_NULL(ctx, "context");
+
+    KosEvent ev = {0};
+    int res = koskari_eval(ctx, &ev, NULL, NULL, NULL);
+    TEST_ASSERT(res == 0, "first koskari_eval succeeded");
+    TEST_ASSERT(ev.kind == KOS_EV_AWAIT, "first event is AWAIT");
+    Py_XDECREF(ev.payload);
+
+    PyObject *throw_exc = PyObject_CallFunction(
+        (PyObject *) PyExc_ValueError, "s", "into await iter");
+    TEST_ASSERT_NOT_NULL(throw_exc, "throw_exc");
+    ev.kind = KOS_EV_RETURN;
+    ev.payload = NULL;
+    ev.exc_type = NULL;
+    res = koskari_eval(ctx, &ev, NULL, (PyObject *) PyExc_ValueError, throw_exc);
+    Py_DECREF(throw_exc);
+    TEST_ASSERT(res == 0, "second koskari_eval succeeded");
+    TEST_ASSERT(ev.kind == KOS_EV_RETURN, "second event is RETURN");
+    TEST_ASSERT_NOT_NULL(ev.payload, "return payload");
+    TEST_ASSERT_EQ(PyLong_AsLong(ev.payload), 99, "await result 99");
+
+    Py_XDECREF(ev.payload);
+    Py_XDECREF(ev.exc_type);
+    kos_context_free(ctx);
+    Py_DECREF(code_obj);
+    Py_DECREF(pre);
+
+    return 0;
+}
+
+
+static int test_eval_await_throw_reyield(void) {
+    /*
+      Iterator catches ValueError and yields 99; throw must run first so the
+      second suspend exposes payload 99 (KOS_MODE_AWAIT / KOS_EV_AWAIT).
+    */
+    PyObject *pre = PyDict_New();
+    TEST_ASSERT_NOT_NULL(pre, "prelude dict");
+    if (PyRun_String(
+            "def _it():\n"
+            "    try:\n"
+            "        yield 1\n"
+            "    except ValueError:\n"
+            "        yield 99\n"
+            "class AW:\n"
+            "    def __await__(self):\n"
+            "        return _it()\n",
+            Py_file_input, pre, pre) < 0) {
+        Py_DECREF(pre);
+        return -1;
+    }
+
+    PyObject *aw_class = PyDict_GetItemString(pre, "AW");
+    TEST_ASSERT_NOT_NULL(aw_class, "AW class");
+    PyObject *aw = PyObject_CallNoArgs(aw_class);
+    TEST_ASSERT_NOT_NULL(aw, "AW instance");
+
+    PyObject *name_test = PyUnicode_FromString("test");
+    PyObject *sym_a = PyUnicode_FromString("a");
+    PyObject *locals = PyTuple_Pack(1, sym_a);
+    PyObject *closures = PyTuple_New(0);
+    PyObject *nspec = KosNamespaceSpec_New(name_test, locals, closures, NULL);
+    Py_DECREF(name_test);
+    Py_DECREF(locals);
+    Py_DECREF(closures);
+
+    PyObject *instr = PyList_New(3);
+    PyList_SET_ITEM(instr, 0, make_instr(KOS_OP_VAR, sym_a));
+    PyList_SET_ITEM(instr, 1, make_instr_int(KOS_OP_AWAIT, 0));
+    PyList_SET_ITEM(instr, 2, make_instr_int(KOS_OP_RETURN, 1));
+
+    PyObject *code_obj = KosCode_New(nspec, instr, NULL, NULL);
+    Py_DECREF(instr);
+    TEST_ASSERT_NOT_NULL(code_obj, "code");
+
+    PyObject *ns = KosNamespace_FromSpec(nspec, NULL);
+    TEST_ASSERT_NOT_NULL(ns, "namespace");
+    TEST_ASSERT(KosNamespace_Store(ns, sym_a, aw) == 0, "store a");
+    Py_DECREF(nspec);
+    Py_DECREF(aw);
+
+    KosDynFrame *frame = kos_dynframe_new(NULL, (KosCode *) code_obj, ns, NULL);
+    TEST_ASSERT_NOT_NULL(frame, "frame");
+    KosContext *ctx = kos_context_new(frame);
+    TEST_ASSERT_NOT_NULL(ctx, "context");
+
+    KosEvent ev = {0};
+    int res = koskari_eval(ctx, &ev, NULL, NULL, NULL);
+    TEST_ASSERT(res == 0, "first koskari_eval succeeded");
+    TEST_ASSERT(ev.kind == KOS_EV_AWAIT, "first event is AWAIT");
+    Py_XDECREF(ev.payload);
+
+    PyObject *throw_exc = PyObject_CallFunction(
+        (PyObject *) PyExc_ValueError, "s", "first throw");
+    TEST_ASSERT_NOT_NULL(throw_exc, "throw_exc");
+    ev.kind = KOS_EV_RETURN;
+    ev.payload = NULL;
+    ev.exc_type = NULL;
+    res = koskari_eval(ctx, &ev, NULL, (PyObject *) PyExc_ValueError, throw_exc);
+    Py_DECREF(throw_exc);
+    TEST_ASSERT(res == 0, "second koskari_eval succeeded");
+    TEST_ASSERT(ev.kind == KOS_EV_AWAIT, "second event is AWAIT (re-yield)");
+    TEST_ASSERT_NOT_NULL(ev.payload, "second payload");
+    TEST_ASSERT_EQ(PyLong_AsLong(ev.payload), 99, "re-yielded 99");
+
+    Py_XDECREF(ev.payload);
+    Py_XDECREF(ev.exc_type);
+    kos_context_free(ctx);
+    Py_DECREF(code_obj);
+    Py_DECREF(pre);
+
+    return 0;
+}
+
+
 static int test_eval_yield_throw_resume(void) {
     /*
       Bytecode: CONST 42, YIELD 1, RETURN 1.
@@ -1926,6 +2095,8 @@ int run_eval_tests(void) {
     RUN_TEST(test_eval_call_zero_args);
     RUN_TEST(test_eval_fast_on_dict_ns);
 
+    RUN_TEST(test_eval_await_throw_completes_iterator);
+    RUN_TEST(test_eval_await_throw_reyield);
     RUN_TEST(test_eval_yield_empty_resume);
     RUN_TEST(test_eval_yield_send_resume);
     RUN_TEST(test_eval_yield_throw_resume);

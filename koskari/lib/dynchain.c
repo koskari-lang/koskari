@@ -2699,7 +2699,7 @@ KosHandleResult kos_dyn_handle(KosContext *ctx, KosDynNode *node,
                (unsigned) KosDynFrame_ACTING_PC(frame),
                kh,
                exc_pc_u);
-               #endif
+          #endif
 
           if (kh == 0 && th.except_pc != KOS_EXTENT_NONE)
             return KOS_HANDLE_CONSUMED;
