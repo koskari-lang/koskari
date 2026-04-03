@@ -169,21 +169,8 @@ polluting the module.
 
 Ref: [bundles-and-namespace-facets.md](bundles-and-namespace-facets.md).
 
-
 ---
 
-## Domain / parameters
-
-### bind-param and use-param
-
-- **bind-param** — bind a parameter name in scope (currently consumers use
-  ParamRef(name).deref()).
-- **use-param** — `(use-param X)` expansion to bind X to `(PARAM "X")` (not
-  yet implemented).
-
-Ref: [interpreter/domain.md](interpreter/domain.md); [SPECIALS.md](SPECIALS.md) § compile/parameterize.
-
----
 
 ## Import / loader
 

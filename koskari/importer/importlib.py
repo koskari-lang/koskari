@@ -139,6 +139,7 @@ class KoskariSourceFileLoader(FileLoader):
             except AttributeError:
                 pass
 
+
     def exec_module_demand(self, module):
         """
         Execute the module synchronously via the demand path (demand_sync).
@@ -163,6 +164,7 @@ class KoskariSourceFileLoader(FileLoader):
                 setattr(module, name, val)
             except AttributeError:
                 pass
+
 
     def exec_module(self, module):
         return self.exec_module_demand(module)

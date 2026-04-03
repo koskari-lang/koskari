@@ -80,11 +80,11 @@ class LifeScreen []:
 
         for-each [item (board.tracked cleanup: True)]:
             define-values [xy val] item
+            define-values [x y] xy
             define-values [cell style] (render val)
             (screen.attrset style)
 
             try:
-              define-values [x y] xy
               (screen.addch (+ 1 y) (+ 1 x) cell)
             except [Exception]:
               raise (Exception f"x: {(repr x)}, y: {(repr y)}, cell: {(repr cell)}")

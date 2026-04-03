@@ -54,13 +54,11 @@ class LifeBoard []:
         if cleanup:
             for-each [item (list (data.items))]:
                 (define-values [coord cell] item)
-                (yield item)
                 unless cell:
                     (del-item data coord)
-        else:
-            for-each [item (data.items)]:
                 (yield item)
-            ;;(yield-from (data.items))
+        else:
+            (data.items)
 
 
     define toggle [self x y]:

@@ -121,11 +121,8 @@ define-syntax compile/bind!:
     match (bind! name (memoized getfn)):
       (compile/bindq name (MemoizedRef 'name getfn))
 
-    match (bind! name (parameterq param-name r ...)):
-      (compile/bindq name (ParamRef 'param-name r ...))
-
     match (bind! name (parameter param-name r ...)):
-      (compile/bindq name (ParamRef param-name r ...))
+      (compile/bindq name (ParamRef 'param-name r ...))
 
     match (bind! name value):
       (compile/bindq name value)
@@ -165,15 +162,20 @@ define-syntax compile/unless:
 
 define-syntax compile/define-parameter:
   syntax-rules []:
-    match (use-parameter name):
+    match (define-parameter name):
       (compile/define name)
       (compile/bindq name (ParamRef 'name))
+    match (define-parameter name default):
+      (compile/define name)
+      (compile/bindq name (ParamRef 'name default))
 
 
 define-syntax compile/parameterq:
   syntax-rules []:
     match (parameterq name):
       (parameter 'name)
+    match (parameterq name default):
+      (parameter 'name default)
 
 
 define-syntax compile/None?:
@@ -211,10 +213,12 @@ define-syntax compile/each:
       ((lambda [] (for-each [binding seq]
          (yield body))))
 
+
 define-syntax compile/list-each:
   syntax-rules []:
     match (list-each [binding seq] body ...):
       (list (each [binding seq] body ...))
+
 
 define-syntax compile/dict-each:
   syntax-rules [when: unless: key: value:]:

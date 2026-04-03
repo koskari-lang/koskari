@@ -35,16 +35,12 @@ This is the koskari analogue of sibilant.module from python-sibilant.
 """
 
 
+import sys
 from os.path import split
 
 from ..compile import Compiler
 from ..lib import Module, ModuleNamespace, demand_sync
-from ..reader import (
-    IndentAwareStream,
-    LayoutReader,
-    READ_EOF,
-    source_open,
-)
+from ..reader import READ_EOF, IndentAwareStream, LayoutReader, source_open
 
 
 __all__ = (
@@ -56,7 +52,7 @@ __all__ = (
 )
 
 
-async def new_module(name, package=None):
+async def new_module(name, package=None, system=False):
     """
     Create a new koskari Module with an initialised ModuleNamespace.
 
@@ -78,10 +74,13 @@ async def new_module(name, package=None):
     if package is not None:
         _ns_store(ns, '__package__', package)
 
+    if system:
+        sys.modules[name] = module
+
     return module
 
 
-def new_module_demand(name, package=None):
+def new_module_demand(name, package=None, system=False):
     """
     Create a new koskari Module with an initialised ModuleNamespace (demand path).
 
@@ -102,6 +101,9 @@ def new_module_demand(name, package=None):
     _ns_store(ns, '__name__', name)
     if package is not None:
         _ns_store(ns, '__package__', package)
+
+    if system:
+        sys.modules[name] = module
 
     return module
 
