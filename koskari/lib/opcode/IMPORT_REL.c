@@ -34,10 +34,6 @@
    _import_fromlist is initialised once in koskari_eval_init.
 */
 
-/* _import_fromlist is defined and initialised in eval.c */
-extern PyObject *_import_fromlist;
-
-
 KOS_OP_HANDLER(IMPORT_REL) {
   /* Constant is a (level:int, name:str|None) tuple */
   PyObject *tup = get_name_from_insn(CURRENT_CODE(ctx), insn);
