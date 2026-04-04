@@ -2858,6 +2858,55 @@ static KosEvalStep eval_phase_post_opcode(
 }
 
 
+/**
+   Top-of-loop transfer drain.  STOP_EVENT means caller should return eval 0.
+*/
+static KosEvalStep eval_step_drain_transfer_plan(KosContext *ctx, KosEvent *out_ev) {
+
+  if (! KosContext_PLAN(ctx))
+    return KOS_STEP_CONTINUE;
+  if (run_transfer_plan_to_completion(ctx, out_ev) < 0)
+    return KOS_STEP_STOP_EVENT;
+  return KOS_STEP_CONTINUE;
+}
+
+
+/**
+   One native-frame iteration: run handler; on non-zero result, post_opcode.
+   Caller must only invoke when CURRENT_FRAME has NATIVE_HANDLER.
+   Sets *eval_ret on FATAL (-1) or STOP (0).  *loop_continue when returning
+   CONTINUE after handled exception/async unwind.
+*/
+static KosEvalStep eval_step_native_iteration(
+    KosContext *ctx,
+    KosEvent *out_ev,
+    int *loop_continue,
+    int *eval_ret) {
+
+  int op_res;
+  KosEvalStep ps;
+  KosDispatchCtx dc_native = { 0 };
+
+  op_res = kos_eval_call_native_handler(ctx, out_ev, 0, NULL);
+
+  if (op_res == 0) {
+    *loop_continue = 0;
+    return KOS_STEP_CONTINUE;
+  }
+
+  dc_native.code = NULL;
+  dc_native.pc = 0;
+  dc_native.insn = NULL;
+  *loop_continue = 0;
+  ps = eval_phase_post_opcode(ctx, out_ev, &dc_native, op_res, loop_continue);
+  if (ps == KOS_STEP_FATAL_ERROR)
+    *eval_ret = -1;
+  else if (ps == KOS_STEP_STOP_EVENT)
+    *eval_ret = 0;
+  return ps;
+}
+
+
 int koskari_eval(KosContext *ctx, KosEvent *out_ev, PyObject *send_val, PyObject *throw_typ, PyObject *throw_exc) {
   int eval_ret = 0;
 
@@ -2917,9 +2966,12 @@ int koskari_eval(KosContext *ctx, KosEvent *out_ev, PyObject *send_val, PyObject
 #if KOS_STACK_TRACE
     trace_stack("  after ", CURRENT_STACK(ctx));
 #endif
-    if (KosContext_PLAN(ctx) && run_transfer_plan_to_completion(ctx, out_ev) < 0) {
-      eval_ret = 0;
-      goto koskari_eval_cleanup;
+    {
+      KosEvalStep xfer = eval_step_drain_transfer_plan(ctx, out_ev);
+      if (xfer == KOS_STEP_STOP_EVENT) {
+        eval_ret = 0;
+        goto koskari_eval_cleanup;
+      }
     }
 
     /* Phase 3: async pending-exception check */
@@ -2936,25 +2988,15 @@ int koskari_eval(KosContext *ctx, KosEvent *out_ev, PyObject *send_val, PyObject
     /* Native frame: run native handler as frame evaluator (skip bytecode dispatch) */
     if (CURRENT_FRAME(ctx)
         && KosDynFrame_NATIVE_HANDLER(CURRENT_FRAME(ctx)) != NULL) {
-      int op_res = kos_eval_call_native_handler(ctx, out_ev, 0, NULL);
-      if (op_res != 0) {
-        KosDispatchCtx dc_native = { 0 };
-        dc_native.code = NULL;
-        dc_native.pc = 0;
-        dc_native.insn = NULL;
-        int loop_continue = 0;
-        KosEvalStep ps = eval_phase_post_opcode(ctx, out_ev, &dc_native, op_res, &loop_continue);
-        if (ps == KOS_STEP_FATAL_ERROR) {
-          eval_ret = -1;
-          goto koskari_eval_cleanup;
-        }
-        if (ps == KOS_STEP_STOP_EVENT) {
-          eval_ret = 0;
-          goto koskari_eval_cleanup;
-        }
-        if (loop_continue)
-          continue;
-      }
+      int loop_continue = 0;
+      KosEvalStep ns = eval_step_native_iteration(ctx, out_ev, &loop_continue,
+                                                  &eval_ret);
+      if (ns == KOS_STEP_FATAL_ERROR)
+        goto koskari_eval_cleanup;
+      if (ns == KOS_STEP_STOP_EVENT)
+        goto koskari_eval_cleanup;
+      if (loop_continue)
+        continue;
       goto next_insn;
     }
 
