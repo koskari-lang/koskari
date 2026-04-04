@@ -2730,6 +2730,90 @@ static KosEvalStep eval_phase_prepare_dispatch(
 
 
 /**
+   Koskari async-gen flatten: after YIELD walk with PENDING_AGEN, or RETURN
+   exhaustion with PENDING_AGEN.  For YIELD, caller already ran
+   kos_dyn_walk_handle_yield.
+*/
+static KosEvalStep eval_post_opcode_pending_agen(
+    KosContext *ctx,
+    KosEvent *out_ev,
+    int *loop_continue) {
+
+  if (KosEvent_KIND(out_ev) == KOS_EV_YIELD) {
+    KosPyAsyncGen *agen;
+    PyObject *payload;
+
+    agen = (KosPyAsyncGen *) KosContext_PENDING_AGEN(ctx);
+    payload = KosEvent_PAYLOAD(out_ev);
+    if (KosStackBlock_PushRef(&CURRENT_STACK(ctx), payload) < 0) {
+      Py_XDECREF(payload);
+      return KOS_STEP_FATAL_ERROR;
+    }
+    Py_DECREF(payload);
+    KosEvent_PAYLOAD(out_ev) = NULL;
+    KosEvent_KIND(out_ev) = KOS_EV_NONE;
+    KosContext_PENDING_AGEN(ctx) = NULL;
+    Py_XDECREF(KosContext_PENDING_AGEN_DEFAULT(ctx));
+    KosContext_PENDING_AGEN_DEFAULT(ctx) = NULL;
+    agen->in_progress = 0;
+    *loop_continue = 1;
+    return KOS_STEP_CONTINUE;
+  }
+
+  {
+    KosPyAsyncGen *agen;
+    PyObject *val;
+
+    agen = (KosPyAsyncGen *) KosContext_PENDING_AGEN(ctx);
+    val = KosEvent_PAYLOAD(out_ev);
+    if (kos_dyn_gen_unwind_exhausted(ctx) < 0) {
+      Py_DECREF(val);
+      return KOS_STEP_FATAL_ERROR;
+    }
+    agen->closed = 1;
+    agen->in_progress = 0;
+    if (KosContext_PENDING_AGEN_N(ctx) == 0) {
+      KosDynNode *r = kos_find_node_for_loop(ctx);
+
+      if (r) {
+        KosDynForeach_EXHAUSTED((KosDynForeach *) r) = 1;
+        CURRENT_PC(ctx) = KosDynForeach_ITER_NEXT_ELSE_PC((KosDynForeach *) r);
+      }
+      KosContext_PENDING_AGEN(ctx) = NULL;
+      KosContext_PENDING_AGEN_DEFAULT(ctx) = NULL;
+      Py_DECREF(val);
+    } else if (KosContext_PENDING_AGEN_N(ctx) == 2
+               && KosContext_PENDING_AGEN_DEFAULT(ctx)) {
+      if (KosStackBlock_PushRef(&CURRENT_STACK(ctx),
+                                KosContext_PENDING_AGEN_DEFAULT(ctx)) < 0) {
+        Py_XDECREF(KosContext_PENDING_AGEN_DEFAULT(ctx));
+        KosContext_PENDING_AGEN_DEFAULT(ctx) = NULL;
+        KosContext_PENDING_AGEN(ctx) = NULL;
+        Py_DECREF(val);
+        return KOS_STEP_FATAL_ERROR;
+      }
+      Py_XDECREF(KosContext_PENDING_AGEN_DEFAULT(ctx));
+      Py_DECREF(val);
+    } else if (KosContext_PENDING_AGEN_N(ctx) == 1) {
+      Py_DECREF(val);
+      KosContext_PENDING_AGEN(ctx) = NULL;
+      KosContext_PENDING_AGEN_DEFAULT(ctx) = NULL;
+      PyErr_SetNone(PyExc_StopIteration);
+      return KOS_STEP_FATAL_ERROR;
+    } else {
+      Py_DECREF(val);
+    }
+    KosContext_PENDING_AGEN(ctx) = NULL;
+    KosContext_PENDING_AGEN_DEFAULT(ctx) = NULL;
+    KosEvent_PAYLOAD(out_ev) = NULL;
+    KosEvent_KIND(out_ev) = KOS_EV_NONE;
+    *loop_continue = 1;
+    return KOS_STEP_CONTINUE;
+  }
+}
+
+
+/**
    Phase 6: post-opcode result handling.
 
    Called when an opcode handler returns a non-zero op_res.  Handles the
@@ -2787,70 +2871,11 @@ static KosEvalStep eval_phase_post_opcode(
       return KOS_STEP_FATAL_ERROR;
     /* Koskari flatten: GEN was on consumer chain; freeze restored caller.
        Push value onto caller stack and continue (no event return). */
-    if (KosContext_PENDING_AGEN(ctx)) {
-      KosPyAsyncGen *agen = (KosPyAsyncGen *) KosContext_PENDING_AGEN(ctx);
-      PyObject *payload = KosEvent_PAYLOAD(out_ev);
-      if (KosStackBlock_PushRef(&CURRENT_STACK(ctx), payload) < 0) {
-        Py_XDECREF(payload);
-        return KOS_STEP_FATAL_ERROR;
-      }
-      Py_DECREF(payload);
-      KosEvent_PAYLOAD(out_ev) = NULL;
-      KosEvent_KIND(out_ev) = KOS_EV_NONE;
-      KosContext_PENDING_AGEN(ctx) = NULL;
-      Py_XDECREF(KosContext_PENDING_AGEN_DEFAULT(ctx));
-      KosContext_PENDING_AGEN_DEFAULT(ctx) = NULL;
-      agen->in_progress = 0;
-      *loop_continue = 1;
-      return KOS_STEP_CONTINUE;
-    }
+    if (KosContext_PENDING_AGEN(ctx))
+      return eval_post_opcode_pending_agen(ctx, out_ev, loop_continue);
     KosContext_SUSPENSION_EVENT(ctx) = KOS_SUSP_YIELD;
   } else if (KosEvent_KIND(out_ev) == KOS_EV_RETURN && KosContext_PENDING_AGEN(ctx)) {
-    /* Koskari flatten: gen exhausted; unwind and deliver to consumer */
-    KosPyAsyncGen *agen = (KosPyAsyncGen *) KosContext_PENDING_AGEN(ctx);
-    PyObject *val = KosEvent_PAYLOAD(out_ev);
-    if (kos_dyn_gen_unwind_exhausted(ctx) < 0) {
-      Py_DECREF(val);
-      return KOS_STEP_FATAL_ERROR;
-    }
-    agen->closed = 1;
-    agen->in_progress = 0;
-    if (KosContext_PENDING_AGEN_N(ctx) == 0) {
-      KosDynNode *r = kos_find_node_for_loop(ctx);
-      if (r) {
-        KosDynForeach_EXHAUSTED((KosDynForeach *) r) = 1;
-        CURRENT_PC(ctx) = KosDynForeach_ITER_NEXT_ELSE_PC((KosDynForeach *) r);
-      }
-      KosContext_PENDING_AGEN(ctx) = NULL;
-      KosContext_PENDING_AGEN_DEFAULT(ctx) = NULL;
-      Py_DECREF(val);
-    } else if (KosContext_PENDING_AGEN_N(ctx) == 2
-               && KosContext_PENDING_AGEN_DEFAULT(ctx)) {
-      if (KosStackBlock_PushRef(&CURRENT_STACK(ctx),
-                                KosContext_PENDING_AGEN_DEFAULT(ctx)) < 0) {
-        Py_XDECREF(KosContext_PENDING_AGEN_DEFAULT(ctx));
-        KosContext_PENDING_AGEN_DEFAULT(ctx) = NULL;
-        KosContext_PENDING_AGEN(ctx) = NULL;
-        Py_DECREF(val);
-        return KOS_STEP_FATAL_ERROR;
-      }
-      Py_XDECREF(KosContext_PENDING_AGEN_DEFAULT(ctx));
-      Py_DECREF(val);
-    } else if (KosContext_PENDING_AGEN_N(ctx) == 1) {
-      Py_DECREF(val);
-      KosContext_PENDING_AGEN(ctx) = NULL;
-      KosContext_PENDING_AGEN_DEFAULT(ctx) = NULL;
-      PyErr_SetNone(PyExc_StopIteration);
-      return KOS_STEP_FATAL_ERROR;
-    } else {
-      Py_DECREF(val);
-    }
-    KosContext_PENDING_AGEN(ctx) = NULL;
-    KosContext_PENDING_AGEN_DEFAULT(ctx) = NULL;
-    KosEvent_PAYLOAD(out_ev) = NULL;
-    KosEvent_KIND(out_ev) = KOS_EV_NONE;
-    *loop_continue = 1;
-    return KOS_STEP_CONTINUE;
+    return eval_post_opcode_pending_agen(ctx, out_ev, loop_continue);
   }
 
   /* op_res < 0 with no PyErr and no suspension event is a fatal internal error */
