@@ -2034,6 +2034,58 @@ static KosGetNextResult op_get_next_from_iter(
 }
 
 
+enum {
+  KOS_ATTACH_AGEN_MODE_NEXT = 0,
+  KOS_ATTACH_AGEN_MODE_ITER_NEXT = 1,
+};
+
+
+/**
+   Shared install of Koskari async gen frame onto consumer ctx.  mode NEXT
+   clears pending_agen and DECREFs iter/default_val on failure; ITER_NEXT only
+   resets in_progress.
+*/
+static int attach_koskari_gen_core(
+    KosContext *ctx,
+    KosPyAsyncGen *agen,
+    int mode,
+    PyObject *iter,
+    PyObject *default_val) {
+
+  KosDynGen *gen = (KosDynGen *) agen->gen;
+
+  if (! gen || ! KosDynGen_ACTIVE(gen)) {
+    if (mode == KOS_ATTACH_AGEN_MODE_NEXT) {
+      KosContext_PENDING_AGEN(ctx) = NULL;
+      Py_XDECREF(KosContext_PENDING_AGEN_DEFAULT(ctx));
+      KosContext_PENDING_AGEN_DEFAULT(ctx) = NULL;
+      Py_DECREF(iter);
+      Py_XDECREF(default_val);
+    }
+    agen->in_progress = 0;
+    PyErr_SetString(PyExc_RuntimeError, "async generator has no active frame");
+    return -1;
+  }
+
+  KosContext_DYN_TOP(agen->ctx) = NULL;
+  KosContext_FRAME_TOP(agen->ctx) = NULL;
+
+  if (kos_dyn_gen_install(ctx, gen) < 0) {
+    if (mode == KOS_ATTACH_AGEN_MODE_NEXT) {
+      KosContext_PENDING_AGEN(ctx) = NULL;
+      Py_XDECREF(KosContext_PENDING_AGEN_DEFAULT(ctx));
+      KosContext_PENDING_AGEN_DEFAULT(ctx) = NULL;
+      Py_DECREF(iter);
+      Py_XDECREF(default_val);
+    }
+    agen->in_progress = 0;
+    return -1;
+  }
+
+  return 0;
+}
+
+
 /**
    Install GEN onto consumer ctx (Koskari flatten). Clears agen->ctx chain
    so state lives only in GEN. kos_dyn_gen_install pushes Py_None.
@@ -2048,30 +2100,8 @@ static int op_attach_koskari_agen_frame(
     PyObject *iter,
     PyObject *default_val) {
 
-  KosDynGen *gen = (KosDynGen *) agen->gen;
-  if (! gen || ! KosDynGen_ACTIVE(gen)) {
-    KosContext_PENDING_AGEN(ctx) = NULL;
-    Py_XDECREF(KosContext_PENDING_AGEN_DEFAULT(ctx));
-    KosContext_PENDING_AGEN_DEFAULT(ctx) = NULL;
-    Py_DECREF(iter);
-    Py_XDECREF(default_val);
-    agen->in_progress = 0;
-    PyErr_SetString(PyExc_RuntimeError, "async generator has no active frame");
-    return -1;
-  }
-  /* Clear agen->ctx so chain lives only in GEN; we are moving it to consumer */
-  KosContext_DYN_TOP(agen->ctx) = NULL;
-  KosContext_FRAME_TOP(agen->ctx) = NULL;
-  if (kos_dyn_gen_install(ctx, gen) < 0) {
-    KosContext_PENDING_AGEN(ctx) = NULL;
-    Py_XDECREF(KosContext_PENDING_AGEN_DEFAULT(ctx));
-    KosContext_PENDING_AGEN_DEFAULT(ctx) = NULL;
-    Py_DECREF(iter);
-    Py_XDECREF(default_val);
-    agen->in_progress = 0;
-    return -1;
-  }
-  return 0;
+  return attach_koskari_gen_core(ctx, agen, KOS_ATTACH_AGEN_MODE_NEXT,
+                                 iter, default_val);
 }
 
 
@@ -2085,19 +2115,8 @@ static int op_attach_koskari_agen_frame_for_iter_next(
     KosDynNode *region) {
 
   (void) region;
-  KosDynGen *gen = (KosDynGen *) agen->gen;
-  if (! gen || ! KosDynGen_ACTIVE(gen)) {
-    agen->in_progress = 0;
-    PyErr_SetString(PyExc_RuntimeError, "async generator has no active frame");
-    return -1;
-  }
-  KosContext_DYN_TOP(agen->ctx) = NULL;
-  KosContext_FRAME_TOP(agen->ctx) = NULL;
-  if (kos_dyn_gen_install(ctx, gen) < 0) {
-    agen->in_progress = 0;
-    return -1;
-  }
-  return 0;
+  return attach_koskari_gen_core(ctx, agen, KOS_ATTACH_AGEN_MODE_ITER_NEXT,
+                                 NULL, NULL);
 }
 
 
@@ -2121,6 +2140,33 @@ enum {
   KOS_YF_THROW = 2,
   KOS_YF_CLOSE = 3,
 };
+
+
+/**
+   Pop inner result from stack, feed defer, push result back, release defer_obj.
+   Returns 0 on success, -1 on error (defer_obj released on failure paths that
+   match defer_drive).
+*/
+static int defer_complete_with_inner_result(
+    KosContext *ctx,
+    KosDefer *defer,
+    PyObject *defer_obj) {
+
+  PyObject *inner_result = KosStackBlock_PopRef(&CURRENT_STACK(ctx));
+  if (! inner_result) {
+    Py_DECREF(defer_obj);
+    return -1;
+  }
+  KosDefer_FeedResult(defer, inner_result);
+  if (KosStackBlock_PushRef(&CURRENT_STACK(ctx), inner_result) < 0) {
+    Py_DECREF(inner_result);
+    Py_DECREF(defer_obj);
+    return -1;
+  }
+  Py_DECREF(inner_result);
+  Py_DECREF(defer_obj);
+  return 0;
+}
 
 
 void kos_yieldfrom_close_delegate(KosDynYieldFrom *node) {
@@ -2198,19 +2244,8 @@ static int defer_drive(KosContext *ctx, KosEvent *out_ev, PyObject *defer_obj) {
       if (KosDefer_Check(yielded)) {
         int r = defer_drive(ctx, out_ev, yielded);
         if (r == 0) {
-          PyObject *inner_result = KosStackBlock_PopRef(&CURRENT_STACK(ctx));
-          if (! inner_result) {
-            Py_DECREF(defer_obj);
+          if (defer_complete_with_inner_result(ctx, defer, defer_obj) < 0)
             return -1;
-          }
-          KosDefer_FeedResult(defer, inner_result);
-          if (KosStackBlock_PushRef(&CURRENT_STACK(ctx), inner_result) < 0) {
-            Py_DECREF(inner_result);
-            Py_DECREF(defer_obj);
-            return -1;
-          }
-          Py_DECREF(inner_result);
-          Py_DECREF(defer_obj);
           return 0;
         }
         if (r == 1) {
@@ -2224,19 +2259,8 @@ static int defer_drive(KosContext *ctx, KosEvent *out_ev, PyObject *defer_obj) {
       int r = push_or_await(ctx, out_ev, yielded);
       Py_DECREF(yielded);
       if (r == 0) {
-        PyObject *inner_result = KosStackBlock_PopRef(&CURRENT_STACK(ctx));
-        if (! inner_result) {
-          Py_DECREF(defer_obj);
+        if (defer_complete_with_inner_result(ctx, defer, defer_obj) < 0)
           return -1;
-        }
-        KosDefer_FeedResult(defer, inner_result);
-        if (KosStackBlock_PushRef(&CURRENT_STACK(ctx), inner_result) < 0) {
-          Py_DECREF(inner_result);
-          Py_DECREF(defer_obj);
-          return -1;
-        }
-        Py_DECREF(inner_result);
-        Py_DECREF(defer_obj);
         return 0;
       }
       if (r == 1) {
@@ -2447,6 +2471,26 @@ static int try_local_exception_handler(KosContext *ctx, KosEvent *out_ev) {
 
 
 /**
+   Invoke native frame handler when CURRENT_FRAME has NATIVE_HANDLER.
+   Returns handler result, or -1 if no handler (callers usually guard).
+*/
+static int kos_eval_call_native_handler(
+    KosContext *ctx,
+    KosEvent *out_ev,
+    int phase,
+    PyObject *arg) {
+
+  KosDynFrame *frame = CURRENT_FRAME(ctx);
+  if (! frame || ! KosDynFrame_NATIVE_HANDLER(frame))
+    return -1;
+  typedef int (*NativeHandlerFn)(void *, void *, int, PyObject *);
+  NativeHandlerFn fn =
+      (NativeHandlerFn) KosDynFrame_NATIVE_HANDLER(frame);
+  return fn(ctx, out_ev, phase, arg);
+}
+
+
+/**
    Phase 1: entry and revive normalization.
 
    Determines the initial KosEvalMode by dispatching through the current
@@ -2562,10 +2606,7 @@ entry_mode_dispatch:
       && KosDynFrame_NATIVE_HANDLER(CURRENT_FRAME(ctx)) != NULL) {
     PyObject *val = KosStackBlock_PopRef(&CURRENT_STACK(ctx));
     if (val) {
-      typedef int (*NativeHandlerFn)(void *, void *, int, PyObject *);
-      NativeHandlerFn fn =
-          (NativeHandlerFn) KosDynFrame_NATIVE_HANDLER(CURRENT_FRAME(ctx));
-      int res = fn(ctx, out_ev, 1, val);
+      int res = kos_eval_call_native_handler(ctx, out_ev, 1, val);
       if (res < 0)
         return KOS_STEP_FATAL_ERROR;
       if (res == 1)
@@ -2607,6 +2648,29 @@ static KosEvalStep eval_phase_transfer(KosContext *ctx, KosEvent *out_ev) {
 
 
 /**
+   Map process_raise outcome to eval step: propagate RAISE, resuspend on
+   AWAIT, or set loop_continue for local recovery.
+*/
+static KosEvalStep eval_step_after_process_raise(
+    KosContext *ctx,
+    KosEvent *out_ev,
+    int *loop_continue) {
+
+  KosEvalMode raise_mode = process_raise(ctx, out_ev);
+  if (raise_mode == KOS_MODE_RAISE)
+    return KOS_STEP_STOP_EVENT;
+
+  if (KosEvent_KIND(out_ev) == KOS_EV_AWAIT) {
+    KosContext_SUSPENSION_EVENT(ctx) = KOS_SUSP_AWAIT;
+    return KOS_STEP_STOP_EVENT;
+  }
+
+  *loop_continue = 1;
+  return KOS_STEP_CONTINUE;
+}
+
+
+/**
    Phase 3: async exception check at each loop iteration top.
 
    When PyErr_Occurred() is set on entry to the dispatch loop (e.g. from a
@@ -2627,17 +2691,7 @@ static KosEvalStep eval_phase_pending_exception(
   if (! PyErr_Occurred())
     return KOS_STEP_CONTINUE;
 
-  KosEvalMode raise_mode = process_raise(ctx, out_ev);
-  if (raise_mode == KOS_MODE_RAISE)
-    return KOS_STEP_STOP_EVENT;
-
-  if (KosEvent_KIND(out_ev) == KOS_EV_AWAIT) {
-    KosContext_SUSPENSION_EVENT(ctx) = KOS_SUSP_AWAIT;
-    return KOS_STEP_STOP_EVENT;
-  }
-
-  *loop_continue = 1;
-  return KOS_STEP_CONTINUE;
+  return eval_step_after_process_raise(ctx, out_ev, loop_continue);
 }
 
 
@@ -2735,17 +2789,8 @@ static KosEvalStep eval_phase_post_opcode(
     }
   }
 
-  if (PyErr_Occurred()) {
-    KosEvalMode raise_mode = process_raise(ctx, out_ev);
-    if (raise_mode == KOS_MODE_RAISE)
-      return KOS_STEP_STOP_EVENT;
-    if (KosEvent_KIND(out_ev) == KOS_EV_AWAIT) {
-      KosContext_SUSPENSION_EVENT(ctx) = KOS_SUSP_AWAIT;
-      return KOS_STEP_STOP_EVENT;
-    }
-    *loop_continue = 1;
-    return KOS_STEP_CONTINUE;
-  }
+  if (PyErr_Occurred())
+    return eval_step_after_process_raise(ctx, out_ev, loop_continue);
 
   /* Record why we suspended so next entry can choose revive path.
      post_opcode is only called for non-zero op_res; a handler that stops
@@ -2914,9 +2959,7 @@ int koskari_eval(KosContext *ctx, KosEvent *out_ev, PyObject *send_val, PyObject
     /* Native frame: run native handler as frame evaluator (skip bytecode dispatch) */
     if (CURRENT_FRAME(ctx)
         && KosDynFrame_NATIVE_HANDLER(CURRENT_FRAME(ctx)) != NULL) {
-      typedef int (*NativeHandlerFn)(void *, void *, int, PyObject *);
-      NativeHandlerFn fn = (NativeHandlerFn) KosDynFrame_NATIVE_HANDLER(CURRENT_FRAME(ctx));
-      int op_res = fn(ctx, out_ev, 0, NULL);
+      int op_res = kos_eval_call_native_handler(ctx, out_ev, 0, NULL);
       if (op_res != 0) {
         KosDispatchCtx dc_native = { 0 };
         dc_native.code = NULL;
