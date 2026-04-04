@@ -131,6 +131,9 @@ static void clear_and_free_transfer_plan(KosContext *ctx) {
 static void inject_eval_frame_traceback(KosContext *ctx,
     PyObject **exc_type, PyObject **exc_val, PyObject **exc_tb);
 
+static void kos_eval_mark_context_dead(KosContext *ctx);
+static void kos_eval_emit_raise_from_pyerr(KosContext *ctx, KosEvent *out_ev);
+
 
 /**
    Run the current transfer plan to completion.  Returns 0 on success (plan
@@ -149,19 +152,7 @@ static int run_transfer_plan_to_completion(
 
     if (plan_res < 0) {
       SAY("[eval] transfer step failed -> KOS_EV_RAISE\n");
-      KosEvent_KIND(out_ev) = KOS_EV_RAISE;
-      KosEvent_PAYLOAD(out_ev) = NULL;
-      KosEvent_EXC_TYPE(out_ev) = NULL;
-      {
-        PyObject *exc_typ = NULL, *exc_val = NULL, *exc_tb = NULL;
-        PyErr_Fetch(&exc_typ, &exc_val, &exc_tb);
-        inject_eval_frame_traceback(ctx, &exc_typ, &exc_val, &exc_tb);
-        Py_XDECREF(exc_tb);
-        KosEvent_EXC_TYPE(out_ev) = exc_typ;  /* caller owns */
-        KosEvent_PAYLOAD(out_ev) = exc_val;   /* caller owns */
-      }
-      KosContext_FLAGS(ctx) &= ~KOS_CTX_RUNNING;
-      KosContext_FLAGS(ctx) |= KOS_CTX_DEAD;
+      kos_eval_emit_raise_from_pyerr(ctx, out_ev);
       return -1;
     }
 
@@ -591,6 +582,33 @@ static void inject_eval_frame_traceback(
       PyErr_Clear();
   }
 }
+
+
+static void kos_eval_mark_context_dead(KosContext *ctx) {
+
+  KosContext_FLAGS(ctx) &= ~KOS_CTX_RUNNING;
+  KosContext_FLAGS(ctx) |= KOS_CTX_DEAD;
+}
+
+
+/**
+   Move current PyErr into out_ev as KOS_EV_RAISE with injected traceback,
+   clear thread error, and mark the context dead.  Call only when PyErr is set.
+*/
+static void kos_eval_emit_raise_from_pyerr(KosContext *ctx, KosEvent *out_ev) {
+
+  PyObject *typ = NULL, *val = NULL, *tb = NULL;
+
+  PyErr_Fetch(&typ, &val, &tb);
+  inject_eval_frame_traceback(ctx, &typ, &val, &tb);
+  Py_XDECREF(tb);
+  KosEvent_KIND(out_ev) = KOS_EV_RAISE;
+  KosEvent_EXC_TYPE(out_ev) = typ;
+  KosEvent_PAYLOAD(out_ev) = val;
+  PyErr_Clear();
+  kos_eval_mark_context_dead(ctx);
+}
+
 
 /**
    Intercept a KoskariContinuationApply exception and install the appropriate
@@ -2343,16 +2361,7 @@ static int try_local_exception_handler(KosContext *ctx, KosEvent *out_ev) {
              : hr == KOS_HANDLE_ERROR ? "ERROR" : "?");
       if (hr == KOS_HANDLE_CONSUMED) {
         if (KosDynNode_IS_GEN(top)) {
-          PyObject *typ = NULL, *val = NULL, *tb = NULL;
-          PyErr_Fetch(&typ, &val, &tb);
-          inject_eval_frame_traceback(ctx, &typ, &val, &tb);
-          PyErr_Clear();
-          KosEvent_KIND(out_ev) = KOS_EV_RAISE;
-          KosEvent_EXC_TYPE(out_ev) = typ;
-          KosEvent_PAYLOAD(out_ev) = val;
-          Py_XDECREF(tb);
-          KosContext_FLAGS(ctx) &= ~KOS_CTX_RUNNING;
-          KosContext_FLAGS(ctx) |= KOS_CTX_DEAD;
+          kos_eval_emit_raise_from_pyerr(ctx, out_ev);
           return 0;
         }
         KosDynNode *region = top;
@@ -2429,19 +2438,8 @@ static int try_local_exception_handler(KosContext *ctx, KosEvent *out_ev) {
           if (exc_res == 0)
             continue;
         }
-        {
-          PyObject *typ = NULL, *val = NULL, *tb = NULL;
-          PyErr_Fetch(&typ, &val, &tb);
-          inject_eval_frame_traceback(ctx, &typ, &val, &tb);
-          PyErr_Clear();
-          KosEvent_KIND(out_ev) = KOS_EV_RAISE;
-          KosEvent_EXC_TYPE(out_ev) = typ;
-          KosEvent_PAYLOAD(out_ev) = val;
-          Py_XDECREF(tb);
-        }
         SAY("[try_local] pop/unwind path -> KOS_EV_RAISE\n");
-        KosContext_FLAGS(ctx) &= ~KOS_CTX_RUNNING;
-        KosContext_FLAGS(ctx) |= KOS_CTX_DEAD;
+        kos_eval_emit_raise_from_pyerr(ctx, out_ev);
         return 0;
       }
       if (top_may_swallow && ! PyErr_Occurred()) {
@@ -2455,16 +2453,7 @@ static int try_local_exception_handler(KosContext *ctx, KosEvent *out_ev) {
   /* No handler found */
   {
     SAY("[try_local] no handler found -> KOS_EV_RAISE\n");
-    PyObject *typ = NULL, *val = NULL, *tb = NULL;
-    PyErr_Fetch(&typ, &val, &tb);
-    inject_eval_frame_traceback(ctx, &typ, &val, &tb);
-    PyErr_Clear();
-    KosEvent_KIND(out_ev) = KOS_EV_RAISE;
-    KosEvent_EXC_TYPE(out_ev) = typ;
-    KosEvent_PAYLOAD(out_ev) = val;
-    Py_XDECREF(tb);
-    KosContext_FLAGS(ctx) &= ~KOS_CTX_RUNNING;
-    KosContext_FLAGS(ctx) |= KOS_CTX_DEAD;
+    kos_eval_emit_raise_from_pyerr(ctx, out_ev);
     return 0;
   }
 }
@@ -2582,22 +2571,11 @@ entry_mode_dispatch:
     /* try_local_exception_handler returning 0 has already filled out_ev with
        KOS_EV_RAISE and the exception payload, and cleared PyErr.  Just mark
        the context dead and stop; do not call PyErr_Fetch again. */
-    KosContext_FLAGS(ctx) &= ~KOS_CTX_RUNNING;
-    KosContext_FLAGS(ctx) |= KOS_CTX_DEAD;
+    kos_eval_mark_context_dead(ctx);
     return KOS_STEP_STOP_EVENT;
   }
   if (mode == KOS_MODE_RAISE) {
-    KosEvent_KIND(out_ev) = KOS_EV_RAISE;
-    KosEvent_PAYLOAD(out_ev) = NULL;
-    KosEvent_EXC_TYPE(out_ev) = NULL;
-    PyObject *raise_typ = NULL;
-    PyObject *raise_tb  = NULL;
-    PyErr_Fetch(&raise_typ, &KosEvent_PAYLOAD(out_ev), &raise_tb);
-    inject_eval_frame_traceback(ctx, &raise_typ, &KosEvent_PAYLOAD(out_ev), &raise_tb);
-    KosEvent_EXC_TYPE(out_ev) = raise_typ;
-    Py_XDECREF(raise_tb);
-    KosContext_FLAGS(ctx) &= ~KOS_CTX_RUNNING;
-    KosContext_FLAGS(ctx) |= KOS_CTX_DEAD;
+    kos_eval_emit_raise_from_pyerr(ctx, out_ev);
     return KOS_STEP_STOP_EVENT;
   }
 
@@ -2638,8 +2616,7 @@ static KosEvalStep eval_phase_transfer(KosContext *ctx, KosEvent *out_ev) {
     KosEvent_KIND(out_ev) = KOS_EV_RETURN;
     KosEvent_PAYLOAD(out_ev) = Py_None;
     Py_INCREF(Py_None);
-    KosContext_FLAGS(ctx) &= ~KOS_CTX_RUNNING;
-    KosContext_FLAGS(ctx) |= KOS_CTX_DEAD;
+    kos_eval_mark_context_dead(ctx);
     return KOS_STEP_STOP_EVENT;
   }
 
