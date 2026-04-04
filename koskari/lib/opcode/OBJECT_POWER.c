@@ -23,7 +23,7 @@ KOS_OP_HANDLER(OBJECT_POWER) {
   if (opa < 2 || opa > 3) {
     PyErr_Format(PyExc_RuntimeError,
                  "OBJECT_POWER requires 2 or 3 arguments, got %i", opa);
-    return -1;
+    return KOS_OP_POST_ERR();
   }
 
   PyObject *base = NULL, *exp = NULL, *mod = Py_None;
@@ -31,14 +31,14 @@ KOS_OP_HANDLER(OBJECT_POWER) {
   if (opa == 3) {
     mod = KosStackBlock_PopRef(&CURRENT_STACK(ctx));
     if (! mod)
-      return -1;
+      return KOS_OP_POST_ERR();
   }
 
   exp = KosStackBlock_PopRef(&CURRENT_STACK(ctx));
   if (! exp) {
     if (opa == 3)
       Py_DECREF(mod);
-    return -1;
+    return KOS_OP_POST_ERR();
   }
 
   base = KosStackBlock_PopRef(&CURRENT_STACK(ctx));
@@ -46,7 +46,7 @@ KOS_OP_HANDLER(OBJECT_POWER) {
     Py_DECREF(exp);
     if (opa == 3)
       Py_DECREF(mod);
-    return -1;
+    return KOS_OP_POST_ERR();
   }
 
   PyObject *val = PyNumber_Power(base, exp, mod);
@@ -55,6 +55,6 @@ KOS_OP_HANDLER(OBJECT_POWER) {
   if (opa == 3)
     Py_DECREF(mod);
   if (! val)
-    return -1;
-  return push_result(ctx, val);
+    return KOS_OP_POST_ERR();
+  return kos_op_outcome_from_int_step(push_result(ctx, val));
 }

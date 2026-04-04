@@ -24,7 +24,7 @@ KOS_OP_HANDLER(ITER_NEXT) {
   if (! region || ! KosDynNode_IS_FOREACH(region)) {
     PyErr_SetString(PyExc_RuntimeError,
                     "ITER_NEXT must be used inside a PUSH_FOREACH block");
-    return -1;
+    return KOS_OP_POST_ERR();
   }
 
   PyObject *iter = KosDynForeach_ITER((KosDynForeach *) region);
@@ -33,12 +33,12 @@ KOS_OP_HANDLER(ITER_NEXT) {
     if (agen->in_progress) {
       PyErr_SetString(PyExc_RuntimeError,
                       "async generator already being iterated");
-      return -1;
+      return KOS_OP_POST_ERR();
     }
     if (agen->closed || ! agen->ctx) {
       KosDynForeach_EXHAUSTED((KosDynForeach *) region) = 1;
       CURRENT_PC(ctx) = KosOp_ARG(insn);
-      return 0;
+      return KOS_OP_RUN();
     }
     agen->in_progress = 1;
     KosContext_PENDING_AGEN(ctx) = (void *) agen;
@@ -48,9 +48,9 @@ KOS_OP_HANDLER(ITER_NEXT) {
     if (op_attach_koskari_agen_frame_for_iter_next(ctx, agen, region) < 0) {
       agen->in_progress = 0;
       KosContext_PENDING_AGEN(ctx) = NULL;
-      return -1;
+      return KOS_OP_POST_ERR();
     }
-    return 0;
+    return KOS_OP_RUN();
   }
 
   PyObject *value = NULL;
@@ -59,19 +59,19 @@ KOS_OP_HANDLER(ITER_NEXT) {
     case GET_NEXT_VALUE:
       if (KosStackBlock_PushRef(&CURRENT_STACK(ctx), value) < 0) {
         Py_DECREF(value);
-        return -1;
+        return KOS_OP_POST_ERR();
       }
       Py_DECREF(value);
-      return 0;
+      return KOS_OP_RUN();
     case GET_NEXT_EXHAUSTED:
       KosDynForeach_EXHAUSTED((KosDynForeach *) region) = 1;
       CURRENT_PC(ctx) = KosOp_ARG(insn);
-      return 0;
+      return KOS_OP_RUN();
     case GET_NEXT_SUSPEND:
-      return 1;
+      return KOS_OP_POST_SUSPEND();
     case GET_NEXT_ERROR:
-      return -1;
+      return KOS_OP_POST_ERR();
     default:
-      return -1;
+      return KOS_OP_POST_ERR();
   }
 }

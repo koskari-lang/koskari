@@ -27,7 +27,7 @@ KOS_OP_HANDLER(POP_COLLECT) {
                ! KosDynNode_IS_COLLECT(KosContext_DYN_TOP(ctx)))) {
     PyErr_SetString(PyExc_RuntimeError,
                     "POP_COLLECT: top is not a collector scope");
-    return -1;
+    return KOS_OP_POST_ERR();
   }
 
   KosDynCollect *col_node = (KosDynCollect *) KosContext_DYN_TOP(ctx);
@@ -40,14 +40,14 @@ KOS_OP_HANDLER(POP_COLLECT) {
 
   if (KosStackBlock_DropBlock(&CURRENT_STACK(ctx)) < 0) {
     Py_DECREF(collector);
-    return -1;
+    return KOS_OP_POST_ERR();
   }
   kos_dyn_pop_collect(ctx, col_node);
 
   int res = KosStackBlock_PushRef(&CURRENT_STACK(ctx), collector);
   Py_DECREF(collector);
 
-  return res;
+  return kos_op_outcome_from_int_step(res);
 }
 
 

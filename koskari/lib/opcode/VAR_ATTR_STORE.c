@@ -24,20 +24,20 @@ KOS_OP_HANDLER(VAR_ATTR_STORE) {
   PyObject *var_name = KosCode_GetConstant((PyObject *) code, row.a0);
   PyObject *attr_name = KosCode_GetConstant((PyObject *) code, row.a1);
   if (! var_name || ! attr_name)
-    return -1;
+    return KOS_OP_POST_ERR();
   PyObject *val = KosStackBlock_PopRef(&CURRENT_STACK(ctx));
   if (! val)
-    return -1;
+    return KOS_OP_POST_ERR();
   PyObject *obj = frame_ns_deref(ctx, var_name);
   if (! obj) {
     Py_DECREF(val);
-    return -1;
+    return KOS_OP_POST_ERR();
   }
   int res = PyObject_SetAttr(obj, attr_name, val);
   Py_DECREF(obj);
   Py_DECREF(val);
   if (res < 0)
-    return -1;
+    return KOS_OP_POST_ERR();
   (void) out_ev;
-  return 0;
+  return KOS_OP_RUN();
 }

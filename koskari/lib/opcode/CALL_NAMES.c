@@ -26,11 +26,11 @@ KOS_OP_HANDLER(CALL_NAMES) {
 
   PyObject *names = KosStackBlock_Peek(*stack);
   if (! names)
-    return -1;
+    return KOS_OP_POST_ERR();
   if (! PyTuple_CheckExact(names)) {
     PyErr_Format(PyExc_RuntimeError, "CALL_NAMES names must be tuple"
                  ", not %R", names);
-    return -1;
+    return KOS_OP_POST_ERR();
   }
 
   Py_ssize_t npos = (Py_ssize_t) opa;
@@ -40,26 +40,26 @@ KOS_OP_HANDLER(CALL_NAMES) {
 
   PyObject *const *ptr = KosStackBlock_TailPtr(*stack, ntotal);
   if (! ptr)
-    return -1;
+    return KOS_OP_POST_ERR();
 
   PyObject *kwnames = nkwds ? ptr[total + 1] : NULL;
 
   if (KosCallable_Check(ptr[0])) {
     KosStackSteal steal = { 0 };
     if (KosStackSteal_Tail(&steal, ntotal, stack) < 0)
-      return -1;
+      return KOS_OP_POST_ERR();
     PyObject *kwnames_arg = nkwds ? steal.vals[total + 1] : NULL;
     int r = KosContext_Call(ctx, out_ev, steal.vals[0],
                             &steal.vals[1], npos, kwnames_arg, 0);
     KosStackSteal_Free(&steal);
-    return r;
+    return kos_op_outcome_from_call_int(ctx, r);
   }
 
   PyObject *result = PyObject_Vectorcall(ptr[0], &ptr[1], (size_t) npos,
                                          kwnames);
   if (! result)
-    return -1;
+    return KOS_OP_POST_ERR();
 
   KosStackBlock_DropNoErr(stack, ntotal);
-  return kos_push_or_await(ctx, out_ev, result);
+  return kos_op_outcome_from_push_int(kos_push_or_await(ctx, out_ev, result));
 }

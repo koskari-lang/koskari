@@ -20,5 +20,5 @@
 KOS_OP_HANDLER(JUMP) {
   CURRENT_PC(ctx) = KosOp_ARG(insn);
   (void) out_ev;
-  return 0;
+  return KOS_OP_RUN();
 }

@@ -26,20 +26,20 @@ KOS_OP_HANDLER(COMBINE_ARGS) {
   if (opa == 0) {
     PyObject *empty = PyTuple_New(0);
     if (! empty)
-      return -1;
+      return KOS_OP_POST_ERR();
     if (KosStackBlock_PushRef(&CURRENT_STACK(ctx), empty) < 0) {
       Py_DECREF(empty);
-      return -1;
+      return KOS_OP_POST_ERR();
     }
     Py_DECREF(empty);
     (void) out_ev;
-    return 0;
+    return KOS_OP_RUN();
   }
 
   if (opa == 1) {
     PyObject *v = KosStackBlock_PopRef(&CURRENT_STACK(ctx));
     if (! v)
-      return -1;
+      return KOS_OP_POST_ERR();
 
     if (! PyTuple_CheckExact(v)) {
       PyObject *s = PySequence_Tuple(v);
@@ -48,32 +48,32 @@ KOS_OP_HANDLER(COMBINE_ARGS) {
     }
 
     if (! v)
-      return -1;
+      return KOS_OP_POST_ERR();
 
     if (KosStackBlock_PushRef(&CURRENT_STACK(ctx), v) < 0) {
       Py_DECREF(v);
-      return -1;
+      return KOS_OP_POST_ERR();
     }
     Py_DECREF(v);
     (void) out_ev;
-    return 0;
+    return KOS_OP_RUN();
   }
 
   PyObject *const *vals = KosStackBlock_TailPtr(CURRENT_STACK(ctx),
                                                  (size_t) opa);
   if (! vals)
-    return -1;
+    return KOS_OP_POST_ERR();
 
   PyObject *built = PyList_New(0);
   if (! built)
-    return -1;
+    return KOS_OP_POST_ERR();
 
   for (unsigned i = 0; i < opa; i++) {
     PyObject *nb = PySequence_InPlaceConcat(built, vals[i]);
     Py_DECREF(built);
     if (! nb) {
       KosStackBlock_DropNoErr(&CURRENT_STACK(ctx), (size_t) opa);
-      return -1;
+      return KOS_OP_POST_ERR();
     }
     built = nb;
   }
@@ -83,14 +83,14 @@ KOS_OP_HANDLER(COMBINE_ARGS) {
   PyObject *result = PySequence_Tuple(built);
   Py_DECREF(built);
   if (! result)
-    return -1;
+    return KOS_OP_POST_ERR();
 
   if (KosStackBlock_PushRef(&CURRENT_STACK(ctx), result) < 0) {
     Py_DECREF(result);
-    return -1;
+    return KOS_OP_POST_ERR();
   }
   Py_DECREF(result);
 
   (void) out_ev;
-  return 0;
+  return KOS_OP_RUN();
 }

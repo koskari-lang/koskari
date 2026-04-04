@@ -21,5 +21,5 @@ KOS_OP_HANDLER(NOOP) {
   (void) ctx;
   (void) out_ev;
   (void) insn;
-  return 0;  /* continue */
+  return KOS_OP_RUN();  /* continue */
 }

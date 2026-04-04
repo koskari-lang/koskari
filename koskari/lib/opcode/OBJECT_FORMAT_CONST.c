@@ -25,16 +25,16 @@ KOS_OP_HANDLER(OBJECT_FORMAT_CONST) {
   PyObject *res;
 
   if (! rules)
-    return -1;
+    return KOS_OP_POST_ERR();
 
   obj = KosStackBlock_PopRef(&CURRENT_STACK(ctx));
   if (! obj)
-    return -1;
+    return KOS_OP_POST_ERR();
 
   res = PyObject_Format(obj, rules);
   Py_DECREF(obj);
   if (! res)
-    return -1;
+    return KOS_OP_POST_ERR();
 
-  return push_result(ctx, res);
+  return kos_op_outcome_from_int_step(push_result(ctx, res));
 }

@@ -38,12 +38,12 @@ KOS_OP_HANDLER(IMPORT_REL) {
   /* Constant is a (level:int, name:str|None) tuple */
   PyObject *tup = get_name_from_insn(CURRENT_CODE(ctx), insn);
   if (! tup)
-    return -1;
+    return KOS_OP_POST_ERR();
 
   if (! PyTuple_Check(tup) || PyTuple_GET_SIZE(tup) != 2) {
     PyErr_SetString(PyExc_TypeError,
                     "IMPORT_REL constant must be a (level, name) tuple");
-    return -1;
+    return KOS_OP_POST_ERR();
   }
 
   PyObject *level_obj = PyTuple_GET_ITEM(tup, 0);
@@ -51,7 +51,7 @@ KOS_OP_HANDLER(IMPORT_REL) {
 
   long level = PyLong_AsLong(level_obj);
   if (level < 0 && PyErr_Occurred())
-    return -1;
+    return KOS_OP_POST_ERR();
 
   /* A bare relative import "(import .)" has name == None */
   if (name == Py_None)
@@ -77,19 +77,19 @@ KOS_OP_HANDLER(IMPORT_REL) {
 
   PyObject *name_val = KosNamespace_Deref(globals_ns, str_name);
   if (! name_val) {
-    return -1;
+    return KOS_OP_POST_ERR();
   }
   PyObject *package_val = KosNamespace_Deref(globals_ns, str_package);
   if (! package_val) {
     Py_DECREF(name_val);
-    return -1;
+    return KOS_OP_POST_ERR();
   }
 
   PyObject *globals_dict = PyDict_New();
   if (! globals_dict) {
     Py_DECREF(name_val);
     Py_DECREF(package_val);
-    return -1;
+    return KOS_OP_POST_ERR();
   }
 
   if (PyDict_SetItem(globals_dict, str_name, name_val) ||
@@ -97,7 +97,7 @@ KOS_OP_HANDLER(IMPORT_REL) {
     Py_DECREF(name_val);
     Py_DECREF(package_val);
     Py_DECREF(globals_dict);
-    return -1;
+    return KOS_OP_POST_ERR();
   }
   Py_DECREF(name_val);
   Py_DECREF(package_val);
@@ -106,7 +106,7 @@ KOS_OP_HANDLER(IMPORT_REL) {
     name, globals_dict, NULL, _import_fromlist, (int) level);
   Py_DECREF(globals_dict);
   if (! mod)
-    return -1;
+    return KOS_OP_POST_ERR();
 
-  return push_result(ctx, mod);
+  return kos_op_outcome_from_int_step(push_result(ctx, mod));
 }

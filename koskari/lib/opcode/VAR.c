@@ -21,9 +21,9 @@
 KOS_OP_HANDLER(VAR) {
   PyObject *name = get_name_from_insn(CURRENT_CODE(ctx), insn);
   if (! name)
-    return -1;
+    return KOS_OP_POST_ERR();
   PyObject *val = frame_ns_deref(ctx, name);
   if (! val)
-    return -1;
-  return push_result(ctx, val);
+    return KOS_OP_POST_ERR();
+  return kos_op_outcome_from_int_step(push_result(ctx, val));
 }

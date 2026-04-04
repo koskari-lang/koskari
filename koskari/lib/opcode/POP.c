@@ -23,8 +23,9 @@ KOS_OP_HANDLER(POP) {
 
   unsigned n = KosOp_ARG(insn);
   if (likely(n == 1)) {
-    return KosStackBlock_Drop1(&CURRENT_STACK(ctx));
-  } else {
-    return KosStackBlock_Drop(&CURRENT_STACK(ctx), (size_t) n);
+    return kos_op_outcome_from_int_step(
+        KosStackBlock_Drop1(&CURRENT_STACK(ctx)));
   }
+  return kos_op_outcome_from_int_step(
+      KosStackBlock_Drop(&CURRENT_STACK(ctx), (size_t) n));
 }

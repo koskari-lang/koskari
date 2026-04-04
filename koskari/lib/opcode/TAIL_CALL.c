@@ -31,7 +31,7 @@ KOS_OP_HANDLER(TAIL_CALL) {
 
   KosStackSteal steal = { 0 };
   if (KosStackSteal_Tail(&steal, count, stack) < 0)
-    return -1;
+    return KOS_OP_POST_ERR();
 
   PyObject *callable = steal.vals[0];
   PyObject *const *args =
@@ -41,5 +41,5 @@ KOS_OP_HANDLER(TAIL_CALL) {
                             (Py_ssize_t) n, NULL, 1);
 
   KosStackSteal_Free(&steal);
-  return res;
+  return kos_op_outcome_from_call_int(ctx, res);
 }

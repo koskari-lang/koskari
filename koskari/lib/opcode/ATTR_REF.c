@@ -20,13 +20,13 @@
 KOS_OP_HANDLER(ATTR_REF) {
   PyObject *name = get_name_from_insn(CURRENT_CODE(ctx), insn);
   if (! name)
-    return -1;
+    return KOS_OP_POST_ERR();
   PyObject *obj = KosStackBlock_PopRef(&CURRENT_STACK(ctx));
   if (! obj)
-    return -1;
+    return KOS_OP_POST_ERR();
   PyObject *ref = KosAttributeRef_New(name, obj, name);
   Py_DECREF(obj);
   if (! ref)
-    return -1;
-  return push_result(ctx, ref);
+    return KOS_OP_POST_ERR();
+  return kos_op_outcome_from_int_step(push_result(ctx, ref));
 }

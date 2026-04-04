@@ -20,7 +20,7 @@
 KOS_OP_HANDLER(OBJECT_VARS) {
   PyObject *val = KosStackBlock_PopRef(&CURRENT_STACK(ctx));
   if (! val)
-    return -1;
+    return KOS_OP_POST_ERR();
 
   PyObject *d = PyObject_GetAttrString(val, "__dict__");
   Py_DECREF(val);
@@ -28,8 +28,8 @@ KOS_OP_HANDLER(OBJECT_VARS) {
     PyErr_Clear();
     PyErr_SetString(PyExc_TypeError,
                     "vars argument must have __dict__ attribute");
-    return -1;
+    return KOS_OP_POST_ERR();
   }
   (void) insn;
-  return push_result(ctx, d);
+  return kos_op_outcome_from_int_step(push_result(ctx, d));
 }

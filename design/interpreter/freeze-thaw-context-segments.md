@@ -475,10 +475,10 @@ Every opcode dereferences `ctx → frame_top → stack` and then `stack → objs
 Opcodes are dispatched via computed goto or switch. Each handler has signature:
 
 ```c
-int op_<name>(KosContext *ctx, KosEvent *out_ev, KosOp *insn);
+KosOpOutcome op_<name>(KosContext *ctx, KosEvent *out_ev, KosOp *insn);
 ```
 
-`KosDispatchCtx` (`code`, `pc`, `insn`) is filled by `eval_phase_prepare_dispatch` and used for post-opcode handling; it is not passed into opcodes. Opcodes read `CURRENT_*` macros and call `KosStackBlock_*` APIs directly.
+`kos_eval_prepare_next_insn` supplies the current `KosOp *insn` before each dispatch; post-opcode handling does not use a separate dispatch struct. Opcodes read `CURRENT_*` macros and call `KosStackBlock_*` APIs directly.
 
 ### A.4 DynChain and Frames
 

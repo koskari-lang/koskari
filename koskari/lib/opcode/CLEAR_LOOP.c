@@ -21,20 +21,20 @@
 KOS_OP_HANDLER(CLEAR_LOOP) {
   if (! KosContext_DYN_TOP(ctx) || ! KosDynNode_IS_REGION(KosContext_DYN_TOP(ctx))) {
     PyErr_SetString(PyExc_RuntimeError, "CLEAR_LOOP: top is not a region");
-    return -1;
+    return KOS_OP_POST_ERR();
   }
   KosDynNode *region = (KosDynNode *) KosContext_DYN_TOP(ctx);
   if (! KosDynNode_IS_LOOP(region) && ! KosDynNode_IS_FOREACH(region)) {
     PyErr_SetString(PyExc_RuntimeError,
                     "CLEAR_LOOP: top is not a LOOP or FOREACH region");
-    return -1;
+    return KOS_OP_POST_ERR();
   }
 
   if (KosDynNode_IS_TRY(region)) KosDynTry_ENABLED((KosDynTry *) region)=0; else if (KosDynNode_IS_FINALLY(region)) KosDynFinally_ENABLED((KosDynFinally *) region)=0; else if (KosDynNode_IS_LOOP(region)) KosDynLoop_ENABLED((KosDynLoop *) region)=0; else KosDynForeach_ENABLED((KosDynForeach *) region)=0;
   if (KosStackBlock_ClearBlock(&CURRENT_STACK(ctx)) < 0)
-    return -1;
+    return KOS_OP_POST_ERR();
 
   (void) out_ev;
   (void) insn;
-  return 0;
+  return KOS_OP_RUN();
 }

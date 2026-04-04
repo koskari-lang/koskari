@@ -20,13 +20,13 @@
 KOS_OP_HANDLER(JUMP_FALSE) {
   PyObject *val = KosStackBlock_PopRef(&CURRENT_STACK(ctx));
   if (! val)
-    return -1;
+    return KOS_OP_POST_ERR();
   int res = PyObject_Not(val);
   Py_DECREF(val);
   if (res < 0)
-    return -1;
+    return KOS_OP_POST_ERR();
   if (res)
     CURRENT_PC(ctx) = KosOp_ARG(insn);
   (void) out_ev;
-  return 0;
+  return KOS_OP_RUN();
 }

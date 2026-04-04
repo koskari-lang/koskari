@@ -29,11 +29,11 @@ KOS_OP_HANDLER(TAIL_CALL_NAMES) {
 
   PyObject *names = KosStackBlock_Peek(*stack);
   if (! names)
-    return -1;
+    return KOS_OP_POST_ERR();
   if (! PyTuple_CheckExact(names)) {
     PyErr_Format(PyExc_RuntimeError, "TAIL_CALL_NAMES names must be tuple"
                  ", not %R", names);
-    return -1;
+    return KOS_OP_POST_ERR();
   }
 
   Py_ssize_t npos = (Py_ssize_t) opa;
@@ -43,7 +43,7 @@ KOS_OP_HANDLER(TAIL_CALL_NAMES) {
 
   KosStackSteal steal = { 0 };
   if (KosStackSteal_Tail(&steal, ntotal, stack) < 0)
-    return -1;
+    return KOS_OP_POST_ERR();
 
   PyObject *callable = steal.vals[0];
   PyObject *const *args =
@@ -54,5 +54,5 @@ KOS_OP_HANDLER(TAIL_CALL_NAMES) {
                             npos, kwnames_arg, 1);
 
   KosStackSteal_Free(&steal);
-  return res;
+  return kos_op_outcome_from_call_int(ctx, res);
 }

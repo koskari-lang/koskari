@@ -29,25 +29,25 @@ KOS_OP_HANDLER(CALL_VAR_ATTR) {
 
   PyObject *var_name = KosCode_GetConstant((PyObject *) code, name_cpool_idx);
   if (! var_name)
-    return -1;
+    return KOS_OP_POST_ERR();
 
   PyObject *attr_name = KosCode_GetConstant((PyObject *) code, attr_cpool_idx);
   if (! attr_name)
-    return -1;
+    return KOS_OP_POST_ERR();
 
   KosDynFrame *frame_top = CURRENT_FRAME(ctx);
   KosStackBlock **stack = &KosDynFrame_STACK(frame_top);
 
   PyObject *obj = frame_ns_deref(ctx, var_name);
   if (! obj)
-    return -1;
+    return KOS_OP_POST_ERR();
 
   PyObject *const *ptr = NULL;
   if (n > 0) {
     ptr = KosStackBlock_TailPtr(*stack, (size_t) n);
     if (! ptr) {
       Py_DECREF(obj);
-      return -1;
+      return KOS_OP_POST_ERR();
     }
   }
 
@@ -55,7 +55,7 @@ KOS_OP_HANDLER(CALL_VAR_ATTR) {
   int send_self = kos_resolve_named_attr(obj, attr_name, NULL, &resolved);
   if (send_self < 0) {
     Py_DECREF(obj);
-    return -1;
+    return KOS_OP_POST_ERR();
   }
 
   if (KosCallable_Check(resolved)) {
@@ -69,7 +69,7 @@ KOS_OP_HANDLER(CALL_VAR_ATTR) {
     if (steal_ok < 0) {
       Py_DECREF(resolved);
       Py_DECREF(obj);
-      return -1;
+      return KOS_OP_POST_ERR();
     }
     PyObject *const *args;
     Py_ssize_t nargs;
@@ -84,7 +84,7 @@ KOS_OP_HANDLER(CALL_VAR_ATTR) {
     Py_DECREF(obj);
     KosStackSteal_Free(&steal);
     Py_DECREF(resolved);
-    return r;
+    return kos_op_outcome_from_call_int(ctx, r);
   }
 
   PyObject *result;
@@ -93,7 +93,7 @@ KOS_OP_HANDLER(CALL_VAR_ATTR) {
     if (KosStackSteal_TailPrepend(&steal, obj, (size_t) n, stack) < 0) {
       Py_DECREF(resolved);
       Py_DECREF(obj);
-      return -1;
+      return KOS_OP_POST_ERR();
     }
     result = PyObject_Vectorcall(resolved, steal.vals, (size_t) n + 1, NULL);
     KosStackSteal_Free(&steal);
@@ -106,7 +106,7 @@ KOS_OP_HANDLER(CALL_VAR_ATTR) {
   Py_DECREF(resolved);
   Py_DECREF(obj);
 
-  return result ? kos_push_or_await(ctx, out_ev, result) : -1;
+  return result ? kos_op_outcome_from_push_int(kos_push_or_await(ctx, out_ev, result)) : KOS_OP_POST_ERR();
 }
 
 

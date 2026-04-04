@@ -21,5 +21,5 @@ KOS_OP_HANDLER(LABEL) {
   (void) ctx;
   (void) out_ev;
   (void) insn;
-  return 0;
+  return KOS_OP_RUN();
 }

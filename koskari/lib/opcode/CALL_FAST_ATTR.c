@@ -29,21 +29,21 @@ KOS_OP_HANDLER(CALL_FAST_ATTR) {
 
   PyObject *attr_name = KosCode_GetConstant((PyObject *) code, attr_cpool_idx);
   if (! attr_name)
-    return -1;
+    return KOS_OP_POST_ERR();
 
   PyObject *ns = CURRENT_NS(ctx);
   if (! ns) {
     PyErr_SetString(PyExc_RuntimeError, "CALL_FAST_ATTR on NULL namespace");
-    return -1;
+    return KOS_OP_POST_ERR();
   }
   if (! KosNamespace_SupportsFast(ns)) {
     PyErr_Format(PyExc_RuntimeError, "CALL_FAST_ATTR on %R", ns);
-    return -1;
+    return KOS_OP_POST_ERR();
   }
 
   PyObject *obj = KosNamespace_FastDeref(ns, (size_t) slot_idx);
   if (! obj)
-    return -1;
+    return KOS_OP_POST_ERR();
 
   KosDynFrame *frame_top = CURRENT_FRAME(ctx);
   KosStackBlock **stack = &KosDynFrame_STACK(frame_top);
@@ -52,13 +52,13 @@ KOS_OP_HANDLER(CALL_FAST_ATTR) {
   if (n > 0) {
     ptr = KosStackBlock_TailPtr(*stack, (size_t) n);
     if (! ptr)
-      return -1;
+      return KOS_OP_POST_ERR();
   }
 
   PyObject *resolved;
   int send_self = kos_resolve_named_attr(obj, attr_name, NULL, &resolved);
   if (send_self < 0)
-    return -1;
+    return KOS_OP_POST_ERR();
 
   if (KosCallable_Check(resolved)) {
     KosStackSteal steal = { 0 };
@@ -70,7 +70,7 @@ KOS_OP_HANDLER(CALL_FAST_ATTR) {
     }
     if (steal_ok < 0) {
       Py_DECREF(resolved);
-      return -1;
+      return KOS_OP_POST_ERR();
     }
     PyObject *const *args;
     Py_ssize_t nargs;
@@ -84,7 +84,7 @@ KOS_OP_HANDLER(CALL_FAST_ATTR) {
     int r = KosContext_Call(ctx, out_ev, resolved, args, nargs, NULL, 0);
     KosStackSteal_Free(&steal);
     Py_DECREF(resolved);
-    return r;
+    return kos_op_outcome_from_call_int(ctx, r);
   }
 
   PyObject *result;
@@ -92,7 +92,7 @@ KOS_OP_HANDLER(CALL_FAST_ATTR) {
     KosStackSteal steal = { 0 };
     if (KosStackSteal_TailPrepend(&steal, obj, (size_t) n, stack) < 0) {
       Py_DECREF(resolved);
-      return -1;
+      return KOS_OP_POST_ERR();
     }
     result = PyObject_Vectorcall(resolved, steal.vals, (size_t) n + 1, NULL);
     KosStackSteal_Free(&steal);
@@ -104,7 +104,7 @@ KOS_OP_HANDLER(CALL_FAST_ATTR) {
 
   Py_DECREF(resolved);
 
-  return result ? kos_push_or_await(ctx, out_ev, result) : -1;
+  return result ? kos_op_outcome_from_push_int(kos_push_or_await(ctx, out_ev, result)) : KOS_OP_POST_ERR();
 }
 
 

@@ -27,13 +27,13 @@ KOS_OP_HANDLER(PUSH_FOREACH) {
   PyObject *iterable = KosStackBlock_PopRef(&CURRENT_STACK(ctx));
   if (! iterable) {
     PyErr_SetString(PyExc_RuntimeError, "PUSH_FOREACH: missing iterable");
-    return -1;
+    return KOS_OP_POST_ERR();
   }
   PyObject *loop_result = KosStackBlock_PopRef(&CURRENT_STACK(ctx));
   if (! loop_result) {
     Py_DECREF(iterable);
     PyErr_SetString(PyExc_RuntimeError, "PUSH_FOREACH: missing loop_result");
-    return -1;
+    return KOS_OP_POST_ERR();
   }
 
   /* Derive break target from the extent table (pop_pc + 1) */
@@ -45,14 +45,14 @@ KOS_OP_HANDLER(PUSH_FOREACH) {
     Py_DECREF(iterable);
     PyErr_SetString(PyExc_RuntimeError,
                     "PUSH_FOREACH: no FOREACH extent at this PC");
-    return -1;
+    return KOS_OP_POST_ERR();
   }
   KosExtentDesc *ext = kos_extent_desc((PyObject *) code, eid);
   if (! ext) {
     Py_DECREF(loop_result);
     Py_DECREF(iterable);
     PyErr_SetString(PyExc_RuntimeError, "PUSH_FOREACH: invalid extent");
-    return -1;
+    return KOS_OP_POST_ERR();
   }
   uint32_t break_pc = ext->pop_pc + 1u;
 
@@ -72,7 +72,7 @@ KOS_OP_HANDLER(PUSH_FOREACH) {
   }
   if (! iter) {
     Py_DECREF(loop_result);
-    return -1;
+    return KOS_OP_POST_ERR();
   }
 
   /* Push region */
@@ -82,7 +82,7 @@ KOS_OP_HANDLER(PUSH_FOREACH) {
     Py_DECREF(iter);
     Py_DECREF(loop_result);
     PyErr_NoMemory();
-    return -1;
+    return KOS_OP_POST_ERR();
   }
 
   /* Store result and iterator in region (takes ownership) */
@@ -93,9 +93,9 @@ KOS_OP_HANDLER(PUSH_FOREACH) {
   /* Push stack block for iteration temporaries */
   if (KosStackBlock_PushBlock(&CURRENT_STACK(ctx)) < 0) {
     if (KosDynNode_IS_TRY(region)) kos_dyn_pop_try(ctx, (KosDynTry *) region); else if (KosDynNode_IS_FINALLY(region)) kos_dyn_pop_finally(ctx, (KosDynFinally *) region); else if (KosDynNode_IS_LOOP(region)) kos_dyn_pop_loop(ctx, (KosDynLoop *) region); else if (KosDynNode_IS_FOREACH(region)) kos_dyn_pop_foreach(ctx, (KosDynForeach *) region);
-    return -1;
+    return KOS_OP_POST_ERR();
   }
 
   (void) out_ev;
-  return 0;
+  return KOS_OP_RUN();
 }

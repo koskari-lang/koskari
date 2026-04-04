@@ -28,12 +28,12 @@ KOS_OP_HANDLER(PUSH_SHIFT) {
   KosTransferPlan *plan = NULL;
 
   if (get_prompt_id_from_insn(CURRENT_CODE(ctx), insn, &prompt_id) < 0)
-    return -1;
+    return KOS_OP_POST_ERR();
 
   KosDynPrompt *prompt = kos_find_prompt(ctx, prompt_id);
   if (! prompt) {
     PyErr_SetString(PyExc_RuntimeError, "PUSH_SHIFT: prompt not found");
-    return -1;
+    return KOS_OP_POST_ERR();
   }
 
   /* Re-entry after plan completed: push shift node and continuation */
@@ -45,11 +45,11 @@ KOS_OP_HANDLER(PUSH_SHIFT) {
     shift_body_pc = CURRENT_ACTING_PC(ctx) + 1;
     if (kos_dyn_push_shift(ctx) < 0) {
       KosDynPrompt_PENDING_SHIFT_WRAPPER(prompt) = wrapper;
-      return -1;
+      return KOS_OP_POST_ERR();
     }
 
     CURRENT_PC(ctx) = shift_body_pc;
-    return push_result(ctx, wrapper);
+    return kos_op_outcome_from_int_step(push_result(ctx, wrapper));
   }
 
   /* Already at prompt: capture, push shift node, done */
@@ -58,25 +58,25 @@ KOS_OP_HANDLER(PUSH_SHIFT) {
                                  CURRENT_ACTING_PC(ctx));
     if (resume_pc == KOS_EXTENT_NONE) {
       PyErr_SetString(PyExc_RuntimeError, "PUSH_SHIFT: no SHIFT extent at pc");
-      return -1;
+      return KOS_OP_POST_ERR();
     }
     if (kos_shift_capture(ctx, prompt_id, resume_pc, &k) < 0)
-      return -1;
+      return KOS_OP_POST_ERR();
 
     PyObject *wrapper = KosPyDelimitedContinuation_New(k);
     if (! wrapper) {
       kos_continuation_free(k);
-      return -1;
+      return KOS_OP_POST_ERR();
     }
 
     shift_body_pc = CURRENT_ACTING_PC(ctx) + 1;
     if (kos_dyn_push_shift(ctx) < 0) {
       Py_DECREF(wrapper);
-      return -1;
+      return KOS_OP_POST_ERR();
     }
 
     CURRENT_PC(ctx) = shift_body_pc;
-    return push_result(ctx, wrapper);
+    return kos_op_outcome_from_int_step(push_result(ctx, wrapper));
   }
 
   /* Need to unwind: build plan, capture, set continuation on plan, roll back PC */
@@ -84,25 +84,25 @@ KOS_OP_HANDLER(PUSH_SHIFT) {
                                CURRENT_ACTING_PC(ctx));
   if (resume_pc == KOS_EXTENT_NONE) {
     PyErr_SetString(PyExc_RuntimeError, "PUSH_SHIFT: no SHIFT extent at pc");
-    return -1;
+    return KOS_OP_POST_ERR();
   }
 
   SAYF("[eval] PUSH_SHIFT prompt_id=%u resume_pc=%u\n",
        (unsigned) prompt_id, (unsigned) resume_pc);
   if (kos_shift_capture(ctx, prompt_id, resume_pc, &k) < 0) {
     SAY("[eval] PUSH_SHIFT capture failed\n");
-    return -1;
+    return KOS_OP_POST_ERR();
   }
 
   PyObject *wrapper = KosPyDelimitedContinuation_New(k);
   if (! wrapper) {
     kos_continuation_free(k);
-    return -1;
+    return KOS_OP_POST_ERR();
   }
 
   if (kos_dyn_build_push_shift_unwind_plan(ctx, prompt, &plan) < 0) {
     Py_DECREF(wrapper);
-    return -1;
+    return KOS_OP_POST_ERR();
   }
 
   KosTransferPlan_CONTINUATION_REF(plan) = wrapper;
@@ -114,5 +114,5 @@ KOS_OP_HANDLER(PUSH_SHIFT) {
 
   /* Roll back PC so we re-enter PUSH_SHIFT after plan completes */
   CURRENT_PC(ctx) = KosDynFrame_ACTING_PC(CURRENT_FRAME(ctx));
-  return 0;
+  return KOS_OP_PROLOGUE();
 }

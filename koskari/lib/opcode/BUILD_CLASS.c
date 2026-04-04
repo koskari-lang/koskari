@@ -27,7 +27,7 @@ KOS_OP_HANDLER(BUILD_CLASS) {
   PyObject *ns = KosStackBlock_PopRef(&CURRENT_STACK(ctx));
   if (! ns) {
     PyErr_SetString(PyExc_RuntimeError, "BUILD_CLASS stack underrun (ns)");
-    return -1;
+    return KOS_OP_POST_ERR();
   }
 
   SAYF("BUILD_CLASS: ns=%R", ns);
@@ -36,7 +36,7 @@ KOS_OP_HANDLER(BUILD_CLASS) {
   if (! pos) {
     Py_DECREF(ns);
     PyErr_SetString(PyExc_RuntimeError, "BUILD_CLASS stack underrun (pos)");
-    return -1;
+    return KOS_OP_POST_ERR();
   }
 
   SAYF("BUILD_CLASS: pos=%R", pos);
@@ -47,7 +47,7 @@ KOS_OP_HANDLER(BUILD_CLASS) {
     pos = fixed;
     if (! pos) {
       Py_DECREF(ns);
-      return -1;
+      return KOS_OP_POST_ERR();
     }
   }
 
@@ -58,7 +58,7 @@ KOS_OP_HANDLER(BUILD_CLASS) {
   if (! PyArg_ParseTuple(pos, "OO|O:BUILD_CLASS", &name, &bases, &metaclass)) {
     Py_DECREF(pos);
     Py_DECREF(ns);
-    return -1;
+    return KOS_OP_POST_ERR();
   }
   Py_INCREF(name);
   Py_INCREF(bases);
@@ -71,7 +71,7 @@ KOS_OP_HANDLER(BUILD_CLASS) {
     metaclass = kos_get_default_metaclass();
     if (! metaclass) {
       Py_DECREF(ns);
-      return -1;
+      return KOS_OP_POST_ERR();
     }
   } else {
     Py_INCREF(metaclass);
@@ -81,14 +81,14 @@ KOS_OP_HANDLER(BUILD_CLASS) {
   if (! cls_dict) {
     Py_DECREF(metaclass);
     Py_DECREF(ns);
-    return -1;
+    return KOS_OP_POST_ERR();
   }
 
   if (PyDict_Merge(cls_dict, ns, 1) < 0) {
     Py_DECREF(cls_dict);
     Py_DECREF(metaclass);
     Py_DECREF(ns);
-    return -1;
+    return KOS_OP_POST_ERR();
   }
   Py_DECREF(ns);
 
@@ -98,7 +98,7 @@ KOS_OP_HANDLER(BUILD_CLASS) {
   Py_DECREF(cls_dict);
   if (! args) {
     Py_DECREF(metaclass);
-    return -1;
+    return KOS_OP_POST_ERR();
   }
 
   SAYF("BUILD_CLASS: metaclass args=%R", args);
@@ -107,14 +107,14 @@ KOS_OP_HANDLER(BUILD_CLASS) {
   Py_DECREF(metaclass);
   Py_DECREF(args);
   if (! cls)
-    return -1;
+    return KOS_OP_POST_ERR();
 
   SAYF("BUILD_CLASS: cls=%R", cls);
 
   int res = KosStackBlock_PushRef(&CURRENT_STACK(ctx), cls);
   Py_DECREF(cls);
 
-  return res;
+  return kos_op_outcome_from_int_step(res);
 }
 
 

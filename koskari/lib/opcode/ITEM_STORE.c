@@ -25,13 +25,13 @@ KOS_OP_HANDLER(ITEM_STORE) {
   } args = {0};
 
   if (KOS_STACK_BLOCK_POP_ARGS(&CURRENT_STACK(ctx), args))
-    return -1;
+    return KOS_OP_POST_ERR();
   int res = PyObject_SetItem(args.obj, args.key, args.val);
   Py_DECREF(args.obj);
   Py_DECREF(args.key);
   Py_DECREF(args.val);
   if (res < 0)
-    return -1;
+    return KOS_OP_POST_ERR();
   (void) out_ev;
-  return 0;
+  return KOS_OP_RUN();
 }

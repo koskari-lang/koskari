@@ -20,16 +20,16 @@
 KOS_OP_HANDLER(OBJECT_LEN) {
   PyObject *val = KosStackBlock_PopRef(&CURRENT_STACK(ctx));
   if (! val)
-    return -1;
+    return KOS_OP_POST_ERR();
 
   Py_ssize_t n = PyObject_Length(val);
   Py_DECREF(val);
   if (n < 0)
-    return -1;
+    return KOS_OP_POST_ERR();
 
   PyObject *res = PyLong_FromSsize_t(n);
   if (! res)
-    return -1;
+    return KOS_OP_POST_ERR();
   (void) insn;
-  return push_result(ctx, res);
+  return kos_op_outcome_from_int_step(push_result(ctx, res));
 }

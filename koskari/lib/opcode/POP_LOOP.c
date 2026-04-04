@@ -21,13 +21,13 @@
 KOS_OP_HANDLER(POP_LOOP) {
   if (! KosContext_DYN_TOP(ctx) || ! KosDynNode_IS_REGION(KosContext_DYN_TOP(ctx))) {
     PyErr_SetString(PyExc_RuntimeError, "POP_LOOP: top is not a region");
-    return -1;
+    return KOS_OP_POST_ERR();
   }
   KosDynNode *region = (KosDynNode *) KosContext_DYN_TOP(ctx);
   if (! KosDynNode_IS_LOOP(region) && ! KosDynNode_IS_FOREACH(region)) {
     PyErr_SetString(PyExc_RuntimeError,
                     "POP_LOOP: top is not a LOOP or FOREACH region");
-    return -1;
+    return KOS_OP_POST_ERR();
   }
 
   /* Get result before popping region (region owns the reference) */
@@ -37,7 +37,7 @@ KOS_OP_HANDLER(POP_LOOP) {
   /* Drop the stack block (both LOOP and FOREACH now push blocks) */
   if (KosStackBlock_DropBlock(&CURRENT_STACK(ctx)) < 0) {
     Py_DECREF(result);
-    return -1;
+    return KOS_OP_POST_ERR();
   }
 
   /* Pop the region (this DECREFs (KosDynNode_IS_LOOP(region) ? KosDynLoop_RESULT((KosDynLoop *) region) : KosDynForeach_RESULT((KosDynForeach *) region))) */
@@ -46,11 +46,11 @@ KOS_OP_HANDLER(POP_LOOP) {
   /* Push result to stack as loop expression value */
   if (KosStackBlock_PushRef(&CURRENT_STACK(ctx), result) < 0) {
     Py_DECREF(result);
-    return -1;
+    return KOS_OP_POST_ERR();
   }
   Py_DECREF(result);
 
   (void) out_ev;
   (void) insn;
-  return 0;
+  return KOS_OP_RUN();
 }

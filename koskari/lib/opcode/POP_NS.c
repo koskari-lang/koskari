@@ -21,7 +21,7 @@
 KOS_OP_HANDLER(POP_NS) {
   if (! KosContext_DYN_TOP(ctx) || ! KosDynNode_IS_NS(KosContext_DYN_TOP(ctx))) {
     PyErr_SetString(PyExc_RuntimeError, "POP_NS: top is not a namespace scope");
-    return -1;
+    return KOS_OP_POST_ERR();
   }
 
   KosDynNs *ns_node = (KosDynNs *) KosContext_DYN_TOP(ctx);
@@ -33,5 +33,5 @@ KOS_OP_HANDLER(POP_NS) {
 
   (void) out_ev;
   (void) insn;
-  return 0;
+  return KOS_OP_RUN();
 }

@@ -33,32 +33,32 @@ KOS_OP_HANDLER(PUSH_NS) {
   if (opa < 0) {
     PyErr_Format(PyExc_RuntimeError,
                  "PUSH_NS called with negative count: %i", opa);
-    return -1;
+    return KOS_OP_POST_ERR();
   }
 
   if (opa == 0) {
     nspec = KosStackBlock_PopRef(&CURRENT_STACK(ctx));
     if (! nspec) {
       PyErr_SetString(PyExc_RuntimeError, "PUSH_NS stack underrun");
-      return -1;
+      return KOS_OP_POST_ERR();
     }
   } else {
     names = KosStackBlock_PopRef(&CURRENT_STACK(ctx));
     if (! names) {
       PyErr_SetString(PyExc_RuntimeError, "PUSH_NS stack underrun");
-      return -1;
+      return KOS_OP_POST_ERR();
     }
     if (! PyTuple_CheckExact(names)) {
       Py_DECREF(names);
       PyErr_Format(PyExc_RuntimeError,
                    "PUSH_NS names must be tuple, not %R", names);
-      return -1;
+      return KOS_OP_POST_ERR();
     }
     args = KosStackBlock_TailPtr(CURRENT_STACK(ctx), (size_t) opa + 1);
     if (! args) {
       Py_DECREF(names);
       PyErr_SetString(PyExc_RuntimeError, "PUSH_NS stack underrun");
-      return -1;
+      return KOS_OP_POST_ERR();
     }
     nspec = args[0];
     Py_INCREF(nspec);
@@ -69,7 +69,7 @@ KOS_OP_HANDLER(PUSH_NS) {
     Py_XDECREF(names);
     PyErr_Format(PyExc_RuntimeError,
                  "PUSH_NS spec must be a NamespaceSpec, not %R", nspec);
-    return -1;
+    return KOS_OP_POST_ERR();
   }
 
   {
@@ -80,7 +80,7 @@ KOS_OP_HANDLER(PUSH_NS) {
       PyErr_Format(PyExc_RuntimeError,
                    "PUSH_NS names length (%i) must match value count (%i)",
                    i, opa);
-      return -1;
+      return KOS_OP_POST_ERR();
     }
   }
 
@@ -94,7 +94,7 @@ KOS_OP_HANDLER(PUSH_NS) {
   Py_DECREF(nspec);
   if (! new_ns) {
     Py_XDECREF(names);
-    return -1;
+    return KOS_OP_POST_ERR();
   }
 
   if (opa > 0) {
@@ -104,7 +104,7 @@ KOS_OP_HANDLER(PUSH_NS) {
       if (KosNamespace_Store(new_ns, name, val) < 0) {
         Py_DECREF(names);
         Py_DECREF(new_ns);
-        return -1;
+        return KOS_OP_POST_ERR();
       }
     }
     KosStackBlock_DropNoErr(&CURRENT_STACK(ctx), (size_t) opa + 1);
@@ -116,12 +116,12 @@ KOS_OP_HANDLER(PUSH_NS) {
   if (! ns_node) {
     Py_DECREF(parent);
     Py_DECREF(new_ns);
-    return -1;
+    return KOS_OP_POST_ERR();
   }
 
   Py_DECREF(CURRENT_NS(ctx));
   CURRENT_NS(ctx) = new_ns;
 
   (void) out_ev;
-  return 0;
+  return KOS_OP_RUN();
 }

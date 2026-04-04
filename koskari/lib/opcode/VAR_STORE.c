@@ -21,15 +21,15 @@
 KOS_OP_HANDLER(VAR_STORE) {
   PyObject *name = get_name_from_insn(CURRENT_CODE(ctx), insn);
   if (! name)
-    return -1;
+    return KOS_OP_POST_ERR();
   PyObject *val = KosStackBlock_PopRef(&CURRENT_STACK(ctx));
   if (! val)
-    return -1;
+    return KOS_OP_POST_ERR();
   if (frame_ns_store(ctx, name, val) < 0) {
     Py_DECREF(val);
-    return -1;
+    return KOS_OP_POST_ERR();
   }
   Py_DECREF(val);
   (void) out_ev;
-  return 0;
+  return KOS_OP_RUN();
 }

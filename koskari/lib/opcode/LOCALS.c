@@ -21,5 +21,5 @@
 KOS_OP_HANDLER(LOCALS) {
   PyObject *ns = CURRENT_NS(ctx);
   Py_INCREF(ns);
-  return push_result(ctx, ns);
+  return kos_op_outcome_from_int_step(push_result(ctx, ns));
 }

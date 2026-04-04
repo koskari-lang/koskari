@@ -24,21 +24,21 @@ KOS_OP_HANDLER(CONS) {
 
   if (count == 0) {
     Py_INCREF(KosNil);
-    return push_result(ctx, KosNil);
+    return kos_op_outcome_from_int_step(push_result(ctx, KosNil));
   }
 
   PyObject *const *ptr = KosStackBlock_TailPtr(CURRENT_STACK(ctx), count);
   if (! ptr)
-    return -1;
+    return KOS_OP_POST_ERR();
 
   PyObject *result = KosPair_ConsFromPtr(ptr, (int) count);
   if (! result)
-    return -1;
+    return KOS_OP_POST_ERR();
 
   if (KosStackBlock_Drop(&CURRENT_STACK(ctx), count) < 0) {
     Py_DECREF(result);
-    return -1;
+    return KOS_OP_POST_ERR();
   }
 
-  return push_result(ctx, result);
+  return kos_op_outcome_from_int_step(push_result(ctx, result));
 }

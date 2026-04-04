@@ -20,14 +20,14 @@
 KOS_OP_HANDLER(ATTR_CLEAR) {
   PyObject *name = get_name_from_insn(CURRENT_CODE(ctx), insn);
   if (! name)
-    return -1;
+    return KOS_OP_POST_ERR();
   PyObject *obj = KosStackBlock_PopRef(&CURRENT_STACK(ctx));
   if (! obj)
-    return -1;
+    return KOS_OP_POST_ERR();
   int res = PyObject_DelAttr(obj, name);
   Py_DECREF(obj);
   if (res < 0)
-    return -1;
+    return KOS_OP_POST_ERR();
   (void) out_ev;
-  return 0;
+  return KOS_OP_RUN();
 }

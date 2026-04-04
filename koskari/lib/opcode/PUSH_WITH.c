@@ -24,13 +24,13 @@ KOS_OP_HANDLER(PUSH_WITH) {
 
   PyObject *mgr = KosStackBlock_PopRef(&CURRENT_STACK(ctx));
   if (! mgr)
-    return -1;
+    return KOS_OP_POST_ERR();
 
   PyObject *enter = NULL;
   PyObject *exit = NULL;
   if (resolve_context_enter_exit(mgr, &enter, &exit) < 0) {
     Py_DECREF(mgr);
-    return -1;
+    return KOS_OP_POST_ERR();
   }
 
   KosCode *code = CURRENT_CODE(ctx);
@@ -41,7 +41,7 @@ KOS_OP_HANDLER(PUSH_WITH) {
     Py_DECREF(enter);
     Py_DECREF(mgr);
     PyErr_SetString(PyExc_RuntimeError, "PUSH_WITH: no WITH extent at this PC");
-    return -1;
+    return KOS_OP_POST_ERR();
   }
   KosExtentDesc *ext = kos_extent_desc((PyObject *) code, eid);
   if (! ext) {
@@ -49,7 +49,7 @@ KOS_OP_HANDLER(PUSH_WITH) {
     Py_DECREF(enter);
     Py_DECREF(mgr);
     PyErr_SetString(PyExc_RuntimeError, "PUSH_WITH: invalid extent");
-    return -1;
+    return KOS_OP_POST_ERR();
   }
   uint32_t resume_pc = ext->pop_pc + 1u;
 
@@ -61,7 +61,7 @@ KOS_OP_HANDLER(PUSH_WITH) {
     Py_DECREF(exit);
     Py_DECREF(enter);
     Py_DECREF(mgr);
-    return -1;
+    return KOS_OP_POST_ERR();
   }
 
   KosDynWith *with_node = kos_dyn_push_with_provisional(ctx, mgr, enter, exit,
@@ -72,7 +72,7 @@ KOS_OP_HANDLER(PUSH_WITH) {
     Py_DECREF(exit);
     Py_DECREF(enter);
     Py_DECREF(mgr);
-    return -1;
+    return KOS_OP_POST_ERR();
   }
 
   int r = kos_dyn_wind(ctx, (KosDynNode *) with_node, out_ev);
@@ -80,16 +80,16 @@ KOS_OP_HANDLER(PUSH_WITH) {
     uint32_t same_pc = CURRENT_ACTING_PC(ctx);
     CURRENT_PC(ctx) = same_pc;
     KosDynFrame_ACTING_PC(CURRENT_FRAME(ctx)) = same_pc;
-    return 1;
+    return KOS_OP_POST_SUSPEND();
   }
 
   if (r < 0) {
     kos_dyn_pop_with(ctx, with_node);
     KosStackBlock_DropBlock(&CURRENT_STACK(ctx));
-    return -1;
+    return KOS_OP_POST_ERR();
   }
 
-  return 0;
+  return KOS_OP_RUN();
 }
 
 

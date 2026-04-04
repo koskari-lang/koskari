@@ -20,17 +20,17 @@
 KOS_OP_HANDLER(ITEM_CLEAR) {
   PyObject *key = KosStackBlock_PopRef(&CURRENT_STACK(ctx));
   if (! key)
-    return -1;
+    return KOS_OP_POST_ERR();
   PyObject *obj = KosStackBlock_PopRef(&CURRENT_STACK(ctx));
   if (! obj) {
     Py_DECREF(key);
-    return -1;
+    return KOS_OP_POST_ERR();
   }
   int res = PyObject_DelItem(obj, key);
   Py_DECREF(obj);
   Py_DECREF(key);
   if (res < 0)
-    return -1;
+    return KOS_OP_POST_ERR();
   (void) out_ev;
-  return 0;
+  return KOS_OP_RUN();
 }

@@ -29,18 +29,18 @@ KOS_OP_HANDLER(CALL_ATTR_NAMES) {
 
   PyObject *name = KosCode_GetConstant((PyObject *) code, attr_cpool_idx);
   if (! name)
-    return -1;
+    return KOS_OP_POST_ERR();
 
   PyObject *names = KosCode_GetConstant((PyObject *) code, names_cpool_idx);
   if (! names)
-    return -1;
+    return KOS_OP_POST_ERR();
 
   KosStackBlock **stack = &CURRENT_STACK(ctx);
 
   if (! PyTuple_CheckExact(names)) {
     PyErr_Format(PyExc_RuntimeError, "CALL_ATTR_NAMES names must be tuple"
                  ", not %R", names);
-    return -1;
+    return KOS_OP_POST_ERR();
   }
 
   Py_ssize_t npos = (Py_ssize_t) opa;
@@ -50,21 +50,21 @@ KOS_OP_HANDLER(CALL_ATTR_NAMES) {
 
   PyObject *const *ptr = KosStackBlock_TailPtr(*stack, ntotal);
   if (! ptr)
-    return -1;
+    return KOS_OP_POST_ERR();
 
   PyObject *obj = ptr[0];
 
   PyObject *resolved;
   int send_self = kos_resolve_named_attr(obj, name, NULL, &resolved);
   if (send_self < 0)
-    return -1;
+    return KOS_OP_POST_ERR();
 
   PyObject *result;
   if (KosCallable_Check(resolved)) {
     KosStackSteal steal = { 0 };
     if (KosStackSteal_Tail(&steal, ntotal, stack) < 0) {
       Py_DECREF(resolved);
-      return -1;
+      return KOS_OP_POST_ERR();
     }
     PyObject *const *args;
     Py_ssize_t nargs;
@@ -79,7 +79,7 @@ KOS_OP_HANDLER(CALL_ATTR_NAMES) {
                             names, 0);
     KosStackSteal_Free(&steal);
     Py_DECREF(resolved);
-    return r;
+    return kos_op_outcome_from_call_int(ctx, r);
   }
 
   if (send_self == 0) {
@@ -91,8 +91,8 @@ KOS_OP_HANDLER(CALL_ATTR_NAMES) {
   }
   Py_DECREF(resolved);
   if (! result)
-    return -1;
+    return KOS_OP_POST_ERR();
 
   KosStackBlock_DropNoErr(stack, ntotal);
-  return kos_push_or_await(ctx, out_ev, result);
+  return kos_op_outcome_from_push_int(kos_push_or_await(ctx, out_ev, result));
 }

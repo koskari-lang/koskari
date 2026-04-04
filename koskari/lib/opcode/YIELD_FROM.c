@@ -677,19 +677,19 @@ KOS_OP_HANDLER(YIELD_FROM) {
        PHASE=DRIVING, PENDING_ACTION=STEP, roll back PC, return 0. */
     PyObject *subexpr = KosStackBlock_PopRef(&KosDynFrame_STACK(frame));
     if (! subexpr)
-      return -1;
+      return KOS_OP_POST_ERR();
 
     PyObject *delegate = NULL;
     uint8_t kind = KOS_YF_SYNC_ITER; /* overwritten by yield_from_normalize */
     if (yield_from_normalize(subexpr, &delegate, &kind) < 0) {
       Py_DECREF(subexpr);
-      return -1;
+      return KOS_OP_POST_ERR();
     }
 
     Py_DECREF(subexpr);
     if (! kos_dyn_push_yield_from(ctx, delegate, kind)) {
       Py_DECREF(delegate);
-      return -1;
+      return KOS_OP_POST_ERR();
     }
 
     Py_DECREF(delegate);
@@ -699,7 +699,7 @@ KOS_OP_HANDLER(YIELD_FROM) {
       KosDynYieldFrom_PHASE_SET(yf_new, KOS_YF_PHASE_DRIVING);
     }
     yield_from_rollback_pc(ctx, insn);
-    return 0;
+    return KOS_OP_RUN();
   }
 
   KosDynYieldFrom *yf = (KosDynYieldFrom *) dyn_top;
@@ -731,7 +731,7 @@ KOS_OP_HANDLER(YIELD_FROM) {
   else if (KosDynYieldFrom_PHASE(yf) == KOS_YF_PHASE_EXPECT_SEND) {
     size_t sz = KosStackBlock_LEN(KosDynFrame_STACK(frame));
     if (sz == 0)
-      return -1;
+      return KOS_OP_POST_ERR();
     PyObject *first = KosStackBlock_PopRef(&KosDynFrame_STACK(frame));
     if (sz >= 2) {
       Py_XDECREF(KosDynYieldFrom_PENDING_ARG(yf));
@@ -752,7 +752,7 @@ KOS_OP_HANDLER(YIELD_FROM) {
   else if (KosDynYieldFrom_PHASE(yf) == KOS_YF_PHASE_EXPECT_AWAIT) {
     PyObject *aw_result = KosStackBlock_PopRef(&KosDynFrame_STACK(frame));
     if (! aw_result)
-      return -1;
+      return KOS_OP_POST_ERR();
     Py_INCREF(aw_result);
     Py_XDECREF(KosDynYieldFrom_PENDING_ARG(yf));
     KosDynYieldFrom_PENDING_ARG(yf) = aw_result;
@@ -765,14 +765,22 @@ KOS_OP_HANDLER(YIELD_FROM) {
   PyObject *delegate = KosDynYieldFrom_DELEGATE(yf);
 
   if (kind == KOS_YF_SYNC_ITER)
-    return yield_from_drive_sync_iter(ctx, frame, yf, delegate, action, out_ev, insn);
+    return kos_op_outcome_from_int_step(
+        yield_from_drive_sync_iter(ctx, frame, yf, delegate, action, out_ev,
+                                   insn));
   if (kind == KOS_YF_SYNC_GEN)
-    return yield_from_drive_sync_gen(ctx, frame, yf, delegate, action, out_ev, insn);
+    return kos_op_outcome_from_int_step(
+        yield_from_drive_sync_gen(ctx, frame, yf, delegate, action, out_ev,
+                                  insn));
   if (kind == KOS_YF_PY_ASYNC_ITER || kind == KOS_YF_PY_ASYNC_GEN)
-    return yield_from_drive_py_async(ctx, frame, yf, delegate, kind, action, out_ev, insn);
+    return kos_op_outcome_from_int_step(
+        yield_from_drive_py_async(ctx, frame, yf, delegate, kind, action,
+                                  out_ev, insn));
   if (kind == KOS_YF_KOS_ASYNC_GEN)
-    return yield_from_drive_kos_async_gen(ctx, frame, yf, delegate, action, out_ev, insn);
+    return kos_op_outcome_from_int_step(
+        yield_from_drive_kos_async_gen(ctx, frame, yf, delegate, action,
+                                       out_ev, insn));
 
   PyErr_SetString(PyExc_RuntimeError, "unexpected delegate kind");
-  return -1;
+  return KOS_OP_POST_ERR();
 }

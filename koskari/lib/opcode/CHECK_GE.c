@@ -18,5 +18,5 @@
 */
 
 KOS_OP_HANDLER(CHECK_GE) {
-  return kos_check_cmp(ctx, out_ev, insn, Py_GE);
+  return kos_op_outcome_from_int_step(kos_check_cmp(ctx, out_ev, insn, Py_GE));
 }

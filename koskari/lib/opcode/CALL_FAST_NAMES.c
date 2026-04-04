@@ -31,27 +31,27 @@ KOS_OP_HANDLER(CALL_FAST_NAMES) {
   PyObject *ns = CURRENT_NS(ctx);
   if (! ns) {
     PyErr_SetString(PyExc_RuntimeError, "CALL_FAST_NAMES on NULL namespace");
-    return -1;
+    return KOS_OP_POST_ERR();
   }
   if (! KosNamespace_SupportsFast(ns)) {
     PyErr_Format(PyExc_RuntimeError, "CALL_FAST_NAMES on %R", ns);
-    return -1;
+    return KOS_OP_POST_ERR();
   }
 
   PyObject *callable = KosNamespace_FastDeref(ns, (size_t) slot_idx);
   if (! callable)
-    return -1;
+    return KOS_OP_POST_ERR();
 
   PyObject *names = KosCode_GetConstant((PyObject *) code, names_cpool_idx);
   if (! names) {
     Py_DECREF(callable);
-    return -1;
+    return KOS_OP_POST_ERR();
   }
   if (! PyTuple_CheckExact(names)) {
     PyErr_Format(PyExc_RuntimeError, "CALL_FAST_NAMES names must be tuple"
                  ", not %R", names);
     Py_DECREF(callable);
-    return -1;
+    return KOS_OP_POST_ERR();
   }
 
   Py_ssize_t nkwds = PyTuple_GET_SIZE(names);
@@ -62,20 +62,20 @@ KOS_OP_HANDLER(CALL_FAST_NAMES) {
   PyObject *const *ptr = KosStackBlock_TailPtr(*stack, ntotal);
   if (! ptr) {
     Py_DECREF(callable);
-    return -1;
+    return KOS_OP_POST_ERR();
   }
 
   if (KosCallable_Check(callable)) {
     KosStackSteal steal = { 0 };
     if (KosStackSteal_Tail(&steal, ntotal, stack) < 0) {
       Py_DECREF(callable);
-      return -1;
+      return KOS_OP_POST_ERR();
     }
     int r = KosContext_Call(ctx, out_ev, callable, steal.vals,
                             npos, names, 0);
     Py_DECREF(callable);
     KosStackSteal_Free(&steal);
-    return r;
+    return kos_op_outcome_from_call_int(ctx, r);
   }
 
   PyObject *result = PyObject_Vectorcall(callable, ptr, (size_t) npos,
@@ -83,7 +83,7 @@ KOS_OP_HANDLER(CALL_FAST_NAMES) {
   KosStackBlock_DropNoErr(stack, ntotal);
   Py_DECREF(callable);
 
-  return result ? kos_push_or_await(ctx, out_ev, result) : -1;
+  return result ? kos_op_outcome_from_push_int(kos_push_or_await(ctx, out_ev, result)) : KOS_OP_POST_ERR();
 }
 
 

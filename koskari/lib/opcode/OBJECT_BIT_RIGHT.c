@@ -18,5 +18,5 @@
 */
 
 KOS_OP_HANDLER(OBJECT_BIT_RIGHT) {
-  return obj_op_binary(ctx, out_ev, insn, PyNumber_Rshift);
+  return kos_op_outcome_from_int_step(obj_op_binary(ctx, out_ev, insn, PyNumber_Rshift));
 }

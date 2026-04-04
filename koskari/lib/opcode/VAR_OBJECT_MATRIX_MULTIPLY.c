@@ -24,25 +24,25 @@ KOS_OP_HANDLER(VAR_OBJECT_MATRIX_MULTIPLY) {
 
   PyObject *name = get_name_from_insn(CURRENT_CODE(ctx), insn);
   if (unlikely(! name))
-    return -1;
+    return KOS_OP_POST_ERR();
 
   PyObject *obj = frame_ns_deref(ctx, name);
   if (unlikely(! obj))
-    return -1;
+    return KOS_OP_POST_ERR();
 
   PyObject *rhs = KosStackBlock_PopRef(&CURRENT_STACK(ctx));
   if (unlikely(! rhs)) {
     Py_DECREF(obj);
-    return -1;
+    return KOS_OP_POST_ERR();
   }
 
   PyObject *result = PyNumber_InPlaceMatrixMultiply(obj, rhs);
   Py_DECREF(obj);
   Py_DECREF(rhs);
   if (unlikely(! result))
-    return -1;
+    return KOS_OP_POST_ERR();
 
   int res = frame_ns_store(ctx, name, result);
   Py_DECREF(result);
-  return res;
+  return kos_op_outcome_from_int_step(res);
 }

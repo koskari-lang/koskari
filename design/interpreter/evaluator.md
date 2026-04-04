@@ -405,17 +405,18 @@ the appropriate `revive_*` helper is selected via `KosContext_SUSPENSION_EVENT`.
 
 #### Internal Phase Structure
 
-`koskari_eval` is organized as six named static phase helpers. The optable
-and computed-goto dispatch (phase 5) remain in-situ in `koskari_eval` because
-GCC requires `&&TARGET_name` label addresses and the indirect `goto *optable[op]`
-to be in the same function body.
+`koskari_eval` runs shared entry/transfer setup, then dispatches to either
+`koskari_eval_dispatch_computed_goto` (GCC/Clang: optable, `&&cg_TARGET_*`,
+`goto *optable[op]` in one static function) or `koskari_eval_dispatch_switch`
+(MSVC: `for(;;)` + `switch`).  Phase helpers 1–4 and 6 stay shared; phase 5
+lives entirely inside those two dispatchers.
 
 | Phase | Helper | Responsibility |
 |-------|--------|----------------|
 | 1 | `eval_phase_entry` | Entry/revive normalization; `entry_mode_dispatch` for EXCEPTION/RAISE outcomes |
 | 2 | `eval_phase_transfer` | Transfer-plan drain; terminal RETURN(None) when no frame or hook remains |
 | 3 | `eval_phase_pending_exception` | `PyErr_Occurred()` + `process_raise` at each loop-top iteration |
-| 4 | `eval_phase_prepare_dispatch` | Frame/hook fetch, PC bounds check, insn load, PC pre-advance |
+| 4 | `kos_eval_prepare_next_insn` | Frame fetch, PC bounds check, insn load into `*out_insn`, PC pre-advance |
 | 5 | *(inline)* | Computed-goto / switch opcode dispatch |
 | 6 | `eval_phase_post_opcode` | `op_res != 0` handler: exception path, WITH rollback, suspension tagging |
 
@@ -423,22 +424,14 @@ Each helper returns a `KosEvalStep` value:
 
 ```c
 typedef enum KosEvalStep {
-  KOS_STEP_CONTINUE,      /* phase completed; proceed to next phase */
+  KOS_STEP_CONTINUE,      /* phase completed; next prologue step or prepare */
+  KOS_STEP_REPROLOGUE,    /* restart full prologue (xfer, pending, native) */
   KOS_STEP_STOP_EVENT,    /* out_ev is filled; return to caller (eval_ret = 0) */
   KOS_STEP_FATAL_ERROR,   /* PyErr set; return to caller (eval_ret = -1) */
 } KosEvalStep;
 ```
 
-Phase 4 fills a `KosDispatchCtx` struct consumed by phases 5 and 6:
-
-```c
-typedef struct KosDispatchCtx {
-  int in_hook;     /* non-zero when executing inside a hook runner */
-  KosCode *code;   /* code object for the current frame or hook */
-  uint32_t pc;     /* acting_pc (before pre-advance) */
-  KosOp *insn;     /* pointer into code->code at acting_pc */
-} KosDispatchCtx;
-```
+Phase 4 sets a local `KosOp *insn` (and frame `acting_pc` / `pc`) for phase 5. Phase 6 (**eval_phase_post_opcode**) takes only `ctx`, `out_ev`, and mapped `op_res`; it does not receive insn.
 
 #### Exception ownership note
 

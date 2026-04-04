@@ -24,30 +24,30 @@ KOS_OP_HANDLER(COMBINE_KWDS) {
 
   PyObject *built = PyDict_New();
   if (! built)
-    return -1;
+    return KOS_OP_POST_ERR();
 
   if (opa == 0) {
     if (KosStackBlock_PushRef(&CURRENT_STACK(ctx), built) < 0) {
       Py_DECREF(built);
-      return -1;
+      return KOS_OP_POST_ERR();
     }
     Py_DECREF(built);
     (void) out_ev;
-    return 0;
+    return KOS_OP_RUN();
   }
 
   PyObject *const *vals = KosStackBlock_TailPtr(CURRENT_STACK(ctx),
                                                  (size_t) opa);
   if (! vals) {
     Py_DECREF(built);
-    return -1;
+    return KOS_OP_POST_ERR();
   }
 
   for (unsigned i = 0; i < opa; i++) {
     if (PyDict_Merge(built, vals[i], 1) != 0) {
       Py_DECREF(built);
       KosStackBlock_DropNoErr(&CURRENT_STACK(ctx), (size_t) opa);
-      return -1;
+      return KOS_OP_POST_ERR();
     }
   }
 
@@ -55,10 +55,10 @@ KOS_OP_HANDLER(COMBINE_KWDS) {
 
   if (KosStackBlock_PushRef(&CURRENT_STACK(ctx), built) < 0) {
     Py_DECREF(built);
-    return -1;
+    return KOS_OP_POST_ERR();
   }
   Py_DECREF(built);
 
   (void) out_ev;
-  return 0;
+  return KOS_OP_RUN();
 }
