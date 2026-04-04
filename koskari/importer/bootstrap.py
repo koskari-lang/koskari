@@ -26,6 +26,7 @@ using bootstrap as its builtins, then merges both and caches the result.
 :ai-assistant: claude-4.6-sonnet-high via Cursor
 """
 
+import operator as _op
 from decimal import Decimal as decimal
 from fractions import Fraction as fraction
 from os.path import dirname, join
@@ -40,7 +41,7 @@ from ..lib import (AttributeRef, ConstantRef, DynamicRef, ItemRef, MemoizedRef,
                    setcar, setcdr, symbol, values)
 from ..reader.layouts import LAYOUTS
 from ..types import (TypePredicate, build_proper, is_nil, is_proper,
-                     is_recursive, unpack)
+                     is_recursive, unpack, is_None)
 
 __all__ = ('make_bootstrap', 'make_builtins', 'make_builtins_demand')
 
@@ -79,100 +80,96 @@ def make_bootstrap():
     _bind('ref?', TypePredicate('ref?', Ref))
 
     # pair types and operations
+    _ty('defer', defer)
+    _ty('keyword', keyword)
     _ty('pair', pair)
-    _bind('nil', nil)
-    _bind('nil?', is_nil)
-    _bind('cons', cons)
+    _ty('symbol', symbol)
+    _ty('values', values)
+
+    _bind('apply', apply)
+    _bind('as-coroutine', as_coroutine)
+    _bind('build-proper', build_proper)
     _bind('car', car)
     _bind('cdr', cdr)
-    _bind('set-car', setcar)
-    _bind('set-cdr', setcdr)
-
-    _bind('#list', build_list)
-    _bind('#tuple', build_tuple)
-    _bind('#set', build_set)
-    _bind('#dict', build_dict)
-
+    _bind('cons', cons)
+    _bind('demand', demand_sync)
+    _bind('deref', deref)
+    _bind('gensym', gensym)
+    _bind('nil', nil)
+    _bind('nil?', is_nil)
+    _bind('parameter', parameter)
     _bind('proper?', is_proper)
     _bind('recursive?', is_recursive)
-    _bind('build-proper', build_proper)
+    _bind('set-car', setcar)
+    _bind('set-cdr', setcdr)
     _bind('unpack', unpack)
-    _bind('deref', deref)
-    _bind('apply', apply)
-    _bind('parameter', parameter)
-    _bind('demand', demand_sync)
 
-    _bind('as-coroutine', as_coroutine)
-
-    # atom types and operations
-    _ty('symbol', symbol)
-    _ty('keyword', keyword)
-    _bind('gensym', gensym)
-
-    # values type (multiple return values)
-    _ty('values', values)
-    _ty('defer', defer)
+    # builders
+    _bind('#dict', build_dict)
+    _bind('#list', build_list)
+    _bind('#set', build_set)
+    _bind('#str', lambda *args: "".join(args))
+    _bind('#tuple', build_tuple)
 
     # Python standard types available by default
     _ty('bool', bool)
-    _ty('int', int)
-    _ty('float', float)
-    _ty('complex', complex)
-    _ty('str', str)
     _ty('bytes', bytes)
-    _ty('tuple', tuple)
-    _ty('list', list)
-    _ty('dict', dict)
-    _ty('set', set)
-    _ty('frozenset', frozenset)
-    _ty('type', type)
-    _ty('slice', slice)
-    _ty('fraction', fraction)
+    _ty('complex', complex)
     _ty('decimal', decimal)
+    _ty('dict', dict)
+    _ty('float', float)
+    _ty('fraction', fraction)
+    _ty('frozenset', frozenset)
+    _ty('int', int)
+    _ty('list', list)
+    _ty('range', range)
+    _ty('set', set)
+    _ty('slice', slice)
+    _ty('str', str)
+    _ty('tuple', tuple)
+    _ty('type', type)
 
     # These are parsed as literals, not as named references, similar
     # to numbers and strings.
     _bind('None', None)
+    _bind('None?', is_None)
     _bind('True', True)
     _bind('False', False)
     _bind('Ellipsis', Ellipsis)
     _bind('...', ...)
 
     # common builtins
-    _bind('len', len)
-    _bind('repr', repr)
-    _bind('str', str)
-    _bind('print', print)
-    _bind('getattr', getattr)
-    _bind('setattr', setattr)
-    _bind('hasattr', hasattr)
-    _bind('isinstance', isinstance)
-    _bind('issubclass', issubclass)
-    _bind('callable', callable)
-    _bind('iter', iter)
-    _bind('next', next)
-    _bind('sorted', sorted)
-    _bind('reversed', reversed)
-    _bind('enumerate', enumerate)
-    _bind('zip', zip)
-    _bind('map', map)
-    _bind('filter', filter)
-    _bind('any', any)
-    _bind('all', all)
-    _bind('min', min)
-    _bind('max', max)
-    _bind('sum', sum)
     _bind('abs', abs)
+    _bind('all', all)
+    _bind('any', any)
+    _bind('callable', callable)
+    _bind('chr', chr)
+    _bind('dir', dir)
+    _bind('enumerate', enumerate)
+    _bind('filter', filter)
+    _bind('format', format)
+    _bind('getattr', getattr)
+    _bind('hasattr', hasattr)
     _bind('hash', hash)
     _bind('id', id)
-    _bind('vars', vars)
+    _bind('isinstance', isinstance)
+    _bind('iter', iter)
+    _bind('len', len)
+    _bind('map', map)
+    _bind('max', max)
+    _bind('min', min)
+    _bind('next', next)
     _bind('open', open)
-    _bind('range', range)
-    _bind('format', format)
-    _bind('chr', chr)
     _bind('ord', ord)
-
-    _bind('dir', dir)
+    _bind('print', print)
+    _bind('repr', repr)
+    _bind('reversed', reversed)
+    _bind('setattr', setattr)
+    _bind('sorted', sorted)
+    _bind('issubclass', issubclass)
+    _bind('sum', sum)
+    _bind('vars', vars)
+    _bind('zip', zip)
 
     # todo: replace me with a better help built-in
     _bind('help', help)
@@ -184,6 +181,11 @@ def make_bootstrap():
     for name in ('*', '+', '-', '/', '//', '&', '|', '^',
                  'in', 'not-in', ):
         _bind(name, getattr(kl, name))
+
+    _bind('**', _op.pow)
+    _bind('@', _op.matmul)
+    _bind('<<', _op.lshift)
+    _bind('>>', _op.rshift)
 
     # Register all compiler specials so the Compiler can find them
     for sym, fn in SPECIALS.items():

@@ -178,16 +178,6 @@ define-syntax compile/parameterq:
       (parameter 'name default)
 
 
-define-syntax compile/None?:
-  syntax-rules []:
-    match (None? value):
-      (compile/is None value)
-
-
-define None? [value]:
-  (compile/None? value)
-
-
 define-syntax define-coroutine:
   syntax-rules []:
     match (define-coroutine name args body ...):
@@ -231,6 +221,18 @@ define-syntax compile/dict-each:
 
     match (dict-each [binding seq] body ...):
       (dict (each [binding seq] body ...))
+
+
+define-syntax compile/None?:
+  syntax-rules []:
+    match (None? value):
+      (compile/is None value)
+
+
+define-syntax compile/nil?:
+  syntax-rules []:
+    match (nil? value):
+      (compile/is nil value)
 
 
 ;; The end.

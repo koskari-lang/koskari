@@ -617,12 +617,18 @@ def special_bit_invert(compiler, source, tc=False):
     return _unary_op(OpCode.KOS_OP_OBJECT_BIT_INVERT, compiler, source)
 
 
-@special(symbol("compile/str"))
+@special(symbol("compile/#str"))
 def special_str(compiler, source, tc=False):
     """
-    Compile (compile/str OBJ ...). String conversion via __str__, variadic
+    Compile (compile/#str OBJ ...). String conversion via __str__, variadic
     for f-string style multi-part concatenation
     """
+
+    called_by, body = source
+    if body is nil:
+        frag = compiler.fragment(called_by)
+        frag.instruction(OpCode.KOS_OP_CONST, "")
+        return frag
 
     return _reduce_op(
         OpCode.KOS_OP_OBJECT_STR,

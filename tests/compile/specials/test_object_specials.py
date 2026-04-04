@@ -21,7 +21,7 @@ compile/+, compile/-, compile/*, compile/**, compile/&, compile/|, compile/^,
 compile///, compile/@, compile//, compile/%, compile/<<, compile/>>,
 compile/divmod,
 compile/not, compile/repr, compile/truth, compile/iter, compile/~,
-compile/str, compile/len, compile/type, compile/dir, compile/vars,
+compile/#str, compile/len, compile/type, compile/dir, compile/vars,
 compile/aiter.
 """
 
@@ -807,20 +807,20 @@ class TestObjectBitInvert(SpecialsTestCase):
 class TestObjectStr(SpecialsTestCase):
 
     async def test_str_result(self):
-        expr, mod = self.compile_expr("(compile/str a)", a=99)
+        expr, mod = self.compile_expr("(compile/#str a)", a=99)
         self.assertEqual("99", await expr())
 
 
+    async def test_str_empty(self):
+        expr, mod = self.compile_expr("(compile/#str)")
+        self.assertEqual("", await expr())
+
+
     async def test_str_emits_count_opcode(self):
-        code = self.compile_to_code("(compile/str a)")
+        code = self.compile_to_code("(compile/#str a)")
         arg = _find_op(code, OpCode.KOS_OP_OBJECT_STR)
         self.assertIsNotNone(arg)
         self.assertEqual(1, arg)
-
-
-    async def test_str_requires_at_least_one_arg(self):
-        with self.assertRaises(SpecialError):
-            self.compile_to_code("(compile/str)")
 
 
 class TestObjectLen(SpecialsTestCase):

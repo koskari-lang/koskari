@@ -138,6 +138,7 @@ __all__ = (
     "is_nil",
     "is_proper",
     "is_recursive",
+    "is_None",
 
     # predicate helpers
     "TypePredicate",
@@ -190,6 +191,8 @@ is_keyword = TypePredicate("keyword?", keyword)
 
 is_pair = TypePredicate("pair?", pair)
 is_nil = BuiltinPredicate("nil?", operator.is_, nil)
+
+is_None = BuiltinPredicate("None?", operator.is_, None)
 
 
 def is_proper(value):

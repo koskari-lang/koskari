@@ -81,7 +81,7 @@ class ReadEOFType(object):
 READ_EOF = ReadEOFType()
 
 
-_symbol__str = symbol("compile/str")
+_symbol__str = symbol("compile/#str")
 _symbol_gensym_thunk = symbol("compile/gensym-thunk")
 _symbol_decimal = symbol("decimal")
 _symbol_format = symbol("format")
