@@ -80,6 +80,18 @@
 #define CURRENT_ACTING_PC(ctx)   KosDynFrame_ACTING_PC(CURRENT_FRAME(ctx))
 
 
+typedef struct {
+  PyObject *left;
+  PyObject *right;
+} KosEvalStackLR;
+
+
+typedef struct {
+  PyObject *container;
+  PyObject *value;
+} KosEvalStackContains;
+
+
 /* Module-level string constants for await/send/throw/close.  Initialized
    in koskari_eval_init, cleared in koskari_eval_clear. */
 static PyObject *str_await = NULL;
@@ -106,6 +118,20 @@ static PyObject *str_package = NULL;
 static PyObject *_import_fromlist = NULL;
 
 
+/* === Static forward declarations === */
+
+static int defer_drive(KosContext *ctx, KosEvent *out_ev, PyObject *defer_obj);
+
+static void inject_eval_frame_traceback(KosContext *ctx,
+    PyObject **exc_type, PyObject **exc_val, PyObject **exc_tb);
+
+static void kos_eval_emit_raise_from_pyerr(KosContext *ctx, KosEvent *out_ev);
+
+static void kos_eval_mark_context_dead(KosContext *ctx);
+
+static int try_local_exception_handler(KosContext *ctx, KosEvent *out_ev);
+
+
 /**
    Clear the context's transfer plan and free it.  Plan pointer is nulled
    before freeing so any re-entrant eval (e.g. from Py_XDECREF(continuation_ref)
@@ -127,12 +153,6 @@ static void clear_and_free_transfer_plan(KosContext *ctx) {
   kos_free_transfer_plan(p);
 }
 
-
-static void inject_eval_frame_traceback(KosContext *ctx,
-    PyObject **exc_type, PyObject **exc_val, PyObject **exc_tb);
-
-static void kos_eval_mark_context_dead(KosContext *ctx);
-static void kos_eval_emit_raise_from_pyerr(KosContext *ctx, KosEvent *out_ev);
 
 
 /**
@@ -258,16 +278,6 @@ static KosEvalMode revive_plan(
   }
 
   return KOS_MODE_TRANSFER;
-}
-
-
-/**
-   Set up VM for "resume with no value" after AWAIT suspend.
-   No inject; just continue. Call when send_val and throw_exc are both NULL and suspension_event was AWAIT.
-*/
-static KosEvalMode raise_await(KosContext *ctx) {
-  (void) ctx;
-  return KOS_MODE_NORMAL;
 }
 
 
@@ -440,9 +450,6 @@ static KosEvalMode revive_yield(KosContext *ctx, PyObject *send_val, PyObject *t
        throw_exc != NULL);
   return KOS_MODE_NORMAL;
 }
-
-
-static int try_local_exception_handler(KosContext *ctx, KosEvent *out_ev);
 
 
 static void decorate_exception_with_dynchain(KosContext *ctx, PyObject *exc_val) {
@@ -1695,8 +1702,6 @@ static int op_unimplemented_stub(KosContext *ctx, KosEvent *out_ev, KosOp *insn)
    SHIFT, INVOKE_K, prompt - continuations
  */
 
-static int defer_drive(KosContext *ctx, KosEvent *out_ev, PyObject *defer_obj);
-
 
 static int kos_await_dispatch(KosContext *ctx, KosEvent *out_ev, PyObject *value) {
   if (KosDefer_Check(value))
@@ -1757,17 +1762,12 @@ static int obj_op_binary(
     KosOp *insn,
     PyObject *(*fn)(PyObject *left, PyObject *right)) {
 
-  PyObject *right = KosStackBlock_PopRef(&CURRENT_STACK(ctx));
-  if (! right)
+  KosEvalStackLR op = {0};
+  if (KOS_STACK_BLOCK_POP_ARGS(&CURRENT_STACK(ctx), op))
     return -1;
-  PyObject *left = KosStackBlock_PopRef(&CURRENT_STACK(ctx));
-  if (! left) {
-    Py_DECREF(right);
-    return -1;
-  }
-  PyObject *res = fn(left, right);
-  Py_DECREF(left);
-  Py_DECREF(right);
+  PyObject *res = fn(op.left, op.right);
+  Py_DECREF(op.left);
+  Py_DECREF(op.right);
   if (! res)
     return -1;
   (void) insn;
@@ -1815,18 +1815,13 @@ static int op_OBJECT_EQ_impl(
     KosOp *insn,
     int op) {
 
-  PyObject *right = KosStackBlock_PopRef(&CURRENT_STACK(ctx));
-  if (! right)
+  KosEvalStackLR lr = {0};
+  if (KOS_STACK_BLOCK_POP_ARGS(&CURRENT_STACK(ctx), lr))
     return -1;
-  PyObject *left = KosStackBlock_PopRef(&CURRENT_STACK(ctx));
-  if (! left) {
-    Py_DECREF(right);
-    return -1;
-  }
 
-  int cmp = PyObject_RichCompareBool(left, right, op);
-  Py_DECREF(left);
-  Py_DECREF(right);
+  int cmp = PyObject_RichCompareBool(lr.left, lr.right, op);
+  Py_DECREF(lr.left);
+  Py_DECREF(lr.right);
   if (cmp < 0 && PyErr_Occurred())
     return -1;
 
@@ -1845,17 +1840,12 @@ static int kos_check_contains(
     KosOp *insn,
     int branch_when) {
 
-  PyObject *value = KosStackBlock_PopRef(&CURRENT_STACK(ctx));
-  if (! value)
+  KosEvalStackContains args = {0};
+  if (KOS_STACK_BLOCK_POP_ARGS(&CURRENT_STACK(ctx), args))
     return -1;
-  PyObject *container = KosStackBlock_PopRef(&CURRENT_STACK(ctx));
-  if (! container) {
-    Py_DECREF(value);
-    return -1;
-  }
-  int cmp = PySequence_Contains(container, value);
-  Py_DECREF(value);
-  Py_DECREF(container);
+  int cmp = PySequence_Contains(args.container, args.value);
+  Py_DECREF(args.value);
+  Py_DECREF(args.container);
   if (unlikely(cmp < 0))
     return -1;
   if (cmp == branch_when)
@@ -1873,17 +1863,12 @@ static int kos_check_identity(
     KosOp *insn,
     int branch_when_equal) {
 
-  PyObject *right = KosStackBlock_PopRef(&CURRENT_STACK(ctx));
-  if (! right)
+  KosEvalStackLR lr = {0};
+  if (KOS_STACK_BLOCK_POP_ARGS(&CURRENT_STACK(ctx), lr))
     return -1;
-  PyObject *left = KosStackBlock_PopRef(&CURRENT_STACK(ctx));
-  if (! left) {
-    Py_DECREF(right);
-    return -1;
-  }
-  int cmp = (left == right);
-  Py_DECREF(left);
-  Py_DECREF(right);
+  int cmp = (lr.left == lr.right);
+  Py_DECREF(lr.left);
+  Py_DECREF(lr.right);
   if (cmp == branch_when_equal)
     CURRENT_PC(ctx) = KosOp_ARG(insn);
   (void) out_ev;
@@ -1898,17 +1883,12 @@ static int kos_check_two_arg(
     KosOp *insn,
     int (*check)(PyObject *, PyObject *)) {
 
-  PyObject *right = KosStackBlock_PopRef(&CURRENT_STACK(ctx));
-  if (! right)
+  KosEvalStackLR lr = {0};
+  if (KOS_STACK_BLOCK_POP_ARGS(&CURRENT_STACK(ctx), lr))
     return -1;
-  PyObject *left = KosStackBlock_PopRef(&CURRENT_STACK(ctx));
-  if (! left) {
-    Py_DECREF(right);
-    return -1;
-  }
-  int res = check(left, right);
-  Py_DECREF(left);
-  Py_DECREF(right);
+  int res = check(lr.left, lr.right);
+  Py_DECREF(lr.left);
+  Py_DECREF(lr.right);
   if (unlikely(res < 0))
     return -1;
   if (res == 0)
@@ -1926,17 +1906,12 @@ static int kos_check_cmp(
     KosOp *insn,
     int cmp_op) {
 
-  PyObject *right = KosStackBlock_PopRef(&CURRENT_STACK(ctx));
-  if (! right)
+  KosEvalStackLR lr = {0};
+  if (KOS_STACK_BLOCK_POP_ARGS(&CURRENT_STACK(ctx), lr))
     return -1;
-  PyObject *left = KosStackBlock_PopRef(&CURRENT_STACK(ctx));
-  if (! left) {
-    Py_DECREF(right);
-    return -1;
-  }
-  int res = PyObject_RichCompareBool(left, right, cmp_op);
-  Py_DECREF(left);
-  Py_DECREF(right);
+  int res = PyObject_RichCompareBool(lr.left, lr.right, cmp_op);
+  Py_DECREF(lr.left);
+  Py_DECREF(lr.right);
   if (res < 0)
     return -1;
   if (res == 0)
@@ -2512,7 +2487,7 @@ static KosEvalStep eval_phase_entry(
         mode = KOS_MODE_NORMAL;
         break;
       case KOS_SUSP_AWAIT:
-        mode = raise_await(ctx);
+        mode = KOS_MODE_NORMAL;
         break;
       case KOS_SUSP_YIELD:
         /* anext() passes NULL for send; treat as Py_None per async gen protocol */

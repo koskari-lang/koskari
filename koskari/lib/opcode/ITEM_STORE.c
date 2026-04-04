@@ -18,24 +18,18 @@
 */
 
 KOS_OP_HANDLER(ITEM_STORE) {
-  PyObject *val = KosStackBlock_PopRef(&CURRENT_STACK(ctx));
-  if (! val)
+  struct {
+    PyObject *obj;
+    PyObject *key;
+    PyObject *val;
+  } args = {0};
+
+  if (KOS_STACK_BLOCK_POP_ARGS(&CURRENT_STACK(ctx), args))
     return -1;
-  PyObject *key = KosStackBlock_PopRef(&CURRENT_STACK(ctx));
-  if (! key) {
-    Py_DECREF(val);
-    return -1;
-  }
-  PyObject *obj = KosStackBlock_PopRef(&CURRENT_STACK(ctx));
-  if (! obj) {
-    Py_DECREF(key);
-    Py_DECREF(val);
-    return -1;
-  }
-  int res = PyObject_SetItem(obj, key, val);
-  Py_DECREF(obj);
-  Py_DECREF(key);
-  Py_DECREF(val);
+  int res = PyObject_SetItem(args.obj, args.key, args.val);
+  Py_DECREF(args.obj);
+  Py_DECREF(args.key);
+  Py_DECREF(args.val);
   if (res < 0)
     return -1;
   (void) out_ev;

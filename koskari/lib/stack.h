@@ -398,6 +398,19 @@ PyObject *KosStackBlock_PopTail(KosStackBlock **self, size_t count);
 int KosStackBlock_PopTailPtr(KosStackBlock **self, size_t count, PyObject **dest);
 
 
+/**
+   Pop tail slots into an aggregate of PyObject * fields only. Count is
+   sizeof(agg) / sizeof(PyObject *). Field order must be deepest stack slot
+   first, TOS last (matches PopTailPtr dest layout). Returns 0 on success,
+   -1 on underrun.
+ */
+#define KOS_STACK_BLOCK_POP_ARGS(block_pp, agg) \
+  KosStackBlock_PopTailPtr( \
+      (block_pp), \
+      sizeof(agg) / sizeof(PyObject *), \
+      (PyObject **)(void *)&(agg))
+
+
 /* === KosStackSteal: fast-path tail extraction for call sites === */
 
 
