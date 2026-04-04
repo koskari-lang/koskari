@@ -254,9 +254,10 @@ static void clear_pending_agen_on_error(KosContext *ctx) {
 
 
 /**
-   Revive the active transfer plan with send_val or throw_exc.
-   Consumes send_val/throw_exc for the plan. May set exception in context.
-   :return: KOS_MODE_TRANSFER to continue draining plan, KOS_MODE_EXCEPTION if throw_exc set, KOS_MODE_NORMAL if plan done
+   Revive the active transfer plan with send_val or throw_exc. Consumes
+   send_val/throw_exc for the plan. May set exception in context. :return:
+   KOS_MODE_TRANSFER to continue draining plan, KOS_MODE_EXCEPTION if
+   throw_exc set, KOS_MODE_NORMAL if plan done
 */
 static KosEvalMode revive_plan(
     KosContext *ctx,
@@ -283,14 +284,16 @@ static KosEvalMode revive_plan(
 
 /**
    Revive from AWAIT: push await result or set throw_exc. Use PY_RESUME_INJECT
-   when set (driver pre-stored await result, e.g. coro.c throw-into-awaitable),
-   else send_val. Complete pending WITH exit if applicable.
+   when set (driver pre-stored await result, e.g. coro.c
+   throw-into-awaitable), else send_val. Complete pending WITH exit if
+   applicable.
 
    When throw_exc is set and py_await_iter is non-NULL, resolves a callable
    throw and forwards with single-arg throw(exc) before the VM exception path
-   (align with coroutine_throw WAITING_PY). On StopIteration, completes the await like a
-   normal resume. On non-NULL throw result, fills out_ev with KOS_EV_AWAIT
-   (re-suspend). out_ev must be non-NULL whenever throw_exc is non-NULL.
+   (align with coroutine_throw WAITING_PY). On StopIteration, completes the
+   await like a normal resume. On non-NULL throw result, fills out_ev with
+   KOS_EV_AWAIT (re-suspend). out_ev must be non-NULL whenever throw_exc is
+   non-NULL.
 */
 static KosEvalMode revive_await(
         KosContext *ctx,
@@ -414,11 +417,16 @@ static KosEvalMode revive_await(
 
 
 /**
-   Revive from YIELD: push send_val or set throw_exc.
-   When send_val is NULL (e.g. __anext__), push Py_None per async gen protocol.
-   Must install the gen first even when throwing, so frame and chain are restored.
+   Revive from YIELD: push send_val or set throw_exc. When send_val is NULL
+   (e.g. __anext__), push Py_None per async gen protocol. Must install the gen
+   first even when throwing, so frame and chain are restored.
 */
-static KosEvalMode revive_yield(KosContext *ctx, PyObject *send_val, PyObject *throw_typ, PyObject *throw_exc) {
+static KosEvalMode revive_yield(
+    KosContext *ctx,
+    PyObject *send_val,
+    PyObject *throw_typ,
+    PyObject *throw_exc) {
+
   KosDynGen *gen;
   PyObject *to_push;
 
@@ -427,6 +435,7 @@ static KosEvalMode revive_yield(KosContext *ctx, PyObject *send_val, PyObject *t
        KosContext_SUSPENSION_EVENT(ctx), (void *) KosContext_RESUME_GEN(ctx),
        (void *) send_val, (void *) throw_typ, (void *) throw_exc,
        (void *) KosContext_DYN_TOP(ctx), (void *) KosContext_FRAME_TOP(ctx));
+
   gen = KosContext_RESUME_GEN(ctx);
   if (gen) {
     KosContext_RESUME_GEN(ctx) = NULL;
@@ -452,7 +461,9 @@ static KosEvalMode revive_yield(KosContext *ctx, PyObject *send_val, PyObject *t
 }
 
 
-static void decorate_exception_with_dynchain(KosContext *ctx, PyObject *exc_val) {
+static void decorate_exception_with_dynchain(
+    KosContext *ctx,
+    PyObject *exc_val) {
 
   if (! ctx || ! exc_val || ! PyExceptionInstance_Check(exc_val)) {
     return;
@@ -524,9 +535,10 @@ static void inject_eval_frame_traceback(
     return;
   }
 
-#if PY_MINOR_VERSION < 12
+  #if PY_MINOR_VERSION < 12
+  // I cannot tell you how long this took to debug...
   PyErr_NormalizeException(exc_type, exc_val, exc_tb);
-#endif
+  #endif
 
   decorate_exception_with_dynchain(ctx, *exc_val);
 
@@ -602,7 +614,9 @@ static void kos_eval_mark_context_dead(KosContext *ctx) {
    Move current PyErr into out_ev as KOS_EV_RAISE with injected traceback,
    clear thread error, and mark the context dead.  Call only when PyErr is set.
 */
-static void kos_eval_emit_raise_from_pyerr(KosContext *ctx, KosEvent *out_ev) {
+static void kos_eval_emit_raise_from_pyerr(
+    KosContext *ctx,
+    KosEvent *out_ev) {
 
   PyObject *typ = NULL, *val = NULL, *tb = NULL;
 
@@ -622,8 +636,8 @@ static void kos_eval_emit_raise_from_pyerr(KosContext *ctx, KosEvent *out_ev) {
    transfer plan.  PyErr must be set to KoskariContinuationApply on entry.
 
    Own-token path: the continuation targets this eval context.  Extract the
-   continuation and resume value, clear PyErr, and call kos_invoke_continuation
-   to install a direct-apply transfer plan.
+   continuation and resume value, clear PyErr, and call
+   kos_invoke_continuation to install a direct-apply transfer plan.
 
    Foreign-token path: the continuation targets a different eval context.
    Fetch and clear PyErr, insert a KosDynCCRaise sentinel at the root of the
@@ -723,11 +737,11 @@ static KosEvalMode handle_continuation_apply(
 /**
    Process the current exception (in PyErr or context). Handles
    KoskariContinuationApply (invoke continuation or unwind-and-reraise), local
-   handlers (try/except/finally, WITH exit, unwind), or returns RAISE.
-   Call only when mode is EXCEPTION.
+   handlers (try/except/finally, WITH exit, unwind), or returns RAISE. Call
+   only when mode is EXCEPTION.
 
-   :return: KOS_MODE_NORMAL or KOS_MODE_TRANSFER to continue,
-            KOS_MODE_RAISE to propagate (out_ev set to KOS_EV_RAISE)
+   :return: KOS_MODE_NORMAL or KOS_MODE_TRANSFER to continue, KOS_MODE_RAISE
+            to propagate (out_ev set to KOS_EV_RAISE)
 */
 static KosEvalMode process_raise(KosContext *ctx, KosEvent *out_ev) {
   if (! PyErr_Occurred()) {
@@ -736,28 +750,37 @@ static KosEvalMode process_raise(KosContext *ctx, KosEvent *out_ev) {
     KosEvent_EXC_TYPE(out_ev) = NULL;
     return KOS_MODE_RAISE;
   }
+
   if (KoskariContinuationApply && PyErr_ExceptionMatches(KoskariContinuationApply))
     return handle_continuation_apply(ctx, out_ev);
   clear_pending_agen_on_error(ctx);
+
   if (try_local_exception_handler(ctx, out_ev))
     return KOS_MODE_NORMAL;
-  /* try_local_exception_handler already set out_ev and ctx flags when it returned 0 */
+
+  /* try_local_exception_handler already set out_ev and ctx flags when it
+  returned 0 */
   return KOS_MODE_RAISE;
 }
 
 
 /**
-   Resolve KosOp_ARG(insn) as a prompt_id constant from code.  Returns -1 on error,
-   0 on success with *out_prompt_id set.
+   Resolve KosOp_ARG(insn) as a prompt_id constant from code.  Returns -1 on
+   error, 0 on success with *out_prompt_id set.
 */
-static int get_prompt_id_from_insn(KosCode *code, KosOp *insn,
-                                   uint32_t *out_prompt_id) {
+static int get_prompt_id_from_insn(
+    KosCode *code,
+    KosOp *insn,
+    uint32_t *out_prompt_id) {
+
   PyObject *cid = KosCode_GetConstant((PyObject *) code, KosOp_ARG(insn));
   if (! cid)
     return -1;
+
   long pid = PyLong_AsLong(cid);
   if (pid < 0 && PyErr_Occurred())
     return -1;
+
   *out_prompt_id = (uint32_t) pid;
   return 0;
 }
@@ -801,18 +824,22 @@ static int resolve_context_enter_exit(
   if (enter) {
     exit = PyObject_GetAttr(mgr, str_aexit);
   }
+
   if (! enter || ! exit) {
     Py_XDECREF(enter);
     PyErr_Clear();
+
     enter = PyObject_GetAttr(mgr, str_enter);
     if (! enter)
       return -1;
+
     exit = PyObject_GetAttr(mgr, str_exit);
     if (! exit) {
       Py_DECREF(enter);
       return -1;
     }
   }
+
   *out_enter = enter;
   *out_exit = exit;
   return 0;
@@ -845,6 +872,7 @@ KosEvaluatorToken *KosEvaluatorToken_New(void) {
                                           &KosEvaluatorTokenType);
   if (! token)
     return NULL;
+
   token->cookie = (uint64_t) __sync_add_and_fetch(&token_cookie_counter, 1);
   token->live_depth = 0;
   return token;
@@ -1219,7 +1247,8 @@ static PyObject *eager_step_awaitable(
   *yielded = NULL;
 
   if (! awaitable) {
-    PyErr_SetString(PyExc_TypeError, "eager_step_awaitable: awaitable is NULL");
+    PyErr_SetString(PyExc_TypeError,
+                    "eager_step_awaitable: awaitable is NULL");
     return NULL;
   }
 
@@ -1843,13 +1872,16 @@ static int kos_check_contains(
   KosEvalStackContains args = {0};
   if (KOS_STACK_BLOCK_POP_ARGS(&CURRENT_STACK(ctx), args))
     return -1;
+
   int cmp = PySequence_Contains(args.container, args.value);
   Py_DECREF(args.value);
   Py_DECREF(args.container);
   if (unlikely(cmp < 0))
     return -1;
+
   if (cmp == branch_when)
     CURRENT_PC(ctx) = KosOp_ARG(insn);
+
   (void) out_ev;
   return 0;
 }
@@ -1866,11 +1898,13 @@ static int kos_check_identity(
   KosEvalStackLR lr = {0};
   if (KOS_STACK_BLOCK_POP_ARGS(&CURRENT_STACK(ctx), lr))
     return -1;
+
   int cmp = (lr.left == lr.right);
   Py_DECREF(lr.left);
   Py_DECREF(lr.right);
   if (cmp == branch_when_equal)
     CURRENT_PC(ctx) = KosOp_ARG(insn);
+
   (void) out_ev;
   return 0;
 }
@@ -1886,13 +1920,16 @@ static int kos_check_two_arg(
   KosEvalStackLR lr = {0};
   if (KOS_STACK_BLOCK_POP_ARGS(&CURRENT_STACK(ctx), lr))
     return -1;
+
   int res = check(lr.left, lr.right);
   Py_DECREF(lr.left);
   Py_DECREF(lr.right);
   if (unlikely(res < 0))
     return -1;
+
   if (res == 0)
     CURRENT_PC(ctx) = KosOp_ARG(insn);
+
   (void) out_ev;
   return 0;
 }
@@ -1909,13 +1946,17 @@ static int kos_check_cmp(
   KosEvalStackLR lr = {0};
   if (KOS_STACK_BLOCK_POP_ARGS(&CURRENT_STACK(ctx), lr))
     return -1;
+
   int res = PyObject_RichCompareBool(lr.left, lr.right, cmp_op);
   Py_DECREF(lr.left);
   Py_DECREF(lr.right);
+
   if (res < 0)
     return -1;
+
   if (res == 0)
     CURRENT_PC(ctx) = KosOp_ARG(insn);
+
   (void) out_ev;
   return 0;
 }
@@ -1958,20 +1999,24 @@ static KosGetNextResult next_from_python_async_iter(
   PyObject *result = eager_step_awaitable(awaitable, ctx, &suspended,
                                           &yielded);
   Py_DECREF(awaitable);
+
   if (suspended && yielded) {
     KosContext_FLAGS(ctx) &= ~KOS_CTX_RUNNING;
     KosEvent_KIND(out_ev) = KOS_EV_AWAIT;
     KosEvent_PAYLOAD(out_ev) = yielded;
     return GET_NEXT_SUSPEND;
   }
+
   if (PyErr_ExceptionMatches(PyExc_StopAsyncIteration)) {
     PyErr_Clear();
     return GET_NEXT_EXHAUSTED;
   }
+
   if (result) {
     *result_out = result;
     return GET_NEXT_VALUE;
   }
+
   return GET_NEXT_ERROR;
 }
 
@@ -1988,13 +2033,16 @@ static KosGetNextResult next_from_python_sync_iter(
 
   (void) ctx;
   (void) out_ev;
+
   PyObject *n = PyIter_Next(iter);
   if (n) {
     *result_out = n;
     return GET_NEXT_VALUE;
   }
+
   if (PyErr_Occurred())
     return GET_NEXT_ERROR;
+
   return GET_NEXT_EXHAUSTED;
 }
 
@@ -2150,12 +2198,14 @@ static int defer_complete_with_inner_result(
     Py_DECREF(defer_obj);
     return -1;
   }
+
   KosDefer_FeedResult(defer, inner_result);
   if (KosStackBlock_PushRef(&CURRENT_STACK(ctx), inner_result) < 0) {
     Py_DECREF(inner_result);
     Py_DECREF(defer_obj);
     return -1;
   }
+
   Py_DECREF(inner_result);
   Py_DECREF(defer_obj);
   return 0;
@@ -2177,12 +2227,14 @@ void kos_yieldfrom_close_delegate(KosDynYieldFrom *node) {
   switch (kind) {
   case KOS_YF_SYNC_ITER:
     break;
+
   case KOS_YF_SYNC_GEN: {
     PyObject *res = PyObject_CallMethodObjArgs(delegate, str_close, NULL);
     Py_XDECREF(res);
     PyErr_Clear();
     break;
   }
+
   case KOS_YF_PY_ASYNC_ITER:
   case KOS_YF_PY_ASYNC_GEN:
     Py_XDECREF(inflight);
@@ -2193,10 +2245,12 @@ void kos_yieldfrom_close_delegate(KosDynYieldFrom *node) {
       PyErr_Clear();
     }
     break;
+
   case KOS_YF_KOS_ASYNC_GEN:
     if (KosPyAsyncGen_Check(delegate))
       ((KosPyAsyncGen *) delegate)->closed = 1;
     break;
+
   default:
     break;
   }
@@ -2205,11 +2259,15 @@ void kos_yieldfrom_close_delegate(KosDynYieldFrom *node) {
 
 /**
    Drive a defer to completion or suspension. Used only by AWAIT opcode.
-   Consumes defer (caller's ref). Returns 0 continue, 1 stop (AWAIT), -1 error.
-   When DELEGATING(inner), calls push_or_await(ctx, out_ev, inner); on suspend
-   stores defer in ctx->pending_defer for FeedResult on resume.
+   Consumes defer (caller's ref). Returns 0 continue, 1 stop (AWAIT), -1
+   error. When DELEGATING(inner), calls push_or_await(ctx, out_ev, inner); on
+   suspend stores defer in ctx->pending_defer for FeedResult on resume.
 */
-static int defer_drive(KosContext *ctx, KosEvent *out_ev, PyObject *defer_obj) {
+static int defer_drive(
+    KosContext *ctx,
+    KosEvent *out_ev,
+    PyObject *defer_obj) {
+
   KosDefer *defer = (KosDefer *) defer_obj;
   for (;;) {
     int suspended = 0;
@@ -2241,14 +2299,17 @@ static int defer_drive(KosContext *ctx, KosEvent *out_ev, PyObject *defer_obj) {
             return -1;
           return 0;
         }
+
         if (r == 1) {
           Py_XDECREF(KosContext_PENDING_DEFER(ctx));
           KosContext_PENDING_DEFER(ctx) = defer_obj;
           return 1;
         }
+
         Py_DECREF(defer_obj);
         return -1;
       }
+
       int r = push_or_await(ctx, out_ev, yielded);
       Py_DECREF(yielded);
       if (r == 0) {
@@ -2256,11 +2317,13 @@ static int defer_drive(KosContext *ctx, KosEvent *out_ev, PyObject *defer_obj) {
           return -1;
         return 0;
       }
+
       if (r == 1) {
         Py_XDECREF(KosContext_PENDING_DEFER(ctx));
         KosContext_PENDING_DEFER(ctx) = defer_obj;
         return 1;
       }
+
       Py_DECREF(defer_obj);
       return -1;
     }
@@ -2334,6 +2397,7 @@ static int try_local_exception_handler(KosContext *ctx, KosEvent *out_ev) {
              : hr == KOS_HANDLE_PASS ? "PASS"
              : hr == KOS_HANDLE_DEFERRED ? "DEFERRED"
              : hr == KOS_HANDLE_ERROR ? "ERROR" : "?");
+
       if (hr == KOS_HANDLE_CONSUMED) {
         if (KosDynNode_IS_GEN(top)) {
           kos_eval_emit_raise_from_pyerr(ctx, out_ev);
@@ -2343,6 +2407,7 @@ static int try_local_exception_handler(KosContext *ctx, KosEvent *out_ev) {
         uint32_t handler_pc = KosDynNode_IS_TRY(region)
             ? KosDynTry_HANDLER_PC((KosDynTry *) region)
             : KosDynFinally_HANDLER_PC((KosDynFinally *) region);
+
         {
           KosTryHandler th;
           if (kos_try_handler_for((PyObject *) CURRENT_CODE(ctx),
@@ -2353,28 +2418,34 @@ static int try_local_exception_handler(KosContext *ctx, KosEvent *out_ev) {
               handler_pc = th.except_pc;
           }
         }
+
         if (KosDynNode_IS_TRY(region) || KosDynNode_IS_FINALLY(region)) {
           if (KosStackBlock_ClearBlock(&CURRENT_STACK(ctx)) < 0)
             return -1;
         }
+
         SAYF("[try_local] CONSUMED region=%s handler_pc=%u\n",
              KosDynNode_IS_TRY(region) ? "TRY" : "FINALLY",
              (unsigned) handler_pc);
         CURRENT_PC(ctx) = handler_pc;
+
         if (KosDynNode_IS_TRY(region))
           KosDynTry_ENABLED((KosDynTry *) region) = 0;
         else
           KosDynFinally_ENABLED((KosDynFinally *) region) = 0;
+
         {
           PyObject *typ = NULL, *val = NULL, *tb = NULL;
           PyErr_Fetch(&typ, &val, &tb);
           PyErr_SetExcInfo(typ, val, tb);
           PyErr_Clear();
         }
+
         if (KosDynNode_IS_FINALLY(region))
           KosDynFinally_HANDLING_RAISE((KosDynFinally *) region) = 1;
         return 1;
       }
+
       if (hr == KOS_HANDLE_ERROR)
         return -1;
     }
@@ -2447,9 +2518,11 @@ static int kos_eval_call_native_handler(
   KosDynFrame *frame = CURRENT_FRAME(ctx);
   if (! frame || ! KosDynFrame_NATIVE_HANDLER(frame))
     return -1;
+
   typedef int (*NativeHandlerFn)(void *, void *, int, PyObject *);
   NativeHandlerFn fn =
       (NativeHandlerFn) KosDynFrame_NATIVE_HANDLER(frame);
+
   return fn(ctx, out_ev, phase, arg);
 }
 
@@ -2479,6 +2552,7 @@ static KosEvalStep eval_phase_entry(
     mode = revive_plan(ctx, send_val, throw_typ, throw_exc);
     if (mode != KOS_MODE_NORMAL && mode != KOS_MODE_TRANSFER)
       goto entry_mode_dispatch;
+
   } else if (send_val == NULL && throw_typ == NULL && throw_exc == NULL) {
     SAYF("[eval] phase_entry branch: send/throw all NULL, suspend=%d\n",
          KosContext_SUSPENSION_EVENT(ctx));
@@ -2498,6 +2572,7 @@ static KosEvalStep eval_phase_entry(
         mode = KOS_MODE_NORMAL;
         break;
     }
+
   } else {
     SAYF("[eval] phase_entry branch: send_val=%p throw_typ=%p throw_exc=%p "
          "suspend=%d\n",
@@ -2524,12 +2599,14 @@ entry_mode_dispatch:
     KosContext_FLAGS(ctx) &= ~KOS_CTX_RUNNING;
     return KOS_STEP_STOP_EVENT;
   }
+
   if (mode == KOS_MODE_EXCEPTION) {
     int tl;
     clear_pending_agen_on_error(ctx);
     tl = try_local_exception_handler(ctx, out_ev);
     SAYF("[eval] phase_entry try_local ret=%d out_kind=%d\n",
          tl, (int) KosEvent_KIND(out_ev));
+
     if (tl > 0) {
       if (KosEvent_KIND(out_ev) == KOS_EV_AWAIT) {
         Py_XDECREF(KosEvent_PAYLOAD(out_ev));
@@ -2541,6 +2618,7 @@ entry_mode_dispatch:
       *mode_out = KOS_MODE_NORMAL;
       return KOS_STEP_CONTINUE;
     }
+
     if (tl < 0)
       return KOS_STEP_FATAL_ERROR;
     /* try_local_exception_handler returning 0 has already filled out_ev with
@@ -2549,6 +2627,7 @@ entry_mode_dispatch:
     kos_eval_mark_context_dead(ctx);
     return KOS_STEP_STOP_EVENT;
   }
+
   if (mode == KOS_MODE_RAISE) {
     kos_eval_emit_raise_from_pyerr(ctx, out_ev);
     return KOS_STEP_STOP_EVENT;
@@ -2757,6 +2836,7 @@ static KosEvalStep eval_post_opcode_pending_agen(
       KosContext_PENDING_AGEN(ctx) = NULL;
       KosContext_PENDING_AGEN_DEFAULT(ctx) = NULL;
       Py_DECREF(val);
+
     } else if (KosContext_PENDING_AGEN_N(ctx) == 2
                && KosContext_PENDING_AGEN_DEFAULT(ctx)) {
       if (KosStackBlock_PushRef(&CURRENT_STACK(ctx),
@@ -2769,15 +2849,18 @@ static KosEvalStep eval_post_opcode_pending_agen(
       }
       Py_XDECREF(KosContext_PENDING_AGEN_DEFAULT(ctx));
       Py_DECREF(val);
+
     } else if (KosContext_PENDING_AGEN_N(ctx) == 1) {
       Py_DECREF(val);
       KosContext_PENDING_AGEN(ctx) = NULL;
       KosContext_PENDING_AGEN_DEFAULT(ctx) = NULL;
       PyErr_SetNone(PyExc_StopIteration);
       return KOS_STEP_FATAL_ERROR;
+
     } else {
       Py_DECREF(val);
     }
+
     KosContext_PENDING_AGEN(ctx) = NULL;
     KosContext_PENDING_AGEN_DEFAULT(ctx) = NULL;
     KosEvent_PAYLOAD(out_ev) = NULL;
@@ -2797,10 +2880,14 @@ static KosEvalStep eval_post_opcode_pending_agen(
    was locally handled and the loop should continue without stopping.
 
    :param op_res: The non-zero return value from the opcode handler.
-   :param loop_continue: Set to 1 when exception was handled and loop should continue.
-   :return: KOS_STEP_FATAL_ERROR when op_res < 0 and no exception/event (caller uses eval_ret -1);
-            KOS_STEP_STOP_EVENT when out_ev is filled and eval should return (eval_ret 0);
-            KOS_STEP_CONTINUE when *loop_continue is set.
+
+   :param loop_continue: Set to 1 when exception was handled and loop should
+    continue.
+
+   :return: KOS_STEP_FATAL_ERROR when op_res < 0 and no exception/event
+    (caller uses eval_ret -1); KOS_STEP_STOP_EVENT when out_ev is filled and
+    eval should return (eval_ret 0); KOS_STEP_CONTINUE when *loop_continue
+    is set.
 */
 static KosEvalStep eval_phase_post_opcode(
         KosContext *ctx,
@@ -2836,8 +2923,10 @@ static KosEvalStep eval_phase_post_opcode(
                     "eval post_opcode: KOS_EV_NONE with non-zero opcode result");
     return KOS_STEP_FATAL_ERROR;
   }
+
   if (KosEvent_KIND(out_ev) == KOS_EV_AWAIT) {
     KosContext_SUSPENSION_EVENT(ctx) = KOS_SUSP_AWAIT;
+
   } else if (KosEvent_KIND(out_ev) == KOS_EV_YIELD) {
     /* YIELD transit: walk chain with handle(YIELD); GEN intercepts */
     SAYF("[eval] post_opcode KOS_EV_YIELD -> walk_handle_yield dyn_top=%p\n",
@@ -2849,6 +2938,7 @@ static KosEvalStep eval_phase_post_opcode(
     if (KosContext_PENDING_AGEN(ctx))
       return eval_post_opcode_pending_agen(ctx, out_ev, loop_continue);
     KosContext_SUSPENSION_EVENT(ctx) = KOS_SUSP_YIELD;
+
   } else if (KosEvent_KIND(out_ev) == KOS_EV_RETURN && KosContext_PENDING_AGEN(ctx)) {
     return eval_post_opcode_pending_agen(ctx, out_ev, loop_continue);
   }
@@ -2898,16 +2988,37 @@ static KosEvalStep eval_step_native_iteration(
   dc_native.pc = 0;
   dc_native.insn = NULL;
   *loop_continue = 0;
+
   ps = eval_phase_post_opcode(ctx, out_ev, &dc_native, op_res, loop_continue);
   if (ps == KOS_STEP_FATAL_ERROR)
     *eval_ret = -1;
   else if (ps == KOS_STEP_STOP_EVENT)
     *eval_ret = 0;
+
   return ps;
 }
 
 
-int koskari_eval(KosContext *ctx, KosEvent *out_ev, PyObject *send_val, PyObject *throw_typ, PyObject *throw_exc) {
+int koskari_eval(
+    KosContext *ctx,
+    KosEvent *out_ev,
+    PyObject *send_val,
+    PyObject *throw_typ,
+    PyObject *throw_exc) {
+
+  /*
+   The optable and all TARGET_* labels must remain in koskari_eval because
+   GCC/Clang computed-goto requires label addresses (&&TARGET_name) and the
+   indirect goto (goto *optable[op]) to be in the same function body.
+  */
+  #if KOS_USE_COMPUTED_GOTO
+  #define OP(name, ...)  &&TARGET_##name,
+  static const void *const optable[] = {
+    #include "opcodes.incl"
+  };
+  #undef OP
+  #endif
+
   int eval_ret = 0;
 
   if (! ctx) {
@@ -2929,7 +3040,9 @@ int koskari_eval(KosContext *ctx, KosEvent *out_ev, PyObject *send_val, PyObject
   /* Phase 1: entry/revive normalization */
   KosEvalMode mode = KOS_MODE_NORMAL;
   {
-    KosEvalStep pe = eval_phase_entry(ctx, out_ev, send_val, throw_typ, throw_exc, &mode);
+    KosEvalStep pe = eval_phase_entry(ctx, out_ev, send_val, throw_typ,
+                                      throw_exc, &mode);
+
     if (pe == KOS_STEP_FATAL_ERROR) {
       eval_ret = -1;
       goto koskari_eval_cleanup;
@@ -2949,23 +3062,14 @@ int koskari_eval(KosContext *ctx, KosEvent *out_ev, PyObject *send_val, PyObject
      non-zero results so the hot path (tail-dispatch) never touches it. */
   KosContext_PY_RESUME_KIND(ctx) = KOS_RESUME_NONE;
 
-/* The optable and all TARGET_* labels must remain in koskari_eval because
-   GCC/Clang computed-goto requires label addresses (&&TARGET_name) and the
-   indirect goto (goto *optable[op]) to be in the same function body. */
-#if KOS_USE_COMPUTED_GOTO
-  static const void *const optable[] = {
-#define OP(name, ...)  &&TARGET_##name,
-#include "opcodes.incl"
-#undef OP
-  };
-#endif
-
   /* Opcode dispatch loop; tail-dispatch: normal path jumps to next_insn. */
-  for (;;) {
+  do {
     next_insn:
-#if KOS_STACK_TRACE
+
+    #if KOS_STACK_TRACE
     trace_stack("  after ", CURRENT_STACK(ctx));
-#endif
+    #endif
+
     {
       KosEvalStep xfer = eval_step_drain_transfer_plan(ctx, out_ev);
       if (xfer == KOS_STEP_STOP_EVENT) {
@@ -3001,9 +3105,10 @@ int koskari_eval(KosContext *ctx, KosEvent *out_ev, PyObject *send_val, PyObject
     }
 
     /* Phase 4: dispatch prelude */
-#if KOS_STACK_TRACE
+    #if KOS_STACK_TRACE
     trace_stack("  before", CURRENT_STACK(ctx));
-#endif
+    #endif
+
     KosDispatchCtx dc = {0};
     {
       KosEvalStep pds = eval_phase_prepare_dispatch(ctx, out_ev, &dc);
@@ -3018,24 +3123,26 @@ int koskari_eval(KosContext *ctx, KosEvent *out_ev, PyObject *send_val, PyObject
     {
       int op_res;
 
-#if KOS_USE_COMPUTED_GOTO
+      #if KOS_USE_COMPUTED_GOTO
       goto *optable[KosOp_OP(dc.insn)];
-#define OP(name, ...)  TARGET_##name: op_res = op_##name(ctx, out_ev, dc.insn); if (likely(! op_res)) goto next_insn; goto handle_op_result;
-#include "opcodes.incl"
-#undef OP
+
+      #define OP(name, ...)  TARGET_##name: op_res = op_##name(ctx, out_ev, dc.insn); if (likely(! op_res)) goto next_insn; goto handle_op_result;
+      #include "opcodes.incl"
+      #undef OP
       handle_op_result:
-#else
+
+      #else
       switch (KosOp_OP(dc.insn)) {
-#define OP(name, ...)  case KOS_OP_##name: op_res = op_##name(ctx, out_ev, dc.insn); break;
-#include "opcodes.incl"
-#undef OP
+      #define OP(name, ...)  case KOS_OP_##name: op_res = op_##name(ctx, out_ev, dc.insn); break;
+      #include "opcodes.incl"
+      #undef OP
       default:
         PyErr_Format(PyExc_RuntimeError, "invalid opcode %u",
                      (unsigned) KosOp_OP(dc.insn));
         eval_ret = -1;
         goto koskari_eval_cleanup;
       }
-#endif
+      #endif
 
       /* Phase 6: post-opcode result handling */
       if (unlikely(op_res != 0)) {
@@ -3053,11 +3160,11 @@ int koskari_eval(KosContext *ctx, KosEvent *out_ev, PyObject *send_val, PyObject
           continue;
       }
 
-#if KOS_USE_COMPUTED_GOTO
+      #if KOS_USE_COMPUTED_GOTO
       goto next_insn;
-#endif
+      #endif
     }
-  }
+  } while (1);
 
 koskari_eval_cleanup:
   kos_domain_pop_scope(ctx);
@@ -3109,21 +3216,21 @@ int koskari_eval_init(PyObject *mod) {
   }
 
   /* Initialize string constants (cleared in koskari_eval_clear). */
-  STR_CONST(str_await, "__await__");
-  STR_CONST(str_send, "send");
-  STR_CONST(str_throw, "throw");
-  STR_CONST(str_close, "close");
-  STR_CONST(str_asend, "asend");
-  STR_CONST(str_athrow, "athrow");
   STR_CONST(str_aclose, "aclose");
-  STR_CONST(str_enter, "__enter__");
-  STR_CONST(str_exit, "__exit__");
   STR_CONST(str_aenter, "__aenter__");
   STR_CONST(str_aexit, "__aexit__");
+  STR_CONST(str_asend, "asend");
+  STR_CONST(str_athrow, "athrow");
+  STR_CONST(str_await, "__await__");
   STR_CONST(str_class, "__class__");
+  STR_CONST(str_close, "close");
+  STR_CONST(str_enter, "__enter__");
+  STR_CONST(str_exit, "__exit__");
   STR_CONST(str_getattr, "__getattr__");
   STR_CONST(str_name, "__name__");
   STR_CONST(str_package, "__package__");
+  STR_CONST(str_send, "send");
+  STR_CONST(str_throw, "throw");
   // STR_CONST(str_getattribute, "__getattribute__");
 
   /* Initialize KosEvaluatorToken type */
@@ -3168,21 +3275,22 @@ int koskari_eval_clear(PyObject *mod) {
 
   /* Clear import sentinel and string constants initialized in koskari_eval_init. */
   Py_CLEAR(_import_fromlist);
-  Py_CLEAR(str_await);
-  Py_CLEAR(str_send);
-  Py_CLEAR(str_throw);
-  Py_CLEAR(str_close);
-  Py_CLEAR(str_asend);
-  Py_CLEAR(str_athrow);
+
   Py_CLEAR(str_aclose);
-  Py_CLEAR(str_enter);
-  Py_CLEAR(str_exit);
   Py_CLEAR(str_aenter);
   Py_CLEAR(str_aexit);
+  Py_CLEAR(str_asend);
+  Py_CLEAR(str_athrow);
+  Py_CLEAR(str_await);
   Py_CLEAR(str_class);
+  Py_CLEAR(str_close);
+  Py_CLEAR(str_enter);
+  Py_CLEAR(str_exit);
   Py_CLEAR(str_getattr);
   Py_CLEAR(str_name);
   Py_CLEAR(str_package);
+  Py_CLEAR(str_send);
+  Py_CLEAR(str_throw);
 
   /* Null out exception type pointers (module dict owns the refs) */
   KoskariContinuationDead = NULL;
