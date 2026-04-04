@@ -2992,25 +2992,244 @@ static KosEvalStep eval_step_native_iteration(
 }
 
 
+#if KOS_USE_COMPUTED_GOTO
+/**
+   Opcode loop for GCC/Clang: computed goto, tail-dispatch on RUN, prologue
+   via cg_prologue.  Must be a single function: label addresses and optable
+   live here only.
+*/
+static int koskari_eval_dispatch_computed_goto(
+    KosContext *ctx,
+    KosEvent *out_ev) {
+
+  #define OP(name, ...)  &&cg_TARGET_##name,
+  static const void *const optable[] = {
+    #include "opcodes.incl"
+  };
+  #undef OP
+
+  KosOp *insn;
+  KosOpOutcome op_out;
+  int eval_ret = 0;
+
+  goto cg_prologue;
+
+cg_prologue:
+
+  #if KOS_STACK_TRACE
+  trace_stack("  after ", CURRENT_STACK(ctx));
+  #endif
+
+  {
+    KosEvalStep xfer = eval_step_drain_transfer_plan(ctx, out_ev);
+    if (xfer == KOS_STEP_STOP_EVENT)
+      return 0;
+  }
+
+  {
+    int loop_continue = 0;
+    if (eval_phase_pending_exception(ctx, out_ev, &loop_continue)
+        == KOS_STEP_STOP_EVENT)
+      return 0;
+
+    if (loop_continue)
+      goto cg_prologue;
+  }
+
+  if (CURRENT_FRAME(ctx)
+      && KosDynFrame_NATIVE_HANDLER(CURRENT_FRAME(ctx)) != NULL) {
+    int loop_continue = 0;
+    KosEvalStep ns = eval_step_native_iteration(ctx, out_ev,
+                                                &loop_continue,
+                                                &eval_ret);
+    if (ns == KOS_STEP_FATAL_ERROR)
+      return eval_ret;
+    if (ns == KOS_STEP_STOP_EVENT)
+      return eval_ret;
+    if (loop_continue)
+      goto cg_prologue;
+    goto cg_prologue;
+  }
+
+  #if KOS_STACK_TRACE
+  trace_stack("  before", CURRENT_STACK(ctx));
+  #endif
+
+  {
+    KosEvalStep pds = kos_eval_prepare_next_insn(ctx, out_ev, &insn);
+    if (pds == KOS_STEP_FATAL_ERROR)
+      return -1;
+  }
+  goto *optable[KosOp_OP(insn)];
+
+  #define OP(name, ...)                                                \
+    cg_TARGET_##name:                                                  \
+      op_out = op_##name(ctx, out_ev, insn);                             \
+      if (likely(op_out.mode == KOS_LOP_RUN)) {                         \
+        KosEvalStep _tail = kos_eval_prepare_next_insn(ctx, out_ev,    \
+                                                       &insn);         \
+        if (unlikely(_tail != KOS_STEP_CONTINUE))                      \
+          return -1;                                                   \
+        goto *optable[KosOp_OP(insn)];                                 \
+      }                                                                \
+      goto cg_handle_op_outcome;
+
+  #include "opcodes.incl"
+  #undef OP
+
+cg_handle_op_outcome:
+
+  if (op_out.mode == KOS_LOP_FAIL)
+    return -1;
+
+  if (op_out.mode == KOS_LOP_PROLOGUE)
+    goto cg_prologue;
+
+  if (op_out.mode == KOS_LOP_POST) {
+    int loop_continue = 0;
+    int op_res = kos_op_post_tag_to_res(op_out.post_tag);
+    KosEvalStep ps = eval_phase_post_opcode(ctx, out_ev, op_res,
+                                            &loop_continue);
+    if (ps == KOS_STEP_FATAL_ERROR)
+      return -1;
+    if (ps == KOS_STEP_STOP_EVENT)
+      return 0;
+    if (loop_continue)
+      goto cg_prologue;
+    goto cg_prologue;
+  }
+
+  return eval_ret;
+}
+
+#else
+
+/**
+   Opcode loop without computed goto: for(;;), need_prologue, switch dispatch.
+*/
+static int
+koskari_eval_dispatch_switch(KosContext *ctx, KosEvent *out_ev) {
+
+  int eval_ret = 0;
+  int need_prologue = 1;
+  KosOp *insn = NULL;
+  KosOpOutcome op_out;
+
+  for (;;) {
+
+  sw_loop_head:
+
+    if (need_prologue) {
+
+      #if KOS_STACK_TRACE
+      trace_stack("  after ", CURRENT_STACK(ctx));
+      #endif
+
+      {
+        KosEvalStep xfer = eval_step_drain_transfer_plan(ctx, out_ev);
+        if (xfer == KOS_STEP_STOP_EVENT)
+          return 0;
+      }
+
+      {
+        int loop_continue = 0;
+        if (eval_phase_pending_exception(ctx, out_ev, &loop_continue)
+            == KOS_STEP_STOP_EVENT)
+          return 0;
+        if (loop_continue) {
+          need_prologue = 1;
+          goto sw_loop_head;
+        }
+      }
+
+      if (CURRENT_FRAME(ctx)
+          && KosDynFrame_NATIVE_HANDLER(CURRENT_FRAME(ctx)) != NULL) {
+        int loop_continue = 0;
+        KosEvalStep ns = eval_step_native_iteration(ctx, out_ev,
+                                                    &loop_continue,
+                                                    &eval_ret);
+        if (ns == KOS_STEP_FATAL_ERROR)
+          return eval_ret;
+        if (ns == KOS_STEP_STOP_EVENT)
+          return eval_ret;
+        if (loop_continue) {
+          need_prologue = 1;
+          goto sw_loop_head;
+        }
+        need_prologue = 1;
+        goto sw_loop_head;
+      }
+
+      #if KOS_STACK_TRACE
+      trace_stack("  before", CURRENT_STACK(ctx));
+      #endif
+
+      need_prologue = 0;
+    }
+
+  sw_prepare_and_dispatch:
+
+    {
+      KosEvalStep pds = kos_eval_prepare_next_insn(ctx, out_ev, &insn);
+      if (pds == KOS_STEP_FATAL_ERROR)
+        return -1;
+    }
+
+    switch (KosOp_OP(insn)) {
+    #define OP(name, ...)                                                \
+      case KOS_OP_##name:                                                \
+        op_out = op_##name(ctx, out_ev, insn);                           \
+        break;
+    #include "opcodes.incl"
+    #undef OP
+    default:
+      PyErr_Format(PyExc_RuntimeError, "invalid opcode %u",
+                   (unsigned) KosOp_OP(insn));
+      return -1;
+    }
+
+    if (likely(op_out.mode == KOS_LOP_RUN))
+      goto sw_prepare_and_dispatch;
+
+    if (op_out.mode == KOS_LOP_FAIL)
+      return -1;
+
+    if (op_out.mode == KOS_LOP_PROLOGUE) {
+      need_prologue = 1;
+      goto sw_loop_head;
+    }
+
+    if (op_out.mode == KOS_LOP_POST) {
+      int loop_continue = 0;
+      int op_res = kos_op_post_tag_to_res(op_out.post_tag);
+      KosEvalStep ps = eval_phase_post_opcode(ctx, out_ev, op_res,
+                                              &loop_continue);
+      if (ps == KOS_STEP_FATAL_ERROR)
+        return -1;
+      if (ps == KOS_STEP_STOP_EVENT)
+        return 0;
+      if (loop_continue) {
+        need_prologue = 1;
+        goto sw_loop_head;
+      }
+      need_prologue = 1;
+      goto sw_loop_head;
+    }
+  }
+
+  /* All iterations return or branch; keep a fallback for static analysis. */
+  return -1;
+}
+
+#endif
+
+
 int koskari_eval(
     KosContext *ctx,
     KosEvent *out_ev,
     PyObject *send_val,
     PyObject *throw_typ,
     PyObject *throw_exc) {
-
-  /*
-   The optable and all TARGET_* labels must remain in koskari_eval because
-   GCC/Clang computed-goto requires label addresses (&&TARGET_name) and the
-   indirect goto (goto *optable[op]) to be in the same function body.
-  */
-  #if KOS_USE_COMPUTED_GOTO
-  #define OP(name, ...)  &&TARGET_##name,
-  static const void *const optable[] = {
-    #include "opcodes.incl"
-  };
-  #undef OP
-  #endif
 
   int eval_ret = 0;
 
@@ -3055,234 +3274,11 @@ int koskari_eval(
      non-zero results so the hot path (tail-dispatch) never touches it. */
   KosContext_PY_RESUME_KIND(ctx) = KOS_RESUME_NONE;
 
-  /* Opcode dispatch.  KOS_LOP_RUN skips the prologue (transfer drain,
-     pending-exception, native-frame branch) and tail-dispatches to the next
-     opcode.  KOS_LOP_PROLOGUE re-enters the prologue.  Computed-goto builds
-     use goto-only control flow; the switch build keeps for(;;)+need_prologue. */
-  {
 #if KOS_USE_COMPUTED_GOTO
-    KosOp *insn;
-    KosOpOutcome op_out;
-
-    goto eval_prologue;
-
-  eval_prologue:
-
-    #if KOS_STACK_TRACE
-    trace_stack("  after ", CURRENT_STACK(ctx));
-    #endif
-
-    {
-      KosEvalStep xfer = eval_step_drain_transfer_plan(ctx, out_ev);
-      if (xfer == KOS_STEP_STOP_EVENT) {
-        eval_ret = 0;
-        goto koskari_eval_cleanup;
-      }
-    }
-
-    {
-      int loop_continue = 0;
-      if (eval_phase_pending_exception(ctx, out_ev, &loop_continue)
-          == KOS_STEP_STOP_EVENT) {
-        eval_ret = 0;
-        goto koskari_eval_cleanup;
-      }
-      if (loop_continue)
-        goto eval_prologue;
-    }
-
-    if (CURRENT_FRAME(ctx)
-        && KosDynFrame_NATIVE_HANDLER(CURRENT_FRAME(ctx)) != NULL) {
-      int loop_continue = 0;
-      KosEvalStep ns = eval_step_native_iteration(ctx, out_ev,
-                                                  &loop_continue,
-                                                  &eval_ret);
-      if (ns == KOS_STEP_FATAL_ERROR)
-        goto koskari_eval_cleanup;
-      if (ns == KOS_STEP_STOP_EVENT)
-        goto koskari_eval_cleanup;
-      if (loop_continue)
-        goto eval_prologue;
-      goto eval_prologue;
-    }
-
-    #if KOS_STACK_TRACE
-    trace_stack("  before", CURRENT_STACK(ctx));
-    #endif
-
-    {
-      KosEvalStep pds = kos_eval_prepare_next_insn(ctx, out_ev, &insn);
-      if (pds == KOS_STEP_FATAL_ERROR) {
-        eval_ret = -1;
-        goto koskari_eval_cleanup;
-      }
-    }
-    goto *optable[KosOp_OP(insn)];
-
-    #define OP(name, ...)                                                \
-      TARGET_##name:                                                       \
-        op_out = op_##name(ctx, out_ev, insn);                             \
-        if (likely(op_out.mode == KOS_LOP_RUN)) {                          \
-          KosEvalStep _tail = kos_eval_prepare_next_insn(ctx, out_ev,      \
-                                                         &insn);           \
-          if (unlikely(_tail != KOS_STEP_CONTINUE)) {                      \
-            eval_ret = -1;                                                 \
-            goto koskari_eval_cleanup;                                     \
-          }                                                                \
-          goto *optable[KosOp_OP(insn)];                                   \
-        }                                                                  \
-        goto handle_op_outcome;
-
-    #include "opcodes.incl"
-    #undef OP
-  handle_op_outcome:
-
-    if (op_out.mode == KOS_LOP_FAIL) {
-      eval_ret = -1;
-      goto koskari_eval_cleanup;
-    }
-
-    if (op_out.mode == KOS_LOP_PROLOGUE)
-      goto eval_prologue;
-
-    if (op_out.mode == KOS_LOP_POST) {
-      int loop_continue = 0;
-      int op_res = kos_op_post_tag_to_res(op_out.post_tag);
-      KosEvalStep ps = eval_phase_post_opcode(ctx, out_ev, op_res,
-                                              &loop_continue);
-      if (ps == KOS_STEP_FATAL_ERROR) {
-        eval_ret = -1;
-        goto koskari_eval_cleanup;
-      }
-      if (ps == KOS_STEP_STOP_EVENT) {
-        eval_ret = 0;
-        goto koskari_eval_cleanup;
-      }
-      if (loop_continue)
-        goto eval_prologue;
-      goto eval_prologue;
-    }
-
+  eval_ret = koskari_eval_dispatch_computed_goto(ctx, out_ev);
 #else
-    int need_prologue = 1;
-    KosOp *insn = NULL;
-    KosOpOutcome op_out;
-
-    for (;;) {
-
-    eval_loop_head:
-
-      if (need_prologue) {
-
-        #if KOS_STACK_TRACE
-        trace_stack("  after ", CURRENT_STACK(ctx));
-        #endif
-
-        {
-          KosEvalStep xfer = eval_step_drain_transfer_plan(ctx, out_ev);
-          if (xfer == KOS_STEP_STOP_EVENT) {
-            eval_ret = 0;
-            goto koskari_eval_cleanup;
-          }
-        }
-
-        {
-          int loop_continue = 0;
-          if (eval_phase_pending_exception(ctx, out_ev, &loop_continue)
-              == KOS_STEP_STOP_EVENT) {
-            eval_ret = 0;
-            goto koskari_eval_cleanup;
-          }
-          if (loop_continue) {
-            need_prologue = 1;
-            goto eval_loop_head;
-          }
-        }
-
-        if (CURRENT_FRAME(ctx)
-            && KosDynFrame_NATIVE_HANDLER(CURRENT_FRAME(ctx)) != NULL) {
-          int loop_continue = 0;
-          KosEvalStep ns = eval_step_native_iteration(ctx, out_ev,
-                                                      &loop_continue,
-                                                      &eval_ret);
-          if (ns == KOS_STEP_FATAL_ERROR)
-            goto koskari_eval_cleanup;
-          if (ns == KOS_STEP_STOP_EVENT)
-            goto koskari_eval_cleanup;
-          if (loop_continue) {
-            need_prologue = 1;
-            goto eval_loop_head;
-          }
-          need_prologue = 1;
-          goto eval_loop_head;
-        }
-
-        #if KOS_STACK_TRACE
-        trace_stack("  before", CURRENT_STACK(ctx));
-        #endif
-
-        need_prologue = 0;
-      }
-
-    eval_prepare_and_dispatch:
-
-      {
-        KosEvalStep pds = kos_eval_prepare_next_insn(ctx, out_ev, &insn);
-        if (pds == KOS_STEP_FATAL_ERROR) {
-          eval_ret = -1;
-          goto koskari_eval_cleanup;
-        }
-      }
-
-      switch (KosOp_OP(insn)) {
-      #define OP(name, ...)                                                \
-        case KOS_OP_##name:                                                \
-          op_out = op_##name(ctx, out_ev, insn);                           \
-          break;
-      #include "opcodes.incl"
-      #undef OP
-      default:
-        PyErr_Format(PyExc_RuntimeError, "invalid opcode %u",
-                     (unsigned) KosOp_OP(insn));
-        eval_ret = -1;
-        goto koskari_eval_cleanup;
-      }
-      if (likely(op_out.mode == KOS_LOP_RUN))
-        goto eval_prepare_and_dispatch;
-
-      if (op_out.mode == KOS_LOP_FAIL) {
-        eval_ret = -1;
-        goto koskari_eval_cleanup;
-      }
-
-      if (op_out.mode == KOS_LOP_PROLOGUE) {
-        need_prologue = 1;
-        goto eval_loop_head;
-      }
-
-      if (op_out.mode == KOS_LOP_POST) {
-        int loop_continue = 0;
-        int op_res = kos_op_post_tag_to_res(op_out.post_tag);
-        KosEvalStep ps = eval_phase_post_opcode(ctx, out_ev, op_res,
-                                                &loop_continue);
-        if (ps == KOS_STEP_FATAL_ERROR) {
-          eval_ret = -1;
-          goto koskari_eval_cleanup;
-        }
-        if (ps == KOS_STEP_STOP_EVENT) {
-          eval_ret = 0;
-          goto koskari_eval_cleanup;
-        }
-        if (loop_continue) {
-          need_prologue = 1;
-          goto eval_loop_head;
-        }
-        need_prologue = 1;
-        goto eval_loop_head;
-      }
-    }
+  eval_ret = koskari_eval_dispatch_switch(ctx, out_ev);
 #endif
-  }
 
 koskari_eval_cleanup:
   kos_domain_pop_scope(ctx);

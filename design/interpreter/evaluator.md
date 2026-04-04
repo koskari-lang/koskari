@@ -405,10 +405,11 @@ the appropriate `revive_*` helper is selected via `KosContext_SUSPENSION_EVENT`.
 
 #### Internal Phase Structure
 
-`koskari_eval` is organized as six named static phase helpers. The optable
-and computed-goto dispatch (phase 5) remain in-situ in `koskari_eval` because
-GCC requires `&&TARGET_name` label addresses and the indirect `goto *optable[op]`
-to be in the same function body.
+`koskari_eval` runs shared entry/transfer setup, then dispatches to either
+`koskari_eval_dispatch_computed_goto` (GCC/Clang: optable, `&&cg_TARGET_*`,
+`goto *optable[op]` in one static function) or `koskari_eval_dispatch_switch`
+(MSVC: `for(;;)` + `switch`).  Phase helpers 1–4 and 6 stay shared; phase 5
+lives entirely inside those two dispatchers.
 
 | Phase | Helper | Responsibility |
 |-------|--------|----------------|
