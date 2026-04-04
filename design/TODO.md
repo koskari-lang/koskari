@@ -147,6 +147,21 @@ Ref: [interpreter/compiler.md](interpreter/compiler.md) (current compiler);
 [language/special-forms.md](language/special-forms.md) (special forms catalog);
 [archive/compiler-python-sibilant-historical.md](archive/compiler-python-sibilant-historical.md) § To Migrate.
 
+### Procedural macro hygiene (syntax boxes)
+
+**Status:** Proposed design only; not implemented.
+
+Implement the singular **syntax box** type and pipeline: macro output is a mix
+of unboxed macro-generated skeleton (subject to the existing binding/hygiene
+pass) and boxed segments holding call-site source (any expression shape,
+including full subtrees). The binder must not recurse into box payloads for
+renaming; after normalization, **finalize** by splicing unwrapped payloads into
+place. Expanders may split, reorder, or duplicate boxes as needed.
+
+Ref: [language/macro-hygiene-syntax-boxes.md](language/macro-hygiene-syntax-boxes.md);
+[api/matcher-hygiene-extensions.md](api/matcher-hygiene-extensions.md) (hygiene
+discovery metadata for specials).
+
 ### Fenced foreign literal
 
 Add a compile-time fenced foreign-literal mechanism: the reader recognizes
