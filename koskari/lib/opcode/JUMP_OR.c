@@ -21,16 +21,16 @@
 KOS_OP_HANDLER(JUMP_OR) {
   PyObject *val = KosStackBlock_PopRef(&CURRENT_STACK(ctx));
   if (! val)
-    return -1;
+    return KOS_OP_POST_ERR();
   int res = PyObject_IsTrue(val);
   if (res < 0) {
     Py_DECREF(val);
-    return -1;
+    return KOS_OP_POST_ERR();
   }
   if (res) {
     if (KosStackBlock_PushRef(&CURRENT_STACK(ctx), val) < 0) {
       Py_DECREF(val);
-      return -1;
+      return KOS_OP_POST_ERR();
     }
     Py_DECREF(val);
     CURRENT_PC(ctx) = KosOp_ARG(insn);
@@ -38,5 +38,5 @@ KOS_OP_HANDLER(JUMP_OR) {
     Py_DECREF(val);
   }
   (void) out_ev;
-  return 0;
+  return KOS_OP_RUN();
 }

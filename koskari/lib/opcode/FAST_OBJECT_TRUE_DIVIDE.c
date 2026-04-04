@@ -26,27 +26,27 @@ KOS_OP_HANDLER(FAST_OBJECT_TRUE_DIVIDE) {
   if (unlikely(! ns)) {
     PyErr_SetString(PyExc_RuntimeError,
                     "FAST_OBJECT_TRUE_DIVIDE invoked on NULL namespace");
-    return -1;
+    return KOS_OP_POST_ERR();
   }
 
   size_t idx = (size_t) KosOp_ARG(insn);
   PyObject *obj = KosNamespace_FastDeref(ns, idx);
   if (unlikely(! obj))
-    return -1;
+    return KOS_OP_POST_ERR();
 
   PyObject *rhs = KosStackBlock_PopRef(&CURRENT_STACK(ctx));
   if (unlikely(! rhs)) {
     Py_DECREF(obj);
-    return -1;
+    return KOS_OP_POST_ERR();
   }
 
   PyObject *result = PyNumber_InPlaceTrueDivide(obj, rhs);
   Py_DECREF(obj);
   Py_DECREF(rhs);
   if (unlikely(! result))
-    return -1;
+    return KOS_OP_POST_ERR();
 
   int res = KosNamespace_FastStore(ns, idx, result);
   Py_DECREF(result);
-  return res;
+  return kos_op_outcome_from_int_step(res);
 }

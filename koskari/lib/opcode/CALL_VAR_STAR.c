@@ -46,11 +46,11 @@ KOS_OP_HANDLER(CALL_VAR_STAR) {
 
   PyObject *name = KosCode_GetConstant((PyObject *) code, name_cpool_idx);
   if (! name)
-    return -1;
+    return KOS_OP_POST_ERR();
 
   PyObject *callable = frame_ns_deref(ctx, name);
   if (! callable)
-    return -1;
+    return KOS_OP_POST_ERR();
 
   PyObject *pos = NULL;
   PyObject *kwd = NULL;
@@ -61,49 +61,49 @@ KOS_OP_HANDLER(CALL_VAR_STAR) {
     kwd = KosStackBlock_PopRef(stack);
     if (! kwd) {
       Py_DECREF(callable);
-      return -1;
+      return KOS_OP_POST_ERR();
     }
     pos = KosStackBlock_PopRef(stack);
     if (! pos) {
       Py_DECREF(callable);
       Py_DECREF(kwd);
-      return -1;
+      return KOS_OP_POST_ERR();
     }
     if (ensure_tuple_var_star(&pos)) {
       Py_DECREF(callable);
       Py_DECREF(pos);
       Py_DECREF(kwd);
-      return -1;
+      return KOS_OP_POST_ERR();
     }
   } else if (opa & 2) {
     kwd = KosStackBlock_PopRef(stack);
     if (! kwd) {
       Py_DECREF(callable);
-      return -1;
+      return KOS_OP_POST_ERR();
     }
     pos = PyTuple_New(0);
     if (! pos) {
       Py_DECREF(callable);
       Py_DECREF(kwd);
-      return -1;
+      return KOS_OP_POST_ERR();
     }
   } else if (opa & 1) {
     pos = KosStackBlock_PopRef(stack);
     if (! pos) {
       Py_DECREF(callable);
-      return -1;
+      return KOS_OP_POST_ERR();
     }
     if (ensure_tuple_var_star(&pos)) {
       Py_DECREF(callable);
       Py_DECREF(pos);
-      return -1;
+      return KOS_OP_POST_ERR();
     }
     kwd = NULL;
   } else {
     pos = PyTuple_New(0);
     if (! pos) {
       Py_DECREF(callable);
-      return -1;
+      return KOS_OP_POST_ERR();
     }
     kwd = NULL;
   }
@@ -113,7 +113,7 @@ KOS_OP_HANDLER(CALL_VAR_STAR) {
   Py_DECREF(callable);
   Py_DECREF(pos);
   Py_XDECREF(kwd);
-  return res;
+  return kos_op_outcome_from_call_int(ctx, res);
 }
 
 

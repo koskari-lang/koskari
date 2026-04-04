@@ -24,7 +24,7 @@ KOS_OP_HANDLER(CHECK_EXCEPTION) {
 
   PyObject *match = KosStackBlock_PopRef(&CURRENT_STACK(ctx));
   if (! match)
-    return -1;
+    return KOS_OP_POST_ERR();
 
   int ret = 0;
   PyObject *typ = NULL, *val = NULL, *tb = NULL;
@@ -41,5 +41,5 @@ KOS_OP_HANDLER(CHECK_EXCEPTION) {
   if (! ret)
     CURRENT_PC(ctx) = KosOp_ARG(insn);
 
-  return 0;
+  return KOS_OP_RUN();
 }

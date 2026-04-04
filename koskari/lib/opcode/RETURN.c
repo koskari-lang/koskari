@@ -41,7 +41,7 @@ KOS_OP_HANDLER(RETURN) {
            (void *) CURRENT_STACK(ctx),
            CURRENT_STACK(ctx) ? (unsigned long) KosStackBlock_LEN(CURRENT_STACK(ctx)) : 0UL);
       PyErr_SetString(PyExc_RuntimeError, "RETURN: stack underrun");
-      return -1;
+      return KOS_OP_POST_ERR();
     }
 
   } else {
@@ -49,7 +49,7 @@ KOS_OP_HANDLER(RETURN) {
     if (! val) {
       SAY("[eval] RETURN PopTail underrun\n");
       PyErr_SetString(PyExc_RuntimeError, "RETURN: stack underrun");
-      return -1;
+      return KOS_OP_POST_ERR();
     }
   }
 
@@ -57,8 +57,12 @@ KOS_OP_HANDLER(RETURN) {
      When inside a reset/prompt, k(value) returns the value to the call site
      of the continuation. This bypasses the normal parent chain. Rare path. */
   if (unlikely(KosContext_RETURN_TARGET_CHAIN(ctx) != NULL
-               && KosContext_RETURN_TARGET_PC(ctx) != (uint32_t) -1))
-    return kos_return_delimited(ctx, val, out_ev);
+               && KosContext_RETURN_TARGET_PC(ctx) != (uint32_t) -1)) {
+    int rd = kos_return_delimited(ctx, val, out_ev);
+    if (rd < 0)
+      return KOS_OP_POST_ERR();
+    return KosContext_PLAN(ctx) ? KOS_OP_PROLOGUE() : KOS_OP_RUN();
+  }
 
   /* === Phase 2b: Frame has parent (normal call return) ===
      We are returning from a callee into its caller. Unwind (run wind/finally
@@ -76,21 +80,21 @@ KOS_OP_HANDLER(RETURN) {
     if (unw == KOS_DYN_UNWIND_ASYNC_STARTED) {
       KosContext_PENDING_RETURN_VALUE(ctx) = val;
       KosContext_PENDING_RETURN_TO_PARENT(ctx) = 1;
-      return 0;
+      return KOS_OP_RUN();
     }
     if (unw == KOS_DYN_UNWIND_FINALLY_TAKING_RETURN) {
       /* Delivered to finally block; eval continues at finally (val on block) */
-      return 0;
+      return KOS_OP_RUN();
     }
     if (unw < 0) {
       Py_DECREF(val);
-      return -1;
+      return KOS_OP_POST_ERR();
     }
 
     /* Detach our frame; parent becomes DYN_TOP. */
     if (kos_dyn_detach_top_frame(ctx, &detached_frame) < 0) {
       Py_DECREF(val);
-      return -1;
+      return KOS_OP_POST_ERR();
     }
     KosPyAsyncGen *agen = was_pending_ctx ? (KosPyAsyncGen *) KosContext_PENDING_AGEN(ctx) : NULL;
 
@@ -110,7 +114,7 @@ KOS_OP_HANDLER(RETURN) {
         KosContext_PENDING_AGEN(ctx) = NULL;
         KosContext_PENDING_AGEN_DEFAULT(ctx) = NULL;
         Py_DECREF(val);
-        return 0;
+        return KOS_OP_RUN();
       }
       if (KosContext_PENDING_AGEN_N(ctx) == 2 && KosContext_PENDING_AGEN_DEFAULT(ctx)) {
         /* N=2: had default arg; push it as result, discard our return value */
@@ -120,7 +124,7 @@ KOS_OP_HANDLER(RETURN) {
           KosContext_PENDING_AGEN_DEFAULT(ctx) = NULL;
           KosContext_PENDING_AGEN(ctx) = NULL;
           Py_DECREF(val);
-          return -1;
+          return KOS_OP_POST_ERR();
         }
         Py_XDECREF(KosContext_PENDING_AGEN_DEFAULT(ctx));
         Py_DECREF(val);
@@ -130,13 +134,13 @@ KOS_OP_HANDLER(RETURN) {
         Py_DECREF(val);
         KosContext_PENDING_AGEN(ctx) = NULL;
         KosContext_PENDING_AGEN_DEFAULT(ctx) = NULL;
-        return -1;
+        return KOS_OP_POST_ERR();
       } else {
         Py_DECREF(val);
       }
       KosContext_PENDING_AGEN(ctx) = NULL;
       KosContext_PENDING_AGEN_DEFAULT(ctx) = NULL;
-      return 0;
+      return KOS_OP_RUN();
     }
 
     /* Deliver value to parent: native handler takes it, else push onto stack.
@@ -148,14 +152,14 @@ KOS_OP_HANDLER(RETURN) {
           (NativeHandlerFn) KosDynFrame_NATIVE_HANDLER(CURRENT_FRAME(ctx));
       int res = fn(ctx, out_ev, 1, val);
       Py_DECREF(val);
-      return res;
+      return kos_op_outcome_from_int_step(res);
     }
     if (KosStackBlock_PushRef(&CURRENT_STACK(ctx), val) < 0) {
       Py_DECREF(val);
-      return -1;
+      return KOS_OP_POST_ERR();
     }
     Py_DECREF(val);
-    return KOS_OP_RES_CONTROL_RETURNED;
+    return KOS_OP_POST_CONTROL();
   }
   }
 
@@ -166,14 +170,14 @@ KOS_OP_HANDLER(RETURN) {
   if (unw == KOS_DYN_UNWIND_ASYNC_STARTED) {
     KosContext_PENDING_RETURN_VALUE(ctx) = val;
     KosContext_PENDING_RETURN_TO_PARENT(ctx) = 0;
-    return 0;
+    return KOS_OP_RUN();
   }
   if (unw == KOS_DYN_UNWIND_FINALLY_TAKING_RETURN) {
-    return 0;
+    return KOS_OP_RUN();
   }
   if (unw < 0) {
     Py_DECREF(val);
-    return -1;
+    return KOS_OP_POST_ERR();
   }
 
   /* Emit boundary event: eval is complete. */
@@ -183,5 +187,5 @@ KOS_OP_HANDLER(RETURN) {
   KosEvent_PAYLOAD(out_ev) = val;
   KosContext_FLAGS(ctx) &= ~KOS_CTX_RUNNING;
   KosContext_FLAGS(ctx) |= KOS_CTX_DEAD;
-  return 1;
+  return KOS_OP_POST_SUSPEND();
 }

@@ -22,14 +22,14 @@ KOS_OP_HANDLER(INVOKE_K) {
   PyObject *value = KosStackBlock_PopRef(&CURRENT_STACK(ctx));
   if (! value) {
     SAY("[eval] INVOKE_K pop value failed\n");
-    return -1;
+    return KOS_OP_POST_ERR();
   }
 
   PyObject *cont_obj = KosStackBlock_PopRef(&CURRENT_STACK(ctx));
   if (! cont_obj) {
     SAY("[eval] INVOKE_K pop cont failed\n");
     Py_DECREF(value);
-    return -1;
+    return KOS_OP_POST_ERR();
   }
 
   if (PyLong_Check(value))
@@ -40,7 +40,7 @@ KOS_OP_HANDLER(INVOKE_K) {
     PyErr_SetString(PyExc_TypeError, "INVOKE_K: TOS is not a DelimitedContinuation");
     Py_DECREF(value);
     Py_DECREF(cont_obj);
-    return -1;
+    return KOS_OP_POST_ERR();
   }
 
   KosContinuation *k = ((KosPyDelimitedContinuation *) cont_obj)->captured;
@@ -49,7 +49,7 @@ KOS_OP_HANDLER(INVOKE_K) {
     Py_DECREF(cont_obj);
     PyErr_SetString(PyExc_RuntimeError,
                     "INVOKE_K: continuation has no captured state");
-    return -1;
+    return KOS_OP_POST_ERR();
   }
 
   /* Validate token ownership */
@@ -58,7 +58,7 @@ KOS_OP_HANDLER(INVOKE_K) {
     Py_DECREF(cont_obj);
     PyErr_SetString(KoskariContinuationError,
                     "INVOKE_K: continuation does not belong to current evaluator");
-    return -1;
+    return KOS_OP_POST_ERR();
   }
 
   /* Prompt need not be in chain: push model grafts cont frames onto current
@@ -73,11 +73,11 @@ KOS_OP_HANDLER(INVOKE_K) {
     SAY("[eval] INVOKE_K kos_invoke_continuation returned -1\n");
     Py_DECREF(value);
     Py_DECREF(cont_obj);
-    return -1;
+    return KOS_OP_POST_ERR();
   }
   Py_DECREF(value);
   /* cont_obj not DECREF'd: invoke transfers control on success */
   (void) out_ev;
   (void) insn;
-  return 0;
+  return KosContext_PLAN(ctx) ? KOS_OP_PROLOGUE() : KOS_OP_RUN();
 }

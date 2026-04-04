@@ -415,7 +415,7 @@ to be in the same function body.
 | 1 | `eval_phase_entry` | Entry/revive normalization; `entry_mode_dispatch` for EXCEPTION/RAISE outcomes |
 | 2 | `eval_phase_transfer` | Transfer-plan drain; terminal RETURN(None) when no frame or hook remains |
 | 3 | `eval_phase_pending_exception` | `PyErr_Occurred()` + `process_raise` at each loop-top iteration |
-| 4 | `eval_phase_prepare_dispatch` | Frame/hook fetch, PC bounds check, insn load, PC pre-advance |
+| 4 | `kos_eval_prepare_next_insn` | Frame fetch, PC bounds check, insn load into `*out_insn`, PC pre-advance |
 | 5 | *(inline)* | Computed-goto / switch opcode dispatch |
 | 6 | `eval_phase_post_opcode` | `op_res != 0` handler: exception path, WITH rollback, suspension tagging |
 
@@ -429,16 +429,7 @@ typedef enum KosEvalStep {
 } KosEvalStep;
 ```
 
-Phase 4 fills a `KosDispatchCtx` struct consumed by phases 5 and 6:
-
-```c
-typedef struct KosDispatchCtx {
-  int in_hook;     /* non-zero when executing inside a hook runner */
-  KosCode *code;   /* code object for the current frame or hook */
-  uint32_t pc;     /* acting_pc (before pre-advance) */
-  KosOp *insn;     /* pointer into code->code at acting_pc */
-} KosDispatchCtx;
-```
+Phase 4 sets a local `KosOp *insn` (and frame `acting_pc` / `pc`) for phase 5. Phase 6 (**eval_phase_post_opcode**) takes only `ctx`, `out_ev`, mapped `op_res`, and `loop_continue`; it does not receive insn.
 
 #### Exception ownership note
 

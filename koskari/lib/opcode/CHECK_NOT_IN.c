@@ -18,5 +18,5 @@
 */
 
 KOS_OP_HANDLER(CHECK_NOT_IN) {
-  return kos_check_contains(ctx, out_ev, insn, 1);
+  return kos_op_outcome_from_int_step(kos_check_contains(ctx, out_ev, insn, 1));
 }

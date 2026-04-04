@@ -20,9 +20,9 @@
 KOS_OP_HANDLER(VAR_CLEAR) {
   PyObject *name = get_name_from_insn(CURRENT_CODE(ctx), insn);
   if (! name)
-    return -1;
+    return KOS_OP_POST_ERR();
   if (frame_ns_clear(ctx, name) < 0)
-    return -1;
+    return KOS_OP_POST_ERR();
   (void) out_ev;
-  return 0;
+  return KOS_OP_RUN();
 }

@@ -22,13 +22,13 @@ KOS_OP_HANDLER(PARAM) {
   PyObject *key = KosCode_GetConstant((PyObject *) CURRENT_CODE(ctx),
                                        KosOp_ARG(insn));
   if (! key)
-    return -1;
+    return KOS_OP_POST_ERR();
 
   PyObject *param_ref = KosParamRef_New(key, Py_None);
   if (! param_ref)
-    return -1;
+    return KOS_OP_POST_ERR();
 
-  return push_result(ctx, param_ref);
+  return kos_op_outcome_from_int_step(push_result(ctx, param_ref));
 }
 
 

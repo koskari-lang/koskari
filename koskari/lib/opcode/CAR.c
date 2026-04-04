@@ -21,14 +21,14 @@
 KOS_OP_HANDLER(CAR) {
   PyObject *pair = KosStackBlock_PopRef(&CURRENT_STACK(ctx));
   if (! pair)
-    return -1;
+    return KOS_OP_POST_ERR();
   if (! KosPair_Check(pair) || KosNil_Check(pair)) {
     Py_DECREF(pair);
     PyErr_SetString(PyExc_TypeError, "car argument must be pair");
-    return -1;
+    return KOS_OP_POST_ERR();
   }
   PyObject *val = KosPair_CAR(pair);
   Py_INCREF(val);
   Py_DECREF(pair);
-  return push_result(ctx, val);
+  return kos_op_outcome_from_int_step(push_result(ctx, val));
 }

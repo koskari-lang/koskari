@@ -30,17 +30,17 @@ KOS_OP_HANDLER(UNPACK_STAR) {
   if (left + right == 0) {
     PyErr_SetString(PyExc_ValueError,
                     "UNPACK_STAR requires left + right > 0");
-    return -1;
+    return KOS_OP_POST_ERR();
   }
 
   PyObject *raw = KosStackBlock_PopRef(&CURRENT_STACK(ctx));
   if (! raw)
-    return -1;
+    return KOS_OP_POST_ERR();
 
   PyObject *seq = PySequence_Fast(raw, NULL);
   Py_DECREF(raw);
   if (! seq)
-    return -1;
+    return KOS_OP_POST_ERR();
 
   Py_ssize_t slen = PySequence_Fast_GET_SIZE(seq);
   if (slen < (Py_ssize_t) (left + right)) {
@@ -48,7 +48,7 @@ KOS_OP_HANDLER(UNPACK_STAR) {
     PyErr_Format(PyExc_ValueError,
                  "UNPACK_STAR needs at least %u elements, got %zd",
                  left + right, slen);
-    return -1;
+    return KOS_OP_POST_ERR();
   }
 
   Py_ssize_t k;
@@ -57,7 +57,7 @@ KOS_OP_HANDLER(UNPACK_STAR) {
     PyObject *item = PySequence_Fast_GET_ITEM(seq, k);
     if (KosStackBlock_PushRef(&CURRENT_STACK(ctx), item) < 0) {
       Py_DECREF(seq);
-      return -1;
+      return KOS_OP_POST_ERR();
     }
   }
 
@@ -65,31 +65,31 @@ KOS_OP_HANDLER(UNPACK_STAR) {
                                             slen - (Py_ssize_t) right);
   if (! mid_slice) {
     Py_DECREF(seq);
-    return -1;
+    return KOS_OP_POST_ERR();
   }
 
   PyObject *middle = PySequence_Tuple(mid_slice);
   Py_DECREF(mid_slice);
   if (! middle) {
     Py_DECREF(seq);
-    return -1;
+    return KOS_OP_POST_ERR();
   }
 
   if (KosStackBlock_PUSH(&CURRENT_STACK(ctx), middle) < 0) {
     Py_DECREF(seq);
-    return -1;
+    return KOS_OP_POST_ERR();
   }
 
   for (k = (Py_ssize_t) left - 1; k >= 0; k--) {
     PyObject *item = PySequence_Fast_GET_ITEM(seq, k);
     if (KosStackBlock_PushRef(&CURRENT_STACK(ctx), item) < 0) {
       Py_DECREF(seq);
-      return -1;
+      return KOS_OP_POST_ERR();
     }
   }
 
   Py_DECREF(seq);
-  return 0;
+  return KOS_OP_RUN();
 }
 
 

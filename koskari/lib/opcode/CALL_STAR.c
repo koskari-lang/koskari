@@ -50,62 +50,62 @@ KOS_OP_HANDLER(CALL_STAR) {
   if ((opa & 3) == 3) {
     kwd = KosStackBlock_PopRef(stack);
     if (! kwd)
-      return -1;
+      return KOS_OP_POST_ERR();
     pos = KosStackBlock_PopRef(stack);
     if (! pos) {
       Py_DECREF(kwd);
-      return -1;
+      return KOS_OP_POST_ERR();
     }
     fun = KosStackBlock_PopRef(stack);
     if (! fun) {
       Py_DECREF(pos);
       Py_DECREF(kwd);
-      return -1;
+      return KOS_OP_POST_ERR();
     }
     if (ensure_tuple(&pos)) {
       Py_DECREF(fun);
       Py_DECREF(pos);
       Py_DECREF(kwd);
-      return -1;
+      return KOS_OP_POST_ERR();
     }
   } else if (opa & 2) {
     kwd = KosStackBlock_PopRef(stack);
     if (! kwd)
-      return -1;
+      return KOS_OP_POST_ERR();
     fun = KosStackBlock_PopRef(stack);
     if (! fun) {
       Py_DECREF(kwd);
-      return -1;
+      return KOS_OP_POST_ERR();
     }
     pos = PyTuple_New(0);
     if (! pos) {
       Py_DECREF(fun);
       Py_DECREF(kwd);
-      return -1;
+      return KOS_OP_POST_ERR();
     }
   } else if (opa & 1) {
     pos = KosStackBlock_PopRef(stack);
     if (! pos)
-      return -1;
+      return KOS_OP_POST_ERR();
     fun = KosStackBlock_PopRef(stack);
     if (! fun) {
       Py_DECREF(pos);
-      return -1;
+      return KOS_OP_POST_ERR();
     }
     if (ensure_tuple(&pos)) {
       Py_DECREF(fun);
       Py_DECREF(pos);
-      return -1;
+      return KOS_OP_POST_ERR();
     }
     kwd = NULL;
   } else {
     fun = KosStackBlock_PopRef(stack);
     if (! fun)
-      return -1;
+      return KOS_OP_POST_ERR();
     pos = PyTuple_New(0);
     if (! pos) {
       Py_DECREF(fun);
-      return -1;
+      return KOS_OP_POST_ERR();
     }
     kwd = NULL;
   }
@@ -115,5 +115,5 @@ KOS_OP_HANDLER(CALL_STAR) {
   Py_DECREF(fun);
   Py_DECREF(pos);
   Py_XDECREF(kwd);
-  return res;
+  return kos_op_outcome_from_call_int(ctx, res);
 }

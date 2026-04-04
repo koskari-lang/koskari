@@ -172,22 +172,77 @@ typedef enum KosEvalStep {
 
 
 /**
-  Opcode handler return values.  0 = normal continue; 1 = suspend or
-  WITH async rollback; 2 = control returned to awaiting dyn node.
+  KosLoopOpMode is the opcode-to-loop signal: what the main eval loop should
+  do after each instruction.  Distinct from KosEvalMode (entry/revive only).
+
+  KOS_LOP_RUN — continue with the next instruction without running the
+  expensive prologue (transfer drain, pending-exception check, native
+  frame branch).
+
+  KOS_LOP_PROLOGUE — next cycle must run the full prologue before dispatch
+  (e.g. PyErr set by RAISE opcode, new transfer plan, native handler installed).
+
+  KOS_LOP_POST — run eval_phase_post_opcode with kos_op_post_tag_to_res(tag).
+
+  KOS_LOP_FAIL — hard evaluator fault: koskari_eval returns -1 immediately;
+  no post_opcode (differs from Python exception path, which uses PROLOGUE or
+  POST with ERR tag and PyErr).
+*/
+typedef enum KosLoopOpMode {
+  KOS_LOP_RUN = 0,
+  KOS_LOP_PROLOGUE,
+  KOS_LOP_POST,
+  KOS_LOP_FAIL,
+} KosLoopOpMode;
+
+
+/**
+  Post-opcode tags for KOS_LOP_POST only; passed to eval_phase_post_opcode as
+  the legacy int (1 = suspend/async, 2 = control returned, -1 = error path).
+*/
+#define KOS_OP_POST_TAG_SUSPEND 1
+#define KOS_OP_POST_TAG_CONTROL_RETURNED 2
+#define KOS_OP_POST_TAG_ERR 3
+
+
+typedef struct KosOpOutcome {
+  KosLoopOpMode mode;
+  uint8_t post_tag;
+  PyObject *value;  /* reserved for future use; must be NULL unless documented */
+} KosOpOutcome;
+
+
+#define KOS_OP_RUN() ((KosOpOutcome){ KOS_LOP_RUN, 0, NULL })
+#define KOS_OP_PROLOGUE() ((KosOpOutcome){ KOS_LOP_PROLOGUE, 0, NULL })
+#define KOS_OP_FAIL() ((KosOpOutcome){ KOS_LOP_FAIL, 0, NULL })
+#define KOS_OP_POST_SUSPEND() \
+  ((KosOpOutcome){ KOS_LOP_POST, KOS_OP_POST_TAG_SUSPEND, NULL })
+#define KOS_OP_POST_CONTROL() \
+  ((KosOpOutcome){ KOS_LOP_POST, KOS_OP_POST_TAG_CONTROL_RETURNED, NULL })
+#define KOS_OP_POST_ERR() \
+  ((KosOpOutcome){ KOS_LOP_POST, KOS_OP_POST_TAG_ERR, NULL })
+
+
+/**
+  Opcode handler return values (legacy KosContext_Call / helpers).  0 = normal;
+  1 = suspend or WITH async rollback; 2 = control returned to awaiting dyn node.
 */
 #define KOS_OP_RES_CONTROL_RETURNED 2
 
 
 /**
-  KosDispatchCtx bundles the per-instruction context assembled by
-  eval_phase_prepare_dispatch and consumed by eval_phase_execute_opcode
-  and eval_phase_post_opcode.
+  Map KOS_LOP_POST tag to the int historically passed to eval_phase_post_opcode.
 */
-typedef struct KosDispatchCtx {
-  KosCode *code;   /* code object for the current frame */
-  uint32_t pc;     /* pc before pre-advance (acting_pc value) */
-  KosOp *insn;     /* pointer into code->code at the acting pc */
-} KosDispatchCtx;
+static inline int kos_op_post_tag_to_res(uint8_t tag) {
+
+  if (tag == KOS_OP_POST_TAG_SUSPEND)
+    return 1;
+  if (tag == KOS_OP_POST_TAG_CONTROL_RETURNED)
+    return KOS_OP_RES_CONTROL_RETURNED;
+  if (tag == KOS_OP_POST_TAG_ERR)
+    return -1;
+  return -1;
+}
 
 
 /**
@@ -221,6 +276,70 @@ typedef struct KosEvent {
 #define KosEvent_KIND(ev)    (((KosEvent *) (ev))->kind)
 #define KosEvent_PAYLOAD(ev) (((KosEvent *) (ev))->payload)
 #define KosEvent_EXC_TYPE(ev) (((KosEvent *) (ev))->exc_type)
+
+
+/**
+  KosEvalResultKind is the driver-visible completion of koskari_eval when
+  stopping with a value boundary.  KOS_ERES_RAISE uses PyErr as authority;
+  value is always NULL for RAISE (out_ev may still carry exc_type when
+  materialized from PyErr elsewhere).
+*/
+typedef enum KosEvalResultKind {
+  KOS_ERES_RETURN = 0,
+  KOS_ERES_RAISE,
+  KOS_ERES_YIELD,
+  KOS_ERES_AWAIT,
+} KosEvalResultKind;
+
+
+typedef struct KosEvalResult {
+  KosEvalResultKind kind;
+  PyObject *value;  /* strong ref; NULL for RAISE */
+} KosEvalResult;
+
+
+static inline void kos_eval_result_clear(KosEvalResult *r) {
+
+  Py_XDECREF(r->value);
+  r->value = NULL;
+}
+
+
+/**
+  Fill *dst from *src; steals no references from src (increments into dst).
+  Clears previous dst payload and exc_type.  For KOS_ERES_RAISE, only sets
+  kind; caller syncs exc_type/payload from PyErr if needed.
+*/
+static inline void kos_eval_result_to_event(
+    const KosEvalResult *src,
+    KosEvent *dst) {
+
+  Py_CLEAR(KosEvent_PAYLOAD(dst));
+  Py_CLEAR(KosEvent_EXC_TYPE(dst));
+  switch (src->kind) {
+  case KOS_ERES_RETURN:
+    KosEvent_KIND(dst) = KOS_EV_RETURN;
+    KosEvent_PAYLOAD(dst) = src->value;
+    Py_XINCREF(src->value);
+    break;
+  case KOS_ERES_RAISE:
+    KosEvent_KIND(dst) = KOS_EV_RAISE;
+    break;
+  case KOS_ERES_YIELD:
+    KosEvent_KIND(dst) = KOS_EV_YIELD;
+    KosEvent_PAYLOAD(dst) = src->value;
+    Py_XINCREF(src->value);
+    break;
+  case KOS_ERES_AWAIT:
+    KosEvent_KIND(dst) = KOS_EV_AWAIT;
+    KosEvent_PAYLOAD(dst) = src->value;
+    Py_XINCREF(src->value);
+    break;
+  default:
+    KosEvent_KIND(dst) = KOS_EV_NONE;
+    break;
+  }
+}
 
 
 /* === KosContext: VM execution context === */
@@ -357,6 +476,60 @@ struct KosContext {
 
 #define KosContext_FLAGS(c)                  (((KosContext *)(c))->flags)
 #define KosContext_FREELIST_NEXT(c)          (((KosContext *)(c))->context_freelist_next)
+
+
+/**
+  Map KosContext_Call / KosCallable_Call legacy int r to KosOpOutcome.  When
+  r==0 after install, forces PROLOGUE if a transfer plan or native handler
+  is present on the current frame.
+*/
+static inline KosOpOutcome kos_op_outcome_from_call_int(KosContext *ctx, int r) {
+
+  if (r < 0)
+    return KOS_OP_POST_ERR();
+  if (r == KOS_OP_RES_CONTROL_RETURNED)
+    return KOS_OP_POST_CONTROL();
+  if (r == 1)
+    return KOS_OP_POST_SUSPEND();
+  if (r == 0) {
+    if (KosContext_PLAN(ctx))
+      return KOS_OP_PROLOGUE();
+    if (KosContext_FRAME_TOP(ctx)
+        && KosDynFrame_NATIVE_HANDLER(KosContext_FRAME_TOP(ctx)))
+      return KOS_OP_PROLOGUE();
+    return KOS_OP_RUN();
+  }
+  return KOS_OP_POST_ERR();
+}
+
+
+/**
+  Map push_or_await / kos_push_or_await return (0 push, 1 suspend, -1 err).
+*/
+static inline KosOpOutcome kos_op_outcome_from_push_int(int r) {
+
+  if (r < 0)
+    return KOS_OP_POST_ERR();
+  if (r == 1)
+    return KOS_OP_POST_SUSPEND();
+  return KOS_OP_RUN();
+}
+
+
+/**
+  Map legacy opcode-helper int to KosOpOutcome (0 run, 1 suspend, 2 control,
+  -1 err).
+*/
+static inline KosOpOutcome kos_op_outcome_from_int_step(int r) {
+
+  if (r < 0)
+    return KOS_OP_POST_ERR();
+  if (r == 1)
+    return KOS_OP_POST_SUSPEND();
+  if (r == KOS_OP_RES_CONTROL_RETURNED)
+    return KOS_OP_POST_CONTROL();
+  return KOS_OP_RUN();
+}
 
 
 /* === Context lifecycle === */

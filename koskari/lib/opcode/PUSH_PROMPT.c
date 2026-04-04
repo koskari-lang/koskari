@@ -21,9 +21,9 @@
 KOS_OP_HANDLER(PUSH_PROMPT) {
   uint32_t prompt_id;
   if (get_prompt_id_from_insn(CURRENT_CODE(ctx), insn, &prompt_id) < 0)
-    return -1;
+    return KOS_OP_POST_ERR();
   if (! kos_dyn_push_prompt(ctx, prompt_id))
-    return -1;
+    return KOS_OP_POST_ERR();
   (void) out_ev;
-  return 0;
+  return KOS_OP_RUN();
 }

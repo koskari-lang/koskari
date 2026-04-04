@@ -18,12 +18,12 @@
 */
 KOS_OP_HANDLER(OBJECT_TRUTH) {
     PyObject *val = KosStackBlock_PopRef(&CURRENT_STACK(ctx));
-    if (! val) return -1;
+    if (! val) return KOS_OP_POST_ERR();
     int r = PyObject_IsTrue(val);
     Py_DECREF(val);
-    if (r < 0) return -1;
+    if (r < 0) return KOS_OP_POST_ERR();
     PyObject *res = (r ? Py_True : Py_False);
     Py_INCREF(res);
     (void) insn;
-    return push_result(ctx, res);
+    return kos_op_outcome_from_int_step(push_result(ctx, res));
 }

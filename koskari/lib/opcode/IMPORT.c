@@ -35,12 +35,12 @@
 KOS_OP_HANDLER(IMPORT) {
   PyObject *name = get_name_from_insn(CURRENT_CODE(ctx), insn);
   if (! name)
-    return -1;
+    return KOS_OP_POST_ERR();
 
   PyObject *mod = PyImport_ImportModuleLevelObject(
     name, NULL, NULL, _import_fromlist, 0);
   if (! mod)
-    return -1;
+    return KOS_OP_POST_ERR();
 
-  return push_result(ctx, mod);
+  return kos_op_outcome_from_int_step(push_result(ctx, mod));
 }

@@ -25,13 +25,13 @@
 KOS_OP_HANDLER(DEREF) {
   PyObject *ref = KosStackBlock_PopRef(&CURRENT_STACK(ctx));
   if (! ref)
-    return -1;
+    return KOS_OP_POST_ERR();
 
   PyObject *val = PyObject_CallMethod(ref, "deref", NULL);
   Py_DECREF(ref);
 
   if (! val)
-    return -1;
+    return KOS_OP_POST_ERR();
 
-  return push_result(ctx, val);
+  return kos_op_outcome_from_int_step(push_result(ctx, val));
 }

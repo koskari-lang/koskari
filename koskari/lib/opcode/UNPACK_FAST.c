@@ -30,28 +30,28 @@ KOS_OP_HANDLER(UNPACK_FAST) {
   if (! ns) {
     PyErr_SetString(PyExc_RuntimeError,
                     "UNPACK_FAST invoked on NULL namespace");
-    return -1;
+    return KOS_OP_POST_ERR();
   }
 
   if (! KosNamespace_SupportsFast(ns)) {
     PyErr_Format(PyExc_RuntimeError, "UNPACK_FAST invoked on %R", ns);
-    return -1;
+    return KOS_OP_POST_ERR();
   }
 
   if (idx0 >= KosNamespace_FAST_COUNT(ns) || idx1 >= KosNamespace_FAST_COUNT(ns)) {
     PyErr_Format(PyExc_NameError,
                  "UNPACK_FAST fast index out of bounds");
-    return -1;
+    return KOS_OP_POST_ERR();
   }
 
   PyObject *raw = KosStackBlock_PopRef(&CURRENT_STACK(ctx));
   if (! raw)
-    return -1;
+    return KOS_OP_POST_ERR();
 
   PyObject *seq = PySequence_Fast(raw, NULL);
   Py_DECREF(raw);
   if (! seq)
-    return -1;
+    return KOS_OP_POST_ERR();
 
   Py_ssize_t slen = PySequence_Fast_GET_SIZE(seq);
   if (slen != 2) {
@@ -59,17 +59,17 @@ KOS_OP_HANDLER(UNPACK_FAST) {
     PyErr_Format(PyExc_ValueError,
                  "UNPACK_FAST expected sequence of length 2, got %zd",
                  slen);
-    return -1;
+    return KOS_OP_POST_ERR();
   }
 
   if (KosNamespace_FastStore(ns, idx0, PySequence_Fast_GET_ITEM(seq, 0)) ||
       KosNamespace_FastStore(ns, idx1, PySequence_Fast_GET_ITEM(seq, 1))) {
     Py_DECREF(seq);
-    return -1;
+    return KOS_OP_POST_ERR();
   }
 
   Py_DECREF(seq);
-  return 0;
+  return KOS_OP_RUN();
 }
 
 

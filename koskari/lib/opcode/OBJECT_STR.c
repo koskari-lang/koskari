@@ -19,5 +19,5 @@
 */
 
 KOS_OP_HANDLER(OBJECT_STR) {
-  return obj_op_reducing(ctx, out_ev, insn, KosOperator_BuildStr);
+  return kos_op_outcome_from_int_step(obj_op_reducing(ctx, out_ev, insn, KosOperator_BuildStr));
 }

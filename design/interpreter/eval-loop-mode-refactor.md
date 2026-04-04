@@ -2,7 +2,18 @@
 
 This document describes a refactor of the Koskari eval loop around a **mode** as the single outcome of each opcode (and of the loop prologue). The goal is to optimize the common case—**MODE_NORMAL** ("just continue handling opcodes")—by gating prologue checks and using tail-dispatch so that the fast path does not run transfer plan, pending exception, or native-frame checks.
 
-**Status:** Design. Not yet implemented.
+**Status:** Implemented in `koskari/lib/eval.c` and `koskari/lib/eval.h` (April 2026). Opcode handlers return **`KosOpOutcome`** with **`KosLoopOpMode`**: **`KOS_LOP_RUN`** (tail-dispatch, skip prologue), **`KOS_LOP_PROLOGUE`**, **`KOS_LOP_POST`** (via `post_tag` → `eval_phase_post_opcode`), **`KOS_LOP_FAIL`** (evaluator fault, return -1 without raise handling). **`KosEvalResult`** / **`kos_eval_result_to_event`** bridge stop boundaries to existing **`KosEvent *out_ev`**. See `KOS_OP_*` macros and **`kos_op_outcome_from_*`** helpers in `eval.h`.
+
+**Outcome → loop (implemented):**
+
+| `KosLoopOpMode` | Loop action |
+|-----------------|-------------|
+| `KOS_LOP_RUN` | **Computed goto:** `kos_eval_prepare_next_insn` then `goto *optable[op]` (no shared prepare label). **Switch build:** `goto eval_prepare_and_dispatch`. Neither path runs the prologue. |
+| `KOS_LOP_PROLOGUE` | **Computed goto:** `goto eval_prologue`. **Switch:** `need_prologue = 1`; `goto eval_loop_head`. |
+| `KOS_LOP_POST` | `kos_op_post_tag_to_res` → `eval_phase_post_opcode`; then same as PROLOGUE unless stop/event. |
+| `KOS_LOP_FAIL` | `eval_ret = -1`; cleanup (no `try_local_exception_handler`). |
+
+Opcodes that leave **`PyErr_Occurred()`** and expect **`eval_phase_pending_exception`** before the next bytecode (e.g. **RAISE**, **POP_FINALLY** after restoring the active exception) must return **`KOS_OP_PROLOGUE`**, not **`KOS_LOP_RUN`**.
 
 ---
 
@@ -165,7 +176,7 @@ These have no ambiguity; they return 0 (→ NORMAL) or -1 (→ ERROR).
 
 | Opcode | Modes | Events | Conditions |
 |--------|--------|--------|------------|
-| **RAISE** | ERROR, **PROLOGUE** | — | **Gap:** Currently returns 0 after setting PyErr. Must return a mode that causes exception handling (PROLOGUE or POST_OPCODE) so next iteration sees the exception. |
+| **RAISE** | POST (err paths), **PROLOGUE** | — | After setting PyErr on success paths, returns **`KOS_OP_PROLOGUE`** so pending-exception runs. |
 | **RETURN** | NORMAL, POST_OPCODE, EVENT, ERROR | RETURN, RAISE | opa=0/1/N; delimited path; normal return to parent (POST_OPCODE + control returned); top-level (EVENT RETURN); async/finally paths (0); error. |
 | **YIELD** | NORMAL, EVENT, ERROR | YIELD | In-gen: EVENT YIELD. Flattened: NORMAL (value pushed to caller). |
 | **YIELD_FROM** | NORMAL, POST_OPCODE, EVENT, ERROR | YIELD, AWAIT, RETURN | Many paths; suspend (1), complete with value (0), event (1 + out_ev). |
@@ -183,7 +194,7 @@ These have no ambiguity; they return 0 (→ NORMAL) or -1 (→ ERROR).
 | **POP_SHIFT** | NORMAL, **PROLOGUE**, ERROR | — | **Gap:** Same; sets plan, returns 0. Must return PROLOGUE. |
 | **INVOKE_K**, **INVOKE_K_VAR** | NORMAL, **PROLOGUE**, ERROR | — | **Gap:** kos_invoke_continuation sets `KosContext_PLAN(ctx)` and returns 0. Must return PROLOGUE. |
 | **POP_PROMPT** | NORMAL, PROLOGUE(suspend), EVENT, ERROR | RETURN | Can return 0, 1 (event), or -1. |
-| **POP_FINALLY** | NORMAL, ERROR | — | |
+| **POP_FINALLY** | NORMAL, **PROLOGUE**, ERROR | — | After **`HANDLING_RAISE`** restore, **`PyErr_Occurred()`** → **`KOS_OP_PROLOGUE`** so exc info is synchronized before **EXCEPTION** / **RAISE** in finally. |
 | **ITER_NEXT** | NORMAL, POST_OPCODE, ERROR | — | Can return 0 (jump), 1 (suspend), -1. |
 | **NEXT** | NORMAL, POST_OPCODE, EVENT, ERROR | AWAIT | Attach gen frame (0); suspend (1); error. |
 | **CAPTURE_CC** | NORMAL, ERROR | — | |
@@ -203,29 +214,19 @@ These are not opcodes but are reached via CALL when the callable is a KosCallabl
 
 ---
 
-## 7. Gap Analysis (Places Where Mode Cannot Be Inferred From Current Return)
+## 7. Gap Analysis (Historical — addressed in `KosOpOutcome` implementation)
 
-These are cases where the **current** return value (0 or 1) does **not** allow the loop to choose the correct next step. They must be fixed so that the refactored loop can rely on mode.
+These were cases where a plain **0** return did not force the prologue. The implementation maps them to **`KOS_LOP_PROLOGUE`** (or **`KOS_LOP_POST`** with error) as appropriate.
 
-1. **RAISE**  
-   Returns **0** after setting PyErr. With a gated prologue, the next iteration would skip prologue and run the next opcode, so the exception would never be handled.  
-   **Fix:** RAISE must return a mode that forces prologue (or post_opcode) so that the pending-exception check runs (e.g. **PROLOGUE** or a dedicated "exception set" that runs process_raise).
+1. **RAISE** — **Fixed:** success paths return **`KOS_OP_PROLOGUE()`** after setting PyErr.
 
-2. **kos_install_apply**  
-   Sets a **native handler** on the current frame and returns **0**. Next iteration would skip the native-frame check and run bytecode for a frame that should be driven by the native handler.  
-   **Fix:** When install sets `NATIVE_HANDLER`, return **PROLOGUE** (or a code that maps to MODE_PROLOGUE).
+2. **kos_install_apply** — **Fixed:** **`kos_op_outcome_from_call_int`** (and related CALL paths) probe **`NATIVE_HANDLER`** / **`KosContext_PLAN`** after success and yield **PROLOGUE** when needed.
 
-3. **PUSH_SHIFT** (unwind path)  
-   Sets `KosContext_PLAN(ctx) = plan` and **returns 0**. Next iteration would skip prologue and never run `run_transfer_plan_to_completion`.  
-   **Fix:** When PUSH_SHIFT sets a transfer plan, return **PROLOGUE**.
+3. **PUSH_SHIFT** / **POP_SHIFT** — **Fixed:** when **`KosContext_PLAN`** is set on success, outcome is **PROLOGUE**.
 
-4. **POP_SHIFT**  
-   Sets `KosContext_PLAN(ctx) = plan` and **returns 0**. Same as PUSH_SHIFT.  
-   **Fix:** Return **PROLOGUE** when plan is set.
+4. **INVOKE_K / INVOKE_K_VAR** — **Fixed:** same plan probe → **PROLOGUE**.
 
-5. **INVOKE_K / INVOKE_K_VAR**  
-   `kos_invoke_continuation` sets `KosContext_PLAN(ctx)` and returns 0. Next iteration must run the transfer plan.  
-   **Fix:** When the call succeeds and a plan was set, return **PROLOGUE** (from the opcode, which can check whether ctx now has a plan if the C API doesn’t return a distinct value).
+5. **POP_FINALLY** (restored exception) — **Fixed:** if **`PyErr_Occurred()`** after successful pop, return **`KOS_OP_PROLOGUE()`** so **`eval_phase_pending_exception`** runs before the next opcode (matches pre–fast-path loop behavior).
 
 6. **Return 1 overload**  
    The value **1** is used for: suspend (YIELD, AWAIT), WITH/POP_WITH async started, ITER_NEXT suspend, YIELD_FROM suspend. The loop and post_opcode distinguish by opcode and out_ev. For the refactor, ensure that whenever we return 1 we also set out_ev or a mode flag so the loop can decide between POST_OPCODE (continue after handling) and EVENT (stop with event). No semantic gap if we keep decoding 1 via out_ev and opcode type.
@@ -264,7 +265,7 @@ These are cases where the **current** return value (0 or 1) does **not** allow t
 
 | Opcode | Returns | → Mode / Event |
 |--------|---------|----------------|
-| RAISE | 0 (today; **must change**) | PROLOGUE so exception is seen |
+| RAISE | PROLOGUE / POST err | PROLOGUE after PyErr set on success paths |
 | RETURN | 0, 1, 2, -1 | 0: NORMAL (finally/async); 2: POST_OPCODE (control returned); 1: EVENT (top-level); -1: ERROR |
 | YIELD | 0, 1, -1 | 0: NORMAL (flattened); 1: EVENT YIELD; -1: ERROR |
 | YIELD_FROM | 0, 1, -1 | 0: NORMAL; 1: EVENT or POST_OPCODE; -1: ERROR |
@@ -284,4 +285,4 @@ These are cases where the **current** return value (0 or 1) does **not** allow t
 
 ---
 
-*Document version: 1. Design may be updated as implementation proceeds.*
+*Document version: 2. Core loop refactor implemented; historical sections still describe pre-refactor ints where noted.*

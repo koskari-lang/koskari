@@ -48,21 +48,21 @@ KOS_OP_HANDLER(CALL_FAST_ATTR_STAR) {
 
   PyObject *attr_name = KosCode_GetConstant((PyObject *) code, attr_cpool_idx);
   if (! attr_name)
-    return -1;
+    return KOS_OP_POST_ERR();
 
   PyObject *ns = CURRENT_NS(ctx);
   if (! ns) {
     PyErr_SetString(PyExc_RuntimeError, "CALL_FAST_ATTR_STAR on NULL namespace");
-    return -1;
+    return KOS_OP_POST_ERR();
   }
   if (! KosNamespace_SupportsFast(ns)) {
     PyErr_Format(PyExc_RuntimeError, "CALL_FAST_ATTR_STAR on %R", ns);
-    return -1;
+    return KOS_OP_POST_ERR();
   }
 
   PyObject *obj = KosNamespace_FastDeref(ns, (size_t) slot_idx);
   if (! obj)
-    return -1;
+    return KOS_OP_POST_ERR();
 
   PyObject *pos = NULL;
   PyObject *kwd = NULL;
@@ -72,39 +72,39 @@ KOS_OP_HANDLER(CALL_FAST_ATTR_STAR) {
   if ((opa & 3) == 3) {
     kwd = KosStackBlock_PopRef(stack);
     if (! kwd)
-      return -1;
+      return KOS_OP_POST_ERR();
     pos = KosStackBlock_PopRef(stack);
     if (! pos) {
       Py_DECREF(kwd);
-      return -1;
+      return KOS_OP_POST_ERR();
     }
     if (ensure_tuple_fast_attr_star(&pos)) {
       Py_DECREF(pos);
       Py_DECREF(kwd);
-      return -1;
+      return KOS_OP_POST_ERR();
     }
   } else if (opa & 2) {
     kwd = KosStackBlock_PopRef(stack);
     if (! kwd)
-      return -1;
+      return KOS_OP_POST_ERR();
     pos = PyTuple_New(0);
     if (! pos) {
       Py_DECREF(kwd);
-      return -1;
+      return KOS_OP_POST_ERR();
     }
   } else if (opa & 1) {
     pos = KosStackBlock_PopRef(stack);
     if (! pos)
-      return -1;
+      return KOS_OP_POST_ERR();
     if (ensure_tuple_fast_attr_star(&pos)) {
       Py_DECREF(pos);
-      return -1;
+      return KOS_OP_POST_ERR();
     }
     kwd = NULL;
   } else {
     pos = PyTuple_New(0);
     if (! pos)
-      return -1;
+      return KOS_OP_POST_ERR();
     kwd = NULL;
   }
 
@@ -113,7 +113,7 @@ KOS_OP_HANDLER(CALL_FAST_ATTR_STAR) {
   if (send_self < 0) {
     Py_DECREF(pos);
     Py_XDECREF(kwd);
-    return -1;
+    return KOS_OP_POST_ERR();
   }
 
   PyObject *args_for_call = pos;
@@ -125,7 +125,7 @@ KOS_OP_HANDLER(CALL_FAST_ATTR_STAR) {
       Py_DECREF(resolved);
       Py_DECREF(pos);
       Py_XDECREF(kwd);
-      return -1;
+      return KOS_OP_POST_ERR();
     }
     args_for_call = PySequence_Concat(combined, pos);
     Py_DECREF(combined);
@@ -133,7 +133,7 @@ KOS_OP_HANDLER(CALL_FAST_ATTR_STAR) {
       Py_DECREF(resolved);
       Py_DECREF(pos);
       Py_XDECREF(kwd);
-      return -1;
+      return KOS_OP_POST_ERR();
     }
     Py_DECREF(pos);
   }
@@ -143,7 +143,7 @@ KOS_OP_HANDLER(CALL_FAST_ATTR_STAR) {
   Py_DECREF(resolved);
   Py_DECREF(args_for_call);
   Py_XDECREF(kwd);
-  return res;
+  return kos_op_outcome_from_call_int(ctx, res);
 }
 
 

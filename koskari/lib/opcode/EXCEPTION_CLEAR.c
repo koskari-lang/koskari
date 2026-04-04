@@ -23,5 +23,5 @@ KOS_OP_HANDLER(EXCEPTION_CLEAR) {
   (void) ctx;
   (void) out_ev;
   (void) insn;
-  return 0;
+  return KOS_OP_RUN();
 }

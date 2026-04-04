@@ -19,5 +19,5 @@
 */
 
 KOS_OP_HANDLER(OBJECT_MULTIPLY) {
-  return obj_op_reducing(ctx, out_ev, insn, KosOperator_Multiply);
+  return kos_op_outcome_from_int_step(obj_op_reducing(ctx, out_ev, insn, KosOperator_Multiply));
 }

@@ -21,12 +21,12 @@
 KOS_OP_HANDLER(CAPTURE_CC) {
   KosContinuation *k = NULL;
   if (kos_capture_cc(ctx, &k) < 0) {
-    return -1;
+    return KOS_OP_POST_ERR();
   }
   PyObject *wrapper = KosPyContinuation_New(k);
   if (! wrapper) {
     kos_continuation_free(k);
-    return -1;
+    return KOS_OP_POST_ERR();
   }
-  return push_result(ctx, wrapper);
+  return kos_op_outcome_from_int_step(push_result(ctx, wrapper));
 }

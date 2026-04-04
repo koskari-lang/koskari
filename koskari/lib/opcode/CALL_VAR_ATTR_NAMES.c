@@ -31,30 +31,30 @@ KOS_OP_HANDLER(CALL_VAR_ATTR_NAMES) {
   // borrow reference
   PyObject *name = KosCode_GetConstant((PyObject *) code, name_cpool_idx);
   if (! name)
-    return -1;
+    return KOS_OP_POST_ERR();
 
   // owned reference
   PyObject *obj = frame_ns_deref(ctx, name);
   if (! obj)
-    return -1;
+    return KOS_OP_POST_ERR();
 
   // borrowed reference
   PyObject *attr_name = KosCode_GetConstant((PyObject *) code, attr_cpool_idx);
   if (! attr_name)
-    return -1;
+    return KOS_OP_POST_ERR();
 
   // borrowed reference
   PyObject *names = KosCode_GetConstant((PyObject *) code, names_cpool_idx);
   if (! names) {
     Py_DECREF(obj);
-    return -1;
+    return KOS_OP_POST_ERR();
   }
 
   if (! PyTuple_CheckExact(names)) {
     PyErr_Format(PyExc_RuntimeError, "CALL_VAR_ATTR_NAMES names must be tuple"
                  ", not %R", names);
     Py_DECREF(obj);
-    return -1;
+    return KOS_OP_POST_ERR();
   }
 
   Py_ssize_t npos = (Py_ssize_t) opa;
@@ -66,7 +66,7 @@ KOS_OP_HANDLER(CALL_VAR_ATTR_NAMES) {
     ptr = KosStackBlock_TailPtr(*stack, (size_t)(npos + nkwds));
     if (! ptr) {
       Py_DECREF(obj);
-      return -1;
+      return KOS_OP_POST_ERR();
     }
   }
 
@@ -76,7 +76,7 @@ KOS_OP_HANDLER(CALL_VAR_ATTR_NAMES) {
   PyObject *resolved;
   int send_self = kos_resolve_named_attr(obj, attr_name, NULL, &resolved);
   if (send_self < 0)
-    return -1;
+    return KOS_OP_POST_ERR();
 
   if (KosCallable_Check(resolved)) {
     KosStackSteal steal = { 0 };
@@ -89,7 +89,7 @@ KOS_OP_HANDLER(CALL_VAR_ATTR_NAMES) {
     if (steal_ok < 0) {
       Py_DECREF(resolved);
       Py_DECREF(obj);
-      return -1;
+      return KOS_OP_POST_ERR();
     }
     PyObject *const *args;
     Py_ssize_t nargs;
@@ -104,7 +104,7 @@ KOS_OP_HANDLER(CALL_VAR_ATTR_NAMES) {
     KosStackSteal_Free(&steal);
     Py_DECREF(resolved);
     Py_DECREF(obj);
-    return r;
+    return kos_op_outcome_from_call_int(ctx, r);
   }
 
   PyObject *result;
@@ -113,7 +113,7 @@ KOS_OP_HANDLER(CALL_VAR_ATTR_NAMES) {
     if (KosStackSteal_TailPrepend(&steal, obj, ntotal, stack) < 0) {
       Py_DECREF(resolved);
       Py_DECREF(obj);
-      return -1;
+      return KOS_OP_POST_ERR();
     }
     result = PyObject_Vectorcall(resolved, steal.vals, (size_t)(npos + 1), names);
     KosStackSteal_Free(&steal);
@@ -126,7 +126,7 @@ KOS_OP_HANDLER(CALL_VAR_ATTR_NAMES) {
   Py_DECREF(resolved);
   Py_DECREF(obj);
 
-  return result ? kos_push_or_await(ctx, out_ev, result) : -1;
+  return result ? kos_op_outcome_from_push_int(kos_push_or_await(ctx, out_ev, result)) : KOS_OP_POST_ERR();
 }
 
 

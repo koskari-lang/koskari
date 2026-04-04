@@ -22,6 +22,6 @@ KOS_OP_HANDLER(AWAIT) {
   (void) insn;
   PyObject *val = KosStackBlock_PopRef(&CURRENT_STACK(ctx));
   if (! val)
-    return -1;
-  return kos_await_dispatch(ctx, out_ev, val);
+    return KOS_OP_POST_ERR();
+  return kos_op_outcome_from_push_int(kos_await_dispatch(ctx, out_ev, val));
 }

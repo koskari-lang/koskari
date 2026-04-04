@@ -36,7 +36,7 @@ KOS_OP_HANDLER(POP_SHIFT) {
 
   if (! KosContext_DYN_TOP(ctx) || ! KosDynNode_IS_SHIFT(KosContext_DYN_TOP(ctx))) {
     PyErr_SetString(PyExc_RuntimeError, "POP_SHIFT: top is not a shift node");
-    return -1;
+    return KOS_OP_POST_ERR();
   }
 
   /* PC already advanced: we are post-INSN, so resume will run instruction at
@@ -48,7 +48,7 @@ KOS_OP_HANDLER(POP_SHIFT) {
   result = KosStackBlock_PopRef(&CURRENT_STACK(ctx));
   if (! result) {
     SAY("[eval] POP_SHIFT pop result failed (stack underrun)");
-    return -1;
+    return KOS_OP_POST_ERR();
   }
 
   /* acting_pc is POP_SHIFT; find SHIFT extent by its pop_pc. */
@@ -59,20 +59,20 @@ KOS_OP_HANDLER(POP_SHIFT) {
   if (eid == KOS_EXTENT_NONE) {
     Py_DECREF(result);
     PyErr_SetString(PyExc_RuntimeError, "POP_SHIFT: no SHIFT extent at pc");
-    return -1;
+    return KOS_OP_POST_ERR();
   }
 
   shift_extent = kos_extent_desc((PyObject *) code, eid);
   if (! shift_extent) {
     Py_DECREF(result);
-    return -1;
+    return KOS_OP_POST_ERR();
   }
 
   parent_id = shift_extent->parent_extent_id;
   if (parent_id == KOS_EXTENT_NONE) {
     Py_DECREF(result);
     PyErr_SetString(PyExc_RuntimeError, "POP_SHIFT: SHIFT extent has no parent");
-    return -1;
+    return KOS_OP_POST_ERR();
   }
 
   prompt_extent = kos_extent_desc((PyObject *) code, parent_id);
@@ -80,7 +80,7 @@ KOS_OP_HANDLER(POP_SHIFT) {
     Py_DECREF(result);
     PyErr_SetString(PyExc_RuntimeError,
                     "POP_SHIFT: parent of SHIFT is not PROMPT extent");
-    return -1;
+    return KOS_OP_POST_ERR();
   }
 
   prompt_pop_pc = prompt_extent->pop_pc;
@@ -97,12 +97,12 @@ KOS_OP_HANDLER(POP_SHIFT) {
   if (! prompt) {
     Py_DECREF(result);
     PyErr_SetString(PyExc_RuntimeError, "POP_SHIFT: no prompt on chain");
-    return -1;
+    return KOS_OP_POST_ERR();
   }
 
   if (kos_dyn_build_pop_shift_plan(ctx, prompt, result, &plan) < 0) {
     Py_DECREF(result);
-    return -1;
+    return KOS_OP_POST_ERR();
   }
   Py_DECREF(result);
 
@@ -118,5 +118,5 @@ KOS_OP_HANDLER(POP_SHIFT) {
   KosContext_FLAGS(ctx) |= KOS_CTX_IN_TRANSFER;
   KosTransferPlan_CONTINUATION_REF(plan) = NULL;
 
-  return 0;
+  return KOS_OP_PROLOGUE();
 }

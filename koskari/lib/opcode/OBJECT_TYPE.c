@@ -20,11 +20,11 @@
 KOS_OP_HANDLER(OBJECT_TYPE) {
   PyObject *val = KosStackBlock_PopRef(&CURRENT_STACK(ctx));
   if (! val)
-    return -1;
+    return KOS_OP_POST_ERR();
 
   PyObject *res = (PyObject *) Py_TYPE(val);
   Py_INCREF(res);
   Py_DECREF(val);
   (void) insn;
-  return push_result(ctx, res);
+  return kos_op_outcome_from_int_step(push_result(ctx, res));
 }

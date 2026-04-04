@@ -28,20 +28,20 @@ KOS_OP_HANDLER(UNPACK_VAR) {
 
   PyObject *name0 = KosCode_GetConstant((PyObject *) code, name0_idx);
   if (! name0)
-    return -1;
+    return KOS_OP_POST_ERR();
 
   PyObject *name1 = KosCode_GetConstant((PyObject *) code, name1_idx);
   if (! name1)
-    return -1;
+    return KOS_OP_POST_ERR();
 
   PyObject *raw = KosStackBlock_PopRef(&CURRENT_STACK(ctx));
   if (! raw)
-    return -1;
+    return KOS_OP_POST_ERR();
 
   PyObject *seq = PySequence_Fast(raw, NULL);
   Py_DECREF(raw);
   if (! seq)
-    return -1;
+    return KOS_OP_POST_ERR();
 
   Py_ssize_t slen = PySequence_Fast_GET_SIZE(seq);
   if (slen != 2) {
@@ -49,17 +49,17 @@ KOS_OP_HANDLER(UNPACK_VAR) {
     PyErr_Format(PyExc_ValueError,
                  "UNPACK_VAR expected sequence of length 2, got %zd",
                  slen);
-    return -1;
+    return KOS_OP_POST_ERR();
   }
 
   if (frame_ns_store(ctx, name0, PySequence_Fast_GET_ITEM(seq, 0)) ||
       frame_ns_store(ctx, name1, PySequence_Fast_GET_ITEM(seq, 1))) {
     Py_DECREF(seq);
-    return -1;
+    return KOS_OP_POST_ERR();
   }
 
   Py_DECREF(seq);
-  return 0;
+  return KOS_OP_RUN();
 }
 
 

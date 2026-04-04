@@ -18,5 +18,5 @@
 */
 
 KOS_OP_HANDLER(OBJECT_LE) {
-  return op_OBJECT_EQ_impl(ctx, out_ev, insn, Py_LE);
+  return kos_op_outcome_from_int_step(op_OBJECT_EQ_impl(ctx, out_ev, insn, Py_LE));
 }

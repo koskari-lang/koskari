@@ -21,14 +21,14 @@ KOS_OP_HANDLER(FAST_CLEAR) {
   PyObject *ns = CURRENT_NS(ctx);
   if (! ns) {
     PyErr_SetString(PyExc_RuntimeError, "FAST_CLEAR invoked on NULL namespace");
-    return -1;
+    return KOS_OP_POST_ERR();
   }
   if (! KosNamespace_SupportsFast(ns)) {
     PyErr_Format(PyExc_RuntimeError, "FAST_CLEAR invoked on %R", ns);
-    return -1;
+    return KOS_OP_POST_ERR();
   }
   if (KosNamespace_FastClear(ns, (size_t) KosOp_ARG(insn)) < 0)
-    return -1;
+    return KOS_OP_POST_ERR();
   (void) out_ev;
-  return 0;
+  return KOS_OP_RUN();
 }

@@ -33,5 +33,5 @@ KOS_OP_HANDLER(GLOBALS) {
 
   PyObject *ns = KosDynFrame_NS(KosContext_GLOBALS_FRAME(ctx));
   Py_INCREF(ns);
-  return push_result(ctx, ns);
+  return kos_op_outcome_from_int_step(push_result(ctx, ns));
 }

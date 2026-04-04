@@ -23,5 +23,5 @@ KOS_OP_HANDLER(THEEND) {
   (void) out_ev;
   (void) insn;
   PyErr_SetString(PyExc_RuntimeError, "THEEND has no runtime implementation");
-  return -1;
+  return KOS_OP_POST_ERR();
 }

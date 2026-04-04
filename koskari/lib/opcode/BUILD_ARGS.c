@@ -24,14 +24,14 @@ KOS_OP_HANDLER(BUILD_ARGS) {
   PyObject *built = KosStackBlock_PopTail(&CURRENT_STACK(ctx), (size_t) opa);
 
   if (! built)
-    return -1;
+    return KOS_OP_POST_ERR();
 
   if (KosStackBlock_PushRef(&CURRENT_STACK(ctx), built) < 0) {
     Py_DECREF(built);
-    return -1;
+    return KOS_OP_POST_ERR();
   }
   Py_DECREF(built);
 
   (void) out_ev;
-  return 0;
+  return KOS_OP_RUN();
 }

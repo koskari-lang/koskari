@@ -48,16 +48,16 @@
 KOS_OP_HANDLER(IMPORT_FROM) {
   PyObject *name = get_name_from_insn(CURRENT_CODE(ctx), insn);
   if (! name)
-    return -1;
+    return KOS_OP_POST_ERR();
 
   /* Borrow TOS without popping — module stays on the stack */
   PyObject *mod = KosStackBlock_Peek(CURRENT_STACK(ctx));
   if (! mod)
-    return -1;
+    return KOS_OP_POST_ERR();
 
   PyObject *val = PyObject_GetAttr(mod, name);
   if (! val)
-    return -1;
+    return KOS_OP_POST_ERR();
 
-  return push_result(ctx, val);
+  return kos_op_outcome_from_int_step(push_result(ctx, val));
 }

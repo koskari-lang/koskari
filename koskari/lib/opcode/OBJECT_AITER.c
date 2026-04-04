@@ -21,7 +21,7 @@
 KOS_OP_HANDLER(OBJECT_AITER) {
   PyObject *val = KosStackBlock_PopRef(&CURRENT_STACK(ctx));
   if (! val)
-    return -1;
+    return KOS_OP_POST_ERR();
 
   PyObject *res = NULL;
   PyTypeObject *type = Py_TYPE(val);
@@ -30,9 +30,9 @@ KOS_OP_HANDLER(OBJECT_AITER) {
   if (! res) {
     PyErr_Format(PyExc_RuntimeError, "cannot await for elements of %R", val);
     Py_DECREF(val);
-    return -1;
+    return KOS_OP_POST_ERR();
   }
   Py_DECREF(val);
   (void) insn;
-  return push_result(ctx, res);
+  return kos_op_outcome_from_int_step(push_result(ctx, res));
 }

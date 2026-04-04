@@ -31,24 +31,24 @@ KOS_OP_HANDLER(PUSH_COLLECT) {
   if (cidx >= KosCode_CPOOL_LEN(code)) {
     PyErr_Format(PyExc_IndexError, "PUSH_COLLECT constant index out of"
                  " bounds: %u", cidx);
-    return -1;
+    return KOS_OP_POST_ERR();
   }
 
   nspec = KosCode_GetConstant((PyObject *) code, cidx);
   if (! nspec) {
-    return -1;
+    return KOS_OP_POST_ERR();
   }
 
   if (! KosNamespaceSpec_CheckExact(nspec)) {
     PyErr_Format(PyExc_RuntimeError,
                  "PUSH_COLLECT spec must be a NamespaceSpec, not %R", nspec);
-    return -1;
+    return KOS_OP_POST_ERR();
   }
 
   PyObject *spec_parent = KosNamespace_Check(parent) ? parent : NULL;
   new_ns = KosCollectorNamespace_New(spec_parent, nspec);
   if (! new_ns) {
-    return -1;
+    return KOS_OP_POST_ERR();
   }
 
   Py_INCREF(parent);
@@ -56,7 +56,7 @@ KOS_OP_HANDLER(PUSH_COLLECT) {
   if (! col_node) {
     Py_DECREF(parent);
     Py_DECREF(new_ns);
-    return -1;
+    return KOS_OP_POST_ERR();
   }
 
   Py_DECREF(CURRENT_NS(ctx));
@@ -67,11 +67,11 @@ KOS_OP_HANDLER(PUSH_COLLECT) {
     CURRENT_NS(ctx) = parent;
     Py_DECREF(parent);
     kos_dyn_pop_collect(ctx, col_node);
-    return -1;
+    return KOS_OP_POST_ERR();
   }
 
   (void) out_ev;
-  return 0;
+  return KOS_OP_RUN();
 }
 
 

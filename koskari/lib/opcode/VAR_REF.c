@@ -20,10 +20,10 @@
 KOS_OP_HANDLER(VAR_REF) {
   PyObject *name = get_name_from_insn(CURRENT_CODE(ctx), insn);
   if (! name)
-    return -1;
+    return KOS_OP_POST_ERR();
   PyObject *ref = frame_ns_ref(ctx, name);
   if (! ref)
-    return -1;
+    return KOS_OP_POST_ERR();
   Py_INCREF(ref);
-  return push_result(ctx, ref);
+  return kos_op_outcome_from_int_step(push_result(ctx, ref));
 }

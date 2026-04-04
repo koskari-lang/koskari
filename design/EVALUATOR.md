@@ -29,16 +29,16 @@ flowchart TD
         P1["Phase 1: eval_phase_entry<br/>Resolve mode from suspension state + send_val/throw_exc"]
         mode_check{"mode?"}
         P2["Phase 2: eval_phase_transfer<br/>Drain active transfer plan; terminal RETURN if empty"]
-        loop_start["for (;;) dispatch loop"]
+        loop_start["dispatch loop (computed goto: goto eval_prologue; switch: for(;;))"]
 
         subgraph loop["Loop body"]
             Xfer["run_transfer_plan_to_completion<br/>(if plan active)"]
             P3["Phase 3: eval_phase_pending_exception<br/>PyErr_Occurred? → process_raise"]
             Native{"Frame has native_handler?"}
-            P4["Phase 4: eval_phase_prepare_dispatch<br>fetch code, pc, insn; pre-advance pc"]
+            P4["Phase 4: kos_eval_prepare_next_insn<br>fetch insn; acting_pc; pre-advance pc"]
             P5["Phase 5: opcode dispatch<br/>computed goto → op_xxx(ctx, out_ev, insn)"]
             P6["Phase 6: eval_phase_post_opcode<br>op_res != 0 handling"]
-            next["next_insn"]
+            next["re-enter prologue (or RUN tail-dispatch)"]
         end
 
         P1 --> mode_check
@@ -142,15 +142,17 @@ flowchart TD
     raise_check -->|else| loop_cont
 ```
 
-### 2.4 Phase 4: Prepare Dispatch
+### 2.4 Phase 4: Prepare next instruction
 
-**eval_phase_prepare_dispatch** fills `KosDispatchCtx`:
+**kos_eval_prepare_next_insn** (static in `eval.c`) writes the current instruction pointer into `*out_insn` and updates the frame:
 
 1. Check `CURRENT_FRAME(ctx)`.
 2. Read `code`, `pc` from frame; bounds-check `pc`.
 3. Load `insn = code->code[pc]`.
 4. Set `acting_pc = pc` (instruction being executed).
 5. Advance `pc` (pre-advance so normal path does not need to redo).
+
+There is no separate dispatch-context struct; the hot path keeps a local `KosOp *insn`. **eval_phase_post_opcode** does not take insn or a dispatch bundle.
 
 PC is rolled back for WITH enter/exit suspend so the same instruction is retried on resume.
 

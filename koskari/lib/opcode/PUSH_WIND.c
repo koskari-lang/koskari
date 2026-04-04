@@ -27,34 +27,34 @@ KOS_OP_HANDLER(PUSH_WIND) {
   if (count != 1 && count != 2) {
     PyErr_Format(PyExc_ValueError,
                  "PUSH_WIND: COUNT must be 1 or 2, got %u", count);
-    return -1;
+    return KOS_OP_POST_ERR();
   }
 
   if (count == 2) {
     after = KosStackBlock_PopRef(&CURRENT_STACK(ctx));
     if (! after) {
       PyErr_SetString(PyExc_RuntimeError, "PUSH_WIND: stack underrun (after)");
-      return -1;
+      return KOS_OP_POST_ERR();
     }
   }
   before = KosStackBlock_PopRef(&CURRENT_STACK(ctx));
   if (! before) {
     Py_XDECREF(after);
     PyErr_SetString(PyExc_RuntimeError, "PUSH_WIND: stack underrun (before)");
-    return -1;
+    return KOS_OP_POST_ERR();
   }
 
   if (before != Py_None && ! KosCallable_Check(before)) {
     Py_DECREF(before);
     Py_XDECREF(after);
     PyErr_SetString(PyExc_TypeError, "PUSH_WIND: before thunk must be callable or nil");
-    return -1;
+    return KOS_OP_POST_ERR();
   }
   if (after && after != Py_None && ! KosCallable_Check(after)) {
     Py_DECREF(before);
     Py_DECREF(after);
     PyErr_SetString(PyExc_TypeError, "PUSH_WIND: after thunk must be callable or nil");
-    return -1;
+    return KOS_OP_POST_ERR();
   }
 
   PyObject *b = (before == Py_None) ? NULL : before;
@@ -68,7 +68,7 @@ KOS_OP_HANDLER(PUSH_WIND) {
   if (! wind) {
     Py_XDECREF(b);
     Py_XDECREF(a);
-    return -1;
+    return KOS_OP_POST_ERR();
   }
   if (b)
     Py_DECREF(b);
@@ -77,12 +77,12 @@ KOS_OP_HANDLER(PUSH_WIND) {
 
   int r = kos_dyn_wind(ctx, (KosDynNode *) wind, out_ev);
   if (r == KOS_DYN_UNWIND_ASYNC_STARTED)
-    return 0;
+    return KOS_OP_RUN();
   if (r < 0)
-    return -1;
+    return KOS_OP_POST_ERR();
   /* No before thunk or sync before: wind phase done, mark entered */
   KosDynWind_ENTERED(wind) = 1;
 
   (void) out_ev;
-  return 0;
+  return KOS_OP_RUN();
 }

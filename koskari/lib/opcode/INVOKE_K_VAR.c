@@ -22,11 +22,11 @@ KOS_OP_HANDLER(INVOKE_K_VAR) {
   KosCode *code = CURRENT_CODE(ctx);
   PyObject *name = KosCode_GetConstant((PyObject *) code, KosOp_ARG(insn));
   if (! name)
-    return -1;
+    return KOS_OP_POST_ERR();
 
   PyObject *value = KosStackBlock_PopRef(&CURRENT_STACK(ctx));
   if (! value)
-    return -1;
+    return KOS_OP_POST_ERR();
 
   PyObject *ns = CURRENT_NS(ctx);
   PyObject *cont_obj = NULL;
@@ -40,12 +40,12 @@ KOS_OP_HANDLER(INVOKE_K_VAR) {
     Py_DECREF(value);
     PyErr_Format(PyExc_TypeError,
                  "frame namespace must be Namespace or dict, got %R", ns);
-    return -1;
+    return KOS_OP_POST_ERR();
   }
 
   if (! cont_obj) {
     Py_DECREF(value);
-    return -1;
+    return KOS_OP_POST_ERR();
   }
 
   if (! KosPyDelimitedContinuation_Check(cont_obj)) {
@@ -53,7 +53,7 @@ KOS_OP_HANDLER(INVOKE_K_VAR) {
     Py_DECREF(cont_obj);
     PyErr_SetString(PyExc_TypeError,
                     "INVOKE_K_VAR: name is not a DelimitedContinuation");
-    return -1;
+    return KOS_OP_POST_ERR();
   }
 
   KosContinuation *k = ((KosPyDelimitedContinuation *) cont_obj)->captured;
@@ -63,7 +63,7 @@ KOS_OP_HANDLER(INVOKE_K_VAR) {
     Py_DECREF(cont_obj);
     PyErr_SetString(PyExc_RuntimeError,
                     "INVOKE_K_VAR: continuation has no captured state");
-    return -1;
+    return KOS_OP_POST_ERR();
   }
 
   if (k->token_ref != (PyObject *) KosContext_TOKEN(ctx)) {
@@ -72,7 +72,7 @@ KOS_OP_HANDLER(INVOKE_K_VAR) {
     PyErr_SetString(KoskariContinuationError,
                     "INVOKE_K_VAR: continuation does not belong to current"
                     " evaluator");
-    return -1;
+    return KOS_OP_POST_ERR();
   }
 
   /* Prompt need not be in chain: push model grafts cont frames onto current
@@ -81,11 +81,11 @@ KOS_OP_HANDLER(INVOKE_K_VAR) {
   if (kos_invoke_continuation(ctx, k, value, 0, cont_obj) < 0) {
     Py_DECREF(value);
     Py_DECREF(cont_obj);
-    return -1;
+    return KOS_OP_POST_ERR();
   }
   Py_DECREF(value);
   /* cont_obj not DECREF'd: invoke transfers control on success */
   (void) out_ev;
   (void) insn;
-  return 0;
+  return KosContext_PLAN(ctx) ? KOS_OP_PROLOGUE() : KOS_OP_RUN();
 }

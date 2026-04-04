@@ -24,7 +24,7 @@ KOS_OP_HANDLER(NEXT) {
   uint16_t n = KosOp_ARG(insn);
   if (n != 1 && n != 2) {
     PyErr_Format(PyExc_ValueError, "NEXT arg must be 1 or 2, got %u", n);
-    return -1;
+    return KOS_OP_POST_ERR();
   }
 
   PyObject *default_val = NULL;
@@ -32,12 +32,12 @@ KOS_OP_HANDLER(NEXT) {
   if (n == 2) {
     default_val = KosStackBlock_PopRef(&CURRENT_STACK(ctx));
     if (! default_val)
-      return -1;
+      return KOS_OP_POST_ERR();
   }
   iter = KosStackBlock_PopRef(&CURRENT_STACK(ctx));
   if (! iter) {
     Py_XDECREF(default_val);
-    return -1;
+    return KOS_OP_POST_ERR();
   }
 
   /* If not already an iterator, get one (NEXT allows iterables). */
@@ -51,7 +51,7 @@ KOS_OP_HANDLER(NEXT) {
   //     Py_DECREF(iter);
   //     if (! it) {
   //       Py_XDECREF(default_val);
-  //       return -1;
+  //       return KOS_OP_POST_ERR();
   //     }
   //     iter = it;
   //   }
@@ -65,21 +65,21 @@ KOS_OP_HANDLER(NEXT) {
                       "async generator already being iterated");
       Py_DECREF(iter);
       Py_XDECREF(default_val);
-      return -1;
+      return KOS_OP_POST_ERR();
     }
     if (agen->closed || ! agen->ctx) {
       Py_DECREF(iter);
       if (n == 2 && default_val) {
         if (KosStackBlock_PushRef(&CURRENT_STACK(ctx), default_val) < 0) {
           Py_XDECREF(default_val);
-          return -1;
+          return KOS_OP_POST_ERR();
         }
         Py_XDECREF(default_val);
-        return 0;
+        return KOS_OP_RUN();
       }
       Py_XDECREF(default_val);
       PyErr_SetNone(PyExc_StopIteration);
-      return -1;
+      return KOS_OP_POST_ERR();
     }
     agen->in_progress = 1;
     KosContext_PENDING_AGEN(ctx) = (void *) agen;
@@ -91,10 +91,10 @@ KOS_OP_HANDLER(NEXT) {
     }
     KosContext_PENDING_AGEN_N(ctx) = (int) n;
     if (op_attach_koskari_agen_frame(ctx, agen, iter, default_val) < 0)
-      return -1;
+      return KOS_OP_POST_ERR();
     Py_DECREF(iter);
     Py_XDECREF(default_val);
-    return 0;
+    return KOS_OP_RUN();
   }
 
   PyObject *value = NULL;
@@ -105,33 +105,33 @@ KOS_OP_HANDLER(NEXT) {
         Py_DECREF(value);
         Py_DECREF(iter);
         Py_XDECREF(default_val);
-        return -1;
+        return KOS_OP_POST_ERR();
       }
       Py_DECREF(value);
       Py_DECREF(iter);
       Py_XDECREF(default_val);
-      return 0;
+      return KOS_OP_RUN();
 
     case GET_NEXT_EXHAUSTED:
       Py_DECREF(iter);
       if (default_val) {
         if (KosStackBlock_PushRef(&CURRENT_STACK(ctx), default_val) < 0) {
           Py_XDECREF(default_val);
-          return -1;
+          return KOS_OP_POST_ERR();
         }
         Py_XDECREF(default_val);
-        return 0;
+        return KOS_OP_RUN();
       }
       Py_XDECREF(default_val);
       PyErr_SetNone(PyExc_StopIteration);
-      return -1;
+      return KOS_OP_POST_ERR();
 
     case GET_NEXT_SUSPEND:
       if (n == 2) {
         if (KosStackBlock_PushRef(&CURRENT_STACK(ctx), default_val) < 0) {
           Py_DECREF(default_val);
           Py_DECREF(iter);
-          return -1;
+          return KOS_OP_POST_ERR();
         }
       }
       if (KosStackBlock_PushRef(&CURRENT_STACK(ctx), iter) < 0) {
@@ -141,20 +141,20 @@ KOS_OP_HANDLER(NEXT) {
           Py_DECREF(default_val);
         }
         Py_DECREF(iter);
-        return -1;
+        return KOS_OP_POST_ERR();
       }
       Py_DECREF(iter);
       Py_XDECREF(default_val);
-      return 1;
+      return KOS_OP_POST_SUSPEND();
 
     case GET_NEXT_ERROR:
       Py_DECREF(iter);
       Py_XDECREF(default_val);
-      return -1;
+      return KOS_OP_POST_ERR();
 
     default:
       Py_DECREF(iter);
       Py_XDECREF(default_val);
-      return -1;
+      return KOS_OP_POST_ERR();
   }
 }

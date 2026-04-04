@@ -29,16 +29,16 @@ KOS_OP_HANDLER(CALL_FAST) {
   PyObject *ns = CURRENT_NS(ctx);
   if (! ns) {
     PyErr_SetString(PyExc_RuntimeError, "CALL_FAST on NULL namespace");
-    return -1;
+    return KOS_OP_POST_ERR();
   }
   if (! KosNamespace_SupportsFast(ns)) {
     PyErr_Format(PyExc_RuntimeError, "CALL_FAST on %R", ns);
-    return -1;
+    return KOS_OP_POST_ERR();
   }
 
   PyObject *callable = KosNamespace_FastDeref(ns, (size_t) slot_idx);
   if (! callable)
-    return -1;
+    return KOS_OP_POST_ERR();
 
   KosStackBlock **stack = &CURRENT_STACK(ctx);
 
@@ -46,14 +46,14 @@ KOS_OP_HANDLER(CALL_FAST) {
     KosStackSteal steal = { 0 };
     if (KosStackSteal_Tail(&steal, (size_t) n, stack) < 0) {
       Py_DECREF(callable);
-      return -1;
+      return KOS_OP_POST_ERR();
     }
     int r = KosContext_Call(ctx, out_ev, callable,
                             (n > 0) ? steal.vals : NULL,
                             (Py_ssize_t) n, NULL, 0);
     Py_DECREF(callable);
     KosStackSteal_Free(&steal);
-    return r;
+    return kos_op_outcome_from_call_int(ctx, r);
   }
 
   PyObject *result = NULL;
@@ -64,7 +64,7 @@ KOS_OP_HANDLER(CALL_FAST) {
     PyObject *const *ptr = KosStackBlock_TailPtr(*stack, n);
     if (! ptr) {
       Py_DECREF(callable);
-      return -1;
+      return KOS_OP_POST_ERR();
     }
 
     result = PyObject_Vectorcall(callable, ptr, (size_t) n, NULL);
@@ -72,7 +72,7 @@ KOS_OP_HANDLER(CALL_FAST) {
   }
 
   Py_DECREF(callable);
-  return result ? kos_push_or_await(ctx, out_ev, result) : -1;
+  return result ? kos_op_outcome_from_push_int(kos_push_or_await(ctx, out_ev, result)) : KOS_OP_POST_ERR();
 }
 
 

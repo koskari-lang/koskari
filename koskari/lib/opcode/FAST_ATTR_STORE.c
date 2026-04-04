@@ -24,29 +24,29 @@ KOS_OP_HANDLER(FAST_ATTR_STORE) {
   PyObject *ns = CURRENT_NS(ctx);
   if (! ns) {
     PyErr_SetString(PyExc_RuntimeError, "FAST_ATTR_STORE invoked on NULL namespace");
-    return -1;
+    return KOS_OP_POST_ERR();
   }
   if (! KosNamespace_SupportsFast(ns)) {
     PyErr_Format(PyExc_RuntimeError, "FAST_ATTR_STORE invoked on %R", ns);
-    return -1;
+    return KOS_OP_POST_ERR();
   }
   PyObject *attr_name = KosCode_GetConstant((PyObject *) code, row.a1);
   if (! attr_name)
-    return -1;
+    return KOS_OP_POST_ERR();
   PyObject *val = KosStackBlock_PopRef(&CURRENT_STACK(ctx));
   if (! val)
-    return -1;
+    return KOS_OP_POST_ERR();
   size_t idx = (size_t) row.a0;
   PyObject *obj = KosNamespace_FastDeref(ns, idx);
   if (! obj) {
     Py_DECREF(val);
-    return -1;
+    return KOS_OP_POST_ERR();
   }
   int res = PyObject_SetAttr(obj, attr_name, val);
   Py_DECREF(obj);
   Py_DECREF(val);
   if (res < 0)
-    return -1;
+    return KOS_OP_POST_ERR();
   (void) out_ev;
-  return 0;
+  return KOS_OP_RUN();
 }

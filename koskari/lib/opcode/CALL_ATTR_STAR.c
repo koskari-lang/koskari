@@ -47,7 +47,7 @@ KOS_OP_HANDLER(CALL_ATTR_STAR) {
 
   PyObject *name = KosCode_GetConstant((PyObject *) code, attr_cpool_idx);
   if (! name)
-    return -1;
+    return KOS_OP_POST_ERR();
 
   PyObject *obj = NULL;
   PyObject *pos = NULL;
@@ -58,62 +58,62 @@ KOS_OP_HANDLER(CALL_ATTR_STAR) {
   if ((opa & 3) == 3) {
     kwd = KosStackBlock_PopRef(stack);
     if (! kwd)
-      return -1;
+      return KOS_OP_POST_ERR();
     pos = KosStackBlock_PopRef(stack);
     if (! pos) {
       Py_DECREF(kwd);
-      return -1;
+      return KOS_OP_POST_ERR();
     }
     obj = KosStackBlock_PopRef(stack);
     if (! obj) {
       Py_DECREF(pos);
       Py_DECREF(kwd);
-      return -1;
+      return KOS_OP_POST_ERR();
     }
     if (ensure_tuple_attr_star(&pos)) {
       Py_DECREF(obj);
       Py_DECREF(pos);
       Py_DECREF(kwd);
-      return -1;
+      return KOS_OP_POST_ERR();
     }
   } else if (opa & 2) {
     kwd = KosStackBlock_PopRef(stack);
     if (! kwd)
-      return -1;
+      return KOS_OP_POST_ERR();
     obj = KosStackBlock_PopRef(stack);
     if (! obj) {
       Py_DECREF(kwd);
-      return -1;
+      return KOS_OP_POST_ERR();
     }
     pos = PyTuple_New(0);
     if (! pos) {
       Py_DECREF(obj);
       Py_DECREF(kwd);
-      return -1;
+      return KOS_OP_POST_ERR();
     }
   } else if (opa & 1) {
     pos = KosStackBlock_PopRef(stack);
     if (! pos)
-      return -1;
+      return KOS_OP_POST_ERR();
     obj = KosStackBlock_PopRef(stack);
     if (! obj) {
       Py_DECREF(pos);
-      return -1;
+      return KOS_OP_POST_ERR();
     }
     if (ensure_tuple_attr_star(&pos)) {
       Py_DECREF(obj);
       Py_DECREF(pos);
-      return -1;
+      return KOS_OP_POST_ERR();
     }
     kwd = NULL;
   } else {
     obj = KosStackBlock_PopRef(stack);
     if (! obj)
-      return -1;
+      return KOS_OP_POST_ERR();
     pos = PyTuple_New(0);
     if (! pos) {
       Py_DECREF(obj);
-      return -1;
+      return KOS_OP_POST_ERR();
     }
     kwd = NULL;
   }
@@ -124,7 +124,7 @@ KOS_OP_HANDLER(CALL_ATTR_STAR) {
     Py_DECREF(obj);
     Py_DECREF(pos);
     Py_XDECREF(kwd);
-    return -1;
+    return KOS_OP_POST_ERR();
   }
 
   PyObject *args_for_call = pos;
@@ -137,7 +137,7 @@ KOS_OP_HANDLER(CALL_ATTR_STAR) {
       Py_DECREF(resolved);
       Py_DECREF(pos);
       Py_XDECREF(kwd);
-      return -1;
+      return KOS_OP_POST_ERR();
     }
     args_for_call = PySequence_Concat(combined, pos);
     Py_DECREF(combined);
@@ -146,7 +146,7 @@ KOS_OP_HANDLER(CALL_ATTR_STAR) {
       Py_DECREF(resolved);
       Py_DECREF(pos);
       Py_XDECREF(kwd);
-      return -1;
+      return KOS_OP_POST_ERR();
     }
     Py_DECREF(pos);
   }
@@ -158,7 +158,7 @@ KOS_OP_HANDLER(CALL_ATTR_STAR) {
   Py_DECREF(resolved);
   Py_DECREF(args_for_call);
   Py_XDECREF(kwd);
-  return res;
+  return kos_op_outcome_from_call_int(ctx, res);
 }
 
 

@@ -20,16 +20,16 @@
 KOS_OP_HANDLER(ITEM_REF) {
   PyObject *key = KosStackBlock_PopRef(&CURRENT_STACK(ctx));
   if (! key)
-    return -1;
+    return KOS_OP_POST_ERR();
   PyObject *obj = KosStackBlock_PopRef(&CURRENT_STACK(ctx));
   if (! obj) {
     Py_DECREF(key);
-    return -1;
+    return KOS_OP_POST_ERR();
   }
   PyObject *ref = KosItemRef_New(NULL, obj, key);
   Py_DECREF(obj);
   Py_DECREF(key);
   if (! ref)
-    return -1;
-  return push_result(ctx, ref);
+    return KOS_OP_POST_ERR();
+  return kos_op_outcome_from_int_step(push_result(ctx, ref));
 }

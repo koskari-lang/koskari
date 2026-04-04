@@ -27,19 +27,19 @@ KOS_OP_HANDLER(CALL) {
 
   PyObject *const *ptr = KosStackBlock_TailPtr(*stack, n + 1);
   if (! ptr)
-    return -1;
+    return KOS_OP_POST_ERR();
 
   SAYF("CALL: callable=%R", ptr[0]);
 
   if (KosCallable_Check(ptr[0])) {
     KosStackSteal steal = { 0 };
     if (KosStackSteal_Tail(&steal, (size_t)(n + 1), stack) < 0)
-      return -1;
+      return KOS_OP_POST_ERR();
     int r = KosContext_Call(ctx, out_ev, steal.vals[0],
                             (n > 0) ? &steal.vals[1] : NULL,
                             (Py_ssize_t) n, NULL, 0);
     KosStackSteal_Free(&steal);
-    return r;
+    return kos_op_outcome_from_call_int(ctx, r);
 
   } else {
     PyObject *result;
@@ -52,6 +52,8 @@ KOS_OP_HANDLER(CALL) {
 
     SAYF("CALL: result=%R", result);
     KosStackBlock_DropNoErr(stack, n + 1);
-    return result ? kos_push_or_await(ctx, out_ev, result) : -1;
+    return result
+        ? kos_op_outcome_from_push_int(kos_push_or_await(ctx, out_ev, result))
+        : KOS_OP_POST_ERR();
   }
 }

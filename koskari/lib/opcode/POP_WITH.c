@@ -27,7 +27,7 @@ KOS_OP_HANDLER(POP_WITH) {
   if (! top || ! KosDynNode_IS_WITH(top)) {
     SAY("[eval] POP_WITH top is not a with node");
     PyErr_SetString(PyExc_RuntimeError, "POP_WITH: top is not a with node");
-    return -1;
+    return KOS_OP_POST_ERR();
   }
   KosDynWith *with_node = (KosDynWith *) top;
 
@@ -36,32 +36,32 @@ KOS_OP_HANDLER(POP_WITH) {
     uint32_t same_pc = CURRENT_ACTING_PC(ctx);
     CURRENT_PC(ctx) = same_pc;
     KosDynFrame_ACTING_PC(CURRENT_FRAME(ctx)) = same_pc;
-    return KOS_DYN_UNWIND_ASYNC_STARTED;
+    return KOS_OP_POST_SUSPEND();
   }
   if (unw == KOS_DYN_UNWIND_SWALLOWED)
-    return 0;
+    return KOS_OP_RUN();
   if (unw < 0)
-    return -1;
+    return KOS_OP_POST_ERR();
 
   /* Sync path: pop body value, drop block, pop with node, push body value. */
   PyObject *body_val = KosStackBlock_PopRef(&CURRENT_STACK(ctx));
   if (! body_val)
-    return -1;
+    return KOS_OP_POST_ERR();
   if (KosStackBlock_DropBlock(&CURRENT_STACK(ctx)) < 0) {
     Py_DECREF(body_val);
-    return -1;
+    return KOS_OP_POST_ERR();
   }
   kos_dyn_pop_with(ctx, with_node);
   if (KosStackBlock_PushRef(&CURRENT_STACK(ctx), body_val) < 0) {
     Py_DECREF(body_val);
-    return -1;
+    return KOS_OP_POST_ERR();
   }
   Py_DECREF(body_val);
 
   SAY("[eval] POP_WITH sync path done -> return 0");
   (void) out_ev;
   (void) insn;
-  return 0;
+  return KOS_OP_RUN();
 }
 
 
