@@ -104,7 +104,8 @@ typedef KosDynFrame KosFrame;
   Opcode handlers set kind and payload when an instruction must signal
   return, yield, await, or raise.  The main loop and eval_phase_post_opcode
   then either stop the eval and return to the koskari_eval caller
-  (KOS_STEP_STOP_EVENT), or handle the boundary inside the loop without
+  (KOS_STEP_STOP_EVENT), restart the full dispatch prologue
+  (KOS_STEP_REPROLOGUE), or handle the boundary inside the loop without
   leaving (detach and deliver to a parent frame, push yielded values for
   flattened async iteration, run unwind handlers, and similar).  Nested
   calls and non-top frames use the same kinds; framing is not limited to
@@ -160,12 +161,15 @@ typedef enum KosEvalMode {
 /**
   KosEvalStep is the return type of each internal phase helper inside
   koskari_eval.  CONTINUE means the phase completed normally and the next
-  phase should run.  STOP_EVENT means out_ev has been filled and the
-  evaluator should return to its caller.  FATAL_ERROR means a PyErr has
-  been set and koskari_eval must return -1.
+  prologue step (or prepare/dispatch) should run in order.  REPROLOGUE means
+  restart from the top of the dispatch prologue (transfer drain, pending
+  exception, native frame) before the next opcode.  STOP_EVENT means out_ev
+  has been filled and the evaluator should return to its caller.
+  FATAL_ERROR means a PyErr has been set and koskari_eval must return -1.
 */
 typedef enum KosEvalStep {
   KOS_STEP_CONTINUE,
+  KOS_STEP_REPROLOGUE,
   KOS_STEP_STOP_EVENT,
   KOS_STEP_FATAL_ERROR,
 } KosEvalStep;

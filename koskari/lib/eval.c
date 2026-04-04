@@ -2680,12 +2680,11 @@ static KosEvalStep eval_phase_transfer(KosContext *ctx, KosEvent *out_ev) {
 
 /**
    Map process_raise outcome to eval step: propagate RAISE, resuspend on
-   AWAIT, or set loop_continue for local recovery.
+   AWAIT, or REPROLOGUE after local recovery.
 */
 static KosEvalStep eval_step_after_process_raise(
     KosContext *ctx,
-    KosEvent *out_ev,
-    int *loop_continue) {
+    KosEvent *out_ev) {
 
   KosEvalMode raise_mode = process_raise(ctx, out_ev);
   if (raise_mode == KOS_MODE_RAISE)
@@ -2696,8 +2695,7 @@ static KosEvalStep eval_step_after_process_raise(
     return KOS_STEP_STOP_EVENT;
   }
 
-  *loop_continue = 1;
-  return KOS_STEP_CONTINUE;
+  return KOS_STEP_REPROLOGUE;
 }
 
 
@@ -2706,23 +2704,20 @@ static KosEvalStep eval_step_after_process_raise(
 
    When PyErr_Occurred() is set on entry to the dispatch loop (e.g. from a
    signal handler or a mid-loop async exception), calls process_raise to
-   attempt local handling.  Sets *loop_continue when the caller should
-   issue a bare continue rather than proceeding to dispatch.
+   attempt local handling.
 
-   :param loop_continue: Set to 1 when the loop should continue without dispatch.
    :return: KOS_STEP_STOP_EVENT when out_ev is filled and eval should return;
-            KOS_STEP_CONTINUE otherwise (including when *loop_continue is set).
+            KOS_STEP_REPROLOGUE when handled locally (restart prologue);
+            KOS_STEP_CONTINUE when no PyErr.
 */
 static KosEvalStep eval_phase_pending_exception(
         KosContext *ctx,
-        KosEvent *out_ev,
-        int *loop_continue) {
+        KosEvent *out_ev) {
 
-  *loop_continue = 0;
   if (! PyErr_Occurred())
     return KOS_STEP_CONTINUE;
 
-  return eval_step_after_process_raise(ctx, out_ev, loop_continue);
+  return eval_step_after_process_raise(ctx, out_ev);
 }
 
 
@@ -2788,8 +2783,7 @@ static KosEvalStep kos_eval_prepare_next_insn(
 */
 static KosEvalStep eval_post_opcode_pending_agen(
     KosContext *ctx,
-    KosEvent *out_ev,
-    int *loop_continue) {
+    KosEvent *out_ev) {
 
   if (KosEvent_KIND(out_ev) == KOS_EV_YIELD) {
     KosPyAsyncGen *agen;
@@ -2808,8 +2802,7 @@ static KosEvalStep eval_post_opcode_pending_agen(
     Py_XDECREF(KosContext_PENDING_AGEN_DEFAULT(ctx));
     KosContext_PENDING_AGEN_DEFAULT(ctx) = NULL;
     agen->in_progress = 0;
-    *loop_continue = 1;
-    return KOS_STEP_CONTINUE;
+    return KOS_STEP_REPROLOGUE;
   }
 
   {
@@ -2863,8 +2856,7 @@ static KosEvalStep eval_post_opcode_pending_agen(
     KosContext_PENDING_AGEN_DEFAULT(ctx) = NULL;
     KosEvent_PAYLOAD(out_ev) = NULL;
     KosEvent_KIND(out_ev) = KOS_EV_NONE;
-    *loop_continue = 1;
-    return KOS_STEP_CONTINUE;
+    return KOS_STEP_REPROLOGUE;
   }
 }
 
@@ -2874,26 +2866,19 @@ static KosEvalStep eval_post_opcode_pending_agen(
 
    Called when an opcode handler returns a non-zero op_res.  Handles the
    exception path (via try_local_exception_handler) and suspension-event
-   tagging for AWAIT and YIELD events.  Sets *loop_continue when an exception
-   was locally handled and the loop should continue without stopping.
+   tagging for AWAIT and YIELD events.
 
    :param op_res: The non-zero return value from the opcode handler.
 
-   :param loop_continue: Set to 1 when exception was handled and loop should
-    continue.
-
    :return: KOS_STEP_FATAL_ERROR when op_res < 0 and no exception/event
     (caller uses eval_ret -1); KOS_STEP_STOP_EVENT when out_ev is filled and
-    eval should return (eval_ret 0); KOS_STEP_CONTINUE when *loop_continue
-    is set.
+    eval should return (eval_ret 0); KOS_STEP_REPROLOGUE when the dispatch
+    loop should restart the full prologue without surfacing a boundary.
 */
 static KosEvalStep eval_phase_post_opcode(
         KosContext *ctx,
         KosEvent *out_ev,
-        int op_res,
-        int *loop_continue) {
-
-  *loop_continue = 0;
+        int op_res) {
 
   /* Clear resume kind when handling non-zero result so next iteration (if we
      continue) has it clean. Keeps the hot path (tail-dispatch) from touching it. */
@@ -2904,13 +2889,12 @@ static KosEvalStep eval_phase_post_opcode(
     if (r == 0 || r == KOS_DYN_UNWIND_ASYNC_STARTED) {
       /* 0: thunk/wind advanced; 1: async extent started (same numeric value as
          a normal opcode "suspend" but only returned from dyn helpers). */
-      *loop_continue = 1;
-      return KOS_STEP_CONTINUE;
+      return KOS_STEP_REPROLOGUE;
     }
   }
 
   if (PyErr_Occurred())
-    return eval_step_after_process_raise(ctx, out_ev, loop_continue);
+    return eval_step_after_process_raise(ctx, out_ev);
 
   /* Record why we suspended so next entry can choose revive path.
      post_opcode is only called for non-zero op_res; a handler that stops
@@ -2933,11 +2917,11 @@ static KosEvalStep eval_phase_post_opcode(
     /* Koskari flatten: GEN was on consumer chain; freeze restored caller.
        Push value onto caller stack and continue (no event return). */
     if (KosContext_PENDING_AGEN(ctx))
-      return eval_post_opcode_pending_agen(ctx, out_ev, loop_continue);
+      return eval_post_opcode_pending_agen(ctx, out_ev);
     KosContext_SUSPENSION_EVENT(ctx) = KOS_SUSP_YIELD;
 
   } else if (KosEvent_KIND(out_ev) == KOS_EV_RETURN && KosContext_PENDING_AGEN(ctx)) {
-    return eval_post_opcode_pending_agen(ctx, out_ev, loop_continue);
+    return eval_post_opcode_pending_agen(ctx, out_ev);
   }
 
   /* op_res < 0 with no PyErr and no suspension event is a fatal internal error */
@@ -2961,13 +2945,11 @@ static KosEvalStep eval_step_drain_transfer_plan(KosContext *ctx, KosEvent *out_
 /**
    One native-frame iteration: run handler; on non-zero result, post_opcode.
    Caller must only invoke when CURRENT_FRAME has NATIVE_HANDLER.
-   Sets *eval_ret on FATAL (-1) or STOP (0).  *loop_continue when returning
-   CONTINUE after handled exception/async unwind.
+   Sets *eval_ret on FATAL (-1) or STOP (0).
 */
 static KosEvalStep eval_step_native_iteration(
     KosContext *ctx,
     KosEvent *out_ev,
-    int *loop_continue,
     int *eval_ret) {
 
   int op_res;
@@ -2975,14 +2957,10 @@ static KosEvalStep eval_step_native_iteration(
 
   op_res = kos_eval_call_native_handler(ctx, out_ev, 0, NULL);
 
-  if (op_res == 0) {
-    *loop_continue = 0;
-    return KOS_STEP_CONTINUE;
-  }
+  if (op_res == 0)
+    return KOS_STEP_REPROLOGUE;
 
-  *loop_continue = 0;
-
-  ps = eval_phase_post_opcode(ctx, out_ev, op_res, loop_continue);
+  ps = eval_phase_post_opcode(ctx, out_ev, op_res);
   if (ps == KOS_STEP_FATAL_ERROR)
     *eval_ret = -1;
   else if (ps == KOS_STEP_STOP_EVENT)
@@ -3027,27 +3005,20 @@ cg_prologue:
   }
 
   {
-    int loop_continue = 0;
-    if (eval_phase_pending_exception(ctx, out_ev, &loop_continue)
-        == KOS_STEP_STOP_EVENT)
+    KosEvalStep pend = eval_phase_pending_exception(ctx, out_ev);
+    if (pend == KOS_STEP_STOP_EVENT)
       return 0;
-
-    if (loop_continue)
+    if (pend == KOS_STEP_REPROLOGUE)
       goto cg_prologue;
   }
 
   if (CURRENT_FRAME(ctx)
       && KosDynFrame_NATIVE_HANDLER(CURRENT_FRAME(ctx)) != NULL) {
-    int loop_continue = 0;
-    KosEvalStep ns = eval_step_native_iteration(ctx, out_ev,
-                                                &loop_continue,
-                                                &eval_ret);
+    KosEvalStep ns = eval_step_native_iteration(ctx, out_ev, &eval_ret);
     if (ns == KOS_STEP_FATAL_ERROR)
       return eval_ret;
     if (ns == KOS_STEP_STOP_EVENT)
       return eval_ret;
-    if (loop_continue)
-      goto cg_prologue;
     goto cg_prologue;
   }
 
@@ -3086,16 +3057,12 @@ cg_handle_op_outcome:
     goto cg_prologue;
 
   if (op_out.mode == KOS_LOP_POST) {
-    int loop_continue = 0;
     int op_res = kos_op_post_tag_to_res(op_out.post_tag);
-    KosEvalStep ps = eval_phase_post_opcode(ctx, out_ev, op_res,
-                                            &loop_continue);
+    KosEvalStep ps = eval_phase_post_opcode(ctx, out_ev, op_res);
     if (ps == KOS_STEP_FATAL_ERROR)
       return -1;
     if (ps == KOS_STEP_STOP_EVENT)
       return 0;
-    if (loop_continue)
-      goto cg_prologue;
     goto cg_prologue;
   }
 
@@ -3132,11 +3099,10 @@ koskari_eval_dispatch_switch(KosContext *ctx, KosEvent *out_ev) {
       }
 
       {
-        int loop_continue = 0;
-        if (eval_phase_pending_exception(ctx, out_ev, &loop_continue)
-            == KOS_STEP_STOP_EVENT)
+        KosEvalStep pend = eval_phase_pending_exception(ctx, out_ev);
+        if (pend == KOS_STEP_STOP_EVENT)
           return 0;
-        if (loop_continue) {
+        if (pend == KOS_STEP_REPROLOGUE) {
           need_prologue = 1;
           goto sw_loop_head;
         }
@@ -3144,18 +3110,11 @@ koskari_eval_dispatch_switch(KosContext *ctx, KosEvent *out_ev) {
 
       if (CURRENT_FRAME(ctx)
           && KosDynFrame_NATIVE_HANDLER(CURRENT_FRAME(ctx)) != NULL) {
-        int loop_continue = 0;
-        KosEvalStep ns = eval_step_native_iteration(ctx, out_ev,
-                                                    &loop_continue,
-                                                    &eval_ret);
+        KosEvalStep ns = eval_step_native_iteration(ctx, out_ev, &eval_ret);
         if (ns == KOS_STEP_FATAL_ERROR)
           return eval_ret;
         if (ns == KOS_STEP_STOP_EVENT)
           return eval_ret;
-        if (loop_continue) {
-          need_prologue = 1;
-          goto sw_loop_head;
-        }
         need_prologue = 1;
         goto sw_loop_head;
       }
@@ -3200,18 +3159,12 @@ koskari_eval_dispatch_switch(KosContext *ctx, KosEvent *out_ev) {
     }
 
     if (op_out.mode == KOS_LOP_POST) {
-      int loop_continue = 0;
       int op_res = kos_op_post_tag_to_res(op_out.post_tag);
-      KosEvalStep ps = eval_phase_post_opcode(ctx, out_ev, op_res,
-                                              &loop_continue);
+      KosEvalStep ps = eval_phase_post_opcode(ctx, out_ev, op_res);
       if (ps == KOS_STEP_FATAL_ERROR)
         return -1;
       if (ps == KOS_STEP_STOP_EVENT)
         return 0;
-      if (loop_continue) {
-        need_prologue = 1;
-        goto sw_loop_head;
-      }
       need_prologue = 1;
       goto sw_loop_head;
     }

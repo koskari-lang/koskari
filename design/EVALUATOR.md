@@ -132,14 +132,14 @@ flowchart TD
     raise_check{"result?"}
     stop_raise["KOS_MODE_RAISE<br/>→ KOS_STEP_STOP_EVENT"]
     stop_await["KOS_EV_AWAIT<br/>SUSPENSION_EVENT = AWAIT<br/>→ KOS_STEP_STOP_EVENT"]
-    loop_cont["*loop_continue = 1<br/>KOS_STEP_CONTINUE"]
+    repro["KOS_STEP_REPROLOGUE"]
 
     pyerr -->|No| cont
     pyerr -->|Yes| process
     process --> raise_check
     raise_check -->|KOS_MODE_RAISE| stop_raise
     raise_check -->|KOS_EV_AWAIT| stop_await
-    raise_check -->|else| loop_cont
+    raise_check -->|else| repro
 ```
 
 ### 2.4 Phase 4: Prepare next instruction
@@ -178,9 +178,9 @@ flowchart LR
 ```mermaid
 flowchart TD
     control{"op_res == KOS_OP_RES_CONTROL_RETURNED?"}
-    ctrl_returned["kos_dynnode_on_control_returned<br/>(wind thunks)<br/>loop_continue = 1, CONTINUE"]
+    ctrl_returned["kos_dynnode_on_control_returned<br/>(wind thunks)<br/>→ KOS_STEP_REPROLOGUE"]
     pyerr{"PyErr_Occurred()?"}
-    process["process_raise<br/>→ STOP_EVENT or loop_continue"]
+    process["process_raise<br/>→ STOP_EVENT or REPROLOGUE"]
     suspend{"op_res == 1<br/>(suspend)?"}
     with_rollback["WITH rollback? (PUSH_WITH/POP_WITH/etc.)<br/>roll back pc for resume"]
     yield_walk["KOS_EV_YIELD?<br/>kos_dyn_walk_handle_yield<br/>(GEN consumes, freeze)"]
@@ -198,7 +198,7 @@ flowchart TD
 For **YIELD** and **YIELD_FROM** (op_res == 1, `out_ev` == KOS_EV_YIELD): before tagging suspension, the evaluator calls `kos_dyn_walk_handle_yield(ctx, out_ev)`. The dynamic chain is walked from dyn_top toward the frame; each node is offered handle(YIELD). The **generator node** (KOS_DYN_GEN) **consumes** the event and freezes the chain (e.g. `kos_dyn_gen_freeze_and_release`).
 
 Whether `koskari_eval()` actually *returns* this yield to its caller depends on flattening mode:
-- **Flattened koskati-to-koskari (NEXT/ITER_NEXT over `KosPyAsyncGen`)**: if `KosContext_PENDING_AGEN(ctx)` is set, `eval_phase_post_opcode` treats the yielded payload as an internal step result. After `kos_dyn_walk_handle_yield`, it pushes the payload onto the current frame stack, clears `out_ev` back to `KOS_EV_NONE` (and drops the payload), and continues the dispatch loop (`*loop_continue = 1`, `KOS_STEP_CONTINUE`). In this mode, the caller never observes a suspension boundary.
+- **Flattened koskati-to-koskari (NEXT/ITER_NEXT over `KosPyAsyncGen`)**: if `KosContext_PENDING_AGEN(ctx)` is set, `eval_phase_post_opcode` treats the yielded payload as an internal step result. After `kos_dyn_walk_handle_yield`, it pushes the payload onto the current frame stack, clears `out_ev` back to `KOS_EV_NONE` (and drops the payload), and returns `KOS_STEP_REPROLOGUE` so the dispatch loop restarts the full prologue. In this mode, the caller never observes a suspension boundary.
 - **Regular python-to-koskari boundary**: if `KosContext_PENDING_AGEN(ctx)` is not set, `eval_phase_post_opcode` sets `SUSPENSION_EVENT = KOS_SUSP_YIELD` and exits with STOP_EVENT. The caller observes `out_ev.kind == KOS_EV_YIELD` and later resumes the generator via `revive_yield(send_val)`.
 
 In both cases (plain `YIELD` or `YIELD_FROM`), resume inject uses the same `revive_yield` path when the driver does resume the evaluator.
@@ -485,7 +485,7 @@ When `CURRENT_FRAME(ctx)` has `native_handler != NULL`, the loop runs that handl
 1. Opcode fails, sets PyErr. `op_res == -1`.
 2. Post-opcode: `PyErr_Occurred()` → `process_raise`.
 3. `try_local_exception_handler` finds TRY region, sets handler_pc, clears PyErr for handler, returns 1.
-4. `process_raise` returns `KOS_MODE_NORMAL`. Post-opcode sets `loop_continue = 1`, returns CONTINUE.
+4. `process_raise` returns `KOS_MODE_NORMAL`. Post-opcode returns `KOS_STEP_REPROLOGUE`.
 5. Loop continues; next instruction is the except block.
 
 ### 9.3 Scenario: Continuation Invoke (Own Token)
@@ -513,7 +513,7 @@ When `CURRENT_FRAME(ctx)` has `native_handler != NULL`, the loop runs that handl
 
 1. Generator is running; frame's parent is GEN. Plain `YIELD` or `YIELD_FROM` sets `out_ev = KOS_EV_YIELD`, sets payload, marks context DEAD, returns 1.
 2. Post-opcode: `KosEvent_KIND(out_ev) == KOS_EV_YIELD` → `kos_dyn_walk_handle_yield(ctx, out_ev)`. Chain is walked; GEN receives handle(YIELD) and **consumes** it (e.g. `kos_dyn_gen_freeze_and_release`): dynchain is frozen, context suspended.
-3. Post-opcode sets `SUSPENSION_EVENT = KOS_SUSP_YIELD` and returns STOP_EVENT in the regular boundary case. If `KosContext_PENDING_AGEN(ctx)` is set (flattened async-gen stepping), `eval_phase_post_opcode` instead clears `out_ev` and continues dispatch (no external suspension).
+3. Post-opcode sets `SUSPENSION_EVENT = KOS_SUSP_YIELD` and returns STOP_EVENT in the regular boundary case. If `KosContext_PENDING_AGEN(ctx)` is set (flattened async-gen stepping), `eval_phase_post_opcode` instead clears `out_ev` and returns `KOS_STEP_REPROLOGUE` (no external suspension).
 4. Driver (e.g. Python generator `send`) receives `KOS_EV_YIELD` and payload in the regular boundary case; later calls `koskari_eval(ctx, &ev, send_val, NULL, NULL)`.
 5. Entry: `SUSPENSION_EVENT == YIELD`, `send_val` provided → `revive_yield(send_val, ...)`.
 6. `revive_yield` pushes `send_val` onto the stack. Mode = NORMAL. Loop continues; next instruction runs with the sent value on the stack.
@@ -523,7 +523,7 @@ When `CURRENT_FRAME(ctx)` has `native_handler != NULL`, the loop runs that handl
 1. TAIL_CALL opcode calls `kos_callable_tail_call`. Callable has `tp_kos_tail_install`.
 2. Install resets current frame (code, ns, stack, pc) for the new function, returns 0.
 3. Opcode returns `KOS_OP_RES_CONTROL_RETURNED`.
-4. Post-opcode: `kos_dynnode_on_control_returned` runs (wind thunks if any). `loop_continue = 1`, CONTINUE.
+4. Post-opcode: `kos_dynnode_on_control_returned` runs (wind thunks if any). Returns `KOS_STEP_REPROLOGUE`.
 5. Loop continues; next instruction is first instruction of the new function (same frame, new content).
 
 ### 9.7 Scenario: Transfer Plan Step Fails
@@ -546,7 +546,8 @@ When `CURRENT_FRAME(ctx)` has `native_handler != NULL`, the loop runs that handl
 
 | KosEvalStep | Meaning |
 |-------------|---------|
-| CONTINUE | Proceed to next phase or next iteration |
+| CONTINUE | Proceed to next prologue step or prepare/dispatch |
+| REPROLOGUE | Restart full dispatch prologue (xfer, pending, native) |
 | STOP_EVENT | out_ev filled; return 0 to caller |
 | FATAL_ERROR | PyErr set; return -1 to caller |
 

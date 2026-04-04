@@ -424,13 +424,14 @@ Each helper returns a `KosEvalStep` value:
 
 ```c
 typedef enum KosEvalStep {
-  KOS_STEP_CONTINUE,      /* phase completed; proceed to next phase */
+  KOS_STEP_CONTINUE,      /* phase completed; next prologue step or prepare */
+  KOS_STEP_REPROLOGUE,    /* restart full prologue (xfer, pending, native) */
   KOS_STEP_STOP_EVENT,    /* out_ev is filled; return to caller (eval_ret = 0) */
   KOS_STEP_FATAL_ERROR,   /* PyErr set; return to caller (eval_ret = -1) */
 } KosEvalStep;
 ```
 
-Phase 4 sets a local `KosOp *insn` (and frame `acting_pc` / `pc`) for phase 5. Phase 6 (**eval_phase_post_opcode**) takes only `ctx`, `out_ev`, mapped `op_res`, and `loop_continue`; it does not receive insn.
+Phase 4 sets a local `KosOp *insn` (and frame `acting_pc` / `pc`) for phase 5. Phase 6 (**eval_phase_post_opcode**) takes only `ctx`, `out_ev`, and mapped `op_res`; it does not receive insn.
 
 #### Exception ownership note
 
