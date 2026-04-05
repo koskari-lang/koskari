@@ -465,4 +465,33 @@ class TestCallEndToEnd(SpecialsTestCase):
         self.assertEqual(got[0], ([1, 10, 11, 2, 20, 21], {}))
 
 
+class TestGeneratorTailCallDemotion(SpecialsTestCase):
+    """
+    Yielding functions run demote_tail_calls_if_yields before Code(); tail
+    calls must not appear in the sealed bytecode.
+    """
+
+    async def test_yield_and_tail_position_emits_call_not_tail_call(self):
+        """
+        Else branch is a call in tail position (would be TAIL_CALL without
+        demotion). With yield in the same body, final code uses CALL.
+        """
+
+        code = self.compile_to_code(
+            """
+            (lambda [x]
+              (if x
+                (compile/yield x)
+                (compile/call list 1 2 3)))
+            """,
+            list=list,
+            tc=True,
+        )
+        body = self.lambda_body_code(code)
+        ops = [body.oparg(i)[0] for i in range(body.length())]
+        self.assertIn(OpCode.KOS_OP_YIELD, ops)
+        self.assertNotIn(OpCode.KOS_OP_TAIL_CALL, ops)
+        self.assertIn(OpCode.KOS_OP_CALL, ops)
+
+
 # The end.

@@ -129,6 +129,13 @@ def _build_var_to_fast():
 VAR_TO_FAST = _build_var_to_fast()
 
 
+_TAIL_CALL_TO_CALL = {
+    OpCode.KOS_OP_TAIL_CALL: OpCode.KOS_OP_CALL,
+    OpCode.KOS_OP_TAIL_CALL_NAMES: OpCode.KOS_OP_CALL_NAMES,
+    OpCode.KOS_OP_TAIL_CALL_STAR: OpCode.KOS_OP_CALL_STAR,
+}
+
+
 def _is_const_container(value):
     if not isinstance(value, CONST_CONTAINER_TYPES):
         return False
@@ -907,6 +914,21 @@ class Compiler:
         return result
 
 
+    def demote_tail_calls_if_yields(self, instr):
+        """
+        If the stream contains yield or yield-from, replace TAIL_CALL* with
+        CALL* so generator frames never use tail-call frame reuse. Native
+        Code lowering rejects the combination outright.
+        """
+
+        yield_ops = (OpCode.KOS_OP_YIELD, OpCode.KOS_OP_YIELD_FROM)
+        if not any(op in yield_ops for op, _ in instr):
+            return instr
+        return [
+            (_TAIL_CALL_TO_CALL.get(op, op), arg)
+            for op, arg in instr]
+
+
     def _cpool_scan_merge(self, fragment, instr):
         """
         Scan instructions for CONST (FunctionSpec) and merge inner Code's
@@ -940,6 +962,8 @@ class Compiler:
 
         # Lower VAR/request ops to FAST where possible
         instr = self.convert_fast(base_nspec, instr, mode=mode)
+
+        instr = self.demote_tail_calls_if_yields(instr)
 
         # Resolve filename for Code metadata
         try:

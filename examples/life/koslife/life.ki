@@ -7,19 +7,26 @@
 ;; :license: GNU General Public License v3
 
 
-(import-from copy copy)
+(import-from functools partial)
 (import-from itertools product starmap)
 (import-from random random seed)
+
+
+define demanding [fn]:
+    """
+    A demand wrapper for fn, so that starmap will operate correctly
+    """
+
+    (partial demand fn)
 
 
 class LifeBoard []:
 
     define __init__ [self width height wrap: False]:
-        (set! self.width width)
-        (set! self.height height)
-        (set! self.wrap wrap)
-        (set! self.data (dict))
-        (self.clear)
+        set! self.width width
+        set! self.height height
+        set! self.wrap wrap
+        set! self.data (dict)
 
 
     define clear [self]:
@@ -58,7 +65,7 @@ class LifeBoard []:
                     (del-item data coord)
                 (yield item)
         else:
-            (data.items)
+            yield-from (data.items)
 
 
     define toggle [self x y]:
@@ -92,11 +99,14 @@ class LifeBoard []:
 
 
     define get-group [self x y]:
-        (starmap self.get-cell (self.group-coord x y))
+        (list (starmap (demanding self.get-cell) (self.group-coord x y)))
 
 
     define get-all-groups [self]:
-        (starmap self.get-group (product (range 0 self.width) (range 0 self.height)))
+        ;; starmap isn't koskari so it sees coroutines, we need to
+        ;; actualize those.
+        (list (starmap (demanding self.get-group)
+               (product (range 0 self.width) (range 0 self.height))))
 
 
     define age [self]:
@@ -123,7 +133,8 @@ class LifeBoard []:
 
 
     define child [self]:
-        (define clone (copy self))
+        define clone (LifeBoard self.width self.height self.wrap)
+        (set! clone.data self.data)
         (clone.age)
 
 
@@ -141,7 +152,7 @@ define life-rule [group]:
             (set! living (+ living 1))
 
     if center:
-        if (and (<= 3 living) (< living 5)) (min (+ center 1) 9) 0
+        if (and (<= 3 living) (< living 5)) (+ center 1) 0
     else:
         if (eq? living 3) 1 0
 

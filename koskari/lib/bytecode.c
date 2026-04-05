@@ -1454,6 +1454,52 @@ static int validate_iter_next_in_foreach(
 }
 
 
+/**
+   Reject streams that mix yield with tail-call opcodes. Generators must
+   not use tail-call frame reuse; the compiler demotes TAIL_* to CALL_* when
+   yields are present.
+
+   :param instr_fast: result of PySequence_Fast on the instruction list
+
+   :return: 0 if ok, -1 with ValueError set if both yields and tail calls
+*/
+static int validate_no_tail_with_yield(PyObject *instr_fast) {
+
+  int saw_yield = 0;
+  int saw_tail = 0;
+  Py_ssize_t instr_l = PySequence_Fast_GET_SIZE(instr_fast);
+
+  for (Py_ssize_t i = 0; i < instr_l; i++) {
+    PyObject *pair = PySequence_Fast_GET_ITEM(instr_fast, i);
+    if (! PySequence_Check(pair) || PySequence_Fast_GET_SIZE(pair) < 2) {
+      continue;
+    }
+
+    PyObject *a = PySequence_Fast_GET_ITEM(pair, 0);
+    if (! PyLong_Check(a)) {
+      continue;
+    }
+
+    long lop = PyLong_AsLong(a);
+    if (lop == KOS_OP_YIELD || lop == KOS_OP_YIELD_FROM) {
+      saw_yield = 1;
+    } else if (lop == KOS_OP_TAIL_CALL || lop == KOS_OP_TAIL_CALL_NAMES
+               || lop == KOS_OP_TAIL_CALL_STAR) {
+      saw_tail = 1;
+    }
+
+    if (saw_yield && saw_tail) {
+      PyErr_SetString(PyExc_ValueError,
+                      "code containing yield or yield-from cannot use "
+                      "TAIL_CALL, TAIL_CALL_NAMES, or TAIL_CALL_STAR");
+      return -1;
+    }
+  }
+
+  return 0;
+}
+
+
 /* === Code initialization === */
 
 
@@ -1466,6 +1512,9 @@ static int validate_iter_next_in_foreach(
    3. Emit: write instructions, positions, cpool, extra into block.
    4. Finalize: derive_extents_fill or validate_extents; validate jumps;
       mprotect(PROT_READ); set KosCode fields.
+
+   Invariant: instruction streams that contain yield or yield-from must not
+   contain TAIL_CALL, TAIL_CALL_NAMES, or TAIL_CALL_STAR (ValueError).
 */
 static int code_instr_init(PyObject *self, PyObject *instr) {
 
@@ -1484,6 +1533,11 @@ static int code_instr_init(PyObject *self, PyObject *instr) {
 
   PyObject *instr_fast = PySequence_Fast(instr, "instructions must be sequence");
   if (! instr_fast) {
+    return -1;
+  }
+
+  if (validate_no_tail_with_yield(instr_fast)) {
+    Py_DECREF(instr_fast);
     return -1;
   }
 

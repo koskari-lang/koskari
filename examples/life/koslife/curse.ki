@@ -13,21 +13,9 @@
 (import-from .life LifeBoard)
 
 
-define smilies:
-  #("\U0001f615"
-    "\U0001f610"
-    "\U0001f642"
-    "\U0001f600"
-    "\U0001f60e")
-
 define digits "1234567890"
 
-
-define smilie-renderer [cell]:
-  if cell:
-    #((item smilies (% cell (len smilies))) 0)
-  else:
-    #(" " 0)
+define dots "⣷⣯⣟⡿⢿⣻⣽⣾"
 
 
 define make-char-renderer [alive: "O" dead: " "]:
@@ -46,11 +34,18 @@ define digit-renderer [cell]:
   #((if cell (str cell) " ") 0)
 
 
+define dots-renderer [cell]:
+  if cell:
+    #((item dots (% cell (len dots))) 0)
+  else:
+    #(" " 0)
+
+
 define get-renderer [by-name]:
-  if (eq? by-name "smilies"):
-    smilie-renderer
-  elif (eq? by-name "digits"):
+  if (eq? by-name "digits"):
     digit-renderer
+  elif (eq? by-name "dots"):
+    dots-renderer
   else:
     (make-char-renderer)
 

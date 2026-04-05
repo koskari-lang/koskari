@@ -1,0 +1,22 @@
+
+
+define bad_generator [x]:
+    if x:
+        (yield x)
+    else:
+        #[1 2 3]  ;; a return value that is a sequence
+
+
+define use_bad_generator []:
+    for-each [x (bad_generator None)]:
+        (return x)
+    (return None)
+
+
+define working_return []:
+    for-each [x (range 0 10)]:
+        (return x)
+    (return x)
+
+
+;; The end.
