@@ -98,6 +98,30 @@ Ref: [api/tracing.md](api/tracing.md).
 
 ## Runtime / execution
 
+### Demand wrapper, `demand_call`, `demand_apply`, bootstrap rename
+
+Introduce a **`Demand`** type: a Python-facing callable adapter that forwards
+metadata (`__wrapped__`, annotations, doc, name) from the inner Koskari or
+Python callable and implements `__call__` via the same primitive as today’s
+`demand_sync` (no partial-bound args on the wrapper; use thunks or explicit
+primitives when args must be bundled).
+
+Rename the public Python API **`demand_sync` → `demand_call`** (keep
+`demand_sync` as a deprecated alias during transition). Add **`demand_apply`**:
+`demand_apply(callable, args, kwargs)` equivalent to splatting into
+`demand_call`. C code may keep internal names like `demand_sync_ex`.
+
+Update **`koskari.importer.bootstrap`**: bind **`demand`** to `Demand` (not the
+invoke primitive); bind **`demand-call`** to `demand_call`; bind
+**`demand-apply`** to `demand_apply`. Migrate all existing `.ki` uses of
+`(demand …)` to `(demand-call …)`. Update **`demanding`** in `basics.ki` to use
+`Demand` instead of `partial` + `demand`.
+
+Ref: [api/demand-wrapper.md](api/demand-wrapper.md);
+[api/dunder-adapter.md](api/dunder-adapter.md) (host path, historical
+`demand_sync` naming); [api/import-system.md](api/import-system.md) (module
+loading uses demand path).
+
 ### Run and iter use demand
 
 Replace the `run` and `iter` methods of **KosFunction** and **KosPyAsyncGenerator**
