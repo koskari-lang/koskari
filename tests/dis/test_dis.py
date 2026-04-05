@@ -21,7 +21,7 @@ Unit tests for koskari.dis (disassembler).
 import io
 import unittest
 
-from koskari.lib import Code, Function, OpCode
+from koskari.lib import BoundMethod, Code, Function, OpCode
 from koskari.types import FormalsSpec, NamespaceSpec
 from tests import make_callable
 from koskari.dis import (
@@ -286,6 +286,44 @@ class TestDisFunction(unittest.IsolatedAsyncioTestCase):
             dis(42)
         with self.assertRaises(TypeError):
             dis('not code')
+
+
+class TestDisBoundMethod(unittest.IsolatedAsyncioTestCase):
+
+    async def test_dis_bound_method(self):
+        """
+        BoundMethod prints bound section, function section, then same KosCode
+        as the underlying Function.
+        """
+        fn = _make_function()
+        obj = object()
+        bm = fn.__get__(obj, type(obj))
+        self.assertIsInstance(bm, BoundMethod)
+        buf = io.StringIO()
+        dis(bm, file=buf)
+        text = buf.getvalue()
+        self.assertIn('Bound method instance:', text)
+        self.assertIn('__self__:', text)
+        self.assertIn(_format_constant(obj), text)
+        self.assertIn('Function instance:', text)
+        self.assertIn('KosCode', text)
+        self.assertIn('truthy_yus', text)
+        self.assertIn('KOS_OP_VAR', text)
+
+    async def test_dis_bound_method_not_plain_function(self):
+        """
+        Bound-method disassembly includes 'Bound method'; plain Function does
+        not.
+        """
+        fn = _make_function()
+        obj = object()
+        bm = fn.__get__(obj, type(obj))
+        buf_fn = io.StringIO()
+        dis(fn, file=buf_fn)
+        buf_bm = io.StringIO()
+        dis(bm, file=buf_bm)
+        self.assertNotIn('Bound method instance:', buf_fn.getvalue())
+        self.assertIn('Bound method instance:', buf_bm.getvalue())
 
 
 class TestGetInstructionLines(unittest.IsolatedAsyncioTestCase):

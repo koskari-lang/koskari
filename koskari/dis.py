@@ -18,14 +18,22 @@ Disassembler for Koskari code objects. Similar to Python's dis module:
 unpacks constant pool, vars (local_syms), closure refs (closure_syms from
 namespace_spec), and prints indexed opcodes with human-readable arguments
 (e.g. constant pool index as repr of value, jump targets as instruction
-indices).
+indices). Also accepts BoundMethod (unwraps __func__ for bytecode, prints
+__self__ in a leading section).
 
 :author: Christopher O'Brien <obriencj@preoccupied.net>
 :license: GNU General Public License v3
 :ai-assistant: claude-4.6-sonnet-high via Cursor
 """
 
-from koskari.lib import Code, Expression, Function, OpCode, OpStyle
+from koskari.lib import (
+    BoundMethod,
+    Code,
+    Expression,
+    Function,
+    OpCode,
+    OpStyle,
+)
 from koskari.types import NamespaceSpec
 
 
@@ -92,6 +100,19 @@ def _write_function_instance_section(file, fn):
                 file.write('    %s: %s\n' % (repr(k), _format_constant(v)))
     else:
         file.write('    (none)\n')
+    file.write('\n')
+
+
+def _write_bound_method_section(file, bm):
+    """
+    Write a leading section for a BoundMethod: bound __self__.
+
+    :param file: file-like object to write to
+    :param bm: BoundMethod instance
+    """
+
+    file.write('Bound method instance:\n')
+    file.write('  __self__: %s\n' % _format_constant(bm.__self__))
     file.write('\n')
 
 
@@ -298,6 +319,9 @@ def dis(x, file=None):
     For Function: prints a leading section with function instance details
     (name, formals, base_ns closures), then the disassembly of its code.
 
+    For BoundMethod: prints a bound-method section (__self__), then the
+    same function-instance section and code disassembly as for __func__.
+
     For Code: output includes constant pool (with NamespaceSpec entries
     expanded to show their locals and closures), vars (local_syms from
     namespace_spec), closure refs (closure_syms from namespace_spec),
@@ -306,7 +330,7 @@ def dis(x, file=None):
     instructions are annotated with the namespace ID (ns#K) and name of
     the NamespaceSpec they push.
 
-    :param x: Code, Expression (unwraps to Code), or Function instance
+    :param x: Code, Expression (unwraps to Code), Function, or BoundMethod
     :param file: file-like object to print to (default: stdout)
     """
 
@@ -316,10 +340,20 @@ def dis(x, file=None):
             import sys
             file = sys.stdout
         _write_function_instance_section(file, x)
+    elif isinstance(x, BoundMethod):
+        fn = x.__func__
+        code = fn.code
+        if file is None:
+            import sys
+            file = sys.stdout
+        _write_bound_method_section(file, x)
+        _write_function_instance_section(file, fn)
     else:
         code = _get_code(x)
         if code is None:
-            raise TypeError('expected Code or Function, got %s' % type(x).__name__)
+            raise TypeError(
+                'expected Code, Expression, Function, or BoundMethod, got %s'
+                % type(x).__name__)
     if file is None:
         import sys
         file = sys.stdout
