@@ -31,7 +31,7 @@ from decimal import Decimal as decimal
 from fractions import Fraction as fraction
 from os.path import dirname, join
 
-from .._sync import as_coroutine
+from ..types import as_coroutine
 from ..compile.specials import SPECIALS
 from ..compile.syntax import build_syntax as build_syntax_rules
 from ..lib import (AttributeRef, ConstantRef, DynamicRef, ItemRef, MemoizedRef,

@@ -459,13 +459,41 @@ static PyObject *coroutine_close(PyObject *self) {
 
 
 /*
-   run() – Run coroutine to completion from sync context. Safe when an
-   event loop is already running (uses executor thread). For tests and
-   synchronous scripts.
+   demand() – Run coroutine to completion on the demand path (no asyncio).
+   If the coroutine suspends on a Python awaitable, raises RuntimeError.
 */
-static PyObject *coroutine_run(PyObject *self) {
+static PyObject *coroutine_demand(PyObject *self) {
 
-  return Koskari_RunSync(self);
+  KosCoroutine *coro = (KosCoroutine *) self;
+
+  for (;;) {
+    PyObject *step = coroutine_send(self, Py_None);
+
+    if (! step) {
+      if (PyErr_Occurred()) {
+        if (PyErr_ExceptionMatches(PyExc_StopIteration)) {
+          PyObject *val = NULL;
+
+          (void) PyGen_FetchStopIterationValue(&val);
+          if (! val)
+            Py_RETURN_NONE;
+          return val;
+        }
+        return NULL;
+      }
+      return NULL;
+    }
+
+    if (coro->state == KOS_CORO_WAITING_PY) {
+      Py_DECREF(step);
+      PyErr_SetString(PyExc_RuntimeError,
+                      "coroutine.demand() cannot complete: coroutine is "
+                      "waiting on a Python awaitable; use async await");
+      return NULL;
+    }
+
+    Py_DECREF(step);
+  }
 }
 
 
@@ -479,9 +507,9 @@ static PyMethodDef coroutine_methods[] = {
   { "close", (PyCFunction) coroutine_close, METH_NOARGS,
     "Close the coroutine" },
 
-  { "run", (PyCFunction) coroutine_run, METH_NOARGS,
-    "Run coroutine to completion from sync context. Safe when an event loop "
-    "is already running. For tests and synchronous scripts." },
+  { "demand", (PyCFunction) coroutine_demand, METH_NOARGS,
+    "Run coroutine to completion from sync context on the demand path "
+    "(no asyncio). Raises if the coroutine waits on a Python awaitable." },
 
   { NULL, NULL, 0, NULL },
 };

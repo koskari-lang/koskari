@@ -9,10 +9,9 @@ files transparently via Python's standard `import` machinery.
   `.ki` files are discovered before Python's PathFinder can claim a directory as
   a namespace package.
 - **Loader**: `KoskariSourceFileLoader` drives the read-compile-execute loop for
-  `.ki` files. It may use either `run_sync(exec_module_async)` or
-  `exec_module_demand` to satisfy the synchronous `exec_module` entry point
-  required by importlib. Swap by changing the single return line in
-  `exec_module`.
+  `.ki` files. The synchronous `exec_module` entry point uses `exec_module_demand`
+  (demand path). An async `exec_module_async` path exists for callers that run an
+  event loop.
 - **Compiler specials**: The `import` and `import-from` special forms emit
   `IMPORT`, `IMPORT_REL`, and `IMPORT_FROM` opcodes; see [SPECIALS.md](../SPECIALS.md).
 

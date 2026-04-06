@@ -69,9 +69,9 @@
 - Outer invocation gets next value from iterable/awaitable
 - Frame re-entered when exhausted/completed
 
-### Synchronous entry points (run / iter)
+### Synchronous entry points (demand / DemandGenerator)
 
-For synchronous Python code (e.g. tests, scripts) that does not run an event loop, the runtime provides **KosCoroutine.run()** and **KosPyAsyncGen.iter()**. These use `asyncio.run()` under the hood so that callers can write `expr().run()` instead of `asyncio.run(expr())`, and `for x in agen.iter():` instead of driving the async gen with `async for` inside `asyncio.run()`. They must not be used when an event loop is already running (deadlock risk). See `design/interpreter/evaluator.md` § "Synchronous adapters (run / iter)".
+For synchronous Python code (e.g. tests, scripts), the runtime provides **KosCoroutine.demand()** and sync iteration via **`iter(agen)`** ( **`tp_iter`** → **DemandGenerator**). See `design/interpreter/evaluator.md` § "Synchronous entry points (demand / tp_iter)". Use **asyncio** when the coroutine awaits Python objects or you need `async for`.
 
 ## Migration Notes
 

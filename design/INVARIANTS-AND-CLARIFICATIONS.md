@@ -153,9 +153,9 @@ These are **commitments**: they must hold for correct behavior. They are elabora
 
 - **KosPyContinuation** (cont.c): Wraps undelimited `KosContinuation` (call/cc). Callable from Python: does not return; raises `KoskariContinuationApply` to perform upwards transfer via exception. Multi-shot: each apply clones captured state.
 
-- **KosCoroutine** (coro.c / coro.h): Wraps `KosContext` for the coroutine protocol (`__await__`, `send`, `throw`, `close`). States: NEW, RUNNING, WAITING_PY, YIELDED, DONE. Created by `KosCoroutine_NewFromCode()` (Expression/Function call). Driving the coroutine (send/await) calls `koskari_eval()`. (Continuation invocation from Python raises; it does not create a KosCoroutine.) **Sync adapter**: `run()` drives the coroutine to completion from synchronous code via `Koskari_RunSync()` (sync.c / koskari._sync); safe when an event loop is already running (uses a dedicated executor thread to avoid deadlock).
+- **KosCoroutine** (coro.c / coro.h): Wraps `KosContext` for the coroutine protocol (`__await__`, `send`, `throw`, `close`). States: NEW, RUNNING, WAITING_PY, YIELDED, DONE. Created by `KosCoroutine_NewFromCode()` (Expression/Function call). Driving the coroutine (send/await) calls `koskari_eval()`. (Continuation invocation from Python raises; it does not create a KosCoroutine.) **Sync entry**: `demand()` drives the coroutine to completion on the demand path (no asyncio); raises if suspension requires a Python awaitable.
 
-- **KosPyAsyncGen** / **KosPyAsyncGenASend** (iter.c / iter.h): Async generator protocol; `__anext__` returns an awaitable that drives until yield or completion. **Sync adapter**: `iter()` returns a synchronous iterator via `Koskari_IterSync()` (sync.c / koskari._sync); reuses a single event loop per iteration session; safe when an event loop is already running.
+- **KosPyAsyncGen** / **KosPyAsyncGenASend** (iter.c / iter.h): Async generator protocol; `__anext__` returns an awaitable that drives until yield or completion. **Sync iteration**: `tp_iter` returns a **DemandGenerator** (`KosDemandGenerator_FromAsyncGen`), not asyncio.
 
 ---
 
@@ -204,7 +204,7 @@ These are **commitments**: they must hold for correct behavior. They are elabora
 - Wind: push/pop wind, hook runner, begin/hook_active/end_hook (dynchain.c, eval.c).
 - Evaluator core: KosContext (with domain field), KosFrame, kos_context_new/free, kos_frame_new/clone/free (eval.c). Domain: KosDomain type (param value store: name -> value), ParamRef (Ref subclass; resolves via kos_domain_current and kos_domain_get_param), TLS (KosTlsState, ctx_stack, token_stack), kos_ctx_current, kos_domain_current, kos_domain_push_scope, kos_domain_pop_scope (domain.c).
 - Drive loop: `koskari_eval()` is implemented with opcode fetch, dispatch table, and boundary handling. **CALL** (stack [callable, arg_0, ..., arg_{N-1}]): for Continuation/DelimitedContinuation, same-token invoke applies directly, different-token sets KoskariContinuationApply and returns -1; for KosExpression/KosFunction pushes the callee frame and continues in the same loop (flattened); for other callables goes through Python (push_or_await result). **NEXT/ITER_NEXT** for a Koskari async gen attach the gen’s frame to the current context and continue in the same loop until the gen yields or completes (flattened). **YIELD/RETURN** with a parent frame detach and push value onto the parent, then continue in the same loop; only with no parent do they set a boundary event. Opcode implementation status: see [OPCODES.md](OPCODES.md) §1.6.
-- Python wrappers: KosPyContinuation (cont.c); KosCoroutine and `KosCoroutine_NewFromCode` (coro.c); KosPyAsyncGen, KosPyAsyncGenASend (iter.c). KosCoroutine drive (send/throw/close) in coro.c; async-gen drive and eager-step await in eval.c / iter.c. Sync adapter: `Koskari_RunSync` / `Koskari_IterSync` (sync.c), backed by `koskari._sync` (_sync.py).
+- Python wrappers: KosPyContinuation (cont.c); KosCoroutine and `KosCoroutine_NewFromCode` (coro.c); KosPyAsyncGen, KosPyAsyncGenASend (iter.c). KosCoroutine drive (send/throw/close) in coro.c; async-gen drive and eager-step await in eval.c / iter.c. Sync: `Coroutine.demand()` (coro.c); `tp_iter` → DemandGenerator (iter.c / sync.c).
 - GC: traverse helpers for context, frame, stack block, chain, continuation, transfer plan, hook runner (eval.c, dynchain.c).
 - Operators: reducing arithmetic, bitwise, membership, build-str; apply, reapply, identity, constantly, _pass; build_tuple, build_list, build_set, build_dict (operator.c, lib.c).
 
@@ -240,7 +240,7 @@ These are **commitments**: they must hold for correct behavior. They are elabora
 | Domain (TLS, KosDomain) | interpreter/domain.md      | koskari/lib/domain.c, domain.h          |
 | Coroutine / run-code | (this doc, evaluator.md)       | koskari/lib/coro.c, coro.h              |
 | Async generator   | (this doc, evaluator.md)         | koskari/lib/iter.c, iter.h              |
-| Sync adapter      | (this doc)                       | koskari/lib/sync.c, sync.h, koskari/_sync.py |
+| Demand path       | (this doc)                       | koskari/lib/sync.c, sync.h; `as_coroutine` in koskari/types.py |
 | Dynamic chain     | interpreter/evaluator.md          | koskari/lib/dynchain.c, dynchain.h      |
 | Continuations     | interpreter/callcc.md             | dynchain.c (capture/invoke), eval.c     |
 | Bytecode          | interpreter/bytecode.md, bytecode-metadata-tables.md | koskari/lib/bytecode.c, bytecode.h, opcodes.incl |

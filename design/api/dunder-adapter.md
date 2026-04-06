@@ -253,7 +253,7 @@ The adapter discards the temporary evaluator context before raising.
 | `push_or_await`      | Internal path: drives awaitables in OBJECT_* opcodes |
 | `demand_sync`        | Host path: drives dunder calls without suspension    |
 | `demand_next`        | Host path: drives sync iteration without suspension  |
-| `Koskari_RunSync`    | **Not** used for dunders. Runs coroutines via event loop; dunder adapter forbids suspension instead. |
+| `Coroutine.demand()` | **Not** used for dunders. Completes a KosCoroutine on the demand path; dunder adapter uses `demand_sync` / `Koskari_DemandSyncEx` instead. |
 | `__init__` (KosType) | demand dunder: kostype_tp_call uses Koskari_DemandSyncEx(__init__, ...). C() returns instance directly; C.new removed. |
 
 ---

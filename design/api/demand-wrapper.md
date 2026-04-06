@@ -127,8 +127,8 @@ in `*.ki` when implementing.
 - **`koskari/importer/module.py`**, **`importlib.py`**, docs that say
   `demand_sync(expr)` → `demand_call(expr)` in prose; loader code imports
   updated symbol.
-- **`koskari/_sync.py`**: any `from koskari.lib import demand_sync` →
-  `demand_call` (or keep alias).
+- **`koskari/types.py`**: `as_coroutine` lives here for bootstrap/asyncio
+  adaptation (the old `koskari._sync` module was removed).
 - **C layer** (`sync.c`): optionally rename public Python methoddef only;
   internal `demand_sync_ex` can stay to minimize churn.
 - **Tests**: `tests/lib/test_demand_sync.py` → extend or rename to cover

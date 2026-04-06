@@ -181,7 +181,7 @@ class TestYieldKoskariCallPath(CevalTest):
         caller = make_callable(caller_code, caller_ns)
         result = demand_call(caller)
         self.assertIsInstance(result, AsyncGenerator)
-        self.assertEqual(list(result.iter()), [6, 7])
+        self.assertEqual(list(result), [6, 7])
 
 
     def test_yielding_expression_call_returns_async_generator(self):
@@ -207,7 +207,7 @@ class TestYieldKoskariCallPath(CevalTest):
         caller = make_callable(caller_code, caller_ns)
         result = demand_call(caller)
         self.assertIsInstance(result, AsyncGenerator)
-        self.assertEqual(list(result.iter()), [42])
+        self.assertEqual(list(result), [42])
 
 
     def test_non_yielding_function_call_returns_value(self):

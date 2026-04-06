@@ -221,14 +221,14 @@ struct KosTransferPlan {
 - `__anext__` returns `KosPyAsyncGenASend` awaitable
 - When driven from **within** a Koskari eval (e.g. `await-for-each`), the gen’s frame is **attached** to the current context and stepped in the same loop; when driven from Python (`__anext__`), `koskari_eval(agen->ctx, &ev)` is used directly.
 
-### Synchronous adapters (run / iter)
+### Synchronous entry points (demand / tp_iter)
 
-For ease of use in **synchronous** Python code (e.g. tests, scripts) that does not already run an event loop, the C extension provides:
+For **synchronous** Python code (e.g. tests, scripts) that does not use `asyncio`:
 
-- **KosCoroutine.run()**: Runs the coroutine to completion using `asyncio.run(self)`. Callers can write `expr().run()` instead of `asyncio.run(expr())`.
-- **KosPyAsyncGen.iter()**: Returns a synchronous iterator that drives the async generator by calling `asyncio.run(awaitable)` on each `__anext__` result, so `for x in agen.iter():` yields values without an explicit event loop.
+- **KosCoroutine.demand()**: Runs the coroutine to completion on the demand path (no asyncio). If the coroutine suspends on a Python awaitable, `demand()` raises; use `async`/`await` for that case.
+- **`iter(agen)` / `for x in agen`**: `tp_iter` returns a **DemandGenerator** that drives the Koskari async generator synchronously via the evaluator (not `koskari._sync`).
 
-**Warning**: These are **unsafe** convenience APIs. They must **not** be used when an event loop is already running (e.g. from inside async code or from another `run()` call), as that can cause deadlock. They are intended for tests and synchronous entry points only. The API docstrings and type docs carry this warning.
+Use **`asyncio.run(expr())`** or **`await expr()`** when you need the full asyncio stack.
 
 ## In-loop flattening (same koskari_eval run)
 

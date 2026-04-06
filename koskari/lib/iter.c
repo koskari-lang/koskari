@@ -17,8 +17,8 @@
 /**
    koskari/lib/iter.c
 
-   KosPyAsyncGen, KosPyAsyncGenASend, and the sync iterator adapter.
-   Async iteration and sync layer for driving async generators.
+   KosPyAsyncGen and KosPyAsyncGenASend. Async iteration and tp_iter
+   DemandGenerator for synchronous for-loops.
 
    :author: Christopher O'Brien <obriencj@preoccupied.net>
    :license: GNU General Public License v3
@@ -261,28 +261,10 @@ static PyObject *asyncgen_repr(PyObject *self) {
 }
 
 
-/*
-   iter() – Return a sync iterator that drives this async generator.
-   Reuses a single event loop per iteration session. Safe when an event
-   loop is already running.
-*/
-static PyObject *asyncgen_iter(PyObject *self) {
-
-  return Koskari_IterSync(self);
-}
-
-
 static PyObject *asyncgen_tp_iter(PyObject *self) {
 
   return KosDemandGenerator_FromAsyncGen((KosPyAsyncGen *) self);
 }
-
-static PyMethodDef asyncgen_methods[] = {
-  { "iter", (PyCFunction) asyncgen_iter, METH_NOARGS,
-    "Return a synchronous iterator that drives this async generator. "
-    "Reuses a loop per session. Safe when an event loop is already running." },
-  { NULL, NULL, 0, NULL },
-};
 
 
 static PyAsyncMethods asyncgen_async_methods = {
@@ -305,7 +287,6 @@ PyTypeObject KosPyAsyncGenType = {
   .tp_traverse = asyncgen_traverse,
   .tp_clear = asyncgen_clear,
   .tp_iter = asyncgen_tp_iter,
-  .tp_methods = asyncgen_methods,
 };
 
 

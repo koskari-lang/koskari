@@ -12,11 +12,7 @@
 # along with this library; if not, see <http://www.gnu.org/licenses/>.
 
 """
-Tests for KosCoroutine.run() and KosPyAsyncGen.iter() sync adapters.
-
-These adapters use asyncio.run() under the hood and must not be used when
-an event loop is already running. The tests here run in a synchronous
-context only.
+Tests for KosCoroutine.demand() and sync iteration over KosPyAsyncGen.
 
 :author: Christopher O'Brien <obriencj@preoccupied.net>
 :license: GNU General Public License v3
@@ -34,14 +30,14 @@ import pytest
 pytestmark = pytest.mark.phase_lib
 
 
-class TestCoroutineRun(unittest.IsolatedAsyncioTestCase):
+class TestCoroutineDemand(unittest.IsolatedAsyncioTestCase):
     """
-    KosCoroutine.run() behaves like asyncio.run(coro)
+    KosCoroutine.demand() matches asyncio.run(expr()) for pure Koskari code
     """
 
-    async def test_run_returns_same_as_asyncio_run(self):
+    async def test_demand_returns_same_as_asyncio_run(self):
         """
-        expr().run() returns the same value as asyncio.run(expr())
+        expr().demand() returns the same value as asyncio.run(expr())
         """
 
         code, ns = build_expr([
@@ -52,15 +48,15 @@ class TestCoroutineRun(unittest.IsolatedAsyncioTestCase):
         ])
         expr = make_callable(code, ns)
         coro = expr()
-        self.assertEqual(coro.run(), 42)
+        self.assertEqual(coro.demand(), 42)
         loop = asyncio.get_running_loop()
         result = await loop.run_in_executor(None, lambda: asyncio.run(expr()))
         self.assertEqual(result, 42)
 
 
-    def test_run_on_expression_result(self):
+    def test_demand_on_expression_result(self):
         """
-        expr().run() works for an expression that returns a constant
+        expr().demand() works for an expression that returns a constant
         """
 
         code, ns = build_expr([
@@ -69,17 +65,17 @@ class TestCoroutineRun(unittest.IsolatedAsyncioTestCase):
         ])
         expr = make_callable(code, ns)
         coro = expr()
-        self.assertEqual(coro.run(), 99)
+        self.assertEqual(coro.demand(), 99)
 
 
-class TestAsyncGeneratorIter(unittest.IsolatedAsyncioTestCase):
+class TestAsyncGeneratorSyncList(unittest.IsolatedAsyncioTestCase):
     """
-    KosPyAsyncGen.iter() yields the same values as async for
+    list(agen) via DemandGenerator matches async for
     """
 
-    async def test_iter_matches_async_for(self):
+    async def test_list_matches_async_for(self):
         """
-        list(agen.iter()) matches the list from async for over a fresh agen
+        list(agen) matches the list from async for over a fresh agen
         """
 
         code, ns = build_expr([
@@ -95,16 +91,18 @@ class TestAsyncGeneratorIter(unittest.IsolatedAsyncioTestCase):
 
         agen_sync = expr()
         self.assertIsInstance(agen_sync, AsyncGenerator)
-        sync_values = list(agen_sync.iter())
+        sync_values = list(agen_sync)
         self.assertEqual(sync_values, [1, 2, 3])
 
         def run_in_thread():
             agen = expr()
+
             async def collect(gen):
                 out = []
                 async for x in gen:
                     out.append(x)
                 return out
+
             return asyncio.run(collect(agen))
 
         loop = asyncio.get_running_loop()
@@ -113,9 +111,9 @@ class TestAsyncGeneratorIter(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(sync_values, async_values)
 
 
-    def test_iter_single_value(self):
+    def test_list_single_value(self):
         """
-        list(agen.iter()) for a single yield returns one element
+        list(agen) for a single yield returns one element
         """
 
         code, ns = build_expr([
@@ -125,17 +123,17 @@ class TestAsyncGeneratorIter(unittest.IsolatedAsyncioTestCase):
         ])
         expr = make_callable(code, ns)
         agen = expr()
-        self.assertEqual(list(agen.iter()), [42])
+        self.assertEqual(list(agen), [42])
 
 
 class TestAsyncGeneratorDemandIter(unittest.TestCase):
     """
-    __iter__ returns a native DemandGenerator (no asyncio iter_sync)
+    __iter__ returns a native DemandGenerator
     """
 
-    def test_iter_builtin_matches_iter_method(self):
+    def test_two_fresh_agens_list_same(self):
         """
-        list(agen) uses tp_iter and matches list(agen.iter())
+        Two fresh async generators list to the same values
         """
 
         code, ns = build_expr([
@@ -146,10 +144,13 @@ class TestAsyncGeneratorDemandIter(unittest.TestCase):
             ["RETURN", 0],
         ])
         expr = make_callable(code, ns)
-        agen_demand = expr()
-        agen_loop = expr()
-        self.assertIsInstance(agen_demand, AsyncGenerator)
-        self.assertEqual(list(agen_demand), list(agen_loop.iter()))
+        agen_a = expr()
+        agen_b = expr()
+        self.assertIsInstance(agen_a, AsyncGenerator)
+        out_a = list(agen_a)
+        out_b = list(agen_b)
+        self.assertEqual(out_a, out_b)
+        self.assertEqual(out_a, [1, 2])
 
 
 # The end.

@@ -17,9 +17,8 @@
 /**
    koskari/lib/sync.c
 
-   Async-to-sync primitives. Imports koskari._sync and exposes
-   run_sync and iter_sync for C callers and the module dict.
-   demand_call: invoke Koskari callable without suspension (callee as root).
+   Demand path and KoskariSyncViolation. demand_call invokes Koskari callable
+   without suspension (callee as root).
    Yielding KosFunctions return DemandGenerator instead of raising.
    AWAIT/YIELD inject (in-eval KoskariSyncViolation) is implemented only in
    demand_sync_ex run_eval; DemandGenerator (demand_gen_step) still raises
@@ -995,37 +994,9 @@ static PyMethodDef demand_apply_methoddef = {
 };
 
 
-static PyObject *as_coroutine_func = NULL;
-static PyObject *run_sync_func = NULL;
-static PyObject *iter_sync_func = NULL;
-
-
-PyObject *Koskari_RunSync(PyObject *awaitable) {
-
-  if (! run_sync_func) {
-    PyErr_SetString(PyExc_RuntimeError,
-                    "run_sync not available (koskari.lib init failed?)");
-    return NULL;
-  }
-  return PyObject_CallOneArg(run_sync_func, awaitable);
-}
-
-
-PyObject *Koskari_IterSync(PyObject *async_iterable) {
-
-  if (! iter_sync_func) {
-    PyErr_SetString(PyExc_RuntimeError,
-                    "iter_sync not available (koskari.lib init failed?)");
-    return NULL;
-  }
-  return PyObject_CallOneArg(iter_sync_func, async_iterable);
-}
-
-
 int koskari_sync_init(PyObject *mod) {
 
   PyObject *dict = PyModule_GetDict(mod);
-  PyObject *sync_mod = NULL;
   PyObject *demand_call_func = NULL;
   PyObject *demand_apply_func = NULL;
 
@@ -1076,27 +1047,6 @@ int koskari_sync_init(PyObject *mod) {
       return 0;
   }
 
-  sync_mod = PyImport_ImportModule("koskari._sync");
-  if (! sync_mod)
-    return -1;
-
-  run_sync_func = PyObject_GetAttrString(sync_mod, "run_sync");
-  iter_sync_func = PyObject_GetAttrString(sync_mod, "iter_sync");
-  Py_DECREF(sync_mod);
-
-  if (! run_sync_func || ! iter_sync_func) {
-    Py_XDECREF(run_sync_func);
-    Py_XDECREF(iter_sync_func);
-    run_sync_func = NULL;
-    iter_sync_func = NULL;
-    return -1;
-  }
-
-  if (PyDict_SetItemString(dict, "run_sync", run_sync_func))
-    return -1;
-  if (PyDict_SetItemString(dict, "iter_sync", iter_sync_func))
-    return -1;
-
   return 0;
 }
 
@@ -1104,9 +1054,6 @@ int koskari_sync_init(PyObject *mod) {
 int koskari_sync_clear(PyObject *mod) {
 
   KoskariSyncViolation = NULL;
-  Py_CLEAR(as_coroutine_func);
-  Py_CLEAR(run_sync_func);
-  Py_CLEAR(iter_sync_func);
   (void) mod;
   return 0;
 }

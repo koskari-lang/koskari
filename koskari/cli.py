@@ -130,7 +130,6 @@ def _make_prompter(histfile=None, get_namespace=None):
 
 REPL_INFRASTRUCTURE_MODULES = frozenset((
     'koskari.cli',
-    'koskari._sync',
     'asyncio',
     'asyncio.base_events',
     'asyncio.events',
