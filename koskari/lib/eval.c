@@ -154,7 +154,6 @@ static void clear_and_free_transfer_plan(KosContext *ctx) {
 }
 
 
-
 /**
    Run the current transfer plan to completion.  Returns 0 on success (plan
    cleared or was NULL).  Returns -1 if a step failed (out_ev set to RAISE,
@@ -3035,8 +3034,8 @@ cg_prologue:
 
   #define OP(name, ...)                                                \
     cg_TARGET_##name:                                                  \
-      op_out = op_##name(ctx, out_ev, insn);                             \
-      if (likely(op_out.mode == KOS_LOP_RUN)) {                         \
+      op_out = op_##name(ctx, out_ev, insn);                           \
+      if (likely(op_out.mode == KOS_LOP_RUN)) {                        \
         KosEvalStep _tail = kos_eval_prepare_next_insn(ctx, out_ev,    \
                                                        &insn);         \
         if (unlikely(_tail != KOS_STEP_CONTINUE))                      \

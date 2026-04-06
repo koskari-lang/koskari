@@ -46,7 +46,7 @@ struct KosEvent;
 #include "eval.h"
 #include "formals.h"
 #include "func.h"
-#include "sync.h"
+#include "demand.h"
 #include "coro.h"
 #include "cont.h"
 #include "iter.h"

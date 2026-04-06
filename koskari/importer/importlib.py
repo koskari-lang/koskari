@@ -27,10 +27,9 @@ it contains no __init__.py, refusing to give us the chance to find
 __init__.ki.  By going first we can find koskari packages and decline
 gracefully on everything else.
 
-The loader (KoskariSourceFileLoader) can use either run_sync(exec_module_async)
-or exec_module_demand to satisfy the synchronous exec_module entry point
-required by importlib.  Swap between them by changing the single return
-line in exec_module.
+The loader (KoskariSourceFileLoader) uses exec_module_demand for the
+synchronous exec_module entry point required by importlib.  An async
+path (exec_module_async) exists for callers that run an event loop.
 
 :author: Christopher O'Brien <obriencj@preoccupied.net>
 :license: GNU General Public License v3
@@ -106,8 +105,7 @@ class KoskariSourceFileLoader(FileLoader):
     """
     FileLoader for .ki source files.
 
-    exec_module can use either run_sync(exec_module_async) or exec_module_demand.
-    Swap by changing the single return line in exec_module.
+    exec_module uses exec_module_demand by default (demand path).
     """
 
     def create_module(self, spec):
@@ -142,7 +140,7 @@ class KoskariSourceFileLoader(FileLoader):
 
     def exec_module_demand(self, module):
         """
-        Execute the module synchronously via the demand path (demand_sync).
+        Execute the module synchronously via the demand path (demand_call).
 
         Same steps as exec_module_async but uses new_module_demand and
         load_module_demand so no event loop or await is required.

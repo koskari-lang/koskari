@@ -18,7 +18,7 @@ Tests for YIELD and async gen opcodes.
 :license: GNU General Public License v3
 """
 
-from koskari.lib import AsyncGenerator, demand_sync
+from koskari.lib import AsyncGenerator, demand_call
 from koskari.types import FormalsSpec
 from tests import make_callable
 from tests.lib.opcode import CevalTest, build_code, build_expr
@@ -179,9 +179,9 @@ class TestYieldKoskariCallPath(CevalTest):
             values={"foo": yielding_fn},
         )
         caller = make_callable(caller_code, caller_ns)
-        result = demand_sync(caller)
+        result = demand_call(caller)
         self.assertIsInstance(result, AsyncGenerator)
-        self.assertEqual(list(result.iter()), [6, 7])
+        self.assertEqual(list(result), [6, 7])
 
 
     def test_yielding_expression_call_returns_async_generator(self):
@@ -205,9 +205,9 @@ class TestYieldKoskariCallPath(CevalTest):
             values={"expr": yielding_expr},
         )
         caller = make_callable(caller_code, caller_ns)
-        result = demand_sync(caller)
+        result = demand_call(caller)
         self.assertIsInstance(result, AsyncGenerator)
-        self.assertEqual(list(result.iter()), [42])
+        self.assertEqual(list(result), [42])
 
 
     def test_non_yielding_function_call_returns_value(self):
@@ -236,7 +236,7 @@ class TestYieldKoskariCallPath(CevalTest):
             values={"bar": normal_fn},
         )
         caller = make_callable(caller_code, caller_ns)
-        result = demand_sync(caller)
+        result = demand_call(caller)
         self.assertEqual(result, 42)
 
 

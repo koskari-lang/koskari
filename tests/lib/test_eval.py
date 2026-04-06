@@ -161,24 +161,14 @@ class TestEvalModuleIntegration(unittest.TestCase):
         self.assertIsInstance(Coroutine, type)
         self.assertIsInstance(AsyncGenerator, type)
 
-    def test_run_sync_and_iter_sync_registered(self):
-        """run_sync, iter_sync are registered in koskari.lib"""
 
-        import koskari.lib as lib
-
-        self.assertTrue(hasattr(lib, 'run_sync'))
-        self.assertTrue(hasattr(lib, 'iter_sync'))
-        self.assertTrue(callable(lib.run_sync))
-        self.assertTrue(callable(lib.iter_sync))
-
-
-class TestCoroutineRunIntegration(unittest.IsolatedAsyncioTestCase):
+class TestCoroutineDemandIntegration(unittest.TestCase):
     """
-    Integration tests for Coroutine.run() via run_sync
+    Integration tests for Coroutine.demand()
     """
 
-    async def test_coroutine_run_uses_run_sync(self):
-        """Coroutine.run() completes and returns value"""
+    def test_coroutine_demand_returns_value(self):
+        """Coroutine.demand() completes and returns the result value"""
 
         from tests import make_callable
         from tests.lib.opcode import build_expr
@@ -188,8 +178,34 @@ class TestCoroutineRunIntegration(unittest.IsolatedAsyncioTestCase):
             ["RETURN", 1],
         ])
         expr = make_callable(code, ns)
-        result = await expr()
-        self.assertEqual(result, 42)
+        coro = expr()
+        self.assertEqual(coro.demand(), 42)
+
+
+class TestAsyncGeneratorIterIntegration(unittest.TestCase):
+    """
+    Integration tests for sync iteration via tp_iter / DemandGenerator
+    """
+
+    def test_list_agen_yields_values(self):
+        """list(agen) yields the same values as async for over a fresh agen"""
+
+        from tests import make_callable
+        from tests.lib.opcode import build_expr
+
+        gen_code, gen_ns = build_expr([
+            ["CONST", 1],
+            ["YIELD", 1],
+            ["CONST", 2],
+            ["YIELD", 1],
+            ["CONST", 3],
+            ["YIELD", 1],
+            ["RETURN", 0],
+        ])
+        expr = make_callable(gen_code, gen_ns)
+        agen = expr()
+        self.assertIsInstance(agen, AsyncGenerator)
+        self.assertEqual(list(agen), [1, 2, 3])
 
 
 def _assert_exception_has_traceback_attrs(test_case, exc, expected_type=None):
@@ -368,32 +384,6 @@ class TestExceptionFromKoskariCall(unittest.IsolatedAsyncioTestCase):
 
         exc = ctx.exception
         _assert_exception_has_traceback_attrs(self, exc, ZeroDivisionError)
-
-
-class TestAsyncGeneratorIterIntegration(unittest.TestCase):
-    """
-    Integration tests for AsyncGenerator.iter() via iter_sync
-    """
-
-    def test_async_generator_iter_uses_iter_sync(self):
-        """AsyncGenerator.iter() yields values via iter_sync"""
-
-        from tests import make_callable
-        from tests.lib.opcode import build_expr
-
-        gen_code, gen_ns = build_expr([
-            ["CONST", 1],
-            ["YIELD", 1],
-            ["CONST", 2],
-            ["YIELD", 1],
-            ["CONST", 3],
-            ["YIELD", 1],
-            ["RETURN", 0],
-        ])
-        expr = make_callable(gen_code, gen_ns)
-        agen = expr()
-        self.assertIsInstance(agen, AsyncGenerator)
-        self.assertEqual(list(agen.iter()), [1, 2, 3])
 
 
 # The end.

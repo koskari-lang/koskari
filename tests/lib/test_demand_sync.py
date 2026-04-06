@@ -12,7 +12,7 @@
 # along with this library; if not, see <http://www.gnu.org/licenses/>.
 
 """
-Tests for demand_sync: invoke Koskari callables synchronously without suspension.
+Tests for demand_call: invoke Koskari callables synchronously without suspension.
 
 :author: Christopher O'Brien <obriencj@preoccupied.net>
 :license: GNU General Public License v3
@@ -20,7 +20,12 @@ Tests for demand_sync: invoke Koskari callables synchronously without suspension
 
 import unittest
 
-from koskari.lib import KoskariSyncViolation, demand_sync
+from koskari.lib import (
+    KoskariSyncViolation,
+    demand,
+    demand_apply,
+    demand_call,
+)
 from koskari.types import FormalsSpec
 from tests import make_callable
 from tests.lib.opcode import build_code, build_expr
@@ -32,24 +37,24 @@ pytestmark = pytest.mark.phase_lib
 
 class TestDemandSyncExpression(unittest.TestCase):
     """
-    demand_sync on Expression (no args)
+    demand_call on Expression (no args)
     """
 
     def test_return_value(self):
         """
-        demand_sync(expr) returns value for CONST RETURN
+        demand_call(expr) returns value for CONST RETURN
         """
         code, ns = build_expr([
             ["CONST", 42],
             ["RETURN", 1],
         ])
         expr = make_callable(code, ns)
-        self.assertEqual(demand_sync(expr), 42)
+        self.assertEqual(demand_call(expr), 42)
 
 
     def test_raise_propagation(self):
         """
-        demand_sync(expr) propagates RAISE
+        demand_call(expr) propagates RAISE
         """
         code, ns = build_expr(
             [
@@ -57,17 +62,17 @@ class TestDemandSyncExpression(unittest.TestCase):
                 ["RAISE", 1],
                 ["RETURN", 0],
             ],
-            values={"exc": ValueError("demand_sync raise test")},
+            values={"exc": ValueError("demand_call raise test")},
         )
         expr = make_callable(code, ns)
         with self.assertRaises(ValueError) as ctx:
-            demand_sync(expr)
-        self.assertEqual(ctx.exception.args, ("demand_sync raise test",))
+            demand_call(expr)
+        self.assertEqual(ctx.exception.args, ("demand_call raise test",))
 
 
     def test_yield_violation(self):
         """
-        demand_sync(expr) raises KoskariSyncViolation on YIELD
+        demand_call(expr) raises KoskariSyncViolation on YIELD
         """
         code, ns = build_expr([
             ["CONST", 1],
@@ -76,13 +81,13 @@ class TestDemandSyncExpression(unittest.TestCase):
         ])
         expr = make_callable(code, ns)
         with self.assertRaises(KoskariSyncViolation) as ctx:
-            demand_sync(expr)
+            demand_call(expr)
         self.assertIn("suspension", str(ctx.exception))
 
 
 class TestDemandSyncFunctionClosure(unittest.IsolatedAsyncioTestCase):
     """
-    demand_sync on Function with closures (reproducer for closure-slot bug)
+    demand_call on Function with closures (reproducer for closure-slot bug)
 
     Simpler case: no args, one closure. Slot 0 = closure 'x'.
     (define later [] (+ x 5))-style with x in enclosing scope.
@@ -114,22 +119,22 @@ class TestDemandSyncFunctionClosure(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(result, 100)
 
 
-    def test_function_closure_no_args_via_demand_sync(self):
+    def test_function_closure_no_args_via_demand_call(self):
         """
-        demand_sync on Function with closure; fn() -> 100 (reproducer)
+        demand_call on Function with closure; fn() -> 100 (reproducer)
         """
         fn = self._make_closure_fn_no_args()
-        self.assertEqual(demand_sync(fn), 100)
+        self.assertEqual(demand_call(fn), 100)
 
 
-class TestDemandSyncGenerator(unittest.TestCase):
+class TestDemandGenerator(unittest.TestCase):
     """
-    demand_sync on yielding KosFunction returns DemandSyncGenerator
+    demand_call on yielding KosFunction returns DemandGenerator
     """
 
     def test_yielding_function_returns_generator(self):
         """
-        demand_sync(yielding_fn) returns a generator, not KoskariSyncViolation
+        demand_call(yielding_fn) returns a generator, not KoskariSyncViolation
         """
         _, base_ns = build_expr(
             [["CONST", 0], ["RETURN", 1]],
@@ -144,7 +149,7 @@ class TestDemandSyncGenerator(unittest.TestCase):
             name='yielding_fn',
         )
         fn = make_callable(code, base_ns, FormalsSpec())
-        result = demand_sync(fn)
+        result = demand_call(fn)
         self.assertIsNotNone(result)
         self.assertTrue(hasattr(result, '__next__'))
         self.assertIs(iter(result), result)
@@ -153,7 +158,7 @@ class TestDemandSyncGenerator(unittest.TestCase):
 
     def test_yielding_function_list(self):
         """
-        list(demand_sync(yielding_fn)) yields expected values
+        list(demand_call(yielding_fn)) yields expected values
         """
         _, base_ns = build_expr(
             [["CONST", 0], ["RETURN", 1]],
@@ -170,7 +175,7 @@ class TestDemandSyncGenerator(unittest.TestCase):
             name='yielding_fn',
         )
         fn = make_callable(code, base_ns, FormalsSpec())
-        result = demand_sync(fn)
+        result = demand_call(fn)
         self.assertEqual(list(result), [1, 2])
 
 
@@ -207,7 +212,7 @@ class TestDemandSyncGenerator(unittest.TestCase):
             name='await_then_yield',
         )
         fn = make_callable(code, base_ns, FormalsSpec())
-        gen = demand_sync(fn)
+        gen = demand_call(fn)
         with self.assertRaises(KoskariSyncViolation) as ctx:
             next(gen)
         self.assertIn('suspension', str(ctx.exception))
@@ -215,20 +220,20 @@ class TestDemandSyncGenerator(unittest.TestCase):
 
 class TestDemandSyncTryExceptAwaitInject(unittest.TestCase):
     """
-    Reproducer: demand_sync injects KoskariSyncViolation via a second
+    Reproducer: demand_call injects KoskariSyncViolation via a second
     koskari_eval; an enclosing PUSH_TRY handler should catch it and return.
 
     Currently try_local_exception_handler does not deliver the raise to TRY
     when DYN_TOP is the current frame (e.g. after CALL left the callee frame
-    on top), so demand_sync surfaces KoskariSyncViolation instead of the
+    on top), so demand_call surfaces KoskariSyncViolation instead of the
     handler result. This test asserts the desired behavior and fails until
     that is fixed.
     """
 
-    def test_try_except_catches_injected_violation_under_demand_sync(self):
+    def test_try_except_catches_injected_violation_under_demand_call(self):
         """
         Suspending await under PUSH_TRY; except body should run and return
-        a sentinel. demand_sync currently raises KoskariSyncViolation.
+        a sentinel. demand_call currently raises KoskariSyncViolation.
         """
 
         def _suspending_iter():
@@ -266,7 +271,7 @@ class TestDemandSyncTryExceptAwaitInject(unittest.TestCase):
             name='demand_try_await_inject_repro',
         )
         fn = make_callable(code, base_ns, FormalsSpec())
-        self.assertEqual(demand_sync(fn), "caught")
+        self.assertEqual(demand_call(fn), "caught")
 
     def test_await_iter_receives_throw_before_vm_except_path(self):
         """
@@ -302,27 +307,53 @@ class TestDemandSyncTryExceptAwaitInject(unittest.TestCase):
             name='demand_await_iter_throw_swallow',
         )
         fn = make_callable(code, base_ns, FormalsSpec())
-        self.assertEqual(demand_sync(fn), "from_iter")
+        self.assertEqual(demand_call(fn), "from_iter")
 
 
 class TestDemandSyncPlainPython(unittest.TestCase):
     """
-    demand_sync on plain Python callables
+    demand_call on plain Python callables
     """
 
     def test_plain_python_callable(self):
         """
-        demand_sync(lambda: 99) returns 99
+        demand_call(lambda: 99) returns 99
         """
-        self.assertEqual(demand_sync(lambda: 99), 99)
+        self.assertEqual(demand_call(lambda: 99), 99)
 
 
     def test_plain_python_raising(self):
         """
-        demand_sync(lambda: 1/0) propagates ZeroDivisionError
+        demand_call(lambda: 1/0) propagates ZeroDivisionError
         """
         with self.assertRaises(ZeroDivisionError):
-            demand_sync(lambda: 1 / 0)
+            demand_call(lambda: 1 / 0)
+
+
+class TestDemandWrapperAndApply(unittest.TestCase):
+    """
+    Demand adapter and demand_apply agree with demand_call
+    """
+
+    def test_demand_wrapper_matches_call(self):
+        """
+        demand(fn)() matches demand_call(fn)
+        """
+        fn = lambda: 42
+        wrapped = demand(fn)
+        self.assertEqual(wrapped(), demand_call(fn))
+        self.assertIs(wrapped.__wrapped__, fn)
+
+
+    def test_demand_apply_matches_call(self):
+        """
+        demand_apply(fn, args, None) matches demand_call(fn, *args)
+        """
+        fn = lambda x, y: x + y
+        self.assertEqual(
+            demand_apply(fn, (2, 3), None),
+            demand_call(fn, 2, 3),
+        )
 
 
 # The end.

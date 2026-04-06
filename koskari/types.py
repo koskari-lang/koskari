@@ -16,15 +16,11 @@ koskari.types
 
 Koskari native types, predicates, and helper functions.
 
-This module re-exports the native types and functions from the C
-extension library and provides Python-level type predicates and
-utility functions.
-
 :author: Christopher O'Brien <obriencj@preoccupied.net>
 :license: GNU General Public License v3
 """
 
-from functools import partial
+from functools import partial, wraps
 import operator
 
 from .lib import (
@@ -152,6 +148,9 @@ __all__ = (
     "get_position",
     "set_position",
     "fill_position",
+
+    # asyncio bootstrap
+    "as_coroutine",
 )
 
 
@@ -275,6 +274,21 @@ def fill_position(value, position, follow=True):
 
     if position and is_pair(value):
         value.fill_position(position, follow)
+
+
+def as_coroutine(awaitable):
+    """
+    Return a coroutine that, when awaited, awaits the given awaitable
+    and returns its result. Accepts arbitrary awaitables (e.g. custom
+    __await__), not just coroutines. asyncio.run requires a coroutine,
+    so use this to adapt before passing to asyncio.run
+    """
+
+    @wraps(awaitable)
+    async def _as_coroutine(*args, **kwargs):
+        return await awaitable(*args, **kwargs)
+
+    return _as_coroutine
 
 
 # The end.

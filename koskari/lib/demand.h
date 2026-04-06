@@ -14,8 +14,8 @@
 */
 
 
-#ifndef KOSKARI_SYNC_H
-#define KOSKARI_SYNC_H
+#ifndef KOSKARI_DEMAND_H
+#define KOSKARI_DEMAND_H
 
 
 #include <Python.h>
@@ -24,18 +24,11 @@
 struct KosPyAsyncGen;  /* defined in iter.h */
 
 
-int koskari_sync_init(PyObject *mod);
-int koskari_sync_clear(PyObject *mod);
+extern PyTypeObject KosDemandType;
 
-/**
-   awaitable is borrowed. Caller retains ownership.
-*/
-PyObject *Koskari_RunSync(PyObject *awaitable);
 
-/**
-   async_iterable is borrowed. Caller retains ownership.
-*/
-PyObject *Koskari_IterSync(PyObject *async_iterable);
+int koskari_demand_init(PyObject *mod);
+int koskari_demand_clear(PyObject *mod);
 
 /**
    callable, args, kwargs are borrowed. Caller retains ownership.
@@ -56,13 +49,13 @@ int Koskari_DemandSyncEx(PyObject *callable, PyObject *args, PyObject *kwargs,
 
 
 /**
-   Build a DemandSyncGenerator for tp_iter: new KosContext, GEN installed from
+   Build a DemandGenerator for tp_iter: new KosContext, GEN installed from
    agen (kos_dyn_gen_install). Caller must not overlap with async iteration
 */
-PyObject *KosDemandSyncGenerator_FromAsyncGen(struct KosPyAsyncGen *agen);
+PyObject *KosDemandGenerator_FromAsyncGen(struct KosPyAsyncGen *agen);
 
 
-#endif
+#endif /* KOSKARI_DEMAND_H */
 
 
 // The end.

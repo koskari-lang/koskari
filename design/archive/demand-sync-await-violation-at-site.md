@@ -4,7 +4,7 @@
 `demand_sync` / `Koskari_DemandSyncEx` when driving a **KosCallable** via
 `run_eval`: on `KOS_EV_AWAIT` or `KOS_EV_YIELD`, `demand_sync_ex` injects
 `KoskariSyncViolation` with a second `koskari_eval` (throw into the suspended
-context) so `TRY`/`finally` can run. See `koskari/lib/sync.c` (`demand_sync_ex`).
+context) so `TRY`/`finally` can run. See `koskari/lib/demand.c` (`demand_sync_ex`).
 **DemandSyncGenerator** stepping still surfaces await at the iterator boundary;
 that path was explicitly out of scope for the in-eval inject.
 
