@@ -12,14 +12,6 @@
 (import-from random random seed)
 
 
-define demanding [fn]:
-    """
-    A demand wrapper for fn, so that starmap will operate correctly
-    """
-
-    (partial demand fn)
-
-
 class LifeBoard []:
 
     define __init__ [self width height wrap: False]:
@@ -99,13 +91,13 @@ class LifeBoard []:
 
 
     define get-group [self x y]:
-        (list (starmap (demanding self.get-cell) (self.group-coord x y)))
+        (list (starmap (demand self.get-cell) (self.group-coord x y)))
 
 
     define get-all-groups [self]:
         ;; starmap isn't koskari so it sees coroutines, we need to
         ;; actualize those.
-        (list (starmap (demanding self.get-group)
+        (list (starmap (demand self.get-group)
                (product (range 0 self.width) (range 0 self.height))))
 
 
