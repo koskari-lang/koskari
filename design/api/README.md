@@ -13,7 +13,7 @@ This directory documents the runtime API of Koskari, including types, functions,
 - **OBJECT-MODEL.md**: Koskari object model (KosType, KosObject, class creation, awaitable construction, C.new sync adapter)
 - **dunder-adapter.md**: Dunder adapter design — demand_sync and demand_next for Python slot interop, no-suspend sync bridge, slot wiring for KosType, internal push_or_await for OBJECT_* opcodes
 - **demand-wrapper.md**: `Demand` adapter type for Python interop; `demand_call` / `demand_apply` (rename from `demand_sync`); Ki bootstrap bindings `demand`, `demand-call`, `demand-apply`
-- **demand-sync-await-violation-at-site.md** (archived): Historical proposal for in-eval KoskariSyncViolation at await under demand path — see [archive/demand-sync-await-violation-at-site.md](../archive/demand-sync-await-violation-at-site.md); implemented for `demand_sync_ex` / KosCallable `run_eval` in `koskari/lib/sync.c`
+- **demand-sync-await-violation-at-site.md** (archived): Historical proposal for in-eval KoskariSyncViolation at await under demand path — see [archive/demand-sync-await-violation-at-site.md](../archive/demand-sync-await-violation-at-site.md); implemented for `demand_sync_ex` / KosCallable `run_eval` in `koskari/lib/demand.c`
 - **NAMESPACE-AND-REFS.md**: Namespace, Ref types, and related special forms
 - **inspect-interop-kos-callables.md**: Python `inspect` (and related typing) interoperability for `KosFunction` and `KosBoundMethod` — `__signature__`, bound-method semantics, annotations, non-goals
 - **import-system.md**: Import system for `.ki` files (meta_path, KoskariPathFinder, load_module_async)

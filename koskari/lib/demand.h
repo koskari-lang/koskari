@@ -14,8 +14,8 @@
 */
 
 
-#ifndef KOSKARI_SYNC_H
-#define KOSKARI_SYNC_H
+#ifndef KOSKARI_DEMAND_H
+#define KOSKARI_DEMAND_H
 
 
 #include <Python.h>
@@ -27,8 +27,8 @@ struct KosPyAsyncGen;  /* defined in iter.h */
 extern PyTypeObject KosDemandType;
 
 
-int koskari_sync_init(PyObject *mod);
-int koskari_sync_clear(PyObject *mod);
+int koskari_demand_init(PyObject *mod);
+int koskari_demand_clear(PyObject *mod);
 
 /**
    callable, args, kwargs are borrowed. Caller retains ownership.
@@ -55,7 +55,7 @@ int Koskari_DemandSyncEx(PyObject *callable, PyObject *args, PyObject *kwargs,
 PyObject *KosDemandGenerator_FromAsyncGen(struct KosPyAsyncGen *agen);
 
 
-#endif
+#endif /* KOSKARI_DEMAND_H */
 
 
 // The end.

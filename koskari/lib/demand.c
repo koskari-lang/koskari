@@ -15,7 +15,7 @@
 
 
 /**
-   koskari/lib/sync.c
+   koskari/lib/demand.c
 
    Demand path and KoskariSyncViolation. demand_call invokes Koskari callable
    without suspension (callee as root).
@@ -71,7 +71,7 @@ static PyObject *KosDemandGenerator_New(KosContext *ctx);
   KoskariSyncViolation via a second koskari_eval (throw into suspended context)
   so TRY/finally can run; uncaught, surfaces as KOS_EV_RAISE (-1, PyErr set).
   demand_sync_impl keeps defensive r==1 handling though run_eval no longer
-  returns 1. DemandGenerator stepping is unchanged (see sync.c).
+  returns 1. DemandGenerator stepping is unchanged (see demand.c).
 
   callable, args, kwargs are borrowed. Never decref them.
  */
@@ -994,7 +994,7 @@ static PyMethodDef demand_apply_methoddef = {
 };
 
 
-int koskari_sync_init(PyObject *mod) {
+int koskari_demand_init(PyObject *mod) {
 
   PyObject *dict = PyModule_GetDict(mod);
   PyObject *demand_call_func = NULL;
@@ -1051,7 +1051,7 @@ int koskari_sync_init(PyObject *mod) {
 }
 
 
-int koskari_sync_clear(PyObject *mod) {
+int koskari_demand_clear(PyObject *mod) {
 
   KoskariSyncViolation = NULL;
   (void) mod;

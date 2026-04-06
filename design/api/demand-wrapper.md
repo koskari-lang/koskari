@@ -4,7 +4,7 @@ This document specifies the **Demand** wrapper type (Python-facing adapter for
 Koskari callables), the split between **call** and **apply** entry points
 (renaming `demand_sync`), and bootstrap bindings for `.ki` code.
 
-**Implementation status**: Implemented in `koskari/lib/sync.c`. `koskari.lib`
+**Implementation status**: Implemented in `koskari/lib/demand.c`. `koskari.lib`
 exposes the wrapper type as **`demand`** (constructor), plus `demand_call` and
 `demand_apply`; Ki bootstrap binds the name **`demand`** to that type.
 `demand_sync` remains available as a deprecated alias for `demand_call`.
@@ -48,7 +48,7 @@ primitive. That works but:
   on the demand path when Python calls it,” not necessarily “invoke this
   expression right now.”
 
-A small **`Demand`** type (implemented in C alongside `sync.c`, or a thin Python
+A small **`Demand`** type (implemented in C alongside `demand.c`, or a thin Python
 type delegating to C) can:
 
 - Expose `__call__(self, /, *args, **kwargs)` → `demand_call(self.__wrapped__, args, kwargs)` (or equivalent internal call).
@@ -129,7 +129,7 @@ in `*.ki` when implementing.
   updated symbol.
 - **`koskari/types.py`**: `as_coroutine` lives here for bootstrap/asyncio
   adaptation (the old `koskari._sync` module was removed).
-- **C layer** (`sync.c`): optionally rename public Python methoddef only;
+- **C layer** (`demand.c`): optionally rename public Python methoddef only;
   internal `demand_sync_ex` can stay to minimize churn.
 - **Tests**: `tests/lib/test_demand_sync.py` → extend or rename to cover
   `demand_call`, `demand_apply`, and `Demand`; keep tests for deprecated

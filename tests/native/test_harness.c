@@ -147,7 +147,7 @@ static int initialize_types(void) {
         fprintf(stderr, "Failed to initialize callable\n");
         return -1;
     }
-    if (koskari_sync_init(kos_lib_module)) {
+    if (koskari_demand_init(kos_lib_module)) {
         fprintf(stderr, "Failed to initialize sync\n");
         return -1;
     }
