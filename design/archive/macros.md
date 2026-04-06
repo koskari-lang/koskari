@@ -80,3 +80,8 @@ Similar macro system, but integrated with custom bytecode compiler.
 - Macro compilation to bytecode (for faster expansion)
 - Macro caching/invalidation strategy
 - Integration with `call/cc` (if macros can capture continuations)
+
+## Related design (current tree)
+
+- **Unified matcher & transformer model (proposal):** [../language/unified-matcher-transformer-model.md](../language/unified-matcher-transformer-model.md)
+- **Procedural hygiene / syntax boxes (proposal):** [../language/macro-hygiene-syntax-boxes.md](../language/macro-hygiene-syntax-boxes.md)

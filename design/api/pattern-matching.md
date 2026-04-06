@@ -11,6 +11,8 @@ All pattern and template structures use **tagged tuples**: every element is `(ta
 - Serializes to const-pool-friendly koskari values (symbols, keywords, pairs).
 - Is consumable from Python (objects with `to_tuple()` / `from_tuple()`) and from Koskari (direct tuple interpretation).
 
+**Related (proposed architecture):** [../language/unified-matcher-transformer-model.md](../language/unified-matcher-transformer-model.md) — unified transformer pipeline and Matcher IR for specials, `define-syntax`, and procedural macros.
+
 ---
 
 ## Implementation (Current)
@@ -466,6 +468,7 @@ Matcher classes register via `@matcher(tag)`. The `from_tuple()` function looks 
 
 ## Related Documents
 
+- [../language/unified-matcher-transformer-model.md](../language/unified-matcher-transformer-model.md): Proposed shared Matcher IR and transformer pipeline (syntax-rules, procedural macros, specials)
 - [matcher-hygiene-extensions.md](matcher-hygiene-extensions.md): MATCH role additions for hygiene discovery; `BINDINGS` with scope; REST/EXPR as body regions; implemented `_collect_binding_symbols_matcher`
 - [archive/macros.md](../archive/macros.md): Macro system notes; define-syntax will supersede defmacro
 - [special-forms.md](../language/special-forms.md): Special form catalog

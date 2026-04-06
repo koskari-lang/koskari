@@ -5,6 +5,8 @@ This document describes the macros currently implemented in Koskari (via
 the compiler sees the result; the expanded forms are then compiled as normal.
 For compiler special forms, see [SPECIALS.md](SPECIALS.md).
 
+**Design (proposed):** [language/unified-matcher-transformer-model.md](language/unified-matcher-transformer-model.md) — how future `define-macro` / `define-syntax` may share one matcher IR and transformer pipeline with Python specials.
+
 Macros documented here are defined in `koskari/importer/basics.ki` and are
 available in every module without import. The format mirrors SPECIALS.md to
 ease future migration of purely transformative forms from specials to macros.

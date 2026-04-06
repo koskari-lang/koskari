@@ -135,6 +135,9 @@ Ref: [interpreter/compiler.md](interpreter/compiler.md) (current compiler);
 [language/special-forms.md](language/special-forms.md) (special forms catalog);
 [archive/compiler-python-sibilant-historical.md](archive/compiler-python-sibilant-historical.md) § To Migrate.
 
+- Architectural umbrella for matchers, `define-syntax` / `define-macro`, and
+  specials: [language/unified-matcher-transformer-model.md](language/unified-matcher-transformer-model.md).
+
 ### Procedural macro hygiene (syntax boxes)
 
 **Status:** Proposed design only; not implemented.
@@ -148,7 +151,10 @@ place. Expanders may split, reorder, or duplicate boxes as needed.
 
 Ref: [language/macro-hygiene-syntax-boxes.md](language/macro-hygiene-syntax-boxes.md);
 [api/matcher-hygiene-extensions.md](api/matcher-hygiene-extensions.md) (hygiene
-discovery metadata for specials).
+discovery metadata for specials);
+[language/unified-matcher-transformer-model.md](language/unified-matcher-transformer-model.md)
+(shared Matcher IR, transformer pipeline, and surface syntax for declarative vs
+procedural macros).
 
 ### Fenced foreign literal
 
@@ -227,7 +233,9 @@ From [FEATURES.md](FEATURES.md) and related docs:
 - JIT integration
 - Additional language features (e.g. comprehensions, pattern matching, let*)
 - Performance optimizations (general)
-- Pattern matching: [api/pattern-matching.md](api/pattern-matching.md)
+- Pattern matching: [api/pattern-matching.md](api/pattern-matching.md); unified
+  matcher/transformer architecture:
+  [language/unified-matcher-transformer-model.md](language/unified-matcher-transformer-model.md)
 - Control flow (comprehensions, etc.): [language/control-flow.md](language/control-flow.md)
 
 ---

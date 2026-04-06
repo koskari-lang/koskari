@@ -1314,6 +1314,8 @@ this form; see [LAYOUTS.md](LAYOUTS.md).
 
 **Implementation:** `koskari/compile/specials/variables.special_define_syntax`
 
+**See also:** [language/unified-matcher-transformer-model.md](language/unified-matcher-transformer-model.md) (proposed unified matcher IR and transformer pipeline for `define-syntax`, future `define-macro`, and specials); [MACROS.md](MACROS.md) (implemented macros in basics.ki).
+
 ## compile/class
 
 **Symbol:** `compile/class`

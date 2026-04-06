@@ -29,6 +29,7 @@ This document provides a high-level summary of all features identified from both
 - **Reader Macros**: Character-based parse-time transformation
 - **Compile-time Macros**: define-syntax (syntax-rules), defmacro, defalias
 - **Expansion**: macroexpand-1
+- **Design (proposed)**: Unified matcher/transformer model for declarative and procedural macros with specials — [language/unified-matcher-transformer-model.md](language/unified-matcher-transformer-model.md); procedural hygiene — [language/macro-hygiene-syntax-boxes.md](language/macro-hygiene-syntax-boxes.md)
 
 ### Control Flow
 - **Conditionals**: cond
