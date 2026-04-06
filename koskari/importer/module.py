@@ -18,11 +18,11 @@ Module lifecycle for Koskari source files.
 
 Provides new_module, init_module, load_module_async, and a parallel demand
 chain (new_module_demand, load_module_demand) which drive execution via
-demand_sync instead of coroutines.  The loader may use either path; swapping
+demand_call instead of coroutines.  The loader may use either path; swapping
 is a one-line change in exec_module.
 
 Each top-level expression is read, compiled to a Code object, executed as a
-koskari expression coroutine (async path) or via demand_sync (demand path),
+koskari expression coroutine (async path) or via demand_call (demand path),
 and run in sequence.  This allows each expression to mutate the module
 namespace for subsequent expressions, e.g. by adding new bindings or
 special forms.
@@ -39,7 +39,7 @@ import sys
 from os.path import split
 
 from ..compile import Compiler
-from ..lib import Module, ModuleNamespace, demand_sync
+from ..lib import Module, ModuleNamespace, demand_call
 from ..reader import READ_EOF, IndentAwareStream, LayoutReader, source_open
 
 
@@ -185,10 +185,10 @@ async def load_module_async(module):
 def load_module_demand(module):
     """
     Execute a koskari module by reading, compiling, and running each
-    top-level expression in order via demand_sync.
+    top-level expression in order via demand_call.
 
     Same structure as load_module_async but each expression is run with
-    demand_sync(expr) instead of awaiting a coroutine.  No async
+    demand_call(expr) instead of awaiting a coroutine.  No async
     suspension is allowed.  Used by the loader's exec_module_demand path.
 
     :param module: koskari Module instance with __file__ set
@@ -221,7 +221,7 @@ def load_module_demand(module):
 
             fragment = compiler.full_compile(source_expr)
             expr = fragment.as_expression(ns)
-            demand_sync(expr)
+            demand_call(expr)
 
 
 # ---------------------------------------------------------------------------

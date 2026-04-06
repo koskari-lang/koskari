@@ -37,11 +37,11 @@ from ..compile.syntax import build_syntax as build_syntax_rules
 from ..lib import (AttributeRef, ConstantRef, DynamicRef, ItemRef, MemoizedRef,
                    Module, ModuleNamespace, ParamRef, Ref, apply, build_dict,
                    build_list, build_set, build_tuple, car, cdr, cons, defer,
-                   demand_sync, deref, gensym, keyword, nil, pair, parameter,
-                   setcar, setcdr, symbol, values)
+                   demand, demand_apply, demand_call, deref, gensym, keyword,
+                   nil, pair, parameter, setcar, setcdr, symbol, values)
 from ..reader.layouts import LAYOUTS
-from ..types import (TypePredicate, build_proper, is_nil, is_proper,
-                     is_recursive, unpack, is_None)
+from ..types import (TypePredicate, build_proper, is_nil, is_None, is_proper,
+                     is_recursive, unpack)
 
 __all__ = ('make_bootstrap', 'make_builtins', 'make_builtins_demand')
 
@@ -81,6 +81,7 @@ def make_bootstrap():
 
     # pair types and operations
     _ty('defer', defer)
+    _ty('demand', demand)
     _ty('keyword', keyword)
     _ty('pair', pair)
     _ty('symbol', symbol)
@@ -92,7 +93,8 @@ def make_bootstrap():
     _bind('car', car)
     _bind('cdr', cdr)
     _bind('cons', cons)
-    _bind('demand', demand_sync)
+    _bind('demand-apply', demand_apply)
+    _bind('demand-call', demand_call)
     _bind('deref', deref)
     _bind('gensym', gensym)
     _bind('nil', nil)

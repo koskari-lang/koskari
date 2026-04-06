@@ -4,8 +4,10 @@ This document specifies the **Demand** wrapper type (Python-facing adapter for
 Koskari callables), the split between **call** and **apply** entry points
 (renaming `demand_sync`), and bootstrap bindings for `.ki` code.
 
-**Implementation status**: Not implemented; design only. Current code still
-exposes `demand_sync` and binds Ki name `demand` to that function.
+**Implementation status**: Implemented in `koskari/lib/sync.c`. `koskari.lib`
+exposes the wrapper type as **`demand`** (constructor), plus `demand_call` and
+`demand_apply`; Ki bootstrap binds the name **`demand`** to that type.
+`demand_sync` remains available as a deprecated alias for `demand_call`.
 
 ---
 
@@ -50,11 +52,11 @@ A small **`Demand`** type (implemented in C alongside `sync.c`, or a thin Python
 type delegating to C) can:
 
 - Expose `__call__(self, /, *args, **kwargs)` → `demand_call(self.__wrapped__, args, kwargs)` (or equivalent internal call).
-- Set `__wrapped__` to the Koskari (or plain Python) callable.
-- Copy or forward **`__annotations__`**, **`__doc__`**, **`__name__`**, **`__qualname__`**, **`__module__`** from `__wrapped__` (same spirit as `functools.wraps`).
+- Hold **`__wrapped__`** as a native member (read-only) pointing at the Koskari (or plain Python) callable.
+- Expose **`__annotations__`**, **`__doc__`**, **`__name__`**, **`__qualname__`**, **`__module__`** via getters that read through to `__wrapped__` (no copy at construction).
 - Optionally implement **`__signature__`** or rely on `inspect.signature` via `__wrapped__` for the inner callable (see [inspect-interop-kos-callables.md](inspect-interop-kos-callables.md)).
 
-**demanding** then becomes: wrap `fn` in `Demand(fn)` (plus metadata copy), with
+**demanding** then becomes: wrap `fn` in `Demand(fn)` with
 no `partial`.
 
 ---

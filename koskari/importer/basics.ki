@@ -7,7 +7,8 @@
 
 
 define-syntax compile/set!:
-  syntax-rules [item attr deref compile/item compile/attr compile/deref
+  syntax-rules [item attr deref
+                compile/item compile/attr compile/deref
                 + - * / // % ** @ << >> & ^ |]:
     match (set! (item obj name) value):
       (compile/set-item obj name value)
@@ -235,19 +236,10 @@ define-syntax compile/nil?:
       (compile/is nil value)
 
 
-let []:
-  import-from functools partial wraps
-  define-global demanding [fn]:
-    """
-    A demand wrapper for fn
-    """
-    ((wraps fn) (partial demand fn))
-
-
 define-syntax compile/define-demanding:
   syntax-rules []:
     match (define-demanding name formals body ...):
-      (define name (demanding (lambda name formals body ...)))
+      (define name (demand (lambda name formals body ...)))
 
 
 ;; The end.

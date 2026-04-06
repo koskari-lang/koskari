@@ -129,11 +129,11 @@ def as_demand(awaitable):
     so use this to adapt before passing to run_sync or asyncio.run.
     """
 
-    from koskari.lib import demand_sync
+    from koskari.lib import demand_call
 
     @functools.wraps(awaitable)
     def _as_demand(*args, **kwargs):
-        return demand_sync(awaitable, *args, **kwargs)
+        return demand_call(awaitable, *args, **kwargs)
     return _as_demand
 
 

@@ -24,6 +24,9 @@
 struct KosPyAsyncGen;  /* defined in iter.h */
 
 
+extern PyTypeObject KosDemandType;
+
+
 int koskari_sync_init(PyObject *mod);
 int koskari_sync_clear(PyObject *mod);
 
@@ -56,10 +59,10 @@ int Koskari_DemandSyncEx(PyObject *callable, PyObject *args, PyObject *kwargs,
 
 
 /**
-   Build a DemandSyncGenerator for tp_iter: new KosContext, GEN installed from
+   Build a DemandGenerator for tp_iter: new KosContext, GEN installed from
    agen (kos_dyn_gen_install). Caller must not overlap with async iteration
 */
-PyObject *KosDemandSyncGenerator_FromAsyncGen(struct KosPyAsyncGen *agen);
+PyObject *KosDemandGenerator_FromAsyncGen(struct KosPyAsyncGen *agen);
 
 
 #endif

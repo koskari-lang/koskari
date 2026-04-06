@@ -39,7 +39,7 @@ class LifeBoard []:
             (set! (item dat key) 0)
 
 
-    define randomize [self threshold: 0.5]:
+    define randomize [self threshold: 0.6]:
         """
         Random fill: cell lives when (random) > threshold
         """

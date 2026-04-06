@@ -274,7 +274,7 @@ static PyObject *asyncgen_iter(PyObject *self) {
 
 static PyObject *asyncgen_tp_iter(PyObject *self) {
 
-  return KosDemandSyncGenerator_FromAsyncGen((KosPyAsyncGen *) self);
+  return KosDemandGenerator_FromAsyncGen((KosPyAsyncGen *) self);
 }
 
 static PyMethodDef asyncgen_methods[] = {

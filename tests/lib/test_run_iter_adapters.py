@@ -130,7 +130,7 @@ class TestAsyncGeneratorIter(unittest.IsolatedAsyncioTestCase):
 
 class TestAsyncGeneratorDemandIter(unittest.TestCase):
     """
-    __iter__ returns a native DemandSyncGenerator (no asyncio iter_sync)
+    __iter__ returns a native DemandGenerator (no asyncio iter_sync)
     """
 
     def test_iter_builtin_matches_iter_method(self):
