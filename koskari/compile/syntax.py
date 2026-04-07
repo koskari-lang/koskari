@@ -14,7 +14,8 @@
 """
 koskari.compile.syntax
 
-Syntax rules transformer implementing (syntax-rules ...)
+Syntax rules transformer implementing (syntax-rules ...). Expansion is driven
+by an ordered tuple of SyntaxRulesSegment tables (literals + rules per segment).
 
 :author: Christopher O'Brien <obriencj@preoccupied.net>
 :license: GNU General Public License v3
@@ -430,23 +431,88 @@ class SyntaxRule:
         return cls(_deserialize_form(tup[0]), _deserialize_form(tup[1]))
 
 
+    def try_expand(self, compiler, source_obj, literals):
+        """
+        Match this rule's pattern and expand the template if it matches
+
+        :param compiler: Compiler instance for ``find_compiled``
+        :param source_obj: Invocation form to match
+        :param literals: Symbols treated as literals during pattern match
+        :return: Expanded source form, or None if the pattern does not match
+        """
+
+        bindings = _match_pattern(self.pattern, source_obj, literals)
+        if bindings is None:
+            return None
+
+        binding_symbols = _collect_binding_symbols_matcher(
+            self.template, compiler.find_compiled)
+        introduced = {}
+        return _expand_template(
+            self.template,
+            bindings,
+            binding_symbols,
+            compiler,
+            introduced)
+
+
+@dataclass(frozen=True)
+class SyntaxRulesSegment:
+    """
+    One syntax-rules-shaped table: literals for this segment plus ordered rules
+    """
+
+    literals: frozenset
+    rules: tuple
+
+
 class SyntaxRulesTransformer:
     """
     Compiled-compatible transformer built from (syntax-rules ...).
+
+    Holds an ordered tuple of SyntaxRulesSegment values so multiple segments
+    (each with its own literals list) can be composed; the const-pool wire
+    format still serializes a single segment until a future tag supports more.
     """
 
     def __init__(self, name, literals, rules):
         self.name = name
-        self.literals = frozenset(literals)
-        self.rules = tuple(rules)
+        self.segments = (
+            SyntaxRulesSegment(frozenset(literals), tuple(rules)),
+        )
+
+
+    @classmethod
+    def from_segments(cls, name, segments):
+        """
+        Build a transformer from an ordered sequence of syntax-rules segments
+
+        :param name: Macro name symbol
+        :param segments: Iterable of SyntaxRulesSegment in dispatch order
+        :return: SyntaxRulesTransformer instance
+
+        Note: ``to_tuple`` raises ValueError if len(segments) != 1 until a new
+        pool tag supports multi-segment serialization
+        """
+
+        inst = cls.__new__(cls)
+        inst.name = name
+        inst.segments = tuple(segments)
+        return inst
 
 
     def to_tuple(self):
+        if len(self.segments) != 1:
+            raise ValueError(
+                "SyntaxRulesTransformer.to_tuple requires exactly one "
+                "segment until multi-segment const-pool format exists")
+
+        seg = self.segments[0]
         return (
             _tag_syntax_rules,
             _serialize_form(self.name),
-            tuple(_serialize_form(x) for x in self.literals),
-            tuple(r.to_tuple() for r in self.rules),
+            tuple(_serialize_form(x) for x in seg.literals),
+            tuple(r.to_tuple() for r in seg.rules),
         )
 
 
@@ -456,26 +522,18 @@ class SyntaxRulesTransformer:
             raise ValueError("invalid syntax-rules tuple")
 
         name = _deserialize_form(tup[1])
-        literals = [_deserialize_form(x) for x in tup[2]]
-        rules = [SyntaxRule.from_tuple(rt) for rt in tup[3]]
-        return cls(name, literals, rules)
+        literals = frozenset(_deserialize_form(x) for x in tup[2])
+        rules = tuple(SyntaxRule.from_tuple(rt) for rt in tup[3])
+        return cls.from_segments(name, (SyntaxRulesSegment(literals, rules),))
 
 
     def compile_impl(self, compiler, source_obj, tc=False):
-        for rule in self.rules:
-            bindings = _match_pattern(rule.pattern, source_obj, self.literals)
-            if bindings is None:
-                continue
-
-            binding_symbols = _collect_binding_symbols_matcher(
-                rule.template, compiler.find_compiled)
-            introduced = {}
-            return _expand_template(
-                rule.template,
-                bindings,
-                binding_symbols,
-                compiler,
-                introduced)
+        for segment in self.segments:
+            for rule in segment.rules:
+                expanded = rule.try_expand(
+                    compiler, source_obj, segment.literals)
+                if expanded is not None:
+                    return expanded
 
         raise CompilerError("no matching define-syntax rule", source_obj)
 
