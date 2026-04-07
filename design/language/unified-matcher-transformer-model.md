@@ -2,9 +2,21 @@
 
 **Status:** Design proposal; guides implementation. Parts of the matcher stack and
 `syntax-rules` exist today (`koskari/matcher`, `koskari/compile/syntax.py`);
-`macro-rules`, shared base transformer, syntax boxes, and layered post-expand
-passes are not yet implemented. Complements
+`macro-rules`, syntax boxes, and layered post-expand passes are not yet
+implemented. Complements
 [macro-hygiene-syntax-boxes.md](macro-hygiene-syntax-boxes.md).
+
+**Completed in current step (`koskari/compile/syntax.py`):**
+
+* `SyntaxRulesTransformer` now stores ordered `segments`, where each segment
+  carries its own `literals` and `rules` table.
+* `compile_impl` now dispatches by segment then rule (`first match wins`),
+  preserving existing `define-syntax` behavior.
+* `SyntaxRule.try_expand(...)` now encapsulates the per-rule
+  match-and-expand path.
+* `from_segments(...)` exists for future merge/prepend extension work.
+* Tagged tuple wire format is unchanged for compatibility; `to_tuple` currently
+  requires exactly one segment until a multi-segment pool format is introduced.
 
 ## Related documents
 

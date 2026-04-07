@@ -26,14 +26,126 @@ from dataclasses import dataclass
 
 from ..exceptions import CompilerError, SpecialError
 from ..lib import car, cdr, cons, nil, symbol, gensym
-from ..matcher import (BIND, LITERAL_SYM, MATCH, REPEAT, REST, BindingResult,
-                       BindingsResult, FormalsResult, RepeatResult,
-                       extract_binder_symbols, is_binder_spec,
-                       is_scope_region_spec, match)
-from ..types import is_pair, is_proper, is_symbol, unpack
-
+from ..matcher import (BIND, LITERAL, LITERAL_SYM, LIST, MATCH, Matcher,
+                       REPEAT, REST, VALUE, BindingResult, BindingsResult,
+                       FormalsResult, MatchResult, RepeatResult,
+                       extract_binder_symbols, from_tuple as matcher_from_tuple,
+                       is_binder_spec, is_scope_region_spec, match)
+from ..types import is_pair, is_proper, is_symbol, unpack, build_proper
 
 _ellipsis = symbol("...")
+
+_symbol_match = symbol("match")
+_symbol_rule = symbol("rule")
+
+
+def parse_explicit_rule_pattern(inner, literals, source_ctx):
+    """
+    Placeholder for explicit ``rule`` pattern mode (decorated matcher atoms).
+
+    :param inner: Single form inside ``(rule ...)``
+    :param literals: Literal symbols for this syntax-rules segment
+    :param source_ctx: Original rule form for error reporting
+    :raises CompilerError: always until ``rule`` parsing is implemented
+    """
+
+    raise CompilerError("rule pattern mode not implemented yet", source_ctx)
+
+
+def parse_rule_pattern(pattern_expr, literals, source_ctx):
+    """
+    Dispatch syntax-rules pattern source into ``match`` vs ``rule`` parsers,
+    then lower to matcher IR via ``syntax_pattern_to_matcher`` (except ``rule``,
+    which is not implemented yet).
+
+    :param pattern_expr: Car of the rule pair (pattern position)
+    :param literals: Literal symbols for this syntax-rules segment
+    :param source_ctx: Full rule cons for error reporting
+    :return: Matcher for ``SyntaxRule.pattern_matcher``
+    """
+
+    if is_pair(pattern_expr):
+        head = car(pattern_expr)
+        if head == _symbol_match:
+            rest = cdr(pattern_expr)
+            if not is_proper(rest) or cdr(rest) is not nil:
+                raise CompilerError(
+                    "match pattern must have exactly one form", pattern_expr)
+
+            return syntax_pattern_to_matcher(car(rest), literals, source_ctx)
+
+        if head == _symbol_rule:
+            rest = cdr(pattern_expr)
+            if not is_proper(rest) or cdr(rest) is not nil:
+                raise CompilerError(
+                    "rule pattern must have exactly one form", pattern_expr)
+
+            return parse_explicit_rule_pattern(car(rest), literals, source_ctx)
+
+    return syntax_pattern_to_matcher(pattern_expr, literals, source_ctx)
+
+
+def syntax_pattern_to_matcher(pattern_expr, literals, source_ctx):
+    """
+    Lower a syntax-rules pattern cons tree to matcher IR (syntax-rules matching
+    semantics for literals, ellipsis, and nested lists).
+    """
+
+    if _is_syntax_ellipsis(pattern_expr):
+        raise CompilerError("invalid ellipsis placement in pattern", source_ctx)
+
+    if is_symbol(pattern_expr):
+        if pattern_expr in literals:
+            return MATCH(LITERAL(pattern_expr))
+        return MATCH(REST(pattern_expr))
+
+    if not is_pair(pattern_expr):
+        return MATCH(LITERAL(pattern_expr))
+
+    return MATCH(*_syntax_pattern_specs(
+        _to_list(pattern_expr), literals, source_ctx))
+
+
+def _syntax_elem_matcher(pat, literals, source_ctx):
+    """
+    Matcher for one list element (including one repetition inside ``REPEAT``).
+    """
+
+    if _is_syntax_ellipsis(pat):
+        raise CompilerError("invalid ellipsis placement in pattern", source_ctx)
+
+    if is_symbol(pat):
+        if pat in literals:
+            return LITERAL(pat)
+        return VALUE(pat)
+
+    if not is_pair(pat):
+        return LITERAL(pat)
+
+    return LIST(*_syntax_pattern_specs(
+        _to_list(pat), literals, source_ctx))
+
+
+def _syntax_pattern_specs(p_items, literals, source_ctx):
+    """
+    Sequence of matchers for a proper list pattern (ellipsis-aware).
+    """
+
+    specs = []
+    i = 0
+    while i < len(p_items):
+        if i + 1 < len(p_items) and _is_syntax_ellipsis(p_items[i + 1]):
+            pat = p_items[i]
+            inner = _syntax_elem_matcher(pat, literals, source_ctx)
+            slot = gensym('_repeat')
+            specs.append(REPEAT(slot, inner, min_count=0))
+            i += 2
+            continue
+
+        specs.append(_syntax_elem_matcher(p_items[i], literals, source_ctx))
+        i += 1
+
+    return specs
 
 
 def _is_syntax_ellipsis(obj):
@@ -64,12 +176,6 @@ def _to_list(value):
     return list(unpack(value))
 
 
-def _from_list(values):
-    if not values:
-        return nil
-    return cons(*values, nil)
-
-
 def _serialize_form(form):
     if form is nil:
         return nil
@@ -96,7 +202,7 @@ def _deserialize_form(payload):
         tag = payload[0]
 
         if tag is _tag_list:
-            return _from_list([_deserialize_form(x) for x in payload[1:]])
+            return build_proper(*(_deserialize_form(x) for x in payload[1:]))
 
         if tag is _tag_cons:
             if len(payload) != 3:
@@ -128,6 +234,39 @@ def _merge_bindings(dst, src):
     return True
 
 
+def _syntax_match_result_to_bindings(raw):
+    """
+    Map ``match()`` result dict (``str`` slot keys from matchers, values that
+    are ``RepeatResult`` or ``MatchResult``) to the symbol-keyed binding dict
+    expected by ``_expand_template``.
+    """
+
+    if not raw:
+        return {}
+
+    out = {}
+
+    for k, v in raw.items():
+        if isinstance(v, RepeatResult):
+            merged = {}
+            for sub_res, _specs in v.matches:
+                flat = _syntax_match_result_to_bindings(sub_res)
+                if flat is None:
+                    return None
+
+                for rk, val in flat.items():
+                    merged.setdefault(rk, []).append(val)
+
+            if not _merge_bindings(out, merged):
+                return None
+
+        else:
+            if not _merge_bindings(out, {symbol(k): v.source}):
+                return None
+
+    return out
+
+
 def _collect_symbols(expr, out):
     if is_symbol(expr):
         out.add(expr)
@@ -143,7 +282,7 @@ def _recurse_target(val):
     Return the value(s) to recurse into for binding symbol collection.
 
     For BindingsResult: values list. For FormalsResult: defaults and kwonly.
-    For MatchResult or has .source: source. Else: val itself.
+    For MatchResult: source. Else: val itself.
     """
     if val is None:
         return None
@@ -162,14 +301,31 @@ def _recurse_target(val):
         out = []
         for res, _sp in val.matches:
             for v in res.values():
-                if hasattr(v, 'source') and v.source is not None:
-                    out.append(v.source)
+                if isinstance(v, MatchResult):
+                    if v.source is not None:
+                        out.append(v.source)
+                    else:
+                        out.append(v)
                 elif v is not None and not isinstance(v, (dict, list)):
                     out.append(v)
         return out
-    if hasattr(val, 'source'):
+    if isinstance(val, MatchResult):
         return val.source
+
     return val
+
+
+def _tail_forms_for_binding_walk(rest):
+    """
+    Non-nil elements of a proper list tail for recursive template walking.
+    """
+
+    if rest is nil or not is_pair(rest):
+        return []
+
+    return [
+        e for e in unpack(rest)
+        if e is not None and e is not nil]
 
 
 def _scope_region_keys(matched, specs):
@@ -210,20 +366,18 @@ def _collect_binding_symbols_matcher(template, find_compiled):
 
     head, rest = template
     if not is_symbol(head):
-        for elem in (unpack(rest) if rest is not nil and is_pair(rest) else []):
-            if elem is not None and elem is not nil:
-                out |= _collect_binding_symbols_matcher(
-                    elem if is_pair(elem) else cons(elem, nil),
-                    find_compiled)
+        for elem in _tail_forms_for_binding_walk(rest):
+            out |= _collect_binding_symbols_matcher(
+                elem if is_pair(elem) else cons(elem, nil),
+                find_compiled)
         return out
 
     special = find_compiled(head)
     if special is None or not getattr(special, 'forms', None):
-        for elem in (unpack(rest) if rest is not nil and is_pair(rest) else []):
-            if elem is not None and elem is not nil:
-                out |= _collect_binding_symbols_matcher(
-                    elem if is_pair(elem) else cons(elem, nil),
-                    find_compiled)
+        for elem in _tail_forms_for_binding_walk(rest):
+            out |= _collect_binding_symbols_matcher(
+                elem if is_pair(elem) else cons(elem, nil),
+                find_compiled)
         return out
 
     try:
@@ -231,11 +385,10 @@ def _collect_binding_symbols_matcher(template, find_compiled):
     except SpecialError:
         m = None
     if m is None:
-        for elem in (unpack(rest) if rest is not nil and is_pair(rest) else []):
-            if elem is not None and elem is not nil:
-                out |= _collect_binding_symbols_matcher(
-                    elem if is_pair(elem) else cons(elem, nil),
-                    find_compiled)
+        for elem in _tail_forms_for_binding_walk(rest):
+            out |= _collect_binding_symbols_matcher(
+                elem if is_pair(elem) else cons(elem, nil),
+                find_compiled)
         return out
 
     matched, specs = m
@@ -280,81 +433,6 @@ def _collect_binding_symbols_matcher(template, find_compiled):
                             find_compiled)
 
     return out
-
-
-def _match_pattern(pattern, expr, literals):
-    if _is_syntax_ellipsis(pattern):
-        return None
-    if is_symbol(pattern):
-        if pattern in literals:
-            return {} if pattern == expr else None
-        return {pattern: expr}
-
-    if not is_pair(pattern):
-        return {} if pattern == expr else None
-
-    if not (expr is nil or is_pair(expr)):
-        return None
-
-    p_items = _to_list(pattern)
-    e_items = _to_list(expr)
-    return _match_sequence(p_items, e_items, literals)
-
-
-def _match_sequence(p_items, e_items, literals):
-    def rec(pi, ei, bindings):
-        if pi >= len(p_items):
-            return bindings if ei == len(e_items) else None
-
-        pat = p_items[pi]
-        rep = (pi + 1 < len(p_items) and _is_syntax_ellipsis(p_items[pi + 1]))
-
-        if not rep:
-            if ei >= len(e_items):
-                return None
-            m = _match_pattern(pat, e_items[ei], literals)
-            if m is None:
-                return None
-            nxt = dict(bindings)
-            if not _merge_bindings(nxt, m):
-                return None
-            return rec(pi + 1, ei + 1, nxt)
-
-        next_pi = pi + 2
-        for used in range(0, len(e_items) - ei + 1):
-            nxt = dict(bindings)
-            ok = True
-            repeated = {}
-
-            for off in range(used):
-                m = _match_pattern(pat, e_items[ei + off], literals)
-                if m is None:
-                    ok = False
-                    break
-                for k, v in m.items():
-                    repeated.setdefault(k, []).append(v)
-
-            if not ok:
-                continue
-
-            for k, vals in repeated.items():
-                if k in nxt:
-                    if nxt[k] != vals:
-                        ok = False
-                        break
-                else:
-                    nxt[k] = vals
-
-            if not ok:
-                continue
-
-            out = rec(next_pi, ei + used, nxt)
-            if out is not None:
-                return out
-
-        return None
-
-    return rec(0, 0, {})
 
 
 def _repeat_count(template, bindings):
@@ -411,24 +489,36 @@ def _expand_template(template, bindings, binding_symbols, compiler, introduced, 
             out.append(_expand_template(elem, bindings, binding_symbols, compiler, introduced, index=rep_i))
         i += 2
 
-    return _from_list(out)
+    return build_proper(*out)
 
 
 @dataclass(frozen=True)
 class SyntaxRule:
-    pattern: object
+    """
+    A syntax-rules clause: compiled pattern matcher plus template form.
+    """
+
+    pattern_matcher: Matcher
     template: object
 
 
     def to_tuple(self):
-        return (_serialize_form(self.pattern), _serialize_form(self.template))
+        return (
+            self.pattern_matcher.to_tuple(),
+            _serialize_form(self.template))
 
 
     @classmethod
     def from_tuple(cls, tup):
+        """
+        Deserialize one rule tuple: pattern is a matcher tagged tuple, template
+        uses ``syntax/list`` / ``syntax/cons`` wire forms.
+        """
+
         if not isinstance(tup, tuple) or len(tup) != 2:
             raise ValueError("invalid syntax rule tuple")
-        return cls(_deserialize_form(tup[0]), _deserialize_form(tup[1]))
+
+        return cls(matcher_from_tuple(tup[0]), _deserialize_form(tup[1]))
 
 
     def try_expand(self, compiler, source_obj, literals):
@@ -441,7 +531,11 @@ class SyntaxRule:
         :return: Expanded source form, or None if the pattern does not match
         """
 
-        bindings = _match_pattern(self.pattern, source_obj, literals)
+        raw = match(source_obj, self.pattern_matcher, literals=literals)
+        if raw is None:
+            return None
+
+        bindings = _syntax_match_result_to_bindings(raw)
         if bindings is None:
             return None
 
@@ -573,14 +667,16 @@ def build_syntax_rules_transformer(name, spec):
         raw_rule = res["rule"].source
         if not is_pair(raw_rule):
             raise CompilerError("invalid syntax-rules rule", raw_rule)
-        pattern_expr = car(raw_rule)
-        template_tail = cdr(raw_rule)
+
+        pattern_src, template_tail = raw_rule
         if not is_proper(template_tail) or cdr(template_tail) is not nil:
             raise CompilerError(
                 "syntax-rules rule must have pattern and template",
                 raw_rule)
         template_expr = car(template_tail)
-        rules.append(SyntaxRule(pattern_expr, template_expr))
+        pattern_matcher = parse_rule_pattern(
+            pattern_src, literals, raw_rule)
+        rules.append(SyntaxRule(pattern_matcher, template_expr))
 
     return SyntaxRulesTransformer(name, literals, rules)
 

@@ -712,8 +712,9 @@ class _ExprMatcher(Matcher):
 @matcher(_tag_repeat)
 class _RepeatMatcher(BindingMatcher):
     """
-    Match sub-matcher 1+ times (or min+), bind slot to RepeatResult with
-    list of (result_dict, specs_dict) per repetition.
+    Match sub-matcher min_count or more times, bind slot to RepeatResult with
+    list of (result_dict, specs_dict) per repetition. When min_count is zero,
+    an empty source list succeeds with zero matches.
     """
 
     def __init__(self, slot, elem, min_count=1):
@@ -740,7 +741,19 @@ class _RepeatMatcher(BindingMatcher):
     def consume(self, source, literals, result, specs=None):
         # print("RepeatMatcher source", source)
         if source is nil:
-            return (None, False)
+            if self.min_count != 0:
+                return (None, False)
+
+            repeat_result = RepeatResult(nil, None, [])
+            if not _check_duplicate_slot(
+                    self._key, repeat_result, self, result, specs):
+                return (None, False)
+
+            result[self._key] = repeat_result
+            if specs is not None:
+                specs[self._key] = self
+
+            return (nil, True)
 
         matches = []
         current = source
@@ -1061,7 +1074,8 @@ def REST(slot):
 def REPEAT(slot, elem, min_count=1):
     """
     Match sub-matcher min_count or more times, bind slot to RepeatResult
-    with list of (result_dict, specs_dict) per repetition.
+    with list of (result_dict, specs_dict) per repetition. With min_count 0,
+    an empty remaining list matches zero repetitions.
     """
 
     return _RepeatMatcher(slot, elem, min_count)

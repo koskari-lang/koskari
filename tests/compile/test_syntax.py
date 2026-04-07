@@ -32,10 +32,13 @@ import unittest
 from koskari.compile import Compiler
 from koskari.compile.helpers import pycons
 from koskari.compile.specials import SPECIALS
+from koskari.exceptions import CompilerError
 from koskari.compile.syntax import (
     SyntaxRule,
     SyntaxRulesTransformer,
     build_syntax,
+    build_syntax_rules_transformer,
+    syntax_pattern_to_matcher,
 )
 from koskari.lib import car, cdr, symbol
 from koskari.types import Module, ModuleNamespace
@@ -88,10 +91,15 @@ def rule(macro_name, pattern, template):
     Build a SyntaxRulesTransformer. Pattern/template strings become symbols
     """
 
+    name = symbol(macro_name)
+    literals = frozenset({name})
+    pat_form = _ensure_form(pattern)
+    pat_m = syntax_pattern_to_matcher(pat_form, literals, pat_form)
+
     return SyntaxRulesTransformer(
-        symbol(macro_name),
-        frozenset(),
-        [SyntaxRule(_ensure_form(pattern), _ensure_form(template))],
+        name,
+        literals,
+        [SyntaxRule(pat_m, _ensure_form(template))],
 
     )
 
@@ -175,6 +183,69 @@ class TestSyntaxExpansion(unittest.IsolatedAsyncioTestCase):
         expanded = expand(rebuilt, form('wrap', 99))
         expected = form('list', 99)
         assert_forms_equal(self, expanded, expected)
+
+
+class TestSyntaxRulesPatternParsing(unittest.TestCase):
+
+    def test_match_pattern_equivalent_to_plain(self):
+        spec_plain = form(
+            'syntax-rules',
+            (),
+            form(form('double', 'x'), form('+', 'x', 'x')),
+        )
+        spec_match = form(
+            'syntax-rules',
+            (),
+            form(
+                form('match', form('double', 'x')),
+                form('+', 'x', 'x'),
+            ),
+        )
+        t_plain = build_syntax_rules_transformer(symbol('double'), spec_plain)
+        t_match = build_syntax_rules_transformer(symbol('double'), spec_match)
+        ex = expand(t_plain, form('double', 21))
+        assert_forms_equal(self, ex, expand(t_match, form('double', 21)))
+
+    def test_rule_pattern_not_implemented(self):
+        spec_rule = form(
+            'syntax-rules',
+            (),
+            form(
+                form('rule', form('double', 'x')),
+                form('+', 'x', 'x'),
+            ),
+        )
+        with self.assertRaises(CompilerError) as ctx:
+            build_syntax_rules_transformer(symbol('double'), spec_rule)
+        self.assertIn('rule pattern mode not implemented', str(ctx.exception))
+
+    def test_syntax_rule_matcher_roundtrip(self):
+        name = symbol('wrap')
+        literals = frozenset({name})
+        pat_form = _ensure_form(('wrap', 'x'))
+        tpl = _ensure_form(('list', 'x'))
+        pat_m = syntax_pattern_to_matcher(pat_form, literals, pat_form)
+        sr = SyntaxRule(pat_m, tpl)
+        sr2 = SyntaxRule.from_tuple(sr.to_tuple())
+        tr = SyntaxRulesTransformer(name, literals, [sr2])
+        expanded = expand(tr, form('wrap', 99))
+        assert_forms_equal(self, expanded, form('list', 99))
+
+    def test_single_var_pattern_binds_whole_form(self):
+        transformer = rule('capture', 'x', ('list', 'x'))
+        expanded = expand(transformer, form('capture', 1, 2, 3))
+        assert_forms_equal(self, expanded, form('list', form('capture', 1, 2, 3)))
+
+    def test_ellipsis_zero_or_more(self):
+        transformer = rule(
+            'take',
+            ('take', 'x', Ellipsis),
+            ('list', 'x', Ellipsis),
+        )
+        expanded = expand(transformer, form('take', 1, 2))
+        assert_forms_equal(self, expanded, form('list', 1, 2))
+        expanded0 = expand(transformer, form('take'))
+        assert_forms_equal(self, expanded0, form('list'))
 
 
 # The end.
