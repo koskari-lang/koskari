@@ -22,6 +22,7 @@ tuple interpretation for future define-syntax integration.
 :license: GNU General Public License v3
 """
 
+from dataclasses import dataclass
 from typing import Any, Dict, Optional, Protocol, Tuple, runtime_checkable
 
 from .lib import car, cdr, cons, keyword, nil, symbol
@@ -61,7 +62,9 @@ __all__ = (
     'is_scope_region_spec',
     'match',
     'match1',
-    'match_tuple',
+
+    'Syntax',
+    'match_dict_to_syntax_kwargs',
 )
 
 
@@ -187,6 +190,25 @@ class MatchResult:
         self.source_pos = source_pos
 
 
+    def box(self, position_fallback=None):
+        """
+        Build a Syntax value from this capture (datum and best-effort position).
+
+        :param position_fallback: used when source_pos is unset and the datum is
+            not a pair with get_position
+        :return: Syntax instance
+        """
+
+        d = self.source
+        pos = self.source_pos
+        if pos is None and is_pair(d):
+            pos = get_position(d)
+        if pos is None:
+            pos = position_fallback
+
+        return Syntax(d, pos)
+
+
 class FormalsResult(MatchResult):
     """
     Result for FORMALS: source, source_pos, plus positional, defaults, kwonly,
@@ -289,12 +311,24 @@ class RepeatResult(MatchResult):
         self.matches = matches if matches is not None else []
 
 
-def _slot_key(slot):
-    """
-    Return str key for a slot (symbol or str)
-    """
+    def box(self, position_fallback=None):
+        """
+        Box each repetition into a symbol-keyed dict of Syntax values.
 
-    return str(slot)
+        :param position_fallback: passed through to nested captures
+        :return: list of per-iteration dicts, or None if a sub-capture fails
+        """
+
+        rows = []
+        for sub_res, _specs in self.matches:
+            flat = match_dict_to_syntax_kwargs(
+                sub_res, position_fallback=position_fallback)
+            if flat is None:
+                return None
+
+            rows.append(flat)
+
+        return rows
 
 
 def _is_tagged_tuple(tup):
@@ -389,7 +423,7 @@ class _BindMatcher(Matcher):
 
     def __init__(self, slot):
         self.slot = slot
-        self._key = _slot_key(slot)
+        self._key = str(slot)
 
 
     @classmethod
@@ -425,7 +459,7 @@ class _SymbolMatcher(BindingMatcher):
 
     def __init__(self, slot):
         self.slot = slot
-        self._key = _slot_key(slot)
+        self._key = str(slot)
 
 
     @classmethod
@@ -453,7 +487,7 @@ class _SymbolMatcher(BindingMatcher):
 
 
     def extract_binder_symbols(self, value):
-        raw = value.source if hasattr(value, 'source') else value
+        raw = value.source # if hasattr(value, 'source') else value
         if is_symbol(raw):
             yield raw
 
@@ -473,7 +507,7 @@ class _DefineMatcher(BindingMatcher):
 
     def __init__(self, slot):
         self.slot = slot
-        self._key = _slot_key(slot)
+        self._key = str(slot)
 
 
     @classmethod
@@ -517,7 +551,7 @@ class _DeclMatcher(BindingMatcher):
 
     def __init__(self, slot):
         self.slot = slot
-        self._key = _slot_key(slot)
+        self._key = str(slot)
 
 
     @classmethod
@@ -565,7 +599,7 @@ class _ValueMatcher(Matcher):
 
     def __init__(self, slot):
         self.slot = slot
-        self._key = _slot_key(slot)
+        self._key = str(slot)
 
 
     @classmethod
@@ -602,7 +636,7 @@ class _RestMatcher(Matcher):
 
     def __init__(self, slot):
         self.slot = slot
-        self._key = _slot_key(slot)
+        self._key = str(slot)
 
 
     @classmethod
@@ -641,7 +675,7 @@ class _PairMatcher(Matcher):
 
     def __init__(self, slot):
         self.slot = slot
-        self._key = _slot_key(slot)
+        self._key = str(slot)
 
 
     @classmethod
@@ -681,7 +715,7 @@ class _ExprMatcher(Matcher):
 
     def __init__(self, slot):
         self.slot = slot
-        self._key = _slot_key(slot)
+        self._key = str(slot)
 
 
     @classmethod
@@ -719,7 +753,7 @@ class _RepeatMatcher(BindingMatcher):
 
     def __init__(self, slot, elem, min_count=1):
         self.slot = slot
-        self._key = _slot_key(slot)
+        self._key = str(slot)
         self.elem = elem
         self.min_count = min_count
 
@@ -960,10 +994,8 @@ class _AnyOrderMatcher(Matcher):
 
 
     def to_tuple(self):
-        parts = []
-        for s in self.specs:
-            parts.append(s.to_tuple() if hasattr(s, 'to_tuple') else s)
-        return (_tag_any_order,) + tuple(parts)
+        parts = tuple(s.to_tuple() for s in self.specs)
+        return (_tag_any_order,) + parts
 
 
 def from_tuple(tup):
@@ -1211,23 +1243,40 @@ def extract_binder_symbols(spec, value):
         yield from spec.extract_binder_symbols(value)
 
 
-def match_tuple(
-        source,
-        tup,
-        literals=None):
+@dataclass(frozen=True)
+class Syntax:
     """
-    Deserialize tagged tuple to matcher, then match against source. Convenience
-    for the common from_tuple + match pattern.
+    Wraps a Koskari datum with optional source position and optional tag.
 
-    :param source: pair (proper list) or iterable to unpack to list
-    :param tup: tagged tuple pattern
-    :param literals: set or frozenset of symbols to match literally; default
-        empty frozenset
-    :return: dict mapping slot names to values, or None
+    :param datum: underlying form (pair, symbol, nil, literals)
+    :param position: source position tuple or None when unknown
+    :param tag: optional interpretation hint; reserved for future use
     """
 
-    matcher = from_tuple(tup)
-    return match(source, matcher, literals=literals)
+    datum: Any
+    position: Any = None
+    tag: Any = None
+
+
+def match_dict_to_syntax_kwargs(raw, position_fallback=None):
+    """
+    Map match() result dict to kwargs suitable for macro-rules: str keys to
+    Syntax or list of boxed values (ellipsis). Symbol keys in output for
+    Koskari call convention via demand_apply.
+    """
+
+    if not raw:
+        return {}
+
+    out = {}
+    for k, v in raw.items():
+        boxed = v.box(position_fallback)
+        if boxed is None:
+            return None
+
+        out[symbol(k)] = boxed
+
+    return out
 
 
 # The end.

@@ -33,7 +33,9 @@ from os.path import dirname, join
 
 from ..types import as_coroutine
 from ..compile.specials import SPECIALS
+from ..compile.macro_rules import build_macro_syntax as build_macro_rules
 from ..compile.syntax import build_syntax as build_syntax_rules
+from ..matcher import Syntax
 from ..lib import (AttributeRef, ConstantRef, DynamicRef, ItemRef, MemoizedRef,
                    Module, ModuleNamespace, ParamRef, Ref, apply, build_dict,
                    build_list, build_set, build_tuple, car, cdr, cons, defer,
@@ -86,6 +88,7 @@ def make_bootstrap():
     _ty('pair', pair)
     _ty('symbol', symbol)
     _ty('values', values)
+    _ty('syntax', Syntax)
 
     _bind('apply', apply)
     _bind('as-coroutine', as_coroutine)
@@ -178,6 +181,7 @@ def make_bootstrap():
 
     # syntax-rule constructor for define-syntax lowering
     _bind('build-syntax-rules', build_syntax_rules)
+    _bind('build-macro-rules', build_macro_rules)
 
     import koskari.lib as kl
     for name in ('*', '+', '-', '/', '//', '&', '|', '^',

@@ -16,7 +16,7 @@ koskari.compile.specials.variables
 
 Special form handlers for compile/setq, compile/setq-values,
 compile/define-values, compile/delq, compile/define,
-compile/define-syntax, compile/globals, and compile/locals.
+compile/globals, and compile/locals.
 
 :author: Christopher O'Brien <obriencj@preoccupied.net>
 :license: GNU General Public License v3
@@ -45,9 +45,6 @@ from ..helpers import (
     unpack_lhs_bind_symbols,
     using_unpack_helper,
 )
-from ..syntax import build_syntax_rules_transformer
-
-
 def _define_name_type_pos_from_match(matched, rest):
     """
     Resolve name symbol, optional type expression, and position from a
@@ -395,44 +392,6 @@ def special_define_global(compiler, source, tc=False):
 
     frag.merge(compiler.full_compile(val_expr))
     frag.instruction(OpCode.KOS_OP_VAR_STORE, name)
-    frag.instruction(OpCode.KOS_OP_CONST, None)
-
-    return frag
-
-
-_DEFINE_SYNTAX_PATTERNS = [MATCH(DEFINE("name"), VALUE("transformer"))]
-
-
-@special_forms(_DEFINE_SYNTAX_PATTERNS)
-@special(symbol("compile/define-syntax"))
-def special_define_syntax(compiler, source, tc=False):
-    """
-    Compile (define-syntax NAME (syntax-rules ...)). Registers a
-    deterministic matcher/transformer object under compile/NAME.
-    """
-
-    called_by, rest = source
-    matched = match(rest, _DEFINE_SYNTAX_PATTERNS)
-    if matched is None:
-        raise SpecialError("define-syntax requires a name and transformer", source)
-
-    namesym = matched["name"].source
-    transformer_spec = matched["transformer"].source
-
-    try:
-        transformer = build_syntax_rules_transformer(namesym, transformer_spec)
-    except CompilerError as ex:
-        raise SpecialError(str(ex), source) from ex
-
-    tagged = transformer.to_tuple()
-    build_call = cons(symbol("build-syntax-rules"), str(namesym), tagged, nil)
-
-    frag = compiler.fragment(called_by)
-    pos = matched["name"].source_pos
-    frag.declare_var(str(namesym), position=pos)
-
-    frag.merge(compiler.full_compile(build_call))
-    frag.instruction(OpCode.KOS_OP_VAR_STORE, str(namesym))
     frag.instruction(OpCode.KOS_OP_CONST, None)
 
     return frag

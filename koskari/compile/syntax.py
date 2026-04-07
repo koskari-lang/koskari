@@ -25,13 +25,15 @@ by an ordered tuple of SyntaxRulesSegment tables (literals + rules per segment).
 from dataclasses import dataclass
 
 from ..exceptions import CompilerError, SpecialError
-from ..lib import car, cdr, cons, nil, symbol, gensym
-from ..matcher import (BIND, LITERAL, LITERAL_SYM, LIST, MATCH, Matcher,
-                       REPEAT, REST, VALUE, BindingResult, BindingsResult,
-                       FormalsResult, MatchResult, RepeatResult,
-                       extract_binder_symbols, from_tuple as matcher_from_tuple,
-                       is_binder_spec, is_scope_region_spec, match)
-from ..types import is_pair, is_proper, is_symbol, unpack, build_proper
+from ..lib import car, cdr, cons, gensym, nil, symbol
+from ..matcher import (BIND, LIST, LITERAL, LITERAL_SYM, MATCH, REPEAT, REST,
+                       VALUE, BindingResult, BindingsResult, FormalsResult,
+                       Matcher, MatchResult, RepeatResult,
+                       extract_binder_symbols)
+from ..matcher import from_tuple as matcher_from_tuple
+from ..matcher import is_binder_spec, is_scope_region_spec, match
+from ..types import build_proper, is_pair, is_proper, is_symbol, unpack
+
 
 _ellipsis = symbol("...")
 
@@ -157,6 +159,44 @@ def _is_syntax_ellipsis(obj):
     return obj is _ellipsis or obj is Ellipsis
 
 
+def collect_pattern_variable_symbols(pattern_expr, literals):
+    """
+    Pattern variables in pre-order, excluding literals and ellipsis markers.
+    Each symbol appears once (first occurrence). Used for macro-rules formals.
+    """
+
+    seen = []
+
+    def walk(expr):
+        if _is_syntax_ellipsis(expr):
+            return
+
+        if is_symbol(expr):
+            if expr in literals:
+                return
+
+            if expr not in seen:
+                seen.append(expr)
+
+            return
+
+        if not is_pair(expr):
+            return
+
+        items = _to_list(expr)
+        i = 0
+        while i < len(items):
+            if i + 1 < len(items) and _is_syntax_ellipsis(items[i + 1]):
+                walk(items[i])
+                i += 2
+            else:
+                walk(items[i])
+                i += 1
+
+    walk(pattern_expr)
+    return seen
+
+
 _tag_syntax_rules = symbol("syntax/rules")
 _tag_list = symbol("syntax/list")
 _tag_cons = symbol("syntax/cons")
@@ -236,9 +276,8 @@ def _merge_bindings(dst, src):
 
 def _syntax_match_result_to_bindings(raw):
     """
-    Map ``match()`` result dict (``str`` slot keys from matchers, values that
-    are ``RepeatResult`` or ``MatchResult``) to the symbol-keyed binding dict
-    expected by ``_expand_template``.
+    Map ``match()`` result dict to the symbol-keyed binding dict expected by
+    ``_expand_template``, using ``.box()`` on each capture and storing datums.
     """
 
     if not raw:
@@ -247,21 +286,21 @@ def _syntax_match_result_to_bindings(raw):
     out = {}
 
     for k, v in raw.items():
-        if isinstance(v, RepeatResult):
-            merged = {}
-            for sub_res, _specs in v.matches:
-                flat = _syntax_match_result_to_bindings(sub_res)
-                if flat is None:
-                    return None
+        boxed = v.box()
+        if boxed is None:
+            return None
 
-                for rk, val in flat.items():
-                    merged.setdefault(rk, []).append(val)
+        if isinstance(boxed, list):
+            merged = {}
+            for item in boxed:
+                for rk, val in item.items():
+                    merged.setdefault(rk, []).append(val.datum)
 
             if not _merge_bindings(out, merged):
                 return None
 
         else:
-            if not _merge_bindings(out, {symbol(k): v.source}):
+            if not _merge_bindings(out, {symbol(k): boxed.datum}):
                 return None
 
     return out
