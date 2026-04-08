@@ -17,25 +17,20 @@ Tests for matcher Syntax boxing and macro-rules expansion.
 
 import unittest
 
+import pytest
+
 from koskari.compile import Compiler
 from koskari.compile.helpers import pycons
 from koskari.compile.specials import SPECIALS
-from koskari.lib import symbol
+from koskari.lib import Module, ModuleNamespace, cdr, cons, nil, symbol
 from koskari.matcher import MatchResult
-from koskari.syntax import (MacroRulesTransformer,
-                            Syntax,
-                            box_match_capture,
+from koskari.syntax import (MacroRulesTransformer, Syntax, box_match_capture,
                             build_macro_rules_transformer,
                             collect_pattern_variable_symbols)
-from koskari.lib import Module, ModuleNamespace
+from koskari.types import get_position, unpack
 
-import pytest
 
 pytestmark = pytest.mark.phase_compile
-
-
-def _sym(s):
-    return symbol(s)
 
 
 def _make_compiler():
@@ -67,12 +62,45 @@ class TestSyntaxBox(unittest.TestCase):
         self.assertTrue(isinstance(s, Syntax))
         self.assertEqual(s.datum, 42)
 
+
     def test_collect_pattern_variables(self):
-        lit = frozenset({_sym('m')})
+        lit = frozenset({symbol('m')})
         names = collect_pattern_variable_symbols(
             _ensure_form(('m', 'a', 'b', Ellipsis)),
             lit)
-        self.assertEqual(names, [_sym('a'), _sym('b')])
+        self.assertEqual(names, [symbol('a'), symbol('b')])
+
+
+    def test_syntax_iter_pair_yields_syntax_boxes(self):
+        a, b = symbol('a'), symbol('b')
+        p = cons(a, cons(b, nil))
+        outer_pos = (1, 2)
+        s = Syntax(p, outer_pos)
+        out = list(iter(s))
+        self.assertEqual(len(out), len(list(unpack(p))))
+        self.assertEqual([x.datum for x in out], [a, b])
+        self.assertEqual(
+            [x.position for x in out],
+            [get_position(p) or outer_pos, get_position(cdr(p)) or outer_pos])
+
+
+    def test_syntax_iter_improper_matches_unpack(self):
+        p = cons(1, 2)
+        s = Syntax(p, (0, 0))
+        self.assertEqual(
+            [x.datum for x in s],
+            list(unpack(p)))
+
+
+    def test_syntax_iter_symbol_raises(self):
+        s = Syntax(symbol('x'))
+        with self.assertRaises(TypeError):
+            list(iter(s))
+
+
+    def test_syntax_iter_nil_yields_nothing(self):
+        s = Syntax(nil)
+        self.assertEqual(list(iter(s)), [])
 
 
 class TestMacroRules(unittest.TestCase):
@@ -93,6 +121,7 @@ class TestMacroRules(unittest.TestCase):
             compiler, form('double', 21), frozenset({symbol('double')}))
         self.assertTrue(isinstance(out, Syntax))
         self.assertEqual(out.datum, 21)
+
 
     def test_macro_rules_tuple_roundtrip(self):
         compiler = _make_compiler()

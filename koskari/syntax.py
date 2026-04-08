@@ -34,7 +34,7 @@ from .matcher import (BIND, LIST, LITERAL, LITERAL_SYM, MATCH, REPEAT, REST,
                       extract_binder_symbols)
 from .matcher import from_tuple as matcher_from_tuple
 from .matcher import is_binder_spec, is_scope_region_spec, match
-from .types import (build_proper, get_position, is_pair, is_proper,
+from .types import (build_proper, get_position, is_nil, is_pair, is_proper,
                     is_symbol, unpack)
 
 
@@ -46,11 +46,43 @@ class Syntax:
     :param datum: underlying form (pair, symbol, nil, literals)
     :param position: source position tuple or None when unknown
     :param tag: optional interpretation hint; reserved for future use
+
+    Iteration is defined when ``datum`` is a pair (including empty list
+    ``nil``): each step yields a ``Syntax`` box around one element of
+    ``unpack(datum)``, using the cons cell's position when set. Non-pair
+    datums raise ``TypeError`` (for example when treating a box as a splice
+    source).
     """
 
     datum: Any
     position: Any = None
     tag: Any = None
+
+
+    def __iter__(self):
+        """
+        Yield ``Syntax`` values for each element from the pair spine.
+
+        :raises TypeError: if ``datum`` is not a pair
+        :return: iterator of Syntax instances
+        """
+
+        d = self.datum
+
+        # TODO: I might want to allow iteration over list or tuple in case
+        # we ever leak those into source forms. Not for now though.
+        if not is_pair(d):
+            raise TypeError(
+                "cannot iterate Syntax with non-pair datum")
+
+        cell = d
+        for elem in unpack(d):
+            if is_pair(cell) and not is_nil(cell):
+                pos = get_position(cell) or self.position
+                yield Syntax(elem, pos, self.tag)
+                cell = cdr(cell)
+            else:
+                yield Syntax(elem, self.position, self.tag)
 
 
 def box_match_capture(value, position_fallback=None):
