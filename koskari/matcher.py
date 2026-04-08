@@ -25,7 +25,7 @@ tuple interpretation for future define-syntax integration.
 from typing import Any, Dict, Optional, Protocol, Tuple, runtime_checkable
 
 from .lib import car, cdr, cons, keyword, nil, symbol
-from .types import Syntax, get_position, is_pair, is_proper, is_symbol, unpack
+from .types import get_position, is_pair, is_proper, is_symbol, unpack
 
 
 __all__ = (
@@ -187,25 +187,6 @@ class MatchResult:
         self.source_pos = source_pos
 
 
-    def box(self, position_fallback=None):
-        """
-        Build a Syntax value from this capture (datum and best-effort position).
-
-        :param position_fallback: used when source_pos is unset and the datum is
-            not a pair with get_position
-        :return: Syntax instance
-        """
-
-        d = self.source
-        pos = self.source_pos
-        if pos is None and is_pair(d):
-            pos = get_position(d)
-        if pos is None:
-            pos = position_fallback
-
-        return Syntax(d, pos)
-
-
 class FormalsResult(MatchResult):
     """
     Result for FORMALS: source, source_pos, plus positional, defaults, kwonly,
@@ -306,27 +287,6 @@ class RepeatResult(MatchResult):
     def __init__(self, source, source_pos=None, matches=None):
         super().__init__(source, source_pos)
         self.matches = matches if matches is not None else []
-
-
-    def box(self, position_fallback=None):
-        """
-        Box each repetition into a symbol-keyed dict of Syntax values.
-
-        :param position_fallback: passed through to nested captures
-        :return: list of per-iteration dicts, or None if a sub-capture fails
-        """
-
-        rows = []
-        for sub_res, _specs in self.matches:
-            flat = {}
-            for k, v in sub_res.items():
-                boxed = v.box(position_fallback)
-                if boxed is None:
-                    return None
-                flat[symbol(k)] = boxed
-            rows.append(flat)
-
-        return rows
 
 
 def _is_tagged_tuple(tup):

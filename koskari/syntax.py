@@ -23,7 +23,7 @@ compilation, transformer models, and runtime tagged-tuple builders.
 
 
 from dataclasses import dataclass
-from typing import Optional
+from typing import Any, Optional
 
 from .exceptions import CompilerError, SpecialError
 from .lib import (FunctionSpec, OpCode, car, cdr, cons, demand_call, gensym,
@@ -37,7 +37,60 @@ from .matcher import is_binder_spec, is_scope_region_spec, match
 from .types import (build_proper, get_position, is_pair, is_proper,
                     is_symbol, unpack)
 
+
+@dataclass(frozen=True)
+class Syntax:
+    """
+    Wraps a Koskari datum with optional source position and optional tag.
+
+    :param datum: underlying form (pair, symbol, nil, literals)
+    :param position: source position tuple or None when unknown
+    :param tag: optional interpretation hint; reserved for future use
+    """
+
+    datum: Any
+    position: Any = None
+    tag: Any = None
+
+
+def box_match_capture(value, position_fallback=None):
+    """
+    Build a Syntax value from a simple capture, or box each repetition for
+    RepeatResult.
+
+    :param value: MatchResult (or subclass) or RepeatResult from matching
+    :param position_fallback: used when source_pos is unset and the datum is
+        not a pair with get_position (simple captures only)
+    :return: Syntax instance, or list of per-iteration dicts for RepeatResult,
+        or None if a nested RepeatResult boxing fails
+    """
+
+    if isinstance(value, RepeatResult):
+        rows = []
+        for sub_res, _specs in value.matches:
+            flat = {}
+            for k, v in sub_res.items():
+                boxed = box_match_capture(v, position_fallback)
+                if boxed is None:
+                    return None
+                flat[symbol(k)] = boxed
+            rows.append(flat)
+
+        return rows
+
+    d = value.source
+    pos = value.source_pos
+    if pos is None and is_pair(d):
+        pos = get_position(d)
+    if pos is None:
+        pos = position_fallback
+
+    return Syntax(d, pos)
+
+
 __all__ = (
+    'Syntax',
+    'box_match_capture',
     'parse_rule_pattern',
     'syntax_pattern_to_matcher',
     'collect_pattern_variable_symbols',
@@ -267,7 +320,7 @@ def _match_dict_to_syntax_kwargs(raw, position_fallback=None):
 
     out = {}
     for k, v in raw.items():
-        boxed = v.box(position_fallback)
+        boxed = box_match_capture(v, position_fallback)
         if boxed is None:
             return None
 
@@ -300,7 +353,7 @@ def _syntax_match_result_to_bindings(raw):
     out = {}
 
     for k, v in raw.items():
-        boxed = v.box()
+        boxed = box_match_capture(v)
         if boxed is None:
             return None
 

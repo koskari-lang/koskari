@@ -23,10 +23,11 @@ from koskari.compile.specials import SPECIALS
 from koskari.lib import symbol
 from koskari.matcher import MatchResult
 from koskari.syntax import (MacroRulesTransformer,
+                            Syntax,
+                            box_match_capture,
                             build_macro_rules_transformer,
                             collect_pattern_variable_symbols)
 from koskari.lib import Module, ModuleNamespace
-from koskari.types import Syntax
 
 import pytest
 
@@ -62,7 +63,7 @@ class TestSyntaxBox(unittest.TestCase):
 
     def test_match_result_box(self):
         mr = MatchResult(42, None)
-        s = mr.box()
+        s = box_match_capture(mr)
         self.assertTrue(isinstance(s, Syntax))
         self.assertEqual(s.datum, 42)
 

@@ -21,26 +21,9 @@ Koskari native types, predicates, and helper functions.
 """
 
 import operator
-from dataclasses import dataclass
 from functools import partial, wraps
-from typing import Any
 
 from .lib import cons, keyword, nil, pair, symbol
-
-
-@dataclass(frozen=True)
-class Syntax:
-    """
-    Wraps a Koskari datum with optional source position and optional tag.
-
-    :param datum: underlying form (pair, symbol, nil, literals)
-    :param position: source position tuple or None when unknown
-    :param tag: optional interpretation hint; reserved for future use
-    """
-
-    datum: Any
-    position: Any = None
-    tag: Any = None
 
 
 class TypePredicate(partial):
