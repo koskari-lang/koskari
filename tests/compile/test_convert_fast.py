@@ -22,8 +22,7 @@ Unit tests for convert_fast VAR to FAST lowering in the compiler.
 import unittest
 
 from koskari.compile import Compiler, CompilerMode
-from koskari.lib import OpCode
-from koskari.types import NamespaceSpec
+from koskari.lib import OpCode, NamespaceSpec
 
 import pytest
 

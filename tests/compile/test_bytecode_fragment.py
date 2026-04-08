@@ -24,14 +24,13 @@ deduplication, and position tracking.
 :license: GNU General Public License v3
 """
 
-
 import unittest
 
-from koskari.compile import ByteCodeFragment
-from koskari.lib import Code, FunctionSpec, OpCode
-from koskari.types import FormalsSpec, NamespaceSpec
-
 import pytest
+
+from koskari.compile import ByteCodeFragment
+from koskari.lib import Code, FormalsSpec, FunctionSpec, NamespaceSpec, OpCode
+
 
 pytestmark = pytest.mark.phase_compile
 

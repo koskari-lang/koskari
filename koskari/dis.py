@@ -26,15 +26,9 @@ __self__ in a leading section).
 :ai-assistant: claude-4.6-sonnet-high via Cursor
 """
 
-from koskari.lib import (
-    BoundMethod,
-    Code,
-    Expression,
-    Function,
-    OpCode,
-    OpStyle,
-)
-from koskari.types import NamespaceSpec
+
+from koskari.lib import (BoundMethod, Code, Expression, Function,
+                         NamespaceSpec, OpCode, OpStyle)
 
 
 def _get_code(x):

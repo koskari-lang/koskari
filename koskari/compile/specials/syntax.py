@@ -14,7 +14,7 @@
 """
 koskari.compile.specials.syntax
 
-Special forms for ``compile/syntax`` (alias ``syntax``) and
+Special forms for ``compile/syntax`` and
 ``compile/define-syntax``: Syntax box construction and macro registration.
 
 :author: Christopher O'Brien <obriencj@preoccupied.net>
@@ -29,8 +29,7 @@ from ...matcher import DEFINE, MATCH, VALUE, match
 from ...types import get_position, is_pair, is_proper
 from ..compiler import Compiler
 from ..helpers import special, special_forms
-from ..macro_rules import build_macro_rules_transformer
-from ..syntax import build_syntax_rules_transformer
+from ...syntax import build_macro_rules_transformer, build_syntax_rules_transformer
 
 
 _DEFINE_SYNTAX_PATTERNS = [MATCH(DEFINE("name"), VALUE("transformer"))]

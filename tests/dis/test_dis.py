@@ -22,7 +22,7 @@ import io
 import unittest
 
 from koskari.lib import BoundMethod, Code, Function, OpCode
-from koskari.types import FormalsSpec, NamespaceSpec
+from koskari.lib import FormalsSpec, NamespaceSpec
 from tests import make_callable
 from koskari.dis import (
     dis,

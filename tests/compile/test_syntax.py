@@ -12,7 +12,7 @@
 # along with this library; if not, see <http://www.gnu.org/licenses/>.
 
 """
-Tests for koskari.compile.syntax (SyntaxRulesTransformer, build_syntax).
+Tests for koskari.syntax (SyntaxRulesTransformer, build_syntax).
 
 Validate expansion output only, using transformers built via tagged tuples.
 
@@ -33,7 +33,7 @@ from koskari.compile import Compiler
 from koskari.compile.helpers import pycons
 from koskari.compile.specials import SPECIALS
 from koskari.exceptions import CompilerError
-from koskari.compile.syntax import (
+from koskari.syntax import (
     SyntaxRule,
     SyntaxRulesTransformer,
     build_syntax,
@@ -41,7 +41,7 @@ from koskari.compile.syntax import (
     syntax_pattern_to_matcher,
 )
 from koskari.lib import car, cdr, symbol
-from koskari.types import Module, ModuleNamespace
+from koskari.lib import Module, ModuleNamespace
 from koskari.types import is_symbol, unpack
 
 import pytest

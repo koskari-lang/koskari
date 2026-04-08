@@ -19,7 +19,7 @@ Tests for koskari.compile.helpers (gather_parameters, gather_formals).
 import unittest
 
 from koskari.lib import OpCode
-from koskari.types import cons, keyword, nil, symbol
+from koskari.lib import cons, keyword, nil, symbol
 from koskari.exceptions import ParametersError, SpecialError
 from koskari.compile.compiler import Compiler
 from koskari.compile.helpers import (

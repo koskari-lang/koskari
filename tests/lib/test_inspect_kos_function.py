@@ -24,7 +24,7 @@ import unittest
 import pytest
 
 from koskari.lib import symbol
-from koskari.types import FormalsSpec
+from koskari.lib import FormalsSpec
 
 from tests.lib.test_expression_function import build_expr
 

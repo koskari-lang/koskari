@@ -406,7 +406,8 @@ from koskari.compile import Compiler
 from koskari.compile.specials import SPECIALS
 from koskari.reader import LayoutReader, source_str
 from koskari.reader.layouts import LAYOUTS
-from koskari.types import is_pair, keyword as _kw_type, Module, ModuleNamespace, symbol as _sym_type
+from koskari.lib import Module, ModuleNamespace, keyword as _kw_type, symbol as _sym_type
+from koskari.types import is_pair
 
 _keyword_block = _kw_type(':block:')
 _symbol_apply_layout = _sym_type('compile/apply-layout')

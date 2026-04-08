@@ -58,7 +58,7 @@ def collect_special_like_names_from_builtins(builtins_dict):
     """
 
     from koskari.compile.compiler import Special
-    from koskari.compile.syntax import SyntaxRulesTransformer
+    from koskari.syntax import SyntaxRulesTransformer
 
     names = set()
     for name, val in builtins_dict.items():

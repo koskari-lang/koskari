@@ -43,10 +43,9 @@ from re import UNICODE, VERBOSE
 from re import compile as regex
 
 from ..exceptions import FormatStringSyntaxError, ReaderSyntaxError
-from ..types import (BaseSourceStream, Module, cons, is_pair, is_symbol,
-                     keyword, nil, setcdr, symbol, unpack)
+from ..lib import BaseSourceStream, Module, cons, keyword, nil, setcdr, symbol
+from ..types import is_pair, is_symbol, unpack
 from .layouts import LayoutHandler
-
 
 DEDENT = keyword("dedent")
 
@@ -1522,7 +1521,7 @@ class LayoutReader(Reader):
         """
 
         super().__init__(nodefaults=nodefaults)
-        from ..types import ModuleNamespace
+        from ..lib import ModuleNamespace
 
         if isinstance(namespace, Module):
             self._ns = vars(namespace)

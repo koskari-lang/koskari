@@ -20,7 +20,7 @@ USING_UNPACK, FORMALS).
 import pytest
 import unittest
 
-from koskari.types import cons, keyword, nil, symbol
+from koskari.lib import cons, keyword, nil, symbol
 from koskari.exceptions import SpecialError
 from koskari.compile.helpers import (
     BINDING,

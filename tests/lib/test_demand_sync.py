@@ -26,7 +26,7 @@ from koskari.lib import (
     demand_apply,
     demand_call,
 )
-from koskari.types import FormalsSpec
+from koskari.lib import FormalsSpec
 from tests import make_callable
 from tests.lib.opcode import build_code, build_expr
 

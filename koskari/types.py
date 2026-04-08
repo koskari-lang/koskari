@@ -20,138 +20,27 @@ Koskari native types, predicates, and helper functions.
 :license: GNU General Public License v3
 """
 
-from functools import partial, wraps
 import operator
+from dataclasses import dataclass
+from functools import partial, wraps
+from typing import Any
 
-from .lib import (
-    # atom types
-    symbol,
-    keyword,
-
-    # pair types
-    pair,
-    nil,
-
-    # namespace types
-    Namespace,
-    NamespaceSpec,
-    CollectorNamespace,
-    ModuleNamespace,
-    Module,
-
-    # formals types
-    Formals,
-    FormalsSpec,
-
-    # reference types
-    Ref,
-    AttributeRef,
-    ItemRef,
-    DynamicRef,
-    ConstantRef,
-    MemoizedRef,
-    WeakRef,
-
-    # values type
-    values,
-
-    # parse types
-    BaseSourceStream,
-
-    # bytecode types
-    Code,
-    OpCode,
-    OpStyle,
-
-    # atom functions
-    gensym,
-
-    # pair functions
-    cons,
-    car,
-    cdr,
-    setcar,
-    setcdr,
-    build_unpack_pair,
-)
+from .lib import cons, keyword, nil, pair, symbol
 
 
-__all__ = (
-    # atom types
-    "symbol",
-    "keyword",
+@dataclass(frozen=True)
+class Syntax:
+    """
+    Wraps a Koskari datum with optional source position and optional tag.
 
-    # pair types
-    "pair",
-    "nil",
+    :param datum: underlying form (pair, symbol, nil, literals)
+    :param position: source position tuple or None when unknown
+    :param tag: optional interpretation hint; reserved for future use
+    """
 
-    # namespace types
-    "Namespace",
-    "NamespaceSpec",
-    "CollectorNamespace",
-    "ModuleNamespace",
-    "Module",
-
-    # formals types
-    "Formals",
-    "FormalsSpec",
-
-    # reference types
-    "Ref",
-    "AttributeRef",
-    "ItemRef",
-    "DynamicRef",
-    "ConstantRef",
-    "MemoizedRef",
-    "WeakRef",
-
-    # values type
-    "values",
-
-    # parse types
-    "BaseSourceStream",
-
-    # bytecode types
-    "Code",
-    "OpCode",
-    "OpStyle",
-
-    # atom functions
-    "gensym",
-
-    # pair functions
-    "cons",
-    "car",
-    "cdr",
-    "setcar",
-    "setcdr",
-    "build_unpack_pair",
-
-    # type predicates
-    "is_symbol",
-    "is_keyword",
-    "is_pair",
-    "is_nil",
-    "is_proper",
-    "is_recursive",
-    "is_None",
-
-    # predicate helpers
-    "TypePredicate",
-    "BuiltinPredicate",
-
-    # pair helpers
-    "build_proper",
-    "unpack",
-
-    # position helpers
-    "get_position",
-    "set_position",
-    "fill_position",
-
-    # asyncio bootstrap
-    "as_coroutine",
-)
+    datum: Any
+    position: Any = None
+    tag: Any = None
 
 
 class TypePredicate(partial):

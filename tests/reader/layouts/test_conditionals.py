@@ -1,6 +1,6 @@
 from unittest import IsolatedAsyncioTestCase
 
-from koskari.types import keyword, symbol
+from koskari.lib import keyword, symbol
 from koskari.compile.helpers import pycons
 
 from .. import parse_layout

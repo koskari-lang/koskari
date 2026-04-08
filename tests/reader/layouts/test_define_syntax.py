@@ -24,8 +24,8 @@ from koskari.dis import dis
 from koskari.importer.bootstrap import make_bootstrap
 from koskari.reader import LayoutReader, source_str
 from koskari.compile import Compiler
-from koskari.types import Module, ModuleNamespace
-from koskari.types import is_pair, nil, symbol
+from koskari.lib import Module, ModuleNamespace, nil, symbol
+from koskari.types import is_pair
 from koskari.compile.helpers import pycons
 
 from .. import parse_layout

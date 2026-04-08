@@ -19,12 +19,14 @@ import unittest
 
 from koskari.compile import Compiler
 from koskari.compile.helpers import pycons
-from koskari.compile.macro_rules import MacroRulesTransformer, build_macro_rules_transformer
 from koskari.compile.specials import SPECIALS
-from koskari.compile.syntax import collect_pattern_variable_symbols
 from koskari.lib import symbol
-from koskari.matcher import MatchResult, Syntax
-from koskari.types import Module, ModuleNamespace
+from koskari.matcher import MatchResult
+from koskari.syntax import (MacroRulesTransformer,
+                            build_macro_rules_transformer,
+                            collect_pattern_variable_symbols)
+from koskari.lib import Module, ModuleNamespace
+from koskari.types import Syntax
 
 import pytest
 

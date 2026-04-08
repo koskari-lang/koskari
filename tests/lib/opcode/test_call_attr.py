@@ -19,7 +19,7 @@ schema; resolves obj.attr and invokes with (obj, *args) for unbound fn, else
 (*args).
 """
 
-from koskari.types import FormalsSpec, NamespaceSpec
+from koskari.lib import FormalsSpec, NamespaceSpec
 from tests import make_callable
 from tests.lib.opcode import CevalTest, build_code, build_expr
 

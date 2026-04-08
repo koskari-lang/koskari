@@ -22,19 +22,14 @@ Unit tests for koskari.dis_ng (koskari-native disassembler experiment).
 import io
 import unittest
 
-from koskari.lib import Code, Function, OpCode
-from koskari.types import FormalsSpec, NamespaceSpec
-from tests import make_callable
-from koskari.dis_ng import (
-    dis,
-    _get_code,
-    _get_instruction_lines,
-    _format_constant,
-    _build_ns_const_map,
-    _format_nspec_inline,
-)
-
 import pytest
+
+from koskari.dis_ng import (_build_ns_const_map, _format_constant,
+                            _format_nspec_inline, _get_code,
+                            _get_instruction_lines, dis)
+from koskari.lib import Code, FormalsSpec, NamespaceSpec, OpCode
+from tests import make_callable
+
 
 pytestmark = pytest.mark.phase_infra
 

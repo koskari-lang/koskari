@@ -24,7 +24,7 @@ Unit tests for koskari.parse
 from io import StringIO
 from unittest import IsolatedAsyncioTestCase
 
-from koskari.types import cons, symbol, keyword, nil, car, cdr, BaseSourceStream
+from koskari.lib import BaseSourceStream, car, cdr, cons, keyword, nil, symbol
 from koskari.reader import READ_EOF, default_reader, source_str
 
 import pytest

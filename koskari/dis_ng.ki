@@ -3,8 +3,7 @@
 ;; Experimental koskari-native disassembler aiming for parity with
 ;; koskari.dis output shape.
 
-(import-from koskari.lib Code Function OpCode OpStyle)
-(import-from koskari.types NamespaceSpec)
+(import-from koskari.lib Code Function NamespaceSpec OpCode OpStyle)
 
 
 (define __all__

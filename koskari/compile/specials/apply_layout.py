@@ -27,7 +27,8 @@ forms. Multiple top-level results are wrapped in compile/begin.
 
 
 from ...exceptions import SpecialError
-from ...types import car, cdr, cons, is_nil, is_pair, keyword, nil, symbol, unpack
+from ...lib import car, cdr, cons, keyword, nil, symbol
+from ...types import is_nil, is_pair, unpack
 from ..helpers import special
 
 

@@ -20,7 +20,8 @@ Unit tests for koskari.lexer.parser.
 
 from unittest import IsolatedAsyncioTestCase
 
-from koskari.types import symbol, car, cdr, is_pair
+from koskari.lib import car, cdr, symbol
+from koskari.types import is_pair
 from koskari.reader import LayoutReader
 
 from koskari.lexer import READ_EOF, default_layout_reader, parse, parse_all

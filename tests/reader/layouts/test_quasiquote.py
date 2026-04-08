@@ -25,7 +25,7 @@ style parse and compile correctly.
 from unittest import IsolatedAsyncioTestCase
 
 from koskari.lib import nil
-from koskari.types import keyword, symbol
+from koskari.lib import keyword, symbol
 from koskari.compile.helpers import pycons
 
 
@@ -238,7 +238,8 @@ class TestQuoteBlock(IsolatedAsyncioTestCase):
         'begin:
         """
 
-        from koskari.types import cons, is_pair, car, cdr, is_nil
+        from koskari.lib import car, cdr, cons
+        from koskari.types import is_nil, is_pair
 
         result = parse_layout(src)
 

@@ -22,11 +22,10 @@ tuple interpretation for future define-syntax integration.
 :license: GNU General Public License v3
 """
 
-from dataclasses import dataclass
 from typing import Any, Dict, Optional, Protocol, Tuple, runtime_checkable
 
 from .lib import car, cdr, cons, keyword, nil, symbol
-from .types import get_position, is_pair, is_proper, is_symbol, unpack
+from .types import Syntax, get_position, is_pair, is_proper, is_symbol, unpack
 
 
 __all__ = (
@@ -63,8 +62,6 @@ __all__ = (
     'match',
     'match1',
 
-    'Syntax',
-    'match_dict_to_syntax_kwargs',
 )
 
 
@@ -321,11 +318,12 @@ class RepeatResult(MatchResult):
 
         rows = []
         for sub_res, _specs in self.matches:
-            flat = match_dict_to_syntax_kwargs(
-                sub_res, position_fallback=position_fallback)
-            if flat is None:
-                return None
-
+            flat = {}
+            for k, v in sub_res.items():
+                boxed = v.box(position_fallback)
+                if boxed is None:
+                    return None
+                flat[symbol(k)] = boxed
             rows.append(flat)
 
         return rows
@@ -1216,7 +1214,7 @@ def is_binder_spec(spec):
     Used by hygiene discovery to identify captures that introduce bindings.
     """
 
-    return spec is not None and isinstance(spec, BindingMatcher)
+    return isinstance(spec, BindingMatcher)
 
 
 def is_scope_region_spec(spec):
@@ -1226,7 +1224,7 @@ def is_scope_region_spec(spec):
     Used by hygiene discovery for scope inference.
     """
 
-    return spec is not None and getattr(spec, 'is_scope_region_spec', False)
+    return getattr(spec, 'is_scope_region_spec', False)
 
 
 def extract_binder_symbols(spec, value):
@@ -1241,42 +1239,6 @@ def extract_binder_symbols(spec, value):
         return
     if isinstance(spec, BindingMatcher):
         yield from spec.extract_binder_symbols(value)
-
-
-@dataclass(frozen=True)
-class Syntax:
-    """
-    Wraps a Koskari datum with optional source position and optional tag.
-
-    :param datum: underlying form (pair, symbol, nil, literals)
-    :param position: source position tuple or None when unknown
-    :param tag: optional interpretation hint; reserved for future use
-    """
-
-    datum: Any
-    position: Any = None
-    tag: Any = None
-
-
-def match_dict_to_syntax_kwargs(raw, position_fallback=None):
-    """
-    Map match() result dict to kwargs suitable for macro-rules: str keys to
-    Syntax or list of boxed values (ellipsis). Symbol keys in output for
-    Koskari call convention via demand_apply.
-    """
-
-    if not raw:
-        return {}
-
-    out = {}
-    for k, v in raw.items():
-        boxed = v.box(position_fallback)
-        if boxed is None:
-            return None
-
-        out[symbol(k)] = boxed
-
-    return out
 
 
 # The end.

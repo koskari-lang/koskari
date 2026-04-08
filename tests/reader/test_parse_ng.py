@@ -35,7 +35,7 @@ from koskari.reader.layouts import LAYOUTS
 from koskari.reader.parser import (READ_EOF, IndentAwareStream, LayoutReader,
                                    Reader, SourceStream, default_reader,
                                    source_str)
-from koskari.types import BaseSourceStream, cons, keyword, nil, symbol
+from koskari.lib import BaseSourceStream, cons, keyword, nil, symbol
 
 import pytest
 

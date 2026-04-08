@@ -19,7 +19,8 @@ Layout handler for layout/dyn-wind block syntax.
 
 
 from ...exceptions import LayoutError
-from ...types import car, cdr, cons, get_position, nil, symbol, unpack
+from ...lib import car, cdr, cons, nil, symbol
+from ...types import get_position, unpack
 from .helpers import layout
 
 

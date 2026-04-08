@@ -19,7 +19,7 @@ protocols (obj + 1, repr(obj), str(obj)).
 import unittest
 
 from koskari.lib import KosType
-from koskari.types import FormalsSpec
+from koskari.lib import FormalsSpec
 from tests import make_callable
 from tests.lib.opcode import build_code, build_expr
 

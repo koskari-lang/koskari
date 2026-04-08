@@ -19,7 +19,7 @@ Tests for YIELD and async gen opcodes.
 """
 
 from koskari.lib import AsyncGenerator, demand_call
-from koskari.types import FormalsSpec
+from koskari.lib import FormalsSpec
 from tests import make_callable
 from tests.lib.opcode import CevalTest, build_code, build_expr
 

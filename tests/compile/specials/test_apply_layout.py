@@ -28,10 +28,9 @@ import unittest
 from koskari.compile import Compiler
 from koskari.compile.specials import SPECIALS
 from koskari.exceptions import SpecialError
-from koskari.lib import cons, nil
+from koskari.lib import Module, ModuleNamespace, cons, keyword, nil, symbol
 from koskari.reader import default_reader, source_str
 from koskari.reader.layouts import LAYOUTS
-from koskari.types import keyword, symbol, Module, ModuleNamespace
 
 from . import _register_specials
 

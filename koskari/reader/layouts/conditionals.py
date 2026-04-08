@@ -19,7 +19,8 @@ Layout handlers for conditional block syntax.
 
 
 from ...exceptions import LayoutError
-from ...types import car, cdr, cons, get_position, keyword, nil, symbol, unpack
+from ...lib import car, cdr, cons, keyword, nil, symbol
+from ...types import get_position, unpack
 from .helpers import layout
 
 

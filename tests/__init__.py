@@ -16,8 +16,7 @@
 Test suite for koskari.
 """
 
-from koskari.lib import Expression, Function
-from koskari.types import FormalsSpec
+from koskari.lib import Expression, Function, FormalsSpec
 
 
 def make_callable(code, ns, formals_spec=None):
@@ -41,5 +40,6 @@ def make_callable(code, ns, formals_spec=None):
             'expected FormalsSpec or None, got %s' % type(formals_spec).__name__
         )
     return Function(code, ns, formals_spec)
+
 
 # The end.

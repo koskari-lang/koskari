@@ -19,7 +19,8 @@ Layout handlers for class block syntax.
 
 
 from ...exceptions import LayoutError
-from ...types import cons, get_position, nil, symbol, unpack
+from ...lib import cons, nil, symbol
+from ...types import get_position, unpack
 from .helpers import layout
 
 

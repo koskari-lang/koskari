@@ -19,7 +19,7 @@ Tests for koskari.compile define-syntax special form.
 """
 
 
-from koskari.compile.syntax import SyntaxRulesTransformer, build_syntax
+from koskari.syntax import SyntaxRulesTransformer, build_syntax
 from koskari.dis import dis
 from koskari.lib import OpCode
 

@@ -20,13 +20,21 @@ Unit tests for type predicates and helper functions
 
 import unittest
 
+from koskari.lib import cons, keyword, nil, pair, symbol
 from koskari.types import (
-    symbol, keyword, pair, nil, cons,
-    is_symbol, is_keyword, is_pair, is_nil,
-    is_proper, is_recursive,
-    TypePredicate, BuiltinPredicate,
-    build_proper, unpack,
-    get_position, set_position, fill_position,
+    BuiltinPredicate,
+    TypePredicate,
+    build_proper,
+    fill_position,
+    get_position,
+    is_keyword,
+    is_nil,
+    is_pair,
+    is_proper,
+    is_recursive,
+    is_symbol,
+    set_position,
+    unpack,
 )
 
 import pytest
@@ -225,7 +233,7 @@ class TestIsRecursive(unittest.IsolatedAsyncioTestCase):
     async def test_true_for_circular(self):
         """is_recursive returns True for circular structures"""
         p = cons(1, nil)
-        from koskari.types import setcdr
+        from koskari.lib import setcdr
         setcdr(p, p)
         self.assertTrue(is_recursive(p))
 

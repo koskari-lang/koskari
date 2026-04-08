@@ -28,7 +28,7 @@ import asyncio
 import unittest
 
 from koskari.lib import BoundMethod, Code, Expression, Function
-from koskari.types import FormalsSpec, NamespaceSpec, OpCode
+from koskari.lib import FormalsSpec, NamespaceSpec, OpCode
 from tests import make_callable
 
 import pytest

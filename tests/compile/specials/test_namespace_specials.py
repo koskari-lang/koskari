@@ -18,7 +18,7 @@ Tests for compile/globals and compile/locals specials
 
 from koskari.exceptions import SpecialError
 from koskari.lib import OpCode
-from koskari.types import ModuleNamespace
+from koskari.lib import ModuleNamespace
 
 from . import SpecialsTestCase
 

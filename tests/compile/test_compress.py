@@ -21,10 +21,11 @@ Unit tests for Compiler.compress peephole optimizations
 
 import unittest
 
-from koskari.compile.compiler import Compiler, _CHECK_SQUASHES
+import pytest
+
+from koskari.compile.compiler import _CHECK_SQUASHES, Compiler
 from koskari.lib import Module, ModuleNamespace, OpCode
 
-import pytest
 
 pytestmark = pytest.mark.phase_compile
 

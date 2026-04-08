@@ -23,7 +23,7 @@ from koskari.compile.helpers import pycons
 from koskari.reader import source_str
 from koskari.reader import LayoutReader
 from koskari.reader.layouts import LAYOUTS
-from koskari.types import cons, keyword, nil, symbol
+from koskari.lib import cons, keyword, nil, symbol
 
 import pytest
 
