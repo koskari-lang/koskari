@@ -17,6 +17,9 @@ layout_heads:
   - dyn-with
   - define-syntax
   - syntax-rules
+  - macro-rules
+  - syntax-match
+  - macro-match
 
 # Peer block heads for layouts that declare peers. These are not necessarily
 # special forms, but they do appear as `NAME:` block headers.
@@ -53,6 +56,7 @@ constants:
 list_head_specials:
   - and
   - attr
+  - await
   - begin
   - bind!
   - bindq
@@ -62,16 +66,19 @@ list_head_specials:
   - class
   - cond
   - continue
+  - define
   - define-coroutine
+  - define-global
   - define-parameter
   - define-syntax
-  - define
+  - define-values
   - delq
   - dict-each
   - dyn-wind
   - dyn-with
   - each
   - for-each
+  - globals
   - if
   - import
   - import-from
@@ -82,22 +89,31 @@ list_head_specials:
   - let/cc
   - letrec
   - list-each
-  - None?
+  - locals
+  - macro-match
+  - macro-rules
   - or
   - parameterq
   - parameterize
   - raise
-  - refq
   - ref
+  - refq
   - reset
+  - return
   - set!
   - setq
+  - setq-values
   - shift
+  - syntax-match
+  - syntax-rules
   - try
   - unless
   - when
   - when-main
   - while
   - with
+  - yield
+  - yield-from
+
 
 # The end.

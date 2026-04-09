@@ -81,21 +81,24 @@
    ;; Block control keywords (overrides custom names for define, when, etc.)
    ;; Source: design/SPECIALS.md, design/LAYOUTS.md
    (list (concat "^\\([ \t]*\\)"
-                 "\\(with\\|while\\|when-main\\|when\\|try\\|syntax-rules\\|if\\|for-each\\|"
-                 "finally\\|except\\|else\\|elif\\|dyn-with\\|dyn-wind\\|define-syntax\\|define\\|"
-                 "class\\|begin\\)"
+                 "\\(with\\|while\\|when-main\\|when\\|try\\|syntax-rules\\|syntax-match\\|"
+                 "macro-rules\\|macro-match\\|if\\|for-each\\|finally\\|except\\|else\\|elif\\|"
+                 "dyn-with\\|dyn-wind\\|define-syntax\\|define\\|class\\|begin\\)"
 
                  "\\b\\([^\n]*?\\)\\(:\\)")
          (list 2 font-lock-keyword-face)
          (list 4 font-lock-preprocessor-face))
    ;; List-head special forms (first symbol in paren form)
    (list (concat "(\\s-*\\("
-                 "with\\|while\\|when-main\\|when\\|unless\\|try\\|shift\\|setq\\|set!\\|reset\\|"
-                 "refq\\|ref\\|raise\\|parameterq\\|parameterize\\|or\\|list-each\\|letrec\\|"
-                 "let/cc\\|let-values\\|let\\*\\|let\\|lambda\\|import-from\\|import\\|if\\|"
-                 "for-each\\|each\\|dyn-with\\|dyn-wind\\|dict-each\\|delq\\|define-syntax\\|"
-                 "define-parameter\\|define-coroutine\\|define\\|continue\\|cond\\|class\\|"
-                 "capture/cc\\|call/cc\\|break\\|bindq\\|bind!\\|begin\\|attr\\|and\\|None\\?"
+                 "yield-from\\|yield\\|with\\|while\\|when-main\\|when\\|unless\\|try\\|"
+                 "syntax-rules\\|syntax-match\\|shift\\|setq-values\\|setq\\|set!\\|return\\|"
+                 "reset\\|refq\\|ref\\|raise\\|parameterq\\|parameterize\\|or\\|macro-rules\\|"
+                 "macro-match\\|locals\\|list-each\\|letrec\\|let/cc\\|let-values\\|let\\*\\|let\\|"
+                 "lambda\\|import-from\\|import\\|if\\|globals\\|for-each\\|each\\|dyn-with\\|"
+                 "dyn-wind\\|dict-each\\|delq\\|define-values\\|define-syntax\\|"
+                 "define-parameter\\|define-global\\|define-coroutine\\|define\\|continue\\|"
+                 "cond\\|class\\|capture/cc\\|call/cc\\|break\\|bindq\\|bind!\\|begin\\|await\\|"
+                 "attr\\|and"
 
                  "\\)\\>")
          1 font-lock-keyword-face)

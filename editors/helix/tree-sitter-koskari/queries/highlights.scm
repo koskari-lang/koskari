@@ -17,15 +17,21 @@
 ((list (symbol) @keyword.control)
  (#any-of? @keyword.control
 
+   "yield-from"
+   "yield"
    "with"
    "while"
    "when-main"
    "when"
    "unless"
    "try"
+   "syntax-rules"
+   "syntax-match"
    "shift"
+   "setq-values"
    "setq"
    "set!"
+   "return"
    "reset"
    "refq"
    "ref"
@@ -33,6 +39,9 @@
    "parameterq"
    "parameterize"
    "or"
+   "macro-rules"
+   "macro-match"
+   "locals"
    "list-each"
    "letrec"
    "let/cc"
@@ -43,14 +52,17 @@
    "import-from"
    "import"
    "if"
+   "globals"
    "for-each"
    "each"
    "dyn-with"
    "dyn-wind"
    "dict-each"
    "delq"
+   "define-values"
    "define-syntax"
    "define-parameter"
+   "define-global"
    "define-coroutine"
    "define"
    "continue"
@@ -62,9 +74,9 @@
    "bindq"
    "bind!"
    "begin"
+   "await"
    "attr"
-   "and"
-   "None?"))
+   "and"))
 
 ; General symbols
 (symbol) @variable.other
