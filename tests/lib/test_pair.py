@@ -60,6 +60,28 @@ class TestPair(unittest.IsolatedAsyncioTestCase):
         setcdr(p, "new")
         self.assertEqual(cdr(p), "new")
 
+    async def test_car_cdr_attributes_read_write(self):
+        """pair.car and pair.cdr match car/cdr/setcar/setcdr"""
+        p = pair("head", "tail")
+        self.assertEqual(p.car, car(p))
+        self.assertEqual(p.cdr, cdr(p))
+        p.car = 1
+        p.cdr = 2
+        self.assertEqual(car(p), 1)
+        self.assertEqual(cdr(p), 2)
+        setcar(p, "a")
+        setcdr(p, "b")
+        self.assertEqual(p.car, "a")
+        self.assertEqual(p.cdr, "b")
+
+    async def test_car_cdr_delete_raises(self):
+        """del pair.car / del pair.cdr raises TypeError"""
+        p = pair(1, 2)
+        with self.assertRaises(TypeError):
+            del p.car
+        with self.assertRaises(TypeError):
+            del p.cdr
+
     async def test_len(self):
         """len() always returns 2 for pairs"""
         p = pair(1, 2)
@@ -221,6 +243,9 @@ class TestPair(unittest.IsolatedAsyncioTestCase):
         pos = ("file.ki", 10, 5)
         p.set_position(pos)
         self.assertEqual(p.get_position(), pos)
+        self.assertEqual(p.position, pos)
+        p.position = ("other.ki", 8, 2)
+        self.assertEqual(p.get_position(), ("other.ki", 8, 2))
 
     async def test_clear_position(self):
         """clear_position() removes position info"""
@@ -290,6 +315,32 @@ class TestNil(unittest.IsolatedAsyncioTestCase):
         """setcdr(nil, x) raises TypeError"""
         with self.assertRaises(TypeError):
             setcdr(nil, 1)
+
+    async def test_nil_car_attr_error(self):
+        """nil.car raises TypeError"""
+        with self.assertRaises(TypeError):
+            _ = nil.car
+
+    async def test_nil_cdr_attr_error(self):
+        """nil.cdr raises TypeError"""
+        with self.assertRaises(TypeError):
+            _ = nil.cdr
+
+    async def test_nil_setcar_attr_error(self):
+        """nil.car = x raises TypeError"""
+        with self.assertRaises(TypeError):
+            nil.car = 1
+
+    async def test_nil_setcdr_attr_error(self):
+        """nil.cdr = x raises TypeError"""
+        with self.assertRaises(TypeError):
+            nil.cdr = 1
+
+    async def test_nil_position_attr_noop(self):
+        """nil.position read is None, write is a no-op"""
+        self.assertIsNone(nil.position)
+        nil.position = (1, 2)
+        self.assertIsNone(nil.position)
 
     async def test_is_pair(self):
         """nil is an instance of pair (subtype)"""

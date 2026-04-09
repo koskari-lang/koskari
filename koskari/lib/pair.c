@@ -1069,6 +1069,10 @@ static void pwalk_fillpos(PyObject *pair, PyObject *seen, PyObject *pos) {
 }
 
 
+static PyObject *pair_read_position(PyObject *pair);
+static int pair_write_position(PyObject *pair, PyObject *position);
+
+
 static PyObject *pair_clear_position(PyObject *self,
                                      PyObject *args, PyObject *kwds) {
 
@@ -1101,9 +1105,6 @@ static PyObject *pair_set_position(PyObject *self,
   PyObject *position = NULL;
   int follow = 0;
 
-  if (KosNil_Check(self))
-    Py_RETURN_NONE;
-
   if (! PyArg_ParseTupleAndKeywords(args, kwds, "O|p", keywords,
                                     &position, &follow))
     return NULL;
@@ -1114,7 +1115,8 @@ static PyObject *pair_set_position(PyObject *self,
     Py_DECREF(seen);
 
   } else {
-    Py_ASSIGN(KosPair_POSITION(self), position);
+    if (pair_write_position(self, position) < 0)
+      return NULL;
   }
 
   Py_RETURN_NONE;
@@ -1149,15 +1151,7 @@ static PyObject *pair_fill_position(PyObject *self,
 
 
 static PyObject *pair_get_position(PyObject *self, PyObject *_noargs) {
-  PyObject *position = KosPair_POSITION(self);
-
-  if (position) {
-    Py_INCREF(position);
-    return position;
-
-  } else {
-    Py_RETURN_NONE;
-  }
+  return pair_read_position(self);
 }
 
 
@@ -1208,6 +1202,161 @@ static PyMethodDef pair_methods[] = {
 };
 
 
+static PyObject *pair_read_car(PyObject *pair) {
+  PyObject *result = NULL;
+
+  if (! KosPair_Check(pair)) {
+    PyErr_SetString(PyExc_TypeError, "car argument must be pair");
+
+  } else if (KosNil_Check(pair)) {
+    PyErr_SetString(PyExc_TypeError, "cannot get car of nil");
+
+  } else {
+    result = KosPair_CAR(pair);
+    Py_INCREF(result);
+  }
+
+  return result;
+}
+
+
+static PyObject *pair_read_cdr(PyObject *pair) {
+  PyObject *result = NULL;
+
+  if (! KosPair_Check(pair)) {
+    PyErr_SetString(PyExc_TypeError, "cdr argument must be pair");
+
+  } else if (KosNil_Check(pair)) {
+    PyErr_SetString(PyExc_TypeError, "cannot get cdr of nil");
+
+  } else {
+    result = KosPair_CDR(pair);
+    Py_INCREF(result);
+  }
+
+  return result;
+}
+
+
+static PyObject *pair_read_position(PyObject *pair) {
+  PyObject *position = NULL;
+
+  if (! KosPair_Check(pair)) {
+    PyErr_SetString(PyExc_TypeError, "position argument must be pair");
+    return NULL;
+  }
+
+  position = KosPair_POSITION(pair);
+  if (position) {
+    Py_INCREF(position);
+    return position;
+  }
+
+  Py_RETURN_NONE;
+}
+
+
+static int pair_write_car(PyObject *pair, PyObject *val) {
+
+  if (KosNil_Check(pair)) {
+    PyErr_SetString(PyExc_TypeError, "cannot set car of nil");
+    return -1;
+  }
+
+  KosPair_SETCAR(pair, val);
+  return 0;
+}
+
+
+static int pair_write_cdr(PyObject *pair, PyObject *val) {
+
+  if (KosNil_Check(pair)) {
+    PyErr_SetString(PyExc_TypeError, "cannot set cdr of nil");
+    return -1;
+  }
+
+  KosPair_SETCDR(pair, val);
+  return 0;
+}
+
+
+static int pair_write_position(PyObject *pair, PyObject *position) {
+
+  if (KosNil_Check(pair)) {
+    return 0;
+  }
+
+  Py_ASSIGN(KosPair_POSITION(pair), position);
+  return 0;
+}
+
+
+static PyObject *pair_get_car(PyObject *self, void *closure) {
+  (void) closure;
+  return pair_read_car(self);
+}
+
+
+static int pair_set_car(PyObject *self, PyObject *value, void *closure) {
+  (void) closure;
+
+  if (! value) {
+    PyErr_SetString(PyExc_TypeError, "cannot delete car");
+    return -1;
+  }
+
+  return pair_write_car(self, value);
+}
+
+
+static PyObject *pair_get_cdr(PyObject *self, void *closure) {
+  (void) closure;
+  return pair_read_cdr(self);
+}
+
+
+static int pair_set_cdr(PyObject *self, PyObject *value, void *closure) {
+  (void) closure;
+
+  if (! value) {
+    PyErr_SetString(PyExc_TypeError, "cannot delete cdr");
+    return -1;
+  }
+
+  return pair_write_cdr(self, value);
+}
+
+
+static PyObject *pair_get_position_attr(PyObject *self, void *closure) {
+  (void) closure;
+  return pair_read_position(self);
+}
+
+
+static int pair_set_position_attr(
+    PyObject *self,
+    PyObject *value,
+    void *closure) {
+
+  (void) closure;
+
+  if (! value) {
+    PyErr_SetString(PyExc_TypeError, "cannot delete position");
+    return -1;
+  }
+
+  return pair_write_position(self, value);
+}
+
+
+static PyGetSetDef pair_getsets[] = {
+  {"car", pair_get_car, pair_set_car, NULL, NULL},
+  {"cdr", pair_get_cdr, pair_set_cdr, NULL, NULL},
+  {"position", pair_get_position_attr, pair_set_position_attr, NULL, NULL},
+  {NULL},
+};
+
+
 static PySequenceMethods pair_as_sequence = {
   .sq_length = pair_len,
   .sq_item = pair_getitem,
@@ -1224,6 +1373,7 @@ PyTypeObject KosPairType = {
 
   .tp_flags = Py_TPFLAGS_DEFAULT|Py_TPFLAGS_HAVE_GC,
   .tp_methods = pair_methods,
+  .tp_getset = pair_getsets,
   .tp_new = pair_new,
   .tp_dealloc = pair_dealloc,
   .tp_traverse = pair_traverse,
@@ -1498,38 +1648,14 @@ static PyObject *m_cons(PyObject *mod, PyObject *args, PyObject *kwds) {
 
 
 static PyObject *m_car(PyObject *mod, PyObject *pair) {
-  PyObject *result = NULL;
-
-  if (! KosPair_Check(pair)) {
-    PyErr_SetString(PyExc_TypeError, "car argument must be pair");
-
-  } else if (KosNil_Check(pair)) {
-    PyErr_SetString(PyExc_TypeError, "cannot get car of nil");
-
-  } else {
-    result = KosPair_CAR(pair);
-    Py_INCREF(result);
-  }
-
-  return result;
+  (void) mod;
+  return pair_read_car(pair);
 }
 
 
 static PyObject *m_cdr(PyObject *mod, PyObject *pair) {
-  PyObject *result = NULL;
-
-  if (! KosPair_Check(pair)) {
-    PyErr_SetString(PyExc_TypeError, "cdr argument must be pair");
-
-  } else if (KosNil_Check(pair)) {
-    PyErr_SetString(PyExc_TypeError, "cannot get cdr of nil");
-
-  } else {
-    result = KosPair_CDR(pair);
-    Py_INCREF(result);
-  }
-
-  return result;
+  (void) mod;
+  return pair_read_cdr(pair);
 }
 
 
@@ -1554,38 +1680,34 @@ static PyObject *m_break_recursive(PyObject *mod, PyObject *pair) {
 
 
 static PyObject *m_setcar(PyObject *mod, PyObject *args) {
-  PyObject *pair = NULL;
+  PyObject *p = NULL;
   PyObject *val = NULL;
 
-  if (! PyArg_ParseTuple(args, "O!O", &KosPairType, &pair, &val)) {
+  (void) mod;
+
+  if (! PyArg_ParseTuple(args, "O!O", &KosPairType, &p, &val))
     return NULL;
 
-  } else if (KosNil_Check(pair)) {
-    PyErr_SetString(PyExc_TypeError, "cannot set car of nil");
+  if (pair_write_car(p, val) < 0)
     return NULL;
 
-  } else {
-    KosPair_SETCAR(pair, val);
-    Py_RETURN_NONE;
-  }
+  Py_RETURN_NONE;
 }
 
 
 static PyObject *m_setcdr(PyObject *mod, PyObject *args) {
-  PyObject *pair = NULL;
+  PyObject *p = NULL;
   PyObject *val = NULL;
 
-  if (! PyArg_ParseTuple(args, "O!O", &KosPairType, &pair, &val)) {
+  (void) mod;
+
+  if (! PyArg_ParseTuple(args, "O!O", &KosPairType, &p, &val))
     return NULL;
 
-  } else if (KosNil_Check(pair)) {
-    PyErr_SetString(PyExc_TypeError, "cannot set cdr of nil");
+  if (pair_write_cdr(p, val) < 0)
     return NULL;
 
-  } else {
-    KosPair_SETCDR(pair, val);
-    Py_RETURN_NONE;
-  }
+  Py_RETURN_NONE;
 }
 
 

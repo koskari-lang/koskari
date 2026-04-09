@@ -41,6 +41,8 @@ Types are defined in the native extension `koskari.lib`; the Python module `kosk
 - `cdr(pair)`: Get rest
 - `setcar(pair, value)`: Set first element
 - `setcdr(pair, value)`: Set rest
+- `pair.car` / `pair.cdr`: Attribute read/write matching the above (including `nil` errors)
+- `pair.position`: Attribute read/write matching `get_position()` / `set_position()`
 - `cons(car, cdr)`: Create pair
 - `build-proper(*values)`: Create proper list
 
