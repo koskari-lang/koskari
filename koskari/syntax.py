@@ -147,12 +147,20 @@ def box_match_capture(value, position_fallback=None):
 
 def parse_explicit_rule_pattern(inner, literals, source_ctx):
     """
-    Placeholder for explicit ``rule`` pattern mode (decorated matcher atoms).
+    Placeholder for the **MATCH** pattern language (rich explicit-rule inner).
 
-    :param inner: Single form inside ``(rule ...)``
-    :param literals: Literal symbols for this syntax-rules segment
+    This language is **Koskari surface syntax** for the same expressive matcher
+    IR that specials build with the ``MATCH`` combinator in ``koskari.matcher``.
+    It is **not** a parallel ad-hoc semantics: the aim is **parity** with
+    combinator-built matchers. Distinct from **RULE** patterns
+    (``syntax_pattern_to_matcher``). Used for ``(syntax-match …)`` /
+    ``(macro-match …)`` rows shaped ``((rule INNER) …)`` and for ``(rule INNER)``
+    escapes inside **RULE** patterns once implemented.
+
+    :param inner: Single form inside ``(rule …)``
+    :param literals: Literal symbols for this segment
     :param source_ctx: Original rule form for error reporting
-    :raises CompilerError: always until ``rule`` parsing is implemented
+    :raises CompilerError: until MATCH parsing is implemented
     """
 
     raise CompilerError("rule pattern mode not implemented yet", source_ctx)
@@ -160,9 +168,17 @@ def parse_explicit_rule_pattern(inner, literals, source_ctx):
 
 def parse_rule_pattern(pattern_expr, literals, source_ctx):
     """
-    Dispatch syntax-rules pattern source into ``match`` vs ``rule`` parsers,
-    then lower via ``syntax_pattern_to_matcher`` (except ``rule``,
-    which is not implemented yet).
+    Dispatch **RULE** pattern source (``syntax-rules`` / ``macro-rules``).
+
+    If the pattern is ``(match INNER)``, lower ``INNER`` with
+    ``syntax_pattern_to_matcher``. If it is ``(rule INNER)``, delegate to
+    ``parse_explicit_rule_pattern`` (**MATCH**; not implemented yet). Otherwise
+    treat the whole tree as a Scheme-style pattern via
+    ``syntax_pattern_to_matcher``.
+
+    The **macro spec head** (``syntax-rules`` vs ``syntax-match``, etc.)
+    selects RULE vs MATCH for the whole ruleset; this function only handles the
+    **RULE** pattern column and nested ``match`` / ``rule`` escapes.
     """
 
     if is_pair(pattern_expr):

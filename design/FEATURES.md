@@ -29,6 +29,14 @@ This document provides a high-level summary of all features identified from both
 - **Reader Macros**: Character-based parse-time transformation
 - **Compile-time Macros**: define-syntax (syntax-rules), defmacro, defalias
 - **Expansion**: macroexpand-1
+- **RULE vs MATCH**: **RULE** patterns (Scheme-style list patterns) are used by
+  **`syntax-rules`** and **`macro-rules`**. **MATCH** patterns (explicit
+  **`(rule INNER)`** rows) target **`syntax-match`** and **`macro-match`**;
+  they are **surface syntax** for the same expressive matcher IR as the
+  **`MATCH(...)`** combinator in `koskari.matcher`, and remain **in progress**
+  until `parse_explicit_rule_pattern` is implemented. The **macro spec head**
+  selects which language applies; see
+  [language/unified-matcher-transformer-model.md](language/unified-matcher-transformer-model.md).
 - **Design (proposed)**: Unified matcher/transformer model for declarative and procedural macros with specials — [language/unified-matcher-transformer-model.md](language/unified-matcher-transformer-model.md); procedural hygiene — [language/macro-hygiene-syntax-boxes.md](language/macro-hygiene-syntax-boxes.md)
 
 ### Control Flow
@@ -99,7 +107,7 @@ This document provides a high-level summary of all features identified from both
 - **Phases**: Parse → Expand → Compile → Optimize → Generate (full pipeline in progress)
 - **Components**: Compiler, CodeContext, ByteCodeFragment (implemented in `koskari.compile`)
 - **Optimization**: Constant folding, dead code elimination, fast paths (planned)
-- **Implemented specials**: compile/bytecode, compile/begin, compile/call, compile/class, compile/define, **compile/define-syntax**, compile/lambda, compile/let, compile/parameterize, compile/cond, compile/if, compile/when, compile/unless, compile/and, compile/or, compile/while, compile/for-each, compile/break, compile/continue, compile/try, compile/raise, compile/check-exception, compile/clear-exception, compile/load-exception, compile/setq, compile/setq-values, compile/define-values, compile/refq, compile/bindq, compile/delq, compile/attr, compile/del-attr, compile/set-attr, compile/ref-attr, compile/item, compile/ref-item, compile/del-item, compile/set-item, compile/quote, **compile/quasiquote, compile/unquote, compile/unquote-splicing**, compile/car, compile/cdr, compile/cons, compile/with, compile/dyn-with, compile/dyn-wind, **import**, **import-from**, **compile/= compile/!= compile/< compile/<= compile/> compile/>= compile/in compile/not-in compile/is compile/is-not compile/isinstance compile/issubclass compile/+ compile/- compile/* compile/** compile/& compile/| compile/^ compile/// compile// compile/@ compile/% compile/<< compile/>> compile/divmod compile/not compile/repr compile/truth compile/iter compile/~ compile/str compile/len compile/type compile/dir compile/vars compile/aiter** (see design/SPECIALS.md)
+- **Implemented specials**: compile/bytecode, compile/begin, compile/call, compile/class, compile/define, **compile/define-syntax**, **compile/syntax-rules**, **compile/macro-rules**, **compile/syntax-match**, **compile/macro-match**, compile/lambda, compile/let, compile/parameterize, compile/cond, compile/if, compile/when, compile/unless, compile/and, compile/or, compile/while, compile/for-each, compile/break, compile/continue, compile/try, compile/raise, compile/check-exception, compile/clear-exception, compile/load-exception, compile/setq, compile/setq-values, compile/define-values, compile/refq, compile/bindq, compile/delq, compile/attr, compile/del-attr, compile/set-attr, compile/ref-attr, compile/item, compile/ref-item, compile/del-item, compile/set-item, compile/quote, **compile/quasiquote, compile/unquote, compile/unquote-splicing**, compile/car, compile/cdr, compile/cons, compile/with, compile/dyn-with, compile/dyn-wind, **import**, **import-from**, **compile/= compile/!= compile/< compile/<= compile/> compile/>= compile/in compile/not-in compile/is compile/is-not compile/isinstance compile/issubclass compile/+ compile/- compile/* compile/** compile/& compile/| compile/^ compile/// compile// compile/@ compile/% compile/<< compile/>> compile/divmod compile/not compile/repr compile/truth compile/iter compile/~ compile/str compile/len compile/type compile/dir compile/vars compile/aiter** (see design/SPECIALS.md)
 
 ### Evaluator
 - **Model**: Custom drive loop (`koskari_eval` in eval.c). Callable types Expression and Function (func.c) return a KosCoroutine (coro.c); driving the coroutine (await/send) runs the evaluator. Continuation invocation from Python raises `KoskariContinuationApply` for upwards transfer (does not return a coroutine).

@@ -11,7 +11,15 @@ All pattern and template structures use **tagged tuples**: every element is `(ta
 - Serializes to const-pool-friendly koskari values (symbols, keywords, pairs).
 - Is consumable from Python (objects with `to_tuple()` / `from_tuple()`) and from Koskari (direct tuple interpretation).
 
-**Related (proposed architecture):** [../language/unified-matcher-transformer-model.md](../language/unified-matcher-transformer-model.md) — unified transformer pipeline and Matcher IR for specials, `define-syntax`, and procedural macros.
+**Related:** [../language/unified-matcher-transformer-model.md](../language/unified-matcher-transformer-model.md) — **RULE** vs **MATCH** macro pattern languages, unified transformer pipeline, and Matcher IR for specials, `define-syntax`, and procedural macros.
+
+**MATCH macro patterns vs this document’s `MATCH(...)`:** The **MATCH** pattern
+language used in **`syntax-match`** / **`macro-match`** (surface **`(rule INNER)`**,
+lowered by `parse_explicit_rule_pattern` in `koskari/syntax.py`) is **Koskari
+syntax for the same matcher IR** described here. Specials build matchers with
+the Python **`MATCH(...)`** combinator below; macro authors will build **the
+same structures** from source. The names align **by design**—expressive
+fidelity is the point.
 
 ---
 

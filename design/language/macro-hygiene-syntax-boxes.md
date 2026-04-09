@@ -24,7 +24,11 @@ substituted back in at the very end, after binding normalization.
 
 Koskari currently supports:
 
-- Declarative `define-syntax` (data-driven pattern transforms)
+- Declarative **`define-syntax`** with **`syntax-rules`** (**RULE** patterns) and
+  procedural **`macro-rules`** (**RULE** patterns + expand-time bodies); see
+  [unified-matcher-transformer-model.md](unified-matcher-transformer-model.md) for
+  terminology. **MATCH**-style specs (`syntax-match`, `macro-match`) are **not**
+  fully wired until `parse_explicit_rule_pattern` exists.
 - A binding-aware compiler pass that:
   - identifies declaring forms
   - determines lexical scopes

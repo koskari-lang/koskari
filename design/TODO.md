@@ -127,7 +127,15 @@ Ref: [archive/compiler-python-sibilant-historical.md](archive/compiler-python-si
 ### Macro expansion and optimization
 
 - Macro expansion: reader macros; defmacro, defalias (compile/define-syntax
-  is implemented).
+  is implemented). **Compile-time lowering** for re-emitting macro specs as
+  source (`compile/syntax-rules`, `compile/macro-rules`, `compile/syntax-match`,
+  `compile/macro-match`) is implemented in `koskari/compile/specials/syntax.py`.
+- **MATCH** pattern language (`parse_explicit_rule_pattern` for
+  `syntax-match` / `macro-match`): **work in progress** (stub raises until
+  implemented). **RULE** patterns (`syntax-rules` / `macro-rules`) are
+  implemented in `koskari/syntax.py`. Terminology and the four surface forms are
+  documented in
+  [language/unified-matcher-transformer-model.md](language/unified-matcher-transformer-model.md).
 - Optimization passes: constant folding, dead code elimination, VAR→FAST
   conversion.
 
@@ -140,7 +148,10 @@ Ref: [interpreter/compiler.md](interpreter/compiler.md) (current compiler);
 
 ### Procedural macro hygiene (syntax boxes)
 
-**Status:** Proposed design only; not implemented.
+**Status:** Partially implemented in Python (`koskari/hygiene.py` expands templates
+with binding metadata; matcher `extract_targets` and related paths support
+hygiene walks). The singular **syntax box** type and full **box** pipeline
+(described below) remain **design / not complete**.
 
 Implement the singular **syntax box** type and pipeline: macro output is a mix
 of unboxed macro-generated skeleton (subject to the existing binding/hygiene

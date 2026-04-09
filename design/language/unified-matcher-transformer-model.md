@@ -1,22 +1,61 @@
 # Koskari Unified Matcher & Transformer Model
 
-**Status:** Design proposal; guides implementation. Parts of the matcher stack and
-`syntax-rules` exist today (`koskari/matcher`, `koskari/compile/syntax.py`);
-`macro-rules`, syntax boxes, and layered post-expand passes are not yet
-implemented. Complements
-[macro-hygiene-syntax-boxes.md](macro-hygiene-syntax-boxes.md).
+**Status:** Design proposal; guides implementation. The matcher stack, **RULE**
+pattern parsing (`koskari/syntax.py`: `parse_rule_pattern`, `syntax_pattern_to_matcher`),
+`syntax-rules` / **`macro-rules`** transformers, **compile-time lowering**
+(`compile/syntax-rules`, `compile/macro-rules`, … in `koskari/compile/specials/syntax.py`),
+and **template hygiene helpers** (`koskari/hygiene.py`) exist today. **MATCH**
+pattern parsing (`parse_explicit_rule_pattern`) is **not** implemented yet.
+Syntax boxes and the full layered post-expand box pipeline remain **design**
+work. Complements [macro-hygiene-syntax-boxes.md](macro-hygiene-syntax-boxes.md).
 
-**Completed in current step (`koskari/compile/syntax.py`):**
+**Terminology: RULE vs MATCH (macro pattern languages)**
 
-* `SyntaxRulesTransformer` now stores ordered `segments`, where each segment
-  carries its own `literals` and `rules` table.
-* `compile_impl` now dispatches by segment then rule (`first match wins`),
-  preserving existing `define-syntax` behavior.
-* `SyntaxRule.try_expand(...)` now encapsulates the per-rule
-  match-and-expand path.
-* `from_segments(...)` exists for future merge/prepend extension work.
-* Tagged tuple wire format is unchanged for compatibility; `to_tuple` currently
-  requires exactly one segment until a multi-segment pool format is introduced.
+These names refer to **two surface pattern languages** for macro rules.
+
+**MATCH** in this sense is **not** a different semantics from the **`MATCH(...)`**
+combinator in `koskari.matcher`: the **goal** is the same level of fidelity.
+**MATCH** macro patterns are **Koskari source syntax** for building the same
+expressive matcher structures that specials construct in Python (nested
+`MATCH`, `BIND`, decorated matchers, scope metadata, etc.). The combinator is
+the **API** in host code; **`parse_explicit_rule_pattern`** (and friends) are
+the **lowering** from surface **`(rule INNER)`** forms into that same IR.
+
+| Name | Meaning | Where it is used | Implementation status |
+|------|---------|------------------|-------------------------|
+| **RULE** | Scheme-style **list-shaped** patterns (ellipsis, literals, nested list structure), lowered via `syntax_pattern_to_matcher`. | **`(syntax-rules …)`** and **`(macro-rules …)`** specs. | **Implemented** (`parse_rule_pattern`). |
+| **MATCH** | **Rich** patterns in **`(rule INNER)`** that lower to the same matcher vocabulary as **`MATCH(...)`** in `koskari.matcher`. | **`(syntax-match …)`** and **`(macro-match …)`**; each rule row is **`((rule INNER) …)`**. | **Work in progress:** `parse_explicit_rule_pattern` is still a stub. |
+
+**How the implementation chooses RULE vs MATCH**
+
+The **head form of the macro spec** selects the pattern language for the whole
+ruleset: **`syntax-rules`** / **`macro-rules`** use **RULE**; **`syntax-match`**
+/ **`macro-match`** use **MATCH**. This is **not** selected by ad hoc per-pattern
+type annotations on individual rules.
+
+**Nested `(match …)` / `(rule …)` inside a RULE pattern**
+
+Inside **`syntax-rules`** / **`macro-rules`** only, `parse_rule_pattern` may
+see a pattern whose car is the **`match`** or **`rule`** symbol. That dispatch
+is **orthogonal** to the table above: it is an escape **within** the RULE
+pattern column (`(match INNER)` is wired to `syntax_pattern_to_matcher`;
+`(rule INNER)` still flows to `parse_explicit_rule_pattern` and therefore
+remains **unimplemented** until MATCH lands). Prefer the **four** top-level
+forms (`syntax-rules`, `macro-rules`, `syntax-match`, `macro-match`) for the
+primary RULE vs MATCH split.
+
+**Completed (recent / current tree):**
+
+* `SyntaxRulesTransformer` stores ordered `segments`; each segment has
+  `literals` and `rules`.
+* `compile_impl` dispatches by segment then rule (first match wins).
+* `SyntaxRule.try_expand(...)` encapsulates the per-rule match-and-expand path.
+* **Source-to-source** compile specials lower **`(syntax-rules …)`** /
+  **`(macro-rules …)`** to **`(build-syntax-rules …)`** / **`(build-macro-rules …)`**
+  without building runtime transformers solely to serialize them
+  (`parse_macro_rules_rows`, `koskari/compile/specials/syntax.py`).
+* Tagged tuple wire format unchanged; `to_tuple` currently assumes one segment
+  until a multi-segment pool format exists.
 
 ## Related documents
 
@@ -148,8 +187,11 @@ syntax-rules patterns, specials, and (eventually) one matching engine. Today:
 * **Specials** use **`koskari.matcher`** (`MATCH`, `SYMBOL`, `VALUE`, `REST`,
   `LITERAL_*`, `BINDINGS`, scope metadata, etc.) — see
   [pattern-matching.md](../api/pattern-matching.md).
-* **`syntax-rules` rule patterns** are matched by **`_match_pattern`** in
-  `koskari/compile/syntax.py`, not yet lowered to the same IR as specials.
+* **`syntax-rules` / `macro-rules` RULE patterns** are lowered in
+  **`koskari/syntax.py`** (`parse_rule_pattern` → `syntax_pattern_to_matcher`).
+  Full **unification** of that path with every combinator used by specials is a
+  **refactor milestone**, not a blocker for `macro-rules` on the shared rule
+  table + post-expand protocol.
 
 ### Primitive matchers (conceptual / alignment)
 
@@ -173,9 +215,10 @@ syntax-rules patterns, specials, and (eventually) one matching engine. Today:
 * Optional future: `OPTIONAL(...)`, `ONE_OF(...)`, `REPEAT(...)` at the unified
   IR level for macro patterns.
 
-Surface syntaxes (`syntax-rules` lists, layout blocks, future `match` / `rule`
-clauses) **lower** into this IR over time; v1 may keep `_match_pattern` for
-syntax-rules while sharing **post-expand** and **metadata** conventions.
+Surface syntaxes (**RULE** lists in `syntax-rules` / `macro-rules`, **MATCH**
+rows in `syntax-match` / `macro-match`, layout blocks) **lower** into this IR
+over time; v1 keeps RULE parsing in `koskari/syntax.py` while sharing
+**post-expand** and **metadata** conventions.
 
 ---
 
@@ -266,24 +309,21 @@ where a symbol is literal in one block and a pattern variable in another.
 
 ---
 
-## Advanced / future surface: `match` and `rule` clauses
+## MATCH surface: `syntax-match` and `macro-match`
 
-Optional higher-level clause forms (for decorated matchers, explicit scope
-roles) may sugar the same underlying rule table. Illustrative shapes from the
-earlier sketch:
+**MATCH** rules (see the **Terminology: RULE vs MATCH** section above) use
+**`(syntax-match RULE …)`** / **`(macro-match RULE …)`** with rows
+shaped **`((rule INNER) TEMPLATE | BODY …)`**. **`parse_explicit_rule_pattern`**
+implements **`INNER`**; until it exists, these forms cannot run end-to-end.
 
-```scheme
-match (if cond then else):
-  (compile/cond ...)
-```
+Older drafts showed illustrative **`match`** / **`rule`** block sugars with names
+**inverted** relative to current usage: **RULE** is the simple Scheme-style
+language; **MATCH** is the rich explicit-rule language. Do not use those sketches
+as terminology references.
 
-```scheme
-rule (lambda name :: return_type formals body ...):
-  ...
-```
-
-These are **not** required for v1; **`syntax-rules`** and **`macro-rules`**
-remain the primary user-facing mirrors.
+Optional **future** sugars (decorated matchers, explicit scope roles) may still
+wrap the same underlying rule table; they are **not** required for v1.
+**`syntax-rules`** and **`macro-rules`** remain the primary **RULE** mirrors.
 
 ---
 
@@ -371,8 +411,8 @@ dispatch**.
 
 6. **Matcher-driven hygiene** — Binding semantics from metadata where possible.
 
-7. **Progressive surface** — Ship `macro-rules` and merged sections before
-   optional `match` / `rule` sugar.
+7. **Progressive surface** — Ship **`macro-rules`** and merged sections before
+   optional **MATCH**-language polish and extra sugar.
 
 ---
 
@@ -386,7 +426,9 @@ dispatch**.
 * **Expand-time evaluation** for `macro-rules`: host Python callables first vs
   Koskari bytecode + eval bridge.
 * Debugging: which rule matched, which section it came from.
-* Optional `match` / `rule` decorated syntax and matcher algebra exposure.
+* **MATCH** language: implement `parse_explicit_rule_pattern` and exercise
+  **`syntax-match`** / **`macro-match`** end-to-end; optional extra sugar and
+  matcher algebra exposure.
 
 ---
 
@@ -394,7 +436,9 @@ dispatch**.
 
 Koskari's macro system is a **matcher-driven rule table** with **pluggable
 expansion workers** (template vs procedural), **shared** hygienic rewriting and
-**unboxing**, and **merge-based extension**. Authoring centers on
+**unboxing**, and **merge-based extension**. **RULE** authoring centers on
 **`syntax-rules`** and **`macro-rules`** under **`define-syntax`** (with optional
-`define-macro` sugar). Python specials remain the compiler's native interface
-while sharing matcher vocabulary and post-expand policy where possible.
+`define-macro` sugar). **MATCH** authoring uses **`syntax-match`** and
+**`macro-match`** once `parse_explicit_rule_pattern` is complete. Python
+specials remain the compiler's native interface while sharing matcher vocabulary
+and post-expand policy where possible.
