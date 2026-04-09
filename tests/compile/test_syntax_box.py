@@ -116,8 +116,7 @@ class TestMacroRules(unittest.TestCase):
             cons(symbol('double'), symbol('x'), nil),
             symbol('x'),
             nil)
-        spec = cons(symbol('macro-rules'), nil, _rule, nil)
-        literals, rows = parse_macro_rules_rows(symbol('double'), spec)
+        literals, rows = parse_macro_rules_rows(symbol('double'), nil, cons(_rule, nil))
         self.assertIn(symbol('double'), literals)
         _pattern, formals, body_forms = rows[0]
         lam = _macro_rule_lambda_form(formals, body_forms)

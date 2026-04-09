@@ -14,7 +14,8 @@
 """
 koskari.reader.layouts.define_syntax
 
-Layout handlers for define-syntax and syntax-rules block syntax.
+Layout handlers for define-syntax and transformer block syntax (syntax-rules,
+macro-rules, syntax-match, macro-match).
 
 :author: Christopher O'Brien <obriencj@preoccupied.net>
 :license: GNU General Public License v3
@@ -25,8 +26,22 @@ from ...exceptions import LayoutError
 from ...lib import car, cons, nil, symbol
 from ...matcher import (DEFINE, LIST, LITERAL_SYM, MATCH, PAIR, REPEAT, VALUE,
                         match, match1)
-from ...types import get_position, is_keyword, is_proper, is_symbol, unpack
+from ...types import (
+    get_position,
+    is_keyword,
+    is_proper,
+    is_symbol,
+    unpack,
+)
 from .helpers import layout
+
+
+_ALLOWED_DEFINE_SYNTAX_TRANSFORMERS = frozenset({
+    'syntax-rules',
+    'macro-rules',
+    'syntax-match',
+    'macro-match',
+})
 
 
 _DEFINE_SYNTAX_FORMS = [
@@ -44,8 +59,24 @@ _SYNTAX_RULES_FORM = MATCH(
     LIST(LITERAL_SYM('syntax-rules'), VALUE('literals_expr')),
     REPEAT('rules', PAIR('rule'), min_count=1))
 
+_MACRO_RULES_FORM = MATCH(
+    LIST(LITERAL_SYM('macro-rules'), VALUE('literals_expr')),
+    REPEAT('rules', PAIR('rule'), min_count=1))
+
+_SYNTAX_MATCH_FORM = MATCH(
+    LIST(LITERAL_SYM('syntax-match')),
+    REPEAT('rules', PAIR('rule'), min_count=1))
+
+_MACRO_MATCH_FORM = MATCH(
+    LIST(LITERAL_SYM('macro-match')),
+    REPEAT('rules', PAIR('rule'), min_count=1))
+
 
 _symbol_syntax_rules = symbol('syntax-rules')
+_symbol_macro_rules = symbol('macro-rules')
+_symbol_syntax_match = symbol('syntax-match')
+_symbol_macro_match = symbol('macro-match')
+_symbol_rule = symbol('rule')
 _symbol_compile_define_syntax = symbol('compile/define-syntax')
 
 
@@ -70,6 +101,42 @@ def _literals_to_list(literals_expr, source):
     return cons(*literals, nil)
 
 
+def _pattern_template_from_rule(rule_source):
+    """
+    Split a syntax-rules-shaped rule block into pattern and template datums.
+
+    :param rule_source: pair source for one rule block
+    :return: ``(pattern, template)``
+    """
+
+    rule_parts = list(unpack(rule_source))
+    if len(rule_parts) < 2:
+        raise LayoutError(
+            'rule block must have pattern and template',
+            get_position(rule_source))
+    pattern = cons(*rule_parts[:-1], nil)
+    template = rule_parts[-1]
+    match_m = match1(pattern, [_MATCH_FORM_PATTERN])
+    if match_m is not None:
+        pattern = match_m['inner'].source
+    return pattern, template
+
+
+def _syntax_rules_like_rows(rule_matches):
+    """
+    Build (PATTERN TEMPLATE) rows for syntax-rules / macro-rules.
+
+    :param rule_matches: ``repeat.matches`` from a syntax-rules-shaped rule list
+    :return: list of ``cons(pattern, template, nil)`` forms
+    """
+
+    rules = []
+    for sub_res, _ in rule_matches:
+        pattern, template = _pattern_template_from_rule(sub_res['rule'].source)
+        rules.append(cons(pattern, template, nil))
+    return rules
+
+
 @layout(symbol('layout/syntax-rules'))
 def layout_syntax_rules(source, peers):
     """
@@ -91,31 +158,111 @@ def layout_syntax_rules(source, peers):
             get_position(source))
 
     literals = _literals_to_list(m['literals_expr'].source, source)
+    rules = _syntax_rules_like_rows(m['rules'].matches)
+
+    return cons(_symbol_syntax_rules, literals, *rules, nil)
+
+
+@layout(symbol('layout/macro-rules'))
+def layout_macro_rules(source, peers):
+    """
+    Lower macro-rules block to (macro-rules (LIT ...) ((PAT) TMPL) ...).
+
+    Same block shape as syntax-rules; only the emitted head differs.
+    """
+
+    if peers:
+        raise LayoutError(
+            'macro-rules block does not take peers',
+            get_position(source))
+
+    m = match(source, _MACRO_RULES_FORM)
+    if m is None:
+        raise LayoutError(
+            'macro-rules requires literals list and at least one rule',
+            get_position(source))
+
+    literals = _literals_to_list(m['literals_expr'].source, source)
+    rules = _syntax_rules_like_rows(m['rules'].matches)
+
+    return cons(_symbol_macro_rules, literals, *rules, nil)
+
+
+@layout(symbol('layout/syntax-match'))
+def layout_syntax_match(source, peers):
+    """
+    Lower syntax-match block to (syntax-match ((rule PAT) TMPL) ...).
+
+    No literals list; each pattern is wrapped as (rule PAT).
+    """
+
+    if peers:
+        raise LayoutError(
+            'syntax-match block does not take peers',
+            get_position(source))
+
+    m = match(source, _SYNTAX_MATCH_FORM)
+    if m is None:
+        raise LayoutError(
+            'syntax-match requires at least one rule',
+            get_position(source))
+
     rules = []
     for sub_res, _ in m['rules'].matches:
-        rule_parts = list(unpack(sub_res['rule'].source))
-        if len(rule_parts) < 2:
-            raise LayoutError(
-                'syntax-rules rule must have pattern and template',
-                get_position(sub_res['rule'].source))
-        pattern = cons(*rule_parts[:-1], nil)
-        template = rule_parts[-1]
-        match_m = match1(pattern, [_MATCH_FORM_PATTERN])
-        if match_m is not None:
-            pattern = match_m['inner'].source
-        rules.append(cons(pattern, cons(template, nil)))
+        pattern, template = _pattern_template_from_rule(sub_res['rule'].source)
+        rule_pattern = cons(_symbol_rule, pattern, nil)
+        rules.append(cons(rule_pattern, template, nil))
 
-    return cons(
-        _symbol_syntax_rules,
-        cons(literals, cons(*rules, nil)))
+    return cons(_symbol_syntax_match, *rules, nil)
+
+
+@layout(symbol('layout/macro-match'))
+def layout_macro_match(source, peers):
+    """
+    Lower macro-match block to (macro-match (rule INNER BODY ...) ...).
+
+    Each rule must begin with ``rule`` and a single inner pattern form, then
+    the body forms.
+    """
+
+    if peers:
+        raise LayoutError(
+            'macro-match block does not take peers',
+            get_position(source))
+
+    m = match(source, _MACRO_MATCH_FORM)
+    if m is None:
+        raise LayoutError(
+            'macro-match requires at least one rule',
+            get_position(source))
+
+    rules = []
+    for sub_res, _ in m['rules'].matches:
+        rule_src = sub_res['rule'].source
+        rule_parts = list(unpack(rule_src))
+        if len(rule_parts) < 3:
+            raise LayoutError(
+                'macro-match rule must have rule (INNER) and at least one body form',
+                get_position(rule_src))
+        head = rule_parts[0]
+        if not is_symbol(head) or str(head) != 'rule':
+            raise LayoutError(
+                'macro-match rule must begin with rule',
+                get_position(rule_src))
+        inner = rule_parts[1]
+        body_forms = rule_parts[2:]
+        rules.append(cons(_symbol_rule, inner, *body_forms, nil))
+
+    return cons(_symbol_macro_match, *rules, nil)
 
 
 @layout(symbol('layout/define-syntax'))
 def layout_define_syntax(source, peers):
     """
-    Lower define-syntax block to (compile/define-syntax NAME (syntax-rules ...)).
+    Lower define-syntax block to (compile/define-syntax NAME TRANSFORMER).
 
-    Expects exactly one body form: a syntax-rules form.
+    Expects exactly one body form: syntax-rules, macro-rules, syntax-match, or
+    macro-match.
     """
 
     if peers:
@@ -126,19 +273,19 @@ def layout_define_syntax(source, peers):
     m = match(source, _DEFINE_SYNTAX_FORMS)
     if m is None:
         raise LayoutError(
-            'define-syntax block requires name and single syntax-rules form',
+            'define-syntax block requires name and single transformer form',
             get_position(source))
 
     name = m['name'].source
     transformer_spec = m['transformer'].source
-    if not is_symbol(car(transformer_spec)) or str(car(transformer_spec)) != 'syntax-rules':
+    head = car(transformer_spec)
+    if not is_symbol(head) or str(head) not in _ALLOWED_DEFINE_SYNTAX_TRANSFORMERS:
         raise LayoutError(
-            'define-syntax requires a syntax-rules form',
+            'define-syntax requires syntax-rules, macro-rules, syntax-match, '
+            'or macro-match',
             get_position(transformer_spec))
 
-    return cons(
-        _symbol_compile_define_syntax,
-        cons(name, cons(transformer_spec, nil)))
+    return cons(_symbol_compile_define_syntax, name, transformer_spec, nil)
 
 
 # The end.

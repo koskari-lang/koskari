@@ -334,18 +334,92 @@ syntax-rules [item]:
 **Implementation:** `koskari/reader/layouts/define_syntax.layout_syntax_rules`
 
 
+## layout/macro-rules
+
+**Symbol:** `layout/macro-rules`
+
+**Use-case:** Block syntax for the `macro-rules` transformer within a
+`define-syntax` block. Same surface as `layout/syntax-rules` (literals list and
+indented rules); lowers to `(macro-rules (LIT ...) ((PATTERN) TEMPLATE) ...)`.
+
+**Behaviour:** Same as `layout/syntax-rules` except for the emitted head. Does
+not accept peers.
+
+**Syntax:**
+
+```
+macro-rules [LIT ...]:
+  PATTERN1:
+    BODY1...
+  PATTERN2:
+    BODY2...
+```
+
+**Implementation:** `koskari/reader/layouts/define_syntax.layout_macro_rules`
+
+
+## layout/syntax-match
+
+**Symbol:** `layout/syntax-match`
+
+**Use-case:** Block syntax for the `syntax-match` transformer within a
+`define-syntax` block. No literals list; each rule pattern is wrapped as
+`(rule PATTERN)` before emitting `((rule PATTERN) TEMPLATE)`.
+
+**Behaviour:** Same per-rule header/body rules as `layout/syntax-rules` (including
+`match (PATTERN):` for keywords). Does not accept peers.
+
+**Syntax:**
+
+```
+syntax-match:
+  PATTERN1:
+    TEMPLATE1...
+  match (PATTERN-WITH-KEYWORDS):
+    TEMPLATE...
+```
+
+**Implementation:** `koskari/reader/layouts/define_syntax.layout_syntax_match`
+
+
+## layout/macro-match
+
+**Symbol:** `layout/macro-match`
+
+**Use-case:** Block syntax for the `macro-match` transformer within a
+`define-syntax` block. Each rule must begin with `rule` and a single inner
+pattern form, then one or more body forms.
+
+**Behaviour:** Does not accept peers.
+
+**Syntax:**
+
+```
+macro-match:
+  rule (INNER):
+    BODY1...
+  rule (inner-pattern):
+    BODY1
+    BODY2
+```
+
+**Implementation:** `koskari/reader/layouts/define_syntax.layout_macro_match`
+
+
 ## layout/define-syntax
 
 **Symbol:** `layout/define-syntax`
 
 **Use-case:** Block syntax for defining syntax transformers (macros). Wraps a
-single `syntax-rules` block and lowers to
-`(compile/define-syntax NAME (syntax-rules ...))`. The resulting form is
-compiled by the `compile/define-syntax` special; see [SPECIALS.md](SPECIALS.md).
+single inner transformer block and lowers to
+`(compile/define-syntax NAME (TRANSFORMER ...))`. The resulting form is
+expanded by the **`compile/define-syntax`** macro, then compiled; see
+[MACROS.md](MACROS.md) and [SPECIALS.md](SPECIALS.md).
 
-**Behaviour:** Expects exactly one body form: a `syntax-rules` form (typically
-produced by `layout/syntax-rules`). Produces `(compile/define-syntax NAME
-syntax-rules-form)`. Does not accept peers.
+**Behaviour:** Expects exactly one body form: `syntax-rules`, `macro-rules`,
+`syntax-match`, or `macro-match` (each produced by the corresponding
+`layout/...`). Produces `(compile/define-syntax NAME transformer-form)`. Does
+not accept peers.
 
 **Syntax:**
 
@@ -357,6 +431,9 @@ define-syntax NAME:
     PATTERN2:
       TEMPLATE2...
 ```
+
+**Other inner heads:** `macro-rules`, `syntax-match`, and `macro-match` use the
+same indentation style as their layout sections above.
 
 **Examples:**
 

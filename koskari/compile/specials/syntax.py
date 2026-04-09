@@ -24,7 +24,7 @@ Special forms for ``compile/syntax`` and
 
 
 from ...exceptions import SpecialError
-from ...lib import car, cons, nil, pair, symbol
+from ...lib import cons, nil, pair, symbol
 from ...matcher import (BIND, DEFINE, LITERAL_SYM, LIST, MATCH, REPEAT, REST,
                         VALUE, match)
 from ...syntax import (SyntaxRule, SyntaxRulesTransformer, _serialize_form,
@@ -63,16 +63,15 @@ _MACRO_MATCH_RULE_ROW = MATCH(
     LIST(LITERAL_SYM("rule"), BIND("inner")), REST("body"))
 MACRO_MATCH_RULES_PATTERN = MATCH(REPEAT("rules", _MACRO_MATCH_RULE_ROW))
 
-# MATCH-style specs: (syntax-match . RULES) / (macro-match . RULES). Unlike
-# syntax-rules / macro-rules, there is no separate LITERALS form; literals
-# are expressed inside each pattern. Segment literals are only {NAME}.
-SYNTAX_MATCH_HEAD = MATCH(
-    LITERAL_SYM("syntax-match"),
-    REST("rules"))
+# After compile/define-syntax, (compile/<rules-kind> NAME LITERALS . RULES).
+_COMPILE_NAME_LITERALS_RULES = [
+    MATCH(DEFINE("name"), VALUE("literals"), REST("rules")),
+]
 
-MACRO_MATCH_HEAD = MATCH(
-    LITERAL_SYM("macro-match"),
-    REST("rules"))
+# After compile/define-syntax, (compile/<match-kind> NAME . RULES).
+_COMPILE_NAME_RULES_TAIL = [
+    MATCH(DEFINE("name"), REST("rules")),
+]
 
 
 @special(symbol("compile/make-syntax"))
@@ -101,54 +100,60 @@ def special_compile_syntax(
 _COMPILE_NAME_SPEC_PATTERNS = [MATCH(DEFINE("name"), VALUE("spec"))]
 
 
-@special_forms(_COMPILE_NAME_SPEC_PATTERNS)
+@special_forms(_COMPILE_NAME_LITERALS_RULES)
 @special(symbol("compile/syntax-rules"))
 def special_compile_syntax_rules(compiler, source, tc=False):
     """
-    Compile (compile/syntax-rules NAME (syntax-rules LITERALS ... RULES)).
+    Compile (compile/syntax-rules NAME LITERALS RULES...).
 
     Lowers to a (build-syntax-rules ...) call form for recompilation. The
     built transformer is the value of that expression; use (compile/define
     NAME ...) to bind it.
     """
 
-    # Lower the embedded (syntax-rules ...) spec to a transformer, then emit
-    # a (build-syntax-rules ...) call form as the expression value.
     _, rest = source
-    matched = match(rest, _COMPILE_NAME_SPEC_PATTERNS)
+    matched = match(rest, _COMPILE_NAME_LITERALS_RULES)
     if matched is None:
-        raise SpecialError("compile/syntax-rules requires name and spec", source)
+        raise SpecialError(
+            "compile/syntax-rules requires name, literals list, and rule forms",
+            source)
 
     namesym = matched["name"].source
-    spec = matched["spec"].source
 
-    transformer = build_syntax_rules_transformer(namesym, spec)
+    transformer = build_syntax_rules_transformer(
+        namesym,
+        matched["literals"].source,
+        matched["rules"].source,
+    )
     tagged = transformer.to_tuple()
     return cons(symbol("build-syntax-rules"), str(namesym), tagged, nil)
 
 
-@special_forms(_COMPILE_NAME_SPEC_PATTERNS)
+@special_forms(_COMPILE_NAME_LITERALS_RULES)
 @special(symbol("compile/macro-rules"))
 def special_compile_macro_rules(compiler, source, tc=False):
     """
-    Compile (compile/macro-rules NAME (macro-rules LITERALS ... RULES)).
+    Compile (compile/macro-rules NAME LITERALS RULES...).
 
     Lowers to a (build-macro-rules ...) call form for recompilation. The
     built transformer is the value of that expression; use (compile/define
     NAME ...) to bind it.
     """
 
-    # Same as syntax-rules but for (macro-rules ...); emit (build-macro-rules
-    # ...) with serialized rules and per-rule lambda forms.
     _, rest = source
-    matched = match(rest, _COMPILE_NAME_SPEC_PATTERNS)
+    matched = match(rest, _COMPILE_NAME_LITERALS_RULES)
     if matched is None:
-        raise SpecialError("compile/macro-rules requires name and spec", source)
+        raise SpecialError(
+            "compile/macro-rules requires name, literals list, and rule forms",
+            source)
 
     namesym = matched["name"].source
-    spec = matched["spec"].source
 
-    literals, rows = parse_macro_rules_rows(namesym, spec)
+    literals, rows = parse_macro_rules_rows(
+        namesym,
+        matched["literals"].source,
+        matched["rules"].source,
+    )
     literals_tuple = tuple(
         _serialize_form(x) for x in sorted(literals, key=str))
     parts = [symbol("build-macro-rules"), str(namesym), literals_tuple]
@@ -160,11 +165,11 @@ def special_compile_macro_rules(compiler, source, tc=False):
     return build_proper(*parts)
 
 
-@special_forms(_COMPILE_NAME_SPEC_PATTERNS)
+@special_forms(_COMPILE_NAME_RULES_TAIL)
 @special(symbol("compile/syntax-match"))
 def special_compile_syntax_match(compiler, source, tc=False):
     """
-    Compile (compile/syntax-match NAME (syntax-match RULE ...)).
+    Compile (compile/syntax-match NAME RULE ...).
 
     Rule patterns must be (rule INNER); INNER is passed to
     parse_explicit_rule_pattern.
@@ -175,29 +180,24 @@ def special_compile_syntax_match(compiler, source, tc=False):
     """
 
     _, rest = source
-    matched = match(rest, _COMPILE_NAME_SPEC_PATTERNS)
+    matched = match(rest, _COMPILE_NAME_RULES_TAIL)
     if matched is None:
-        raise SpecialError("compile/syntax-match requires name and spec", source)
+        raise SpecialError(
+            "compile/syntax-match requires name and at least one rule",
+            source)
 
     namesym = matched["name"].source
-    spec = matched["spec"].source
     sym_rule = symbol("rule")
 
-    # SPEC must be (syntax-match . RULES); rules follow the head with no
-    # separate literal list (unlike syntax-rules).
-    head_m = match(spec, SYNTAX_MATCH_HEAD)
-    if head_m is None:
-        raise SpecialError(
-            "syntax-match requires (syntax-match RULE ...)", spec)
-
-    rules_expr = head_m["rules"].source
+    rules_expr = matched["rules"].source
     literals = frozenset({namesym})
 
     # RULES is a list of ((rule INNER) TEMPLATE) rows; shape errors are a
     # single failed match, not per-field checks.
     rules_m = match(rules_expr, SYNTAX_MATCH_RULES_PATTERN)
     if rules_m is None:
-        raise SpecialError("syntax-match requires at least one valid rule", spec)
+        raise SpecialError(
+            "syntax-match requires at least one valid rule", rules_expr)
 
     # Build SyntaxRule objects; raw_rule is reconstructed for error context in
     # parse_explicit_rule_pattern (same shape as the source row).
@@ -217,11 +217,11 @@ def special_compile_syntax_match(compiler, source, tc=False):
     return cons(symbol("build-syntax-rules"), str(namesym), tagged, nil)
 
 
-@special_forms(_COMPILE_NAME_SPEC_PATTERNS)
+@special_forms(_COMPILE_NAME_RULES_TAIL)
 @special(symbol("compile/macro-match"))
 def special_compile_macro_match(compiler, source, tc=False):
     """
-    Compile (compile/macro-match NAME (macro-match RULE ...)).
+    Compile (compile/macro-match NAME RULE ...).
 
     Rule patterns must be (rule INNER); INNER is passed to
     parse_explicit_rule_pattern.
@@ -232,28 +232,23 @@ def special_compile_macro_match(compiler, source, tc=False):
     """
 
     _, rest = source
-    matched = match(rest, _COMPILE_NAME_SPEC_PATTERNS)
+    matched = match(rest, _COMPILE_NAME_RULES_TAIL)
     if matched is None:
-        raise SpecialError("compile/macro-match requires name and spec", source)
+        raise SpecialError(
+            "compile/macro-match requires name and at least one rule",
+            source)
 
     namesym = matched["name"].source
-    spec = matched["spec"].source
     sym_rule = symbol("rule")
 
-    # SPEC must be (macro-match . RULES); no separate literal list (unlike
-    # macro-rules).
-    head_m = match(spec, MACRO_MATCH_HEAD)
-    if head_m is None:
-        raise SpecialError(
-            "macro-match requires (macro-match RULE ...)", spec)
-
-    rules_expr = head_m["rules"].source
+    rules_expr = matched["rules"].source
     literals = frozenset({namesym})
 
     # RULES: ((rule INNER) BODY ...) rows; REST captures all body forms.
     rules_m = match(rules_expr, MACRO_MATCH_RULES_PATTERN)
     if rules_m is None:
-        raise SpecialError("macro-match requires at least one valid rule", spec)
+        raise SpecialError(
+            "macro-match requires at least one valid rule", rules_expr)
 
     # Per row: explicit rule pattern, then emit like compile/macro-rules.
     parts = [symbol("build-macro-rules"), str(namesym)]
@@ -278,41 +273,6 @@ def special_compile_macro_match(compiler, source, tc=False):
         parts.append(_macro_rule_lambda_form(formals, body_forms))
 
     return build_proper(*parts)
-
-
-# (NAME TRANSFORMER) after compile/define-syntax.
-_DEFINE_SYNTAX_PATTERNS = [
-    MATCH(DEFINE("name"), VALUE("transformer"))]
-
-
-@special_forms(_DEFINE_SYNTAX_PATTERNS)
-@special(symbol("compile/define-syntax"))
-def special_define_syntax(compiler, source, tc=False):
-    """
-    Compile (define-syntax NAME TRANSFORMER).
-
-    Expands to (compile/define NAME (compile/<head> NAME TRANSFORMER)) as a
-    new source form for the surrounding compilation pass.
-    """
-
-    # Expand only: (compile/define NAME (compile/<head> NAME TRANSFORMER)).
-    # Non-pair transformer uses syntax-rules as the default head.
-    _, rest = source
-    matched = match(rest, _DEFINE_SYNTAX_PATTERNS)
-    if matched is None:
-        raise SpecialError("define-syntax requires a name and transformer", source)
-
-    namesym = matched["name"].source
-    transformer_spec = matched["transformer"].source
-
-    if is_pair(transformer_spec):
-        head_sym = car(transformer_spec)
-    else:
-        head_sym = symbol("syntax-rules")
-
-    inner = cons(symbol("compile/" + str(head_sym)),
-                 namesym, transformer_spec, nil)
-    return cons(symbol("compile/define"), namesym, inner, nil)
 
 
 # The end.

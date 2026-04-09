@@ -1276,45 +1276,98 @@ with local declaration; raises if the name is already in `declares` (e.g. from
 
 ## compile/define-syntax
 
-**Symbol:** `compile/define-syntax`
+**Not a compiler special.** User-facing **`(define-syntax NAME TRANSFORMER)`** is
+expanded by the **`compile/define-syntax`** **macro** in
+`koskari/importer/basics.ki` (there is no registered `@special` for
+`compile/define-syntax`). The macro rewrites to **`(compile/define NAME …)`** with a
+transformer whose head is **`syntax-rules`**, **`macro-rules`**, **`syntax-match`**, or
+**`macro-match`**. Those specs are lowered by **`compile/syntax-rules`**,
+**`compile/macro-rules`**, **`compile/syntax-match`**, and **`compile/macro-match`**
+(below).
 
-**Syntax:** `(compile/define-syntax NAME (syntax-rules (LIT ...) ((PATTERN) TEMPLATE) ...))`
+**Typical surface form:** **`(define-syntax NAME (syntax-rules (LIT ...) ((PATTERN) TEMPLATE) ...))`**
+— the macro expands that to **`compile/define`** plus a **`syntax-rules`** spec
+with **`NAME`** repeated as the first argument. Block syntax via
+`layout/define-syntax` and `layout/syntax-rules` produces the same shape; see
+[LAYOUTS.md](LAYOUTS.md).
 
-**Use-case:** Define a compile-time syntax transformer. Registers a
-`syntax-rules`–based matcher under the given name. When the compiler
-encounters a form whose head matches the transformer name, it expands the
-form using the pattern/template rules before compiling.
+**Implementation:** `koskari/importer/basics.ki` (macro definition).
 
-**Behaviour:** Takes exactly two arguments: a symbol (the macro name) and a
-`syntax-rules` form. Parses the syntax-rules spec (literals list and rules),
-builds a `SyntaxRulesTransformer`, and emits `(build-syntax-rules NAME tagged)`
-to produce the transformer at module load time. Binds the result to NAME in
-the module namespace. The transformer is invoked during the expand phase when
-forms matching any rule pattern are seen.
+**See also:** [MACROS.md](MACROS.md) — **compile/define-syntax (macro)**;
+[language/unified-matcher-transformer-model.md](language/unified-matcher-transformer-model.md)
+(**RULE** vs **MATCH** pattern languages; unified matcher IR and transformer
+pipeline for `define-syntax`, future `define-macro`, and specials).
 
-**Syntax-rules form:** `(syntax-rules (LIT ...) ((PATTERN) TEMPLATE) ...)`.
-Each rule has a PATTERN (list matching the macro invocation shape) and a
-TEMPLATE (output form with pattern variables substituted). LIT symbols match
-literally. Template supports `...` for ellipsis repetition.
 
-**Examples:**
+## compile/syntax-rules
 
-```scheme
-;; Define a double macro: (double x) → (* x 2)
-(compile/define-syntax double
-  (syntax-rules ()
-    ((double x) (* x 2))))
+**Symbol:** `compile/syntax-rules`
 
-;; Use it
-(double 21)   ; → (* 21 2) → 42
-```
+**Syntax:** `(compile/syntax-rules NAME LITERALS RULE ...)`
 
-Block syntax via `layout/define-syntax` and `layout/syntax-rules` produces
-this form; see [LAYOUTS.md](LAYOUTS.md).
+**Use-case:** Lower a **`syntax-rules`**-style transformer spec to a
+**`build-syntax-rules`** call form (for recompilation). The built transformer is
+the **value** of that expression; bind it with **`(compile/define NAME …)`**.
 
-**Implementation:** `koskari/compile/specials/variables.special_define_syntax`
+**Behaviour:** Parses literals and implicit-pattern rules, builds a
+`SyntaxRulesTransformer`, emits **`(build-syntax-rules NAME TAGGED)`**.
 
-**See also:** [language/unified-matcher-transformer-model.md](language/unified-matcher-transformer-model.md) (**RULE** vs **MATCH** pattern languages; unified matcher IR and transformer pipeline for `define-syntax`, future `define-macro`, and specials); [MACROS.md](MACROS.md) (implemented macros in basics.ki). For **re-emitting** macro specs as source, see **`compile/syntax-rules`**, **`compile/macro-rules`**, **`compile/syntax-match`**, and **`compile/macro-match`** in `koskari/compile/specials/syntax.py`.
+**Implementation:** `koskari/compile/specials/syntax.py` —
+`special_compile_syntax_rules`
+
+**Tests:** `tests/compile/specials/test_define_syntax.py`
+
+
+## compile/macro-rules
+
+**Symbol:** `compile/macro-rules`
+
+**Syntax:** `(compile/macro-rules NAME LITERALS RULE ...)`
+
+**Use-case:** Lower a **`macro-rules`**-style transformer spec to a
+**`build-macro-rules`** call form. Bind the result with **`compile/define`**.
+
+**Behaviour:** Parses literals and implicit-pattern macro rules, emits
+**`build-macro-rules`** with serialized pattern matchers and per-rule lambdas.
+
+**Implementation:** `koskari/compile/specials/syntax.py` —
+`special_compile_macro_rules`
+
+**Tests:** `tests/compile/specials/test_define_syntax.py`
+
+
+## compile/syntax-match
+
+**Symbol:** `compile/syntax-match`
+
+**Syntax:** `(compile/syntax-match NAME ((rule INNER) TEMPLATE) ...)`
+
+**Use-case:** Explicit-pattern **`syntax-match`** rules (same emission path as
+**`compile/syntax-rules`**: **`build-syntax-rules`**).
+
+**Behaviour:** Rule patterns must be **`(rule INNER)`**; **`INNER`** is passed to
+**`parse_explicit_rule_pattern`**. That path is not fully implemented yet
+(**`CompilerError`** from `koskari/syntax.py`: "rule pattern mode not implemented yet").
+
+**Implementation:** `koskari/compile/specials/syntax.py` —
+`special_compile_syntax_match`
+
+
+## compile/macro-match
+
+**Symbol:** `compile/macro-match`
+
+**Syntax:** `(compile/macro-match NAME ((rule INNER) BODY ...) ...)`
+
+**Use-case:** Explicit-pattern **`macro-match`** rules (same emission shape as
+**`compile/macro-rules`**: **`build-macro-rules`**).
+
+**Behaviour:** Rule patterns must be **`(rule INNER)`**; **`INNER`** is passed to
+**`parse_explicit_rule_pattern`** (same caveat as **`compile/syntax-match`**).
+
+**Implementation:** `koskari/compile/specials/syntax.py` —
+`special_compile_macro_match`
+
 
 ## compile/class
 

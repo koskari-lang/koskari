@@ -100,7 +100,7 @@ This document provides a high-level summary of all features identified from both
 - **Default syntax**: Indentation-based block syntax with colon-terminated headers; lowers into canonical s-expressions. See `design/language/layout-syntax.md` and `design/language/layout-syntax-formal.md`.
 - **Block parsing**: Header terminator is the final `:` at delimiter depth 0; `x:` and `x :` parse identically. Keywords like `as:`, `x:` remain intact inside headers.
 - **Block header parsing**: Single forward pass; `:` is a terminating event at depth 0. No probe or replay; the first bare `:` at delimiter depth 0 ends the header.
-- **Layout heads**: Block heads resolve via `layout/<head>` lookup; handlers receive `(header . body)` and optional peer blocks. Implemented: layout/if (peers: elif, else), layout/try (peers: except, else, finally), layout/dyn-wind (peers: before, body, after), layout/define-syntax, layout/syntax-rules. Fallback: `layout/block` for unknown heads.
+- **Layout heads**: Block heads resolve via `layout/<head>` lookup; handlers receive `(header . body)` and optional peer blocks. Implemented: layout/if (peers: elif, else), layout/try (peers: except, else, finally), layout/dyn-wind (peers: before, body, after), layout/define-syntax, layout/syntax-rules, layout/macro-rules, layout/syntax-match, layout/macro-match. Fallback: `layout/block` for unknown heads.
 - **Mixed mode**: Pure s-expr syntax embeddable anywhere; layout and s-expr alternate by context.
 
 ### Compiler

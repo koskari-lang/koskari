@@ -14,30 +14,38 @@
 """
 Tests for koskari.reader.layouts.define_syntax layout handlers.
 
-define-syntax and syntax-rules block syntax.
+define-syntax and transformer block syntax (syntax-rules, macro-rules,
+syntax-match, macro-match).
+
+These tests only assert that layout expands to the expected cons-tree
+(``parse_layout`` / ``LayoutReader.read``). They do not compile or run code.
 """
 
 
-from unittest import IsolatedAsyncioTestCase
+from unittest import TestCase
 
-from koskari.dis import dis
-from koskari.importer.bootstrap import make_bootstrap
-from koskari.reader import LayoutReader, source_str
-from koskari.compile import Compiler
-from koskari.lib import Module, ModuleNamespace, nil, symbol
-from koskari.types import is_pair
+from koskari.exceptions import LayoutError
+from koskari.lib import symbol
 from koskari.compile.helpers import pycons
 
 from .. import parse_layout
 
 import pytest
 
+
 pytestmark = pytest.mark.phase_infra
 
 
-class TestLayoutDefineSyntax(IsolatedAsyncioTestCase):
+class TestLayoutDefineSyntax(TestCase):
 
-    async def test_define_syntax_layout_parses(self):
+    def _assert_layout_parse(self, src, expected):
+        result = parse_layout(src)
+        print('result   :', result)
+        print('expected :', expected)
+        self.assertEqual(result, expected)
+
+
+    def test_define_syntax_layout_parses(self):
         src = """
         define-syntax do-something-with-x:
           syntax-rules [x]:
@@ -65,13 +73,10 @@ class TestLayoutDefineSyntax(IsolatedAsyncioTestCase):
               (symbol('x'),),
               rule1,
               rule2)))
-        result = parse_layout(src)
-        print('result   :', result)
-        print('expected :', expected)
-        self.assertEqual(result, expected)
+        self._assert_layout_parse(src, expected)
 
 
-    async def test_syntax_rules_match_form(self):
+    def test_syntax_rules_match_form(self):
         """
         match (FORM): unwraps to same output as FORM: for s-expr patterns
         """
@@ -90,11 +95,10 @@ class TestLayoutDefineSyntax(IsolatedAsyncioTestCase):
              (symbol('syntax-rules'),
               (symbol('item'), symbol('compile/item')),
               rule1)))
-        result = parse_layout(src)
-        self.assertEqual(result, expected)
+        self._assert_layout_parse(src, expected)
 
 
-    async def test_syntax_rules_empty_literals(self):
+    def test_syntax_rules_empty_literals(self):
         src = """
         define-syntax m:
           syntax-rules ():
@@ -110,13 +114,10 @@ class TestLayoutDefineSyntax(IsolatedAsyncioTestCase):
              (symbol('syntax-rules'),
               (),
               rule1,)))
-        result = parse_layout(src)
-        print('result   :', result)
-        print('expected :', expected)
-        self.assertEqual(result, expected)
+        self._assert_layout_parse(src, expected)
 
 
-    async def test_define_syntax_layout_compiles_and_runs(self):
+    def test_define_syntax_layout_double_syntax_rules(self):
         src = """
         define-syntax double:
           syntax-rules ():
@@ -132,78 +133,28 @@ class TestLayoutDefineSyntax(IsolatedAsyncioTestCase):
                (symbol('compile/begin'),
                 (symbol('+'), symbol('x'), symbol('x'),)))))
         )
-
-        result = parse_layout(src)
-        print('result   :', result)
-        print('expected :', expected)
-        self.assertEqual(result, expected)
-
-        builtins = make_bootstrap()
-        reader = LayoutReader(builtins)
-        stream = source_str(src, __file__)
-        source = reader.read(stream)
-
-        sr = source[1][1][0]
-        rules = list(sr[1][1].unpack())
-        self.assertEqual(len(rules), 1, 'expect one rule')
-        rule = rules[0]
-        pattern_expr, template_tail = rule
-        self.assertTrue(is_pair(template_tail),
-                        'rule must be (pattern (template)); template_tail=%r' % (template_tail,))
-        self.assertTrue(
-            template_tail[1] is nil if is_pair(template_tail) else False,
-            'template_tail must be single-element list; template_tail=%r' % (template_tail,))
-
-        module = Module(ModuleNamespace('test', builtins))
-        compiler = Compiler('<unittest>', module, filename=__file__)
-        fragment = compiler.full_compile(source)
-        expr = fragment.as_expression(vars(module))
-        await expr()
-
-        use_src = """
-        (double 21)
-        """
-        use_reader = LayoutReader(vars(module))
-        use_stream = source_str(use_src, __file__)
-        use_source = use_reader.read(use_stream)
-        use_fragment = compiler.full_compile(use_source)
-        use_expr = use_fragment.as_expression(vars(module))
-
-        dis(use_expr.code)
-
-        result = await use_expr()
-        self.assertEqual(42, result)
+        self._assert_layout_parse(src, expected)
 
 
-    async def test_define_syntax_template_with_literal_number(self):
+    def test_define_syntax_layout_double_literal_in_template(self):
         src = """
         define-syntax double:
           syntax-rules ():
             double x:
               (* x 2)
         """
-
-        builtins = make_bootstrap()
-        reader = LayoutReader(builtins)
-        stream = source_str(src, __file__)
-        source = reader.read(stream)
-        module = Module(ModuleNamespace('test', builtins))
-        compiler = Compiler('<unittest>', module, filename=__file__)
-        fragment = compiler.full_compile(source)
-        expr = fragment.as_expression(vars(module))
-        await expr()
-
-        use_src = "(double 21)"
-        use_reader = LayoutReader(vars(module))
-        use_stream = source_str(use_src, __file__)
-        use_source = use_reader.read(use_stream)
-        use_fragment = compiler.full_compile(use_source)
-        use_expr = use_fragment.as_expression(vars(module))
-        result = await use_expr()
-        self.assertEqual(42, result)
+        expected = pycons(
+            (symbol('compile/define-syntax'),
+             symbol('double'),
+             (symbol('syntax-rules'),
+              (),
+              ((symbol('double'), symbol('x')),
+               (symbol('compile/begin'),
+                (symbol('*'), symbol('x'), 2),)))))
+        self._assert_layout_parse(src, expected)
 
 
-    async def test_define_syntax_requires_single_syntax_rules(self):
+    def test_define_syntax_requires_single_transformer(self):
         src = """
         define-syntax m:
           syntax-rules ():
@@ -213,6 +164,71 @@ class TestLayoutDefineSyntax(IsolatedAsyncioTestCase):
         """
 
         with self.assertRaises(Exception):
+            parse_layout(src)
+
+
+    def test_define_syntax_macro_rules_layout(self):
+        src = """
+        define-syntax m:
+          macro-rules ():
+            m x:
+              x
+        """
+        rule1 = (
+            (symbol('m'), symbol('x')),
+            (symbol('compile/begin'), symbol('x'),))
+        expected = pycons(
+            (symbol('compile/define-syntax'),
+             symbol('m'),
+             (symbol('macro-rules'),
+              (),
+              rule1,)))
+        self._assert_layout_parse(src, expected)
+
+
+    def test_define_syntax_syntax_match_layout(self):
+        src = """
+        define-syntax m:
+          syntax-match:
+            m x:
+              x
+        """
+        rule1 = (
+            (symbol('rule'), (symbol('m'), symbol('x'))),
+            (symbol('compile/begin'), symbol('x'),))
+        expected = pycons(
+            (symbol('compile/define-syntax'),
+             symbol('m'),
+             (symbol('syntax-match'),
+              rule1,)))
+        self._assert_layout_parse(src, expected)
+
+
+    def test_define_syntax_macro_match_layout(self):
+        src = """
+        define-syntax m:
+          macro-match:
+            rule (m x):
+              x
+        """
+        expected = pycons(
+            (symbol('compile/define-syntax'),
+             symbol('m'),
+             (symbol('macro-match'),
+              (symbol('rule'),
+               (symbol('m'), symbol('x')),
+               (symbol('compile/begin'), symbol('x')),))))
+        self._assert_layout_parse(src, expected)
+
+
+    def test_define_syntax_rejects_unknown_transformer(self):
+        src = """
+        define-syntax m:
+          foo:
+            x
+        """
+
+        with self.assertRaises(LayoutError):
             parse_layout(src)
 
 

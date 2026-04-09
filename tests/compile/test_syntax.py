@@ -40,7 +40,7 @@ from koskari.syntax import (
     build_syntax_rules_transformer,
     syntax_pattern_to_matcher,
 )
-from koskari.lib import car, cdr, symbol
+from koskari.lib import car, cdr, cons, nil, symbol
 from koskari.lib import Module, ModuleNamespace
 from koskari.types import is_symbol, unpack
 
@@ -188,35 +188,26 @@ class TestSyntaxExpansion(unittest.IsolatedAsyncioTestCase):
 class TestSyntaxRulesPatternParsing(unittest.TestCase):
 
     def test_match_pattern_equivalent_to_plain(self):
-        spec_plain = form(
-            'syntax-rules',
-            (),
-            form(form('double', 'x'), form('+', 'x', 'x')),
+        rule_plain = form(form('double', 'x'), form('+', 'x', 'x'))
+        rule_match = form(
+            form('match', form('double', 'x')),
+            form('+', 'x', 'x'),
         )
-        spec_match = form(
-            'syntax-rules',
-            (),
-            form(
-                form('match', form('double', 'x')),
-                form('+', 'x', 'x'),
-            ),
-        )
-        t_plain = build_syntax_rules_transformer(symbol('double'), spec_plain)
-        t_match = build_syntax_rules_transformer(symbol('double'), spec_match)
+        t_plain = build_syntax_rules_transformer(
+            symbol('double'), nil, cons(rule_plain, nil))
+        t_match = build_syntax_rules_transformer(
+            symbol('double'), nil, cons(rule_match, nil))
         ex = expand(t_plain, form('double', 21))
         assert_forms_equal(self, ex, expand(t_match, form('double', 21)))
 
     def test_rule_pattern_not_implemented(self):
-        spec_rule = form(
-            'syntax-rules',
-            (),
-            form(
-                form('rule', form('double', 'x')),
-                form('+', 'x', 'x'),
-            ),
+        rule_bad = form(
+            form('rule', form('double', 'x')),
+            form('+', 'x', 'x'),
         )
         with self.assertRaises(CompilerError) as ctx:
-            build_syntax_rules_transformer(symbol('double'), spec_rule)
+            build_syntax_rules_transformer(
+                symbol('double'), nil, cons(rule_bad, nil))
         self.assertIn('rule pattern mode not implemented', str(ctx.exception))
 
     def test_syntax_rule_matcher_roundtrip(self):

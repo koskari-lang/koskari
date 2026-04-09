@@ -32,8 +32,8 @@ from .hygiene import (
     expand_template_with_hygiene,
 )
 from .lib import car, cdr, cons, demand_call, gensym, nil, symbol
-from .matcher import (BIND, LIST, LITERAL, LITERAL_SYM, MATCH, REPEAT, REST,
-                      VALUE, Matcher, RepeatResult, match)
+from .matcher import (BIND, LIST, LITERAL, MATCH, REPEAT, REST, VALUE, Matcher,
+                      RepeatResult, match)
 from .matcher import from_tuple as matcher_from_tuple
 from .types import (build_proper, get_position, is_nil, is_pair,
                     is_proper, is_symbol, unpack)
@@ -321,14 +321,8 @@ _tag_syntax_rules = symbol("syntax/rules")
 _tag_list = symbol("syntax/list")
 _tag_cons = symbol("syntax/cons")
 
-_SYNTAX_RULES_HEAD_PATTERN = MATCH(
-    LITERAL_SYM("syntax-rules"),
-    MATCH(BIND("literals"), REST("rules")))
 _SYNTAX_RULE_PATTERN = MATCH(REPEAT("rules", BIND("rule")))
 
-_MACRO_RULES_HEAD_PATTERN = MATCH(
-    LITERAL_SYM("macro-rules"),
-    MATCH(BIND("literals"), REST("rules")))
 _MACRO_RULE_PATTERN = MATCH(REPEAT("rules", BIND("rule")))
 
 
@@ -741,20 +735,13 @@ def build_macro_syntax(name, literals_tuple, *pattern_and_lambdas):
     return transformer
 
 
-def build_syntax_rules_transformer(name, spec):
-    head_m = match(spec, _SYNTAX_RULES_HEAD_PATTERN)
-    if head_m is None:
-        raise CompilerError("define-syntax requires a syntax-rules form", spec)
-
-    literals_expr = head_m["literals"].source
-    rules_expr = head_m["rules"].source
-
+def build_syntax_rules_transformer(name, literals_expr, rules_expr):
     literals = frozenset(unpack(literals_expr))
     literals = literals | {name}
 
     rules_m = match(rules_expr, _SYNTAX_RULE_PATTERN)
     if rules_m is None or not rules_m["rules"].matches:
-        raise CompilerError("syntax-rules requires at least one rule", spec)
+        raise CompilerError("syntax-rules requires at least one rule", rules_expr)
 
     rules = []
     for res, _sp in rules_m["rules"].matches:
@@ -774,33 +761,28 @@ def build_syntax_rules_transformer(name, spec):
     return SyntaxRulesTransformer(name, literals, rules)
 
 
-def parse_macro_rules_rows(name, spec):
+def parse_macro_rules_rows(name, literals_expr, rules_expr):
     """
-    Parse a (macro-rules LITERALS ... RULES) spec into matchers and body datums
+    Parse macro-rules literals and rules tail into matchers and body datums
 
     No compile/lambda or build-macro-rules source is emitted here; compile
     specials lower that from the returned rows.
 
     :param name: macro name symbol (included in literals)
-    :param spec: pair tree matching the macro-rules head shape
+    :param literals_expr: literals list expression (same position as in
+        ``(macro-rules LITERALS RULE ...)``)
+    :param rules_expr: rules tail (same as after literals in macro-rules form)
     :return: ``(literals, rows)`` where each row is ``(pattern_matcher,
         formals_tuple, list of body forms)``
-    :raises CompilerError: when the spec is not a valid macro-rules form
+    :raises CompilerError: when the rules are not valid macro-rules rows
     """
-
-    head_m = match(spec, _MACRO_RULES_HEAD_PATTERN)
-    if head_m is None:
-        raise CompilerError("define-syntax requires macro-rules form", spec)
-
-    literals_expr = head_m["literals"].source
-    rules_expr = head_m["rules"].source
 
     literals = frozenset(unpack(literals_expr))
     literals = literals | {name}
 
     rules_m = match(rules_expr, _MACRO_RULE_PATTERN)
     if rules_m is None or not rules_m["rules"].matches:
-        raise CompilerError("macro-rules requires at least one rule", spec)
+        raise CompilerError("macro-rules requires at least one rule", rules_expr)
 
     rows = []
     for res, _sp in rules_m["rules"].matches:

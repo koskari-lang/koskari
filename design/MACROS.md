@@ -1,15 +1,50 @@
 # Koskari Macros — Implemented Reference
 
-This document describes the macros currently implemented in Koskari (via
-`compile/define-syntax` and syntax-rules). Macros expand at compile time before
-the compiler sees the result; the expanded forms are then compiled as normal.
-For compiler special forms, see [SPECIALS.md](SPECIALS.md).
+This document describes the macros currently implemented in Koskari. Macros
+expand at compile time before the compiler sees the result; the expanded forms
+are then compiled as normal. For compiler special forms, see
+[SPECIALS.md](SPECIALS.md).
+
+User-facing **`define-syntax`** is not implemented as a compiler special: it is
+handled by the **`compile/define-syntax`** macro in `koskari/importer/basics.ki`
+(bound with `(define compile/define-syntax (syntax-rules …))`). That macro
+rewrites `(define-syntax NAME TRANSFORMER)` into **`(compile/define NAME …)`**
+with a transformer whose head is **`syntax-rules`**, **`macro-rules`**,
+**`syntax-match`**, or **`macro-match`**. The compiler then lowers those
+**`syntax-rules` / `macro-rules` / …** specs via the specials **`compile/syntax-rules`**,
+**`compile/macro-rules`**, **`compile/syntax-match`**, and **`compile/macro-match`**
+(see [SPECIALS.md](SPECIALS.md)), and binds the result with **`compile/define`**.
 
 **Design (living):** [language/unified-matcher-transformer-model.md](language/unified-matcher-transformer-model.md) — matcher IR, **RULE** vs **MATCH** pattern languages (see that doc: **`syntax-rules`** / **`macro-rules`** vs **`syntax-match`** / **`macro-match`**), and how `define-syntax` / future `define-macro` share the transformer pipeline with Python specials.
 
 Macros documented here are defined in `koskari/importer/basics.ki` and are
 available in every module without import. The format mirrors SPECIALS.md to
 ease future migration of purely transformative forms from specials to macros.
+
+
+## compile/define-syntax (macro)
+
+**Symbol:** `compile/define-syntax` — the macro that defines other macros.
+
+**Syntax:** The macro is defined in `basics.ki` and matches **`(define-syntax …)`**
+forms whose transformer is one of:
+
+- `(syntax-rules literals rule …)` → `(compile/define name (syntax-rules name literals rule …))`
+- `(syntax-match rule …)` → `(compile/define name (syntax-match name rule …))`
+- `(macro-rules literals rule …)` → `(compile/define name (macro-rules name literals rule …))`
+- `(macro-match rule …)` → `(compile/define name (macro-match name rule …))`
+
+**Use-case:** Install a compile-time transformer under the given name. After
+expansion, the **value** of **`compile/define`** is built from the **`syntax-rules`** /
+**`macro-rules`** / … spec (see specials above).
+
+**Behaviour:** Purely macro expansion; no dedicated `@special` handler for
+`compile/define-syntax` in the compiler.
+
+**Defined in:** `koskari/importer/basics.ki`
+
+**Tests:** `tests/importer/test_basics.py` (where applicable); compile specials
+for **`compile/syntax-rules`** / **`compile/macro-rules`**: `tests/compile/specials/test_define_syntax.py`
 
 
 ## set!

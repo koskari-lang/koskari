@@ -66,7 +66,7 @@ from .slots import special_attr, special_del_attr, special_set_attr
 from .thunk import special_gensym_thunk
 from .syntax import (special_compile_macro_match, special_compile_macro_rules,
                      special_compile_syntax, special_compile_syntax_match,
-                     special_compile_syntax_rules, special_define_syntax)
+                     special_compile_syntax_rules)
 from .variables import (special_define, special_define_global,
                         special_define_values,
                         special_delq, special_globals, special_locals,
@@ -114,7 +114,6 @@ __all__ = (
     "special_del_item",
     "special_define",
     "special_define_global",
-    "special_define_syntax",
     "special_define_values",
     "special_delq",
     "special_dir",

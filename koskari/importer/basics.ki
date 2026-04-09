@@ -6,6 +6,25 @@
 ;; here; they will be available in every module without import.
 
 
+(define compile/define-syntax
+  ;; the macro for defining macros
+
+  (syntax-rules compile/define-syntax
+      [syntax-rules syntax-match macro-rules macro-match]
+
+    [(define-syntax name (syntax-rules literals rule ...))
+      (compile/define name (syntax-rules name literals rule ...))]
+
+    [(define-syntax name (syntax-match rule ...))
+      (compile/define name (syntax-match name rule ...))]
+
+    [(define-syntax name (macro-rules literals rule ...))
+      (compile/define name (macro-rules name literals rule ...))]
+
+    [(define-syntax name (macro-match rule ...))
+      (compile/define name (macro-match name rule ...))]))
+
+
 define-syntax compile/set!:
   syntax-rules [item attr deref
                 compile/item compile/attr compile/deref
