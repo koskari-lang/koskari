@@ -42,7 +42,7 @@ Types are defined in the native extension `koskari.lib`; the Python module `kosk
 - `setcar(pair, value)`: Set first element
 - `setcdr(pair, value)`: Set rest
 - `pair.car` / `pair.cdr`: Attribute read/write matching the above (including `nil` errors)
-- `pair.position`: Attribute read/write matching `get_position()` / `set_position()`
+- `pair.position`: Attribute read/write matching `get_position()` / `set_position()`; `del pair.position` clears the slot (this cell only; `nil` no-op)
 - `cons(car, cdr)`: Create pair
 - `build-proper(*values)`: Create proper list
 

@@ -247,6 +247,15 @@ class TestPair(unittest.IsolatedAsyncioTestCase):
         p.position = ("other.ki", 8, 2)
         self.assertEqual(p.get_position(), ("other.ki", 8, 2))
 
+    async def test_position_delete_clears(self):
+        """del pair.position clears the slot (C NULL), like clear_position"""
+        p = pair(1, 2)
+        p.set_position(("file.ki", 10, 5))
+        self.assertIsNotNone(p.get_position())
+        del p.position
+        self.assertIsNone(p.get_position())
+        self.assertIsNone(p.position)
+
     async def test_clear_position(self):
         """clear_position() removes position info"""
         p = pair(1, 2)
@@ -340,6 +349,11 @@ class TestNil(unittest.IsolatedAsyncioTestCase):
         """nil.position read is None, write is a no-op"""
         self.assertIsNone(nil.position)
         nil.position = (1, 2)
+        self.assertIsNone(nil.position)
+
+    async def test_nil_position_delete_noop(self):
+        """del nil.position is a no-op"""
+        del nil.position
         self.assertIsNone(nil.position)
 
     async def test_is_pair(self):

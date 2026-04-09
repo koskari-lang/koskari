@@ -1341,8 +1341,11 @@ static int pair_set_position_attr(
   (void) closure;
 
   if (! value) {
-    PyErr_SetString(PyExc_TypeError, "cannot delete position");
-    return -1;
+    if (KosNil_Check(self))
+      return 0;
+
+    Py_CLEAR(KosPair_POSITION(self));
+    return 0;
   }
 
   return pair_write_position(self, value);
