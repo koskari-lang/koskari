@@ -276,7 +276,7 @@ class TestUnpack(unittest.IsolatedAsyncioTestCase):
 
     async def test_unpack_pair(self):
         """unpack on a pair returns its unpack iterator"""
-        p = cons(1, cons(2, cons(3, nil)))
+        p = cons(1, 2, 3, nil)
         result = list(unpack(p))
         self.assertEqual(result, [1, 2, 3])
 
@@ -351,7 +351,7 @@ class TestSetPosition(unittest.IsolatedAsyncioTestCase):
 
     async def test_follow_false(self):
         """set_position with follow=False only sets on first pair"""
-        p = cons(1, cons(2, nil))
+        p = cons(1, 2, nil)
         pos = (1, 0)
         set_position(p, pos, follow=False)
         self.assertEqual(get_position(p), pos)
@@ -359,7 +359,7 @@ class TestSetPosition(unittest.IsolatedAsyncioTestCase):
 
     async def test_follow_true(self):
         """set_position with follow=True sets on all pairs"""
-        p = cons(1, cons(2, nil))
+        p = cons(1, 2, nil)
         pos = (1, 0)
         set_position(p, pos, follow=True)
         self.assertEqual(get_position(p), pos)
@@ -398,8 +398,5 @@ class TestFillPosition(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(get_position(outer), (5, 5))
         self.assertEqual(get_position(inner), (5, 5))
 
-
-if __name__ == "__main__":
-    unittest.main()
 
 # The end.

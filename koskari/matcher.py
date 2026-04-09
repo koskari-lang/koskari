@@ -138,7 +138,8 @@ class Matcher(Protocol):
 class BindingMatcher(Matcher):
     """
     Base for matchers that introduce bindings. Subclasses implement
-    extract_binder_symbols and get_recurse_targets for hygiene discovery.
+    extract_binder_symbols for hygiene discovery; override
+    get_recurse_targets when initializer or sub-expression walks are needed.
     """
 
     def extract_binder_symbols(self, value):
@@ -151,11 +152,12 @@ class BindingMatcher(Matcher):
 
     def get_recurse_targets(self, value):
         """
-        Return iterable of values to recurse into for nested binding discovery,
-        or None if none. Override in subclasses.
+        Return an iterable of forms to recurse into for nested binding
+        discovery. Default is empty; override in subclasses that bind
+        expressions (e.g. initializers) that may contain nested specials.
         """
 
-        return None
+        return ()
 
 
 # Tag symbols for serialization
@@ -185,6 +187,20 @@ class MatchResult:
     def __init__(self, source, source_pos=None):
         self.source = source
         self.source_pos = source_pos
+
+
+    def extract_targets(self):
+        """
+        Yield sub-forms to walk for syntax-rules hygiene when this capture is
+        a scope region (REST/EXPR). Distinct from
+        :meth:`BindingMatcher.get_recurse_targets`, which applies to binder
+        slots for initializer recursion.
+
+        :return: iterator of template sub-forms
+        """
+
+        if self.source is not None:
+            yield self.source
 
 
 class FormalsResult(MatchResult):
@@ -217,6 +233,27 @@ class FormalsResult(MatchResult):
                      self.star, self.starstar))
 
 
+    def extract_targets(self):
+        """
+        Yield sub-forms to walk for syntax-rules hygiene when this capture is
+        a scope region (REST/EXPR). Distinct from
+        :meth:`BindingMatcher.get_recurse_targets`, which applies to binder
+        slots for initializer recursion.
+
+        :return: iterator of template sub-forms
+        """
+
+        for _kw, expr in (self.defaults or ()):
+            yield expr
+        for _kw, expr in (self.kwonly or ()):
+            yield expr
+        ann = getattr(self, 'annotations', None) or {}
+        for bundle in ann.values():
+            t = bundle.get('type')
+            if t is not None:
+                yield t
+
+
 class BindingsResult(MatchResult):
     """
     Result for BINDINGS: source, source_pos, plus names, values. Supports
@@ -233,6 +270,19 @@ class BindingsResult(MatchResult):
         return iter((self.names, self.values))
 
 
+    def extract_targets(self):
+        """
+        Yield sub-forms to walk for syntax-rules hygiene when this capture is
+        a scope region (REST/EXPR). Distinct from
+        :meth:`BindingMatcher.get_recurse_targets`, which applies to binder
+        slots for initializer recursion.
+
+        :return: iterator of template sub-forms
+        """
+
+        yield from self.values
+
+
 class BindingResult(MatchResult):
     """
     Result for BINDING: source, source_pos, plus name (symbol or None),
@@ -243,6 +293,20 @@ class BindingResult(MatchResult):
         super().__init__(source, source_pos)
         self.name = name
         self.value = value
+
+
+    def extract_targets(self):
+        """
+        Yield sub-forms to walk for syntax-rules hygiene when this capture is
+        a scope region (REST/EXPR). Distinct from
+        :meth:`BindingMatcher.get_recurse_targets`, which applies to binder
+        slots for initializer recursion.
+
+        :return: iterator of template sub-forms
+        """
+
+        if self.value is not None:
+            yield self.value
 
 
 class DeclResult(MatchResult):
@@ -287,6 +351,27 @@ class RepeatResult(MatchResult):
     def __init__(self, source, source_pos=None, matches=None):
         super().__init__(source, source_pos)
         self.matches = matches if matches is not None else []
+
+
+    def extract_targets(self):
+        """
+        Yield sub-forms to walk for syntax-rules hygiene when this capture is
+        a scope region (REST/EXPR). Distinct from
+        :meth:`BindingMatcher.get_recurse_targets`, which applies to binder
+        slots for initializer recursion.
+
+        :return: iterator of template sub-forms
+        """
+
+        for res, _sp in self.matches:
+            for v in res.values():
+                if isinstance(v, MatchResult):
+                    if v.source is not None:
+                        yield v.source
+                    else:
+                        yield v
+                elif v is not None and not isinstance(v, (dict, list)):
+                    yield v
 
 
 def _is_tagged_tuple(tup):
@@ -445,7 +530,7 @@ class _SymbolMatcher(BindingMatcher):
 
 
     def extract_binder_symbols(self, value):
-        raw = value.source # if hasattr(value, 'source') else value
+        raw = value.source  # if hasattr(value, 'source') else value
         if is_symbol(raw):
             yield raw
 
@@ -794,9 +879,9 @@ class _RepeatMatcher(BindingMatcher):
     def get_recurse_targets(self, value):
         for res, sp in value.matches:
             for key, spec in sp.items():
-                targets = getattr(spec, 'get_recurse_targets', lambda v: None)(res.get(key))
-                if targets is not None:
-                    yield from targets
+                if not is_binder_spec(spec) or key not in res:
+                    continue
+                yield from spec.get_recurse_targets(res[key])
 
 
     def to_tuple(self):

@@ -23,19 +23,44 @@ compilation, transformer models, and runtime tagged-tuple builders.
 
 
 from dataclasses import dataclass
-from typing import Any, Optional
+from typing import Any
 
-from .exceptions import CompilerError, SpecialError
-from .lib import (FunctionSpec, OpCode, car, cdr, cons, demand_call, gensym,
-                  nil, symbol)
+from .exceptions import CompilerError
+from .hygiene import (
+    apply_syntax_rules_hygiene,
+    collect_binding_symbols,
+    expand_template_with_hygiene,
+)
+from .lib import car, cdr, cons, demand_call, gensym, nil, symbol
 from .matcher import (BIND, LIST, LITERAL, LITERAL_SYM, MATCH, REPEAT, REST,
-                      VALUE, BindingResult, BindingsResult, FormalsResult,
-                      Matcher, MatchResult, RepeatResult,
-                      extract_binder_symbols)
+                      VALUE, Matcher, RepeatResult, match)
 from .matcher import from_tuple as matcher_from_tuple
-from .matcher import is_binder_spec, is_scope_region_spec, match
-from .types import (build_proper, get_position, is_nil, is_pair, is_proper,
-                    is_symbol, unpack)
+from .types import (build_proper, get_position, is_nil, is_pair,
+                    is_proper, is_symbol, unpack)
+
+
+__all__ = (
+    'Syntax',
+    'box_match_capture',
+    'parse_rule_pattern',
+    'syntax_pattern_to_matcher',
+    'collect_pattern_variable_symbols',
+    'SyntaxRule',
+    'SyntaxRulesSegment',
+    'SyntaxRulesTransformer',
+    'build_syntax',
+    'build_syntax_rules_transformer',
+    'MacroRule',
+    'MacroRulesSegment',
+    'MacroRulesTransformer',
+    'build_macro_syntax',
+    'parse_macro_rules_rows',
+    'unbox_macro_with_hygiene',
+)
+
+
+_symbol_match = symbol("match")
+_symbol_rule = symbol("rule")
 
 
 @dataclass(frozen=True)
@@ -120,30 +145,6 @@ def box_match_capture(value, position_fallback=None):
     return Syntax(d, pos)
 
 
-__all__ = (
-    'Syntax',
-    'box_match_capture',
-    'parse_rule_pattern',
-    'syntax_pattern_to_matcher',
-    'collect_pattern_variable_symbols',
-    'SyntaxRule',
-    'SyntaxRulesSegment',
-    'SyntaxRulesTransformer',
-    'build_syntax',
-    'build_syntax_rules_transformer',
-    'MacroRule',
-    'MacroRulesSegment',
-    'MacroRulesTransformer',
-    'build_macro_syntax',
-    'build_macro_rules_transformer',
-)
-
-
-_ellipsis = symbol("...")
-_symbol_match = symbol("match")
-_symbol_rule = symbol("rule")
-
-
 def parse_explicit_rule_pattern(inner, literals, source_ctx):
     """
     Placeholder for explicit ``rule`` pattern mode (decorated matcher atoms).
@@ -160,14 +161,13 @@ def parse_explicit_rule_pattern(inner, literals, source_ctx):
 def parse_rule_pattern(pattern_expr, literals, source_ctx):
     """
     Dispatch syntax-rules pattern source into ``match`` vs ``rule`` parsers,
-    then lower to matcher IR via ``syntax_pattern_to_matcher`` (except ``rule``,
+    then lower via ``syntax_pattern_to_matcher`` (except ``rule``,
     which is not implemented yet).
     """
 
     if is_pair(pattern_expr):
-        head = car(pattern_expr)
+        head, rest = pattern_expr
         if head == _symbol_match:
-            rest = cdr(pattern_expr)
             if not is_proper(rest) or cdr(rest) is not nil:
                 raise CompilerError(
                     "match pattern must have exactly one form", pattern_expr)
@@ -175,7 +175,6 @@ def parse_rule_pattern(pattern_expr, literals, source_ctx):
             return syntax_pattern_to_matcher(car(rest), literals, source_ctx)
 
         if head == _symbol_rule:
-            rest = cdr(pattern_expr)
             if not is_proper(rest) or cdr(rest) is not nil:
                 raise CompilerError(
                     "rule pattern must have exactly one form", pattern_expr)
@@ -187,10 +186,10 @@ def parse_rule_pattern(pattern_expr, literals, source_ctx):
 
 def syntax_pattern_to_matcher(pattern_expr, literals, source_ctx):
     """
-    Lower a syntax-rules pattern cons tree to matcher IR.
+    Lower a syntax-rules pattern cons tree to matcher objects.
     """
 
-    if _is_syntax_ellipsis(pattern_expr):
+    if pattern_expr is Ellipsis:
         raise CompilerError("invalid ellipsis placement in pattern", source_ctx)
 
     if is_symbol(pattern_expr):
@@ -202,11 +201,24 @@ def syntax_pattern_to_matcher(pattern_expr, literals, source_ctx):
         return MATCH(LITERAL(pattern_expr))
 
     return MATCH(*_syntax_pattern_specs(
-        _to_list(pattern_expr), literals, source_ctx))
+        list(unpack(pattern_expr)), literals, source_ctx))
 
 
 def _syntax_elem_matcher(pat, literals, source_ctx):
-    if _is_syntax_ellipsis(pat):
+    """
+    Lower a single syntax-rules pattern element to matcher objects
+
+    Symbols become LITERAL or VALUE; non-pairs become LITERAL; proper lists
+    become LIST of nested specs from the same pattern language
+
+    :param pat: pattern datum (symbol, pair, or literal)
+    :param literals: literal symbols for this segment
+    :param source_ctx: form for error reporting
+    :raises CompilerError: on invalid ellipsis placement
+    :return: a matcher spec (LITERAL, VALUE, or LIST wrapping inner specs)
+    """
+
+    if pat is Ellipsis:
         raise CompilerError("invalid ellipsis placement in pattern", source_ctx)
 
     if is_symbol(pat):
@@ -218,14 +230,26 @@ def _syntax_elem_matcher(pat, literals, source_ctx):
         return LITERAL(pat)
 
     return LIST(*_syntax_pattern_specs(
-        _to_list(pat), literals, source_ctx))
+        list(unpack(pat)), literals, source_ctx))
 
 
 def _syntax_pattern_specs(p_items, literals, source_ctx):
+    """
+    Build matcher specs from a flat sequence of pattern list elements
+
+    Treats ``(subpat ...)`` pairs with ``...`` as zero-or-more REPEAT regions;
+    other elements are passed to :func:`_syntax_elem_matcher`
+
+    :param p_items: list of elements from ``list(unpack(...))`` of a pattern list
+    :param literals: literal symbols for this segment
+    :param source_ctx: form for error reporting
+    :return: list of matcher specs (LITERAL, VALUE, LIST, REPEAT, etc.)
+    """
+
     specs = []
     i = 0
     while i < len(p_items):
-        if i + 1 < len(p_items) and _is_syntax_ellipsis(p_items[i + 1]):
+        if i + 1 < len(p_items) and p_items[i + 1] is Ellipsis:
             pat = p_items[i]
             inner = _syntax_elem_matcher(pat, literals, source_ctx)
             slot = gensym('_repeat')
@@ -239,10 +263,6 @@ def _syntax_pattern_specs(p_items, literals, source_ctx):
     return specs
 
 
-def _is_syntax_ellipsis(obj):
-    return obj is _ellipsis or obj is Ellipsis
-
-
 def collect_pattern_variable_symbols(pattern_expr, literals):
     """
     Pattern variables in pre-order, excluding literals and ellipsis markers.
@@ -252,7 +272,7 @@ def collect_pattern_variable_symbols(pattern_expr, literals):
     seen = []
 
     def walk(expr):
-        if _is_syntax_ellipsis(expr):
+        if expr is Ellipsis:
             return
 
         if is_symbol(expr):
@@ -267,10 +287,10 @@ def collect_pattern_variable_symbols(pattern_expr, literals):
         if not is_pair(expr):
             return
 
-        items = _to_list(expr)
+        items = list(unpack(expr))
         i = 0
         while i < len(items):
-            if i + 1 < len(items) and _is_syntax_ellipsis(items[i + 1]):
+            if i + 1 < len(items) and items[i + 1] is Ellipsis:
                 walk(items[i])
                 i += 2
             else:
@@ -282,7 +302,6 @@ def collect_pattern_variable_symbols(pattern_expr, literals):
 
 
 _tag_syntax_rules = symbol("syntax/rules")
-_tag_macro_rules = symbol("syntax/macro-rules")
 _tag_list = symbol("syntax/list")
 _tag_cons = symbol("syntax/cons")
 
@@ -297,15 +316,17 @@ _MACRO_RULES_HEAD_PATTERN = MATCH(
 _MACRO_RULE_PATTERN = MATCH(REPEAT("rules", BIND("rule")))
 
 
-def _to_list(value):
-    if value is nil:
-        return []
-    if not is_proper(value):
-        raise CompilerError("expected proper list", value)
-    return list(unpack(value))
-
-
 def _serialize_form(form):
+    """
+    Encode a Koskari form as tagged tuples for const-pool persistence
+
+    Proper lists use ``syntax/list``; improper pairs use ``syntax/cons``;
+    tuples and frozensets recurse structurally; atoms pass through
+
+    :param form: pair tree, tuple, frozenset, or leaf datum
+    :return: tagged tuple, nil, or leaf suitable for ``from_tuple`` round-trip
+    """
+
     if form is nil:
         return nil
 
@@ -324,6 +345,14 @@ def _serialize_form(form):
 
 
 def _deserialize_form(payload):
+    """
+    Decode :func:`_serialize_form` output back to Koskari pairs and datums
+
+    :param payload: nil, tagged tuple from serialization, or pass-through leaf
+    :raises ValueError: when a ``syntax/cons`` payload has wrong length
+    :return: cons tree, tuple, frozenset, or leaf
+    """
+
     if payload is nil:
         return nil
 
@@ -347,6 +376,17 @@ def _deserialize_form(payload):
 
 
 def _match_dict_to_syntax_kwargs(raw, position_fallback=None):
+    """
+    Box macro-rules match results into ``Syntax`` keyword arguments
+
+    Each capture becomes a :class:`Syntax` wrapper (or None on boxing failure).
+    Used when invoking procedural macro lambdas
+
+    :param raw: dict from :func:`~koskari.matcher.match` (string keys)
+    :param position_fallback: default position when captures lack one
+    :return: dict mapping symbol keys to ``Syntax``, or None if boxing failed
+    """
+
     if not raw:
         return {}
 
@@ -362,6 +402,17 @@ def _match_dict_to_syntax_kwargs(raw, position_fallback=None):
 
 
 def _merge_bindings(dst, src):
+    """
+    Merge ``src`` binding entries into ``dst`` for macro-rules environments
+
+    Keys must agree when both sides bind the same name; list-valued repeats
+    must match exactly between merges
+
+    :param dst: target dict (mutated)
+    :param src: new bindings to fold in
+    :return: True if merge succeeded, False on conflict
+    """
+
     for k, v in src.items():
         if k in dst:
             cur = dst[k]
@@ -379,6 +430,17 @@ def _merge_bindings(dst, src):
 
 
 def _syntax_match_result_to_bindings(raw):
+    """
+    Turn a syntax-rules match dict into plain symbol-to-datum bindings
+
+    Flattens :func:`box_match_capture` output: simple captures become one
+    entry per key; ``RepeatResult`` rows merge into list-valued keys
+
+    :param raw: dict from :func:`~koskari.matcher.match`
+    :return: bindings dict suitable for :func:`apply_syntax_rules_hygiene`, or
+        None if repeat merging conflicts or boxing fails
+    """
+
     if not raw:
         return {}
 
@@ -405,255 +467,18 @@ def _syntax_match_result_to_bindings(raw):
     return out
 
 
-def _collect_symbols(expr, out):
-    if is_symbol(expr):
-        out.add(expr)
-        return
-
-    if is_pair(expr):
-        for elem in unpack(expr):
-            _collect_symbols(elem, out)
-
-
-def _recurse_target(val):
-    if val is None:
-        return None
-    if isinstance(val, BindingsResult):
-        return val.values
-    if isinstance(val, BindingResult):
-        return [val.value] if val.value is not None else []
-    if isinstance(val, FormalsResult):
-        out = []
-        for _kw, expr in (val.defaults or ()):
-            out.append(expr)
-        for _kw, expr in (val.kwonly or ()):
-            out.append(expr)
-        return out
-    if isinstance(val, RepeatResult):
-        out = []
-        for res, _sp in val.matches:
-            for v in res.values():
-                if isinstance(v, MatchResult):
-                    if v.source is not None:
-                        out.append(v.source)
-                    else:
-                        out.append(v)
-                elif v is not None and not isinstance(v, (dict, list)):
-                    out.append(v)
-        return out
-    if isinstance(val, MatchResult):
-        return val.source
-
-    return val
-
-
-def _tail_forms_for_binding_walk(rest):
-    if rest is nil or not is_pair(rest):
-        return []
-
-    return [e for e in unpack(rest) if e is not None and e is not nil]
-
-
-def _scope_region_keys(matched, specs):
-    keys = set()
-    for key, spec in (specs or {}).items():
-        if spec is None:
-            continue
-
-        scope = getattr(spec, 'scope', None)
-        scopes = getattr(spec, 'scopes', None)
-
-        if scope is not None:
-            keys.add(scope if isinstance(scope, str) else str(scope))
-
-        if scopes is not None:
-            for s in scopes:
-                keys.add(s if isinstance(s, str) else str(s))
-    if not keys:
-        for key, spec in (specs or {}).items():
-            if is_scope_region_spec(spec):
-                keys.add(key)
-    return keys
-
-
-def _collect_binding_symbols_matcher(template, find_compiled):
-    out = set()
-    if template is nil or not is_pair(template):
-        return out
-
-    head, rest = template
-    if not is_symbol(head):
-        for elem in _tail_forms_for_binding_walk(rest):
-            out |= _collect_binding_symbols_matcher(
-                elem if is_pair(elem) else cons(elem, nil),
-                find_compiled)
-        return out
-
-    special = find_compiled(head)
-    if special is None or not getattr(special, 'forms', None):
-        for elem in _tail_forms_for_binding_walk(rest):
-            out |= _collect_binding_symbols_matcher(
-                elem if is_pair(elem) else cons(elem, nil),
-                find_compiled)
-        return out
-
-    try:
-        m = match(rest, special.forms, with_specs=True)
-    except SpecialError:
-        m = None
-    if m is None:
-        for elem in _tail_forms_for_binding_walk(rest):
-            out |= _collect_binding_symbols_matcher(
-                elem if is_pair(elem) else cons(elem, nil),
-                find_compiled)
-        return out
-
-    matched, specs = m
-    scope_keys = _scope_region_keys(matched, specs)
-
-    for key, spec in specs.items():
-        if is_binder_spec(spec) and key in matched:
-            for sym in extract_binder_symbols(spec, matched[key]):
-                out.add(sym)
-
-    for key in scope_keys:
-        if key in matched:
-            val = matched[key]
-            if val is not None:
-                target = _recurse_target(val)
-                if target is None:
-                    pass
-                elif is_pair(target):
-                    for elem in unpack(target):
-                        out |= _collect_binding_symbols_matcher(
-                            elem if is_pair(elem) else cons(elem, nil),
-                            find_compiled)
-                elif isinstance(target, (list, tuple)):
-                    for v in target:
-                        out |= _collect_binding_symbols_matcher(
-                            v if is_pair(v) else cons(v, nil),
-                            find_compiled)
-                else:
-                    out |= _collect_binding_symbols_matcher(
-                        target if is_pair(target) else cons(target, nil),
-                        find_compiled)
-
-    for key, spec in specs.items():
-        if is_binder_spec(spec) and key in matched:
-            val = matched[key]
-            targets = getattr(spec, 'get_recurse_targets', lambda v: None)(val)
-            if targets is not None:
-                for v in targets:
-                    if v is not None:
-                        out |= _collect_binding_symbols_matcher(
-                            v if is_pair(v) else cons(v, nil),
-                            find_compiled)
-
-    return out
-
-
-def _repeat_count(template, bindings):
-    syms = set()
-    _collect_symbols(template, syms)
-    counts = {
-        len(bindings[s])
-        for s in syms
-        if s in bindings and isinstance(bindings[s], list)
-    }
-    if not counts:
-        return 0
-    if len(counts) != 1:
-        raise CompilerError("incompatible ellipsis repetition lengths", template)
-    return next(iter(counts))
-
-
-def _expand_template(template, bindings, binding_symbols, compiler, introduced, index=None):
-    if is_symbol(template):
-        if template in bindings:
-            val = bindings[template]
-            if isinstance(val, list):
-                if index is None:
-                    raise CompilerError("ellipsis variable outside repeated template", template)
-                return val[index]
-            return val
-
-        if _is_syntax_ellipsis(template):
-            return template
-
-        if template in binding_symbols:
-            if template not in introduced:
-                introduced[template] = gensym(str(template))
-            return introduced[template]
-
-        return template
-
-    if not is_pair(template):
-        return template
-
-    items = _to_list(template)
-    out = []
-    i = 0
-    while i < len(items):
-        elem = items[i]
-        rep = (i + 1 < len(items) and _is_syntax_ellipsis(items[i + 1]))
-        if not rep:
-            out.append(_expand_template(elem, bindings, binding_symbols, compiler, introduced, index=index))
-            i += 1
-            continue
-
-        count = _repeat_count(elem, bindings)
-        for rep_i in range(count):
-            out.append(_expand_template(elem, bindings, binding_symbols, compiler, introduced, index=rep_i))
-        i += 2
-
-    return build_proper(*out)
-
-
-def _extract_function_spec(fragment):
-    fspec = None
-    for op, arg in fragment.instructions:
-        if op == OpCode.KOS_OP_CONST and isinstance(arg, FunctionSpec):
-            fspec = arg
-
-    if fspec is None:
-        raise CompilerError("internal: missing FunctionSpec in macro lambda")
-
-    return fspec
-
-
-def _function_from_spec(compiler, fspec):
-    from .lib import Function
-
-    return Function(fspec.code, vars(compiler.module), fspec.formals_spec)
-
-
-def _compile_macro_lambda(compiler, pattern_src, body_forms, literals, raw_rule):
-    if not body_forms:
-        raise CompilerError("macro-rules rule requires a body", raw_rule)
-
-    pattern_matcher = parse_rule_pattern(pattern_src, literals, raw_rule)
-    vars_ordered = collect_pattern_variable_symbols(pattern_src, literals)
-    formals = build_proper(*vars_ordered)
-
-    if len(body_forms) == 1:
-        body_expr = body_forms[0]
-    else:
-        body_expr = cons(symbol("compile/begin"), build_proper(*body_forms))
-
-    lambda_src = cons(
-        symbol("compile/lambda"),
-        cons(formals, cons(body_expr, nil)))
-
-    from .compile.helpers import SPECIALS
-
-    lam_special = SPECIALS[symbol("compile/lambda")]
-    frag = lam_special.compile_impl(compiler, lambda_src, False)
-    fspec = _extract_function_spec(frag)
-
-    return pattern_matcher, tuple(vars_ordered), lambda_src, fspec
-
-
 def _maybe_unwrap_repeat_macro_kwarg(val, formal_sym):
+    """
+    Normalize repeat-shaped macro kwargs to bare values when unambiguous
+
+    If ``val`` is a list of one-key dicts each holding ``formal_sym``, return
+    the list of those values; otherwise return ``val`` unchanged
+
+    :param val: keyword value from macro match (often list of per-repeat dicts)
+    :param formal_sym: formal name for this argument
+    :return: unwrapped list or original ``val``
+    """
+
     if not isinstance(val, list) or not val:
         return val
 
@@ -687,15 +512,8 @@ class SyntaxRule:
         if bindings is None:
             return None
 
-        binding_symbols = _collect_binding_symbols_matcher(
-            self.template, compiler.find_compiled)
-        introduced = {}
-        return _expand_template(
-            self.template,
-            bindings,
-            binding_symbols,
-            compiler,
-            introduced)
+        return apply_syntax_rules_hygiene(
+            self.template, bindings, compiler.find_compiled)
 
 
 @dataclass(frozen=True)
@@ -705,11 +523,13 @@ class SyntaxRulesSegment:
 
 
 class SyntaxRulesTransformer:
+
     def __init__(self, name, literals, rules):
         self.name = name
         self.segments = (
             SyntaxRulesSegment(frozenset(literals), tuple(rules)),
         )
+
 
     @classmethod
     def from_segments(cls, name, segments):
@@ -717,6 +537,7 @@ class SyntaxRulesTransformer:
         inst.name = name
         inst.segments = tuple(segments)
         return inst
+
 
     def to_tuple(self):
         if len(self.segments) != 1:
@@ -732,6 +553,7 @@ class SyntaxRulesTransformer:
             tuple(r.to_tuple() for r in seg.rules),
         )
 
+
     @classmethod
     def from_tuple(cls, tup):
         if not isinstance(tup, tuple) or len(tup) != 4 or tup[0] is not _tag_syntax_rules:
@@ -741,6 +563,7 @@ class SyntaxRulesTransformer:
         literals = frozenset(_deserialize_form(x) for x in tup[2])
         rules = tuple(SyntaxRule.from_tuple(rt) for rt in tup[3])
         return cls.from_segments(name, (SyntaxRulesSegment(literals, rules),))
+
 
     def compile_impl(self, compiler, source_obj, tc=False):
         for segment in self.segments:
@@ -753,30 +576,72 @@ class SyntaxRulesTransformer:
         raise CompilerError("no matching define-syntax rule", source_obj)
 
 
+def unbox_macro_with_hygiene(expanded, find_compiled):
+    """
+    Run syntax-rules hygiene on procedural macro output, then strip Syntax
+
+    Hygiene runs while ``Syntax`` boxes are still present so
+    ``collect_binding_symbols`` and ``expand_template_with_hygiene`` never
+    descend into boxed captures. Unboxing runs last for the compiler.
+
+    :param expanded: form returned by the macro procedure (may contain ``Syntax``)
+    :param find_compiled: callback used by syntax-rules to resolve special heads
+    :return: form ready for compilation (no ``Syntax`` wrappers)
+
+    Unboxing updates ``car``/``cdr`` in place on existing pairs so source
+    positions on those cells are preserved
+    """
+
+    syms = collect_binding_symbols(expanded, find_compiled)
+    hygiened = expand_template_with_hygiene(expanded, {}, syms, {})
+
+    seen = set()
+
+    def walk(x):
+        xi = id(x)
+        if xi in seen:
+            return x
+        seen.add(xi)
+
+        if isinstance(x, Syntax):
+            return walk(x.datum)
+
+        if is_nil(x):
+            return x
+
+        if is_pair(x):
+            nx = x
+            while nx is not nil:
+                xi = id(nx)
+                if xi in seen:
+                    nx = nx.cdr
+                    continue
+                seen.add(xi)
+
+                head, tail = nx
+                if isinstance(head, Syntax):
+                    nx.car = walk(head.datum)
+                    nx.position = head.position
+                elif is_nil(head):
+                    pass
+                elif is_pair(head):
+                    walk(head)
+                nx = tail
+            return x
+        return x
+
+    return walk(hygiened)
+
+
 @dataclass
 class MacroRule:
     pattern_matcher: Matcher
     formals: tuple
-    lambda_source: object
-    function_spec: Optional[FunctionSpec] = None
+    lambda_form: Any = None
+    procedure: Any = None
 
-    def to_tuple(self):
-        return (
-            self.pattern_matcher.to_tuple(),
-            tuple(_serialize_form(x) for x in self.formals),
-            _serialize_form(self.lambda_source))
 
-    @classmethod
-    def from_tuple(cls, tup):
-        if not isinstance(tup, tuple) or len(tup) != 3:
-            raise ValueError("invalid macro rule tuple")
-
-        pm = matcher_from_tuple(tup[0])
-        formals = tuple(_deserialize_form(x) for x in tup[1])
-        lam = _deserialize_form(tup[2])
-        return cls(pm, formals, lam, None)
-
-    def expand(self, compiler, source_obj, literals):
+    def expand(self, source_obj, literals):
         raw = match(source_obj, self.pattern_matcher, literals=literals)
         if raw is None:
             return None
@@ -790,17 +655,11 @@ class MacroRule:
             if s not in kwargs:
                 return None
 
-        fspec = self.function_spec
-        if fspec is None:
-            from .compile.helpers import SPECIALS
+        if self.procedure is None:
+            raise CompilerError("internal: macro rule missing procedure")
 
-            lam_special = SPECIALS[symbol("compile/lambda")]
-            frag = lam_special.compile_impl(compiler, self.lambda_source, False)
-            fspec = _extract_function_spec(frag)
-
-        fn = _function_from_spec(compiler, fspec)
         args = [_maybe_unwrap_repeat_macro_kwarg(kwargs[s], s) for s in self.formals]
-        return demand_call(fn, *args)
+        return demand_call(self.procedure, *args)
 
 
 @dataclass(frozen=True)
@@ -810,11 +669,13 @@ class MacroRulesSegment:
 
 
 class MacroRulesTransformer:
+
     def __init__(self, name, literals, rules):
         self.name = name
         self.segments = (
             MacroRulesSegment(frozenset(literals), tuple(rules)),
         )
+
 
     @classmethod
     def from_segments(cls, name, segments):
@@ -823,34 +684,14 @@ class MacroRulesTransformer:
         inst.segments = tuple(segments)
         return inst
 
-    def to_tuple(self):
-        if len(self.segments) != 1:
-            raise ValueError(
-                "MacroRulesTransformer.to_tuple requires exactly one segment")
-
-        seg = self.segments[0]
-        return (
-            _tag_macro_rules,
-            _serialize_form(self.name),
-            tuple(_serialize_form(x) for x in seg.literals),
-            tuple(r.to_tuple() for r in seg.rules))
-
-    @classmethod
-    def from_tuple(cls, tup):
-        if not isinstance(tup, tuple) or len(tup) != 4 or tup[0] is not _tag_macro_rules:
-            raise ValueError("invalid macro-rules tuple")
-
-        name = _deserialize_form(tup[1])
-        literals = frozenset(_deserialize_form(x) for x in tup[2])
-        rules = tuple(MacroRule.from_tuple(rt) for rt in tup[3])
-        return cls.from_segments(name, (MacroRulesSegment(literals, rules),))
 
     def compile_impl(self, compiler, source_obj, tc=False):
         for segment in self.segments:
             for rule in segment.rules:
-                expanded = rule.expand(compiler, source_obj, segment.literals)
+                expanded = rule.expand(source_obj, segment.literals)
                 if expanded is not None:
-                    return expanded
+                    return unbox_macro_with_hygiene(
+                        expanded, compiler.find_compiled)
 
         raise CompilerError("no matching macro-rules rule", source_obj)
 
@@ -862,10 +703,25 @@ def build_syntax(name, tagged_tuple):
     return transformer
 
 
-def build_macro_syntax(name, tagged_tuple):
-    transformer = MacroRulesTransformer.from_tuple(tagged_tuple)
-    if name is not None:
-        transformer.name = name
+def build_macro_syntax(name, literals_tuple, *pattern_and_lambdas):
+    """
+    Build a MacroRulesTransformer from compile-time lowered arguments:
+    name, serialized literals tuple, then alternating (pattern_tuple, fn) pairs.
+    """
+
+    if len(pattern_and_lambdas) % 2 != 0:
+        raise CompilerError("build-macro-rules requires pattern/lambda pairs")
+
+    literals = frozenset(_deserialize_form(x) for x in literals_tuple)
+    rules = []
+    for i in range(0, len(pattern_and_lambdas), 2):
+        pattern_tup = pattern_and_lambdas[i]
+        fn = pattern_and_lambdas[i + 1]
+        pm = matcher_from_tuple(pattern_tup[0])
+        formals = tuple(_deserialize_form(x) for x in pattern_tup[1])
+        rules.append(MacroRule(pm, formals, procedure=fn))
+
+    transformer = MacroRulesTransformer(name, literals, rules)
     return transformer
 
 
@@ -877,7 +733,7 @@ def build_syntax_rules_transformer(name, spec):
     literals_expr = head_m["literals"].source
     rules_expr = head_m["rules"].source
 
-    literals = frozenset(_to_list(literals_expr))
+    literals = frozenset(unpack(literals_expr))
     literals = literals | {name}
 
     rules_m = match(rules_expr, _SYNTAX_RULE_PATTERN)
@@ -902,7 +758,20 @@ def build_syntax_rules_transformer(name, spec):
     return SyntaxRulesTransformer(name, literals, rules)
 
 
-def build_macro_rules_transformer(compiler, name, spec):
+def parse_macro_rules_rows(name, spec):
+    """
+    Parse a (macro-rules LITERALS ... RULES) spec into matchers and body datums
+
+    No compile/lambda or build-macro-rules source is emitted here; compile
+    specials lower that from the returned rows.
+
+    :param name: macro name symbol (included in literals)
+    :param spec: pair tree matching the macro-rules head shape
+    :return: ``(literals, rows)`` where each row is ``(pattern_matcher,
+        formals_tuple, list of body forms)``
+    :raises CompilerError: when the spec is not a valid macro-rules form
+    """
+
     head_m = match(spec, _MACRO_RULES_HEAD_PATTERN)
     if head_m is None:
         raise CompilerError("define-syntax requires macro-rules form", spec)
@@ -910,14 +779,14 @@ def build_macro_rules_transformer(compiler, name, spec):
     literals_expr = head_m["literals"].source
     rules_expr = head_m["rules"].source
 
-    literals = frozenset(_to_list(literals_expr))
+    literals = frozenset(unpack(literals_expr))
     literals = literals | {name}
 
     rules_m = match(rules_expr, _MACRO_RULE_PATTERN)
     if rules_m is None or not rules_m["rules"].matches:
         raise CompilerError("macro-rules requires at least one rule", spec)
 
-    rules = []
+    rows = []
     for res, _sp in rules_m["rules"].matches:
         raw_rule = res["rule"].source
         if not is_pair(raw_rule):
@@ -926,7 +795,7 @@ def build_macro_rules_transformer(compiler, name, spec):
         if not is_proper(raw_rule):
             raise CompilerError("macro-rules rule must be a proper list", raw_rule)
 
-        items = _to_list(raw_rule)
+        items = list(unpack(raw_rule))
         if len(items) < 2:
             raise CompilerError(
                 "macro-rules rule needs pattern and at least one body form",
@@ -934,11 +803,14 @@ def build_macro_rules_transformer(compiler, name, spec):
 
         pattern_src = items[0]
         body_forms = items[1:]
-        pm, formals, lam_src, fspec = _compile_macro_lambda(
-            compiler, pattern_src, body_forms, literals, raw_rule)
-        rules.append(MacroRule(pm, formals, lam_src, fspec))
+        if not body_forms:
+            raise CompilerError("macro-rules rule requires a body", raw_rule)
 
-    return MacroRulesTransformer(name, literals, rules)
+        pattern_matcher = parse_rule_pattern(pattern_src, literals, raw_rule)
+        vars_ordered = collect_pattern_variable_symbols(pattern_src, literals)
+        rows.append((pattern_matcher, tuple(vars_ordered), body_forms))
+
+    return literals, tuple(rows)
 
 
 # The end.

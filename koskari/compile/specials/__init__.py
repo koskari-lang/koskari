@@ -64,7 +64,9 @@ from .refs import (special_bindq, special_deref, special_ref_attr,
                    special_ref_item, special_refq)
 from .slots import special_attr, special_del_attr, special_set_attr
 from .thunk import special_gensym_thunk
-from .syntax import special_compile_syntax, special_define_syntax
+from .syntax import (special_compile_macro_match, special_compile_macro_rules,
+                     special_compile_syntax, special_compile_syntax_match,
+                     special_compile_syntax_rules, special_define_syntax)
 from .variables import (special_define, special_define_global,
                         special_define_values,
                         special_delq, special_globals, special_locals,
@@ -96,7 +98,11 @@ __all__ = (
     "special_call_attr",
     "special_class",
     "special_call_cc",
+    "special_compile_macro_match",
+    "special_compile_macro_rules",
     "special_compile_syntax",
+    "special_compile_syntax_match",
+    "special_compile_syntax_rules",
     "special_capture_cc",
     "special_car",
     "special_cdr",

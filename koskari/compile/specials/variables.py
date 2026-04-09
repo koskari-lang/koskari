@@ -45,6 +45,8 @@ from ..helpers import (
     unpack_lhs_bind_symbols,
     using_unpack_helper,
 )
+
+
 def _define_name_type_pos_from_match(matched, rest):
     """
     Resolve name symbol, optional type expression, and position from a

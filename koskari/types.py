@@ -116,7 +116,7 @@ def get_position(value, default=None):
     :return: the position tuple, or default
     """
 
-    return (value.get_position() or default) if is_pair(value) else default
+    return (value.position or default) if is_pair(value) else default
 
 
 def set_position(value, position, follow=False):
