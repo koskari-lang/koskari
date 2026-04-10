@@ -4483,6 +4483,78 @@ static int xfer_step_extent_action(KosContext *ctx, KosTransferAction *action,
 
 
 /**
+   Run install-phase wind for each node with KOS_DYN_CAP_NEEDS_INSTALL_WIND
+   along the parent chain from seg toward chain_stop (walk stops before
+   chain_stop).  Wind callbacks run in reverse of the collection order
+   (outer chain nodes first), matching prior INSTALL/PUSH behavior.
+
+   :param xfer_fail_tag: trace label on wind failure ("INSTALL" or "PUSH")
+   :return: 0, -1, or KOS_DYN_UNWIND_ASYNC_STARTED
+*/
+static int kos_dyn_run_install_wind_span(
+    KosContext *ctx,
+    KosDynNode *seg,
+    KosDynNode *chain_stop,
+    KosEvent *out_ev,
+    const char *xfer_fail_tag) {
+
+  if (! seg)
+    return 0;
+
+  KosDynNode *stack_buf[KOS_STACK_BUF_SIZE];
+  KosDynNode **wind_nodes = stack_buf;
+  size_t wind_count = 0;
+  size_t wind_cap = KOS_STACK_BUF_SIZE;
+  KosDynNode *walk = seg;
+
+  while (walk && walk != chain_stop) {
+    if (KosDynNode_HAS_CAP(walk, KOS_DYN_CAP_NEEDS_INSTALL_WIND)) {
+      if (wind_count == wind_cap) {
+        size_t new_cap = wind_cap * 2;
+        KosDynNode **next = PyMem_Malloc(new_cap * sizeof(KosDynNode *));
+        if (! next) {
+          PyErr_NoMemory();
+          if (wind_nodes != stack_buf)
+            PyMem_Free(wind_nodes);
+          return -1;
+        }
+        memcpy(next, wind_nodes, wind_cap * sizeof(KosDynNode *));
+        if (wind_nodes != stack_buf)
+          PyMem_Free(wind_nodes);
+        wind_nodes = next;
+        wind_cap = new_cap;
+      }
+      wind_nodes[wind_count++] = walk;
+    }
+    walk = KosDynNode_PARENT(walk);
+  }
+
+  if (wind_count == 0)
+    return 0;
+
+  /* Run wind in reverse order (outer nodes first) */
+  for (size_t i = wind_count; i > 0; i--) {
+    int r = kos_dynnode_run_wind(ctx, wind_nodes[i - 1], out_ev);
+    if (r == KOS_DYN_UNWIND_ASYNC_STARTED) {
+      if (wind_nodes != stack_buf)
+        PyMem_Free(wind_nodes);
+      return KOS_DYN_UNWIND_ASYNC_STARTED;
+    }
+    if (r < 0) {
+      if (wind_nodes != stack_buf)
+        PyMem_Free(wind_nodes);
+      if (KOS_XFER_TRACE)
+        SAYF("[xfer] %s wind failed", xfer_fail_tag);
+      return -1;
+    }
+  }
+  if (wind_nodes != stack_buf)
+    PyMem_Free(wind_nodes);
+  return 0;
+}
+
+
+/**
    Execute an INSTALL step: replace the current dynamic chain with a fresh
    clone of the plan's target segment, restore the frame's stack and PC
    from the plan's resume state, and run param_enter for each PARAM node
@@ -4541,61 +4613,15 @@ static int xfer_step_install(KosContext *ctx, KosTransferAction *action,
              ? KosStackBlock_LEN(KosDynFrame_STACK(KosContext_FRAME_TOP(ctx))) : 0,
          (unsigned) KosTransferPlan_RESUME_PC(plan));
   KosContext_GLOBALS_CACHE_VERSION(ctx) = KosContext_CHAIN_VERSION(ctx);
-  /* Run install wind for nodes that need it (in reverse order) */
   {
-    /* First pass: count nodes that need wind */
-    size_t wind_count = 0;
-    KosDynNode *walk = seg;
     KosDynNode *chain_bottom = seg;
     while (chain_bottom && KosDynNode_PARENT(chain_bottom))
       chain_bottom = KosDynNode_PARENT(chain_bottom);
     KosDynNode *chain_stop = chain_bottom ? KosDynNode_PARENT(chain_bottom) : NULL;
-    while (walk && walk != chain_stop) {
-      if (KosDynNode_HAS_CAP(walk, KOS_DYN_CAP_NEEDS_INSTALL_WIND))
-        wind_count++;
-      walk = KosDynNode_PARENT(walk);
-    }
-
-    /* Second pass: collect nodes into C array (stack buffer for common case) */
-    if (wind_count > 0) {
-      KosDynNode *stack_buf[KOS_STACK_BUF_SIZE];
-      KosDynNode **wind_nodes;
-      if (wind_count <= KOS_STACK_BUF_SIZE) {
-        wind_nodes = stack_buf;
-      } else {
-        wind_nodes = PyMem_Malloc(wind_count * sizeof(KosDynNode *));
-        if (! wind_nodes) {
-          PyErr_NoMemory();
-          return -1;
-        }
-      }
-      size_t idx = 0;
-      walk = seg;
-      while (walk && walk != chain_stop) {
-        if (KosDynNode_HAS_CAP(walk, KOS_DYN_CAP_NEEDS_INSTALL_WIND))
-          wind_nodes[idx++] = walk;
-        walk = KosDynNode_PARENT(walk);
-      }
-
-      /* Third pass: run wind in reverse order */
-      for (size_t i = wind_count; i > 0; i--) {
-        int r = kos_dynnode_run_wind(ctx, wind_nodes[i - 1], out_ev);
-        if (r == KOS_DYN_UNWIND_ASYNC_STARTED) {
-          if (wind_nodes != stack_buf)
-            PyMem_Free(wind_nodes);
-          return KOS_DYN_UNWIND_ASYNC_STARTED;
-        }
-        if (r < 0) {
-          if (wind_nodes != stack_buf)
-            PyMem_Free(wind_nodes);
-          if (KOS_XFER_TRACE)
-            SAY("[xfer] INSTALL wind failed");
-          return -1;
-        }
-      }
-      if (wind_nodes != stack_buf)
-        PyMem_Free(wind_nodes);
-    }
+    int wind_r = kos_dyn_run_install_wind_span(ctx, seg, chain_stop, out_ev,
+                                               "INSTALL");
+    if (wind_r != 0)
+      return wind_r;
   }
   if (KOS_XFER_TRACE)
     SAYF("[xfer] INSTALL after: dyn_top=%p frame_top=%p",
@@ -4661,58 +4687,11 @@ static int xfer_step_push(KosContext *ctx, KosTransferAction *action,
         KosTransferPlan_RESUME_PC(plan);
   KosContext_CHAIN_VERSION(ctx)++;
 
-  /* Run install wind for nodes that need it (in reverse order) */
-  if (seg) {
-    /* First pass: count nodes that need wind */
-    size_t wind_count = 0;
-    KosDynNode *walk = seg;
-    KosDynNode *chain_stop = current_top;
-    while (walk && walk != chain_stop) {
-      if (KosDynNode_HAS_CAP(walk, KOS_DYN_CAP_NEEDS_INSTALL_WIND))
-        wind_count++;
-      walk = KosDynNode_PARENT(walk);
-    }
-
-    /* Second pass: collect nodes into C array (stack buffer for common case) */
-    if (wind_count > 0) {
-      KosDynNode *stack_buf[KOS_STACK_BUF_SIZE];
-      KosDynNode **wind_nodes;
-      if (wind_count <= KOS_STACK_BUF_SIZE) {
-        wind_nodes = stack_buf;
-      } else {
-        wind_nodes = PyMem_Malloc(wind_count * sizeof(KosDynNode *));
-        if (! wind_nodes) {
-          PyErr_NoMemory();
-          return -1;
-        }
-      }
-      size_t idx = 0;
-      walk = seg;
-      while (walk && walk != chain_stop) {
-        if (KosDynNode_HAS_CAP(walk, KOS_DYN_CAP_NEEDS_INSTALL_WIND))
-          wind_nodes[idx++] = walk;
-        walk = KosDynNode_PARENT(walk);
-      }
-
-      /* Third pass: run wind in reverse order */
-      for (size_t i = wind_count; i > 0; i--) {
-        int r = kos_dynnode_run_wind(ctx, wind_nodes[i - 1], out_ev);
-        if (r == KOS_DYN_UNWIND_ASYNC_STARTED) {
-          if (wind_nodes != stack_buf)
-            PyMem_Free(wind_nodes);
-          return KOS_DYN_UNWIND_ASYNC_STARTED;
-        }
-        if (r < 0) {
-          if (wind_nodes != stack_buf)
-            PyMem_Free(wind_nodes);
-          if (KOS_XFER_TRACE)
-            SAY("[xfer] PUSH wind failed");
-          return -1;
-        }
-      }
-      if (wind_nodes != stack_buf)
-        PyMem_Free(wind_nodes);
-    }
+  {
+    int wind_r = kos_dyn_run_install_wind_span(ctx, seg, current_top, out_ev,
+                                               "PUSH");
+    if (wind_r != 0)
+      return wind_r;
   }
   if (KOS_XFER_TRACE)
     SAYF("[xfer] PUSH after: dyn_top=%p frame_top=%p",
