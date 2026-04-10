@@ -1340,33 +1340,42 @@ the **value** of that expression; bind it with **`(compile/define NAME …)`**.
 
 **Symbol:** `compile/syntax-match`
 
-**Syntax:** `(compile/syntax-match NAME ((rule INNER) TEMPLATE) ...)`
+**Syntax:** `(compile/syntax-match NAME (PATTERN TEMPLATE) ...)`
 
-**Use-case:** Explicit-pattern **`syntax-match`** rules (same emission path as
+**Use-case:** **MATCH**-dialect pattern rules (same emission path as
 **`compile/syntax-rules`**: **`build-syntax-rules`**).
 
-**Behaviour:** Rule patterns must be **`(rule INNER)`**; **`INNER`** is passed to
-**`parse_explicit_rule_pattern`**. That path is not fully implemented yet
-(**`CompilerError`** from `koskari/syntax.py`: "rule pattern mode not implemented yet").
+**Behaviour:** Each rule row is **`(PATTERN TEMPLATE)`** where **`PATTERN`** is
+lowered by **`parse_explicit_rule_pattern`** in `koskari/syntax.py` (explicit
+matcher declarations such as **`(VALUE x)`**, **`(REPEAT … elem: …)`**, keyword
+options on registered matchers, etc.). See
+**[language/unified-matcher-transformer-model.md](language/unified-matcher-transformer-model.md)**.
 
 **Implementation:** `koskari/compile/specials/syntax.py` —
 `special_compile_syntax_match`
+
+**Tests:** `tests/compile/specials/test_define_syntax.py`
 
 
 ## compile/macro-match
 
 **Symbol:** `compile/macro-match`
 
-**Syntax:** `(compile/macro-match NAME ((rule INNER) BODY ...) ...)`
+**Syntax:** `(compile/macro-match NAME (PATTERN BODY ...) ...)`
 
-**Use-case:** Explicit-pattern **`macro-match`** rules (same emission shape as
+**Use-case:** **MATCH**-dialect procedural rules (same emission shape as
 **`compile/macro-rules`**: **`build-macro-rules`**).
 
-**Behaviour:** Rule patterns must be **`(rule INNER)`**; **`INNER`** is passed to
-**`parse_explicit_rule_pattern`** (same caveat as **`compile/syntax-match`**).
+**Behaviour:** Each rule row is **`(PATTERN BODY …)`**; **`PATTERN`** is passed to
+**`parse_explicit_rule_pattern`**. Per-rule **`compile/lambda`** formals are
+**`matcher_slot_names(pattern_matcher)`** in consume order (see
+`koskari/matcher.py`). Macro procedures are invoked with **keyword** arguments
+from the match result (`koskari/syntax.py`: **`MacroRule.expand`**).
 
 **Implementation:** `koskari/compile/specials/syntax.py` —
 `special_compile_macro_match`
+
+**Tests:** `tests/compile/specials/test_define_syntax.py`
 
 
 ## compile/class

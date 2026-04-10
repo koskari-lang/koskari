@@ -27,8 +27,9 @@ Koskari currently supports:
 - Declarative **`define-syntax`** with **`syntax-rules`** (**RULE** patterns) and
   procedural **`macro-rules`** (**RULE** patterns + expand-time bodies); see
   [unified-matcher-transformer-model.md](unified-matcher-transformer-model.md) for
-  terminology. **MATCH**-style specs (`syntax-match`, `macro-match`) are **not**
-  fully wired until `parse_explicit_rule_pattern` exists.
+  terminology. **MATCH**-style specs (`syntax-match`, `macro-match`) use
+  **`parse_explicit_rule_pattern`** for patterns; the **syntax box** pipeline
+  described in this document remains **design / not complete**.
 - A binding-aware compiler pass that:
   - identifies declaring forms
   - determines lexical scopes

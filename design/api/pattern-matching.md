@@ -14,11 +14,11 @@ All pattern and template structures use **tagged tuples**: every element is `(ta
 **Related:** [../language/unified-matcher-transformer-model.md](../language/unified-matcher-transformer-model.md) — **RULE** vs **MATCH** macro pattern languages, unified transformer pipeline, and Matcher IR for specials, `define-syntax`, and procedural macros.
 
 **MATCH macro patterns vs this document’s `MATCH(...)`:** The **MATCH** pattern
-language used in **`syntax-match`** / **`macro-match`** (surface **`(rule INNER)`**,
-lowered by `parse_explicit_rule_pattern` in `koskari/syntax.py`) is **Koskari
-syntax for the same matcher IR** described here. Specials build matchers with
-the Python **`MATCH(...)`** combinator below; macro authors will build **the
-same structures** from source. The names align **by design**—expressive
+language used in **`syntax-match`** / **`macro-match`** (per-rule **`PATTERN`**
+forms, lowered by `parse_explicit_rule_pattern` in `koskari/syntax.py`) is
+**Koskari syntax for the same matcher IR** described here. Specials build
+matchers with the Python **`MATCH(...)`** combinator below; macro authors build
+**the same structures** from source. The names align **by design**—expressive
 fidelity is the point.
 
 ---

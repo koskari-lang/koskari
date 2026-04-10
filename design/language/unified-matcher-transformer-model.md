@@ -2,12 +2,14 @@
 
 **Status:** Design proposal; guides implementation. The matcher stack, **RULE**
 pattern parsing (`koskari/syntax.py`: `parse_rule_pattern`, `syntax_pattern_to_matcher`),
-`syntax-rules` / **`macro-rules`** transformers, **compile-time lowering**
-(`compile/syntax-rules`, `compile/macro-rules`, … in `koskari/compile/specials/syntax.py`),
-and **template hygiene helpers** (`koskari/hygiene.py`) exist today. **MATCH**
-pattern parsing (`parse_explicit_rule_pattern`) is **not** implemented yet.
-Syntax boxes and the full layered post-expand box pipeline remain **design**
-work. Complements [macro-hygiene-syntax-boxes.md](macro-hygiene-syntax-boxes.md).
+**MATCH** pattern parsing (`parse_explicit_rule_pattern`, `_lower_match_pattern_spec`),
+`syntax-rules` / **`macro-rules`** / **`syntax-match`** / **`macro-match`**
+transformers, **compile-time lowering**
+(`compile/syntax-rules`, `compile/macro-rules`, `compile/syntax-match`,
+`compile/macro-match` in `koskari/compile/specials/syntax.py`), and **template
+hygiene helpers** (`koskari/hygiene.py`) exist today. Syntax boxes and the full
+layered post-expand box pipeline remain **design** work. Complements
+[macro-hygiene-syntax-boxes.md](macro-hygiene-syntax-boxes.md).
 
 **Terminology: RULE vs MATCH (macro pattern languages)**
 
@@ -19,12 +21,12 @@ combinator in `koskari.matcher`: the **goal** is the same level of fidelity.
 expressive matcher structures that specials construct in Python (nested
 `MATCH`, `BIND`, decorated matchers, scope metadata, etc.). The combinator is
 the **API** in host code; **`parse_explicit_rule_pattern`** (and friends) are
-the **lowering** from surface **`(rule INNER)`** forms into that same IR.
+the **lowering** from **MATCH** surface patterns into that same IR.
 
 | Name | Meaning | Where it is used | Implementation status |
 |------|---------|------------------|-------------------------|
 | **RULE** | Scheme-style **list-shaped** patterns (ellipsis, literals, nested list structure), lowered via `syntax_pattern_to_matcher`. | **`(syntax-rules …)`** and **`(macro-rules …)`** specs. | **Implemented** (`parse_rule_pattern`). |
-| **MATCH** | **Rich** patterns in **`(rule INNER)`** that lower to the same matcher vocabulary as **`MATCH(...)`** in `koskari.matcher`. | **`(syntax-match …)`** and **`(macro-match …)`**; each rule row is **`((rule INNER) …)`**. | **Work in progress:** `parse_explicit_rule_pattern` is still a stub. |
+| **MATCH** | **Rich** patterns that lower to the same matcher vocabulary as **`MATCH(...)`** in `koskari.matcher`. | **`(syntax-match …)`** and **`(macro-match …)`**; each rule row is **`(PATTERN TEMPLATE)`** or **`(PATTERN BODY …)`**. | **Implemented:** `parse_explicit_rule_pattern` in `koskari/syntax.py`. |
 
 **How the implementation chooses RULE vs MATCH**
 
@@ -33,16 +35,15 @@ ruleset: **`syntax-rules`** / **`macro-rules`** use **RULE**; **`syntax-match`**
 / **`macro-match`** use **MATCH**. This is **not** selected by ad hoc per-pattern
 type annotations on individual rules.
 
-**Nested `(match …)` / `(rule …)` inside a RULE pattern**
+**Nested `(match …)` inside a RULE pattern**
 
 Inside **`syntax-rules`** / **`macro-rules`** only, `parse_rule_pattern` may
-see a pattern whose car is the **`match`** or **`rule`** symbol. That dispatch
-is **orthogonal** to the table above: it is an escape **within** the RULE
-pattern column (`(match INNER)` is wired to `syntax_pattern_to_matcher`;
-`(rule INNER)` still flows to `parse_explicit_rule_pattern` and therefore
-remains **unimplemented** until MATCH lands). Prefer the **four** top-level
-forms (`syntax-rules`, `macro-rules`, `syntax-match`, `macro-match`) for the
-primary RULE vs MATCH split.
+see a pattern whose car is the **`match`** symbol. That dispatch is
+**orthogonal** to the table above: it is an escape **within** the RULE pattern
+column (`(match INNER)` is lowered with `syntax_pattern_to_matcher`). Prefer the
+**four** top-level forms (`syntax-rules`, `macro-rules`, `syntax-match`,
+`macro-match`) for the primary RULE vs MATCH split; **MATCH** patterns are not
+embedded via a **`rule`** wrapper inside RULE columns.
 
 **Completed (recent / current tree):**
 
@@ -312,9 +313,9 @@ where a symbol is literal in one block and a pattern variable in another.
 ## MATCH surface: `syntax-match` and `macro-match`
 
 **MATCH** rules (see the **Terminology: RULE vs MATCH** section above) use
-**`(syntax-match RULE …)`** / **`(macro-match RULE …)`** with rows
-shaped **`((rule INNER) TEMPLATE | BODY …)`**. **`parse_explicit_rule_pattern`**
-implements **`INNER`**; until it exists, these forms cannot run end-to-end.
+**`(syntax-match NAME …)`** / **`(macro-match NAME …)`** with rows shaped
+**`(PATTERN TEMPLATE)`** (template macros) or **`(PATTERN BODY …)`** (procedural
+macros). **`parse_explicit_rule_pattern`** lowers each **`PATTERN`** form.
 
 Older drafts showed illustrative **`match`** / **`rule`** block sugars with names
 **inverted** relative to current usage: **RULE** is the simple Scheme-style
@@ -411,8 +412,8 @@ dispatch**.
 
 6. **Matcher-driven hygiene** — Binding semantics from metadata where possible.
 
-7. **Progressive surface** — Ship **`macro-rules`** and merged sections before
-   optional **MATCH**-language polish and extra sugar.
+7. **Progressive surface** — **`macro-rules`** and **MATCH** lowering are both
+   in tree; further optional **MATCH**-language polish and extra sugar remain.
 
 ---
 
@@ -426,9 +427,8 @@ dispatch**.
 * **Expand-time evaluation** for `macro-rules`: host Python callables first vs
   Koskari bytecode + eval bridge.
 * Debugging: which rule matched, which section it came from.
-* **MATCH** language: implement `parse_explicit_rule_pattern` and exercise
-  **`syntax-match`** / **`macro-match`** end-to-end; optional extra sugar and
-  matcher algebra exposure.
+* **MATCH** language: optional extra surface sugar and matcher algebra exposure
+  beyond the current **`parse_explicit_rule_pattern`** lowering.
 
 ---
 
@@ -439,6 +439,6 @@ expansion workers** (template vs procedural), **shared** hygienic rewriting and
 **unboxing**, and **merge-based extension**. **RULE** authoring centers on
 **`syntax-rules`** and **`macro-rules`** under **`define-syntax`** (with optional
 `define-macro` sugar). **MATCH** authoring uses **`syntax-match`** and
-**`macro-match`** once `parse_explicit_rule_pattern` is complete. Python
+**`macro-match`** with **`parse_explicit_rule_pattern`**. Python
 specials remain the compiler's native interface while sharing matcher vocabulary
 and post-expand policy where possible.

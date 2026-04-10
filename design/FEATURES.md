@@ -30,12 +30,11 @@ This document provides a high-level summary of all features identified from both
 - **Compile-time Macros**: define-syntax (syntax-rules), defmacro, defalias
 - **Expansion**: macroexpand-1
 - **RULE vs MATCH**: **RULE** patterns (Scheme-style list patterns) are used by
-  **`syntax-rules`** and **`macro-rules`**. **MATCH** patterns (explicit
-  **`(rule INNER)`** rows) target **`syntax-match`** and **`macro-match`**;
-  they are **surface syntax** for the same expressive matcher IR as the
-  **`MATCH(...)`** combinator in `koskari.matcher`, and remain **in progress**
-  until `parse_explicit_rule_pattern` is implemented. The **macro spec head**
-  selects which language applies; see
+  **`syntax-rules`** and **`macro-rules`**. **MATCH** patterns (explicit matcher
+  rows **`(PATTERN …)`** per rule) target **`syntax-match`** and
+  **`macro-match`**; they lower via **`parse_explicit_rule_pattern`** to the same
+  matcher IR as the **`MATCH(...)`** combinator in `koskari.matcher`. The
+  **macro spec head** selects which language applies; see
   [language/unified-matcher-transformer-model.md](language/unified-matcher-transformer-model.md).
 - **Design (proposed)**: Unified matcher/transformer model for declarative and procedural macros with specials — [language/unified-matcher-transformer-model.md](language/unified-matcher-transformer-model.md); procedural hygiene — [language/macro-hygiene-syntax-boxes.md](language/macro-hygiene-syntax-boxes.md)
 

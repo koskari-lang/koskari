@@ -363,8 +363,8 @@ macro-rules [LIT ...]:
 **Symbol:** `layout/syntax-match`
 
 **Use-case:** Block syntax for the `syntax-match` transformer within a
-`define-syntax` block. No literals list; each rule pattern is wrapped as
-`(rule PATTERN)` before emitting `((rule PATTERN) TEMPLATE)`.
+`define-syntax` block. No literals list; each rule lowers to **`(PATTERN
+TEMPLATE)`** (no **`rule`** wrapper).
 
 **Behaviour:** Same per-rule header/body rules as `layout/syntax-rules` (including
 `match (PATTERN):` for keywords). Does not accept peers.
@@ -387,8 +387,8 @@ syntax-match:
 **Symbol:** `layout/macro-match`
 
 **Use-case:** Block syntax for the `macro-match` transformer within a
-`define-syntax` block. Each rule must begin with `rule` and a single inner
-pattern form, then one or more body forms.
+`define-syntax` block. Same rule shape as **`layout/macro-rules`**: a pattern
+header (symbol or parenthesized form) then body forms.
 
 **Behaviour:** Does not accept peers.
 
@@ -396,9 +396,9 @@ pattern form, then one or more body forms.
 
 ```
 macro-match:
-  rule (INNER):
+  HEAD ARGS...:
     BODY1...
-  rule (inner-pattern):
+  (complex pat):
     BODY1
     BODY2
 ```

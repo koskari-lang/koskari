@@ -30,9 +30,9 @@ ease future migration of purely transformative forms from specials to macros.
 forms whose transformer is one of:
 
 - `(syntax-rules literals rule …)` → `(compile/define name (syntax-rules name literals rule …))`
-- `(syntax-match rule …)` → `(compile/define name (syntax-match name rule …))`
+- `(syntax-match (PATTERN TEMPLATE) …)` → `(compile/define name (syntax-match name (PATTERN TEMPLATE) …))`
 - `(macro-rules literals rule …)` → `(compile/define name (macro-rules name literals rule …))`
-- `(macro-match rule …)` → `(compile/define name (macro-match name rule …))`
+- `(macro-match (PATTERN BODY …) …)` → `(compile/define name (macro-match name (PATTERN BODY …) …))`
 
 **Use-case:** Install a compile-time transformer under the given name. After
 expansion, the **value** of **`compile/define`** is built from the **`syntax-rules`** /

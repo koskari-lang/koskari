@@ -130,11 +130,11 @@ Ref: [archive/compiler-python-sibilant-historical.md](archive/compiler-python-si
   is implemented). **Compile-time lowering** for re-emitting macro specs as
   source (`compile/syntax-rules`, `compile/macro-rules`, `compile/syntax-match`,
   `compile/macro-match`) is implemented in `koskari/compile/specials/syntax.py`.
-- **MATCH** pattern language (`parse_explicit_rule_pattern` for
-  `syntax-match` / `macro-match`): **work in progress** (stub raises until
-  implemented). **RULE** patterns (`syntax-rules` / `macro-rules`) are
-  implemented in `koskari/syntax.py`. Terminology and the four surface forms are
-  documented in
+  **`parse_explicit_rule_pattern`** implements the **MATCH** surface language for
+  **`syntax-match`** / **`macro-match`**; optional sugar and further matcher
+  exposure remain incremental work. **RULE** patterns (`syntax-rules` /
+  `macro-rules`) are implemented in `koskari/syntax.py`. Terminology and the four
+  surface forms are documented in
   [language/unified-matcher-transformer-model.md](language/unified-matcher-transformer-model.md).
 - Optimization passes: constant folding, dead code elimination, VAR→FAST
   conversion.
