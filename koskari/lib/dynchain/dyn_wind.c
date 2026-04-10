@@ -1,0 +1,219 @@
+/* Included by dynchain.c — dyn_wind */
+/* === KosDynWind implementation === */
+
+
+KosDynWind *kos_dynwind_new(
+    KosDynNode *parent,
+    PyObject *before_thunk,
+    PyObject *after_thunk) {
+
+  KosDynWind *wind = kos_dynnode_alloc();
+  if (! wind)
+    return NULL;
+
+  uint32_t wind_caps = 0;
+  if (after_thunk)
+    wind_caps |= KOS_DYN_CAP_NEEDS_UNWIND_ACTION;
+  if (before_thunk)
+    wind_caps |= KOS_DYN_CAP_NEEDS_WIND_BEFORE_ACTION;
+  if (before_thunk || after_thunk)
+    wind_caps |= KOS_DYN_CAP_AWAITS_THUNK_RESULT;
+  kos_dynnode_init(wind, KOS_DYN_WIND, parent, wind_caps);
+  KosDynWind_BEFORE_THUNK(wind) = before_thunk;
+  if (before_thunk)
+    Py_INCREF(before_thunk);
+  KosDynWind_AFTER_THUNK(wind) = after_thunk;
+  if (after_thunk)
+    Py_INCREF(after_thunk);
+  KosDynWind_ENTERED(wind) = 0;
+  KosDynWind_PHASE(wind) = KOS_WIND_PHASE_IDLE;
+  return wind;
+}
+
+
+KosDynWind *kos_dynwind_clone(KosDynWind *wind) {
+  if (! wind)
+    return NULL;
+
+  KosDynWind *clone = kos_dynnode_alloc();
+  if (! clone)
+    return NULL;
+
+  kos_dynnode_init(clone, KOS_DYN_WIND, NULL, KosDynNode_CAPS(wind));
+  KosDynNode_FLAGS(clone) = KosDynNode_FLAGS(wind) | KOS_DYNF_CLONED;
+  KosDynNode_NODE_ID(clone) = KosDynNode_NODE_ID(wind);
+  KosDynWind_BEFORE_THUNK(clone) = KosDynWind_BEFORE_THUNK(wind);
+  if (KosDynWind_BEFORE_THUNK(clone))
+    Py_INCREF(KosDynWind_BEFORE_THUNK(clone));
+  KosDynWind_AFTER_THUNK(clone) = KosDynWind_AFTER_THUNK(wind);
+  if (KosDynWind_AFTER_THUNK(clone))
+    Py_INCREF(KosDynWind_AFTER_THUNK(clone));
+  KosDynWind_BODY_RESULT(clone) = NULL;
+  KosDynWind_ENTERED(clone) = KosDynWind_ENTERED(wind);
+  KosDynWind_PHASE(clone) = KosDynWind_PHASE(wind);
+  return clone;
+}
+
+
+void kos_dynwind_free(KosDynWind *wind) {
+  if (! wind)
+    return;
+
+  Py_XDECREF(KosDynWind_BEFORE_THUNK(wind));
+  KosDynWind_BEFORE_THUNK(wind) = NULL;
+  Py_XDECREF(KosDynWind_AFTER_THUNK(wind));
+  KosDynWind_AFTER_THUNK(wind) = NULL;
+  Py_XDECREF(KosDynWind_BODY_RESULT(wind));
+  KosDynWind_BODY_RESULT(wind) = NULL;
+  kos_dynnode_return_to_freelist(wind);
+}
+
+
+int kos_dyn_wind_wind(KosContext *ctx, KosDynWind *node) {
+  if (! node || ! KosDynWind_BEFORE_THUNK(node))
+    return 0;
+
+  KosDynWind_PHASE(node) = KOS_WIND_PHASE_PRE_BEGIN;
+  if (KosContext_CallNoArgs(ctx, NULL, KosDynWind_BEFORE_THUNK(node), 0) < 0) {
+    return -1;
+  }
+
+  return KOS_DYN_UNWIND_ASYNC_STARTED;
+}
+
+
+int kos_dyn_wind_unwind(KosContext *ctx, KosDynWind *node) {
+  if (! node || ! KosDynWind_ENTERED(node))
+    return 0;
+
+  if (! KosDynWind_AFTER_THUNK(node)) {
+    /* No after-thunk: push stored body result and finish uninstall */
+    KosDynFrame *frame_below = (KosDynFrame *) KosDynNode_PARENT(node);
+    PyObject *body_result = KosDynWind_BODY_RESULT(node);
+    KosDynWind_BODY_RESULT(node) = NULL;
+    if (frame_below && KosDynFrame_STACK(frame_below) && body_result) {
+      if (KosStackBlock_PushRef(&KosDynFrame_STACK(frame_below), body_result) < 0) {
+        KosDynWind_BODY_RESULT(node) = body_result;
+        return -1;
+      }
+    }
+    if (body_result)
+      Py_DECREF(body_result);
+    return 0;
+  }
+
+  KosDynWind_PHASE(node) = KOS_WIND_PHASE_PRE_AFTER;
+  {
+    PyObject *args = PyTuple_New(0);
+    if (! args)
+      return -1;
+    if (KosContext_CallArgs(ctx, NULL, KosDynWind_AFTER_THUNK(node), args, NULL, 0) < 0) {
+      Py_DECREF(args);
+      return -1;
+    }
+    Py_DECREF(args);
+  }
+  return KOS_DYN_UNWIND_ASYNC_STARTED;
+}
+
+
+static int kos_dyn_wind_on_control_returned(KosContext *ctx, KosDynWind *wind) {
+  KosDynFrame *frame_below = (KosDynFrame *) KosDynNode_PARENT(wind);
+  if (! frame_below || ! KosDynFrame_STACK(frame_below))
+    return 0;
+
+  if (KosDynWind_PHASE(wind) == KOS_WIND_PHASE_PRE_BEGIN) {
+    KosDynWind_PHASE(wind) = KOS_WIND_PHASE_POST_BEGIN;
+    KosDynWind_ENTERED(wind) = 1;
+    PyObject *val = KosStackBlock_PopRef(&KosDynFrame_STACK(frame_below));
+    if (val)
+      Py_DECREF(val);
+    return 0;
+  }
+  if (KosDynWind_PHASE(wind) == KOS_WIND_PHASE_PRE_AFTER) {
+    PyObject *thunk_ret = KosStackBlock_PopRef(&KosDynFrame_STACK(frame_below));
+    if (thunk_ret)
+      Py_DECREF(thunk_ret);
+
+    PyObject *body_result = KosDynWind_BODY_RESULT(wind);
+    KosDynWind_BODY_RESULT(wind) = NULL;
+
+    KosDynWind_PHASE(wind) = KOS_WIND_PHASE_POST_AFTER;
+    KosContext_UNWIND_TARGET_FRAME(ctx) = NULL;
+    KosContext_DYN_TOP(ctx) = KosDynNode_PARENT(wind);
+    KosContext_CHAIN_VERSION(ctx)++;
+    KosDynNode_PARENT(wind) = NULL;
+    kos_dynwind_free(wind);
+    kos_update_frame_top(ctx);
+
+    if (body_result) {
+      if (KosStackBlock_PushRef(&KosDynFrame_STACK(frame_below), body_result) < 0) {
+        Py_DECREF(body_result);
+        return -1;
+      }
+      Py_DECREF(body_result);
+    }
+    return 0;
+  }
+  return 0;
+}
+
+
+int kos_dynnode_on_control_returned(KosContext *ctx, KosDynNode *node, KosEvent *out_ev) {
+  (void) out_ev;
+  /* When node is a frame, check if parent is WITH in pending phase. */
+  if (KosDynNode_IS_FRAME(node)) {
+    KosDynNode *parent = KosDynNode_PARENT(node);
+    if (parent && KosDynNode_IS_WITH(parent)) {
+      uint8_t phase = KosDynWith_PHASE((KosDynWith *) parent);
+      if (phase == KOS_WITH_PHASE_PENDING_EXIT_AWAIT)
+        return kos_dyn_with_on_control_returned(ctx, (KosDynWith *) parent, 1);
+      if (phase == KOS_WITH_PHASE_PENDING_ENTER_AWAIT)
+        return kos_dyn_with_on_enter_control_returned(ctx, (KosDynWith *) parent);
+    }
+  }
+  switch (KosDynNode_KIND(node)) {
+    case KOS_DYN_WIND:
+      return kos_dyn_wind_on_control_returned(ctx, (KosDynWind *) node);
+    case KOS_DYN_WITH:
+    case KOS_DYN_DYN_WITH:
+      if (KosDynWith_PHASE((KosDynWith *) node) == KOS_WITH_PHASE_PENDING_EXIT_AWAIT)
+        return kos_dyn_with_on_control_returned(ctx, (KosDynWith *) node, 1);
+      return 0;
+    default:
+      return 0;
+  }
+}
+
+
+KosDynWind *kos_dyn_push_wind(
+    KosContext *ctx,
+    PyObject *before_thunk,
+    PyObject *after_thunk) {
+
+  KosDynWind *wind = kos_dynwind_new(KosContext_DYN_TOP(ctx),
+                                     before_thunk, after_thunk);
+  if (! wind)
+    return NULL;
+
+  KosContext_DYN_TOP(ctx) = (KosDynNode *) wind;
+  KosContext_CHAIN_VERSION(ctx)++;
+
+  return wind;
+}
+
+
+int kos_dyn_pop_wind(KosContext *ctx, KosDynWind *wind) {
+  if (! KosContext_DYN_TOP(ctx) || KosContext_DYN_TOP(ctx) != (KosDynNode *) wind) {
+    PyErr_SetString(PyExc_RuntimeError, "wind node is not at top of chain");
+    return -1;
+  }
+
+  KosContext_DYN_TOP(ctx) = KosDynNode_PARENT(wind);
+  KosContext_CHAIN_VERSION(ctx)++;
+  kos_dynwind_free(wind);
+
+  return 0;
+}
+
+

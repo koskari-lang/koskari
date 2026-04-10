@@ -200,7 +200,6 @@ struct KosDynNode {
     } frame;
     struct {
       uint32_t prompt_id;
-      KosStackBlock *stack;  /* prompt-owned operand stack; NULL if not used */
       PyObject *pending_shift_wrapper;  /* KosPyDelimitedContinuation when PUSH_SHIFT plan completed; owned */
     } prompt;
     struct {
@@ -1903,7 +1902,6 @@ int kos_transferplan_traverse(
 #define KosDynNode_IS_FINALLY(n) (KosDynNode_KIND(n) == KOS_DYN_FINALLY)
 #define KosDynNode_IS_LOOP(n)    (KosDynNode_KIND(n) == KOS_DYN_LOOP)
 #define KosDynNode_IS_FOREACH(n) (KosDynNode_KIND(n) == KOS_DYN_FOREACH)
-#define KosDynNode_IS_REGION(n)  (KosDynNode_IS_TRY(n) || KosDynNode_IS_FINALLY(n) || KosDynNode_IS_LOOP(n) || KosDynNode_IS_FOREACH(n))
 #define KosDynNode_IS_NS(n)      (KosDynNode_KIND(n) == KOS_DYN_NS)
 #define KosDynNode_IS_COLLECT(n) (KosDynNode_KIND(n) == KOS_DYN_COLLECT)
 #define KosDynNode_IS_CC(n)      (KosDynNode_KIND(n) == KOS_DYN_CC)
@@ -1932,7 +1930,6 @@ int kos_transferplan_traverse(
 #define KosDynFrame_NATIVE_HANDLER(f) (((KosDynNode *)(f))->u.frame.native_handler)
 
 #define KosDynPrompt_ID(p)               (((KosDynNode *)(p))->u.prompt.prompt_id)
-#define KosDynPrompt_STACK(p)            (((KosDynNode *)(p))->u.prompt.stack)
 #define KosDynPrompt_PENDING_SHIFT_WRAPPER(p) (((KosDynNode *)(p))->u.prompt.pending_shift_wrapper)
 
 #define KosDynCC_RESUME_PC(c)     (((KosDynNode *)(c))->u.cc.resume_pc)

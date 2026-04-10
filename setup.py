@@ -70,6 +70,7 @@ def extension(platform=None, debug=None):
     depends = list(libdir.glob("*.h"))
     depends.extend(libdir.glob("*.incl"))
     depends.extend(libdir.glob("opcode/*.c"))
+    depends.extend(libdir.glob("dynchain/*.c"))
     depends = sorted(map(str, depends))
 
     return Extension(
