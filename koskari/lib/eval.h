@@ -773,6 +773,9 @@ int kos_tail_koscall(KosContext *ctx, KosCode *code, PyObject *ns);
    val is consumed (ownership transferred). Internal helper; stolen refs
    are acceptable here.
 
+   CALL* opcodes use a separate eval.c entry (op_push_or_await) that may
+   elide push plus a trailing POP,1; this API is unchanged for other callers.
+
    :return: 0 continue, 1 stop (AWAIT), -1 error
 */
 int kos_push_or_await(KosContext *ctx, KosEvent *out_ev, PyObject *val);

@@ -53,7 +53,7 @@ KOS_OP_HANDLER(CALL) {
     SAYF("CALL: result=%R", result);
     KosStackBlock_DropNoErr(stack, n + 1);
     return result
-        ? kos_op_outcome_from_push_int(kos_push_or_await(ctx, out_ev, result))
+        ? kos_op_outcome_from_push_int(op_push_or_await(ctx, out_ev, result))
         : KOS_OP_POST_ERR();
   }
 }

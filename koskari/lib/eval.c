@@ -1359,6 +1359,10 @@ KOS_OP_INLINE int push_result(KosContext *ctx, PyObject *val) {
    opcode (explicitly awaiting TOS). All other paths must use push_result
    so we do not auto-await values that are merely loaded or computed.
 
+   CALL* bytecode uses op_push_or_await instead: same logic plus an optional
+   POP,1 peephole so kos_push_or_await and this function stay free of that
+   cost on every non-opcode caller (e.g. defer_drive, KosContext_Call).
+
    val is consumed (new reference).
 
    :return: 0 continue, 1 stop (AWAIT), -1 error
@@ -1397,6 +1401,77 @@ static int push_or_await(KosContext *ctx, KosEvent *out_ev, PyObject *val) {
 
   return -1;
 }
+
+
+/**
+   Opcode-only variant of push_or_await: same semantics, plus peephole elision
+   when the next bytecode is POP with argument 1 (discard TOS). In that case
+   the value is released and CURRENT_PC is advanced past that POP without a
+   stack push. Used only from CALL* handlers where CURRENT_PC is already the
+   next instruction index after fetch. Do not use from defer_drive or other
+   paths that pop the stack in C before the next opcode — use push_or_await.
+
+   val is consumed (new reference).
+
+   :return: 0 continue, 1 stop (AWAIT), -1 error
+*/
+
+#define OP_TRY_FUSE_POP1_AFTER_PUSH(ctx, val)                                 \
+  do {                                                                        \
+    KosCode *opfuse_code = CURRENT_CODE(ctx);                                 \
+    uint32_t opfuse_pc = CURRENT_PC(ctx);                                     \
+    KosOp *opfuse_nx = &KosCode_CODE(opfuse_code)[opfuse_pc];                 \
+    if (KosOp_OP(opfuse_nx) == KOS_OP_POP && KosOp_ARG(opfuse_nx) == 1) {     \
+      Py_DECREF(val);                                                         \
+      CURRENT_PC(ctx) = opfuse_pc + 1;                                        \
+      return 0;                                                               \
+    }                                                                         \
+  } while (0)
+
+
+KOS_OP_INLINE int op_push_or_await(
+    KosContext *ctx,
+    KosEvent *out_ev,
+    PyObject *val) {
+
+  /* Defer is not auto-awaited; push as plain value (explicit AWAIT drives it). */
+  if (KosDefer_Check(val)) {
+    OP_TRY_FUSE_POP1_AFTER_PUSH(ctx, val);
+    return KosStackBlock_PUSH(&CURRENT_STACK(ctx), val);
+  }
+
+  PyTypeObject *type = Py_TYPE(val);
+  SAYF("[eval] op_push_or_await entry is_awaitable=%d\n",
+       (type->tp_as_async && type->tp_as_async->am_await) ? 1 : 0);
+  if (! type->tp_as_async || ! type->tp_as_async->am_await) {
+    OP_TRY_FUSE_POP1_AFTER_PUSH(ctx, val);
+    return KosStackBlock_PUSH(&CURRENT_STACK(ctx), val);
+  }
+
+  int suspended = 0;
+  PyObject *yielded = NULL;
+  PyObject *result = eager_step_awaitable(val, ctx, &suspended, &yielded);
+  Py_DECREF(val);
+
+  if (result) {
+    OP_TRY_FUSE_POP1_AFTER_PUSH(ctx, result);
+    return KosStackBlock_PUSH(&CURRENT_STACK(ctx), result);
+  }
+
+  if (suspended && yielded) {
+    KosContext_FLAGS(ctx) &= ~KOS_CTX_RUNNING;
+    KosEvent_KIND(out_ev) = KOS_EV_AWAIT;
+    KosEvent_PAYLOAD(out_ev) = yielded;
+    SAYF("[eval] op_push_or_await set KOS_EV_AWAIT (suspended=%d yielded=%d)\n",
+         suspended, yielded ? 1 : 0);
+    return 1;
+  }
+
+  return -1;
+}
+
+
+#undef OP_TRY_FUSE_POP1_AFTER_PUSH
 
 
 /* Public wrapper for external callers; delegates to static push_or_await. */

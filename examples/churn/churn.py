@@ -9,12 +9,10 @@ import time
 from churn_p import churn_loop as churn_loop_p, churn_tree as churn_tree_p
 from churn_k import churn_loop as churn_loop_k, churn_tree as churn_tree_k
 
-RUNS = 10
 
-
-async def bench_async(fn, *args):
+async def bench_async(runs, fn, *args):
     t0 = time.perf_counter()
-    for _ in range(RUNS):
+    for _ in range(runs):
         answer = await fn(*args)
     t1 = time.perf_counter()
 
@@ -22,9 +20,9 @@ async def bench_async(fn, *args):
     return t1 - t0
 
 
-def bench_sync(fn, *args):
+def bench_sync(runs, fn, *args):
     t0 = time.perf_counter()
-    for _ in range(RUNS):
+    for _ in range(runs):
         answer = fn(*args)
     t1 = time.perf_counter()
 
@@ -39,19 +37,22 @@ def announce(name, total, avg):
 async def main():
     print("Running benchmarks...")
 
-    # Python versions
-    t = bench_sync(churn_loop_p, 5_000_000, 1)
-    announce("python churn_loop", t, t / RUNS)
+    loop_runs = 50
+    tree_runs = 50
 
-    t = bench_sync(churn_tree_p, 18, 50)
-    announce("python churn_tree", t, t / RUNS)
+    # Python versions
+    t = bench_sync(loop_runs, churn_loop_p, 1_000_000, 1)
+    announce("python churn_loop", t, t / loop_runs)
+
+    t = bench_sync(tree_runs, churn_tree_p, 18, 50)
+    announce("python churn_tree", t, t / tree_runs)
 
     # Koskari versions
-    t = await bench_async(churn_loop_k, 5_000_000, 1)
-    announce("koskari churn_loop", t, t / RUNS)
+    t = await bench_async(loop_runs, churn_loop_k, 1_000_000, 1)
+    announce("koskari churn_loop", t, t / loop_runs)
 
-    t = await bench_async(churn_tree_k, 18, 50)
-    announce("koskari churn_tree", t, t / RUNS)
+    t = await bench_async(tree_runs, churn_tree_k, 18, 50)
+    announce("koskari churn_tree", t, t / tree_runs)
 
 
 def print_trace_report_if_enabled():

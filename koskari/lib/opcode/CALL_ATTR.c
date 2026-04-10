@@ -75,5 +75,5 @@ KOS_OP_HANDLER(CALL_ATTR) {
   KosStackBlock_DropNoErr(stack, count);
   Py_DECREF(resolved);
 
-  return result ? kos_op_outcome_from_push_int(kos_push_or_await(ctx, out_ev, result)) : KOS_OP_POST_ERR();
+  return result ? kos_op_outcome_from_push_int(op_push_or_await(ctx, out_ev, result)) : KOS_OP_POST_ERR();
 }

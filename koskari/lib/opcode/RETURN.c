@@ -105,6 +105,8 @@ KOS_OP_HANDLER(RETURN) {
       Py_DECREF(val);
       return KOS_OP_POST_ERR();
     }
+    kos_dynframe_free(detached_frame);
+
     KosPyAsyncGen *agen = was_pending_ctx ? (KosPyAsyncGen *) KosContext_PENDING_AGEN(ctx) : NULL;
 
     /* Async gen special case: we were iterating with ITER_NEXT over an async
