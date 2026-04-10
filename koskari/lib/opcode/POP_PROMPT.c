@@ -73,20 +73,8 @@ KOS_OP_HANDLER(POP_PROMPT) {
       SAYF("[eval] POP_PROMPT after unwind: dyn_top=%p kind=%s",
            (void *) KosContext_DYN_TOP(ctx),
            KosContext_DYN_TOP(ctx) ? kos_dynnode_kind_name(KosDynNode_KIND(KosContext_DYN_TOP(ctx))) : "NULL");
-      if (KosStackBlock_PushRef(
-              &KosDynFrame_STACK(KosContext_DELIMITED_RETURN_FRAME(ctx)),
-              val) < 0) {
-        Py_DECREF(val);
+      if (kos_dyn_finish_delimited_pop_return(ctx, val) < 0)
         return KOS_OP_POST_ERR();
-      }
-      Py_DECREF(val);
-      KosDynFrame_PC(KosContext_DELIMITED_RETURN_FRAME(ctx)) =
-          KosContext_DELIMITED_RETURN_PC(ctx);
-      KosContext_FRAME_TOP(ctx) = KosContext_DELIMITED_RETURN_FRAME(ctx);
-      KosContext_INVOCATION_SEGMENT_TOP(ctx) = NULL;
-      KosContext_DELIMITED_RETURN_FRAME(ctx) = NULL;
-      KosContext_DELIMITED_RETURN_PC(ctx) = (uint32_t) -1;
-      KosContext_DELIMITED_RETURN_NODE(ctx) = NULL;
       (void) insn;
       return KOS_OP_RUN();
     }

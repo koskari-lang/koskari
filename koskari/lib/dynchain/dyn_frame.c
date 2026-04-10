@@ -204,4 +204,3 @@ int kos_dyn_detach_top_frame(KosContext *ctx, KosDynFrame **frame_out) {
     *frame_out = frame;
   return 0;
 }
-

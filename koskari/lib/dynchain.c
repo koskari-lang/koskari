@@ -174,6 +174,47 @@ static void kos_dynnode_return_to_freelist(KosDynNode *node) {
 #include "dynchain/dyn_with.c"
 
 
+/* === Globals frame cache (CONTEXT_GLOBALS_FRAME / opcode GLOBALS, IMPORT_REL) === */
+
+
+KosDynFrame *kos_dyn_globals_frame(KosContext *ctx) {
+
+  if (KosContext_CHAIN_VERSION(ctx) != KosContext_GLOBALS_CACHE_VERSION(ctx)) {
+    KosDynNode *n = (KosDynNode *) KosContext_FRAME_TOP(ctx);
+    KosDynFrame *outer = KosContext_FRAME_TOP(ctx);
+
+    while (n && KosDynNode_PARENT(n)) {
+      n = KosDynNode_PARENT(n);
+      if (KosDynNode_IS_FRAME(n))
+        outer = (KosDynFrame *) n;
+    }
+    KosContext_GLOBALS_FRAME(ctx) = outer;
+    KosContext_GLOBALS_CACHE_VERSION(ctx) = KosContext_CHAIN_VERSION(ctx);
+  }
+  return KosContext_GLOBALS_FRAME(ctx);
+}
+
+
+int kos_dyn_abort_push_region(KosContext *ctx, KosDynNode *region) {
+
+  switch (KosDynNode_KIND(region)) {
+    case KOS_DYN_TRY:
+      kos_dyn_pop_try(ctx, (KosDynTry *) region);
+      return 0;
+    case KOS_DYN_FINALLY:
+      kos_dyn_pop_finally(ctx, (KosDynFinally *) region);
+      return 0;
+    case KOS_DYN_LOOP:
+      kos_dyn_pop_loop(ctx, (KosDynLoop *) region);
+      return 0;
+    case KOS_DYN_FOREACH:
+      kos_dyn_pop_foreach(ctx, (KosDynForeach *) region);
+      return 0;
+    default:
+      return -1;
+  }
+}
+
 
 /* === Generic pending-exit APIs === */
 
@@ -1708,6 +1749,19 @@ KosDynPrompt *kos_find_prompt(KosContext *ctx, uint32_t prompt_id) {
         return prompt;
       }
     }
+    node = KosDynNode_PARENT(node);
+  }
+
+  return NULL;
+}
+
+
+KosDynPrompt *kos_find_nearest_prompt(KosContext *ctx) {
+  KosDynNode *node = KosContext_DYN_TOP(ctx);
+
+  while (node) {
+    if (KosDynNode_IS_PROMPT(node))
+      return (KosDynPrompt *) node;
     node = KosDynNode_PARENT(node);
   }
 
@@ -3780,6 +3834,52 @@ int kos_transferplan_traverse(
     }
   }
 
+  return 0;
+}
+
+
+int kos_dyn_finish_delimited_pop_return(KosContext *ctx, PyObject *value) {
+
+  KosDynFrame *ret_frame;
+
+  if (! ctx) {
+    PyErr_SetString(PyExc_RuntimeError,
+                    "kos_dyn_finish_delimited_pop_return: context is NULL");
+    Py_XDECREF(value);
+    return -1;
+  }
+  if (! value) {
+    PyErr_SetString(PyExc_RuntimeError,
+                    "kos_dyn_finish_delimited_pop_return: value is NULL");
+    return -1;
+  }
+  ret_frame = KosContext_DELIMITED_RETURN_FRAME(ctx);
+  if (! ret_frame) {
+    PyErr_SetString(PyExc_RuntimeError,
+                    "kos_dyn_finish_delimited_pop_return: "
+                    "delimited_return_frame is NULL");
+    Py_DECREF(value);
+    return -1;
+  }
+  if (KosContext_DELIMITED_RETURN_PC(ctx) == (uint32_t) -1) {
+    PyErr_SetString(PyExc_RuntimeError,
+                    "kos_dyn_finish_delimited_pop_return: "
+                    "delimited_return_pc is unset");
+    Py_DECREF(value);
+    return -1;
+  }
+
+  if (KosStackBlock_PushRef(&KosDynFrame_STACK(ret_frame), value) < 0) {
+    Py_DECREF(value);
+    return -1;
+  }
+  Py_DECREF(value);
+  KosDynFrame_PC(ret_frame) = KosContext_DELIMITED_RETURN_PC(ctx);
+  KosContext_FRAME_TOP(ctx) = ret_frame;
+  KosContext_INVOCATION_SEGMENT_TOP(ctx) = NULL;
+  KosContext_DELIMITED_RETURN_FRAME(ctx) = NULL;
+  KosContext_DELIMITED_RETURN_PC(ctx) = (uint32_t) -1;
+  KosContext_DELIMITED_RETURN_NODE(ctx) = NULL;
   return 0;
 }
 
