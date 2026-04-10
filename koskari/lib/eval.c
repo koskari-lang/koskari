@@ -2765,7 +2765,7 @@ static KosEvalStep kos_eval_prepare_next_insn(
 /**
    Koskari async-gen flatten: after YIELD walk with PENDING_AGEN, or RETURN
    exhaustion with PENDING_AGEN.  For YIELD, caller already ran
-   kos_dyn_walk_handle_yield.
+   kos_dyn_transition with KOS_TRANS_WALK_HANDLE_YIELD.
 */
 static KosEvalStep eval_post_opcode_pending_agen(
     KosContext *ctx,
@@ -2898,8 +2898,12 @@ static KosEvalStep eval_phase_post_opcode(
     /* YIELD transit: walk chain with handle(YIELD); GEN intercepts */
     SAYF("[eval] post_opcode KOS_EV_YIELD -> walk_handle_yield dyn_top=%p\n",
          (void *) KosContext_DYN_TOP(ctx));
-    if (kos_dyn_walk_handle_yield(ctx, out_ev) < 0)
-      return KOS_STEP_FATAL_ERROR;
+    {
+      KosTransitionReq treq = { .kind = KOS_TRANS_WALK_HANDLE_YIELD };
+      KosTransitionResult tres = {0};
+      if (kos_dyn_transition(ctx, &treq, &tres, out_ev) < 0)
+        return KOS_STEP_FATAL_ERROR;
+    }
     /* Koskari flatten: GEN was on consumer chain; freeze restored caller.
        Push value onto caller stack and continue (no event return). */
     if (KosContext_PENDING_AGEN(ctx))
