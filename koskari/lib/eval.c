@@ -2378,6 +2378,10 @@ static int try_local_exception_handler(KosContext *ctx, KosEvent *out_ev) {
   }
   #endif
 
+  PyObject *saved_exc_typ = NULL;
+  PyObject *saved_exc_val = NULL;
+  PyObject *saved_exc_tb = NULL;
+
   while (CURRENT_FRAME(ctx) && KosContext_DYN_TOP(ctx) != NULL
          && KosContext_DYN_TOP(ctx) != (KosDynNode *) CURRENT_FRAME(ctx)) {
     KosDynNode *top = KosContext_DYN_TOP(ctx);
@@ -2441,14 +2445,15 @@ static int try_local_exception_handler(KosContext *ctx, KosEvent *out_ev) {
     {
       int top_may_swallow = (top && KosDynNode_HAS_CAP(top, KOS_DYN_CAP_CATCH));
       uint32_t catch_resume_pc = kos_dynnode_catch_resume_pc(top);
-      PyObject *saved_typ = NULL, *saved_val = NULL, *saved_tb = NULL;
       int needs_preserve = (top && KosDynNode_HAS_CAP(top, KOS_DYN_CAP_PRESERVE_ERR_ACROSS_POP))
           || (top && KosDynNode_HAS_CAP(top, KOS_DYN_CAP_BARRIER));
       if (needs_preserve && PyErr_Occurred())
-        PyErr_Fetch(&saved_typ, &saved_val, &saved_tb);
+        PyErr_Fetch(&saved_exc_typ, &saved_exc_val, &saved_exc_tb);
       int pop_res = kos_dyn_pop_top(ctx, KOS_XFER_EVENT_RAISE, out_ev);
-      if (saved_typ != NULL)
-        PyErr_Restore(saved_typ, saved_val, saved_tb);
+      if (saved_exc_typ != NULL) {
+        PyErr_Restore(saved_exc_typ, saved_exc_val, saved_exc_tb);
+        saved_exc_typ = saved_exc_val = saved_exc_tb = NULL;
+      }
       if (pop_res == KOS_DYN_UNWIND_ASYNC_STARTED) {
         KosContext_UNWIND_TARGET_FRAME(ctx) = CURRENT_FRAME(ctx);
         return 1;

@@ -2979,6 +2979,34 @@ int kos_dyn_pop_top(KosContext *ctx, KosXferEvent event, KosEvent *out_ev) {
 }
 
 
+/**
+   Pop dyn_top during an unwind walk toward a frame or node.  PROMPT
+   nodes use kos_dyn_pop_prompt; others use kos_dyn_pop_top.  Unlike
+   kos_dyn_pop_top alone, barriers are popped here because these walks
+   deliberately unwind through delimited prompt boundaries.
+
+   :return: same as kos_dyn_pop_top, or 0 after popping a prompt
+*/
+static int kos_dyn_pop_one_unwind_walk(
+    KosContext *ctx,
+    KosXferEvent event,
+    KosEvent *out_ev) {
+
+  KosDynNode *top = KosContext_DYN_TOP(ctx);
+  if (! top) {
+    PyErr_SetString(PyExc_RuntimeError,
+                    "kos_dyn_pop_one_unwind_walk: empty dynamic chain");
+    return -1;
+  }
+
+  if (KosDynNode_IS_PROMPT(top)) {
+    kos_dyn_pop_prompt(ctx, (KosDynPrompt *) top);
+    return 0;
+  }
+  return kos_dyn_pop_top(ctx, event, out_ev);
+}
+
+
 int kos_dyn_unwind_to_node(KosContext *ctx, KosDynNode *target,
                            KosXferEvent event, KosEvent *out_ev) {
 
@@ -2988,19 +3016,17 @@ int kos_dyn_unwind_to_node(KosContext *ctx, KosDynNode *target,
 
   while (KosContext_DYN_TOP(ctx) != NULL
          && KosContext_DYN_TOP(ctx) != target) {
-    KosDynNode *top = KosContext_DYN_TOP(ctx);
-    if (KOS_XFER_TRACE)
+#if KOS_XFER_TRACE
+    {
+      KosDynNode *trace_top = KosContext_DYN_TOP(ctx);
       SAYF("[xfer] unwind_to_node: popping node=%p kind=%s",
-           (void *) top, kos_dynnode_kind_name(KosDynNode_KIND(top)));
-    int pop_res;
-    if (KosDynNode_IS_PROMPT(top)) {
-      kos_dyn_pop_prompt(ctx, (KosDynPrompt *) top);
-      pop_res = 0;
-    } else {
-      pop_res = kos_dyn_pop_top(ctx, event, out_ev);
-      if (pop_res == KOS_DYN_UNWIND_ASYNC_STARTED)
-        return pop_res;
+           (void *) trace_top,
+           kos_dynnode_kind_name(KosDynNode_KIND(trace_top)));
     }
+#endif
+    int pop_res = kos_dyn_pop_one_unwind_walk(ctx, event, out_ev);
+    if (pop_res == KOS_DYN_UNWIND_ASYNC_STARTED)
+      return pop_res;
     if (pop_res != 0)
       return -1;
   }
@@ -3062,17 +3088,12 @@ int kos_dyn_walk_return_to_frame(KosContext *ctx, KosDynFrame *frame,
     if (KOS_XFER_TRACE)
       SAYF("[xfer] walk_return: popping node=%p kind=%s",
            (void *) top, kos_dynnode_kind_name(KosDynNode_KIND(top)));
-    int pop_res;
-    if (KosDynNode_IS_PROMPT(top)) {
-      kos_dyn_pop_prompt(ctx, (KosDynPrompt *) top);
-      pop_res = 0;
-    } else {
-      pop_res = kos_dyn_pop_top(ctx, KOS_XFER_EVENT_RETURN, out_ev);
-      if (pop_res == KOS_DYN_UNWIND_ASYNC_STARTED) {
-        KosContext_UNWIND_TARGET_FRAME(ctx) = frame;
-        Py_DECREF(val);
-        return pop_res;
-      }
+    int pop_res = kos_dyn_pop_one_unwind_walk(ctx, KOS_XFER_EVENT_RETURN,
+                                             out_ev);
+    if (pop_res == KOS_DYN_UNWIND_ASYNC_STARTED) {
+      KosContext_UNWIND_TARGET_FRAME(ctx) = frame;
+      Py_DECREF(val);
+      return pop_res;
     }
     if (pop_res != 0) {
       Py_DECREF(val);
@@ -3113,16 +3134,10 @@ int kos_dyn_unwind_to_frame(KosContext *ctx, KosDynFrame *frame,
     if (KOS_XFER_TRACE)
       SAYF("[xfer] unwind_to_frame: popping node=%p kind=%s",
            (void *) top, kos_dynnode_kind_name(KosDynNode_KIND(top)));
-    int pop_res;
-    if (KosDynNode_IS_PROMPT(top)) {
-      kos_dyn_pop_prompt(ctx, (KosDynPrompt *) top);
-      pop_res = 0;
-    } else {
-      pop_res = kos_dyn_pop_top(ctx, event, out_ev);
-      if (pop_res == KOS_DYN_UNWIND_ASYNC_STARTED) {
-        KosContext_UNWIND_TARGET_FRAME(ctx) = frame;
-        return pop_res;
-      }
+    int pop_res = kos_dyn_pop_one_unwind_walk(ctx, event, out_ev);
+    if (pop_res == KOS_DYN_UNWIND_ASYNC_STARTED) {
+      KosContext_UNWIND_TARGET_FRAME(ctx) = frame;
+      return pop_res;
     }
     if (pop_res != 0)
       return -1;
