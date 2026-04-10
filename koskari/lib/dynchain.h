@@ -268,6 +268,63 @@ struct KosDynNode {
 };
 
 typedef struct KosDynNode KosDynFrame;
+
+
+/**
+   KosTransitionKind selects which existing dynchain walk or transfer
+   kos_dyn_transition dispatches to.  Payload and target fields in
+   KosTransitionReq are interpreted per kind.
+*/
+typedef enum KosTransitionKind {
+  KOS_TRANS_WALK_RETURN_TO_FRAME = 0,
+  KOS_TRANS_UNWIND_TO_FRAME,
+  KOS_TRANS_UNWIND_TO_NODE,
+  KOS_TRANS_WALK_HANDLE_YIELD,
+  KOS_TRANS_TRANSFER_TO_LOOP,
+} KosTransitionKind;
+
+
+/**
+   Normalized outcome from kos_dyn_transition for callers that should not
+   branch on raw helper return codes.
+*/
+typedef enum KosTransitionStatus {
+  KOS_TRANS_STATUS_OK = 0,
+  KOS_TRANS_STATUS_ERROR,
+  KOS_TRANS_STATUS_ASYNC_UNWIND,
+  KOS_TRANS_STATUS_FINALLY_TAKING_RETURN,
+} KosTransitionStatus;
+
+
+/**
+   Request for kos_dyn_transition.  Unused pointer fields must be NULL.
+
+   :param kind: which operation to run
+   :param xfer_event: for UNWIND_TO_FRAME, UNWIND_TO_NODE, TRANSFER_TO_LOOP
+   :param target_frame: WALK_RETURN_TO_FRAME, UNWIND_TO_FRAME
+   :param target_node: UNWIND_TO_NODE
+   :param payload: borrowed reference for WALK_RETURN_TO_FRAME (return
+     value); TRANSFER_TO_LOOP steals or uses per kos_dyn_transfer_to_loop
+*/
+typedef struct KosTransitionReq {
+  KosTransitionKind kind;
+  KosXferEvent xfer_event;
+  KosDynFrame *target_frame;
+  KosDynNode *target_node;
+  PyObject *payload;
+} KosTransitionReq;
+
+
+/**
+   Result from kos_dyn_transition.  :c:member:`raw` holds the legacy int
+   return from the underlying helper when useful for debugging.
+*/
+typedef struct KosTransitionResult {
+  KosTransitionStatus status;
+  int raw;
+} KosTransitionResult;
+
+
 typedef struct KosDynNode KosDynPrompt;
 typedef struct KosDynNode KosDynWind;
 typedef struct KosDynNode KosDynTry;
@@ -1403,6 +1460,24 @@ KosDynNode *kos_find_node_for_loop(KosContext *ctx);
 */
 int kos_dyn_transfer_to_loop(KosContext *ctx, KosXferEvent event,
                              PyObject *result, struct KosEvent *out_ev);
+
+
+/**
+   Dispatch control transfer to existing dynchain helpers.  Thin wrapper;
+   behavior matches the underlying function for each KosTransitionKind.
+
+   :param req: request; must be non-NULL
+   :param out: result; must be non-NULL
+   :param out_ev: passed to helpers that need it
+
+   :return: 0 on success (including FINALLY_TAKING_RETURN and async
+     start), -1 on error (PyErr set)
+*/
+int kos_dyn_transition(
+    KosContext *ctx,
+    const KosTransitionReq *req,
+    KosTransitionResult *out,
+    struct KosEvent *out_ev);
 
 
 /**

@@ -3263,6 +3263,115 @@ int kos_dyn_transfer_to_loop(KosContext *ctx, KosXferEvent event,
 }
 
 
+int kos_dyn_transition(
+    KosContext *ctx,
+    const KosTransitionReq *req,
+    KosTransitionResult *out,
+    KosEvent *out_ev) {
+
+  if (! ctx || ! req || ! out) {
+    PyErr_SetString(PyExc_RuntimeError,
+                    "kos_dyn_transition: invalid arguments");
+    return -1;
+  }
+
+  out->status = KOS_TRANS_STATUS_OK;
+  out->raw = 0;
+
+  switch (req->kind) {
+  case KOS_TRANS_WALK_RETURN_TO_FRAME: {
+    if (! req->target_frame || ! req->payload) {
+      PyErr_SetString(PyExc_RuntimeError,
+                      "kos_dyn_transition: WALK_RETURN_TO_FRAME needs "
+                      "target_frame and payload");
+      return -1;
+    }
+    int r = kos_dyn_walk_return_to_frame(ctx, req->target_frame,
+                                         req->payload, out_ev);
+    out->raw = r;
+    if (r == KOS_DYN_UNWIND_FINALLY_TAKING_RETURN)
+      out->status = KOS_TRANS_STATUS_FINALLY_TAKING_RETURN;
+    else if (r == KOS_DYN_UNWIND_ASYNC_STARTED)
+      out->status = KOS_TRANS_STATUS_ASYNC_UNWIND;
+    else if (r < 0) {
+      out->status = KOS_TRANS_STATUS_ERROR;
+      return -1;
+    }
+    return 0;
+  }
+  case KOS_TRANS_UNWIND_TO_FRAME: {
+    if (! req->target_frame) {
+      PyErr_SetString(PyExc_RuntimeError,
+                      "kos_dyn_transition: UNWIND_TO_FRAME needs "
+                      "target_frame");
+      return -1;
+    }
+    int r = kos_dyn_unwind_to_frame(ctx, req->target_frame,
+                                    req->xfer_event, out_ev);
+    out->raw = r;
+    if (r == KOS_DYN_UNWIND_ASYNC_STARTED)
+      out->status = KOS_TRANS_STATUS_ASYNC_UNWIND;
+    else if (r < 0) {
+      out->status = KOS_TRANS_STATUS_ERROR;
+      return -1;
+    }
+    return 0;
+  }
+  case KOS_TRANS_UNWIND_TO_NODE: {
+    if (! req->target_node) {
+      PyErr_SetString(PyExc_RuntimeError,
+                      "kos_dyn_transition: UNWIND_TO_NODE needs "
+                      "target_node");
+      return -1;
+    }
+    int r = kos_dyn_unwind_to_node(ctx, req->target_node,
+                                   req->xfer_event, out_ev);
+    out->raw = r;
+    if (r == KOS_DYN_UNWIND_ASYNC_STARTED)
+      out->status = KOS_TRANS_STATUS_ASYNC_UNWIND;
+    else if (r < 0) {
+      out->status = KOS_TRANS_STATUS_ERROR;
+      return -1;
+    }
+    return 0;
+  }
+  case KOS_TRANS_WALK_HANDLE_YIELD: {
+    int r = kos_dyn_walk_handle_yield(ctx, out_ev);
+    out->raw = r;
+    if (r < 0) {
+      out->status = KOS_TRANS_STATUS_ERROR;
+      return -1;
+    }
+    return 0;
+  }
+  case KOS_TRANS_TRANSFER_TO_LOOP: {
+    if (! req->payload) {
+      PyErr_SetString(PyExc_RuntimeError,
+                      "kos_dyn_transition: TRANSFER_TO_LOOP needs "
+                      "payload");
+      return -1;
+    }
+    int r = kos_dyn_transfer_to_loop(ctx, req->xfer_event, req->payload,
+                                     out_ev);
+    out->raw = r;
+    if (r == KOS_DYN_UNWIND_ASYNC_STARTED)
+      out->status = KOS_TRANS_STATUS_ASYNC_UNWIND;
+    else if (r < 0) {
+      out->status = KOS_TRANS_STATUS_ERROR;
+      return -1;
+    }
+    return 0;
+  }
+  default:
+    PyErr_Format(PyExc_RuntimeError,
+                 "kos_dyn_transition: unknown kind %d",
+                 (int) req->kind);
+    out->status = KOS_TRANS_STATUS_ERROR;
+    return -1;
+  }
+}
+
+
 KosDynYieldFrom *kos_dyn_push_yield_from(
     KosContext *ctx,
     PyObject *delegate,
