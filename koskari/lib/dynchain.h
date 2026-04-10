@@ -275,8 +275,9 @@ typedef struct KosDynNode KosDynFrame;
    kos_dyn_transition dispatches to.  Payload and target fields in
    KosTransitionReq are interpreted per kind.
 
-   Continuation transfer plans (kos_run_transfer_step, run_transfer_plan_to
-   completion, continuation return) remain orchestrated from eval.c; they are
+   Continuation transfer plans (kos_run_transfer_step,
+   run_transfer_plan_to_completion, continuation return) remain orchestrated
+   from eval.c; they are
    not yet modeled as transition kinds.  A future phase may map install or
    resume steps to dedicated request values without changing plan semantics.
 */
