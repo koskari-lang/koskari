@@ -13,7 +13,8 @@
 
 """
 Tests for delimited and undelimited continuations (PUSH_PROMPT, SHIFT,
-INVOKE_K, POP_PROMPT, PUSH_CC, CAPTURE_CC, POP_CC) and evaluator token.
+CALL on DelimitedContinuation, POP_PROMPT, PUSH_CC, CAPTURE_CC, POP_CC)
+and evaluator token.
 Includes cross-context continuation pass-through tests verifying the
 segmented transfer path (foreign-token KoskariContinuationApply handling).
 
@@ -33,13 +34,13 @@ pytestmark = pytest.mark.phase_lib
 
 class TestDelimitedContinuations(CevalTest):
     """
-    Tests for PUSH_PROMPT, PUSH_SHIFT, POP_SHIFT, INVOKE_K, POP_PROMPT
+    Tests for PUSH_PROMPT, PUSH_SHIFT, POP_SHIFT, CALL, POP_PROMPT
     """
 
     async def test_reset_shift_invoke(self):
         """
         Program (+ 1 (shift k (k 5))) => 6. Validates PUSH_PROMPT,
-        PUSH_SHIFT, INVOKE_K, POP_SHIFT, POP_PROMPT for continuation invocation
+        PUSH_SHIFT, CALL, POP_SHIFT, POP_PROMPT for continuation invocation
         """
 
         code = [
@@ -47,7 +48,7 @@ class TestDelimitedContinuations(CevalTest):
             ["CONST", 1],
             ["PUSH_SHIFT", 0],
             ["CONST", 5],
-            ["INVOKE_K", 0],
+            ["CALL", 1],
             ["POP_SHIFT", 0],
             ["OBJECT_ADD", 2],
             ["POP_PROMPT", 0],
@@ -80,18 +81,19 @@ class TestDelimitedContinuations(CevalTest):
         self.assertIn("cannot be called from Python", str(ctx.exception))
 
 
-    async def test_invoke_k_var_lookup_and_invoke(self):
+    async def test_var_store_then_var_call_invokes_delimited(self):
         """
-        INVOKE_K_VAR: shift body stores cont in ns, then INVOKE_K_VAR name
-        invokes it with value. (+ 1 (shift k (do (var-store k k) (invoke-k-var k 5)))) => 6
+        Shift body stores cont in ns, then VAR and CALL invoke it with value.
+        (+ 1 (shift k (do (var-store k k) (k 5)))) => 6
         """
         code = [
             ["PUSH_PROMPT", 0],
             ["CONST", 1],
             ["PUSH_SHIFT", 0],
             ["VAR_STORE", "k"],
+            ["VAR", "k"],
             ["CONST", 5],
-            ["INVOKE_K_VAR", "k"],
+            ["CALL", 1],
             ["POP_SHIFT", 0],
             ["OBJECT_ADD", 2],
             ["POP_PROMPT", 0],
@@ -101,28 +103,6 @@ class TestDelimitedContinuations(CevalTest):
         expr = make_callable(code_obj, ns)
         result = await expr()
         self.assertEqual(result, 6)
-
-
-    async def test_invoke_k_with_non_continuation_raises_type_error(self):
-        """
-        INVOKE_K expects DelimitedContinuation at TOS-1; int => TypeError
-        """
-        code = [
-            ["PUSH_PROMPT", 0],
-            ["PUSH_SHIFT", 0],
-            ["POP", 1],
-            ["CONST", 1],
-            ["CONST", 2],
-            ["INVOKE_K", 0],
-            ["POP_SHIFT", 0],
-            ["POP_PROMPT", 0],
-            ["RETURN", 1],
-        ]
-        code_obj, ns = build_expr(code)
-        expr = make_callable(code_obj, ns)
-        with self.assertRaises(TypeError) as ctx:
-            await expr()
-        self.assertIn("DelimitedContinuation", str(ctx.exception))
 
 
     async def test_delimited_continuation_stored_and_invoked_outside_shift(self):
@@ -138,7 +118,7 @@ class TestDelimitedContinuations(CevalTest):
             ["VAR_STORE", "k"],
             ["VAR", "k"],
             ["CONST", 42],
-            ["INVOKE_K", 0],
+            ["CALL", 1],
             ["RETURN", 1],
         ]
         code_obj, ns = build_expr(code, local_syms=("k",))
@@ -161,7 +141,7 @@ class TestDelimitedContinuations(CevalTest):
             ["VAR_STORE", "k"],
             ["VAR", "k"],
             ["CONST", 99],
-            ["INVOKE_K", 0],
+            ["CALL", 1],
             ["RETURN", 1],
         ]
         code_obj, ns = build_expr(code, local_syms=("k",))

@@ -397,9 +397,9 @@ static int test_eval_try_finally_rerase(void) {
 
 static int test_eval_reset_shift_invoke(void) {
     /*
-      Bytecode: PUSH_PROMPT 0, CONST 1, PUSH_SHIFT 0, CONST 5, INVOKE_K 0,
+      Bytecode: PUSH_PROMPT 0, CONST 1, PUSH_SHIFT 0, CONST 5, CALL 1,
       POP_SHIFT 0, OBJECT_ADD 2, POP_PROMPT 0, RETURN 1.
-      (+ 1 (shift k (k 5))) => 6. Shift body: k on stack, CONST 5, INVOKE_K.
+      (+ 1 (shift k (k 5))) => 6. Shift body: k on stack, CONST 5, CALL 1.
       Continuation: OBJECT_ADD 2 (1+5=6), POP_PROMPT, RETURN.
     */
     PyObject *nspec = NULL;
@@ -435,7 +435,7 @@ static int test_eval_reset_shift_invoke(void) {
     PyList_SET_ITEM(instr, 1, make_instr(KOS_OP_CONST, one));
     PyList_SET_ITEM(instr, 2, make_instr(KOS_OP_PUSH_SHIFT, zero));
     PyList_SET_ITEM(instr, 3, make_instr(KOS_OP_CONST, five));
-    PyList_SET_ITEM(instr, 4, make_instr_int(KOS_OP_INVOKE_K, 0));
+    PyList_SET_ITEM(instr, 4, make_instr_int(KOS_OP_CALL, 1));
     PyList_SET_ITEM(instr, 5, make_instr_int(KOS_OP_POP_SHIFT, 0));
     PyList_SET_ITEM(instr, 6, make_instr_int(KOS_OP_OBJECT_ADD, 2));
     PyList_SET_ITEM(instr, 7, make_instr_int(KOS_OP_POP_PROMPT, 0));
@@ -1150,108 +1150,6 @@ static int test_eval_pop_collect_without_push_collect(void) {
     PyErr_Clear();
     Py_DECREF(instr);
     Py_DECREF(nspec);
-
-    return 0;
-}
-
-
-/* === Test: INVOKE_K stack underrun === */
-
-
-static int test_eval_invoke_k_underrun(void) {
-    /*
-      INVOKE_K needs value and continuation on stack. Empty stack or
-      only one value causes underrun. Expect KOS_EV_RAISE.
-    */
-    PyObject *nspec = create_test_nspec();
-    TEST_ASSERT_NOT_NULL(nspec, "create nspec");
-
-    PyObject *instr = PyList_New(2);
-    PyList_SET_ITEM(instr, 0, make_instr_int(KOS_OP_INVOKE_K, 0));
-    PyList_SET_ITEM(instr, 1, make_instr_int(KOS_OP_RETURN, 0));
-
-    PyObject *code_obj = KosCode_New(nspec, instr, NULL, NULL);
-    TEST_ASSERT_NOT_NULL(code_obj, "create Code");
-
-    Py_DECREF(instr);
-    Py_DECREF(nspec);
-
-    PyObject *ns = PyDict_New();
-    TEST_ASSERT_NOT_NULL(ns, "create ns");
-
-    KosDynFrame *frame = kos_dynframe_new(NULL, (KosCode *) code_obj, ns, NULL);
-    TEST_ASSERT_NOT_NULL(frame, "create frame");
-
-    KosContext *ctx = kos_context_new(frame);
-    TEST_ASSERT_NOT_NULL(ctx, "create context");
-
-    KosEvent ev = {0};
-    int res = koskari_eval(ctx, &ev, NULL, NULL, NULL);
-
-    TEST_ASSERT(res == 0, "koskari_eval succeeded");
-    TEST_ASSERT(ev.kind == KOS_EV_RAISE, "event is RAISE");
-    TEST_ASSERT_NOT_NULL(ev.payload, "payload not NULL");
-
-    Py_XDECREF(ev.payload);
-    Py_XDECREF(ev.exc_type);
-    kos_context_free(ctx);
-    Py_DECREF(code_obj);
-
-    return 0;
-}
-
-
-/* === Test: INVOKE_K wrong type (int as continuation) => TypeError === */
-
-
-static int test_eval_invoke_k_wrong_type(void) {
-    /*
-      INVOKE_K expects DelimitedContinuation at TOS-1; int => TypeError.
-      Stack: value, cont. We use two ints so cont is int.
-    */
-    PyObject *nspec = create_test_nspec();
-    TEST_ASSERT_NOT_NULL(nspec, "create nspec");
-
-    PyObject *five = PyLong_FromLong(5);
-    PyObject *ninety_nine = PyLong_FromLong(99);
-
-    PyObject *instr = PyList_New(4);
-    PyList_SET_ITEM(instr, 0, make_instr(KOS_OP_CONST, ninety_nine));
-    PyList_SET_ITEM(instr, 1, make_instr(KOS_OP_CONST, five));
-    PyList_SET_ITEM(instr, 2, make_instr_int(KOS_OP_INVOKE_K, 0));
-    PyList_SET_ITEM(instr, 3, make_instr_int(KOS_OP_RETURN, 0));
-
-    PyObject *code_obj = KosCode_New(nspec, instr, NULL, NULL);
-    TEST_ASSERT_NOT_NULL(code_obj, "create Code");
-
-    Py_DECREF(five);
-    Py_DECREF(ninety_nine);
-    Py_DECREF(instr);
-    Py_DECREF(nspec);
-
-    PyObject *ns = PyDict_New();
-    TEST_ASSERT_NOT_NULL(ns, "create ns");
-
-    KosDynFrame *frame = kos_dynframe_new(NULL, (KosCode *) code_obj, ns, NULL);
-    TEST_ASSERT_NOT_NULL(frame, "create frame");
-
-    KosContext *ctx = kos_context_new(frame);
-    TEST_ASSERT_NOT_NULL(ctx, "create context");
-
-    KosEvent ev = {0};
-    int res = koskari_eval(ctx, &ev, NULL, NULL, NULL);
-
-    TEST_ASSERT(res == 0, "koskari_eval succeeded");
-    TEST_ASSERT(ev.kind == KOS_EV_RAISE, "event is RAISE");
-    TEST_ASSERT_NOT_NULL(ev.payload, "payload not NULL");
-    TEST_ASSERT(PyErr_GivenExceptionMatches((PyObject *) Py_TYPE(ev.payload),
-                                            PyExc_TypeError),
-                "exception is TypeError");
-
-    Py_XDECREF(ev.payload);
-    Py_XDECREF(ev.exc_type);
-    kos_context_free(ctx);
-    Py_DECREF(code_obj);
 
     return 0;
 }
@@ -2090,8 +1988,6 @@ int run_eval_tests(void) {
     RUN_TEST(test_eval_pop_try_without_push_try);
     RUN_TEST(test_eval_pop_finally_without_push);
     RUN_TEST(test_eval_pop_cc_without_push_cc);
-    RUN_TEST(test_eval_invoke_k_underrun);
-    RUN_TEST(test_eval_invoke_k_wrong_type);
     RUN_TEST(test_eval_call_zero_args);
     RUN_TEST(test_eval_fast_on_dict_ns);
 

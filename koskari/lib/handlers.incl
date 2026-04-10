@@ -192,8 +192,6 @@
 #include "opcode/POP_PROMPT.c"
 #include "opcode/PUSH_SHIFT.c"
 #include "opcode/POP_SHIFT.c"
-#include "opcode/INVOKE_K.c"
-#include "opcode/INVOKE_K_VAR.c"
 #include "opcode/PUSH_CC.c"
 #include "opcode/POP_CC.c"
 #include "opcode/CAPTURE_CC.c"
