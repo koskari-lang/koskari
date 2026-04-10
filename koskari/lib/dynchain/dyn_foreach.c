@@ -1,0 +1,57 @@
+/* Included by dynchain.c — dyn_foreach */
+KosDynForeach *kos_dynforeach_new(KosDynNode *parent, uint32_t break_pc, uint32_t continue_pc) {
+  KosDynForeach *node = kos_dynnode_alloc();
+  if (! node)
+    return NULL;
+  kos_dynnode_init(node, KOS_DYN_FOREACH, parent, 0);
+  KosDynForeach_BREAK_PC(node) = break_pc;
+  KosDynForeach_CONTINUE_PC(node) = continue_pc;
+  KosDynForeach_ENABLED(node) = 1;
+  KosDynForeach_RESULT(node) = NULL;
+  KosDynForeach_ITER(node) = NULL;
+  KosDynForeach_EXHAUSTED(node) = 0;
+  KosDynForeach_ITER_NEXT_ELSE_PC(node) = 0;
+  return node;
+}
+
+KosDynForeach *kos_dynforeach_clone(KosDynForeach *node) {
+  KosDynForeach *clone = kos_dynnode_alloc();
+  if (! clone)
+    return NULL;
+  kos_dynnode_init(clone, KOS_DYN_FOREACH, NULL, KosDynNode_CAPS(node));
+  KosDynNode_FLAGS(clone) = KosDynNode_FLAGS(node) | KOS_DYNF_CLONED;
+  KosDynNode_NODE_ID(clone) = KosDynNode_NODE_ID(node);
+  KosDynForeach_BREAK_PC(clone) = KosDynForeach_BREAK_PC(node);
+  KosDynForeach_CONTINUE_PC(clone) = KosDynForeach_CONTINUE_PC(node);
+  KosDynForeach_ENABLED(clone) = KosDynForeach_ENABLED(node);
+  KosDynForeach_RESULT(clone) = KosDynForeach_RESULT(node);
+  Py_XINCREF(KosDynForeach_RESULT(clone));
+  KosDynForeach_ITER(clone) = KosDynForeach_ITER(node);
+  Py_XINCREF(KosDynForeach_ITER(clone));
+  KosDynForeach_EXHAUSTED(clone) = KosDynForeach_EXHAUSTED(node);
+  KosDynForeach_ITER_NEXT_ELSE_PC(clone) = KosDynForeach_ITER_NEXT_ELSE_PC(node);
+  return clone;
+}
+
+
+void kos_dynforeach_free(KosDynForeach *node) {
+  Py_XDECREF(KosDynForeach_RESULT(node));
+  Py_XDECREF(KosDynForeach_ITER(node));
+  kos_dynnode_return_to_freelist(node);
+}
+
+KosDynForeach *kos_dyn_push_foreach(KosContext *ctx, uint32_t break_pc, uint32_t continue_pc) {
+  KosDynForeach *node = kos_dynforeach_new(KosContext_DYN_TOP(ctx), break_pc, continue_pc);
+  if (! node) return NULL;
+  KosContext_DYN_TOP(ctx) = (KosDynNode *) node;
+  KosContext_CHAIN_VERSION(ctx)++;
+  return node;
+}
+
+void kos_dyn_pop_foreach(KosContext *ctx, KosDynForeach *node) {
+  if (KosContext_DYN_TOP(ctx)==(KosDynNode*)node) {
+    KosContext_DYN_TOP(ctx)=KosDynNode_PARENT(node);
+    KosContext_CHAIN_VERSION(ctx)++;
+    kos_dynforeach_free(node);
+  }
+}

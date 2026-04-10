@@ -296,8 +296,6 @@ OP(PUSH_PROMPT, CONST)         // arg = prompt_id constant pool index
 OP(POP_PROMPT, NOARG)          // pop prompt from dynamic chain
 OP(PUSH_SHIFT, CONST)          // arg = prompt_id; capture continuation, enter shift block
 OP(POP_SHIFT, NOARG)           // pop shift block; return from handler without invoking k
-OP(INVOKE_K, NOARG)            // pop value, pop continuation; invoke delimited continuation
-OP(INVOKE_K_VAR, CONST)        // pop value; lookup name (constant index), invoke that continuation
 
 // undelimited continuation (call/cc) block
 OP(PUSH_CC, NOARG)             // arg = instruction index after POP_CC (resume PC)

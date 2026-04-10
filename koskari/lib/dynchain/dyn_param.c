@@ -1,0 +1,248 @@
+/* Included by dynchain.c — dyn_param */
+/* === KosDynParam implementation === */
+
+
+/* Sentinel for "param was unset" in saved dict; value must not be a valid param value.
+   Initialized in koskari_dynchain_init, cleared in koskari_dynchain_clear. */
+static PyObject *_param_sentinel_unset = NULL;
+
+
+static KosDynParam *kos_dynparam_new_from_bindings(
+    KosDynNode *parent,
+    PyObject *bindings) {
+
+  KosDynParam *node = (KosDynParam *) kos_dynnode_alloc();
+  if (! node) {
+    Py_DECREF(bindings);
+    return NULL;
+  }
+
+  kos_dynnode_init(
+    (KosDynNode *) node,
+    KOS_DYN_PARAM,
+    parent,
+    KOS_DYN_CAP_NEEDS_UNWIND_ACTION | KOS_DYN_CAP_NEEDS_INSTALL_WIND);
+
+  KosDynParam_BINDINGS(node) = bindings;
+  KosDynParam_SAVED(node) = NULL;
+
+  return node;
+}
+
+
+static KosDynParam *kos_dynparam_new(
+    KosDynNode *parent,
+    uint32_t count,
+    PyObject **params,
+    PyObject **values) {
+
+  if (count == 0) {
+    PyErr_SetString(PyExc_ValueError, "KosDynParam requires at least one binding");
+    return NULL;
+  }
+
+  PyObject *bindings = PyDict_New();
+  if (! bindings)
+    return NULL;
+
+  for (uint32_t i = 0; i < count; i++) {
+    PyObject *key = KosParamRef_KEY(params[i]);
+    if (PyDict_SetItem(bindings, key, values[i]) < 0) {
+      Py_DECREF(bindings);
+      return NULL;
+    }
+  }
+
+  return kos_dynparam_new_from_bindings(parent, bindings);
+}
+
+
+static KosDynParam *kos_dynparam_clone(KosDynParam *node) {
+
+  if (! node)
+    return NULL;
+
+  PyObject *bindings = KosDynParam_BINDINGS(node);
+  PyObject *copy = PyDict_Copy(bindings);
+  if (! copy)
+    return NULL;
+
+  KosDynParam *clone = (KosDynParam *) kos_dynnode_alloc();
+  if (! clone) {
+    Py_DECREF(copy);
+    return NULL;
+  }
+
+  kos_dynnode_init((KosDynNode *) clone, KOS_DYN_PARAM, NULL,
+                   KosDynNode_CAPS(node));
+  KosDynNode_FLAGS(clone) = KosDynNode_FLAGS(node) | KOS_DYNF_CLONED;
+  KosDynNode_NODE_ID(clone) = KosDynNode_NODE_ID(node);
+  KosDynParam_BINDINGS(clone) = copy;
+  KosDynParam_SAVED(clone) = NULL;
+
+  return clone;
+}
+
+
+static void kos_dynparam_free(KosDynParam *node) {
+
+  if (! node)
+    return;
+
+  Py_XDECREF(KosDynParam_BINDINGS(node));
+  KosDynParam_BINDINGS(node) = NULL;
+  Py_XDECREF(KosDynParam_SAVED(node));
+  KosDynParam_SAVED(node) = NULL;
+
+  kos_dynnode_return_to_freelist((KosDynNode *) node);
+}
+
+
+static int kos_dynparam_enter(KosContext *ctx, KosDynParam *node) {
+
+  PyObject *domain = KosContext_DOMAIN(ctx);
+  if (! domain) {
+    PyErr_SetString(PyExc_RuntimeError,
+                    "param enter requires active domain");
+    return -1;
+  }
+
+  PyObject *bindings = KosDynParam_BINDINGS(node);
+  PyObject *saved = PyDict_New();
+  if (! saved)
+    return -1;
+
+  PyObject *sentinel = _param_sentinel_unset;
+  if (! sentinel) {
+    Py_DECREF(saved);
+    return -1;
+  }
+
+  PyObject *key;
+  PyObject *value;
+  Py_ssize_t pos = 0;
+
+  while (PyDict_Next(bindings, &pos, &key, &value)) {
+    PyObject *cur = kos_domain_get_param(domain, key);
+    PyObject *to_save = cur ? cur : sentinel;
+    if (PyDict_SetItem(saved, key, to_save) < 0) {
+      Py_XDECREF(cur);
+      Py_DECREF(saved);
+      return -1;
+    }
+    if (cur)
+      Py_DECREF(cur);  /* SetItem holds its own ref */
+    if (kos_domain_set_param(domain, key, value) < 0) {
+      Py_DECREF(saved);
+      return -1;
+    }
+  }
+
+  KosDynParam_SAVED(node) = saved;
+  return 0;
+}
+
+
+static void kos_dynparam_restore(KosContext *ctx, KosDynParam *node) {
+
+  PyObject *domain = KosContext_DOMAIN(ctx);
+  if (! domain)
+    return;
+
+  PyObject *saved = KosDynParam_SAVED(node);
+  if (! saved)
+    return;
+
+  PyObject *sentinel = _param_sentinel_unset;
+  PyObject *key;
+  PyObject *old_val;
+  Py_ssize_t pos = 0;
+
+  while (PyDict_Next(saved, &pos, &key, &old_val)) {
+    if (old_val == sentinel)
+      kos_domain_clear_param(domain, key);
+    else
+      kos_domain_set_param(domain, key, old_val);
+  }
+}
+
+
+int kos_dyn_param_wind(KosContext *ctx, KosDynParam *node) {
+  return kos_dynparam_enter(ctx, node);
+}
+
+
+void kos_dyn_param_unwind(KosContext *ctx, KosDynParam *node) {
+  if (KOS_XFER_TRACE)
+    SAYF("[xfer] param unwind node=%p", (void *) node);
+  kos_dynparam_restore(ctx, node);
+}
+
+
+KosDynParam *kos_dyn_push_param_dict(KosContext *ctx, PyObject *bindings) {
+
+  if (! bindings) {
+    PyErr_SetString(PyExc_ValueError, "kos_dyn_push_param_dict: bindings is NULL");
+    return NULL;
+  }
+  if (! PyDict_CheckExact(bindings)) {
+    PyErr_Format(PyExc_TypeError, "kos_dyn_push_param_dict expected dict, got %R",
+                 bindings);
+    return NULL;
+  }
+  if (PyDict_Size(bindings) == 0) {
+    PyErr_SetString(PyExc_ValueError,
+                    "KosDynParam requires at least one binding");
+    return NULL;
+  }
+
+  KosDynParam *node = kos_dynparam_new_from_bindings(
+      KosContext_DYN_TOP(ctx), bindings);
+  if (! node)
+    return NULL;
+
+  if (kos_dynparam_enter(ctx, node) < 0) {
+    kos_dynparam_free(node);
+    return NULL;
+  }
+
+  KosContext_DYN_TOP(ctx) = (KosDynNode *) node;
+  KosContext_CHAIN_VERSION(ctx)++;
+
+  return node;
+}
+
+
+KosDynParam *kos_dyn_push_param(
+    KosContext *ctx,
+    uint32_t count,
+    PyObject **params,
+    PyObject **values) {
+
+  KosDynParam *node = kos_dynparam_new(KosContext_DYN_TOP(ctx),
+                                       count, params, values);
+  if (! node)
+    return NULL;
+
+  if (kos_dynparam_enter(ctx, node) < 0) {
+    kos_dynparam_free(node);
+    return NULL;
+  }
+
+  KosContext_DYN_TOP(ctx) = (KosDynNode *) node;
+  KosContext_CHAIN_VERSION(ctx)++;
+
+  return node;
+}
+
+
+void kos_dyn_pop_param(KosContext *ctx, KosDynParam *node) {
+  if (! KosContext_DYN_TOP(ctx) || KosContext_DYN_TOP(ctx) != (KosDynNode *) node) {
+    return;
+  }
+
+  kos_dynparam_restore(ctx, node);
+  KosContext_DYN_TOP(ctx) = KosDynNode_PARENT(node);
+  KosContext_CHAIN_VERSION(ctx)++;
+  kos_dynparam_free(node);
+}

@@ -200,7 +200,6 @@ struct KosDynNode {
     } frame;
     struct {
       uint32_t prompt_id;
-      KosStackBlock *stack;  /* prompt-owned operand stack; NULL if not used */
       PyObject *pending_shift_wrapper;  /* KosPyDelimitedContinuation when PUSH_SHIFT plan completed; owned */
     } prompt;
     struct {
@@ -914,6 +913,18 @@ int kos_dyn_detach_top_frame(KosContext *ctx, KosDynFrame **frame_out);
 
 
 /**
+   Return the outermost frame on the parent chain starting from the current
+   acting frame. When the dynamic chain has changed since the last refresh,
+   recomputes KosContext globals_frame and globals_cache_version.
+
+   :param ctx: execution context
+
+   :return: cached globals frame (at least the current frame)
+*/
+KosDynFrame *kos_dyn_globals_frame(KosContext *ctx);
+
+
+/**
    Push a prompt delimiter onto the dynamic chain.
 
    :param ctx: execution context
@@ -934,6 +945,20 @@ KosDynPrompt *kos_dyn_push_prompt(KosContext *ctx, uint32_t prompt_id);
    :param prompt: prompt to pop (must be dyn_top)
 */
 void kos_dyn_pop_prompt(KosContext *ctx, KosDynPrompt *prompt);
+
+
+/**
+   Complete a delimited POP_PROMPT return after kos_dyn_transition succeeds
+   (non-async). Pushes value onto the delimited return frame's stack, sets
+   PC and frame_top, clears invocation and delimited-return fields.
+
+   :param ctx: execution context
+   :param value: return value (consumes a reference on success or failure)
+
+   :return: 0 on success, -1 if ctx, value, delimited_return_frame, or
+      delimited_return_pc is invalid (sets PyExc_RuntimeError)
+*/
+int kos_dyn_finish_delimited_pop_return(KosContext *ctx, PyObject *value);
 
 
 /**
@@ -1051,6 +1076,20 @@ void kos_dyn_pop_try(KosContext *ctx, KosDynTry *node);
 void kos_dyn_pop_finally(KosContext *ctx, KosDynFinally *node);
 void kos_dyn_pop_loop(KosContext *ctx, KosDynLoop *node);
 void kos_dyn_pop_foreach(KosContext *ctx, KosDynForeach *node);
+
+
+/**
+   Undo a successful kos_dyn_push_try/finally/loop/foreach when a follow-up
+   step (e.g. KosStackBlock_PushBlock) fails. region must be the pointer
+   returned from the corresponding push.
+
+   :param ctx: execution context
+   :param region: region node still at dyn_top
+
+   :return: 0 after popping the region; -1 if kind is not TRY/FINALLY/LOOP/FOREACH
+      (does not pop; caller should set PyExc_RuntimeError)
+*/
+int kos_dyn_abort_push_region(KosContext *ctx, KosDynNode *region);
 
 
 /**
@@ -1538,6 +1577,17 @@ KosDynPrompt *kos_find_prompt(KosContext *ctx, uint32_t prompt_id);
 
 
 /**
+   Find the nearest prompt from dyn_top toward the root (first PROMPT on
+   the chain). Unlike kos_find_prompt, does not filter by prompt_id.
+
+   :param ctx: execution context
+
+   :return: innermost prompt, or NULL if none
+*/
+KosDynPrompt *kos_find_nearest_prompt(KosContext *ctx);
+
+
+/**
    Find the topmost CC (call/cc) block on the dynamic chain.
 
    :param ctx: execution context
@@ -1903,7 +1953,6 @@ int kos_transferplan_traverse(
 #define KosDynNode_IS_FINALLY(n) (KosDynNode_KIND(n) == KOS_DYN_FINALLY)
 #define KosDynNode_IS_LOOP(n)    (KosDynNode_KIND(n) == KOS_DYN_LOOP)
 #define KosDynNode_IS_FOREACH(n) (KosDynNode_KIND(n) == KOS_DYN_FOREACH)
-#define KosDynNode_IS_REGION(n)  (KosDynNode_IS_TRY(n) || KosDynNode_IS_FINALLY(n) || KosDynNode_IS_LOOP(n) || KosDynNode_IS_FOREACH(n))
 #define KosDynNode_IS_NS(n)      (KosDynNode_KIND(n) == KOS_DYN_NS)
 #define KosDynNode_IS_COLLECT(n) (KosDynNode_KIND(n) == KOS_DYN_COLLECT)
 #define KosDynNode_IS_CC(n)      (KosDynNode_KIND(n) == KOS_DYN_CC)
@@ -1932,7 +1981,6 @@ int kos_transferplan_traverse(
 #define KosDynFrame_NATIVE_HANDLER(f) (((KosDynNode *)(f))->u.frame.native_handler)
 
 #define KosDynPrompt_ID(p)               (((KosDynNode *)(p))->u.prompt.prompt_id)
-#define KosDynPrompt_STACK(p)            (((KosDynNode *)(p))->u.prompt.stack)
 #define KosDynPrompt_PENDING_SHIFT_WRAPPER(p) (((KosDynNode *)(p))->u.prompt.pending_shift_wrapper)
 
 #define KosDynCC_RESUME_PC(c)     (((KosDynNode *)(c))->u.cc.resume_pc)

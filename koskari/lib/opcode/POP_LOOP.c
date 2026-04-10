@@ -19,44 +19,28 @@
 */
 
 KOS_OP_HANDLER(POP_LOOP) {
-  (void) out_ev;
-  (void) insn;
-
-  if (unlikely(! KosContext_DYN_TOP(ctx) || ! KosDynNode_IS_REGION(KosContext_DYN_TOP(ctx)))) {
-    PyErr_SetString(PyExc_RuntimeError, "POP_LOOP: top is not a region");
-    return KOS_OP_POST_ERR();
-  }
-
   KosDynNode *region = (KosDynNode *) KosContext_DYN_TOP(ctx);
-
-  PyObject *result = NULL;
-  if (KosDynNode_IS_LOOP(region)) {
-    result = KosDynLoop_RESULT((KosDynLoop *) region);
-    KosDynLoop_RESULT((KosDynLoop *) region) = NULL;
-
-    /* Drop the stack block (both LOOP and FOREACH now push blocks) */
-    if (KosStackBlock_DropBlock(&CURRENT_STACK(ctx)) < 0) {
-      Py_DECREF(result);
-      return KOS_OP_POST_ERR();
-    }
-    kos_dyn_pop_loop(ctx, (KosDynLoop *) region);
-
-  } else if (KosDynNode_IS_FOREACH(region)) {
-    result = KosDynForeach_RESULT((KosDynForeach *) region);
-    KosDynLoop_RESULT((KosDynLoop *) region) = NULL;
-
-    /* Drop the stack block (both LOOP and FOREACH now push blocks) */
-    if (KosStackBlock_DropBlock(&CURRENT_STACK(ctx)) < 0) {
-      Py_DECREF(result);
-      return KOS_OP_POST_ERR();
-    }
-    kos_dyn_pop_foreach(ctx, (KosDynForeach *) region);
-
-  } else {
+  if (! region || (! KosDynNode_IS_LOOP(region) && ! KosDynNode_IS_FOREACH(region))) {
     PyErr_SetString(PyExc_RuntimeError,
       "POP_LOOP: top is not a LOOP or FOREACH region");
     return KOS_OP_POST_ERR();
   }
+
+  /* Get result before popping region (region owns the reference) */
+  PyObject *result = (KosDynNode_IS_LOOP(region) ? KosDynLoop_RESULT((KosDynLoop *) region) : KosDynForeach_RESULT((KosDynForeach *) region));
+  Py_INCREF(result);
+
+  /* Drop the stack block (both LOOP and FOREACH now push blocks) */
+  if (KosStackBlock_DropBlock(&CURRENT_STACK(ctx)) < 0) {
+    Py_DECREF(result);
+    return KOS_OP_POST_ERR();
+  }
+
+  /* Pop the region (this DECREFs (KosDynNode_IS_LOOP(region) ? KosDynLoop_RESULT((KosDynLoop *) region) : KosDynForeach_RESULT((KosDynForeach *) region))) */
+  if (KosDynNode_IS_LOOP(region))
+    kos_dyn_pop_loop(ctx, (KosDynLoop *) region);
+  else
+    kos_dyn_pop_foreach(ctx, (KosDynForeach *) region);
 
   /* Push result to stack as loop expression value */
   if (unlikely(KosStackBlock_PushRef(&CURRENT_STACK(ctx), result) < 0)) {

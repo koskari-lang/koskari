@@ -1801,7 +1801,7 @@ static int op_unimplemented_stub(KosContext *ctx, KosEvent *out_ev, KosOp *insn)
    CHECK_* - comparison / jump
    OBJECT_* - object protocol
    PUSH_*, POP_* - blocks, regions, NS
-   SHIFT, INVOKE_K, prompt - continuations
+   SHIFT, CALL on DelimitedContinuation, prompt - continuations
  */
 
 

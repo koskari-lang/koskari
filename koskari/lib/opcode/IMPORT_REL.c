@@ -57,20 +57,9 @@ KOS_OP_HANDLER(IMPORT_REL) {
   if (name == Py_None)
     name = NULL;
 
-  /* Walk the dynamic chain to find the globals (outermost) frame namespace.
-     This is the same logic as the GLOBALS opcode; the globals namespace
-     provides __name__ and __package__ for relative import anchor resolution. */
-  if (KosContext_CHAIN_VERSION(ctx) != KosContext_GLOBALS_CACHE_VERSION(ctx)) {
-    KosDynNode *n = (KosDynNode *) CURRENT_FRAME(ctx);
-    KosDynFrame *outer = CURRENT_FRAME(ctx);
-    while (n && n->parent) {
-      n = n->parent;
-      if (KosDynNode_IS_FRAME(n))
-        outer = (KosDynFrame *) n;
-    }
-    KosContext_GLOBALS_FRAME(ctx) = outer;
-    KosContext_GLOBALS_CACHE_VERSION(ctx) = KosContext_CHAIN_VERSION(ctx);
-  }
+  /* Globals namespace supplies __name__ and __package__ for relative import
+     anchor resolution (same as GLOBALS opcode). */
+  kos_dyn_globals_frame(ctx);
 
   PyObject *globals_ns = KosDynFrame_NS(KosContext_GLOBALS_FRAME(ctx));
 

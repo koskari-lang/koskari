@@ -30,7 +30,6 @@ KOS_OP_HANDLER(POP_SHIFT) {
   KosExtentDesc *prompt_extent;
   uint32_t prompt_pop_pc;
   KosCode *code = CURRENT_CODE(ctx);
-  KosDynNode *node;
   KosDynPrompt *prompt = NULL;
   KosTransferPlan *plan = NULL;
 
@@ -85,15 +84,7 @@ KOS_OP_HANDLER(POP_SHIFT) {
 
   prompt_pop_pc = prompt_extent->pop_pc;
 
-  /* Find the innermost prompt on the chain (matches our SHIFT extent). */
-  node = KosContext_DYN_TOP(ctx);
-  while (node) {
-    if (KosDynNode_IS_PROMPT(node)) {
-      prompt = (KosDynPrompt *) node;
-      break;
-    }
-    node = KosDynNode_PARENT(node);
-  }
+  prompt = kos_find_nearest_prompt(ctx);
   if (! prompt) {
     Py_DECREF(result);
     PyErr_SetString(PyExc_RuntimeError, "POP_SHIFT: no prompt on chain");
