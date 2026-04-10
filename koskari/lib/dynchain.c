@@ -2738,6 +2738,44 @@ KosHandleResult kos_dyn_handle(KosContext *ctx, KosDynNode *node,
 }
 
 
+uint32_t kos_dynnode_raise_handler_pc_for_try_finally(
+    KosContext *ctx,
+    KosDynNode *region) {
+
+  uint32_t handler_pc;
+  KosDynFrame *frame = KosContext_FRAME_TOP(ctx);
+
+  if (KosDynNode_IS_TRY(region))
+    handler_pc = KosDynTry_HANDLER_PC((KosDynTry *) region);
+  else
+    handler_pc = KosDynFinally_HANDLER_PC((KosDynFinally *) region);
+
+  if (frame) {
+    KosTryHandler th;
+    if (kos_try_handler_for((PyObject *) KosDynFrame_CODE(frame),
+                            KosDynFrame_ACTING_PC(frame), &th) == 0) {
+      if (KosDynNode_IS_FINALLY(region) && th.finally_pc != KOS_EXTENT_NONE)
+        handler_pc = th.finally_pc;
+      else if (th.except_pc != KOS_EXTENT_NONE)
+        handler_pc = th.except_pc;
+    }
+  }
+  return handler_pc;
+}
+
+
+uint32_t kos_dynnode_catch_resume_pc(KosDynNode *node) {
+
+  if (! node || ! KosDynNode_HAS_CAP(node, KOS_DYN_CAP_CATCH))
+    return (uint32_t) -1;
+  if (KosDynNode_IS_CC(node))
+    return KosDynCC_RESUME_PC((KosDynCC *) node);
+  if (KosDynNode_IS_WITH_OR_DYN_WITH(node))
+    return KosDynWith_RESUME_PC((KosDynWith *) node);
+  return (uint32_t) -1;
+}
+
+
 static int kos_dyn_gen_freeze_and_release(KosContext *ctx, KosDynGen *gen,
                                           KosEvent *out_ev) {
   KosDynNode *saved_parent;

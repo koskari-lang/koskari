@@ -2403,20 +2403,8 @@ static int try_local_exception_handler(KosContext *ctx, KosEvent *out_ev) {
           return 0;
         }
         KosDynNode *region = top;
-        uint32_t handler_pc = KosDynNode_IS_TRY(region)
-            ? KosDynTry_HANDLER_PC((KosDynTry *) region)
-            : KosDynFinally_HANDLER_PC((KosDynFinally *) region);
-
-        {
-          KosTryHandler th;
-          if (kos_try_handler_for((PyObject *) CURRENT_CODE(ctx),
-                                  CURRENT_ACTING_PC(ctx), &th) == 0) {
-            if (KosDynNode_IS_FINALLY(region) && th.finally_pc != KOS_EXTENT_NONE)
-              handler_pc = th.finally_pc;
-            else if (th.except_pc != KOS_EXTENT_NONE)
-              handler_pc = th.except_pc;
-          }
-        }
+        uint32_t handler_pc =
+            kos_dynnode_raise_handler_pc_for_try_finally(ctx, region);
 
         if (KosDynNode_IS_TRY(region) || KosDynNode_IS_FINALLY(region)) {
           if (KosStackBlock_ClearBlock(&CURRENT_STACK(ctx)) < 0)
@@ -2452,13 +2440,7 @@ static int try_local_exception_handler(KosContext *ctx, KosEvent *out_ev) {
     /* PASS: unwind and pop */
     {
       int top_may_swallow = (top && KosDynNode_HAS_CAP(top, KOS_DYN_CAP_CATCH));
-      uint32_t catch_resume_pc = (uint32_t) -1;
-      if (top && top_may_swallow) {
-        if (KosDynNode_IS_CC(top))
-          catch_resume_pc = KosDynCC_RESUME_PC((KosDynCC *) top);
-        else if (KosDynNode_IS_WITH_OR_DYN_WITH(top))
-          catch_resume_pc = KosDynWith_RESUME_PC((KosDynWith *) top);
-      }
+      uint32_t catch_resume_pc = kos_dynnode_catch_resume_pc(top);
       PyObject *saved_typ = NULL, *saved_val = NULL, *saved_tb = NULL;
       int needs_preserve = (top && KosDynNode_HAS_CAP(top, KOS_DYN_CAP_PRESERVE_ERR_ACROSS_POP))
           || (top && KosDynNode_HAS_CAP(top, KOS_DYN_CAP_BARRIER));

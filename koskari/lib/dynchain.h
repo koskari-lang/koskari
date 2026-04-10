@@ -1321,6 +1321,27 @@ KosHandleResult kos_dyn_handle(KosContext *ctx, KosDynNode *node,
 
 
 /**
+   Resolve bytecode PC after TRY or FINALLY consumed RAISE via
+   kos_dyn_handle.  Merges node handler_pc with kos_try_handler_for
+   extent entries.
+
+   :param region: TRY or FINALLY node (caller must not pass GEN)
+
+   :return: handler PC to branch to
+*/
+uint32_t kos_dynnode_raise_handler_pc_for_try_finally(
+    KosContext *ctx,
+    KosDynNode *region);
+
+
+/**
+   Resume PC when a CATCH-capable node swallows an exception during pop,
+   or (uint32_t)-1 when not applicable
+*/
+uint32_t kos_dynnode_catch_resume_pc(KosDynNode *node);
+
+
+/**
    Walk the dynamic chain from DYN_TOP upward, offering handle(YIELD) to
    each node. Stops when a node returns CONSUMED (generator boundary).
    Used for YIELD transit: the value is in out_ev; GEN intercepts and
