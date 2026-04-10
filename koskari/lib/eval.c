@@ -2909,7 +2909,7 @@ cg_prologue:
 
   #define OP(name, ...)                                                \
     cg_TARGET_##name:                                                  \
-      op_out = op_##name(ctx, out_ev, insn);                           \
+      KOS_TRACE_OP_WRAP(name, op_out = op_##name(ctx, out_ev, insn));  \
       if (likely(op_out.mode == KOS_LOP_RUN)) {                        \
         KosEvalStep _tail = kos_eval_prepare_next_insn(ctx, out_ev,    \
                                                        &insn);         \
@@ -3011,7 +3011,7 @@ koskari_eval_dispatch_switch(KosContext *ctx, KosEvent *out_ev) {
     switch (KosOp_OP(insn)) {
     #define OP(name, ...)                                                \
       case KOS_OP_##name:                                                \
-        op_out = op_##name(ctx, out_ev, insn);                           \
+        KOS_TRACE_OP_WRAP(name, op_out = op_##name(ctx, out_ev, insn));  \
         break;
     #include "opcodes.incl"
     #undef OP

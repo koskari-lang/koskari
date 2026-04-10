@@ -87,10 +87,9 @@ Ref: [interpreter/freeze-thaw-context-segments.md](interpreter/freeze-thaw-conte
 
 ### Profiling compile-time options and runtime hooks
 
-Add profiling support via compile-time options and runtime hooks. Goals:
-timing information for opcodes, the eval loop, and usage of freelists (and
-related allocator caches). Design and implement the knobs and hook points so
-we can measure where time is spent and how freelists behave.
+**Status:** Freelist tracing and **`KOS_TRACE_EVENTS`** (VM/dynchain counters via
+`get_trace_report()["events"]`) are implemented. Remaining work: timing,
+intern cache, and optional opcode-level histograms.
 
 Ref: [api/tracing.md](api/tracing.md).
 

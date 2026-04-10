@@ -1,12 +1,13 @@
 
+import asyncio
+import json
 import koskari
+import koskari.lib as koskari_lib
+import sys
+import time
 
 from churn_p import churn_loop as churn_loop_p, churn_tree as churn_tree_p
 from churn_k import churn_loop as churn_loop_k, churn_tree as churn_tree_k
-
-import asyncio
-import time
-import timeit
 
 RUNS = 10
 
@@ -53,4 +54,25 @@ async def main():
     announce("koskari churn_tree", t, t / RUNS)
 
 
-asyncio.run(main())
+def print_trace_report_if_enabled():
+    """
+    If the extension was built with KOS_TRACE_EVENTS, print get_trace_report()
+    JSON. Event values are cumulative counts, not wall time
+    """
+
+    report = koskari_lib.get_trace_report()
+    if not report.get("flags", {}).get("events"):
+        return
+
+    sys.stdout.flush()
+    print(file=sys.stderr)
+    print(
+        "--- get_trace_report() (events are cumulative counts, not wall time) ---",
+        file=sys.stderr,
+    )
+    print(json.dumps(report, indent=2, default=str))
+
+
+if __name__ == "__main__":
+    asyncio.run(main())
+    print_trace_report_if_enabled()

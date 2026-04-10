@@ -29,7 +29,63 @@
 #include "tracing.h"
 
 #include <stddef.h>
+#include <stdint.h>
+#include <stdlib.h>
 #include <string.h>
+#include <time.h>
+
+
+/* === event counters (VM / dynchain) === */
+
+#if KOS_TRACE_EVENTS
+
+static uint64_t kos_te_counters[KOS_TE__COUNT];
+
+static const char *const kos_te_names[KOS_TE__COUNT] = {
+  "dyn_handle_enter",
+  "dyn_unwind_step",
+  "transfer_plan_build",
+  "raise_local_walk_iter",
+};
+
+
+void kos_trace_events_inc(KosTraceEventId id) {
+  if ((unsigned) id < (unsigned) KOS_TE__COUNT)
+    kos_te_counters[id]++;
+}
+
+#endif
+
+
+/* === per-opcode timing (eval handlers) === */
+
+#if KOS_TRACE_TIMING
+
+typedef struct {
+  uint64_t count;
+  uint64_t total_ns;
+} kos_trace_op_slot_t;
+
+static kos_trace_op_slot_t kos_op_timing[KOS_OP_THEEND + 1];
+
+
+uint64_t kos_trace_now_ns(void) {
+  struct timespec ts;
+
+  if (clock_gettime(CLOCK_MONOTONIC, &ts) != 0)
+    return 0;
+  return (uint64_t) ts.tv_sec * 1000000000ULL + (uint64_t) ts.tv_nsec;
+}
+
+
+void kos_trace_opcode_record(unsigned op, uint64_t delta_ns) {
+  if (op > (unsigned) KOS_OP_THEEND)
+    return;
+  kos_op_timing[op].count++;
+  kos_op_timing[op].total_ns += delta_ns;
+}
+
+#endif
 
 
 /* === freelist counters === */
@@ -105,6 +161,12 @@ void kos_trace_init(void) {
   memset(&fl_stack_block, 0, sizeof(fl_stack_block));
   memset(&fl_pair, 0, sizeof(fl_pair));
 #endif
+#if KOS_TRACE_EVENTS
+  memset(kos_te_counters, 0, sizeof(kos_te_counters));
+#endif
+#if KOS_TRACE_TIMING
+  memset(kos_op_timing, 0, sizeof(kos_op_timing));
+#endif
 }
 
 
@@ -162,6 +224,342 @@ static int add_fl_section(PyObject *report) {
 }
 
 
+#if KOS_TRACE_TIMING
+
+#define KOS_TRACE_OPCODE_TOP_N 10
+
+typedef struct {
+  unsigned idx;
+  uint64_t count;
+  uint64_t total_ns;
+  uint64_t avg_ns;
+} kos_trace_op_aggregate_t;
+
+
+static int cmp_op_agg_total_ns_desc(const void *a, const void *b) {
+  const kos_trace_op_aggregate_t *x = a;
+  const kos_trace_op_aggregate_t *y = b;
+
+  if (x->total_ns < y->total_ns)
+    return 1;
+  if (x->total_ns > y->total_ns)
+    return -1;
+  return 0;
+}
+
+
+static int cmp_op_agg_avg_ns_desc(const void *a, const void *b) {
+  const kos_trace_op_aggregate_t *x = a;
+  const kos_trace_op_aggregate_t *y = b;
+
+  if (x->avg_ns < y->avg_ns)
+    return 1;
+  if (x->avg_ns > y->avg_ns)
+    return -1;
+  return 0;
+}
+
+#endif
+
+
+static int add_events_section(PyObject *report) {
+#if KOS_TRACE_EVENTS
+  PyObject *events = PyDict_New();
+  if (! events)
+    return -1;
+
+  Py_ssize_t i;
+  for (i = 0; i < (Py_ssize_t) KOS_TE__COUNT; i++) {
+    PyObject *n = PyLong_FromUnsignedLongLong(kos_te_counters[i]);
+    if (! n) {
+      Py_DECREF(events);
+      return -1;
+    }
+    if (PyDict_SetItemString(events, kos_te_names[i], n) < 0) {
+      Py_DECREF(n);
+      Py_DECREF(events);
+      return -1;
+    }
+    Py_DECREF(n);
+  }
+
+  if (PyDict_SetItemString(report, "events", events) < 0) {
+    Py_DECREF(events);
+    return -1;
+  }
+  Py_DECREF(events);
+#endif
+  return 0;
+}
+
+
+static int add_opcode_timing_section(PyObject *report) {
+#if KOS_TRACE_TIMING
+  PyObject *ot = NULL;
+  PyObject *summary = NULL;
+  kos_trace_op_aggregate_t aggs[KOS_OP_THEEND + 1];
+  kos_trace_op_aggregate_t tmp[KOS_OP_THEEND + 1];
+  unsigned i;
+  size_t n_agg;
+  uint64_t total_executions;
+  uint64_t total_ns_all;
+  uint64_t avg_ns_per_dispatch;
+  unsigned opcode_count_nonzero;
+  const char *max_total_ns_op;
+  uint64_t max_total_ns;
+  const char *max_avg_ns_op;
+  uint64_t max_avg_ns;
+  int rc = -1;
+
+  ot = PyDict_New();
+  if (! ot)
+    return -1;
+
+  total_executions = 0;
+  total_ns_all = 0;
+  opcode_count_nonzero = 0;
+  max_total_ns_op = "";
+  max_total_ns = 0;
+  max_avg_ns_op = "";
+  max_avg_ns = 0;
+  n_agg = 0;
+
+  for (i = 0; i <= (unsigned) KOS_OP_THEEND; i++) {
+    uint64_t c;
+    uint64_t t;
+    uint64_t avg;
+
+    c = kos_op_timing[i].count;
+    t = kos_op_timing[i].total_ns;
+    if (c == 0)
+      continue;
+
+    total_executions += c;
+    total_ns_all += t;
+    opcode_count_nonzero++;
+
+    if (t > max_total_ns) {
+      max_total_ns = t;
+      max_total_ns_op = kos_opcode_name((KosOpCode) i);
+    }
+
+    avg = t / c;
+    if (avg > max_avg_ns) {
+      max_avg_ns = avg;
+      max_avg_ns_op = kos_opcode_name((KosOpCode) i);
+    }
+
+    aggs[n_agg].idx = i;
+    aggs[n_agg].count = c;
+    aggs[n_agg].total_ns = t;
+    aggs[n_agg].avg_ns = avg;
+    n_agg++;
+  }
+
+  if (total_executions > 0)
+    avg_ns_per_dispatch = total_ns_all / total_executions;
+  else
+    avg_ns_per_dispatch = 0;
+
+  for (i = 0; i <= (unsigned) KOS_OP_THEEND; i++) {
+    PyObject *entry;
+    const char *name;
+    uint64_t c;
+    uint64_t t;
+    uint64_t avg;
+    double share_time;
+    double share_exec;
+    double ratio_mean;
+
+    c = kos_op_timing[i].count;
+    t = kos_op_timing[i].total_ns;
+    if (c == 0)
+      continue;
+
+    avg = t / c;
+    if (total_ns_all > 0)
+      share_time = (double) t / (double) total_ns_all;
+    else
+      share_time = 0.0;
+    if (total_executions > 0)
+      share_exec = (double) c / (double) total_executions;
+    else
+      share_exec = 0.0;
+    if (avg_ns_per_dispatch > 0)
+      ratio_mean = (double) avg / (double) avg_ns_per_dispatch;
+    else
+      ratio_mean = 0.0;
+
+    entry = PyDict_New();
+    if (! entry)
+      goto fail;
+
+    if (PyDict_SetItemString(entry, "count",
+            PyLong_FromUnsignedLongLong(c)) < 0 ||
+        PyDict_SetItemString(entry, "total_ns",
+            PyLong_FromUnsignedLongLong(t)) < 0 ||
+        PyDict_SetItemString(entry, "avg_ns",
+            PyLong_FromUnsignedLongLong(avg)) < 0 ||
+        PyDict_SetItemString(entry, "share_of_time",
+            PyFloat_FromDouble(share_time)) < 0 ||
+        PyDict_SetItemString(entry, "share_of_executions",
+            PyFloat_FromDouble(share_exec)) < 0 ||
+        PyDict_SetItemString(entry, "ratio_vs_mean",
+            PyFloat_FromDouble(ratio_mean)) < 0) {
+      Py_DECREF(entry);
+      goto fail;
+    }
+    name = kos_opcode_name((KosOpCode) i);
+    if (PyDict_SetItemString(ot, name, entry) < 0) {
+      Py_DECREF(entry);
+      goto fail;
+    }
+    Py_DECREF(entry);
+  }
+
+  summary = PyDict_New();
+  if (! summary)
+    goto fail;
+
+  if (PyDict_SetItemString(summary, "total_executions",
+          PyLong_FromUnsignedLongLong(total_executions)) < 0 ||
+      PyDict_SetItemString(summary, "total_ns",
+          PyLong_FromUnsignedLongLong(total_ns_all)) < 0 ||
+      PyDict_SetItemString(summary, "avg_ns_per_dispatch",
+          PyLong_FromUnsignedLongLong(avg_ns_per_dispatch)) < 0 ||
+      PyDict_SetItemString(summary, "opcode_count_nonzero",
+          PyLong_FromUnsignedLong((unsigned long) opcode_count_nonzero)) < 0 ||
+      PyDict_SetItemString(summary, "max_total_ns_op",
+          PyUnicode_FromString(max_total_ns_op)) < 0 ||
+      PyDict_SetItemString(summary, "max_total_ns",
+          PyLong_FromUnsignedLongLong(max_total_ns)) < 0 ||
+      PyDict_SetItemString(summary, "max_avg_ns_op",
+          PyUnicode_FromString(max_avg_ns_op)) < 0 ||
+      PyDict_SetItemString(summary, "max_avg_ns",
+          PyLong_FromUnsignedLongLong(max_avg_ns)) < 0) {
+    goto fail;
+  }
+
+  {
+    PyObject *top_total;
+    PyObject *top_avg;
+    size_t k;
+    size_t lim;
+
+    top_total = PyList_New(0);
+    top_avg = PyList_New(0);
+    if (! top_total || ! top_avg) {
+      Py_XDECREF(top_total);
+      Py_XDECREF(top_avg);
+      goto fail;
+    }
+
+    if (n_agg > 0) {
+      memcpy(tmp, aggs, n_agg * sizeof(kos_trace_op_aggregate_t));
+      qsort(tmp, n_agg, sizeof(kos_trace_op_aggregate_t),
+            cmp_op_agg_total_ns_desc);
+      lim = n_agg;
+      if (lim > (size_t) KOS_TRACE_OPCODE_TOP_N)
+        lim = (size_t) KOS_TRACE_OPCODE_TOP_N;
+      for (k = 0; k < lim; k++) {
+        PyObject *row;
+        const char *opname;
+
+        row = PyDict_New();
+        if (! row) {
+          Py_DECREF(top_total);
+          Py_DECREF(top_avg);
+          goto fail;
+        }
+        opname = kos_opcode_name((KosOpCode) tmp[k].idx);
+        if (PyDict_SetItemString(row, "op",
+                PyUnicode_FromString(opname)) < 0 ||
+            PyDict_SetItemString(row, "total_ns",
+                PyLong_FromUnsignedLongLong(tmp[k].total_ns)) < 0) {
+          Py_DECREF(row);
+          Py_DECREF(top_total);
+          Py_DECREF(top_avg);
+          goto fail;
+        }
+        if (PyList_Append(top_total, row) < 0) {
+          Py_DECREF(row);
+          Py_DECREF(top_total);
+          Py_DECREF(top_avg);
+          goto fail;
+        }
+        Py_DECREF(row);
+      }
+
+      memcpy(tmp, aggs, n_agg * sizeof(kos_trace_op_aggregate_t));
+      qsort(tmp, n_agg, sizeof(kos_trace_op_aggregate_t),
+            cmp_op_agg_avg_ns_desc);
+      lim = n_agg;
+      if (lim > (size_t) KOS_TRACE_OPCODE_TOP_N)
+        lim = (size_t) KOS_TRACE_OPCODE_TOP_N;
+      for (k = 0; k < lim; k++) {
+        PyObject *row;
+        const char *opname;
+
+        row = PyDict_New();
+        if (! row) {
+          Py_DECREF(top_total);
+          Py_DECREF(top_avg);
+          goto fail;
+        }
+        opname = kos_opcode_name((KosOpCode) tmp[k].idx);
+        if (PyDict_SetItemString(row, "op",
+                PyUnicode_FromString(opname)) < 0 ||
+            PyDict_SetItemString(row, "avg_ns",
+                PyLong_FromUnsignedLongLong(tmp[k].avg_ns)) < 0) {
+          Py_DECREF(row);
+          Py_DECREF(top_total);
+          Py_DECREF(top_avg);
+          goto fail;
+        }
+        if (PyList_Append(top_avg, row) < 0) {
+          Py_DECREF(row);
+          Py_DECREF(top_total);
+          Py_DECREF(top_avg);
+          goto fail;
+        }
+        Py_DECREF(row);
+      }
+    }
+
+    if (PyDict_SetItemString(summary, "top_by_total_ns", top_total) < 0 ||
+        PyDict_SetItemString(summary, "top_by_avg_ns", top_avg) < 0) {
+      Py_DECREF(top_total);
+      Py_DECREF(top_avg);
+      goto fail;
+    }
+    Py_DECREF(top_total);
+    Py_DECREF(top_avg);
+  }
+
+  if (PyDict_SetItemString(report, "opcode_timing", ot) < 0)
+    goto fail;
+  Py_DECREF(ot);
+  ot = NULL;
+
+  if (PyDict_SetItemString(report, "opcode_timing_summary", summary) < 0)
+    goto fail;
+  Py_DECREF(summary);
+  summary = NULL;
+
+  rc = 0;
+  return rc;
+
+fail:
+  Py_XDECREF(ot);
+  Py_XDECREF(summary);
+  return -1;
+#else
+  (void) report;
+#endif
+  return 0;
+}
+
+
 PyObject *kos_trace_report(void) {
   PyObject *report = PyDict_New();
   if (! report)
@@ -194,6 +592,16 @@ PyObject *kos_trace_report(void) {
   Py_DECREF(flags);
 
   if (add_fl_section(report) < 0) {
+    Py_DECREF(report);
+    return NULL;
+  }
+
+  if (add_events_section(report) < 0) {
+    Py_DECREF(report);
+    return NULL;
+  }
+
+  if (add_opcode_timing_section(report) < 0) {
     Py_DECREF(report);
     return NULL;
   }

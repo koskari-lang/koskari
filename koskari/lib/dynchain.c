@@ -2675,6 +2675,8 @@ KosHandleResult kos_dyn_handle(KosContext *ctx, KosDynNode *node,
 
   (void) out_ev;
 
+  KOS_TRACE_EVENTS_INC(KOS_TE_DYN_HANDLE_ENTER);
+
   switch (KosDynNode_KIND(node)) {
     case KOS_DYN_TRY:
       if (event == KOS_XFER_EVENT_RAISE) {
@@ -2993,6 +2995,8 @@ static int kos_dyn_pop_one_unwind_walk(
     KosXferEvent event,
     KosEvent *out_ev) {
 
+  KOS_TRACE_EVENTS_INC(KOS_TE_DYN_UNWIND_STEP);
+
   KosDynNode *top = KosContext_DYN_TOP(ctx);
   if (! top) {
     PyErr_SetString(PyExc_RuntimeError,
@@ -3301,6 +3305,8 @@ static int kos_dyn_try_local_raise_body(KosContext *ctx, KosEvent *out_ev) {
   while (CURRENT_FRAME(ctx) && KosContext_DYN_TOP(ctx) != NULL
          && KosContext_DYN_TOP(ctx) != (KosDynNode *) CURRENT_FRAME(ctx)) {
     KosDynNode *top = KosContext_DYN_TOP(ctx);
+
+    KOS_TRACE_EVENTS_INC(KOS_TE_RAISE_LOCAL_WALK_ITER);
 
     SAYF("[try_local] walk top=%p kind=%s\n",
          (void *) top,
@@ -4343,6 +4349,8 @@ int kos_build_transfer_plan(
     int is_throw,
     uint32_t graft_point_id,
     KosTransferPlan **out_plan) {
+
+  KOS_TRACE_EVENTS_INC(KOS_TE_TRANSFER_PLAN_BUILD);
 
   KosDynNode *current = KosContext_DYN_TOP(ctx);
   KosDynNode *lca = kos_compute_lca(current, target, graft_point_id);
