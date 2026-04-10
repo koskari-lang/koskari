@@ -135,8 +135,17 @@ static int apply_native_handler(
 
   /* Walk RETURN to frame (FINALLY may consume). */
   KosDynFrame *detached = NULL;
-  int unw = kos_dyn_walk_return_to_frame(ctx, CURRENT_FRAME(ctx), result,
-                                          out_ev);
+  KosTransitionReq treq = {
+    .kind = KOS_TRANS_WALK_RETURN_TO_FRAME,
+    .target_frame = CURRENT_FRAME(ctx),
+    .payload = result,
+  };
+  KosTransitionResult tres = {0};
+  if (kos_dyn_transition(ctx, &treq, &tres, out_ev) < 0) {
+    Py_DECREF(result);
+    return -1;
+  }
+  int unw = tres.raw;
   if (unw == KOS_DYN_UNWIND_FINALLY_TAKING_RETURN) {
     /* Delivered to finally; eval continues at finally block */
     return 0;

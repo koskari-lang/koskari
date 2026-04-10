@@ -75,8 +75,17 @@ KOS_OP_HANDLER(RETURN) {
     KosDynFrame *detached_frame = NULL;
 
     /* Walk RETURN to frame (handle phase: FINALLY may consume and run). */
-    int unw = kos_dyn_walk_return_to_frame(ctx, CURRENT_FRAME(ctx), val,
-                                            out_ev);
+    KosTransitionReq treq = {
+      .kind = KOS_TRANS_WALK_RETURN_TO_FRAME,
+      .target_frame = CURRENT_FRAME(ctx),
+      .payload = val,
+    };
+    KosTransitionResult tres = {0};
+    if (kos_dyn_transition(ctx, &treq, &tres, out_ev) < 0) {
+      Py_DECREF(val);
+      return KOS_OP_POST_ERR();
+    }
+    int unw = tres.raw;
     if (unw == KOS_DYN_UNWIND_ASYNC_STARTED) {
       KosContext_PENDING_RETURN_VALUE(ctx) = val;
       KosContext_PENDING_RETURN_TO_PARENT(ctx) = 1;
@@ -165,27 +174,38 @@ KOS_OP_HANDLER(RETURN) {
 
   /* === Phase 2c: Top-level return (no parent or parent is GEN) ===
      We are the root frame; returning means the evaluator is done. */
-  int unw = kos_dyn_walk_return_to_frame(ctx, CURRENT_FRAME(ctx), val,
-                                          out_ev);
-  if (unw == KOS_DYN_UNWIND_ASYNC_STARTED) {
-    KosContext_PENDING_RETURN_VALUE(ctx) = val;
-    KosContext_PENDING_RETURN_TO_PARENT(ctx) = 0;
-    return KOS_OP_RUN();
-  }
-  if (unw == KOS_DYN_UNWIND_FINALLY_TAKING_RETURN) {
-    return KOS_OP_RUN();
-  }
-  if (unw < 0) {
-    Py_DECREF(val);
-    return KOS_OP_POST_ERR();
-  }
+  {
+    KosTransitionReq treq = {
+      .kind = KOS_TRANS_WALK_RETURN_TO_FRAME,
+      .target_frame = CURRENT_FRAME(ctx),
+      .payload = val,
+    };
+    KosTransitionResult tres = {0};
+    if (kos_dyn_transition(ctx, &treq, &tres, out_ev) < 0) {
+      Py_DECREF(val);
+      return KOS_OP_POST_ERR();
+    }
+    int unw = tres.raw;
+    if (unw == KOS_DYN_UNWIND_ASYNC_STARTED) {
+      KosContext_PENDING_RETURN_VALUE(ctx) = val;
+      KosContext_PENDING_RETURN_TO_PARENT(ctx) = 0;
+      return KOS_OP_RUN();
+    }
+    if (unw == KOS_DYN_UNWIND_FINALLY_TAKING_RETURN) {
+      return KOS_OP_RUN();
+    }
+    if (unw < 0) {
+      Py_DECREF(val);
+      return KOS_OP_POST_ERR();
+    }
 
-  /* Emit boundary event: eval is complete. */
-  SAYF("[eval] RETURN count=%u -> KOS_EV_RETURN\n", opa);
-  SAYF("[eval] RETURN payload: %R\n", val);
-  KosEvent_KIND(out_ev) = KOS_EV_RETURN;
-  KosEvent_PAYLOAD(out_ev) = val;
-  KosContext_FLAGS(ctx) &= ~KOS_CTX_RUNNING;
-  KosContext_FLAGS(ctx) |= KOS_CTX_DEAD;
-  return KOS_OP_POST_SUSPEND();
+    /* Emit boundary event: eval is complete. */
+    SAYF("[eval] RETURN count=%u -> KOS_EV_RETURN\n", opa);
+    SAYF("[eval] RETURN payload: %R\n", val);
+    KosEvent_KIND(out_ev) = KOS_EV_RETURN;
+    KosEvent_PAYLOAD(out_ev) = val;
+    KosContext_FLAGS(ctx) &= ~KOS_CTX_RUNNING;
+    KosContext_FLAGS(ctx) |= KOS_CTX_DEAD;
+    return KOS_OP_POST_SUSPEND();
+  }
 }

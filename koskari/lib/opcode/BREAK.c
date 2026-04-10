@@ -41,5 +41,17 @@ KOS_OP_HANDLER(BREAK) {
     }
   }
 
-  return kos_op_outcome_from_int_step(kos_dyn_transfer_to_loop(ctx, KOS_XFER_EVENT_BREAK, result, out_ev));
+  {
+    KosTransitionReq treq = {
+      .kind = KOS_TRANS_TRANSFER_TO_LOOP,
+      .xfer_event = KOS_XFER_EVENT_BREAK,
+      .payload = result,
+    };
+    KosTransitionResult tres = {0};
+    if (kos_dyn_transition(ctx, &treq, &tres, out_ev) < 0) {
+      Py_DECREF(result);
+      return KOS_OP_POST_ERR();
+    }
+    return kos_op_outcome_from_int_step(tres.raw);
+  }
 }

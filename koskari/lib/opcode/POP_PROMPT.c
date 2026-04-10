@@ -41,16 +41,26 @@ KOS_OP_HANDLER(POP_PROMPT) {
       SAYF("[eval] POP_PROMPT unwinding to return frame=%p node=%p",
            (void *) KosContext_DELIMITED_RETURN_FRAME(ctx),
            (void *) KosContext_DELIMITED_RETURN_NODE(ctx));
-      int unw;
+      KosTransitionReq treq;
+      KosTransitionResult tres = {0};
       if (KosContext_DELIMITED_RETURN_NODE(ctx) != NULL) {
-        unw = kos_dyn_unwind_to_node(ctx,
-                                     KosContext_DELIMITED_RETURN_NODE(ctx),
-                                     KOS_XFER_EVENT_SHIFT, out_ev);
+        treq = (KosTransitionReq) {
+          .kind = KOS_TRANS_UNWIND_TO_NODE,
+          .xfer_event = KOS_XFER_EVENT_SHIFT,
+          .target_node = KosContext_DELIMITED_RETURN_NODE(ctx),
+        };
       } else {
-        unw = kos_dyn_unwind_to_frame(ctx,
-                                      KosContext_DELIMITED_RETURN_FRAME(ctx),
-                                      KOS_XFER_EVENT_SHIFT, out_ev);
+        treq = (KosTransitionReq) {
+          .kind = KOS_TRANS_UNWIND_TO_FRAME,
+          .xfer_event = KOS_XFER_EVENT_SHIFT,
+          .target_frame = KosContext_DELIMITED_RETURN_FRAME(ctx),
+        };
       }
+      if (kos_dyn_transition(ctx, &treq, &tres, out_ev) < 0) {
+        Py_DECREF(val);
+        return KOS_OP_POST_ERR();
+      }
+      int unw = tres.raw;
       if (unw == KOS_DYN_UNWIND_ASYNC_STARTED) {
         KosContext_PENDING_RETURN_VALUE(ctx) = val;
         KosContext_PENDING_RETURN_TO_PARENT(ctx) = 0;
