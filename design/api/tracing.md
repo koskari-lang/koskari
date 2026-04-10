@@ -14,7 +14,8 @@ cap). The tracing module provides:
 
 - **Compile-time flags** to enable specific features (each has a cost)
 - **Macros** that expand to noops when disabled (zero runtime cost)
-- **Python API** `koskari.lib.get_trace_report()` returning a dict
+- **Python API** `koskari.lib.get_trace_report()` returning a dict, and
+  **`koskari.lib.clear_trace_counters()`** to zero accumulators mid-process
 
 The header `tracing.h` is not included from `lib.h`. Files that use tracing
 macros must include it explicitly (same opt-in pattern as `debug.h`).
@@ -33,7 +34,11 @@ Flags are defaulted in `tracing.h` with `#ifndef`. Override at build time:
 - **setup.py**: `KOS_TRACE_FREELIST=1 python setup.py build_ext` (same pattern for `KOS_TRACE_EVENTS=1`, etc.)
 - **tests.mk**: `make KOS_TRACE_FREELIST=1`
 
-Counters reset in `kos_trace_init()` / `kos_trace_clear()` (module init and clear). For a tracing-enabled build, run code then call `get_trace_report()` in the same process to read totals.
+Counters reset in `kos_trace_init()` / `kos_trace_clear()` (module init and
+clear), and optionally via **`koskari.lib.clear_trace_counters()`** after
+preload so a benchmark window does not include earlier interpreter work. For a
+tracing-enabled build, run code then call `get_trace_report()` in the same
+process to read totals.
 
 ### Churn demo (`tox -e churn-trace`)
 
@@ -60,7 +65,13 @@ PyObject *kos_trace_report(void);/* Returns new ref to dict */
 ```python
 import koskari.lib as lib
 report = lib.get_trace_report()
+lib.clear_trace_counters()  # optional: zero freelist/events/opcode accumulators
 ```
+
+**`clear_trace_counters()`** takes no arguments, returns `None`, and calls the
+same reset as module init and `kos_trace_clear()` (all enabled trace slots).
+Use it immediately before a timed region when import-time work would otherwise
+pollute `get_trace_report()`.
 
 ## Report Structure
 

@@ -74,5 +74,11 @@ def print_trace_report_if_enabled():
 
 
 if __name__ == "__main__":
+    # Trace accumulators include import/setup; clear so the report matches the
+    # benchmarks below, not earlier koskari work
+    koskari_lib.clear_trace_counters()
     asyncio.run(main())
     print_trace_report_if_enabled()
+
+
+# The end.

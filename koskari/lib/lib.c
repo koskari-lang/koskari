@@ -38,9 +38,20 @@ static PyObject *lib_get_trace_report(PyObject *mod, PyObject *unused) {
 }
 
 
+static PyObject *lib_clear_trace_counters(PyObject *mod, PyObject *unused) {
+  (void) mod;
+  (void) unused;
+  kos_trace_clear();
+  Py_RETURN_NONE;
+}
+
+
 static PyMethodDef libmod_methods[] = {
   { "get_trace_report", (PyCFunction) lib_get_trace_report, METH_NOARGS,
     "Return a dict of compile-time tracing report (flags and per-feature data)" },
+  { "clear_trace_counters", (PyCFunction) lib_clear_trace_counters, METH_NOARGS,
+    "Reset all compile-time trace counters/timers for enabled build features "
+    "(same as module init/clear)" },
   { NULL, },
 };
 

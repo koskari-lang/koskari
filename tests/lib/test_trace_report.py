@@ -12,7 +12,8 @@
 # along with this library; if not, see <http://www.gnu.org/licenses/>.
 
 """
-Tests for koskari.lib.get_trace_report and compile-time tracing flags
+Tests for koskari.lib.get_trace_report, clear_trace_counters, and compile-time
+tracing flags
 
 :author: Christopher O'Brien <obriencj@preoccupied.net>
 :license: GNU General Public License v3
@@ -194,6 +195,47 @@ class TestTraceReport(unittest.TestCase):
             self.assertIn("avg_ns", row)
             self.assertIsInstance(row["op"], str)
             self.assertIsInstance(row["avg_ns"], int)
+
+    def test_clear_trace_counters_returns_none(self):
+        """
+        clear_trace_counters is always available and returns None
+        """
+
+        self.assertIsNone(lib.clear_trace_counters())
+        self.assertIsNone(lib.clear_trace_counters())
+
+    def test_clear_trace_counters_resets_timing_when_enabled(self):
+        """
+        When KOS_TRACE_TIMING=1, clear zeros opcode_timing_summary totals
+        """
+
+        if not lib.get_trace_report()["flags"].get("timing"):
+            self.skipTest(
+                "KOS_TRACE_TIMING not enabled; rebuild with KOS_TRACE_TIMING=1"
+            )
+        lib.clear_trace_counters()
+        report = lib.get_trace_report()
+        sm = report["opcode_timing_summary"]
+        self.assertEqual(sm["total_executions"], 0)
+        self.assertEqual(sm["total_ns"], 0)
+        self.assertEqual(sm["avg_ns_per_dispatch"], 0)
+        self.assertEqual(sm["opcode_count_nonzero"], 0)
+        self.assertEqual(report["opcode_timing"], {})
+
+    def test_clear_trace_counters_resets_events_when_enabled(self):
+        """
+        When KOS_TRACE_EVENTS=1, clear zeros all event counters
+        """
+
+        if not lib.get_trace_report()["flags"].get("events"):
+            self.skipTest(
+                "KOS_TRACE_EVENTS not enabled; rebuild with KOS_TRACE_EVENTS=1"
+            )
+        lib.clear_trace_counters()
+        report = lib.get_trace_report()
+        ev = report["events"]
+        for val in ev.values():
+            self.assertEqual(val, 0)
 
 
 if __name__ == "__main__":
