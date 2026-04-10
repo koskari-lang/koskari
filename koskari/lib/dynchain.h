@@ -274,6 +274,11 @@ typedef struct KosDynNode KosDynFrame;
    KosTransitionKind selects which existing dynchain walk or transfer
    kos_dyn_transition dispatches to.  Payload and target fields in
    KosTransitionReq are interpreted per kind.
+
+   Continuation transfer plans (kos_run_transfer_step, run_transfer_plan_to
+   completion, continuation return) remain orchestrated from eval.c; they are
+   not yet modeled as transition kinds.  A future phase may map install or
+   resume steps to dedicated request values without changing plan semantics.
 */
 typedef enum KosTransitionKind {
   KOS_TRANS_WALK_RETURN_TO_FRAME = 0,
@@ -281,6 +286,8 @@ typedef enum KosTransitionKind {
   KOS_TRANS_UNWIND_TO_NODE,
   KOS_TRANS_WALK_HANDLE_YIELD,
   KOS_TRANS_TRANSFER_TO_LOOP,
+  /** Walk TRY/FINALLY on dyn_top; deliver or emit raise (no extra req fields) */
+  KOS_TRANS_TRY_LOCAL_RAISE,
 } KosTransitionKind;
 
 
@@ -293,6 +300,10 @@ typedef enum KosTransitionStatus {
   KOS_TRANS_STATUS_ERROR,
   KOS_TRANS_STATUS_ASYNC_UNWIND,
   KOS_TRANS_STATUS_FINALLY_TAKING_RETURN,
+  /** Local TRY/FINALLY handler took the exception; eval continues */
+  KOS_TRANS_STATUS_HANDLER_APPLIED,
+  /** No local handler; kos_eval_emit_raise_from_pyerr filled out_ev */
+  KOS_TRANS_STATUS_NO_LOCAL_HANDLER,
 } KosTransitionStatus;
 
 

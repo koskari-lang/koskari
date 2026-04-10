@@ -125,8 +125,6 @@ static int defer_drive(KosContext *ctx, KosEvent *out_ev, PyObject *defer_obj);
 static void inject_eval_frame_traceback(KosContext *ctx,
     PyObject **exc_type, PyObject **exc_val, PyObject **exc_tb);
 
-static void kos_eval_emit_raise_from_pyerr(KosContext *ctx, KosEvent *out_ev);
-
 static void kos_eval_mark_context_dead(KosContext *ctx);
 
 static int try_local_exception_handler(KosContext *ctx, KosEvent *out_ev);
@@ -613,7 +611,7 @@ static void kos_eval_mark_context_dead(KosContext *ctx) {
    Move current PyErr into out_ev as KOS_EV_RAISE with injected traceback,
    clear thread error, and mark the context dead.  Call only when PyErr is set.
 */
-static void kos_eval_emit_raise_from_pyerr(
+void kos_eval_emit_raise_from_pyerr(
     KosContext *ctx,
     KosEvent *out_ev) {
 
@@ -754,12 +752,13 @@ static KosEvalMode process_raise(KosContext *ctx, KosEvent *out_ev) {
     return handle_continuation_apply(ctx, out_ev);
   clear_pending_agen_on_error(ctx);
 
-  if (try_local_exception_handler(ctx, out_ev))
-    return KOS_MODE_NORMAL;
-
-  /* try_local_exception_handler already set out_ev and ctx flags when it
-  returned 0 */
-  return KOS_MODE_RAISE;
+  {
+    int tl = try_local_exception_handler(ctx, out_ev);
+    if (tl > 0)
+      return KOS_MODE_NORMAL;
+    /* tl<0: PyErr set; tl==0: out_ev is KOS_EV_RAISE, PyErr cleared */
+    return KOS_MODE_RAISE;
+  }
 }
 
 
@@ -2348,146 +2347,28 @@ static int defer_drive(
    Try to handle an exception locally by finding a TRY or FINALLY region
    and jumping to its handler.  Call when PyErr_Occurred() is set.
 
+   Delegates to kos_dyn_transition(KOS_TRANS_TRY_LOCAL_RAISE).
+
    :param ctx: execution context
    :param out_ev: event to fill if no handler is found
 
    :return: 1 if a handler was applied (caller should continue the loop),
-            0 if no handler (out_ev set to KOS_EV_RAISE, caller should return)
+            0 if no handler (out_ev set to KOS_EV_RAISE, caller should return),
+            -1 on error (PyErr set)
 */
 static int try_local_exception_handler(KosContext *ctx, KosEvent *out_ev) {
-  #if VERBOSE_DEBUG
-  if (! ctx) {
-    SAY("[try_local] ctx=NULL\n");
-  }
-  else if (CURRENT_FRAME(ctx)) {
-    SAYF("[try_local] enter dyn_top=%p frame_top=%p acting_pc=%u stack_len=%zu\n",
-         (void *) KosContext_DYN_TOP(ctx),
-         (void *) CURRENT_FRAME(ctx),
-         (unsigned) CURRENT_ACTING_PC(ctx),
-         (size_t) (CURRENT_STACK(ctx) ? KosStackBlock_LEN(CURRENT_STACK(ctx)) : 0));
-  }
-  else {
-    SAYF("[try_local] enter dyn_top=%p frame_top=NULL\n",
-         (void *) KosContext_DYN_TOP(ctx));
-  }
+  KosTransitionReq req = { .kind = KOS_TRANS_TRY_LOCAL_RAISE };
+  KosTransitionResult res = {0};
 
-  if (CURRENT_FRAME(ctx) && KosContext_DYN_TOP(ctx) != NULL
-      && KosContext_DYN_TOP(ctx) == (KosDynNode *) CURRENT_FRAME(ctx)) {
-    SAYF("[try_local] skip_search dyn_top==frame_top %p\n",
-         (void *) KosContext_DYN_TOP(ctx));
-  }
-  #endif
-
-  PyObject *saved_exc_typ = NULL;
-  PyObject *saved_exc_val = NULL;
-  PyObject *saved_exc_tb = NULL;
-
-  while (CURRENT_FRAME(ctx) && KosContext_DYN_TOP(ctx) != NULL
-         && KosContext_DYN_TOP(ctx) != (KosDynNode *) CURRENT_FRAME(ctx)) {
-    KosDynNode *top = KosContext_DYN_TOP(ctx);
-
-    SAYF("[try_local] walk top=%p kind=%s\n",
-         (void *) top,
-         kos_dynnode_kind_name(KosDynNode_KIND(top)));
-
-    /* Handle phase: offer RAISE to node before unwind.  If consumed,
-       deliver to handler and return.  Otherwise pop and continue. */
-    {
-      KosHandleResult hr = kos_dyn_handle(ctx, top, KOS_XFER_EVENT_RAISE, out_ev);
-      SAYF("[try_local] kos_dyn_handle RAISE hr=%d (%s)\n",
-           (int) hr,
-           hr == KOS_HANDLE_CONSUMED ? "CONSUMED"
-             : hr == KOS_HANDLE_PASS ? "PASS"
-             : hr == KOS_HANDLE_DEFERRED ? "DEFERRED"
-             : hr == KOS_HANDLE_ERROR ? "ERROR" : "?");
-
-      if (hr == KOS_HANDLE_CONSUMED) {
-        if (KosDynNode_IS_GEN(top)) {
-          kos_eval_emit_raise_from_pyerr(ctx, out_ev);
-          return 0;
-        }
-        KosDynNode *region = top;
-        uint32_t handler_pc =
-            kos_dynnode_raise_handler_pc_for_try_finally(ctx, region);
-
-        if (KosDynNode_IS_TRY(region) || KosDynNode_IS_FINALLY(region)) {
-          if (KosStackBlock_ClearBlock(&CURRENT_STACK(ctx)) < 0)
-            return -1;
-        }
-
-        SAYF("[try_local] CONSUMED region=%s handler_pc=%u\n",
-             KosDynNode_IS_TRY(region) ? "TRY" : "FINALLY",
-             (unsigned) handler_pc);
-        CURRENT_PC(ctx) = handler_pc;
-
-        if (KosDynNode_IS_TRY(region))
-          KosDynTry_ENABLED((KosDynTry *) region) = 0;
-        else
-          KosDynFinally_ENABLED((KosDynFinally *) region) = 0;
-
-        {
-          PyObject *typ = NULL, *val = NULL, *tb = NULL;
-          PyErr_Fetch(&typ, &val, &tb);
-          PyErr_SetExcInfo(typ, val, tb);
-          PyErr_Clear();
-        }
-
-        if (KosDynNode_IS_FINALLY(region))
-          KosDynFinally_HANDLING_RAISE((KosDynFinally *) region) = 1;
-        return 1;
-      }
-
-      if (hr == KOS_HANDLE_ERROR)
-        return -1;
-    }
-
-    /* PASS: unwind and pop */
-    {
-      int top_may_swallow = (top && KosDynNode_HAS_CAP(top, KOS_DYN_CAP_CATCH));
-      uint32_t catch_resume_pc = kos_dynnode_catch_resume_pc(top);
-      int needs_preserve = (top && KosDynNode_HAS_CAP(top, KOS_DYN_CAP_PRESERVE_ERR_ACROSS_POP))
-          || (top && KosDynNode_HAS_CAP(top, KOS_DYN_CAP_BARRIER));
-      if (needs_preserve && PyErr_Occurred())
-        PyErr_Fetch(&saved_exc_typ, &saved_exc_val, &saved_exc_tb);
-      int pop_res = kos_dyn_pop_top(ctx, KOS_XFER_EVENT_RAISE, out_ev);
-      if (saved_exc_typ != NULL) {
-        PyErr_Restore(saved_exc_typ, saved_exc_val, saved_exc_tb);
-        saved_exc_typ = saved_exc_val = saved_exc_tb = NULL;
-      }
-      if (pop_res == KOS_DYN_UNWIND_ASYNC_STARTED) {
-        KosContext_UNWIND_TARGET_FRAME(ctx) = CURRENT_FRAME(ctx);
-        return 1;
-      }
-      if (pop_res != 0) {
-        if (top && KosDynNode_HAS_CAP(top, KOS_DYN_CAP_HANDLES_EXCEPTIONS)) {
-          int exc_res = kos_dyn_exception_unwind(ctx, top, out_ev);
-          if (exc_res == KOS_DYN_UNWIND_ASYNC_STARTED) {
-            KosContext_UNWIND_TARGET_FRAME(ctx) = CURRENT_FRAME(ctx);
-            return 1;
-          }
-          if (exc_res == 1)
-            return 1;
-          if (exc_res == 0)
-            continue;
-        }
-        SAY("[try_local] pop/unwind path -> KOS_EV_RAISE\n");
-        kos_eval_emit_raise_from_pyerr(ctx, out_ev);
-        return 0;
-      }
-      if (top_may_swallow && ! PyErr_Occurred()) {
-        if (catch_resume_pc != (uint32_t) -1 && CURRENT_FRAME(ctx))
-          CURRENT_PC(ctx) = catch_resume_pc;
-        return 1;
-      }
-    }
-  }
-
-  /* No handler found */
-  {
-    SAY("[try_local] no handler found -> KOS_EV_RAISE\n");
-    kos_eval_emit_raise_from_pyerr(ctx, out_ev);
+  if (kos_dyn_transition(ctx, &req, &res, out_ev) < 0)
+    return -1;
+  if (res.status == KOS_TRANS_STATUS_HANDLER_APPLIED)
+    return 1;
+  if (res.status == KOS_TRANS_STATUS_NO_LOCAL_HANDLER)
     return 0;
-  }
+  PyErr_SetString(PyExc_RuntimeError,
+                  "try_local_exception_handler: unexpected transition status");
+  return -1;
 }
 
 
@@ -2673,8 +2554,11 @@ static KosEvalStep eval_step_after_process_raise(
     KosEvent *out_ev) {
 
   KosEvalMode raise_mode = process_raise(ctx, out_ev);
-  if (raise_mode == KOS_MODE_RAISE)
+  if (raise_mode == KOS_MODE_RAISE) {
+    if (PyErr_Occurred())
+      return KOS_STEP_FATAL_ERROR;
     return KOS_STEP_STOP_EVENT;
+  }
 
   if (KosEvent_KIND(out_ev) == KOS_EV_AWAIT) {
     KosContext_SUSPENSION_EVENT(ctx) = KOS_SUSP_AWAIT;

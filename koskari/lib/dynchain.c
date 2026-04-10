@@ -1895,6 +1895,7 @@ void kos_dyn_pop_with(KosContext *ctx, KosDynWith *node) {
 
 #define CURRENT_FRAME(ctx)  KosContext_FRAME_TOP(ctx)
 #define CURRENT_STACK(ctx)  KosDynFrame_STACK(CURRENT_FRAME(ctx))
+#define CURRENT_PC(ctx)       KosDynFrame_PC(CURRENT_FRAME(ctx))
 
 
 static int frame_ns_store(KosContext *ctx, PyObject *name, PyObject *val) {
@@ -3263,6 +3264,149 @@ int kos_dyn_transfer_to_loop(KosContext *ctx, KosXferEvent event,
 }
 
 
+/**
+   Try to handle PyErr by finding a TRY or FINALLY region and jumping to its
+   handler.  Same semantics as the former try_local_exception_handler in
+   eval.c: return 1 if a handler was applied, 0 if out_ev was filled with
+   RAISE, -1 on error (PyErr set).
+*/
+static int kos_dyn_try_local_raise_body(KosContext *ctx, KosEvent *out_ev) {
+  #if VERBOSE_DEBUG
+  if (! ctx) {
+    SAY("[try_local] ctx=NULL\n");
+  }
+  else if (CURRENT_FRAME(ctx)) {
+    SAYF("[try_local] enter dyn_top=%p frame_top=%p acting_pc=%u stack_len=%zu\n",
+         (void *) KosContext_DYN_TOP(ctx),
+         (void *) CURRENT_FRAME(ctx),
+         (unsigned) KosDynFrame_ACTING_PC(CURRENT_FRAME(ctx)),
+         (size_t) (CURRENT_STACK(ctx) ? KosStackBlock_LEN(CURRENT_STACK(ctx)) : 0));
+  }
+  else {
+    SAYF("[try_local] enter dyn_top=%p frame_top=NULL\n",
+         (void *) KosContext_DYN_TOP(ctx));
+  }
+
+  if (CURRENT_FRAME(ctx) && KosContext_DYN_TOP(ctx) != NULL
+      && KosContext_DYN_TOP(ctx) == (KosDynNode *) CURRENT_FRAME(ctx)) {
+    SAYF("[try_local] skip_search dyn_top==frame_top %p\n",
+         (void *) KosContext_DYN_TOP(ctx));
+  }
+  #endif
+
+  PyObject *saved_exc_typ = NULL;
+  PyObject *saved_exc_val = NULL;
+  PyObject *saved_exc_tb = NULL;
+
+  while (CURRENT_FRAME(ctx) && KosContext_DYN_TOP(ctx) != NULL
+         && KosContext_DYN_TOP(ctx) != (KosDynNode *) CURRENT_FRAME(ctx)) {
+    KosDynNode *top = KosContext_DYN_TOP(ctx);
+
+    SAYF("[try_local] walk top=%p kind=%s\n",
+         (void *) top,
+         kos_dynnode_kind_name(KosDynNode_KIND(top)));
+
+    /* Handle phase: offer RAISE to node before unwind.  If consumed,
+       deliver to handler and return.  Otherwise pop and continue. */
+    {
+      KosHandleResult hr = kos_dyn_handle(ctx, top, KOS_XFER_EVENT_RAISE, out_ev);
+      SAYF("[try_local] kos_dyn_handle RAISE hr=%d (%s)\n",
+           (int) hr,
+           hr == KOS_HANDLE_CONSUMED ? "CONSUMED"
+             : hr == KOS_HANDLE_PASS ? "PASS"
+             : hr == KOS_HANDLE_DEFERRED ? "DEFERRED"
+             : hr == KOS_HANDLE_ERROR ? "ERROR" : "?");
+
+      if (hr == KOS_HANDLE_CONSUMED) {
+        if (KosDynNode_IS_GEN(top)) {
+          kos_eval_emit_raise_from_pyerr(ctx, out_ev);
+          return 0;
+        }
+        KosDynNode *region = top;
+        uint32_t handler_pc =
+            kos_dynnode_raise_handler_pc_for_try_finally(ctx, region);
+
+        if (KosDynNode_IS_TRY(region) || KosDynNode_IS_FINALLY(region)) {
+          if (KosStackBlock_ClearBlock(&CURRENT_STACK(ctx)) < 0)
+            return -1;
+        }
+
+        SAYF("[try_local] CONSUMED region=%s handler_pc=%u\n",
+             KosDynNode_IS_TRY(region) ? "TRY" : "FINALLY",
+             (unsigned) handler_pc);
+        CURRENT_PC(ctx) = handler_pc;
+
+        if (KosDynNode_IS_TRY(region))
+          KosDynTry_ENABLED((KosDynTry *) region) = 0;
+        else
+          KosDynFinally_ENABLED((KosDynFinally *) region) = 0;
+
+        {
+          PyObject *typ = NULL, *val = NULL, *tb = NULL;
+          PyErr_Fetch(&typ, &val, &tb);
+          PyErr_SetExcInfo(typ, val, tb);
+          PyErr_Clear();
+        }
+
+        if (KosDynNode_IS_FINALLY(region))
+          KosDynFinally_HANDLING_RAISE((KosDynFinally *) region) = 1;
+        return 1;
+      }
+
+      if (hr == KOS_HANDLE_ERROR)
+        return -1;
+    }
+
+    /* PASS: unwind and pop */
+    {
+      int top_may_swallow = (top && KosDynNode_HAS_CAP(top, KOS_DYN_CAP_CATCH));
+      uint32_t catch_resume_pc = kos_dynnode_catch_resume_pc(top);
+      int needs_preserve = (top && KosDynNode_HAS_CAP(top, KOS_DYN_CAP_PRESERVE_ERR_ACROSS_POP))
+          || (top && KosDynNode_HAS_CAP(top, KOS_DYN_CAP_BARRIER));
+      if (needs_preserve && PyErr_Occurred())
+        PyErr_Fetch(&saved_exc_typ, &saved_exc_val, &saved_exc_tb);
+      int pop_res = kos_dyn_pop_top(ctx, KOS_XFER_EVENT_RAISE, out_ev);
+      if (saved_exc_typ != NULL) {
+        PyErr_Restore(saved_exc_typ, saved_exc_val, saved_exc_tb);
+        saved_exc_typ = saved_exc_val = saved_exc_tb = NULL;
+      }
+      if (pop_res == KOS_DYN_UNWIND_ASYNC_STARTED) {
+        KosContext_UNWIND_TARGET_FRAME(ctx) = CURRENT_FRAME(ctx);
+        return 1;
+      }
+      if (pop_res != 0) {
+        if (top && KosDynNode_HAS_CAP(top, KOS_DYN_CAP_HANDLES_EXCEPTIONS)) {
+          int exc_res = kos_dyn_exception_unwind(ctx, top, out_ev);
+          if (exc_res == KOS_DYN_UNWIND_ASYNC_STARTED) {
+            KosContext_UNWIND_TARGET_FRAME(ctx) = CURRENT_FRAME(ctx);
+            return 1;
+          }
+          if (exc_res == 1)
+            return 1;
+          if (exc_res == 0)
+            continue;
+        }
+        SAY("[try_local] pop/unwind path -> KOS_EV_RAISE\n");
+        kos_eval_emit_raise_from_pyerr(ctx, out_ev);
+        return 0;
+      }
+      if (top_may_swallow && ! PyErr_Occurred()) {
+        if (catch_resume_pc != (uint32_t) -1 && CURRENT_FRAME(ctx))
+          CURRENT_PC(ctx) = catch_resume_pc;
+        return 1;
+      }
+    }
+  }
+
+  /* No handler found */
+  {
+    SAY("[try_local] no handler found -> KOS_EV_RAISE\n");
+    kos_eval_emit_raise_from_pyerr(ctx, out_ev);
+    return 0;
+  }
+}
+
+
 int kos_dyn_transition(
     KosContext *ctx,
     const KosTransitionReq *req,
@@ -3360,6 +3504,19 @@ int kos_dyn_transition(
       out->status = KOS_TRANS_STATUS_ERROR;
       return -1;
     }
+    return 0;
+  }
+  case KOS_TRANS_TRY_LOCAL_RAISE: {
+    int r = kos_dyn_try_local_raise_body(ctx, out_ev);
+    out->raw = r;
+    if (r < 0) {
+      out->status = KOS_TRANS_STATUS_ERROR;
+      return -1;
+    }
+    if (r == 1)
+      out->status = KOS_TRANS_STATUS_HANDLER_APPLIED;
+    else
+      out->status = KOS_TRANS_STATUS_NO_LOCAL_HANDLER;
     return 0;
   }
   default:
