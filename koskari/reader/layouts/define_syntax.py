@@ -76,7 +76,6 @@ _symbol_syntax_rules = symbol('syntax-rules')
 _symbol_macro_rules = symbol('macro-rules')
 _symbol_syntax_match = symbol('syntax-match')
 _symbol_macro_match = symbol('macro-match')
-_symbol_rule = symbol('rule')
 _symbol_compile_define_syntax = symbol('compile/define-syntax')
 
 
@@ -191,9 +190,9 @@ def layout_macro_rules(source, peers):
 @layout(symbol('layout/syntax-match'))
 def layout_syntax_match(source, peers):
     """
-    Lower syntax-match block to (syntax-match ((rule PAT) TMPL) ...).
+    Lower syntax-match block to (syntax-match (PAT TMPL) ...).
 
-    No literals list; each pattern is wrapped as (rule PAT).
+    No literals list; each rule is (pattern . (template . nil)).
     """
 
     if peers:
@@ -210,8 +209,7 @@ def layout_syntax_match(source, peers):
     rules = []
     for sub_res, _ in m['rules'].matches:
         pattern, template = _pattern_template_from_rule(sub_res['rule'].source)
-        rule_pattern = cons(_symbol_rule, pattern, nil)
-        rules.append(cons(rule_pattern, template, nil))
+        rules.append(cons(pattern, template, nil))
 
     return cons(_symbol_syntax_match, *rules, nil)
 
@@ -219,10 +217,9 @@ def layout_syntax_match(source, peers):
 @layout(symbol('layout/macro-match'))
 def layout_macro_match(source, peers):
     """
-    Lower macro-match block to (macro-match (rule INNER BODY ...) ...).
+    Lower macro-match block to (macro-match (PATTERN BODY ...) ...).
 
-    Each rule must begin with ``rule`` and a single inner pattern form, then
-    the body forms.
+    Same rule shape as macro-rules blocks: pattern forms then template / body.
     """
 
     if peers:
@@ -238,20 +235,8 @@ def layout_macro_match(source, peers):
 
     rules = []
     for sub_res, _ in m['rules'].matches:
-        rule_src = sub_res['rule'].source
-        rule_parts = list(unpack(rule_src))
-        if len(rule_parts) < 3:
-            raise LayoutError(
-                'macro-match rule must have rule (INNER) and at least one body form',
-                get_position(rule_src))
-        head = rule_parts[0]
-        if not is_symbol(head) or str(head) != 'rule':
-            raise LayoutError(
-                'macro-match rule must begin with rule',
-                get_position(rule_src))
-        inner = rule_parts[1]
-        body_forms = rule_parts[2:]
-        rules.append(cons(_symbol_rule, inner, *body_forms, nil))
+        pattern, template = _pattern_template_from_rule(sub_res['rule'].source)
+        rules.append(cons(pattern, template, nil))
 
     return cons(_symbol_macro_match, *rules, nil)
 

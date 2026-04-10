@@ -25,42 +25,20 @@ Special forms for ``compile/syntax`` and
 
 from ...exceptions import SpecialError
 from ...lib import cons, nil, pair, symbol
-from ...matcher import (BIND, DEFINE, LITERAL_SYM, LIST, MATCH, REPEAT, REST,
-                        VALUE, match)
+from ...matcher import (BIND, DEFINE, LIST, MATCH, REPEAT, REST, VALUE, match,
+                        matcher_slot_names)
 from ...syntax import (SyntaxRule, SyntaxRulesTransformer, _serialize_form,
                        build_syntax_rules_transformer,
-                       collect_pattern_variable_symbols,
                        parse_explicit_rule_pattern, parse_macro_rules_rows)
-from ...types import build_proper, get_position, is_pair, unpack
+from ...types import build_proper, get_position, is_pair
 from ..compiler import Compiler
 from ..helpers import special, special_forms
 
 
-def _macro_rule_lambda_form(vars_ordered, body_forms):
-    """
-    Build (compile/lambda FORMALS BODY) source for a macro-rules row
-
-    :param vars_ordered: ordered pattern variable symbols
-    :param body_forms: list of body expression datums (at least one)
-    :return: proper list whose head is compile/lambda
-    """
-
-    formals_proper = build_proper(*vars_ordered)
-    if len(body_forms) == 1:
-        body_expr = body_forms[0]
-    else:
-        body_expr = cons(symbol("compile/begin"), build_proper(*body_forms))
-
-    return cons(symbol("compile/lambda"), formals_proper, body_expr, nil)
-
-
-
-_SYNTAX_MATCH_RULE_ROW = MATCH(
-    LIST(LITERAL_SYM("rule"), BIND("inner")), VALUE("template"))
+_SYNTAX_MATCH_RULE_ROW = LIST(BIND("pattern"), VALUE("template"))
 SYNTAX_MATCH_RULES_PATTERN = MATCH(REPEAT("rules", _SYNTAX_MATCH_RULE_ROW))
 
-_MACRO_MATCH_RULE_ROW = MATCH(
-    LIST(LITERAL_SYM("rule"), BIND("inner")), REST("body"))
+_MACRO_MATCH_RULE_ROW = LIST(BIND("pattern"), REST("body"))
 MACRO_MATCH_RULES_PATTERN = MATCH(REPEAT("rules", _MACRO_MATCH_RULE_ROW))
 
 # After compile/define-syntax, (compile/<rules-kind> NAME LITERALS . RULES).
@@ -141,6 +119,7 @@ def special_compile_macro_rules(compiler, source, tc=False):
     """
 
     _, rest = source
+
     matched = match(rest, _COMPILE_NAME_LITERALS_RULES)
     if matched is None:
         raise SpecialError(
@@ -156,13 +135,17 @@ def special_compile_macro_rules(compiler, source, tc=False):
     )
     literals_tuple = tuple(
         _serialize_form(x) for x in sorted(literals, key=str))
-    parts = [symbol("build-macro-rules"), str(namesym), literals_tuple]
+
+    parts = []
+
     for pattern_matcher, formals, body_forms in rows:
-        parts.append(
-            (pattern_matcher.to_tuple(),
-             tuple(_serialize_form(x) for x in formals)))
-        parts.append(_macro_rule_lambda_form(formals, body_forms))
-    return build_proper(*parts)
+        parts.append(pattern_matcher.to_tuple())
+        parts.append(cons(symbol("compile/lambda"),
+                          build_proper(*formals), body_forms))
+
+    return cons(symbol("build-macro-rules"),
+                str(namesym), literals_tuple,
+                *parts, nil)
 
 
 @special_forms(_COMPILE_NAME_RULES_TAIL)
@@ -171,7 +154,7 @@ def special_compile_syntax_match(compiler, source, tc=False):
     """
     Compile (compile/syntax-match NAME RULE ...).
 
-    Rule patterns must be (rule INNER); INNER is passed to
+    Rule rows are (PATTERN TEMPLATE); PATTERN is passed to
     parse_explicit_rule_pattern.
 
     Lowers to a (build-syntax-rules ...) call form for recompilation. The
@@ -187,33 +170,27 @@ def special_compile_syntax_match(compiler, source, tc=False):
             source)
 
     namesym = matched["name"].source
-    sym_rule = symbol("rule")
 
     rules_expr = matched["rules"].source
     literals = frozenset({namesym})
 
-    # RULES is a list of ((rule INNER) TEMPLATE) rows; shape errors are a
-    # single failed match, not per-field checks.
+    # RULES is a list of (PATTERN TEMPLATE) rows.
     rules_m = match(rules_expr, SYNTAX_MATCH_RULES_PATTERN)
     if rules_m is None:
         raise SpecialError(
             "syntax-match requires at least one valid rule", rules_expr)
 
-    # Build SyntaxRule objects; raw_rule is reconstructed for error context in
-    # parse_explicit_rule_pattern (same shape as the source row).
     rules = []
     for sub_res, _sp in rules_m["rules"].matches:
-        inner = sub_res["inner"].source
+        pattern_src = sub_res["pattern"].source
         template_expr = sub_res["template"].source
-        pattern_src = cons(sym_rule, inner, nil)
-        raw_rule = cons(pattern_src, template_expr, nil)
-        pattern_matcher = parse_explicit_rule_pattern(
-            inner, literals, raw_rule)
+        pattern_matcher = parse_explicit_rule_pattern(pattern_src)
         rules.append(SyntaxRule(pattern_matcher, template_expr))
 
     # Same emission path as compile/syntax-rules: one build-syntax-rules call.
     transformer = SyntaxRulesTransformer(namesym, literals, tuple(rules))
     tagged = transformer.to_tuple()
+
     return cons(symbol("build-syntax-rules"), str(namesym), tagged, nil)
 
 
@@ -223,7 +200,7 @@ def special_compile_macro_match(compiler, source, tc=False):
     """
     Compile (compile/macro-match NAME RULE ...).
 
-    Rule patterns must be (rule INNER); INNER is passed to
+    Rule rows are (PATTERN BODY...); PATTERN is passed to
     parse_explicit_rule_pattern.
 
     Lowers to a (build-macro-rules ...) call form for recompilation. The
@@ -239,40 +216,29 @@ def special_compile_macro_match(compiler, source, tc=False):
             source)
 
     namesym = matched["name"].source
-    sym_rule = symbol("rule")
 
     rules_expr = matched["rules"].source
-    literals = frozenset({namesym})
 
-    # RULES: ((rule INNER) BODY ...) rows; REST captures all body forms.
     rules_m = match(rules_expr, MACRO_MATCH_RULES_PATTERN)
     if rules_m is None:
         raise SpecialError(
             "macro-match requires at least one valid rule", rules_expr)
 
-    # Per row: explicit rule pattern, then emit like compile/macro-rules.
-    parts = [symbol("build-macro-rules"), str(namesym)]
-    literals_tuple = tuple(
-        _serialize_form(x) for x in sorted(literals, key=str))
-    parts.append(literals_tuple)
+    parts = []
 
     for sub_res, _sp in rules_m["rules"].matches:
-        inner = sub_res["inner"].source
+        pattern_src = sub_res["pattern"].source
         body_src = sub_res["body"].source
-        body_forms = list(unpack(body_src))
-        pattern_src = cons(sym_rule, inner, nil)
-        raw_rule = cons(pattern_src, *body_forms, nil)
-        pattern_matcher = parse_explicit_rule_pattern(
-            inner, literals, raw_rule)
-        vars_ordered = collect_pattern_variable_symbols(inner, literals)
-        formals = tuple(vars_ordered)
 
-        parts.append(
-            (pattern_matcher.to_tuple(),
-             tuple(_serialize_form(x) for x in formals)))
-        parts.append(_macro_rule_lambda_form(formals, body_forms))
+        pattern_matcher = parse_explicit_rule_pattern(pattern_src)
+        vars_ordered = [symbol(n) for n in matcher_slot_names(pattern_matcher)]
 
-    return build_proper(*parts)
+        parts.append(pattern_matcher.to_tuple())
+        parts.append(cons(symbol("compile/lambda"),
+                          build_proper(*vars_ordered), body_src))
+
+    return cons(symbol("build-macro-rules"),
+                str(namesym), (), *parts, nil)
 
 
 # The end.

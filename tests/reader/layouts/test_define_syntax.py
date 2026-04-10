@@ -194,7 +194,7 @@ class TestLayoutDefineSyntax(TestCase):
               x
         """
         rule1 = (
-            (symbol('rule'), (symbol('m'), symbol('x'))),
+            (symbol('m'), symbol('x')),
             (symbol('compile/begin'), symbol('x'),))
         expected = pycons(
             (symbol('compile/define-syntax'),
@@ -208,15 +208,14 @@ class TestLayoutDefineSyntax(TestCase):
         src = """
         define-syntax m:
           macro-match:
-            rule (m x):
+            m x:
               x
         """
         expected = pycons(
             (symbol('compile/define-syntax'),
              symbol('m'),
              (symbol('macro-match'),
-              (symbol('rule'),
-               (symbol('m'), symbol('x')),
+              ((symbol('m'), symbol('x')),
                (symbol('compile/begin'), symbol('x')),))))
         self._assert_layout_parse(src, expected)
 

@@ -15,36 +15,21 @@
 Tests for koskari.syntax (SyntaxRulesTransformer, build_syntax).
 
 Validate expansion output only, using transformers built via tagged tuples.
-
-Helpers for test authors:
-  form('head', arg, ...)     - Build a form; strings become symbols.
-  rule(name, pat, tpl)       - Build transformer with one (pattern, template) rule.
-  expand(transformer, form)  - Expand form through transformer.
-  assert_forms_equal(tc, got, expected)
-  assert_head(tc, form, symbol_name)
-  assert_binding_renamed(tc, let_form, original_name)
-  assert_formal_renamed(tc, lambda_form, original_name)
 """
 
 
 import unittest
 
-from koskari.compile import Compiler
-from koskari.compile.helpers import pycons
-from koskari.compile.specials import SPECIALS
-from koskari.exceptions import CompilerError
-from koskari.syntax import (
-    SyntaxRule,
-    SyntaxRulesTransformer,
-    build_syntax,
-    build_syntax_rules_transformer,
-    syntax_pattern_to_matcher,
-)
-from koskari.lib import car, cdr, cons, nil, symbol
-from koskari.lib import Module, ModuleNamespace
-from koskari.types import is_symbol, unpack
-
 import pytest
+
+from koskari.compile import Compiler
+from koskari.compile.specials import SPECIALS
+from koskari.lib import Module, ModuleNamespace, car, cdr, cons, nil, symbol
+from koskari.syntax import (SyntaxRule, SyntaxRulesTransformer, build_syntax,
+                            build_syntax_rules_transformer,
+                            syntax_pattern_to_matcher)
+from koskari.types import build_proper, is_symbol, unpack
+
 
 pytestmark = pytest.mark.phase_compile
 
@@ -66,41 +51,19 @@ def expand(transformer, input_form):
     return transformer.compile_impl(compiler, input_form, tc=False)
 
 
-def _ensure_form(x):
+def rule(macro_name, pat_form, tpl_form):
     """
-    Convert structure to form; strings become symbols
-    """
-
-    if isinstance(x, str):
-        return symbol(x)
-    if isinstance(x, (tuple, list)):
-        return pycons(tuple(_ensure_form(v) for v in x))
-    return x
-
-
-def form(*parts):
-    """
-    Build a form. Strings become symbols: form('double', 21) -> (double 21)
-    """
-
-    return pycons(tuple(_ensure_form(p) for p in parts))
-
-
-def rule(macro_name, pattern, template):
-    """
-    Build a SyntaxRulesTransformer. Pattern/template strings become symbols
+    Build a SyntaxRulesTransformer from pattern and template cons trees.
     """
 
     name = symbol(macro_name)
     literals = frozenset({name})
-    pat_form = _ensure_form(pattern)
     pat_m = syntax_pattern_to_matcher(pat_form, literals, pat_form)
 
     return SyntaxRulesTransformer(
         name,
         literals,
-        [SyntaxRule(pat_m, _ensure_form(template))],
-
+        [SyntaxRule(pat_m, tpl_form)],
     )
 
 
@@ -145,98 +108,138 @@ def assert_formal_renamed(test_case, lambda_form, original_name):
     test_case.assertNotEqual(str(param), original_name)
 
 
-class TestSyntaxExpansion(unittest.IsolatedAsyncioTestCase):
+class TestSyntaxExpansion(unittest.TestCase):
 
-    async def test_simple_expansion_pattern_var_substituted(self):
-        transformer = rule('double', ('double', 'x'), ('+', 'x', 'x'))
-        expanded = expand(transformer, form('double', 21))
-        expected = form('+', 21, 21)
+    def test_simple_expansion_pattern_var_substituted(self):
+        pat = build_proper(symbol('double'), symbol('x'))
+        tpl = build_proper(symbol('+'), symbol('x'), symbol('x'))
+        transformer = rule('double', pat, tpl)
+        expanded = expand(transformer, build_proper(symbol('double'), 21))
+        expected = build_proper(symbol('+'), 21, 21)
         assert_forms_equal(self, expanded, expected)
 
 
-    async def test_let_hygiene_introduced_symbol_renamed(self):
+    def test_let_hygiene_introduced_symbol_renamed(self):
+        bindings = build_proper(build_proper(symbol('t'), 99))
+        let_tpl = build_proper(
+            symbol('let'),
+            bindings,
+            build_proper(symbol('+'), symbol('t'), symbol('x')),
+        )
         transformer = rule(
             'use-temp',
-            ('use-temp', 'x'),
-            ('let', (('t', 99),), ('+', 't', 'x')),
+            build_proper(symbol('use-temp'), symbol('x')),
+            let_tpl,
         )
-        expanded = expand(transformer, form('use-temp', 5))
+        expanded = expand(transformer, build_proper(symbol('use-temp'), 5))
         assert_head(self, expanded, 'let')
         assert_binding_renamed(self, expanded, 't')
 
 
-    async def test_lambda_hygiene_introduced_param_renamed(self):
+    def test_lambda_hygiene_introduced_param_renamed(self):
         transformer = rule(
             'lambda-inc',
-            ('lambda-inc',),
-            ('compile/lambda', ('n',), ('+', 'n', 1)),
+            build_proper(symbol('lambda-inc')),
+            build_proper(
+                symbol('compile/lambda'),
+                build_proper(symbol('n')),
+                build_proper(symbol('+'), symbol('n'), 1),
+            ),
         )
-        expanded = expand(transformer, form('lambda-inc'))
+        expanded = expand(transformer, build_proper(symbol('lambda-inc')))
         assert_head(self, expanded, 'compile/lambda')
         assert_formal_renamed(self, expanded, 'n')
 
 
-    async def test_build_syntax_from_tagged_tuple_roundtrip(self):
-        transformer = rule('wrap', ('wrap', 'x'), ('list', 'x'))
+    def test_build_syntax_from_tagged_tuple_roundtrip(self):
+        transformer = rule(
+            'wrap',
+            build_proper(symbol('wrap'), symbol('x')),
+            build_proper(symbol('list'), symbol('x')),
+        )
         tagged = transformer.to_tuple()
         rebuilt = build_syntax(symbol('wrap'), tagged)
-        expanded = expand(rebuilt, form('wrap', 99))
-        expected = form('list', 99)
+        expanded = expand(rebuilt, build_proper(symbol('wrap'), 99))
+        expected = build_proper(symbol('list'), 99)
         assert_forms_equal(self, expanded, expected)
 
 
 class TestSyntaxRulesPatternParsing(unittest.TestCase):
 
     def test_match_pattern_equivalent_to_plain(self):
-        rule_plain = form(form('double', 'x'), form('+', 'x', 'x'))
-        rule_match = form(
-            form('match', form('double', 'x')),
-            form('+', 'x', 'x'),
+        rule_plain = build_proper(
+            build_proper(symbol('double'), symbol('x')),
+            build_proper(symbol('+'), symbol('x'), symbol('x')),
+        )
+        rule_match = build_proper(
+            build_proper(
+                symbol('match'),
+                build_proper(symbol('double'), symbol('x')),
+            ),
+            build_proper(symbol('+'), symbol('x'), symbol('x')),
         )
         t_plain = build_syntax_rules_transformer(
             symbol('double'), nil, cons(rule_plain, nil))
         t_match = build_syntax_rules_transformer(
             symbol('double'), nil, cons(rule_match, nil))
-        ex = expand(t_plain, form('double', 21))
-        assert_forms_equal(self, ex, expand(t_match, form('double', 21)))
+        ex = expand(t_plain, build_proper(symbol('double'), 21))
+        assert_forms_equal(
+            self, ex, expand(t_match, build_proper(symbol('double'), 21)))
 
-    def test_rule_pattern_not_implemented(self):
-        rule_bad = form(
-            form('rule', form('double', 'x')),
-            form('+', 'x', 'x'),
+
+    def test_rule_pattern_explicit_value_matcher(self):
+        rule_row = build_proper(
+            build_proper(
+                symbol('double'),
+                build_proper(symbol('VALUE'), symbol('x')),
+            ),
+            build_proper(symbol('+'), symbol('x'), symbol('x')),
         )
-        with self.assertRaises(CompilerError) as ctx:
-            build_syntax_rules_transformer(
-                symbol('double'), nil, cons(rule_bad, nil))
-        self.assertIn('rule pattern mode not implemented', str(ctx.exception))
+        t = build_syntax_rules_transformer(
+            symbol('double'), nil, cons(rule_row, nil), match_patterns=True)
+        ex = expand(t, build_proper(symbol('double'), 21))
+        assert_forms_equal(self, ex, build_proper(symbol('+'), 21, 21))
+
 
     def test_syntax_rule_matcher_roundtrip(self):
         name = symbol('wrap')
         literals = frozenset({name})
-        pat_form = _ensure_form(('wrap', 'x'))
-        tpl = _ensure_form(('list', 'x'))
+        pat_form = build_proper(symbol('wrap'), symbol('x'))
+        tpl = build_proper(symbol('list'), symbol('x'))
         pat_m = syntax_pattern_to_matcher(pat_form, literals, pat_form)
         sr = SyntaxRule(pat_m, tpl)
         sr2 = SyntaxRule.from_tuple(sr.to_tuple())
         tr = SyntaxRulesTransformer(name, literals, [sr2])
-        expanded = expand(tr, form('wrap', 99))
-        assert_forms_equal(self, expanded, form('list', 99))
+        expanded = expand(tr, build_proper(symbol('wrap'), 99))
+        assert_forms_equal(self, expanded, build_proper(symbol('list'), 99))
+
 
     def test_single_var_pattern_binds_whole_form(self):
-        transformer = rule('capture', 'x', ('list', 'x'))
-        expanded = expand(transformer, form('capture', 1, 2, 3))
-        assert_forms_equal(self, expanded, form('list', form('capture', 1, 2, 3)))
+        transformer = rule(
+            'capture',
+            symbol('x'),
+            build_proper(symbol('list'), symbol('x')),
+        )
+        expanded = expand(
+            transformer,
+            build_proper(symbol('capture'), 1, 2, 3))
+        assert_forms_equal(
+            self,
+            expanded,
+            build_proper(symbol('list'), build_proper(symbol('capture'), 1, 2, 3)),
+        )
+
 
     def test_ellipsis_zero_or_more(self):
         transformer = rule(
             'take',
-            ('take', 'x', Ellipsis),
-            ('list', 'x', Ellipsis),
+            build_proper(symbol('take'), symbol('x'), Ellipsis),
+            build_proper(symbol('list'), symbol('x'), Ellipsis),
         )
-        expanded = expand(transformer, form('take', 1, 2))
-        assert_forms_equal(self, expanded, form('list', 1, 2))
-        expanded0 = expand(transformer, form('take'))
-        assert_forms_equal(self, expanded0, form('list'))
+        expanded = expand(transformer, build_proper(symbol('take'), 1, 2))
+        assert_forms_equal(self, expanded, build_proper(symbol('list'), 1, 2))
+        expanded0 = expand(transformer, build_proper(symbol('take')))
+        assert_forms_equal(self, expanded0, build_proper(symbol('list')))
 
 
 # The end.

@@ -61,6 +61,7 @@ __all__ = (
     'is_scope_region_spec',
     'match',
     'match1',
+    'matcher_slot_names',
 
 )
 
@@ -126,6 +127,22 @@ class Matcher(Protocol):
         ...
 
 
+    def get_key(self):
+        """
+        Result dict slot name this matcher writes, or None when it does not bind
+        """
+
+        ...
+
+
+    def children(self):
+        """
+        Child matchers in consume order, or None when there are no children
+        """
+
+        ...
+
+
     @classmethod
     def from_tuple(cls, tup):
         """
@@ -158,6 +175,22 @@ class BindingMatcher(Matcher):
         """
 
         return ()
+
+
+    def get_key(self):
+        """
+        Result dict slot name this matcher writes, or None when it does not bind
+        """
+
+        return None
+
+
+    def children(self):
+        """
+        Child matchers in consume order, or None when there are no children
+        """
+
+        return None
 
 
 # Tag symbols for serialization
@@ -458,6 +491,14 @@ class _LiteralMatcher(Matcher):
         return (_tag_literal, self.value)
 
 
+    def get_key(self):
+        return None
+
+
+    def children(self):
+        return None
+
+
 @matcher(_tag_bind)
 class _BindMatcher(Matcher):
     """
@@ -492,6 +533,14 @@ class _BindMatcher(Matcher):
 
     def to_tuple(self):
         return (_tag_bind, symbol(self._key) if isinstance(self.slot, str) else self.slot)
+
+
+    def get_key(self):
+        return self._key
+
+
+    def children(self):
+        return None
 
 
 @matcher(_tag_bind_sym)
@@ -539,6 +588,10 @@ class _SymbolMatcher(BindingMatcher):
         return (_tag_bind_sym, symbol(self._key) if isinstance(self.slot, str) else self.slot)
 
 
+    def get_key(self):
+        return self._key
+
+
 @matcher(_tag_define)
 class _DefineMatcher(BindingMatcher):
     """
@@ -584,6 +637,10 @@ class _DefineMatcher(BindingMatcher):
 
     def to_tuple(self):
         return (_tag_define, symbol(self._key) if isinstance(self.slot, str) else self.slot)
+
+
+    def get_key(self):
+        return self._key
 
 
 @matcher(_tag_decl)
@@ -634,6 +691,10 @@ class _DeclMatcher(BindingMatcher):
         return (_tag_decl, symbol(self._key) if isinstance(self.slot, str) else self.slot)
 
 
+    def get_key(self):
+        return self._key
+
+
 @matcher(_tag_value)
 class _ValueMatcher(Matcher):
     """
@@ -667,6 +728,14 @@ class _ValueMatcher(Matcher):
 
     def to_tuple(self):
         return (_tag_value, symbol(self._key) if isinstance(self.slot, str) else self.slot)
+
+
+    def get_key(self):
+        return self._key
+
+
+    def children(self):
+        return None
 
 
 @matcher(_tag_rest)
@@ -709,6 +778,14 @@ class _RestMatcher(Matcher):
         return (_tag_rest, symbol(self._key) if isinstance(self.slot, str) else self.slot)
 
 
+    def get_key(self):
+        return self._key
+
+
+    def children(self):
+        return None
+
+
 @matcher(_tag_pair)
 @matcher(_tag_bind_pair)
 class _PairMatcher(Matcher):
@@ -748,6 +825,14 @@ class _PairMatcher(Matcher):
         return (_tag_pair, symbol(self._key) if isinstance(self.slot, str) else self.slot)
 
 
+    def get_key(self):
+        return self._key
+
+
+    def children(self):
+        return None
+
+
 @matcher(_tag_expr)
 class _ExprMatcher(Matcher):
     """
@@ -784,6 +869,14 @@ class _ExprMatcher(Matcher):
 
     def to_tuple(self):
         return (_tag_expr, symbol(self._key) if isinstance(self.slot, str) else self.slot)
+
+
+    def get_key(self):
+        return self._key
+
+
+    def children(self):
+        return None
 
 
 @matcher(_tag_repeat)
@@ -896,6 +989,14 @@ class _RepeatMatcher(BindingMatcher):
                 elem_t)
 
 
+    def get_key(self):
+        return self._key
+
+
+    def children(self):
+        return (self.elem,)
+
+
 @matcher(_tag_match)
 class _MatchMatcher(Matcher):
     """
@@ -938,6 +1039,18 @@ class _MatchMatcher(Matcher):
         if self.key is not None:
             result[self.key] = MatchResult(source, get_position(source))
         return (current, True)
+
+
+    def get_key(self):
+        if self.key is None:
+            return None
+        return str(self.key)
+
+
+    def children(self):
+        if not self.specs:
+            return None
+        return tuple(self.specs)
 
 
     def to_tuple(self):
@@ -990,6 +1103,16 @@ class _ListMatcher(Matcher):
         return (rest, True)
 
 
+    def get_key(self):
+        if self.key is None:
+            return None
+        return str(self.key)
+
+
+    def children(self):
+        return (self.matcher,)
+
+
     def to_tuple(self):
         parts = [s.to_tuple() for s in self.matcher.specs]
         if self.key is not None:
@@ -1036,9 +1159,35 @@ class _AnyOrderMatcher(Matcher):
         return (nil, True)
 
 
+    def get_key(self):
+        return None
+
+
+    def children(self):
+        if not self.specs:
+            return None
+        return tuple(self.specs)
+
+
     def to_tuple(self):
         parts = tuple(s.to_tuple() for s in self.specs)
         return (_tag_any_order,) + parts
+
+
+def matcher_slot_names(matcher):
+    """
+    Match result dict slot names in consume order for this matcher tree
+    """
+
+    out = []
+    ch = matcher.children()
+    if ch is not None:
+        for child in ch:
+            out.extend(matcher_slot_names(child))
+    key = matcher.get_key()
+    if key is not None:
+        out.append(key)
+    return out
 
 
 def from_tuple(tup):

@@ -32,10 +32,10 @@ from .hygiene import (
     expand_template_with_hygiene,
 )
 from .lib import car, cdr, cons, demand_call, gensym, nil, symbol
-from .matcher import (BIND, LIST, LITERAL, MATCH, REPEAT, REST, VALUE, Matcher,
-                      RepeatResult, match)
+from .matcher import (BIND, LIST, LITERAL, MATCH, MATCHERS, REPEAT, REST, VALUE,
+                      Matcher, RepeatResult, match)
 from .matcher import from_tuple as matcher_from_tuple
-from .types import (build_proper, get_position, is_nil, is_pair,
+from .types import (build_proper, get_position, is_keyword, is_nil, is_pair,
                     is_proper, is_symbol, unpack)
 
 
@@ -60,7 +60,8 @@ __all__ = (
 
 
 _symbol_match = symbol("match")
-_symbol_rule = symbol("rule")
+
+_MATCH_STRUCT_TYPE = type(MATCH(LITERAL(symbol('_'))))
 
 
 @dataclass(frozen=True)
@@ -145,25 +146,92 @@ def box_match_capture(value, position_fallback=None):
     return Syntax(d, pos)
 
 
-def parse_explicit_rule_pattern(inner, literals, source_ctx):
+def parse_explicit_rule_pattern(pattern_source):
     """
-    Placeholder for the **MATCH** pattern language (rich explicit-rule inner).
+    Lower **MATCH** pattern source (a cons tree) to a matcher.
 
-    This language is **Koskari surface syntax** for the same expressive matcher
-    IR that specials build with the ``MATCH`` combinator in ``koskari.matcher``.
-    It is **not** a parallel ad-hoc semantics: the aim is **parity** with
-    combinator-built matchers. Distinct from **RULE** patterns
-    (``syntax_pattern_to_matcher``). Used for ``(syntax-match …)`` /
-    ``(macro-match …)`` rows shaped ``((rule INNER) …)`` and for ``(rule INNER)``
-    escapes inside **RULE** patterns once implemented.
+    Surface syntax: implicit literals for bare atoms; explicit declarations are
+    proper lists ``(ATOM binding opt: val ...)`` where ``ATOM`` names a matcher
+    in ``koskari.matcher.MATCHERS`` (via ``matcher/<lower>`` lookup on the
+    symbol name). Distinct from **RULE** patterns
+    (``syntax_pattern_to_matcher``).
 
-    :param inner: Single form inside ``(rule …)``
-    :param literals: Literal symbols for this segment
-    :param source_ctx: Original rule form for error reporting
-    :raises CompilerError: until MATCH parsing is implemented
+    :param pattern_source: Match pattern only (not wrapped in ``rule``)
+    :raises CompilerError: on invalid pattern shape or unknown matcher atom
+    :return: Matcher (typically ``MATCH(...)`` wrapping the pattern sequence)
     """
 
-    raise CompilerError("rule pattern mode not implemented yet", source_ctx)
+    result = _lower_match_pattern_spec(pattern_source)
+    if isinstance(result, _MATCH_STRUCT_TYPE):
+        return result
+    return MATCH(result)
+
+
+def _lower_match_pattern_spec(form):
+    """
+    Lower one pattern position to a matcher spec (no outer ``MATCH`` wrap).
+    """
+
+    if form is Ellipsis:
+        raise CompilerError(
+            'invalid ellipsis in MATCH pattern', form)
+
+    if not is_pair(form):
+        return LITERAL(form)
+
+    if not is_proper(form):
+        raise CompilerError(
+            'MATCH pattern must be a proper list', form)
+
+    head, tail = form
+
+    decl_cls = None
+    decl_bind = None
+    decl_opts = None
+
+    if tail is not nil:
+        decl_bind, decl_opts = tail
+        reg_key = symbol('matcher/' + str(head).lower())
+        if is_symbol(decl_bind) and reg_key in MATCHERS:
+            decl_cls = MATCHERS[reg_key]
+
+    if decl_cls is not None:
+        kwargs = {}
+        optwalk = decl_opts
+        while optwalk is not nil:
+            if not is_pair(optwalk):
+                raise CompilerError(
+                    'MATCH pattern: malformed matcher options',
+                    form)
+            keyw, rest = optwalk
+            if rest is nil:
+                raise CompilerError(
+                    'MATCH pattern: matcher option missing value',
+                    form)
+            val, optwalk = rest
+            if not is_keyword(keyw):
+                raise CompilerError(
+                    'MATCH pattern: expected keyword in matcher options',
+                    form)
+            kwargs[str(keyw)] = val
+        if 'elem' in kwargs:
+            ev = kwargs['elem']
+            if is_pair(ev):
+                kwargs['elem'] = _lower_match_pattern_spec(ev)
+        try:
+            return decl_cls(decl_bind, **kwargs)
+        except TypeError as exc:
+            raise CompilerError(
+                'MATCH pattern: invalid matcher arguments for %s'
+                % (str(head),),
+                form) from exc
+
+    specs = []
+    cur = form
+    while cur is not nil:
+        first, cur = cur
+        specs.append(_lower_match_pattern_spec(first))
+    return MATCH(*specs)
 
 
 def parse_rule_pattern(pattern_expr, literals, source_ctx):
@@ -171,14 +239,11 @@ def parse_rule_pattern(pattern_expr, literals, source_ctx):
     Dispatch **RULE** pattern source (``syntax-rules`` / ``macro-rules``).
 
     If the pattern is ``(match INNER)``, lower ``INNER`` with
-    ``syntax_pattern_to_matcher``. If it is ``(rule INNER)``, delegate to
-    ``parse_explicit_rule_pattern`` (**MATCH**; not implemented yet). Otherwise
-    treat the whole tree as a Scheme-style pattern via
-    ``syntax_pattern_to_matcher``.
+    ``syntax_pattern_to_matcher``. Otherwise treat the whole tree as a
+    Scheme-style pattern via ``syntax_pattern_to_matcher``.
 
-    The **macro spec head** (``syntax-rules`` vs ``syntax-match``, etc.)
-    selects RULE vs MATCH for the whole ruleset; this function only handles the
-    **RULE** pattern column and nested ``match`` / ``rule`` escapes.
+    **MATCH** dialect patterns use :func:`parse_explicit_rule_pattern` at the
+    call site (e.g. ``compile/syntax-match``), not via a ``rule`` wrapper here.
     """
 
     if is_pair(pattern_expr):
@@ -189,13 +254,6 @@ def parse_rule_pattern(pattern_expr, literals, source_ctx):
                     "match pattern must have exactly one form", pattern_expr)
 
             return syntax_pattern_to_matcher(car(rest), literals, source_ctx)
-
-        if head == _symbol_rule:
-            if not is_proper(rest) or cdr(rest) is not nil:
-                raise CompilerError(
-                    "rule pattern must have exactly one form", pattern_expr)
-
-            return parse_explicit_rule_pattern(car(rest), literals, source_ctx)
 
     return syntax_pattern_to_matcher(pattern_expr, literals, source_ctx)
 
@@ -646,8 +704,6 @@ def unbox_macro_with_hygiene(expanded, find_compiled):
 @dataclass
 class MacroRule:
     pattern_matcher: Matcher
-    formals: tuple
-    lambda_form: Any = None
     procedure: Any = None
 
 
@@ -656,20 +712,15 @@ class MacroRule:
         if raw is None:
             return None
 
-        pos_fb = get_position(source_obj) if is_pair(source_obj) else None
-        kwargs = _match_dict_to_syntax_kwargs(raw, position_fallback=pos_fb)
-        if kwargs is None:
-            return None
-
-        for s in self.formals:
-            if s not in kwargs:
-                return None
-
         if self.procedure is None:
             raise CompilerError("internal: macro rule missing procedure")
 
-        args = [_maybe_unwrap_repeat_macro_kwarg(kwargs[s], s) for s in self.formals]
-        return demand_call(self.procedure, *args)
+        pos_fb = get_position(source_obj) if is_pair(source_obj) else None
+
+        kwargs = _match_dict_to_syntax_kwargs(raw, position_fallback=pos_fb)
+        kwargs = {str(k): v for k, v in kwargs.items()}
+
+        return demand_call(self.procedure, **kwargs)
 
 
 @dataclass(frozen=True)
@@ -727,15 +778,23 @@ def build_macro_syntax(name, literals_tuple, *pattern_and_lambdas):
     for i in range(0, len(pattern_and_lambdas), 2):
         pattern_tup = pattern_and_lambdas[i]
         fn = pattern_and_lambdas[i + 1]
-        pm = matcher_from_tuple(pattern_tup[0])
-        formals = tuple(_deserialize_form(x) for x in pattern_tup[1])
-        rules.append(MacroRule(pm, formals, procedure=fn))
+        pm = matcher_from_tuple(pattern_tup)
+        rules.append(MacroRule(pm, procedure=fn))
 
     transformer = MacroRulesTransformer(name, literals, rules)
     return transformer
 
 
-def build_syntax_rules_transformer(name, literals_expr, rules_expr):
+def build_syntax_rules_transformer(
+        name, literals_expr, rules_expr, *, match_patterns=False):
+    """
+    Build a :class:`SyntaxRulesTransformer` from literals and rule forms.
+
+    :param match_patterns: If True, each rule's pattern column is lowered with
+        :func:`parse_explicit_rule_pattern` (MATCH dialect). If False (default),
+        use :func:`parse_rule_pattern` (syntax-rules / ``(match ...)`` escape).
+    """
+
     literals = frozenset(unpack(literals_expr))
     literals = literals | {name}
 
@@ -755,7 +814,10 @@ def build_syntax_rules_transformer(name, literals_expr, rules_expr):
                 "syntax-rules rule must have pattern and template",
                 raw_rule)
         template_expr = car(template_tail)
-        pattern_matcher = parse_rule_pattern(pattern_src, literals, raw_rule)
+        if match_patterns:
+            pattern_matcher = parse_explicit_rule_pattern(pattern_src)
+        else:
+            pattern_matcher = parse_rule_pattern(pattern_src, literals, raw_rule)
         rules.append(SyntaxRule(pattern_matcher, template_expr))
 
     return SyntaxRulesTransformer(name, literals, rules)
@@ -793,14 +855,7 @@ def parse_macro_rules_rows(name, literals_expr, rules_expr):
         if not is_proper(raw_rule):
             raise CompilerError("macro-rules rule must be a proper list", raw_rule)
 
-        items = list(unpack(raw_rule))
-        if len(items) < 2:
-            raise CompilerError(
-                "macro-rules rule needs pattern and at least one body form",
-                raw_rule)
-
-        pattern_src = items[0]
-        body_forms = items[1:]
+        pattern_src, body_forms = raw_rule
         if not body_forms:
             raise CompilerError("macro-rules rule requires a body", raw_rule)
 

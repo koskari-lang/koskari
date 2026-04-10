@@ -19,12 +19,10 @@ import unittest
 
 import pytest
 
-from koskari.compile.specials.syntax import _macro_rule_lambda_form
 from koskari.lib import car, cdr, cons, nil, symbol
 from koskari.matcher import MatchResult
 from koskari.syntax import (Syntax, box_match_capture,
                             collect_pattern_variable_symbols,
-                            parse_macro_rules_rows,
                             unbox_macro_with_hygiene)
 from koskari.types import get_position, is_nil, is_pair, unpack
 
@@ -107,20 +105,6 @@ class TestSyntaxBox(unittest.TestCase):
         out = unbox_macro_with_hygiene(Syntax(symbol('z'), None), lambda _h: None)
         self.assertEqual(out, symbol('z'))
         self.assertFalse(_tree_contains_syntax(out))
-
-
-class TestMacroRules(unittest.TestCase):
-
-    def test_parse_macro_rules_rows_and_lambda_form_is_compile_lambda(self):
-        _rule = cons(
-            cons(symbol('double'), symbol('x'), nil),
-            symbol('x'),
-            nil)
-        literals, rows = parse_macro_rules_rows(symbol('double'), nil, cons(_rule, nil))
-        self.assertIn(symbol('double'), literals)
-        _pattern, formals, body_forms = rows[0]
-        lam = _macro_rule_lambda_form(formals, body_forms)
-        self.assertEqual(car(lam), symbol('compile/lambda'))
 
 
 # The end.
