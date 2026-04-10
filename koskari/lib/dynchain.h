@@ -268,6 +268,75 @@ struct KosDynNode {
 };
 
 typedef struct KosDynNode KosDynFrame;
+
+
+/**
+   KosTransitionKind selects which existing dynchain walk or transfer
+   kos_dyn_transition dispatches to.  Payload and target fields in
+   KosTransitionReq are interpreted per kind.
+
+   Continuation transfer plans (kos_run_transfer_step,
+   run_transfer_plan_to_completion, continuation return) remain orchestrated
+   from eval.c; they are
+   not yet modeled as transition kinds.  A future phase may map install or
+   resume steps to dedicated request values without changing plan semantics.
+*/
+typedef enum KosTransitionKind {
+  KOS_TRANS_WALK_RETURN_TO_FRAME = 0,
+  KOS_TRANS_UNWIND_TO_FRAME,
+  KOS_TRANS_UNWIND_TO_NODE,
+  KOS_TRANS_WALK_HANDLE_YIELD,
+  KOS_TRANS_TRANSFER_TO_LOOP,
+  /** Walk TRY/FINALLY on dyn_top; deliver or emit raise (no extra req fields) */
+  KOS_TRANS_TRY_LOCAL_RAISE,
+} KosTransitionKind;
+
+
+/**
+   Normalized outcome from kos_dyn_transition for callers that should not
+   branch on raw helper return codes.
+*/
+typedef enum KosTransitionStatus {
+  KOS_TRANS_STATUS_OK = 0,
+  KOS_TRANS_STATUS_ERROR,
+  KOS_TRANS_STATUS_ASYNC_UNWIND,
+  KOS_TRANS_STATUS_FINALLY_TAKING_RETURN,
+  /** Local TRY/FINALLY handler took the exception; eval continues */
+  KOS_TRANS_STATUS_HANDLER_APPLIED,
+  /** No local handler; kos_eval_emit_raise_from_pyerr filled out_ev */
+  KOS_TRANS_STATUS_NO_LOCAL_HANDLER,
+} KosTransitionStatus;
+
+
+/**
+   Request for kos_dyn_transition.  Unused pointer fields must be NULL.
+
+   :param kind: which operation to run
+   :param xfer_event: for UNWIND_TO_FRAME, UNWIND_TO_NODE, TRANSFER_TO_LOOP
+   :param target_frame: WALK_RETURN_TO_FRAME, UNWIND_TO_FRAME
+   :param target_node: UNWIND_TO_NODE
+   :param payload: borrowed reference for WALK_RETURN_TO_FRAME (return
+     value); TRANSFER_TO_LOOP steals or uses per kos_dyn_transfer_to_loop
+*/
+typedef struct KosTransitionReq {
+  KosTransitionKind kind;
+  KosXferEvent xfer_event;
+  KosDynFrame *target_frame;
+  KosDynNode *target_node;
+  PyObject *payload;
+} KosTransitionReq;
+
+
+/**
+   Result from kos_dyn_transition.  :c:member:`raw` holds the legacy int
+   return from the underlying helper when useful for debugging.
+*/
+typedef struct KosTransitionResult {
+  KosTransitionStatus status;
+  int raw;
+} KosTransitionResult;
+
+
 typedef struct KosDynNode KosDynPrompt;
 typedef struct KosDynNode KosDynWind;
 typedef struct KosDynNode KosDynTry;
@@ -1321,6 +1390,27 @@ KosHandleResult kos_dyn_handle(KosContext *ctx, KosDynNode *node,
 
 
 /**
+   Resolve bytecode PC after TRY or FINALLY consumed RAISE via
+   kos_dyn_handle.  Merges node handler_pc with kos_try_handler_for
+   extent entries.
+
+   :param region: TRY or FINALLY node (caller must not pass GEN)
+
+   :return: handler PC to branch to
+*/
+uint32_t kos_dynnode_raise_handler_pc_for_try_finally(
+    KosContext *ctx,
+    KosDynNode *region);
+
+
+/**
+   Resume PC when a CATCH-capable node swallows an exception during pop,
+   or (uint32_t)-1 when not applicable
+*/
+uint32_t kos_dynnode_catch_resume_pc(KosDynNode *node);
+
+
+/**
    Walk the dynamic chain from DYN_TOP upward, offering handle(YIELD) to
    each node. Stops when a node returns CONSUMED (generator boundary).
    Used for YIELD transit: the value is in out_ev; GEN intercepts and
@@ -1382,6 +1472,24 @@ KosDynNode *kos_find_node_for_loop(KosContext *ctx);
 */
 int kos_dyn_transfer_to_loop(KosContext *ctx, KosXferEvent event,
                              PyObject *result, struct KosEvent *out_ev);
+
+
+/**
+   Dispatch control transfer to existing dynchain helpers.  Thin wrapper;
+   behavior matches the underlying function for each KosTransitionKind.
+
+   :param req: request; must be non-NULL
+   :param out: result; must be non-NULL
+   :param out_ev: passed to helpers that need it
+
+   :return: 0 on success (including FINALLY_TAKING_RETURN and async
+     start), -1 on error (PyErr set)
+*/
+int kos_dyn_transition(
+    KosContext *ctx,
+    const KosTransitionReq *req,
+    KosTransitionResult *out,
+    struct KosEvent *out_ev);
 
 
 /**

@@ -14,7 +14,8 @@ cap). The tracing module provides:
 
 - **Compile-time flags** to enable specific features (each has a cost)
 - **Macros** that expand to noops when disabled (zero runtime cost)
-- **Python API** `koskari.lib.get_trace_report()` returning a dict
+- **Python API** `koskari.lib.get_trace_report()` returning a dict, and
+  **`koskari.lib.clear_trace_counters()`** to zero accumulators mid-process
 
 The header `tracing.h` is not included from `lib.h`. Files that use tracing
 macros must include it explicitly (same opt-in pattern as `debug.h`).
@@ -25,13 +26,29 @@ macros must include it explicitly (same opt-in pattern as `debug.h`).
 |------|---------|---------|
 | `KOS_TRACE_FREELIST` | 0 | Freelist alloc/return hit/miss/overrun |
 | `KOS_TRACE_INTERN`   | 0 | Atom intern hit/miss (phase 2) |
-| `KOS_TRACE_EVENTS`   | 0 | Event counting (phase 2) |
-| `KOS_TRACE_TIMING`   | 0 | Timing data (phase 2) |
+| `KOS_TRACE_EVENTS`   | 0 | VM / dynchain event counters (`events` report key) |
+| `KOS_TRACE_TIMING`   | 0 | Per-opcode handler time (`opcode_timing` report key) |
 
 Flags are defaulted in `tracing.h` with `#ifndef`. Override at build time:
 
-- **setup.py**: `KOS_TRACE_FREELIST=1 python setup.py build_ext`
+- **setup.py**: `KOS_TRACE_FREELIST=1 python setup.py build_ext` (same pattern for `KOS_TRACE_EVENTS=1`, etc.)
 - **tests.mk**: `make KOS_TRACE_FREELIST=1`
+
+Counters reset in `kos_trace_init()` / `kos_trace_clear()` (module init and
+clear), and optionally via **`koskari.lib.clear_trace_counters()`** after
+preload so a benchmark window does not include earlier interpreter work. For a
+tracing-enabled build, run code then call `get_trace_report()` in the same
+process to read totals.
+
+### Churn demo (`tox -e churn-trace`)
+
+The **`churn-trace`** tox environment rebuilds the native module with
+`KOS_TRACE_EVENTS=1` and runs [`examples/churn/churn.py`](../../examples/churn/churn.py).
+After the benchmarks, that script prints `get_trace_report()` as JSON when the
+extension was built with event tracing. Wall-clock per phase still comes from
+the churn script's own output; the report **`events`** values are **cumulative
+counts** (not seconds). Use `tox -r -e churn-trace` if you need to force a clean
+rebuild after toggling trace flags.
 
 ## API
 
@@ -48,7 +65,13 @@ PyObject *kos_trace_report(void);/* Returns new ref to dict */
 ```python
 import koskari.lib as lib
 report = lib.get_trace_report()
+lib.clear_trace_counters()  # optional: zero freelist/events/opcode accumulators
 ```
+
+**`clear_trace_counters()`** takes no arguments, returns `None`, and calls the
+same reset as module init and `kos_trace_clear()` (all enabled trace slots).
+Use it immediately before a timed region when import-time work would otherwise
+pollute `get_trace_report()`.
 
 ## Report Structure
 
@@ -65,8 +88,9 @@ report = lib.get_trace_report()
 }
 ```
 
-The `flags` dict always reflects the build-time state of each feature. No
-other keys are present when all features are off.
+The `flags` dict always reflects the build-time state of each feature. When
+all optional sections are disabled, no `freelists`, `events`,
+`opcode_timing`, or `opcode_timing_summary` keys are present (only `flags`).
 
 ### When freelist tracing is enabled (`KOS_TRACE_FREELIST=1`)
 
@@ -82,6 +106,66 @@ other keys are present when all features are off.
     }
 }
 ```
+
+### When event tracing is enabled (`KOS_TRACE_EVENTS=1`)
+
+The report includes an **`events`** dict mapping string keys to non-negative
+integer counts (implemented as `uint64_t` in C, exposed as Python `int`).
+
+| Key | Meaning |
+|-----|---------|
+| **dyn_handle_enter** | Calls to `kos_dyn_handle` (control transfer offer to a chain node). |
+| **dyn_unwind_step** | Steps in `kos_dyn_pop_one_unwind_walk` (unwind/return walks that pop one node). |
+| **transfer_plan_build** | Calls to `kos_build_transfer_plan`. |
+| **raise_local_walk_iter** | Iterations of the walk in `kos_dyn_try_local_raise_body` (local exception handler search). |
+
+Add new counters in `tracing.h` (`KosTraceEventId`) and `tracing.c` (names
+array) only by appending entries; do not reorder existing ids.
+
+C code increments via `KOS_TRACE_EVENTS_INC(KOS_TE_...)` from `tracing.h`.
+
+### When opcode timing is enabled (`KOS_TRACE_TIMING=1`)
+
+The report includes **`opcode_timing`** and **`opcode_timing_summary`**.
+
+#### `opcode_timing`
+
+Keys are opcode names (same strings as `kos_opcode_name`). Values are objects
+with:
+
+| Field | Type | Meaning |
+|-------|------|---------|
+| **count** | `int` | How many times that opcode’s handler ran. |
+| **total_ns** | `int` | Sum of elapsed time inside the handler (nanoseconds, `CLOCK_MONOTONIC` on POSIX). |
+| **avg_ns** | `int` | `total_ns // count` (integer division; only opcodes with `count > 0` appear). |
+| **share_of_time** | `float` | `total_ns / total_ns_all` over all timed opcodes, or `0.0` if there is no time recorded. |
+| **share_of_executions** | `float` | `count / total_executions` over all timed opcodes, or `0.0` if there are no executions. |
+| **ratio_vs_mean** | `float` | `avg_ns / avg_ns_per_dispatch`, where `avg_ns_per_dispatch` is `total_ns_all // total_executions` (see summary); `0.0` if `total_executions` is zero or the mean dispatch time is zero. |
+
+Timing is recorded around each `op_*` call in both eval dispatch loops
+(computed goto and switch); it does not include `prepare_next_insn` or
+`eval_phase_post_opcode` work.
+
+C code uses `KOS_TRACE_OP_WRAP(name, op_out = op_##name(...))` in `eval.c`
+(via `tracing.h`).
+
+#### `opcode_timing_summary`
+
+Aggregates and ranked lists (top **10** entries per list, constant
+`KOS_TRACE_OPCODE_TOP_N` in `tracing.c`):
+
+| Field | Type | Meaning |
+|-------|------|---------|
+| **total_executions** | `int` | Sum of all per-opcode `count` values. |
+| **total_ns** | `int` | Sum of all per-opcode `total_ns` values (same as `total_ns_all` used in shares). |
+| **avg_ns_per_dispatch** | `int` | `total_ns // total_executions`, or `0` if `total_executions` is `0`. |
+| **opcode_count_nonzero** | `int` | Number of opcode indices with at least one execution. |
+| **max_total_ns_op** | `str` | Name of the opcode with the largest `total_ns` (empty string if none). |
+| **max_total_ns** | `int` | That largest `total_ns` value (`0` if none). |
+| **max_avg_ns_op** | `str` | Name of the opcode with the largest `avg_ns` among ops with `count > 0` (empty string if none). |
+| **max_avg_ns** | `int` | That largest `avg_ns` (`0` if none). |
+| **top_by_total_ns** | `list` | Up to 10 `{"op": str, "total_ns": int}` objects, sorted by `total_ns` descending. |
+| **top_by_avg_ns** | `list` | Up to 10 `{"op": str, "avg_ns": int}` objects, sorted by `avg_ns` descending. |
 
 ## Freelist Counter Meanings
 
@@ -112,15 +196,21 @@ Each freelist entry has four counters:
 
 ## Instrumentation Points
 
-Files that include `tracing.h` and use `KOS_TRACE_FL_ALLOC` / `KOS_TRACE_FL_RETURN`:
+**Freelist** — files that include `tracing.h` and use `KOS_TRACE_FL_ALLOC` / `KOS_TRACE_FL_RETURN`:
 
 - **dynchain.c** — `kos_dynnode_alloc`, `kos_dynnode_return_to_freelist`; `kos_continuation_create`, `kos_continuation_free_exclude`, `xfer_plan_release_invoke_clone`
 - **eval.c** — `kos_context_new`, `kos_context_free`, and context release on allocation failure
 - **stack.c** — `KosStackBlock_New`, `KosStackBlock_NewSized`, `KosStackBlock_ReleaseExclude`
 - **pair.c** — `KosPair_New`, `pair_dealloc`
 
+**Events** — `KOS_TRACE_EVENTS_INC` in **dynchain.c** at `kos_dyn_handle`,
+`kos_dyn_pop_one_unwind_walk`, `kos_build_transfer_plan`, and
+`kos_dyn_try_local_raise_body` (see table above).
+
+**Opcode timing** — `KOS_TRACE_OP_WRAP` in **eval.c** dispatch
+(`koskari_eval_dispatch_computed_goto` and `koskari_eval_dispatch_switch`).
+
 ## Future Phases
 
 - **KOS_TRACE_INTERN**: Symbol and keyword intern cache hit/miss
-- **KOS_TRACE_EVENTS**: Opcode dispatch counts, Python call counts, etc.
-- **KOS_TRACE_TIMING**: Wall-clock or cycle timing for eval runs, per-opcode sampling
+- **KOS_TRACE_EVENTS**: Additional counters as needed

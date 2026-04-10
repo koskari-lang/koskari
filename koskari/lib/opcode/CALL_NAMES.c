@@ -61,5 +61,5 @@ KOS_OP_HANDLER(CALL_NAMES) {
     return KOS_OP_POST_ERR();
 
   KosStackBlock_DropNoErr(stack, ntotal);
-  return kos_op_outcome_from_push_int(kos_push_or_await(ctx, out_ev, result));
+  return kos_op_outcome_from_push_int(op_push_or_await(ctx, out_ev, result));
 }

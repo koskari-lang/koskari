@@ -773,9 +773,21 @@ int kos_tail_koscall(KosContext *ctx, KosCode *code, PyObject *ns);
    val is consumed (ownership transferred). Internal helper; stolen refs
    are acceptable here.
 
+   CALL* opcodes use a separate eval.c entry (op_push_or_await) that may
+   elide push plus a trailing POP,1; this API is unchanged for other callers.
+
    :return: 0 continue, 1 stop (AWAIT), -1 error
 */
 int kos_push_or_await(KosContext *ctx, KosEvent *out_ev, PyObject *val);
+
+
+/**
+   Move current PyErr into out_ev as KOS_EV_RAISE with injected traceback,
+   clear the thread error state, and mark the context dead.  Call only when
+   PyErr is set.  Used by dynchain local-exception delivery when unwinding
+   does not find a handler.
+*/
+void kos_eval_emit_raise_from_pyerr(KosContext *ctx, struct KosEvent *out_ev);
 
 
 int koskari_eval_init(PyObject *mod);
