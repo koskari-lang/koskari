@@ -15,7 +15,7 @@
 Tests for PUSH_WITH, POP_WITH opcodes.
 
 Single-shot context manager: enter runs before body, exit runs after (or on
-exception). Uses KOS_DYN_WITH on the dynamic chain. Supports async
+exception). Uses KOS_DYN_WITH (single-shot) on the dynamic chain. Supports async
 enter/exit (auto-await).
 """
 

@@ -17,14 +17,14 @@
    POP_DYN_WITH: arg unused. Pop multi-shot dyn-with context. Call exit(typ, val, tb);
    auto-await if exit returns awaitable. If exception and exit returns true,
    swallow; else re-raise. Pop body value from block, drop block, pop
-   KOS_DYN_DYN_WITH node, push body value.
+   KOS_DYN_WITH node (multi-shot), push body value.
 */
 
 KOS_OP_HANDLER(POP_DYN_WITH) {
 
   KosDynNode *top = KosContext_DYN_TOP(ctx);
-  if (! top || ! KosDynNode_IS_DYN_WITH(top)) {
-    PyErr_SetString(PyExc_RuntimeError, "POP_DYN_WITH: top is not a dyn-with node");
+  if (! top || ! KosDynNode_IS_WITH(top)) {
+    PyErr_SetString(PyExc_RuntimeError, "POP_DYN_WITH: top is not a with node");
     return KOS_OP_POST_ERR();
   }
   KosDynWith *with_node = (KosDynWith *) top;
@@ -38,7 +38,7 @@ KOS_OP_HANDLER(POP_DYN_WITH) {
   }
   if (unw == KOS_DYN_UNWIND_SWALLOWED)
     return KOS_OP_RUN();
-  if (unw < 0)
+  if (unw != KOS_DYN_UNWIND_PROTOCOL_SKIPPED && unw < 0)
     return KOS_OP_POST_ERR();
 
   PyObject *body_val = KosStackBlock_PopRef(&CURRENT_STACK(ctx));

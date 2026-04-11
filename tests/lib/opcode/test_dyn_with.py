@@ -15,7 +15,7 @@
 Tests for PUSH_DYN_WITH, POP_DYN_WITH opcodes.
 
 Multi-shot context manager: enter runs before body, exit runs after (or on
-exception). Uses KOS_DYN_DYN_WITH on the dynamic chain. Supports async
+exception). Uses KOS_DYN_WITH (multi-shot) on the dynamic chain. Supports async
 enter/exit (auto-await). Participates in transfer plans (exit on unwind,
 enter on wind).
 """

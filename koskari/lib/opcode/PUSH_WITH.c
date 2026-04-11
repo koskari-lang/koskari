@@ -16,7 +16,7 @@
 /**
    PUSH_WITH: arg = constant pool index (name or None). Single-shot context
    manager. Stack before: [..., mgr]. Pop mgr, resolve enter/exit, push block,
-   push provisional KOS_DYN_WITH node (push = link only), then wind (enter).
+   push provisional KOS_DYN_WITH node (single-shot, push = link only), then wind.
    Wind may suspend (async enter); otherwise result is bound to name.
 */
 
@@ -64,8 +64,8 @@ KOS_OP_HANDLER(PUSH_WITH) {
     return KOS_OP_POST_ERR();
   }
 
-  KosDynWith *with_node = kos_dyn_push_with_provisional(ctx, mgr, enter, exit,
-                                                        name_obj, resume_pc);
+  KosDynWith *with_node = kos_dyn_push_with_provisional(
+      ctx, mgr, enter, exit, name_obj, resume_pc, KOS_DYN_WITH_SHOT_SINGLE_ACTIVE);
   if (! with_node) {
     KosStackBlock_DropBlock(&CURRENT_STACK(ctx));
     Py_DECREF(name_obj);

@@ -1,29 +1,40 @@
 /* Included by dynchain.c — dyn_with */
-/* === KosDynWith (single-shot context manager) === */
+/* === KosDynWith (context manager; multi/single via u.with.shot) === */
 
 
 /**
-   Single-shot WITH: catch cap, resume_pc after body. Callers: kos_dyn_push_with.
+   Allocate a WITH node: kind KOS_DYN_WITH, caps from shot (multi vs single).
 */
-static KosDynWith *kos_dynwith_new(
+static KosDynWith *kos_dyn_with_allocate(
     KosDynNode *parent,
     PyObject *mgr,
     PyObject *enter,
     PyObject *exit,
     PyObject *name,
-    uint32_t resume_pc) {
+    uint32_t resume_pc,
+    uint8_t shot) {
 
   KosDynWith *node = (KosDynWith *) kos_dynnode_alloc();
   if (! node)
     return NULL;
 
-  kos_dynnode_init((KosDynNode *) node, KOS_DYN_WITH, parent,
-                   KOS_DYN_CAP_CATCH | KOS_DYN_CAP_NEEDS_UNWIND_ACTION);
+  {
+    uint32_t caps;
+    if (shot == KOS_DYN_WITH_SHOT_MULTI)
+      caps = KOS_DYN_CAP_MAY_SWALLOW_EXCEPTION | KOS_DYN_CAP_NEEDS_UNWIND_ACTION
+          | KOS_DYN_CAP_NEEDS_INSTALL_WIND;
+    else
+      caps = KOS_DYN_CAP_CATCH | KOS_DYN_CAP_NEEDS_UNWIND_ACTION;
+
+    kos_dynnode_init((KosDynNode *) node, KOS_DYN_WITH, parent, caps);
+  }
+
   KosDynWith_MGR(node) = mgr;
   KosDynWith_ENTER(node) = enter;
   KosDynWith_EXIT(node) = exit;
   KosDynWith_ENTERED(node) = 0;
   KosDynWith_PHASE(node) = KOS_WITH_PHASE_IDLE;
+  KosDynWith_SHOT(node) = shot;
   KosDynWith_NAME(node) = name;
   KosDynWith_RESUME_PC(node) = resume_pc;
   KosDynWith_EXC_TYP(node) = NULL;
@@ -33,43 +44,16 @@ static KosDynWith *kos_dynwith_new(
 }
 
 
-/**
-   Multi-shot dyn-with: install_wind + unwind caps for enter/exit thunks.
-*/
-static KosDynWith *kos_dyndynwith_new(
-    KosDynNode *parent,
-    PyObject *mgr,
-    PyObject *enter,
-    PyObject *exit,
-    PyObject *name,
-    uint32_t resume_pc) {
-
-  KosDynWith *node = (KosDynWith *) kos_dynnode_alloc();
-  if (! node)
-    return NULL;
-
-  kos_dynnode_init((KosDynNode *) node, KOS_DYN_DYN_WITH, parent,
-                   KOS_DYN_CAP_MAY_SWALLOW_EXCEPTION | KOS_DYN_CAP_NEEDS_UNWIND_ACTION
-                   | KOS_DYN_CAP_NEEDS_INSTALL_WIND
-                  );
-  KosDynWith_MGR(node) = mgr;
-  KosDynWith_ENTER(node) = enter;
-  KosDynWith_EXIT(node) = exit;
-  KosDynWith_ENTERED(node) = 0;
-  KosDynWith_PHASE(node) = KOS_WITH_PHASE_IDLE;
-  KosDynWith_NAME(node) = name;
-  KosDynWith_RESUME_PC(node) = resume_pc;
-  KosDynWith_EXC_TYP(node) = NULL;
-  KosDynWith_EXC_VAL(node) = NULL;
-  KosDynWith_EXC_TB(node) = NULL;
-  return node;
+static void kos_dyn_with_shot_after_exit_done(KosDynWith *node) {
+  if (KosDynWith_SHOT(node) == KOS_DYN_WITH_SHOT_SINGLE_ACTIVE)
+    KosDynWith_SHOT(node) = KOS_DYN_WITH_SHOT_SINGLE_DONE;
 }
 
 
 /**
    Clone mgr/enter/exit/name for continuation segment (not in pending await).
 */
-KosDynWith *kos_dynwith_clone(KosDynWith *src) {
+KosDynWith *kos_dyn_with_clone(KosDynWith *src) {
   if (! src)
     return NULL;
   /* Invariant: do not clone a node in PENDING_EXIT_AWAIT or PENDING_ENTER_AWAIT */
@@ -93,44 +77,7 @@ KosDynWith *kos_dynwith_clone(KosDynWith *src) {
   Py_XINCREF(KosDynWith_EXIT(node));
   KosDynWith_ENTERED(node) = KosDynWith_ENTERED(src);
   KosDynWith_PHASE(node) = KOS_WITH_PHASE_IDLE;
-  KosDynWith_NAME(node) = KosDynWith_NAME(src);
-  if (KosDynWith_NAME(node))
-    Py_INCREF(KosDynWith_NAME(node));
-  KosDynWith_RESUME_PC(node) = KosDynWith_RESUME_PC(src);
-  KosDynWith_EXC_TYP(node) = NULL;
-  KosDynWith_EXC_VAL(node) = NULL;
-  KosDynWith_EXC_TB(node) = NULL;
-  return node;
-}
-
-
-/**
-   Clone DYN_WITH payload like kos_dynwith_clone.
-*/
-KosDynWith *kos_dyndynwith_clone(KosDynWith *src) {
-  if (! src)
-    return NULL;
-  /* Invariant: do not clone a node in PENDING_EXIT_AWAIT or PENDING_ENTER_AWAIT */
-  if (KosDynWith_PHASE(src) == KOS_WITH_PHASE_PENDING_EXIT_AWAIT
-      || KosDynWith_PHASE(src) == KOS_WITH_PHASE_PENDING_ENTER_AWAIT)
-    return NULL;
-
-  KosDynWith *node = (KosDynWith *) kos_dynnode_alloc();
-  if (! node)
-    return NULL;
-
-  kos_dynnode_init((KosDynNode *) node, KOS_DYN_DYN_WITH, NULL,
-                   KosDynNode_CAPS(src));
-  KosDynNode_FLAGS(node) = KosDynNode_FLAGS(src) | KOS_DYNF_CLONED;
-  KosDynNode_NODE_ID(node) = KosDynNode_NODE_ID(src);
-  KosDynWith_MGR(node) = KosDynWith_MGR(src);
-  Py_XINCREF(KosDynWith_MGR(node));
-  KosDynWith_ENTER(node) = KosDynWith_ENTER(src);
-  Py_XINCREF(KosDynWith_ENTER(node));
-  KosDynWith_EXIT(node) = KosDynWith_EXIT(src);
-  Py_XINCREF(KosDynWith_EXIT(node));
-  KosDynWith_ENTERED(node) = KosDynWith_ENTERED(src);
-  KosDynWith_PHASE(node) = KOS_WITH_PHASE_IDLE;
+  KosDynWith_SHOT(node) = KosDynWith_SHOT(src);
   KosDynWith_NAME(node) = KosDynWith_NAME(src);
   if (KosDynWith_NAME(node))
     Py_INCREF(KosDynWith_NAME(node));
@@ -171,7 +118,7 @@ static void kos_dynwith_free(KosDynWith *node) {
 
 
 /**
-   Push WITH as DYN_TOP with ENTERED=1 after sync __enter__. Callers: PUSH_WITH.
+   Push WITH as DYN_TOP with ENTERED=1 after sync __enter__.
 */
 KosDynWith *kos_dyn_push_with(
     KosContext *ctx,
@@ -179,10 +126,11 @@ KosDynWith *kos_dyn_push_with(
     PyObject *enter,
     PyObject *exit,
     PyObject *name,
-    uint32_t resume_pc) {
+    uint32_t resume_pc,
+    uint8_t shot) {
 
-  KosDynWith *node = kos_dynwith_new(
-      KosContext_DYN_TOP(ctx), mgr, enter, exit, name, resume_pc);
+  KosDynWith *node = kos_dyn_with_allocate(
+      KosContext_DYN_TOP(ctx), mgr, enter, exit, name, resume_pc, shot);
   if (! node)
     return NULL;
 
@@ -194,9 +142,6 @@ KosDynWith *kos_dyn_push_with(
 }
 
 
-/**
-   Push DYN_WITH as DYN_TOP (multi-shot). Callers: PUSH_DYN_WITH.
-*/
 KosDynWith *kos_dyn_push_dyn_with(
     KosContext *ctx,
     PyObject *mgr,
@@ -205,21 +150,13 @@ KosDynWith *kos_dyn_push_dyn_with(
     PyObject *name,
     uint32_t resume_pc) {
 
-  KosDynWith *node = kos_dyndynwith_new(
-      KosContext_DYN_TOP(ctx), mgr, enter, exit, name, resume_pc);
-  if (! node)
-    return NULL;
-
-  KosDynWith_ENTERED(node) = 1;
-  KosContext_DYN_TOP(ctx) = (KosDynNode *) node;
-  KosContext_CHAIN_VERSION(ctx)++;
-
-  return node;
+  return kos_dyn_push_with(
+      ctx, mgr, enter, exit, name, resume_pc, KOS_DYN_WITH_SHOT_MULTI);
 }
 
 
 /**
-   Push WITH before async __enter__ completes (PENDING_ENTER_AWAIT).
+   Push provisional node before async __enter__ completes (PENDING_ENTER_AWAIT).
 */
 KosDynWith *kos_dyn_push_with_provisional(
     KosContext *ctx,
@@ -227,10 +164,11 @@ KosDynWith *kos_dyn_push_with_provisional(
     PyObject *enter,
     PyObject *exit,
     PyObject *name,
-    uint32_t resume_pc) {
+    uint32_t resume_pc,
+    uint8_t shot) {
 
-  KosDynWith *node = kos_dynwith_new(
-      KosContext_DYN_TOP(ctx), mgr, enter, exit, name, resume_pc);
+  KosDynWith *node = kos_dyn_with_allocate(
+      KosContext_DYN_TOP(ctx), mgr, enter, exit, name, resume_pc, shot);
   if (! node)
     return NULL;
 
@@ -243,9 +181,6 @@ KosDynWith *kos_dyn_push_with_provisional(
 }
 
 
-/**
-   Push DYN_WITH before async __enter__ completes.
-*/
 KosDynWith *kos_dyn_push_dyn_with_provisional(
     KosContext *ctx,
     PyObject *mgr,
@@ -254,17 +189,8 @@ KosDynWith *kos_dyn_push_dyn_with_provisional(
     PyObject *name,
     uint32_t resume_pc) {
 
-  KosDynWith *node = kos_dyndynwith_new(
-      KosContext_DYN_TOP(ctx), mgr, enter, exit, name, resume_pc);
-  if (! node)
-    return NULL;
-
-  KosDynWith_ENTERED(node) = 0;
-  KosDynWith_PHASE(node) = KOS_WITH_PHASE_PENDING_ENTER_AWAIT;
-  KosContext_DYN_TOP(ctx) = (KosDynNode *) node;
-  KosContext_CHAIN_VERSION(ctx)++;
-
-  return node;
+  return kos_dyn_push_with_provisional(
+      ctx, mgr, enter, exit, name, resume_pc, KOS_DYN_WITH_SHOT_MULTI);
 }
 
 
@@ -370,6 +296,7 @@ static int kos_dyn_with_on_control_returned(KosContext *ctx, KosDynWith *with_no
     if (KosContext_FRAME_TOP(ctx))
       KosDynFrame_PC(KosContext_FRAME_TOP(ctx)) = KosDynWith_RESUME_PC(with_node);
     if (do_pop_node) {
+      kos_dyn_with_shot_after_exit_done(with_node);
       kos_dyn_pop_with(ctx, with_node);
     }
     if (KosStackBlock_PushRef(&CURRENT_STACK(ctx), Py_None) < 0)
@@ -384,6 +311,7 @@ static int kos_dyn_with_on_control_returned(KosContext *ctx, KosDynWith *with_no
       return -1;
     }
     if (do_pop_node) {
+      kos_dyn_with_shot_after_exit_done(with_node);
       kos_dyn_pop_with(ctx, with_node);
     }
     PyErr_Restore(typ, val, tb);
@@ -404,6 +332,7 @@ static int kos_dyn_with_on_control_returned(KosContext *ctx, KosDynWith *with_no
   if (KosContext_FRAME_TOP(ctx))
     KosDynFrame_PC(KosContext_FRAME_TOP(ctx)) = KosDynWith_RESUME_PC(with_node);
   if (do_pop_node) {
+    kos_dyn_with_shot_after_exit_done(with_node);
     kos_dyn_pop_with(ctx, with_node);
   }
   if (KosStackBlock_PushRef(&CURRENT_STACK(ctx), body_val) < 0) {
@@ -416,9 +345,12 @@ static int kos_dyn_with_on_control_returned(KosContext *ctx, KosDynWith *with_no
 
 
 /**
-   INSTALL wind: sync __enter__ for DYN_WITH during transfer. Callers: kos_dyn_wind.
+   INSTALL wind: sync __enter__ during transfer. Callers: kos_dyn_wind.
 */
 static int kos_dyn_dyn_with_wind(KosContext *ctx, KosDynWith *node, KosEvent *out_ev) {
+  if (KosDynWith_SHOT(node) == KOS_DYN_WITH_SHOT_SINGLE_DONE)
+    return 0;
+
   PyObject *enter_fn = KosDynWith_ENTER(node);
   int r = KosContext_CallNoArgs(ctx, out_ev, enter_fn, 0);
   if (r == 1)
@@ -446,6 +378,112 @@ static int kos_dyn_dyn_with_wind(KosContext *ctx, KosDynWith *node, KosEvent *ou
 
 
 /**
+   Run context manager __exit__ during kos_dyn_unwind.
+*/
+int kos_dyn_with_unwind(
+    KosContext *ctx,
+    KosDynWith *node,
+    KosEvent *out_ev) {
+
+  if (KosDynWith_SHOT(node) == KOS_DYN_WITH_SHOT_SINGLE_DONE)
+    return KOS_DYN_UNWIND_PROTOCOL_SKIPPED;
+
+  PyObject *exit_fn = KosDynWith_EXIT(node);
+  PyObject *typ = NULL;
+  PyObject *val = NULL;
+  PyObject *tb = NULL;
+
+  if (PyErr_Occurred()) {
+    PyErr_Fetch(&typ, &val, &tb);
+    PyErr_Clear();
+    if (! typ) { Py_INCREF(Py_None); typ = Py_None; }
+    if (! val) { Py_INCREF(Py_None); val = Py_None; }
+    if (! tb)  { Py_INCREF(Py_None); tb  = Py_None; }
+
+  } else {
+    Py_INCREF(Py_None); typ = Py_None;
+    Py_INCREF(Py_None); val = Py_None;
+    Py_INCREF(Py_None); tb  = Py_None;
+  }
+
+  PyObject *args = PyTuple_Pack(3, typ, val, tb);
+  if (! args) {
+    Py_DECREF(typ);
+    Py_DECREF(val);
+    Py_DECREF(tb);
+    return -1;
+  }
+
+  int r = KosContext_CallArgs(ctx, out_ev, exit_fn, args, NULL, 0);
+  Py_DECREF(args);
+
+  if (r == KOS_DYN_UNWIND_ASYNC_STARTED) {
+    KosDynWith_PHASE(node) = KOS_WITH_PHASE_PENDING_EXIT_AWAIT;
+    KosDynWith_EXC_TYP(node) = typ;
+    KosDynWith_EXC_VAL(node) = val;
+    KosDynWith_EXC_TB(node) = tb;
+    KosDynWith_NORMAL_EXIT(node) = (typ == Py_None);
+    return KOS_DYN_UNWIND_ASYNC_STARTED;
+  }
+
+  if (r < 0) {
+    Py_DECREF(typ);
+    Py_DECREF(val);
+    Py_DECREF(tb);
+    return -1;
+  }
+
+  KosDynFrame *frame = KosContext_FRAME_TOP(ctx);
+  if (! frame || ! KosDynFrame_STACK(frame)) {
+    Py_DECREF(typ);
+    Py_DECREF(val);
+    Py_DECREF(tb);
+    return -1;
+  }
+
+  PyObject *result = KosStackBlock_PopRef(&KosDynFrame_STACK(frame));
+  if (! result) {
+    Py_DECREF(typ);
+    Py_DECREF(val);
+    Py_DECREF(tb);
+    return -1;
+  }
+
+  if (typ != Py_None && PyObject_IsTrue(result)) {
+    PyErr_Clear();
+    Py_XDECREF(typ);
+    Py_XDECREF(val);
+    Py_XDECREF(tb);
+    Py_DECREF(result);
+    kos_dyn_with_shot_after_exit_done(node);
+
+    if (KosStackBlock_DropBlock(&KosDynFrame_STACK(frame)) < 0)
+      return -1;
+
+    if (frame)
+      KosDynFrame_PC(frame) = KosDynWith_RESUME_PC(node);
+
+    if (KosStackBlock_PushRef(&KosDynFrame_STACK(frame), Py_None) < 0)
+      return -1;
+
+    return KOS_DYN_UNWIND_SWALLOWED;
+
+  } else if (typ != Py_None) {
+    PyErr_Restore(typ, val, tb);
+
+  } else {
+    Py_XDECREF(typ);
+    Py_XDECREF(val);
+    Py_XDECREF(tb);
+  }
+
+  Py_DECREF(result);
+  kos_dyn_with_shot_after_exit_done(node);
+  return 0;
+}
+
+
+/**
    Complete provisional WITH after __enter__ result is ready (non-await path).
 */
 int finalize_provisional_with_enter(KosContext *ctx, PyObject *result,
@@ -464,3 +502,6 @@ int finalize_provisional_with_enter(KosContext *ctx, PyObject *result,
   KosDynWith_PHASE(with_node) = KOS_WITH_PHASE_IDLE;
   return 0;
 }
+
+
+// The end.

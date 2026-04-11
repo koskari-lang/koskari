@@ -54,8 +54,8 @@
    KOS_DYN_CC     - Undelimited continuation block (call/cc)
    KOS_DYN_YIELD_FROM - Yield-from delegation state
    KOS_DYN_PARAM     - Parameter bindings (parameterize extent)
-   KOS_DYN_WITH      - Single-shot context manager (with)
-   KOS_DYN_DYN_WITH  - Multi-shot context manager (dyn-with)
+   KOS_DYN_WITH      - Context manager (with / dyn-with); multi vs single-shot
+                       is u.with.shot (see KOS_DYN_WITH_SHOT_*), not a second kind
    KOS_DYN_SHIFT     - Shift handler block (push stack block; no frame/namespace)
    KOS_DYN_CC_RAISE  - Sentinel node holding a KoskariContinuationApply exception
                        for the foreign-token transfer path; its unwind re-raises the
@@ -78,7 +78,6 @@ typedef enum KosDynKind {
   KOS_DYN_YIELD_FROM,
   KOS_DYN_PARAM,
   KOS_DYN_WITH,
-  KOS_DYN_DYN_WITH,
   KOS_DYN_SHIFT,
   KOS_DYN_CC_RAISE,
   KOS_DYN_GEN,
@@ -244,6 +243,7 @@ struct KosDynNode {
       PyObject *exit;      /* resolved exit callable (owned) */
       uint8_t entered;     /* 1 after enter succeeded */
       uint8_t phase;       /* KOS_WITH_PHASE_IDLE, PENDING_EXIT_AWAIT, or PENDING_ENTER_AWAIT */
+      uint8_t shot;        /* KOS_DYN_WITH_SHOT_*; internal to dyn_with only */
       PyObject *name;      /* binding name or NULL (owned) */
       uint32_t resume_pc;  /* PC to jump to after with body (pop_pc + 1) */
       PyObject *exc_typ;   /* owned; only when phase == PENDING_EXIT_AWAIT */
@@ -1186,18 +1186,9 @@ void kos_dyn_pop_param(KosContext *ctx, KosDynParam *node);
 
 
 /**
-   Push a single-shot with (context manager) extent onto the dynamic chain.
-
-   Caller must have called enter(mgr) and have the result; the node stores
-   mgr, enter, exit, and optional name. Node takes ownership of mgr, enter,
-   exit, and name (name may be NULL).
-
-   :param ctx: execution context
-   :param mgr: context manager object (ownership transferred)
-   :param enter: resolved enter callable (ownership transferred)
-   :param exit: resolved exit callable (ownership transferred)
-   :param name: binding name or NULL (ownership transferred)
-   :param resume_pc: PC to resume at after with body (extent pop_pc + 1)
+   Push a with (context manager) extent onto the dynamic chain after sync
+   enter. :c:member:`shot` is KOS_DYN_WITH_SHOT_MULTI or
+   KOS_DYN_WITH_SHOT_SINGLE_ACTIVE.
 
    :return: new KosDynWith node, or NULL on error
 */
@@ -1207,22 +1198,13 @@ KosDynWith *kos_dyn_push_with(
     PyObject *enter,
     PyObject *exit,
     PyObject *name,
-    uint32_t resume_pc);
+    uint32_t resume_pc,
+    uint8_t shot);
 
 
 /**
-   Push a dyn-with (multi-shot context manager) extent onto the dynamic chain.
-   Same as kos_dyn_push_with but installs KOS_DYN_DYN_WITH for transfer-plan
-   participation.
-
-   :param ctx: execution context
-   :param mgr: context manager object (ownership transferred)
-   :param enter: resolved enter callable (ownership transferred)
-   :param exit: resolved exit callable (ownership transferred)
-   :param name: binding name or NULL (ownership transferred)
-   :param resume_pc: PC to resume at after dyn-with body (extent pop_pc + 1)
-
-   :return: new KosDynWith node (kind KOS_DYN_DYN_WITH), or NULL on error
+   Push a dyn-with (multi-shot) extent; same as kos_dyn_push_with with
+   KOS_DYN_WITH_SHOT_MULTI.
 */
 KosDynWith *kos_dyn_push_dyn_with(
     KosContext *ctx,
@@ -1235,7 +1217,7 @@ KosDynWith *kos_dyn_push_dyn_with(
 
 /**
    Push a provisional WITH node (phase PENDING_ENTER_AWAIT) before calling
-   enter. Same ownership semantics as kos_dyn_push_with; entered = 0.
+   enter. :c:member:`shot` selects multi vs single-shot caps.
 */
 KosDynWith *kos_dyn_push_with_provisional(
     KosContext *ctx,
@@ -1243,12 +1225,13 @@ KosDynWith *kos_dyn_push_with_provisional(
     PyObject *enter,
     PyObject *exit,
     PyObject *name,
-    uint32_t resume_pc);
+    uint32_t resume_pc,
+    uint8_t shot);
 
 
 /**
-   Push a provisional DYN_WITH node (phase PENDING_ENTER_AWAIT) before
-   calling enter. Same ownership semantics as kos_dyn_push_dyn_with.
+   Push provisional dyn-with; same as kos_dyn_push_with_provisional with
+   KOS_DYN_WITH_SHOT_MULTI.
 */
 KosDynWith *kos_dyn_push_dyn_with_provisional(
     KosContext *ctx,
@@ -1260,15 +1243,12 @@ KosDynWith *kos_dyn_push_dyn_with_provisional(
 
 
 /**
-   Clone a KOS_DYN_DYN_WITH node for continuation capture.
-   Copies mgr, enter, exit, name with new references.
-
-   :param src: DYN_WITH node to clone
+   Clone a WITH node for continuation capture. Copies mgr, enter, exit,
+   name with new references and copies shot/caps from src.
 
    :return: cloned node, or NULL on error
 */
-KosDynWith *kos_dynwith_clone(KosDynWith *src);
-KosDynWith *kos_dyndynwith_clone(KosDynWith *src);
+KosDynWith *kos_dyn_with_clone(KosDynWith *src);
 
 
 /**
@@ -1291,7 +1271,8 @@ void kos_dyn_pop_with(KosContext *ctx, KosDynWith *node);
    Uses KosContext_CallArgs for exit. When exit returns an awaitable, suspend
    happens inside KosContext_CallArgs; pending state is stashed and this returns 1.
 
-   :return: 0 on success, -1 on error, 1 when suspend occurred
+   :return: 0 on success, KOS_DYN_UNWIND_SWALLOWED, KOS_DYN_UNWIND_PROTOCOL_SKIPPED,
+     -1 on error, KOS_DYN_UNWIND_ASYNC_STARTED when suspend occurred
 */
 int kos_dyn_with_unwind(KosContext *ctx, KosDynWith *node, struct KosEvent *out_ev);
 
@@ -1352,6 +1333,9 @@ int kos_dyn_unwind_to_node(KosContext *ctx, KosDynNode *target,
 /** When FINALLY consumed handle(RETURN): delivered to finally block, value
     pushed to block. Caller must return 0 (eval continues at finally). */
 #define KOS_DYN_UNWIND_FINALLY_TAKING_RETURN 3
+
+/** WITH skipped __exit__ (single-shot already consumed); not an error */
+#define KOS_DYN_UNWIND_PROTOCOL_SKIPPED 4
 
 
 /**
@@ -1959,9 +1943,6 @@ int kos_transferplan_traverse(
 #define KosDynNode_IS_YIELD_FROM(n)  (KosDynNode_KIND(n) == KOS_DYN_YIELD_FROM)
 #define KosDynNode_IS_PARAM(n)       (KosDynNode_KIND(n) == KOS_DYN_PARAM)
 #define KosDynNode_IS_WITH(n)       (KosDynNode_KIND(n) == KOS_DYN_WITH)
-#define KosDynNode_IS_DYN_WITH(n)   (KosDynNode_KIND(n) == KOS_DYN_DYN_WITH)
-#define KosDynNode_IS_WITH_OR_DYN_WITH(n) \
-  (KosDynNode_IS_WITH(n) || KosDynNode_IS_DYN_WITH(n))
 #define KosDynNode_IS_SHIFT(n)    (KosDynNode_KIND(n) == KOS_DYN_SHIFT)
 #define KosDynNode_IS_CC_RAISE(n) (KosDynNode_KIND(n) == KOS_DYN_CC_RAISE)
 #define KosDynNode_IS_GEN(n)      (KosDynNode_KIND(n) == KOS_DYN_GEN)
@@ -2038,11 +2019,19 @@ typedef enum KosYfPhase {
 #define KOS_WITH_PHASE_PENDING_EXIT_AWAIT  1
 #define KOS_WITH_PHASE_PENDING_ENTER_AWAIT 2
 
+/** Multi-shot (dyn-with); participates in install wind */
+#define KOS_DYN_WITH_SHOT_MULTI 0u
+/** Single-shot; __exit__ not yet consumed for extent pairing */
+#define KOS_DYN_WITH_SHOT_SINGLE_ACTIVE 1u
+/** Single-shot; __exit__ already consumed; ignore further protocol */
+#define KOS_DYN_WITH_SHOT_SINGLE_DONE 2u
+
 #define KosDynWith_MGR(n)          (((KosDynNode *)(n))->u.with.mgr)
 #define KosDynWith_ENTER(n)        (((KosDynNode *)(n))->u.with.enter)
 #define KosDynWith_EXIT(n)         (((KosDynNode *)(n))->u.with.exit)
 #define KosDynWith_ENTERED(n)      (((KosDynNode *)(n))->u.with.entered)
 #define KosDynWith_PHASE(n)        (((KosDynNode *)(n))->u.with.phase)
+#define KosDynWith_SHOT(n)         (((KosDynNode *)(n))->u.with.shot)
 #define KosDynWith_NAME(n)         (((KosDynNode *)(n))->u.with.name)
 #define KosDynWith_RESUME_PC(n)    (((KosDynNode *)(n))->u.with.resume_pc)
 #define KosDynWith_EXC_TYP(n)      (((KosDynNode *)(n))->u.with.exc_typ)

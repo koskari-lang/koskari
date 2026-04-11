@@ -181,37 +181,6 @@ static int kos_dyn_wind_on_control_returned(KosContext *ctx, KosDynWind *wind) {
 
 
 /**
-   Dispatch post-await resume: WITH phases, WIND phases. Callers: eval after
-   KosContext_CallArgs returns.
-*/
-int kos_dynnode_on_control_returned(KosContext *ctx, KosDynNode *node, KosEvent *out_ev) {
-  (void) out_ev;
-  /* When node is a frame, check if parent is WITH in pending phase. */
-  if (KosDynNode_IS_FRAME(node)) {
-    KosDynNode *parent = KosDynNode_PARENT(node);
-    if (parent && KosDynNode_IS_WITH(parent)) {
-      uint8_t phase = KosDynWith_PHASE((KosDynWith *) parent);
-      if (phase == KOS_WITH_PHASE_PENDING_EXIT_AWAIT)
-        return kos_dyn_with_on_control_returned(ctx, (KosDynWith *) parent, 1);
-      if (phase == KOS_WITH_PHASE_PENDING_ENTER_AWAIT)
-        return kos_dyn_with_on_enter_control_returned(ctx, (KosDynWith *) parent);
-    }
-  }
-  switch (KosDynNode_KIND(node)) {
-    case KOS_DYN_WIND:
-      return kos_dyn_wind_on_control_returned(ctx, (KosDynWind *) node);
-    case KOS_DYN_WITH:
-    case KOS_DYN_DYN_WITH:
-      if (KosDynWith_PHASE((KosDynWith *) node) == KOS_WITH_PHASE_PENDING_EXIT_AWAIT)
-        return kos_dyn_with_on_control_returned(ctx, (KosDynWith *) node, 1);
-      return 0;
-    default:
-      return 0;
-  }
-}
-
-
-/**
    Allocate and link wind as DYN_TOP (caller runs wind enter separately in
    some paths). Callers: opcode PUSH_WIND.
 */

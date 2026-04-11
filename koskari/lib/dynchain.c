@@ -42,9 +42,6 @@
 static void kos_update_frame_top(KosContext *ctx);
 static int kos_dyn_uninstall_handler(KosContext *ctx, KosDynNode *node,
                                      KosXferEvent event, KosEvent *out_ev);
-static int kos_dyn_wind_on_control_returned(KosContext *ctx, KosDynWind *wind);
-static int kos_dyn_with_on_control_returned(KosContext *ctx, KosDynWith *with_node, int do_pop_node);
-static int kos_dyn_with_on_enter_control_returned(KosContext *ctx, KosDynWith *with_node);
 int kos_dyn_push(KosContext *ctx, KosDynNode *node);
 
 
@@ -65,7 +62,6 @@ static const char *kos_dynnode_kind_names[] = {
   "YIELD_FROM",
   "PARAM",
   "WITH",
-  "DYN_WITH",
   "SHIFT",
   "CC_RAISE",
   "GEN",
@@ -166,7 +162,6 @@ static void kos_dynnode_return_to_freelist(KosDynNode *node) {
 }
 
 
-
 #include "dynchain/dyn_frame.c"
 #include "dynchain/dyn_prompt.c"
 #include "dynchain/dyn_cc.c"
@@ -183,6 +178,36 @@ static void kos_dynnode_return_to_freelist(KosDynNode *node) {
 #include "dynchain/dyn_yield_from.c"
 #include "dynchain/dyn_param.c"
 #include "dynchain/dyn_with.c"
+
+
+/**
+   Dispatch post-await resume: WITH phases, WIND phases. Callers: eval after
+   KosContext_CallArgs returns.
+*/
+int kos_dynnode_on_control_returned(KosContext *ctx, KosDynNode *node, KosEvent *out_ev) {
+  (void) out_ev;
+  /* When node is a frame, check if parent is WITH in pending phase. */
+  if (KosDynNode_IS_FRAME(node)) {
+    KosDynNode *parent = KosDynNode_PARENT(node);
+    if (parent && KosDynNode_IS_WITH(parent)) {
+      uint8_t phase = KosDynWith_PHASE((KosDynWith *) parent);
+      if (phase == KOS_WITH_PHASE_PENDING_EXIT_AWAIT)
+        return kos_dyn_with_on_control_returned(ctx, (KosDynWith *) parent, 1);
+      if (phase == KOS_WITH_PHASE_PENDING_ENTER_AWAIT)
+        return kos_dyn_with_on_enter_control_returned(ctx, (KosDynWith *) parent);
+    }
+  }
+  switch (KosDynNode_KIND(node)) {
+    case KOS_DYN_WIND:
+      return kos_dyn_wind_on_control_returned(ctx, (KosDynWind *) node);
+    case KOS_DYN_WITH:
+      if (KosDynWith_PHASE((KosDynWith *) node) == KOS_WITH_PHASE_PENDING_EXIT_AWAIT)
+        return kos_dyn_with_on_control_returned(ctx, (KosDynWith *) node, 1);
+      return 0;
+    default:
+      return 0;
+  }
+}
 
 
 /* === Globals frame cache (CONTEXT_GLOBALS_FRAME / opcode GLOBALS, IMPORT_REL) === */
@@ -241,7 +266,7 @@ int kos_dyn_abort_push_region(KosContext *ctx, KosDynNode *region) {
 
 
 /**
-   Walk ancestors from node for a WITH/DYN_WITH awaiting async __exit__.
+   Walk ancestors from node for a WITH awaiting async __exit__.
 */
 static KosDynWith *find_pending_exit_with(KosDynNode *node) {
   for (; node; node = KosDynNode_PARENT(node)) {
@@ -294,116 +319,6 @@ void kos_dyn_clear_pending_exit(KosContext *ctx) {
 }
 
 
-/**
-   Run context manager __exit__ for WITH/DYN_WITH during kos_dyn_unwind.
-   Fetches current exception triple (or None triple on normal exit), calls
-   exit_fn, and handles swallow / async await. Callers: kos_dyn_uninstall path
-   for WITH nodes, transfer unwind.
-*/
-int kos_dyn_with_unwind(
-    KosContext *ctx,
-    KosDynWith *node,
-    KosEvent *out_ev) {
-
-  PyObject *exit_fn = KosDynWith_EXIT(node);
-  PyObject *typ = NULL;
-  PyObject *val = NULL;
-  PyObject *tb = NULL;
-
-  if (PyErr_Occurred()) {
-    PyErr_Fetch(&typ, &val, &tb);
-    PyErr_Clear();
-    /* PyErr_Fetch returns new refs or NULL; substitute Py_None for any
-       missing component so the caller can unconditionally DECREF all three. */
-    if (! typ) { Py_INCREF(Py_None); typ = Py_None; }
-    if (! val) { Py_INCREF(Py_None); val = Py_None; }
-    if (! tb)  { Py_INCREF(Py_None); tb  = Py_None; }
-
-  } else {
-    Py_INCREF(Py_None); typ = Py_None;
-    Py_INCREF(Py_None); val = Py_None;
-    Py_INCREF(Py_None); tb  = Py_None;
-  }
-
-  PyObject *args = PyTuple_Pack(3, typ, val, tb);
-  if (! args) {
-    Py_DECREF(typ);
-    Py_DECREF(val);
-    Py_DECREF(tb);
-    return -1;
-  }
-
-  int r = KosContext_CallArgs(ctx, out_ev, exit_fn, args, NULL, 0);
-  Py_DECREF(args);
-
-  if (r == KOS_DYN_UNWIND_ASYNC_STARTED) {
-    /* Suspend occurred inside KosContext_CallArgs. Pending state lives on node. */
-    KosDynWith_PHASE(node) = KOS_WITH_PHASE_PENDING_EXIT_AWAIT;
-    KosDynWith_EXC_TYP(node) = typ;
-    KosDynWith_EXC_VAL(node) = val;
-    KosDynWith_EXC_TB(node) = tb;
-    KosDynWith_NORMAL_EXIT(node) = (typ == Py_None);
-    return KOS_DYN_UNWIND_ASYNC_STARTED;
-  }
-
-  if (r < 0) {
-    Py_DECREF(typ);
-    Py_DECREF(val);
-    Py_DECREF(tb);
-    return -1;
-  }
-
-  /* r == 0: result is on stack */
-  KosDynFrame *frame = KosContext_FRAME_TOP(ctx);
-  if (! frame || ! KosDynFrame_STACK(frame)) {
-    Py_DECREF(typ);
-    Py_DECREF(val);
-    Py_DECREF(tb);
-    return -1;
-  }
-
-  PyObject *result = KosStackBlock_PopRef(&KosDynFrame_STACK(frame));
-  if (! result) {
-    Py_DECREF(typ);
-    Py_DECREF(val);
-    Py_DECREF(tb);
-    return -1;
-  }
-
-  if (typ != Py_None && PyObject_IsTrue(result)) {
-    PyErr_Clear();
-    Py_XDECREF(typ);
-    Py_XDECREF(val);
-    Py_XDECREF(tb);
-    Py_DECREF(result);
-
-    /* Swallow: discard body value if any (body raised so stack may be empty),
-       drop block, push None. Caller pops node. */
-    if (KosStackBlock_DropBlock(&KosDynFrame_STACK(frame)) < 0)
-      return -1;
-
-    if (frame)
-      KosDynFrame_PC(frame) = KosDynWith_RESUME_PC(node);
-
-    if (KosStackBlock_PushRef(&KosDynFrame_STACK(frame), Py_None) < 0)
-      return -1;
-
-    return KOS_DYN_UNWIND_SWALLOWED;
-
-  } else if (typ != Py_None) {
-    PyErr_Restore(typ, val, tb);
-
-  } else {
-    Py_XDECREF(typ);
-    Py_XDECREF(val);
-    Py_XDECREF(tb);
-  }
-
-  Py_DECREF(result);
-  return 0;
-}
-
-
 /* === Generic DynNode operations === */
 
 
@@ -451,7 +366,6 @@ void kos_dynnode_free(KosDynNode *node) {
       kos_dynparam_free((KosDynParam *) node);
       break;
     case KOS_DYN_WITH:
-    case KOS_DYN_DYN_WITH:
       kos_dynwith_free((KosDynWith *) node);
       break;
     case KOS_DYN_SHIFT:
@@ -703,7 +617,6 @@ int kos_dyn_install(KosContext *ctx, KosDynNode *node, KosEvent *out_ev) {
     case KOS_DYN_PARAM:
       return kos_dynparam_enter(ctx, (KosDynParam *) node);
     case KOS_DYN_WITH:
-    case KOS_DYN_DYN_WITH:
       /* Push = link + local setup only.  Wind (enter) is invoked explicitly
          by opcodes or transfer plan after push, never in install. */
       return 0;
@@ -777,12 +690,13 @@ static int kos_dyn_uninstall_handler(KosContext *ctx, KosDynNode *node,
       (void) out_ev;
       kos_dyn_yieldfrom_unwind(ctx, (KosDynYieldFrom *) node);
       return 0;
-    case KOS_DYN_WITH:
-    case KOS_DYN_DYN_WITH: {
+    case KOS_DYN_WITH: {
       KosDynWith *with_node = (KosDynWith *) node;
       int unw = kos_dyn_unwind(ctx, node, event, out_ev);
       if (unw == KOS_DYN_UNWIND_ASYNC_STARTED)
         return KOS_DYN_UNWIND_ASYNC_STARTED;
+      if (unw == KOS_DYN_UNWIND_PROTOCOL_SKIPPED)
+        return 0;
       if (unw == KOS_DYN_UNWIND_SWALLOWED)
         return 0;
       if (unw < 0)
@@ -836,7 +750,6 @@ int kos_dyn_wind(KosContext *ctx, KosDynNode *node, KosEvent *out_ev) {
     case KOS_DYN_PARAM:
       return kos_dyn_param_wind(ctx, (KosDynParam *) node);
     case KOS_DYN_WITH:
-    case KOS_DYN_DYN_WITH:
       return kos_dyn_dyn_with_wind(ctx, (KosDynWith *) node, out_ev);
     case KOS_DYN_WIND:
       return kos_dyn_wind_wind(ctx, (KosDynWind *) node);
@@ -871,7 +784,6 @@ int kos_dyn_unwind(KosContext *ctx, KosDynNode *node, KosXferEvent event,
       (void) out_ev;
       return kos_dyn_wind_unwind(ctx, (KosDynWind *) node);
     case KOS_DYN_WITH:
-    case KOS_DYN_DYN_WITH:
       return kos_dyn_with_unwind(ctx, (KosDynWith *) node, out_ev);
     case KOS_DYN_CC_RAISE:
       (void) out_ev;
@@ -1010,7 +922,7 @@ uint32_t kos_dynnode_catch_resume_pc(KosDynNode *node) {
     return (uint32_t) -1;
   if (KosDynNode_IS_CC(node))
     return KosDynCC_RESUME_PC((KosDynCC *) node);
-  if (KosDynNode_IS_WITH_OR_DYN_WITH(node))
+  if (KosDynNode_IS_WITH(node))
     return KosDynWith_RESUME_PC((KosDynWith *) node);
   return (uint32_t) -1;
 }
@@ -1186,9 +1098,7 @@ KosDynNode *kos_dyn_clone(KosDynNode *node) {
     case KOS_DYN_PARAM:
       return (KosDynNode *) kos_dynparam_clone((KosDynParam *) node);
     case KOS_DYN_WITH:
-      return (KosDynNode *) kos_dynwith_clone((KosDynWith *) node);
-    case KOS_DYN_DYN_WITH:
-      return (KosDynNode *) kos_dyndynwith_clone((KosDynWith *) node);
+      return (KosDynNode *) kos_dyn_with_clone((KosDynWith *) node);
     case KOS_DYN_SHIFT:
       return (KosDynNode *) kos_dynshift_clone((KosDynShift *) node);
     case KOS_DYN_CC_RAISE:
@@ -3484,7 +3394,7 @@ static int xfer_step_truncate_and_inject(KosContext *ctx,
     SAYF("[xfer] TRUNCATE_AND_INJECT: freeing from current=%p to stop_node=%p (inclusive), new_top will be=%p",
          (void *) current, (void *) stop_node, (void *) new_top);
 
-  /* Teardown PROMPT and DYN_WITH nodes before freeing: drop stack blocks.
+  /* Teardown PROMPT and WITH nodes before freeing: drop stack blocks.
    * The flatten removed NEEDS_TRANSFER_TEARDOWN but TRUNCATE does not run
    * uninstall handlers; we must drop blocks here so the frame's stack shape
    * is correct when we inject the value onto new_top's frame. */
@@ -3492,7 +3402,7 @@ static int xfer_step_truncate_and_inject(KosContext *ctx,
     KosDynNode *node = current;
     while (node && node != new_top) {
       KosDynNode *parent = KosDynNode_PARENT(node);
-      if (KosDynNode_IS_PROMPT(node) || KosDynNode_IS_DYN_WITH(node)) {
+      if (KosDynNode_IS_PROMPT(node) || KosDynNode_IS_WITH(node)) {
         if (KosContext_FRAME_TOP(ctx)
             && KosStackBlock_DropBlock(&KosDynFrame_STACK(KosContext_FRAME_TOP(ctx))) < 0)
           return -1;
@@ -3973,7 +3883,6 @@ int kos_dynnode_traverse(KosDynNode *node, visitproc visit, void *arg) {
     case KOS_DYN_PARAM:
       return dynnode_traverse_param(node, visit, arg);
     case KOS_DYN_WITH:
-    case KOS_DYN_DYN_WITH:
       return dynnode_traverse_with(node, visit, arg);
     case KOS_DYN_COLLECT:
       Py_VISIT(KosDynCollect_SAVED_NS((KosDynCollect *) node));

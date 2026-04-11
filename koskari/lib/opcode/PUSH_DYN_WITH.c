@@ -16,7 +16,7 @@
 /**
    PUSH_DYN_WITH: arg = constant pool index (name or None). Multi-shot context
    manager. Stack before: [..., mgr]. Pop mgr, resolve enter/exit, push block,
-   push provisional KOS_DYN_DYN_WITH node (push = link only), then wind (enter).
+   push provisional KOS_DYN_WITH node (multi-shot, push = link only), then wind.
    Wind may suspend (async enter); otherwise result is bound to name.
 */
 

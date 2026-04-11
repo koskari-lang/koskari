@@ -17,7 +17,7 @@
    POP_WITH: arg unused. Pop single-shot with context. Call exit(typ, val, tb);
    auto-await if exit returns awaitable. If exception and exit returns true,
    swallow; else re-raise. Pop body value from block, drop block, pop
-   KOS_DYN_WITH node, push body value.
+   KOS_DYN_WITH node (single-shot), push body value.
 */
 
 KOS_OP_HANDLER(POP_WITH) {
@@ -40,7 +40,7 @@ KOS_OP_HANDLER(POP_WITH) {
   }
   if (unw == KOS_DYN_UNWIND_SWALLOWED)
     return KOS_OP_RUN();
-  if (unw < 0)
+  if (unw != KOS_DYN_UNWIND_PROTOCOL_SKIPPED && unw < 0)
     return KOS_OP_POST_ERR();
 
   /* Sync path: pop body value, drop block, pop with node, push body value. */

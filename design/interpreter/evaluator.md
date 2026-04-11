@@ -26,18 +26,23 @@ separate frame chain and handler chain.
 
 **KosDynNode** — Single tagged-union struct for all chain node kinds. Base fields
 `parent`, `kind`, `flags`, `caps`, `node_id` are followed by a union `u` with variants:
-`frame`, `prompt`, `cc`, `wind`, `try_`, `finally_`, `loop`, `foreach`, `ns`, `with_`,
-`shift`, `param`, `yieldfrom`.
+Payload variants live in union `u` (see `struct KosDynNode` in [`dynchain.h`](../../koskari/lib/dynchain.h)).
 Typedefs (KosDynFrame, KosDynPrompt, KosDynWind, KosDynNs, KosDynCC, KosDynWith,
-KosDynShift, KosDynParam, KosDynYieldFrom) all refer to this same struct.
+KosDynShift, KosDynParam, KosDynYieldFrom, …) all refer to this same struct.
 **All field access must use the macros** defined in dynchain.h; do not touch union
-members or base fields directly. Node kinds: KOS_DYN_FRAME, KOS_DYN_PROMPT,
-KOS_DYN_SHIFT, KOS_DYN_WIND, KOS_DYN_TRY, KOS_DYN_FINALLY, KOS_DYN_LOOP,
-KOS_DYN_FOREACH, KOS_DYN_NS, KOS_DYN_CC, KOS_DYN_YIELD_FROM, KOS_DYN_PARAM,
-KOS_DYN_WITH, KOS_DYN_DYN_WITH, KOS_DYN_CC_RAISE. The macro `KosDynNode_IS_REGION`
-matches TRY, FINALLY, LOOP, and FOREACH for convenience. Behavior is driven by
-capability bits (`KOS_DYN_CAP_*`); see [dynamic-node-unified-api.md](dynamic-node-unified-api.md)
-for the capability model.
+members or base fields directly. Node kinds are enumerated by `KosDynKind`:
+`KOS_DYN_FRAME` through `KOS_DYN_GEN` (see `dynchain.h`; `KOS_DYN_UNKNOWN` is a
+sentinel). The macro `KosDynNode_IS_REGION` matches TRY, FINALLY, LOOP, and
+FOREACH for convenience. Behavior is driven by capability bits (`KOS_DYN_CAP_*`);
+see [dynamic-node-unified-api.md](dynamic-node-unified-api.md) for the capability model.
+
+**Context managers (`KOS_DYN_WITH`)** — Lexical `with` and `dyn-with` share one
+node kind. Multi-shot vs single-shot is **not** a second `KosDynKind`; it is
+`u.with.shot` (`KOS_DYN_WITH_SHOT_MULTI`, `KOS_DYN_WITH_SHOT_SINGLE_ACTIVE`,
+`KOS_DYN_WITH_SHOT_SINGLE_DONE`) together with caps set at construction (e.g.
+`KOS_DYN_CAP_NEEDS_INSTALL_WIND` only for multi-shot). Policy stays in
+`dynchain/dyn_with.c`; generic `dynchain.c` dispatches on kind and caps only.
+See [with-dyn-with.md](with-dyn-with.md) and `dynchain.h`.
 
 - **Frame** (u.frame): code (borrowed), pc (next instruction), acting_pc (instruction currently being executed), stack (owned), ns (owned), frame_flags, native_handler (optional; when non-NULL, handler is frame evaluator; see [api/special-call-protocol.md](../api/special-call-protocol.md)).
   Macros: KosDynFrame_CODE, KosDynFrame_PC, KosDynFrame_ACTING_PC, KosDynFrame_STACK, KosDynFrame_NS, KosDynFrame_FLAGS, KosDynFrame_NATIVE_HANDLER.
@@ -50,6 +55,9 @@ for the capability model.
 - **Loop** (u.loop): break_pc, continue_pc, enabled, result. Macros: KosDynLoop_BREAK_PC, KosDynLoop_CONTINUE_PC, KosDynLoop_ENABLED, KosDynLoop_RESULT.
 - **Foreach** (u.foreach): break_pc, continue_pc, enabled, result, iter, exhausted, iter_next_else_pc (else PC when ITER_NEXT gen exhausts; 0 = not set). Macros: KosDynForeach_ITER, KosDynForeach_EXHAUSTED, KosDynForeach_ITER_NEXT_ELSE_PC, and the shared Loop macros.
 - **Ns** (u.ns): saved_ns. Macro: KosDynNs_SAVED_NS.
+- **With** (u.with): context manager enter/exit, optional `as` name, `resume_pc`,
+  async phases (`KOS_WITH_PHASE_*`), and **`shot`** (`KOS_DYN_WITH_SHOT_*`).
+  Macros: `KosDynWith_MGR`, `KosDynWith_ENTER`, `KosDynWith_EXIT`, `KosDynWith_SHOT`, etc.
 - **CC** (u.cc): resume_pc. Macro: KosDynCC_RESUME_PC.
 
 All nodes are allocated from a single-size pool in dynchain.c (one freelist for
@@ -58,64 +66,51 @@ dynchain.c and eval.c).
 
 ### KosContext — Top-level VM Execution State
 
+Authoritative layout is `struct KosContext` in [`eval.h`](../../koskari/lib/eval.h).
+It holds `dyn_top`, `frame_top`, `globals_frame`, transfer-plan fields, delimited
+continuation return targets, Python await/yield bridge (`py_await_iter`,
+`py_resume_inject`, `py_resume_kind`), `pending_defer` (AWAIT on KosDefer inner),
+exception inject mode, async-gen `pending_agen` / `resume_gen`, and `flags`.
+Async **WITH** enter/exit suspension does **not** use separate `KosContext`
+slots: state lives on the `KosDynWith` node (`phase`, `exc_*`, `normal_exit`, etc.);
+see `kos_dyn_complete_pending_exit` in `dynchain.c` and `revive_await` in `eval.c`.
+
 ```c
+/* Abbreviated; see eval.h for full struct KosContext */
 struct KosContext {
-  KosDynNode *dyn_top;       /* top of dynamic chain */
-  KosDynFrame *frame_top;    /* cached topmost frame (for fast access) */
-  KosDynFrame *globals_frame;     /* cached outermost frame (for op_GLOBALS) */
-  uint32_t globals_cache_version; /* chain_version when globals_frame was set */
-
-  KosEvaluatorToken *token; /* evaluator identity; ownership marker for continuations */
-  PyObject *domain;         /* KosDomain; ambient dynamic context anchor */
-
-  /* Wind thunk and unwind state */
-  KosDynFrame *unwind_target_frame; /* target frame for async unwind completion */
-
-  /* Pending async return (when RETURN fires while wind after-hook is in progress) */
+  KosDynNode *dyn_top;
+  KosDynFrame *frame_top;
+  KosDynFrame *globals_frame;
+  uint32_t globals_cache_version;
+  KosEvaluatorToken *token;
+  PyObject *domain;
+  KosDynFrame *unwind_target_frame;
   PyObject *pending_return_value;
   int pending_return_to_parent;
-
-  /* Transfer plan state */
-  KosTransferPlan *plan;        /* active transfer plan (or NULL) */
-  KosTransferPlan *plan_stack;  /* suspended plans stack */
-  uint32_t chain_version;       /* incremented on chain modifications */
-  /* Plan resume state (step_resume_inject) lives on the plan; see KosTransferPlan. */
-
-  /* Delimited continuation: top of installed segment when inside invoked k */
+  KosTransferPlan *plan;
+  KosTransferPlan *plan_stack;
+  uint32_t chain_version;
   KosDynNode *invocation_segment_top;
-
-  /* Delimited k(value) return path */
-  KosDynNode *return_target_chain;  /* cloned invocation-site chain (owned) */
-  uint32_t return_target_pc;        /* pc to resume at (UINT32_MAX = not set) */
-
-  /* Delimited push model: frame to return to when continuation hits POP_PROMPT */
-  KosDynFrame *delimited_return_frame;  /* invocation site frame */
-  uint32_t delimited_return_pc;         /* pc to resume at (UINT32_MAX = not set) */
-  KosDynNode *delimited_return_node;    /* unwind stop for POP_SHIFT */
-
-  /* Python bridge: await/yield suspend and resume */
-  PyObject *py_await_iter;   /* await-iterator from __await__() */
-  PyObject *py_last_yielded; /* last yielded object (debug/optional) */
-  PyObject *py_resume_inject; /* value to push on next koskari_eval when resuming */
-  uint8_t py_resume_kind;    /* 0=none, 1=await, 2=yield */
-  uint8_t suspension_event;  /* KosSuspensionEvent */
-
-  /* Exception injection (set by coroutine_throw or dynchain inject) */
-  int inject_mode;       /* 0=none, 1=pending_throw */
-  PyObject *inject_value;  /* exception object when inject_mode==1 */
-
-  /* Pending async gen (in-loop NEXT/ITER_NEXT): gen frame is attached, awaiting yield/return */
-  void *pending_agen;        /* KosPyAsyncGen * when set */
+  KosDynNode *return_target_chain;
+  uint32_t return_target_pc;
+  KosDynFrame *delimited_return_frame;
+  uint32_t delimited_return_pc;
+  KosDynNode *delimited_return_node;
+  PyObject *py_await_iter;
+  PyObject *py_last_yielded;
+  PyObject *py_resume_inject;
+  uint8_t py_resume_kind;
+  PyObject *pending_defer;
+  int inject_mode;
+  PyObject *inject_type;
+  PyObject *inject_value;
+  uint8_t suspension_event;
+  void *pending_agen;
   PyObject *pending_agen_default;
-  int pending_agen_n;        /* 1 or 2 for NEXT; 0 for ITER_NEXT */
-
-  /* Pending WITH enter (async __enter__ suspended) */
-  struct { PyObject *mgr, *enter, *exit, *name; uint32_t resume_pc; int is_dyn_with; } pending_with_enter;
-
-  /* Pending WITH exit (async __aexit__ suspended) */
-  struct { KosDynWith *with_node; PyObject *exc_typ, *exc_val, *exc_tb; int normal_exit; } pending_with_exit;
-
-  uint32_t flags;            /* KosContextFlags */
+  int pending_agen_n;
+  KosDynGen *resume_gen;
+  uint32_t flags;
+  struct KosContext *context_freelist_next;
 };
 ```
 
@@ -255,33 +250,33 @@ All other opcodes push their result with **no** automatic await. That includes: 
 
 When `koskari_eval` returns `KOS_EV_AWAIT`, the driver (e.g. KosCoroutine.send or
 the sync adapter) sends the await result and calls `koskari_eval` again. On
-re-entry, **revive** runs before the next opcode is dispatched: for AWAIT it
-pushes the send value onto the current frame's stack, then checks
-`PENDING_WITH_EXIT_NODE`. If set (async WITH exit had suspended), it calls
-`kos_complete_pending_with_exit(ctx)`, which pops TOS (the exit result just
-pushed), applies swallow logic (exception and truthy ⇒ swallow), drops the WITH
-stack block, pops the WITH node, sets frame PC to the post-POP_WITH instruction,
-and pushes `None`. Thus the with-expression value is always `None`; the
-`__aexit__` return is never left on the stack for RETURN to use.
+re-entry, **revive** runs before the next opcode is dispatched. **`revive_await`**
+(in `eval.c`) pushes the await result (from `py_resume_inject` or the send value)
+onto the current frame stack, then calls **`kos_dyn_complete_pending_exit(ctx, 1)`**.
+That walks the dynamic chain for a `KosDynWith` whose **`phase`** is
+`KOS_WITH_PHASE_PENDING_EXIT_AWAIT` (async `__aexit__` had suspended) and runs
+`kos_dyn_with_on_control_returned`: it pops TOS (the `__aexit__` return), applies
+swallow logic (exception and truthy ⇒ swallow), drops the WITH stack block,
+optionally pops the node, sets frame PC to the post-`POP_WITH` instruction, and
+pushes `None` or the body value as appropriate. Thus the with-expression value is
+always `None` on swallow/normal paths; the `__aexit__` return is not left on the
+stack for RETURN to use.
 
-Two variants exist: `kos_complete_pending_with_exit(ctx)` fully completes and
-unlinks the WITH node; `kos_complete_pending_with_exit_semantic(ctx)` performs
-only the semantic actions (swallow logic, stack cleanup, PC set) without unlinking,
-for use inside the WITH node's own `pop` handler where the caller (kos_dyn_pop)
-is responsible for unlinking. See [with-dyn-with.md](with-dyn-with.md) for the
-full async exit flow (sync completion and suspend/resume).
+Wrappers: **`kos_complete_pending_with_exit(ctx)`** / **`kos_complete_pending_with_exit_semantic(ctx)`**
+delegate to `kos_dyn_complete_pending_exit` with `do_pop_node` 1 or 0 (full unlink
+vs semantic-only for paths where the caller unlinks). See
+[with-dyn-with.md](with-dyn-with.md) for the full async exit flow.
 
 ## Public C API
 
 ### DynNode Chain Management
 
-The unified API dispatches through `kos_dyn_type_ops[]` indexed by node kind. Each node
-type implements handlers (install, pop, wind, unwind, teardown_after_unwind,
-unwind_on_exception, clone) and declares capability bits. See
-[dynamic-node-unified-api.md](dynamic-node-unified-api.md) for the full handler model.
+Chain operations dispatch on `KosDynKind` and `KOS_DYN_CAP_*` in `dynchain.c`
+(switch-based helpers per kind). See
+[dynamic-node-unified-api.md](dynamic-node-unified-api.md) for the capability model.
 
 ```c
-/* Generic push/pop (dispatches through type-ops table) */
+/* Generic push/pop */
 int kos_dyn_push(KosContext *ctx, KosDynNode *node);
 int kos_dyn_pop(KosContext *ctx, KosDynNode *node, KosEvent *out_ev);
 int kos_dyn_pop_top(KosContext *ctx, KosEvent *out_ev);  /* pops top; fails for BARRIER nodes */
