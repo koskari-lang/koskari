@@ -2,6 +2,10 @@
 /* === KosDynFrame implementation === */
 
 
+/**
+   Allocate a FRAME node: code, namespace, stack ownership per caller.
+   Callers: internal frame construction, kos_dyn_push_frame.
+*/
 KosDynFrame *kos_dynframe_new(
     KosDynNode *parent,
     KosCode *code,
@@ -26,6 +30,9 @@ KosDynFrame *kos_dynframe_new(
 }
 
 
+/**
+   Deep-copy stack for continuation capture / INSTALL. Callers: kos_dyn_clone.
+*/
 KosDynFrame *kos_dynframe_clone(KosDynFrame *frame) {
   if (! frame)
     return NULL;
@@ -60,6 +67,10 @@ KosDynFrame *kos_dynframe_clone(KosDynFrame *frame) {
 }
 
 
+/**
+   Release stack chain and namespace; return node to freelist. Callers:
+   kos_dynnode_free, chain teardown.
+*/
 void kos_dynframe_free(KosDynFrame *frame) {
   if (! frame)
     return;
@@ -79,6 +90,10 @@ void kos_dynframe_free(KosDynFrame *frame) {
 }
 
 
+/**
+   Push a new frame with code and ns as DYN_TOP and FRAME_TOP. Callers: eval
+   when entering a Python function.
+*/
 KosDynFrame *kos_dyn_push_frame(
     KosContext *ctx,
     KosCode *code,
@@ -96,11 +111,18 @@ KosDynFrame *kos_dyn_push_frame(
 }
 
 
+/**
+   Push frame with NULL code/ns (placeholder). Callers: setup paths needing a
+   frame before code is bound.
+*/
 KosDynFrame *kos_dyn_push_frame_empty(KosContext *ctx) {
   return kos_dyn_push_frame(ctx, NULL, NULL);
 }
 
 
+/**
+   Clear stack and metadata for tail-call reuse of the same frame object.
+*/
 void kos_dynframe_reset_for_tail(KosDynFrame *frame) {
   if (! frame)
     return;
@@ -126,6 +148,10 @@ void kos_dynframe_reset_for_tail(KosDynFrame *frame) {
 }
 
 
+/**
+   Pop top if it is a FRAME; refresh frame_top. Does not run full uninstall
+   (no extent teardown). Callers: simple frame exit when no extra nodes on top.
+*/
 int kos_dyn_pop_frame(KosContext *ctx) {
   if (! KosContext_DYN_TOP(ctx)) {
     PyErr_SetString(PyExc_RuntimeError, "no node to pop");

@@ -2,6 +2,10 @@
 /* === KosDynCC implementation === */
 
 
+/**
+   Allocate call/cc marker with resume PC after CAPTURE_CC. Callers:
+   opcode PUSH_CC.
+*/
 static KosDynCC *kos_dyncc_new(KosDynNode *parent, uint32_t resume_pc) {
 
   KosDynCC *cc = kos_dynnode_alloc();
@@ -14,6 +18,9 @@ static KosDynCC *kos_dyncc_new(KosDynNode *parent, uint32_t resume_pc) {
 }
 
 
+/**
+   Clone resume_pc for continuation templates.
+*/
 static KosDynCC *kos_dyncc_clone(KosDynCC *cc) {
   if (! cc)
     return NULL;
@@ -30,6 +37,9 @@ static KosDynCC *kos_dyncc_clone(KosDynCC *cc) {
 }
 
 
+/**
+   No refs on CC payload; return to freelist.
+*/
 static void kos_dyncc_free(KosDynCC *cc) {
   if (! cc)
     return;
@@ -38,6 +48,9 @@ static void kos_dyncc_free(KosDynCC *cc) {
 }
 
 
+/**
+   Link CC as DYN_TOP without kos_dyn_install (minimal push). Callers: PUSH_CC.
+*/
 KosDynCC *kos_dyn_push_cc(KosContext *ctx, uint32_t resume_pc) {
 
   KosDynCC *cc = kos_dyncc_new(KosContext_DYN_TOP(ctx), resume_pc);
@@ -51,6 +64,9 @@ KosDynCC *kos_dyn_push_cc(KosContext *ctx, uint32_t resume_pc) {
 }
 
 
+/**
+   Unlink CC from top when it matches; free node. Callers: POP_CC fast path.
+*/
 void kos_dyn_pop_cc(KosContext *ctx, KosDynCC *cc) {
   if (! KosContext_DYN_TOP(ctx) || KosContext_DYN_TOP(ctx) != (KosDynNode *) cc) {
     return;

@@ -7,6 +7,9 @@
 static PyObject *_param_sentinel_unset = NULL;
 
 
+/**
+   Build PARAM node from owned bindings dict (caller transfers ownership).
+*/
 static KosDynParam *kos_dynparam_new_from_bindings(
     KosDynNode *parent,
     PyObject *bindings) {
@@ -30,6 +33,9 @@ static KosDynParam *kos_dynparam_new_from_bindings(
 }
 
 
+/**
+   Build PARAM from parallel param ref / value arrays (creates dict).
+*/
 static KosDynParam *kos_dynparam_new(
     KosDynNode *parent,
     uint32_t count,
@@ -57,6 +63,9 @@ static KosDynParam *kos_dynparam_new(
 }
 
 
+/**
+   PyDict_Copy bindings for INSTALL/PUSH segments.
+*/
 static KosDynParam *kos_dynparam_clone(KosDynParam *node) {
 
   if (! node)
@@ -84,6 +93,9 @@ static KosDynParam *kos_dynparam_clone(KosDynParam *node) {
 }
 
 
+/**
+   DECREF bindings and saved; return to freelist.
+*/
 static void kos_dynparam_free(KosDynParam *node) {
 
   if (! node)
@@ -98,6 +110,9 @@ static void kos_dynparam_free(KosDynParam *node) {
 }
 
 
+/**
+   Apply bindings to KosContext domain; stash prior values in SAVED dict.
+*/
 static int kos_dynparam_enter(KosContext *ctx, KosDynParam *node) {
 
   PyObject *domain = KosContext_DOMAIN(ctx);
@@ -143,6 +158,9 @@ static int kos_dynparam_enter(KosContext *ctx, KosDynParam *node) {
 }
 
 
+/**
+   Restore domain from SAVED (unwind / transfer).
+*/
 static void kos_dynparam_restore(KosContext *ctx, KosDynParam *node) {
 
   PyObject *domain = KosContext_DOMAIN(ctx);
@@ -167,11 +185,17 @@ static void kos_dynparam_restore(KosContext *ctx, KosDynParam *node) {
 }
 
 
+/**
+   INSTALL wind: enter bindings. Callers: kos_dyn_wind, install wind span.
+*/
 int kos_dyn_param_wind(KosContext *ctx, KosDynParam *node) {
   return kos_dynparam_enter(ctx, node);
 }
 
 
+/**
+   Restore outer param values on extent unwind. Callers: kos_dyn_unwind.
+*/
 void kos_dyn_param_unwind(KosContext *ctx, KosDynParam *node) {
   if (KOS_XFER_TRACE)
     SAYF("[xfer] param unwind node=%p", (void *) node);
@@ -179,6 +203,9 @@ void kos_dyn_param_unwind(KosContext *ctx, KosDynParam *node) {
 }
 
 
+/**
+   Push PARAM from dict: enter then link as DYN_TOP. Callers: opcode PUSH_PARAM.
+*/
 KosDynParam *kos_dyn_push_param_dict(KosContext *ctx, PyObject *bindings) {
 
   if (! bindings) {
@@ -213,6 +240,9 @@ KosDynParam *kos_dyn_push_param_dict(KosContext *ctx, PyObject *bindings) {
 }
 
 
+/**
+   Push PARAM from parallel arrays (vector call sites).
+*/
 KosDynParam *kos_dyn_push_param(
     KosContext *ctx,
     uint32_t count,
@@ -236,6 +266,9 @@ KosDynParam *kos_dyn_push_param(
 }
 
 
+/**
+   Restore and unlink PARAM when top. Callers: POP_PARAM, transfer pop.
+*/
 void kos_dyn_pop_param(KosContext *ctx, KosDynParam *node) {
   if (! KosContext_DYN_TOP(ctx) || KosContext_DYN_TOP(ctx) != (KosDynNode *) node) {
     return;

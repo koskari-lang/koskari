@@ -2,6 +2,10 @@
 /* === KosDynNs (namespace scope) implementation === */
 
 
+/**
+   NS node holding prior frame namespace for restore on pop. Callers:
+   kos_dyn_push_ns.
+*/
 static KosDynNs *kos_dynns_new(KosDynNode *parent, PyObject *saved_ns) {
 
   KosDynNs *ns_node = kos_dynnode_alloc();
@@ -16,6 +20,9 @@ static KosDynNs *kos_dynns_new(KosDynNode *parent, PyObject *saved_ns) {
 }
 
 
+/**
+   Clone saved_ns INCREF for continuation segments.
+*/
 static KosDynNs *kos_dynns_clone(KosDynNs *ns_node) {
   if (! ns_node)
     return NULL;
@@ -29,6 +36,9 @@ static KosDynNs *kos_dynns_clone(KosDynNs *ns_node) {
 }
 
 
+/**
+   DECREF saved_ns; return node to freelist.
+*/
 static void kos_dynns_free(KosDynNs *ns_node) {
   if (! ns_node)
     return;
@@ -38,6 +48,9 @@ static void kos_dynns_free(KosDynNs *ns_node) {
 }
 
 
+/**
+   Restore frame ns from saved_ns during uninstall (PUSH_NS / POP_NS).
+*/
 void kos_dyn_ns_unwind(KosContext *ctx, KosDynNs *node) {
   if (! node)
     return;
@@ -50,6 +63,9 @@ void kos_dyn_ns_unwind(KosContext *ctx, KosDynNs *node) {
 }
 
 
+/**
+   Push NS as DYN_TOP (caller swapped frame ns before push). Callers: PUSH_NS.
+*/
 KosDynNs *kos_dyn_push_ns(KosContext *ctx, PyObject *saved_ns) {
 
   KosDynNs *ns_node = kos_dynns_new(KosContext_DYN_TOP(ctx), saved_ns);
@@ -63,6 +79,9 @@ KosDynNs *kos_dyn_push_ns(KosContext *ctx, PyObject *saved_ns) {
 }
 
 
+/**
+   Unlink and free NS when top. Callers: POP_NS.
+*/
 void kos_dyn_pop_ns(KosContext *ctx, KosDynNs *node) {
   if (! KosContext_DYN_TOP(ctx) || KosContext_DYN_TOP(ctx) != (KosDynNode *) node) {
     return;

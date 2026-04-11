@@ -2,6 +2,9 @@
 /* === KosDynWith (single-shot context manager) === */
 
 
+/**
+   Single-shot WITH: catch cap, resume_pc after body. Callers: kos_dyn_push_with.
+*/
 static KosDynWith *kos_dynwith_new(
     KosDynNode *parent,
     PyObject *mgr,
@@ -30,6 +33,9 @@ static KosDynWith *kos_dynwith_new(
 }
 
 
+/**
+   Multi-shot dyn-with: install_wind + unwind caps for enter/exit thunks.
+*/
 static KosDynWith *kos_dyndynwith_new(
     KosDynNode *parent,
     PyObject *mgr,
@@ -60,6 +66,9 @@ static KosDynWith *kos_dyndynwith_new(
 }
 
 
+/**
+   Clone mgr/enter/exit/name for continuation segment (not in pending await).
+*/
 KosDynWith *kos_dynwith_clone(KosDynWith *src) {
   if (! src)
     return NULL;
@@ -95,6 +104,9 @@ KosDynWith *kos_dynwith_clone(KosDynWith *src) {
 }
 
 
+/**
+   Clone DYN_WITH payload like kos_dynwith_clone.
+*/
 KosDynWith *kos_dyndynwith_clone(KosDynWith *src) {
   if (! src)
     return NULL;
@@ -130,6 +142,9 @@ KosDynWith *kos_dyndynwith_clone(KosDynWith *src) {
 }
 
 
+/**
+   DECREF mgr/enter/exit/name and pending exc triple; return to freelist.
+*/
 static void kos_dynwith_free(KosDynWith *node) {
   if (! node)
     return;
@@ -155,6 +170,9 @@ static void kos_dynwith_free(KosDynWith *node) {
 }
 
 
+/**
+   Push WITH as DYN_TOP with ENTERED=1 after sync __enter__. Callers: PUSH_WITH.
+*/
 KosDynWith *kos_dyn_push_with(
     KosContext *ctx,
     PyObject *mgr,
@@ -176,6 +194,9 @@ KosDynWith *kos_dyn_push_with(
 }
 
 
+/**
+   Push DYN_WITH as DYN_TOP (multi-shot). Callers: PUSH_DYN_WITH.
+*/
 KosDynWith *kos_dyn_push_dyn_with(
     KosContext *ctx,
     PyObject *mgr,
@@ -197,6 +218,9 @@ KosDynWith *kos_dyn_push_dyn_with(
 }
 
 
+/**
+   Push WITH before async __enter__ completes (PENDING_ENTER_AWAIT).
+*/
 KosDynWith *kos_dyn_push_with_provisional(
     KosContext *ctx,
     PyObject *mgr,
@@ -219,6 +243,9 @@ KosDynWith *kos_dyn_push_with_provisional(
 }
 
 
+/**
+   Push DYN_WITH before async __enter__ completes.
+*/
 KosDynWith *kos_dyn_push_dyn_with_provisional(
     KosContext *ctx,
     PyObject *mgr,
@@ -241,6 +268,9 @@ KosDynWith *kos_dyn_push_dyn_with_provisional(
 }
 
 
+/**
+   Unlink WITH when top without running __exit__ (fast path only).
+*/
 void kos_dyn_pop_with(KosContext *ctx, KosDynWith *node) {
   if (! KosContext_DYN_TOP(ctx) || KosContext_DYN_TOP(ctx) != (KosDynNode *) node) {
     return;
@@ -257,6 +287,9 @@ void kos_dyn_pop_with(KosContext *ctx, KosDynWith *node) {
 #define CURRENT_PC(ctx)       KosDynFrame_PC(CURRENT_FRAME(ctx))
 
 
+/**
+   Bind name in frame namespace for `as` targets.
+*/
 static int frame_ns_store(KosContext *ctx, PyObject *name, PyObject *val) {
   KosDynFrame *frame = CURRENT_FRAME(ctx);
   if (! frame)
@@ -270,6 +303,9 @@ static int frame_ns_store(KosContext *ctx, PyObject *name, PyObject *val) {
 }
 
 
+/**
+   Resume after awaitable __enter__: bind name, clear PENDING_ENTER_AWAIT.
+*/
 static int kos_dyn_with_on_enter_control_returned(KosContext *ctx, KosDynWith *with_node) {
 
   if (! with_node || KosDynWith_PHASE(with_node) != KOS_WITH_PHASE_PENDING_ENTER_AWAIT)
@@ -297,6 +333,9 @@ static int kos_dyn_with_on_enter_control_returned(KosContext *ctx, KosDynWith *w
 }
 
 
+/**
+   Resume after awaitable __exit__: merge result with exc triple, maybe pop node.
+*/
 static int kos_dyn_with_on_control_returned(KosContext *ctx, KosDynWith *with_node,
                                             int do_pop_node) {
 
@@ -376,6 +415,9 @@ static int kos_dyn_with_on_control_returned(KosContext *ctx, KosDynWith *with_no
 }
 
 
+/**
+   INSTALL wind: sync __enter__ for DYN_WITH during transfer. Callers: kos_dyn_wind.
+*/
 static int kos_dyn_dyn_with_wind(KosContext *ctx, KosDynWith *node, KosEvent *out_ev) {
   PyObject *enter_fn = KosDynWith_ENTER(node);
   int r = KosContext_CallNoArgs(ctx, out_ev, enter_fn, 0);
@@ -403,6 +445,9 @@ static int kos_dyn_dyn_with_wind(KosContext *ctx, KosDynWith *node, KosEvent *ou
 }
 
 
+/**
+   Complete provisional WITH after __enter__ result is ready (non-await path).
+*/
 int finalize_provisional_with_enter(KosContext *ctx, PyObject *result,
                                     KosDynWith *with_node) {
 

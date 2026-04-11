@@ -2,6 +2,10 @@
 /* === KosDynYieldFrom implementation === */
 
 
+/**
+   YIELD_FROM node: delegate iterator, phase state for close/send. Callers:
+   kos_dyn_push_yield_from.
+*/
 KosDynYieldFrom *kos_dynyieldfrom_new(
     KosDynNode *parent,
     PyObject *delegate,
@@ -26,6 +30,9 @@ KosDynYieldFrom *kos_dynyieldfrom_new(
 }
 
 
+/**
+   DECREF delegate and pending refs; return to freelist.
+*/
 static void kos_dynyieldfrom_free(KosDynYieldFrom *node) {
   if (! node)
     return;
@@ -38,6 +45,9 @@ static void kos_dynyieldfrom_free(KosDynYieldFrom *node) {
 }
 
 
+/**
+   Clone delegate and pending state for continuation capture.
+*/
 static KosDynYieldFrom *kos_dynyieldfrom_clone(KosDynYieldFrom *node) {
 
   KosDynYieldFrom *clone = kos_dynnode_alloc();
@@ -72,6 +82,9 @@ static KosDynYieldFrom *kos_dynyieldfrom_clone(KosDynYieldFrom *node) {
 }
 
 
+/**
+   Close delegate on pop (uninstall path). Callers: kos_dyn_uninstall_handler.
+*/
 void kos_dyn_yieldfrom_unwind(KosContext *ctx, KosDynYieldFrom *node) {
   (void) ctx;
   if (node)

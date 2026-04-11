@@ -2,6 +2,9 @@
 /* === KosDynCollect implementation === */
 
 
+/**
+   COLLECT region: saved ns for restore when collector scope ends.
+*/
 static KosDynCollect *kos_dyncollect_new(KosDynNode *parent, PyObject *saved_ns) {
   KosDynCollect *col_node = (KosDynCollect *) kos_dynnode_alloc();
   if (! col_node) {
@@ -15,6 +18,9 @@ static KosDynCollect *kos_dyncollect_new(KosDynNode *parent, PyObject *saved_ns)
 }
 
 
+/**
+   Clone saved_ns for continuation capture.
+*/
 static KosDynCollect *kos_dyncollect_clone(KosDynCollect *col_node) {
   if (! col_node)
     return NULL;
@@ -28,6 +34,9 @@ static KosDynCollect *kos_dyncollect_clone(KosDynCollect *col_node) {
 }
 
 
+/**
+   DECREF saved_ns; return node to freelist.
+*/
 static void kos_dyncollect_free(KosDynCollect *col_node) {
   if (! col_node)
     return;
@@ -37,6 +46,9 @@ static void kos_dyncollect_free(KosDynCollect *col_node) {
 }
 
 
+/**
+   Restore frame ns from collector saved_ns on pop (matches kos_dyn_ns_unwind).
+*/
 void kos_dyn_collect_unwind(KosContext *ctx, KosDynCollect *node) {
   if (! node)
     return;
@@ -49,6 +61,9 @@ void kos_dyn_collect_unwind(KosContext *ctx, KosDynCollect *node) {
 }
 
 
+/**
+   Push COLLECT as DYN_TOP. Callers: PUSH_COLLECT.
+*/
 KosDynCollect *kos_dyn_push_collect(KosContext *ctx, PyObject *saved_ns) {
   KosDynCollect *col_node = kos_dyncollect_new(KosContext_DYN_TOP(ctx), saved_ns);
   if (! col_node)
@@ -61,6 +76,9 @@ KosDynCollect *kos_dyn_push_collect(KosContext *ctx, PyObject *saved_ns) {
 }
 
 
+/**
+   Pop COLLECT when top. Callers: POP_COLLECT.
+*/
 void kos_dyn_pop_collect(KosContext *ctx, KosDynCollect *node) {
   if (! KosContext_DYN_TOP(ctx) ||
       KosContext_DYN_TOP(ctx) != (KosDynNode *) node) {

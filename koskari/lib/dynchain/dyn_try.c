@@ -1,4 +1,10 @@
 /* Included by dynchain.c — dyn_try */
+/* === KosDynTry (try region) === */
+
+
+/**
+   Allocate TRY with handler_pc; HANDLES_EXCEPTIONS cap for kos_dyn_handle.
+*/
 KosDynTry *kos_dyntry_new(KosDynNode *parent, uint32_t handler_pc) {
   KosDynTry *node = kos_dynnode_alloc();
   if (! node)
@@ -9,6 +15,10 @@ KosDynTry *kos_dyntry_new(KosDynNode *parent, uint32_t handler_pc) {
   return node;
 }
 
+
+/**
+   Clone enabled flag and handler_pc for continuation capture.
+*/
 KosDynTry *kos_dyntry_clone(KosDynTry *node) {
   KosDynTry *clone = kos_dynnode_alloc();
   if (! clone)
@@ -21,10 +31,18 @@ KosDynTry *kos_dyntry_clone(KosDynTry *node) {
   return clone;
 }
 
+
+/**
+   Return TRY node to freelist (no PyObject refs).
+*/
 void kos_dyntry_free(KosDynTry *node) {
   kos_dynnode_return_to_freelist(node);
 }
 
+
+/**
+   Push TRY as DYN_TOP without kos_dyn_install. Callers: opcode PUSH_TRY.
+*/
 KosDynTry *kos_dyn_push_try(KosContext *ctx, uint32_t handler_pc) {
   KosDynTry *node = kos_dyntry_new(KosContext_DYN_TOP(ctx), handler_pc);
   if (! node) return NULL;
@@ -33,6 +51,10 @@ KosDynTry *kos_dyn_push_try(KosContext *ctx, uint32_t handler_pc) {
   return node;
 }
 
+
+/**
+   Pop TRY when it is top (fast path). Callers: abort_push_region, POP_TRY.
+*/
 void kos_dyn_pop_try(KosContext *ctx, KosDynTry *node) {
   if (KosContext_DYN_TOP(ctx)==(KosDynNode*)node) {
     KosContext_DYN_TOP(ctx)=KosDynNode_PARENT(node);

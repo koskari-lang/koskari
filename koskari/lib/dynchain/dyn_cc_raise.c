@@ -2,6 +2,10 @@
 /* === KosDynCCRaise implementation === */
 
 
+/**
+   Sentinel holding exception for foreign apply; unwind sets PyErr. Callers:
+   kos_build_cc_unwind_plan.
+*/
 static KosDynCCRaise *kos_dyn_cc_raise_new(KosDynNode *parent, PyObject *exc_type, PyObject *exc_val) {
   KosDynCCRaise *node = (KosDynCCRaise *) kos_dynnode_alloc();
   if (! node)
@@ -17,6 +21,9 @@ static KosDynCCRaise *kos_dyn_cc_raise_new(KosDynNode *parent, PyObject *exc_typ
 }
 
 
+/**
+   DECREF exc refs; return node to freelist.
+*/
 static void kos_dyn_cc_raise_free(KosDynCCRaise *node) {
   if (! node)
     return;
@@ -28,6 +35,11 @@ static void kos_dyn_cc_raise_free(KosDynCCRaise *node) {
   kos_dynnode_return_to_freelist(node);
 }
 
+
+/**
+   Transfer EXTENT_ACTION target: set PyErr from stored exception; returns -1.
+   Callers: kos_dyn_unwind for KOS_DYN_CC_RAISE.
+*/
 static int cc_raise_unwind(KosContext *ctx, KosDynNode *node,
                            KosEvent *out_ev) {
   (void) ctx;

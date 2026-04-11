@@ -2,6 +2,10 @@
 /* === KosDynPrompt implementation === */
 
 
+/**
+   Allocate PROMPT delimiter: barrier + stack block pairing in install. Callers:
+   kos_dyn_push_prompt.
+*/
 KosDynPrompt *kos_dynprompt_new(KosDynNode *parent, uint32_t prompt_id) {
 
   KosDynPrompt *prompt = kos_dynnode_alloc();
@@ -17,6 +21,9 @@ KosDynPrompt *kos_dynprompt_new(KosDynNode *parent, uint32_t prompt_id) {
 }
 
 
+/**
+   Clone prompt id for captured segments; pending shift wrapper not cloned.
+*/
 static KosDynPrompt *kos_dynprompt_clone(KosDynPrompt *prompt) {
   if (! prompt)
     return NULL;
@@ -34,6 +41,9 @@ static KosDynPrompt *kos_dynprompt_clone(KosDynPrompt *prompt) {
 }
 
 
+/**
+   DECREF pending wrapper; return node to freelist.
+*/
 void kos_dynprompt_free(KosDynPrompt *prompt) {
   if (! prompt)
     return;
@@ -44,6 +54,10 @@ void kos_dynprompt_free(KosDynPrompt *prompt) {
 }
 
 
+/**
+   Push prompt via kos_dyn_push (install pushes stack block on frame). Callers:
+   opcode PUSH_PROMPT.
+*/
 KosDynPrompt *kos_dyn_push_prompt(KosContext *ctx, uint32_t prompt_id) {
 
   KosDynPrompt *prompt = kos_dynprompt_new(KosContext_DYN_TOP(ctx), prompt_id);
@@ -59,6 +73,10 @@ KosDynPrompt *kos_dyn_push_prompt(KosContext *ctx, uint32_t prompt_id) {
 }
 
 
+/**
+   Run uninstall handler (drop block), unlink, free. Used when popping prompt
+   without full kos_dyn_uninstall (exception_unwind, unwind walks).
+*/
 void kos_dyn_pop_prompt(KosContext *ctx, KosDynPrompt *prompt) {
   if (! KosContext_DYN_TOP(ctx) || KosContext_DYN_TOP(ctx) != (KosDynNode *) prompt) {
     return;

@@ -1,4 +1,10 @@
 /* Included by dynchain.c — dyn_finally */
+/* === KosDynFinally (finally region) === */
+
+
+/**
+   Allocate FINALLY with handler_pc; handles RAISE and RETURN when enabled.
+*/
 KosDynFinally *kos_dynfinally_new(KosDynNode *parent, uint32_t handler_pc) {
   KosDynFinally *node = kos_dynnode_alloc();
   if (! node)
@@ -12,6 +18,10 @@ KosDynFinally *kos_dynfinally_new(KosDynNode *parent, uint32_t handler_pc) {
   return node;
 }
 
+
+/**
+   Clone finally state for continuation templates.
+*/
 KosDynFinally *kos_dynfinally_clone(KosDynFinally *node) {
   KosDynFinally *clone = kos_dynnode_alloc();
   if (! clone)
@@ -29,11 +39,18 @@ KosDynFinally *kos_dynfinally_clone(KosDynFinally *node) {
 }
 
 
+/**
+   DECREF handling result; return node to freelist.
+*/
 void kos_dynfinally_free(KosDynFinally *node) {
   Py_XDECREF(KosDynFinally_HANDLING_RESULT(node));
   kos_dynnode_return_to_freelist(node);
 }
 
+
+/**
+   Push FINALLY as DYN_TOP. Callers: opcode PUSH_FINALLY.
+*/
 KosDynFinally *kos_dyn_push_finally(KosContext *ctx, uint32_t handler_pc) {
   KosDynFinally *node = kos_dynfinally_new(KosContext_DYN_TOP(ctx), handler_pc);
   if (! node) return NULL;
@@ -42,6 +59,10 @@ KosDynFinally *kos_dyn_push_finally(KosContext *ctx, uint32_t handler_pc) {
   return node;
 }
 
+
+/**
+   Pop FINALLY when top. Callers: abort_push_region, POP_FINALLY fast path.
+*/
 void kos_dyn_pop_finally(KosContext *ctx, KosDynFinally *node) {
   if (KosContext_DYN_TOP(ctx)==(KosDynNode*)node) {
     KosContext_DYN_TOP(ctx)=KosDynNode_PARENT(node);

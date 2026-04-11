@@ -2,6 +2,9 @@
 /* === KosDynShift implementation === */
 
 
+/**
+   Marker for shift handler extent (no frame). Callers: kos_dyn_push_shift.
+*/
 static KosDynShift *kos_dynshift_new(KosDynNode *parent) {
   KosDynShift *shift = (KosDynShift *) kos_dynnode_alloc();
   if (! shift)
@@ -12,6 +15,9 @@ static KosDynShift *kos_dynshift_new(KosDynNode *parent) {
 }
 
 
+/**
+   Clone for captured chain segments.
+*/
 static KosDynShift *kos_dynshift_clone(KosDynShift *shift) {
   if (! shift)
     return NULL;
@@ -28,6 +34,9 @@ static KosDynShift *kos_dynshift_clone(KosDynShift *shift) {
 }
 
 
+/**
+   Return shift node to freelist.
+*/
 static void kos_dynshift_free(KosDynShift *shift) {
   if (! shift)
     return;
@@ -36,6 +45,9 @@ static void kos_dynshift_free(KosDynShift *shift) {
 }
 
 
+/**
+   Push SHIFT node via kos_dyn_push. Callers: opcode PUSH_SHIFT.
+*/
 int kos_dyn_push_shift(KosContext *ctx) {
   KosDynShift *shift = kos_dynshift_new(KosContext_DYN_TOP(ctx));
   if (! shift)

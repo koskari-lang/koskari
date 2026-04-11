@@ -2,6 +2,10 @@
 /* === KosDynGen implementation === */
 
 
+/**
+   Allocate GEN boundary node; owner borrowed, refcount for sharing. Callers:
+   generator object setup.
+*/
 KosDynGen *kos_dyngen_new(PyObject *owner) {
   KosDynGen *gen = (KosDynGen *) kos_dynnode_alloc();
   if (! gen)
@@ -16,6 +20,9 @@ KosDynGen *kos_dyngen_new(PyObject *owner) {
 }
 
 
+/**
+   Clear owner/active; return node to freelist.
+*/
 void kos_dyngen_free(KosDynGen *gen) {
   if (! gen)
     return;
@@ -26,12 +33,18 @@ void kos_dyngen_free(KosDynGen *gen) {
 }
 
 
+/**
+   Increment GEN refcount when chain holds an extra reference.
+*/
 void kos_dyngen_acquire(KosDynGen *gen) {
   if (gen)
     KosDynGen_REFCOUNT(gen)++;
 }
 
 
+/**
+   Decrement refcount; free at zero. Callers: freeze path, unwind exhausted.
+*/
 void kos_dyngen_release(KosDynGen *gen) {
   if (! gen)
     return;
@@ -46,6 +59,10 @@ void kos_dyngen_release(KosDynGen *gen) {
 }
 
 
+/**
+   Resume generator: graft GEN under ctx, swap in frozen active chain, push
+   None. Callers: eval when entering generator body from consumer.
+*/
 int kos_dyn_gen_install(KosContext *ctx, KosDynGen *gen) {
   KosDynNode *active;
   KosDynNode *n;

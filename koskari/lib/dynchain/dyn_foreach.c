@@ -1,4 +1,10 @@
 /* Included by dynchain.c — dyn_foreach */
+/* === KosDynForeach === */
+
+
+/**
+   FOREACH region: loop PCs, iterator, exhausted flag, for/else PC.
+*/
 KosDynForeach *kos_dynforeach_new(KosDynNode *parent, uint32_t break_pc, uint32_t continue_pc) {
   KosDynForeach *node = kos_dynnode_alloc();
   if (! node)
@@ -14,6 +20,10 @@ KosDynForeach *kos_dynforeach_new(KosDynNode *parent, uint32_t break_pc, uint32_
   return node;
 }
 
+
+/**
+   Clone iterator and result refs for continuation capture.
+*/
 KosDynForeach *kos_dynforeach_clone(KosDynForeach *node) {
   KosDynForeach *clone = kos_dynnode_alloc();
   if (! clone)
@@ -34,12 +44,19 @@ KosDynForeach *kos_dynforeach_clone(KosDynForeach *node) {
 }
 
 
+/**
+   DECREF result and iterator; return node to freelist.
+*/
 void kos_dynforeach_free(KosDynForeach *node) {
   Py_XDECREF(KosDynForeach_RESULT(node));
   Py_XDECREF(KosDynForeach_ITER(node));
   kos_dynnode_return_to_freelist(node);
 }
 
+
+/**
+   Push FOREACH as DYN_TOP. Callers: opcode PUSH_FOREACH.
+*/
 KosDynForeach *kos_dyn_push_foreach(KosContext *ctx, uint32_t break_pc, uint32_t continue_pc) {
   KosDynForeach *node = kos_dynforeach_new(KosContext_DYN_TOP(ctx), break_pc, continue_pc);
   if (! node) return NULL;
@@ -48,6 +65,10 @@ KosDynForeach *kos_dyn_push_foreach(KosContext *ctx, uint32_t break_pc, uint32_t
   return node;
 }
 
+
+/**
+   Pop FOREACH when top. Callers: abort_push_region, kos_dyn_transfer_to_loop.
+*/
 void kos_dyn_pop_foreach(KosContext *ctx, KosDynForeach *node) {
   if (KosContext_DYN_TOP(ctx)==(KosDynNode*)node) {
     KosContext_DYN_TOP(ctx)=KosDynNode_PARENT(node);

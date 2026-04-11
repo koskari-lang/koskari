@@ -2,6 +2,10 @@
 /* === KosDynWind implementation === */
 
 
+/**
+   Allocate dynamic-wind node; caps derived from which thunks are present.
+   Callers: kos_dyn_push_wind.
+*/
 KosDynWind *kos_dynwind_new(
     KosDynNode *parent,
     PyObject *before_thunk,
@@ -31,6 +35,9 @@ KosDynWind *kos_dynwind_new(
 }
 
 
+/**
+   Clone thunks and phase for continuation segments.
+*/
 KosDynWind *kos_dynwind_clone(KosDynWind *wind) {
   if (! wind)
     return NULL;
@@ -55,6 +62,9 @@ KosDynWind *kos_dynwind_clone(KosDynWind *wind) {
 }
 
 
+/**
+   DECREF thunks and body_result; return to freelist.
+*/
 void kos_dynwind_free(KosDynWind *wind) {
   if (! wind)
     return;
@@ -69,6 +79,10 @@ void kos_dynwind_free(KosDynWind *wind) {
 }
 
 
+/**
+   Run before-thunk (enter path); may suspend async. Callers: kos_dyn_wind,
+   install wind span.
+*/
 int kos_dyn_wind_wind(KosContext *ctx, KosDynWind *node) {
   if (! node || ! KosDynWind_BEFORE_THUNK(node))
     return 0;
@@ -82,6 +96,10 @@ int kos_dyn_wind_wind(KosContext *ctx, KosDynWind *node) {
 }
 
 
+/**
+   Run after-thunk or push body_result when leaving extent. Callers:
+   kos_dyn_unwind, uninstall_handler.
+*/
 int kos_dyn_wind_unwind(KosContext *ctx, KosDynWind *node) {
   if (! node || ! KosDynWind_ENTERED(node))
     return 0;
@@ -117,6 +135,9 @@ int kos_dyn_wind_unwind(KosContext *ctx, KosDynWind *node) {
 }
 
 
+/**
+   Resume after async before/after thunk: advance phase, pop junk, maybe unlink.
+*/
 static int kos_dyn_wind_on_control_returned(KosContext *ctx, KosDynWind *wind) {
   KosDynFrame *frame_below = (KosDynFrame *) KosDynNode_PARENT(wind);
   if (! frame_below || ! KosDynFrame_STACK(frame_below))
@@ -159,6 +180,10 @@ static int kos_dyn_wind_on_control_returned(KosContext *ctx, KosDynWind *wind) {
 }
 
 
+/**
+   Dispatch post-await resume: WITH phases, WIND phases. Callers: eval after
+   KosContext_CallArgs returns.
+*/
 int kos_dynnode_on_control_returned(KosContext *ctx, KosDynNode *node, KosEvent *out_ev) {
   (void) out_ev;
   /* When node is a frame, check if parent is WITH in pending phase. */
@@ -186,6 +211,10 @@ int kos_dynnode_on_control_returned(KosContext *ctx, KosDynNode *node, KosEvent 
 }
 
 
+/**
+   Allocate and link wind as DYN_TOP (caller runs wind enter separately in
+   some paths). Callers: opcode PUSH_WIND.
+*/
 KosDynWind *kos_dyn_push_wind(
     KosContext *ctx,
     PyObject *before_thunk,
@@ -203,6 +232,10 @@ KosDynWind *kos_dyn_push_wind(
 }
 
 
+/**
+   Unlink wind without running full uninstall (legacy fast pop). Prefer
+   kos_dyn_uninstall for extent teardown when thunks must run.
+*/
 int kos_dyn_pop_wind(KosContext *ctx, KosDynWind *wind) {
   if (! KosContext_DYN_TOP(ctx) || KosContext_DYN_TOP(ctx) != (KosDynNode *) wind) {
     PyErr_SetString(PyExc_RuntimeError, "wind node is not at top of chain");

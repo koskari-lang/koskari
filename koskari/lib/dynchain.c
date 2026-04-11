@@ -17,12 +17,15 @@
 /**
    koskari/lib/dynchain.c
 
-   Dynamic chain infrastructure implementation. Provides DynNode
-   allocation, freeing, cloning, and chain management operations.
+   Implements the unified dynamic chain: a single parent-linked stack of
+   KosDynNode values (frames, prompts, regions, winds, continuations, etc.)
+   replacing separate frame and handler chains. Transfer plans (see
+   kos_build_transfer_plan, kos_run_transfer_step) move control for delimited
+   and undelimited continuation invoke. Types and macros live in dynchain.h.
 
    :author: Christopher O'Brien <obriencj@preoccupied.net>
    :license: GNU General Public License v3
-   :ai-assistant: claude-4.6-sonnet-high via Cursor
+   :ai-assistant: GPT-5.2 via Cursor
 */
 
 
@@ -70,6 +73,10 @@ static const char *kos_dynnode_kind_names[] = {
 };
 
 
+/**
+   String name for a KosDynKind (tracing, diagnostics). Unknown kinds map to
+   UNKNOWN. Callers: debug output, SAYF traces.
+*/
 const char *kos_dynnode_kind_name(KosDynKind kind) {
   if (kind < 0 || kind >= KOS_DYN_UNKNOWN) {
     return "UNKNOWN";
@@ -81,6 +88,10 @@ const char *kos_dynnode_kind_name(KosDynKind kind) {
 /* === DynNode base operations === */
 
 
+/**
+   Initialize base KosDynNode fields (parent, kind, flags, caps). Per-kind
+   constructors call this before filling the union payload.
+*/
 static void kos_dynnode_init(
     KosDynNode *node,
     KosDynKind kind,
@@ -177,6 +188,11 @@ static void kos_dynnode_return_to_freelist(KosDynNode *node) {
 /* === Globals frame cache (CONTEXT_GLOBALS_FRAME / opcode GLOBALS, IMPORT_REL) === */
 
 
+/**
+   Outermost FRAME on the chain, cached across chain_version. Recomputed when
+   the cache is stale so GLOBALS and IMPORT_REL resolve the module namespace.
+   Callers: opcode GLOBALS, IMPORT_REL, any code needing top-level frame.
+*/
 KosDynFrame *kos_dyn_globals_frame(KosContext *ctx) {
 
   if (KosContext_CHAIN_VERSION(ctx) != KosContext_GLOBALS_CACHE_VERSION(ctx)) {
@@ -195,6 +211,11 @@ KosDynFrame *kos_dyn_globals_frame(KosContext *ctx) {
 }
 
 
+/**
+   Pop a region node without going through normal opcode POP_* when a push
+   must be rolled back (e.g. setup failure). Dispatches to the matching
+   kos_dyn_pop_* for TRY, FINALLY, LOOP, FOREACH only.
+*/
 int kos_dyn_abort_push_region(KosContext *ctx, KosDynNode *region) {
 
   switch (KosDynNode_KIND(region)) {
@@ -219,6 +240,9 @@ int kos_dyn_abort_push_region(KosContext *ctx, KosDynNode *region) {
 /* === Generic pending-exit APIs === */
 
 
+/**
+   Walk ancestors from node for a WITH/DYN_WITH awaiting async __exit__.
+*/
 static KosDynWith *find_pending_exit_with(KosDynNode *node) {
   for (; node; node = KosDynNode_PARENT(node)) {
     if (KosDynNode_IS_WITH(node)
@@ -229,12 +253,21 @@ static KosDynWith *find_pending_exit_with(KosDynNode *node) {
 }
 
 
+/**
+   Exposed form of find_pending_exit_with; returns the node or NULL.
+   Callers: eval when resuming after await inside __exit__.
+*/
 KosDynNode *kos_dyn_find_pending_exit(KosDynNode *node) {
   KosDynWith *w = find_pending_exit_with(node);
   return w ? (KosDynNode *) w : NULL;
 }
 
 
+/**
+   Resume control after async WITH exit completes: runs
+   kos_dyn_with_on_control_returned for the pending node. Callers: eval loop
+   when finishing a suspended unwind.
+*/
 int kos_dyn_complete_pending_exit(KosContext *ctx, int do_pop_node) {
   KosDynNode *n = kos_dyn_find_pending_exit(KosContext_DYN_TOP(ctx));
   if (! n)
@@ -243,6 +276,10 @@ int kos_dyn_complete_pending_exit(KosContext *ctx, int do_pop_node) {
 }
 
 
+/**
+   Clear stale PENDING_EXIT_AWAIT state on all WITH nodes (exc refs and phase).
+   Callers: eval when abandoning a pending exit path without completing it.
+*/
 void kos_dyn_clear_pending_exit(KosContext *ctx) {
   KosDynNode *n = KosContext_DYN_TOP(ctx);
   for (; n; n = KosDynNode_PARENT(n)) {
@@ -257,6 +294,12 @@ void kos_dyn_clear_pending_exit(KosContext *ctx) {
 }
 
 
+/**
+   Run context manager __exit__ for WITH/DYN_WITH during kos_dyn_unwind.
+   Fetches current exception triple (or None triple on normal exit), calls
+   exit_fn, and handles swallow / async await. Callers: kos_dyn_uninstall path
+   for WITH nodes, transfer unwind.
+*/
 int kos_dyn_with_unwind(
     KosContext *ctx,
     KosDynWith *node,
@@ -364,6 +407,11 @@ int kos_dyn_with_unwind(
 /* === Generic DynNode operations === */
 
 
+/**
+   Release kind-specific payload and PyObject refs, then return the struct to
+   the freelist or PyMem_Free. Does not walk parent links. Callers:
+   kos_dyn_uninstall, kos_dynchain_free, error paths after failed push.
+*/
 void kos_dynnode_free(KosDynNode *node) {
   if (! node)
     return;
@@ -427,11 +475,18 @@ void kos_dynnode_free(KosDynNode *node) {
 }
 
 
+/**
+   Thin wrapper around kos_dyn_clone for symmetry with kos_dynnode_free.
+*/
 KosDynNode *kos_dynnode_clone(KosDynNode *node) {
   return kos_dyn_clone(node);
 }
 
 
+/**
+   Free nodes from node toward the root, stopping before stop (stop is not
+   freed). Used to tear down a suffix of chain or a cloned template.
+*/
 void kos_dynchain_free(KosDynNode *node, KosDynNode *stop) {
 
   while (node && node != stop) {
@@ -442,11 +497,16 @@ void kos_dynchain_free(KosDynNode *node, KosDynNode *stop) {
 }
 
 
+/**
+   Deep-clone a chain suffix from top down to (but not including) stop, with
+   the clone's innermost parent set to stop. Used for continuation capture and
+   INSTALL/PUSH segments. On failure, frees partial clone.
+*/
 KosDynNode *kos_clone_chain_segment(KosDynNode *top, KosDynNode *stop) {
   if (! top || top == stop)
     return NULL;
 
-  /* Clone nodes from top to stop, linking them together */
+  /* Inner-to-outer clone; link cloned_prev->parent = next older clone */
   KosDynNode *cloned_top = NULL;
   KosDynNode *cloned_prev = NULL;
 
@@ -486,8 +546,9 @@ KosDynNode *kos_clone_chain_segment(KosDynNode *top, KosDynNode *stop) {
 
 
 /**
-   Update the frame_top cache after chain modifications.
-   Walks from dyn_top to find the topmost FRAME node.
+   Refresh FRAME_TOP after DYN_TOP changes when the new top is not a FRAME
+   (e.g. GEN, PROMPT above frame). Callers: kos_dyn_push, kos_dyn_uninstall,
+   transfer steps, generator freeze.
 */
 static void kos_update_frame_top(KosContext *ctx) {
   KosDynNode *node = KosContext_DYN_TOP(ctx);
@@ -507,6 +568,10 @@ static void kos_update_frame_top(KosContext *ctx) {
 }
 
 
+/**
+   Link node as DYN_TOP, bump chain_version, set FRAME_TOP if FRAME, and run
+   install. Primary entry for opcode and internal push helpers.
+*/
 int kos_dyn_push(KosContext *ctx, KosDynNode *node) {
   if (! node)
     return -1;
@@ -522,6 +587,11 @@ int kos_dyn_push(KosContext *ctx, KosDynNode *node) {
 }
 
 
+/**
+   Pop dyn_top: run uninstall handler (teardown, winds), unlink, free node,
+   refresh FRAME_TOP. Must be the current top. Callers: kos_dyn_pop_top,
+   xfer_step_pop_one, explicit unwinds.
+*/
 int kos_dyn_uninstall(KosContext *ctx, KosDynNode *node, KosXferEvent event,
                       KosEvent *out_ev) {
   if (! node || KosContext_DYN_TOP(ctx) != node) {
@@ -551,6 +621,10 @@ int kos_dyn_uninstall(KosContext *ctx, KosDynNode *node, KosXferEvent event,
 }
 
 
+/**
+   Clone node then kos_dyn_push the clone. Used when the source node is shared
+   or must remain immutable on the template chain.
+*/
 int kos_dyn_push_clone(KosContext *ctx, KosDynNode *node) {
   if (! node)
     return -1;
@@ -815,20 +889,14 @@ int kos_dyn_unwind(KosContext *ctx, KosDynNode *node, KosXferEvent event,
 
 
 /**
-   Called when exception propagation reaches a HANDLES_EXCEPTIONS node
-   that refused to pop normally.  Returns 0 to continue unwinding, 1 if
-   the exception was swallowed and execution should resume,
-   KOS_DYN_UNWIND_ASYNC_STARTED if async, or -1 on error.
-*/
-/**
-   Offer a control transit to a node.  Does not unlink; only decides
-   whether the node consumes, passes through, defers, or errors.
+   Offer a control transit to dyn_top without unlinking: PASS, CONSUMED,
+   DEFERRED, or ERROR. Central dispatch for exception/return/yield/shift
+   semantics (TRY/FINALLY except/finally PCs, GEN boundary, PROMPT shift).
+   Callers: kos_dyn_transition walks, kos_dyn_try_local_raise_body,
+   kos_dyn_walk_handle_yield, unwind_to_frame, shift walk.
 
-   For TRY: returns CONSUMED when event is RAISE, TRY is enabled,
-   PyErr_Occurred(), and extent table has an except handler.
-
-   For FINALLY: returns CONSUMED when event is RAISE or RETURN and
-   FINALLY is enabled.
+   TRY: CONSUMED when RAISE, enabled, PyErr set, and extent has except_pc.
+   FINALLY: CONSUMED when RAISE or RETURN and finally enabled.
 */
 KosHandleResult kos_dyn_handle(KosContext *ctx, KosDynNode *node,
                                KosXferEvent event, KosEvent *out_ev) {
@@ -901,6 +969,11 @@ KosHandleResult kos_dyn_handle(KosContext *ctx, KosDynNode *node,
 }
 
 
+/**
+   Handler PC for a TRY or FINALLY region, merged with extent table lookup on
+   the current frame. Callers: kos_dyn_try_local_raise_body when routing RAISE
+   into except/finally.
+*/
 uint32_t kos_dynnode_raise_handler_pc_for_try_finally(
     KosContext *ctx,
     KosDynNode *region) {
@@ -927,6 +1000,10 @@ uint32_t kos_dynnode_raise_handler_pc_for_try_finally(
 }
 
 
+/**
+   Resume PC for nodes that may swallow exceptions (CC, WITH). Used when a pop
+   cleared PyErr and execution should continue at a catch label.
+*/
 uint32_t kos_dynnode_catch_resume_pc(KosDynNode *node) {
 
   if (! node || ! KosDynNode_HAS_CAP(node, KOS_DYN_CAP_CATCH))
@@ -939,6 +1016,11 @@ uint32_t kos_dynnode_catch_resume_pc(KosDynNode *node) {
 }
 
 
+/**
+   Detach the chain above GEN into the GEN node for generator resume, set
+   ctx dyn_top to GEN's former parent, and wire asyncgen owner if any. Called
+   when handle(YIELD) consumes at GEN during kos_dyn_walk_handle_yield.
+*/
 static int kos_dyn_gen_freeze_and_release(KosContext *ctx, KosDynGen *gen,
                                           KosEvent *out_ev) {
   KosDynNode *saved_parent;
@@ -1015,6 +1097,10 @@ static int kos_dyn_gen_freeze_and_release(KosContext *ctx, KosDynGen *gen,
 }
 
 
+/**
+   Walk from dyn_top inward, handle(YIELD) until GEN consumes, then freeze.
+   Callers: kos_dyn_transition KOS_TRANS_WALK_HANDLE_YIELD (eval YIELD path).
+*/
 int kos_dyn_walk_handle_yield(KosContext *ctx, KosEvent *out_ev) {
   KosDynNode *node = KosContext_DYN_TOP(ctx);
 
@@ -1043,6 +1129,10 @@ int kos_dyn_walk_handle_yield(KosContext *ctx, KosEvent *out_ev) {
 }
 
 
+/**
+   PROMPT-specific step when unwinding on exception: pop prompt (drop block)
+   so RAISE can continue past the delimiter. Callers: try_local raise path.
+*/
 int kos_dyn_exception_unwind(
     KosContext *ctx,
     KosDynNode *node,
@@ -1172,6 +1262,10 @@ static int kos_dyn_pop_one_unwind_walk(
 }
 
 
+/**
+   Pop until dyn_top == target or empty. PROMPT uses kos_dyn_pop_prompt so
+   walks can cross delimiters. Callers: transfer helpers, targeted unwind.
+*/
 int kos_dyn_unwind_to_node(KosContext *ctx, KosDynNode *target,
                            KosXferEvent event, KosEvent *out_ev) {
 
@@ -1201,6 +1295,11 @@ int kos_dyn_unwind_to_node(KosContext *ctx, KosDynNode *target,
 }
 
 
+/**
+   Unwind toward frame, offering RETURN to each top (FINALLY can consume and
+   branch). Sets async unwind target frame when WITH exits suspend. Callers:
+   kos_dyn_transition WALK_RETURN_TO_FRAME, RETURN opcode plumbing.
+*/
 int kos_dyn_walk_return_to_frame(KosContext *ctx, KosDynFrame *frame,
                                   PyObject *val, KosEvent *out_ev) {
 
@@ -1273,6 +1372,11 @@ int kos_dyn_walk_return_to_frame(KosContext *ctx, KosDynFrame *frame,
 }
 
 
+/**
+   Pop toward frame with handle(event) before each pop. CONSUMED for non-
+   FINALLY is currently an error (see message). Callers: kos_dyn_transition
+   UNWIND_TO_FRAME.
+*/
 int kos_dyn_unwind_to_frame(KosContext *ctx, KosDynFrame *frame,
                             KosXferEvent event, KosEvent *out_ev) {
 
@@ -1314,6 +1418,10 @@ int kos_dyn_unwind_to_frame(KosContext *ctx, KosDynFrame *frame,
 }
 
 
+/**
+   Nearest enabled TRY or FINALLY from dyn_top for local exception dispatch.
+   Callers: kos_dyn_try_local_raise_body, opcode RAISE routing.
+*/
 KosDynNode *kos_find_node_for_raise(KosContext *ctx) {
   KosDynNode *node = KosContext_DYN_TOP(ctx);
   while (node) {
@@ -1326,6 +1434,9 @@ KosDynNode *kos_find_node_for_raise(KosContext *ctx) {
 }
 
 
+/**
+   Nearest LOOP or FOREACH from dyn_top. Callers: BREAK, CONTINUE opcodes.
+*/
 KosDynNode *kos_find_node_for_loop(KosContext *ctx) {
   KosDynNode *node = KosContext_DYN_TOP(ctx);
   while (node) {
@@ -1337,6 +1448,10 @@ KosDynNode *kos_find_node_for_loop(KosContext *ctx) {
 }
 
 
+/**
+   Implement break/continue: find loop region in current frame, unwind to it,
+   set PC and stack per event. Callers: kos_dyn_transition TRANSFER_TO_LOOP.
+*/
 int kos_dyn_transfer_to_loop(KosContext *ctx, KosXferEvent event,
                              PyObject *result, KosEvent *out_ev) {
 
@@ -1429,10 +1544,11 @@ int kos_dyn_transfer_to_loop(KosContext *ctx, KosXferEvent event,
 
 
 /**
-   Try to handle PyErr by finding a TRY or FINALLY region and jumping to its
-   handler.  Same semantics as the former try_local_exception_handler in
-   eval.c: return 1 if a handler was applied, 0 if out_ev was filled with
-   RAISE, -1 on error (PyErr set).
+   Walk dyn_top down toward frame_top, handle(RAISE) then pop until a TRY or
+   FINALLY consumes (jump to handler) or no handler remains. Same semantics as
+   legacy try_local_exception_handler in eval.c: return 1 if handler applied,
+   0 if out_ev gets RAISE, -1 on error. Callers: kos_dyn_transition
+   KOS_TRANS_TRY_LOCAL_RAISE.
 */
 static int kos_dyn_try_local_raise_body(KosContext *ctx, KosEvent *out_ev) {
   #if VERBOSE_DEBUG
@@ -1573,6 +1689,11 @@ static int kos_dyn_try_local_raise_body(KosContext *ctx, KosEvent *out_ev) {
 }
 
 
+/**
+   Single entry for eval-driven chain transitions: return walk, unwind, yield
+   walk, loop transfer, local raise. Fills out status and raw result codes.
+   Callers: eval.c opcode and event dispatch.
+*/
 int kos_dyn_transition(
     KosContext *ctx,
     const KosTransitionReq *req,
@@ -1695,6 +1816,10 @@ int kos_dyn_transition(
 }
 
 
+/**
+   Allocate YIELD_FROM node, set as DYN_TOP, refresh frame_top. Callers: opcode
+   YIELD_FROM setup (generator delegation).
+*/
 KosDynYieldFrom *kos_dyn_push_yield_from(
     KosContext *ctx,
     PyObject *delegate,
@@ -1718,6 +1843,10 @@ KosDynYieldFrom *kos_dyn_push_yield_from(
 }
 
 
+/**
+   Unlink YIELD_FROM from top and free it if it matches dyn_top (no-op on
+   mismatch). Callers: YIELD_FROM completion and unwind paths.
+*/
 void kos_dyn_pop_yield_from(KosContext *ctx, KosDynYieldFrom *node) {
   SAYF("[gen] pop_yield_from node=%p dyn_top=%p\n",
        (void *) node, (void *) KosContext_DYN_TOP(ctx));
@@ -1739,6 +1868,10 @@ void kos_dyn_pop_yield_from(KosContext *ctx, KosDynYieldFrom *node) {
 /* === Prompt lookup and validation === */
 
 
+/**
+   Find PROMPT with matching id walking from dyn_top. Callers: shift capture,
+   POP_PROMPT, reset/shift routing.
+*/
 KosDynPrompt *kos_find_prompt(KosContext *ctx, uint32_t prompt_id) {
   KosDynNode *node = KosContext_DYN_TOP(ctx);
 
@@ -1756,6 +1889,9 @@ KosDynPrompt *kos_find_prompt(KosContext *ctx, uint32_t prompt_id) {
 }
 
 
+/**
+   Innermost PROMPT from dyn_top. Callers: delimited continuation edge cases.
+*/
 KosDynPrompt *kos_find_nearest_prompt(KosContext *ctx) {
   KosDynNode *node = KosContext_DYN_TOP(ctx);
 
@@ -1769,6 +1905,9 @@ KosDynPrompt *kos_find_nearest_prompt(KosContext *ctx) {
 }
 
 
+/**
+   Ensure prompt lies on the chain from dyn_top (shift capture precondition).
+*/
 int kos_validate_capture(KosContext *ctx, KosDynPrompt *prompt) {
   KosDynNode *node = KosContext_DYN_TOP(ctx);
 
@@ -1828,6 +1967,9 @@ static int kos_dyn_walk_handle_shift_to_prompt(KosContext *ctx,
 }
 
 
+/**
+   Innermost CC node from dyn_top. Callers: kos_capture_cc.
+*/
 KosDynCC *kos_find_cc(KosContext *ctx) {
   KosDynNode *node = KosContext_DYN_TOP(ctx);
 
@@ -1841,6 +1983,9 @@ KosDynCC *kos_find_cc(KosContext *ctx) {
 }
 
 
+/**
+   Ensure cc lies on the chain from dyn_top (call/cc capture precondition).
+*/
 static int kos_validate_capture_cc(KosContext *ctx, KosDynCC *cc) {
   KosDynNode *node = KosContext_DYN_TOP(ctx);
 
@@ -1872,6 +2017,11 @@ static size_t cont_freecount = 0;
 static KosContinuation *cont_freelist = NULL;
 
 
+/**
+   Allocate or reuse a KosContinuation struct and wire captured chain, resume
+   frame/pc/stack, graft id, one-shot flag, token ref. Callers: kos_shift_capture,
+   kos_capture_cc, kos_continuation_clone.
+*/
 static KosContinuation *kos_continuation_create(
     KosDynNode *captured_chain,
     KosDynFrame *resume_frame,
@@ -1913,6 +2063,10 @@ static KosContinuation *kos_continuation_create(
 }
 
 
+/**
+   Delimited shift: validate prompt, walk handle(SHIFT), clone chain segment for
+   invoke template, build one-shot KosContinuation. Callers: opcode PUSH_SHIFT.
+*/
 int kos_shift_capture(
     KosContext *ctx,
     uint32_t prompt_id,
@@ -2019,6 +2173,10 @@ int kos_shift_capture(
 }
 
 
+/**
+   Undelimited call/cc: clone chain above CC, multi-shot continuation with
+   undelimited prompt id. Callers: opcode CAPTURE_CC.
+*/
 int kos_capture_cc(KosContext *ctx, KosContinuation **out_k) {
 
   KosDynCC *cc = kos_find_cc(ctx);
@@ -2088,11 +2246,20 @@ int kos_capture_cc(KosContext *ctx, KosContinuation **out_k) {
 }
 
 
+/**
+   Free continuation and captured chain; delegates to _exclude with no stack
+   slot preserved. Callers: error paths, wrapper dealloc.
+*/
 void kos_continuation_free(KosContinuation *k) {
   kos_continuation_free_exclude(k, NULL);
 }
 
 
+/**
+   Release resume_stack with optional exclude (avoid DECREF during teardown),
+   free captured_chain, return struct to freelist or PyMem_Free. Callers:
+   kos_continuation_free, kos_free_transfer_plan after invoke.
+*/
 void kos_continuation_free_exclude(KosContinuation *k, PyObject *exclude_from_stack) {
   if (! k)
     return;
@@ -2132,6 +2299,10 @@ void kos_continuation_free_exclude(KosContinuation *k, PyObject *exclude_from_st
 }
 
 
+/**
+   Deep-copy captured segment and stack for a multi-shot re-invoke. Callers:
+   kos_invoke_continuation when ONE_SHOT is false.
+*/
 KosContinuation *kos_continuation_clone(KosContinuation *k) {
   if (! k)
     return NULL;
@@ -2181,6 +2352,10 @@ KosContinuation *kos_continuation_clone(KosContinuation *k) {
 /* === LCA computation === */
 
 
+/**
+   Linear search from chain toward root for a stable node_id (graft fallback
+   when LCA walk finds no intersection across disjoint templates).
+*/
 static KosDynNode *kos_find_node_by_id(KosDynNode *chain, uint32_t id) {
   KosDynNode *node = chain;
   while (node) {
@@ -2192,6 +2367,11 @@ static KosDynNode *kos_find_node_by_id(KosDynNode *chain, uint32_t id) {
 }
 
 
+/**
+   Lowest common ancestor of two chain pointers via transient marks on chain a,
+   or kos_find_node_by_id(a, graft_point_id) when disjoint. Callers:
+   kos_build_transfer_plan and other builders that need unwind vs install split.
+*/
 KosDynNode *kos_compute_lca(KosDynNode *a, KosDynNode *b, uint32_t graft_point_id) {
   if (! a || ! b)
     return NULL;
@@ -2479,6 +2659,10 @@ static void xfer_plan_fill_inject_action(
 }
 
 
+/**
+   Append one KOS_XFER_POP_ONE slot (uninstall current top during plan run).
+   Callers: kos_dyn_build_push_shift_unwind_plan.
+*/
 static void xfer_plan_fill_pop_one_action(KosTransferPlan *plan, size_t *idx) {
   KosTransferAction_STEP(&KosTransferPlan_ACTIONS(plan)[*idx]) = KOS_XFER_POP_ONE;
   (*idx)++;
@@ -2710,6 +2894,11 @@ int kos_build_direct_install_plan(
 }
 
 
+/**
+   Attach CC_RAISE sentinel at chain root and build a full transfer plan to
+   NULL target so unwind runs teardown then re-raises via sentinel. Callers:
+   foreign continuation apply error path.
+*/
 int kos_build_cc_unwind_plan(
     KosContext *ctx,
     PyObject *exc_type,
@@ -2748,6 +2937,10 @@ int kos_build_cc_unwind_plan(
 }
 
 
+/**
+   Plan: unwind extent actions to prompt, then TRUNCATE_AND_INJECT value at
+   prompt (shift result delivery). Callers: POP_SHIFT completion.
+*/
 int kos_dyn_build_pop_shift_plan(KosContext *ctx, KosDynPrompt *prompt,
                                  PyObject *value, KosTransferPlan **out_plan) {
 
@@ -2779,6 +2972,10 @@ int kos_dyn_build_pop_shift_plan(KosContext *ctx, KosDynPrompt *prompt,
 }
 
 
+/**
+   Plan: POP_ONE repeatedly until dyn_top is prompt (abort path before inject).
+   Callers: PUSH_SHIFT unwind-to-prompt setup.
+*/
 int kos_dyn_build_push_shift_unwind_plan(KosContext *ctx, KosDynPrompt *prompt,
                                          KosTransferPlan **out_plan) {
 
@@ -3502,6 +3699,12 @@ int kos_resume_transfer_plan(KosContext *ctx) {
 /* === Continuation invocation === */
 
 
+/**
+   Build and install a transfer plan to invoke k with value or throw: PUSH for
+   delimited (caller chain preserved), full plan for undelimited. Sets plan
+   resume fields and optional continuation_ref for GC. Callers: callable invoke,
+   apply paths.
+*/
 int kos_invoke_continuation(
     KosContext *ctx,
     KosContinuation *k,
@@ -3786,6 +3989,10 @@ int kos_dynnode_traverse(KosDynNode *node, visitproc visit, void *arg) {
 }
 
 
+/**
+   Visit every node from node down to stop (exclusive) with kos_dynnode_traverse.
+   Callers: kos_continuation_traverse, GC of captured segments.
+*/
 int kos_dynchain_traverse(
     KosDynNode *node,
     KosDynNode *stop,
@@ -3803,6 +4010,9 @@ int kos_dynchain_traverse(
 }
 
 
+/**
+   GC: visit token ref and captured chain. Used by continuation wrapper type.
+*/
 int kos_continuation_traverse(
     KosContinuation *k,
     visitproc visit,
@@ -3816,6 +4026,10 @@ int kos_continuation_traverse(
 }
 
 
+/**
+   GC: visit continuation ref, step awaitables, and pending INJECT/TRUNCATE
+   payload objects in unfinished plan actions.
+*/
 int kos_transferplan_traverse(
     KosTransferPlan *plan,
     visitproc visit,
@@ -3843,6 +4057,11 @@ int kos_transferplan_traverse(
 }
 
 
+/**
+   After POP_PROMPT on delimited invoke return path: push value on saved frame,
+   restore PC and clear DELIMITED_RETURN_* slots. Callers: opcode POP_PROMPT
+   when returning from k(value).
+*/
 int kos_dyn_finish_delimited_pop_return(KosContext *ctx, PyObject *value) {
 
   KosDynFrame *ret_frame;
@@ -3892,6 +4111,9 @@ int kos_dyn_finish_delimited_pop_return(KosContext *ctx, PyObject *value) {
 /* === Unit lifecycle === */
 
 
+/**
+   Module init: param sentinel singleton for parameterize unset markers.
+*/
 int koskari_dynchain_init(PyObject *mod) {
   Py_CLEAR(_param_sentinel_unset);
   _param_sentinel_unset = Py_BuildValue("(s)", "<param was unset>");
@@ -3901,6 +4123,10 @@ int koskari_dynchain_init(PyObject *mod) {
 }
 
 
+/**
+   Interpreter shutdown: clear sentinel, drain dyn_node and continuation
+   freelists, release cached transfer plan buffer.
+*/
 int koskari_dynchain_clear(PyObject *mod) {
   Py_CLEAR(_param_sentinel_unset);
 

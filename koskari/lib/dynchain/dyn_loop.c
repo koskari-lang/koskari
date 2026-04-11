@@ -1,4 +1,10 @@
 /* Included by dynchain.c — dyn_loop */
+/* === KosDynLoop === */
+
+
+/**
+   LOOP region: break/continue PCs and optional continue result.
+*/
 KosDynLoop *kos_dynloop_new(KosDynNode *parent, uint32_t break_pc, uint32_t continue_pc) {
   KosDynLoop *node = kos_dynnode_alloc();
   if (! node)
@@ -11,6 +17,10 @@ KosDynLoop *kos_dynloop_new(KosDynNode *parent, uint32_t break_pc, uint32_t cont
   return node;
 }
 
+
+/**
+   Clone PCs, enabled, and RESULT ref for capture.
+*/
 KosDynLoop *kos_dynloop_clone(KosDynLoop *node) {
   KosDynLoop *clone = kos_dynnode_alloc();
   if (! clone)
@@ -27,11 +37,18 @@ KosDynLoop *kos_dynloop_clone(KosDynLoop *node) {
 }
 
 
+/**
+   DECREF RESULT; return node to freelist.
+*/
 void kos_dynloop_free(KosDynLoop *node) {
   Py_XDECREF(KosDynLoop_RESULT(node));
   kos_dynnode_return_to_freelist(node);
 }
 
+
+/**
+   Push LOOP as DYN_TOP. Callers: opcode PUSH_LOOP.
+*/
 KosDynLoop *kos_dyn_push_loop(KosContext *ctx, uint32_t break_pc, uint32_t continue_pc) {
   KosDynLoop *node = kos_dynloop_new(KosContext_DYN_TOP(ctx), break_pc, continue_pc);
   if (! node) return NULL;
@@ -40,6 +57,10 @@ KosDynLoop *kos_dyn_push_loop(KosContext *ctx, uint32_t break_pc, uint32_t conti
   return node;
 }
 
+
+/**
+   Pop LOOP when top. Callers: abort_push_region, kos_dyn_transfer_to_loop, POP.
+*/
 void kos_dyn_pop_loop(KosContext *ctx, KosDynLoop *node) {
   if (KosContext_DYN_TOP(ctx)==(KosDynNode*)node) {
     KosContext_DYN_TOP(ctx)=KosDynNode_PARENT(node);
