@@ -4,7 +4,7 @@ This directory contains the design documentation for koskari, organized into thr
 
 **For teaching another system** (human or agent) about what has been done and what must hold, see **[INVARIANTS-AND-CLARIFICATIONS.md](INVARIANTS-AND-CLARIFICATIONS.md)**. It summarizes execution invariants, type and data invariants, C structures, implementation status, and clarifications in one place.
 
-**For open work** (unimplemented opcodes, GIL, generator wind/unwind, compiler and evaluator todos), see **[TODO.md](TODO.md)**.
+**For open work** (GIL, profiling gaps, compiler and loader backlog, generator wind-at-yield tradeoffs, proposals), see **[TODO.md](TODO.md)**.
 
 ## Structure
 

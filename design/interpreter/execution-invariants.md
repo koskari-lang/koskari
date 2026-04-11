@@ -255,7 +255,7 @@ the boundary constraint.
   (The macro `KosDynNode_IS_REGION` matches all four of these kinds.)
 * `KOS_DYN_NS` — namespace scope (PUSH_NS/POP_NS)
 * `KOS_DYN_CC` — call/cc extent (PUSH_CC/POP_CC)
-* `KOS_DYN_YIELD_FROM` — yield-from delegation state (see yield-from-execution-model.md)
+* `KOS_DYN_YIELD_FROM` — yield-from delegation state (see [EVALUATOR.md](../EVALUATOR.md) §5; [archive/yield-from-execution-model.md](../archive/yield-from-execution-model.md))
 * `KOS_DYN_PARAM` — parameterize extent (PUSH_PARAM/POP_PARAM); binds/restores dynamic param
 * `KOS_DYN_WITH` — with context manager extent (PUSH_WITH/POP_WITH); CATCH
 * `KOS_DYN_DYN_WITH` — multi-shot with extent (PUSH_DYN_WITH/POP_DYN_WITH); CATCH

@@ -85,9 +85,10 @@ This document provides a high-level summary of all features identified from both
 ### Bytecode
 - **Format**: Custom compact bytecode (4 bytes per instruction)
 - **Opcodes**: Comprehensive opcode set for all operations. **Implementation
-  status** (which opcodes are implemented, stubs, or no-runtime) is documented
-  in [OPCODES.md](OPCODES.md) §1.6; that document is the authoritative
-  reference.
+  status** is documented in [OPCODES.md](OPCODES.md) §1.6: every opcode in
+  shipped bytecode has a runtime implementation except **THEEND** (must not
+  execute) and compile-time **LABEL** / **POSITION** (normally stripped before
+  execution). That section is the authoritative reference.
 - **Structure**: Code (with NamespaceSpec), position table, constant pool,
   extent table
 - **Position**: Delta-encoded line/column tracking
@@ -173,7 +174,7 @@ This document provides a high-level summary of all features identified from both
 - Wind/unwind: `kos_push_wind`, `kos_push_before_wind`, `kos_push_after_wind`, `kos_pop_wind`
 - Continuation application: `kos_apply_continuation` with LCA computation and hook execution
 - Call operations: internal tail-call for KosExpression/KosFunction (eval.c)
-- Drive loop: `koskari_eval` (opcode fetch and dispatch implemented; many opcodes still stubs)
+- Drive loop: `koskari_eval` (opcode fetch and dispatch; handlers per [OPCODES.md](OPCODES.md) §1.6)
 - GC traversal: helpers for all VM structures
 
 **Continuation Support**:
@@ -194,12 +195,12 @@ This document provides a high-level summary of all features identified from both
 - `OpStyle`: Enum for opcode argument interpretation
 - Full opcode set for: stack ops, control flow, jumps, variables, attributes, items, calls, blocks, object protocol, iteration, exceptions
 
-### Ready to Migrate
-- Most special forms from python-sibilant (beyond what is already implemented)
-- Macro system: defmacro, defalias (reader macros and compile/define-syntax are implemented)
-- Remaining control flow constructs (class blocks)
-- Compiler: remaining specials (await), macro expansion, optimization passes
-- Remaining opcode handlers: see [OPCODES.md](OPCODES.md) §1.6 for stub opcodes.
+### Further migration / backlog
+
+Further language and compiler work (slices, variadic comparison chains,
+optimization passes, macro hygiene, fenced literals, bundles, and other items)
+is tracked in [TODO.md](TODO.md). The live inventory of implemented specials
+is [SPECIALS.md](SPECIALS.md).
 
 ### Needs Reconsideration
 - CPython bytecode target (abandoned)

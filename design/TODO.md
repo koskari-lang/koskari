@@ -7,11 +7,6 @@ design docs for detail.
 
 ## VM / opcodes
 
-### Unimplemented opcodes (stubs)
-
-See [OPCODES.md](OPCODES.md) §1.6 for the authoritative list of stub opcodes.
-That document is the single reference for implementation status.
-
 ### Switch / equality dispatch (SWITCH_EQ family)
 
 Proposal: opcodes **SWITCH_EQ** (stack key + discriminant) and compressed
@@ -35,8 +30,7 @@ Decide whether to run dynamic-wind (and param/dyn-with) enter/exit at
 generator install and freeze (so `(dynamic-wind before body after)` that
 spans a yield runs `after` on yield and `before` on resume).
 
-Ref: [plan/09-phase-gen-wind-unwind.md](plan/09-phase-gen-wind-unwind.md);
-[interpreter/extent-wind-unwind.md](interpreter/extent-wind-unwind.md) (wind/unwind semantics).
+Ref: [interpreter/extent-wind-unwind.md](interpreter/extent-wind-unwind.md) (wind/unwind semantics).
 
 ---
 
@@ -102,7 +96,7 @@ Ref: [api/tracing.md](api/tracing.md).
 - **Variadic ordering checks** — variadic `>`, `>=`, `<`, `<=` that assert
   strict/non-strict chain (e.g. `(> 9 2 0)`, `(<= 0 0 3 4 5 5 8)`).
 
-Ref: [FEATURES.md](FEATURES.md) § Ready to Migrate;
+Ref: [FEATURES.md](FEATURES.md) § Further migration / backlog;
 [language/async.md](language/async.md) (await syntax/semantics);
 [language/special-forms.md](language/special-forms.md).
 
@@ -254,6 +248,5 @@ From [FEATURES.md](FEATURES.md) and related docs:
 
 - **Implemented specials:** [SPECIALS.md](SPECIALS.md)
 - **Feature catalog and status:** [FEATURES.md](FEATURES.md)
-- **Generator plan (phases 1–8 done, 9 under consideration):** [plan/README.md](plan/README.md)
 - **Ideas (uncommitted):** [ideas.md](ideas.md)
 - **Variable resolution model (proposed):** [language/RESOLUTION-MODEL.md](language/RESOLUTION-MODEL.md)

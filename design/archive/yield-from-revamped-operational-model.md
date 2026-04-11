@@ -301,7 +301,7 @@ KOS_ASYNC_GEN may have agen->ctx == NULL (lazy context). The drive creates ctx o
 
 ## Part 13: Relation to Existing Documents
 
-This document revises and extends `yield-from-execution-model.md`. The high-level semantics, delegate classification, and delegation rules remain. The changes are:
+This document revises and extends [yield-from-execution-model.md](yield-from-execution-model.md). The high-level semantics, delegate classification, and delegation rules remain. The changes are:
 
 - Resume inject: stack-based, consumed by the node via phase.
 - No SUSP_YIELD_FROM or revive_yield_from.

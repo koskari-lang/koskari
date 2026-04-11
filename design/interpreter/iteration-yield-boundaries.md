@@ -13,8 +13,9 @@ This document describes how four related mechanisms are implemented in the Koska
 **Related documentation**
 
 - [EVALUATOR.md](../EVALUATOR.md) — eval loop, `KosEvent`, post-opcode yield handling, `KosContext_PENDING_AGEN` flattening
-- [yield-from-execution-model.md](yield-from-execution-model.md) — YIELD_FROM delegation model
-- [dynnode-event-model.md](dynnode-event-model.md) — handle/unwind transits including YIELD
+- [../EVALUATOR.md](../EVALUATOR.md) §5 — control transit and dynamic-node event model
+- [../archive/yield-from-execution-model.md](../archive/yield-from-execution-model.md) — archived YIELD_FROM delegation narrative
+- [../archive/dynnode-event-model.md](../archive/dynnode-event-model.md) — archived handle/unwind write-up
 
 ---
 

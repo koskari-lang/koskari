@@ -2,7 +2,7 @@
 
 This document describes the operation of the koskari eval loop in `koskari/lib/eval.c`: its stages, how opcodes are invoked and signal back, exception handling, control transit (event-driven handle/unwind model), transfer plans, tail calls, call installs, and resumption paths.
 
-Implementation reference: `koskari/lib/eval.c`, `koskari/lib/eval.h`, `koskari/lib/dynchain.h`, `design/interpreter/evaluator.md`, and `design/interpreter/dynnode-event-model.md`.
+Implementation reference: `koskari/lib/eval.c`, `koskari/lib/eval.h`, `koskari/lib/dynchain.h`, and `design/interpreter/evaluator.md`.
 
 ---
 
@@ -313,30 +313,81 @@ flowchart TD
 
 ## 5. Control Transit (Event-Driven Model)
 
-Control transits (RETURN, RAISE, YIELD, BREAK, CONTINUE, SHIFT) use a two-phase model: **handle()** then **unwind()**. Nodes are offered the event via `kos_dyn_handle` before being unwound. See `design/interpreter/dynnode-event-model.md` for the full design.
+Dynamic nodes on the dynchain participate in control flow through a small
+lifecycle vocabulary and a two-phase transit model: **handle** then **unwind**
+(unless the transit is AWAIT, which does not walk or pop the chain).
 
-### 5.1 handle(node, event)
+### 5.1 Lifecycle vocabulary
+
+- **push(node)** — Link the node onto the dynchain (structural only: stack
+  block, namespace, frame resources). No user code, suspension, or transfer.
+- **wind(node)** — Enter the node’s active extent; may run user code (`__enter__`,
+  dynamic-wind before-thunk, parameterize bindings) and may suspend or start a
+  transfer. Often paired with **push** on construct entry and on transfer
+  re-entry.
+- **resume(node)** — Normal return to an already-active node after a
+  subordinate step; node stays on chain. Payload is delivered by pushing to TOS
+  then redispatching (send value, await result, yield-from delegate step).
+- **handle(node, event)** — Offer a **control transit** (RETURN, RAISE, YIELD,
+  BREAK, CONTINUE, SHIFT). Does **not** unlink the node; outcome is PASS, CONSUME,
+  or DENY (see §5.3).
+- **unwind(node, event)** — Leave the extent semantically; event records *why*.
+  Used for after-thunks, teardown, and walking the chain during transits.
+- **pop(node)** — Structural unlink (usually after unwind).
+- **free(node)** — Destroy storage when ownership allows (generator nodes may
+  defer until the generator object dies).
+
+### 5.2 Construct entry
+
+On entering constructs such as `with`, `dynamic-wind`, or handler scopes, the
+evaluator performs **push** then **wind**. **push** stays cheap; **wind** runs
+side-effectful entry and may suspend. Separating them avoids running user code
+before the node is fully linked.
+
+### 5.3 resume vs handle
+
+- **resume** — Ordinary continuation **within** the current extent (value on TOS,
+  node still installed).
+- **handle** — A **control transit** that may cross nodes (return, raise, yield,
+  break, continue, shift).
+
+Keeping this distinction stable lets opcode and transfer machinery stay generic
+while node kinds specialize behavior.
+
+### 5.4 handle(node, event)
 
 `kos_dyn_handle(ctx, node, event)` offers a control transit to each node. The node may:
 - **PASS** — pass through unchanged
 - **CONSUME** — handle the event (e.g. TRY catches RAISE, FINALLY consumes RETURN)
 - **DENY** — reject (e.g. generator boundary denies SHIFT)
 
-### 5.2 unwind(node, event)
+### 5.5 unwind(node, event)
 
 `kos_dyn_unwind` takes a `KosXferEvent` (RETURN, RAISE, YIELD, BREAK, CONTINUE, SHIFT) so nodes know *why* they are being torn down. Transfer-aware nodes (e.g. `dynamic-wind`) use this for after-thunks.
 
-### 5.3 Transit Types
+### 5.6 Transit types
 
 | Transit | Walk | Key functions |
 |---------|------|----------------|
-| RETURN | handle(RETURN) per node; FINALLY may overwrite value | `kos_dyn_walk_return_to_frame` |
-| RAISE | handle(RAISE); TRY/FINALLY catch | `process_raise` → `try_local_exception_handler`; `kos_dyn_handle` on unwind path |
-| YIELD | handle(YIELD) per node; generator boundary intercepts | `kos_dyn_walk_handle_yield` |
-| BREAK / CONTINUE | transfer_to_loop; unwind(node, event); handle on loop | `kos_dyn_transfer_to_loop` |
-| SHIFT | handle(SHIFT); prompt consumes; generator boundary denies | `kos_dyn_walk_handle_shift_to_prompt` |
+| RETURN | handle(RETURN) per node; FINALLY may overwrite value; if not consumed, unwind → pop; may push result and resume parent | `kos_dyn_walk_return_to_frame` |
+| RAISE | handle(RAISE); TRY/FINALLY catch; else unwind → pop | `process_raise` → `try_local_exception_handler`; `kos_dyn_handle` on unwind path |
+| YIELD | handle(YIELD) per node until generator boundary consumes | `kos_dyn_walk_handle_yield` |
+| AWAIT | **No** chain unwind or pop; full dynchain preserved; evaluator suspends with `KOS_EV_AWAIT` | AWAIT opcode, `revive_await` |
+| BREAK / CONTINUE | Find loop in-frame; walk unwind/pop to loop; handle on loop; resume at loop head or after loop | `kos_dyn_transfer_to_loop` |
+| SHIFT | handle(SHIFT); prompt consumes; generator boundary denies crossing | `kos_dyn_walk_handle_shift_to_prompt` |
 
-### 5.4 Generator Boundary Node
+**YIELD details:** Nodes from the emitter up to the generator boundary see
+handle(YIELD); the emitter (e.g. yield-from) often passes through. The generator
+boundary captures/frozen state and detaches. **Top-level** generator: suspend
+and return the yield value. **Flattened** async-gen stepping: the value may be
+pushed into the parent frame without an external boundary event
+(`KosContext_PENDING_AGEN`). Nodes that care may pair unwind-before-suspend with
+wind-on-resume.
+
+**Generator close:** `close` uses the normal exception path (GeneratorExit via
+RAISE transit), not a separate inbound channel.
+
+### 5.7 Generator boundary node
 
 `KOS_DYN_GEN` marks the generator boundary. It is pushed when a generator or coroutine is **installed** (e.g. when Python drives a Koskari generator via `send`/`throw`); the frame's parent is then the GEN node.
 
@@ -347,6 +398,49 @@ Whether control returns to the caller depends on evaluator flattening:
 - In flattened async-gen stepping (`KosContext_PENDING_AGEN(ctx)`), `eval_phase_post_opcode` clears `out_ev` and continues dispatch; the yield does not escape as a boundary event.
 - **handle(SHIFT)**: GEN **denies**; shift cannot cross the generator boundary.
 - **RETURN** when the frame's parent is GEN (or there is no parent) produces a boundary event `KOS_EV_RETURN` and the evaluator exits; the driver receives the return value (e.g. StopIteration for sync generators).
+
+### 5.8 Node behavior categories
+
+- **Lexical / resource nodes** (e.g. `with`): **push** / **wind**, **unwind** /
+  **pop**, often **handle(RAISE)**; typically ignore YIELD.
+- **Transfer-aware nodes** (e.g. `dynamic-wind`): **wind** and **unwind** on
+  RETURN, RAISE, YIELD (when suspension counts as leaving the extent), BREAK,
+  CONTINUE, SHIFT.
+- **Interceptors** (`try` / `except`, `finally`): primarily **handle(event)**;
+  may transform or swallow transits.
+- **Resumable operation nodes** (e.g. `KOS_DYN_YIELD_FROM`): **resume** for
+  delegate steps; internal state machine across suspensions; may **handle** for
+  delegation.
+- **Generator boundary (`KOS_DYN_GEN`)**: intercepts YIELD and RETURN/RAISE as
+  documented in §5.7; **denies** SHIFT across the boundary. The generator object
+  owns the node; the chain borrows it during execution.
+
+**Boundaries:** When a rule would be violated, the responsible node **denies**
+in **handle** (e.g. SHIFT at GEN). **BREAK** / **CONTINUE** targeting fails in
+the find phase before unwind if no loop exists in-frame.
+
+### 5.9 Inbound events from the driver
+
+- **Value on TOS** — After **push** to TOS, **resume** runs with the active node
+  consuming TOS (yield **send**, await completion, yield-from delegate).
+- **Throw / close** — Delivered as a normal **RAISE** transit (no parallel
+  channel). `throw` into await uses `revive_await` + iterator `throw` where
+  applicable (see §8).
+
+### 5.10 Implementation map
+
+- **KosXferEvent** — RETURN, RAISE, YIELD, BREAK, CONTINUE, SHIFT (unwind/handle).
+- **KosHandleResult** — PASS, CONSUME, DENY.
+- **kos_dyn_handle()** — Offer event before unwind on RETURN, RAISE, YIELD, SHIFT
+  walks.
+- **kos_dyn_unwind(ctx, node, event, out_ev)** — Semantic exit with reason.
+- **kos_dyn_transfer_to_loop()** — BREAK / CONTINUE targeting.
+- **KOS_DYN_GEN** — Generator boundary; intercepts YIELD; denies SHIFT.
+- **KosYfPhase** — Yield-from phases (DRIVING, EXPECT_SEND, EXPECT_AWAIT);
+  YIELD_FROM emits only YIELD or AWAIT boundary events (no `KOS_SUSP_YIELD_FROM`
+  or `revive_yield_from`).
+
+Primary code: `koskari/lib/dynchain.c`, `koskari/lib/dynchain.h`, `koskari/lib/eval.c`.
 
 ---
 
@@ -556,8 +650,8 @@ When `CURRENT_FRAME(ctx)` has `native_handler != NULL`, the loop runs that handl
 ## 11. Related Documentation
 
 - [design/interpreter/evaluator.md](interpreter/evaluator.md) — VM structures, C API reference
-- [design/interpreter/dynnode-event-model.md](interpreter/dynnode-event-model.md) — Event-driven handle/unwind model
 - [design/interpreter/ceval-exception-paths.md](interpreter/ceval-exception-paths.md) — Exception paths and trace injection
 - [design/api/special-call-protocol.md](api/special-call-protocol.md) — Install slots and invocation
 - [design/interpreter/execution-invariants.md](interpreter/execution-invariants.md) — Execution invariants
 - [design/interpreter/iteration-yield-boundaries.md](interpreter/iteration-yield-boundaries.md) — Iteration vs yield-from vs for-each: implementation map and consolidation proposals
+- [design/archive/dynnode-event-model.md](archive/dynnode-event-model.md) — Earlier standalone write-up of the same event model (archived)

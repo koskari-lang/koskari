@@ -13,16 +13,16 @@ This directory documents the interpreter implementation, including bytecode form
 - **iteration-yield-boundaries.md**: YIELD vs YIELD_FROM vs PUSH_FOREACH/ITER_NEXT — implementation map, underlying calls, consolidation proposals
 - **opcode-eval-helpers-inventory.md**: Static helpers in `eval.c` and opcode `.c` files — opcode cross-reference, redundancies, suggested public names for native/runtime API
 - **execution-invariants.md**: Koskari execution model invariants and design commitments
-- **yield-from-execution-model.md**: YIELD_FROM opcode execution model (delegation conduit, KOS_DYN_YIELD_FROM, delegate kinds, PC discipline)
 - **introspection-trace.md**: Read-only introspection and trace snapshot design (TraceView; proposed CAPTURE_FRAME opcode is design-only, see that doc §5)
 - **callcc.md**: Call/cc implementation design
 - **dynamic-node-unified-api.md**: Dynamic node unified API redesign and migration specification (implementation prompt)
 - **generic-dynnode-protocol.md**: Generic DynNode interface design, API reference, and type-specific bypass cases (when opcodes use type-named APIs)
-- **dynnode-event-model.md**: Event-oriented model for dynamic nodes — lifecycle events (push, wind, resume, handle, unwind, pop, free), evaluator event composition (RETURN/RAISE/YIELD/AWAIT transits), and node behavior categories — **implemented** (see plan/00-gap-analysis.md)
 - **evaluator-token-continuation.md**: Evaluator token + continuation application model (KosEvaluatorToken, KoskariContinuationApply)
 - **domain.md**: Koskari Domain (ambient dynamic context) — design proposal for parameters and dynamic-extent scoping across AWAIT, boundaries, and continuations
 - **gil-cooperation.md**: GIL cooperation design — domain-TLS counter + timer, maybe_cooperate/ensure_gil, candidate call sites, and cost–benefit of options
 - **kio-format.md**: `.kio` compiled cache format — binary file layout, softened/hardened serialization levels, constant pool policy, `TaggedTuple`, cache invalidation, and loader algorithm
+
+Completed design drafts (historical) live under **[archive/](../archive/)** — e.g. `dynnode-event-model.md`, `yield-from-execution-model.md`, `yield-from-revamped-operational-model.md`, `eval-loop-mode-refactor.md`, `block-quasiquote.md`.
 
 ## Implementation Status
 
@@ -32,7 +32,7 @@ This directory documents the interpreter implementation, including bytecode form
 | Opcode definitions | Implemented | `opcodes.incl` |
 | Evaluator core | Implemented | `eval.c`, `eval.h` |
 | KosCoroutine / run-code-as-coroutine | Implemented | `func.c`, `func.h` |
-| Opcode dispatch | Implemented | `eval.c` (most opcodes implemented; CALL_ATTR* stubs remain) |
+| Opcode dispatch | Implemented | `eval.c` (per [OPCODES.md](../OPCODES.md) §1.6) |
 | Continuation support | Implemented | `eval.c`, `dynchain.c` |
 | Compiler | Substantially implemented — see [SPECIALS.md](../SPECIALS.md) | `koskari/compile/compiler.py`, `koskari/compile/specials/` |
 | `.kio` cache format | Design only | `design/interpreter/kio-format.md` |

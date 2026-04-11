@@ -398,4 +398,4 @@ This design has been implemented. Key implementation artifacts:
 
 YieldFrom emits only YIELD or AWAIT; there is no KOS_SUSP_YIELD_FROM or revive_yield_from.
 
-See `plan/00-gap-analysis.md` and `plan/README.md` for full status; `koskari/lib/dynchain.c`, `koskari/lib/dynchain.h`, and `koskari/lib/eval.c` for implementation.
+Canonical narrative: [../EVALUATOR.md](../EVALUATOR.md) §5. Implementation: `koskari/lib/dynchain.c`, `koskari/lib/dynchain.h`, `koskari/lib/eval.c`.
