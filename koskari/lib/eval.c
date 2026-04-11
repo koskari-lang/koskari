@@ -170,6 +170,7 @@ static int run_transfer_plan_to_completion(
     if (plan_res < 0) {
       SAY("[eval] transfer step failed -> KOS_EV_RAISE\n");
       kos_eval_emit_raise_from_pyerr(ctx, out_ev);
+      clear_and_free_transfer_plan(ctx);
       return -1;
     }
 

@@ -2896,6 +2896,10 @@ static void xfer_plan_release_invoke_clone(KosTransferPlan *plan) {
                                       KosTransferPlan_CONTINUATION_REF(plan));
     KosContinuation_RESUME_STACK(clone) = NULL;
   }
+  if (KosContinuation_CAPTURED_CHAIN(clone)) {
+    kos_dynchain_free(KosContinuation_CAPTURED_CHAIN(clone), NULL);
+    KosContinuation_CAPTURED_CHAIN(clone) = NULL;
+  }
   Py_XDECREF(KosContinuation_TOKEN_REF(clone));
   if (cont_freecount < CONT_MAX_FREE) {
     KOS_TRACE_FL_RETURN("continuation", 0);
@@ -3605,11 +3609,12 @@ int kos_invoke_continuation(
   }
 
   if (to_use != k) {
-    to_use->captured_chain = NULL;
     KosTransferPlan_INVOKE_CLONE(plan) = to_use;
     /* Do not release to_use->resume_stack here; that would DECREF the
      * continuation and free k before the plan runs. kos_free_transfer_plan
-     * will release it with exclude=continuation_ref then free to_use. */
+     * will release it with exclude=continuation_ref then free to_use.
+     * The clone retains ownership of captured_chain until
+     * xfer_plan_release_invoke_clone frees it. */
   }
 
   return 0;
