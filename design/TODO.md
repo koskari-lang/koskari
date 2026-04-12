@@ -140,8 +140,22 @@ polluting the module.
 
 Ref: [bundles-and-namespace-facets.md](bundles-and-namespace-facets.md).
 
----
+### Extend existing syntax (prepend rules)
 
+Investigate and implement a new special form that **copies** the current syntax
+definition for a name (its transformer / merged rule table), **prepends** a new
+rule or match group (first match wins globally), and **stores** the augmented
+definition back into the **same** name slot—so existing surface syntax is
+extended in place without replacing the whole transformer by hand.
+
+Exact surface syntax is open (design sketches mention `extend-syntax`,
+`transformer` + `prepend-rules`, and related merge constructors).
+
+Ref: [language/unified-matcher-transformer-model.md](language/unified-matcher-transformer-model.md)
+(Combining sections: merge, extend, copy; composable operators);
+[MACROS.md](MACROS.md).
+
+---
 
 ## Import / loader
 
