@@ -102,7 +102,7 @@ Opcodes that pop a specific extent use the type-specific pop when they have alre
 |---------------|--------------------|-----|
 | POP_PROMPT | `kos_dyn_pop_prompt(ctx, prompt)` | PROMPT is a barrier; transfer plan and POP_RESET explicitly pop it. |
 | POP_WIND | `kos_dyn_pop_top(ctx, out_ev)` | Generic: POP_WIND pops top, which must be WIND. |
-| BREAK, CONTINUE, POP_LOOP, etc. | `kos_dyn_pop_try`, `kos_dyn_pop_loop`, ... | After `kos_find_node_for_loop`, caller knows the kind; must pop the correct region type (TRY vs FINALLY vs LOOP vs FOREACH) to drop the right stack block. |
+| BREAK, CONTINUE, POP_LOOP, POP_FOREACH, etc. | `kos_dyn_pop_try`, `kos_dyn_pop_loop`, `kos_dyn_pop_foreach`, ... | After `kos_find_node_for_loop`, caller knows the kind; must pop the correct region type (TRY vs FINALLY vs LOOP vs FOREACH) to drop the right stack block. |
 | POP_PARAM | `kos_dyn_pop_param(ctx, param)` | Param extent needs explicit restore. |
 | POP_NS | `kos_dyn_ns_unwind` via generic path | NS unwind is triggered by generic pop. |
 

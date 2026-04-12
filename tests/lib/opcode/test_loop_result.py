@@ -37,7 +37,7 @@ class TestLoopResultOpcodes(CevalTest):
 
     BREAK pushes the result and jumps to break target.
     CONTINUE updates region->result and jumps to continue target.
-    POP_LOOP pushes region->result as the loop expression value.
+    POP_LOOP and POP_FOREACH push region->result as the loop expression value.
     """
 
     async def test_break_with_single_value(self):
@@ -152,11 +152,11 @@ class TestLoopResultOpcodes(CevalTest):
             ["POP", 1],  # discard the iteration value
             ["CONTINUE", 0],  # continue to next iteration
             ["LABEL", "else_lbl"],
-            ["CLEAR_LOOP", 0],
+            ["CLEAR_FOREACH", 0],
             ["LABEL", "break_lbl"],
-            ["POP_LOOP", 0],
+            ["POP_FOREACH", 0],
             ["LABEL", "after_loop"],
-            # BREAK or POP_LOOP pushed the result
+            # BREAK or POP_FOREACH pushed the result
             ["RETURN", 1],
         ])
         result = await make_callable(code, ns)()

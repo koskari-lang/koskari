@@ -204,7 +204,7 @@ Legend: **Ext** = referenced outside `dynchain.c` (must remain linkable and beha
 | `POP_WITH.c` / `POP_DYN_WITH.c` | `kos_dyn_with_unwind`, `kos_dyn_pop_with`, `KosDynNode_IS_*` |
 | `PUSH_DYN_WITH.c` | `kos_dyn_push_dyn_with_provisional`, `kos_dyn_wind`, `kos_dyn_pop_with` |
 | `PUSH_TRY` / `PUSH_FINALLY` / `PUSH_LOOP` / `PUSH_FOREACH` | `kos_dyn_push_*`, rollback pops on failure |
-| `POP_TRY` / `POP_FINALLY` / `POP_LOOP` | `kos_dyn_pop_*`, `KosDynFinally_*`, `KosDynNode_IS_REGION` |
+| `POP_TRY` / `POP_FINALLY` / `POP_LOOP` / `POP_FOREACH` | `kos_dyn_pop_*`, `KosDynFinally_*`, `KosDynNode_IS_REGION` |
 | `PUSH_NS` | `kos_dyn_push_ns` |
 | `POP_NS` / `POP_COLLECT` / `POP_PARAM` | corresponding `kos_dyn_pop_*`, `kos_dynnode_kind_name` |
 | `PUSH_PROMPT` | `kos_dyn_push_prompt` |
@@ -215,7 +215,7 @@ Legend: **Ext** = referenced outside `dynchain.c` (must remain linkable and beha
 | `INVOKE_K.c` / `INVOKE_K_VAR.c` | `kos_invoke_continuation` |
 | `CALL*.c` / `TAIL_CALL.c` | `KosDynFrame_STACK` |
 | `GLOBALS.c` / `IMPORT_REL.c` | Walk `KosDynNode` from frame toward root, `KosDynNode_IS_FRAME`, `KosContext_GLOBALS_FRAME`, `KosDynFrame_NS` |
-| `CLEAR_TRY` / `CLEAR_FINALLY` / `CLEAR_LOOP` | `KosDynNode_IS_REGION`, enable flags on region nodes |
+| `CLEAR_TRY` / `CLEAR_FINALLY` / `CLEAR_LOOP` / `CLEAR_FOREACH` | `KosDynNode_IS_REGION`, enable flags on region nodes |
 | `ITER_NEXT.c` | `kos_find_node_for_loop`, `KosDynForeach_*` |
 
 ### 5.11 Tests
@@ -237,11 +237,7 @@ Legend: **Ext** = referenced outside `dynchain.c` (must remain linkable and beha
 3. **Delimited continuation:** `KosContext_INVOCATION_SEGMENT_TOP`, `RETURN_TARGET_CHAIN`, `DELIMITED_RETURN_*` interact with `POP_PROMPT` and transfer plans (`eval.c`).
 4. **Generator:** `KosDynGen` linked under frame; `iter.c` / `demand.c` clear `DYN_TOP` and install via `kos_dyn_gen_install`.
 
-## 7. Known quirk (preserve behavior unless fixing deliberately)
-
-`POP_LOOP.c` uses `KosDynLoop_RESULT` on a branch that follows `KosDynNode_IS_FOREACH` — mirror existing semantics in tests.
-
-## 8. Checklist for implementor
+## 7. Checklist for implementor
 
 - [ ] Every **Y** row in §4 links and runs.
 - [ ] Every opcode file in §5.10 covered by tests or manual verification.

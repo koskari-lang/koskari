@@ -67,7 +67,7 @@ Per proposal: "The exception_unwind handler for TRY/FINALLY performs clear-block
 
 ### Repeated pop-if/else chains
 
-Pattern appears in PUSH_TRY, PUSH_FINALLY, PUSH_LOOP, PUSH_FOREACH, POP_TRY, POP_FINALLY, POP_LOOP, PUSH_FOREACH:
+Pattern appears in PUSH_TRY, PUSH_FINALLY, PUSH_LOOP, PUSH_FOREACH, POP_TRY, POP_FINALLY, POP_LOOP, POP_FOREACH:
 ```
 if (KosDynNode_IS_TRY(region)) kos_dyn_pop_try(...);
 else if (KosDynNode_IS_FINALLY(region)) kos_dyn_pop_finally(...);
@@ -77,11 +77,11 @@ else if (KosDynNode_IS_FOREACH(region)) ...
 
 Add generic `kos_dyn_uninstall(ctx, node, out_ev)` that switch/case dispatches to the correct pop handler. Have opcodes call it instead of branching on kind.
 
-### Specialized opcodes (POP_TRY, POP_FINALLY, POP_LOOP)
+### Specialized opcodes (POP_TRY, POP_FINALLY, POP_LOOP, POP_FOREACH)
 
 Can assume top node kind but should call the generic uninstall instead of duplicating kind checks and pop logic.
 
-### CONTINUE, POP_LOOP, ITER_NEXT
+### CONTINUE, POP_LOOP, POP_FOREACH, ITER_NEXT
 
 Use IS_LOOP vs IS_FOREACH and direct KosDynLoop_* / KosDynForeach_* access. Move kind-specific behavior into dynchain.c helpers (e.g. generic get-result, set-result, get-continue_pc) or per-kind handlers invoked via switch/case.
 

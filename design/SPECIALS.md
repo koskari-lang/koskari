@@ -583,17 +583,17 @@ evaluates to `None`.
 
 **Behaviour:** Emits CONST None (default loop result), compiles EXPR (the
 iterable), then PUSH_FOREACH whose break target is set to a label after
-POP_LOOP. The continue target (first instruction after PUSH_FOREACH) is
+POP_FOREACH. The continue target (first instruction after PUSH_FOREACH) is
 ITER_NEXT. On each iteration, ITER_NEXT pushes the next value or jumps to the
 else label on exhaustion. The value is stored with VAR_STORE into the binding
 name. The body is compiled with `helper_begin`; CONTINUE 0 resets the stack
 block and jumps back to ITER_NEXT.
 
-On exhaustion, CLEAR_LOOP marks natural exit. When an else body is present, its
+On exhaustion, CLEAR_FOREACH marks natural exit. When an else body is present, its
 result is compiled and then BREAK 1 is emitted: this pops the FOREACH region,
 pushes the else result directly to the parent stack, and jumps to after_pop —
 so the else value arrives cleanly without any temporary variable. When there is
-no else body, POP_LOOP falls through to after_pop and pushes the region's None.
+no else body, POP_FOREACH falls through to after_pop and pushes the region's None.
 User `compile/break` also jumps to after_pop with its value already on the
 parent stack.
 

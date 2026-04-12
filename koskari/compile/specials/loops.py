@@ -122,13 +122,13 @@ def special_for_each(compiler, source, tc=False):
     fragment.instruction(OpCode.KOS_OP_CONTINUE, 1)
 
     fragment.instruction(OpCode.KOS_OP_LABEL, loop_else)
-    fragment.instruction(OpCode.KOS_OP_CLEAR_LOOP, 0)
+    fragment.instruction(OpCode.KOS_OP_CLEAR_FOREACH, 0)
 
     if has_elsebody:
         fragment.merge(compiler.full_compile(elsebody, False))
         fragment.instruction(OpCode.KOS_OP_BREAK, 1)
 
-    fragment.instruction(OpCode.KOS_OP_POP_LOOP, 0)
+    fragment.instruction(OpCode.KOS_OP_POP_FOREACH, 0)
 
     return fragment
 

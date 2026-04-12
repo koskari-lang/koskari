@@ -424,7 +424,7 @@ APIs in `bytecode.h` / `bytecode.c`:
 * `kos_try_handler_for(code, pc, out)` — fills KosTryHandler; returns 0 if found, -1 otherwise
 * `kos_shift_ic_for(code, pc)` — ic_pc for SHIFT extent, or KOS_EXTENT_NONE
 
-Extent kinds: TRY, LOOP, PROMPT, SHIFT, CALLCC_BIND, FINALLY, WIND, WITH, FOREACH, BEGIN, NS. PUSH/POP pairs: TRY, LOOP, FINALLY, PROMPT, SHIFT (PUSH_SHIFT/POP_SHIFT), WITH, BEGIN, NS, WIND, REGION, FOREACH (FOREACH→POP_LOOP).
+Extent kinds: TRY, LOOP, PROMPT, SHIFT, CALLCC_BIND, FINALLY, WIND, WITH, FOREACH, BEGIN, NS. PUSH/POP pairs: TRY, LOOP, FINALLY, PROMPT, SHIFT (PUSH_SHIFT/POP_SHIFT), WITH, BEGIN, NS, WIND, REGION, FOREACH (PUSH_FOREACH/POP_FOREACH).
 
 ---
 

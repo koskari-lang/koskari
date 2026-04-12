@@ -14,23 +14,19 @@
 */
 
 /**
-   CLEAR_LOOP: arg unused. Disable the top LOOP/FOREACH region (used when
+   CLEAR_LOOP: arg unused. Disable the top LOOP region (used when
    exiting normally before POP_LOOP).
 */
 
 KOS_OP_HANDLER(CLEAR_LOOP) {
   KosDynNode *region = (KosDynNode *) KosContext_DYN_TOP(ctx);
-  if (! region
-      || (! KosDynNode_IS_LOOP(region) && ! KosDynNode_IS_FOREACH(region))) {
+  if (! region || ! KosDynNode_IS_LOOP(region)) {
     PyErr_SetString(PyExc_RuntimeError,
-                    "CLEAR_LOOP: top is not a LOOP or FOREACH region");
+                    "CLEAR_LOOP: top is not a LOOP region");
     return KOS_OP_POST_ERR();
   }
 
-  if (KosDynNode_IS_LOOP(region))
-    KosDynLoop_ENABLED((KosDynLoop *) region) = 0;
-  else
-    KosDynForeach_ENABLED((KosDynForeach *) region) = 0;
+  KosDynLoop_ENABLED((KosDynLoop *) region) = 0;
   if (KosStackBlock_ClearBlock(&CURRENT_STACK(ctx)) < 0)
     return KOS_OP_POST_ERR();
 
@@ -38,3 +34,6 @@ KOS_OP_HANDLER(CLEAR_LOOP) {
   (void) insn;
   return KOS_OP_RUN();
 }
+
+
+// The end.

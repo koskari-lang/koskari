@@ -179,8 +179,9 @@ When adding or changing an opcode:
 
 1. **Add to `koskari/lib/opcodes.incl`** (name and style). The enum and order
    there are authoritative.
-2. **Implement or stub** the handler in `koskari/lib/eval.c` (or mark as
-   no-runtime for THEEND / compile-time for LABEL, POSITION).
+2. **Implement or stub** the handler in `koskari/lib/opcode/*.c` (included from
+   `handlers.incl`; or mark as no-runtime for THEEND / compile-time for LABEL,
+   POSITION).
 3. **Add or update** the opcode's section in this document: a `### KOS_OP_*`
    heading with stable anchor, category, stack effect, invariants, compiler form
    (if pre ≠ post), and at least one disassembly table (post-compile) when
@@ -301,6 +302,10 @@ When adding or changing an opcode:
 | TAIL_CALL_STAR | STAR | Tail call with *args and/or **kwargs | [§17](#kos_op_tail_call_star) |
 | PUSH_FOREACH | NOARG | Push foreach region; break target from extent table | [§18](#kos_op_push_foreach) |
 | PUSH_LOOP | NOARG | Push loop region; break target from extent table | [§18](#kos_op_push_loop) |
+| POP_FOREACH | NOARG | Pop foreach region; push loop result | [§18](#kos_op_pop_foreach) |
+| POP_LOOP | NOARG | Pop loop region; push loop result | [§18](#kos_op_pop_loop) |
+| CLEAR_LOOP | NOARG | Disable top LOOP region (before POP_LOOP) | [§18](#kos_op_clear_loop) |
+| CLEAR_FOREACH | NOARG | Disable top FOREACH region (before POP_FOREACH) | [§18](#kos_op_clear_foreach) |
 | PUSH_NS | COUNT | Push namespace scope | [§18](#kos_op_push_ns) |
 | PUSH_COLLECT | CONST | Push collector namespace scope | [§18](#kos_op_push_collect) |
 | POP_COLLECT | NOARG | Pop collect scope, push ns | [§18](#kos_op_pop_collect) |
@@ -654,13 +659,13 @@ bottom to top matches push order).
 - **Stack**: Pops `arg` elements; control transfers to break target of innermost LOOP/FOREACH extent.
 - **Invariants**: Must be inside a LOOP or FOREACH extent.
 
-**Example:** Inside a loop; pop 0 and jump to extent break_pc (e.g. after POP_LOOP).
+**Example:** Inside a loop; pop 0 and jump to extent break_pc (instruction after the matching POP_LOOP or POP_FOREACH).
 
 | index | opcode | arg | arg view | comment |
 |------:|--------|-----|----------|---------|
 | 2     | BREAK  | 0   | 0        | pop 0, jump to break target (e.g. pc 6) |
 | …     | …      | …   | …        | |
-| 6     | POP_LOOP | 0 | 0        | break target |
+| 6     | POP_LOOP | 0 | 0        | break target (LOOP extent; use POP_FOREACH for FOREACH) |
 
 ---
 
@@ -769,7 +774,7 @@ bottom to top matches push order).
 | 2     | ITER_NEXT| 6   | 6 (-> 6)  | next from region; if exhausted → pc=6. stack: [..., val] or jump |
 | 3     | POP      | 1   | 1        | consume value (body) |
 | 4     | JUMP     | 2   | 2 (-> 2) | loop back |
-| 5     | POP_LOOP | 0   | 0        | |
+| 5     | POP_FOREACH | 0 | 0        | |
 | 6     | LABEL    | —   | —        | else (exhausted) |
 
 ---
@@ -2148,7 +2153,7 @@ These opcodes perform attribute get, set, clear, or reference on an object fetch
 
 - **Style**: NOARG. Argument unused; break target is derived at runtime from the extent table (`pop_pc + 1`).
 - **Status**: Implemented.
-- **Stack**: Pops iterable (TOS) and loop_result (below TOS); creates iterator; pushes FOREACH node and stack block. ITER_NEXT uses the node's iterator. Break target = `extent.pop_pc + 1` (instruction after the matching POP_LOOP).
+- **Stack**: Pops iterable (TOS) and loop_result (below TOS); creates iterator; pushes FOREACH node and stack block. ITER_NEXT uses the node's iterator. Break target = `extent.pop_pc + 1` (instruction after the matching POP_FOREACH).
 - **Pushes:** KOS_DYN_FOREACH (static extent KOS_EXT_FOREACH; node holds iterator and loop state).
 - **Invariants**: A KOS_EXT_FOREACH extent must exist at the PUSH_FOREACH PC; otherwise RuntimeError. Extent kind KOS_EXT_FOREACH.
 - **Compiler form:** Pre-compile arg = 0 (unused). Break target is not stored in the instruction; it is derived at runtime via `kos_extent_find(KOS_EXT_FOREACH)` → `ext->pop_pc + 1`.
@@ -2163,7 +2168,7 @@ These opcodes perform attribute get, set, clear, or reference on an object fetch
 | 3     | ITER_NEXT    | 7   | 7 (-> 7) | next from region; else → 7. stack: [..., x] |
 | 4     | POP          | 1   | 1        | body: consume x |
 | 5     | JUMP         | 3   | 3 (-> 3) | loop back |
-| 6     | POP_LOOP     | 0   | 0        | |
+| 6     | POP_FOREACH  | 0   | 0        | |
 | 7     | LABEL        | —   | —        | break / exhausted (= pop_pc+1) |
 
 ---
@@ -2348,8 +2353,20 @@ Full design: [interpreter/with-dyn-with.md](interpreter/with-dyn-with.md). Summa
 
 - **Style**: NOARG.
 - **Status**: Implemented.
-- **Stack**: No stack effect. Clears LOOP region state on non-local exit (e.g. break); POP_LOOP runs at the break target.
-- **Example:** On `break`: CLEAR_LOOP (and possibly CLEAR_TRY) then jump to break_pc; POP_LOOP at target.
+- **Stack**: No stack effect. Disables the top LOOP region (sets `enabled` to 0) and clears the loop stack block. Used on normal exit from a while-loop body (before POP_LOOP), or on iterator exhaustion in patterns that only use LOOP extents.
+- **Invariants**: Top of chain must be KOS_DYN_LOOP. Use CLEAR_FOREACH for FOREACH extents.
+- **Example:** On `break` from a while loop: CLEAR_LOOP (and possibly CLEAR_TRY) then jump to break_pc; POP_LOOP at target.
+- **Implementation**: `koskari/lib/opcode/CLEAR_LOOP.c`
+
+---
+
+### KOS_OP_CLEAR_FOREACH {#kos_op_clear_foreach}
+
+- **Style**: NOARG.
+- **Status**: Implemented.
+- **Stack**: No stack effect. Disables the top FOREACH region (sets `enabled` to 0) and clears the loop stack block. Used when a for-each iterator is exhausted naturally (before POP_FOREACH).
+- **Invariants**: Top of chain must be KOS_DYN_FOREACH. Use CLEAR_LOOP for LOOP extents.
+- **Implementation**: `koskari/lib/opcode/CLEAR_FOREACH.c`
 
 ---
 
@@ -2384,8 +2401,19 @@ Full design: [interpreter/with-dyn-with.md](interpreter/with-dyn-with.md). Summa
 
 - **Style**: NOARG.
 - **Status**: Implemented.
-- **Stack**: Drop stack block (no promotion); pop LOOP/FOREACH region; push loop/foreach result from the region (stored on the region, not from the block).
-- **Invariants**: Top of chain must match LOOP/FOREACH.
+- **Stack**: Drop stack block (no promotion); pop LOOP region; push loop result from the region (stored on the region, not from the block).
+- **Invariants**: Top of chain must be KOS_DYN_LOOP (paired with PUSH_LOOP).
+- **Implementation**: `koskari/lib/opcode/POP_LOOP.c`
+
+---
+
+### KOS_OP_POP_FOREACH {#kos_op_pop_foreach}
+
+- **Style**: NOARG.
+- **Status**: Implemented.
+- **Stack**: Drop stack block (no promotion); pop FOREACH region; push loop result from the region (stored on the region, not from the block).
+- **Invariants**: Top of chain must be KOS_DYN_FOREACH (paired with PUSH_FOREACH).
+- **Implementation**: `koskari/lib/opcode/POP_FOREACH.c`
 
 ---
 

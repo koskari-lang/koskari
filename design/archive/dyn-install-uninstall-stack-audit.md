@@ -12,7 +12,7 @@ no mismatch that could cause leaked or orphaned blocks.
 | TRY        | PUSH_TRY opcode                              | kos_dyn_uninstall_handler                        | ✓ |
 | FINALLY    | PUSH_FINALLY opcode                          | kos_dyn_uninstall_handler                        | ✓ |
 | LOOP       | PUSH_LOOP opcode                             | kos_dyn_uninstall_handler; POP_LOOP opcode       | ✓ |
-| FOREACH    | PUSH_FOREACH opcode                          | kos_dyn_uninstall_handler; POP_LOOP; BREAK; CONT | ✓ |
+| FOREACH    | PUSH_FOREACH opcode                          | kos_dyn_uninstall_handler; POP_FOREACH; BREAK; CONT | ✓ |
 | WITH       | eval.c kos_with_push                         | kos_dyn_uninstall_handler                        | ✓ |
 | DYN_WITH   | eval.c kos_dyn_with_push                     | kos_dyn_uninstall_handler; POP_DYN_WITH; TRUNCATE | ✓ |
 | PARAM      | no stack block                               | no stack block                                   | ✓ |
@@ -42,7 +42,7 @@ no mismatch that could cause leaked or orphaned blocks.
 
 - **Install**: PUSH_LOOP / PUSH_FOREACH opcodes call `KosStackBlock_PushBlock` then `kos_dyn_push` (opcode/PUSH_LOOP.c:52, PUSH_FOREACH.c:94)
 - **Uninstall**: `kos_dyn_uninstall_handler` case TRY/FINALLY/LOOP/FOREACH → `KosStackBlock_DropBlock` (dynchain.c:1768)
-- **Other**: POP_LOOP opcode also drops block (opcode/POP_LOOP.c:38). BREAK and CONTINUE drop blocks for each popped LOOP/FOREACH (opcode/BREAK.c:63,89; CONTINUE.c:67).
+- **Other**: POP_LOOP / POP_FOREACH opcodes drop blocks (opcode/POP_LOOP.c, POP_FOREACH.c). BREAK and CONTINUE drop blocks for each popped LOOP/FOREACH (opcode/BREAK.c:63,89; CONTINUE.c:67).
 
 ### KOS_DYN_WITH, KOS_DYN_DYN_WITH
 

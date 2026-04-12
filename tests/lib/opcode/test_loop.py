@@ -28,7 +28,7 @@ pytestmark = pytest.mark.phase_lib
 
 class TestLoopOpcodes(CevalTest):
     """
-    Tests for PUSH_LOOP, POP_LOOP, CLEAR_LOOP, BREAK, CONTINUE.
+    Tests for PUSH_LOOP, POP_LOOP, CLEAR_LOOP, CLEAR_FOREACH, BREAK, CONTINUE.
 
     PUSH_LOOP initializes region->result to None.
     BREAK/CONTINUE update region->result with their arg-derived value.
@@ -204,25 +204,102 @@ class TestLoopOpcodes(CevalTest):
         self.assertIn("continue outside loop", str(ctx.exception))
 
 
-    async def test_clear_loop_outside_loop_raises(self):
+    async def test_clear_loop_without_push_raises(self):
         """
-        CLEAR_LOOP without preceding PUSH_LOOP/PUSH_FOREACH raises RuntimeError
+        CLEAR_LOOP with no LOOP region on the chain raises RuntimeError
         """
 
         code_obj, ns = build_expr([["CLEAR_LOOP", 0], ["RETURN", 1]])
-        with self.assertRaises(RuntimeError):
+        with self.assertRaises(RuntimeError) as ctx:
             await make_callable(code_obj, ns)()
+        self.assertIn("CLEAR_LOOP: top is not a LOOP region", str(ctx.exception))
 
 
-    async def test_pop_loop_without_push_loop_raises(self):
+    async def test_clear_foreach_without_push_raises(self):
         """
-        POP_LOOP without preceding PUSH_LOOP/PUSH_FOREACH raises RuntimeError
-        (at code build or run).
+        CLEAR_FOREACH with no FOREACH region on the chain raises RuntimeError
+        """
+
+        code_obj, ns = build_expr([["CLEAR_FOREACH", 0], ["RETURN", 1]])
+        with self.assertRaises(RuntimeError) as ctx:
+            await make_callable(code_obj, ns)()
+        self.assertIn("CLEAR_FOREACH: top is not a FOREACH region",
+                      str(ctx.exception))
+
+
+    async def test_clear_loop_requires_loop_not_foreach(self):
+        """
+        CLEAR_LOOP rejects a FOREACH region (use CLEAR_FOREACH).
+        """
+
+        code, ns = build_expr([
+            ["CONST", None],
+            ["CONST", []],
+            ["PUSH_FOREACH", 0],
+            ["CLEAR_LOOP", 0],
+            ["POP_FOREACH", 0],
+            ["RETURN", 0],
+        ])
+        with self.assertRaises(RuntimeError) as ctx:
+            await make_callable(code, ns)()
+        self.assertIn("CLEAR_LOOP: top is not a LOOP region", str(ctx.exception))
+
+
+    async def test_clear_foreach_requires_foreach_not_loop(self):
+        """
+        CLEAR_FOREACH rejects a LOOP region (use CLEAR_LOOP).
+        """
+
+        code, ns = build_expr([
+            ["PUSH_LOOP", 0],
+            ["CLEAR_FOREACH", 0],
+            ["POP_LOOP", 0],
+            ["RETURN", 0],
+        ])
+        with self.assertRaises(RuntimeError) as ctx:
+            await make_callable(code, ns)()
+        self.assertIn("CLEAR_FOREACH: top is not a FOREACH region",
+                      str(ctx.exception))
+
+
+    async def test_pop_loop_without_push_raises(self):
+        """
+        POP_LOOP with no matching PUSH_LOOP raises RuntimeError (finalize or run).
         """
 
         with self.assertRaises(RuntimeError):
             code_obj, ns = build_expr([["POP_LOOP", 0], ["RETURN", 1]])
             await make_callable(code_obj, ns)()
+
+
+    def test_extent_foreach_requires_pop_foreach(self):
+        """
+        PUSH_FOREACH must close with POP_FOREACH; POP_LOOP is rejected at finalize.
+        """
+
+        with self.assertRaises(RuntimeError) as ctx:
+            build_expr([
+                ["CONST", None],
+                ["CONST", []],
+                ["PUSH_FOREACH", 0],
+                ["POP_LOOP", 0],
+                ["RETURN", 0],
+            ])
+        self.assertIn("extent mismatch", str(ctx.exception))
+
+
+    def test_extent_loop_requires_pop_loop(self):
+        """
+        PUSH_LOOP must close with POP_LOOP; POP_FOREACH is rejected at finalize.
+        """
+
+        with self.assertRaises(RuntimeError) as ctx:
+            build_expr([
+                ["PUSH_LOOP", 0],
+                ["POP_FOREACH", 0],
+                ["RETURN", 0],
+            ])
+        self.assertIn("extent mismatch", str(ctx.exception))
 
 
 # The end.

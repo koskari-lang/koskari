@@ -33,7 +33,7 @@ class TestForeachOpcodes(CevalTest):
     PUSH_FOREACH expects stack: [loop_result, iterable].
     It pops both, creates an iterator from the iterable, and stores
     loop_result and iterator in the region. ITER_NEXT reads from region.
-    POP_LOOP pushes region->result to the stack as the loop expression value.
+    POP_FOREACH pushes region->result to the stack as the loop expression value.
     """
 
     async def test_iter_next_outside_foreach_fails(self):
@@ -72,11 +72,11 @@ class TestForeachOpcodes(CevalTest):
             ["ITER_NEXT", "else_lbl"],
             ["RETURN", 1],
             ["LABEL", "else_lbl"],
-            ["CLEAR_LOOP", 0],
+            ["CLEAR_FOREACH", 0],
             ["LABEL", "break_lbl"],
-            ["POP_LOOP", 0],
+            ["POP_FOREACH", 0],
             ["LABEL", "after_pop"],
-            # POP_LOOP pushed the loop result; we want to return -1
+            # POP_FOREACH pushed the loop result; we want to return -1
             ["POP", 1],
             ["CONST", -1],
             ["RETURN", 1],
@@ -104,11 +104,11 @@ class TestForeachOpcodes(CevalTest):
             ["LABEL", "loop_cont"],
             ["JUMP", "loop_head"],
             ["LABEL", "else_lbl"],
-            ["CLEAR_LOOP", 0],
+            ["CLEAR_FOREACH", 0],
             ["LABEL", "break_lbl"],
-            ["POP_LOOP", 0],
+            ["POP_FOREACH", 0],
             ["LABEL", "after_pop"],
-            # POP_LOOP pushed the loop result (None from break)
+            # POP_FOREACH pushed the loop result (None from break)
             ["POP", 1],
             ["CONST", 42],
             ["RETURN", 1],
@@ -130,11 +130,11 @@ class TestForeachOpcodes(CevalTest):
             ["CONST", -1],
             ["RETURN", 1],
             ["LABEL", "else_lbl"],
-            ["CLEAR_LOOP", 0],
+            ["CLEAR_FOREACH", 0],
             ["LABEL", "break_lbl"],
-            ["POP_LOOP", 0],
+            ["POP_FOREACH", 0],
             ["LABEL", "after_pop"],
-            # POP_LOOP pushed the loop result (None)
+            # POP_FOREACH pushed the loop result (None)
             ["POP", 1],
             ["CONST", 99],
             ["RETURN", 1],
@@ -146,7 +146,7 @@ class TestForeachOpcodes(CevalTest):
     async def test_push_foreach_with_iter_next_completes(self):
         """
         PUSH_FOREACH with ITER_NEXT on empty list exits to else.
-        POP_LOOP pushes the loop result (None in this case).
+        POP_FOREACH pushes the loop result (None in this case).
         """
 
         code, ns = build_expr([
@@ -157,10 +157,10 @@ class TestForeachOpcodes(CevalTest):
             ["CONST", -1],
             ["RETURN", 1],
             ["LABEL", "else_lbl"],
-            ["CLEAR_LOOP", 0],
+            ["CLEAR_FOREACH", 0],
             ["LABEL", "break_lbl"],
-            ["POP_LOOP", 0],
-            # POP_LOOP now pushes the loop result (None)
+            ["POP_FOREACH", 0],
+            # POP_FOREACH now pushes the loop result (None)
             ["POP", 1],  # discard the loop result
             ["CONST", 42],
             ["RETURN", 1],
@@ -189,9 +189,9 @@ class TestForeachOpcodes(CevalTest):
                 ["VAR_STORE", "last"],
                 ["JUMP", "loop_head"],
                 ["LABEL", "else_lbl"],
-                ["CLEAR_LOOP", 0],
+                ["CLEAR_FOREACH", 0],
                 ["LABEL", "break_lbl"],
-                ["POP_LOOP", 0],
+                ["POP_FOREACH", 0],
                 ["POP", 1],
                 ["VAR", "last"],
                 ["RETURN", 1],
@@ -220,9 +220,9 @@ class TestForeachOpcodes(CevalTest):
             ["VAR_STORE", "total"],
             ["JUMP", "loop_head"],
             ["LABEL", "else_lbl"],
-            ["CLEAR_LOOP", 0],
+            ["CLEAR_FOREACH", 0],
             ["LABEL", "break_lbl"],
-            ["POP_LOOP", 0],
+            ["POP_FOREACH", 0],
             ["POP", 1],
             ["VAR", "total"],
             ["RETURN", 1],
@@ -250,9 +250,9 @@ class TestForeachOpcodes(CevalTest):
                 ["CONST", -1],
                 ["RETURN", 1],
                 ["LABEL", "else_lbl"],
-                ["CLEAR_LOOP", 0],
+                ["CLEAR_FOREACH", 0],
                 ["LABEL", "break_lbl"],
-                ["POP_LOOP", 0],
+                ["POP_FOREACH", 0],
                 ["POP", 1],
                 ["CONST", 999],
                 ["RETURN", 1],
@@ -276,9 +276,9 @@ class TestForeachOpcodes(CevalTest):
             ["CONST", -1],
             ["RETURN", 1],
             ["LABEL", "else_lbl"],
-            ["CLEAR_LOOP", 0],
+            ["CLEAR_FOREACH", 0],
             ["LABEL", "break_lbl"],
-            ["POP_LOOP", 0],
+            ["POP_FOREACH", 0],
             ["POP", 1],
             ["CONST", 0],
             ["RETURN", 1],
@@ -307,9 +307,9 @@ class TestForeachOpcodes(CevalTest):
             ["CONST", -1],
             ["RETURN", 1],
             ["LABEL", "else_lbl"],
-            ["CLEAR_LOOP", 0],
+            ["CLEAR_FOREACH", 0],
             ["LABEL", "break_lbl"],
-            ["POP_LOOP", 0],
+            ["POP_FOREACH", 0],
             ["POP", 1],
             ["CONST", 0],
             ["RETURN", 1],

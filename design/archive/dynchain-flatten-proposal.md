@@ -210,7 +210,7 @@ And a header comment mapping Kind → line range or section.
 
 - **PUSH_TRY, PUSH_FINALLY, PUSH_LOOP, PUSH_FOREACH** — Call `kos_dyn_push_try`, `kos_dyn_push_finally`, etc., which allocate the correct kind and call `kos_dyn_push` (which calls install).
 - **POP_TRY, POP_FINALLY, POP_LOOP, POP_FOREACH** — Verify top has the expected kind, perform PopBlock if needed (for TRY/FINALLY), then call `kos_dyn_uninstall` (or a thin wrapper that does PopBlock + uninstall for TRY/FINALLY).
-- **CLEAR_TRY, CLEAR_FINALLY, CLEAR_LOOP** — Set `enabled = 0` on the appropriate kind. No kind check needed if the opcode is already specialized.
+- **CLEAR_TRY, CLEAR_FINALLY, CLEAR_LOOP, CLEAR_FOREACH** — Set `enabled = 0` on the appropriate kind. No kind check needed if the opcode is already specialized.
 - **BREAK, CONTINUE** — Use `kos_find_node_for_loop`; cast to `KosDynLoop` or `KosDynForeach` based on Kind.
 - **ITER_NEXT** — Use finder for FOREACH only.
 - **eval.c exception dispatch** — Uses `kos_find_node_for_raise`; dispatches to TRY or FINALLY. The `exception_unwind` handler for TRY/FINALLY performs clear-block, set-handling-raise, set-PC internally. No separate clear-block call from eval.
