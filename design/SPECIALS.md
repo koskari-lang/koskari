@@ -10,6 +10,35 @@ dispatches on the head symbol of a list form. The forms below are implemented in
 `koskari/compile/specials/` and use helpers from `koskari/compile/helpers.py`
 where applicable.
 
+## Macros, reader macros, hygiene, and compiler optimizations
+
+**Reader macros** — Parse-time character dispatch is implemented on
+`koskari.reader.parser.Parser`: `set_macro_character`, `remove_macro_character`,
+and default readers for quote, quasiquote, unquote, and unquote-splicing.
+
+**Compile-time macros** — User-facing **`(define-syntax NAME SPEC)`** is expanded
+by the **`compile/define-syntax`** macro in `koskari/importer/basics.ki` (not a
+`@special`). **`SPEC`** must begin with **`syntax-rules`**, **`macro-rules`**,
+**`syntax-match`**, or **`macro-match`**; see **`compile/define-syntax`** and the
+**`compile/syntax-rules`**, **`compile/macro-rules`**, **`compile/syntax-match`**,
+and **`compile/macro-match`** sections below. **RULE** vs **MATCH** pattern
+languages and the shared transformer model are documented in
+[language/unified-matcher-transformer-model.md](language/unified-matcher-transformer-model.md).
+
+**Syntax boxes and hygiene** — **`koskari.syntax.Syntax`** wraps call-site
+segments so the hygiene pass does not rename inside boxed payloads;
+**`koskari.syntax.unbox_macro_with_hygiene`** splices after hygiene. See
+[language/macro-hygiene-syntax-boxes.md](language/macro-hygiene-syntax-boxes.md)
+and [api/matcher-hygiene-extensions.md](api/matcher-hygiene-extensions.md).
+
+**Compiler optimizations** (in **`Compiler.complete`**, `koskari/compile/compiler.py`)
+— Instruction **`compress`** applies peephole rewrites (for example redundant
+**POP** after **CONST**, constant **OBJECT_NOT**, jump folding when branches are
+constant). **`convert_fast`** lowers **VAR** family opcodes to **FAST** indices
+where the namespace layout allows. Separately, many **`compile/`** specials apply
+left-to-right **constant folding** for reducible `OBJECT_*` opcodes (see
+`koskari/compile/specials/object.py`).
+
 ## compile/bytecode
 
 **Symbol:** `compile/bytecode`
@@ -1295,8 +1324,9 @@ with **`NAME`** repeated as the first argument. Block syntax via
 
 **See also:** [MACROS.md](MACROS.md) — **compile/define-syntax (macro)**;
 [language/unified-matcher-transformer-model.md](language/unified-matcher-transformer-model.md)
-(**RULE** vs **MATCH** pattern languages; unified matcher IR and transformer
-pipeline for `define-syntax`, future `define-macro`, and specials).
+(**RULE** vs **MATCH** pattern languages; unified matcher IR, transformer
+pipeline, and post-expand hygiene/unbox for `define-syntax`, `macro-rules`, and
+specials).
 
 
 ## compile/syntax-rules

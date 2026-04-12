@@ -1,14 +1,14 @@
 # Koskari Unified Matcher & Transformer Model
 
-**Status:** Design proposal; guides implementation. The matcher stack, **RULE**
-pattern parsing (`koskari/syntax.py`: `parse_rule_pattern`, `syntax_pattern_to_matcher`),
-**MATCH** pattern parsing (`parse_explicit_rule_pattern`, `_lower_match_pattern_spec`),
-`syntax-rules` / **`macro-rules`** / **`syntax-match`** / **`macro-match`**
-transformers, **compile-time lowering**
+**Status:** Architecture reference; matches the implementation. The matcher stack,
+**RULE** pattern parsing (`koskari/syntax.py`: `parse_rule_pattern`,
+`syntax_pattern_to_matcher`), **MATCH** pattern parsing (`parse_explicit_rule_pattern`,
+`_lower_match_pattern_spec`), `syntax-rules` / **`macro-rules`** /
+**`syntax-match`** / **`macro-match`** transformers, **compile-time lowering**
 (`compile/syntax-rules`, `compile/macro-rules`, `compile/syntax-match`,
-`compile/macro-match` in `koskari/compile/specials/syntax.py`), and **template
-hygiene helpers** (`koskari/hygiene.py`) exist today. Syntax boxes and the full
-layered post-expand box pipeline remain **design** work. Complements
+`compile/macro-match` in `koskari/compile/specials/syntax.py`), **template hygiene**
+(`koskari/hygiene.py`), and **syntax boxes** (`koskari.syntax.Syntax`,
+`unbox_macro_with_hygiene`) are implemented. Complements
 [macro-hygiene-syntax-boxes.md](macro-hygiene-syntax-boxes.md).
 
 **Terminology: RULE vs MATCH (macro pattern languages)**
@@ -64,8 +64,7 @@ embedded via a **`rule`** wrapper inside RULE columns.
 - **Matcher hygiene metadata (current implementation)**: [matcher-hygiene-extensions.md](../api/matcher-hygiene-extensions.md)
 - **Pattern matching API (tagged tuples, `koskari.matcher`)**: [pattern-matching.md](../api/pattern-matching.md)
 - **Implemented compile-time macros**: [MACROS.md](../MACROS.md)
-- **`compile/define-syntax` reference**: [SPECIALS.md](../SPECIALS.md) (compile/define-syntax)
-- **Open work**: [TODO.md](../TODO.md) (Macro expansion; Procedural macro hygiene)
+- **`compile/define-syntax` and macro specials**: [SPECIALS.md](../SPECIALS.md)
 - **Historical macro notes**: [archive/macros.md](../archive/macros.md)
 
 ---
@@ -150,11 +149,12 @@ For every rule, after the worker returns:
 
 1. **Hygiene transform** — Matcher-informed gensym / binding isolation (reuse
    and extend `_collect_binding_symbols_matcher` and related paths for
-   templates; align procedural output with [macro-hygiene-syntax-boxes.md](macro-hygiene-syntax-boxes.md) when boxes land).
+   templates; boxed payloads skip renaming per
+   [macro-hygiene-syntax-boxes.md](macro-hygiene-syntax-boxes.md)).
 
-2. **Unboxing / splice** — Resolve **syntax boxes**; merge call-site segments
-   into the final tree. Template-only macros may omit boxes initially;
-   procedural macros are the primary consumer.
+2. **Unboxing / splice** — Resolve **`Syntax`** boxes; merge call-site segments
+   into the final tree (`unbox_macro_with_hygiene`). Procedural macros are the
+   primary consumer when mixing generated skeleton with user subforms.
 
 Schematic order: **match → expand (template *or* macro) → hygiene → unbox → …**
 
@@ -176,7 +176,7 @@ Schematic order: **match → expand (template *or* macro) → hygiene → unbox 
 
 4. **Hygiene** — Shared post-expand pass.
 
-5. **Unboxing** — Shared final splice when syntax boxes are implemented.
+5. **Unboxing** — Shared final splice (`unbox_macro_with_hygiene`).
 
 ---
 
@@ -356,9 +356,9 @@ layers. **Hygiene** and **unbox** are **not** duplicated inside each worker type
 
 * Matcher / template metadata drives **which** symbols are in binding position
   for **template** expansion.
-* Procedural macros may rely on **syntax boxes** + final splice (see
-  macro-hygiene-syntax-boxes) and/or explicit **use-gensyms**-style discipline
-  until the box pipeline is complete.
+* Procedural macros rely on **`Syntax`** boxes + final splice (see
+  macro-hygiene-syntax-boxes) and may combine with explicit **use-gensyms**-style
+  discipline where applicable.
 
 Future: lean more on matcher-declared binding metadata and less on ad hoc
 preview heuristics.

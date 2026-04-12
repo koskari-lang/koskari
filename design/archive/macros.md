@@ -84,4 +84,4 @@ Similar macro system, but integrated with custom bytecode compiler.
 ## Related design (current tree)
 
 - **Unified matcher & transformer model (proposal):** [../language/unified-matcher-transformer-model.md](../language/unified-matcher-transformer-model.md)
-- **Procedural hygiene / syntax boxes (proposal):** [../language/macro-hygiene-syntax-boxes.md](../language/macro-hygiene-syntax-boxes.md)
+- **Procedural hygiene / syntax boxes:** [../language/macro-hygiene-syntax-boxes.md](../language/macro-hygiene-syntax-boxes.md) (implementation pointer; archived spec: [macro-hygiene-syntax-boxes.md](macro-hygiene-syntax-boxes.md))

@@ -15,7 +15,7 @@ The matcher serves two purposes:
 
 The goal is to let macro/template hygiene remain generic. The expander should not hardcode knowledge of `compile/let`, `compile/lambda`, `compile/define`, etc. Instead, it should inspect matcher metadata exposed by registered specials and derive a gensym-renaming map from that metadata.
 
-**Related (proposed umbrella):** [../language/unified-matcher-transformer-model.md](../language/unified-matcher-transformer-model.md) describes the intended convergence of syntax-rules, procedural macros, and specials on the same matcher-driven pipeline (pattern dispatch, match environment, outcome, hygiene, unbox).
+**Related (architecture):** [../language/unified-matcher-transformer-model.md](../language/unified-matcher-transformer-model.md) describes how syntax-rules, procedural macros, and specials share matcher-driven structure and the same post-expand hygiene and unbox stages.
 
 ---
 

@@ -26,9 +26,8 @@ This document provides a high-level summary of all features identified from both
 - **Items**: item, set-item, del-item, ref-item (implemented as compile/item, compile/set-item, compile/del-item, compile/ref-item)
 
 ### Macros
-- **Reader Macros**: Character-based parse-time transformation
-- **Compile-time Macros**: define-syntax (syntax-rules), defmacro, defalias
-- **Expansion**: macroexpand-1
+- **Reader macros**: Character-based parse-time transformation (`koskari.reader.parser`; `set_macro_character`, default quote and quasiquote readers).
+- **Compile-time macros**: **`define-syntax`** with **`syntax-rules`**, **`macro-rules`**, **`syntax-match`**, or **`macro-match`**; lowered by the corresponding **`compile/syntax-*`** / **`compile/macro-*`** specials (see [SPECIALS.md](SPECIALS.md)). Historical **`defmacro`** / **`defalias`** / **`macroexpand-1`** notes live in [archive/compiler-python-sibilant-historical.md](archive/compiler-python-sibilant-historical.md).
 - **RULE vs MATCH**: **RULE** patterns (Scheme-style list patterns) are used by
   **`syntax-rules`** and **`macro-rules`**. **MATCH** patterns (explicit matcher
   rows **`(PATTERN …)`** per rule) target **`syntax-match`** and
@@ -36,7 +35,7 @@ This document provides a high-level summary of all features identified from both
   matcher IR as the **`MATCH(...)`** combinator in `koskari.matcher`. The
   **macro spec head** selects which language applies; see
   [language/unified-matcher-transformer-model.md](language/unified-matcher-transformer-model.md).
-- **Design (proposed)**: Unified matcher/transformer model for declarative and procedural macros with specials — [language/unified-matcher-transformer-model.md](language/unified-matcher-transformer-model.md); procedural hygiene — [language/macro-hygiene-syntax-boxes.md](language/macro-hygiene-syntax-boxes.md)
+- **Hygiene and syntax boxes**: **`koskari.syntax.Syntax`**, **`koskari.hygiene`**, **`unbox_macro_with_hygiene`** — [language/macro-hygiene-syntax-boxes.md](language/macro-hygiene-syntax-boxes.md); matcher metadata for specials — [api/matcher-hygiene-extensions.md](api/matcher-hygiene-extensions.md)
 
 ### Control Flow
 - **Conditionals**: cond
@@ -106,7 +105,7 @@ This document provides a high-level summary of all features identified from both
 ### Compiler
 - **Phases**: Parse → Expand → Compile → Optimize → Generate (full pipeline in progress)
 - **Components**: Compiler, CodeContext, ByteCodeFragment (implemented in `koskari.compile`)
-- **Optimization**: Constant folding, dead code elimination, fast paths (planned)
+- **Optimization**: Reducible constant folding (`koskari/compile/specials/object.py` and related), instruction peephole rewrites and jump folding (`Compiler.compress`), VAR→FAST lowering (`Compiler.convert_fast` in `Compiler.complete`)
 - **Implemented specials**: compile/bytecode, compile/begin, compile/call, compile/class, compile/define, **compile/define-syntax**, **compile/syntax-rules**, **compile/macro-rules**, **compile/syntax-match**, **compile/macro-match**, compile/lambda, compile/let, compile/parameterize, compile/cond, compile/if, compile/when, compile/unless, compile/and, compile/or, compile/while, compile/for-each, compile/break, compile/continue, compile/try, compile/raise, compile/check-exception, compile/clear-exception, compile/load-exception, compile/setq, compile/setq-values, compile/define-values, compile/refq, compile/bindq, compile/delq, compile/attr, compile/del-attr, compile/set-attr, compile/ref-attr, compile/item, compile/ref-item, compile/del-item, compile/set-item, compile/quote, **compile/quasiquote, compile/unquote, compile/unquote-splicing**, compile/car, compile/cdr, compile/cons, compile/with, compile/dyn-with, compile/dyn-wind, **import**, **import-from**, **compile/= compile/!= compile/< compile/<= compile/> compile/>= compile/in compile/not-in compile/is compile/is-not compile/isinstance compile/issubclass compile/+ compile/- compile/* compile/** compile/& compile/| compile/^ compile/// compile// compile/@ compile/% compile/<< compile/>> compile/divmod compile/not compile/repr compile/truth compile/iter compile/~ compile/str compile/len compile/type compile/dir compile/vars compile/aiter** (see design/SPECIALS.md)
 
 ### Evaluator

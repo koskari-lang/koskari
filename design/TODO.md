@@ -67,11 +67,11 @@ Ref: [interpreter/gil-cooperation.md](interpreter/gil-cooperation.md).
 
 ### Fast local stack
 
-Explore a fast local stack (or stack layout) to speed up the evaluator. Ideas
-include: VAR→FAST conversion in the compiler (indexed locals instead of
-name lookup), and/or a dedicated fast operand stack (e.g. linear array for
-current frame). Compiler optimization passes (constant folding, dead code
-elimination, VAR→FAST) are still to migrate.
+Explore a fast local stack (or stack layout) to speed up the evaluator (C-local
+eval state, freeze/thaw; see the design note). The compiler already performs
+reducible constant folding, instruction peephole rewrites in `compress`, and
+VAR→FAST lowering in `Compiler.complete`; a separate fast operand stack in the
+VM remains open.
 
 Ref: [interpreter/freeze-thaw-context-segments.md](interpreter/freeze-thaw-context-segments.md).
 
@@ -116,49 +116,6 @@ Bring over Python-sibilant slicing support in both forms:
   (start/stop/step variants) so user code can write slices directly.
 
 Ref: [archive/compiler-python-sibilant-historical.md](archive/compiler-python-sibilant-historical.md) § To Migrate.
-
-### Macro expansion and optimization
-
-- Macro expansion: reader macros; defmacro, defalias (compile/define-syntax
-  is implemented). **Compile-time lowering** for re-emitting macro specs as
-  source (`compile/syntax-rules`, `compile/macro-rules`, `compile/syntax-match`,
-  `compile/macro-match`) is implemented in `koskari/compile/specials/syntax.py`.
-  **`parse_explicit_rule_pattern`** implements the **MATCH** surface language for
-  **`syntax-match`** / **`macro-match`**; optional sugar and further matcher
-  exposure remain incremental work. **RULE** patterns (`syntax-rules` /
-  `macro-rules`) are implemented in `koskari/syntax.py`. Terminology and the four
-  surface forms are documented in
-  [language/unified-matcher-transformer-model.md](language/unified-matcher-transformer-model.md).
-- Optimization passes: constant folding, dead code elimination, VAR→FAST
-  conversion.
-
-Ref: [interpreter/compiler.md](interpreter/compiler.md) (current compiler);
-[language/special-forms.md](language/special-forms.md) (special forms catalog);
-[archive/compiler-python-sibilant-historical.md](archive/compiler-python-sibilant-historical.md) § To Migrate.
-
-- Architectural umbrella for matchers, `define-syntax` / `define-macro`, and
-  specials: [language/unified-matcher-transformer-model.md](language/unified-matcher-transformer-model.md).
-
-### Procedural macro hygiene (syntax boxes)
-
-**Status:** Partially implemented in Python (`koskari/hygiene.py` expands templates
-with binding metadata; matcher `extract_targets` and related paths support
-hygiene walks). The singular **syntax box** type and full **box** pipeline
-(described below) remain **design / not complete**.
-
-Implement the singular **syntax box** type and pipeline: macro output is a mix
-of unboxed macro-generated skeleton (subject to the existing binding/hygiene
-pass) and boxed segments holding call-site source (any expression shape,
-including full subtrees). The binder must not recurse into box payloads for
-renaming; after normalization, **finalize** by splicing unwrapped payloads into
-place. Expanders may split, reorder, or duplicate boxes as needed.
-
-Ref: [language/macro-hygiene-syntax-boxes.md](language/macro-hygiene-syntax-boxes.md);
-[api/matcher-hygiene-extensions.md](api/matcher-hygiene-extensions.md) (hygiene
-discovery metadata for specials);
-[language/unified-matcher-transformer-model.md](language/unified-matcher-transformer-model.md)
-(shared Matcher IR, transformer pipeline, and surface syntax for declarative vs
-procedural macros).
 
 ### Fenced foreign literal
 

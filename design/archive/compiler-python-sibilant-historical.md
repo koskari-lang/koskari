@@ -100,8 +100,10 @@ Koskari uses custom bytecode and a custom C evaluator, not CPython bytecode. The
 
 ### To Migrate
 
-- Macro expansion (reader macros; `defmacro`, `defalias` — syntax-rules via compile/define-syntax is implemented)
-- Optimization passes (constant folding, dead code elimination, VAR→FAST conversion)
+- Parity items still tracked against python-sibilant only (Koskari has reader
+  macros, `define-syntax` with **RULE**/**MATCH** specs, syntax boxes, and
+  compiler **compress** / **convert_fast** / reducible constant folding; see
+  [SPECIALS.md](../SPECIALS.md) and [FEATURES.md](../FEATURES.md)).
 
 ### To Reconsider
 

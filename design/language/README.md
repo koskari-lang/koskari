@@ -8,8 +8,8 @@ This directory documents the language-level features of Koskari, including synta
 - **special-forms.md**: All special forms (compile-time constructs)
 - **operators.md**: Operators and their compile-time optimizations
 - **macros.md**: Macro system (reader macros and compile-time macros) — see [archive/macros.md](../archive/macros.md)
-- **macro-hygiene-syntax-boxes.md**: Procedural macro hygiene via a single syntax-box type; boxes hold any call-site segment (including subtrees), skip hygiene until a final splice
-- **unified-matcher-transformer-model.md**: Proposed shared Matcher IR and transformer pipeline unifying `define-syntax`, procedural macros (`define-macro`), and Python specials
+- **macro-hygiene-syntax-boxes.md**: Implemented syntax-box hygiene (`koskari.syntax.Syntax`, `koskari.hygiene`); archived full design note in [archive/macro-hygiene-syntax-boxes.md](../archive/macro-hygiene-syntax-boxes.md)
+- **unified-matcher-transformer-model.md**: Shared Matcher IR and transformer pipeline for `define-syntax`, `macro-rules`, specials, and post-expand hygiene/unbox
 - **syntax.md**: Syntax elements, literals, and parsing rules
 - **layout-syntax.md**: Layout-based block syntax, layout heads, and reader model
 - **layout-syntax-formal.md**: Formal EBNF specification of the Koskari Layout Syntax (lexical preprocessing, logical lines, grammar)
