@@ -15,7 +15,7 @@ with a transformer whose head is **`syntax-rules`**, **`macro-rules`**,
 **`compile/macro-rules`**, **`compile/syntax-match`**, and **`compile/macro-match`**
 (see [SPECIALS.md](SPECIALS.md)), and binds the result with **`compile/define`**.
 
-**Design (living):** [language/unified-matcher-transformer-model.md](language/unified-matcher-transformer-model.md) — matcher IR, **RULE** vs **MATCH** pattern languages (see that doc: **`syntax-rules`** / **`macro-rules`** vs **`syntax-match`** / **`macro-match`**), and how `define-syntax` / future `define-macro` share the transformer pipeline with Python specials.
+**Design (living):** [language/unified-matcher-transformer-model.md](language/unified-matcher-transformer-model.md) — matcher IR, **RULE** vs **MATCH** pattern languages (**`syntax-rules`** / **`macro-rules`** vs **`syntax-match`** / **`macro-match`**), post-expand hygiene and **`Syntax`** boxes, and how `define-syntax` transformers align with the same ideas as Python specials. Reader macros, hygiene, and compiler optimizations around macros: [SPECIALS.md](SPECIALS.md) (§ Macros, reader macros, hygiene, and compiler optimizations); [language/macro-hygiene-syntax-boxes.md](language/macro-hygiene-syntax-boxes.md).
 
 Macros documented here are defined in `koskari/importer/basics.ki` and are
 available in every module without import. The format mirrors SPECIALS.md to
@@ -331,16 +331,77 @@ optionally with a default value.
 **Defined in:** `koskari/importer/basics.ki`
 
 
-## None?
+## compile/nil?
 
-**Symbol:** `None?` (function, not only the macro pattern above)
+**Symbol:** `compile/nil?`
 
-**Syntax:** `(None? VALUE)` in expression position uses the macro; the prelude
-also defines a callable:
+**Syntax:** `(nil? VALUE)`
 
-`(define None? [value]: (compile/None? value))`
+**Use-case:** Test whether a value is `nil` via `compile/is`.
 
-**Use-case:** Predicate usable as a function value or in macro-expanded calls.
+**Behaviour:** Expands to `(compile/is nil VALUE)`.
+
+**Defined in:** `koskari/importer/basics.ki`
+
+
+## compile/each
+
+**Symbol:** `compile/each`
+
+**Syntax:**
+
+- `(each [BINDING SEQ] when: CONDITION BODY)` — yield `BODY` only when `CONDITION`
+- `(each [BINDING SEQ] unless: CONDITION BODY)` — yield `BODY` only when `CONDITION` is false
+- `(each [BINDING SEQ] BODY)` — yield `BODY` for every iteration
+
+**Use-case:** Generator comprehension sugar: expands to a thunked **`for-each`**
+that **`yield`**s each body result (optionally filtered with **`when:`** /
+**`unless:`**).
+
+**Behaviour:** Wraps **`for-each`** in **`lambda`** and uses **`when`** /
+**`unless`** for the filtered variants, as in `basics.ki`.
+
+**Defined in:** `koskari/importer/basics.ki`
+
+
+## compile/list-each
+
+**Symbol:** `compile/list-each`
+
+**Syntax:** `(list-each [BINDING SEQ] BODY ...)`
+
+**Use-case:** Collect **`compile/each`** results into a list.
+
+**Behaviour:** Expands to `(list (each [BINDING SEQ] BODY ...))`.
+
+**Defined in:** `koskari/importer/basics.ki`
+
+
+## compile/dict-each
+
+**Symbol:** `compile/dict-each`
+
+**Syntax:**
+
+- `(dict-each [BINDING SEQ] key: KEY value: VALUE)` — build dict from **`cons`** pairs
+- Variants with **`when:`** / **`unless:`** filters
+- `(dict-each [BINDING SEQ] BODY ...)` — **`BODY`** should produce pairs
+
+**Use-case:** Dict comprehension over a sequence via **`compile/each`**.
+
+**Defined in:** `koskari/importer/basics.ki`
+
+
+## compile/define-demanding
+
+**Symbol:** `compile/define-demanding`
+
+**Syntax:** `(define-demanding NAME FORMALS BODY ...)`
+
+**Use-case:** Define **`NAME`** as a **`demand`**-wrapped lambda (lazy / on-demand
+callable).
+
+**Behaviour:** Expands to `(define NAME (demand (lambda NAME FORMALS BODY ...)))`.
 
 **Defined in:** `koskari/importer/basics.ki`
 
