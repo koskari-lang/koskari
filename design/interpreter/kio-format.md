@@ -177,7 +177,7 @@ single section.
 |-------|------|-------|
 | `magic` | 8 bytes | `b"KIO\x00\x00\x00\x00\x00"` |
 | `format_version` | u16 | bump on incompatible layout changes |
-| `opcode_set_hash` | 16 bytes | MD5 of `opcodes.incl` contents |
+| `bytecode_abi` | 16 bytes | four little-endian `u32`: major, minor, patch, reserved |
 | `finalize_pipeline_version` | u32 | bump when `complete()` semantics change |
 | `struct_layout_versions` | u32 | bitfield: `NamespaceSpec`/`FormalsSpec`/`Code` record layout |
 | `flags` | u32 | `FLAG_SOFTENED = 0x01`, `FLAG_HAS_DEBUG = 0x02`, `FLAG_COMPRESSED = 0x04` |
@@ -185,6 +185,11 @@ single section.
 | `section_dir_count` | u32 | number of section directory entries |
 
 All integer fields use little-endian byte order (`<` in Python `struct`).
+
+The `bytecode_abi` words are `BYTECODE_ABI_MAJOR`, `BYTECODE_ABI_MINOR`,
+`BYTECODE_ABI_PATCH`, and `0` (reserved). They are maintained in
+`koskari.serialize.constants` and incremented when opcode numbering or
+softened CODEP encoding changes.
 
 ### 4.2 Section directory
 
@@ -305,7 +310,7 @@ is rejected and the source is recompiled.
 | Field | Type | Notes |
 |-------|------|-------|
 | `format_version` | u16 | must match header |
-| `opcode_set_hash` | 16 bytes | must match `opcodes.incl` hash |
+| `bytecode_abi` | 16 bytes | must match interpreter (four `u32`: major, minor, patch, reserved) |
 | `finalize_pipeline_version` | u32 | must match |
 | `struct_layout_versions` | u32 | must match |
 
@@ -402,6 +407,9 @@ u32 arity + u32 pool_index[arity]
 | Allowed constant types | `CONST_TYPES` in `koskari/compile/compiler.py` |
 | Symbol/keyword interning | `koskari.lib.symbol`, `koskari.lib.keyword` |
 
-The `opcode_set_hash` field in the header should be computed as the MD5 (or
-SHA-256) digest of the verbatim bytes of `koskari/lib/opcodes.incl`, making
-it sensitive to any opcode addition, removal, or reordering.
+The 16-byte `bytecode_abi` field in the header and META hard invalidators is
+the packed form of `BYTECODE_ABI_MAJOR`, `BYTECODE_ABI_MINOR`,
+`BYTECODE_ABI_PATCH`, and a reserved zero word (`struct.pack('<IIII', ...)`
+in `koskari.serialize.constants`). Bump those integers when `KosOpCode`
+values or softened-instruction semantics change. The installed package does
+not need to ship `opcodes.incl` for this check.

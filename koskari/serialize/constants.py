@@ -22,8 +22,7 @@ Binary layout constants for the .kio format.
 """
 
 
-import hashlib
-from pathlib import Path
+import struct
 
 
 KIO_MAGIC = b'KIO\x00\x00\x00\x00\x00'
@@ -38,18 +37,32 @@ FLAG_SOFTENED = 0x01
 FLAG_HAS_DEBUG = 0x02
 FLAG_COMPRESSED = 0x04
 
+# Bump when KosOpCode enum values or softened CODEP instruction semantics
+# change. Encoded as four little-endian u32 in the .kio header (16 bytes);
+# no build-time or runtime dependency on opcodes.incl in the installed
+# package.
+BYTECODE_ABI_MAJOR = 0
+BYTECODE_ABI_MINOR = 1
+BYTECODE_ABI_PATCH = 0
 
-def opcode_set_hash_bytes():
+
+def bytecode_abi_ident_bytes():
     """
-    Return 16-byte digest of opcodes.incl for header invalidation.
+    Return the 16-byte bytecode ABI identifier for the fixed .kio header.
 
-    :return: bytes of length 16 (MD5 per kio-format.md)
+    The wire format is four little-endian u32 values: major, minor, patch,
+    and a reserved word (zero). Increment these constants when opcode
+    numbering or instruction-stream encoding changes.
+
+    :return: bytes of length 16
     """
 
-    pkg = Path(__file__).resolve().parent.parent
-    incl = pkg / 'lib' / 'opcodes.incl'
-    data = incl.read_bytes()
-    return hashlib.md5(data).digest()
+    return struct.pack(
+        '<IIII',
+        BYTECODE_ABI_MAJOR,
+        BYTECODE_ABI_MINOR,
+        BYTECODE_ABI_PATCH,
+        0)
 
 
 # The end.

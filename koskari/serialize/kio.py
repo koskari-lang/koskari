@@ -29,17 +29,13 @@ from koskari.serialize.constants import (
     FORMAT_VERSION,
     FLAG_SOFTENED,
     STRUCT_LAYOUT_VERSIONS,
-    opcode_set_hash_bytes,
+    bytecode_abi_ident_bytes,
 )
 from koskari.serialize.softcode import soften_code, validate_fast_indices
 from koskari.serialize.pool import decode_pool_records, encode_pool
 from koskari.serialize.pool import PoolBuilder
 from koskari.serialize.sections import (
-    CODEP_TAG,
-    FRMS_TAG,
-    META_TAG,
-    NSPC_TAG,
-    POOL_TAG,
+    SectionTag,
     decode_codep_bodies,
     decode_directory,
     decode_instruction,
@@ -181,18 +177,18 @@ def dump_kio(path, bodies, soft_meta=None):
 
     hard_meta = (
         FORMAT_VERSION,
-        opcode_set_hash_bytes(),
+        bytecode_abi_ident_bytes(),
         FINALIZE_PIPELINE_VERSION,
         STRUCT_LAYOUT_VERSIONS,
     )
     meta_bytes = encode_meta(hard_meta, soft_meta)
 
     sections = [
-        (POOL_TAG, pool_bytes),
-        (NSPC_TAG, nspec_bytes),
-        (FRMS_TAG, frms_bytes),
-        (CODEP_TAG, codep_bytes),
-        (META_TAG, meta_bytes),
+        (SectionTag.POOL, pool_bytes),
+        (SectionTag.NSPC, nspec_bytes),
+        (SectionTag.FRMS, frms_bytes),
+        (SectionTag.CODE, codep_bytes),
+        (SectionTag.META, meta_bytes),
     ]
 
     body = bytearray()
@@ -241,8 +237,8 @@ def load_kio(path):
         raise ValueError('bad .kio magic')
     if fv != FORMAT_VERSION:
         raise ValueError('unsupported .kio format version %s' % fv)
-    if oh != opcode_set_hash_bytes():
-        raise ValueError('.kio opcode set hash does not match this interpreter')
+    if oh != bytecode_abi_ident_bytes():
+        raise ValueError('.kio bytecode ABI does not match this interpreter')
     if fin != FINALIZE_PIPELINE_VERSION:
         raise ValueError('unsupported finalize pipeline version %s' % fin)
     if sv != STRUCT_LAYOUT_VERSIONS:
@@ -255,23 +251,23 @@ def load_kio(path):
     frms_list = []
     code_list = []
 
-    if sec[NSPC_TAG][1] > 0:
+    if sec[SectionTag.NSPC][1] > 0:
         from koskari.serialize.sections import decode_nspec_section
         nspec_list, _ = decode_nspec_section(
-            data, sec[NSPC_TAG][0], [])
+            data, sec[SectionTag.NSPC][0], [])
 
-    if sec[FRMS_TAG][1] > 0:
+    if sec[SectionTag.FRMS][1] > 0:
         from koskari.serialize.sections import decode_frms_section
         frms_list, _ = decode_frms_section(
-            data, sec[FRMS_TAG][0], [])
+            data, sec[SectionTag.FRMS][0], [])
 
     pool, _ = decode_pool_records(
-        data, sec[POOL_TAG][0], nspec_list, frms_list, code_list)
+        data, sec[SectionTag.POOL][0], nspec_list, frms_list, code_list)
 
-    bodies_meta, _ = decode_codep_bodies(data, sec[CODEP_TAG][0])
+    bodies_meta, _ = decode_codep_bodies(data, sec[SectionTag.CODE][0])
 
     meta_hard, meta_soft, _ = decode_meta(
-        data, sec[META_TAG][0])
+        data, sec[SectionTag.META][0])
 
     bodies = []
     for bm in bodies_meta:

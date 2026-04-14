@@ -29,14 +29,12 @@ from koskari_importer import (
     KoskariFileFinder,
     KoskariPathFinder,
     KoskariSourceFileLoader,
-    SOURCE_SUFFIXES,
     path_hooks,
     path_importer_cache,
 )
 
 
 __all__ = (
-    'SOURCE_SUFFIXES',
     'KoskariPathFinder',
     'KoskariSourceFileLoader',
     'KoskariFileFinder',

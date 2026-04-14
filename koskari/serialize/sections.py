@@ -23,6 +23,8 @@ Binary sections for .kio files.
 
 
 import struct
+from enum import Enum
+
 
 from koskari.lib import OpCode, OpStyle
 
@@ -36,19 +38,32 @@ ARG_U32 = 1
 ARG_LABEL_ID = 2
 ARG_POOL_INDEX = 3
 
-POOL_TAG = b'POOL'
-NSPC_TAG = b'NSPC'
-FRMS_TAG = b'FRMS'
-# Spec names this the CODEP section; on-wire tags are exactly 4 bytes
-CODEP_TAG = b'CODE'
-META_TAG = b'META'
+
+class SectionTag(Enum):
+    """
+    Four-byte ASCII section tags for directory entries (struct 4s on wire)
+    """
+
+    POOL = 'POOL'
+    NSPC = 'NSPC'
+    FRMS = 'FRMS'
+    CODE = 'CODE'
+    META = 'META'
+
+    def encode(self):
+        return self.value.encode('ascii')
+
+    @classmethod
+    def decode(cls, tag_b):
+        return cls(tag_b.decode('ascii'))
+
 
 DIR_ENTRY_SIZE = struct.calcsize('<4sQQ')
 
 
 def pack_header(
         format_version,
-        opcode_hash_16,
+        bytecode_abi_16,
         finalize_ver,
         struct_ver,
         flags,
@@ -64,7 +79,7 @@ def pack_header(
         '<8sH16sIIIQI',
         KIO_MAGIC,
         format_version,
-        opcode_hash_16,
+        bytecode_abi_16,
         finalize_ver,
         struct_ver,
         flags,
@@ -86,13 +101,14 @@ def encode_directory(entries):
     """
     Encode section directory.
 
-    :param entries: list of (tag_bytes_4, offset, length)
+    :param entries: list of (SectionTag or 4-byte tag, offset, length)
     :return: bytes
     """
 
     out = bytearray()
     for tag, off, ln in entries:
-        out.extend(struct.pack('<4sQQ', tag, off, ln))
+        tag_b = tag.encode() if isinstance(tag, SectionTag) else tag
+        out.extend(struct.pack('<4sQQ', tag_b, off, ln))
     return bytes(out)
 
 
@@ -100,13 +116,14 @@ def decode_directory(buf, off, count):
     """
     Decode section directory at offset.
 
-    :return: list of (tag, offset, length)
+    :return: list of (SectionTag, offset, length)
     """
 
     entries = []
     for _ in range(count):
-        tag, o, ln = struct.unpack_from('<4sQQ', buf, off)
+        tag_b, o, ln = struct.unpack_from('<4sQQ', buf, off)
         off += DIR_ENTRY_SIZE
+        tag = SectionTag.decode(tag_b)
         entries.append((tag, o, ln))
     return entries
 
@@ -391,7 +408,7 @@ def encode_meta(hard_meta, soft_meta=None):
     """
     Encode META section (hard invalidators + optional soft blob).
 
-    :param hard_meta: tuple (format_version, opcode_hash_16, finalize_ver, struct_ver)
+    :param hard_meta: tuple (format_version, bytecode_abi_16, finalize_ver, struct_ver)
     :param soft_meta: optional bytes (opaque)
     :return: bytes
     """
