@@ -140,6 +140,20 @@ polluting the module.
 
 Ref: [bundles-and-namespace-facets.md](bundles-and-namespace-facets.md).
 
+### Self-hosted compiler and bootstrap (roadmap)
+
+**Status:** Design only; phased implementation.
+
+Split the Python compiler into a **bootstrap** package, reimplement the
+compiler in **`.ki`**, compile to **`.kio`** with the bootstrap stack, then
+recompile with **loaded `.kio`** (stage0 → final) and verify fixpoint. Native
+**C** VM and a **thin Python** host layer remain; see the doc for package
+layout, two-pass build, and ordered steps.
+
+Ref: [self-hosted-compiler-bootstrap.md](self-hosted-compiler-bootstrap.md);
+[interpreter/kio-format.md](interpreter/kio-format.md) (`.kio` format);
+`koskari.serialize` (incremental compile and `dump_kio`).
+
 ### Extend existing syntax (prepend rules)
 
 Investigate and implement a new special form that **copies** the current syntax
@@ -171,10 +185,13 @@ Ref: [python-ast-loader.md](python-ast-loader.md); [api/import-system.md](api/im
 
 ### .kio compiled cache
 
-Suffix and loader for `.kio` compiled cache are not yet integrated. Design in
-[interpreter/kio-format.md](interpreter/kio-format.md).
+Implementation exists under `koskari.serialize` (read/write sectioned `.kio`,
+incremental compile from `.ki`). Loader integration and packaging follow the
+self-hosting roadmap.
 
-Ref: [api/import-system.md](api/import-system.md).
+Ref: [interpreter/kio-format.md](interpreter/kio-format.md);
+[self-hosted-compiler-bootstrap.md](self-hosted-compiler-bootstrap.md);
+[api/import-system.md](api/import-system.md).
 
 ### Import path selection
 
@@ -219,5 +236,6 @@ From [FEATURES.md](FEATURES.md) and related docs:
 
 - **Implemented specials:** [SPECIALS.md](SPECIALS.md)
 - **Feature catalog and status:** [FEATURES.md](FEATURES.md)
+- **Self-hosted compiler roadmap:** [self-hosted-compiler-bootstrap.md](self-hosted-compiler-bootstrap.md)
 - **Ideas (uncommitted):** [ideas.md](ideas.md)
 - **Variable resolution model (proposed):** [language/RESOLUTION-MODEL.md](language/RESOLUTION-MODEL.md)
