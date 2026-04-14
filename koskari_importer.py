@@ -247,7 +247,4 @@ def uninstall():
     ]
 
 
-install()
-
-
 # The end.
