@@ -93,6 +93,17 @@ class TestOptionParser(unittest.IsolatedAsyncioTestCase):
         self.assertEqual('script.ki', opts.filename)
         self.assertEqual(['arg1', 'arg2'], opts.args)
 
+    async def test_compile_kio_source_name(self):
+        opts = self._parse(
+            '--compile-kio',
+            'out.kio',
+            '--compile-kio-source-name',
+            'pkg/foo.ki',
+            'x.ki')
+        self.assertEqual('out.kio', opts.compile_kio)
+        self.assertEqual('pkg/foo.ki', opts.compile_kio_source_name)
+        self.assertEqual('x.ki', opts.filename)
+
 
 class TestRunFile(unittest.IsolatedAsyncioTestCase):
 

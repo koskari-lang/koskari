@@ -541,21 +541,29 @@ async def repl_async(mod, prompter=None, histfile=None, stdin=None, stdout=None,
 # ---------------------------------------------------------------------------
 
 
-async def run_file_async(mod, filename):
+async def run_file_async(mod, filename, execute_kio=False):
     """
     Load and execute a koskari source file into mod.
 
     Calls init_module to attach file metadata and compiler specials, then
-    awaits load_module_async.
+    awaits load_module_async (or load_module_kio_async when execute_kio).
 
     :param mod: koskari Module to execute into
-    :param filename: path to the .ki source file
+    :param filename: path to the .ki source file or .kio when execute_kio
+    :param execute_kio: when True, load precompiled .kio bodies
     """
 
-    from koskari.importer.module import init_module, load_module_async
+    from koskari.importer.module import (
+        init_module,
+        load_module_async,
+        load_module_kio_async,
+    )
 
     init_module(mod, filename)
-    await load_module_async(mod)
+    if execute_kio:
+        await load_module_kio_async(mod)
+    else:
+        await load_module_async(mod)
 
 
 # ---------------------------------------------------------------------------
@@ -574,12 +582,20 @@ async def cli_async(options):
     :param options: namespace returned by option_parser().parse_args()
     """
 
+    filename = options.filename
+
+    if options.compile_kio:
+        from koskari.serialize.incremental import compile_ki_file_to_kio
+        compile_ki_file_to_kio(
+            filename,
+            options.compile_kio,
+            source_filename=options.compile_kio_source_name)
+        return
+
     from koskari.importer import install
     from koskari.importer.module import new_module
 
     install()
-
-    filename = options.filename
 
     if filename:
         sys.argv = [filename] + list(options.args)
@@ -592,7 +608,7 @@ async def cli_async(options):
     mod = await new_module('__main__')
 
     if filename:
-        await run_file_async(mod, filename)
+        await run_file_async(mod, filename, execute_kio=options.execute_kio)
 
         if not options.interactive:
             return
@@ -637,6 +653,27 @@ def option_parser(name):
         help="Enter interactive mode after executing the given script")
 
     parser.add_argument(
+        '--compile-kio',
+        dest='compile_kio',
+        metavar='OUT',
+        default=None,
+        help='Compile the given .ki file to OUT as .kio, then exit')
+
+    parser.add_argument(
+        '--compile-kio-source-name',
+        dest='compile_kio_source_name',
+        metavar='PATH',
+        default=None,
+        help='Logical .ki path stored in the .kio for tracebacks (default: input path)')
+
+    parser.add_argument(
+        '--execute-kio',
+        dest='execute_kio',
+        action='store_true',
+        default=False,
+        help='Run filename as a precompiled .kio (instead of .ki source)')
+
+    parser.add_argument(
         'filename',
         nargs='?',
         default=None,
@@ -670,6 +707,14 @@ def main(argv=None):
     name, *args = argv
     parser = option_parser(name)
     options = parser.parse_args(args)
+
+    if options.compile_kio and not options.filename:
+        parser.error('--compile-kio requires a .ki source file argument')
+    if options.compile_kio_source_name and not options.compile_kio:
+        parser.error(
+            '--compile-kio-source-name requires --compile-kio')
+    if options.execute_kio and not options.filename:
+        parser.error('--execute-kio requires a script filename')
 
     try:
         asyncio.run(cli_async(options))

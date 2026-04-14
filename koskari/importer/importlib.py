@@ -42,7 +42,8 @@ from importlib.machinery import FileFinder, PathFinder
 from os import getcwd
 
 from .module import (init_module, load_module_async, load_module_demand,
-                     new_module, new_module_demand)
+                     load_module_kio_async, load_module_kio_demand, new_module,
+                     new_module_demand)
 
 
 __all__ = (
@@ -55,7 +56,7 @@ __all__ = (
 )
 
 
-SOURCE_SUFFIXES = ('.ki',)
+SOURCE_SUFFIXES = ('.ki', '.kio')
 
 # Module-level path hook storage, kept separate from Python's own caches
 # so we do not interfere with the standard PathFinder.
@@ -65,7 +66,7 @@ path_hooks = []
 
 class KoskariPathFinder(PathFinder):
     """
-    A PathFinder subclass that hunts for .ki files on sys.path.
+    A PathFinder subclass that hunts for .ki and .kio files on sys.path.
 
     Uses module-local path_hooks and path_importer_cache so that koskari
     finder instances do not pollute Python's own importer cache.
@@ -103,7 +104,7 @@ class KoskariPathFinder(PathFinder):
 
 class KoskariSourceFileLoader(FileLoader):
     """
-    FileLoader for .ki source files.
+    FileLoader for .ki source files and precompiled .kio artifacts.
 
     exec_module uses exec_module_demand by default (demand path).
     """
@@ -113,7 +114,10 @@ class KoskariSourceFileLoader(FileLoader):
 
 
     def get_source(self, fullname):
-        return self.get_data(self.get_filename(fullname)).decode('utf-8')
+        path = self.get_filename(fullname)
+        if path.endswith('.kio'):
+            return ''
+        return self.get_data(path).decode('utf-8')
 
 
     async def exec_module_async(self, module):
@@ -125,7 +129,10 @@ class KoskariSourceFileLoader(FileLoader):
 
         init_module(ki_mod, filename, spec=getattr(module, '__spec__', None))
 
-        await load_module_async(ki_mod)
+        if filename.endswith('.kio'):
+            await load_module_kio_async(ki_mod)
+        else:
+            await load_module_async(ki_mod)
 
         # Copy all non-dunder bindings from the koskari namespace back
         # to the Python module so that standard attribute access works.
@@ -153,7 +160,10 @@ class KoskariSourceFileLoader(FileLoader):
 
         init_module(ki_mod, filename, spec=getattr(module, '__spec__', None))
 
-        load_module_demand(ki_mod)
+        if filename.endswith('.kio'):
+            load_module_kio_demand(ki_mod)
+        else:
+            load_module_demand(ki_mod)
 
         ki_ns = vars(ki_mod)
         for name in list(ki_ns.keys()):

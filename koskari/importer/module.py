@@ -48,6 +48,8 @@ __all__ = (
     'init_module',
     'load_module_async',
     'load_module_demand',
+    'load_module_kio_async',
+    'load_module_kio_demand',
     'new_module_demand',
 )
 
@@ -222,6 +224,60 @@ def load_module_demand(module):
             fragment = compiler.full_compile(source_expr)
             expr = fragment.as_expression(ns)
             demand_call(expr)
+
+
+async def load_module_kio_async(module):
+    """
+    Execute a module from a precompiled .kio file.
+
+    Each stored body is re-hardened and run as a top-level expression in
+    order, matching the incremental structure of load_module_async.
+
+    :param module: koskari Module with __file__ pointing at a .kio path
+    """
+
+    filename = getattr(module, '__file__', '<unknown>')
+    ns = vars(module)
+
+    from ..serialize.kio import load_kio
+    from ..serialize.softcode import reharden_code
+
+    payload = load_kio(filename)
+    for body in payload['bodies']:
+        code = reharden_code(
+            body['nspec'],
+            body['instructions'],
+            body['name'],
+            body['filename'])
+        expr = code.expression(ns)
+        coro = expr()
+        await coro
+
+
+def load_module_kio_demand(module):
+    """
+    Execute a module from a precompiled .kio file via demand_call.
+
+    Same ordering as load_module_kio_async but synchronous.
+
+    :param module: koskari Module with __file__ set to a .kio path
+    """
+
+    filename = getattr(module, '__file__', '<unknown>')
+    ns = vars(module)
+
+    from ..serialize.kio import load_kio
+    from ..serialize.softcode import reharden_code
+
+    payload = load_kio(filename)
+    for body in payload['bodies']:
+        code = reharden_code(
+            body['nspec'],
+            body['instructions'],
+            body['name'],
+            body['filename'])
+        expr = code.expression(ns)
+        demand_call(expr)
 
 
 # ---------------------------------------------------------------------------
