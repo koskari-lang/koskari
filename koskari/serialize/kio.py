@@ -22,7 +22,7 @@ Read and write .kio sectioned files.
 """
 
 
-from koskari.lib import NamespaceSpec, OpCode, OpStyle
+from koskari.lib import FormalsSpec, FunctionSpec, NamespaceSpec, OpCode, OpStyle
 
 from koskari.serialize.constants import (
     FINALIZE_PIPELINE_VERSION,
@@ -31,7 +31,7 @@ from koskari.serialize.constants import (
     STRUCT_LAYOUT_VERSIONS,
     opcode_set_hash_bytes,
 )
-from koskari.serialize.softcode import validate_fast_indices
+from koskari.serialize.softcode import soften_code, validate_fast_indices
 from koskari.serialize.pool import decode_pool_records, encode_pool
 from koskari.serialize.pool import PoolBuilder
 from koskari.serialize.sections import (
@@ -48,8 +48,8 @@ from koskari.serialize.sections import (
     encode_directory,
     encode_frms_section,
     encode_meta,
-    encode_instruction,
     encode_nspec_section,
+    encode_softened_instructions,
     pack_header,
     unpack_header,
 )
@@ -71,6 +71,31 @@ def _intern_for_pool(pb, obj):
         _intern_for_pool(pb, tuple(obj.local_syms))
         _intern_for_pool(pb, tuple(obj.closure_syms))
         _intern_for_pool(pb, tuple(obj.global_syms))
+        idx = len(pb.values)
+        pb._index[id(obj)] = idx
+        pb.values.append(obj)
+        return idx
+    if isinstance(obj, FormalsSpec):
+        _intern_for_pool(pb, obj.pos)
+        _intern_for_pool(pb, obj.pos_only)
+        _intern_for_pool(pb, obj.kwd)
+        _intern_for_pool(pb, obj.kwd_only)
+        _intern_for_pool(pb, obj.star)
+        _intern_for_pool(pb, obj.starstar)
+        _intern_for_pool(pb, obj.annotations)
+        idx = len(pb.values)
+        pb._index[id(obj)] = idx
+        pb.values.append(obj)
+        return idx
+    if isinstance(obj, FunctionSpec):
+        _intern_for_pool(pb, obj.name)
+        _intern_for_pool(pb, obj.formals_spec)
+        code = obj.code
+        _intern_for_pool(pb, code.namespace_spec)
+        _intern_for_pool(pb, code.name)
+        _intern_for_pool(pb, code.filename)
+        instr, _lc = soften_code(code)
+        _intern_instruction_args(pb, instr)
         idx = len(pb.values)
         pb._index[id(obj)] = idx
         pb.values.append(obj)
@@ -107,30 +132,6 @@ def _intern_instruction_args(pb, instructions):
             _intern_for_pool(pb, arg)
 
 
-def build_codep_instr_bytes(pb, instructions, label_count):
-    """
-    Encode softened instructions to CODEP instruction blob.
-
-    :param pb: PoolBuilder with args already interned
-    :param instructions: softened instructions
-    :param label_count: number of distinct labels
-    :return: bytes
-    """
-
-    def index_of(obj):
-        i = id(obj)
-        if i not in pb._index:
-            raise ValueError('pool index missing for %r' % (obj,))
-        return pb._index[i]
-
-    chunks = []
-    for op, arg in instructions:
-        op = op if isinstance(op, OpCode) else OpCode(op)
-        chunks.append(
-            encode_instruction(op, arg, index_of, label_count))
-    return b''.join(chunks)
-
-
 def dump_kio(path, bodies, soft_meta=None):
     """
     Write a .kio file from a list of code bodies.
@@ -157,7 +158,7 @@ def dump_kio(path, bodies, soft_meta=None):
     for body in bodies:
         flg = 0x01 if body.get('yields') else 0
         lc = body.get('label_count', 0)
-        instr_b = build_codep_instr_bytes(
+        instr_b = encode_softened_instructions(
             pb, body['instructions'], lc)
         codep_payload.append({
             'name_idx': _intern_for_pool(pb, body['name']),
@@ -172,7 +173,7 @@ def dump_kio(path, bodies, soft_meta=None):
     def index_of(o):
         return pb._index[id(o)]
 
-    pool_bytes = encode_pool(pb.values, index_of)
+    pool_bytes = encode_pool(pb.values, index_of, pb)
 
     codep_bytes = encode_codep_bodies(codep_payload)
     nspec_bytes = encode_nspec_section(nspec_rows)

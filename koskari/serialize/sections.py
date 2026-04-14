@@ -229,6 +229,33 @@ def decode_instruction(buf, off, pool_list):
     return (op, arg_val), off
 
 
+def encode_softened_instructions(pb, instructions, label_count):
+    """
+    Encode a softened instruction list to CODEP-style bytes (8 bytes each).
+
+    Every operand that uses pool indices must already be interned in
+    pb._index.
+
+    :param pb: PoolBuilder with interned values
+    :param instructions: list of (OpCode, arg) pairs
+    :param label_count: number of distinct labels for jump validation
+    :return: bytes
+    """
+
+    def index_of(obj):
+        i = id(obj)
+        if i not in pb._index:
+            raise ValueError('pool index missing for %r' % (obj,))
+        return pb._index[i]
+
+    chunks = []
+    for op, arg in instructions:
+        op = op if isinstance(op, OpCode) else OpCode(op)
+        chunks.append(
+            encode_instruction(op, arg, index_of, label_count))
+    return b''.join(chunks)
+
+
 def encode_nspec_section(nspec_entries):
     """
     Encode NSPC section: count + rows of u32 indices.

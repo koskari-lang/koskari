@@ -25,11 +25,17 @@ Constant pool encoding and decoding for .kio files.
 import struct
 
 from koskari.lib import (
+    FormalsSpec,
+    FunctionSpec,
     NamespaceSpec,
+    OpCode,
     keyword,
     nil,
     symbol,
 )
+
+from koskari.serialize.sections import decode_instruction, encode_softened_instructions
+from koskari.serialize.softcode import reharden_code, soften_code, validate_fast_indices
 
 
 K_NIL = 1
@@ -48,6 +54,8 @@ K_CODE_REF = 14
 K_NSPC_REF = 15
 K_FRMS_REF = 16
 K_NAMESPACE_SPEC = 17
+K_FORMALS_SPEC = 18
+K_FUNCTION_SPEC = 19
 
 
 def _pack_string(s):
@@ -109,12 +117,13 @@ class PoolBuilder(object):
         return idx
 
 
-def pool_record_encode(val, index_of):
+def pool_record_encode(val, index_of, pb=None):
     """
     Encode one pool entry to bytes.
 
     :param val: stored value
     :param index_of: callable(obj) -> pool index for nested tuple elements
+    :param pb: optional PoolBuilder (required for FunctionSpec)
     :return: bytes
     """
 
@@ -131,6 +140,50 @@ def pool_record_encode(val, index_of):
         gi = index_of(tuple(val.global_syms))
         return struct.pack(
             '<BIIII', K_NAMESPACE_SPEC, ni, li, ci, gi)
+
+    if isinstance(val, FormalsSpec):
+        idxs = (
+            index_of(val.pos),
+            index_of(val.pos_only),
+            index_of(val.kwd),
+            index_of(val.kwd_only),
+            index_of(val.star),
+            index_of(val.starstar),
+            index_of(val.annotations),
+        )
+        return struct.pack('<BIIIIIII', K_FORMALS_SPEC, *idxs)
+
+    if isinstance(val, FunctionSpec):
+        if pb is None:
+            raise TypeError(
+                'FunctionSpec pool encoding requires a PoolBuilder')
+
+        code = val.code
+        instr, lc = soften_code(code)
+        yld = False
+        for op, _ in instr:
+            if op in (OpCode.KOS_OP_YIELD, OpCode.KOS_OP_YIELD_FROM):
+                yld = True
+                break
+        flg = 0x01 if yld else 0
+        instr_b = encode_softened_instructions(pb, instr, lc)
+        ni = index_of(val.name)
+        fi = index_of(val.formals_spec)
+        nsi = index_of(code.namespace_spec)
+        cni = index_of(code.name)
+        cfi = index_of(code.filename)
+        ic = len(instr)
+        return struct.pack(
+            '<BIIIIIIII',
+            K_FUNCTION_SPEC,
+            ni,
+            fi,
+            nsi,
+            cni,
+            cfi,
+            flg,
+            ic,
+            lc) + instr_b
 
     if val is nil:
         return struct.pack('<B', K_NIL)
@@ -165,18 +218,19 @@ def pool_record_encode(val, index_of):
     raise TypeError('unsupported pool value %r' % (val,))
 
 
-def encode_pool(pool_values, index_of):
+def encode_pool(pool_values, index_of, pb=None):
     """
     Encode full POOL section body (count + records).
 
     :param pool_values: list of values in index order
     :param index_of: callable for tuple element refs
+    :param pb: optional PoolBuilder (required when values include FunctionSpec)
     :return: bytes
     """
 
     chunks = [struct.pack('<I', len(pool_values))]
     for val in pool_values:
-        chunks.append(pool_record_encode(val, index_of))
+        chunks.append(pool_record_encode(val, index_of, pb))
     return b''.join(chunks)
 
 
@@ -253,6 +307,18 @@ def decode_pool_records(buf, off, nspec_list, frms_list, code_list):
             ni, li, ci, gi = struct.unpack_from('<IIII', buf, off)
             off += 16
             out.append(('__nspec__', ni, li, ci, gi))
+        elif kind == K_FORMALS_SPEC:
+            idxs = struct.unpack_from('<IIIIIII', buf, off)
+            off += 28
+            out.append(('__formals__', idxs))
+        elif kind == K_FUNCTION_SPEC:
+            ni, fi, nsi, cni, cfi, flg, ic, lc = struct.unpack_from(
+                '<IIIIIIII', buf, off)
+            off += 32
+            ib = buf[off:off + ic * 8]
+            off += ic * 8
+            out.append((
+                '__fspec__', ni, fi, nsi, cni, cfi, flg, ic, lc, ib))
         else:
             raise ValueError('unknown pool kind %s' % kind)
 
@@ -283,6 +349,32 @@ def decode_pool_records(buf, off, nspec_list, frms_list, code_list):
             ni, li, ci, gi = val[1], val[2], val[3], val[4]
             out[i] = NamespaceSpec(
                 out[ni], out[li], out[ci], out[gi])
+
+    for i, val in enumerate(out):
+        if (
+                isinstance(val, tuple) and len(val) == 2
+                and val[0] == '__formals__'):
+            idxs = val[1]
+            out[i] = FormalsSpec(*[out[j] for j in idxs])
+
+    for i, val in enumerate(out):
+        if (
+                isinstance(val, tuple) and len(val) == 10
+                and val[0] == '__fspec__'):
+            _, ni, fi, nsi, cni, cfi, _flg, ic, lc, ib = val
+            name = out[ni]
+            formals = out[fi]
+            nspec = out[nsi]
+            code_name = out[cni]
+            code_fn = out[cfi]
+            instr = []
+            ioff = 0
+            for _ in range(ic):
+                (op, arg), ioff = decode_instruction(ib, ioff, out)
+                instr.append((op, arg))
+            validate_fast_indices(nspec, instr)
+            code = reharden_code(nspec, instr, code_name, code_fn)
+            out[i] = FunctionSpec(name, formals, code)
 
     return out, off
 

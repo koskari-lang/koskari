@@ -19,10 +19,17 @@ Tests for .kio serialization: round-trip, validation, and importer parity.
 """
 
 import os
+import struct
 import tempfile
 import unittest
 
-from koskari.lib import NamespaceSpec, OpCode, demand_call
+from koskari.lib import (
+    FormalsSpec,
+    FunctionSpec,
+    NamespaceSpec,
+    OpCode,
+    demand_call,
+)
 from koskari.serialize.incremental import compile_ki_file_to_kio
 from koskari.serialize.kio import dump_kio, load_kio
 from koskari.serialize.softcode import reharden_code, soften_code
@@ -67,6 +74,43 @@ class TestKioRoundTrip(unittest.TestCase):
                 b0['filename'])
             expr = make_callable(c2, ns)
             self.assertEqual(demand_call(expr), 42)
+        finally:
+            os.unlink(path)
+
+    def test_function_spec_const_roundtrip(self):
+        inner_code, ns_inner = build_expr([
+            ['CONST', 7],
+            ['RETURN', 1],
+        ], name='inner')
+        fspec = FunctionSpec('inner', FormalsSpec(), inner_code)
+        code, _ = build_expr([
+            ['CONST', fspec],
+            ['RETURN', 1],
+        ], name='outer')
+        instr, lc = soften_code(code)
+        bodies = [{
+            'nspec': code.namespace_spec,
+            'name': 'outer',
+            'filename': 'x.ki',
+            'instructions': instr,
+            'label_count': lc,
+            'yields': False,
+        }]
+        fd, path = tempfile.mkstemp(suffix='.kio')
+        os.close(fd)
+        try:
+            dump_kio(path, bodies)
+            payload = load_kio(path)
+            self.assertEqual(len(payload['bodies']), 1)
+            b0 = payload['bodies'][0]
+            loaded = None
+            for op, arg in b0['instructions']:
+                if op == OpCode.KOS_OP_CONST:
+                    loaded = arg
+                    break
+            self.assertIsInstance(loaded, FunctionSpec)
+            inner_expr = make_callable(loaded.code, ns_inner)
+            self.assertEqual(demand_call(inner_expr), 7)
         finally:
             os.unlink(path)
 
@@ -126,6 +170,35 @@ class TestKioMalformed(unittest.TestCase):
             with self.assertRaises(ValueError) as ctx:
                 load_kio(path)
             self.assertIn('magic', str(ctx.exception).lower())
+        finally:
+            os.unlink(path)
+
+    def test_rejects_stale_format_version(self):
+        code, _ = build_expr([
+            ['CONST', 42],
+            ['RETURN', 1],
+        ])
+        instr, lc = soften_code(code)
+        bodies = [{
+            'nspec': code.namespace_spec,
+            'name': 'e0',
+            'filename': 'x.ki',
+            'instructions': instr,
+            'label_count': lc,
+            'yields': False,
+        }]
+        fd, path = tempfile.mkstemp(suffix='.kio')
+        os.close(fd)
+        try:
+            dump_kio(path, bodies)
+            with open(path, 'r+b') as f:
+                data = bytearray(f.read())
+            struct.pack_into('<H', data, 8, 1)
+            with open(path, 'wb') as f:
+                f.write(data)
+            with self.assertRaises(ValueError) as ctx:
+                load_kio(path)
+            self.assertIn('format version', str(ctx.exception).lower())
         finally:
             os.unlink(path)
 

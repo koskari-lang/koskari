@@ -28,7 +28,7 @@ from pathlib import Path
 
 KIO_MAGIC = b'KIO\x00\x00\x00\x00\x00'
 
-FORMAT_VERSION = 1
+FORMAT_VERSION = 2
 
 FINALIZE_PIPELINE_VERSION = 1
 
