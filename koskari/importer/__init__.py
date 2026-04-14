@@ -16,6 +16,9 @@ koskari.importer
 
 Install/remove hooks that allow .ki files to be imported transparently.
 
+Implementation is delegated to the top-level ``koskari_importer`` module so
+``import koskari`` can register the hook without loading this subpackage.
+
 The primary entry points are install() and is_installed().  Installing
 inserts KoskariPathFinder at the front of sys.meta_path so that .ki
 source files are found before Python's own PathFinder can claim a
@@ -28,60 +31,18 @@ _auto_enable_importer() at import time.
 
 :author: Christopher O'Brien <obriencj@preoccupied.net>
 :license: GNU General Public License v3
-:ai-assistant: claude-4.6-sonnet-high via Cursor
+:ai-assistant: Auto via Cursor
 """
 
 
-import sys
+from koskari_importer import install, is_installed, uninstall
 
 
 __all__ = (
     'install',
     'is_installed',
+    'uninstall',
 )
-
-
-def is_installed():
-    """
-    Return True if KoskariPathFinder is currently in sys.meta_path.
-
-    KoskariPathFinder is inserted as a class (like Python's own PathFinder),
-    so we check for the class object itself, not instances of it.
-
-    :return: bool
-    """
-
-    from .importlib import KoskariPathFinder
-    return KoskariPathFinder in sys.meta_path
-
-
-def install():
-    """
-    Insert KoskariPathFinder at the front of sys.meta_path.
-
-    KoskariPathFinder is inserted as a class object, following the same
-    convention as Python's own PathFinder.  Calling install() when the
-    finder is already present is a no-op.
-    """
-
-    if is_installed():
-        return
-
-    from .importlib import KoskariPathFinder
-    sys.meta_path.insert(0, KoskariPathFinder)
-
-
-def uninstall():
-    """
-    Remove KoskariPathFinder from sys.meta_path.
-
-    Calling uninstall() when the finder is not present is a no-op.
-    """
-
-    from .importlib import KoskariPathFinder
-    sys.meta_path[:] = [
-        f for f in sys.meta_path if f is not KoskariPathFinder
-    ]
 
 
 # The end.

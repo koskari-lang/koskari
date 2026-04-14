@@ -7,9 +7,13 @@ Koskari, a LISP dialect for Python
 :license: GPL v.3
 """
 
-from os import environ
+from os.path import join
 from pathlib import Path
+
 from setuptools import Extension, setup
+from setuptools.command.build_py import build_py as setuptools_build_py
+
+from os import environ
 
 
 passenvs = (
@@ -81,8 +85,26 @@ def extension(platform=None, debug=None):
     )
 
 
+class build_py(setuptools_build_py):
+    """
+    Copy koskari.pth into build_lib so wheels place it at site-packages root.
+    """
+
+    def run(self):
+        super().run()
+        root = Path(__file__).resolve().parent
+        pth = root / "koskari.pth"
+        if not self.build_lib or not pth.is_file():
+            return
+        from shutil import copyfile
+        copyfile(str(pth), join(self.build_lib, "koskari.pth"))
+
+
 if __name__ == '__main__':
-    setup(ext_modules=[extension()])
+    setup(
+        cmdclass={'build_py': build_py},
+        ext_modules=[extension()],
+    )
 
 
 # The end.

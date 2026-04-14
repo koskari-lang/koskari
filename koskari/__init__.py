@@ -28,10 +28,8 @@ def _auto_enable_importer():
     """
     Install the koskari import hook unless suppressed.
 
-    Uses sys.modules to detect whether koskari.importer has already been
-    imported so as to avoid creating a circular import during koskari's own
-    package initialisation.  The actual install() call is deferred by
-    registering with sys.modules' post-import machinery via importlib.
+    Uses the top-level ``koskari_importer`` package so ``koskari.compile`` and
+    ``koskari.lib`` are not loaded as a side effect of ``import koskari``.
 
     Suppressed when the environment variable KOSKARI_NOIMPORTER is set to
     a non-zero value, or when the -X KOSKARI_NOIMPORTER Python xoption is
@@ -44,18 +42,8 @@ def _auto_enable_importer():
             or environ.get('KOSKARI_NOIMPORTER', '0') != '0'):
         return
 
-    # Defer so that koskari.lib / koskari.compile finish loading first.
-    # By the time Python finishes executing this module the rest of the
-    # package's submodules have not yet been imported, so we register a
-    # one-shot post-import hook using importlib.util's find_spec mechanism.
-    # The simplest reliable approach: just call install() here; any real
-    # circular import would manifest as an ImportError, which means the
-    # user ran into a packaging issue rather than a module-loading cycle.
-    try:
-        from koskari.importer import install
-        install()
-    except ImportError:
-        pass
+    from koskari_importer import install
+    install()
 
 
 _auto_enable_importer()
