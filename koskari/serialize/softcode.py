@@ -25,7 +25,7 @@ validation against NamespaceSpec.
 
 from typing import Tuple, Union
 
-from koskari.lib import Code, OpCode, OpStyle
+from ..lib import Code, OpCode, OpStyle
 
 
 SoftArg = Union[
@@ -86,16 +86,13 @@ def soften_code(code):
     FAST opcodes are preserved with integer slot indices (per project policy).
 
     :param code: koskari Code instance
-    :return: tuple (instructions, label_count) where instructions is a list
-        of (OpCode, arg) pairs suitable for Code(...)
+    :return: instructions list of (OpCode, arg) pairs suitable for Code(...)
     """
 
     targets = _collect_label_targets(code)
     label_for_pc = {}
     for j, pc in enumerate(sorted(targets)):
         label_for_pc[pc] = 'L%d' % j
-    label_count = len(label_for_pc)
-
     n = code.length()
     out = []
     prev_pos = None
@@ -141,7 +138,7 @@ def soften_code(code):
         else:
             out.append((op, int(arg)))
 
-    return out, label_count
+    return out
 
 
 def validate_fast_indices(nspec, instructions):

@@ -105,13 +105,14 @@ Minimal set:
 | `KEYWORD` | `keyword` (interned on load) |
 | `TUPLE` | tuple of allowed constants |
 
-Frozen VM structures (also allowed, stored in dedicated sections):
+Frozen VM structures (encoded as pool records; see `PoolKind` in `koskari.serialize.codex`):
 
 | Kind | Python type |
 |------|-------------|
-| `CODE_REF` | `Code` (stored in `CODEP` section; pool entry is a forward reference) |
-| `NSPC_REF` | `NamespaceSpec` (stored in `NSPC` section) |
-| `FRMS_REF` | `FormalsSpec` (stored in `FRMS` section) |
+| `CODE_REF` | forward reference to a `Code` body in the `CODE` section |
+| `NAMESPACE_SPEC` | `NamespaceSpec` |
+| `FORMALS_SPEC` | `FormalsSpec` |
+| `FUNCTION_SPEC` | `FunctionSpec` (embeds a softened instruction blob) |
 
 ### 3.2 Tagged tuples for complex constants
 
@@ -173,23 +174,25 @@ single section.
 
 ### 4.1 Header
 
+Fixed **40-byte** prefix. Layout: `struct.Struct('<8sIIIIIQI')`.
+
 | Field | Type | Notes |
 |-------|------|-------|
 | `magic` | 8 bytes | `b"KIO\x00\x00\x00\x00\x00"` |
-| `format_version` | u16 | bump on incompatible layout changes |
-| `bytecode_abi` | 16 bytes | four little-endian `u32`: major, minor, patch, reserved |
-| `finalize_pipeline_version` | u32 | bump when `complete()` semantics change |
-| `struct_layout_versions` | u32 | bitfield: `NamespaceSpec`/`FormalsSpec`/`Code` record layout |
-| `flags` | u32 | `FLAG_SOFTENED = 0x01`, `FLAG_HAS_DEBUG = 0x02`, `FLAG_COMPRESSED = 0x04` |
+| `abi_major` | u32 | semantic bytecode ABI (see below) |
+| `abi_minor` | u32 | |
+| `abi_micro` | u32 | |
+| `abi_patch` | u32 | |
+| `flags` | u32 | reserved; writers emit `0` until individual bits are defined |
 | `section_dir_offset` | u64 | byte offset to section directory |
 | `section_dir_count` | u32 | number of section directory entries |
 
 All integer fields use little-endian byte order (`<` in Python `struct`).
 
-The `bytecode_abi` words are `BYTECODE_ABI_MAJOR`, `BYTECODE_ABI_MINOR`,
-`BYTECODE_ABI_PATCH`, and `0` (reserved). They are maintained in
-`koskari.serialize.constants` and incremented when opcode numbering or
-softened CODEP encoding changes.
+Compatibility is defined by the four ABI fields together. They are
+`BYTECODE_ABI_MAJOR`, `BYTECODE_ABI_MINOR`, `BYTECODE_ABI_MICRO`, and
+`BYTECODE_ABI_PATCH` in `koskari.serialize.constants`. Bump them when opcode
+numbering or softened CODEP encoding changes.
 
 ### 4.2 Section directory
 
@@ -197,19 +200,20 @@ Each entry:
 
 | Field | Type | Notes |
 |-------|------|-------|
-| `section_tag` | 4 bytes | ASCII tag, e.g. `b"POOL"`, `b"NSPC"` |
+| `section_tag` | 4 bytes | ASCII tag, e.g. `b"POOL"`, `b"CODE"`, `b"META"` |
 | `offset` | u64 | byte offset from start of file |
 | `length` | u64 | byte length of section |
 
-### 4.3 Minimum required sections
+### 4.3 Required sections
 
 | Tag | Contents |
 |-----|----------|
 | `POOL` | Constant pool records |
-| `NSPC` | `NamespaceSpec` bodies |
-| `FRMS` | `FormalsSpec` bodies |
-| `CODEP` | Pre-finalize code bodies (softened form) |
-| `META` | Cache invalidation metadata |
+| `CODE` | Pre-finalize code bodies (softened form) |
+| `META` | Optional cache metadata blob (length may be zero) |
+
+`NamespaceSpec` and `FormalsSpec` values live in the pool (`NAMESPACE_SPEC` /
+`FORMALS_SPEC` records), not in separate section bodies.
 
 ### 4.4 Optional sections
 
@@ -284,10 +288,9 @@ Each code body in `CODEP` begins with:
 |-------|------|-------|
 | `name_pool_idx` | u32 | pool index of `STR` constant for name, or `0xFFFFFFFF` |
 | `filename_pool_idx` | u32 | pool index of `STR` constant for filename, or `0xFFFFFFFF` |
-| `nspec_pool_idx` | u32 | pool index of `NSPC_REF` constant |
+| `nspec_pool_idx` | u32 | pool index of a `NamespaceSpec` (pool `NAMESPACE_SPEC` record) |
 | `flags` | u32 | `KOS_CODE_YIELDS = 0x01` |
 | `instr_count` | u32 | number of instruction records following |
-| `label_count` | u32 | number of distinct label IDs used |
 
 Then `instr_count` instruction records (§5.1).
 
@@ -305,18 +308,14 @@ is rejected and the source is recompiled.
 
 ## 6. Cache invalidation metadata (META section)
 
-### 6.1 Hard invalidators — must reject on mismatch
+Hard validation (magic and bytecode ABI) happens in the **file header** (§4.1)
+only. The `META` section body is **optional opaque bytes**; its length is the
+section length from the directory entry. A length of zero is valid.
 
-| Field | Type | Notes |
-|-------|------|-------|
-| `format_version` | u16 | must match header |
-| `bytecode_abi` | 16 bytes | must match interpreter (four `u32`: major, minor, patch, reserved) |
-| `finalize_pipeline_version` | u32 | must match |
-| `struct_layout_versions` | u32 | must match |
+Future soft-cache policy may interpret this blob (e.g. digests, mtimes); the
+binary format does not nest a second hard-invalidating prefix inside `META`.
 
-Any mismatch causes immediate rejection of the `.kio` file.
-
-### 6.2 Soft invalidators — policy-controlled
+### 6.1 Soft invalidators — policy-controlled (not yet fixed layout)
 
 | Field | Type | Notes |
 |-------|------|-------|
@@ -362,28 +361,23 @@ u32 arity + u32 pool_index[arity]
 
 ## 8. Loader algorithm (softened)
 
-1. Read the header; verify all hard invalidators (§6.1). Reject on any
+1. Read the header; verify `magic` and bytecode ABI (§4.1). Reject on any
    mismatch.
-2. Apply soft invalidator policy (§6.2); reject if policy requires freshness.
-3. Read `POOL` records sequentially. Do not fully materialize composite
-   entries yet — record their field indices.
-4. Materialize atom-like primitives: `NIL`, `TRUE`, `FALSE`, `NONE`, `INT`,
-   `FLOAT`, `COMPLEX`, `STR`, `BYTES`, `SYMBOL` (interned), `KEYWORD`
-   (interned).
-5. Read `NSPC` section; build `NamespaceSpec` objects and insert them at
-   their pool positions (`NSPC_REF` entries).
-6. Read `FRMS` section; build `FormalsSpec` objects and insert them at their
-   pool positions (`FRMS_REF` entries).
-7. Read each code body from `CODEP`; reconstruct a `ByteCodeFragment`-
-   equivalent instruction list.
-8. Run `Compiler.complete()` (or an equivalent finalize path) for each code
-   body to produce a hardened `Code` object. A finalize failure is a hard
+2. Read the section directory; locate `POOL`, `CODE`, and `META` offsets.
+3. Apply soft invalidator policy on `META` when implemented (§6.1); reject if
+   policy requires freshness.
+4. Decode the `POOL` section (`koskari.serialize.codex.decode_pool_records`):
+   multi-pass materialization of tuples, `NamespaceSpec`, `FormalsSpec`,
+   embedded `FunctionSpec`, and related records.
+5. Decode each record in the `CODE` section into softened instructions using
+   the pool for operand resolution.
+6. Run `Compiler.complete()` (or an equivalent finalize path) for each top-level
+   code body to produce a hardened `Code` object. A finalize failure is a hard
    cache miss.
-9. Insert each `Code` into its `CODE_REF` pool positions.
-10. Materialize remaining composite constants: `TUPLE` and `TAGTUP` entries,
-    now that all referenced pool entries exist.
-11. Optionally apply the plugin materialization stage for `TAGTUP` entries
-    (§3.2.3), gated by caller policy.
+7. Resolve any remaining `CODE_REF` / composite entries if the codec defers
+   them until after code bodies exist (matches pool fixup order in the reader).
+8. Optionally apply the plugin materialization stage for `TAGTUP` entries
+   (§3.2.3), gated by caller policy.
 
 ## 9. Tradeoffs and guidance
 
@@ -407,9 +401,7 @@ u32 arity + u32 pool_index[arity]
 | Allowed constant types | `CONST_TYPES` in `koskari/compile/compiler.py` |
 | Symbol/keyword interning | `koskari.lib.symbol`, `koskari.lib.keyword` |
 
-The 16-byte `bytecode_abi` field in the header and META hard invalidators is
-the packed form of `BYTECODE_ABI_MAJOR`, `BYTECODE_ABI_MINOR`,
-`BYTECODE_ABI_PATCH`, and a reserved zero word (`struct.pack('<IIII', ...)`
-in `koskari.serialize.constants`). Bump those integers when `KosOpCode`
-values or softened-instruction semantics change. The installed package does
-not need to ship `opcodes.incl` for this check.
+The header carries four ABI `u32` fields (`BYTECODE_ABI_MAJOR` through
+`BYTECODE_ABI_PATCH` in `koskari.serialize.constants`). Bump them when
+`KosOpCode` values or softened-instruction semantics change. The installed
+package does not need to ship `opcodes.incl` for this check.

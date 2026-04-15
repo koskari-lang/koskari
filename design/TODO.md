@@ -21,10 +21,10 @@ Ref: [switch-eq-opcodes.md](switch-eq-opcodes.md).
 
 ## Generator / yield
 
-### Dynamic wind-unwind at yield (Phase 9)
+### Dynamic wind-unwind at yield
 
-**Status:** Under consideration. May be a bad idea or cause too great a
-performance impact; no implementation planned until resolved.
+**Status:** Proposal Only. Under consideration. May be a bad idea or cause too
+great a performance impact; no implementation planned until resolved.
 
 Decide whether to run dynamic-wind (and param/dyn-with) enter/exit at
 generator install and freeze (so `(dynamic-wind before body after)` that
@@ -223,12 +223,8 @@ Ref: [api/builtins.md](api/builtins.md) (builtin catalog);
 From [FEATURES.md](FEATURES.md) and related docs:
 
 - JIT integration
-- Additional language features (e.g. comprehensions, pattern matching, let*)
+- Additional language features
 - Performance optimizations (general)
-- Pattern matching: [api/pattern-matching.md](api/pattern-matching.md); unified
-  matcher/transformer architecture:
-  [language/unified-matcher-transformer-model.md](language/unified-matcher-transformer-model.md)
-- Control flow (comprehensions, etc.): [language/control-flow.md](language/control-flow.md)
 
 ---
 

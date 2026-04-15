@@ -22,22 +22,59 @@ Compile .ki sources into .kio bodies and drive evaluation from loaded .kio.
 """
 
 
-from koskari.compile.compiler import CompilerMode
-from koskari.lib import OpCode
-from koskari.reader import READ_EOF, IndentAwareStream, LayoutReader, source_open
+from ..compile.compiler import Compiler, CompilerMode
+from ..importer.module import init_module, new_module_demand
+from ..lib import demand_call
+from ..reader import IndentAwareStream, LayoutReader, READ_EOF, source_open, source_str
+from .codex import KioFile
 
-from koskari.serialize.kio import dump_kio
-from koskari.serialize.softcode import soften_code
+
+def _compile_top_level_to_codes(mod, compiler, source_stream):
+    """
+    Read top-level forms from a SourceStream and return compiled Code objects
+
+    :param mod: module namespace for evaluation side effects
+    :param compiler: Compiler instance
+    :param source_stream: SourceStream from source_open or source_str
+    :return: list of Code objects in source order
+    """
+
+    ns = vars(mod)
+    reader = LayoutReader(mod)
+    stream = IndentAwareStream(
+        source_stream.stream,
+        source_stream.filename,
+        auto_skip_exec=False,
+        line_no=source_stream.lin,
+        col_no=source_stream.col,
+        max_indent=None)
+
+    bodies = []
+    while True:
+        source_expr = reader.read(stream)
+        if source_expr is READ_EOF:
+            break
+
+        fragment = compiler.full_compile(source_expr)
+        code = compiler.complete(
+            fragment, mode=CompilerMode.EXPRESSION, is_root=True)
+        bodies.append(code)
+
+        # we must evaluate the code to ensure future compile-time
+        # artifacts are available
+        demand_call(code.expression(ns))
+
+    return bodies
 
 
 def compile_ki_file_to_kio(
         ki_path,
-        kio_path,
+        kio_dest,
         mod_name='__kio_compile__',
         source_filename=None):
     """
     Read each top-level form from a .ki file, compile to expression Code,
-    soften, and write a single .kio containing one CODEP body per form.
+    and write a single .kio containing one CODEP body per form.
 
     Source bytes are always read from ``ki_path``. Each body stores a
     ``filename`` string used when the .kio is loaded so ``Code.filename`` and
@@ -49,57 +86,52 @@ def compile_ki_file_to_kio(
     paths depend on the process current working directory.
 
     :param ki_path: path to Koskari source file to open and compile
-    :param kio_path: output .kio path
+    :param kio_dest: output .kio path or writable binary stream
     :param mod_name: synthetic module name for compiled fragments
     :param source_filename: optional string stored per body as the logical
         source path for diagnostics when it differs from ``ki_path``
     """
 
-    from koskari.compile.compiler import Compiler
-    from koskari.importer.module import init_module, new_module_demand
-
     display = source_filename if source_filename is not None else ki_path
 
     mod = new_module_demand(mod_name, system=False)
     init_module(mod, ki_path, spec=None)
-    compiler = Compiler(mod_name, mod, filename=ki_path)
-    bodies = []
-    idx = 0
+    compiler = Compiler(mod_name, mod, filename=display)
 
     with source_open(ki_path) as source_stream:
-        reader = LayoutReader(mod)
-        stream = IndentAwareStream(
-            source_stream.stream,
-            source_stream.filename,
-            auto_skip_exec=False,
-            line_no=source_stream.lin,
-            col_no=source_stream.col,
-            max_indent=None)
+        bodies = _compile_top_level_to_codes(mod, compiler, source_stream)
 
-        while True:
-            source_expr = reader.read(stream)
-            if source_expr is READ_EOF:
-                break
-            fragment = compiler.full_compile(source_expr)
-            code = compiler.complete(
-                fragment, mode=CompilerMode.EXPRESSION, is_root=True)
-            instr, lc = soften_code(code)
-            yld = False
-            for op, _ in instr:
-                if op in (OpCode.KOS_OP_YIELD, OpCode.KOS_OP_YIELD_FROM):
-                    yld = True
-                    break
-            bodies.append({
-                'nspec': code.namespace_spec,
-                'name': '%s$%d' % (mod_name, idx),
-                'filename': display,
-                'instructions': instr,
-                'label_count': lc,
-                'yields': yld,
-            })
-            idx += 1
+    KioFile.from_codes(bodies).write(kio_dest)
 
-    dump_kio(kio_path, bodies)
+
+def compile_ki_source_to_kio(
+        source_text,
+        kio_dest,
+        mod_name='__kio_compile__',
+        source_filename=None):
+    """
+    Compile Koskari source text to a single .kio with one CODEP body per form.
+
+    Same semantics as compile_ki_file_to_kio except input is a string. The
+    logical filename for diagnostics and embedded ``Code.filename`` is
+    ``source_filename`` when set, otherwise a placeholder string.
+
+    :param source_text: Koskari source string
+    :param kio_dest: output .kio path or writable binary stream
+    :param mod_name: synthetic module name for compiled fragments
+    :param source_filename: logical path for errors and stored filenames
+    """
+
+    display = source_filename if source_filename is not None else '<compile_ki_source>'
+
+    mod = new_module_demand(mod_name, system=False)
+    init_module(mod, display, spec=None)
+    compiler = Compiler(mod_name, mod, filename=display)
+
+    source_stream = source_str(source_text, display)
+    bodies = _compile_top_level_to_codes(mod, compiler, source_stream)
+
+    KioFile.from_codes(bodies).write(kio_dest)
 
 
 # The end.

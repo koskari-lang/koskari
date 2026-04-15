@@ -239,19 +239,12 @@ async def load_module_kio_async(module):
     filename = getattr(module, '__file__', '<unknown>')
     ns = vars(module)
 
-    from ..serialize.kio import load_kio
-    from ..serialize.softcode import reharden_code
+    from ..serialize.codex import KioFile
 
-    payload = load_kio(filename)
-    for body in payload['bodies']:
-        code = reharden_code(
-            body['nspec'],
-            body['instructions'],
-            body['name'],
-            body['filename'])
+    kio_file = KioFile.read(filename)
+    for code in kio_file.codes:
         expr = code.expression(ns)
-        coro = expr()
-        await coro
+        await expr()
 
 
 def load_module_kio_demand(module):
@@ -266,18 +259,11 @@ def load_module_kio_demand(module):
     filename = getattr(module, '__file__', '<unknown>')
     ns = vars(module)
 
-    from ..serialize.kio import load_kio
-    from ..serialize.softcode import reharden_code
+    from ..serialize.codex import KioFile
 
-    payload = load_kio(filename)
-    for body in payload['bodies']:
-        code = reharden_code(
-            body['nspec'],
-            body['instructions'],
-            body['name'],
-            body['filename'])
-        expr = code.expression(ns)
-        demand_call(expr)
+    kio_file = KioFile.read(filename)
+    for code in kio_file.codes:
+        demand_call(code.expression(ns))
 
 
 # ---------------------------------------------------------------------------

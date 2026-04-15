@@ -45,6 +45,7 @@ class TestKioImporterParity(unittest.TestCase):
         self._prev_path = __import__('sys').path[:]
         __import__('sys').path.insert(0, self._tmpdir)
 
+
     def tearDown(self):
         uninstall()
         __import__('sys').path[:] = self._prev_path
@@ -58,6 +59,7 @@ class TestKioImporterParity(unittest.TestCase):
             del __import__('sys').modules[name]
         import shutil
         shutil.rmtree(self._tmpdir, ignore_errors=True)
+
 
     def test_define_via_kio_matches_ki(self):
         ki_path = os.path.join(self._tmpdir, 'parity_src.ki')

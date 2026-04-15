@@ -1,2 +1,1 @@
-recursive-include koskari/lib *.h *.incl
-recursive-include koskari/lib/opcode *.c
+recursive-include koskari/lib *.c *.h *.incl

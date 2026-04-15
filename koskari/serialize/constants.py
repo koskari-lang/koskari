@@ -22,47 +22,14 @@ Binary layout constants for the .kio format.
 """
 
 
-import struct
-
-
 KIO_MAGIC = b'KIO\x00\x00\x00\x00\x00'
 
-FORMAT_VERSION = 2
-
-FINALIZE_PIPELINE_VERSION = 1
-
-STRUCT_LAYOUT_VERSIONS = 0x01
-
-FLAG_SOFTENED = 0x01
-FLAG_HAS_DEBUG = 0x02
-FLAG_COMPRESSED = 0x04
-
-# Bump when KosOpCode enum values or softened CODEP instruction semantics
-# change. Encoded as four little-endian u32 in the .kio header (16 bytes);
-# no build-time or runtime dependency on opcodes.incl in the installed
-# package.
+# Semantic bytecode ABI for .kio (four little-endian u32 in the file header).
+# Bump when KosOpCode values or softened CODEP instruction semantics change.
 BYTECODE_ABI_MAJOR = 0
 BYTECODE_ABI_MINOR = 1
+BYTECODE_ABI_MICRO = 0
 BYTECODE_ABI_PATCH = 0
-
-
-def bytecode_abi_ident_bytes():
-    """
-    Return the 16-byte bytecode ABI identifier for the fixed .kio header.
-
-    The wire format is four little-endian u32 values: major, minor, patch,
-    and a reserved word (zero). Increment these constants when opcode
-    numbering or instruction-stream encoding changes.
-
-    :return: bytes of length 16
-    """
-
-    return struct.pack(
-        '<IIII',
-        BYTECODE_ABI_MAJOR,
-        BYTECODE_ABI_MINOR,
-        BYTECODE_ABI_PATCH,
-        0)
 
 
 # The end.

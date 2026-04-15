@@ -25,9 +25,9 @@ source bytes required).
 """
 
 
-from koskari.serialize.incremental import compile_ki_file_to_kio
-from koskari.serialize.kio import dump_kio, load_kio
-from koskari.serialize.softcode import (
+from .incremental import compile_ki_file_to_kio, compile_ki_source_to_kio
+from .codex import KioFile, KioHeader, KioMeta, dump_kio, load_kio
+from .softcode import (
     reharden_code,
     soften_code,
     validate_fast_indices,
@@ -36,6 +36,10 @@ from koskari.serialize.softcode import (
 
 __all__ = (
     'compile_ki_file_to_kio',
+    'compile_ki_source_to_kio',
+    'KioFile',
+    'KioHeader',
+    'KioMeta',
     'dump_kio',
     'load_kio',
     'reharden_code',

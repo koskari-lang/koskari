@@ -227,7 +227,8 @@ Work can overlap, but **dependency order** matters.
 | Risk | Mitigation |
 |------|------------|
 | Circular dependency (compiler needs features not yet in Koskari) | Port in **slices**; keep Python FFI boundaries documented; temporary dual paths. |
-| Nondeterministic `.kio` bytes | Canonical pool ordering; pinned `FORMAT_VERSION`; tests that hash normalized output. |
+| Nondeterministic `.kio` bytes | Canonical pool ordering; pinned bytecode ABI in
+  header; tests that hash normalized output. |
 | Loader ambiguity (mixed `.py` / `.kio`) | Explicit path ordering; tests; naming (`stage0` under `build/` only). |
 | Bootstrap bit-rot | CI job: **bootstrap-only** build of compiler sources on every PR. |
 
