@@ -15,6 +15,9 @@
 """
 Tests for UNPACK, UNPACK_STAR, UNPACK_VAR, UNPACK_FAST opcodes.
 
+UNPACK_FAST embeds fast slot indices; out-of-range indices are rejected when
+building Code, not at eval time.
+
 :author: Christopher O'Brien <obriencj@preoccupied.net>
 :license: GNU General Public License v3
 """
@@ -190,18 +193,18 @@ class TestUnpackOpcodes(CevalTest):
         self.assertEqual(result, (30, 40))
 
 
-    async def test_unpack_fast_out_of_bounds_raises(self):
+    def test_unpack_fast_out_of_bounds_raises(self):
         """
-        UNPACK_FAST raises NameError when a fast index is out of bounds
+        UNPACK_FAST with a fast index past NamespaceSpec slots fails at Code(...)
         """
 
-        code, ns = build_expr([
-            ["CONST", (1, 2)],
-            ["UNPACK_FAST", (0, 1, 0, 0)],
-            ["RETURN", 0],
-        ], local_syms=("a",))
-        with self.assertRaises(NameError):
-            await make_callable(code, ns)()
+        with self.assertRaises(ValueError) as ctx:
+            build_expr([
+                ["CONST", (1, 2)],
+                ["UNPACK_FAST", (0, 1, 0, 0)],
+                ["RETURN", 0],
+            ], local_syms=("a",))
+        self.assertIn("FAST", str(ctx.exception))
 
 
 # The end.

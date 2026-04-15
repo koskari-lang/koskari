@@ -45,6 +45,10 @@
 static PyObject *_str_anon = NULL;
 
 
+/* Max depth for PUSH/POP stacks used in extent derivation and FAST validation */
+#define DERIVE_EXTENT_STACK_MAX 64
+
+
 /* === Opcode styles table === */
 
 
@@ -125,6 +129,212 @@ KosExtraSchema kos_opcode_extra_schema(KosOpCode op) {
   }
   return (KosExtraSchema){ KOSTYLE_NOARG, KOSTYLE_NOARG,
       KOSTYLE_NOARG, KOSTYLE_NOARG };
+}
+
+
+/* === Softening helpers === */
+
+/*
+   Softening turns sealed (hardened) bytecode back into a Python list of
+   (opcode, arg) pairs suitable for Code(...). The stream is longer than
+   code_len because it re-inserts KOS_OP_POSITION and KOS_OP_LABEL pseudo-ops
+   that were stripped during hardening. Label *names* are not stored in
+   hardened form (only target PCs). ``collect_label_map`` uses a single
+   ``PyDict`` and one forward scan; on first discovery of each PC it assigns
+   the PC text immediately. Emission order per
+   instruction index is LABEL (if target), POSITION (if changed), then opcode.
+*/
+
+
+/**
+   Record a jump-target PC in ``label_map`` and assign a label name on first
+   discovery. Duplicate PCs are ignored.
+
+   :param label_map: the only dict used for soften label collection
+   :param pc: instruction index
+   :return: 0 on success, -1 on error
+*/
+static int soften_label_map_add_pc(
+    PyObject *label_map,
+    uint32_t pc) {
+
+  PyObject *key = PyLong_FromUnsignedLong((unsigned long) pc);
+  if (! key)
+    return -1;
+
+  PyObject *existing = PyDict_GetItemWithError(label_map, key);
+  if (! existing && PyErr_Occurred()) {
+    Py_DECREF(key);
+    return -1;
+  }
+
+  if (! existing) {
+    PyObject *name = PyUnicode_FromFormat("LABEL_%u", (unsigned int) pc);
+    if (! name) {
+      Py_DECREF(key);
+      return -1;
+    }
+
+    if (PyDict_SetItem(label_map, key, name) < 0) {
+      Py_DECREF(name);
+      Py_DECREF(key);
+      return -1;
+    }
+    Py_DECREF(name);
+  }
+
+  Py_DECREF(key);
+  return 0;
+}
+
+
+/**
+   Build the single ``dict`` mapping each jump-target PC (``int`` key) to
+   label string (``"L0"``, ``"L1"``, ...).
+
+   Hardened code stores branch destinations as raw PCs in ``KosOp.arg`` for
+   KOSTYLE_LABEL opcodes, and likewise in EXTRA row slots marked LABEL in the
+   opcode schema. One ``PyDict`` is filled in one scan, and first discovery of
+   a target PC assigns the PC text immediately.
+
+   :param self: KosCode object
+   :param code_len: instruction count (hardened stream length)
+
+   :return: new reference to ``dict`` (possibly empty); NULL on error
+*/
+static PyObject *collect_label_map(PyObject *self, uint32_t code_len) {
+
+  PyObject *label_map = PyDict_New();
+  if (! label_map) {
+    return NULL;
+  }
+
+  KosOp *code = KosCode_CODE(self);
+
+  /* Every JUMP*, CHECK*, etc. records the destination PC in op.arg */
+  for (uint32_t i = 0; i < code_len; i++) {
+    KosOpCode op = (KosOpCode) code[i].op;
+    if (op > KOS_OP_THEEND) {
+      Py_DECREF(label_map);
+      PyErr_Format(PyExc_RuntimeError, "invalid opcode %u", (unsigned) op);
+      return NULL;
+    }
+
+    KosOpStyle st = opcode_styles[op].style;
+
+    if (st == KOSTYLE_LABEL) {
+      /* op.arg is the destination instruction index */
+      if (soften_label_map_add_pc(label_map, code[i].arg)) {
+        Py_DECREF(label_map);
+        return NULL;
+      }
+
+    } else if (st == KOSTYLE_EXTRA) {
+      /* insn.arg is row index; each schema LABEL field holds a dest PC */
+      uint16_t eidx = code[i].arg;
+      if (eidx >= KosCode_EXTRA_LEN(self)) {
+        Py_DECREF(label_map);
+        PyErr_SetString(PyExc_RuntimeError, "EXTRA index out of bounds");
+        return NULL;
+      }
+
+      KosExtra row = KosCode_GetExtra(self, eidx);
+      KosExtraSchema schema = kos_opcode_extra_schema(op);
+      uint16_t raw[4] = { row.a0, row.a1, row.a2, row.a3 };
+
+      for (int slot = 0; slot < 4; slot++) {
+        KosOpStyle fk = (slot == 0) ? schema.f0 : (slot == 1) ? schema.f1 :
+            (slot == 2) ? schema.f2 : schema.f3;
+        if (fk == KOSTYLE_LABEL) {
+          if (soften_label_map_add_pc(label_map, raw[slot])) {
+            Py_DECREF(label_map);
+            return NULL;
+          }
+        }
+      }
+    }
+  }
+
+  return label_map;
+}
+
+
+/**
+  Build a 4-tuple of Python soften arguments for one EXTRA opcode row.
+
+  Hardened EXTRA rows store uint16 indices (cpool, raw ints, or PCs). This
+  reverses emit: CONST/VAR become Python values from the pool; LABEL slots
+  look up the destination PC in ``label_map``; other slots stay as integers
+  (FAST,
+  COUNT, STAR, etc.). NOARG schema slots become 0, matching the collect
+  phase default.
+
+  :param self: KosCode (for constant pool lookup)
+  :param op: opcode (selects EXTRA field schema)
+  :param row: raw a0..a3 from hardened extra table
+  :param label_map: ``dict`` mapping target PC ``int`` to label ``str``
+
+  :return: new tuple of length 4, or NULL on error
+*/
+static PyObject *soften_extra_tuple(
+    PyObject *self,
+    KosOpCode op,
+    KosExtra row,
+    PyObject *label_map) {
+
+  KosExtraSchema schema = kos_opcode_extra_schema(op);
+  uint16_t raw[4] = { row.a0, row.a1, row.a2, row.a3 };
+  PyObject *items[4];
+
+  for (int slot = 0; slot < 4; slot++) {
+    KosOpStyle fk = (slot == 0) ? schema.f0 : (slot == 1) ? schema.f1 :
+        (slot == 2) ? schema.f2 : schema.f3;
+
+    /* Mirror code_collect: skip NOARG (emit uses 0); else decode by kind */
+    if (fk == KOSTYLE_NOARG) {
+      items[slot] = PyLong_FromLong(0);
+
+    } else if (fk == KOSTYLE_CONST || fk == KOSTYLE_VAR) {
+      PyObject *v = KosCode_GetConstant(self, raw[slot]);
+      if (! v) {
+        for (int j = 0; j < slot; j++)
+          Py_DECREF(items[j]);
+        return NULL;
+      }
+      Py_INCREF(v);
+      items[slot] = v;
+
+    } else if (fk == KOSTYLE_LABEL) {
+      PyObject *key = PyLong_FromUnsignedLong((unsigned long) raw[slot]);
+      if (! key) {
+        for (int j = 0; j < slot; j++)
+          Py_DECREF(items[j]);
+        return NULL;
+      }
+      PyObject *lab = PyDict_GetItem(label_map, key);
+      Py_DECREF(key);
+      if (! lab) {
+        for (int j = 0; j < slot; j++)
+          Py_DECREF(items[j]);
+        PyErr_Format(PyExc_RuntimeError,
+                     "label pc %u missing from label map", raw[slot]);
+        return NULL;
+      }
+      Py_INCREF(lab);
+      items[slot] = lab;
+
+    } else {
+      items[slot] = PyLong_FromLong((long) raw[slot]);
+    }
+
+    if (! items[slot]) {
+      for (int j = 0; j < slot; j++)
+        Py_DECREF(items[j]);
+      return NULL;
+    }
+  }
+
+  return PyTuple_Pack(4, items[0], items[1], items[2], items[3]);
 }
 
 
@@ -368,6 +578,165 @@ static PyObject *code_m_extra_tuple(PyObject *self, PyObject *index) {
 }
 
 
+/**
+   Python method: ``Code.soften()`` -> list of instruction pairs.
+
+   Reconstructs the softened stream the compiler would pass to ``Code()``:
+   per hardened instruction index, optional ``KOS_OP_LABEL`` (name for jump
+   target PCs), ``KOS_OP_POSITION`` when (line, col) changes, then the real
+   opcode with pool values and string labels instead of raw indices.
+
+   :param self: KosCode instance
+
+   :return: new list of ``(int opcode, arg)`` pairs, or NULL on error
+*/
+static PyObject *code_m_soften(PyObject *self, PyObject *unused) {
+
+  (void) unused;
+
+  uint32_t code_len = KosCode_CODE_LEN(self);
+  PyObject *label_map = collect_label_map(self, code_len);
+
+  if (! label_map) {
+    return NULL;
+  }
+
+  PyObject *out = PyList_New(0);
+  if (! out) {
+    Py_DECREF(label_map);
+    return NULL;
+  }
+
+  int have_prev = 0;
+  uint16_t prev_line = 0;
+  uint16_t prev_col = 0;
+
+  for (uint32_t i = 0; i < code_len; i++) {
+    /* If this instruction index is a jump target, emit a label pseudo-op */
+    {
+      PyObject *key_i = PyLong_FromUnsignedLong((unsigned long) i);
+      if (! key_i) {
+        Py_DECREF(out);
+        Py_DECREF(label_map);
+        return NULL;
+      }
+      PyObject *lab = PyDict_GetItem(label_map, key_i);
+      Py_DECREF(key_i);
+      if (lab) {
+        Py_INCREF(lab);
+        PyObject *t = Py_BuildValue("(iN)", (int) KOS_OP_LABEL, lab);
+        if (! t || PyList_Append(out, t) < 0) {
+          Py_XDECREF(t);
+          Py_DECREF(out);
+          Py_DECREF(label_map);
+          return NULL;
+        }
+        Py_DECREF(t);
+      }
+    }
+
+    uint16_t line = 0, col = 0;
+
+    /* Delta-decode from KosCode position table (same as code_collect) */
+    KosCode_GetPosition(self, i, &line, &col);
+
+    if (! have_prev || line != prev_line || col != prev_col) {
+      PyObject *t = Py_BuildValue("(i(HH))", (int) KOS_OP_POSITION, line, col);
+      if (! t || PyList_Append(out, t) < 0) {
+        Py_XDECREF(t);
+        Py_DECREF(out);
+        Py_DECREF(label_map);
+        return NULL;
+      }
+      Py_DECREF(t);
+      have_prev = 1;
+      prev_line = line;
+      prev_col = col;
+    }
+
+    KosOp insn = KosCode_CODE(self)[i];
+    KosOpCode op = (KosOpCode) insn.op;
+
+    if (op > KOS_OP_THEEND) {
+      Py_DECREF(out);
+      Py_DECREF(label_map);
+      PyErr_Format(PyExc_RuntimeError, "invalid opcode %u", (unsigned) op);
+      return NULL;
+    }
+
+    if (op == KOS_OP_LABEL || op == KOS_OP_POSITION) {
+      Py_DECREF(out);
+      Py_DECREF(label_map);
+      PyErr_SetString(PyExc_RuntimeError,
+                      "hardened code must not contain LABEL or POSITION");
+      return NULL;
+    }
+
+    KosOpStyle st = opcode_styles[op].style;
+    PyObject *pair = NULL;
+
+    if (st == KOSTYLE_CONST || st == KOSTYLE_VAR) {
+      PyObject *val = KosCode_GetConstant(self, insn.arg);
+      if (! val) {
+        Py_DECREF(out);
+        Py_DECREF(label_map);
+        return NULL;
+      }
+      pair = Py_BuildValue("(iO)", (int) op, val);
+    } else if (st == KOSTYLE_LABEL) {
+      /* insn.arg is destination PC; label string is label_map[insn.arg] */
+      PyObject *key_d = PyLong_FromUnsignedLong((unsigned long) insn.arg);
+      if (! key_d) {
+        Py_DECREF(out);
+        Py_DECREF(label_map);
+        return NULL;
+      }
+      PyObject *lab = PyDict_GetItem(label_map, key_d);
+      Py_DECREF(key_d);
+      if (! lab) {
+        Py_DECREF(out);
+        Py_DECREF(label_map);
+        PyErr_Format(PyExc_RuntimeError,
+                     "label pc %u missing from label map", insn.arg);
+        return NULL;
+      }
+      Py_INCREF(lab);
+      pair = Py_BuildValue("(iN)", (int) op, lab);
+    } else if (st == KOSTYLE_EXTRA) {
+      if (insn.arg >= KosCode_EXTRA_LEN(self)) {
+        Py_DECREF(out);
+        Py_DECREF(label_map);
+        PyErr_SetString(PyExc_RuntimeError, "EXTRA index out of bounds");
+        return NULL;
+      }
+      KosExtra row = KosCode_GetExtra(self, insn.arg);
+      PyObject *tup = soften_extra_tuple(self, op, row, label_map);
+      if (! tup) {
+        Py_DECREF(out);
+        Py_DECREF(label_map);
+        return NULL;
+      }
+      pair = Py_BuildValue("(iN)", (int) op, tup);
+    } else {
+      /* COUNT, FASTVAR, NOARG raw fields: pass through as small ints */
+      pair = Py_BuildValue("(ii)", (int) op, (int) insn.arg);
+    }
+
+    if (! pair || PyList_Append(out, pair) < 0) {
+      Py_XDECREF(pair);
+      Py_DECREF(out);
+      Py_DECREF(label_map);
+      return NULL;
+    }
+    Py_DECREF(pair);
+  }
+
+  Py_DECREF(label_map);
+
+  return out;
+}
+
+
 static PyMethodDef code_methods[] = {
 
   { "constant", (PyCFunction) code_m_constant, METH_O,
@@ -393,6 +762,10 @@ static PyMethodDef code_methods[] = {
 
   { "extra_tuple", (PyCFunction) code_m_extra_tuple, METH_O,
     "C.extra_tuple(index) => (a0, a1, a2, a3) for EXTRA opcode operand row" },
+
+  { "soften", (PyCFunction) code_m_soften, METH_NOARGS,
+    "C.soften() => list of (opcode, arg) pairs with LABEL/POSITION "
+    "pseudo-ops and pool/label values restored" },
 
   { NULL, },
 };
@@ -1097,8 +1470,6 @@ static int code_emit(
    gives the innermost extent id at each instruction for jump locality checks.
 */
 
-#define DERIVE_EXTENT_STACK_MAX 64
-
 
 typedef struct {
   KosOpCode push_op;
@@ -1500,6 +1871,201 @@ static int validate_no_tail_with_yield(PyObject *instr_fast) {
 }
 
 
+/**
+   FAST slot count for a NamespaceSpec.
+
+   Matches ``convert_fast`` / compiler ordering: locals, then closures, then
+   globals. Indices 0 .. limit-1 are the only valid FASTVAR operands.
+
+   :param nspec: NamespaceSpec instance
+   :param out_limit: set to ``len(local)+len(closure)+len(global)``
+
+   :return: 0 on success, -1 on error
+*/
+static int namespace_spec_fast_slot_limit(
+    PyObject *nspec,
+    uint32_t *out_limit) {
+
+  PyObject *loc = KosNamespaceSpec_LOCAL_SYMS(nspec);
+  PyObject *clo = KosNamespaceSpec_CLOSURE_SYMS(nspec);
+  PyObject *glo = KosNamespaceSpec_GLOBAL_SYMS(nspec);
+
+  if (! loc || ! clo || ! glo) {
+    return -1;
+  }
+
+  Py_ssize_t nloc = PySequence_Size(loc);
+  Py_ssize_t nclo = PySequence_Size(clo);
+  Py_ssize_t nglo = PySequence_Size(glo);
+
+  if (nloc < 0 || nclo < 0 || nglo < 0) {
+    return -1;
+  }
+
+  Py_ssize_t total = nloc + nclo + nglo;
+
+  if (total > (Py_ssize_t) 0xFFFFFFFFu) {
+    PyErr_SetString(PyExc_ValueError, "namespace symbol count too large");
+    return -1;
+  }
+
+  *out_limit = (uint32_t) total;
+  return 0;
+}
+
+
+/**
+   Reject FASTVAR operands outside the active NamespaceSpec slot range.
+
+   Called after emit when ``code`` and ``extra`` are fully materialized so we
+   can validate both scalar FAST opcodes and FAST slots embedded in EXTRA rows
+   (CALL_FAST-style operands). Mirrors ``Compiler.convert_fast``: walk the
+   instruction stream in order, track pending ``NamespaceSpec`` from ``CONST``,
+   push/pop slot limits on ``PUSH_NS`` / ``PUSH_COLLECT`` / ``POP_NS`` /
+   ``POP_COLLECT``. The active limit is the root ``Code`` NamespaceSpec when
+   the namespace stack is empty, else the innermost pushed extent.
+
+   :param self: partially built KosCode (needs ``namespace_spec`` set)
+   :param code: emitted instruction array, length ``code_len``
+   :param extra: emitted EXTRA table (may be NULL if ``extra_len==0``)
+   :param extra_len: row count of ``extra``
+   :param cpool: constant pool (``NamespaceSpec`` lookup for namespace ops)
+   :param cpool_len: number of entries in ``cpool``
+
+   :return: 0 if all FAST indices satisfy ``0 <= idx < active_limit``, else -1
+      with ValueError or RuntimeError set
+*/
+static int validate_fast_slots(
+    PyObject *self,
+    KosOp *code,
+    uint32_t code_len,
+    KosExtra *extra,
+    uint32_t extra_len,
+    PyObject **cpool,
+    uint32_t cpool_len) {
+
+  uint32_t root_limit = 0;
+
+  if (namespace_spec_fast_slot_limit(KosCode_NSPEC(self), &root_limit)) {
+    return -1;
+  }
+
+  uint32_t ns_stack[DERIVE_EXTENT_STACK_MAX];
+  int depth = 0;
+  /* Borrowed ref: last CONST NamespaceSpec, matching convert_fast ``nspec`` */
+  PyObject *pending = NULL;
+
+  for (uint32_t i = 0; i < code_len; i++) {
+    KosOpCode op = (KosOpCode) code[i].op;
+
+    if (op > KOS_OP_THEEND) {
+      PyErr_Format(PyExc_RuntimeError, "invalid opcode %u", (unsigned) op);
+      return -1;
+    }
+
+    KosOpStyle st = opcode_styles[op].style;
+
+    uint32_t active = (depth == 0) ? root_limit : (uint32_t) ns_stack[depth - 1];
+
+    if (st == KOSTYLE_FASTVAR) {
+      /* op.arg is the fast slot index */
+      if (active == 0 || code[i].arg >= active) {
+        PyErr_Format(PyExc_ValueError,
+                     "FAST index %u out of bounds (limit %u)",
+                     (unsigned) code[i].arg, (unsigned) active);
+        return -1;
+      }
+    } else if (st == KOSTYLE_EXTRA) {
+      /* Walk schema: only slots tagged FASTVAR are checked */
+      uint16_t eidx = code[i].arg;
+      if (eidx >= extra_len) {
+        PyErr_SetString(PyExc_RuntimeError, "EXTRA index out of bounds");
+        return -1;
+      }
+
+      KosExtra row = extra[eidx];
+      KosExtraSchema schema = kos_opcode_extra_schema(op);
+      uint16_t raw[4] = { row.a0, row.a1, row.a2, row.a3 };
+
+      for (int slot = 0; slot < 4; slot++) {
+        KosOpStyle fk = (slot == 0) ? schema.f0 : (slot == 1) ? schema.f1 :
+            (slot == 2) ? schema.f2 : schema.f3;
+
+        if (fk != KOSTYLE_FASTVAR) {
+          continue;
+        }
+
+        if (active == 0 || raw[slot] >= active) {
+          PyErr_Format(PyExc_ValueError,
+                       "FAST index %u out of bounds (limit %u)",
+                       (unsigned) raw[slot], (unsigned) active);
+          return -1;
+        }
+      }
+    }
+
+    /* Advance namespace stack (mirror Compiler.convert_fast) */
+    if (op == KOS_OP_CONST && st == KOSTYLE_CONST) {
+      if (code[i].arg >= cpool_len) {
+        PyErr_SetString(PyExc_RuntimeError,
+                        "CONST operand index out of bounds");
+        return -1;
+      }
+      PyObject *val = cpool[code[i].arg];
+      if (KosNamespaceSpec_CheckExact(val)) {
+        pending = val;
+      }
+    } else if (op == KOS_OP_PUSH_NS) {
+      /* Mirror convert_fast: nspec comes from preceding CONST NamespaceSpec.
+         Malformed streams are left to extent validation; skip push if missing. */
+      if (pending && KosNamespaceSpec_CheckExact(pending)) {
+        uint32_t lim = 0;
+        if (namespace_spec_fast_slot_limit(pending, &lim)) {
+          return -1;
+        }
+        if (depth >= DERIVE_EXTENT_STACK_MAX) {
+          PyErr_SetString(PyExc_ValueError, "namespace stack overflow");
+          return -1;
+        }
+        ns_stack[depth++] = lim;
+      }
+      pending = NULL;
+    } else if (op == KOS_OP_PUSH_COLLECT) {
+      /* Operand is cpool index of NamespaceSpec, or fall back to pending */
+      PyObject *ns = NULL;
+      if (code[i].arg < cpool_len) {
+        PyObject *v = cpool[code[i].arg];
+        if (KosNamespaceSpec_CheckExact(v)) {
+          ns = v;
+        }
+      }
+      if (! ns) {
+        ns = pending;
+      }
+      if (ns && KosNamespaceSpec_CheckExact(ns)) {
+        uint32_t lim = 0;
+        if (namespace_spec_fast_slot_limit(ns, &lim)) {
+          return -1;
+        }
+        if (depth >= DERIVE_EXTENT_STACK_MAX) {
+          PyErr_SetString(PyExc_ValueError, "namespace stack overflow");
+          return -1;
+        }
+        ns_stack[depth++] = lim;
+      }
+      pending = NULL;
+    } else if (op == KOS_OP_POP_NS || op == KOS_OP_POP_COLLECT) {
+      /* Do not error on underflow; extent validation reports POP without PUSH */
+      if (depth > 0) {
+        depth--;
+      }
+    }
+  }
+
+  return 0;
+}
+
+
 /* === Code initialization === */
 
 
@@ -1574,6 +2140,16 @@ static int code_instr_init(PyObject *self, PyObject *instr) {
 
   /* Phase 3: Emit — write instructions and tables into block */
   if (code_emit(self, instr_fast, &coll, code, pos, cpool, extra)) {
+    code_collect_clear(&coll);
+    mprotect(base, alloc_size, PROT_WRITE);
+    free(base);
+    Py_DECREF(instr_fast);
+    return -1;
+  }
+
+  /* Before sealing: ensure FAST indices match active NamespaceSpec per extent */
+  if (validate_fast_slots(self, code, code_len, extra, extra_len,
+                          cpool, cpool_len)) {
     code_collect_clear(&coll);
     mprotect(base, alloc_size, PROT_WRITE);
     free(base);

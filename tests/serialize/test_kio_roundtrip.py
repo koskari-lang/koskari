@@ -24,10 +24,9 @@ import unittest
 
 import pytest
 
-from koskari.lib import (FormalsSpec, FunctionSpec, NamespaceSpec, OpCode,
-                         demand_call)
+from koskari.lib import (Code, FormalsSpec, FunctionSpec, NamespaceSpec,
+                         OpCode, demand_call)
 from koskari.serialize import compile_ki_source_to_kio, dump_kio, load_kio
-from koskari.serialize.softcode import reharden_code, soften_code
 
 from .. import make_callable
 from ..lib.opcode import build_expr
@@ -71,7 +70,7 @@ class TestKioRoundTrip(unittest.TestCase):
         kio = load_kio(buf)
         self.assertEqual(len(kio.codes), 1)
         loaded = None
-        for op, arg in soften_code(kio.codes[0]):
+        for op, arg in kio.codes[0].soften():
             if op == OpCode.KOS_OP_CONST:
                 loaded = arg
                 break
@@ -98,6 +97,21 @@ class TestSourceFilenameIndirection(unittest.TestCase):
         self.assertEqual(kio.codes[0].filename, logical)
 
 
+class TestSoftenRebuild(unittest.TestCase):
+    """
+    Native soften output round-trips through Code(...)
+    """
+
+    def test_soften_rebuild_runs(self):
+        code, ns = build_expr([
+            ['CONST', 42],
+            ['RETURN', 1],
+        ])
+        instr = code.soften()
+        code2 = Code(code.namespace_spec, instr, code.name, code.filename)
+        self.assertEqual(demand_call(make_callable(code2, ns)), 42)
+
+
 class TestFastValidation(unittest.TestCase):
     """
     FAST slot bounds enforced on re-harden
@@ -107,7 +121,7 @@ class TestFastValidation(unittest.TestCase):
         nspec = NamespaceSpec(None, ('a',), ())
         instr = [(OpCode.KOS_OP_FAST, 1)]
         with self.assertRaises(ValueError) as ctx:
-            reharden_code(nspec, instr, 'x', 'y.ki')
+            Code(nspec, instr, 'x', 'y.ki')
         self.assertIn('FAST', str(ctx.exception))
 
 

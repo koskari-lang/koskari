@@ -27,11 +27,10 @@ import struct
 from dataclasses import dataclass
 from enum import Enum, IntEnum
 
-from ..lib import (FormalsSpec, FunctionSpec, NamespaceSpec, OpCode, OpStyle,
-                   keyword, nil, symbol)
+from ..lib import (Code, FormalsSpec, FunctionSpec, NamespaceSpec, OpCode,
+                   OpStyle, keyword, nil, symbol)
 from .constants import (BYTECODE_ABI_MAJOR, BYTECODE_ABI_MICRO,
                         BYTECODE_ABI_MINOR, BYTECODE_ABI_PATCH, KIO_MAGIC)
-from .softcode import reharden_code, soften_code, validate_fast_indices
 
 
 def binary_read_all(source):
@@ -360,8 +359,7 @@ class KioFile(object):
             nspec = pool[record.nspec_idx]
             name = pool[record.name_idx]
             filename = pool[record.filename_idx]
-            validate_fast_indices(nspec, instr)
-            code = reharden_code(nspec, instr, name, filename)
+            code = Code(nspec, instr, name, filename)
             codes.append(code)
 
         return cls(header, meta, codes, pool)
@@ -373,7 +371,7 @@ class KioFile(object):
 
 
     def build_pool_and_code_records(self):
-        softened = [(code, soften_code(code)) for code in self.codes]
+        softened = [(code, code.soften()) for code in self.codes]
 
         pb = PoolBuilder()
         for code, instr in softened:
@@ -544,7 +542,7 @@ def intern_for_pool(pb, obj):
         intern_for_pool(pb, code.namespace_spec)
         intern_for_pool(pb, code.name)
         intern_for_pool(pb, code.filename)
-        instr = soften_code(code)
+        instr = code.soften()
         intern_instruction_args(pb, instr)
         return pb.add(obj)
 
@@ -814,7 +812,7 @@ def encode_pool_record_value(val, index_of, pb=None):
         if pb is None:
             raise TypeError('FunctionSpec pool encoding requires a PoolBuilder')
         code = val.code
-        instr = soften_code(code)
+        instr = code.soften()
         yld = False
         for op, _ in instr:
             if op in (OpCode.KOS_OP_YIELD, OpCode.KOS_OP_YIELD_FROM):
@@ -1003,8 +1001,7 @@ def decode_pool_record_at_kind(kind, buf, off, prior, code_list):
         for _ in range(ic):
             (op, arg), ioff = decode_instruction(ib, ioff, prior)
             instr.append((op, arg))
-        validate_fast_indices(nspec, instr)
-        code = reharden_code(nspec, instr, code_name, code_fn)
+        code = Code(nspec, instr, code_name, code_fn)
         return FunctionSpec(name, formals, code), off
 
     raise ValueError('unknown pool kind %s' % kind)

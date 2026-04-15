@@ -14,16 +14,44 @@
 """
 Tests for FAST, FAST_BIND, FAST_CLEAR opcodes.
 
+Invalid FAST slot indices are rejected at Code construction (see
+validate_fast_slots in the native Code object). Tests that build Code must
+use indices within the NamespaceSpec fast-slot range.
+
 :author: Christopher O'Brien <obriencj@preoccupied.net>
 :license: GNU General Public License v3
 """
 
 from tests import make_callable
-from tests.lib.opcode import CevalTest, build_expr
+from tests.lib.opcode import CevalTest, build_code, build_expr
 
 import pytest
 
 pytestmark = pytest.mark.phase_lib
+
+
+@pytest.mark.parametrize(
+    "code_list",
+    [
+        pytest.param([["FAST", 0], ["RETURN", 1]], id="FAST"),
+        pytest.param([["FAST_BIND", 0], ["RETURN", 1]], id="FAST_BIND"),
+        pytest.param([["FAST_CLEAR", 0], ["RETURN", 1]], id="FAST_CLEAR"),
+        pytest.param([["FAST_REF", 0], ["RETURN", 1]], id="FAST_REF"),
+        pytest.param(
+            [["CONST", 42], ["FAST_STORE", 0], ["RETURN", 1]],
+            id="FAST_STORE"),
+    ],
+)
+def test_fast_out_of_bounds_rejected_at_construction(code_list):
+    """
+    With no fast slots in the NamespaceSpec, any FAST* opcode is invalid
+    at Code(...) time (ValueError), not at eval time
+    """
+
+    with pytest.raises(ValueError) as ctx:
+        build_code(code_list)
+    assert "FAST" in str(ctx.value)
+    assert "limit" in str(ctx.value)
 
 
 class TestFastOpcodes(CevalTest):
@@ -31,75 +59,17 @@ class TestFastOpcodes(CevalTest):
     Tests for FAST, FAST_BIND, FAST_CLEAR, FAST_REF, FAST_STORE
     """
 
-    async def _run_fast_out_of_bounds(self, opname, arg=0):
-        """
-        Run bytecode that hits the given FAST opcode with no fast slots
-        """
-
-        if opname == "FAST_STORE":
-            code_list = [["CONST", 42], [opname, arg], ["RETURN", 1]]
-        else:
-            code_list = [[opname, arg], ["RETURN", 1]]
-        code_obj, ns = build_expr(code_list)
-        expr = make_callable(code_obj, ns)
-        return await expr()
-
-
-    async def test_fast_raises_name_error_for_out_of_bounds_index(self):
-        """
-        FAST raises NameError when slot index is out of bounds
-        """
-
-        with self.assertRaises(NameError):
-            await self._run_fast_out_of_bounds("FAST", 0)
-
-
-    async def test_fast_bind_raises_name_error_for_out_of_bounds_index(self):
-        """
-        FAST_BIND raises NameError when slot index is out of bounds
-        """
-
-        with self.assertRaises(NameError):
-            await self._run_fast_out_of_bounds("FAST_BIND", 0)
-
-
-    async def test_fast_clear_raises_name_error_for_out_of_bounds_index(self):
-        """
-        FAST_CLEAR raises NameError when slot index is out of bounds
-        """
-
-        with self.assertRaises(NameError):
-            await self._run_fast_out_of_bounds("FAST_CLEAR", 0)
-
-
-    async def test_fast_ref_raises_name_error_for_out_of_bounds_index(self):
-        """
-        FAST_REF raises NameError when slot index is out of bounds
-        """
-
-        with self.assertRaises(NameError):
-            await self._run_fast_out_of_bounds("FAST_REF", 0)
-
-
-    async def test_fast_store_raises_name_error_for_out_of_bounds_index(self):
-        """
-        FAST_STORE raises NameError when slot index is out of bounds
-        """
-
-        with self.assertRaises(NameError):
-            await self._run_fast_out_of_bounds("FAST_STORE", 0)
-
-
     async def test_fast_on_dict_namespace_raises_runtime_error(self):
         """
         FAST requires KosNamespace with fast slots; dict as frame ns => RuntimeError
         """
-        code_obj, _ = build_expr([["FAST", 0], ["RETURN", 1]])
+        code_obj, _ = build_expr(
+            [["FAST", 0], ["RETURN", 1]],
+            local_syms=("x",))
         ns = {}
         with self.assertRaises(RuntimeError) as ctx:
             await make_callable(code_obj, ns)()
         self.assertIn("FAST invoked", str(ctx.exception))
-
 
     async def test_fast_bind_binds_slot(self):
         """
