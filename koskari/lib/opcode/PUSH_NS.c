@@ -69,9 +69,9 @@ KOS_OP_HANDLER(PUSH_NS) {
   }
 
   if (! KosNamespaceSpec_CheckExact(nspec)) {
-    Py_DECREF(nspec);
     PyErr_Format(PyExc_RuntimeError,
                  "PUSH_NS spec must be a NamespaceSpec, not %R", nspec);
+    Py_DECREF(nspec);
     return KOS_OP_POST_ERR();
   }
 
@@ -81,9 +81,9 @@ KOS_OP_HANDLER(PUSH_NS) {
 
   } else {
     if (! PyTuple_CheckExact(names)) {
-      Py_DECREF(nspec);
       PyErr_Format(PyExc_RuntimeError,
                    "PUSH_NS names must be tuple or None, not %R", names);
+      Py_DECREF(nspec);
       return KOS_OP_POST_ERR();
     }
     opa = (int) PyTuple_GET_SIZE(names);

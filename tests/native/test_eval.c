@@ -1251,7 +1251,21 @@ static int test_eval_fast_on_dict_ns(void) {
     /*
       FAST requires KosNamespace with fast slots; PyDict => RuntimeError.
     */
-    PyObject *nspec = create_test_nspec();
+
+    PyObject *name = PyUnicode_FromString("test");
+    PyObject *locals = PyTuple_New(1);
+    PyObject *closures = PyTuple_New(0);
+    TEST_ASSERT_NOT_NULL(name, "create nspec name");
+    TEST_ASSERT_NOT_NULL(locals, "create nspec locals");
+    TEST_ASSERT_NOT_NULL(closures, "create nspec closures");
+
+    PyObject *local0 = PyUnicode_FromString("x");
+    TEST_ASSERT_NOT_NULL(local0, "create local symbol");
+    PyTuple_SET_ITEM(locals, 0, local0);
+    PyObject *nspec = KosNamespaceSpec_New(name, locals, closures, NULL);
+    Py_DECREF(name);
+    Py_DECREF(locals);
+    Py_DECREF(closures);
     TEST_ASSERT_NOT_NULL(nspec, "create nspec");
 
     PyObject *instr = PyList_New(2);
