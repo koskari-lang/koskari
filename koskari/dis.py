@@ -155,8 +155,8 @@ def _build_ns_const_map(code):
     Pre-scan instructions and return a mapping from PUSH_NS / PUSH_COLLECT
     instruction index to the constant pool index of the NamespaceSpec.
 
-    PUSH_NS: compiler emits CONST <nspec> immediately before; the direct
-    predecessor is used. PUSH_COLLECT: arg is the constant pool index.
+    PUSH_NS: extra row slot a0 is the constant pool index of the NamespaceSpec.
+    PUSH_COLLECT: arg is the constant pool index.
 
     :param code: Code instance
     :return: dict mapping instruction index -> constant pool index
@@ -174,8 +174,8 @@ def _build_ns_const_map(code):
             else:
                 last_nspec_cpool_idx = None
         elif op == OpCode.KOS_OP_PUSH_NS:
-            if last_nspec_cpool_idx is not None:
-                result[i] = last_nspec_cpool_idx
+            a0, _a1, _a2, _a3 = code.extra_tuple(arg)
+            result[i] = a0
             last_nspec_cpool_idx = None
         elif op == OpCode.KOS_OP_PUSH_COLLECT:
             if 0 <= arg < len(cpool) and isinstance(cpool[arg], NamespaceSpec):
@@ -226,9 +226,15 @@ def _format_arg(
                                 (a2, schema[2]), (a3, schema[3])):
                     if fk == OpStyle.KOSTYLE_CONST or fk == OpStyle.KOSTYLE_VAR:
                         if 0 <= val < len(cpool):
+                            cval = cpool[val]
+                            if fk == OpStyle.KOSTYLE_CONST and isinstance(
+                                    cval, NamespaceSpec):
+                                inner = _format_nspec_inline(val, cval)
+                            else:
+                                inner = _format_constant(cval)
                             parts.append('%s#%d (%s)' % (
                                 'c' if fk == OpStyle.KOSTYLE_CONST else 'v',
-                                val, _format_constant(cpool[val])))
+                                val, inner))
                         else:
                             parts.append('%d' % val)
                     elif fk == OpStyle.KOSTYLE_FASTVAR:

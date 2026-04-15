@@ -14,7 +14,7 @@
 """
 koskari.serialize
 
-Spec-driven .kio read/write, softened Code conversion, and incremental adapters.
+Spec-driven .kio read/write and incremental adapters.
 Use ``compile_ki_file_to_kio(..., source_filename=...)`` when the path stored
 for runtime tracebacks should differ from the build-time ``ki_path`` (same
 source bytes required).
@@ -27,11 +27,6 @@ source bytes required).
 
 from .incremental import compile_ki_file_to_kio, compile_ki_source_to_kio
 from .codex import KioFile, KioHeader, KioMeta, dump_kio, load_kio
-from .softcode import (
-    reharden_code,
-    soften_code,
-    validate_fast_indices,
-)
 
 
 __all__ = (
@@ -42,9 +37,6 @@ __all__ = (
     'KioMeta',
     'dump_kio',
     'load_kio',
-    'reharden_code',
-    'soften_code',
-    'validate_fast_indices',
 )
 
 

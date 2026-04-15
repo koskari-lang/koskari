@@ -197,10 +197,10 @@ quick lookup.
 ### Block Control
 - `KOS_OP_PUSH_FOREACH`: Push for-each loop (implemented); arg = break target; TOS = iterable for ITER_NEXT; pushes KOS_DYN_FOREACH and stack block
 - `KOS_OP_PUSH_WITH`: Push with context (stub)
-- `KOS_OP_PUSH_COLLECT`: Push collector scope (implemented); COUNT-style; installs CollectorNamespace; KOS_DYN_COLLECT
+- `KOS_OP_PUSH_COLLECT`: Push collector scope (implemented); CONST operand = cpool index of NamespaceSpec; installs CollectorNamespace; KOS_DYN_COLLECT
 - `KOS_OP_PUSH_FINALLY`: Push finally block (implemented); pushes KOS_DYN_FINALLY and KosStackBlock
 - `KOS_OP_PUSH_LOOP`: Push while loop (implemented); arg = break target; pushes KOS_DYN_LOOP and KosStackBlock
-- `KOS_OP_PUSH_NS`: Push namespace scope; arg = count of values to bind; opa=0: [NSPEC]; opa>0: [NSPEC, val0, ..., NAMES]; creates KosNamespace, pushes KosDynNs
+- `KOS_OP_PUSH_NS`: Push namespace scope (implemented); EXTRA operand row: NSPEC and names (tuple or None) as cpool indices; opa=0: no stack values; opa>0: [val0, ..., val_{opa-1}] only; creates KosNamespace, pushes KosDynNs
 - `KOS_OP_PUSH_TRY`: Push try block (implemented); pushes KOS_DYN_TRY and KosStackBlock
 - `KOS_OP_CLEAR_FINALLY`, `KOS_OP_CLEAR_LOOP`, `KOS_OP_CLEAR_FOREACH`, `KOS_OP_CLEAR_TRY` (implemented)
 - `KOS_OP_POP_WITH`, `KOS_OP_POP_FINALLY`, `KOS_OP_POP_LOOP`, `KOS_OP_POP_FOREACH`, `KOS_OP_POP_NS`, `KOS_OP_POP_COLLECT` (POP_NS, POP_LOOP, POP_FOREACH, POP_COLLECT implemented), etc.

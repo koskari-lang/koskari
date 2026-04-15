@@ -58,13 +58,12 @@ def _make_truthy_code():
 
 def _make_push_ns_code():
     """
-    Code that emits CONST <nspec> then PUSH_NS 0 then POP_NS, so we
-    can verify the namespace annotation on PUSH_NS.
+    Code that emits PUSH_NS with nspec and names=None in the EXTRA row,
+    then POP_NS, so we can verify the namespace annotation on PUSH_NS.
     """
     child_nspec = NamespaceSpec('let', ('x', 'y'), ('outer',))
     instr = (
-        [OpCode.KOS_OP_CONST, child_nspec],
-        [OpCode.KOS_OP_PUSH_NS, 0],
+        [OpCode.KOS_OP_PUSH_NS, (child_nspec, None, 0, 0)],
         [OpCode.KOS_OP_CONST, None],
         [OpCode.KOS_OP_POP_NS, 1],
         [OpCode.KOS_OP_RETURN, 1],
@@ -202,18 +201,19 @@ class TestDisOutput(unittest.IsolatedAsyncioTestCase):
 
     async def test_const_nspec_shows_ns_inline(self):
         """
-        CONST instructions that load a NamespaceSpec show the ns# inline label
+        NamespaceSpec in CONST slots (including PUSH_NS EXTRA operands) uses
+        the ns# inline label
         """
         code = _make_push_ns_code()
         buf = io.StringIO()
         dis(code, file=buf)
         text = buf.getvalue()
-        const_ns_line = next(
+        push_ns_line = next(
             line for line in text.splitlines()
-            if 'KOS_OP_CONST' in line and 'ns#' in line
+            if 'KOS_OP_PUSH_NS' in line and 'ns#' in line
         )
-        self.assertIn('ns#0', const_ns_line)
-        self.assertIn("'let'", const_ns_line)
+        self.assertIn('ns#0', push_ns_line)
+        self.assertIn("'let'", push_ns_line)
 
     async def test_fast_local_label(self):
         """
@@ -386,12 +386,11 @@ class TestFormatConstant(unittest.IsolatedAsyncioTestCase):
 
 class TestBuildNsConstMap(unittest.IsolatedAsyncioTestCase):
 
-    async def test_push_ns_maps_to_preceding_nspec_const(self):
+    async def test_push_ns_maps_extra_row_nspec(self):
         code = _make_push_ns_code()
         ns_map = _build_ns_const_map(code)
-        # instruction index 1 is PUSH_NS; it follows CONST at index 0
-        self.assertIn(1, ns_map)
-        self.assertEqual(ns_map[1], 0)
+        self.assertIn(0, ns_map)
+        self.assertEqual(ns_map[0], 0)
 
     async def test_no_push_ns_gives_empty_map(self):
         code = _make_truthy_code()
@@ -405,7 +404,7 @@ class TestBuildNsConstMap(unittest.IsolatedAsyncioTestCase):
         """
         code = _make_push_ns_code()
         ns_map = _build_ns_const_map(code)
-        # Only index 1 (PUSH_NS) should appear, not any CONST of a plain value
+        # Only index 0 (PUSH_NS) should appear, not any CONST of a plain value
         cpool = code.constants_pool
         for i, cpool_idx in ns_map.items():
             self.assertIsInstance(cpool[cpool_idx], NamespaceSpec)

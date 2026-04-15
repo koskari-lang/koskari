@@ -207,7 +207,7 @@ is [SPECIALS.md](SPECIALS.md).
 - Module representation
 
 ### Namespace and Continuation Binding
-- **PUSH_NS / POP_NS**: Create and pop namespace scopes. PUSH_NS arg = count of values to bind; opa=0 uses stack [NSPEC]; opa>0 uses [NSPEC, val0, ..., val(N-1), NAMES]. Uses KosDynNs node; SHIFT unwind restores namespaces correctly.
+- **PUSH_NS / POP_NS**: Create and pop namespace scopes. PUSH_NS is EXTRA-style: NSPEC and NAMES (tuple or None) live in the extra operand row (cpool indices); binding count is inferred from `len(names)` or 0 if None. Stack holds only value operands when binding: `[val0, ..., val_{N-1}]` with N = number of names. Uses KosDynNs node; SHIFT unwind restores namespaces correctly.
 - **VAR_STORE**: Pop TOS and store in frame namespace under name (supports KosNamespace and dict).
 - **INVOKE_K_VAR**: Pop value, look up name in frame namespace, invoke that continuation. Enables shift handlers to bind continuation by name (PUSH_NS + VAR_STORE + INVOKE_K_VAR).
 - **CAPTURE_CC**: Implemented. Captures undelimited continuation up to the current PUSH_CC block; continuation holds token_ref; invoke via CALL 0 or CALL 1.

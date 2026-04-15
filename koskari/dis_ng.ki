@@ -126,8 +126,8 @@ define _build_ns_const_map [code]:
   Pre-scan instructions and return a mapping from PUSH_NS / PUSH_COLLECT
   instruction index to the constant pool index of the NamespaceSpec.
 
-  PUSH_NS: compiler emits CONST <nspec> immediately before; the direct
-  predecessor is used. PUSH_COLLECT: arg is the constant pool index.
+  PUSH_NS: extra row slot a0 is the constant pool index of the NamespaceSpec.
+  PUSH_COLLECT: arg is the constant pool index.
 
   :param code: Code instance
   :return: dict mapping instruction index -> constant pool index
@@ -151,8 +151,8 @@ define _build_ns_const_map [code]:
         set! last_nspec_cpool_idx None
     else:
       if (eq? op OpCode.KOS_OP_PUSH_NS):
-        when (is-not last_nspec_cpool_idx None):
-          (set-item result i last_nspec_cpool_idx)
+        define ext (code.extra_tuple arg)
+        (set-item result i (item ext 0))
         (set! last_nspec_cpool_idx None)
       else:
         if (eq? op OpCode.KOS_OP_PUSH_COLLECT):
@@ -224,8 +224,13 @@ define _format_arg [code op_style arg cpool local_names closure_names
             if (and (<= 0 val) (< val (len cpool))):
               (define prefix
                 (if (eq? fk OpStyle.KOSTYLE_CONST) "c" "v"))
-              (parts.append
-                f"{prefix}#{val} ({(_format_constant (item cpool val))})")
+              (define cval (item cpool val))
+              (define inner
+                (if (and (eq? fk OpStyle.KOSTYLE_CONST)
+                         (isinstance cval NamespaceSpec))
+                  then: (_format_nspec_inline val cval)
+                  else: (_format_constant cval)))
+              (parts.append f"{prefix}#{val} ({inner})")
             else:
               parts.append (str val)
           else:
@@ -240,7 +245,8 @@ define _format_arg [code op_style arg cpool local_names closure_names
                 else:
                   parts.append (str val)
 
-        return f"{arg} ({(str.join ', ' parts)})"
+        define joined (.join ", " parts)
+        return f"{arg} ({joined})"
       else:
         return (str arg)
     else:

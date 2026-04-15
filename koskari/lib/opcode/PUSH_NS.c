@@ -14,72 +14,86 @@
 */
 
 /**
-   PUSH_NS: arg = count (opa) of values to bind. Stack layout:
-   opa == 0: [NSPEC]
-   opa > 0:  [NSPEC, val0, val1, ..., val(N-1), NAMES]
-   NSPEC from constant pool; NAMES = tuple of names. Creates child namespace
-   from NSPEC, optionally binds values to names, pushes KOS_DYN_NS.
+   PUSH_NS: insn.arg = extra row index. Schema: CONST (nspec cpool idx),
+   CONST (names cpool idx or None), NOARG, NOARG. Count opa = len(names)
+   if names is a tuple, else 0 if names is None.
+
+   Stack: opa == 0: no values. opa > 0: [val0, ..., val_{opa-1}] with TOS =
+   last value. NSPEC and NAMES come from the constant pool only.
 */
 
 KOS_OP_HANDLER(PUSH_NS) {
-  int opa = (int) KosOp_ARG(insn);
+  KosCode *code = CURRENT_CODE(ctx);
+  uint16_t eidx = (uint16_t) KosOp_ARG(insn);
   PyObject *nspec = NULL;
   PyObject *names = NULL;
   PyObject *const *args = NULL;
   PyObject *parent = CURRENT_NS(ctx);
   PyObject *new_ns = NULL;
   KosDynNs *ns_node = NULL;
+  int opa = 0;
 
-  if (opa < 0) {
-    PyErr_Format(PyExc_RuntimeError,
-                 "PUSH_NS called with negative count: %i", opa);
-    return KOS_OP_POST_ERR();
-  }
-
-  if (opa == 0) {
-    nspec = KosStackBlock_PopRef(&CURRENT_STACK(ctx));
-    if (! nspec) {
-      PyErr_SetString(PyExc_RuntimeError, "PUSH_NS stack underrun");
-      return KOS_OP_POST_ERR();
-    }
-  } else {
-    names = KosStackBlock_PopRef(&CURRENT_STACK(ctx));
-    if (! names) {
-      PyErr_SetString(PyExc_RuntimeError, "PUSH_NS stack underrun");
-      return KOS_OP_POST_ERR();
-    }
-    if (! PyTuple_CheckExact(names)) {
-      Py_DECREF(names);
-      PyErr_Format(PyExc_RuntimeError,
-                   "PUSH_NS names must be tuple, not %R", names);
-      return KOS_OP_POST_ERR();
-    }
-    args = KosStackBlock_TailPtr(CURRENT_STACK(ctx), (size_t) opa + 1);
-    if (! args) {
-      Py_DECREF(names);
-      PyErr_SetString(PyExc_RuntimeError, "PUSH_NS stack underrun");
-      return KOS_OP_POST_ERR();
-    }
-    nspec = args[0];
-    Py_INCREF(nspec);
-  }
-
-  if (! KosNamespaceSpec_CheckExact(nspec)) {
-    Py_DECREF(nspec);
-    Py_XDECREF(names);
-    PyErr_Format(PyExc_RuntimeError,
-                 "PUSH_NS spec must be a NamespaceSpec, not %R", nspec);
+  if (eidx >= KosCode_EXTRA_LEN(code)) {
+    PyErr_Format(PyExc_IndexError, "PUSH_NS extra index out of bounds: %u",
+                 (unsigned) eidx);
     return KOS_OP_POST_ERR();
   }
 
   {
-    int i = names ? (int) PyTuple_GET_SIZE(names) : 0;
-    if (i != opa) {
+    KosExtra row = KosCode_GetExtra(code, eidx);
+    uint32_t i0 = row.a0;
+    uint32_t i1 = row.a1;
+
+    if (i0 >= KosCode_CPOOL_LEN(code)) {
+      PyErr_Format(PyExc_IndexError, "PUSH_NS nspec constant index out of"
+                   " bounds: %u", (unsigned) i0);
+      return KOS_OP_POST_ERR();
+    }
+    if (i1 >= KosCode_CPOOL_LEN(code)) {
+      PyErr_Format(PyExc_IndexError, "PUSH_NS names constant index out of"
+                   " bounds: %u", (unsigned) i1);
+      return KOS_OP_POST_ERR();
+    }
+
+    nspec = KosCode_GetConstant((PyObject *) code, i0);
+    if (! nspec) {
+      return KOS_OP_POST_ERR();
+    }
+    Py_INCREF(nspec);
+
+    names = KosCode_GetConstant((PyObject *) code, i1);
+    if (! names) {
       Py_DECREF(nspec);
-      Py_XDECREF(names);
+      return KOS_OP_POST_ERR();
+    }
+  }
+
+  if (! KosNamespaceSpec_CheckExact(nspec)) {
+    PyErr_Format(PyExc_RuntimeError,
+                 "PUSH_NS spec must be a NamespaceSpec, not %R", nspec);
+    Py_DECREF(nspec);
+    return KOS_OP_POST_ERR();
+  }
+
+  if (names == Py_None) {
+    opa = 0;
+    names = NULL;
+
+  } else {
+    if (! PyTuple_CheckExact(names)) {
       PyErr_Format(PyExc_RuntimeError,
-                   "PUSH_NS names length (%i) must match value count (%i)",
-                   i, opa);
+                   "PUSH_NS names must be tuple or None, not %R", names);
+      Py_DECREF(nspec);
+      return KOS_OP_POST_ERR();
+    }
+    opa = (int) PyTuple_GET_SIZE(names);
+  }
+
+  if (opa > 0) {
+    args = KosStackBlock_TailPtr(CURRENT_STACK(ctx), (size_t) opa);
+    if (! args) {
+      Py_DECREF(nspec);
+      PyErr_SetString(PyExc_RuntimeError, "PUSH_NS stack underrun");
       return KOS_OP_POST_ERR();
     }
   }
@@ -93,22 +107,19 @@ KOS_OP_HANDLER(PUSH_NS) {
   new_ns = KosNamespace_FromSpec(nspec, spec_parent);
   Py_DECREF(nspec);
   if (! new_ns) {
-    Py_XDECREF(names);
     return KOS_OP_POST_ERR();
   }
 
   if (opa > 0) {
     for (int i = 0; i < opa; i++) {
       PyObject *name = PyTuple_GET_ITEM(names, i);
-      PyObject *val = args[i + 1];
+      PyObject *val = args[i];
       if (KosNamespace_Store(new_ns, name, val) < 0) {
-        Py_DECREF(names);
         Py_DECREF(new_ns);
         return KOS_OP_POST_ERR();
       }
     }
-    KosStackBlock_DropNoErr(&CURRENT_STACK(ctx), (size_t) opa + 1);
-    Py_DECREF(names);
+    KosStackBlock_DropNoErr(&CURRENT_STACK(ctx), (size_t) opa);
   }
 
   Py_INCREF(parent);
@@ -125,3 +136,6 @@ KOS_OP_HANDLER(PUSH_NS) {
   (void) out_ev;
   return KOS_OP_RUN();
 }
+
+
+// The end.

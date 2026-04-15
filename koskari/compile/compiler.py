@@ -334,8 +334,8 @@ class ByteCodeFragment:
         """
         Context manager that compiles a child scope with bound names.
         On entry, compiles all value expressions and yields a fragment for
-        the body. On exit, emits CONST nspec, values, CONST names,
-        PUSH_NS, body instructions, POP_NS.
+        the body. On exit, emits value expressions (if any), then PUSH_NS with
+        nspec and names in the EXTRA row, body instructions, POP_NS.
 
         :param ns_name: name for the child namespace (e.g. source form)
         :param names: sequence of bound names (strings or symbols)
@@ -362,13 +362,13 @@ class ByteCodeFragment:
 
             yield child
             nspec = child.as_namespace_spec()
-            self.instruction(OpCode.KOS_OP_CONST, nspec)
 
             if names:
                 self.merge(valfrag)
-                self.instruction(OpCode.KOS_OP_CONST, names)
 
-            self.instruction(OpCode.KOS_OP_PUSH_NS, len(names))
+            self.instruction(
+                OpCode.KOS_OP_PUSH_NS,
+                (nspec, tuple(names) if names else None, 0, 0))
             self.instructions.extend(child.instructions)
             self.instruction(OpCode.KOS_OP_POP_NS, 0)
 
@@ -878,7 +878,7 @@ class Compiler:
                     nspec = arg
 
             elif op == OpCode.KOS_OP_PUSH_NS:
-                push_nspec(nspec)
+                push_nspec(arg[0])
                 nspec = None
 
             elif op == OpCode.KOS_OP_PUSH_COLLECT:
