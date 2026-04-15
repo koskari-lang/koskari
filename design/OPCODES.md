@@ -306,7 +306,7 @@ When adding or changing an opcode:
 | POP_LOOP | NOARG | Pop loop region; push loop result | [§18](#kos_op_pop_loop) |
 | CLEAR_LOOP | NOARG | Disable top LOOP region (before POP_LOOP) | [§18](#kos_op_clear_loop) |
 | CLEAR_FOREACH | NOARG | Disable top FOREACH region (before POP_FOREACH) | [§18](#kos_op_clear_foreach) |
-| PUSH_NS | COUNT | Push namespace scope | [§18](#kos_op_push_ns) |
+| PUSH_NS | EXTRA | Push namespace scope (nspec + names in extra row) | [§18](#kos_op_push_ns) |
 | PUSH_COLLECT | CONST | Push collector namespace scope | [§18](#kos_op_push_collect) |
 | POP_COLLECT | NOARG | Pop collect scope, push ns | [§18](#kos_op_pop_collect) |
 | BUILD_CLASS | NOARG | Consume pos+ns, call metaclass | [§18](#kos_op_build_class) |
@@ -2283,17 +2283,18 @@ Full design: [interpreter/with-dyn-with.md](interpreter/with-dyn-with.md). Summa
 
 ### KOS_OP_PUSH_NS
 
-- **Style**: COUNT. Arg = 0 or number of values to bind. 0: push namespace with NSPEC only; >0: NSPEC plus value/name bindings.
+- **Style**: EXTRA. Schema: CONST (cpool index of NamespaceSpec), CONST (cpool index of names tuple or None), NOARG, NOARG. Instruction `arg` is the extra-row index. Binding count is `len(names)` when names is a tuple, or `0` when names is `None`.
 - **Status**: Implemented.
-- **Stack**: Pops as per arg; pushes namespace scope (KosDynNs). **Stack layout (opa > 0):** `[..., NSPEC, val_0, val_1, ..., val_{N-1}, NAMES]` with TOS = NAMES (tuple of N names). VM pops NAMES, then the N values, then NSPEC; binds names to values in the new namespace. For opa = 0: stack is `[..., NSPEC]`; only NSPEC is popped.
+- **Constant pool**: NSPEC and NAMES are loaded from the pool; they are not placed on the stack by preceding `CONST` opcodes.
+- **Stack**: If `opa == 0`, no stack operands for bindings. If `opa > 0`, stack is `[..., val_0, ..., val_{opa-1}]` with TOS = last value; names come from the extra row. The VM binds `names[i]` to `val[i]`, then drops `opa` stack slots.
 - **Pushes:** KOS_DYN_NS (static extent KOS_EXT_NS; stores saved namespace for restore on POP_NS).
 - **Invariants**: Extent kind KOS_EXT_NS.
 
-**Example:** Push namespace with 0 (NSPEC only). Stack unchanged except chain.
+**Example:** Push namespace with no bound values (names = None). Operand row holds NSPEC and None; stack carries only the chain side effect until body runs.
 
 | index | opcode  | arg | arg view | comment |
 |------:|--------|-----|----------|---------|
-| 0     | PUSH_NS| 0   | 0        | push NS region; chain: [..., KosDynNs] |
+| 0     | PUSH_NS| 0   | extra row 0 (e.g. c# nspec, c# None) | push NS region; chain: [..., KosDynNs] |
 | 1     | …      | …   | …        | body |
 | 2     | POP_NS | 0   | 0        | pop NS; restore previous namespace |
 

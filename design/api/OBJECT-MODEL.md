@@ -28,9 +28,9 @@ Koskari uses PUSH_COLLECT, POP_COLLECT, and BUILD_CLASS. The class body runs
 inside a CollectorNamespace; the class value is produced by BUILD_CLASS
 (which calls the metaclass), not by the body's return value.
 
-**PUSH_COLLECT** (same style as PUSH_NS, COUNT arg)
+**PUSH_COLLECT** (CONST arg: constant-pool index of NamespaceSpec; does not match PUSH_NS, which is EXTRA with NSPEC and names in the extra row)
 
-1. Pop NSPEC (and optionally values/names if arg > 0).
+1. Read NSPEC from the constant pool via the instruction operand.
 2. Create CollectorNamespace from NSPEC, install as frame ns.
 3. Push KOS_DYN_COLLECT node (saves prior ns for restore).
 

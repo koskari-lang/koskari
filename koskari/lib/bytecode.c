@@ -1920,7 +1920,8 @@ static int namespace_spec_fast_slot_limit(
    Called after emit when ``code`` and ``extra`` are fully materialized so we
    can validate both scalar FAST opcodes and FAST slots embedded in EXTRA rows
    (CALL_FAST-style operands). Mirrors ``Compiler.convert_fast``: walk the
-   instruction stream in order, track pending ``NamespaceSpec`` from ``CONST``,
+   instruction stream in order, track pending ``NamespaceSpec`` from ``CONST``
+   (for ``PUSH_COLLECT`` fallback), read ``PUSH_NS`` nspec from the EXTRA row,
    push/pop slot limits on ``PUSH_NS`` / ``PUSH_COLLECT`` / ``POP_NS`` /
    ``POP_COLLECT``. The active limit is the root ``Code`` NamespaceSpec when
    the namespace stack is empty, else the innermost pushed extent.
@@ -1952,7 +1953,7 @@ static int validate_fast_slots(
 
   uint32_t ns_stack[DERIVE_EXTENT_STACK_MAX];
   int depth = 0;
-  /* Borrowed ref: last CONST NamespaceSpec, matching convert_fast ``nspec`` */
+  /* Borrowed ref: last CONST NamespaceSpec (for PUSH_COLLECT fallback) */
   PyObject *pending = NULL;
 
   for (uint32_t i = 0; i < code_len; i++) {
@@ -2016,11 +2017,23 @@ static int validate_fast_slots(
         pending = val;
       }
     } else if (op == KOS_OP_PUSH_NS) {
-      /* Mirror convert_fast: nspec comes from preceding CONST NamespaceSpec.
-         Malformed streams are left to extent validation; skip push if missing. */
-      if (pending && KosNamespaceSpec_CheckExact(pending)) {
+      /* Nspec cpool index is extra row a0 (schema CONST, CONST, NOARG, NOARG). */
+      uint16_t eidx = code[i].arg;
+      if (eidx >= extra_len) {
+        PyErr_SetString(PyExc_RuntimeError, "EXTRA index out of bounds");
+        return -1;
+      }
+      KosExtra row = extra[eidx];
+      uint32_t ci = row.a0;
+      if (ci >= cpool_len) {
+        PyErr_SetString(PyExc_RuntimeError,
+                        "CONST operand index out of bounds");
+        return -1;
+      }
+      PyObject *ns = cpool[ci];
+      if (ns && KosNamespaceSpec_CheckExact(ns)) {
         uint32_t lim = 0;
-        if (namespace_spec_fast_slot_limit(pending, &lim)) {
+        if (namespace_spec_fast_slot_limit(ns, &lim)) {
           return -1;
         }
         if (depth >= DERIVE_EXTENT_STACK_MAX) {

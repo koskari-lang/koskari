@@ -52,8 +52,7 @@ def _make_truthy_code():
 def _make_push_ns_code():
     child_nspec = NamespaceSpec("let", ("x", "y"), ("outer",))
     instr = (
-        [OpCode.KOS_OP_CONST, child_nspec],
-        [OpCode.KOS_OP_PUSH_NS, 0],
+        [OpCode.KOS_OP_PUSH_NS, (child_nspec, None, 0, 0)],
         [OpCode.KOS_OP_CONST, None],
         [OpCode.KOS_OP_POP_NS, 1],
         [OpCode.KOS_OP_RETURN, 1],
@@ -158,8 +157,8 @@ class TestDisNgHelpers(unittest.IsolatedAsyncioTestCase):
     async def test_build_ns_const_map(self):
         code = _make_push_ns_code()
         ns_map = await _build_ns_const_map(code)
-        self.assertIn(1, ns_map)
-        self.assertEqual(ns_map[1], 0)
+        self.assertIn(0, ns_map)
+        self.assertEqual(ns_map[0], 0)
 
     async def test_dis_non_code_raises(self):
         with self.assertRaises(TypeError):

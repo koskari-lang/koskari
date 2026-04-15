@@ -93,7 +93,7 @@ Built by `ByteCodeFragment.as_namespace_spec()` (via pragma):
 ### Where NamespaceSpec Appears
 
 1. **Code.namespace_spec** — The baseline spec for a function or expression's scope.
-2. **Constant pool** — Emitted before PUSH_NS or PUSH_COLLECT; describes a child scope.
+2. **Constant pool** — Child NamespaceSpecs are interned here. `PUSH_NS` references NSPEC (and optional names tuple) via its EXTRA operand row; `PUSH_COLLECT` references NSPEC via its CONST operand.
 3. **FunctionSpec** — Wraps a Code; the Code's namespace_spec describes the function body.
 
 ---
@@ -150,8 +150,8 @@ between the current Code and nested functions; they contribute their
 | Phase | NamespaceSpec |
 |-------|---------------|
 | Function invocation | Code.namespace_spec → KosNamespace_FromSpec → ns_init_syms(local_syms, closure_syms, global_syms) |
-| PUSH_NS execution | NSPEC from cpool → KosNamespace_FromSpec(nspec, parent) |
-| PUSH_COLLECT execution | Same as PUSH_NS |
+| PUSH_NS execution | NSPEC (and names tuple or None) from cpool via extra row → KosNamespace_FromSpec(nspec, parent); bindings from stack when names non-empty |
+| PUSH_COLLECT execution | NSPEC from cpool via CONST operand → same creation pattern; no stack NSPEC |
 
 ---
 
@@ -199,8 +199,8 @@ between the current Code and nested functions; they contribute their
 - **Inner lambda:** Fragment has `requests_for_write = ['x']`, `requests = ['x']`. `x` is in the let scope.
 - **Complete(inner):** NamespaceSpec has `closure_syms = ('x',)`. Pragma stores `request_for_write_syms = ('x',)`. Code created.
 - **Child fragment:** After body compiles, has instructions including CONST FunctionSpec(inner_code). `as_namespace_spec()` → child NamespaceSpec with `local_syms = ('x',)` (from the let binding), `closure_syms = ()`, etc.
-- **child_namespace exit:** Emits CONST nspec (child's NamespaceSpec), PUSH_NS, child.instructions, POP_NS. Parent (let) fragment gets these instructions.
-- **Complete(let):** The let fragment's instructions include CONST child_nspec, PUSH_NS, ... The constant pool contains both the child NamespaceSpec and the FunctionSpec(inner_code). Cpool scan: finds FunctionSpec(inner_code). Merges inner's closure_syms and request_for_write_syms into the let fragment. But the let fragment is the *parent* of the child—the child's instructions are inlined. The let fragment does not have a Code of its own in the same way; it becomes part of the expression Code. The Code's constants_pool has: child_nspec (NamespaceSpec with local_syms=('x',)), FunctionSpec(inner_code). Validation: root Code. Recurse into FunctionSpec(inner_code). For inner, ancestor_nspecs = (root_nspec, child_nspec). Child_nspec has local_syms = ('x',). Satisfied includes 'x'. **OK.**
+- **child_namespace exit:** Emits PUSH_NS with (nspec, names tuple or None) in the EXTRA operand tuple, then child.instructions, POP_NS. Parent (let) fragment gets these instructions.
+- **Complete(let):** The let fragment's instructions include PUSH_NS (interning child NamespaceSpec and names into the pool), ... The constant pool contains both the child NamespaceSpec and the FunctionSpec(inner_code). Cpool scan: finds FunctionSpec(inner_code). Merges inner's closure_syms and request_for_write_syms into the let fragment. But the let fragment is the *parent* of the child—the child's instructions are inlined. The let fragment does not have a Code of its own in the same way; it becomes part of the expression Code. The Code's constants_pool has: child_nspec (NamespaceSpec with local_syms=('x',)), FunctionSpec(inner_code). Validation: root Code. Recurse into FunctionSpec(inner_code). For inner, ancestor_nspecs = (root_nspec, child_nspec). Child_nspec has local_syms = ('x',). Satisfied includes 'x'. **OK.**
 
 ---
 
@@ -212,7 +212,7 @@ between the current Code and nested functions; they contribute their
 - **Lambda:** `requests = ['a','b']`, no requests_for_write. Closure over both let bindings.
 - **Complete(lambda):** NamespaceSpec has `closure_syms = ('a','b')`, `request_for_write_syms = ()`.
 - **Inner let child:** NamespaceSpec has `local_syms = ('b',)`. Its instructions include CONST FunctionSpec(lambda_code). Constant pool: inner let's nspec, lambda's FunctionSpec.
-- **Outer let:** Instructions include CONST outer_child_nspec, PUSH_NS, inner let instructions. Constant pool: outer child nspec (local_syms=('a',)), inner child nspec (local_syms=('b',)), FunctionSpec(lambda_code).
+- **Outer let:** Instructions include PUSH_NS (outer child nspec and names in EXTRA operands), then inner let instructions. Constant pool: outer child nspec (local_syms=('a',)), inner child nspec (local_syms=('b',)), FunctionSpec(lambda_code).
 - **Cpool scan:** Root fragment = let fragment. Scan instructions; find CONST FunctionSpec(lambda_code). Merge lambda's closure_syms into let fragment.
 - **Validation:** Root Code's constants_pool includes outer_let_nspec, inner_let_nspec, FunctionSpec(lambda_code). For lambda: ancestor_nspecs = (root_nspec, outer_let_nspec, inner_let_nspec). Satisfied = outer.local_syms ∪ inner.local_syms = {'a','b'}. Lambda's request_for_write_syms is empty. **OK.**
 - **Runtime:** Expression runs in module ns. PUSH_NS creates outer let ns (a), inner let ns (b). Lambda built with inner let ns as parent. Closure lookup finds a and b. Root Code's closure_syms on the expression are irrelevant—expressions run in the given parent (module), not in a namespace built from the spec.
