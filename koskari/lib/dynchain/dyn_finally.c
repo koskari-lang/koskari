@@ -70,3 +70,15 @@ void kos_dyn_pop_finally(KosContext *ctx, KosDynFinally *node) {
     kos_dynfinally_free(node);
   }
 }
+
+
+/* === GC traversal === */
+
+
+/**
+   GC traverse a KOS_DYN_FINALLY: visit handling result when present.
+*/
+static int dynnode_traverse_finally(KosDynNode *node, visitproc visit, void *arg) {
+  Py_VISIT(KosDynFinally_HANDLING_RESULT((KosDynFinally *) node));
+  return 0;
+}

@@ -504,4 +504,25 @@ int finalize_provisional_with_enter(KosContext *ctx, PyObject *result,
 }
 
 
+/* === GC traversal === */
+
+
+/**
+   GC traverse a KOS_DYN_WITH: visit mgr, enter, exit, and name.
+*/
+static int dynnode_traverse_with(KosDynNode *node, visitproc visit, void *arg) {
+  KosDynWith *with_node = (KosDynWith *) node;
+  Py_VISIT(KosDynWith_MGR(with_node));
+  Py_VISIT(KosDynWith_ENTER(with_node));
+  Py_VISIT(KosDynWith_EXIT(with_node));
+  Py_VISIT(KosDynWith_NAME(with_node));
+  if (KosDynWith_PHASE(with_node) == KOS_WITH_PHASE_PENDING_EXIT_AWAIT) {
+    Py_VISIT(KosDynWith_EXC_TYP(with_node));
+    Py_VISIT(KosDynWith_EXC_VAL(with_node));
+    Py_VISIT(KosDynWith_EXC_TB(with_node));
+  }
+  return 0;
+}
+
+
 // The end.

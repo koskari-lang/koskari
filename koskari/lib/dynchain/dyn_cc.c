@@ -77,3 +77,17 @@ void kos_dyn_pop_cc(KosContext *ctx, KosDynCC *cc) {
   kos_dyncc_free(cc);
 }
 
+
+/* === GC traversal === */
+
+
+/**
+   GC traverse a KOS_DYN_CC: no PyObject refs on the node.
+*/
+static int dynnode_traverse_cc(KosDynNode *node, visitproc visit, void *arg) {
+  (void) node;
+  (void) visit;
+  (void) arg;
+  return 0;
+}
+

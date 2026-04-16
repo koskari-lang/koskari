@@ -56,3 +56,17 @@ int kos_dyn_push_shift(KosContext *ctx) {
   return kos_dyn_push(ctx, (KosDynNode *) shift);
 }
 
+
+/* === GC traversal === */
+
+
+/**
+   GC traverse a KOS_DYN_SHIFT: no PyObject refs on the node.
+*/
+static int dynnode_traverse_shift(KosDynNode *node, visitproc visit, void *arg) {
+  (void) node;
+  (void) visit;
+  (void) arg;
+  return 0;
+}
+

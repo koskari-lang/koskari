@@ -78,3 +78,16 @@ void kos_dyn_pop_foreach(KosContext *ctx, KosDynForeach *node) {
     kos_dynforeach_free(node);
   }
 }
+
+
+/* === GC traversal === */
+
+
+/**
+   GC traverse a KOS_DYN_FOREACH: visit result and iterator refs.
+*/
+static int dynnode_traverse_foreach(KosDynNode *node, visitproc visit, void *arg) {
+  Py_VISIT(KosDynForeach_RESULT((KosDynForeach *) node));
+  Py_VISIT(KosDynForeach_ITER((KosDynForeach *) node));
+  return 0;
+}

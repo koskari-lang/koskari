@@ -91,3 +91,20 @@ void kos_dyn_yieldfrom_unwind(KosContext *ctx, KosDynYieldFrom *node) {
     kos_yieldfrom_close_delegate(node);
 }
 
+
+/* === GC traversal === */
+
+
+/**
+   GC traverse a KOS_DYN_YIELD_FROM: visit the delegate subiterator and
+   any pending or in-flight value references.
+*/
+static int dynnode_traverse_yield_from(KosDynNode *node, visitproc visit, void *arg) {
+  KosDynYieldFrom *yf = (KosDynYieldFrom *) node;
+  Py_VISIT(KosDynYieldFrom_DELEGATE(yf));
+  Py_VISIT(KosDynYieldFrom_PENDING_ARG(yf));
+  Py_VISIT(KosDynYieldFrom_PENDING_ARG_TYPE(yf));
+  Py_VISIT(KosDynYieldFrom_INFLIGHT(yf));
+  return 0;
+}
+

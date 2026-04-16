@@ -270,3 +270,16 @@ KosDynNext *kos_dyn_next_clone(KosDynNext *node) {
   KosDynNext_N((KosDynNode *) clone) = KosDynNext_N((KosDynNode *) node);
   return clone;
 }
+
+
+/* === GC traversal === */
+
+
+/**
+   GC traverse a KOS_DYN_NEXT: visit async gen object and optional default.
+*/
+static int dynnode_traverse_next(KosDynNode *node, visitproc visit, void *arg) {
+  Py_VISIT(KosDynNext_AGEN_OBJ(node));
+  Py_VISIT(KosDynNext_DEFAULT_VAL(node));
+  return 0;
+}

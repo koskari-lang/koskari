@@ -62,3 +62,17 @@ void kos_dyn_pop_try(KosContext *ctx, KosDynTry *node) {
     kos_dyntry_free(node);
   }
 }
+
+
+/* === GC traversal === */
+
+
+/**
+   GC traverse a KOS_DYN_TRY: no PyObject refs on the node.
+*/
+static int dynnode_traverse_try(KosDynNode *node, visitproc visit, void *arg) {
+  (void) node;
+  (void) visit;
+  (void) arg;
+  return 0;
+}

@@ -230,3 +230,24 @@ int kos_dyn_detach_top_frame(KosContext *ctx, KosDynFrame **frame_out) {
     *frame_out = frame;
   return 0;
 }
+
+
+/* === GC traversal === */
+
+
+/**
+   GC traverse a KOS_DYN_FRAME: visit the frame's namespace and every
+   object on the frame's stack block chain.  Used by kos_dynnode_traverse.
+*/
+static int dynnode_traverse_frame(KosDynNode *node, visitproc visit, void *arg) {
+  KosDynFrame *frame = (KosDynFrame *) node;
+  Py_VISIT(KosDynFrame_NS(frame));
+  KosStackBlock *b = KosDynFrame_STACK(frame);
+  while (b) {
+    for (size_t i = b->len; i--; ) {
+      Py_VISIT(b->objs[i]);
+    }
+    b = KosStackBlock_PARENT(b);
+  }
+  return 0;
+}

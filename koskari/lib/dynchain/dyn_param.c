@@ -279,3 +279,18 @@ void kos_dyn_pop_param(KosContext *ctx, KosDynParam *node) {
   KosContext_CHAIN_VERSION(ctx)++;
   kos_dynparam_free(node);
 }
+
+
+/* === GC traversal === */
+
+
+/**
+   GC traverse a KOS_DYN_PARAM: visit the parameter bindings dict and
+   the saved bindings from outer scopes.
+*/
+static int dynnode_traverse_param(KosDynNode *node, visitproc visit, void *arg) {
+  KosDynParam *param_node = (KosDynParam *) node;
+  Py_VISIT(KosDynParam_BINDINGS(param_node));
+  Py_VISIT(KosDynParam_SAVED(param_node));
+  return 0;
+}
