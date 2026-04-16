@@ -82,14 +82,14 @@ KOS_OP_HANDLER(NEXT) {
       return KOS_OP_POST_ERR();
     }
     agen->in_progress = 1;
-    KosContext_PENDING_AGEN(ctx) = (void *) agen;
-    if (default_val) {
-      Py_INCREF(default_val);
-      KosContext_PENDING_AGEN_DEFAULT(ctx) = default_val;
-    } else {
-      KosContext_PENDING_AGEN_DEFAULT(ctx) = NULL;
+    if (kos_dyn_push_next_for_kos_agen(ctx, (PyObject *) agen, default_val,
+                                        (int) n)
+        < 0) {
+      agen->in_progress = 0;
+      Py_DECREF(iter);
+      Py_XDECREF(default_val);
+      return KOS_OP_POST_ERR();
     }
-    KosContext_PENDING_AGEN_N(ctx) = (int) n;
     if (op_attach_koskari_agen_frame(ctx, agen, iter, default_val) < 0)
       return KOS_OP_POST_ERR();
     Py_DECREF(iter);

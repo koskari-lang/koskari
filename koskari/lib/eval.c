@@ -225,29 +225,46 @@ static int kos_return_delimited(KosContext *ctx, PyObject *val, KosEvent *out_ev
 
 
 /**
-   Unwind pending async gen on error. If ctx has a pending async gen (NEXT or
-   ITER_NEXT), and the top frame is the gen frame, detach it, close the gen,
-   and clear state. Call when propagating an exception so the gen is properly
-   closed.
+   On exception: if we are inside a Koskari async gen step (NEXT or ITER_NEXT),
+   detach the gen frame, close the gen, and clear NEXT / FOREACH boundary state.
 */
-static void clear_pending_agen_on_error(KosContext *ctx) {
-  if (! CURRENT_FRAME(ctx) || KosDynNode_PARENT(CURRENT_FRAME(ctx)) == NULL)
-    return;
+static void clear_kos_agen_boundary_on_error(KosContext *ctx) {
 
-  if (! KosContext_PENDING_AGEN(ctx))
-    return;
+  KosDynFrame *cf = KosContext_FRAME_TOP(ctx);
+  KosDynNode *top = KosContext_DYN_TOP(ctx);
+  KosDynNext *dn;
+  KosDynForeach *fe;
+  KosPyAsyncGen *agen;
 
-  KosPyAsyncGen *agen = (KosPyAsyncGen *) KosContext_PENDING_AGEN(ctx);
-  KosDynFrame *detached_frame = NULL;
-  if (kos_dyn_detach_top_frame(ctx, &detached_frame) == 0 && detached_frame) {
-    agen->closed = 1;
-    agen->in_progress = 0;
-    kos_dynframe_free(detached_frame);
+  if (! cf || ! top || ! KosDynNode_IS_FRAME(top))
+    return;
+  {
+    KosDynNode *par = KosDynNode_PARENT(top);
+    if (! par || ! KosDynNode_IS_GEN(par))
+      return;
   }
 
-  KosContext_PENDING_AGEN(ctx) = NULL;
-  Py_XDECREF(KosContext_PENDING_AGEN_DEFAULT(ctx));
-  KosContext_PENDING_AGEN_DEFAULT(ctx) = NULL;
+  dn = kos_dyn_find_next_above_frame(ctx);
+  fe = kos_dyn_find_awaiting_foreach(ctx);
+  if (! dn && ! fe)
+    return;
+
+  agen = dn ? (KosPyAsyncGen *) KosDynNext_AGEN_OBJ((KosDynNode *) dn)
+            : (KosPyAsyncGen *) KosDynForeach_ITER(fe);
+
+  {
+    KosDynFrame *detached_frame = NULL;
+    if (kos_dyn_detach_top_frame(ctx, &detached_frame) == 0 && detached_frame) {
+      agen->closed = 1;
+      agen->in_progress = 0;
+      kos_dynframe_free(detached_frame);
+    }
+  }
+
+  if (fe)
+    KosDynForeach_ITER_STEP_PHASE(fe) = KOS_FOREACH_ITER_STEP_IDLE;
+  if (dn)
+    kos_dyn_unlink_next_node(ctx, dn);
 }
 
 
@@ -430,7 +447,8 @@ static KosEvalMode revive_yield(
 
   SAYF("[gen] revive_yield ENTER suspend=%d resume_gen=%p send_val=%p "
        "throw_typ=%p throw_exc=%p dyn_top=%p frame_top=%p\n",
-       KosContext_SUSPENSION_EVENT(ctx), (void *) KosContext_RESUME_GEN(ctx),
+       KosContext_SUSPENSION_EVENT(ctx),
+       (void *) KosContext_RESUME_GEN(ctx),
        (void *) send_val, (void *) throw_typ, (void *) throw_exc,
        (void *) KosContext_DYN_TOP(ctx), (void *) KosContext_FRAME_TOP(ctx));
 
@@ -751,7 +769,7 @@ static KosEvalMode process_raise(KosContext *ctx, KosEvent *out_ev) {
 
   if (KoskariContinuationApply && PyErr_ExceptionMatches(KoskariContinuationApply))
     return handle_continuation_apply(ctx, out_ev);
-  clear_pending_agen_on_error(ctx);
+  clear_kos_agen_boundary_on_error(ctx);
 
   {
     int tl = try_local_exception_handler(ctx, out_ev);
@@ -1048,12 +1066,6 @@ KosContext *kos_context_new(KosDynFrame *top) {
   KosContext_INJECT_TYPE(ctx) = NULL;
   KosContext_INJECT_VALUE(ctx) = NULL;
 
-  /* Pending async gen (NEXT and ITER_NEXT) */
-  KosContext_PENDING_AGEN(ctx) = NULL;
-  KosContext_PENDING_AGEN_DEFAULT(ctx) = NULL;
-  KosContext_PENDING_AGEN_N(ctx) = 0;
-  KosContext_RESUME_GEN(ctx) = NULL;
-
   KosContext_FLAGS(ctx) = 0;
 
   return ctx;
@@ -1067,11 +1079,6 @@ void kos_context_free(KosContext *ctx) {
 
   Py_XDECREF(KosContext_TOKEN(ctx));
   KosContext_TOKEN(ctx) = NULL;
-
-  if (KosContext_RESUME_GEN(ctx)) {
-    kos_dyngen_release(KosContext_RESUME_GEN(ctx));
-    KosContext_RESUME_GEN(ctx) = NULL;
-  }
 
   /* Free the dynamic chain */
   kos_dynchain_free(KosContext_DYN_TOP(ctx), NULL);
@@ -1100,7 +1107,6 @@ void kos_context_free(KosContext *ctx) {
   Py_XDECREF(KosContext_INJECT_VALUE(ctx));
   Py_XDECREF(KosContext_PENDING_RETURN_VALUE(ctx));
   KosContext_PENDING_RETURN_VALUE(ctx) = NULL;
-  Py_XDECREF(KosContext_PENDING_AGEN_DEFAULT(ctx));
   Py_XDECREF(KosContext_DOMAIN(ctx));
   KosContext_DOMAIN(ctx) = NULL;
 
@@ -1136,15 +1142,16 @@ int kos_context_traverse(
   Py_VISIT(KosContext_PENDING_DEFER(ctx));
   Py_VISIT(KosContext_INJECT_TYPE(ctx));
   Py_VISIT(KosContext_INJECT_VALUE(ctx));
-  Py_VISIT(KosContext_PENDING_AGEN_DEFAULT(ctx));
 
-  if (KosContext_RESUME_GEN(ctx)) {
-    int res = kos_dynnode_traverse((KosDynNode *) KosContext_RESUME_GEN(ctx),
-                                   visit, arg);
-    if (res)
-      return res;
-  }
-
+  /* Frozen GEN awaiting revive (was ctx->resume_gen; now top frame only) */
+  // if (KosContext_FRAME_TOP(ctx)
+  //     && KosDynFrame_RESUME_GEN(KosContext_FRAME_TOP(ctx))) {
+  //   int res = kos_dynnode_traverse(
+  //       KosDynFrame_RESUME_GEN(KosContext_FRAME_TOP(ctx)),
+  //       visit, arg);
+  //   if (res)
+  //     return res;
+  // }
   /* Traverse the dynamic chain */
   int res = kos_dynchain_traverse(KosContext_DYN_TOP(ctx), NULL, visit, arg);
   if (res)
@@ -2157,25 +2164,27 @@ enum {
 
 /**
    Shared install of Koskari async gen frame onto consumer ctx.  mode NEXT
-   clears pending_agen and DECREFs iter/default_val on failure; ITER_NEXT only
-   resets in_progress.
+   pops KOS_DYN_NEXT and DECREFs iter/default_val on failure; ITER_NEXT clears
+   FOREACH iter_step_phase on failure.
 */
 static int attach_koskari_gen_core(
     KosContext *ctx,
     KosPyAsyncGen *agen,
     int mode,
     PyObject *iter,
-    PyObject *default_val) {
+    PyObject *default_val,
+    KosDynForeach *iter_next_region) {
 
   KosDynGen *gen = (KosDynGen *) agen->gen;
 
   if (! gen || ! KosDynGen_ACTIVE(gen)) {
     if (mode == KOS_ATTACH_AGEN_MODE_NEXT) {
-      KosContext_PENDING_AGEN(ctx) = NULL;
-      Py_XDECREF(KosContext_PENDING_AGEN_DEFAULT(ctx));
-      KosContext_PENDING_AGEN_DEFAULT(ctx) = NULL;
+      kos_dyn_next_abort_after_failed_attach(ctx);
       Py_DECREF(iter);
       Py_XDECREF(default_val);
+    } else if (mode == KOS_ATTACH_AGEN_MODE_ITER_NEXT && iter_next_region) {
+      KosDynForeach_ITER_STEP_PHASE(iter_next_region) =
+          KOS_FOREACH_ITER_STEP_IDLE;
     }
     agen->in_progress = 0;
     PyErr_SetString(PyExc_RuntimeError, "async generator has no active frame");
@@ -2187,11 +2196,12 @@ static int attach_koskari_gen_core(
 
   if (kos_dyn_gen_install(ctx, gen) < 0) {
     if (mode == KOS_ATTACH_AGEN_MODE_NEXT) {
-      KosContext_PENDING_AGEN(ctx) = NULL;
-      Py_XDECREF(KosContext_PENDING_AGEN_DEFAULT(ctx));
-      KosContext_PENDING_AGEN_DEFAULT(ctx) = NULL;
+      kos_dyn_next_abort_after_failed_attach(ctx);
       Py_DECREF(iter);
       Py_XDECREF(default_val);
+    } else if (mode == KOS_ATTACH_AGEN_MODE_ITER_NEXT && iter_next_region) {
+      KosDynForeach_ITER_STEP_PHASE(iter_next_region) =
+          KOS_FOREACH_ITER_STEP_IDLE;
     }
     agen->in_progress = 0;
     return -1;
@@ -2205,8 +2215,8 @@ static int attach_koskari_gen_core(
    Install GEN onto consumer ctx (Koskari flatten). Clears agen->ctx chain
    so state lives only in GEN. kos_dyn_gen_install pushes Py_None.
    Caller must have already: checked in_progress, handled closed/ctx.
-   Caller must have set KosContext_PENDING_AGEN(ctx) and mode-specific fields.
-   On error: clears pending_agen, resets in_progress; for NEXT mode also
+   Caller must have pushed KOS_DYN_NEXT before calling (NEXT opcode).
+   On error: aborts NEXT node, resets in_progress; for NEXT mode also
    DECREFs iter and default_val.
 */
 static int op_attach_koskari_agen_frame(
@@ -2216,22 +2226,24 @@ static int op_attach_koskari_agen_frame(
     PyObject *default_val) {
 
   return attach_koskari_gen_core(ctx, agen, KOS_ATTACH_AGEN_MODE_NEXT,
-                                 iter, default_val);
+                                 iter, default_val, NULL);
 }
 
 
 /**
    ITER_NEXT variant: install GEN onto consumer ctx. On error clear
-   context pending_agen.
+   FOREACH iter_step_phase.
 */
 static int op_attach_koskari_agen_frame_for_iter_next(
     KosContext *ctx,
     KosPyAsyncGen *agen,
     KosDynNode *region) {
 
-  (void) region;
+  KosDynForeach *fe = (KosDynNode_IS_FOREACH(region))
+                          ? (KosDynForeach *) region
+                          : NULL;
   return attach_koskari_gen_core(ctx, agen, KOS_ATTACH_AGEN_MODE_ITER_NEXT,
-                                 NULL, NULL);
+                                 NULL, NULL, fe);
 }
 
 
@@ -2545,7 +2557,7 @@ entry_mode_dispatch:
 
   if (mode == KOS_MODE_EXCEPTION) {
     int tl;
-    clear_pending_agen_on_error(ctx);
+    clear_kos_agen_boundary_on_error(ctx);
     tl = try_local_exception_handler(ctx, out_ev);
     SAYF("[eval] phase_entry try_local ret=%d out_kind=%d\n",
          tl, (int) KosEvent_KIND(out_ev));
@@ -2723,87 +2735,58 @@ static KosEvalStep kos_eval_prepare_next_insn(
 
 
 /**
-   Koskari async-gen flatten: after YIELD walk with PENDING_AGEN, or RETURN
-   exhaustion with PENDING_AGEN.  For YIELD, caller already ran
-   kos_dyn_transition with KOS_TRANS_WALK_HANDLE_YIELD.
+   Deliver YIELD/RETURN from a flattened Koskari async gen to the standalone
+   NEXT opcode (KOS_DYN_NEXT) or ITER_NEXT (FOREACH phase). Caller already ran
+   kos_dyn_transition with KOS_TRANS_WALK_HANDLE_YIELD for YIELD.
 */
-static KosEvalStep eval_post_opcode_pending_agen(
-    KosContext *ctx,
-    KosEvent *out_ev) {
+static KosEvalStep dispatch_boundary_event(KosContext *ctx, KosEvent *out_ev) {
 
   if (KosEvent_KIND(out_ev) == KOS_EV_YIELD) {
-    KosPyAsyncGen *agen;
-    PyObject *payload;
-
-    agen = (KosPyAsyncGen *) KosContext_PENDING_AGEN(ctx);
-    payload = KosEvent_PAYLOAD(out_ev);
-    if (KosStackBlock_PushRef(&CURRENT_STACK(ctx), payload) < 0) {
-      Py_XDECREF(payload);
-      return KOS_STEP_FATAL_ERROR;
-    }
-    Py_DECREF(payload);
-    KosEvent_PAYLOAD(out_ev) = NULL;
-    KosEvent_KIND(out_ev) = KOS_EV_NONE;
-    KosContext_PENDING_AGEN(ctx) = NULL;
-    Py_XDECREF(KosContext_PENDING_AGEN_DEFAULT(ctx));
-    KosContext_PENDING_AGEN_DEFAULT(ctx) = NULL;
-    agen->in_progress = 0;
-    return KOS_STEP_REPROLOGUE;
-  }
-
-  {
-    KosPyAsyncGen *agen;
-    PyObject *val;
-
-    agen = (KosPyAsyncGen *) KosContext_PENDING_AGEN(ctx);
-    val = KosEvent_PAYLOAD(out_ev);
-    if (kos_dyn_gen_unwind_exhausted(ctx) < 0) {
-      Py_DECREF(val);
-      return KOS_STEP_FATAL_ERROR;
-    }
-    agen->closed = 1;
-    agen->in_progress = 0;
-    if (KosContext_PENDING_AGEN_N(ctx) == 0) {
-      KosDynNode *r = kos_find_node_for_loop(ctx);
-
-      if (r) {
-        KosDynForeach_EXHAUSTED((KosDynForeach *) r) = 1;
-        CURRENT_PC(ctx) = KosDynForeach_ITER_NEXT_ELSE_PC((KosDynForeach *) r);
-      }
-      KosContext_PENDING_AGEN(ctx) = NULL;
-      KosContext_PENDING_AGEN_DEFAULT(ctx) = NULL;
-      Py_DECREF(val);
-
-    } else if (KosContext_PENDING_AGEN_N(ctx) == 2
-               && KosContext_PENDING_AGEN_DEFAULT(ctx)) {
-      if (KosStackBlock_PushRef(&CURRENT_STACK(ctx),
-                                KosContext_PENDING_AGEN_DEFAULT(ctx)) < 0) {
-        Py_XDECREF(KosContext_PENDING_AGEN_DEFAULT(ctx));
-        KosContext_PENDING_AGEN_DEFAULT(ctx) = NULL;
-        KosContext_PENDING_AGEN(ctx) = NULL;
-        Py_DECREF(val);
+    KosDynNext *next = kos_dyn_find_next_above_frame(ctx);
+    if (next) {
+      if (kos_dyn_next_deliver_yield(ctx, out_ev) < 0)
         return KOS_STEP_FATAL_ERROR;
-      }
-      Py_XDECREF(KosContext_PENDING_AGEN_DEFAULT(ctx));
-      Py_DECREF(val);
-
-    } else if (KosContext_PENDING_AGEN_N(ctx) == 1) {
-      Py_DECREF(val);
-      KosContext_PENDING_AGEN(ctx) = NULL;
-      KosContext_PENDING_AGEN_DEFAULT(ctx) = NULL;
-      PyErr_SetNone(PyExc_StopIteration);
-      return KOS_STEP_FATAL_ERROR;
-
-    } else {
-      Py_DECREF(val);
+      return KOS_STEP_REPROLOGUE;
     }
-
-    KosContext_PENDING_AGEN(ctx) = NULL;
-    KosContext_PENDING_AGEN_DEFAULT(ctx) = NULL;
-    KosEvent_PAYLOAD(out_ev) = NULL;
-    KosEvent_KIND(out_ev) = KOS_EV_NONE;
-    return KOS_STEP_REPROLOGUE;
+    {
+      KosDynForeach *fe = kos_dyn_find_awaiting_foreach(ctx);
+      if (fe) {
+        if (kos_dyn_foreach_deliver_yield_kos_agen(ctx, fe, out_ev) < 0)
+          return KOS_STEP_FATAL_ERROR;
+        return KOS_STEP_REPROLOGUE;
+      }
+    }
+    PyErr_SetString(PyExc_RuntimeError,
+                    "eval: boundary YIELD without NEXT/FOREACH Koskari agen state");
+    return KOS_STEP_FATAL_ERROR;
   }
+
+  if (KosEvent_KIND(out_ev) == KOS_EV_RETURN) {
+    KosDynNext *next = kos_dyn_find_next_above_frame(ctx);
+    if (next) {
+      if (kos_dyn_next_deliver_return(ctx, out_ev) < 0) {
+        if (PyErr_Occurred())
+          return KOS_STEP_FATAL_ERROR;
+        return KOS_STEP_REPROLOGUE;
+      }
+      return KOS_STEP_REPROLOGUE;
+    }
+    {
+      KosDynForeach *fe = kos_dyn_find_awaiting_foreach(ctx);
+      if (fe) {
+        if (kos_dyn_foreach_deliver_return_kos_agen(ctx, fe, out_ev) < 0)
+          return KOS_STEP_FATAL_ERROR;
+        return KOS_STEP_REPROLOGUE;
+      }
+    }
+    PyErr_SetString(PyExc_RuntimeError,
+                    "eval: boundary RETURN without NEXT/FOREACH Koskari agen state");
+    return KOS_STEP_FATAL_ERROR;
+  }
+
+  PyErr_SetString(PyExc_RuntimeError,
+                  "eval: dispatch_boundary_event unexpected event kind");
+  return KOS_STEP_FATAL_ERROR;
 }
 
 
@@ -2866,12 +2849,13 @@ static KosEvalStep eval_phase_post_opcode(
     }
     /* Koskari flatten: GEN was on consumer chain; freeze restored caller.
        Push value onto caller stack and continue (no event return). */
-    if (KosContext_PENDING_AGEN(ctx))
-      return eval_post_opcode_pending_agen(ctx, out_ev);
+    if (kos_dyn_need_kos_agen_boundary_deliver(ctx))
+      return dispatch_boundary_event(ctx, out_ev);
     KosContext_SUSPENSION_EVENT(ctx) = KOS_SUSP_YIELD;
 
-  } else if (KosEvent_KIND(out_ev) == KOS_EV_RETURN && KosContext_PENDING_AGEN(ctx)) {
-    return eval_post_opcode_pending_agen(ctx, out_ev);
+  } else if (KosEvent_KIND(out_ev) == KOS_EV_RETURN
+             && kos_dyn_need_kos_agen_boundary_deliver(ctx)) {
+    return dispatch_boundary_event(ctx, out_ev);
   }
 
   /* op_res < 0 with no PyErr and no suspension event is a fatal internal error */

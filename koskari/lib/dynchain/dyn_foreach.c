@@ -17,6 +17,7 @@ KosDynForeach *kos_dynforeach_new(KosDynNode *parent, uint32_t break_pc, uint32_
   KosDynForeach_ITER(node) = NULL;
   KosDynForeach_EXHAUSTED(node) = 0;
   KosDynForeach_ITER_NEXT_ELSE_PC(node) = 0;
+  KosDynForeach_ITER_STEP_PHASE(node) = KOS_FOREACH_ITER_STEP_IDLE;
   return node;
 }
 
@@ -40,6 +41,7 @@ KosDynForeach *kos_dynforeach_clone(KosDynForeach *node) {
   Py_XINCREF(KosDynForeach_ITER(clone));
   KosDynForeach_EXHAUSTED(clone) = KosDynForeach_EXHAUSTED(node);
   KosDynForeach_ITER_NEXT_ELSE_PC(clone) = KosDynForeach_ITER_NEXT_ELSE_PC(node);
+  KosDynForeach_ITER_STEP_PHASE(clone) = KosDynForeach_ITER_STEP_PHASE(node);
   return clone;
 }
 

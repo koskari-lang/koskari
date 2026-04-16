@@ -41,13 +41,13 @@ KOS_OP_HANDLER(ITER_NEXT) {
       return KOS_OP_RUN();
     }
     agen->in_progress = 1;
-    KosContext_PENDING_AGEN(ctx) = (void *) agen;
-    KosContext_PENDING_AGEN_DEFAULT(ctx) = NULL;
-    KosContext_PENDING_AGEN_N(ctx) = 0;
     KosDynForeach_ITER_NEXT_ELSE_PC((KosDynForeach *) region) = KosOp_ARG(insn);
+    KosDynForeach_ITER_STEP_PHASE((KosDynForeach *) region) =
+        KOS_FOREACH_ITER_STEP_AWAITING_KOS_AGEN;
     if (op_attach_koskari_agen_frame_for_iter_next(ctx, agen, region) < 0) {
       agen->in_progress = 0;
-      KosContext_PENDING_AGEN(ctx) = NULL;
+      KosDynForeach_ITER_STEP_PHASE((KosDynForeach *) region) =
+          KOS_FOREACH_ITER_STEP_IDLE;
       return KOS_OP_POST_ERR();
     }
     return KOS_OP_RUN();

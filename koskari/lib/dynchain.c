@@ -65,6 +65,7 @@ static const char *kos_dynnode_kind_names[] = {
   "SHIFT",
   "CC_RAISE",
   "GEN",
+  "NEXT",
   "UNKNOWN",
 };
 
@@ -173,6 +174,7 @@ static void kos_dynnode_return_to_freelist(KosDynNode *node) {
 #include "dynchain/dyn_finally.c"
 #include "dynchain/dyn_loop.c"
 #include "dynchain/dyn_foreach.c"
+#include "dynchain/dyn_next.c"
 #include "dynchain/dyn_ns.c"
 #include "dynchain/dyn_collect.c"
 #include "dynchain/dyn_yield_from.c"
@@ -376,6 +378,9 @@ void kos_dynnode_free(KosDynNode *node) {
       break;
     case KOS_DYN_GEN:
       kos_dyngen_release((KosDynGen *) node);
+      break;
+    case KOS_DYN_NEXT:
+      kos_dyn_next_free_payload(node);
       break;
     case KOS_DYN_COLLECT:
       kos_dyncollect_free((KosDynCollect *) node);
@@ -626,6 +631,8 @@ int kos_dyn_install(KosContext *ctx, KosDynNode *node, KosEvent *out_ev) {
       return 0;
     case KOS_DYN_GEN:
       return 0;
+    case KOS_DYN_NEXT:
+      return 0;
     default:
       return 0;
   }
@@ -789,6 +796,9 @@ int kos_dyn_unwind(KosContext *ctx, KosDynNode *node, KosXferEvent event,
       (void) out_ev;
       return cc_raise_unwind(ctx, node, NULL);
     case KOS_DYN_GEN:
+      (void) out_ev;
+      return 0;
+    case KOS_DYN_NEXT:
       (void) out_ev;
       return 0;
     default:
@@ -1109,6 +1119,8 @@ KosDynNode *kos_dyn_clone(KosDynNode *node) {
       PyErr_SetString(PyExc_RuntimeError,
                       "cannot clone generator boundary node");
       return NULL;
+    case KOS_DYN_NEXT:
+      return (KosDynNode *) kos_dyn_next_clone((KosDynNext *) node);
     case KOS_DYN_COLLECT:
       return (KosDynNode *) kos_dyncollect_clone((KosDynCollect *) node);
     default:
@@ -3873,6 +3885,10 @@ int kos_dynnode_traverse(KosDynNode *node, visitproc visit, void *arg) {
             KosDynGen_ACTIVE((KosDynGen *) node), visit, arg);
       break;
     }
+    case KOS_DYN_NEXT:
+      Py_VISIT(KosDynNext_AGEN_OBJ(node));
+      Py_VISIT(KosDynNext_DEFAULT_VAL(node));
+      break;
     case KOS_DYN_TRY:
     case KOS_DYN_FINALLY:
     case KOS_DYN_LOOP:

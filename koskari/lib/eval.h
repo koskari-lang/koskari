@@ -422,11 +422,6 @@ struct KosContext {
   /* --- Suspension: why we last suspended (set on return AWAIT/YIELD; cleared when running) --- */
   uint8_t suspension_event;  /* KosSuspensionEvent */
 
-  /* --- Pending async gen: NEXT and ITER_NEXT (Koskari gen) --- */
-  void *pending_agen;        /* KosPyAsyncGen * when set (avoid func.h in eval.h) */
-  PyObject *pending_agen_default;  /* default value for 2-arg NEXT (or NULL) */
-  int pending_agen_n;       /* 1 or 2 for NEXT; 0 for ITER_NEXT (ITER_NEXT exhausted path reads from region) */
-
   /* --- Resume from YIELD: GEN to install when reviving (agen path) --- */
   KosDynGen *resume_gen;     /* set during freeze; cleared after install on revive */
 
@@ -473,9 +468,6 @@ struct KosContext {
 #define KOS_INJECT_NONE   0
 #define KOS_INJECT_THROW  1
 #define KosContext_SUSPENSION_EVENT(c)      (((KosContext *)(c))->suspension_event)
-#define KosContext_PENDING_AGEN(c)           (((KosContext *)(c))->pending_agen)
-#define KosContext_PENDING_AGEN_DEFAULT(c)   (((KosContext *)(c))->pending_agen_default)
-#define KosContext_PENDING_AGEN_N(c)         (((KosContext *)(c))->pending_agen_n)
 #define KosContext_RESUME_GEN(c)             (((KosContext *)(c))->resume_gen)
 
 #define KosContext_FLAGS(c)                  (((KosContext *)(c))->flags)
