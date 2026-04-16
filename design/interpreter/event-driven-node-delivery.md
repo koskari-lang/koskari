@@ -20,6 +20,24 @@ The document is written for implementers: it states goals, proposes concrete mec
 
 ---
 
+## Agreed decisions (post-draft)
+
+The following choices **narrow** earlier ambiguous wording in this document and should be treated as **authoritative** for implementation:
+
+1. **`KOS_DYN_NEXT` is only for the standalone `NEXT` opcode**  
+   It exists solely to represent the consumer-side boundary when **`KOS_OP_NEXT`** attaches a **Koskari async generator** and flattens it into the same eval loop. Payload on that node is **NEXT-shaped** (e.g. arity 1 vs 2, default value for two-arg `NEXT`).
+
+2. **`ITER_NEXT` does not use `KOS_DYN_NEXT`**  
+   **`ITER_NEXT`** always runs inside an existing **`PUSH_FOREACH`** / **`KOS_DYN_FOREACH`** region. Iterator-step boundary state, **phase gating** (see §5), and completion policy for that construct live on **`FOREACH`** only. **`compile/for-each`** stays **`PUSH_FOREACH` → `ITER_NEXT`** with **no** extra dyn-node opcodes inserted.
+
+3. **No `PUSH_NEXT` / `POP_NEXT` (or any new opcode for this feature)**  
+   The **`KOS_DYN_NEXT`** node is **pushed conditionally at runtime** from the **`NEXT`** opcode handler when a boundary node is needed, and it **self-pops** after it has **accepted** the boundary event (yield/return) and applied stack/PC semantics—there is **no** separate POP opcode for this extent.
+
+4. **Remove `KosContext.pending_agen*` in the same effort**  
+   Equivalent state moves to **`KOS_DYN_NEXT`** (NEXT path) and **`KOS_DYN_FOREACH`** (ITER_NEXT path), not to ad-hoc **`KosContext`** fields.
+
+---
+
 ## 1. Ultimate goal
 
 1. **Single source of truth for “what happened at the boundary”**  
@@ -32,7 +50,7 @@ The document is written for implementers: it states goals, proposes concrete mec
    Opcodes **install** extents, **advance** the abstract machine (stack, PC), and **emit** events. They **do not** implement the full consumer policy for async gen flattening beyond what is strictly the opcode’s syntactic job (e.g. ITER_NEXT still **starts** the step; the **completion** policy moves to nodes).
 
 4. **Thin context**  
-   Remove **`pending_agen` / `pending_agen_default` / `pending_agen_n`** from `KosContext` once equivalent state lives on **frames** and/or **nodes** (some of this already exists on `KosDynFrame` as `PENDING_AGEN*` — the goal is **one** coherent place, not both context and frame).
+   Remove **`pending_agen` / `pending_agen_default` / `pending_agen_n`** from `KosContext` once equivalent state lives on **`KOS_DYN_NEXT`** (standalone **`NEXT`** path) and **`KOS_DYN_FOREACH`** (**`ITER_NEXT`** path), with **one** coherent place per construct (no duplicate mirrors on context).
 
 5. **Reuse the control-returned dispatch pattern**  
    Extend **`kos_dynnode_on_control_returned`** (or split/rename into a clearly named **“boundary delivery”** entry point) so it is invoked for **yield and return** completions from nested Koskari async generators, not only for WIND/WITH **after** `KOS_OP_RES_CONTROL_RETURNED` from RETURN. Eval remains **type-agnostic**: it calls **one** generic function with **`KosContext_DYN_TOP(ctx)`** and **`out_ev`**.
@@ -54,7 +72,7 @@ pending_agen_default
 pending_agen_n   /* 0 = ITER_NEXT, 1/2 = NEXT */
 ```
 
-Parallel state also exists on **`KosDynFrame`** (`KosDynFrame_PENDING_AGEN`, etc.). **RETURN.c** and **eval_post_opcode_pending_agen** branch on **both** context and frame depending on path. That splits **one logical protocol** across three layers (context, frame, opcode).
+**RETURN.c** and **eval_post_opcode_pending_agen** may consult **context** pending fields and opcode-local state today. That splits **one logical protocol** across **context** and **opcode** instead of **dyn nodes**. The refactor consolidates onto **`KOS_DYN_NEXT`** / **`FOREACH`** as above.
 
 ### 2.2 eval special cases
 
@@ -110,7 +128,7 @@ int kos_dynnode_on_boundary_event(
 2. **New:** After **`KOS_TRANS_WALK_HANDLE_YIELD`** (and any GEN freeze) when the **consumer** must accept the yield — **before** or **instead of** duplicating logic in **`eval_post_opcode_pending_agen`**.
 3. **New:** When **`KOS_EV_RETURN`** is delivered from an **exhausted** nested Koskari async gen in the flattening scenario — same entry point with **`out_ev->kind == KOS_EV_RETURN`**.
 
-Eval **only** passes **`KosContext_DYN_TOP(ctx)`** unless a separate design requires walking **down** from GEN to the **NEXT** boundary node (see §4.2).
+Eval **only** passes **`KosContext_DYN_TOP(ctx)`** unless routing rules require a short walk (e.g. after freeze, **NEXT** may be **dyn_top** when pushed by **`NEXT.c`**).
 
 ### 3.3 Capability bits
 
@@ -118,32 +136,34 @@ Add capability flags (exact names TBD; align with `KOS_DYN_CAP_*` in `dynchain.h
 
 | Cap | Intended meaning |
 |-----|------------------|
-| **Receives iterator boundary** | Node participates in **generic** boundary delivery for **yield/return** from an attached Koskari async gen (or delegated iterator) when installed as the **consumer** extent. |
+| **Receives iterator boundary** | Node participates in **generic** boundary delivery for **yield/return** from an attached Koskari async gen (or delegated iterator) when it is the **consumer** extent for that construct. |
 | Optional sub-cap | **FOREACH only when ITER_NEXT step is active** — node **ignores** delivery if not in the **awaiting step** phase (§5). |
 
-**Candidate node kinds:** new **NEXT** dyn node (§4.1), **FOREACH** (extended), **YIELD_FROM** (already has internal phase; may align caps with explicit delivery).
+**Node kinds involved:** **`KOS_DYN_NEXT`** (only **`NEXT`** opcode path), **`KOS_DYN_FOREACH`** (**`ITER_NEXT`** path), **`KOS_DYN_YIELD_FROM`** (delegate already has internal phase; align with the same **event** path where applicable).
 
-Nodes **without** the cap must **not** intercept events intended for an inner boundary node.
+Nodes **without** the cap must **not** intercept events intended for another boundary.
 
 ---
 
-## 4. Structural options: NEXT as a dynamic node
+## 4. `KOS_DYN_NEXT`: runtime push, self-pop, NEXT opcode only
 
 ### 4.1 Motivation
 
-Flattening a **nested Koskari async generator** into the same eval loop places a **GEN** frame under a **consumer** frame. The compiler may insert a **NEXT** dynamic node **below** the GEN (above the consumer’s loop body) so that:
+Flattening a **nested Koskari async generator** for the standalone **`NEXT`** opcode places a **GEN** frame under the consumer. A **`KOS_DYN_NEXT`** node provides a **stable chain position** for “the boundary that interprets one yield/return” for **`NEXT`**—without new bytecode.
 
-- There is a **stable chain position** for “the boundary that interprets one yield/return”.
-- **FOREACH** does not need to guess from **PC alone** whether a yield belongs to **ITER_NEXT** vs arbitrary code in the loop body.
+### 4.2 Installation (no new opcodes)
 
-### 4.2 Routing: who is `dyn_top`?
+- **`NEXT.c`** **conditionally** allocates and **`kos_dyn_push_next`**s a **`KOS_DYN_NEXT`** when the opcode attaches a Koskari async gen and needs that boundary (same situations that today use **`KosContext.pending_agen*`** for **`NEXT`**).
+- There is **no** **`PUSH_NEXT`** / **`POP_NEXT`** opcode and **no** compiler change to emit a NEXT extent.
 
-When the nested gen yields:
+### 4.3 Self-pop
 
-- **Typical case:** **`walk_handle_yield`** runs; GEN may **freeze** and hand off to the **consumer** chain. The **top** node after transfer should be the **NEXT** boundary node **if** the flattening strategy inserts it.
-- **Ordering:** If **FOREACH** and **NEXT** both have “receive” caps, **innermost** (closest to GEN) should run **first**: **NEXT** consumes and materializes stack/PC; **FOREACH** may only see **derived** state if needed.
+- When **boundary control returns** to this node (yield or return consumed, stack/PC updated per **`NEXT`** semantics), the node **unlinks itself** from **`dyn_top`** as part of handling—**self-pop**—so the next **`NEXT`** execution can push a fresh node if needed.
 
-If **NEXT** is **not** materialized for some compilation modes, **FOREACH** (with cap + **phase**) must still enforce **ITER_NEXT-only** behavior (§5).
+### 4.4 Routing vs `ITER_NEXT`
+
+- **`ITER_NEXT`** **never** pushes **`KOS_DYN_NEXT`**. For **`for-each`**, **`dyn_top`** for the iterator-step boundary is **`KOS_DYN_FOREACH`** (with **phase** in §5), not **`KOS_DYN_NEXT`**.
+- There is **no** “**FOREACH** and **NEXT** both receive the same yield” ordering problem for **`ITER_NEXT`**, because **`KOS_DYN_NEXT`** is absent on that path.
 
 ---
 
@@ -165,12 +185,10 @@ Transitions:
 - **Enter `AWAITING_ITER_STEP`:** **ITER_NEXT** opcode (or shared helper) when attaching Koskari async gen for **this** loop construct.
 - **Leave to `BODY`:** After boundary delivery **successfully** delivers a value to the loop variable path (stack + PC at head of body), or branches to **else** on exhaustion.
 
-### 5.2 NEXT-only flattening
+### 5.2 State ownership (NEXT vs FOREACH)
 
-When a **NEXT** dyn node exists:
-
-- It may own **`pending_agen_n`**, **default**, and **link to `KosPyAsyncGen`**, **migrated off context**.
-- **FOREACH** may **only** store **loop-wide** state (`iter`, `exhausted`, `iter_next_else_pc`, …) without **pending_agen** duplication.
+- **`KOS_DYN_NEXT`** ( **`NEXT`** opcode only ): owns **NEXT-shaped** per-step state migrated off **`KosContext`** (e.g. **`n`** 1 or 2, **default** for two-arg **`NEXT`**, reference to the **`KosPyAsyncGen`** for this step). It does **not** carry **`n == 0`** / **else-PC** semantics; those belong to **`FOREACH`**.
+- **`KOS_DYN_FOREACH`** (**`ITER_NEXT`** ): owns **loop-wide** and **ITER_NEXT-step** state (`iter`, `exhausted`, `iter_next_else_pc`, **phase**, and any per-step fields required for **`ITER_NEXT`** completion), migrated off **`KosContext`**.
 
 ### 5.3 YIELD_FROM
 
@@ -185,11 +203,10 @@ When a **NEXT** dyn node exists:
 
 ### 6.1 Yield from nested Koskari async gen (flattened)
 
+**Path A — standalone `NEXT` opcode (`KOS_DYN_NEXT` on chain):**
+
 ```text
-[Consumer frame: foreach body schedule]
-       |
-       v
-ITER_NEXT / NEXT attaches gen frame, runs gen
+NEXT.c attaches gen, pushes KOS_DYN_NEXT when needed
        |
        v
 YIELD in gen -> KOS_EV_YIELD in out_ev
@@ -198,9 +215,26 @@ YIELD in gen -> KOS_EV_YIELD in out_ev
 walk_handle_yield (+ freeze if applicable)
        |
        v
-kos_dynnode_on_boundary_event(dyn_top, out_ev)   # NEXT or FOREACH (gated)
+kos_dynnode_on_boundary_event(dyn_top, out_ev)   # KOS_DYN_NEXT
        |
-       +--> push value / set PC / suspend to host  # per node policy
+       +--> push value / self-pop NEXT node / REPROLOGUE
+```
+
+**Path B — `ITER_NEXT` / `FOREACH` (no `KOS_DYN_NEXT`):**
+
+```text
+ITER_NEXT attaches gen; FOREACH phase = AWAITING_ITER_STEP
+       |
+       v
+YIELD in gen -> KOS_EV_YIELD in out_ev
+       |
+       v
+walk_handle_yield (+ freeze if applicable)
+       |
+       v
+kos_dynnode_on_boundary_event(dyn_top, out_ev)   # KOS_DYN_FOREACH (gated)
+       |
+       +--> push value / set PC / clear phase  # per FOREACH policy
 ```
 
 ### 6.2 Return / exhaustion from nested gen
@@ -212,7 +246,8 @@ RETURN in gen -> KOS_EV_RETURN, payload or exhaustion contract
 Same boundary delivery entry point with kind RETURN
        |
        v
-NEXT or FOREACH: else-branch PC, default push, or StopIteration
+KOS_DYN_NEXT (NEXT opcode): default / StopIteration / stack per n
+KOS_DYN_FOREACH (ITER_NEXT): else-branch PC, exhausted flag, etc.
 ```
 
 ### 6.3 Exception (raise) from nested gen
@@ -270,19 +305,22 @@ to **one** internal **`dispatch_boundary_event(ctx, out_ev)`** that:
    If **raise** is delivered through both **exception unwind** and **boundary event**, ensure **one** path **owns** the error state.
 
 8. **Continuation capture**  
-   **Clone** paths for new node kinds must copy **phase** and **pending** references correctly; **KOS_DYN_FOREACH** and any **NEXT** clone must be tested with **call/cc**-style capture if supported.
+   **Clone** paths for new node kinds must copy **phase** and **pending** references correctly; **KOS_DYN_FOREACH** and **`KOS_DYN_NEXT`** clone must be tested with **call/cc**-style capture if supported.
 
-9. **Native handler / `KosDynFrame_NATIVE_HANDLER`**  
+9. **Self-pop timing (`KOS_DYN_NEXT`)**  
+   Unlink the node **after** stack/PC updates and **`out_ev`** payload ownership are settled; avoid double **`DECREF`** or use-after-pop.
+
+10. **Native handler / `KosDynFrame_NATIVE_HANDLER`**  
    **RETURN** to native parent must **still** receive values; boundary refactor must **not** break the **native handler** short-circuit in **RETURN.c**.
 
-10. **Regression in non-Koskari iterators**  
+11. **Regression in non-Koskari iterators**  
     **Python** async iterators, sync **next**, and **YIELD_FROM** drivers must keep **identical** observable behavior.
 
 ---
 
 ## 9. Migration strategy
 
-1. **Inventory** every read/write of **`KosContext_PENDING_AGEN*`** and **`KosDynFrame_PENDING_AGEN*`** (grep-driven).
+1. **Inventory** every read/write of **`KosContext_PENDING_AGEN*`** (grep-driven; include any frame-local mirrors if present in tree).
 2. **Introduce** node/frame fields that **mirror** semantics **before** deleting context fields.
 3. **Route** **`eval_post_opcode_pending_agen`** through **`kos_dynnode_on_boundary_event`** incrementally: first **delegate** to a **switch** that **copies** old behavior per kind; then **move** cases into **node** files.
 4. **Add** tests (or extend existing) for: **NEXT** 1-arg vs 2-arg, **ITER_NEXT** else branch, **StopIteration** on 1-arg, **YIELD_FROM** kos async gen delegate, **revive** after yield.
@@ -302,13 +340,17 @@ to **one** internal **`dispatch_boundary_event(ctx, out_ev)`** that:
 
 ## 11. Open decisions (implementation phase)
 
-- Exact **cap** names and whether **NEXT** is always a **separate** `KosDynKind` or an **overlay** on an existing node.
+- Exact **`KOS_DYN_CAP_*`** names for **NEXT** vs **FOREACH** boundary receive.
+- **`KOS_DYN_NEXT`** as a **separate** `KosDynKind` vs overlay (separate kind is the current direction).
 - **NULL** vs **`KOS_EV_*`** for exhaustion.
 - Whether **`kos_dynnode_on_control_returned`** is **renamed** for clarity or kept with **widened** contract.
 - Interaction with a future **`KosDynTypeOps`** table if [dynamic-node-unified-api.md](dynamic-node-unified-api.md) is fully adopted.
+
+**Settled (not open):** no **`PUSH_NEXT`** opcode; **`KOS_DYN_NEXT`** only for **`NEXT`** opcode; **`ITER_NEXT`** on **`FOREACH`** only; **self-pop** for **`KOS_DYN_NEXT`**.
 
 ---
 
 ## Document history
 
 - **2026-04-16** — Initial design draft for event-driven boundary delivery and node-centric consumption.
+- **2026-04-16** — Agreed decisions: **`KOS_DYN_NEXT`** scope (**`NEXT`** opcode only), **`ITER_NEXT`** on **`FOREACH`** only, **no** new opcodes (**runtime push** + **self-pop**), **`KosContext.pending_agen*`** removal; diagrams and §4/§5 updated.
