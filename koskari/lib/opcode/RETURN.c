@@ -72,7 +72,7 @@ KOS_OP_HANDLER(RETURN) {
     KosDynNode *parent = KosDynNode_PARENT(CURRENT_FRAME(ctx));
     if (parent != NULL && ! KosDynNode_IS_GEN(parent)) {
     int was_pending_ctx = (KosContext_PENDING_AGEN(ctx) != NULL);
-    KosDynFrame *detached_frame = NULL;
+    // KosDynFrame *detached_frame = NULL;
 
     /* Walk RETURN to frame (handle phase: FINALLY may consume and run). */
     KosTransitionReq treq = {
@@ -101,11 +101,15 @@ KOS_OP_HANDLER(RETURN) {
     }
 
     /* Detach our frame; parent becomes DYN_TOP. */
-    if (kos_dyn_detach_top_frame(ctx, &detached_frame) < 0) {
+    // if (kos_dyn_detach_top_frame(ctx, &detached_frame) < 0) {
+    //   Py_DECREF(val);
+    //   return KOS_OP_POST_ERR();
+    // }
+    // kos_dynframe_free(detached_frame);
+    if (unlikely(kos_dyn_pop_frame(ctx) < 0)) {
       Py_DECREF(val);
       return KOS_OP_POST_ERR();
     }
-    kos_dynframe_free(detached_frame);
 
     KosPyAsyncGen *agen = was_pending_ctx ? (KosPyAsyncGen *) KosContext_PENDING_AGEN(ctx) : NULL;
 
