@@ -234,6 +234,8 @@ static void clear_kos_agen_boundary_on_error(KosContext *ctx) {
   KosDynNode *top = KosContext_DYN_TOP(ctx);
   KosDynNext *dn;
   KosDynForeach *fe;
+  KosDynYieldFrom *yf = NULL;
+  KosDynNode *w;
   KosPyAsyncGen *agen;
 
   if (! cf || ! top || ! KosDynNode_IS_FRAME(top))
@@ -246,11 +248,26 @@ static void clear_kos_agen_boundary_on_error(KosContext *ctx) {
 
   dn = kos_dyn_find_next_above_frame(ctx);
   fe = kos_dyn_find_awaiting_foreach(ctx);
-  if (! dn && ! fe)
+  if (! dn && ! fe) {
+    for (w = KosDynNode_PARENT((KosDynNode *) cf); w; w = KosDynNode_PARENT(w)) {
+      if (KosDynNode_IS_YIELD_FROM(w)
+          && KosDynNode_HAS_CAP(w, KOS_DYN_CAP_RECEIVES_ITER_BOUNDARY)
+          && KosDynYieldFrom_KIND((KosDynYieldFrom *) w) == (uint8_t) 4) {
+        yf = (KosDynYieldFrom *) w;
+        break;
+      }
+    }
+  }
+
+  if (! dn && ! fe && ! yf)
     return;
 
-  agen = dn ? (KosPyAsyncGen *) KosDynNext_AGEN_OBJ((KosDynNode *) dn)
-            : (KosPyAsyncGen *) KosDynForeach_ITER(fe);
+  if (dn)
+    agen = (KosPyAsyncGen *) KosDynNext_AGEN_OBJ((KosDynNode *) dn);
+  else if (fe)
+    agen = (KosPyAsyncGen *) KosDynForeach_ITER(fe);
+  else
+    agen = (KosPyAsyncGen *) KosDynYieldFrom_DELEGATE(yf);
 
   {
     KosDynFrame *detached_frame = NULL;
@@ -265,6 +282,10 @@ static void clear_kos_agen_boundary_on_error(KosContext *ctx) {
     KosDynForeach_ITER_STEP_PHASE(fe) = KOS_FOREACH_ITER_STEP_IDLE;
   if (dn)
     kos_dyn_unlink_next_node(ctx, dn);
+  if (yf) {
+    KosDynYieldFrom_DELEGATING_FRAME_SET(yf, NULL);
+    kos_dyn_pop_yield_from(ctx, yf);
+  }
 }
 
 
@@ -2159,13 +2180,15 @@ static KosGetNextResult op_get_next_from_iter(
 enum {
   KOS_ATTACH_AGEN_MODE_NEXT = 0,
   KOS_ATTACH_AGEN_MODE_ITER_NEXT = 1,
+  KOS_ATTACH_AGEN_MODE_YIELD_FROM = 2,
 };
 
 
 /**
    Shared install of Koskari async gen frame onto consumer ctx.  mode NEXT
    pops KOS_DYN_NEXT and DECREFs iter/default_val on failure; ITER_NEXT clears
-   FOREACH iter_step_phase on failure.
+   FOREACH iter_step_phase on failure; YIELD_FROM pops KOS_DYN_YIELD_FROM on
+   failure.
 */
 static int attach_koskari_gen_core(
     KosContext *ctx,
@@ -2173,7 +2196,8 @@ static int attach_koskari_gen_core(
     int mode,
     PyObject *iter,
     PyObject *default_val,
-    KosDynForeach *iter_next_region) {
+    KosDynForeach *iter_next_region,
+    KosDynYieldFrom *yf_boundary) {
 
   KosDynGen *gen = (KosDynGen *) agen->gen;
 
@@ -2185,6 +2209,8 @@ static int attach_koskari_gen_core(
     } else if (mode == KOS_ATTACH_AGEN_MODE_ITER_NEXT && iter_next_region) {
       KosDynForeach_ITER_STEP_PHASE(iter_next_region) =
           KOS_FOREACH_ITER_STEP_IDLE;
+    } else if (mode == KOS_ATTACH_AGEN_MODE_YIELD_FROM && yf_boundary) {
+      kos_dyn_pop_yield_from(ctx, yf_boundary);
     }
     agen->in_progress = 0;
     PyErr_SetString(PyExc_RuntimeError, "async generator has no active frame");
@@ -2202,6 +2228,8 @@ static int attach_koskari_gen_core(
     } else if (mode == KOS_ATTACH_AGEN_MODE_ITER_NEXT && iter_next_region) {
       KosDynForeach_ITER_STEP_PHASE(iter_next_region) =
           KOS_FOREACH_ITER_STEP_IDLE;
+    } else if (mode == KOS_ATTACH_AGEN_MODE_YIELD_FROM && yf_boundary) {
+      kos_dyn_pop_yield_from(ctx, yf_boundary);
     }
     agen->in_progress = 0;
     return -1;
@@ -2226,7 +2254,7 @@ static int op_attach_koskari_agen_frame(
     PyObject *default_val) {
 
   return attach_koskari_gen_core(ctx, agen, KOS_ATTACH_AGEN_MODE_NEXT,
-                                 iter, default_val, NULL);
+                                 iter, default_val, NULL, NULL);
 }
 
 
@@ -2243,7 +2271,30 @@ static int op_attach_koskari_agen_frame_for_iter_next(
                           ? (KosDynForeach *) region
                           : NULL;
   return attach_koskari_gen_core(ctx, agen, KOS_ATTACH_AGEN_MODE_ITER_NEXT,
-                                 NULL, NULL, fe);
+                                 NULL, NULL, fe, NULL);
+}
+
+
+/**
+   YIELD_FROM: install delegate Koskari async gen onto consumer ctx.  dyn_top
+   must be KOS_DYN_YIELD_FROM.  Records delegating frame for rollback.  On
+   error pops yield-from node.
+*/
+static int op_attach_koskari_agen_frame_for_yield_from(
+    KosContext *ctx,
+    KosPyAsyncGen *agen,
+    KosDynYieldFrom *yf) {
+
+  KosDynFrame *delegating = KosContext_FRAME_TOP(ctx);
+  int r;
+
+  if (! delegating)
+    return -1;
+  r = attach_koskari_gen_core(ctx, agen, KOS_ATTACH_AGEN_MODE_YIELD_FROM,
+                              NULL, NULL, NULL, yf);
+  if (r == 0)
+    KosDynYieldFrom_DELEGATING_FRAME_SET(yf, delegating);
+  return r;
 }
 
 
@@ -2767,8 +2818,19 @@ static KosEvalStep eval_event_yield_deliver_to_boundary(
       return KOS_STEP_REPROLOGUE;
     }
   }
+  {
+    KosDynYieldFrom *yf = kos_dyn_find_yield_from_iter_boundary(ctx);
+
+    if (yf) {
+      if (kos_dyn_yield_from_deliver_inner_yield(ctx, yf, out_ev) < 0)
+        return KOS_STEP_FATAL_ERROR;
+      KosContext_SUSPENSION_EVENT(ctx) = KOS_SUSP_YIELD;
+      return KOS_STEP_STOP_EVENT;
+    }
+  }
   PyErr_SetString(PyExc_RuntimeError,
-                  "eval: boundary YIELD without NEXT/FOREACH Koskari agen state");
+                  "eval: boundary YIELD without NEXT/FOREACH/YIELD_FROM "
+                  "Koskari agen state");
   return KOS_STEP_FATAL_ERROR;
 }
 
@@ -2857,6 +2919,30 @@ static KosEvalStep eval_phase_post_opcode(
   }
 
   if (KosEvent_KIND(out_ev) == KOS_EV_AWAIT) {
+    {
+      KosDynYieldFrom *yf_aw = kos_dyn_find_yield_from_for_inner_await(ctx);
+
+      if (yf_aw) {
+        PyObject *aw = KosEvent_PAYLOAD(out_ev);
+
+        if (! aw) {
+          PyErr_SetString(PyExc_RuntimeError,
+                          "AWAIT with NULL payload under yield-from");
+          return KOS_STEP_FATAL_ERROR;
+        }
+        Py_INCREF(aw);
+        KosDynYieldFrom_INFLIGHT(yf_aw) = aw;
+        KosDynYieldFrom_PHASE_SET(yf_aw, KOS_YF_PHASE_EXPECT_AWAIT);
+        {
+          KosDynFrame *deleg = KosDynYieldFrom_DELEGATING_FRAME(yf_aw);
+
+          if (deleg)
+            KosDynFrame_PC(deleg) = KosDynYieldFrom_ROLLBACK_PC(yf_aw);
+        }
+        KosContext_SUSPENSION_EVENT(ctx) = KOS_SUSP_AWAIT;
+        return KOS_STEP_STOP_EVENT;
+      }
+    }
     KosContext_SUSPENSION_EVENT(ctx) = KOS_SUSP_AWAIT;
 
   } else if (KosEvent_KIND(out_ev) == KOS_EV_YIELD) {

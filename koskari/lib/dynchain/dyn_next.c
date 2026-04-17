@@ -249,7 +249,9 @@ int kos_dyn_foreach_deliver_return_kos_agen(
 int kos_dyn_need_kos_agen_boundary_deliver(KosContext *ctx) {
 
   return kos_dyn_find_next_above_frame(ctx) != NULL
-      || kos_dyn_find_awaiting_foreach(ctx) != NULL;
+      || kos_dyn_find_awaiting_foreach(ctx) != NULL
+      || kos_dyn_find_yield_from_iter_boundary(ctx) != NULL
+      || kos_dyn_find_yield_from_for_inner_await(ctx) != NULL;
 }
 
 
@@ -274,8 +276,17 @@ int kos_dyn_deliver_iterator_boundary_return_event(
     if (fe)
       return kos_dyn_foreach_deliver_return_kos_agen(ctx, fe, out_ev);
   }
+  {
+    KosDynYieldFrom *yf = kos_dyn_find_yield_from_iter_boundary(ctx);
+
+    if (! yf)
+      yf = kos_dyn_find_yield_from_for_inner_await(ctx);
+    if (yf)
+      return kos_dyn_yield_from_deliver_inner_return(ctx, yf, out_ev);
+  }
   PyErr_SetString(PyExc_RuntimeError,
-                  "iterator boundary RETURN without NEXT/FOREACH Koskari agen state");
+                  "iterator boundary RETURN without NEXT/FOREACH/YIELD_FROM "
+                  "Koskari agen state");
   return -1;
 }
 
