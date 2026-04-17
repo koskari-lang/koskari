@@ -89,6 +89,7 @@ _symbol_quasiquote = symbol("compile/quasiquote")
 _symbol_quasiquote_block = symbol("compile/quasiquote-block")
 _symbol_attr = symbol("compile/attr")
 _symbol_quote = symbol("compile/quote")
+_symbol_compile_decorate = symbol("compile/decorate")
 _symbol_ref = symbol("compile/ref")
 _symbol_refq = symbol("compile/refq")
 _symbol_splice = symbol("compile/splice")
@@ -1505,6 +1506,10 @@ class LayoutReader(Reader):
     to be SourceStream instances (for pushback support). Body reads always
     use an IndentAwareStream so that dedent detection is available through
     the stream.dedented attribute rather than getattr guards.
+
+    Subclasses may override _add_default_layout_macros to register or omit
+    layout-mode-only prefix handlers (_layout_macros), parallel to
+    _add_default_block_macros for block header prefixes (_block_macros).
     """
 
     def __init__(self, namespace, nodefaults=False,
@@ -1533,11 +1538,13 @@ class LayoutReader(Reader):
         self._layout_depth = 0
         self._block_mode = False
         self._block_macros = {}
+        self._layout_macros = {}
         self.layout_enabled = layout_enabled
         self.layout_implicit_calls = layout_implicit_calls
 
         if not nodefaults:
             self._add_default_block_macros()
+            self._add_default_layout_macros()
 
         # Reader does not install a depth-0 `:` macro; structural `:` is
         # emitted only while parsing headers (see _header_mode / _read_default).
@@ -1580,6 +1587,12 @@ class LayoutReader(Reader):
         self._block_macros.update({
             "'": self._read_quote_block,
             "`": self._read_quasiquote_block,
+        })
+
+
+    def _add_default_layout_macros(self):
+        self._layout_macros.update({
+            "@": self._read_layout_decorate,
         })
 
 
@@ -2157,6 +2170,63 @@ class LayoutReader(Reader):
         return cons(_symbol_quasiquote_block, raw, nil)
 
 
+    def _combine_implicit_line_tail_forms(self, forms):
+        """
+        Combine multiple forms on a layout line into one value (implicit call)
+
+        :param forms: non-empty list of parsed values
+        :return: single form or cons chain
+        """
+
+        if len(forms) == 1:
+            return forms[0]
+        return cons(forms[0], *forms[1:], nil)
+
+
+    def _read_layout_decorate(self, stream, outer_indent):
+        """
+        Layout-macro handler for the @ prefix (leading decorator lines)
+
+        The first ``@`` was consumed by read_form. Reads more ``@`` lines at
+        the same column, then one layout form (block or s-expr), and wraps
+        ``(compile/decorate (d1 d2 ...) INNER)``.
+
+        :param stream: the source stream, positioned after the first ``@``
+        :param outer_indent: column of the first ``@`` character
+        :return: (compile/decorate (decorators...) INNER) cons
+        """
+
+        decorators = []
+        while True:
+            forms = self._read_line_tail_forms(stream)
+            if not forms:
+                raise stream.error('empty decorator line', stream.position())
+
+            decorators.append(self._combine_implicit_line_tail_forms(forms))
+            stream.skip_whitespace()
+            pk = stream.peek(1)
+            if not pk:
+                raise stream.error('unexpected EOF after decorator', stream.position())
+
+            col = stream.position()[1]
+            if col != outer_indent:
+                raise stream.error(
+                    'decorator lines must align with the decorated form',
+                    stream.position())
+
+            if pk != '@':
+                break
+
+            stream.read(1)
+
+        event, pos, inner = self.read_form(stream)
+        if event is not VALUE:
+            raise stream.error('invalid syntax after decorators', pos)
+
+        deco_list = cons(*decorators, nil)
+        return cons(_symbol_compile_decorate, cons(deco_list, cons(inner, nil)))
+
+
     def _apply_layout(self, stream, outer_indent, source):
         """
         Apply a layout handler to an already-read block source cons
@@ -2215,9 +2285,13 @@ class LayoutReader(Reader):
 
         At depth 0:
         1. c in '([{' -- parenthesised s-expression, read directly via _read.
-        2. c in _block_macros -- quote/quasiquote raw block when a structural
-           header colon exists ahead; otherwise fall through to _read.
-        3. Bare atom -- read under header atom rules; if the head commits as
+        2. c in _layout_macros -- layout-only prefix (e.g. @ decorator lines);
+           next_c not in '([{' then consume prefix and run handler; no colon
+           lookahead. Inner form is one read_form (block or s-expr).
+        3. c in _block_macros -- quote/quasiquote raw block when a structural
+           header colon exists ahead (_has_block_colon_ahead); otherwise fall
+           through to _read.
+        4. Bare atom -- read under header atom rules; if the head commits as
            a block header, read args until structural `:` or raise on missing
            terminator.
 
@@ -2269,9 +2343,22 @@ class LayoutReader(Reader):
 
             outer_indent = position[1]
 
+            if c in self._layout_macros:
+                next_c = stream.peek(2)[1:2]
+                if next_c and next_c not in '([{':
+                    stream.read(1)
+                    layout_macro = self._layout_macros[c]
+                    result = layout_macro(stream, outer_indent)
+                    if is_pair(result):
+                        result.set_position(position)
+                    return VALUE, position, result
+
+                return super()._read(stream)
+
             if c in self._block_macros:
                 next_c = stream.peek(2)[1:2]
-                if next_c and next_c not in '([{' and self._has_block_colon_ahead(stream):
+                if (next_c and next_c not in '([{'
+                        and self._has_block_colon_ahead(stream)):
                     stream.read(1)
                     block_macro = self._block_macros[c]
                     result = block_macro(stream, outer_indent)

@@ -20,7 +20,7 @@ Layout handlers for conditional block syntax.
 
 from ...exceptions import LayoutError
 from ...lib import car, cdr, cons, keyword, nil, symbol
-from ...types import get_position, unpack
+from ...types import get_position, unpack, is_pair, is_keyword
 from .helpers import layout
 
 
@@ -52,6 +52,50 @@ def layout_block(source, peers):
 
     hdr.append(cons(symbol('compile/begin'), body))
     return hdr
+
+
+@layout(symbol('layout/call'))
+def layout_call(source, peers):
+    """
+    a breakout of a call as a block
+
+    eg.
+    layout/call foo:
+      bar
+      (baz)
+      alpha: beta
+
+    becomes
+    (foo bar (baz) alpha: beta)
+    """
+
+    if peers:
+        raise LayoutError(
+            'call does not take peers',
+            get_position(source))
+
+    header, body = source
+    try:
+        called_by, (fn, rest) = header
+    except ValueError:
+        raise LayoutError(
+            'call block requires a function name',
+            get_position(source))
+
+    if rest:
+        raise LayoutError(
+            'call block header does not accept arguments',
+            get_position(source))
+
+    corr = body
+    while corr:
+        head, next = corr
+        if is_pair(head) and is_keyword(head.car):
+            corr.car = car(head)
+            corr.cdr = cons(cdr(head), next)
+        corr = next
+
+    return cons(symbol('compile/call'), fn, body)
 
 
 @layout(symbol('layout/begin'))
