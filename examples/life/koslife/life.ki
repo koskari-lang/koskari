@@ -12,7 +12,7 @@
 (import-from random random seed)
 
 
-class LifeBoard []:
+define-class LifeBoard []:
 
     define __init__ [self width height wrap: False]:
         set! self.width width

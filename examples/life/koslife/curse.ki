@@ -50,7 +50,7 @@ define get-renderer [by-name]:
     (make-char-renderer)
 
 
-class LifeScreen []:
+define-class LifeScreen []:
 
     define __init__ [self screen rw: False rend: None]:
         when (None? rend):
