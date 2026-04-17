@@ -102,9 +102,13 @@ layout/begin:
 
 **Symbol:** `layout/class`
 
-**Use-case:** Class definition block syntax. Lowers to `(compile/class NAME SUPERS
-(compile/begin BODY))`. The superclass list may be omitted; when missing, the
-expansion uses `()` (nil).
+**Use-case:** Class **expression** block syntax. Lowers to `(compile/class NAME SUPERS
+(compile/begin BODY))`. The form evaluates to the new class object; it does **not**
+by itself bind **NAME** in the module (see [SPECIALS.md](SPECIALS.md) §
+compile/class). To define a named class in one step, use **`layout/define-class`**
+or wrap with **`compile/define`**.
+
+The superclass list may be omitted; when missing, the expansion uses `()` (nil).
 
 **Behaviour:** No peers. Parses header as `(class NAME)` or `(class NAME SUPERS)`.
 When supers are omitted, uses nil so the result is `(compile/class NAME () BODY)`.
@@ -141,6 +145,49 @@ class C ():
 ```
 
 **Implementation:** `koskari/reader/layouts/classes.layout_class`
+
+
+## layout/define-class
+
+**Symbol:** `layout/define-class`
+
+**Use-case:** Class **definition** block syntax: lowers to
+`(compile/define-class NAME SUPERS (compile/begin BODY))`, which the
+**`compile/define-class`** macro expands to **`define`** plus **`class`** (see
+[MACROS.md](MACROS.md) § compile/define-class). Same header shape as
+**`layout/class`**, but the read result binds **NAME** to the class after
+expansion.
+
+**Behaviour:** No peers. Parses header as `(define-class NAME)` or
+`(define-class NAME SUPERS)`. When supers are omitted, uses nil. Raises
+LayoutError if the header has fewer than two elements (missing name) or more
+than three.
+
+**Syntax:**
+
+```
+define-class NAME:
+  BODY
+;; → (compile/define-class NAME () (compile/begin BODY))
+
+define-class NAME (Base1 Base2):
+  BODY
+;; → (compile/define-class NAME (Base1 Base2) (compile/begin BODY))
+```
+
+**Examples:**
+
+```scheme
+define-class C:
+  x
+;; → (compile/define-class C () (compile/begin x))
+
+define-class C (Base):
+  x
+;; → (compile/define-class C (Base) (compile/begin x))
+```
+
+**Implementation:** `koskari/reader/layouts/classes.layout_define_class`
 
 
 ## layout/if

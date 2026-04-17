@@ -1407,39 +1407,47 @@ from the match result (`koskari/syntax.py`: **`MacroRule.expand`**).
 
 **Syntax:** `(compile/class NAME (SUPERS) BODY ...)`
 
-- **NAME**: symbol — the class name and binding target
+- **NAME**: symbol — used for the Python class `__name__` (and the BUILD_CLASS
+  position tuple); **not** a compile-time binding target for this special
 - **SUPERS**: list of superclass expressions and optional `meta: Metaclass` keyword
 - **BODY**: forms compiled in sequence inside the CollectorNamespace (e.g.
-`compile/define` for class attributes and methods)
+  `compile/define` for class attributes and methods)
 
-**Use-case:** Create a Koskari class via PUSH_COLLECT/POP_COLLECT/BUILD_CLASS,
-run body in CollectorNamespace, bind the resulting class to NAME. Default
-metaclass is KosType; use `meta: MyMeta` in SUPERS for a custom metaclass.
+**Use-case:** Create a Koskari class via PUSH_COLLECT/POP_COLLECT/BUILD_CLASS and
+run the body in a CollectorNamespace. The **value of the form** is the new class
+object (default metaclass is KosType; use `meta: MyMeta` in SUPERS for a custom
+metaclass). To **bind** the class to a name in the surrounding scope, wrap with
+`compile/define` (or use the **`define-class`** macro — see
+[MACROS.md](MACROS.md) § compile/define-class).
 
-**Behaviour:** Builds pos tuple (name, bases) or (name, bases, metaclass) with
-BUILD_ARGS, emits PUSH_COLLECT (CONST-style, namespace spec from constant pool)
-via with_collector_namespace, compiles body with helper_begin, emits POP_COLLECT,
-BUILD_CLASS, then VAR_STORE to bind the class to NAME. The collect scope pushes
-a stack block so body expression results (e.g. None from compile/define) do not
-reach BUILD_CLASS. Returns None (matches compile/define).
+**Behaviour:** Builds a position tuple `(name, bases)` or
+`(name, bases, metaclass)` with BUILD_ARGS, opens a collector namespace
+(PUSH_COLLECT / POP_COLLECT around the body), compiles **BODY** with
+`helper_begin`, then emits **BUILD_CLASS**. The collect scope uses a stack block
+so body expression results (e.g. `None` from `compile/define`) do not reach
+**BUILD_CLASS**. The class object is left on the stack as the expression result.
+This special does **not** emit `declare_var` or `VAR_STORE` for **NAME**.
 
 **Examples:**
 
 ```scheme
-;; Empty class
-(compile/class C ())
+;; Expression value is the class (e.g. bind with compile/define)
+(compile/define C (compile/class C ()))
 
 ;; Class with attribute
-(compile/class C ()
-  (compile/define x 42))
+(compile/define C
+  (compile/class C ()
+    (compile/define x 42)))
 
-;; Class with superclass
-(compile/class C (object)
-  (compile/define x 1))
+;; Class with superclass (object is available from bootstrap)
+(compile/define C
+  (compile/class C (object)
+    (compile/define x 1)))
 
 ;; Custom metaclass
-(compile/class C (Base meta: MyMeta)
-  (compile/define x 1))
+(compile/define C
+  (compile/class C (Base meta: MyMeta)
+    (compile/define x 1)))
 ```
 
 **Tests:** `tests/compile/specials/test_class.py`

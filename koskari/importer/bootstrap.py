@@ -119,6 +119,7 @@ def make_bootstrap():
     # Python standard types available by default
     _ty('bool', bool)
     _ty('bytes', bytes)
+    _ty('classmethod', classmethod)
     _ty('complex', complex)
     _ty('decimal', decimal)
     _ty('dict', dict)
@@ -130,6 +131,7 @@ def make_bootstrap():
     _ty('object', object)
     _ty('range', range)
     _ty('set', set)
+    _ty('staticmethod', staticmethod)
     _ty('slice', slice)
     _ty('str', str)
     _ty('tuple', tuple)

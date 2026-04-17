@@ -406,6 +406,64 @@ callable).
 **Defined in:** `koskari/importer/basics.ki`
 
 
+## compile/define-class
+
+**Symbol:** `compile/define-class`
+
+**Syntax:** `(define-class NAME SUPERS BODY ...)`
+
+**Use-case:** Define **NAME** as a class: expands to **`define`** around a **`class`**
+form so the class object is stored in **NAME** (the **`compile/class`** special
+alone only produces a value; it does not bind **NAME** — see
+[SPECIALS.md](SPECIALS.md) § compile/class).
+
+**Behaviour:** Expands to **`(define NAME (class NAME SUPERS BODY ...))`**. The
+inner **`class`** form is the same shape the reader uses for **`layout/class`**
+(lowered to **`compile/class`**). Block syntax uses **`layout/define-class`**;
+see [LAYOUTS.md](LAYOUTS.md).
+
+**Defined in:** `koskari/importer/basics.ki`
+
+
+## compile/decorate
+
+**Symbol:** `compile/decorate`
+
+**Syntax:**
+
+- `(decorate [] FN)` — **FN** unchanged
+- `(decorate [DECORATOR ...] (define-class NAME SUPERS BODY ...))` — class with
+  decorators on the **class** expression inside **`define`**
+- `(decorate [DECORATOR ...] (define NAME FORMALS BODY ...))` — function define
+  with decorators on the **`lambda`**
+- `(decorate [DECORATOR ...] FN)` — non-define **FN**: **`((function-compose DECORATOR ...) FN)`**
+
+**Use-case:** Apply one or more decorators to a **`define-class`**, a function
+**`define`**, or an arbitrary callable expression.
+
+**Behaviour:** Syntax-rules in **`basics.ki`**. For **`define-class`** and
+**`define`**, rewrites so **`decorate`** wraps the **`class`** or **`lambda`**
+value before **`define`** stores it. For a bare **FN**, composes decorators
+with **`function-compose`** (see **`compile/function-compose`** in the same file).
+
+**Defined in:** `koskari/importer/basics.ki`
+
+
+## compile/function-compose
+
+**Symbol:** `compile/function-compose`
+
+**Syntax:** `(function-compose FN)` or `(function-compose FN1 FN2 ...)`
+
+**Use-case:** Right-fold decorator composition: the composed callable accepts
+**`*args`** and **`**kwds`** and threads calls through **FN1**, **FN2**, …
+
+**Behaviour:** Macro-rules: single **FN** is unchanged; multiple **FN**s build a
+**`lambda [*: args **: kwds]`** that nests calls inner-to-outer.
+
+**Defined in:** `koskari/importer/basics.ki`
+
+
 ## define-coroutine
 
 **Symbol:** `define-coroutine`
