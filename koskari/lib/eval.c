@@ -2658,6 +2658,16 @@ static KosEvalStep eval_step_after_process_raise(
 
 
 /**
+   Post-opcode / entry normalization for active PyErr: wraps process_raise.
+   See design/interpreter/event-driven-eval-event-handlers.md (eval_event_raise).
+*/
+static KosEvalStep eval_event_raise(KosContext *ctx, KosEvent *out_ev) {
+
+  return eval_step_after_process_raise(ctx, out_ev);
+}
+
+
+/**
    Phase 3: async exception check at each loop iteration top.
 
    When PyErr_Occurred() is set on entry to the dispatch loop (e.g. from a
@@ -2675,7 +2685,7 @@ static KosEvalStep eval_phase_pending_exception(
   if (! PyErr_Occurred())
     return KOS_STEP_CONTINUE;
 
-  return eval_step_after_process_raise(ctx, out_ev);
+  return eval_event_raise(ctx, out_ev);
 }
 
 
@@ -2735,58 +2745,70 @@ static KosEvalStep kos_eval_prepare_next_insn(
 
 
 /**
-   Deliver YIELD/RETURN from a flattened Koskari async gen to the standalone
-   NEXT opcode (KOS_DYN_NEXT) or ITER_NEXT (FOREACH phase). Caller already ran
-   kos_dyn_transition with KOS_TRANS_WALK_HANDLE_YIELD for YIELD.
+   YIELD half of dispatch_boundary_event. Caller already ran
+   KOS_TRANS_WALK_HANDLE_YIELD.
 */
-static KosEvalStep dispatch_boundary_event(KosContext *ctx, KosEvent *out_ev) {
+static KosEvalStep eval_event_yield_deliver_to_boundary(
+    KosContext *ctx, KosEvent *out_ev) {
 
-  if (KosEvent_KIND(out_ev) == KOS_EV_YIELD) {
-    KosDynNext *next = kos_dyn_find_next_above_frame(ctx);
-    if (next) {
-      if (kos_dyn_next_deliver_yield(ctx, out_ev) < 0)
+  KosDynNext *next = kos_dyn_find_next_above_frame(ctx);
+
+  if (next) {
+    if (kos_dyn_next_deliver_yield(ctx, out_ev) < 0)
+      return KOS_STEP_FATAL_ERROR;
+    return KOS_STEP_REPROLOGUE;
+  }
+  {
+    KosDynForeach *fe = kos_dyn_find_awaiting_foreach(ctx);
+
+    if (fe) {
+      if (kos_dyn_foreach_deliver_yield_kos_agen(ctx, fe, out_ev) < 0)
         return KOS_STEP_FATAL_ERROR;
       return KOS_STEP_REPROLOGUE;
     }
-    {
-      KosDynForeach *fe = kos_dyn_find_awaiting_foreach(ctx);
-      if (fe) {
-        if (kos_dyn_foreach_deliver_yield_kos_agen(ctx, fe, out_ev) < 0)
-          return KOS_STEP_FATAL_ERROR;
-        return KOS_STEP_REPROLOGUE;
-      }
-    }
-    PyErr_SetString(PyExc_RuntimeError,
-                    "eval: boundary YIELD without NEXT/FOREACH Koskari agen state");
-    return KOS_STEP_FATAL_ERROR;
   }
-
-  if (KosEvent_KIND(out_ev) == KOS_EV_RETURN) {
-    KosDynNext *next = kos_dyn_find_next_above_frame(ctx);
-    if (next) {
-      if (kos_dyn_next_deliver_return(ctx, out_ev) < 0) {
-        if (PyErr_Occurred())
-          return KOS_STEP_FATAL_ERROR;
-        return KOS_STEP_REPROLOGUE;
-      }
-      return KOS_STEP_REPROLOGUE;
-    }
-    {
-      KosDynForeach *fe = kos_dyn_find_awaiting_foreach(ctx);
-      if (fe) {
-        if (kos_dyn_foreach_deliver_return_kos_agen(ctx, fe, out_ev) < 0)
-          return KOS_STEP_FATAL_ERROR;
-        return KOS_STEP_REPROLOGUE;
-      }
-    }
-    PyErr_SetString(PyExc_RuntimeError,
-                    "eval: boundary RETURN without NEXT/FOREACH Koskari agen state");
-    return KOS_STEP_FATAL_ERROR;
-  }
-
   PyErr_SetString(PyExc_RuntimeError,
-                  "eval: dispatch_boundary_event unexpected event kind");
+                  "eval: boundary YIELD without NEXT/FOREACH Koskari agen state");
   return KOS_STEP_FATAL_ERROR;
+}
+
+
+/**
+   RETURN half: deliver KOS_EV_RETURN payload to NEXT or FOREACH consumer.
+*/
+static KosEvalStep eval_event_return_deliver_to_boundary(
+    KosContext *ctx, KosEvent *out_ev) {
+
+  int dr = kos_dyn_deliver_iterator_boundary_return_event(ctx, out_ev);
+
+  if (dr < 0) {
+    if (PyErr_Occurred())
+      return KOS_STEP_FATAL_ERROR;
+    return KOS_STEP_REPROLOGUE;
+  }
+  return KOS_STEP_REPROLOGUE;
+}
+
+
+/**
+   Post-opcode handling for KOS_EV_YIELD: walk_handle_yield, optional flattened
+   agen boundary delivery, else tag suspension for outer koskari_eval.
+*/
+static KosEvalStep eval_event_yield(KosContext *ctx, KosEvent *out_ev) {
+
+  SAYF("[eval] post_opcode KOS_EV_YIELD -> walk_handle_yield dyn_top=%p\n",
+       (void *) KosContext_DYN_TOP(ctx));
+  {
+    KosTransitionReq treq = { .kind = KOS_TRANS_WALK_HANDLE_YIELD };
+    KosTransitionResult tres = {0};
+
+    if (kos_dyn_transition(ctx, &treq, &tres, out_ev) < 0)
+      return KOS_STEP_FATAL_ERROR;
+  }
+  if (kos_dyn_need_kos_agen_boundary_deliver(ctx))
+    return eval_event_yield_deliver_to_boundary(ctx, out_ev);
+  KosContext_SUSPENSION_EVENT(ctx) = KOS_SUSP_YIELD;
+  return KOS_STEP_STOP_EVENT;
 }
 
 
@@ -2823,7 +2845,7 @@ static KosEvalStep eval_phase_post_opcode(
   }
 
   if (PyErr_Occurred())
-    return eval_step_after_process_raise(ctx, out_ev);
+    return eval_event_raise(ctx, out_ev);
 
   /* Record why we suspended so next entry can choose revive path.
      post_opcode is only called for non-zero op_res; a handler that stops
@@ -2838,24 +2860,14 @@ static KosEvalStep eval_phase_post_opcode(
     KosContext_SUSPENSION_EVENT(ctx) = KOS_SUSP_AWAIT;
 
   } else if (KosEvent_KIND(out_ev) == KOS_EV_YIELD) {
-    /* YIELD transit: walk chain with handle(YIELD); GEN intercepts */
-    SAYF("[eval] post_opcode KOS_EV_YIELD -> walk_handle_yield dyn_top=%p\n",
-         (void *) KosContext_DYN_TOP(ctx));
-    {
-      KosTransitionReq treq = { .kind = KOS_TRANS_WALK_HANDLE_YIELD };
-      KosTransitionResult tres = {0};
-      if (kos_dyn_transition(ctx, &treq, &tres, out_ev) < 0)
-        return KOS_STEP_FATAL_ERROR;
-    }
-    /* Koskari flatten: GEN was on consumer chain; freeze restored caller.
-       Push value onto caller stack and continue (no event return). */
-    if (kos_dyn_need_kos_agen_boundary_deliver(ctx))
-      return dispatch_boundary_event(ctx, out_ev);
-    KosContext_SUSPENSION_EVENT(ctx) = KOS_SUSP_YIELD;
+    KosEvalStep ys = eval_event_yield(ctx, out_ev);
+
+    if (ys != KOS_STEP_STOP_EVENT)
+      return ys;
 
   } else if (KosEvent_KIND(out_ev) == KOS_EV_RETURN
              && kos_dyn_need_kos_agen_boundary_deliver(ctx)) {
-    return dispatch_boundary_event(ctx, out_ev);
+    return eval_event_return_deliver_to_boundary(ctx, out_ev);
   }
 
   /* op_res < 0 with no PyErr and no suspension event is a fatal internal error */

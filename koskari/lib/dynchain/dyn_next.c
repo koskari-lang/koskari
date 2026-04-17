@@ -253,6 +253,74 @@ int kos_dyn_need_kos_agen_boundary_deliver(KosContext *ctx) {
 }
 
 
+/**
+   Shared path for KOS_EV_RETURN delivery to KOS_DYN_NEXT or awaiting
+   KOS_DYN_FOREACH after a flattened Koskari async generator completes.
+   Expects KosEvent_KIND(out_ev) == KOS_EV_RETURN and payload set.
+
+   :return: same as kos_dyn_next_deliver_return / foreach deliver (0 success,
+      -1 error; next may leave no PyErr for REPROLOGUE)
+*/
+int kos_dyn_deliver_iterator_boundary_return_event(
+    KosContext *ctx, struct KosEvent *out_ev) {
+
+  KosDynNext *next = kos_dyn_find_next_above_frame(ctx);
+
+  if (next)
+    return kos_dyn_next_deliver_return(ctx, out_ev);
+  {
+    KosDynForeach *fe = kos_dyn_find_awaiting_foreach(ctx);
+
+    if (fe)
+      return kos_dyn_foreach_deliver_return_kos_agen(ctx, fe, out_ev);
+  }
+  PyErr_SetString(PyExc_RuntimeError,
+                  "iterator boundary RETURN without NEXT/FOREACH Koskari agen state");
+  return -1;
+}
+
+
+/**
+   After kos_dyn_pop_frame from a callee: if a flattened Koskari async-gen
+   consumer (NEXT or ITER_NEXT) is active, deliver the return value using the
+   same logic as eval dispatch_boundary_event for KOS_EV_RETURN.
+
+   On success or error paths that consume the value, sets *p_val to NULL.
+   On return 1, *p_val is unchanged and the caller must deliver to the parent
+   frame (native handler or stack push).
+
+   :return: 0 if delivery ran (continue eval); -1 if POST_ERR; 1 if no
+      boundary consumer for this return
+*/
+int kos_dyn_try_deliver_iterator_boundary_after_pop(
+    KosContext *ctx, PyObject **p_val, struct KosEvent *out_ev) {
+
+  PyObject *val;
+
+  if (! kos_dyn_need_kos_agen_boundary_deliver(ctx))
+    return 1;
+
+  val = *p_val;
+  KosEvent_KIND(out_ev) = KOS_EV_RETURN;
+  KosEvent_PAYLOAD(out_ev) = val;
+
+  {
+    int dr = kos_dyn_deliver_iterator_boundary_return_event(ctx, out_ev);
+
+    if (dr < 0) {
+      if (PyErr_Occurred()) {
+        *p_val = NULL;
+        return -1;
+      }
+      *p_val = NULL;
+      return 0;
+    }
+  }
+  *p_val = NULL;
+  return 0;
+}
+
+
 KosDynNext *kos_dyn_next_clone(KosDynNext *node) {
 
   KosDynNext *clone = (KosDynNext *) kos_dynnode_alloc();

@@ -245,6 +245,27 @@ The **archived** plan already moved **delivery** into **`dyn_next.c`** / **`dyn_
 
 ---
 
+## Implementation status (2026-04)
+
+**Done in-tree**
+
+- **Single delivery path for flattened Koskari async-gen RETURN** after `kos_dyn_pop_frame`: [`kos_dyn_try_deliver_iterator_boundary_after_pop`](../../koskari/lib/dynchain/dyn_next.c) and [`kos_dyn_deliver_iterator_boundary_return_event`](../../koskari/lib/dynchain/dyn_next.c) share logic with post-opcode return delivery (`eval_event_return_deliver_to_boundary` in [`eval.c`](../../koskari/lib/eval.c)). [`RETURN.c`](../../koskari/lib/opcode/RETURN.c) no longer duplicates the NEXT/FOREACH exhaustion block inline.
+- **`eval_event_yield`** — post-opcode `KOS_EV_YIELD` handling ([`eval.c`](../../koskari/lib/eval.c)).
+- **`eval_event_return_deliver_to_boundary`** — `KOS_EV_RETURN` to NEXT/FOREACH when `kos_dyn_need_kos_agen_boundary_deliver` ([`eval.c`](../../koskari/lib/eval.c)).
+- **`eval_event_raise`** — wraps `eval_step_after_process_raise` for pending/post-opcode exception normalization ([`eval.c`](../../koskari/lib/eval.c)).
+- Comment on `kos_dynnode_on_control_returned`: iterator boundaries use eval/dispatch helpers, not this hook ([`dynchain.c`](../../koskari/lib/dynchain.c)).
+
+**Not done (future milestones)**
+
+- Move **`KOS_TRANS_WALK_RETURN_TO_FRAME`** / **`kos_dyn_pop_frame`** out of **`RETURN.c`** into a fuller **`eval_event_return`** (§3.2 recommendation: eval-owned unwind).
+- Optional **`KOS_DYN_CAP_*`**-only router if it removes remaining conditionals.
+- Deeper **`eval_event_raise`** split (transfer-plan ordering vs `process_raise` internals).
+
+**Verification:** `tox -qe test` (2134 passed, 5 skipped). Native `make test-valgrind`: 190 tests passed; valgrind leak summary matches existing baseline for this tree.
+
+---
+
 ## Document history
 
 - **2026-04-16** — Initial draft: eval event handlers, RETURN escape, RAISE/YIELD unification, ownership and pitfalls.
+- **2026-04-16** — Implementation status: shared iterator RETURN delivery, `eval_event_*` extractions.

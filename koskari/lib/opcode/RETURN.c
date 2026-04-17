@@ -71,9 +71,6 @@ KOS_OP_HANDLER(RETURN) {
   {
     KosDynNode *parent = KosDynNode_PARENT(CURRENT_FRAME(ctx));
     if (parent != NULL && ! KosDynNode_IS_GEN(parent)) {
-    KosDynNext *pending_next = kos_dyn_find_next_above_frame(ctx);
-    KosDynForeach *pending_foreach = kos_dyn_find_awaiting_foreach(ctx);
-    // KosDynFrame *detached_frame = NULL;
 
     /* Walk RETURN to frame (handle phase: FINALLY may consume and run). */
     KosTransitionReq treq = {
@@ -106,45 +103,15 @@ KOS_OP_HANDLER(RETURN) {
       return KOS_OP_POST_ERR();
     }
 
-    /* Async gen special case: flattened Koskari async gen exhausted (ITER_NEXT
-       or standalone NEXT). Rare path. */
-    if (unlikely(pending_foreach && ! pending_next)) {
-      KosPyAsyncGen *agen =
-          (KosPyAsyncGen *) KosDynForeach_ITER(pending_foreach);
-      (void) agen;
-      agen->closed = 1;
-      agen->in_progress = 0;
-      KosDynForeach_EXHAUSTED(pending_foreach) = 1;
-      CURRENT_PC(ctx) = KosDynForeach_ITER_NEXT_ELSE_PC(pending_foreach);
-      KosDynForeach_ITER_STEP_PHASE(pending_foreach) = KOS_FOREACH_ITER_STEP_IDLE;
-      Py_DECREF(val);
-      return KOS_OP_RUN();
-    }
-    if (unlikely(pending_next)) {
-      KosPyAsyncGen *agen =
-          (KosPyAsyncGen *) KosDynNext_AGEN_OBJ((KosDynNode *) pending_next);
-      int n = KosDynNext_N((KosDynNode *) pending_next);
-      agen->closed = 1;
-      agen->in_progress = 0;
-      if (n == 2 && KosDynNext_DEFAULT_VAL((KosDynNode *) pending_next)) {
-        if (KosStackBlock_PushRef(
-                &CURRENT_STACK(ctx),
-                KosDynNext_DEFAULT_VAL((KosDynNode *) pending_next)) < 0) {
-          Py_DECREF(val);
-          kos_dyn_unlink_next_node(ctx, pending_next);
-          return KOS_OP_POST_ERR();
-        }
-        Py_DECREF(val);
-      } else if (n == 1) {
-        PyErr_SetNone(PyExc_StopIteration);
-        Py_DECREF(val);
-        kos_dyn_unlink_next_node(ctx, pending_next);
+    /* Flattened Koskari async gen: same delivery path as dispatch_boundary_event
+       (KOS_DYN_NEXT or awaiting KOS_DYN_FOREACH). */
+    {
+      int bd = kos_dyn_try_deliver_iterator_boundary_after_pop(ctx, &val, out_ev);
+
+      if (bd == 0)
+        return KOS_OP_RUN();
+      if (bd < 0)
         return KOS_OP_POST_ERR();
-      } else {
-        Py_DECREF(val);
-      }
-      kos_dyn_unlink_next_node(ctx, pending_next);
-      return KOS_OP_RUN();
     }
 
     /* Deliver value to parent: native handler takes it, else push onto stack.

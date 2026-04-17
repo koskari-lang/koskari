@@ -187,6 +187,8 @@ static void kos_dynnode_return_to_freelist(KosDynNode *node) {
    KosContext_CallArgs returns.
 */
 int kos_dynnode_on_control_returned(KosContext *ctx, KosDynNode *node, KosEvent *out_ev) {
+  /* Iterator-boundary yield/return uses eval dispatch_boundary_event /
+     kos_dyn_deliver_* instead of this hook. */
   (void) out_ev;
   /* When node is a frame, check if parent is WITH in pending phase. */
   if (KosDynNode_IS_FRAME(node)) {

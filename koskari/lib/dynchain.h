@@ -1117,6 +1117,12 @@ int kos_dyn_foreach_deliver_return_kos_agen(
 
 int kos_dyn_need_kos_agen_boundary_deliver(KosContext *ctx);
 
+int kos_dyn_deliver_iterator_boundary_return_event(
+    KosContext *ctx, struct KosEvent *out_ev);
+
+int kos_dyn_try_deliver_iterator_boundary_after_pop(
+    KosContext *ctx, PyObject **p_val, struct KosEvent *out_ev);
+
 KosDynNext *kos_dyn_next_clone(KosDynNext *node);
 
 
