@@ -107,4 +107,86 @@ class TestFormalsStarKwdOrderKoskariSource(SpecialsTestCase):
         self.assertEqual(result, (1, 2, (3, 4), "ecks", 100, {}))
 
 
+    async def test_define_no_varargs_bare_kwonly_and_starstar(self):
+        """
+        No positionals after required slots: *more is empty; one bare kw-only x.
+        """
+
+        src = """
+        (compile/begin
+          (define g [a b *: more x **: rest]
+            (col a b more x rest))
+          (g 1 2 x: "only"))
+        """
+        expr, mod = self.compile_expr(src, col=lambda *a: a)
+        result = await expr()
+        self.assertEqual(result, (1, 2, (), "only", {}))
+
+
+    async def test_define_override_kwonly_default(self):
+        """
+        Same shape as foobar but pass y explicitly so it overrides the default.
+        """
+
+        src = """
+        (compile/begin
+          (define f [a b *: more x y: 100 **: lol]
+            (col a b more x y lol))
+          (f 1 2 3 4 x: "ecks" y: 42))
+        """
+        expr, mod = self.compile_expr(src, col=lambda *a: a)
+        result = await expr()
+        self.assertEqual(result, (1, 2, (3, 4), "ecks", 42, {}))
+
+
+    async def test_define_starstar_collects_extra_keywords(self):
+        """
+        Extra call keywords land in the ** binding after kw-only names are taken.
+        """
+
+        src = """
+        (compile/begin
+          (define f [a b *: more x y: 100 **: lol]
+            (col a b more x y lol))
+          (f 1 2 3 4 x: "ecks" extra: 7))
+        """
+        expr, mod = self.compile_expr(src, col=lambda *a: a)
+        result = await expr()
+        self.assertEqual(len(result), 6)
+        self.assertEqual(result[:5], (1, 2, (3, 4), "ecks", 100))
+        self.assertEqual(result[5], {"extra": 7})
+
+
+    async def test_define_two_bare_kwonly_after_star(self):
+        """
+        Two required keyword-only names after *; no kw-only defaults in this form.
+        """
+
+        src = """
+        (compile/begin
+          (define h [a *: more p q **: r]
+            (col a more p q r))
+          (h 10 p: 1 q: 2))
+        """
+        expr, mod = self.compile_expr(src, col=lambda *a: a)
+        result = await expr()
+        self.assertEqual(result, (10, (), 1, 2, {}))
+
+
+    async def test_define_pre_star_default_plus_kwonly_after_star(self):
+        """
+        Optional positional-or-keyword before *; *more; then bare kw-only x.
+        """
+
+        src = """
+        (compile/begin
+          (define f [a b: 99 *: more x **: lol]
+            (col a b more x lol))
+          (f 1 2 3 x: "z"))
+        """
+        expr, mod = self.compile_expr(src, col=lambda *a: a)
+        result = await expr()
+        self.assertEqual(result, (1, 2, (3,), "z", {}))
+
+
 # The end.

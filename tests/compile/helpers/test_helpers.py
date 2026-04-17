@@ -224,6 +224,33 @@ class TestGatherFormals(unittest.TestCase):
         self.assertEqual(kwonly[0], (k, v))
         self.assertEqual(annotations, {})
 
+    def test_star_then_bare_kwonly_then_keyword_value(self):
+        a = symbol("a")
+        star_sym = symbol("args")
+        x_sym = symbol("x")
+        ky = keyword("y")
+        v = symbol("v")
+        k_star = keyword("*")
+        args = cons(
+            a,
+            cons(
+                k_star,
+                cons(
+                    star_sym,
+                    cons(
+                        x_sym,
+                        cons(ky, cons(v, nil))))))
+        pos, defaults, kwonly, star, starstar, annotations = gather_formals(
+            args)
+        self.assertEqual(pos, [a])
+        self.assertEqual(defaults, [])
+        self.assertIs(star, star_sym)
+        self.assertIsNone(starstar)
+        self.assertEqual(len(kwonly), 2)
+        self.assertEqual(kwonly[0], (keyword("x"), nil))
+        self.assertEqual(kwonly[1], (ky, v))
+        self.assertEqual(annotations, {})
+
     def test_starstar(self):
         star_sym = symbol("args")
         starstar_sym = symbol("kwargs")
