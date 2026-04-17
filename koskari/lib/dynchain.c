@@ -1003,7 +1003,7 @@ static int kos_dyn_gen_freeze_and_release(KosContext *ctx, KosDynGen *gen,
   owner = KosDynGen_OWNER(gen);
   if (owner && KosPyAsyncGen_Check(owner))
     ((KosPyAsyncGen *) owner)->gen = (void *) gen;
-  KosContext_RESUME_GEN(ctx) = gen;
+  kos_ctx_async_bridge_set_yield_gen(ctx, gen);
 
   /* Release only when owner holds the gen; standalone gen is kept for resume */
   if (owner)
@@ -1015,7 +1015,7 @@ static int kos_dyn_gen_freeze_and_release(KosContext *ctx, KosDynGen *gen,
            ? kos_dynnode_kind_name(KosDynNode_KIND(KosContext_DYN_TOP(ctx)))
            : "NULL",
        (void *) KosContext_FRAME_TOP(ctx),
-       (void *) KosContext_RESUME_GEN(ctx),
+       (void *) kos_ctx_resume_gen_get(ctx),
        (void *) owner);
   return 0;
 }
@@ -3665,23 +3665,22 @@ int kos_invoke_continuation(
     KosDynNode *captured = KosContinuation_CAPTURED_CHAIN(to_use);
     /* Segment to push: frames below the prompt (exclude prompt from push) */
     push_segment = captured ? KosDynNode_PARENT(captured) : NULL;
-    KosContext_DELIMITED_RETURN_FRAME(ctx) = KosContext_FRAME_TOP(ctx);
-    KosContext_DELIMITED_RETURN_PC(ctx) = KosContext_FRAME_TOP(ctx)
-        ? KosDynFrame_PC(KosContext_FRAME_TOP(ctx)) : (uint32_t) -1;
-    /* Return to current dyn_top, not frame_top, so we don't unwind past
-       nodes that were pushed after the continuation was invoked (e.g. PARAM) */
-    KosContext_DELIMITED_RETURN_NODE(ctx) = KosContext_DYN_TOP(ctx);
+    if (KosContext_RETURN_TARGET_CHAIN(ctx)) {
+      kos_dynchain_free(KosContext_RETURN_TARGET_CHAIN(ctx), NULL);
+    }
+    kos_ctx_delim_clear(ctx);
+    kos_ctx_delim_set_pop_prompt(
+        ctx,
+        KosContext_FRAME_TOP(ctx),
+        KosContext_FRAME_TOP(ctx)
+            ? KosDynFrame_PC(KosContext_FRAME_TOP(ctx)) : (uint32_t) -1,
+        KosContext_DYN_TOP(ctx));
     if (KOS_XFER_TRACE)
       SAYF("[xfer] invoke: set DELIMITED_RETURN dyn_top=%p kind=%s frame_top=%p return_node=%p",
            (void *) KosContext_DYN_TOP(ctx),
            KosContext_DYN_TOP(ctx) ? kos_dynnode_kind_name(KosDynNode_KIND(KosContext_DYN_TOP(ctx))) : "NULL",
            (void *) KosContext_FRAME_TOP(ctx),
            (void *) KosContext_DELIMITED_RETURN_NODE(ctx));
-    if (KosContext_RETURN_TARGET_CHAIN(ctx)) {
-      kos_dynchain_free(KosContext_RETURN_TARGET_CHAIN(ctx), NULL);
-      KosContext_RETURN_TARGET_CHAIN(ctx) = NULL;
-    }
-    KosContext_RETURN_TARGET_PC(ctx) = (uint32_t) -1;
   }
 
   /* Build plan: PUSH for delimited; full transfer for undelimited. */
@@ -3705,11 +3704,8 @@ int kos_invoke_continuation(
   if (KOS_XFER_TRACE)
     SAYF("[xfer] plan build -> res=%d plan=%p", res, (void *) plan);
   if (res < 0) {
-    if (is_delimited) {
-      KosContext_DELIMITED_RETURN_FRAME(ctx) = NULL;
-      KosContext_DELIMITED_RETURN_PC(ctx) = (uint32_t) -1;
-      KosContext_DELIMITED_RETURN_NODE(ctx) = NULL;
-    }
+    if (is_delimited)
+      kos_ctx_delim_clear(ctx);
     if (to_use != k)
       kos_continuation_free(to_use);
     return -1;
@@ -3916,9 +3912,7 @@ int kos_dyn_finish_delimited_pop_return(KosContext *ctx, PyObject *value) {
   KosDynFrame_PC(ret_frame) = KosContext_DELIMITED_RETURN_PC(ctx);
   KosContext_FRAME_TOP(ctx) = ret_frame;
   KosContext_INVOCATION_SEGMENT_TOP(ctx) = NULL;
-  KosContext_DELIMITED_RETURN_FRAME(ctx) = NULL;
-  KosContext_DELIMITED_RETURN_PC(ctx) = (uint32_t) -1;
-  KosContext_DELIMITED_RETURN_NODE(ctx) = NULL;
+  kos_ctx_delim_clear(ctx);
   return 0;
 }
 

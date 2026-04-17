@@ -216,8 +216,7 @@ static int kos_return_delimited(KosContext *ctx, PyObject *val, KosEvent *out_ev
   KosContext_FLAGS(ctx) |= KOS_CTX_IN_TRANSFER;
   KosTransferPlan_CONTINUATION_REF(plan) = NULL;
   kos_dynchain_free(KosContext_RETURN_TARGET_CHAIN(ctx), NULL);
-  KosContext_RETURN_TARGET_CHAIN(ctx) = NULL;
-  KosContext_RETURN_TARGET_PC(ctx) = (uint32_t) -1;
+  kos_ctx_delim_clear(ctx);
   if (run_transfer_plan_to_completion(ctx, out_ev) < 0)
     return -1;
   return 0;
@@ -373,12 +372,12 @@ static KosEvalMode revive_await(
         Py_XDECREF(tb);
         if (PyErr_ExceptionMatches(PyExc_AttributeError)) {
           PyErr_Clear();
-          Py_CLEAR(KosContext_PY_AWAIT_ITER(ctx));
+          kos_ctx_async_bridge_py_clear_await_iter(ctx);
           PyErr_SetObject(throw_typ ? throw_typ : (PyObject *) Py_TYPE(throw_exc),
                           throw_exc);
           return KOS_MODE_EXCEPTION;
         }
-        Py_CLEAR(KosContext_PY_AWAIT_ITER(ctx));
+        kos_ctx_async_bridge_py_clear_await_iter(ctx);
         return KOS_MODE_EXCEPTION;
       }
       if (! PyCallable_Check(throw_meth)) {
@@ -390,7 +389,7 @@ static KosEvalMode revive_await(
         Py_DECREF(typ);
         Py_DECREF(val);
         Py_XDECREF(tb);
-        Py_CLEAR(KosContext_PY_AWAIT_ITER(ctx));
+        kos_ctx_async_bridge_py_clear_await_iter(ctx);
         return KOS_MODE_EXCEPTION;
       }
       /* Single-arg throw(exc) avoids deprecated (typ, val, tb) on generators */
@@ -408,14 +407,14 @@ static KosEvalMode revive_await(
       if (PyErr_ExceptionMatches(PyExc_StopIteration)) {
         PyObject *await_result = NULL;
         if (PyGen_FetchStopIterationValue(&await_result) < 0) {
-          Py_CLEAR(KosContext_PY_AWAIT_ITER(ctx));
+          kos_ctx_async_bridge_py_clear_await_iter(ctx);
           return KOS_MODE_EXCEPTION;
         }
         if (! await_result) {
           await_result = Py_None;
           Py_INCREF(await_result);
         }
-        Py_CLEAR(KosContext_PY_AWAIT_ITER(ctx));
+        kos_ctx_async_bridge_py_clear_await_iter(ctx);
         Py_XDECREF(KosContext_PY_RESUME_INJECT(ctx));
         KosContext_PY_RESUME_INJECT(ctx) = await_result;
         KosContext_PY_RESUME_KIND(ctx) = KOS_RESUME_AWAIT;
@@ -423,7 +422,7 @@ static KosEvalMode revive_await(
         /* Fall through: push inject like a normal successful resume */
       }
       else {
-        Py_CLEAR(KosContext_PY_AWAIT_ITER(ctx));
+        kos_ctx_async_bridge_py_clear_await_iter(ctx);
         return KOS_MODE_EXCEPTION;
       }
     }
@@ -436,7 +435,7 @@ static KosEvalMode revive_await(
   }
   if (KosContext_PENDING_DEFER(ctx) && to_push != NULL) {
     KosDefer_FeedResult((KosDefer *) KosContext_PENDING_DEFER(ctx), to_push);
-    Py_CLEAR(KosContext_PENDING_DEFER(ctx));
+    kos_ctx_async_bridge_py_clear_pending_defer(ctx);
   }
   if (to_push != NULL && CURRENT_FRAME(ctx)) {
     if (KosStackBlock_PushRef(&CURRENT_STACK(ctx), to_push) < 0)
@@ -471,9 +470,8 @@ static KosEvalMode revive_yield(
        (void *) send_val, (void *) throw_typ, (void *) throw_exc,
        (void *) KosContext_DYN_TOP(ctx), (void *) KosContext_FRAME_TOP(ctx));
 
-  gen = KosContext_RESUME_GEN(ctx);
+  gen = kos_ctx_async_bridge_take_yield_gen(ctx);
   if (gen) {
-    KosContext_RESUME_GEN(ctx) = NULL;
     SAYF("[gen] revive_yield calling install for gen=%p\n", (void *) gen);
     if (kos_dyn_gen_install(ctx, gen) < 0)
       return KOS_MODE_EXCEPTION;
@@ -1067,18 +1065,13 @@ KosContext *kos_context_new(KosDynFrame *top) {
   KosContext_PLAN_STACK(ctx) = NULL;
   KosContext_CHAIN_VERSION(ctx) = 0;
   KosContext_INVOCATION_SEGMENT_TOP(ctx) = NULL;
-  KosContext_RETURN_TARGET_CHAIN(ctx) = NULL;
-  KosContext_RETURN_TARGET_PC(ctx) = (uint32_t) -1;
-  KosContext_DELIMITED_RETURN_FRAME(ctx) = NULL;
-  KosContext_DELIMITED_RETURN_PC(ctx) = (uint32_t) -1;
-  KosContext_DELIMITED_RETURN_NODE(ctx) = NULL;
+  kos_ctx_delim_clear(ctx);
+  kos_ctx_async_bridge_clear(ctx);
 
   /* Initialize Python await bridging */
-  KosContext_PY_AWAIT_ITER(ctx) = NULL;
   KosContext_PY_LAST_YIELDED(ctx) = NULL;
   KosContext_PY_RESUME_INJECT(ctx) = NULL;
   KosContext_PY_RESUME_KIND(ctx) = KOS_RESUME_NONE;
-  KosContext_PENDING_DEFER(ctx) = NULL;
 
   /* Initialize exception injection */
   KosContext_INJECT_MODE(ctx) = KOS_INJECT_NONE;
@@ -1105,8 +1098,8 @@ void kos_context_free(KosContext *ctx) {
   /* Free return target chain (delimited k return path) */
   if (KosContext_RETURN_TARGET_CHAIN(ctx)) {
     kos_dynchain_free(KosContext_RETURN_TARGET_CHAIN(ctx), NULL);
-    KosContext_RETURN_TARGET_CHAIN(ctx) = NULL;
   }
+  kos_ctx_delim_clear(ctx);
 
   /* Free any active transfer plan */
   kos_free_transfer_plan(KosContext_PLAN(ctx));
@@ -1116,11 +1109,9 @@ void kos_context_free(KosContext *ctx) {
     kos_free_transfer_plan(p);
   }
 
-  Py_XDECREF(KosContext_PY_AWAIT_ITER(ctx));
+  kos_ctx_async_bridge_clear(ctx);
   Py_XDECREF(KosContext_PY_LAST_YIELDED(ctx));
   Py_XDECREF(KosContext_PY_RESUME_INJECT(ctx));
-  Py_XDECREF(KosContext_PENDING_DEFER(ctx));
-  KosContext_PENDING_DEFER(ctx) = NULL;
   Py_XDECREF(KosContext_INJECT_TYPE(ctx));
   KosContext_INJECT_TYPE(ctx) = NULL;
   Py_XDECREF(KosContext_INJECT_VALUE(ctx));
@@ -1155,10 +1146,12 @@ int kos_context_traverse(
 
   Py_VISIT(KosContext_TOKEN(ctx));
   Py_VISIT(KosContext_DOMAIN(ctx));
-  Py_VISIT(KosContext_PY_AWAIT_ITER(ctx));
+  if (ctx->async_bridge.kind == KOS_ASYNC_BRIDGE_AWAIT) {
+    Py_VISIT(ctx->async_bridge.u.await.await_iter);
+    Py_VISIT(ctx->async_bridge.u.await.pending_defer);
+  }
   Py_VISIT(KosContext_PY_LAST_YIELDED(ctx));
   Py_VISIT(KosContext_PY_RESUME_INJECT(ctx));
-  Py_VISIT(KosContext_PENDING_DEFER(ctx));
   Py_VISIT(KosContext_INJECT_TYPE(ctx));
   Py_VISIT(KosContext_INJECT_VALUE(ctx));
 
@@ -1312,8 +1305,7 @@ static PyObject *eager_step_awaitable(
     *yielded = result;
 
     /* Store iterator for later resumption */
-    Py_XDECREF(KosContext_PY_AWAIT_ITER(ctx));
-    KosContext_PY_AWAIT_ITER(ctx) = await_iter;
+    kos_ctx_async_bridge_assign_await_iter(ctx, await_iter);
 
     return NULL;
   }
@@ -2427,8 +2419,7 @@ static int defer_drive(
         }
 
         if (r == 1) {
-          Py_XDECREF(KosContext_PENDING_DEFER(ctx));
-          KosContext_PENDING_DEFER(ctx) = defer_obj;
+          kos_ctx_async_bridge_assign_pending_defer(ctx, defer_obj);
           return 1;
         }
 
@@ -2445,8 +2436,7 @@ static int defer_drive(
       }
 
       if (r == 1) {
-        Py_XDECREF(KosContext_PENDING_DEFER(ctx));
-        KosContext_PENDING_DEFER(ctx) = defer_obj;
+        kos_ctx_async_bridge_assign_pending_defer(ctx, defer_obj);
         return 1;
       }
 
