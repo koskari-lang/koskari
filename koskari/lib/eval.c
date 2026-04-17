@@ -2937,7 +2937,7 @@ static KosEvalStep eval_phase_post_opcode(
           KosDynFrame *deleg = KosDynYieldFrom_DELEGATING_FRAME(yf_aw);
 
           if (deleg)
-            KosDynFrame_PC(deleg) = KosDynYieldFrom_ROLLBACK_PC(yf_aw);
+            KosDynFrame_PC(deleg) = KosDynFrame_ACTING_PC(deleg);
         }
         KosContext_SUSPENSION_EVENT(ctx) = KOS_SUSP_AWAIT;
         return KOS_STEP_STOP_EVENT;

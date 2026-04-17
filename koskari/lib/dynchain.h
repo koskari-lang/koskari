@@ -254,8 +254,6 @@ struct KosDynNode {
       PyObject *pending_arg;
       PyObject *pending_arg_type;  /* for KOS_YF_THROW: exception type */
       PyObject *inflight;
-      /** PC of YIELD_FROM on delegating frame; set on first opcode entry */
-      uint32_t rollback_pc;
       /** Outer frame running YIELD_FROM; set when flattening Koskari agen */
       struct KosDynNode *delegating_frame;
     } yield_from;
@@ -2088,7 +2086,6 @@ typedef enum KosYfPhase {
 #define KosDynYieldFrom_PENDING_ARG(n) (((KosDynNode *)(n))->u.yield_from.pending_arg)
 #define KosDynYieldFrom_PENDING_ARG_TYPE(n) (((KosDynNode *)(n))->u.yield_from.pending_arg_type)
 #define KosDynYieldFrom_INFLIGHT(n)    (((KosDynNode *)(n))->u.yield_from.inflight)
-#define KosDynYieldFrom_ROLLBACK_PC(n) (((KosDynNode *)(n))->u.yield_from.rollback_pc)
 #define KosDynYieldFrom_DELEGATING_FRAME(n) \
     ((KosDynFrame *)(((KosDynNode *)(n))->u.yield_from.delegating_frame))
 #define KosDynYieldFrom_DELEGATING_FRAME_SET(n, f) \

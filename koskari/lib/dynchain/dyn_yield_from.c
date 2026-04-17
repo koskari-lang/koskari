@@ -32,7 +32,6 @@ KosDynYieldFrom *kos_dynyieldfrom_new(
   KosDynYieldFrom_PENDING_ARG(node) = NULL;
   KosDynYieldFrom_PENDING_ARG_TYPE(node) = NULL;
   KosDynYieldFrom_INFLIGHT(node) = NULL;
-  KosDynYieldFrom_ROLLBACK_PC(node) = 0;
   KosDynYieldFrom_DELEGATING_FRAME_SET(node, NULL);
   return node;
 }
@@ -86,7 +85,6 @@ static KosDynYieldFrom *kos_dynyieldfrom_clone(KosDynYieldFrom *node) {
   if (KosDynYieldFrom_INFLIGHT(clone))
     Py_INCREF(KosDynYieldFrom_INFLIGHT(clone));
 
-  KosDynYieldFrom_ROLLBACK_PC(clone) = KosDynYieldFrom_ROLLBACK_PC(node);
   KosDynYieldFrom_DELEGATING_FRAME_SET(
       clone, KosDynYieldFrom_DELEGATING_FRAME(node));
 
@@ -159,7 +157,7 @@ int kos_dyn_yield_from_deliver_inner_yield(
   agen->in_progress = 0;
 
   KosDynYieldFrom_PHASE_SET(yf, KOS_YF_PHASE_EXPECT_SEND);
-  KosDynFrame_PC(frame) = KosDynYieldFrom_ROLLBACK_PC(yf);
+  KosDynFrame_PC(frame) = KosDynFrame_ACTING_PC(frame);
 
   tos = KosStackBlock_TailPtr(KosDynFrame_STACK(frame), 1);
   if (! tos)
@@ -184,7 +182,6 @@ int kos_dyn_yield_from_deliver_inner_return(
 
   PyObject *val = KosEvent_PAYLOAD(out_ev);
   KosDynFrame *df = KosDynYieldFrom_DELEGATING_FRAME(yf);
-  uint32_t rpc = KosDynYieldFrom_ROLLBACK_PC(yf);
   KosCode *code;
   KosPyAsyncGen *delegate_agen;
 
@@ -205,9 +202,8 @@ int kos_dyn_yield_from_deliver_inner_return(
     delegate_agen->in_progress = 0;
 
   code = df ? KosDynFrame_CODE(df) : NULL;
-  if (df && code && (uint32_t) rpc + 1u < KosCode_CODE_LEN(code)) {
-    KosDynFrame_PC(df) = rpc + 1u;
-    KosDynFrame_ACTING_PC(df) = rpc + 1u;
+  if (df && code && KosDynFrame_ACTING_PC(df) + 1u < KosCode_CODE_LEN(code)) {
+    KosDynFrame_PC(df) = KosDynFrame_ACTING_PC(df) + 1u;
   }
 
   KosDynYieldFrom_DELEGATING_FRAME_SET(yf, NULL);

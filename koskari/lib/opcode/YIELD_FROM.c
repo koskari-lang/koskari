@@ -150,25 +150,6 @@ static int yield_from_normalize(
 
 
 /**
-   Set frame PC back to the YIELD_FROM instruction so the next loop
-   iteration re-dispatches to YIELD_FROM (used when suspending).  Records
-   rollback_pc on the yield-from node for flattened Koskari async gen
-   boundary delivery.
-*/
-static void yield_from_rollback_pc(
-    KosContext *ctx, KosOp *insn, KosDynYieldFrom *yf) {
-
-  KosDynFrame *frame = CURRENT_FRAME(ctx);
-  KosCode *code = KosDynFrame_CODE(frame);
-  uint32_t pc = (uint32_t)(insn - KosCode_CODE(code));
-
-  KosDynFrame_PC(frame) = pc;
-  if (yf)
-    KosDynYieldFrom_ROLLBACK_PC(yf) = pc;
-}
-
-
-/**
    Emit KOS_EV_YIELD using the value at TOS. Call after pushing the
    yielded value onto the frame stack. Requires at least one value on
    the frame stack (TOS). On success sets phase to EXPECT_SEND, DEAD, and
@@ -179,8 +160,7 @@ static int yield_from_emit_yield(
     KosContext *ctx,
     KosDynFrame *frame,
     KosDynYieldFrom *yf,
-    KosEvent *out_ev,
-    KosOp *insn) {
+    KosEvent *out_ev) {
 
   PyObject *const *tos = KosStackBlock_TailPtr(
       KosDynFrame_STACK(frame), 1);
@@ -192,7 +172,7 @@ static int yield_from_emit_yield(
   }
 
   KosDynYieldFrom_PHASE_SET(yf, KOS_YF_PHASE_EXPECT_SEND);
-  yield_from_rollback_pc(ctx, insn, yf);
+  KosDynFrame_PC(frame) = KosDynFrame_ACTING_PC(frame);
   KosEvent_KIND(out_ev) = KOS_EV_YIELD;
   KosEvent_PAYLOAD(out_ev) = *tos;
   Py_INCREF(KosEvent_PAYLOAD(out_ev));
@@ -254,7 +234,7 @@ static int yield_from_drive_sync_iter(
       return -1;
     }
     Py_DECREF(n);
-    return yield_from_emit_yield(ctx, frame, yf, out_ev, insn);
+    return yield_from_emit_yield(ctx, frame, yf, out_ev);
   }
 
   /* PyIter_Next returns NULL with no exception set on normal exhaustion.
@@ -305,7 +285,7 @@ static int yield_from_drive_sync_gen(
           return -1;
         }
         Py_DECREF(res);
-        return yield_from_emit_yield(ctx, frame, yf, out_ev, insn);
+        return yield_from_emit_yield(ctx, frame, yf, out_ev);
       }
     }
     kos_yieldfrom_close_delegate(yf);
@@ -337,7 +317,7 @@ static int yield_from_drive_sync_gen(
         return -1;
       }
       Py_DECREF(res);
-      return yield_from_emit_yield(ctx, frame, yf, out_ev, insn);
+      return yield_from_emit_yield(ctx, frame, yf, out_ev);
     }
     return -1;
   }
@@ -358,6 +338,8 @@ static int yield_from_drive_py_async(
     uint8_t action,
     KosEvent *out_ev,
     KosOp *insn) {
+
+  (void) insn;
 
   /* Resuming from await: we had suspended with INFLIGHT set; the
      result was stashed in PENDING_ARG. Push it and emit YIELD. */
@@ -380,7 +362,7 @@ static int yield_from_drive_py_async(
     }
 
     Py_DECREF(aw_result);
-    return yield_from_emit_yield(ctx, frame, yf, out_ev, insn);
+    return yield_from_emit_yield(ctx, frame, yf, out_ev);
   }
 
   /* Throw(StopAsyncIteration): delegate was closed with that; discard value. */
@@ -456,7 +438,7 @@ static int yield_from_drive_py_async(
   if (suspended && yielded) {
     KosDynYieldFrom_INFLIGHT(yf) = awaitable;
     KosDynYieldFrom_PHASE_SET(yf, KOS_YF_PHASE_EXPECT_AWAIT);
-    yield_from_rollback_pc(ctx, insn, yf);
+    KosDynFrame_PC(frame) = KosDynFrame_ACTING_PC(frame);
     KosEvent_KIND(out_ev) = KOS_EV_AWAIT;
     KosEvent_PAYLOAD(out_ev) = yielded;
     KosContext_FLAGS(ctx) &= ~KOS_CTX_RUNNING;
@@ -474,7 +456,7 @@ static int yield_from_drive_py_async(
       return -1;
     }
     Py_DECREF(result);
-    return yield_from_emit_yield(ctx, frame, yf, out_ev, insn);
+    return yield_from_emit_yield(ctx, frame, yf, out_ev);
   }
 
   if (PyErr_ExceptionMatches(PyExc_StopAsyncIteration)) {
@@ -675,7 +657,7 @@ KOS_OP_HANDLER(YIELD_FROM) {
       KosDynYieldFrom *yf_new = (KosDynYieldFrom *) KosContext_DYN_TOP(ctx);
       KosDynYieldFrom_PENDING_ACTION(yf_new) = KOS_YF_STEP;
       KosDynYieldFrom_PHASE_SET(yf_new, KOS_YF_PHASE_DRIVING);
-      yield_from_rollback_pc(ctx, insn, yf_new);
+      KosDynFrame_PC(CURRENT_FRAME(ctx)) = KosDynFrame_ACTING_PC(CURRENT_FRAME(ctx));
     }
     return KOS_OP_RUN();
   }
