@@ -2674,10 +2674,10 @@ static KosEvalStep eval_phase_transfer(KosContext *ctx, KosEvent *out_ev) {
 
 
 /**
-   Map process_raise outcome to eval step: propagate RAISE, resuspend on
-   AWAIT, or REPROLOGUE after local recovery.
+   Single PyErr / RAISE ordering contract after process_raise: propagate RAISE,
+   resuspend on AWAIT, or REPROLOGUE after local recovery.
 */
-static KosEvalStep eval_step_after_process_raise(
+static KosEvalStep eval_boundary_raise_dispatch(
     KosContext *ctx,
     KosEvent *out_ev) {
 
@@ -2698,12 +2698,13 @@ static KosEvalStep eval_step_after_process_raise(
 
 
 /**
-   Post-opcode / entry normalization for active PyErr: wraps process_raise.
+   Post-opcode / entry normalization for active PyErr: delegates to
+   eval_boundary_raise_dispatch (process_raise and suspension tagging).
    See design/interpreter/event-driven-eval-event-handlers.md (eval_event_raise).
 */
 static KosEvalStep eval_event_raise(KosContext *ctx, KosEvent *out_ev) {
 
-  return eval_step_after_process_raise(ctx, out_ev);
+  return eval_boundary_raise_dispatch(ctx, out_ev);
 }
 
 
@@ -2825,9 +2826,9 @@ static KosEvalStep eval_event_yield_deliver_to_boundary(
 
 
 /**
-   RETURN half: deliver KOS_EV_RETURN payload to NEXT or FOREACH consumer.
+   Shared step mapping for kos_dyn_deliver_iterator_boundary_return_event.
 */
-static KosEvalStep eval_event_return_deliver_to_boundary(
+static KosEvalStep eval_deliver_iterator_boundary_return_step(
     KosContext *ctx, KosEvent *out_ev) {
 
   int dr = kos_dyn_deliver_iterator_boundary_return_event(ctx, out_ev);
@@ -2842,6 +2843,38 @@ static KosEvalStep eval_event_return_deliver_to_boundary(
 
 
 /**
+   RETURN half: deliver KOS_EV_RETURN payload to NEXT or FOREACH consumer.
+*/
+static KosEvalStep eval_event_return_deliver_to_boundary(
+    KosContext *ctx, KosEvent *out_ev) {
+
+  return eval_deliver_iterator_boundary_return_step(ctx, out_ev);
+}
+
+
+static KosEvalStep eval_parent_return_deliver(KosContext *ctx, KosEvent *out_ev);
+static KosEvalStep eval_phase_post_opcode(
+        KosContext *ctx,
+        KosEvent *out_ev,
+        int op_res);
+
+
+/**
+   Stage A of post-opcode YIELD: transition walk only (freeze is walk side).
+*/
+static KosEvalStep eval_yield_handle_walk_and_freeze(
+    KosContext *ctx, KosEvent *out_ev) {
+
+  KosTransitionReq treq = { .kind = KOS_TRANS_WALK_HANDLE_YIELD };
+  KosTransitionResult tres = {0};
+
+  if (kos_dyn_transition(ctx, &treq, &tres, out_ev) < 0)
+    return KOS_STEP_FATAL_ERROR;
+  return KOS_STEP_CONTINUE;
+}
+
+
+/**
    Post-opcode handling for KOS_EV_YIELD: walk_handle_yield, optional flattened
    agen boundary delivery, else tag suspension for outer koskari_eval.
 */
@@ -2850,11 +2883,10 @@ static KosEvalStep eval_event_yield(KosContext *ctx, KosEvent *out_ev) {
   SAYF("[eval] post_opcode KOS_EV_YIELD -> walk_handle_yield dyn_top=%p\n",
        (void *) KosContext_DYN_TOP(ctx));
   {
-    KosTransitionReq treq = { .kind = KOS_TRANS_WALK_HANDLE_YIELD };
-    KosTransitionResult tres = {0};
+    KosEvalStep ws = eval_yield_handle_walk_and_freeze(ctx, out_ev);
 
-    if (kos_dyn_transition(ctx, &treq, &tres, out_ev) < 0)
-      return KOS_STEP_FATAL_ERROR;
+    if (ws != KOS_STEP_CONTINUE)
+      return ws;
   }
   if (kos_dyn_need_kos_agen_boundary_deliver(ctx))
     return eval_event_yield_deliver_to_boundary(ctx, out_ev);
@@ -2864,36 +2896,12 @@ static KosEvalStep eval_event_yield(KosContext *ctx, KosEvent *out_ev) {
 
 
 /**
-   Phase 6: post-opcode result handling.
-
-   Called when an opcode handler returns a non-zero op_res.  Handles the
-   exception path (via try_local_exception_handler) and suspension-event
-   tagging for AWAIT and YIELD events.
-
-   :param op_res: The non-zero return value from the opcode handler.
-
-   :return: KOS_STEP_FATAL_ERROR when op_res < 0 and no exception/event
-    (caller uses eval_ret -1); KOS_STEP_STOP_EVENT when out_ev is filled and
-    eval should return (eval_ret 0); KOS_STEP_REPROLOGUE when the dispatch
-    loop should restart the full prologue without surfacing a boundary.
+   Tail of post-opcode handling after CONTROL_RETURNED hook (or equivalent).
 */
-static KosEvalStep eval_phase_post_opcode(
+static KosEvalStep eval_phase_post_opcode_tail(
         KosContext *ctx,
         KosEvent *out_ev,
         int op_res) {
-
-  /* Clear resume kind when handling non-zero result so next iteration (if we
-     continue) has it clean. Keeps the hot path (tail-dispatch) from touching it. */
-  KosContext_PY_RESUME_KIND(ctx) = KOS_RESUME_NONE;
-
-  if (op_res == KOS_OP_RES_CONTROL_RETURNED) {
-    int r = kos_dynnode_on_control_returned(ctx, KosContext_DYN_TOP(ctx), out_ev);
-    if (r == 0 || r == KOS_DYN_UNWIND_ASYNC_STARTED) {
-      /* 0: thunk/wind advanced; 1: async extent started (same numeric value as
-         a normal opcode "suspend" but only returned from dyn helpers). */
-      return KOS_STEP_REPROLOGUE;
-    }
-  }
 
   if (PyErr_Occurred())
     return eval_event_raise(ctx, out_ev);
@@ -2923,6 +2931,104 @@ static KosEvalStep eval_phase_post_opcode(
 
   /* op_res < 0 with no PyErr and no suspension event is a fatal internal error */
   return (op_res < 0) ? KOS_STEP_FATAL_ERROR : KOS_STEP_STOP_EVENT;
+}
+
+
+/**
+   After RETURN opcode pop: iterator boundary, native handler or stack push,
+   then kos_dynnode_on_control_returned (WIND/WITH).
+*/
+static KosEvalStep eval_parent_return_deliver(KosContext *ctx, KosEvent *out_ev) {
+
+  PyObject *val = KosEvent_PAYLOAD(out_ev);
+
+  {
+    int bd = kos_dyn_try_deliver_iterator_boundary_after_pop(ctx, &val, out_ev);
+
+    if (bd == 0)
+      return KOS_STEP_REPROLOGUE;
+    if (bd < 0)
+      return KOS_STEP_FATAL_ERROR;
+  }
+
+  KosEvent_KIND(out_ev) = KOS_EV_RETURN;
+  KosEvent_PAYLOAD(out_ev) = val;
+
+  if (unlikely(KosDynFrame_NATIVE_HANDLER(CURRENT_FRAME(ctx)) != NULL)) {
+    typedef int (*NativeHandlerFn)(void *, void *, int, PyObject *);
+    NativeHandlerFn fn =
+        (NativeHandlerFn) KosDynFrame_NATIVE_HANDLER(CURRENT_FRAME(ctx));
+    int res = fn(ctx, out_ev, 1, val);
+
+    Py_DECREF(val);
+    KosEvent_PAYLOAD(out_ev) = NULL;
+    KosEvent_KIND(out_ev) = KOS_EV_NONE;
+    if (res < 0)
+      return eval_phase_post_opcode(ctx, out_ev, -1);
+    if (res == 0)
+      return KOS_STEP_REPROLOGUE;
+    if (res == 1)
+      return eval_phase_post_opcode(ctx, out_ev, 1);
+    if (res == KOS_OP_RES_CONTROL_RETURNED)
+      return eval_phase_post_opcode(ctx, out_ev, KOS_OP_RES_CONTROL_RETURNED);
+    return KOS_STEP_REPROLOGUE;
+  }
+  if (KosStackBlock_PushRef(&CURRENT_STACK(ctx), val) < 0) {
+    Py_DECREF(val);
+    KosEvent_PAYLOAD(out_ev) = NULL;
+    KosEvent_KIND(out_ev) = KOS_EV_NONE;
+    return KOS_STEP_FATAL_ERROR;
+  }
+  Py_DECREF(val);
+  KosEvent_PAYLOAD(out_ev) = NULL;
+  KosEvent_KIND(out_ev) = KOS_EV_NONE;
+  {
+    int r = kos_dynnode_on_control_returned(ctx, KosContext_DYN_TOP(ctx), out_ev);
+
+    if (r == 0 || r == KOS_DYN_UNWIND_ASYNC_STARTED)
+      return KOS_STEP_REPROLOGUE;
+  }
+
+  return eval_phase_post_opcode_tail(ctx, out_ev, KOS_OP_RES_CONTROL_RETURNED);
+}
+
+
+/**
+   Phase 6: post-opcode result handling.
+
+   Called when an opcode handler returns a non-zero op_res.  Handles the
+   exception path (via try_local_exception_handler) and suspension-event
+   tagging for AWAIT and YIELD events.
+
+   :param op_res: The non-zero return value from the opcode handler.
+
+   :return: KOS_STEP_FATAL_ERROR when op_res < 0 and no exception/event
+    (caller uses eval_ret -1); KOS_STEP_STOP_EVENT when out_ev is filled and
+    eval should return (eval_ret 0); KOS_STEP_REPROLOGUE when the dispatch
+    loop should restart the full prologue without surfacing a boundary.
+*/
+static KosEvalStep eval_phase_post_opcode(
+        KosContext *ctx,
+        KosEvent *out_ev,
+        int op_res) {
+
+  /* Clear resume kind when handling non-zero result so next iteration (if we
+     continue) has it clean. Keeps the hot path (tail-dispatch) from touching it. */
+  KosContext_PY_RESUME_KIND(ctx) = KOS_RESUME_NONE;
+
+  if (op_res == KOS_OP_RES_PARENT_RETURN_DELIVER)
+    return eval_parent_return_deliver(ctx, out_ev);
+
+  if (op_res == KOS_OP_RES_CONTROL_RETURNED) {
+    int r = kos_dynnode_on_control_returned(ctx, KosContext_DYN_TOP(ctx), out_ev);
+    if (r == 0 || r == KOS_DYN_UNWIND_ASYNC_STARTED) {
+      /* 0: thunk/wind advanced; 1: async extent started (same numeric value as
+         a normal opcode "suspend" but only returned from dyn helpers). */
+      return KOS_STEP_REPROLOGUE;
+    }
+  }
+
+  return eval_phase_post_opcode_tail(ctx, out_ev, op_res);
 }
 
 

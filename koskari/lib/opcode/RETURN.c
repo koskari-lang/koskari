@@ -103,34 +103,11 @@ KOS_OP_HANDLER(RETURN) {
       return KOS_OP_POST_ERR();
     }
 
-    /* Flattened Koskari async gen: same delivery path as dispatch_boundary_event
-       (KOS_DYN_NEXT or awaiting KOS_DYN_FOREACH). */
-    {
-      int bd = kos_dyn_try_deliver_iterator_boundary_after_pop(ctx, &val, out_ev);
-
-      if (bd == 0)
-        return KOS_OP_RUN();
-      if (bd < 0)
-        return KOS_OP_POST_ERR();
-    }
-
-    /* Deliver value to parent: native handler takes it, else push onto stack.
-       Returning KOS_OP_RES_CONTROL_RETURNED triggers post_opcode to run
-       kos_dynnode_on_control_returned (e.g. wind handler for thunk completion). */
-    if (unlikely(KosDynFrame_NATIVE_HANDLER(CURRENT_FRAME(ctx)) != NULL)) {
-      typedef int (*NativeHandlerFn)(void *, void *, int, PyObject *);
-      NativeHandlerFn fn =
-          (NativeHandlerFn) KosDynFrame_NATIVE_HANDLER(CURRENT_FRAME(ctx));
-      int res = fn(ctx, out_ev, 1, val);
-      Py_DECREF(val);
-      return kos_op_outcome_from_int_step(res);
-    }
-    if (KosStackBlock_PushRef(&CURRENT_STACK(ctx), val) < 0) {
-      Py_DECREF(val);
-      return KOS_OP_POST_ERR();
-    }
-    Py_DECREF(val);
-    return KOS_OP_POST_CONTROL();
+    /* Stage B: eval runs iterator-boundary delivery, native handler, stack
+       push, and kos_dynnode_on_control_returned via eval_parent_return_deliver. */
+    KosEvent_KIND(out_ev) = KOS_EV_RETURN;
+    KosEvent_PAYLOAD(out_ev) = val;
+    return KOS_OP_POST_PARENT_RETURN();
   }
   }
 

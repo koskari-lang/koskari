@@ -38,9 +38,10 @@ The opcode and local transition logic emit a local event:
 - `RETURN`
 - `YIELD`
 - `RAISE`
-- optional `AWAIT` (if resume-from-await is unified into this channel)
 
-Local unwind/extent logic runs in the current frame context only.
+Local unwind/extent logic runs in the current frame context only. Flattened
+`AWAIT` remains evaluator suspension and is not folded into this staging
+channel (see constraints in section 4).
 
 ### Stage B: handle re-emitted boundary event in parent context
 
@@ -52,6 +53,22 @@ After frame boundary crossing:
 
 This ensures "send signal out" and "handle signalled result" are distinct
 operations.
+
+
+### Implementation notes (eval-owned staging)
+
+Public `KosEventKind` values for embedders are unchanged. Internal staging uses
+`KosOpOutcome` with `KOS_LOP_POST` and `KOS_OP_POST_TAG_PARENT_RETURN` mapped
+to `KOS_OP_RES_PARENT_RETURN_DELIVER` in `eval_phase_post_opcode`. After
+`RETURN` pops the callee frame, the opcode sets `KOS_EV_RETURN` and defers to
+`eval_parent_return_deliver` (iterator boundary via
+`kos_dyn_try_deliver_iterator_boundary_after_pop`, native handler or stack
+push, then `kos_dynnode_on_control_returned`). Shared iterator return delivery
+mapping lives in `eval_deliver_iterator_boundary_return_step`. Post-opcode
+tail logic after the control-returned hook is `eval_phase_post_opcode_tail`.
+YIELD uses `eval_yield_handle_walk_and_freeze` then
+`eval_event_yield_deliver_to_boundary`. Active `PyErr` in post-opcode flows
+through `eval_boundary_raise_dispatch` (wraps `process_raise`).
 
 
 ## 3. Boundary control event kinds

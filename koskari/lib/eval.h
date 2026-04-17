@@ -202,11 +202,13 @@ typedef enum KosLoopOpMode {
 
 /**
   Post-opcode tags for KOS_LOP_POST only; passed to eval_phase_post_opcode as
-  the legacy int (1 = suspend/async, 2 = control returned, -1 = error path).
+  the legacy int (1 = suspend/async, 2 = control returned, -1 = error path,
+  4 = parent return delivery after pop).
 */
 #define KOS_OP_POST_TAG_SUSPEND 1
 #define KOS_OP_POST_TAG_CONTROL_RETURNED 2
 #define KOS_OP_POST_TAG_ERR 3
+#define KOS_OP_POST_TAG_PARENT_RETURN 4
 
 
 typedef struct KosOpOutcome {
@@ -225,13 +227,17 @@ typedef struct KosOpOutcome {
   ((KosOpOutcome){ KOS_LOP_POST, KOS_OP_POST_TAG_CONTROL_RETURNED, NULL })
 #define KOS_OP_POST_ERR() \
   ((KosOpOutcome){ KOS_LOP_POST, KOS_OP_POST_TAG_ERR, NULL })
+#define KOS_OP_POST_PARENT_RETURN() \
+  ((KosOpOutcome){ KOS_LOP_POST, KOS_OP_POST_TAG_PARENT_RETURN, NULL })
 
 
 /**
   Opcode handler return values (legacy KosContext_Call / helpers).  0 = normal;
-  1 = suspend or WITH async rollback; 2 = control returned to awaiting dyn node.
+  1 = suspend or WITH async rollback; 2 = control returned to awaiting dyn node;
+  4 = parent-frame return delivery staged in eval (post-pop).
 */
 #define KOS_OP_RES_CONTROL_RETURNED 2
+#define KOS_OP_RES_PARENT_RETURN_DELIVER 4
 
 
 /**
@@ -245,6 +251,8 @@ static inline int kos_op_post_tag_to_res(uint8_t tag) {
     return KOS_OP_RES_CONTROL_RETURNED;
   if (tag == KOS_OP_POST_TAG_ERR)
     return -1;
+  if (tag == KOS_OP_POST_TAG_PARENT_RETURN)
+    return KOS_OP_RES_PARENT_RETURN_DELIVER;
   return -1;
 }
 
@@ -485,6 +493,8 @@ static inline KosOpOutcome kos_op_outcome_from_call_int(KosContext *ctx, int r) 
     return KOS_OP_POST_ERR();
   if (r == KOS_OP_RES_CONTROL_RETURNED)
     return KOS_OP_POST_CONTROL();
+  if (r == KOS_OP_RES_PARENT_RETURN_DELIVER)
+    return KOS_OP_POST_PARENT_RETURN();
   if (r == 1)
     return KOS_OP_POST_SUSPEND();
   if (r == 0) {
@@ -524,6 +534,8 @@ static inline KosOpOutcome kos_op_outcome_from_int_step(int r) {
     return KOS_OP_POST_SUSPEND();
   if (r == KOS_OP_RES_CONTROL_RETURNED)
     return KOS_OP_POST_CONTROL();
+  if (r == KOS_OP_RES_PARENT_RETURN_DELIVER)
+    return KOS_OP_POST_PARENT_RETURN();
   return KOS_OP_RUN();
 }
 
