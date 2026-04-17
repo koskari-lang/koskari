@@ -254,8 +254,6 @@ struct KosDynNode {
       PyObject *pending_arg;
       PyObject *pending_arg_type;  /* for KOS_YF_THROW: exception type */
       PyObject *inflight;
-      /** Outer frame running YIELD_FROM; set when flattening Koskari agen */
-      struct KosDynNode *delegating_frame;
     } yield_from;
     struct {
       PyObject *bindings;  /* PyDict: key -> value (what we bind; keys from ParamRef) */
@@ -1120,8 +1118,6 @@ int kos_dyn_foreach_deliver_return_kos_agen(
 int kos_dyn_need_kos_agen_boundary_deliver(KosContext *ctx);
 
 KosDynYieldFrom *kos_dyn_find_yield_from_iter_boundary(KosContext *ctx);
-
-KosDynYieldFrom *kos_dyn_find_yield_from_for_inner_await(KosContext *ctx);
 
 int kos_dyn_yield_from_deliver_inner_yield(
     KosContext *ctx, KosDynYieldFrom *yf, struct KosEvent *out_ev);
@@ -2086,10 +2082,6 @@ typedef enum KosYfPhase {
 #define KosDynYieldFrom_PENDING_ARG(n) (((KosDynNode *)(n))->u.yield_from.pending_arg)
 #define KosDynYieldFrom_PENDING_ARG_TYPE(n) (((KosDynNode *)(n))->u.yield_from.pending_arg_type)
 #define KosDynYieldFrom_INFLIGHT(n)    (((KosDynNode *)(n))->u.yield_from.inflight)
-#define KosDynYieldFrom_DELEGATING_FRAME(n) \
-    ((KosDynFrame *)(((KosDynNode *)(n))->u.yield_from.delegating_frame))
-#define KosDynYieldFrom_DELEGATING_FRAME_SET(n, f) \
-    ((((KosDynNode *)(n))->u.yield_from.delegating_frame) = ((struct KosDynNode *)(f)))
 
 #define KosDynParam_BINDINGS(n)    (((KosDynNode *)(n))->u.param.bindings)
 #define KosDynParam_SAVED(n)       (((KosDynNode *)(n))->u.param.saved)

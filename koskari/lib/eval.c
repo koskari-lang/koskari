@@ -282,10 +282,8 @@ static void clear_kos_agen_boundary_on_error(KosContext *ctx) {
     KosDynForeach_ITER_STEP_PHASE(fe) = KOS_FOREACH_ITER_STEP_IDLE;
   if (dn)
     kos_dyn_unlink_next_node(ctx, dn);
-  if (yf) {
-    KosDynYieldFrom_DELEGATING_FRAME_SET(yf, NULL);
+  if (yf)
     kos_dyn_pop_yield_from(ctx, yf);
-  }
 }
 
 
@@ -2277,24 +2275,15 @@ static int op_attach_koskari_agen_frame_for_iter_next(
 
 /**
    YIELD_FROM: install delegate Koskari async gen onto consumer ctx.  dyn_top
-   must be KOS_DYN_YIELD_FROM.  Records delegating frame for rollback.  On
-   error pops yield-from node.
+   must be KOS_DYN_YIELD_FROM.  On error pops yield-from node.
 */
 static int op_attach_koskari_agen_frame_for_yield_from(
     KosContext *ctx,
     KosPyAsyncGen *agen,
     KosDynYieldFrom *yf) {
 
-  KosDynFrame *delegating = KosContext_FRAME_TOP(ctx);
-  int r;
-
-  if (! delegating)
-    return -1;
-  r = attach_koskari_gen_core(ctx, agen, KOS_ATTACH_AGEN_MODE_YIELD_FROM,
-                              NULL, NULL, NULL, yf);
-  if (r == 0)
-    KosDynYieldFrom_DELEGATING_FRAME_SET(yf, delegating);
-  return r;
+  return attach_koskari_gen_core(ctx, agen, KOS_ATTACH_AGEN_MODE_YIELD_FROM,
+                                 NULL, NULL, NULL, yf);
 }
 
 
@@ -2919,30 +2908,6 @@ static KosEvalStep eval_phase_post_opcode(
   }
 
   if (KosEvent_KIND(out_ev) == KOS_EV_AWAIT) {
-    {
-      KosDynYieldFrom *yf_aw = kos_dyn_find_yield_from_for_inner_await(ctx);
-
-      if (yf_aw) {
-        PyObject *aw = KosEvent_PAYLOAD(out_ev);
-
-        if (! aw) {
-          PyErr_SetString(PyExc_RuntimeError,
-                          "AWAIT with NULL payload under yield-from");
-          return KOS_STEP_FATAL_ERROR;
-        }
-        Py_INCREF(aw);
-        KosDynYieldFrom_INFLIGHT(yf_aw) = aw;
-        KosDynYieldFrom_PHASE_SET(yf_aw, KOS_YF_PHASE_EXPECT_AWAIT);
-        {
-          KosDynFrame *deleg = KosDynYieldFrom_DELEGATING_FRAME(yf_aw);
-
-          if (deleg)
-            KosDynFrame_PC(deleg) = KosDynFrame_ACTING_PC(deleg);
-        }
-        KosContext_SUSPENSION_EVENT(ctx) = KOS_SUSP_AWAIT;
-        return KOS_STEP_STOP_EVENT;
-      }
-    }
     KosContext_SUSPENSION_EVENT(ctx) = KOS_SUSP_AWAIT;
 
   } else if (KosEvent_KIND(out_ev) == KOS_EV_YIELD) {

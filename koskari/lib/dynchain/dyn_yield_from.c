@@ -32,7 +32,6 @@ KosDynYieldFrom *kos_dynyieldfrom_new(
   KosDynYieldFrom_PENDING_ARG(node) = NULL;
   KosDynYieldFrom_PENDING_ARG_TYPE(node) = NULL;
   KosDynYieldFrom_INFLIGHT(node) = NULL;
-  KosDynYieldFrom_DELEGATING_FRAME_SET(node, NULL);
   return node;
 }
 
@@ -85,45 +84,29 @@ static KosDynYieldFrom *kos_dynyieldfrom_clone(KosDynYieldFrom *node) {
   if (KosDynYieldFrom_INFLIGHT(clone))
     Py_INCREF(KosDynYieldFrom_INFLIGHT(clone));
 
-  KosDynYieldFrom_DELEGATING_FRAME_SET(
-      clone, KosDynYieldFrom_DELEGATING_FRAME(node));
-
   return clone;
 }
 
 
 /**
-   After freeze, dyn_top is KOS_DYN_YIELD_FROM with RECEIVES_ITER_BOUNDARY.
+   Locate flattened yield-from iterator-boundary consumer from current chain
+   state.  Works both after freeze (dyn_top is YIELD_FROM) and while running
+   in the delegate frame (walk ancestors from FRAME).
 */
 KosDynYieldFrom *kos_dyn_find_yield_from_iter_boundary(KosContext *ctx) {
 
   KosDynNode *top = KosContext_DYN_TOP(ctx);
-
-  if (top && KosDynNode_IS_YIELD_FROM(top)
-      && KosDynNode_HAS_CAP(top, KOS_DYN_CAP_RECEIVES_ITER_BOUNDARY)
-      && KosDynYieldFrom_DELEGATING_FRAME((KosDynYieldFrom *) top))
-    return (KosDynYieldFrom *) top;
-  return NULL;
-}
-
-
-/**
-   When the running activation is a frame inside a flattened yield-from
-   delegate, walk outward from that frame to find the YIELD_FROM node.
-   dyn_top must be a FRAME (not the YIELD_FROM frozen head).
-*/
-KosDynYieldFrom *kos_dyn_find_yield_from_for_inner_await(KosContext *ctx) {
-
-  KosDynNode *top = KosContext_DYN_TOP(ctx);
   KosDynNode *n;
 
+  if (top && KosDynNode_IS_YIELD_FROM(top)
+      && KosDynNode_HAS_CAP(top, KOS_DYN_CAP_RECEIVES_ITER_BOUNDARY))
+    return (KosDynYieldFrom *) top;
   if (! top || ! KosDynNode_IS_FRAME(top))
     return NULL;
 
   for (n = KosDynNode_PARENT(top); n; n = KosDynNode_PARENT(n)) {
     if (KosDynNode_IS_YIELD_FROM(n)
-        && KosDynNode_HAS_CAP(n, KOS_DYN_CAP_RECEIVES_ITER_BOUNDARY)
-        && KosDynYieldFrom_DELEGATING_FRAME((KosDynYieldFrom *) n))
+        && KosDynNode_HAS_CAP(n, KOS_DYN_CAP_RECEIVES_ITER_BOUNDARY))
       return (KosDynYieldFrom *) n;
   }
   return NULL;
@@ -138,12 +121,10 @@ int kos_dyn_yield_from_deliver_inner_yield(
     KosContext *ctx, KosDynYieldFrom *yf, KosEvent *out_ev) {
 
   PyObject *payload = KosEvent_PAYLOAD(out_ev);
-  KosDynFrame *frame = KosDynYieldFrom_DELEGATING_FRAME(yf);
+  KosDynFrame *frame = KosContext_FRAME_TOP(ctx);
   KosPyAsyncGen *agen;
   PyObject *const *tos;
 
-  if (! frame)
-    frame = KosContext_FRAME_TOP(ctx);
   if (! frame || ! payload)
     return -1;
 
@@ -181,7 +162,7 @@ int kos_dyn_yield_from_deliver_inner_return(
     KosContext *ctx, KosDynYieldFrom *yf, KosEvent *out_ev) {
 
   PyObject *val = KosEvent_PAYLOAD(out_ev);
-  KosDynFrame *df = KosDynYieldFrom_DELEGATING_FRAME(yf);
+  KosDynFrame *df;
   KosCode *code;
   KosPyAsyncGen *delegate_agen;
 
@@ -197,6 +178,8 @@ int kos_dyn_yield_from_deliver_inner_return(
   if (kos_dyn_gen_unwind_exhausted(ctx) < 0)
     return -1;
 
+  df = KosContext_FRAME_TOP(ctx);
+
   delegate_agen = (KosPyAsyncGen *) KosDynYieldFrom_DELEGATE(yf);
   if (delegate_agen)
     delegate_agen->in_progress = 0;
@@ -206,7 +189,6 @@ int kos_dyn_yield_from_deliver_inner_return(
     KosDynFrame_PC(df) = KosDynFrame_ACTING_PC(df) + 1u;
   }
 
-  KosDynYieldFrom_DELEGATING_FRAME_SET(yf, NULL);
   kos_dyn_pop_yield_from(ctx, yf);
   return 0;
 }

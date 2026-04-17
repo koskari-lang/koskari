@@ -250,8 +250,7 @@ int kos_dyn_need_kos_agen_boundary_deliver(KosContext *ctx) {
 
   return kos_dyn_find_next_above_frame(ctx) != NULL
       || kos_dyn_find_awaiting_foreach(ctx) != NULL
-      || kos_dyn_find_yield_from_iter_boundary(ctx) != NULL
-      || kos_dyn_find_yield_from_for_inner_await(ctx) != NULL;
+      || kos_dyn_find_yield_from_iter_boundary(ctx) != NULL;
 }
 
 
@@ -279,8 +278,6 @@ int kos_dyn_deliver_iterator_boundary_return_event(
   {
     KosDynYieldFrom *yf = kos_dyn_find_yield_from_iter_boundary(ctx);
 
-    if (! yf)
-      yf = kos_dyn_find_yield_from_for_inner_await(ctx);
     if (yf)
       return kos_dyn_yield_from_deliver_inner_return(ctx, yf, out_ev);
   }
