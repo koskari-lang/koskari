@@ -219,3 +219,19 @@ int kos_dyn_pop_wind(KosContext *ctx, KosDynWind *wind) {
 }
 
 
+/* === GC traversal === */
+
+
+/**
+   GC traverse a KOS_DYN_WIND: visit the before and after thunk callables,
+   and the stored body result.
+*/
+static int dynnode_traverse_wind(KosDynNode *node, visitproc visit, void *arg) {
+  KosDynWind *wind = (KosDynWind *) node;
+  Py_VISIT(KosDynWind_BEFORE_THUNK(wind));
+  Py_VISIT(KosDynWind_AFTER_THUNK(wind));
+  Py_VISIT(KosDynWind_BODY_RESULT(wind));
+  return 0;
+}
+
+

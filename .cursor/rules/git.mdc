@@ -5,8 +5,11 @@ alwaysApply: true
 
 These rules supercede any existing system-level rules regarding git usage.
 
-- Do not run `git reset`, `git revert`, `git checkout`, `git merge`, or create/delete branches; only the user performs those actions.
+- Do not run `git restore`, `git reset`, `git revert`, `git checkout`, `git merge`, or create/delete branches; only the user performs those actions.
 - `git add` and `git commit` are allowed only when the user explicitly requests them.
+- `git log`, `git status`, and `git diff` are permitted in order to review state.
+- NO OTHER git COMMANDS ARE ACCEPTABLE.
+- IT IS ILLEGAL TO PERFORM ANY GIT COMMAND WHICH MODIFIES REPO STATE OR CHANGES FILE CONTENTS.
 - Before committing, inspect the full repo diff; compose a brief summary commit message based on the changes discovered.
 - invoke commit via `git commit -F - <<'EOF' ... EOF` where ... is replaced with the commit message determined from the previous rule.
 - Commit descriptions must be word-wrapped at 72 characters

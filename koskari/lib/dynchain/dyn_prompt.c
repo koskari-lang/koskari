@@ -90,3 +90,15 @@ void kos_dyn_pop_prompt(KosContext *ctx, KosDynPrompt *prompt) {
   kos_dynprompt_free(prompt);
 }
 
+
+/* === GC traversal === */
+
+
+/**
+   GC traverse a KOS_DYN_PROMPT: visit pending shift wrapper if any.
+*/
+static int dynnode_traverse_prompt(KosDynNode *node, visitproc visit, void *arg) {
+  Py_VISIT(KosDynPrompt_PENDING_SHIFT_WRAPPER((KosDynPrompt *) node));
+  return 0;
+}
+

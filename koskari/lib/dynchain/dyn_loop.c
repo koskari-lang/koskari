@@ -68,3 +68,15 @@ void kos_dyn_pop_loop(KosContext *ctx, KosDynLoop *node) {
     kos_dynloop_free(node);
   }
 }
+
+
+/* === GC traversal === */
+
+
+/**
+   GC traverse a KOS_DYN_LOOP: visit optional continue result.
+*/
+static int dynnode_traverse_loop(KosDynNode *node, visitproc visit, void *arg) {
+  Py_VISIT(KosDynLoop_RESULT((KosDynLoop *) node));
+  return 0;
+}

@@ -91,3 +91,16 @@ void kos_dyn_pop_ns(KosContext *ctx, KosDynNs *node) {
   KosContext_CHAIN_VERSION(ctx)++;
   kos_dynns_free(node);
 }
+
+
+/* === GC traversal === */
+
+
+/**
+   GC traverse a KOS_DYN_NS: visit the saved namespace reference.
+*/
+static int dynnode_traverse_ns(KosDynNode *node, visitproc visit, void *arg) {
+  KosDynNs *ns_node = (KosDynNs *) node;
+  Py_VISIT(KosDynNs_SAVED_NS(ns_node));
+  return 0;
+}

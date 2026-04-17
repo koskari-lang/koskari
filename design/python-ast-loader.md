@@ -100,5 +100,5 @@ So: **transformative parser = reader that turns Python AST into Koskari expressi
 
 - [api/import-system.md](api/import-system.md) — Module lifecycle, load paths, loader/finder.
 - [SPECIALS.md](SPECIALS.md) — Catalog of special forms the transformative parser must target.
-- [interpreter/compiler.md](interpreter/compiler.md) — Compiler input (symbol/pair/const), `full_compile`, dispatch to specials.
+- [interpreter/README.md](interpreter/README.md) (Compiler) — Compiler lives in `koskari/compile/`; see [SPECIALS.md](SPECIALS.md) for specials.
 - Discussion: Python AST and Koskari specials are sufficient to define the transformation; the new piece is the reader/transformative parser; compiler and specials are reused as-is.

@@ -65,6 +65,7 @@ static const char *kos_dynnode_kind_names[] = {
   "SHIFT",
   "CC_RAISE",
   "GEN",
+  "NEXT",
   "UNKNOWN",
 };
 
@@ -173,6 +174,7 @@ static void kos_dynnode_return_to_freelist(KosDynNode *node) {
 #include "dynchain/dyn_finally.c"
 #include "dynchain/dyn_loop.c"
 #include "dynchain/dyn_foreach.c"
+#include "dynchain/dyn_next.c"
 #include "dynchain/dyn_ns.c"
 #include "dynchain/dyn_collect.c"
 #include "dynchain/dyn_yield_from.c"
@@ -185,6 +187,8 @@ static void kos_dynnode_return_to_freelist(KosDynNode *node) {
    KosContext_CallArgs returns.
 */
 int kos_dynnode_on_control_returned(KosContext *ctx, KosDynNode *node, KosEvent *out_ev) {
+  /* Iterator-boundary yield/return uses eval dispatch_boundary_event /
+     kos_dyn_deliver_* instead of this hook. */
   (void) out_ev;
   /* When node is a frame, check if parent is WITH in pending phase. */
   if (KosDynNode_IS_FRAME(node)) {
@@ -376,6 +380,9 @@ void kos_dynnode_free(KosDynNode *node) {
       break;
     case KOS_DYN_GEN:
       kos_dyngen_release((KosDynGen *) node);
+      break;
+    case KOS_DYN_NEXT:
+      kos_dyn_next_free_payload(node);
       break;
     case KOS_DYN_COLLECT:
       kos_dyncollect_free((KosDynCollect *) node);
@@ -626,6 +633,8 @@ int kos_dyn_install(KosContext *ctx, KosDynNode *node, KosEvent *out_ev) {
       return 0;
     case KOS_DYN_GEN:
       return 0;
+    case KOS_DYN_NEXT:
+      return 0;
     default:
       return 0;
   }
@@ -789,6 +798,9 @@ int kos_dyn_unwind(KosContext *ctx, KosDynNode *node, KosXferEvent event,
       (void) out_ev;
       return cc_raise_unwind(ctx, node, NULL);
     case KOS_DYN_GEN:
+      (void) out_ev;
+      return 0;
+    case KOS_DYN_NEXT:
       (void) out_ev;
       return 0;
     default:
@@ -1109,6 +1121,8 @@ KosDynNode *kos_dyn_clone(KosDynNode *node) {
       PyErr_SetString(PyExc_RuntimeError,
                       "cannot clone generator boundary node");
       return NULL;
+    case KOS_DYN_NEXT:
+      return (KosDynNode *) kos_dyn_next_clone((KosDynNext *) node);
     case KOS_DYN_COLLECT:
       return (KosDynNode *) kos_dyncollect_clone((KosDynCollect *) node);
     default:
@@ -3738,112 +3752,9 @@ int kos_invoke_continuation(
 
 
 /**
-   GC traverse a KOS_DYN_FRAME: visit the frame's namespace and every
-   object on the frame's stack block chain.  Used by kos_dynnode_traverse.
-*/
-static int dynnode_traverse_frame(KosDynNode *node, visitproc visit, void *arg) {
-  KosDynFrame *frame = (KosDynFrame *) node;
-  Py_VISIT(KosDynFrame_NS(frame));
-  KosStackBlock *b = KosDynFrame_STACK(frame);
-  while (b) {
-    for (size_t i = b->len; i--; ) {
-      Py_VISIT(b->objs[i]);
-    }
-    b = KosStackBlock_PARENT(b);
-  }
-  return 0;
-}
-
-
-/**
-   GC traverse a KOS_DYN_WIND: visit the before and after thunk callables,
-   and the stored body result.
-*/
-static int dynnode_traverse_wind(KosDynNode *node, visitproc visit, void *arg) {
-  KosDynWind *wind = (KosDynWind *) node;
-  Py_VISIT(KosDynWind_BEFORE_THUNK(wind));
-  Py_VISIT(KosDynWind_AFTER_THUNK(wind));
-  Py_VISIT(KosDynWind_BODY_RESULT(wind));
-  return 0;
-}
-
-
-/**
-   GC traverse a KOS_DYN_NS: visit the saved namespace reference.
-*/
-static int dynnode_traverse_ns(KosDynNode *node, visitproc visit, void *arg) {
-  KosDynNs *ns_node = (KosDynNs *) node;
-  Py_VISIT(KosDynNs_SAVED_NS(ns_node));
-  return 0;
-}
-
-
-/**
-   GC traverse a TRY/FINALLY/LOOP/FOREACH node payload.
-*/
-static int dynnode_traverse_region(KosDynNode *node, visitproc visit, void *arg) {
-  if (KosDynNode_IS_FINALLY(node))
-    Py_VISIT(KosDynFinally_HANDLING_RESULT((KosDynFinally *) node));
-  else if (KosDynNode_IS_LOOP(node))
-    Py_VISIT(KosDynLoop_RESULT((KosDynLoop *) node));
-  else if (KosDynNode_IS_FOREACH(node)) {
-    Py_VISIT(KosDynForeach_RESULT((KosDynForeach *) node));
-    Py_VISIT(KosDynForeach_ITER((KosDynForeach *) node));
-  }
-  return 0;
-}
-
-
-/**
-   GC traverse a KOS_DYN_YIELD_FROM: visit the delegate subiterator and
-   any pending or in-flight value references.
-*/
-static int dynnode_traverse_yield_from(KosDynNode *node, visitproc visit, void *arg) {
-  KosDynYieldFrom *yf = (KosDynYieldFrom *) node;
-  Py_VISIT(KosDynYieldFrom_DELEGATE(yf));
-  Py_VISIT(KosDynYieldFrom_PENDING_ARG(yf));
-  Py_VISIT(KosDynYieldFrom_PENDING_ARG_TYPE(yf));
-  Py_VISIT(KosDynYieldFrom_INFLIGHT(yf));
-  return 0;
-}
-
-
-/**
-   GC traverse a KOS_DYN_PARAM: visit the parameter bindings dict and
-   the saved bindings from outer scopes.
-*/
-static int dynnode_traverse_param(KosDynNode *node, visitproc visit, void *arg) {
-  KosDynParam *param_node = (KosDynParam *) node;
-  Py_VISIT(KosDynParam_BINDINGS(param_node));
-  Py_VISIT(KosDynParam_SAVED(param_node));
-  return 0;
-}
-
-
-/**
-   GC traverse a KOS_DYN_WITH: visit mgr, enter, exit, and name.
-*/
-static int dynnode_traverse_with(KosDynNode *node, visitproc visit, void *arg) {
-  KosDynWith *with_node = (KosDynWith *) node;
-  Py_VISIT(KosDynWith_MGR(with_node));
-  Py_VISIT(KosDynWith_ENTER(with_node));
-  Py_VISIT(KosDynWith_EXIT(with_node));
-  Py_VISIT(KosDynWith_NAME(with_node));
-  if (KosDynWith_PHASE(with_node) == KOS_WITH_PHASE_PENDING_EXIT_AWAIT) {
-    Py_VISIT(KosDynWith_EXC_TYP(with_node));
-    Py_VISIT(KosDynWith_EXC_VAL(with_node));
-    Py_VISIT(KosDynWith_EXC_TB(with_node));
-  }
-  return 0;
-}
-
-
-/**
    GC traverse a single dynamic chain node.  Dispatches on node kind to
-   visit all PyObject references reachable from the node (namespaces,
-   stack slots, region state, param bindings, etc.).  Prompt, CC, and
-   wind nodes hold no such references and are no-ops.  Used by
-   kos_dynchain_traverse and by continuation/plan traversals.
+   per-kind helpers in dynchain/dyn_*.c.  Used by kos_dynchain_traverse and
+   by continuation/plan traversals.
 */
 int kos_dynnode_traverse(KosDynNode *node, visitproc visit, void *arg) {
   if (! node)
@@ -3855,29 +3766,27 @@ int kos_dynnode_traverse(KosDynNode *node, visitproc visit, void *arg) {
     case KOS_DYN_NS:
       return dynnode_traverse_ns(node, visit, arg);
     case KOS_DYN_PROMPT:
-      Py_VISIT(KosDynPrompt_PENDING_SHIFT_WRAPPER((KosDynPrompt *) node));
-      break;
+      return dynnode_traverse_prompt(node, visit, arg);
     case KOS_DYN_CC:
+      return dynnode_traverse_cc(node, visit, arg);
     case KOS_DYN_SHIFT:
-      break;
+      return dynnode_traverse_shift(node, visit, arg);
     case KOS_DYN_WIND:
       return dynnode_traverse_wind(node, visit, arg);
     case KOS_DYN_CC_RAISE:
-      Py_VISIT(KosDynCCRaise_EXC_TYPE(node));
-      Py_VISIT(KosDynCCRaise_EXC_VAL(node));
-      break;
-    case KOS_DYN_GEN: {
-      Py_VISIT(KosDynGen_OWNER((KosDynGen *) node));
-      if (KosDynGen_ACTIVE((KosDynGen *) node))
-        return dynnode_traverse_frame(
-            KosDynGen_ACTIVE((KosDynGen *) node), visit, arg);
-      break;
-    }
+      return dynnode_traverse_cc_raise(node, visit, arg);
+    case KOS_DYN_GEN:
+      return dynnode_traverse_gen(node, visit, arg);
+    case KOS_DYN_NEXT:
+      return dynnode_traverse_next(node, visit, arg);
     case KOS_DYN_TRY:
+      return dynnode_traverse_try(node, visit, arg);
     case KOS_DYN_FINALLY:
+      return dynnode_traverse_finally(node, visit, arg);
     case KOS_DYN_LOOP:
+      return dynnode_traverse_loop(node, visit, arg);
     case KOS_DYN_FOREACH:
-      return dynnode_traverse_region(node, visit, arg);
+      return dynnode_traverse_foreach(node, visit, arg);
     case KOS_DYN_YIELD_FROM:
       return dynnode_traverse_yield_from(node, visit, arg);
     case KOS_DYN_PARAM:
@@ -3885,16 +3794,13 @@ int kos_dynnode_traverse(KosDynNode *node, visitproc visit, void *arg) {
     case KOS_DYN_WITH:
       return dynnode_traverse_with(node, visit, arg);
     case KOS_DYN_COLLECT:
-      Py_VISIT(KosDynCollect_SAVED_NS((KosDynCollect *) node));
-      break;
+      return dynnode_traverse_collect(node, visit, arg);
     default:
       PyErr_Format(PyExc_RuntimeError,
                    "kos_dynnode_traverse: unknown node kind %u",
                    (unsigned) KosDynNode_KIND(node));
       return -1;
   }
-
-  return 0;
 }
 
 

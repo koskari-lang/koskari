@@ -2,7 +2,7 @@
 
 **Status:** Partially implemented — see implementation notes below.
 **Author:** —
-**Related:** [dynamic-node-unified-api.md](../interpreter/dynamic-node-unified-api.md), [extent-wind-unwind.md](../interpreter/extent-wind-unwind.md), `koskari/lib/dynchain.c`, `koskari/lib/dynchain.h`
+**Related:** [dynamic-node-unified-api.md](dynamic-node-unified-api.md) (archived), [extent-wind-unwind.md](../interpreter/extent-wind-unwind.md), `koskari/lib/dynchain.c`, `koskari/lib/dynchain.h`
 
 This document proposed a refactor of the Koskari dynamic chain to reduce complexity, eliminate redundant branching, and make behavior easy to locate.
 

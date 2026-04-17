@@ -81,6 +81,12 @@ typedef enum KosDynKind {
   KOS_DYN_SHIFT,
   KOS_DYN_CC_RAISE,
   KOS_DYN_GEN,
+  /**
+   KOS_DYN_NEXT - Iterator boundary for standalone NEXT opcode over Koskari
+   async gen (flatten). Pushed at runtime from NEXT.c; self-pops after yield
+   or return is delivered.
+  */
+  KOS_DYN_NEXT,
   /* sentinel value */
   KOS_DYN_UNKNOWN,
 } KosDynKind;
@@ -113,6 +119,8 @@ typedef enum KosDynFlags {
 #define KOS_DYN_CAP_AWAITS_THUNK_RESULT      (1u << 5)
 #define KOS_DYN_CAP_BARRIER                  (1u << 7)
 #define KOS_DYN_CAP_HANDLES_EXCEPTIONS       (1u << 8)
+/** Iterator yield/return boundary (KOS_DYN_NEXT, extended FOREACH stepping) */
+#define KOS_DYN_CAP_RECEIVES_ITER_BOUNDARY     (1u << 9)
 
 /* Alias for KOS_DYN_CAP_MAY_SWALLOW_EXCEPTION (unified API naming) */
 #define KOS_DYN_CAP_CATCH KOS_DYN_CAP_MAY_SWALLOW_EXCEPTION
@@ -133,6 +141,11 @@ typedef enum KosRegionStyle {
   KOS_REGION_LOOP     = 2,
   KOS_REGION_FOREACH  = 4,
 } KosRegionStyle;
+
+
+/** FOREACH: ITER_NEXT Koskari async-gen step (phase gating for boundary events) */
+#define KOS_FOREACH_ITER_STEP_IDLE               0u
+#define KOS_FOREACH_ITER_STEP_AWAITING_KOS_AGEN  1u
 
 
 /**
@@ -220,7 +233,16 @@ struct KosDynNode {
       PyObject *handling_result;
     } finally_;
     struct { uint32_t break_pc; uint32_t continue_pc; uint8_t enabled; PyObject *result; } loop;
-    struct { uint32_t break_pc; uint32_t continue_pc; uint8_t enabled; PyObject *result; PyObject *iter; uint8_t exhausted; uint32_t iter_next_else_pc; } foreach;
+    struct {
+      uint32_t break_pc;
+      uint32_t continue_pc;
+      uint8_t enabled;
+      PyObject *result;
+      PyObject *iter;
+      uint8_t exhausted;
+      uint32_t iter_next_else_pc;
+      uint8_t iter_step_phase;  /* KOS_FOREACH_ITER_STEP_* */
+    } foreach;
     struct {
       PyObject *saved_ns;
     } ns;
@@ -263,6 +285,11 @@ struct KosDynNode {
       struct KosDynNode *active; /* suspended frame when released; NULL when running */
       uintptr_t refcount;  /* reference count; init 1; release decrements; free when 0 */
     } gen;
+    struct {
+      PyObject *agen_obj;   /* KosPyAsyncGen, strong ref */
+      PyObject *default_val; /* owned; 2-arg NEXT */
+      int n;                 /* 1 or 2 */
+    } next;
   } u;
 };
 
@@ -351,6 +378,7 @@ typedef struct KosDynNode KosDynWith;
 typedef struct KosDynNode KosDynShift;
 typedef struct KosDynNode KosDynCCRaise;
 typedef struct KosDynNode KosDynGen;
+typedef struct KosDynNode KosDynNext;
 
 
 /* === KosContinuation: captured delimited continuation === */
@@ -1064,6 +1092,46 @@ KosDynTry *kos_dyn_push_try(KosContext *ctx, uint32_t handler_pc);
 KosDynFinally *kos_dyn_push_finally(KosContext *ctx, uint32_t handler_pc);
 KosDynLoop *kos_dyn_push_loop(KosContext *ctx, uint32_t break_pc, uint32_t continue_pc);
 KosDynForeach *kos_dyn_push_foreach(KosContext *ctx, uint32_t break_pc, uint32_t continue_pc);
+
+
+int kos_dyn_push_next_for_kos_agen(
+    KosContext *ctx, PyObject *agen_obj, PyObject *default_val, int n);
+
+void kos_dyn_next_abort_after_failed_attach(KosContext *ctx);
+
+KosDynForeach *kos_dyn_find_awaiting_foreach(KosContext *ctx);
+
+KosDynNext *kos_dyn_find_next_above_frame(KosContext *ctx);
+
+void kos_dyn_unlink_next_node(KosContext *ctx, KosDynNext *node);
+
+int kos_dyn_next_deliver_yield(KosContext *ctx, struct KosEvent *out_ev);
+
+int kos_dyn_next_deliver_return(KosContext *ctx, struct KosEvent *out_ev);
+
+int kos_dyn_foreach_deliver_yield_kos_agen(
+    KosContext *ctx, KosDynForeach *fe, struct KosEvent *out_ev);
+
+int kos_dyn_foreach_deliver_return_kos_agen(
+    KosContext *ctx, KosDynForeach *fe, struct KosEvent *out_ev);
+
+int kos_dyn_need_kos_agen_boundary_deliver(KosContext *ctx);
+
+KosDynYieldFrom *kos_dyn_find_yield_from_iter_boundary(KosContext *ctx);
+
+int kos_dyn_yield_from_deliver_inner_yield(
+    KosContext *ctx, KosDynYieldFrom *yf, struct KosEvent *out_ev);
+
+int kos_dyn_yield_from_deliver_inner_return(
+    KosContext *ctx, KosDynYieldFrom *yf, struct KosEvent *out_ev);
+
+int kos_dyn_deliver_iterator_boundary_return_event(
+    KosContext *ctx, struct KosEvent *out_ev);
+
+int kos_dyn_try_deliver_iterator_boundary_after_pop(
+    KosContext *ctx, PyObject **p_val, struct KosEvent *out_ev);
+
+KosDynNext *kos_dyn_next_clone(KosDynNext *node);
 
 
 /**
@@ -1946,6 +2014,7 @@ int kos_transferplan_traverse(
 #define KosDynNode_IS_SHIFT(n)    (KosDynNode_KIND(n) == KOS_DYN_SHIFT)
 #define KosDynNode_IS_CC_RAISE(n) (KosDynNode_KIND(n) == KOS_DYN_CC_RAISE)
 #define KosDynNode_IS_GEN(n)      (KosDynNode_KIND(n) == KOS_DYN_GEN)
+#define KosDynNode_IS_NEXT(n)     (KosDynNode_KIND(n) == KOS_DYN_NEXT)
 
 #define KosDynGen_OWNER(n)        (((KosDynNode *)(n))->u.gen.owner)
 #define KosDynGen_ACTIVE(n)       (((KosDynNode *)(n))->u.gen.active)
@@ -1990,6 +2059,11 @@ int kos_transferplan_traverse(
 #define KosDynForeach_ITER(r)        (((KosDynNode *)(r))->u.foreach.iter)
 #define KosDynForeach_EXHAUSTED(r)   (((KosDynNode *)(r))->u.foreach.exhausted)
 #define KosDynForeach_ITER_NEXT_ELSE_PC(r) (((KosDynNode *)(r))->u.foreach.iter_next_else_pc)
+#define KosDynForeach_ITER_STEP_PHASE(r) (((KosDynNode *)(r))->u.foreach.iter_step_phase)
+
+#define KosDynNext_AGEN_OBJ(nd) (((KosDynNode *)(nd))->u.next.agen_obj)
+#define KosDynNext_DEFAULT_VAL(nd) (((KosDynNode *)(nd))->u.next.default_val)
+#define KosDynNext_N(nd) (((KosDynNode *)(nd))->u.next.n)
 
 #define KosDynNs_SAVED_NS(n)      (((KosDynNode *)(n))->u.ns.saved_ns)
 

@@ -1,6 +1,6 @@
 # Generic DynNode Protocol
 
-This document describes the design ideology of the Koskari dynamic chain interface and provides a reference for all generic calls versus type-specific bypasses. It complements [dynamic-node-unified-api.md](dynamic-node-unified-api.md) and [extent-wind-unwind.md](extent-wind-unwind.md).
+This document describes the design ideology of the Koskari dynamic chain interface and provides a reference for all generic calls versus type-specific bypasses. It complements the archived migration spec [dynamic-node-unified-api.md](../archive/dynamic-node-unified-api.md) and [extent-wind-unwind.md](extent-wind-unwind.md).
 
 ---
 

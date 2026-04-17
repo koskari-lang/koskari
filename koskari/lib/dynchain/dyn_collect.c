@@ -89,3 +89,15 @@ void kos_dyn_pop_collect(KosContext *ctx, KosDynCollect *node) {
   KosContext_CHAIN_VERSION(ctx)++;
   kos_dyncollect_free(node);
 }
+
+
+/* === GC traversal === */
+
+
+/**
+   GC traverse a KOS_DYN_COLLECT: visit saved namespace for the collector.
+*/
+static int dynnode_traverse_collect(KosDynNode *node, visitproc visit, void *arg) {
+  Py_VISIT(KosDynCollect_SAVED_NS((KosDynCollect *) node));
+  return 0;
+}

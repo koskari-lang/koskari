@@ -61,3 +61,16 @@ static int cc_raise_unwind(KosContext *ctx, KosDynNode *node,
   }
   return -1;
 }
+
+
+/* === GC traversal === */
+
+
+/**
+   GC traverse a KOS_DYN_CC_RAISE: visit stored exception type and value.
+*/
+static int dynnode_traverse_cc_raise(KosDynNode *node, visitproc visit, void *arg) {
+  Py_VISIT(KosDynCCRaise_EXC_TYPE(node));
+  Py_VISIT(KosDynCCRaise_EXC_VAL(node));
+  return 0;
+}

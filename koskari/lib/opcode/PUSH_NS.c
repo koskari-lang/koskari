@@ -33,7 +33,7 @@ KOS_OP_HANDLER(PUSH_NS) {
   KosDynNs *ns_node = NULL;
   int opa = 0;
 
-  if (eidx >= KosCode_EXTRA_LEN(code)) {
+  if (unlikely(eidx >= KosCode_EXTRA_LEN(code))) {
     PyErr_Format(PyExc_IndexError, "PUSH_NS extra index out of bounds: %u",
                  (unsigned) eidx);
     return KOS_OP_POST_ERR();
@@ -44,43 +44,43 @@ KOS_OP_HANDLER(PUSH_NS) {
     uint32_t i0 = row.a0;
     uint32_t i1 = row.a1;
 
-    if (i0 >= KosCode_CPOOL_LEN(code)) {
+    if (unlikely(i0 >= KosCode_CPOOL_LEN(code))) {
       PyErr_Format(PyExc_IndexError, "PUSH_NS nspec constant index out of"
                    " bounds: %u", (unsigned) i0);
       return KOS_OP_POST_ERR();
     }
-    if (i1 >= KosCode_CPOOL_LEN(code)) {
+    if (unlikely(i1 >= KosCode_CPOOL_LEN(code))) {
       PyErr_Format(PyExc_IndexError, "PUSH_NS names constant index out of"
                    " bounds: %u", (unsigned) i1);
       return KOS_OP_POST_ERR();
     }
 
     nspec = KosCode_GetConstant((PyObject *) code, i0);
-    if (! nspec) {
+    if (unlikely(! nspec)) {
       return KOS_OP_POST_ERR();
     }
     Py_INCREF(nspec);
 
     names = KosCode_GetConstant((PyObject *) code, i1);
-    if (! names) {
+    if (unlikely(! names)) {
       Py_DECREF(nspec);
       return KOS_OP_POST_ERR();
     }
   }
 
-  if (! KosNamespaceSpec_CheckExact(nspec)) {
+  if (unlikely(! KosNamespaceSpec_CheckExact(nspec))) {
     PyErr_Format(PyExc_RuntimeError,
                  "PUSH_NS spec must be a NamespaceSpec, not %R", nspec);
     Py_DECREF(nspec);
     return KOS_OP_POST_ERR();
   }
 
-  if (names == Py_None) {
+  if (unlikely(names == Py_None)) {
     opa = 0;
     names = NULL;
 
   } else {
-    if (! PyTuple_CheckExact(names)) {
+    if (unlikely(! PyTuple_CheckExact(names))) {
       PyErr_Format(PyExc_RuntimeError,
                    "PUSH_NS names must be tuple or None, not %R", names);
       Py_DECREF(nspec);
@@ -91,7 +91,7 @@ KOS_OP_HANDLER(PUSH_NS) {
 
   if (opa > 0) {
     args = KosStackBlock_TailPtr(CURRENT_STACK(ctx), (size_t) opa);
-    if (! args) {
+    if (unlikely(! args)) {
       Py_DECREF(nspec);
       PyErr_SetString(PyExc_RuntimeError, "PUSH_NS stack underrun");
       return KOS_OP_POST_ERR();
@@ -106,7 +106,7 @@ KOS_OP_HANDLER(PUSH_NS) {
   PyObject *spec_parent = KosNamespace_Check(parent) ? parent : NULL;
   new_ns = KosNamespace_FromSpec(nspec, spec_parent);
   Py_DECREF(nspec);
-  if (! new_ns) {
+  if (unlikely(! new_ns)) {
     return KOS_OP_POST_ERR();
   }
 
@@ -114,7 +114,7 @@ KOS_OP_HANDLER(PUSH_NS) {
     for (int i = 0; i < opa; i++) {
       PyObject *name = PyTuple_GET_ITEM(names, i);
       PyObject *val = args[i];
-      if (KosNamespace_Store(new_ns, name, val) < 0) {
+      if (unlikely(KosNamespace_Store(new_ns, name, val) < 0)) {
         Py_DECREF(new_ns);
         return KOS_OP_POST_ERR();
       }
@@ -124,7 +124,7 @@ KOS_OP_HANDLER(PUSH_NS) {
 
   Py_INCREF(parent);
   ns_node = kos_dyn_push_ns(ctx, parent);
-  if (! ns_node) {
+  if (unlikely(! ns_node)) {
     Py_DECREF(parent);
     Py_DECREF(new_ns);
     return KOS_OP_POST_ERR();

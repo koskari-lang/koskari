@@ -15,7 +15,7 @@ and stack pressure on the common hot path of calling a fast-local callable.
 
 **See also:** [../OPCODES.md](../OPCODES.md) §17 (call opcodes), [vector-call.md](vector-call.md)
 (vectorcall integration), [evaluator.md](evaluator.md) (evaluation loop),
-[compiler.md](compiler.md) (compiler pipeline).
+[../interpreter/README.md](../interpreter/README.md) (Compiler) and [SPECIALS.md](../SPECIALS.md).
 
 
 ## Motivation

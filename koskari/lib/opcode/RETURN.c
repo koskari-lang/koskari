@@ -71,8 +71,6 @@ KOS_OP_HANDLER(RETURN) {
   {
     KosDynNode *parent = KosDynNode_PARENT(CURRENT_FRAME(ctx));
     if (parent != NULL && ! KosDynNode_IS_GEN(parent)) {
-    int was_pending_ctx = (KosContext_PENDING_AGEN(ctx) != NULL);
-    KosDynFrame *detached_frame = NULL;
 
     /* Walk RETURN to frame (handle phase: FINALLY may consume and run). */
     KosTransitionReq treq = {
@@ -100,77 +98,16 @@ KOS_OP_HANDLER(RETURN) {
       return KOS_OP_POST_ERR();
     }
 
-    /* Detach our frame; parent becomes DYN_TOP. */
-    if (kos_dyn_detach_top_frame(ctx, &detached_frame) < 0) {
+    if (unlikely(kos_dyn_pop_frame(ctx) < 0)) {
       Py_DECREF(val);
       return KOS_OP_POST_ERR();
     }
-    kos_dynframe_free(detached_frame);
 
-    KosPyAsyncGen *agen = was_pending_ctx ? (KosPyAsyncGen *) KosContext_PENDING_AGEN(ctx) : NULL;
-
-    /* Async gen special case: we were iterating with ITER_NEXT over an async
-       gen; it just exhausted. Feed the return value into the else branch or
-       default, or raise StopIteration. Rare path. */
-    if (unlikely(was_pending_ctx && agen)) {
-      agen->closed = 1;
-      agen->in_progress = 0;
-      if (KosContext_PENDING_AGEN_N(ctx) == 0) {
-        /* N=0: ITER_NEXT exhausted; jump to else branch (foreach else_pc) */
-        KosDynNode *r = kos_find_node_for_loop(ctx);
-        if (r) {
-          KosDynForeach_EXHAUSTED((KosDynForeach *) r) = 1;
-          CURRENT_PC(ctx) = KosDynForeach_ITER_NEXT_ELSE_PC((KosDynForeach *) r);
-        }
-        KosContext_PENDING_AGEN(ctx) = NULL;
-        KosContext_PENDING_AGEN_DEFAULT(ctx) = NULL;
-        Py_DECREF(val);
-        return KOS_OP_RUN();
-      }
-      if (KosContext_PENDING_AGEN_N(ctx) == 2 && KosContext_PENDING_AGEN_DEFAULT(ctx)) {
-        /* N=2: had default arg; push it as result, discard our return value */
-        if (KosStackBlock_PushRef(&CURRENT_STACK(ctx),
-                                  KosContext_PENDING_AGEN_DEFAULT(ctx)) < 0) {
-          Py_XDECREF(KosContext_PENDING_AGEN_DEFAULT(ctx));
-          KosContext_PENDING_AGEN_DEFAULT(ctx) = NULL;
-          KosContext_PENDING_AGEN(ctx) = NULL;
-          Py_DECREF(val);
-          return KOS_OP_POST_ERR();
-        }
-        Py_XDECREF(KosContext_PENDING_AGEN_DEFAULT(ctx));
-        Py_DECREF(val);
-      } else if (KosContext_PENDING_AGEN_N(ctx) == 1) {
-        /* N=1: no default; raise StopIteration (caller will catch) */
-        PyErr_SetNone(PyExc_StopIteration);
-        Py_DECREF(val);
-        KosContext_PENDING_AGEN(ctx) = NULL;
-        KosContext_PENDING_AGEN_DEFAULT(ctx) = NULL;
-        return KOS_OP_POST_ERR();
-      } else {
-        Py_DECREF(val);
-      }
-      KosContext_PENDING_AGEN(ctx) = NULL;
-      KosContext_PENDING_AGEN_DEFAULT(ctx) = NULL;
-      return KOS_OP_RUN();
-    }
-
-    /* Deliver value to parent: native handler takes it, else push onto stack.
-       Returning KOS_OP_RES_CONTROL_RETURNED triggers post_opcode to run
-       kos_dynnode_on_control_returned (e.g. wind handler for thunk completion). */
-    if (unlikely(KosDynFrame_NATIVE_HANDLER(CURRENT_FRAME(ctx)) != NULL)) {
-      typedef int (*NativeHandlerFn)(void *, void *, int, PyObject *);
-      NativeHandlerFn fn =
-          (NativeHandlerFn) KosDynFrame_NATIVE_HANDLER(CURRENT_FRAME(ctx));
-      int res = fn(ctx, out_ev, 1, val);
-      Py_DECREF(val);
-      return kos_op_outcome_from_int_step(res);
-    }
-    if (KosStackBlock_PushRef(&CURRENT_STACK(ctx), val) < 0) {
-      Py_DECREF(val);
-      return KOS_OP_POST_ERR();
-    }
-    Py_DECREF(val);
-    return KOS_OP_POST_CONTROL();
+    /* Stage B: eval runs iterator-boundary delivery, native handler, stack
+       push, and kos_dynnode_on_control_returned via eval_parent_return_deliver. */
+    KosEvent_KIND(out_ev) = KOS_EV_RETURN;
+    KosEvent_PAYLOAD(out_ev) = val;
+    return KOS_OP_POST_PARENT_RETURN();
   }
   }
 

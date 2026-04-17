@@ -17,6 +17,7 @@ KosDynForeach *kos_dynforeach_new(KosDynNode *parent, uint32_t break_pc, uint32_
   KosDynForeach_ITER(node) = NULL;
   KosDynForeach_EXHAUSTED(node) = 0;
   KosDynForeach_ITER_NEXT_ELSE_PC(node) = 0;
+  KosDynForeach_ITER_STEP_PHASE(node) = KOS_FOREACH_ITER_STEP_IDLE;
   return node;
 }
 
@@ -40,6 +41,7 @@ KosDynForeach *kos_dynforeach_clone(KosDynForeach *node) {
   Py_XINCREF(KosDynForeach_ITER(clone));
   KosDynForeach_EXHAUSTED(clone) = KosDynForeach_EXHAUSTED(node);
   KosDynForeach_ITER_NEXT_ELSE_PC(clone) = KosDynForeach_ITER_NEXT_ELSE_PC(node);
+  KosDynForeach_ITER_STEP_PHASE(clone) = KosDynForeach_ITER_STEP_PHASE(node);
   return clone;
 }
 
@@ -75,4 +77,17 @@ void kos_dyn_pop_foreach(KosContext *ctx, KosDynForeach *node) {
     KosContext_CHAIN_VERSION(ctx)++;
     kos_dynforeach_free(node);
   }
+}
+
+
+/* === GC traversal === */
+
+
+/**
+   GC traverse a KOS_DYN_FOREACH: visit result and iterator refs.
+*/
+static int dynnode_traverse_foreach(KosDynNode *node, visitproc visit, void *arg) {
+  Py_VISIT(KosDynForeach_RESULT((KosDynForeach *) node));
+  Py_VISIT(KosDynForeach_ITER((KosDynForeach *) node));
+  return 0;
 }

@@ -145,3 +145,18 @@ int kos_dyn_gen_unwind_exhausted(KosContext *ctx) {
   return 0;
 }
 
+
+/* === GC traversal === */
+
+
+/**
+   GC traverse a KOS_DYN_GEN: visit owner and, when frozen, the active chain.
+*/
+static int dynnode_traverse_gen(KosDynNode *node, visitproc visit, void *arg) {
+  Py_VISIT(KosDynGen_OWNER((KosDynGen *) node));
+  if (KosDynGen_ACTIVE((KosDynGen *) node))
+    return dynnode_traverse_frame(
+        KosDynGen_ACTIVE((KosDynGen *) node), visit, arg);
+  return 0;
+}
+
