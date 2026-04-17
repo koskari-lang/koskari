@@ -9,7 +9,7 @@ The document is written for implementers: it states goals, proposes concrete mec
 - [event-driven-eval-event-handlers.md](../interpreter/event-driven-eval-event-handlers.md) — **next** milestone: escape overloaded `RETURN`, `eval_event_*` helpers, RAISE/RETURN/YIELD handler routing
 - [iteration-yield-boundaries.md](../interpreter/iteration-yield-boundaries.md) — current opcode map and file locations
 - [generic-dynnode-protocol.md](../interpreter/generic-dynnode-protocol.md) — generic vs type-specific bypass; `kos_dynnode_on_control_returned` today
-- [dynamic-node-unified-api.md](../interpreter/dynamic-node-unified-api.md) — capability model (partially adopted)
+- [dynamic-node-unified-api.md](dynamic-node-unified-api.md) — capability model (partially adopted; archived spec)
 - [evaluator.md](../interpreter/evaluator.md) — eval loop, `eval_phase_post_opcode`, suspension
 
 **Primary code references (current behavior)**
@@ -345,7 +345,7 @@ to **one** internal **`dispatch_boundary_event(ctx, out_ev)`** that:
 - **`KOS_DYN_NEXT`** as a **separate** `KosDynKind` vs overlay (separate kind is the current direction).
 - **NULL** vs **`KOS_EV_*`** for exhaustion.
 - Whether **`kos_dynnode_on_control_returned`** is **renamed** for clarity or kept with **widened** contract.
-- Interaction with a future **`KosDynTypeOps`** table if [dynamic-node-unified-api.md](../interpreter/dynamic-node-unified-api.md) is fully adopted.
+- Interaction with a future **`KosDynTypeOps`** table if [dynamic-node-unified-api.md](dynamic-node-unified-api.md) were fully adopted (historical; not adopted).
 
 **Settled (not open):** no **`PUSH_NEXT`** opcode; **`KOS_DYN_NEXT`** only for **`NEXT`** opcode; **`ITER_NEXT`** on **`FOREACH`** only; **self-pop** for **`KOS_DYN_NEXT`**.
 

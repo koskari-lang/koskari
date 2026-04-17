@@ -267,7 +267,7 @@ If a continuation transfer (delimited or undelimited) would cross an active
 
 This preserves the single-shot contract and prevents resource unsafety.
 
-> **Note:** [dynamic-node-unified-api.md](dynamic-node-unified-api.md) §9.7 supersedes
+> **Note:** [dynamic-node-unified-api.md](../archive/dynamic-node-unified-api.md) §9.7 supersedes
 > this rule with respect to continuation **capture**: WITH nodes may be included in captured
 > chain segments (they are cloneable). The barrier applies only to **transfer** (wind/unwind
 > across an active WITH instance), not to capture of a chain that contains a WITH node.

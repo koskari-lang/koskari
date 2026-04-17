@@ -35,7 +35,7 @@ members or base fields directly. Node kinds are enumerated by `KosDynKind`:
 `KOS_DYN_FRAME` through `KOS_DYN_GEN` (see `dynchain.h`; `KOS_DYN_UNKNOWN` is a
 sentinel). The macro `KosDynNode_IS_REGION` matches TRY, FINALLY, LOOP, and
 FOREACH for convenience. Behavior is driven by capability bits (`KOS_DYN_CAP_*`);
-see [dynamic-node-unified-api.md](dynamic-node-unified-api.md) for the capability model.
+see [dynamic-node-unified-api.md](../archive/dynamic-node-unified-api.md) for the capability model.
 
 **Context managers (`KOS_DYN_WITH`)** — Lexical `with` and `dyn-with` share one
 node kind. Multi-shot vs single-shot is **not** a second `KosDynKind`; it is
@@ -282,7 +282,7 @@ vs semantic-only for paths where the caller unlinks). See
 
 Chain operations dispatch on `KosDynKind` and `KOS_DYN_CAP_*` in `dynchain.c`
 (switch-based helpers per kind). See
-[dynamic-node-unified-api.md](dynamic-node-unified-api.md) for the capability model.
+[dynamic-node-unified-api.md](../archive/dynamic-node-unified-api.md) for the capability model.
 
 ```c
 /* Generic push/pop */

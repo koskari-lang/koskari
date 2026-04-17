@@ -137,7 +137,7 @@ This helper is the **heart** of escaping overloaded **`RETURN`**. It is **not** 
 
 ### 4.1 What “capacity” means here
 
-Nodes expose **`KosDynNode_CAPS`** (and possibly finer flags per [dynamic-node-unified-api.md](dynamic-node-unified-api.md)). For this refactor:
+Nodes expose **`KosDynNode_CAPS`** (and possibly finer flags per [dynamic-node-unified-api.md](../archive/dynamic-node-unified-api.md)). For this refactor:
 
 | Capability (conceptual) | Participates in |
 |-------------------------|-----------------|

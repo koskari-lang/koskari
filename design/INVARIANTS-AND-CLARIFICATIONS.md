@@ -247,7 +247,7 @@ These are **commitments**: they must hold for correct behavior. They are elabora
 | Types             | api/types.md                     | koskari/lib/*.c, koskari/types.py       |
 | Builtins/API      | api/builtins.md, api/runtime.md   | koskari/lib/lib.c, operator.c           |
 | Language / Reader | language/*.md, SYNTAX.md, LAYOUTS.md | koskari/reader/parser.py, koskari/lib/parse.c |
-| Compiler          | SPECIALS.md, OPCODES.md, interpreter/compiler.md | koskari/compile/                  |
+| Compiler          | SPECIALS.md, OPCODES.md, interpreter/README.md (Compiler) | koskari/compile/                  |
 | Import system     | api/import-system.md             | koskari/importer/                 |
 | Feature list      | FEATURES.md, README.md           | —                                       |
 

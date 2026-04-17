@@ -55,6 +55,57 @@ flowchart TD
     end
 ```
 
+### 1.3 Design goals: orchestration, reactions, and local opcodes
+
+Koskari aims for an evaluator that is easy to picture as a **pipeline of
+boxes**: clear event boundaries, generic chain behavior where it helps, and
+room to add new control (for example a new stop reason or a hypothetical
+debug interrupt) by **extending the same pattern** instead of threading special
+cases through every opcode.
+
+A useful summary of that intent:
+
+| Layer | Owns |
+| ----- | ---- |
+| **Eval** (`eval.c`) | **Orchestration**: when to run post-opcode handling, how `out_ev` and suspension line up, ordering between unwind/pop/freeze and consumer delivery, `process_raise` / exception routing, transfer-plan interaction with the loop. |
+| **DynNodes** (`dynchain*.c`, kind helpers) | **Reactions**: what a particular node kind does when walked, unwound, or notified (e.g. `kos_dynnode_on_control_returned` for WIND/WITH, NEXT/FOREACH/YIELD_FROM delivery primitives). |
+| **Opcodes** (`opcode/*.c`) | **Local stack and unwind steps**: pop/push operands, request transitions via `kos_dyn_transition`, return `KosOpOutcome` so the loop can run the right follow-up. |
+
+The goal is **compartmentalization**: new behavior should touch the layers it
+actually needs (a new opcode, a new cap on a node, or a new branch in eval’s
+post-opcode pipeline), without forcing unrelated code to “learn” a new case.
+
+**Where we are not there yet (honest gaps):**
+
+- **No single generic “boundary event” dispatcher on dynnodes.** WIND/WITH use
+  `kos_dynnode_on_control_returned`; flattened iterator return/yield still
+  spread across eval helpers (`eval_parent_return_deliver`,
+  `eval_event_yield_deliver_to_boundary`, etc.) and **kind-specific** helpers in
+  `dyn_next.c` / `dyn_yield_from.c`. A unified `kos_dynnode_on_boundary_event`-
+  style API remains a direction, not a full replacement for those paths yet
+  (see [interpreter/boundary-control-reemit.md](interpreter/boundary-control-reemit.md)).
+
+- **Large opcodes.** Handlers such as **YIELD_FROM** still bundle substantial
+  logic in one file; the eval/dynchain split reduces duplication but does not
+  yet shrink every opcode to “thin local work + one transition.”
+
+- **Native frames** (`native_handler`) are a parallel “mini eval” on the same
+  chain: orchestration and reaction blur at the frame boundary because the
+  handler is not a bytecode opcode.
+
+- **AWAIT** is intentionally **not** folded into the same boundary-control
+  staging as RETURN/YIELD parent delivery; that keeps semantics stable but
+  means “one pipeline for every suspend kind” is not a literal single path.
+
+- **Exceptions** are centralized for post-opcode `PyErr` via
+  `eval_boundary_raise_dispatch`, but **try/finally**, **WITH**, and
+  **transfer-plan** failure paths still interact with eval and dynchain in
+  several places—good for correctness, harder to draw as one box.
+
+These gaps are useful to track: they mark where future refactors should push
+**policy toward eval** and **reactions toward dynchain**, without pretending
+the codebase is already uniform end-to-end.
+
 ---
 
 ## 2. Phase Detail Diagrams
@@ -650,7 +701,7 @@ When `CURRENT_FRAME(ctx)` has `native_handler != NULL`, the loop runs that handl
 ## 11. Related Documentation
 
 - [design/interpreter/evaluator.md](interpreter/evaluator.md) — VM structures, C API reference
-- [design/interpreter/ceval-exception-paths.md](interpreter/ceval-exception-paths.md) — Exception paths and trace injection
+- [design/interpreter/event-driven-eval-event-handlers.md](interpreter/event-driven-eval-event-handlers.md) — Eval event handlers, exception boundaries, `out_ev` contracts
 - [design/api/special-call-protocol.md](api/special-call-protocol.md) — Install slots and invocation
 - [design/interpreter/execution-invariants.md](interpreter/execution-invariants.md) — Execution invariants
 - [design/interpreter/iteration-yield-boundaries.md](interpreter/iteration-yield-boundaries.md) — Iteration vs yield-from vs for-each: implementation map and consolidation proposals

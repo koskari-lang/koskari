@@ -337,5 +337,5 @@ semantics if desired.
 
 - [RESOLUTION-MODEL-NAMESPEC-AND-FRAGMENT.md](RESOLUTION-MODEL-NAMESPEC-AND-FRAGMENT.md) — NamespaceSpec and ByteCodeFragment field reference, utilization timeline, case analysis
 - [design/api/NAMESPACE-AND-REFS.md](../api/NAMESPACE-AND-REFS.md) — Current namespace and ref model
-- [design/interpreter/compiler.md](../interpreter/compiler.md) — Compiler architecture
+- [design/interpreter/README.md](../interpreter/README.md) — Interpreter docs (Compiler section); [SPECIALS.md](../SPECIALS.md)
 - [design/SPECIALS.md](../SPECIALS.md) — Special forms reference

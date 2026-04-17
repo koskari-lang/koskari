@@ -1,8 +1,18 @@
 # Dynamic Node Unified API: Design and Migration Specification
 
-This document specifies the redesign of the Koskari dynamic node system into a clean, unified API. It is intended as an **implementation prompt**: a fresh implementer should be able to execute this specification without additional context.
+**Status:** Archived. Partial migration landed in `dynchain.c` / `dynchain.h` (capability
+bits, per-kind nodes, parts of transfer plans). The vtable-based `KosDynTypeOps`
+design and “push/pop as sole entry points” were not adopted; dispatch remains
+`switch` on `KosDynKind`. For current chain ideology see
+[generic-dynnode-protocol.md](../interpreter/generic-dynnode-protocol.md). Remaining
+cleanup is tracked in
+[dynchain-refactor-notes.md](../interpreter/dynchain-refactor-notes.md).
 
-**Existing reference material:** `dynchain.c`, `dynchain.h`, `eval.c`, [callcc.md](callcc.md), [with-dyn-with.md](with-dyn-with.md), [extent-wind-unwind.md](extent-wind-unwind.md).
+---
+
+This document specified the redesign of the Koskari dynamic node system into a clean, unified API. It was intended as an **implementation prompt**: a fresh implementer could execute this specification without additional context.
+
+**Existing reference material:** `dynchain.c`, `dynchain.h`, `eval.c`, [callcc.md](../interpreter/callcc.md), [with-dyn-with.md](../interpreter/with-dyn-with.md), [extent-wind-unwind.md](../interpreter/extent-wind-unwind.md).
 
 ## Implementation Status
 
@@ -32,7 +42,7 @@ This specification was partially adopted. The following notes describe what was 
 - §8 "Adding a New Dynamic Node Type" via function table: since the table was not adopted, new
   kinds are added by extending the `switch` statements in `dynchain.c`.
 
-**Open work:** See `design/interpreter/dynchain-refactor-notes.md` for remaining kind-check
+**Open work:** See [dynchain-refactor-notes.md](../interpreter/dynchain-refactor-notes.md) for remaining kind-check
 violations that would be resolved by fuller adoption of the capability-based dispatch model.
 
 ---
