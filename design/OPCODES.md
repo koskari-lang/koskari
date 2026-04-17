@@ -14,7 +14,8 @@ See §1.6. Other design docs should refer here instead of duplicating status.
 metadata tables), [interpreter/execution-invariants.md](interpreter/execution-invariants.md)
 (execution model), [interpreter/bytecode-metadata-tables.md](interpreter/bytecode-metadata-tables.md)
 (extents, jump locality), [interpreter/evaluator.md](interpreter/evaluator.md)
-(evaluation loop), [interpreter/with-dyn-with.md](interpreter/with-dyn-with.md)
+(VM structures, C API), [EVALUATOR.md](EVALUATOR.md) (eval loop, post-opcode
+delivery, **`KosOpOutcome`**), [interpreter/with-dyn-with.md](interpreter/with-dyn-with.md)
 (context managers).
 
 
@@ -241,8 +242,8 @@ When adding or changing an opcode:
 | BREAK | COUNT | Jump to loop break target | [§6](#kos_op_break) |
 | CONTINUE | COUNT | Jump to loop continue target | [§6](#kos_op_continue) |
 | RAISE | COUNT | Pop N, raise exception | [§6](#kos_op_raise) |
-| RETURN | COUNT | Return TOS (or push to parent) | [§6](#kos_op_return) |
-| YIELD | COUNT | Yield TOS | [§6](#kos_op_yield) |
+| RETURN | COUNT | Pop return value; non-GEN parent delivery in **`eval_parent_return_deliver`** (post-opcode), or **`KOS_EV_RETURN`** at top / GEN parent | [§6](#kos_op_return) |
+| YIELD | COUNT | Pop value; **`KOS_EV_YIELD`** + post-opcode **`eval_event_yield`** (walk/freeze, optional boundary deliver) | [§6](#kos_op_yield) |
 | YIELD_FROM | NOARG | Delegate to sub-iterator/gen; PC-stable; send/throw/close | [§6](#kos_op_yield_from) |
 | ITER_NEXT | LABEL | Next from region iterator; else jump | [§7](#kos_op_iter_next) |
 | NEXT | COUNT | Stack-based next (1 or 2 args) | [§7](#kos_op_next) |
@@ -705,15 +706,16 @@ bottom to top matches push order).
 
 - **Style**: COUNT. Arg = number of values to leave on stack as return value (typically 1).
 - **Status**: Implemented.
-- **Stack**: Return value is TOS. If frame has a parent, value is pushed onto parent and frame is detached; else boundary event RETURN(value).
+- **Stack**: Pops the return value(s) per `arg`. Does **not** push onto the caller inside the opcode handler: after **`kos_dyn_transition`** (**`KOS_TRANS_WALK_RETURN_TO_FRAME`**) and **`kos_dyn_pop_frame`**, a **non-GEN** parent path returns **`KOS_OP_POST_PARENT_RETURN()`** (**`KosOpOutcome` / `KOS_LOP_POST`**), and **`eval_parent_return_deliver`** (post-opcode) performs iterator-boundary delivery, native-handler delivery, or **`KosStackBlock_PushRef`** onto the caller, then **`kos_dynnode_on_control_returned`**. **Top-level** or **GEN** parent: **`KOS_EV_RETURN`** in **`out_ev`**, **`KOS_OP_POST_SUSPEND()`** — driver-visible completion boundary. **Delimited** continuation returns (`RETURN_TARGET_CHAIN`) are a separate early path.
 - **Invariants**: See execution-invariants: in-loop flattening for RETURN.
+- **See also**: [EVALUATOR.md](EVALUATOR.md) §2.6–3; **`koskari/lib/opcode/RETURN.c`**.
 
 **Example:** Return TOS (arg = 1). Pool: 0 = 42.
 
 | index | opcode | arg | arg view | comment |
 |------:|--------|-----|----------|---------|
 | 0     | CONST  | 0   | 0 (42)   | stack: [..., 42] |
-| 1     | RETURN | 1   | 1        | return 42 (boundary or push to parent) |
+| 1     | RETURN | 1   | 1        | return 42 (post-opcode deliver to caller or boundary `KOS_EV_RETURN`) |
 
 ---
 
@@ -721,8 +723,9 @@ bottom to top matches push order).
 
 - **Style**: COUNT. Arg = number of values to yield (typically 1).
 - **Status**: Implemented.
-- **Stack**: Yields TOS. Sets KOS_CODE_YIELDS on the code object. If frame has parent (async gen), value is fed to parent in-loop; else boundary event YIELD(value).
+- **Stack**: Pops the yielded value(s). Sets **`KOS_CODE_YIELDS`** on the code object. Opcode sets **`out_ev = KOS_EV_YIELD`** and returns **`KOS_OP_POST_SUSPEND()`**; **`eval_event_yield`** (post-opcode) runs **`eval_yield_handle_walk_and_freeze`** (**`kos_dyn_walk_handle_yield`** via **`kos_dyn_transition`**), then either **`eval_event_yield_deliver_to_boundary`** when **`kos_dyn_need_kos_agen_boundary_deliver`** (flattened **NEXT** / **FOREACH** / **YIELD_FROM**, often **REPROLOGUE** without stopping **`koskari_eval`**) or **`STOP_EVENT`** with **`KOS_SUSP_YIELD`** for the outer driver.
 - **Invariants**: Code is treated as async generator when YIELDS flag set.
+- **See also**: [EVALUATOR.md](EVALUATOR.md) §2.6, §5.7; **`koskari/lib/opcode/YIELD.c`**.
 
 **Example:** Yield TOS (arg = 1). Pool: 0 = 100.
 
@@ -2116,7 +2119,7 @@ These opcodes perform attribute get, set, clear, or reference on an object fetch
 
 - **Style**: COUNT. Arg = number of positional arguments.
 - **Status**: Implemented.
-- **Stack**: Same as CALL: `[..., callable, arg_1, ..., arg_n]`. Extracts args via PopTailPtr (small counts) or PopTail (large) before branching; opcode owns storage, DECREFs at end. For KosCallable: tail install recycles the frame. For Plain Python: `kos_dyn_pop_frame` when parent exists, then PyObject_Vectorcall, kos_push_or_await. Returns KOS_OP_RES_CONTROL_RETURNED when continuing (triggers kos_dynnode_on_control_returned for wind thunks).
+- **Stack**: Same as CALL: `[..., callable, arg_1, ..., arg_n]`. Extracts args via PopTailPtr (small counts) or PopTail (large) before branching; opcode owns storage, DECREFs at end. For KosCallable: tail install recycles the frame. For Plain Python: `kos_dyn_pop_frame` when parent exists, then PyObject_Vectorcall, kos_push_or_await. Returns **`KOS_OP_POST_CONTROL()`** (legacy **`KOS_OP_RES_CONTROL_RETURNED`**) when continuing (triggers **`kos_dynnode_on_control_returned`** for wind thunks).
 - **Execution model**: When the callable is a KosExpression or KosFunction, the VM replaces the current frame (tail install). For all other callable types, the opcode drops the current frame when parent exists, calls the callable, and pushes the result.
 - **Invariants**: Stack has at least 1 + arg elements. KosExpression allows no arguments (arg must be 0); otherwise TypeError.
 - **Compiler form:** Emitted by the compile/call special when the call is in tail position (`tc` true).
@@ -2134,7 +2137,7 @@ These opcodes perform attribute get, set, clear, or reference on an object fetch
 
 - **Style**: COUNT. Arg = N (number of positional arguments).
 - **Status**: Implemented.
-- **Stack**: Same layout as CALL_NAMES: `[..., callable, pos_0, ..., pos_{N-1}, val_0, ..., val_{M-1}, names_tuple]`. Extracts via PopTailPtr (small) or PopTail (large); opcode owns storage, DECREFs at end. KosCallable: kos_callable_tail_vcall. Plain Python: kos_dyn_pop_frame when parent exists, PyObject_Vectorcall, kos_push_or_await. Returns KOS_OP_RES_CONTROL_RETURNED when continuing.
+- **Stack**: Same layout as CALL_NAMES: `[..., callable, pos_0, ..., pos_{N-1}, val_0, ..., val_{M-1}, names_tuple]`. Extracts via PopTailPtr (small) or PopTail (large); opcode owns storage, DECREFs at end. KosCallable: kos_callable_tail_vcall. Plain Python: kos_dyn_pop_frame when parent exists, PyObject_Vectorcall, kos_push_or_await. Returns **`KOS_OP_POST_CONTROL()`** (legacy **`KOS_OP_RES_CONTROL_RETURNED`**) when continuing.
 
 ---
 
@@ -2142,7 +2145,7 @@ These opcodes perform attribute get, set, clear, or reference on an object fetch
 
 - **Style**: STAR. Arg = bitflags (1 = has *args, 2 = has **kwargs).
 - **Status**: Implemented.
-- **Stack**: Same layout as CALL_STAR: `[..., callable, pos, kwd]`. Pop order and ensure_tuple as CALL_STAR. KosCallable: kos_callable_tail_call. Plain Python: kos_dyn_pop_frame when parent exists, PyObject_Call, kos_push_or_await. Returns KOS_OP_RES_CONTROL_RETURNED when continuing. Same replace-frame semantics as TAIL_CALL.
+- **Stack**: Same layout as CALL_STAR: `[..., callable, pos, kwd]`. Pop order and ensure_tuple as CALL_STAR. KosCallable: kos_callable_tail_call. Plain Python: kos_dyn_pop_frame when parent exists, PyObject_Call, kos_push_or_await. Returns **`KOS_OP_POST_CONTROL()`** (legacy **`KOS_OP_RES_CONTROL_RETURNED`**) when continuing. Same replace-frame semantics as TAIL_CALL.
 
 ---
 
