@@ -101,12 +101,6 @@ KOS_OP_HANDLER(RETURN) {
       return KOS_OP_POST_ERR();
     }
 
-    /* Detach our frame; parent becomes DYN_TOP. */
-    // if (kos_dyn_detach_top_frame(ctx, &detached_frame) < 0) {
-    //   Py_DECREF(val);
-    //   return KOS_OP_POST_ERR();
-    // }
-    // kos_dynframe_free(detached_frame);
     if (unlikely(kos_dyn_pop_frame(ctx) < 0)) {
       Py_DECREF(val);
       return KOS_OP_POST_ERR();

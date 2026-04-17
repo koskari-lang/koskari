@@ -6,15 +6,16 @@ The document is written for implementers: it states goals, proposes concrete mec
 
 **Related documentation**
 
-- [iteration-yield-boundaries.md](iteration-yield-boundaries.md) — current opcode map and file locations
-- [generic-dynnode-protocol.md](generic-dynnode-protocol.md) — generic vs type-specific bypass; `kos_dynnode_on_control_returned` today
-- [dynamic-node-unified-api.md](dynamic-node-unified-api.md) — capability model (partially adopted)
-- [evaluator.md](evaluator.md) — eval loop, `eval_phase_post_opcode`, suspension
+- [event-driven-eval-event-handlers.md](../interpreter/event-driven-eval-event-handlers.md) — **next** milestone: escape overloaded `RETURN`, `eval_event_*` helpers, RAISE/RETURN/YIELD handler routing
+- [iteration-yield-boundaries.md](../interpreter/iteration-yield-boundaries.md) — current opcode map and file locations
+- [generic-dynnode-protocol.md](../interpreter/generic-dynnode-protocol.md) — generic vs type-specific bypass; `kos_dynnode_on_control_returned` today
+- [dynamic-node-unified-api.md](../interpreter/dynamic-node-unified-api.md) — capability model (partially adopted)
+- [evaluator.md](../interpreter/evaluator.md) — eval loop, `eval_phase_post_opcode`, suspension
 
 **Primary code references (current behavior)**
 
-- `koskari/lib/eval.h` — `KosEvent`, `KosEventKind`, `KosContext` pending async-gen fields (`pending_agen`, `pending_agen_default`, `pending_agen_n`)
-- `koskari/lib/eval.c` — `eval_phase_post_opcode`, `eval_post_opcode_pending_agen`
+- `koskari/lib/eval.h` — `KosEvent`, `KosEventKind`, `KosContext`
+- `koskari/lib/eval.c` — `eval_phase_post_opcode`, `dispatch_boundary_event` (pending async-gen fields removed; state on `KOS_DYN_NEXT` / `KOS_DYN_FOREACH`)
 - `koskari/lib/opcode/{NEXT,ITER_NEXT,RETURN,YIELD,YIELD_FROM}.c`
 - `koskari/lib/dynchain.c` — `kos_dynnode_on_control_returned`, yield walk / GEN freeze
 
@@ -76,7 +77,7 @@ pending_agen_n   /* 0 = ITER_NEXT, 1/2 = NEXT */
 
 ### 2.2 eval special cases
 
-`eval_phase_post_opcode` treats **`KOS_EV_YIELD`** and **`KOS_EV_RETURN`** with **dedicated** paths that call **`eval_post_opcode_pending_agen`**, which encodes NEXT vs ITER_NEXT vs default vs StopIteration **inline**. That is **node policy** expressed in the **evaluator**, which violates the ideology in [generic-dynnode-protocol.md](generic-dynnode-protocol.md).
+`eval_phase_post_opcode` treats **`KOS_EV_YIELD`** and **`KOS_EV_RETURN`** with **dedicated** paths that call **`eval_post_opcode_pending_agen`**, which encodes NEXT vs ITER_NEXT vs default vs StopIteration **inline**. That is **node policy** expressed in the **evaluator**, which violates the ideology in [generic-dynnode-protocol.md](../interpreter/generic-dynnode-protocol.md).
 
 ### 2.3 `kos_dynnode_on_control_returned` is narrow
 
@@ -293,7 +294,7 @@ to **one** internal **`dispatch_boundary_event(ctx, out_ev)`** that:
    Attaching boundary delivery to **FOREACH** without **AWAITING_ITER_STEP** (or equivalent) will **mis-handle** any future suspension inside the loop body.
 
 4. **Order of handling vs `walk_handle_yield`**  
-   **Freeze / install / chain version** updates must stay **consistent** with [freeze-thaw-context-segments.md](freeze-thaw-context-segments.md). If **boundary** runs **before** freeze completes, nodes may see **stale** `dyn_top`.
+   **Freeze / install / chain version** updates must stay **consistent** with [freeze-thaw-context-segments.md](../interpreter/freeze-thaw-context-segments.md). If **boundary** runs **before** freeze completes, nodes may see **stale** `dyn_top`.
 
 5. **Ownership of payload**  
    `KosEvent` payload **reference** ownership must match **exactly** one of: **transferred to stack**, **stolen by node**, or **decref’d by generic** path. Document per branch.
@@ -344,7 +345,7 @@ to **one** internal **`dispatch_boundary_event(ctx, out_ev)`** that:
 - **`KOS_DYN_NEXT`** as a **separate** `KosDynKind` vs overlay (separate kind is the current direction).
 - **NULL** vs **`KOS_EV_*`** for exhaustion.
 - Whether **`kos_dynnode_on_control_returned`** is **renamed** for clarity or kept with **widened** contract.
-- Interaction with a future **`KosDynTypeOps`** table if [dynamic-node-unified-api.md](dynamic-node-unified-api.md) is fully adopted.
+- Interaction with a future **`KosDynTypeOps`** table if [dynamic-node-unified-api.md](../interpreter/dynamic-node-unified-api.md) is fully adopted.
 
 **Settled (not open):** no **`PUSH_NEXT`** opcode; **`KOS_DYN_NEXT`** only for **`NEXT`** opcode; **`ITER_NEXT`** on **`FOREACH`** only; **self-pop** for **`KOS_DYN_NEXT`**.
 
@@ -354,3 +355,5 @@ to **one** internal **`dispatch_boundary_event(ctx, out_ev)`** that:
 
 - **2026-04-16** — Initial design draft for event-driven boundary delivery and node-centric consumption.
 - **2026-04-16** — Agreed decisions: **`KOS_DYN_NEXT`** scope (**`NEXT`** opcode only), **`ITER_NEXT`** on **`FOREACH`** only, **no** new opcodes (**runtime push** + **self-pop**), **`KosContext.pending_agen*`** removal; diagrams and §4/§5 updated.
+- **2026-04-16** — Linked follow-on **`eval_event_*`** / thin-RETURN design doc (`design/interpreter/event-driven-eval-event-handlers.md`).
+- **2026-04-16** — Document moved to **`design/archive/`** (superseded-as-stable snapshot of boundary ideology; active follow-up is **`event-driven-eval-event-handlers`**).
