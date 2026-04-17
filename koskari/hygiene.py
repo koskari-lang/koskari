@@ -92,6 +92,14 @@ def collect_binding_symbols(template, find_compiled):
 
     head, rest = template
     if not is_symbol(head):
+        # A one-form body from REST extract_targets is shaped as ``(FORM . nil)``.
+        # The nested special (e.g. ``(compile/lambda ...)``) sits entirely in
+        # ``car``; ``cdr`` is nil, so the sibling tail walk below sees nothing
+        # and would skip that form unless we descend into ``car`` here.
+        # Only recurse ``car`` when it is a pair (nested list/special); a
+        # non-pair atom in ``car`` with ``cdr`` nil is not a wrapper.
+        if rest is nil and is_pair(head):
+            return collect_binding_symbols(head, find_compiled)
         for elem in _tail_forms_for_binding_walk(rest):
             out |= collect_binding_symbols(
                 elem if is_pair(elem) else cons(elem, nil),

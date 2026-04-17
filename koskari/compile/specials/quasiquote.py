@@ -309,10 +309,13 @@ def _qq_list(compiler, frag, lst, level):
         splice_count += 1
 
     if has_splice:
-        if splice_count > 1:
+        # Always emit PAIR_SPLICE when any ,@ ran. A lone ,@ leaves one segment on
+        # the stack (list/tuple/pair/iterable); skipping PAIR_SPLICE 1 left Python
+        # list/tuple values unevaluated into Koskari proper lists (PAIR_SPLICE.c
+        # flattens segments into cons cells). splice_count counts every segment:
+        # literal PROPER/tuple chunks plus each splice result.
+        if splice_count >= 1:
             frag.instruction(OpCode.KOS_OP_PAIR_SPLICE, splice_count)
-        # splice_count == 1 means the only thing is a bare splice expression —
-        # it is already on the stack as a proper list, no further work needed
     elif splice_count == 0:
         # Empty list: `() → nil
         frag.instruction(OpCode.KOS_OP_CONST, nil)

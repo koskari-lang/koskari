@@ -100,6 +100,19 @@ class TestSyntaxBox(unittest.TestCase):
         self.assertFalse(_tree_contains_syntax(out))
         self.assertEqual(car(cdr(out)), cons(y, nil))
 
+    def test_unbox_macro_with_hygiene_strips_syntax_in_first_car(self):
+        """
+        Regression: the spine walk must not pre-register the whole pair in
+        ``seen`` before the first cell, or the first ``car`` is skipped and
+        ``Syntax`` boxes remain (e.g. macro output like ``(a b . #*args)``).
+        """
+
+        a = symbol('a')
+        b = symbol('b')
+        form = cons(Syntax(a, None), cons(Syntax(b, None), nil))
+        out = unbox_macro_with_hygiene(form, lambda _h: None)
+        self.assertFalse(_tree_contains_syntax(out))
+        self.assertEqual(out, cons(a, cons(b, nil)))
 
     def test_unbox_macro_with_hygiene_atom_syntax(self):
         out = unbox_macro_with_hygiene(Syntax(symbol('z'), None), lambda _h: None)

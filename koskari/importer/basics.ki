@@ -261,4 +261,17 @@ define-syntax compile/define-demanding:
       (define name (demand (lambda name formals body ...)))
 
 
+define-syntax compile/function-compose:
+  macro-rules []:
+    match (function-compose fn1):
+      fn1
+    match (function-compose fn1 ...):
+      define acc `(value)
+      define elems (list-each [fn fn1] #((gensym) fn))
+      for-each [[sym fn] (reversed elems)]:
+        set! acc `((,sym ,@acc))
+      `(let [,@(each [[sym fn] elems] (cons sym fn nil))]
+        (lambda [value] ,@acc))
+
+
 ;; The end.

@@ -326,7 +326,14 @@ def _syntax_pattern_specs(p_items, literals, source_ctx):
         if i + 1 < len(p_items) and p_items[i + 1] is Ellipsis:
             pat = p_items[i]
             inner = _syntax_elem_matcher(pat, literals, source_ctx)
-            slot = gensym('_repeat')
+            # Bind REPEAT to the pattern variable when the repeated element is a
+            # bare symbol (e.g. ``xs ...``); otherwise use a fresh slot. This
+            # must match ``collect_pattern_variable_symbols`` so macro-rules
+            # lambdas receive the correct keyword (see macro-rules ellipsis tests).
+            if is_symbol(pat) and pat not in literals:
+                slot = pat
+            else:
+                slot = gensym('_repeat')
             specs.append(REPEAT(slot, inner, min_count=0))
             i += 2
             continue
@@ -557,6 +564,32 @@ def _maybe_unwrap_repeat_macro_kwarg(val, formal_sym):
     return [row[formal_sym] for row in val]
 
 
+def _unwrap_repeat_macro_rows(val):
+    """
+    Turn :func:`box_match_capture` output for ``RepeatResult`` into a flat list
+
+    After ``box_match_capture``, a repeat region is a list of per-iteration
+    dicts with one key each (the inner pattern variable). Macro bodies expect
+    a list of ``Syntax`` values for ``(apply #list xs)``-style expansions.
+
+    :param val: keyword value (possibly list of one-key dicts)
+    :return: list of boxed captures, or ``val`` if not repeat-shaped
+    """
+
+    if not isinstance(val, list) or not val:
+        return val
+
+    if not all(isinstance(row, dict) and len(row) == 1 for row in val):
+        return val
+
+    keys0 = next(iter(val[0]))
+    for row in val:
+        if next(iter(row)) != keys0:
+            return val
+
+    return [row[keys0] for row in val]
+
+
 @dataclass(frozen=True)
 class SyntaxRule:
     pattern_matcher: Matcher
@@ -666,10 +699,9 @@ def unbox_macro_with_hygiene(expanded, find_compiled):
     seen = set()
 
     def walk(x):
-        xi = id(x)
-        if xi in seen:
-            return x
-        seen.add(xi)
+        # xi = id(x)
+        # if xi in seen:
+        #     return x
 
         if isinstance(x, Syntax):
             return walk(x.datum)
@@ -718,7 +750,11 @@ class MacroRule:
         pos_fb = get_position(source_obj) if is_pair(source_obj) else None
 
         kwargs = _match_dict_to_syntax_kwargs(raw, position_fallback=pos_fb)
-        kwargs = {str(k): v for k, v in kwargs.items()}
+        if kwargs is None:
+            raise CompilerError("macro-rules: failed to box match captures")
+
+        kwargs = {
+            str(k): _unwrap_repeat_macro_rows(v) for k, v in kwargs.items()}
 
         return demand_call(self.procedure, **kwargs)
 

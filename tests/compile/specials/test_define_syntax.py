@@ -22,7 +22,7 @@ Integration tests for compile/define with syntax and macro transformers.
 import pytest
 
 from koskari.dis import dis
-from koskari.lib import OpCode
+from koskari.lib import OpCode, build_list
 from koskari.syntax import (SyntaxRulesTransformer, build_macro_syntax,
                             build_syntax)
 
@@ -139,6 +139,40 @@ class TestCompileMacroRules(DefineSyntaxCompileHelpers):
 
         result = await expr()
         self.assertEqual(42, result)
+
+
+    async def test_compile_macro_rules_ellipsis_repeat_to_list(self):
+        """
+        ``macro-rules`` must bind ``xs ...`` to the pattern variable ``xs`` (not
+        an internal gensym) and pass repeat captures so the macro body can
+        splice them (e.g. ``(#list ,@xs)``). Regression for
+        ``compile/function-compose``-style macros that iterate ``reverse`` over
+        the repeated forms.
+        """
+
+        src_str = """
+        (compile/define ellipsis-repro
+          (compile/macro-rules ellipsis-repro []
+            [(ellipsis-repro xs ...)
+             `(#list ,@xs)]))
+        """
+        expr, mod = self.compile_expr(src_str)
+        dis(expr.code)
+
+        await expr()
+        defn = {
+            'compile/ellipsis-repro': vars(mod)['ellipsis-repro'],
+            '#list': build_list,
+        }
+
+        src_str = """
+        (ellipsis-repro 1 2 3)
+        """
+        expr, mod = self.compile_expr(src_str, **defn)
+        dis(expr.code)
+
+        result = await expr()
+        self.assertEqual([1, 2, 3], list(result))
 
 
 class TestCompileSyntaxMatch(DefineSyntaxCompileHelpers):

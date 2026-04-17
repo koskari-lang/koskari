@@ -200,6 +200,44 @@ class TestQuasiquoteSplice(SpecialsTestCase):
         self.assertEqual([1, 2, 3], list(result.unpack()))
 
 
+    async def test_splice_only_python_list(self):
+        """
+        Lone ,@ must still run PAIR_SPLICE so a Python list splices to a proper
+        Koskari list, not a raw list object.
+        """
+
+        expr, mod = self.compile_expr("`(,@lst)", lst=[1, 2, 3])
+        result = await expr()
+        self.assertEqual(cons(1, 2, 3, nil), result)
+        self.assertTrue(result.is_proper())
+
+
+    async def test_splice_only_python_tuple(self):
+        """
+        Same for tuple — PAIR_SPLICE normalizes tuple segments to cons cells.
+        """
+
+        expr, mod = self.compile_expr("`(,@t)", t=(1, 2, 3))
+        result = await expr()
+        self.assertEqual(cons(1, 2, 3, nil), result)
+
+
+    async def test_splice_python_list_after_fixed_prefix(self):
+        """
+        `(foo ,@lst) with lst a Python list — splices as cons cells, not nested list
+        """
+
+        expr, mod = self.compile_expr(
+            "`(foo ,@lst)",
+            lst=[0, 1, 2, 3, 4],
+        )
+        result = await expr()
+        self.assertEqual(
+            [symbol("foo"), 0, 1, 2, 3, 4],
+            list(result.unpack()),
+        )
+
+
     async def test_splice_at_front(self):
         """
         `(,@lst b c) prepends lst before b, c
