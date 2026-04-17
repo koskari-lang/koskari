@@ -38,12 +38,11 @@ def special_parameterize(
         source: pair,
         tc: bool = False) -> ByteCodeFragment:
     """
-    Compile (compile/parameterize [[name val] ...] BODY...). Binds names as
-    dynamic parameters for the duration of body; restores ambient values on
-    exit. Uses PUSH_PARAM (values on stack, names tuple constant) and POP_PARAM.
-    Consumers of parameters (e.g. functions that would use bind-param) read the
-    current value via ParamRef(name).deref(); the body typically calls such
-    consumers. See tests/compile/specials/test_parameterize.py.
+    Compile (compile/parameterize [[name val] ...] BODY...).
+
+    Sets named dynamic parameters for the duration of body; restores ambient
+    values on exit. Consumers can use these parameters via `define-parameter`
+    or `parameterq`
     """
 
     called_by, rest = source
