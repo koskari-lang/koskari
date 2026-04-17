@@ -745,6 +745,31 @@ PyObject *KosFormals_NewFull(
 }
 
 
+/*
+  Valid Formals from the compiler list every name before * in kwd and every
+  name after * in kwd_only, so the first kwd_only symbol sorts after the
+  first kwd symbol. A mis-encoded layout can place a post-* name in kwd,
+  inverting that order (first kwd_only < first kwd). When * is present,
+  remaining positionals must go to the variadic slot before such kwd names.
+*/
+static int formals_pos_star_before_kwd(PyObject *kwd, PyObject *kwd_only) {
+
+  if (! kwd || ! kwd_only)
+    return 0;
+
+  if (PyTuple_GET_SIZE(kwd) < 1 || PyTuple_GET_SIZE(kwd_only) < 1)
+    return 0;
+
+  PyObject *fk = PyTuple_GET_ITEM(kwd, 0);
+  PyObject *fo = PyTuple_GET_ITEM(kwd_only, 0);
+
+  if (! PyUnicode_Check(fk) || ! PyUnicode_Check(fo))
+    return 0;
+
+  return PyUnicode_Compare(fo, fk) < 0;
+}
+
+
 /**
    Shared kwargs phase: fill remaining pos/kwd/kwd_only from kwargs and
    defaults, then store starstar or error on unexpected keywords.
@@ -891,6 +916,8 @@ int KosFormals_ApplyFast(
   SAYF("  starstar : %R", starstar);
   SAYF("  defaults : %R", defaults);
 
+  int star_first = formals_pos_star_before_kwd(kwd, kwd_only);
+
   ssize_t i, ipos = 0, ipos_only = 0, ikwd = 0, ikwd_only = 0;
   ssize_t l = args? PyTuple_GET_SIZE(args): 0;
 
@@ -914,6 +941,16 @@ int KosFormals_ApplyFast(
         return -1;
       if (++ipos_only >= PyTuple_GET_SIZE(pos_only))
         pos_only = NULL;
+
+    } else if (star_first && star) {
+      PyObject *sl = PyTuple_GetSlice(args, i, l);
+      if (KosNamespace_FastStore(namespace, i, sl)) {
+        Py_DECREF(sl);
+        return -1;
+      }
+      Py_DECREF(sl);
+      star = NULL;
+      break;
 
     } else if (kwd) {
       if (KosNamespace_FastStore(
@@ -1030,6 +1067,8 @@ int KosFormals_Apply(
   SAYF("  starstar : %R", starstar);
   SAYF("  defaults : %R", defaults);
 
+  int star_first = formals_pos_star_before_kwd(kwd, kwd_only);
+
   ssize_t i, ipos = 0, ipos_only = 0, ikwd = 0, ikwd_only = 0;
   ssize_t l = args? PyTuple_GET_SIZE(args): 0;
 
@@ -1053,6 +1092,16 @@ int KosFormals_Apply(
         return -1;
       if (ipos_only >= PyTuple_GET_SIZE(pos_only))
         pos_only = NULL;
+
+    } else if (star_first && star) {
+      PyObject *sl = PyTuple_GetSlice(args, i, l);
+      if (KosNamespace_Store(namespace, star, sl)) {
+        Py_DECREF(sl);
+        return -1;
+      }
+      Py_DECREF(sl);
+      star = NULL;
+      break;
 
     } else if (kwd) {
       if (KosNamespace_Store(
@@ -1170,6 +1219,8 @@ int KosFormals_VectorApply(
   SAYF("  starstar : %R", starstar);
   SAYF("  defaults : %R", defaults);
 
+  int star_first = formals_pos_star_before_kwd(kwd, kwd_only);
+
   ssize_t i, ipos = 0, ipos_only = 0, ikwd = 0, ikwd_only = 0;
   ssize_t l = PyVectorcall_NARGS(nargs);
 
@@ -1193,6 +1244,25 @@ int KosFormals_VectorApply(
         return -1;
       if (ipos_only >= PyTuple_GET_SIZE(pos_only))
         pos_only = NULL;
+
+    } else if (star_first && star) {
+      size_t nstar = l - i;
+      PyObject *sl = PyTuple_New(nstar);
+      if (! sl)
+        return -1;
+      for (size_t istar = 0; istar < nstar; istar++) {
+        PyObject *a = args[i++];
+        Py_INCREF(a);
+        PyTuple_SET_ITEM(sl, istar, a);
+      }
+
+      if (KosNamespace_Store(namespace, star, sl)) {
+        Py_DECREF(sl);
+        return -1;
+      }
+      Py_DECREF(sl);
+      star = NULL;
+      break;
 
     } else if (kwd) {
       if (KosNamespace_Store(
@@ -1335,6 +1405,8 @@ int KosFormals_VectorApplyFast(
   SAYF("  starstar : %R", starstar);
   SAYF("  defaults : %R", defaults);
 
+  int star_first = formals_pos_star_before_kwd(kwd, kwd_only);
+
   ssize_t i, ipos = 0, ipos_only = 0, ikwd = 0, ikwd_only = 0;
   ssize_t l = PyVectorcall_NARGS(nargs);
 
@@ -1358,6 +1430,26 @@ int KosFormals_VectorApplyFast(
         return -1;
       if (++ipos_only >= PyTuple_GET_SIZE(pos_only))
         pos_only = NULL;
+
+    } else if (star_first && star) {
+      size_t nstar = l - i;
+      size_t fast_i = i;
+      PyObject *sl = PyTuple_New(nstar);
+      if (! sl)
+        return -1;
+      for (size_t istar = 0; istar < nstar; istar++) {
+        PyObject *a = args[i++];
+        Py_INCREF(a);
+        PyTuple_SET_ITEM(sl, istar, a);
+      }
+
+      if (KosNamespace_FastStore(namespace, fast_i, sl)) {
+        Py_DECREF(sl);
+        return -1;
+      }
+      Py_DECREF(sl);
+      star = NULL;
+      break;
 
     } else if (kwd) {
       if (KosNamespace_FastStore(

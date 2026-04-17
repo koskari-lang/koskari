@@ -1120,6 +1120,7 @@ def gather_formals(args, source=None):
         - positional: list of symbols for positional parameters
         - defaults: list of (keyword, default_expr) for keyword params
         - kwonly: list of (keyword, default_expr) for keyword-only params
+          (after ``*:`` a bare symbol means required keyword-only, no default)
         - star: symbol or None for *args
         - starstar: symbol or None for **kwargs
         - annotations: dict name str -> {type: expr, ...} per parameter
@@ -1215,10 +1216,17 @@ def gather_formals(args, source=None):
     if arg is undefined:
         return (positional, defaults, kwonly, star, starstar, annotations)
 
-    if not is_keyword(arg):
-        raise SpecialError("expected keyword in formals, got %r" % arg, source)
-
     while arg not in (_keyword_star, _keyword_starstar):
+        if is_symbol(arg) or is_lazygensym(arg):
+            kwonly.append((keyword(str(arg)), nil))
+            arg = next(iargs, undefined)
+            if arg is undefined:
+                break
+            continue
+
+        if not is_keyword(arg):
+            raise SpecialError("expected keyword in formals, got %r" % arg, source)
+
         value = next(iargs, undefined)
         if value is undefined:
             raise SpecialError(f"missing value for keyword-only formal {arg}", source)

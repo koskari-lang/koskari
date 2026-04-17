@@ -22,7 +22,7 @@ Special form handler for compile/lambda.
 """
 
 
-from ...lib import FormalsSpec, FunctionSpec, OpCode, pair, symbol
+from ...lib import FormalsSpec, FunctionSpec, OpCode, nil, pair, symbol
 from ..compiler import ByteCodeFragment, Compiler, CompilerMode
 from ...exceptions import SpecialError
 from ...matcher import (
@@ -101,25 +101,31 @@ def special_lambda(
     proper_name = str(named) if named else None
     fragment_name = proper_name or "<lambda>"
 
-    kw = []
+    pre_kwd = []
     pos = [str(k) for k in pos]
     star = str(star) if star else None
     starstar = str(starstar) if starstar else None
 
     frag = compiler.fragment(called_by)
     for k, expr in defaults:
-        kw.append(str(k))
+        pre_kwd.append(str(k))
         frag.merge(compiler.full_compile(expr))
 
-    if defaults:
-        frag.instruction(OpCode.KOS_OP_CONST, tuple(kw))
+    defnames = list(pre_kwd)
+    for k, expr in kwonly:
+        if expr is not nil:
+            defnames.append(str(k))
+            frag.merge(compiler.full_compile(expr))
+
+    if defnames:
+        frag.instruction(OpCode.KOS_OP_CONST, tuple(defnames))
 
     lamb = compiler.fragment(fragment_name)
     lamb.declare_vars(pos)
-    lamb.declare_vars(kw)
-    lamb.declare_vars([str(k) for k, _ in kwonly])
+    lamb.declare_vars(pre_kwd)
     if star:
         lamb.declare_var(star)
+    lamb.declare_vars([str(k) for k, _ in kwonly])
     if starstar:
         lamb.declare_var(starstar)
     if proper_name is not None:
@@ -133,10 +139,10 @@ def special_lambda(
     if return_type_src is not None:
         code.extras['return'] = return_type_src
     fspec = FunctionSpec(proper_name, FormalsSpec(
-        tuple(pos), (), tuple(kw), tuple(str(k) for k, _ in kwonly),
+        tuple(pos), (), tuple(pre_kwd), tuple(str(k) for k, _ in kwonly),
         star, starstar, ann), code)
     frag.instruction(OpCode.KOS_OP_CONST, fspec)
-    frag.instruction(OpCode.KOS_OP_BUILD_FUNCTION, len(kw))
+    frag.instruction(OpCode.KOS_OP_BUILD_FUNCTION, len(defnames))
 
     return frag
 
