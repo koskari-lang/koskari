@@ -1,6 +1,8 @@
 # Event-driven eval handlers: RETURN escape, RAISE, YIELD, and node dispatch
 
-This document specifies the **next** refactor after the completed NEXT boundary milestone (delivered: `KOS_DYN_NEXT`, FOREACH phases, `dispatch_boundary_event`, removal of `KosContext.pending_agen*`). Background: [event-driven-node-delivery.md](../archive/event-driven-node-delivery.md). It focuses on **escaping the overloaded `RETURN` opcode**, unifying **RAISE**, **RETURN**, and **YIELD** behind **eval-owned** routing, and introducing **`eval_event_*`** helpers that encapsulate non-trivial handling (transitions, transfer plans, dyn walks).
+This document specifies the **next** refactor after the completed NEXT boundary milestone (delivered: `KOS_DYN_NEXT`, FOREACH phases, removal of `KosContext.pending_agen*`). Background: [event-driven-node-delivery.md](../archive/event-driven-node-delivery.md). It focuses on **escaping the overloaded `RETURN` opcode**, unifying **RAISE**, **RETURN**, and **YIELD** behind **eval-owned** routing, and introducing **`eval_event_*`** helpers that encapsulate non-trivial handling (transitions, transfer plans, dyn walks).
+
+**Implementation status:** The design is **only partially realized** in the tree. Post-opcode **YIELD** and **RETURN** boundary delivery to **`KOS_DYN_NEXT` / `KOS_DYN_FOREACH`** share helpers with the opcode path for the **iterator exhaustion** slice of **`RETURN`**. The bulk of **`RETURN`** Phase **2** (see [`RETURN.c`](../../koskari/lib/opcode/RETURN.c) comments: **2a** delimited, **2b** normal unwind and parent delivery, **2c** top-level completion) **still lives in the opcode**. See §12 for migration proposals.
 
 Companion documents: [evaluator.md](evaluator.md), [generic-dynnode-protocol.md](generic-dynnode-protocol.md).
 
@@ -10,17 +12,18 @@ Companion documents: [evaluator.md](evaluator.md), [generic-dynnode-protocol.md]
 
 ### 1.1 What is still wrong after NEXT delivery
 
-The standalone **`NEXT`** / **`ITER_NEXT`** boundary is largely **event-driven**: **`YIELD`** and (when applicable) **`RETURN`** surface as **`KosEvent`**, then **`eval_phase_post_opcode`** runs **`kos_dyn_transition`** for yield walks and **`dispatch_boundary_event`** for flattened Koskari async-generator delivery to **`KOS_DYN_NEXT`** or **`KOS_DYN_FOREACH`**.
+The standalone **`NEXT`** / **`ITER_NEXT`** boundary is largely **event-driven**: **`YIELD`** and (when applicable) **`RETURN`** surface as **`KosEvent`**, then **`eval_phase_post_opcode`** runs **`kos_dyn_transition`** for yield walks and **`eval_event_yield`** / **`eval_event_return_deliver_to_boundary`** for flattened Koskari async-generator delivery to **`KOS_DYN_NEXT`** or **`KOS_DYN_FOREACH`**.
 
-**`RETURN`** remains **overloaded**. In [`koskari/lib/opcode/RETURN.c`](koskari/lib/opcode/RETURN.c) the handler:
+**`RETURN`** remains **overloaded** outside the iterator-delivery slice. In [`koskari/lib/opcode/RETURN.c`](../../koskari/lib/opcode/RETURN.c) the handler still:
 
-- Pops stack operands and builds the return value (appropriate for an opcode).
-- Runs **delimited** return (`kos_return_delimited`) when prompts are active.
-- For a frame with a **non-GEN** parent, runs a full **`KOS_TRANS_WALK_RETURN_TO_FRAME`**, **`kos_dyn_pop_frame`**, then contains **inline** policy for **flattened async gen exhaustion** (unlink **`KOS_DYN_NEXT`**, **`StopIteration`** vs default value, **`KOS_DYN_FOREACH`** else-PC and phase) that **duplicates** the semantics already implemented in **`kos_dyn_next_deliver_return`** / **`kos_dyn_foreach_deliver_return_kos_agen`** (used from **`dispatch_boundary_event`**).
-- Delivers to **native** parent handlers or pushes on the parent stack, or emits **`KOS_OP_RES_CONTROL_RETURNED`** for **WIND** / thunk completion.
-- Only the **root / GEN-parent** path emits **`KOS_EV_RETURN`** and clears **`KOS_CTX_RUNNING`**.
+- **Phase 1:** Pops stack operands and builds the return value (appropriate for an opcode).
+- **Phase 2a:** Runs **delimited** return (`kos_return_delimited`) when prompts are active — **still opcode-local**.
+- **Phase 2b:** For a frame with a **non-GEN** parent, runs **`KOS_TRANS_WALK_RETURN_TO_FRAME`**, handles async unwind / **finally** taking return, **`kos_dyn_pop_frame`**, then **`kos_dyn_try_deliver_iterator_boundary_after_pop`** (shared with eval), then **native** handler or stack push or **`KOS_OP_RES_CONTROL_RETURNED`** — **still almost entirely in the opcode**.
+- **Phase 2c:** Top-level / **GEN-parent** path runs the same **walk_return** family, then emits **`KOS_EV_RETURN`**, **`KOS_CTX_DEAD`** — **still in the opcode**.
 
-That split means **one logical story** (“return crossed a consumer boundary”) is implemented in **two places** (opcode synchronous path vs eval **`dispatch_boundary_event`**), which blocks a clean **handler-based** model.
+The **flattened async-gen exhaustion** policy for **NEXT/FOREACH** after **`pop_frame`** is **no longer duplicated** inline; it uses **`kos_dyn_deliver_iterator_boundary_return_event`** from both **`RETURN.c`** and **`eval.c`**. Everything else in Phase **2** above is **not** yet **`eval_event_return`**.
+
+That remaining split means **unwind, parent delivery, and terminal completion** are still **opcode-driven** for **`RETURN`**, while **post-opcode YIELD/RETURN boundary** paths are **eval-driven** — a **partial** handler model until **`eval_event_return`** owns Phase **2** end-to-end (§12).
 
 ### 1.2 Goal statement
 
@@ -58,7 +61,7 @@ Router: find boundary consumer(s) by cap + chain position (NEXT, FOREACH, GEN, .
 Node handler OR default eval policy (push stack, STOP_EVENT, REPROLOGUE)
 ```
 
-**Invariant:** Opcodes **do not** call **`kos_dyn_next_deliver_return`** directly. **Eval** (or a **dynchain** function invoked **only** from eval) does.
+**Invariant (target):** **`RETURN`** should not embed iterator-boundary policy; **eval** should drive **`KOS_EV_RETURN`** handling. **Interim:** [`kos_dyn_try_deliver_iterator_boundary_after_pop`](../../koskari/lib/dynchain/dyn_next.c) may be called from **`RETURN.c`** after **`pop_frame`** until **`eval_event_return`** subsumes Phase **2**; it shares **`kos_dyn_deliver_iterator_boundary_return_event`** with the eval path.
 
 ---
 
@@ -74,10 +77,10 @@ Names are **proposed**; final names should match **`koskari/lib/eval.c`** static
 
 1. Clear or preserve **`KosContext_PY_RESUME_KIND`** per existing **`eval_phase_post_opcode`** contract.
 2. Run **`kos_dyn_transition`** with **`KOS_TRANS_WALK_HANDLE_YIELD`** (current behavior).
-3. If **`kos_dyn_need_kos_agen_boundary_deliver(ctx)`**, call **`dispatch_boundary_event(ctx, out_ev)`** (or inline equivalent once unified).
-4. Set **`KosContext_SUSPENSION_EVENT`** to **`KOS_SUSP_YIELD`** when execution will **stop** with yield; if **`dispatch_boundary_event`** **consumes** the event in-loop (**`out_ev`** cleared to **`KOS_EV_NONE`** inside deliver helpers), match **current** **`STOP_EVENT`** vs **continue** behavior exactly.
+3. If **`kos_dyn_need_kos_agen_boundary_deliver(ctx)`**, call **`eval_event_yield_deliver_to_boundary`** (or equivalent yield-only delivery).
+4. Set **`KosContext_SUSPENSION_EVENT`** to **`KOS_SUSP_YIELD`** when execution will **stop** with yield; if **yield boundary delivery** **consumes** the event in-loop (**`out_ev`** cleared to **`KOS_EV_NONE`** inside deliver helpers), match **current** **`STOP_EVENT`** vs **continue** behavior exactly.
 
-**Ownership:** Before **`dispatch_boundary_event`**, payload is owned by **`out_ev`**. Deliver helpers in **`dyn_next.c`** / **`dyn_foreach.c`** must **either** steal into stack/node, **or** **`Py_DECREF`** and clear **`KosEvent_PAYLOAD`**, matching **current** **`kos_dyn_next_deliver_yield`** behavior. **No** double free: **`eval_event_yield`** must not **`DECREF`** after a successful steal.
+**Ownership:** Before **yield boundary delivery**, payload is owned by **`out_ev`**. Deliver helpers in **`dyn_next.c`** / **`dyn_foreach.c`** must **either** steal into stack/node, **or** **`Py_DECREF`** and clear **`KosEvent_PAYLOAD`**, matching **current** **`kos_dyn_next_deliver_yield`** behavior. **No** double free: **`eval_event_yield`** must not **`DECREF`** after a successful steal.
 
 ### 3.2 `eval_event_return`
 
@@ -101,7 +104,7 @@ This helper is the **heart** of escaping overloaded **`RETURN`**. It is **not** 
 
 5. **Pop frame** when unwind completes and callee frame detaches.
 
-6. **Boundary delivery** (flattened Koskari async gen): if **NEXT** or **awaiting FOREACH** is active, call **`dispatch_boundary_event`** with **`KOS_EV_RETURN`** — **replacing** the **inline** block in **`RETURN.c`** (lines that touch **`pending_next`**, **`pending_foreach`**, **`agen`**, default **`StopIteration`**).
+6. **Boundary delivery** (flattened Koskari async gen): if **NEXT** or **awaiting FOREACH** is active, deliver via **`kos_dyn_deliver_iterator_boundary_return_event`** / **`eval_event_return_deliver_to_boundary`** — **done** for the post-**`pop_frame`** slice; **parent** unwind and **push** still originate in **`RETURN.c`** until §12.
 
 7. **Non-boundary parent:** native handler vs **`KosStackBlock_PushRef`** vs **`KOS_OP_RES_CONTROL_RETURNED`** path — **same** as today but **inside eval** after pop.
 
@@ -158,7 +161,7 @@ The **archived** plan already moved **delivery** into **`dyn_next.c`** / **`dyn_
 
 **Invariant:** **`eval_event_*`** helpers that may **start** or **complete** transfers must cooperate with **`eval_step_drain_transfer_plan`** and **`run_transfer_plan_to_completion`**.
 
-**Pitfall:** Calling **`dispatch_boundary_event`** while a **transfer plan** is **partially** applied can leave **`ctx`** in **`KOS_CTX_IN_TRANSFER`** with **stale** **`dyn_top`**. **Rule:** document **allowed** orderings: e.g. **drain transfer** before **boundary delivery**, or **boundary delivery** only when **plan** is **NULL** — **match** existing **`eval`** prologue order.
+**Pitfall:** Calling **iterator boundary delivery** while a **transfer plan** is **partially** applied can leave **`ctx`** in **`KOS_CTX_IN_TRANSFER`** with **stale** **`dyn_top`**. **Rule:** document **allowed** orderings: e.g. **drain transfer** before **boundary delivery**, or **boundary delivery** only when **plan** is **NULL** — **match** existing **`eval`** prologue order.
 
 **Show-stopper:** If **`eval_event_return`** pops a frame **before** transfer state is updated, **continuation capture** tests break. Any move of **`pop_frame`** must preserve **`freeze-thaw`** and **segment** invariants (see [freeze-thaw-context-segments.md](freeze-thaw-context-segments.md) if present).
 
@@ -173,7 +176,7 @@ The **archived** plan already moved **delivery** into **`dyn_next.c`** / **`dyn_
 - **`PyErr` set** → **`eval_event_raise`** (or **`eval_step_after_process_raise`**) **without** a competing filled **`out_ev`**, or  
 - **`KosEvent_KIND == KOS_EV_RAISE`** with **parallel** **`PyErr`** cleared per existing contract.
 
-**Show-stopper:** **`eval_event_raise`** and **`dispatch_boundary_event`** both **clearing** or **replacing** **`PyErr`** causes **lost** exceptions or **double** **`PyErr_Dict`**.
+**Show-stopper:** **`eval_event_raise`** and **boundary delivery** both **clearing** or **replacing** **`PyErr`** causes **lost** exceptions or **double** **`PyErr_Dict`**.
 
 ---
 
@@ -203,7 +206,7 @@ The **archived** plan already moved **delivery** into **`dyn_next.c`** / **`dyn_
 
 1. **Two transitions for one RETURN** — Opcode and **`eval_event_return`** both run **`KOS_TRANS_WALK_RETURN_TO_FRAME`**: **undefined** stack/`finally` state.
 
-2. **Boundary delivery without walk** — **`dispatch_boundary_event`** expects **GEN** freeze / **caller** stack layout already established by **`walk_handle_yield`** for **YIELD**; **RETURN** path must not call it with **wrong** **`CURRENT_FRAME`**.
+2. **Boundary delivery without walk** — **Yield** boundary delivery expects **GEN** freeze / **caller** stack layout already established by **`walk_handle_yield`**; **RETURN** path must not call **return** delivery with **wrong** **`CURRENT_FRAME`** relative to **NEXT/FOREACH**.
 
 3. **`out_ev` left `KOS_EV_NONE` with non-zero `op_res`** — **RuntimeError** today; **`eval_event_*`** must set kind **before** any early return.
 
@@ -227,7 +230,7 @@ The **archived** plan already moved **delivery** into **`dyn_next.c`** / **`dyn_
 
 3. **Move** **`KOS_TRANS_WALK_RETURN_TO_FRAME`** + **pop_frame** + **inline async-gen block** from **`RETURN.c`** into **`eval_event_return`**, **deleting** duplicate **NEXT/FOREACH** logic from opcode.
 
-4. **Unify** **`dispatch_boundary_event`** invocation: only from **`eval_event_yield`** / **`eval_event_return`**.
+4. **Centralize** iterator boundary delivery: only from **`eval_event_yield`** (yield half) / **`eval_event_return_deliver_to_boundary`** and **`kos_dyn_try_deliver_iterator_boundary_after_pop`** (opcode after **pop**), sharing **`kos_dyn_deliver_iterator_boundary_return_event`**.
 
 5. **Extract** **`eval_event_raise`** from **`eval_step_after_process_raise`** + **`eval_phase_post_opcode`** **PyErr** branch; align **`RAISE`** opcode to **prefer** this path.
 
@@ -237,31 +240,80 @@ The **archived** plan already moved **delivery** into **`dyn_next.c`** / **`dyn_
 
 ## 11. Success criteria
 
-- **`RETURN.c`** contains **operand decoding**, **delimited** shortcut, and **minimal** tagging — **no** **`kos_dyn_find_next_above_frame`** in opcode.
-- **`eval_phase_post_opcode`** delegates **YIELD/RETURN/RAISE** complexity to **`eval_event_*`** helpers.
-- **Single** implementation of **flattened** async-gen **return** delivery (**`dyn_next` / `dyn_foreach`** only).
+These criteria describe the **finished** refactor. The tree is **partially** there (see the **Implementation status** section below); **`RETURN`** Phase **2** migration is **not** complete until §12 proposals are executed.
+
+- **`RETURN.c`** contains **operand decoding**, optional **delimited** shortcut only if that remains opcode-local by policy, and **minimal** machine tagging — **no** **`kos_dyn_transition`** / **`kos_dyn_pop_frame`** for the normal path once **`eval_event_return`** owns Phase **2b/2c**.
+- **`eval_phase_post_opcode`** delegates **YIELD/RETURN/RAISE** complexity to **`eval_event_*`** helpers for **all** opcode-emitted boundary outcomes.
+- **Single** implementation of **flattened** async-gen **return** delivery (**`dyn_next` / `dyn_foreach`** only) — **met** for delivery **after** **`pop_frame`**; unwind still in opcode.
 - **No** new **`KosContext`** mirrors of **NEXT/FOREACH** state.
 - **Green** regression suite for **NEXT**, **ITER_NEXT**, **FOREACH**, **YIELD_FROM**, **try/finally**, **native** returns.
 
 ---
 
-## Implementation status (2026-04)
+## Implementation status (partial, 2026-04)
 
-**Done in-tree**
+**Summary:** Event-driven **post-opcode** paths and **shared dynchain** helpers are in place; **`RETURN`** is still a **fat opcode** for everything except the **iterator boundary return** slice. Do **not** read older sections of this doc as “fully implemented” without cross-checking this section.
 
-- **Single delivery path for flattened Koskari async-gen RETURN** after `kos_dyn_pop_frame`: [`kos_dyn_try_deliver_iterator_boundary_after_pop`](../../koskari/lib/dynchain/dyn_next.c) and [`kos_dyn_deliver_iterator_boundary_return_event`](../../koskari/lib/dynchain/dyn_next.c) share logic with post-opcode return delivery (`eval_event_return_deliver_to_boundary` in [`eval.c`](../../koskari/lib/eval.c)). [`RETURN.c`](../../koskari/lib/opcode/RETURN.c) no longer duplicates the NEXT/FOREACH exhaustion block inline.
-- **`eval_event_yield`** — post-opcode `KOS_EV_YIELD` handling ([`eval.c`](../../koskari/lib/eval.c)).
-- **`eval_event_return_deliver_to_boundary`** — `KOS_EV_RETURN` to NEXT/FOREACH when `kos_dyn_need_kos_agen_boundary_deliver` ([`eval.c`](../../koskari/lib/eval.c)).
-- **`eval_event_raise`** — wraps `eval_step_after_process_raise` for pending/post-opcode exception normalization ([`eval.c`](../../koskari/lib/eval.c)).
-- Comment on `kos_dynnode_on_control_returned`: iterator boundaries use eval/dispatch helpers, not this hook ([`dynchain.c`](../../koskari/lib/dynchain.c)).
+**Implemented**
 
-**Not done (future milestones)**
+- **Iterator RETURN delivery unified:** [`kos_dyn_deliver_iterator_boundary_return_event`](../../koskari/lib/dynchain/dyn_next.c), [`kos_dyn_try_deliver_iterator_boundary_after_pop`](../../koskari/lib/dynchain/dyn_next.c), and [`eval_event_return_deliver_to_boundary`](../../koskari/lib/eval.c) — same semantics whether **`RETURN`** runs delivery after **`pop_frame`** or **`eval_phase_post_opcode`** handles **`KOS_EV_RETURN`** with **`kos_dyn_need_kos_agen_boundary_deliver`**.
+- **`eval_event_yield`** — post-opcode **`KOS_EV_YIELD`** ([`eval.c`](../../koskari/lib/eval.c)).
+- **`eval_event_raise`** — thin wrapper used from **`eval_phase_post_opcode`** and **`eval_phase_pending_exception`** ([`eval.c`](../../koskari/lib/eval.c)).
+- Comment on **`kos_dynnode_on_control_returned`**: iterator boundaries use eval/dynchain helpers, not that hook ([`dynchain.c`](../../koskari/lib/dynchain.c)).
 
-- Move **`KOS_TRANS_WALK_RETURN_TO_FRAME`** / **`kos_dyn_pop_frame`** out of **`RETURN.c`** into a fuller **`eval_event_return`** (§3.2 recommendation: eval-owned unwind).
-- Optional **`KOS_DYN_CAP_*`**-only router if it removes remaining conditionals.
-- Deeper **`eval_event_raise`** split (transfer-plan ordering vs `process_raise` internals).
+**Not implemented (still in [`RETURN.c`](../../koskari/lib/opcode/RETURN.c) Phase 2)**
 
-**Verification:** `tox -qe test` (2134 passed, 5 skipped). Native `make test-valgrind`: 190 tests passed; valgrind leak summary matches existing baseline for this tree.
+| Phase in `RETURN.c` | What still runs in the opcode |
+|---------------------|-------------------------------|
+| **2a** | **`kos_return_delimited`** (reset/prompt **k(value)** path). |
+| **2b** | **`KOS_TRANS_WALK_RETURN_TO_FRAME`**, async-unwind / **finally**-taking-return branches, **`kos_dyn_pop_frame`**, **native** handler delivery, stack **push**, **`KOS_OP_RES_CONTROL_RETURNED`**. Only the **flattened agen** tail after **`pop_frame`** is delegated to **`kos_dyn_try_deliver_iterator_boundary_after_pop`**. |
+| **2c** | Second **`KOS_TRANS_WALK_RETURN_TO_FRAME`** block and terminal **`KOS_EV_RETURN`** / **`KOS_CTX_DEAD`** for root / **GEN**-parent completion. |
+
+**Verification (snapshot):** `tox -qe test` green; native **`make test-valgrind`**: tests pass; known valgrind leak baseline unchanged for this tree.
+
+---
+
+## 12. Migration proposals: shifting `RETURN` Phase 2 into eval handlers
+
+The following are **design options** for completing the move so **`eval_event_return`** (or a small family of **`eval_event_return_*`** statics) owns the same ordering contract as §3.2. They can be combined; order is a suggested dependency order.
+
+### Proposal A — Opcode emits **`KOS_EV_RETURN` + POST**, eval owns unwind
+
+**Idea:** After Phase **1** (operands on **`out_ev`** or in a **single** scratch **`PyObject *`** owned by **`out_ev`**), **`RETURN`** returns **`KOS_OP_POST_SUSPEND`** (or a dedicated **post tag**) with **`KosEvent_KIND` = **`KOS_EV_RETURN`** and payload = value, **without** calling **`kos_dyn_transition`**.
+
+**`eval_phase_post_opcode`** dispatches to **`eval_event_return`**, which runs **2a/2b/2c** classification (delimited vs nested vs root), **`KOS_TRANS_WALK_RETURN_TO_FRAME`**, **`pop_frame`**, iterator boundary (**existing** helpers), parent delivery, terminal **STOP_EVENT**.
+
+**Pros:** Single owner for **`KOS_TRANS_WALK_RETURN_TO_FRAME`** (§9.1). **Cons:** Requires **`CURRENT_FRAME`** to still be the **callee** at **post_opcode** entry (true today); careful with **PC advance** and **acting_pc** if the opcode does **not** mutate chain before POST.
+
+### Proposal B — Two-step return: “begin return” vs “finish after unwind”
+
+**Idea:** Split **`eval_event_return`** into **`eval_event_return_begin`** (run **walk_return** only; may **resume** at **finally** without **pop**) and **`eval_event_return_complete`** (after frame is detached, run **iterator** + **parent** delivery), wired through **existing** **`KosEvalStep`** / **REPROLOGUE** flow.
+
+**Pros:** Matches the **natural** **`KOS_DYN_UNWIND_*`** state machine. **Cons:** More **surface area** in the eval loop; must not **double**-**pop** or **double**-**deliver**.
+
+### Proposal C — Delimited **2a** stays opcode-local or moves to **`eval_event_return`**
+
+**Idea:** Either **keep** **`kos_return_delimited`** in **`RETURN`** (documented **exception**: no **`KOS_EV_RETURN`** until plan completes) **or** treat delimited like **A** with a **synthetic** internal kind **`KOS_EV_RETURN_DELIMITED`** consumed only by **`eval_event_return`**.
+
+**Pros:** Avoids **prompt** / **transfer-plan** ordering bugs. **Cons:** Extra **event** kind or **branch** complexity.
+
+### Proposal D — Terminal **2c** only from eval
+
+**Idea:** Narrow migration: move **only** Phase **2c** (root **`KOS_EV_RETURN`**, **`KOS_CTX_DEAD`**) into **`eval_event_return`** or **`eval_phase_post_opcode`**, leaving **2b** until **A** or **B**.
+
+**Pros:** Smaller **diff**, proves **payload** / **ownership** plumbing. **Cons:** **Two** owners of **walk_return** temporarily — must document and **test** heavily.
+
+### Proposal E — **`eval_event_return_parent_delivery`**
+
+**Idea:** Extract **native** handler + **`KosStackBlock_PushRef`** + **`KOS_OP_RES_CONTROL_RETURNED`** (current tail of **2b**) into **`eval_event_return_parent_delivery(ctx, val, out_ev)`** called from **`eval_event_return`** after **pop** and optional **iterator** delivery — even if **walk** stays in opcode one milestone longer.
+
+**Pros:** Shrinks **`RETURN.c`** and centralizes **refcount** rules for **§7**. **Cons:** Still need **opcode** or **A** to reach this function without **split** ownership of **val**.
+
+### Ordering and invariants (all proposals)
+
+- Preserve **§5** transfer-plan ordering relative to **pop** and **boundary** delivery.
+- **Exactly one** **`KOS_TRANS_WALK_RETURN_TO_FRAME`** per **logical** return (§9.1).
+- Run **full** **`tox -qe test`** and **native** tests after each milestone; **YIELD_FROM** and **nested** **`koskari_eval`** (§8) must be re-audited when **`RETURN`** stops setting **terminal** events from the opcode path.
 
 ---
 
@@ -269,3 +321,4 @@ The **archived** plan already moved **delivery** into **`dyn_next.c`** / **`dyn_
 
 - **2026-04-16** — Initial draft: eval event handlers, RETURN escape, RAISE/YIELD unification, ownership and pitfalls.
 - **2026-04-16** — Implementation status: shared iterator RETURN delivery, `eval_event_*` extractions.
+- **2026-04-16** — Partial implementation called out; `RETURN` Phase 2 mapping; §12 migration proposals A–E.
