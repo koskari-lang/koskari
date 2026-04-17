@@ -9,17 +9,20 @@ layout_heads:
   - define
   - when
   - when-main
+  - call
   - class
   - for-each
   - while
   - dyn-wind
   - with
   - dyn-with
+  - define-class
   - define-syntax
   - syntax-rules
   - macro-rules
   - syntax-match
   - macro-match
+  - define-coroutine
 
 # Peer block heads for layouts that declare peers. These are not necessarily
 # special forms, but they do appear as `NAME:` block headers.
@@ -66,8 +69,11 @@ list_head_specials:
   - class
   - cond
   - continue
+  - decorate
   - define
+  - define-class
   - define-coroutine
+  - define-demanding
   - define-global
   - define-parameter
   - define-syntax
@@ -78,6 +84,7 @@ list_head_specials:
   - dyn-with
   - each
   - for-each
+  - function-compose
   - globals
   - if
   - import
