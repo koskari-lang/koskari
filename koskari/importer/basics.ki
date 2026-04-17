@@ -255,6 +255,12 @@ define-syntax compile/nil?:
       (compile/is nil value)
 
 
+define-syntax compile/define-class:
+  syntax-rules []:
+    match (define-class name supers body ...):
+      (define name (class name supers body ...))
+
+
 define-syntax compile/define-demanding:
   syntax-rules []:
     match (define-demanding name formals body ...):
@@ -266,12 +272,24 @@ define-syntax compile/function-compose:
     match (function-compose fn1):
       fn1
     match (function-compose fn1 ...):
-      define acc `(value)
+      define acc `(*: args **: kwds)
       define elems (list-each [fn fn1] #((gensym) fn))
       for-each [[sym fn] (reversed elems)]:
         set! acc `((,sym ,@acc))
       `(let [,@(each [[sym fn] elems] (cons sym fn nil))]
-        (lambda [value] ,@acc))
+        (lambda [*: args **: kwds] ,@acc))
+
+
+define-syntax compile/decorate:
+  syntax-rules [define-class define]:
+    match (decorate [] fn):
+      fn
+    match (decorate [decorators ...] (define-class name supers body ...)):
+      (define name (decorate [decorators ...] (class name supers (begin body ...))))
+    match (decorate [decorators ...] (define name formals body ...)):
+      (define name (decorate [decorators ...] (lambda name formals body ...)))
+    match (decorate [decorators ...] fn):
+      ((function-compose decorators ...) fn)
 
 
 ;; The end.

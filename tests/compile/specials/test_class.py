@@ -28,9 +28,7 @@ class TestClassEmpty(SpecialsTestCase):
 
     async def test_empty_class_binds_and_is_type(self):
         src_str = """
-        (compile/begin
-          (compile/class C () 5)
-          C)
+        (compile/class C () 5)
         """
         expr, mod = self.compile_expr(src_str)
         result = await expr()
@@ -42,9 +40,7 @@ class TestClassEmpty(SpecialsTestCase):
         from koskari.lib import KosType
 
         src_str = """
-        (compile/begin
-          (compile/class C () 5)
-          C)
+        (compile/class C () 5)
         """
         expr, mod = self.compile_expr(src_str)
 
@@ -62,8 +58,9 @@ class TestClassWithAttribute(SpecialsTestCase):
     async def test_class_with_define(self):
         src_str = """
         (compile/begin
-          (compile/class C ()
-            (compile/define x 42))
+          (compile/define C
+            (compile/class C ()
+              (compile/define x 42)))
           C.x)
         """
         expr, mod = self.compile_expr(src_str)
@@ -79,8 +76,9 @@ class TestClassWithSuperclass(SpecialsTestCase):
     async def test_class_extends_object(self):
         src_str = """
         (compile/begin
-          (compile/class C (object)
-            (compile/define x 1))
+          (compile/define C
+            (compile/class C (object)
+              (compile/define x 1)))
           C.x)
         """
 
@@ -104,16 +102,17 @@ class TestClassWithInitAndMethods(SpecialsTestCase):
         """
         src_str = """
         (compile/begin
-          (compile/class Box ()
-            (compile/define __init__
-              (compile/lambda [self v]
-                (compile/set-attr self value v)))
-            (compile/define get_value
-              (compile/lambda [self]
-                (compile/attr self value)))
-            (compile/define set_value
-              (compile/lambda [self new_val]
-                (compile/set-attr self value new_val))))
+          (compile/define Box
+            (compile/class Box ()
+              (compile/define __init__
+                (compile/lambda [self v]
+                  (compile/set-attr self value v)))
+              (compile/define get_value
+                (compile/lambda [self]
+                  (compile/attr self value)))
+              (compile/define set_value
+                (compile/lambda [self new_val]
+                  (compile/set-attr self value new_val)))))
           (Box 10))
         """
         expr, mod = self.compile_expr(src_str)
@@ -135,9 +134,7 @@ class TestClassKosCallable(SpecialsTestCase):
         from koskari.lib import KosType
 
         src_str = """
-        (compile/begin
-          (compile/class Foo () 1)
-          Foo)
+        (compile/class Foo () 1)
         """
         expr, mod = self.compile_expr(src_str)
         result = await expr()
@@ -154,9 +151,7 @@ class TestClassKosCallable(SpecialsTestCase):
         from koskari.lib import KosType
 
         src_str = """
-        (compile/begin
-          (compile/class C () 1)
-          C)
+        (compile/class C () 1)
         """
         expr, mod = self.compile_expr(src_str)
         result = await expr()
@@ -170,7 +165,7 @@ class TestClassKosCallable(SpecialsTestCase):
 
         src_str = """
         (compile/begin
-          (compile/class Foo () 1)
+          (compile/define Foo (compile/class Foo () 1))
           (Foo))
         """
         expr, mod = self.compile_expr(src_str)
@@ -187,7 +182,7 @@ class TestClassKosCallable(SpecialsTestCase):
 
         src_str = """
         (compile/begin
-          (compile/class Foo () 1)
+          (compile/define Foo (compile/class Foo () 1))
           (compile/define f (Foo))
           f)
         """
@@ -207,8 +202,9 @@ class TestClassKosCallable(SpecialsTestCase):
 
         src_str = """
         (compile/begin
-          (compile/class Foo ()
-            (compile/define greet (compile/lambda [self] "hello")))
+          (compile/define Foo
+            (compile/class Foo ()
+              (compile/define greet (compile/lambda [self] "hello"))))
           (compile/define inst (Foo))
           inst)
         """
@@ -227,8 +223,9 @@ class TestClassKosCallable(SpecialsTestCase):
 
         src_str = """
         (compile/begin
-          (compile/class Foo ()
-            (compile/define id_self (compile/lambda [self] self)))
+          (compile/define Foo
+            (compile/class Foo ()
+              (compile/define id_self (compile/lambda [self] self))))
           (compile/define inst (Foo))
           inst)
         """
@@ -240,7 +237,7 @@ class TestClassKosCallable(SpecialsTestCase):
 
 class TestClassBytecode(SpecialsTestCase):
 
-    async def test_class_emits_push_pop_collect_build_class_and_var_bind(self):
+    async def test_class_emits_push_pop_collect_build_class(self):
         src_str = """
         (compile/class C () (compile/define x 1))
         """
@@ -249,7 +246,6 @@ class TestClassBytecode(SpecialsTestCase):
         self.assertIn(self.opcode_named("PUSH_COLLECT"), opcodes)
         self.assertIn(self.opcode_named("POP_COLLECT"), opcodes)
         self.assertIn(self.opcode_named("BUILD_CLASS"), opcodes)
-        self.assertIn(self.opcode_named("VAR_STORE"), opcodes)
         self.assertIn(self.opcode_named("BUILD_ARGS"), opcodes)
 
 

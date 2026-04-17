@@ -58,4 +58,38 @@ def layout_class(source, peers):
              cons(supers, cons(cons(symbol('compile/begin'), body), nil))))
 
 
+@layout(symbol('layout/define-class'))
+def layout_define_class(source, peers):
+    """
+    Lower define-class block to (compile/define-class NAME SUPERS (compile/begin BODY)).
+    SUPERS may be omitted; when missing, use nil.
+    """
+
+    if peers:
+        raise LayoutError(
+            'define-class block does not take peers',
+            get_position(source))
+
+    header, body = source
+    header_parts = list(unpack(header))
+
+    if len(header_parts) < 2:
+        raise LayoutError(
+            'define-class block requires a name',
+            get_position(source))
+
+    if len(header_parts) > 3:
+        raise LayoutError(
+            'define-class block takes at most name and supers',
+            get_position(source))
+
+    name = header_parts[1]
+    supers = nil if len(header_parts) == 2 else header_parts[2]
+
+    return cons(
+        symbol('compile/define-class'),
+        cons(name,
+             cons(supers, cons(cons(symbol('compile/begin'), body), nil))))
+
+
 # The end.

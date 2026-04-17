@@ -127,6 +127,7 @@ def make_bootstrap():
     _ty('frozenset', frozenset)
     _ty('int', int)
     _ty('list', list)
+    _ty('object', object)
     _ty('range', range)
     _ty('set', set)
     _ty('slice', slice)

@@ -85,7 +85,6 @@ def special_class(compiler, source, tc=False):
 
     frag = compiler.fragment(called_by)
     frag.position_of(source)
-    frag.declare_var(name)
 
     # Build pos tuple: (name, bases) or (name, bases, metaclass)
     # Stack order for BUILD_ARGS: first pushed is last popped
@@ -105,11 +104,16 @@ def special_class(compiler, source, tc=False):
         frag.instruction(OpCode.KOS_OP_BUILD_ARGS, 2)
 
     with frag.collector_namespace(called_by) as body_frag:
+        # TODO: declare __class__
         helper_begin(body_frag, body, tc)
 
+    # TODO: ensure OP_BUILD_CLASS binds its result to the enveloped
+    # namespace's __class__ slot.
     frag.instruction(OpCode.KOS_OP_BUILD_CLASS, 0)
-    frag.instruction(OpCode.KOS_OP_VAR_STORE, name)
-    frag.instruction(OpCode.KOS_OP_CONST, None)
+
+    # frag.declare_var(name)
+    # frag.instruction(OpCode.KOS_OP_VAR_STORE, name)
+    # frag.instruction(OpCode.KOS_OP_CONST, None)
 
     return frag
 
