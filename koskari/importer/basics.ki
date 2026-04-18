@@ -208,7 +208,7 @@ define-syntax when-main:
   syntax-rules []:
     match (when-main body ...):
       when (eq? __name__ "__main__"):
-        body ...
+        (begin body ...)
 
 
 define-syntax compile/each:

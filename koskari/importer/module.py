@@ -173,20 +173,12 @@ async def load_module_async(module):
 
         while True:
             source_expr = reader.read(stream)
-            # print(f"source_expr: {source_expr}")
-
             if source_expr is READ_EOF:
                 break
 
             fragment = compiler.full_compile(source_expr)
             expr = fragment.as_expression(ns)
-            try:
-                await expr()
-            except Exception as e:
-                from ..dis import dis
-                dis(expr.code)
-                print(f"error: {e}")
-                raise e
+            await expr()
 
 
 def load_module_demand(module):
