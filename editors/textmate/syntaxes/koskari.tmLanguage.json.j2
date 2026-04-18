@@ -20,6 +20,7 @@
     { "include": "#quote-form" },
     { "include": "#quasiquote-form" },
     { "include": "#block-header" },
+    { "include": "#bare-line-call-head" },
     { "include": "#keyword" },
     { "include": "#symbol" }
   ],
@@ -260,6 +261,12 @@
       "match": "\\s*({{ list_head_specials | regex_alternation | json_string_escape }})(?=(?:\\s|\\)|\\]|\\}|$))",
       "captures": {
         "1": { "name": "keyword.control.koskari" }
+      }
+    },
+    "bare-line-call-head": {
+      "match": "^(\\s*)({{ list_head_specials | regex_alternation | json_string_escape }})(?=(?:\\s|\\)|\\]|\\}|$))",
+      "captures": {
+        "2": { "name": "keyword.control.koskari" }
       }
     },
     "block-header": {

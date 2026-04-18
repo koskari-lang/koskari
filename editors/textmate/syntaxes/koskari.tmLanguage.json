@@ -20,6 +20,7 @@
     { "include": "#quote-form" },
     { "include": "#quasiquote-form" },
     { "include": "#block-header" },
+    { "include": "#bare-line-call-head" },
     { "include": "#keyword" },
     { "include": "#symbol" }
   ],
@@ -260,6 +261,12 @@
       "match": "\\s*(yield-from|yield|with|while|when-main|when|unless|try|syntax-rules|syntax-match|shift|setq-values|setq|set!|return|reset|refq|ref|raise|parameterq|parameterize|or|macro-rules|macro-match|locals|list-each|letrec|let/cc|let-values|let\\*|let|lambda|import-from|import|if|globals|function-compose|for-each|each|dyn-with|dyn-wind|dict-each|delq|define-values|define-syntax|define-parameter|define-global|define-demanding|define-coroutine|define-class|define|decorate|continue|cond|class|capture/cc|call/cc|break|bindq|bind!|begin|await|attr|and)(?=(?:\\s|\\)|\\]|\\}|$))",
       "captures": {
         "1": { "name": "keyword.control.koskari" }
+      }
+    },
+    "bare-line-call-head": {
+      "match": "^(\\s*)(yield-from|yield|with|while|when-main|when|unless|try|syntax-rules|syntax-match|shift|setq-values|setq|set!|return|reset|refq|ref|raise|parameterq|parameterize|or|macro-rules|macro-match|locals|list-each|letrec|let/cc|let-values|let\\*|let|lambda|import-from|import|if|globals|function-compose|for-each|each|dyn-with|dyn-wind|dict-each|delq|define-values|define-syntax|define-parameter|define-global|define-demanding|define-coroutine|define-class|define|decorate|continue|cond|class|capture/cc|call/cc|break|bindq|bind!|begin|await|attr|and)(?=(?:\\s|\\)|\\]|\\}|$))",
+      "captures": {
+        "2": { "name": "keyword.control.koskari" }
       }
     },
     "block-header": {

@@ -86,6 +86,11 @@
                  "\\b\\([^\n]*?\\)\\(:\\)")
          (list 2 font-lock-keyword-face)
          (list 4 font-lock-preprocessor-face))
+   ;; Implicit list head (layout line: first atom on line, no leading paren)
+   (list (concat "^\\([ \t]*\\)\\("
+{{ list_head_specials | emacs_concat_list_head(emacs_concat_indent) }}
+                 "\\)\\>")
+         2 font-lock-keyword-face)
    ;; List-head special forms (first symbol in paren form)
    (list (concat "(\\s-*\\("
 {{ list_head_specials | emacs_concat_list_head(emacs_concat_indent) }}

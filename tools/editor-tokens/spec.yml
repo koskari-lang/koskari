@@ -38,10 +38,10 @@ layout_peers:
 # Literal constants reserved for future editor highlighting. The first
 # iteration keeps these in the spec but does not wire them into grammars yet.
 constants:
-  - True
-  - False
-  - None
-  - nil
+  - "True"
+  - "False"
+  - "None"
+  - "nil"
 
 # Paren-list first-symbol tokens to highlight as keyword.control (TextMate),
 # keyword.control (Helix), and font-lock-keyword-face (Emacs). One ordered list
@@ -53,9 +53,13 @@ constants:
 # koskari/importer/basics.ki (design/MACROS.md; define-syntax compile/NAME
 # registers NAME without the compile/ prefix).
 #
-# TextMate: editors/textmate/syntaxes/koskari.tmLanguage.json duplicates this
-# word set in #list-head-special and #bare-line-call-head (same alternation);
-# keep those patterns aligned when adding or renaming entries here.
+# TextMate: editors/textmate/syntaxes/koskari.tmLanguage.json.j2 renders this
+# word set into #list-head-special and #bare-line-call-head (same alternation);
+# regenerate the JSON after edits.
+# Emacs: editors/emacs/koskari-mode.el.j2 uses the same list for paren list-head
+# and for implicit layout lines (line-start, optional indent, head word); regenerate
+# koskari-mode.el after edits.
+# Keep entries aligned when adding or renaming.
 list_head_specials:
   - and
   - attr

@@ -180,8 +180,13 @@ async def load_module_async(module):
 
             fragment = compiler.full_compile(source_expr)
             expr = fragment.as_expression(ns)
-            coro = expr()
-            await coro
+            try:
+                await expr()
+            except Exception as e:
+                from ..dis import dis
+                dis(expr.code)
+                print(f"error: {e}")
+                raise e
 
 
 def load_module_demand(module):

@@ -2286,7 +2286,8 @@ class LayoutReader(Reader):
         At depth 0:
         1. c in '([{' -- parenthesised s-expression, read directly via _read.
         2. c in _layout_macros -- layout-only prefix (e.g. @ decorator lines);
-           next_c not in '([{' then consume prefix and run handler; no colon
+           always consume the prefix and run the handler (explicit layout
+           intent; no lookahead for ``(``, ``[``, or ``{``). No colon
            lookahead. Inner form is one read_form (block or s-expr).
         3. c in _block_macros -- quote/quasiquote raw block when a structural
            header colon exists ahead (_has_block_colon_ahead); otherwise fall
@@ -2344,16 +2345,12 @@ class LayoutReader(Reader):
             outer_indent = position[1]
 
             if c in self._layout_macros:
-                next_c = stream.peek(2)[1:2]
-                if next_c and next_c not in '([{':
-                    stream.read(1)
-                    layout_macro = self._layout_macros[c]
-                    result = layout_macro(stream, outer_indent)
-                    if is_pair(result):
-                        result.set_position(position)
-                    return VALUE, position, result
-
-                return super()._read(stream)
+                stream.read(1)
+                layout_macro = self._layout_macros[c]
+                result = layout_macro(stream, outer_indent)
+                if is_pair(result):
+                    result.fill_position(position)
+                return VALUE, position, result
 
             if c in self._block_macros:
                 next_c = stream.peek(2)[1:2]
@@ -2363,7 +2360,7 @@ class LayoutReader(Reader):
                     block_macro = self._block_macros[c]
                     result = block_macro(stream, outer_indent)
                     if is_pair(result):
-                        result.set_position(position)
+                        result.fill_position(position)
                     return VALUE, position, result
 
                 return super()._read(stream)

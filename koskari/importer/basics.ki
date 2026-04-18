@@ -281,12 +281,16 @@ define-syntax compile/function-compose:
 
 
 define-syntax compile/decorate:
-  syntax-rules [define-class define]:
+  syntax-rules [define-class define compile/define-class compile/define]:
     match (decorate [] fn):
       fn
     match (decorate [decorators ...] (define-class name supers body ...)):
       (define name (decorate [decorators ...] (class name supers (begin body ...))))
+    match (decorate [decorators ...] (compile/define-class name supers body ...)):
+      (define name (decorate [decorators ...] (class name supers (begin body ...))))
     match (decorate [decorators ...] (define name formals body ...)):
+      (define name (decorate [decorators ...] (lambda name formals body ...)))
+    match (decorate [decorators ...] (compile/define name formals body ...)):
       (define name (decorate [decorators ...] (lambda name formals body ...)))
     match (decorate [decorators ...] fn):
       ((function-compose decorators ...) fn)

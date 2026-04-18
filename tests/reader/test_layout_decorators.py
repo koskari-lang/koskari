@@ -55,6 +55,7 @@ class TestLayoutDecorateBlock(IsolatedAsyncioTestCase):
         result = parse_layout(src)
         self.assertEqual(result, expected)
 
+
     async def test_two_decorators_implicit_call(self):
         src = """
         @foo
@@ -77,6 +78,30 @@ class TestLayoutDecorateBlock(IsolatedAsyncioTestCase):
         result = parse_layout(src)
         self.assertEqual(result, expected)
 
+
+    async def test_decorator_explicit_sexpr_call(self):
+        # @(…) must use the layout @ path, not matmul (@ as first token on line).
+        src = """
+        @(foo 123)
+        define-class Obj []:
+          x
+        """
+
+        inner = pycons(
+            (symbol('compile/define-class'),
+             symbol('Obj'),
+             (),
+             (symbol('compile/begin'), symbol('x'))))
+
+        expected = pycons(
+            (symbol('compile/decorate'),
+             ((symbol('foo'), 123),),
+             inner))
+
+        result = parse_layout(src)
+        self.assertEqual(result, expected)
+
+
     async def test_decorated_sexpr_inner(self):
         src = """
         @foo
@@ -92,6 +117,7 @@ class TestLayoutDecorateBlock(IsolatedAsyncioTestCase):
 
         result = parse_layout(src)
         self.assertEqual(result, expected)
+
 
     async def test_decorated_if_with_else_peer(self):
         src = """
@@ -125,10 +151,7 @@ class TestLayoutDecorateErrors(IsolatedAsyncioTestCase):
           x
         """
 
-        builtins = {}
-        for name, value in LAYOUTS.items():
-            builtins[str(name)] = value
-
+        builtins = {str(k): v for k, v in LAYOUTS.items()}
         reader = LayoutReader(builtins)
         stream = source_str(src, '<unittest>')
 
