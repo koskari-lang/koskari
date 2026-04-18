@@ -22,10 +22,16 @@ Special form handler for compile/class.
 """
 
 
-from ...lib import nil, OpCode, symbol
+from ...lib import cons, nil, OpCode, symbol
 from ...types import is_pair
 from ...exceptions import ParametersError, SpecialError
-from ..helpers import gather_parameters_ng, helper_begin, is_symbolish, special
+from ..helpers import (
+    gather_parameters_ng,
+    helper_begin,
+    is_symbolish,
+    special,
+    strip_leading_docstring,
+)
 
 
 def _extract_metaclass(kwds_seq):
@@ -83,6 +89,8 @@ def special_class(compiler, source, tc=False):
 
     bases = [expr for _, expr in args_seq]
 
+    doc, body = strip_leading_docstring(body)
+
     frag = compiler.fragment(called_by)
     frag.position_of(source)
 
@@ -105,6 +113,13 @@ def special_class(compiler, source, tc=False):
 
     with frag.collector_namespace(called_by) as body_frag:
         # TODO: declare __class__
+        if doc is not None:
+            define_doc = cons(
+                symbol("compile/define"),
+                cons(symbol("__doc__"), cons(doc, nil)))
+            body_frag.merge(compiler.full_compile(define_doc, False))
+            if body is not nil:
+                body_frag.instruction(OpCode.KOS_OP_POP, 1)
         helper_begin(body_frag, body, tc)
 
     # TODO: ensure OP_BUILD_CLASS binds its result to the enveloped

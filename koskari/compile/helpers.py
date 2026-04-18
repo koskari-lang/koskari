@@ -46,6 +46,7 @@ __all__ = (
     "const_only_expr",
     "convert_bindings",
     "discover_docstring",
+    "strip_leading_docstring",
     "gather_bindings",
     "gather_formals",
     "gather_parameters_ng",
@@ -1437,6 +1438,58 @@ def discover_docstring(body):
             return None
 
     return None
+
+
+def _strip_leading_docstring_body(body):
+    """
+    Return (docstring, new_body) after removing one leading docstring per
+    discover_docstring rules, or (None, None) if there is no such docstring.
+
+    :param body: proper list of forms (pair or nil)
+    :return: (str, pair or nil) or (None, None)
+    """
+
+    while body is not nil:
+        head, tail = body
+        if isinstance(head, str):
+            return head, tail
+
+        if head is nil or not is_pair(head):
+            return None, None
+
+        ihead, itail = head
+        if ihead in _BEGIN_HEADS:
+            if itail is nil:
+                body = tail
+                continue
+            doc, new_itail = _strip_leading_docstring_body(itail)
+            if doc is None:
+                return None, None
+            if new_itail is nil:
+                return doc, tail
+            new_head = cons(ihead, new_itail)
+            return doc, cons(new_head, tail)
+        else:
+            return None, None
+
+    return None, None
+
+
+def strip_leading_docstring(body):
+    """
+    If the leading form(s) are a docstring per discover_docstring, return
+    (docstring, body with that prefix removed). Otherwise return (None, body).
+
+    Does not mutate body.
+
+    :param body: proper list of forms (pair or nil)
+    :return: (str or None, body list to compile)
+    """
+
+    doc, new_body = _strip_leading_docstring_body(body)
+    if doc is None:
+        return None, body
+    return doc, new_body
 
 
 def helper_begin(

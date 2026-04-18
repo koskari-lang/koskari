@@ -53,6 +53,32 @@ class TestClassEmpty(SpecialsTestCase):
         self.assertIsInstance(c, result)
 
 
+class TestClassDocstring(SpecialsTestCase):
+
+    async def test_class_has_docstring_from_leading_string(self):
+        src_str = """
+        (compile/begin
+          (compile/define C
+            (compile/class C ()
+              "hello class doc"
+              (compile/define x 1)))
+          (compile/attr C __doc__))
+        """
+        expr, mod = self.compile_expr(src_str)
+        result = await expr()
+        self.assertEqual(result, "hello class doc")
+
+    async def test_class_docstring_only_body(self):
+        src_str = """
+        (compile/begin
+          (compile/define C (compile/class C () "only doc"))
+          (compile/attr C __doc__))
+        """
+        expr, mod = self.compile_expr(src_str)
+        result = await expr()
+        self.assertEqual(result, "only doc")
+
+
 class TestClassWithAttribute(SpecialsTestCase):
 
     async def test_class_with_define(self):

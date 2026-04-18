@@ -22,7 +22,7 @@ Tests for koskari.compile.helpers.discover_docstring.
 
 import unittest
 
-from koskari.compile.helpers import discover_docstring
+from koskari.compile.helpers import discover_docstring, strip_leading_docstring
 from koskari.lib import cons, nil, symbol
 
 import pytest
@@ -72,6 +72,48 @@ class TestDiscoverDocstring(unittest.TestCase):
         head1 = cons(begin, inner1)
         body = cons(head1, nil)
         self.assertEqual(discover_docstring(body), 'nested')
+
+
+class TestStripLeadingDocstring(unittest.TestCase):
+
+    def test_nil_body(self):
+        doc, rest = strip_leading_docstring(nil)
+        self.assertIsNone(doc)
+        self.assertIs(rest, nil)
+
+    def test_leading_str_removed(self):
+        body = cons('alpha', cons(symbol('x'), nil))
+        doc, rest = strip_leading_docstring(body)
+        self.assertEqual(doc, 'alpha')
+        self.assertEqual(rest, cons(symbol('x'), nil))
+
+    def test_no_leading_str_unchanged(self):
+        body = cons(symbol('x'), nil)
+        doc, rest = strip_leading_docstring(body)
+        self.assertIsNone(doc)
+        self.assertIs(rest, body)
+
+    def test_begin_with_str(self):
+        begin = symbol('begin')
+        inner = cons('beta', cons(symbol('y'), nil))
+        head = cons(begin, inner)
+        body = cons(head, nil)
+        doc, rest = strip_leading_docstring(body)
+        self.assertEqual(doc, 'beta')
+        self.assertEqual(rest, cons(cons(begin, cons(symbol('y'), nil)), nil))
+
+    def test_nested_begin(self):
+        begin = symbol('begin')
+        inner2 = cons('nested', cons(symbol('u'), nil))
+        head2 = cons(begin, inner2)
+        inner1 = cons(head2, nil)
+        head1 = cons(begin, inner1)
+        body = cons(head1, nil)
+        doc, rest = strip_leading_docstring(body)
+        self.assertEqual(doc, 'nested')
+        self.assertEqual(
+            discover_docstring(rest),
+            None)
 
 
 # The end.
