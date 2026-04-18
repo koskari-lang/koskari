@@ -205,6 +205,7 @@ class ByteCodeFragment:
         self.requests_for_write = []
         self._request_global = []
         self.declares = []
+        self.annotation_bindings = []
         self.doc = None
 
 
@@ -248,15 +249,19 @@ class ByteCodeFragment:
         self.pragma.on_explicit_global(self, str(var_name), position=position)
 
 
-    def declare_var(self, var_name, position=None):
+    def declare_var(self, var_name, position=None, type_expr=None):
         """
         Record a name declared in this fragment's namespace.
 
         :param var_name: name to declare
         :param position: optional (line, col) for error reporting
+        :param type_expr: optional source form for a type annotation (compile
+            metadata only; not evaluated here)
         """
 
         self.pragma.on_declare(self, str(var_name), position=position)
+        if type_expr is not None:
+            self.annotation_bindings.append((str(var_name), type_expr))
 
 
     def declare_vars(self, var_names):
@@ -309,8 +314,8 @@ class ByteCodeFragment:
     def merge(self, other):
         """
         Merge another fragment into this one: adopt its declarations,
-        requests, requests_for_write, and request_global, then append
-        its instructions.
+        requests, requests_for_write, request_global, and
+        annotation_bindings, then append its instructions.
 
         Used when combining forms in the same scope (e.g. begin body);
         request_global must propagate so that (define-global x) followed
@@ -326,6 +331,7 @@ class ByteCodeFragment:
         for name in other._request_global:
             if name not in self.declares:
                 self.request_global(name)
+        self.annotation_bindings.extend(other.annotation_bindings)
         self.instructions.extend(other.instructions)
 
 

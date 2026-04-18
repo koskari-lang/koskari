@@ -16,11 +16,22 @@ Tests for koskari.compile compile/define special form.
 """
 
 
+from koskari.compile import Compiler
+from koskari.compile.specials import SPECIALS
+from koskari.lib import Module, symbol
+from koskari.reader import LayoutReader, source_str
+from koskari.reader.layouts import LAYOUTS
+
 from . import SpecialsTestCase
 
 import pytest
 
 pytestmark = pytest.mark.phase_specials
+
+
+def _register_specials(ns, specials):
+    for sym, fn in specials.items():
+        ns.store(str(sym), fn)
 
 
 class TestDefineDeclareOnly(SpecialsTestCase):
@@ -128,6 +139,31 @@ class TestDefineInlineTypedValue(SpecialsTestCase):
         expr, mod = self.compile_expr(src_str)
         result = await expr()
         self.assertEqual(100, result)
+
+
+class TestDefineAnnotationBindings(SpecialsTestCase):
+
+    def compile_fragment(self, src_str, lineno=1, **defns):
+        mod_ns = self.get_glbls(**defns)
+        module = Module(mod_ns)
+        ns = vars(module)
+        _register_specials(ns, SPECIALS)
+        _register_specials(ns, LAYOUTS)
+        stream = source_str(src_str, __file__, line_no=lineno)
+        source = LayoutReader(ns).read(stream)
+        compiler = Compiler("<unittest>", module, filename=__file__)
+        return compiler.full_compile(source)
+
+    def test_value_branch_records_annotation_binding(self):
+        f = self.compile_fragment("(compile/define z :: int 100)")
+        self.assertEqual(len(f.annotation_bindings), 1)
+        self.assertEqual(f.annotation_bindings[0][0], "z")
+        self.assertEqual(f.annotation_bindings[0][1], symbol("int"))
+
+    def test_function_shorthand_no_fragment_annotation_binding(self):
+        f = self.compile_fragment(
+            "(compile/define f :: int [x] (mul x 2))", mul=lambda a, b: a * b)
+        self.assertEqual(f.annotation_bindings, [])
 
 
 # The end.

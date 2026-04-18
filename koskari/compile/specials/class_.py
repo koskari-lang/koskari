@@ -113,23 +113,38 @@ def special_class(compiler, source, tc=False):
 
     with frag.collector_namespace(called_by) as body_frag:
         # TODO: declare __class__
-        if doc is not None:
-            define_doc = cons(
-                symbol("compile/define"),
-                cons(symbol("__doc__"), cons(doc, nil)))
-            body_frag.merge(compiler.full_compile(define_doc, False))
-            if body is not nil:
-                body_frag.instruction(OpCode.KOS_OP_POP, 1)
         helper_begin(body_frag, body, tc)
+
+        if doc and "__doc__" not in body_frag.declares:
+            # don't override an existing __doc__, just in case
+            # some code has pre-built it.
+
+            doc_frag = compiler.fragment("__doc__")
+            doc_frag.declare_var("__doc__")
+            doc_frag.instruction(OpCode.KOS_OP_CONST, doc)
+            doc_frag.instruction(OpCode.KOS_OP_VAR_STORE, "__doc__")
+            body_frag.merge(doc_frag)
+
+        binds = body_frag.annotation_bindings
+        if binds and "__annotations__" not in body_frag.declares:
+            # don't override an existing __annotations__, just in case
+            # some code has pre-built it.
+
+            annos = compiler.fragment("__annotations__")
+            annos.declare_var("__annotations__")
+
+            collapsed = dict(binds)
+            for name, type_expr in collapsed.items():
+                annos.merge(compiler.full_compile(type_expr, False))
+
+            annos.instruction(OpCode.KOS_OP_BUILD_KWDS_NAMES,
+                              tuple(collapsed.keys()))
+            annos.instruction(OpCode.KOS_OP_VAR_STORE, "__annotations__")
+            body_frag.merge(annos)
 
     # TODO: ensure OP_BUILD_CLASS binds its result to the enveloped
     # namespace's __class__ slot.
     frag.instruction(OpCode.KOS_OP_BUILD_CLASS, 0)
-
-    # frag.declare_var(name)
-    # frag.instruction(OpCode.KOS_OP_VAR_STORE, name)
-    # frag.instruction(OpCode.KOS_OP_CONST, None)
-
     return frag
 
 

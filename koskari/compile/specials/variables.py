@@ -277,9 +277,9 @@ def special_define(compiler, source, tc=False):
     name = str(namesym)
 
     frag = compiler.fragment(called_by)
-    frag.declare_var(name, position=pos)
 
     if "body" in matched:
+        frag.declare_var(name, position=pos)
         formals = matched["formals"]
         body = matched["body"]
         if type_expr is not None:
@@ -295,9 +295,17 @@ def special_define(compiler, source, tc=False):
                             formals.source, body.source)
 
     elif "value" in matched:
+        if type_expr is not None:
+            frag.declare_var(name, position=pos, type_expr=type_expr)
+        else:
+            frag.declare_var(name, position=pos)
         val_expr = matched["value"].source
 
     else:
+        if type_expr is not None:
+            frag.declare_var(name, position=pos, type_expr=type_expr)
+        else:
+            frag.declare_var(name, position=pos)
         frag.instruction(OpCode.KOS_OP_CONST, None)
         return frag
 

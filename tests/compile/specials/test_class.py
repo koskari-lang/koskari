@@ -80,6 +80,33 @@ class TestClassDocstring(SpecialsTestCase):
         self.assertEqual(result, "only doc")
 
 
+class TestClassAnnotations(SpecialsTestCase):
+
+    async def test_class_pep526_annotations_dict(self):
+        src_str = """
+        (compile/begin
+          (compile/define C
+            (compile/class C ()
+              (compile/define x :: int 1)))
+          C)
+        """
+        expr, mod = self.compile_expr(src_str, int=int)
+        C = await expr()
+        self.assertEqual(C.__annotations__, {"x": int})
+
+    async def test_class_untyped_define_no_annotations_emitted(self):
+        src_str = """
+        (compile/begin
+          (compile/define C
+            (compile/class C ()
+              (compile/define x 1)))
+          C)
+        """
+        expr, mod = self.compile_expr(src_str)
+        C = await expr()
+        self.assertEqual(getattr(C, "__annotations__", {}), {})
+
+
 class TestClassWithAttribute(SpecialsTestCase):
 
     async def test_class_with_define(self):

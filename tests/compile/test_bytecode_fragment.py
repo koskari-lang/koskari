@@ -29,7 +29,7 @@ import unittest
 import pytest
 
 from koskari.compile import ByteCodeFragment
-from koskari.lib import Code, FormalsSpec, FunctionSpec, NamespaceSpec, OpCode
+from koskari.lib import Code, FormalsSpec, FunctionSpec, NamespaceSpec, OpCode, symbol
 
 
 pytestmark = pytest.mark.phase_compile
@@ -502,6 +502,28 @@ class TestByteCodeFragment(unittest.IsolatedAsyncioTestCase):
             a.instructions,
             [(OpCode.KOS_OP_CONST, 1), (OpCode.KOS_OP_RETURN, 1)],
         )
+
+    async def test_declare_var_with_type_expr(self):
+        f = ByteCodeFragment()
+        t = symbol("int")
+        f.declare_var("x", type_expr=t)
+        self.assertEqual(f.declares, ["x"])
+        self.assertEqual(f.annotation_bindings, [("x", t)])
+
+    async def test_declare_var_without_type_expr_no_annotation_bindings(self):
+        f = ByteCodeFragment()
+        f.declare_var("a")
+        self.assertEqual(f.annotation_bindings, [])
+
+    async def test_merge_annotation_bindings(self):
+        a = ByteCodeFragment(name="a")
+        ta = symbol("int")
+        a.declare_var("x", type_expr=ta)
+        b = ByteCodeFragment(name="b")
+        tb = symbol("str")
+        b.declare_var("y", type_expr=tb)
+        a.merge(b)
+        self.assertEqual(a.annotation_bindings, [("x", ta), ("y", tb)])
 
 
 # The end.
