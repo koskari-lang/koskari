@@ -21,8 +21,9 @@ try/except/else/finally block syntax parsing.
 from unittest import IsolatedAsyncioTestCase
 
 from koskari.exceptions import LayoutError
-from koskari.lib import cons, keyword, nil, symbol
+from koskari.lib import car, cdr, cons, keyword, nil, symbol
 from koskari.compile.helpers import pycons
+from koskari.types import get_position
 from .. import parse_layout
 
 import pytest
@@ -186,6 +187,34 @@ class TestLayoutTry(IsolatedAsyncioTestCase):
         expected = cons(_symbol_try, try_body, except_clause, else_clause, finally_clause, nil)
         result = parse_layout(src)
         self.assertEqual(result, expected)
+
+
+    async def test_try_layout_fills_positions(self):
+        """
+        Lowered try form and each clause cons should carry source positions.
+        """
+        src = """
+        try:
+          x
+        except [Exception]:
+          y
+        else:
+          a
+        finally:
+          z
+        """
+        result = parse_layout(src)
+        self.assertIsNotNone(get_position(result))
+
+        rest = cdr(result)
+        try_body = car(rest)
+        self.assertIsNotNone(get_position(try_body))
+
+        catches = cdr(rest)
+        while catches is not nil:
+            clause = car(catches)
+            self.assertIsNotNone(get_position(clause))
+            catches = cdr(catches)
 
 
     async def test_try_no_handlers_error(self):

@@ -20,7 +20,7 @@ Layout handlers for try/except/else/finally block syntax.
 from ...compile.helpers import helper_using
 from ...exceptions import LayoutError
 from ...lib import cons, keyword, nil, symbol
-from ...types import get_position, is_pair, unpack
+from ...types import fill_position, get_position, is_pair, unpack
 from .helpers import layout
 
 
@@ -119,7 +119,11 @@ def layout_try(source, peers):
         catches.append(cons(_keyword_finally, act_finally))
 
     catches_list = cons(*catches, nil) if catches else nil
-    return cons(symbol('try'), try_body, catches_list)
+
+    result = cons(symbol('try'), try_body, catches_list)
+    if get_position(source):
+        fill_position(result, get_position(source))
+    return result
 
 
 # The end.
