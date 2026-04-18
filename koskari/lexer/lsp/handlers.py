@@ -34,7 +34,7 @@ from lsprotocol.types import (
 )
 
 from koskari.exceptions import ReaderError
-from koskari.lexer import LAYOUT_HEAD_NAMES, SPECIAL_NAMES, parse_all, tokenize
+from koskari.lexer import LAYOUT_BLOCK_NAMES, SPECIAL_NAMES, parse_all, tokenize
 from koskari.lexer.lsp.utils import get_word_at_position, koskari_to_lsp_range
 
 
@@ -119,7 +119,7 @@ def handle_completion(ls, params):
     if doc is None:
         return CompletionList(is_incomplete=False, items=[])
     prefix = get_word_at_position(doc, params.position)
-    candidates = SPECIAL_NAMES | LAYOUT_HEAD_NAMES
+    candidates = SPECIAL_NAMES | LAYOUT_BLOCK_NAMES
 
     if prefix:
         matching = [c for c in candidates if c.startswith(prefix)]
@@ -153,7 +153,7 @@ def _hover_for_symbol(name):
 
     if name in SPECIAL_NAMES:
         return 'Special form: `' + name + '`'
-    if name in LAYOUT_HEAD_NAMES:
+    if name in LAYOUT_BLOCK_NAMES:
         return 'Layout: `' + name + '`'
     return None
 

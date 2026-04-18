@@ -16,8 +16,9 @@ koskari.lexer.tokens
 
 Token type, tokenizer, and name sets for lexical analysis.
 
-Provides Token, tokenize, SPECIAL_NAMES, LAYOUT_NAMES, and LAYOUT_HEAD_NAMES
-for syntax highlighting and completion without compilation.
+Provides Token, tokenize, SPECIAL_NAMES, LAYOUT_NAMES, LAYOUT_HEAD_NAMES,
+LAYOUT_PEER_NAMES, and LAYOUT_BLOCK_NAMES for syntax highlighting and completion
+without compilation.
 
 :author: Christopher O'Brien <obriencj@preoccupied.net>
 :license: GNU General Public License v3
@@ -39,6 +40,8 @@ __all__ = (
     'SPECIAL_NAMES',
     'LAYOUT_NAMES',
     'LAYOUT_HEAD_NAMES',
+    'LAYOUT_PEER_NAMES',
+    'LAYOUT_BLOCK_NAMES',
 )
 
 Token = namedtuple(
@@ -69,9 +72,20 @@ def _make_layout_head_names():
     return frozenset(result)
 
 
+def _make_layout_peer_names():
+    from koskari.reader.layouts import LAYOUTS
+    result = set()
+    for handler in LAYOUTS.values():
+        for peer in handler.peers:
+            result.add(str(peer))
+    return frozenset(result)
+
+
 SPECIAL_NAMES = _make_special_names()
 LAYOUT_NAMES = _make_layout_names()
 LAYOUT_HEAD_NAMES = _make_layout_head_names()
+LAYOUT_PEER_NAMES = _make_layout_peer_names()
+LAYOUT_BLOCK_NAMES = frozenset(LAYOUT_HEAD_NAMES | LAYOUT_PEER_NAMES)
 
 
 _ATOM_TERMINATORS = ' \t\n\r()[]{}"\';`,'
@@ -132,7 +146,7 @@ def _atom_type(text, special_names):
         return 'py_singleton'
     if text in special_names:
         return 'special'
-    if text in LAYOUT_HEAD_NAMES:
+    if text in LAYOUT_BLOCK_NAMES:
         return 'layout'
     return 'symbol'
 
@@ -163,6 +177,26 @@ def _scan_atom_end(source, start, n):
     while i < n and source[i] not in _ATOM_TERMINATOR_SET:
         i += 1
     return i
+
+
+def _try_layout_block_split(text, start_line, start_col, sn):
+    """
+    If text is ``prefix:`` with prefix in ``LAYOUT_BLOCK_NAMES``, return a
+    pair of Tokens (prefix, colon). Prefix type comes from ``_atom_type`` so
+    specials win over layout. Otherwise return None.
+    """
+
+    if len(text) <= 1 or not text.endswith(':'):
+        return None
+    prefix = text[:-1]
+    if prefix not in LAYOUT_BLOCK_NAMES:
+        return None
+    tok_type = _atom_type(prefix, sn)
+    lp, cp = _advance_pos(start_line, start_col, prefix)
+    first = Token(tok_type, prefix, start_line, start_col, lp, cp)
+    lc, cc = _advance_pos(lp, cp, ':')
+    second = Token('colon', ':', lp, cp, lc, cc)
+    return (first, second)
 
 
 def tokenize(source, filename='<string>', special_names=None):
@@ -319,6 +353,13 @@ def tokenize(source, filename='<string>', special_names=None):
                 end = _scan_atom_end(sl, i, n)
                 text = sl[i - 1:end]
                 i = end
+                split = _try_layout_block_split(text, start_line, start_col, sn)
+                if split is not None:
+                    first, second = split
+                    yield first
+                    yield second
+                    line, col = _advance_pos(start_line, start_col, text)
+                    continue
                 line, col = _advance_pos(line, col, text[1:])
                 tok_type = (
                     _atom_type(text, sn) if text != '#' else 'symbol')
@@ -328,6 +369,13 @@ def tokenize(source, filename='<string>', special_names=None):
         end = _scan_atom_end(sl, i, n)
         text = sl[i - 1:end]
         i = end
+        split = _try_layout_block_split(text, start_line, start_col, sn)
+        if split is not None:
+            first, second = split
+            yield first
+            yield second
+            line, col = _advance_pos(start_line, start_col, text)
+            continue
         line, col = _advance_pos(line, col, text[1:])
         tok_type = _atom_type(text, sn)
         yield Token(tok_type, text, start_line, start_col, line, col)

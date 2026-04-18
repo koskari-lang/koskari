@@ -26,6 +26,8 @@ from koskari.lexer import (
     SPECIAL_NAMES,
     LAYOUT_NAMES,
     LAYOUT_HEAD_NAMES,
+    LAYOUT_PEER_NAMES,
+    LAYOUT_BLOCK_NAMES,
 )
 
 import pytest
@@ -146,6 +148,35 @@ class TestTokenize(IsolatedAsyncioTestCase):
         self.assertEqual(toks[0].text, 'if')
 
 
+    async def test_tokenize_layout_peer(self):
+        toks = list(tokenize('except'))
+        self.assertEqual(len(toks), 1)
+        self.assertEqual(toks[0].type, 'layout')
+        self.assertEqual(toks[0].text, 'except')
+
+
+    async def test_tokenize_layout_block_split_colon(self):
+        toks = list(tokenize('try:'))
+        self.assertEqual(len(toks), 2)
+        self.assertEqual(toks[0].type, 'layout')
+        self.assertEqual(toks[0].text, 'try')
+        self.assertEqual(toks[0].start_line, 1)
+        self.assertEqual(toks[0].start_col, 1)
+        self.assertEqual(toks[1].type, 'colon')
+        self.assertEqual(toks[1].text, ':')
+        self.assertEqual(toks[1].start_line, 1)
+        self.assertEqual(toks[1].start_col, 4)
+        self.assertEqual(toks[1].end_line, 1)
+        self.assertEqual(toks[1].end_col, 5)
+
+
+    async def test_tokenize_non_layout_trailing_colon_stays_keyword(self):
+        toks = list(tokenize('foobar:'))
+        self.assertEqual(len(toks), 1)
+        self.assertEqual(toks[0].type, 'keyword')
+        self.assertEqual(toks[0].text, 'foobar:')
+
+
     async def test_tokenize_quote(self):
         toks = list(tokenize("'x"))
         self.assertEqual(toks[0].type, 'quote')
@@ -170,6 +201,17 @@ class TestNameSets(IsolatedAsyncioTestCase):
     async def test_layout_head_names_contains_if(self):
         self.assertIsInstance(LAYOUT_HEAD_NAMES, frozenset)
         self.assertIn('if', LAYOUT_HEAD_NAMES)
+
+
+    async def test_layout_peer_names_contains_except(self):
+        self.assertIsInstance(LAYOUT_PEER_NAMES, frozenset)
+        self.assertIn('except', LAYOUT_PEER_NAMES)
+
+
+    async def test_layout_block_names_unions_heads_and_peers(self):
+        self.assertIsInstance(LAYOUT_BLOCK_NAMES, frozenset)
+        self.assertIn('if', LAYOUT_BLOCK_NAMES)
+        self.assertIn('except', LAYOUT_BLOCK_NAMES)
 
 
 # The end.

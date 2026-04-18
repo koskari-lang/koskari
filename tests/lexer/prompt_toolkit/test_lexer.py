@@ -65,6 +65,20 @@ class TestKoskariLexer(IsolatedAsyncioTestCase):
             s and 'koskari.keyword' in str(s) for s, _ in parts)
         self.assertTrue(has_keyword_style)
 
+    async def test_lexer_layout_block_splits_try_colon(self):
+        lexer = KoskariLexer()
+        doc = Document('try:')
+        get_line = lexer.lex_document(doc)
+        parts = get_line(0)
+        joined = ''.join(t for _, t in parts)
+        self.assertEqual(joined, 'try:')
+        has_layout = any(
+            s and 'koskari.layout' in str(s) for s, t in parts if t == 'try')
+        has_punct_colon = any(
+            s and 'koskari.punctuation' in str(s) for s, t in parts if t == ':')
+        self.assertTrue(has_layout)
+        self.assertTrue(has_punct_colon)
+
     async def test_lexer_multiline_triple_string_reconstructs_lines(self):
         """
         Multi-line string tokens must be sliced per line; using full tok.text

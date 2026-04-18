@@ -27,7 +27,7 @@ Tab completion for Koskari REPL.
 
 from prompt_toolkit.completion import Completion, Completer
 
-from ..tokens import LAYOUT_HEAD_NAMES, SPECIAL_NAMES
+from ..tokens import LAYOUT_BLOCK_NAMES, SPECIAL_NAMES
 
 
 def _completion_candidates_sorted(candidates):
@@ -73,7 +73,7 @@ class KoskariCompleter(Completer):
 
         self.get_namespace = get_namespace
         sn = special_names if special_names is not None else SPECIAL_NAMES
-        self._static = frozenset(sn | LAYOUT_HEAD_NAMES)
+        self._static = frozenset(sn | LAYOUT_BLOCK_NAMES)
 
     def get_completions(self, document, complete_event):
         """

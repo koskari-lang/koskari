@@ -49,6 +49,7 @@ _TOKEN_TYPE_TO_CLASS = {
     'collection_open': 'class:koskari.punctuation',
     'dot': 'class:koskari.punctuation',
     'comma': 'class:koskari.punctuation',
+    'colon': 'class:koskari.punctuation',
     'quote': 'class:koskari.punctuation',
     'quasiquote': 'class:koskari.punctuation',
     'unquote_splicing': 'class:koskari.punctuation',
@@ -160,6 +161,9 @@ class KoskariLexer(Lexer):
 
 def _make_style():
     from prompt_toolkit.styles import Style
+    # Special and layout share one color so mixed block lines (e.g. try/except)
+    # are not blue vs purple in the REPL.
+    _special_layout = '#268bd2'
     return Style.from_dict({
         'koskari.keyword': '#859900',
         'koskari.ellipsis': '#2aa198',
@@ -167,8 +171,8 @@ def _make_style():
         'koskari.string': '#b58900',
         'koskari.number': '#2aa198',
         'koskari.comment': '#93a1a1',
-        'koskari.special': '#268bd2',
-        'koskari.layout': '#6c71c4',
+        'koskari.special': _special_layout,
+        'koskari.layout': _special_layout,
         'koskari.symbol': '#839496',
         'koskari.punctuation': '#586e75',
     })

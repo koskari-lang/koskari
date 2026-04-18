@@ -39,6 +39,8 @@ from .tokens import (
     SPECIAL_NAMES,
     LAYOUT_NAMES,
     LAYOUT_HEAD_NAMES,
+    LAYOUT_PEER_NAMES,
+    LAYOUT_BLOCK_NAMES,
 )
 
 
@@ -54,6 +56,8 @@ __all__ = (
     'SPECIAL_NAMES',
     'LAYOUT_NAMES',
     'LAYOUT_HEAD_NAMES',
+    'LAYOUT_PEER_NAMES',
+    'LAYOUT_BLOCK_NAMES',
 )
 
 

@@ -21,6 +21,18 @@ Base exception classes for Koskari.
 """
 
 import linecache
+from .lib import KoskariSyncViolation
+
+
+__all__ = (
+    "KoskariException",
+    "NotYetImplemented",
+    "KoskariSyntaxError",
+    "ReaderError",
+    "ReaderSyntaxError",
+    "FormatStringSyntaxError",
+    "LayoutError",
+)
 
 
 class KoskariException(Exception):
