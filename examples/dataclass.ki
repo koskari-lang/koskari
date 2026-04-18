@@ -1,0 +1,25 @@
+;; Example: Python dataclass decorator on a Koskari define-class
+
+
+import-from dataclasses dataclass
+
+
+@dataclass
+define-class Point []:
+    """ A point in 2D space """
+
+    define x :: int 0
+    define y :: int 0
+
+
+when-main:
+    print "Point class:" Point
+    print "Point.__doc__:" Point.__doc__
+
+    define p (Point 1 2)
+    print "p:" p
+    print "p.x:" p.x
+    print "p.y:" p.y
+
+
+;; The end.
