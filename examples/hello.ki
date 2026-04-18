@@ -1,7 +1,7 @@
 ;; Example koskari program
 
 
-class FunTimes []:
+define-class FunTimes []:
 
     define __init__ [self x]:
         (self.set_x x)

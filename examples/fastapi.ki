@@ -1,13 +1,13 @@
-(import fastapi as: fastapi)
-(import uvicorn as: uvicorn)
+import fastapi as: fastapi
+import uvicorn as: uvicorn
 
-(define app (fastapi.FastAPI title: "Koskari Demo"))
+define app (fastapi.FastAPI title: "Koskari Demo")
 
 
 define-syntax define-route:
     syntax-rules []:
         define-route path name args body...:
-            (define name args body...)
+            define name args body...
             (app.add_api_route path (as-coroutine name)
                 methods: #["GET"])
 
@@ -25,14 +25,17 @@ define-route "/healthz" healthz []:
 define-route "/echo/{name}" echo [name: "<anon>"]:
     (print "echo" name)
     #{ok: True
-     echo: name}
+      echo: name}
 
 
 define main []:
-  (define config (uvicorn.Config app host: "127.0.0.1" port: 8000))
-  (define server (uvicorn.Server config))
+  define config (uvicorn.Config app host: "127.0.0.1" port: 8000)
+  define server (uvicorn.Server config)
   (server.serve)
 
 
 when-main:
     (main)
+
+
+;; The end.

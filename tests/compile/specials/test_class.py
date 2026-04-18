@@ -68,6 +68,7 @@ class TestClassDocstring(SpecialsTestCase):
         result = await expr()
         self.assertEqual(result, "hello class doc")
 
+
     async def test_class_docstring_only_body(self):
         src_str = """
         (compile/begin
