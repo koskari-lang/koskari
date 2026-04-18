@@ -228,13 +228,13 @@ define-syntax when-main:
 define-syntax compile/each:
   syntax-rules [when: unless:]:
     match (each [binding seq] when: condition body):
-      ((lambda [] (for-each [binding seq]
+      ((lambda each [] (for-each [binding seq]
          (when condition (yield body)))))
     match (each [binding seq] unless: condition body):
-      ((lambda [] (for-each [binding seq]
+      ((lambda each [] (for-each [binding seq]
          (unless condition (yield body)))))
     match (each [binding seq] body):
-      ((lambda [] (for-each [binding seq]
+      ((lambda each [] (for-each [binding seq]
          (yield body))))
 
 
@@ -247,11 +247,11 @@ define-syntax compile/list-each:
 define-syntax compile/dict-each:
   syntax-rules [when: unless: key: value:]:
     match (dict-each [binding seq] key: key value: value):
-      (dict (each [binding seq] (cons key value) ))
+      (dict (each [binding seq] #(key value) ))
     match (dict-each [binding seq] when: condition key: key value: value):
-      (dict (each [binding seq] when: condition (cons key value)))
+      (dict (each [binding seq] when: condition #(key value)))
     match (dict-each [binding seq] unless: condition key: key value: value):
-      (dict (each [binding seq] unless: condition (cons key value)))
+      (dict (each [binding seq] unless: condition #(key value)))
 
     match (dict-each [binding seq] body ...):
       (dict (each [binding seq] body ...))
