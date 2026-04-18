@@ -180,6 +180,8 @@ static void asyncgen_dealloc(PyObject *self) {
   if (agen->ctx)
     kos_context_free(agen->ctx);
 
+  Py_XDECREF(agen->code_name);
+
   Py_TYPE(self)->tp_free(self);
 }
 
@@ -188,6 +190,8 @@ static int asyncgen_traverse(PyObject *self, visitproc visit, void *arg) {
 
   KosPyAsyncGen *agen = (KosPyAsyncGen *) self;
   int res;
+
+  Py_VISIT(agen->code_name);
 
   if (agen->sync_demand_active) {
     if (agen->ctx)
@@ -210,6 +214,8 @@ static int asyncgen_traverse(PyObject *self, visitproc visit, void *arg) {
 static int asyncgen_clear(PyObject *self) {
 
   KosPyAsyncGen *agen = (KosPyAsyncGen *) self;
+
+  Py_CLEAR(agen->code_name);
 
   if (agen->sync_demand_active) {
     if (agen->ctx) {
@@ -257,7 +263,12 @@ static PyObject *asyncgen_anext(PyObject *self) {
 
 static PyObject *asyncgen_repr(PyObject *self) {
 
-  return PyUnicode_FromFormat("<async_generator at %p>", self);
+  KosPyAsyncGen *agen = (KosPyAsyncGen *) self;
+
+  if (agen->code_name && PyUnicode_Check(agen->code_name))
+    return PyUnicode_FromFormat(
+        "<async_generator object %U at %p>", agen->code_name, (void *) self);
+  return PyUnicode_FromFormat("<async_generator object at %p>", (void *) self);
 }
 
 
@@ -299,6 +310,7 @@ PyObject *KosPyAsyncGen_New(KosContext *ctx) {
   }
 
   agen->ctx = ctx;
+  agen->code_name = NULL;
   agen->in_progress = 0;
   agen->closed = 0;
   agen->sync_demand_active = 0;

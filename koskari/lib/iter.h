@@ -37,6 +37,7 @@ struct KosPyAsyncGen {
   PyObject_HEAD
   KosContext *ctx;
   void *gen;         /* KosDynGen * when set; agen holds ref when GEN released from chain */
+  PyObject *code_name;  /* strong ref; KosCode name for repr (ctx may not expose frame) */
   int in_progress;   /* anext in progress */
   int closed;        /* generator closed */
   int sync_demand_active;  /* DemandSyncGenerator from __iter__ holds the gen chain */

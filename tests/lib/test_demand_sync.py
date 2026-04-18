@@ -156,6 +156,29 @@ class TestDemandGenerator(unittest.TestCase):
         self.assertEqual(next(result), 1)
 
 
+    def test_repr_includes_code_name(self):
+        """
+        DemandGenerator repr matches Python-style <generator object name at ...>
+        """
+        _, base_ns = build_expr(
+            [["CONST", 0], ["RETURN", 1]],
+            values={},
+        )
+        code = build_code(
+            [
+                ["CONST", 1],
+                ["YIELD", 1],
+                ["RETURN", 0],
+            ],
+            name='yielding_fn',
+        )
+        fn = make_callable(code, base_ns, FormalsSpec())
+        result = demand_call(fn)
+        r = repr(result)
+        self.assertIn('generator object yielding_fn', r)
+        self.assertIn(' at 0x', r)
+
+
     def test_yielding_function_list(self):
         """
         list(demand_call(yielding_fn)) yields expected values

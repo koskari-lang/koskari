@@ -55,6 +55,26 @@ class TestYieldOpcodes(CevalTest):
         self.assertIsInstance(agen, AsyncGenerator)
 
 
+    async def test_async_generator_repr_includes_code_name(self):
+        """
+        AsyncGenerator repr matches Python-style <async_generator object name at ...>
+        """
+        gen_code, gen_ns = build_expr(
+            [
+                ["CONST", 1],
+                ["YIELD", 1],
+                ["RETURN", 0],
+            ],
+            name='my_ag',
+        )
+        expr = make_callable(gen_code, gen_ns)
+        agen = expr()
+        self.assertIsInstance(agen, AsyncGenerator)
+        r = repr(agen)
+        self.assertIn('async_generator object my_ag', r)
+        self.assertIn(' at 0x', r)
+
+
     async def test_yield_suspends_and_resumes(self):
         """
         Yielding code returns AsyncGenerator; anext() yields value then StopAsyncIteration

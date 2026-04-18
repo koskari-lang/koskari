@@ -62,6 +62,8 @@ PyObject *KosAsyncGen_NewFromCodeAndNs(KosCode *code, PyObject *ns) {
   PyObject *agen = KosPyAsyncGen_New(ctx);
   if (! agen)
     return NULL;
+  Py_XINCREF(KosCode_NAME(code));
+  ((KosPyAsyncGen *) agen)->code_name = KosCode_NAME(code);
   KosDynGen_OWNER(gen) = (PyObject *) agen;
   ((KosPyAsyncGen *) agen)->gen = (void *) gen;
   kos_dyngen_acquire(gen);
