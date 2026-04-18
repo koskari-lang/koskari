@@ -372,6 +372,18 @@ class TestQuasiquoteDottedPair(SpecialsTestCase):
         self.assertFalse(result.is_proper())
 
 
+    async def test_dotted_tail_unquote_pair(self):
+        """
+        `(,x . ,y) with x='foo and y=5 yields improper (foo . 5)
+        """
+
+        expr, mod = self.compile_expr("`(,x . ,y)", x="foo", y=5)
+        result = await expr()
+        self.assertEqual("foo", result[0])
+        self.assertEqual(5, result[1])
+        self.assertFalse(result.is_proper())
+
+
 class TestQuasiquoteNested(SpecialsTestCase):
     """
     Nested quasi-quote: inner quasiquotes increment the nesting level so

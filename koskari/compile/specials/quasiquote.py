@@ -226,14 +226,28 @@ def _qq_list(compiler, frag, lst, level):
     current = lst
 
     while is_pair(current) and not is_nil(current):
-        elem = current[0]
-        current = current[1]
+        elem = current.car
+        current = current.cdr
 
         # If current is now a non-nil, non-pair value, it's the dotted tail.
         # Stop iterating: the loop condition will exit and the dotted-tail
         # branch below will handle it.
         if not is_nil(current) and not is_pair(current):
-            # elem is the last element before the dotted tail
+
+            # elem is the last element before the dotted tail of an improper
+            # list
+            segment.append(_compile_element(compiler, frag, elem, level))
+            break
+
+        # Improper list whose dotted tail is (compile/unquote …): `current` is
+        # that pair without a wrapping cons(..., nil).  Proper `(,x ,y)` has
+        # current = cons(uqy, nil) after the first step (cdr is nil), so this
+        # branch does not fire there.
+        # `is_pair(nil)` is true; guard before `.cdr` (cannot get cdr of nil).
+        if (not is_nil(current)
+                and is_pair(current)
+                and not is_nil(current.cdr)
+                and current.car is _symbol_unquote):
             segment.append(_compile_element(compiler, frag, elem, level))
             break
 
