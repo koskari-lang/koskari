@@ -26,8 +26,9 @@ import unittest
 from koskari.compile import Compiler, CompilerMode
 from koskari.compile.specials import SPECIALS
 from koskari.lib import FunctionSpec, OpCode
-from koskari.reader import default_reader, source_str
+from koskari.reader import LayoutReader, default_reader, source_str
 from koskari.lib import Module, ModuleNamespace
+from koskari.reader.layouts import LAYOUTS
 
 
 def _register_specials(ns, specials):
@@ -46,9 +47,11 @@ class SpecialsTestCase(unittest.IsolatedAsyncioTestCase):
         return ModuleNamespace("test", builtins)
 
 
-    def parse_source(self, src_str, lineno=1):
+    def parse_source(self, src_str, lineno=1, reader=None):
         stream = source_str(src_str, __file__, line_no=lineno)
-        return default_reader.read(stream)
+        if reader is None:
+            reader = default_reader
+        return reader.read(stream)
 
 
     def compile_expr(self, src_str, lineno=1, specials=SPECIALS,
@@ -62,8 +65,9 @@ class SpecialsTestCase(unittest.IsolatedAsyncioTestCase):
         ns = vars(module)
 
         _register_specials(ns, specials)
+        _register_specials(ns, LAYOUTS)
 
-        source = self.parse_source(src_str, lineno=lineno)
+        source = self.parse_source(src_str, lineno=lineno, reader=LayoutReader(ns))
 
         kwargs = {}
         if resolution_pragma_class is not None:

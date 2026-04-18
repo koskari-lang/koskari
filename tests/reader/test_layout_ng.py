@@ -232,7 +232,7 @@ class TestLayoutNgReaderParity(IsolatedAsyncioTestCase):
         """
 
         try_body = cons(symbol('compile/begin'), symbol('x'), nil)
-        except_clause = cons(symbol('Exception'), symbol('y'), nil)
+        except_clause = cons(cons(symbol('Exception'), nil), symbol('y'), nil)
         expected = cons(symbol('try'), try_body, except_clause, nil)
 
         result = parse_layout_ng(src)
@@ -251,7 +251,7 @@ class TestLayoutNgReaderParity(IsolatedAsyncioTestCase):
         """
 
         try_body = cons(symbol('compile/begin'), symbol('x'), nil)
-        except_clause = cons(symbol('Exception'), symbol('y'), nil)
+        except_clause = cons(cons(symbol('Exception'), nil), symbol('y'), nil)
         else_clause = cons(keyword('else'), symbol('a'), nil)
         finally_clause = cons(keyword('finally'), symbol('z'), nil)
         expected = cons(

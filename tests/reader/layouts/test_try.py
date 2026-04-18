@@ -46,7 +46,7 @@ class TestLayoutTryExceptBindings(IsolatedAsyncioTestCase):
         expected = pycons(
             (symbol('try'),
              (_compile_begin, symbol('x')),
-             (symbol('Exception'), symbol('y')))
+             ((symbol('Exception'),), symbol('y')))
         )
 
         result = parse_layout(src)
@@ -68,7 +68,7 @@ class TestLayoutTryExceptBindings(IsolatedAsyncioTestCase):
         expected = pycons(
             (symbol('try'),
              (_compile_begin, symbol('x')),
-             (cons(symbol('e'), symbol('Exception')), symbol('y')))
+             ((symbol('e'), symbol('Exception')), symbol('y')))
         )
 
         result = parse_layout(src)
@@ -90,7 +90,7 @@ class TestLayoutTryExceptBindings(IsolatedAsyncioTestCase):
         expected = pycons(
             (symbol('try'),
              (_compile_begin, symbol('x')),
-             (cons(symbol('e'), symbol('Exception')), symbol('y')))
+             ((symbol('Exception'), keyword('as'), symbol('e')), symbol('y')))
         )
 
         result = parse_layout(src)
@@ -148,7 +148,7 @@ class TestLayoutTry(IsolatedAsyncioTestCase):
           y
         """
         try_body = cons(_compile_begin, symbol('x'), nil)
-        except_clause = cons(symbol('Exception'), symbol('y'), nil)
+        except_clause = cons(cons(symbol('Exception'), nil), symbol('y'), nil)
         expected = cons(_symbol_try, try_body, except_clause, nil)
         result = parse_layout(src)
         self.assertEqual(result, expected)
@@ -180,7 +180,7 @@ class TestLayoutTry(IsolatedAsyncioTestCase):
           z
         """
         try_body = cons(_compile_begin, symbol('x'), nil)
-        except_clause = cons(symbol('Exception'), symbol('y'), nil)
+        except_clause = cons(cons(symbol('Exception'), nil), symbol('y'), nil)
         else_clause = cons(keyword('else'), symbol('a'), nil)
         finally_clause = cons(keyword('finally'), symbol('z'), nil)
         expected = cons(_symbol_try, try_body, except_clause, else_clause, finally_clause, nil)

@@ -19,7 +19,7 @@ Layout handlers for try/except/else/finally block syntax.
 
 from ...compile.helpers import helper_using
 from ...exceptions import LayoutError
-from ...lib import car, cdr, cons, keyword, nil, symbol
+from ...lib import cons, keyword, nil, symbol
 from ...types import get_position, is_pair, unpack
 from .helpers import layout
 
@@ -50,8 +50,8 @@ def layout_try(source, peers):
 
     for peer in peers:
         pheader, pbody = peer
-        phead = car(pheader)
-        ppargs = list(unpack(cdr(pheader)))
+        phead, prest = pheader
+        ppargs = list(unpack(prest))
 
         if phead is _symbol_except:
             has_except = True
@@ -70,15 +70,12 @@ def layout_try(source, peers):
                         % ppargs[0],
                         get_position(peer))
                 try:
-                    name, ex_type = helper_using(ppargs[0])
+                    helper_using(prest.car)
                 except Exception as e:
                     raise LayoutError(
                         'invalid except USE form: %s' % e,
                         get_position(peer))
-                if name is not None:
-                    except_clauses.append(cons(cons(name, ex_type), pbody))
-                else:
-                    except_clauses.append(cons(ex_type, pbody))
+                except_clauses.append(cons(prest.car, pbody))
 
         elif phead is _symbol_else:
             if act_else is not None:
@@ -112,7 +109,7 @@ def layout_try(source, peers):
             'try block requires at least one except or one finally',
             get_position(source))
 
-    try_body = cons(symbol('compile/begin'), body) if body is not nil else cons(symbol('compile/begin'), nil)
+    try_body = cons(symbol('compile/begin'), body)
     catches = []
     for clause in except_clauses:
         catches.append(clause)
@@ -122,7 +119,7 @@ def layout_try(source, peers):
         catches.append(cons(_keyword_finally, act_finally))
 
     catches_list = cons(*catches, nil) if catches else nil
-    return cons(symbol('try'), cons(try_body, catches_list))
+    return cons(symbol('try'), try_body, catches_list)
 
 
 # The end.
