@@ -15,6 +15,7 @@ define-class Point []:
 when-main:
     print "Point class:" Point
     print "Point.__doc__:" Point.__doc__
+    print "Point.__annotations__:" Point.__annotations__
 
     define p (Point 1 2)
     print "p:" p
