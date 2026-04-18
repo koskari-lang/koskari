@@ -1578,7 +1578,7 @@ static int test_eval_await_throw_completes_iterator(void) {
 
     PyObject *instr = PyList_New(3);
     PyList_SET_ITEM(instr, 0, make_instr(KOS_OP_VAR, sym_a));
-    PyList_SET_ITEM(instr, 1, make_instr_int(KOS_OP_AWAIT, 0));
+    PyList_SET_ITEM(instr, 1, make_instr_int(KOS_OP_AWAIT, 1));
     PyList_SET_ITEM(instr, 2, make_instr_int(KOS_OP_RETURN, 1));
 
     PyObject *code_obj = KosCode_New(nspec, instr, NULL, NULL);
@@ -1662,7 +1662,7 @@ static int test_eval_await_throw_reyield(void) {
 
     PyObject *instr = PyList_New(3);
     PyList_SET_ITEM(instr, 0, make_instr(KOS_OP_VAR, sym_a));
-    PyList_SET_ITEM(instr, 1, make_instr_int(KOS_OP_AWAIT, 0));
+    PyList_SET_ITEM(instr, 1, make_instr_int(KOS_OP_AWAIT, 1));
     PyList_SET_ITEM(instr, 2, make_instr_int(KOS_OP_RETURN, 1));
 
     PyObject *code_obj = KosCode_New(nspec, instr, NULL, NULL);

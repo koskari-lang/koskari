@@ -134,7 +134,7 @@ quick lookup.
 - `KOS_OP_CONST`: Load constant from pool
 
 ### Control Flow
-- `KOS_OP_AWAIT`: Await expression
+- `KOS_OP_AWAIT`: Await (arg = stack count: 1 = TOS awaitable, 0 = bare suspend)
 - `KOS_OP_BREAK`: Break from loop (implemented; unwinds to LOOP/FOREACH region, jumps to break target)
 - `KOS_OP_CONTINUE`: Continue loop (implemented; unwinds to LOOP/FOREACH region, jumps to continue target)
 - `KOS_OP_RAISE`: Raise exception

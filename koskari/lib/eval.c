@@ -131,6 +131,64 @@ static int try_local_exception_handler(KosContext *ctx, KosEvent *out_ev);
 
 
 /**
+  Map KosContext_Call / KosCallable_Call legacy int r to KosOpOutcome.  When
+  r==0 after install, forces PROLOGUE if a transfer plan or native handler
+  is present on the current frame.
+*/
+static inline KosOpOutcome kos_op_outcome_from_call_int(KosContext *ctx, int r) {
+
+  if (r < 0)
+    return KOS_OP_POST_ERR();
+  if (r == KOS_OP_RES_CONTROL_RETURNED)
+    return KOS_OP_POST_CONTROL();
+  if (r == KOS_OP_RES_PARENT_RETURN_DELIVER)
+    return KOS_OP_POST_PARENT_RETURN();
+  if (r == 1)
+    return KOS_OP_POST_SUSPEND();
+  if (r == 0) {
+    if (KosContext_PLAN(ctx))
+      return KOS_OP_PROLOGUE();
+    if (KosContext_FRAME_TOP(ctx)
+        && KosDynFrame_NATIVE_HANDLER(KosContext_FRAME_TOP(ctx)))
+      return KOS_OP_PROLOGUE();
+    return KOS_OP_RUN();
+  }
+  return KOS_OP_POST_ERR();
+}
+
+
+/**
+  Map push_or_await / kos_push_or_await return (0 push, 1 suspend, -1 err).
+*/
+static inline KosOpOutcome kos_op_outcome_from_push_int(int r) {
+
+  if (r < 0)
+    return KOS_OP_POST_ERR();
+  if (r == 1)
+    return KOS_OP_POST_SUSPEND();
+  return KOS_OP_RUN();
+}
+
+
+/**
+  Map legacy opcode-helper int to KosOpOutcome (0 run, 1 suspend, 2 control,
+  -1 err).
+*/
+static inline KosOpOutcome kos_op_outcome_from_int_step(int r) {
+
+  if (r < 0)
+    return KOS_OP_POST_ERR();
+  if (r == 1)
+    return KOS_OP_POST_SUSPEND();
+  if (r == KOS_OP_RES_CONTROL_RETURNED)
+    return KOS_OP_POST_CONTROL();
+  if (r == KOS_OP_RES_PARENT_RETURN_DELIVER)
+    return KOS_OP_POST_PARENT_RETURN();
+  return KOS_OP_RUN();
+}
+
+
+/**
    Clear the context's transfer plan and free it.  Plan pointer is nulled
    before freeing so any re-entrant eval (e.g. from Py_XDECREF(continuation_ref)
    triggering Python dealloc/__del__) does not see the plan while it is freed.
@@ -2546,7 +2604,11 @@ static KosEvalStep eval_phase_entry(
         mode = KOS_MODE_NORMAL;
         break;
       case KOS_SUSP_AWAIT:
-        mode = KOS_MODE_NORMAL;
+        if (KosContext_PY_AWAIT_ITER(ctx)) {
+          mode = KOS_MODE_NORMAL;
+        } else {
+          mode = revive_await(ctx, Py_None, NULL, NULL, out_ev);
+        }
         break;
       case KOS_SUSP_YIELD:
         /* anext() passes NULL for send; treat as Py_None per async gen protocol */

@@ -117,7 +117,7 @@ class TestDeferExplicitAwait(unittest.IsolatedAsyncioTestCase):
             ["VAR", "identity"],
             ["CONST", 42],
             ["CALL", 2],
-            ["AWAIT", 0],
+            ["AWAIT", 1],
             ["RETURN", 1],
         ], values={"defer": lib.defer, "identity": lib.identity})
         result = await make_callable(code, ns)()
@@ -140,7 +140,7 @@ class TestDeferExplicitAwait(unittest.IsolatedAsyncioTestCase):
             ["VAR", "track"],
             ["CONST", 21],
             ["CALL", 2],
-            ["AWAIT", 0],
+            ["AWAIT", 1],
             ["RETURN", 1],
         ], values={"defer": lib.defer, "track": track})
         result = await make_callable(code, ns)()
@@ -221,7 +221,7 @@ class TestDeferOfDefer(unittest.IsolatedAsyncioTestCase):
             ["CONST", 1],
             ["CALL", 2],
             ["CALL", 2],
-            ["AWAIT", 0],
+            ["AWAIT", 1],
             ["RETURN", 1],
         ], values={"defer": lib.defer, "f": f, "g": g})
         result = await make_callable(code, ns)()

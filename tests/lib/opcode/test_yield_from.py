@@ -293,7 +293,7 @@ class TestYieldFrom(CevalTest):
             ["YIELD", 1],
             ["VAR", "noop"],
             ["CALL", 0],
-            ["AWAIT", 0],
+            ["AWAIT", 1],
             ["POP", 1],
             ["CONST", 2],
             ["YIELD", 1],

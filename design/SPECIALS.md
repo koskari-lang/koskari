@@ -848,7 +848,7 @@ with `KOS_CODE_YIELDS`. Full stack and suspension details are in
 
 **Symbol:** `compile/await`
 
-**Syntax:** `(compile/await EXPR)` — exactly one argument.
+**Syntax:** `(compile/await)` or `(compile/await EXPR)` — zero or one argument.
 
 **Use-case:** Koskari runs code under an async evaluator: ordinary Python calls
 that return a coroutine or awaitable are **auto-awaited** at the CALL boundary,
@@ -862,9 +862,14 @@ pass the handle around as a first-class value and choose **when** to drive it.
 Use `(compile/await EXPR)` when `EXPR` evaluates to such a defer (or any other
 awaitable you need to await explicitly at this program point).
 
-**Behaviour:** Compiles `EXPR` onto the stack, then emits `AWAIT` (operand
-unused at runtime). The opcode pops TOS, dispatches the awaitable, and may
-suspend with `KOS_EV_AWAIT` or push the resolved value. See
+With **no arguments**, `compile/await` emits a **bare** cooperative suspend
+(`AWAIT` with stack count `0`) and then **`CONST None`** so the expression’s
+value is `None`.
+
+**Behaviour:** With one argument, compiles `EXPR` onto the stack, then emits
+`AWAIT` with operand **1** (one stack element). The opcode pops TOS, dispatches
+the awaitable, and may suspend with `KOS_EV_AWAIT` or push the resolved value.
+With zero arguments, emits `AWAIT` with operand **0** then `CONST None`. See
 `design/OPCODES.md` (KOS_OP_AWAIT) and `koskari/lib/opcode/AWAIT.c`.
 
 **Examples:**
@@ -872,6 +877,9 @@ suspend with `KOS_EV_AWAIT` or push the resolved value. See
 ```scheme
 ;; Await a defer stored in d (defer was used so d is not auto-awaited)
 (compile/await d)
+
+;; Cooperative suspend only; value of the form is None
+(compile/await)
 ```
 
 **Tests:** `tests/compile/specials/test_await_special.py`

@@ -14,12 +14,30 @@
 */
 
 /**
-   AWAIT: arg unused. Pop TOS (awaitable), start/resume awaiting it; may
-   suspend with KOS_EV_AWAIT or push the result.
+   AWAIT: arg = stack element count. 1: pop TOS (awaitable), start/resume
+   awaiting it; may suspend with KOS_EV_AWAIT or push the result. 0: bare
+   cooperative suspend — no stack effect; KOS_EV_AWAIT with Py_None payload
+   and no py_await_iter.
 */
 
 KOS_OP_HANDLER(AWAIT) {
-  (void) insn;
+  uint32_t arg = KosOp_ARG(insn);
+
+  if (arg == 0u) {
+    KosContext_FLAGS(ctx) &= ~KOS_CTX_RUNNING;
+    KosEvent_KIND(out_ev) = KOS_EV_AWAIT;
+    Py_INCREF(Py_None);
+    KosEvent_PAYLOAD(out_ev) = Py_None;
+    return KOS_OP_POST_SUSPEND();
+  }
+
+  if (arg != 1u) {
+    PyErr_Format(PyExc_RuntimeError,
+                 "AWAIT: arg must be 0 or 1 (stack count), got %u",
+                 (unsigned) arg);
+    return KOS_OP_POST_ERR();
+  }
+
   PyObject *val = KosStackBlock_PopRef(&CURRENT_STACK(ctx));
   if (! val)
     return KOS_OP_POST_ERR();

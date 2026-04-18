@@ -225,21 +225,24 @@ def special_yield(compiler, source, tc=False):
 @special(symbol("compile/await"))
 def special_await(compiler, source, tc=False):
     """
-    Compile (compile/await EXPR). Evaluates EXPR, then awaits TOS via AWAIT.
+    Compile (compile/await) or (compile/await EXPR). Zero-arg: bare AWAIT (0)
+    then CONST None. One-arg: evaluate EXPR, then AWAIT (1) on TOS.
     """
 
     called_by, rest = source
-    if rest is nil or not is_pair(rest):
-        raise SpecialError("await requires a single argument", source)
-
-    expr, tail = rest
-    if not is_nil(tail):
-        raise SpecialError("await requires a single argument", source)
+    expr = nil
+    if rest is not nil:
+        expr, tail = rest
+        if tail is not nil:
+            raise SpecialError("await requires zero or one argument", source)
 
     frag = compiler.fragment(called_by)
     frag.position_of(source)
-    frag.merge(compiler.full_compile(expr, False))
-    frag.instruction(OpCode.KOS_OP_AWAIT, 0)
+    if expr:
+        frag.merge(compiler.full_compile(expr, False))
+        frag.instruction(OpCode.KOS_OP_AWAIT, 1)
+    else:
+        frag.instruction(OpCode.KOS_OP_AWAIT, 0)
     return frag
 
 

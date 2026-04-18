@@ -179,6 +179,42 @@ class TestDemandGenerator(unittest.TestCase):
         self.assertEqual(list(result), [1, 2])
 
 
+    def test_await0_in_demand_generator_raises_violation(self):
+        """
+        Generator that awaits raises KoskariSyncViolation when the await
+        suspends. Uses a custom awaitable that yields on first send.
+        """
+
+        def _suspending_iter():
+            yield
+            return None
+
+        class SuspendingAwaitable:
+            def __await__(self):
+                return _suspending_iter()
+
+        awaitable = SuspendingAwaitable()
+        _, base_ns = build_expr(
+            [["CONST", 0], ["RETURN", 1]],
+            local_syms=('a',),
+            values={'a': awaitable},
+        )
+        code = build_code(
+            [
+                ["AWAIT", 0],
+                ["CONST", 1],
+                ["YIELD", 1],
+                ["RETURN", 0],
+            ],
+            name='await0_then_yield',
+        )
+        fn = make_callable(code, base_ns, FormalsSpec())
+        gen = demand_call(fn)
+        with self.assertRaises(KoskariSyncViolation) as ctx:
+            next(gen)
+        self.assertIn('suspension', str(ctx.exception))
+
+
     def test_await_in_demand_generator_raises_violation(self):
         """
         Generator that awaits raises KoskariSyncViolation when the await
@@ -202,7 +238,7 @@ class TestDemandGenerator(unittest.TestCase):
         code = build_code(
             [
                 ["FAST", 0],
-                ["AWAIT", 0],
+                ["AWAIT", 1],
                 ["CONST", 1],
                 ["YIELD", 1],
                 ["RETURN", 0],
@@ -254,7 +290,7 @@ class TestDemandSyncTryExceptAwaitInject(unittest.TestCase):
             [
                 ["PUSH_TRY", "handler"],
                 ["VAR", "a"],
-                ["AWAIT", 0],
+                ["AWAIT", 1],
                 ["CLEAR_TRY", 0],
                 ["JUMP", "end"],
                 ["LABEL", "handler"],
@@ -299,7 +335,7 @@ class TestDemandSyncTryExceptAwaitInject(unittest.TestCase):
         code = build_code(
             [
                 ["VAR", "a"],
-                ["AWAIT", 0],
+                ["AWAIT", 1],
                 ["RETURN", 1],
             ],
             local_syms=(),

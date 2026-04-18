@@ -713,64 +713,6 @@ static inline KosDynGen *kos_ctx_resume_gen_get(const KosContext *c) {
 #define KosContext_FREELIST_NEXT(c)          (((KosContext *)(c))->context_freelist_next)
 
 
-/**
-  Map KosContext_Call / KosCallable_Call legacy int r to KosOpOutcome.  When
-  r==0 after install, forces PROLOGUE if a transfer plan or native handler
-  is present on the current frame.
-*/
-static inline KosOpOutcome kos_op_outcome_from_call_int(KosContext *ctx, int r) {
-
-  if (r < 0)
-    return KOS_OP_POST_ERR();
-  if (r == KOS_OP_RES_CONTROL_RETURNED)
-    return KOS_OP_POST_CONTROL();
-  if (r == KOS_OP_RES_PARENT_RETURN_DELIVER)
-    return KOS_OP_POST_PARENT_RETURN();
-  if (r == 1)
-    return KOS_OP_POST_SUSPEND();
-  if (r == 0) {
-    if (KosContext_PLAN(ctx))
-      return KOS_OP_PROLOGUE();
-    if (KosContext_FRAME_TOP(ctx)
-        && KosDynFrame_NATIVE_HANDLER(KosContext_FRAME_TOP(ctx)))
-      return KOS_OP_PROLOGUE();
-    return KOS_OP_RUN();
-  }
-  return KOS_OP_POST_ERR();
-}
-
-
-/**
-  Map push_or_await / kos_push_or_await return (0 push, 1 suspend, -1 err).
-*/
-static inline KosOpOutcome kos_op_outcome_from_push_int(int r) {
-
-  if (r < 0)
-    return KOS_OP_POST_ERR();
-  if (r == 1)
-    return KOS_OP_POST_SUSPEND();
-  return KOS_OP_RUN();
-}
-
-
-/**
-  Map legacy opcode-helper int to KosOpOutcome (0 run, 1 suspend, 2 control,
-  -1 err).
-*/
-static inline KosOpOutcome kos_op_outcome_from_int_step(int r) {
-
-  if (r < 0)
-    return KOS_OP_POST_ERR();
-  if (r == 1)
-    return KOS_OP_POST_SUSPEND();
-  if (r == KOS_OP_RES_CONTROL_RETURNED)
-    return KOS_OP_POST_CONTROL();
-  if (r == KOS_OP_RES_PARENT_RETURN_DELIVER)
-    return KOS_OP_POST_PARENT_RETURN();
-  return KOS_OP_RUN();
-}
-
-
 /* === Context lifecycle === */
 
 

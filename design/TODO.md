@@ -17,18 +17,6 @@ special **compile/switch** mirroring **compile/cond** syntax.
 
 Ref: [switch-eq-opcodes.md](switch-eq-opcodes.md).
 
-### No-arg `await` (suspension-only AWAIT)
-
-Add a **no-argument** `(await)` special form and a matching **AWAIT** opcode
-shape that does not consume an awaitable on the stack: it **only** forces an
-eval suspension (same boundary as `AWAIT` on a value), so drivers can
-preempt or cooperatively yield without a Python awaitable.
-
-Ref: [SPECIALS.md](SPECIALS.md) (`await`); [OPCODES.md](OPCODES.md) (KOS_OP_AWAIT);
-`koskari/compile/specials/continuations.py` (`special_await`).
-
----
-
 ## Generator / yield
 
 ### Dynamic wind-unwind at yield
@@ -107,7 +95,6 @@ Ref: [api/tracing.md](api/tracing.md).
   strict/non-strict chain (e.g. `(> 9 2 0)`, `(<= 0 0 3 4 5 5 8)`).
 
 Ref: [FEATURES.md](FEATURES.md) § Further migration / backlog;
-[language/async.md](language/async.md) (await syntax/semantics);
 [language/special-forms.md](language/special-forms.md).
 
 ### Variadic compiled object ops (`*` keyword form)

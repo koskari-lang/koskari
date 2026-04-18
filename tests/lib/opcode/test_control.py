@@ -56,7 +56,7 @@ class TestControlOpcodes(CevalTest):
         code, ns = build_expr([
             ["VAR", "f"],
             ["CALL", 0],
-            ["AWAIT", 0],
+            ["AWAIT", 1],
             ["RETURN", 1],
         ], values={"f": return_five})
         result = await make_callable(code, ns)()

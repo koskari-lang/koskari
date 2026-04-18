@@ -12,41 +12,76 @@
 # along with this library; if not, see <http://www.gnu.org/licenses/>.
 
 """
-Tests for compile/await special
+Tests for compile/await: run compiled expressions (see test_try.py pattern).
 """
 
+from asyncio import sleep
 
+import pytest
+
+import koskari.lib as lib
 from koskari.exceptions import SpecialError
-from koskari.lib import OpCode
 
 from . import SpecialsTestCase
 
-import pytest
 
 pytestmark = pytest.mark.phase_specials
 
 
-def _opcodes(code):
-    return [code.oparg(i)[0] for i in range(code.length())]
-
-
 class TestCompileAwait(SpecialsTestCase):
 
-    async def test_await_emits_opcode(self):
-        code = self.compile_to_code("(compile/await (compile/quote 1))")
-        ops = _opcodes(code)
-        self.assertIn(OpCode.KOS_OP_AWAIT, ops)
-        aw = ops.index(OpCode.KOS_OP_AWAIT)
-        ret = ops.index(OpCode.KOS_OP_RETURN)
-        self.assertLess(aw, ret)
-        self.assertEqual(ops[aw - 1], OpCode.KOS_OP_CONST)
+    async def test_await_sleep_returns_value(self):
+        src = """
+            (begin
+              (compile/await (sleep 0))
+              42)
+        """
 
-    async def test_await_requires_one_arg(self):
-        with self.assertRaises(SpecialError):
-            self.compile_to_code("(compile/await)")
+        expr, _mod = self.compile_expr(
+            src,
+            sleep=sleep,
+        )
+        res = await expr()
+        self.assertEqual(res, 42)
 
+
+    async def test_await_defer_returns_value(self):
+        src = """
+            (compile/await (compile/call defer identity 42))
+        """
+
+        expr, _mod = self.compile_expr(
+            src,
+            defer=lib.defer,
+            identity=lib.identity,
+        )
+        res = await expr()
+        self.assertEqual(res, 42)
+
+
+    async def test_await_bare_returns_none(self):
+        src = """
+            (compile/await)
+        """
+        expr, _mod = self.compile_expr(src)
+        res = await expr()
+        self.assertIsNone(res)
+
+
+    async def test_await_bare(self):
+        src = """
+            (begin
+              (compile/await)
+              42)
+        """
+        expr, _mod = self.compile_expr(src)
+        res = await expr()
+        self.assertEqual(res, 42)
+
+
+    def test_await_two_args_raises_at_compile(self):
         with self.assertRaises(SpecialError):
-            self.compile_to_code("(compile/await a b)")
+            self.compile_expr("(compile/await a b)")
 
 
 # The end.
