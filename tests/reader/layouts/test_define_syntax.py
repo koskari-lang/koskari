@@ -186,6 +186,25 @@ class TestLayoutDefineSyntax(TestCase):
         self._assert_layout_parse(src, expected)
 
 
+    def test_define_syntax_special_rules_layout(self):
+        src = """
+        define-syntax m:
+          special-rules ():
+            m x:
+              x
+        """
+        rule1 = (
+            (symbol('m'), symbol('x')),
+            (symbol('compile/begin'), symbol('x'),))
+        expected = pycons(
+            (symbol('compile/define-syntax'),
+             symbol('m'),
+             (symbol('special-rules'),
+              (),
+              rule1,)))
+        self._assert_layout_parse(src, expected)
+
+
     def test_define_syntax_syntax_match_layout(self):
         src = """
         define-syntax m:
@@ -215,6 +234,22 @@ class TestLayoutDefineSyntax(TestCase):
             (symbol('compile/define-syntax'),
              symbol('m'),
              (symbol('macro-match'),
+              ((symbol('m'), symbol('x')),
+               (symbol('compile/begin'), symbol('x')),))))
+        self._assert_layout_parse(src, expected)
+
+
+    def test_define_syntax_special_match_layout(self):
+        src = """
+        define-syntax m:
+          special-match:
+            m x:
+              x
+        """
+        expected = pycons(
+            (symbol('compile/define-syntax'),
+             symbol('m'),
+             (symbol('special-match'),
               ((symbol('m'), symbol('x')),
                (symbol('compile/begin'), symbol('x')),))))
         self._assert_layout_parse(src, expected)

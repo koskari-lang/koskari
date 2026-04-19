@@ -10,7 +10,9 @@
   ;; the macro for defining macros
 
   (syntax-rules compile/define-syntax
-      [syntax-rules syntax-match macro-rules macro-match]
+      [syntax-rules syntax-match
+       macro-rules macro-match
+       special-rules special-match]
 
     [(define-syntax name (syntax-rules literals rule ...))
       (compile/define name (syntax-rules name literals rule ...))]
@@ -22,7 +24,13 @@
       (compile/define name (macro-rules name literals rule ...))]
 
     [(define-syntax name (macro-match rule ...))
-      (compile/define name (macro-match name rule ...))]))
+      (compile/define name (macro-match name rule ...))]
+
+    [(define-syntax name (special-rules literals rule ...))
+      (compile/define name (special-rules name literals rule ...))]
+
+    [(define-syntax name (special-match rule ...))
+      (compile/define name (special-match name rule ...))]))
 
 
 define-syntax compile/set!:

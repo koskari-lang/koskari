@@ -241,4 +241,92 @@ def special_compile_macro_match(compiler, source, tc=False):
                 str(namesym), (), *parts, nil)
 
 
+@special_forms(_COMPILE_NAME_LITERALS_RULES)
+@special(symbol("compile/special-rules"))
+def special_compile_special_rules(compiler, source, tc=False):
+    """
+    Compile (compile/special-rules NAME LITERALS RULES...).
+
+    Lowers to a (build-special-rules ...) call form for recompilation. The
+    built transformer is the value of that expression; use (compile/define
+    NAME ...) to bind it.
+    """
+
+    _, rest = source
+
+    matched = match(rest, _COMPILE_NAME_LITERALS_RULES)
+    if matched is None:
+        raise SpecialError(
+            "compile/special-rules requires name, literals list, and rule forms",
+            source)
+
+    namesym = matched["name"].source
+
+    literals, rows = parse_macro_rules_rows(
+        namesym,
+        matched["literals"].source,
+        matched["rules"].source,
+    )
+    literals_tuple = tuple(
+        _serialize_form(x) for x in sorted(literals, key=str))
+
+    parts = []
+
+    for pattern_matcher, formals, body_forms in rows:
+        parts.append(pattern_matcher.to_tuple())
+        parts.append(cons(symbol("compile/lambda"),
+                          build_proper(*formals), body_forms))
+
+    return cons(symbol("build-special-rules"),
+                str(namesym), literals_tuple,
+                *parts, nil)
+
+
+@special_forms(_COMPILE_NAME_RULES_TAIL)
+@special(symbol("compile/special-match"))
+def special_compile_special_match(compiler, source, tc=False):
+    """
+    Compile (compile/special-match NAME RULE ...).
+
+    Rule rows are (PATTERN BODY...); PATTERN is passed to
+    parse_explicit_rule_pattern.
+
+    Lowers to a (build-special-rules ...) call form for recompilation (same
+    shape as compile/macro-match). The built transformer is the value of that
+    expression; use (compile/define NAME ...) to bind it.
+    """
+
+    _, rest = source
+    matched = match(rest, _COMPILE_NAME_RULES_TAIL)
+    if matched is None:
+        raise SpecialError(
+            "compile/special-match requires name and at least one rule",
+            source)
+
+    namesym = matched["name"].source
+
+    rules_expr = matched["rules"].source
+
+    rules_m = match(rules_expr, MACRO_MATCH_RULES_PATTERN)
+    if rules_m is None:
+        raise SpecialError(
+            "special-match requires at least one valid rule", rules_expr)
+
+    parts = []
+
+    for sub_res, _sp in rules_m["rules"].matches:
+        pattern_src = sub_res["pattern"].source
+        body_src = sub_res["body"].source
+
+        pattern_matcher = parse_explicit_rule_pattern(pattern_src)
+        vars_ordered = [symbol(n) for n in matcher_slot_names(pattern_matcher)]
+
+        parts.append(pattern_matcher.to_tuple())
+        parts.append(cons(symbol("compile/lambda"),
+                          build_proper(*vars_ordered), body_src))
+
+    return cons(symbol("build-special-rules"),
+                str(namesym), (), *parts, nil)
+
+
 # The end.

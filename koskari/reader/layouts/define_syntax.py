@@ -15,7 +15,7 @@
 koskari.reader.layouts.define_syntax
 
 Layout handlers for define-syntax and transformer block syntax (syntax-rules,
-macro-rules, syntax-match, macro-match).
+macro-rules, special-rules, syntax-match, macro-match, special-match).
 
 :author: Christopher O'Brien <obriencj@preoccupied.net>
 :license: GNU General Public License v3
@@ -39,8 +39,10 @@ from .helpers import layout
 _ALLOWED_DEFINE_SYNTAX_TRANSFORMERS = frozenset({
     'syntax-rules',
     'macro-rules',
+    'special-rules',
     'syntax-match',
     'macro-match',
+    'special-match',
 })
 
 
@@ -63,6 +65,10 @@ _MACRO_RULES_FORM = MATCH(
     LIST(LITERAL_SYM('macro-rules'), VALUE('literals_expr')),
     REPEAT('rules', PAIR('rule'), min_count=1))
 
+_SPECIAL_RULES_FORM = MATCH(
+    LIST(LITERAL_SYM('special-rules'), VALUE('literals_expr')),
+    REPEAT('rules', PAIR('rule'), min_count=1))
+
 _SYNTAX_MATCH_FORM = MATCH(
     LIST(LITERAL_SYM('syntax-match')),
     REPEAT('rules', PAIR('rule'), min_count=1))
@@ -71,11 +77,17 @@ _MACRO_MATCH_FORM = MATCH(
     LIST(LITERAL_SYM('macro-match')),
     REPEAT('rules', PAIR('rule'), min_count=1))
 
+_SPECIAL_MATCH_FORM = MATCH(
+    LIST(LITERAL_SYM('special-match')),
+    REPEAT('rules', PAIR('rule'), min_count=1))
+
 
 _symbol_syntax_rules = symbol('syntax-rules')
 _symbol_macro_rules = symbol('macro-rules')
+_symbol_special_rules = symbol('special-rules')
 _symbol_syntax_match = symbol('syntax-match')
 _symbol_macro_match = symbol('macro-match')
+_symbol_special_match = symbol('special-match')
 _symbol_compile_define_syntax = symbol('compile/define-syntax')
 
 
@@ -123,7 +135,7 @@ def _pattern_template_from_rule(rule_source):
 
 def _syntax_rules_like_rows(rule_matches):
     """
-    Build (PATTERN TEMPLATE) rows for syntax-rules / macro-rules.
+    Build (PATTERN TEMPLATE) rows for syntax-rules / macro-rules / special-rules.
 
     :param rule_matches: ``repeat.matches`` from a syntax-rules-shaped rule list
     :return: list of ``cons(pattern, template, nil)`` forms
@@ -187,6 +199,31 @@ def layout_macro_rules(source, peers):
     return cons(_symbol_macro_rules, literals, *rules, nil)
 
 
+@layout(symbol('layout/special-rules'))
+def layout_special_rules(source, peers):
+    """
+    Lower special-rules block to (special-rules (LIT ...) ((PAT) TMPL) ...).
+
+    Same block shape as macro-rules; only the emitted head differs.
+    """
+
+    if peers:
+        raise LayoutError(
+            'special-rules block does not take peers',
+            get_position(source))
+
+    m = match(source, _SPECIAL_RULES_FORM)
+    if m is None:
+        raise LayoutError(
+            'special-rules requires literals list and at least one rule',
+            get_position(source))
+
+    literals = _literals_to_list(m['literals_expr'].source, source)
+    rules = _syntax_rules_like_rows(m['rules'].matches)
+
+    return cons(_symbol_special_rules, literals, *rules, nil)
+
+
 @layout(symbol('layout/syntax-match'))
 def layout_syntax_match(source, peers):
     """
@@ -241,13 +278,40 @@ def layout_macro_match(source, peers):
     return cons(_symbol_macro_match, *rules, nil)
 
 
+@layout(symbol('layout/special-match'))
+def layout_special_match(source, peers):
+    """
+    Lower special-match block to (special-match (PATTERN BODY ...) ...).
+
+    Same rule shape as macro-match blocks: pattern forms then template / body.
+    """
+
+    if peers:
+        raise LayoutError(
+            'special-match block does not take peers',
+            get_position(source))
+
+    m = match(source, _SPECIAL_MATCH_FORM)
+    if m is None:
+        raise LayoutError(
+            'special-match requires at least one rule',
+            get_position(source))
+
+    rules = []
+    for sub_res, _ in m['rules'].matches:
+        pattern, template = _pattern_template_from_rule(sub_res['rule'].source)
+        rules.append(cons(pattern, template, nil))
+
+    return cons(_symbol_special_match, *rules, nil)
+
+
 @layout(symbol('layout/define-syntax'))
 def layout_define_syntax(source, peers):
     """
     Lower define-syntax block to (compile/define-syntax NAME TRANSFORMER).
 
-    Expects exactly one body form: syntax-rules, macro-rules, syntax-match, or
-    macro-match.
+    Expects exactly one body form: syntax-rules, macro-rules, special-rules,
+    syntax-match, macro-match, or special-match.
     """
 
     if peers:
@@ -266,8 +330,8 @@ def layout_define_syntax(source, peers):
     head = car(transformer_spec)
     if not is_symbol(head) or str(head) not in _ALLOWED_DEFINE_SYNTAX_TRANSFORMERS:
         raise LayoutError(
-            'define-syntax requires syntax-rules, macro-rules, syntax-match, '
-            'or macro-match',
+            'define-syntax requires syntax-rules, macro-rules, special-rules, '
+            'syntax-match, macro-match, or special-match',
             get_position(transformer_spec))
 
     return cons(_symbol_compile_define_syntax, name, transformer_spec, nil)

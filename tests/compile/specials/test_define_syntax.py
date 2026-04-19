@@ -23,7 +23,8 @@ import pytest
 
 from koskari.dis import dis
 from koskari.lib import OpCode, build_list
-from koskari.syntax import (SyntaxRulesTransformer, build_macro_syntax,
+from koskari.syntax import (SpecialRulesTransformer, SyntaxRulesTransformer,
+                            build_macro_syntax, build_special_syntax,
                             build_syntax)
 
 from . import SpecialsTestCase
@@ -37,6 +38,7 @@ class DefineSyntaxCompileHelpers(SpecialsTestCase):
     def compile_expr(self, src_str, **defns):
         defns.setdefault('build-syntax-rules', build_syntax)
         defns.setdefault('build-macro-rules', build_macro_syntax)
+        defns.setdefault('build-special-rules', build_special_syntax)
         return super().compile_expr(src_str, **defns)
 
 
@@ -45,6 +47,7 @@ class DefineSyntaxCompileHelpers(SpecialsTestCase):
                         **defns):
         defns.setdefault('build-syntax-rules', build_syntax)
         defns.setdefault('build-macro-rules', build_macro_syntax)
+        defns.setdefault('build-special-rules', build_special_syntax)
         return super().compile_to_code(
             src_str, lineno=lineno, tc=tc,
             resolution_pragma_class=resolution_pragma_class,
@@ -275,6 +278,58 @@ class TestCompileMacroMatch(DefineSyntaxCompileHelpers):
         expr, mod = self.compile_expr(src_str, **defn)
         result = await expr()
         self.assertEqual(2, result)
+
+
+class TestCompileSpecialRules(DefineSyntaxCompileHelpers):
+
+    async def test_compile_special_rules_identity(self):
+        src_str = """
+        (compile/define ident
+          (compile/special-rules ident []
+            [(ident x) x]))
+        """
+        expr, mod = self.compile_expr(src_str)
+        dis(expr.code)
+
+        await expr()
+        ident = vars(mod)['ident']
+        self.assertIsInstance(ident, SpecialRulesTransformer)
+        defn = {'compile/ident': ident}
+
+        src_str = """
+        (ident 42)
+        """
+        expr, mod = self.compile_expr(src_str, **defn)
+        dis(expr.code)
+
+        result = await expr()
+        self.assertEqual(42, result)
+
+
+class TestCompileSpecialMatch(DefineSyntaxCompileHelpers):
+
+    async def test_compile_special_match_value_pattern(self):
+        src_str = """
+        (compile/define ident
+          (compile/special-match ident
+            [(ident (VALUE x)) x]))
+        """
+        expr, mod = self.compile_expr(src_str)
+        dis(expr.code)
+
+        await expr()
+        ident = vars(mod)['ident']
+        self.assertIsInstance(ident, SpecialRulesTransformer)
+        defn = {'compile/ident': ident}
+
+        src_str = """
+        (ident 42)
+        """
+        expr, mod = self.compile_expr(src_str, **defn)
+        dis(expr.code)
+
+        result = await expr()
+        self.assertEqual(42, result)
 
 
 # The end.

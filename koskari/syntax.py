@@ -53,8 +53,12 @@ __all__ = (
     'MacroRule',
     'MacroRulesSegment',
     'MacroRulesTransformer',
+    'SpecialRulesTransformer',
     'build_macro_syntax',
+    'build_special_syntax',
+    'build_special_match',
     'parse_macro_rules_rows',
+    'unbox_macro',
     'unbox_macro_with_hygiene',
 )
 
@@ -677,6 +681,50 @@ class SyntaxRulesTransformer:
         raise CompilerError("no matching define-syntax rule", source_obj)
 
 
+def unbox_macro(expanded):
+    """
+    Strip Syntax wrappers from procedural macro output without hygiene
+
+    :param expanded: form returned by the macro procedure (may contain ``Syntax``)
+    :return: form ready for compilation (no ``Syntax`` wrappers)
+
+    Unboxing updates ``car``/``cdr`` in place on existing pairs so source
+    positions on those cells are preserved
+    """
+
+    seen = set()
+
+    def walk(x):
+        if isinstance(x, Syntax):
+            return walk(x.datum)
+
+        if is_nil(x):
+            return x
+
+        if is_pair(x):
+            nx = x
+            while nx is not nil:
+                xi = id(nx)
+                if xi in seen:
+                    nx = nx.cdr
+                    continue
+                seen.add(xi)
+
+                head, tail = nx
+                if isinstance(head, Syntax):
+                    nx.car = walk(head.datum)
+                    nx.position = head.position
+                elif is_nil(head):
+                    pass
+                elif is_pair(head):
+                    walk(head)
+                nx = tail
+            return x
+        return x
+
+    return walk(expanded)
+
+
 def unbox_macro_with_hygiene(expanded, find_compiled):
     """
     Run syntax-rules hygiene on procedural macro output, then strip Syntax
@@ -793,6 +841,33 @@ class MacroRulesTransformer:
         raise CompilerError("no matching macro-rules rule", source_obj)
 
 
+class SpecialRulesTransformer:
+
+    def __init__(self, name, literals, rules):
+        self.name = name
+        self.segments = (
+            MacroRulesSegment(frozenset(literals), tuple(rules)),
+        )
+
+
+    @classmethod
+    def from_segments(cls, name, segments):
+        inst = cls.__new__(cls)
+        inst.name = name
+        inst.segments = tuple(segments)
+        return inst
+
+
+    def compile_impl(self, compiler, source_obj, tc=False):
+        for segment in self.segments:
+            for rule in segment.rules:
+                expanded = rule.expand(source_obj, segment.literals)
+                if expanded is not None:
+                    return unbox_macro(expanded)
+
+        raise CompilerError("no matching special-rules rule", source_obj)
+
+
 def build_syntax(name, tagged_tuple):
     transformer = SyntaxRulesTransformer.from_tuple(tagged_tuple)
     if name is not None:
@@ -819,6 +894,35 @@ def build_macro_syntax(name, literals_tuple, *pattern_and_lambdas):
 
     transformer = MacroRulesTransformer(name, literals, rules)
     return transformer
+
+
+def build_special_syntax(name, literals_tuple, *pattern_and_lambdas):
+    """
+    Build a SpecialRulesTransformer from compile-time lowered arguments:
+    name, serialized literals tuple, then alternating (pattern_tuple, fn) pairs.
+    """
+
+    if len(pattern_and_lambdas) % 2 != 0:
+        raise CompilerError("build-special-rules requires pattern/lambda pairs")
+
+    literals = frozenset(_deserialize_form(x) for x in literals_tuple)
+    rules = []
+    for i in range(0, len(pattern_and_lambdas), 2):
+        pattern_tup = pattern_and_lambdas[i]
+        fn = pattern_and_lambdas[i + 1]
+        pm = matcher_from_tuple(pattern_tup)
+        rules.append(MacroRule(pm, procedure=fn))
+
+    transformer = SpecialRulesTransformer(name, literals, rules)
+    return transformer
+
+
+def build_special_match(name, *pattern_and_lambdas):
+    """
+    Build a SpecialRulesTransformer with no literals (same shape as macro-match).
+    """
+
+    return build_special_syntax(name, (), *pattern_and_lambdas)
 
 
 def build_syntax_rules_transformer(

@@ -29,6 +29,8 @@ from .define_syntax import (
     layout_define_syntax,
     layout_macro_match,
     layout_macro_rules,
+    layout_special_match,
+    layout_special_rules,
     layout_syntax_match,
     layout_syntax_rules,
 )
@@ -50,6 +52,8 @@ __all__ = (
     "layout_if",
     "layout_macro_match",
     "layout_macro_rules",
+    "layout_special_match",
+    "layout_special_rules",
     "layout_syntax_match",
     "layout_syntax_rules",
     "layout_try",
