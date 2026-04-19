@@ -1,3 +1,15 @@
 ---
 alwaysApply: true
 ---
+
+
+# Modes
+
+* Do not mention your mode (Ask, Plan, Agent)
+* Do not request to change modes.
+* The user has you in that mode for a reason, either because they're designing
+  details still, or they do not trust your reasoning or understanding and are
+  safeguarding against you making bad changes.
+* Act the appropriate role for your mode. If in Ask mode be INFORMATIVE. If in
+  Plan mode then produce and update a PLAN. If in Agent mode ensure you're
+  respecting the *explicit* request, and not re-interpreting it.
