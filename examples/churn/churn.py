@@ -1,7 +1,6 @@
 
 import asyncio
 import json
-import koskari
 import koskari.lib as koskari_lib
 import sys
 import time
@@ -41,18 +40,23 @@ async def main():
     tree_runs = 50
 
     # Python versions
-    t = bench_sync(loop_runs, churn_loop_p, 1_000_000, 1)
-    announce("python churn_loop", t, t / loop_runs)
+    tp1 = bench_sync(loop_runs, churn_loop_p, 1_000_000, 1)
+    announce("python churn_loop", tp1, tp1 / loop_runs)
 
-    t = bench_sync(tree_runs, churn_tree_p, 18, 50)
-    announce("python churn_tree", t, t / tree_runs)
+    tp2 = bench_sync(tree_runs, churn_tree_p, 18, 50)
+    announce("python churn_tree", tp2, tp2 / tree_runs)
 
     # Koskari versions
-    t = await bench_async(loop_runs, churn_loop_k, 1_000_000, 1)
-    announce("koskari churn_loop", t, t / loop_runs)
+    tk1 = await bench_async(loop_runs, churn_loop_k, 1_000_000, 1)
+    announce("koskari churn_loop", tk1, tk1 / loop_runs)
 
-    t = await bench_async(tree_runs, churn_tree_k, 18, 50)
-    announce("koskari churn_tree", t, t / tree_runs)
+    tk2 = await bench_async(tree_runs, churn_tree_k, 18, 50)
+    announce("koskari churn_tree", tk2, tk2 / tree_runs)
+
+    ratio1 = tp1 / tk1
+    ratio2 = tp2 / tk2
+    print(f"churn_loop = {ratio1} ({(100 / ratio1):.2f}%)")
+    print(f"churn_tree = {ratio2} ({(100 / ratio2):.2f}%)")
 
 
 def print_trace_report_if_enabled():
