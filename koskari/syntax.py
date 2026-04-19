@@ -41,6 +41,7 @@ __all__ = (
     'MacroRule',
     'MacroRulesSegment',
     'MacroRulesTransformer',
+    'SpecialRule',
     'SpecialRulesTransformer',
     'Syntax',
     'SyntaxRule',
@@ -104,6 +105,16 @@ class Syntax:
                 cell = cdr(cell)
             else:
                 yield Syntax(elem, self.position, self.tag)
+
+
+    @property
+    def car(self):
+        return self.datum.car
+
+
+    @property
+    def cdr(self):
+        return self.datum.cdr
 
 
 def box_match_capture(value, position_fallback=None):
@@ -536,6 +547,32 @@ class MacroRule:
         return demand_call(self.procedure, **kwargs)
 
 
+@dataclass
+class SpecialRule:
+    pattern_matcher: Matcher
+    procedure: Any = None
+
+
+    def expand(self, compiler, source_obj, literals, tc=False):
+        raw = match(source_obj, self.pattern_matcher, literals=literals)
+        if raw is None:
+            return None
+
+        if self.procedure is None:
+            raise ValueError("internal: special rule missing procedure")
+
+        pos_fb = get_position(source_obj) if is_pair(source_obj) else None
+
+        kwargs = _match_dict_to_syntax_kwargs(raw, position_fallback=pos_fb)
+        if kwargs is None:
+            raise ValueError("special-rules: failed to box match captures")
+
+        kwargs = {
+            str(k): _unwrap_repeat_macro_rows(v) for k, v in kwargs.items()}
+
+        return demand_call(self.procedure, compiler, tc, **kwargs)
+
+
 @dataclass(frozen=True)
 class MacroRulesSegment:
     literals: frozenset
@@ -590,7 +627,8 @@ class SpecialRulesTransformer:
     def compile_impl(self, compiler, source_obj, tc=False):
         for segment in self.segments:
             for rule in segment.rules:
-                expanded = rule.expand(source_obj, segment.literals)
+                expanded = rule.expand(
+                    compiler, source_obj, segment.literals, tc=tc)
                 if expanded is not None:
                     return unbox_macro(expanded)
 
@@ -640,7 +678,7 @@ def build_special_syntax(name, literals_tuple, *pattern_and_lambdas):
         pattern_tup = pattern_and_lambdas[i]
         fn = pattern_and_lambdas[i + 1]
         pm = matcher_from_tuple(pattern_tup)
-        rules.append(MacroRule(pm, procedure=fn))
+        rules.append(SpecialRule(pm, procedure=fn))
 
     transformer = SpecialRulesTransformer(name, literals, rules)
     return transformer

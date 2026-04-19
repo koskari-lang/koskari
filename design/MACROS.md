@@ -10,10 +10,12 @@ handled by the **`compile/define-syntax`** macro in `koskari/importer/basics.ki`
 (bound with `(define compile/define-syntax (syntax-rules …))`). That macro
 rewrites `(define-syntax NAME TRANSFORMER)` into **`(compile/define NAME …)`**
 with a transformer whose head is **`syntax-rules`**, **`macro-rules`**,
-**`syntax-match`**, or **`macro-match`**. The compiler then lowers those
-**`syntax-rules` / `macro-rules` / …** specs via the specials **`compile/syntax-rules`**,
-**`compile/macro-rules`**, **`compile/syntax-match`**, and **`compile/macro-match`**
-(see [SPECIALS.md](SPECIALS.md)), and binds the result with **`compile/define`**.
+**`syntax-match`**, **`macro-match`**, **`special-rules`**, or **`special-match`**.
+The compiler then lowers those **`syntax-rules` / `macro-rules` / …** specs via
+the specials **`compile/syntax-rules`**, **`compile/macro-rules`**,
+**`compile/syntax-match`**, **`compile/macro-match`**, **`compile/special-rules`**,
+and **`compile/special-match`** (see [SPECIALS.md](SPECIALS.md)), and binds the
+result with **`compile/define`**.
 
 **Design (living):** [language/unified-matcher-transformer-model.md](language/unified-matcher-transformer-model.md) — matcher IR, **RULE** vs **MATCH** pattern languages (**`syntax-rules`** / **`macro-rules`** vs **`syntax-match`** / **`macro-match`**), post-expand hygiene and **`Syntax`** boxes, and how `define-syntax` transformers align with the same ideas as Python specials. Reader macros, hygiene, and compiler optimizations around macros: [SPECIALS.md](SPECIALS.md) (§ Macros, reader macros, hygiene, and compiler optimizations); [language/macro-hygiene-syntax-boxes.md](language/macro-hygiene-syntax-boxes.md).
 
@@ -33,10 +35,12 @@ forms whose transformer is one of:
 - `(syntax-match (PATTERN TEMPLATE) …)` → `(compile/define name (syntax-match name (PATTERN TEMPLATE) …))`
 - `(macro-rules literals rule …)` → `(compile/define name (macro-rules name literals rule …))`
 - `(macro-match (PATTERN BODY …) …)` → `(compile/define name (macro-match name (PATTERN BODY …) …))`
+- `(special-rules literals rule …)` → `(compile/define name (special-rules name literals rule …))`
+- `(special-match rule …)` → `(compile/define name (special-match name rule …))`
 
 **Use-case:** Install a compile-time transformer under the given name. After
 expansion, the **value** of **`compile/define`** is built from the **`syntax-rules`** /
-**`macro-rules`** / … spec (see specials above).
+**`macro-rules`** / **`special-rules`** / … spec (see specials above).
 
 **Behaviour:** Purely macro expansion; no dedicated `@special` handler for
 `compile/define-syntax` in the compiler.
@@ -44,7 +48,8 @@ expansion, the **value** of **`compile/define`** is built from the **`syntax-rul
 **Defined in:** `koskari/importer/basics.ki`
 
 **Tests:** `tests/importer/test_basics.py` (where applicable); compile specials
-for **`compile/syntax-rules`** / **`compile/macro-rules`**: `tests/compile/specials/test_define_syntax.py`
+for **`compile/syntax-rules`** / **`compile/macro-rules`** / **`compile/special-rules`**
+/ **`compile/special-match`**: `tests/compile/specials/test_define_syntax.py`
 
 
 ## set!
@@ -159,6 +164,39 @@ redundant inner `(let [] ...)`). Two or more:
 (let* [[x 1]] x)
 
 (let* [[x 1] [y (+ x 1)]] y)
+```
+
+**Defined in:** `koskari/importer/basics.ki`
+
+
+## first, second, third, fourth, fifth; cadr, caddr, cadddr, caddddr
+
+**Symbols:**
+
+- **Positional:** `first`, `second`, `third`, `fourth`, `fifth` (defined as
+  `compile/first` … `compile/fifth`)
+- **`c*r`:** `cadr`, `caddr`, `cadddr`, `caddddr` (defined as `compile/cadr` …)
+
+**Syntax:** `(first pair)` … `(fifth pair)`; `(cadr pair)` … `(caddddr pair)` — one
+argument each (the list or pair chain).
+
+**Use-case:** Take the first through fifth elements of a list (1-based) without
+hand-writing nested `car` / `cdr`. The `c*r` names match usual Lisp/Scheme usage:
+`cadr` is the 2nd element, … `caddddr` is the 5th.
+
+**Behaviour:** In `basics.ki`, `compile/first` is bound to `compile/car`;
+`compile/second` … `compile/fifth` are bound to `compile/cadr` …
+`compile/caddddr`. The `compile/cadr` family are `define-syntax` /
+`syntax-rules` macros that expand to nested `(car (cdr …))` (as many `cdr` hops
+as there are `d` letters between `ca` and `r` in the name).
+
+**Examples:**
+
+```scheme
+(first '(a b c))     ; → a   (same as car)
+(second '(a b c))    ; → b
+(caddr '(a b c d))   ; → c
+(fifth '(a b c d e)) ; → e
 ```
 
 **Defined in:** `koskari/importer/basics.ki`

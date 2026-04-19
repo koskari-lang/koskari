@@ -25,7 +25,8 @@ Special forms for ``compile/syntax`` and
 from ...exceptions import SpecialError
 from ...lib import cons, gensym, nil, pair, symbol
 from ...matcher import (BIND, DEFINE, LIST, LITERAL, MATCH, MATCHERS, REPEAT,
-                        REST, SYMBOL, VALUE, match, matcher_slot_names)
+                        REST, SYMBOL, VALUE, match, matcher_slot_names,
+                        match1)
 from ...syntax import SyntaxRule, SyntaxRulesTransformer, _serialize_form
 from ...types import (build_proper, get_position, is_keyword, is_pair,
                       is_proper, is_symbol, unpack)
@@ -40,10 +41,10 @@ _MACRO_MATCH_RULE_ROW = LIST(BIND("pattern"), REST("body"))
 MACRO_MATCH_RULES_PATTERN = MATCH(REPEAT("rules", _MACRO_MATCH_RULE_ROW))
 
 SPECIAL_RULES_PATTERN = MATCH(REPEAT("rules", _MACRO_MATCH_RULE_ROW))
-SPECIAL_PATTERN_BREAKOUT = (
+SPECIAL_PATTERN_BREAKOUT = [
     MATCH(LIST(SYMBOL("compiler"), VALUE("pattern"), SYMBOL("tc"))),
     MATCH(LIST(SYMBOL("compiler"), VALUE("pattern"))),
-)
+]
 
 # After compile/define-syntax, (compile/<rules-kind> NAME LITERALS . RULES).
 _COMPILE_NAME_LITERALS_RULES = [
@@ -251,9 +252,12 @@ def special_compile_special_rules(compiler, source, tc=False):
     """
     Compile (compile/special-rules NAME LITERALS RULES...).
 
-    Lowers to a (build-special-rules ...) call form for recompilation. The
-    built transformer is the value of that expression; use (compile/define
-    NAME ...) to bind it.
+    Each rule pattern column is ``(compiler-formal pattern [tc-formal])``: the
+    first subform names the compiler parameter (any symbol), the second is the
+    nested RULE pattern, the optional third names the ``tc`` formal. PATTERN is
+    lowered with parse_rule_pattern. Lowers to a (build-special-rules ...)
+    call form for recompilation. The built transformer is the value of that
+    expression; use (compile/define NAME ...) to bind it.
     """
 
     _, rest = source
@@ -265,21 +269,50 @@ def special_compile_special_rules(compiler, source, tc=False):
             source)
 
     namesym = matched["name"].source
+    literals_expr = matched["literals"].source
+    rules_expr = matched["rules"].source
 
-    literals, rows = parse_macro_rules_rows(
-        namesym,
-        matched["literals"].source,
-        matched["rules"].source,
-    )
+    literals = frozenset(unpack(literals_expr))
+    literals = literals | {namesym}
+
+    rules_m = match(rules_expr, _MACRO_RULE_PATTERN)
+    if rules_m is None or not rules_m["rules"].matches:
+        raise SpecialError("special-rules requires at least one rule", rules_expr)
+
     literals_tuple = tuple(
         _serialize_form(x) for x in sorted(literals, key=str))
 
     parts = []
+    for res, _sp in rules_m["rules"].matches:
+        raw_rule = res["rule"].source
+        if not is_pair(raw_rule):
+            raise SpecialError("invalid special-rules rule", raw_rule)
 
-    for pattern_matcher, formals, body_forms in rows:
+        if not is_proper(raw_rule):
+            raise SpecialError("special-rules rule must be a proper list", raw_rule)
+
+        pattern_src, body_forms = raw_rule
+        if not body_forms:
+            raise SpecialError("special-rules rule requires a body", raw_rule)
+
+        m = match1(pattern_src, SPECIAL_PATTERN_BREAKOUT)
+        if m is None:
+            raise SpecialError(
+                "special-rules pattern column must be "
+                "(compiler-formal pattern [tc-formal])",
+                pattern_src)
+
+        compiler_formal = m["compiler"].source
+        inner = m["pattern"].source
+        tc_formal = m["tc"].source if "tc" in m else gensym()
+
+        pattern_matcher = parse_rule_pattern(inner, literals, raw_rule)
+        vars_ordered = collect_pattern_variable_symbols(inner, literals)
+
         parts.append(pattern_matcher.to_tuple())
         parts.append(cons(symbol("compile/lambda"),
-                          build_proper(*formals), body_forms))
+                          build_proper(compiler_formal, tc_formal, *vars_ordered),
+                          body_forms))
 
     return cons(symbol("build-special-rules"),
                 str(namesym), literals_tuple,
@@ -292,8 +325,10 @@ def special_compile_special_match(compiler, source, tc=False):
     """
     Compile (compile/special-match NAME RULE ...).
 
-    Rule rows are (PATTERN BODY...); PATTERN is passed to
-    parse_explicit_rule_pattern.
+    Each rule pattern column is ``(compiler-formal pattern [tc-formal])``: the
+    first subform names the compiler parameter (any symbol), the second is the
+    nested MATCH pattern for parse_explicit_rule_pattern, the optional third
+    names the ``tc`` formal.
 
     Lowers to a (build-special-rules ...) call form for recompilation (same
     shape as compile/macro-match). The built transformer is the value of that
@@ -322,12 +357,26 @@ def special_compile_special_match(compiler, source, tc=False):
         pattern_src = sub_res["pattern"].source
         body_src = sub_res["body"].source
 
-        pattern_matcher = parse_explicit_rule_pattern(pattern_src)
+        m = match1(pattern_src, SPECIAL_PATTERN_BREAKOUT)
+        if m is None:
+            raise SpecialError(
+                "special-match pattern column must be "
+                "(compiler-formal pattern [tc-formal])",
+                pattern_src)
+
+        compiler_formal = m["compiler"].source
+        inner = m["pattern"].source
+        if is_symbol(inner):
+            inner = cons(cons(symbol("REST"), inner, nil), nil)
+        tc_formal = m["tc"].source if "tc" in m else gensym()
+
+        pattern_matcher = parse_explicit_rule_pattern(inner)
         vars_ordered = [symbol(n) for n in matcher_slot_names(pattern_matcher)]
 
         parts.append(pattern_matcher.to_tuple())
         parts.append(cons(symbol("compile/lambda"),
-                          build_proper(*vars_ordered), body_src))
+                          build_proper(compiler_formal, tc_formal, *vars_ordered),
+                          body_src))
 
     return cons(symbol("build-special-rules"),
                 str(namesym), (), *parts, nil)

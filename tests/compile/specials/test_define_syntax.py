@@ -286,7 +286,34 @@ class TestCompileSpecialRules(DefineSyntaxCompileHelpers):
         src_str = """
         (compile/define ident
           (compile/special-rules ident []
-            [(ident x) x]))
+            [(c (ident x) t) x]))
+        """
+        expr, mod = self.compile_expr(src_str)
+        dis(expr.code)
+
+        await expr()
+        ident = vars(mod)['ident']
+        self.assertIsInstance(ident, SpecialRulesTransformer)
+        defn = {'compile/ident': ident}
+
+        src_str = """
+        (ident 42)
+        """
+        expr, mod = self.compile_expr(src_str, **defn)
+        dis(expr.code)
+
+        result = await expr()
+        self.assertEqual(42, result)
+
+
+    async def test_compile_special_rules_bare_symbol_inner_pattern(self):
+        # Bare inner x binds the whole source form (ident 42); returning x
+        # would re-expand forever. Take the argument with (car (cdr x)).
+
+        src_str = """
+        (compile/define ident
+          (compile/special-rules ident []
+            [(c x t) (car (cdr x.datum))]))
         """
         expr, mod = self.compile_expr(src_str)
         dis(expr.code)
@@ -312,7 +339,36 @@ class TestCompileSpecialMatch(DefineSyntaxCompileHelpers):
         src_str = """
         (compile/define ident
           (compile/special-match ident
-            [(ident (VALUE x)) x]))
+            [(compiler (ident (VALUE x)) t)
+             x]))
+        """
+        expr, mod = self.compile_expr(src_str)
+        dis(expr.code)
+
+        await expr()
+        ident = vars(mod)['ident']
+        self.assertIsInstance(ident, SpecialRulesTransformer)
+        defn = {'compile/ident': ident}
+
+        src_str = """
+        (ident 42)
+        """
+        expr, mod = self.compile_expr(src_str, **defn)
+        dis(expr.code)
+
+        result = await expr()
+        self.assertEqual(42, result)
+
+
+    async def test_compile_special_match_bare_symbol_inner_pattern(self):
+        # Same as test_compile_special_rules_bare_symbol_inner_pattern:
+        # full-form bind; expand to the operand, not the whole form.
+
+        src_str = """
+        (compile/define ident
+          (compile/special-match ident
+            [(c x t)
+             (car (cdr x.datum))]))
         """
         expr, mod = self.compile_expr(src_str)
         dis(expr.code)
