@@ -201,5 +201,55 @@ class TestCompress(unittest.TestCase):
         ])
         self.assertEqual(out, [(OpCode.KOS_OP_RETURN, 0)])
 
+    def test_consecutive_cdr_merges_to_sum(self):
+        out = compress_ops([
+            (OpCode.KOS_OP_CONST, 0),
+            (OpCode.KOS_OP_CDR, 1),
+            (OpCode.KOS_OP_CDR, 1),
+            (OpCode.KOS_OP_CDR, 1),
+        ])
+        self.assertEqual(
+            out,
+            [(OpCode.KOS_OP_CONST, 0),
+             (OpCode.KOS_OP_CDR, 3),
+             (OpCode.KOS_OP_RETURN, 1)])
+
+    def test_consecutive_cdr_merges_mixed_counts(self):
+        out = compress_ops([
+            (OpCode.KOS_OP_CONST, 0),
+            (OpCode.KOS_OP_CDR, 2),
+            (OpCode.KOS_OP_CDR, 1),
+        ])
+        self.assertEqual(
+            out,
+            [(OpCode.KOS_OP_CONST, 0),
+             (OpCode.KOS_OP_CDR, 3),
+             (OpCode.KOS_OP_RETURN, 1)])
+
+    def test_consecutive_car_merges_to_sum(self):
+        out = compress_ops([
+            (OpCode.KOS_OP_CONST, 0),
+            (OpCode.KOS_OP_CAR, 1),
+            (OpCode.KOS_OP_CAR, 1),
+        ])
+        self.assertEqual(
+            out,
+            [(OpCode.KOS_OP_CONST, 0),
+             (OpCode.KOS_OP_CAR, 2),
+             (OpCode.KOS_OP_RETURN, 1)])
+
+    def test_car_then_cdr_not_merged(self):
+        out = compress_ops([
+            (OpCode.KOS_OP_CONST, 0),
+            (OpCode.KOS_OP_CAR, 1),
+            (OpCode.KOS_OP_CDR, 1),
+        ])
+        self.assertEqual(
+            out,
+            [(OpCode.KOS_OP_CONST, 0),
+             (OpCode.KOS_OP_CAR, 1),
+             (OpCode.KOS_OP_CDR, 1),
+             (OpCode.KOS_OP_RETURN, 1)])
+
 
 # The end.

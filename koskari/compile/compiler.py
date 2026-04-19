@@ -833,6 +833,12 @@ class Compiler:
                 del squished[-1]
                 arg = 0
 
+            elif (op in (OpCode.KOS_OP_CAR, OpCode.KOS_OP_CDR)
+                  and squished[-1][0] == op):
+                prev_op, prev_arg = squished[-1]
+                squished[-1] = (prev_op, prev_arg + arg)
+                continue
+
             squished.append((op, arg))
 
         if squished[-1][0] != OpCode.KOS_OP_RETURN:

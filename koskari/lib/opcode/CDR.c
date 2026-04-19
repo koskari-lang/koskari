@@ -14,21 +14,38 @@
 */
 
 /**
-   CDR: no arg. Pop one value (a pair). Push its cdr. Fails if TOS is
-   not a pair or is nil.
+  CDR: arg = repeat count. Pop TOS once; walk cdr that many times in locals
+  (refcount-safe); push the final value. arg < 1 is an error. Fails if any
+  intermediate is not a pair or is nil.
 */
 
 KOS_OP_HANDLER(CDR) {
-  PyObject *pair = KosStackBlock_PopRef(&CURRENT_STACK(ctx));
-  if (! pair)
-    return KOS_OP_POST_ERR();
-  if (! KosPair_Check(pair) || KosNil_Check(pair)) {
-    Py_DECREF(pair);
-    PyErr_SetString(PyExc_TypeError, "cdr argument must be pair");
+  int opa = (int) KosOp_ARG(insn);
+  if (opa <= 0) {
+    PyErr_Format(PyExc_RuntimeError, "CDR invoked with invalid"
+                 " argument count: %i", opa);
     return KOS_OP_POST_ERR();
   }
-  PyObject *val = KosPair_CDR(pair);
-  Py_INCREF(val);
-  Py_DECREF(pair);
-  return kos_op_outcome_from_int_step(push_result(ctx, val));
+
+  PyObject *cur = KosStackBlock_PopRef(&CURRENT_STACK(ctx));
+  if (! cur)
+    return KOS_OP_POST_ERR();
+
+  for (int i = 0; i < opa; i++) {
+    if (! KosPair_Check(cur) || KosNil_Check(cur)) {
+      const char *got = KosNil_Check(cur)
+          ? "nil"
+          : Py_TYPE(cur)->tp_name;
+      Py_DECREF(cur);
+      PyErr_Format(PyExc_TypeError,
+                   "CDR at index %d of %d requires a non-nil pair, got %s",
+                   i, opa, got);
+      return KOS_OP_POST_ERR();
+    }
+    PyObject *next = KosPair_CDR(cur);
+    Py_INCREF(next);
+    Py_DECREF(cur);
+    cur = next;
+  }
+  return kos_op_outcome_from_int_step(push_result(ctx, cur));
 }

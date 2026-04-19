@@ -2021,9 +2021,11 @@ cdr (dotted tail) position of an improper list; the quasiquote compiler raises
 **Use-case:** Compile code that evaluates EXPR (must produce a pair), then
 pushes the car of that pair. One argument.
 
-**Behaviour:** Compile EXPR, then emit CAR. At runtime, CAR pops one value; if
-it is not a pair or is nil, TypeError is raised. Otherwise the car (INCREF) is
-pushed.
+**Behaviour:** Compile EXPR, then emit **CAR 1**. At runtime, CAR applies car
+once per unit of arg (see [OPCODES §5.1](OPCODES.md#kos_op_car)). If a popped
+value is not a pair or is nil, TypeError is raised. Consecutive **CAR**
+instructions may be merged by the compiler **compress** pass into one **CAR**
+with the sum of their counts (same for **CDR**).
 
 **Example:**
 
@@ -2040,9 +2042,11 @@ pushed.
 **Use-case:** Compile code that evaluates EXPR (must produce a pair), then
 pushes the cdr of that pair. One argument.
 
-**Behaviour:** Compile EXPR, then emit CDR. At runtime, CDR pops one value; if
-it is not a pair or is nil, TypeError is raised. Otherwise the cdr (INCREF)
-is pushed.
+**Behaviour:** Compile EXPR, then emit **CDR 1**. At runtime, CDR applies cdr
+once per unit of arg (see [OPCODES §5.1](OPCODES.md#kos_op_cdr)). If a popped
+value is not a pair or is nil, TypeError is raised. Consecutive **CDR**
+instructions may be merged by the compiler **compress** pass into one **CDR**
+with the sum of their counts (same for **CAR**).
 
 **Example:**
 
