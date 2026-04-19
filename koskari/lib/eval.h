@@ -116,6 +116,9 @@ typedef KosDynFrame KosFrame;
   KOS_EV_RAISE  - exception propagation
   KOS_EV_YIELD  - generator yield
   KOS_EV_AWAIT  - suspension on Python awaitable
+  KOS_EV_POST_OPCODE - eval-internal only: deferred second pass of
+                   eval_phase_post_opcode; payload is PyLong holding op_res
+                   (drained at dispatch prologue, never returned to drivers)
   KOS_EV_NONE   - out_ev cleared after an in-loop consume; not a driver-facing
                    boundary
 */
@@ -125,6 +128,7 @@ typedef enum KosEventKind {
   KOS_EV_RAISE,
   KOS_EV_YIELD,
   KOS_EV_AWAIT,
+  KOS_EV_POST_OPCODE,
 } KosEventKind;
 
 

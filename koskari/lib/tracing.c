@@ -85,6 +85,30 @@ void kos_trace_opcode_record(unsigned op, uint64_t delta_ns) {
   kos_op_timing[op].total_ns += delta_ns;
 }
 
+
+static kos_trace_op_slot_t kos_post_handler_timing[KOS_TP__COUNT];
+
+static _Thread_local uint64_t kos_tp_roll_t0;
+
+
+void kos_trace_post_op_record(unsigned id, uint64_t delta_ns) {
+  if (id >= (unsigned) KOS_TP__COUNT)
+    return;
+  kos_post_handler_timing[id].count++;
+  kos_post_handler_timing[id].total_ns += delta_ns;
+}
+
+
+void kos_trace_post_op_enter(void) {
+  kos_tp_roll_t0 = kos_trace_now_ns();
+}
+
+
+void kos_trace_post_op_exit(void) {
+  kos_trace_post_op_record((unsigned) KOS_TP_rollup,
+                           kos_trace_now_ns() - kos_tp_roll_t0);
+}
+
 #endif
 
 
@@ -166,6 +190,7 @@ void kos_trace_init(void) {
 #endif
 #if KOS_TRACE_TIMING
   memset(kos_op_timing, 0, sizeof(kos_op_timing));
+  memset(kos_post_handler_timing, 0, sizeof(kos_post_handler_timing));
 #endif
 }
 
@@ -560,6 +585,325 @@ fail:
 }
 
 
+#if KOS_TRACE_TIMING
+
+#define KOS_TRACE_POST_HANDLER_TOP_N 10
+
+static const char *const kos_tp_names[KOS_TP__COUNT] = {
+  "rollup",
+  "parent_return",
+  "control_returned",
+  "event_raise",
+  "event_await",
+  "event_yield",
+  "return_boundary",
+};
+
+
+static int cmp_post_agg_total_ns_desc(const void *a, const void *b) {
+  const kos_trace_op_aggregate_t *x = a;
+  const kos_trace_op_aggregate_t *y = b;
+
+  if (x->total_ns < y->total_ns)
+    return 1;
+  if (x->total_ns > y->total_ns)
+    return -1;
+  return 0;
+}
+
+
+static int cmp_post_agg_avg_ns_desc(const void *a, const void *b) {
+  const kos_trace_op_aggregate_t *x = a;
+  const kos_trace_op_aggregate_t *y = b;
+
+  if (x->avg_ns < y->avg_ns)
+    return 1;
+  if (x->avg_ns > y->avg_ns)
+    return -1;
+  return 0;
+}
+
+
+static int add_post_handler_timing_section(PyObject *report) {
+  PyObject *ph = NULL;
+  PyObject *summary = NULL;
+  kos_trace_op_aggregate_t aggs[KOS_TP__COUNT];
+  kos_trace_op_aggregate_t tmp[KOS_TP__COUNT];
+  unsigned i;
+  size_t n_agg;
+  uint64_t total_executions;
+  uint64_t total_ns_all;
+  uint64_t avg_ns_per_dispatch;
+  unsigned handler_count_nonzero;
+  const char *max_total_ns_handler;
+  uint64_t max_total_ns;
+  const char *max_avg_ns_handler;
+  uint64_t max_avg_ns;
+  uint64_t rollup_count;
+  uint64_t rollup_total_ns;
+  uint64_t rollup_avg_ns;
+  int rc = -1;
+
+  ph = PyDict_New();
+  if (! ph)
+    return -1;
+
+  total_executions = 0;
+  total_ns_all = 0;
+  handler_count_nonzero = 0;
+  max_total_ns_handler = "";
+  max_total_ns = 0;
+  max_avg_ns_handler = "";
+  max_avg_ns = 0;
+  n_agg = 0;
+
+  for (i = 0; i < (unsigned) KOS_TP__COUNT; i++) {
+    uint64_t c;
+    uint64_t t;
+    uint64_t avg;
+
+    c = kos_post_handler_timing[i].count;
+    t = kos_post_handler_timing[i].total_ns;
+    if (c == 0)
+      continue;
+
+    total_executions += c;
+    total_ns_all += t;
+    handler_count_nonzero++;
+
+    if (t > max_total_ns) {
+      max_total_ns = t;
+      max_total_ns_handler = kos_tp_names[i];
+    }
+
+    avg = t / c;
+    if (avg > max_avg_ns) {
+      max_avg_ns = avg;
+      max_avg_ns_handler = kos_tp_names[i];
+    }
+
+    aggs[n_agg].idx = i;
+    aggs[n_agg].count = c;
+    aggs[n_agg].total_ns = t;
+    aggs[n_agg].avg_ns = avg;
+    n_agg++;
+  }
+
+  if (total_executions > 0)
+    avg_ns_per_dispatch = total_ns_all / total_executions;
+  else
+    avg_ns_per_dispatch = 0;
+
+  rollup_count = kos_post_handler_timing[KOS_TP_rollup].count;
+  rollup_total_ns = kos_post_handler_timing[KOS_TP_rollup].total_ns;
+  if (rollup_count > 0)
+    rollup_avg_ns = rollup_total_ns / rollup_count;
+  else
+    rollup_avg_ns = 0;
+
+  for (i = 0; i < (unsigned) KOS_TP__COUNT; i++) {
+    PyObject *entry;
+    const char *name;
+    uint64_t c;
+    uint64_t t;
+    uint64_t avg;
+    double share_time;
+    double share_exec;
+    double ratio_mean;
+
+    c = kos_post_handler_timing[i].count;
+    t = kos_post_handler_timing[i].total_ns;
+    if (c == 0)
+      continue;
+
+    avg = t / c;
+    if (total_ns_all > 0)
+      share_time = (double) t / (double) total_ns_all;
+    else
+      share_time = 0.0;
+    if (total_executions > 0)
+      share_exec = (double) c / (double) total_executions;
+    else
+      share_exec = 0.0;
+    if (avg_ns_per_dispatch > 0)
+      ratio_mean = (double) avg / (double) avg_ns_per_dispatch;
+    else
+      ratio_mean = 0.0;
+
+    entry = PyDict_New();
+    if (! entry)
+      goto fail;
+
+    if (PyDict_SetItemString(entry, "count",
+            PyLong_FromUnsignedLongLong(c)) < 0 ||
+        PyDict_SetItemString(entry, "total_ns",
+            PyLong_FromUnsignedLongLong(t)) < 0 ||
+        PyDict_SetItemString(entry, "avg_ns",
+            PyLong_FromUnsignedLongLong(avg)) < 0 ||
+        PyDict_SetItemString(entry, "share_of_time",
+            PyFloat_FromDouble(share_time)) < 0 ||
+        PyDict_SetItemString(entry, "share_of_executions",
+            PyFloat_FromDouble(share_exec)) < 0 ||
+        PyDict_SetItemString(entry, "ratio_vs_mean",
+            PyFloat_FromDouble(ratio_mean)) < 0) {
+      Py_DECREF(entry);
+      goto fail;
+    }
+    name = kos_tp_names[i];
+    if (PyDict_SetItemString(ph, name, entry) < 0) {
+      Py_DECREF(entry);
+      goto fail;
+    }
+    Py_DECREF(entry);
+  }
+
+  summary = PyDict_New();
+  if (! summary)
+    goto fail;
+
+  if (PyDict_SetItemString(summary, "total_executions",
+          PyLong_FromUnsignedLongLong(total_executions)) < 0 ||
+      PyDict_SetItemString(summary, "total_ns",
+          PyLong_FromUnsignedLongLong(total_ns_all)) < 0 ||
+      PyDict_SetItemString(summary, "avg_ns_per_dispatch",
+          PyLong_FromUnsignedLongLong(avg_ns_per_dispatch)) < 0 ||
+      PyDict_SetItemString(summary, "handler_count_nonzero",
+          PyLong_FromUnsignedLong((unsigned long) handler_count_nonzero)) < 0 ||
+      PyDict_SetItemString(summary, "max_total_ns_handler",
+          PyUnicode_FromString(max_total_ns_handler)) < 0 ||
+      PyDict_SetItemString(summary, "max_total_ns",
+          PyLong_FromUnsignedLongLong(max_total_ns)) < 0 ||
+      PyDict_SetItemString(summary, "max_avg_ns_handler",
+          PyUnicode_FromString(max_avg_ns_handler)) < 0 ||
+      PyDict_SetItemString(summary, "max_avg_ns",
+          PyLong_FromUnsignedLongLong(max_avg_ns)) < 0 ||
+      PyDict_SetItemString(summary, "rollup_invocations",
+          PyLong_FromUnsignedLongLong(rollup_count)) < 0 ||
+      PyDict_SetItemString(summary, "rollup_total_ns",
+          PyLong_FromUnsignedLongLong(rollup_total_ns)) < 0 ||
+      PyDict_SetItemString(summary, "rollup_avg_ns",
+          PyLong_FromUnsignedLongLong(rollup_avg_ns)) < 0) {
+    goto fail;
+  }
+
+  {
+    PyObject *top_total;
+    PyObject *top_avg;
+    size_t k;
+    size_t lim;
+
+    top_total = PyList_New(0);
+    top_avg = PyList_New(0);
+    if (! top_total || ! top_avg) {
+      Py_XDECREF(top_total);
+      Py_XDECREF(top_avg);
+      goto fail;
+    }
+
+    if (n_agg > 0) {
+      memcpy(tmp, aggs, n_agg * sizeof(kos_trace_op_aggregate_t));
+      qsort(tmp, n_agg, sizeof(kos_trace_op_aggregate_t),
+            cmp_post_agg_total_ns_desc);
+      lim = n_agg;
+      if (lim > (size_t) KOS_TRACE_POST_HANDLER_TOP_N)
+        lim = (size_t) KOS_TRACE_POST_HANDLER_TOP_N;
+      for (k = 0; k < lim; k++) {
+        PyObject *row;
+        const char *hname;
+
+        row = PyDict_New();
+        if (! row) {
+          Py_DECREF(top_total);
+          Py_DECREF(top_avg);
+          goto fail;
+        }
+        hname = kos_tp_names[tmp[k].idx];
+        if (PyDict_SetItemString(row, "handler",
+                PyUnicode_FromString(hname)) < 0 ||
+            PyDict_SetItemString(row, "total_ns",
+                PyLong_FromUnsignedLongLong(tmp[k].total_ns)) < 0) {
+          Py_DECREF(row);
+          Py_DECREF(top_total);
+          Py_DECREF(top_avg);
+          goto fail;
+        }
+        if (PyList_Append(top_total, row) < 0) {
+          Py_DECREF(row);
+          Py_DECREF(top_total);
+          Py_DECREF(top_avg);
+          goto fail;
+        }
+        Py_DECREF(row);
+      }
+
+      memcpy(tmp, aggs, n_agg * sizeof(kos_trace_op_aggregate_t));
+      qsort(tmp, n_agg, sizeof(kos_trace_op_aggregate_t),
+            cmp_post_agg_avg_ns_desc);
+      lim = n_agg;
+      if (lim > (size_t) KOS_TRACE_POST_HANDLER_TOP_N)
+        lim = (size_t) KOS_TRACE_POST_HANDLER_TOP_N;
+      for (k = 0; k < lim; k++) {
+        PyObject *row;
+        const char *hname;
+
+        row = PyDict_New();
+        if (! row) {
+          Py_DECREF(top_total);
+          Py_DECREF(top_avg);
+          goto fail;
+        }
+        hname = kos_tp_names[tmp[k].idx];
+        if (PyDict_SetItemString(row, "handler",
+                PyUnicode_FromString(hname)) < 0 ||
+            PyDict_SetItemString(row, "avg_ns",
+                PyLong_FromUnsignedLongLong(tmp[k].avg_ns)) < 0) {
+          Py_DECREF(row);
+          Py_DECREF(top_total);
+          Py_DECREF(top_avg);
+          goto fail;
+        }
+        if (PyList_Append(top_avg, row) < 0) {
+          Py_DECREF(row);
+          Py_DECREF(top_total);
+          Py_DECREF(top_avg);
+          goto fail;
+        }
+        Py_DECREF(row);
+      }
+    }
+
+    if (PyDict_SetItemString(summary, "top_by_total_ns", top_total) < 0 ||
+        PyDict_SetItemString(summary, "top_by_avg_ns", top_avg) < 0) {
+      Py_DECREF(top_total);
+      Py_DECREF(top_avg);
+      goto fail;
+    }
+    Py_DECREF(top_total);
+    Py_DECREF(top_avg);
+  }
+
+  if (PyDict_SetItemString(report, "post_handler_timing", ph) < 0)
+    goto fail;
+  Py_DECREF(ph);
+  ph = NULL;
+
+  if (PyDict_SetItemString(report, "post_handler_timing_summary", summary) < 0)
+    goto fail;
+  Py_DECREF(summary);
+  summary = NULL;
+
+  rc = 0;
+  return rc;
+
+fail:
+  Py_XDECREF(ph);
+  Py_XDECREF(summary);
+  return -1;
+}
+
+#endif
+
+
 PyObject *kos_trace_report(void) {
   PyObject *report = PyDict_New();
   if (! report)
@@ -605,6 +949,13 @@ PyObject *kos_trace_report(void) {
     Py_DECREF(report);
     return NULL;
   }
+
+#if KOS_TRACE_TIMING
+  if (add_post_handler_timing_section(report) < 0) {
+    Py_DECREF(report);
+    return NULL;
+  }
+#endif
 
   return report;
 }

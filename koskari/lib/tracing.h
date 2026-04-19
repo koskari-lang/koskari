@@ -48,6 +48,23 @@ typedef enum KosTraceEventId {
 } KosTraceEventId;
 
 
+/**
+   Post-opcode eval handler timing ids (KOS_TRACE_TIMING). Add new ids only at
+   end. Names must match KOS_TRACE_POST_OP_WRAP(name, ...) token pasting
+   (KOS_TP_##name).
+*/
+typedef enum KosTracePostOpId {
+  KOS_TP_rollup = 0,
+  KOS_TP_parent_return,
+  KOS_TP_control_returned,
+  KOS_TP_event_raise,
+  KOS_TP_event_await,
+  KOS_TP_event_yield,
+  KOS_TP_return_boundary,
+  KOS_TP__COUNT
+} KosTracePostOpId;
+
+
 /* === compile-time flags === */
 
 #ifndef KOS_TRACE_FREELIST
@@ -82,6 +99,9 @@ void kos_trace_events_inc(KosTraceEventId id);
 #if KOS_TRACE_TIMING
 uint64_t kos_trace_now_ns(void);
 void kos_trace_opcode_record(unsigned op, uint64_t delta_ns);
+void kos_trace_post_op_enter(void);
+void kos_trace_post_op_exit(void);
+void kos_trace_post_op_record(unsigned id, uint64_t delta_ns);
 #endif
 
 
@@ -135,8 +155,21 @@ void kos_trace_fl_return(const char *name, int overrun);
     kos_trace_opcode_record((unsigned)(KOS_OP_##name),                        \
                             kos_trace_now_ns() - _kos_t0);                   \
   } while (0)
+
+#define KOS_TRACE_POST_OP_ENTER() kos_trace_post_op_enter()
+#define KOS_TRACE_POST_OP_EXIT() kos_trace_post_op_exit()
+#define KOS_TRACE_POST_OP_WRAP(name, stmt)                                  \
+  do {                                                                      \
+    uint64_t _kos_pt0 = kos_trace_now_ns();                                 \
+    stmt;                                                                   \
+    kos_trace_post_op_record((unsigned)(KOS_TP_##name),                       \
+                             kos_trace_now_ns() - _kos_pt0);                 \
+  } while (0)
 #else
 #define KOS_TRACE_OP_WRAP(name, stmt) do { stmt; } while (0)
+#define KOS_TRACE_POST_OP_ENTER() ((void)0)
+#define KOS_TRACE_POST_OP_EXIT() ((void)0)
+#define KOS_TRACE_POST_OP_WRAP(name, stmt) do { stmt; } while (0)
 #endif
 
 

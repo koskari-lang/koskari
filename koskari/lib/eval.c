@@ -2955,8 +2955,12 @@ static KosEvalStep eval_phase_post_opcode_tail(
         KosEvent *out_ev,
         int op_res) {
 
-  if (PyErr_Occurred())
-    return eval_event_raise(ctx, out_ev);
+  if (PyErr_Occurred()) {
+    KosEvalStep rs;
+
+    KOS_TRACE_POST_OP_WRAP(event_raise, rs = eval_event_raise(ctx, out_ev));
+    return rs;
+  }
 
   /* Record why we suspended so next entry can choose revive path.
      post_opcode is only called for non-zero op_res; a handler that stops
@@ -2968,17 +2972,24 @@ static KosEvalStep eval_phase_post_opcode_tail(
   }
 
   if (KosEvent_KIND(out_ev) == KOS_EV_AWAIT) {
-    KosContext_SUSPENSION_EVENT(ctx) = KOS_SUSP_AWAIT;
+    KOS_TRACE_POST_OP_WRAP(event_await,
+        KosContext_SUSPENSION_EVENT(ctx) = KOS_SUSP_AWAIT);
 
   } else if (KosEvent_KIND(out_ev) == KOS_EV_YIELD) {
-    KosEvalStep ys = eval_event_yield(ctx, out_ev);
+    KosEvalStep ys;
+
+    KOS_TRACE_POST_OP_WRAP(event_yield, ys = eval_event_yield(ctx, out_ev));
 
     if (ys != KOS_STEP_STOP_EVENT)
       return ys;
 
   } else if (KosEvent_KIND(out_ev) == KOS_EV_RETURN
              && kos_dyn_need_kos_agen_boundary_deliver(ctx)) {
-    return eval_event_return_deliver_to_boundary(ctx, out_ev);
+    KosEvalStep bs;
+
+    KOS_TRACE_POST_OP_WRAP(return_boundary,
+        bs = eval_event_return_deliver_to_boundary(ctx, out_ev));
+    return bs;
   }
 
   /* op_res < 0 with no PyErr and no suspension event is a fatal internal error */
@@ -2987,10 +2998,29 @@ static KosEvalStep eval_phase_post_opcode_tail(
 
 
 /**
+   Native parent-return path defers a second eval_phase_post_opcode pass by
+   filling out_ev with KOS_EV_POST_OPCODE and a PyLong op_res; the dispatch
+   prologue drains it before native_iteration.
+*/
+static KosEvalStep eval_emit_post_opcode_deferred(KosEvent *out_ev, int pr) {
+
+  PyObject *tag = PyLong_FromLong((long) pr);
+
+  if (! tag)
+    return KOS_STEP_FATAL_ERROR;
+  Py_CLEAR(KosEvent_EXC_TYPE(out_ev));
+  Py_XDECREF(KosEvent_PAYLOAD(out_ev));
+  KosEvent_PAYLOAD(out_ev) = tag;
+  KosEvent_KIND(out_ev) = KOS_EV_POST_OPCODE;
+  return KOS_STEP_REPROLOGUE;
+}
+
+
+/**
    After RETURN opcode pop: iterator boundary, native handler or stack push,
    then kos_dynnode_on_control_returned (WIND/WITH).
 */
-static KosEvalStep eval_parent_return_deliver(KosContext *ctx, KosEvent *out_ev) {
+static KosEvalStep eval_parent_return_deliver_impl(KosContext *ctx, KosEvent *out_ev) {
 
   PyObject *val = KosEvent_PAYLOAD(out_ev);
 
@@ -3016,13 +3046,13 @@ static KosEvalStep eval_parent_return_deliver(KosContext *ctx, KosEvent *out_ev)
     KosEvent_PAYLOAD(out_ev) = NULL;
     KosEvent_KIND(out_ev) = KOS_EV_NONE;
     if (res < 0)
-      return eval_phase_post_opcode(ctx, out_ev, -1);
+      return eval_emit_post_opcode_deferred(out_ev, -1);
     if (res == 0)
       return KOS_STEP_REPROLOGUE;
     if (res == 1)
-      return eval_phase_post_opcode(ctx, out_ev, 1);
+      return eval_emit_post_opcode_deferred(out_ev, 1);
     if (res == KOS_OP_RES_CONTROL_RETURNED)
-      return eval_phase_post_opcode(ctx, out_ev, KOS_OP_RES_CONTROL_RETURNED);
+      return eval_emit_post_opcode_deferred(out_ev, KOS_OP_RES_CONTROL_RETURNED);
     return KOS_STEP_REPROLOGUE;
   }
   if (KosStackBlock_PushRef(&CURRENT_STACK(ctx), val) < 0) {
@@ -3035,13 +3065,26 @@ static KosEvalStep eval_parent_return_deliver(KosContext *ctx, KosEvent *out_ev)
   KosEvent_PAYLOAD(out_ev) = NULL;
   KosEvent_KIND(out_ev) = KOS_EV_NONE;
   {
-    int r = kos_dynnode_on_control_returned(ctx, KosContext_DYN_TOP(ctx), out_ev);
+    int r;
+
+    KOS_TRACE_POST_OP_WRAP(control_returned, r = kos_dynnode_on_control_returned(
+        ctx, KosContext_DYN_TOP(ctx), out_ev));
 
     if (r == 0 || r == KOS_DYN_UNWIND_ASYNC_STARTED)
       return KOS_STEP_REPROLOGUE;
   }
 
   return eval_phase_post_opcode_tail(ctx, out_ev, KOS_OP_RES_CONTROL_RETURNED);
+}
+
+
+static KosEvalStep eval_parent_return_deliver(KosContext *ctx, KosEvent *out_ev) {
+
+  KosEvalStep ret;
+
+  KOS_TRACE_POST_OP_WRAP(parent_return,
+      ret = eval_parent_return_deliver_impl(ctx, out_ev));
+  return ret;
 }
 
 
@@ -3064,23 +3107,85 @@ static KosEvalStep eval_phase_post_opcode(
         KosEvent *out_ev,
         int op_res) {
 
+  KosEvalStep ret;
+
+  KOS_TRACE_POST_OP_ENTER();
+
   /* Clear resume kind when handling non-zero result so next iteration (if we
      continue) has it clean. Keeps the hot path (tail-dispatch) from touching it. */
   KosContext_PY_RESUME_KIND(ctx) = KOS_RESUME_NONE;
 
-  if (op_res == KOS_OP_RES_PARENT_RETURN_DELIVER)
-    return eval_parent_return_deliver(ctx, out_ev);
+  if (op_res == KOS_OP_RES_PARENT_RETURN_DELIVER) {
+    ret = eval_parent_return_deliver(ctx, out_ev);
+    goto post_opcode_done;
+  }
 
   if (op_res == KOS_OP_RES_CONTROL_RETURNED) {
-    int r = kos_dynnode_on_control_returned(ctx, KosContext_DYN_TOP(ctx), out_ev);
+    int r;
+
+    KOS_TRACE_POST_OP_WRAP(control_returned, r = kos_dynnode_on_control_returned(
+        ctx, KosContext_DYN_TOP(ctx), out_ev));
     if (r == 0 || r == KOS_DYN_UNWIND_ASYNC_STARTED) {
       /* 0: thunk/wind advanced; 1: async extent started (same numeric value as
          a normal opcode "suspend" but only returned from dyn helpers). */
-      return KOS_STEP_REPROLOGUE;
+      ret = KOS_STEP_REPROLOGUE;
+      goto post_opcode_done;
     }
   }
 
-  return eval_phase_post_opcode_tail(ctx, out_ev, op_res);
+  ret = eval_phase_post_opcode_tail(ctx, out_ev, op_res);
+post_opcode_done:
+  KOS_TRACE_POST_OP_EXIT();
+  return ret;
+}
+
+
+/**
+   Drain KOS_EV_POST_OPCODE (deferred eval_phase_post_opcode from native
+   parent-return).  Runs at dispatch prologue before native_iteration.
+*/
+static KosEvalStep eval_dispatch_maybe_post_opcode_event(
+    KosContext *ctx,
+    KosEvent *out_ev,
+    int *eval_ret) {
+
+  PyObject *pl;
+  long pr_long;
+  int pr;
+  KosEvalStep ps;
+
+  if (KosEvent_KIND(out_ev) != KOS_EV_POST_OPCODE)
+    return KOS_STEP_CONTINUE;
+
+  pl = KosEvent_PAYLOAD(out_ev);
+  if (! pl || ! PyLong_Check(pl)) {
+    PyErr_SetString(PyExc_RuntimeError,
+                    "eval: KOS_EV_POST_OPCODE requires PyLong payload");
+    return KOS_STEP_FATAL_ERROR;
+  }
+
+  pr_long = PyLong_AsLong(pl);
+  if (pr_long == -1 && PyErr_Occurred())
+    return KOS_STEP_FATAL_ERROR;
+
+  Py_DECREF(pl);
+  KosEvent_PAYLOAD(out_ev) = NULL;
+  KosEvent_KIND(out_ev) = KOS_EV_NONE;
+
+  pr = (int) pr_long;
+
+  ps = eval_phase_post_opcode(ctx, out_ev, pr);
+  if (ps == KOS_STEP_FATAL_ERROR) {
+    if (eval_ret)
+      *eval_ret = -1;
+    return ps;
+  }
+  if (ps == KOS_STEP_STOP_EVENT) {
+    if (eval_ret)
+      *eval_ret = 0;
+    return ps;
+  }
+  return ps;
 }
 
 
@@ -3164,6 +3269,16 @@ cg_prologue:
     if (pend == KOS_STEP_STOP_EVENT)
       return 0;
     if (pend == KOS_STEP_REPROLOGUE)
+      goto cg_prologue;
+  }
+
+  {
+    KosEvalStep pp = eval_dispatch_maybe_post_opcode_event(ctx, out_ev, &eval_ret);
+    if (pp == KOS_STEP_FATAL_ERROR)
+      return eval_ret;
+    if (pp == KOS_STEP_STOP_EVENT)
+      return eval_ret;
+    if (pp == KOS_STEP_REPROLOGUE)
       goto cg_prologue;
   }
 
@@ -3258,6 +3373,18 @@ koskari_eval_dispatch_switch(KosContext *ctx, KosEvent *out_ev) {
         if (pend == KOS_STEP_STOP_EVENT)
           return 0;
         if (pend == KOS_STEP_REPROLOGUE) {
+          need_prologue = 1;
+          goto sw_loop_head;
+        }
+      }
+
+      {
+        KosEvalStep pp = eval_dispatch_maybe_post_opcode_event(ctx, out_ev, &eval_ret);
+        if (pp == KOS_STEP_FATAL_ERROR)
+          return eval_ret;
+        if (pp == KOS_STEP_STOP_EVENT)
+          return eval_ret;
+        if (pp == KOS_STEP_REPROLOGUE) {
           need_prologue = 1;
           goto sw_loop_head;
         }

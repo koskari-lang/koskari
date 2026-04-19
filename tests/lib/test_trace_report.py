@@ -123,6 +123,17 @@ class TestTraceReport(unittest.TestCase):
                 "opcode_timing_summary key should be absent when "
                 "KOS_TRACE_TIMING is off",
             )
+            self.assertNotIn(
+                "post_handler_timing",
+                report,
+                "post_handler_timing key should be absent when KOS_TRACE_TIMING is off",
+            )
+            self.assertNotIn(
+                "post_handler_timing_summary",
+                report,
+                "post_handler_timing_summary key should be absent when "
+                "KOS_TRACE_TIMING is off",
+            )
 
     def test_opcode_timing_shape_when_enabled(self):
         """
@@ -196,6 +207,73 @@ class TestTraceReport(unittest.TestCase):
             self.assertIsInstance(row["op"], str)
             self.assertIsInstance(row["avg_ns"], int)
 
+    def test_post_handler_timing_shape_when_enabled(self):
+        """
+        When built with KOS_TRACE_TIMING=1, post_handler_timing entries match
+        opcode_timing field shape; summary includes rollup and top lists
+        """
+
+        report = lib.get_trace_report()
+        if not report["flags"].get("timing"):
+            self.skipTest(
+                "KOS_TRACE_TIMING not enabled; rebuild with KOS_TRACE_TIMING=1"
+            )
+        self.assertIn("post_handler_timing", report)
+        self.assertIn("post_handler_timing_summary", report)
+        ph = report["post_handler_timing"]
+        self.assertIsInstance(ph, dict)
+        for name, val in ph.items():
+            self.assertIsInstance(name, str)
+            self.assertIsInstance(val, dict)
+            self.assertIn("count", val)
+            self.assertIn("total_ns", val)
+            self.assertIn("avg_ns", val)
+            self.assertIn("share_of_time", val)
+            self.assertIn("share_of_executions", val)
+            self.assertIn("ratio_vs_mean", val)
+            self.assertIsInstance(val["count"], int)
+            self.assertIsInstance(val["total_ns"], int)
+            self.assertIsInstance(val["avg_ns"], int)
+            self.assertIsInstance(val["share_of_time"], float)
+            self.assertIsInstance(val["share_of_executions"], float)
+            self.assertIsInstance(val["ratio_vs_mean"], float)
+            self.assertGreaterEqual(val["count"], 0)
+            self.assertGreaterEqual(val["total_ns"], 0)
+            self.assertGreaterEqual(val["avg_ns"], 0)
+
+        sm = report["post_handler_timing_summary"]
+        self.assertIsInstance(sm, dict)
+        self.assertIn("total_executions", sm)
+        self.assertIn("total_ns", sm)
+        self.assertIn("avg_ns_per_dispatch", sm)
+        self.assertIn("handler_count_nonzero", sm)
+        self.assertIn("max_total_ns_handler", sm)
+        self.assertIn("max_total_ns", sm)
+        self.assertIn("max_avg_ns_handler", sm)
+        self.assertIn("max_avg_ns", sm)
+        self.assertIn("rollup_invocations", sm)
+        self.assertIn("rollup_total_ns", sm)
+        self.assertIn("rollup_avg_ns", sm)
+        self.assertIn("top_by_total_ns", sm)
+        self.assertIn("top_by_avg_ns", sm)
+        self.assertIsInstance(sm["rollup_invocations"], int)
+        self.assertIsInstance(sm["rollup_total_ns"], int)
+        self.assertIsInstance(sm["rollup_avg_ns"], int)
+        self.assertLessEqual(len(sm["top_by_total_ns"]), 10)
+        self.assertLessEqual(len(sm["top_by_avg_ns"]), 10)
+        for row in sm["top_by_total_ns"]:
+            self.assertIsInstance(row, dict)
+            self.assertIn("handler", row)
+            self.assertIn("total_ns", row)
+            self.assertIsInstance(row["handler"], str)
+            self.assertIsInstance(row["total_ns"], int)
+        for row in sm["top_by_avg_ns"]:
+            self.assertIsInstance(row, dict)
+            self.assertIn("handler", row)
+            self.assertIn("avg_ns", row)
+            self.assertIsInstance(row["handler"], str)
+            self.assertIsInstance(row["avg_ns"], int)
+
     def test_clear_trace_counters_returns_none(self):
         """
         clear_trace_counters is always available and returns None
@@ -221,6 +299,15 @@ class TestTraceReport(unittest.TestCase):
         self.assertEqual(sm["avg_ns_per_dispatch"], 0)
         self.assertEqual(sm["opcode_count_nonzero"], 0)
         self.assertEqual(report["opcode_timing"], {})
+        phs = report["post_handler_timing_summary"]
+        self.assertEqual(phs["total_executions"], 0)
+        self.assertEqual(phs["total_ns"], 0)
+        self.assertEqual(phs["avg_ns_per_dispatch"], 0)
+        self.assertEqual(phs["handler_count_nonzero"], 0)
+        self.assertEqual(phs["rollup_invocations"], 0)
+        self.assertEqual(phs["rollup_total_ns"], 0)
+        self.assertEqual(phs["rollup_avg_ns"], 0)
+        self.assertEqual(report["post_handler_timing"], {})
 
     def test_clear_trace_counters_resets_events_when_enabled(self):
         """
