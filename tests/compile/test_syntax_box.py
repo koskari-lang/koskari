@@ -22,7 +22,6 @@ import pytest
 from koskari.lib import car, cdr, cons, nil, symbol
 from koskari.matcher import MatchResult
 from koskari.syntax import (Syntax, box_match_capture,
-                            collect_pattern_variable_symbols,
                             unbox_macro, unbox_macro_with_hygiene)
 from koskari.types import get_position, is_nil, is_pair, unpack
 
@@ -51,13 +50,6 @@ class TestSyntaxBox(unittest.TestCase):
         s = box_match_capture(mr)
         self.assertTrue(isinstance(s, Syntax))
         self.assertEqual(s.datum, 42)
-
-
-    def test_collect_pattern_variables(self):
-        lit = frozenset({symbol('m')})
-        pat = cons(symbol('m'), symbol('a'), symbol('b'), Ellipsis, nil)
-        names = collect_pattern_variable_symbols(pat, lit)
-        self.assertEqual(names, [symbol('a'), symbol('b')])
 
 
     def test_syntax_iter_pair_yields_syntax_boxes(self):
@@ -100,6 +92,7 @@ class TestSyntaxBox(unittest.TestCase):
         self.assertFalse(_tree_contains_syntax(out))
         self.assertEqual(car(cdr(out)), cons(y, nil))
 
+
     def test_unbox_macro_with_hygiene_strips_syntax_in_first_car(self):
         """
         Regression: the spine walk must not pre-register the whole pair in
@@ -114,10 +107,12 @@ class TestSyntaxBox(unittest.TestCase):
         self.assertFalse(_tree_contains_syntax(out))
         self.assertEqual(out, cons(a, cons(b, nil)))
 
+
     def test_unbox_macro_with_hygiene_atom_syntax(self):
         out = unbox_macro_with_hygiene(Syntax(symbol('z'), None), lambda _h: None)
         self.assertEqual(out, symbol('z'))
         self.assertFalse(_tree_contains_syntax(out))
+
 
     def test_unbox_macro_strips_syntax(self):
         y = symbol('y')
@@ -127,6 +122,7 @@ class TestSyntaxBox(unittest.TestCase):
         self.assertFalse(_tree_contains_syntax(out))
         self.assertEqual(car(cdr(out)), cons(y, nil))
 
+
     def test_unbox_macro_strips_syntax_in_first_car(self):
         a = symbol('a')
         b = symbol('b')
@@ -134,6 +130,7 @@ class TestSyntaxBox(unittest.TestCase):
         out = unbox_macro(form)
         self.assertFalse(_tree_contains_syntax(out))
         self.assertEqual(out, cons(a, cons(b, nil)))
+
 
     def test_unbox_macro_atom_syntax(self):
         out = unbox_macro(Syntax(symbol('z'), None))

@@ -12,7 +12,11 @@
 # along with this library; if not, see <http://www.gnu.org/licenses/>.
 
 """
-Tests for koskari.syntax (SyntaxRulesTransformer, build_syntax).
+Tests for syntax expansion and pattern lowering.
+
+Runtime types and ``build_syntax`` come from ``koskari.syntax``.
+``build_syntax_rules_transformer`` and ``syntax_pattern_to_matcher`` are
+compile-time helpers in ``koskari.compile.specials.syntax``.
 
 Validate expansion output only, using transformers built via tagged tuples.
 """
@@ -24,10 +28,10 @@ import pytest
 
 from koskari.compile import Compiler
 from koskari.compile.specials import SPECIALS
+from koskari.compile.specials.syntax import (build_syntax_rules_transformer,
+                                             syntax_pattern_to_matcher)
 from koskari.lib import Module, ModuleNamespace, car, cdr, cons, nil, symbol
-from koskari.syntax import (SyntaxRule, SyntaxRulesTransformer, build_syntax,
-                            build_syntax_rules_transformer,
-                            syntax_pattern_to_matcher)
+from koskari.syntax import SyntaxRule, SyntaxRulesTransformer, build_syntax
 from koskari.types import build_proper, is_symbol, unpack
 
 

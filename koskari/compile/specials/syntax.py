@@ -22,15 +22,13 @@ Special forms for ``compile/syntax`` and
 :ai-assistant: Claude via Cursor
 """
 
-
 from ...exceptions import SpecialError
-from ...lib import cons, nil, pair, symbol
-from ...matcher import (BIND, DEFINE, LIST, MATCH, REPEAT, REST, VALUE, match,
-                        matcher_slot_names)
-from ...syntax import (SyntaxRule, SyntaxRulesTransformer, _serialize_form,
-                       build_syntax_rules_transformer,
-                       parse_explicit_rule_pattern, parse_macro_rules_rows)
-from ...types import build_proper, get_position, is_pair
+from ...lib import cons, gensym, nil, pair, symbol
+from ...matcher import (BIND, DEFINE, LIST, LITERAL, MATCH, MATCHERS, REPEAT,
+                        REST, SYMBOL, VALUE, match, matcher_slot_names)
+from ...syntax import SyntaxRule, SyntaxRulesTransformer, _serialize_form
+from ...types import (build_proper, get_position, is_keyword, is_pair,
+                      is_proper, is_symbol, unpack)
 from ..compiler import Compiler
 from ..helpers import special, special_forms
 
@@ -40,6 +38,12 @@ SYNTAX_MATCH_RULES_PATTERN = MATCH(REPEAT("rules", _SYNTAX_MATCH_RULE_ROW))
 
 _MACRO_MATCH_RULE_ROW = LIST(BIND("pattern"), REST("body"))
 MACRO_MATCH_RULES_PATTERN = MATCH(REPEAT("rules", _MACRO_MATCH_RULE_ROW))
+
+SPECIAL_RULES_PATTERN = MATCH(REPEAT("rules", _MACRO_MATCH_RULE_ROW))
+SPECIAL_PATTERN_BREAKOUT = (
+    MATCH(LIST(SYMBOL("compiler"), VALUE("pattern"), SYMBOL("tc"))),
+    MATCH(LIST(SYMBOL("compiler"), VALUE("pattern"))),
+)
 
 # After compile/define-syntax, (compile/<rules-kind> NAME LITERALS . RULES).
 _COMPILE_NAME_LITERALS_RULES = [
@@ -327,6 +331,320 @@ def special_compile_special_match(compiler, source, tc=False):
 
     return cons(symbol("build-special-rules"),
                 str(namesym), (), *parts, nil)
+
+
+_SYNTAX_RULE_PATTERN = MATCH(REPEAT("rules", BIND("rule")))
+
+_MACRO_RULE_PATTERN = MATCH(REPEAT("rules", BIND("rule")))
+
+
+def build_syntax_rules_transformer(
+        name, literals_expr, rules_expr, *, match_patterns=False):
+    """
+    Build a :class:`SyntaxRulesTransformer` from literals and rule forms.
+
+    :param match_patterns: If True, each rule's pattern column is lowered with
+        :func:`parse_explicit_rule_pattern` (MATCH dialect). If False (default),
+        use :func:`parse_rule_pattern` (syntax-rules / ``(match ...)`` escape).
+    """
+
+    literals = frozenset(unpack(literals_expr))
+    literals = literals | {name}
+
+    rules_m = match(rules_expr, _SYNTAX_RULE_PATTERN)
+    if rules_m is None or not rules_m["rules"].matches:
+        raise SpecialError("syntax-rules requires at least one rule", rules_expr)
+
+    rules = []
+    for res, _sp in rules_m["rules"].matches:
+        raw_rule = res["rule"].source
+        if not is_pair(raw_rule):
+            raise SpecialError("invalid syntax-rules rule", raw_rule)
+
+        pattern_src, template_tail = raw_rule
+        if not is_proper(template_tail) or template_tail.cdr is not nil:
+            raise SpecialError(
+                "syntax-rules rule must have pattern and template",
+                raw_rule)
+        template_expr = template_tail.car
+        if match_patterns:
+            pattern_matcher = parse_explicit_rule_pattern(pattern_src)
+        else:
+            pattern_matcher = parse_rule_pattern(pattern_src, literals, raw_rule)
+        rules.append(SyntaxRule(pattern_matcher, template_expr))
+
+    return SyntaxRulesTransformer(name, literals, rules)
+
+
+def collect_pattern_variable_symbols(pattern_expr, literals):
+    """
+    Pattern variables in pre-order, excluding literals and ellipsis markers.
+    Each symbol appears once (first occurrence). Used for macro-rules formals.
+    """
+
+    seen = []
+
+    def walk(expr):
+        if expr is Ellipsis:
+            return
+
+        if is_symbol(expr):
+            if expr in literals:
+                return
+
+            if expr not in seen:
+                seen.append(expr)
+
+            return
+
+        if not is_pair(expr):
+            return
+
+        items = list(unpack(expr))
+        i = 0
+        while i < len(items):
+            if i + 1 < len(items) and items[i + 1] is Ellipsis:
+                walk(items[i])
+                i += 2
+            else:
+                walk(items[i])
+                i += 1
+
+    walk(pattern_expr)
+    return seen
+
+
+def parse_macro_rules_rows(name, literals_expr, rules_expr):
+    """
+    Parse macro-rules literals and rules tail into matchers and body datums
+
+    No compile/lambda or build-macro-rules source is emitted here; compile
+    specials lower that from the returned rows.
+
+    :param name: macro name symbol (included in literals)
+    :param literals_expr: literals list expression (same position as in
+        ``(macro-rules LITERALS RULE ...)``)
+    :param rules_expr: rules tail (same as after literals in macro-rules form)
+    :return: ``(literals, rows)`` where each row is ``(pattern_matcher,
+        formals_tuple, list of body forms)``
+    :raises SpecialError: when the rules are not valid macro-rules rows
+    """
+
+    literals = frozenset(unpack(literals_expr))
+    literals = literals | {name}
+
+    rules_m = match(rules_expr, _MACRO_RULE_PATTERN)
+    if rules_m is None or not rules_m["rules"].matches:
+        raise SpecialError("macro-rules requires at least one rule", rules_expr)
+
+    rows = []
+    for res, _sp in rules_m["rules"].matches:
+        raw_rule = res["rule"].source
+        if not is_pair(raw_rule):
+            raise SpecialError("invalid macro-rules rule", raw_rule)
+
+        if not is_proper(raw_rule):
+            raise SpecialError("macro-rules rule must be a proper list", raw_rule)
+
+        pattern_src, body_forms = raw_rule
+        if not body_forms:
+            raise SpecialError("macro-rules rule requires a body", raw_rule)
+
+        pattern_matcher = parse_rule_pattern(pattern_src, literals, raw_rule)
+        vars_ordered = collect_pattern_variable_symbols(pattern_src, literals)
+        rows.append((pattern_matcher, tuple(vars_ordered), body_forms))
+
+    return literals, tuple(rows)
+
+
+_symbol_match = symbol("match")
+
+
+def parse_rule_pattern(pattern_expr, literals, source_ctx):
+    """
+    Dispatch **RULE** pattern source (``syntax-rules`` / ``macro-rules``).
+
+    If the pattern is ``(match INNER)``, lower ``INNER`` with
+    ``syntax_pattern_to_matcher``. Otherwise treat the whole tree as a
+    Scheme-style pattern via ``syntax_pattern_to_matcher``.
+
+    **MATCH** dialect patterns use :func:`parse_explicit_rule_pattern` at the
+    call site (e.g. ``compile/syntax-match``), not via a ``rule`` wrapper here.
+    """
+
+    if is_pair(pattern_expr):
+        head, rest = pattern_expr
+        if head == _symbol_match:
+            if not is_proper(rest) or rest.cdr is not nil:
+                raise ValueError(
+                    f"match pattern must have exactly one form: {pattern_expr}")
+
+            return syntax_pattern_to_matcher(rest.car, literals, source_ctx)
+
+    return syntax_pattern_to_matcher(pattern_expr, literals, source_ctx)
+
+
+def syntax_pattern_to_matcher(pattern_expr, literals, source_ctx):
+    """
+    Lower a syntax-rules pattern cons tree to matcher objects.
+    """
+
+    if pattern_expr is Ellipsis:
+        raise TypeError(f"invalid ellipsis placement in pattern: {pattern_expr}")
+
+    if is_symbol(pattern_expr):
+        if pattern_expr in literals:
+            return MATCH(LITERAL(pattern_expr))
+        return MATCH(REST(pattern_expr))
+
+    if not is_pair(pattern_expr):
+        return MATCH(LITERAL(pattern_expr))
+
+    return MATCH(*_syntax_pattern_specs(
+        list(unpack(pattern_expr)), literals, source_ctx))
+
+
+def _syntax_elem_matcher(pat, literals, source_ctx):
+    """
+    Lower a single syntax-rules pattern element to matcher objects
+
+    Symbols become LITERAL or VALUE; non-pairs become LITERAL; proper lists
+    become LIST of nested specs from the same pattern language
+
+    :param pat: pattern datum (symbol, pair, or literal)
+    :param literals: literal symbols for this segment
+    :param source_ctx: form for error reporting
+    :raises ValueError: on invalid ellipsis placement
+    :return: a matcher spec (LITERAL, VALUE, or LIST wrapping inner specs)
+    """
+
+    if pat is Ellipsis:
+        raise ValueError(f"invalid ellipsis placement in pattern: {pat}")
+
+    if is_symbol(pat):
+        if pat in literals:
+            return LITERAL(pat)
+        return VALUE(pat)
+
+    if not is_pair(pat):
+        return LITERAL(pat)
+
+    return LIST(*_syntax_pattern_specs(
+        list(unpack(pat)), literals, source_ctx))
+
+
+def _syntax_pattern_specs(p_items, literals, source_ctx):
+    """
+    Build matcher specs from a flat sequence of pattern list elements
+
+    Treats ``(subpat ...)`` pairs with ``...`` as zero-or-more REPEAT regions;
+    other elements are passed to :func:`_syntax_elem_matcher`
+
+    :param p_items: list of elements from ``list(unpack(...))`` of a pattern list
+    :param literals: literal symbols for this segment
+    :param source_ctx: form for error reporting
+    :return: list of matcher specs (LITERAL, VALUE, LIST, REPEAT, etc.)
+    """
+
+    specs = []
+    i = 0
+    while i < len(p_items):
+        if i + 1 < len(p_items) and p_items[i + 1] is Ellipsis:
+            pat = p_items[i]
+            inner = _syntax_elem_matcher(pat, literals, source_ctx)
+            # Bind REPEAT to the pattern variable when the repeated element is a
+            # bare symbol (e.g. ``xs ...``); otherwise use a fresh slot. This
+            # must match ``collect_pattern_variable_symbols`` so macro-rules
+            # lambdas receive the correct keyword (see macro-rules ellipsis tests).
+            if is_symbol(pat) and pat not in literals:
+                slot = pat
+            else:
+                slot = gensym('_repeat')
+            specs.append(REPEAT(slot, inner, min_count=0))
+            i += 2
+            continue
+
+        specs.append(_syntax_elem_matcher(p_items[i], literals, source_ctx))
+        i += 1
+
+    return specs
+
+
+def parse_explicit_rule_pattern(form):
+    """
+    Lower **MATCH** pattern source (a cons tree) to a matcher.
+
+    Surface syntax: implicit literals for bare atoms; explicit declarations are
+    proper lists ``(ATOM binding opt: val ...)`` where ``ATOM`` names a matcher
+    in ``koskari.matcher.MATCHERS`` (via ``matcher/<lower>`` lookup on the
+    symbol name). Distinct from **RULE** patterns
+    (``syntax_pattern_to_matcher``).
+
+    :param pattern_source: Match pattern only (not wrapped in ``rule``)
+    :raises SpecialError: on invalid pattern shape or unknown matcher atom
+    :return: Matcher (typically ``MATCH(...)`` wrapping the pattern sequence)
+    """
+
+    if form is Ellipsis:
+        raise SpecialError(
+            'invalid ellipsis in MATCH pattern', form)
+
+    if not is_pair(form):
+        return LITERAL(form)
+
+    if not is_proper(form):
+        raise SpecialError(
+            'MATCH pattern must be a proper list', form)
+
+    head, tail = form
+
+    decl_cls = None
+    decl_bind = None
+    decl_opts = None
+
+    if tail is not nil:
+        decl_bind, decl_opts = tail
+        reg_key = symbol('matcher/' + str(head).lower())
+        if is_symbol(decl_bind) and reg_key in MATCHERS:
+            decl_cls = MATCHERS[reg_key]
+
+    if decl_cls is not None:
+        kwargs = {}
+        optwalk = decl_opts
+        while optwalk is not nil:
+            if not is_pair(optwalk):
+                raise SpecialError(
+                    'MATCH pattern: malformed matcher options',
+                    form)
+            keyw, rest = optwalk
+            if rest is nil:
+                raise SpecialError(
+                    'MATCH pattern: matcher option missing value',
+                    form)
+            val, optwalk = rest
+            if not is_keyword(keyw):
+                raise SpecialError(
+                    'MATCH pattern: expected keyword in matcher options',
+                    form)
+            kwargs[str(keyw)] = val
+        if 'elem' in kwargs:
+            ev = kwargs['elem']
+            if is_pair(ev):
+                kwargs['elem'] = parse_explicit_rule_pattern(ev)
+        try:
+            return decl_cls(decl_bind, **kwargs)
+        except TypeError as exc:
+            raise SpecialError(
+                'MATCH pattern: invalid matcher arguments for %s'
+                % (str(head),),
+                form) from exc
+
+    specs = []
+    cur = form
+    while cur is not nil:
+        first, cur = cur
+        specs.append(parse_explicit_rule_pattern(first))
+    return MATCH(*specs)
 
 
 # The end.
