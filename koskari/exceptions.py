@@ -28,6 +28,7 @@ __all__ = (
     "KoskariException",
     "NotYetImplemented",
     "KoskariSyntaxError",
+    "KoskariSyncViolation",
     "ReaderError",
     "ReaderSyntaxError",
     "FormatStringSyntaxError",

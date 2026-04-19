@@ -163,26 +163,14 @@ def _build_ns_const_map(code):
     """
 
     result = {}
-    cpool = code.constants_pool
-    last_nspec_cpool_idx = None
     for i in range(code.length()):
         op_int, arg = code.oparg(i)
         op = OpCode(op_int)
-        if op == OpCode.KOS_OP_CONST:
-            if 0 <= arg < len(cpool) and isinstance(cpool[arg], NamespaceSpec):
-                last_nspec_cpool_idx = arg
-            else:
-                last_nspec_cpool_idx = None
-        elif op == OpCode.KOS_OP_PUSH_NS:
+        if op == OpCode.KOS_OP_PUSH_NS:
             a0, _a1, _a2, _a3 = code.extra_tuple(arg)
             result[i] = a0
-            last_nspec_cpool_idx = None
         elif op == OpCode.KOS_OP_PUSH_COLLECT:
-            if 0 <= arg < len(cpool) and isinstance(cpool[arg], NamespaceSpec):
-                result[i] = arg
-            last_nspec_cpool_idx = None
-        else:
-            last_nspec_cpool_idx = None
+            result[i] = arg
     return result
 
 

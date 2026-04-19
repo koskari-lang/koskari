@@ -20,8 +20,10 @@ layout_heads:
   - define-syntax
   - syntax-rules
   - macro-rules
+  - special-rules
   - syntax-match
   - macro-match
+  - special-match
   - define-coroutine
 
 # Peer block heads for layouts that declare peers. These are not necessarily
@@ -104,6 +106,8 @@ list_head_specials:
   - macro-match
   - macro-rules
   - or
+  - special-match
+  - special-rules
   - parameterq
   - parameterize
   - raise

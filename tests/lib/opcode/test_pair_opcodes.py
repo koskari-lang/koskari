@@ -12,14 +12,14 @@
 # along with this library; if not, see <http://www.gnu.org/licenses/>.
 
 """
-Tests for PROPER and PAIR_SPLICE opcodes.
+Tests for PROPER, PAIR_SPLICE, CAR (TestCarOpcode), and CDR (TestCdrOpcode).
 
 :author: Christopher O'Brien <obriencj@preoccupied.net>
 :license: GNU General Public License v3
 :ai-assistant: claude-4.6-sonnet-high via Cursor
 """
 
-from koskari.lib import nil, symbol
+from koskari.lib import cons, nil, symbol
 
 from tests import make_callable
 from tests.lib.opcode import CevalTest, build_expr
@@ -27,6 +27,197 @@ from tests.lib.opcode import CevalTest, build_expr
 import pytest
 
 pytestmark = pytest.mark.phase_lib
+
+
+class TestCarOpcode(CevalTest):
+    """
+    Tests for the CAR opcode: COUNT argument and chained car.
+    """
+
+    async def test_car_one(self):
+        """
+        CAR 1 returns the car of a cons cell.
+        """
+
+        cell = cons(10, cons(20, nil))
+        code, ns = build_expr([
+            ["CONST", cell],
+            ["CAR", 1],
+            ["RETURN", 1],
+        ])
+        result = await make_callable(code, ns)()
+        self.assertEqual(result, 10)
+
+
+    async def test_car_two_chained(self):
+        """
+        CAR 2 applies car twice in the handler (one pop, local walk).
+        """
+
+        inner = cons(1, nil)
+        cell = cons(inner, cons(2, nil))
+        code, ns = build_expr([
+            ["CONST", cell],
+            ["CAR", 2],
+            ["RETURN", 1],
+        ])
+        result = await make_callable(code, ns)()
+        self.assertEqual(result, 1)
+
+
+    async def test_car_invalid_count_zero_raises(self):
+        """
+        CAR 0 is rejected at runtime (invalid argument count).
+        """
+
+        code, ns = build_expr([
+            ["CONST", cons(1, nil)],
+            ["CAR", 0],
+            ["RETURN", 1],
+        ])
+        with self.assertRaises(RuntimeError) as cm:
+            await make_callable(code, ns)()
+        self.assertIn("CAR invoked with invalid", str(cm.exception))
+        self.assertIn("0", str(cm.exception))
+
+
+    async def test_car_type_error_reports_index_and_type(self):
+        """
+        CAR on a non-pair reports index 0 and the Python type name.
+        """
+
+        code, ns = build_expr([
+            ["CONST", "not-a-pair"],
+            ["CAR", 1],
+            ["RETURN", 1],
+        ])
+        with self.assertRaises(TypeError) as cm:
+            await make_callable(code, ns)()
+        msg = str(cm.exception)
+        self.assertIn("CAR at index 0 of 1", msg)
+        self.assertIn("str", msg)
+
+
+    async def test_car_on_nil_reports_nil(self):
+        """
+        CAR on nil reports got nil at index 0.
+        """
+
+        code, ns = build_expr([
+            ["CONST", nil],
+            ["CAR", 1],
+            ["RETURN", 1],
+        ])
+        with self.assertRaises(TypeError) as cm:
+            await make_callable(code, ns)()
+        msg = str(cm.exception)
+        self.assertIn("CAR at index 0 of 1", msg)
+        self.assertIn("nil", msg)
+
+
+    async def test_car_second_step_type_error_reports_index_one(self):
+        """
+        CAR 2 fails on the second application with index 1 and the bad type.
+        """
+
+        inner = cons(99, nil)
+        cell = cons(1, inner)
+        code, ns = build_expr([
+            ["CONST", cell],
+            ["CAR", 2],
+            ["RETURN", 1],
+        ])
+        with self.assertRaises(TypeError) as cm:
+            await make_callable(code, ns)()
+        msg = str(cm.exception)
+        self.assertIn("CAR at index 1 of 2", msg)
+        self.assertIn("int", msg)
+
+
+class TestCdrOpcode(CevalTest):
+    """
+    Tests for the CDR opcode: COUNT argument and chained cdr.
+    """
+
+    async def test_cdr_one(self):
+        """
+        CDR 1 returns the cdr of a cons cell.
+        """
+
+        tail = cons(2, nil)
+        cell = cons(1, tail)
+        code, ns = build_expr([
+            ["CONST", cell],
+            ["CDR", 1],
+            ["RETURN", 1],
+        ])
+        result = await make_callable(code, ns)()
+        self.assertIs(result, tail)
+
+
+    async def test_cdr_two_chained(self):
+        """
+        CDR 2 walks two cons cells.
+        """
+
+        cell = cons(1, cons(2, cons(3, nil)))
+        code, ns = build_expr([
+            ["CONST", cell],
+            ["CDR", 2],
+            ["RETURN", 1],
+        ])
+        result = await make_callable(code, ns)()
+        self.assertEqual([3], list(result.unpack()))
+
+
+    async def test_cdr_invalid_count_zero_raises(self):
+        """
+        CDR 0 is rejected at runtime.
+        """
+
+        code, ns = build_expr([
+            ["CONST", cons(1, nil)],
+            ["CDR", 0],
+            ["RETURN", 1],
+        ])
+        with self.assertRaises(RuntimeError) as cm:
+            await make_callable(code, ns)()
+        self.assertIn("CDR invoked with invalid", str(cm.exception))
+
+
+    async def test_cdr_type_error_reports_index_and_type(self):
+        """
+        CDR on a non-pair reports index 0 and the type.
+        """
+
+        code, ns = build_expr([
+            ["CONST", 3.14],
+            ["CDR", 1],
+            ["RETURN", 1],
+        ])
+        with self.assertRaises(TypeError) as cm:
+            await make_callable(code, ns)()
+        msg = str(cm.exception)
+        self.assertIn("CDR at index 0 of 1", msg)
+        self.assertIn("float", msg)
+
+
+    async def test_cdr_second_step_reports_nil(self):
+        """
+        CDR on a pair whose cdr is nil fails at index 1 with got nil.
+        """
+
+        cell = cons(1, nil)
+        code, ns = build_expr([
+            ["CONST", cell],
+            ["CDR", 2],
+            ["RETURN", 1],
+        ])
+        with self.assertRaises(TypeError) as cm:
+            await make_callable(code, ns)()
+        msg = str(cm.exception)
+        self.assertIn("CDR at index 1 of 2", msg)
+        self.assertIn("nil", msg)
 
 
 class TestProperOpcode(CevalTest):

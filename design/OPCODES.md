@@ -233,8 +233,8 @@ When adding or changing an opcode:
 | UNPACK_VAR | EXTRA | STORE seq[0], seq[1] into two VAR names | [§4](#kos_op_unpack_var) |
 | UNPACK_FAST | EXTRA | STORE seq[0], seq[1] into two fast slots | [§4](#kos_op_unpack_fast) |
 | CONST | CONST | Push constant from pool | [§5](#kos_op_const) |
-| CAR | NOARG | Pop pair; push car | [§5.1](#kos_op_car) |
-| CDR | NOARG | Pop pair; push cdr | [§5.1](#kos_op_cdr) |
+| CAR | COUNT | Apply car **n** times (**n** ≥ 1); **n** = 0 invalid | [§5.1](#kos_op_car) |
+| CDR | COUNT | Apply cdr **n** times (**n** ≥ 1); **n** = 0 invalid | [§5.1](#kos_op_cdr) |
 | CONS | COUNT | Pop N values; push (e_0 . ... . e_{N-1}) | [§5.1](#kos_op_cons) |
 | PROPER | COUNT | Pop N values; push proper list (e_0 ... e_{N-1}) | [§5.1](#kos_op_proper) |
 | PAIR_SPLICE | COUNT | Concatenate N pair/tuple segments into one proper list | [§5.1](#kos_op_pair_splice) |
@@ -557,18 +557,30 @@ bottom to top matches push order).
 
 ### KOS_OP_CAR {#kos_op_car}
 
-- **Style**: NOARG.
+- **Style**: COUNT. Arg = repeat count: apply **car** that many times to the
+  stack top (each step pops one pair and pushes its car).
 - **Status**: Implemented.
-- **Stack**: `[..., pair] → [..., car(pair)]`. Pops one value; if not a pair or
-  is nil, sets TypeError and returns -1. Otherwise pushes car (INCREF).
+- **Invariants**: **`n` ≥ 1**. **`n` ≤ 0** (including **CAR 0**) is invalid:
+  **RuntimeError** (`CAR invoked with invalid argument count: …`); the stack is
+  not modified because the handler returns before popping TOS.
+- **Stack**: With valid **`n` ≥ 1**, same effect as **`n`** chained **CAR 1**
+  instructions (one stack pop of the initial value, local walk, one push). If
+  any intermediate value is not a pair or is nil, **TypeError** (message
+  includes step index and type / `nil`).
 
 
 ### KOS_OP_CDR {#kos_op_cdr}
 
-- **Style**: NOARG.
+- **Style**: COUNT. Arg = repeat count: apply **cdr** that many times to the
+  stack top (each step pops one pair and pushes its cdr).
 - **Status**: Implemented.
-- **Stack**: `[..., pair] → [..., cdr(pair)]`. Pops one value; if not a pair or
-  is nil, sets TypeError and returns -1. Otherwise pushes cdr (INCREF).
+- **Invariants**: **`n` ≥ 1**. **`n` ≤ 0** (including **CDR 0**) is invalid:
+  **RuntimeError** (`CDR invoked with invalid argument count: …`); the stack is
+  not modified because the handler returns before popping TOS.
+- **Stack**: With valid **`n` ≥ 1**, same effect as **`n`** chained **CDR 1**
+  instructions (one stack pop, local walk, one push). If any intermediate value
+  is not a pair or is nil, **TypeError** (message includes step index and type /
+  `nil`).
 
 
 ### KOS_OP_CONS {#kos_op_cons}

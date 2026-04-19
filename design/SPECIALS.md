@@ -19,11 +19,19 @@ and default readers for quote, quasiquote, unquote, and unquote-splicing.
 **Compile-time macros** — User-facing **`(define-syntax NAME SPEC)`** is expanded
 by the **`compile/define-syntax`** macro in `koskari/importer/basics.ki` (not a
 `@special`). **`SPEC`** must begin with **`syntax-rules`**, **`macro-rules`**,
-**`syntax-match`**, or **`macro-match`**; see **`compile/define-syntax`** and the
-**`compile/syntax-rules`**, **`compile/macro-rules`**, **`compile/syntax-match`**,
-and **`compile/macro-match`** sections below. **RULE** vs **MATCH** pattern
-languages and the shared transformer model are documented in
+**`syntax-match`**, **`macro-match`**, **`special-rules`**, or **`special-match`**;
+see **`compile/define-syntax`** and the **`compile/syntax-rules`**,
+**`compile/macro-rules`**, **`compile/syntax-match`**, **`compile/macro-match`**,
+**`compile/special-rules`**, and **`compile/special-match`** sections below.
+**RULE** vs **MATCH** pattern languages and the shared transformer model are
+documented in
 [language/unified-matcher-transformer-model.md](language/unified-matcher-transformer-model.md).
+
+**Special-form transformers** — **`special-rules`** and **`special-match`** build
+**`SpecialRulesTransformer`** values (`koskari/syntax.py`): rule procedures are
+invoked with **`compiler`**, **`tc`**, and keyword arguments from the match
+(unlike **`macro-rules`** / **`macro-match`**, which receive only keyword args).
+Expansion uses **`unbox_macro`** (not **`unbox_macro_with_hygiene`**).
 
 **Syntax boxes and hygiene** — **`koskari.syntax.Syntax`** wraps call-site
 segments so the hygiene pass does not rename inside boxed payloads;
@@ -1310,10 +1318,11 @@ with local declaration; raises if the name is already in `declares` (e.g. from
 expanded by the **`compile/define-syntax`** **macro** in
 `koskari/importer/basics.ki` (there is no registered `@special` for
 `compile/define-syntax`). The macro rewrites to **`(compile/define NAME …)`** with a
-transformer whose head is **`syntax-rules`**, **`macro-rules`**, **`syntax-match`**, or
-**`macro-match`**. Those specs are lowered by **`compile/syntax-rules`**,
-**`compile/macro-rules`**, **`compile/syntax-match`**, and **`compile/macro-match`**
-(below).
+transformer whose head is **`syntax-rules`**, **`macro-rules`**, **`syntax-match`**,
+**`macro-match`**, **`special-rules`**, or **`special-match`**. Those specs are
+lowered by **`compile/syntax-rules`**, **`compile/macro-rules`**,
+**`compile/syntax-match`**, **`compile/macro-match`**, **`compile/special-rules`**,
+and **`compile/special-match`** (below).
 
 **Typical surface form:** **`(define-syntax NAME (syntax-rules (LIT ...) ((PATTERN) TEMPLATE) ...))`**
 — the macro expands that to **`compile/define`** plus a **`syntax-rules`** spec
@@ -1405,6 +1414,59 @@ from the match result (`koskari/syntax.py`: **`MacroRule.expand`**).
 
 **Implementation:** `koskari/compile/specials/syntax.py` —
 `special_compile_macro_match`
+
+**Tests:** `tests/compile/specials/test_define_syntax.py`
+
+
+## compile/special-rules
+
+**Symbol:** `compile/special-rules`
+
+**Syntax:** `(compile/special-rules NAME LITERALS RULE ...)`
+
+**Use-case:** Lower a **`special-rules`**-style transformer spec to a
+**`build-special-rules`** call form. Rule procedures are **compiler-aware**:
+each rule’s lambda is built with formals **`(COMPILER TC pattern-vars …)`** —
+the **`COMPILER`** and **`tc`** slots correspond to the pattern column breakout
+(see behaviour). Bind the result with **`compile/define`**.
+
+**Behaviour:** Like **`compile/macro-rules`**, but each rule’s pattern column must
+be **`(compiler-formal pattern [tc-formal])`**: the first subform names the
+compiler parameter, the second is a nested **RULE** pattern (lowered with
+**`parse_rule_pattern`**), and the optional third names the tail-call formal
+(defaults to a fresh **`gensym`**). Per-rule **`compile/lambda`** formals are
+**`compiler-formal`**, **`tc-formal`**, then pattern variables from the inner
+RULE pattern (same ordering as **`compile/macro-rules`** for implicit patterns).
+The literal set includes the macro **`NAME`** automatically (as for other
+rule-based transformers). The built transformer’s **`compile_impl`** passes
+**`compiler`** and **`tc`** into the winning rule and returns **`unbox_macro`**
+of the result (see **`SpecialRulesTransformer`** in **`koskari/syntax.py`**).
+
+**Implementation:** `koskari/compile/specials/syntax.py` —
+`special_compile_special_rules`
+
+**Tests:** `tests/compile/specials/test_define_syntax.py`
+
+
+## compile/special-match
+
+**Symbol:** `compile/special-match`
+
+**Syntax:** `(compile/special-match NAME (PATTERN BODY ...) ...)`
+
+**Use-case:** **MATCH**-dialect special rules (same **`build-special-rules`**
+lowering as **`compile/special-rules`**, with an empty literals tuple — same
+overall shape as **`compile/macro-match`**). Rule bodies receive **`compiler`**,
+**`tc`**, and matcher slots, as for **`compile/special-rules`**.
+
+**Behaviour:** Each rule’s pattern column must be **`(compiler-formal pattern [tc-formal])`**;
+the inner **`pattern`** is lowered by **`parse_explicit_rule_pattern`** (explicit
+MATCH syntax). If that inner pattern is a bare symbol, it is wrapped as
+**`(REST sym)`** before parsing (same convenience as **`compile/macro-match`**).
+Emits **`build-special-rules`** with **`()`** for the serialized literals tuple.
+
+**Implementation:** `koskari/compile/specials/syntax.py` —
+`special_compile_special_match`
 
 **Tests:** `tests/compile/specials/test_define_syntax.py`
 
@@ -1959,9 +2021,11 @@ cdr (dotted tail) position of an improper list; the quasiquote compiler raises
 **Use-case:** Compile code that evaluates EXPR (must produce a pair), then
 pushes the car of that pair. One argument.
 
-**Behaviour:** Compile EXPR, then emit CAR. At runtime, CAR pops one value; if
-it is not a pair or is nil, TypeError is raised. Otherwise the car (INCREF) is
-pushed.
+**Behaviour:** Compile EXPR, then emit **CAR 1**. At runtime, CAR applies car
+once per unit of arg (see [OPCODES §5.1](OPCODES.md#kos_op_car)). If a popped
+value is not a pair or is nil, TypeError is raised. Consecutive **CAR**
+instructions may be merged by the compiler **compress** pass into one **CAR**
+with the sum of their counts (same for **CDR**).
 
 **Example:**
 
@@ -1978,9 +2042,11 @@ pushed.
 **Use-case:** Compile code that evaluates EXPR (must produce a pair), then
 pushes the cdr of that pair. One argument.
 
-**Behaviour:** Compile EXPR, then emit CDR. At runtime, CDR pops one value; if
-it is not a pair or is nil, TypeError is raised. Otherwise the cdr (INCREF)
-is pushed.
+**Behaviour:** Compile EXPR, then emit **CDR 1**. At runtime, CDR applies cdr
+once per unit of arg (see [OPCODES §5.1](OPCODES.md#kos_op_cdr)). If a popped
+value is not a pair or is nil, TypeError is raised. Consecutive **CDR**
+instructions may be merged by the compiler **compress** pass into one **CDR**
+with the sum of their counts (same for **CAR**).
 
 **Example:**
 

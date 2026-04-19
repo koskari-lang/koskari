@@ -22,7 +22,7 @@ Special form handler for compile/class.
 """
 
 
-from ...lib import cons, nil, OpCode, symbol
+from ...lib import nil, OpCode, symbol
 from ...types import is_pair
 from ...exceptions import ParametersError, SpecialError
 from ..helpers import (

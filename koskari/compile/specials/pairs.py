@@ -55,7 +55,8 @@ def special_quote(compiler, source, tc=False):
 def special_car(compiler, source, tc=False):
     """
     Compile (compile/car EXPR). Emit code that evaluates EXPR, then pushes
-    the car of that pair. One argument.
+    the car of that pair. One argument. Emits CAR 1; consecutive CAR/CDR
+    instructions may be merged by the compiler compress pass.
     """
 
     called_by, body = source
@@ -69,7 +70,7 @@ def special_car(compiler, source, tc=False):
     frag = compiler.fragment(called_by)
     frag.position_of(body)
     frag.merge(compiler.full_compile(expr))
-    frag.instruction(OpCode.KOS_OP_CAR, 0)
+    frag.instruction(OpCode.KOS_OP_CAR, 1)
 
     return frag
 
@@ -78,7 +79,8 @@ def special_car(compiler, source, tc=False):
 def special_cdr(compiler, source, tc=False):
     """
     Compile (compile/cdr EXPR). Emit code that evaluates EXPR, then pushes
-    the cdr of that pair. One argument.
+    the cdr of that pair. One argument. Emits CDR 1; consecutive CDR/CAR
+    instructions may be merged by the compiler compress pass.
     """
 
     called_by, body = source
@@ -92,7 +94,7 @@ def special_cdr(compiler, source, tc=False):
     frag = compiler.fragment(called_by)
     frag.position_of(body)
     frag.merge(compiler.full_compile(expr))
-    frag.instruction(OpCode.KOS_OP_CDR, 0)
+    frag.instruction(OpCode.KOS_OP_CDR, 1)
 
     return frag
 
