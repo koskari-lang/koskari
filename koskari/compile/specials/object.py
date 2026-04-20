@@ -30,14 +30,14 @@ preserve dunder dispatch semantics.
 
 import operator as _op
 
-from ...lib import nil, OpCode, symbol
+from ...lib import nil, OpCode, symbol, cons, keyword
 from ...exceptions import SpecialError
 from ...matcher import MATCH, VALUE, match
-from ...types import get_position, is_pair, is_symbol
+from ...types import get_position, is_pair, is_symbol, unpack
 from ..helpers import const_only_expr, is_symbolish, special, special_forms
 
 
-def _reduce_fold(py_fold, compiler, frag, body):
+def _reduce_fold(py_fold, compiler, body):
     """
     Consume leading constant arguments from body, fold them with py_fold,
     and emit a single CONST into frag if any folding occurred.
@@ -80,10 +80,7 @@ def _reduce_fold(py_fold, compiler, frag, body):
 
         current = rest
 
-    if have_acc:
-        frag.instruction(OpCode.KOS_OP_CONST, acc)
-
-    return (current, have_acc)
+    return (current, have_acc, acc)
 
 
 def _reduce_op(op, py_fold, compiler, source):
@@ -108,11 +105,19 @@ def _reduce_op(op, py_fold, compiler, source):
     frag = compiler.fragment(called_by)
     count = 0
 
+    have_acc = False
     if py_fold is not None:
         frag.position_of(body)
-        body, folded = _reduce_fold(py_fold, compiler, frag, body)
-        if folded:
-            count += 1
+        body, have_acc, acc = _reduce_fold(py_fold, compiler, body)
+
+    # we can't handle star args here, so we rewrite to call
+    if keyword("*") in unpack(body):
+        # print("rewriting to call", called_by, acc, body)
+        return cons(symbol("call"), called_by, acc, body)
+
+    if have_acc:
+        frag.instruction(OpCode.KOS_OP_CONST, acc)
+        count += 1
 
     current = body
     while current is not nil:

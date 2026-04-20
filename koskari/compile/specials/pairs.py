@@ -23,7 +23,7 @@ compile/cons.
 """
 
 
-from ...lib import nil, OpCode, symbol
+from ...lib import nil, OpCode, symbol, cons, keyword
 from ...types import get_position, is_nil, is_pair, set_position
 from ...exceptions import SpecialError
 from ..helpers import requote, special
@@ -115,6 +115,11 @@ def special_cons(compiler, source, tc=False):
             source)
 
     exprs = list(body.unpack())
+
+    # we can't handle star args here, so we rewrite to call
+    if keyword("*") in exprs:
+        return cons(symbol("call"), source)
+
     frag = compiler.fragment(called_by)
     frag.position_of(source)
 

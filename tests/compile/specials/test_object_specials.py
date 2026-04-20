@@ -400,6 +400,29 @@ class TestObjectAdd(SpecialsTestCase):
         self.assertEqual(3, arg)
 
 
+    async def test_add_star_arg_rewrites_to_call_not_object_add(self):
+        """
+        *: in the argument list cannot lower to OBJECT_ADD; specials fall back
+        to compile/call (call opcodes, not KOS_OP_OBJECT_ADD).
+        """
+
+        code = self.compile_to_code("(compile/+ 1 *: xs)")
+        self.assertIsNone(_find_op(code, OpCode.KOS_OP_OBJECT_ADD))
+        self.assertTrue(self.call_ops(code))
+
+
+    async def test_add_const_fold_star_arg(self):
+        code = self.compile_to_code("(compile/+ 1 11 *: xs)")
+        arg = _find_op(code, OpCode.KOS_OP_OBJECT_ADD)
+        self.assertIsNone(arg)
+        consts = [
+            code.constant(arg)
+            for op, arg in _ops(code)
+            if op == OpCode.KOS_OP_CONST
+        ]
+        self.assertIn(12, consts)
+
+
 class TestObjectSubtract(SpecialsTestCase):
 
     async def test_subtract_two_vars(self):
