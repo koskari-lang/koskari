@@ -12,7 +12,7 @@
 # along with this library; if not, see <http://www.gnu.org/licenses/>.
 
 """
-Tests for PROPER, PAIR_SPLICE, CAR (TestCarOpcode), and CDR (TestCdrOpcode).
+Tests for PROPER, PAIR_SPLICE, CAR, and CDR
 
 :author: Christopher O'Brien <obriencj@preoccupied.net>
 :license: GNU General Public License v3
