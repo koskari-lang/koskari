@@ -30,10 +30,10 @@ preserve dunder dispatch semantics.
 
 import operator as _op
 
-from ...lib import nil, OpCode, symbol, cons, keyword
+from ...lib import nil, OpCode, symbol, cons
 from ...exceptions import SpecialError
 from ...matcher import MATCH, VALUE, match
-from ...types import get_position, is_pair, is_symbol, unpack
+from ...types import get_position, is_pair, is_symbol, is_keyword, unpack
 from ..helpers import const_only_expr, is_symbolish, special, special_forms
 
 
@@ -110,10 +110,12 @@ def _reduce_op(op, py_fold, compiler, source):
         frag.position_of(body)
         body, have_acc, acc = _reduce_fold(py_fold, compiler, body)
 
-    # we can't handle star args here, so we rewrite to call
-    if keyword("*") in unpack(body):
-        # print("rewriting to call", called_by, acc, body)
-        return cons(symbol("call"), called_by, acc, body)
+    for fm in unpack(body):
+        if is_keyword(fm):
+            if have_acc:
+                return cons(symbol("compile/call"), called_by, acc, body)
+            else:
+                return cons(symbol("compile/call"), called_by, body)
 
     if have_acc:
         frag.instruction(OpCode.KOS_OP_CONST, acc)

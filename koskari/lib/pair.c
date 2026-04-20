@@ -1783,7 +1783,7 @@ static PyObject *m_build_unpack_pair(PyObject *mod, PyObject *seqs) {
 
 static PyMethodDef pair_mod_methods[] = {
 
-  { "cons", (PyCFunction) m_cons, METH_VARARGS|METH_KEYWORDS,
+  { "cons", (PyCFunction) m_cons, METH_VARARGS,
     "cons(head, *tail) -> new pair\n"
     "Build a pair chain from the given sequence. No tail implies nil." },
 

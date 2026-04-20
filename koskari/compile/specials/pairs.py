@@ -23,8 +23,8 @@ compile/cons.
 """
 
 
-from ...lib import nil, OpCode, symbol, cons, keyword
-from ...types import get_position, is_nil, is_pair, set_position
+from ...lib import nil, OpCode, symbol, cons
+from ...types import get_position, is_nil, is_pair, is_keyword
 from ...exceptions import SpecialError
 from ..helpers import requote, special
 
@@ -42,7 +42,7 @@ def special_quote(compiler, source, tc=False):
 
     if is_pair(body) and not is_nil(body):
         body = requote(body)
-        set_position(body, get_position(source))
+        body.fill_position(get_position(source))
         return body
 
     frag = compiler.fragment(called_by)
@@ -116,9 +116,9 @@ def special_cons(compiler, source, tc=False):
 
     exprs = list(body.unpack())
 
-    # we can't handle star args here, so we rewrite to call
-    if keyword("*") in exprs:
-        return cons(symbol("call"), source)
+    for fm in exprs:
+        if is_keyword(fm):
+            return cons(symbol("compile/call"), source)
 
     frag = compiler.fragment(called_by)
     frag.position_of(source)
