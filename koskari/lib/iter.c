@@ -362,7 +362,7 @@ static PyObject *asyncgenasend_iternext(PyObject *self) {
   KosPyAsyncGenASend *asend = (KosPyAsyncGenASend *) self;
   KosPyAsyncGen *agen = asend->agen;
 
-  if (! agen || ! agen->ctx || agen->closed || agen->closed) {
+  if (! agen || ! agen->ctx || agen->closed) {
     PyErr_SetNone(PyExc_StopAsyncIteration);
     return NULL;
   }
