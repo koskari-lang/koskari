@@ -896,6 +896,16 @@ int kos_dyn_gen_install(KosContext *ctx, KosDynGen *gen);
 
 
 /**
+   True when GEN should be passed to kos_dyn_gen_install before the next
+   koskari_eval on eval_ctx: GEN.active holds the chain but GEN is not
+   under eval_ctx->dyn_top (yield freeze, or first run while still linked).
+
+   If GEN.active is NULL, returns 0 (already installed or exhausted).
+*/
+int kos_dyn_gen_frozen_needs_install(KosContext *eval_ctx, KosDynGen *gen);
+
+
+/**
    Unwind an exhausted gen from the chain. Call when gen's frame returns
    (parent is GEN). Frees frame and restores consumer.
 */

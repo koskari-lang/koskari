@@ -27,6 +27,7 @@
    any individual header is included, so that include order never matters.
    Individual headers define the struct bodies; they do not re-typedef. */
 
+struct KosPyAsyncGen;       typedef struct KosPyAsyncGen       KosPyAsyncGen;
 struct KosCode;             typedef struct KosCode             KosCode;
 struct KosStackBlock;       typedef struct KosStackBlock       KosStackBlock;
 struct KosContext;          typedef struct KosContext          KosContext;

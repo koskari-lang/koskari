@@ -75,17 +75,20 @@ int kos_dyn_gen_install(KosContext *ctx, KosDynGen *gen) {
            ? kos_dynnode_kind_name(KosDynNode_KIND(KosContext_DYN_TOP(ctx)))
            : "NULL",
        (void *) KosDynGen_ACTIVE(gen));
+
   if (KosDynGen_ACTIVE(gen)) {
     SAY("[gen] install chain from active: ");
-    for (n = (KosDynNode *) KosDynGen_ACTIVE(gen); n; n = KosDynNode_PARENT(n))
-      SAYF("  %p %s -> ", (void *) n,
-           kos_dynnode_kind_name(KosDynNode_KIND(n)));
+    // for (n = (KosDynNode *) KosDynGen_ACTIVE(gen); n; n = KosDynNode_PARENT(n))
+    //   SAYF("  %p %s -> ", (void *) n,
+    //        kos_dynnode_kind_name(KosDynNode_KIND(n)));
     SAY("(end)");
   }
+
   if (! gen || ! ctx) {
     PyErr_SetString(PyExc_RuntimeError, "NULL ctx or gen for gen_install");
     return -1;
   }
+
   active = (KosDynNode *) KosDynGen_ACTIVE(gen);
   if (! active) {
     PyErr_SetString(PyExc_RuntimeError,
@@ -120,6 +123,23 @@ int kos_dyn_gen_install(KosContext *ctx, KosDynGen *gen) {
     SAYF("%p %s -> ", (void *) n, kos_dynnode_kind_name(KosDynNode_KIND(n)));
   SAY("(end)");
   return 0;
+}
+
+
+int kos_dyn_gen_frozen_needs_install(KosContext *eval_ctx, KosDynGen *g) {
+
+  KosDynNode *n;
+
+  if (! eval_ctx || ! g)
+    return 0;
+  if (! KosDynGen_ACTIVE(g))
+    return 0;
+
+  for (n = KosContext_DYN_TOP(eval_ctx); n; n = KosDynNode_PARENT(n)) {
+    if (n == (KosDynNode *) g)
+      return 0;
+  }
+  return 1;
 }
 
 
@@ -159,4 +179,3 @@ static int dynnode_traverse_gen(KosDynNode *node, visitproc visit, void *arg) {
         KosDynGen_ACTIVE((KosDynGen *) node), visit, arg);
   return 0;
 }
-

@@ -1003,20 +1003,18 @@ static int kos_dyn_gen_freeze_and_release(KosContext *ctx, KosDynGen *gen,
   owner = KosDynGen_OWNER(gen);
   if (owner && KosPyAsyncGen_Check(owner))
     ((KosPyAsyncGen *) owner)->gen = (void *) gen;
-  kos_ctx_async_bridge_set_yield_gen(ctx, gen);
 
   /* Release only when owner holds the gen; standalone gen is kept for resume */
   if (owner)
     kos_dyngen_release(gen);
-  SAYF("[gen] freeze DONE ctx->dyn_top=%p (%s) frame_top=%p resume_gen=%p "
-       "owner=%p\n",
+  SAYF("[gen] freeze DONE ctx->dyn_top=%p (%s) frame_top=%p owner=%p gen=%p\n",
        (void *) KosContext_DYN_TOP(ctx),
        KosContext_DYN_TOP(ctx)
            ? kos_dynnode_kind_name(KosDynNode_KIND(KosContext_DYN_TOP(ctx)))
            : "NULL",
        (void *) KosContext_FRAME_TOP(ctx),
-       (void *) KosContext_RESUME_GEN(ctx),
-       (void *) owner);
+       (void *) owner,
+       (void *) gen);
   return 0;
 }
 

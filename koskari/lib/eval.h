@@ -157,19 +157,6 @@ typedef enum KosDelimReturnKind {
 
 
 /**
-  Python await vs frozen GEN resume storage: mutually exclusive in practice.
-  suspension_event (separate field) records the last eval boundary for revive;
-  async_* holds in-flight await/yield machinery and may be AWAIT while
-  suspension_event is KOS_SUSP_NONE after entry clears the tag.
-*/
-typedef enum KosAsyncBridgeKind {
-  KOS_ASYNC_BRIDGE_NONE = 0,
-  KOS_ASYNC_BRIDGE_YIELD_GEN,
-  KOS_ASYNC_BRIDGE_AWAIT,
-} KosAsyncBridgeKind;
-
-
-/**
   KosEvalMode is the result of entry/revive and drives the mode-handler loop.
   NORMAL = run next insn or check completion; TRANSFER = run process_plan;
   EXCEPTION = run process_raise; RAISE/AWAIT/YIELD/YIELD_FROM = return with event;
@@ -346,8 +333,10 @@ typedef struct KosEvalResult {
 
   Suspension and resumption:
   - When koskari_eval returns KOS_EV_AWAIT, the context is suspended.
-  - async_kind KOS_ASYNC_BRIDGE_AWAIT holds the iterator from __await__()
-    on the Python awaitable; KOS_ASYNC_BRIDGE_YIELD_GEN holds the frozen GEN.
+  - py_await_iter / pending_defer hold in-flight Python await machinery
+    (iterator from __await__(), defer payload). Frozen GEN resume uses
+    KosPyAsyncGen::gen plus kos_dyn_gen_install at the driver before
+    re-entering koskari_eval.
   - Resumption injects the result back into the VM via the stack.
 */
 
@@ -395,25 +384,16 @@ struct KosContext {
   PyObject *py_last_yielded; /* last yielded object (debug/optional) */
   PyObject *py_resume_inject; /* value to push on next koskari_eval when resuming */
   uint8_t py_resume_kind;    /* 0=none, 1=await, 2=yield */
+  PyObject *py_await_iter;   /* iterator from __await__() when suspended on AWAIT */
+  PyObject *pending_defer;   /* KosDefer payload when suspended on inner defer */
 
   /* --- Exception injection (set by coroutine_throw or dynchain inject) --- */
   int inject_mode;       /* 0=none, 1=pending_throw */
   PyObject *inject_type;  /* exception type when inject_mode==KOS_INJECT_THROW */
   PyObject *inject_value;  /* exception object when inject_mode==1 */
 
-  /* Last eval boundary reason for revive (independent of async_kind) */
+  /* Last eval boundary reason for revive */
   uint8_t suspension_event;  /* KosSuspensionEvent */
-
-  uint8_t async_kind; /* KosAsyncBridgeKind */
-  union {
-    struct {
-      KosDynGen *gen;
-    } yield;
-    struct {
-      PyObject *await_iter;
-      PyObject *pending_defer;
-    } await;
-  } async;
 
   uint32_t flags;            /* KosContextFlags */
 
@@ -446,32 +426,16 @@ static inline void kos_ctx_delim_set_pop_prompt(
 
 static inline void kos_ctx_async_bridge_clear(KosContext *ctx) {
 
-  if (ctx->async_kind == KOS_ASYNC_BRIDGE_AWAIT) {
-    Py_XDECREF(ctx->async.await.await_iter);
-    Py_XDECREF(ctx->async.await.pending_defer);
-  }
-  ctx->async_kind = KOS_ASYNC_BRIDGE_NONE;
-  memset(&ctx->async, 0, sizeof(ctx->async));
+  Py_XDECREF(ctx->py_await_iter);
+  Py_XDECREF(ctx->pending_defer);
+  ctx->py_await_iter = NULL;
+  ctx->pending_defer = NULL;
 }
 
 
 static inline void kos_ctx_async_bridge_py_clear_await_iter(KosContext *ctx) {
 
-  if (ctx->async_kind == KOS_ASYNC_BRIDGE_AWAIT) {
-    Py_CLEAR(ctx->async.await.await_iter);
-    if (! ctx->async.await.pending_defer)
-      ctx->async_kind = KOS_ASYNC_BRIDGE_NONE;
-  }
-}
-
-
-static inline void kos_ctx_async_bridge_set_yield_gen(
-    KosContext *ctx,
-    KosDynGen *gen) {
-
-  kos_ctx_async_bridge_clear(ctx);
-  ctx->async_kind = KOS_ASYNC_BRIDGE_YIELD_GEN;
-  ctx->async.yield.gen = gen;
+  Py_CLEAR(ctx->py_await_iter);
 }
 
 
@@ -483,7 +447,6 @@ static inline void kos_ctx_async_bridge_set_yield_gen(
 #define KosContext_GLOBALS_CACHE_VERSION(c)  (((KosContext *)(c))->globals_cache_version)
 #define KosContext_TOKEN(c)                  (((KosContext *)(c))->token)
 #define KosContext_DOMAIN(c)                 (((KosContext *)(c))->domain)
-#define KosContext_UNWIND_TARGET_FRAME(c)    (((KosContext *)(c))->unwind_target_frame)
 #define KosContext_UNWIND_TARGET_FRAME(c)    (((KosContext *)(c))->unwind_target_frame)
 #define KosContext_PENDING_RETURN_VALUE(c)   (((KosContext *)(c))->pending_return_value)
 #define KosContext_PENDING_RETURN_TO_PARENT(c) (((KosContext *)(c))->pending_return_to_parent)
@@ -511,17 +474,11 @@ static inline void kos_ctx_async_bridge_set_yield_gen(
   (((KosContext *)(c))->delim_kind == KOS_DELIM_POP_PROMPT                     \
        ? ((KosContext *)(c))->delim.pop_prompt.node                           \
        : NULL)
-#define KosContext_PY_AWAIT_ITER(c)                                         \
-  (((KosContext *)(c))->async_kind == KOS_ASYNC_BRIDGE_AWAIT                   \
-       ? ((KosContext *)(c))->async.await.await_iter                         \
-       : NULL)
+#define KosContext_PY_AWAIT_ITER(c)          (((KosContext *)(c))->py_await_iter)
 #define KosContext_PY_LAST_YIELDED(c)        (((KosContext *)(c))->py_last_yielded)
 #define KosContext_PY_RESUME_INJECT(c)       (((KosContext *)(c))->py_resume_inject)
 #define KosContext_PY_RESUME_KIND(c)         (((KosContext *)(c))->py_resume_kind)
-#define KosContext_PENDING_DEFER(c)                                       \
-  (((KosContext *)(c))->async_kind == KOS_ASYNC_BRIDGE_AWAIT                  \
-       ? ((KosContext *)(c))->async.await.pending_defer                      \
-       : NULL)
+#define KosContext_PENDING_DEFER(c)        (((KosContext *)(c))->pending_defer)
 
 #define KOS_RESUME_NONE  0
 #define KOS_RESUME_AWAIT 1
@@ -533,10 +490,6 @@ static inline void kos_ctx_async_bridge_set_yield_gen(
 #define KOS_INJECT_NONE   0
 #define KOS_INJECT_THROW  1
 #define KosContext_SUSPENSION_EVENT(c)      (((KosContext *)(c))->suspension_event)
-#define KosContext_RESUME_GEN(c)                                            \
-  (((KosContext *)(c))->async_kind == KOS_ASYNC_BRIDGE_YIELD_GEN              \
-       ? ((KosContext *)(c))->async.yield.gen                                 \
-       : NULL)
 
 #define KosContext_FLAGS(c)                  (((KosContext *)(c))->flags)
 #define KosContext_FREELIST_NEXT(c)          (((KosContext *)(c))->context_freelist_next)

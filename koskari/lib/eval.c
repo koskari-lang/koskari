@@ -157,15 +157,14 @@ static inline void kos_ctx_async_bridge_assign_await_iter(
     KosContext *ctx,
     PyObject *await_iter) {
 
-  if (ctx->async_kind == KOS_ASYNC_BRIDGE_AWAIT) {
-    Py_XDECREF(ctx->async.await.await_iter);
-    ctx->async.await.await_iter = await_iter;
+  if (ctx->py_await_iter || ctx->pending_defer) {
+    Py_XDECREF(ctx->py_await_iter);
+    ctx->py_await_iter = await_iter;
     return;
   }
   kos_ctx_async_bridge_clear(ctx);
-  ctx->async_kind = KOS_ASYNC_BRIDGE_AWAIT;
-  ctx->async.await.await_iter = await_iter;
-  ctx->async.await.pending_defer = NULL;
+  ctx->py_await_iter = await_iter;
+  ctx->pending_defer = NULL;
 }
 
 
@@ -173,36 +172,16 @@ static inline void kos_ctx_async_bridge_assign_pending_defer(
     KosContext *ctx,
     PyObject *defer_obj) {
 
-  if (ctx->async_kind != KOS_ASYNC_BRIDGE_AWAIT) {
+  if (! ctx->py_await_iter && ! ctx->pending_defer)
     kos_ctx_async_bridge_clear(ctx);
-    ctx->async_kind = KOS_ASYNC_BRIDGE_AWAIT;
-    ctx->async.await.await_iter = NULL;
-  }
-  Py_XDECREF(ctx->async.await.pending_defer);
-  ctx->async.await.pending_defer = defer_obj;
+  Py_XDECREF(ctx->pending_defer);
+  ctx->pending_defer = defer_obj;
 }
 
 
 static inline void kos_ctx_async_bridge_py_clear_pending_defer(KosContext *ctx) {
 
-  if (ctx->async_kind == KOS_ASYNC_BRIDGE_AWAIT) {
-    Py_CLEAR(ctx->async.await.pending_defer);
-    if (! ctx->async.await.await_iter)
-      ctx->async_kind = KOS_ASYNC_BRIDGE_NONE;
-  }
-}
-
-
-static inline KosDynGen *kos_ctx_async_bridge_take_yield_gen(KosContext *ctx) {
-
-  KosDynGen *g;
-
-  if (ctx->async_kind != KOS_ASYNC_BRIDGE_YIELD_GEN)
-    return NULL;
-  g = ctx->async.yield.gen;
-  ctx->async.yield.gen = NULL;
-  ctx->async_kind = KOS_ASYNC_BRIDGE_NONE;
-  return g;
+  Py_CLEAR(ctx->pending_defer);
 }
 
 
@@ -959,9 +938,10 @@ static KosEvalMode revive_await(
 
 
 /**
-   Revive from YIELD: push send_val or set throw_exc. When send_val is NULL
-   (e.g. __anext__), push Py_None per async gen protocol. Must install the gen
-   first even when throwing, so frame and chain are restored.
+   Revive from YIELD: pop install placeholder (Py_None from kos_dyn_gen_install),
+   then push send_val or set throw_exc. When send_val is NULL (e.g. __anext__),
+   push Py_None per async gen protocol. Caller must have called
+   kos_dyn_gen_install before koskari_eval (e.g. KosPyAsyncGen drivers, tests).
 */
 static KosEvalMode revive_yield(
     KosContext *ctx,
@@ -969,36 +949,28 @@ static KosEvalMode revive_yield(
     PyObject *throw_typ,
     PyObject *throw_exc) {
 
-  //KosDynGen *gen;
   PyObject *to_push;
 
-  SAYF("[gen] revive_yield ENTER suspend=%d resume_gen=%p send_val=%p "
+  SAYF("[gen] revive_yield ENTER suspend=%d send_val=%p "
        "throw_typ=%p throw_exc=%p dyn_top=%p frame_top=%p\n",
        KosContext_SUSPENSION_EVENT(ctx),
-       (void *) KosContext_RESUME_GEN(ctx),
        (void *) send_val, (void *) throw_typ, (void *) throw_exc,
        (void *) KosContext_DYN_TOP(ctx), (void *) KosContext_FRAME_TOP(ctx));
 
-  gen = kos_ctx_async_bridge_take_yield_gen(ctx);
-  if (gen) {
-    SAYF("[gen] revive_yield calling install for gen=%p\n", (void *) gen);
-    if (kos_dyn_gen_install(ctx, gen) < 0)
-      return KOS_MODE_EXCEPTION;
-    /* install pushed Py_None; replace with send value or leave for throw */
-    (void) KosStackBlock_PopRef(&CURRENT_STACK(ctx));
-  }
   if (throw_exc != NULL) {
+    if (CURRENT_FRAME(ctx))
+      (void) KosStackBlock_PopRef(&CURRENT_STACK(ctx));
     PyErr_SetObject(throw_typ, throw_exc);
     return KOS_MODE_EXCEPTION;
   }
   if (CURRENT_FRAME(ctx)) {
+    (void) KosStackBlock_PopRef(&CURRENT_STACK(ctx));
     to_push = (send_val != NULL) ? send_val : Py_None;
     if (KosStackBlock_PushRef(&CURRENT_STACK(ctx), to_push) < 0)
       return KOS_MODE_EXCEPTION;
   }
   SAYF("[gen] revive_yield DONE frame_top=%p dyn_top=%p throw=%d\n",
-       (void *) KosContext_FRAME_TOP(ctx), (void *) KosContext_DYN_TOP(ctx),
-       throw_exc != NULL);
+       (void *) KosContext_FRAME_TOP(ctx), (void *) KosContext_DYN_TOP(ctx), 0);
   return KOS_MODE_NORMAL;
 }
 
@@ -1655,10 +1627,8 @@ int kos_context_traverse(
 
   Py_VISIT(KosContext_TOKEN(ctx));
   Py_VISIT(KosContext_DOMAIN(ctx));
-  if (ctx->async_kind == KOS_ASYNC_BRIDGE_AWAIT) {
-    Py_VISIT(ctx->async.await.await_iter);
-    Py_VISIT(ctx->async.await.pending_defer);
-  }
+  Py_VISIT(ctx->py_await_iter);
+  Py_VISIT(ctx->pending_defer);
   Py_VISIT(KosContext_PY_LAST_YIELDED(ctx));
   Py_VISIT(KosContext_PY_RESUME_INJECT(ctx));
   Py_VISIT(KosContext_INJECT_TYPE(ctx));

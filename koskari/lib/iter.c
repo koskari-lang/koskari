@@ -29,6 +29,21 @@
 #include "lib.h"
 
 
+static int install_frozen_gen_for_resume(
+    KosContext *eval_ctx,
+    KosPyAsyncGen *agen) {
+
+  KosDynGen *g;
+
+  if (! eval_ctx || ! agen)
+    return 0;
+  g = (KosDynGen *) agen->gen;
+  if (! g || ! kos_dyn_gen_frozen_needs_install(eval_ctx, g))
+    return 0;
+  return kos_dyn_gen_install(eval_ctx, g);
+}
+
+
 /* === KosPyAsyncGen type === */
 
 
@@ -41,11 +56,8 @@
 
    On success (primary path): chain unwound, gen released, ctx ready for free.
    On fallback: chain freed, gen released, ctx ready for free.
-   Does not free ctx; caller does that.  For clear, caller also sets
+   Does not free ctx; caller does that. For clear, caller also sets
    agen->gen = NULL and agen->ctx = NULL.
-
-   For demand __iter__, chain_ctx is the dedicated demand context instead of
-   agen->ctx
 */
 static void asyncgen_teardown_chain_on_ctx(KosPyAsyncGen *agen, KosContext *ctx) {
 
@@ -110,9 +122,11 @@ static void asyncgen_teardown_chain_on_ctx(KosPyAsyncGen *agen, KosContext *ctx)
     if (PyErr_ExceptionMatches(PyExc_GeneratorExit)
         || PyErr_ExceptionMatches(PyExc_StopIteration)) {
       PyErr_Clear();
+
     } else {
       PyErr_Clear();
     }
+
     if (KosEvent_PAYLOAD(&ev))
       Py_DECREF(KosEvent_PAYLOAD(&ev));
     if (KosEvent_EXC_TYPE(&ev))
@@ -145,38 +159,20 @@ fallback:
 }
 
 
-static void asyncgen_teardown_frozen(KosPyAsyncGen *agen) {
-
-  asyncgen_teardown_chain_on_ctx(agen, agen->ctx);
-}
-
-
-void KosAsyncGen_TeardownDemandContext(KosPyAsyncGen *agen, KosContext *dctx) {
-
-  asyncgen_teardown_chain_on_ctx(agen, dctx);
-}
-
-
 static void asyncgen_dealloc(PyObject *self) {
 
   PyObject_GC_UnTrack(self);
 
   KosPyAsyncGen *agen = (KosPyAsyncGen *) self;
 
-  if (agen->sync_demand_active) {
-    /* Execution chain is on DemandSyncGenerator ctx; only free empty agen ctx */
-    if (agen->ctx) {
-      kos_context_free(agen->ctx);
-      agen->ctx = NULL;
-    }
-  }
-  else if (agen->gen && agen->ctx && ! KosContext_DYN_TOP(agen->ctx)) {
-    asyncgen_teardown_frozen(agen);
-  }
-  else if (agen->gen) {
+  if (agen->gen && agen->ctx && ! KosContext_DYN_TOP(agen->ctx)) {
+    asyncgen_teardown_chain_on_ctx(agen, agen->ctx);
+
+  } else if (agen->gen) {
     kos_dyngen_release((KosDynGen *) agen->gen);
     agen->gen = NULL;
   }
+
   if (agen->ctx)
     kos_context_free(agen->ctx);
 
@@ -193,17 +189,12 @@ static int asyncgen_traverse(PyObject *self, visitproc visit, void *arg) {
 
   Py_VISIT(agen->code_name);
 
-  if (agen->sync_demand_active) {
-    if (agen->ctx)
-      return kos_context_traverse(agen->ctx, visit, arg);
-    return 0;
-  }
-
   if (agen->gen && agen->ctx && ! KosContext_DYN_TOP(agen->ctx)) {
     res = kos_dynnode_traverse((KosDynNode *) agen->gen, visit, arg);
     if (res)
       return res;
   }
+
   if (agen->ctx)
     return kos_context_traverse(agen->ctx, visit, arg);
 
@@ -217,21 +208,14 @@ static int asyncgen_clear(PyObject *self) {
 
   Py_CLEAR(agen->code_name);
 
-  if (agen->sync_demand_active) {
-    if (agen->ctx) {
-      kos_context_free(agen->ctx);
-      agen->ctx = NULL;
-    }
-    return 0;
-  }
-
   if (agen->gen && agen->ctx && ! KosContext_DYN_TOP(agen->ctx)) {
-    asyncgen_teardown_frozen(agen);
-  }
-  else if (agen->gen) {
+    asyncgen_teardown_chain_on_ctx(agen, agen->ctx);
+
+  } else if (agen->gen) {
     kos_dyngen_release((KosDynGen *) agen->gen);
     agen->gen = NULL;
   }
+
   if (agen->ctx) {
     kos_context_free(agen->ctx);
     agen->ctx = NULL;
@@ -313,7 +297,6 @@ PyObject *KosPyAsyncGen_New(KosContext *ctx) {
   agen->code_name = NULL;
   agen->in_progress = 0;
   agen->closed = 0;
-  agen->sync_demand_active = 0;
 
   PyObject_GC_Track((PyObject *) agen);
   return (PyObject *) agen;
@@ -379,12 +362,7 @@ static PyObject *asyncgenasend_iternext(PyObject *self) {
   KosPyAsyncGenASend *asend = (KosPyAsyncGenASend *) self;
   KosPyAsyncGen *agen = asend->agen;
 
-  if (! agen || ! agen->ctx) {
-    PyErr_SetNone(PyExc_StopAsyncIteration);
-    return NULL;
-  }
-
-  if (agen->closed) {
+  if (! agen || ! agen->ctx || agen->closed || agen->closed) {
     PyErr_SetNone(PyExc_StopAsyncIteration);
     return NULL;
   }
@@ -404,6 +382,14 @@ static PyObject *asyncgenasend_iternext(PyObject *self) {
   asend->send_value = NULL;
   asend->throw_typ = NULL;
   asend->throw_exc = NULL;
+
+  if (install_frozen_gen_for_resume(agen->ctx, agen) < 0) {
+    agen->in_progress = 0;
+    Py_XDECREF(send_val);
+    Py_XDECREF(throw_typ);
+    Py_XDECREF(throw_exc);
+    return NULL;
+  }
 
   /* Drive the context */
   KosEvent ev = {0};
