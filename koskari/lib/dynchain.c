@@ -1015,7 +1015,7 @@ static int kos_dyn_gen_freeze_and_release(KosContext *ctx, KosDynGen *gen,
            ? kos_dynnode_kind_name(KosDynNode_KIND(KosContext_DYN_TOP(ctx)))
            : "NULL",
        (void *) KosContext_FRAME_TOP(ctx),
-       (void *) kos_ctx_resume_gen_get(ctx),
+       (void *) KosContext_RESUME_GEN(ctx),
        (void *) owner);
   return 0;
 }

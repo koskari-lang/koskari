@@ -156,27 +156,10 @@ typedef enum KosDelimReturnKind {
 } KosDelimReturnKind;
 
 
-typedef struct KosDelimReturnState {
-  uint8_t kind; /* KosDelimReturnKind */
-  uint8_t _pad[3];
-  union {
-    struct {
-      KosDynNode *chain;
-      uint32_t pc;
-    } k_return;
-    struct {
-      KosDynFrame *frame;
-      uint32_t pc;
-      KosDynNode *node;
-    } pop_prompt;
-  } u;
-} KosDelimReturnState;
-
-
 /**
   Python await vs frozen GEN resume storage: mutually exclusive in practice.
   suspension_event (separate field) records the last eval boundary for revive;
-  the bridge holds in-flight await/yield machinery and may be AWAIT while
+  async_* holds in-flight await/yield machinery and may be AWAIT while
   suspension_event is KOS_SUSP_NONE after entry clears the tag.
 */
 typedef enum KosAsyncBridgeKind {
@@ -184,21 +167,6 @@ typedef enum KosAsyncBridgeKind {
   KOS_ASYNC_BRIDGE_YIELD_GEN,
   KOS_ASYNC_BRIDGE_AWAIT,
 } KosAsyncBridgeKind;
-
-
-typedef struct KosAsyncBridge {
-  uint8_t kind; /* KosAsyncBridgeKind */
-  uint8_t _pad[3];
-  union {
-    struct {
-      KosDynGen *gen;
-    } yield;
-    struct {
-      PyObject *await_iter;
-      PyObject *pending_defer;
-    } await;
-  } u;
-} KosAsyncBridge;
 
 
 /**
@@ -302,23 +270,6 @@ typedef struct KosOpOutcome {
 
 
 /**
-  Map KOS_LOP_POST tag to the int historically passed to eval_phase_post_opcode.
-*/
-static inline int kos_op_post_tag_to_res(uint8_t tag) {
-
-  if (tag == KOS_OP_POST_TAG_SUSPEND)
-    return 1;
-  if (tag == KOS_OP_POST_TAG_CONTROL_RETURNED)
-    return KOS_OP_RES_CONTROL_RETURNED;
-  if (tag == KOS_OP_POST_TAG_ERR)
-    return -1;
-  if (tag == KOS_OP_POST_TAG_PARENT_RETURN)
-    return KOS_OP_RES_PARENT_RETURN_DELIVER;
-  return -1;
-}
-
-
-/**
   KosEvent is the out_ev buffer passed into koskari_eval for the whole run.
 
   Handlers and post_opcode write kind, payload, and exc_type as each
@@ -371,48 +322,7 @@ typedef struct KosEvalResult {
 } KosEvalResult;
 
 
-static inline void kos_eval_result_clear(KosEvalResult *r) {
-
-  Py_XDECREF(r->value);
-  r->value = NULL;
-}
-
-
-/**
-  Fill *dst from *src; steals no references from src (increments into dst).
-  Clears previous dst payload and exc_type.  For KOS_ERES_RAISE, only sets
-  kind; caller syncs exc_type/payload from PyErr if needed.
-*/
-static inline void kos_eval_result_to_event(
-    const KosEvalResult *src,
-    KosEvent *dst) {
-
-  Py_CLEAR(KosEvent_PAYLOAD(dst));
-  Py_CLEAR(KosEvent_EXC_TYPE(dst));
-  switch (src->kind) {
-  case KOS_ERES_RETURN:
-    KosEvent_KIND(dst) = KOS_EV_RETURN;
-    KosEvent_PAYLOAD(dst) = src->value;
-    Py_XINCREF(src->value);
-    break;
-  case KOS_ERES_RAISE:
-    KosEvent_KIND(dst) = KOS_EV_RAISE;
-    break;
-  case KOS_ERES_YIELD:
-    KosEvent_KIND(dst) = KOS_EV_YIELD;
-    KosEvent_PAYLOAD(dst) = src->value;
-    Py_XINCREF(src->value);
-    break;
-  case KOS_ERES_AWAIT:
-    KosEvent_KIND(dst) = KOS_EV_AWAIT;
-    KosEvent_PAYLOAD(dst) = src->value;
-    Py_XINCREF(src->value);
-    break;
-  default:
-    KosEvent_KIND(dst) = KOS_EV_NONE;
-    break;
-  }
-}
+#define kos_eval_result_clear(r) Py_CLEAR((r)->value)
 
 
 /* === KosContext: VM execution context === */
@@ -436,7 +346,7 @@ static inline void kos_eval_result_to_event(
 
   Suspension and resumption:
   - When koskari_eval returns KOS_EV_AWAIT, the context is suspended.
-  - async_bridge (KOS_ASYNC_BRIDGE_AWAIT) holds the iterator from __await__()
+  - async_kind KOS_ASYNC_BRIDGE_AWAIT holds the iterator from __await__()
     on the Python awaitable; KOS_ASYNC_BRIDGE_YIELD_GEN holds the frozen GEN.
   - Resumption injects the result back into the VM via the stack.
 */
@@ -468,7 +378,18 @@ struct KosContext {
   KosDynNode *invocation_segment_top;
 
   /* k(value) return vs POP_PROMPT delimited push (mutually exclusive) */
-  KosDelimReturnState delim_return;
+  uint8_t delim_kind; /* KosDelimReturnKind */
+  union {
+    struct {
+      KosDynNode *chain;
+      uint32_t pc;
+    } k_return;
+    struct {
+      KosDynFrame *frame;
+      uint32_t pc;
+      KosDynNode *node;
+    } pop_prompt;
+  } delim;
 
   /* --- Python bridge: await/yield suspend and resume --- */
   PyObject *py_last_yielded; /* last yielded object (debug/optional) */
@@ -480,10 +401,19 @@ struct KosContext {
   PyObject *inject_type;  /* exception type when inject_mode==KOS_INJECT_THROW */
   PyObject *inject_value;  /* exception object when inject_mode==1 */
 
-  /* Last eval boundary reason for revive (independent of async_bridge kind) */
+  /* Last eval boundary reason for revive (independent of async_kind) */
   uint8_t suspension_event;  /* KosSuspensionEvent */
 
-  KosAsyncBridge async_bridge;
+  uint8_t async_kind; /* KosAsyncBridgeKind */
+  union {
+    struct {
+      KosDynGen *gen;
+    } yield;
+    struct {
+      PyObject *await_iter;
+      PyObject *pending_defer;
+    } await;
+  } async;
 
   uint32_t flags;            /* KosContextFlags */
 
@@ -491,64 +421,12 @@ struct KosContext {
 };
 
 
-/* === KosContext delim_return + async_bridge (inline helpers) === */
+/* === KosContext delim + async (mutator helpers; getters are KosContext_*) === */
 
 static inline void kos_ctx_delim_clear(KosContext *ctx) {
 
-  ctx->delim_return.kind = KOS_DELIM_NONE;
-  memset(&ctx->delim_return.u, 0, sizeof(ctx->delim_return.u));
-}
-
-
-static inline KosDynNode *kos_ctx_return_target_chain(const KosContext *c) {
-
-  return (c->delim_return.kind == KOS_DELIM_K_RETURN)
-             ? c->delim_return.u.k_return.chain
-             : NULL;
-}
-
-
-static inline uint32_t kos_ctx_return_target_pc(const KosContext *c) {
-
-  return (c->delim_return.kind == KOS_DELIM_K_RETURN)
-             ? c->delim_return.u.k_return.pc
-             : (uint32_t) -1;
-}
-
-
-static inline KosDynFrame *kos_ctx_delimited_return_frame(const KosContext *c) {
-
-  return (c->delim_return.kind == KOS_DELIM_POP_PROMPT)
-             ? c->delim_return.u.pop_prompt.frame
-             : NULL;
-}
-
-
-static inline uint32_t kos_ctx_delimited_return_pc(const KosContext *c) {
-
-  return (c->delim_return.kind == KOS_DELIM_POP_PROMPT)
-             ? c->delim_return.u.pop_prompt.pc
-             : (uint32_t) -1;
-}
-
-
-static inline KosDynNode *kos_ctx_delimited_return_node(const KosContext *c) {
-
-  return (c->delim_return.kind == KOS_DELIM_POP_PROMPT)
-             ? c->delim_return.u.pop_prompt.node
-             : NULL;
-}
-
-
-static inline void kos_ctx_delim_set_k_return(
-    KosContext *ctx,
-    KosDynNode *chain,
-    uint32_t pc) {
-
-  kos_ctx_delim_clear(ctx);
-  ctx->delim_return.kind = KOS_DELIM_K_RETURN;
-  ctx->delim_return.u.k_return.chain = chain;
-  ctx->delim_return.u.k_return.pc = pc;
+  ctx->delim_kind = KOS_DELIM_NONE;
+  memset(&ctx->delim, 0, sizeof(ctx->delim));
 }
 
 
@@ -559,84 +437,31 @@ static inline void kos_ctx_delim_set_pop_prompt(
     KosDynNode *node) {
 
   kos_ctx_delim_clear(ctx);
-  ctx->delim_return.kind = KOS_DELIM_POP_PROMPT;
-  ctx->delim_return.u.pop_prompt.frame = frame;
-  ctx->delim_return.u.pop_prompt.pc = pc;
-  ctx->delim_return.u.pop_prompt.node = node;
+  ctx->delim_kind = KOS_DELIM_POP_PROMPT;
+  ctx->delim.pop_prompt.frame = frame;
+  ctx->delim.pop_prompt.pc = pc;
+  ctx->delim.pop_prompt.node = node;
 }
 
 
 static inline void kos_ctx_async_bridge_clear(KosContext *ctx) {
 
-  if (ctx->async_bridge.kind == KOS_ASYNC_BRIDGE_AWAIT) {
-    Py_XDECREF(ctx->async_bridge.u.await.await_iter);
-    Py_XDECREF(ctx->async_bridge.u.await.pending_defer);
+  if (ctx->async_kind == KOS_ASYNC_BRIDGE_AWAIT) {
+    Py_XDECREF(ctx->async.await.await_iter);
+    Py_XDECREF(ctx->async.await.pending_defer);
   }
-  ctx->async_bridge.kind = KOS_ASYNC_BRIDGE_NONE;
-  memset(&ctx->async_bridge.u, 0, sizeof(ctx->async_bridge.u));
-}
-
-
-static inline void kos_ctx_async_bridge_assign_await_iter(
-    KosContext *ctx,
-    PyObject *await_iter) {
-
-  if (ctx->async_bridge.kind == KOS_ASYNC_BRIDGE_AWAIT) {
-    Py_XDECREF(ctx->async_bridge.u.await.await_iter);
-    ctx->async_bridge.u.await.await_iter = await_iter;
-    return;
-  }
-  kos_ctx_async_bridge_clear(ctx);
-  ctx->async_bridge.kind = KOS_ASYNC_BRIDGE_AWAIT;
-  ctx->async_bridge.u.await.await_iter = await_iter;
-  ctx->async_bridge.u.await.pending_defer = NULL;
-}
-
-
-static inline void kos_ctx_async_bridge_assign_pending_defer(
-    KosContext *ctx,
-    PyObject *defer_obj) {
-
-  if (ctx->async_bridge.kind != KOS_ASYNC_BRIDGE_AWAIT) {
-    kos_ctx_async_bridge_clear(ctx);
-    ctx->async_bridge.kind = KOS_ASYNC_BRIDGE_AWAIT;
-    ctx->async_bridge.u.await.await_iter = NULL;
-  }
-  Py_XDECREF(ctx->async_bridge.u.await.pending_defer);
-  ctx->async_bridge.u.await.pending_defer = defer_obj;
+  ctx->async_kind = KOS_ASYNC_BRIDGE_NONE;
+  memset(&ctx->async, 0, sizeof(ctx->async));
 }
 
 
 static inline void kos_ctx_async_bridge_py_clear_await_iter(KosContext *ctx) {
 
-  if (ctx->async_bridge.kind == KOS_ASYNC_BRIDGE_AWAIT) {
-    Py_CLEAR(ctx->async_bridge.u.await.await_iter);
-    if (! ctx->async_bridge.u.await.pending_defer)
-      ctx->async_bridge.kind = KOS_ASYNC_BRIDGE_NONE;
+  if (ctx->async_kind == KOS_ASYNC_BRIDGE_AWAIT) {
+    Py_CLEAR(ctx->async.await.await_iter);
+    if (! ctx->async.await.pending_defer)
+      ctx->async_kind = KOS_ASYNC_BRIDGE_NONE;
   }
-}
-
-
-static inline void kos_ctx_async_bridge_py_clear_pending_defer(KosContext *ctx) {
-
-  if (ctx->async_bridge.kind == KOS_ASYNC_BRIDGE_AWAIT) {
-    Py_CLEAR(ctx->async_bridge.u.await.pending_defer);
-    if (! ctx->async_bridge.u.await.await_iter)
-      ctx->async_bridge.kind = KOS_ASYNC_BRIDGE_NONE;
-  }
-}
-
-
-static inline KosDynGen *kos_ctx_async_bridge_take_yield_gen(KosContext *ctx) {
-
-  KosDynGen *g;
-
-  if (ctx->async_bridge.kind != KOS_ASYNC_BRIDGE_YIELD_GEN)
-    return NULL;
-  g = ctx->async_bridge.u.yield.gen;
-  ctx->async_bridge.u.yield.gen = NULL;
-  ctx->async_bridge.kind = KOS_ASYNC_BRIDGE_NONE;
-  return g;
 }
 
 
@@ -645,32 +470,8 @@ static inline void kos_ctx_async_bridge_set_yield_gen(
     KosDynGen *gen) {
 
   kos_ctx_async_bridge_clear(ctx);
-  ctx->async_bridge.kind = KOS_ASYNC_BRIDGE_YIELD_GEN;
-  ctx->async_bridge.u.yield.gen = gen;
-}
-
-
-static inline PyObject *kos_ctx_py_await_iter_get(const KosContext *c) {
-
-  return (c->async_bridge.kind == KOS_ASYNC_BRIDGE_AWAIT)
-             ? c->async_bridge.u.await.await_iter
-             : NULL;
-}
-
-
-static inline PyObject *kos_ctx_pending_defer_get(const KosContext *c) {
-
-  return (c->async_bridge.kind == KOS_ASYNC_BRIDGE_AWAIT)
-             ? c->async_bridge.u.await.pending_defer
-             : NULL;
-}
-
-
-static inline KosDynGen *kos_ctx_resume_gen_get(const KosContext *c) {
-
-  return (c->async_bridge.kind == KOS_ASYNC_BRIDGE_YIELD_GEN)
-             ? c->async_bridge.u.yield.gen
-             : NULL;
+  ctx->async_kind = KOS_ASYNC_BRIDGE_YIELD_GEN;
+  ctx->async.yield.gen = gen;
 }
 
 
@@ -690,16 +491,37 @@ static inline KosDynGen *kos_ctx_resume_gen_get(const KosContext *c) {
 #define KosContext_PLAN_STACK(c)             (((KosContext *)(c))->plan_stack)
 #define KosContext_CHAIN_VERSION(c)          (((KosContext *)(c))->chain_version)
 #define KosContext_INVOCATION_SEGMENT_TOP(c) (((KosContext *)(c))->invocation_segment_top)
-#define KosContext_RETURN_TARGET_CHAIN(c)   (kos_ctx_return_target_chain((const KosContext *)(c)))
-#define KosContext_RETURN_TARGET_PC(c)      (kos_ctx_return_target_pc((const KosContext *)(c)))
-#define KosContext_DELIMITED_RETURN_FRAME(c) (kos_ctx_delimited_return_frame((const KosContext *)(c)))
-#define KosContext_DELIMITED_RETURN_PC(c)   (kos_ctx_delimited_return_pc((const KosContext *)(c)))
-#define KosContext_DELIMITED_RETURN_NODE(c) (kos_ctx_delimited_return_node((const KosContext *)(c)))
-#define KosContext_PY_AWAIT_ITER(c)          (kos_ctx_py_await_iter_get((const KosContext *)(c)))
+#define KosContext_RETURN_TARGET_CHAIN(c)                                 \
+  (((KosContext *)(c))->delim_kind == KOS_DELIM_K_RETURN                      \
+       ? ((KosContext *)(c))->delim.k_return.chain                            \
+       : NULL)
+#define KosContext_RETURN_TARGET_PC(c)                                      \
+  (((KosContext *)(c))->delim_kind == KOS_DELIM_K_RETURN                      \
+       ? ((KosContext *)(c))->delim.k_return.pc                              \
+       : (uint32_t)-1)
+#define KosContext_DELIMITED_RETURN_FRAME(c)                                \
+  (((KosContext *)(c))->delim_kind == KOS_DELIM_POP_PROMPT                     \
+       ? ((KosContext *)(c))->delim.pop_prompt.frame                         \
+       : NULL)
+#define KosContext_DELIMITED_RETURN_PC(c)                                   \
+  (((KosContext *)(c))->delim_kind == KOS_DELIM_POP_PROMPT                     \
+       ? ((KosContext *)(c))->delim.pop_prompt.pc                              \
+       : (uint32_t)-1)
+#define KosContext_DELIMITED_RETURN_NODE(c)                                 \
+  (((KosContext *)(c))->delim_kind == KOS_DELIM_POP_PROMPT                     \
+       ? ((KosContext *)(c))->delim.pop_prompt.node                           \
+       : NULL)
+#define KosContext_PY_AWAIT_ITER(c)                                         \
+  (((KosContext *)(c))->async_kind == KOS_ASYNC_BRIDGE_AWAIT                   \
+       ? ((KosContext *)(c))->async.await.await_iter                         \
+       : NULL)
 #define KosContext_PY_LAST_YIELDED(c)        (((KosContext *)(c))->py_last_yielded)
 #define KosContext_PY_RESUME_INJECT(c)       (((KosContext *)(c))->py_resume_inject)
 #define KosContext_PY_RESUME_KIND(c)         (((KosContext *)(c))->py_resume_kind)
-#define KosContext_PENDING_DEFER(c)         (kos_ctx_pending_defer_get((const KosContext *)(c)))
+#define KosContext_PENDING_DEFER(c)                                       \
+  (((KosContext *)(c))->async_kind == KOS_ASYNC_BRIDGE_AWAIT                  \
+       ? ((KosContext *)(c))->async.await.pending_defer                      \
+       : NULL)
 
 #define KOS_RESUME_NONE  0
 #define KOS_RESUME_AWAIT 1
@@ -711,10 +533,61 @@ static inline KosDynGen *kos_ctx_resume_gen_get(const KosContext *c) {
 #define KOS_INJECT_NONE   0
 #define KOS_INJECT_THROW  1
 #define KosContext_SUSPENSION_EVENT(c)      (((KosContext *)(c))->suspension_event)
-#define KosContext_RESUME_GEN(c)             (kos_ctx_resume_gen_get((const KosContext *)(c)))
+#define KosContext_RESUME_GEN(c)                                            \
+  (((KosContext *)(c))->async_kind == KOS_ASYNC_BRIDGE_YIELD_GEN              \
+       ? ((KosContext *)(c))->async.yield.gen                                 \
+       : NULL)
 
 #define KosContext_FLAGS(c)                  (((KosContext *)(c))->flags)
 #define KosContext_FREELIST_NEXT(c)          (((KosContext *)(c))->context_freelist_next)
+
+
+/* === KosEvalState: C-local execution snapshot (API scaffolding) === */
+
+/**
+  KosEvalState holds a borrowed pointer to the heap KosContext plus cached
+  pointers to the current frame and code object for the hot path.
+
+  See design/interpreter/freeze-thaw-context-segments.md for the freeze/thaw
+  model. Part 2 of design/api/opcode-access-and-koscontext-surface.md lists
+  opcode-level responsibilities consolidated under this API surface.
+
+  Call KosEvalState_Init before use; call KosEvalState_SyncFromContext when
+  ctx->frame_top may have changed without updating this struct.
+*/
+
+struct KosEvalState {
+  KosContext *ctx;
+  KosDynFrame *frame; /* cached top frame; maintained by Init/Sync */
+  KosCode *code;      /* cached from frame */
+};
+
+
+void KosEvalState_Init(KosEvalState *es, KosContext *ctx);
+void KosEvalState_SyncFromContext(KosEvalState *es);
+
+KosContext *KosEvalState_Context(const KosEvalState *es);
+KosDynFrame *KosEvalState_Frame(const KosEvalState *es);
+KosCode *KosEvalState_CurrentCode(const KosEvalState *es);
+PyObject *KosEvalState_CurrentNamespace(const KosEvalState *es);
+
+uint32_t KosEvalState_GetFramePc(const KosEvalState *es);
+int KosEvalState_SetFramePc(KosEvalState *es, uint32_t pc);
+uint32_t KosEvalState_GetActingPc(const KosEvalState *es);
+int KosEvalState_SetActingPc(KosEvalState *es, uint32_t pc);
+
+PyObject *KosEvalState_GetConstant(const KosEvalState *es, uint32_t index);
+
+int KosEvalState_StackPushRef(KosEvalState *es, PyObject *val);
+PyObject *KosEvalState_StackPopRef(KosEvalState *es);
+
+int KosEvalState_StackPushBlock(KosEvalState *es);
+int KosEvalState_StackDropBlock(KosEvalState *es);
+
+PyObject *KosEvalState_GetFast(const KosEvalState *es, size_t index);
+int KosEvalState_SetFast(KosEvalState *es, size_t index, PyObject *value);
+
+PyObject *KosEvalState_GetVar(const KosEvalState *es, PyObject *key);
 
 
 /* === Context lifecycle === */
