@@ -89,20 +89,6 @@ Ref: [api/tracing.md](api/tracing.md).
 
 ## Compiler
 
-### Remaining specials
-
-- **Variadic ordering checks** — variadic `>`, `>=`, `<`, `<=` that assert
-  strict/non-strict chain (e.g. `(> 9 2 0)`, `(<= 0 0 3 4 5 5 8)`).
-
-Ref: [FEATURES.md](FEATURES.md) § Further migration / backlog;
-[language/special-forms.md](language/special-forms.md).
-
-### Variadic compiled object ops (`*` keyword form)
-
-Variadic compiled object ops need to support the `*` keyword form. In that case
-they should lower left-most first, then expand to the run-time form of the
-operation.
-
 ### Slice atom and slice syntax
 
 Bring over Python-sibilant slicing support in both forms:

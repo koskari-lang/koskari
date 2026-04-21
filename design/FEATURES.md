@@ -16,9 +16,9 @@ This document provides a high-level summary of all features identified from both
 - **Documentation**: doc
 
 ### Operators
-- **Arithmetic**: +, -, *, /, //, %, **, @ (implemented as compile/+, compile/-, compile/*, compile//, compile///, compile/%, compile/**, compile/@ via OBJECT_* opcodes with left-to-right constant folding for leading constant arguments)
+- **Arithmetic**: +, -, *, /, //, %, **, @ (implemented as compile/+, compile/-, compile/*, compile//, compile///, compile/%, compile/**, compile/@ via OBJECT_* COUNT opcodes with left-to-right constant folding for leading constant arguments)
 - **Bitwise**: &, |, ^, ~, <<, >> (implemented as compile/&, compile/|, compile/^, compile/~, compile/<<, compile/>> via OBJECT_* opcodes; &, |, ^ are variadic with constant folding)
-- **Comparison**: =, !=, <, <=, >, >=, is, is-not, in, not-in (implemented as compile/=, compile/!=, compile/<, compile/<=, compile/>, compile/>=, compile/is, compile/is-not, compile/in, compile/not-in via OBJECT_* opcodes)
+- **Comparison**: ==, !=, <, <=, >, >=, is, is-not, in, not-in (implemented as compile/==, compile/!=, compile/<, compile/<=, compile/>, compile/>=, compile/is, compile/is-not, compile/in, compile/not-in via OBJECT_* COUNT opcodes for rich compares; **chained** `a op b op c` semantics; aliases include **compile/equal?**, **compile/not-equal?**, **compile/lt?**, **compile/le?**, **compile/gt?**, **compile/ge?**)
 - **Type checks**: isinstance, issubclass (implemented as compile/isinstance, compile/issubclass via OBJECT_IS_INSTANCE, OBJECT_IS_SUBCLASS; variadic type arguments)
 - **Logical**: and, or, not (compile/not via OBJECT_NOT; compile/and and compile/or implemented as short-circuit conjunctions/disjunctions via JUMP_AND/JUMP_OR)
 - **Object introspection**: repr, truth, iter, str, len, type, dir, vars, aiter, divmod (implemented as compile/repr, compile/truth, compile/iter, compile/str, compile/len, compile/type, compile/dir, compile/vars, compile/aiter, compile/divmod via OBJECT_* opcodes)
@@ -77,7 +77,7 @@ This document provides a high-level summary of all features identified from both
 - **Collections**: build_tuple, build_list, build_set, build_dict
 - **Values**: values
 - **Utilities**: reapply, apply, identity, constantly, _pass
-- **Operators**: +, -, *, /, //, @, &, |, ^, in, not-in, build-str
+- **Operators**: +, -, *, /, //, @, &, |, ^, ==, !=, <, <=, >, >=, in, not-in, build-str (and **equal?**, **not-equal?**, **lt?**, **le?**, **gt?**, **ge?** aliases for comparisons)
 
 ## Interpreter Features
 
@@ -106,7 +106,7 @@ This document provides a high-level summary of all features identified from both
 - **Phases**: Parse → Expand → Compile → Optimize → Generate (full pipeline in progress)
 - **Components**: Compiler, CodeContext, ByteCodeFragment (implemented in `koskari.compile`)
 - **Optimization**: Reducible constant folding (`koskari/compile/specials/object.py` and related), instruction peephole rewrites and jump folding (`Compiler.compress`), VAR→FAST lowering (`Compiler.convert_fast` in `Compiler.complete`)
-- **Implemented specials**: compile/bytecode, compile/begin, compile/call, compile/class, compile/define, **compile/define-syntax**, **compile/syntax-rules**, **compile/macro-rules**, **compile/syntax-match**, **compile/macro-match**, compile/lambda, compile/let, compile/parameterize, **compile/define-parameter**, compile/cond, compile/if, compile/when, compile/unless, compile/and, compile/or, compile/while, compile/for-each, compile/break, compile/continue, compile/try, compile/raise, compile/check-exception, compile/clear-exception, compile/load-exception, compile/setq, compile/setq-values, compile/define-values, compile/refq, compile/bindq, compile/delq, compile/attr, compile/del-attr, compile/set-attr, compile/ref-attr, compile/item, compile/ref-item, compile/del-item, compile/set-item, compile/quote, **compile/quasiquote, compile/unquote, compile/unquote-splicing**, compile/car, compile/cdr, compile/cons, compile/with, compile/dyn-with, compile/dyn-wind, **import**, **import-from**, **compile/= compile/!= compile/< compile/<= compile/> compile/>= compile/in compile/not-in compile/is compile/is-not compile/isinstance compile/issubclass compile/+ compile/- compile/* compile/** compile/& compile/| compile/^ compile/// compile// compile/@ compile/% compile/<< compile/>> compile/divmod compile/not compile/repr compile/truth compile/iter compile/~ compile/str compile/len compile/type compile/dir compile/vars compile/aiter** (see design/SPECIALS.md)
+- **Implemented specials**: compile/bytecode, compile/begin, compile/call, compile/class, compile/define, **compile/define-syntax**, **compile/syntax-rules**, **compile/macro-rules**, **compile/syntax-match**, **compile/macro-match**, compile/lambda, compile/let, compile/parameterize, **compile/define-parameter**, compile/cond, compile/if, compile/when, compile/unless, compile/and, compile/or, compile/while, compile/for-each, compile/break, compile/continue, compile/try, compile/raise, compile/check-exception, compile/clear-exception, compile/load-exception, compile/setq, compile/setq-values, compile/define-values, compile/refq, compile/bindq, compile/delq, compile/attr, compile/del-attr, compile/set-attr, compile/ref-attr, compile/item, compile/ref-item, compile/del-item, compile/set-item, compile/quote, **compile/quasiquote, compile/unquote, compile/unquote-splicing**, compile/car, compile/cdr, compile/cons, compile/with, compile/dyn-with, compile/dyn-wind, **import**, **import-from**, **compile/== compile/!= compile/< compile/<= compile/> compile/>= compile/in compile/not-in compile/is compile/is-not compile/isinstance compile/issubclass compile/+ compile/- compile/* compile/** compile/& compile/| compile/^ compile/// compile// compile/@ compile/% compile/<< compile/>> compile/divmod compile/not compile/repr compile/truth compile/iter compile/~ compile/str compile/len compile/type compile/dir compile/vars compile/aiter** (see design/SPECIALS.md)
 
 ### Evaluator
 - **Model**: Custom drive loop (`koskari_eval` in eval.c). Callable types Expression and Function (func.c) return a KosCoroutine (coro.c); driving the coroutine (await/send) runs the evaluator. Continuation invocation from Python raises `KoskariContinuationApply` for upwards transfer (does not return a coroutine).
@@ -156,6 +156,7 @@ This document provides a high-level summary of all features identified from both
 **Native Operators** (C extension):
 - Reducing arithmetic: `+`, `-`, `*`, `/`, `//`, `@`
 - Reducing bitwise: `&`, `|`, `^`
+- Chained rich comparison: `==`, `!=`, `<`, `<=`, `>`, `>=` (and **equal?**, **not-equal?**, **lt?**, **le?**, **gt?**, **ge?** aliases)
 - Membership: `in`, `not-in`
 - String builder: `build-str`
 
@@ -196,10 +197,9 @@ This document provides a high-level summary of all features identified from both
 
 ### Further migration / backlog
 
-Further language and compiler work (slices, variadic comparison chains,
-optimization passes, macro hygiene, fenced literals, bundles, and other items)
-is tracked in [TODO.md](TODO.md). The live inventory of implemented specials
-is [SPECIALS.md](SPECIALS.md).
+Further language and compiler work (slices, optimization passes, macro hygiene,
+fenced literals, bundles, and other items) is tracked in [TODO.md](TODO.md).
+The live inventory of implemented specials is [SPECIALS.md](SPECIALS.md).
 
 ### Needs Reconsideration
 - CPython bytecode target (abandoned)
