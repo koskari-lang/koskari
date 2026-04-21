@@ -42,9 +42,9 @@ define dots-renderer [cell]:
 
 
 define get-renderer [by-name]:
-  if (eq? by-name "digits"):
+  if (equal? by-name "digits"):
     digit-renderer
-  elif (eq? by-name "dots"):
+  elif (equal? by-name "dots"):
     dots-renderer
   else:
     (make-char-renderer)
@@ -123,7 +123,7 @@ define multi-step [stdscr board menu-y counter]:
     (stdscr.addstr 0 0 (str index))
     (stdscr.refresh)
     (board.age)
-    unless (eq? -1 (stdscr.getch)):
+    unless (equal? -1 (stdscr.getch)):
       (break)
 
   (board.display)
@@ -138,7 +138,7 @@ define continuous-mode [stdscr board menu-y]:
   (stdscr.refresh)
   (stdscr.nodelay 1)
 
-  while (eq? -1 (stdscr.getch)):
+  while (equal? -1 (stdscr.getch)):
     (step stdscr board)
     (sleep 0.1)
 
@@ -167,10 +167,10 @@ define curses-main [stdscr options]:
     (stdscr.move (+ 1 y-pos) (+ 1 x-pos))
     define event (stdscr.getch)
 
-    if (eq? event ERR):
+    if (equal? event ERR):
       sleep(0.1)
 
-    elif (and (< 0 event) (< event 256)):
+    elif (< 0 event 256):
       (define echar (chr event))
       if (in " \n" echar):
         (board.toggle x-pos y-pos)
@@ -190,13 +190,13 @@ define curses-main [stdscr options]:
       elif (in digits echar):
         (multi-step stdscr board menu-y (** 10 (digits.index echar)))
 
-    elif (eq? event KEY_UP):
+    elif (equal? event KEY_UP):
       (set! y-pos (- y-pos 1))
-    elif (eq? event KEY_DOWN):
+    elif (equal? event KEY_DOWN):
       (set! y-pos (+ y-pos 1))
-    elif (eq? event KEY_LEFT):
+    elif (equal? event KEY_LEFT):
       (set! x-pos (- x-pos 1))
-    elif (eq? event KEY_RIGHT):
+    elif (equal? event KEY_RIGHT):
       (set! x-pos (+ x-pos 1))
     None
   None

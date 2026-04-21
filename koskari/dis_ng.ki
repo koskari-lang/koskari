@@ -144,18 +144,18 @@ define _build_ns_const_map [code]:
     define arg (item oparg 1)
     define op (OpCode op_int)
 
-    if (eq? op OpCode.KOS_OP_CONST):
+    if (equal? op OpCode.KOS_OP_CONST):
       if (and (<= 0 arg) (< arg (len cpool)) (isinstance (item cpool arg) NamespaceSpec)):
         set! last_nspec_cpool_idx arg
       else:
         set! last_nspec_cpool_idx None
     else:
-      if (eq? op OpCode.KOS_OP_PUSH_NS):
+      if (equal? op OpCode.KOS_OP_PUSH_NS):
         define ext (code.extra_tuple arg)
         (set-item result i (item ext 0))
         (set! last_nspec_cpool_idx None)
       else:
-        if (eq? op OpCode.KOS_OP_PUSH_COLLECT):
+        if (equal? op OpCode.KOS_OP_PUSH_COLLECT):
           if (and (<= 0 arg) (< arg (len cpool))
                   (isinstance (item cpool arg) NamespaceSpec)):
             (set-item result i arg)
@@ -208,7 +208,7 @@ define _format_arg [code op_style arg cpool local_names closure_names
   :return: string description of the argument
   """
 
-  if (eq? op_style OpStyle.KOSTYLE_EXTRA):
+  if (equal? op_style OpStyle.KOSTYLE_EXTRA):
     if (is-not extra_schema None):
       define schema extra_schema
       if schema:
@@ -220,13 +220,13 @@ define _format_arg [code op_style arg cpool local_names closure_names
 
         define parts #[]
         for-each [[val fk] (zip ext schema)]:
-          if (or (eq? fk OpStyle.KOSTYLE_CONST) (eq? fk OpStyle.KOSTYLE_VAR)):
+          if (or (equal? fk OpStyle.KOSTYLE_CONST) (equal? fk OpStyle.KOSTYLE_VAR)):
             if (and (<= 0 val) (< val (len cpool))):
               (define prefix
-                (if (eq? fk OpStyle.KOSTYLE_CONST) "c" "v"))
+                (if (equal? fk OpStyle.KOSTYLE_CONST) "c" "v"))
               (define cval (item cpool val))
               (define inner
-                (if (and (eq? fk OpStyle.KOSTYLE_CONST)
+                (if (and (equal? fk OpStyle.KOSTYLE_CONST)
                          (isinstance cval NamespaceSpec))
                   then: (_format_nspec_inline val cval)
                   else: (_format_constant cval)))
@@ -234,13 +234,13 @@ define _format_arg [code op_style arg cpool local_names closure_names
             else:
               parts.append (str val)
           else:
-            if (eq? fk OpStyle.KOSTYLE_FASTVAR):
+            if (equal? fk OpStyle.KOSTYLE_FASTVAR):
               parts.append (_format_fast_part val local_names closure_names)
             else:
-              if (eq? fk OpStyle.KOSTYLE_COUNT):
+              if (equal? fk OpStyle.KOSTYLE_COUNT):
                 parts.append (str val)
               else:
-                if (eq? fk OpStyle.KOSTYLE_LABEL):
+                if (equal? fk OpStyle.KOSTYLE_LABEL):
                   parts.append f"-> {val}"
                 else:
                   parts.append (str val)
@@ -252,7 +252,7 @@ define _format_arg [code op_style arg cpool local_names closure_names
     else:
       return (str arg)
 
-  if (eq? op_style OpStyle.KOSTYLE_CONST):
+  if (equal? op_style OpStyle.KOSTYLE_CONST):
     if (and (<= 0 arg) (< arg (len cpool))):
       define val (item cpool arg)
       if (isinstance val NamespaceSpec):
@@ -261,13 +261,13 @@ define _format_arg [code op_style arg cpool local_names closure_names
         return f"{arg} ({(_format_constant val)})"
     return (str arg)
 
-  if (eq? op_style OpStyle.KOSTYLE_VAR):
+  if (equal? op_style OpStyle.KOSTYLE_VAR):
     if (and (<= 0 arg) (< arg (len cpool))):
       define name (item cpool arg)
       return f"{arg} ({(repr name)})"
     return (str arg)
 
-  if (eq? op_style OpStyle.KOSTYLE_FASTVAR):
+  if (equal? op_style OpStyle.KOSTYLE_FASTVAR):
     (define n_local
       (if local_names
         (len local_names)
@@ -284,12 +284,12 @@ define _format_arg [code op_style arg cpool local_names closure_names
       return f"{arg} (closure {(repr (item closure_names idx))})"
     return (str arg)
 
-  if (eq? op_style OpStyle.KOSTYLE_LABEL):
+  if (equal? op_style OpStyle.KOSTYLE_LABEL):
     (return f"{arg} (-> {arg})")
 
-  if (or (eq? op_style OpStyle.KOSTYLE_COUNT)
-         (eq? op_style OpStyle.KOSTYLE_PAIR_COUNT)
-         (eq? op_style OpStyle.KOSTYLE_STAR)):
+  if (or (equal? op_style OpStyle.KOSTYLE_COUNT)
+         (equal? op_style OpStyle.KOSTYLE_PAIR_COUNT)
+         (equal? op_style OpStyle.KOSTYLE_STAR)):
     if (is-not ns_label None):
       return f"{arg} ({ns_label})"
     return (str arg)

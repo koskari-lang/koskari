@@ -428,6 +428,156 @@ class TestOperatorNotIn(unittest.IsolatedAsyncioTestCase):
             op_not_in(1, 2, 3)
 
 
+class TestOperatorComparisonArity(unittest.IsolatedAsyncioTestCase):
+    """Tests for comparison operator arity checks"""
+
+    async def test_eq_requires_two_args(self):
+        """== with fewer than two args raises TypeError"""
+
+        op_eq = getattr(lib, '==')
+        with self.assertRaises(TypeError):
+            op_eq()
+        with self.assertRaises(TypeError):
+            op_eq(1)
+
+
+    async def test_ne_requires_two_args(self):
+        """!= with fewer than two args raises TypeError"""
+
+        op_ne = getattr(lib, '!=')
+        with self.assertRaises(TypeError):
+            op_ne()
+        with self.assertRaises(TypeError):
+            op_ne(1)
+
+
+    async def test_lt_requires_two_args(self):
+        """< with fewer than two args raises TypeError"""
+
+        op_lt = getattr(lib, '<')
+        with self.assertRaises(TypeError):
+            op_lt()
+        with self.assertRaises(TypeError):
+            op_lt(1)
+
+
+    async def test_le_requires_two_args(self):
+        """<= with fewer than two args raises TypeError"""
+
+        op_le = getattr(lib, '<=')
+        with self.assertRaises(TypeError):
+            op_le()
+        with self.assertRaises(TypeError):
+            op_le(1)
+
+
+    async def test_gt_requires_two_args(self):
+        """> with fewer than two args raises TypeError"""
+
+        op_gt = getattr(lib, '>')
+        with self.assertRaises(TypeError):
+            op_gt()
+        with self.assertRaises(TypeError):
+            op_gt(1)
+
+
+    async def test_ge_requires_two_args(self):
+        """>= with fewer than two args raises TypeError"""
+
+        op_ge = getattr(lib, '>=')
+        with self.assertRaises(TypeError):
+            op_ge()
+        with self.assertRaises(TypeError):
+            op_ge(1)
+
+
+class TestOperatorComparisonChaining(unittest.IsolatedAsyncioTestCase):
+    """Tests for comparison operator chaining behavior"""
+
+    async def test_eq_chain_true(self):
+        """== returns true when all links are equal"""
+
+        op_eq = getattr(lib, '==')
+        self.assertTrue(op_eq(3, 3, 3, 3))
+
+
+    async def test_eq_chain_false(self):
+        """== returns false when any link differs"""
+
+        op_eq = getattr(lib, '==')
+        self.assertFalse(op_eq(3, 3, 4, 3))
+
+
+    async def test_ne_chain_true(self):
+        """!= returns true when all adjacent links differ"""
+
+        op_ne = getattr(lib, '!=')
+        self.assertTrue(op_ne(1, 2, 3, 4))
+
+
+    async def test_ne_chain_false(self):
+        """!= returns false when an adjacent pair is equal"""
+
+        op_ne = getattr(lib, '!=')
+        self.assertFalse(op_ne(1, 2, 2, 3))
+
+
+    async def test_lt_chain_true(self):
+        """< returns true for strictly increasing chain"""
+
+        op_lt = getattr(lib, '<')
+        self.assertTrue(op_lt(1, 2, 3, 4))
+
+
+    async def test_lt_chain_false_middle(self):
+        """< returns false when middle link fails"""
+
+        op_lt = getattr(lib, '<')
+        self.assertFalse(op_lt(1, 3, 2, 4))
+
+
+    async def test_le_chain_true(self):
+        """<= returns true for non-decreasing chain"""
+
+        op_le = getattr(lib, '<=')
+        self.assertTrue(op_le(1, 2, 2, 4))
+
+
+    async def test_le_chain_false_middle(self):
+        """<= returns false when middle link fails"""
+
+        op_le = getattr(lib, '<=')
+        self.assertFalse(op_le(1, 2, 1, 4))
+
+
+    async def test_gt_chain_true(self):
+        """> returns true for strictly decreasing chain"""
+
+        op_gt = getattr(lib, '>')
+        self.assertTrue(op_gt(4, 3, 2, 1))
+
+
+    async def test_gt_chain_false_middle(self):
+        """> returns false when middle link fails"""
+
+        op_gt = getattr(lib, '>')
+        self.assertFalse(op_gt(4, 2, 3, 1))
+
+
+    async def test_ge_chain_true(self):
+        """>= returns true for non-increasing chain"""
+
+        op_ge = getattr(lib, '>=')
+        self.assertTrue(op_ge(4, 3, 3, 1))
+
+
+    async def test_ge_chain_false_middle(self):
+        """>= returns false when middle link fails"""
+
+        op_ge = getattr(lib, '>=')
+        self.assertFalse(op_ge(4, 3, 4, 1))
+
+
 class TestOperatorBuildStr(unittest.IsolatedAsyncioTestCase):
     """Tests for the build-str string concatenation operator"""
 

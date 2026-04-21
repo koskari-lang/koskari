@@ -9,7 +9,7 @@ define main []:
     (print "Hello, koskari!")
 
 
-when (eq? __name__ "__main__"):
+when (equal? __name__ "__main__"):
     (main)
 
 

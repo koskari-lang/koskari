@@ -1988,29 +1988,6 @@ static PyObject *binary_is_not_result(PyObject *left, PyObject *right) {
 }
 
 
-static int op_OBJECT_EQ_impl(
-    KosContext *ctx,
-    KosEvent *out_ev,
-    KosOp *insn,
-    int op) {
-
-  KosEvalStackLR lr = {0};
-  if (KOS_STACK_BLOCK_POP_ARGS(&CURRENT_STACK(ctx), lr))
-    return -1;
-
-  int cmp = PyObject_RichCompareBool(lr.left, lr.right, op);
-  Py_DECREF(lr.left);
-  Py_DECREF(lr.right);
-  if (cmp < 0 && PyErr_Occurred())
-    return -1;
-
-  PyObject *res = (cmp ? Py_True : Py_False);
-  Py_INCREF(res);
-  (void) insn;
-  return push_result(ctx, res);
-}
-
-
 /* Pop value then container; PySequence_Contains(container, value). Branch to
    KosOp_ARG(insn) when cmp == branch_when (CHECK_IN: 0, CHECK_NOT_IN: 1). */
 static int kos_check_contains(

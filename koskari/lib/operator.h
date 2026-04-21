@@ -60,6 +60,19 @@ PyObject *KosOperator_NotIn(PyObject *const *value, size_t count);
 PyObject *KosOperator_BuildStr(PyObject *const *value, size_t count);
 
 
+PyObject *KosOperator_Eq(PyObject *const *values, size_t count);
+
+PyObject *KosOperator_Ne(PyObject *const *values, size_t count);
+
+PyObject *KosOperator_Lt(PyObject *const *values, size_t count);
+
+PyObject *KosOperator_Le(PyObject *const *values, size_t count);
+
+PyObject *KosOperator_Gt(PyObject *const *values, size_t count);
+
+PyObject *KosOperator_Ge(PyObject *const *values, size_t count);
+
+
 /* === unit lifecycle === */
 
 

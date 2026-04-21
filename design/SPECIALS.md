@@ -2101,18 +2101,34 @@ the first non-constant argument to preserve dunder dispatch semantics.
 
 ### Comparison interface
 
-All comparison specials require exactly 2 arguments and emit a NOARG opcode
-(the arg value is ignored by the C handler).
+All comparison specials require at least 2 arguments and emit a COUNT opcode
+with arg = number of supplied operands.
+
+Primary symbols and aliases (see `koskari/compile/specials/object.py`):
+
+- Equality: **`compile/==`**, alias **`compile/equal?`**
+- Inequality: **`compile/!=`**, alias **`compile/not-equal?`**
+- Ordering: **`compile/<`**, **`compile/<=`**, **`compile/>`**, **`compile/>=`**
+  with aliases **`compile/lt?`**, **`compile/le?`**, **`compile/gt?`**, **`compile/ge?`**
 
 
-| Special            | Opcode      | Python   |
-| ------------------ | ----------- | -------- |
-| `(compile/= A B)`  | `OBJECT_EQ` | `A == B` |
-| `(compile/!= A B)` | `OBJECT_NE` | `A != B` |
-| `(compile/< A B)`  | `OBJECT_LT` | `A < B`  |
-| `(compile/<= A B)` | `OBJECT_LE` | `A <= B` |
-| `(compile/> A B)`  | `OBJECT_GT` | `A > B`  |
-| `(compile/>= A B)` | `OBJECT_GE` | `A >= B` |
+| Special                  | Opcode      | Chained Python semantics                 |
+| ------------------------ | ----------- | ---------------------------------------- |
+| `(compile/== A B ...)`   | `OBJECT_EQ` | `A == B == ...`                          |
+| `(compile/!= A B ...)`   | `OBJECT_NE` | `A != B != ...`                          |
+| `(compile/< A B ...)`    | `OBJECT_LT` | `A < B < ...`                            |
+| `(compile/<= A B ...)`   | `OBJECT_LE` | `A <= B <= ...`                          |
+| `(compile/> A B ...)`    | `OBJECT_GT` | `A > B > ...`                            |
+| `(compile/>= A B ...)`   | `OBJECT_GE` | `A >= B >= ...`                          |
+
+
+Examples:
+
+```scheme
+(compile/< 0 1 2 3)      ; true  => (and (< 0 1) (< 1 2) (< 2 3))
+(compile/<= 1 2 2 4)     ; true
+(compile/== 5 5 7 5)     ; false
+```
 
 
 ---

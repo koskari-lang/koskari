@@ -59,28 +59,40 @@ def _find_op(code, opcode):
 class TestObjectEq(SpecialsTestCase):
 
     async def test_eq_true(self):
-        expr, mod = self.compile_expr("(compile/= a b)", a=1, b=1)
+        expr, mod = self.compile_expr("(compile/== a b)", a=1, b=1)
         self.assertTrue(await expr())
 
 
     async def test_eq_false(self):
-        expr, mod = self.compile_expr("(compile/= a b)", a=1, b=2)
+        expr, mod = self.compile_expr("(compile/== a b)", a=1, b=2)
         self.assertFalse(await expr())
 
 
     async def test_eq_emits_opcode(self):
-        code = self.compile_to_code("(compile/= a b)")
+        code = self.compile_to_code("(compile/== a b)")
         self.assertIn(OpCode.KOS_OP_OBJECT_EQ, _opcodes(code))
+
+
+    async def test_eq_chain_true(self):
+        expr, mod = self.compile_expr("(compile/== a b c d)", a=5, b=5, c=5, d=5)
+        self.assertTrue(await expr())
+
+
+    async def test_eq_chain_false(self):
+        expr, mod = self.compile_expr("(compile/== a b c d)", a=5, b=5, c=7, d=5)
+        self.assertFalse(await expr())
+
+
+    async def test_eq_emits_count_for_chain(self):
+        code = self.compile_to_code("(compile/== a b c)")
+        arg = _find_op(code, OpCode.KOS_OP_OBJECT_EQ)
+        self.assertIsNotNone(arg)
+        self.assertEqual(3, arg)
 
 
     async def test_eq_requires_two_args(self):
         with self.assertRaises(SpecialError):
-            self.compile_to_code("(compile/= a)")
-
-
-    async def test_eq_rejects_three_args(self):
-        with self.assertRaises(SpecialError):
-            self.compile_to_code("(compile/= a b c)")
+            self.compile_to_code("(compile/== a)")
 
 
 class TestObjectNe(SpecialsTestCase):
@@ -100,6 +112,28 @@ class TestObjectNe(SpecialsTestCase):
         self.assertIn(OpCode.KOS_OP_OBJECT_NE, _opcodes(code))
 
 
+    async def test_ne_chain_true(self):
+        expr, mod = self.compile_expr("(compile/!= a b c d)", a=1, b=2, c=3, d=4)
+        self.assertTrue(await expr())
+
+
+    async def test_ne_chain_false(self):
+        expr, mod = self.compile_expr("(compile/!= a b c d)", a=1, b=2, c=2, d=4)
+        self.assertFalse(await expr())
+
+
+    async def test_ne_emits_count_for_chain(self):
+        code = self.compile_to_code("(compile/!= a b c)")
+        arg = _find_op(code, OpCode.KOS_OP_OBJECT_NE)
+        self.assertIsNotNone(arg)
+        self.assertEqual(3, arg)
+
+
+    async def test_ne_requires_two_args(self):
+        with self.assertRaises(SpecialError):
+            self.compile_to_code("(compile/!= a)")
+
+
 class TestObjectLt(SpecialsTestCase):
 
     async def test_lt_true(self):
@@ -115,6 +149,34 @@ class TestObjectLt(SpecialsTestCase):
     async def test_lt_emits_opcode(self):
         code = self.compile_to_code("(compile/< a b)")
         self.assertIn(OpCode.KOS_OP_OBJECT_LT, _opcodes(code))
+
+
+    async def test_lt_chain_true(self):
+        expr, mod = self.compile_expr("(compile/< a b c d)", a=1, b=2, c=3, d=4)
+        self.assertTrue(await expr())
+
+
+    async def test_lt_chain_false(self):
+        expr, mod = self.compile_expr("(compile/< a b c d)", a=1, b=3, c=2, d=4)
+        self.assertFalse(await expr())
+
+
+    async def test_lt_emits_count_for_chain(self):
+        code = self.compile_to_code("(compile/< a b c)")
+        arg = _find_op(code, OpCode.KOS_OP_OBJECT_LT)
+        self.assertIsNotNone(arg)
+        self.assertEqual(3, arg)
+
+
+    async def test_lt_requires_two_args(self):
+        with self.assertRaises(SpecialError):
+            self.compile_to_code("(compile/< a)")
+
+
+    async def test_lt_star_arg_rewrites_to_call(self):
+        code = self.compile_to_code("(compile/< a *: xs)")
+        self.assertIsNone(_find_op(code, OpCode.KOS_OP_OBJECT_LT))
+        self.assertTrue(self.call_ops(code))
 
 
 class TestObjectLe(SpecialsTestCase):
@@ -139,6 +201,28 @@ class TestObjectLe(SpecialsTestCase):
         self.assertIn(OpCode.KOS_OP_OBJECT_LE, _opcodes(code))
 
 
+    async def test_le_chain_true(self):
+        expr, mod = self.compile_expr("(compile/<= a b c d)", a=1, b=2, c=2, d=4)
+        self.assertTrue(await expr())
+
+
+    async def test_le_chain_false(self):
+        expr, mod = self.compile_expr("(compile/<= a b c d)", a=1, b=2, c=1, d=4)
+        self.assertFalse(await expr())
+
+
+    async def test_le_emits_count_for_chain(self):
+        code = self.compile_to_code("(compile/<= a b c)")
+        arg = _find_op(code, OpCode.KOS_OP_OBJECT_LE)
+        self.assertIsNotNone(arg)
+        self.assertEqual(3, arg)
+
+
+    async def test_le_requires_two_args(self):
+        with self.assertRaises(SpecialError):
+            self.compile_to_code("(compile/<= a)")
+
+
 class TestObjectGt(SpecialsTestCase):
 
     async def test_gt_true(self):
@@ -154,6 +238,28 @@ class TestObjectGt(SpecialsTestCase):
     async def test_gt_emits_opcode(self):
         code = self.compile_to_code("(compile/> a b)")
         self.assertIn(OpCode.KOS_OP_OBJECT_GT, _opcodes(code))
+
+
+    async def test_gt_chain_true(self):
+        expr, mod = self.compile_expr("(compile/> a b c d)", a=4, b=3, c=2, d=1)
+        self.assertTrue(await expr())
+
+
+    async def test_gt_chain_false(self):
+        expr, mod = self.compile_expr("(compile/> a b c d)", a=4, b=2, c=3, d=1)
+        self.assertFalse(await expr())
+
+
+    async def test_gt_emits_count_for_chain(self):
+        code = self.compile_to_code("(compile/> a b c)")
+        arg = _find_op(code, OpCode.KOS_OP_OBJECT_GT)
+        self.assertIsNotNone(arg)
+        self.assertEqual(3, arg)
+
+
+    async def test_gt_requires_two_args(self):
+        with self.assertRaises(SpecialError):
+            self.compile_to_code("(compile/> a)")
 
 
 class TestObjectGe(SpecialsTestCase):
@@ -176,6 +282,28 @@ class TestObjectGe(SpecialsTestCase):
     async def test_ge_emits_opcode(self):
         code = self.compile_to_code("(compile/>= a b)")
         self.assertIn(OpCode.KOS_OP_OBJECT_GE, _opcodes(code))
+
+
+    async def test_ge_chain_true(self):
+        expr, mod = self.compile_expr("(compile/>= a b c d)", a=4, b=3, c=3, d=1)
+        self.assertTrue(await expr())
+
+
+    async def test_ge_chain_false(self):
+        expr, mod = self.compile_expr("(compile/>= a b c d)", a=4, b=3, c=4, d=1)
+        self.assertFalse(await expr())
+
+
+    async def test_ge_emits_count_for_chain(self):
+        code = self.compile_to_code("(compile/>= a b c)")
+        arg = _find_op(code, OpCode.KOS_OP_OBJECT_GE)
+        self.assertIsNotNone(arg)
+        self.assertEqual(3, arg)
+
+
+    async def test_ge_requires_two_args(self):
+        with self.assertRaises(SpecialError):
+            self.compile_to_code("(compile/>= a)")
 
 
 # ---------------------------------------------------------------------------

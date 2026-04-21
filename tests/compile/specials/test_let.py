@@ -99,7 +99,7 @@ class TestLetrecSpecial(SpecialsTestCase):
         src_str = """
         (compile/letrec [[fact (compile/lambda [n]
                           (compile/cond
-                            [(compile/= n 0) 1]
+                            [(compile/== n 0) 1]
                             [else:
                               (compile/* n
                                 (compile/call fact (compile/- n 1)))]))]]

@@ -1,7 +1,7 @@
 ;; Minimal full-stack reproducer: reader, compiler, basics, and runtime.
 
 
-when (eq? __name__ "__main__"):
+when (equal? __name__ "__main__"):
     (print (+ 1 (* 2 3)))
 
 

@@ -37,7 +37,7 @@ class TestObjectComparisonOpcodes(CevalTest):
         code, ns = build_expr([
             ["CONST", 42],
             ["CONST", 42],
-            ["OBJECT_EQ", 0],
+            ["OBJECT_EQ", 2],
             ["RETURN", 1],
         ])
         self.assertEqual(await make_callable(code, ns)(), True)
@@ -47,7 +47,7 @@ class TestObjectComparisonOpcodes(CevalTest):
         code, ns = build_expr([
             ["CONST", 1],
             ["CONST", 2],
-            ["OBJECT_NE", 0],
+            ["OBJECT_NE", 2],
             ["RETURN", 1],
         ])
         self.assertEqual(await make_callable(code, ns)(), True)
@@ -57,7 +57,7 @@ class TestObjectComparisonOpcodes(CevalTest):
         code, ns = build_expr([
             ["CONST", 1],
             ["CONST", 2],
-            ["OBJECT_LT", 0],
+            ["OBJECT_LT", 2],
             ["RETURN", 1],
         ])
         self.assertEqual(await make_callable(code, ns)(), True)
@@ -67,7 +67,7 @@ class TestObjectComparisonOpcodes(CevalTest):
         code, ns = build_expr([
             ["CONST", 2],
             ["CONST", 2],
-            ["OBJECT_LE", 0],
+            ["OBJECT_LE", 2],
             ["RETURN", 1],
         ])
         self.assertEqual(await make_callable(code, ns)(), True)
@@ -77,7 +77,7 @@ class TestObjectComparisonOpcodes(CevalTest):
         code, ns = build_expr([
             ["CONST", 3],
             ["CONST", 2],
-            ["OBJECT_GT", 0],
+            ["OBJECT_GT", 2],
             ["RETURN", 1],
         ])
         self.assertEqual(await make_callable(code, ns)(), True)
@@ -87,10 +87,77 @@ class TestObjectComparisonOpcodes(CevalTest):
         code, ns = build_expr([
             ["CONST", 2],
             ["CONST", 2],
-            ["OBJECT_GE", 0],
+            ["OBJECT_GE", 2],
             ["RETURN", 1],
         ])
         self.assertEqual(await make_callable(code, ns)(), True)
+
+
+    async def test_object_comparisons_chain_true(self):
+        cases = (
+            ("OBJECT_EQ", [7, 7, 7]),
+            ("OBJECT_NE", [1, 2, 3]),
+            ("OBJECT_LT", [1, 2, 3]),
+            ("OBJECT_LE", [1, 2, 2]),
+            ("OBJECT_GT", [3, 2, 1]),
+            ("OBJECT_GE", [3, 2, 2]),
+        )
+
+        for opcode, values in cases:
+            with self.subTest(opcode=opcode):
+                expr = [["CONST", value] for value in values]
+                expr.append([opcode, 3])
+                expr.append(["RETURN", 1])
+                code, ns = build_expr(expr)
+                self.assertEqual(await make_callable(code, ns)(), True)
+
+
+    async def test_object_comparisons_chain_false(self):
+        cases = (
+            ("OBJECT_EQ", [7, 7, 8]),
+            ("OBJECT_NE", [1, 2, 2]),
+            ("OBJECT_LT", [1, 3, 2]),
+            ("OBJECT_LE", [1, 2, 1]),
+            ("OBJECT_GT", [3, 1, 2]),
+            ("OBJECT_GE", [3, 2, 3]),
+        )
+
+        for opcode, values in cases:
+            with self.subTest(opcode=opcode):
+                expr = [["CONST", value] for value in values]
+                expr.append([opcode, 3])
+                expr.append(["RETURN", 1])
+                code, ns = build_expr(expr)
+                self.assertEqual(await make_callable(code, ns)(), False)
+
+
+    async def test_object_comparisons_reject_count_zero(self):
+        opcodes = ("OBJECT_EQ", "OBJECT_NE", "OBJECT_LT",
+                   "OBJECT_LE", "OBJECT_GT", "OBJECT_GE")
+
+        for opcode in opcodes:
+            with self.subTest(opcode=opcode):
+                code, ns = build_expr([
+                    [opcode, 0],
+                    ["RETURN", 1],
+                ])
+                with self.assertRaises(TypeError):
+                    await make_callable(code, ns)()
+
+
+    async def test_object_comparisons_reject_count_one(self):
+        opcodes = ("OBJECT_EQ", "OBJECT_NE", "OBJECT_LT",
+                   "OBJECT_LE", "OBJECT_GT", "OBJECT_GE")
+
+        for opcode in opcodes:
+            with self.subTest(opcode=opcode):
+                code, ns = build_expr([
+                    ["CONST", 1],
+                    [opcode, 1],
+                    ["RETURN", 1],
+                ])
+                with self.assertRaises(TypeError):
+                    await make_callable(code, ns)()
 
 
     async def test_object_in(self):

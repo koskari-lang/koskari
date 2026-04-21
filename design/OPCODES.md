@@ -2452,7 +2452,7 @@ Full design: [interpreter/with-dyn-with.md](interpreter/with-dyn-with.md). Summa
 
 Object protocol opcodes: single Python operation on TOS (and optionally below); pop operands, push result. All **Implemented** unless noted.
 
-- **Comparisons**: OBJECT_EQ, OBJECT_NE, OBJECT_LT, OBJECT_LE, OBJECT_GT, OBJECT_GE — stack `[..., a, b] → [..., result]`.
+- **Comparisons**: OBJECT_EQ, OBJECT_NE, OBJECT_LT, OBJECT_LE, OBJECT_GT, OBJECT_GE (COUNT) — stack `[..., a1, a2, ... aN] → [..., result]`, `N >= 2`.
 - **Predicates**: OBJECT_IN, OBJECT_NOT_IN, OBJECT_IS, OBJECT_IS_NOT; OBJECT_IS_INSTANCE (COUNT), OBJECT_IS_SUBCLASS (COUNT).
 - **Numeric**: OBJECT_ADD, OBJECT_SUBTRACT, OBJECT_MULTIPLY, OBJECT_POWER, OBJECT_FLOOR_DIVIDE, OBJECT_TRUE_DIVIDE, OBJECT_MODULO, OBJECT_* (bit ops, matrix multiply).
 - **General**: OBJECT_ITER, OBJECT_AITER, OBJECT_LEN, OBJECT_NOT, OBJECT_REPR, OBJECT_STR, OBJECT_FORMAT, OBJECT_FORMAT_CONST, OBJECT_TYPE, OBJECT_DIR, OBJECT_VARS, OBJECT_TRUTH, OBJECT_DIVMOD, OBJECT_BIT_INVERT, OBJECT_BIT_LEFT, OBJECT_BIT_RIGHT.
@@ -2461,44 +2461,44 @@ Each `OBJECT_*` opcode in `opcodes.incl` has its own subsection below.
 
 ### KOS_OP_OBJECT_EQ {#kos_op_object_eq}
 
-- **Style**: NOARG.
+- **Style**: COUNT.
 - **Status**: Implemented.
-- **Semantics**: See [§19 Object protocol](#19-object-protocol) overview.
+- **Semantics**: Rich-compare chain `a1 == a2 == ... == aN` over `N` stack values (`arg = N`, `N >= 2`). Raises `TypeError` when `arg < 2`.
 - **Implementation**: `koskari/lib/opcode/OBJECT_EQ.c`
 
 ### KOS_OP_OBJECT_GE {#kos_op_object_ge}
 
-- **Style**: NOARG.
+- **Style**: COUNT.
 - **Status**: Implemented.
-- **Semantics**: See [§19 Object protocol](#19-object-protocol) overview.
+- **Semantics**: Rich-compare chain `a1 >= a2 >= ... >= aN` over `N` stack values (`arg = N`, `N >= 2`). Raises `TypeError` when `arg < 2`.
 - **Implementation**: `koskari/lib/opcode/OBJECT_GE.c`
 
 ### KOS_OP_OBJECT_GT {#kos_op_object_gt}
 
-- **Style**: NOARG.
+- **Style**: COUNT.
 - **Status**: Implemented.
-- **Semantics**: See [§19 Object protocol](#19-object-protocol) overview.
+- **Semantics**: Rich-compare chain `a1 > a2 > ... > aN` over `N` stack values (`arg = N`, `N >= 2`). Raises `TypeError` when `arg < 2`.
 - **Implementation**: `koskari/lib/opcode/OBJECT_GT.c`
 
 ### KOS_OP_OBJECT_LE {#kos_op_object_le}
 
-- **Style**: NOARG.
+- **Style**: COUNT.
 - **Status**: Implemented.
-- **Semantics**: See [§19 Object protocol](#19-object-protocol) overview.
+- **Semantics**: Rich-compare chain `a1 <= a2 <= ... <= aN` over `N` stack values (`arg = N`, `N >= 2`). Raises `TypeError` when `arg < 2`.
 - **Implementation**: `koskari/lib/opcode/OBJECT_LE.c`
 
 ### KOS_OP_OBJECT_LT {#kos_op_object_lt}
 
-- **Style**: NOARG.
+- **Style**: COUNT.
 - **Status**: Implemented.
-- **Semantics**: See [§19 Object protocol](#19-object-protocol) overview.
+- **Semantics**: Rich-compare chain `a1 < a2 < ... < aN` over `N` stack values (`arg = N`, `N >= 2`). Raises `TypeError` when `arg < 2`.
 - **Implementation**: `koskari/lib/opcode/OBJECT_LT.c`
 
 ### KOS_OP_OBJECT_NE {#kos_op_object_ne}
 
-- **Style**: NOARG.
+- **Style**: COUNT.
 - **Status**: Implemented.
-- **Semantics**: See [§19 Object protocol](#19-object-protocol) overview.
+- **Semantics**: Rich-compare chain `a1 != a2 != ... != aN` over `N` stack values (`arg = N`, `N >= 2`). Raises `TypeError` when `arg < 2`.
 - **Implementation**: `koskari/lib/opcode/OBJECT_NE.c`
 
 ### KOS_OP_OBJECT_IN {#kos_op_object_in}

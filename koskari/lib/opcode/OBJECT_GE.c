@@ -18,5 +18,22 @@
 */
 
 KOS_OP_HANDLER(OBJECT_GE) {
-  return kos_op_outcome_from_int_step(op_OBJECT_EQ_impl(ctx, out_ev, insn, Py_GE));
+  int count = (int) KosOp_ARG(insn);
+
+  if (count < 2) {
+    PyErr_Format(PyExc_TypeError, "OBJECT_GE requires at least 2"
+                 " elements");
+    return KOS_OP_POST_ERR();
+  }
+
+  PyObject *const *args = KosStackBlock_TailPtr(CURRENT_STACK(ctx), count);
+  if (unlikely(! args))
+    return KOS_OP_POST_ERR();
+
+  PyObject *result = KosOperator_Ge(args, count);
+  KosStackBlock_DropNoErr(&CURRENT_STACK(ctx), count);
+  if (unlikely(! result))
+    return KOS_OP_POST_ERR();
+
+  return kos_op_outcome_from_int_step(push_result(ctx, result));
 }
