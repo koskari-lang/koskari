@@ -25,10 +25,9 @@
 /**
    tracing.h
 
-   Compile-flag enabled tracing for Koskari freelists, interned atoms,
-   events, and timing. Include this header in .c files that use tracing
-   macros. Not included from lib.h; opt-in per file (same pattern as
-   debug.h).
+   Compile-flag enabled tracing for Koskari freelists, events, and timing.
+   Include this header in .c files that use tracing macros. Not included from
+   lib.h; opt-in per file (same pattern as debug.h).
 
    Event counters use KosTraceEventId; increment with KOS_TRACE_EVENTS_INC.
 
@@ -69,10 +68,6 @@ typedef enum KosTracePostOpId {
 
 #ifndef KOS_TRACE_FREELIST
 #define KOS_TRACE_FREELIST 0
-#endif
-
-#ifndef KOS_TRACE_INTERN
-#define KOS_TRACE_INTERN 0
 #endif
 
 #ifndef KOS_TRACE_EVENTS
@@ -123,16 +118,6 @@ void kos_trace_fl_return(const char *name, int overrun);
 #else
 #define KOS_TRACE_FL_ALLOC(name, from_freelist)   ((void)0)
 #define KOS_TRACE_FL_RETURN(name, overrun)        ((void)0)
-#endif
-
-
-/* === intern tracing macros (phase 2) === */
-
-#if KOS_TRACE_INTERN
-#define KOS_TRACE_INTERN_HIT(kind, hit)           \
-  kos_trace_intern_hit(kind, hit)
-#else
-#define KOS_TRACE_INTERN_HIT(kind, hit)           ((void)0)
 #endif
 
 

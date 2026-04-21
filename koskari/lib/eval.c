@@ -80,6 +80,23 @@
 #define CURRENT_ACTING_PC(ctx)   KosDynFrame_ACTING_PC(CURRENT_FRAME(ctx))
 
 
+/* Fast dispatch prelude: SAYF, acting_pc, pre-advance pc, *insn_ptr. Assumes a
+   valid frame, in-range pc, and valid bytecode — no defensive checks. */
+#define KOS_EVAL_PREPARE_NEXT_INSN(ctx, insn_ptr)                         \
+  do {                                                                    \
+    KosDynFrame *_kos_pf = CURRENT_FRAME(ctx);                            \
+    KosCode *_kos_code = KosDynFrame_CODE(_kos_pf);                       \
+    uint32_t _kos_pc = KosDynFrame_PC(_kos_pf);                           \
+    KosOp *_kos_insn = &KosCode_CODE(_kos_code)[_kos_pc];                 \
+    SAYF("[eval] pc=%u op=%s arg=%u\n",                                   \
+         (unsigned) _kos_pc, kos_opcode_name(KosOp_OP(_kos_insn)),        \
+         (unsigned) KosOp_ARG(_kos_insn));                                \
+    KosDynFrame_ACTING_PC(_kos_pf) = _kos_pc;                             \
+    KosDynFrame_PC(_kos_pf) = _kos_pc + 1;                                \
+    *(insn_ptr) = _kos_insn;                                              \
+  } while (0)
+
+
 typedef struct {
   PyObject *left;
   PyObject *right;
@@ -2760,61 +2777,6 @@ static KosEvalStep eval_phase_pending_exception(
 
 
 /**
-   Dispatch prelude — fetch, validate, and pre-advance.
-
-   Loads the next instruction from CURRENT_CODE / CURRENT_PC, performs bounds
-   and opcode-range checks, records acting_pc, pre-advances pc, and stores a
-   pointer to the instruction in *out_insn.
-
-   :param out_insn: Receives the insn pointer for the opcode about to execute.
-   :return: KOS_STEP_CONTINUE on success;
-            KOS_STEP_FATAL_ERROR when a hard internal error is set via PyErr.
-*/
-static KosEvalStep kos_eval_prepare_next_insn(
-        KosContext *ctx,
-        KosEvent *out_ev,
-        KosOp **out_insn) {
-
-  (void) out_ev;
-
-  if (unlikely(! CURRENT_FRAME(ctx))) {
-    PyErr_SetString(PyExc_RuntimeError, "eval loop: no active frame");
-    return KOS_STEP_FATAL_ERROR;
-  }
-
-  KosCode *code = CURRENT_CODE(ctx);
-  uint32_t pc = CURRENT_PC(ctx);
-
-  if (unlikely(pc >= KosCode_CODE_LEN(code))) {
-    SAYF("[eval] pc=%u OUT OF RANGE (code_len=%u)\n",
-         (unsigned) pc, (unsigned) KosCode_CODE_LEN(code));
-    PyErr_SetString(PyExc_RuntimeError, "pc out of range");
-    return KOS_STEP_FATAL_ERROR;
-  }
-
-  KosOp *insn = &KosCode_CODE(code)[pc];
-  SAYF("[eval] pc=%u op=%s arg=%u\n",
-       (unsigned) pc, kos_opcode_name(KosOp_OP(insn)), (unsigned) KosOp_ARG(insn));
-
-  /* Record acting_pc (instruction we are executing) before advance. */
-  KosDynFrame_ACTING_PC(CURRENT_FRAME(ctx)) = pc;
-
-  /* Advance PC before dispatch so normal path advances. Handlers that need
-     same-insn resume (e.g. WITH async enter/exit) perform rollback themselves. */
-  CURRENT_PC(ctx) = pc + 1;
-
-  if (unlikely((KosOpCode) KosOp_OP(insn) > KOS_OP_THEEND)) {
-    PyErr_Format(PyExc_RuntimeError, "invalid opcode %u",
-                 (unsigned) KosOp_OP(insn));
-    return KOS_STEP_FATAL_ERROR;
-  }
-
-  *out_insn = insn;
-  return KOS_STEP_CONTINUE;
-}
-
-
-/**
    YIELD half of dispatch_boundary_event. Caller already ran
    KOS_TRANS_WALK_HANDLE_YIELD.
 */
@@ -3273,21 +3235,14 @@ cg_prologue:
   trace_stack("  before", CURRENT_STACK(ctx));
   #endif
 
-  {
-    KosEvalStep pds = kos_eval_prepare_next_insn(ctx, out_ev, &insn);
-    if (pds == KOS_STEP_FATAL_ERROR)
-      return -1;
-  }
+  KOS_EVAL_PREPARE_NEXT_INSN(ctx, &insn);
   goto *optable[KosOp_OP(insn)];
 
   #define OP(name, ...)                                                \
     cg_TARGET_##name:                                                  \
       KOS_TRACE_OP_WRAP(name, op_out = op_##name(ctx, out_ev, insn));  \
       if (likely(op_out.mode == KOS_LOP_RUN)) {                        \
-        KosEvalStep _tail = kos_eval_prepare_next_insn(ctx, out_ev,    \
-                                                       &insn);         \
-        if (unlikely(_tail != KOS_STEP_CONTINUE))                      \
-          return -1;                                                   \
+        KOS_EVAL_PREPARE_NEXT_INSN(ctx, &insn);                        \
         goto *optable[KosOp_OP(insn)];                                 \
       }                                                                \
       goto cg_handle_op_outcome;
@@ -3387,11 +3342,7 @@ koskari_eval_dispatch_switch(KosContext *ctx, KosEvent *out_ev) {
 
   sw_prepare_and_dispatch:
 
-    {
-      KosEvalStep pds = kos_eval_prepare_next_insn(ctx, out_ev, &insn);
-      if (pds == KOS_STEP_FATAL_ERROR)
-        return -1;
-    }
+    KOS_EVAL_PREPARE_NEXT_INSN(ctx, &insn);
 
     switch (KosOp_OP(insn)) {
     #define OP(name, ...)                                                \

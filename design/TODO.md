@@ -79,9 +79,10 @@ Ref: [interpreter/freeze-thaw-context-segments.md](interpreter/freeze-thaw-conte
 
 ### Profiling compile-time options and runtime hooks
 
-**Status:** Freelist tracing and **`KOS_TRACE_EVENTS`** (VM/dynchain counters via
-`get_trace_report()["events"]`) are implemented. Remaining work: timing,
-intern cache, and optional opcode-level histograms.
+**Status:** Freelist tracing, **`KOS_TRACE_EVENTS`** (VM/dynchain counters via
+`get_trace_report()["events"]`), and **`KOS_TRACE_TIMING`** (per-opcode and
+post-handler timing) are implemented. Remaining work: optional opcode-level
+histograms.
 
 Ref: [api/tracing.md](api/tracing.md).
 

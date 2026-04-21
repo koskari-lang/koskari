@@ -45,10 +45,9 @@ class TestTraceReport(unittest.TestCase):
         flags = report["flags"]
         self.assertIsInstance(flags, dict)
         self.assertIn("freelist", flags)
-        self.assertIn("intern", flags)
         self.assertIn("events", flags)
         self.assertIn("timing", flags)
-        for k in ("freelist", "intern", "events", "timing"):
+        for k in ("freelist", "events", "timing"):
             self.assertIsInstance(flags[k], bool)
 
     def test_events_section_when_disabled(self):

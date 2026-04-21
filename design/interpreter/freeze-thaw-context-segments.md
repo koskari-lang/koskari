@@ -478,7 +478,7 @@ Opcodes are dispatched via computed goto or switch. Each handler has signature:
 KosOpOutcome op_<name>(KosContext *ctx, KosEvent *out_ev, KosOp *insn);
 ```
 
-`kos_eval_prepare_next_insn` supplies the current `KosOp *insn` before each dispatch; post-opcode handling does not use a separate dispatch struct. Opcodes read `CURRENT_*` macros and call `KosStackBlock_*` APIs directly.
+`KOS_EVAL_PREPARE_NEXT_INSN` supplies the current `KosOp *insn` before each dispatch; post-opcode handling does not use a separate dispatch struct. Opcodes read `CURRENT_*` macros and call `KosStackBlock_*` APIs directly.
 
 ### A.4 DynChain and Frames
 
