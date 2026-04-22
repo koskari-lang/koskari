@@ -157,31 +157,13 @@ static inline void kos_ctx_async_bridge_assign_await_iter(
     KosContext *ctx,
     PyObject *await_iter) {
 
-  if (ctx->py_await_iter || ctx->pending_defer) {
+  if (ctx->py_await_iter) {
     Py_XDECREF(ctx->py_await_iter);
     ctx->py_await_iter = await_iter;
     return;
   }
   kos_ctx_async_bridge_clear(ctx);
   ctx->py_await_iter = await_iter;
-  ctx->pending_defer = NULL;
-}
-
-
-static inline void kos_ctx_async_bridge_assign_pending_defer(
-    KosContext *ctx,
-    PyObject *defer_obj) {
-
-  if (! ctx->py_await_iter && ! ctx->pending_defer)
-    kos_ctx_async_bridge_clear(ctx);
-  Py_XDECREF(ctx->pending_defer);
-  ctx->pending_defer = defer_obj;
-}
-
-
-static inline void kos_ctx_async_bridge_py_clear_pending_defer(KosContext *ctx) {
-
-  Py_CLEAR(ctx->pending_defer);
 }
 
 
@@ -550,8 +532,6 @@ static PyObject *_import_fromlist = NULL;
 
 /* === Static forward declarations === */
 
-static int defer_drive(KosContext *ctx, KosEvent *out_ev, PyObject *defer_obj);
-
 static void inject_eval_frame_traceback(KosContext *ctx,
     PyObject **exc_type, PyObject **exc_val, PyObject **exc_tb);
 
@@ -918,10 +898,6 @@ static KosEvalMode revive_await(
     KosContext_PY_RESUME_INJECT(ctx) = NULL;
   } else if (send_val != NULL) {
     to_push = send_val;
-  }
-  if (KosContext_PENDING_DEFER(ctx) && to_push != NULL) {
-    KosDefer_FeedResult((KosDefer *) KosContext_PENDING_DEFER(ctx), to_push);
-    kos_ctx_async_bridge_py_clear_pending_defer(ctx);
   }
   if (to_push != NULL && CURRENT_FRAME(ctx)) {
     if (KosStackBlock_PushRef(&CURRENT_STACK(ctx), to_push) < 0)
@@ -1623,7 +1599,6 @@ int kos_context_traverse(
   Py_VISIT(KosContext_TOKEN(ctx));
   Py_VISIT(KosContext_DOMAIN(ctx));
   Py_VISIT(ctx->py_await_iter);
-  Py_VISIT(ctx->pending_defer);
   Py_VISIT(KosContext_PY_RESUME_INJECT(ctx));
   Py_VISIT(KosContext_INJECT_TYPE(ctx));
   Py_VISIT(KosContext_INJECT_VALUE(ctx));
@@ -1850,10 +1825,14 @@ KOS_OP_INLINE int push_result(KosContext *ctx, PyObject *val) {
 
    :return: 0 continue, 1 stop (AWAIT), -1 error
 */
-static int push_or_await(KosContext *ctx, KosEvent *out_ev, PyObject *val) {
+static int push_or_await_common(
+    KosContext *ctx,
+    KosEvent *out_ev,
+    PyObject *val,
+    int await_defer) {
 
   /* Defer is not auto-awaited; push as plain value (explicit AWAIT drives it). */
-  if (KosDefer_Check(val)) {
+  if (! await_defer && KosDefer_Check(val)) {
     return KosStackBlock_PUSH(&CURRENT_STACK(ctx), val);
   }
 
@@ -1883,6 +1862,11 @@ static int push_or_await(KosContext *ctx, KosEvent *out_ev, PyObject *val) {
   }
 
   return -1;
+}
+
+
+static int push_or_await(KosContext *ctx, KosEvent *out_ev, PyObject *val) {
+  return push_or_await_common(ctx, out_ev, val, 0);
 }
 
 
@@ -2289,9 +2273,7 @@ static int op_unimplemented_stub(KosContext *ctx, KosEvent *out_ev, KosOp *insn)
 
 
 static int kos_await_dispatch(KosContext *ctx, KosEvent *out_ev, PyObject *value) {
-  if (KosDefer_Check(value))
-    return defer_drive(ctx, out_ev, value);
-  return push_or_await(ctx, out_ev, value);
+  return push_or_await_common(ctx, out_ev, value, 1);
 }
 
 
@@ -2742,35 +2724,6 @@ enum {
 };
 
 
-/**
-   Pop inner result from stack, feed defer, push result back, release defer_obj.
-   Returns 0 on success, -1 on error (defer_obj released on failure paths that
-   match defer_drive).
-*/
-static int defer_complete_with_inner_result(
-    KosContext *ctx,
-    KosDefer *defer,
-    PyObject *defer_obj) {
-
-  PyObject *inner_result = KosStackBlock_PopRef(&CURRENT_STACK(ctx));
-  if (! inner_result) {
-    Py_DECREF(defer_obj);
-    return -1;
-  }
-
-  KosDefer_FeedResult(defer, inner_result);
-  if (KosStackBlock_PushRef(&CURRENT_STACK(ctx), inner_result) < 0) {
-    Py_DECREF(inner_result);
-    Py_DECREF(defer_obj);
-    return -1;
-  }
-
-  Py_DECREF(inner_result);
-  Py_DECREF(defer_obj);
-  return 0;
-}
-
-
 void kos_yieldfrom_close_delegate(KosDynYieldFrom *node) {
 
   if (! node)
@@ -2812,82 +2765,6 @@ void kos_yieldfrom_close_delegate(KosDynYieldFrom *node) {
 
   default:
     break;
-  }
-}
-
-
-/**
-   Drive a defer to completion or suspension. Used only by AWAIT opcode.
-   Consumes defer (caller's ref). Returns 0 continue, 1 stop (AWAIT), -1
-   error. When DELEGATING(inner), calls push_or_await(ctx, out_ev, inner); on
-   suspend stores defer in ctx->pending_defer for FeedResult on resume.
-*/
-static int defer_drive(
-    KosContext *ctx,
-    KosEvent *out_ev,
-    PyObject *defer_obj) {
-
-  KosDefer *defer = (KosDefer *) defer_obj;
-  for (;;) {
-    int suspended = 0;
-    PyObject *yielded = NULL;
-    PyObject *result = KosDefer_Start(defer, &suspended, &yielded);
-
-    if (result) {
-      if (KosStackBlock_PushRef(&CURRENT_STACK(ctx), result) < 0) {
-        Py_DECREF(result);
-        Py_DECREF(defer_obj);
-        return -1;
-      }
-      Py_DECREF(result);
-      Py_DECREF(defer_obj);
-      return 0;
-    }
-
-    if (PyErr_Occurred()) {
-      Py_DECREF(defer_obj);
-      return -1;
-    }
-
-    if (suspended && yielded) {
-      /* If inner is itself a defer, drive it; then feed outer with result. */
-      if (KosDefer_Check(yielded)) {
-        int r = defer_drive(ctx, out_ev, yielded);
-        if (r == 0) {
-          if (defer_complete_with_inner_result(ctx, defer, defer_obj) < 0)
-            return -1;
-          return 0;
-        }
-
-        if (r == 1) {
-          kos_ctx_async_bridge_assign_pending_defer(ctx, defer_obj);
-          return 1;
-        }
-
-        Py_DECREF(defer_obj);
-        return -1;
-      }
-
-      int r = push_or_await(ctx, out_ev, yielded);
-      Py_DECREF(yielded);
-      if (r == 0) {
-        if (defer_complete_with_inner_result(ctx, defer, defer_obj) < 0)
-          return -1;
-        return 0;
-      }
-
-      if (r == 1) {
-        kos_ctx_async_bridge_assign_pending_defer(ctx, defer_obj);
-        return 1;
-      }
-
-      Py_DECREF(defer_obj);
-      return -1;
-    }
-
-    Py_DECREF(defer_obj);
-    PyErr_SetString(PyExc_RuntimeError, "defer Start returned without value or suspend");
-    return -1;
   }
 }
 

@@ -333,7 +333,7 @@ typedef struct KosEvalResult {
 
   Suspension and resumption:
   - When koskari_eval returns KOS_EV_AWAIT, the context is suspended.
-  - py_await_iter / pending_defer hold in-flight Python await machinery
+  - py_await_iter holds in-flight Python await machinery
     (iterator from __await__(), defer payload). Frozen GEN resume uses
     KosPyAsyncGen::gen plus kos_dyn_gen_install at the driver before
     re-entering koskari_eval.
@@ -379,13 +379,12 @@ struct KosContext {
 
   /* --- Python bridge: await/yield suspend and resume --- */
   PyObject *py_resume_inject; /* value to push on next koskari_eval when resuming */
-  uint8_t py_resume_kind;    /* 0=none, 1=await, 2=yield */
-  PyObject *py_await_iter;   /* iterator from __await__() when suspended on AWAIT */
-  PyObject *pending_defer;   /* KosDefer payload when suspended on inner defer */
+  uint8_t py_resume_kind;     /* 0=none, 1=await, 2=yield */
+  PyObject *py_await_iter;    /* iterator from __await__() when suspended on AWAIT */
 
   /* --- Exception injection (set by coroutine_throw or dynchain inject) --- */
-  int inject_mode;       /* 0=none, 1=pending_throw */
-  PyObject *inject_type;  /* exception type when inject_mode==KOS_INJECT_THROW */
+  int inject_mode;         /* 0=none, 1=pending_throw */
+  PyObject *inject_type;   /* exception type when inject_mode==KOS_INJECT_THROW */
   PyObject *inject_value;  /* exception object when inject_mode==1 */
 
   /* Last eval boundary reason for revive */
@@ -423,9 +422,7 @@ static inline void kos_ctx_delim_set_pop_prompt(
 static inline void kos_ctx_async_bridge_clear(KosContext *ctx) {
 
   Py_XDECREF(ctx->py_await_iter);
-  Py_XDECREF(ctx->pending_defer);
   ctx->py_await_iter = NULL;
-  ctx->pending_defer = NULL;
 }
 
 
@@ -473,7 +470,6 @@ static inline void kos_ctx_async_bridge_py_clear_await_iter(KosContext *ctx) {
 #define KosContext_PY_AWAIT_ITER(c)          (((KosContext *)(c))->py_await_iter)
 #define KosContext_PY_RESUME_INJECT(c)       (((KosContext *)(c))->py_resume_inject)
 #define KosContext_PY_RESUME_KIND(c)         (((KosContext *)(c))->py_resume_kind)
-#define KosContext_PENDING_DEFER(c)        (((KosContext *)(c))->pending_defer)
 
 #define KOS_RESUME_NONE  0
 #define KOS_RESUME_AWAIT 1

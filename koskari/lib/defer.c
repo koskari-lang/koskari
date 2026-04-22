@@ -419,6 +419,21 @@ static PyObject *defer_valiter_iternext(PyObject *self) {
 }
 
 
+static PyObject *defer_valiter_send(PyObject *self, PyObject *arg) {
+  if (arg != Py_None) {
+    PyErr_SetString(PyExc_TypeError, "can't send non-None value to a just-started coroutine");
+    return NULL;
+  }
+  return defer_valiter_iternext(self);
+}
+
+
+static PyMethodDef defer_valiter_methods[] = {
+  {"send", (PyCFunction) defer_valiter_send, METH_O, NULL},
+  {NULL, NULL, 0, NULL},
+};
+
+
 static PyTypeObject KosDeferValueIteratorType = {
   PyVarObject_HEAD_INIT(NULL, 0)
   "defer_value_iterator",
@@ -429,6 +444,7 @@ static PyTypeObject KosDeferValueIteratorType = {
   .tp_traverse = defer_valiter_traverse,
   .tp_clear = defer_valiter_clear,
   .tp_iter = PyObject_SelfIter,
+  .tp_methods = defer_valiter_methods,
   .tp_iternext = defer_valiter_iternext,
 };
 
