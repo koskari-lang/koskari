@@ -60,7 +60,7 @@ KOS_OP_HANDLER(CALL_VAR_NAMES) {
 
   if (KosCallable_Check(callable)) {
     KosStackSteal steal = { 0 };
-    if (KosStackSteal_Tail(&steal, ntotal, (ctx ? KosContext_BLOCK(ctx) : NULL)) < 0) {
+    if (KosEvalState_StackSteal_Tail(es, &steal, ntotal) < 0) {
       Py_DECREF(callable);
       return KOS_OP_POST_ERR();
     }

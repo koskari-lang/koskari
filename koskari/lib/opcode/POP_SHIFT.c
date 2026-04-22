@@ -43,13 +43,8 @@ KOS_OP_HANDLER(POP_SHIFT) {
    * prompt_pop_pc+1 (first instr after POP_PROMPT). */
   SAYF("[POP_SHIFT] pre-pop: frame=%p stack=%p len=%zu (pc already advanced to %u)",
        (void *) CURRENT_FRAME(ctx),
-       (void *) (KosContext_BLOCK(ctx) && *KosContext_BLOCK(ctx)
-                     ? *KosContext_BLOCK(ctx)
-                     : NULL),
-       (KosContext_BLOCK(ctx) && *KosContext_BLOCK(ctx) ? *KosContext_BLOCK(ctx)
-                                                       : NULL)
-           ? KosEvalState_StackLen(es)
-           : 0,
+       (void *) KosEvalState_StackHead(es),
+       KosEvalState_StackLen(es),
        (unsigned) CURRENT_PC(ctx));
   result = KosEvalState_StackPopRef(es);
   if (! result) {

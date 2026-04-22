@@ -81,9 +81,9 @@ KOS_OP_HANDLER(CALL_VAR_ATTR_NAMES) {
     KosStackSteal steal = { 0 };
     int steal_ok;
     if (send_self == 0) {
-      steal_ok = KosStackSteal_TailPrepend(&steal, obj, ntotal, (ctx ? KosContext_BLOCK(ctx) : NULL));
+      steal_ok = KosEvalState_StackSteal_TailPrepend(es, &steal, obj, ntotal);
     } else {
-      steal_ok = KosStackSteal_Tail(&steal, ntotal, (ctx ? KosContext_BLOCK(ctx) : NULL));
+      steal_ok = KosEvalState_StackSteal_Tail(es, &steal, ntotal);
     }
     if (steal_ok < 0) {
       Py_DECREF(resolved);
@@ -109,7 +109,7 @@ KOS_OP_HANDLER(CALL_VAR_ATTR_NAMES) {
   PyObject *result;
   if (send_self == 0) {
     KosStackSteal steal = { 0 };
-    if (KosStackSteal_TailPrepend(&steal, obj, ntotal, (ctx ? KosContext_BLOCK(ctx) : NULL)) < 0) {
+    if (KosEvalState_StackSteal_TailPrepend(es, &steal, obj, ntotal) < 0) {
       Py_DECREF(resolved);
       Py_DECREF(obj);
       return KOS_OP_POST_ERR();

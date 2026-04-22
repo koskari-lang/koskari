@@ -45,7 +45,7 @@ KOS_OP_HANDLER(CALL_NAMES) {
 
   if (KosCallable_Check(ptr[0])) {
     KosStackSteal steal = { 0 };
-    if (KosStackSteal_Tail(&steal, ntotal, (ctx ? KosContext_BLOCK(ctx) : NULL)) < 0)
+    if (KosEvalState_StackSteal_Tail(es, &steal, ntotal) < 0)
       return KOS_OP_POST_ERR();
     PyObject *kwnames_arg = nkwds ? steal.vals[total + 1] : NULL;
     int r = KosContext_Call(ctx, out_ev, steal.vals[0],

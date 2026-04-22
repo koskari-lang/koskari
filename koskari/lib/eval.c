@@ -161,7 +161,7 @@ static inline void kos_ctx_async_bridge_assign_await_iter(
     ctx->py_await_iter = await_iter;
     return;
   }
-  kos_ctx_async_bridge_clear(ctx);
+  Py_CLEAR(KosContext_PY_AWAIT_ITER(ctx));
   ctx->py_await_iter = await_iter;
 }
 
@@ -470,11 +470,44 @@ static KosStackBlock **kos_evalstate_stack_slot_ptr(KosEvalState *es) {
 }
 
 
-static KosStackBlock *kos_evalstate_stack_head_ptr(KosEvalState *es) {
+static KosStackBlock *kos_evalstate_stack_head_ptr(const KosEvalState *es) {
 
   KosContext *ctx = kos_evalstate_context(es);
   KosStackBlock **sl = ctx ? KosContext_BLOCK(ctx) : NULL;
   return (sl && *sl) ? *sl : NULL;
+}
+
+
+KosStackBlock *KosEvalState_StackHead(const KosEvalState *es) {
+
+  return kos_evalstate_stack_head_ptr(es);
+}
+
+
+int KosEvalState_StackSteal_Tail(KosEvalState *es, KosStackSteal *s, size_t count) {
+
+  KosStackBlock **sl = kos_evalstate_stack_slot_ptr(es);
+  if (! sl) {
+    PyErr_SetString(PyExc_SystemError, "KosEvalState_StackSteal_Tail: no context");
+    return -1;
+  }
+  return KosStackSteal_Tail(s, count, sl);
+}
+
+
+int KosEvalState_StackSteal_TailPrepend(
+    KosEvalState *es,
+    KosStackSteal *s,
+    PyObject *prefix,
+    size_t count) {
+
+  KosStackBlock **sl = kos_evalstate_stack_slot_ptr(es);
+  if (! sl) {
+    PyErr_SetString(PyExc_SystemError,
+                    "KosEvalState_StackSteal_TailPrepend: no context");
+    return -1;
+  }
+  return KosStackSteal_TailPrepend(s, prefix, count, sl);
 }
 
 
@@ -1072,12 +1105,12 @@ static KosEvalMode revive_await(
         Py_XDECREF(tb);
         if (PyErr_ExceptionMatches(PyExc_AttributeError)) {
           PyErr_Clear();
-          kos_ctx_async_bridge_py_clear_await_iter(ctx);
+          Py_CLEAR(KosContext_PY_AWAIT_ITER(ctx));
           PyErr_SetObject(throw_typ ? throw_typ : (PyObject *) Py_TYPE(throw_exc),
                           throw_exc);
           return KOS_MODE_EXCEPTION;
         }
-        kos_ctx_async_bridge_py_clear_await_iter(ctx);
+        Py_CLEAR(KosContext_PY_AWAIT_ITER(ctx));
         return KOS_MODE_EXCEPTION;
       }
       if (! PyCallable_Check(throw_meth)) {
@@ -1089,7 +1122,7 @@ static KosEvalMode revive_await(
         Py_DECREF(typ);
         Py_DECREF(val);
         Py_XDECREF(tb);
-        kos_ctx_async_bridge_py_clear_await_iter(ctx);
+        Py_CLEAR(KosContext_PY_AWAIT_ITER(ctx));
         return KOS_MODE_EXCEPTION;
       }
       /* Single-arg throw(exc) avoids deprecated (typ, val, tb) on generators */
@@ -1107,14 +1140,14 @@ static KosEvalMode revive_await(
       if (PyErr_ExceptionMatches(PyExc_StopIteration)) {
         PyObject *await_result = NULL;
         if (PyGen_FetchStopIterationValue(&await_result) < 0) {
-          kos_ctx_async_bridge_py_clear_await_iter(ctx);
+          Py_CLEAR(KosContext_PY_AWAIT_ITER(ctx));
           return KOS_MODE_EXCEPTION;
         }
         if (! await_result) {
           await_result = Py_None;
           Py_INCREF(await_result);
         }
-        kos_ctx_async_bridge_py_clear_await_iter(ctx);
+        Py_CLEAR(KosContext_PY_AWAIT_ITER(ctx));
         Py_XDECREF(KosContext_PY_RESUME_INJECT(ctx));
         KosContext_PY_RESUME_INJECT(ctx) = await_result;
         KosContext_PY_RESUME_KIND(ctx) = KOS_RESUME_AWAIT;
@@ -1122,7 +1155,7 @@ static KosEvalMode revive_await(
         /* Fall through: push inject like a normal successful resume */
       }
       else {
-        kos_ctx_async_bridge_py_clear_await_iter(ctx);
+        Py_CLEAR(KosContext_PY_AWAIT_ITER(ctx));
         return KOS_MODE_EXCEPTION;
       }
     }
@@ -1760,7 +1793,7 @@ KosContext *kos_context_new(KosDynFrame *top) {
   KosContext_PLAN(ctx) = NULL;
   KosContext_PLAN_STACK(ctx) = NULL;
   KosContext_CHAIN_VERSION(ctx) = 0;
-  kos_ctx_async_bridge_clear(ctx);
+  Py_CLEAR(KosContext_PY_AWAIT_ITER(ctx));
 
   /* Initialize Python await bridging */
   KosContext_PY_RESUME_INJECT(ctx) = NULL;
@@ -1798,7 +1831,7 @@ void kos_context_free(KosContext *ctx) {
     kos_free_transfer_plan(p);
   }
 
-  kos_ctx_async_bridge_clear(ctx);
+  Py_CLEAR(KosContext_PY_AWAIT_ITER(ctx));
   Py_XDECREF(KosContext_PY_RESUME_INJECT(ctx));
   Py_XDECREF(KosContext_INJECT_TYPE(ctx));
   KosContext_INJECT_TYPE(ctx) = NULL;

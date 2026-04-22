@@ -374,17 +374,6 @@ struct KosContext {
 };
 
 
-static inline void kos_ctx_async_bridge_clear(KosContext *ctx) {
-  Py_CLEAR(ctx->py_await_iter);
-}
-
-
-static inline void kos_ctx_async_bridge_py_clear_await_iter(KosContext *ctx) {
-
-  Py_CLEAR(ctx->py_await_iter);
-}
-
-
 /* === KosContext accessor macros === */
 
 #define KosContext_DYN_TOP(c)                (((KosContext *)(c))->dyn_top)
@@ -455,8 +444,26 @@ int KosEvalState_SetActingPc(KosEvalState *es, uint32_t pc);
 
 PyObject *KosEvalState_GetConstant(const KosEvalState *es, uint32_t index);
 
+typedef struct KosStackSteal KosStackSteal;
+
 int KosEvalState_StackPushRef(KosEvalState *es, PyObject *val);
 PyObject *KosEvalState_StackPopRef(KosEvalState *es);
+
+/**
+  Innermost operand-stack block head for logging / presence checks only.
+*/
+KosStackBlock *KosEvalState_StackHead(const KosEvalState *es);
+
+/**
+  Tail steal into s (stack mutation). Caller must KosStackSteal_Free(s).
+*/
+int KosEvalState_StackSteal_Tail(KosEvalState *es, KosStackSteal *s, size_t count);
+int KosEvalState_StackSteal_TailPrepend(
+    KosEvalState *es,
+    KosStackSteal *s,
+    PyObject *prefix,
+    size_t count);
+
 /**
   Push stolen reference (KosStackBlock_PUSH semantics). Opcode/dynchain paths
   should use this instead of KosStackBlock_PUSH on the current operand slot.

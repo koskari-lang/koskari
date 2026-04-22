@@ -38,7 +38,7 @@ KOS_OP_HANDLER(CALL_VAR) {
 
   if (KosCallable_Check(callable)) {
     KosStackSteal steal = { 0 };
-    if (KosStackSteal_Tail(&steal, (size_t) n, (ctx ? KosContext_BLOCK(ctx) : NULL)) < 0) {
+    if (KosEvalState_StackSteal_Tail(es, &steal, (size_t) n) < 0) {
       Py_DECREF(callable);
       return KOS_OP_POST_ERR();
     }

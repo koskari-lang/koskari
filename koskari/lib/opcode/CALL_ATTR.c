@@ -45,7 +45,7 @@ KOS_OP_HANDLER(CALL_ATTR) {
   PyObject *result;
   if (KosCallable_Check(resolved)) {
     KosStackSteal steal = { 0 };
-    if (KosStackSteal_Tail(&steal, (size_t)count, (ctx ? KosContext_BLOCK(ctx) : NULL)) < 0) {
+    if (KosEvalState_StackSteal_Tail(es, &steal, (size_t)count) < 0) {
       Py_DECREF(resolved);
       return KOS_OP_POST_ERR();
     }
