@@ -26,8 +26,10 @@ frames, prompts, wind extents, and control regions. This replaces the previous
 separate frame chain and handler chain.
 
 **KosDynNode** — Single tagged-union struct for all chain node kinds. Base fields
-`parent`, `kind`, `flags`, `caps`, `node_id` are followed by a union `u` with variants:
-Payload variants live in union `u` (see `struct KosDynNode` in [`dynchain.h`](../../koskari/lib/dynchain.h)).
+`parent`, `kind`, `flags`, `caps`, `node_id`, and **`stack`** (optional owned operand
+extent; `NULL` = inherit) precede union `u`. Payload variants live in `u` (see
+`struct KosDynNode` in [`dynchain.h`](../../koskari/lib/dynchain.h)). **`KosDynFrame_STACK`**
+reads this **`stack`** field on the node, not a member of `u.frame`.
 Typedefs (KosDynFrame, KosDynPrompt, KosDynWind, KosDynNs, KosDynCC, KosDynWith,
 KosDynShift, KosDynParam, KosDynYieldFrom, …) all refer to this same struct.
 **All field access must use the macros** defined in dynchain.h; do not touch union
@@ -45,14 +47,14 @@ node kind. Multi-shot vs single-shot is **not** a second `KosDynKind`; it is
 `dynchain/dyn_with.c`; generic `dynchain.c` dispatches on kind and caps only.
 See [with-dyn-with.md](with-dyn-with.md) and `dynchain.h`.
 
-- **Frame** (u.frame): code (borrowed), pc (next instruction), acting_pc (instruction currently being executed), stack (owned), ns (owned), frame_flags, native_handler (optional; when non-NULL, handler is frame evaluator; see [api/special-call-protocol.md](../api/special-call-protocol.md)).
+- **Frame** (u.frame): code (borrowed), pc (next instruction), acting_pc (instruction currently being executed), ns (owned), frame_flags, native_handler (optional; when non-NULL, handler is frame evaluator; see [api/special-call-protocol.md](../api/special-call-protocol.md)).
   Macros: KosDynFrame_CODE, KosDynFrame_PC, KosDynFrame_ACTING_PC, KosDynFrame_STACK, KosDynFrame_NS, KosDynFrame_FLAGS, KosDynFrame_NATIVE_HANDLER.
-- **Prompt** (u.prompt): prompt_id, handler_code, handler_pc, pending_shift_wrapper (KosPyDelimitedContinuation wrapper when PUSH_SHIFT plan completed; owned).
-  Macros: KosDynPrompt_ID, KosDynPrompt_HANDLER_CODE, KosDynPrompt_HANDLER_PC, KosDynPrompt_PENDING_SHIFT_WRAPPER.
-- **Wind** (u.wind): before_code, before_pc, after_code, after_pc, entered.
-  Macros: KosDynWind_BEFORE_CODE, KosDynWind_BEFORE_PC, KosDynWind_AFTER_CODE, KosDynWind_AFTER_PC, KosDynWind_ENTERED.
+- **Prompt** (u.prompt): prompt_id; pending_shift_wrapper (KosPyDelimitedContinuation when PUSH_SHIFT plan completed; owned).
+  Macros: KosDynPrompt_ID, KosDynPrompt_PENDING_SHIFT_WRAPPER.
+- **Wind** (u.wind): before_thunk, after_thunk, body_result, entered, phase (`KosDynWindPhase`).
+  Macros: KosDynWind_BEFORE_THUNK, KosDynWind_AFTER_THUNK, KosDynWind_BODY_RESULT, KosDynWind_ENTERED, KosDynWind_PHASE.
 - **Try** (u.try_): handler_pc, enabled. Macros: KosDynTry_HANDLER_PC, KosDynTry_ENABLED.
-- **Finally** (u.finally_): handler_pc, enabled, handling_raise (1 when entered due to exception), result (stashed return value). Macros: KosDynFinally_HANDLER_PC, KosDynFinally_ENABLED, KosDynFinally_HANDLING_RAISE, KosDynFinally_RESULT.
+- **Finally** (u.finally_): handler_pc, enabled, handling_raise, handling_return, handling_result. Macros: KosDynFinally_HANDLER_PC, KosDynFinally_ENABLED, KosDynFinally_HANDLING_RAISE, KosDynFinally_HANDLING_RETURN, KosDynFinally_HANDLING_RESULT.
 - **Loop** (u.loop): break_pc, continue_pc, enabled, result. Macros: KosDynLoop_BREAK_PC, KosDynLoop_CONTINUE_PC, KosDynLoop_ENABLED, KosDynLoop_RESULT.
 - **Foreach** (u.foreach): break_pc, continue_pc, enabled, result, iter, exhausted, iter_next_else_pc (else PC when ITER_NEXT gen exhausts; 0 = not set). Macros: KosDynForeach_ITER, KosDynForeach_EXHAUSTED, KosDynForeach_ITER_NEXT_ELSE_PC, and the shared Loop macros.
 - **Ns** (u.ns): saved_ns. Macro: KosDynNs_SAVED_NS.
@@ -68,10 +70,12 @@ dynchain.c and eval.c).
 ### KosContext — Top-level VM Execution State
 
 Authoritative layout is `struct KosContext` in [`eval.h`](../../koskari/lib/eval.h).
-It holds `dyn_top`, `frame_top`, `globals_frame`, transfer-plan fields, delimited
-continuation return targets, Python await/yield bridge (`py_await_iter`,
-`py_resume_inject`, `py_resume_kind`), `pending_defer` (AWAIT on KosDefer inner),
-exception inject mode, async-gen `pending_agen` / `resume_gen`, and `flags`.
+It holds `dyn_top`, `frame_top`, **`block`** (address of the innermost operand-stack
+`KosStackBlock *`; maintained with the dyn chain), `globals_frame` / cache version,
+transfer-plan fields, unwind/return staging, Python await bridge (`py_await_iter`,
+`py_resume_inject`, `py_resume_kind`), exception inject fields, `suspension_event`,
+and `flags`. Delimited **invoke return** metadata lives on **`KOS_DYN_DELIM`**
+nodes (`kos_dyndelim_*`, `KosDynDelim_*`), not in separate context slots.
 Async **WITH** enter/exit suspension does **not** use separate `KosContext`
 slots: state lives on the `KosDynWith` node (`phase`, `exc_*`, `normal_exit`, etc.);
 see `kos_dyn_complete_pending_exit` in `dynchain.c` and `revive_await` in `eval.c`.
@@ -81,6 +85,7 @@ see `kos_dyn_complete_pending_exit` in `dynchain.c` and `revive_await` in `eval.
 struct KosContext {
   KosDynNode *dyn_top;
   KosDynFrame *frame_top;
+  KosStackBlock **block;
   KosDynFrame *globals_frame;
   uint32_t globals_cache_version;
   KosEvaluatorToken *token;
@@ -91,25 +96,13 @@ struct KosContext {
   KosTransferPlan *plan;
   KosTransferPlan *plan_stack;
   uint32_t chain_version;
-  KosDynNode *invocation_segment_top;
-  KosDynNode *return_target_chain;
-  uint32_t return_target_pc;
-  KosDynFrame *delimited_return_frame;
-  uint32_t delimited_return_pc;
-  KosDynNode *delimited_return_node;
-  PyObject *py_await_iter;
-  PyObject *py_last_yielded;
   PyObject *py_resume_inject;
   uint8_t py_resume_kind;
-  PyObject *pending_defer;
+  PyObject *py_await_iter;
   int inject_mode;
   PyObject *inject_type;
   PyObject *inject_value;
   uint8_t suspension_event;
-  void *pending_agen;
-  PyObject *pending_agen_default;
-  int pending_agen_n;
-  KosDynGen *resume_gen;
   uint32_t flags;
   struct KosContext *context_freelist_next;
 };
@@ -238,7 +231,7 @@ To avoid recursive C calls and keep a single state machine:
 
 2. **RETURN (frame has parent, normal call return)**: When the callee’s dynamic parent is not a GEN, the RETURN opcode runs `KOS_TRANS_WALK_RETURN_TO_FRAME` via `kos_dyn_transition`, then `kos_dyn_pop_frame` so the **caller** becomes `frame_top`. It does **not** push onto the parent stack in the opcode handler. Instead it fills `out_ev` with `KOS_EV_RETURN` and the return value (one ref held by `out_ev`) and returns `KOS_OP_POST_PARENT_RETURN()`. The main loop then runs **`eval_parent_return_deliver`**: optional flattened Koskari async-gen iterator delivery (`kos_dyn_try_deliver_iterator_boundary_after_pop`), else native-frame handler or `KosStackBlock_PushRef` onto the parent stack, then **`kos_dynnode_on_control_returned`** (WIND/WITH). The outer `koskari_eval` caller still does not observe a completion event for this path unless the eval loop eventually stops for another reason.
 
-3. **NEXT/ITER_NEXT (Koskari async gen)**: When the iterator is a Koskari async generator, the evaluator sets `pending_agen` and **attaches** the generator’s frame to the current context with `kos_dyn_attach_frame(ctx, gen_frame)`, then continues the loop. The gen’s frame runs until it YIELD or RETURN. On YIELD/RETURN, the **frame-has-parent** rule runs: the gen frame is **detached** (without freeing), the value (or exhausted/default) is delivered to the awaiting frame, and the loop continues with the caller as `frame_top`. No recursive `koskari_eval(agen->ctx, ...)`.
+3. **NEXT/ITER_NEXT (Koskari async gen)**: **`NEXT`** pushes a **`KOS_DYN_NEXT`** boundary (`kos_dyn_push_next_for_kos_agen`, …) as needed, then **attaches** the generator’s frame (`op_attach_koskari_agen_frame`). **`ITER_NEXT`** records state on the innermost **`KOS_DYN_FOREACH`** region and uses `op_attach_koskari_agen_frame_for_iter_next`. The gen’s frame runs until it YIELD or RETURN. On YIELD/RETURN, the **frame-has-parent** rule runs: the gen frame is **detached** (without freeing), the value (or exhausted/default) is delivered to the awaiting frame, and the loop continues with the caller as `frame_top`. No recursive `koskari_eval(agen->ctx, ...)`.
 
 4. **YIELD (post-opcode path)**: When a **top-level** or otherwise surfaced YIELD produces `KOS_EV_YIELD` in `out_ev` and `eval_phase_post_opcode` runs, **`eval_event_yield`** performs stage A (`eval_yield_handle_walk_and_freeze`: `KOS_TRANS_WALK_HANDLE_YIELD`) and stage B (optional NEXT/FOREACH/YIELD_FROM delivery for flattened Koskari async gens via **`eval_event_yield_deliver_to_boundary`**), or tags suspension for the outer driver. In-loop child-frame YIELD (parent non-NULL) still avoids stopping `koskari_eval` with a public boundary in the same way as before; the exact unwind/freeze steps live in `kos_dyn_transition` / dynchain helpers.
 

@@ -49,9 +49,13 @@
 
 - `KosStackBlock` is documented as a **chain** of segments; `back` points toward
   the bottom of the **physical** stack (`stack.h`).
-- `FRAME` carries `u.frame.stack`; eval hot paths use that as the live stack.
-- Dynamic install/uninstall already runs for many node kinds; some paths still
-  **manually** drop blocks or consult `KosStackBlock_PARENT` during teardown.
+- **`KosDynNode.stack`** (base field, above `u`) owns the operand extent for
+  nodes that introduce one; **`KosContext.block`** points at the innermost
+  active `KosStackBlock *` and is refreshed with install/uninstall
+  (`kos_ctx_refresh_dyn_caches`, …). Opcodes use **`KosEvalState`** stack
+  helpers bound to that slot.
+- Dynamic install/uninstall already runs for many node kinds; teardown must stay
+  symmetric so `ctx->block` and the node chain never disagree.
 - Continuations / transfer plans may carry `resume_stack` in parallel with chain
   clones.
 

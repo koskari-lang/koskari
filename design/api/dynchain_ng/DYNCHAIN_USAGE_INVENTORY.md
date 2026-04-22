@@ -19,21 +19,23 @@ These fields **must** remain coherent with any new implementation:
 |-------|-------------------|
 | `dyn_top` | Top of `KosDynNode` chain |
 | `frame_top` | Cached top `KosDynFrame` |
+| `block` | Address of innermost operand-stack `KosStackBlock *` (refreshed with chain) |
 | `globals_frame` | Outermost frame for `GLOBALS` |
 | `globals_cache_version` | Invalidation vs `chain_version` |
+| `token` / `domain` | Evaluator identity / ambient KosDomain |
 | `unwind_target_frame` | Unwind targeting |
 | `pending_return_value` / `pending_return_to_parent` | Async wind / return deferral |
 | `plan` | Active `KosTransferPlan *` |
 | `plan_stack` | Suspended nested plans |
 | `chain_version` | Bumped on chain mutation |
-| `invocation_segment_top` | Delimited continuation install |
-| `return_target_chain` | Cloned chain for return transfer |
-| `return_target_pc` | Resume PC for return plan |
-| `delimited_return_frame` / `delimited_return_pc` / `delimited_return_node` | Delimited push / POP_PROMPT path |
-| `resume_gen` | `KosDynGen *` for frozen generator resume |
+| `py_resume_inject` / `py_resume_kind` / `py_await_iter` | Python await/yield bridge |
 | `inject_*` | Exception injection (incl. dynchain-driven paths) |
+| `suspension_event` | Last boundary reason for revive |
+| `flags` | `KosContextFlags` |
 
-Accessor macros: `KosContext_DYN_TOP`, `KosContext_PLAN`, `KosContext_RETURN_TARGET_CHAIN`, `KosContext_INVOCATION_SEGMENT_TOP`, `KosContext_DELIMITED_RETURN_*`, `KosContext_RESUME_GEN`, `KosContext_CHAIN_VERSION`, etc.
+Delimited **invoke return** metadata lives on **`KOS_DYN_DELIM`** (`KosDynDelim_*`, `kos_dyndelim_*`), not in `KosContext` fields.
+
+Accessor macros include: `KosContext_DYN_TOP`, `KosContext_FRAME_TOP`, `KosContext_BLOCK`, `KosContext_PLAN`, `KosContext_CHAIN_VERSION`, `KosContext_PY_AWAIT_ITER`, … (see `eval.h`).
 
 ## 3. Types and macros from `dynchain.h` (externally visible)
 
@@ -148,7 +150,7 @@ Legend: **Ext** = referenced outside `dynchain.c` (must remain linkable and beha
 - **Chain / frames:** `kos_dynchain_free`, `kos_dyn_detach_top_frame`, `kos_dynframe_free`, `kos_dynframe_new`, `kos_dynframe_clone`, `KosContext_DYN_TOP` assignment, `KosDynNode_PARENT`, `CURRENT_FRAME` / `KosDynFrame_*` throughout.
 - **Decorators:** Walk `dyn_top` via `KosDynNode_PARENT` for `__koskari_dynchain__` exception attribute.
 - **Gen:** `kos_dyngen_release`, `kos_dyn_gen_install`, `KosDynGen_*`, `kos_dyn_gen_unwind_exhausted`.
-- **GC traverse:** `kos_dynnode_traverse` (resume_gen), `kos_dynchain_traverse`, `kos_transferplan_traverse`.
+- **GC traverse:** `kos_dynnode_traverse` (per-kind helpers incl. GEN), `kos_dynchain_traverse`, `kos_transferplan_traverse`.
 - **Pending with / wind exit:** `kos_dyn_complete_pending_exit`, `kos_dyn_clear_pending_exit` (via wrappers).
 - **Tail / async:** `kos_find_node_for_loop`, `KosDynForeach_*` for exhausted foreach.
 - **Main loop:** `kos_dynnode_on_control_returned`, `kos_dyn_transition` (incl. `KOS_TRANS_TRY_LOCAL_RAISE`, walk handle yield).
@@ -234,7 +236,7 @@ Legend: **Ext** = referenced outside `dynchain.c` (must remain linkable and beha
 
 1. **Manual chain walks:** `POP_SHIFT.c` walks from `dyn_top` with `KosDynNode_PARENT` until `KosDynNode_IS_PROMPT`. `GLOBALS.c` / `IMPORT_REL.c` walk from current frame to find outer frames.
 2. **Top must match opcode:** Most `POP_*` assume their node kind is `dyn_top`.
-3. **Delimited continuation:** `KosContext_INVOCATION_SEGMENT_TOP`, `RETURN_TARGET_CHAIN`, `DELIMITED_RETURN_*` interact with `POP_PROMPT` and transfer plans (`eval.c`).
+3. **Delimited continuation:** **`KOS_DYN_DELIM`** nodes (`kos_find_nearest_delim`, `kos_build_delimited_push_plan`, …) interact with `POP_PROMPT` and transfer plans (`eval.c` / `dynchain.c`).
 4. **Generator:** `KosDynGen` linked under frame; `iter.c` / `demand.c` clear `DYN_TOP` and install via `kos_dyn_gen_install`.
 
 ## 7. Checklist for implementor

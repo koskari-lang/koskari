@@ -144,9 +144,10 @@ int kos_invoke_continuation(KosContext *ctx, KosContinuation *k,
 2. **Build transfer plan**:
    - **Delimited (push model)**: Use `kos_build_delimited_push_plan()`. The
      prompt need not be in the current chain; invoke grafts the continuation
-     segment onto the current frame_top and sets `DELIMITED_RETURN_FRAME` /
-     `DELIMITED_RETURN_PC` so that when the continuation hits `POP_PROMPT`,
-     control unwinds to the call site and resumes with the value.
+     segment onto the current chain and installs a **`KOS_DYN_DELIM`** marker
+     (`KOS_DYN_DELIM_MODE_POP_PROMPT`) holding return frame/PC/chain metadata so
+     that when the continuation hits `POP_PROMPT`, control unwinds to the call
+     site and resumes with the value.
    - **Undelimited**: Use `kos_build_transfer_plan()` with INSTALL:
      ```c
      int kos_build_transfer_plan(KosContext *ctx, KosDynNode *target,
@@ -211,8 +212,9 @@ struct KosTransferPlan {
 2. `PUSH` action to graft the continuation frames onto the current chain
    (caller stays below; no INSTALL)
 3. `INJECT` action to push resume value
-4. When the continuation runs and hits `POP_PROMPT`, unwind to `DELIMITED_RETURN_FRAME`,
-   push the value, set PC to `DELIMITED_RETURN_PC`, and continue the eval loop
+4. When the continuation runs and hits `POP_PROMPT`, use the nearest
+   **`KOS_DYN_DELIM`** (`kos_find_nearest_delim`) to unwind to the invocation
+   site, push the value, set PC from the delim node, and continue the eval loop
 
 ### LCA Computation
 

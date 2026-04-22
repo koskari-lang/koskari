@@ -1,4 +1,11 @@
 # Opcode VM access inventory and proposed KosContext API surface
+
+**Note:** Part 1 is a **snapshot** from an earlier grep pass. The tree now uses
+**`KosEvalState *es`** opcode signatures, **`KosEvalState_Stack*`** helpers, and
+**`KosContext_BLOCK`** for the operand stack; many per-opcode lines below still
+list `CURRENT_STACK` / `(ctx, …)` and should be **re-generated** if you need an
+exact inventory.
+
 This document inventories **insn/operand access**, **context/frame/stack/code macros**, **structured accessors**, and **callees** inside each `KOS_OP_HANDLER` in `koskari/lib/opcode/*.c`, then proposes a consolidated `KosContext_*` API (Part 2).
 Classification matches the project report rules: callee list excludes `CURRENT_*`, `KosContext_*` field macros (except `KosContext_Call`, `KosContext_CallArgs`), `KosDynFrame_*`, `KosCode_*`, `KosNamespace_*`, and stack field macros `KosStackBlock_LEN` / `PARENT` / `MAX`.
 **Opcode source file count:** 207

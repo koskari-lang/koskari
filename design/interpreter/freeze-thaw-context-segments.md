@@ -445,18 +445,9 @@ Section 16 addresses the concern that freeze/thaw overhead may exceed savings; t
 
 **Location**: `koskari/lib/eval.h`, `eval.c`
 
-`KosContext` is a large (~90-line) heap-allocated struct holding all persistent VM state: dynchain, frame cache, transfer plans, delimited-continuation state, Python bridge (await/yield), exception injection, pending WITH/async-gen state, and flags. There is no separate resume-image sub-structure; resume-critical data is scattered across the context.
+`KosContext` is a heap-allocated struct holding persistent VM state: dynchain, frame cache, **`block`** (pointer to the current operand-stack `KosStackBlock *`), transfer plans, Python bridge (await/yield), exception injection, suspension bookkeeping, and flags. Delimited invoke return metadata lives on **`KOS_DYN_DELIM`** nodes, not in extra context fields.
 
-`koskari_eval()` drives the interpreter. Opcodes receive `(ctx, out_ev, insn)` and access execution state via macros:
-
-```c
-#define CURRENT_FRAME(ctx)       KosContext_FRAME_TOP(ctx)
-#define CURRENT_STACK(ctx)       KosDynFrame_STACK(CURRENT_FRAME(ctx))
-#define CURRENT_CODE(ctx)        KosDynFrame_CODE(CURRENT_FRAME(ctx))
-#define CURRENT_PC(ctx)          KosDynFrame_PC(CURRENT_FRAME(ctx))
-```
-
-Every opcode dereferences `ctx → frame_top → stack` and then `stack → objs[len]`. The stack pointer lives in `KosDynFrame_STACK(frame)`, i.e., in the frame's union payload on the heap.
+`koskari_eval()` drives the interpreter. Opcodes receive **`(KosEvalState *es, KosEvent *out_ev, KosOp *insn)`** and use **`KosEvalState_*`** stack helpers and/or `KosContext_BLOCK(ctx)` after cache refresh. Eval-local macros in `eval.c` still map `CURRENT_FRAME(ctx)` → `frame_top`, `CURRENT_CODE` / `CURRENT_PC` from that frame; the operand stack is the block referenced from **`ctx->block`**, which tracks **`KosDynNode.stack`** on installed nodes (see [node-owned-operand-stack.md](../node-owned-operand-stack.md)).
 
 ### A.2 Stack and CoW
 
@@ -475,16 +466,16 @@ Every opcode dereferences `ctx → frame_top → stack` and then `stack → objs
 Opcodes are dispatched via computed goto or switch. Each handler has signature:
 
 ```c
-KosOpOutcome op_<name>(KosContext *ctx, KosEvent *out_ev, KosOp *insn);
+KosOpOutcome op_<name>(KosEvalState *es, KosEvent *out_ev, KosOp *insn);
 ```
 
-`KOS_EVAL_PREPARE_NEXT_INSN` supplies the current `KosOp *insn` before each dispatch; post-opcode handling does not use a separate dispatch struct. Opcodes read `CURRENT_*` macros and call `KosStackBlock_*` APIs directly.
+`KOS_EVAL_PREPARE_NEXT_INSN` supplies the current `KosOp *insn` before each dispatch; post-opcode handling does not use a separate dispatch struct. Opcodes use `KosEvalState_Context(es)` where they need `ctx`, and **`KosEvalState_Stack*`** / related helpers for operand-stack access.
 
 ### A.4 DynChain and Frames
 
 **Location**: `koskari/lib/dynchain.h`, `dynchain.c`
 
-`KosDynFrame` (a `KosDynNode` variant) holds `code`, `pc`, `acting_pc`, `stack`, `ns`. The stack is a `KosStackBlock *` chain. Frames are pushed/popped via `kos_dyn_push_frame`, `kos_dyn_pop_frame`; chain structure drives prompts, wind, try/finally, loop/foreach, WITH, etc.
+`KosDynFrame` (a `KosDynNode` variant) holds `code`, `pc`, `acting_pc`, `ns` in `u.frame`. Operand stack storage for a node is **`KosDynNode.stack`** (macro `KosDynFrame_STACK` reads the node base field). Frames are pushed/popped via `kos_dyn_push_frame`, `kos_dyn_pop_frame`; chain structure drives prompts, wind, try/finally, loop/foreach, WITH, DELIM, etc.
 
 **Block transitions** (push/pop block) occur in: `PUSH_TRY`, `PUSH_FINALLY`, `PUSH_LOOP`, `PUSH_FOREACH`, `PUSH_COLLECT`, `PUSH_PROMPT` (via `kos_dyn_install`), `PUSH_WITH`/`PUSH_DYN_WITH`, and their corresponding pop/drop opcodes.
 
@@ -498,7 +489,10 @@ State escapes at: AWAIT (pending `py_await_iter`), YIELD (gen boundary), YIELD_F
 
 ### B.1 Introduce KosEvalState
 
-Add `KosEvalState` (or `KosEvalLocal`) in `eval.h`:
+**Implemented** `KosEvalState` in `eval.h` holds `ctx`, `frame`, and `code`; stack
+access goes through **`KosEvalState_Stack*`** against **`KosContext_BLOCK`**.
+The larger **inline-stack** sketch below was exploratory and is **not** the
+current layout:
 
 ```c
 #define KOS_FAST_STACK_SIZE 32
