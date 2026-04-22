@@ -20,13 +20,15 @@
 */
 
 KOS_OP_HANDLER(POP_PROMPT) {
-  SAYF("[eval] POP_PROMPT delim_kind=%u dyn_top=%p IS_PROMPT=%d frame=%p stack_len=%zu\n",
-       (unsigned) KosContext_DELIM_KIND(ctx), (void *) KosContext_DYN_TOP(ctx),
+  KosDynDelim *ret_delim = kos_find_nearest_delim(ctx, KOS_DYN_DELIM_MODE_POP_PROMPT);
+
+  SAYF("[eval] POP_PROMPT delim=%p dyn_top=%p IS_PROMPT=%d frame=%p stack_len=%zu\n",
+       (void *) ret_delim, (void *) KosContext_DYN_TOP(ctx),
        (KosContext_DYN_TOP(ctx) && KosDynNode_IS_PROMPT(KosContext_DYN_TOP(ctx))) ? 1 : 0,
        (void *) CURRENT_FRAME(ctx),
        CURRENT_STACK(ctx) ? KosStackBlock_LEN(CURRENT_STACK(ctx)) : 0);
 
-  if (KosContext_DELIM_KIND(ctx) == KOS_DELIM_POP_PROMPT) {
+  if (ret_delim) {
     PyObject *val = KosStackBlock_PopRef(&CURRENT_STACK(ctx));
     if (! val) {
       SAY("[eval] POP_PROMPT (invoke) pop underrun\n");
@@ -36,24 +38,24 @@ KOS_OP_HANDLER(POP_PROMPT) {
       SAYF("[eval] POP_PROMPT return to invoker value=%ld\n",
            PyLong_AsLong(val));
 
-    if (KosContext_DELIMITED_RETURN_FRAME(ctx) != NULL
-        && KosContext_DELIMITED_RETURN_PC(ctx) != (uint32_t) -1) {
+    if (KosDynDelim_RETURN_FRAME(ret_delim) != NULL
+        && KosDynDelim_RETURN_PC(ret_delim) != (uint32_t) -1) {
       SAYF("[eval] POP_PROMPT unwinding to return frame=%p node=%p",
-           (void *) KosContext_DELIMITED_RETURN_FRAME(ctx),
-           (void *) KosContext_DELIMITED_RETURN_NODE(ctx));
+           (void *) KosDynDelim_RETURN_FRAME(ret_delim),
+           (void *) KosDynDelim_RETURN_NODE(ret_delim));
       KosTransitionReq treq;
       KosTransitionResult tres = {0};
-      if (KosContext_DELIMITED_RETURN_NODE(ctx) != NULL) {
+      if (KosDynDelim_RETURN_NODE(ret_delim) != NULL) {
         treq = (KosTransitionReq) {
           .kind = KOS_TRANS_UNWIND_TO_NODE,
           .xfer_event = KOS_XFER_EVENT_SHIFT,
-          .target_node = KosContext_DELIMITED_RETURN_NODE(ctx),
+          .target_node = KosDynDelim_RETURN_NODE(ret_delim),
         };
       } else {
         treq = (KosTransitionReq) {
           .kind = KOS_TRANS_UNWIND_TO_FRAME,
           .xfer_event = KOS_XFER_EVENT_SHIFT,
-          .target_frame = KosContext_DELIMITED_RETURN_FRAME(ctx),
+          .target_frame = KosDynDelim_RETURN_FRAME(ret_delim),
         };
       }
       if (kos_dyn_transition(ctx, &treq, &tres, out_ev) < 0) {
@@ -73,7 +75,7 @@ KOS_OP_HANDLER(POP_PROMPT) {
       SAYF("[eval] POP_PROMPT after unwind: dyn_top=%p kind=%s",
            (void *) KosContext_DYN_TOP(ctx),
            KosContext_DYN_TOP(ctx) ? kos_dynnode_kind_name(KosDynNode_KIND(KosContext_DYN_TOP(ctx))) : "NULL");
-      if (kos_dyn_finish_delimited_pop_return(ctx, val) < 0)
+      if (kos_dyn_finish_delimited_pop_return(ctx, ret_delim, val) < 0)
         return KOS_OP_POST_ERR();
       (void) insn;
       return KOS_OP_RUN();
@@ -81,7 +83,8 @@ KOS_OP_HANDLER(POP_PROMPT) {
 
     KosEvent_KIND(out_ev) = KOS_EV_RETURN;
     KosEvent_PAYLOAD(out_ev) = val;
-    kos_ctx_delim_clear(ctx);
+    if (KosContext_DYN_TOP(ctx) == (KosDynNode *) ret_delim)
+      kos_dyn_pop_delim(ctx, ret_delim);
     KosContext_FLAGS(ctx) &= ~KOS_CTX_RUNNING;
     (void) insn;
     return KOS_OP_POST_SUSPEND();

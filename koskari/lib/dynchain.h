@@ -43,7 +43,8 @@
    KosDynKind enumerates the types of nodes in the dynamic chain.
 
    KOS_DYN_FRAME  - Function activation record
-   KOS_DYN_PROMPT - Delimiter for delimited continuations (reset)
+  KOS_DYN_PROMPT - Delimiter for delimited continuations (reset)
+  KOS_DYN_DELIM  - Delimited invoke return marker with return metadata
    KOS_DYN_WIND   - Dynamic-wind extent with before/after hooks
    KOS_DYN_TRY - try region
    KOS_DYN_FINALLY - finally region
@@ -67,6 +68,7 @@
 typedef enum KosDynKind {
   KOS_DYN_FRAME = 0,
   KOS_DYN_PROMPT,
+  KOS_DYN_DELIM,
   KOS_DYN_WIND,
   KOS_DYN_TRY,
   KOS_DYN_FINALLY,
@@ -214,6 +216,13 @@ struct KosDynNode {
       uint32_t prompt_id;
       PyObject *pending_shift_wrapper;  /* KosPyDelimitedContinuation when PUSH_SHIFT plan completed; owned */
     } prompt;
+    struct {
+      uint8_t mode;       /* KOS_DYN_DELIM_MODE_* */
+      KosDynNode *chain;  /* owned when mode == K_RETURN */
+      uint32_t pc;
+      KosDynNode *frame;
+      KosDynNode *node;
+    } delim;
     struct {
       uint32_t resume_pc;
     } cc;
@@ -364,6 +373,7 @@ typedef struct KosTransitionResult {
 
 
 typedef struct KosDynNode KosDynPrompt;
+typedef struct KosDynNode KosDynDelim;
 typedef struct KosDynNode KosDynWind;
 typedef struct KosDynNode KosDynTry;
 typedef struct KosDynNode KosDynFinally;
@@ -657,6 +667,35 @@ KosDynPrompt *kos_dynprompt_new(KosDynNode *parent, uint32_t prompt_id);
    :param prompt: prompt to free (may be NULL)
 */
 void kos_dynprompt_free(KosDynPrompt *prompt);
+
+
+/**
+   Allocate a new DELIM marker node for delimited return bookkeeping.
+
+   :param parent: parent node in dynamic chain
+   :param mode: KOS_DYN_DELIM_MODE_*
+   :param chain: optional owned chain payload for K_RETURN mode
+   :param pc: resume program counter
+   :param frame: resume frame payload
+   :param node: resume node payload
+
+   :return: new DELIM node, or NULL on error
+*/
+KosDynDelim *kos_dyndelim_new(
+   KosDynNode *parent,
+   uint8_t mode,
+   KosDynNode *chain,
+   uint32_t pc,
+   KosDynFrame *frame,
+   KosDynNode *node);
+
+
+/**
+   Free a DELIM node.
+
+   :param delim: DELIM node to free (may be NULL)
+*/
+void kos_dyndelim_free(KosDynDelim *delim);
 
 
 /**
@@ -986,6 +1025,29 @@ void kos_dyn_pop_prompt(KosContext *ctx, KosDynPrompt *prompt);
 
 
 /**
+   Push a DELIM node via kos_dyn_push.
+
+   :return: new DELIM node, or NULL on error
+*/
+KosDynDelim *kos_dyn_push_delim(
+   KosContext *ctx,
+   uint8_t mode,
+   KosDynNode *chain,
+   uint32_t pc,
+   KosDynFrame *frame,
+   KosDynNode *node);
+
+
+/**
+   Pop a DELIM node from the dynamic chain.
+
+   :param ctx: execution context
+   :param delim: DELIM node to pop (must be dyn_top)
+*/
+void kos_dyn_pop_delim(KosContext *ctx, KosDynDelim *delim);
+
+
+/**
    Complete a delimited POP_PROMPT return after kos_dyn_transition succeeds
    (non-async). Pushes value onto the delimited return frame's stack, sets
    PC and frame_top, clears invocation and delimited-return fields.
@@ -996,7 +1058,10 @@ void kos_dyn_pop_prompt(KosContext *ctx, KosDynPrompt *prompt);
    :return: 0 on success, -1 if ctx, value, delimited_return_frame, or
       delimited_return_pc is invalid (sets PyExc_RuntimeError)
 */
-int kos_dyn_finish_delimited_pop_return(KosContext *ctx, PyObject *value);
+int kos_dyn_finish_delimited_pop_return(
+   KosContext *ctx,
+   KosDynDelim *delim,
+   PyObject *value);
 
 
 /**
@@ -1650,6 +1715,17 @@ KosDynPrompt *kos_find_nearest_prompt(KosContext *ctx);
 
 
 /**
+   Find the nearest DELIM node from dyn_top toward root.
+
+   :param ctx: execution context
+   :param mode: KOS_DYN_DELIM_MODE_* to match, or 0 for any DELIM
+
+   :return: nearest matching DELIM node, or NULL if none
+*/
+KosDynDelim *kos_find_nearest_delim(KosContext *ctx, uint8_t mode);
+
+
+/**
    Find the topmost CC (call/cc) block on the dynamic chain.
 
    :param ctx: execution context
@@ -2010,6 +2086,7 @@ int kos_transferplan_traverse(
 
 #define KosDynNode_IS_FRAME(n)   (KosDynNode_KIND(n) == KOS_DYN_FRAME)
 #define KosDynNode_IS_PROMPT(n)  (KosDynNode_KIND(n) == KOS_DYN_PROMPT)
+#define KosDynNode_IS_DELIM(n)   (KosDynNode_KIND(n) == KOS_DYN_DELIM)
 #define KosDynNode_IS_WIND(n)    (KosDynNode_KIND(n) == KOS_DYN_WIND)
 #define KosDynNode_IS_TRY(n)     (KosDynNode_KIND(n) == KOS_DYN_TRY)
 #define KosDynNode_IS_FINALLY(n) (KosDynNode_KIND(n) == KOS_DYN_FINALLY)
@@ -2042,6 +2119,17 @@ int kos_transferplan_traverse(
 
 #define KosDynPrompt_ID(p)               (((KosDynNode *)(p))->u.prompt.prompt_id)
 #define KosDynPrompt_PENDING_SHIFT_WRAPPER(p) (((KosDynNode *)(p))->u.prompt.pending_shift_wrapper)
+
+#define KOS_DYN_DELIM_MODE_NONE       0u
+#define KOS_DYN_DELIM_MODE_K_RETURN   1u
+#define KOS_DYN_DELIM_MODE_POP_PROMPT 2u
+
+#define KosDynDelim_MODE(d)        (((KosDynNode *)(d))->u.delim.mode)
+#define KosDynDelim_RETURN_CHAIN(d) (((KosDynNode *)(d))->u.delim.chain)
+#define KosDynDelim_RETURN_PC(d)   (((KosDynNode *)(d))->u.delim.pc)
+#define KosDynDelim_RETURN_FRAME_NODE(d) (((KosDynNode *)(d))->u.delim.frame)
+#define KosDynDelim_RETURN_FRAME(d) ((KosDynFrame *) (KosDynDelim_RETURN_FRAME_NODE(d)))
+#define KosDynDelim_RETURN_NODE(d)  (((KosDynNode *)(d))->u.delim.node)
 
 #define KosDynCC_RESUME_PC(c)     (((KosDynNode *)(c))->u.cc.resume_pc)
 

@@ -51,6 +51,7 @@ int kos_dyn_push(KosContext *ctx, KosDynNode *node);
 static const char *kos_dynnode_kind_names[] = {
   "FRAME",
   "PROMPT",
+  "DELIM",
   "WIND",
   "TRY",
   "FINALLY",
@@ -165,6 +166,7 @@ static void kos_dynnode_return_to_freelist(KosDynNode *node) {
 
 #include "dynchain/dyn_frame.c"
 #include "dynchain/dyn_prompt.c"
+#include "dynchain/dyn_delim.c"
 #include "dynchain/dyn_cc.c"
 #include "dynchain/dyn_shift.c"
 #include "dynchain/dyn_cc_raise.c"
@@ -341,6 +343,9 @@ void kos_dynnode_free(KosDynNode *node) {
       break;
     case KOS_DYN_PROMPT:
       kos_dynprompt_free((KosDynPrompt *) node);
+      break;
+    case KOS_DYN_DELIM:
+      kos_dyndelim_free((KosDynDelim *) node);
       break;
     case KOS_DYN_WIND:
       kos_dynwind_free((KosDynWind *) node);
@@ -621,6 +626,8 @@ int kos_dyn_install(KosContext *ctx, KosDynNode *node, KosEvent *out_ev) {
       }
       return result;
     }
+    case KOS_DYN_DELIM:
+      return 0;
     case KOS_DYN_PARAM:
       return kos_dynparam_enter(ctx, (KosDynParam *) node);
     case KOS_DYN_WITH:
@@ -660,7 +667,10 @@ static int kos_dyn_uninstall_handler(KosContext *ctx, KosDynNode *node,
              (void *) node, len_before);
         (void) len_before;
       }
-      int result = KosStackBlock_DropBlock(&KosDynFrame_STACK(KosContext_FRAME_TOP(ctx)));
+      int result = 0;
+      KosStackBlock *stack = KosDynFrame_STACK(KosContext_FRAME_TOP(ctx));
+      if (stack && KosStackBlock_PARENT(stack))
+        result = KosStackBlock_DropBlock(&KosDynFrame_STACK(KosContext_FRAME_TOP(ctx)));
       if (KOS_XFER_TRACE && result == 0) {
         size_t len_after = KosDynFrame_STACK(KosContext_FRAME_TOP(ctx))
             ? KosStackBlock_LEN(KosDynFrame_STACK(KosContext_FRAME_TOP(ctx))) : 0;
@@ -669,6 +679,8 @@ static int kos_dyn_uninstall_handler(KosContext *ctx, KosDynNode *node,
       }
       return result;
     }
+    case KOS_DYN_DELIM:
+      return 0;
     case KOS_DYN_WIND:
       return kos_dyn_unwind(ctx, node, event, out_ev);
     case KOS_DYN_TRY:
@@ -782,6 +794,9 @@ int kos_dyn_unwind(KosContext *ctx, KosDynNode *node, KosXferEvent event,
                    KosEvent *out_ev) {
 
   switch (KosDynNode_KIND(node)) {
+    case KOS_DYN_DELIM:
+      (void) out_ev;
+      return 0;
     case KOS_DYN_SHIFT:
       (void) out_ev;
       return 0;
@@ -1070,6 +1085,10 @@ int kos_dyn_exception_unwind(
       kos_dyn_pop_prompt(ctx, (KosDynPrompt *) node);
       /* Exception propagates past the prompt boundary; continue unwinding */
       return 0;
+    case KOS_DYN_DELIM:
+      (void) out_ev;
+      kos_dyn_pop_delim(ctx, (KosDynDelim *) node);
+      return 0;
     default:
       return 0;
   }
@@ -1089,6 +1108,8 @@ KosDynNode *kos_dyn_clone(KosDynNode *node) {
       return (KosDynNode *) kos_dynframe_clone((KosDynFrame *) node);
     case KOS_DYN_PROMPT:
       return (KosDynNode *) kos_dynprompt_clone((KosDynPrompt *) node);
+    case KOS_DYN_DELIM:
+      return (KosDynNode *) kos_dyndelim_clone((KosDynDelim *) node);
     case KOS_DYN_WIND:
       return (KosDynNode *) kos_dynwind_clone((KosDynWind *) node);
     case KOS_DYN_TRY:
@@ -3385,6 +3406,17 @@ static int xfer_step_pop_one(KosContext *ctx, KosEvent *out_ev) {
 }
 
 
+static inline KosDynFrame *truncate_owner_frame(KosDynNode *node) {
+
+  while (node) {
+    if (KosDynNode_IS_FRAME(node))
+      return (KosDynFrame *) node;
+    node = KosDynNode_PARENT(node);
+  }
+  return NULL;
+}
+
+
 /**
    Execute a TRUNCATE_AND_INJECT step: free from current top through the
    given node (inclusive), set dyn_top to node's parent, then inject value.
@@ -3415,9 +3447,13 @@ static int xfer_step_truncate_and_inject(KosContext *ctx,
     while (node && node != new_top) {
       KosDynNode *parent = KosDynNode_PARENT(node);
       if (KosDynNode_IS_PROMPT(node) || KosDynNode_IS_WITH(node)) {
-        if (KosContext_FRAME_TOP(ctx)
-            && KosStackBlock_DropBlock(&KosDynFrame_STACK(KosContext_FRAME_TOP(ctx))) < 0)
-          return -1;
+        KosDynFrame *owner = truncate_owner_frame(node);
+        if (owner && KosDynFrame_STACK(owner)) {
+          KosStackBlock *stack = KosDynFrame_STACK(owner);
+          if (KosStackBlock_PARENT(stack)
+              && KosStackBlock_DropBlock(&KosDynFrame_STACK(owner)) < 0)
+            return -1;
+        }
       }
       node = parent;
     }
@@ -3655,30 +3691,35 @@ int kos_invoke_continuation(
     }
   }
 
-  /* Delimited k(value): use PUSH so caller stays on chain; return path
-   * unwinds to DELIMITED_RETURN_FRAME when continuation hits POP_PROMPT. */
+  /* Delimited k(value): use PUSH so caller stays on chain; install DELIM
+   * marker so POP_PROMPT can route back to callsite without context slots. */
   int is_delimited = (KosContinuation_PROMPT_ID(k) != KOS_PROMPT_ID_UNDELIMITED);
   KosDynNode *push_segment = NULL;
+  KosDynDelim *ret_delim = NULL;
   if (is_delimited) {
     KosDynNode *captured = KosContinuation_CAPTURED_CHAIN(to_use);
     /* Segment to push: frames below the prompt (exclude prompt from push) */
     push_segment = captured ? KosDynNode_PARENT(captured) : NULL;
-    if (KosContext_RETURN_TARGET_CHAIN(ctx)) {
-      kos_dynchain_free(KosContext_RETURN_TARGET_CHAIN(ctx), NULL);
-    }
-    kos_ctx_delim_clear(ctx);
-    kos_ctx_delim_set_pop_prompt(
+    ret_delim = kos_dyn_push_delim(
         ctx,
-        KosContext_FRAME_TOP(ctx),
+        KOS_DYN_DELIM_MODE_POP_PROMPT,
+        NULL,
         KosContext_FRAME_TOP(ctx)
             ? KosDynFrame_PC(KosContext_FRAME_TOP(ctx)) : (uint32_t) -1,
-        KosContext_DYN_TOP(ctx));
+        KosContext_FRAME_TOP(ctx),
+        NULL);
+    if (! ret_delim) {
+      if (to_use != k)
+        kos_continuation_free(to_use);
+      return -1;
+    }
+    KosDynDelim_RETURN_NODE(ret_delim) = (KosDynNode *) ret_delim;
     if (KOS_XFER_TRACE)
-      SAYF("[xfer] invoke: set DELIMITED_RETURN dyn_top=%p kind=%s frame_top=%p return_node=%p",
+      SAYF("[xfer] invoke: push DELIM dyn_top=%p kind=%s frame_top=%p return_node=%p",
            (void *) KosContext_DYN_TOP(ctx),
            KosContext_DYN_TOP(ctx) ? kos_dynnode_kind_name(KosDynNode_KIND(KosContext_DYN_TOP(ctx))) : "NULL",
            (void *) KosContext_FRAME_TOP(ctx),
-           (void *) KosContext_DELIMITED_RETURN_NODE(ctx));
+           (void *) KosDynDelim_RETURN_NODE(ret_delim));
   }
 
   /* Build plan: PUSH for delimited; full transfer for undelimited. */
@@ -3702,8 +3743,8 @@ int kos_invoke_continuation(
   if (KOS_XFER_TRACE)
     SAYF("[xfer] plan build -> res=%d plan=%p", res, (void *) plan);
   if (res < 0) {
-    if (is_delimited)
-      kos_ctx_delim_clear(ctx);
+    if (ret_delim)
+      kos_dyn_pop_delim(ctx, ret_delim);
     if (to_use != k)
       kos_continuation_free(to_use);
     return -1;
@@ -3761,6 +3802,8 @@ int kos_dynnode_traverse(KosDynNode *node, visitproc visit, void *arg) {
       return dynnode_traverse_ns(node, visit, arg);
     case KOS_DYN_PROMPT:
       return dynnode_traverse_prompt(node, visit, arg);
+    case KOS_DYN_DELIM:
+      return dynnode_traverse_delim(node, visit, arg);
     case KOS_DYN_CC:
       return dynnode_traverse_cc(node, visit, arg);
     case KOS_DYN_SHIFT:
@@ -3868,10 +3911,12 @@ int kos_transferplan_traverse(
 
 /**
    After POP_PROMPT on delimited invoke return path: push value on saved frame,
-   restore PC and clear DELIMITED_RETURN_* slots. Callers: opcode POP_PROMPT
-   when returning from k(value).
+   restore PC, and remove the DELIM marker node.
 */
-int kos_dyn_finish_delimited_pop_return(KosContext *ctx, PyObject *value) {
+int kos_dyn_finish_delimited_pop_return(
+    KosContext *ctx,
+    KosDynDelim *delim,
+    PyObject *value) {
 
   KosDynFrame *ret_frame;
 
@@ -3886,7 +3931,13 @@ int kos_dyn_finish_delimited_pop_return(KosContext *ctx, PyObject *value) {
                     "kos_dyn_finish_delimited_pop_return: value is NULL");
     return -1;
   }
-  ret_frame = KosContext_DELIMITED_RETURN_FRAME(ctx);
+  if (! delim || ! KosDynNode_IS_DELIM((KosDynNode *) delim)) {
+    PyErr_SetString(PyExc_RuntimeError,
+                    "kos_dyn_finish_delimited_pop_return: delim is NULL");
+    Py_DECREF(value);
+    return -1;
+  }
+  ret_frame = KosDynDelim_RETURN_FRAME(delim);
   if (! ret_frame) {
     PyErr_SetString(PyExc_RuntimeError,
                     "kos_dyn_finish_delimited_pop_return: "
@@ -3894,7 +3945,7 @@ int kos_dyn_finish_delimited_pop_return(KosContext *ctx, PyObject *value) {
     Py_DECREF(value);
     return -1;
   }
-  if (KosContext_DELIMITED_RETURN_PC(ctx) == (uint32_t) -1) {
+  if (KosDynDelim_RETURN_PC(delim) == (uint32_t) -1) {
     PyErr_SetString(PyExc_RuntimeError,
                     "kos_dyn_finish_delimited_pop_return: "
                     "delimited_return_pc is unset");
@@ -3907,9 +3958,10 @@ int kos_dyn_finish_delimited_pop_return(KosContext *ctx, PyObject *value) {
     return -1;
   }
   Py_DECREF(value);
-  KosDynFrame_PC(ret_frame) = KosContext_DELIMITED_RETURN_PC(ctx);
+  KosDynFrame_PC(ret_frame) = KosDynDelim_RETURN_PC(delim);
   KosContext_FRAME_TOP(ctx) = ret_frame;
-  kos_ctx_delim_clear(ctx);
+  if (KosContext_DYN_TOP(ctx) == (KosDynNode *) delim)
+    kos_dyn_pop_delim(ctx, delim);
   return 0;
 }
 

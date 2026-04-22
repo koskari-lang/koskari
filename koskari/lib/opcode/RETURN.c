@@ -56,9 +56,11 @@ KOS_OP_HANDLER(RETURN) {
   /* === Phase 2a: Delimited continuation return (k(value)) ===
      When inside a reset/prompt, k(value) returns the value to the call site
      of the continuation. This bypasses the normal parent chain. Rare path. */
-  if (unlikely(KosContext_RETURN_TARGET_CHAIN(ctx) != NULL
-               && KosContext_RETURN_TARGET_PC(ctx) != (uint32_t) -1)) {
-    int rd = kos_return_delimited(ctx, val, out_ev);
+  KosDynDelim *ret_delim = kos_find_nearest_delim(ctx, KOS_DYN_DELIM_MODE_K_RETURN);
+  if (unlikely(ret_delim
+               && KosDynDelim_RETURN_CHAIN(ret_delim) != NULL
+               && KosDynDelim_RETURN_PC(ret_delim) != (uint32_t) -1)) {
+    int rd = kos_return_delimited(ctx, ret_delim, val, out_ev);
     if (rd < 0)
       return KOS_OP_POST_ERR();
     return KosContext_PLAN(ctx) ? KOS_OP_PROLOGUE() : KOS_OP_RUN();

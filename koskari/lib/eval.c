@@ -663,17 +663,25 @@ static int run_transfer_plan_to_completion(
    Handle delimited k(value) return: build plan, install it, run to completion.
    Caller has popped val; we consume it. Return 0 on success, -1 on error.
 */
-static int kos_return_delimited(KosContext *ctx, PyObject *val, KosEvent *out_ev) {
+static int kos_return_delimited(
+    KosContext *ctx,
+    KosDynDelim *delim,
+    PyObject *val,
+    KosEvent *out_ev) {
+
+  KosDynNode *ret_chain = KosDynDelim_RETURN_CHAIN(delim);
+  uint32_t ret_pc = KosDynDelim_RETURN_PC(delim);
+
   SAYF("[RETURN] taking return-target path: return_pc=%u",
-       (unsigned) KosContext_RETURN_TARGET_PC(ctx));
+       (unsigned) ret_pc);
   KosTransferPlan *plan = NULL;
-  if (kos_build_return_plan(ctx, KosContext_RETURN_TARGET_CHAIN(ctx),
+  if (kos_build_return_plan(ctx, ret_chain,
                             val, 0, &plan) < 0) {
     Py_DECREF(val);
     return -1;
   }
   Py_DECREF(val);
-  KosTransferPlan_RESUME_PC(plan) = KosContext_RETURN_TARGET_PC(ctx);
+  KosTransferPlan_RESUME_PC(plan) = ret_pc;
   KosTransferPlan_RESUME_FRAME(plan) = NULL;
   KosTransferPlan_RESUME_STACK(plan) = NULL;
   if (KosContext_PLAN(ctx))
@@ -681,8 +689,16 @@ static int kos_return_delimited(KosContext *ctx, PyObject *val, KosEvent *out_ev
   KosContext_PLAN(ctx) = plan;
   KosContext_FLAGS(ctx) |= KOS_CTX_IN_TRANSFER;
   KosTransferPlan_CONTINUATION_REF(plan) = NULL;
-  kos_dynchain_free(KosContext_RETURN_TARGET_CHAIN(ctx), NULL);
-  kos_ctx_delim_clear(ctx);
+  if (ret_chain) {
+    kos_dynchain_free(ret_chain, NULL);
+    KosDynDelim_RETURN_CHAIN(delim) = NULL;
+  }
+  KosDynDelim_MODE(delim) = KOS_DYN_DELIM_MODE_NONE;
+  KosDynDelim_RETURN_PC(delim) = (uint32_t)-1;
+  KosDynDelim_RETURN_FRAME_NODE(delim) = NULL;
+  KosDynDelim_RETURN_NODE(delim) = NULL;
+  if (KosContext_DYN_TOP(ctx) == (KosDynNode *) delim)
+    kos_dyn_pop_delim(ctx, delim);
   if (run_transfer_plan_to_completion(ctx, out_ev) < 0)
     return -1;
   return 0;
@@ -1519,7 +1535,6 @@ KosContext *kos_context_new(KosDynFrame *top) {
   KosContext_PLAN(ctx) = NULL;
   KosContext_PLAN_STACK(ctx) = NULL;
   KosContext_CHAIN_VERSION(ctx) = 0;
-  kos_ctx_delim_clear(ctx);
   kos_ctx_async_bridge_clear(ctx);
 
   /* Initialize Python await bridging */
@@ -1547,12 +1562,6 @@ void kos_context_free(KosContext *ctx) {
 
   /* Free the dynamic chain */
   kos_dynchain_free(KosContext_DYN_TOP(ctx), NULL);
-
-  /* Free return target chain (delimited k return path) */
-  if (KosContext_RETURN_TARGET_CHAIN(ctx)) {
-    kos_dynchain_free(KosContext_RETURN_TARGET_CHAIN(ctx), NULL);
-  }
-  kos_ctx_delim_clear(ctx);
 
   /* Free any active transfer plan */
   kos_free_transfer_plan(KosContext_PLAN(ctx));

@@ -146,17 +146,6 @@ typedef enum KosSuspensionEvent {
 
 
 /**
-  Delimited continuation return path: k(value) transfer vs POP_PROMPT push model.
-  At most one variant is live; switching modes clears the other (see dynchain).
-*/
-typedef enum KosDelimReturnKind {
-  KOS_DELIM_NONE = 0,
-  KOS_DELIM_K_RETURN,
-  KOS_DELIM_POP_PROMPT,
-} KosDelimReturnKind;
-
-
-/**
   KosEvalMode is the result of entry/revive and drives the mode-handler loop.
   NORMAL = run next insn or check completion; TRANSFER = run process_plan;
   EXCEPTION = run process_raise; RAISE/AWAIT/YIELD/YIELD_FROM = return with event;
@@ -363,24 +352,10 @@ struct KosContext {
   KosTransferPlan *plan_stack;  /* suspended plans stack */
   uint32_t chain_version;       /* incremented on chain modifications */
 
-  /* k(value) return vs POP_PROMPT delimited push (mutually exclusive) */
-  uint8_t delim_kind; /* KosDelimReturnKind */
-  union {
-    struct {
-      KosDynNode *chain;
-      uint32_t pc;
-    } k_return;
-    struct {
-      KosDynFrame *frame;
-      uint32_t pc;
-      KosDynNode *node;
-    } pop_prompt;
-  } delim;
-
   /* --- Python bridge: await/yield suspend and resume --- */
-  PyObject *py_resume_inject; /* value to push on next koskari_eval when resuming */
-  uint8_t py_resume_kind;     /* 0=none, 1=await, 2=yield */
-  PyObject *py_await_iter;    /* iterator from __await__() when suspended on AWAIT */
+  PyObject *py_resume_inject;  /* value to push on next koskari_eval when resuming */
+  uint8_t py_resume_kind;      /* 0=none, 1=await, 2=yield */
+  PyObject *py_await_iter;     /* iterator from __await__() when suspended on AWAIT */
 
   /* --- Exception injection (set by coroutine_throw or dynchain inject) --- */
   int inject_mode;         /* 0=none, 1=pending_throw */
@@ -394,29 +369,6 @@ struct KosContext {
 
   struct KosContext *context_freelist_next;  /* link when on context freelist only */
 };
-
-
-/* === KosContext delim + async (mutator helpers; getters are KosContext_*) === */
-
-static inline void kos_ctx_delim_clear(KosContext *ctx) {
-
-  ctx->delim_kind = KOS_DELIM_NONE;
-  memset(&ctx->delim, 0, sizeof(ctx->delim));
-}
-
-
-static inline void kos_ctx_delim_set_pop_prompt(
-    KosContext *ctx,
-    KosDynFrame *frame,
-    uint32_t pc,
-    KosDynNode *node) {
-
-  kos_ctx_delim_clear(ctx);
-  ctx->delim_kind = KOS_DELIM_POP_PROMPT;
-  ctx->delim.pop_prompt.frame = frame;
-  ctx->delim.pop_prompt.pc = pc;
-  ctx->delim.pop_prompt.node = node;
-}
 
 
 static inline void kos_ctx_async_bridge_clear(KosContext *ctx) {
@@ -446,27 +398,6 @@ static inline void kos_ctx_async_bridge_py_clear_await_iter(KosContext *ctx) {
 #define KosContext_PLAN(c)                   (((KosContext *)(c))->plan)
 #define KosContext_PLAN_STACK(c)             (((KosContext *)(c))->plan_stack)
 #define KosContext_CHAIN_VERSION(c)          (((KosContext *)(c))->chain_version)
-#define KosContext_DELIM_KIND(c)             (((KosContext *)(c))->delim_kind)
-#define KosContext_RETURN_TARGET_CHAIN(c)                                 \
-  (((KosContext *)(c))->delim_kind == KOS_DELIM_K_RETURN                      \
-       ? ((KosContext *)(c))->delim.k_return.chain                            \
-       : NULL)
-#define KosContext_RETURN_TARGET_PC(c)                                      \
-  (((KosContext *)(c))->delim_kind == KOS_DELIM_K_RETURN                      \
-       ? ((KosContext *)(c))->delim.k_return.pc                              \
-       : (uint32_t)-1)
-#define KosContext_DELIMITED_RETURN_FRAME(c)                                \
-  (((KosContext *)(c))->delim_kind == KOS_DELIM_POP_PROMPT                     \
-       ? ((KosContext *)(c))->delim.pop_prompt.frame                         \
-       : NULL)
-#define KosContext_DELIMITED_RETURN_PC(c)                                   \
-  (((KosContext *)(c))->delim_kind == KOS_DELIM_POP_PROMPT                     \
-       ? ((KosContext *)(c))->delim.pop_prompt.pc                              \
-       : (uint32_t)-1)
-#define KosContext_DELIMITED_RETURN_NODE(c)                                 \
-  (((KosContext *)(c))->delim_kind == KOS_DELIM_POP_PROMPT                     \
-       ? ((KosContext *)(c))->delim.pop_prompt.node                           \
-       : NULL)
 #define KosContext_PY_AWAIT_ITER(c)          (((KosContext *)(c))->py_await_iter)
 #define KosContext_PY_RESUME_INJECT(c)       (((KosContext *)(c))->py_resume_inject)
 #define KosContext_PY_RESUME_KIND(c)         (((KosContext *)(c))->py_resume_kind)
