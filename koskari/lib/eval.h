@@ -351,7 +351,7 @@ struct KosContext {
 
   KosDynFrame *unwind_target_frame;
 
-  /*   When unwind returns ASYNC_STARTED (wind after-thunk), RETURN stashes the
+  /* When unwind returns ASYNC_STARTED (wind after-thunk), RETURN stashes the
      value here and resumes unwinding when the thunk returns.  If
      pending_return_to_parent is set, push onto parent and detach; else
      set KOS_EV_RETURN. */
@@ -381,7 +381,6 @@ struct KosContext {
   } delim;
 
   /* --- Python bridge: await/yield suspend and resume --- */
-  PyObject *py_last_yielded; /* last yielded object (debug/optional) */
   PyObject *py_resume_inject; /* value to push on next koskari_eval when resuming */
   uint8_t py_resume_kind;    /* 0=none, 1=await, 2=yield */
   PyObject *py_await_iter;   /* iterator from __await__() when suspended on AWAIT */
@@ -475,7 +474,6 @@ static inline void kos_ctx_async_bridge_py_clear_await_iter(KosContext *ctx) {
        ? ((KosContext *)(c))->delim.pop_prompt.node                           \
        : NULL)
 #define KosContext_PY_AWAIT_ITER(c)          (((KosContext *)(c))->py_await_iter)
-#define KosContext_PY_LAST_YIELDED(c)        (((KosContext *)(c))->py_last_yielded)
 #define KosContext_PY_RESUME_INJECT(c)       (((KosContext *)(c))->py_resume_inject)
 #define KosContext_PY_RESUME_KIND(c)         (((KosContext *)(c))->py_resume_kind)
 #define KosContext_PENDING_DEFER(c)        (((KosContext *)(c))->pending_defer)

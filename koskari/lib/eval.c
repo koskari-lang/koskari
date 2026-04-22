@@ -969,8 +969,8 @@ static KosEvalMode revive_yield(
     if (KosStackBlock_PushRef(&CURRENT_STACK(ctx), to_push) < 0)
       return KOS_MODE_EXCEPTION;
   }
-  SAYF("[gen] revive_yield DONE frame_top=%p dyn_top=%p throw=%d\n",
-       (void *) KosContext_FRAME_TOP(ctx), (void *) KosContext_DYN_TOP(ctx), 0);
+  SAYF("[gen] revive_yield DONE frame_top=%p dyn_top=%p\n",
+       (void *) KosContext_FRAME_TOP(ctx), (void *) KosContext_DYN_TOP(ctx));
   return KOS_MODE_NORMAL;
 }
 
@@ -1550,7 +1550,6 @@ KosContext *kos_context_new(KosDynFrame *top) {
   kos_ctx_async_bridge_clear(ctx);
 
   /* Initialize Python await bridging */
-  KosContext_PY_LAST_YIELDED(ctx) = NULL;
   KosContext_PY_RESUME_INJECT(ctx) = NULL;
   KosContext_PY_RESUME_KIND(ctx) = KOS_RESUME_NONE;
 
@@ -1591,7 +1590,6 @@ void kos_context_free(KosContext *ctx) {
   }
 
   kos_ctx_async_bridge_clear(ctx);
-  Py_XDECREF(KosContext_PY_LAST_YIELDED(ctx));
   Py_XDECREF(KosContext_PY_RESUME_INJECT(ctx));
   Py_XDECREF(KosContext_INJECT_TYPE(ctx));
   KosContext_INJECT_TYPE(ctx) = NULL;
@@ -1629,20 +1627,10 @@ int kos_context_traverse(
   Py_VISIT(KosContext_DOMAIN(ctx));
   Py_VISIT(ctx->py_await_iter);
   Py_VISIT(ctx->pending_defer);
-  Py_VISIT(KosContext_PY_LAST_YIELDED(ctx));
   Py_VISIT(KosContext_PY_RESUME_INJECT(ctx));
   Py_VISIT(KosContext_INJECT_TYPE(ctx));
   Py_VISIT(KosContext_INJECT_VALUE(ctx));
 
-  /* Frozen GEN awaiting revive (was ctx->resume_gen; now top frame only) */
-  // if (KosContext_FRAME_TOP(ctx)
-  //     && KosDynFrame_RESUME_GEN(KosContext_FRAME_TOP(ctx))) {
-  //   int res = kos_dynnode_traverse(
-  //       KosDynFrame_RESUME_GEN(KosContext_FRAME_TOP(ctx)),
-  //       visit, arg);
-  //   if (res)
-  //     return res;
-  // }
   /* Traverse the dynamic chain */
   int res = kos_dynchain_traverse(KosContext_DYN_TOP(ctx), NULL, visit, arg);
   if (res)
