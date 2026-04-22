@@ -3,8 +3,8 @@
 
 
 /**
-   Allocate PROMPT delimiter: barrier + stack block pairing in install. Callers:
-   kos_dyn_push_prompt.
+   Allocate PROMPT delimiter (barrier only; operand stack stays on the frame).
+   Callers: kos_dyn_push_prompt.
 */
 KosDynPrompt *kos_dynprompt_new(KosDynNode *parent, uint32_t prompt_id) {
 
@@ -37,6 +37,14 @@ static KosDynPrompt *kos_dynprompt_clone(KosDynPrompt *prompt) {
   KosDynNode_NODE_ID(clone) = KosDynNode_NODE_ID(prompt);
   KosDynPrompt_ID(clone) = KosDynPrompt_ID(prompt);
   KosDynPrompt_PENDING_SHIFT_WRAPPER(clone) = NULL;
+  if (KosDynNode_STACK((KosDynNode *) prompt)) {
+    KosDynNode_STACK((KosDynNode *) clone) =
+        KosEvalState_OperandDeepCopy(KosDynNode_STACK((KosDynNode *) prompt));
+    if (! KosDynNode_STACK((KosDynNode *) clone)) {
+      kos_dynprompt_free(clone);
+      return NULL;
+    }
+  }
   return clone;
 }
 
@@ -50,13 +58,13 @@ void kos_dynprompt_free(KosDynPrompt *prompt) {
 
   Py_XDECREF(KosDynPrompt_PENDING_SHIFT_WRAPPER(prompt));
   KosDynPrompt_PENDING_SHIFT_WRAPPER(prompt) = NULL;
-  kos_dynnode_return_to_freelist(prompt);
+  kos_dynnode_release_stack((KosDynNode *) prompt);
+  kos_dynnode_return_to_freelist((KosDynNode *) prompt);
 }
 
 
 /**
-   Push prompt via kos_dyn_push (install pushes stack block on frame). Callers:
-   opcode PUSH_PROMPT.
+   Push prompt via kos_dyn_push. Callers: opcode PUSH_PROMPT.
 */
 KosDynPrompt *kos_dyn_push_prompt(KosContext *ctx, uint32_t prompt_id) {
 
@@ -92,6 +100,9 @@ int kos_dyn_pop_prompt(KosContext *ctx, KosDynPrompt *prompt) {
    GC traverse a KOS_DYN_PROMPT: visit pending shift wrapper if any.
 */
 static int dynnode_traverse_prompt(KosDynNode *node, visitproc visit, void *arg) {
+  int tr = kos_stackblock_traverse(KosDynNode_STACK(node), visit, arg);
+  if (tr != 0)
+    return tr;
   Py_VISIT(KosDynPrompt_PENDING_SHIFT_WRAPPER((KosDynPrompt *) node));
   return 0;
 }

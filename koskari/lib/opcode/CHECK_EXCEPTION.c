@@ -20,9 +20,10 @@
 */
 
 KOS_OP_HANDLER(CHECK_EXCEPTION) {
+  KosContext *ctx = KosEvalState_Context(es);
   (void) out_ev;
 
-  PyObject *match = KosStackBlock_PopRef(&CURRENT_STACK(ctx));
+  PyObject *match = KosEvalState_StackPopRef(es);
   if (! match)
     return KOS_OP_POST_ERR();
 

@@ -17,7 +17,7 @@
    OBJECT_TRUTH: pop TOS, call PyObject_IsTrue, push Py_True/Py_False.
 */
 KOS_OP_HANDLER(OBJECT_TRUTH) {
-    PyObject *val = KosStackBlock_PopRef(&CURRENT_STACK(ctx));
+    PyObject *val = KosEvalState_StackPopRef(es);
     if (! val) return KOS_OP_POST_ERR();
     int r = PyObject_IsTrue(val);
     Py_DECREF(val);
@@ -25,5 +25,5 @@ KOS_OP_HANDLER(OBJECT_TRUTH) {
     PyObject *res = (r ? Py_True : Py_False);
     Py_INCREF(res);
     (void) insn;
-    return kos_op_outcome_from_int_step(push_result(ctx, res));
+    return kos_op_outcome_from_int_step(push_result(es, res));
 }

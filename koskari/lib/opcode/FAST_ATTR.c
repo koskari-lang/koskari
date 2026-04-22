@@ -19,6 +19,7 @@
 */
 
 KOS_OP_HANDLER(FAST_ATTR) {
+  KosContext *ctx = KosEvalState_Context(es);
   KosCode *code = CURRENT_CODE(ctx);
   KosExtra row = KosCode_GetExtra(code, KosOp_ARG(insn));
   PyObject *ns = CURRENT_NS(ctx);
@@ -41,5 +42,5 @@ KOS_OP_HANDLER(FAST_ATTR) {
   Py_DECREF(obj);
   if (! val)
     return KOS_OP_POST_ERR();
-  return kos_op_outcome_from_int_step(push_result(ctx, val));
+  return kos_op_outcome_from_int_step(push_result(es, val));
 }

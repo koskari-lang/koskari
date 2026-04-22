@@ -19,6 +19,7 @@
 */
 
 KOS_OP_HANDLER(PUSH_PROMPT) {
+  KosContext *ctx = KosEvalState_Context(es);
   uint32_t prompt_id;
   if (get_prompt_id_from_insn(CURRENT_CODE(ctx), insn, &prompt_id) < 0)
     return KOS_OP_POST_ERR();

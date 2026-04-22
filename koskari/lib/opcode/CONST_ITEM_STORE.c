@@ -18,14 +18,15 @@
 */
 
 KOS_OP_HANDLER(CONST_ITEM_STORE) {
+  KosContext *ctx = KosEvalState_Context(es);
   PyObject *key = KosCode_GetConstant((PyObject *) CURRENT_CODE(ctx),
                                       KosOp_ARG(insn));
   if (! key)
     return KOS_OP_POST_ERR();
-  PyObject *val = KosStackBlock_PopRef(&CURRENT_STACK(ctx));
+  PyObject *val = KosEvalState_StackPopRef(es);
   if (! val)
     return KOS_OP_POST_ERR();
-  PyObject *obj = KosStackBlock_PopRef(&CURRENT_STACK(ctx));
+  PyObject *obj = KosEvalState_StackPopRef(es);
   if (! obj) {
     Py_DECREF(val);
     return KOS_OP_POST_ERR();

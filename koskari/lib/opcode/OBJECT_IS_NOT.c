@@ -18,5 +18,5 @@
 */
 
 KOS_OP_HANDLER(OBJECT_IS_NOT) {
-  return kos_op_outcome_from_int_step(obj_op_binary(ctx, out_ev, insn, binary_is_not_result));
+  return kos_op_outcome_from_int_step(obj_op_binary(es, out_ev, insn, binary_is_not_result));
 }

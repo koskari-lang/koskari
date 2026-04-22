@@ -34,7 +34,7 @@ KOS_OP_HANDLER(RAISE) {
     PyErr_SetExcInfo(NULL, NULL, NULL);
 
   } else if (n == 1) {
-    PyObject *exc = KosStackBlock_PopRef(&CURRENT_STACK(ctx));
+    PyObject *exc = KosEvalState_StackPopRef(es);
     if (! exc) {
       return KOS_OP_POST_ERR();
     }

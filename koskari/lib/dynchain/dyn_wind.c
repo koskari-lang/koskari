@@ -106,11 +106,12 @@ int kos_dyn_wind_unwind(KosContext *ctx, KosDynWind *node) {
 
   if (! KosDynWind_AFTER_THUNK(node)) {
     /* No after-thunk: push stored body result and finish uninstall */
-    KosDynFrame *frame_below = (KosDynFrame *) KosDynNode_PARENT(node);
     PyObject *body_result = KosDynWind_BODY_RESULT(node);
     KosDynWind_BODY_RESULT(node) = NULL;
-    if (frame_below && KosDynFrame_STACK(frame_below) && body_result) {
-      if (KosStackBlock_PushRef(&KosDynFrame_STACK(frame_below), body_result) < 0) {
+    if (KosContext_STACK_HEAD(ctx) && body_result) {
+      KosEvalState es;
+      KosEvalState_Init(&es, ctx);
+      if (KosEvalState_StackPushRef(&es, body_result) < 0) {
         KosDynWind_BODY_RESULT(node) = body_result;
         return -1;
       }
@@ -139,20 +140,22 @@ int kos_dyn_wind_unwind(KosContext *ctx, KosDynWind *node) {
    Resume after async before/after thunk: advance phase, pop junk, maybe unlink.
 */
 static int kos_dyn_wind_on_control_returned(KosContext *ctx, KosDynWind *wind) {
-  KosDynFrame *frame_below = (KosDynFrame *) KosDynNode_PARENT(wind);
-  if (! frame_below || ! KosDynFrame_STACK(frame_below))
+  if (! KosContext_STACK_HEAD(ctx))
     return 0;
+
+  KosEvalState es;
+  KosEvalState_Init(&es, ctx);
 
   if (KosDynWind_PHASE(wind) == KOS_WIND_PHASE_PRE_BEGIN) {
     KosDynWind_PHASE(wind) = KOS_WIND_PHASE_POST_BEGIN;
     KosDynWind_ENTERED(wind) = 1;
-    PyObject *val = KosStackBlock_PopRef(&KosDynFrame_STACK(frame_below));
+    PyObject *val = KosEvalState_StackPopRef(&es);
     if (val)
       Py_DECREF(val);
     return 0;
   }
   if (KosDynWind_PHASE(wind) == KOS_WIND_PHASE_PRE_AFTER) {
-    PyObject *thunk_ret = KosStackBlock_PopRef(&KosDynFrame_STACK(frame_below));
+    PyObject *thunk_ret = KosEvalState_StackPopRef(&es);
     if (thunk_ret)
       Py_DECREF(thunk_ret);
 
@@ -165,10 +168,10 @@ static int kos_dyn_wind_on_control_returned(KosContext *ctx, KosDynWind *wind) {
     KosContext_CHAIN_VERSION(ctx)++;
     KosDynNode_PARENT(wind) = NULL;
     kos_dynwind_free(wind);
-    kos_update_frame_top(ctx);
+    kos_ctx_refresh_dyn_caches(ctx);
 
     if (body_result) {
-      if (KosStackBlock_PushRef(&KosDynFrame_STACK(frame_below), body_result) < 0) {
+      if (KosEvalState_StackPushRef(&es, body_result) < 0) {
         Py_DECREF(body_result);
         return -1;
       }

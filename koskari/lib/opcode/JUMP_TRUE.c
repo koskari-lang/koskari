@@ -18,7 +18,8 @@
 */
 
 KOS_OP_HANDLER(JUMP_TRUE) {
-  PyObject *val = KosStackBlock_PopRef(&CURRENT_STACK(ctx));
+  KosContext *ctx = KosEvalState_Context(es);
+  PyObject *val = KosEvalState_StackPopRef(es);
   if (! val)
     return KOS_OP_POST_ERR();
   int res = PyObject_IsTrue(val);

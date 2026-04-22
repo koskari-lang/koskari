@@ -200,13 +200,13 @@ struct KosDynNode {
   uint32_t flags;       /* KosDynFlags bitfield */
   uint32_t caps;        /* capability bits for generic code (KOS_DYN_CAP_*) */
   uint32_t node_id;     /* stable allocation ID; copied on clone for LCA matching */
+  KosStackBlock *stack; /* owned operand-stack extent; NULL if none (inherit ancestor) */
 
   union {
     struct {
       KosCode *code;
       uint32_t pc;        /* next instruction */
       uint32_t acting_pc; /* instruction currently being executed */
-      KosStackBlock *stack;
       PyObject *ns;
       uint32_t frame_flags;
       /* Native frame evaluator: int (*)(void* ctx, void* out_ev, int is_resume, PyObject* val) */
@@ -283,7 +283,7 @@ struct KosDynNode {
       int normal_exit;     /* 1 = exit(None,None,None); only when phase == PENDING_EXIT_AWAIT */
     } with;
     struct {
-      /* shift: simple marker; PROMPT owns the stack block for the delimited region */
+      /* shift: marker; operands stay on the frame (PROMPT install has no stack) */
     } shift;
     struct {
       PyObject *exc_type;  /* exception type from PyErr_Fetch */
@@ -834,6 +834,10 @@ KosDynNode *kos_clone_chain_segment(
 
    :return: 0 on success, -1 on error
 */
+KosDynNode *KosContext_InnermostStackOwner(KosContext *ctx);
+
+void kos_ctx_refresh_dyn_caches(KosContext *ctx);
+
 int kos_dyn_push(KosContext *ctx, KosDynNode *node);
 
 
@@ -2131,7 +2135,8 @@ int kos_transferplan_traverse(
 #define KosDynFrame_CODE(f)       (((KosDynNode *)(f))->u.frame.code)
 #define KosDynFrame_PC(f)         (((KosDynNode *)(f))->u.frame.pc)
 #define KosDynFrame_ACTING_PC(f)  (((KosDynNode *)(f))->u.frame.acting_pc)
-#define KosDynFrame_STACK(f)      (((KosDynNode *)(f))->u.frame.stack)
+#define KosDynNode_STACK(n)       (((KosDynNode *)(n))->stack)
+#define KosDynFrame_STACK(f)      KosDynNode_STACK((KosDynNode *)(f))
 #define KosDynFrame_NS(f)         (((KosDynNode *)(f))->u.frame.ns)
 #define KosDynFrame_FLAGS(f)      (((KosDynNode *)(f))->u.frame.frame_flags)
 #define KosDynFrame_NATIVE_HANDLER(f) (((KosDynNode *)(f))->u.frame.native_handler)

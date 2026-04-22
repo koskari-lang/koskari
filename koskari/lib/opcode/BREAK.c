@@ -21,6 +21,7 @@
 */
 
 KOS_OP_HANDLER(BREAK) {
+  KosContext *ctx = KosEvalState_Context(es);
   unsigned opa = KosOp_ARG(insn);
   PyObject *result = NULL;
 
@@ -28,13 +29,13 @@ KOS_OP_HANDLER(BREAK) {
     result = Py_None;
     Py_INCREF(result);
   } else if (opa == 1) {
-    result = KosStackBlock_PopRef(&CURRENT_STACK(ctx));
+    result = KosEvalState_StackPopRef(es);
     if (! result) {
       PyErr_SetString(PyExc_RuntimeError, "BREAK pop underrun");
       return KOS_OP_POST_ERR();
     }
   } else {
-    result = KosStackBlock_PopTail(&CURRENT_STACK(ctx), (size_t) opa);
+    result = KosEvalState_StackPopTail(es, (size_t) opa);
     if (! result) {
       PyErr_SetString(PyExc_RuntimeError, "BREAK PopTail underrun");
       return KOS_OP_POST_ERR();

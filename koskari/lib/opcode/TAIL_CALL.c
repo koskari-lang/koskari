@@ -23,14 +23,12 @@
 */
 
 KOS_OP_HANDLER(TAIL_CALL) {
+  KosContext *ctx = KosEvalState_Context(es);
   unsigned n = KosOp_ARG(insn);
   size_t count = (size_t)(n + 1);
 
-  KosDynFrame *frame_top = CURRENT_FRAME(ctx);
-  KosStackBlock **stack = &KosDynFrame_STACK(frame_top);
-
   KosStackSteal steal = { 0 };
-  if (KosStackSteal_Tail(&steal, count, stack) < 0)
+  if (KosStackSteal_Tail(&steal, count, KosEvalState_StackOperandSlot(es)) < 0)
     return KOS_OP_POST_ERR();
 
   PyObject *callable = steal.vals[0];

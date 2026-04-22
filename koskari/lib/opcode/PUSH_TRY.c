@@ -19,12 +19,14 @@
 */
 
 KOS_OP_HANDLER(PUSH_TRY) {
+  KosContext *ctx = KosEvalState_Context(es);
   KosDynNode *region = (KosDynNode *) kos_dyn_push_try(ctx, KosOp_ARG(insn));
   if (! region) {
     PyErr_NoMemory();
     return KOS_OP_POST_ERR();
   }
-  if (KosStackBlock_PushBlock(&CURRENT_STACK(ctx)) < 0) {
+  KosDynNode_STACK(region) = KosEvalState_OperandNewEmpty();
+  if (! KosDynNode_STACK(region)) {
     if (kos_dyn_abort_push_region(ctx, region) < 0) {
       PyErr_Clear();
       PyErr_SetString(PyExc_RuntimeError,
@@ -32,6 +34,7 @@ KOS_OP_HANDLER(PUSH_TRY) {
     }
     return KOS_OP_POST_ERR();
   }
+  kos_ctx_refresh_dyn_caches(ctx);
   (void) out_ev;
   return KOS_OP_RUN();
 }

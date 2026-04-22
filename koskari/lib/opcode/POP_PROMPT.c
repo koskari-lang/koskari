@@ -20,16 +20,17 @@
 */
 
 KOS_OP_HANDLER(POP_PROMPT) {
+  KosContext *ctx = KosEvalState_Context(es);
   KosDynDelim *ret_delim = kos_find_nearest_delim(ctx, KOS_DYN_DELIM_MODE_POP_PROMPT);
 
   SAYF("[eval] POP_PROMPT delim=%p dyn_top=%p IS_PROMPT=%d frame=%p stack_len=%zu\n",
        (void *) ret_delim, (void *) KosContext_DYN_TOP(ctx),
        (KosContext_DYN_TOP(ctx) && KosDynNode_IS_PROMPT(KosContext_DYN_TOP(ctx))) ? 1 : 0,
        (void *) CURRENT_FRAME(ctx),
-       CURRENT_STACK(ctx) ? KosStackBlock_LEN(CURRENT_STACK(ctx)) : 0);
+       CURRENT_STACK(ctx) ? KosEvalState_StackLen(es) : 0);
 
   if (ret_delim) {
-    PyObject *val = KosStackBlock_PopRef(&CURRENT_STACK(ctx));
+    PyObject *val = KosEvalState_StackPopRef(es);
     if (! val) {
       SAY("[eval] POP_PROMPT (invoke) pop underrun\n");
       return KOS_OP_POST_ERR();
@@ -96,11 +97,11 @@ KOS_OP_HANDLER(POP_PROMPT) {
   }
   SAYF("[eval] POP_PROMPT (normal): popping prompt, frame=%p stack_len=%zu",
        (void *) CURRENT_FRAME(ctx),
-       CURRENT_STACK(ctx) ? KosStackBlock_LEN(CURRENT_STACK(ctx)) : 0);
+       CURRENT_STACK(ctx) ? KosEvalState_StackLen(es) : 0);
   
   PyObject *result = NULL;
   if (CURRENT_STACK(ctx)) {
-    result = KosStackBlock_PopRef(&CURRENT_STACK(ctx));
+    result = KosEvalState_StackPopRef(es);
     if (! result) {
       SAY("[eval] POP_PROMPT (normal): stack underrun");
       return KOS_OP_POST_ERR();
@@ -114,10 +115,10 @@ KOS_OP_HANDLER(POP_PROMPT) {
   
   SAYF("[eval] POP_PROMPT (normal): after pop, frame=%p stack_len=%zu",
        (void *) CURRENT_FRAME(ctx),
-       CURRENT_STACK(ctx) ? KosStackBlock_LEN(CURRENT_STACK(ctx)) : 0);
+       CURRENT_STACK(ctx) ? KosEvalState_StackLen(es) : 0);
   
   if (result && CURRENT_STACK(ctx)) {
-    if (KosStackBlock_PushRef(&CURRENT_STACK(ctx), result) < 0) {
+    if (KosEvalState_StackPushRef(es, result) < 0) {
       Py_DECREF(result);
       return KOS_OP_POST_ERR();
     }

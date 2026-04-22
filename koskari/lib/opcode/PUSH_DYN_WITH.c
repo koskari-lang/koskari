@@ -21,8 +21,9 @@
 */
 
 KOS_OP_HANDLER(PUSH_DYN_WITH) {
+  KosContext *ctx = KosEvalState_Context(es);
 
-  PyObject *mgr = KosStackBlock_PopRef(&CURRENT_STACK(ctx));
+  PyObject *mgr = KosEvalState_StackPopRef(es);
   if (! mgr)
     return KOS_OP_POST_ERR();
 
@@ -56,7 +57,10 @@ KOS_OP_HANDLER(PUSH_DYN_WITH) {
   PyObject *name_obj = get_name_from_insn(code, insn);
   Py_XINCREF(name_obj);
 
-  if (KosStackBlock_PushBlock(&CURRENT_STACK(ctx)) < 0) {
+  KosDynWith *with_node = kos_dyn_push_dyn_with_provisional(ctx, mgr, enter,
+                                                            exit, name_obj,
+                                                            resume_pc);
+  if (! with_node) {
     Py_DECREF(name_obj);
     Py_DECREF(exit);
     Py_DECREF(enter);
@@ -64,17 +68,16 @@ KOS_OP_HANDLER(PUSH_DYN_WITH) {
     return KOS_OP_POST_ERR();
   }
 
-  KosDynWith *with_node = kos_dyn_push_dyn_with_provisional(ctx, mgr, enter,
-                                                            exit, name_obj,
-                                                            resume_pc);
-  if (! with_node) {
-    KosStackBlock_DropBlock(&CURRENT_STACK(ctx));
+  KosDynNode_STACK((KosDynNode *) with_node) = KosEvalState_OperandNewEmpty();
+  if (! KosDynNode_STACK((KosDynNode *) with_node)) {
+    kos_dyn_pop_with(ctx, with_node);
     Py_DECREF(name_obj);
     Py_DECREF(exit);
     Py_DECREF(enter);
     Py_DECREF(mgr);
     return KOS_OP_POST_ERR();
   }
+  kos_ctx_refresh_dyn_caches(ctx);
 
   int r = kos_dyn_wind(ctx, (KosDynNode *) with_node, out_ev);
   if (r == KOS_DYN_UNWIND_ASYNC_STARTED) {
@@ -86,7 +89,6 @@ KOS_OP_HANDLER(PUSH_DYN_WITH) {
 
   if (r < 0) {
     kos_dyn_pop_with(ctx, with_node);
-    KosStackBlock_DropBlock(&CURRENT_STACK(ctx));
     return KOS_OP_POST_ERR();
   }
 

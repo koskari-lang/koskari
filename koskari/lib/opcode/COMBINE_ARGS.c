@@ -27,7 +27,7 @@ KOS_OP_HANDLER(COMBINE_ARGS) {
     PyObject *empty = PyTuple_New(0);
     if (! empty)
       return KOS_OP_POST_ERR();
-    if (KosStackBlock_PushRef(&CURRENT_STACK(ctx), empty) < 0) {
+    if (KosEvalState_StackPushRef(es, empty) < 0) {
       Py_DECREF(empty);
       return KOS_OP_POST_ERR();
     }
@@ -37,7 +37,7 @@ KOS_OP_HANDLER(COMBINE_ARGS) {
   }
 
   if (opa == 1) {
-    PyObject *v = KosStackBlock_PopRef(&CURRENT_STACK(ctx));
+    PyObject *v = KosEvalState_StackPopRef(es);
     if (! v)
       return KOS_OP_POST_ERR();
 
@@ -50,7 +50,7 @@ KOS_OP_HANDLER(COMBINE_ARGS) {
     if (! v)
       return KOS_OP_POST_ERR();
 
-    if (KosStackBlock_PushRef(&CURRENT_STACK(ctx), v) < 0) {
+    if (KosEvalState_StackPushRef(es, v) < 0) {
       Py_DECREF(v);
       return KOS_OP_POST_ERR();
     }
@@ -59,7 +59,7 @@ KOS_OP_HANDLER(COMBINE_ARGS) {
     return KOS_OP_RUN();
   }
 
-  PyObject *const *vals = KosStackBlock_TailPtr(CURRENT_STACK(ctx),
+  PyObject *const *vals = KosEvalState_StackTailPtr(es,
                                                  (size_t) opa);
   if (! vals)
     return KOS_OP_POST_ERR();
@@ -72,20 +72,20 @@ KOS_OP_HANDLER(COMBINE_ARGS) {
     PyObject *nb = PySequence_InPlaceConcat(built, vals[i]);
     Py_DECREF(built);
     if (! nb) {
-      KosStackBlock_DropNoErr(&CURRENT_STACK(ctx), (size_t) opa);
+      KosEvalState_StackDropNoErr(es, (size_t) opa);
       return KOS_OP_POST_ERR();
     }
     built = nb;
   }
 
-  KosStackBlock_DropNoErr(&CURRENT_STACK(ctx), (size_t) opa);
+  KosEvalState_StackDropNoErr(es, (size_t) opa);
 
   PyObject *result = PySequence_Tuple(built);
   Py_DECREF(built);
   if (! result)
     return KOS_OP_POST_ERR();
 
-  if (KosStackBlock_PushRef(&CURRENT_STACK(ctx), result) < 0) {
+  if (KosEvalState_StackPushRef(es, result) < 0) {
     Py_DECREF(result);
     return KOS_OP_POST_ERR();
   }

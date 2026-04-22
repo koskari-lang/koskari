@@ -33,6 +33,14 @@ KosDynLoop *kos_dynloop_clone(KosDynLoop *node) {
   KosDynLoop_ENABLED(clone) = KosDynLoop_ENABLED(node);
   KosDynLoop_RESULT(clone) = KosDynLoop_RESULT(node);
   Py_XINCREF(KosDynLoop_RESULT(clone));
+  if (KosDynNode_STACK((KosDynNode *) node)) {
+    KosDynNode_STACK((KosDynNode *) clone) =
+        KosEvalState_OperandDeepCopy(KosDynNode_STACK((KosDynNode *) node));
+    if (! KosDynNode_STACK((KosDynNode *) clone)) {
+      kos_dynloop_free(clone);
+      return NULL;
+    }
+  }
   return clone;
 }
 
@@ -41,6 +49,7 @@ KosDynLoop *kos_dynloop_clone(KosDynLoop *node) {
    DECREF RESULT; return node to freelist.
 */
 void kos_dynloop_free(KosDynLoop *node) {
+  kos_dynnode_release_stack((KosDynNode *) node);
   Py_XDECREF(KosDynLoop_RESULT(node));
   kos_dynnode_return_to_freelist(node);
 }
@@ -66,6 +75,7 @@ void kos_dyn_pop_loop(KosContext *ctx, KosDynLoop *node) {
     KosContext_DYN_TOP(ctx)=KosDynNode_PARENT(node);
     KosContext_CHAIN_VERSION(ctx)++;
     kos_dynloop_free(node);
+    kos_ctx_refresh_dyn_caches(ctx);
   }
 }
 
@@ -77,6 +87,9 @@ void kos_dyn_pop_loop(KosContext *ctx, KosDynLoop *node) {
    GC traverse a KOS_DYN_LOOP: visit optional continue result.
 */
 static int dynnode_traverse_loop(KosDynNode *node, visitproc visit, void *arg) {
+  int tr = kos_stackblock_traverse(KosDynNode_STACK(node), visit, arg);
+  if (tr != 0)
+    return tr;
   Py_VISIT(KosDynLoop_RESULT((KosDynLoop *) node));
   return 0;
 }

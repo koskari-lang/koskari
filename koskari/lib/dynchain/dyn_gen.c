@@ -107,11 +107,14 @@ int kos_dyn_gen_install(KosContext *ctx, KosDynGen *gen) {
   KosContext_DYN_TOP(ctx) = active;
   KosDynGen_ACTIVE(gen) = NULL;
   KosContext_CHAIN_VERSION(ctx)++;
-  kos_update_frame_top(ctx);
+  kos_ctx_refresh_dyn_caches(ctx);
 
-  if (KosStackBlock_PushRef(&KosDynFrame_STACK(KosContext_FRAME_TOP(ctx)),
-                            Py_None) < 0)
-    return -1;
+  {
+    KosEvalState es;
+    KosEvalState_Init(&es, ctx);
+    if (KosEvalState_StackPushRef(&es, Py_None) < 0)
+      return -1;
+  }
 
   SAYF("[gen] install DONE dyn_top=%p (%s) frame_top=%p chain: ",
        (void *) KosContext_DYN_TOP(ctx),
@@ -160,7 +163,7 @@ int kos_dyn_gen_unwind_exhausted(KosContext *ctx) {
   kos_dynchain_free(frame, (KosDynNode *) gen);
   KosContext_DYN_TOP(ctx) = consumer;
   KosContext_CHAIN_VERSION(ctx)++;
-  kos_update_frame_top(ctx);
+  kos_ctx_refresh_dyn_caches(ctx);
   kos_dyngen_release(gen);
   return 0;
 }

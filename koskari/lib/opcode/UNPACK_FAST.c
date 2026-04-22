@@ -20,6 +20,7 @@
 */
 
 KOS_OP_HANDLER(UNPACK_FAST) {
+  KosContext *ctx = KosEvalState_Context(es);
   KosCode *code = CURRENT_CODE(ctx);
   KosExtra row = KosCode_GetExtra(code, KosOp_ARG(insn));
   size_t idx0 = (size_t) row.a0;
@@ -44,7 +45,7 @@ KOS_OP_HANDLER(UNPACK_FAST) {
     return KOS_OP_POST_ERR();
   }
 
-  PyObject *raw = KosStackBlock_PopRef(&CURRENT_STACK(ctx));
+  PyObject *raw = KosEvalState_StackPopRef(es);
   if (! raw)
     return KOS_OP_POST_ERR();
 

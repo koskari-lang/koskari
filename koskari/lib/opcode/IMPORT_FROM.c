@@ -46,12 +46,13 @@
 */
 
 KOS_OP_HANDLER(IMPORT_FROM) {
+  KosContext *ctx = KosEvalState_Context(es);
   PyObject *name = get_name_from_insn(CURRENT_CODE(ctx), insn);
   if (! name)
     return KOS_OP_POST_ERR();
 
   /* Borrow TOS without popping — module stays on the stack */
-  PyObject *mod = KosStackBlock_Peek(CURRENT_STACK(ctx));
+  PyObject *mod = KosEvalState_StackPeek(es);
   if (! mod)
     return KOS_OP_POST_ERR();
 
@@ -59,5 +60,5 @@ KOS_OP_HANDLER(IMPORT_FROM) {
   if (! val)
     return KOS_OP_POST_ERR();
 
-  return kos_op_outcome_from_int_step(push_result(ctx, val));
+  return kos_op_outcome_from_int_step(push_result(es, val));
 }

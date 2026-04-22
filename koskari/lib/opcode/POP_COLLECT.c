@@ -20,6 +20,7 @@
 */
 
 KOS_OP_HANDLER(POP_COLLECT) {
+  KosContext *ctx = KosEvalState_Context(es);
   (void) out_ev;
   (void) insn;
 
@@ -38,13 +39,9 @@ KOS_OP_HANDLER(POP_COLLECT) {
   Py_DECREF(CURRENT_NS(ctx));
   CURRENT_NS(ctx) = prior;
 
-  if (KosStackBlock_DropBlock(&CURRENT_STACK(ctx)) < 0) {
-    Py_DECREF(collector);
-    return KOS_OP_POST_ERR();
-  }
   kos_dyn_pop_collect(ctx, col_node);
 
-  int res = KosStackBlock_PushRef(&CURRENT_STACK(ctx), collector);
+  int res = KosEvalState_StackPushRef(es, collector);
   Py_DECREF(collector);
 
   return kos_op_outcome_from_int_step(res);

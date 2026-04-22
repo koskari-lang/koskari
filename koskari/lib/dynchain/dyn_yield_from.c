@@ -122,25 +122,31 @@ int kos_dyn_yield_from_deliver_inner_yield(
 
   PyObject *payload = KosEvent_PAYLOAD(out_ev);
   KosDynFrame *frame = KosContext_FRAME_TOP(ctx);
-  KosPyAsyncGen *agen;
   PyObject *const *tos;
 
   if (! frame || ! payload)
     return -1;
 
-  if (KosStackBlock_PushRef(&KosDynFrame_STACK(frame), payload) < 0)
-    return -1;
-  Py_DECREF(payload);
-  KosEvent_PAYLOAD(out_ev) = NULL;
-  KosEvent_KIND(out_ev) = KOS_EV_NONE;
+  {
+    KosEvalState es;
+    KosEvalState_Init(&es, ctx);
+    if (KosEvalState_StackPushRef(&es, payload) < 0)
+      return -1;
+    Py_DECREF(payload);
+    KosEvent_PAYLOAD(out_ev) = NULL;
+    KosEvent_KIND(out_ev) = KOS_EV_NONE;
 
-  agen = (KosPyAsyncGen *) KosDynYieldFrom_DELEGATE(yf);
-  agen->in_progress = 0;
+    {
+      KosPyAsyncGen *agen =
+          (KosPyAsyncGen *) KosDynYieldFrom_DELEGATE(yf);
+      agen->in_progress = 0;
+    }
 
-  KosDynYieldFrom_PHASE_SET(yf, KOS_YF_PHASE_EXPECT_SEND);
-  KosDynFrame_PC(frame) = KosDynFrame_ACTING_PC(frame);
+    KosDynYieldFrom_PHASE_SET(yf, KOS_YF_PHASE_EXPECT_SEND);
+    KosDynFrame_PC(frame) = KosDynFrame_ACTING_PC(frame);
 
-  tos = KosStackBlock_TailPtr(KosDynFrame_STACK(frame), 1);
+    tos = KosEvalState_StackTailPtr(&es, 1);
+  }
   if (! tos)
     return -1;
 

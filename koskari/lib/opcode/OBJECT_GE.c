@@ -26,14 +26,14 @@ KOS_OP_HANDLER(OBJECT_GE) {
     return KOS_OP_POST_ERR();
   }
 
-  PyObject *const *args = KosStackBlock_TailPtr(CURRENT_STACK(ctx), count);
+  PyObject *const *args = KosEvalState_StackTailPtr(es, count);
   if (unlikely(! args))
     return KOS_OP_POST_ERR();
 
   PyObject *result = KosOperator_Ge(args, count);
-  KosStackBlock_DropNoErr(&CURRENT_STACK(ctx), count);
+  KosEvalState_StackDropNoErr(es, count);
   if (unlikely(! result))
     return KOS_OP_POST_ERR();
 
-  return kos_op_outcome_from_int_step(push_result(ctx, result));
+  return kos_op_outcome_from_int_step(push_result(es, result));
 }

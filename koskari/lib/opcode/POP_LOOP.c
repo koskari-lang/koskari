@@ -19,6 +19,7 @@
 */
 
 KOS_OP_HANDLER(POP_LOOP) {
+  KosContext *ctx = KosEvalState_Context(es);
   KosDynNode *region = (KosDynNode *) KosContext_DYN_TOP(ctx);
   if (! region || ! KosDynNode_IS_LOOP(region)) {
     PyErr_SetString(PyExc_RuntimeError,
@@ -30,16 +31,13 @@ KOS_OP_HANDLER(POP_LOOP) {
   PyObject *result = KosDynLoop_RESULT(loop);
   Py_INCREF(result);
 
-  if (KosStackBlock_DropBlock(&CURRENT_STACK(ctx)) < 0) {
+  kos_dyn_pop_loop(ctx, loop);
+
+  if (unlikely(KosEvalState_StackPushRef(es, result) < 0)) {
     Py_DECREF(result);
     return KOS_OP_POST_ERR();
   }
-
-  kos_dyn_pop_loop(ctx, loop);
-
-  if (unlikely(KosStackBlock_PushRef(&CURRENT_STACK(ctx), result) < 0)) {
-    return KOS_OP_POST_ERR();
-  }
+  Py_DECREF(result);
   return KOS_OP_RUN();
 }
 

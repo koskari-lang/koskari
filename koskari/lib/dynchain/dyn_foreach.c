@@ -42,6 +42,14 @@ KosDynForeach *kos_dynforeach_clone(KosDynForeach *node) {
   KosDynForeach_EXHAUSTED(clone) = KosDynForeach_EXHAUSTED(node);
   KosDynForeach_ITER_NEXT_ELSE_PC(clone) = KosDynForeach_ITER_NEXT_ELSE_PC(node);
   KosDynForeach_ITER_STEP_PHASE(clone) = KosDynForeach_ITER_STEP_PHASE(node);
+  if (KosDynNode_STACK((KosDynNode *) node)) {
+    KosDynNode_STACK((KosDynNode *) clone) =
+        KosEvalState_OperandDeepCopy(KosDynNode_STACK((KosDynNode *) node));
+    if (! KosDynNode_STACK((KosDynNode *) clone)) {
+      kos_dynforeach_free(clone);
+      return NULL;
+    }
+  }
   return clone;
 }
 
@@ -50,9 +58,10 @@ KosDynForeach *kos_dynforeach_clone(KosDynForeach *node) {
    DECREF result and iterator; return node to freelist.
 */
 void kos_dynforeach_free(KosDynForeach *node) {
+  kos_dynnode_release_stack((KosDynNode *) node);
   Py_XDECREF(KosDynForeach_RESULT(node));
   Py_XDECREF(KosDynForeach_ITER(node));
-  kos_dynnode_return_to_freelist(node);
+  kos_dynnode_return_to_freelist((KosDynNode *) node);
 }
 
 
@@ -76,6 +85,7 @@ void kos_dyn_pop_foreach(KosContext *ctx, KosDynForeach *node) {
     KosContext_DYN_TOP(ctx)=KosDynNode_PARENT(node);
     KosContext_CHAIN_VERSION(ctx)++;
     kos_dynforeach_free(node);
+    kos_ctx_refresh_dyn_caches(ctx);
   }
 }
 
@@ -87,6 +97,9 @@ void kos_dyn_pop_foreach(KosContext *ctx, KosDynForeach *node) {
    GC traverse a KOS_DYN_FOREACH: visit result and iterator refs.
 */
 static int dynnode_traverse_foreach(KosDynNode *node, visitproc visit, void *arg) {
+  int tr = kos_stackblock_traverse(KosDynNode_STACK(node), visit, arg);
+  if (tr != 0)
+    return tr;
   Py_VISIT(KosDynForeach_RESULT((KosDynForeach *) node));
   Py_VISIT(KosDynForeach_ITER((KosDynForeach *) node));
   return 0;

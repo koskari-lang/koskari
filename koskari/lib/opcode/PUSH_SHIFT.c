@@ -21,6 +21,7 @@
 */
 
 KOS_OP_HANDLER(PUSH_SHIFT) {
+  KosContext *ctx = KosEvalState_Context(es);
   uint32_t prompt_id;
   KosContinuation *k = NULL;
   uint32_t resume_pc;
@@ -49,7 +50,7 @@ KOS_OP_HANDLER(PUSH_SHIFT) {
     }
 
     CURRENT_PC(ctx) = shift_body_pc;
-    return kos_op_outcome_from_int_step(push_result(ctx, wrapper));
+    return kos_op_outcome_from_int_step(push_result(es, wrapper));
   }
 
   /* Already at prompt: capture, push shift node, done */
@@ -76,7 +77,7 @@ KOS_OP_HANDLER(PUSH_SHIFT) {
     }
 
     CURRENT_PC(ctx) = shift_body_pc;
-    return kos_op_outcome_from_int_step(push_result(ctx, wrapper));
+    return kos_op_outcome_from_int_step(push_result(es, wrapper));
   }
 
   /* Need to unwind: build plan, capture, set continuation on plan, roll back PC */

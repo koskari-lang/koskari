@@ -332,6 +332,10 @@ typedef struct KosEvalResult {
 struct KosContext {
   KosDynNode *dyn_top;       /* top of dynamic chain */
   KosDynFrame *frame_top;    /* cached topmost frame (for fast access) */
+
+  KosStackBlock *block;      /* mirror of *operand_stack_slot; refreshed with caches */
+  KosStackBlock **operand_stack_slot; /* &innermost_owner->stack; same indirection as KosStackBlock_ */
+
   KosDynFrame *globals_frame;     /* cached outermost frame (for op_GLOBALS) */
   uint32_t globals_cache_version; /* chain_version when globals_frame was set */
 
@@ -388,6 +392,28 @@ static inline void kos_ctx_async_bridge_py_clear_await_iter(KosContext *ctx) {
 
 #define KosContext_DYN_TOP(c)                (((KosContext *)(c))->dyn_top)
 #define KosContext_FRAME_TOP(c)              (((KosContext *)(c))->frame_top)
+#define KosContext_BLOCK(c)                  (((KosContext *)(c))->block)
+#define KosContext_OPERAND_STACK_SLOT(c)     (((KosContext *)(c))->operand_stack_slot)
+
+/**
+  Operand stack head: *operand_stack_slot (refreshed in kos_ctx_refresh_dyn_caches).
+  Growth updates the owning node through operand_stack_slot; head tracks *slot.
+*/
+static inline KosStackBlock *KosContext_StackHead(KosContext *c) {
+  KosStackBlock **sl = KosContext_OPERAND_STACK_SLOT(c);
+  return (sl && *sl) ? *sl : NULL;
+}
+
+/**
+  Operand stack slot: address of the innermost owner's KosDynNode_STACK field.
+  Refreshed only when the dynamic chain changes (same contract as frame_top).
+*/
+static inline KosStackBlock **KosContext_StackSlot(KosContext *c) {
+  return KosContext_OPERAND_STACK_SLOT(c);
+}
+
+#define KosContext_STACK_HEAD(c)             KosContext_StackHead(c)
+#define KosContext_STACK_SLOT(c)             KosContext_StackSlot(c)
 #define KosContext_GLOBALS_FRAME(c)          (((KosContext *)(c))->globals_frame)
 #define KosContext_GLOBALS_CACHE_VERSION(c)  (((KosContext *)(c))->globals_cache_version)
 #define KosContext_TOKEN(c)                  (((KosContext *)(c))->token)
@@ -455,6 +481,46 @@ PyObject *KosEvalState_GetConstant(const KosEvalState *es, uint32_t index);
 
 int KosEvalState_StackPushRef(KosEvalState *es, PyObject *val);
 PyObject *KosEvalState_StackPopRef(KosEvalState *es);
+/**
+  Address of the innermost operand-stack head pointer (KosStackBlock **).
+  For KosStackSteal_* and other APIs that mutate via a block pointer slot.
+*/
+KosStackBlock **KosEvalState_StackOperandSlot(KosEvalState *es);
+/**
+  Push stolen reference (KosStackBlock_PUSH semantics). Opcode/dynchain paths
+  should use this instead of KosStackBlock_PUSH on the current operand slot.
+*/
+int KosEvalState_StackPUSH(KosEvalState *es, PyObject *val);
+
+PyObject *KosEvalState_StackPopTail(KosEvalState *es, size_t count);
+PyObject *const *KosEvalState_StackTailPtr(KosEvalState *es, size_t count);
+size_t KosEvalState_StackLen(KosEvalState *es);
+int KosEvalState_StackDrop(KosEvalState *es, size_t count);
+int KosEvalState_StackDrop1(KosEvalState *es);
+void KosEvalState_StackDropNoErr(KosEvalState *es, size_t count);
+int KosEvalState_StackClearBlock(KosEvalState *es);
+int KosEvalState_StackDuplicate(KosEvalState *es, size_t count);
+PyObject *KosEvalState_StackPopTailDict(KosEvalState *es, size_t count);
+PyObject *KosEvalState_StackPopTailDictNames(KosEvalState *es, size_t count);
+PyObject *KosEvalState_StackPopTailDictFromNames(KosEvalState *es, PyObject *names);
+PyObject *KosEvalState_StackPeek(KosEvalState *es);
+PyObject *KosEvalState_StackPeekAt(KosEvalState *es, Py_ssize_t index);
+int KosEvalState_StackPopTailPtr(KosEvalState *es, size_t count, PyObject **dest);
+
+/**
+  Explicit operand slot (e.g. node->stack) when it is not the innermost
+  context stack. Do not use for ordinary opcode stack effects; use
+  KosEvalState_Stack* with a KosEvalState bound to ctx.
+*/
+int KosEvalState_OperandSlotPushRef(KosStackBlock **slot, PyObject *val);
+PyObject *KosEvalState_OperandSlotPopRef(KosStackBlock **slot);
+
+KosStackBlock *KosEvalState_OperandNewEmpty(void);
+KosStackBlock *KosEvalState_OperandDeepCopy(KosStackBlock *block);
+void KosEvalState_OperandRelease(KosStackBlock *block);
+void KosEvalState_OperandReleaseChain(KosStackBlock *block);
+void KosEvalState_OperandReleaseChainExclude(KosStackBlock *block, PyObject *exclude);
+size_t KosEvalState_OperandLen(const KosStackBlock *block);
 
 int KosEvalState_StackPushBlock(KosEvalState *es);
 int KosEvalState_StackDropBlock(KosEvalState *es);
@@ -463,6 +529,17 @@ PyObject *KosEvalState_GetFast(const KosEvalState *es, size_t index);
 int KosEvalState_SetFast(KosEvalState *es, size_t index, PyObject *value);
 
 PyObject *KosEvalState_GetVar(const KosEvalState *es, PyObject *key);
+
+
+/**
+  Pop tail PyObject * fields into aggregate agg (deepest first, TOS last).
+  Same layout contract as KOS_STACK_BLOCK_POP_ARGS in stack.h.
+*/
+#define KOS_EVALSTATE_POP_ARGS(es, agg) \
+  KosEvalState_StackPopTailPtr( \
+      (es), \
+      sizeof(agg) / sizeof(PyObject *), \
+      (PyObject **)(void *)&(agg))
 
 
 /* === Context lifecycle === */

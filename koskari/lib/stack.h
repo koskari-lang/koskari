@@ -126,6 +126,13 @@ KosStackBlock *KosStackBlock_DeepCopy(KosStackBlock *block);
 
 
 /**
+   Allocate an empty root operand stack block (no parent segment).
+   Caller must Release. Used when installing dyn nodes that own a stack.
+ */
+KosStackBlock *KosStackBlock_NewEmpty(void);
+
+
+/**
    Push val onto the block chain (increments ref). val is borrowed; stack
    gains a new reference. For use by eval/dynchain on frame stacks.
    Grows as needed.

@@ -20,6 +20,7 @@
 */
 
 KOS_OP_HANDLER(PUSH_LOOP) {
+  KosContext *ctx = KosEvalState_Context(es);
   uint32_t continue_pc = CURRENT_PC(ctx);  /* already advanced by drive loop */
 
   /* Derive break target from the extent table (pop_pc + 1) */
@@ -49,7 +50,8 @@ KOS_OP_HANDLER(PUSH_LOOP) {
   Py_INCREF(Py_None);
   KosDynLoop_RESULT((KosDynLoop *) region) = Py_None;
 
-  if (KosStackBlock_PushBlock(&CURRENT_STACK(ctx)) < 0) {
+  KosDynNode_STACK(region) = KosEvalState_OperandNewEmpty();
+  if (! KosDynNode_STACK(region)) {
     if (kos_dyn_abort_push_region(ctx, region) < 0) {
       PyErr_Clear();
       PyErr_SetString(PyExc_RuntimeError,
@@ -57,6 +59,7 @@ KOS_OP_HANDLER(PUSH_LOOP) {
     }
     return KOS_OP_POST_ERR();
   }
+  kos_ctx_refresh_dyn_caches(ctx);
   (void) out_ev;
   return KOS_OP_RUN();
 }

@@ -20,6 +20,7 @@
 */
 
 KOS_OP_HANDLER(PUSH_WIND) {
+  KosContext *ctx = KosEvalState_Context(es);
   unsigned count = KosOp_ARG(insn);
   PyObject *before = NULL;
   PyObject *after = NULL;  /* set only when count==2 */
@@ -31,13 +32,13 @@ KOS_OP_HANDLER(PUSH_WIND) {
   }
 
   if (count == 2) {
-    after = KosStackBlock_PopRef(&CURRENT_STACK(ctx));
+    after = KosEvalState_StackPopRef(es);
     if (! after) {
       PyErr_SetString(PyExc_RuntimeError, "PUSH_WIND: stack underrun (after)");
       return KOS_OP_POST_ERR();
     }
   }
-  before = KosStackBlock_PopRef(&CURRENT_STACK(ctx));
+  before = KosEvalState_StackPopRef(es);
   if (! before) {
     Py_XDECREF(after);
     PyErr_SetString(PyExc_RuntimeError, "PUSH_WIND: stack underrun (before)");

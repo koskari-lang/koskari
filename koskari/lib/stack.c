@@ -83,6 +83,11 @@ static KosStackBlock *KosStackBlock_New(KosStackBlock *parent) {
 }
 
 
+KosStackBlock *KosStackBlock_NewEmpty(void) {
+  return KosStackBlock_New(NULL);
+}
+
+
 static KosStackBlock *KosStackBlock_Grow(KosStackBlock *self) {
   size_t max = self->max * 2;
 
@@ -185,7 +190,7 @@ KosStackBlock *KosStackBlock_DeepCopy(KosStackBlock *block) {
     b = KosStackBlock_PARENT(b);
   }
   if (total == 0) {
-    KosStackBlock *empty = KosStackBlock_New(NULL);
+    KosStackBlock *empty = KosStackBlock_NewEmpty();
     return empty;
   }
 
@@ -236,7 +241,7 @@ static int KosStackBlock_Push(
 
   KosStackBlock *s = *self;
   if (! s) {
-    s = KosStackBlock_New(NULL);
+    s = KosStackBlock_NewEmpty();
     if (! s)
       return -1;
     *self = s;
@@ -273,7 +278,7 @@ int KosStackBlock_PUSH(
 
   KosStackBlock *s = *self;
   if (! s) {
-    s = KosStackBlock_New(NULL);
+    s = KosStackBlock_NewEmpty();
     if (! s) {
       Py_DECREF(val);
       return -1;
@@ -668,7 +673,7 @@ PyObject *const *KosStackBlock_TailPtr(
 int KosStackBlock_PushBlock(KosStackBlock **block) {
   KosStackBlock *top = *block;
   if (! top) {
-    top = KosStackBlock_New(NULL);
+    top = KosStackBlock_NewEmpty();
     if (! top) {
       PyErr_SetString(PyExc_RuntimeError,
                       "could not push block; alloc failed");
@@ -1462,7 +1467,7 @@ PyObject *KosStack_New(void) {
   if (! self)
     return NULL;
 
-  KosStack_BLOCK(self) = KosStackBlock_New(NULL);
+  KosStack_BLOCK(self) = KosStackBlock_NewEmpty();
 
   SAYF("KosStack_New() -> %p", (void *) self);
   return self;
@@ -1482,7 +1487,7 @@ PyObject *KosStack_Copy(PyObject *original) {
     Py_DECREF(self);
     return NULL;
   }
-  KosStack_BLOCK(self) = copy ? copy : KosStackBlock_New(NULL);
+  KosStack_BLOCK(self) = copy ? copy : KosStackBlock_NewEmpty();
 
   SAYF("KosStack_Copy() -> %p", (void *) self);
   return self;

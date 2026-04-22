@@ -39,24 +39,23 @@ static int ensure_tuple(PyObject **val) {
 
 
 KOS_OP_HANDLER(CALL_STAR) {
+  KosContext *ctx = KosEvalState_Context(es);
   unsigned opa = KosOp_ARG(insn);
 
   PyObject *fun = NULL;
   PyObject *pos = NULL;
   PyObject *kwd = NULL;
 
-  KosStackBlock **stack = &CURRENT_STACK(ctx);
-
   if ((opa & 3) == 3) {
-    kwd = KosStackBlock_PopRef(stack);
+    kwd = KosEvalState_StackPopRef(es);
     if (! kwd)
       return KOS_OP_POST_ERR();
-    pos = KosStackBlock_PopRef(stack);
+    pos = KosEvalState_StackPopRef(es);
     if (! pos) {
       Py_DECREF(kwd);
       return KOS_OP_POST_ERR();
     }
-    fun = KosStackBlock_PopRef(stack);
+    fun = KosEvalState_StackPopRef(es);
     if (! fun) {
       Py_DECREF(pos);
       Py_DECREF(kwd);
@@ -69,10 +68,10 @@ KOS_OP_HANDLER(CALL_STAR) {
       return KOS_OP_POST_ERR();
     }
   } else if (opa & 2) {
-    kwd = KosStackBlock_PopRef(stack);
+    kwd = KosEvalState_StackPopRef(es);
     if (! kwd)
       return KOS_OP_POST_ERR();
-    fun = KosStackBlock_PopRef(stack);
+    fun = KosEvalState_StackPopRef(es);
     if (! fun) {
       Py_DECREF(kwd);
       return KOS_OP_POST_ERR();
@@ -84,10 +83,10 @@ KOS_OP_HANDLER(CALL_STAR) {
       return KOS_OP_POST_ERR();
     }
   } else if (opa & 1) {
-    pos = KosStackBlock_PopRef(stack);
+    pos = KosEvalState_StackPopRef(es);
     if (! pos)
       return KOS_OP_POST_ERR();
-    fun = KosStackBlock_PopRef(stack);
+    fun = KosEvalState_StackPopRef(es);
     if (! fun) {
       Py_DECREF(pos);
       return KOS_OP_POST_ERR();
@@ -99,7 +98,7 @@ KOS_OP_HANDLER(CALL_STAR) {
     }
     kwd = NULL;
   } else {
-    fun = KosStackBlock_PopRef(stack);
+    fun = KosEvalState_StackPopRef(es);
     if (! fun)
       return KOS_OP_POST_ERR();
     pos = PyTuple_New(0);

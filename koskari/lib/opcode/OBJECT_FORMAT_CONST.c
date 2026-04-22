@@ -19,6 +19,7 @@
 */
 
 KOS_OP_HANDLER(OBJECT_FORMAT_CONST) {
+  KosContext *ctx = KosEvalState_Context(es);
   PyObject *rules = KosCode_GetConstant((PyObject *) CURRENT_CODE(ctx),
                                         KosOp_ARG(insn));
   PyObject *obj;
@@ -27,7 +28,7 @@ KOS_OP_HANDLER(OBJECT_FORMAT_CONST) {
   if (! rules)
     return KOS_OP_POST_ERR();
 
-  obj = KosStackBlock_PopRef(&CURRENT_STACK(ctx));
+  obj = KosEvalState_StackPopRef(es);
   if (! obj)
     return KOS_OP_POST_ERR();
 
@@ -36,5 +37,5 @@ KOS_OP_HANDLER(OBJECT_FORMAT_CONST) {
   if (! res)
     return KOS_OP_POST_ERR();
 
-  return kos_op_outcome_from_int_step(push_result(ctx, res));
+  return kos_op_outcome_from_int_step(push_result(es, res));
 }

@@ -24,7 +24,7 @@ KOS_OP_HANDLER(EXCEPTION) {
 
   if (! typ) {
     Py_INCREF(Py_None);
-    return kos_op_outcome_from_int_step(push_result(ctx, Py_None));
+    return kos_op_outcome_from_int_step(push_result(es, Py_None));
   }
 
   if (! val)
@@ -33,5 +33,5 @@ KOS_OP_HANDLER(EXCEPTION) {
   Py_DECREF(typ);
   Py_XDECREF(tb);
 
-  return kos_op_outcome_from_int_step(push_result(ctx, val));
+  return kos_op_outcome_from_int_step(push_result(es, val));
 }

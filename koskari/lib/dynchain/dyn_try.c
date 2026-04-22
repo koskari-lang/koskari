@@ -28,6 +28,14 @@ KosDynTry *kos_dyntry_clone(KosDynTry *node) {
   KosDynNode_NODE_ID(clone) = KosDynNode_NODE_ID(node);
   KosDynTry_HANDLER_PC(clone) = KosDynTry_HANDLER_PC(node);
   KosDynTry_ENABLED(clone) = KosDynTry_ENABLED(node);
+  if (KosDynNode_STACK((KosDynNode *) node)) {
+    KosDynNode_STACK((KosDynNode *) clone) =
+        KosEvalState_OperandDeepCopy(KosDynNode_STACK((KosDynNode *) node));
+    if (! KosDynNode_STACK((KosDynNode *) clone)) {
+      kos_dyntry_free(clone);
+      return NULL;
+    }
+  }
   return clone;
 }
 
@@ -36,7 +44,8 @@ KosDynTry *kos_dyntry_clone(KosDynTry *node) {
    Return TRY node to freelist (no PyObject refs).
 */
 void kos_dyntry_free(KosDynTry *node) {
-  kos_dynnode_return_to_freelist(node);
+  kos_dynnode_release_stack((KosDynNode *) node);
+  kos_dynnode_return_to_freelist((KosDynNode *) node);
 }
 
 
@@ -60,6 +69,7 @@ void kos_dyn_pop_try(KosContext *ctx, KosDynTry *node) {
     KosContext_DYN_TOP(ctx)=KosDynNode_PARENT(node);
     KosContext_CHAIN_VERSION(ctx)++;
     kos_dyntry_free(node);
+    kos_ctx_refresh_dyn_caches(ctx);
   }
 }
 
@@ -68,11 +78,11 @@ void kos_dyn_pop_try(KosContext *ctx, KosDynTry *node) {
 
 
 /**
-   GC traverse a KOS_DYN_TRY: no PyObject refs on the node.
+   GC traverse a KOS_DYN_TRY: operand stack only.
 */
 static int dynnode_traverse_try(KosDynNode *node, visitproc visit, void *arg) {
-  (void) node;
-  (void) visit;
-  (void) arg;
+  int tr = kos_stackblock_traverse(KosDynNode_STACK(node), visit, arg);
+  if (tr != 0)
+    return tr;
   return 0;
 }

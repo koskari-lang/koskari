@@ -19,7 +19,8 @@
 */
 
 KOS_OP_HANDLER(JUMP_OR) {
-  PyObject *val = KosStackBlock_PopRef(&CURRENT_STACK(ctx));
+  KosContext *ctx = KosEvalState_Context(es);
+  PyObject *val = KosEvalState_StackPopRef(es);
   if (! val)
     return KOS_OP_POST_ERR();
   int res = PyObject_IsTrue(val);
@@ -28,7 +29,7 @@ KOS_OP_HANDLER(JUMP_OR) {
     return KOS_OP_POST_ERR();
   }
   if (res) {
-    if (KosStackBlock_PushRef(&CURRENT_STACK(ctx), val) < 0) {
+    if (KosEvalState_StackPushRef(es, val) < 0) {
       Py_DECREF(val);
       return KOS_OP_POST_ERR();
     }

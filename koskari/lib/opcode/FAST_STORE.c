@@ -18,6 +18,7 @@
 */
 
 KOS_OP_HANDLER(FAST_STORE) {
+  KosContext *ctx = KosEvalState_Context(es);
   PyObject *ns = CURRENT_NS(ctx);
   if (! ns) {
     PyErr_SetString(PyExc_RuntimeError, "FAST_STORE invoked on NULL namespace");
@@ -28,7 +29,7 @@ KOS_OP_HANDLER(FAST_STORE) {
     return KOS_OP_POST_ERR();
   }
   size_t idx = (size_t) KosOp_ARG(insn);
-  PyObject *val = KosStackBlock_PopRef(&CURRENT_STACK(ctx));
+  PyObject *val = KosEvalState_StackPopRef(es);
   if (! val)
     return KOS_OP_POST_ERR();
   int res = KosNamespace_FastStore(ns, idx, val);

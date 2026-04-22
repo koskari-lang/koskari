@@ -18,6 +18,7 @@
 */
 
 KOS_OP_HANDLER(POP_PARAM) {
+  KosContext *ctx = KosEvalState_Context(es);
   KosDynNode *top = KosContext_DYN_TOP(ctx);
   if (! top) {
     PyErr_SetString(PyExc_RuntimeError, "POP_PARAM: dyn_top is NULL");

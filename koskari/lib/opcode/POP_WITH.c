@@ -21,6 +21,7 @@
 */
 
 KOS_OP_HANDLER(POP_WITH) {
+  KosContext *ctx = KosEvalState_Context(es);
 
   SAY("[eval] POP_WITH entry");
   KosDynNode *top = KosContext_DYN_TOP(ctx);
@@ -43,16 +44,12 @@ KOS_OP_HANDLER(POP_WITH) {
   if (unw != KOS_DYN_UNWIND_PROTOCOL_SKIPPED && unw < 0)
     return KOS_OP_POST_ERR();
 
-  /* Sync path: pop body value, drop block, pop with node, push body value. */
-  PyObject *body_val = KosStackBlock_PopRef(&CURRENT_STACK(ctx));
+  /* Sync path: pop body value, pop with node (releases region stack), push. */
+  PyObject *body_val = KosEvalState_StackPopRef(es);
   if (! body_val)
     return KOS_OP_POST_ERR();
-  if (KosStackBlock_DropBlock(&CURRENT_STACK(ctx)) < 0) {
-    Py_DECREF(body_val);
-    return KOS_OP_POST_ERR();
-  }
   kos_dyn_pop_with(ctx, with_node);
-  if (KosStackBlock_PushRef(&CURRENT_STACK(ctx), body_val) < 0) {
+  if (KosEvalState_StackPushRef(es, body_val) < 0) {
     Py_DECREF(body_val);
     return KOS_OP_POST_ERR();
   }

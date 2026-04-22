@@ -35,6 +35,14 @@ KosDynFinally *kos_dynfinally_clone(KosDynFinally *node) {
   KosDynFinally_HANDLING_RETURN(clone) = KosDynFinally_HANDLING_RETURN(node);
   KosDynFinally_HANDLING_RESULT(clone) = KosDynFinally_HANDLING_RESULT(node);
   Py_XINCREF(KosDynFinally_HANDLING_RESULT(clone));
+  if (KosDynNode_STACK((KosDynNode *) node)) {
+    KosDynNode_STACK((KosDynNode *) clone) =
+        KosEvalState_OperandDeepCopy(KosDynNode_STACK((KosDynNode *) node));
+    if (! KosDynNode_STACK((KosDynNode *) clone)) {
+      kos_dynfinally_free(clone);
+      return NULL;
+    }
+  }
   return clone;
 }
 
@@ -43,8 +51,9 @@ KosDynFinally *kos_dynfinally_clone(KosDynFinally *node) {
    DECREF handling result; return node to freelist.
 */
 void kos_dynfinally_free(KosDynFinally *node) {
+  kos_dynnode_release_stack((KosDynNode *) node);
   Py_XDECREF(KosDynFinally_HANDLING_RESULT(node));
-  kos_dynnode_return_to_freelist(node);
+  kos_dynnode_return_to_freelist((KosDynNode *) node);
 }
 
 
@@ -68,6 +77,7 @@ void kos_dyn_pop_finally(KosContext *ctx, KosDynFinally *node) {
     KosContext_DYN_TOP(ctx)=KosDynNode_PARENT(node);
     KosContext_CHAIN_VERSION(ctx)++;
     kos_dynfinally_free(node);
+    kos_ctx_refresh_dyn_caches(ctx);
   }
 }
 
@@ -79,6 +89,9 @@ void kos_dyn_pop_finally(KosContext *ctx, KosDynFinally *node) {
    GC traverse a KOS_DYN_FINALLY: visit handling result when present.
 */
 static int dynnode_traverse_finally(KosDynNode *node, visitproc visit, void *arg) {
+  int tr = kos_stackblock_traverse(KosDynNode_STACK(node), visit, arg);
+  if (tr != 0)
+    return tr;
   Py_VISIT(KosDynFinally_HANDLING_RESULT((KosDynFinally *) node));
   return 0;
 }

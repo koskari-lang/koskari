@@ -35,6 +35,7 @@
 */
 
 KOS_OP_HANDLER(IMPORT_REL) {
+  KosContext *ctx = KosEvalState_Context(es);
   /* Constant is a (level:int, name:str|None) tuple */
   PyObject *tup = get_name_from_insn(CURRENT_CODE(ctx), insn);
   if (! tup)
@@ -97,5 +98,5 @@ KOS_OP_HANDLER(IMPORT_REL) {
   if (! mod)
     return KOS_OP_POST_ERR();
 
-  return kos_op_outcome_from_int_step(push_result(ctx, mod));
+  return kos_op_outcome_from_int_step(push_result(es, mod));
 }

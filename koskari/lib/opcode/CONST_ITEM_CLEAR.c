@@ -18,11 +18,12 @@
 */
 
 KOS_OP_HANDLER(CONST_ITEM_CLEAR) {
+  KosContext *ctx = KosEvalState_Context(es);
   PyObject *key = KosCode_GetConstant((PyObject *) CURRENT_CODE(ctx),
                                       KosOp_ARG(insn));
   if (! key)
     return KOS_OP_POST_ERR();
-  PyObject *obj = KosStackBlock_PopRef(&CURRENT_STACK(ctx));
+  PyObject *obj = KosEvalState_StackPopRef(es);
   if (! obj)
     return KOS_OP_POST_ERR();
   int res = PyObject_DelItem(obj, key);

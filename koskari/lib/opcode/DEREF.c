@@ -23,7 +23,7 @@
 */
 
 KOS_OP_HANDLER(DEREF) {
-  PyObject *ref = KosStackBlock_PopRef(&CURRENT_STACK(ctx));
+  PyObject *ref = KosEvalState_StackPopRef(es);
   if (! ref)
     return KOS_OP_POST_ERR();
 
@@ -33,5 +33,5 @@ KOS_OP_HANDLER(DEREF) {
   if (! val)
     return KOS_OP_POST_ERR();
 
-  return kos_op_outcome_from_int_step(push_result(ctx, val));
+  return kos_op_outcome_from_int_step(push_result(es, val));
 }

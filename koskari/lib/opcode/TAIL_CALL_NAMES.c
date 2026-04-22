@@ -24,10 +24,9 @@
 */
 
 KOS_OP_HANDLER(TAIL_CALL_NAMES) {
+  KosContext *ctx = KosEvalState_Context(es);
   unsigned opa = KosOp_ARG(insn);
-  KosStackBlock **stack = &CURRENT_STACK(ctx);
-
-  PyObject *names = KosStackBlock_Peek(*stack);
+  PyObject *names = KosEvalState_StackPeek(es);
   if (! names)
     return KOS_OP_POST_ERR();
   if (! PyTuple_CheckExact(names)) {
@@ -42,7 +41,7 @@ KOS_OP_HANDLER(TAIL_CALL_NAMES) {
   size_t ntotal = (size_t)(total + 2);
 
   KosStackSteal steal = { 0 };
-  if (KosStackSteal_Tail(&steal, ntotal, stack) < 0)
+  if (KosStackSteal_Tail(&steal, ntotal, KosEvalState_StackOperandSlot(es)) < 0)
     return KOS_OP_POST_ERR();
 
   PyObject *callable = steal.vals[0];

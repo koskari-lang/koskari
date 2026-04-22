@@ -18,6 +18,7 @@
 */
 
 KOS_OP_HANDLER(FAST_CLEAR) {
+  KosContext *ctx = KosEvalState_Context(es);
   PyObject *ns = CURRENT_NS(ctx);
   if (! ns) {
     PyErr_SetString(PyExc_RuntimeError, "FAST_CLEAR invoked on NULL namespace");

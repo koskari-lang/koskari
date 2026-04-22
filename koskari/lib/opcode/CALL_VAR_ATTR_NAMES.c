@@ -21,6 +21,7 @@
 */
 
 KOS_OP_HANDLER(CALL_VAR_ATTR_NAMES) {
+  KosContext *ctx = KosEvalState_Context(es);
   KosCode *code = CURRENT_CODE(ctx);
   KosExtra row = KosCode_GetExtra(code, KosOp_ARG(insn));
   uint32_t name_cpool_idx = row.a0;
@@ -59,11 +60,9 @@ KOS_OP_HANDLER(CALL_VAR_ATTR_NAMES) {
 
   Py_ssize_t npos = (Py_ssize_t) opa;
   Py_ssize_t nkwds = PyTuple_GET_SIZE(names);
-  KosStackBlock **stack = &CURRENT_STACK(ctx);
-
   PyObject *const *ptr = NULL;
   if (npos + nkwds > 0) {
-    ptr = KosStackBlock_TailPtr(*stack, (size_t)(npos + nkwds));
+    ptr = KosEvalState_StackTailPtr(es, (size_t)(npos + nkwds));
     if (! ptr) {
       Py_DECREF(obj);
       return KOS_OP_POST_ERR();
@@ -82,9 +81,9 @@ KOS_OP_HANDLER(CALL_VAR_ATTR_NAMES) {
     KosStackSteal steal = { 0 };
     int steal_ok;
     if (send_self == 0) {
-      steal_ok = KosStackSteal_TailPrepend(&steal, obj, ntotal, stack);
+      steal_ok = KosStackSteal_TailPrepend(&steal, obj, ntotal, KosEvalState_StackOperandSlot(es));
     } else {
-      steal_ok = KosStackSteal_Tail(&steal, ntotal, stack);
+      steal_ok = KosStackSteal_Tail(&steal, ntotal, KosEvalState_StackOperandSlot(es));
     }
     if (steal_ok < 0) {
       Py_DECREF(resolved);
@@ -110,7 +109,7 @@ KOS_OP_HANDLER(CALL_VAR_ATTR_NAMES) {
   PyObject *result;
   if (send_self == 0) {
     KosStackSteal steal = { 0 };
-    if (KosStackSteal_TailPrepend(&steal, obj, ntotal, stack) < 0) {
+    if (KosStackSteal_TailPrepend(&steal, obj, ntotal, KosEvalState_StackOperandSlot(es)) < 0) {
       Py_DECREF(resolved);
       Py_DECREF(obj);
       return KOS_OP_POST_ERR();
@@ -120,13 +119,13 @@ KOS_OP_HANDLER(CALL_VAR_ATTR_NAMES) {
 
   } else {
     result = PyObject_Vectorcall(resolved, ptr, (size_t) npos, names);
-    KosStackBlock_DropNoErr(stack, ntotal);
+    KosEvalState_StackDropNoErr(es, ntotal);
   }
 
   Py_DECREF(resolved);
   Py_DECREF(obj);
 
-  return result ? kos_op_outcome_from_push_int(op_push_or_await(ctx, out_ev, result)) : KOS_OP_POST_ERR();
+  return result ? kos_op_outcome_from_push_int(op_push_or_await(es, out_ev, result)) : KOS_OP_POST_ERR();
 }
 
 

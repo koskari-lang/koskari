@@ -18,6 +18,7 @@
 */
 
 KOS_OP_HANDLER(FAST_BIND) {
+  KosContext *ctx = KosEvalState_Context(es);
   (void) out_ev;
 
   PyObject *ns = CURRENT_NS(ctx);
@@ -38,7 +39,7 @@ KOS_OP_HANDLER(FAST_BIND) {
     return KOS_OP_POST_ERR();
   }
 
-  PyObject *val = KosStackBlock_PopRef(&CURRENT_STACK(ctx));
+  PyObject *val = KosEvalState_StackPopRef(es);
   if (unlikely(! val))
     return KOS_OP_POST_ERR();
 

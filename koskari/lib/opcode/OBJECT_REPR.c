@@ -17,11 +17,11 @@
    OBJECT_REPR: pop TOS, call PyObject_Repr, push result.
 */
 KOS_OP_HANDLER(OBJECT_REPR) {
-    PyObject *val = KosStackBlock_PopRef(&CURRENT_STACK(ctx));
+    PyObject *val = KosEvalState_StackPopRef(es);
     if (! val) return KOS_OP_POST_ERR();
     PyObject *res = PyObject_Repr(val);
     Py_DECREF(val);
     if (! res) return KOS_OP_POST_ERR();
     (void) insn;
-    return kos_op_outcome_from_int_step(push_result(ctx, res));
+    return kos_op_outcome_from_int_step(push_result(es, res));
 }

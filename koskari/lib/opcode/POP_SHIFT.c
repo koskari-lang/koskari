@@ -23,6 +23,7 @@
 */
 
 KOS_OP_HANDLER(POP_SHIFT) {
+  KosContext *ctx = KosEvalState_Context(es);
   PyObject *result;
   uint32_t eid;
   uint32_t parent_id;
@@ -42,9 +43,9 @@ KOS_OP_HANDLER(POP_SHIFT) {
    * prompt_pop_pc+1 (first instr after POP_PROMPT). */
   SAYF("[POP_SHIFT] pre-pop: frame=%p stack=%p len=%zu (pc already advanced to %u)",
        (void *) CURRENT_FRAME(ctx), (void *) CURRENT_STACK(ctx),
-       CURRENT_STACK(ctx) ? KosStackBlock_LEN(CURRENT_STACK(ctx)) : 0,
+       CURRENT_STACK(ctx) ? KosEvalState_StackLen(es) : 0,
        (unsigned) CURRENT_PC(ctx));
-  result = KosStackBlock_PopRef(&CURRENT_STACK(ctx));
+  result = KosEvalState_StackPopRef(es);
   if (! result) {
     SAY("[eval] POP_SHIFT pop result failed (stack underrun)");
     return KOS_OP_POST_ERR();

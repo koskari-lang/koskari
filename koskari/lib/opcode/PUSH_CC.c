@@ -20,6 +20,7 @@
 */
 
 KOS_OP_HANDLER(PUSH_CC) {
+  KosContext *ctx = KosEvalState_Context(es);
   KosCode *code = CURRENT_CODE(ctx);
   uint32_t pc = CURRENT_ACTING_PC(ctx);
   uint32_t eid = kos_extent_find((PyObject *) code, pc, KOS_EXT_CC);

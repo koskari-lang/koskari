@@ -19,6 +19,7 @@
 */
 
 KOS_OP_HANDLER(THEEND) {
+  KosContext *ctx = KosEvalState_Context(es);
   (void) ctx;
   (void) out_ev;
   (void) insn;

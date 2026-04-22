@@ -22,7 +22,7 @@ KOS_OP_HANDLER(UNPACK) {
   Py_ssize_t n = (Py_ssize_t) KosOp_ARG(insn);
   (void) out_ev;
 
-  PyObject *raw = KosStackBlock_PopRef(&CURRENT_STACK(ctx));
+  PyObject *raw = KosEvalState_StackPopRef(es);
   if (! raw)
     return KOS_OP_POST_ERR();
 
@@ -44,7 +44,7 @@ KOS_OP_HANDLER(UNPACK) {
   while (j--) {
     PyObject *item = PySequence_Fast_GET_ITEM(seq, j);
 
-    if (KosStackBlock_PushRef(&CURRENT_STACK(ctx), item) < 0) {
+    if (KosEvalState_StackPushRef(es, item) < 0) {
       Py_DECREF(seq);
       return KOS_OP_POST_ERR();
     }

@@ -127,7 +127,7 @@ void kos_dyn_unlink_next_node(KosContext *ctx, KosDynNext *next) {
   }
   KosDynNode_PARENT(node) = NULL;
   KosContext_CHAIN_VERSION(ctx)++;
-  kos_update_frame_top(ctx);
+  kos_ctx_refresh_dyn_caches(ctx);
   kos_dyn_next_free_payload(node);
 }
 
@@ -141,8 +141,12 @@ int kos_dyn_next_deliver_yield(KosContext *ctx, struct KosEvent *out_ev) {
   if (! next)
     return -1;
   payload = KosEvent_PAYLOAD(out_ev);
-  if (KosStackBlock_PushRef(&KosDynFrame_STACK(KosContext_FRAME_TOP(ctx)), payload) < 0)
-    return -1;
+  {
+    KosEvalState es;
+    KosEvalState_Init(&es, ctx);
+    if (KosEvalState_StackPushRef(&es, payload) < 0)
+      return -1;
+  }
   Py_DECREF(payload);
   KosEvent_PAYLOAD(out_ev) = NULL;
   KosEvent_KIND(out_ev) = KOS_EV_NONE;
@@ -177,8 +181,10 @@ int kos_dyn_next_deliver_return(KosContext *ctx, struct KosEvent *out_ev) {
   agen->in_progress = 0;
 
   if (nn == 2 && KosDynNext_DEFAULT_VAL((KosDynNode *) next)) {
-    if (KosStackBlock_PushRef(
-            &KosDynFrame_STACK(KosContext_FRAME_TOP(ctx)),
+    KosEvalState es;
+    KosEvalState_Init(&es, ctx);
+    if (KosEvalState_StackPushRef(
+            &es,
             KosDynNext_DEFAULT_VAL((KosDynNode *) next)) < 0) {
       Py_DECREF(val);
       return -1;
@@ -207,8 +213,12 @@ int kos_dyn_foreach_deliver_yield_kos_agen(
   PyObject *payload = KosEvent_PAYLOAD(out_ev);
   KosPyAsyncGen *agen;
 
-  if (KosStackBlock_PushRef(&KosDynFrame_STACK(KosContext_FRAME_TOP(ctx)), payload) < 0)
-    return -1;
+  {
+    KosEvalState es;
+    KosEvalState_Init(&es, ctx);
+    if (KosEvalState_StackPushRef(&es, payload) < 0)
+      return -1;
+  }
   Py_DECREF(payload);
   KosEvent_PAYLOAD(out_ev) = NULL;
   KosEvent_KIND(out_ev) = KOS_EV_NONE;

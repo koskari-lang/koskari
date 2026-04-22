@@ -21,15 +21,16 @@
 */
 
 KOS_OP_HANDLER(PUSH_FOREACH) {
+  KosContext *ctx = KosEvalState_Context(es);
   uint32_t continue_pc = CURRENT_PC(ctx);  /* already advanced by drive loop */
 
   /* Pop iterable (TOS) and loop_result from stack */
-  PyObject *iterable = KosStackBlock_PopRef(&CURRENT_STACK(ctx));
+  PyObject *iterable = KosEvalState_StackPopRef(es);
   if (! iterable) {
     PyErr_SetString(PyExc_RuntimeError, "PUSH_FOREACH: missing iterable");
     return KOS_OP_POST_ERR();
   }
-  PyObject *loop_result = KosStackBlock_PopRef(&CURRENT_STACK(ctx));
+  PyObject *loop_result = KosEvalState_StackPopRef(es);
   if (! loop_result) {
     Py_DECREF(iterable);
     PyErr_SetString(PyExc_RuntimeError, "PUSH_FOREACH: missing loop_result");
@@ -90,8 +91,8 @@ KOS_OP_HANDLER(PUSH_FOREACH) {
   KosDynForeach_ITER((KosDynForeach *) region) = iter;
   KosDynForeach_EXHAUSTED((KosDynForeach *) region) = 0;
 
-  /* Push stack block for iteration temporaries */
-  if (KosStackBlock_PushBlock(&CURRENT_STACK(ctx)) < 0) {
+  KosDynNode_STACK(region) = KosEvalState_OperandNewEmpty();
+  if (! KosDynNode_STACK(region)) {
     if (kos_dyn_abort_push_region(ctx, region) < 0) {
       PyErr_Clear();
       PyErr_SetString(PyExc_RuntimeError,
@@ -99,6 +100,7 @@ KOS_OP_HANDLER(PUSH_FOREACH) {
     }
     return KOS_OP_POST_ERR();
   }
+  kos_ctx_refresh_dyn_caches(ctx);
 
   (void) out_ev;
   return KOS_OP_RUN();

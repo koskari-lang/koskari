@@ -18,6 +18,15 @@ KosDynFrame *kos_dynframe_new(
     return NULL;
   }
 
+  if (! stack) {
+    stack = KosEvalState_OperandNewEmpty();
+    if (! stack) {
+      Py_XDECREF(ns);
+      kos_dynnode_return_to_freelist(frame);
+      return NULL;
+    }
+  }
+
   kos_dynnode_init(frame, KOS_DYN_FRAME, parent, 0);
   KosDynFrame_CODE(frame) = code;  /* borrowed */
   KosDynFrame_PC(frame) = 0;
@@ -37,18 +46,13 @@ KosDynFrame *kos_dynframe_clone(KosDynFrame *frame) {
   if (! frame)
     return NULL;
 
-  KosStackBlock *cloned_stack = KosStackBlock_DeepCopy(KosDynFrame_STACK(frame));
+  KosStackBlock *cloned_stack =
+      KosEvalState_OperandDeepCopy(KosDynFrame_STACK(frame));
 
   KosDynFrame *clone = kos_dynnode_alloc();
   if (! clone) {
-    if (cloned_stack) {
-      KosStackBlock *b = cloned_stack;
-      while (b) {
-        KosStackBlock *p = KosStackBlock_PARENT(b);
-        KosStackBlock_Release(b);
-        b = p;
-      }
-    }
+    if (cloned_stack)
+      KosEvalState_OperandReleaseChain(cloned_stack);
     return NULL;
   }
 
@@ -75,13 +79,7 @@ void kos_dynframe_free(KosDynFrame *frame) {
   if (! frame)
     return;
 
-  /* Release the stack block chain */
-  KosStackBlock *block = KosDynFrame_STACK(frame);
-  while (block) {
-    KosStackBlock *p = KosStackBlock_PARENT(block);
-    KosStackBlock_Release(block);
-    block = p;
-  }
+  KosEvalState_OperandReleaseChain(KosDynFrame_STACK(frame));
 
   Py_XDECREF(KosDynFrame_NS(frame));
   /* code is borrowed, don't decref */
@@ -106,6 +104,7 @@ KosDynFrame *kos_dyn_push_frame(
   KosContext_DYN_TOP(ctx) = (KosDynNode *) frame;
   KosContext_FRAME_TOP(ctx) = frame;
   KosContext_CHAIN_VERSION(ctx)++;
+  kos_ctx_refresh_dyn_caches(ctx);
 
   return frame;
 }
@@ -127,13 +126,7 @@ void kos_dynframe_reset_for_tail(KosDynFrame *frame) {
   if (! frame)
     return;
 
-  /* Release the stack block chain */
-  KosStackBlock *block = KosDynFrame_STACK(frame);
-  while (block) {
-    KosStackBlock *p = KosStackBlock_PARENT(block);
-    KosStackBlock_Release(block);
-    block = p;
-  }
+  KosEvalState_OperandReleaseChain(KosDynFrame_STACK(frame));
   KosDynFrame_STACK(frame) = NULL;
 
   /* Replace ns with empty dict */
@@ -145,6 +138,13 @@ void kos_dynframe_reset_for_tail(KosDynFrame *frame) {
   KosDynFrame_ACTING_PC(frame) = 0;
   KosDynFrame_FLAGS(frame) = 0;
   KosDynFrame_NATIVE_HANDLER(frame) = NULL;
+
+  {
+    KosStackBlock *nb = KosEvalState_OperandNewEmpty();
+    if (! nb)
+      PyErr_NoMemory();
+    KosDynFrame_STACK(frame) = nb;
+  }
 }
 
 
@@ -168,7 +168,7 @@ int kos_dyn_pop_frame(KosContext *ctx) {
   KosContext_CHAIN_VERSION(ctx)++;
 
   kos_dynnode_free(old_top);
-  kos_update_frame_top(ctx);
+  kos_ctx_refresh_dyn_caches(ctx);
 
   return 0;
 }
@@ -195,6 +195,7 @@ int kos_dyn_attach_frame(KosContext *ctx, KosDynFrame *frame) {
   KosContext_DYN_TOP(ctx) = (KosDynNode *) frame;
   KosContext_FRAME_TOP(ctx) = frame;
   KosContext_CHAIN_VERSION(ctx)++;
+  kos_ctx_refresh_dyn_caches(ctx);
   return 0;
 }
 
@@ -224,7 +225,7 @@ int kos_dyn_detach_top_frame(KosContext *ctx, KosDynFrame **frame_out) {
   KosDynFrame *frame = (KosDynFrame *) KosContext_DYN_TOP(ctx);
   KosContext_DYN_TOP(ctx) = KosDynNode_PARENT(frame);
   KosContext_CHAIN_VERSION(ctx)++;
-  kos_update_frame_top(ctx);
+  kos_ctx_refresh_dyn_caches(ctx);
   KosDynNode_PARENT(frame) = NULL;
   if (frame_out)
     *frame_out = frame;
@@ -242,12 +243,10 @@ int kos_dyn_detach_top_frame(KosContext *ctx, KosDynFrame **frame_out) {
 static int dynnode_traverse_frame(KosDynNode *node, visitproc visit, void *arg) {
   KosDynFrame *frame = (KosDynFrame *) node;
   Py_VISIT(KosDynFrame_NS(frame));
-  KosStackBlock *b = KosDynFrame_STACK(frame);
-  while (b) {
-    for (size_t i = b->len; i--; ) {
-      Py_VISIT(b->objs[i]);
-    }
-    b = KosStackBlock_PARENT(b);
+  {
+    int tr = kos_stackblock_traverse(KosDynFrame_STACK(frame), visit, arg);
+    if (tr != 0)
+      return tr;
   }
   return 0;
 }

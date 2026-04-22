@@ -19,10 +19,11 @@
 */
 
 KOS_OP_HANDLER(VAR_STORE) {
+  KosContext *ctx = KosEvalState_Context(es);
   PyObject *name = get_name_from_insn(CURRENT_CODE(ctx), insn);
   if (! name)
     return KOS_OP_POST_ERR();
-  PyObject *val = KosStackBlock_PopRef(&CURRENT_STACK(ctx));
+  PyObject *val = KosEvalState_StackPopRef(es);
   if (! val)
     return KOS_OP_POST_ERR();
   if (frame_ns_store(ctx, name, val) < 0) {

@@ -18,10 +18,11 @@
 */
 
 KOS_OP_HANDLER(ATTR_CLEAR) {
+  KosContext *ctx = KosEvalState_Context(es);
   PyObject *name = get_name_from_insn(CURRENT_CODE(ctx), insn);
   if (! name)
     return KOS_OP_POST_ERR();
-  PyObject *obj = KosStackBlock_PopRef(&CURRENT_STACK(ctx));
+  PyObject *obj = KosEvalState_StackPopRef(es);
   if (! obj)
     return KOS_OP_POST_ERR();
   int res = PyObject_DelAttr(obj, name);

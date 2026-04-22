@@ -21,6 +21,7 @@
 */
 
 KOS_OP_HANDLER(UNPACK_STAR) {
+  KosContext *ctx = KosEvalState_Context(es);
   KosCode *code = CURRENT_CODE(ctx);
   KosExtra row = KosCode_GetExtra(code, KosOp_ARG(insn));
   unsigned left = row.a0;
@@ -33,7 +34,7 @@ KOS_OP_HANDLER(UNPACK_STAR) {
     return KOS_OP_POST_ERR();
   }
 
-  PyObject *raw = KosStackBlock_PopRef(&CURRENT_STACK(ctx));
+  PyObject *raw = KosEvalState_StackPopRef(es);
   if (! raw)
     return KOS_OP_POST_ERR();
 
@@ -55,7 +56,7 @@ KOS_OP_HANDLER(UNPACK_STAR) {
   /* suffix: deepest first (len-1 .. len-right) */
   for (k = slen - 1; k >= slen - (Py_ssize_t) right; k--) {
     PyObject *item = PySequence_Fast_GET_ITEM(seq, k);
-    if (KosStackBlock_PushRef(&CURRENT_STACK(ctx), item) < 0) {
+    if (KosEvalState_StackPushRef(es, item) < 0) {
       Py_DECREF(seq);
       return KOS_OP_POST_ERR();
     }
@@ -75,14 +76,14 @@ KOS_OP_HANDLER(UNPACK_STAR) {
     return KOS_OP_POST_ERR();
   }
 
-  if (KosStackBlock_PUSH(&CURRENT_STACK(ctx), middle) < 0) {
+  if (KosEvalState_StackPUSH(es, middle) < 0) {
     Py_DECREF(seq);
     return KOS_OP_POST_ERR();
   }
 
   for (k = (Py_ssize_t) left - 1; k >= 0; k--) {
     PyObject *item = PySequence_Fast_GET_ITEM(seq, k);
-    if (KosStackBlock_PushRef(&CURRENT_STACK(ctx), item) < 0) {
+    if (KosEvalState_StackPushRef(es, item) < 0) {
       Py_DECREF(seq);
       return KOS_OP_POST_ERR();
     }

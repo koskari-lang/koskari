@@ -18,5 +18,5 @@
 */
 
 KOS_OP_HANDLER(CHECK_IS_NOT) {
-  return kos_op_outcome_from_int_step(kos_check_identity(ctx, out_ev, insn, 1));
+  return kos_op_outcome_from_int_step(kos_check_identity(es, out_ev, insn, 1));
 }

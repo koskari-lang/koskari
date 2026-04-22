@@ -23,6 +23,7 @@
 */
 
 KOS_OP_HANDLER(PUSH_NS) {
+  KosContext *ctx = KosEvalState_Context(es);
   KosCode *code = CURRENT_CODE(ctx);
   uint16_t eidx = (uint16_t) KosOp_ARG(insn);
   PyObject *nspec = NULL;
@@ -90,7 +91,7 @@ KOS_OP_HANDLER(PUSH_NS) {
   }
 
   if (opa > 0) {
-    args = KosStackBlock_TailPtr(CURRENT_STACK(ctx), (size_t) opa);
+    args = KosEvalState_StackTailPtr(es, (size_t) opa);
     if (unlikely(! args)) {
       Py_DECREF(nspec);
       PyErr_SetString(PyExc_RuntimeError, "PUSH_NS stack underrun");
@@ -119,7 +120,7 @@ KOS_OP_HANDLER(PUSH_NS) {
         return KOS_OP_POST_ERR();
       }
     }
-    KosStackBlock_DropNoErr(&CURRENT_STACK(ctx), (size_t) opa);
+    KosEvalState_StackDropNoErr(es, (size_t) opa);
   }
 
   Py_INCREF(parent);

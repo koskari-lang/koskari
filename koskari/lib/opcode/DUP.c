@@ -26,7 +26,7 @@ KOS_OP_HANDLER(DUP) {
     return KOS_OP_POST_ERR();
   }
 
-  if (KosStackBlock_Duplicate(&CURRENT_STACK(ctx), (size_t) opa) < 0)
+  if (KosEvalState_StackDuplicate(es, (size_t) opa) < 0)
     return KOS_OP_POST_ERR();
   (void) out_ev;
   return KOS_OP_RUN();

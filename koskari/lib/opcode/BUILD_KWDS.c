@@ -21,12 +21,12 @@
 
 KOS_OP_HANDLER(BUILD_KWDS) {
   unsigned opa = KosOp_ARG(insn);
-  PyObject *built = KosStackBlock_PopTailDict(&CURRENT_STACK(ctx), (size_t) opa);
+  PyObject *built = KosEvalState_StackPopTailDict(es, (size_t) opa);
 
   if (! built)
     return KOS_OP_POST_ERR();
 
-  if (KosStackBlock_PushRef(&CURRENT_STACK(ctx), built) < 0) {
+  if (KosEvalState_StackPushRef(es, built) < 0) {
     Py_DECREF(built);
     return KOS_OP_POST_ERR();
   }

@@ -18,6 +18,7 @@
 */
 
 KOS_OP_HANDLER(EXCEPTION_CLEAR) {
+  KosContext *ctx = KosEvalState_Context(es);
   PyErr_Clear();
   PyErr_SetExcInfo(NULL, NULL, NULL);
   (void) ctx;

@@ -18,7 +18,7 @@
 */
 
 KOS_OP_HANDLER(OBJECT_LEN) {
-  PyObject *val = KosStackBlock_PopRef(&CURRENT_STACK(ctx));
+  PyObject *val = KosEvalState_StackPopRef(es);
   if (! val)
     return KOS_OP_POST_ERR();
 
@@ -31,5 +31,5 @@ KOS_OP_HANDLER(OBJECT_LEN) {
   if (! res)
     return KOS_OP_POST_ERR();
   (void) insn;
-  return kos_op_outcome_from_int_step(push_result(ctx, res));
+  return kos_op_outcome_from_int_step(push_result(es, res));
 }
