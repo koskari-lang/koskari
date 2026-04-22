@@ -363,9 +363,6 @@ struct KosContext {
   KosTransferPlan *plan_stack;  /* suspended plans stack */
   uint32_t chain_version;       /* incremented on chain modifications */
 
-  /* Delimited continuation: top of installed segment when inside invoked k */
-  KosDynNode *invocation_segment_top;
-
   /* k(value) return vs POP_PROMPT delimited push (mutually exclusive) */
   uint8_t delim_kind; /* KosDelimReturnKind */
   union {
@@ -452,7 +449,7 @@ static inline void kos_ctx_async_bridge_py_clear_await_iter(KosContext *ctx) {
 #define KosContext_PLAN(c)                   (((KosContext *)(c))->plan)
 #define KosContext_PLAN_STACK(c)             (((KosContext *)(c))->plan_stack)
 #define KosContext_CHAIN_VERSION(c)          (((KosContext *)(c))->chain_version)
-#define KosContext_INVOCATION_SEGMENT_TOP(c) (((KosContext *)(c))->invocation_segment_top)
+#define KosContext_DELIM_KIND(c)             (((KosContext *)(c))->delim_kind)
 #define KosContext_RETURN_TARGET_CHAIN(c)                                 \
   (((KosContext *)(c))->delim_kind == KOS_DELIM_K_RETURN                      \
        ? ((KosContext *)(c))->delim.k_return.chain                            \

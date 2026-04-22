@@ -3909,7 +3909,6 @@ int kos_dyn_finish_delimited_pop_return(KosContext *ctx, PyObject *value) {
   Py_DECREF(value);
   KosDynFrame_PC(ret_frame) = KosContext_DELIMITED_RETURN_PC(ctx);
   KosContext_FRAME_TOP(ctx) = ret_frame;
-  KosContext_INVOCATION_SEGMENT_TOP(ctx) = NULL;
   kos_ctx_delim_clear(ctx);
   return 0;
 }

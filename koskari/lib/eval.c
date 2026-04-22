@@ -670,10 +670,8 @@ static int run_transfer_plan_to_completion(
     if (plan_res == 0)
       continue;
 
-    SAYF("[eval] transfer complete inv_seg_top=%p\n",
+    SAYF("[eval] transfer complete dyn_top=%p\n",
          (void *) KosContext_DYN_TOP(ctx));
-
-    KosContext_INVOCATION_SEGMENT_TOP(ctx) = KosContext_DYN_TOP(ctx);
     clear_and_free_transfer_plan(ctx);
   }
 
@@ -1545,7 +1543,6 @@ KosContext *kos_context_new(KosDynFrame *top) {
   KosContext_PLAN(ctx) = NULL;
   KosContext_PLAN_STACK(ctx) = NULL;
   KosContext_CHAIN_VERSION(ctx) = 0;
-  KosContext_INVOCATION_SEGMENT_TOP(ctx) = NULL;
   kos_ctx_delim_clear(ctx);
   kos_ctx_async_bridge_clear(ctx);
 

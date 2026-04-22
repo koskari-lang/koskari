@@ -20,13 +20,13 @@
 */
 
 KOS_OP_HANDLER(POP_PROMPT) {
-  SAYF("[eval] POP_PROMPT inv_seg=%p dyn_top=%p IS_PROMPT=%d frame=%p stack_len=%zu\n",
-       (void *) KosContext_INVOCATION_SEGMENT_TOP(ctx), (void *) KosContext_DYN_TOP(ctx),
+  SAYF("[eval] POP_PROMPT delim_kind=%u dyn_top=%p IS_PROMPT=%d frame=%p stack_len=%zu\n",
+       (unsigned) KosContext_DELIM_KIND(ctx), (void *) KosContext_DYN_TOP(ctx),
        (KosContext_DYN_TOP(ctx) && KosDynNode_IS_PROMPT(KosContext_DYN_TOP(ctx))) ? 1 : 0,
        (void *) CURRENT_FRAME(ctx),
        CURRENT_STACK(ctx) ? KosStackBlock_LEN(CURRENT_STACK(ctx)) : 0);
 
-  if (KosContext_INVOCATION_SEGMENT_TOP(ctx) != NULL) {
+  if (KosContext_DELIM_KIND(ctx) == KOS_DELIM_POP_PROMPT) {
     PyObject *val = KosStackBlock_PopRef(&CURRENT_STACK(ctx));
     if (! val) {
       SAY("[eval] POP_PROMPT (invoke) pop underrun\n");
@@ -81,7 +81,7 @@ KOS_OP_HANDLER(POP_PROMPT) {
 
     KosEvent_KIND(out_ev) = KOS_EV_RETURN;
     KosEvent_PAYLOAD(out_ev) = val;
-    KosContext_INVOCATION_SEGMENT_TOP(ctx) = NULL;
+    kos_ctx_delim_clear(ctx);
     KosContext_FLAGS(ctx) &= ~KOS_CTX_RUNNING;
     (void) insn;
     return KOS_OP_POST_SUSPEND();
