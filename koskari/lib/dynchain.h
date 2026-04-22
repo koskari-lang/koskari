@@ -1015,13 +1015,14 @@ KosDynPrompt *kos_dyn_push_prompt(KosContext *ctx, uint32_t prompt_id);
 /**
    Pop a prompt from the dynamic chain.
 
-   Frees the prompt and updates dyn_top.
-   Increments chain_version.
+  Uses barrier-crossing pop policy with shared uninstall machinery.
 
    :param ctx: execution context
    :param prompt: prompt to pop (must be dyn_top)
+
+  :return: 0 on success, -1 on error
 */
-void kos_dyn_pop_prompt(KosContext *ctx, KosDynPrompt *prompt);
+int kos_dyn_pop_prompt(KosContext *ctx, KosDynPrompt *prompt);
 
 
 /**
@@ -1421,17 +1422,35 @@ int kos_dyn_with_unwind(KosContext *ctx, KosDynWith *node, struct KosEvent *out_
 
 
 /**
-   Pop the top node of the dynamic chain. Dispatches on node kind.
-   For NS, restores frame_top->ns from the node's saved_ns before popping.
+  Pop the top node of the dynamic chain with non-barrier policy.
+  For NS, restores frame_top->ns from the node's saved_ns before popping.
 
-   :param ctx: execution context
+  :param ctx: execution context
+  :param out_ev: event output for suspend (required when WITH may have async exit)
+  :param event: transfer event; KOS_XFER_EVENT_NONE if unknown
 
-   :param out_ev: event output for suspend (required when WITH may have async exit)
+  :return: 0 on success, -1 on error or if top is a barrier,
+    KOS_DYN_UNWIND_ASYNC_STARTED when async extent action started
+*/
+int kos_dyn_pop_nonbarrier_top(
+    KosContext *ctx,
+    KosXferEvent event,
+    struct KosEvent *out_ev);
 
-   :param event: transfer event; KOS_XFER_EVENT_NONE if unknown
 
-   :return: 0 on success, -1 on error or if top is PROMPT,
-     KOS_DYN_UNWIND_ASYNC_STARTED when async extent action started (resume later)
+/**
+  Pop the top node of the dynamic chain allowing barrier nodes.
+
+  Internal prompt-crossing unwind/transfer paths use this variant.
+*/
+int kos_dyn_pop_top_allow_barrier(
+    KosContext *ctx,
+    KosXferEvent event,
+    struct KosEvent *out_ev);
+
+
+/**
+  Backward-compatible alias for non-barrier policy pop.
 */
 int kos_dyn_pop_top(KosContext *ctx, KosXferEvent event,
                     struct KosEvent *out_ev);

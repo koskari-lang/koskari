@@ -74,20 +74,14 @@ KosDynPrompt *kos_dyn_push_prompt(KosContext *ctx, uint32_t prompt_id) {
 
 
 /**
-   Run uninstall handler (drop block), unlink, free. Used when popping prompt
-   without full kos_dyn_uninstall (exception_unwind, unwind walks).
+   Pop prompt via barrier-crossing policy API using shared uninstall machinery.
 */
-void kos_dyn_pop_prompt(KosContext *ctx, KosDynPrompt *prompt) {
+int kos_dyn_pop_prompt(KosContext *ctx, KosDynPrompt *prompt) {
   if (! KosContext_DYN_TOP(ctx) || KosContext_DYN_TOP(ctx) != (KosDynNode *) prompt) {
-    return;
+    return 0;
   }
 
-  kos_dyn_uninstall_handler(ctx, (KosDynNode *) prompt,
-                            KOS_XFER_EVENT_NONE, NULL);
-
-  KosContext_DYN_TOP(ctx) = KosDynNode_PARENT(prompt);
-  KosContext_CHAIN_VERSION(ctx)++;
-  kos_dynprompt_free(prompt);
+  return kos_dyn_pop_top_allow_barrier(ctx, KOS_XFER_EVENT_NONE, NULL);
 }
 
 

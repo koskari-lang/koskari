@@ -107,7 +107,10 @@ KOS_OP_HANDLER(POP_PROMPT) {
     }
   }
   
-  kos_dyn_pop_prompt(ctx, (KosDynPrompt *) KosContext_DYN_TOP(ctx));
+  if (kos_dyn_pop_prompt(ctx, (KosDynPrompt *) KosContext_DYN_TOP(ctx)) < 0) {
+    Py_XDECREF(result);
+    return KOS_OP_POST_ERR();
+  }
   
   SAYF("[eval] POP_PROMPT (normal): after pop, frame=%p stack_len=%zu",
        (void *) CURRENT_FRAME(ctx),

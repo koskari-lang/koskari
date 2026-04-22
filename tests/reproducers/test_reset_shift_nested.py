@@ -140,6 +140,25 @@ class TestNestedResetShiftReproducers(SpecialsTestCase):
         ])
 
 
+    async def test_minimal_nested_reset_shift_outer_invoke(self):
+        src = """
+        (compile/reset
+          (compile/begin
+            (compile/shift k_outer
+              (compile/begin
+                (compile/reset
+                  (compile/shift k_inner
+                    (compile/call k_inner 1)))
+                (compile/call k_outer 2)))
+            3))
+        """
+
+        expr, _mod = self.compile_expr(src)
+        result = await expr()
+
+        self.assertEqual(result, 3)
+
+
     async def test_capture_store_and_invoke_across_prompt_boundary(self):
         events, mark = make_accumulator()
 
@@ -197,6 +216,86 @@ class TestNestedResetShiftReproducers(SpecialsTestCase):
 
         self.assertEqual(result, "done")
         self.assertEqual(events, [1, 2, "done"])
+
+
+    async def test_shift_multicall_accumulates_even_series(self):
+        events, mark = make_accumulator()
+
+        def mul2(x):
+            return x * 2
+
+        def sum6(a, b, c, d, e, f):
+            return a + b + c + d + e + f
+
+        src = """
+        (compile/reset
+          (compile/call mark
+            (compile/call mul2
+              (compile/shift k
+                (compile/call sum6
+                  (compile/call k 0)
+                  (compile/call k 1)
+                  (compile/call k 2)
+                  (compile/call k 3)
+                  (compile/call k 4)
+                  (compile/call k 5))))))
+        """
+
+        expr, _mod = self.compile_expr(src, mark=mark, mul2=mul2, sum6=sum6)
+        result = await expr()
+
+        self.assertEqual(result, 30)
+        self.assertEqual(events, [0, 2, 4, 6, 8, 10])
+
+
+    async def test_nested_inner_multicall_continuation_invokes(self):
+        events, mark = make_accumulator()
+
+        def mul2(x):
+            return x * 2
+
+        def sum6(a, b, c, d, e, f):
+            return a + b + c + d + e + f
+
+        src = """
+        (compile/reset
+          (compile/begin
+            (compile/call mark "outer:start")
+            (compile/shift k_outer
+              (compile/begin
+                (compile/call mark "outer:handler:start")
+                (compile/reset
+                  (compile/call mark
+                    (compile/call mul2
+                      (compile/shift k_inner
+                        (compile/call sum6
+                          (compile/call k_inner 0)
+                          (compile/call k_inner 1)
+                          (compile/call k_inner 2)
+                          (compile/call k_inner 3)
+                          (compile/call k_inner 4)
+                          (compile/call k_inner 5))))))
+                (compile/call mark "outer:handler:before-k")
+                (compile/call k_outer 99)))
+            (compile/call mark "outer:after")))
+        """
+
+        expr, _mod = self.compile_expr(src, mark=mark, mul2=mul2, sum6=sum6)
+        result = await expr()
+
+        self.assertEqual(result, "outer:after")
+        self.assertEqual(events, [
+            "outer:start",
+            "outer:handler:start",
+            0,
+            2,
+            4,
+            6,
+            8,
+            10,
+            "outer:handler:before-k",
+            "outer:after",
+        ])
 
 
 # The end.
