@@ -108,7 +108,9 @@ int kos_dyn_wind_unwind(KosContext *ctx, KosDynWind *node) {
     /* No after-thunk: push stored body result and finish uninstall */
     PyObject *body_result = KosDynWind_BODY_RESULT(node);
     KosDynWind_BODY_RESULT(node) = NULL;
-    if (KosContext_STACK_HEAD(ctx) && body_result) {
+    if ((KosContext_BLOCK(ctx) && *KosContext_BLOCK(ctx) ? *KosContext_BLOCK(ctx)
+                                                        : NULL)
+        && body_result) {
       KosEvalState es;
       KosEvalState_Init(&es, ctx);
       if (KosEvalState_StackPushRef(&es, body_result) < 0) {
@@ -140,7 +142,8 @@ int kos_dyn_wind_unwind(KosContext *ctx, KosDynWind *node) {
    Resume after async before/after thunk: advance phase, pop junk, maybe unlink.
 */
 static int kos_dyn_wind_on_control_returned(KosContext *ctx, KosDynWind *wind) {
-  if (! KosContext_STACK_HEAD(ctx))
+  if (! (KosContext_BLOCK(ctx) && *KosContext_BLOCK(ctx) ? *KosContext_BLOCK(ctx)
+                                                         : NULL))
     return 0;
 
   KosEvalState es;

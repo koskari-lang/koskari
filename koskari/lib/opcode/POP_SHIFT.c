@@ -42,8 +42,14 @@ KOS_OP_HANDLER(POP_SHIFT) {
   /* PC already advanced: we are post-INSN, so resume will run instruction at
    * prompt_pop_pc+1 (first instr after POP_PROMPT). */
   SAYF("[POP_SHIFT] pre-pop: frame=%p stack=%p len=%zu (pc already advanced to %u)",
-       (void *) CURRENT_FRAME(ctx), (void *) CURRENT_STACK(ctx),
-       CURRENT_STACK(ctx) ? KosEvalState_StackLen(es) : 0,
+       (void *) CURRENT_FRAME(ctx),
+       (void *) (KosContext_BLOCK(ctx) && *KosContext_BLOCK(ctx)
+                     ? *KosContext_BLOCK(ctx)
+                     : NULL),
+       (KosContext_BLOCK(ctx) && *KosContext_BLOCK(ctx) ? *KosContext_BLOCK(ctx)
+                                                       : NULL)
+           ? KosEvalState_StackLen(es)
+           : 0,
        (unsigned) CURRENT_PC(ctx));
   result = KosEvalState_StackPopRef(es);
   if (! result) {

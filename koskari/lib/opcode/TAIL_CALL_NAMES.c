@@ -41,7 +41,7 @@ KOS_OP_HANDLER(TAIL_CALL_NAMES) {
   size_t ntotal = (size_t)(total + 2);
 
   KosStackSteal steal = { 0 };
-  if (KosStackSteal_Tail(&steal, ntotal, KosEvalState_StackOperandSlot(es)) < 0)
+  if (KosStackSteal_Tail(&steal, ntotal, (ctx ? KosContext_BLOCK(ctx) : NULL)) < 0)
     return KOS_OP_POST_ERR();
 
   PyObject *callable = steal.vals[0];

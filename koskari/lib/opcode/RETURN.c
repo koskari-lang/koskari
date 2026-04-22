@@ -27,8 +27,14 @@ KOS_OP_HANDLER(RETURN) {
   /* === Phase 1: Pop return value from stack ===
      opa=0 => Py_None, opa=1 => single value, opa=N => tuple of N values */
   SAYF("[RETURN] opa=%u frame=%p stack=%p len=%zu (pc advanced to %u)",
-       opa, (void *) CURRENT_FRAME(ctx), (void *) CURRENT_STACK(ctx),
-       CURRENT_STACK(ctx) ? KosEvalState_StackLen(es) : 0,
+       opa, (void *) CURRENT_FRAME(ctx),
+       (void *) (KosContext_BLOCK(ctx) && *KosContext_BLOCK(ctx)
+                     ? *KosContext_BLOCK(ctx)
+                     : NULL),
+       (KosContext_BLOCK(ctx) && *KosContext_BLOCK(ctx) ? *KosContext_BLOCK(ctx)
+                                                       : NULL)
+           ? KosEvalState_StackLen(es)
+           : 0,
        (unsigned) CURRENT_PC(ctx));
 
   if (opa == 0) {
@@ -39,8 +45,13 @@ KOS_OP_HANDLER(RETURN) {
     val = KosEvalState_StackPopRef(es);
     if (! val) {
       SAYF("[RETURN] pop underrun: stack=%p len=%zu",
-           (void *) CURRENT_STACK(ctx),
-           CURRENT_STACK(ctx) ? (unsigned long) KosEvalState_StackLen(es) : 0UL);
+           (void *) (KosContext_BLOCK(ctx) && *KosContext_BLOCK(ctx)
+                         ? *KosContext_BLOCK(ctx)
+                         : NULL),
+           (KosContext_BLOCK(ctx) && *KosContext_BLOCK(ctx) ? *KosContext_BLOCK(ctx)
+                                                           : NULL)
+               ? (unsigned long) KosEvalState_StackLen(es)
+               : 0UL);
       PyErr_SetString(PyExc_RuntimeError, "RETURN: stack underrun");
       return KOS_OP_POST_ERR();
     }

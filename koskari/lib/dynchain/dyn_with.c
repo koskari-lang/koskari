@@ -451,7 +451,8 @@ int kos_dyn_with_unwind(
     return -1;
   }
 
-  if (! KosContext_STACK_HEAD(ctx)) {
+  if (! (KosContext_BLOCK(ctx) && *KosContext_BLOCK(ctx) ? *KosContext_BLOCK(ctx)
+                                                         : NULL)) {
     Py_DECREF(typ);
     Py_DECREF(val);
     Py_DECREF(tb);

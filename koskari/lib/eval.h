@@ -333,8 +333,7 @@ struct KosContext {
   KosDynNode *dyn_top;       /* top of dynamic chain */
   KosDynFrame *frame_top;    /* cached topmost frame (for fast access) */
 
-  KosStackBlock *block;      /* mirror of *operand_stack_slot; refreshed with caches */
-  KosStackBlock **operand_stack_slot; /* &innermost_owner->stack; same indirection as KosStackBlock_ */
+  KosStackBlock **block;     /* &innermost owner stack; refreshed in kos_ctx_refresh_dyn_caches */
 
   KosDynFrame *globals_frame;     /* cached outermost frame (for op_GLOBALS) */
   uint32_t globals_cache_version; /* chain_version when globals_frame was set */
@@ -376,9 +375,7 @@ struct KosContext {
 
 
 static inline void kos_ctx_async_bridge_clear(KosContext *ctx) {
-
-  Py_XDECREF(ctx->py_await_iter);
-  ctx->py_await_iter = NULL;
+  Py_CLEAR(ctx->py_await_iter);
 }
 
 
@@ -393,27 +390,6 @@ static inline void kos_ctx_async_bridge_py_clear_await_iter(KosContext *ctx) {
 #define KosContext_DYN_TOP(c)                (((KosContext *)(c))->dyn_top)
 #define KosContext_FRAME_TOP(c)              (((KosContext *)(c))->frame_top)
 #define KosContext_BLOCK(c)                  (((KosContext *)(c))->block)
-#define KosContext_OPERAND_STACK_SLOT(c)     (((KosContext *)(c))->operand_stack_slot)
-
-/**
-  Operand stack head: *operand_stack_slot (refreshed in kos_ctx_refresh_dyn_caches).
-  Growth updates the owning node through operand_stack_slot; head tracks *slot.
-*/
-static inline KosStackBlock *KosContext_StackHead(KosContext *c) {
-  KosStackBlock **sl = KosContext_OPERAND_STACK_SLOT(c);
-  return (sl && *sl) ? *sl : NULL;
-}
-
-/**
-  Operand stack slot: address of the innermost owner's KosDynNode_STACK field.
-  Refreshed only when the dynamic chain changes (same contract as frame_top).
-*/
-static inline KosStackBlock **KosContext_StackSlot(KosContext *c) {
-  return KosContext_OPERAND_STACK_SLOT(c);
-}
-
-#define KosContext_STACK_HEAD(c)             KosContext_StackHead(c)
-#define KosContext_STACK_SLOT(c)             KosContext_StackSlot(c)
 #define KosContext_GLOBALS_FRAME(c)          (((KosContext *)(c))->globals_frame)
 #define KosContext_GLOBALS_CACHE_VERSION(c)  (((KosContext *)(c))->globals_cache_version)
 #define KosContext_TOKEN(c)                  (((KosContext *)(c))->token)
@@ -481,11 +457,6 @@ PyObject *KosEvalState_GetConstant(const KosEvalState *es, uint32_t index);
 
 int KosEvalState_StackPushRef(KosEvalState *es, PyObject *val);
 PyObject *KosEvalState_StackPopRef(KosEvalState *es);
-/**
-  Address of the innermost operand-stack head pointer (KosStackBlock **).
-  For KosStackSteal_* and other APIs that mutate via a block pointer slot.
-*/
-KosStackBlock **KosEvalState_StackOperandSlot(KosEvalState *es);
 /**
   Push stolen reference (KosStackBlock_PUSH semantics). Opcode/dynchain paths
   should use this instead of KosStackBlock_PUSH on the current operand slot.

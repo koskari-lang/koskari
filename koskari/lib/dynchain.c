@@ -515,31 +515,33 @@ static KosDynNode *kos_chain_find_stack_owner_node(
 
 
 /**
-   Refresh FRAME_TOP and BLOCK after DYN_TOP / chain changes. BLOCK is the
-   innermost non-NULL node->stack walking from dyn_top toward root (borrowed).
+   Refresh FRAME_TOP and BLOCK after DYN_TOP / chain changes. BLOCK is
+   KosStackBlock ** pointing at the innermost non-NULL node->stack from dyn_top
+   toward root (else the frame's stack field).
 */
 void kos_ctx_refresh_dyn_caches(KosContext *ctx) {
   KosDynNode *node = KosContext_DYN_TOP(ctx);
 
   KosContext_FRAME_TOP(ctx) = NULL;
-  KosContext_OPERAND_STACK_SLOT(ctx) = NULL;
+  KosContext_BLOCK(ctx) = NULL;
+
   while (node) {
-    if (! KosContext_OPERAND_STACK_SLOT(ctx) && KosDynNode_STACK(node))
-      KosContext_OPERAND_STACK_SLOT(ctx) = &KosDynNode_STACK(node);
+    if (! KosContext_BLOCK(ctx) && KosDynNode_STACK(node))
+      KosContext_BLOCK(ctx) = &KosDynNode_STACK(node);
+
     if (! KosContext_FRAME_TOP(ctx) && KosDynNode_IS_FRAME(node)) {
       KosContext_FRAME_TOP(ctx) = (KosDynFrame *) node;
       SAYF("[gen] refresh_dyn_caches dyn_top=%p -> frame_top=%p (%s)\n",
            (void *) KosContext_DYN_TOP(ctx), (void *) node,
            kos_dynnode_kind_name(KosDynNode_KIND(node)));
     }
+
     node = KosDynNode_PARENT(node);
   }
-  if (! KosContext_OPERAND_STACK_SLOT(ctx) && KosContext_FRAME_TOP(ctx))
-    KosContext_OPERAND_STACK_SLOT(ctx) =
-        &KosDynNode_STACK((KosDynNode *) KosContext_FRAME_TOP(ctx));
 
-  if (KosContext_OPERAND_STACK_SLOT(ctx))
-    KosContext_BLOCK(ctx) = *KosContext_OPERAND_STACK_SLOT(ctx);
+  // This fallback should be unreachable
+  if (! KosContext_BLOCK(ctx) && KosContext_FRAME_TOP(ctx))
+    KosContext_BLOCK(ctx) = &KosDynNode_STACK((KosDynNode *) KosContext_FRAME_TOP(ctx));
 
   if (! KosContext_FRAME_TOP(ctx))
     SAYF("[gen] refresh_dyn_caches dyn_top=%p -> frame_top=NULL (no frame)\n",
@@ -3361,7 +3363,9 @@ static int xfer_step_install(KosContext *ctx, KosTransferAction *action,
     }
     SAYF("[xfer] INSTALL done: frame_top=%p stack=%p stack_len=%zu resume_pc=%u",
          (void *) KosContext_FRAME_TOP(ctx),
-         (void *) KosContext_STACK_HEAD(ctx),
+         (void *) (KosContext_BLOCK(ctx) && *KosContext_BLOCK(ctx)
+                       ? *KosContext_BLOCK(ctx)
+                       : NULL),
          _install_stack_len,
          (unsigned) KosTransferPlan_RESUME_PC(plan));
   }
@@ -3482,7 +3486,7 @@ static int xfer_step_inject(KosContext *ctx, KosTransferAction *action) {
     }
     SAYF("[xfer] INJECT frame_top=%p stack=%p stack_len=%zu is_throw=%d",
          (void *) KosContext_FRAME_TOP(ctx),
-         (void *) KosContext_STACK_HEAD(ctx),
+         (void *) (KosContext_BLOCK(ctx) ? *KosContext_BLOCK(ctx): NULL),
          _inject_len,
          KosTransferAction_INJECT_IS_THROW(action));
   #endif
@@ -4065,8 +4069,8 @@ int kos_dyn_finish_delimited_pop_return(
     return -1;
   }
 
-  /* Operand stack for the handler lives below the DELIM marker. ctx->block may
-   * still reflect the continuation segment above delim while dyn_top is inner. */
+  /* Operand stack for the handler lives below the DELIM marker; do not use
+   * ctx->block (walk parent chain). */
   {
     KosStackBlock **slot = NULL;
     KosDynNode *n = KosDynNode_PARENT((KosDynNode *) delim);

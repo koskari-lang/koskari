@@ -31,7 +31,7 @@ KOS_OP_HANDLER(CALL) {
 
   if (KosCallable_Check(ptr[0])) {
     KosStackSteal steal = { 0 };
-    if (KosStackSteal_Tail(&steal, (size_t)(n + 1), KosEvalState_StackOperandSlot(es)) < 0)
+    if (KosStackSteal_Tail(&steal, (size_t)(n + 1), (ctx ? KosContext_BLOCK(ctx) : NULL)) < 0)
       return KOS_OP_POST_ERR();
     int r = KosContext_Call(ctx, out_ev, steal.vals[0],
                             (n > 0) ? &steal.vals[1] : NULL,

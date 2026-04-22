@@ -73,8 +73,6 @@
    to silence warnings and make intent explicit, e.g. (void) out_ev; (void) insn; */
 
 #define CURRENT_FRAME(ctx)       KosContext_FRAME_TOP(ctx)
-#define CURRENT_STACK(ctx)       KosContext_STACK_HEAD(ctx)
-#define CURRENT_STACK_SLOT(ctx)  KosContext_STACK_SLOT(ctx)
 #define CURRENT_CODE(ctx)        KosDynFrame_CODE(CURRENT_FRAME(ctx))
 #define CURRENT_NS(ctx)          KosDynFrame_NS(CURRENT_FRAME(ctx))
 #define CURRENT_PC(ctx)          KosDynFrame_PC(CURRENT_FRAME(ctx))
@@ -292,7 +290,7 @@ static inline int kos_evalstate_stack_push_ref(KosEvalState *es, PyObject *val) 
                     "KosEvalState_StackPushRef: no context");
     return -1;
   }
-  return KosStackBlock_PushRef(KosContext_STACK_SLOT(ctx), val);
+  return KosStackBlock_PushRef(KosContext_BLOCK(ctx), val);
 }
 
 
@@ -305,7 +303,7 @@ static inline PyObject *kos_evalstate_stack_pop_ref(KosEvalState *es) {
                     "KosEvalState_StackPopRef: no context");
     return NULL;
   }
-  return KosStackBlock_PopRef(KosContext_STACK_SLOT(ctx));
+  return KosStackBlock_PopRef(KosContext_BLOCK(ctx));
 }
 
 
@@ -435,13 +433,6 @@ PyObject *KosEvalState_StackPopRef(KosEvalState *es) {
 }
 
 
-KosStackBlock **KosEvalState_StackOperandSlot(KosEvalState *es) {
-
-  KosContext *ctx = kos_evalstate_context(es);
-  return ctx ? KosContext_STACK_SLOT(ctx) : NULL;
-}
-
-
 int KosEvalState_StackPushBlock(KosEvalState *es) {
   return kos_evalstate_stack_push_block(es);
 }
@@ -475,14 +466,15 @@ PyObject *KosEvalState_GetVar(const KosEvalState *es, PyObject *key) {
 static KosStackBlock **kos_evalstate_stack_slot_ptr(KosEvalState *es) {
 
   KosContext *ctx = kos_evalstate_context(es);
-  return ctx ? KosContext_STACK_SLOT(ctx) : NULL;
+  return ctx ? KosContext_BLOCK(ctx) : NULL;
 }
 
 
 static KosStackBlock *kos_evalstate_stack_head_ptr(KosEvalState *es) {
 
   KosContext *ctx = kos_evalstate_context(es);
-  return ctx ? KosContext_STACK_HEAD(ctx) : NULL;
+  KosStackBlock **sl = ctx ? KosContext_BLOCK(ctx) : NULL;
+  return (sl && *sl) ? *sl : NULL;
 }
 
 
@@ -3729,7 +3721,11 @@ cg_prologue:
   KosEvalState_Init(&es, ctx);
 
   #if KOS_STACK_TRACE
-  trace_stack("  after ", KosContext_STACK_HEAD(ctx));
+  {
+    KosStackBlock **_kos_tr = KosContext_BLOCK(ctx);
+    trace_stack("  after ",
+                (_kos_tr && *_kos_tr) ? *_kos_tr : NULL);
+  }
   #endif
 
   {
@@ -3767,7 +3763,11 @@ cg_prologue:
   }
 
   #if KOS_STACK_TRACE
-  trace_stack("  before", KosContext_STACK_HEAD(ctx));
+  {
+    KosStackBlock **_kos_tr = KosContext_BLOCK(ctx);
+    trace_stack("  before",
+                (_kos_tr && *_kos_tr) ? *_kos_tr : NULL);
+  }
   #endif
 
   KOS_EVAL_PREPARE_NEXT_INSN(ctx, &insn);
@@ -3827,7 +3827,11 @@ koskari_eval_dispatch_switch(KosContext *ctx, KosEvent *out_ev) {
     if (need_prologue) {
 
       #if KOS_STACK_TRACE
-      trace_stack("  after ", KosContext_STACK_HEAD(ctx));
+      {
+        KosStackBlock **_kos_tr = KosContext_BLOCK(ctx);
+        trace_stack("  after ",
+                    (_kos_tr && *_kos_tr) ? *_kos_tr : NULL);
+      }
       #endif
 
       {
@@ -3870,7 +3874,11 @@ koskari_eval_dispatch_switch(KosContext *ctx, KosEvent *out_ev) {
       }
 
       #if KOS_STACK_TRACE
-      trace_stack("  before", KosContext_STACK_HEAD(ctx));
+      {
+        KosStackBlock **_kos_tr = KosContext_BLOCK(ctx);
+        trace_stack("  before",
+                    (_kos_tr && *_kos_tr) ? *_kos_tr : NULL);
+      }
       #endif
 
       KosEvalState_Init(&es, ctx);

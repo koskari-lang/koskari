@@ -27,7 +27,10 @@ KOS_OP_HANDLER(POP_PROMPT) {
        (void *) ret_delim, (void *) KosContext_DYN_TOP(ctx),
        (KosContext_DYN_TOP(ctx) && KosDynNode_IS_PROMPT(KosContext_DYN_TOP(ctx))) ? 1 : 0,
        (void *) CURRENT_FRAME(ctx),
-       CURRENT_STACK(ctx) ? KosEvalState_StackLen(es) : 0);
+       (KosContext_BLOCK(ctx) && *KosContext_BLOCK(ctx) ? *KosContext_BLOCK(ctx)
+                                                       : NULL)
+           ? KosEvalState_StackLen(es)
+           : 0);
 
   if (ret_delim) {
     PyObject *val = KosEvalState_StackPopRef(es);
@@ -97,10 +100,14 @@ KOS_OP_HANDLER(POP_PROMPT) {
   }
   SAYF("[eval] POP_PROMPT (normal): popping prompt, frame=%p stack_len=%zu",
        (void *) CURRENT_FRAME(ctx),
-       CURRENT_STACK(ctx) ? KosEvalState_StackLen(es) : 0);
+       (KosContext_BLOCK(ctx) && *KosContext_BLOCK(ctx) ? *KosContext_BLOCK(ctx)
+                                                       : NULL)
+           ? KosEvalState_StackLen(es)
+           : 0);
   
   PyObject *result = NULL;
-  if (CURRENT_STACK(ctx)) {
+  if (KosContext_BLOCK(ctx) && *KosContext_BLOCK(ctx) ? *KosContext_BLOCK(ctx)
+                                                      : NULL) {
     result = KosEvalState_StackPopRef(es);
     if (! result) {
       SAY("[eval] POP_PROMPT (normal): stack underrun");
@@ -115,9 +122,14 @@ KOS_OP_HANDLER(POP_PROMPT) {
   
   SAYF("[eval] POP_PROMPT (normal): after pop, frame=%p stack_len=%zu",
        (void *) CURRENT_FRAME(ctx),
-       CURRENT_STACK(ctx) ? KosEvalState_StackLen(es) : 0);
+       (KosContext_BLOCK(ctx) && *KosContext_BLOCK(ctx) ? *KosContext_BLOCK(ctx)
+                                                       : NULL)
+           ? KosEvalState_StackLen(es)
+           : 0);
   
-  if (result && CURRENT_STACK(ctx)) {
+  if (result
+      && (KosContext_BLOCK(ctx) && *KosContext_BLOCK(ctx) ? *KosContext_BLOCK(ctx)
+                                                          : NULL)) {
     if (KosEvalState_StackPushRef(es, result) < 0) {
       Py_DECREF(result);
       return KOS_OP_POST_ERR();

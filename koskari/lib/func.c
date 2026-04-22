@@ -32,7 +32,6 @@
 
 
 #define CURRENT_FRAME(ctx)  KosContext_FRAME_TOP(ctx)
-#define CURRENT_STACK(ctx)  KosContext_STACK_HEAD(ctx)
 
 
 static int kos_expression_wants_frame(PyObject *callable) {
