@@ -132,6 +132,17 @@ Legend: **Ext** = referenced outside `dynchain.c` (must remain linkable and beha
 
 **Note:** Marking **Int** only reflects current call sites; the **public header still exports** these symbols — a shared library or future TU could use them. Prefer keeping exports unless the branch explicitly narrows ABI.
 
+**`KosEvalState` entry points:** Transfer-plan builders (`kos_build_transfer_plan`,
+`kos_build_return_plan`, `kos_build_delimited_push_plan`, `kos_build_direct_install_plan`,
+`kos_build_install_only_plan`), `kos_suspend_transfer_plan`, `kos_resume_transfer_plan`,
+and `kos_invoke_continuation` take **`KosEvalState *es`** as their first parameter.
+`kos_run_transfer_step` already did. Builders call **`KosEvalState_SyncFromContext`**
+on exit. Dynamic-cache refresh for **`frame_top`** / **`block`** is
+**`KosEvalState_RefreshDynCaches(es)`**; innermost stack owner lookup is
+**`KosEvalState_InnermostStackOwner(es)`** (declared in **`eval.h`**).
+Reserved hook runner typedef **`KosHookInvokeFn`** also passes **`KosEvalState *es`**
+instead of **`KosContext *ctx`**.
+
 ## 5. Per-file call sites (outside `dynchain.c`)
 
 ### 5.0 Headers mentioning dynchain types (no extra `kos_*` calls)

@@ -51,9 +51,10 @@
   the bottom of the **physical** stack (`stack.h`).
 - **`KosDynNode.stack`** (base field, above `u`) owns the operand extent for
   nodes that introduce one; **`KosContext.block`** points at the innermost
-  active `KosStackBlock *` and is refreshed with install/uninstall
-  (`kos_ctx_refresh_dyn_caches`, …). Opcodes use **`KosEvalState`** stack
-  helpers bound to that slot.
+  active `KosStackBlock *` and is recomputed after chain changes by
+  **`KosEvalState_RefreshDynCaches(es)`** (then **`KosEvalState_SyncFromContext`**
+  when the live eval slice must see updated **`frame_top`** / **`code`**).
+  Opcodes use **`KosEvalState`** stack helpers bound to that slot.
 - Dynamic install/uninstall already runs for many node kinds; teardown must stay
   symmetric so `ctx->block` and the node chain never disagree.
 - Continuations / transfer plans may carry `resume_stack` in parallel with chain

@@ -171,30 +171,34 @@ KosDynNode *kos_dyn_lca(KosDynNode *a, KosDynNode *b, uint32_t graft_point_id);
 
 ### 4.3 Transfer Plans
 
-```c
-/* Build plan: unwind from current to LCA, install/push target, wind to target, inject. Returns 0 on success, -1 on error. */
-int kos_dyn_build_transfer_plan(KosContext *ctx, KosDynNode *target, PyObject *value, int is_throw,
-                                uint32_t graft_point_id, KosTransferPlan **out_plan);
+**Note:** Older drafts used `KosContext *ctx` here. The supported surface is
+**`KosEvalState *es`** (see `dynchain.h` / `eval.h`).
 
-/* Build plan for POP_SHIFT: unwind from top to prompt (exclusive), truncate at prompt (free through prompt), inject value. No wind phase. */
-int kos_dyn_build_pop_shift_plan(KosContext *ctx, KosDynPrompt *prompt, PyObject *value,
+```c
+/* Build plan: unwind from current to LCA, install target, wind to target, inject. */
+int kos_build_transfer_plan(KosEvalState *es, KosDynNode *target, PyObject *value, int is_throw,
+                          uint32_t graft_point_id, KosTransferPlan **out_plan);
+
+/* Build plan for POP_SHIFT: unwind to prompt (exclusive), truncate at prompt, inject value. */
+int kos_dyn_build_pop_shift_plan(KosEvalState *es, KosDynPrompt *prompt, PyObject *value,
                                  KosTransferPlan **out_plan);
 
-/* Build plan for PUSH_SHIFT unwind: POP_ONE for each node from top to prompt (exclusive). Arrives at prompt. */
-int kos_dyn_build_push_shift_unwind_plan(KosContext *ctx, KosDynPrompt *prompt,
+/* Build plan for PUSH_SHIFT unwind: POP_ONE for each node from top to prompt (exclusive). */
+int kos_dyn_build_push_shift_unwind_plan(KosEvalState *es, KosDynPrompt *prompt,
                                          KosTransferPlan **out_plan);
 
-/* Build plan for delimited invoke: wind nodes in segment, PUSH segment, inject. */
-int kos_dyn_build_delimited_push_plan(KosContext *ctx, KosDynNode *segment, PyObject *value,
-                                      int is_throw, KosTransferPlan **out_plan);
+/* Delimited invoke: wind in segment, PUSH segment, inject. */
+int kos_build_delimited_push_plan(KosEvalState *es, KosDynNode *segment, PyObject *value,
+                                  int is_throw, KosTransferPlan **out_plan);
 
-/* Build plan for direct install (cross barrier): INSTALL, wind, INJECT. No unwind. */
-int kos_dyn_build_direct_install_plan(KosContext *ctx, KosDynNode *target, PyObject *value,
-                                      int is_throw, uint32_t graft_point_id,
-                                      KosTransferPlan **out_plan);
+/* Direct install (cross barrier): INSTALL, wind, INJECT. No unwind. */
+int kos_build_direct_install_plan(KosEvalState *es, KosDynNode *target, PyObject *value,
+                                  int is_throw, uint32_t graft_point_id,
+                                  KosTransferPlan **out_plan);
 
-/* Execute next step of plan. Returns 1 when complete, 0 when more steps, KOS_XFER_SUSPENDED_AWAIT when async, -1 on error. */
-int kos_run_transfer_step(KosContext *ctx);
+/* Execute next step of plan. Returns 1 when complete, 0 when more steps,
+   KOS_XFER_SUSPENDED_AWAIT when async, -1 on error. */
+int kos_run_transfer_step(KosEvalState *es, struct KosEvent *out_ev);
 
 /* Free plan and release resources. */
 void kos_free_transfer_plan(KosTransferPlan *plan);

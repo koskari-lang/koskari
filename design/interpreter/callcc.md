@@ -133,8 +133,8 @@ int kos_shift_capture(KosContext *ctx, uint32_t prompt_id,
 The `kos_invoke_continuation()` function handles resumption:
 
 ```c
-int kos_invoke_continuation(KosContext *ctx, KosContinuation *k,
-        PyObject *value, int is_throw);
+int kos_invoke_continuation(KosEvalState *es, KosContinuation *k,
+        PyObject *value, int is_throw, PyObject *continuation_ref);
 ```
 
 **Algorithm**:
@@ -150,14 +150,14 @@ int kos_invoke_continuation(KosContext *ctx, KosContinuation *k,
      site and resumes with the value.
    - **Undelimited**: Use `kos_build_transfer_plan()` with INSTALL:
      ```c
-     int kos_build_transfer_plan(KosContext *ctx, KosDynNode *target,
+     int kos_build_transfer_plan(KosEvalState *es, KosDynNode *target,
              PyObject *value, int is_throw, uint32_t graft_point_id,
              KosTransferPlan **out_plan);
      ```
 
 3. **Execute transfer**: Run the plan to completion
    ```c
-   int kos_run_transfer_step(KosContext *ctx);
+   int kos_run_transfer_step(KosEvalState *es, struct KosEvent *out_ev);
    ```
 
 ### KosDynCCRaise Sentinel
@@ -238,8 +238,8 @@ When a hook invokes another continuation:
 5. **Replan if needed**: If chain changed, recompute remaining actions
 
 ```c
-void kos_suspend_transfer_plan(KosContext *ctx);
-int kos_resume_transfer_plan(KosContext *ctx);
+void kos_suspend_transfer_plan(KosEvalState *es);
+int kos_resume_transfer_plan(KosEvalState *es);
 ```
 
 ### Chain-Change Detection

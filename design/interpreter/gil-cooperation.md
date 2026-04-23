@@ -103,7 +103,7 @@ Places identified as good candidates (low or no PyObject/refcount work; or singl
 ### 5.2 Dynchain (GIL-free or mostly-GIL-free stretches)
 
 - **After `kos_compute_lca`**: Pure chain walk (mark, find, clear); no Py*. One call after LCA is computed.
-- **Inside `kos_build_transfer_plan`**: Between the LCA + count + fill steps and before `xfer_plan_fill_inject_action` (which does Py_INCREF). The stretch from ~4007–4034 is counter updates and plan filling; one or two `maybe_cooperate()` calls in the middle.
+- **Inside `kos_build_transfer_plan`**: Between the LCA + count + fill steps and before `xfer_plan_fill_inject_action` (which does Py_INCREF). The stretch of counter updates and plan filling in `dynchain.c` is a reasonable place for one or two `maybe_cooperate()` calls (line numbers drift; search for the build function).
 - **In `xfer_plan_fill_unwind_actions`**: Loop over nodes filling the plan; no refcount. One call per N iterations or one at the end.
 - **In `xfer_plan_fill_wind_actions`**: Same idea; loop with PyMem only.
 - **In `kos_clone_chain_segment`**: Between clone steps (each clone does Py* inside); optional call in the linking loop.

@@ -364,6 +364,8 @@ int KosEvalState_SetFast(
   return kos_evalstate_set_fast(es, index, value);
 }
 
+#define KosEvalState_SetFast kos_evalstate_set_fast
+
 
 static inline PyObject *kos_evalstate_get_var(
     const KosEvalState *es,
@@ -378,7 +380,7 @@ PyObject *KosEvalState_GetVar(const KosEvalState *es, PyObject *key) {
   return kos_evalstate_get_var(es, key);
 }
 
-#define KosEvalState_SetFast kos_evalstate_set_fast
+#define KosEvalState_GetVar kos_evalstate_get_var
 
 
 static inline int kos_evalstate_stack_steal_tail(
@@ -1289,15 +1291,12 @@ void kos_eval_emit_raise_from_pyerr(
    :return: KOS_MODE_TRANSFER on success, KOS_MODE_RAISE on error
 */
 static KosEvalMode handle_continuation_apply(
-    KosContext *ctx,
+    KosEvalState *es,
     KosEvent *out_ev) {
 
   (void) out_ev;
 
-  // XXX:  BAD, handle_continuation_apply should accept an EvalState
-  // this is illegal.
-  KosEvalState es;
-  KosEvalState_Init(&es, ctx);
+  KosContext *ctx = KosEvalState_CONTEXT(es);
 
   PyObject *typ = NULL, *val = NULL, *tb = NULL;
   PyErr_Fetch(&typ, &val, &tb);
@@ -1338,7 +1337,7 @@ static KosEvalMode handle_continuation_apply(
       Py_XDECREF(args_obj);
       PyErr_Clear();
 
-      if (k && kos_invoke_continuation(&es, k, resume_val, 0, cont_obj) == 0) {
+      if (k && kos_invoke_continuation(es, k, resume_val, 0, cont_obj) == 0) {
         Py_DECREF(resume_val);
         Py_DECREF(typ);
         Py_DECREF(val);
@@ -1363,7 +1362,7 @@ static KosEvalMode handle_continuation_apply(
   /* Foreign-token path: unwind this context to null and re-raise. */
   PyErr_Clear();
   KosTransferPlan *plan = NULL;
-  if (kos_build_cc_unwind_plan(&es, typ, val, &plan) < 0) {
+  if (kos_build_cc_unwind_plan(es, typ, val, &plan) < 0) {
     Py_DECREF(typ);
     Py_DECREF(val);
     return KOS_MODE_RAISE;
@@ -1399,7 +1398,7 @@ static KosEvalMode process_raise(KosEvalState *es, KosEvent *out_ev) {
   }
 
   if (KoskariContinuationApply && PyErr_ExceptionMatches(KoskariContinuationApply))
-    return handle_continuation_apply(ctx, out_ev);
+    return handle_continuation_apply(es, out_ev);
   clear_kos_agen_boundary_on_error(ctx);
 
   {

@@ -701,8 +701,8 @@ When `CURRENT_FRAME(ctx)` has `native_handler != NULL`, the loop runs that handl
 
 1. Python calls `cont(value)`. Cont raises `KoskariContinuationApply` targeting this context.
 2. `PyErr_Occurred()` at next loop top (or after opcode). `process_raise` runs.
-3. `handle_continuation_apply` sees own token: fetches continuation and value, clears PyErr, calls `kos_invoke_continuation`.
-4. `kos_invoke_continuation` builds transfer plan, sets `KosContext_PLAN(ctx) = plan`, returns 0. `handle_continuation_apply` returns `KOS_MODE_TRANSFER`.
+3. `handle_continuation_apply` sees own token: fetches continuation and value, clears PyErr, calls `kos_invoke_continuation(&es, …)` (eval state for the current context).
+4. `kos_invoke_continuation` builds the transfer plan using `es`, sets `KosContext_PLAN(ctx) = plan`, syncs eval caches, returns 0. `handle_continuation_apply` returns `KOS_MODE_TRANSFER`.
 5. Loop continues (or entry yields TRANSFER). `run_transfer_plan_to_completion` drains plan: unwind extents, install captured chain, inject value.
 6. Execution resumes at captured PC with value on stack.
 

@@ -457,7 +457,7 @@ Section 16 addresses the concern that freeze/thaw overhead may exceed savings; t
 
 **CoW call sites** (in `stack.c`): `Push`, `Pop`, `PushRef`, `PUSH`, `PopRef`, `Drop`, `Drop1`, `DropNoErr`, `PopTail`, `PopTailPtr`, `PopTailDict`, `PopTailDictNames`, `Replace`, `Duplicate`, `ClearBlock`, `PushBlock`, `PopBlock`, `DropBlock`, and several PyObject-facing `KosStack_*` wrappers.
 
-**Continuation capture** uses `KosStackBlock_COW()` (increment refcounts on the chain) rather than `KosStackBlock_DeepCopy()`. Call sites: `kos_dynframe_clone`, transfer-plan resume-stack handling, and several places in `dynchain.c` (e.g., `kos_dyn_install`, `kos_build_return_plan`, `handle_continuation_apply`).
+**Continuation capture** uses `KosStackBlock_COW()` (increment refcounts on the chain) rather than `KosStackBlock_DeepCopy()`. Call sites: `kos_dynframe_clone`, transfer-plan resume-stack handling, and several places in `dynchain.c` (e.g., `kos_dyn_install`, `kos_build_return_plan(es, …)`, `handle_continuation_apply`).
 
 ### A.3 Opcode Dispatch
 

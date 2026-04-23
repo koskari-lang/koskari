@@ -277,67 +277,68 @@ Chain operations dispatch on `KosDynKind` and `KOS_DYN_CAP_*` in `dynchain.c`
 (switch-based helpers per kind). See
 [dynamic-node-unified-api.md](../archive/dynamic-node-unified-api.md) for the capability model.
 
+**Eval state:** Mutators and chain-aware helpers exposed from `dynchain.h` take
+**`KosEvalState *es`** as their first parameter (not `KosContext *ctx`). Use
+**`KosEvalState_CONTEXT(es)`** when you need the heap context. After edits to
+**`dyn_top`** / **`frame_top`** / operand stack ownership, call
+**`KosEvalState_RefreshDynCaches(es)`** and then **`KosEvalState_SyncFromContext(es)`**
+where the hot-path **`frame`** / **`code`** caches must match **`ctx`**.
+
+Representative signatures (see **`koskari/lib/dynchain.h`** for the full set):
+
 ```c
 /* Generic push/pop */
-int kos_dyn_push(KosContext *ctx, KosDynNode *node);
-int kos_dyn_pop(KosContext *ctx, KosDynNode *node, KosEvent *out_ev);
-int kos_dyn_pop_top(KosContext *ctx, KosEvent *out_ev);  /* pops top; fails for BARRIER nodes */
+int kos_dyn_push(KosEvalState *es, KosDynNode *node);
+int kos_dyn_uninstall(KosEvalState *es, KosDynNode *node, KosXferEvent event,
+                      struct KosEvent *out_ev);  /* kos_dyn_pop */
+int kos_dyn_pop_top(KosEvalState *es, KosXferEvent event, struct KosEvent *out_ev);
 
 /* Push/pop frames */
-KosDynFrame *kos_dyn_push_frame(KosContext *ctx, KosCode *code, PyObject *ns);
-int kos_dyn_pop_frame(KosContext *ctx);
+KosDynFrame *kos_dyn_push_frame(KosEvalState *es, KosCode *code, PyObject *ns);
+int kos_dyn_pop_frame(KosEvalState *es);
 
 /* Attach/detach existing frame (no allocation/free); for in-loop async gen stepping */
-int kos_dyn_attach_frame(KosContext *ctx, KosDynFrame *frame);
-int kos_dyn_detach_top_frame(KosContext *ctx, KosDynFrame **frame_out);
+int kos_dyn_attach_frame(KosEvalState *es, KosDynFrame *frame);
+int kos_dyn_detach_top_frame(KosEvalState *es, KosDynFrame **frame_out);
 
 /* Push/pop prompts (also used during POP_SHIFT truncation and exception unwind) */
-KosDynPrompt *kos_dyn_push_prompt(KosContext *ctx, uint32_t prompt_id);
-void kos_dyn_pop_prompt(KosContext *ctx, KosDynPrompt *prompt);
+KosDynPrompt *kos_dyn_push_prompt(KosEvalState *es, uint32_t prompt_id);
+int kos_dyn_pop_prompt(KosEvalState *es, KosDynPrompt *prompt);
 
-/* Push/pop wind extents */
-KosDynWind *kos_dyn_push_wind(KosContext *ctx,
-        KosCode *before_code, uint32_t before_pc,
-        KosCode *after_code, uint32_t after_pc);
-int kos_dyn_pop_wind(KosContext *ctx, KosDynWind *wind);
-
-/* Push/pop region kinds (TRY, FINALLY, LOOP, FOREACH) */
-KosDynNode *kos_dyn_push_try(KosContext *ctx, uint32_t handler_pc);
-KosDynNode *kos_dyn_push_finally(KosContext *ctx, uint32_t handler_pc);
-KosDynNode *kos_dyn_push_loop(KosContext *ctx, uint32_t break_pc, uint32_t continue_pc);
-KosDynNode *kos_dyn_push_foreach(KosContext *ctx, uint32_t break_pc, uint32_t continue_pc);
-void kos_dyn_uninstall_handler(KosContext *ctx, KosDynNode *node);
+/* Wind, regions, NS, COLLECT, CC, SHIFT, … — all first-arg es */
 
 /* Find topmost enabled TRY or FINALLY node (for exception handling) */
-KosDynNode *kos_find_node_for_raise(KosContext *ctx);
+KosDynNode *kos_find_node_for_raise(KosEvalState *es);
 
 /* Find topmost LOOP or FOREACH node (for break/continue) */
-KosDynNode *kos_find_node_for_loop(KosContext *ctx);
+KosDynNode *kos_find_node_for_loop(KosEvalState *es);
 
-/* Async WITH exit completion */
+/* Async WITH exit completion (eval.h: still takes ctx; builds es internally) */
 int kos_complete_pending_with_exit(KosContext *ctx);
 int kos_complete_pending_with_exit_semantic(KosContext *ctx);
 
 /* Unwind to specific chain position (transfer-plan paths) */
-int kos_dyn_unwind_to_node(KosContext *ctx, KosDynNode *target, KosEvent *out_ev);
-int kos_dyn_unwind_to_frame(KosContext *ctx, KosDynFrame *frame, KosEvent *out_ev);
+int kos_dyn_unwind_to_node(KosEvalState *es, KosDynNode *target,
+                           struct KosEvent *out_ev);
+int kos_dyn_unwind_to_frame(KosEvalState *es, KosDynFrame *frame,
+                            struct KosEvent *out_ev);
 ```
 
 ### Continuation Capture and Invocation
 
 ```c
 /* Find prompt by tag */
-KosDynPrompt *kos_find_prompt(KosContext *ctx, uint32_t prompt_id);
+KosDynPrompt *kos_find_prompt(KosEvalState *es, uint32_t prompt_id);
 
 /* Validate capture (prompt reachability in chain) */
-int kos_validate_capture(KosContext *ctx, KosDynPrompt *prompt);
+int kos_validate_capture(KosEvalState *es, KosDynPrompt *prompt);
 
 /* Capture continuation (shift) */
-int kos_shift_capture(KosContext *ctx, uint32_t prompt_id,
-        KosContinuation **out_k);
+int kos_shift_capture(KosEvalState *es, uint32_t prompt_id, uint32_t resume_pc,
+                      KosContinuation **out_k);
 
 /* Invoke continuation (continuation_ref keeps k alive until plan is freed) */
-int kos_invoke_continuation(KosContext *ctx,
+int kos_invoke_continuation(KosEvalState *es,
         KosContinuation *k, PyObject *value, int is_throw,
         PyObject *continuation_ref);
 
@@ -352,20 +353,20 @@ KosContinuation *kos_continuation_clone(KosContinuation *k);
 /* Compute LCA between two chain positions; graft_point_id enables ID fallback when chains disjoint */
 KosDynNode *kos_compute_lca(KosDynNode *a, KosDynNode *b, uint32_t graft_point_id);
 
-/* Build transfer plan */
-int kos_build_transfer_plan(KosContext *ctx,
+/* Build transfer plan (and siblings: return, delimited_push, direct_install, install_only) */
+int kos_build_transfer_plan(KosEvalState *es,
         KosDynNode *target, PyObject *value, int is_throw,
         uint32_t graft_point_id, KosTransferPlan **out_plan);
 
 /* Execute next step of transfer plan */
-int kos_run_transfer_step(KosContext *ctx);
+int kos_run_transfer_step(KosEvalState *es, struct KosEvent *out_ev);
 
 /* Free transfer plan */
 void kos_free_transfer_plan(KosTransferPlan *plan);
 
 /* Suspend/resume for nested transfers */
-void kos_suspend_transfer_plan(KosContext *ctx);
-int kos_resume_transfer_plan(KosContext *ctx);
+void kos_suspend_transfer_plan(KosEvalState *es);
+int kos_resume_transfer_plan(KosEvalState *es);
 ```
 
 ### Context and Frame Lifecycle
