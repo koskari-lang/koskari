@@ -86,14 +86,14 @@ KOS_OP_HANDLER(POP_SHIFT) {
 
   prompt_pop_pc = prompt_extent->pop_pc;
 
-  prompt = kos_find_nearest_prompt(ctx);
+  prompt = kos_find_nearest_prompt(es);
   if (! prompt) {
     Py_DECREF(result);
     PyErr_SetString(PyExc_RuntimeError, "POP_SHIFT: no prompt on chain");
     return KOS_OP_POST_ERR();
   }
 
-  if (kos_dyn_build_pop_shift_plan(ctx, prompt, result, &plan) < 0) {
+  if (kos_dyn_build_pop_shift_plan(es, prompt, result, &plan) < 0) {
     Py_DECREF(result);
     return KOS_OP_POST_ERR();
   }

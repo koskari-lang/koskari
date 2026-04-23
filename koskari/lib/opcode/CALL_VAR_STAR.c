@@ -17,7 +17,7 @@
    CALL_VAR_STAR: arg = extra index. Schema VAR (name), STAR (bitflags).
    Call callable from namespace by name. Stack [pos, kwd] or subsets per
    flags (1 = *args, 2 = **kwargs). Pop per flags, ensure pos is tuple,
-   call via KosContext_CallArgs.
+   call via KosEvalState_CallArgs.
 */
 
 
@@ -107,7 +107,7 @@ KOS_OP_HANDLER(CALL_VAR_STAR) {
     kwd = NULL;
   }
 
-  int res = KosContext_CallArgs(ctx, out_ev, callable, pos, kwd, 0);
+  int res = KosEvalState_CallArgs(es, out_ev, callable, pos, kwd, 0);
 
   Py_DECREF(callable);
   Py_DECREF(pos);

@@ -33,7 +33,7 @@ KOS_OP_HANDLER(POP_TRY) {
     PyObject *promoted = KosStackBlock_PopRef(&KosDynNode_STACK(region));
     if (! promoted)
       return KOS_OP_POST_ERR();
-    kos_dyn_pop_try(ctx, (KosDynTry *) region);
+    kos_dyn_pop_try(es, (KosDynTry *) region);
     if (KosEvalState_StackPushRef(es, promoted) < 0) {
       Py_DECREF(promoted);
       return KOS_OP_POST_ERR();

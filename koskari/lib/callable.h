@@ -31,7 +31,7 @@ struct KosEvent;
    implementation.
 
    tail_call: 1 if this is a tail call; 0 otherwise. Most implementations
-   ignore this; frame behavior is handled by the caller (KosContext_Call*).
+   ignore this; frame behavior is handled by the caller (KosEvalState_Call*).
 */
 typedef int (*KosInstallFunc)(
     struct KosContext *ctx,

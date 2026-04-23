@@ -34,7 +34,7 @@ KOS_OP_HANDLER(PUSH_CC) {
     return KOS_OP_POST_ERR();
   }
   uint32_t resume_pc = ext->pop_pc + 1u;
-  if (! kos_dyn_push_cc(ctx, resume_pc)) {
+  if (! kos_dyn_push_cc(es, resume_pc)) {
     return KOS_OP_POST_ERR();
   }
   (void) out_ev;

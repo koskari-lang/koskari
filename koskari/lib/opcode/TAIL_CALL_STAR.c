@@ -18,7 +18,7 @@
    Same stack layout as CALL_STAR: [callable, pos, kwd]. Tail call: do not
    push a new frame; remove or recycle the current one.
 
-   KosContext_CallArgs handles frame behavior and dispatch.
+   KosEvalState_CallArgs handles frame behavior and dispatch.
 */
 
 
@@ -110,7 +110,7 @@ KOS_OP_HANDLER(TAIL_CALL_STAR) {
     kwd = NULL;
   }
 
-  int res = KosContext_CallArgs(ctx, out_ev, fun, pos, kwd, 1);
+  int res = KosEvalState_CallArgs(es, out_ev, fun, pos, kwd, 1);
 
   Py_DECREF(fun);
   Py_DECREF(pos);

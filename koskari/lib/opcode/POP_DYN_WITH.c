@@ -30,7 +30,7 @@ KOS_OP_HANDLER(POP_DYN_WITH) {
   }
   KosDynWith *with_node = (KosDynWith *) top;
 
-  int unw = kos_dyn_with_unwind(ctx, with_node, out_ev);
+  int unw = kos_dyn_with_unwind(es, with_node, out_ev);
   if (unw == KOS_DYN_UNWIND_ASYNC_STARTED) {
     uint32_t same_pc = CURRENT_ACTING_PC(ctx);
     CURRENT_PC(ctx) = same_pc;
@@ -45,7 +45,7 @@ KOS_OP_HANDLER(POP_DYN_WITH) {
   PyObject *body_val = KosEvalState_StackPopRef(es);
   if (! body_val)
     return KOS_OP_POST_ERR();
-  kos_dyn_pop_with(ctx, with_node);
+  kos_dyn_pop_with(es, with_node);
   if (KosEvalState_StackPushRef(es, body_val) < 0) {
     Py_DECREF(body_val);
     return KOS_OP_POST_ERR();

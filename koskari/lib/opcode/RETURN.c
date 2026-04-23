@@ -58,11 +58,11 @@ KOS_OP_HANDLER(RETURN) {
   /* === Phase 2a: Delimited continuation return (k(value)) ===
      When inside a reset/prompt, k(value) returns the value to the call site
      of the continuation. This bypasses the normal parent chain. Rare path. */
-  KosDynDelim *ret_delim = kos_find_nearest_delim(ctx, KOS_DYN_DELIM_MODE_K_RETURN);
+  KosDynDelim *ret_delim = kos_find_nearest_delim(es, KOS_DYN_DELIM_MODE_K_RETURN);
   if (unlikely(ret_delim
                && KosDynDelim_RETURN_CHAIN(ret_delim) != NULL
                && KosDynDelim_RETURN_PC(ret_delim) != (uint32_t) -1)) {
-    int rd = kos_return_delimited(ctx, ret_delim, val, out_ev);
+    int rd = kos_return_delimited(es, ret_delim, val, out_ev);
     if (rd < 0)
       return KOS_OP_POST_ERR();
     return KosContext_PLAN(ctx) ? KOS_OP_PROLOGUE() : KOS_OP_RUN();
@@ -83,7 +83,7 @@ KOS_OP_HANDLER(RETURN) {
       .payload = val,
     };
     KosTransitionResult tres = {0};
-    if (kos_dyn_transition(ctx, &treq, &tres, out_ev) < 0) {
+    if (kos_dyn_transition(es, &treq, &tres, out_ev) < 0) {
       Py_DECREF(val);
       return KOS_OP_POST_ERR();
     }
@@ -102,7 +102,7 @@ KOS_OP_HANDLER(RETURN) {
       return KOS_OP_POST_ERR();
     }
 
-    if (unlikely(kos_dyn_pop_frame(ctx) < 0)) {
+    if (unlikely(kos_dyn_pop_frame(es) < 0)) {
       Py_DECREF(val);
       return KOS_OP_POST_ERR();
     }
@@ -124,7 +124,7 @@ KOS_OP_HANDLER(RETURN) {
       .payload = val,
     };
     KosTransitionResult tres = {0};
-    if (kos_dyn_transition(ctx, &treq, &tres, out_ev) < 0) {
+    if (kos_dyn_transition(es, &treq, &tres, out_ev) < 0) {
       Py_DECREF(val);
       return KOS_OP_POST_ERR();
     }

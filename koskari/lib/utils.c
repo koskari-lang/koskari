@@ -142,7 +142,7 @@ static int apply_native_handler(
     .payload = result,
   };
   KosTransitionResult tres = {0};
-  if (kos_dyn_transition(ctx, &treq, &tres, out_ev) < 0) {
+  if (kos_dyn_transition(&es, &treq, &tres, out_ev) < 0) {
     Py_DECREF(result);
     return -1;
   }
@@ -160,14 +160,15 @@ static int apply_native_handler(
     Py_DECREF(result);
     return -1;
   }
-  if (kos_dyn_detach_top_frame(ctx, &detached) < 0) {
+  if (kos_dyn_detach_top_frame(&es, &detached) < 0) {
     Py_DECREF(result);
     return -1;
   }
   if (detached)
     kos_dynframe_free(detached);
 
-  return kos_push_or_await(ctx, out_ev, result);
+  KosEvalState_SyncFromContext(&es);
+  return kos_push_or_await(&es, out_ev, result);
 }
 
 

@@ -60,7 +60,7 @@ KOS_OP_HANDLER(IMPORT_REL) {
 
   /* Globals namespace supplies __name__ and __package__ for relative import
      anchor resolution (same as GLOBALS opcode). */
-  kos_dyn_globals_frame(ctx);
+  kos_dyn_globals_frame(es);
 
   PyObject *globals_ns = KosDynFrame_NS(KosContext_GLOBALS_FRAME(ctx));
 

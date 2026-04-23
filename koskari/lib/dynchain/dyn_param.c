@@ -188,26 +188,32 @@ static void kos_dynparam_restore(KosContext *ctx, KosDynParam *node) {
 /**
    INSTALL wind: enter bindings. Callers: kos_dyn_wind, install wind span.
 */
-int kos_dyn_param_wind(KosContext *ctx, KosDynParam *node) {
-  return kos_dynparam_enter(ctx, node);
+int kos_dyn_param_wind(KosEvalState *es, KosDynParam *node) {
+  KosContext *ctx = KosEvalState_CONTEXT(es);
+  int r = kos_dynparam_enter(ctx, node);
+  KosEvalState_SyncFromContext(es);
+  return r;
 }
 
 
 /**
    Restore outer param values on extent unwind. Callers: kos_dyn_unwind.
 */
-void kos_dyn_param_unwind(KosContext *ctx, KosDynParam *node) {
+void kos_dyn_param_unwind(KosEvalState *es, KosDynParam *node) {
+  KosContext *ctx = KosEvalState_CONTEXT(es);
   if (KOS_XFER_TRACE)
     SAYF("[xfer] param unwind node=%p", (void *) node);
   kos_dynparam_restore(ctx, node);
+  KosEvalState_SyncFromContext(es);
 }
 
 
 /**
    Push PARAM from dict: enter then link as DYN_TOP. Callers: opcode PUSH_PARAM.
 */
-KosDynParam *kos_dyn_push_param_dict(KosContext *ctx, PyObject *bindings) {
+KosDynParam *kos_dyn_push_param_dict(KosEvalState *es, PyObject *bindings) {
 
+  KosContext *ctx = KosEvalState_CONTEXT(es);
   if (! bindings) {
     PyErr_SetString(PyExc_ValueError, "kos_dyn_push_param_dict: bindings is NULL");
     return NULL;
@@ -236,6 +242,7 @@ KosDynParam *kos_dyn_push_param_dict(KosContext *ctx, PyObject *bindings) {
   KosContext_DYN_TOP(ctx) = (KosDynNode *) node;
   KosContext_CHAIN_VERSION(ctx)++;
 
+  KosEvalState_SyncFromContext(es);
   return node;
 }
 
@@ -244,11 +251,12 @@ KosDynParam *kos_dyn_push_param_dict(KosContext *ctx, PyObject *bindings) {
    Push PARAM from parallel arrays (vector call sites).
 */
 KosDynParam *kos_dyn_push_param(
-    KosContext *ctx,
+    KosEvalState *es,
     uint32_t count,
     PyObject **params,
     PyObject **values) {
 
+  KosContext *ctx = KosEvalState_CONTEXT(es);
   KosDynParam *node = kos_dynparam_new(KosContext_DYN_TOP(ctx),
                                        count, params, values);
   if (! node)
@@ -262,6 +270,7 @@ KosDynParam *kos_dyn_push_param(
   KosContext_DYN_TOP(ctx) = (KosDynNode *) node;
   KosContext_CHAIN_VERSION(ctx)++;
 
+  KosEvalState_SyncFromContext(es);
   return node;
 }
 
@@ -269,8 +278,10 @@ KosDynParam *kos_dyn_push_param(
 /**
    Restore and unlink PARAM when top. Callers: POP_PARAM, transfer pop.
 */
-void kos_dyn_pop_param(KosContext *ctx, KosDynParam *node) {
+void kos_dyn_pop_param(KosEvalState *es, KosDynParam *node) {
+  KosContext *ctx = KosEvalState_CONTEXT(es);
   if (! KosContext_DYN_TOP(ctx) || KosContext_DYN_TOP(ctx) != (KosDynNode *) node) {
+    KosEvalState_SyncFromContext(es);
     return;
   }
 
@@ -278,6 +289,7 @@ void kos_dyn_pop_param(KosContext *ctx, KosDynParam *node) {
   KosContext_DYN_TOP(ctx) = KosDynNode_PARENT(node);
   KosContext_CHAIN_VERSION(ctx)++;
   kos_dynparam_free(node);
+  KosEvalState_SyncFromContext(es);
 }
 
 

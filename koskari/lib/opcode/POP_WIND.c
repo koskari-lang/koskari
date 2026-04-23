@@ -33,7 +33,7 @@ KOS_OP_HANDLER(POP_WIND) {
     return KOS_OP_POST_ERR();
   KosDynWind_BODY_RESULT(wind) = body_result;
 
-  int r = kos_dyn_pop_top(ctx, KOS_XFER_EVENT_RETURN, out_ev);
+  int r = kos_dyn_pop_top(es, KOS_XFER_EVENT_RETURN, out_ev);
   if (r == KOS_DYN_UNWIND_ASYNC_STARTED) {
     KosContext_UNWIND_TARGET_FRAME(ctx) =
         (KosDynFrame *) KosDynNode_PARENT((KosDynNode *) wind);

@@ -51,8 +51,9 @@ static void kos_dyncc_free(KosDynCC *cc) {
 /**
    Link CC as DYN_TOP without kos_dyn_install (minimal push). Callers: PUSH_CC.
 */
-KosDynCC *kos_dyn_push_cc(KosContext *ctx, uint32_t resume_pc) {
+KosDynCC *kos_dyn_push_cc(KosEvalState *es, uint32_t resume_pc) {
 
+  KosContext *ctx = KosEvalState_CONTEXT(es);
   KosDynCC *cc = kos_dyncc_new(KosContext_DYN_TOP(ctx), resume_pc);
   if (! cc)
     return NULL;
@@ -60,6 +61,7 @@ KosDynCC *kos_dyn_push_cc(KosContext *ctx, uint32_t resume_pc) {
   KosContext_DYN_TOP(ctx) = (KosDynNode *) cc;
   KosContext_CHAIN_VERSION(ctx)++;
 
+  KosEvalState_SyncFromContext(es);
   return cc;
 }
 
@@ -67,7 +69,8 @@ KosDynCC *kos_dyn_push_cc(KosContext *ctx, uint32_t resume_pc) {
 /**
    Unlink CC from top when it matches; free node. Callers: POP_CC fast path.
 */
-void kos_dyn_pop_cc(KosContext *ctx, KosDynCC *cc) {
+void kos_dyn_pop_cc(KosEvalState *es, KosDynCC *cc) {
+  KosContext *ctx = KosEvalState_CONTEXT(es);
   if (! KosContext_DYN_TOP(ctx) || KosContext_DYN_TOP(ctx) != (KosDynNode *) cc) {
     return;
   }
@@ -75,6 +78,7 @@ void kos_dyn_pop_cc(KosContext *ctx, KosDynCC *cc) {
   KosContext_DYN_TOP(ctx) = KosDynNode_PARENT(cc);
   KosContext_CHAIN_VERSION(ctx)++;
   kos_dyncc_free(cc);
+  KosEvalState_SyncFromContext(es);
 }
 
 

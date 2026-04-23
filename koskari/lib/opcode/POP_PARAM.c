@@ -34,7 +34,7 @@ KOS_OP_HANDLER(POP_PARAM) {
     return KOS_OP_POST_ERR();
   }
 
-  kos_dyn_pop_param(ctx, (KosDynParam *) top);
+  kos_dyn_pop_param(es, (KosDynParam *) top);
 
   (void) out_ev;
   (void) insn;

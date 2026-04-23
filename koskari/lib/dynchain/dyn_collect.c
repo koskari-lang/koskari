@@ -62,7 +62,8 @@ static void kos_dyncollect_free(KosDynCollect *col_node) {
 /**
    Restore frame ns from collector saved_ns on pop (matches kos_dyn_ns_unwind).
 */
-void kos_dyn_collect_unwind(KosContext *ctx, KosDynCollect *node) {
+void kos_dyn_collect_unwind(KosEvalState *es, KosDynCollect *node) {
+  KosContext *ctx = KosEvalState_CONTEXT(es);
   if (! node)
     return;
   if (KosContext_FRAME_TOP(ctx)) {
@@ -71,13 +72,15 @@ void kos_dyn_collect_unwind(KosContext *ctx, KosDynCollect *node) {
     Py_DECREF(KosDynFrame_NS(KosContext_FRAME_TOP(ctx)));
     KosDynFrame_NS(KosContext_FRAME_TOP(ctx)) = prior;
   }
+  KosEvalState_SyncFromContext(es);
 }
 
 
 /**
    Push COLLECT as DYN_TOP. Callers: PUSH_COLLECT.
 */
-KosDynCollect *kos_dyn_push_collect(KosContext *ctx, PyObject *saved_ns) {
+KosDynCollect *kos_dyn_push_collect(KosEvalState *es, PyObject *saved_ns) {
+  KosContext *ctx = KosEvalState_CONTEXT(es);
   KosDynCollect *col_node = kos_dyncollect_new(KosContext_DYN_TOP(ctx), saved_ns);
   if (! col_node)
     return NULL;
@@ -85,6 +88,7 @@ KosDynCollect *kos_dyn_push_collect(KosContext *ctx, PyObject *saved_ns) {
   KosContext_DYN_TOP(ctx) = (KosDynNode *) col_node;
   KosContext_CHAIN_VERSION(ctx)++;
 
+  KosEvalState_SyncFromContext(es);
   return col_node;
 }
 
@@ -92,9 +96,11 @@ KosDynCollect *kos_dyn_push_collect(KosContext *ctx, PyObject *saved_ns) {
 /**
    Pop COLLECT when top. Callers: POP_COLLECT.
 */
-void kos_dyn_pop_collect(KosContext *ctx, KosDynCollect *node) {
+void kos_dyn_pop_collect(KosEvalState *es, KosDynCollect *node) {
+  KosContext *ctx = KosEvalState_CONTEXT(es);
   if (! KosContext_DYN_TOP(ctx) ||
       KosContext_DYN_TOP(ctx) != (KosDynNode *) node) {
+    KosEvalState_SyncFromContext(es);
     return;
   }
 
@@ -102,6 +108,7 @@ void kos_dyn_pop_collect(KosContext *ctx, KosDynCollect *node) {
   KosContext_CHAIN_VERSION(ctx)++;
   kos_dyncollect_free(node);
   kos_ctx_refresh_dyn_caches(ctx);
+  KosEvalState_SyncFromContext(es);
 }
 
 

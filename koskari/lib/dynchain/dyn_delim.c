@@ -70,13 +70,14 @@ void kos_dyndelim_free(KosDynDelim *delim) {
    Push DELIM marker via kos_dyn_push.
 */
 KosDynDelim *kos_dyn_push_delim(
-    KosContext *ctx,
+    KosEvalState *es,
     uint8_t mode,
     KosDynNode *chain,
     uint32_t pc,
     KosDynFrame *frame,
     KosDynNode *node) {
 
+  KosContext *ctx = KosEvalState_CONTEXT(es);
   KosDynDelim *delim = kos_dyndelim_new(KosContext_DYN_TOP(ctx),
                                         mode,
                                         chain,
@@ -86,11 +87,12 @@ KosDynDelim *kos_dyn_push_delim(
   if (! delim)
     return NULL;
 
-  if (kos_dyn_push(ctx, (KosDynNode *) delim) < 0) {
+  if (kos_dyn_push(es, (KosDynNode *) delim) < 0) {
     kos_dyndelim_free(delim);
     return NULL;
   }
 
+  KosEvalState_SyncFromContext(es);
   return delim;
 }
 
@@ -98,22 +100,28 @@ KosDynDelim *kos_dyn_push_delim(
 /**
    Pop DELIM marker from top of chain.
 */
-void kos_dyn_pop_delim(KosContext *ctx, KosDynDelim *delim) {
-  if (! KosContext_DYN_TOP(ctx) || KosContext_DYN_TOP(ctx) != (KosDynNode *) delim)
+void kos_dyn_pop_delim(KosEvalState *es, KosDynDelim *delim) {
+  KosContext *ctx = KosEvalState_CONTEXT(es);
+  if (! KosContext_DYN_TOP(ctx) || KosContext_DYN_TOP(ctx) != (KosDynNode *) delim) {
+    KosEvalState_SyncFromContext(es);
     return;
+  }
 
-  kos_dyn_uninstall_handler(ctx, (KosDynNode *) delim, KOS_XFER_EVENT_NONE, NULL);
+  kos_dyn_uninstall_handler(es, (KosDynNode *) delim, KOS_XFER_EVENT_NONE, NULL);
 
   KosContext_DYN_TOP(ctx) = KosDynNode_PARENT(delim);
   KosContext_CHAIN_VERSION(ctx)++;
   kos_dyndelim_free(delim);
+  kos_ctx_refresh_dyn_caches(ctx);
+  KosEvalState_SyncFromContext(es);
 }
 
 
 /**
    Find nearest DELIM from dyn_top toward root; optional mode filter.
 */
-KosDynDelim *kos_find_nearest_delim(KosContext *ctx, uint8_t mode) {
+KosDynDelim *kos_find_nearest_delim(KosEvalState *es, uint8_t mode) {
+  KosContext *ctx = KosEvalState_CONTEXT(es);
   KosDynNode *node;
   for (node = KosContext_DYN_TOP(ctx); node; node = KosDynNode_PARENT(node)) {
     if (! KosDynNode_IS_DELIM(node))

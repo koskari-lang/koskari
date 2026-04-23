@@ -58,11 +58,13 @@ void kos_dynloop_free(KosDynLoop *node) {
 /**
    Push LOOP as DYN_TOP. Callers: opcode PUSH_LOOP.
 */
-KosDynLoop *kos_dyn_push_loop(KosContext *ctx, uint32_t break_pc, uint32_t continue_pc) {
+KosDynLoop *kos_dyn_push_loop(KosEvalState *es, uint32_t break_pc, uint32_t continue_pc) {
+  KosContext *ctx = KosEvalState_CONTEXT(es);
   KosDynLoop *node = kos_dynloop_new(KosContext_DYN_TOP(ctx), break_pc, continue_pc);
   if (! node) return NULL;
   KosContext_DYN_TOP(ctx) = (KosDynNode *) node;
   KosContext_CHAIN_VERSION(ctx)++;
+  KosEvalState_SyncFromContext(es);
   return node;
 }
 
@@ -70,13 +72,15 @@ KosDynLoop *kos_dyn_push_loop(KosContext *ctx, uint32_t break_pc, uint32_t conti
 /**
    Pop LOOP when top. Callers: abort_push_region, kos_dyn_transfer_to_loop, POP.
 */
-void kos_dyn_pop_loop(KosContext *ctx, KosDynLoop *node) {
+void kos_dyn_pop_loop(KosEvalState *es, KosDynLoop *node) {
+  KosContext *ctx = KosEvalState_CONTEXT(es);
   if (KosContext_DYN_TOP(ctx)==(KosDynNode*)node) {
     KosContext_DYN_TOP(ctx)=KosDynNode_PARENT(node);
     KosContext_CHAIN_VERSION(ctx)++;
     kos_dynloop_free(node);
     kos_ctx_refresh_dyn_caches(ctx);
   }
+  KosEvalState_SyncFromContext(es);
 }
 
 

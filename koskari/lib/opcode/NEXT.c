@@ -83,7 +83,7 @@ KOS_OP_HANDLER(NEXT) {
       return KOS_OP_POST_ERR();
     }
     agen->in_progress = 1;
-    if (kos_dyn_push_next_for_kos_agen(ctx, (PyObject *) agen, default_val,
+    if (kos_dyn_push_next_for_kos_agen(es, (PyObject *) agen, default_val,
                                         (int) n)
         < 0) {
       agen->in_progress = 0;

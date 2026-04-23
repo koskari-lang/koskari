@@ -237,7 +237,7 @@ typedef struct KosOpOutcome {
 
 
 /**
-  Opcode handler return values (legacy KosContext_Call / helpers).  0 = normal;
+  Opcode handler return values (legacy KosEvalState_Call / helpers).  0 = normal;
   1 = suspend or WITH async rollback; 2 = control returned to awaiting dyn node;
   4 = parent-frame return delivery staged in eval (post-pop).
 */
@@ -327,6 +327,11 @@ typedef struct KosEvalResult {
     KosPyAsyncGen::gen plus kos_dyn_gen_install at the driver before
     re-entering koskari_eval.
   - Resumption injects the result back into the VM via the stack.
+
+  During koskari_eval, treat this object as cold storage updated only through
+  dynchain helpers (mutating APIs take KosEvalState *). A concurrent
+  KosEvalState snapshot holds the borrowed ctx pointer plus frame/code caches
+  for the active eval slice.
 */
 
 struct KosContext {
@@ -420,6 +425,17 @@ struct KosContext {
 
   Call KosEvalState_Init before use; call KosEvalState_SyncFromContext when
   ctx->frame_top may have changed without updating this struct.
+
+  Execution model (live vs cold storage):
+  - KosEvalState is the only supported handle for mutating the dynamic chain
+    from opcode handlers, callable helpers, and eval drivers: use
+    kos_dyn_*(KosEvalState *, ...) (and related helpers) declared in dynchain.h.
+    Call KosEvalState_SyncFromContext after context mutation when the live
+    eval slice must see updated frame/code caches.
+  - KosContext remains the heap-allocated VM state owned by a coroutine,
+    async generator, or continuation segment. It is authoritative for dyn_top,
+    frame_top, and related fields; KosEvalState caches frame/code for the hot
+    path and must stay aligned via Init/Sync.
 */
 
 struct KosEvalState {
@@ -592,7 +608,12 @@ void kos_frame_free(KosFrame *frame);
 
   :return: 0 on success, -1 on internal error
 */
-int koskari_eval(KosContext *ctx, KosEvent *out_ev, PyObject *send_val, PyObject *throw_typ, PyObject *throw_exc);
+int koskari_eval(
+    KosContext *ctx,
+    KosEvent *out_ev,
+    PyObject *send_val,
+    PyObject *throw_typ,
+    PyObject *throw_exc);
 
 
 /**
@@ -674,10 +695,10 @@ extern PyObject *KoskariContinuationApply;
 extern PyObject *KoskariContinuationError;
 
 
-/* === KosContext_Call* : context-oriented call entry points === */
+/* === KosEvalState_Call* : eval-state-oriented generic call entry points === */
 
 /**
-   KosContext_Call: generic call entry point with vectorcall-style args.
+   KosEvalState_Call: generic call entry point with vectorcall-style args.
 
    Accepts any PyObject* callable. Performs KosCallable_Check; if true,
    dispatches to KosCallable_Call after applying frame behavior per
@@ -693,31 +714,44 @@ extern PyObject *KoskariContinuationError;
    Returns 0 continue, 1 suspend, -1 error. On tail_call success, may return
    KOS_OP_RES_CONTROL_RETURNED to signal control returned (wind thunks).
 */
-int KosContext_Call(KosContext *ctx, KosEvent *out_ev,
+int KosEvalState_Call(
+    KosEvalState *es,
+    KosEvent *out_ev,
     PyObject *callable,
-    PyObject *const *args, Py_ssize_t nargs, PyObject *kwnames,
+    PyObject *const *args,
+    Py_ssize_t nargs,
+    PyObject *kwnames,
     int tail_call);
 
-/**
-   KosContext_CallArgs: generic call entry point with tuple+dict args.
 
-   Same semantics as KosContext_Call but for tuple+dict form. Use for
+/**
+   KosEvalState_CallArgs: generic call entry point with tuple+dict args.
+
+   Same semantics as KosEvalState_Call but for tuple+dict form. Use for
    CALL_STAR, TAIL_CALL_STAR, wind after-thunk, dyn_with exit.
 
    callable, args_tuple, kwds_dict are borrowed.
 */
-int KosContext_CallArgs(KosContext *ctx, KosEvent *out_ev,
-    PyObject *callable, PyObject *args_tuple, PyObject *kwds_dict,
+int KosEvalState_CallArgs(
+    KosEvalState *es,
+    KosEvent *out_ev,
+    PyObject *callable,
+    PyObject *args_tuple,
+    PyObject *kwds_dict,
     int tail_call);
 
-/**
-   KosContext_CallNoArgs: fast path for zero-argument calls.
 
-   Same semantics as KosContext_Call. Uses PyObject_CallNoArgs for
+/**
+   KosEvalState_CallNoArgs: fast path for zero-argument calls.
+
+   Same semantics as KosEvalState_Call. Uses PyObject_CallNoArgs for
    non-KosCallable path. callable is borrowed.
 */
-int KosContext_CallNoArgs(KosContext *ctx, KosEvent *out_ev,
-    PyObject *callable, int tail_call);
+int KosEvalState_CallNoArgs(
+    KosEvalState *es,
+    KosEvent *out_ev,
+    PyObject *callable,
+    int tail_call);
 
 
 /* === Unit lifecycle === */
@@ -742,7 +776,7 @@ int kos_tail_koscall(KosContext *ctx, KosCode *code, PyObject *ns);
 
    :return: 0 continue, 1 stop (AWAIT), -1 error
 */
-int kos_push_or_await(KosContext *ctx, KosEvent *out_ev, PyObject *val);
+int kos_push_or_await(KosEvalState *es, KosEvent *out_ev, PyObject *val);
 
 
 /**

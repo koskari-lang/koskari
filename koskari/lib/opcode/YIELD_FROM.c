@@ -248,11 +248,11 @@ static int yield_from_drive_sync_iter(
     if (! PyErr_ExceptionMatches(PyExc_StopIteration))
       return -1;
     yield_from_discard_stop_iteration_value();
-    kos_dyn_pop_yield_from(ctx, yf);
+    kos_dyn_pop_yield_from(&vf_es, yf);
     return 0;
   }
 
-  kos_dyn_pop_yield_from(ctx, yf);
+  kos_dyn_pop_yield_from(&vf_es, yf);
   return 0;
 }
 
@@ -296,7 +296,7 @@ static int yield_from_drive_sync_gen(
       }
     }
     kos_yieldfrom_close_delegate(yf);
-    kos_dyn_pop_yield_from(ctx, yf);
+    kos_dyn_pop_yield_from(&vf_es, yf);
     return -1;
   }
 
@@ -304,7 +304,7 @@ static int yield_from_drive_sync_gen(
     PyObject *res = PyObject_CallMethodObjArgs(delegate, str_close, NULL);
     Py_XDECREF(res);
     PyErr_Clear();
-    kos_dyn_pop_yield_from(ctx, yf);
+    kos_dyn_pop_yield_from(&vf_es, yf);
     PyErr_SetNone(PyExc_GeneratorExit);
     return -1;
   }
@@ -314,7 +314,7 @@ static int yield_from_drive_sync_gen(
     if (PyErr_ExceptionMatches(PyExc_StopIteration)) {
       Py_XDECREF(res);
       yield_from_discard_stop_iteration_value();
-      kos_dyn_pop_yield_from(ctx, yf);
+      kos_dyn_pop_yield_from(&vf_es, yf);
       return 0;
     }
 
@@ -384,7 +384,7 @@ static int yield_from_drive_py_async(
       Py_XDECREF(KosDynYieldFrom_PENDING_ARG(yf));
       KosDynYieldFrom_PENDING_ARG(yf) = NULL;
       KosDynYieldFrom_PENDING_ACTION(yf) = KOS_YF_STEP;
-      kos_dyn_pop_yield_from(ctx, yf);
+      kos_dyn_pop_yield_from(&vf_es, yf);
       Py_XDECREF(final_val);
       return 0;
     }
@@ -424,7 +424,7 @@ static int yield_from_drive_py_async(
 
   } else if (action == KOS_YF_CLOSE) {
     /* PY_ASYNC_ITER has no aclose; treat as exhausted. */
-    kos_dyn_pop_yield_from(ctx, yf);
+    kos_dyn_pop_yield_from(&vf_es, yf);
     return 0;
   }
 
@@ -434,7 +434,7 @@ static int yield_from_drive_py_async(
       PyObject *final_val = StopAsyncIteration_VALUE(exc);
       Py_XINCREF(final_val);
       Py_DECREF(exc);
-      kos_dyn_pop_yield_from(ctx, yf);
+      kos_dyn_pop_yield_from(&vf_es, yf);
       Py_XDECREF(final_val);
       return 0;
     }
@@ -474,7 +474,7 @@ static int yield_from_drive_py_async(
     PyObject *final_val = StopAsyncIteration_VALUE(exc);
     Py_XINCREF(final_val);
     Py_DECREF(exc);
-    kos_dyn_pop_yield_from(ctx, yf);
+    kos_dyn_pop_yield_from(&vf_es, yf);
     Py_XDECREF(final_val);
     return 0;
   }
@@ -527,7 +527,7 @@ static int yield_from_drive_kos_async_gen(
 
   if (action == KOS_YF_CLOSE) {
     agen->closed = 1;
-    kos_dyn_pop_yield_from(ctx, yf);
+    kos_dyn_pop_yield_from(&vf_es, yf);
     PyErr_SetNone(PyExc_GeneratorExit);
     return -1;
   }
@@ -540,19 +540,19 @@ static int yield_from_drive_kos_async_gen(
       Py_XDECREF(KosDynYieldFrom_PENDING_ARG(yf));
       KosDynYieldFrom_PENDING_ARG(yf) = NULL;
       KosDynYieldFrom_PENDING_ACTION(yf) = KOS_YF_STEP;
-      kos_dyn_pop_yield_from(ctx, yf);
+      kos_dyn_pop_yield_from(&vf_es, yf);
       Py_XDECREF(final_val);
       return 0;
     }
   }
 
   if (agen->closed) {
-    kos_dyn_pop_yield_from(ctx, yf);
+    kos_dyn_pop_yield_from(&vf_es, yf);
     return 0;
   }
 
   if (! agen->gen || ! KosDynGen_ACTIVE((KosDynGen *) agen->gen)) {
-    kos_dyn_pop_yield_from(ctx, yf);
+    kos_dyn_pop_yield_from(&vf_es, yf);
     return 0;
   }
 
@@ -659,7 +659,7 @@ KOS_OP_HANDLER(YIELD_FROM) {
     }
 
     Py_DECREF(subexpr);
-    if (! kos_dyn_push_yield_from(ctx, delegate, kind)) {
+    if (! kos_dyn_push_yield_from(es, delegate, kind)) {
       Py_DECREF(delegate);
       return KOS_OP_POST_ERR();
     }

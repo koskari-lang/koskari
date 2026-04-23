@@ -93,8 +93,9 @@ static KosDynYieldFrom *kos_dynyieldfrom_clone(KosDynYieldFrom *node) {
    state.  Works both after freeze (dyn_top is YIELD_FROM) and while running
    in the delegate frame (walk ancestors from FRAME).
 */
-KosDynYieldFrom *kos_dyn_find_yield_from_iter_boundary(KosContext *ctx) {
+KosDynYieldFrom *kos_dyn_find_yield_from_iter_boundary(KosEvalState *es) {
 
+  KosContext *ctx = KosEvalState_CONTEXT(es);
   KosDynNode *top = KosContext_DYN_TOP(ctx);
   KosDynNode *n;
 
@@ -118,37 +119,40 @@ KosDynYieldFrom *kos_dyn_find_yield_from_iter_boundary(KosContext *ctx) {
    surface KOS_EV_YIELD to the outer koskari_eval caller.
 */
 int kos_dyn_yield_from_deliver_inner_yield(
-    KosContext *ctx, KosDynYieldFrom *yf, KosEvent *out_ev) {
+    KosEvalState *es, KosDynYieldFrom *yf, KosEvent *out_ev) {
 
+  KosContext *ctx = KosEvalState_CONTEXT(es);
   PyObject *payload = KosEvent_PAYLOAD(out_ev);
   KosDynFrame *frame = KosContext_FRAME_TOP(ctx);
   PyObject *const *tos;
 
-  if (! frame || ! payload)
+  if (! frame || ! payload) {
+    KosEvalState_SyncFromContext(es);
     return -1;
+  }
+
+  if (KosEvalState_StackPushRef(es, payload) < 0) {
+    KosEvalState_SyncFromContext(es);
+    return -1;
+  }
+  Py_DECREF(payload);
+  KosEvent_PAYLOAD(out_ev) = NULL;
+  KosEvent_KIND(out_ev) = KOS_EV_NONE;
 
   {
-    KosEvalState es;
-    KosEvalState_Init(&es, ctx);
-    if (KosEvalState_StackPushRef(&es, payload) < 0)
-      return -1;
-    Py_DECREF(payload);
-    KosEvent_PAYLOAD(out_ev) = NULL;
-    KosEvent_KIND(out_ev) = KOS_EV_NONE;
-
-    {
-      KosPyAsyncGen *agen =
-          (KosPyAsyncGen *) KosDynYieldFrom_DELEGATE(yf);
-      agen->in_progress = 0;
-    }
-
-    KosDynYieldFrom_PHASE_SET(yf, KOS_YF_PHASE_EXPECT_SEND);
-    KosDynFrame_PC(frame) = KosDynFrame_ACTING_PC(frame);
-
-    tos = KosEvalState_StackTailPtr(&es, 1);
+    KosPyAsyncGen *agen =
+        (KosPyAsyncGen *) KosDynYieldFrom_DELEGATE(yf);
+    agen->in_progress = 0;
   }
-  if (! tos)
+
+  KosDynYieldFrom_PHASE_SET(yf, KOS_YF_PHASE_EXPECT_SEND);
+  KosDynFrame_PC(frame) = KosDynFrame_ACTING_PC(frame);
+
+  tos = KosEvalState_StackTailPtr(es, 1);
+  if (! tos) {
+    KosEvalState_SyncFromContext(es);
     return -1;
+  }
 
   KosEvent_KIND(out_ev) = KOS_EV_YIELD;
   KosEvent_PAYLOAD(out_ev) = *tos;
@@ -156,6 +160,7 @@ int kos_dyn_yield_from_deliver_inner_yield(
 
   KosContext_FLAGS(ctx) &= ~KOS_CTX_RUNNING;
   KosContext_FLAGS(ctx) |= KOS_CTX_DEAD;
+  KosEvalState_SyncFromContext(es);
   return 0;
 }
 
@@ -165,8 +170,9 @@ int kos_dyn_yield_from_deliver_inner_yield(
    Advance delegating frame PC past the YIELD_FROM instruction.
 */
 int kos_dyn_yield_from_deliver_inner_return(
-    KosContext *ctx, KosDynYieldFrom *yf, KosEvent *out_ev) {
+    KosEvalState *es, KosDynYieldFrom *yf, KosEvent *out_ev) {
 
+  KosContext *ctx = KosEvalState_CONTEXT(es);
   PyObject *val = KosEvent_PAYLOAD(out_ev);
   KosDynFrame *df;
   KosCode *code;
@@ -181,8 +187,10 @@ int kos_dyn_yield_from_deliver_inner_return(
    Match kos_dyn_next_deliver_return: dyn_top must be the delegate gen frame;
    free it and the GEN node, restore dyn_top to the YIELD_FROM consumer.
    */
-  if (kos_dyn_gen_unwind_exhausted(ctx) < 0)
+  if (kos_dyn_gen_unwind_exhausted(es) < 0) {
+    KosEvalState_SyncFromContext(es);
     return -1;
+  }
 
   df = KosContext_FRAME_TOP(ctx);
 
@@ -195,7 +203,8 @@ int kos_dyn_yield_from_deliver_inner_return(
     KosDynFrame_PC(df) = KosDynFrame_ACTING_PC(df) + 1u;
   }
 
-  kos_dyn_pop_yield_from(ctx, yf);
+  kos_dyn_pop_yield_from(es, yf);
+  KosEvalState_SyncFromContext(es);
   return 0;
 }
 
@@ -203,10 +212,10 @@ int kos_dyn_yield_from_deliver_inner_return(
 /**
    Close delegate on pop (uninstall path). Callers: kos_dyn_uninstall_handler.
 */
-void kos_dyn_yieldfrom_unwind(KosContext *ctx, KosDynYieldFrom *node) {
-  (void) ctx;
+void kos_dyn_yieldfrom_unwind(KosEvalState *es, KosDynYieldFrom *node) {
   if (node)
     kos_yieldfrom_close_delegate(node);
+  KosEvalState_SyncFromContext(es);
 }
 
 

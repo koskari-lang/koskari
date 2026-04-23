@@ -20,14 +20,14 @@
 
 KOS_OP_HANDLER(PUSH_TRY) {
   KosContext *ctx = KosEvalState_CONTEXT(es);
-  KosDynNode *region = (KosDynNode *) kos_dyn_push_try(ctx, KosOp_ARG(insn));
+  KosDynNode *region = (KosDynNode *) kos_dyn_push_try(es, KosOp_ARG(insn));
   if (! region) {
     PyErr_NoMemory();
     return KOS_OP_POST_ERR();
   }
   KosDynNode_STACK(region) = KosStackBlock_NewEmpty();
   if (! KosDynNode_STACK(region)) {
-    if (kos_dyn_abort_push_region(ctx, region) < 0) {
+    if (kos_dyn_abort_push_region(es, region) < 0) {
       PyErr_Clear();
       PyErr_SetString(PyExc_RuntimeError,
                       "PUSH_TRY: unexpected region kind during abort");

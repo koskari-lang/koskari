@@ -21,7 +21,6 @@
 */
 
 KOS_OP_HANDLER(CONTINUE) {
-  KosContext *ctx = KosEvalState_CONTEXT(es);
   unsigned opa = KosOp_ARG(insn);
   PyObject *result = NULL;
 
@@ -49,7 +48,7 @@ KOS_OP_HANDLER(CONTINUE) {
       .payload = result,
     };
     KosTransitionResult tres = {0};
-    if (kos_dyn_transition(ctx, &treq, &tres, out_ev) < 0) {
+    if (kos_dyn_transition(es, &treq, &tres, out_ev) < 0) {
       Py_DECREF(result);
       return KOS_OP_POST_ERR();
     }

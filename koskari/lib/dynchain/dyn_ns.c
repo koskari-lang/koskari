@@ -51,7 +51,8 @@ static void kos_dynns_free(KosDynNs *ns_node) {
 /**
    Restore frame ns from saved_ns during uninstall (PUSH_NS / POP_NS).
 */
-void kos_dyn_ns_unwind(KosContext *ctx, KosDynNs *node) {
+void kos_dyn_ns_unwind(KosEvalState *es, KosDynNs *node) {
+  KosContext *ctx = KosEvalState_CONTEXT(es);
   if (! node)
     return;
   if (KosContext_FRAME_TOP(ctx)) {
@@ -60,14 +61,16 @@ void kos_dyn_ns_unwind(KosContext *ctx, KosDynNs *node) {
     Py_DECREF(KosDynFrame_NS(KosContext_FRAME_TOP(ctx)));
     KosDynFrame_NS(KosContext_FRAME_TOP(ctx)) = prior;
   }
+  KosEvalState_SyncFromContext(es);
 }
 
 
 /**
    Push NS as DYN_TOP (caller swapped frame ns before push). Callers: PUSH_NS.
 */
-KosDynNs *kos_dyn_push_ns(KosContext *ctx, PyObject *saved_ns) {
+KosDynNs *kos_dyn_push_ns(KosEvalState *es, PyObject *saved_ns) {
 
+  KosContext *ctx = KosEvalState_CONTEXT(es);
   KosDynNs *ns_node = kos_dynns_new(KosContext_DYN_TOP(ctx), saved_ns);
   if (! ns_node)
     return NULL;
@@ -75,6 +78,7 @@ KosDynNs *kos_dyn_push_ns(KosContext *ctx, PyObject *saved_ns) {
   KosContext_DYN_TOP(ctx) = (KosDynNode *) ns_node;
   KosContext_CHAIN_VERSION(ctx)++;
 
+  KosEvalState_SyncFromContext(es);
   return ns_node;
 }
 
@@ -82,14 +86,17 @@ KosDynNs *kos_dyn_push_ns(KosContext *ctx, PyObject *saved_ns) {
 /**
    Unlink and free NS when top. Callers: POP_NS.
 */
-void kos_dyn_pop_ns(KosContext *ctx, KosDynNs *node) {
+void kos_dyn_pop_ns(KosEvalState *es, KosDynNs *node) {
+  KosContext *ctx = KosEvalState_CONTEXT(es);
   if (! KosContext_DYN_TOP(ctx) || KosContext_DYN_TOP(ctx) != (KosDynNode *) node) {
+    KosEvalState_SyncFromContext(es);
     return;
   }
 
   KosContext_DYN_TOP(ctx) = KosDynNode_PARENT(node);
   KosContext_CHAIN_VERSION(ctx)++;
   kos_dynns_free(node);
+  KosEvalState_SyncFromContext(es);
 }
 
 

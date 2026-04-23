@@ -58,7 +58,7 @@ KOS_OP_HANDLER(CALL_ATTR) {
       args = (n > 0) ? &steal.vals[1] : NULL;
       nargs = (Py_ssize_t) n;
     }
-    int r = KosContext_Call(ctx, out_ev, resolved, args, nargs, NULL, 0);
+    int r = KosEvalState_Call(es, out_ev, resolved, args, nargs, NULL, 0);
     KosStackSteal_Free(&steal);
     Py_DECREF(resolved);
     return kos_op_outcome_from_call_int(ctx, r);

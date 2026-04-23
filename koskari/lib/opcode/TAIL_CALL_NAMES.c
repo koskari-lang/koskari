@@ -19,7 +19,7 @@
    kwd_val_{M-1}, names]. Tail call: do not push a new frame; remove or
    recycle the current one.
 
-   Extracts args via KosStackSteal before call; KosContext_Call handles frame
+   Extracts args via KosStackSteal before call; KosEvalState_Call handles frame
    behavior and dispatch.
 */
 
@@ -49,7 +49,7 @@ KOS_OP_HANDLER(TAIL_CALL_NAMES) {
     (total > 0) ? (PyObject *const *)&steal.vals[1] : NULL;
   PyObject *kwnames_arg = nkwds ? steal.vals[total + 1] : NULL;
 
-  int res = KosContext_Call(ctx, out_ev, callable, args,
+  int res = KosEvalState_Call(es, out_ev, callable, args,
                             npos, kwnames_arg, 1);
 
   KosStackSteal_Free(&steal);

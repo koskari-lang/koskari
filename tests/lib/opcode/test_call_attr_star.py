@@ -15,7 +15,7 @@
 Tests for CALL_ATTR_STAR opcode. EXTRA schema CONST (attr name),
 COUNT (opa bitflags: 1=*args, 2=**kwargs). Stack [obj, pos, kwd] or
 subsets. Resolves obj.name, prepends obj when send_self, calls via
-KosContext_CallArgs.
+KosEvalState_CallArgs.
 
 Also covers CALL_VAR_ATTR_STAR (VAR, CONST, COUNT; obj from frame name)
 and CALL_FAST_ATTR_STAR (FASTVAR, CONST, COUNT; obj from fast slot) with

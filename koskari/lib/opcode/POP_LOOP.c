@@ -31,7 +31,7 @@ KOS_OP_HANDLER(POP_LOOP) {
   PyObject *result = KosDynLoop_RESULT(loop);
   Py_INCREF(result);
 
-  kos_dyn_pop_loop(ctx, loop);
+  kos_dyn_pop_loop(es, loop);
 
   if (unlikely(KosEvalState_StackPushRef(es, result) < 0)) {
     Py_DECREF(result);

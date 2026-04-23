@@ -54,7 +54,7 @@ KOS_OP_HANDLER(YIELD) {
   //       agen->in_progress = 0;
 
   //     KosDynFrame *detached = NULL;
-  //     if (kos_dyn_detach_top_frame(ctx, &detached) < 0) {
+  //     if (kos_dyn_detach_top_frame(es, &detached) < 0) {
   //       Py_DECREF(val);
   //       return KOS_OP_POST_ERR();
   //     }

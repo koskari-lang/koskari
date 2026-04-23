@@ -30,7 +30,7 @@ KOS_OP_HANDLER(POP_NS) {
   Py_INCREF(prior);
   Py_DECREF(CURRENT_NS(ctx));
   CURRENT_NS(ctx) = prior;
-  kos_dyn_pop_ns(ctx, ns_node);
+  kos_dyn_pop_ns(es, ns_node);
 
   (void) out_ev;
   (void) insn;

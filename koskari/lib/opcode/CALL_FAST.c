@@ -16,7 +16,7 @@
 /**
   CALL_FAST: arg = extra index. Schema FASTVAR (slot), COUNT (arg count).
   Call callable from fast local slot. Stack [arg_0, ..., arg_{N-1}].
-  KosCallable: steal args then KosContext_Call. Plain Python: TailPtr +
+  KosCallable: steal args then KosEvalState_Call. Plain Python: TailPtr +
   PyObject_Vectorcall + DropNoErr.
 */
 
@@ -47,7 +47,7 @@ KOS_OP_HANDLER(CALL_FAST) {
       Py_DECREF(callable);
       return KOS_OP_POST_ERR();
     }
-    int r = KosContext_Call(ctx, out_ev, callable,
+    int r = KosEvalState_Call(es, out_ev, callable,
                             (n > 0) ? steal.vals : NULL,
                             (Py_ssize_t) n, NULL, 0);
     Py_DECREF(callable);

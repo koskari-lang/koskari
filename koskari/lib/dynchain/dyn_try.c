@@ -52,11 +52,13 @@ void kos_dyntry_free(KosDynTry *node) {
 /**
    Push TRY as DYN_TOP without kos_dyn_install. Callers: opcode PUSH_TRY.
 */
-KosDynTry *kos_dyn_push_try(KosContext *ctx, uint32_t handler_pc) {
+KosDynTry *kos_dyn_push_try(KosEvalState *es, uint32_t handler_pc) {
+  KosContext *ctx = KosEvalState_CONTEXT(es);
   KosDynTry *node = kos_dyntry_new(KosContext_DYN_TOP(ctx), handler_pc);
   if (! node) return NULL;
   KosContext_DYN_TOP(ctx) = (KosDynNode *) node;
   KosContext_CHAIN_VERSION(ctx)++;
+  KosEvalState_SyncFromContext(es);
   return node;
 }
 
@@ -64,13 +66,15 @@ KosDynTry *kos_dyn_push_try(KosContext *ctx, uint32_t handler_pc) {
 /**
    Pop TRY when it is top (fast path). Callers: abort_push_region, POP_TRY.
 */
-void kos_dyn_pop_try(KosContext *ctx, KosDynTry *node) {
+void kos_dyn_pop_try(KosEvalState *es, KosDynTry *node) {
+  KosContext *ctx = KosEvalState_CONTEXT(es);
   if (KosContext_DYN_TOP(ctx)==(KosDynNode*)node) {
     KosContext_DYN_TOP(ctx)=KosDynNode_PARENT(node);
     KosContext_CHAIN_VERSION(ctx)++;
     kos_dyntry_free(node);
     kos_ctx_refresh_dyn_caches(ctx);
   }
+  KosEvalState_SyncFromContext(es);
 }
 
 

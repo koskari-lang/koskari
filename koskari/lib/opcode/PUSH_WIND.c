@@ -20,7 +20,6 @@
 */
 
 KOS_OP_HANDLER(PUSH_WIND) {
-  KosContext *ctx = KosEvalState_CONTEXT(es);
   unsigned count = KosOp_ARG(insn);
   PyObject *before = NULL;
   PyObject *after = NULL;  /* set only when count==2 */
@@ -65,7 +64,7 @@ KOS_OP_HANDLER(PUSH_WIND) {
   if (after == Py_None || ! after)
     Py_XDECREF(after);
 
-  KosDynWind *wind = kos_dyn_push_wind(ctx, b, a);
+  KosDynWind *wind = kos_dyn_push_wind(es, b, a);
   if (! wind) {
     Py_XDECREF(b);
     Py_XDECREF(a);
@@ -76,7 +75,7 @@ KOS_OP_HANDLER(PUSH_WIND) {
   if (a)
     Py_DECREF(a);
 
-  int r = kos_dyn_wind(ctx, (KosDynNode *) wind, out_ev);
+  int r = kos_dyn_wind(es, (KosDynNode *) wind, out_ev);
   if (r == KOS_DYN_UNWIND_ASYNC_STARTED)
     return KOS_OP_RUN();
   if (r < 0)

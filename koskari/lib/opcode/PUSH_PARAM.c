@@ -31,7 +31,7 @@ KOS_OP_HANDLER(PUSH_PARAM) {
   if (! bindings)
     return KOS_OP_POST_ERR();
 
-  if (! kos_dyn_push_param_dict(ctx, bindings)) {
+  if (! kos_dyn_push_param_dict(es, bindings)) {
     Py_DECREF(bindings);
     return KOS_OP_POST_ERR();
   }

@@ -93,10 +93,11 @@ void kos_dynframe_free(KosDynFrame *frame) {
    when entering a Python function.
 */
 KosDynFrame *kos_dyn_push_frame(
-    KosContext *ctx,
+    KosEvalState *es,
     KosCode *code,
     PyObject *ns) {
 
+  KosContext *ctx = KosEvalState_CONTEXT(es);
   KosDynFrame *frame = kos_dynframe_new(KosContext_DYN_TOP(ctx), code, ns, NULL);
   if (! frame)
     return NULL;
@@ -106,6 +107,7 @@ KosDynFrame *kos_dyn_push_frame(
   KosContext_CHAIN_VERSION(ctx)++;
   kos_ctx_refresh_dyn_caches(ctx);
 
+  KosEvalState_SyncFromContext(es);
   return frame;
 }
 
@@ -114,8 +116,8 @@ KosDynFrame *kos_dyn_push_frame(
    Push frame with NULL code/ns (placeholder). Callers: setup paths needing a
    frame before code is bound.
 */
-KosDynFrame *kos_dyn_push_frame_empty(KosContext *ctx) {
-  return kos_dyn_push_frame(ctx, NULL, NULL);
+KosDynFrame *kos_dyn_push_frame_empty(KosEvalState *es) {
+  return kos_dyn_push_frame(es, NULL, NULL);
 }
 
 
@@ -152,7 +154,8 @@ void kos_dynframe_reset_for_tail(KosDynFrame *frame) {
    Pop top if it is a FRAME; refresh frame_top. Does not run full uninstall
    (no extent teardown). Callers: simple frame exit when no extra nodes on top.
 */
-int kos_dyn_pop_frame(KosContext *ctx) {
+int kos_dyn_pop_frame(KosEvalState *es) {
+  KosContext *ctx = KosEvalState_CONTEXT(es);
   if (! KosContext_DYN_TOP(ctx)) {
     PyErr_SetString(PyExc_RuntimeError, "no node to pop");
     return -1;
@@ -170,6 +173,7 @@ int kos_dyn_pop_frame(KosContext *ctx) {
   kos_dynnode_free(old_top);
   kos_ctx_refresh_dyn_caches(ctx);
 
+  KosEvalState_SyncFromContext(es);
   return 0;
 }
 
@@ -186,7 +190,8 @@ int kos_dyn_pop_frame(KosContext *ctx) {
 
    :return: 0 on success, -1 on error
 */
-int kos_dyn_attach_frame(KosContext *ctx, KosDynFrame *frame) {
+int kos_dyn_attach_frame(KosEvalState *es, KosDynFrame *frame) {
+  KosContext *ctx = KosEvalState_CONTEXT(es);
   if (! frame) {
     PyErr_SetString(PyExc_RuntimeError, "NULL frame for attach");
     return -1;
@@ -196,6 +201,7 @@ int kos_dyn_attach_frame(KosContext *ctx, KosDynFrame *frame) {
   KosContext_FRAME_TOP(ctx) = frame;
   KosContext_CHAIN_VERSION(ctx)++;
   kos_ctx_refresh_dyn_caches(ctx);
+  KosEvalState_SyncFromContext(es);
   return 0;
 }
 
@@ -213,7 +219,8 @@ int kos_dyn_attach_frame(KosContext *ctx, KosDynFrame *frame) {
 
    :return: 0 on success, -1 if top is not a frame
 */
-int kos_dyn_detach_top_frame(KosContext *ctx, KosDynFrame **frame_out) {
+int kos_dyn_detach_top_frame(KosEvalState *es, KosDynFrame **frame_out) {
+  KosContext *ctx = KosEvalState_CONTEXT(es);
   if (! KosContext_DYN_TOP(ctx)) {
     PyErr_SetString(PyExc_RuntimeError, "no node to detach");
     return -1;
@@ -229,6 +236,7 @@ int kos_dyn_detach_top_frame(KosContext *ctx, KosDynFrame **frame_out) {
   KosDynNode_PARENT(frame) = NULL;
   if (frame_out)
     *frame_out = frame;
+  KosEvalState_SyncFromContext(es);
   return 0;
 }
 

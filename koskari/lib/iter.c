@@ -40,7 +40,11 @@ static int install_frozen_gen_for_resume(
   g = (KosDynGen *) agen->gen;
   if (! g || ! kos_dyn_gen_frozen_needs_install(eval_ctx, g))
     return 0;
-  return kos_dyn_gen_install(eval_ctx, g);
+  {
+    KosEvalState es;
+    KosEvalState_Init(&es, eval_ctx);
+    return kos_dyn_gen_install(&es, g);
+  }
 }
 
 
@@ -83,10 +87,14 @@ static void asyncgen_teardown_chain_on_ctx(KosPyAsyncGen *agen, KosContext *ctx)
 
   /* Install gen onto ctx so chain is restored before eval; in flatten path
      the chain lived in GEN->active and agen->ctx was never the running ctx. */
-  if (kos_dyn_gen_install(ctx, gen) < 0) {
-    PyErr_Clear();
-    Py_DECREF(throw_exc);
-    goto fallback;
+  {
+    KosEvalState es;
+    KosEvalState_Init(&es, ctx);
+    if (kos_dyn_gen_install(&es, gen) < 0) {
+      PyErr_Clear();
+      Py_DECREF(throw_exc);
+      goto fallback;
+    }
   }
 
   res = koskari_eval(ctx, &ev, NULL, PyExc_GeneratorExit, throw_exc);
@@ -142,8 +150,12 @@ static void asyncgen_teardown_chain_on_ctx(KosPyAsyncGen *agen, KosContext *ctx)
   goto fallback;
 
 primary_success:
-  if (kos_dyn_gen_unwind_exhausted(ctx) < 0) {
-    goto fallback;
+  {
+    KosEvalState es;
+    KosEvalState_Init(&es, ctx);
+    if (kos_dyn_gen_unwind_exhausted(&es) < 0) {
+      goto fallback;
+    }
   }
   agen->gen = NULL;
   return;

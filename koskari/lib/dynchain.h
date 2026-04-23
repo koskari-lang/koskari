@@ -838,7 +838,7 @@ KosDynNode *KosContext_InnermostStackOwner(KosContext *ctx);
 
 void kos_ctx_refresh_dyn_caches(KosContext *ctx);
 
-int kos_dyn_push(KosContext *ctx, KosDynNode *node);
+int kos_dyn_push(KosEvalState *es, KosDynNode *node);
 
 
 /**
@@ -856,7 +856,7 @@ int kos_dyn_push(KosContext *ctx, KosDynNode *node);
    :return: 0 on success, -1 on error or BARRIER, KOS_DYN_UNWIND_ASYNC_STARTED
      when async
 */
-int kos_dyn_uninstall(KosContext *ctx, KosDynNode *node, KosXferEvent event,
+int kos_dyn_uninstall(KosEvalState *es, KosDynNode *node, KosXferEvent event,
                       struct KosEvent *out_ev);
 #define kos_dyn_pop kos_dyn_uninstall
 
@@ -870,7 +870,7 @@ int kos_dyn_uninstall(KosContext *ctx, KosDynNode *node, KosXferEvent event,
 
    :return: 0 on success, -1 on error
 */
-int kos_dyn_push_clone(KosContext *ctx, KosDynNode *node);
+int kos_dyn_push_clone(KosEvalState *es, KosDynNode *node);
 
 
 /* === Dynamic chain context operations === */
@@ -888,7 +888,7 @@ int kos_dyn_push_clone(KosContext *ctx, KosDynNode *node);
 
    :return: new frame, or NULL on error
 */
-KosDynFrame *kos_dyn_push_frame(KosContext *ctx, KosCode *code, PyObject *ns);
+KosDynFrame *kos_dyn_push_frame(KosEvalState *es, KosCode *code, PyObject *ns);
 
 
 /**
@@ -896,7 +896,7 @@ KosDynFrame *kos_dyn_push_frame(KosContext *ctx, KosCode *code, PyObject *ns);
 
    :return: new frame, or NULL on error
 */
-KosDynFrame *kos_dyn_push_frame_empty(KosContext *ctx);
+KosDynFrame *kos_dyn_push_frame_empty(KosEvalState *es);
 
 
 void kos_dynframe_reset_for_tail(KosDynFrame *frame);
@@ -935,7 +935,7 @@ void kos_dyngen_release(KosDynGen *gen);
 
    :return: 0 on success, -1 on error
 */
-int kos_dyn_gen_install(KosContext *ctx, KosDynGen *gen);
+int kos_dyn_gen_install(KosEvalState *es, KosDynGen *gen);
 
 
 /**
@@ -952,7 +952,7 @@ int kos_dyn_gen_frozen_needs_install(KosContext *eval_ctx, KosDynGen *gen);
    Unwind an exhausted gen from the chain. Call when gen's frame returns
    (parent is GEN). Frees frame and restores consumer.
 */
-int kos_dyn_gen_unwind_exhausted(KosContext *ctx);
+int kos_dyn_gen_unwind_exhausted(KosEvalState *es);
 
 
 /**
@@ -966,7 +966,7 @@ int kos_dyn_gen_unwind_exhausted(KosContext *ctx);
 
    :return: 0 on success, -1 on error
 */
-int kos_dyn_pop_frame(KosContext *ctx);
+int kos_dyn_pop_frame(KosEvalState *es);
 
 
 /**
@@ -977,7 +977,7 @@ int kos_dyn_pop_frame(KosContext *ctx);
 
    :return: 0 on success, -1 on error
 */
-int kos_dyn_attach_frame(KosContext *ctx, KosDynFrame *frame);
+int kos_dyn_attach_frame(KosEvalState *es, KosDynFrame *frame);
 
 
 /**
@@ -990,7 +990,7 @@ int kos_dyn_attach_frame(KosContext *ctx, KosDynFrame *frame);
 
    :return: 0 on success, -1 if top is not a frame
 */
-int kos_dyn_detach_top_frame(KosContext *ctx, KosDynFrame **frame_out);
+int kos_dyn_detach_top_frame(KosEvalState *es, KosDynFrame **frame_out);
 
 
 /**
@@ -1002,7 +1002,7 @@ int kos_dyn_detach_top_frame(KosContext *ctx, KosDynFrame **frame_out);
 
    :return: cached globals frame (at least the current frame)
 */
-KosDynFrame *kos_dyn_globals_frame(KosContext *ctx);
+KosDynFrame *kos_dyn_globals_frame(KosEvalState *es);
 
 
 /**
@@ -1013,7 +1013,7 @@ KosDynFrame *kos_dyn_globals_frame(KosContext *ctx);
 
    :return: new prompt, or NULL on error
 */
-KosDynPrompt *kos_dyn_push_prompt(KosContext *ctx, uint32_t prompt_id);
+KosDynPrompt *kos_dyn_push_prompt(KosEvalState *es, uint32_t prompt_id);
 
 
 /**
@@ -1026,7 +1026,7 @@ KosDynPrompt *kos_dyn_push_prompt(KosContext *ctx, uint32_t prompt_id);
 
   :return: 0 on success, -1 on error
 */
-int kos_dyn_pop_prompt(KosContext *ctx, KosDynPrompt *prompt);
+int kos_dyn_pop_prompt(KosEvalState *es, KosDynPrompt *prompt);
 
 
 /**
@@ -1035,7 +1035,7 @@ int kos_dyn_pop_prompt(KosContext *ctx, KosDynPrompt *prompt);
    :return: new DELIM node, or NULL on error
 */
 KosDynDelim *kos_dyn_push_delim(
-   KosContext *ctx,
+   KosEvalState *es,
    uint8_t mode,
    KosDynNode *chain,
    uint32_t pc,
@@ -1049,7 +1049,7 @@ KosDynDelim *kos_dyn_push_delim(
    :param ctx: execution context
    :param delim: DELIM node to pop (must be dyn_top)
 */
-void kos_dyn_pop_delim(KosContext *ctx, KosDynDelim *delim);
+void kos_dyn_pop_delim(KosEvalState *es, KosDynDelim *delim);
 
 
 /**
@@ -1064,7 +1064,7 @@ void kos_dyn_pop_delim(KosContext *ctx, KosDynDelim *delim);
       delimited_return_pc is invalid (sets PyExc_RuntimeError)
 */
 int kos_dyn_finish_delimited_pop_return(
-   KosContext *ctx,
+   KosEvalState *es,
    KosDynDelim *delim,
    PyObject *value);
 
@@ -1077,7 +1077,7 @@ int kos_dyn_finish_delimited_pop_return(
 
    :return: the new CC node, or NULL on error
 */
-KosDynCC *kos_dyn_push_cc(KosContext *ctx, uint32_t resume_pc);
+KosDynCC *kos_dyn_push_cc(KosEvalState *es, uint32_t resume_pc);
 
 
 /**
@@ -1086,7 +1086,7 @@ KosDynCC *kos_dyn_push_cc(KosContext *ctx, uint32_t resume_pc);
    :param ctx: execution context
    :param cc: the CC node to pop (must be at dyn_top)
 */
-void kos_dyn_pop_cc(KosContext *ctx, KosDynCC *cc);
+void kos_dyn_pop_cc(KosEvalState *es, KosDynCC *cc);
 
 
 /**
@@ -1098,7 +1098,7 @@ void kos_dyn_pop_cc(KosContext *ctx, KosDynCC *cc);
 
    :return: 0 on success, -1 on error
 */
-int kos_dyn_push_shift(KosContext *ctx);
+int kos_dyn_push_shift(KosEvalState *es);
 
 
 /**
@@ -1123,7 +1123,7 @@ int kos_dyn_push_shift(KosContext *ctx);
    :return: 0 on success, -1 on error
 */
 int kos_build_cc_unwind_plan(
-    KosContext *ctx,
+    KosEvalState *es,
     PyObject *exc_type,
     PyObject *exc_val,
     KosTransferPlan **out_plan);
@@ -1139,7 +1139,7 @@ int kos_build_cc_unwind_plan(
    :return: new wind node, or NULL on error
 */
 KosDynWind *kos_dyn_push_wind(
-   KosContext *ctx,
+   KosEvalState *es,
    PyObject *before_thunk,
    PyObject *after_thunk);
 
@@ -1155,7 +1155,7 @@ KosDynWind *kos_dyn_push_wind(
 
    :return: 0 on success, -1 on error
 */
-int kos_dyn_pop_wind(KosContext *ctx, KosDynWind *wind);
+int kos_dyn_pop_wind(KosEvalState *es, KosDynWind *wind);
 
 
 /**
@@ -1168,48 +1168,48 @@ int kos_dyn_pop_wind(KosContext *ctx, KosDynWind *wind);
 
    :return: new region, or NULL on error
 */
-KosDynTry *kos_dyn_push_try(KosContext *ctx, uint32_t handler_pc);
-KosDynFinally *kos_dyn_push_finally(KosContext *ctx, uint32_t handler_pc);
-KosDynLoop *kos_dyn_push_loop(KosContext *ctx, uint32_t break_pc, uint32_t continue_pc);
-KosDynForeach *kos_dyn_push_foreach(KosContext *ctx, uint32_t break_pc, uint32_t continue_pc);
+KosDynTry *kos_dyn_push_try(KosEvalState *es, uint32_t handler_pc);
+KosDynFinally *kos_dyn_push_finally(KosEvalState *es, uint32_t handler_pc);
+KosDynLoop *kos_dyn_push_loop(KosEvalState *es, uint32_t break_pc, uint32_t continue_pc);
+KosDynForeach *kos_dyn_push_foreach(KosEvalState *es, uint32_t break_pc, uint32_t continue_pc);
 
 
 int kos_dyn_push_next_for_kos_agen(
-    KosContext *ctx, PyObject *agen_obj, PyObject *default_val, int n);
+    KosEvalState *es, PyObject *agen_obj, PyObject *default_val, int n);
 
-void kos_dyn_next_abort_after_failed_attach(KosContext *ctx);
+void kos_dyn_next_abort_after_failed_attach(KosEvalState *es);
 
-KosDynForeach *kos_dyn_find_awaiting_foreach(KosContext *ctx);
+KosDynForeach *kos_dyn_find_awaiting_foreach(KosEvalState *es);
 
-KosDynNext *kos_dyn_find_next_above_frame(KosContext *ctx);
+KosDynNext *kos_dyn_find_next_above_frame(KosEvalState *es);
 
-void kos_dyn_unlink_next_node(KosContext *ctx, KosDynNext *node);
+void kos_dyn_unlink_next_node(KosEvalState *es, KosDynNext *node);
 
-int kos_dyn_next_deliver_yield(KosContext *ctx, struct KosEvent *out_ev);
+int kos_dyn_next_deliver_yield(KosEvalState *es, struct KosEvent *out_ev);
 
-int kos_dyn_next_deliver_return(KosContext *ctx, struct KosEvent *out_ev);
+int kos_dyn_next_deliver_return(KosEvalState *es, struct KosEvent *out_ev);
 
 int kos_dyn_foreach_deliver_yield_kos_agen(
-    KosContext *ctx, KosDynForeach *fe, struct KosEvent *out_ev);
+    KosEvalState *es, KosDynForeach *fe, struct KosEvent *out_ev);
 
 int kos_dyn_foreach_deliver_return_kos_agen(
-    KosContext *ctx, KosDynForeach *fe, struct KosEvent *out_ev);
+    KosEvalState *es, KosDynForeach *fe, struct KosEvent *out_ev);
 
-int kos_dyn_need_kos_agen_boundary_deliver(KosContext *ctx);
+int kos_dyn_need_kos_agen_boundary_deliver(KosEvalState *es);
 
-KosDynYieldFrom *kos_dyn_find_yield_from_iter_boundary(KosContext *ctx);
+KosDynYieldFrom *kos_dyn_find_yield_from_iter_boundary(KosEvalState *es);
 
 int kos_dyn_yield_from_deliver_inner_yield(
-    KosContext *ctx, KosDynYieldFrom *yf, struct KosEvent *out_ev);
+    KosEvalState *es, KosDynYieldFrom *yf, struct KosEvent *out_ev);
 
 int kos_dyn_yield_from_deliver_inner_return(
-    KosContext *ctx, KosDynYieldFrom *yf, struct KosEvent *out_ev);
+    KosEvalState *es, KosDynYieldFrom *yf, struct KosEvent *out_ev);
 
 int kos_dyn_deliver_iterator_boundary_return_event(
-    KosContext *ctx, struct KosEvent *out_ev);
+    KosEvalState *es, struct KosEvent *out_ev);
 
 int kos_dyn_try_deliver_iterator_boundary_after_pop(
-    KosContext *ctx, PyObject **p_val, struct KosEvent *out_ev);
+    KosEvalState *es, PyObject **p_val, struct KosEvent *out_ev);
 
 KosDynNext *kos_dyn_next_clone(KosDynNext *node);
 
@@ -1220,10 +1220,10 @@ KosDynNext *kos_dyn_next_clone(KosDynNext *node);
    :param ctx: execution context
    :param region: region to pop (must be dyn_top)
 */
-void kos_dyn_pop_try(KosContext *ctx, KosDynTry *node);
-void kos_dyn_pop_finally(KosContext *ctx, KosDynFinally *node);
-void kos_dyn_pop_loop(KosContext *ctx, KosDynLoop *node);
-void kos_dyn_pop_foreach(KosContext *ctx, KosDynForeach *node);
+void kos_dyn_pop_try(KosEvalState *es, KosDynTry *node);
+void kos_dyn_pop_finally(KosEvalState *es, KosDynFinally *node);
+void kos_dyn_pop_loop(KosEvalState *es, KosDynLoop *node);
+void kos_dyn_pop_foreach(KosEvalState *es, KosDynForeach *node);
 
 
 /**
@@ -1237,7 +1237,7 @@ void kos_dyn_pop_foreach(KosContext *ctx, KosDynForeach *node);
    :return: 0 after popping the region; -1 if kind is not TRY/FINALLY/LOOP/FOREACH
       (does not pop; caller should set PyExc_RuntimeError)
 */
-int kos_dyn_abort_push_region(KosContext *ctx, KosDynNode *region);
+int kos_dyn_abort_push_region(KosEvalState *es, KosDynNode *region);
 
 
 /**
@@ -1250,7 +1250,7 @@ int kos_dyn_abort_push_region(KosContext *ctx, KosDynNode *region);
 
    :return: new KosDynNs node, or NULL on error
 */
-KosDynNs *kos_dyn_push_ns(KosContext *ctx, PyObject *saved_ns);
+KosDynNs *kos_dyn_push_ns(KosEvalState *es, PyObject *saved_ns);
 
 
 /**
@@ -1260,7 +1260,7 @@ KosDynNs *kos_dyn_push_ns(KosContext *ctx, PyObject *saved_ns);
    :param ctx: execution context
    :param node: NS node to pop (must be dyn_top)
 */
-void kos_dyn_pop_ns(KosContext *ctx, KosDynNs *node);
+void kos_dyn_pop_ns(KosEvalState *es, KosDynNs *node);
 
 
 /**
@@ -1272,7 +1272,7 @@ void kos_dyn_pop_ns(KosContext *ctx, KosDynNs *node);
 
    :return: new KosDynCollect node, or NULL on error
 */
-KosDynCollect *kos_dyn_push_collect(KosContext *ctx, PyObject *saved_ns);
+KosDynCollect *kos_dyn_push_collect(KosEvalState *es, PyObject *saved_ns);
 
 
 /**
@@ -1282,10 +1282,10 @@ KosDynCollect *kos_dyn_push_collect(KosContext *ctx, PyObject *saved_ns);
    :param ctx: execution context
    :param node: COLLECT node to pop (must be dyn_top)
 */
-void kos_dyn_pop_collect(KosContext *ctx, KosDynCollect *node);
+void kos_dyn_pop_collect(KosEvalState *es, KosDynCollect *node);
 
 
-void kos_dyn_collect_unwind(KosContext *ctx, KosDynCollect *node);
+void kos_dyn_collect_unwind(KosEvalState *es, KosDynCollect *node);
 
 
 /**
@@ -1299,7 +1299,7 @@ void kos_dyn_collect_unwind(KosContext *ctx, KosDynCollect *node);
 
    :return: new KosDynParam node, or NULL on error
 */
-KosDynParam *kos_dyn_push_param_dict(KosContext *ctx, PyObject *bindings);
+KosDynParam *kos_dyn_push_param_dict(KosEvalState *es, PyObject *bindings);
 
 
 /**
@@ -1316,7 +1316,7 @@ KosDynParam *kos_dyn_push_param_dict(KosContext *ctx, PyObject *bindings);
    :return: new KosDynParam node, or NULL on error
 */
 KosDynParam *kos_dyn_push_param(
-    KosContext *ctx,
+    KosEvalState *es,
     uint32_t count,
     PyObject **params,
     PyObject **values);
@@ -1330,7 +1330,7 @@ KosDynParam *kos_dyn_push_param(
    :param ctx: execution context
    :param node: PARAM node to pop (must be dyn_top)
 */
-void kos_dyn_pop_param(KosContext *ctx, KosDynParam *node);
+void kos_dyn_pop_param(KosEvalState *es, KosDynParam *node);
 
 
 /**
@@ -1341,7 +1341,7 @@ void kos_dyn_pop_param(KosContext *ctx, KosDynParam *node);
    :return: new KosDynWith node, or NULL on error
 */
 KosDynWith *kos_dyn_push_with(
-    KosContext *ctx,
+    KosEvalState *es,
     PyObject *mgr,
     PyObject *enter,
     PyObject *exit,
@@ -1355,7 +1355,7 @@ KosDynWith *kos_dyn_push_with(
    KOS_DYN_WITH_SHOT_MULTI.
 */
 KosDynWith *kos_dyn_push_dyn_with(
-    KosContext *ctx,
+    KosEvalState *es,
     PyObject *mgr,
     PyObject *enter,
     PyObject *exit,
@@ -1368,7 +1368,7 @@ KosDynWith *kos_dyn_push_dyn_with(
    enter. :c:member:`shot` selects multi vs single-shot caps.
 */
 KosDynWith *kos_dyn_push_with_provisional(
-    KosContext *ctx,
+    KosEvalState *es,
     PyObject *mgr,
     PyObject *enter,
     PyObject *exit,
@@ -1382,7 +1382,7 @@ KosDynWith *kos_dyn_push_with_provisional(
    KOS_DYN_WITH_SHOT_MULTI.
 */
 KosDynWith *kos_dyn_push_dyn_with_provisional(
-    KosContext *ctx,
+    KosEvalState *es,
     PyObject *mgr,
     PyObject *enter,
     PyObject *exit,
@@ -1405,7 +1405,7 @@ KosDynWith *kos_dyn_with_clone(KosDynWith *src);
    :param ctx: execution context
    :param node: WITH node to pop (must be dyn_top)
 */
-void kos_dyn_pop_with(KosContext *ctx, KosDynWith *node);
+void kos_dyn_pop_with(KosEvalState *es, KosDynWith *node);
 
 
 /**
@@ -1416,13 +1416,13 @@ void kos_dyn_pop_with(KosContext *ctx, KosDynWith *node);
    :param node: WITH node being unwound
    :param out_ev: event output for suspend (required when exit may be async)
 
-   Uses KosContext_CallArgs for exit. When exit returns an awaitable, suspend
-   happens inside KosContext_CallArgs; pending state is stashed and this returns 1.
+   Uses KosEvalState_CallArgs for exit. When exit returns an awaitable, suspend
+   happens inside KosEvalState_CallArgs; pending state is stashed and this returns 1.
 
    :return: 0 on success, KOS_DYN_UNWIND_SWALLOWED, KOS_DYN_UNWIND_PROTOCOL_SKIPPED,
      -1 on error, KOS_DYN_UNWIND_ASYNC_STARTED when suspend occurred
 */
-int kos_dyn_with_unwind(KosContext *ctx, KosDynWith *node, struct KosEvent *out_ev);
+int kos_dyn_with_unwind(KosEvalState *es, KosDynWith *node, struct KosEvent *out_ev);
 
 
 /**
@@ -1437,7 +1437,7 @@ int kos_dyn_with_unwind(KosContext *ctx, KosDynWith *node, struct KosEvent *out_
     KOS_DYN_UNWIND_ASYNC_STARTED when async extent action started
 */
 int kos_dyn_pop_nonbarrier_top(
-    KosContext *ctx,
+    KosEvalState *es,
     KosXferEvent event,
     struct KosEvent *out_ev);
 
@@ -1448,7 +1448,7 @@ int kos_dyn_pop_nonbarrier_top(
   Internal prompt-crossing unwind/transfer paths use this variant.
 */
 int kos_dyn_pop_top_allow_barrier(
-    KosContext *ctx,
+    KosEvalState *es,
     KosXferEvent event,
     struct KosEvent *out_ev);
 
@@ -1456,11 +1456,11 @@ int kos_dyn_pop_top_allow_barrier(
 /**
   Backward-compatible alias for non-barrier policy pop.
 */
-int kos_dyn_pop_top(KosContext *ctx, KosXferEvent event,
+int kos_dyn_pop_top(KosEvalState *es, KosXferEvent event,
                     struct KosEvent *out_ev);
 
 
-int kos_dyn_unwind_to_frame(KosContext *ctx, KosDynFrame *frame,
+int kos_dyn_unwind_to_frame(KosEvalState *es, KosDynFrame *frame,
                             KosXferEvent event, struct KosEvent *out_ev);
 
 
@@ -1476,11 +1476,11 @@ int kos_dyn_unwind_to_frame(KosContext *ctx, KosDynFrame *frame,
    :return: 0 (walk done), KOS_DYN_UNWIND_ASYNC_STARTED, -1, or
      KOS_DYN_UNWIND_FINALLY_TAKING_RETURN
 */
-int kos_dyn_walk_return_to_frame(KosContext *ctx, KosDynFrame *frame,
+int kos_dyn_walk_return_to_frame(KosEvalState *es, KosDynFrame *frame,
                                   PyObject *val, struct KosEvent *out_ev);
 
 
-int kos_dyn_unwind_to_node(KosContext *ctx, KosDynNode *target,
+int kos_dyn_unwind_to_node(KosEvalState *es, KosDynNode *target,
                            KosXferEvent event, struct KosEvent *out_ev);
 
 
@@ -1518,23 +1518,23 @@ int kos_dyn_unwind_to_node(KosContext *ctx, KosDynNode *target,
    complete, -1 on error, or KOS_DYN_UNWIND_ASYNC_STARTED if async
    exit code was started (caller must not pop until hook completes).
 */
-int kos_dyn_param_wind(KosContext *ctx, KosDynParam *node);
-void kos_dyn_param_unwind(KosContext *ctx, KosDynParam *node);
+int kos_dyn_param_wind(KosEvalState *es, KosDynParam *node);
+void kos_dyn_param_unwind(KosEvalState *es, KosDynParam *node);
 
-int kos_dyn_wind_wind(KosContext *ctx, KosDynWind *node);
-int kos_dyn_wind_unwind(KosContext *ctx, KosDynWind *node);
+int kos_dyn_wind_wind(KosEvalState *es, KosDynWind *node);
+int kos_dyn_wind_unwind(KosEvalState *es, KosDynWind *node);
 
-int kos_dynnode_on_control_returned(KosContext *ctx, KosDynNode *node, struct KosEvent *out_ev);
+int kos_dynnode_on_control_returned(KosEvalState *es, KosDynNode *node, struct KosEvent *out_ev);
 
 KosDynNode *kos_dyn_find_pending_exit(KosDynNode *node);
-int kos_dyn_complete_pending_exit(KosContext *ctx, int do_pop_node);
-void kos_dyn_clear_pending_exit(KosContext *ctx);
+int kos_dyn_complete_pending_exit(KosEvalState *es, int do_pop_node);
+void kos_dyn_clear_pending_exit(KosEvalState *es);
 
 /**
    result: ownership is transferred. Caller must not use result after
    the call.
 */
-int finalize_provisional_with_enter(KosContext *ctx, PyObject *result,
+int finalize_provisional_with_enter(KosEvalState *es, PyObject *result,
                                    KosDynWith *with_node);
 
 
@@ -1554,18 +1554,18 @@ int finalize_provisional_with_enter(KosContext *ctx, PyObject *result,
    kos_dyn_clone: allocate a copy of the node; NULL return on error or if
      the type forbids cloning.
 */
-int kos_dyn_install(KosContext *ctx, KosDynNode *node, struct KosEvent *out_ev);
-int kos_dyn_wind(KosContext *ctx, KosDynNode *node, struct KosEvent *out_ev);
-int kos_dyn_unwind(KosContext *ctx, KosDynNode *node, KosXferEvent event,
+int kos_dyn_install(KosEvalState *es, KosDynNode *node, struct KosEvent *out_ev);
+int kos_dyn_wind(KosEvalState *es, KosDynNode *node, struct KosEvent *out_ev);
+int kos_dyn_unwind(KosEvalState *es, KosDynNode *node, KosXferEvent event,
                    struct KosEvent *out_ev);
-int kos_dyn_exception_unwind(KosContext *ctx, KosDynNode *node,
+int kos_dyn_exception_unwind(KosEvalState *es, KosDynNode *node,
                                struct KosEvent *out_ev);
 
 /**
    Offer a control transit to a node.  Does not unlink; only decides
    whether the node consumes, passes through, defers, or errors.
 
-   :param ctx: execution context
+   :param es: eval state (borrowed ctx for frame/chain reads)
    :param node: node to offer the event to
    :param event: transfer event (RETURN, RAISE, etc.)
    :param out_ev: event output (for transformed events; may be NULL)
@@ -1574,7 +1574,7 @@ int kos_dyn_exception_unwind(KosContext *ctx, KosDynNode *node,
      (deliver to node, stop walk), KOS_HANDLE_DEFERRED, or
      KOS_HANDLE_ERROR (-1)
 */
-KosHandleResult kos_dyn_handle(KosContext *ctx, KosDynNode *node,
+KosHandleResult kos_dyn_handle(KosEvalState *es, KosDynNode *node,
                                KosXferEvent event, struct KosEvent *out_ev);
 
 
@@ -1588,7 +1588,7 @@ KosHandleResult kos_dyn_handle(KosContext *ctx, KosDynNode *node,
    :return: handler PC to branch to
 */
 uint32_t kos_dynnode_raise_handler_pc_for_try_finally(
-    KosContext *ctx,
+    KosEvalState *es,
     KosDynNode *region);
 
 
@@ -1611,13 +1611,13 @@ uint32_t kos_dynnode_catch_resume_pc(KosDynNode *node);
    :return: 0 when GEN consumed (valid yield; caller may return),
      -1 on error or if no generator boundary found
 */
-int kos_dyn_walk_handle_yield(KosContext *ctx, struct KosEvent *out_ev);
+int kos_dyn_walk_handle_yield(KosEvalState *es, struct KosEvent *out_ev);
 
 KosDynNode *kos_dyn_clone(KosDynNode *node);
 
-void kos_dyn_ns_unwind(KosContext *ctx, KosDynNs *node);
+void kos_dyn_ns_unwind(KosEvalState *es, KosDynNs *node);
 
-void kos_dyn_yieldfrom_unwind(KosContext *ctx, KosDynYieldFrom *node);
+void kos_dyn_yieldfrom_unwind(KosEvalState *es, KosDynYieldFrom *node);
 
 
 /**
@@ -1626,22 +1626,22 @@ void kos_dyn_yieldfrom_unwind(KosContext *ctx, KosDynYieldFrom *node);
    handling: when an exception occurs, this returns the region whose
    handler (a_label) should receive control.
 
-   :param ctx: execution context
+   :param es: eval state
 
    :return: the topmost enabled TRY or FINALLY region, or NULL
 */
-KosDynNode *kos_find_node_for_raise(KosContext *ctx);
+KosDynNode *kos_find_node_for_raise(KosEvalState *es);
 
 
 /**
    Find the innermost LOOP or FOREACH region on the dynamic chain,
    walking from dyn_top toward root. Used for break/continue.
 
-   :param ctx: execution context
+   :param es: eval state
 
    :return: the topmost LOOP or FOREACH region, or NULL if none found
  */
-KosDynNode *kos_find_node_for_loop(KosContext *ctx);
+KosDynNode *kos_find_node_for_loop(KosEvalState *es);
 
 
 /**
@@ -1659,7 +1659,7 @@ KosDynNode *kos_find_node_for_loop(KosContext *ctx);
      same-frame check failed), KOS_DYN_UNWIND_ASYNC_STARTED when async
      unwind started
 */
-int kos_dyn_transfer_to_loop(KosContext *ctx, KosXferEvent event,
+int kos_dyn_transfer_to_loop(KosEvalState *es, KosXferEvent event,
                              PyObject *result, struct KosEvent *out_ev);
 
 
@@ -1675,7 +1675,7 @@ int kos_dyn_transfer_to_loop(KosContext *ctx, KosXferEvent event,
      start), -1 on error (PyErr set)
 */
 int kos_dyn_transition(
-    KosContext *ctx,
+    KosEvalState *es,
     const KosTransitionReq *req,
     KosTransitionResult *out,
     struct KosEvent *out_ev);
@@ -1694,7 +1694,7 @@ int kos_dyn_transition(
    :return: new node, or NULL on error
 */
 KosDynYieldFrom *kos_dyn_push_yield_from(
-    KosContext *ctx,
+    KosEvalState *es,
     PyObject *delegate,
     uint8_t kind);
 
@@ -1706,7 +1706,7 @@ KosDynYieldFrom *kos_dyn_push_yield_from(
    :param ctx: execution context
    :param node: YIELD_FROM node to pop (must be current dyn_top)
 */
-void kos_dyn_pop_yield_from(KosContext *ctx, KosDynYieldFrom *node);
+void kos_dyn_pop_yield_from(KosEvalState *es, KosDynYieldFrom *node);
 
 
 /* === Prompt lookup and continuation capture === */
@@ -1718,55 +1718,55 @@ void kos_dyn_pop_yield_from(KosContext *ctx, KosDynYieldFrom *node);
    Walks the dynamic chain from dyn_top toward root, looking for
    a PROMPT node with matching prompt_id.
 
-   :param ctx: execution context
+   :param es: eval state
    :param prompt_id: tag to match (0 = default)
 
    :return: matching prompt, or NULL if not found
 */
-KosDynPrompt *kos_find_prompt(KosContext *ctx, uint32_t prompt_id);
+KosDynPrompt *kos_find_prompt(KosEvalState *es, uint32_t prompt_id);
 
 
 /**
    Find the nearest prompt from dyn_top toward the root (first PROMPT on
    the chain). Unlike kos_find_prompt, does not filter by prompt_id.
 
-   :param ctx: execution context
+   :param es: eval state
 
    :return: innermost prompt, or NULL if none
 */
-KosDynPrompt *kos_find_nearest_prompt(KosContext *ctx);
+KosDynPrompt *kos_find_nearest_prompt(KosEvalState *es);
 
 
 /**
    Find the nearest DELIM node from dyn_top toward root.
 
-   :param ctx: execution context
+   :param es: eval state
    :param mode: KOS_DYN_DELIM_MODE_* to match, or 0 for any DELIM
 
    :return: nearest matching DELIM node, or NULL if none
 */
-KosDynDelim *kos_find_nearest_delim(KosContext *ctx, uint8_t mode);
+KosDynDelim *kos_find_nearest_delim(KosEvalState *es, uint8_t mode);
 
 
 /**
    Find the topmost CC (call/cc) block on the dynamic chain.
 
-   :param ctx: execution context
+   :param es: eval state
 
    :return: topmost KosDynCC, or NULL if none
 */
-KosDynCC *kos_find_cc(KosContext *ctx);
+KosDynCC *kos_find_cc(KosEvalState *es);
 
 
 /**
    Validate that the prompt is reachable from dyn_top on the chain.
 
-   :param ctx: execution context
+   :param es: eval state
    :param prompt: target prompt
 
    :return: 0 if capture allowed, -1 if not (sets exception)
 */
-int kos_validate_capture(KosContext *ctx, KosDynPrompt *prompt);
+int kos_validate_capture(KosEvalState *es, KosDynPrompt *prompt);
 
 
 /**
@@ -1775,14 +1775,14 @@ int kos_validate_capture(KosContext *ctx, KosDynPrompt *prompt);
    Finds the prompt, validates capture, clones the chain segment,
    and creates a KosContinuation.
 
-   :param ctx: execution context
+   :param es: eval state
    :param prompt_id: target prompt tag
    :param out_k: output for captured continuation
 
    :return: 0 on success, -1 on error
 */
 int kos_shift_capture(
-   KosContext *ctx,
+   KosEvalState *es,
    uint32_t prompt_id,
    uint32_t resume_pc,
    KosContinuation **out_k);
@@ -1799,12 +1799,12 @@ int kos_shift_capture(
    frame that was current when PUSH_CC was executed. Multi-shot by
    default.
 
-   :param ctx: execution context
+   :param es: eval state
    :param out_k: output for captured continuation
 
    :return: 0 on success, -1 on error
 */
-int kos_capture_cc(KosContext *ctx, KosContinuation **out_k);
+int kos_capture_cc(KosEvalState *es, KosContinuation **out_k);
 
 
 /**
@@ -1953,7 +1953,7 @@ int kos_build_install_only_plan(
    :return: 1 if plan complete, 0 if more steps remain, -1 on error,
      KOS_XFER_SUSPENDED_AWAIT when async
 */
-int kos_run_transfer_step(KosContext *ctx, struct KosEvent *out_ev);
+int kos_run_transfer_step(KosEvalState *es, struct KosEvent *out_ev);
 
 
 /**
@@ -1963,7 +1963,7 @@ int kos_run_transfer_step(KosContext *ctx, struct KosEvent *out_ev);
 
    :return: 0 on success, -1 on error
 */
-int kos_dyn_build_pop_shift_plan(KosContext *ctx, KosDynPrompt *prompt,
+int kos_dyn_build_pop_shift_plan(KosEvalState *es, KosDynPrompt *prompt,
                                  PyObject *value, KosTransferPlan **out_plan);
 
 
@@ -1974,7 +1974,7 @@ int kos_dyn_build_pop_shift_plan(KosContext *ctx, KosDynPrompt *prompt,
 
    :return: 0 on success, -1 on error
 */
-int kos_dyn_build_push_shift_unwind_plan(KosContext *ctx, KosDynPrompt *prompt,
+int kos_dyn_build_push_shift_unwind_plan(KosEvalState *es, KosDynPrompt *prompt,
                                          KosTransferPlan **out_plan);
 
 

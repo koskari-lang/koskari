@@ -66,17 +66,19 @@ void kos_dynprompt_free(KosDynPrompt *prompt) {
 /**
    Push prompt via kos_dyn_push. Callers: opcode PUSH_PROMPT.
 */
-KosDynPrompt *kos_dyn_push_prompt(KosContext *ctx, uint32_t prompt_id) {
+KosDynPrompt *kos_dyn_push_prompt(KosEvalState *es, uint32_t prompt_id) {
 
+  KosContext *ctx = KosEvalState_CONTEXT(es);
   KosDynPrompt *prompt = kos_dynprompt_new(KosContext_DYN_TOP(ctx), prompt_id);
   if (! prompt)
     return NULL;
 
-  if (kos_dyn_push(ctx, (KosDynNode *) prompt) < 0) {
+  if (kos_dyn_push(es, (KosDynNode *) prompt) < 0) {
     kos_dynprompt_free(prompt);
     return NULL;
   }
 
+  KosEvalState_SyncFromContext(es);
   return prompt;
 }
 
@@ -84,12 +86,17 @@ KosDynPrompt *kos_dyn_push_prompt(KosContext *ctx, uint32_t prompt_id) {
 /**
    Pop prompt via barrier-crossing policy API using shared uninstall machinery.
 */
-int kos_dyn_pop_prompt(KosContext *ctx, KosDynPrompt *prompt) {
+int kos_dyn_pop_prompt(KosEvalState *es, KosDynPrompt *prompt) {
+  KosContext *ctx = KosEvalState_CONTEXT(es);
+  int r;
   if (! KosContext_DYN_TOP(ctx) || KosContext_DYN_TOP(ctx) != (KosDynNode *) prompt) {
-    return 0;
+    r = 0;
   }
-
-  return kos_dyn_pop_top_allow_barrier(ctx, KOS_XFER_EVENT_NONE, NULL);
+  else {
+    r = kos_dyn_pop_top_allow_barrier(es, KOS_XFER_EVENT_NONE, NULL);
+  }
+  KosEvalState_SyncFromContext(es);
+  return r;
 }
 
 

@@ -63,7 +63,8 @@ void kos_dyngen_release(KosDynGen *gen) {
    Resume generator: graft GEN under ctx, swap in frozen active chain, push
    None. Callers: eval when entering generator body from consumer.
 */
-int kos_dyn_gen_install(KosContext *ctx, KosDynGen *gen) {
+int kos_dyn_gen_install(KosEvalState *es, KosDynGen *gen) {
+  KosContext *ctx = KosEvalState_CONTEXT(es);
   KosDynNode *active;
   KosDynNode *n;
 
@@ -86,6 +87,7 @@ int kos_dyn_gen_install(KosContext *ctx, KosDynGen *gen) {
 
   if (! gen || ! ctx) {
     PyErr_SetString(PyExc_RuntimeError, "NULL ctx or gen for gen_install");
+    KosEvalState_SyncFromContext(es);
     return -1;
   }
 
@@ -93,6 +95,7 @@ int kos_dyn_gen_install(KosContext *ctx, KosDynGen *gen) {
   if (! active) {
     PyErr_SetString(PyExc_RuntimeError,
                     "kos_dyn_gen_install: GEN has no active frame");
+    KosEvalState_SyncFromContext(es);
     return -1;
   }
 
@@ -109,11 +112,9 @@ int kos_dyn_gen_install(KosContext *ctx, KosDynGen *gen) {
   KosContext_CHAIN_VERSION(ctx)++;
   kos_ctx_refresh_dyn_caches(ctx);
 
-  {
-    KosEvalState es;
-    KosEvalState_Init(&es, ctx);
-    if (KosEvalState_StackPushRef(&es, Py_None) < 0)
-      return -1;
+  if (KosEvalState_StackPushRef(es, Py_None) < 0) {
+    KosEvalState_SyncFromContext(es);
+    return -1;
   }
 
   SAYF("[gen] install DONE dyn_top=%p (%s) frame_top=%p chain: ",
@@ -125,6 +126,7 @@ int kos_dyn_gen_install(KosContext *ctx, KosDynGen *gen) {
   for (n = KosContext_DYN_TOP(ctx); n; n = KosDynNode_PARENT(n))
     SAYF("%p %s -> ", (void *) n, kos_dynnode_kind_name(KosDynNode_KIND(n)));
   SAY("(end)");
+  KosEvalState_SyncFromContext(es);
   return 0;
 }
 
@@ -152,19 +154,25 @@ int kos_dyn_gen_frozen_needs_install(KosContext *eval_ctx, KosDynGen *g) {
    Assumes ctx->dyn_top is the gen's frame, frame->parent is gen.
    Frees the chain from frame down to gen, restores consumer, releases gen.
 */
-int kos_dyn_gen_unwind_exhausted(KosContext *ctx) {
+int kos_dyn_gen_unwind_exhausted(KosEvalState *es) {
+  KosContext *ctx = KosEvalState_CONTEXT(es);
   KosDynNode *frame = KosContext_DYN_TOP(ctx);
-  if (! frame || ! KosDynNode_IS_FRAME(frame))
+  if (! frame || ! KosDynNode_IS_FRAME(frame)) {
+    KosEvalState_SyncFromContext(es);
     return -1;
+  }
   KosDynGen *gen = (KosDynGen *) KosDynNode_PARENT(frame);
-  if (! gen || ! KosDynNode_IS_GEN((KosDynNode *) gen))
+  if (! gen || ! KosDynNode_IS_GEN((KosDynNode *) gen)) {
+    KosEvalState_SyncFromContext(es);
     return -1;
+  }
   KosDynNode *consumer = KosDynNode_PARENT(gen);
   kos_dynchain_free(frame, (KosDynNode *) gen);
   KosContext_DYN_TOP(ctx) = consumer;
   KosContext_CHAIN_VERSION(ctx)++;
   kos_ctx_refresh_dyn_caches(ctx);
   kos_dyngen_release(gen);
+  KosEvalState_SyncFromContext(es);
   return 0;
 }
 

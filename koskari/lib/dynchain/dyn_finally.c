@@ -60,11 +60,13 @@ void kos_dynfinally_free(KosDynFinally *node) {
 /**
    Push FINALLY as DYN_TOP. Callers: opcode PUSH_FINALLY.
 */
-KosDynFinally *kos_dyn_push_finally(KosContext *ctx, uint32_t handler_pc) {
+KosDynFinally *kos_dyn_push_finally(KosEvalState *es, uint32_t handler_pc) {
+  KosContext *ctx = KosEvalState_CONTEXT(es);
   KosDynFinally *node = kos_dynfinally_new(KosContext_DYN_TOP(ctx), handler_pc);
   if (! node) return NULL;
   KosContext_DYN_TOP(ctx) = (KosDynNode *) node;
   KosContext_CHAIN_VERSION(ctx)++;
+  KosEvalState_SyncFromContext(es);
   return node;
 }
 
@@ -72,13 +74,15 @@ KosDynFinally *kos_dyn_push_finally(KosContext *ctx, uint32_t handler_pc) {
 /**
    Pop FINALLY when top. Callers: abort_push_region, POP_FINALLY fast path.
 */
-void kos_dyn_pop_finally(KosContext *ctx, KosDynFinally *node) {
+void kos_dyn_pop_finally(KosEvalState *es, KosDynFinally *node) {
+  KosContext *ctx = KosEvalState_CONTEXT(es);
   if (KosContext_DYN_TOP(ctx)==(KosDynNode*)node) {
     KosContext_DYN_TOP(ctx)=KosDynNode_PARENT(node);
     KosContext_CHAIN_VERSION(ctx)++;
     kos_dynfinally_free(node);
     kos_ctx_refresh_dyn_caches(ctx);
   }
+  KosEvalState_SyncFromContext(es);
 }
 
 

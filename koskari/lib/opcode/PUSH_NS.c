@@ -124,7 +124,7 @@ KOS_OP_HANDLER(PUSH_NS) {
   }
 
   Py_INCREF(parent);
-  ns_node = kos_dyn_push_ns(ctx, parent);
+  ns_node = kos_dyn_push_ns(es, parent);
   if (unlikely(! ns_node)) {
     Py_DECREF(parent);
     Py_DECREF(new_ns);

@@ -77,8 +77,7 @@ KOS_OP_HANDLER(PUSH_FOREACH) {
   }
 
   /* Push region */
-  KosDynNode *region = (KosDynNode *) kos_dyn_push_foreach(ctx,
-                                             break_pc, continue_pc);
+  KosDynNode *region = (KosDynNode *) kos_dyn_push_foreach(es,                                              break_pc, continue_pc);
   if (! region) {
     Py_DECREF(iter);
     Py_DECREF(loop_result);
@@ -93,7 +92,7 @@ KOS_OP_HANDLER(PUSH_FOREACH) {
 
   KosDynNode_STACK(region) = KosStackBlock_NewEmpty();
   if (! KosDynNode_STACK(region)) {
-    if (kos_dyn_abort_push_region(ctx, region) < 0) {
+    if (kos_dyn_abort_push_region(es, region) < 0) {
       PyErr_Clear();
       PyErr_SetString(PyExc_RuntimeError,
                       "PUSH_FOREACH: unexpected region kind during abort");

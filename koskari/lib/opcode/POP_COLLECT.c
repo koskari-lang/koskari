@@ -39,7 +39,7 @@ KOS_OP_HANDLER(POP_COLLECT) {
   Py_DECREF(CURRENT_NS(ctx));
   CURRENT_NS(ctx) = prior;
 
-  kos_dyn_pop_collect(ctx, col_node);
+  kos_dyn_pop_collect(es, col_node);
 
   int res = KosEvalState_StackPushRef(es, collector);
   Py_DECREF(collector);

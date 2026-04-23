@@ -18,7 +18,7 @@
    COUNT (opa bitflags: 1 = has *args, 2 = has **kwargs).
    Stack [obj, pos, kwd] or subsets per flags. Pop per flags, ensure
    pos is tuple, resolve obj.name, prepend obj to args if send_self,
-   call via KosContext_CallArgs.
+   call via KosEvalState_CallArgs.
 */
 
 
@@ -152,7 +152,7 @@ KOS_OP_HANDLER(CALL_ATTR_STAR) {
 
   Py_DECREF(obj);
 
-  int res = KosContext_CallArgs(ctx, out_ev, resolved, args_for_call, kwd, 0);
+  int res = KosEvalState_CallArgs(es, out_ev, resolved, args_for_call, kwd, 0);
 
   Py_DECREF(resolved);
   Py_DECREF(args_for_call);

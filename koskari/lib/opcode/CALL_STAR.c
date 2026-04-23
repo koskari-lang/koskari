@@ -17,7 +17,7 @@
    CALL_STAR: arg = bitflags (1 = has *args, 2 = has **kwargs). Stack:
    [callable, pos, kwd] with kwd at TOS. pos = *args (tuple or
    iterable); kwd = **kwargs (dict). Pop per opa bits, ensure pos is
-   tuple, call via KosContext_CallArgs.
+   tuple, call via KosEvalState_CallArgs.
 */
 
 
@@ -109,7 +109,7 @@ KOS_OP_HANDLER(CALL_STAR) {
     kwd = NULL;
   }
 
-  int res = KosContext_CallArgs(ctx, out_ev, fun, pos, kwd, 0);
+  int res = KosEvalState_CallArgs(es, out_ev, fun, pos, kwd, 0);
 
   Py_DECREF(fun);
   Py_DECREF(pos);

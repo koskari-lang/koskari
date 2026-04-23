@@ -31,7 +31,7 @@ KOS_OP_HANDLER(POP_FOREACH) {
   PyObject *result = KosDynForeach_RESULT(fe);
   Py_INCREF(result);
 
-  kos_dyn_pop_foreach(ctx, fe);
+  kos_dyn_pop_foreach(es, fe);
 
   if (unlikely(KosEvalState_StackPushRef(es, result) < 0)) {
     Py_DECREF(result);

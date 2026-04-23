@@ -15,7 +15,7 @@
 
 /**
   CALL: arg = number of positional arguments N. Stack has [callable, arg_0,
-  ..., arg_{N-1}] (callable oldest). KosCallable: steal then KosContext_Call.
+  ..., arg_{N-1}] (callable oldest). KosCallable: steal then KosEvalState_Call.
   Plain Python: TailPtr + PyObject_Vectorcall + DropNoErr (fast path).
 */
 
@@ -33,7 +33,7 @@ KOS_OP_HANDLER(CALL) {
     KosStackSteal steal = { 0 };
     if (KosEvalState_StackSteal_Tail(es, &steal, (size_t)(n + 1)) < 0)
       return KOS_OP_POST_ERR();
-    int r = KosContext_Call(ctx, out_ev, steal.vals[0],
+    int r = KosEvalState_Call(es, out_ev, steal.vals[0],
                             (n > 0) ? &steal.vals[1] : NULL,
                             (Py_ssize_t) n, NULL, 0);
     KosStackSteal_Free(&steal);
