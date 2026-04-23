@@ -20,7 +20,7 @@
 */
 
 KOS_OP_HANDLER(POP_FINALLY) {
-  KosContext *ctx = KosEvalState_Context(es);
+  KosContext *ctx = KosEvalState_CONTEXT(es);
   KosDynNode *region = (KosDynNode *) KosContext_DYN_TOP(ctx);
   if (! region || ! KosDynNode_IS_FINALLY(region)) {
     PyErr_SetString(PyExc_RuntimeError,
@@ -38,7 +38,7 @@ KOS_OP_HANDLER(POP_FINALLY) {
   if (KosDynFinally_HANDLING_RETURN((KosDynFinally *) region))
     KosDynFinally_HANDLING_RETURN((KosDynFinally *) region) = 0;
   {
-    PyObject *promoted = KosEvalState_OperandSlotPopRef(&KosDynNode_STACK(region));
+    PyObject *promoted = KosStackBlock_PopRef(&KosDynNode_STACK(region));
     if (! promoted)
       return KOS_OP_POST_ERR();
     kos_dyn_pop_finally(ctx, (KosDynFinally *) region);

@@ -19,7 +19,7 @@ KosDynFrame *kos_dynframe_new(
   }
 
   if (! stack) {
-    stack = KosEvalState_OperandNewEmpty();
+    stack = KosStackBlock_NewEmpty();
     if (! stack) {
       Py_XDECREF(ns);
       kos_dynnode_return_to_freelist(frame);
@@ -47,12 +47,12 @@ KosDynFrame *kos_dynframe_clone(KosDynFrame *frame) {
     return NULL;
 
   KosStackBlock *cloned_stack =
-      KosEvalState_OperandDeepCopy(KosDynFrame_STACK(frame));
+      KosStackBlock_DeepCopy(KosDynFrame_STACK(frame));
 
   KosDynFrame *clone = kos_dynnode_alloc();
   if (! clone) {
     if (cloned_stack)
-      KosEvalState_OperandReleaseChain(cloned_stack);
+      KosStackBlock_ReleaseChainExclude(cloned_stack, NULL);
     return NULL;
   }
 
@@ -79,7 +79,7 @@ void kos_dynframe_free(KosDynFrame *frame) {
   if (! frame)
     return;
 
-  KosEvalState_OperandReleaseChain(KosDynFrame_STACK(frame));
+  KosStackBlock_ReleaseChainExclude(KosDynFrame_STACK(frame), NULL);
 
   Py_XDECREF(KosDynFrame_NS(frame));
   /* code is borrowed, don't decref */
@@ -126,7 +126,7 @@ void kos_dynframe_reset_for_tail(KosDynFrame *frame) {
   if (! frame)
     return;
 
-  KosEvalState_OperandReleaseChain(KosDynFrame_STACK(frame));
+  KosStackBlock_ReleaseChainExclude(KosDynFrame_STACK(frame), NULL);
   KosDynFrame_STACK(frame) = NULL;
 
   /* Replace ns with empty dict */
@@ -140,7 +140,7 @@ void kos_dynframe_reset_for_tail(KosDynFrame *frame) {
   KosDynFrame_NATIVE_HANDLER(frame) = NULL;
 
   {
-    KosStackBlock *nb = KosEvalState_OperandNewEmpty();
+    KosStackBlock *nb = KosStackBlock_NewEmpty();
     if (! nb)
       PyErr_NoMemory();
     KosDynFrame_STACK(frame) = nb;

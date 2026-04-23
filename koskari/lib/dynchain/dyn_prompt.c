@@ -39,7 +39,7 @@ static KosDynPrompt *kos_dynprompt_clone(KosDynPrompt *prompt) {
   KosDynPrompt_PENDING_SHIFT_WRAPPER(clone) = NULL;
   if (KosDynNode_STACK((KosDynNode *) prompt)) {
     KosDynNode_STACK((KosDynNode *) clone) =
-        KosEvalState_OperandDeepCopy(KosDynNode_STACK((KosDynNode *) prompt));
+        KosStackBlock_DeepCopy(KosDynNode_STACK((KosDynNode *) prompt));
     if (! KosDynNode_STACK((KosDynNode *) clone)) {
       kos_dynprompt_free(clone);
       return NULL;

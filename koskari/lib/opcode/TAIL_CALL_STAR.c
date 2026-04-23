@@ -40,7 +40,7 @@ static int ensure_tuple_star(PyObject **val) {
 
 
 KOS_OP_HANDLER(TAIL_CALL_STAR) {
-  KosContext *ctx = KosEvalState_Context(es);
+  KosContext *ctx = KosEvalState_CONTEXT(es);
   unsigned opa = KosOp_ARG(insn);
 
   PyObject *fun = NULL;

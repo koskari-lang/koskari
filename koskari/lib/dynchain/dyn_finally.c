@@ -37,7 +37,7 @@ KosDynFinally *kos_dynfinally_clone(KosDynFinally *node) {
   Py_XINCREF(KosDynFinally_HANDLING_RESULT(clone));
   if (KosDynNode_STACK((KosDynNode *) node)) {
     KosDynNode_STACK((KosDynNode *) clone) =
-        KosEvalState_OperandDeepCopy(KosDynNode_STACK((KosDynNode *) node));
+        KosStackBlock_DeepCopy(KosDynNode_STACK((KosDynNode *) node));
     if (! KosDynNode_STACK((KosDynNode *) clone)) {
       kos_dynfinally_free(clone);
       return NULL;

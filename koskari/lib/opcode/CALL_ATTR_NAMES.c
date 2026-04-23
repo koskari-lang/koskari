@@ -21,7 +21,7 @@
    Resolve obj.name, then call like CALL_NAMES.
 */
 KOS_OP_HANDLER(CALL_ATTR_NAMES) {
-  KosContext *ctx = KosEvalState_Context(es);
+  KosContext *ctx = KosEvalState_CONTEXT(es);
   KosCode *code = CURRENT_CODE(ctx);
   KosExtra row = KosCode_GetExtra(code, KosOp_ARG(insn));
   uint32_t attr_cpool_idx = row.a0;

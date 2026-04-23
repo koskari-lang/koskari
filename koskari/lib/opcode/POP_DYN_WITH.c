@@ -21,7 +21,7 @@
 */
 
 KOS_OP_HANDLER(POP_DYN_WITH) {
-  KosContext *ctx = KosEvalState_Context(es);
+  KosContext *ctx = KosEvalState_CONTEXT(es);
 
   KosDynNode *top = KosContext_DYN_TOP(ctx);
   if (! top || ! KosDynNode_IS_WITH(top)) {

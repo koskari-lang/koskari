@@ -24,7 +24,7 @@
 */
 
 KOS_OP_HANDLER(TAIL_CALL_NAMES) {
-  KosContext *ctx = KosEvalState_Context(es);
+  KosContext *ctx = KosEvalState_CONTEXT(es);
   unsigned opa = KosOp_ARG(insn);
   PyObject *names = KosEvalState_StackPeek(es);
   if (! names)

@@ -19,7 +19,7 @@
 */
 
 KOS_OP_HANDLER(CAPTURE_CC) {
-  KosContext *ctx = KosEvalState_Context(es);
+  KosContext *ctx = KosEvalState_CONTEXT(es);
   KosContinuation *k = NULL;
   if (kos_capture_cc(ctx, &k) < 0) {
     return KOS_OP_POST_ERR();

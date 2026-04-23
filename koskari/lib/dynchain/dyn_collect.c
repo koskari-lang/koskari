@@ -36,7 +36,7 @@ static KosDynCollect *kos_dyncollect_clone(KosDynCollect *col_node) {
   KosDynNode_NODE_ID(clone) = KosDynNode_NODE_ID((KosDynNode *) col_node);
   if (KosDynNode_STACK((KosDynNode *) col_node)) {
     KosDynNode_STACK((KosDynNode *) clone) =
-        KosEvalState_OperandDeepCopy(KosDynNode_STACK((KosDynNode *) col_node));
+        KosStackBlock_DeepCopy(KosDynNode_STACK((KosDynNode *) col_node));
     if (! KosDynNode_STACK((KosDynNode *) clone)) {
       kos_dyncollect_free(clone);
       return NULL;

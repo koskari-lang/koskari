@@ -638,7 +638,7 @@ static int yield_from_drive_kos_async_gen(
 */
 
 KOS_OP_HANDLER(YIELD_FROM) {
-  KosContext *ctx = KosEvalState_Context(es);
+  KosContext *ctx = KosEvalState_CONTEXT(es);
 
   KosDynNode *dyn_top = KosContext_DYN_TOP(ctx);
   KosDynFrame *frame = CURRENT_FRAME(ctx);

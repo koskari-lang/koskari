@@ -19,7 +19,7 @@
 */
 
 KOS_OP_HANDLER(CLEAR_FOREACH) {
-  KosContext *ctx = KosEvalState_Context(es);
+  KosContext *ctx = KosEvalState_CONTEXT(es);
   KosDynNode *region = (KosDynNode *) KosContext_DYN_TOP(ctx);
   if (! region || ! KosDynNode_IS_FOREACH(region)) {
     PyErr_SetString(PyExc_RuntimeError,

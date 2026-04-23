@@ -21,7 +21,7 @@
 */
 
 KOS_OP_HANDLER(POP_WITH) {
-  KosContext *ctx = KosEvalState_Context(es);
+  KosContext *ctx = KosEvalState_CONTEXT(es);
 
   SAY("[eval] POP_WITH entry");
   KosDynNode *top = KosContext_DYN_TOP(ctx);

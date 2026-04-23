@@ -21,7 +21,7 @@
 */
 
 KOS_OP_HANDLER(BUILD_FUNCTION) {
-  KosContext *ctx = KosEvalState_Context(es);
+  KosContext *ctx = KosEvalState_CONTEXT(es);
   unsigned opa = KosOp_ARG(insn);
   PyObject *fspec = KosEvalState_StackPopRef(es);
   if (! fspec)

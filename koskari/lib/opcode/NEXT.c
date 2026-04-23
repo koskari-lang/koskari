@@ -21,7 +21,7 @@
 */
 
 KOS_OP_HANDLER(NEXT) {
-  KosContext *ctx = KosEvalState_Context(es);
+  KosContext *ctx = KosEvalState_CONTEXT(es);
   uint16_t n = KosOp_ARG(insn);
   if (n != 1 && n != 2) {
     PyErr_Format(PyExc_ValueError, "NEXT arg must be 1 or 2, got %u", n);

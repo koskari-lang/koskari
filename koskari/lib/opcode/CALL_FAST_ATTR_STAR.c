@@ -40,7 +40,7 @@ static int ensure_tuple_fast_attr_star(PyObject **val) {
 
 
 KOS_OP_HANDLER(CALL_FAST_ATTR_STAR) {
-  KosContext *ctx = KosEvalState_Context(es);
+  KosContext *ctx = KosEvalState_CONTEXT(es);
   KosCode *code = CURRENT_CODE(ctx);
   KosExtra row = KosCode_GetExtra(code, KosOp_ARG(insn));
   uint32_t slot_idx = row.a0;

@@ -21,7 +21,7 @@
    Unbound fn: fn(obj, *args). Bound/other: callable(*args).
 */
 KOS_OP_HANDLER(CALL_VAR_ATTR) {
-  KosContext *ctx = KosEvalState_Context(es);
+  KosContext *ctx = KosEvalState_CONTEXT(es);
   KosCode *code = CURRENT_CODE(ctx);
   KosExtra row = KosCode_GetExtra(code, KosOp_ARG(insn));
   uint32_t name_cpool_idx = row.a0;

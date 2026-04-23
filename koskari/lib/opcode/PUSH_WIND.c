@@ -20,7 +20,7 @@
 */
 
 KOS_OP_HANDLER(PUSH_WIND) {
-  KosContext *ctx = KosEvalState_Context(es);
+  KosContext *ctx = KosEvalState_CONTEXT(es);
   unsigned count = KosOp_ARG(insn);
   PyObject *before = NULL;
   PyObject *after = NULL;  /* set only when count==2 */

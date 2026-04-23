@@ -21,7 +21,7 @@
 */
 
 KOS_OP_HANDLER(POP_WIND) {
-  KosContext *ctx = KosEvalState_Context(es);
+  KosContext *ctx = KosEvalState_CONTEXT(es);
   if (! KosContext_DYN_TOP(ctx) || ! KosDynNode_IS_WIND(KosContext_DYN_TOP(ctx))) {
     PyErr_SetString(PyExc_RuntimeError, "POP_WIND: top is not a wind node");
     return KOS_OP_POST_ERR();

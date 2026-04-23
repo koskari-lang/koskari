@@ -19,7 +19,7 @@
 */
 
 KOS_OP_HANDLER(FAST_OBJECT_BIT_OR) {
-  KosContext *ctx = KosEvalState_Context(es);
+  KosContext *ctx = KosEvalState_CONTEXT(es);
   (void) out_ev;
 
   PyObject *ns = CURRENT_NS(ctx);

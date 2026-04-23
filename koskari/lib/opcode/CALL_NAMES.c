@@ -20,7 +20,7 @@
   TailPtr + PyObject_Vectorcall + DropNoErr.
 */
 KOS_OP_HANDLER(CALL_NAMES) {
-  KosContext *ctx = KosEvalState_Context(es);
+  KosContext *ctx = KosEvalState_CONTEXT(es);
   unsigned opa = KosOp_ARG(insn);
 
   PyObject *names = KosEvalState_StackPeek(es);

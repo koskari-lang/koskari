@@ -18,7 +18,7 @@
 */
 
 KOS_OP_HANDLER(ATTR_CLEAR) {
-  KosContext *ctx = KosEvalState_Context(es);
+  KosContext *ctx = KosEvalState_CONTEXT(es);
   PyObject *name = get_name_from_insn(CURRENT_CODE(ctx), insn);
   if (! name)
     return KOS_OP_POST_ERR();

@@ -19,7 +19,7 @@
 */
 
 KOS_OP_HANDLER(JUMP_OR) {
-  KosContext *ctx = KosEvalState_Context(es);
+  KosContext *ctx = KosEvalState_CONTEXT(es);
   PyObject *val = KosEvalState_StackPopRef(es);
   if (! val)
     return KOS_OP_POST_ERR();

@@ -20,7 +20,7 @@
 */
 
 KOS_OP_HANDLER(FAST_OBJECT_MATRIX_MULTIPLY) {
-  KosContext *ctx = KosEvalState_Context(es);
+  KosContext *ctx = KosEvalState_CONTEXT(es);
   (void) out_ev;
 
   PyObject *ns = CURRENT_NS(ctx);

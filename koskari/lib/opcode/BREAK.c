@@ -21,7 +21,7 @@
 */
 
 KOS_OP_HANDLER(BREAK) {
-  KosContext *ctx = KosEvalState_Context(es);
+  KosContext *ctx = KosEvalState_CONTEXT(es);
   unsigned opa = KosOp_ARG(insn);
   PyObject *result = NULL;
 

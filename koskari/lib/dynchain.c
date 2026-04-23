@@ -484,7 +484,7 @@ static void kos_dynnode_release_stack(KosDynNode *node) {
     return;
   b = KosDynNode_STACK(node);
   KosDynNode_STACK(node) = NULL;
-  KosEvalState_OperandReleaseChain(b);
+  KosStackBlock_ReleaseChainExclude(b, NULL);
 }
 
 
@@ -713,7 +713,7 @@ static int kos_dyn_uninstall_handler(KosContext *ctx, KosDynNode *node,
     case KOS_DYN_PROMPT: {
       if (KOS_XFER_TRACE) {
         size_t len_before = KosDynNode_STACK(node)
-            ? KosEvalState_OperandLen(KosDynNode_STACK(node)) : 0;
+            ? KosStackBlock_LEN(KosDynNode_STACK(node)) : 0;
         SAYF("[xfer] prompt_pop node=%p: releasing prompt stack, len before=%zu",
              (void *) node, len_before);
         (void) len_before;
@@ -773,7 +773,7 @@ static int kos_dyn_uninstall_handler(KosContext *ctx, KosDynNode *node,
           kos_ctx_refresh_dyn_caches(ctx);
         }
         else {
-          PyObject *body_val = KosEvalState_OperandSlotPopRef(stack);
+          PyObject *body_val = KosStackBlock_PopRef(stack);
           if (! body_val)
             return -1;
           kos_dynnode_release_stack(node);
@@ -2122,7 +2122,7 @@ int kos_shift_capture(
            (unsigned) KosDynNode_KIND(frame_inside),
            (void *) KosDynFrame_STACK(f),
            KosDynFrame_STACK(f)
-               ? (size_t) KosEvalState_OperandLen(KosDynFrame_STACK(f)) : 0);
+               ? (size_t) KosStackBlock_LEN(KosDynFrame_STACK(f)) : 0);
       (void) f;
 
     } else {
@@ -2309,7 +2309,7 @@ void kos_continuation_free_exclude(KosContinuation *k, PyObject *exclude_from_st
     KosStackBlock *rs = KosContinuation_RESUME_STACK(k);
     KosDynNode *owner = kos_chain_find_stack_owner_node(
         KosContinuation_CAPTURED_CHAIN(k), rs);
-    KosEvalState_OperandReleaseChainExclude(rs, exclude_from_stack);
+    KosStackBlock_ReleaseChainExclude(rs, exclude_from_stack);
     KosContinuation_RESUME_STACK(k) = NULL;
     if (owner)
       KosDynNode_STACK(owner) = NULL;
@@ -2369,7 +2369,7 @@ KosContinuation *kos_continuation_clone(KosContinuation *k) {
       cloned_chain,
       resume_frame,
       KosContinuation_RESUME_PC(k),
-      KosEvalState_OperandDeepCopy(KosContinuation_RESUME_STACK(k)),
+      KosStackBlock_DeepCopy(KosContinuation_RESUME_STACK(k)),
       KosContinuation_PROMPT_ID(k),
       KosContinuation_GRAFT_POINT_ID(k),
       KosContinuation_ONE_SHOT(k),
@@ -3124,7 +3124,7 @@ static void xfer_plan_release_invoke_clone(KosTransferPlan *plan) {
   KosContinuation *clone = KosTransferPlan_INVOKE_CLONE(plan);
   KosTransferPlan_INVOKE_CLONE(plan) = NULL;
   if (KosContinuation_RESUME_STACK(clone)) {
-    KosEvalState_OperandReleaseChainExclude(KosContinuation_RESUME_STACK(clone),
+    KosStackBlock_ReleaseChainExclude(KosContinuation_RESUME_STACK(clone),
                                             KosTransferPlan_CONTINUATION_REF(plan));
     KosContinuation_RESUME_STACK(clone) = NULL;
   }
@@ -3169,7 +3169,7 @@ void kos_free_transfer_plan(KosTransferPlan *plan) {
   }
   xfer_plan_release_invoke_clone(plan);
   if (KosTransferPlan_RESUME_STACK(plan)) {
-    KosEvalState_OperandReleaseChain(KosTransferPlan_RESUME_STACK(plan));
+    KosStackBlock_ReleaseChainExclude(KosTransferPlan_RESUME_STACK(plan), NULL);
     KosTransferPlan_RESUME_STACK(plan) = NULL;
   }
   Py_XDECREF(KosTransferPlan_CONTINUATION_REF(plan));
@@ -3337,13 +3337,13 @@ static int xfer_step_install(KosContext *ctx, KosTransferAction *action,
       KosTransferPlan_RESUME_STACK(plan) = NULL;  /* ownership transferred */
 
       if (old_stack && old_stack != new_stack) {
-        KosEvalState_OperandReleaseChainExclude(old_stack,
+        KosStackBlock_ReleaseChainExclude(old_stack,
                                                 KosTransferPlan_CONTINUATION_REF(plan));
       }
       kos_ctx_refresh_dyn_caches(ctx);
 
     } else {
-      KosEvalState_OperandReleaseChainExclude(new_stack,
+      KosStackBlock_ReleaseChainExclude(new_stack,
                                               KosTransferPlan_CONTINUATION_REF(plan));
       KosTransferPlan_RESUME_STACK(plan) = NULL;
     }
@@ -3439,12 +3439,12 @@ static int xfer_step_push(KosContext *ctx, KosTransferAction *action,
       KosDynNode_STACK(owner) = new_stack;
       KosTransferPlan_RESUME_STACK(plan) = NULL;  /* ownership transferred */
       if (old_stack && old_stack != new_stack) {
-        KosEvalState_OperandReleaseChainExclude(old_stack,
+        KosStackBlock_ReleaseChainExclude(old_stack,
                                                 KosTransferPlan_CONTINUATION_REF(plan));
       }
       kos_ctx_refresh_dyn_caches(ctx);
     } else {
-      KosEvalState_OperandReleaseChainExclude(new_stack,
+      KosStackBlock_ReleaseChainExclude(new_stack,
                                               KosTransferPlan_CONTINUATION_REF(plan));
       KosTransferPlan_RESUME_STACK(plan) = NULL;
     }
@@ -3870,7 +3870,7 @@ int kos_invoke_continuation(
   KosTransferPlan_RESUME_FRAME(plan) = to_use->resume_frame;  /* template; INSTALL uses fresh */
   /* DeepCopy of template stack for this invoke; released in kos_free_transfer_plan. */
   KosTransferPlan_RESUME_STACK(plan) = to_use->resume_stack
-      ? KosEvalState_OperandDeepCopy(to_use->resume_stack) : NULL;
+      ? KosStackBlock_DeepCopy(to_use->resume_stack) : NULL;
   if (KOS_XFER_TRACE)
     SAYF("[xfer] plan resume_frame=%p resume_stack=%p",
          (void *) KosTransferPlan_RESUME_FRAME(plan), (void *) KosTransferPlan_RESUME_STACK(plan));
@@ -4083,7 +4083,7 @@ int kos_dyn_finish_delimited_pop_return(
     }
     if (! slot)
       slot = &KosDynNode_STACK((KosDynNode *) ret_frame);
-    if (KosEvalState_OperandSlotPushRef(slot, value) < 0) {
+    if (KosStackBlock_PushRef(slot, value) < 0) {
       Py_DECREF(value);
       return -1;
     }

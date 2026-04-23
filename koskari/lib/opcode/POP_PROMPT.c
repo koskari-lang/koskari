@@ -20,7 +20,7 @@
 */
 
 KOS_OP_HANDLER(POP_PROMPT) {
-  KosContext *ctx = KosEvalState_Context(es);
+  KosContext *ctx = KosEvalState_CONTEXT(es);
   KosDynDelim *ret_delim = kos_find_nearest_delim(ctx, KOS_DYN_DELIM_MODE_POP_PROMPT);
 
   SAYF("[eval] POP_PROMPT delim=%p dyn_top=%p IS_PROMPT=%d frame=%p stack_len=%zu\n",
@@ -98,33 +98,28 @@ KOS_OP_HANDLER(POP_PROMPT) {
   SAYF("[eval] POP_PROMPT (normal): popping prompt, frame=%p stack_len=%zu",
        (void *) CURRENT_FRAME(ctx),
        KosEvalState_StackLen(es));
-  
-  PyObject *result = NULL;
-  if (KosEvalState_StackHead(es)) {
-    result = KosEvalState_StackPopRef(es);
-    if (! result) {
-      SAY("[eval] POP_PROMPT (normal): stack underrun");
-      return KOS_OP_POST_ERR();
-    }
+
+  PyObject *result = KosEvalState_StackPopRef(es);
+  if (! result) {
+    SAY("[eval] POP_PROMPT (normal): stack underrun");
+    return KOS_OP_POST_ERR();
   }
-  
+
   if (kos_dyn_pop_prompt(ctx, (KosDynPrompt *) KosContext_DYN_TOP(ctx)) < 0) {
     Py_XDECREF(result);
     return KOS_OP_POST_ERR();
   }
-  
+
   SAYF("[eval] POP_PROMPT (normal): after pop, frame=%p stack_len=%zu",
        (void *) CURRENT_FRAME(ctx),
        KosEvalState_StackLen(es));
-  
-  if (result && KosEvalState_StackHead(es)) {
-    if (KosEvalState_StackPushRef(es, result) < 0) {
-      Py_DECREF(result);
+
+  if (result) {
+    if (KosEvalState_StackPUSH(es, result) < 0) {
       return KOS_OP_POST_ERR();
     }
   }
-  Py_XDECREF(result);
-  
+
   (void) insn;
   return KOS_OP_RUN();
 }

@@ -19,7 +19,7 @@
 */
 
 KOS_OP_HANDLER(CLEAR_LOOP) {
-  KosContext *ctx = KosEvalState_Context(es);
+  KosContext *ctx = KosEvalState_CONTEXT(es);
   KosDynNode *region = (KosDynNode *) KosContext_DYN_TOP(ctx);
   if (! region || ! KosDynNode_IS_LOOP(region)) {
     PyErr_SetString(PyExc_RuntimeError,

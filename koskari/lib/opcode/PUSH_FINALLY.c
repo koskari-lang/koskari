@@ -19,13 +19,13 @@
 */
 
 KOS_OP_HANDLER(PUSH_FINALLY) {
-  KosContext *ctx = KosEvalState_Context(es);
+  KosContext *ctx = KosEvalState_CONTEXT(es);
   KosDynNode *region = (KosDynNode *) kos_dyn_push_finally(ctx, KosOp_ARG(insn));
   if (! region) {
     PyErr_NoMemory();
     return KOS_OP_POST_ERR();
   }
-  KosDynNode_STACK(region) = KosEvalState_OperandNewEmpty();
+  KosDynNode_STACK(region) = KosStackBlock_NewEmpty();
   if (! KosDynNode_STACK(region)) {
     if (kos_dyn_abort_push_region(ctx, region) < 0) {
       PyErr_Clear();

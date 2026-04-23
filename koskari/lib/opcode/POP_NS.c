@@ -19,7 +19,7 @@
 */
 
 KOS_OP_HANDLER(POP_NS) {
-  KosContext *ctx = KosEvalState_Context(es);
+  KosContext *ctx = KosEvalState_CONTEXT(es);
   if (! KosContext_DYN_TOP(ctx) || ! KosDynNode_IS_NS(KosContext_DYN_TOP(ctx))) {
     PyErr_SetString(PyExc_RuntimeError, "POP_NS: top is not a namespace scope");
     return KOS_OP_POST_ERR();

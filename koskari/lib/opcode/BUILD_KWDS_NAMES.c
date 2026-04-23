@@ -20,7 +20,7 @@
 */
 
 KOS_OP_HANDLER(BUILD_KWDS_NAMES) {
-  KosContext *ctx = KosEvalState_Context(es);
+  KosContext *ctx = KosEvalState_CONTEXT(es);
   PyObject *names = KosCode_GetConstant((PyObject *) CURRENT_CODE(ctx),
                                          KosOp_ARG(insn));
 

@@ -429,11 +429,14 @@ struct KosEvalState {
 };
 
 
+#define KosEvalState_CONTEXT(es) ((es)->ctx)
+#define KosEvalState_FRAME(es) ((es)->frame)
+#define KosEvalState_CODE(es) ((es)->code)
+
+
 void KosEvalState_Init(KosEvalState *es, KosContext *ctx);
 void KosEvalState_SyncFromContext(KosEvalState *es);
 
-KosContext *KosEvalState_Context(const KosEvalState *es);
-KosDynFrame *KosEvalState_Frame(const KosEvalState *es);
 KosCode *KosEvalState_CurrentCode(const KosEvalState *es);
 PyObject *KosEvalState_CurrentNamespace(const KosEvalState *es);
 
@@ -448,11 +451,6 @@ typedef struct KosStackSteal KosStackSteal;
 
 int KosEvalState_StackPushRef(KosEvalState *es, PyObject *val);
 PyObject *KosEvalState_StackPopRef(KosEvalState *es);
-
-/**
-  Innermost operand-stack block head for logging / presence checks only.
-*/
-KosStackBlock *KosEvalState_StackHead(const KosEvalState *es);
 
 /**
   Tail steal into s (stack mutation). Caller must KosStackSteal_Free(s).
@@ -484,24 +482,6 @@ PyObject *KosEvalState_StackPopTailDictFromNames(KosEvalState *es, PyObject *nam
 PyObject *KosEvalState_StackPeek(KosEvalState *es);
 PyObject *KosEvalState_StackPeekAt(KosEvalState *es, Py_ssize_t index);
 int KosEvalState_StackPopTailPtr(KosEvalState *es, size_t count, PyObject **dest);
-
-/**
-  Explicit operand slot (e.g. node->stack) when it is not the innermost
-  context stack. Do not use for ordinary opcode stack effects; use
-  KosEvalState_Stack* with a KosEvalState bound to ctx.
-*/
-int KosEvalState_OperandSlotPushRef(KosStackBlock **slot, PyObject *val);
-PyObject *KosEvalState_OperandSlotPopRef(KosStackBlock **slot);
-
-KosStackBlock *KosEvalState_OperandNewEmpty(void);
-KosStackBlock *KosEvalState_OperandDeepCopy(KosStackBlock *block);
-void KosEvalState_OperandRelease(KosStackBlock *block);
-void KosEvalState_OperandReleaseChain(KosStackBlock *block);
-void KosEvalState_OperandReleaseChainExclude(KosStackBlock *block, PyObject *exclude);
-size_t KosEvalState_OperandLen(const KosStackBlock *block);
-
-int KosEvalState_StackPushBlock(KosEvalState *es);
-int KosEvalState_StackDropBlock(KosEvalState *es);
 
 PyObject *KosEvalState_GetFast(const KosEvalState *es, size_t index);
 int KosEvalState_SetFast(KosEvalState *es, size_t index, PyObject *value);

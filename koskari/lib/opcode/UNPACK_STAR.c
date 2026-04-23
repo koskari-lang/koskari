@@ -21,7 +21,7 @@
 */
 
 KOS_OP_HANDLER(UNPACK_STAR) {
-  KosContext *ctx = KosEvalState_Context(es);
+  KosContext *ctx = KosEvalState_CONTEXT(es);
   KosCode *code = CURRENT_CODE(ctx);
   KosExtra row = KosCode_GetExtra(code, KosOp_ARG(insn));
   unsigned left = row.a0;

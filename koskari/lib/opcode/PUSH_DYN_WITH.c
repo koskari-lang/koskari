@@ -21,7 +21,7 @@
 */
 
 KOS_OP_HANDLER(PUSH_DYN_WITH) {
-  KosContext *ctx = KosEvalState_Context(es);
+  KosContext *ctx = KosEvalState_CONTEXT(es);
 
   PyObject *mgr = KosEvalState_StackPopRef(es);
   if (! mgr)
@@ -68,7 +68,7 @@ KOS_OP_HANDLER(PUSH_DYN_WITH) {
     return KOS_OP_POST_ERR();
   }
 
-  KosDynNode_STACK((KosDynNode *) with_node) = KosEvalState_OperandNewEmpty();
+  KosDynNode_STACK((KosDynNode *) with_node) = KosStackBlock_NewEmpty();
   if (! KosDynNode_STACK((KosDynNode *) with_node)) {
     kos_dyn_pop_with(ctx, with_node);
     Py_DECREF(name_obj);

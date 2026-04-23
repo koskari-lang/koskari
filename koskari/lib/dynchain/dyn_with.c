@@ -90,7 +90,7 @@ KosDynWith *kos_dyn_with_clone(KosDynWith *src) {
   KosDynWith_EXC_TB(node) = NULL;
   if (KosDynNode_STACK((KosDynNode *) src)) {
     KosDynNode_STACK((KosDynNode *) node) =
-        KosEvalState_OperandDeepCopy(KosDynNode_STACK((KosDynNode *) src));
+        KosStackBlock_DeepCopy(KosDynNode_STACK((KosDynNode *) src));
     if (! KosDynNode_STACK((KosDynNode *) node)) {
       kos_dynwith_free(node);
       return NULL;

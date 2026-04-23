@@ -20,7 +20,7 @@
 */
 
 KOS_OP_HANDLER(POP_COLLECT) {
-  KosContext *ctx = KosEvalState_Context(es);
+  KosContext *ctx = KosEvalState_CONTEXT(es);
   (void) out_ev;
   (void) insn;
 

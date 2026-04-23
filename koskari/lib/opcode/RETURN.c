@@ -20,7 +20,7 @@
 */
 
 KOS_OP_HANDLER(RETURN) {
-  KosContext *ctx = KosEvalState_Context(es);
+  KosContext *ctx = KosEvalState_CONTEXT(es);
   unsigned opa = KosOp_ARG(insn);
   PyObject *val = NULL;
 

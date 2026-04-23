@@ -21,7 +21,7 @@
 */
 
 KOS_OP_HANDLER(PUSH_FOREACH) {
-  KosContext *ctx = KosEvalState_Context(es);
+  KosContext *ctx = KosEvalState_CONTEXT(es);
   uint32_t continue_pc = CURRENT_PC(ctx);  /* already advanced by drive loop */
 
   /* Pop iterable (TOS) and loop_result from stack */
@@ -91,7 +91,7 @@ KOS_OP_HANDLER(PUSH_FOREACH) {
   KosDynForeach_ITER((KosDynForeach *) region) = iter;
   KosDynForeach_EXHAUSTED((KosDynForeach *) region) = 0;
 
-  KosDynNode_STACK(region) = KosEvalState_OperandNewEmpty();
+  KosDynNode_STACK(region) = KosStackBlock_NewEmpty();
   if (! KosDynNode_STACK(region)) {
     if (kos_dyn_abort_push_region(ctx, region) < 0) {
       PyErr_Clear();

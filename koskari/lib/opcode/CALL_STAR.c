@@ -39,7 +39,7 @@ static int ensure_tuple(PyObject **val) {
 
 
 KOS_OP_HANDLER(CALL_STAR) {
-  KosContext *ctx = KosEvalState_Context(es);
+  KosContext *ctx = KosEvalState_CONTEXT(es);
   unsigned opa = KosOp_ARG(insn);
 
   PyObject *fun = NULL;

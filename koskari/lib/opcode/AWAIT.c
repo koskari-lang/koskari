@@ -21,7 +21,7 @@
 */
 
 KOS_OP_HANDLER(AWAIT) {
-  KosContext *ctx = KosEvalState_Context(es);
+  KosContext *ctx = KosEvalState_CONTEXT(es);
   uint32_t arg = KosOp_ARG(insn);
 
   if (arg == 0u) {

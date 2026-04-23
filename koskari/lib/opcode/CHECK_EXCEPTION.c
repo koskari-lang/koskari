@@ -20,7 +20,7 @@
 */
 
 KOS_OP_HANDLER(CHECK_EXCEPTION) {
-  KosContext *ctx = KosEvalState_Context(es);
+  KosContext *ctx = KosEvalState_CONTEXT(es);
   (void) out_ev;
 
   PyObject *match = KosEvalState_StackPopRef(es);

@@ -30,7 +30,7 @@ KosDynTry *kos_dyntry_clone(KosDynTry *node) {
   KosDynTry_ENABLED(clone) = KosDynTry_ENABLED(node);
   if (KosDynNode_STACK((KosDynNode *) node)) {
     KosDynNode_STACK((KosDynNode *) clone) =
-        KosEvalState_OperandDeepCopy(KosDynNode_STACK((KosDynNode *) node));
+        KosStackBlock_DeepCopy(KosDynNode_STACK((KosDynNode *) node));
     if (! KosDynNode_STACK((KosDynNode *) clone)) {
       kos_dyntry_free(clone);
       return NULL;

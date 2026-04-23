@@ -20,7 +20,7 @@
 */
 
 KOS_OP_HANDLER(VAR_OBJECT_BIT_RIGHT) {
-  KosContext *ctx = KosEvalState_Context(es);
+  KosContext *ctx = KosEvalState_CONTEXT(es);
   (void) out_ev;
 
   PyObject *name = get_name_from_insn(CURRENT_CODE(ctx), insn);

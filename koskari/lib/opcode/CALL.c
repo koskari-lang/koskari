@@ -20,7 +20,7 @@
 */
 
 KOS_OP_HANDLER(CALL) {
-  KosContext *ctx = KosEvalState_Context(es);
+  KosContext *ctx = KosEvalState_CONTEXT(es);
   unsigned n = KosOp_ARG(insn);
 
   PyObject *const *ptr = KosEvalState_StackTailPtr(es, n + 1);

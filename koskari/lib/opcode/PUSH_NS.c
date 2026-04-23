@@ -23,7 +23,7 @@
 */
 
 KOS_OP_HANDLER(PUSH_NS) {
-  KosContext *ctx = KosEvalState_Context(es);
+  KosContext *ctx = KosEvalState_CONTEXT(es);
   KosCode *code = CURRENT_CODE(ctx);
   uint16_t eidx = (uint16_t) KosOp_ARG(insn);
   PyObject *nspec = NULL;

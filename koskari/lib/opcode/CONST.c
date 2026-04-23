@@ -19,7 +19,7 @@
 */
 
 KOS_OP_HANDLER(CONST) {
-  KosContext *ctx = KosEvalState_Context(es);
+  KosContext *ctx = KosEvalState_CONTEXT(es);
   KosCode *code = CURRENT_CODE(ctx);
   uint32_t index = KosOp_ARG(insn);
 

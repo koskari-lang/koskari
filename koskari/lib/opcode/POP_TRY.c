@@ -20,7 +20,7 @@
 */
 
 KOS_OP_HANDLER(POP_TRY) {
-  KosContext *ctx = KosEvalState_Context(es);
+  KosContext *ctx = KosEvalState_CONTEXT(es);
   KosDynNode *region = (KosDynNode *) KosContext_DYN_TOP(ctx);
   if (! region || ! KosDynNode_IS_TRY(region)) {
     PyErr_SetString(PyExc_RuntimeError, "POP_TRY: top is not a TRY region");
@@ -30,7 +30,7 @@ KOS_OP_HANDLER(POP_TRY) {
   PyErr_Clear();
   PyErr_SetExcInfo(NULL, NULL, NULL);
   {
-    PyObject *promoted = KosEvalState_OperandSlotPopRef(&KosDynNode_STACK(region));
+    PyObject *promoted = KosStackBlock_PopRef(&KosDynNode_STACK(region));
     if (! promoted)
       return KOS_OP_POST_ERR();
     kos_dyn_pop_try(ctx, (KosDynTry *) region);

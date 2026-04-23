@@ -19,7 +19,7 @@
 */
 
 KOS_OP_HANDLER(GLOBALS) {
-  KosContext *ctx = KosEvalState_Context(es);
+  KosContext *ctx = KosEvalState_CONTEXT(es);
   kos_dyn_globals_frame(ctx);
 
   PyObject *ns = KosDynFrame_NS(KosContext_GLOBALS_FRAME(ctx));

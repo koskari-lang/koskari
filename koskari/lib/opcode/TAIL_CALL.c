@@ -23,7 +23,7 @@
 */
 
 KOS_OP_HANDLER(TAIL_CALL) {
-  KosContext *ctx = KosEvalState_Context(es);
+  KosContext *ctx = KosEvalState_CONTEXT(es);
   unsigned n = KosOp_ARG(insn);
   size_t count = (size_t)(n + 1);
 

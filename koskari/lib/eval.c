@@ -69,6 +69,7 @@
 #include <stdint.h>
 #include <frameobject.h>
 
+
 /* Every handler has (ctx, out_ev, insn).  Cast unused parameters to (void)
    to silence warnings and make intent explicit, e.g. (void) out_ev; (void) insn; */
 
@@ -161,6 +162,7 @@ static inline void kos_ctx_async_bridge_assign_await_iter(
     ctx->py_await_iter = await_iter;
     return;
   }
+
   Py_CLEAR(KosContext_PY_AWAIT_ITER(ctx));
   ctx->py_await_iter = await_iter;
 }
@@ -176,6 +178,11 @@ static inline void kos_evalstate_init(KosEvalState *es, KosContext *ctx) {
 }
 
 
+void KosEvalState_Init(KosEvalState *es, KosContext *ctx) {
+  kos_evalstate_init(es, ctx);
+}
+
+
 static inline void kos_evalstate_sync_from_context(KosEvalState *es) {
 
   KosContext *ctx = es->ctx;
@@ -187,204 +194,16 @@ static inline void kos_evalstate_sync_from_context(KosEvalState *es) {
 }
 
 
-static inline KosContext *kos_evalstate_context(const KosEvalState *es) {
-
-  return es->ctx;
-}
-
-
-static inline KosDynFrame *kos_evalstate_frame(const KosEvalState *es) {
-
-  if (es->frame != NULL)
-    return es->frame;
-  return KosContext_FRAME_TOP(es->ctx);
-}
-
-
-static inline KosCode *kos_evalstate_current_code(const KosEvalState *es) {
-
-  KosDynFrame *f = kos_evalstate_frame(es);
-
-  return f ? KosDynFrame_CODE(f) : NULL;
-}
-
-
-static inline PyObject *kos_evalstate_current_namespace(
-    const KosEvalState *es) {
-
-  KosDynFrame *f = kos_evalstate_frame(es);
-
-  return f ? KosDynFrame_NS(f) : NULL;
-}
-
-
-static inline uint32_t kos_evalstate_get_frame_pc(const KosEvalState *es) {
-
-  KosDynFrame *f = kos_evalstate_frame(es);
-
-  return f ? KosDynFrame_PC(f) : (uint32_t) 0;
-}
-
-
-static inline int kos_evalstate_set_frame_pc(KosEvalState *es, uint32_t pc) {
-
-  KosDynFrame *f = kos_evalstate_frame(es);
-
-  if (f == NULL) {
-    PyErr_SetString(PyExc_SystemError, "KosEvalState_SetFramePc: no frame");
-    return -1;
-  }
-  KosDynFrame_PC(f) = pc;
-  return 0;
-}
-
-
-static inline uint32_t kos_evalstate_get_acting_pc(const KosEvalState *es) {
-
-  KosDynFrame *f = kos_evalstate_frame(es);
-
-  return f ? KosDynFrame_ACTING_PC(f) : (uint32_t) 0;
-}
-
-
-static inline int kos_evalstate_set_acting_pc(KosEvalState *es, uint32_t pc) {
-
-  KosDynFrame *f = kos_evalstate_frame(es);
-
-  if (f == NULL) {
-    PyErr_SetString(PyExc_SystemError,
-                    "KosEvalState_SetActingPc: no frame");
-    return -1;
-  }
-  KosDynFrame_ACTING_PC(f) = pc;
-  return 0;
-}
-
-
-static inline PyObject *kos_evalstate_get_constant(
-    const KosEvalState *es,
-    uint32_t index) {
-
-  KosCode *code = kos_evalstate_current_code(es);
-
-  if (code == NULL) {
-    PyErr_SetString(PyExc_SystemError,
-                    "KosEvalState_GetConstant: no code");
-    return NULL;
-  }
-  if (unlikely(index >= KosCode_CPOOL_LEN(code))) {
-    PyErr_Format(PyExc_IndexError, "constant index out of bounds, %u",
-                 (unsigned) index);
-    return NULL;
-  }
-  return KosCode_GET_CONST(code, index);
-}
-
-
-static inline int kos_evalstate_stack_push_ref(KosEvalState *es, PyObject *val) {
-
-  KosContext *ctx = kos_evalstate_context(es);
-
-  if (ctx == NULL) {
-    PyErr_SetString(PyExc_SystemError,
-                    "KosEvalState_StackPushRef: no context");
-    return -1;
-  }
-  return KosStackBlock_PushRef(KosContext_BLOCK(ctx), val);
-}
-
-
-static inline PyObject *kos_evalstate_stack_pop_ref(KosEvalState *es) {
-
-  KosContext *ctx = kos_evalstate_context(es);
-
-  if (ctx == NULL) {
-    PyErr_SetString(PyExc_SystemError,
-                    "KosEvalState_StackPopRef: no context");
-    return NULL;
-  }
-  return KosStackBlock_PopRef(KosContext_BLOCK(ctx));
-}
-
-
-static inline int kos_evalstate_stack_push_block(KosEvalState *es) {
-
-  (void) es;
-  PyErr_SetString(PyExc_SystemError,
-                  "KosEvalState_StackPushBlock: not used; use node->stack");
-  return -1;
-}
-
-
-static inline int kos_evalstate_stack_drop_block(KosEvalState *es) {
-
-  (void) es;
-  PyErr_SetString(PyExc_SystemError,
-                  "KosEvalState_StackDropBlock: not used; use node->stack");
-  return -1;
-}
-
-
-static inline PyObject *kos_evalstate_get_fast(
-    const KosEvalState *es,
-    size_t index) {
-
-  PyObject *ns = kos_evalstate_current_namespace(es);
-
-  if (ns == NULL) {
-    PyErr_SetString(PyExc_SystemError, "KosEvalState_GetFast: no namespace");
-    return NULL;
-  }
-  return KosNamespace_FastDeref(ns, index);
-}
-
-
-static inline int kos_evalstate_set_fast(
-    KosEvalState *es,
-    size_t index,
-    PyObject *value) {
-
-  PyObject *ns = kos_evalstate_current_namespace(es);
-
-  if (ns == NULL) {
-    PyErr_SetString(PyExc_SystemError, "KosEvalState_SetFast: no namespace");
-    return -1;
-  }
-  return KosNamespace_FastStore(ns, index, value);
-}
-
-
-static inline PyObject *kos_evalstate_get_var(
-    const KosEvalState *es,
-    PyObject *key) {
-
-  PyObject *ns = kos_evalstate_current_namespace(es);
-
-  if (ns == NULL) {
-    PyErr_SetString(PyExc_SystemError, "KosEvalState_GetVar: no namespace");
-    return NULL;
-  }
-  return KosNamespace_Deref(ns, key);
-}
-
-
-void KosEvalState_Init(KosEvalState *es, KosContext *ctx) {
-  kos_evalstate_init(es, ctx);
-}
-
-
 void KosEvalState_SyncFromContext(KosEvalState *es) {
   kos_evalstate_sync_from_context(es);
 }
 
 
-KosContext *KosEvalState_Context(const KosEvalState *es) {
-  return kos_evalstate_context(es);
-}
+static inline KosCode *kos_evalstate_current_code(
+    const KosEvalState *es) {
 
-
-KosDynFrame *KosEvalState_Frame(const KosEvalState *es) {
-  return kos_evalstate_frame(es);
+  KosDynFrame *f = KosEvalState_FRAME(es);
+  return f ? KosDynFrame_CODE(f) : NULL;
 }
 
 
@@ -393,8 +212,24 @@ KosCode *KosEvalState_CurrentCode(const KosEvalState *es) {
 }
 
 
+static inline PyObject *kos_evalstate_current_namespace(
+    const KosEvalState *es) {
+
+  KosDynFrame *f = KosEvalState_FRAME(es);
+  return f? KosDynFrame_NS(f): NULL;
+}
+
+
 PyObject *KosEvalState_CurrentNamespace(const KosEvalState *es) {
   return kos_evalstate_current_namespace(es);
+}
+
+
+static inline uint32_t kos_evalstate_get_frame_pc(
+    const KosEvalState *es) {
+
+  KosDynFrame *f = KosEvalState_FRAME(es);
+  return f ? KosDynFrame_PC(f) : (uint32_t) 0;
 }
 
 
@@ -403,8 +238,27 @@ uint32_t KosEvalState_GetFramePc(const KosEvalState *es) {
 }
 
 
+static inline int kos_evalstate_set_frame_pc(KosEvalState *es, uint32_t pc) {
+  KosDynFrame *f = KosEvalState_FRAME(es);
+
+  if (unlikely(! f)) {
+    PyErr_SetString(PyExc_SystemError, "KosEvalState_SetFramePc: no frame");
+    return -1;
+  }
+
+  KosDynFrame_PC(f) = pc;
+  return 0;
+}
+
+
 int KosEvalState_SetFramePc(KosEvalState *es, uint32_t pc) {
   return kos_evalstate_set_frame_pc(es, pc);
+}
+
+
+static inline uint32_t kos_evalstate_get_acting_pc(const KosEvalState *es) {
+  KosDynFrame *f = KosEvalState_FRAME(es);
+  return f ? KosDynFrame_ACTING_PC(f) : (uint32_t) 0;
 }
 
 
@@ -413,87 +267,131 @@ uint32_t KosEvalState_GetActingPc(const KosEvalState *es) {
 }
 
 
+static inline int kos_evalstate_set_acting_pc(KosEvalState *es, uint32_t pc) {
+  KosDynFrame *f = KosEvalState_FRAME(es);
+
+  if (unlikely(! f)) {
+    PyErr_SetString(PyExc_SystemError,
+                    "KosEvalState_SetActingPc: no frame");
+    return -1;
+  }
+
+  KosDynFrame_ACTING_PC(f) = pc;
+  return 0;
+}
+
 int KosEvalState_SetActingPc(KosEvalState *es, uint32_t pc) {
   return kos_evalstate_set_acting_pc(es, pc);
 }
 
+
+static inline PyObject *kos_evalstate_get_constant(
+    const KosEvalState *es,
+    uint32_t index) {
+
+  KosCode *code = KosEvalState_CODE(es);
+  return code? KosCode_GET_CONST(code, index): NULL;
+}
 
 PyObject *KosEvalState_GetConstant(const KosEvalState *es, uint32_t index) {
   return kos_evalstate_get_constant(es, index);
 }
 
 
+static inline int kos_evalstate_stack_push_ref(KosEvalState *es, PyObject *val) {
+  KosContext *ctx = KosEvalState_CONTEXT(es);
+  return KosStackBlock_PushRef(KosContext_BLOCK(ctx), val);
+}
+
 int KosEvalState_StackPushRef(KosEvalState *es, PyObject *val) {
   return kos_evalstate_stack_push_ref(es, val);
 }
 
+
+static inline PyObject *kos_evalstate_stack_pop_ref(KosEvalState *es) {
+  KosContext *ctx = KosEvalState_CONTEXT(es);
+  return KosStackBlock_PopRef(KosContext_BLOCK(ctx));
+}
 
 PyObject *KosEvalState_StackPopRef(KosEvalState *es) {
   return kos_evalstate_stack_pop_ref(es);
 }
 
 
-int KosEvalState_StackPushBlock(KosEvalState *es) {
-  return kos_evalstate_stack_push_block(es);
+static inline PyObject *kos_evalstate_get_fast(
+    const KosEvalState *es,
+    size_t index) {
+
+  KosDynFrame *f = KosEvalState_FRAME(es);
+  PyObject *ns = f? KosDynFrame_NS(f): NULL;
+  return KosNamespace_FastDeref(ns, index);
 }
-
-
-int KosEvalState_StackDropBlock(KosEvalState *es) {
-  return kos_evalstate_stack_drop_block(es);
-}
-
 
 PyObject *KosEvalState_GetFast(const KosEvalState *es, size_t index) {
   return kos_evalstate_get_fast(es, index);
 }
 
 
-int KosEvalState_SetFast(
+static inline int kos_evalstate_set_fast(
     KosEvalState *es,
     size_t index,
     PyObject *value) {
+
+  KosDynFrame *f = KosEvalState_FRAME(es);
+  PyObject *ns = f? KosDynFrame_NS(f): NULL;
+  return KosNamespace_FastStore(ns, index, value);
+}
+
+int KosEvalState_SetFast(
+  KosEvalState *es,
+  size_t index,
+  PyObject *value) {
 
   return kos_evalstate_set_fast(es, index, value);
 }
 
 
-PyObject *KosEvalState_GetVar(const KosEvalState *es, PyObject *key) {
+static inline PyObject *kos_evalstate_get_var(
+    const KosEvalState *es,
+    PyObject *key) {
 
+  KosDynFrame *f = KosEvalState_FRAME(es);
+  PyObject *ns = f? KosDynFrame_NS(f): NULL;
+  return KosNamespace_Deref(ns, key);
+}
+
+PyObject *KosEvalState_GetVar(const KosEvalState *es, PyObject *key) {
   return kos_evalstate_get_var(es, key);
 }
 
 
-static KosStackBlock **kos_evalstate_stack_slot_ptr(KosEvalState *es) {
+static inline int kos_evalstate_stack_steal_tail(
+    KosEvalState *es,
+    KosStackSteal *s,
+    size_t count) {
 
-  KosContext *ctx = kos_evalstate_context(es);
-  return ctx ? KosContext_BLOCK(ctx) : NULL;
+  KosContext *ctx = KosEvalState_CONTEXT(es);
+  return KosStackSteal_Tail(s, count, KosContext_BLOCK(ctx));
+}
+
+int KosEvalState_StackSteal_Tail(
+    KosEvalState *es,
+    KosStackSteal *s,
+    size_t count) {
+
+  return kos_evalstate_stack_steal_tail(es, s, count);
 }
 
 
-static KosStackBlock *kos_evalstate_stack_head_ptr(const KosEvalState *es) {
+static inline int kos_evalstate_stack_steal_tail_prepend(
+    KosEvalState *es,
+    KosStackSteal *s,
+    PyObject *prefix,
+    size_t count) {
 
-  KosContext *ctx = kos_evalstate_context(es);
-  KosStackBlock **sl = ctx ? KosContext_BLOCK(ctx) : NULL;
-  return (sl && *sl) ? *sl : NULL;
+  KosContext *ctx = KosEvalState_CONTEXT(es);
+  return KosStackSteal_TailPrepend(s, prefix, count, KosContext_BLOCK(ctx));
 }
-
-
-KosStackBlock *KosEvalState_StackHead(const KosEvalState *es) {
-
-  return kos_evalstate_stack_head_ptr(es);
-}
-
-
-int KosEvalState_StackSteal_Tail(KosEvalState *es, KosStackSteal *s, size_t count) {
-
-  KosStackBlock **sl = kos_evalstate_stack_slot_ptr(es);
-  if (! sl) {
-    PyErr_SetString(PyExc_SystemError, "KosEvalState_StackSteal_Tail: no context");
-    return -1;
-  }
-  return KosStackSteal_Tail(s, count, sl);
-}
-
 
 int KosEvalState_StackSteal_TailPrepend(
     KosEvalState *es,
@@ -501,232 +399,187 @@ int KosEvalState_StackSteal_TailPrepend(
     PyObject *prefix,
     size_t count) {
 
-  KosStackBlock **sl = kos_evalstate_stack_slot_ptr(es);
-  if (! sl) {
-    PyErr_SetString(PyExc_SystemError,
-                    "KosEvalState_StackSteal_TailPrepend: no context");
-    return -1;
-  }
-  return KosStackSteal_TailPrepend(s, prefix, count, sl);
+  return kos_evalstate_stack_steal_tail_prepend(es, s, prefix, count);
 }
 
+
+static inline int kos_evalstate_stack_PUSH(
+    KosEvalState *es,
+    PyObject *val) {
+
+  KosContext *ctx = KosEvalState_CONTEXT(es);
+  return KosStackBlock_PUSH(KosContext_BLOCK(ctx), val);
+}
 
 int KosEvalState_StackPUSH(KosEvalState *es, PyObject *val) {
-
-  KosStackBlock **sl = kos_evalstate_stack_slot_ptr(es);
-  if (! sl) {
-    PyErr_SetString(PyExc_SystemError, "KosEvalState_StackPUSH: no context");
-    return -1;
-  }
-  return KosStackBlock_PUSH(sl, val);
+  return kos_evalstate_stack_PUSH(es, val);
 }
 
+
+static inline PyObject *kos_evalstate_stack_pop_tail(
+    KosEvalState *es,
+    size_t count) {
+
+  KosContext *ctx = KosEvalState_CONTEXT(es);
+  return KosStackBlock_PopTail(KosContext_BLOCK(ctx), count);
+}
 
 PyObject *KosEvalState_StackPopTail(KosEvalState *es, size_t count) {
-
-  KosStackBlock **sl = kos_evalstate_stack_slot_ptr(es);
-  if (! sl) {
-    PyErr_SetString(PyExc_SystemError, "KosEvalState_StackPopTail: no context");
-    return NULL;
-  }
-  return KosStackBlock_PopTail(sl, count);
+  return kos_evalstate_stack_pop_tail(es, count);
 }
 
+
+static inline PyObject *const *kos_evalstate_stack_tail_ptr(
+    KosEvalState *es,
+    size_t count) {
+
+  KosContext *ctx = KosEvalState_CONTEXT(es);
+  return KosStackBlock_TailPtr(*KosContext_BLOCK(ctx), count);
+}
 
 PyObject *const *KosEvalState_StackTailPtr(KosEvalState *es, size_t count) {
-
-  KosStackBlock *h = kos_evalstate_stack_head_ptr(es);
-  if (! h) {
-    PyErr_SetString(PyExc_SystemError, "KosEvalState_StackTailPtr: no context");
-    return NULL;
-  }
-  return KosStackBlock_TailPtr(h, count);
+  return kos_evalstate_stack_tail_ptr(es, count);
 }
 
+
+static inline size_t kos_evalstate_stack_len(KosEvalState *es) {
+  KosContext *ctx = KosEvalState_CONTEXT(es);
+  return KosStackBlock_LEN(*KosContext_BLOCK(ctx));
+}
 
 size_t KosEvalState_StackLen(KosEvalState *es) {
-
-  KosStackBlock *h = kos_evalstate_stack_head_ptr(es);
-  return h ? KosStackBlock_LEN(h) : 0;
+  return kos_evalstate_stack_len(es);
 }
 
+
+static inline int kos_evalstate_stack_drop(KosEvalState *es, size_t count) {
+  KosContext *ctx = KosEvalState_CONTEXT(es);
+  return KosStackBlock_Drop(KosContext_BLOCK(ctx), count);
+}
 
 int KosEvalState_StackDrop(KosEvalState *es, size_t count) {
-
-  KosStackBlock **sl = kos_evalstate_stack_slot_ptr(es);
-  if (! sl) {
-    PyErr_SetString(PyExc_SystemError, "KosEvalState_StackDrop: no context");
-    return -1;
-  }
-  return KosStackBlock_Drop(sl, count);
+  return kos_evalstate_stack_drop(es, count);
 }
 
 
-int KosEvalState_StackDrop1(KosEvalState *es) {
+static inline int kos_evalstate_stack_drop1(KosEvalState *es) {
+  KosContext *ctx = KosEvalState_CONTEXT(es);
+  return KosStackBlock_Drop1(KosContext_BLOCK(ctx));
+}
 
-  KosStackBlock **sl = kos_evalstate_stack_slot_ptr(es);
-  if (! sl) {
-    PyErr_SetString(PyExc_SystemError, "KosEvalState_StackDrop1: no context");
-    return -1;
-  }
-  return KosStackBlock_Drop1(sl);
+int KosEvalState_StackDrop1(KosEvalState *es) {
+  return kos_evalstate_stack_drop1(es);
+}
+
+
+static inline int kos_evalstate_stack_drop_no_err(KosEvalState *es, size_t count) {
+  KosContext *ctx = KosEvalState_CONTEXT(es);
+  return KosStackBlock_DropNoErr(KosContext_BLOCK(ctx), count);
 }
 
 
 void KosEvalState_StackDropNoErr(KosEvalState *es, size_t count) {
+  kos_evalstate_stack_drop_no_err(es, count);
+}
 
-  KosStackBlock **sl = kos_evalstate_stack_slot_ptr(es);
-  if (sl)
-    KosStackBlock_DropNoErr(sl, count);
+
+static inline int kos_evalstate_stack_clear_block(KosEvalState *es) {
+  KosContext *ctx = KosEvalState_CONTEXT(es);
+  return KosStackBlock_ClearBlock(KosContext_BLOCK(ctx));
 }
 
 
 int KosEvalState_StackClearBlock(KosEvalState *es) {
+  return kos_evalstate_stack_clear_block(es);
+}
 
-  KosStackBlock **sl = kos_evalstate_stack_slot_ptr(es);
-  if (! sl) {
-    PyErr_SetString(PyExc_SystemError, "KosEvalState_StackClearBlock: no context");
-    return -1;
-  }
-  return KosStackBlock_ClearBlock(sl);
+
+static inline int kos_evalstate_stack_duplicate(KosEvalState *es, size_t count) {
+  KosContext *ctx = KosEvalState_CONTEXT(es);
+  return KosStackBlock_Duplicate(KosContext_BLOCK(ctx), count);
 }
 
 
 int KosEvalState_StackDuplicate(KosEvalState *es, size_t count) {
+  return kos_evalstate_stack_duplicate(es, count);
+}
 
-  KosStackBlock **sl = kos_evalstate_stack_slot_ptr(es);
-  if (! sl) {
-    PyErr_SetString(PyExc_SystemError, "KosEvalState_StackDuplicate: no context");
-    return -1;
-  }
-  return KosStackBlock_Duplicate(sl, count);
+
+static inline PyObject *kos_evalstate_stack_pop_tail_dict(KosEvalState *es, size_t count) {
+  KosContext *ctx = KosEvalState_CONTEXT(es);
+  return KosStackBlock_PopTailDict(KosContext_BLOCK(ctx), count);
 }
 
 
 PyObject *KosEvalState_StackPopTailDict(KosEvalState *es, size_t count) {
+  return kos_evalstate_stack_pop_tail_dict(es, count);
+}
 
-  KosStackBlock **sl = kos_evalstate_stack_slot_ptr(es);
-  if (! sl) {
-    PyErr_SetString(PyExc_SystemError, "KosEvalState_StackPopTailDict: no context");
-    return NULL;
-  }
-  return KosStackBlock_PopTailDict(sl, count);
+
+static inline PyObject *kos_evalstate_stack_pop_tail_dict_names(KosEvalState *es, size_t count) {
+  KosContext *ctx = KosEvalState_CONTEXT(es);
+  return KosStackBlock_PopTailDictNames(KosContext_BLOCK(ctx), count);
 }
 
 
 PyObject *KosEvalState_StackPopTailDictNames(KosEvalState *es, size_t count) {
+  return kos_evalstate_stack_pop_tail_dict_names(es, count);
+}
 
-  KosStackBlock **sl = kos_evalstate_stack_slot_ptr(es);
-  if (! sl) {
-    PyErr_SetString(PyExc_SystemError,
-                    "KosEvalState_StackPopTailDictNames: no context");
-    return NULL;
-  }
-  return KosStackBlock_PopTailDictNames(sl, count);
+
+static inline PyObject *kos_evalstate_stack_pop_tail_dict_from_names(
+    KosEvalState *es,
+    PyObject *names) {
+
+  KosContext *ctx = KosEvalState_CONTEXT(es);
+  return KosStackBlock_PopTailDictFromNames(KosContext_BLOCK(ctx), names);
 }
 
 
 PyObject *KosEvalState_StackPopTailDictFromNames(KosEvalState *es, PyObject *names) {
+  return kos_evalstate_stack_pop_tail_dict_from_names(es, names);
+}
 
-  KosStackBlock **sl = kos_evalstate_stack_slot_ptr(es);
-  if (! sl) {
-    PyErr_SetString(PyExc_SystemError,
-                    "KosEvalState_StackPopTailDictFromNames: no context");
-    return NULL;
-  }
-  return KosStackBlock_PopTailDictFromNames(sl, names);
+
+static inline PyObject *kos_evalstate_stack_peek(KosEvalState *es) {
+  KosContext *ctx = KosEvalState_CONTEXT(es);
+  return KosStackBlock_Peek(*KosContext_BLOCK(ctx));
 }
 
 
 PyObject *KosEvalState_StackPeek(KosEvalState *es) {
+  return kos_evalstate_stack_peek(es);
+}
 
-  KosStackBlock *h = kos_evalstate_stack_head_ptr(es);
-  if (! h) {
-    PyErr_SetString(PyExc_SystemError, "KosEvalState_StackPeek: no context");
-    return NULL;
-  }
-  return KosStackBlock_Peek(h);
+
+static inline PyObject *kos_evalstate_stack_peek_at(KosEvalState *es, Py_ssize_t index) {
+  KosContext *ctx = KosEvalState_CONTEXT(es);
+  return KosStackBlock_PeekAt(*KosContext_BLOCK(ctx), index);
 }
 
 
 PyObject *KosEvalState_StackPeekAt(KosEvalState *es, Py_ssize_t index) {
+  return kos_evalstate_stack_peek_at(es, index);
+}
 
-  KosStackBlock *h = kos_evalstate_stack_head_ptr(es);
-  if (! h) {
-    PyErr_SetString(PyExc_SystemError, "KosEvalState_StackPeekAt: no context");
-    return NULL;
-  }
-  return KosStackBlock_PeekAt(h, index);
+
+static inline int kos_evalstate_stack_pop_tail_ptr(
+    KosEvalState *es,
+    size_t count,
+    PyObject **dest) {
+
+  KosContext *ctx = KosEvalState_CONTEXT(es);
+  return KosStackBlock_PopTailPtr(KosContext_BLOCK(ctx), count, dest);
 }
 
 
 int KosEvalState_StackPopTailPtr(KosEvalState *es, size_t count, PyObject **dest) {
-
-  KosStackBlock **sl = kos_evalstate_stack_slot_ptr(es);
-  if (! sl) {
-    PyErr_SetString(PyExc_SystemError, "KosEvalState_StackPopTailPtr: no context");
-    return -1;
-  }
-  return KosStackBlock_PopTailPtr(sl, count, dest);
-}
-
-
-int KosEvalState_OperandSlotPushRef(KosStackBlock **slot, PyObject *val) {
-
-  return KosStackBlock_PushRef(slot, val);
-}
-
-
-PyObject *KosEvalState_OperandSlotPopRef(KosStackBlock **slot) {
-
-  return KosStackBlock_PopRef(slot);
-}
-
-
-KosStackBlock *KosEvalState_OperandNewEmpty(void) {
-
-  return KosStackBlock_NewEmpty();
-}
-
-
-KosStackBlock *KosEvalState_OperandDeepCopy(KosStackBlock *block) {
-
-  return KosStackBlock_DeepCopy(block);
-}
-
-
-void KosEvalState_OperandRelease(KosStackBlock *block) {
-
-  KosStackBlock_Release(block);
-}
-
-
-void KosEvalState_OperandReleaseChain(KosStackBlock *block) {
-
-  while (block) {
-    KosStackBlock *p = KosStackBlock_PARENT(block);
-    KosStackBlock_Release(block);
-    block = p;
-  }
-}
-
-
-void KosEvalState_OperandReleaseChainExclude(KosStackBlock *block, PyObject *exclude) {
-
-  KosStackBlock_ReleaseChainExclude(block, exclude);
-}
-
-
-size_t KosEvalState_OperandLen(const KosStackBlock *block) {
-
-  return block ? KosStackBlock_LEN(block) : 0;
+  return kos_evalstate_stack_pop_tail_ptr(es, count, dest);
 }
 
 
 #define KosEvalState_Init kos_evalstate_init
 #define KosEvalState_SyncFromContext kos_evalstate_sync_from_context
-#define KosEvalState_Context kos_evalstate_context
-#define KosEvalState_Frame kos_evalstate_frame
 #define KosEvalState_CurrentCode kos_evalstate_current_code
 #define KosEvalState_CurrentNamespace kos_evalstate_current_namespace
 #define KosEvalState_GetFramePc kos_evalstate_get_frame_pc
@@ -2101,7 +1954,7 @@ static int push_or_await_common(
     PyObject *val,
     int await_defer) {
 
-  KosContext *ctx = KosEvalState_Context(es);
+  KosContext *ctx = KosEvalState_CONTEXT(es);
 
   /* Defer is not auto-awaited; push as plain value (explicit AWAIT drives it). */
   if (! await_defer && KosDefer_Check(val)) {
@@ -2160,7 +2013,7 @@ static int push_or_await(KosContext *ctx, KosEvent *out_ev, PyObject *val) {
 
 #define OP_TRY_FUSE_POP1_AFTER_PUSH(es, val)                                  \
   do {                                                                        \
-    KosContext *_opfuse_ctx = KosEvalState_Context(es);                       \
+    KosContext *_opfuse_ctx = KosEvalState_CONTEXT(es);                       \
     KosDynFrame *_opfuse_pf = CURRENT_FRAME(_opfuse_ctx);                     \
     KosCode *opfuse_code = KosDynFrame_CODE(_opfuse_pf);                    \
     uint32_t opfuse_pc = KosDynFrame_PC(_opfuse_pf);                          \
@@ -2178,7 +2031,7 @@ KOS_OP_INLINE int op_push_or_await(
     KosEvent *out_ev,
     PyObject *val) {
 
-  KosContext *ctx = KosEvalState_Context(es);
+  KosContext *ctx = KosEvalState_CONTEXT(es);
 
   /* Defer is not auto-awaited; push as plain value (explicit AWAIT drives it). */
   if (KosDefer_Check(val)) {
@@ -2665,7 +2518,7 @@ static int kos_check_contains(
     KosOp *insn,
     int branch_when) {
 
-  KosContext *ctx = KosEvalState_Context(es);
+  KosContext *ctx = KosEvalState_CONTEXT(es);
   KosEvalStackContains args = {0};
   if (KOS_EVALSTATE_POP_ARGS(es, args))
     return -1;
@@ -2692,7 +2545,7 @@ static int kos_check_identity(
     KosOp *insn,
     int branch_when_equal) {
 
-  KosContext *ctx = KosEvalState_Context(es);
+  KosContext *ctx = KosEvalState_CONTEXT(es);
   KosEvalStackLR lr = {0};
   if (KOS_EVALSTATE_POP_ARGS(es, lr))
     return -1;
@@ -2715,7 +2568,7 @@ static int kos_check_two_arg(
     KosOp *insn,
     int (*check)(PyObject *, PyObject *)) {
 
-  KosContext *ctx = KosEvalState_Context(es);
+  KosContext *ctx = KosEvalState_CONTEXT(es);
   KosEvalStackLR lr = {0};
   if (KOS_EVALSTATE_POP_ARGS(es, lr))
     return -1;
@@ -2742,7 +2595,7 @@ static int kos_check_cmp(
     KosOp *insn,
     int cmp_op) {
 
-  KosContext *ctx = KosEvalState_Context(es);
+  KosContext *ctx = KosEvalState_CONTEXT(es);
   KosEvalStackLR lr = {0};
   if (KOS_EVALSTATE_POP_ARGS(es, lr))
     return -1;

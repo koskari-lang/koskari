@@ -23,7 +23,7 @@
 */
 
 KOS_OP_HANDLER(POP_SHIFT) {
-  KosContext *ctx = KosEvalState_Context(es);
+  KosContext *ctx = KosEvalState_CONTEXT(es);
   PyObject *result;
   uint32_t eid;
   uint32_t parent_id;

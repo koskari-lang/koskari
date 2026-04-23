@@ -19,7 +19,7 @@
 */
 
 KOS_OP_HANDLER(VAR_ATTR_CLEAR) {
-  KosContext *ctx = KosEvalState_Context(es);
+  KosContext *ctx = KosEvalState_CONTEXT(es);
   KosCode *code = CURRENT_CODE(ctx);
   KosExtra row = KosCode_GetExtra(code, KosOp_ARG(insn));
   PyObject *var_name = KosCode_GetConstant((PyObject *) code, row.a0);
