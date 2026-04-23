@@ -19,7 +19,6 @@
 */
 
 KOS_OP_HANDLER(PUSH_TRY) {
-  KosContext *ctx = KosEvalState_CONTEXT(es);
   KosDynNode *region = (KosDynNode *) kos_dyn_push_try(es, KosOp_ARG(insn));
   if (! region) {
     PyErr_NoMemory();
@@ -34,7 +33,7 @@ KOS_OP_HANDLER(PUSH_TRY) {
     }
     return KOS_OP_POST_ERR();
   }
-  kos_ctx_refresh_dyn_caches(ctx);
+  KosEvalState_RefreshDynCaches(es);
   (void) out_ev;
   return KOS_OP_RUN();
 }

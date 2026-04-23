@@ -110,7 +110,7 @@ int kos_dyn_gen_install(KosEvalState *es, KosDynGen *gen) {
   KosContext_DYN_TOP(ctx) = active;
   KosDynGen_ACTIVE(gen) = NULL;
   KosContext_CHAIN_VERSION(ctx)++;
-  kos_ctx_refresh_dyn_caches(ctx);
+  KosEvalState_RefreshDynCaches(es);
 
   if (KosEvalState_StackPushRef(es, Py_None) < 0) {
     KosEvalState_SyncFromContext(es);
@@ -170,7 +170,7 @@ int kos_dyn_gen_unwind_exhausted(KosEvalState *es) {
   kos_dynchain_free(frame, (KosDynNode *) gen);
   KosContext_DYN_TOP(ctx) = consumer;
   KosContext_CHAIN_VERSION(ctx)++;
-  kos_ctx_refresh_dyn_caches(ctx);
+  KosEvalState_RefreshDynCaches(es);
   kos_dyngen_release(gen);
   KosEvalState_SyncFromContext(es);
   return 0;

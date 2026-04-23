@@ -78,7 +78,7 @@ void kos_dyn_pop_loop(KosEvalState *es, KosDynLoop *node) {
     KosContext_DYN_TOP(ctx)=KosDynNode_PARENT(node);
     KosContext_CHAIN_VERSION(ctx)++;
     kos_dynloop_free(node);
-    kos_ctx_refresh_dyn_caches(ctx);
+    KosEvalState_RefreshDynCaches(es);
   }
   KosEvalState_SyncFromContext(es);
 }

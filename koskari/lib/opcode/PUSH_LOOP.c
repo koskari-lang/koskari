@@ -58,7 +58,7 @@ KOS_OP_HANDLER(PUSH_LOOP) {
     }
     return KOS_OP_POST_ERR();
   }
-  kos_ctx_refresh_dyn_caches(ctx);
+  KosEvalState_RefreshDynCaches(es);
   (void) out_ev;
   return KOS_OP_RUN();
 }

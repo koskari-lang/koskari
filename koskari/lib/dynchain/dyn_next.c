@@ -136,7 +136,7 @@ void kos_dyn_unlink_next_node(KosEvalState *es, KosDynNext *next) {
   }
   KosDynNode_PARENT(node) = NULL;
   KosContext_CHAIN_VERSION(ctx)++;
-  kos_ctx_refresh_dyn_caches(ctx);
+  KosEvalState_RefreshDynCaches(es);
   kos_dyn_next_free_payload(node);
   KosEvalState_SyncFromContext(es);
 }

@@ -105,7 +105,7 @@ KosDynFrame *kos_dyn_push_frame(
   KosContext_DYN_TOP(ctx) = (KosDynNode *) frame;
   KosContext_FRAME_TOP(ctx) = frame;
   KosContext_CHAIN_VERSION(ctx)++;
-  kos_ctx_refresh_dyn_caches(ctx);
+  KosEvalState_RefreshDynCaches(es);
 
   KosEvalState_SyncFromContext(es);
   return frame;
@@ -171,7 +171,7 @@ int kos_dyn_pop_frame(KosEvalState *es) {
   KosContext_CHAIN_VERSION(ctx)++;
 
   kos_dynnode_free(old_top);
-  kos_ctx_refresh_dyn_caches(ctx);
+  KosEvalState_RefreshDynCaches(es);
 
   KosEvalState_SyncFromContext(es);
   return 0;
@@ -200,7 +200,7 @@ int kos_dyn_attach_frame(KosEvalState *es, KosDynFrame *frame) {
   KosContext_DYN_TOP(ctx) = (KosDynNode *) frame;
   KosContext_FRAME_TOP(ctx) = frame;
   KosContext_CHAIN_VERSION(ctx)++;
-  kos_ctx_refresh_dyn_caches(ctx);
+  KosEvalState_RefreshDynCaches(es);
   KosEvalState_SyncFromContext(es);
   return 0;
 }
@@ -232,7 +232,7 @@ int kos_dyn_detach_top_frame(KosEvalState *es, KosDynFrame **frame_out) {
   KosDynFrame *frame = (KosDynFrame *) KosContext_DYN_TOP(ctx);
   KosContext_DYN_TOP(ctx) = KosDynNode_PARENT(frame);
   KosContext_CHAIN_VERSION(ctx)++;
-  kos_ctx_refresh_dyn_caches(ctx);
+  KosEvalState_RefreshDynCaches(es);
   KosDynNode_PARENT(frame) = NULL;
   if (frame_out)
     *frame_out = frame;

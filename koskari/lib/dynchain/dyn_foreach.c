@@ -88,7 +88,7 @@ void kos_dyn_pop_foreach(KosEvalState *es, KosDynForeach *node) {
     KosContext_DYN_TOP(ctx)=KosDynNode_PARENT(node);
     KosContext_CHAIN_VERSION(ctx)++;
     kos_dynforeach_free(node);
-    kos_ctx_refresh_dyn_caches(ctx);
+    KosEvalState_RefreshDynCaches(es);
   }
   KosEvalState_SyncFromContext(es);
 }

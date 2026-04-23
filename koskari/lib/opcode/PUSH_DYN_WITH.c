@@ -77,7 +77,7 @@ KOS_OP_HANDLER(PUSH_DYN_WITH) {
     Py_DECREF(mgr);
     return KOS_OP_POST_ERR();
   }
-  kos_ctx_refresh_dyn_caches(ctx);
+  KosEvalState_RefreshDynCaches(es);
 
   int r = kos_dyn_wind(es, (KosDynNode *) with_node, out_ev);
   if (r == KOS_DYN_UNWIND_ASYNC_STARTED) {

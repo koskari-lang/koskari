@@ -352,11 +352,14 @@ static int test_transfer_plan_free_with_inject_exc_type(void) {
     KosContext *ctx = kos_context_new(frame);
     TEST_ASSERT_NOT_NULL(ctx, "create context");
 
+    KosEvalState es;
+    KosEvalState_Init(&es, ctx);
+
     PyObject *value = PyLong_FromLong(42);
     TEST_ASSERT_NOT_NULL(value, "create value for throw");
 
     KosTransferPlan *plan = NULL;
-    int res = kos_build_transfer_plan(ctx, (KosDynNode *) frame, value, 1, 0,
+    int res = kos_build_transfer_plan(&es, (KosDynNode *) frame, value, 1, 0,
                                       &plan);
     Py_DECREF(value);
     TEST_ASSERT(res == 0, "kos_build_transfer_plan succeeded");

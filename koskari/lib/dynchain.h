@@ -598,12 +598,12 @@ struct KosTransferPlan {
 
 
 /**
-   Signature for running one hook (or one chunk). Run the hook in ctx; fill
+   Signature for running one hook (or one chunk). Run the hook in es; fill
    out_ev on suspend. Return KOS_HOOK_DONE when the hook finished, or
    KOS_HOOK_IN_PROGRESS when it suspended on await (caller will resume later
    with send_val/throw_exc). hook_state is opaque state for the runner.
 */
-typedef int (*KosHookInvokeFn)(struct KosContext *ctx, struct KosEvent *out_ev, void *hook_state);
+typedef int (*KosHookInvokeFn)(KosEvalState *es, struct KosEvent *out_ev, void *hook_state);
 
 
 /* === DynNode allocation and lifecycle === */
@@ -834,10 +834,6 @@ KosDynNode *kos_clone_chain_segment(
 
    :return: 0 on success, -1 on error
 */
-KosDynNode *KosContext_InnermostStackOwner(KosContext *ctx);
-
-void kos_ctx_refresh_dyn_caches(KosContext *ctx);
-
 int kos_dyn_push(KosEvalState *es, KosDynNode *node);
 
 
@@ -1863,7 +1859,7 @@ KosDynNode *kos_compute_lca(KosDynNode *a, KosDynNode *b, uint32_t graft_point_i
    3. RUN_HOOK actions for before hooks from LCA to target (outer-to-inner)
    4. INJECT action to push resume value
 
-   :param ctx: execution context
+   :param es: execution/eval state (borrowed ctx)
    :param target: target chain position
    :param value: resume value (borrowed, may be NULL)
    :param is_throw: if nonzero, throw value as exception
@@ -1873,7 +1869,7 @@ KosDynNode *kos_compute_lca(KosDynNode *a, KosDynNode *b, uint32_t graft_point_i
    :return: 0 on success, -1 on error
 */
 int kos_build_transfer_plan(
-   KosContext *ctx,
+   KosEvalState *es,
    KosDynNode *target,
    PyObject *value,
    int is_throw,
@@ -1891,7 +1887,7 @@ int kos_build_transfer_plan(
    :return: 0 on success, -1 on error
 */
 int kos_build_direct_install_plan(
-   KosContext *ctx,
+   KosEvalState *es,
    KosDynNode *target,
    PyObject *value,
    int is_throw,
@@ -1906,7 +1902,7 @@ int kos_build_direct_install_plan(
    set RESUME_PC, RESUME_FRAME, RESUME_STACK after return.
 */
 int kos_build_delimited_push_plan(
-   KosContext *ctx,
+   KosEvalState *es,
    KosDynNode *segment,
    PyObject *value,
    int is_throw,
@@ -1919,7 +1915,7 @@ int kos_build_delimited_push_plan(
    disjoint from current.  Caller must set RESUME_PC.
 */
 int kos_build_return_plan(
-   KosContext *ctx,
+   KosEvalState *es,
    KosDynNode *segment,
    PyObject *value,
    int is_throw,
@@ -1933,7 +1929,7 @@ int kos_build_return_plan(
    :param graft_point_id: node_id for LCA fallback when chains disjoint; 0 = none
 */
 int kos_build_install_only_plan(
-   KosContext *ctx,
+   KosEvalState *es,
    KosDynNode *target,
    uint32_t graft_point_id,
    KosTransferPlan **out_plan);
@@ -1991,20 +1987,20 @@ void kos_free_transfer_plan(KosTransferPlan *plan);
    MUST be called before inner continuation invoke when wind thunk invokes k.
    Pushes active plan onto plan_stack, clears it.
 
-   :param ctx: execution context
+   :param es: execution/eval state
 */
-void kos_suspend_transfer_plan(KosContext *ctx);
+void kos_suspend_transfer_plan(KosEvalState *es);
 
 
 /**
    RESERVED - NOT YET WIRED IN.  Resume suspended plan after nested
    transfer completes.  Pairs with kos_suspend_transfer_plan.
 
-   :param ctx: execution context
+   :param es: execution/eval state
 
    :return: 0 on success, 0 when nothing to resume
 */
-int kos_resume_transfer_plan(KosContext *ctx);
+int kos_resume_transfer_plan(KosEvalState *es);
 
 
 /* === Continuation invocation === */
@@ -2016,7 +2012,7 @@ int kos_resume_transfer_plan(KosContext *ctx);
    Builds a transfer plan from current position to the continuation's
    captured chain and schedules execution.
 
-   :param ctx: execution context
+   :param es: execution/eval state
    :param k: continuation to invoke
    :param value: resume value
    :param is_throw: if nonzero, throw value as exception
@@ -2024,7 +2020,7 @@ int kos_resume_transfer_plan(KosContext *ctx);
    :return: 0 on success, -1 on error
 */
 int kos_invoke_continuation(
-   KosContext *ctx,
+   KosEvalState *es,
    KosContinuation *k,
    PyObject *value,
    int is_throw,

@@ -36,9 +36,6 @@
 #include <stdint.h>
 
 
-void kos_ctx_refresh_dyn_caches(KosContext *ctx);
-
-
 /* === Forward declarations === */
 
 
@@ -494,11 +491,8 @@ static void kos_dynnode_release_stack(KosDynNode *node) {
 }
 
 
-/**
-   Innermost dyn node that owns a non-NULL operand stack (from dyn_top toward
-   root). NULL if no explicit stack on the chain.
-*/
-KosDynNode *KosContext_InnermostStackOwner(KosContext *ctx) {
+KosDynNode *KosEvalState_InnermostStackOwner(KosEvalState *es) {
+  KosContext *ctx = KosEvalState_CONTEXT(es);
   KosDynNode *n = KosContext_DYN_TOP(ctx);
   while (n) {
     if (KosDynNode_STACK(n))
@@ -525,7 +519,8 @@ static KosDynNode *kos_chain_find_stack_owner_node(
    KosStackBlock ** pointing at the innermost non-NULL node->stack from dyn_top
    toward root (else the frame's stack field).
 */
-void kos_ctx_refresh_dyn_caches(KosContext *ctx) {
+void KosEvalState_RefreshDynCaches(KosEvalState *es) {
+  KosContext *ctx = KosEvalState_CONTEXT(es);
   KosDynNode *node = KosContext_DYN_TOP(ctx);
 
   KosContext_FRAME_TOP(ctx) = NULL;
@@ -545,7 +540,7 @@ void kos_ctx_refresh_dyn_caches(KosContext *ctx) {
     node = KosDynNode_PARENT(node);
   }
 
-  // This fallback should be unreachable
+  /* This fallback should be unreachable */
   if (! KosContext_BLOCK(ctx) && KosContext_FRAME_TOP(ctx))
     KosContext_BLOCK(ctx) = &KosDynNode_STACK((KosDynNode *) KosContext_FRAME_TOP(ctx));
 
@@ -575,7 +570,7 @@ int kos_dyn_push(KosEvalState *es, KosDynNode *node) {
     KosEvalState_SyncFromContext(es);
     return -1;
   }
-  kos_ctx_refresh_dyn_caches(ctx);
+  KosEvalState_RefreshDynCaches(es);
   KosEvalState_SyncFromContext(es);
   return 0;
 }
@@ -596,7 +591,7 @@ static int kos_dyn_uninstall_core(
 
   KosContext_DYN_TOP(ctx) = KosDynNode_PARENT(node);
   KosContext_CHAIN_VERSION(ctx)++;
-  kos_ctx_refresh_dyn_caches(ctx);
+  KosEvalState_RefreshDynCaches(es);
   KosDynNode_PARENT(node) = NULL;
   kos_dynnode_free(node);
   return 0;
@@ -806,14 +801,14 @@ static int kos_dyn_uninstall_handler(KosEvalState *es, KosDynNode *node,
         KosStackBlock **stack = &KosDynNode_STACK(node);
         if (PyErr_Occurred()) {
           kos_dynnode_release_stack(node);
-          kos_ctx_refresh_dyn_caches(ctx);
+          KosEvalState_RefreshDynCaches(es);
         }
         else {
           PyObject *body_val = KosStackBlock_PopRef(stack);
           if (! body_val)
             return -1;
           kos_dynnode_release_stack(node);
-          kos_ctx_refresh_dyn_caches(ctx);
+          KosEvalState_RefreshDynCaches(es);
           {
             if (KosEvalState_StackPushRef(es, body_val) < 0) {
               Py_DECREF(body_val);
@@ -1111,7 +1106,7 @@ static int kos_dyn_gen_freeze_and_release(KosEvalState *es, KosDynGen *gen,
   /* 3. Put GEN's old parent onto ctx's active */
   KosContext_DYN_TOP(ctx) = saved_parent;
   KosContext_CHAIN_VERSION(ctx)++;
-  kos_ctx_refresh_dyn_caches(ctx);
+  KosEvalState_RefreshDynCaches(es);
 
   owner = KosDynGen_OWNER(gen);
   if (owner && KosPyAsyncGen_Check(owner))
@@ -1980,7 +1975,7 @@ KosDynYieldFrom *kos_dyn_push_yield_from(
 
   KosContext_DYN_TOP(ctx) = (KosDynNode *) node;
   KosContext_CHAIN_VERSION(ctx)++;
-  kos_ctx_refresh_dyn_caches(ctx);
+  KosEvalState_RefreshDynCaches(es);
   SAYF("[gen] push_yield_from done dyn_top=%p parent=%p (%s) frame_top=%p\n",
        (void *) node, (void *) KosDynNode_PARENT(node),
        KosDynNode_PARENT(node)
@@ -2007,7 +2002,7 @@ void kos_dyn_pop_yield_from(KosEvalState *es, KosDynYieldFrom *node) {
   KosContext_DYN_TOP(ctx) = KosDynNode_PARENT(node);
   KosContext_CHAIN_VERSION(ctx)++;
   kos_dynyieldfrom_free(node);
-  kos_ctx_refresh_dyn_caches(ctx);
+  KosEvalState_RefreshDynCaches(es);
   SAYF("[gen] pop_yield_from done dyn_top=%p (%s)\n",
        (void *) KosContext_DYN_TOP(ctx),
        KosContext_DYN_TOP(ctx)
@@ -2263,7 +2258,7 @@ int kos_shift_capture(
 
   /* Clone the chain segment that will be restored on invoke: the prompt and
    * the frames below it (ns, frame).  Include the frame so resume_frame is
-   * found and the push segment contains a frame for kos_ctx_refresh_dyn_caches.
+   * found and the push segment contains a frame for KosEvalState_RefreshDynCaches.
    * That way the resumed context has a prompt to POP_PROMPT and can return
    * to the invoker. */
   KosDynNode *frame_inside = KosDynNode_PARENT(prompt);
@@ -2903,13 +2898,14 @@ static void xfer_plan_fill_truncate_and_inject_action(
    Returns 0 on success, -1 on error (e.g. allocation failure).
 */
 int kos_build_transfer_plan(
-    KosContext *ctx,
+    KosEvalState *es,
     KosDynNode *target,
     PyObject *value,
     int is_throw,
     uint32_t graft_point_id,
     KosTransferPlan **out_plan) {
 
+  KosContext *ctx = KosEvalState_CONTEXT(es);
   KOS_TRACE_EVENTS_INC(KOS_TE_TRANSFER_PLAN_BUILD);
 
   KosDynNode *current = KosContext_DYN_TOP(ctx);
@@ -2925,8 +2921,10 @@ int kos_build_transfer_plan(
       + 1;  /* INJECT */
 
   KosTransferPlan *plan = kos_transfer_plan_alloc(action_count);
-  if (! plan)
+  if (! plan) {
+    KosEvalState_SyncFromContext(es);
     return -1;
+  }
 
   KosTransferPlan_ACTION_COUNT(plan) = action_count;
   KosTransferPlan_ACTION_INDEX(plan) = 0;
@@ -2939,11 +2937,14 @@ int kos_build_transfer_plan(
   size_t idx = 0;
   xfer_plan_fill_unwind_actions(plan, &idx, current, lca);
   xfer_plan_fill_install_action(plan, &idx, target);
-  if (xfer_plan_fill_wind_actions(plan, &idx, target, lca, wind_count) < 0)
+  if (xfer_plan_fill_wind_actions(plan, &idx, target, lca, wind_count) < 0) {
+    KosEvalState_SyncFromContext(es);
     return -1;
+  }
   xfer_plan_fill_inject_action(plan, &idx, value, is_throw ? (PyObject *) Py_TYPE(value) : NULL, is_throw);
 
   *out_plan = plan;
+  KosEvalState_SyncFromContext(es);
   return 0;
 }
 
@@ -2955,15 +2956,18 @@ int kos_build_transfer_plan(
    Returns 0 on success, -1 on error.
 */
 int kos_build_return_plan(
-    KosContext *ctx,
+    KosEvalState *es,
     KosDynNode *segment,
     PyObject *value,
     int is_throw,
     KosTransferPlan **out_plan) {
 
+  KosContext *ctx = KosEvalState_CONTEXT(es);
   KosTransferPlan *plan = kos_transfer_plan_alloc(2);  /* INSTALL + INJECT */
-  if (! plan)
+  if (! plan) {
+    KosEvalState_SyncFromContext(es);
     return -1;
+  }
 
   KosTransferPlan_ACTION_COUNT(plan) = 2;
   KosTransferPlan_ACTION_INDEX(plan) = 0;
@@ -2978,6 +2982,7 @@ int kos_build_return_plan(
   xfer_plan_fill_inject_action(plan, &idx, value, is_throw ? (PyObject *) Py_TYPE(value) : NULL, is_throw);
 
   *out_plan = plan;
+  KosEvalState_SyncFromContext(es);
   return 0;
 }
 
@@ -2987,15 +2992,17 @@ int kos_build_return_plan(
    continuation's frames (first child of prompt in captured_chain).
 */
 int kos_build_delimited_push_plan(
-    KosContext *ctx,
+    KosEvalState *es,
     KosDynNode *segment,
     PyObject *value,
     int is_throw,
     KosTransferPlan **out_plan) {
 
+  KosContext *ctx = KosEvalState_CONTEXT(es);
   if (! segment) {
     PyErr_SetString(PyExc_RuntimeError,
                     "delimited push: empty continuation segment");
+    KosEvalState_SyncFromContext(es);
     return -1;
   }
 
@@ -3003,8 +3010,10 @@ int kos_build_delimited_push_plan(
   size_t action_count = wind_count + 1  /* PUSH */ + 1;  /* INJECT */
 
   KosTransferPlan *plan = kos_transfer_plan_alloc(action_count);
-  if (! plan)
+  if (! plan) {
+    KosEvalState_SyncFromContext(es);
     return -1;
+  }
 
   KosTransferPlan_ACTION_COUNT(plan) = action_count;
   KosTransferPlan_ACTION_INDEX(plan) = 0;
@@ -3015,12 +3024,15 @@ int kos_build_delimited_push_plan(
   KosTransferPlan_RESUME_STACK(plan) = NULL;
 
   size_t idx = 0;
-  if (xfer_plan_fill_wind_actions(plan, &idx, segment, NULL, wind_count) < 0)
+  if (xfer_plan_fill_wind_actions(plan, &idx, segment, NULL, wind_count) < 0) {
+    KosEvalState_SyncFromContext(es);
     return -1;
+  }
   xfer_plan_fill_push_action(plan, &idx, segment);
   xfer_plan_fill_inject_action(plan, &idx, value, is_throw ? (PyObject *) Py_TYPE(value) : NULL, is_throw);
 
   *out_plan = plan;
+  KosEvalState_SyncFromContext(es);
   return 0;
 }
 
@@ -3044,13 +3056,14 @@ int kos_build_delimited_push_plan(
  * ============================================================================
  */
 int kos_build_direct_install_plan(
-    KosContext *ctx,
+    KosEvalState *es,
     KosDynNode *target,
     PyObject *value,
     int is_throw,
     uint32_t graft_point_id,
     KosTransferPlan **out_plan) {
 
+  KosContext *ctx = KosEvalState_CONTEXT(es);
   KosDynNode *current = KosContext_DYN_TOP(ctx);
   KosDynNode *lca = kos_compute_lca(current, target, graft_point_id);
   if (! lca) {
@@ -3075,8 +3088,10 @@ int kos_build_direct_install_plan(
       + 1;  /* INJECT */
 
   KosTransferPlan *plan = kos_transfer_plan_alloc(action_count);
-  if (! plan)
+  if (! plan) {
+    KosEvalState_SyncFromContext(es);
     return -1;
+  }
 
   KosTransferPlan_ACTION_COUNT(plan) = action_count;
   KosTransferPlan_ACTION_INDEX(plan) = 0;
@@ -3088,11 +3103,14 @@ int kos_build_direct_install_plan(
 
   size_t idx = 0;
   xfer_plan_fill_install_action(plan, &idx, target);
-  if (xfer_plan_fill_wind_actions(plan, &idx, target, lca, wind_count) < 0)
+  if (xfer_plan_fill_wind_actions(plan, &idx, target, lca, wind_count) < 0) {
+    KosEvalState_SyncFromContext(es);
     return -1;
+  }
   xfer_plan_fill_inject_action(plan, &idx, value, is_throw ? (PyObject *) Py_TYPE(value) : NULL, is_throw);
 
   *out_plan = plan;
+  KosEvalState_SyncFromContext(es);
   return 0;
 }
 
@@ -3139,11 +3157,7 @@ int kos_build_cc_unwind_plan(
      then INSTALL(NULL), then INJECT.  When the plan reaches the KosDynCCRaise
      EXTENT_ACTION, cc_raise_unwind sets PyErr and returns -1, which causes
      run_transfer_plan_to_completion to package it as KOS_EV_RAISE. */
-  {
-    int tr = kos_build_transfer_plan(ctx, NULL, Py_None, 0, 0, out_plan);
-    KosEvalState_SyncFromContext(es);
-    return tr;
-  }
+  return kos_build_transfer_plan(es, NULL, Py_None, 0, 0, out_plan);
 }
 
 
@@ -3244,11 +3258,12 @@ int kos_dyn_build_push_shift_unwind_plan(KosEvalState *es, KosDynPrompt *prompt,
    entirely, so safe when path crosses PROMPT.  Returns 0 on success.
 */
 int kos_build_install_only_plan(
-    KosContext *ctx,
+    KosEvalState *es,
     KosDynNode *target,
     uint32_t graft_point_id,
     KosTransferPlan **out_plan) {
 
+  KosContext *ctx = KosEvalState_CONTEXT(es);
   KosDynNode *current = KosContext_DYN_TOP(ctx);
   KosDynNode *lca = kos_compute_lca(current, target, graft_point_id);
   if (! lca) {
@@ -3260,6 +3275,7 @@ int kos_build_install_only_plan(
     if (! lca) {
       PyErr_SetString(PyExc_RuntimeError,
                       "install_only: target not reachable from current chain");
+      KosEvalState_SyncFromContext(es);
       return -1;
     }
   }
@@ -3272,8 +3288,10 @@ int kos_build_install_only_plan(
       + wind_count;
 
   KosTransferPlan *plan = kos_transfer_plan_alloc(action_count);
-  if (! plan)
+  if (! plan) {
+    KosEvalState_SyncFromContext(es);
     return -1;
+  }
 
   KosTransferPlan_ACTION_COUNT(plan) = action_count;
   KosTransferPlan_ACTION_INDEX(plan) = 0;
@@ -3285,10 +3303,13 @@ int kos_build_install_only_plan(
 
   size_t idx = 0;
   xfer_plan_fill_install_action(plan, &idx, target);
-  if (xfer_plan_fill_wind_actions(plan, &idx, target, lca, wind_count) < 0)
+  if (xfer_plan_fill_wind_actions(plan, &idx, target, lca, wind_count) < 0) {
+    KosEvalState_SyncFromContext(es);
     return -1;
+  }
 
   *out_plan = plan;
+  KosEvalState_SyncFromContext(es);
   return 0;
 }
 
@@ -3503,7 +3524,7 @@ static int xfer_step_install(KosEvalState *es, KosTransferAction *action,
   {
     KosDynNode *old_top = KosContext_DYN_TOP(ctx);
     KosContext_DYN_TOP(ctx) = seg;
-    kos_ctx_refresh_dyn_caches(ctx);
+    KosEvalState_RefreshDynCaches(es);
     if (old_top)
       kos_dynchain_free(old_top, NULL);
   }
@@ -3512,7 +3533,7 @@ static int xfer_step_install(KosEvalState *es, KosTransferAction *action,
   KosContext_GLOBALS_CACHE_VERSION(ctx) = KosContext_CHAIN_VERSION(ctx) + 1;
   if (KosTransferPlan_RESUME_STACK(plan)) {
     KosStackBlock *new_stack = KosTransferPlan_RESUME_STACK(plan);
-    KosDynNode *owner = KosContext_InnermostStackOwner(ctx);
+    KosDynNode *owner = KosEvalState_InnermostStackOwner(es);
     if (! owner && KosContext_FRAME_TOP(ctx))
       owner = (KosDynNode *) KosContext_FRAME_TOP(ctx);
 
@@ -3525,7 +3546,7 @@ static int xfer_step_install(KosEvalState *es, KosTransferAction *action,
         KosStackBlock_ReleaseChainExclude(old_stack,
                                                 KosTransferPlan_CONTINUATION_REF(plan));
       }
-      kos_ctx_refresh_dyn_caches(ctx);
+      KosEvalState_RefreshDynCaches(es);
 
     } else {
       KosStackBlock_ReleaseChainExclude(new_stack,
@@ -3606,13 +3627,13 @@ static int xfer_step_push(KosEvalState *es, KosTransferAction *action,
     KosDynNode_PARENT(seg_bottom) = current_top;
 
   KosContext_DYN_TOP(ctx) = seg;
-  kos_ctx_refresh_dyn_caches(ctx);
+  KosEvalState_RefreshDynCaches(es);
   KosContext_GLOBALS_FRAME(ctx) = KosContext_FRAME_TOP(ctx);
   KosContext_GLOBALS_CACHE_VERSION(ctx) = KosContext_CHAIN_VERSION(ctx) + 1;
 
   if (KosTransferPlan_RESUME_STACK(plan)) {
     KosStackBlock *new_stack = KosTransferPlan_RESUME_STACK(plan);
-    KosDynNode *owner = KosContext_InnermostStackOwner(ctx);
+    KosDynNode *owner = KosEvalState_InnermostStackOwner(es);
     if (! owner && KosContext_FRAME_TOP(ctx))
       owner = (KosDynNode *) KosContext_FRAME_TOP(ctx);
     if (owner) {
@@ -3623,7 +3644,7 @@ static int xfer_step_push(KosEvalState *es, KosTransferAction *action,
         KosStackBlock_ReleaseChainExclude(old_stack,
                                                 KosTransferPlan_CONTINUATION_REF(plan));
       }
-      kos_ctx_refresh_dyn_caches(ctx);
+      KosEvalState_RefreshDynCaches(es);
     } else {
       KosStackBlock_ReleaseChainExclude(new_stack,
                                               KosTransferPlan_CONTINUATION_REF(plan));
@@ -3921,19 +3942,23 @@ int kos_run_transfer_step(KosEvalState *es, KosEvent *out_ev) {
  * another continuation. Without this, the inner invoke would clobber the
  * outer plan and the outer transfer would be lost.
  *
- * Call kos_suspend_transfer_plan(ctx) before building/running the inner plan,
- * then call kos_resume_transfer_plan(ctx) when the inner plan completes.
+ * Call kos_suspend_transfer_plan(es) before building/running the inner plan,
+ * then call kos_resume_transfer_plan(es) when the inner plan completes.
  *
  * See design/interpreter/callcc.md "When a hook invokes another continuation".
  * ============================================================================
  */
-void kos_suspend_transfer_plan(KosContext *ctx) {
-  if (! KosContext_PLAN(ctx))
+void kos_suspend_transfer_plan(KosEvalState *es) {
+  KosContext *ctx = KosEvalState_CONTEXT(es);
+  if (! KosContext_PLAN(ctx)) {
+    KosEvalState_SyncFromContext(es);
     return;
+  }
 
   KosTransferPlan_SUSPENDED(KosContext_PLAN(ctx)) = KosContext_PLAN_STACK(ctx);
   KosContext_PLAN_STACK(ctx) = KosContext_PLAN(ctx);
   KosContext_PLAN(ctx) = NULL;
+  KosEvalState_SyncFromContext(es);
 }
 
 
@@ -3951,9 +3976,12 @@ void kos_suspend_transfer_plan(KosContext *ctx) {
  * Returns 0 on success, 0 when nothing to resume (plan_stack empty).
  * ============================================================================
  */
-int kos_resume_transfer_plan(KosContext *ctx) {
-  if (! KosContext_PLAN_STACK(ctx))
+int kos_resume_transfer_plan(KosEvalState *es) {
+  KosContext *ctx = KosEvalState_CONTEXT(es);
+  if (! KosContext_PLAN_STACK(ctx)) {
+    KosEvalState_SyncFromContext(es);
     return 0;  /* nothing to resume */
+  }
 
   KosContext_PLAN(ctx) = KosContext_PLAN_STACK(ctx);
   KosContext_PLAN_STACK(ctx) = KosContext_PLAN(ctx)->suspended;
@@ -3963,9 +3991,11 @@ int kos_resume_transfer_plan(KosContext *ctx) {
     PyErr_SetString(PyExc_RuntimeError,
                     "chain version changed during nested transfer; "
                     "replanning not yet implemented");
+    KosEvalState_SyncFromContext(es);
     return -1;
   }
 
+  KosEvalState_SyncFromContext(es);
   return 0;
 }
 
@@ -3980,7 +4010,7 @@ int kos_resume_transfer_plan(KosContext *ctx) {
    apply paths.
 */
 int kos_invoke_continuation(
-    KosContext *ctx,
+    KosEvalState *es,
     KosContinuation *k,
     PyObject *value,
     int is_throw,
@@ -3988,11 +4018,11 @@ int kos_invoke_continuation(
 
   if (! k) {
     PyErr_SetString(PyExc_RuntimeError, "NULL continuation");
+    KosEvalState_SyncFromContext(es);
     return -1;
   }
 
-  KosEvalState invoke_es;
-  KosEvalState_Init(&invoke_es, ctx);
+  KosContext *ctx = KosEvalState_CONTEXT(es);
 
   /* For multi-shot, clone the continuation */
   KosContinuation *to_use = k;
@@ -4006,6 +4036,7 @@ int kos_invoke_continuation(
     if (! to_use) {
       if (KOS_XFER_TRACE)
         SAY("[xfer] clone failed");
+      KosEvalState_SyncFromContext(es);
       return -1;
     }
   }
@@ -4020,7 +4051,7 @@ int kos_invoke_continuation(
     /* Segment to push: frames below the prompt (exclude prompt from push) */
     push_segment = captured ? KosDynNode_PARENT(captured) : NULL;
     ret_delim = kos_dyn_push_delim(
-        &invoke_es,
+        es,
         KOS_DYN_DELIM_MODE_POP_PROMPT,
         NULL,
         KosContext_FRAME_TOP(ctx)
@@ -4030,6 +4061,7 @@ int kos_invoke_continuation(
     if (! ret_delim) {
       if (to_use != k)
         kos_continuation_free(to_use);
+      KosEvalState_SyncFromContext(es);
       return -1;
     }
     KosDynDelim_RETURN_NODE(ret_delim) = (KosDynNode *) ret_delim;
@@ -4048,13 +4080,13 @@ int kos_invoke_continuation(
     if (KOS_XFER_TRACE)
       SAYF("[xfer] kos_build_delimited_push_plan (delimited) segment=%p",
            (void *) push_segment);
-    res = kos_build_delimited_push_plan(ctx, push_segment, value, is_throw,
+    res = kos_build_delimited_push_plan(es, push_segment, value, is_throw,
                                         &plan);
   } else {
     if (KOS_XFER_TRACE)
       SAYF("[xfer] kos_build_transfer_plan current=%p target=%p (template)",
            (void *) KosContext_DYN_TOP(ctx), (void *) to_use->captured_chain);
-    res = kos_build_transfer_plan(ctx, to_use->captured_chain,
+    res = kos_build_transfer_plan(es, to_use->captured_chain,
                                   value, is_throw,
                                   KosContinuation_GRAFT_POINT_ID(to_use),
                                   &plan);
@@ -4063,9 +4095,10 @@ int kos_invoke_continuation(
     SAYF("[xfer] plan build -> res=%d plan=%p", res, (void *) plan);
   if (res < 0) {
     if (ret_delim)
-      kos_dyn_pop_delim(&invoke_es, ret_delim);
+      kos_dyn_pop_delim(es, ret_delim);
     if (to_use != k)
       kos_continuation_free(to_use);
+    KosEvalState_SyncFromContext(es);
     return -1;
   }
 
@@ -4098,6 +4131,7 @@ int kos_invoke_continuation(
      * xfer_plan_release_invoke_clone frees it. */
   }
 
+  KosEvalState_SyncFromContext(es);
   return 0;
 }
 
@@ -4303,7 +4337,7 @@ int kos_dyn_finish_delimited_pop_return(
   KosContext_FRAME_TOP(ctx) = ret_frame;
   if (KosContext_DYN_TOP(ctx) == (KosDynNode *) delim)
     kos_dyn_pop_delim(es, delim);
-  kos_ctx_refresh_dyn_caches(ctx);
+  KosEvalState_RefreshDynCaches(es);
   KosEvalState_SyncFromContext(es);
   return 0;
 }

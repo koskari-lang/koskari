@@ -338,7 +338,7 @@ struct KosContext {
   KosDynNode *dyn_top;       /* top of dynamic chain */
   KosDynFrame *frame_top;    /* cached topmost frame (for fast access) */
 
-  KosStackBlock **block;     /* &innermost owner stack; refreshed in kos_ctx_refresh_dyn_caches */
+  KosStackBlock **block;     /* &innermost owner stack; refreshed in KosEvalState_RefreshDynCaches */
 
   KosDynFrame *globals_frame;     /* cached outermost frame (for op_GLOBALS) */
   uint32_t globals_cache_version; /* chain_version when globals_frame was set */
@@ -452,6 +452,20 @@ struct KosEvalState {
 
 void KosEvalState_Init(KosEvalState *es, KosContext *ctx);
 void KosEvalState_SyncFromContext(KosEvalState *es);
+
+/**
+  Recompute ctx->frame_top and ctx->block from the dynamic chain after
+  dyn_top / chain changes. Does not update es->frame/code; call
+  KosEvalState_SyncFromContext afterward when the live eval slice must see
+  the new caches.
+*/
+void KosEvalState_RefreshDynCaches(KosEvalState *es);
+
+/**
+  Innermost dyn node that owns a non-NULL operand stack (from dyn_top toward
+  root). NULL if no explicit stack on the chain.
+*/
+KosDynNode *KosEvalState_InnermostStackOwner(KosEvalState *es);
 
 KosCode *KosEvalState_CurrentCode(const KosEvalState *es);
 PyObject *KosEvalState_CurrentNamespace(const KosEvalState *es);

@@ -183,7 +183,7 @@ static int kos_dyn_wind_on_control_returned(KosEvalState *es, KosDynWind *wind) 
     KosContext_CHAIN_VERSION(ctx)++;
     KosDynNode_PARENT(wind) = NULL;
     kos_dynwind_free(wind);
-    kos_ctx_refresh_dyn_caches(ctx);
+    KosEvalState_RefreshDynCaches(es);
 
     if (body_result) {
       if (KosEvalState_StackPushRef(es, body_result) < 0) {
@@ -218,7 +218,7 @@ KosDynWind *kos_dyn_push_wind(
 
   KosContext_DYN_TOP(ctx) = (KosDynNode *) wind;
   KosContext_CHAIN_VERSION(ctx)++;
-  kos_ctx_refresh_dyn_caches(ctx);
+  KosEvalState_RefreshDynCaches(es);
 
   KosEvalState_SyncFromContext(es);
   return wind;
@@ -240,7 +240,7 @@ int kos_dyn_pop_wind(KosEvalState *es, KosDynWind *wind) {
   KosContext_DYN_TOP(ctx) = KosDynNode_PARENT(wind);
   KosContext_CHAIN_VERSION(ctx)++;
   kos_dynwind_free(wind);
-  kos_ctx_refresh_dyn_caches(ctx);
+  KosEvalState_RefreshDynCaches(es);
 
   KosEvalState_SyncFromContext(es);
   return 0;

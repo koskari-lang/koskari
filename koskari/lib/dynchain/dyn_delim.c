@@ -112,7 +112,7 @@ void kos_dyn_pop_delim(KosEvalState *es, KosDynDelim *delim) {
   KosContext_DYN_TOP(ctx) = KosDynNode_PARENT(delim);
   KosContext_CHAIN_VERSION(ctx)++;
   kos_dyndelim_free(delim);
-  kos_ctx_refresh_dyn_caches(ctx);
+  KosEvalState_RefreshDynCaches(es);
   KosEvalState_SyncFromContext(es);
 }
 

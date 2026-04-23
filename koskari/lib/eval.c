@@ -170,10 +170,11 @@ static inline void kos_evalstate_init(KosEvalState *es, KosContext *ctx) {
   }
 }
 
-
 void KosEvalState_Init(KosEvalState *es, KosContext *ctx) {
   kos_evalstate_init(es, ctx);
 }
+
+#define KosEvalState_Init kos_evalstate_init
 
 
 static inline void kos_evalstate_sync_from_context(KosEvalState *es) {
@@ -190,10 +191,11 @@ static inline void kos_evalstate_sync_from_context(KosEvalState *es) {
   }
 }
 
-
 void KosEvalState_SyncFromContext(KosEvalState *es) {
   kos_evalstate_sync_from_context(es);
 }
+
+#define KosEvalState_SyncFromContext kos_evalstate_sync_from_context
 
 
 static inline KosCode *kos_evalstate_current_code(
@@ -203,10 +205,11 @@ static inline KosCode *kos_evalstate_current_code(
   return f ? KosDynFrame_CODE(f) : NULL;
 }
 
-
 KosCode *KosEvalState_CurrentCode(const KosEvalState *es) {
   return kos_evalstate_current_code(es);
 }
+
+#define KosEvalState_CurrentCode kos_evalstate_current_code
 
 
 static inline PyObject *kos_evalstate_current_namespace(
@@ -216,10 +219,11 @@ static inline PyObject *kos_evalstate_current_namespace(
   return f? KosDynFrame_NS(f): NULL;
 }
 
-
 PyObject *KosEvalState_CurrentNamespace(const KosEvalState *es) {
   return kos_evalstate_current_namespace(es);
 }
+
+#define KosEvalState_CurrentNamespace kos_evalstate_current_namespace
 
 
 static inline uint32_t kos_evalstate_get_frame_pc(
@@ -229,10 +233,11 @@ static inline uint32_t kos_evalstate_get_frame_pc(
   return f ? KosDynFrame_PC(f) : (uint32_t) 0;
 }
 
-
 uint32_t KosEvalState_GetFramePc(const KosEvalState *es) {
   return kos_evalstate_get_frame_pc(es);
 }
+
+#define KosEvalState_GetFramePc kos_evalstate_get_frame_pc
 
 
 static inline int kos_evalstate_set_frame_pc(KosEvalState *es, uint32_t pc) {
@@ -247,10 +252,11 @@ static inline int kos_evalstate_set_frame_pc(KosEvalState *es, uint32_t pc) {
   return 0;
 }
 
-
 int KosEvalState_SetFramePc(KosEvalState *es, uint32_t pc) {
   return kos_evalstate_set_frame_pc(es, pc);
 }
+
+#define KosEvalState_SetFramePc kos_evalstate_set_frame_pc
 
 
 static inline uint32_t kos_evalstate_get_acting_pc(const KosEvalState *es) {
@@ -258,10 +264,11 @@ static inline uint32_t kos_evalstate_get_acting_pc(const KosEvalState *es) {
   return f ? KosDynFrame_ACTING_PC(f) : (uint32_t) 0;
 }
 
-
 uint32_t KosEvalState_GetActingPc(const KosEvalState *es) {
   return kos_evalstate_get_acting_pc(es);
 }
+
+#define KosEvalState_GetActingPc kos_evalstate_get_acting_pc
 
 
 static inline int kos_evalstate_set_acting_pc(KosEvalState *es, uint32_t pc) {
@@ -281,6 +288,8 @@ int KosEvalState_SetActingPc(KosEvalState *es, uint32_t pc) {
   return kos_evalstate_set_acting_pc(es, pc);
 }
 
+#define KosEvalState_SetActingPc kos_evalstate_set_acting_pc
+
 
 static inline PyObject *kos_evalstate_get_constant(
     const KosEvalState *es,
@@ -294,6 +303,8 @@ PyObject *KosEvalState_GetConstant(const KosEvalState *es, uint32_t index) {
   return kos_evalstate_get_constant(es, index);
 }
 
+#define KosEvalState_GetConstant kos_evalstate_get_constant
+
 
 static inline int kos_evalstate_stack_push_ref(KosEvalState *es, PyObject *val) {
   KosContext *ctx = KosEvalState_CONTEXT(es);
@@ -304,6 +315,8 @@ int KosEvalState_StackPushRef(KosEvalState *es, PyObject *val) {
   return kos_evalstate_stack_push_ref(es, val);
 }
 
+#define KosEvalState_StackPushRef kos_evalstate_stack_push_ref
+
 
 static inline PyObject *kos_evalstate_stack_pop_ref(KosEvalState *es) {
   KosContext *ctx = KosEvalState_CONTEXT(es);
@@ -313,6 +326,8 @@ static inline PyObject *kos_evalstate_stack_pop_ref(KosEvalState *es) {
 PyObject *KosEvalState_StackPopRef(KosEvalState *es) {
   return kos_evalstate_stack_pop_ref(es);
 }
+
+#define KosEvalState_StackPopRef kos_evalstate_stack_pop_ref
 
 
 static inline PyObject *kos_evalstate_get_fast(
@@ -327,6 +342,8 @@ static inline PyObject *kos_evalstate_get_fast(
 PyObject *KosEvalState_GetFast(const KosEvalState *es, size_t index) {
   return kos_evalstate_get_fast(es, index);
 }
+
+#define KosEvalState_GetFast kos_evalstate_get_fast
 
 
 static inline int kos_evalstate_set_fast(
@@ -361,6 +378,8 @@ PyObject *KosEvalState_GetVar(const KosEvalState *es, PyObject *key) {
   return kos_evalstate_get_var(es, key);
 }
 
+#define KosEvalState_SetFast kos_evalstate_set_fast
+
 
 static inline int kos_evalstate_stack_steal_tail(
     KosEvalState *es,
@@ -378,6 +397,8 @@ int KosEvalState_StackSteal_Tail(
 
   return kos_evalstate_stack_steal_tail(es, s, count);
 }
+
+#define KosEvalState_StackSteal_Tail kos_evalstate_stack_steal_tail
 
 
 static inline int kos_evalstate_stack_steal_tail_prepend(
@@ -399,6 +420,8 @@ int KosEvalState_StackSteal_TailPrepend(
   return kos_evalstate_stack_steal_tail_prepend(es, s, prefix, count);
 }
 
+#define KosEvalState_StackSteal_TailPrepend kos_evalstate_stack_steal_tail_prepend
+
 
 static inline int kos_evalstate_stack_PUSH(
     KosEvalState *es,
@@ -411,6 +434,8 @@ static inline int kos_evalstate_stack_PUSH(
 int KosEvalState_StackPUSH(KosEvalState *es, PyObject *val) {
   return kos_evalstate_stack_PUSH(es, val);
 }
+
+#define KosEvalState_StackPUSH kos_evalstate_stack_PUSH
 
 
 static inline PyObject *kos_evalstate_stack_pop_tail(
@@ -425,6 +450,8 @@ PyObject *KosEvalState_StackPopTail(KosEvalState *es, size_t count) {
   return kos_evalstate_stack_pop_tail(es, count);
 }
 
+#define KosEvalState_StackPopTail kos_evalstate_stack_pop_tail
+
 
 static inline PyObject *const *kos_evalstate_stack_tail_ptr(
     KosEvalState *es,
@@ -438,6 +465,8 @@ PyObject *const *KosEvalState_StackTailPtr(KosEvalState *es, size_t count) {
   return kos_evalstate_stack_tail_ptr(es, count);
 }
 
+#define KosEvalState_StackTailPtr kos_evalstate_stack_tail_ptr
+
 
 static inline size_t kos_evalstate_stack_len(KosEvalState *es) {
   KosContext *ctx = KosEvalState_CONTEXT(es);
@@ -447,6 +476,8 @@ static inline size_t kos_evalstate_stack_len(KosEvalState *es) {
 size_t KosEvalState_StackLen(KosEvalState *es) {
   return kos_evalstate_stack_len(es);
 }
+
+#define KosEvalState_StackLen kos_evalstate_stack_len
 
 
 static inline int kos_evalstate_stack_drop(KosEvalState *es, size_t count) {
@@ -458,6 +489,8 @@ int KosEvalState_StackDrop(KosEvalState *es, size_t count) {
   return kos_evalstate_stack_drop(es, count);
 }
 
+#define KosEvalState_StackDrop kos_evalstate_stack_drop
+
 
 static inline int kos_evalstate_stack_drop1(KosEvalState *es) {
   KosContext *ctx = KosEvalState_CONTEXT(es);
@@ -468,16 +501,19 @@ int KosEvalState_StackDrop1(KosEvalState *es) {
   return kos_evalstate_stack_drop1(es);
 }
 
+#define KosEvalState_StackDrop1 kos_evalstate_stack_drop1
+
 
 static inline int kos_evalstate_stack_drop_no_err(KosEvalState *es, size_t count) {
   KosContext *ctx = KosEvalState_CONTEXT(es);
   return KosStackBlock_DropNoErr(KosContext_BLOCK(ctx), count);
 }
 
-
 void KosEvalState_StackDropNoErr(KosEvalState *es, size_t count) {
   kos_evalstate_stack_drop_no_err(es, count);
 }
+
+#define KosEvalState_StackDropNoErr kos_evalstate_stack_drop_no_err
 
 
 static inline int kos_evalstate_stack_clear_block(KosEvalState *es) {
@@ -485,10 +521,11 @@ static inline int kos_evalstate_stack_clear_block(KosEvalState *es) {
   return KosStackBlock_ClearBlock(KosContext_BLOCK(ctx));
 }
 
-
 int KosEvalState_StackClearBlock(KosEvalState *es) {
   return kos_evalstate_stack_clear_block(es);
 }
+
+#define KosEvalState_StackClearBlock kos_evalstate_stack_clear_block
 
 
 static inline int kos_evalstate_stack_duplicate(KosEvalState *es, size_t count) {
@@ -496,10 +533,11 @@ static inline int kos_evalstate_stack_duplicate(KosEvalState *es, size_t count) 
   return KosStackBlock_Duplicate(KosContext_BLOCK(ctx), count);
 }
 
-
 int KosEvalState_StackDuplicate(KosEvalState *es, size_t count) {
   return kos_evalstate_stack_duplicate(es, count);
 }
+
+#define KosEvalState_StackDuplicate kos_evalstate_stack_duplicate
 
 
 static inline PyObject *kos_evalstate_stack_pop_tail_dict(KosEvalState *es, size_t count) {
@@ -507,10 +545,11 @@ static inline PyObject *kos_evalstate_stack_pop_tail_dict(KosEvalState *es, size
   return KosStackBlock_PopTailDict(KosContext_BLOCK(ctx), count);
 }
 
-
 PyObject *KosEvalState_StackPopTailDict(KosEvalState *es, size_t count) {
   return kos_evalstate_stack_pop_tail_dict(es, count);
 }
+
+#define KosEvalState_StackPopTailDict kos_evalstate_stack_pop_tail_dict
 
 
 static inline PyObject *kos_evalstate_stack_pop_tail_dict_names(KosEvalState *es, size_t count) {
@@ -518,10 +557,11 @@ static inline PyObject *kos_evalstate_stack_pop_tail_dict_names(KosEvalState *es
   return KosStackBlock_PopTailDictNames(KosContext_BLOCK(ctx), count);
 }
 
-
 PyObject *KosEvalState_StackPopTailDictNames(KosEvalState *es, size_t count) {
   return kos_evalstate_stack_pop_tail_dict_names(es, count);
 }
+
+#define KosEvalState_StackPopTailDictNames kos_evalstate_stack_pop_tail_dict_names
 
 
 static inline PyObject *kos_evalstate_stack_pop_tail_dict_from_names(
@@ -532,10 +572,11 @@ static inline PyObject *kos_evalstate_stack_pop_tail_dict_from_names(
   return KosStackBlock_PopTailDictFromNames(KosContext_BLOCK(ctx), names);
 }
 
-
 PyObject *KosEvalState_StackPopTailDictFromNames(KosEvalState *es, PyObject *names) {
   return kos_evalstate_stack_pop_tail_dict_from_names(es, names);
 }
+
+#define KosEvalState_StackPopTailDictFromNames kos_evalstate_stack_pop_tail_dict_from_names
 
 
 static inline PyObject *kos_evalstate_stack_peek(KosEvalState *es) {
@@ -543,10 +584,11 @@ static inline PyObject *kos_evalstate_stack_peek(KosEvalState *es) {
   return KosStackBlock_Peek(*KosContext_BLOCK(ctx));
 }
 
-
 PyObject *KosEvalState_StackPeek(KosEvalState *es) {
   return kos_evalstate_stack_peek(es);
 }
+
+#define KosEvalState_StackPeek kos_evalstate_stack_peek
 
 
 static inline PyObject *kos_evalstate_stack_peek_at(KosEvalState *es, Py_ssize_t index) {
@@ -554,10 +596,11 @@ static inline PyObject *kos_evalstate_stack_peek_at(KosEvalState *es, Py_ssize_t
   return KosStackBlock_PeekAt(*KosContext_BLOCK(ctx), index);
 }
 
-
 PyObject *KosEvalState_StackPeekAt(KosEvalState *es, Py_ssize_t index) {
   return kos_evalstate_stack_peek_at(es, index);
 }
+
+#define KosEvalState_StackPeekAt kos_evalstate_stack_peek_at
 
 
 static inline int kos_evalstate_stack_pop_tail_ptr(
@@ -569,28 +612,11 @@ static inline int kos_evalstate_stack_pop_tail_ptr(
   return KosStackBlock_PopTailPtr(KosContext_BLOCK(ctx), count, dest);
 }
 
-
 int KosEvalState_StackPopTailPtr(KosEvalState *es, size_t count, PyObject **dest) {
   return kos_evalstate_stack_pop_tail_ptr(es, count, dest);
 }
 
-
-#define KosEvalState_Init kos_evalstate_init
-#define KosEvalState_SyncFromContext kos_evalstate_sync_from_context
-#define KosEvalState_CurrentCode kos_evalstate_current_code
-#define KosEvalState_CurrentNamespace kos_evalstate_current_namespace
-#define KosEvalState_GetFramePc kos_evalstate_get_frame_pc
-#define KosEvalState_SetFramePc kos_evalstate_set_frame_pc
-#define KosEvalState_GetActingPc kos_evalstate_get_acting_pc
-#define KosEvalState_SetActingPc kos_evalstate_set_acting_pc
-#define KosEvalState_GetConstant kos_evalstate_get_constant
-#define KosEvalState_StackPushRef kos_evalstate_stack_push_ref
-#define KosEvalState_StackPopRef kos_evalstate_stack_pop_ref
-#define KosEvalState_StackPushBlock kos_evalstate_stack_push_block
-#define KosEvalState_StackDropBlock kos_evalstate_stack_drop_block
-#define KosEvalState_GetFast kos_evalstate_get_fast
-#define KosEvalState_SetFast kos_evalstate_set_fast
-#define KosEvalState_GetVar kos_evalstate_get_var
+#define KosEvalState_StackPopTailPtr kos_evalstate_stack_pop_tail_ptr
 
 
 typedef struct {
@@ -779,7 +805,7 @@ static int kos_return_delimited(
   SAYF("[RETURN] taking return-target path: return_pc=%u",
        (unsigned) ret_pc);
   KosTransferPlan *plan = NULL;
-  if (kos_build_return_plan(ctx, ret_chain,
+  if (kos_build_return_plan(es, ret_chain,
                             val, 0, &plan) < 0) {
     Py_DECREF(val);
     return -1;
@@ -1312,7 +1338,7 @@ static KosEvalMode handle_continuation_apply(
       Py_XDECREF(args_obj);
       PyErr_Clear();
 
-      if (k && kos_invoke_continuation(ctx, k, resume_val, 0, cont_obj) == 0) {
+      if (k && kos_invoke_continuation(&es, k, resume_val, 0, cont_obj) == 0) {
         Py_DECREF(resume_val);
         Py_DECREF(typ);
         Py_DECREF(val);
@@ -1665,7 +1691,11 @@ KosContext *kos_context_new(KosDynFrame *top) {
 
   KosContext_FLAGS(ctx) = 0;
 
-  kos_ctx_refresh_dyn_caches(ctx);
+  {
+    KosEvalState es;
+    KosEvalState_Init(&es, ctx);
+    KosEvalState_RefreshDynCaches(&es);
+  }
 
   return ctx;
 }
@@ -1799,7 +1829,11 @@ int kos_tail_koscall(
   KosContext_DYN_TOP(ctx) = (KosDynNode *) frame;
   KosContext_FRAME_TOP(ctx) = frame;
   KosContext_CHAIN_VERSION(ctx)++;
-  kos_ctx_refresh_dyn_caches(ctx);
+  {
+    KosEvalState es;
+    KosEvalState_Init(&es, ctx);
+    KosEvalState_RefreshDynCaches(&es);
+  }
 
   return 0;
 }
