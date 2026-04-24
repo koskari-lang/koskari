@@ -33,6 +33,10 @@ define create-option-parser [name]:
                   const: "dots"
                   help: "use the dots renderer")
 
+  (g.add_argument "--color" action: "store_const" dest: "renderer"
+                  const: "color"
+                  help: "use the color renderer")
+
   (g.add_argument "--default" action: "store_const" dest: "renderer"
                   const: "default" default: "default"
                   help: "use the default renderer")

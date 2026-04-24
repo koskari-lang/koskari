@@ -7,7 +7,10 @@
 
 
 (import-from sys stderr)
-(import-from curses ERR KEY_UP KEY_DOWN KEY_LEFT KEY_RIGHT)
+(import-from curses
+  ERR KEY_UP KEY_DOWN KEY_LEFT KEY_RIGHT A_BOLD
+  COLOR_RED COLOR_YELLOW COLOR_GREEN COLOR_CYAN COLOR_BLUE COLOR_BLACK
+  init_pair color_pair)
 (import-from itertools product)
 (import-from asyncio sleep)
 (import-from .life LifeBoard)
@@ -24,6 +27,43 @@ define make-char-renderer [alive: "O" dead: " "]:
   lambda [cell]:
     if cell:
       #(alive-ch 0)
+    else:
+      #(dead-ch 0)
+
+
+define make-age-color-controls [base-pair: 40]:
+  ;; Red -> yellow -> green -> cyan -> blue
+  (init_pair (+ base-pair 0) COLOR_RED 0)
+  (init_pair (+ base-pair 1) COLOR_YELLOW 0)
+  (init_pair (+ base-pair 2) COLOR_GREEN 0)
+  (init_pair (+ base-pair 3) COLOR_CYAN 0)
+  (init_pair (+ base-pair 4) COLOR_BLUE 0)
+  (init_pair (+ base-pair 5) COLOR_BLACK 0)  ;; oldest/ash state
+
+  #[(| (color_pair (+ base-pair 0)) A_BOLD)  ;; bright red
+    (color_pair (+ base-pair 0))             ;; red
+    (| (color_pair (+ base-pair 1)) A_BOLD)  ;; bright yellow
+    (color_pair (+ base-pair 1))             ;; yellow
+    (| (color_pair (+ base-pair 2)) A_BOLD)  ;; bright green
+    (color_pair (+ base-pair 2))             ;; green
+    (| (color_pair (+ base-pair 3)) A_BOLD)  ;; bright cyan
+    (color_pair (+ base-pair 3))             ;; cyan
+    (| (color_pair (+ base-pair 4)) A_BOLD)  ;; bright blue
+    (color_pair (+ base-pair 4))             ;; blue
+    (| (color_pair (+ base-pair 5)) A_BOLD)] ;; gray-ish
+
+
+define make-color-char-renderer [alive: "O" dead: " " controls: None]:
+  define alive-ch (item alive 0)
+  define dead-ch (item dead 0)
+
+  when (None? controls):
+    set! controls (make-age-color-controls)
+
+  lambda [cell]:
+    if cell:
+      define index (- (min (len controls) cell) 1)
+      #(alive-ch (item controls index))
     else:
       #(dead-ch 0)
 
@@ -46,6 +86,8 @@ define get-renderer [by-name]:
     digit-renderer
   elif (equal? by-name "dots"):
     dots-renderer
+  elif (equal? by-name "color"):
+    (make-color-char-renderer)
   else:
     (make-char-renderer)
 
