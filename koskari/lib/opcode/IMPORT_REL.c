@@ -35,6 +35,7 @@
 */
 
 KOS_OP_HANDLER(IMPORT_REL) {
+  KosContext *ctx = KosEvalState_CONTEXT(es);
   /* Constant is a (level:int, name:str|None) tuple */
   PyObject *tup = get_name_from_insn(CURRENT_CODE(ctx), insn);
   if (! tup)
@@ -59,7 +60,7 @@ KOS_OP_HANDLER(IMPORT_REL) {
 
   /* Globals namespace supplies __name__ and __package__ for relative import
      anchor resolution (same as GLOBALS opcode). */
-  kos_dyn_globals_frame(ctx);
+  kos_dyn_globals_frame(es);
 
   PyObject *globals_ns = KosDynFrame_NS(KosContext_GLOBALS_FRAME(ctx));
 
@@ -97,5 +98,5 @@ KOS_OP_HANDLER(IMPORT_REL) {
   if (! mod)
     return KOS_OP_POST_ERR();
 
-  return kos_op_outcome_from_int_step(push_result(ctx, mod));
+  return kos_op_outcome_from_int_step(push_result(es, mod));
 }

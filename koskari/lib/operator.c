@@ -15,6 +15,7 @@
 
 
 #include "lib.h"
+#include "hints.h"
 
 
 static PyObject *_str__empty = NULL;
@@ -42,6 +43,63 @@ static PyObject *_str__empty = NULL;
   }
 
 #endif
+
+
+static inline PyObject *chain_compare(
+    int opid,
+    const char *name,
+    PyObject *const *args,
+    size_t count) {
+
+  if (count < 2) {
+    PyErr_Format(PyExc_TypeError, "%s requires at least 2"
+                 " positional arguments", name);
+    return NULL;
+  }
+
+  PyObject *value = PyObject_RichCompare(args[0], args[1], opid);
+  if (unlikely(! value) || PyObject_Not(value))
+    return value;
+
+  for (size_t i = 2; i < (size_t) count; i++) {
+    Py_DECREF(value);
+    value = PyObject_RichCompare(args[i - 1], args[i], opid);
+    if (unlikely(! value) || PyObject_Not(value))
+      return value;
+  }
+
+  return value;
+}
+
+
+PyObject *KosOperator_Eq(PyObject *const *values, size_t count) {
+  return chain_compare(Py_EQ, "==", values, count);
+}
+
+
+PyObject *KosOperator_Ne(PyObject *const *values, size_t count) {
+  return chain_compare(Py_NE, "!=", values, count);
+}
+
+
+PyObject *KosOperator_Lt(PyObject *const *values, size_t count) {
+  return chain_compare(Py_LT, "<", values, count);
+}
+
+
+PyObject *KosOperator_Le(PyObject *const *values, size_t count) {
+  return chain_compare(Py_LE, "<=", values, count);
+}
+
+
+PyObject *KosOperator_Gt(PyObject *const *values, size_t count) {
+  return chain_compare(Py_GT, ">", values, count);
+}
+
+
+PyObject *KosOperator_Ge(PyObject *const *values, size_t count) {
+  return chain_compare(Py_GE, ">=", values, count);
+}
 
 
 static inline PyObject *reduce_method(
@@ -73,12 +131,8 @@ static inline PyObject *reduce_method(
     }
   }
 
+  // value is our accumulator, so we own it to start
   PyObject *value = args[0];
-  if (! value) {
-    PyErr_Format(PyExc_RuntimeError, "%s had a NULL argument", name);
-    return NULL;
-  }
-
   Py_INCREF(value);
 
   for (size_t i = 1; i < (size_t) count; i++) {
@@ -250,6 +304,13 @@ VAR_FUNC(KosOperator_In);
 VAR_FUNC(KosOperator_NotIn);
 VAR_FUNC(KosOperator_BuildStr);
 
+VAR_FUNC(KosOperator_Eq);
+VAR_FUNC(KosOperator_Ne);
+VAR_FUNC(KosOperator_Lt);
+VAR_FUNC(KosOperator_Le);
+VAR_FUNC(KosOperator_Gt);
+VAR_FUNC(KosOperator_Ge);
+
 
 static PyMethodDef operators[] = {
   { "+", PICK_FUNC(KosOperator_Add), METHOD_TYPE,
@@ -287,6 +348,24 @@ static PyMethodDef operators[] = {
 
   { "build-str", PICK_FUNC(KosOperator_BuildStr), METHOD_TYPE,
     "(build-str VAL *: VALS)" },
+
+  { "==", PICK_FUNC(KosOperator_Eq), METHOD_TYPE,
+    "(== VAL1 VAL2 *: VALS)" },
+
+  { "!=", PICK_FUNC(KosOperator_Ne), METHOD_TYPE,
+    "(!= VAL1 VAL2 *: VALS)" },
+
+  { "<", PICK_FUNC(KosOperator_Lt), METHOD_TYPE,
+    "(< VAL1 VAL2 *: VALS)" },
+
+  { "<=", PICK_FUNC(KosOperator_Le), METHOD_TYPE,
+    "(<= VAL1 VAL2 *: VALS)" },
+
+  { ">", PICK_FUNC(KosOperator_Gt), METHOD_TYPE,
+    "(> VAL1 VAL2 *: VALS)" },
+
+  { ">=", PICK_FUNC(KosOperator_Ge), METHOD_TYPE,
+    "(>= VAL1 VAL2 *: VALS)" },
 
   { NULL, },
 };

@@ -49,7 +49,7 @@ class TestGensymPartial(SpecialsTestCase):
 
 
     async def test_duplicate_pct_same_binding(self):
-        src = "(compile/gensym-thunk (compile/= %1 %1))"
+        src = "(compile/gensym-thunk (compile/== %1 %1))"
         expr, mod = self.compile_expr(src)
         fn = await expr()
         self.assertIs(await fn(9), True)

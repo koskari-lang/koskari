@@ -19,5 +19,5 @@
 */
 
 KOS_OP_HANDLER(OBJECT_SUBTRACT) {
-  return kos_op_outcome_from_int_step(obj_op_reducing(ctx, out_ev, insn, KosOperator_Subtract));
+  return kos_op_outcome_from_int_step(obj_op_reducing(es, out_ev, insn, KosOperator_Subtract));
 }

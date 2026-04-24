@@ -21,9 +21,6 @@
 #include <Python.h>
 
 
-struct KosPyAsyncGen;  /* defined in iter.h */
-
-
 extern PyTypeObject KosDemandType;
 
 

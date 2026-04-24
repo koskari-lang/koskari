@@ -21,12 +21,17 @@ stack (bottom → top):  [callable, arg_0, arg_1, ..., arg_{N-1}]
 
 ### `CALL N` Opcode (CALL.c)
 
+Handlers take **`KosEvalState *es`**. The live operand block is whatever
+**`KosContext_BLOCK(KosEvalState_Context(es))`** points at (kept in sync with
+the dyn chain); typical code uses **`KosEvalState_StackTailPtr`** /
+**`KosEvalState_StackSteal_Tail`** instead of `&KosDynFrame_STACK(frame_top)`:
+
 ```c
-args = KosStackBlock_PopTail(&KosDynFrame_STACK(frame_top), n);
-callable = KosStackBlock_PopRef(&KosDynFrame_STACK(frame_top));
-kos_callable_call(ctx, out_ev, callable, args, NULL);
-Py_DECREF(callable);
-Py_XDECREF(args);
+KOS_OP_HANDLER(CALL) {
+  KosContext *ctx = KosEvalState_Context(es);
+  PyObject *const *ptr = KosEvalState_StackTailPtr(es, n + 1);
+  /* … KosEvalState_StackSteal_Tail + KosContext_Call, or vectorcall path … */
+}
 ```
 
 `KosStackBlock_PopTail` allocates a fresh `PyTuple`, copies N borrowed
@@ -60,9 +65,9 @@ kwds_dict)`. Otherwise `call_default_python_call` is used, which calls
 Operator opcodes already avoid tuple allocation for native reducing operators:
 
 ```c
-PyObject *const *args = KosStackBlock_TailPtr(CURRENT_STACK(ctx), opa);
+PyObject *const *args = KosEvalState_StackTailPtr(es, opa);
 res = fn(args, (size_t) opa);
-KosStackBlock_DropNoErr(&CURRENT_STACK(ctx), (size_t) opa);
+KosEvalState_StackDropNoErr(es, (size_t) opa);
 ```
 
 `KosStackBlock_TailPtr` returns a pointer directly into the block's `objs[]`
@@ -89,22 +94,20 @@ call `KosFormals_VectorApply` instead.
 Replace `PopTail` with `TailPtr` + post-call `Drop`:
 
 ```c
-/* Before: */
-args = KosStackBlock_PopTail(&KosDynFrame_STACK(frame_top), n);
-callable = KosStackBlock_PopRef(&KosDynFrame_STACK(frame_top));
+/* Before: PopTail / PopRef on the current operand block (*KosContext_BLOCK(ctx)) */
+KosStackBlock **sl = KosContext_BLOCK(ctx);
+args = KosStackBlock_PopTail(sl, n);
+callable = KosStackBlock_PopRef(sl);
 int r = kos_callable_call(ctx, out_ev, callable, args, NULL);
 Py_DECREF(callable); Py_XDECREF(args);
 
 /* After: */
-PyObject *const *args = (n > 0)
-    ? KosStackBlock_TailPtr(&KosDynFrame_STACK(frame_top), n)
-    : NULL;
-if (n > 0 && ! args) return -1;
-PyObject *callable = KosStackBlock_PeekAt_FromTop(
-    &KosDynFrame_STACK(frame_top), n);   /* borrows callable below args */
-if (! callable) return -1;
+PyObject *const *bottom = KosEvalState_StackTailPtr(es, n + 1);
+if (! bottom) return -1;
+PyObject *callable = bottom[0];
+PyObject *const *args = (n > 0) ? bottom + 1 : NULL;
 int r = kos_callable_vcall(ctx, out_ev, callable, args, n, NULL);
-KosStackBlock_DropNoErr(&KosDynFrame_STACK(frame_top), n + 1);
+KosEvalState_StackDropNoErr(es, n + 1);
 /* push result happens inside kos_callable_vcall via push_or_await */
 ```
 
@@ -113,7 +116,7 @@ The key timing difference:
 | Step | Tuple path | TailPtr path |
 |------|-----------|--------------|
 | 1 | PopTail(N) → allocate tuple | TailPtr(N) → borrow pointer |
-| 2 | PopRef → pop callable | PeekAt(N) → borrow callable |
+| 2 | PopRef → pop callable | TailPtr(N+1): callable at `[0]`, args at `[1..]` |
 | 3 | call(callable, tuple) | vcall(callable, args, N) |
 | 4 | push result | Drop(N+1) |
 | 5 | Decref tuple + callable | push result |

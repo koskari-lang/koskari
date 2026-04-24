@@ -19,6 +19,7 @@
 */
 
 KOS_OP_HANDLER(FAST_ATTR_CLEAR) {
+  KosContext *ctx = KosEvalState_CONTEXT(es);
   KosCode *code = CURRENT_CODE(ctx);
   KosExtra row = KosCode_GetExtra(code, KosOp_ARG(insn));
   PyObject *ns = CURRENT_NS(ctx);

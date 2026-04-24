@@ -17,10 +17,11 @@
   CALL_VAR_NAMES: arg = extra index. Schema VAR (name), CONST (kw names),
   COUNT (npos). Call callable from namespace by name. Stack [pos_0, ...,
   pos_{N-1}, kwd_val_0, ..., kwd_val_{M-1}]. KosCallable: steal args then
-  KosContext_Call. Plain Python: TailPtr + PyObject_Vectorcall + DropNoErr.
+  KosEvalState_Call. Plain Python: TailPtr + PyObject_Vectorcall + DropNoErr.
 */
 
 KOS_OP_HANDLER(CALL_VAR_NAMES) {
+  KosContext *ctx = KosEvalState_CONTEXT(es);
   KosCode *code = CURRENT_CODE(ctx);
   KosExtra row = KosCode_GetExtra(code, KosOp_ARG(insn));
   uint32_t name_cpool_idx = row.a0;
@@ -51,8 +52,7 @@ KOS_OP_HANDLER(CALL_VAR_NAMES) {
   Py_ssize_t total = npos + nkwds;
   size_t ntotal = (size_t) total;
 
-  KosStackBlock **stack = &CURRENT_STACK(ctx);
-  PyObject *const *ptr = KosStackBlock_TailPtr(*stack, ntotal);
+  PyObject *const *ptr = KosEvalState_StackTailPtr(es, ntotal);
   if (! ptr) {
     Py_DECREF(callable);
     return KOS_OP_POST_ERR();
@@ -60,11 +60,11 @@ KOS_OP_HANDLER(CALL_VAR_NAMES) {
 
   if (KosCallable_Check(callable)) {
     KosStackSteal steal = { 0 };
-    if (KosStackSteal_Tail(&steal, ntotal, stack) < 0) {
+    if (KosEvalState_StackSteal_Tail(es, &steal, ntotal) < 0) {
       Py_DECREF(callable);
       return KOS_OP_POST_ERR();
     }
-    int r = KosContext_Call(ctx, out_ev, callable, steal.vals,
+    int r = KosEvalState_Call(es, out_ev, callable, steal.vals,
                             npos, names, 0);
     Py_DECREF(callable);
     KosStackSteal_Free(&steal);
@@ -73,10 +73,10 @@ KOS_OP_HANDLER(CALL_VAR_NAMES) {
 
   PyObject *result = PyObject_Vectorcall(callable, ptr, (size_t) npos,
                                          names);
-  KosStackBlock_DropNoErr(stack, ntotal);
+  KosEvalState_StackDropNoErr(es, ntotal);
   Py_DECREF(callable);
 
-  return result ? kos_op_outcome_from_push_int(op_push_or_await(ctx, out_ev, result)) : KOS_OP_POST_ERR();
+  return result ? kos_op_outcome_from_push_int(op_push_or_await(es, out_ev, result)) : KOS_OP_POST_ERR();
 }
 
 

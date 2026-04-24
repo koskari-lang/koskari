@@ -29,19 +29,19 @@ KOS_OP_HANDLER(OBJECT_POWER) {
   PyObject *base = NULL, *exp = NULL, *mod = Py_None;
 
   if (opa == 3) {
-    mod = KosStackBlock_PopRef(&CURRENT_STACK(ctx));
+    mod = KosEvalState_StackPopRef(es);
     if (! mod)
       return KOS_OP_POST_ERR();
   }
 
-  exp = KosStackBlock_PopRef(&CURRENT_STACK(ctx));
+  exp = KosEvalState_StackPopRef(es);
   if (! exp) {
     if (opa == 3)
       Py_DECREF(mod);
     return KOS_OP_POST_ERR();
   }
 
-  base = KosStackBlock_PopRef(&CURRENT_STACK(ctx));
+  base = KosEvalState_StackPopRef(es);
   if (! base) {
     Py_DECREF(exp);
     if (opa == 3)
@@ -56,5 +56,5 @@ KOS_OP_HANDLER(OBJECT_POWER) {
     Py_DECREF(mod);
   if (! val)
     return KOS_OP_POST_ERR();
-  return kos_op_outcome_from_int_step(push_result(ctx, val));
+  return kos_op_outcome_from_int_step(push_result(es, val));
 }

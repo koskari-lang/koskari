@@ -24,7 +24,7 @@ KOS_OP_HANDLER(PROPER) {
   size_t count = (size_t) KosOp_ARG(insn);
 
   /* Push nil onto the stack as the implicit proper tail. */
-  if (unlikely(KosStackBlock_PushRef(&CURRENT_STACK(ctx), KosNil)))
+  if (unlikely(KosEvalState_StackPushRef(es, KosNil)))
     return KOS_OP_POST_ERR();
 
   /* PROPER 0 just returns nil, which we already pushed */
@@ -32,7 +32,7 @@ KOS_OP_HANDLER(PROPER) {
     return KOS_OP_RUN();
 
   /* Now the stack has count elements + nil = count+1 items. */
-  PyObject *const *ptr = KosStackBlock_TailPtr(CURRENT_STACK(ctx), count + 1);
+  PyObject *const *ptr = KosEvalState_StackTailPtr(es, count + 1);
   if (! ptr)
     return KOS_OP_POST_ERR();
 
@@ -40,7 +40,7 @@ KOS_OP_HANDLER(PROPER) {
   if (! result)
     return KOS_OP_POST_ERR();
 
-  KosStackBlock_DropNoErr(&CURRENT_STACK(ctx), count + 1);
+  KosEvalState_StackDropNoErr(es, count + 1);
 
-  return kos_op_outcome_from_int_step(push_result(ctx, result));
+  return kos_op_outcome_from_int_step(push_result(es, result));
 }

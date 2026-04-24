@@ -269,25 +269,65 @@ def special_format(compiler, source, tc=False):
 
 
 # ---------------------------------------------------------------------------
-# Comparison interface (NOARG binary)
+# Comparison interface (COUNT variadic)
 # ---------------------------------------------------------------------------
 
-@special(symbol("compile/="), aliases=(symbol("compile/eq?"),))
+
+def _chain_compare(op, compiler, source):
+    """
+    Compile a comparison operator (OBJECT_EQ, OBJECT_NE, OBJECT_LT, OBJECT_LE,
+    OBJECT_GT, OBJECT_GE) with a variadic COUNT argument list.
+
+    :param op: OpCode for the OBJECT_* instruction
+    :param compiler: active Compiler
+    :param source: raw source pair (called_by . body)
+
+    :return: ByteCodeFragment
+    :raises SpecialError: when fewer than 2 arguments are supplied
+    """
+
+    called_by, body = source
+
+    frag = compiler.fragment(called_by)
+    frag.position_of(source)
+
+    for fm in unpack(body):
+        if is_keyword(fm):
+            return cons(symbol("compile/call"), called_by, body)
+
+    count = 0
+    current = body
+    while current is not nil:
+        frag.position_of(current)
+        expr, current = current
+        frag.merge(compiler.full_compile(expr))
+        count += 1
+
+    if count < 2:
+        raise SpecialError(
+            "%s requires at least two arguments" % called_by,
+            source)
+
+    frag.instruction(op, count)
+    return frag
+
+
+@special(symbol("compile/=="), aliases=(symbol("compile/equal?"),))
 def special_eq(compiler, source, tc=False):
     """
     Compile (compile/= A B). Test equality via __eq__
     """
 
-    return _binary_op(OpCode.KOS_OP_OBJECT_EQ, compiler, source)
+    return _chain_compare(OpCode.KOS_OP_OBJECT_EQ, compiler, source)
 
 
-@special(symbol("compile/!="), aliases=(symbol("compile/neq?"),))
+@special(symbol("compile/!="), aliases=(symbol("compile/not-equal?"),))
 def special_ne(compiler, source, tc=False):
     """
     Compile (compile/!= A B). Test inequality via __ne__
     """
 
-    return _binary_op(OpCode.KOS_OP_OBJECT_NE, compiler, source)
+    return _chain_compare(OpCode.KOS_OP_OBJECT_NE, compiler, source)
 
 
 @special(symbol("compile/<"), aliases=(symbol("compile/lt?"),))
@@ -296,7 +336,7 @@ def special_lt(compiler, source, tc=False):
     Compile (compile/< A B). Test less-than via __lt__
     """
 
-    return _binary_op(OpCode.KOS_OP_OBJECT_LT, compiler, source)
+    return _chain_compare(OpCode.KOS_OP_OBJECT_LT, compiler, source)
 
 
 @special(symbol("compile/<="), aliases=(symbol("compile/le?"),))
@@ -305,7 +345,7 @@ def special_le(compiler, source, tc=False):
     Compile (compile/<= A B). Test less-than-or-equal via __le__
     """
 
-    return _binary_op(OpCode.KOS_OP_OBJECT_LE, compiler, source)
+    return _chain_compare(OpCode.KOS_OP_OBJECT_LE, compiler, source)
 
 
 @special(symbol("compile/>"), aliases=(symbol("compile/gt?"),))
@@ -314,7 +354,7 @@ def special_gt(compiler, source, tc=False):
     Compile (compile/> A B). Test greater-than via __gt__
     """
 
-    return _binary_op(OpCode.KOS_OP_OBJECT_GT, compiler, source)
+    return _chain_compare(OpCode.KOS_OP_OBJECT_GT, compiler, source)
 
 
 @special(symbol("compile/>="), aliases=(symbol("compile/ge?"),))
@@ -323,7 +363,7 @@ def special_ge(compiler, source, tc=False):
     Compile (compile/>= A B). Test greater-than-or-equal via __ge__
     """
 
-    return _binary_op(OpCode.KOS_OP_OBJECT_GE, compiler, source)
+    return _chain_compare(OpCode.KOS_OP_OBJECT_GE, compiler, source)
 
 
 # ---------------------------------------------------------------------------

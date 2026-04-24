@@ -30,10 +30,6 @@
 #include "debug.h"
 
 
-#define CURRENT_FRAME(ctx)  KosContext_FRAME_TOP(ctx)
-#define CURRENT_STACK(ctx)  KosDynFrame_STACK(CURRENT_FRAME(ctx))
-
-
 /* === Dunder adapter (KoskariSyncViolation cache) === */
 
 

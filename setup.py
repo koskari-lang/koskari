@@ -14,7 +14,6 @@ from setuptools import Extension, setup
 
 passenvs = (
     "KOS_TRACE_FREELIST",
-    "KOS_TRACE_INTERN",
     "KOS_TRACE_EVENTS",
     "KOS_TRACE_TIMING",
     "VERBOSE_DEBUG",

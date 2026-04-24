@@ -20,14 +20,16 @@
 */
 
 KOS_OP_HANDLER(RETURN) {
+  KosContext *ctx = KosEvalState_CONTEXT(es);
   unsigned opa = KosOp_ARG(insn);
   PyObject *val = NULL;
 
   /* === Phase 1: Pop return value from stack ===
      opa=0 => Py_None, opa=1 => single value, opa=N => tuple of N values */
   SAYF("[RETURN] opa=%u frame=%p stack=%p len=%zu (pc advanced to %u)",
-       opa, (void *) CURRENT_FRAME(ctx), (void *) CURRENT_STACK(ctx),
-       CURRENT_STACK(ctx) ? KosStackBlock_LEN(CURRENT_STACK(ctx)) : 0,
+       opa, (void *) CURRENT_FRAME(ctx),
+       (void *) KosEvalState_StackHead(es),
+       KosEvalState_StackLen(es),
        (unsigned) CURRENT_PC(ctx));
 
   if (opa == 0) {
@@ -35,17 +37,17 @@ KOS_OP_HANDLER(RETURN) {
     Py_INCREF(val);
 
   } else if (opa == 1) {
-    val = KosStackBlock_PopRef(&CURRENT_STACK(ctx));
+    val = KosEvalState_StackPopRef(es);
     if (! val) {
       SAYF("[RETURN] pop underrun: stack=%p len=%zu",
-           (void *) CURRENT_STACK(ctx),
-           CURRENT_STACK(ctx) ? (unsigned long) KosStackBlock_LEN(CURRENT_STACK(ctx)) : 0UL);
+           (void *) KosEvalState_StackHead(es),
+           (unsigned long) KosEvalState_StackLen(es));
       PyErr_SetString(PyExc_RuntimeError, "RETURN: stack underrun");
       return KOS_OP_POST_ERR();
     }
 
   } else {
-    val = KosStackBlock_PopTail(&CURRENT_STACK(ctx), (size_t) opa);
+    val = KosEvalState_StackPopTail(es, (size_t) opa);
     if (! val) {
       SAY("[eval] RETURN PopTail underrun\n");
       PyErr_SetString(PyExc_RuntimeError, "RETURN: stack underrun");
@@ -56,9 +58,11 @@ KOS_OP_HANDLER(RETURN) {
   /* === Phase 2a: Delimited continuation return (k(value)) ===
      When inside a reset/prompt, k(value) returns the value to the call site
      of the continuation. This bypasses the normal parent chain. Rare path. */
-  if (unlikely(KosContext_RETURN_TARGET_CHAIN(ctx) != NULL
-               && KosContext_RETURN_TARGET_PC(ctx) != (uint32_t) -1)) {
-    int rd = kos_return_delimited(ctx, val, out_ev);
+  KosDynDelim *ret_delim = kos_find_nearest_delim(es, KOS_DYN_DELIM_MODE_K_RETURN);
+  if (unlikely(ret_delim
+               && KosDynDelim_RETURN_CHAIN(ret_delim) != NULL
+               && KosDynDelim_RETURN_PC(ret_delim) != (uint32_t) -1)) {
+    int rd = kos_return_delimited(es, ret_delim, val, out_ev);
     if (rd < 0)
       return KOS_OP_POST_ERR();
     return KosContext_PLAN(ctx) ? KOS_OP_PROLOGUE() : KOS_OP_RUN();
@@ -79,7 +83,7 @@ KOS_OP_HANDLER(RETURN) {
       .payload = val,
     };
     KosTransitionResult tres = {0};
-    if (kos_dyn_transition(ctx, &treq, &tres, out_ev) < 0) {
+    if (kos_dyn_transition(es, &treq, &tres, out_ev) < 0) {
       Py_DECREF(val);
       return KOS_OP_POST_ERR();
     }
@@ -98,7 +102,7 @@ KOS_OP_HANDLER(RETURN) {
       return KOS_OP_POST_ERR();
     }
 
-    if (unlikely(kos_dyn_pop_frame(ctx) < 0)) {
+    if (unlikely(kos_dyn_pop_frame(es) < 0)) {
       Py_DECREF(val);
       return KOS_OP_POST_ERR();
     }
@@ -120,7 +124,7 @@ KOS_OP_HANDLER(RETURN) {
       .payload = val,
     };
     KosTransitionResult tres = {0};
-    if (kos_dyn_transition(ctx, &treq, &tres, out_ev) < 0) {
+    if (kos_dyn_transition(es, &treq, &tres, out_ev) < 0) {
       Py_DECREF(val);
       return KOS_OP_POST_ERR();
     }

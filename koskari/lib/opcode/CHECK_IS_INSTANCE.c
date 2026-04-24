@@ -19,5 +19,5 @@
 */
 
 KOS_OP_HANDLER(CHECK_IS_INSTANCE) {
-  return kos_op_outcome_from_int_step(kos_check_two_arg(ctx, out_ev, insn, PyObject_IsInstance));
+  return kos_op_outcome_from_int_step(kos_check_two_arg(es, out_ev, insn, PyObject_IsInstance));
 }

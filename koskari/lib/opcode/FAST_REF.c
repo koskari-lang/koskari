@@ -18,6 +18,7 @@
 */
 
 KOS_OP_HANDLER(FAST_REF) {
+  KosContext *ctx = KosEvalState_CONTEXT(es);
   PyObject *ns = CURRENT_NS(ctx);
   if (! ns) {
     PyErr_SetString(PyExc_RuntimeError, "FAST_REF invoked on NULL namespace");
@@ -32,5 +33,5 @@ KOS_OP_HANDLER(FAST_REF) {
   if (! ref)
     return KOS_OP_POST_ERR();
   Py_INCREF(ref);
-  return kos_op_outcome_from_int_step(push_result(ctx, ref));
+  return kos_op_outcome_from_int_step(push_result(es, ref));
 }

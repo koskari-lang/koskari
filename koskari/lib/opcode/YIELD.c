@@ -20,6 +20,7 @@
 */
 
 KOS_OP_HANDLER(YIELD) {
+  KosContext *ctx = KosEvalState_CONTEXT(es);
   unsigned opa = KosOp_ARG(insn);
   PyObject *val = NULL;
 
@@ -28,14 +29,14 @@ KOS_OP_HANDLER(YIELD) {
     Py_INCREF(val);
 
   } else if (opa == 1) {
-    val = KosStackBlock_PopRef(&CURRENT_STACK(ctx));
+    val = KosEvalState_StackPopRef(es);
     if (! val) {
       SAY("[eval] YIELD pop underrun\n");
       return KOS_OP_POST_ERR();
     }
 
   } else {
-    val = KosStackBlock_PopTail(&CURRENT_STACK(ctx), (size_t) opa);
+    val = KosEvalState_StackPopTail(es, (size_t) opa);
     if (! val) {
       SAY("[eval] YIELD PopTail underrun\n");
       return KOS_OP_POST_ERR();
@@ -53,7 +54,7 @@ KOS_OP_HANDLER(YIELD) {
   //       agen->in_progress = 0;
 
   //     KosDynFrame *detached = NULL;
-  //     if (kos_dyn_detach_top_frame(ctx, &detached) < 0) {
+  //     if (kos_dyn_detach_top_frame(es, &detached) < 0) {
   //       Py_DECREF(val);
   //       return KOS_OP_POST_ERR();
   //     }
@@ -64,7 +65,7 @@ KOS_OP_HANDLER(YIELD) {
   //       KosContext_PENDING_AGEN_DEFAULT(ctx) = NULL;
   //     }
 
-  //     if (unlikely(KosStackBlock_PushRef(&CURRENT_STACK(ctx), val) < 0)) {
+  //     if (unlikely(KosEvalState_StackPushRef(es, val) < 0)) {
   //       Py_DECREF(val);
   //       return KOS_OP_POST_ERR();
   //     }

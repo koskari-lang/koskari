@@ -21,6 +21,7 @@
    Unbound fn: fn(obj, *args). Bound/other: callable(*args).
 */
 KOS_OP_HANDLER(CALL_FAST_ATTR) {
+  KosContext *ctx = KosEvalState_CONTEXT(es);
   KosCode *code = CURRENT_CODE(ctx);
   KosExtra row = KosCode_GetExtra(code, KosOp_ARG(insn));
   uint32_t slot_idx = row.a0;
@@ -45,12 +46,9 @@ KOS_OP_HANDLER(CALL_FAST_ATTR) {
   if (! obj)
     return KOS_OP_POST_ERR();
 
-  KosDynFrame *frame_top = CURRENT_FRAME(ctx);
-  KosStackBlock **stack = &KosDynFrame_STACK(frame_top);
-
   PyObject *const *ptr = NULL;
   if (n > 0) {
-    ptr = KosStackBlock_TailPtr(*stack, (size_t) n);
+    ptr = KosEvalState_StackTailPtr(es, (size_t) n);
     if (! ptr)
       return KOS_OP_POST_ERR();
   }
@@ -64,9 +62,9 @@ KOS_OP_HANDLER(CALL_FAST_ATTR) {
     KosStackSteal steal = { 0 };
     int steal_ok;
     if (send_self == 0) {
-      steal_ok = KosStackSteal_TailPrepend(&steal, obj, (size_t) n, stack);
+      steal_ok = KosEvalState_StackSteal_TailPrepend(es, &steal, obj, (size_t) n);
     } else {
-      steal_ok = KosStackSteal_Tail(&steal, (size_t) n, stack);
+      steal_ok = KosEvalState_StackSteal_Tail(es, &steal, (size_t) n);
     }
     if (steal_ok < 0) {
       Py_DECREF(resolved);
@@ -81,7 +79,7 @@ KOS_OP_HANDLER(CALL_FAST_ATTR) {
       args = (n > 0) ? steal.vals : NULL;
       nargs = (Py_ssize_t) n;
     }
-    int r = KosContext_Call(ctx, out_ev, resolved, args, nargs, NULL, 0);
+    int r = KosEvalState_Call(es, out_ev, resolved, args, nargs, NULL, 0);
     KosStackSteal_Free(&steal);
     Py_DECREF(resolved);
     return kos_op_outcome_from_call_int(ctx, r);
@@ -90,7 +88,7 @@ KOS_OP_HANDLER(CALL_FAST_ATTR) {
   PyObject *result;
   if (send_self == 0) {
     KosStackSteal steal = { 0 };
-    if (KosStackSteal_TailPrepend(&steal, obj, (size_t) n, stack) < 0) {
+    if (KosEvalState_StackSteal_TailPrepend(es, &steal, obj, (size_t) n) < 0) {
       Py_DECREF(resolved);
       return KOS_OP_POST_ERR();
     }
@@ -99,12 +97,12 @@ KOS_OP_HANDLER(CALL_FAST_ATTR) {
 
   } else {
     result = PyObject_Vectorcall(resolved, ptr, (size_t) n, NULL);
-    KosStackBlock_DropNoErr(stack, (size_t) n);
+    KosEvalState_StackDropNoErr(es, (size_t) n);
   }
 
   Py_DECREF(resolved);
 
-  return result ? kos_op_outcome_from_push_int(op_push_or_await(ctx, out_ev, result)) : KOS_OP_POST_ERR();
+  return result ? kos_op_outcome_from_push_int(op_push_or_await(es, out_ev, result)) : KOS_OP_POST_ERR();
 }
 
 

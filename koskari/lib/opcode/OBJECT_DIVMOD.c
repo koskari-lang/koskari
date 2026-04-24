@@ -21,13 +21,13 @@ KOS_OP_HANDLER(OBJECT_DIVMOD) {
       PyErr_SetString(PyExc_RuntimeError, "OBJECT_DIVMOD: only arg 2 supported");
       return KOS_OP_POST_ERR();
     }
-    PyObject *right = KosStackBlock_PopRef(&CURRENT_STACK(ctx));
+    PyObject *right = KosEvalState_StackPopRef(es);
     if (! right) return KOS_OP_POST_ERR();
-    PyObject *left = KosStackBlock_PopRef(&CURRENT_STACK(ctx));
+    PyObject *left = KosEvalState_StackPopRef(es);
     if (! left) { Py_DECREF(right); return KOS_OP_POST_ERR(); }
     PyObject *res = PyNumber_Divmod(left, right);
     Py_DECREF(left);
     Py_DECREF(right);
     if (! res) return KOS_OP_POST_ERR();
-    return kos_op_outcome_from_int_step(push_result(ctx, res));
+    return kos_op_outcome_from_int_step(push_result(es, res));
 }

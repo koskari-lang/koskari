@@ -17,11 +17,11 @@
    OBJECT_BIT_INVERT: pop TOS, call PyNumber_Invert, push result.
 */
 KOS_OP_HANDLER(OBJECT_BIT_INVERT) {
-    PyObject *val = KosStackBlock_PopRef(&CURRENT_STACK(ctx));
+    PyObject *val = KosEvalState_StackPopRef(es);
     if (! val) return KOS_OP_POST_ERR();
     PyObject *res = PyNumber_Invert(val);
     Py_DECREF(val);
     if (! res) return KOS_OP_POST_ERR();
     (void) insn;
-    return kos_op_outcome_from_int_step(push_result(ctx, res));
+    return kos_op_outcome_from_int_step(push_result(es, res));
 }

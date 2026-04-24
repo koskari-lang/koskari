@@ -2452,7 +2452,7 @@ Full design: [interpreter/with-dyn-with.md](interpreter/with-dyn-with.md). Summa
 
 Object protocol opcodes: single Python operation on TOS (and optionally below); pop operands, push result. All **Implemented** unless noted.
 
-- **Comparisons**: OBJECT_EQ, OBJECT_NE, OBJECT_LT, OBJECT_LE, OBJECT_GT, OBJECT_GE — stack `[..., a, b] → [..., result]`.
+- **Comparisons**: OBJECT_EQ, OBJECT_NE, OBJECT_LT, OBJECT_LE, OBJECT_GT, OBJECT_GE (COUNT) — stack `[..., a1, a2, ... aN] → [..., result]`, `N >= 2`.
 - **Predicates**: OBJECT_IN, OBJECT_NOT_IN, OBJECT_IS, OBJECT_IS_NOT; OBJECT_IS_INSTANCE (COUNT), OBJECT_IS_SUBCLASS (COUNT).
 - **Numeric**: OBJECT_ADD, OBJECT_SUBTRACT, OBJECT_MULTIPLY, OBJECT_POWER, OBJECT_FLOOR_DIVIDE, OBJECT_TRUE_DIVIDE, OBJECT_MODULO, OBJECT_* (bit ops, matrix multiply).
 - **General**: OBJECT_ITER, OBJECT_AITER, OBJECT_LEN, OBJECT_NOT, OBJECT_REPR, OBJECT_STR, OBJECT_FORMAT, OBJECT_FORMAT_CONST, OBJECT_TYPE, OBJECT_DIR, OBJECT_VARS, OBJECT_TRUTH, OBJECT_DIVMOD, OBJECT_BIT_INVERT, OBJECT_BIT_LEFT, OBJECT_BIT_RIGHT.
@@ -2461,44 +2461,44 @@ Each `OBJECT_*` opcode in `opcodes.incl` has its own subsection below.
 
 ### KOS_OP_OBJECT_EQ {#kos_op_object_eq}
 
-- **Style**: NOARG.
+- **Style**: COUNT.
 - **Status**: Implemented.
-- **Semantics**: See [§19 Object protocol](#19-object-protocol) overview.
+- **Semantics**: Rich-compare chain `a1 == a2 == ... == aN` over `N` stack values (`arg = N`, `N >= 2`). Raises `TypeError` when `arg < 2`.
 - **Implementation**: `koskari/lib/opcode/OBJECT_EQ.c`
 
 ### KOS_OP_OBJECT_GE {#kos_op_object_ge}
 
-- **Style**: NOARG.
+- **Style**: COUNT.
 - **Status**: Implemented.
-- **Semantics**: See [§19 Object protocol](#19-object-protocol) overview.
+- **Semantics**: Rich-compare chain `a1 >= a2 >= ... >= aN` over `N` stack values (`arg = N`, `N >= 2`). Raises `TypeError` when `arg < 2`.
 - **Implementation**: `koskari/lib/opcode/OBJECT_GE.c`
 
 ### KOS_OP_OBJECT_GT {#kos_op_object_gt}
 
-- **Style**: NOARG.
+- **Style**: COUNT.
 - **Status**: Implemented.
-- **Semantics**: See [§19 Object protocol](#19-object-protocol) overview.
+- **Semantics**: Rich-compare chain `a1 > a2 > ... > aN` over `N` stack values (`arg = N`, `N >= 2`). Raises `TypeError` when `arg < 2`.
 - **Implementation**: `koskari/lib/opcode/OBJECT_GT.c`
 
 ### KOS_OP_OBJECT_LE {#kos_op_object_le}
 
-- **Style**: NOARG.
+- **Style**: COUNT.
 - **Status**: Implemented.
-- **Semantics**: See [§19 Object protocol](#19-object-protocol) overview.
+- **Semantics**: Rich-compare chain `a1 <= a2 <= ... <= aN` over `N` stack values (`arg = N`, `N >= 2`). Raises `TypeError` when `arg < 2`.
 - **Implementation**: `koskari/lib/opcode/OBJECT_LE.c`
 
 ### KOS_OP_OBJECT_LT {#kos_op_object_lt}
 
-- **Style**: NOARG.
+- **Style**: COUNT.
 - **Status**: Implemented.
-- **Semantics**: See [§19 Object protocol](#19-object-protocol) overview.
+- **Semantics**: Rich-compare chain `a1 < a2 < ... < aN` over `N` stack values (`arg = N`, `N >= 2`). Raises `TypeError` when `arg < 2`.
 - **Implementation**: `koskari/lib/opcode/OBJECT_LT.c`
 
 ### KOS_OP_OBJECT_NE {#kos_op_object_ne}
 
-- **Style**: NOARG.
+- **Style**: COUNT.
 - **Status**: Implemented.
-- **Semantics**: See [§19 Object protocol](#19-object-protocol) overview.
+- **Semantics**: Rich-compare chain `a1 != a2 != ... != aN` over `N` stack values (`arg = N`, `N >= 2`). Raises `TypeError` when `arg < 2`.
 - **Implementation**: `koskari/lib/opcode/OBJECT_NE.c`
 
 ### KOS_OP_OBJECT_IN {#kos_op_object_in}
@@ -3031,9 +3031,9 @@ between POP_SHIFT and POP_PROMPT.
 
 - **Style**: NOARG.
 - **Status**: Implemented.
-- **Stack**: Normal case (no active continuation return): pops TOS as the reset result, drops the PROMPT's COW stack block, unlinks the prompt from the chain, and pushes the result onto the parent stack. Invoked-continuation return case: when `DELIMITED_RETURN_FRAME` is set, pops TOS as result, unwinds continuation frames back to the invocation site, drops the PROMPT's stack block, pushes result, sets PC to post-INVOKE_K, and resumes.
-- **Invariants**: Top of chain must be the matching prompt when POP_PROMPT executes. When returning from an invoked delimited continuation (`INVOCATION_SEGMENT_TOP` and `DELIMITED_RETURN_FRAME` are set), POP_PROMPT transfers control back to the call site with the result value instead of exiting normally. Exactly one value is consumed from the PROMPT's stack block and one is injected to the outer stack.
-- **Push-return model**: Delimited invoke uses PUSH (graft frames onto current chain). When the continuation runs and hits POP_PROMPT, it unwinds to `DELIMITED_RETURN_FRAME` and resumes at the instruction after INVOKE_K with the value on stack.
+- **Stack**: Normal case (no active continuation return): pops TOS as the reset result, drops the PROMPT's COW stack block, unlinks the prompt from the chain, and pushes the result onto the parent stack. Invoked-continuation return case: when a nearest **`KOS_DYN_DELIM`** with mode **`KOS_DYN_DELIM_MODE_POP_PROMPT`** is present (`kos_find_nearest_delim`), pops TOS as result, unwinds continuation frames back to the invocation site per that node’s return metadata, drops the PROMPT's stack block, pushes result, sets PC to post-INVOKE_K, and resumes.
+- **Invariants**: Top of chain must be the matching prompt when POP_PROMPT executes. When returning from an invoked delimited continuation (return path recorded on **`KOS_DYN_DELIM`**), POP_PROMPT transfers control back to the call site with the result value instead of exiting normally. Exactly one value is consumed from the PROMPT's stack block and one is injected to the outer stack.
+- **Push-return model**: Delimited invoke uses PUSH (graft frames onto current chain). When the continuation runs and hits POP_PROMPT, it consults the **`KOS_DYN_DELIM`** marker installed for that invoke and resumes at the call site with the value on stack.
 - **Exception propagation**: If an exception escapes past the PROMPT during unwinding, the `unwind_on_exception` handler (dispatched via `KOS_DYN_CAP_HANDLES_EXCEPTIONS`) drops the stack block and unlinks the PROMPT, then continues unwinding. No POP_PROMPT opcode executes in this path.
 
 **Example:** End of reset body.

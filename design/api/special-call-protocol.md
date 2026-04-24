@@ -113,7 +113,7 @@ Install returns 0 (continue), 1 (suspend, out_ev set), or -1 (error). On 0, the 
 
 ### Transfer plan integration
 
-The context holds an active transfer plan (`KosContext_PLAN(ctx)`). At the top of each dispatch loop iteration, the evaluator drains the plan via `run_transfer_plan_to_completion`. An install that builds a transfer plan (e.g. continuation) sets `KosContext_PLAN(ctx) = plan` and returns 0. The evaluator loop takes over and drains the plan on the next iteration.
+The context holds an active transfer plan (`KosContext_PLAN(ctx)`). At the top of each dispatch loop iteration, the evaluator drains the plan via `run_transfer_plan_to_completion`. An install that builds a transfer plan (e.g. `kos_invoke_continuation(es, …)` for continuations) sets `KosContext_PLAN(ctx) = plan`, syncs eval state from `ctx`, and returns 0. The evaluator loop takes over and drains the plan on the next iteration.
 
 ---
 

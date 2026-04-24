@@ -1,7 +1,7 @@
 # Koskari Tracing
 
-Compile-flag enabled tracing for profiling freelist behaviour, interned atom
-usage, event counts, and timing. The tracing infrastructure is always present;
+Compile-flag enabled tracing for profiling freelist behaviour, event counts,
+and timing. The tracing infrastructure is always present;
 the Python API always returns a report dict; but the report contents reflect
 which tracing features were enabled at build time.
 
@@ -25,7 +25,6 @@ macros must include it explicitly (same opt-in pattern as `debug.h`).
 | Flag | Default | Purpose |
 |------|---------|---------|
 | `KOS_TRACE_FREELIST` | 0 | Freelist alloc/return hit/miss/overrun |
-| `KOS_TRACE_INTERN`   | 0 | Atom intern hit/miss (phase 2) |
 | `KOS_TRACE_EVENTS`   | 0 | VM / dynchain event counters (`events` report key) |
 | `KOS_TRACE_TIMING`   | 0 | Per-opcode handler time (`opcode_timing` report key) |
 
@@ -81,7 +80,6 @@ pollute `get_trace_report()`.
 {
     "flags": {
         "freelist": False,
-        "intern": False,
         "events": False,
         "timing": False
     }
@@ -97,7 +95,7 @@ all optional sections are disabled, no `freelists`, `events`,
 
 ```python
 {
-    "flags": {"freelist": True, "intern": False, "events": False, "timing": False},
+    "flags": {"freelist": True, "events": False, "timing": False},
     "freelists": {
         "dyn_node":     {"alloc_hits": N, "alloc_misses": N, "return_hits": N, "overruns": N},
         "continuation": {...},
@@ -144,7 +142,7 @@ with:
 | **ratio_vs_mean** | `float` | `avg_ns / avg_ns_per_dispatch`, where `avg_ns_per_dispatch` is `total_ns_all // total_executions` (see summary); `0.0` if `total_executions` is zero or the mean dispatch time is zero. |
 
 Timing is recorded around each `op_*` call in both eval dispatch loops
-(computed goto and switch); it does not include `prepare_next_insn` or
+(computed goto and switch); it does not include `KOS_EVAL_PREPARE_NEXT_INSN` or
 `eval_phase_post_opcode` work.
 
 C code uses `KOS_TRACE_OP_WRAP(name, op_out = op_##name(...))` in `eval.c`
@@ -252,7 +250,7 @@ Each freelist entry has four counters:
 
 - **dynchain.c** — `kos_dynnode_alloc`, `kos_dynnode_return_to_freelist`; `kos_continuation_create`, `kos_continuation_free_exclude`, `xfer_plan_release_invoke_clone`
 - **eval.c** — `kos_context_new`, `kos_context_free`, and context release on allocation failure
-- **stack.c** — `KosStackBlock_New`, `KosStackBlock_NewSized`, `KosStackBlock_ReleaseExclude`
+- **stack.c** — `KosStackBlock_New`, `KosStackBlock_NewSized`, `KosStackBlock_Release`, `KosStackBlock_ReleaseChain`
 - **pair.c** — `KosPair_New`, `pair_dealloc`
 
 **Events** — `KOS_TRACE_EVENTS_INC` in **dynchain.c** at `kos_dyn_handle`,
@@ -268,5 +266,4 @@ Each freelist entry has four counters:
 
 ## Future Phases
 
-- **KOS_TRACE_INTERN**: Symbol and keyword intern cache hit/miss
 - **KOS_TRACE_EVENTS**: Additional counters as needed

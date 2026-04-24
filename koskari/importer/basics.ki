@@ -229,7 +229,7 @@ define-syntax define-coroutine:
 define-syntax when-main:
   syntax-rules []:
     match (when-main body ...):
-      when (eq? __name__ "__main__"):
+      when (equal? __name__ "__main__"):
         (begin body ...)
 
 

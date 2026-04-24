@@ -58,7 +58,18 @@ static int register_koskari_sync_exception(PyObject *mod,
 }
 
 
-static PyObject *KosDemandGenerator_New(KosContext *ctx);
+/* === KosDemandGenerator (struct + type forward; methods follow Demand core) === */
+
+
+typedef struct {
+  PyObject_HEAD
+  PyObject *code_name;  /* strong ref; KosCode name for repr (sync with agen->code_name) */
+  PyObject *async_agen; /* KosPyAsyncGen: sole liveness / closed / ctx / gen */
+} KosDemandGenerator;
+
+
+static PyTypeObject KosDemandGeneratorType;
+
 
 /* === Demand core (demand_sync_ex) === */
 
@@ -182,6 +193,9 @@ static int demand_sync_ex(
 
     if (KosCode_YIELDS((KosCode *) code)) {
       KosDynGen *gen_node = kos_dyngen_new(NULL);
+      PyObject *agen_obj;
+      KosPyAsyncGen *agen;
+
       if (! gen_node)
         goto ret_fail;
       frame = kos_dynframe_new(
@@ -193,20 +207,45 @@ static int demand_sync_ex(
       KosDynGen_ACTIVE(gen_node) = (struct KosDynNode *) frame;
       ctx = kos_context_new(frame);
       frame = NULL;
-      if (! ctx) {
-        if (frame)
-          kos_dynframe_free(frame);
+      if (! ctx)
         goto ret_fail;
-      }
-      PyObject *gen = KosDemandGenerator_New(ctx);
-      if (! gen) {
+      agen_obj = KosPyAsyncGen_New(ctx);
+      if (! agen_obj) {
         kos_context_free(ctx);
         goto ret_fail;
       }
-      KosDynGen_OWNER(gen_node) = gen;
+      agen = (KosPyAsyncGen *) agen_obj;
+      KosDynGen_OWNER(gen_node) = (PyObject *) agen;
+      agen->gen = (void *) gen_node;
       kos_dyngen_acquire(gen_node);
-      Py_XDECREF(call_args);
-      *out_result = gen;
+      Py_XINCREF(KosCode_NAME((KosCode *) code));
+      agen->code_name = KosCode_NAME((KosCode *) code);
+
+      {
+        /* KosDemandGenerator holds no KosContext; eval state is only on agen->ctx. */
+        KosDemandGenerator *dsg =
+            (KosDemandGenerator *)
+            PyObject_GC_New(KosDemandGenerator, &KosDemandGeneratorType);
+        PyObject *gen_out;
+
+        if (! dsg) {
+          Py_DECREF(agen_obj);
+          goto ret_fail;
+        }
+        dsg->code_name = NULL;
+        if (agen->code_name) {
+          Py_INCREF(agen->code_name);
+          dsg->code_name = agen->code_name;
+        }
+        Py_INCREF(agen);
+        dsg->async_agen = (PyObject *) agen;
+
+        PyObject_GC_Track((PyObject *) dsg);
+        gen_out = (PyObject *) dsg;
+        Py_DECREF(agen_obj);
+        Py_XDECREF(call_args);
+        *out_result = gen_out;
+      }
       return 0;
     }
 
@@ -541,49 +580,17 @@ PyTypeObject KosDemandType = {
 };
 
 
-/* === KosDemandGenerator === */
 /* In-eval suspend violation (second koskari_eval throw) is not applied here;
    only demand_sync_ex run_eval; see demand_gen_step KOS_EV_AWAIT. */
 
 
-typedef struct {
-  PyObject_HEAD
-  KosContext *ctx;
-  PyObject *code_name;  /* strong ref; KosCode name for repr (ctx may be freed) */
-  int closed;    /* 0=running, 1=done or broken (ctx freed) */
-  int in_send;   /* re-entrancy guard (demand_sync-owned ctx only) */
-  PyObject *async_agen;  /* KosPyAsyncGen when built from tp_iter; else NULL */
-} KosDemandGenerator;
-
-
-static PyTypeObject KosDemandGeneratorType;
-
-
 static void demand_gen_dealloc(PyObject *self) {
-
   PyObject_GC_UnTrack(self);
 
   KosDemandGenerator *gen = (KosDemandGenerator *) self;
 
-  if (gen->async_agen) {
-    KosPyAsyncGen *agen = (KosPyAsyncGen *) gen->async_agen;
-    KosContext *dctx = gen->ctx;
-    gen->ctx = NULL;
-    agen->sync_demand_active = 0;
-    if (dctx) {
-      if (! gen->closed)
-        KosAsyncGen_TeardownDemandContext(agen, dctx);
-      kos_context_free(dctx);
-    }
-    Py_DECREF(gen->async_agen);
-    gen->async_agen = NULL;
-  }
-  else if (gen->ctx) {
-    kos_context_free(gen->ctx);
-    gen->ctx = NULL;
-  }
-
-  Py_XDECREF(gen->code_name);
+  Py_CLEAR(gen->async_agen);
+  Py_CLEAR(gen->code_name);
 
   Py_TYPE(self)->tp_free(self);
 }
@@ -594,11 +601,7 @@ static int demand_gen_traverse(PyObject *self, visitproc visit, void *arg) {
   KosDemandGenerator *gen = (KosDemandGenerator *) self;
 
   Py_VISIT(gen->code_name);
-
-  if (gen->async_agen)
-    Py_VISIT(gen->async_agen);
-  else if (gen->ctx)
-    return kos_context_traverse(gen->ctx, visit, arg);
+  Py_VISIT(gen->async_agen);
 
   return 0;
 }
@@ -609,30 +612,13 @@ static int demand_gen_clear(PyObject *self) {
   KosDemandGenerator *gen = (KosDemandGenerator *) self;
 
   Py_CLEAR(gen->code_name);
-
-  if (gen->async_agen) {
-    KosPyAsyncGen *agen = (KosPyAsyncGen *) gen->async_agen;
-    KosContext *dctx = gen->ctx;
-    gen->ctx = NULL;
-    agen->sync_demand_active = 0;
-    if (dctx) {
-      if (! gen->closed)
-        KosAsyncGen_TeardownDemandContext(agen, dctx);
-      kos_context_free(dctx);
-    }
-    Py_CLEAR(gen->async_agen);
-  }
-  else if (gen->ctx) {
-    kos_context_free(gen->ctx);
-    gen->ctx = NULL;
-  }
+  Py_CLEAR(gen->async_agen);
 
   return 0;
 }
 
 
 static PyObject *demand_gen_iter(PyObject *self) {
-
   Py_INCREF(self);
   return self;
 }
@@ -640,24 +626,33 @@ static PyObject *demand_gen_iter(PyObject *self) {
 
 static void demand_gen_close_ctx(KosDemandGenerator *gen) {
 
-  if (gen->async_agen) {
-    KosPyAsyncGen *agen = (KosPyAsyncGen *) gen->async_agen;
-    agen->sync_demand_active = 0;
-    KosContext *dctx = gen->ctx;
-    gen->ctx = NULL;
-    gen->closed = 1;
-    if (dctx)
-      kos_context_free(dctx);
-    agen->gen = NULL;
-    agen->closed = 1;
-    return;
-  }
+  KosPyAsyncGen *agen = (KosPyAsyncGen *) gen->async_agen;
 
-  if (gen->ctx) {
-    kos_context_free(gen->ctx);
-    gen->ctx = NULL;
+  if (agen->ctx) {
+    kos_context_free(agen->ctx);
+    agen->ctx = NULL;
   }
-  gen->closed = 1;
+  agen->gen = NULL;
+  agen->closed = 1;
+}
+
+
+static int install_frozen_gen_for_resume(
+  KosContext *eval_ctx,
+  KosPyAsyncGen *agen) {
+
+  KosDynGen *g;
+
+  if (! eval_ctx || ! agen)
+    return 0;
+  g = (KosDynGen *) agen->gen;
+  if (! g || ! kos_dyn_gen_frozen_needs_install(eval_ctx, g))
+    return 0;
+  {
+    KosEvalState es;
+    KosEvalState_Init(&es, eval_ctx);
+    return kos_dyn_gen_install(&es, g);
+  }
 }
 
 
@@ -667,43 +662,38 @@ static PyObject *demand_gen_step(
     PyObject *throw_typ,
     PyObject *throw_exc) {
 
-  if (gen->closed) {
+  KosPyAsyncGen *agen = (KosPyAsyncGen *) gen->async_agen;
+
+  if (! agen || ! agen->ctx || agen->closed) {
     PyErr_SetNone(PyExc_StopIteration);
     return NULL;
   }
 
-  if (gen->async_agen) {
-    KosPyAsyncGen *borrow = (KosPyAsyncGen *) gen->async_agen;
-    if (borrow->in_progress) {
-      PyErr_SetString(PyExc_RuntimeError,
-                      "async generator already being iterated");
-      return NULL;
-    }
-    borrow->in_progress = 1;
-  }
-  else {
-    if (gen->in_send) {
-      PyErr_SetString(PyExc_RuntimeError,
-                      "demand generator already being iterated");
-      return NULL;
-    }
-    gen->in_send = 1;
-  }
-
-  KosEvent ev = {0};
-  int res = koskari_eval(gen->ctx, &ev, send_val, throw_typ, throw_exc);
-
-  if (gen->async_agen)
-    ((KosPyAsyncGen *) gen->async_agen)->in_progress = 0;
-  else
-    gen->in_send = 0;
-
-  if (res < 0) {
-    demand_gen_close_ctx(gen);
+  if (agen->in_progress) {
+    PyErr_SetString(PyExc_RuntimeError,
+                    "async generator already being iterated");
     return NULL;
   }
 
-  switch (KosEvent_KIND(&ev)) {
+  agen->in_progress = 1;
+
+  if (install_frozen_gen_for_resume(agen->ctx, agen) < 0) {
+    agen->in_progress = 0;
+    return NULL;
+  }
+
+  KosEvent ev = {0};
+  {
+    int res = koskari_eval(agen->ctx, &ev, send_val, throw_typ, throw_exc);
+
+    agen->in_progress = 0;
+
+    if (res < 0) {
+      demand_gen_close_ctx(gen);
+      return NULL;
+    }
+
+    switch (KosEvent_KIND(&ev)) {
     case KOS_EV_YIELD: {
       PyObject *payload = KosEvent_PAYLOAD(&ev);
       KosEvent_PAYLOAD(&ev) = NULL;
@@ -769,12 +759,12 @@ static PyObject *demand_gen_step(
       demand_gen_close_ctx(gen);
       PyErr_SetString(PyExc_RuntimeError, "unexpected event kind");
       return NULL;
+    }
   }
 }
 
 
 static PyObject *demand_gen_iternext(PyObject *self) {
-
   return demand_gen_step((KosDemandGenerator *) self, NULL, NULL, NULL);
 }
 
@@ -799,9 +789,12 @@ static PyObject *demand_gen_throw(PyObject *self, PyObject *args) {
   if (! PyArg_ParseTuple(args, "O|OO:throw", &typ, &val, &tb))
     return NULL;
 
-  if (gen->closed) {
-    PyErr_SetNone(PyExc_StopIteration);
-    return NULL;
+  {
+    KosPyAsyncGen *wa = (KosPyAsyncGen *) gen->async_agen;
+    if (! wa || wa->closed) {
+      PyErr_SetNone(PyExc_StopIteration);
+      return NULL;
+    }
   }
 
   PyErr_NormalizeException(&typ, &val, &tb);
@@ -862,51 +855,14 @@ static PyTypeObject KosDemandGeneratorType = {
 };
 
 
-static PyObject *KosDemandGenerator_New(KosContext *ctx) {
-
-  KosDemandGenerator *gen =
-      (KosDemandGenerator *)
-      PyObject_GC_New(KosDemandGenerator, &KosDemandGeneratorType);
-  if (! gen) {
-    kos_context_free(ctx);
-    return NULL;
-  }
-
-  gen->ctx = ctx;
-  gen->code_name = NULL;
-  {
-    KosDynFrame *frame = KosContext_FRAME_TOP(ctx);
-    KosCode *code;
-
-    if (frame && (code = KosDynFrame_CODE(frame))) {
-      Py_XINCREF(KosCode_NAME(code));
-      gen->code_name = KosCode_NAME(code);
-    }
-  }
-  gen->closed = 0;
-  gen->in_send = 0;
-  gen->async_agen = NULL;
-
-  PyObject_GC_Track((PyObject *) gen);
-  return (PyObject *) gen;
-}
-
-
 PyObject *KosDemandGenerator_FromAsyncGen(KosPyAsyncGen *agen) {
 
   KosDynGen *dgen;
-  KosContext *ctx;
   KosDemandGenerator *dsg;
   PyObject *code_name = NULL;
 
   if (! agen->ctx || agen->closed) {
     PyErr_SetString(PyExc_RuntimeError, "async generator is closed");
-    return NULL;
-  }
-
-  if (agen->sync_demand_active) {
-    PyErr_SetString(PyExc_RuntimeError,
-                    "async generator already being iterated");
     return NULL;
   }
 
@@ -938,41 +894,29 @@ PyObject *KosDemandGenerator_FromAsyncGen(KosPyAsyncGen *agen) {
     }
   }
 
-  ctx = kos_context_new(NULL);
-  if (! ctx)
-    return NULL;
-
-  KosContext_DYN_TOP(agen->ctx) = NULL;
-  KosContext_FRAME_TOP(agen->ctx) = NULL;
-
-  if (kos_dyn_gen_install(ctx, dgen) < 0) {
-    kos_context_free(ctx);
-    Py_XDECREF(code_name);
-    return NULL;
-  }
+  /* Thin wrapper only: do not install or otherwise mutate the dyn chain here;
+     demand_gen_step installs via kos_dyn_gen_frozen_needs_install when stepping. */
 
   dsg = (KosDemandGenerator *)
       PyObject_GC_New(KosDemandGenerator, &KosDemandGeneratorType);
   if (! dsg) {
-    kos_context_free(ctx);
     Py_XDECREF(code_name);
     return NULL;
   }
 
-  dsg->ctx = ctx;
   dsg->code_name = code_name;
-  dsg->closed = 0;
-  dsg->in_send = 0;
   Py_INCREF(agen);
   dsg->async_agen = (PyObject *) agen;
-  agen->sync_demand_active = 1;
 
   PyObject_GC_Track((PyObject *) dsg);
   return (PyObject *) dsg;
 }
 
-static PyObject *
-demand_call_kw(PyObject *self, PyObject *args, PyObject *kwargs) {
+
+static PyObject *demand_call_kw(
+    PyObject *self,
+    PyObject *args,
+    PyObject *kwargs) {
 
   (void) self;
   if (! PyTuple_GET_SIZE(args)) {
@@ -994,8 +938,10 @@ demand_call_kw(PyObject *self, PyObject *args, PyObject *kwargs) {
 }
 
 
-static PyObject *
-demand_apply_kw(PyObject *self, PyObject *args, PyObject *kwargs) {
+static PyObject *demand_apply_kw(
+    PyObject *self,
+    PyObject *args,
+    PyObject *kwargs) {
 
   PyObject *callable = NULL;
   PyObject *call_args = NULL;

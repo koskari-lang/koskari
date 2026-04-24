@@ -18,5 +18,22 @@
 */
 
 KOS_OP_HANDLER(OBJECT_LT) {
-  return kos_op_outcome_from_int_step(op_OBJECT_EQ_impl(ctx, out_ev, insn, Py_LT));
+  int count = (int) KosOp_ARG(insn);
+
+  if (count < 2) {
+    PyErr_Format(PyExc_TypeError, "OBJECT_LT requires at least 2"
+                 " elements");
+    return KOS_OP_POST_ERR();
+  }
+
+  PyObject *const *args = KosEvalState_StackTailPtr(es, count);
+  if (unlikely(! args))
+    return KOS_OP_POST_ERR();
+
+  PyObject *result = KosOperator_Lt(args, count);
+  KosEvalState_StackDropNoErr(es, count);
+  if (unlikely(! result))
+    return KOS_OP_POST_ERR();
+
+  return kos_op_outcome_from_int_step(push_result(es, result));
 }

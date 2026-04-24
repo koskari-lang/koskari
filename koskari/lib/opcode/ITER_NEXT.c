@@ -20,7 +20,8 @@
 */
 
 KOS_OP_HANDLER(ITER_NEXT) {
-  KosDynNode *region = kos_find_node_for_loop(ctx);
+  KosContext *ctx = KosEvalState_CONTEXT(es);
+  KosDynNode *region = kos_find_node_for_loop(es);
   if (! region || ! KosDynNode_IS_FOREACH(region)) {
     PyErr_SetString(PyExc_RuntimeError,
                     "ITER_NEXT must be used inside a PUSH_FOREACH block");
@@ -57,7 +58,7 @@ KOS_OP_HANDLER(ITER_NEXT) {
   KosGetNextResult get_res = op_get_next_from_iter(ctx, out_ev, iter, &value);
   switch (get_res) {
     case GET_NEXT_VALUE:
-      if (KosStackBlock_PushRef(&CURRENT_STACK(ctx), value) < 0) {
+      if (KosEvalState_StackPushRef(es, value) < 0) {
         Py_DECREF(value);
         return KOS_OP_POST_ERR();
       }

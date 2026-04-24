@@ -40,10 +40,7 @@ struct KosPyAsyncGen {
   PyObject *code_name;  /* strong ref; KosCode name for repr (ctx may not expose frame) */
   int in_progress;   /* anext in progress */
   int closed;        /* generator closed */
-  int sync_demand_active;  /* DemandSyncGenerator from __iter__ holds the gen chain */
 };
-
-typedef struct KosPyAsyncGen KosPyAsyncGen;
 
 
 #define KosPyAsyncGen_Check(obj)                                        \
@@ -54,14 +51,6 @@ typedef struct KosPyAsyncGen KosPyAsyncGen;
 
 
 PyObject *KosPyAsyncGen_New(KosContext *ctx);
-
-
-/**
-   Tear down a demand-iterator context: same contract as frozen teardown, but
-   the running chain lives on dctx (not agen->ctx). Does not free dctx; caller
-   does. Clears agen->gen when finished
-*/
-void KosAsyncGen_TeardownDemandContext(KosPyAsyncGen *agen, KosContext *dctx);
 
 
 /**

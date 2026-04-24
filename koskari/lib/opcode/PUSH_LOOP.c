@@ -20,6 +20,7 @@
 */
 
 KOS_OP_HANDLER(PUSH_LOOP) {
+  KosContext *ctx = KosEvalState_CONTEXT(es);
   uint32_t continue_pc = CURRENT_PC(ctx);  /* already advanced by drive loop */
 
   /* Derive break target from the extent table (pop_pc + 1) */
@@ -38,8 +39,7 @@ KOS_OP_HANDLER(PUSH_LOOP) {
   }
   uint32_t break_pc = ext->pop_pc + 1u;
 
-  KosDynNode *region = (KosDynNode *) kos_dyn_push_loop(ctx,
-                                             break_pc, continue_pc);
+  KosDynNode *region = (KosDynNode *) kos_dyn_push_loop(es,                                              break_pc, continue_pc);
   if (! region) {
     PyErr_NoMemory();
     return KOS_OP_POST_ERR();
@@ -48,15 +48,7 @@ KOS_OP_HANDLER(PUSH_LOOP) {
   /* Initialize loop result to None */
   Py_INCREF(Py_None);
   KosDynLoop_RESULT((KosDynLoop *) region) = Py_None;
-
-  if (KosStackBlock_PushBlock(&CURRENT_STACK(ctx)) < 0) {
-    if (kos_dyn_abort_push_region(ctx, region) < 0) {
-      PyErr_Clear();
-      PyErr_SetString(PyExc_RuntimeError,
-                      "PUSH_LOOP: unexpected region kind during abort");
-    }
-    return KOS_OP_POST_ERR();
-  }
+  KosEvalState_RefreshDynCaches(es);
   (void) out_ev;
   return KOS_OP_RUN();
 }

@@ -18,7 +18,7 @@
    tracing.c
 
    Compile-flag enabled tracing implementation. Counters and report
-   builder for freelist, intern, events, and timing features.
+   builder for freelist, events, and timing features.
 
    :author: Christopher O'Brien <obriencj@preoccupied.net>
    :license: GNU General Public License v3
@@ -917,8 +917,6 @@ PyObject *kos_trace_report(void) {
 
   if (PyDict_SetItemString(flags, "freelist",
           KOS_TRACE_FREELIST ? Py_True : Py_False) < 0 ||
-      PyDict_SetItemString(flags, "intern",
-          KOS_TRACE_INTERN ? Py_True : Py_False) < 0 ||
       PyDict_SetItemString(flags, "events",
           KOS_TRACE_EVENTS ? Py_True : Py_False) < 0 ||
       PyDict_SetItemString(flags, "timing",

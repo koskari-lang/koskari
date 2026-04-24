@@ -23,6 +23,7 @@
 */
 
 KOS_OP_HANDLER(POP_SHIFT) {
+  KosContext *ctx = KosEvalState_CONTEXT(es);
   PyObject *result;
   uint32_t eid;
   uint32_t parent_id;
@@ -41,10 +42,11 @@ KOS_OP_HANDLER(POP_SHIFT) {
   /* PC already advanced: we are post-INSN, so resume will run instruction at
    * prompt_pop_pc+1 (first instr after POP_PROMPT). */
   SAYF("[POP_SHIFT] pre-pop: frame=%p stack=%p len=%zu (pc already advanced to %u)",
-       (void *) CURRENT_FRAME(ctx), (void *) CURRENT_STACK(ctx),
-       CURRENT_STACK(ctx) ? KosStackBlock_LEN(CURRENT_STACK(ctx)) : 0,
+       (void *) CURRENT_FRAME(ctx),
+       (void *) KosEvalState_StackHead(es),
+       KosEvalState_StackLen(es),
        (unsigned) CURRENT_PC(ctx));
-  result = KosStackBlock_PopRef(&CURRENT_STACK(ctx));
+  result = KosEvalState_StackPopRef(es);
   if (! result) {
     SAY("[eval] POP_SHIFT pop result failed (stack underrun)");
     return KOS_OP_POST_ERR();
@@ -84,14 +86,14 @@ KOS_OP_HANDLER(POP_SHIFT) {
 
   prompt_pop_pc = prompt_extent->pop_pc;
 
-  prompt = kos_find_nearest_prompt(ctx);
+  prompt = kos_find_nearest_prompt(es);
   if (! prompt) {
     Py_DECREF(result);
     PyErr_SetString(PyExc_RuntimeError, "POP_SHIFT: no prompt on chain");
     return KOS_OP_POST_ERR();
   }
 
-  if (kos_dyn_build_pop_shift_plan(ctx, prompt, result, &plan) < 0) {
+  if (kos_dyn_build_pop_shift_plan(es, prompt, result, &plan) < 0) {
     Py_DECREF(result);
     return KOS_OP_POST_ERR();
   }

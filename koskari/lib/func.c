@@ -32,7 +32,6 @@
 
 
 #define CURRENT_FRAME(ctx)  KosContext_FRAME_TOP(ctx)
-#define CURRENT_STACK(ctx)  KosDynFrame_STACK(CURRENT_FRAME(ctx))
 
 
 static int kos_expression_wants_frame(PyObject *callable) {
@@ -186,8 +185,11 @@ static int kos_install_expression(
     if (! agen)
       return -1;
 
-    // PUSH steals the agen reference
-    return KosStackBlock_PUSH(&CURRENT_STACK(ctx), agen);
+    {
+      KosEvalState es;
+      KosEvalState_Init(&es, ctx);
+      return KosEvalState_StackPUSH(&es, agen);
+    }
   }
 
   KosDynFrame *frame = CURRENT_FRAME(ctx);
@@ -222,9 +224,13 @@ static int kos_install_function(
     PyObject *agen = KosAsyncGen_NewFromCodeAndNs(code, frame_ns);
     if (! agen)
       return -1;
-    if (KosStackBlock_PushRef(&CURRENT_STACK(ctx), agen) < 0) {
-      Py_DECREF(agen);
-      return -1;
+    {
+      KosEvalState es;
+      KosEvalState_Init(&es, ctx);
+      if (KosEvalState_StackPushRef(&es, agen) < 0) {
+        Py_DECREF(agen);
+        return -1;
+      }
     }
     (void) out_ev;
     return 0;
@@ -257,9 +263,13 @@ static int kos_vinstall_function(
     PyObject *agen = KosAsyncGen_NewFromCodeAndNs(code, frame_ns);
     if (! agen)
       return -1;
-    if (KosStackBlock_PushRef(&CURRENT_STACK(ctx), agen) < 0) {
-      Py_DECREF(agen);
-      return -1;
+    {
+      KosEvalState es;
+      KosEvalState_Init(&es, ctx);
+      if (KosEvalState_StackPushRef(&es, agen) < 0) {
+        Py_DECREF(agen);
+        return -1;
+      }
     }
     (void) out_ev;
     return 0;

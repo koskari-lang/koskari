@@ -18,10 +18,10 @@
 */
 
 KOS_OP_HANDLER(ITEM_CLEAR) {
-  PyObject *key = KosStackBlock_PopRef(&CURRENT_STACK(ctx));
+  PyObject *key = KosEvalState_StackPopRef(es);
   if (! key)
     return KOS_OP_POST_ERR();
-  PyObject *obj = KosStackBlock_PopRef(&CURRENT_STACK(ctx));
+  PyObject *obj = KosEvalState_StackPopRef(es);
   if (! obj) {
     Py_DECREF(key);
     return KOS_OP_POST_ERR();

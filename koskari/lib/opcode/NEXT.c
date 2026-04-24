@@ -21,6 +21,7 @@
 */
 
 KOS_OP_HANDLER(NEXT) {
+  KosContext *ctx = KosEvalState_CONTEXT(es);
   uint16_t n = KosOp_ARG(insn);
   if (n != 1 && n != 2) {
     PyErr_Format(PyExc_ValueError, "NEXT arg must be 1 or 2, got %u", n);
@@ -30,11 +31,11 @@ KOS_OP_HANDLER(NEXT) {
   PyObject *default_val = NULL;
   PyObject *iter = NULL;
   if (n == 2) {
-    default_val = KosStackBlock_PopRef(&CURRENT_STACK(ctx));
+    default_val = KosEvalState_StackPopRef(es);
     if (! default_val)
       return KOS_OP_POST_ERR();
   }
-  iter = KosStackBlock_PopRef(&CURRENT_STACK(ctx));
+  iter = KosEvalState_StackPopRef(es);
   if (! iter) {
     Py_XDECREF(default_val);
     return KOS_OP_POST_ERR();
@@ -70,7 +71,7 @@ KOS_OP_HANDLER(NEXT) {
     if (agen->closed || ! agen->ctx) {
       Py_DECREF(iter);
       if (n == 2 && default_val) {
-        if (KosStackBlock_PushRef(&CURRENT_STACK(ctx), default_val) < 0) {
+        if (KosEvalState_StackPushRef(es, default_val) < 0) {
           Py_XDECREF(default_val);
           return KOS_OP_POST_ERR();
         }
@@ -82,7 +83,7 @@ KOS_OP_HANDLER(NEXT) {
       return KOS_OP_POST_ERR();
     }
     agen->in_progress = 1;
-    if (kos_dyn_push_next_for_kos_agen(ctx, (PyObject *) agen, default_val,
+    if (kos_dyn_push_next_for_kos_agen(es, (PyObject *) agen, default_val,
                                         (int) n)
         < 0) {
       agen->in_progress = 0;
@@ -101,7 +102,7 @@ KOS_OP_HANDLER(NEXT) {
   KosGetNextResult get_res = op_get_next_from_iter(ctx, out_ev, iter, &value);
   switch (get_res) {
     case GET_NEXT_VALUE:
-      if (KosStackBlock_PushRef(&CURRENT_STACK(ctx), value) < 0) {
+      if (KosEvalState_StackPushRef(es, value) < 0) {
         Py_DECREF(value);
         Py_DECREF(iter);
         Py_XDECREF(default_val);
@@ -115,7 +116,7 @@ KOS_OP_HANDLER(NEXT) {
     case GET_NEXT_EXHAUSTED:
       Py_DECREF(iter);
       if (default_val) {
-        if (KosStackBlock_PushRef(&CURRENT_STACK(ctx), default_val) < 0) {
+        if (KosEvalState_StackPushRef(es, default_val) < 0) {
           Py_XDECREF(default_val);
           return KOS_OP_POST_ERR();
         }
@@ -128,15 +129,15 @@ KOS_OP_HANDLER(NEXT) {
 
     case GET_NEXT_SUSPEND:
       if (n == 2) {
-        if (KosStackBlock_PushRef(&CURRENT_STACK(ctx), default_val) < 0) {
+        if (KosEvalState_StackPushRef(es, default_val) < 0) {
           Py_DECREF(default_val);
           Py_DECREF(iter);
           return KOS_OP_POST_ERR();
         }
       }
-      if (KosStackBlock_PushRef(&CURRENT_STACK(ctx), iter) < 0) {
+      if (KosEvalState_StackPushRef(es, iter) < 0) {
         if (n == 2) {
-          PyObject *rollback_default = KosStackBlock_PopRef(&CURRENT_STACK(ctx));
+          PyObject *rollback_default = KosEvalState_StackPopRef(es);
           Py_XDECREF(rollback_default);
           Py_DECREF(default_val);
         }

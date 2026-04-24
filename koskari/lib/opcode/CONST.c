@@ -19,6 +19,7 @@
 */
 
 KOS_OP_HANDLER(CONST) {
+  KosContext *ctx = KosEvalState_CONTEXT(es);
   KosCode *code = CURRENT_CODE(ctx);
   uint32_t index = KosOp_ARG(insn);
 
@@ -30,5 +31,5 @@ KOS_OP_HANDLER(CONST) {
 
   PyObject *val = KosCode_GET_CONST(code, index);
   Py_INCREF(val);
-  return kos_op_outcome_from_int_step(push_result(ctx, val));
+  return kos_op_outcome_from_int_step(push_result(es, val));
 }

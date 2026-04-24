@@ -21,6 +21,7 @@
 */
 
 KOS_OP_HANDLER(PUSH_SHIFT) {
+  KosContext *ctx = KosEvalState_CONTEXT(es);
   uint32_t prompt_id;
   KosContinuation *k = NULL;
   uint32_t resume_pc;
@@ -30,7 +31,7 @@ KOS_OP_HANDLER(PUSH_SHIFT) {
   if (get_prompt_id_from_insn(CURRENT_CODE(ctx), insn, &prompt_id) < 0)
     return KOS_OP_POST_ERR();
 
-  KosDynPrompt *prompt = kos_find_prompt(ctx, prompt_id);
+  KosDynPrompt *prompt = kos_find_prompt(es, prompt_id);
   if (! prompt) {
     PyErr_SetString(PyExc_RuntimeError, "PUSH_SHIFT: prompt not found");
     return KOS_OP_POST_ERR();
@@ -43,13 +44,13 @@ KOS_OP_HANDLER(PUSH_SHIFT) {
     KosDynPrompt_PENDING_SHIFT_WRAPPER(prompt) = NULL;
 
     shift_body_pc = CURRENT_ACTING_PC(ctx) + 1;
-    if (kos_dyn_push_shift(ctx) < 0) {
+    if (kos_dyn_push_shift(es) < 0) {
       KosDynPrompt_PENDING_SHIFT_WRAPPER(prompt) = wrapper;
       return KOS_OP_POST_ERR();
     }
 
     CURRENT_PC(ctx) = shift_body_pc;
-    return kos_op_outcome_from_int_step(push_result(ctx, wrapper));
+    return kos_op_outcome_from_int_step(push_result(es, wrapper));
   }
 
   /* Already at prompt: capture, push shift node, done */
@@ -60,7 +61,7 @@ KOS_OP_HANDLER(PUSH_SHIFT) {
       PyErr_SetString(PyExc_RuntimeError, "PUSH_SHIFT: no SHIFT extent at pc");
       return KOS_OP_POST_ERR();
     }
-    if (kos_shift_capture(ctx, prompt_id, resume_pc, &k) < 0)
+    if (kos_shift_capture(es, prompt_id, resume_pc, &k) < 0)
       return KOS_OP_POST_ERR();
 
     PyObject *wrapper = KosPyDelimitedContinuation_New(k);
@@ -70,13 +71,13 @@ KOS_OP_HANDLER(PUSH_SHIFT) {
     }
 
     shift_body_pc = CURRENT_ACTING_PC(ctx) + 1;
-    if (kos_dyn_push_shift(ctx) < 0) {
+    if (kos_dyn_push_shift(es) < 0) {
       Py_DECREF(wrapper);
       return KOS_OP_POST_ERR();
     }
 
     CURRENT_PC(ctx) = shift_body_pc;
-    return kos_op_outcome_from_int_step(push_result(ctx, wrapper));
+    return kos_op_outcome_from_int_step(push_result(es, wrapper));
   }
 
   /* Need to unwind: build plan, capture, set continuation on plan, roll back PC */
@@ -89,7 +90,7 @@ KOS_OP_HANDLER(PUSH_SHIFT) {
 
   SAYF("[eval] PUSH_SHIFT prompt_id=%u resume_pc=%u\n",
        (unsigned) prompt_id, (unsigned) resume_pc);
-  if (kos_shift_capture(ctx, prompt_id, resume_pc, &k) < 0) {
+  if (kos_shift_capture(es, prompt_id, resume_pc, &k) < 0) {
     SAY("[eval] PUSH_SHIFT capture failed\n");
     return KOS_OP_POST_ERR();
   }
@@ -100,11 +101,14 @@ KOS_OP_HANDLER(PUSH_SHIFT) {
     return KOS_OP_POST_ERR();
   }
 
-  if (kos_dyn_build_push_shift_unwind_plan(ctx, prompt, &plan) < 0) {
+  if (kos_dyn_build_push_shift_unwind_plan(es, prompt, &plan) < 0) {
     Py_DECREF(wrapper);
     return KOS_OP_POST_ERR();
   }
 
+  /* Plan consumes the wrapper's refcount from New; kos_free_transfer_plan
+   * Py_XDECREFs continuation_ref. (Unlike kos_invoke_continuation, there is
+   * no separate caller-owned ref, so no extra INCREF here.) */
   KosTransferPlan_CONTINUATION_REF(plan) = wrapper;
 
   if (KosContext_PLAN(ctx))

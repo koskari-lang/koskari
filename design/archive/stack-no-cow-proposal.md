@@ -46,8 +46,7 @@ After this change, the `refcount` field is removed. Each block chain has a singl
 | `KosStackBlock_COW(KosStackBlock *block)` | Bump refcount on all blocks in chain; return same chain | dynchain.c (7 call sites) |
 | `KosStackBlock_DeepCopy(KosStackBlock *block)` | Allocate new blocks, copy objs, incref each | Currently unused except as implementation detail |
 | `KosStackBlock_Release(KosStackBlock *block)` | Decrement refcount; free if 0, else DECREF objs | Many |
-| `KosStackBlock_ReleaseExclude(block, exclude)` | Same as Release but skip DECREF on slots == exclude | cont.c, dynchain.c (re-entrancy guard) |
-| `KosStackBlock_ReleaseChainExclude(block, exclude)` | Release full chain with exclude | dynchain.c, cont.c |
+| `KosStackBlock_Release` / `KosStackBlock_ReleaseChain` | Unconditional DECREF of slots; transfer plans hold a strong `continuation_ref` while stacks may mention the wrapper | stack.c, dynchain.c |
 | `KosStack_Copy(PyObject *original)` | COW copy of KosStack: bump block refcounts | stack.c `stack_m_copy`, tests |
 
 ### EnsureExclusive Call Sites (stack.c)
@@ -118,8 +117,7 @@ All mutating operations call `EnsureExclusive` before modifying:
 - `refcount` field from `struct KosStackBlock`
 
 **Simplify:**
-- `KosStackBlock_Release` / `KosStackBlock_ReleaseExclude`: always treat block as exclusively owned; directly DECREF objs and free (or cache). No refcount check.
-- `KosStackBlock_ReleaseChainExclude`: keep; still needed for exclude (re-entrancy when continuation wrapper is on stack).
+- `KosStackBlock_Release` / `KosStackBlock_ReleaseChain`: always treat block as exclusively owned; directly DECREF objs and free (or cache). No refcount check.
 
 **Keep and use:**
 - `KosStackBlock_DeepCopy`: becomes the primary "copy stack for capture" API.
@@ -225,16 +223,15 @@ Proposed: `KosStackBlock_DeepCopy` of the block chain, then wrap in a new KosSta
 | API | Change |
 |-----|--------|
 | `KosStackBlock_Release` | Simplify: always DECREF objs and free (or cache); no refcount check |
-| `KosStackBlock_ReleaseExclude` | Keep; exclude logic still needed for re-entrancy |
-| `KosStackBlock_ReleaseChainExclude` | Keep |
+| `KosStackBlock_ReleaseChain` | Release full chain via `Release` |
 | `KosStackBlock_DeepCopy` | Promote to primary copy API |
 | `KosStack_Copy` | Change implementation to use DeepCopy |
 
 ---
 
-## Exclude Semantics (unchanged)
+## Transfer / continuation refcount (post–exclude removal)
 
-`ReleaseExclude(block, exclude)` skips DECREF on slots equal to `exclude`. Used when the continuation Python wrapper is deallocated and the stack may hold a reference to it—we avoid re-entering the wrapper's dealloc. This is independent of COW and remains necessary.
+Transfer plans store a strong `continuation_ref` while operand stacks may hold the same wrapper; `ReleaseChain` does not use slot skipping.
 
 ---
 

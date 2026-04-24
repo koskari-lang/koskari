@@ -15,17 +15,15 @@
 
 /**
   CALL: arg = number of positional arguments N. Stack has [callable, arg_0,
-  ..., arg_{N-1}] (callable oldest). KosCallable: steal then KosContext_Call.
+  ..., arg_{N-1}] (callable oldest). KosCallable: steal then KosEvalState_Call.
   Plain Python: TailPtr + PyObject_Vectorcall + DropNoErr (fast path).
 */
 
 KOS_OP_HANDLER(CALL) {
+  KosContext *ctx = KosEvalState_CONTEXT(es);
   unsigned n = KosOp_ARG(insn);
 
-  KosDynFrame *frame_top = CURRENT_FRAME(ctx);
-  KosStackBlock **stack = &KosDynFrame_STACK(frame_top);
-
-  PyObject *const *ptr = KosStackBlock_TailPtr(*stack, n + 1);
+  PyObject *const *ptr = KosEvalState_StackTailPtr(es, n + 1);
   if (! ptr)
     return KOS_OP_POST_ERR();
 
@@ -33,9 +31,9 @@ KOS_OP_HANDLER(CALL) {
 
   if (KosCallable_Check(ptr[0])) {
     KosStackSteal steal = { 0 };
-    if (KosStackSteal_Tail(&steal, (size_t)(n + 1), stack) < 0)
+    if (KosEvalState_StackSteal_Tail(es, &steal, (size_t)(n + 1)) < 0)
       return KOS_OP_POST_ERR();
-    int r = KosContext_Call(ctx, out_ev, steal.vals[0],
+    int r = KosEvalState_Call(es, out_ev, steal.vals[0],
                             (n > 0) ? &steal.vals[1] : NULL,
                             (Py_ssize_t) n, NULL, 0);
     KosStackSteal_Free(&steal);
@@ -51,9 +49,9 @@ KOS_OP_HANDLER(CALL) {
     }
 
     SAYF("CALL: result=%R", result);
-    KosStackBlock_DropNoErr(stack, n + 1);
+    KosEvalState_StackDropNoErr(es, n + 1);
     return result
-        ? kos_op_outcome_from_push_int(op_push_or_await(ctx, out_ev, result))
+        ? kos_op_outcome_from_push_int(op_push_or_await(es, out_ev, result))
         : KOS_OP_POST_ERR();
   }
 }

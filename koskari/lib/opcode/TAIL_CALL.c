@@ -17,27 +17,25 @@
    TAIL_CALL: arg = N. Same stack as CALL [callable, arg_0, ..., arg_{N-1}].
    Tail call: do not push a new frame; remove or recycle the current one.
 
-   Extracts args via KosStackSteal before call; KosContext_Call handles frame
+   Extracts args via KosStackSteal before call; KosEvalState_Call handles frame
    behavior and dispatch. Returns KOS_OP_RES_CONTROL_RETURNED when we push and
    continue (triggers kos_dynnode_on_control_returned for wind thunks).
 */
 
 KOS_OP_HANDLER(TAIL_CALL) {
+  KosContext *ctx = KosEvalState_CONTEXT(es);
   unsigned n = KosOp_ARG(insn);
   size_t count = (size_t)(n + 1);
 
-  KosDynFrame *frame_top = CURRENT_FRAME(ctx);
-  KosStackBlock **stack = &KosDynFrame_STACK(frame_top);
-
   KosStackSteal steal = { 0 };
-  if (KosStackSteal_Tail(&steal, count, stack) < 0)
+  if (KosEvalState_StackSteal_Tail(es, &steal, count) < 0)
     return KOS_OP_POST_ERR();
 
   PyObject *callable = steal.vals[0];
   PyObject *const *args =
     (n > 0) ? (PyObject *const *)&steal.vals[1] : NULL;
 
-  int res = KosContext_Call(ctx, out_ev, callable, args,
+  int res = KosEvalState_Call(es, out_ev, callable, args,
                             (Py_ssize_t) n, NULL, 1);
 
   KosStackSteal_Free(&steal);

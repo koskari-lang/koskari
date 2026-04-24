@@ -8,7 +8,7 @@ This document describes a refactor of the Koskari eval loop around a **mode** as
 
 | `KosLoopOpMode` | Loop action |
 |-----------------|-------------|
-| `KOS_LOP_RUN` | **Computed goto:** `kos_eval_prepare_next_insn` then `goto *optable[op]` (no shared prepare label). **Switch build:** `goto eval_prepare_and_dispatch`. Neither path runs the prologue. |
+| `KOS_LOP_RUN` | **Computed goto:** `KOS_EVAL_PREPARE_NEXT_INSN` then `goto *optable[op]` (no shared prepare label). **Switch build:** `goto sw_prepare_and_dispatch`. Neither path runs the prologue. |
 | `KOS_LOP_PROLOGUE` | **Computed goto:** `goto eval_prologue`. **Switch:** `need_prologue = 1`; `goto eval_loop_head`. |
 | `KOS_LOP_POST` | `kos_op_post_tag_to_res` → `eval_phase_post_opcode`; then same as PROLOGUE unless stop/event. |
 | `KOS_LOP_FAIL` | `eval_ret = -1`; cleanup (no `try_local_exception_handler`). |

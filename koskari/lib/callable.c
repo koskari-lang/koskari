@@ -64,9 +64,10 @@ static int get_effective_wants_frame(PyObject *callable, PyTypeObject *typ) {
 }
 
 
-static int do_frame_prep(KosContext *ctx, PyObject *callable, PyTypeObject *typ,
+static int do_frame_prep(KosEvalState *es, PyObject *callable, PyTypeObject *typ,
                          int tail_call) {
 
+  KosContext *ctx = KosEvalState_CONTEXT(es);
   int wants = get_effective_wants_frame(callable, typ);
   KosDynFrame *frame = CURRENT_FRAME(ctx);
   KosDynNode *parent = KosDynNode_PARENT((KosDynNode *) frame);
@@ -76,12 +77,12 @@ static int do_frame_prep(KosContext *ctx, PyObject *callable, PyTypeObject *typ,
     return 0;
   }
   if (wants && ! tail_call) {
-    if (kos_dyn_push_frame_empty(ctx) == NULL)
+    if (kos_dyn_push_frame_empty(es) == NULL)
       return -1;
     return 0;
   }
   if (! wants && tail_call && parent) {
-    return kos_dyn_pop_frame(ctx);
+    return kos_dyn_pop_frame(es);
   }
   return 0;
 }
@@ -143,19 +144,21 @@ int KosCallable_CallNoArgs(KosContext *ctx, KosEvent *out_ev,
 }
 
 
-/* === KosContext_Call* : generic entry points === */
+/* === KosEvalState_Call* : generic entry points === */
 
 
-int KosContext_Call(KosContext *ctx, KosEvent *out_ev,
+int KosEvalState_Call(KosEvalState *es, KosEvent *out_ev,
     PyObject *callable,
     PyObject *const *args, Py_ssize_t nargs, PyObject *kwnames,
     int tail_call) {
+
+  KosContext *ctx = KosEvalState_CONTEXT(es);
 
   if (! KosCallable_Check(callable)) {
     if (tail_call) {
       KosDynFrame *frame = CURRENT_FRAME(ctx);
       KosDynNode *parent = KosDynNode_PARENT((KosDynNode *) frame);
-      if (parent && kos_dyn_pop_frame(ctx) < 0)
+      if (parent && kos_dyn_pop_frame(es) < 0)
         return -1;
     }
     /* nargs matches KosCallable_Call: positional count only. PEP 590:
@@ -165,14 +168,14 @@ int KosContext_Call(KosContext *ctx, KosEvent *out_ev,
         : PyObject_Vectorcall(callable, args, (size_t) nargs, kwnames);
     if (! result)
       return -1;
-    int r = kos_push_or_await(ctx, out_ev, result);
+    int r = kos_push_or_await(es, out_ev, result);
     if (r == 0 && tail_call)
       r = KOS_OP_RES_CONTROL_RETURNED;
     return r;
   }
 
   PyTypeObject *typ = Py_TYPE(callable);
-  if (do_frame_prep(ctx, callable, typ, tail_call) < 0)
+  if (do_frame_prep(es, callable, typ, tail_call) < 0)
     return -1;
 
   int r = KosCallable_Call(ctx, out_ev, callable, args, nargs, kwnames,
@@ -183,19 +186,21 @@ int KosContext_Call(KosContext *ctx, KosEvent *out_ev,
 }
 
 
-int KosContext_CallArgs(
-    KosContext *ctx,
+int KosEvalState_CallArgs(
+    KosEvalState *es,
     KosEvent *out_ev,
     PyObject *callable,
     PyObject *args_tuple,
     PyObject *kwds_dict,
     int tail_call) {
 
+  KosContext *ctx = KosEvalState_CONTEXT(es);
+
   if (! KosCallable_Check(callable)) {
     if (tail_call) {
       KosDynFrame *frame = CURRENT_FRAME(ctx);
       KosDynNode *parent = KosDynNode_PARENT((KosDynNode *) frame);
-      if (parent && kos_dyn_pop_frame(ctx) < 0)
+      if (parent && kos_dyn_pop_frame(es) < 0)
         return -1;
     }
     PyObject *result = NULL;
@@ -217,7 +222,7 @@ int KosContext_CallArgs(
     if (! result)
       return -1;
 
-    int r = kos_push_or_await(ctx, out_ev, result);
+    int r = kos_push_or_await(es, out_ev, result);
     if (r == 0 && tail_call)
       r = KOS_OP_RES_CONTROL_RETURNED;
 
@@ -225,7 +230,7 @@ int KosContext_CallArgs(
   }
 
   PyTypeObject *typ = Py_TYPE(callable);
-  if (do_frame_prep(ctx, callable, typ, tail_call) < 0)
+  if (do_frame_prep(es, callable, typ, tail_call) < 0)
     return -1;
 
   int r = KosCallable_CallArgs(ctx, out_ev, callable, args_tuple, kwds_dict,
@@ -236,27 +241,29 @@ int KosContext_CallArgs(
 }
 
 
-int KosContext_CallNoArgs(KosContext *ctx, KosEvent *out_ev,
+int KosEvalState_CallNoArgs(KosEvalState *es, KosEvent *out_ev,
     PyObject *callable, int tail_call) {
+
+  KosContext *ctx = KosEvalState_CONTEXT(es);
 
   if (! KosCallable_Check(callable)) {
     if (tail_call) {
       KosDynFrame *frame = CURRENT_FRAME(ctx);
       KosDynNode *parent = KosDynNode_PARENT((KosDynNode *) frame);
-      if (parent && kos_dyn_pop_frame(ctx) < 0)
+      if (parent && kos_dyn_pop_frame(es) < 0)
         return -1;
     }
     PyObject *result = PyObject_CallNoArgs(callable);
     if (! result)
       return -1;
-    int r = kos_push_or_await(ctx, out_ev, result);
+    int r = kos_push_or_await(es, out_ev, result);
     if (r == 0 && tail_call)
       r = KOS_OP_RES_CONTROL_RETURNED;
     return r;
   }
 
   PyTypeObject *typ = Py_TYPE(callable);
-  if (do_frame_prep(ctx, callable, typ, tail_call) < 0)
+  if (do_frame_prep(es, callable, typ, tail_call) < 0)
     return -1;
 
   int r = KosCallable_CallNoArgs(ctx, out_ev, callable, tail_call);

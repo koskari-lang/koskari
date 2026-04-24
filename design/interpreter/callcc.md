@@ -133,8 +133,8 @@ int kos_shift_capture(KosContext *ctx, uint32_t prompt_id,
 The `kos_invoke_continuation()` function handles resumption:
 
 ```c
-int kos_invoke_continuation(KosContext *ctx, KosContinuation *k,
-        PyObject *value, int is_throw);
+int kos_invoke_continuation(KosEvalState *es, KosContinuation *k,
+        PyObject *value, int is_throw, PyObject *continuation_ref);
 ```
 
 **Algorithm**:
@@ -144,19 +144,20 @@ int kos_invoke_continuation(KosContext *ctx, KosContinuation *k,
 2. **Build transfer plan**:
    - **Delimited (push model)**: Use `kos_build_delimited_push_plan()`. The
      prompt need not be in the current chain; invoke grafts the continuation
-     segment onto the current frame_top and sets `DELIMITED_RETURN_FRAME` /
-     `DELIMITED_RETURN_PC` so that when the continuation hits `POP_PROMPT`,
-     control unwinds to the call site and resumes with the value.
+     segment onto the current chain and installs a **`KOS_DYN_DELIM`** marker
+     (`KOS_DYN_DELIM_MODE_POP_PROMPT`) holding return frame/PC/chain metadata so
+     that when the continuation hits `POP_PROMPT`, control unwinds to the call
+     site and resumes with the value.
    - **Undelimited**: Use `kos_build_transfer_plan()` with INSTALL:
      ```c
-     int kos_build_transfer_plan(KosContext *ctx, KosDynNode *target,
+     int kos_build_transfer_plan(KosEvalState *es, KosDynNode *target,
              PyObject *value, int is_throw, uint32_t graft_point_id,
              KosTransferPlan **out_plan);
      ```
 
 3. **Execute transfer**: Run the plan to completion
    ```c
-   int kos_run_transfer_step(KosContext *ctx);
+   int kos_run_transfer_step(KosEvalState *es, struct KosEvent *out_ev);
    ```
 
 ### KosDynCCRaise Sentinel
@@ -211,8 +212,9 @@ struct KosTransferPlan {
 2. `PUSH` action to graft the continuation frames onto the current chain
    (caller stays below; no INSTALL)
 3. `INJECT` action to push resume value
-4. When the continuation runs and hits `POP_PROMPT`, unwind to `DELIMITED_RETURN_FRAME`,
-   push the value, set PC to `DELIMITED_RETURN_PC`, and continue the eval loop
+4. When the continuation runs and hits `POP_PROMPT`, use the nearest
+   **`KOS_DYN_DELIM`** (`kos_find_nearest_delim`) to unwind to the invocation
+   site, push the value, set PC from the delim node, and continue the eval loop
 
 ### LCA Computation
 
@@ -236,8 +238,8 @@ When a hook invokes another continuation:
 5. **Replan if needed**: If chain changed, recompute remaining actions
 
 ```c
-void kos_suspend_transfer_plan(KosContext *ctx);
-int kos_resume_transfer_plan(KosContext *ctx);
+void kos_suspend_transfer_plan(KosEvalState *es);
+int kos_resume_transfer_plan(KosEvalState *es);
 ```
 
 ### Chain-Change Detection

@@ -16,11 +16,12 @@
 /**
   CALL_VAR: arg = extra index. Schema VAR (name), COUNT (arg count).
   Call callable from namespace by name. Stack [arg_0, ..., arg_{N-1}].
-  KosCallable: steal args then KosContext_Call. Plain Python: TailPtr +
+  KosCallable: steal args then KosEvalState_Call. Plain Python: TailPtr +
   PyObject_Vectorcall + DropNoErr.
 */
 
 KOS_OP_HANDLER(CALL_VAR) {
+  KosContext *ctx = KosEvalState_CONTEXT(es);
   KosCode *code = CURRENT_CODE(ctx);
   KosExtra row = KosCode_GetExtra(code, KosOp_ARG(insn));
   uint32_t name_cpool_idx = row.a0;
@@ -35,15 +36,13 @@ KOS_OP_HANDLER(CALL_VAR) {
   if (! callable)
     return KOS_OP_POST_ERR();
 
-  KosStackBlock **stack = &CURRENT_STACK(ctx);
-
   if (KosCallable_Check(callable)) {
     KosStackSteal steal = { 0 };
-    if (KosStackSteal_Tail(&steal, (size_t) n, stack) < 0) {
+    if (KosEvalState_StackSteal_Tail(es, &steal, (size_t) n) < 0) {
       Py_DECREF(callable);
       return KOS_OP_POST_ERR();
     }
-    int r = KosContext_Call(ctx, out_ev, callable,
+    int r = KosEvalState_Call(es, out_ev, callable,
                             (n > 0) ? steal.vals : NULL,
                             (Py_ssize_t) n, NULL, 0);
     Py_DECREF(callable);
@@ -56,19 +55,19 @@ KOS_OP_HANDLER(CALL_VAR) {
       result = PyObject_CallNoArgs(callable);
 
     } else {
-      PyObject *const *ptr = KosStackBlock_TailPtr(*stack, n);
+      PyObject *const *ptr = KosEvalState_StackTailPtr(es, n);
       if (! ptr) {
         Py_DECREF(callable);
         return KOS_OP_POST_ERR();
       }
 
       result = PyObject_Vectorcall(callable, ptr, (size_t) n, NULL);
-      KosStackBlock_DropNoErr(stack, n);
+      KosEvalState_StackDropNoErr(es, n);
     }
 
     SAYF("CALL_VAR: result=%R", result);
     Py_DECREF(callable);
-    return result ? kos_op_outcome_from_push_int(op_push_or_await(ctx, out_ev, result)) : KOS_OP_POST_ERR();
+    return result ? kos_op_outcome_from_push_int(op_push_or_await(es, out_ev, result)) : KOS_OP_POST_ERR();
   }
 }
 

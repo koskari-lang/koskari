@@ -19,19 +19,12 @@
 */
 
 KOS_OP_HANDLER(PUSH_FINALLY) {
-  KosDynNode *region = (KosDynNode *) kos_dyn_push_finally(ctx, KosOp_ARG(insn));
+  KosDynNode *region = (KosDynNode *) kos_dyn_push_finally(es, KosOp_ARG(insn));
   if (! region) {
     PyErr_NoMemory();
     return KOS_OP_POST_ERR();
   }
-  if (KosStackBlock_PushBlock(&CURRENT_STACK(ctx)) < 0) {
-    if (kos_dyn_abort_push_region(ctx, region) < 0) {
-      PyErr_Clear();
-      PyErr_SetString(PyExc_RuntimeError,
-                      "PUSH_FINALLY: unexpected region kind during abort");
-    }
-    return KOS_OP_POST_ERR();
-  }
+  KosEvalState_RefreshDynCaches(es);
   (void) out_ev;
   return KOS_OP_RUN();
 }

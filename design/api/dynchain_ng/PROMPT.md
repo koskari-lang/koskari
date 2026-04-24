@@ -17,8 +17,8 @@ The new implementation must be CLEAR, and COMPARTMENTALIZED. Current implementat
 - **Full VM scope:** Every use of `KosDynNode`, `KosDynFrame`, `KosContext` chain-related fields, `KosTransferPlan`, `KosContinuation`, and `kos_*` entry points from `dynchain.h` in non-dynchain translation units must continue to work.
 - **Symbol compatibility:** For each function, type, macro, and `KosContext` field listed in the inventory as **externally referenced**, provide the same names and compatible signatures/layouts **or** document a mechanical migration (default: preserve symbols).
 - **GC:** `kos_dynnode_traverse`, `kos_dynchain_traverse`, `kos_continuation_traverse`, `kos_transferplan_traverse` must remain correct for all owned `PyObject *`.
-- **Transfer plans:** `kos_run_transfer_step`, all `kos_build_*_plan` variants used outside `dynchain.c`, `kos_free_transfer_plan`, suspend/resume hooks if referenced, and `KosTransferPlan_*` macros used in `eval.c` / opcodes must behave equivalently.
-- **Continuations:** `kos_shift_capture`, `kos_capture_cc`, `kos_invoke_continuation`, `kos_continuation_*`, `KosContinuation_*` macros used in `cont.c` / opcodes.
+- **Transfer plans:** `kos_run_transfer_step(es, …)`, all `kos_build_*_plan` variants (first arg **`KosEvalState *es`**) used outside `dynchain.c`, `kos_free_transfer_plan`, `kos_suspend_transfer_plan` / `kos_resume_transfer_plan` if wired, and `KosTransferPlan_*` macros used in `eval.c` / opcodes must behave equivalently.
+- **Continuations:** `kos_shift_capture`, `kos_capture_cc`, `kos_invoke_continuation(es, …)`, `kos_continuation_*`, `KosContinuation_*` macros used in `cont.c` / opcodes.
 - **Module lifecycle:** `koskari_dynchain_init`, `koskari_dynchain_clear` — same registration/cleanup contract.
 
 ## Process

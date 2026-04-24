@@ -20,6 +20,7 @@
 */
 
 KOS_OP_HANDLER(PUSH_CC) {
+  KosContext *ctx = KosEvalState_CONTEXT(es);
   KosCode *code = CURRENT_CODE(ctx);
   uint32_t pc = CURRENT_ACTING_PC(ctx);
   uint32_t eid = kos_extent_find((PyObject *) code, pc, KOS_EXT_CC);
@@ -33,7 +34,7 @@ KOS_OP_HANDLER(PUSH_CC) {
     return KOS_OP_POST_ERR();
   }
   uint32_t resume_pc = ext->pop_pc + 1u;
-  if (! kos_dyn_push_cc(ctx, resume_pc)) {
+  if (! kos_dyn_push_cc(es, resume_pc)) {
     return KOS_OP_POST_ERR();
   }
   (void) out_ev;

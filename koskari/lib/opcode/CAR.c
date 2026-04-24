@@ -27,7 +27,7 @@ KOS_OP_HANDLER(CAR) {
     return KOS_OP_POST_ERR();
   }
 
-  PyObject *cur = KosStackBlock_PopRef(&CURRENT_STACK(ctx));
+  PyObject *cur = KosEvalState_StackPopRef(es);
   if (! cur)
     return KOS_OP_POST_ERR();
 
@@ -47,5 +47,5 @@ KOS_OP_HANDLER(CAR) {
     Py_DECREF(cur);
     cur = next;
   }
-  return kos_op_outcome_from_int_step(push_result(ctx, cur));
+  return kos_op_outcome_from_int_step(push_result(es, cur));
 }

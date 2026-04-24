@@ -20,6 +20,7 @@
    Unbound fn: fn(obj, *args). Bound/other: callable(*args).
 */
 KOS_OP_HANDLER(CALL_ATTR) {
+  KosContext *ctx = KosEvalState_CONTEXT(es);
   KosCode *code = CURRENT_CODE(ctx);
   KosExtra row = KosCode_GetExtra(code, KosOp_ARG(insn));
   uint32_t attr_cpool_idx = row.a0;
@@ -30,10 +31,7 @@ KOS_OP_HANDLER(CALL_ATTR) {
   if (! name)
     return KOS_OP_POST_ERR();
 
-  KosDynFrame *frame_top = CURRENT_FRAME(ctx);
-  KosStackBlock **stack = &KosDynFrame_STACK(frame_top);
-
-  PyObject *const *ptr = KosStackBlock_TailPtr(*stack, count);
+  PyObject *const *ptr = KosEvalState_StackTailPtr(es, count);
   if (! ptr)
     return KOS_OP_POST_ERR();
 
@@ -47,7 +45,7 @@ KOS_OP_HANDLER(CALL_ATTR) {
   PyObject *result;
   if (KosCallable_Check(resolved)) {
     KosStackSteal steal = { 0 };
-    if (KosStackSteal_Tail(&steal, (size_t)count, stack) < 0) {
+    if (KosEvalState_StackSteal_Tail(es, &steal, (size_t)count) < 0) {
       Py_DECREF(resolved);
       return KOS_OP_POST_ERR();
     }
@@ -60,7 +58,7 @@ KOS_OP_HANDLER(CALL_ATTR) {
       args = (n > 0) ? &steal.vals[1] : NULL;
       nargs = (Py_ssize_t) n;
     }
-    int r = KosContext_Call(ctx, out_ev, resolved, args, nargs, NULL, 0);
+    int r = KosEvalState_Call(es, out_ev, resolved, args, nargs, NULL, 0);
     KosStackSteal_Free(&steal);
     Py_DECREF(resolved);
     return kos_op_outcome_from_call_int(ctx, r);
@@ -72,8 +70,8 @@ KOS_OP_HANDLER(CALL_ATTR) {
     result = PyObject_Vectorcall(resolved,
         (n > 0) ? &ptr[1] : NULL, (size_t) n, NULL);
   }
-  KosStackBlock_DropNoErr(stack, count);
+  KosEvalState_StackDropNoErr(es, count);
   Py_DECREF(resolved);
 
-  return result ? kos_op_outcome_from_push_int(op_push_or_await(ctx, out_ev, result)) : KOS_OP_POST_ERR();
+  return result ? kos_op_outcome_from_push_int(op_push_or_await(es, out_ev, result)) : KOS_OP_POST_ERR();
 }

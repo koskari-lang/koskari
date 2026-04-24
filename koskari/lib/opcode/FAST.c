@@ -18,6 +18,7 @@
 */
 
 KOS_OP_HANDLER(FAST) {
+  KosContext *ctx = KosEvalState_CONTEXT(es);
   PyObject *ns = CURRENT_NS(ctx);
   if (! ns) {
     PyErr_SetString(PyExc_RuntimeError, "FAST invoked on NULL namespace");
@@ -31,5 +32,5 @@ KOS_OP_HANDLER(FAST) {
   PyObject *val = KosNamespace_FastDeref(ns, idx);
   if (! val)
     return KOS_OP_POST_ERR();
-  return kos_op_outcome_from_int_step(push_result(ctx, val));
+  return kos_op_outcome_from_int_step(push_result(es, val));
 }

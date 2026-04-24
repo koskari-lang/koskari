@@ -50,13 +50,6 @@ def _collect_symbols(expr, out):
     # fall-through, don't collect.
 
 
-def _tail_forms_for_binding_walk(rest):
-    if rest is nil or not is_pair(rest):
-        return []
-
-    return [e for e in unpack(rest) if e is not None and e is not nil]
-
-
 def _scope_region_keys(matched, specs):
     keys = set()
     for key, spec in (specs or {}).items():
@@ -100,7 +93,7 @@ def collect_binding_symbols(template, find_compiled):
         # non-pair atom in ``car`` with ``cdr`` nil is not a wrapper.
         if rest is nil and is_pair(head):
             return collect_binding_symbols(head, find_compiled)
-        for elem in _tail_forms_for_binding_walk(rest):
+        for elem in rest.unpack():
             out |= collect_binding_symbols(
                 elem if is_pair(elem) else cons(elem, nil),
                 find_compiled)
@@ -108,7 +101,7 @@ def collect_binding_symbols(template, find_compiled):
 
     special = find_compiled(head)
     if special is None or not getattr(special, 'forms', None):
-        for elem in _tail_forms_for_binding_walk(rest):
+        for elem in rest.unpack():
             out |= collect_binding_symbols(
                 elem if is_pair(elem) else cons(elem, nil),
                 find_compiled)
@@ -119,7 +112,7 @@ def collect_binding_symbols(template, find_compiled):
     except SpecialError:
         m = None
     if m is None:
-        for elem in _tail_forms_for_binding_walk(rest):
+        for elem in rest.unpack():
             out |= collect_binding_symbols(
                 elem if is_pair(elem) else cons(elem, nil),
                 find_compiled)

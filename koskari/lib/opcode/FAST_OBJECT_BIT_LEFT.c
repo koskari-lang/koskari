@@ -19,6 +19,7 @@
 */
 
 KOS_OP_HANDLER(FAST_OBJECT_BIT_LEFT) {
+  KosContext *ctx = KosEvalState_CONTEXT(es);
   (void) out_ev;
 
   PyObject *ns = CURRENT_NS(ctx);
@@ -33,7 +34,7 @@ KOS_OP_HANDLER(FAST_OBJECT_BIT_LEFT) {
   if (unlikely(! obj))
     return KOS_OP_POST_ERR();
 
-  PyObject *rhs = KosStackBlock_PopRef(&CURRENT_STACK(ctx));
+  PyObject *rhs = KosEvalState_StackPopRef(es);
   if (unlikely(! rhs)) {
     Py_DECREF(obj);
     return KOS_OP_POST_ERR();

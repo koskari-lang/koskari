@@ -79,29 +79,16 @@ Ref: [interpreter/freeze-thaw-context-segments.md](interpreter/freeze-thaw-conte
 
 ### Profiling compile-time options and runtime hooks
 
-**Status:** Freelist tracing and **`KOS_TRACE_EVENTS`** (VM/dynchain counters via
-`get_trace_report()["events"]`) are implemented. Remaining work: timing,
-intern cache, and optional opcode-level histograms.
+**Status:** Freelist tracing, **`KOS_TRACE_EVENTS`** (VM/dynchain counters via
+`get_trace_report()["events"]`), and **`KOS_TRACE_TIMING`** (per-opcode and
+post-handler timing) are implemented. Remaining work: optional opcode-level
+histograms.
 
 Ref: [api/tracing.md](api/tracing.md).
 
 ---
 
 ## Compiler
-
-### Remaining specials
-
-- **Variadic ordering checks** — variadic `>`, `>=`, `<`, `<=` that assert
-  strict/non-strict chain (e.g. `(> 9 2 0)`, `(<= 0 0 3 4 5 5 8)`).
-
-Ref: [FEATURES.md](FEATURES.md) § Further migration / backlog;
-[language/special-forms.md](language/special-forms.md).
-
-### Variadic compiled object ops (`*` keyword form)
-
-Variadic compiled object ops need to support the `*` keyword form. In that case
-they should lower left-most first, then expand to the run-time form of the
-operation.
 
 ### Slice atom and slice syntax
 

@@ -7,7 +7,10 @@
 
 
 (import-from sys stderr)
-(import-from curses ERR KEY_UP KEY_DOWN KEY_LEFT KEY_RIGHT)
+(import-from curses
+  ERR KEY_UP KEY_DOWN KEY_LEFT KEY_RIGHT A_BOLD
+  COLOR_RED COLOR_YELLOW COLOR_GREEN COLOR_CYAN COLOR_BLUE COLOR_BLACK
+  init_pair color_pair)
 (import-from itertools product)
 (import-from asyncio sleep)
 (import-from .life LifeBoard)
@@ -28,6 +31,36 @@ define make-char-renderer [alive: "O" dead: " "]:
       #(dead-ch 0)
 
 
+define make-age-color-controls [base-pair: 40]:
+  ;; Red -> yellow -> green -> cyan -> blue
+  (init_pair (+ base-pair 0) COLOR_RED 0)
+  (init_pair (+ base-pair 1) COLOR_YELLOW 0)
+  (init_pair (+ base-pair 2) COLOR_GREEN 0)
+  (init_pair (+ base-pair 3) COLOR_CYAN 0)
+  (init_pair (+ base-pair 4) COLOR_BLUE 0)
+
+  #[(color_pair (+ base-pair 0))
+    (color_pair (+ base-pair 1))
+    (color_pair (+ base-pair 2))
+    (color_pair (+ base-pair 3))
+    (color_pair (+ base-pair 4))]
+
+
+define make-color-char-renderer [alive: "O" dead: " " controls: None]:
+  define alive-ch (item alive 0)
+  define dead-ch (item dead 0)
+
+  when (None? controls):
+    set! controls (make-age-color-controls)
+
+  lambda [cell]:
+    if cell:
+      define index (- (min (len controls) cell) 1)
+      #(alive-ch (item controls index))
+    else:
+      #(dead-ch 0)
+
+
 define digit-renderer [cell]:
   when (< 9 cell):
     (set! cell 9)
@@ -42,10 +75,12 @@ define dots-renderer [cell]:
 
 
 define get-renderer [by-name]:
-  if (eq? by-name "digits"):
+  if (equal? by-name "digits"):
     digit-renderer
-  elif (eq? by-name "dots"):
+  elif (equal? by-name "dots"):
     dots-renderer
+  elif (equal? by-name "color"):
+    (make-color-char-renderer)
   else:
     (make-char-renderer)
 
@@ -123,7 +158,7 @@ define multi-step [stdscr board menu-y counter]:
     (stdscr.addstr 0 0 (str index))
     (stdscr.refresh)
     (board.age)
-    unless (eq? -1 (stdscr.getch)):
+    unless (equal? -1 (stdscr.getch)):
       (break)
 
   (board.display)
@@ -138,7 +173,7 @@ define continuous-mode [stdscr board menu-y]:
   (stdscr.refresh)
   (stdscr.nodelay 1)
 
-  while (eq? -1 (stdscr.getch)):
+  while (equal? -1 (stdscr.getch)):
     (step stdscr board)
     (sleep 0.1)
 
@@ -167,10 +202,10 @@ define curses-main [stdscr options]:
     (stdscr.move (+ 1 y-pos) (+ 1 x-pos))
     define event (stdscr.getch)
 
-    if (eq? event ERR):
+    if (equal? event ERR):
       sleep(0.1)
 
-    elif (and (< 0 event) (< event 256)):
+    elif (< 0 event 256):
       (define echar (chr event))
       if (in " \n" echar):
         (board.toggle x-pos y-pos)
@@ -190,13 +225,13 @@ define curses-main [stdscr options]:
       elif (in digits echar):
         (multi-step stdscr board menu-y (** 10 (digits.index echar)))
 
-    elif (eq? event KEY_UP):
+    elif (equal? event KEY_UP):
       (set! y-pos (- y-pos 1))
-    elif (eq? event KEY_DOWN):
+    elif (equal? event KEY_DOWN):
       (set! y-pos (+ y-pos 1))
-    elif (eq? event KEY_LEFT):
+    elif (equal? event KEY_LEFT):
       (set! x-pos (- x-pos 1))
-    elif (eq? event KEY_RIGHT):
+    elif (equal? event KEY_RIGHT):
       (set! x-pos (+ x-pos 1))
     None
   None

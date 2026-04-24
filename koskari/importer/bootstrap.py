@@ -47,7 +47,11 @@ from ..reader.layouts import LAYOUTS
 from ..types import (TypePredicate, build_proper, is_nil, is_None, is_proper,
                      is_recursive, unpack)
 
-__all__ = ('make_bootstrap', 'make_builtins', 'make_builtins_demand')
+__all__ = (
+    'make_bootstrap',
+    'make_builtins',
+    'make_builtins_demand',
+)
 
 
 _BUILTINS_CACHE = None
@@ -192,8 +196,13 @@ def make_bootstrap():
 
     import koskari.lib as kl
     for name in ('*', '+', '-', '/', '//', '&', '|', '^',
-                 'in', 'not-in', ):
+                 'in', 'not-in'):
         _bind(name, getattr(kl, name))
+    for (name, alias) in (('==', 'equal?'), ('!=', 'not-equal?'),
+                          ('<', 'lt?'), ('<=', 'le?'),
+                          ('>', 'gt?'), ('>=', 'ge?')):
+        _bind(name, getattr(kl, name))
+        _bind(alias, getattr(kl, name))
 
     _bind('**', _op.pow)
     _bind('@', _op.matmul)

@@ -19,15 +19,14 @@
    kwd_val_{M-1}, names]. Tail call: do not push a new frame; remove or
    recycle the current one.
 
-   Extracts args via KosStackSteal before call; KosContext_Call handles frame
+   Extracts args via KosStackSteal before call; KosEvalState_Call handles frame
    behavior and dispatch.
 */
 
 KOS_OP_HANDLER(TAIL_CALL_NAMES) {
+  KosContext *ctx = KosEvalState_CONTEXT(es);
   unsigned opa = KosOp_ARG(insn);
-  KosStackBlock **stack = &CURRENT_STACK(ctx);
-
-  PyObject *names = KosStackBlock_Peek(*stack);
+  PyObject *names = KosEvalState_StackPeek(es);
   if (! names)
     return KOS_OP_POST_ERR();
   if (! PyTuple_CheckExact(names)) {
@@ -42,7 +41,7 @@ KOS_OP_HANDLER(TAIL_CALL_NAMES) {
   size_t ntotal = (size_t)(total + 2);
 
   KosStackSteal steal = { 0 };
-  if (KosStackSteal_Tail(&steal, ntotal, stack) < 0)
+  if (KosEvalState_StackSteal_Tail(es, &steal, ntotal) < 0)
     return KOS_OP_POST_ERR();
 
   PyObject *callable = steal.vals[0];
@@ -50,7 +49,7 @@ KOS_OP_HANDLER(TAIL_CALL_NAMES) {
     (total > 0) ? (PyObject *const *)&steal.vals[1] : NULL;
   PyObject *kwnames_arg = nkwds ? steal.vals[total + 1] : NULL;
 
-  int res = KosContext_Call(ctx, out_ev, callable, args,
+  int res = KosEvalState_Call(es, out_ev, callable, args,
                             npos, kwnames_arg, 1);
 
   KosStackSteal_Free(&steal);

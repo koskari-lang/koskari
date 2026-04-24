@@ -70,7 +70,7 @@ define-class LifeBoard []:
         define w self.width
         define h self.height
         unless self.wrap:
-            unless (and (<= 0 x) (< x w) (<= 0 y) (< y h)):
+            unless (and (< -1 x w) (< -1 y h)):
                 return None
         #((% x w) (% y h))
 
@@ -146,7 +146,7 @@ define life-rule [group]:
     if center:
         if (and (<= 3 living) (< living 5)) (+ center 1) 0
     else:
-        if (eq? living 3) 1 0
+        if (== living 3) 1 0
 
 
 ;; The end.

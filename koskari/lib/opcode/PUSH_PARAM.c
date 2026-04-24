@@ -20,18 +20,18 @@
 */
 
 KOS_OP_HANDLER(PUSH_PARAM) {
+  KosContext *ctx = KosEvalState_CONTEXT(es);
   PyObject *names = KosCode_GetConstant((PyObject *) CURRENT_CODE(ctx),
                                          KosOp_ARG(insn));
   if (! names) {
     return KOS_OP_POST_ERR();
   }
 
-  PyObject *bindings = KosStackBlock_PopTailDictFromNames(
-      &CURRENT_STACK(ctx), names);
+  PyObject *bindings = KosEvalState_StackPopTailDictFromNames(es, names);
   if (! bindings)
     return KOS_OP_POST_ERR();
 
-  if (! kos_dyn_push_param_dict(ctx, bindings)) {
+  if (! kos_dyn_push_param_dict(es, bindings)) {
     Py_DECREF(bindings);
     return KOS_OP_POST_ERR();
   }

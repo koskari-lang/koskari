@@ -21,6 +21,7 @@
 */
 
 KOS_OP_HANDLER(AWAIT) {
+  KosContext *ctx = KosEvalState_CONTEXT(es);
   uint32_t arg = KosOp_ARG(insn);
 
   if (arg == 0u) {
@@ -38,8 +39,8 @@ KOS_OP_HANDLER(AWAIT) {
     return KOS_OP_POST_ERR();
   }
 
-  PyObject *val = KosStackBlock_PopRef(&CURRENT_STACK(ctx));
+  PyObject *val = KosEvalState_StackPopRef(es);
   if (! val)
     return KOS_OP_POST_ERR();
-  return kos_op_outcome_from_push_int(kos_await_dispatch(ctx, out_ev, val));
+  return kos_op_outcome_from_push_int(kos_await_dispatch(es, out_ev, val));
 }

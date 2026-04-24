@@ -68,6 +68,14 @@ static PyObject *make_instr_int(int op, int arg) {
 }
 
 
+static int install_frozen_gen(KosContext *ctx, KosDynGen *gen) {
+
+    KosEvalState es;
+    KosEvalState_Init(&es, ctx);
+    return kos_dyn_gen_install(&es, gen);
+}
+
+
 /* === Test: KosType is not KosCallable (uses default PyObject_Call path) === */
 
 
@@ -1382,14 +1390,15 @@ static int test_eval_build_function_no_defaults(void) {
   Caller owns code_obj_out and ctx_out references; ns is owned by the frame.
 
   For yielding code (KosCode_YIELDS), the frame is created under a KosDynGen
-  (Generator node) with owner NULL (standalone). Yield uses the same GEN
-  freeze/install path as Python generators; RESUME_GEN is set on freeze so
-  the next koskari_eval can revive via revive_yield.
+  (Generator node) with owner NULL (standalone). After YIELD freeze, the
+  caller must install the frozen generator before next koskari_eval;
+  if gen_out_opt is non-NULL, *gen_out_opt receives the KosDynGen * for that.
 */
 static int make_simple_ctx(
     PyObject *instr,
     PyObject **code_obj_out,
-    KosContext **ctx_out)
+    KosContext **ctx_out,
+    KosDynGen **gen_out_opt)
 {
     PyObject *nspec = create_test_nspec();
     if (! nspec) return -1;
@@ -1413,9 +1422,13 @@ static int make_simple_ctx(
             return -1;
         }
         KosDynGen_OWNER(gen) = NULL;
+        if (gen_out_opt)
+            *gen_out_opt = gen;
     }
     else {
         frame = kos_dynframe_new(NULL, (KosCode *) *code_obj_out, ns, NULL);
+        if (gen_out_opt)
+            *gen_out_opt = NULL;
     }
     if (! frame) { Py_DECREF(*code_obj_out); return -1; }
 
@@ -1429,17 +1442,18 @@ static int make_simple_ctx(
 /*
   These yield tests use the GEN-based path: make_simple_ctx builds a context
   with a KosDynGen (owner NULL). On YIELD, walk_handle_yield freezes the GEN
-  and sets SUSPENSION_EVENT; next eval revive_yield installs the gen and
-  pushes send value (or sets throw), then execution continues.
+  and sets SUSPENSION_EVENT; before the next koskari_eval, kos_dyn_gen_install
+  restores the chain; revive_yield pops the install placeholder and pushes
+  the resume value (Py_None here), then execution continues.
 */
 
 
 static int test_eval_yield_empty_resume(void) {
     /*
       Bytecode: CONST 42, YIELD 1, CONST 99, RETURN 1.
-      First eval (NULL, NULL): KOS_EV_YIELD(42); GEN frozen, RESUME_GEN set.
-      Second eval (NULL, NULL): revive_yield(Py_None) installs gen, pushes
-      Py_None; execution resumes at CONST 99, RETURN 1 => KOS_EV_RETURN(99).
+      First eval (NULL, NULL): KOS_EV_YIELD(42); GEN frozen.
+      Second eval: kos_dyn_gen_install, then revive_yield(Py_None) replaces
+      placeholder; execution resumes at CONST 99, RETURN 1 => KOS_EV_RETURN(99).
     */
     PyObject *forty_two = PyLong_FromLong(42);
     PyObject *ninety_nine = PyLong_FromLong(99);
@@ -1455,7 +1469,8 @@ static int test_eval_yield_empty_resume(void) {
 
     PyObject *code_obj = NULL;
     KosContext *ctx = NULL;
-    int rc = make_simple_ctx(instr, &code_obj, &ctx);
+    KosDynGen *dyn_gen = NULL;
+    int rc = make_simple_ctx(instr, &code_obj, &ctx, &dyn_gen);
     Py_DECREF(instr);
     TEST_ASSERT(rc == 0, "create context");
 
@@ -1466,6 +1481,8 @@ static int test_eval_yield_empty_resume(void) {
     TEST_ASSERT_NOT_NULL(ev.payload, "first payload not NULL");
     TEST_ASSERT_EQ(PyLong_AsLong(ev.payload), 42, "yielded value is 42");
     Py_XDECREF(ev.payload);
+
+    TEST_ASSERT(install_frozen_gen(ctx, dyn_gen) == 0, "install frozen gen");
 
     ev.kind = KOS_EV_RETURN;
     ev.payload = NULL;
@@ -1492,7 +1509,7 @@ static int test_eval_yield_send_resume(void) {
     /*
       Bytecode: CONST 42, YIELD 1, RETURN 1.
       First eval (NULL, NULL): KOS_EV_YIELD(42).
-      Second eval (send_val=7, NULL): revive_yield pushes 7 onto stack;
+      Second eval: install frozen gen; revive_yield pushes 7 onto stack;
       RETURN 1 pops TOS => KOS_EV_RETURN(7).
     */
     PyObject *forty_two = PyLong_FromLong(42);
@@ -1506,7 +1523,8 @@ static int test_eval_yield_send_resume(void) {
 
     PyObject *code_obj = NULL;
     KosContext *ctx = NULL;
-    int rc = make_simple_ctx(instr, &code_obj, &ctx);
+    KosDynGen *dyn_gen = NULL;
+    int rc = make_simple_ctx(instr, &code_obj, &ctx, &dyn_gen);
     Py_DECREF(instr);
     TEST_ASSERT(rc == 0, "create context");
 
@@ -1516,6 +1534,8 @@ static int test_eval_yield_send_resume(void) {
     TEST_ASSERT(ev.kind == KOS_EV_YIELD, "first event is YIELD");
     TEST_ASSERT_EQ(PyLong_AsLong(ev.payload), 42, "yielded value is 42");
     Py_XDECREF(ev.payload);
+
+    TEST_ASSERT(install_frozen_gen(ctx, dyn_gen) == 0, "install frozen gen");
 
     PyObject *send_val = PyLong_FromLong(7);
     ev.kind = KOS_EV_RETURN;
@@ -1713,7 +1733,7 @@ static int test_eval_yield_throw_resume(void) {
     /*
       Bytecode: CONST 42, YIELD 1, RETURN 1.
       First eval (NULL, NULL): KOS_EV_YIELD(42).
-      Second eval (NULL, throw_exc=ValueError): revive_yield sets PyErr =>
+      Second eval: install frozen gen; revive_yield sets PyErr =>
       KOS_MODE_EXCEPTION; no TRY handler present => KOS_EV_RAISE.
     */
     PyObject *forty_two = PyLong_FromLong(42);
@@ -1727,7 +1747,8 @@ static int test_eval_yield_throw_resume(void) {
 
     PyObject *code_obj = NULL;
     KosContext *ctx = NULL;
-    int rc = make_simple_ctx(instr, &code_obj, &ctx);
+    KosDynGen *dyn_gen = NULL;
+    int rc = make_simple_ctx(instr, &code_obj, &ctx, &dyn_gen);
     Py_DECREF(instr);
     TEST_ASSERT(rc == 0, "create context");
 
@@ -1736,6 +1757,8 @@ static int test_eval_yield_throw_resume(void) {
     TEST_ASSERT(res == 0, "first koskari_eval succeeded");
     TEST_ASSERT(ev.kind == KOS_EV_YIELD, "first event is YIELD");
     Py_XDECREF(ev.payload);
+
+    TEST_ASSERT(install_frozen_gen(ctx, dyn_gen) == 0, "install frozen gen");
 
     PyObject *throw_exc = PyObject_CallFunction(
         (PyObject *) PyExc_ValueError, "s", "thrown into yield");
@@ -1804,7 +1827,8 @@ static int test_eval_yield_throw_caught(void) {
 
     PyObject *code_obj = NULL;
     KosContext *ctx = NULL;
-    int rc = make_simple_ctx(instr, &code_obj, &ctx);
+    KosDynGen *dyn_gen = NULL;
+    int rc = make_simple_ctx(instr, &code_obj, &ctx, &dyn_gen);
     Py_DECREF(instr);
     TEST_ASSERT(rc == 0, "create context");
 
@@ -1814,6 +1838,8 @@ static int test_eval_yield_throw_caught(void) {
     TEST_ASSERT(ev.kind == KOS_EV_YIELD, "first event is YIELD");
     TEST_ASSERT_EQ(PyLong_AsLong(ev.payload), 42, "yielded value is 42");
     Py_XDECREF(ev.payload);
+
+    TEST_ASSERT(install_frozen_gen(ctx, dyn_gen) == 0, "install frozen gen");
 
     PyObject *throw_exc = PyObject_CallFunction(
         (PyObject *) PyExc_ValueError, "s", "thrown into yield");
@@ -1950,7 +1976,7 @@ static int test_eval_opcode_error_caught_by_try(void) {
 
     PyObject *code_obj = NULL;
     KosContext *ctx = NULL;
-    int rc = make_simple_ctx(instr, &code_obj, &ctx);
+    int rc = make_simple_ctx(instr, &code_obj, &ctx, NULL);
     Py_DECREF(instr);
     TEST_ASSERT(rc == 0, "create context");
 

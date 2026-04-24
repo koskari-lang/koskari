@@ -162,7 +162,7 @@ after an opcode completes.
 
 - Extract continuation and args from the exception value
 - Clear PyErr
-- Call `kos_invoke_continuation` to install a direct-apply transfer plan
+- Call `kos_invoke_continuation(es, …)` to install a direct-apply transfer plan
 - Resume evaluation via the transfer path
 
 ### Foreign-token path (`exc.target != current_token`)

@@ -21,6 +21,7 @@
 */
 
 KOS_OP_HANDLER(PUSH_COLLECT) {
+  KosContext *ctx = KosEvalState_CONTEXT(es);
   KosCode *code = CURRENT_CODE(ctx);
   uint32_t cidx = KosOp_ARG(insn);
   PyObject *nspec = NULL;
@@ -52,7 +53,7 @@ KOS_OP_HANDLER(PUSH_COLLECT) {
   }
 
   Py_INCREF(parent);
-  col_node = kos_dyn_push_collect(ctx, parent);
+  col_node = kos_dyn_push_collect(es, parent);
   if (! col_node) {
     Py_DECREF(parent);
     Py_DECREF(new_ns);
@@ -62,13 +63,15 @@ KOS_OP_HANDLER(PUSH_COLLECT) {
   Py_DECREF(CURRENT_NS(ctx));
   CURRENT_NS(ctx) = new_ns;
 
-  if (KosStackBlock_PushBlock(&CURRENT_STACK(ctx)) < 0) {
+  KosDynNode_STACK((KosDynNode *) col_node) = KosStackBlock_NewEmpty();
+  if (! KosDynNode_STACK((KosDynNode *) col_node)) {
     Py_DECREF(new_ns);
     CURRENT_NS(ctx) = parent;
     Py_DECREF(parent);
-    kos_dyn_pop_collect(ctx, col_node);
+    kos_dyn_pop_collect(es, col_node);
     return KOS_OP_POST_ERR();
   }
+  KosEvalState_RefreshDynCaches(es);
 
   (void) out_ev;
   return KOS_OP_RUN();

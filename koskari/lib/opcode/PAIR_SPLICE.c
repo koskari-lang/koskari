@@ -79,10 +79,10 @@ KOS_OP_HANDLER(PAIR_SPLICE) {
 
   if (count == 0) {
     Py_INCREF(KosNil);
-    return kos_op_outcome_from_int_step(push_result(ctx, KosNil));
+    return kos_op_outcome_from_int_step(push_result(es, KosNil));
   }
 
-  PyObject *const *ptr = KosStackBlock_TailPtr(CURRENT_STACK(ctx), count);
+  PyObject *const *ptr = KosEvalState_StackTailPtr(es, count);
   if (! ptr)
     return KOS_OP_POST_ERR();
 
@@ -115,10 +115,10 @@ KOS_OP_HANDLER(PAIR_SPLICE) {
       return KOS_OP_POST_ERR();
   }
 
-  if (KosStackBlock_Drop(&CURRENT_STACK(ctx), count) < 0) {
+  if (KosEvalState_StackDrop(es, count) < 0) {
     Py_DECREF(result);
     return KOS_OP_POST_ERR();
   }
 
-  return kos_op_outcome_from_int_step(push_result(ctx, result));
+  return kos_op_outcome_from_int_step(push_result(es, result));
 }

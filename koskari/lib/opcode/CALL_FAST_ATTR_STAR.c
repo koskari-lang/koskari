@@ -18,7 +18,7 @@
    COUNT (opa bitflags: 1 = has *args, 2 = has **kwargs).
    Stack [pos, kwd] or subsets per flags; obj from fast local slot (borrowed).
    Ensure pos is tuple, resolve obj.attr, prepend obj to args if send_self,
-   call via KosContext_CallArgs.
+   call via KosEvalState_CallArgs.
 */
 
 
@@ -40,6 +40,7 @@ static int ensure_tuple_fast_attr_star(PyObject **val) {
 
 
 KOS_OP_HANDLER(CALL_FAST_ATTR_STAR) {
+  KosContext *ctx = KosEvalState_CONTEXT(es);
   KosCode *code = CURRENT_CODE(ctx);
   KosExtra row = KosCode_GetExtra(code, KosOp_ARG(insn));
   uint32_t slot_idx = row.a0;
@@ -67,13 +68,11 @@ KOS_OP_HANDLER(CALL_FAST_ATTR_STAR) {
   PyObject *pos = NULL;
   PyObject *kwd = NULL;
 
-  KosStackBlock **stack = &CURRENT_STACK(ctx);
-
   if ((opa & 3) == 3) {
-    kwd = KosStackBlock_PopRef(stack);
+    kwd = KosEvalState_StackPopRef(es);
     if (! kwd)
       return KOS_OP_POST_ERR();
-    pos = KosStackBlock_PopRef(stack);
+    pos = KosEvalState_StackPopRef(es);
     if (! pos) {
       Py_DECREF(kwd);
       return KOS_OP_POST_ERR();
@@ -84,7 +83,7 @@ KOS_OP_HANDLER(CALL_FAST_ATTR_STAR) {
       return KOS_OP_POST_ERR();
     }
   } else if (opa & 2) {
-    kwd = KosStackBlock_PopRef(stack);
+    kwd = KosEvalState_StackPopRef(es);
     if (! kwd)
       return KOS_OP_POST_ERR();
     pos = PyTuple_New(0);
@@ -93,7 +92,7 @@ KOS_OP_HANDLER(CALL_FAST_ATTR_STAR) {
       return KOS_OP_POST_ERR();
     }
   } else if (opa & 1) {
-    pos = KosStackBlock_PopRef(stack);
+    pos = KosEvalState_StackPopRef(es);
     if (! pos)
       return KOS_OP_POST_ERR();
     if (ensure_tuple_fast_attr_star(&pos)) {
@@ -138,7 +137,7 @@ KOS_OP_HANDLER(CALL_FAST_ATTR_STAR) {
     Py_DECREF(pos);
   }
 
-  int res = KosContext_CallArgs(ctx, out_ev, resolved, args_for_call, kwd, 0);
+  int res = KosEvalState_CallArgs(es, out_ev, resolved, args_for_call, kwd, 0);
 
   Py_DECREF(resolved);
   Py_DECREF(args_for_call);

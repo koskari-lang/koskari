@@ -34,7 +34,7 @@
 static void delimited_continuation_dealloc(PyObject *self) {
   KosPyDelimitedContinuation *cont = (KosPyDelimitedContinuation *) self;
 
-  kos_continuation_free_exclude(KosPyDelimitedContinuation_CAPTURED(cont), self);
+  kos_continuation_free(KosPyDelimitedContinuation_CAPTURED(cont));
 
   Py_TYPE(self)->tp_free(self);
 }
@@ -102,6 +102,9 @@ static int call_call_continuation(
     KosEvent *out_ev,
     KosOp *insn) {
 
+  KosEvalState es;
+  KosEvalState_Init(&es, ctx);
+
   KosContinuation *k = KosPyDelimitedContinuation_Check(callable)
       ? KosPyDelimitedContinuation_CAPTURED((KosPyDelimitedContinuation *) callable)
       : KosPyContinuation_CAPTURED((KosPyContinuation *) callable);
@@ -146,7 +149,7 @@ static int call_call_continuation(
 
   if (KosContinuation_TOKEN_REF(k) == (PyObject *) KosContext_TOKEN(ctx)
       || (KosContinuation_PROMPT_ID(k) == KOS_PROMPT_ID_UNDELIMITED && ! KosContinuation_TOKEN_REF(k))) {
-    if (kos_invoke_continuation(ctx, k, resume_val, 0, callable) < 0) {
+    if (kos_invoke_continuation(&es, k, resume_val, 0, callable) < 0) {
       Py_DECREF(resume_val);
       return -1;
     }
@@ -241,7 +244,7 @@ static void continuation_dealloc(PyObject *self) {
 
   KosPyContinuation *cont = (KosPyContinuation *) self;
 
-  kos_continuation_free_exclude(KosPyContinuation_CAPTURED(cont), self);
+  kos_continuation_free(KosPyContinuation_CAPTURED(cont));
 
   Py_TYPE(self)->tp_free(self);
 }

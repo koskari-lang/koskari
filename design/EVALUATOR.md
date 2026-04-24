@@ -35,7 +35,7 @@ flowchart TD
             Xfer["run_transfer_plan_to_completion<br/>(if plan active)"]
             P3["Phase 3: eval_phase_pending_exception<br/>PyErr_Occurred? → process_raise"]
             Native{"Frame has native_handler?"}
-            P4["Phase 4: kos_eval_prepare_next_insn<br>fetch insn; acting_pc; pre-advance pc"]
+            P4["Phase 4: KOS_EVAL_PREPARE_NEXT_INSN<br>fetch insn; acting_pc; pre-advance pc"]
             P5["Phase 5: opcode dispatch<br/>computed goto → op_xxx(ctx, out_ev, insn)"]
             P6["Phase 6: eval_phase_post_opcode<br>op_res != 0 handling"]
             next["re-enter prologue (or RUN tail-dispatch)"]
@@ -195,13 +195,7 @@ flowchart TD
 
 ### 2.4 Phase 4: Prepare next instruction
 
-**kos_eval_prepare_next_insn** (static in `eval.c`) writes the current instruction pointer into `*out_insn` and updates the frame:
-
-1. Check `CURRENT_FRAME(ctx)`.
-2. Read `code`, `pc` from frame; bounds-check `pc`.
-3. Load `insn = code->code[pc]`.
-4. Set `acting_pc = pc` (instruction being executed).
-5. Advance `pc` (pre-advance so normal path does not need to redo).
+**`KOS_EVAL_PREPARE_NEXT_INSN`** (macro in `eval.c`) writes the current instruction pointer into `*insn` and updates the frame: load `code` and `pc`, optional **`SAYF`** trace, set `acting_pc`, pre-advance `pc`, assign `*insn`. It assumes a valid frame, in-range `pc`, and valid bytecode (no defensive checks).
 
 There is no separate dispatch-context struct; the hot path keeps a local `KosOp *insn`. **eval_phase_post_opcode** does not take insn or a dispatch bundle.
 
@@ -707,8 +701,8 @@ When `CURRENT_FRAME(ctx)` has `native_handler != NULL`, the loop runs that handl
 
 1. Python calls `cont(value)`. Cont raises `KoskariContinuationApply` targeting this context.
 2. `PyErr_Occurred()` at next loop top (or after opcode). `process_raise` runs.
-3. `handle_continuation_apply` sees own token: fetches continuation and value, clears PyErr, calls `kos_invoke_continuation`.
-4. `kos_invoke_continuation` builds transfer plan, sets `KosContext_PLAN(ctx) = plan`, returns 0. `handle_continuation_apply` returns `KOS_MODE_TRANSFER`.
+3. `handle_continuation_apply` sees own token: fetches continuation and value, clears PyErr, calls `kos_invoke_continuation(&es, …)` (eval state for the current context).
+4. `kos_invoke_continuation` builds the transfer plan using `es`, sets `KosContext_PLAN(ctx) = plan`, syncs eval caches, returns 0. `handle_continuation_apply` returns `KOS_MODE_TRANSFER`.
 5. Loop continues (or entry yields TRANSFER). `run_transfer_plan_to_completion` drains plan: unwind extents, install captured chain, inject value.
 6. Execution resumes at captured PC with value on stack.
 

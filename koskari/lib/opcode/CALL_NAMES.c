@@ -16,15 +16,14 @@
 /**
   CALL_NAMES: arg = N (number of positional arguments). Stack:
   [callable, pos_0, ..., pos_{N-1}, kwd_val_0, ..., kwd_val_{M-1}, names]
-  with names at TOS. KosCallable: steal then KosContext_Call. Plain Python:
+  with names at TOS. KosCallable: steal then KosEvalState_Call. Plain Python:
   TailPtr + PyObject_Vectorcall + DropNoErr.
 */
 KOS_OP_HANDLER(CALL_NAMES) {
+  KosContext *ctx = KosEvalState_CONTEXT(es);
   unsigned opa = KosOp_ARG(insn);
 
-  KosStackBlock **stack = &CURRENT_STACK(ctx);
-
-  PyObject *names = KosStackBlock_Peek(*stack);
+  PyObject *names = KosEvalState_StackPeek(es);
   if (! names)
     return KOS_OP_POST_ERR();
   if (! PyTuple_CheckExact(names)) {
@@ -38,7 +37,7 @@ KOS_OP_HANDLER(CALL_NAMES) {
   Py_ssize_t total = npos + nkwds;
   size_t ntotal = (size_t)(total + 2);
 
-  PyObject *const *ptr = KosStackBlock_TailPtr(*stack, ntotal);
+  PyObject *const *ptr = KosEvalState_StackTailPtr(es, ntotal);
   if (! ptr)
     return KOS_OP_POST_ERR();
 
@@ -46,10 +45,10 @@ KOS_OP_HANDLER(CALL_NAMES) {
 
   if (KosCallable_Check(ptr[0])) {
     KosStackSteal steal = { 0 };
-    if (KosStackSteal_Tail(&steal, ntotal, stack) < 0)
+    if (KosEvalState_StackSteal_Tail(es, &steal, ntotal) < 0)
       return KOS_OP_POST_ERR();
     PyObject *kwnames_arg = nkwds ? steal.vals[total + 1] : NULL;
-    int r = KosContext_Call(ctx, out_ev, steal.vals[0],
+    int r = KosEvalState_Call(es, out_ev, steal.vals[0],
                             &steal.vals[1], npos, kwnames_arg, 0);
     KosStackSteal_Free(&steal);
     return kos_op_outcome_from_call_int(ctx, r);
@@ -60,6 +59,6 @@ KOS_OP_HANDLER(CALL_NAMES) {
   if (! result)
     return KOS_OP_POST_ERR();
 
-  KosStackBlock_DropNoErr(stack, ntotal);
-  return kos_op_outcome_from_push_int(op_push_or_await(ctx, out_ev, result));
+  KosEvalState_StackDropNoErr(es, ntotal);
+  return kos_op_outcome_from_push_int(op_push_or_await(es, out_ev, result));
 }

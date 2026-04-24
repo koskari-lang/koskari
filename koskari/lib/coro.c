@@ -213,14 +213,14 @@ static PyObject *coroutine_send(PyObject *self, PyObject *value) {
       if (! await_result)
         await_result = Py_None;
 
-      kos_ctx_async_bridge_py_clear_await_iter(coro->ctx);
+      Py_CLEAR(KosContext_PY_AWAIT_ITER(coro->ctx));
       coro->state = KOS_CORO_RUNNING;
       send_val = await_result;
       Py_INCREF(send_val);
       /* fall through to drive and handle ev */
     } else {
       /* Exception from Python awaitable */
-      kos_ctx_async_bridge_py_clear_await_iter(coro->ctx);
+      Py_CLEAR(KosContext_PY_AWAIT_ITER(coro->ctx));
       coro->state = KOS_CORO_DONE;
       return NULL;
     }
@@ -340,14 +340,14 @@ static PyObject *coroutine_throw(PyObject *self, PyObject *args) {
       PyGen_FetchStopIterationValue(&await_result);
       if (! await_result)
         await_result = Py_None;
-      kos_ctx_async_bridge_py_clear_await_iter(coro->ctx);
+      Py_CLEAR(KosContext_PY_AWAIT_ITER(coro->ctx));
       coro->state = KOS_CORO_RUNNING;
       Py_XDECREF(KosContext_PY_RESUME_INJECT(coro->ctx));
       KosContext_PY_RESUME_INJECT(coro->ctx) = await_result;
       KosContext_PY_RESUME_KIND(coro->ctx) = KOS_RESUME_AWAIT;
       return coroutine_send(self, Py_None);
     } else {
-      kos_ctx_async_bridge_py_clear_await_iter(coro->ctx);
+      Py_CLEAR(KosContext_PY_AWAIT_ITER(coro->ctx));
       coro->state = KOS_CORO_DONE;
       return NULL;
     }
@@ -431,7 +431,7 @@ static PyObject *coroutine_close(PyObject *self) {
                                                   coro_str_close, NULL);
     Py_XDECREF(result);
     PyErr_Clear();
-    kos_ctx_async_bridge_py_clear_await_iter(coro->ctx);
+    Py_CLEAR(KosContext_PY_AWAIT_ITER(coro->ctx));
   }
 
   /* Throw GeneratorExit */

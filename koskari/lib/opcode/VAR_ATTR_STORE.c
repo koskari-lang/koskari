@@ -19,13 +19,14 @@
 */
 
 KOS_OP_HANDLER(VAR_ATTR_STORE) {
+  KosContext *ctx = KosEvalState_CONTEXT(es);
   KosCode *code = CURRENT_CODE(ctx);
   KosExtra row = KosCode_GetExtra(code, KosOp_ARG(insn));
   PyObject *var_name = KosCode_GetConstant((PyObject *) code, row.a0);
   PyObject *attr_name = KosCode_GetConstant((PyObject *) code, row.a1);
   if (! var_name || ! attr_name)
     return KOS_OP_POST_ERR();
-  PyObject *val = KosStackBlock_PopRef(&CURRENT_STACK(ctx));
+  PyObject *val = KosEvalState_StackPopRef(es);
   if (! val)
     return KOS_OP_POST_ERR();
   PyObject *obj = frame_ns_deref(ctx, var_name);
