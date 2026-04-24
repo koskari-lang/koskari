@@ -53,7 +53,6 @@ static void kos_dyncollect_free(KosDynCollect *col_node) {
   if (! col_node)
     return;
 
-  kos_dynnode_release_stack((KosDynNode *) col_node);
   Py_DECREF(KosDynCollect_SAVED_NS(col_node));
   kos_dynnode_return_to_freelist((KosDynNode *) col_node);
 }

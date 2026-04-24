@@ -58,7 +58,6 @@ void kos_dynprompt_free(KosDynPrompt *prompt) {
 
   Py_XDECREF(KosDynPrompt_PENDING_SHIFT_WRAPPER(prompt));
   KosDynPrompt_PENDING_SHIFT_WRAPPER(prompt) = NULL;
-  kos_dynnode_release_stack((KosDynNode *) prompt);
   kos_dynnode_return_to_freelist((KosDynNode *) prompt);
 }
 

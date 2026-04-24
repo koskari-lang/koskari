@@ -7,13 +7,22 @@
 */
 KosDynLoop *kos_dynloop_new(KosDynNode *parent, uint32_t break_pc, uint32_t continue_pc) {
   KosDynLoop *node = kos_dynnode_alloc();
+
   if (! node)
     return NULL;
+
+  KosStackBlock *stack = KosStackBlock_NewEmpty();
+  if (! stack) {
+    kos_dynnode_return_to_freelist((KosDynNode *) node);
+    return NULL;
+  }
+
   kos_dynnode_init(node, KOS_DYN_LOOP, parent, 0);
   KosDynLoop_BREAK_PC(node) = break_pc;
   KosDynLoop_CONTINUE_PC(node) = continue_pc;
   KosDynLoop_ENABLED(node) = 1;
   KosDynLoop_RESULT(node) = NULL;
+  KosDynNode_STACK((KosDynNode *) node) = stack;
   return node;
 }
 
@@ -49,7 +58,6 @@ KosDynLoop *kos_dynloop_clone(KosDynLoop *node) {
    DECREF RESULT; return node to freelist.
 */
 void kos_dynloop_free(KosDynLoop *node) {
-  kos_dynnode_release_stack((KosDynNode *) node);
   Py_XDECREF(KosDynLoop_RESULT(node));
   kos_dynnode_return_to_freelist(node);
 }

@@ -7,8 +7,16 @@
 */
 KosDynForeach *kos_dynforeach_new(KosDynNode *parent, uint32_t break_pc, uint32_t continue_pc) {
   KosDynForeach *node = kos_dynnode_alloc();
+
   if (! node)
     return NULL;
+
+  KosStackBlock *stack = KosStackBlock_NewEmpty();
+  if (! stack) {
+    kos_dynnode_return_to_freelist((KosDynNode *) node);
+    return NULL;
+  }
+
   kos_dynnode_init(node, KOS_DYN_FOREACH, parent, 0);
   KosDynForeach_BREAK_PC(node) = break_pc;
   KosDynForeach_CONTINUE_PC(node) = continue_pc;
@@ -18,6 +26,7 @@ KosDynForeach *kos_dynforeach_new(KosDynNode *parent, uint32_t break_pc, uint32_
   KosDynForeach_EXHAUSTED(node) = 0;
   KosDynForeach_ITER_NEXT_ELSE_PC(node) = 0;
   KosDynForeach_ITER_STEP_PHASE(node) = KOS_FOREACH_ITER_STEP_IDLE;
+  KosDynNode_STACK((KosDynNode *) node) = stack;
   return node;
 }
 
@@ -58,7 +67,6 @@ KosDynForeach *kos_dynforeach_clone(KosDynForeach *node) {
    DECREF result and iterator; return node to freelist.
 */
 void kos_dynforeach_free(KosDynForeach *node) {
-  kos_dynnode_release_stack((KosDynNode *) node);
   Py_XDECREF(KosDynForeach_RESULT(node));
   Py_XDECREF(KosDynForeach_ITER(node));
   kos_dynnode_return_to_freelist((KosDynNode *) node);

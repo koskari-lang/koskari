@@ -34,7 +34,7 @@
 static void delimited_continuation_dealloc(PyObject *self) {
   KosPyDelimitedContinuation *cont = (KosPyDelimitedContinuation *) self;
 
-  kos_continuation_free_exclude(KosPyDelimitedContinuation_CAPTURED(cont), self);
+  kos_continuation_free(KosPyDelimitedContinuation_CAPTURED(cont));
 
   Py_TYPE(self)->tp_free(self);
 }
@@ -244,7 +244,7 @@ static void continuation_dealloc(PyObject *self) {
 
   KosPyContinuation *cont = (KosPyContinuation *) self;
 
-  kos_continuation_free_exclude(KosPyContinuation_CAPTURED(cont), self);
+  kos_continuation_free(KosPyContinuation_CAPTURED(cont));
 
   Py_TYPE(self)->tp_free(self);
 }

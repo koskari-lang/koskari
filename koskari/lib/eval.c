@@ -314,6 +314,47 @@ int KosEvalState_StackPUSH(KosEvalState *es, PyObject *val) {
 }
 
 
+static KosStackBlock **kos_evalstate_parent_stack_slot(KosEvalState *es) {
+
+  KosDynNode *owner = KosEvalState_InnermostStackOwner(es);
+  KosDynNode *node;
+  if (! owner) {
+    PyErr_SetString(PyExc_RuntimeError,
+                    "KosEvalState_ParentStack*: no current stack owner");
+    return NULL;
+  }
+
+  for (node = KosDynNode_PARENT(owner); node; node = KosDynNode_PARENT(node)) {
+    if (KosDynNode_STACK(node))
+      return &KosDynNode_STACK(node);
+  }
+
+  PyErr_SetString(PyExc_RuntimeError,
+                  "KosEvalState_ParentStack*: no parent stack owner");
+  return NULL;
+}
+
+
+int KosEvalState_ParentStackPushRef(KosEvalState *es, PyObject *val) {
+
+  KosStackBlock **slot = kos_evalstate_parent_stack_slot(es);
+  if (! slot)
+    return -1;
+  return KosStackBlock_PushRef(slot, val);
+}
+
+
+int KosEvalState_ParentStackPUSH(KosEvalState *es, PyObject *val) {
+
+  KosStackBlock **slot = kos_evalstate_parent_stack_slot(es);
+  if (! slot) {
+    Py_XDECREF(val);
+    return -1;
+  }
+  return KosStackBlock_PUSH(slot, val);
+}
+
+
 PyObject *KosEvalState_StackPopTail(KosEvalState *es, size_t count) {
 
   KosContext *ctx = KosEvalState_CONTEXT(es);

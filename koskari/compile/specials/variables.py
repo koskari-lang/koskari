@@ -91,7 +91,7 @@ def special_setq(compiler, source, tc=False):
     if not is_pair(expr):
         frag.position_of(rest)
 
-    pos = matched["sym"].source_pos if hasattr(matched["sym"], "source_pos") else get_position(rest)
+    pos = matched["sym"].source_pos
     frag.request_for_write(sym, position=pos)
     frag.merge(compiler.full_compile(expr))
     frag.instruction(OpCode.KOS_OP_VAR_STORE, sym)
@@ -208,7 +208,7 @@ def special_delq(compiler, source, tc=False):
     frag = compiler.fragment(called_by)
 
     frag.position_of(rest)
-    pos = matched["sym"].source_pos if hasattr(matched["sym"], "source_pos") else get_position(rest)
+    pos = matched["sym"].source_pos
     frag.request_for_write(sym, position=pos)
     frag.instruction(OpCode.KOS_OP_VAR_CLEAR, sym)
     frag.instruction(OpCode.KOS_OP_CONST, None)

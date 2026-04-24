@@ -497,6 +497,8 @@ int KosEvalState_StackSteal_TailPrepend(
   should use this instead of KosStackBlock_PUSH on the current operand slot.
 */
 int KosEvalState_StackPUSH(KosEvalState *es, PyObject *val);
+int KosEvalState_ParentStackPushRef(KosEvalState *es, PyObject *val);
+int KosEvalState_ParentStackPUSH(KosEvalState *es, PyObject *val);
 
 PyObject *KosEvalState_StackPopTail(KosEvalState *es, size_t count);
 PyObject *const *KosEvalState_StackTailPtr(KosEvalState *es, size_t count);

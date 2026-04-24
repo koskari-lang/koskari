@@ -89,16 +89,6 @@ KOS_OP_HANDLER(PUSH_FOREACH) {
   KosDynForeach_RESULT((KosDynForeach *) region) = loop_result;
   KosDynForeach_ITER((KosDynForeach *) region) = iter;
   KosDynForeach_EXHAUSTED((KosDynForeach *) region) = 0;
-
-  KosDynNode_STACK(region) = KosStackBlock_NewEmpty();
-  if (! KosDynNode_STACK(region)) {
-    if (kos_dyn_abort_push_region(es, region) < 0) {
-      PyErr_Clear();
-      PyErr_SetString(PyExc_RuntimeError,
-                      "PUSH_FOREACH: unexpected region kind during abort");
-    }
-    return KOS_OP_POST_ERR();
-  }
   KosEvalState_RefreshDynCaches(es);
 
   (void) out_ev;

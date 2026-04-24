@@ -39,7 +39,6 @@
 /* === Forward declarations === */
 
 
-static void kos_dynnode_release_stack(KosDynNode *node);
 static int kos_dyn_uninstall_handler(KosEvalState *es, KosDynNode *node,
                                      KosXferEvent event, KosEvent *out_ev);
 int kos_dyn_push(KosEvalState *es, KosDynNode *node);
@@ -150,6 +149,11 @@ static KosDynNode *kos_dynnode_alloc(void) {
    cleanup (refs released). Node is zeroed before being cached.
 */
 static void kos_dynnode_return_to_freelist(KosDynNode *node) {
+  if (KosDynNode_STACK(node)) {
+    KosStackBlock_Release(KosDynNode_STACK(node));
+    KosDynNode_STACK(node) = NULL;
+  }
+
   if (dyn_freecount < DYN_NODE_MAX_FREE) {
     KOS_TRACE_FL_RETURN("dyn_node", 0);
     memset(node, 0, sizeof(KosDynNode));
@@ -477,20 +481,6 @@ KosDynNode *kos_clone_chain_segment(KosDynNode *top, KosDynNode *stop) {
 /* === Context operations === */
 
 
-/**
-   Release node->stack (full chain) and clear the field. Safe on NULL / repeat.
-*/
-static void kos_dynnode_release_stack(KosDynNode *node) {
-  KosStackBlock *b;
-
-  if (! node)
-    return;
-  b = KosDynNode_STACK(node);
-  KosDynNode_STACK(node) = NULL;
-  KosStackBlock_ReleaseChainExclude(b, NULL);
-}
-
-
 KosDynNode *KosEvalState_InnermostStackOwner(KosEvalState *es) {
   KosContext *ctx = KosEvalState_CONTEXT(es);
   KosDynNode *n = KosContext_DYN_TOP(ctx);
@@ -498,17 +488,6 @@ KosDynNode *KosEvalState_InnermostStackOwner(KosEvalState *es) {
     if (KosDynNode_STACK(n))
       return n;
     n = KosDynNode_PARENT(n);
-  }
-  return NULL;
-}
-
-
-static KosDynNode *kos_chain_find_stack_owner_node(
-    KosDynNode *from_top,
-    KosStackBlock *stack_root) {
-  for (KosDynNode *n = from_top; n; n = KosDynNode_PARENT(n)) {
-    if (KosDynNode_STACK(n) == stack_root)
-      return n;
   }
   return NULL;
 }
@@ -739,17 +718,15 @@ int kos_dyn_install(KosEvalState *es, KosDynNode *node, KosEvent *out_ev) {
 */
 static int kos_dyn_uninstall_handler(KosEvalState *es, KosDynNode *node,
                                      KosXferEvent event, KosEvent *out_ev) {
-  KosContext *ctx = KosEvalState_CONTEXT(es);
   switch (KosDynNode_KIND(node)) {
     case KOS_DYN_PROMPT: {
       if (KOS_XFER_TRACE) {
         size_t len_before = KosDynNode_STACK(node)
             ? KosStackBlock_LEN(KosDynNode_STACK(node)) : 0;
-        SAYF("[xfer] prompt_pop node=%p: releasing prompt stack, len before=%zu",
+        SAYF("[xfer] prompt_pop node=%p: prompt stack len=%zu",
              (void *) node, len_before);
         (void) len_before;
       }
-      kos_dynnode_release_stack(node);
       return 0;
     }
     case KOS_DYN_DELIM:
@@ -761,7 +738,6 @@ static int kos_dyn_uninstall_handler(KosEvalState *es, KosDynNode *node,
     case KOS_DYN_LOOP:
     case KOS_DYN_FOREACH:
       (void) out_ev;
-      kos_dynnode_release_stack(node);
       return 0;
     case KOS_DYN_NS:
       (void) out_ev;
@@ -769,7 +745,6 @@ static int kos_dyn_uninstall_handler(KosEvalState *es, KosDynNode *node,
       return 0;
     case KOS_DYN_COLLECT: {
       (void) out_ev;
-      kos_dynnode_release_stack(node);
       kos_dyn_collect_unwind(es, (KosDynCollect *) node);
       return 0;
     }
@@ -782,43 +757,7 @@ static int kos_dyn_uninstall_handler(KosEvalState *es, KosDynNode *node,
       kos_dyn_yieldfrom_unwind(es, (KosDynYieldFrom *) node);
       return 0;
     case KOS_DYN_WITH: {
-      KosDynWith *with_node = (KosDynWith *) node;
-      int unw = kos_dyn_unwind(es, node, event, out_ev);
-      if (unw == KOS_DYN_UNWIND_ASYNC_STARTED)
-        return KOS_DYN_UNWIND_ASYNC_STARTED;
-      if (unw == KOS_DYN_UNWIND_PROTOCOL_SKIPPED)
-        return 0;
-      if (unw == KOS_DYN_UNWIND_SWALLOWED)
-        return 0;
-      if (unw < 0)
-        return -1;
-      if (! PyErr_Occurred()) {
-        KosDynFrame *frame = KosContext_FRAME_TOP(ctx);
-        if (frame)
-          KosDynFrame_PC(frame) = KosDynWith_RESUME_PC(with_node);
-      }
-      {
-        KosStackBlock **stack = &KosDynNode_STACK(node);
-        if (PyErr_Occurred()) {
-          kos_dynnode_release_stack(node);
-          KosEvalState_RefreshDynCaches(es);
-        }
-        else {
-          PyObject *body_val = KosStackBlock_PopRef(stack);
-          if (! body_val)
-            return -1;
-          kos_dynnode_release_stack(node);
-          KosEvalState_RefreshDynCaches(es);
-          {
-            if (KosEvalState_StackPushRef(es, body_val) < 0) {
-              Py_DECREF(body_val);
-              return -1;
-            }
-          }
-          Py_DECREF(body_val);
-        }
-      }
-      return 0;
+      return kos_dyn_unwind(es, node, event, out_ev);
     }
     default:
       (void) out_ev;
@@ -2446,16 +2385,6 @@ int kos_capture_cc(KosEvalState *es, KosContinuation **out_k) {
    slot preserved. Callers: error paths, wrapper dealloc.
 */
 void kos_continuation_free(KosContinuation *k) {
-  kos_continuation_free_exclude(k, NULL);
-}
-
-
-/**
-   Release resume_stack with optional exclude (avoid DECREF during teardown),
-   free captured_chain, return struct to freelist or PyMem_Free. Callers:
-   kos_continuation_free, kos_free_transfer_plan after invoke.
-*/
-void kos_continuation_free_exclude(KosContinuation *k, PyObject *exclude_from_stack) {
   if (! k)
     return;
 
@@ -2468,17 +2397,7 @@ void kos_continuation_free_exclude(KosContinuation *k, PyObject *exclude_from_st
    * which can re-enter the continuation wrapper's dealloc if the wrapper
    * was on the stack at capture time. Releasing with exclude first avoids
    * that. */
-  if (KosContinuation_RESUME_STACK(k)) {
-    KosStackBlock *rs = KosContinuation_RESUME_STACK(k);
-    KosDynNode *owner = kos_chain_find_stack_owner_node(
-        KosContinuation_CAPTURED_CHAIN(k), rs);
-    KosStackBlock_ReleaseChainExclude(rs, exclude_from_stack);
-    KosContinuation_RESUME_STACK(k) = NULL;
-    if (owner)
-      KosDynNode_STACK(owner) = NULL;
-    else if (KosContinuation_RESUME_FRAME(k))
-      KosDynFrame_STACK(KosContinuation_RESUME_FRAME(k)) = NULL;
-  }
+  KosContinuation_RESUME_STACK(k) = NULL;
 
   /* Free the captured chain (frame stacks may still be non-NULL but are
    * either unshared or already released by resume_stack release above). */

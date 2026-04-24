@@ -7,11 +7,20 @@
 */
 KosDynTry *kos_dyntry_new(KosDynNode *parent, uint32_t handler_pc) {
   KosDynTry *node = kos_dynnode_alloc();
+
   if (! node)
     return NULL;
+
+  KosStackBlock *stack = KosStackBlock_NewEmpty();
+  if (! stack) {
+    kos_dynnode_return_to_freelist((KosDynNode *) node);
+    return NULL;
+  }
+
   kos_dynnode_init(node, KOS_DYN_TRY, parent, KOS_DYN_CAP_HANDLES_EXCEPTIONS);
   KosDynTry_HANDLER_PC(node) = handler_pc;
   KosDynTry_ENABLED(node) = 1;
+  KosDynNode_STACK((KosDynNode *) node) = stack;
   return node;
 }
 
@@ -44,7 +53,6 @@ KosDynTry *kos_dyntry_clone(KosDynTry *node) {
    Return TRY node to freelist (no PyObject refs).
 */
 void kos_dyntry_free(KosDynTry *node) {
-  kos_dynnode_release_stack((KosDynNode *) node);
   kos_dynnode_return_to_freelist((KosDynNode *) node);
 }
 

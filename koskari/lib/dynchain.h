@@ -1814,15 +1814,6 @@ void kos_continuation_free(KosContinuation *k);
 
 
 /**
-   Free a continuation; when releasing its resume_stack, do not DECREF
-   any slot equal to exclude_from_stack (used from the Python wrapper's
-   dealloc so the wrapper is not decref'd while being deallocated).
-   exclude_from_stack may be NULL.
-*/
-void kos_continuation_free_exclude(KosContinuation *k, PyObject *exclude_from_stack);
-
-
-/**
    Clone a continuation for multi-shot invocation.
 
    :param k: continuation to clone

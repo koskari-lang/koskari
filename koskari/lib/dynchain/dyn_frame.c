@@ -46,15 +46,16 @@ KosDynFrame *kos_dynframe_clone(KosDynFrame *frame) {
   if (! frame)
     return NULL;
 
-  KosStackBlock *cloned_stack =
-      KosStackBlock_DeepCopy(KosDynFrame_STACK(frame));
-
   KosDynFrame *clone = kos_dynnode_alloc();
-  if (! clone) {
-    if (cloned_stack)
-      KosStackBlock_ReleaseChainExclude(cloned_stack, NULL);
+  if (! clone)
+    return NULL;
+
+  KosStackBlock *cst = KosStackBlock_DeepCopy(KosDynFrame_STACK(frame));
+  if (! cst) {
+    kos_dynnode_return_to_freelist(clone);
     return NULL;
   }
+  KosDynFrame_STACK(clone) = cst;
 
   kos_dynnode_init(clone, KOS_DYN_FRAME, NULL, KosDynNode_CAPS(frame));
   KosDynNode_FLAGS(clone) = KosDynNode_FLAGS(frame) | KOS_DYNF_CLONED;
@@ -62,9 +63,10 @@ KosDynFrame *kos_dynframe_clone(KosDynFrame *frame) {
   KosDynFrame_CODE(clone) = KosDynFrame_CODE(frame);  /* borrowed */
   KosDynFrame_PC(clone) = KosDynFrame_PC(frame);
   KosDynFrame_ACTING_PC(clone) = KosDynFrame_ACTING_PC(frame);
-  KosDynFrame_STACK(clone) = cloned_stack;
+
   KosDynFrame_NS(clone) = KosDynFrame_NS(frame);
   Py_XINCREF(KosDynFrame_NS(clone));
+
   KosDynFrame_FLAGS(clone) = KosDynFrame_FLAGS(frame);
   KosDynFrame_NATIVE_HANDLER(clone) = KosDynFrame_NATIVE_HANDLER(frame);
   return clone;
@@ -78,8 +80,6 @@ KosDynFrame *kos_dynframe_clone(KosDynFrame *frame) {
 void kos_dynframe_free(KosDynFrame *frame) {
   if (! frame)
     return;
-
-  KosStackBlock_ReleaseChainExclude(KosDynFrame_STACK(frame), NULL);
 
   Py_XDECREF(KosDynFrame_NS(frame));
   /* code is borrowed, don't decref */
@@ -128,8 +128,7 @@ void kos_dynframe_reset_for_tail(KosDynFrame *frame) {
   if (! frame)
     return;
 
-  KosStackBlock_ReleaseChainExclude(KosDynFrame_STACK(frame), NULL);
-  KosDynFrame_STACK(frame) = NULL;
+  KosStackBlock_ClearBlock(&KosDynFrame_STACK(frame));
 
   /* Replace ns with empty dict */
   Py_XDECREF(KosDynFrame_NS(frame));
@@ -140,13 +139,6 @@ void kos_dynframe_reset_for_tail(KosDynFrame *frame) {
   KosDynFrame_ACTING_PC(frame) = 0;
   KosDynFrame_FLAGS(frame) = 0;
   KosDynFrame_NATIVE_HANDLER(frame) = NULL;
-
-  {
-    KosStackBlock *nb = KosStackBlock_NewEmpty();
-    if (! nb)
-      PyErr_NoMemory();
-    KosDynFrame_STACK(frame) = nb;
-  }
 }
 
 

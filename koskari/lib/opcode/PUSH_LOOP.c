@@ -48,16 +48,6 @@ KOS_OP_HANDLER(PUSH_LOOP) {
   /* Initialize loop result to None */
   Py_INCREF(Py_None);
   KosDynLoop_RESULT((KosDynLoop *) region) = Py_None;
-
-  KosDynNode_STACK(region) = KosStackBlock_NewEmpty();
-  if (! KosDynNode_STACK(region)) {
-    if (kos_dyn_abort_push_region(es, region) < 0) {
-      PyErr_Clear();
-      PyErr_SetString(PyExc_RuntimeError,
-                      "PUSH_LOOP: unexpected region kind during abort");
-    }
-    return KOS_OP_POST_ERR();
-  }
   KosEvalState_RefreshDynCaches(es);
   (void) out_ev;
   return KOS_OP_RUN();

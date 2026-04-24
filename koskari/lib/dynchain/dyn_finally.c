@@ -7,14 +7,23 @@
 */
 KosDynFinally *kos_dynfinally_new(KosDynNode *parent, uint32_t handler_pc) {
   KosDynFinally *node = kos_dynnode_alloc();
+
   if (! node)
     return NULL;
+
+  KosStackBlock *stack = KosStackBlock_NewEmpty();
+  if (! stack) {
+    kos_dynnode_return_to_freelist((KosDynNode *) node);
+    return NULL;
+  }
+
   kos_dynnode_init(node, KOS_DYN_FINALLY, parent, KOS_DYN_CAP_HANDLES_EXCEPTIONS);
   KosDynFinally_HANDLER_PC(node) = handler_pc;
   KosDynFinally_ENABLED(node) = 1;
   KosDynFinally_HANDLING_RAISE(node) = 0;
   KosDynFinally_HANDLING_RETURN(node) = 0;
   KosDynFinally_HANDLING_RESULT(node) = NULL;
+  KosDynNode_STACK((KosDynNode *) node) = stack;
   return node;
 }
 
@@ -51,7 +60,6 @@ KosDynFinally *kos_dynfinally_clone(KosDynFinally *node) {
    DECREF handling result; return node to freelist.
 */
 void kos_dynfinally_free(KosDynFinally *node) {
-  kos_dynnode_release_stack((KosDynNode *) node);
   Py_XDECREF(KosDynFinally_HANDLING_RESULT(node));
   kos_dynnode_return_to_freelist((KosDynNode *) node);
 }

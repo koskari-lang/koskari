@@ -42,15 +42,20 @@ KOS_OP_HANDLER(POP_DYN_WITH) {
   if (unw != KOS_DYN_UNWIND_PROTOCOL_SKIPPED && unw < 0)
     return KOS_OP_POST_ERR();
 
-  PyObject *body_val = KosEvalState_StackPopRef(es);
-  if (! body_val)
-    return KOS_OP_POST_ERR();
-  kos_dyn_pop_with(es, with_node);
-  if (KosEvalState_StackPushRef(es, body_val) < 0) {
+  if (KosDynNode_STACK((KosDynNode *) with_node)
+      && KosStackBlock_LEN(KosDynNode_STACK((KosDynNode *) with_node)) > 0) {
+    PyObject *body_val = KosEvalState_StackPopRef(es);
+    if (! body_val)
+      return KOS_OP_POST_ERR();
+    kos_dyn_pop_with(es, with_node);
+    if (KosEvalState_StackPushRef(es, body_val) < 0) {
+      Py_DECREF(body_val);
+      return KOS_OP_POST_ERR();
+    }
     Py_DECREF(body_val);
-    return KOS_OP_POST_ERR();
+  } else {
+    kos_dyn_pop_with(es, with_node);
   }
-  Py_DECREF(body_val);
 
   (void) out_ev;
   (void) insn;
