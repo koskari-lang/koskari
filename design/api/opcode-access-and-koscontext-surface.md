@@ -1,16 +1,28 @@
 # Opcode VM access inventory and proposed KosContext API surface
 
-**Note:** Part 1 is a **snapshot** from an earlier grep pass. The tree now uses
-**`KosEvalState *es`** opcode signatures, **`KosEvalState_Stack*`** helpers, and
-**`KosContext_BLOCK`** for the operand stack; many per-opcode lines below still
-list `CURRENT_STACK` / `(ctx, …)` and should be **re-generated** if you need an
-exact inventory.
+## Document status (vs current tree)
 
-This document inventories **insn/operand access**, **context/frame/stack/code macros**, **structured accessors**, and **callees** inside each `KOS_OP_HANDLER` in `koskari/lib/opcode/*.c`, then proposes a consolidated `KosContext_*` API (Part 2).
-Classification matches the project report rules: callee list excludes `CURRENT_*`, `KosContext_*` field macros (except `KosContext_Call`, `KosContext_CallArgs`), `KosDynFrame_*`, `KosCode_*`, `KosNamespace_*`, and stack field macros `KosStackBlock_LEN` / `PARENT` / `MAX`.
-**Opcode source file count:** 207
+| Section | Status | Notes |
+|--------|--------|--------|
+| **Part 1** | **Obsolete (historical)** | Grep snapshot from before the **`KosEvalState`** migration. It still lists **`CURRENT_STACK`**, which **no longer exists** in `koskari/lib`. Handlers today take **`KosEvalState *es`** (see `KOS_OP_HANDLER` in `koskari/lib/eval.c`). Operand stack mutations go through **`KosEvalState_Stack*`** and **`KosContext_BLOCK(ctx)`** (`ctx = KosEvalState_CONTEXT(es)`). Many opcodes still use **`KosContext *ctx`** plus **`CURRENT_CODE` / `CURRENT_FRAME` / `CURRENT_PC` / …** macros defined in `eval.c` (not `CURRENT_STACK`). **Do not use Part 1 for audits** unless you re-run an inventory. |
+| **Part 2** | **Conceptual groups — naming superseded** | The **semantic surface is implemented** under **`KosEvalState_*`** in `koskari/lib/eval.h` / `eval.c`, not under the `KosContext_*` helper names used below. **`KosContext`** remains heap state with **field macros** (`KosContext_DYN_TOP`, `KosContext_FLAGS`, `KosContext_PLAN`, inject/pending-return fields, etc.). Dynamic-chain mutations from opcodes go through **`kos_dyn_*` / `kos_dyn_transition`** with a **`KosEvalState *`** (see `koskari/lib/dynchain.h`). |
+
+**Opcode source files:** 207 under `koskari/lib/opcode/*.c` (matches Part 1 file count).
+
+**Authoritative handler shape:**
+
+```c
+KosOpOutcome op_NAME(KosEvalState *es, KosEvent *out_ev, KosOp *insn);
+```
+
 ---
-## Part 1 — Per-opcode inventory
+
+This document inventories **insn/operand access**, **context/frame/stack/code macros**, **structured accessors**, and **callees** inside each `KOS_OP_HANDLER` in `koskari/lib/opcode/*.c`, then proposes a consolidated VM access API (Part 2 — originally spelled as `KosContext_*`; see status table above).
+Classification (for the historical Part 1 pass) excluded `CURRENT_*`, most `KosContext_*` field macros, `KosDynFrame_*`, `KosCode_*`, `KosNamespace_*`, and stack field macros `KosStackBlock_LEN` / `PARENT` / `MAX`. Call entry points in code are **`KosCallable_Call`** / **`KosCallable_CallArgs`** (not `KosContext_Call*`).
+
+---
+## Part 1 — Per-opcode inventory *(obsolete historical snapshot; see Document status)*
+
 ### OP_ATTR
 **Source:** [`koskari/lib/opcode/ATTR.c`](koskari/lib/opcode/ATTR.c)
 
@@ -4995,12 +5007,38 @@ Classification matches the project report rules: callee list excludes `CURRENT_*
   - `yield_from_normalize`
 
 ---
-## Part 2 — Proposed `KosContext_*` API surface
+## Part 2 — Proposed VM access API surface *(conceptual; implemented as `KosEvalState_*`)*
+
 ### Design constraints
 
-Opcode handlers are the only scope for Part 1. The API below consolidates every distinct access pattern from Part 1 into named `KosContext_*` entry points. Implementations may use an eval snapshot struct and macro wrappers in the dispatch loop; Part 2 names the semantic surface only.
+Opcode handlers are the only scope for Part 1 (when it was current). The API below consolidates access patterns into **named entry points**. In the **current tree**, those entry points live on **`KosEvalState`** (borrowed `ctx` + cached frame/code), not as `KosContext_*` functions. Part 2 keeps the original **`KosContext_*` labels** as **group titles** for historical continuity; see the **Implementation mapping** table for real symbols.
+
+### Implementation mapping (complete vs remaining gaps)
+
+| Part 2 group (original name) | Implemented as (current) | Notes |
+|------------------------------|---------------------------|--------|
+| `KosContext_GetConstant` | **`KosEvalState_GetConstant`** | |
+| `KosContext_GetVar` | **`KosEvalState_GetVar`** | |
+| `KosContext_GetFast` | **`KosEvalState_GetFast`** | |
+| `KosContext_SetFast` | **`KosEvalState_SetFast`** | |
+| `KosContext_StackPushRef` / pop / tail / dict / steal / peek / len / drop / duplicate / clear block | **`KosEvalState_Stack*`** family in `eval.h` (`StackPushRef`, `StackPopRef`, `StackPopTail`, `StackSteal_Tail`, `StackPUSH`, `ParentStack*`, …) | All use **`KosContext_BLOCK(ctx)`** internally. |
+| `KosContext_StackPushBlock` / `StackDropBlock` | **No `KosEvalState_*` wrapper** | **`KosStackBlock_PushBlock` / `DropBlock`** still exist in `stack.c`, but opcode paths typically allocate stack segments via **`kos_dyn_push_*`** / region setup, not a standalone context helper. Treat Part 2 wording as **conceptual**. |
+| `KosContext_GetFramePc` (read/write PC) | **`KosEvalState_GetFramePc`**, **`KosEvalState_SetFramePc`**, **`KosEvalState_GetActingPc`**, **`KosEvalState_SetActingPc`** | |
+| `KosContext_CurrentNamespace` | **`KosEvalState_CurrentNamespace`** | Also **`KosEvalState_CurrentCode`**. |
+| `KosContext_CallableCall` | **`KosEvalState_Call`**, **`KosEvalState_CallArgs`**, **`KosEvalState_CallNoArgs`** | Underlying Koskari callables use **`KosCallable_Call`** / **`KosCallable_CallArgs`** (`callable.c`) with **`KosContext *`**. |
+| `KosContext_DynTop` | **`KosContext_DYN_TOP`** macro (+ **`kos_dyn_*`**) | Not a function; **`KosEvalState_RefreshDynCaches`** / **`KosEvalState_InnermostStackOwner`** for cache discipline. |
+| `KosContext_TransferPlan` | **`KosContext_PLAN`**, **`KosContext_PLAN_STACK`**, **`KosContext_FLAGS`** macros | |
+| `KosContext_PendingReturn` | **`KosContext_PENDING_RETURN_*`** macros | |
+| `KosContext_InjectedException` | **`KosContext_INJECT_*`** macros | |
+| `KosContext_BoundaryFlags` | **`KosContext_FLAGS`**, **`KosContext_SUSPENSION_EVENT`** | |
+| `KosContext_OpOutcome` | **`KosOpOutcome`**, **`KOS_OP_RUN`**, **`KOS_OP_POST_*`**, **`kos_op_outcome_from_*`** | No single “builder” function; macros/helpers in `eval.h` / opcode code. |
+| `KosContext_GlobalsFrame` | **`KosContext_GLOBALS_FRAME`**, **`KosContext_GLOBALS_CACHE_VERSION`** | |
+
+**Call discipline:** Mutating the dynamic chain from opcode handlers and drivers should go through APIs that take **`KosEvalState *`** (`kos_dyn_*`, `kos_dyn_transition`, `KosEvalState_SyncFromContext` after chain changes). See comments on **`KosEvalState`** in `eval.h`.
 
 ### Grouped API (names and responsibilities)
+
+*Original proposal used `KosContext_*` prefixes; implementation uses the mapping table above.*
 
 #### `KosContext_GetConstant`
 
@@ -5048,6 +5086,7 @@ Opcode handlers are the only scope for Part 1. The API below consolidates every 
 
 - **Group:** Stack
 - **Responsibility:** Allocate or push a new stack block segment on the current frame stack.
+- **Implementation (current):** **Not** a standalone `KosEvalState_*` entry point; stack segments are created as part of **`kos_dyn_push_*`** / region setup. See **Implementation mapping**.
 - **Wraps / replaces (conceptual):** `KosStackBlock_PushBlock`
 - **Motivating opcodes (Part 1 heuristic):** `PUSH_COLLECT`, `PUSH_DYN_WITH`, `PUSH_FINALLY`, `PUSH_FOREACH`, `PUSH_LOOP`, `PUSH_TRY`, `PUSH_WITH`
 
@@ -5055,6 +5094,7 @@ Opcode handlers are the only scope for Part 1. The API below consolidates every 
 
 - **Group:** Stack
 - **Responsibility:** Drop a stack block segment.
+- **Implementation (current):** Same as push-block: no `KosEvalState_*` wrapper; drops happen inside dyn unwind / **`kos_dyn_transition`** paths. See **Implementation mapping**.
 - **Wraps / replaces (conceptual):** `KosStackBlock_DropBlock`
 - **Motivating opcodes (Part 1 heuristic):** `POP_COLLECT`, `POP_DYN_WITH`, `POP_FOREACH`, `POP_LOOP`, `POP_WITH`, `PUSH_DYN_WITH`, `PUSH_WITH`
 
@@ -5136,7 +5176,9 @@ Opcode handlers are the only scope for Part 1. The API below consolidates every 
 
 ### Opcode coverage mapping (Part 1 → Part 2)
 
-- **Total opcodes:** 207; **mapped to ≥1 `KosContext_*` group:** 207.
+- **Total opcodes:** 207; **mapped to ≥1 API group in the Part 2 taxonomy:** 207 (per the original automated mapping).
 - **Opcodes with no automated API mapping:** none.
 
-Cross-reference: each opcode’s Part 1 section lists raw symbols; Part 2 groups above consolidate them under `KosContext_*` names.
+**Current relevance:** Part 1 is **obsolete**, so this coverage statement describes the **historical** inventory only. For live code, use **`KosEvalState_*`** / **`kos_dyn_*`** / **`KosContext_*` macros** as in the Implementation mapping table.
+
+Cross-reference: each opcode’s Part 1 section lists raw symbols from the old snapshot; Part 2 groups consolidate them under the original `KosContext_*` names, which map to `KosEvalState_*` and macros as above.

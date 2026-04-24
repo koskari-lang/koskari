@@ -352,4 +352,28 @@ define on-demand? []:
     False
 
 
+define-syntax create-instance-check:
+  macro-match:
+    match (create-instance-check (BIND name)):
+      define pname (syntax (symbol f"{name.datum}?"))
+      `define ,pname:
+        let [[tp ,name]]:
+          lambda ,pname [value]:
+            compile/isinstance value tp
+
+
+define-syntax compile/define-dataclass:
+  syntax-rules [begin]:
+    match (define-dataclass name (members ...)):
+      (define-dataclass name [] (members ...))
+    match (define-dataclass name supers members ...):
+      define name:
+        let []:
+          import-from dataclasses dataclass field
+          @dataclass
+          class name supers:
+            (begin members ...)
+      create-instance-check name
+
+
 ;; The end.
