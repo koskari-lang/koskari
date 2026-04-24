@@ -38,19 +38,12 @@ define make-age-color-controls [base-pair: 40]:
   (init_pair (+ base-pair 2) COLOR_GREEN 0)
   (init_pair (+ base-pair 3) COLOR_CYAN 0)
   (init_pair (+ base-pair 4) COLOR_BLUE 0)
-  (init_pair (+ base-pair 5) COLOR_BLACK 0)  ;; oldest/ash state
 
-  #[(| (color_pair (+ base-pair 0)) A_BOLD)  ;; bright red
-    (color_pair (+ base-pair 0))             ;; red
-    (| (color_pair (+ base-pair 1)) A_BOLD)  ;; bright yellow
-    (color_pair (+ base-pair 1))             ;; yellow
-    (| (color_pair (+ base-pair 2)) A_BOLD)  ;; bright green
-    (color_pair (+ base-pair 2))             ;; green
-    (| (color_pair (+ base-pair 3)) A_BOLD)  ;; bright cyan
-    (color_pair (+ base-pair 3))             ;; cyan
-    (| (color_pair (+ base-pair 4)) A_BOLD)  ;; bright blue
-    (color_pair (+ base-pair 4))             ;; blue
-    (| (color_pair (+ base-pair 5)) A_BOLD)] ;; gray-ish
+  #[(color_pair (+ base-pair 0))
+    (color_pair (+ base-pair 1))
+    (color_pair (+ base-pair 2))
+    (color_pair (+ base-pair 3))
+    (color_pair (+ base-pair 4))]
 
 
 define make-color-char-renderer [alive: "O" dead: " " controls: None]:
