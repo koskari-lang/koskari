@@ -402,7 +402,9 @@ typedef struct KosDynNode KosDynNext;
 
    The resume_frame points to the frame where execution resumes.
    The resume_pc is the program counter to resume at.
-   The resume_stack holds the stack state at capture.
+   The resume_stack points at the operand stack owned by resume_frame
+   (or the innermost region with a stack on captured_chain); it is an
+   alias for that node-owned block, not separately released here.
 
    For multi-shot continuations, the chain/stack are cloned on
    each invocation. For one-shot, they are consumed directly.
@@ -412,7 +414,7 @@ struct KosContinuation {
   KosDynNode *captured_chain;   /* cloned chain segment */
   KosDynFrame *resume_frame;    /* frame to resume into */
   uint32_t resume_pc;           /* pc to resume at */
-  KosStackBlock *resume_stack;  /* stack state; continuation owns exclusively */
+  KosStackBlock *resume_stack;  /* aliases node-owned stack on captured_chain */
   uint32_t prompt_id;           /* target prompt tag */
   uint32_t graft_point_id;      /* node_id of graft point for ID fallback; 0 = none */
   uint8_t one_shot;             /* 0 = multi-shot, 1 = one-shot */
@@ -559,7 +561,7 @@ struct KosTransferPlan {
   uint32_t resume_pc;           /* UINT32_MAX = not set; set for invocation */
   KosDynFrame *resume_frame;    /* frame to resume into (invocation only) */
   KosStackBlock *resume_stack;  /* stack state at capture (invocation only) */
-  PyObject *continuation_ref;   /* keep continuation alive until plan is freed */
+  PyObject *continuation_ref;   /* strong ref (Py_INCREF) until plan freed or moved to prompt */
   KosContinuation *invoke_clone;  /* when set, release then free when plan freed */
 
   /* Stateful step: when current step suspended on await, store awaitable and resume state */

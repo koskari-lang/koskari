@@ -250,7 +250,7 @@ Each freelist entry has four counters:
 
 - **dynchain.c** — `kos_dynnode_alloc`, `kos_dynnode_return_to_freelist`; `kos_continuation_create`, `kos_continuation_free_exclude`, `xfer_plan_release_invoke_clone`
 - **eval.c** — `kos_context_new`, `kos_context_free`, and context release on allocation failure
-- **stack.c** — `KosStackBlock_New`, `KosStackBlock_NewSized`, `KosStackBlock_ReleaseExclude`
+- **stack.c** — `KosStackBlock_New`, `KosStackBlock_NewSized`, `KosStackBlock_Release`, `KosStackBlock_ReleaseChain`
 - **pair.c** — `KosPair_New`, `pair_dealloc`
 
 **Events** — `KOS_TRACE_EVENTS_INC` in **dynchain.c** at `kos_dyn_handle`,

@@ -106,6 +106,9 @@ KOS_OP_HANDLER(PUSH_SHIFT) {
     return KOS_OP_POST_ERR();
   }
 
+  /* Plan consumes the wrapper's refcount from New; kos_free_transfer_plan
+   * Py_XDECREFs continuation_ref. (Unlike kos_invoke_continuation, there is
+   * no separate caller-owned ref, so no extra INCREF here.) */
   KosTransferPlan_CONTINUATION_REF(plan) = wrapper;
 
   if (KosContext_PLAN(ctx))

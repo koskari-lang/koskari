@@ -902,7 +902,7 @@ static int test_stack_block_deepcopy_direct(void) {
     TEST_ASSERT_EQ(KosStackBlock_LEN(copy), 1, "copy has same length");
     TEST_ASSERT_EQ(KosStackBlock_LEN(block), 1, "original unchanged");
 
-    KosStackBlock_ReleaseChainExclude(copy, NULL);
+    KosStackBlock_ReleaseChain(copy);
     Py_DECREF(stack);
     Py_DECREF(v0);
     return 0;

@@ -125,20 +125,10 @@ int KosStackBlock_ClearBlock(KosStackBlock **block) {
 
 
 void KosStackBlock_Release(KosStackBlock *self) {
-  KosStackBlock_ReleaseExclude(self, NULL);
-}
-
-
-void KosStackBlock_ReleaseExclude(KosStackBlock *self, PyObject *exclude) {
   SAYF("KosStackBlock_Release(%p)", (void *) self);
 
   for (size_t i = self->len; i--; ) {
-    PyObject *o = self->objs[i];
-    if (exclude && o == exclude) {
-      self->objs[i] = NULL;
-      continue;
-    }
-    Py_DECREF(o);
+    Py_DECREF(self->objs[i]);
   }
 
   /* Grown blocks (max > BLOCK_NEW_SIZE) are from KosStackBlock_Grow via
@@ -168,11 +158,11 @@ void KosStackBlock_ReleaseExclude(KosStackBlock *self, PyObject *exclude) {
 }
 
 
-void KosStackBlock_ReleaseChainExclude(KosStackBlock *block, PyObject *exclude) {
+void KosStackBlock_ReleaseChain(KosStackBlock *block) {
   KosStackBlock *b = block;
   while (b) {
     KosStackBlock *p = KosStackBlock_PARENT(b);
-    KosStackBlock_ReleaseExclude(b, exclude);
+    KosStackBlock_Release(b);
     b = p;
   }
 }

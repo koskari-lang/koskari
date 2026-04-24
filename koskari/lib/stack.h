@@ -104,18 +104,10 @@ void KosStackBlock_Release(KosStackBlock *block);
 
 
 /**
-   Release a stack block but do not DECREF any slot equal to exclude
-   (used when the block chain contains a reference to the object being
-   deallocated). exclude may be NULL for normal release.
+   Release a full stack block chain (via KosStackBlock_PARENT / back).
+   Each block is released with KosStackBlock_Release.
  */
-void KosStackBlock_ReleaseExclude(KosStackBlock *block, PyObject *exclude);
-
-
-/**
-   Release a full chain; exclude is passed to each block (see
-   KosStackBlock_ReleaseExclude).
- */
-void KosStackBlock_ReleaseChainExclude(KosStackBlock *block, PyObject *exclude);
+void KosStackBlock_ReleaseChain(KosStackBlock *block);
 
 
 /**

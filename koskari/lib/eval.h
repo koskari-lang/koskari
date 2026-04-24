@@ -338,7 +338,7 @@ struct KosContext {
   KosDynNode *dyn_top;       /* top of dynamic chain */
   KosDynFrame *frame_top;    /* cached topmost frame (for fast access) */
 
-  KosStackBlock **block;     /* &innermost owner stack; refreshed in KosEvalState_RefreshDynCaches */
+  KosStackBlock **block;     /* non-owning: &innermost dynnode stack; see KosEvalState_RefreshDynCaches */
 
   KosDynFrame *globals_frame;     /* cached outermost frame (for op_GLOBALS) */
   uint32_t globals_cache_version; /* chain_version when globals_frame was set */

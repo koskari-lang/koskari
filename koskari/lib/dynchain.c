@@ -496,7 +496,8 @@ KosDynNode *KosEvalState_InnermostStackOwner(KosEvalState *es) {
 /**
    Refresh FRAME_TOP and BLOCK after DYN_TOP / chain changes. BLOCK is
    KosStackBlock ** pointing at the innermost non-NULL node->stack from dyn_top
-   toward root (else the frame's stack field).
+   toward root (else the frame's stack field). It does not own the block;
+   only the dynnode releases it.
 */
 void KosEvalState_RefreshDynCaches(KosEvalState *es) {
   KosContext *ctx = KosEvalState_CONTEXT(es);
@@ -2381,8 +2382,7 @@ int kos_capture_cc(KosEvalState *es, KosContinuation **out_k) {
 
 
 /**
-   Free continuation and captured chain; delegates to _exclude with no stack
-   slot preserved. Callers: error paths, wrapper dealloc.
+   Free continuation and captured chain. Callers: error paths, wrapper dealloc.
 */
 void kos_continuation_free(KosContinuation *k) {
   if (! k)
@@ -2391,16 +2391,11 @@ void kos_continuation_free(KosContinuation *k) {
   Py_XDECREF(KosContinuation_TOKEN_REF(k));
   KosContinuation_TOKEN_REF(k) = NULL;
 
-  /* Release the stack reference before freeing the captured chain. The
-   * captured chain's resume frame holds KosContinuation_RESUME_STACK(k);
-   * freeing the chain would release frame stacks and DECREF slot values,
-   * which can re-enter the continuation wrapper's dealloc if the wrapper
-   * was on the stack at capture time. Releasing with exclude first avoids
-   * that. */
+  /* resume_stack aliases the operand stack owned by resume_frame (or an
+   * innermost region node) on captured_chain; kos_dynchain_free releases
+   * node-owned blocks. Clear the pointer only. */
   KosContinuation_RESUME_STACK(k) = NULL;
 
-  /* Free the captured chain (frame stacks may still be non-NULL but are
-   * either unshared or already released by resume_stack release above). */
   kos_dynchain_free(KosContinuation_CAPTURED_CHAIN(k), NULL);
 
   if (cont_freecount < CONT_MAX_FREE) {
@@ -3236,10 +3231,11 @@ int kos_build_install_only_plan(
 /**
    Release the multi-shot continuation clone held by the plan, if any.
    The clone was used for a re-invocation; we release its resume_stack
-   with exclude=continuation_ref so we do not DECREF the original
-   continuation (and free the captured chain) while the plan may still
-   reference them.  Then we either return the clone to the continuation
-   freelist or PyMem_Free it.  Called from kos_free_transfer_plan.
+   chain.  KosTransferPlan_CONTINUATION_REF holds a strong ref to the
+   Python wrapper for the whole plan lifetime, so operand-stack DECREFs
+   during release cannot drop the last ref to that object.  Then we
+   either return the clone to the continuation freelist or PyMem_Free it.
+   Called from kos_free_transfer_plan.
 */
 static void xfer_plan_release_invoke_clone(KosTransferPlan *plan) {
   if (! KosTransferPlan_INVOKE_CLONE(plan))
@@ -3248,8 +3244,7 @@ static void xfer_plan_release_invoke_clone(KosTransferPlan *plan) {
   KosContinuation *clone = KosTransferPlan_INVOKE_CLONE(plan);
   KosTransferPlan_INVOKE_CLONE(plan) = NULL;
   if (KosContinuation_RESUME_STACK(clone)) {
-    KosStackBlock_ReleaseChainExclude(KosContinuation_RESUME_STACK(clone),
-                                            KosTransferPlan_CONTINUATION_REF(plan));
+    KosStackBlock_ReleaseChain(KosContinuation_RESUME_STACK(clone));
     KosContinuation_RESUME_STACK(clone) = NULL;
   }
   if (KosContinuation_CAPTURED_CHAIN(clone)) {
@@ -3293,7 +3288,7 @@ void kos_free_transfer_plan(KosTransferPlan *plan) {
   }
   xfer_plan_release_invoke_clone(plan);
   if (KosTransferPlan_RESUME_STACK(plan)) {
-    KosStackBlock_ReleaseChainExclude(KosTransferPlan_RESUME_STACK(plan), NULL);
+    KosStackBlock_ReleaseChain(KosTransferPlan_RESUME_STACK(plan));
     KosTransferPlan_RESUME_STACK(plan) = NULL;
   }
   Py_XDECREF(KosTransferPlan_CONTINUATION_REF(plan));
@@ -3462,14 +3457,12 @@ static int xfer_step_install(KosEvalState *es, KosTransferAction *action,
       KosTransferPlan_RESUME_STACK(plan) = NULL;  /* ownership transferred */
 
       if (old_stack && old_stack != new_stack) {
-        KosStackBlock_ReleaseChainExclude(old_stack,
-                                                KosTransferPlan_CONTINUATION_REF(plan));
+        KosStackBlock_ReleaseChain(old_stack);
       }
       KosEvalState_RefreshDynCaches(es);
 
     } else {
-      KosStackBlock_ReleaseChainExclude(new_stack,
-                                              KosTransferPlan_CONTINUATION_REF(plan));
+      KosStackBlock_ReleaseChain(new_stack);
       KosTransferPlan_RESUME_STACK(plan) = NULL;
     }
   }
@@ -3560,13 +3553,11 @@ static int xfer_step_push(KosEvalState *es, KosTransferAction *action,
       KosDynNode_STACK(owner) = new_stack;
       KosTransferPlan_RESUME_STACK(plan) = NULL;  /* ownership transferred */
       if (old_stack && old_stack != new_stack) {
-        KosStackBlock_ReleaseChainExclude(old_stack,
-                                                KosTransferPlan_CONTINUATION_REF(plan));
+        KosStackBlock_ReleaseChain(old_stack);
       }
       KosEvalState_RefreshDynCaches(es);
     } else {
-      KosStackBlock_ReleaseChainExclude(new_stack,
-                                              KosTransferPlan_CONTINUATION_REF(plan));
+      KosStackBlock_ReleaseChain(new_stack);
       KosTransferPlan_RESUME_STACK(plan) = NULL;
     }
   }
@@ -4045,7 +4036,7 @@ int kos_invoke_continuation(
     KosTransferPlan_INVOKE_CLONE(plan) = to_use;
     /* Do not release to_use->resume_stack here; that would DECREF the
      * continuation and free k before the plan runs. kos_free_transfer_plan
-     * will release it with exclude=continuation_ref then free to_use.
+     * releases it via KosStackBlock_ReleaseChain then frees to_use.
      * The clone retains ownership of captured_chain until
      * xfer_plan_release_invoke_clone frees it. */
   }
