@@ -432,12 +432,12 @@ int KosStackBlock_PopTailPtr(KosStackBlock **self, size_t count, PyObject **dest
    owned_start: indices [0, owned_start) are borrowed (not DECREF'd by Free).
    Default 0 (own all). TailPrepend sets 1 so vals[0] (prefix) is skipped.
 */
-typedef struct KosStackSteal {
+struct KosStackSteal {
   PyObject *fast[KOS_STACK_STEAL_FAST_SIZE];
   size_t len;
   size_t owned_start;   /* skip DECREF for indices < this */
   PyObject **vals;      /* points to fast or malloc'd array */
-} KosStackSteal;
+};
 
 
 /**

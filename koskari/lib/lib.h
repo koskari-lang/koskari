@@ -36,6 +36,7 @@ struct KosContinuation;     typedef struct KosContinuation     KosContinuation;
 struct KosTransferPlan;     typedef struct KosTransferPlan     KosTransferPlan;
 struct KosEvaluatorToken;   typedef struct KosEvaluatorToken   KosEvaluatorToken;
 struct KosEvalState;        typedef struct KosEvalState        KosEvalState;
+struct KosStackSteal;       typedef struct KosStackSteal       KosStackSteal;
 struct KosEvent;
 
 

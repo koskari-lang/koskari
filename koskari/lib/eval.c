@@ -119,43 +119,6 @@ static inline int kos_op_post_tag_to_res(uint8_t tag) {
 }
 
 
-/**
-  Fill *dst from *src; steals no references from src (increments into dst).
-  Clears previous dst payload and exc_type.  For KOS_ERES_RAISE, only sets
-  kind; caller syncs exc_type/payload from PyErr if needed.
-*/
-static inline void kos_eval_result_to_event(
-    const KosEvalResult *src,
-    KosEvent *dst) {
-
-  Py_CLEAR(KosEvent_PAYLOAD(dst));
-  Py_CLEAR(KosEvent_EXC_TYPE(dst));
-  switch (src->kind) {
-  case KOS_ERES_RETURN:
-    KosEvent_KIND(dst) = KOS_EV_RETURN;
-    KosEvent_PAYLOAD(dst) = src->value;
-    Py_XINCREF(src->value);
-    break;
-  case KOS_ERES_RAISE:
-    KosEvent_KIND(dst) = KOS_EV_RAISE;
-    break;
-  case KOS_ERES_YIELD:
-    KosEvent_KIND(dst) = KOS_EV_YIELD;
-    KosEvent_PAYLOAD(dst) = src->value;
-    Py_XINCREF(src->value);
-    break;
-  case KOS_ERES_AWAIT:
-    KosEvent_KIND(dst) = KOS_EV_AWAIT;
-    KosEvent_PAYLOAD(dst) = src->value;
-    Py_XINCREF(src->value);
-    break;
-  default:
-    KosEvent_KIND(dst) = KOS_EV_NONE;
-    break;
-  }
-}
-
-
 /* --- KosEvalState helpers (link symbols for other TUs; same-TU calls inline at -O2) --- */
 
 void KosEvalState_Init(KosEvalState *es, KosContext *ctx) {

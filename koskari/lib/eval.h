@@ -477,8 +477,6 @@ int KosEvalState_SetActingPc(KosEvalState *es, uint32_t pc);
 
 PyObject *KosEvalState_GetConstant(const KosEvalState *es, uint32_t index);
 
-typedef struct KosStackSteal KosStackSteal;
-
 int KosEvalState_StackPushRef(KosEvalState *es, PyObject *val);
 PyObject *KosEvalState_StackPopRef(KosEvalState *es);
 

@@ -42,8 +42,6 @@ struct KosPyAsyncGen {
   int closed;        /* generator closed */
 };
 
-typedef struct KosPyAsyncGen KosPyAsyncGen;
-
 
 #define KosPyAsyncGen_Check(obj)                                        \
   ((obj) && PyType_IsSubtype((obj)->ob_type, &KosPyAsyncGenType))
