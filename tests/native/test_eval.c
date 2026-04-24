@@ -68,6 +68,14 @@ static PyObject *make_instr_int(int op, int arg) {
 }
 
 
+static int install_frozen_gen(KosContext *ctx, KosDynGen *gen) {
+
+    KosEvalState es;
+    KosEvalState_Init(&es, ctx);
+    return kos_dyn_gen_install(&es, gen);
+}
+
+
 /* === Test: KosType is not KosCallable (uses default PyObject_Call path) === */
 
 
@@ -1383,7 +1391,7 @@ static int test_eval_build_function_no_defaults(void) {
 
   For yielding code (KosCode_YIELDS), the frame is created under a KosDynGen
   (Generator node) with owner NULL (standalone). After YIELD freeze, the
-  caller must kos_dyn_gen_install(ctx, gen) before the next koskari_eval;
+  caller must install the frozen generator before next koskari_eval;
   if gen_out_opt is non-NULL, *gen_out_opt receives the KosDynGen * for that.
 */
 static int make_simple_ctx(
@@ -1474,7 +1482,7 @@ static int test_eval_yield_empty_resume(void) {
     TEST_ASSERT_EQ(PyLong_AsLong(ev.payload), 42, "yielded value is 42");
     Py_XDECREF(ev.payload);
 
-    TEST_ASSERT(kos_dyn_gen_install(ctx, dyn_gen) == 0, "install frozen gen");
+    TEST_ASSERT(install_frozen_gen(ctx, dyn_gen) == 0, "install frozen gen");
 
     ev.kind = KOS_EV_RETURN;
     ev.payload = NULL;
@@ -1527,7 +1535,7 @@ static int test_eval_yield_send_resume(void) {
     TEST_ASSERT_EQ(PyLong_AsLong(ev.payload), 42, "yielded value is 42");
     Py_XDECREF(ev.payload);
 
-    TEST_ASSERT(kos_dyn_gen_install(ctx, dyn_gen) == 0, "install frozen gen");
+    TEST_ASSERT(install_frozen_gen(ctx, dyn_gen) == 0, "install frozen gen");
 
     PyObject *send_val = PyLong_FromLong(7);
     ev.kind = KOS_EV_RETURN;
@@ -1750,7 +1758,7 @@ static int test_eval_yield_throw_resume(void) {
     TEST_ASSERT(ev.kind == KOS_EV_YIELD, "first event is YIELD");
     Py_XDECREF(ev.payload);
 
-    TEST_ASSERT(kos_dyn_gen_install(ctx, dyn_gen) == 0, "install frozen gen");
+    TEST_ASSERT(install_frozen_gen(ctx, dyn_gen) == 0, "install frozen gen");
 
     PyObject *throw_exc = PyObject_CallFunction(
         (PyObject *) PyExc_ValueError, "s", "thrown into yield");
@@ -1831,7 +1839,7 @@ static int test_eval_yield_throw_caught(void) {
     TEST_ASSERT_EQ(PyLong_AsLong(ev.payload), 42, "yielded value is 42");
     Py_XDECREF(ev.payload);
 
-    TEST_ASSERT(kos_dyn_gen_install(ctx, dyn_gen) == 0, "install frozen gen");
+    TEST_ASSERT(install_frozen_gen(ctx, dyn_gen) == 0, "install frozen gen");
 
     PyObject *throw_exc = PyObject_CallFunction(
         (PyObject *) PyExc_ValueError, "s", "thrown into yield");
