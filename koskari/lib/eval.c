@@ -3410,27 +3410,27 @@ static void kos_eval_report_pc_bounds_error(KosEvalState *es) {
 /* Dispatch prelude: frame and pc from es (dual-written with heap frame).
    Code from frame first, then es->code (tail reset may clear frame code
    before Sync updates es->code).  On OOB, goto on_bad. */
-#define KOS_EVAL_PREPARE_NEXT_INSN(es, insn_ptr, on_bad)                   \
+#define KOS_EVAL_PREPARE_NEXT_INSN(es, insn_lvalue, on_bad)                \
   do {                                                                     \
     KosDynFrame *_kos_pf = KosEvalState_FRAME(es);                         \
     if (unlikely(! _kos_pf))                                               \
       goto on_bad;                                                         \
-    KosCode *_kos_code = KosDynFrame_CODE(_kos_pf);                         \
+    KosCode *_kos_code = KosDynFrame_CODE(_kos_pf);                        \
     if (unlikely(! _kos_code))                                             \
       _kos_code = KosEvalState_CODE(es);                                   \
     uint32_t _kos_pc = (es)->pc;                                           \
     if (unlikely(! _kos_code || _kos_pc >= KosCode_CODE_LEN(_kos_code))) { \
       goto on_bad;                                                         \
     }                                                                      \
-    KosOp *_kos_insn = &KosCode_CODE(_kos_code)[_kos_pc];                   \
+    KosOp _kos_insn = KosCode_CODE(_kos_code)[_kos_pc];                    \
     SAYF("[eval] pc=%u op=%s arg=%u\n",                                    \
-         (unsigned) _kos_pc, kos_opcode_name(KosOp_OP(_kos_insn)),         \
-         (unsigned) KosOp_ARG(_kos_insn));                                 \
+         (unsigned) _kos_pc, kos_opcode_name(KosOp_OP(&_kos_insn)),         \
+         (unsigned) KosOp_ARG(&_kos_insn));                                 \
     (es)->acting_pc = _kos_pc;                                             \
     (es)->pc = _kos_pc + 1u;                                               \
     KosDynFrame_ACTING_PC(_kos_pf) = _kos_pc;                              \
     KosDynFrame_PC(_kos_pf) = _kos_pc + 1u;                                \
-    *(insn_ptr) = _kos_insn;                                               \
+    (insn_lvalue) = _kos_insn;                                             \
   } while (0)
 
 
@@ -3452,7 +3452,7 @@ static int koskari_eval_dispatch_computed_goto(
   };
   #undef OP
 
-  KosOp *insn;
+  KosOp insn;
   KosOpOutcome op_out;
   int eval_ret = 0;
 
@@ -3512,15 +3512,15 @@ cg_prologue:
   }
   #endif
 
-  KOS_EVAL_PREPARE_NEXT_INSN(es, &insn, cg_pc_bounds_error);
-  goto *optable[KosOp_OP(insn)];
+  KOS_EVAL_PREPARE_NEXT_INSN(es, insn, cg_pc_bounds_error);
+  goto *optable[KosOp_OP(&insn)];
 
   #define OP(name, ...)                                                \
     cg_TARGET_##name:                                                  \
-      KOS_TRACE_OP_WRAP(name, op_out = op_##name(es, out_ev, insn));    \
+      KOS_TRACE_OP_WRAP(name, op_out = op_##name(es, out_ev, &insn));    \
       if (likely(op_out.mode == KOS_LOP_RUN)) {                        \
-        KOS_EVAL_PREPARE_NEXT_INSN(es, &insn, cg_pc_bounds_error);       \
-        goto *optable[KosOp_OP(insn)];                                 \
+        KOS_EVAL_PREPARE_NEXT_INSN(es, insn, cg_pc_bounds_error);       \
+        goto *optable[KosOp_OP(&insn)];                                 \
       }                                                                \
       goto cg_handle_op_outcome;
 
@@ -3562,7 +3562,7 @@ koskari_eval_dispatch_switch(KosEvalState *es, KosEvent *out_ev) {
 
   int eval_ret = 0;
   int need_prologue = 1;
-  KosOp *insn = NULL;
+  KosOp insn;
   KosOpOutcome op_out;
 
   for (;;) {
@@ -3633,18 +3633,18 @@ koskari_eval_dispatch_switch(KosEvalState *es, KosEvent *out_ev) {
 
   sw_prepare_and_dispatch:
 
-    KOS_EVAL_PREPARE_NEXT_INSN(es, &insn, sw_pc_bounds_error);
+    KOS_EVAL_PREPARE_NEXT_INSN(es, insn, sw_pc_bounds_error);
 
-    switch (KosOp_OP(insn)) {
+    switch (KosOp_OP(&insn)) {
     #define OP(name, ...)                                                \
       case KOS_OP_##name:                                                \
-        KOS_TRACE_OP_WRAP(name, op_out = op_##name(es, out_ev, insn));    \
+        KOS_TRACE_OP_WRAP(name, op_out = op_##name(es, out_ev, &insn));    \
         break;
     #include "opcodes.incl"
     #undef OP
     default:
       PyErr_Format(PyExc_RuntimeError, "invalid opcode %u",
-                   (unsigned) KosOp_OP(insn));
+                   (unsigned) KosOp_OP(&insn));
       return -1;
     }
 

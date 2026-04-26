@@ -469,7 +469,7 @@ Opcodes are dispatched via computed goto or switch. Each handler has signature:
 KosOpOutcome op_<name>(KosEvalState *es, KosEvent *out_ev, KosOp *insn);
 ```
 
-`KOS_EVAL_PREPARE_NEXT_INSN` supplies the current `KosOp *insn` before each dispatch; post-opcode handling does not use a separate dispatch struct. Opcodes use `KosEvalState_Context(es)` where they need `ctx`, and **`KosEvalState_Stack*`** / related helpers for operand-stack access.
+`KOS_EVAL_PREPARE_NEXT_INSN` copies the current instruction into a local `KosOp insn` before each dispatch; **`op_*`** still take `KosOp *` and receive **`&insn`**. Post-opcode handling does not use a separate dispatch struct. Opcodes use `KosEvalState_Context(es)` where they need `ctx`, and **`KosEvalState_Stack*`** / related helpers for operand-stack access.
 
 ### A.4 DynChain and Frames
 

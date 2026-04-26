@@ -35,7 +35,7 @@ flowchart TD
             Xfer["run_transfer_plan_to_completion<br/>(if plan active)"]
             P3["Phase 3: eval_phase_pending_exception<br/>PyErr_Occurred? → process_raise"]
             Native{"Frame has native_handler?"}
-            P4["Phase 4: KOS_EVAL_PREPARE_NEXT_INSN<br>fetch insn; acting_pc; pre-advance pc"]
+            P4["Phase 4: KOS_EVAL_PREPARE_NEXT_INSN<br>copy insn; acting_pc; pre-advance pc"]
             P5["Phase 5: opcode dispatch<br/>computed goto → op_xxx(ctx, out_ev, insn)"]
             P6["Phase 6: eval_phase_post_opcode<br>op_res != 0 handling"]
             next["re-enter prologue (or RUN tail-dispatch)"]
@@ -195,9 +195,9 @@ flowchart TD
 
 ### 2.4 Phase 4: Prepare next instruction
 
-**`KOS_EVAL_PREPARE_NEXT_INSN`** (macro in `eval.c`) writes the current instruction pointer into `*insn` and updates the frame: load `code` and `pc`, optional **`SAYF`** trace, set `acting_pc`, pre-advance `pc`, assign `*insn`. It assumes a valid frame, in-range `pc`, and valid bytecode (no defensive checks).
+**`KOS_EVAL_PREPARE_NEXT_INSN`** (macro in `eval.c`) **copies** the current instruction into a local **`KosOp insn`** lvalue and updates the frame: load `code` and `pc`, optional **`SAYF`** trace, set `acting_pc`, pre-advance `pc`, struct-assign **`insn`**. It assumes a valid frame, in-range `pc`, and valid bytecode (no defensive checks).
 
-Opcode handlers receive **`KosEvalState *es`** (see **`koskari/lib/eval.h`**): cached **`frame`**, **`code`**, operand-stack **`block`**, and live **`pc`** / **`acting_pc`** registers for the eval slice, aligned with **`KosEvalState_CONTEXT(es)`** via **`KosEvalState_SyncFromContext`** / **`KosEvalState_RefreshDynCaches`**. There is no separate per-opcode struct beyond handler parameters; the hot path still keeps a local **`KosOp *insn`**. **eval_phase_post_opcode** does not take insn or a dispatch bundle.
+Opcode handlers receive **`KosEvalState *es`** (see **`koskari/lib/eval.h`**): cached **`frame`**, **`code`**, operand-stack **`block`**, and live **`pc`** / **`acting_pc`** registers for the eval slice, aligned with **`KosEvalState_CONTEXT(es)`** via **`KosEvalState_SyncFromContext`** / **`KosEvalState_RefreshDynCaches`**. There is no separate per-opcode struct beyond handler parameters; the hot path keeps a local **`KosOp insn`** and passes **`&insn`** into **`op_*`**. **eval_phase_post_opcode** does not take insn or a dispatch bundle.
 
 PC is rolled back for WITH enter/exit suspend so the same instruction is retried on resume.
 

@@ -415,7 +415,7 @@ lives entirely inside those two dispatchers.
 | 1 | `eval_phase_entry` | Entry/revive normalization; `entry_mode_dispatch` for EXCEPTION/RAISE outcomes |
 | 2 | `eval_phase_transfer` | Transfer-plan drain; terminal RETURN(None) when no frame or hook remains |
 | 3 | `eval_phase_pending_exception` | `PyErr_Occurred()` → **`eval_event_raise`** (→ **`eval_boundary_raise_dispatch`**) at each loop-top iteration |
-| 4 | `KOS_EVAL_PREPARE_NEXT_INSN` | Fetch insn into `*insn`, set `acting_pc`, pre-advance `pc` (assumes valid frame/PC; no checks) |
+| 4 | `KOS_EVAL_PREPARE_NEXT_INSN` | Copy insn into local `KosOp insn`, set `acting_pc`, pre-advance `pc` (assumes valid frame/PC; no checks) |
 | 5 | *(inline)* | Computed-goto / switch opcode dispatch; handlers return **`KosOpOutcome`** (`KosLoopOpMode` + optional post tag) |
 | 6 | `eval_phase_post_opcode` | When mode is `KOS_LOP_POST`, map tag via **`kos_op_post_tag_to_res`** to legacy `op_res` and run post-opcode logic (see below) |
 
@@ -430,7 +430,7 @@ typedef enum KosEvalStep {
 } KosEvalStep;
 ```
 
-Phase 4 sets a local `KosOp *insn` (and frame `acting_pc` / `pc`) for phase 5. Phase 6 (**`eval_phase_post_opcode`**) takes `ctx`, `out_ev`, and mapped `op_res`; it does not receive insn.
+Phase 4 sets a local `KosOp insn` (and frame `acting_pc` / `pc`) for phase 5; opcodes are called with `&insn`. Phase 6 (**`eval_phase_post_opcode`**) takes `ctx`, `out_ev`, and mapped `op_res`; it does not receive insn.
 
 #### Post-opcode staging (`eval_phase_post_opcode`)
 
