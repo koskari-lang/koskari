@@ -1624,6 +1624,16 @@ void kos_dyn_yieldfrom_unwind(KosEvalState *es, KosDynYieldFrom *node);
 
 
 /**
+   Close the delegate of a YIELD_FROM dyn node (on unwind or error).
+   Does not free the node. Callers: kos_dyn_yieldfrom_unwind, opcode
+   YIELD_FROM.
+
+   :param node: YIELD_FROM node, or NULL (no-op)
+*/
+void kos_yieldfrom_close_delegate(KosDynYieldFrom *node);
+
+
+/**
    Find the first TRY or FINALLY region on the dynamic chain that is
    enabled, walking from dyn_top toward root. Used for exception
    handling: when an exception occurs, this returns the region whose
@@ -1692,7 +1702,7 @@ int kos_dyn_transition(
 
    :param ctx: execution context
    :param delegate: normalized delegate (new ref; node takes ownership)
-   :param kind: delegate kind (KOS_YF_* from eval.c)
+   :param kind: delegate kind (KOS_YF_SYNC_ITER, … from this header)
 
    :return: new node, or NULL on error
 */
@@ -2189,6 +2199,32 @@ typedef enum KosYfPhase {
   KOS_YF_PHASE_EXPECT_SEND,
   KOS_YF_PHASE_EXPECT_AWAIT,
 } KosYfPhase;
+
+
+/**
+   Yield-from delegate classification. Values stored in KosDynYieldFrom kind.
+   Must stay aligned with yield_from_normalize in opcode/YIELD_FROM.c
+*/
+enum {
+  KOS_YF_SYNC_ITER = 0,
+  KOS_YF_SYNC_GEN = 1,
+  KOS_YF_PY_ASYNC_ITER = 2,
+  KOS_YF_PY_ASYNC_GEN = 3,
+  KOS_YF_KOS_ASYNC_GEN = 4,
+};
+
+
+/**
+   Pending action for yield-from resume inject. Must stay aligned with
+   opcode/YIELD_FROM.c handler
+*/
+enum {
+  KOS_YF_STEP = 0,
+  KOS_YF_SEND = 1,
+  KOS_YF_THROW = 2,
+  KOS_YF_CLOSE = 3,
+};
+
 
 #define KosDynYieldFrom_DELEGATE(n)     (((KosDynNode *)(n))->u.yield_from.delegate)
 #define KosDynYieldFrom_KIND(n)         (((KosDynNode *)(n))->u.yield_from.kind)

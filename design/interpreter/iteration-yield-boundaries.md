@@ -84,7 +84,7 @@ This document describes how four related mechanisms are implemented in the Koska
 - `yield_from_normalize` — classification, `PyObject_GetIter`, callable one-shot, coroutine rejection
 - `yield_from_emit_yield`, `yield_from_rollback_pc`
 - Per-kind drivers: `PyIter_Next`, Python gen `send`/`throw`, `__anext__` / async gen helpers; **`KOS_YF_KOS_ASYNC_GEN`** uses **`op_attach_koskari_agen_frame_for_yield_from`** + **`kos_dyn_gen_install`** on the current **`es`** (Python-driven **`__anext__`** still uses **`koskari_eval(agen->ctx, …)`** outside this opcode path)
-- `kos_dyn_pop_yield_from`, `kos_yieldfrom_close_delegate` (unwind)
+- `kos_dyn_pop_yield_from`, `kos_yieldfrom_close_delegate` / `kos_dyn_yieldfrom_unwind` (`koskari/lib/dynchain/dyn_yield_from.c`)
 - Same eval boundary stack as plain YIELD: `**kos_dyn_walk_handle_yield`**, `**revive_yield**`, `**revive_await**`
 
 ---

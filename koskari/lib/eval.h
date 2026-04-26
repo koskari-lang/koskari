@@ -702,13 +702,6 @@ int kos_frame_traverse(KosFrame *frame, visitproc visit, void *arg);
 int kos_context_traverse(KosContext *ctx, visitproc visit, void *arg);
 
 
-/**
-  Close the delegate of a YIELD_FROM dyn node (on unwind/error).
-  Called from dynchain.c when popping KOS_DYN_YIELD_FROM. Does not free the node.
-*/
-void kos_yieldfrom_close_delegate(KosDynYieldFrom *node);
-
-
 int kos_complete_pending_with_exit(KosContext *ctx);
 int kos_complete_pending_with_exit_semantic(KosContext *ctx);
 void kos_clear_pending_with_exit(KosContext *ctx);

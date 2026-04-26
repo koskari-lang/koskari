@@ -166,7 +166,7 @@ instead of **`KosContext *ctx`**.
 - **Tail / async:** `kos_find_node_for_loop`, `KosDynForeach_*` for exhausted foreach.
 - **Main loop:** `kos_dynnode_on_control_returned`, `kos_dyn_transition` (incl. `KOS_TRANS_TRY_LOCAL_RAISE`, walk handle yield).
 - **Init:** `koskari_dynchain_init`, `koskari_dynchain_clear`.
-- **`kos_yieldfrom_close_delegate`:** `KosDynYieldFrom_*` field access.
+- **`kos_yieldfrom_close_delegate`** (`koskari/lib/dynchain/dyn_yield_from.c`): `KosDynYieldFrom_*` field access; `KOS_YF_*` kinds/actions in `dynchain.h`.
 
 ### 5.2 `koskari/lib/callable.c`
 
