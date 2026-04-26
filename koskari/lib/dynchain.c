@@ -42,6 +42,8 @@
 static int kos_dyn_uninstall_handler(KosEvalState *es, KosDynNode *node,
                                      KosXferEvent event, KosEvent *out_ev);
 int kos_dyn_push(KosEvalState *es, KosDynNode *node);
+int kos_dyn_push_noinstall(KosEvalState *es, KosDynNode *node);
+void kos_dyn_commit_dyn_top(KosEvalState *es, KosDynNode *new_top);
 
 
 /* === Debug helper functions === */
@@ -232,9 +234,8 @@ KosDynFrame *kos_dyn_globals_frame(KosEvalState *es) {
 
   KosContext *ctx = KosEvalState_CONTEXT(es);
   if (KosContext_CHAIN_VERSION(ctx) != KosContext_GLOBALS_CACHE_VERSION(ctx)) {
-    KosEvalState_SyncFromContext(es);
-    KosDynNode *n = (KosDynNode *) KosEvalState_FRAME(es);
-    KosDynFrame *outer = KosEvalState_FRAME(es);
+    KosDynNode *n = (KosDynNode *) KosContext_FRAME_TOP(ctx);
+    KosDynFrame *outer = KosContext_FRAME_TOP(ctx);
 
     while (n && KosDynNode_PARENT(n)) {
       n = KosDynNode_PARENT(n);
@@ -244,8 +245,6 @@ KosDynFrame *kos_dyn_globals_frame(KosEvalState *es) {
     KosContext_GLOBALS_FRAME(ctx) = outer;
     KosContext_GLOBALS_CACHE_VERSION(ctx) = KosContext_CHAIN_VERSION(ctx);
   }
-  if (KosContext_GLOBALS_FRAME(ctx))
-    KosEvalState_SyncFromContext(es);
   return KosContext_GLOBALS_FRAME(ctx);
 }
 
@@ -495,48 +494,22 @@ KosDynNode *KosEvalState_InnermostStackOwner(KosEvalState *es) {
 
 
 /**
-   Refresh FRAME_TOP and BLOCK after DYN_TOP / chain changes. BLOCK is
-   KosStackBlock ** pointing at the innermost non-NULL node->stack from dyn_top
-   toward root (else the frame's stack field). It does not own the block;
-   only the dynnode releases it. Also calls KosEvalState_SyncFromContext so
-   es->frame and es->code match the context.
+   Refresh FRAME_TOP and BLOCK after DYN_TOP / chain changes, then apply
+   them to es without a full KosEvalState_SyncFromContext traversal.
 */
 void KosEvalState_RefreshDynCaches(KosEvalState *es) {
+
   KosContext *ctx = KosEvalState_CONTEXT(es);
-  KosDynNode *node = KosContext_DYN_TOP(ctx);
 
-  KosContext_FRAME_TOP(ctx) = NULL;
-  KosContext_BLOCK(ctx) = NULL;
-
-  while (node) {
-    if (! KosContext_BLOCK(ctx) && KosDynNode_STACK(node))
-      KosContext_BLOCK(ctx) = &KosDynNode_STACK(node);
-
-    if (! KosContext_FRAME_TOP(ctx) && KosDynNode_IS_FRAME(node)) {
-      KosContext_FRAME_TOP(ctx) = (KosDynFrame *) node;
-      SAYF("[gen] refresh_dyn_caches dyn_top=%p -> frame_top=%p (%s)\n",
-           (void *) KosContext_DYN_TOP(ctx), (void *) node,
-           kos_dynnode_kind_name(KosDynNode_KIND(node)));
-    }
-
-    node = KosDynNode_PARENT(node);
-  }
-
-  /* This fallback should be unreachable */
-  if (! KosContext_BLOCK(ctx) && KosContext_FRAME_TOP(ctx))
-    KosContext_BLOCK(ctx) = &KosDynNode_STACK((KosDynNode *) KosContext_FRAME_TOP(ctx));
-
-  if (! KosContext_FRAME_TOP(ctx))
-    SAYF("[gen] refresh_dyn_caches dyn_top=%p -> frame_top=NULL (no frame)\n",
-         (void *) KosContext_DYN_TOP(ctx));
-
-  KosEvalState_SyncFromContext(es);
+  KosContext_RecomputeFrameTopAndBlock(ctx);
+  KosEvalState_ApplyDynCaches(es);
 }
 
 
 /**
-   Link node as DYN_TOP, bump chain_version, set FRAME_TOP if FRAME, and run
-   install. Primary entry for opcode and internal push helpers.
+   Link node as DYN_TOP, bump chain_version, run install, recompute
+   frame_top/block, apply eval caches. Flushes live PCs to the outgoing
+   frame before replacing dyn_top.
 */
 int kos_dyn_push(KosEvalState *es, KosDynNode *node) {
   KosContext *ctx = KosEvalState_CONTEXT(es);
@@ -545,16 +518,43 @@ int kos_dyn_push(KosEvalState *es, KosDynNode *node) {
     return -1;
   }
 
+  KosEvalState_FlushLiveRegsToFrame(es);
   KosContext_DYN_TOP(ctx) = node;
   KosContext_CHAIN_VERSION(ctx)++;
-  if (KosDynNode_IS_FRAME(node))
-    KosContext_FRAME_TOP(ctx) = (KosDynFrame *) node;
 
   if (kos_dyn_install(es, node, NULL) < 0) {
     KosEvalState_SyncFromContext(es);
     return -1;
   }
-  KosEvalState_RefreshDynCaches(es);
+  KosContext_RecomputeFrameTopAndBlock(ctx);
+  KosEvalState_ApplyDynCaches(es);
+  return 0;
+}
+
+
+void kos_dyn_commit_dyn_top(KosEvalState *es, KosDynNode *new_top) {
+
+  KosContext *ctx = KosEvalState_CONTEXT(es);
+
+  KosEvalState_FlushLiveRegsToFrame(es);
+  KosContext_DYN_TOP(ctx) = new_top;
+  KosContext_CHAIN_VERSION(ctx)++;
+  KosContext_RecomputeFrameTopAndBlock(ctx);
+  KosEvalState_ApplyDynCaches(es);
+}
+
+
+/**
+   Like kos_dyn_push but skips kos_dyn_install (region nodes, etc.).
+*/
+int kos_dyn_push_noinstall(KosEvalState *es, KosDynNode *node) {
+
+  if (! node) {
+    KosEvalState_SyncFromContext(es);
+    return -1;
+  }
+
+  kos_dyn_commit_dyn_top(es, node);
   return 0;
 }
 
@@ -565,16 +565,16 @@ static int kos_dyn_uninstall_core(
     KosXferEvent event,
     KosEvent *out_ev) {
 
-  KosContext *ctx = KosEvalState_CONTEXT(es);
-  int r = kos_dyn_uninstall_handler(es, node, event, out_ev);
+  int r;
+
+  KosEvalState_FlushLiveRegsToFrame(es);
+  r = kos_dyn_uninstall_handler(es, node, event, out_ev);
   if (r == KOS_DYN_UNWIND_ASYNC_STARTED)
     return KOS_DYN_UNWIND_ASYNC_STARTED;
   if (r < 0)
     return -1;
 
-  KosContext_DYN_TOP(ctx) = KosDynNode_PARENT(node);
-  KosContext_CHAIN_VERSION(ctx)++;
-  KosEvalState_RefreshDynCaches(es);
+  kos_dyn_commit_dyn_top(es, KosDynNode_PARENT(node));
   KosDynNode_PARENT(node) = NULL;
   kos_dynnode_free(node);
   return 0;
@@ -601,9 +601,13 @@ int kos_dyn_uninstall(KosEvalState *es, KosDynNode *node, KosXferEvent event,
     return -1;
   }
 
-  int u = kos_dyn_uninstall_core(es, node, event, out_ev);
-  KosEvalState_SyncFromContext(es);
-  return u;
+  {
+    int u = kos_dyn_uninstall_core(es, node, event, out_ev);
+
+    if (u < 0)
+      KosEvalState_SyncFromContext(es);
+    return u;
+  }
 }
 
 
@@ -709,7 +713,6 @@ int kos_dyn_install(KosEvalState *es, KosDynNode *node, KosEvent *out_ev) {
       r = 0;
       break;
   }
-  KosEvalState_SyncFromContext(es);
   return r;
 }
 
@@ -1928,9 +1931,10 @@ KosDynYieldFrom *kos_dyn_push_yield_from(
   if (! node)
     return NULL;
 
-  KosContext_DYN_TOP(ctx) = (KosDynNode *) node;
-  KosContext_CHAIN_VERSION(ctx)++;
-  KosEvalState_RefreshDynCaches(es);
+  if (kos_dyn_push_noinstall(es, (KosDynNode *) node) < 0) {
+    kos_dynyieldfrom_free(node);
+    return NULL;
+  }
   SAYF("[gen] push_yield_from done dyn_top=%p parent=%p (%s) frame_top=%p\n",
        (void *) node, (void *) KosDynNode_PARENT(node),
        KosDynNode_PARENT(node)
@@ -1953,10 +1957,13 @@ void kos_dyn_pop_yield_from(KosEvalState *es, KosDynYieldFrom *node) {
     SAY("[gen] pop_yield_from no-op (mismatch or null)");
     return;
   }
-  KosContext_DYN_TOP(ctx) = KosDynNode_PARENT(node);
-  KosContext_CHAIN_VERSION(ctx)++;
-  kos_dynyieldfrom_free(node);
-  KosEvalState_RefreshDynCaches(es);
+  {
+    KosDynNode *parent = KosDynNode_PARENT((KosDynNode *) node);
+
+    kos_dyn_commit_dyn_top(es, parent);
+    KosDynNode_PARENT((KosDynNode *) node) = NULL;
+    kos_dynyieldfrom_free(node);
+  }
   SAYF("[gen] pop_yield_from done dyn_top=%p (%s)\n",
        (void *) KosContext_DYN_TOP(ctx),
        KosContext_DYN_TOP(ctx)

@@ -167,10 +167,10 @@ KosDynWith *kos_dyn_push_with(
     return NULL;
 
   KosDynWith_ENTERED(node) = 1;
-  KosContext_DYN_TOP(ctx) = (KosDynNode *) node;
-  KosContext_CHAIN_VERSION(ctx)++;
-
-  KosEvalState_SyncFromContext(es);
+  if (kos_dyn_push_noinstall(es, (KosDynNode *) node) < 0) {
+    kos_dynwith_free(node);
+    return NULL;
+  }
   return node;
 }
 
@@ -208,10 +208,10 @@ KosDynWith *kos_dyn_push_with_provisional(
 
   KosDynWith_ENTERED(node) = 0;
   KosDynWith_PHASE(node) = KOS_WITH_PHASE_PENDING_ENTER_AWAIT;
-  KosContext_DYN_TOP(ctx) = (KosDynNode *) node;
-  KosContext_CHAIN_VERSION(ctx)++;
-
-  KosEvalState_SyncFromContext(es);
+  if (kos_dyn_push_noinstall(es, (KosDynNode *) node) < 0) {
+    kos_dynwith_free(node);
+    return NULL;
+  }
   return node;
 }
 
@@ -238,11 +238,13 @@ void kos_dyn_pop_with(KosEvalState *es, KosDynWith *node) {
     KosEvalState_SyncFromContext(es);
     return;
   }
+  {
+    KosDynNode *parent = KosDynNode_PARENT((KosDynNode *) node);
 
-  KosContext_DYN_TOP(ctx) = KosDynNode_PARENT(node);
-  KosContext_CHAIN_VERSION(ctx)++;
-  kos_dynwith_free(node);
-  KosEvalState_RefreshDynCaches(es);
+    kos_dyn_commit_dyn_top(es, parent);
+    KosDynNode_PARENT((KosDynNode *) node) = NULL;
+    kos_dynwith_free(node);
+  }
 }
 
 

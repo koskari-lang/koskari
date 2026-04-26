@@ -32,9 +32,10 @@ int kos_dyn_push_next_for_kos_agen(
   }
   KosDynNext_N(node) = n;
 
-  KosContext_DYN_TOP(ctx) = node;
-  KosContext_CHAIN_VERSION(ctx)++;
-  KosEvalState_SyncFromContext(es);
+  if (kos_dyn_push_noinstall(es, node) < 0) {
+    kos_dyn_next_free_payload(node);
+    return -1;
+  }
   return 0;
 }
 
@@ -45,11 +46,12 @@ void kos_dyn_next_abort_after_failed_attach(KosEvalState *es) {
   KosDynNode *top = KosContext_DYN_TOP(ctx);
   if (top && KosDynNode_IS_NEXT(top)) {
     KosDynNode *parent = KosDynNode_PARENT(top);
-    KosContext_DYN_TOP(ctx) = parent;
-    KosContext_CHAIN_VERSION(ctx)++;
+
+    kos_dyn_commit_dyn_top(es, parent);
+    KosDynNode_PARENT(top) = NULL;
     kos_dyn_next_free_payload(top);
-  }
-  KosEvalState_SyncFromContext(es);
+  } else
+    KosEvalState_SyncFromContext(es);
 }
 
 
@@ -123,6 +125,7 @@ void kos_dyn_unlink_next_node(KosEvalState *es, KosDynNext *next) {
   KosDynNode *node = (KosDynNode *) next;
   KosDynNode *p = KosDynNode_PARENT(node);
 
+  KosEvalState_FlushLiveRegsToFrame(es);
   if (KosContext_DYN_TOP(ctx) == node) {
     KosContext_DYN_TOP(ctx) = p;
   } else {
@@ -136,7 +139,8 @@ void kos_dyn_unlink_next_node(KosEvalState *es, KosDynNext *next) {
   }
   KosDynNode_PARENT(node) = NULL;
   KosContext_CHAIN_VERSION(ctx)++;
-  KosEvalState_RefreshDynCaches(es);
+  KosContext_RecomputeFrameTopAndBlock(ctx);
+  KosEvalState_ApplyDynCaches(es);
   kos_dyn_next_free_payload(node);
 }
 
@@ -164,7 +168,6 @@ int kos_dyn_next_deliver_yield(KosEvalState *es, struct KosEvent *out_ev) {
   agen->in_progress = 0;
 
   kos_dyn_unlink_next_node(es, next);
-  KosEvalState_SyncFromContext(es);
   return 0;
 }
 
@@ -206,7 +209,6 @@ int kos_dyn_next_deliver_return(KosEvalState *es, struct KosEvent *out_ev) {
     Py_DECREF(val);
     PyErr_SetNone(PyExc_StopIteration);
     kos_dyn_unlink_next_node(es, next);
-    KosEvalState_SyncFromContext(es);
     return -1;
   } else {
     Py_DECREF(val);
@@ -216,7 +218,6 @@ int kos_dyn_next_deliver_return(KosEvalState *es, struct KosEvent *out_ev) {
   KosEvent_KIND(out_ev) = KOS_EV_NONE;
 
   kos_dyn_unlink_next_node(es, next);
-  KosEvalState_SyncFromContext(es);
   return 0;
 }
 

@@ -100,6 +100,7 @@ int kos_dyn_gen_install(KosEvalState *es, KosDynGen *gen) {
   }
 
   /* 1. GEN's parent = current ctx's active node */
+  KosEvalState_FlushLiveRegsToFrame(es);
   KosDynNode_PARENT(gen) = KosContext_DYN_TOP(ctx);
   /* 2. Incref GEN */
   kos_dyngen_acquire(gen);
@@ -110,7 +111,8 @@ int kos_dyn_gen_install(KosEvalState *es, KosDynGen *gen) {
   KosContext_DYN_TOP(ctx) = active;
   KosDynGen_ACTIVE(gen) = NULL;
   KosContext_CHAIN_VERSION(ctx)++;
-  KosEvalState_RefreshDynCaches(es);
+  KosContext_RecomputeFrameTopAndBlock(ctx);
+  KosEvalState_ApplyDynCaches(es);
 
   if (KosEvalState_StackPushRef(es, Py_None) < 0)
     return -1;
@@ -164,10 +166,10 @@ int kos_dyn_gen_unwind_exhausted(KosEvalState *es) {
     return -1;
   }
   KosDynNode *consumer = KosDynNode_PARENT(gen);
+
+  KosEvalState_FlushLiveRegsToFrame(es);
   kos_dynchain_free(frame, (KosDynNode *) gen);
-  KosContext_DYN_TOP(ctx) = consumer;
-  KosContext_CHAIN_VERSION(ctx)++;
-  KosEvalState_RefreshDynCaches(es);
+  kos_dyn_commit_dyn_top(es, consumer);
   kos_dyngen_release(gen);
   return 0;
 }

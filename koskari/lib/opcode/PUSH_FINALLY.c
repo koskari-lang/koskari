@@ -24,7 +24,6 @@ KOS_OP_HANDLER(PUSH_FINALLY) {
     PyErr_NoMemory();
     return KOS_OP_POST_ERR();
   }
-  KosEvalState_RefreshDynCaches(es);
   (void) out_ev;
   return KOS_OP_RUN();
 }

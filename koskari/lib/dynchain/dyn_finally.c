@@ -71,10 +71,12 @@ void kos_dynfinally_free(KosDynFinally *node) {
 KosDynFinally *kos_dyn_push_finally(KosEvalState *es, uint32_t handler_pc) {
   KosContext *ctx = KosEvalState_CONTEXT(es);
   KosDynFinally *node = kos_dynfinally_new(KosContext_DYN_TOP(ctx), handler_pc);
-  if (! node) return NULL;
-  KosContext_DYN_TOP(ctx) = (KosDynNode *) node;
-  KosContext_CHAIN_VERSION(ctx)++;
-  KosEvalState_SyncFromContext(es);
+  if (! node)
+    return NULL;
+  if (kos_dyn_push_noinstall(es, (KosDynNode *) node) < 0) {
+    kos_dynfinally_free(node);
+    return NULL;
+  }
   return node;
 }
 
@@ -84,13 +86,16 @@ KosDynFinally *kos_dyn_push_finally(KosEvalState *es, uint32_t handler_pc) {
 */
 void kos_dyn_pop_finally(KosEvalState *es, KosDynFinally *node) {
   KosContext *ctx = KosEvalState_CONTEXT(es);
-  if (KosContext_DYN_TOP(ctx)==(KosDynNode*)node) {
-    KosContext_DYN_TOP(ctx)=KosDynNode_PARENT(node);
-    KosContext_CHAIN_VERSION(ctx)++;
-    kos_dynfinally_free(node);
-    KosEvalState_RefreshDynCaches(es);
-  } else {
+  if (KosContext_DYN_TOP(ctx) != (KosDynNode *) node) {
     KosEvalState_SyncFromContext(es);
+    return;
+  }
+  {
+    KosDynNode *parent = KosDynNode_PARENT((KosDynNode *) node);
+
+    kos_dyn_commit_dyn_top(es, parent);
+    KosDynNode_PARENT((KosDynNode *) node) = NULL;
+    kos_dynfinally_free(node);
   }
 }
 

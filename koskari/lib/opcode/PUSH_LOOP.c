@@ -47,7 +47,6 @@ KOS_OP_HANDLER(PUSH_LOOP) {
   /* Initialize loop result to None */
   Py_INCREF(Py_None);
   KosDynLoop_RESULT((KosDynLoop *) region) = Py_None;
-  KosEvalState_RefreshDynCaches(es);
   (void) out_ev;
   return KOS_OP_RUN();
 }

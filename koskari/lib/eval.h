@@ -432,9 +432,11 @@ struct KosContext {
   - KosEvalState is the only supported handle for mutating the dynamic chain
     from opcode handlers, callable helpers, and eval drivers: use
     kos_dyn_*(KosEvalState *, ...) (and related helpers) declared in dynchain.h.
-    Call KosEvalState_SyncFromContext after context mutation when the live
-    eval slice must see updated frame/code caches (KosEvalState_RefreshDynCaches
-    includes that step after recomputing frame_top/block).
+    Chain changes must go through those commit paths: they flush live PCs to
+    the outgoing frame, mutate ctx, recompute frame_top/block, then
+    KosEvalState_ApplyDynCaches. Use KosEvalState_SyncFromContext only at true
+    re-entry boundaries (resume, debugger, arbitrarily stale es), not after
+    every dyn tweak.
   - KosContext remains the heap-allocated VM state owned by a coroutine,
     async generator, or continuation segment. It is authoritative for dyn_top,
     frame_top, and block (cold storage). KosEvalState mirrors frame, code,
@@ -533,10 +535,41 @@ static inline void KosEvalState_SyncFromContext(KosEvalState *es) {
   }
 }
 
+
+/**
+  Dual-write live PC registers from es into the current frame before the
+  chain or current-frame pointer changes. No-op when es has no frame.
+*/
+static inline void KosEvalState_FlushLiveRegsToFrame(KosEvalState *es) {
+
+  KosDynFrame *f = KosEvalState_FRAME(es);
+
+  if (! f)
+    return;
+  KosDynFrame_PC(f) = (es)->pc;
+  KosDynFrame_ACTING_PC(f) = (es)->acting_pc;
+}
+
+
+/**
+  Recompute ctx->frame_top and ctx->block by walking from dyn_top toward
+  root. Does not touch KosEvalState.
+*/
+void KosContext_RecomputeFrameTopAndBlock(KosContext *ctx);
+
+
+/**
+  After RecomputeFrameTopAndBlock, mirror ctx->frame_top and ctx->block into
+  es. If the frame pointer changed, load code and PCs from the new frame.
+  If only block changed, update es->block without clobbering pc/acting_pc.
+*/
+void KosEvalState_ApplyDynCaches(KosEvalState *es);
+
+
 /**
   Recompute ctx->frame_top and ctx->block from the dynamic chain after
-  dyn_top / chain changes, then refresh es->frame and es->code from the
-  context (KosEvalState_SyncFromContext).
+  dyn_top / chain changes, then apply them to es (incremental; avoids full
+  KosEvalState_SyncFromContext when frame and PCs are already coherent).
 */
 void KosEvalState_RefreshDynCaches(KosEvalState *es);
 

@@ -180,11 +180,13 @@ static int kos_dyn_wind_on_control_returned(KosEvalState *es, KosDynWind *wind) 
 
     KosDynWind_PHASE(wind) = KOS_WIND_PHASE_POST_AFTER;
     KosContext_UNWIND_TARGET_FRAME(ctx) = NULL;
-    KosContext_DYN_TOP(ctx) = KosDynNode_PARENT(wind);
-    KosContext_CHAIN_VERSION(ctx)++;
-    KosDynNode_PARENT(wind) = NULL;
-    kos_dynwind_free(wind);
-    KosEvalState_RefreshDynCaches(es);
+    {
+      KosDynNode *parent = KosDynNode_PARENT((KosDynNode *) wind);
+
+      kos_dyn_commit_dyn_top(es, parent);
+      KosDynNode_PARENT((KosDynNode *) wind) = NULL;
+      kos_dynwind_free(wind);
+    }
 
     if (body_result) {
       if (KosEvalState_StackPushRef(es, body_result) < 0) {
@@ -215,10 +217,10 @@ KosDynWind *kos_dyn_push_wind(
   if (! wind)
     return NULL;
 
-  KosContext_DYN_TOP(ctx) = (KosDynNode *) wind;
-  KosContext_CHAIN_VERSION(ctx)++;
-  KosEvalState_RefreshDynCaches(es);
-
+  if (kos_dyn_push_noinstall(es, (KosDynNode *) wind) < 0) {
+    kos_dynwind_free(wind);
+    return NULL;
+  }
   return wind;
 }
 
@@ -234,11 +236,13 @@ int kos_dyn_pop_wind(KosEvalState *es, KosDynWind *wind) {
     KosEvalState_SyncFromContext(es);
     return -1;
   }
+  {
+    KosDynNode *parent = KosDynNode_PARENT((KosDynNode *) wind);
 
-  KosContext_DYN_TOP(ctx) = KosDynNode_PARENT(wind);
-  KosContext_CHAIN_VERSION(ctx)++;
-  kos_dynwind_free(wind);
-  KosEvalState_RefreshDynCaches(es);
+    kos_dyn_commit_dyn_top(es, parent);
+    KosDynNode_PARENT((KosDynNode *) wind) = NULL;
+    kos_dynwind_free(wind);
+  }
 
   return 0;
 }

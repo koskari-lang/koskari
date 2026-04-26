@@ -77,7 +77,6 @@ KosDynPrompt *kos_dyn_push_prompt(KosEvalState *es, uint32_t prompt_id) {
     return NULL;
   }
 
-  KosEvalState_SyncFromContext(es);
   return prompt;
 }
 

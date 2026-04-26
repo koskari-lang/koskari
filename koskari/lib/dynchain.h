@@ -845,6 +845,20 @@ int kos_dyn_push(KosEvalState *es, KosDynNode *node);
 
 
 /**
+   Like kos_dyn_push but skips kos_dyn_install (e.g. TRY/FINALLY regions).
+*/
+int kos_dyn_push_noinstall(KosEvalState *es, KosDynNode *node);
+
+
+/**
+   Flush live PCs, set dyn_top to new_top, bump chain_version, recompute
+   frame_top/block, apply eval caches. Used after manual pops that do not
+   go through kos_dyn_uninstall.
+*/
+void kos_dyn_commit_dyn_top(KosEvalState *es, KosDynNode *new_top);
+
+
+/**
    Pop a node from the context's dynamic chain.  Node must be dyn_top.
    For BARRIER nodes (PROMPT) returns -1.  Otherwise runs the
    type's pop handler (if any) then unlinks and frees.  Returns

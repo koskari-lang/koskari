@@ -70,7 +70,6 @@ void kos_dyn_collect_unwind(KosEvalState *es, KosDynCollect *node) {
     Py_DECREF(KosDynFrame_NS(KosEvalState_FRAME(es)));
     KosDynFrame_NS(KosEvalState_FRAME(es)) = prior;
   }
-  KosEvalState_SyncFromContext(es);
 }
 
 
@@ -83,10 +82,10 @@ KosDynCollect *kos_dyn_push_collect(KosEvalState *es, PyObject *saved_ns) {
   if (! col_node)
     return NULL;
 
-  KosContext_DYN_TOP(ctx) = (KosDynNode *) col_node;
-  KosContext_CHAIN_VERSION(ctx)++;
-
-  KosEvalState_SyncFromContext(es);
+  if (kos_dyn_push_noinstall(es, (KosDynNode *) col_node) < 0) {
+    kos_dyncollect_free(col_node);
+    return NULL;
+  }
   return col_node;
 }
 
@@ -101,11 +100,13 @@ void kos_dyn_pop_collect(KosEvalState *es, KosDynCollect *node) {
     KosEvalState_SyncFromContext(es);
     return;
   }
+  {
+    KosDynNode *parent = KosDynNode_PARENT((KosDynNode *) node);
 
-  KosContext_DYN_TOP(ctx) = KosDynNode_PARENT(node);
-  KosContext_CHAIN_VERSION(ctx)++;
-  kos_dyncollect_free(node);
-  KosEvalState_RefreshDynCaches(es);
+    kos_dyn_commit_dyn_top(es, parent);
+    KosDynNode_PARENT((KosDynNode *) node) = NULL;
+    kos_dyncollect_free(node);
+  }
 }
 
 

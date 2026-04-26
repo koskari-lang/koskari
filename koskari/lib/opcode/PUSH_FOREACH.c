@@ -88,7 +88,6 @@ KOS_OP_HANDLER(PUSH_FOREACH) {
   KosDynForeach_RESULT((KosDynForeach *) region) = loop_result;
   KosDynForeach_ITER((KosDynForeach *) region) = iter;
   KosDynForeach_EXHAUSTED((KosDynForeach *) region) = 0;
-  KosEvalState_RefreshDynCaches(es);
 
   (void) out_ev;
   return KOS_OP_RUN();

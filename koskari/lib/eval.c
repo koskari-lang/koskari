@@ -94,6 +94,78 @@ static inline int kos_op_post_tag_to_res(uint8_t tag) {
 
 /* --- KosEvalState helpers (Init/SyncFromContext: static inline in eval.h) --- */
 
+
+void KosContext_RecomputeFrameTopAndBlock(KosContext *ctx) {
+
+  KosDynNode *node;
+
+  if (! ctx)
+    return;
+
+  node = KosContext_DYN_TOP(ctx);
+  KosContext_FRAME_TOP(ctx) = NULL;
+  KosContext_BLOCK(ctx) = NULL;
+
+  while (node) {
+    if (! KosContext_BLOCK(ctx) && KosDynNode_STACK(node))
+      KosContext_BLOCK(ctx) = &KosDynNode_STACK(node);
+
+    if (! KosContext_FRAME_TOP(ctx) && KosDynNode_IS_FRAME(node)) {
+      KosContext_FRAME_TOP(ctx) = (KosDynFrame *) node;
+      SAYF("[gen] refresh_dyn_caches dyn_top=%p -> frame_top=%p (%s)\n",
+           (void *) KosContext_DYN_TOP(ctx), (void *) node,
+           kos_dynnode_kind_name(KosDynNode_KIND(node)));
+    }
+
+    node = KosDynNode_PARENT(node);
+  }
+
+  if (! KosContext_BLOCK(ctx) && KosContext_FRAME_TOP(ctx))
+    KosContext_BLOCK(ctx) =
+        &KosDynNode_STACK((KosDynNode *) KosContext_FRAME_TOP(ctx));
+
+  if (! KosContext_FRAME_TOP(ctx))
+    SAYF("[gen] refresh_dyn_caches dyn_top=%p -> frame_top=NULL (no frame)\n",
+         (void *) KosContext_DYN_TOP(ctx));
+}
+
+
+void KosEvalState_ApplyDynCaches(KosEvalState *es) {
+
+  KosContext *ctx;
+  KosDynFrame *ft;
+  KosStackBlock **bl;
+  KosDynFrame *ef;
+
+  if (! es)
+    return;
+  ctx = KosEvalState_CONTEXT(es);
+  if (! ctx)
+    return;
+
+  ft = KosContext_FRAME_TOP(ctx);
+  bl = KosContext_BLOCK(ctx);
+  ef = KosEvalState_FRAME(es);
+
+  if (ef != ft) {
+    KosEvalState_FRAME(es) = ft;
+    KosEvalState_BLOCK(es) = bl;
+    if (ft) {
+      KosEvalState_CODE(es) = KosDynFrame_CODE(ft);
+      es->pc = KosDynFrame_PC(ft);
+      es->acting_pc = KosDynFrame_ACTING_PC(ft);
+    } else {
+      KosEvalState_CODE(es) = NULL;
+      es->pc = 0;
+      es->acting_pc = 0;
+    }
+    return;
+  }
+
+  KosEvalState_BLOCK(es) = bl;
+}
+
+
 KosCode *KosEvalState_CurrentCode(const KosEvalState *es) {
 
   KosDynFrame *f = KosEvalState_FRAME(es);
@@ -129,7 +201,7 @@ int KosEvalState_SetFramePc(KosEvalState *es, uint32_t pc) {
 
 
 uint32_t KosEvalState_GetActingPc(const KosEvalState *es) {
-
+  
   return KosEvalState_FRAME(es) ? es->acting_pc : (uint32_t) 0;
 }
 
@@ -1542,28 +1614,26 @@ int kos_tail_koscall(
   }
 
   KosDynFrame *old = KosEvalState_FRAME(&es);
-  KosDynNode *parent = KosDynNode_PARENT(old);
+  KosDynNode *parent = KosDynNode_PARENT((KosDynNode *) old);
+  KosDynFrame *frame;
 
-  /* Pop the old frame */
+  KosEvalState_FlushLiveRegsToFrame(&es);
   KosContext_DYN_TOP(ctx) = parent;
 
-  /* Create new frame with same parent */
-  KosDynFrame *frame = kos_dynframe_new(parent, code, ns, NULL);
+  frame = kos_dynframe_new(parent, code, ns, NULL);
   if (! frame) {
-    /* Restore old frame on failure */
     KosContext_DYN_TOP(ctx) = (KosDynNode *) old;
+    KosContext_RecomputeFrameTopAndBlock(ctx);
+    KosEvalState_ApplyDynCaches(&es);
     return -1;
   }
 
-  /* Free old frame */
   kos_dynframe_free(old);
 
-  /* Install new frame */
   KosContext_DYN_TOP(ctx) = (KosDynNode *) frame;
-  KosContext_FRAME_TOP(ctx) = frame;
   KosContext_CHAIN_VERSION(ctx)++;
-  KosEvalState_Init(&es, ctx);
-  KosEvalState_RefreshDynCaches(&es);
+  KosContext_RecomputeFrameTopAndBlock(ctx);
+  KosEvalState_ApplyDynCaches(&es);
 
   return 0;
 }

@@ -288,7 +288,6 @@ void kos_yieldfrom_close_delegate(KosDynYieldFrom *node) {
 void kos_dyn_yieldfrom_unwind(KosEvalState *es, KosDynYieldFrom *node) {
   if (node)
     kos_yieldfrom_close_delegate(node);
-  KosEvalState_SyncFromContext(es);
 }
 
 
