@@ -18,7 +18,6 @@
 */
 
 KOS_OP_HANDLER(JUMP_FALSE) {
-  KosContext *ctx = KosEvalState_CONTEXT(es);
   PyObject *val = KosEvalState_StackPopRef(es);
   if (! val)
     return KOS_OP_POST_ERR();
@@ -26,8 +25,10 @@ KOS_OP_HANDLER(JUMP_FALSE) {
   Py_DECREF(val);
   if (res < 0)
     return KOS_OP_POST_ERR();
-  if (res)
-    CURRENT_PC(ctx) = KosOp_ARG(insn);
+  if (res) {
+    if (KosEvalState_SetFramePc(es, KosOp_ARG(insn)) < 0)
+      return KOS_OP_POST_ERR();
+  }
   (void) out_ev;
   return KOS_OP_RUN();
 }

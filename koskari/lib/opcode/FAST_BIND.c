@@ -18,10 +18,9 @@
 */
 
 KOS_OP_HANDLER(FAST_BIND) {
-  KosContext *ctx = KosEvalState_CONTEXT(es);
   (void) out_ev;
 
-  PyObject *ns = CURRENT_NS(ctx);
+  PyObject *ns = CURRENT_NS();
   if (unlikely(! ns)) {
     PyErr_SetString(PyExc_RuntimeError, "FAST_BIND invoked on NULL namespace");
     return KOS_OP_POST_ERR();

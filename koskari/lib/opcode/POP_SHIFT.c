@@ -30,7 +30,7 @@ KOS_OP_HANDLER(POP_SHIFT) {
   KosExtentDesc *shift_extent;
   KosExtentDesc *prompt_extent;
   uint32_t prompt_pop_pc;
-  KosCode *code = CURRENT_CODE(ctx);
+  KosCode *code = KosEvalState_CurrentCode(es);
   KosDynPrompt *prompt = NULL;
   KosTransferPlan *plan = NULL;
 
@@ -42,10 +42,10 @@ KOS_OP_HANDLER(POP_SHIFT) {
   /* PC already advanced: we are post-INSN, so resume will run instruction at
    * prompt_pop_pc+1 (first instr after POP_PROMPT). */
   SAYF("[POP_SHIFT] pre-pop: frame=%p stack=%p len=%zu (pc already advanced to %u)",
-       (void *) CURRENT_FRAME(ctx),
+       (void *) KosEvalState_FRAME(es),
        (void *) KosEvalState_StackHead(es),
        KosEvalState_StackLen(es),
-       (unsigned) CURRENT_PC(ctx));
+       (unsigned) KosEvalState_GetFramePc(es));
   result = KosEvalState_StackPopRef(es);
   if (! result) {
     SAY("[eval] POP_SHIFT pop result failed (stack underrun)");
@@ -54,7 +54,7 @@ KOS_OP_HANDLER(POP_SHIFT) {
 
   /* acting_pc is POP_SHIFT; find SHIFT extent by its pop_pc. */
   {
-    uint32_t pop_pc = CURRENT_ACTING_PC(ctx);
+    uint32_t pop_pc = KosEvalState_GetActingPc(es);
     eid = kos_extent_find_by_pop_pc((PyObject *) code, pop_pc, KOS_EXT_SHIFT);
   }
   if (eid == KOS_EXTENT_NONE) {

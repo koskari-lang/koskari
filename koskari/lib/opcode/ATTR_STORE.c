@@ -18,8 +18,7 @@
 */
 
 KOS_OP_HANDLER(ATTR_STORE) {
-  KosContext *ctx = KosEvalState_CONTEXT(es);
-  PyObject *name = get_name_from_insn(CURRENT_CODE(ctx), insn);
+  PyObject *name = get_name_from_insn(KosEvalState_CurrentCode(es), insn);
   if (! name)
     return KOS_OP_POST_ERR();
   PyObject *val = KosEvalState_StackPopRef(es);

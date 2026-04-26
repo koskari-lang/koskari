@@ -21,8 +21,7 @@
    Unbound fn: fn(obj, *args). Bound/other: callable(*args).
 */
 KOS_OP_HANDLER(CALL_FAST_ATTR) {
-  KosContext *ctx = KosEvalState_CONTEXT(es);
-  KosCode *code = CURRENT_CODE(ctx);
+  KosCode *code = KosEvalState_CurrentCode(es);
   KosExtra row = KosCode_GetExtra(code, KosOp_ARG(insn));
   uint32_t slot_idx = row.a0;
   uint32_t attr_cpool_idx = row.a1;
@@ -32,7 +31,7 @@ KOS_OP_HANDLER(CALL_FAST_ATTR) {
   if (! attr_name)
     return KOS_OP_POST_ERR();
 
-  PyObject *ns = CURRENT_NS(ctx);
+  PyObject *ns = CURRENT_NS();
   if (! ns) {
     PyErr_SetString(PyExc_RuntimeError, "CALL_FAST_ATTR on NULL namespace");
     return KOS_OP_POST_ERR();
@@ -82,7 +81,7 @@ KOS_OP_HANDLER(CALL_FAST_ATTR) {
     int r = KosEvalState_Call(es, out_ev, resolved, args, nargs, NULL, 0);
     KosStackSteal_Free(&steal);
     Py_DECREF(resolved);
-    return kos_op_outcome_from_call_int(ctx, r);
+    return kos_op_outcome_from_call_int(es, r);
   }
 
   PyObject *result;

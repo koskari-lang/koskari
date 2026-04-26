@@ -20,12 +20,11 @@
 */
 
 KOS_OP_HANDLER(PUSH_LOOP) {
-  KosContext *ctx = KosEvalState_CONTEXT(es);
-  uint32_t continue_pc = CURRENT_PC(ctx);  /* already advanced by drive loop */
+  uint32_t continue_pc = KosEvalState_GetFramePc(es);  /* next insn; fetch advanced */
 
   /* Derive break target from the extent table (pop_pc + 1) */
-  KosCode *code = CURRENT_CODE(ctx);
-  uint32_t pc = CURRENT_ACTING_PC(ctx);
+  KosCode *code = KosEvalState_CurrentCode(es);
+  uint32_t pc = KosEvalState_GetActingPc(es);
   uint32_t eid = kos_extent_find((PyObject *) code, pc, KOS_EXT_LOOP);
   if (eid == KOS_EXTENT_NONE) {
     PyErr_SetString(PyExc_RuntimeError,

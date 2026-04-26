@@ -123,7 +123,7 @@ int kos_dyn_yield_from_deliver_inner_yield(
 
   KosContext *ctx = KosEvalState_CONTEXT(es);
   PyObject *payload = KosEvent_PAYLOAD(out_ev);
-  KosDynFrame *frame = KosContext_FRAME_TOP(ctx);
+  KosDynFrame *frame = KosEvalState_FRAME(es);
   PyObject *const *tos;
 
   if (! frame || ! payload) {
@@ -146,7 +146,10 @@ int kos_dyn_yield_from_deliver_inner_yield(
   }
 
   KosDynYieldFrom_PHASE_SET(yf, KOS_YF_PHASE_EXPECT_SEND);
-  KosDynFrame_PC(frame) = KosDynFrame_ACTING_PC(frame);
+  if (KosEvalState_SetFramePc(es, KosEvalState_GetActingPc(es)) < 0) {
+    KosEvalState_SyncFromContext(es);
+    return -1;
+  }
 
   tos = KosEvalState_StackTailPtr(es, 1);
   if (! tos) {
@@ -172,7 +175,6 @@ int kos_dyn_yield_from_deliver_inner_yield(
 int kos_dyn_yield_from_deliver_inner_return(
     KosEvalState *es, KosDynYieldFrom *yf, KosEvent *out_ev) {
 
-  KosContext *ctx = KosEvalState_CONTEXT(es);
   PyObject *val = KosEvent_PAYLOAD(out_ev);
   KosDynFrame *df;
   KosCode *code;
@@ -192,15 +194,18 @@ int kos_dyn_yield_from_deliver_inner_return(
     return -1;
   }
 
-  df = KosContext_FRAME_TOP(ctx);
+  df = KosEvalState_FRAME(es);
 
   delegate_agen = (KosPyAsyncGen *) KosDynYieldFrom_DELEGATE(yf);
   if (delegate_agen)
     delegate_agen->in_progress = 0;
 
   code = df ? KosDynFrame_CODE(df) : NULL;
-  if (df && code && KosDynFrame_ACTING_PC(df) + 1u < KosCode_CODE_LEN(code)) {
-    KosDynFrame_PC(df) = KosDynFrame_ACTING_PC(df) + 1u;
+  if (df && code && KosEvalState_GetActingPc(es) + 1u < KosCode_CODE_LEN(code)) {
+    if (KosEvalState_SetFramePc(es, KosEvalState_GetActingPc(es) + 1u) < 0) {
+      KosEvalState_SyncFromContext(es);
+      return -1;
+    }
   }
 
   kos_dyn_pop_yield_from(es, yf);

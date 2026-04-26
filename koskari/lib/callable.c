@@ -17,9 +17,6 @@
 #include "lib.h"
 
 
-#define CURRENT_FRAME(ctx)  KosContext_FRAME_TOP(ctx)
-
-
 /* === Helpers === */
 
 
@@ -67,9 +64,8 @@ static int get_effective_wants_frame(PyObject *callable, PyTypeObject *typ) {
 static int do_frame_prep(KosEvalState *es, PyObject *callable, PyTypeObject *typ,
                          int tail_call) {
 
-  KosContext *ctx = KosEvalState_CONTEXT(es);
   int wants = get_effective_wants_frame(callable, typ);
-  KosDynFrame *frame = CURRENT_FRAME(ctx);
+  KosDynFrame *frame = KosEvalState_FRAME(es);
   KosDynNode *parent = KosDynNode_PARENT((KosDynNode *) frame);
 
   if (wants && tail_call) {
@@ -157,7 +153,7 @@ int KosEvalState_Call(KosEvalState *es, KosEvent *out_ev,
 
   if (! KosCallable_Check(callable)) {
     if (tail_call) {
-      KosDynFrame *frame = CURRENT_FRAME(ctx);
+      KosDynFrame *frame = KosEvalState_FRAME(es);
       KosDynNode *parent = KosDynNode_PARENT((KosDynNode *) frame);
       if (parent && kos_dyn_pop_frame(es) < 0)
         return -1;
@@ -199,7 +195,7 @@ int KosEvalState_CallArgs(
 
   if (! KosCallable_Check(callable)) {
     if (tail_call) {
-      KosDynFrame *frame = CURRENT_FRAME(ctx);
+      KosDynFrame *frame = KosEvalState_FRAME(es);
       KosDynNode *parent = KosDynNode_PARENT((KosDynNode *) frame);
       if (parent && kos_dyn_pop_frame(es) < 0)
         return -1;
@@ -249,7 +245,7 @@ int KosEvalState_CallNoArgs(KosEvalState *es, KosEvent *out_ev,
 
   if (! KosCallable_Check(callable)) {
     if (tail_call) {
-      KosDynFrame *frame = CURRENT_FRAME(ctx);
+      KosDynFrame *frame = KosEvalState_FRAME(es);
       KosDynNode *parent = KosDynNode_PARENT((KosDynNode *) frame);
       if (parent && kos_dyn_pop_frame(es) < 0)
         return -1;

@@ -70,7 +70,7 @@ KosDynForeach *kos_dyn_find_awaiting_foreach(KosEvalState *es) {
   }
 
   {
-    KosDynFrame *cf = KosContext_FRAME_TOP(ctx);
+    KosDynFrame *cf = KosEvalState_FRAME(es);
     KosDynNode *n;
     if (! cf)
       return NULL;
@@ -104,7 +104,7 @@ KosDynNext *kos_dyn_find_next_above_frame(KosEvalState *es) {
    frame: FRAME -> GEN -> NEXT.
    */
   {
-    KosDynFrame *cf = KosContext_FRAME_TOP(ctx);
+    KosDynFrame *cf = KosEvalState_FRAME(es);
     KosDynNode *n;
     if (! cf)
       return NULL;
@@ -246,7 +246,6 @@ int kos_dyn_foreach_deliver_yield_kos_agen(
 int kos_dyn_foreach_deliver_return_kos_agen(
     KosEvalState *es, KosDynForeach *fe, struct KosEvent *out_ev) {
 
-  KosContext *ctx = KosEvalState_CONTEXT(es);
   PyObject *val = KosEvent_PAYLOAD(out_ev);
   KosPyAsyncGen *agen;
 
@@ -261,7 +260,11 @@ int kos_dyn_foreach_deliver_return_kos_agen(
   agen->in_progress = 0;
 
   KosDynForeach_EXHAUSTED(fe) = 1;
-  KosDynFrame_PC(KosContext_FRAME_TOP(ctx)) = KosDynForeach_ITER_NEXT_ELSE_PC(fe);
+  if (KosEvalState_SetFramePc(es, KosDynForeach_ITER_NEXT_ELSE_PC(fe)) < 0) {
+    Py_DECREF(val);
+    KosEvalState_SyncFromContext(es);
+    return -1;
+  }
   KosDynForeach_ITER_STEP_PHASE(fe) = KOS_FOREACH_ITER_STEP_IDLE;
 
   Py_DECREF(val);

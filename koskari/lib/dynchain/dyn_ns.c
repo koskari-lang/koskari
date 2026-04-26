@@ -52,14 +52,13 @@ static void kos_dynns_free(KosDynNs *ns_node) {
    Restore frame ns from saved_ns during uninstall (PUSH_NS / POP_NS).
 */
 void kos_dyn_ns_unwind(KosEvalState *es, KosDynNs *node) {
-  KosContext *ctx = KosEvalState_CONTEXT(es);
   if (! node)
     return;
-  if (KosContext_FRAME_TOP(ctx)) {
+  if (KosEvalState_FRAME(es)) {
     PyObject *prior = KosDynNs_SAVED_NS(node);
     Py_INCREF(prior);
-    Py_DECREF(KosDynFrame_NS(KosContext_FRAME_TOP(ctx)));
-    KosDynFrame_NS(KosContext_FRAME_TOP(ctx)) = prior;
+    Py_DECREF(KosDynFrame_NS(KosEvalState_FRAME(es)));
+    KosDynFrame_NS(KosEvalState_FRAME(es)) = prior;
   }
   KosEvalState_SyncFromContext(es);
 }

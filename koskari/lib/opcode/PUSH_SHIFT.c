@@ -28,7 +28,7 @@ KOS_OP_HANDLER(PUSH_SHIFT) {
   uint32_t shift_body_pc;
   KosTransferPlan *plan = NULL;
 
-  if (get_prompt_id_from_insn(CURRENT_CODE(ctx), insn, &prompt_id) < 0)
+  if (get_prompt_id_from_insn(KosEvalState_CurrentCode(es), insn, &prompt_id) < 0)
     return KOS_OP_POST_ERR();
 
   KosDynPrompt *prompt = kos_find_prompt(es, prompt_id);
@@ -43,20 +43,21 @@ KOS_OP_HANDLER(PUSH_SHIFT) {
     PyObject *wrapper = KosDynPrompt_PENDING_SHIFT_WRAPPER(prompt);
     KosDynPrompt_PENDING_SHIFT_WRAPPER(prompt) = NULL;
 
-    shift_body_pc = CURRENT_ACTING_PC(ctx) + 1;
+    shift_body_pc = KosEvalState_GetActingPc(es) + 1;
     if (kos_dyn_push_shift(es) < 0) {
       KosDynPrompt_PENDING_SHIFT_WRAPPER(prompt) = wrapper;
       return KOS_OP_POST_ERR();
     }
 
-    CURRENT_PC(ctx) = shift_body_pc;
+    if (KosEvalState_SetFramePc(es, shift_body_pc) < 0)
+      return KOS_OP_POST_ERR();
     return kos_op_outcome_from_int_step(push_result(es, wrapper));
   }
 
   /* Already at prompt: capture, push shift node, done */
   if (KosContext_DYN_TOP(ctx) == (KosDynNode *) prompt) {
-    resume_pc = kos_shift_ic_for((PyObject *) CURRENT_CODE(ctx),
-                                 CURRENT_ACTING_PC(ctx));
+    resume_pc = kos_shift_ic_for((PyObject *) KosEvalState_CurrentCode(es),
+                                 KosEvalState_GetActingPc(es));
     if (resume_pc == KOS_EXTENT_NONE) {
       PyErr_SetString(PyExc_RuntimeError, "PUSH_SHIFT: no SHIFT extent at pc");
       return KOS_OP_POST_ERR();
@@ -70,19 +71,20 @@ KOS_OP_HANDLER(PUSH_SHIFT) {
       return KOS_OP_POST_ERR();
     }
 
-    shift_body_pc = CURRENT_ACTING_PC(ctx) + 1;
+    shift_body_pc = KosEvalState_GetActingPc(es) + 1;
     if (kos_dyn_push_shift(es) < 0) {
       Py_DECREF(wrapper);
       return KOS_OP_POST_ERR();
     }
 
-    CURRENT_PC(ctx) = shift_body_pc;
+    if (KosEvalState_SetFramePc(es, shift_body_pc) < 0)
+      return KOS_OP_POST_ERR();
     return kos_op_outcome_from_int_step(push_result(es, wrapper));
   }
 
   /* Need to unwind: build plan, capture, set continuation on plan, roll back PC */
-  resume_pc = kos_shift_ic_for((PyObject *) CURRENT_CODE(ctx),
-                               CURRENT_ACTING_PC(ctx));
+  resume_pc = kos_shift_ic_for((PyObject *) KosEvalState_CurrentCode(es),
+                               KosEvalState_GetActingPc(es));
   if (resume_pc == KOS_EXTENT_NONE) {
     PyErr_SetString(PyExc_RuntimeError, "PUSH_SHIFT: no SHIFT extent at pc");
     return KOS_OP_POST_ERR();
@@ -117,6 +119,7 @@ KOS_OP_HANDLER(PUSH_SHIFT) {
   KosContext_FLAGS(ctx) |= KOS_CTX_IN_TRANSFER;
 
   /* Roll back PC so we re-enter PUSH_SHIFT after plan completes */
-  CURRENT_PC(ctx) = KosDynFrame_ACTING_PC(CURRENT_FRAME(ctx));
+  if (KosEvalState_SetFramePc(es, KosEvalState_GetActingPc(es)) < 0)
+    return KOS_OP_POST_ERR();
   return KOS_OP_PROLOGUE();
 }

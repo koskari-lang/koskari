@@ -31,9 +31,6 @@
 #include "debug.h"
 
 
-#define CURRENT_FRAME(ctx)  KosContext_FRAME_TOP(ctx)
-
-
 static int kos_expression_wants_frame(PyObject *callable) {
 
   KosCode *code = (KosCode *) KosExpression_CODE(callable);
@@ -192,12 +189,15 @@ static int kos_install_expression(
     }
   }
 
-  KosDynFrame *frame = CURRENT_FRAME(ctx);
+  KosEvalState es;
+  KosEvalState_Init(&es, ctx);
+  KosDynFrame *frame = KosEvalState_FRAME(&es);
   PyObject *ns = KosExpression_NS(callable);
   Py_INCREF(ns);
   Py_XDECREF(KosDynFrame_NS(frame));
   KosDynFrame_NS(frame) = ns;
   KosDynFrame_CODE(frame) = code;
+  KosEvalState_SyncFromContext(&es);
 
   return 0;
 }
@@ -235,10 +235,13 @@ static int kos_install_function(
     (void) out_ev;
     return 0;
   }
-  KosDynFrame *frame = CURRENT_FRAME(ctx);
+  KosEvalState es;
+  KosEvalState_Init(&es, ctx);
+  KosDynFrame *frame = KosEvalState_FRAME(&es);
   Py_XDECREF(KosDynFrame_NS(frame));
   KosDynFrame_NS(frame) = frame_ns;
   KosDynFrame_CODE(frame) = code;
+  KosEvalState_SyncFromContext(&es);
   (void) out_ev;
   return 0;
 }
@@ -274,10 +277,13 @@ static int kos_vinstall_function(
     (void) out_ev;
     return 0;
   }
-  KosDynFrame *frame = CURRENT_FRAME(ctx);
+  KosEvalState es;
+  KosEvalState_Init(&es, ctx);
+  KosDynFrame *frame = KosEvalState_FRAME(&es);
   Py_XDECREF(KosDynFrame_NS(frame));
   KosDynFrame_NS(frame) = frame_ns;
   KosDynFrame_CODE(frame) = code;
+  KosEvalState_SyncFromContext(&es);
   (void) out_ev;
   return 0;
 }

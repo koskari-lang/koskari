@@ -46,7 +46,7 @@ KOS_OP_HANDLER(YIELD) {
   /* Frame has parent (not GEN): return into parent in same loop
      (CALL return or async gen step).  Parent is GEN => top-level yield. */
   // {
-  //   KosDynNode *parent = KosDynNode_PARENT(CURRENT_FRAME(ctx));
+  //   KosDynNode *parent = KosDynNode_PARENT(KosEvalState_FRAME(es));
   //   if (parent != NULL && ! KosDynNode_IS_GEN(parent)) {
   //     int was_pending_ctx = (KosContext_PENDING_AGEN(ctx) != NULL);
   //     KosPyAsyncGen *agen = was_pending_ctx ? (KosPyAsyncGen *) KosContext_PENDING_AGEN(ctx) : NULL;

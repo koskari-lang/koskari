@@ -19,8 +19,7 @@
 */
 
 KOS_OP_HANDLER(PARAM) {
-  KosContext *ctx = KosEvalState_CONTEXT(es);
-  PyObject *key = KosCode_GetConstant((PyObject *) CURRENT_CODE(ctx),
+  PyObject *key = KosCode_GetConstant((PyObject *) KosEvalState_CurrentCode(es),
                                        KosOp_ARG(insn));
   if (! key)
     return KOS_OP_POST_ERR();

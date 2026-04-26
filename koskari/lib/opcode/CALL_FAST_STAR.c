@@ -39,13 +39,12 @@ static int ensure_tuple_fast_star(PyObject **val) {
 
 
 KOS_OP_HANDLER(CALL_FAST_STAR) {
-  KosContext *ctx = KosEvalState_CONTEXT(es);
-  KosCode *code = CURRENT_CODE(ctx);
+  KosCode *code = KosEvalState_CurrentCode(es);
   KosExtra row = KosCode_GetExtra(code, KosOp_ARG(insn));
   uint32_t slot_idx = row.a0;
   unsigned opa = row.a1;
 
-  PyObject *ns = CURRENT_NS(ctx);
+  PyObject *ns = CURRENT_NS();
   if (! ns) {
     PyErr_SetString(PyExc_RuntimeError, "CALL_FAST_STAR on NULL namespace");
     return KOS_OP_POST_ERR();
@@ -118,7 +117,7 @@ KOS_OP_HANDLER(CALL_FAST_STAR) {
   Py_DECREF(callable);
   Py_DECREF(pos);
   Py_XDECREF(kwd);
-  return kos_op_outcome_from_call_int(ctx, res);
+  return kos_op_outcome_from_call_int(es, res);
 }
 
 

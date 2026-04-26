@@ -23,13 +23,12 @@
 */
 
 KOS_OP_HANDLER(PUSH_NS) {
-  KosContext *ctx = KosEvalState_CONTEXT(es);
-  KosCode *code = CURRENT_CODE(ctx);
+  KosCode *code = KosEvalState_CurrentCode(es);
   uint16_t eidx = (uint16_t) KosOp_ARG(insn);
   PyObject *nspec = NULL;
   PyObject *names = NULL;
   PyObject *const *args = NULL;
-  PyObject *parent = CURRENT_NS(ctx);
+  PyObject *parent = CURRENT_NS();
   PyObject *new_ns = NULL;
   KosDynNs *ns_node = NULL;
   int opa = 0;
@@ -131,8 +130,8 @@ KOS_OP_HANDLER(PUSH_NS) {
     return KOS_OP_POST_ERR();
   }
 
-  Py_DECREF(CURRENT_NS(ctx));
-  CURRENT_NS(ctx) = new_ns;
+  Py_DECREF(CURRENT_NS());
+  CURRENT_NS() = new_ns;
 
   (void) out_ev;
   return KOS_OP_RUN();

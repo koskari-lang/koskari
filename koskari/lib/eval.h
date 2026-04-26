@@ -435,20 +435,33 @@ struct KosContext {
     includes that step after recomputing frame_top/block).
   - KosContext remains the heap-allocated VM state owned by a coroutine,
     async generator, or continuation segment. It is authoritative for dyn_top,
-    frame_top, and related fields; KosEvalState caches frame/code for the hot
-    path and must stay aligned via Init/Sync.
+    frame_top, and block (cold storage). KosEvalState mirrors frame, code,
+    block, pc, and acting_pc for the hot path; Init/Sync reload from context
+    and frame. SetFramePc/SetActingPc dual-write es registers and the frame.
 */
 
 struct KosEvalState {
   KosContext *ctx;
   KosDynFrame *frame; /* cached top frame; maintained by Init/Sync */
   KosCode *code;      /* cached from frame */
+  KosStackBlock **block; /* mirror of ctx->block; non-owning */
+  uint32_t pc;        /* live next-instruction PC; dual-written to frame */
+  uint32_t acting_pc; /* live acting PC; dual-written to frame */
 };
 
 
 #define KosEvalState_CONTEXT(es) ((es)->ctx)
 #define KosEvalState_FRAME(es) ((es)->frame)
 #define KosEvalState_CODE(es) ((es)->code)
+#define KosEvalState_BLOCK(es) ((es)->block)
+
+/**
+  Operand stack head block for logging; NULL when no stack.
+*/
+#define KosEvalState_StackHead(es) \
+  ((KosEvalState_BLOCK(es) && *(KosEvalState_BLOCK(es))) \
+   ? (*(KosEvalState_BLOCK(es))) \
+   : (KosStackBlock *) NULL)
 
 
 void KosEvalState_Init(KosEvalState *es, KosContext *ctx);

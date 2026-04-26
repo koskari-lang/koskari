@@ -20,14 +20,13 @@
 */
 
 KOS_OP_HANDLER(UNPACK_FAST) {
-  KosContext *ctx = KosEvalState_CONTEXT(es);
-  KosCode *code = CURRENT_CODE(ctx);
+  KosCode *code = KosEvalState_CurrentCode(es);
   KosExtra row = KosCode_GetExtra(code, KosOp_ARG(insn));
   size_t idx0 = (size_t) row.a0;
   size_t idx1 = (size_t) row.a1;
   (void) out_ev;
 
-  PyObject *ns = CURRENT_NS(ctx);
+  PyObject *ns = CURRENT_NS();
   if (! ns) {
     PyErr_SetString(PyExc_RuntimeError,
                     "UNPACK_FAST invoked on NULL namespace");

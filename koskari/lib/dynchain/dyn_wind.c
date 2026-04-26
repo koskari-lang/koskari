@@ -105,7 +105,6 @@ int kos_dyn_wind_wind(KosEvalState *es, KosDynWind *node) {
    kos_dyn_unwind, uninstall_handler.
 */
 int kos_dyn_wind_unwind(KosEvalState *es, KosDynWind *node) {
-  KosContext *ctx = KosEvalState_CONTEXT(es);
   if (! node || ! KosDynWind_ENTERED(node)) {
     KosEvalState_SyncFromContext(es);
     return 0;
@@ -115,8 +114,9 @@ int kos_dyn_wind_unwind(KosEvalState *es, KosDynWind *node) {
     /* No after-thunk: push stored body result and finish uninstall */
     PyObject *body_result = KosDynWind_BODY_RESULT(node);
     KosDynWind_BODY_RESULT(node) = NULL;
-    if ((KosContext_BLOCK(ctx) && *KosContext_BLOCK(ctx) ? *KosContext_BLOCK(ctx)
-                                                        : NULL)
+    if ((KosEvalState_BLOCK(es) && *KosEvalState_BLOCK(es)
+             ? *KosEvalState_BLOCK(es)
+             : NULL)
         && body_result) {
       if (KosEvalState_StackPushRef(es, body_result) < 0) {
         KosDynWind_BODY_RESULT(node) = body_result;
@@ -154,8 +154,9 @@ int kos_dyn_wind_unwind(KosEvalState *es, KosDynWind *node) {
 */
 static int kos_dyn_wind_on_control_returned(KosEvalState *es, KosDynWind *wind) {
   KosContext *ctx = KosEvalState_CONTEXT(es);
-  if (! (KosContext_BLOCK(ctx) && *KosContext_BLOCK(ctx) ? *KosContext_BLOCK(ctx)
-                                                         : NULL)) {
+  if (! (KosEvalState_BLOCK(es) && *KosEvalState_BLOCK(es)
+             ? *KosEvalState_BLOCK(es)
+             : NULL)) {
     KosEvalState_SyncFromContext(es);
     return 0;
   }

@@ -62,14 +62,13 @@ static void kos_dyncollect_free(KosDynCollect *col_node) {
    Restore frame ns from collector saved_ns on pop (matches kos_dyn_ns_unwind).
 */
 void kos_dyn_collect_unwind(KosEvalState *es, KosDynCollect *node) {
-  KosContext *ctx = KosEvalState_CONTEXT(es);
   if (! node)
     return;
-  if (KosContext_FRAME_TOP(ctx)) {
+  if (KosEvalState_FRAME(es)) {
     PyObject *prior = KosDynCollect_SAVED_NS(node);
     Py_INCREF(prior);
-    Py_DECREF(KosDynFrame_NS(KosContext_FRAME_TOP(ctx)));
-    KosDynFrame_NS(KosContext_FRAME_TOP(ctx)) = prior;
+    Py_DECREF(KosDynFrame_NS(KosEvalState_FRAME(es)));
+    KosDynFrame_NS(KosEvalState_FRAME(es)) = prior;
   }
   KosEvalState_SyncFromContext(es);
 }

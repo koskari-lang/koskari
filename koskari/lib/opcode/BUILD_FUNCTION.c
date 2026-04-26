@@ -21,7 +21,6 @@
 */
 
 KOS_OP_HANDLER(BUILD_FUNCTION) {
-  KosContext *ctx = KosEvalState_CONTEXT(es);
   unsigned opa = KosOp_ARG(insn);
   PyObject *fspec = KosEvalState_StackPopRef(es);
   if (! fspec)
@@ -36,7 +35,7 @@ KOS_OP_HANDLER(BUILD_FUNCTION) {
     }
   }
 
-  PyObject *parent_ns = CURRENT_NS(ctx);
+  PyObject *parent_ns = CURRENT_NS();
   PyObject *fn = KosFunction_New(fspec, defaults, parent_ns);
   Py_DECREF(fspec);
   Py_XDECREF(defaults);

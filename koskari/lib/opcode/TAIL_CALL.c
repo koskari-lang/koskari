@@ -23,7 +23,6 @@
 */
 
 KOS_OP_HANDLER(TAIL_CALL) {
-  KosContext *ctx = KosEvalState_CONTEXT(es);
   unsigned n = KosOp_ARG(insn);
   size_t count = (size_t)(n + 1);
 
@@ -39,5 +38,5 @@ KOS_OP_HANDLER(TAIL_CALL) {
                             (Py_ssize_t) n, NULL, 1);
 
   KosStackSteal_Free(&steal);
-  return kos_op_outcome_from_call_int(ctx, res);
+  return kos_op_outcome_from_call_int(es, res);
 }

@@ -24,7 +24,6 @@
 */
 
 KOS_OP_HANDLER(TAIL_CALL_NAMES) {
-  KosContext *ctx = KosEvalState_CONTEXT(es);
   unsigned opa = KosOp_ARG(insn);
   PyObject *names = KosEvalState_StackPeek(es);
   if (! names)
@@ -53,5 +52,5 @@ KOS_OP_HANDLER(TAIL_CALL_NAMES) {
                             npos, kwnames_arg, 1);
 
   KosStackSteal_Free(&steal);
-  return kos_op_outcome_from_call_int(ctx, res);
+  return kos_op_outcome_from_call_int(es, res);
 }

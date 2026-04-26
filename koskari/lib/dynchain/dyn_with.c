@@ -246,15 +246,11 @@ void kos_dyn_pop_with(KosEvalState *es, KosDynWith *node) {
 }
 
 
-#define CURRENT_FRAME(ctx)  KosContext_FRAME_TOP(ctx)
-#define CURRENT_PC(ctx)       KosDynFrame_PC(CURRENT_FRAME(ctx))
-
-
 /**
    Bind name in frame namespace for `as` targets.
 */
-static int frame_ns_store(KosContext *ctx, PyObject *name, PyObject *val) {
-  KosDynFrame *frame = CURRENT_FRAME(ctx);
+static int frame_ns_store(KosEvalState *es, PyObject *name, PyObject *val) {
+  KosDynFrame *frame = KosEvalState_FRAME(es);
   if (! frame)
     return -1;
   PyObject *ns = KosDynFrame_NS(frame);
@@ -271,13 +267,12 @@ static int frame_ns_store(KosContext *ctx, PyObject *name, PyObject *val) {
 */
 static int kos_dyn_with_on_enter_control_returned(KosEvalState *es, KosDynWith *with_node) {
 
-  KosContext *ctx = KosEvalState_CONTEXT(es);
   if (! with_node || KosDynWith_PHASE(with_node) != KOS_WITH_PHASE_PENDING_ENTER_AWAIT) {
     KosEvalState_SyncFromContext(es);
     return 0;
   }
 
-  if (! KosContext_FRAME_TOP(ctx)) {
+  if (! KosEvalState_FRAME(es)) {
     KosEvalState_SyncFromContext(es);
     return -1;
   }
@@ -291,7 +286,7 @@ static int kos_dyn_with_on_enter_control_returned(KosEvalState *es, KosDynWith *
 
     PyObject *name = KosDynWith_NAME(with_node);
     if (name && name != Py_None) {
-      if (frame_ns_store(ctx, name, result) < 0) {
+      if (frame_ns_store(es, name, result) < 0) {
         Py_DECREF(result);
         KosEvalState_SyncFromContext(es);
         return -1;
@@ -313,13 +308,12 @@ static int kos_dyn_with_on_enter_control_returned(KosEvalState *es, KosDynWith *
 static int kos_dyn_with_on_control_returned(KosEvalState *es, KosDynWith *with_node,
                                             int do_pop_node) {
 
-  KosContext *ctx = KosEvalState_CONTEXT(es);
   if (! with_node || KosDynWith_PHASE(with_node) != KOS_WITH_PHASE_PENDING_EXIT_AWAIT) {
     KosEvalState_SyncFromContext(es);
     return 0;
   }
 
-  if (! KosContext_FRAME_TOP(ctx)) {
+  if (! KosEvalState_FRAME(es)) {
     KosEvalState_SyncFromContext(es);
     return -1;
   }
@@ -346,8 +340,12 @@ static int kos_dyn_with_on_control_returned(KosEvalState *es, KosDynWith *with_n
     Py_XDECREF(typ);
     Py_XDECREF(val);
     Py_XDECREF(tb);
-    if (KosContext_FRAME_TOP(ctx))
-      KosDynFrame_PC(KosContext_FRAME_TOP(ctx)) = KosDynWith_RESUME_PC(with_node);
+    if (KosEvalState_FRAME(es)) {
+      if (KosEvalState_SetFramePc(es, KosDynWith_RESUME_PC(with_node)) < 0) {
+        KosEvalState_SyncFromContext(es);
+        return -1;
+      }
+    }
     if (do_pop_node) {
       kos_dyn_with_shot_after_exit_done(with_node);
       kos_dyn_pop_with(es, with_node);
@@ -379,8 +377,12 @@ static int kos_dyn_with_on_control_returned(KosEvalState *es, KosDynWith *with_n
     KosEvalState_SyncFromContext(es);
     return -1;
   }
-  if (KosContext_FRAME_TOP(ctx))
-    KosDynFrame_PC(KosContext_FRAME_TOP(ctx)) = KosDynWith_RESUME_PC(with_node);
+  if (KosEvalState_FRAME(es)) {
+    if (KosEvalState_SetFramePc(es, KosDynWith_RESUME_PC(with_node)) < 0) {
+      KosEvalState_SyncFromContext(es);
+      return -1;
+    }
+  }
   if (do_pop_node) {
     kos_dyn_with_shot_after_exit_done(with_node);
     kos_dyn_pop_with(es, with_node);
@@ -394,7 +396,6 @@ static int kos_dyn_with_on_control_returned(KosEvalState *es, KosDynWith *with_n
    INSTALL wind: sync __enter__ during transfer. Callers: kos_dyn_wind.
 */
 static int kos_dyn_dyn_with_wind(KosEvalState *es, KosDynWith *node, KosEvent *out_ev) {
-  KosContext *ctx = KosEvalState_CONTEXT(es);
   if (KosDynWith_SHOT(node) == KOS_DYN_WITH_SHOT_SINGLE_DONE) {
     KosEvalState_SyncFromContext(es);
     return 0;
@@ -420,7 +421,7 @@ static int kos_dyn_dyn_with_wind(KosEvalState *es, KosDynWith *node, KosEvent *o
 
     PyObject *name = KosDynWith_NAME(node);
     if (name && name != Py_None) {
-      if (frame_ns_store(ctx, name, result) < 0) {
+      if (frame_ns_store(es, name, result) < 0) {
         Py_DECREF(result);
         KosEvalState_SyncFromContext(es);
         return -1;
@@ -444,7 +445,6 @@ int kos_dyn_with_unwind(
     KosDynWith *node,
     KosEvent *out_ev) {
 
-  KosContext *ctx = KosEvalState_CONTEXT(es);
   if (KosDynWith_SHOT(node) == KOS_DYN_WITH_SHOT_SINGLE_DONE) {
     KosEvalState_SyncFromContext(es);
     return KOS_DYN_UNWIND_PROTOCOL_SKIPPED;
@@ -498,8 +498,9 @@ int kos_dyn_with_unwind(
     return -1;
   }
 
-  if (! (KosContext_BLOCK(ctx) && *KosContext_BLOCK(ctx) ? *KosContext_BLOCK(ctx)
-                                                         : NULL)) {
+  if (! (KosEvalState_BLOCK(es) && *KosEvalState_BLOCK(es)
+             ? *KosEvalState_BLOCK(es)
+             : NULL)) {
     Py_DECREF(typ);
     Py_DECREF(val);
     Py_DECREF(tb);
@@ -524,8 +525,12 @@ int kos_dyn_with_unwind(
     Py_DECREF(result);
     kos_dyn_with_shot_after_exit_done(node);
 
-    if (KosContext_FRAME_TOP(ctx))
-      KosDynFrame_PC(KosContext_FRAME_TOP(ctx)) = KosDynWith_RESUME_PC(node);
+    if (KosEvalState_FRAME(es)) {
+      if (KosEvalState_SetFramePc(es, KosDynWith_RESUME_PC(node)) < 0) {
+        KosEvalState_SyncFromContext(es);
+        return -1;
+      }
+    }
 
     if (KosEvalState_ParentStackPushRef(es, Py_None) < 0) {
       KosEvalState_SyncFromContext(es);
@@ -547,8 +552,12 @@ int kos_dyn_with_unwind(
   Py_DECREF(result);
   kos_dyn_with_shot_after_exit_done(node);
   if (! PyErr_Occurred()) {
-    if (KosContext_FRAME_TOP(ctx))
-      KosDynFrame_PC(KosContext_FRAME_TOP(ctx)) = KosDynWith_RESUME_PC(node);
+    if (KosEvalState_FRAME(es)) {
+      if (KosEvalState_SetFramePc(es, KosDynWith_RESUME_PC(node)) < 0) {
+        KosEvalState_SyncFromContext(es);
+        return -1;
+      }
+    }
     if (kos_dyn_with_post_unwind_deliver(es, node) < 0) {
       KosEvalState_SyncFromContext(es);
       return -1;
@@ -565,10 +574,9 @@ int kos_dyn_with_unwind(
 int finalize_provisional_with_enter(KosEvalState *es, PyObject *result,
                                     KosDynWith *with_node) {
 
-  KosContext *ctx = KosEvalState_CONTEXT(es);
   PyObject *name = KosDynWith_NAME(with_node);
   if (name && name != Py_None) {
-    if (frame_ns_store(ctx, name, result) < 0) {
+    if (frame_ns_store(es, name, result) < 0) {
       Py_DECREF(result);
       KosEvalState_SyncFromContext(es);
       return -1;

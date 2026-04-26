@@ -197,9 +197,15 @@ flowchart TD
 
 **`KOS_EVAL_PREPARE_NEXT_INSN`** (macro in `eval.c`) writes the current instruction pointer into `*insn` and updates the frame: load `code` and `pc`, optional **`SAYF`** trace, set `acting_pc`, pre-advance `pc`, assign `*insn`. It assumes a valid frame, in-range `pc`, and valid bytecode (no defensive checks).
 
-There is no separate dispatch-context struct; the hot path keeps a local `KosOp *insn`. **eval_phase_post_opcode** does not take insn or a dispatch bundle.
+Opcode handlers receive **`KosEvalState *es`** (see **`koskari/lib/eval.h`**): cached **`frame`**, **`code`**, operand-stack **`block`**, and live **`pc`** / **`acting_pc`** registers for the eval slice, aligned with **`KosEvalState_CONTEXT(es)`** via **`KosEvalState_SyncFromContext`** / **`KosEvalState_RefreshDynCaches`**. There is no separate per-opcode struct beyond handler parameters; the hot path still keeps a local **`KosOp *insn`**. **eval_phase_post_opcode** does not take insn or a dispatch bundle.
 
 PC is rolled back for WITH enter/exit suspend so the same instruction is retried on resume.
+
+#### 2.4.1 Flattened Koskari async generator attach (NEXT / ITER_NEXT / YIELD_FROM)
+
+When a **KosPyAsyncGen** is stepped **inside** the same **`koskari_eval`** invocation (not from Python **`__anext__`** alone), **`koskari/lib/eval.c`** installs its active dyn chain onto the **consumer** context through **`attach_koskari_gen_core(es, …)`** (static). That helper clears **`agen->ctx`**’s **`dyn_top`** / **`frame_top`**, then calls **`kos_dyn_gen_install(es, gen)`**, which updates **`KosEvalState_CONTEXT(es)`**’s chain and runs **`KosEvalState_RefreshDynCaches(es)`** (recompute **`frame_top`** / **`block`** on the context, then **`KosEvalState_SyncFromContext(es)`**).
+
+The **same** live **`es`** passed into the opcode must be forwarded to the attach path. Wrappers **`op_attach_koskari_agen_frame`** (**NEXT**), **`op_attach_koskari_agen_frame_for_iter_next`** (**ITER_NEXT**), and **`op_attach_koskari_agen_frame_for_yield_from`** (**YIELD_FROM** kos-async-gen driver) all take **`KosEvalState *es`** first so **`kos_dyn_gen_install`** refreshes the interpreter’s eval-state mirrors—not a temporary **`KosEvalState`** built only for install.
 
 ### 2.5 Phase 5: Opcode Dispatch
 

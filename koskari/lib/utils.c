@@ -18,9 +18,6 @@
 #include "hints.h"
 
 
-#define CURRENT_FRAME(ctx)  KosContext_FRAME_TOP(ctx)
-
-
 /* === Constantly callable type === */
 
 
@@ -126,7 +123,7 @@ static int apply_native_handler(
   if (kwds == Py_None)
     kwds = NULL;
 
-  KosDynFrame_NATIVE_HANDLER(CURRENT_FRAME(ctx)) = NULL;
+  KosDynFrame_NATIVE_HANDLER(KosEvalState_FRAME(&es)) = NULL;
   PyObject *result = PyObject_Call(fn, seq_args, kwds);
   Py_DECREF(fn);
   Py_DECREF(seq_args);
@@ -138,7 +135,7 @@ static int apply_native_handler(
   KosDynFrame *detached = NULL;
   KosTransitionReq treq = {
     .kind = KOS_TRANS_WALK_RETURN_TO_FRAME,
-    .target_frame = CURRENT_FRAME(ctx),
+    .target_frame = KosEvalState_FRAME(&es),
     .payload = result,
   };
   KosTransitionResult tres = {0};
@@ -215,24 +212,22 @@ static int kos_install_apply(
   }
 
   /* Non-flattening: configure frame with native handler, fn, seq_args, kwds */
-  KosDynFrame *frame = CURRENT_FRAME(ctx);
+  KosEvalState es;
+  KosEvalState_Init(&es, ctx);
+  KosDynFrame *frame = KosEvalState_FRAME(&es);
   typedef int (*NativeHandlerFn)(void *, void *, int, PyObject *);
   KosDynFrame_NATIVE_HANDLER(frame) = (NativeHandlerFn) apply_native_handler;
 
-  {
-    KosEvalState es;
-    KosEvalState_Init(&es, ctx);
-    if (KosEvalState_StackPushRef(&es, fn) < 0
-        || KosEvalState_StackPushRef(&es, seq_args) < 0) {
-      Py_DECREF(seq_args);
-      return -1;
-    }
-    PyObject *kwds_push = kwds ? kwds : Py_None;
-    Py_INCREF(kwds_push);
-    if (KosEvalState_StackPushRef(&es, kwds_push) < 0) {
-      Py_DECREF(kwds_push);
-      return -1;
-    }
+  if (KosEvalState_StackPushRef(&es, fn) < 0
+      || KosEvalState_StackPushRef(&es, seq_args) < 0) {
+    Py_DECREF(seq_args);
+    return -1;
+  }
+  PyObject *kwds_push = kwds ? kwds : Py_None;
+  Py_INCREF(kwds_push);
+  if (KosEvalState_StackPushRef(&es, kwds_push) < 0) {
+    Py_DECREF(kwds_push);
+    return -1;
   }
   return 0;
 }

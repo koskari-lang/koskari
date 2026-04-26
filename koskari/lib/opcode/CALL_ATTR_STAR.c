@@ -40,8 +40,7 @@ static int ensure_tuple_attr_star(PyObject **val) {
 
 
 KOS_OP_HANDLER(CALL_ATTR_STAR) {
-  KosContext *ctx = KosEvalState_CONTEXT(es);
-  KosCode *code = CURRENT_CODE(ctx);
+  KosCode *code = KosEvalState_CurrentCode(es);
   KosExtra row = KosCode_GetExtra(code, KosOp_ARG(insn));
   uint32_t attr_cpool_idx = row.a0;
   unsigned opa = row.a1;
@@ -157,7 +156,7 @@ KOS_OP_HANDLER(CALL_ATTR_STAR) {
   Py_DECREF(resolved);
   Py_DECREF(args_for_call);
   Py_XDECREF(kwd);
-  return kos_op_outcome_from_call_int(ctx, res);
+  return kos_op_outcome_from_call_int(es, res);
 }
 
 

@@ -21,8 +21,7 @@
 */
 
 KOS_OP_HANDLER(CALL_VAR_NAMES) {
-  KosContext *ctx = KosEvalState_CONTEXT(es);
-  KosCode *code = CURRENT_CODE(ctx);
+  KosCode *code = KosEvalState_CurrentCode(es);
   KosExtra row = KosCode_GetExtra(code, KosOp_ARG(insn));
   uint32_t name_cpool_idx = row.a0;
   uint32_t names_cpool_idx = row.a1;
@@ -32,7 +31,7 @@ KOS_OP_HANDLER(CALL_VAR_NAMES) {
   if (! name)
     return KOS_OP_POST_ERR();
 
-  PyObject *callable = frame_ns_deref(ctx, name);
+  PyObject *callable = frame_ns_deref(es, name);
   if (! callable)
     return KOS_OP_POST_ERR();
 
@@ -68,7 +67,7 @@ KOS_OP_HANDLER(CALL_VAR_NAMES) {
                             npos, names, 0);
     Py_DECREF(callable);
     KosStackSteal_Free(&steal);
-    return kos_op_outcome_from_call_int(ctx, r);
+    return kos_op_outcome_from_call_int(es, r);
   }
 
   PyObject *result = PyObject_Vectorcall(callable, ptr, (size_t) npos,

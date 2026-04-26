@@ -21,13 +21,12 @@
 */
 
 KOS_OP_HANDLER(CALL_FAST) {
-  KosContext *ctx = KosEvalState_CONTEXT(es);
-  KosCode *code = CURRENT_CODE(ctx);
+  KosCode *code = KosEvalState_CurrentCode(es);
   KosExtra row = KosCode_GetExtra(code, KosOp_ARG(insn));
   uint32_t slot_idx = row.a0;
   unsigned n = row.a1;
 
-  PyObject *ns = CURRENT_NS(ctx);
+  PyObject *ns = CURRENT_NS();
   if (! ns) {
     PyErr_SetString(PyExc_RuntimeError, "CALL_FAST on NULL namespace");
     return KOS_OP_POST_ERR();
@@ -52,7 +51,7 @@ KOS_OP_HANDLER(CALL_FAST) {
                             (Py_ssize_t) n, NULL, 0);
     Py_DECREF(callable);
     KosStackSteal_Free(&steal);
-    return kos_op_outcome_from_call_int(ctx, r);
+    return kos_op_outcome_from_call_int(es, r);
   }
 
   PyObject *result = NULL;

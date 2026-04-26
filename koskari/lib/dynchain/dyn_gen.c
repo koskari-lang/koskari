@@ -120,7 +120,7 @@ int kos_dyn_gen_install(KosEvalState *es, KosDynGen *gen) {
        KosContext_DYN_TOP(ctx)
            ? kos_dynnode_kind_name(KosDynNode_KIND(KosContext_DYN_TOP(ctx)))
            : "NULL",
-       (void *) KosContext_FRAME_TOP(ctx));
+       (void *) KosEvalState_FRAME(es));
   for (n = KosContext_DYN_TOP(ctx); n; n = KosDynNode_PARENT(n))
     SAYF("%p %s -> ", (void *) n, kos_dynnode_kind_name(KosDynNode_KIND(n)));
   SAY("(end)");

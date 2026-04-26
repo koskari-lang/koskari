@@ -27,10 +27,10 @@ KOS_OP_HANDLER(RETURN) {
   /* === Phase 1: Pop return value from stack ===
      opa=0 => Py_None, opa=1 => single value, opa=N => tuple of N values */
   SAYF("[RETURN] opa=%u frame=%p stack=%p len=%zu (pc advanced to %u)",
-       opa, (void *) CURRENT_FRAME(ctx),
+       opa, (void *) KosEvalState_FRAME(es),
        (void *) KosEvalState_StackHead(es),
        KosEvalState_StackLen(es),
-       (unsigned) CURRENT_PC(ctx));
+       (unsigned) KosEvalState_GetFramePc(es));
 
   if (opa == 0) {
     val = Py_None;
@@ -73,13 +73,13 @@ KOS_OP_HANDLER(RETURN) {
      etc), detach our frame, then deliver the value to the parent.
      Skip when parent is GEN (generator boundary): treat as top-level return. */
   {
-    KosDynNode *parent = KosDynNode_PARENT(CURRENT_FRAME(ctx));
+    KosDynNode *parent = KosDynNode_PARENT(KosEvalState_FRAME(es));
     if (parent != NULL && ! KosDynNode_IS_GEN(parent)) {
 
     /* Walk RETURN to frame (handle phase: FINALLY may consume and run). */
     KosTransitionReq treq = {
       .kind = KOS_TRANS_WALK_RETURN_TO_FRAME,
-      .target_frame = CURRENT_FRAME(ctx),
+      .target_frame = KosEvalState_FRAME(es),
       .payload = val,
     };
     KosTransitionResult tres = {0};
@@ -120,7 +120,7 @@ KOS_OP_HANDLER(RETURN) {
   {
     KosTransitionReq treq = {
       .kind = KOS_TRANS_WALK_RETURN_TO_FRAME,
-      .target_frame = CURRENT_FRAME(ctx),
+      .target_frame = KosEvalState_FRAME(es),
       .payload = val,
     };
     KosTransitionResult tres = {0};

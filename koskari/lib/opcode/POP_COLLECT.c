@@ -33,11 +33,11 @@ KOS_OP_HANDLER(POP_COLLECT) {
 
   KosDynCollect *col_node = (KosDynCollect *) KosContext_DYN_TOP(ctx);
   PyObject *prior = KosDynCollect_SAVED_NS(col_node);
-  PyObject *collector = CURRENT_NS(ctx);
+  PyObject *collector = CURRENT_NS();
   Py_INCREF(prior);
   Py_INCREF(collector);
-  Py_DECREF(CURRENT_NS(ctx));
-  CURRENT_NS(ctx) = prior;
+  Py_DECREF(CURRENT_NS());
+  CURRENT_NS() = prior;
 
   kos_dyn_pop_collect(es, col_node);
 

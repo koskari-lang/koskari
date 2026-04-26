@@ -33,8 +33,7 @@
 */
 
 KOS_OP_HANDLER(IMPORT) {
-  KosContext *ctx = KosEvalState_CONTEXT(es);
-  PyObject *name = get_name_from_insn(CURRENT_CODE(ctx), insn);
+  PyObject *name = get_name_from_insn(KosEvalState_CurrentCode(es), insn);
   if (! name)
     return KOS_OP_POST_ERR();
 

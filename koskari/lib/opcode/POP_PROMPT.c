@@ -26,7 +26,7 @@ KOS_OP_HANDLER(POP_PROMPT) {
   SAYF("[eval] POP_PROMPT delim=%p dyn_top=%p IS_PROMPT=%d frame=%p stack_len=%zu\n",
        (void *) ret_delim, (void *) KosContext_DYN_TOP(ctx),
        (KosContext_DYN_TOP(ctx) && KosDynNode_IS_PROMPT(KosContext_DYN_TOP(ctx))) ? 1 : 0,
-       (void *) CURRENT_FRAME(ctx),
+       (void *) KosEvalState_FRAME(es),
        KosEvalState_StackLen(es));
 
   if (ret_delim) {
@@ -96,7 +96,7 @@ KOS_OP_HANDLER(POP_PROMPT) {
     return KOS_OP_POST_ERR();
   }
   SAYF("[eval] POP_PROMPT (normal): popping prompt, frame=%p stack_len=%zu",
-       (void *) CURRENT_FRAME(ctx),
+       (void *) KosEvalState_FRAME(es),
        KosEvalState_StackLen(es));
 
   PyObject *result = KosEvalState_StackPopRef(es);
@@ -111,7 +111,7 @@ KOS_OP_HANDLER(POP_PROMPT) {
   }
 
   SAYF("[eval] POP_PROMPT (normal): after pop, frame=%p stack_len=%zu",
-       (void *) CURRENT_FRAME(ctx),
+       (void *) KosEvalState_FRAME(es),
        KosEvalState_StackLen(es));
 
   if (result) {

@@ -20,7 +20,6 @@
 */
 
 KOS_OP_HANDLER(CALL) {
-  KosContext *ctx = KosEvalState_CONTEXT(es);
   unsigned n = KosOp_ARG(insn);
 
   PyObject *const *ptr = KosEvalState_StackTailPtr(es, n + 1);
@@ -37,7 +36,7 @@ KOS_OP_HANDLER(CALL) {
                             (n > 0) ? &steal.vals[1] : NULL,
                             (Py_ssize_t) n, NULL, 0);
     KosStackSteal_Free(&steal);
-    return kos_op_outcome_from_call_int(ctx, r);
+    return kos_op_outcome_from_call_int(es, r);
 
   } else {
     PyObject *result;

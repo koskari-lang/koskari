@@ -28,8 +28,8 @@ KOS_OP_HANDLER(POP_NS) {
   KosDynNs *ns_node = (KosDynNs *) KosContext_DYN_TOP(ctx);
   PyObject *prior = KosDynNs_SAVED_NS(ns_node);
   Py_INCREF(prior);
-  Py_DECREF(CURRENT_NS(ctx));
-  CURRENT_NS(ctx) = prior;
+  Py_DECREF(CURRENT_NS());
+  CURRENT_NS() = prior;
   kos_dyn_pop_ns(es, ns_node);
 
   (void) out_ev;

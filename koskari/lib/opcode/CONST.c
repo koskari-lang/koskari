@@ -19,8 +19,7 @@
 */
 
 KOS_OP_HANDLER(CONST) {
-  KosContext *ctx = KosEvalState_CONTEXT(es);
-  KosCode *code = CURRENT_CODE(ctx);
+  KosCode *code = KosEvalState_CurrentCode(es);
   uint32_t index = KosOp_ARG(insn);
 
   if (unlikely(index >= KosCode_CPOOL_LEN(code))) {
