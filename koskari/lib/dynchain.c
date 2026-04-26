@@ -497,7 +497,8 @@ KosDynNode *KosEvalState_InnermostStackOwner(KosEvalState *es) {
    Refresh FRAME_TOP and BLOCK after DYN_TOP / chain changes. BLOCK is
    KosStackBlock ** pointing at the innermost non-NULL node->stack from dyn_top
    toward root (else the frame's stack field). It does not own the block;
-   only the dynnode releases it.
+   only the dynnode releases it. Also calls KosEvalState_SyncFromContext so
+   es->frame and es->code match the context.
 */
 void KosEvalState_RefreshDynCaches(KosEvalState *es) {
   KosContext *ctx = KosEvalState_CONTEXT(es);
@@ -527,6 +528,8 @@ void KosEvalState_RefreshDynCaches(KosEvalState *es) {
   if (! KosContext_FRAME_TOP(ctx))
     SAYF("[gen] refresh_dyn_caches dyn_top=%p -> frame_top=NULL (no frame)\n",
          (void *) KosContext_DYN_TOP(ctx));
+
+  KosEvalState_SyncFromContext(es);
 }
 
 
@@ -551,7 +554,6 @@ int kos_dyn_push(KosEvalState *es, KosDynNode *node) {
     return -1;
   }
   KosEvalState_RefreshDynCaches(es);
-  KosEvalState_SyncFromContext(es);
   return 0;
 }
 
@@ -1063,7 +1065,6 @@ static int kos_dyn_gen_freeze_and_release(KosEvalState *es, KosDynGen *gen,
        (void *) KosContext_FRAME_TOP(ctx),
        (void *) owner,
        (void *) gen);
-  KosEvalState_SyncFromContext(es);
   return 0;
 }
 
@@ -1922,7 +1923,6 @@ KosDynYieldFrom *kos_dyn_push_yield_from(
            ? kos_dynnode_kind_name(KosDynNode_KIND(KosDynNode_PARENT(node)))
            : "NULL",
        (void *) KosContext_FRAME_TOP(ctx));
-  KosEvalState_SyncFromContext(es);
   return node;
 }
 
@@ -1948,7 +1948,6 @@ void kos_dyn_pop_yield_from(KosEvalState *es, KosDynYieldFrom *node) {
        KosContext_DYN_TOP(ctx)
            ? kos_dynnode_kind_name(KosDynNode_KIND(KosContext_DYN_TOP(ctx)))
            : "NULL");
-  KosEvalState_SyncFromContext(es);
 }
 
 
@@ -4248,7 +4247,6 @@ int kos_dyn_finish_delimited_pop_return(
   if (KosContext_DYN_TOP(ctx) == (KosDynNode *) delim)
     kos_dyn_pop_delim(es, delim);
   KosEvalState_RefreshDynCaches(es);
-  KosEvalState_SyncFromContext(es);
   return 0;
 }
 

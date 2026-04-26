@@ -243,7 +243,6 @@ void kos_dyn_pop_with(KosEvalState *es, KosDynWith *node) {
   KosContext_CHAIN_VERSION(ctx)++;
   kos_dynwith_free(node);
   KosEvalState_RefreshDynCaches(es);
-  KosEvalState_SyncFromContext(es);
 }
 
 

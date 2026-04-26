@@ -107,7 +107,6 @@ KosDynFrame *kos_dyn_push_frame(
   KosContext_CHAIN_VERSION(ctx)++;
   KosEvalState_RefreshDynCaches(es);
 
-  KosEvalState_SyncFromContext(es);
   return frame;
 }
 
@@ -165,7 +164,6 @@ int kos_dyn_pop_frame(KosEvalState *es) {
   kos_dynnode_free(old_top);
   KosEvalState_RefreshDynCaches(es);
 
-  KosEvalState_SyncFromContext(es);
   return 0;
 }
 
@@ -193,7 +191,6 @@ int kos_dyn_attach_frame(KosEvalState *es, KosDynFrame *frame) {
   KosContext_FRAME_TOP(ctx) = frame;
   KosContext_CHAIN_VERSION(ctx)++;
   KosEvalState_RefreshDynCaches(es);
-  KosEvalState_SyncFromContext(es);
   return 0;
 }
 
@@ -228,7 +225,6 @@ int kos_dyn_detach_top_frame(KosEvalState *es, KosDynFrame **frame_out) {
   KosDynNode_PARENT(frame) = NULL;
   if (frame_out)
     *frame_out = frame;
-  KosEvalState_SyncFromContext(es);
   return 0;
 }
 

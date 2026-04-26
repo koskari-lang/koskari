@@ -188,12 +188,10 @@ static int kos_dyn_wind_on_control_returned(KosEvalState *es, KosDynWind *wind) 
     if (body_result) {
       if (KosEvalState_StackPushRef(es, body_result) < 0) {
         Py_DECREF(body_result);
-        KosEvalState_SyncFromContext(es);
         return -1;
       }
       Py_DECREF(body_result);
     }
-    KosEvalState_SyncFromContext(es);
     return 0;
   }
   KosEvalState_SyncFromContext(es);
@@ -220,7 +218,6 @@ KosDynWind *kos_dyn_push_wind(
   KosContext_CHAIN_VERSION(ctx)++;
   KosEvalState_RefreshDynCaches(es);
 
-  KosEvalState_SyncFromContext(es);
   return wind;
 }
 
@@ -242,7 +239,6 @@ int kos_dyn_pop_wind(KosEvalState *es, KosDynWind *wind) {
   kos_dynwind_free(wind);
   KosEvalState_RefreshDynCaches(es);
 
-  KosEvalState_SyncFromContext(es);
   return 0;
 }
 

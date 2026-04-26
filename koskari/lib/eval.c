@@ -80,26 +80,6 @@
 #define CURRENT_ACTING_PC(ctx)   KosDynFrame_ACTING_PC(CURRENT_FRAME(ctx))
 
 
-/* Fast dispatch prelude: SAYF, acting_pc, pre-advance pc, *insn_ptr. Assumes a
-   valid frame, in-range pc, and valid bytecode — no defensive checks.
-
-   First argument is KosEvalState *es; uses live ctx->frame_top via CONTEXT(es). */
-#define KOS_EVAL_PREPARE_NEXT_INSN(es, insn_ptr)                          \
-  do {                                                                    \
-    KosContext *_kos_insn_ctx = KosEvalState_CONTEXT(es);                 \
-    KosDynFrame *_kos_pf = CURRENT_FRAME(_kos_insn_ctx);                  \
-    KosCode *_kos_code = KosDynFrame_CODE(_kos_pf);                       \
-    uint32_t _kos_pc = KosDynFrame_PC(_kos_pf);                           \
-    KosOp *_kos_insn = &KosCode_CODE(_kos_code)[_kos_pc];                 \
-    SAYF("[eval] pc=%u op=%s arg=%u\n",                                   \
-         (unsigned) _kos_pc, kos_opcode_name(KosOp_OP(_kos_insn)),        \
-         (unsigned) KosOp_ARG(_kos_insn));                                \
-    KosDynFrame_ACTING_PC(_kos_pf) = _kos_pc;                             \
-    KosDynFrame_PC(_kos_pf) = _kos_pc + 1;                                \
-    *(insn_ptr) = _kos_insn;                                              \
-  } while (0)
-
-
 /* eval.c-local static inline helpers (not the KosEvalState_* API block below). */
 
 /**
@@ -3439,6 +3419,68 @@ static KosEvalStep eval_step_native_iteration(
 }
 
 
+static void kos_eval_report_pc_bounds_error(KosEvalState *es) {
+
+  KosDynFrame *rep_pf = KosEvalState_FRAME(es);
+
+  if (! rep_pf) {
+    PyErr_SetString(PyExc_SystemError,
+                    "koskari eval: no interpreter frame during "
+                    "instruction fetch");
+    return;
+  }
+
+  KosCode *rep_code = KosDynFrame_CODE(rep_pf);
+  uint32_t rep_pc = KosDynFrame_PC(rep_pf);
+
+  if (! rep_code) {
+    PyErr_Format(PyExc_SystemError,
+                 "koskari eval: frame has no bytecode (pc=%u)",
+                 (unsigned) rep_pc);
+    return;
+  }
+
+  uint32_t rep_len = KosCode_CODE_LEN(rep_code);
+
+  if (rep_pc >= rep_len) {
+    PyErr_Format(PyExc_SystemError,
+                  "koskari eval: program counter out of bounds "
+                  "(pc=%u, len=%u)",
+                  (unsigned) rep_pc,
+                  (unsigned) rep_len);
+    return;
+  }
+
+  PyErr_SetString(PyExc_SystemError,
+                  "koskari eval: instruction fetch failed");
+}
+
+
+/* Dispatch prelude: live ctx frame_top; code from frame (not es->code: tail
+   reset clears frame code before cache update).  On OOB, goto on_bad; call
+   kos_eval_report_pc_bounds_error(es) there.  Only after prologue
+   SyncFromContext. */
+#define KOS_EVAL_PREPARE_NEXT_INSN(es, insn_ptr, on_bad)                   \
+  do {                                                                     \
+    KosContext *_kos_insn_ctx = KosEvalState_CONTEXT(es);                  \
+    KosDynFrame *_kos_pf = CURRENT_FRAME(_kos_insn_ctx);                   \
+    if (unlikely(! _kos_pf))                                               \
+      goto on_bad;                                                         \
+    KosCode *_kos_code = KosDynFrame_CODE(_kos_pf);                        \
+    uint32_t _kos_pc = KosDynFrame_PC(_kos_pf);                            \
+    if (unlikely(! _kos_code || _kos_pc >= KosCode_CODE_LEN(_kos_code))) { \
+      goto on_bad;                                                         \
+    }                                                                      \
+    KosOp *_kos_insn = &KosCode_CODE(_kos_code)[_kos_pc];                  \
+    SAYF("[eval] pc=%u op=%s arg=%u\n",                                    \
+         (unsigned) _kos_pc, kos_opcode_name(KosOp_OP(_kos_insn)),         \
+         (unsigned) KosOp_ARG(_kos_insn));                                 \
+    KosDynFrame_ACTING_PC(_kos_pf) = _kos_pc;                              \
+    KosDynFrame_PC(_kos_pf) = _kos_pc + 1u;                                \
+    *(insn_ptr) = _kos_insn;                                               \
+  } while (0)
+
+
 #if KOS_USE_COMPUTED_GOTO
 /**
    Opcode loop for GCC/Clang: computed goto, tail-dispatch on RUN, prologue
@@ -3517,20 +3559,24 @@ cg_prologue:
   }
   #endif
 
-  KOS_EVAL_PREPARE_NEXT_INSN(es, &insn);
+  KOS_EVAL_PREPARE_NEXT_INSN(es, &insn, cg_pc_bounds_error);
   goto *optable[KosOp_OP(insn)];
 
   #define OP(name, ...)                                                \
     cg_TARGET_##name:                                                  \
       KOS_TRACE_OP_WRAP(name, op_out = op_##name(es, out_ev, insn));    \
       if (likely(op_out.mode == KOS_LOP_RUN)) {                        \
-        KOS_EVAL_PREPARE_NEXT_INSN(es, &insn);                        \
+        KOS_EVAL_PREPARE_NEXT_INSN(es, &insn, cg_pc_bounds_error);       \
         goto *optable[KosOp_OP(insn)];                                 \
       }                                                                \
       goto cg_handle_op_outcome;
 
   #include "opcodes.incl"
   #undef OP
+
+cg_pc_bounds_error:
+  kos_eval_report_pc_bounds_error(es);
+  return -1;
 
 cg_handle_op_outcome:
 
@@ -3635,7 +3681,7 @@ koskari_eval_dispatch_switch(KosEvalState *es, KosEvent *out_ev) {
 
   sw_prepare_and_dispatch:
 
-    KOS_EVAL_PREPARE_NEXT_INSN(es, &insn);
+    KOS_EVAL_PREPARE_NEXT_INSN(es, &insn, sw_pc_bounds_error);
 
     switch (KosOp_OP(insn)) {
     #define OP(name, ...)                                                \
@@ -3673,11 +3719,17 @@ koskari_eval_dispatch_switch(KosEvalState *es, KosEvent *out_ev) {
     }
   }
 
+sw_pc_bounds_error:
+  kos_eval_report_pc_bounds_error(es);
+  return -1;
+
   /* All iterations return or branch; keep a fallback for static analysis. */
   return -1;
 }
 
 #endif
+
+#undef KOS_EVAL_PREPARE_NEXT_INSN
 
 
 int koskari_eval(

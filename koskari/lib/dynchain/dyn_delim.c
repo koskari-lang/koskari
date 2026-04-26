@@ -113,7 +113,6 @@ void kos_dyn_pop_delim(KosEvalState *es, KosDynDelim *delim) {
   KosContext_CHAIN_VERSION(ctx)++;
   kos_dyndelim_free(delim);
   KosEvalState_RefreshDynCaches(es);
-  KosEvalState_SyncFromContext(es);
 }
 
 

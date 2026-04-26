@@ -431,7 +431,8 @@ struct KosContext {
     from opcode handlers, callable helpers, and eval drivers: use
     kos_dyn_*(KosEvalState *, ...) (and related helpers) declared in dynchain.h.
     Call KosEvalState_SyncFromContext after context mutation when the live
-    eval slice must see updated frame/code caches.
+    eval slice must see updated frame/code caches (KosEvalState_RefreshDynCaches
+    includes that step after recomputing frame_top/block).
   - KosContext remains the heap-allocated VM state owned by a coroutine,
     async generator, or continuation segment. It is authoritative for dyn_top,
     frame_top, and related fields; KosEvalState caches frame/code for the hot
@@ -455,9 +456,8 @@ void KosEvalState_SyncFromContext(KosEvalState *es);
 
 /**
   Recompute ctx->frame_top and ctx->block from the dynamic chain after
-  dyn_top / chain changes. Does not update es->frame/code; call
-  KosEvalState_SyncFromContext afterward when the live eval slice must see
-  the new caches.
+  dyn_top / chain changes, then refresh es->frame and es->code from the
+  context (KosEvalState_SyncFromContext).
 */
 void KosEvalState_RefreshDynCaches(KosEvalState *es);
 

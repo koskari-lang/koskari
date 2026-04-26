@@ -112,10 +112,8 @@ int kos_dyn_gen_install(KosEvalState *es, KosDynGen *gen) {
   KosContext_CHAIN_VERSION(ctx)++;
   KosEvalState_RefreshDynCaches(es);
 
-  if (KosEvalState_StackPushRef(es, Py_None) < 0) {
-    KosEvalState_SyncFromContext(es);
+  if (KosEvalState_StackPushRef(es, Py_None) < 0)
     return -1;
-  }
 
   SAYF("[gen] install DONE dyn_top=%p (%s) frame_top=%p chain: ",
        (void *) KosContext_DYN_TOP(ctx),
@@ -126,7 +124,6 @@ int kos_dyn_gen_install(KosEvalState *es, KosDynGen *gen) {
   for (n = KosContext_DYN_TOP(ctx); n; n = KosDynNode_PARENT(n))
     SAYF("%p %s -> ", (void *) n, kos_dynnode_kind_name(KosDynNode_KIND(n)));
   SAY("(end)");
-  KosEvalState_SyncFromContext(es);
   return 0;
 }
 
@@ -172,7 +169,6 @@ int kos_dyn_gen_unwind_exhausted(KosEvalState *es) {
   KosContext_CHAIN_VERSION(ctx)++;
   KosEvalState_RefreshDynCaches(es);
   kos_dyngen_release(gen);
-  KosEvalState_SyncFromContext(es);
   return 0;
 }
 

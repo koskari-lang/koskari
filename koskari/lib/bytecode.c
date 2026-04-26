@@ -214,7 +214,7 @@ static PyObject *collect_label_map(PyObject *self, uint32_t code_len) {
   /* Every JUMP*, CHECK*, etc. records the destination PC in op.arg */
   for (uint32_t i = 0; i < code_len; i++) {
     KosOpCode op = (KosOpCode) code[i].op;
-    if (op > KOS_OP_THEEND) {
+    if (op >= KOS_OP_THEEND) {
       Py_DECREF(label_map);
       PyErr_Format(PyExc_RuntimeError, "invalid opcode %u", (unsigned) op);
       return NULL;
@@ -1746,7 +1746,7 @@ static int validate_jump_locality(
     }
 
     uint32_t t = code[src_pc].arg;
-    if (t > code_len) {
+    if (t >= code_len) {
       PyErr_Format(PyExc_RuntimeError,
                    "JUMP at pc %u targets out-of-range pc %u",
                    src_pc, t);

@@ -74,6 +74,7 @@ static int do_frame_prep(KosEvalState *es, PyObject *callable, PyTypeObject *typ
 
   if (wants && tail_call) {
     kos_dynframe_reset_for_tail(frame);
+    KosEvalState_SyncFromContext(es);
     return 0;
   }
   if (wants && ! tail_call) {
