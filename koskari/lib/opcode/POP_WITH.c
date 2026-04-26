@@ -38,11 +38,8 @@ KOS_OP_HANDLER(POP_WITH) {
   /* Async path, need to suspend, we'll resume at this opcode when we
      wake back up. */
   if (unw == KOS_DYN_UNWIND_ASYNC_STARTED) {
-    uint32_t same_pc = KosEvalState_GetActingPc(es);
-    if (KosEvalState_SetFramePc(es, same_pc) < 0)
-      return KOS_OP_POST_ERR();
-    if (KosEvalState_SetActingPc(es, same_pc) < 0)
-      return KOS_OP_POST_ERR();
+    uint32_t same_pc = KosEvalState_ACTING_PC(es);
+    KosEvalState_SET_PC(es, same_pc);
     return KOS_OP_POST_SUSPEND();
   }
 

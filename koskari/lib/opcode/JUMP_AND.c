@@ -33,8 +33,7 @@ KOS_OP_HANDLER(JUMP_AND) {
       return KOS_OP_POST_ERR();
     }
     Py_DECREF(val);
-    if (KosEvalState_SetFramePc(es, KosOp_ARG(insn)) < 0)
-      return KOS_OP_POST_ERR();
+    KosEvalState_SET_PC(es, KosOp_ARG(insn));
   } else {
     Py_DECREF(val);
   }

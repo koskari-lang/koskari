@@ -38,8 +38,7 @@ KOS_OP_HANDLER(ITER_NEXT) {
     }
     if (agen->closed || ! agen->ctx) {
       KosDynForeach_EXHAUSTED((KosDynForeach *) region) = 1;
-      if (KosEvalState_SetFramePc(es, KosOp_ARG(insn)) < 0)
-        return KOS_OP_POST_ERR();
+      KosEvalState_SET_PC(es, KosOp_ARG(insn));
       return KOS_OP_RUN();
     }
     agen->in_progress = 1;
@@ -67,8 +66,7 @@ KOS_OP_HANDLER(ITER_NEXT) {
       return KOS_OP_RUN();
     case GET_NEXT_EXHAUSTED:
       KosDynForeach_EXHAUSTED((KosDynForeach *) region) = 1;
-      if (KosEvalState_SetFramePc(es, KosOp_ARG(insn)) < 0)
-        return KOS_OP_POST_ERR();
+      KosEvalState_SET_PC(es, KosOp_ARG(insn));
       return KOS_OP_RUN();
     case GET_NEXT_SUSPEND:
       return KOS_OP_POST_SUSPEND();

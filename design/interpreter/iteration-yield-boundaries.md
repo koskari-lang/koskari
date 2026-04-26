@@ -120,7 +120,7 @@ This document describes how four related mechanisms are implemented in the Koska
 3. **If Koskari async gen:** records else PC and step phase on the **`KOS_DYN_FOREACH`** region, **`op_attach_koskari_agen_frame_for_iter_next(es, …)`**, returns 0 (flatten into same eval loop).
 4. **Else:** `**op_get_next_from_iter`** (same as `NEXT` for non–async-gen cases):
   - `GET_NEXT_VALUE` → push value, return 0
-  - `GET_NEXT_EXHAUSTED` → set exhausted, **`KosEvalState_SetFramePc(es, else_pc)`**
+  - `GET_NEXT_EXHAUSTED` → set exhausted, **`KosEvalState_SET_PC(es, else_pc)`**
   - `GET_NEXT_SUSPEND` → return 1, `out_ev` await path
 
 **Underlying calls**

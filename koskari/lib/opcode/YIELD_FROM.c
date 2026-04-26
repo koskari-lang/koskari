@@ -171,8 +171,7 @@ static int yield_from_emit_yield(
   }
 
   KosDynYieldFrom_PHASE_SET(yf, KOS_YF_PHASE_EXPECT_SEND);
-  if (KosEvalState_SetFramePc(es, KosEvalState_GetActingPc(es)) < 0)
-    return -1;
+  KosEvalState_SET_PC(es, KosEvalState_ACTING_PC(es));
   KosEvent_KIND(out_ev) = KOS_EV_YIELD;
   KosEvent_PAYLOAD(out_ev) = *tos;
   Py_INCREF(KosEvent_PAYLOAD(out_ev));
@@ -180,6 +179,7 @@ static int yield_from_emit_yield(
        (void *) KosContext_DYN_TOP(ctx), (void *) KosEvalState_FRAME(es),
        (void *) KosEvent_PAYLOAD(out_ev));
 
+  KosEvalState_FlushLiveRegsToFrame(es);
   KosContext_FLAGS(ctx) &= ~KOS_CTX_RUNNING;
   KosContext_FLAGS(ctx) |= KOS_CTX_DEAD;
   return 1;
@@ -441,12 +441,10 @@ static int yield_from_drive_py_async(
   if (suspended && yielded) {
     KosDynYieldFrom_INFLIGHT(yf) = awaitable;
     KosDynYieldFrom_PHASE_SET(yf, KOS_YF_PHASE_EXPECT_AWAIT);
-    if (KosEvalState_SetFramePc(es, KosEvalState_GetActingPc(es)) < 0) {
-      Py_DECREF(awaitable);
-      return -1;
-    }
+    KosEvalState_SET_PC(es, KosEvalState_ACTING_PC(es));
     KosEvent_KIND(out_ev) = KOS_EV_AWAIT;
     KosEvent_PAYLOAD(out_ev) = yielded;
+    KosEvalState_FlushLiveRegsToFrame(es);
     KosContext_FLAGS(ctx) &= ~KOS_CTX_RUNNING;
     KosContext_FLAGS(ctx) |= KOS_CTX_DEAD;
     return 1;
@@ -659,7 +657,7 @@ KOS_OP_HANDLER(YIELD_FROM) {
       KosDynYieldFrom *yf_new = (KosDynYieldFrom *) KosContext_DYN_TOP(ctx);
       KosDynYieldFrom_PENDING_ACTION(yf_new) = KOS_YF_STEP;
       KosDynYieldFrom_PHASE_SET(yf_new, KOS_YF_PHASE_DRIVING);
-      KosEvalState_SetFramePc(es, KosEvalState_GetActingPc(es));
+      KosEvalState_SET_PC(es, KosEvalState_ACTING_PC(es));
     }
     return KOS_OP_RUN();
   }

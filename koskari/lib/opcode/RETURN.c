@@ -30,7 +30,7 @@ KOS_OP_HANDLER(RETURN) {
        opa, (void *) KosEvalState_FRAME(es),
        (void *) KosEvalState_StackHead(es),
        KosEvalState_StackLen(es),
-       (unsigned) KosEvalState_GetFramePc(es));
+       (unsigned) KosEvalState_PC(es));
 
   if (opa == 0) {
     val = Py_None;

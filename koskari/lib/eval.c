@@ -139,6 +139,7 @@ void KosEvalState_ApplyDynCaches(KosEvalState *es) {
 
   if (! es)
     return;
+
   ctx = KosEvalState_CONTEXT(es);
   if (! ctx)
     return;
@@ -148,6 +149,8 @@ void KosEvalState_ApplyDynCaches(KosEvalState *es) {
   ef = KosEvalState_FRAME(es);
 
   if (ef != ft) {
+    if (ef)
+      KosEvalState_FlushLiveRegsToFrame(es);
     KosEvalState_FRAME(es) = ft;
     KosEvalState_BLOCK(es) = bl;
     if (ft) {
@@ -180,47 +183,6 @@ PyObject *KosEvalState_CurrentNamespace(const KosEvalState *es) {
 }
 
 
-uint32_t KosEvalState_GetFramePc(const KosEvalState *es) {
-
-  return KosEvalState_FRAME(es) ? es->pc : (uint32_t) 0;
-}
-
-
-int KosEvalState_SetFramePc(KosEvalState *es, uint32_t pc) {
-  KosDynFrame *f = KosEvalState_FRAME(es);
-
-  if (unlikely(! f)) {
-    PyErr_SetString(PyExc_SystemError, "KosEvalState_SetFramePc: no frame");
-    return -1;
-  }
-
-  es->pc = pc;
-  KosDynFrame_PC(f) = pc;
-  return 0;
-}
-
-
-uint32_t KosEvalState_GetActingPc(const KosEvalState *es) {
-  
-  return KosEvalState_FRAME(es) ? es->acting_pc : (uint32_t) 0;
-}
-
-
-int KosEvalState_SetActingPc(KosEvalState *es, uint32_t pc) {
-  KosDynFrame *f = KosEvalState_FRAME(es);
-
-  if (unlikely(! f)) {
-    PyErr_SetString(PyExc_SystemError,
-                    "KosEvalState_SetActingPc: no frame");
-    return -1;
-  }
-
-  es->acting_pc = pc;
-  KosDynFrame_ACTING_PC(f) = pc;
-  return 0;
-}
-
-
 PyObject *KosEvalState_GetConstant(const KosEvalState *es, uint32_t index) {
 
   KosCode *code = KosEvalState_CODE(es);
@@ -229,15 +191,27 @@ PyObject *KosEvalState_GetConstant(const KosEvalState *es, uint32_t index) {
 
 
 int KosEvalState_StackPushRef(KosEvalState *es, PyObject *val) {
-
   return KosStackBlock_PushRef(KosEvalState_BLOCK(es), val);
 }
 
+#define KosEvalState_StackPushRef(es, val) \
+  KosStackBlock_PushRef(KosEvalState_BLOCK(es), val)
+
+
+int KosEvalState_StackPUSH(KosEvalState *es, PyObject *val) {
+  return KosStackBlock_PUSH(KosEvalState_BLOCK(es), val);
+}
+
+#define KosEvalState_StackPUSH(es, val) \
+  KosStackBlock_PUSH(KosEvalState_BLOCK(es), val)
+
 
 PyObject *KosEvalState_StackPopRef(KosEvalState *es) {
-
   return KosStackBlock_PopRef(KosEvalState_BLOCK(es));
 }
+
+#define KosEvalState_StackPopRef(es) \
+  KosStackBlock_PopRef(KosEvalState_BLOCK(es))
 
 
 PyObject *KosEvalState_GetFast(const KosEvalState *es, size_t index) {
@@ -275,6 +249,9 @@ int KosEvalState_StackSteal_Tail(
   return KosStackSteal_Tail(s, count, KosEvalState_BLOCK(es));
 }
 
+#define KosEvalState_StackSteal_Tail(es, s, count) \
+  KosStackSteal_Tail(s, count, KosEvalState_BLOCK(es))
+
 
 int KosEvalState_StackSteal_TailPrepend(
     KosEvalState *es,
@@ -285,11 +262,8 @@ int KosEvalState_StackSteal_TailPrepend(
   return KosStackSteal_TailPrepend(s, prefix, count, KosEvalState_BLOCK(es));
 }
 
-
-int KosEvalState_StackPUSH(KosEvalState *es, PyObject *val) {
-
-  return KosStackBlock_PUSH(KosEvalState_BLOCK(es), val);
-}
+#define KosEvalState_StackSteal_TailPrepend(es, s, prefix, count) \
+  KosStackSteal_TailPrepend(s, prefix, count, KosEvalState_BLOCK(es))
 
 
 static KosStackBlock **kos_evalstate_parent_stack_slot(KosEvalState *es) {
@@ -334,63 +308,83 @@ int KosEvalState_ParentStackPUSH(KosEvalState *es, PyObject *val) {
 
 
 PyObject *KosEvalState_StackPopTail(KosEvalState *es, size_t count) {
-
   return KosStackBlock_PopTail(KosEvalState_BLOCK(es), count);
 }
 
+#define KosEvalState_StackPopTail(es, count) \
+  KosStackBlock_PopTail(KosEvalState_BLOCK(es), count)
+
 
 PyObject *const *KosEvalState_StackTailPtr(KosEvalState *es, size_t count) {
-
   return KosStackBlock_TailPtr(*KosEvalState_BLOCK(es), count);
 }
 
+#define KosEvalState_StackTailPtr(es, count) \
+  KosStackBlock_TailPtr(*KosEvalState_BLOCK(es), count)
+
 
 size_t KosEvalState_StackLen(KosEvalState *es) {
-
   return KosStackBlock_LEN(*KosEvalState_BLOCK(es));
 }
 
+#define KosEvalState_StackLen(es) \
+  KosStackBlock_LEN(*KosEvalState_BLOCK(es))
+
 
 int KosEvalState_StackDrop(KosEvalState *es, size_t count) {
-
   return KosStackBlock_Drop(KosEvalState_BLOCK(es), count);
 }
 
+#define KosEvalState_StackDrop(es, count) \
+  KosStackBlock_Drop(KosEvalState_BLOCK(es), count)
+
 
 int KosEvalState_StackDrop1(KosEvalState *es) {
-
   return KosStackBlock_Drop1(KosEvalState_BLOCK(es));
 }
 
+#define KosEvalState_StackDrop1(es) \
+  KosStackBlock_Drop1(KosEvalState_BLOCK(es))
+
 
 void KosEvalState_StackDropNoErr(KosEvalState *es, size_t count) {
-
-  (void) KosStackBlock_DropNoErr(KosEvalState_BLOCK(es), count);
+  KosStackBlock_DropNoErr(KosEvalState_BLOCK(es), count);
 }
+
+#define KosEvalState_StackDropNoErr(es, count) \
+  KosStackBlock_DropNoErr(KosEvalState_BLOCK(es), count)
 
 
 int KosEvalState_StackClearBlock(KosEvalState *es) {
-
   return KosStackBlock_ClearBlock(KosEvalState_BLOCK(es));
 }
 
+#define KosEvalState_StackClearBlock(es) \
+  KosStackBlock_ClearBlock(KosEvalState_BLOCK(es))
+
 
 int KosEvalState_StackDuplicate(KosEvalState *es, size_t count) {
-
   return KosStackBlock_Duplicate(KosEvalState_BLOCK(es), count);
 }
 
+#define KosEvalState_StackDuplicate(es, count) \
+  KosStackBlock_Duplicate(KosEvalState_BLOCK(es), count)
+
 
 PyObject *KosEvalState_StackPopTailDict(KosEvalState *es, size_t count) {
-
   return KosStackBlock_PopTailDict(KosEvalState_BLOCK(es), count);
 }
 
+#define KosEvalState_StackPopTailDict(es, count) \
+  KosStackBlock_PopTailDict(KosEvalState_BLOCK(es), count)
+
 
 PyObject *KosEvalState_StackPopTailDictNames(KosEvalState *es, size_t count) {
-
   return KosStackBlock_PopTailDictNames(KosEvalState_BLOCK(es), count);
 }
+
+#define KosEvalState_StackPopTailDictNames(es, count) \
+  KosStackBlock_PopTailDictNames(KosEvalState_BLOCK(es), count)
 
 
 PyObject *KosEvalState_StackPopTailDictFromNames(
@@ -400,23 +394,32 @@ PyObject *KosEvalState_StackPopTailDictFromNames(
   return KosStackBlock_PopTailDictFromNames(KosEvalState_BLOCK(es), names);
 }
 
+#define KosEvalState_StackPopTailDictFromNames(es, names) \
+  KosStackBlock_PopTailDictFromNames(KosEvalState_BLOCK(es), names)
+
 
 PyObject *KosEvalState_StackPeek(KosEvalState *es) {
-
   return KosStackBlock_Peek(*KosEvalState_BLOCK(es));
 }
 
+#define KosEvalState_StackPeek(es) \
+  KosStackBlock_Peek(*KosEvalState_BLOCK(es))
+
 
 PyObject *KosEvalState_StackPeekAt(KosEvalState *es, Py_ssize_t index) {
-
   return KosStackBlock_PeekAt(*KosEvalState_BLOCK(es), index);
 }
 
+#define KosEvalState_StackPeekAt(es, index) \
+  KosStackBlock_PeekAt(*KosEvalState_BLOCK(es), index)
+
 
 int KosEvalState_StackPopTailPtr(KosEvalState *es, size_t count, PyObject **dest) {
-
   return KosStackBlock_PopTailPtr(KosEvalState_BLOCK(es), count, dest);
 }
+
+#define KosEvalState_StackPopTailPtr(es, count, dest) \
+  KosStackBlock_PopTailPtr(KosEvalState_BLOCK(es), count, dest)
 
 
 typedef struct {
@@ -450,10 +453,12 @@ static PyObject *str_name = NULL;
 static PyObject *str_package = NULL;
 
 
-/* Sentinel fromlist for IMPORT / IMPORT_REL opcodes (handlers.incl).  Passing
-   ("*",) as fromlist to PyImport_ImportModuleLevelObject causes it to return
-   the deepest (leaf) submodule rather than the topmost package, matching
-   importlib.import_module semantics.  Initialized in koskari_eval_init. */
+/*
+  Sentinel fromlist for IMPORT / IMPORT_REL opcodes (handlers.incl).  Passing
+  ("*",) as fromlist to PyImport_ImportModuleLevelObject causes it to return
+  the deepest (leaf) submodule rather than the topmost package, matching
+  importlib.import_module semantics.  Initialized in koskari_eval_init.
+*/
 static PyObject *_import_fromlist = NULL;
 
 
@@ -528,11 +533,11 @@ static inline KosOpOutcome kos_op_outcome_from_int_step(int r) {
 
 
 /**
-   Clear the context's transfer plan and free it.  Plan pointer is nulled
-   before freeing so any re-entrant eval (e.g. from Py_XDECREF(continuation_ref)
-   triggering Python dealloc/__del__) does not see the plan while it is freed.
-   For PUSH_SHIFT unwind plans, transfers continuation_ref to the prompt's
-   pending_shift_wrapper so the opcode can push the handler on re-entry.
+  Clear the context's transfer plan and free it.  Plan pointer is nulled
+  before freeing so any re-entrant eval (e.g. from Py_XDECREF(continuation_ref)
+  triggering Python dealloc/__del__) does not see the plan while it is freed.
+  For PUSH_SHIFT unwind plans, transfers continuation_ref to the prompt's
+  pending_shift_wrapper so the opcode can push the handler on re-entry.
 */
 static void clear_and_free_transfer_plan(KosContext *ctx) {
   KosTransferPlan *p = KosContext_PLAN(ctx);
@@ -550,9 +555,9 @@ static void clear_and_free_transfer_plan(KosContext *ctx) {
 
 
 /**
-   Run the current transfer plan to completion.  Returns 0 on success (plan
-   cleared or was NULL).  Returns -1 if a step failed (out_ev set to RAISE,
-   caller should return 0 from koskari_eval).
+  Run the current transfer plan to completion.  Returns 0 on success (plan
+  cleared or was NULL).  Returns -1 if a step failed (out_ev set to RAISE,
+  caller should return 0 from koskari_eval).
 */
 static int run_transfer_plan_to_completion(
     KosEvalState *es,
@@ -568,7 +573,7 @@ static int run_transfer_plan_to_completion(
 
     if (plan_res < 0) {
       SAY("[eval] transfer step failed -> KOS_EV_RAISE\n");
-      kos_eval_emit_raise_from_pyerr(ctx, out_ev);
+      kos_eval_emit_raise_from_pyerr(ctx, out_ev, es);
       clear_and_free_transfer_plan(ctx);
       return -1;
     }
@@ -1058,13 +1063,18 @@ static void kos_eval_mark_context_dead(KosContext *ctx) {
 /**
    Move current PyErr into out_ev as KOS_EV_RAISE with injected traceback,
    clear thread error, and mark the context dead.  Call only when PyErr is set.
+   When es is non-NULL, flushes live pc/acting_pc to the top frame before
+   building traceback metadata.
 */
 void kos_eval_emit_raise_from_pyerr(
     KosContext *ctx,
-    KosEvent *out_ev) {
+    KosEvent *out_ev,
+    KosEvalState *es) {
 
   PyObject *typ = NULL, *val = NULL, *tb = NULL;
 
+  if (es)
+    KosEvalState_FlushLiveRegsToFrame(es);
   PyErr_Fetch(&typ, &val, &tb);
   inject_eval_frame_traceback(ctx, &typ, &val, &tb);
   Py_XDECREF(tb);
@@ -1859,20 +1869,12 @@ static int push_or_await(KosEvalState *es, KosEvent *out_ev, PyObject *val) {
 
 #define OP_TRY_FUSE_POP1_AFTER_PUSH(es, val)                                  \
   do {                                                                        \
-    KosDynFrame *_opfuse_pf = KosEvalState_FRAME(es);                         \
-    if (! _opfuse_pf)                                                         \
-      break;                                                                  \
-    KosCode *opfuse_code = KosDynFrame_CODE(_opfuse_pf);                      \
-    if (! opfuse_code)                                                        \
-      opfuse_code = KosEvalState_CODE(es);                                    \
-    if (! opfuse_code)                                                        \
-      break;                                                                  \
-    uint32_t opfuse_pc = (es)->pc;                                            \
+    KosCode *opfuse_code = KosEvalState_CODE(es);                             \
+    uint32_t opfuse_pc = KosEvalState_PC(es);                                 \
     KosOp *opfuse_nx = &KosCode_CODE(opfuse_code)[opfuse_pc];                 \
     if (KosOp_OP(opfuse_nx) == KOS_OP_POP && KosOp_ARG(opfuse_nx) == 1) {     \
       Py_DECREF(val);                                                         \
-      if (KosEvalState_SetFramePc(es, opfuse_pc + 1u) < 0)                     \
-        return -1;                                                            \
+      KosEvalState_SET_PC(es, opfuse_pc + 1u);                                \
       return 0;                                                               \
     }                                                                         \
   } while (0)
@@ -2383,10 +2385,8 @@ static int kos_check_contains(
   if (unlikely(cmp < 0))
     return -1;
 
-  if (cmp == branch_when) {
-    if (KosEvalState_SetFramePc(es, KosOp_ARG(insn)) < 0)
-      return -1;
-  }
+  if (cmp == branch_when)
+    KosEvalState_SET_PC(es, KosOp_ARG(insn));
 
   (void) out_ev;
   return 0;
@@ -2408,10 +2408,8 @@ static int kos_check_identity(
   int cmp = (lr.left == lr.right);
   Py_DECREF(lr.left);
   Py_DECREF(lr.right);
-  if (cmp == branch_when_equal) {
-    if (KosEvalState_SetFramePc(es, KosOp_ARG(insn)) < 0)
-      return -1;
-  }
+  if (cmp == branch_when_equal)
+    KosEvalState_SET_PC(es, KosOp_ARG(insn));
 
   (void) out_ev;
   return 0;
@@ -2435,10 +2433,8 @@ static int kos_check_two_arg(
   if (unlikely(res < 0))
     return -1;
 
-  if (res == 0) {
-    if (KosEvalState_SetFramePc(es, KosOp_ARG(insn)) < 0)
-      return -1;
-  }
+  if (res == 0)
+    KosEvalState_SET_PC(es, KosOp_ARG(insn));
 
   (void) out_ev;
   return 0;
@@ -2464,10 +2460,8 @@ static int kos_check_cmp(
   if (res < 0)
     return -1;
 
-  if (res == 0) {
-    if (KosEvalState_SetFramePc(es, KosOp_ARG(insn)) < 0)
-      return -1;
-  }
+  if (res == 0)
+    KosEvalState_SET_PC(es, KosOp_ARG(insn));
 
   (void) out_ev;
   return 0;
@@ -2783,12 +2777,12 @@ static int kos_eval_call_native_handler(
             KOS_STEP_STOP_EVENT when out_ev is filled and eval should return.
 */
 static KosEvalStep eval_phase_entry(
-        KosEvalState *es,
-        KosEvent *out_ev,
-        PyObject *send_val,
-        PyObject *throw_typ,
-        PyObject *throw_exc,
-        KosEvalMode *mode_out) {
+    KosEvalState *es,
+    KosEvent *out_ev,
+    PyObject *send_val,
+    PyObject *throw_typ,
+    PyObject *throw_exc,
+    KosEvalMode *mode_out) {
 
   KosContext *ctx = KosEvalState_CONTEXT(es);
 
@@ -2878,7 +2872,7 @@ entry_mode_dispatch:
   }
 
   if (mode == KOS_MODE_RAISE) {
-    kos_eval_emit_raise_from_pyerr(ctx, out_ev);
+    kos_eval_emit_raise_from_pyerr(ctx, out_ev, es);
     return KOS_STEP_STOP_EVENT;
   }
 
@@ -3411,10 +3405,10 @@ static void kos_eval_report_pc_bounds_error(KosEvalState *es) {
     return;
   }
 
-  KosCode *rep_code = KosDynFrame_CODE(rep_pf);
+  KosCode *rep_code = KosEvalState_CODE(es);
   if (! rep_code)
-    rep_code = KosEvalState_CODE(es);
-  uint32_t rep_pc = es->pc;
+    rep_code = KosDynFrame_CODE(rep_pf);
+  uint32_t rep_pc = KosEvalState_PC(es);
 
   if (! rep_code) {
     PyErr_Format(PyExc_SystemError,
@@ -3439,29 +3433,22 @@ static void kos_eval_report_pc_bounds_error(KosEvalState *es) {
 }
 
 
-/* Dispatch prelude: frame and pc from es (dual-written with heap frame).
-   Code from frame first, then es->code (tail reset may clear frame code
-   before Sync updates es->code).  On OOB, goto on_bad. */
+/* Dispatch prelude: next PC and acting PC live only on es (no heap write).
+   Code from es->code first (hot cache); if NULL, KosDynFrame_CODE (e.g. tail
+   reset cleared heap slot before es->code was updated).  On OOB, goto on_bad. */
 #define KOS_EVAL_PREPARE_NEXT_INSN(es, insn_lvalue, on_bad)                \
   do {                                                                     \
-    KosDynFrame *_kos_pf = KosEvalState_FRAME(es);                         \
-    if (unlikely(! _kos_pf))                                               \
-      goto on_bad;                                                         \
-    KosCode *_kos_code = KosDynFrame_CODE(_kos_pf);                        \
-    if (unlikely(! _kos_code))                                             \
-      _kos_code = KosEvalState_CODE(es);                                   \
-    uint32_t _kos_pc = (es)->pc;                                           \
+    KosCode *_kos_code = KosEvalState_CODE(es);                            \
+    uint32_t _kos_pc = KosEvalState_PC(es);                                \
     if (unlikely(! _kos_code || _kos_pc >= KosCode_CODE_LEN(_kos_code))) { \
       goto on_bad;                                                         \
     }                                                                      \
     KosOp _kos_insn = KosCode_CODE(_kos_code)[_kos_pc];                    \
     SAYF("[eval] pc=%u op=%s arg=%u\n",                                    \
-         (unsigned) _kos_pc, kos_opcode_name(_kos_insn.op),                 \
-         (unsigned) _kos_insn.arg);                                         \
+         (unsigned) _kos_pc, kos_opcode_name(_kos_insn.op),                \
+         (unsigned) _kos_insn.arg);                                        \
     (es)->acting_pc = _kos_pc;                                             \
     (es)->pc = _kos_pc + 1u;                                               \
-    KosDynFrame_ACTING_PC(_kos_pf) = _kos_pc;                              \
-    KosDynFrame_PC(_kos_pf) = _kos_pc + 1u;                                \
     (insn_lvalue) = _kos_insn;                                             \
   } while (0)
 
@@ -3774,6 +3761,7 @@ int koskari_eval(
 #endif
 
 koskari_eval_cleanup:
+  KosEvalState_FlushLiveRegsToFrame(&es);
   kos_domain_pop_scope(ctx);
   return eval_ret;
 }

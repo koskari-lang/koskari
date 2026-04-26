@@ -43,21 +43,20 @@ KOS_OP_HANDLER(PUSH_SHIFT) {
     PyObject *wrapper = KosDynPrompt_PENDING_SHIFT_WRAPPER(prompt);
     KosDynPrompt_PENDING_SHIFT_WRAPPER(prompt) = NULL;
 
-    shift_body_pc = KosEvalState_GetActingPc(es) + 1;
+    shift_body_pc = KosEvalState_ACTING_PC(es) + 1;
     if (kos_dyn_push_shift(es) < 0) {
       KosDynPrompt_PENDING_SHIFT_WRAPPER(prompt) = wrapper;
       return KOS_OP_POST_ERR();
     }
 
-    if (KosEvalState_SetFramePc(es, shift_body_pc) < 0)
-      return KOS_OP_POST_ERR();
+    KosEvalState_SET_PC(es, shift_body_pc);
     return kos_op_outcome_from_int_step(push_result(es, wrapper));
   }
 
   /* Already at prompt: capture, push shift node, done */
   if (KosContext_DYN_TOP(ctx) == (KosDynNode *) prompt) {
     resume_pc = kos_shift_ic_for((PyObject *) KosEvalState_CurrentCode(es),
-                                 KosEvalState_GetActingPc(es));
+                                 KosEvalState_ACTING_PC(es));
     if (resume_pc == KOS_EXTENT_NONE) {
       PyErr_SetString(PyExc_RuntimeError, "PUSH_SHIFT: no SHIFT extent at pc");
       return KOS_OP_POST_ERR();
@@ -71,20 +70,19 @@ KOS_OP_HANDLER(PUSH_SHIFT) {
       return KOS_OP_POST_ERR();
     }
 
-    shift_body_pc = KosEvalState_GetActingPc(es) + 1;
+    shift_body_pc = KosEvalState_ACTING_PC(es) + 1;
     if (kos_dyn_push_shift(es) < 0) {
       Py_DECREF(wrapper);
       return KOS_OP_POST_ERR();
     }
 
-    if (KosEvalState_SetFramePc(es, shift_body_pc) < 0)
-      return KOS_OP_POST_ERR();
+    KosEvalState_SET_PC(es, shift_body_pc);
     return kos_op_outcome_from_int_step(push_result(es, wrapper));
   }
 
   /* Need to unwind: build plan, capture, set continuation on plan, roll back PC */
   resume_pc = kos_shift_ic_for((PyObject *) KosEvalState_CurrentCode(es),
-                               KosEvalState_GetActingPc(es));
+                               KosEvalState_ACTING_PC(es));
   if (resume_pc == KOS_EXTENT_NONE) {
     PyErr_SetString(PyExc_RuntimeError, "PUSH_SHIFT: no SHIFT extent at pc");
     return KOS_OP_POST_ERR();
@@ -119,7 +117,6 @@ KOS_OP_HANDLER(PUSH_SHIFT) {
   KosContext_FLAGS(ctx) |= KOS_CTX_IN_TRANSFER;
 
   /* Roll back PC so we re-enter PUSH_SHIFT after plan completes */
-  if (KosEvalState_SetFramePc(es, KosEvalState_GetActingPc(es)) < 0)
-    return KOS_OP_POST_ERR();
+  KosEvalState_SET_PC(es, KosEvalState_ACTING_PC(es));
   return KOS_OP_PROLOGUE();
 }

@@ -45,7 +45,7 @@ KOS_OP_HANDLER(POP_SHIFT) {
        (void *) KosEvalState_FRAME(es),
        (void *) KosEvalState_StackHead(es),
        KosEvalState_StackLen(es),
-       (unsigned) KosEvalState_GetFramePc(es));
+       (unsigned) KosEvalState_PC(es));
   result = KosEvalState_StackPopRef(es);
   if (! result) {
     SAY("[eval] POP_SHIFT pop result failed (stack underrun)");
@@ -54,7 +54,7 @@ KOS_OP_HANDLER(POP_SHIFT) {
 
   /* acting_pc is POP_SHIFT; find SHIFT extent by its pop_pc. */
   {
-    uint32_t pop_pc = KosEvalState_GetActingPc(es);
+    uint32_t pop_pc = KosEvalState_ACTING_PC(es);
     eid = kos_extent_find_by_pop_pc((PyObject *) code, pop_pc, KOS_EXT_SHIFT);
   }
   if (eid == KOS_EXTENT_NONE) {

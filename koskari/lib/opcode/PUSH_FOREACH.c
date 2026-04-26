@@ -21,7 +21,7 @@
 */
 
 KOS_OP_HANDLER(PUSH_FOREACH) {
-  uint32_t continue_pc = KosEvalState_GetFramePc(es);  /* next insn; fetch advanced */
+  uint32_t continue_pc = KosEvalState_PC(es);  /* next insn; fetch advanced */
 
   /* Pop iterable (TOS) and loop_result from stack */
   PyObject *iterable = KosEvalState_StackPopRef(es);
@@ -38,7 +38,7 @@ KOS_OP_HANDLER(PUSH_FOREACH) {
 
   /* Derive break target from the extent table (pop_pc + 1) */
   KosCode *code = KosEvalState_CurrentCode(es);
-  uint32_t pc = KosEvalState_GetActingPc(es);
+  uint32_t pc = KosEvalState_ACTING_PC(es);
   uint32_t eid = kos_extent_find((PyObject *) code, pc, KOS_EXT_FOREACH);
   if (eid == KOS_EXTENT_NONE) {
     Py_DECREF(loop_result);

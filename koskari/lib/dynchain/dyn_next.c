@@ -261,11 +261,7 @@ int kos_dyn_foreach_deliver_return_kos_agen(
   agen->in_progress = 0;
 
   KosDynForeach_EXHAUSTED(fe) = 1;
-  if (KosEvalState_SetFramePc(es, KosDynForeach_ITER_NEXT_ELSE_PC(fe)) < 0) {
-    Py_DECREF(val);
-    KosEvalState_SyncFromContext(es);
-    return -1;
-  }
+  KosEvalState_SET_PC(es, KosDynForeach_ITER_NEXT_ELSE_PC(fe));
   KosDynForeach_ITER_STEP_PHASE(fe) = KOS_FOREACH_ITER_STEP_IDLE;
 
   Py_DECREF(val);

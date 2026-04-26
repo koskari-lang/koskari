@@ -167,10 +167,7 @@ int kos_dyn_yield_from_deliver_inner_yield(
   }
 
   KosDynYieldFrom_PHASE_SET(yf, KOS_YF_PHASE_EXPECT_SEND);
-  if (KosEvalState_SetFramePc(es, KosEvalState_GetActingPc(es)) < 0) {
-    KosEvalState_SyncFromContext(es);
-    return -1;
-  }
+  KosEvalState_SET_PC(es, KosEvalState_ACTING_PC(es));
 
   tos = KosEvalState_StackTailPtr(es, 1);
   if (! tos) {
@@ -182,6 +179,7 @@ int kos_dyn_yield_from_deliver_inner_yield(
   KosEvent_PAYLOAD(out_ev) = *tos;
   Py_INCREF(KosEvent_PAYLOAD(out_ev));
 
+  KosEvalState_FlushLiveRegsToFrame(es);
   KosContext_FLAGS(ctx) &= ~KOS_CTX_RUNNING;
   KosContext_FLAGS(ctx) |= KOS_CTX_DEAD;
   KosEvalState_SyncFromContext(es);
@@ -222,12 +220,8 @@ int kos_dyn_yield_from_deliver_inner_return(
     delegate_agen->in_progress = 0;
 
   code = df ? KosDynFrame_CODE(df) : NULL;
-  if (df && code && KosEvalState_GetActingPc(es) + 1u < KosCode_CODE_LEN(code)) {
-    if (KosEvalState_SetFramePc(es, KosEvalState_GetActingPc(es) + 1u) < 0) {
-      KosEvalState_SyncFromContext(es);
-      return -1;
-    }
-  }
+  if (df && code && KosEvalState_ACTING_PC(es) + 1u < KosCode_CODE_LEN(code))
+    KosEvalState_SET_PC(es, KosEvalState_ACTING_PC(es) + 1u);
 
   kos_dyn_pop_yield_from(es, yf);
   KosEvalState_SyncFromContext(es);

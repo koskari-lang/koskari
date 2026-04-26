@@ -892,7 +892,7 @@ KosHandleResult kos_dyn_handle(KosEvalState *es, KosDynNode *node,
         {
           KosTryHandler th;
           int kh = kos_try_handler_for((PyObject *) KosDynFrame_CODE(frame),
-                                       KosEvalState_GetActingPc(es), &th);
+                                       KosEvalState_ACTING_PC(es), &th);
           #if VERBOSE_DEBUG
           unsigned exc_pc_u = (unsigned) KOS_EXTENT_NONE;
           if (kh == 0)
@@ -900,7 +900,7 @@ KosHandleResult kos_dyn_handle(KosEvalState *es, KosDynNode *node,
           SAYF("[xfer] kos_dyn_handle TRY kos_try_handler_for code=%p "
                "acting_pc=%u ret=%d except_pc=%u\n",
                (void *) KosDynFrame_CODE(frame),
-               (unsigned) KosEvalState_GetActingPc(es),
+               (unsigned) KosEvalState_ACTING_PC(es),
                kh,
                exc_pc_u);
           #endif
@@ -962,7 +962,7 @@ uint32_t kos_dynnode_raise_handler_pc_for_try_finally(
   if (frame) {
     KosTryHandler th;
     if (kos_try_handler_for((PyObject *) KosDynFrame_CODE(frame),
-                            KosEvalState_GetActingPc(es), &th) == 0) {
+                            KosEvalState_ACTING_PC(es), &th) == 0) {
       if (KosDynNode_IS_FINALLY(region) && th.finally_pc != KOS_EXTENT_NONE)
         handler_pc = th.finally_pc;
       else if (th.except_pc != KOS_EXTENT_NONE)
@@ -1361,10 +1361,7 @@ int kos_dyn_walk_return_to_frame(KosEvalState *es, KosDynFrame *frame,
           }
           Py_DECREF(val);
           if (KosEvalState_FRAME(es)) {
-            if (KosEvalState_SetFramePc(es, KosDynFinally_HANDLER_PC(fin)) < 0) {
-              KosEvalState_SyncFromContext(es);
-              return -1;
-            }
+            KosEvalState_SET_PC(es, KosDynFinally_HANDLER_PC(fin));
           }
           KosDynFinally_ENABLED(fin) = 0;
           KosDynFinally_HANDLING_RETURN(fin) = 1;
@@ -1571,10 +1568,7 @@ int kos_dyn_transfer_to_loop(KosEvalState *es, KosXferEvent event,
       return -1;
     }
 
-    if (KosEvalState_SetFramePc(es, continue_pc) < 0) {
-      KosEvalState_SyncFromContext(es);
-      return -1;
-    }
+    KosEvalState_SET_PC(es, continue_pc);
     KosEvalState_SyncFromContext(es);
     return 0;
   }
@@ -1597,10 +1591,7 @@ int kos_dyn_transfer_to_loop(KosEvalState *es, KosXferEvent event,
   }
   Py_DECREF(result);
 
-  if (KosEvalState_SetFramePc(es, break_pc) < 0) {
-    KosEvalState_SyncFromContext(es);
-    return -1;
-  }
+  KosEvalState_SET_PC(es, break_pc);
   KosEvalState_SyncFromContext(es);
   return 0;
 }
@@ -1625,7 +1616,7 @@ static int kos_dyn_try_local_raise_body(KosEvalState *es, KosEvent *out_ev) {
     SAYF("[try_local] enter dyn_top=%p frame_top=%p acting_pc=%u stack_len=%zu\n",
          (void *) KosContext_DYN_TOP(ctx),
          (void *) KosEvalState_FRAME(es),
-         (unsigned) KosEvalState_GetActingPc(es),
+         (unsigned) KosEvalState_ACTING_PC(es),
          (size_t) _try_local_stack_len);
   }
   else {
@@ -1667,7 +1658,7 @@ static int kos_dyn_try_local_raise_body(KosEvalState *es, KosEvent *out_ev) {
 
       if (hr == KOS_HANDLE_CONSUMED) {
         if (KosDynNode_IS_GEN(top)) {
-          kos_eval_emit_raise_from_pyerr(ctx, out_ev);
+          kos_eval_emit_raise_from_pyerr(ctx, out_ev, es);
           KosEvalState_SyncFromContext(es);
           return 0;
         }
@@ -1685,10 +1676,7 @@ static int kos_dyn_try_local_raise_body(KosEvalState *es, KosEvent *out_ev) {
         SAYF("[try_local] CONSUMED region=%s handler_pc=%u\n",
              KosDynNode_IS_TRY(region) ? "TRY" : "FINALLY",
              (unsigned) handler_pc);
-        if (KosEvalState_SetFramePc(es, handler_pc) < 0) {
-          KosEvalState_SyncFromContext(es);
-          return -1;
-        }
+        KosEvalState_SET_PC(es, handler_pc);
 
         if (KosDynNode_IS_TRY(region))
           KosDynTry_ENABLED((KosDynTry *) region) = 0;
@@ -1749,16 +1737,13 @@ static int kos_dyn_try_local_raise_body(KosEvalState *es, KosEvent *out_ev) {
             continue;
         }
         SAY("[try_local] pop/unwind path -> KOS_EV_RAISE\n");
-        kos_eval_emit_raise_from_pyerr(ctx, out_ev);
+        kos_eval_emit_raise_from_pyerr(ctx, out_ev, es);
         KosEvalState_SyncFromContext(es);
         return 0;
       }
       if (top_may_swallow && ! PyErr_Occurred()) {
         if (catch_resume_pc != (uint32_t) -1 && KosEvalState_FRAME(es)) {
-          if (KosEvalState_SetFramePc(es, catch_resume_pc) < 0) {
-            KosEvalState_SyncFromContext(es);
-            return -1;
-          }
+          KosEvalState_SET_PC(es, catch_resume_pc);
         }
         KosEvalState_SyncFromContext(es);
         return 1;
@@ -1769,7 +1754,7 @@ static int kos_dyn_try_local_raise_body(KosEvalState *es, KosEvent *out_ev) {
   /* No handler found */
   {
     SAY("[try_local] no handler found -> KOS_EV_RAISE\n");
-    kos_eval_emit_raise_from_pyerr(ctx, out_ev);
+    kos_eval_emit_raise_from_pyerr(ctx, out_ev, es);
     KosEvalState_SyncFromContext(es);
     return 0;
   }
@@ -3488,8 +3473,7 @@ static int xfer_step_install(KosEvalState *es, KosTransferAction *action,
   }
 
   if (KosTransferPlan_RESUME_PC(plan) != (uint32_t) -1 && KosEvalState_FRAME(es)) {
-    if (KosEvalState_SetFramePc(es, KosTransferPlan_RESUME_PC(plan)) < 0)
-      return -1;
+    KosEvalState_SET_PC(es, KosTransferPlan_RESUME_PC(plan));
   }
   KosContext_CHAIN_VERSION(ctx)++;
 
@@ -3583,8 +3567,7 @@ static int xfer_step_push(KosEvalState *es, KosTransferAction *action,
   }
   if (KosTransferPlan_RESUME_PC(plan) != (uint32_t) -1
       && KosEvalState_FRAME(es)) {
-    if (KosEvalState_SetFramePc(es, KosTransferPlan_RESUME_PC(plan)) < 0)
-      return -1;
+    KosEvalState_SET_PC(es, KosTransferPlan_RESUME_PC(plan));
   }
   KosContext_CHAIN_VERSION(ctx)++;
 
@@ -3702,8 +3685,7 @@ static int xfer_step_truncate_and_inject(KosEvalState *es,
 
   if (plan && KosTransferPlan_RESUME_PC(plan) != (uint32_t) -1
       && KosEvalState_FRAME(es)) {
-    if (KosEvalState_SetFramePc(es, KosTransferPlan_RESUME_PC(plan)) < 0)
-      return -1;
+    KosEvalState_SET_PC(es, KosTransferPlan_RESUME_PC(plan));
   }
 
   if (KosTransferAction_TRUNCATE_IS_THROW(action)) {
@@ -3987,7 +3969,7 @@ int kos_invoke_continuation(
         KOS_DYN_DELIM_MODE_POP_PROMPT,
         NULL,
         KosEvalState_FRAME(es)
-            ? KosEvalState_GetFramePc(es) : (uint32_t) -1,
+            ? KosEvalState_PC(es) : (uint32_t) -1,
         KosEvalState_FRAME(es),
         NULL);
     if (! ret_delim) {

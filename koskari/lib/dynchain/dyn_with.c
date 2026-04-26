@@ -342,12 +342,8 @@ static int kos_dyn_with_on_control_returned(KosEvalState *es, KosDynWith *with_n
     Py_XDECREF(typ);
     Py_XDECREF(val);
     Py_XDECREF(tb);
-    if (KosEvalState_FRAME(es)) {
-      if (KosEvalState_SetFramePc(es, KosDynWith_RESUME_PC(with_node)) < 0) {
-        KosEvalState_SyncFromContext(es);
-        return -1;
-      }
-    }
+    if (KosEvalState_FRAME(es))
+      KosEvalState_SET_PC(es, KosDynWith_RESUME_PC(with_node));
     if (do_pop_node) {
       kos_dyn_with_shot_after_exit_done(with_node);
       kos_dyn_pop_with(es, with_node);
@@ -379,12 +375,8 @@ static int kos_dyn_with_on_control_returned(KosEvalState *es, KosDynWith *with_n
     KosEvalState_SyncFromContext(es);
     return -1;
   }
-  if (KosEvalState_FRAME(es)) {
-    if (KosEvalState_SetFramePc(es, KosDynWith_RESUME_PC(with_node)) < 0) {
-      KosEvalState_SyncFromContext(es);
-      return -1;
-    }
-  }
+  if (KosEvalState_FRAME(es))
+    KosEvalState_SET_PC(es, KosDynWith_RESUME_PC(with_node));
   if (do_pop_node) {
     kos_dyn_with_shot_after_exit_done(with_node);
     kos_dyn_pop_with(es, with_node);
@@ -527,12 +519,8 @@ int kos_dyn_with_unwind(
     Py_DECREF(result);
     kos_dyn_with_shot_after_exit_done(node);
 
-    if (KosEvalState_FRAME(es)) {
-      if (KosEvalState_SetFramePc(es, KosDynWith_RESUME_PC(node)) < 0) {
-        KosEvalState_SyncFromContext(es);
-        return -1;
-      }
-    }
+    if (KosEvalState_FRAME(es))
+      KosEvalState_SET_PC(es, KosDynWith_RESUME_PC(node));
 
     if (KosEvalState_ParentStackPushRef(es, Py_None) < 0) {
       KosEvalState_SyncFromContext(es);
@@ -554,12 +542,8 @@ int kos_dyn_with_unwind(
   Py_DECREF(result);
   kos_dyn_with_shot_after_exit_done(node);
   if (! PyErr_Occurred()) {
-    if (KosEvalState_FRAME(es)) {
-      if (KosEvalState_SetFramePc(es, KosDynWith_RESUME_PC(node)) < 0) {
-        KosEvalState_SyncFromContext(es);
-        return -1;
-      }
-    }
+    if (KosEvalState_FRAME(es))
+      KosEvalState_SET_PC(es, KosDynWith_RESUME_PC(node));
     if (kos_dyn_with_post_unwind_deliver(es, node) < 0) {
       KosEvalState_SyncFromContext(es);
       return -1;

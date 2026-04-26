@@ -33,7 +33,7 @@ KOS_OP_HANDLER(PUSH_DYN_WITH) {
   }
 
   KosCode *code = KosEvalState_CurrentCode(es);
-  uint32_t pc = KosEvalState_GetActingPc(es);
+  uint32_t pc = KosEvalState_ACTING_PC(es);
   uint32_t eid = kos_extent_find((PyObject *) code, pc, KOS_EXT_DYN_WITH);
   if (eid == KOS_EXTENT_NONE) {
     Py_DECREF(exit);
@@ -79,11 +79,8 @@ KOS_OP_HANDLER(PUSH_DYN_WITH) {
 
   int r = kos_dyn_wind(es, (KosDynNode *) with_node, out_ev);
   if (r == KOS_DYN_UNWIND_ASYNC_STARTED) {
-    uint32_t same_pc = KosEvalState_GetActingPc(es);
-    if (KosEvalState_SetFramePc(es, same_pc) < 0)
-      return KOS_OP_POST_ERR();
-    if (KosEvalState_SetActingPc(es, same_pc) < 0)
-      return KOS_OP_POST_ERR();
+    uint32_t same_pc = KosEvalState_ACTING_PC(es);
+    KosEvalState_SET_PC(es, same_pc);
     return KOS_OP_POST_SUSPEND();
   }
 

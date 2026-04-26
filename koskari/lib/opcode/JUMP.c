@@ -18,8 +18,7 @@
 */
 
 KOS_OP_HANDLER(JUMP) {
-  if (KosEvalState_SetFramePc(es, KosOp_ARG(insn)) < 0)
-    return KOS_OP_POST_ERR();
+  KosEvalState_SET_PC(es, KosOp_ARG(insn));
   (void) out_ev;
   return KOS_OP_RUN();
 }

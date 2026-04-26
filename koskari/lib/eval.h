@@ -426,7 +426,7 @@ struct KosContext {
   Call KosEvalState_Init before use; call KosEvalState_SyncFromContext when
   ctx->frame_top may have changed without updating this struct. Both are
   static inline in this header; SyncFromContext skips work when es already
-  matches ctx (frame, block, code, pc).
+  matches ctx (frame, block, code).
 
   Execution model (live vs cold storage):
   - KosEvalState is the only supported handle for mutating the dynamic chain
@@ -439,9 +439,13 @@ struct KosContext {
     every dyn tweak.
   - KosContext remains the heap-allocated VM state owned by a coroutine,
     async generator, or continuation segment. It is authoritative for dyn_top,
-    frame_top, and block (cold storage). KosEvalState mirrors frame, code,
-    block, pc, and acting_pc for the hot path; Init/Sync reload from context
-    and frame. SetFramePc/SetActingPc dual-write es registers and the frame.
+    frame_top, and block (cold storage). While running, KosEvalState mirrors
+    frame, code, block, and holds the sole live pc and acting_pc registers.
+    Heap KosDynFrame pc slots are updated only at freeze boundaries (e.g.
+    KosEvalState_FlushLiveRegsToFrame before chain surgery or koskari_eval
+    exit). Init loads cold frame values into es; KosEvalState_SyncFromContext
+    reloads es when the frame or code pointer changes, but never clobbers live
+    pc/acting from stale heap when the code pointer still matches.
 */
 
 struct KosEvalState {
@@ -449,8 +453,8 @@ struct KosEvalState {
   KosDynFrame *frame; /* cached top frame; maintained by Init/Sync */
   KosCode *code;      /* cached from frame */
   KosStackBlock **block; /* mirror of ctx->block; non-owning */
-  uint32_t pc;        /* live next-instruction PC; dual-written to frame */
-  uint32_t acting_pc; /* live acting PC; dual-written to frame */
+  uint32_t pc;        /* live next-instruction PC (freeze copies to frame) */
+  uint32_t acting_pc; /* live acting PC (freeze copies to frame) */
 };
 
 
@@ -458,6 +462,13 @@ struct KosEvalState {
 #define KosEvalState_FRAME(es) ((es)->frame)
 #define KosEvalState_CODE(es) ((es)->code)
 #define KosEvalState_BLOCK(es) ((es)->block)
+
+/** Live next-instruction PC on es only; use KosEvalState_SET_PC to assign. */
+#define KosEvalState_PC(es) ((es)->pc)
+/** Instruction currently executing (last fetch); live on es only. */
+#define KosEvalState_ACTING_PC(es) ((es)->acting_pc)
+#define KosEvalState_SET_PC(es, v) ((void)((es)->pc = (uint32_t)(v)))
+
 
 /**
   Operand stack head block for logging; NULL when no stack.
@@ -487,8 +498,10 @@ static inline void KosEvalState_Init(KosEvalState *es, KosContext *ctx) {
 
 
 /**
-  Reload es from ctx when frame_top / block / PC caches may differ.
-  Fast path: no-op when es already matches ctx (hot paths call this often).
+  Reload es from ctx when frame_top / block / code pointer may differ.
+  When the top frame and code pointer match es, live pc/acting_pc on es are
+  authoritative (heap frame slots may lag until freeze). Fast path: no-op
+  when es already matches ctx (hot paths call this often).
 */
 static inline void KosEvalState_SyncFromContext(KosEvalState *es) {
 
@@ -511,9 +524,7 @@ static inline void KosEvalState_SyncFromContext(KosEvalState *es) {
         (es)->acting_pc = 0;
         return;
       }
-      if (KosEvalState_CODE(es) == KosDynFrame_CODE(ft)
-          && (es)->pc == KosDynFrame_PC(ft)
-          && (es)->acting_pc == KosDynFrame_ACTING_PC(ft))
+      if (KosEvalState_CODE(es) == KosDynFrame_CODE(ft))
         return;
       KosEvalState_CODE(es) = KosDynFrame_CODE(ft);
       (es)->pc = KosDynFrame_PC(ft);
@@ -537,8 +548,9 @@ static inline void KosEvalState_SyncFromContext(KosEvalState *es) {
 
 
 /**
-  Dual-write live PC registers from es into the current frame before the
-  chain or current-frame pointer changes. No-op when es has no frame.
+  Freeze live pc and acting_pc from es onto the current heap frame before the
+  chain or current-frame pointer changes, or before another subsystem reads
+  frame PC slots. No-op when es has no frame.
 */
 static inline void KosEvalState_FlushLiveRegsToFrame(KosEvalState *es) {
 
@@ -560,8 +572,9 @@ void KosContext_RecomputeFrameTopAndBlock(KosContext *ctx);
 
 /**
   After RecomputeFrameTopAndBlock, mirror ctx->frame_top and ctx->block into
-  es. If the frame pointer changed, load code and PCs from the new frame.
-  If only block changed, update es->block without clobbering pc/acting_pc.
+  es. If the frame pointer changed, flush live pc/acting_pc onto the outgoing
+  cached frame, then load code and PCs from the new frame. If only block
+  changed, update es->block without clobbering pc/acting_pc.
 */
 void KosEvalState_ApplyDynCaches(KosEvalState *es);
 
@@ -581,11 +594,6 @@ KosDynNode *KosEvalState_InnermostStackOwner(KosEvalState *es);
 
 KosCode *KosEvalState_CurrentCode(const KosEvalState *es);
 PyObject *KosEvalState_CurrentNamespace(const KosEvalState *es);
-
-uint32_t KosEvalState_GetFramePc(const KosEvalState *es);
-int KosEvalState_SetFramePc(KosEvalState *es, uint32_t pc);
-uint32_t KosEvalState_GetActingPc(const KosEvalState *es);
-int KosEvalState_SetActingPc(KosEvalState *es, uint32_t pc);
 
 PyObject *KosEvalState_GetConstant(const KosEvalState *es, uint32_t index);
 
@@ -902,9 +910,14 @@ int kos_push_or_await(KosEvalState *es, KosEvent *out_ev, PyObject *val);
    Move current PyErr into out_ev as KOS_EV_RAISE with injected traceback,
    clear the thread error state, and mark the context dead.  Call only when
    PyErr is set.  Used by dynchain local-exception delivery when unwinding
-   does not find a handler.
+   does not find a handler.  When es is non-NULL, flushes live pc/acting_pc
+   onto the top frame first so traceback and heap introspection see the
+   current instruction.
 */
-void kos_eval_emit_raise_from_pyerr(KosContext *ctx, struct KosEvent *out_ev);
+void kos_eval_emit_raise_from_pyerr(
+    KosContext *ctx,
+    struct KosEvent *out_ev,
+    KosEvalState *es);
 
 
 int koskari_eval_init(PyObject *mod);

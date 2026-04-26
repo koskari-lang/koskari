@@ -39,8 +39,7 @@ KOS_OP_HANDLER(CHECK_EXCEPTION) {
   Py_DECREF(match);
 
   if (! ret) {
-    if (KosEvalState_SetFramePc(es, KosOp_ARG(insn)) < 0)
-      return KOS_OP_POST_ERR();
+    KosEvalState_SET_PC(es, KosOp_ARG(insn));
   }
 
   return KOS_OP_RUN();
