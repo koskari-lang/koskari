@@ -424,7 +424,9 @@ struct KosContext {
   opcode-level responsibilities consolidated under this API surface.
 
   Call KosEvalState_Init before use; call KosEvalState_SyncFromContext when
-  ctx->frame_top may have changed without updating this struct.
+  ctx->frame_top may have changed without updating this struct. Both are
+  static inline in this header; SyncFromContext skips work when es already
+  matches ctx (frame, block, code, pc).
 
   Execution model (live vs cold storage):
   - KosEvalState is the only supported handle for mutating the dynamic chain
@@ -464,8 +466,72 @@ struct KosEvalState {
    : (KosStackBlock *) NULL)
 
 
-void KosEvalState_Init(KosEvalState *es, KosContext *ctx);
-void KosEvalState_SyncFromContext(KosEvalState *es);
+static inline void KosEvalState_Init(KosEvalState *es, KosContext *ctx) {
+
+  KosEvalState_CONTEXT(es) = ctx;
+  KosEvalState_FRAME(es) = KosContext_FRAME_TOP(ctx);
+  KosEvalState_BLOCK(es) = KosContext_BLOCK(ctx);
+
+  if (KosEvalState_FRAME(es)) {
+    KosEvalState_CODE(es) = KosDynFrame_CODE(KosEvalState_FRAME(es));
+    (es)->pc = KosDynFrame_PC(KosEvalState_FRAME(es));
+    (es)->acting_pc = KosDynFrame_ACTING_PC(KosEvalState_FRAME(es));
+  } else {
+    KosEvalState_CODE(es) = NULL;
+    (es)->pc = 0;
+    (es)->acting_pc = 0;
+  }
+}
+
+
+/**
+  Reload es from ctx when frame_top / block / PC caches may differ.
+  Fast path: no-op when es already matches ctx (hot paths call this often).
+*/
+static inline void KosEvalState_SyncFromContext(KosEvalState *es) {
+
+  KosContext *ctx = KosEvalState_CONTEXT(es);
+
+  if (! ctx)
+    return;
+
+  {
+    KosDynFrame *ft = KosContext_FRAME_TOP(ctx);
+    KosStackBlock **bl = KosContext_BLOCK(ctx);
+    KosDynFrame *ef = KosEvalState_FRAME(es);
+
+    if (ef == ft && KosEvalState_BLOCK(es) == bl) {
+      if (! ft) {
+        if (! KosEvalState_CODE(es) && ! (es)->pc && ! (es)->acting_pc)
+          return;
+        KosEvalState_CODE(es) = NULL;
+        (es)->pc = 0;
+        (es)->acting_pc = 0;
+        return;
+      }
+      if (KosEvalState_CODE(es) == KosDynFrame_CODE(ft)
+          && (es)->pc == KosDynFrame_PC(ft)
+          && (es)->acting_pc == KosDynFrame_ACTING_PC(ft))
+        return;
+      KosEvalState_CODE(es) = KosDynFrame_CODE(ft);
+      (es)->pc = KosDynFrame_PC(ft);
+      (es)->acting_pc = KosDynFrame_ACTING_PC(ft);
+      return;
+    }
+
+    KosEvalState_FRAME(es) = ft;
+    KosEvalState_BLOCK(es) = bl;
+    if (ft) {
+      KosEvalState_CODE(es) = KosDynFrame_CODE(ft);
+      (es)->pc = KosDynFrame_PC(ft);
+      (es)->acting_pc = KosDynFrame_ACTING_PC(ft);
+    } else {
+      KosEvalState_CODE(es) = NULL;
+      (es)->pc = 0;
+      (es)->acting_pc = 0;
+    }
+  }
+}
 
 /**
   Recompute ctx->frame_top and ctx->block from the dynamic chain after
