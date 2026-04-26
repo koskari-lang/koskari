@@ -96,14 +96,13 @@ static PyObject *delimited_continuation_repr(PyObject *self) {
    Plan INCREFs callable on same-evaluator path; handler releases callable and args.
 */
 static int call_call_continuation(
-    KosContext *ctx,
+    KosEvalState *es,
     PyObject *callable,
     PyObject *args,
     KosEvent *out_ev,
     KosOp *insn) {
 
-  KosEvalState es;
-  KosEvalState_Init(&es, ctx);
+  KosContext *ctx = KosEvalState_CONTEXT(es);
 
   KosContinuation *k = KosPyDelimitedContinuation_Check(callable)
       ? KosPyDelimitedContinuation_CAPTURED((KosPyDelimitedContinuation *) callable)
@@ -149,7 +148,7 @@ static int call_call_continuation(
 
   if (KosContinuation_TOKEN_REF(k) == (PyObject *) KosContext_TOKEN(ctx)
       || (KosContinuation_PROMPT_ID(k) == KOS_PROMPT_ID_UNDELIMITED && ! KosContinuation_TOKEN_REF(k))) {
-    if (kos_invoke_continuation(&es, k, resume_val, 0, callable) < 0) {
+    if (kos_invoke_continuation(es, k, resume_val, 0, callable) < 0) {
       Py_DECREF(resume_val);
       return -1;
     }
@@ -179,7 +178,7 @@ static int call_call_continuation(
 
 
 static int kos_install_continuation(
-    KosContext *ctx,
+    KosEvalState *es,
     KosEvent *out_ev,
     PyObject *callable,
     PyObject *args_tuple,
@@ -188,7 +187,7 @@ static int kos_install_continuation(
 
   (void) kwds_dict;
   (void) tail_call;
-  return call_call_continuation(ctx, callable, args_tuple, out_ev, NULL);
+  return call_call_continuation(es, callable, args_tuple, out_ev, NULL);
 }
 
 

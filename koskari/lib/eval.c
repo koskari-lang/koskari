@@ -2795,12 +2795,11 @@ static int kos_eval_call_native_handler(
   if (! frame || ! KosDynFrame_NATIVE_HANDLER(frame))
     return -1;
 
-  typedef int (*NativeHandlerFn)(void *, void *, int, PyObject *);
+  typedef int (*NativeHandlerFn)(KosEvalState *, KosEvent *, int, PyObject *);
   NativeHandlerFn fn =
       (NativeHandlerFn) KosDynFrame_NATIVE_HANDLER(frame);
 
-  KosContext *ctx = KosEvalState_CONTEXT(es);
-  return fn(ctx, out_ev, phase, arg);
+  return fn(es, out_ev, phase, arg);
 }
 
 
@@ -3231,10 +3230,10 @@ static KosEvalStep eval_parent_return_deliver_impl(KosEvalState *es, KosEvent *o
   KosEvent_PAYLOAD(out_ev) = val;
 
   if (unlikely(KosDynFrame_NATIVE_HANDLER(KosEvalState_FRAME(es)) != NULL)) {
-    typedef int (*NativeHandlerFn)(void *, void *, int, PyObject *);
+    typedef int (*NativeHandlerFn)(KosEvalState *, KosEvent *, int, PyObject *);
     NativeHandlerFn fn =
         (NativeHandlerFn) KosDynFrame_NATIVE_HANDLER(KosEvalState_FRAME(es));
-    int res = fn(ctx, out_ev, 1, val);
+    int res = fn(es, out_ev, 1, val);
 
     Py_DECREF(val);
     KosEvent_PAYLOAD(out_ev) = NULL;

@@ -88,7 +88,7 @@ static int do_frame_prep(KosEvalState *es, PyObject *callable, PyTypeObject *typ
 /* === KosCallable_* : KosCallable-only (no type check, no frame prep) === */
 
 
-int KosCallable_Call(KosContext *ctx, KosEvent *out_ev,
+int KosCallable_Call(KosEvalState *es, KosEvent *out_ev,
     PyObject *callable,
     PyObject *const *args, Py_ssize_t nargs, PyObject *kwnames,
     int tail_call) {
@@ -96,7 +96,7 @@ int KosCallable_Call(KosContext *ctx, KosEvent *out_ev,
   PyTypeObject *typ = Py_TYPE(callable);
   KosVectorInstallFunc vfn = KosCallableType_VINSTALL(typ);
   if (vfn)
-    return vfn(ctx, out_ev, callable, args, nargs, kwnames, tail_call);
+    return vfn(es, out_ev, callable, args, nargs, kwnames, tail_call);
 
   KosInstallFunc fn = KosCallableType_INSTALL(typ);
   if (! fn)
@@ -113,31 +113,31 @@ int KosCallable_Call(KosContext *ctx, KosEvent *out_ev,
       return -1;
     }
   }
-  int r = fn(ctx, out_ev, callable, tup, kwds, tail_call);
+  int r = fn(es, out_ev, callable, tup, kwds, tail_call);
   Py_XDECREF(tup);
   Py_XDECREF(kwds);
   return r;
 }
 
 
-int KosCallable_CallArgs(KosContext *ctx, KosEvent *out_ev,
+int KosCallable_CallArgs(KosEvalState *es, KosEvent *out_ev,
     PyObject *callable, PyObject *args_tuple, PyObject *kwds_dict,
     int tail_call) {
 
   KosInstallFunc fn = KosCallableType_INSTALL(Py_TYPE(callable));
   if (! fn)
     return -1;
-  return fn(ctx, out_ev, callable, args_tuple, kwds_dict, tail_call);
+  return fn(es, out_ev, callable, args_tuple, kwds_dict, tail_call);
 }
 
 
-int KosCallable_CallNoArgs(KosContext *ctx, KosEvent *out_ev,
+int KosCallable_CallNoArgs(KosEvalState *es, KosEvent *out_ev,
     PyObject *callable, int tail_call) {
 
   KosInstallFunc fn = KosCallableType_INSTALL(Py_TYPE(callable));
   if (! fn)
     return -1;
-  return fn(ctx, out_ev, callable, NULL, NULL, tail_call);
+  return fn(es, out_ev, callable, NULL, NULL, tail_call);
 }
 
 
@@ -148,8 +148,6 @@ int KosEvalState_Call(KosEvalState *es, KosEvent *out_ev,
     PyObject *callable,
     PyObject *const *args, Py_ssize_t nargs, PyObject *kwnames,
     int tail_call) {
-
-  KosContext *ctx = KosEvalState_CONTEXT(es);
 
   if (! KosCallable_Check(callable)) {
     if (tail_call) {
@@ -175,7 +173,7 @@ int KosEvalState_Call(KosEvalState *es, KosEvent *out_ev,
   if (do_frame_prep(es, callable, typ, tail_call) < 0)
     return -1;
 
-  int r = KosCallable_Call(ctx, out_ev, callable, args, nargs, kwnames,
+  int r = KosCallable_Call(es, out_ev, callable, args, nargs, kwnames,
                            tail_call);
   if (r == 0 && tail_call)
     r = KOS_OP_RES_CONTROL_RETURNED;
@@ -190,8 +188,6 @@ int KosEvalState_CallArgs(
     PyObject *args_tuple,
     PyObject *kwds_dict,
     int tail_call) {
-
-  KosContext *ctx = KosEvalState_CONTEXT(es);
 
   if (! KosCallable_Check(callable)) {
     if (tail_call) {
@@ -230,7 +226,7 @@ int KosEvalState_CallArgs(
   if (do_frame_prep(es, callable, typ, tail_call) < 0)
     return -1;
 
-  int r = KosCallable_CallArgs(ctx, out_ev, callable, args_tuple, kwds_dict,
+  int r = KosCallable_CallArgs(es, out_ev, callable, args_tuple, kwds_dict,
                                tail_call);
   if (r == 0 && tail_call)
     r = KOS_OP_RES_CONTROL_RETURNED;
@@ -240,8 +236,6 @@ int KosEvalState_CallArgs(
 
 int KosEvalState_CallNoArgs(KosEvalState *es, KosEvent *out_ev,
     PyObject *callable, int tail_call) {
-
-  KosContext *ctx = KosEvalState_CONTEXT(es);
 
   if (! KosCallable_Check(callable)) {
     if (tail_call) {
@@ -263,7 +257,7 @@ int KosEvalState_CallNoArgs(KosEvalState *es, KosEvent *out_ev,
   if (do_frame_prep(es, callable, typ, tail_call) < 0)
     return -1;
 
-  int r = KosCallable_CallNoArgs(ctx, out_ev, callable, tail_call);
+  int r = KosCallable_CallNoArgs(es, out_ev, callable, tail_call);
   if (r == 0 && tail_call)
     r = KOS_OP_RES_CONTROL_RETURNED;
   return r;

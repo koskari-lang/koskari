@@ -36,6 +36,10 @@
 #include <stdint.h>
 
 
+struct KosEvalState;
+struct KosEvent;
+
+
 /* === DynNode kind enum === */
 
 
@@ -209,8 +213,9 @@ struct KosDynNode {
       uint32_t acting_pc; /* instruction currently being executed */
       PyObject *ns;
       uint32_t frame_flags;
-      /* Native frame evaluator: int (*)(void* ctx, void* out_ev, int is_resume, PyObject* val) */
-      int (*native_handler)(void *, void *, int, PyObject *);
+      /* Native frame evaluator: (es, out_ev, is_resume, val); es is live slice */
+      int (*native_handler)(struct KosEvalState *, struct KosEvent *, int,
+                            PyObject *);
     } frame;
     struct {
       uint32_t prompt_id;

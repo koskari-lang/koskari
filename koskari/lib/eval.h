@@ -728,9 +728,9 @@ extern PyObject *KoskariContinuationError;
    KosEvalState_Call: generic call entry point with vectorcall-style args.
 
    Accepts any PyObject* callable. Performs KosCallable_Check; if true,
-   dispatches to KosCallable_Call after applying frame behavior per
-   wants_frame and tail_call. If false, invokes PyObject_Vectorcall and
-   kos_push_or_await.
+   dispatches to KosCallable_Call with the same es after applying frame
+   behavior per wants_frame and tail_call. If false, invokes
+   PyObject_Vectorcall and kos_push_or_await.
 
    Frame matrix (when KosCallable): wants_frame+tail -> reset; wants_frame+!tail
    -> create; !wants_frame+tail -> drop; !wants_frame+!tail -> no change.

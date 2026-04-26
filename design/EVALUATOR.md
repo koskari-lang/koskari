@@ -673,7 +673,7 @@ If `throw_typ`/`throw_exc` are set, any revive path calls `PyErr_SetObject` and 
 
 ### 8.2 Native Frame Handler
 
-When `CURRENT_FRAME(ctx)` has `native_handler != NULL`, the loop runs that handler as the frame evaluator instead of bytecode dispatch. On resume with `send_val`, entry delivers the value to the handler via `fn(ctx, out_ev, 1, val)`.
+When the top frame has `native_handler != NULL`, the loop runs that handler as the frame evaluator instead of bytecode dispatch. On resume with `send_val`, entry delivers the value to the handler via `fn(es, out_ev, 1, val)` (live **`KosEvalState *`**).
 
 ---
 
