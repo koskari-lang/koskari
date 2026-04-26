@@ -331,7 +331,6 @@ void kos_dyn_clear_pending_exit(KosEvalState *es) {
       KosDynWith_PHASE((KosDynWith *) n) = KOS_WITH_PHASE_IDLE;
     }
   }
-  KosEvalState_SyncFromContext(es);
 }
 
 
@@ -499,10 +498,15 @@ KosDynNode *KosEvalState_InnermostStackOwner(KosEvalState *es) {
 */
 void KosEvalState_RefreshDynCaches(KosEvalState *es) {
 
-  KosContext *ctx = KosEvalState_CONTEXT(es);
+  KosContext *ctx;
 
+  KOS_TRACE_EVAL_SYNC_BEGIN();
+
+  ctx = KosEvalState_CONTEXT(es);
   KosContext_RecomputeFrameTopAndBlock(ctx);
   KosEvalState_ApplyDynCaches(es);
+
+  KOS_TRACE_EVAL_SYNC_END(KOS_TEVS_refresh_dyn_caches);
 }
 
 
@@ -513,10 +517,8 @@ void KosEvalState_RefreshDynCaches(KosEvalState *es) {
 */
 int kos_dyn_push(KosEvalState *es, KosDynNode *node) {
   KosContext *ctx = KosEvalState_CONTEXT(es);
-  if (! node) {
-    KosEvalState_SyncFromContext(es);
+  if (! node)
     return -1;
-  }
 
   KosEvalState_FlushLiveRegsToFrame(es);
   KosContext_DYN_TOP(ctx) = node;
@@ -549,10 +551,8 @@ void kos_dyn_commit_dyn_top(KosEvalState *es, KosDynNode *new_top) {
 */
 int kos_dyn_push_noinstall(KosEvalState *es, KosDynNode *node) {
 
-  if (! node) {
-    KosEvalState_SyncFromContext(es);
+  if (! node)
     return -1;
-  }
 
   kos_dyn_commit_dyn_top(es, node);
   return 0;
@@ -591,13 +591,11 @@ int kos_dyn_uninstall(KosEvalState *es, KosDynNode *node, KosXferEvent event,
   KosContext *ctx = KosEvalState_CONTEXT(es);
   if (! node || KosContext_DYN_TOP(ctx) != node) {
     PyErr_SetString(PyExc_RuntimeError, "kos_dyn_uninstall: node is not dyn_top");
-    KosEvalState_SyncFromContext(es);
     return -1;
   }
 
   if (KosDynNode_HAS_CAP(node, KOS_DYN_CAP_BARRIER)) {
     PyErr_SetString(PyExc_RuntimeError, "cannot unwind past barrier node");
-    KosEvalState_SyncFromContext(es);
     return -1;
   }
 
@@ -3739,15 +3737,11 @@ static int xfer_step_truncate_and_inject(KosEvalState *es,
 */
 int kos_run_transfer_step(KosEvalState *es, KosEvent *out_ev) {
   KosContext *ctx = KosEvalState_CONTEXT(es);
-  if (! KosContext_PLAN(ctx)) {
-    KosEvalState_SyncFromContext(es);
+  if (! KosContext_PLAN(ctx))
     return 1;  /* no plan, complete */
-  }
 
-  if (KosTransferPlan_ACTION_INDEX(KosContext_PLAN(ctx)) >= KosTransferPlan_ACTION_COUNT(KosContext_PLAN(ctx))) {
-    KosEvalState_SyncFromContext(es);
+  if (KosTransferPlan_ACTION_INDEX(KosContext_PLAN(ctx)) >= KosTransferPlan_ACTION_COUNT(KosContext_PLAN(ctx)))
     return 1;  /* plan complete */
-  }
 
   KosTransferAction *action = &KosTransferPlan_ACTIONS(KosContext_PLAN(ctx))[KosTransferPlan_ACTION_INDEX(KosContext_PLAN(ctx))];
   if (KOS_XFER_TRACE)
@@ -3832,14 +3826,14 @@ int kos_run_transfer_step(KosEvalState *es, KosEvent *out_ev) {
     }
   }
 
-  /* Advance only when step completed normally (no early return -1 or KOS_XFER_SUSPENDED_AWAIT). */
+  /* Advance only when step completed normally (no early return -1 or
+     KOS_XFER_SUSPENDED_AWAIT).  No SyncFromContext here: each xfer_step_*
+     leaves es coherent (RefreshDynCaches on INSTALL/PUSH, wind/unwind
+     tails on EXTENT, in-place inject or pop paths that already refreshed). */
   KosTransferPlan_ACTION_INDEX(KosContext_PLAN(ctx))++;
-  if (KosTransferPlan_ACTION_INDEX(KosContext_PLAN(ctx)) >= KosTransferPlan_ACTION_COUNT(KosContext_PLAN(ctx))) {
-    KosEvalState_SyncFromContext(es);
+  if (KosTransferPlan_ACTION_INDEX(KosContext_PLAN(ctx)) >= KosTransferPlan_ACTION_COUNT(KosContext_PLAN(ctx)))
     return 1;
-  }
 
-  KosEvalState_SyncFromContext(es);
   return 0;  /* more steps remain */
 }
 
@@ -3864,15 +3858,12 @@ int kos_run_transfer_step(KosEvalState *es, KosEvent *out_ev) {
  */
 void kos_suspend_transfer_plan(KosEvalState *es) {
   KosContext *ctx = KosEvalState_CONTEXT(es);
-  if (! KosContext_PLAN(ctx)) {
-    KosEvalState_SyncFromContext(es);
+  if (! KosContext_PLAN(ctx))
     return;
-  }
 
   KosTransferPlan_SUSPENDED(KosContext_PLAN(ctx)) = KosContext_PLAN_STACK(ctx);
   KosContext_PLAN_STACK(ctx) = KosContext_PLAN(ctx);
   KosContext_PLAN(ctx) = NULL;
-  KosEvalState_SyncFromContext(es);
 }
 
 
@@ -3892,10 +3883,8 @@ void kos_suspend_transfer_plan(KosEvalState *es) {
  */
 int kos_resume_transfer_plan(KosEvalState *es) {
   KosContext *ctx = KosEvalState_CONTEXT(es);
-  if (! KosContext_PLAN_STACK(ctx)) {
-    KosEvalState_SyncFromContext(es);
+  if (! KosContext_PLAN_STACK(ctx))
     return 0;  /* nothing to resume */
-  }
 
   KosContext_PLAN(ctx) = KosContext_PLAN_STACK(ctx);
   KosContext_PLAN_STACK(ctx) = KosContext_PLAN(ctx)->suspended;
@@ -3909,7 +3898,6 @@ int kos_resume_transfer_plan(KosEvalState *es) {
     return -1;
   }
 
-  KosEvalState_SyncFromContext(es);
   return 0;
 }
 

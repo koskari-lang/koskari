@@ -137,12 +137,14 @@ void KosEvalState_ApplyDynCaches(KosEvalState *es) {
   KosStackBlock **bl;
   KosDynFrame *ef;
 
+  KOS_TRACE_EVAL_SYNC_BEGIN();
+
   if (! es)
-    return;
+    goto done;
 
   ctx = KosEvalState_CONTEXT(es);
   if (! ctx)
-    return;
+    goto done;
 
   ft = KosContext_FRAME_TOP(ctx);
   bl = KosContext_BLOCK(ctx);
@@ -162,10 +164,13 @@ void KosEvalState_ApplyDynCaches(KosEvalState *es) {
       es->pc = 0;
       es->acting_pc = 0;
     }
-    return;
+    goto done;
   }
 
   KosEvalState_BLOCK(es) = bl;
+
+done:
+  KOS_TRACE_EVAL_SYNC_END(KOS_TEVS_apply_dyn_caches);
 }
 
 
@@ -3477,7 +3482,8 @@ static int koskari_eval_dispatch_computed_goto(
 
 cg_prologue:
 
-  KosEvalState_SyncFromContext(es);
+  /* es mirrors ctx via Init, ApplyDynCaches after dyn surgery, and targeted
+     SyncFromContext on transfer/error paths — not a full sync every prologue. */
 
   #if KOS_STACK_TRACE
   {
@@ -3588,7 +3594,7 @@ koskari_eval_dispatch_switch(KosEvalState *es, KosEvent *out_ev) {
 
     if (need_prologue) {
 
-      KosEvalState_SyncFromContext(es);
+      /* See cg_prologue: no unconditional SyncFromContext here. */
 
       #if KOS_STACK_TRACE
       {

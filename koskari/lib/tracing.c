@@ -112,6 +112,45 @@ void kos_trace_post_op_exit(void) {
 #endif
 
 
+/* === eval state sync (counts + monotonic wall time per API) === */
+
+#if KOS_TRACE_EVAL_SYNC
+
+typedef struct {
+  uint64_t count;
+  uint64_t total_ns;
+} kos_trace_evs_slot_t;
+
+static kos_trace_evs_slot_t kos_tevs_slots[KOS_TEVS__COUNT];
+
+static const char *const kos_tevs_names[KOS_TEVS__COUNT] = {
+  "init",
+  "sync_from_context",
+  "flush_live_regs",
+  "apply_dyn_caches",
+  "refresh_dyn_caches",
+};
+
+
+uint64_t kos_trace_eval_sync_now(void) {
+  struct timespec ts;
+
+  if (clock_gettime(CLOCK_MONOTONIC, &ts) != 0)
+    return 0;
+  return (uint64_t) ts.tv_sec * 1000000000ULL + (uint64_t) ts.tv_nsec;
+}
+
+
+void kos_trace_eval_sync_record(KosTraceEvalSyncId id, uint64_t delta_ns) {
+  if ((unsigned) id >= (unsigned) KOS_TEVS__COUNT)
+    return;
+  kos_tevs_slots[id].count++;
+  kos_tevs_slots[id].total_ns += delta_ns;
+}
+
+#endif
+
+
 /* === freelist counters === */
 
 #if KOS_TRACE_FREELIST
@@ -191,6 +230,9 @@ void kos_trace_init(void) {
 #if KOS_TRACE_TIMING
   memset(kos_op_timing, 0, sizeof(kos_op_timing));
   memset(kos_post_handler_timing, 0, sizeof(kos_post_handler_timing));
+#endif
+#if KOS_TRACE_EVAL_SYNC
+  memset(kos_tevs_slots, 0, sizeof(kos_tevs_slots));
 #endif
 }
 
@@ -313,6 +355,46 @@ static int add_events_section(PyObject *report) {
     return -1;
   }
   Py_DECREF(events);
+#endif
+  return 0;
+}
+
+
+static int add_eval_state_sync_section(PyObject *report) {
+#if KOS_TRACE_EVAL_SYNC
+  PyObject *sec = PyDict_New();
+  Py_ssize_t i;
+
+  if (! sec)
+    return -1;
+
+  for (i = 0; i < (Py_ssize_t) KOS_TEVS__COUNT; i++) {
+    PyObject *entry = PyDict_New();
+    if (! entry) {
+      Py_DECREF(sec);
+      return -1;
+    }
+    if (PyDict_SetItemString(entry, "count",
+            PyLong_FromUnsignedLongLong(kos_tevs_slots[i].count)) < 0 ||
+        PyDict_SetItemString(entry, "total_ns",
+            PyLong_FromUnsignedLongLong(kos_tevs_slots[i].total_ns)) < 0) {
+      Py_DECREF(entry);
+      Py_DECREF(sec);
+      return -1;
+    }
+    if (PyDict_SetItemString(sec, kos_tevs_names[i], entry) < 0) {
+      Py_DECREF(entry);
+      Py_DECREF(sec);
+      return -1;
+    }
+    Py_DECREF(entry);
+  }
+
+  if (PyDict_SetItemString(report, "eval_state_sync", sec) < 0) {
+    Py_DECREF(sec);
+    return -1;
+  }
+  Py_DECREF(sec);
 #endif
   return 0;
 }
@@ -920,7 +1002,9 @@ PyObject *kos_trace_report(void) {
       PyDict_SetItemString(flags, "events",
           KOS_TRACE_EVENTS ? Py_True : Py_False) < 0 ||
       PyDict_SetItemString(flags, "timing",
-          KOS_TRACE_TIMING ? Py_True : Py_False) < 0) {
+          KOS_TRACE_TIMING ? Py_True : Py_False) < 0 ||
+      PyDict_SetItemString(flags, "eval_state_sync",
+          KOS_TRACE_EVAL_SYNC ? Py_True : Py_False) < 0) {
     Py_DECREF(flags);
     Py_DECREF(report);
     return NULL;
@@ -939,6 +1023,11 @@ PyObject *kos_trace_report(void) {
   }
 
   if (add_events_section(report) < 0) {
+    Py_DECREF(report);
+    return NULL;
+  }
+
+  if (add_eval_state_sync_section(report) < 0) {
     Py_DECREF(report);
     return NULL;
   }

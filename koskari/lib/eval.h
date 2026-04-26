@@ -37,6 +37,7 @@
 #include <string.h>
 
 #include "dynchain.h"
+#include "tracing.h"
 
 
 /* === KosEvaluatorToken === */
@@ -434,18 +435,22 @@ struct KosContext {
     kos_dyn_*(KosEvalState *, ...) (and related helpers) declared in dynchain.h.
     Chain changes must go through those commit paths: they flush live PCs to
     the outgoing frame, mutate ctx, recompute frame_top/block, then
-    KosEvalState_ApplyDynCaches. Use KosEvalState_SyncFromContext only at true
-    re-entry boundaries (resume, debugger, arbitrarily stale es), not after
-    every dyn tweak.
+    KosEvalState_ApplyDynCaches. Use KosEvalState_SyncFromContext at true
+    re-entry or error boundaries when es may be stale relative to ctx — not
+    on every eval dispatch prologue (the RUN hot path and post-Apply paths
+    keep es coherent).
   - KosContext remains the heap-allocated VM state owned by a coroutine,
     async generator, or continuation segment. It is authoritative for dyn_top,
     frame_top, and block (cold storage). While running, KosEvalState mirrors
     frame, code, block, and holds the sole live pc and acting_pc registers.
     Heap KosDynFrame pc slots are updated only at freeze boundaries (e.g.
-    KosEvalState_FlushLiveRegsToFrame before chain surgery or koskari_eval
-    exit). Init loads cold frame values into es; KosEvalState_SyncFromContext
-    reloads es when the frame or code pointer changes, but never clobbers live
-    pc/acting from stale heap when the code pointer still matches.
+  KosEvalState_FlushLiveRegsToFrame before chain surgery or koskari_eval
+  exit). Init loads cold frame values into es; KosEvalState_SyncFromContext
+  reloads es when the frame or code pointer changes, but never clobbers live
+  pc/acting from stale heap when the code pointer still matches.
+
+  With KOS_TRACE_EVAL_SYNC, call counts and total wall time per sync API are
+  recorded for kos_trace_report / get_trace_report under eval_state_sync.
 */
 
 struct KosEvalState {
@@ -481,6 +486,8 @@ struct KosEvalState {
 
 static inline void KosEvalState_Init(KosEvalState *es, KosContext *ctx) {
 
+  KOS_TRACE_EVAL_SYNC_BEGIN();
+
   KosEvalState_CONTEXT(es) = ctx;
   KosEvalState_FRAME(es) = KosContext_FRAME_TOP(ctx);
   KosEvalState_BLOCK(es) = KosContext_BLOCK(ctx);
@@ -494,6 +501,8 @@ static inline void KosEvalState_Init(KosEvalState *es, KosContext *ctx) {
     (es)->pc = 0;
     (es)->acting_pc = 0;
   }
+
+  KOS_TRACE_EVAL_SYNC_END(KOS_TEVS_init);
 }
 
 
@@ -505,10 +514,13 @@ static inline void KosEvalState_Init(KosEvalState *es, KosContext *ctx) {
 */
 static inline void KosEvalState_SyncFromContext(KosEvalState *es) {
 
-  KosContext *ctx = KosEvalState_CONTEXT(es);
+  KosContext *ctx;
 
+  KOS_TRACE_EVAL_SYNC_BEGIN();
+
+  ctx = KosEvalState_CONTEXT(es);
   if (! ctx)
-    return;
+    goto done;
 
   {
     KosDynFrame *ft = KosContext_FRAME_TOP(ctx);
@@ -518,18 +530,18 @@ static inline void KosEvalState_SyncFromContext(KosEvalState *es) {
     if (ef == ft && KosEvalState_BLOCK(es) == bl) {
       if (! ft) {
         if (! KosEvalState_CODE(es) && ! (es)->pc && ! (es)->acting_pc)
-          return;
+          goto done;
         KosEvalState_CODE(es) = NULL;
         (es)->pc = 0;
         (es)->acting_pc = 0;
-        return;
+        goto done;
       }
       if (KosEvalState_CODE(es) == KosDynFrame_CODE(ft))
-        return;
+        goto done;
       KosEvalState_CODE(es) = KosDynFrame_CODE(ft);
       (es)->pc = KosDynFrame_PC(ft);
       (es)->acting_pc = KosDynFrame_ACTING_PC(ft);
-      return;
+      goto done;
     }
 
     KosEvalState_FRAME(es) = ft;
@@ -544,6 +556,9 @@ static inline void KosEvalState_SyncFromContext(KosEvalState *es) {
       (es)->acting_pc = 0;
     }
   }
+
+done:
+  KOS_TRACE_EVAL_SYNC_END(KOS_TEVS_sync_from_context);
 }
 
 
@@ -554,12 +569,18 @@ static inline void KosEvalState_SyncFromContext(KosEvalState *es) {
 */
 static inline void KosEvalState_FlushLiveRegsToFrame(KosEvalState *es) {
 
-  KosDynFrame *f = KosEvalState_FRAME(es);
+  KosDynFrame *f;
 
+  KOS_TRACE_EVAL_SYNC_BEGIN();
+
+  f = KosEvalState_FRAME(es);
   if (! f)
-    return;
+    goto done;
   KosDynFrame_PC(f) = (es)->pc;
   KosDynFrame_ACTING_PC(f) = (es)->acting_pc;
+
+done:
+  KOS_TRACE_EVAL_SYNC_END(KOS_TEVS_flush_live_regs);
 }
 
 

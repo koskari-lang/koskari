@@ -16,6 +16,7 @@ passenvs = (
     "KOS_TRACE_FREELIST",
     "KOS_TRACE_EVENTS",
     "KOS_TRACE_TIMING",
+    "KOS_TRACE_EVAL_SYNC",
     "VERBOSE_DEBUG",
 )
 
