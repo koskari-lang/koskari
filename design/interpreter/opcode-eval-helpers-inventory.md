@@ -28,7 +28,7 @@ The table lists **current internal names**, a **suggested public name** for a
 future `koskari` runtime API (native modules, tooling), and **opcodes that call
 the helper** (by `KOS_OP_HANDLER` basename).
 
-**Koskari async gen flattening:** **`op_attach_koskari_agen_frame`**, **`op_attach_koskari_agen_frame_for_iter_next`**, and **`op_attach_koskari_agen_frame_for_yield_from`** each take **`KosEvalState *es`** as the first argument (the same live eval state as the opcode handler). They delegate to **`attach_koskari_gen_core(es, …)`**, which calls **`kos_dyn_gen_install(es, gen)`** so **`KosEvalState_RefreshDynCaches`** updates **`es`** in place.
+**Koskari async gen flattening:** **`op_attach_koskari_agen_frame`**, **`op_attach_koskari_agen_frame_for_iter_next`**, and **`op_attach_koskari_agen_frame_for_yield_from`** each take **`KosEvalState *es`** as the first argument (the same live eval state as the opcode handler). Each validates **`gen`** and performs opcode-specific failure cleanup, then calls **`kos_attach_agen_gen_flatten(es, agen, gen)`**, which clears **`agen->ctx`**’s dyn/frame head and invokes **`kos_dyn_gen_install(es, gen)`** so **`KosEvalState_RefreshDynCaches`** updates **`es`** in place.
 
 | Internal name | Suggested public name | Opcodes using it |
 |---------------|----------------------|------------------|

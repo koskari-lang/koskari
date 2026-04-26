@@ -41,7 +41,7 @@ This document describes how four related mechanisms are implemented in the Koska
 | `YIELD_FROM`             | `koskari/lib/opcode/YIELD_FROM.c` (`yield_from_normalize`, `yield_from_emit_yield`, `yield_from_drive_*`, `KOS_OP_HANDLER(YIELD_FROM)`)                                                   |
 | `PUSH_FOREACH`           | `koskari/lib/opcode/PUSH_FOREACH.c`                                                                                                                                                       |
 | `ITER_NEXT`              | `koskari/lib/opcode/ITER_NEXT.c`                                                                                                                                                          |
-| Shared “get next”        | `koskari/lib/eval.c` — `op_get_next_from_iter`, `next_from_python_async_iter`, `next_from_python_sync_iter`, `attach_koskari_gen_core` / `op_attach_koskari_agen_frame(es, …)`, `op_attach_koskari_agen_frame_for_iter_next(es, …)`, `op_attach_koskari_agen_frame_for_yield_from(es, …)` (all take live **`KosEvalState *es`**) |
+| Shared “get next”        | `koskari/lib/eval.c` — `op_get_next_from_iter`, `next_from_python_async_iter`, `next_from_python_sync_iter`, `kos_attach_agen_gen_flatten`, `op_attach_koskari_agen_frame(es, …)`, `op_attach_koskari_agen_frame_for_iter_next(es, …)`, `op_attach_koskari_agen_frame_for_yield_from(es, …)` (attach helpers take live **`KosEvalState *es`**) |
 | Yield boundary + flatten | `koskari/lib/eval.c` — `eval_phase_post_opcode` (`KOS_EV_YIELD`, …); `koskari/lib/dynchain.c` — `kos_dyn_walk_handle_yield`, `kos_dyn_gen_freeze_and_release`     |
 | Entry revive             | `koskari/lib/eval.c` — `revive_yield`, `revive_await`                                                                                                                                     |
 
@@ -126,7 +126,7 @@ This document describes how four related mechanisms are implemented in the Koska
 **Underlying calls**
 
 - `op_get_next_from_iter` → `get_await_next` / `PyIter_Next` / etc. (see `eval.c`)
-- `op_attach_koskari_agen_frame_for_iter_next(es, …)` → `attach_koskari_gen_core` → `kos_dyn_gen_install(es, gen)`
+- `op_attach_koskari_agen_frame_for_iter_next(es, …)` → `kos_attach_agen_gen_flatten` → `kos_dyn_gen_install(es, gen)`
 - Post-opcode yield/return integration with **`KOS_DYN_NEXT`** / attach paths (same family as `NEXT`) — see [EVALUATOR.md](../EVALUATOR.md) and `eval_phase_post_opcode` in `eval.c`
 
 ---
@@ -137,7 +137,7 @@ This document describes how four related mechanisms are implemented in the Koska
 | Layer                                                                         | Shared by                                           | Notes                                                                                                |
 | ----------------------------------------------------------------------------- | --------------------------------------------------- | ---------------------------------------------------------------------------------------------------- |
 | `op_get_next_from_iter`                                                       | `NEXT`, `ITER_NEXT`                                 | Single entry for “iterator object → one value / suspend / exhausted” except Koskari async gen attach |
-| `op_attach_koskari_agen_frame(es, …)` / `op_attach_koskari_agen_frame_for_iter_next(es, …)` / `op_attach_koskari_agen_frame_for_yield_from(es, …)` | `NEXT`, `ITER_NEXT`, **YIELD_FROM** (kos async gen) | Shared **`attach_koskari_gen_core`**; **`kos_dyn_gen_install(es, gen)`** on the opcode’s live **`es`** |
+| `op_attach_koskari_agen_frame(es, …)` / `op_attach_koskari_agen_frame_for_iter_next(es, …)` / `op_attach_koskari_agen_frame_for_yield_from(es, …)` | `NEXT`, `ITER_NEXT`, **YIELD_FROM** (kos async gen) | Opcode-specific attach helpers; shared **`kos_attach_agen_gen_flatten`** → **`kos_dyn_gen_install(es, gen)`** on the opcode’s live **`es`** |
 | `KOS_DYN_NEXT` / `KOS_DYN_FOREACH` attach paths + `eval_phase_post_opcode`     | `NEXT`, `ITER_NEXT`, yield paths when flattened     | Delivers inner yield/return without escaping boundary                                                |
 | `kos_dyn_walk_handle_yield`, `revive_yield`, `revive_await`                   | `YIELD`, `YIELD_FROM`                               | Same boundary kinds; no `KOS_SUSP_YIELD_FROM`                                                        |
 

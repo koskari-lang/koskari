@@ -2555,63 +2555,51 @@ static KosGetNextResult op_get_next_from_iter(
 }
 
 
-enum {
-  KOS_ATTACH_AGEN_MODE_NEXT = 0,
-  KOS_ATTACH_AGEN_MODE_ITER_NEXT = 1,
-  KOS_ATTACH_AGEN_MODE_YIELD_FROM = 2,
-};
+/**
+   Clear agen->ctx dyn/frame head and graft gen's active chain onto the
+   consumer (KosEvalState_CONTEXT(es)). gen must be non-NULL and ACTIVE;
+   es is the consumer's live interpreter KosEvalState.
+*/
+static int kos_attach_agen_gen_flatten(
+    KosEvalState *es,
+    KosPyAsyncGen *agen,
+    KosDynGen *gen) {
+
+  KosContext_DYN_TOP(agen->ctx) = NULL;
+  KosContext_FRAME_TOP(agen->ctx) = NULL;
+  return kos_dyn_gen_install(es, gen);
+}
 
 
 /**
-   Shared install of Koskari async gen frame onto consumer ctx.  mode NEXT
-   pops KOS_DYN_NEXT and DECREFs iter/default_val on failure; ITER_NEXT clears
-   FOREACH iter_step_phase on failure; YIELD_FROM pops KOS_DYN_YIELD_FROM on
-   failure.
-
-   es must be the consumer's live interpreter KosEvalState; KosEvalState_CONTEXT
-   (es) is the context onto which the async gen is flattened
+   Install GEN onto consumer ctx (Koskari flatten). Clears agen->ctx chain
+   so state lives only in GEN. kos_dyn_gen_install pushes Py_None.
+   Caller must have already: checked in_progress, handled closed/ctx.
+   Caller must have pushed KOS_DYN_NEXT before calling (NEXT opcode).
+   On error: aborts NEXT node, resets in_progress; DECREFs iter and
+   default_val.
 */
-static int attach_koskari_gen_core(
+static int op_attach_koskari_agen_frame(
     KosEvalState *es,
     KosPyAsyncGen *agen,
-    int mode,
     PyObject *iter,
-    PyObject *default_val,
-    KosDynForeach *iter_next_region,
-    KosDynYieldFrom *yf_boundary) {
+    PyObject *default_val) {
 
   KosDynGen *gen = (KosDynGen *) agen->gen;
 
   if (! gen || ! KosDynGen_ACTIVE(gen)) {
-    if (mode == KOS_ATTACH_AGEN_MODE_NEXT) {
-      kos_dyn_next_abort_after_failed_attach(es);
-      Py_DECREF(iter);
-      Py_XDECREF(default_val);
-    } else if (mode == KOS_ATTACH_AGEN_MODE_ITER_NEXT && iter_next_region) {
-      KosDynForeach_ITER_STEP_PHASE(iter_next_region) =
-          KOS_FOREACH_ITER_STEP_IDLE;
-    } else if (mode == KOS_ATTACH_AGEN_MODE_YIELD_FROM && yf_boundary) {
-      kos_dyn_pop_yield_from(es, yf_boundary);
-    }
+    kos_dyn_next_abort_after_failed_attach(es);
+    Py_DECREF(iter);
+    Py_XDECREF(default_val);
     agen->in_progress = 0;
     PyErr_SetString(PyExc_RuntimeError, "async generator has no active frame");
     return -1;
   }
 
-  KosContext_DYN_TOP(agen->ctx) = NULL;
-  KosContext_FRAME_TOP(agen->ctx) = NULL;
-
-  if (kos_dyn_gen_install(es, gen) < 0) {
-    if (mode == KOS_ATTACH_AGEN_MODE_NEXT) {
-      kos_dyn_next_abort_after_failed_attach(es);
-      Py_DECREF(iter);
-      Py_XDECREF(default_val);
-    } else if (mode == KOS_ATTACH_AGEN_MODE_ITER_NEXT && iter_next_region) {
-      KosDynForeach_ITER_STEP_PHASE(iter_next_region) =
-          KOS_FOREACH_ITER_STEP_IDLE;
-    } else if (mode == KOS_ATTACH_AGEN_MODE_YIELD_FROM && yf_boundary) {
-      kos_dyn_pop_yield_from(es, yf_boundary);
-    }
+  if (kos_attach_agen_gen_flatten(es, agen, gen) < 0) {
+    kos_dyn_next_abort_after_failed_attach(es);
+    Py_DECREF(iter);
+    Py_XDECREF(default_val);
     agen->in_progress = 0;
     return -1;
   }
@@ -2621,27 +2609,8 @@ static int attach_koskari_gen_core(
 
 
 /**
-   Install GEN onto consumer ctx (Koskari flatten). Clears agen->ctx chain
-   so state lives only in GEN. kos_dyn_gen_install pushes Py_None.
-   Caller must have already: checked in_progress, handled closed/ctx.
-   Caller must have pushed KOS_DYN_NEXT before calling (NEXT opcode).
-   On error: aborts NEXT node, resets in_progress; for NEXT mode also
-   DECREFs iter and default_val.
-*/
-static int op_attach_koskari_agen_frame(
-    KosEvalState *es,
-    KosPyAsyncGen *agen,
-    PyObject *iter,
-    PyObject *default_val) {
-
-  return attach_koskari_gen_core(es, agen, KOS_ATTACH_AGEN_MODE_NEXT,
-                                 iter, default_val, NULL, NULL);
-}
-
-
-/**
    ITER_NEXT variant: install GEN onto consumer ctx. On error clear
-   FOREACH iter_step_phase.
+   FOREACH iter_step_phase when region is a FOREACH node.
 */
 static int op_attach_koskari_agen_frame_for_iter_next(
     KosEvalState *es,
@@ -2651,8 +2620,24 @@ static int op_attach_koskari_agen_frame_for_iter_next(
   KosDynForeach *fe = (KosDynNode_IS_FOREACH(region))
                           ? (KosDynForeach *) region
                           : NULL;
-  return attach_koskari_gen_core(es, agen, KOS_ATTACH_AGEN_MODE_ITER_NEXT,
-                                 NULL, NULL, fe, NULL);
+  KosDynGen *gen = (KosDynGen *) agen->gen;
+
+  if (! gen || ! KosDynGen_ACTIVE(gen)) {
+    if (fe)
+      KosDynForeach_ITER_STEP_PHASE(fe) = KOS_FOREACH_ITER_STEP_IDLE;
+    agen->in_progress = 0;
+    PyErr_SetString(PyExc_RuntimeError, "async generator has no active frame");
+    return -1;
+  }
+
+  if (kos_attach_agen_gen_flatten(es, agen, gen) < 0) {
+    if (fe)
+      KosDynForeach_ITER_STEP_PHASE(fe) = KOS_FOREACH_ITER_STEP_IDLE;
+    agen->in_progress = 0;
+    return -1;
+  }
+
+  return 0;
 }
 
 
@@ -2665,8 +2650,22 @@ static int op_attach_koskari_agen_frame_for_yield_from(
     KosPyAsyncGen *agen,
     KosDynYieldFrom *yf) {
 
-  return attach_koskari_gen_core(es, agen, KOS_ATTACH_AGEN_MODE_YIELD_FROM,
-                                 NULL, NULL, NULL, yf);
+  KosDynGen *gen = (KosDynGen *) agen->gen;
+
+  if (! gen || ! KosDynGen_ACTIVE(gen)) {
+    kos_dyn_pop_yield_from(es, yf);
+    agen->in_progress = 0;
+    PyErr_SetString(PyExc_RuntimeError, "async generator has no active frame");
+    return -1;
+  }
+
+  if (kos_attach_agen_gen_flatten(es, agen, gen) < 0) {
+    kos_dyn_pop_yield_from(es, yf);
+    agen->in_progress = 0;
+    return -1;
+  }
+
+  return 0;
 }
 
 
