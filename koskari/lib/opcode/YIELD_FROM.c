@@ -432,8 +432,8 @@ static int yield_from_drive_py_async(
 
   int suspended = 0;
   PyObject *yielded = NULL;
-  PyObject *result = eager_step_awaitable(
-      awaitable, KosEvalState_CONTEXT(es), &suspended, &yielded);
+  PyObject *result = KosEvalState_EagerStepAwaitable(
+      es, awaitable, &suspended, &yielded);
 
   if (suspended && yielded) {
     KosDynYieldFrom_INFLIGHT(yf) = awaitable;

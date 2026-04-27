@@ -717,6 +717,28 @@ int KosEvalState_KReturnDelimited(
     PyObject *val,
     KosEvent *out_ev);
 
+void KosEvalState_SetSuspensionEvent(KosEvalState *es, uint8_t ev);
+void KosEvalState_ClearSuspensionEvent(KosEvalState *es);
+uint8_t KosEvalState_SuspensionEvent(const KosEvalState *es);
+
+void KosEvalState_PythonAwaitSetIter(KosEvalState *es, PyObject *iter);
+void KosEvalState_PythonAwaitClearIter(KosEvalState *es);
+PyObject *KosEvalState_PythonAwaitIter(KosEvalState *es);
+void KosEvalState_PythonResumeSet(KosEvalState *es, PyObject *val, uint8_t kind);
+int KosEvalState_PythonResumeTake(
+    KosEvalState *es,
+    PyObject **out_val,
+    uint8_t *out_kind);
+
+void KosEvalState_EnterDomainScope(KosEvalState *es);
+void KosEvalState_LeaveDomainScope(KosEvalState *es);
+
+PyObject *KosEvalState_EagerStepAwaitable(
+    KosEvalState *es,
+    PyObject *awaitable,
+    int *suspended,
+    PyObject **yielded);
+
 /**
   Innermost dyn node that owns a non-NULL operand stack (from dyn_top toward
   root). NULL if no explicit stack on the chain.

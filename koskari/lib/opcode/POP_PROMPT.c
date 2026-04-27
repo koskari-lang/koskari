@@ -20,8 +20,6 @@
 */
 
 KOS_OP_HANDLER(POP_PROMPT) {
-  KosContext *ctx = KosEvalState_CONTEXT(es);
-  // CONTEXT: dirty, touches context directly
   KosDynDelim *ret_delim = kos_find_nearest_delim(es, KOS_DYN_DELIM_MODE_POP_PROMPT);
 
   SAYF("[eval] POP_PROMPT delim=%p dyn_top=%p IS_PROMPT=%d frame=%p stack_len=%zu\n",
@@ -86,7 +84,7 @@ KOS_OP_HANDLER(POP_PROMPT) {
     KosEvent_PAYLOAD(out_ev) = val;
     if (KosEvalState_CurrentNode(es) == (KosDynNode *) ret_delim)
       kos_dyn_pop_delim(es, ret_delim);
-    KosContext_FLAGS(ctx) &= ~KOS_CTX_RUNNING;
+    KosEvalState_MarkSuspendedNotRunning(es);
     (void) insn;
     return KOS_OP_POST_SUSPEND();
   }

@@ -44,35 +44,6 @@ KOS_OP_HANDLER(YIELD) {
 
   /* Frame has parent (not GEN): return into parent in same loop
      (CALL return or async gen step).  Parent is GEN => top-level yield. */
-  // {
-  //   KosDynNode *parent = KosDynNode_PARENT(KosEvalState_FRAME(es));
-  //   if (parent != NULL && ! KosDynNode_IS_GEN(parent)) {
-  //     int was_pending_ctx = (KosContext_PENDING_AGEN(ctx) != NULL);
-  //     KosPyAsyncGen *agen = was_pending_ctx ? (KosPyAsyncGen *) KosContext_PENDING_AGEN(ctx) : NULL;
-  //     if (was_pending_ctx && agen)
-  //       agen->in_progress = 0;
-
-  //     KosDynFrame *detached = NULL;
-  //     if (kos_dyn_detach_top_frame(es, &detached) < 0) {
-  //       Py_DECREF(val);
-  //       return KOS_OP_POST_ERR();
-  //     }
-
-  //     if (was_pending_ctx && agen) {
-  //       KosContext_PENDING_AGEN(ctx) = NULL;
-  //       Py_XDECREF(KosContext_PENDING_AGEN_DEFAULT(ctx));
-  //       KosContext_PENDING_AGEN_DEFAULT(ctx) = NULL;
-  //     }
-
-  //     if (unlikely(KosEvalState_StackPushRef(es, val) < 0)) {
-  //       Py_DECREF(val);
-  //       return KOS_OP_POST_ERR();
-  //     }
-
-  //     Py_DECREF(val);
-  //     return KOS_OP_RUN();
-  //   }
-  // }
 
   KosEvent_KIND(out_ev) = KOS_EV_YIELD;
   KosEvent_PAYLOAD(out_ev) = val;

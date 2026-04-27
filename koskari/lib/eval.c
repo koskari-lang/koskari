@@ -952,8 +952,6 @@ static KosEvalMode revive_await(
         PyObject *throw_exc,
         KosEvent *out_ev) {
 
-  KosContext *ctx = KosEvalState_CONTEXT(es);
-
   if (throw_exc != NULL) {
     SAYF("[await] revive_await throw typ=%p exc=%p\n",
          (void *) throw_typ, (void *) throw_exc);
@@ -968,7 +966,7 @@ static KosEvalMode revive_await(
     KosEvent_PAYLOAD(out_ev) = NULL;
     KosEvent_KIND(out_ev) = KOS_EV_NONE;
 
-    if (! KosContext_PY_AWAIT_ITER(ctx)) {
+    if (! KosEvalState_PythonAwaitIter(es)) {
       PyErr_SetObject(throw_typ ? throw_typ : (PyObject *) Py_TYPE(throw_exc),
                       throw_exc);
       return KOS_MODE_EXCEPTION;
@@ -984,23 +982,23 @@ static KosEvalMode revive_await(
       Py_INCREF(val);
       Py_INCREF(tb);
       PyErr_NormalizeException(&typ, &val, &tb);
-      throw_meth = PyObject_GetAttr(KosContext_PY_AWAIT_ITER(ctx), str_throw);
+      throw_meth = PyObject_GetAttr(KosEvalState_PythonAwaitIter(es), str_throw);
       if (! throw_meth) {
         Py_DECREF(typ);
         Py_DECREF(val);
         Py_XDECREF(tb);
         if (PyErr_ExceptionMatches(PyExc_AttributeError)) {
           PyErr_Clear();
-          Py_CLEAR(KosContext_PY_AWAIT_ITER(ctx));
+          KosEvalState_PythonAwaitClearIter(es);
           PyErr_SetObject(throw_typ ? throw_typ : (PyObject *) Py_TYPE(throw_exc),
                           throw_exc);
           return KOS_MODE_EXCEPTION;
         }
-        Py_CLEAR(KosContext_PY_AWAIT_ITER(ctx));
+        KosEvalState_PythonAwaitClearIter(es);
         return KOS_MODE_EXCEPTION;
       }
       if (! PyCallable_Check(throw_meth)) {
-        PyObject *await_iter = KosContext_PY_AWAIT_ITER(ctx);
+        PyObject *await_iter = KosEvalState_PythonAwaitIter(es);
         PyErr_Format(PyExc_TypeError,
                      "%R object attribute throw is not callable",
                      await_iter);
@@ -1008,7 +1006,7 @@ static KosEvalMode revive_await(
         Py_DECREF(typ);
         Py_DECREF(val);
         Py_XDECREF(tb);
-        Py_CLEAR(KosContext_PY_AWAIT_ITER(ctx));
+        KosEvalState_PythonAwaitClearIter(es);
         return KOS_MODE_EXCEPTION;
       }
       /* Single-arg throw(exc) avoids deprecated (typ, val, tb) on generators */
@@ -1026,30 +1024,29 @@ static KosEvalMode revive_await(
       if (PyErr_ExceptionMatches(PyExc_StopIteration)) {
         PyObject *await_result = NULL;
         if (PyGen_FetchStopIterationValue(&await_result) < 0) {
-          Py_CLEAR(KosContext_PY_AWAIT_ITER(ctx));
+          KosEvalState_PythonAwaitClearIter(es);
           return KOS_MODE_EXCEPTION;
         }
         if (! await_result) {
           await_result = Py_None;
           Py_INCREF(await_result);
         }
-        Py_CLEAR(KosContext_PY_AWAIT_ITER(ctx));
-        Py_XDECREF(KosContext_PY_RESUME_INJECT(ctx));
-        KosContext_PY_RESUME_INJECT(ctx) = await_result;
-        KosContext_PY_RESUME_KIND(ctx) = KOS_RESUME_AWAIT;
+        KosEvalState_PythonAwaitClearIter(es);
+        KosEvalState_PythonResumeSet(es, await_result, KOS_RESUME_AWAIT);
         PyErr_Clear();
         /* Fall through: push inject like a normal successful resume */
       }
       else {
-        Py_CLEAR(KosContext_PY_AWAIT_ITER(ctx));
+        KosEvalState_PythonAwaitClearIter(es);
         return KOS_MODE_EXCEPTION;
       }
     }
   }
-  PyObject *to_push = KosContext_PY_RESUME_INJECT(ctx);
-  if (to_push != NULL) {
-    KosContext_PY_RESUME_INJECT(ctx) = NULL;
-  } else if (send_val != NULL) {
+  PyObject *to_push = NULL;
+  uint8_t resume_kind_unused;
+  KosEvalState_PythonResumeTake(es, &to_push, &resume_kind_unused);
+  (void) resume_kind_unused;
+  if (to_push == NULL && send_val != NULL) {
     to_push = send_val;
   }
   if (to_push != NULL && KosEvalState_FRAME(es)) {
@@ -1080,7 +1077,7 @@ static KosEvalMode revive_yield(
 
   SAYF("[gen] revive_yield ENTER suspend=%d send_val=%p "
        "throw_typ=%p throw_exc=%p dyn_top=%p frame_top=%p\n",
-       KosContext_SUSPENSION_EVENT(KosEvalState_CONTEXT(es)),
+       KosEvalState_SuspensionEvent(es),
        (void *) send_val, (void *) throw_typ, (void *) throw_exc,
        (void *) KosContext_DYN_TOP(KosEvalState_CONTEXT(es)),
        (void *) KosEvalState_FRAME(es));
@@ -1960,6 +1957,16 @@ static PyObject *eager_step_awaitable(
 }
 
 
+PyObject *KosEvalState_EagerStepAwaitable(
+    KosEvalState *es,
+    PyObject *awaitable,
+    int *suspended,
+    PyObject **yielded) {
+
+  return eager_step_awaitable(awaitable, KosEvalState_CONTEXT(es), suspended, yielded);
+}
+
+
 /**
    Get the awaitable for one step of an async iterator (__anext__).
    Mirror of sibilant-ceval get_await_next: tp_as_async->am_anext then
@@ -2022,8 +2029,6 @@ static int push_or_await_common(
     PyObject *val,
     int await_defer) {
 
-  KosContext *ctx = KosEvalState_CONTEXT(es);
-
   /* Defer is not auto-awaited; push as plain value (explicit AWAIT drives it). */
   if (! await_defer && KosDefer_Check(val)) {
     return KosEvalState_StackPUSH(es, val);
@@ -2038,7 +2043,7 @@ static int push_or_await_common(
 
   int suspended = 0;
   PyObject *yielded = NULL;
-  PyObject *result = eager_step_awaitable(val, ctx, &suspended, &yielded);
+  PyObject *result = KosEvalState_EagerStepAwaitable(es, val, &suspended, &yielded);
   Py_DECREF(val);
 
   if (result) {
@@ -2046,7 +2051,7 @@ static int push_or_await_common(
   }
 
   if (suspended && yielded) {
-    KosContext_FLAGS(ctx) &= ~KOS_CTX_RUNNING;
+    KosEvalState_MarkSuspendedNotRunning(es);
     KosEvent_KIND(out_ev) = KOS_EV_AWAIT;
     KosEvent_PAYLOAD(out_ev) = yielded;
     SAYF("[eval] push_or_await set KOS_EV_AWAIT (suspended=%d yielded=%d)\n",
@@ -2094,8 +2099,6 @@ KOS_OP_INLINE int op_push_or_await(
     KosEvent *out_ev,
     PyObject *val) {
 
-  KosContext *ctx = KosEvalState_CONTEXT(es);
-
   /* Defer is not auto-awaited; push as plain value (explicit AWAIT drives it). */
   if (KosDefer_Check(val)) {
     OP_TRY_FUSE_POP1_AFTER_PUSH(es, val);
@@ -2112,7 +2115,7 @@ KOS_OP_INLINE int op_push_or_await(
 
   int suspended = 0;
   PyObject *yielded = NULL;
-  PyObject *result = eager_step_awaitable(val, ctx, &suspended, &yielded);
+  PyObject *result = KosEvalState_EagerStepAwaitable(es, val, &suspended, &yielded);
   Py_DECREF(val);
 
   if (result) {
@@ -2121,7 +2124,7 @@ KOS_OP_INLINE int op_push_or_await(
   }
 
   if (suspended && yielded) {
-    KosContext_FLAGS(ctx) &= ~KOS_CTX_RUNNING;
+    KosEvalState_MarkSuspendedNotRunning(es);
     KosEvent_KIND(out_ev) = KOS_EV_AWAIT;
     KosEvent_PAYLOAD(out_ev) = yielded;
     SAYF("[eval] op_push_or_await set KOS_EV_AWAIT (suspended=%d yielded=%d)\n",
@@ -2700,13 +2703,11 @@ static KosGetNextResult next_from_python_async_iter(
     PyObject **result_out,
     PyObject *awaitable) {
 
-  KosContext *ctx = KosEvalState_CONTEXT(es);
-
   (void) iter;
   int suspended = 0;
   PyObject *yielded = NULL;
-  PyObject *result = eager_step_awaitable(awaitable, ctx, &suspended,
-                                          &yielded);
+  PyObject *result = KosEvalState_EagerStepAwaitable(es, awaitable, &suspended,
+                                                     &yielded);
   Py_DECREF(awaitable);
 
   if (suspended && yielded) {
@@ -2973,7 +2974,7 @@ static int kos_eval_call_native_handler(
    Determines the initial KosEvalMode by dispatching through the current
    suspension state and send_val/throw_exc arguments.  Handles the
    EXCEPTION and RAISE outcomes in-place (filling out_ev and flagging the
-   context dead).  Clears KosContext_SUSPENSION_EVENT after mode selection.
+   context dead).  Clears suspension event after mode selection.
 
    :param mode_out: Receives the resolved KosEvalMode on KOS_STEP_CONTINUE.
    :return: KOS_STEP_CONTINUE when the loop should proceed;
@@ -2997,13 +2998,13 @@ static KosEvalStep eval_phase_entry(
 
   } else if (send_val == NULL && throw_typ == NULL && throw_exc == NULL) {
     SAYF("[eval] phase_entry branch: send/throw all NULL, suspend=%d\n",
-         KosContext_SUSPENSION_EVENT(ctx));
-    switch (KosContext_SUSPENSION_EVENT(ctx)) {
+         KosEvalState_SuspensionEvent(es));
+    switch (KosEvalState_SuspensionEvent(es)) {
       case KOS_SUSP_NONE:
         mode = KOS_MODE_NORMAL;
         break;
       case KOS_SUSP_AWAIT:
-        if (KosContext_PY_AWAIT_ITER(ctx)) {
+        if (KosEvalState_PythonAwaitIter(es)) {
           mode = KOS_MODE_NORMAL;
         } else {
           mode = revive_await(es, Py_None, NULL, NULL, out_ev);
@@ -3023,8 +3024,8 @@ static KosEvalStep eval_phase_entry(
     SAYF("[eval] phase_entry branch: send_val=%p throw_typ=%p throw_exc=%p "
          "suspend=%d\n",
          (void *) send_val, (void *) throw_typ, (void *) throw_exc,
-         KosContext_SUSPENSION_EVENT(ctx));
-    switch (KosContext_SUSPENSION_EVENT(ctx)) {
+         KosEvalState_SuspensionEvent(es));
+    switch (KosEvalState_SuspensionEvent(es)) {
       case KOS_SUSP_AWAIT:
         mode = revive_await(es, send_val, throw_typ, throw_exc, out_ev);
         break;
@@ -3037,12 +3038,12 @@ static KosEvalStep eval_phase_entry(
         break;
     }
   }
-  KosContext_SUSPENSION_EVENT(ctx) = KOS_SUSP_NONE;
+  KosEvalState_ClearSuspensionEvent(es);
 
 entry_mode_dispatch:
   if (mode == KOS_MODE_AWAIT) {
-    KosContext_SUSPENSION_EVENT(ctx) = KOS_SUSP_AWAIT;
-    KosContext_FLAGS(ctx) &= ~KOS_CTX_RUNNING;
+    KosEvalState_SetSuspensionEvent(es, KOS_SUSP_AWAIT);
+    KosEvalState_MarkSuspendedNotRunning(es);
     return KOS_STEP_STOP_EVENT;
   }
 
@@ -3145,8 +3146,7 @@ static KosEvalStep eval_boundary_raise_dispatch(
   }
 
   if (KosEvent_KIND(out_ev) == KOS_EV_AWAIT) {
-    KosContext *ctx = KosEvalState_CONTEXT(es);
-    KosContext_SUSPENSION_EVENT(ctx) = KOS_SUSP_AWAIT;
+    KosEvalState_SetSuspensionEvent(es, KOS_SUSP_AWAIT);
     return KOS_STEP_STOP_EVENT;
   }
 
@@ -3193,7 +3193,6 @@ static KosEvalStep eval_phase_pending_exception(
 static KosEvalStep eval_event_yield_deliver_to_boundary(
     KosEvalState *es, KosEvent *out_ev) {
 
-  KosContext *ctx = KosEvalState_CONTEXT(es);
   KosDynNext *next = kos_dyn_find_next_above_frame(es);
 
   if (next) {
@@ -3216,7 +3215,7 @@ static KosEvalStep eval_event_yield_deliver_to_boundary(
     if (yf) {
       if (kos_dyn_yield_from_deliver_inner_yield(es, yf, out_ev) < 0)
         return KOS_STEP_FATAL_ERROR;
-      KosContext_SUSPENSION_EVENT(ctx) = KOS_SUSP_YIELD;
+      KosEvalState_SetSuspensionEvent(es, KOS_SUSP_YIELD);
       return KOS_STEP_STOP_EVENT;
     }
   }
@@ -3283,10 +3282,8 @@ static KosEvalStep eval_yield_handle_walk_and_freeze(
 */
 static KosEvalStep eval_event_yield(KosEvalState *es, KosEvent *out_ev) {
 
-  KosContext *ctx = KosEvalState_CONTEXT(es);
-
   SAYF("[eval] post_opcode KOS_EV_YIELD -> walk_handle_yield dyn_top=%p\n",
-       (void *) KosContext_DYN_TOP(ctx));
+       (void *) KosEvalState_CurrentNode(es));
   {
     KosEvalStep ws = eval_yield_handle_walk_and_freeze(es, out_ev);
 
@@ -3295,7 +3292,7 @@ static KosEvalStep eval_event_yield(KosEvalState *es, KosEvent *out_ev) {
   }
   if (kos_dyn_need_kos_agen_boundary_deliver(es))
     return eval_event_yield_deliver_to_boundary(es, out_ev);
-  KosContext_SUSPENSION_EVENT(ctx) = KOS_SUSP_YIELD;
+  KosEvalState_SetSuspensionEvent(es, KOS_SUSP_YIELD);
   return KOS_STEP_STOP_EVENT;
 }
 
@@ -3324,11 +3321,9 @@ static KosEvalStep eval_phase_post_opcode_tail(
     return KOS_STEP_FATAL_ERROR;
   }
 
-  KosContext *ctx = KosEvalState_CONTEXT(es);
-
   if (KosEvent_KIND(out_ev) == KOS_EV_AWAIT) {
     KOS_TRACE_POST_OP_WRAP(event_await,
-        KosContext_SUSPENSION_EVENT(ctx) = KOS_SUSP_AWAIT);
+        KosEvalState_SetSuspensionEvent(es, KOS_SUSP_AWAIT));
 
   } else if (KosEvent_KIND(out_ev) == KOS_EV_YIELD) {
     KosEvalStep ys;
@@ -3474,7 +3469,7 @@ static KosEvalStep eval_phase_post_opcode(
 
   /* Clear resume kind when handling non-zero result so next iteration (if we
      continue) has it clean. Keeps the hot path (tail-dispatch) from touching it. */
-  KosContext_PY_RESUME_KIND(ctx) = KOS_RESUME_NONE;
+  KosEvalState_PythonResumeSet(es, NULL, KOS_RESUME_NONE);
 
   if (op_res == KOS_OP_RES_PARENT_RETURN_DELIVER) {
     ret = eval_parent_return_deliver(es, out_ev);
@@ -3931,7 +3926,7 @@ int koskari_eval(
   KosContext_FLAGS(ctx) |= KOS_CTX_RUNNING;
 
   /* Push domain scope (token, context, live_depth) onto per-thread TLS */
-  kos_domain_push_scope(ctx);
+  KosEvalState_EnterDomainScope(&es);
 
   /* Phase 1: entry/revive normalization */
   KosEvalMode mode = KOS_MODE_NORMAL;
@@ -3956,7 +3951,7 @@ int koskari_eval(
 
   /* Clear resume kind once before loop; post_opcode clears it when handling
      non-zero results so the hot path (tail-dispatch) never touches it. */
-  KosContext_PY_RESUME_KIND(ctx) = KOS_RESUME_NONE;
+  KosEvalState_PythonResumeSet(&es, NULL, KOS_RESUME_NONE);
 
 #if KOS_USE_COMPUTED_GOTO
   eval_ret = koskari_eval_dispatch_computed_goto(&es, out_ev);
@@ -3966,7 +3961,7 @@ int koskari_eval(
 
 koskari_eval_cleanup:
   KosEvalState_FlushLiveRegsToFrame(&es);
-  kos_domain_pop_scope(ctx);
+  KosEvalState_LeaveDomainScope(&es);
   return eval_ret;
 }
 

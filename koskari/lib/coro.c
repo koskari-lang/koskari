@@ -197,32 +197,36 @@ static PyObject *coroutine_send(PyObject *self, PyObject *value) {
   }
 
   /* If waiting on Python awaitable, forward to it */
-  if (coro->state == KOS_CORO_WAITING_PY && KosContext_PY_AWAIT_ITER(coro->ctx)) {
-    PyObject *result = PyObject_CallMethodObjArgs(KosContext_PY_AWAIT_ITER(coro->ctx),
-                                                  coro_str_send, value, NULL);
+  if (coro->state == KOS_CORO_WAITING_PY) {
+    KosEvalState coro_es;
+    KosEvalState_Init(&coro_es, coro->ctx);
+    if (KosEvalState_PythonAwaitIter(&coro_es)) {
+      PyObject *result = PyObject_CallMethodObjArgs(
+          KosEvalState_PythonAwaitIter(&coro_es), coro_str_send, value, NULL);
 
-    if (result) {
-      /* Still yielding */
-      return result;
-    }
+      if (result) {
+        /* Still yielding */
+        return result;
+      }
 
-    if (PyErr_ExceptionMatches(PyExc_StopIteration)) {
-      /* Python awaitable completed - pass result as send_val and drive again */
-      PyObject *await_result = NULL;
-      PyGen_FetchStopIterationValue(&await_result);
-      if (! await_result)
-        await_result = Py_None;
+      if (PyErr_ExceptionMatches(PyExc_StopIteration)) {
+        /* Python awaitable completed - pass result as send_val and drive again */
+        PyObject *await_result = NULL;
+        PyGen_FetchStopIterationValue(&await_result);
+        if (! await_result)
+          await_result = Py_None;
 
-      Py_CLEAR(KosContext_PY_AWAIT_ITER(coro->ctx));
-      coro->state = KOS_CORO_RUNNING;
-      send_val = await_result;
-      Py_INCREF(send_val);
-      /* fall through to drive and handle ev */
-    } else {
-      /* Exception from Python awaitable */
-      Py_CLEAR(KosContext_PY_AWAIT_ITER(coro->ctx));
-      coro->state = KOS_CORO_DONE;
-      return NULL;
+        KosEvalState_PythonAwaitClearIter(&coro_es);
+        coro->state = KOS_CORO_RUNNING;
+        send_val = await_result;
+        Py_INCREF(send_val);
+        /* fall through to drive and handle ev */
+      } else {
+        /* Exception from Python awaitable */
+        KosEvalState_PythonAwaitClearIter(&coro_es);
+        coro->state = KOS_CORO_DONE;
+        return NULL;
+      }
     }
   }
 
@@ -326,30 +330,32 @@ static PyObject *coroutine_throw(PyObject *self, PyObject *args) {
 
   /* If yielded, throw will inject exception and run (no special case) */
   /* If waiting on Python awaitable, forward throw */
-  if (coro->state == KOS_CORO_WAITING_PY && KosContext_PY_AWAIT_ITER(coro->ctx)) {
-    PyObject *result = PyObject_CallMethodObjArgs(KosContext_PY_AWAIT_ITER(coro->ctx),
-                                                  coro_str_throw, typ, val, tb,
-                                                  NULL);
+  if (coro->state == KOS_CORO_WAITING_PY) {
+    KosEvalState coro_es;
+    KosEvalState_Init(&coro_es, coro->ctx);
+    if (KosEvalState_PythonAwaitIter(&coro_es)) {
+      PyObject *result = PyObject_CallMethodObjArgs(
+          KosEvalState_PythonAwaitIter(&coro_es), coro_str_throw, typ, val, tb,
+          NULL);
 
-    if (result) {
-      return result;
-    }
+      if (result) {
+        return result;
+      }
 
-    if (PyErr_ExceptionMatches(PyExc_StopIteration)) {
-      PyObject *await_result = NULL;
-      PyGen_FetchStopIterationValue(&await_result);
-      if (! await_result)
-        await_result = Py_None;
-      Py_CLEAR(KosContext_PY_AWAIT_ITER(coro->ctx));
-      coro->state = KOS_CORO_RUNNING;
-      Py_XDECREF(KosContext_PY_RESUME_INJECT(coro->ctx));
-      KosContext_PY_RESUME_INJECT(coro->ctx) = await_result;
-      KosContext_PY_RESUME_KIND(coro->ctx) = KOS_RESUME_AWAIT;
-      return coroutine_send(self, Py_None);
-    } else {
-      Py_CLEAR(KosContext_PY_AWAIT_ITER(coro->ctx));
-      coro->state = KOS_CORO_DONE;
-      return NULL;
+      if (PyErr_ExceptionMatches(PyExc_StopIteration)) {
+        PyObject *await_result = NULL;
+        PyGen_FetchStopIterationValue(&await_result);
+        if (! await_result)
+          await_result = Py_None;
+        KosEvalState_PythonAwaitClearIter(&coro_es);
+        coro->state = KOS_CORO_RUNNING;
+        KosEvalState_PythonResumeSet(&coro_es, await_result, KOS_RESUME_AWAIT);
+        return coroutine_send(self, Py_None);
+      } else {
+        KosEvalState_PythonAwaitClearIter(&coro_es);
+        coro->state = KOS_CORO_DONE;
+        return NULL;
+      }
     }
   }
 
@@ -426,12 +432,16 @@ static PyObject *coroutine_close(PyObject *self) {
   }
 
   /* Close any pending Python awaitable */
-  if (KosContext_PY_AWAIT_ITER(coro->ctx)) {
-    PyObject *result = PyObject_CallMethodObjArgs(KosContext_PY_AWAIT_ITER(coro->ctx),
-                                                  coro_str_close, NULL);
-    Py_XDECREF(result);
-    PyErr_Clear();
-    Py_CLEAR(KosContext_PY_AWAIT_ITER(coro->ctx));
+  {
+    KosEvalState coro_es;
+    KosEvalState_Init(&coro_es, coro->ctx);
+    if (KosEvalState_PythonAwaitIter(&coro_es)) {
+      PyObject *result = PyObject_CallMethodObjArgs(
+          KosEvalState_PythonAwaitIter(&coro_es), coro_str_close, NULL);
+      Py_XDECREF(result);
+      PyErr_Clear();
+      KosEvalState_PythonAwaitClearIter(&coro_es);
+    }
   }
 
   /* Throw GeneratorExit */
