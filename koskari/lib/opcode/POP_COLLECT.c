@@ -14,9 +14,8 @@
 */
 
 /**
-   POP_COLLECT: arg unused. Verify dyn_top is KOS_DYN_COLLECT, restore
-   frame ns from saved_ns, pop the node, push the collected namespace
-   onto the value stack.
+   POP_COLLECT: arg unused. Verify dyn_top is KOS_DYN_COLLECT, pop the node,
+   and push the collected namespace onto the value stack.
 */
 
 KOS_OP_HANDLER(POP_COLLECT) {
@@ -32,12 +31,8 @@ KOS_OP_HANDLER(POP_COLLECT) {
   }
 
   KosDynCollect *col_node = (KosDynCollect *) KosContext_DYN_TOP(ctx);
-  PyObject *prior = KosDynCollect_SAVED_NS(col_node);
-  PyObject *collector = CURRENT_NS();
-  Py_INCREF(prior);
+  PyObject *collector = KosDynNode_NS(col_node);
   Py_INCREF(collector);
-  Py_DECREF(CURRENT_NS());
-  CURRENT_NS() = prior;
 
   kos_dyn_pop_collect(es, col_node);
 

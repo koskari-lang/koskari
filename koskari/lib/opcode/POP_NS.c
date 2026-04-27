@@ -14,8 +14,7 @@
 */
 
 /**
-   POP_NS: arg unused. Verify dyn_top is KOS_DYN_NS, restore frame ns from
-   saved_ns, pop the NS node.
+   POP_NS: arg unused. Verify dyn_top is KOS_DYN_NS and pop the NS node.
 */
 
 KOS_OP_HANDLER(POP_NS) {
@@ -26,10 +25,6 @@ KOS_OP_HANDLER(POP_NS) {
   }
 
   KosDynNs *ns_node = (KosDynNs *) KosContext_DYN_TOP(ctx);
-  PyObject *prior = KosDynNs_SAVED_NS(ns_node);
-  Py_INCREF(prior);
-  Py_DECREF(CURRENT_NS());
-  CURRENT_NS() = prior;
   kos_dyn_pop_ns(es, ns_node);
 
   (void) out_ev;

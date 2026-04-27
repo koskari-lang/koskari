@@ -101,6 +101,8 @@ static void kos_dynnode_init(
   KosDynNode_KIND(node) = kind;
   KosDynNode_FLAGS(node) = KOS_DYNF_NONE;
   KosDynNode_CAPS(node) = caps;
+  KosDynNode_STACK(node) = NULL;
+  KosDynNode_NS(node) = NULL;
 }
 
 
@@ -477,39 +479,6 @@ KosDynNode *kos_clone_chain_segment(KosDynNode *top, KosDynNode *stop) {
 }
 
 
-/* === Context operations === */
-
-
-KosDynNode *KosEvalState_InnermostStackOwner(KosEvalState *es) {
-  KosContext *ctx = KosEvalState_CONTEXT(es);
-  KosDynNode *n = KosContext_DYN_TOP(ctx);
-  while (n) {
-    if (KosDynNode_STACK(n))
-      return n;
-    n = KosDynNode_PARENT(n);
-  }
-  return NULL;
-}
-
-
-/**
-   Refresh FRAME_TOP and BLOCK after DYN_TOP / chain changes, then apply
-   them to es without a full KosEvalState_SyncFromContext traversal.
-*/
-void KosEvalState_RefreshDynCaches(KosEvalState *es) {
-
-  KosContext *ctx;
-
-  KOS_TRACE_EVAL_SYNC_BEGIN();
-
-  ctx = KosEvalState_CONTEXT(es);
-  KosContext_RecomputeFrameTopAndBlock(ctx);
-  KosEvalState_ApplyDynCaches(es);
-
-  KOS_TRACE_EVAL_SYNC_END(KOS_TEVS_refresh_dyn_caches);
-}
-
-
 /**
    Link node as DYN_TOP, bump chain_version, run install, recompute
    frame_top/block, apply eval caches. Flushes live PCs to the outgoing
@@ -528,8 +497,7 @@ int kos_dyn_push(KosEvalState *es, KosDynNode *node) {
     KosEvalState_SyncFromContext(es);
     return -1;
   }
-  KosContext_RecomputeFrameTopAndBlock(ctx);
-  KosEvalState_ApplyDynCaches(es);
+  KosEvalState_RefreshDynCaches(es);
   return 0;
 }
 
@@ -541,8 +509,7 @@ void kos_dyn_commit_dyn_top(KosEvalState *es, KosDynNode *new_top) {
   KosEvalState_FlushLiveRegsToFrame(es);
   KosContext_DYN_TOP(ctx) = new_top;
   KosContext_CHAIN_VERSION(ctx)++;
-  KosContext_RecomputeFrameTopAndBlock(ctx);
-  KosEvalState_ApplyDynCaches(es);
+  KosEvalState_RefreshDynCaches(es);
 }
 
 
@@ -745,12 +712,12 @@ static int kos_dyn_uninstall_handler(KosEvalState *es, KosDynNode *node,
       (void) out_ev;
       return 0;
     case KOS_DYN_NS:
+      (void) es;
       (void) out_ev;
-      kos_dyn_ns_unwind(es, (KosDynNs *) node);
       return 0;
     case KOS_DYN_COLLECT: {
+      (void) es;
       (void) out_ev;
-      kos_dyn_collect_unwind(es, (KosDynCollect *) node);
       return 0;
     }
     case KOS_DYN_PARAM:

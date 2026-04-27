@@ -111,8 +111,7 @@ int kos_dyn_gen_install(KosEvalState *es, KosDynGen *gen) {
   KosContext_DYN_TOP(ctx) = active;
   KosDynGen_ACTIVE(gen) = NULL;
   KosContext_CHAIN_VERSION(ctx)++;
-  KosContext_RecomputeFrameTopAndBlock(ctx);
-  KosEvalState_ApplyDynCaches(es);
+  KosEvalState_RefreshDynCaches(es);
 
   if (KosEvalState_StackPushRef(es, Py_None) < 0)
     return -1;

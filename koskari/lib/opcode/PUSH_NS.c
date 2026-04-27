@@ -122,16 +122,10 @@ KOS_OP_HANDLER(PUSH_NS) {
     KosEvalState_StackDropNoErr(es, (size_t) opa);
   }
 
-  Py_INCREF(parent);
-  ns_node = kos_dyn_push_ns(es, parent);
+  ns_node = kos_dyn_push_ns(es, new_ns);
   if (unlikely(! ns_node)) {
-    Py_DECREF(parent);
-    Py_DECREF(new_ns);
     return KOS_OP_POST_ERR();
   }
-
-  Py_DECREF(CURRENT_NS());
-  CURRENT_NS() = new_ns;
 
   (void) out_ev;
   return KOS_OP_RUN();

@@ -95,20 +95,45 @@ static inline int kos_op_post_tag_to_res(uint8_t tag) {
 /* --- KosEvalState helpers (Init/SyncFromContext: static inline in eval.h) --- */
 
 
-void KosContext_RecomputeFrameTopAndBlock(KosContext *ctx) {
+KosDynNode *KosEvalState_InnermostStackOwner(KosEvalState *es) {
+  KosContext *ctx = KosEvalState_CONTEXT(es);
+  KosDynNode *n = KosContext_DYN_TOP(ctx);
+  while (n) {
+    if (KosDynNode_STACK(n))
+      return n;
+    n = KosDynNode_PARENT(n);
+  }
+  return NULL;
+}
 
+
+/**
+   Refresh FRAME_TOP and BLOCK after DYN_TOP / chain changes, then apply
+   them to es without a full KosEvalState_SyncFromContext traversal.
+*/
+void KosEvalState_RefreshDynCaches(KosEvalState *es) {
+
+  KosContext *ctx;
   KosDynNode *node;
 
+  KOS_TRACE_EVAL_SYNC_BEGIN();
+
+  ctx = KosEvalState_CONTEXT(es);
+
   if (! ctx)
-    return;
+    goto done;
 
   node = KosContext_DYN_TOP(ctx);
   KosContext_FRAME_TOP(ctx) = NULL;
   KosContext_BLOCK(ctx) = NULL;
+  KosContext_NAMESPACE(ctx) = NULL;
 
   while (node) {
     if (! KosContext_BLOCK(ctx) && KosDynNode_STACK(node))
       KosContext_BLOCK(ctx) = &KosDynNode_STACK(node);
+
+    if (! KosContext_NAMESPACE(ctx) && KosDynNode_NS(node))
+      KosContext_NAMESPACE(ctx) = KosDynNode_NS(node);
 
     if (! KosContext_FRAME_TOP(ctx) && KosDynNode_IS_FRAME(node)) {
       KosContext_FRAME_TOP(ctx) = (KosDynFrame *) node;
@@ -124,9 +149,17 @@ void KosContext_RecomputeFrameTopAndBlock(KosContext *ctx) {
     KosContext_BLOCK(ctx) =
         &KosDynNode_STACK((KosDynNode *) KosContext_FRAME_TOP(ctx));
 
+  if (! KosContext_NAMESPACE(ctx) && KosContext_FRAME_TOP(ctx))
+    KosContext_NAMESPACE(ctx) = KosDynFrame_NS(KosContext_FRAME_TOP(ctx));
+
   if (! KosContext_FRAME_TOP(ctx))
     SAYF("[gen] refresh_dyn_caches dyn_top=%p -> frame_top=NULL (no frame)\n",
          (void *) KosContext_DYN_TOP(ctx));
+
+  KosEvalState_ApplyDynCaches(es);
+
+done:
+  KOS_TRACE_EVAL_SYNC_END(KOS_TEVS_refresh_dyn_caches);
 }
 
 
@@ -135,6 +168,7 @@ void KosEvalState_ApplyDynCaches(KosEvalState *es) {
   KosContext *ctx;
   KosDynFrame *ft;
   KosStackBlock **bl;
+  PyObject *ns;
   KosDynFrame *ef;
 
   KOS_TRACE_EVAL_SYNC_BEGIN();
@@ -148,6 +182,7 @@ void KosEvalState_ApplyDynCaches(KosEvalState *es) {
 
   ft = KosContext_FRAME_TOP(ctx);
   bl = KosContext_BLOCK(ctx);
+  ns = KosContext_NAMESPACE(ctx);
   ef = KosEvalState_FRAME(es);
 
   if (ef != ft) {
@@ -155,6 +190,7 @@ void KosEvalState_ApplyDynCaches(KosEvalState *es) {
       KosEvalState_FlushLiveRegsToFrame(es);
     KosEvalState_FRAME(es) = ft;
     KosEvalState_BLOCK(es) = bl;
+    KosEvalState_NAMESPACE(es) = ns;
     if (ft) {
       KosEvalState_CODE(es) = KosDynFrame_CODE(ft);
       es->pc = KosDynFrame_PC(ft);
@@ -168,6 +204,7 @@ void KosEvalState_ApplyDynCaches(KosEvalState *es) {
   }
 
   KosEvalState_BLOCK(es) = bl;
+  KosEvalState_NAMESPACE(es) = ns;
 
 done:
   KOS_TRACE_EVAL_SYNC_END(KOS_TEVS_apply_dyn_caches);
@@ -175,16 +212,13 @@ done:
 
 
 KosCode *KosEvalState_CurrentCode(const KosEvalState *es) {
-
-  KosDynFrame *f = KosEvalState_FRAME(es);
-  return f ? KosDynFrame_CODE(f) : NULL;
+  return KosEvalState_CODE(es);
 }
 
 
 PyObject *KosEvalState_CurrentNamespace(const KosEvalState *es) {
 
-  KosDynFrame *f = KosEvalState_FRAME(es);
-  return f? KosDynFrame_NS(f): NULL;
+  return KosEvalState_NAMESPACE(es);
 }
 
 
@@ -221,8 +255,7 @@ PyObject *KosEvalState_StackPopRef(KosEvalState *es) {
 
 PyObject *KosEvalState_GetFast(const KosEvalState *es, size_t index) {
 
-  KosDynFrame *f = KosEvalState_FRAME(es);
-  PyObject *ns = f? KosDynFrame_NS(f): NULL;
+  PyObject *ns = KosEvalState_CurrentNamespace(es);
   return KosNamespace_FastDeref(ns, index);
 }
 
@@ -232,16 +265,14 @@ int KosEvalState_SetFast(
   size_t index,
   PyObject *value) {
 
-  KosDynFrame *f = KosEvalState_FRAME(es);
-  PyObject *ns = f? KosDynFrame_NS(f): NULL;
+  PyObject *ns = KosEvalState_CurrentNamespace(es);
   return KosNamespace_FastStore(ns, index, value);
 }
 
 
 PyObject *KosEvalState_GetVar(const KosEvalState *es, PyObject *key) {
 
-  KosDynFrame *f = KosEvalState_FRAME(es);
-  PyObject *ns = f? KosDynFrame_NS(f): NULL;
+  PyObject *ns = KosEvalState_CurrentNamespace(es);
   return KosNamespace_Deref(ns, key);
 }
 
@@ -1638,8 +1669,7 @@ int kos_tail_koscall(
   frame = kos_dynframe_new(parent, code, ns, NULL);
   if (! frame) {
     KosContext_DYN_TOP(ctx) = (KosDynNode *) old;
-    KosContext_RecomputeFrameTopAndBlock(ctx);
-    KosEvalState_ApplyDynCaches(&es);
+    KosEvalState_RefreshDynCaches(&es);
     return -1;
   }
 
@@ -1647,8 +1677,7 @@ int kos_tail_koscall(
 
   KosContext_DYN_TOP(ctx) = (KosDynNode *) frame;
   KosContext_CHAIN_VERSION(ctx)++;
-  KosContext_RecomputeFrameTopAndBlock(ctx);
-  KosEvalState_ApplyDynCaches(&es);
+  KosEvalState_RefreshDynCaches(&es);
 
   return 0;
 }
@@ -2173,7 +2202,7 @@ static PyObject *frame_ns_deref(KosEvalState *es, PyObject *name) {
   PyObject *ns = KosEvalState_CurrentNamespace(es);
   if (KosNamespace_Check(ns))
     return KosNamespace_Deref(ns, name);
-  PyErr_Format(PyExc_TypeError, "frame namespace must be Namespace or dict,"
+  PyErr_Format(PyExc_TypeError, "frame namespace must be Namespace,"
                " got %R", ns);
   return NULL;
 }
@@ -2709,7 +2738,7 @@ static int op_attach_koskari_agen_frame_for_yield_from(
 #define KOS_OP_HANDLER(name)                                            \
   KOS_OP_INLINE KosOpOutcome op_##name(KosEvalState *es, KosEvent *out_ev, \
                                        KosOp *insn)
-#define CURRENT_NS() KosDynFrame_NS(KosEvalState_FRAME(es))
+#define CURRENT_NS() KosEvalState_NAMESPACE(es)
 #include "handlers.incl"
 #undef CURRENT_NS
 #undef KOS_OP_HANDLER

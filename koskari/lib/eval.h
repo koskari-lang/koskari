@@ -340,6 +340,7 @@ struct KosContext {
   KosDynFrame *frame_top;    /* cached topmost frame (for fast access) */
 
   KosStackBlock **block;     /* non-owning: &innermost dynnode stack; see KosEvalState_RefreshDynCaches */
+  PyObject *namespace;       /* borrowed: active namespace object */
 
   KosDynFrame *globals_frame;     /* cached outermost frame (for op_GLOBALS) */
   uint32_t globals_cache_version; /* chain_version when globals_frame was set */
@@ -385,6 +386,7 @@ struct KosContext {
 #define KosContext_DYN_TOP(c)                (((KosContext *)(c))->dyn_top)
 #define KosContext_FRAME_TOP(c)              (((KosContext *)(c))->frame_top)
 #define KosContext_BLOCK(c)                  (((KosContext *)(c))->block)
+#define KosContext_NAMESPACE(c)              (((KosContext *)(c))->namespace)
 #define KosContext_GLOBALS_FRAME(c)          (((KosContext *)(c))->globals_frame)
 #define KosContext_GLOBALS_CACHE_VERSION(c)  (((KosContext *)(c))->globals_cache_version)
 #define KosContext_TOKEN(c)                  (((KosContext *)(c))->token)
@@ -458,6 +460,7 @@ struct KosEvalState {
   KosDynFrame *frame; /* cached top frame; maintained by Init/Sync */
   KosCode *code;      /* cached from frame */
   KosStackBlock **block; /* mirror of ctx->block; non-owning */
+  PyObject *namespace;   /* mirror of ctx->namespace; borrowed */
   uint32_t pc;        /* live next-instruction PC (freeze copies to frame) */
   uint32_t acting_pc; /* live acting PC (freeze copies to frame) */
 };
@@ -467,6 +470,7 @@ struct KosEvalState {
 #define KosEvalState_FRAME(es) ((es)->frame)
 #define KosEvalState_CODE(es) ((es)->code)
 #define KosEvalState_BLOCK(es) ((es)->block)
+#define KosEvalState_NAMESPACE(es) ((es)->namespace)
 
 /** Live next-instruction PC on es only; use KosEvalState_SET_PC to assign. */
 #define KosEvalState_PC(es) ((es)->pc)
@@ -491,6 +495,9 @@ static inline void KosEvalState_Init(KosEvalState *es, KosContext *ctx) {
   KosEvalState_CONTEXT(es) = ctx;
   KosEvalState_FRAME(es) = KosContext_FRAME_TOP(ctx);
   KosEvalState_BLOCK(es) = KosContext_BLOCK(ctx);
+  KosEvalState_NAMESPACE(es) = KosContext_NAMESPACE(ctx);
+  if (! KosEvalState_NAMESPACE(es) && KosEvalState_FRAME(es))
+    KosEvalState_NAMESPACE(es) = KosDynFrame_NS(KosEvalState_FRAME(es));
 
   if (KosEvalState_FRAME(es)) {
     KosEvalState_CODE(es) = KosDynFrame_CODE(KosEvalState_FRAME(es));
@@ -525,9 +532,14 @@ static inline void KosEvalState_SyncFromContext(KosEvalState *es) {
   {
     KosDynFrame *ft = KosContext_FRAME_TOP(ctx);
     KosStackBlock **bl = KosContext_BLOCK(ctx);
+    PyObject *ns = KosContext_NAMESPACE(ctx);
     KosDynFrame *ef = KosEvalState_FRAME(es);
+    if (! ns && ft)
+      ns = KosDynFrame_NS(ft);
 
-    if (ef == ft && KosEvalState_BLOCK(es) == bl) {
+    if (ef == ft &&
+        KosEvalState_BLOCK(es) == bl &&
+        KosEvalState_NAMESPACE(es) == ns) {
       if (! ft) {
         if (! KosEvalState_CODE(es) && ! (es)->pc && ! (es)->acting_pc)
           goto done;
@@ -546,6 +558,7 @@ static inline void KosEvalState_SyncFromContext(KosEvalState *es) {
 
     KosEvalState_FRAME(es) = ft;
     KosEvalState_BLOCK(es) = bl;
+    KosEvalState_NAMESPACE(es) = ns;
     if (ft) {
       KosEvalState_CODE(es) = KosDynFrame_CODE(ft);
       (es)->pc = KosDynFrame_PC(ft);
@@ -585,23 +598,18 @@ done:
 
 
 /**
-  Recompute ctx->frame_top and ctx->block by walking from dyn_top toward
-  root. Does not touch KosEvalState.
-*/
-void KosContext_RecomputeFrameTopAndBlock(KosContext *ctx);
-
-
-/**
-  After RecomputeFrameTopAndBlock, mirror ctx->frame_top and ctx->block into
-  es. If the frame pointer changed, flush live pc/acting_pc onto the outgoing
-  cached frame, then load code and PCs from the new frame. If only block
-  changed, update es->block without clobbering pc/acting_pc.
+  After RecomputeFrameTopAndBlock, mirror ctx->frame_top, ctx->block, and
+  ctx->namespace into es. If the frame pointer changed, flush live
+  pc/acting_pc onto the outgoing cached frame, then load code and PCs from
+  the new frame. If only block/namespace changed, update es caches without
+  clobbering pc/acting_pc.
 */
 void KosEvalState_ApplyDynCaches(KosEvalState *es);
 
 
 /**
-  Recompute ctx->frame_top and ctx->block from the dynamic chain after
+  Recompute ctx->frame_top, ctx->block, and ctx->namespace from the
+  dynamic chain after
   dyn_top / chain changes, then apply them to es (incremental; avoids full
   KosEvalState_SyncFromContext when frame and PCs are already coherent).
 */

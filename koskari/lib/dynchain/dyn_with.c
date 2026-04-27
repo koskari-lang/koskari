@@ -252,10 +252,7 @@ void kos_dyn_pop_with(KosEvalState *es, KosDynWith *node) {
    Bind name in frame namespace for `as` targets.
 */
 static int frame_ns_store(KosEvalState *es, PyObject *name, PyObject *val) {
-  KosDynFrame *frame = KosEvalState_FRAME(es);
-  if (! frame)
-    return -1;
-  PyObject *ns = KosDynFrame_NS(frame);
+  PyObject *ns = KosEvalState_CurrentNamespace(es);
   if (KosNamespace_Check(ns))
     return KosNamespace_Store(ns, name, val);
   PyErr_Format(PyExc_TypeError,

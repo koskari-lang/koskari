@@ -81,7 +81,7 @@ void kos_dynframe_free(KosDynFrame *frame) {
   if (! frame)
     return;
 
-  Py_XDECREF(KosDynFrame_NS(frame));
+  Py_CLEAR(KosDynFrame_NS(frame));
   /* code is borrowed, don't decref */
 
   kos_dynnode_return_to_freelist(frame);

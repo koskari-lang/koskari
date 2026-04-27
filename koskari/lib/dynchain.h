@@ -36,7 +36,6 @@
 #include <stdint.h>
 
 
-struct KosEvalState;
 struct KosEvent;
 
 
@@ -205,6 +204,7 @@ struct KosDynNode {
   uint32_t caps;        /* capability bits for generic code (KOS_DYN_CAP_*) */
   uint32_t node_id;     /* stable allocation ID; copied on clone for LCA matching */
   KosStackBlock *stack; /* owned operand-stack extent; NULL if none (inherit ancestor) */
+  PyObject *ns;         /* owned namespace extent; NULL if none (inherit ancestor) */
 
   union {
     struct {
@@ -257,9 +257,6 @@ struct KosDynNode {
       uint32_t iter_next_else_pc;
       uint8_t iter_step_phase;  /* KOS_FOREACH_ITER_STEP_* */
     } foreach;
-    struct {
-      PyObject *saved_ns;
-    } ns;
     struct {
       PyObject *delegate;
       uint8_t kind;
@@ -1258,21 +1255,19 @@ int kos_dyn_abort_push_region(KosEvalState *es, KosDynNode *region);
 
 
 /**
-   Push a namespace scope node (for PUSH_NS).  Does not modify frame ns;
-   caller must set frame->ns to the new namespace and later restore from
-   saved_ns on pop.
+   Push a namespace scope node (for PUSH_NS). The node owns its active
+   namespace in the generic node namespace slot.
 
    :param ctx: execution context
-   :param saved_ns: prior frame namespace to restore on POP_NS (new ref)
+   :param ns: active namespace for this NS scope (new ref)
 
    :return: new KosDynNs node, or NULL on error
 */
-KosDynNs *kos_dyn_push_ns(KosEvalState *es, PyObject *saved_ns);
+KosDynNs *kos_dyn_push_ns(KosEvalState *es, PyObject *ns);
 
 
 /**
-   Pop a namespace scope node.  Caller must restore frame->ns from the
-   node's saved_ns before calling this.
+   Pop a namespace scope node.
 
    :param ctx: execution context
    :param node: NS node to pop (must be dyn_top)
@@ -1281,20 +1276,19 @@ void kos_dyn_pop_ns(KosEvalState *es, KosDynNs *node);
 
 
 /**
-   Push a collector scope node (for PUSH_COLLECT).  Caller creates
-   CollectorNamespace and sets frame ns before pushing.
+   Push a collector scope node (for PUSH_COLLECT). The node owns its
+   collector namespace in the generic node namespace slot.
 
    :param ctx: execution context
-   :param saved_ns: enclosing scope to restore on pop (new ref)
+   :param ns: collector namespace active in this scope (new ref)
 
    :return: new KosDynCollect node, or NULL on error
 */
-KosDynCollect *kos_dyn_push_collect(KosEvalState *es, PyObject *saved_ns);
+KosDynCollect *kos_dyn_push_collect(KosEvalState *es, PyObject *ns);
 
 
 /**
-   Pop a collector scope node.  Caller must restore frame->ns and push
-   the collected namespace onto the value stack before calling this.
+   Pop a collector scope node.
 
    :param ctx: execution context
    :param node: COLLECT node to pop (must be dyn_top)
@@ -1444,7 +1438,7 @@ int kos_dyn_with_unwind(KosEvalState *es, KosDynWith *node, struct KosEvent *out
 
 /**
   Pop the top node of the dynamic chain with non-barrier policy.
-  For NS, restores frame_top->ns from the node's saved_ns before popping.
+  Namespace ownership is node-local; popping reveals next owner by chain walk.
 
   :param ctx: execution context
   :param out_ev: event output for suspend (required when WITH may have async exit)
@@ -2148,14 +2142,15 @@ int kos_transferplan_traverse(
 #define KosDynGen_ACTIVE(n)       (((KosDynNode *)(n))->u.gen.active)
 #define KosDynGen_REFCOUNT(n)     (((KosDynNode *)(n))->u.gen.refcount)
 
-#define KosDynCollect_SAVED_NS(n) (((KosDynNode *)(n))->u.ns.saved_ns)
-
 #define KosDynFrame_CODE(f)       (((KosDynNode *)(f))->u.frame.code)
 #define KosDynFrame_PC(f)         (((KosDynNode *)(f))->u.frame.pc)
 #define KosDynFrame_ACTING_PC(f)  (((KosDynNode *)(f))->u.frame.acting_pc)
 #define KosDynNode_STACK(n)       (((KosDynNode *)(n))->stack)
+#define KosDynNode_NS(n)          (((KosDynNode *)(n))->ns)
 #define KosDynFrame_STACK(f)      KosDynNode_STACK((KosDynNode *)(f))
+/* Frame ns is initial frame namespace storage, not dynamic current scope. */
 #define KosDynFrame_NS(f)         (((KosDynNode *)(f))->u.frame.ns)
+
 #define KosDynFrame_FLAGS(f)      (((KosDynNode *)(f))->u.frame.frame_flags)
 #define KosDynFrame_NATIVE_HANDLER(f) (((KosDynNode *)(f))->u.frame.native_handler)
 
@@ -2204,8 +2199,6 @@ int kos_transferplan_traverse(
 #define KosDynNext_AGEN_OBJ(nd) (((KosDynNode *)(nd))->u.next.agen_obj)
 #define KosDynNext_DEFAULT_VAL(nd) (((KosDynNode *)(nd))->u.next.default_val)
 #define KosDynNext_N(nd) (((KosDynNode *)(nd))->u.next.n)
-
-#define KosDynNs_SAVED_NS(n)      (((KosDynNode *)(n))->u.ns.saved_ns)
 
 /* KosYfPhase: state machine for stack-based resume inject consumption */
 typedef enum KosYfPhase {
