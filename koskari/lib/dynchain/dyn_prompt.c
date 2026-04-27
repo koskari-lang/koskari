@@ -106,7 +106,7 @@ int kos_dyn_pop_prompt(KosEvalState *es, KosDynPrompt *prompt) {
    GC traverse a KOS_DYN_PROMPT: visit pending shift wrapper if any.
 */
 static int dynnode_traverse_prompt(KosDynNode *node, visitproc visit, void *arg) {
-  int tr = kos_stackblock_traverse(KosDynNode_STACK(node), visit, arg);
+  int tr = KosStackBlock_Traverse(KosDynNode_STACK(node), visit, arg);
   if (tr != 0)
     return tr;
   Py_VISIT(KosDynPrompt_PENDING_SHIFT_WRAPPER((KosDynPrompt *) node));

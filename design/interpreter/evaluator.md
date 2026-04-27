@@ -372,8 +372,8 @@ int kos_resume_transfer_plan(KosEvalState *es);
 ### Context and Frame Lifecycle
 
 ```c
-KosContext *kos_context_new(KosDynFrame *top);
-void kos_context_free(KosContext *ctx);
+KosContext *KosContext_New(KosDynFrame *top);
+void KosContext_Free(KosContext *ctx);
 
 /* Frame helpers (wrappers around kos_dynframe_new/clone/free) */
 KosFrame *kos_frame_new(KosCode *code, PyObject *ns,
@@ -463,9 +463,8 @@ int kos_dynnode_traverse(KosDynNode *node, visitproc visit, void *arg);
 int kos_dynchain_traverse(KosDynNode *node, KosDynNode *stop,
         visitproc visit, void *arg);
 int kos_continuation_traverse(KosContinuation *k, visitproc visit, void *arg);
-int kos_stackblock_traverse(KosStackBlock *block, visitproc visit, void *arg);
-int kos_frame_traverse(KosFrame *frame, visitproc visit, void *arg);
-int kos_context_traverse(KosContext *ctx, visitproc visit, void *arg);
+int KosStackBlock_Traverse(KosStackBlock *block, visitproc visit, void *arg);
+int KosContext_Traverse(KosContext *ctx, visitproc visit, void *arg);
 ```
 
 ## Ownership and Invariants

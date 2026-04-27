@@ -317,25 +317,6 @@ int kos_dyn_complete_pending_exit(KosEvalState *es, int do_pop_node) {
 }
 
 
-/**
-   Clear stale PENDING_EXIT_AWAIT state on all WITH nodes (exc refs and phase).
-   Callers: eval when abandoning a pending exit path without completing it.
-*/
-void kos_dyn_clear_pending_exit(KosEvalState *es) {
-  KosContext *ctx = KosEvalState_CONTEXT(es);
-  KosDynNode *n = KosContext_DYN_TOP(ctx);
-  for (; n; n = KosDynNode_PARENT(n)) {
-    if (KosDynNode_IS_WITH(n)
-        && KosDynWith_PHASE((KosDynWith *) n) == KOS_WITH_PHASE_PENDING_EXIT_AWAIT) {
-      Py_CLEAR(KosDynWith_EXC_TYP((KosDynWith *) n));
-      Py_CLEAR(KosDynWith_EXC_VAL((KosDynWith *) n));
-      Py_CLEAR(KosDynWith_EXC_TB((KosDynWith *) n));
-      KosDynWith_PHASE((KosDynWith *) n) = KOS_WITH_PHASE_IDLE;
-    }
-  }
-}
-
-
 /* === Generic DynNode operations === */
 
 

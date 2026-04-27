@@ -53,7 +53,7 @@ PyObject *KosAsyncGen_NewFromCodeAndNs(KosCode *code, PyObject *ns) {
     return NULL;
   }
   KosDynGen_ACTIVE(gen) = (struct KosDynNode *) frame;
-  KosContext *ctx = kos_context_new(frame);
+  KosContext *ctx = KosContext_New(frame);
   if (! ctx) {
     kos_dynframe_free(frame);
     kos_dyngen_free(gen);
@@ -93,7 +93,7 @@ PyObject *KosCoroutine_NewFromCode(PyObject *code, PyObject *ns) {
   if (! frame)
     return NULL;
 
-  KosContext *ctx = kos_context_new(frame);
+  KosContext *ctx = KosContext_New(frame);
   if (! ctx) {
     kos_dynframe_free(frame);
     return NULL;
@@ -112,7 +112,7 @@ static void coroutine_dealloc(PyObject *self) {
   KosCoroutine *coro = (KosCoroutine *) self;
 
   if (coro->ctx)
-    kos_context_free(coro->ctx);
+    KosContext_Free(coro->ctx);
 
   Py_XDECREF(coro->pending_await);
 
@@ -130,7 +130,7 @@ static int coroutine_traverse(
   Py_VISIT(coro->pending_await);
 
   if (coro->ctx) {
-    return kos_context_traverse(coro->ctx, visit, arg);
+    return KosContext_Traverse(coro->ctx, visit, arg);
   }
 
   return 0;
@@ -144,7 +144,7 @@ static int coroutine_clear(PyObject *self) {
   Py_CLEAR(coro->pending_await);
 
   if (coro->ctx) {
-    kos_context_free(coro->ctx);
+    KosContext_Free(coro->ctx);
     coro->ctx = NULL;
   }
 
@@ -584,7 +584,7 @@ PyObject *KosCoroutine_New(KosContext *ctx) {
 
   KosCoroutine *coro = PyObject_GC_New(KosCoroutine, &KosCoroutineType);
   if (! coro) {
-    kos_context_free(ctx);
+    KosContext_Free(ctx);
     return NULL;
   }
 

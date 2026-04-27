@@ -349,7 +349,7 @@ static int test_transfer_plan_free_with_inject_exc_type(void) {
     KosDynFrame *frame = kos_dynframe_new(NULL, NULL, ns, NULL);
     TEST_ASSERT_NOT_NULL(frame, "create frame");
 
-    KosContext *ctx = kos_context_new(frame);
+    KosContext *ctx = KosContext_New(frame);
     TEST_ASSERT_NOT_NULL(ctx, "create context");
 
     KosEvalState es;
@@ -367,7 +367,7 @@ static int test_transfer_plan_free_with_inject_exc_type(void) {
 
     kos_free_transfer_plan(plan);
 
-    kos_context_free(ctx);
+    KosContext_Free(ctx);
 
     return 0;
 }

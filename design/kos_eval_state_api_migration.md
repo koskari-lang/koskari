@@ -65,8 +65,8 @@ plans, flag and inject fields, and the Python await/yield bridge.
 **`KosContext` remains the backing struct** (token, domain, plan pointers,
 chain version, bridge object fields). **Application code and opcode handlers do
 not use `KosContext_*` macros** except inside the implementation of
-`KosEvalState_*` and in **context lifecycle** (`kos_context_new`,
-`kos_context_free`, GC traverse) and **constructors** that run before any
+`KosEvalState_*` and in **context lifecycle** (`KosContext_New`,
+`KosContext_Free`, GC traverse) and **constructors** that run before any
 `KosEvalState` exists (`KosPyAsyncGen_New`, `KosCoroutine_New`, …).
 
 ### 1.2 Compile-to-native
@@ -95,7 +95,7 @@ inject fields by name.
 | **D3** | **`KosEvalState_Transition`** is the **public** name for `kos_dyn_transition`. Implementation stays in `dynchain.c` until renamed; **on `-1`**, call **`KosEvalState_SyncFromContext(es)`** before returning (same class of repair as `kos_dyn_uninstall` error paths). After all call sites switch, **`kos_dyn_transition` may become `static`** in `dynchain.c` and drop from `dynchain.h`. |
 | **D4** | **No new** `KosContext_DYN_TOP(ctx) = …` outside **`dynchain.c`** and **`eval.c`** (tail-koscall / agen paths). Existing stragglers are listed in Phase **F** for folding into **`kos_dyn_commit_dyn_top`** (or a single `eval.c` helper). |
 | **D5** | **Pure** chain-editing helpers (clone segment, splice under a given node) take **explicit** `KosDynNode *` arguments — they do **not** read `KosContext_DYN_TOP` internally. **Publishing** the new live head remains **`kos_dyn_commit_dyn_top(es, new_top)`** (or push/install). |
-| **D6** | Writers of **`globals_frame`** / **`globals_cache_version`** are **`kos_context_new`**, **`kos_dyn_globals_frame`**, and xfer **INSTALL/PUSH** in `dynchain.c` — nowhere else. Opcodes read module globals only through **`KosEvalState_GlobalsNamespace(es)`**. |
+| **D6** | Writers of **`globals_frame`** / **`globals_cache_version`** are **`KosContext_New`**, **`kos_dyn_globals_frame`**, and xfer **INSTALL/PUSH** in `dynchain.c` — nowhere else. Opcodes read module globals only through **`KosEvalState_GlobalsNamespace(es)`**. |
 
 ---
 
@@ -247,7 +247,7 @@ Delete the unused **`ctx`** binding in:
 | Delim return | **`kos_return_delimited`** (`eval.c`) — build plan, arm, delim cleanup, **`run_transfer_plan_to_completion`** | **`KosEvalState_KReturnDelimited`** — same signature as current **`kos_return_delimited`** (§10.12). |
 | Python await bridge | **`py_await_iter`**, **`py_resume_*`** | §10.9 accessors. |
 | Suspension event | **`suspension_event`** | §10.8. |
-| Lifecycle | **`kos_context_new`**, **free**, traverse | **Stay `KosContext`-centric** — not opcodes. |
+| Lifecycle | **`KosContext_New`**, **free**, traverse | **Stay `KosContext`-centric** — not opcodes. |
 | Tail koscall | **`kos_tail_koscall(ctx, code, ns)`** (`eval.c`) | **`KosEvalState_TailKoscallReplaceFrame(es, code, ns)`** — §10.13 (**`ctx` → `es`**). |
 | Opcode-visible flags | YIELD/AWAIT/RETURN death and suspend bits | §10.2 helpers — **bit patterns copied verbatim** from the opcode bodies listed there. |
 | Eval-only plan teardown | Prologue / driver clears active plan | **`KosEvalState_DisarmTransferPlan`** delegates to **`clear_and_free_transfer_plan`** in **`eval.c`** (frees plan, clears **`IN_TRANSFER`**, continuation-ref handoff). No separate public “clear flag only” helper exists today. |
@@ -304,7 +304,7 @@ points.
 |-------|--------------------------|---------------------------|
 | `dyn_top` | **`kos_dyn_commit_dyn_top`**, **`kos_dyn_push`**, xfer INSTALL/PUSH, **`kos_tail_koscall`**, gen install/freeze, CC plan, agen flatten | Walks; **`KosEvalState_CurrentNode`** |
 | `frame_top`, `block`, `namespace` | **`KosEvalState_RefreshDynCaches`** | **`ApplyDynCaches`**, **`SyncFromContext`** |
-| `globals_frame`, `globals_cache_version` | **`kos_context_new`**, **`kos_dyn_globals_frame`**, xfer INSTALL/PUSH | **`GLOBALS.c`**, **`IMPORT_REL.c`** |
+| `globals_frame`, `globals_cache_version` | **`KosContext_New`**, **`kos_dyn_globals_frame`**, xfer INSTALL/PUSH | **`GLOBALS.c`**, **`IMPORT_REL.c`** |
 | `plan`, `plan_stack` | **`eval.c`**, shift opcodes, xfer arm, suspend/resume | Prologue driver |
 | `chain_version` | Chain mutation helpers | Plan capture; globals cache |
 | `flags` | Opcodes (YIELD, AWAIT, RETURN, SHIFT, PROMPT), **`eval.c`**, **`dynchain.c`** | Prologue / revive |
@@ -313,13 +313,13 @@ points.
 | `inject_*` | **`YIELD_FROM`**; xfer inject/truncate | **`YIELD_FROM`**, throw |
 | `py_*` | **`eval.c`**, **`coro.c`** | Resume / AWAIT |
 | `suspension_event` | **`eval.c`** | Prologue branches |
-| `token`, `domain` | **`kos_context_new`**, domain push/pop | **`cont.c`**, **`domain.c`** |
+| `token`, `domain` | **`KosContext_New`**, domain push/pop | **`cont.c`**, **`domain.c`** |
 
 ---
 
 ## 10. Target `KosEvalState` API — concrete functions to add
 
-Implementations live in **`eval.c`** (later **`eval_state.c`** if split). They
+Implementations live in **`eval.c`**. They
 **delegate** to existing code; **no semantic change**.
 
 **Convention (every subsection below):**
@@ -572,7 +572,7 @@ assignment.
 | **B2** | **`utils.c`**, **`func.c`**, **`NEXT`/`ITER_NEXT`** (§10.11), **`cont.c`** (§10.10) per §8; **`kos_tail_koscall`** call sites → §10.13 | No **`KosContext_*`** there except Phase **G** exceptions. **`tox -qe test`** green. |
 | **C** | **`kos_dyn_transition`**: either **`static`** in **`dynchain.c`** or not in **`dynchain.h`**; all callers use **`KosEvalState_Transition`** | **`rg kos_dyn_transition koskari/lib`** shows only **`dynchain.c`** (and **`KosEvalState_Transition`** body). |
 | **D** | **`kos_dyn_gen_frozen_needs_install_es`**; **`iter.c`**, **`demand.c`** | No **`KosContext *`** for this check on paths that hold **`es`**. |
-| **E** | Extract plan driver, Python bridge, tail-koscall, agen flatten to **`eval_state.c`** | **`eval.c`** line count drops materially; full **`tox -qe test`**. |
+| **E** | Plan driver, Python bridge, tail-koscall, agen flatten live in **`eval.c`** (single TU with the rest of the evaluator) | **`eval.c`** remains coherent; full **`tox -qe test`**. |
 | **F** | **`rg 'KosContext_DYN_TOP\([^)]+\)\s*=' koskari/lib`** — fold non-`dynchain`/`eval` assigns into commit helper | All assigns documented; only allowed files remain. |
 | **G** | **`coro.c`**, **`domain.c`**: §10.9 / domain wrappers where **`es` exists** | Documented list of remaining **`ctx`-only** entry points (if any). |
 

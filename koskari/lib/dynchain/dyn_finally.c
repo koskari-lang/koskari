@@ -107,7 +107,7 @@ void kos_dyn_pop_finally(KosEvalState *es, KosDynFinally *node) {
    GC traverse a KOS_DYN_FINALLY: visit handling result when present.
 */
 static int dynnode_traverse_finally(KosDynNode *node, visitproc visit, void *arg) {
-  int tr = kos_stackblock_traverse(KosDynNode_STACK(node), visit, arg);
+  int tr = KosStackBlock_Traverse(KosDynNode_STACK(node), visit, arg);
   if (tr != 0)
     return tr;
   Py_VISIT(KosDynFinally_HANDLING_RESULT((KosDynFinally *) node));

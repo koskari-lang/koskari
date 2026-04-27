@@ -115,7 +115,7 @@ void kos_dyn_pop_foreach(KosEvalState *es, KosDynForeach *node) {
    GC traverse a KOS_DYN_FOREACH: visit result and iterator refs.
 */
 static int dynnode_traverse_foreach(KosDynNode *node, visitproc visit, void *arg) {
-  int tr = kos_stackblock_traverse(KosDynNode_STACK(node), visit, arg);
+  int tr = KosStackBlock_Traverse(KosDynNode_STACK(node), visit, arg);
   if (tr != 0)
     return tr;
   Py_VISIT(KosDynForeach_RESULT((KosDynForeach *) node));

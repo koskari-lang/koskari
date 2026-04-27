@@ -239,7 +239,7 @@ static int dynnode_traverse_frame(KosDynNode *node, visitproc visit, void *arg) 
   KosDynFrame *frame = (KosDynFrame *) node;
   Py_VISIT(KosDynFrame_NS(frame));
   {
-    int tr = kos_stackblock_traverse(KosDynFrame_STACK(frame), visit, arg);
+    int tr = KosStackBlock_Traverse(KosDynFrame_STACK(frame), visit, arg);
     if (tr != 0)
       return tr;
   }

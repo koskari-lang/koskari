@@ -918,7 +918,7 @@ void kos_dynframe_reset_for_tail(KosDynFrame *frame);
 /**
    Create a generator boundary node.  The generator object owns the node;
    the dynchain borrows it during execution.  Caller links the frame under
-   it (frame->parent = gen) before passing the frame to kos_context_new.
+   it (frame->parent = gen) before passing the frame to KosContext_New.
 
    :param owner: owning generator object (borrowed) or NULL
 
@@ -1538,7 +1538,6 @@ int kos_dynnode_on_control_returned(KosEvalState *es, KosDynNode *node, struct K
 
 KosDynNode *kos_dyn_find_pending_exit(KosDynNode *node);
 int kos_dyn_complete_pending_exit(KosEvalState *es, int do_pop_node);
-void kos_dyn_clear_pending_exit(KosEvalState *es);
 
 /**
    result: ownership is transferred. Caller must not use result after

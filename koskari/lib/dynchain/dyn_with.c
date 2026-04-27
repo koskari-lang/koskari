@@ -584,7 +584,7 @@ int finalize_provisional_with_enter(KosEvalState *es, PyObject *result,
 static int dynnode_traverse_with(KosDynNode *node, visitproc visit, void *arg) {
   KosDynWith *with_node = (KosDynWith *) node;
   {
-    int tr = kos_stackblock_traverse(KosDynNode_STACK(node), visit, arg);
+    int tr = KosStackBlock_Traverse(KosDynNode_STACK(node), visit, arg);
     if (tr != 0)
       return tr;
   }

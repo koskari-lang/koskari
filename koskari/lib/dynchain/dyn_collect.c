@@ -117,7 +117,7 @@ void kos_dyn_pop_collect(KosEvalState *es, KosDynCollect *node) {
    GC traverse a KOS_DYN_COLLECT: visit node-owned namespace for collector.
 */
 static int dynnode_traverse_collect(KosDynNode *node, visitproc visit, void *arg) {
-  int tr = kos_stackblock_traverse(KosDynNode_STACK(node), visit, arg);
+  int tr = KosStackBlock_Traverse(KosDynNode_STACK(node), visit, arg);
   if (tr != 0)
     return tr;
   Py_VISIT(KosDynNode_NS(node));
