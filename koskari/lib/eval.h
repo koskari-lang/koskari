@@ -182,6 +182,17 @@ typedef enum KosEvalStep {
 
 
 /**
+  Result of op_get_next_from_iter and low-level iter helpers.
+*/
+typedef enum KosGetNextResult {
+  GET_NEXT_VALUE,
+  GET_NEXT_EXHAUSTED,
+  GET_NEXT_SUSPEND,
+  GET_NEXT_ERROR
+} KosGetNextResult;
+
+
+/**
   KosLoopOpMode is the opcode-to-loop signal: what the main eval loop should
   do after each instruction.  Distinct from KosEvalMode (entry/revive only).
 
@@ -662,6 +673,25 @@ int KosEvalState_TakeInjectThrow(
 */
 PyObject *KosEvalState_GlobalsNamespace(KosEvalState *es);
 
+int KosEvalState_SetFrameCodeAndNamespace(
+    KosEvalState *es,
+    KosDynFrame *frame,
+    KosCode *code,
+    PyObject *ns);
+
+KosEvaluatorToken *KosEvalState_Token(const KosEvalState *es);
+
+KosGetNextResult op_get_next_from_iter(
+    KosEvalState *es,
+    KosEvent *out_ev,
+    PyObject *iter,
+    PyObject **result_out);
+
+int KosEvalState_TailKoscallReplaceFrame(
+    KosEvalState *es,
+    KosCode *code,
+    PyObject *ns);
+
 /**
   Non-zero when a transfer plan is armed (ctx->plan != NULL).
 */
@@ -973,13 +1003,6 @@ int KosEvalState_CallNoArgs(
 
 
 /* === Unit lifecycle === */
-
-
-/**
-   Replace the current frame with a new one (code, ns). Used for tail calls.
-   Caller owns ns; refcount unchanged on success.
-*/
-int kos_tail_koscall(KosContext *ctx, KosCode *code, PyObject *ns);
 
 
 /**

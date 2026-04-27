@@ -102,9 +102,6 @@ static int call_call_continuation(
     KosEvent *out_ev,
     KosOp *insn) {
 
-  KosContext *ctx = KosEvalState_CONTEXT(es);
-  // CONTEXT: dirty, touches context directly
-
   KosContinuation *k = KosPyDelimitedContinuation_Check(callable)
       ? KosPyDelimitedContinuation_CAPTURED((KosPyDelimitedContinuation *) callable)
       : KosPyContinuation_CAPTURED((KosPyContinuation *) callable);
@@ -147,7 +144,7 @@ static int call_call_continuation(
   /* Delimited: prompt need not be in chain; push model grafts onto current
    * chain and returns to call site on POP_PROMPT. */
 
-  if (KosContinuation_TOKEN_REF(k) == (PyObject *) KosContext_TOKEN(ctx)
+  if (KosContinuation_TOKEN_REF(k) == (PyObject *) KosEvalState_Token(es)
       || (KosContinuation_PROMPT_ID(k) == KOS_PROMPT_ID_UNDELIMITED && ! KosContinuation_TOKEN_REF(k))) {
     if (kos_invoke_continuation(es, k, resume_val, 0, callable) < 0) {
       Py_DECREF(resume_val);

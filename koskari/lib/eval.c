@@ -704,6 +704,31 @@ PyObject *KosEvalState_GlobalsNamespace(KosEvalState *es) {
 }
 
 
+int KosEvalState_SetFrameCodeAndNamespace(
+    KosEvalState *es,
+    KosDynFrame *frame,
+    KosCode *code,
+    PyObject *ns) {
+
+  KosContext *ctx = KosEvalState_CONTEXT(es);
+
+  Py_XDECREF(KosDynFrame_NS(frame));
+  KosDynFrame_NS(frame) = ns;
+  KosDynFrame_CODE(frame) = code;
+  KosContext_NAMESPACE(ctx) = ns;
+  KosEvalState_SyncFromContext(es);
+  return 0;
+}
+
+
+KosEvaluatorToken *KosEvalState_Token(const KosEvalState *es) {
+
+  if (! es)
+    return NULL;
+  return KosContext_TOKEN(KosEvalState_CONTEXT(es));
+}
+
+
 void KosEvalState_ArmTransferPlan(KosEvalState *es, KosTransferPlan *plan) {
 
   KosContext *ctx = KosEvalState_CONTEXT(es);
@@ -1797,30 +1822,29 @@ int kos_stackblock_traverse(
 /* === Koskari call operations === */
 
 
-int kos_tail_koscall(
-    KosContext *ctx,
+int KosEvalState_TailKoscallReplaceFrame(
+    KosEvalState *es,
     KosCode *code,
     PyObject *ns) {
 
-  KosEvalState es;
-  KosEvalState_Init(&es, ctx);
+  KosContext *ctx = KosEvalState_CONTEXT(es);
 
-  if (! ctx || ! KosEvalState_FRAME(&es)) {
+  if (! ctx || ! KosEvalState_FRAME(es)) {
     PyErr_SetString(PyExc_RuntimeError, "no frame for tail_koscall");
     return -1;
   }
 
-  KosDynFrame *old = KosEvalState_FRAME(&es);
+  KosDynFrame *old = KosEvalState_FRAME(es);
   KosDynNode *parent = KosDynNode_PARENT((KosDynNode *) old);
   KosDynFrame *frame;
 
-  KosEvalState_FlushLiveRegsToFrame(&es);
+  KosEvalState_FlushLiveRegsToFrame(es);
   KosContext_DYN_TOP(ctx) = parent;
 
   frame = kos_dynframe_new(parent, code, ns, NULL);
   if (! frame) {
     KosContext_DYN_TOP(ctx) = (KosDynNode *) old;
-    KosEvalState_RefreshDynCaches(&es);
+    KosEvalState_RefreshDynCaches(es);
     return -1;
   }
 
@@ -1828,7 +1852,7 @@ int kos_tail_koscall(
 
   KosContext_DYN_TOP(ctx) = (KosDynNode *) frame;
   KosContext_CHAIN_VERSION(ctx)++;
-  KosEvalState_RefreshDynCaches(&es);
+  KosEvalState_RefreshDynCaches(es);
 
   return 0;
 }
@@ -2663,14 +2687,6 @@ static int kos_check_cmp(
 */
 
 
-typedef enum {
-  GET_NEXT_VALUE,
-  GET_NEXT_EXHAUSTED,
-  GET_NEXT_SUSPEND,
-  GET_NEXT_ERROR
-} KosGetNextResult;
-
-
 /**
    Get next value from a Python async iterator using the given __anext__
    awaitable. Caller must have obtained awaitable via get_await_next(iter);
@@ -2678,11 +2694,13 @@ typedef enum {
    reference on GET_NEXT_VALUE.
 */
 static KosGetNextResult next_from_python_async_iter(
-    KosContext *ctx,
+    KosEvalState *es,
     KosEvent *out_ev,
     PyObject *iter,
     PyObject **result_out,
     PyObject *awaitable) {
+
+  KosContext *ctx = KosEvalState_CONTEXT(es);
 
   (void) iter;
   int suspended = 0;
@@ -2692,7 +2710,7 @@ static KosGetNextResult next_from_python_async_iter(
   Py_DECREF(awaitable);
 
   if (suspended && yielded) {
-    KosContext_FLAGS(ctx) &= ~KOS_CTX_RUNNING;
+    KosEvalState_MarkSuspendedNotRunning(es);
     KosEvent_KIND(out_ev) = KOS_EV_AWAIT;
     KosEvent_PAYLOAD(out_ev) = yielded;
     return GET_NEXT_SUSPEND;
@@ -2717,12 +2735,12 @@ static KosGetNextResult next_from_python_async_iter(
    *result_out is set with a new reference on GET_NEXT_VALUE.
 */
 static KosGetNextResult next_from_python_sync_iter(
-    KosContext *ctx,
+    KosEvalState *es,
     KosEvent *out_ev,
     PyObject *iter,
     PyObject **result_out) {
 
-  (void) ctx;
+  (void) es;
   (void) out_ev;
 
   PyObject *n = PyIter_Next(iter);
@@ -2743,8 +2761,8 @@ static KosGetNextResult next_from_python_sync_iter(
    or Python sync iter). Does not push; does not perform GetIter.
    *result_out set only on GET_NEXT_VALUE (caller pushes and DECREF).
 */
-static KosGetNextResult op_get_next_from_iter(
-    KosContext *ctx,
+KosGetNextResult op_get_next_from_iter(
+    KosEvalState *es,
     KosEvent *out_ev,
     PyObject *iter,
     PyObject **result_out) {
@@ -2753,13 +2771,13 @@ static KosGetNextResult op_get_next_from_iter(
 
   PyObject *awaitable = get_await_next(iter);
   if (awaitable) {
-    KosGetNextResult r = next_from_python_async_iter(ctx, out_ev, iter,
+    KosGetNextResult r = next_from_python_async_iter(es, out_ev, iter,
                                                       result_out, awaitable);
     return r;
   }
 
   if (PyIter_Check(iter))
-    return next_from_python_sync_iter(ctx, out_ev, iter, result_out);
+    return next_from_python_sync_iter(es, out_ev, iter, result_out);
 
   PyErr_SetString(PyExc_TypeError, "not an iterator");
   return GET_NEXT_ERROR;

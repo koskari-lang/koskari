@@ -20,7 +20,6 @@
 */
 
 KOS_OP_HANDLER(ITER_NEXT) {
-  KosContext *ctx = KosEvalState_CONTEXT(es); /* agen attach paths */
   KosDynNode *region = kos_find_node_for_loop(es);
   if (! region || ! KosDynNode_IS_FOREACH(region)) {
     PyErr_SetString(PyExc_RuntimeError,
@@ -55,7 +54,7 @@ KOS_OP_HANDLER(ITER_NEXT) {
   }
 
   PyObject *value = NULL;
-  KosGetNextResult get_res = op_get_next_from_iter(ctx, out_ev, iter, &value);
+  KosGetNextResult get_res = op_get_next_from_iter(es, out_ev, iter, &value);
   switch (get_res) {
     case GET_NEXT_VALUE:
       if (KosEvalState_StackPushRef(es, value) < 0) {
