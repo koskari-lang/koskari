@@ -129,8 +129,7 @@ void KosEvalState_RefreshDynCaches(KosEvalState *es) {
   KOS_TRACE_EVAL_SYNC_BEGIN();
 
   ctx = KosEvalState_CONTEXT(es);
-
-  if (! ctx)
+  if (unlikely(! ctx))
     goto done;
 
   KosDynFrame *ft = NULL;
@@ -224,23 +223,17 @@ done:
 }
 
 
-static inline PyObject *
-kos_evalstate_get_constant(const KosEvalState *es, uint32_t index) {
-
-  KosCode *code = KosEvalState_CODE(es);
-
-  return code ? KosCode_GET_CONST(code, index) : NULL;
-}
 
 #define KosEvalState_GetConstant(es, index) \
-  kos_evalstate_get_constant((es), (index))
+  KosCode_GET_CONST(KosEvalState_CODE(es), index)
 
 
-static KosStackBlock **kos_evalstate_parent_stack_slot(KosEvalState *es) {
+static KosStackBlock **kos_evalstate_parent_stack_slot(
+    KosEvalState *es) {
 
   KosDynNode *owner = KosEvalState_InnermostStackOwner(es);
   KosDynNode *node;
-  if (! owner) {
+  if (unlikely(! owner)) {
     PyErr_SetString(PyExc_RuntimeError,
                     "KosEvalState_ParentStack*: no current stack owner");
     return NULL;
@@ -258,23 +251,23 @@ static KosStackBlock **kos_evalstate_parent_stack_slot(KosEvalState *es) {
 
 
 int KosEvalState_ParentStackPushRef(KosEvalState *es, PyObject *val) {
-
   KosStackBlock **slot = kos_evalstate_parent_stack_slot(es);
-  if (! slot)
+  if (unlikely(! slot))
     return -1;
+
   return KosStackBlock_PushRef(slot, val);
 }
 
 
 int KosEvalState_ParentStackPUSH(KosEvalState *es, PyObject *val) {
-
   KosStackBlock **slot = kos_evalstate_parent_stack_slot(es);
-  if (! slot) {
+  if (unlikely(! slot)) {
     Py_XDECREF(val);
     return -1;
   }
   return KosStackBlock_PUSH(slot, val);
 }
+
 
 /* --- Transfer plan and delimited return --- */
 
@@ -301,8 +294,7 @@ static void clear_and_free_transfer_plan(KosContext *ctx) {
 
 
 static inline void KosEvalState_DisarmTransferPlan(KosEvalState *es) {
-
-  if (! es)
+  if (unlikely(! es))
     return;
   clear_and_free_transfer_plan(KosEvalState_CONTEXT(es));
 }
@@ -419,14 +411,12 @@ static inline int KosEvalState_PythonResumeTake(
 }
 
 
-static inline void KosEvalState_EnterDomainScope(KosEvalState *es) {
-  kos_domain_push_scope(KosEvalState_CONTEXT(es));
-}
+#define KosEvalState_EnterDomainScope(es) \
+  kos_domain_push_scope(KosEvalState_CONTEXT(es))
 
 
-static inline void KosEvalState_LeaveDomainScope(KosEvalState *es) {
-  kos_domain_pop_scope(KosEvalState_CONTEXT(es));
-}
+#define KosEvalState_LeaveDomainScope(es) \
+  kos_domain_pop_scope(KosEvalState_CONTEXT(es))
 
 
 KosEvaluatorToken *KosEvalState_Token(const KosEvalState *es) {
