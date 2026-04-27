@@ -23,8 +23,6 @@
 */
 
 KOS_OP_HANDLER(POP_SHIFT) {
-  KosContext *ctx = KosEvalState_CONTEXT(es);
-  // CONTEXT: dirty, touches context directly
   PyObject *result;
   uint32_t eid;
   uint32_t parent_id;
@@ -107,10 +105,7 @@ KOS_OP_HANDLER(POP_SHIFT) {
   SAYF("[POP_SHIFT] plan ready: RESUME_PC=%u (first instr after POP_PROMPT)",
        (unsigned) (prompt_pop_pc + 1));
 
-  if (KosContext_PLAN(ctx))
-    kos_free_transfer_plan(KosContext_PLAN(ctx));
-  KosContext_PLAN(ctx) = plan;
-  KosContext_FLAGS(ctx) |= KOS_CTX_IN_TRANSFER;
+  KosEvalState_ArmTransferPlan(es, plan);
   KosTransferPlan_CONTINUATION_REF(plan) = NULL;
 
   return KOS_OP_PROLOGUE();

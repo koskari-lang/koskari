@@ -611,6 +611,18 @@ static void clear_and_free_transfer_plan(KosContext *ctx) {
 }
 
 
+void KosEvalState_ArmTransferPlan(KosEvalState *es, KosTransferPlan *plan) {
+
+  KosContext *ctx = KosEvalState_CONTEXT(es);
+  KosTransferPlan *old = KosContext_PLAN(ctx);
+
+  if (old)
+    kos_free_transfer_plan(old);
+  KosContext_PLAN(ctx) = plan;
+  KosContext_FLAGS(ctx) |= KOS_CTX_IN_TRANSFER;
+}
+
+
 /**
   Run the current transfer plan to completion.  Returns 0 on success (plan
   cleared or was NULL).  Returns -1 if a step failed (out_ev set to RAISE,
@@ -678,10 +690,7 @@ static int kos_return_delimited(
   KosTransferPlan_RESUME_PC(plan) = ret_pc;
   KosTransferPlan_RESUME_FRAME(plan) = NULL;
   KosTransferPlan_RESUME_STACK(plan) = NULL;
-  if (KosContext_PLAN(ctx))
-    kos_free_transfer_plan(KosContext_PLAN(ctx));
-  KosContext_PLAN(ctx) = plan;
-  KosContext_FLAGS(ctx) |= KOS_CTX_IN_TRANSFER;
+  KosEvalState_ArmTransferPlan(es, plan);
   KosTransferPlan_CONTINUATION_REF(plan) = NULL;
   if (ret_chain) {
     kos_dynchain_free(ret_chain, NULL);
@@ -1260,10 +1269,7 @@ own_fail:
   Py_DECREF(typ);
   Py_DECREF(val);
 
-  if (KosContext_PLAN(ctx))
-    kos_free_transfer_plan(KosContext_PLAN(ctx));
-  KosContext_PLAN(ctx) = plan;
-  KosContext_FLAGS(ctx) |= KOS_CTX_IN_TRANSFER;
+  KosEvalState_ArmTransferPlan(es, plan);
   return KOS_MODE_TRANSFER;
 }
 

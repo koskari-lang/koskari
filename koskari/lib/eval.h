@@ -616,6 +616,12 @@ void KosEvalState_ApplyDynCaches(KosEvalState *es);
 void KosEvalState_RefreshDynCaches(KosEvalState *es);
 
 /**
+  Replace any active transfer plan with plan and set KOS_CTX_IN_TRANSFER.
+  plan must be non-NULL. Frees the previous plan if present.
+*/
+void KosEvalState_ArmTransferPlan(KosEvalState *es, KosTransferPlan *plan);
+
+/**
   Innermost dyn node that owns a non-NULL operand stack (from dyn_top toward
   root). NULL if no explicit stack on the chain.
 */

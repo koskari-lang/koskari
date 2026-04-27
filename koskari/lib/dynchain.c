@@ -3912,9 +3912,6 @@ int kos_invoke_continuation(
     return -1;
   }
 
-  KosContext *ctx = KosEvalState_CONTEXT(es);
-  // CONTEXT: dirty, touches context directly
-
   /* For multi-shot, clone the continuation */
   KosContinuation *to_use = k;
   if (KOS_XFER_TRACE)
@@ -3964,8 +3961,11 @@ int kos_invoke_continuation(
     KosDynDelim_RETURN_NODE(ret_delim) = (KosDynNode *) ret_delim;
     if (KOS_XFER_TRACE)
       SAYF("[xfer] invoke: push DELIM dyn_top=%p kind=%s frame_top=%p return_node=%p",
-           (void *) KosContext_DYN_TOP(ctx),
-           KosContext_DYN_TOP(ctx) ? kos_dynnode_kind_name(KosDynNode_KIND(KosContext_DYN_TOP(ctx))) : "NULL",
+           (void *) KosContext_DYN_TOP(KosEvalState_CONTEXT(es)),
+           KosContext_DYN_TOP(KosEvalState_CONTEXT(es))
+               ? kos_dynnode_kind_name(KosDynNode_KIND(
+                     KosContext_DYN_TOP(KosEvalState_CONTEXT(es))))
+               : "NULL",
            (void *) KosEvalState_FRAME(es),
            (void *) KosDynDelim_RETURN_NODE(ret_delim));
   }
@@ -4012,10 +4012,7 @@ int kos_invoke_continuation(
          (void *) KosTransferPlan_RESUME_FRAME(plan), (void *) KosTransferPlan_RESUME_STACK(plan));
 
   /* Plan replacement: one active plan at a time; discard any existing plan */
-  if (KosContext_PLAN(ctx))
-    kos_free_transfer_plan(KosContext_PLAN(ctx));
-  KosContext_PLAN(ctx) = plan;
-  KosContext_FLAGS(ctx) |= KOS_CTX_IN_TRANSFER;
+  KosEvalState_ArmTransferPlan(es, plan);
   KosTransferPlan_CONTINUATION_REF(plan) = NULL;
   if (continuation_ref) {
     Py_INCREF(continuation_ref);

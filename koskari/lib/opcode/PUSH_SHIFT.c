@@ -21,8 +21,6 @@
 */
 
 KOS_OP_HANDLER(PUSH_SHIFT) {
-  KosContext *ctx = KosEvalState_CONTEXT(es);
-  // CONTEXT: dirty, touches context directly
   uint32_t prompt_id;
   KosContinuation *k = NULL;
   uint32_t resume_pc;
@@ -112,10 +110,7 @@ KOS_OP_HANDLER(PUSH_SHIFT) {
    * no separate caller-owned ref, so no extra INCREF here.) */
   KosTransferPlan_CONTINUATION_REF(plan) = wrapper;
 
-  if (KosContext_PLAN(ctx))
-    kos_free_transfer_plan(KosContext_PLAN(ctx));
-  KosContext_PLAN(ctx) = plan;
-  KosContext_FLAGS(ctx) |= KOS_CTX_IN_TRANSFER;
+  KosEvalState_ArmTransferPlan(es, plan);
 
   /* Roll back PC so we re-enter PUSH_SHIFT after plan completes */
   KosEvalState_SET_PC(es, KosEvalState_ACTING_PC(es));
