@@ -38,11 +38,11 @@ static int install_frozen_gen_for_resume(
   if (! eval_ctx || ! agen)
     return 0;
   g = (KosDynGen *) agen->gen;
-  if (! g || ! kos_dyn_gen_frozen_needs_install(eval_ctx, g))
-    return 0;
   {
     KosEvalState es;
     KosEvalState_Init(&es, eval_ctx);
+    if (! g || ! kos_dyn_gen_frozen_needs_install_es(&es, g))
+      return 0;
     return kos_dyn_gen_install(&es, g);
   }
 }

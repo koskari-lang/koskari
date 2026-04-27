@@ -109,10 +109,8 @@ int kos_dyn_gen_install(KosEvalState *es, KosDynGen *gen) {
    * Do NOT overwrite active->parent: the stored chain active -> ... -> gen
    * is already intact (e.g. YIELD_FROM -> FRAME -> GEN). Overwriting
    * would sever links when active is not a direct child of gen. */
-  KosContext_DYN_TOP(ctx) = active;
   KosDynGen_ACTIVE(gen) = NULL;
-  KosContext_CHAIN_VERSION(ctx)++;
-  KosEvalState_RefreshDynCaches(es);
+  kos_dyn_commit_dyn_top(es, active);
 
   if (KosEvalState_StackPushRef(es, Py_None) < 0)
     return -1;
@@ -130,7 +128,7 @@ int kos_dyn_gen_install(KosEvalState *es, KosDynGen *gen) {
 }
 
 
-int kos_dyn_gen_frozen_needs_install(KosContext *eval_ctx, KosDynGen *g) {
+static int kos_dyn_gen_frozen_needs_install_ctx(KosContext *eval_ctx, KosDynGen *g) {
 
   KosDynNode *n;
 
@@ -144,6 +142,14 @@ int kos_dyn_gen_frozen_needs_install(KosContext *eval_ctx, KosDynGen *g) {
       return 0;
   }
   return 1;
+}
+
+
+int kos_dyn_gen_frozen_needs_install_es(KosEvalState *es, KosDynGen *g) {
+
+  if (! es)
+    return 0;
+  return kos_dyn_gen_frozen_needs_install_ctx(KosEvalState_CONTEXT(es), g);
 }
 
 

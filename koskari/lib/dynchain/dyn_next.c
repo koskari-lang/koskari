@@ -128,7 +128,7 @@ void kos_dyn_unlink_next_node(KosEvalState *es, KosDynNext *next) {
 
   KosEvalState_FlushLiveRegsToFrame(es);
   if (KosContext_DYN_TOP(ctx) == node) {
-    KosContext_DYN_TOP(ctx) = p;
+    kos_dyn_commit_dyn_top(es, p);
   } else {
     KosDynNode *c;
     for (c = KosContext_DYN_TOP(ctx); c; c = KosDynNode_PARENT(c)) {
@@ -137,11 +137,11 @@ void kos_dyn_unlink_next_node(KosEvalState *es, KosDynNext *next) {
         break;
       }
     }
+    KosContext_CHAIN_VERSION(ctx)++;
+    KosEvalState_RefreshDynCaches(es);
   }
-  
+
   KosDynNode_PARENT(node) = NULL;
-  KosContext_CHAIN_VERSION(ctx)++;
-  KosEvalState_RefreshDynCaches(es);
   kos_dyn_next_free_payload(node);
 }
 
