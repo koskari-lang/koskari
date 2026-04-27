@@ -834,8 +834,11 @@ int kos_push_or_await(KosEvalState *es, KosEvent *out_ev, PyObject *val) {
    Prepare frame stack for a KosCallable install per wants_frame / tail_call.
    Inlines effective wants_frame resolution (hook vs static flag).
 */
-static int do_frame_prep(KosEvalState *es, PyObject *callable, PyTypeObject *typ,
-                         int tail_call) {
+static inline int do_frame_prep(
+    KosEvalState *es,
+    PyObject *callable,
+    PyTypeObject *typ,
+    int tail_call) {
 
   KosCallableTypeObject *ctyp = (KosCallableTypeObject *) typ;
   int wants;
@@ -854,11 +857,13 @@ static int do_frame_prep(KosEvalState *es, PyObject *callable, PyTypeObject *typ
     KosEvalState_SyncFromContext(es);
     return 0;
   }
+
   if (wants && ! tail_call) {
     if (kos_dyn_push_frame_empty(es) == NULL)
       return -1;
     return 0;
   }
+
   if (! wants && tail_call && parent)
     return kos_dyn_pop_frame(es);
 
@@ -866,9 +871,13 @@ static int do_frame_prep(KosEvalState *es, PyObject *callable, PyTypeObject *typ
 }
 
 
-int KosEvalState_Call(KosEvalState *es, KosEvent *out_ev,
+int KosEvalState_Call(
+    KosEvalState *es,
+    KosEvent *out_ev,
     PyObject *callable,
-    PyObject *const *args, Py_ssize_t nargs, PyObject *kwnames,
+    PyObject *const *args,
+    Py_ssize_t nargs,
+    PyObject *kwnames,
     int tail_call) {
 
   if (! KosCallable_Check(callable)) {
@@ -956,8 +965,11 @@ int KosEvalState_CallArgs(
 }
 
 
-int KosEvalState_CallNoArgs(KosEvalState *es, KosEvent *out_ev,
-    PyObject *callable, int tail_call) {
+int KosEvalState_CallNoArgs(
+    KosEvalState *es,
+    KosEvent *out_ev,
+    PyObject *callable,
+    int tail_call) {
 
   if (! KosCallable_Check(callable)) {
     if (tail_call) {
