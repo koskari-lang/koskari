@@ -18,8 +18,7 @@
 */
 
 KOS_OP_HANDLER(CLEAR_FINALLY) {
-  KosContext *ctx = KosEvalState_CONTEXT(es);
-  KosDynNode *region = (KosDynNode *) KosContext_DYN_TOP(ctx);
+  KosDynNode *region = KosEvalState_CurrentNode(es);
   if (! region || ! KosDynNode_IS_FINALLY(region)) {
     PyErr_SetString(PyExc_RuntimeError,
                     "CLEAR_FINALLY: top is not a FINALLY region");

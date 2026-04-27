@@ -25,8 +25,8 @@ KOS_OP_HANDLER(POP_PROMPT) {
   KosDynDelim *ret_delim = kos_find_nearest_delim(es, KOS_DYN_DELIM_MODE_POP_PROMPT);
 
   SAYF("[eval] POP_PROMPT delim=%p dyn_top=%p IS_PROMPT=%d frame=%p stack_len=%zu\n",
-       (void *) ret_delim, (void *) KosContext_DYN_TOP(ctx),
-       (KosContext_DYN_TOP(ctx) && KosDynNode_IS_PROMPT(KosContext_DYN_TOP(ctx))) ? 1 : 0,
+       (void *) ret_delim, (void *) KosEvalState_CurrentNode(es),
+       (KosEvalState_CurrentNode(es) && KosDynNode_IS_PROMPT(KosEvalState_CurrentNode(es))) ? 1 : 0,
        (void *) KosEvalState_FRAME(es),
        KosEvalState_StackLen(es));
 
@@ -75,8 +75,8 @@ KOS_OP_HANDLER(POP_PROMPT) {
         return KOS_OP_POST_ERR();
       }
       SAYF("[eval] POP_PROMPT after unwind: dyn_top=%p kind=%s",
-           (void *) KosContext_DYN_TOP(ctx),
-           KosContext_DYN_TOP(ctx) ? kos_dynnode_kind_name(KosDynNode_KIND(KosContext_DYN_TOP(ctx))) : "NULL");
+           (void *) KosEvalState_CurrentNode(es),
+           KosEvalState_CurrentNode(es) ? kos_dynnode_kind_name(KosDynNode_KIND(KosEvalState_CurrentNode(es))) : "NULL");
       if (kos_dyn_finish_delimited_pop_return(es, ret_delim, val) < 0)
         return KOS_OP_POST_ERR();
       (void) insn;
@@ -85,14 +85,15 @@ KOS_OP_HANDLER(POP_PROMPT) {
 
     KosEvent_KIND(out_ev) = KOS_EV_RETURN;
     KosEvent_PAYLOAD(out_ev) = val;
-    if (KosContext_DYN_TOP(ctx) == (KosDynNode *) ret_delim)
+    if (KosEvalState_CurrentNode(es) == (KosDynNode *) ret_delim)
       kos_dyn_pop_delim(es, ret_delim);
     KosContext_FLAGS(ctx) &= ~KOS_CTX_RUNNING;
     (void) insn;
     return KOS_OP_POST_SUSPEND();
   }
 
-  if (! KosContext_DYN_TOP(ctx) || ! KosDynNode_IS_PROMPT(KosContext_DYN_TOP(ctx))) {
+  KosDynNode *top = KosEvalState_CurrentNode(es);
+  if (! top || ! KosDynNode_IS_PROMPT(top)) {
     PyErr_SetString(PyExc_RuntimeError, "POP_PROMPT: top is not a prompt");
     return KOS_OP_POST_ERR();
   }
@@ -106,7 +107,7 @@ KOS_OP_HANDLER(POP_PROMPT) {
     return KOS_OP_POST_ERR();
   }
 
-  if (kos_dyn_pop_prompt(es, (KosDynPrompt *) KosContext_DYN_TOP(ctx)) < 0) {
+  if (kos_dyn_pop_prompt(es, (KosDynPrompt *) top) < 0) {
     Py_XDECREF(result);
     return KOS_OP_POST_ERR();
   }

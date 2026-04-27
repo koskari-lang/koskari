@@ -19,12 +19,12 @@
 */
 
 KOS_OP_HANDLER(POP_CC) {
-  KosContext *ctx = KosEvalState_CONTEXT(es);
-  if (! KosContext_DYN_TOP(ctx) || ! KosDynNode_IS_CC(KosContext_DYN_TOP(ctx))) {
+  KosDynNode *top = KosEvalState_CurrentNode(es);
+  if (! top || ! KosDynNode_IS_CC(top)) {
     PyErr_SetString(PyExc_RuntimeError, "POP_CC: top is not a CC block");
     return KOS_OP_POST_ERR();
   }
-  kos_dyn_pop_cc(es, (KosDynCC *) KosContext_DYN_TOP(ctx));
+  kos_dyn_pop_cc(es, (KosDynCC *) top);
   (void) out_ev;
   (void) insn;
   return KOS_OP_RUN();

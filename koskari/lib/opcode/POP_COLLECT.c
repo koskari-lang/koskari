@@ -19,19 +19,17 @@
 */
 
 KOS_OP_HANDLER(POP_COLLECT) {
-  KosContext *ctx = KosEvalState_CONTEXT(es);
-  // CONTEXT: dirty, touches context directly
   (void) out_ev;
   (void) insn;
 
-  if (unlikely(! KosContext_DYN_TOP(ctx) ||
-               ! KosDynNode_IS_COLLECT(KosContext_DYN_TOP(ctx)))) {
+  KosDynNode *top = KosEvalState_CurrentNode(es);
+  if (unlikely(! top || ! KosDynNode_IS_COLLECT(top))) {
     PyErr_SetString(PyExc_RuntimeError,
                     "POP_COLLECT: top is not a collector scope");
     return KOS_OP_POST_ERR();
   }
 
-  KosDynCollect *col_node = (KosDynCollect *) KosContext_DYN_TOP(ctx);
+  KosDynCollect *col_node = (KosDynCollect *) top;
   PyObject *collector = KosDynNode_NS(col_node);
   Py_INCREF(collector);
 

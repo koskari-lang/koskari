@@ -176,7 +176,7 @@ static int yield_from_emit_yield(
   KosEvent_PAYLOAD(out_ev) = *tos;
   Py_INCREF(KosEvent_PAYLOAD(out_ev));
   SAYF("[yf] emit_yield dyn_top=%p frame=%p payload=%p -> KOS_EV_YIELD\n",
-       (void *) KosContext_DYN_TOP(ctx), (void *) KosEvalState_FRAME(es),
+       (void *) KosEvalState_CurrentNode(es), (void *) KosEvalState_FRAME(es),
        (void *) KosEvent_PAYLOAD(out_ev));
 
   KosEvalState_FlushLiveRegsToFrame(es);
@@ -629,7 +629,7 @@ static int yield_from_drive_kos_async_gen(
 KOS_OP_HANDLER(YIELD_FROM) {
   KosContext *ctx = KosEvalState_CONTEXT(es);
 
-  KosDynNode *dyn_top = KosContext_DYN_TOP(ctx);
+  KosDynNode *dyn_top = KosEvalState_CurrentNode(es);
 
   if (! KosDynNode_IS_YIELD_FROM(dyn_top)) {
     /* 1. First entry: TOS is the yield-from expression result. Pop it,
@@ -654,7 +654,7 @@ KOS_OP_HANDLER(YIELD_FROM) {
 
     Py_DECREF(delegate);
     {
-      KosDynYieldFrom *yf_new = (KosDynYieldFrom *) KosContext_DYN_TOP(ctx);
+      KosDynYieldFrom *yf_new = (KosDynYieldFrom *) KosEvalState_CurrentNode(es);
       KosDynYieldFrom_PENDING_ACTION(yf_new) = KOS_YF_STEP;
       KosDynYieldFrom_PHASE_SET(yf_new, KOS_YF_PHASE_DRIVING);
       KosEvalState_SET_PC(es, KosEvalState_ACTING_PC(es));

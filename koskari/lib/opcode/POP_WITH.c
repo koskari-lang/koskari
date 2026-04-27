@@ -21,11 +21,10 @@
 */
 
 KOS_OP_HANDLER(POP_WITH) {
-  KosContext *ctx = KosEvalState_CONTEXT(es);
 
   SAY("[eval] POP_WITH entry");
 
-  KosDynNode *top = KosContext_DYN_TOP(ctx);
+  KosDynNode *top = KosEvalState_CurrentNode(es);
   if (! top || ! KosDynNode_IS_WITH(top)) {
     SAY("[eval] POP_WITH top is not a with node");
     PyErr_SetString(PyExc_RuntimeError, "POP_WITH: top is not a with node");

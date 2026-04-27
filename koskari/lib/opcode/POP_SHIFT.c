@@ -35,7 +35,8 @@ KOS_OP_HANDLER(POP_SHIFT) {
   KosDynPrompt *prompt = NULL;
   KosTransferPlan *plan = NULL;
 
-  if (! KosContext_DYN_TOP(ctx) || ! KosDynNode_IS_SHIFT(KosContext_DYN_TOP(ctx))) {
+  KosDynNode *top = KosEvalState_CurrentNode(es);
+  if (! top || ! KosDynNode_IS_SHIFT(top)) {
     PyErr_SetString(PyExc_RuntimeError, "POP_SHIFT: top is not a shift node");
     return KOS_OP_POST_ERR();
   }

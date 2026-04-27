@@ -40,7 +40,7 @@ KOS_OP_HANDLER(PUSH_SHIFT) {
 
   /* Re-entry after plan completed: push shift node and continuation */
   if (KosDynPrompt_PENDING_SHIFT_WRAPPER(prompt)
-      && KosContext_DYN_TOP(ctx) == (KosDynNode *) prompt) {
+      && KosEvalState_CurrentNode(es) == (KosDynNode *) prompt) {
     PyObject *wrapper = KosDynPrompt_PENDING_SHIFT_WRAPPER(prompt);
     KosDynPrompt_PENDING_SHIFT_WRAPPER(prompt) = NULL;
 
@@ -55,7 +55,7 @@ KOS_OP_HANDLER(PUSH_SHIFT) {
   }
 
   /* Already at prompt: capture, push shift node, done */
-  if (KosContext_DYN_TOP(ctx) == (KosDynNode *) prompt) {
+  if (KosEvalState_CurrentNode(es) == (KosDynNode *) prompt) {
     resume_pc = kos_shift_ic_for((PyObject *) KosEvalState_CurrentCode(es),
                                  KosEvalState_ACTING_PC(es));
     if (resume_pc == KOS_EXTENT_NONE) {

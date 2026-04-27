@@ -18,8 +18,7 @@
 */
 
 KOS_OP_HANDLER(CLEAR_TRY) {
-  KosContext *ctx = KosEvalState_CONTEXT(es);
-  KosDynNode *region = (KosDynNode *) KosContext_DYN_TOP(ctx);
+  KosDynNode *region = KosEvalState_CurrentNode(es);
   if (! region || ! KosDynNode_IS_TRY(region)) {
     PyErr_SetString(PyExc_RuntimeError, "CLEAR_TRY: top is not a TRY region");
     return KOS_OP_POST_ERR();

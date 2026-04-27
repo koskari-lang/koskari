@@ -211,19 +211,31 @@ done:
 }
 
 
+KosDynNode *KosEvalState_CurrentNode(const KosEvalState *es) {
+  return KosContext_DYN_TOP(KosEvalState_CONTEXT(es));
+}
+
+#define KosEvalState_CurrentNode(es) \
+  KosContext_DYN_TOP(KosEvalState_CONTEXT(es))
+
+
 KosCode *KosEvalState_CurrentCode(const KosEvalState *es) {
   return KosEvalState_CODE(es);
 }
 
+#define KosEvalState_CurrentCode(es) \
+  KosEvalState_CODE(es)
+
 
 PyObject *KosEvalState_CurrentNamespace(const KosEvalState *es) {
-
   return KosEvalState_NAMESPACE(es);
 }
 
+#define KosEvalState_CurrentNamespace(es) \
+  KosEvalState_NAMESPACE(es)
+
 
 PyObject *KosEvalState_GetConstant(const KosEvalState *es, uint32_t index) {
-
   KosCode *code = KosEvalState_CODE(es);
   return code? KosCode_GET_CONST(code, index): NULL;
 }
@@ -254,10 +266,12 @@ PyObject *KosEvalState_StackPopRef(KosEvalState *es) {
 
 
 PyObject *KosEvalState_GetFast(const KosEvalState *es, size_t index) {
-
   PyObject *ns = KosEvalState_CurrentNamespace(es);
   return KosNamespace_FastDeref(ns, index);
 }
+
+#define KosEvalState_GetFast(es, index) \
+  KosNamespace_FastDeref(KosEvalState_CurrentNamespace(es), index)
 
 
 int KosEvalState_SetFast(
@@ -269,12 +283,17 @@ int KosEvalState_SetFast(
   return KosNamespace_FastStore(ns, index, value);
 }
 
+#define KosEvalState_SetFast(es, index, value) \
+  KosNamespace_FastStore(KosEvalState_CurrentNamespace(es), index, value)
+
 
 PyObject *KosEvalState_GetVar(const KosEvalState *es, PyObject *key) {
-
   PyObject *ns = KosEvalState_CurrentNamespace(es);
   return KosNamespace_Deref(ns, key);
 }
+
+#define KosEvalState_GetVar(es, key) \
+  KosNamespace_Deref(KosEvalState_CurrentNamespace(es), key)
 
 
 int KosEvalState_StackSteal_Tail(
