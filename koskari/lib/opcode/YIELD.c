@@ -20,8 +20,6 @@
 */
 
 KOS_OP_HANDLER(YIELD) {
-  KosContext *ctx = KosEvalState_CONTEXT(es);
-  // CONTEXT: dirty, touches context directly
   unsigned opa = KosOp_ARG(insn);
   PyObject *val = NULL;
 
@@ -78,7 +76,6 @@ KOS_OP_HANDLER(YIELD) {
 
   KosEvent_KIND(out_ev) = KOS_EV_YIELD;
   KosEvent_PAYLOAD(out_ev) = val;
-  KosContext_FLAGS(ctx) &= ~KOS_CTX_RUNNING;
-  KosContext_FLAGS(ctx) |= KOS_CTX_DEAD;
+  KosEvalState_MarkDeadAfterYield(es);
   return KOS_OP_POST_SUSPEND();
 }

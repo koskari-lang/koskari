@@ -627,6 +627,9 @@ void KosEvalState_ArmTransferPlan(KosEvalState *es, KosTransferPlan *plan);
 */
 void KosEvalState_DisarmTransferPlan(KosEvalState *es);
 
+void KosEvalState_SuspendActivePlan(KosEvalState *es);
+int KosEvalState_ResumeSuspendedPlan(KosEvalState *es);
+
 /**
   Stage return value for async unwind / parent delivery. to_parent is 0 or 1.
   Refcount semantics match direct assignments to ctx (no extra INCREF).
@@ -640,6 +643,24 @@ void KosEvalState_SetPendingReturn(
   Target frame for resume after async dynamic-wind pop (KOS_DYN_UNWIND_ASYNC_STARTED).
 */
 void KosEvalState_SetUnwindTargetFrame(KosEvalState *es, KosDynFrame *frame);
+
+void KosEvalState_MarkSuspendedNotRunning(KosEvalState *es);
+void KosEvalState_MarkDeadAfterYield(KosEvalState *es);
+void KosEvalState_MarkDeadAfterReturn(KosEvalState *es);
+
+/**
+  If inject_mode is KOS_INJECT_THROW, copy type and value, clear inject slots,
+  return 1. Otherwise return 0 (outputs untouched).
+*/
+int KosEvalState_TakeInjectThrow(
+    KosEvalState *es,
+    PyObject **type_out,
+    PyObject **value_out);
+
+/**
+  Outermost-frame namespace after kos_dyn_globals_frame(es). Borrowed ref.
+*/
+PyObject *KosEvalState_GlobalsNamespace(KosEvalState *es);
 
 /**
   Non-zero when a transfer plan is armed (ctx->plan != NULL).

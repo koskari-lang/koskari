@@ -20,8 +20,6 @@
 */
 
 KOS_OP_HANDLER(RETURN) {
-  KosContext *ctx = KosEvalState_CONTEXT(es);
-  // CONTEXT: dirty, touches context directly
   unsigned opa = KosOp_ARG(insn);
   PyObject *val = NULL;
 
@@ -147,8 +145,7 @@ KOS_OP_HANDLER(RETURN) {
     SAYF("[eval] RETURN payload: %R\n", val);
     KosEvent_KIND(out_ev) = KOS_EV_RETURN;
     KosEvent_PAYLOAD(out_ev) = val;
-    KosContext_FLAGS(ctx) &= ~KOS_CTX_RUNNING;
-    KosContext_FLAGS(ctx) |= KOS_CTX_DEAD;
+    KosEvalState_MarkDeadAfterReturn(es);
     return KOS_OP_POST_SUSPEND();
   }
 }

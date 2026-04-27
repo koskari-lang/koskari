@@ -619,6 +619,18 @@ void KosEvalState_DisarmTransferPlan(KosEvalState *es) {
 }
 
 
+void KosEvalState_SuspendActivePlan(KosEvalState *es) {
+
+  kos_suspend_transfer_plan(es);
+}
+
+
+int KosEvalState_ResumeSuspendedPlan(KosEvalState *es) {
+
+  return kos_resume_transfer_plan(es);
+}
+
+
 void KosEvalState_SetPendingReturn(
     KosEvalState *es,
     PyObject *val,
@@ -636,6 +648,59 @@ void KosEvalState_SetUnwindTargetFrame(KosEvalState *es, KosDynFrame *frame) {
   KosContext *ctx = KosEvalState_CONTEXT(es);
 
   KosContext_UNWIND_TARGET_FRAME(ctx) = frame;
+}
+
+
+void KosEvalState_MarkSuspendedNotRunning(KosEvalState *es) {
+
+  KosContext *ctx = KosEvalState_CONTEXT(es);
+
+  KosContext_FLAGS(ctx) &= ~KOS_CTX_RUNNING;
+}
+
+
+void KosEvalState_MarkDeadAfterYield(KosEvalState *es) {
+
+  KosContext *ctx = KosEvalState_CONTEXT(es);
+
+  KosContext_FLAGS(ctx) &= ~KOS_CTX_RUNNING;
+  KosContext_FLAGS(ctx) |= KOS_CTX_DEAD;
+}
+
+
+void KosEvalState_MarkDeadAfterReturn(KosEvalState *es) {
+
+  KosContext *ctx = KosEvalState_CONTEXT(es);
+
+  KosContext_FLAGS(ctx) &= ~KOS_CTX_RUNNING;
+  KosContext_FLAGS(ctx) |= KOS_CTX_DEAD;
+}
+
+
+int KosEvalState_TakeInjectThrow(
+    KosEvalState *es,
+    PyObject **type_out,
+    PyObject **value_out) {
+
+  KosContext *ctx = KosEvalState_CONTEXT(es);
+
+  if (KosContext_INJECT_MODE(ctx) != KOS_INJECT_THROW)
+    return 0;
+  *value_out = KosContext_INJECT_VALUE(ctx);
+  *type_out = KosContext_INJECT_TYPE(ctx);
+  KosContext_INJECT_MODE(ctx) = KOS_INJECT_NONE;
+  KosContext_INJECT_VALUE(ctx) = NULL;
+  KosContext_INJECT_TYPE(ctx) = NULL;
+  return 1;
+}
+
+
+PyObject *KosEvalState_GlobalsNamespace(KosEvalState *es) {
+
+  KosContext *ctx = KosEvalState_CONTEXT(es);
+
+  kos_dyn_globals_frame(es);
+  return KosDynFrame_NS(KosContext_GLOBALS_FRAME(ctx));
 }
 
 
