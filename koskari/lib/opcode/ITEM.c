@@ -19,7 +19,7 @@
 
 KOS_OP_HANDLER(ITEM) {
   PyObject *key = KosEvalState_StackPopRef(es);
-  if (! key)
+  if (unlikely(! key))
     return KOS_OP_POST_ERR();
 
   PyObject *obj = KosEvalState_StackPopRef(es);
