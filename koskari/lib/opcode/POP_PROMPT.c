@@ -21,6 +21,7 @@
 
 KOS_OP_HANDLER(POP_PROMPT) {
   KosContext *ctx = KosEvalState_CONTEXT(es);
+  // CONTEXT: dirty, touches context directly
   KosDynDelim *ret_delim = kos_find_nearest_delim(es, KOS_DYN_DELIM_MODE_POP_PROMPT);
 
   SAYF("[eval] POP_PROMPT delim=%p dyn_top=%p IS_PROMPT=%d frame=%p stack_len=%zu\n",

@@ -103,6 +103,7 @@ static int call_call_continuation(
     KosOp *insn) {
 
   KosContext *ctx = KosEvalState_CONTEXT(es);
+  // CONTEXT: dirty, touches context directly
 
   KosContinuation *k = KosPyDelimitedContinuation_Check(callable)
       ? KosPyDelimitedContinuation_CAPTURED((KosPyDelimitedContinuation *) callable)

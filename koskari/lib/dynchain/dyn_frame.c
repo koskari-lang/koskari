@@ -50,16 +50,16 @@ KosDynFrame *kos_dynframe_clone(KosDynFrame *frame) {
   if (! clone)
     return NULL;
 
+  kos_dynnode_init(clone, KOS_DYN_FRAME, NULL, KosDynNode_CAPS(frame));
+  KosDynNode_FLAGS(clone) = KosDynNode_FLAGS(frame) | KOS_DYNF_CLONED;
+  KosDynNode_NODE_ID(clone) = KosDynNode_NODE_ID(frame);
+
   KosStackBlock *cst = KosStackBlock_DeepCopy(KosDynFrame_STACK(frame));
   if (! cst) {
     kos_dynnode_return_to_freelist(clone);
     return NULL;
   }
   KosDynFrame_STACK(clone) = cst;
-
-  kos_dynnode_init(clone, KOS_DYN_FRAME, NULL, KosDynNode_CAPS(frame));
-  KosDynNode_FLAGS(clone) = KosDynNode_FLAGS(frame) | KOS_DYNF_CLONED;
-  KosDynNode_NODE_ID(clone) = KosDynNode_NODE_ID(frame);
   KosDynFrame_CODE(clone) = KosDynFrame_CODE(frame);  /* borrowed */
   KosDynFrame_PC(clone) = KosDynFrame_PC(frame);
   KosDynFrame_ACTING_PC(clone) = KosDynFrame_ACTING_PC(frame);
@@ -98,6 +98,7 @@ KosDynFrame *kos_dyn_push_frame(
     PyObject *ns) {
 
   KosContext *ctx = KosEvalState_CONTEXT(es);
+  // CONTEXT: dirty, touches context directly
   KosDynFrame *frame = kos_dynframe_new(KosContext_DYN_TOP(ctx), code, ns, NULL);
   if (! frame)
     return NULL;

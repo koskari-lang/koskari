@@ -211,7 +211,6 @@ struct KosDynNode {
       KosCode *code;
       uint32_t pc;        /* next instruction */
       uint32_t acting_pc; /* instruction currently being executed */
-      PyObject *ns;
       uint32_t frame_flags;
       /* Native frame evaluator: (es, out_ev, is_resume, val); es is live slice */
       int (*native_handler)(struct KosEvalState *, struct KosEvent *, int,
@@ -2148,8 +2147,7 @@ int kos_transferplan_traverse(
 #define KosDynNode_STACK(n)       (((KosDynNode *)(n))->stack)
 #define KosDynNode_NS(n)          (((KosDynNode *)(n))->ns)
 #define KosDynFrame_STACK(f)      KosDynNode_STACK((KosDynNode *)(f))
-/* Frame ns is initial frame namespace storage, not dynamic current scope. */
-#define KosDynFrame_NS(f)         (((KosDynNode *)(f))->u.frame.ns)
+#define KosDynFrame_NS(f)         KosDynNode_NS((KosDynNode *)(f))
 
 #define KosDynFrame_FLAGS(f)      (((KosDynNode *)(f))->u.frame.frame_flags)
 #define KosDynFrame_NATIVE_HANDLER(f) (((KosDynNode *)(f))->u.frame.native_handler)

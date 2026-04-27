@@ -76,6 +76,7 @@ KosDynCollect *kos_dyn_push_collect(
     KosEvalState *es,
     PyObject *ns) {
   KosContext *ctx = KosEvalState_CONTEXT(es);
+  // CONTEXT: dirty, touches context directly
   KosDynCollect *col_node = kos_dyncollect_new(
       KosContext_DYN_TOP(ctx), ns);
   if (! col_node)

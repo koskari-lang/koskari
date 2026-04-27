@@ -21,6 +21,7 @@
 
 KOS_OP_HANDLER(YIELD) {
   KosContext *ctx = KosEvalState_CONTEXT(es);
+  // CONTEXT: dirty, touches context directly
   unsigned opa = KosOp_ARG(insn);
   PyObject *val = NULL;
 

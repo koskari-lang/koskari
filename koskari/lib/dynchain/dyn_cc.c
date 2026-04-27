@@ -54,6 +54,7 @@ static void kos_dyncc_free(KosDynCC *cc) {
 KosDynCC *kos_dyn_push_cc(KosEvalState *es, uint32_t resume_pc) {
 
   KosContext *ctx = KosEvalState_CONTEXT(es);
+  // CONTEXT: dirty, touches context directly
   KosDynCC *cc = kos_dyncc_new(KosContext_DYN_TOP(ctx), resume_pc);
   if (! cc)
     return NULL;

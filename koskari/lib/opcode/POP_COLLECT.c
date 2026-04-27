@@ -20,6 +20,7 @@
 
 KOS_OP_HANDLER(POP_COLLECT) {
   KosContext *ctx = KosEvalState_CONTEXT(es);
+  // CONTEXT: dirty, touches context directly
   (void) out_ev;
   (void) insn;
 

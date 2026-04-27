@@ -1171,32 +1171,53 @@ static KosEvalMode handle_continuation_apply(
   if (is_own) {
     PyObject *cont_obj = PyObject_GetAttrString(val, "continuation");
     PyObject *args_obj = PyObject_GetAttrString(val, "args");
+    KosContinuation *k = NULL;
+    PyObject *resume_val = NULL;
 
-    if (cont_obj && PyObject_TypeCheck(cont_obj, KOS_CALLABLE_PYTYPE(KosPyContinuationType))) {
-      KosContinuation *k = ((KosPyContinuation *) cont_obj)->captured;
-      PyObject *resume_val = Py_None;
+    if (! cont_obj || ! args_obj)
+      goto own_fail;
 
-      if (args_obj && PyTuple_Check(args_obj) && PyTuple_GET_SIZE(args_obj) > 0) {
-        resume_val = PyTuple_GET_ITEM(args_obj, 0);
-        Py_INCREF(resume_val);
-      } else {
-        Py_INCREF(resume_val);
-      }
-
-      Py_XDECREF(args_obj);
-      PyErr_Clear();
-
-      if (k && kos_invoke_continuation(es, k, resume_val, 0, cont_obj) == 0) {
-        Py_DECREF(resume_val);
-        Py_DECREF(typ);
-        Py_DECREF(val);
-        Py_DECREF(cont_obj);
-        return KOS_MODE_TRANSFER;
-      }
-      Py_DECREF(resume_val);
-    } else {
-      Py_XDECREF(args_obj);
+    if (KosPyDelimitedContinuation_Check(cont_obj))
+      k = KosPyDelimitedContinuation_CAPTURED((KosPyDelimitedContinuation *) cont_obj);
+    else if (KosPyContinuation_Check(cont_obj))
+      k = KosPyContinuation_CAPTURED((KosPyContinuation *) cont_obj);
+    else {
+      PyErr_Format(PyExc_TypeError,
+                   "KoskariContinuationApply.continuation must be Continuation"
+                   " or DelimitedContinuation, got %R", cont_obj);
+      goto own_fail;
     }
+
+    if (! PyTuple_Check(args_obj)) {
+      PyErr_Format(PyExc_TypeError,
+                   "KoskariContinuationApply.args must be tuple, got %R",
+                   args_obj);
+      goto own_fail;
+    }
+
+    if (PyTuple_GET_SIZE(args_obj) > 0) {
+      resume_val = PyTuple_GET_ITEM(args_obj, 0);
+      Py_INCREF(resume_val);
+    } else {
+      resume_val = Py_None;
+      Py_INCREF(resume_val);
+    }
+
+    if (kos_invoke_continuation(es, k, resume_val, 0, cont_obj) == 0) {
+      Py_DECREF(resume_val);
+      Py_DECREF(args_obj);
+      Py_DECREF(typ);
+      Py_DECREF(val);
+      Py_DECREF(cont_obj);
+      return KOS_MODE_TRANSFER;
+    }
+    if (! PyErr_Occurred())
+      PyErr_SetString(PyExc_RuntimeError,
+                      "KoskariContinuationApply: invoke failed without PyErr");
+    Py_DECREF(resume_val);
+
+own_fail:
+    Py_XDECREF(args_obj);
 
     Py_DECREF(typ);
     Py_DECREF(val);
@@ -1209,7 +1230,6 @@ static KosEvalMode handle_continuation_apply(
   }
 
   /* Foreign-token path: unwind this context to null and re-raise. */
-  PyErr_Clear();
   KosTransferPlan *plan = NULL;
   if (kos_build_cc_unwind_plan(es, typ, val, &plan) < 0) {
     Py_DECREF(typ);

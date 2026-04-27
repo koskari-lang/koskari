@@ -65,6 +65,7 @@ void kos_dyngen_release(KosDynGen *gen) {
 */
 int kos_dyn_gen_install(KosEvalState *es, KosDynGen *gen) {
   KosContext *ctx = KosEvalState_CONTEXT(es);
+  // CONTEXT: dirty, touches context directly
   KosDynNode *active;
   KosDynNode *n;
 

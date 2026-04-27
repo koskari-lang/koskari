@@ -24,6 +24,7 @@
 
 KOS_OP_HANDLER(POP_SHIFT) {
   KosContext *ctx = KosEvalState_CONTEXT(es);
+  // CONTEXT: dirty, touches context directly
   PyObject *result;
   uint32_t eid;
   uint32_t parent_id;

@@ -22,6 +22,7 @@
 
 KOS_OP_HANDLER(PUSH_SHIFT) {
   KosContext *ctx = KosEvalState_CONTEXT(es);
+  // CONTEXT: dirty, touches context directly
   uint32_t prompt_id;
   KosContinuation *k = NULL;
   uint32_t resume_pc;

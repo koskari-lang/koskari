@@ -50,6 +50,7 @@ static void kos_dynshift_free(KosDynShift *shift) {
 */
 int kos_dyn_push_shift(KosEvalState *es) {
   KosContext *ctx = KosEvalState_CONTEXT(es);
+  // CONTEXT: dirty, touches context directly
   KosDynShift *shift = kos_dynshift_new(KosContext_DYN_TOP(ctx));
   if (! shift)
     return -1;

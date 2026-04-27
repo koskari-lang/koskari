@@ -22,6 +22,7 @@
 
 KOS_OP_HANDLER(AWAIT) {
   KosContext *ctx = KosEvalState_CONTEXT(es);
+  // CONTEXT: dirty, touches context directly
   uint32_t arg = KosOp_ARG(insn);
 
   if (arg == 0u) {

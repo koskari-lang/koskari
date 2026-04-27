@@ -14,6 +14,7 @@ int kos_dyn_push_next_for_kos_agen(
     KosEvalState *es, PyObject *agen_obj, PyObject *default_val, int n) {
 
   KosContext *ctx = KosEvalState_CONTEXT(es);
+  // CONTEXT: dirty, touches context directly
   KosDynNode *node = kos_dynnode_alloc();
   if (! node) {
     KosEvalState_SyncFromContext(es);
@@ -137,6 +138,7 @@ void kos_dyn_unlink_next_node(KosEvalState *es, KosDynNext *next) {
       }
     }
   }
+  
   KosDynNode_PARENT(node) = NULL;
   KosContext_CHAIN_VERSION(ctx)++;
   KosEvalState_RefreshDynCaches(es);

@@ -161,6 +161,7 @@ KosDynWith *kos_dyn_push_with(
     uint8_t shot) {
 
   KosContext *ctx = KosEvalState_CONTEXT(es);
+  // CONTEXT: dirty, touches context directly
   KosDynWith *node = kos_dyn_with_allocate(
       KosContext_DYN_TOP(ctx), mgr, enter, exit, name, resume_pc, shot);
   if (! node)

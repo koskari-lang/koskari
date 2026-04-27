@@ -440,6 +440,7 @@ void kos_dynchain_free(KosDynNode *node, KosDynNode *stop) {
    INSTALL/PUSH segments. On failure, frees partial clone.
 */
 KosDynNode *kos_clone_chain_segment(KosDynNode *top, KosDynNode *stop) {
+  SAYF("[xfer] clone_segment enter top=%p stop=%p", (void *) top, (void *) stop);
   if (! top || top == stop)
     return NULL;
 
@@ -454,8 +455,8 @@ KosDynNode *kos_clone_chain_segment(KosDynNode *top, KosDynNode *stop) {
            (void *) node, (unsigned) KosDynNode_KIND(node));
     KosDynNode *cloned = kos_dynnode_clone(node);
     if (! cloned) {
-      if (KOS_XFER_TRACE)
-        SAY("[xfer] clone_segment kos_dynnode_clone failed");
+      SAYF("[xfer] clone_segment kos_dynnode_clone failed node=%p kind=%u pyerr=%d",
+           (void *) node, (unsigned) KosDynNode_KIND(node), PyErr_Occurred() ? 1 : 0);
       /* Clone failed, free what we've built so far */
       kos_dynchain_free(cloned_top, NULL);
       return NULL;
@@ -486,6 +487,7 @@ KosDynNode *kos_clone_chain_segment(KosDynNode *top, KosDynNode *stop) {
 */
 int kos_dyn_push(KosEvalState *es, KosDynNode *node) {
   KosContext *ctx = KosEvalState_CONTEXT(es);
+  // CONTEXT: dirty, touches context directly
   if (! node)
     return -1;
 
@@ -505,6 +507,7 @@ int kos_dyn_push(KosEvalState *es, KosDynNode *node) {
 void kos_dyn_commit_dyn_top(KosEvalState *es, KosDynNode *new_top) {
 
   KosContext *ctx = KosEvalState_CONTEXT(es);
+  // CONTEXT: dirty, touches context directly
 
   KosEvalState_FlushLiveRegsToFrame(es);
   KosContext_DYN_TOP(ctx) = new_top;
@@ -2399,6 +2402,12 @@ KosContinuation *kos_continuation_clone(KosContinuation *k) {
 
   KosDynNode *cloned_chain = kos_clone_chain_segment(KosContinuation_CAPTURED_CHAIN(k), stop);
   if (! cloned_chain && KosContinuation_CAPTURED_CHAIN(k)) {
+    SAYF("[xfer] continuation_clone failed captured_chain=%p stop=%p pyerr=%d",
+         (void *) KosContinuation_CAPTURED_CHAIN(k), (void *) stop,
+         PyErr_Occurred() ? 1 : 0);
+    if (! PyErr_Occurred())
+      PyErr_SetString(PyExc_RuntimeError,
+                      "continuation captured chain clone failed");
     return NULL;
   }
 
@@ -2410,6 +2419,12 @@ KosContinuation *kos_continuation_clone(KosContinuation *k) {
       break;
     }
     node = KosDynNode_PARENT(node);
+  }
+  if (KosContinuation_CAPTURED_CHAIN(k) && ! resume_frame) {
+    PyErr_SetString(PyExc_RuntimeError,
+                    "continuation clone has no frame");
+    kos_dynchain_free(cloned_chain, NULL);
+    return NULL;
   }
 
   KosContinuation *clone = kos_continuation_create(
@@ -3577,15 +3592,20 @@ static int xfer_step_inject(KosEvalState *es, KosTransferAction *action) {
     if (KosContext_INJECT_TYPE(ctx))
       Py_INCREF(KosContext_INJECT_TYPE(ctx));
   } else {
-    if (KosEvalState_FRAME(es)) {
-      if (KosEvalState_StackPushRef(es, KosTransferAction_INJECT_VALUE(action))
-          < 0) {
-        if (KOS_XFER_TRACE)
-          SAY("[xfer] INJECT PushRef failed");
-        Py_XDECREF(KosTransferAction_INJECT_VALUE(action));
-        KosTransferAction_INJECT_VALUE(action) = NULL;
-        return -1;
-      }
+    if (! KosEvalState_FRAME(es)) {
+      PyErr_SetString(PyExc_RuntimeError,
+                      "INJECT requires a current frame");
+      Py_XDECREF(KosTransferAction_INJECT_VALUE(action));
+      KosTransferAction_INJECT_VALUE(action) = NULL;
+      return -1;
+    }
+    if (KosEvalState_StackPushRef(es, KosTransferAction_INJECT_VALUE(action))
+        < 0) {
+      if (KOS_XFER_TRACE)
+        SAY("[xfer] INJECT PushRef failed");
+      Py_XDECREF(KosTransferAction_INJECT_VALUE(action));
+      KosTransferAction_INJECT_VALUE(action) = NULL;
+      return -1;
     }
   }
   Py_DECREF(KosTransferAction_INJECT_VALUE(action));
@@ -3704,6 +3724,7 @@ static int xfer_step_truncate_and_inject(KosEvalState *es,
 */
 int kos_run_transfer_step(KosEvalState *es, KosEvent *out_ev) {
   KosContext *ctx = KosEvalState_CONTEXT(es);
+  // CONTEXT: dirty, touches context directly
   if (! KosContext_PLAN(ctx))
     return 1;  /* no plan, complete */
 
@@ -3892,6 +3913,7 @@ int kos_invoke_continuation(
   }
 
   KosContext *ctx = KosEvalState_CONTEXT(es);
+  // CONTEXT: dirty, touches context directly
 
   /* For multi-shot, clone the continuation */
   KosContinuation *to_use = k;
@@ -3905,6 +3927,9 @@ int kos_invoke_continuation(
     if (! to_use) {
       if (KOS_XFER_TRACE)
         SAY("[xfer] clone failed");
+      if (! PyErr_Occurred())
+        PyErr_SetString(PyExc_RuntimeError,
+                        "continuation clone failed without PyErr");
       KosEvalState_SyncFromContext(es);
       return -1;
     }
@@ -3917,8 +3942,8 @@ int kos_invoke_continuation(
   KosDynDelim *ret_delim = NULL;
   if (is_delimited) {
     KosDynNode *captured = KosContinuation_CAPTURED_CHAIN(to_use);
-    /* Segment to push: frames below the prompt (exclude prompt from push) */
-    push_segment = captured ? KosDynNode_PARENT(captured) : NULL;
+    /* Segment to push: captured prompt plus body frames/ns nodes. */
+    push_segment = captured;
     ret_delim = kos_dyn_push_delim(
         es,
         KOS_DYN_DELIM_MODE_POP_PROMPT,
@@ -3930,6 +3955,9 @@ int kos_invoke_continuation(
     if (! ret_delim) {
       if (to_use != k)
         kos_continuation_free(to_use);
+      if (! PyErr_Occurred())
+        PyErr_SetString(PyExc_RuntimeError,
+                        "failed to push delimited return marker");
       KosEvalState_SyncFromContext(es);
       return -1;
     }
@@ -3967,6 +3995,9 @@ int kos_invoke_continuation(
       kos_dyn_pop_delim(es, ret_delim);
     if (to_use != k)
       kos_continuation_free(to_use);
+    if (! PyErr_Occurred())
+      PyErr_SetString(PyExc_RuntimeError,
+                      "continuation plan build failed without PyErr");
     KosEvalState_SyncFromContext(es);
     return -1;
   }

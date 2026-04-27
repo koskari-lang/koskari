@@ -66,6 +66,7 @@ KosDynNs *kos_dyn_push_ns(
     PyObject *ns) {
 
   KosContext *ctx = KosEvalState_CONTEXT(es);
+  // CONTEXT: dirty, touches context directly
   KosDynNs *ns_node = kos_dynns_new(KosContext_DYN_TOP(ctx), ns);
   if (! ns_node)
     return NULL;

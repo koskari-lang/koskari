@@ -185,12 +185,18 @@ static int kos_install_expression(
     return KosEvalState_StackPUSH(es, agen);
   }
 
+  // CONTEXT: dirty, touches context directly
+
   KosDynFrame *frame = KosEvalState_FRAME(es);
+  KosContext *ctx = KosEvalState_CONTEXT(es);
+  // CONTEXT: dirty, touches context directly
   PyObject *ns = KosExpression_NS(callable);
   Py_INCREF(ns);
   Py_XDECREF(KosDynFrame_NS(frame));
   KosDynFrame_NS(frame) = ns;
+  KosContext_NAMESPACE(ctx) = ns;
   KosDynFrame_CODE(frame) = code;
+
   KosEvalState_SyncFromContext(es);
 
   return 0;
@@ -226,8 +232,11 @@ static int kos_install_function(
     return 0;
   }
   KosDynFrame *frame = KosEvalState_FRAME(es);
+  KosContext *ctx = KosEvalState_CONTEXT(es);
+  // CONTEXT: dirty, touches context directly
   Py_XDECREF(KosDynFrame_NS(frame));
   KosDynFrame_NS(frame) = frame_ns;
+  KosContext_NAMESPACE(ctx) = frame_ns;
   KosDynFrame_CODE(frame) = code;
   KosEvalState_SyncFromContext(es);
   (void) out_ev;
@@ -262,8 +271,11 @@ static int kos_vinstall_function(
     return 0;
   }
   KosDynFrame *frame = KosEvalState_FRAME(es);
+  KosContext *ctx = KosEvalState_CONTEXT(es);
+  // CONTEXT: dirty, touches context directly
   Py_XDECREF(KosDynFrame_NS(frame));
   KosDynFrame_NS(frame) = frame_ns;
+  KosContext_NAMESPACE(ctx) = frame_ns;
   KosDynFrame_CODE(frame) = code;
   KosEvalState_SyncFromContext(es);
   (void) out_ev;

@@ -68,6 +68,7 @@ void kos_dynprompt_free(KosDynPrompt *prompt) {
 KosDynPrompt *kos_dyn_push_prompt(KosEvalState *es, uint32_t prompt_id) {
 
   KosContext *ctx = KosEvalState_CONTEXT(es);
+  // CONTEXT: dirty, touches context directly
   KosDynPrompt *prompt = kos_dynprompt_new(KosContext_DYN_TOP(ctx), prompt_id);
   if (! prompt)
     return NULL;

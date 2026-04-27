@@ -78,6 +78,7 @@ KosDynDelim *kos_dyn_push_delim(
     KosDynNode *node) {
 
   KosContext *ctx = KosEvalState_CONTEXT(es);
+  // CONTEXT: dirty, touches context directly
   KosDynDelim *delim = kos_dyndelim_new(KosContext_DYN_TOP(ctx),
                                         mode,
                                         chain,
