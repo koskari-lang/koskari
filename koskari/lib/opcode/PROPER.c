@@ -44,3 +44,6 @@ KOS_OP_HANDLER(PROPER) {
 
   return kos_op_outcome_from_int_step(push_result(es, result));
 }
+
+
+// The end.

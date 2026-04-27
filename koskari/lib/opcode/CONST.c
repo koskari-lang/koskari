@@ -19,16 +19,12 @@
 */
 
 KOS_OP_HANDLER(CONST) {
-  KosCode *code = KosEvalState_CurrentCode(es);
   uint32_t index = KosOp_ARG(insn);
 
-  if (unlikely(index >= KosCode_CPOOL_LEN(code))) {
-    PyErr_Format(PyExc_IndexError, "constant index out of bounds, %u",
-                 index);
+  PyObject *val = KosEvalState_GetConstant(es, index);
+  if (! val)
     return KOS_OP_POST_ERR();
-  }
-
-  PyObject *val = KosCode_GET_CONST(code, index);
   Py_INCREF(val);
+
   return kos_op_outcome_from_int_step(push_result(es, val));
 }

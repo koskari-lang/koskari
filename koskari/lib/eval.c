@@ -142,15 +142,14 @@ void KosEvalState_RefreshDynCaches(KosEvalState *es) {
            kos_dynnode_kind_name(KosDynNode_KIND(node)));
     }
 
+    if (KosContext_FRAME_TOP(ctx) && KosContext_BLOCK(ctx) && KosContext_NAMESPACE(ctx))
+      break;
+
     node = KosDynNode_PARENT(node);
   }
 
-  if (! KosContext_BLOCK(ctx) && KosContext_FRAME_TOP(ctx))
-    KosContext_BLOCK(ctx) =
-        &KosDynNode_STACK((KosDynNode *) KosContext_FRAME_TOP(ctx));
-
-  if (! KosContext_NAMESPACE(ctx) && KosContext_FRAME_TOP(ctx))
-    KosContext_NAMESPACE(ctx) = KosDynFrame_NS(KosContext_FRAME_TOP(ctx));
+  // TODO: if we get here, we need to verify that we have valid data and didn't
+  // just run out of nodes
 
   if (! KosContext_FRAME_TOP(ctx))
     SAYF("[gen] refresh_dyn_caches dyn_top=%p -> frame_top=NULL (no frame)\n",
@@ -239,6 +238,9 @@ PyObject *KosEvalState_GetConstant(const KosEvalState *es, uint32_t index) {
   KosCode *code = KosEvalState_CODE(es);
   return code? KosCode_GET_CONST(code, index): NULL;
 }
+
+#define KosEvalState_GetConstant(es, index) \
+  KosCode_GET_CONST(KosEvalState_CODE(es), index)
 
 
 int KosEvalState_StackPushRef(KosEvalState *es, PyObject *val) {

@@ -20,25 +20,35 @@
 */
 
 KOS_OP_HANDLER(POP_TRY) {
-  KosDynNode *region = KosEvalState_CurrentNode(es);
-  if (! region || ! KosDynNode_IS_TRY(region)) {
-    PyErr_SetString(PyExc_RuntimeError, "POP_TRY: top is not a TRY region");
+  KosDynNode *top = KosEvalState_CurrentNode(es);
+  if (unlikely(! top)) {
+    PyErr_SetString(PyExc_RuntimeError, "POP_TRY: dyn_top is NULL");
+    return KOS_OP_POST_ERR();
+  }
+
+  if (unlikely(! KosDynNode_IS_TRY(top))) {
+    PyErr_Format(
+      PyExc_RuntimeError,
+      "POP_TRY: top is %s (expected TRY), node=%p",
+      kos_dynnode_kind_name(KosDynNode_KIND(top)), (void *) top);
     return KOS_OP_POST_ERR();
   }
 
   PyErr_Clear();
   PyErr_SetExcInfo(NULL, NULL, NULL);
-  {
-    PyObject *promoted = KosStackBlock_PopRef(&KosDynNode_STACK(region));
-    if (! promoted)
-      return KOS_OP_POST_ERR();
-    kos_dyn_pop_try(es, (KosDynTry *) region);
-    if (KosEvalState_StackPushRef(es, promoted) < 0) {
-      Py_DECREF(promoted);
-      return KOS_OP_POST_ERR();
-    }
-    Py_DECREF(promoted);
-  }
+
+  PyObject *value = KosEvalState_StackPopRef(es);
+  if (unlikely(! value))
+    return KOS_OP_POST_ERR();
+
+  kos_dyn_pop_try(es, (KosDynTry *) top);
+
+  if (unlikely(KosEvalState_StackPUSH(es, value) < 0))
+    return KOS_OP_POST_ERR();
+
   (void) out_ev;
   return KOS_OP_RUN();
 }
+
+
+// The end.
