@@ -1684,24 +1684,6 @@ int kos_dyn_transfer_to_loop(KosEvalState *es, KosXferEvent event,
 
 
 /**
-   Dispatch control transfer to existing dynchain helpers.  Thin wrapper;
-   behavior matches the underlying function for each KosTransitionKind.
-
-   :param req: request; must be non-NULL
-   :param out: result; must be non-NULL
-   :param out_ev: passed to helpers that need it
-
-   :return: 0 on success (including FINALLY_TAKING_RETURN and async
-     start), -1 on error (PyErr set)
-*/
-int kos_dyn_transition(
-    KosEvalState *es,
-    const KosTransitionReq *req,
-    KosTransitionResult *out,
-    struct KosEvent *out_ev);
-
-
-/**
    Push a YIELD_FROM delegation node onto the context's dynamic chain.
 
    Does not update frame_top (the frame remains the topmost frame).

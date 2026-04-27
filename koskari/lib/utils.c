@@ -137,7 +137,7 @@ static int apply_native_handler(
     .payload = result,
   };
   KosTransitionResult tres = {0};
-  if (kos_dyn_transition(es, &treq, &tres, out_ev) < 0) {
+  if (KosEvalState_Transition(es, &treq, &tres, out_ev) < 0) {
     Py_DECREF(result);
     return -1;
   }

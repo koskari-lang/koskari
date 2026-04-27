@@ -1734,7 +1734,7 @@ static int kos_dyn_try_local_raise_body(KosEvalState *es, KosEvent *out_ev) {
    walk, loop transfer, local raise. Fills out status and raw result codes.
    Callers: eval.c opcode and event dispatch.
 */
-int kos_dyn_transition(
+static int kos_dyn_transition_internal(
     KosEvalState *es,
     const KosTransitionReq *req,
     KosTransitionResult *out,
@@ -1866,6 +1866,20 @@ int kos_dyn_transition(
     KosEvalState_SyncFromContext(es);
     return -1;
   }
+}
+
+
+int KosEvalState_Transition(
+    KosEvalState *es,
+    const KosTransitionReq *req,
+    KosTransitionResult *out,
+    KosEvent *out_ev) {
+
+  int r = kos_dyn_transition_internal(es, req, out, out_ev);
+
+  if (r < 0)
+    KosEvalState_SyncFromContext(es);
+  return r;
 }
 
 

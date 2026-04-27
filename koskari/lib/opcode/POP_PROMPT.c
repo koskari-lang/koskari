@@ -60,7 +60,7 @@ KOS_OP_HANDLER(POP_PROMPT) {
           .target_frame = KosDynDelim_RETURN_FRAME(ret_delim),
         };
       }
-      if (kos_dyn_transition(es, &treq, &tres, out_ev) < 0) {
+      if (KosEvalState_Transition(es, &treq, &tres, out_ev) < 0) {
         Py_DECREF(val);
         return KOS_OP_POST_ERR();
       }

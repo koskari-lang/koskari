@@ -2917,7 +2917,7 @@ static int op_attach_koskari_agen_frame_for_yield_from(
    Try to handle an exception locally by finding a TRY or FINALLY region
    and jumping to its handler.  Call when PyErr_Occurred() is set.
 
-   Delegates to kos_dyn_transition(KOS_TRANS_TRY_LOCAL_RAISE).
+   Delegates to KosEvalState_Transition(KOS_TRANS_TRY_LOCAL_RAISE).
 
    :param ctx: execution context
    :param out_ev: event to fill if no handler is found
@@ -2933,7 +2933,7 @@ static int try_local_exception_handler(
   KosTransitionReq req = { .kind = KOS_TRANS_TRY_LOCAL_RAISE };
   KosTransitionResult res = {0};
 
-  if (kos_dyn_transition(es, &req, &res, out_ev) < 0)
+  if (KosEvalState_Transition(es, &req, &res, out_ev) < 0)
     return -1;
   if (res.status == KOS_TRANS_STATUS_HANDLER_APPLIED)
     return 1;
@@ -3271,7 +3271,7 @@ static KosEvalStep eval_yield_handle_walk_and_freeze(
   KosTransitionReq treq = { .kind = KOS_TRANS_WALK_HANDLE_YIELD };
   KosTransitionResult tres = {0};
 
-  if (kos_dyn_transition(es, &treq, &tres, out_ev) < 0)
+  if (KosEvalState_Transition(es, &treq, &tres, out_ev) < 0)
     return KOS_STEP_FATAL_ERROR;
   return KOS_STEP_CONTINUE;
 }

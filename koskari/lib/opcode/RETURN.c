@@ -83,7 +83,7 @@ KOS_OP_HANDLER(RETURN) {
       .payload = val,
     };
     KosTransitionResult tres = {0};
-    if (kos_dyn_transition(es, &treq, &tres, out_ev) < 0) {
+    if (KosEvalState_Transition(es, &treq, &tres, out_ev) < 0) {
       Py_DECREF(val);
       return KOS_OP_POST_ERR();
     }
@@ -123,7 +123,7 @@ KOS_OP_HANDLER(RETURN) {
       .payload = val,
     };
     KosTransitionResult tres = {0};
-    if (kos_dyn_transition(es, &treq, &tres, out_ev) < 0) {
+    if (KosEvalState_Transition(es, &treq, &tres, out_ev) < 0) {
       Py_DECREF(val);
       return KOS_OP_POST_ERR();
     }

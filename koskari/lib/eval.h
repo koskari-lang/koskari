@@ -693,6 +693,16 @@ int KosEvalState_TailKoscallReplaceFrame(
     PyObject *ns);
 
 /**
+  Eval-facing dynamic-chain transition dispatcher. On -1, synchronizes
+  eval state from context after the underlying walk reports an error.
+*/
+int KosEvalState_Transition(
+    KosEvalState *es,
+    const KosTransitionReq *req,
+    KosTransitionResult *out,
+    KosEvent *out_ev);
+
+/**
   Non-zero when a transfer plan is armed (ctx->plan != NULL).
 */
 int KosEvalState_HasActiveTransferPlan(const KosEvalState *es);
