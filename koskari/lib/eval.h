@@ -622,6 +622,12 @@ void KosEvalState_RefreshDynCaches(KosEvalState *es);
 void KosEvalState_ArmTransferPlan(KosEvalState *es, KosTransferPlan *plan);
 
 /**
+  Clear active transfer plan, KOS_CTX_IN_TRANSFER, and free the plan (with
+  continuation_ref handoff when applicable).
+*/
+void KosEvalState_DisarmTransferPlan(KosEvalState *es);
+
+/**
   Non-zero when a transfer plan is armed (ctx->plan != NULL).
 */
 int KosEvalState_HasActiveTransferPlan(const KosEvalState *es);

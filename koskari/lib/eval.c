@@ -611,6 +611,14 @@ static void clear_and_free_transfer_plan(KosContext *ctx) {
 }
 
 
+void KosEvalState_DisarmTransferPlan(KosEvalState *es) {
+
+  if (! es)
+    return;
+  clear_and_free_transfer_plan(KosEvalState_CONTEXT(es));
+}
+
+
 void KosEvalState_ArmTransferPlan(KosEvalState *es, KosTransferPlan *plan) {
 
   KosContext *ctx = KosEvalState_CONTEXT(es);
@@ -654,7 +662,7 @@ static int run_transfer_plan_to_completion(
     if (plan_res < 0) {
       SAY("[eval] transfer step failed -> KOS_EV_RAISE\n");
       kos_eval_emit_raise_from_pyerr(ctx, out_ev, es);
-      clear_and_free_transfer_plan(ctx);
+      KosEvalState_DisarmTransferPlan(es);
       return -1;
     }
 
@@ -668,7 +676,7 @@ static int run_transfer_plan_to_completion(
 
     SAYF("[eval] transfer complete dyn_top=%p\n",
          (void *) KosContext_DYN_TOP(ctx));
-    clear_and_free_transfer_plan(ctx);
+    KosEvalState_DisarmTransferPlan(es);
   }
 
   return 0;
