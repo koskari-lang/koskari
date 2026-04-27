@@ -847,9 +847,9 @@ int kos_dyn_push_noinstall(KosEvalState *es, KosDynNode *node);
 
 
 /**
-   Flush live PCs, set dyn_top to new_top, bump chain_version, recompute
-   frame_top/block, apply eval caches. Used after manual pops that do not
-   go through kos_dyn_uninstall.
+   Flush live PCs, set dyn_top to new_top, bump chain_version, full
+   RefreshDynCaches walk. Used for pops, splices, and manual rewinds — not for
+   ordinary single-node pushes (those use KosEvalState_PatchDynCaches).
 */
 void kos_dyn_commit_dyn_top(KosEvalState *es, KosDynNode *new_top);
 

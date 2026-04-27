@@ -129,6 +129,7 @@ static const char *const kos_tevs_names[KOS_TEVS__COUNT] = {
   "flush_live_regs",
   "apply_dyn_caches",
   "refresh_dyn_caches",
+  "patch_dyn_caches",
 };
 
 

@@ -462,9 +462,9 @@ KosDynNode *kos_clone_chain_segment(KosDynNode *top, KosDynNode *stop) {
 
 
 /**
-   Link node as DYN_TOP, bump chain_version, run install, recompute
-   frame_top/block, apply eval caches. Flushes live PCs to the outgoing
-   frame before replacing dyn_top.
+   Link node as DYN_TOP, bump chain_version, run install, patch derived caches
+   for this push. Flushes live PCs to the outgoing frame before replacing
+   dyn_top.
 */
 int kos_dyn_push(KosEvalState *es, KosDynNode *node) {
   KosContext *ctx = KosEvalState_CONTEXT(es);
@@ -480,11 +480,16 @@ int kos_dyn_push(KosEvalState *es, KosDynNode *node) {
     KosEvalState_SyncFromContext(es);
     return -1;
   }
-  KosEvalState_RefreshDynCaches(es);
+  KosEvalState_PatchDynCaches(es, node);
   return 0;
 }
 
 
+/**
+   Flush live PCs, set dyn_top to new_top, bump chain_version, full
+   KosEvalState_RefreshDynCaches (chain walk). Use for pops, splices, and any
+   edit that is not a single-node push; push paths use PatchDynCaches instead.
+*/
 void kos_dyn_commit_dyn_top(KosEvalState *es, KosDynNode *new_top) {
 
   KosContext *ctx = KosEvalState_CONTEXT(es);
@@ -502,10 +507,16 @@ void kos_dyn_commit_dyn_top(KosEvalState *es, KosDynNode *new_top) {
 */
 int kos_dyn_push_noinstall(KosEvalState *es, KosDynNode *node) {
 
+  KosContext *ctx;
+
   if (! node)
     return -1;
 
-  kos_dyn_commit_dyn_top(es, node);
+  ctx = KosEvalState_CONTEXT(es);
+  KosEvalState_FlushLiveRegsToFrame(es);
+  KosContext_DYN_TOP(ctx) = node;
+  KosContext_CHAIN_VERSION(ctx)++;
+  KosEvalState_PatchDynCaches(es, node);
   return 0;
 }
 

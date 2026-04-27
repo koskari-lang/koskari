@@ -175,6 +175,43 @@ done:
 }
 
 
+/**
+   Push-only derived-cache patch; see eval.h. new_node must already be dyn_top.
+*/
+void KosEvalState_PatchDynCaches(
+    KosEvalState *es,
+    KosDynNode *new_node) {
+
+  KosContext *ctx;
+
+  KOS_TRACE_EVAL_SYNC_BEGIN();
+
+  ctx = KosEvalState_CONTEXT(es);
+  if (unlikely(! es || ! ctx || ! new_node))
+    goto done;
+
+  if (KosDynNode_IS_FRAME(new_node)) {
+    KosDynFrame *ft = (KosDynFrame *) new_node;
+
+    KosContext_FRAME_TOP(ctx) = ft;
+    KosContext_BLOCK(ctx) = &KosDynNode_STACK(new_node);
+    KosContext_NAMESPACE(ctx) = KosDynNode_NS(new_node);
+
+  } else {
+    if (KosDynNode_NS(new_node))
+      KosContext_NAMESPACE(ctx) = KosDynNode_NS(new_node);
+
+    if (KosDynNode_STACK(new_node))
+      KosContext_BLOCK(ctx) = &KosDynNode_STACK(new_node);
+  }
+
+  KosEvalState_ApplyDynCaches(es);
+
+done:
+  KOS_TRACE_EVAL_SYNC_END(KOS_TEVS_patch_dyn_caches);
+}
+
+
 void KosEvalState_ApplyDynCaches(KosEvalState *es) {
 
   KosContext *ctx;

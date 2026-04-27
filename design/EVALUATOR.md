@@ -21,7 +21,7 @@ The evaluator runs until it hits a **boundary event** (return, raise, yield, awa
 
 `send_val` and `throw_typ`/`throw_exc` are the resume arguments (both may be NULL for a fresh start or null resume).
 
-`koskari_eval` builds a stack **`KosEvalState`** (`KosEvalState_Init(&es, ctx)`), marks the context running, and pushes the per-thread **domain scope** via **`KosEvalState_EnterDomainScope(&es)`** (token stack and live depth in `domain.c` TLS). On exit (including error paths through **`koskari_eval_cleanup`**), it flushes registers, calls **`KosEvalState_LeaveDomainScope(&es)`**, and returns. All loop phases and opcode handlers use **`&es`**; hot-path mirrors (`frame`, `code`, `pc`, operand stack) stay in sync with **`KosEvalState_CONTEXT(&es)`** through **`KosEvalState_SyncFromContext`** / **`KosEvalState_RefreshDynCaches`**.
+`koskari_eval` builds a stack **`KosEvalState`** (`KosEvalState_Init(&es, ctx)`), marks the context running, and pushes the per-thread **domain scope** via **`KosEvalState_EnterDomainScope(&es)`** (token stack and live depth in `domain.c` TLS). On exit (including error paths through **`koskari_eval_cleanup`**), it flushes registers, calls **`KosEvalState_LeaveDomainScope(&es)`**, and returns. All loop phases and opcode handlers use **`&es`**; hot-path mirrors (`frame`, `code`, `pc`, operand stack) stay in sync with **`KosEvalState_CONTEXT(&es)`** through **`KosEvalState_PatchDynCaches`** (single-node push), **`KosEvalState_RefreshDynCaches`** (full recompute after pops/splices/other commits), and **`KosEvalState_SyncFromContext`** (O(1) reload from **`ctx`**).
 
 ### 1.2 Main Loop Phases
 
@@ -119,6 +119,18 @@ Eval and opcodes share a single **`KosEvalState *es`** for the running slice. No
 - **Globals / inject / iteration** — **`KosEvalState_GlobalsNamespace`**, **`KosEvalState_TakeInjectThrow`**, **`op_get_next_from_iter(es, …)`**, **`KosEvalState_EagerStepAwaitable`** (first eager **`__await__`/`send(None)`** step for awaitables; used from AWAIT plumbing and **`YIELD_FROM`**).
 - **`eval.c`** (suspension / Python bridge / domain scope) — **`KosEvalState_SetSuspensionEvent`**, **`KosEvalState_ClearSuspensionEvent`**, **`KosEvalState_SuspensionEvent`**; **`KosEvalState_PythonAwaitSetIter` / `PythonAwaitClearIter` / `PythonAwaitIter`**; **`KosEvalState_PythonResumeSet` / `PythonResumeTake`**; **`KosEvalState_EnterDomainScope` / `LeaveDomainScope`**.
 
+### 1.5 Derived `KosContext` caches (`frame_top`, `block`, `namespace`)
+
+These fields summarize the innermost frame, operand-stack head, and namespace along the dynamic chain (same predicate as the walk in **`KosEvalState_RefreshDynCaches`**). **`KosEvalState`** mirrors them for opcode hot paths.
+
+| Mechanism | Role |
+| --------- | ---- |
+| **`KosEvalState_PatchDynCaches(es, new_node)`** | **Trusting push-only** update after **`new_node` is already `dyn_top`** via **`kos_dyn_push`** / **`kos_dyn_push_noinstall`**: O(1), no parent walk. Frame nodes refresh all three derived fields from that frame; other nodes update **namespace** and/or **block** only when the node carries them. Always ends with **`KosEvalState_ApplyDynCaches`**. |
+| **`KosEvalState_RefreshDynCaches(es)`** | **Full recompute** (walk from **`dyn_top`**, then **`ApplyDynCaches`**). Used when the head changes by **pop**, **splice**, **`kos_dyn_commit_dyn_top`** without the simple-push contract (uninstall after pop, transfer-plan steps, **`kos_dyn_gen_install`** publishing a grafted segment, etc.). |
+| **`KosEvalState_SyncFromContext(es)`** | Reload **`es`** from **existing** derived fields on **`ctx`** (O(1)); repair and legacy paths (e.g. **`KosEvalState_Transition`** on **`-1`**). |
+
+Optional **`KOS_DEBUG_PATCH_DYN_CACHES`**: after **`PatchDynCaches`**, compare **`ctx`** caches to a full **`RefreshDynCaches`** walk and fall back to refresh on mismatch.
+
 Coroutine drivers outside the bytecode loop (**`coro.c`**) still hold a **`KosContext *`** on the **`KosCoroutine`** object; they construct a short-lived **`KosEvalState`** when they need the same Python-bridge helpers as **`revive_await`**.
 
 ---
@@ -212,13 +224,13 @@ flowchart TD
 
 **`KOS_EVAL_PREPARE_NEXT_INSN`** (macro in `eval.c`) sets a local **`KosOp *insn`** to the current instruction in **`KosCode_CODE`** and updates the frame: load `code` and `pc`, optional **`SAYF`** trace, set `acting_pc`, pre-advance `pc`. It assumes a valid frame, in-range `pc`, and valid bytecode (no defensive checks).
 
-Opcode handlers receive **`KosEvalState *es`** (see **`koskari/lib/eval.h`**): cached **`frame`**, **`code`**, operand-stack **`block`**, and live **`pc`** / **`acting_pc`** registers for the eval slice, aligned with **`KosEvalState_CONTEXT(es)`** via **`KosEvalState_SyncFromContext`** / **`KosEvalState_RefreshDynCaches`**. There is no separate per-opcode struct beyond handler parameters; the hot path keeps **`KosOp *insn`** into **`op_*`**. **eval_phase_post_opcode** does not take insn or a dispatch bundle.
+Opcode handlers receive **`KosEvalState *es`** (see **`koskari/lib/eval.h`**): cached **`frame`**, **`code`**, operand-stack **`block`**, and live **`pc`** / **`acting_pc`** registers for the eval slice, aligned with **`KosEvalState_CONTEXT(es)`** via **`KosEvalState_PatchDynCaches`**, **`KosEvalState_RefreshDynCaches`**, and **`KosEvalState_SyncFromContext`** as summarized in section 1.5 above. There is no separate per-opcode struct beyond handler parameters; the hot path keeps **`KosOp *insn`** into **`op_*`**. **eval_phase_post_opcode** does not take insn or a dispatch bundle.
 
 PC is rolled back for WITH enter/exit suspend so the same instruction is retried on resume.
 
 #### 2.4.1 Flattened Koskari async generator attach (NEXT / ITER_NEXT / YIELD_FROM)
 
-When a **KosPyAsyncGen** is stepped **inside** the same **`koskari_eval`** invocation (not from Python **`__anext__`** alone), **`koskari/lib/eval.c`** installs its active dyn chain onto the **consumer** context. **`op_attach_koskari_agen_frame`** (**NEXT**), **`op_attach_koskari_agen_frame_for_iter_next`** (**ITER_NEXT**), and **`op_attach_koskari_agen_frame_for_yield_from`** (**YIELD_FROM** kos-async-gen driver) each validate **`gen`** / **`KosDynGen_ACTIVE`**, run **opcode-specific** failure cleanup (NEXT abort + decrefs; ITER_NEXT may reset **`KOS_DYN_FOREACH`** step phase; YIELD_FROM pops **`KOS_DYN_YIELD_FROM`**), then call **`kos_attach_agen_gen_flatten(es, agen, gen)`** (static). That small helper clears **`agen->ctx`**’s **`dyn_top`** / **`frame_top`** and calls **`kos_dyn_gen_install(es, gen)`**, which updates **`KosEvalState_CONTEXT(es)`**’s chain and runs **`KosEvalState_RefreshDynCaches(es)`** (recompute **`frame_top`** / **`block`** on the context, then **`KosEvalState_SyncFromContext(es)`**).
+When a **KosPyAsyncGen** is stepped **inside** the same **`koskari_eval`** invocation (not from Python **`__anext__`** alone), **`koskari/lib/eval.c`** installs its active dyn chain onto the **consumer** context. **`op_attach_koskari_agen_frame`** (**NEXT**), **`op_attach_koskari_agen_frame_for_iter_next`** (**ITER_NEXT**), and **`op_attach_koskari_agen_frame_for_yield_from`** (**YIELD_FROM** kos-async-gen driver) each validate **`gen`** / **`KosDynGen_ACTIVE`**, run **opcode-specific** failure cleanup (NEXT abort + decrefs; ITER_NEXT may reset **`KOS_DYN_FOREACH`** step phase; YIELD_FROM pops **`KOS_DYN_YIELD_FROM`**), then call **`kos_attach_agen_gen_flatten(es, agen, gen)`** (static). That small helper clears **`agen->ctx`**’s **`dyn_top`** / **`frame_top`** and calls **`kos_dyn_gen_install(es, gen)`**. **`kos_dyn_gen_install`** publishes the restored **`dyn_top`** via **`kos_dyn_commit_dyn_top(es, active)`**, which runs **`KosEvalState_RefreshDynCaches`** (full chain walk, then **`KosEvalState_ApplyDynCaches`**) — **not** **`PatchDynCaches`**, because install grafts a frozen **segment** rather than appending a single new head. Earlier draft text in this section sometimes paired that path with **`KosEvalState_SyncFromContext`**; **`RefreshDynCaches`** already applies eval mirrors via **`ApplyDynCaches`**, so that was redundant.
 
 The **same** live **`es`** passed into the opcode must be forwarded to the attach path. All three helpers take **`KosEvalState *es`** first so **`kos_dyn_gen_install`** refreshes the interpreter’s eval-state mirrors—not a temporary **`KosEvalState`** built only for install.
 

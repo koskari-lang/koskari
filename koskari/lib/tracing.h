@@ -84,6 +84,10 @@ typedef enum KosTracePostOpId {
 #define KOS_TRACE_EVAL_SYNC 0
 #endif
 
+#ifndef KOS_DEBUG_PATCH_DYN_CACHES
+#define KOS_DEBUG_PATCH_DYN_CACHES 0
+#endif
+
 
 /* === eval state sync timing ids (KOS_TRACE_EVAL_SYNC; add only at end) === */
 
@@ -93,6 +97,7 @@ typedef enum KosTraceEvalSyncId {
   KOS_TEVS_flush_live_regs,
   KOS_TEVS_apply_dyn_caches,
   KOS_TEVS_refresh_dyn_caches,
+  KOS_TEVS_patch_dyn_caches,
   KOS_TEVS__COUNT
 } KosTraceEvalSyncId;
 

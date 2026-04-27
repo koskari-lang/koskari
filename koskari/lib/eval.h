@@ -439,7 +439,8 @@ struct KosContext {
   Call KosEvalState_Init before use; both KosEvalState_Init and
   KosEvalState_SyncFromContext are declared in this header and implemented in
   eval/eval_state.c (included into the eval.c translation unit). After chain
-  surgery, prefer KosEvalState_RefreshDynCaches and
+  surgery, prefer KosEvalState_PatchDynCaches after a single-node push,
+  KosEvalState_RefreshDynCaches for pops and other edits, and
   KosEvalState_ApplyDynCaches on the kos_dyn_* commit paths; the full mirror
   reload KosEvalState_SyncFromContext remains for existing call sites, not for
   new code.
@@ -668,6 +669,17 @@ void KosEvalState_ApplyDynCaches(KosEvalState *es);
   context-wide mirror reload when frame and PCs are already coherent).
 */
 void KosEvalState_RefreshDynCaches(KosEvalState *es);
+
+
+/**
+  Trusting push-only derived-cache update: caller guarantees new_node is already
+  KosContext_DYN_TOP and that the chain gained exactly this head (no pop or
+  splice). Walk-free. Frame nodes refresh frame_top, block, and namespace from
+  that frame; non-frame nodes optionally refresh namespace and/or block slots
+  when present on the node. Always ends with KosEvalState_ApplyDynCaches.
+*/
+void KosEvalState_PatchDynCaches(KosEvalState *es, KosDynNode *new_node);
+
 
 /**
   Replace any active transfer plan with plan and set KOS_CTX_IN_TRANSFER.
