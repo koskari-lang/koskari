@@ -623,6 +623,17 @@ void KosEvalState_ArmTransferPlan(KosEvalState *es, KosTransferPlan *plan) {
 }
 
 
+int KosEvalState_HasActiveTransferPlan(const KosEvalState *es) {
+
+  KosContext *ctx;
+
+  if (! es)
+    return 0;
+  ctx = KosEvalState_CONTEXT(es);
+  return KosContext_PLAN(ctx) != NULL;
+}
+
+
 /**
   Run the current transfer plan to completion.  Returns 0 on success (plan
   cleared or was NULL).  Returns -1 if a step failed (out_ev set to RAISE,
@@ -668,7 +679,7 @@ static int run_transfer_plan_to_completion(
    Handle delimited k(value) return: build plan, install it, run to completion.
    Caller has popped val; we consume it. Return 0 on success, -1 on error.
 */
-static int kos_return_delimited(
+int KosEvalState_KReturnDelimited(
     KosEvalState *es,
     KosDynDelim *delim,
     PyObject *val,

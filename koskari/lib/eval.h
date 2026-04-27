@@ -622,6 +622,21 @@ void KosEvalState_RefreshDynCaches(KosEvalState *es);
 void KosEvalState_ArmTransferPlan(KosEvalState *es, KosTransferPlan *plan);
 
 /**
+  Non-zero when a transfer plan is armed (ctx->plan != NULL).
+*/
+int KosEvalState_HasActiveTransferPlan(const KosEvalState *es);
+
+/**
+  Delimited k(value) return: build plan, arm, clear delim metadata, run plan
+  to completion. val is consumed.
+*/
+int KosEvalState_KReturnDelimited(
+    KosEvalState *es,
+    KosDynDelim *delim,
+    PyObject *val,
+    KosEvent *out_ev);
+
+/**
   Innermost dyn node that owns a non-NULL operand stack (from dyn_top toward
   root). NULL if no explicit stack on the chain.
 */

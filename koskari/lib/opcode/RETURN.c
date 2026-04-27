@@ -63,10 +63,11 @@ KOS_OP_HANDLER(RETURN) {
   if (unlikely(ret_delim
                && KosDynDelim_RETURN_CHAIN(ret_delim) != NULL
                && KosDynDelim_RETURN_PC(ret_delim) != (uint32_t) -1)) {
-    int rd = kos_return_delimited(es, ret_delim, val, out_ev);
+    int rd = KosEvalState_KReturnDelimited(es, ret_delim, val, out_ev);
     if (rd < 0)
       return KOS_OP_POST_ERR();
-    return KosContext_PLAN(ctx) ? KOS_OP_PROLOGUE() : KOS_OP_RUN();
+    return KosEvalState_HasActiveTransferPlan(es) ? KOS_OP_PROLOGUE()
+                                                   : KOS_OP_RUN();
   }
 
   /* === Phase 2b: Frame has parent (normal call return) ===
