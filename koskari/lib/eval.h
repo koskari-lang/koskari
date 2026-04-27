@@ -438,7 +438,8 @@ struct KosContext {
 
   Call KosEvalState_Init before use; both KosEvalState_Init and
   KosEvalState_SyncFromContext are declared in this header and implemented in
-  eval/eval_state.c (included into the eval.c translation unit). After chain
+  eval/eval_state*.c fragments (included into eval.c via eval/eval_state.c).
+  After chain
   surgery, prefer KosEvalState_PatchDynCaches after a single-node push,
   KosEvalState_RefreshDynCaches for pops and other edits, and
   KosEvalState_ApplyDynCaches on the kos_dyn_* commit paths; the full mirror
@@ -622,7 +623,7 @@ void KosEvalState_Init(KosEvalState *es, KosContext *ctx);
   Reload es from KosEvalState_CONTEXT(es) when frame_top, block, or code on the
   heap may differ from the es cache (full mirror reload versus incremental
   KosEvalState_RefreshDynCaches / KosEvalState_ApplyDynCaches). Implemented in
-  eval/eval_state.c (included into eval.c). Prefer structured cache updates on
+  eval/eval_state*.c included into eval.c). Prefer structured cache updates on
   kos_dyn_* commit paths for new
   code; this remains for existing call sites until they are rewired.
 */
@@ -682,6 +683,15 @@ void KosEvalState_PatchDynCaches(KosEvalState *es, KosDynNode *new_node);
 
 
 /**
+  Commit contract for dynchain: do not assign to ctx dyn fields and return
+  to the eval loop without going through a kos_dyn_* path that ends in
+  KosEvalState_PatchDynCaches, KosEvalState_RefreshDynCaches, or
+  KosEvalState_SyncFromContext after failure recovery. Builds with
+  KOS_DEBUG_PATCH_DYN_CACHES compare PatchDynCaches against Refresh for drift.
+*/
+
+
+/**
   Replace any active transfer plan with plan and set KOS_CTX_IN_TRANSFER.
   plan must be non-NULL. Frees the previous plan if present.
 */
@@ -710,8 +720,9 @@ int KosEvalState_SetFrameCodeAndNamespace(
 KosEvaluatorToken *KosEvalState_Token(const KosEvalState *es);
 
 /**
-  Eval-facing dynamic-chain transition dispatcher. On -1, synchronizes
-  eval state from context after the underlying walk reports an error.
+  Eval-facing dynamic-chain transition dispatcher; implemented in
+  eval/eval_transition.c included into eval.c. On -1, performs a single
+  KosEvalState_SyncFromContext when es is non-NULL (internal paths do not sync).
 */
 int KosEvalState_Transition(
     KosEvalState *es,
@@ -923,7 +934,8 @@ int KosEvalState_CallNoArgs(
    val is consumed (ownership transferred). Internal helper; stolen refs
    are acceptable here.
 
-   CALL* opcodes use a separate entry in eval/eval_state.c (op_push_or_await)
+   CALL* opcodes use a separate entry in eval/eval_state_python_bridge.c
+   (op_push_or_await)
    that may
    elide push plus a trailing POP,1; this API is unchanged for other callers.
 

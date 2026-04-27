@@ -209,7 +209,9 @@ static inline KosOpOutcome kos_op_outcome_from_int_step(int r) {
 }
 
 
+#include "eval/eval_chain.c"
 #include "eval/eval_state.c"
+#include "eval/eval_utils.c"
 
 
 /**
@@ -2010,36 +2012,15 @@ static KosEvalStep eval_phase_pending_exception(
 static KosEvalStep eval_event_yield_deliver_to_boundary(
     KosEvalState *es, KosEvent *out_ev) {
 
-  KosDynNext *next = kos_dyn_find_next_above_frame(es);
+  int r = kos_dyn_deliver_yield_to_iter_boundary(es, out_ev);
 
-  if (next) {
-    if (kos_dyn_next_deliver_yield(es, out_ev) < 0)
-      return KOS_STEP_FATAL_ERROR;
-    return KOS_STEP_REPROLOGUE;
+  if (r < 0)
+    return KOS_STEP_FATAL_ERROR;
+  if (r == 1) {
+    KosEvalState_SetSuspensionEvent(es, KOS_SUSP_YIELD);
+    return KOS_STEP_STOP_EVENT;
   }
-  {
-    KosDynForeach *fe = kos_dyn_find_awaiting_foreach(es);
-
-    if (fe) {
-      if (kos_dyn_foreach_deliver_yield_kos_agen(es, fe, out_ev) < 0)
-        return KOS_STEP_FATAL_ERROR;
-      return KOS_STEP_REPROLOGUE;
-    }
-  }
-  {
-    KosDynYieldFrom *yf = kos_dyn_find_yield_from_iter_boundary(es);
-
-    if (yf) {
-      if (kos_dyn_yield_from_deliver_inner_yield(es, yf, out_ev) < 0)
-        return KOS_STEP_FATAL_ERROR;
-      KosEvalState_SetSuspensionEvent(es, KOS_SUSP_YIELD);
-      return KOS_STEP_STOP_EVENT;
-    }
-  }
-  PyErr_SetString(PyExc_RuntimeError,
-                  "eval: boundary YIELD without NEXT/FOREACH/YIELD_FROM "
-                  "Koskari agen state");
-  return KOS_STEP_FATAL_ERROR;
+  return KOS_STEP_REPROLOGUE;
 }
 
 
@@ -2161,6 +2142,27 @@ static KosEvalStep eval_phase_post_opcode_tail(
    filling out_ev with KOS_EV_POST_OPCODE and a PyLong op_res; the dispatch
    prologue drains it before native_iteration.
 */
+/**
+   Shared kos_dynnode_on_control_returned post-opcode path for
+   KOS_OP_RES_CONTROL_RETURNED: after stack or other delivery, run WIND/WITH
+   control hook, then continue the post-opcode tail if the hook does not
+   request a prologue restart.
+*/
+static KosEvalStep kos_eval_post_opcode_control_returned_after_hook(
+    KosEvalState *es,
+    KosEvent *out_ev) {
+
+  int r;
+
+  KOS_TRACE_POST_OP_WRAP(control_returned, r = kos_dynnode_on_control_returned(
+      es, KosEvalState_CurrentNode(es), out_ev));
+  if (r == 0 || r == KOS_DYN_UNWIND_ASYNC_STARTED)
+    return KOS_STEP_REPROLOGUE;
+
+  return eval_phase_post_opcode_tail(es, out_ev, KOS_OP_RES_CONTROL_RETURNED);
+}
+
+
 static KosEvalStep eval_emit_post_opcode_deferred(KosEvent *out_ev, int pr) {
 
   PyObject *tag = PyLong_FromLong((long) pr);
@@ -2225,17 +2227,8 @@ static KosEvalStep eval_parent_return_deliver_impl(KosEvalState *es, KosEvent *o
   Py_DECREF(val);
   KosEvent_PAYLOAD(out_ev) = NULL;
   KosEvent_KIND(out_ev) = KOS_EV_NONE;
-  {
-    int r;
 
-    KOS_TRACE_POST_OP_WRAP(control_returned, r = kos_dynnode_on_control_returned(
-        es, KosEvalState_CurrentNode(es), out_ev));
-
-    if (r == 0 || r == KOS_DYN_UNWIND_ASYNC_STARTED)
-      return KOS_STEP_REPROLOGUE;
-  }
-
-  return eval_phase_post_opcode_tail(es, out_ev, KOS_OP_RES_CONTROL_RETURNED);
+  return kos_eval_post_opcode_control_returned_after_hook(es, out_ev);
 }
 
 
@@ -2268,8 +2261,6 @@ static KosEvalStep eval_phase_post_opcode(
         KosEvent *out_ev,
         int op_res) {
 
-  KosContext *ctx = KosEvalState_CONTEXT(es);
-
   KosEvalStep ret;
 
   KOS_TRACE_POST_OP_ENTER();
@@ -2284,16 +2275,8 @@ static KosEvalStep eval_phase_post_opcode(
   }
 
   if (op_res == KOS_OP_RES_CONTROL_RETURNED) {
-    int r;
-
-    KOS_TRACE_POST_OP_WRAP(control_returned, r = kos_dynnode_on_control_returned(
-        es, KosContext_DYN_TOP(ctx), out_ev));
-    if (r == 0 || r == KOS_DYN_UNWIND_ASYNC_STARTED) {
-      /* 0: thunk/wind advanced; 1: async extent started (same numeric value as
-         a normal opcode "suspend" but only returned from dyn helpers). */
-      ret = KOS_STEP_REPROLOGUE;
-      goto post_opcode_done;
-    }
+    ret = kos_eval_post_opcode_control_returned_after_hook(es, out_ev);
+    goto post_opcode_done;
   }
 
   ret = eval_phase_post_opcode_tail(es, out_ev, op_res);

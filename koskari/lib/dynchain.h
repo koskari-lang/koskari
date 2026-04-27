@@ -373,6 +373,15 @@ typedef struct KosTransitionResult {
 } KosTransitionResult;
 
 
+/**
+   TRY/FINALLY handler walk used by KosEvalState_Transition
+   KOS_TRANS_TRY_LOCAL_RAISE. Implemented in dynchain.c; exposed for linking with
+   eval/eval_transition.c included from eval.c.
+*/
+
+int kos_dyn_try_local_raise_body(KosEvalState *es, struct KosEvent *out_ev);
+
+
 typedef struct KosDynNode KosDynPrompt;
 typedef struct KosDynNode KosDynDelim;
 typedef struct KosDynNode KosDynWind;
@@ -1219,6 +1228,9 @@ int kos_dyn_yield_from_deliver_inner_return(
     KosEvalState *es, KosDynYieldFrom *yf, struct KosEvent *out_ev);
 
 int kos_dyn_deliver_iterator_boundary_return_event(
+    KosEvalState *es, struct KosEvent *out_ev);
+
+int kos_dyn_deliver_yield_to_iter_boundary(
     KosEvalState *es, struct KosEvent *out_ev);
 
 int kos_dyn_try_deliver_iterator_boundary_after_pop(

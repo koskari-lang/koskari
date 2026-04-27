@@ -1561,10 +1561,10 @@ int kos_dyn_transfer_to_loop(KosEvalState *es, KosXferEvent event,
    Walk dyn_top down toward frame_top, handle(RAISE) then pop until a TRY or
    FINALLY consumes (jump to handler) or no handler remains. Same semantics as
    legacy try_local_exception_handler in eval.c: return 1 if handler applied,
-   0 if out_ev gets RAISE, -1 on error. Callers: kos_dyn_transition
+   0 if out_ev gets RAISE, -1 on error. Callers: eval transition
    KOS_TRANS_TRY_LOCAL_RAISE.
 */
-static int kos_dyn_try_local_raise_body(KosEvalState *es, KosEvent *out_ev) {
+int kos_dyn_try_local_raise_body(KosEvalState *es, KosEvent *out_ev) {
   KosContext *ctx = KosEvalState_CONTEXT(es);
   #if VERBOSE_DEBUG
   if (! ctx) {
@@ -1718,160 +1718,6 @@ static int kos_dyn_try_local_raise_body(KosEvalState *es, KosEvent *out_ev) {
     KosEvalState_SyncFromContext(es);
     return 0;
   }
-}
-
-
-/**
-   Single entry for eval-driven chain transitions: return walk, unwind, yield
-   walk, loop transfer, local raise. Fills out status and raw result codes.
-   Callers: eval.c opcode and event dispatch.
-*/
-static int kos_dyn_transition_internal(
-    KosEvalState *es,
-    const KosTransitionReq *req,
-    KosTransitionResult *out,
-    KosEvent *out_ev) {
-
-  if (! es || ! req || ! out) {
-    PyErr_SetString(PyExc_RuntimeError,
-                    "kos_dyn_transition: invalid arguments");
-    if (es)
-      KosEvalState_SyncFromContext(es);
-    return -1;
-  }
-
-  out->status = KOS_TRANS_STATUS_OK;
-  out->raw = 0;
-
-  switch (req->kind) {
-  case KOS_TRANS_WALK_RETURN_TO_FRAME: {
-    if (! req->target_frame || ! req->payload) {
-      PyErr_SetString(PyExc_RuntimeError,
-                      "kos_dyn_transition: WALK_RETURN_TO_FRAME needs "
-                      "target_frame and payload");
-      KosEvalState_SyncFromContext(es);
-      return -1;
-    }
-    int r = kos_dyn_walk_return_to_frame(es, req->target_frame,
-                                         req->payload, out_ev);
-    out->raw = r;
-    if (r == KOS_DYN_UNWIND_FINALLY_TAKING_RETURN)
-      out->status = KOS_TRANS_STATUS_FINALLY_TAKING_RETURN;
-    else if (r == KOS_DYN_UNWIND_ASYNC_STARTED)
-      out->status = KOS_TRANS_STATUS_ASYNC_UNWIND;
-    else if (r < 0) {
-      out->status = KOS_TRANS_STATUS_ERROR;
-      KosEvalState_SyncFromContext(es);
-      return -1;
-    }
-    return 0;
-  }
-  case KOS_TRANS_UNWIND_TO_FRAME: {
-    if (! req->target_frame) {
-      PyErr_SetString(PyExc_RuntimeError,
-                      "kos_dyn_transition: UNWIND_TO_FRAME needs "
-                      "target_frame");
-      KosEvalState_SyncFromContext(es);
-      return -1;
-    }
-    int r = kos_dyn_unwind_to_frame(es, req->target_frame,
-                                    req->xfer_event, out_ev);
-    out->raw = r;
-    if (r == KOS_DYN_UNWIND_ASYNC_STARTED)
-      out->status = KOS_TRANS_STATUS_ASYNC_UNWIND;
-    else if (r < 0) {
-      out->status = KOS_TRANS_STATUS_ERROR;
-      KosEvalState_SyncFromContext(es);
-      return -1;
-    }
-    return 0;
-  }
-  case KOS_TRANS_UNWIND_TO_NODE: {
-    if (! req->target_node) {
-      PyErr_SetString(PyExc_RuntimeError,
-                      "kos_dyn_transition: UNWIND_TO_NODE needs "
-                      "target_node");
-      KosEvalState_SyncFromContext(es);
-      return -1;
-    }
-    int r = kos_dyn_unwind_to_node(es, req->target_node,
-                                   req->xfer_event, out_ev);
-    out->raw = r;
-    if (r == KOS_DYN_UNWIND_ASYNC_STARTED)
-      out->status = KOS_TRANS_STATUS_ASYNC_UNWIND;
-    else if (r < 0) {
-      out->status = KOS_TRANS_STATUS_ERROR;
-      KosEvalState_SyncFromContext(es);
-      return -1;
-    }
-    return 0;
-  }
-  case KOS_TRANS_WALK_HANDLE_YIELD: {
-    int r = kos_dyn_walk_handle_yield(es, out_ev);
-    out->raw = r;
-    if (r < 0) {
-      out->status = KOS_TRANS_STATUS_ERROR;
-      KosEvalState_SyncFromContext(es);
-      return -1;
-    }
-    return 0;
-  }
-  case KOS_TRANS_TRANSFER_TO_LOOP: {
-    if (! req->payload) {
-      PyErr_SetString(PyExc_RuntimeError,
-                      "kos_dyn_transition: TRANSFER_TO_LOOP needs "
-                      "payload");
-      KosEvalState_SyncFromContext(es);
-      return -1;
-    }
-    int r = kos_dyn_transfer_to_loop(es, req->xfer_event, req->payload,
-                                     out_ev);
-    out->raw = r;
-    if (r == KOS_DYN_UNWIND_ASYNC_STARTED)
-      out->status = KOS_TRANS_STATUS_ASYNC_UNWIND;
-    else if (r < 0) {
-      out->status = KOS_TRANS_STATUS_ERROR;
-      KosEvalState_SyncFromContext(es);
-      return -1;
-    }
-    return 0;
-  }
-  case KOS_TRANS_TRY_LOCAL_RAISE: {
-    int r = kos_dyn_try_local_raise_body(es, out_ev);
-    out->raw = r;
-    if (r < 0) {
-      out->status = KOS_TRANS_STATUS_ERROR;
-      KosEvalState_SyncFromContext(es);
-      return -1;
-    }
-    if (r == 1)
-      out->status = KOS_TRANS_STATUS_HANDLER_APPLIED;
-    else
-      out->status = KOS_TRANS_STATUS_NO_LOCAL_HANDLER;
-    return 0;
-  }
-  default:
-    PyErr_Format(PyExc_RuntimeError,
-                 "kos_dyn_transition: unknown kind %d",
-                 (int) req->kind);
-    out->status = KOS_TRANS_STATUS_ERROR;
-    KosEvalState_SyncFromContext(es);
-    return -1;
-  }
-}
-
-
-int KosEvalState_Transition(
-    KosEvalState *es,
-    const KosTransitionReq *req,
-    KosTransitionResult *out,
-    KosEvent *out_ev) {
-
-  int r = kos_dyn_transition_internal(es, req, out, out_ev);
-
-  if (r < 0)
-    KosEvalState_SyncFromContext(es);
-  return r;
 }
 
 
@@ -4245,6 +4091,133 @@ int kos_dyn_finish_delimited_pop_return(
 }
 
 
+
+/**
+   Shared path for KOS_EV_RETURN delivery to KOS_DYN_NEXT or awaiting
+   KOS_DYN_FOREACH after a flattened Koskari async generator completes.
+   Expects KosEvent_KIND(out_ev) == KOS_EV_RETURN and payload set.
+
+   :return: same as kos_dyn_next_deliver_return / foreach deliver (0 success,
+      -1 error; next may leave no PyErr for REPROLOGUE)
+*/
+int kos_dyn_deliver_iterator_boundary_return_event(
+    KosEvalState *es,
+    struct KosEvent *out_ev) {
+
+  // TODO: this is bad, it hard-coded specific node types. It should use
+  // a capability-based approach.
+
+  KosDynNext *next = kos_dyn_find_next_above_frame(es);
+
+  if (next)
+    return kos_dyn_next_deliver_return(es, out_ev);
+
+  KosDynForeach *fe = kos_dyn_find_awaiting_foreach(es);
+  if (fe)
+    return kos_dyn_foreach_deliver_return_kos_agen(es, fe, out_ev);
+
+  KosDynYieldFrom *yf = kos_dyn_find_yield_from_iter_boundary(es);
+  if (yf)
+    return kos_dyn_yield_from_deliver_inner_return(es, yf, out_ev);
+
+  PyErr_SetString(PyExc_RuntimeError,
+                  "iterator boundary RETURN without NEXT/FOREACH/YIELD_FROM "
+                  "Koskari agen state");
+  KosEvalState_SyncFromContext(es);
+  return -1;
+}
+
+
+/**
+ Delivers KOS_EV_YIELD to the first matching iterator boundary, in the same
+ order as kos_dyn_deliver_iterator_boundary_return_event: NEXT, then
+ FOREACH (Koskari agen await), then YIELD_FROM.
+
+ :return: 0 if NEXT or FOREACH delivered (caller should REPROLOGUE);
+          1 if YIELD_FROM delivered (caller sets KOS_SUSP_YIELD and returns
+          STOP to the outer driver);
+          -1 on error
+*/
+int kos_dyn_deliver_yield_to_iter_boundary(
+    KosEvalState *es,
+    struct KosEvent *out_ev) {
+
+  // TODO: this is bad, it hard-coded specific node types. It should use
+  // a capability-based approach.
+
+  KosDynNext *next = kos_dyn_find_next_above_frame(es);
+
+  if (next) {
+    if (kos_dyn_next_deliver_yield(es, out_ev) < 0)
+      return -1;
+    return 0;
+  }
+
+  KosDynForeach *fe = kos_dyn_find_awaiting_foreach(es);
+  if (fe) {
+    if (kos_dyn_foreach_deliver_yield_kos_agen(es, fe, out_ev) < 0)
+      return -1;
+    return 0;
+  }
+
+  KosDynYieldFrom *yf = kos_dyn_find_yield_from_iter_boundary(es);
+  if (yf) {
+    if (kos_dyn_yield_from_deliver_inner_yield(es, yf, out_ev) < 0)
+      return -1;
+    return 1;
+  }
+
+  PyErr_SetString(PyExc_RuntimeError,
+                  "iterator boundary YIELD without NEXT/FOREACH/YIELD_FROM "
+                  "Koskari agen state");
+  return -1;
+}
+
+
+/**
+ After kos_dyn_pop_frame from a callee: if a flattened Koskari async-gen
+ consumer (NEXT or ITER_NEXT) is active, deliver the return value using the
+ same logic as eval dispatch_boundary_event for KOS_EV_RETURN.
+
+ On success or error paths that consume the value, sets *p_val to NULL.
+ On return 1, *p_val is unchanged and the caller must deliver to the parent
+ frame (native handler or stack push).
+
+ :return: 0 if delivery ran (continue eval); -1 if POST_ERR; 1 if no
+    boundary consumer for this return
+*/
+int kos_dyn_try_deliver_iterator_boundary_after_pop(
+    KosEvalState *es,
+    PyObject **p_val,
+    struct KosEvent *out_ev) {
+
+  PyObject *val;
+
+  if (! kos_dyn_need_kos_agen_boundary_deliver(es)) {
+    KosEvalState_SyncFromContext(es);
+    return 1;
+  }
+
+  val = *p_val;
+  KosEvent_KIND(out_ev) = KOS_EV_RETURN;
+  KosEvent_PAYLOAD(out_ev) = val;
+
+  int dr = kos_dyn_deliver_iterator_boundary_return_event(es, out_ev);
+  if (dr < 0) {
+    if (PyErr_Occurred()) {
+      *p_val = NULL;
+      KosEvalState_SyncFromContext(es);
+      return -1;
+    }
+    *p_val = NULL;
+    KosEvalState_SyncFromContext(es);
+    return 0;
+  }
+
+  *p_val = NULL;
+  KosEvalState_SyncFromContext(es);
+  return 0;
+}
 
 
 /* === Unit lifecycle === */
