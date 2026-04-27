@@ -91,8 +91,7 @@ KOS_OP_HANDLER(RETURN) {
     }
     int unw = tres.raw;
     if (unw == KOS_DYN_UNWIND_ASYNC_STARTED) {
-      KosContext_PENDING_RETURN_VALUE(ctx) = val;
-      KosContext_PENDING_RETURN_TO_PARENT(ctx) = 1;
+      KosEvalState_SetPendingReturn(es, val, 1);
       return KOS_OP_RUN();
     }
     if (unw == KOS_DYN_UNWIND_FINALLY_TAKING_RETURN) {
@@ -132,8 +131,7 @@ KOS_OP_HANDLER(RETURN) {
     }
     int unw = tres.raw;
     if (unw == KOS_DYN_UNWIND_ASYNC_STARTED) {
-      KosContext_PENDING_RETURN_VALUE(ctx) = val;
-      KosContext_PENDING_RETURN_TO_PARENT(ctx) = 0;
+      KosEvalState_SetPendingReturn(es, val, 0);
       return KOS_OP_RUN();
     }
     if (unw == KOS_DYN_UNWIND_FINALLY_TAKING_RETURN) {

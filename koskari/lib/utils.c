@@ -103,8 +103,6 @@ static int apply_native_handler(
     int is_resume,
     PyObject *delivered_value) {
 
-  KosContext *ctx = KosEvalState_CONTEXT(es);
-
   (void) delivered_value;
   if (unlikely(is_resume != 0)) {
     PyErr_SetString(PyExc_RuntimeError, "apply native handler resume not implemented");
@@ -149,8 +147,7 @@ static int apply_native_handler(
     return 0;
   }
   if (unw == KOS_DYN_UNWIND_ASYNC_STARTED) {
-    KosContext_PENDING_RETURN_VALUE(ctx) = result;
-    KosContext_PENDING_RETURN_TO_PARENT(ctx) = 1;
+    KosEvalState_SetPendingReturn(es, result, 1);
     return 0;
   }
   if (unw < 0) {

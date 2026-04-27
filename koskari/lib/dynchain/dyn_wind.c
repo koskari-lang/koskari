@@ -153,7 +153,6 @@ int kos_dyn_wind_unwind(KosEvalState *es, KosDynWind *node) {
    Resume after async before/after thunk: advance phase, pop junk, maybe unlink.
 */
 static int kos_dyn_wind_on_control_returned(KosEvalState *es, KosDynWind *wind) {
-  KosContext *ctx = KosEvalState_CONTEXT(es);
   if (! (KosEvalState_BLOCK(es) && *KosEvalState_BLOCK(es)
              ? *KosEvalState_BLOCK(es)
              : NULL)) {
@@ -179,7 +178,7 @@ static int kos_dyn_wind_on_control_returned(KosEvalState *es, KosDynWind *wind) 
     KosDynWind_BODY_RESULT(wind) = NULL;
 
     KosDynWind_PHASE(wind) = KOS_WIND_PHASE_POST_AFTER;
-    KosContext_UNWIND_TARGET_FRAME(ctx) = NULL;
+    KosEvalState_SetUnwindTargetFrame(es, NULL);
     {
       KosDynNode *parent = KosDynNode_PARENT((KosDynNode *) wind);
 

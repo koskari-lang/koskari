@@ -1359,7 +1359,7 @@ int kos_dyn_walk_return_to_frame(KosEvalState *es, KosDynFrame *frame,
     int pop_res = kos_dyn_pop_one_unwind_walk(es, KOS_XFER_EVENT_RETURN,
                                              out_ev);
     if (pop_res == KOS_DYN_UNWIND_ASYNC_STARTED) {
-      KosContext_UNWIND_TARGET_FRAME(ctx) = frame;
+      KosEvalState_SetUnwindTargetFrame(es, frame);
       Py_DECREF(val);
       KosEvalState_SyncFromContext(es);
       return pop_res;
@@ -1370,7 +1370,7 @@ int kos_dyn_walk_return_to_frame(KosEvalState *es, KosDynFrame *frame,
       return -1;
     }
   }
-  KosContext_UNWIND_TARGET_FRAME(ctx) = NULL;
+  KosEvalState_SetUnwindTargetFrame(es, NULL);
   if (KOS_XFER_TRACE)
     SAYF("[xfer] walk_return: done, dyn_top=%p",
          (void *) KosContext_DYN_TOP(ctx));
@@ -1416,7 +1416,7 @@ int kos_dyn_unwind_to_frame(KosEvalState *es, KosDynFrame *frame,
            (void *) top, kos_dynnode_kind_name(KosDynNode_KIND(top)));
     int pop_res = kos_dyn_pop_one_unwind_walk(es, event, out_ev);
     if (pop_res == KOS_DYN_UNWIND_ASYNC_STARTED) {
-      KosContext_UNWIND_TARGET_FRAME(ctx) = frame;
+      KosEvalState_SetUnwindTargetFrame(es, frame);
       KosEvalState_SyncFromContext(es);
       return pop_res;
     }
@@ -1425,7 +1425,7 @@ int kos_dyn_unwind_to_frame(KosEvalState *es, KosDynFrame *frame,
       return -1;
     }
   }
-  KosContext_UNWIND_TARGET_FRAME(ctx) = NULL;
+  KosEvalState_SetUnwindTargetFrame(es, NULL);
   if (KOS_XFER_TRACE)
     SAYF("[xfer] unwind_to_frame: done, dyn_top=%p", (void *) KosContext_DYN_TOP(ctx));
   KosEvalState_SyncFromContext(es);
@@ -1507,7 +1507,7 @@ int kos_dyn_transfer_to_loop(KosEvalState *es, KosXferEvent event,
   while (KosContext_DYN_TOP(ctx) != (KosDynNode *) region) {
     int pop_res = kos_dyn_pop_nonbarrier_top(es, event, out_ev);
     if (pop_res == KOS_DYN_UNWIND_ASYNC_STARTED) {
-      KosContext_UNWIND_TARGET_FRAME(ctx) = KosEvalState_FRAME(es);
+      KosEvalState_SetUnwindTargetFrame(es, KosEvalState_FRAME(es));
       KosEvalState_SyncFromContext(es);
       return KOS_DYN_UNWIND_ASYNC_STARTED;
     }
@@ -1685,7 +1685,7 @@ static int kos_dyn_try_local_raise_body(KosEvalState *es, KosEvent *out_ev) {
         saved_exc_typ = saved_exc_val = saved_exc_tb = NULL;
       }
       if (pop_res == KOS_DYN_UNWIND_ASYNC_STARTED) {
-        KosContext_UNWIND_TARGET_FRAME(ctx) = KosEvalState_FRAME(es);
+        KosEvalState_SetUnwindTargetFrame(es, KosEvalState_FRAME(es));
         KosEvalState_SyncFromContext(es);
         return 1;
       }
@@ -1693,7 +1693,7 @@ static int kos_dyn_try_local_raise_body(KosEvalState *es, KosEvent *out_ev) {
         if (top && KosDynNode_HAS_CAP(top, KOS_DYN_CAP_HANDLES_EXCEPTIONS)) {
           int exc_res = kos_dyn_exception_unwind(es, top, out_ev);
           if (exc_res == KOS_DYN_UNWIND_ASYNC_STARTED) {
-            KosContext_UNWIND_TARGET_FRAME(ctx) = KosEvalState_FRAME(es);
+            KosEvalState_SetUnwindTargetFrame(es, KosEvalState_FRAME(es));
             KosEvalState_SyncFromContext(es);
             return 1;
           }

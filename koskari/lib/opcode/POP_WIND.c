@@ -21,7 +21,6 @@
 */
 
 KOS_OP_HANDLER(POP_WIND) {
-  KosContext *ctx = KosEvalState_CONTEXT(es);
   KosDynNode *top = KosEvalState_CurrentNode(es);
   if (! top || ! KosDynNode_IS_WIND(top)) {
     PyErr_SetString(PyExc_RuntimeError, "POP_WIND: top is not a wind node");
@@ -36,8 +35,8 @@ KOS_OP_HANDLER(POP_WIND) {
 
   int r = kos_dyn_pop_top(es, KOS_XFER_EVENT_RETURN, out_ev);
   if (r == KOS_DYN_UNWIND_ASYNC_STARTED) {
-    KosContext_UNWIND_TARGET_FRAME(ctx) =
-        (KosDynFrame *) KosDynNode_PARENT((KosDynNode *) wind);
+    KosEvalState_SetUnwindTargetFrame(
+        es, (KosDynFrame *) KosDynNode_PARENT((KosDynNode *) wind));
     return KOS_OP_RUN();  /* eval continues in thunk frame; RETURN will resume unwinding */
   }
   if (r < 0) {

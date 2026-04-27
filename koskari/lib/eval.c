@@ -619,6 +619,26 @@ void KosEvalState_DisarmTransferPlan(KosEvalState *es) {
 }
 
 
+void KosEvalState_SetPendingReturn(
+    KosEvalState *es,
+    PyObject *val,
+    int to_parent) {
+
+  KosContext *ctx = KosEvalState_CONTEXT(es);
+
+  KosContext_PENDING_RETURN_VALUE(ctx) = val;
+  KosContext_PENDING_RETURN_TO_PARENT(ctx) = to_parent;
+}
+
+
+void KosEvalState_SetUnwindTargetFrame(KosEvalState *es, KosDynFrame *frame) {
+
+  KosContext *ctx = KosEvalState_CONTEXT(es);
+
+  KosContext_UNWIND_TARGET_FRAME(ctx) = frame;
+}
+
+
 void KosEvalState_ArmTransferPlan(KosEvalState *es, KosTransferPlan *plan) {
 
   KosContext *ctx = KosEvalState_CONTEXT(es);

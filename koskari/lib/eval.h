@@ -628,6 +628,20 @@ void KosEvalState_ArmTransferPlan(KosEvalState *es, KosTransferPlan *plan);
 void KosEvalState_DisarmTransferPlan(KosEvalState *es);
 
 /**
+  Stage return value for async unwind / parent delivery. to_parent is 0 or 1.
+  Refcount semantics match direct assignments to ctx (no extra INCREF).
+*/
+void KosEvalState_SetPendingReturn(
+    KosEvalState *es,
+    PyObject *val,
+    int to_parent);
+
+/**
+  Target frame for resume after async dynamic-wind pop (KOS_DYN_UNWIND_ASYNC_STARTED).
+*/
+void KosEvalState_SetUnwindTargetFrame(KosEvalState *es, KosDynFrame *frame);
+
+/**
   Non-zero when a transfer plan is armed (ctx->plan != NULL).
 */
 int KosEvalState_HasActiveTransferPlan(const KosEvalState *es);
