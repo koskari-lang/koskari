@@ -341,6 +341,171 @@ static PyObject *soften_extra_tuple(
 /* === KosCode getset === */
 
 
+typedef struct {
+  size_t allocation_bytes;
+  size_t payload_bytes;
+  size_t padding_bytes;
+  size_t page_rounding_bytes;
+  size_t code_bytes;
+  size_t position_bytes;
+  size_t cpool_bytes;
+  size_t extra_bytes;
+  size_t extent_bytes;
+  size_t top_extent_bytes;
+} CodeAllocStats;
+
+
+static size_t align_size(size_t value, size_t unit) {
+
+  if (! unit) {
+    return value;
+  }
+  return ((value + unit - 1) / unit) * unit;
+}
+
+
+static void code_calc_alloc_stats(PyObject *self, CodeAllocStats *out) {
+
+  size_t ptr_size = sizeof(PyObject *);
+  size_t code_bytes = sizeof(KosOp) * (size_t) KosCode_CODE_LEN(self);
+  size_t pos_bytes = sizeof(KosPosition) * (size_t) KosCode_POS_LEN(self);
+  size_t cpool_bytes = sizeof(PyObject *) * (size_t) KosCode_CPOOL_LEN(self);
+  size_t extra_bytes = sizeof(KosExtra) * (size_t) KosCode_EXTRA_LEN(self);
+  size_t extent_bytes = sizeof(KosExtentDesc) * (size_t) KosCode_EXTENT_LEN(self);
+  size_t top_bytes = sizeof(uint16_t) * (size_t) KosCode_CODE_LEN(self);
+
+  size_t code_offset = 0;
+  size_t pos_offset = align_size(code_bytes, ptr_size);
+  size_t cpool_offset = pos_offset + align_size(pos_bytes, ptr_size);
+  size_t extra_offset = cpool_offset + align_size(cpool_bytes, ptr_size);
+  size_t extent_offset = extra_offset + align_size(extra_bytes, sizeof(uint32_t));
+  size_t top_offset = extent_offset + extent_bytes;
+  size_t total_unrounded = top_offset + top_bytes;
+  size_t page_size = (size_t) sysconf(_SC_PAGE_SIZE);
+  size_t allocation = KosCode_ALLOCATION(self);
+  size_t rounded_total = total_unrounded;
+
+  if (! page_size || (ssize_t) page_size < 0) {
+    page_size = 4096;
+  }
+  rounded_total = align_size(total_unrounded, page_size);
+
+  out->allocation_bytes = allocation;
+  out->code_bytes = code_bytes;
+  out->position_bytes = pos_bytes;
+  out->cpool_bytes = cpool_bytes;
+  out->extra_bytes = extra_bytes;
+  out->extent_bytes = extent_bytes;
+  out->top_extent_bytes = top_bytes;
+  out->payload_bytes = code_bytes + pos_bytes + cpool_bytes + extra_bytes
+      + extent_bytes + top_bytes;
+
+  out->padding_bytes = (pos_offset - code_offset - code_bytes)
+      + (cpool_offset - pos_offset - pos_bytes)
+      + (extra_offset - cpool_offset - cpool_bytes)
+      + (extent_offset - extra_offset - extra_bytes)
+      + (top_offset - extent_offset - extent_bytes);
+
+  if (allocation >= total_unrounded) {
+    out->page_rounding_bytes = allocation - total_unrounded;
+  } else if (rounded_total >= total_unrounded) {
+    out->page_rounding_bytes = rounded_total - total_unrounded;
+  } else {
+    out->page_rounding_bytes = 0;
+  }
+}
+
+
+static PyObject *code_get_allocation_bytes(PyObject *self, void *_unused) {
+
+  CodeAllocStats stats;
+  (void) _unused;
+  code_calc_alloc_stats(self, &stats);
+  return PyLong_FromSize_t(stats.allocation_bytes);
+}
+
+
+static PyObject *code_get_payload_bytes(PyObject *self, void *_unused) {
+
+  CodeAllocStats stats;
+  (void) _unused;
+  code_calc_alloc_stats(self, &stats);
+  return PyLong_FromSize_t(stats.payload_bytes);
+}
+
+
+static PyObject *code_get_padding_bytes(PyObject *self, void *_unused) {
+
+  CodeAllocStats stats;
+  (void) _unused;
+  code_calc_alloc_stats(self, &stats);
+  return PyLong_FromSize_t(stats.padding_bytes);
+}
+
+
+static PyObject *code_get_page_rounding_bytes(PyObject *self, void *_unused) {
+
+  CodeAllocStats stats;
+  (void) _unused;
+  code_calc_alloc_stats(self, &stats);
+  return PyLong_FromSize_t(stats.page_rounding_bytes);
+}
+
+
+static PyObject *code_get_code_bytes(PyObject *self, void *_unused) {
+
+  CodeAllocStats stats;
+  (void) _unused;
+  code_calc_alloc_stats(self, &stats);
+  return PyLong_FromSize_t(stats.code_bytes);
+}
+
+
+static PyObject *code_get_position_bytes(PyObject *self, void *_unused) {
+
+  CodeAllocStats stats;
+  (void) _unused;
+  code_calc_alloc_stats(self, &stats);
+  return PyLong_FromSize_t(stats.position_bytes);
+}
+
+
+static PyObject *code_get_cpool_bytes(PyObject *self, void *_unused) {
+
+  CodeAllocStats stats;
+  (void) _unused;
+  code_calc_alloc_stats(self, &stats);
+  return PyLong_FromSize_t(stats.cpool_bytes);
+}
+
+
+static PyObject *code_get_extra_bytes(PyObject *self, void *_unused) {
+
+  CodeAllocStats stats;
+  (void) _unused;
+  code_calc_alloc_stats(self, &stats);
+  return PyLong_FromSize_t(stats.extra_bytes);
+}
+
+
+static PyObject *code_get_extent_bytes(PyObject *self, void *_unused) {
+
+  CodeAllocStats stats;
+  (void) _unused;
+  code_calc_alloc_stats(self, &stats);
+  return PyLong_FromSize_t(stats.extent_bytes);
+}
+
+
+static PyObject *code_get_top_extent_bytes(PyObject *self, void *_unused) {
+
+  CodeAllocStats stats;
+  (void) _unused;
+  code_calc_alloc_stats(self, &stats);
+  return PyLong_FromSize_t(stats.top_extent_bytes);
+}
+
+
 static PyObject *code_get_yields(PyObject *self, void *_unused) {
 
   return PyBool_FromLong(KosCode_YIELDS(self));
@@ -367,6 +532,46 @@ static PyObject *code_get_cpool(PyObject *self, void *_unused) {
 
 
 static PyGetSetDef code_getset[] = {
+
+  { "allocation_bytes", code_get_allocation_bytes, NULL,
+    "int; total allocated bytes for sealed bytecode storage",
+    NULL },
+
+  { "payload_bytes", code_get_payload_bytes, NULL,
+    "int; sum of logical region bytes before padding",
+    NULL },
+
+  { "padding_bytes", code_get_padding_bytes, NULL,
+    "int; alignment padding bytes between storage regions",
+    NULL },
+
+  { "page_rounding_bytes", code_get_page_rounding_bytes, NULL,
+    "int; tail padding bytes added by page-size rounding",
+    NULL },
+
+  { "code_bytes", code_get_code_bytes, NULL,
+    "int; bytes used by hardened instruction array",
+    NULL },
+
+  { "position_bytes", code_get_position_bytes, NULL,
+    "int; bytes used by source position table",
+    NULL },
+
+  { "cpool_bytes", code_get_cpool_bytes, NULL,
+    "int; bytes reserved for constant pool pointer array",
+    NULL },
+
+  { "extra_bytes", code_get_extra_bytes, NULL,
+    "int; bytes used by extra operand rows",
+    NULL },
+
+  { "extent_bytes", code_get_extent_bytes, NULL,
+    "int; bytes used by static extent descriptor table",
+    NULL },
+
+  { "top_extent_bytes", code_get_top_extent_bytes, NULL,
+    "int; bytes reserved for top-extent lookup table",
+    NULL },
 
   { "yields", code_get_yields, NULL,
     "bool; whether this code will yield like a generator",

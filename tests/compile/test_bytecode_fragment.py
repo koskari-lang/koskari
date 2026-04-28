@@ -354,6 +354,52 @@ class TestCode(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(code.oparg(1), (OpCode.KOS_OP_CONST, 0))
         self.assertEqual(code.oparg(2), (OpCode.KOS_OP_CONST, 0))
 
+    async def test_allocation_introspection_fields_basic(self):
+        """Allocation fields exist and satisfy the identity relation."""
+
+        nspec = NamespaceSpec(None, (), ())
+        instr = ([OpCode.KOS_OP_CONST, 1], [OpCode.KOS_OP_RETURN, 1])
+        code = Code(nspec, instr, "alloc_basic")
+        fields = (
+            'allocation_bytes',
+            'payload_bytes',
+            'padding_bytes',
+            'page_rounding_bytes',
+            'code_bytes',
+            'position_bytes',
+            'cpool_bytes',
+            'extra_bytes',
+            'extent_bytes',
+            'top_extent_bytes',
+        )
+
+        for field in fields:
+            value = getattr(code, field)
+            self.assertIsInstance(value, int)
+            self.assertGreaterEqual(value, 0)
+
+        self.assertEqual(
+            code.allocation_bytes,
+            code.payload_bytes + code.padding_bytes + code.page_rounding_bytes)
+
+    async def test_allocation_introspection_with_extent_and_extra(self):
+        """Fields remain coherent when code has extents and EXTRA rows."""
+
+        nspec = NamespaceSpec(None, ('obj',), ())
+        instr = (
+            [OpCode.KOS_OP_PUSH_LOOP, 0],
+            [OpCode.KOS_OP_FAST_ATTR, (0, 'value', 0, 0)],
+            [OpCode.KOS_OP_POP_LOOP, 0],
+            [OpCode.KOS_OP_RETURN, 1],
+        )
+        code = Code(nspec, instr, "alloc_complex")
+
+        self.assertGreaterEqual(code.extra_bytes, 1)
+        self.assertGreaterEqual(code.extent_bytes, 1)
+        self.assertEqual(
+            code.allocation_bytes,
+            code.payload_bytes + code.padding_bytes + code.page_rounding_bytes)
+
 
 class TestCodeFunctionSpec(unittest.IsolatedAsyncioTestCase):
     """
