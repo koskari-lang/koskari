@@ -169,6 +169,35 @@ redundant inner `(let [] ...)`). Two or more:
 **Defined in:** `koskari/importer/basics.ki`
 
 
+## item*
+
+**Symbol:** `item*` (defined as `compile/item*`)
+
+**Syntax:** `(item* OBJ KEY KEY2 ...)` (two or more total arguments: object plus
+at least one key)
+
+**Use-case:** Nested item lookup sugar. Avoids writing manually nested
+`(item ...)` calls for deep indexing paths.
+
+**Behaviour:** Syntax-rules macro in `basics.ki`.
+
+- `(item* obj key)` expands to `(item obj key)`
+- `(item* obj key rest ...)` expands recursively to
+  `(item* (item obj key) rest ...)`
+
+So `(item* root a b c)` becomes `(item (item (item root a) b) c)`.
+
+**Examples:**
+
+```scheme
+(item* obj key)          ; -> (item obj key)
+(item* row "user" "id")  ; -> (item (item row "user") "id")
+(item* tree 0 1 2)       ; -> (item (item (item tree 0) 1) 2)
+```
+
+**Defined in:** `koskari/importer/basics.ki`
+
+
 ## first, second, third, fourth, fifth; cadr, caddr, cadddr, caddddr
 
 **Symbols:**
