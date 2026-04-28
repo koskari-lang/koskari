@@ -117,6 +117,14 @@ define-syntax compile/let*:
       (let [first] (let* [rest ...] body ...))
 
 
+define-syntax compile/item*:
+  syntax-rules []:
+    match (item* obj key):
+      (item obj key)
+    match (item* obj key rest ...):
+      (item* (item obj key) rest ...)
+
+
 define-syntax compile/ref:
   syntax-rules [item compile/item attr compile/attr parameter]:
     match (ref (item obj name)):

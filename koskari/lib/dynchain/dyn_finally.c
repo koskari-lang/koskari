@@ -65,6 +65,27 @@ void kos_dynfinally_free(KosDynFinally *node) {
 }
 
 
+static int dynnode_to_dict_finally(KosDynNode *node, PyObject *data) {
+
+  if (snapshot_set_uint(data, "handler_pc",
+                        KosDynFinally_HANDLER_PC((KosDynFinally *) node)) < 0)
+    return -1;
+  if (snapshot_set_int(data, "enabled",
+                       KosDynFinally_ENABLED((KosDynFinally *) node)) < 0)
+    return -1;
+  if (snapshot_set_int(data, "handling_raise",
+      KosDynFinally_HANDLING_RAISE((KosDynFinally *) node)) < 0)
+    return -1;
+  if (snapshot_set_int(data, "handling_return",
+      KosDynFinally_HANDLING_RETURN((KosDynFinally *) node)) < 0)
+    return -1;
+  if (snapshot_set_obj(data, "handling_result",
+      KosDynFinally_HANDLING_RESULT((KosDynFinally *) node)) < 0)
+    return -1;
+  return 0;
+}
+
+
 /**
    Push FINALLY as DYN_TOP. Callers: opcode PUSH_FINALLY.
 */

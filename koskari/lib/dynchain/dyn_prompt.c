@@ -62,6 +62,18 @@ void kos_dynprompt_free(KosDynPrompt *prompt) {
 }
 
 
+static int dynnode_to_dict_prompt(KosDynNode *node, PyObject *data) {
+
+  if (snapshot_set_uint(data, "prompt_id",
+                        KosDynPrompt_ID((KosDynPrompt *) node)) < 0)
+    return -1;
+  if (snapshot_set_obj(data, "pending_shift_wrapper",
+      KosDynPrompt_PENDING_SHIFT_WRAPPER((KosDynPrompt *) node)) < 0)
+    return -1;
+  return 0;
+}
+
+
 /**
    Push prompt via kos_dyn_push. Callers: opcode PUSH_PROMPT.
 */

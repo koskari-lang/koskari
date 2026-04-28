@@ -262,7 +262,118 @@ static PyObject *m_parameter(PyObject *mod, PyObject *args) {
 }
 
 
+static int domain_snapshot_set_item(
+    PyObject *dict,
+    const char *key,
+    PyObject *value) {
+
+  if (PyDict_SetItemString(dict, key, value) < 0) {
+    Py_DECREF(value);
+    return -1;
+  }
+  Py_DECREF(value);
+  return 0;
+}
+
+
+static int domain_snapshot_set_uint(PyObject *dict, const char *key, uint32_t value) {
+
+  return domain_snapshot_set_item(
+      dict, key, PyLong_FromUnsignedLong((unsigned long) value));
+}
+
+
+static PyObject *context_to_dict(KosContext *ctx) {
+
+  PyObject *out = PyDict_New();
+  if (! out)
+    return NULL;
+
+  if (domain_snapshot_set_item(out, "schema_version", PyLong_FromLong(1)) < 0
+      || domain_snapshot_set_item(out, "context_id", PyLong_FromVoidPtr((void *) ctx)) < 0
+      || domain_snapshot_set_uint(out, "flags", KosContext_FLAGS(ctx)) < 0
+      || domain_snapshot_set_uint(out, "suspension_event",
+                                  (uint32_t) KosContext_SUSPENSION_EVENT(ctx)) < 0
+      || domain_snapshot_set_uint(out, "chain_version",
+                                  KosContext_CHAIN_VERSION(ctx)) < 0) {
+    Py_DECREF(out);
+    return NULL;
+  }
+
+  PyObject *domain = KosContext_DOMAIN(ctx) ? KosContext_DOMAIN(ctx) : Py_None;
+  Py_INCREF(domain);
+  if (domain_snapshot_set_item(out, "domain", domain) < 0) {
+    Py_DECREF(out);
+    return NULL;
+  }
+
+  PyObject *ns = KosContext_NAMESPACE(ctx) ? KosContext_NAMESPACE(ctx) : Py_None;
+  Py_INCREF(ns);
+  if (domain_snapshot_set_item(out, "namespace", ns) < 0) {
+    Py_DECREF(out);
+    return NULL;
+  }
+
+  PyObject *nodes = kos_dynchain_snapshot_to_list(KosContext_DYN_TOP(ctx));
+  if (! nodes) {
+    Py_DECREF(out);
+    return NULL;
+  }
+  if (domain_snapshot_set_item(out, "dynnodes", nodes) < 0) {
+    Py_DECREF(out);
+    return NULL;
+  }
+
+  return out;
+}
+
+
+static PyObject *domain_current_domain(PyObject *cls, PyObject *unused) {
+
+  (void) cls;
+  (void) unused;
+  PyObject *domain = kos_domain_current();
+  if (! domain)
+    Py_RETURN_NONE;
+  Py_INCREF(domain);
+  return domain;
+}
+
+
+static PyObject *domain_get_contexts(PyObject *self, PyObject *unused) {
+
+  (void) unused;
+  KosTlsState *s = (KosTlsState *) PyThread_tss_get(&tls_state_key);
+  PyObject *out = PyList_New(0);
+  if (! out)
+    return NULL;
+
+  if (! s || s->ctx_depth == 0)
+    return out;
+
+  for (size_t i = s->ctx_depth; i--; ) {
+    KosContext *ctx = s->ctx_stack[i];
+    if (! ctx || KosContext_DOMAIN(ctx) != self)
+      continue;
+    PyObject *entry = context_to_dict(ctx);
+    if (! entry || PyList_Append(out, entry) < 0) {
+      Py_XDECREF(entry);
+      Py_DECREF(out);
+      return NULL;
+    }
+    Py_DECREF(entry);
+  }
+
+  return out;
+}
+
+
 static PyMethodDef domain_methods[] = {
+  {"current_domain", (PyCFunction) domain_current_domain,
+   METH_CLASS | METH_NOARGS,
+   "Return the active Domain from current TLS scope, or None"},
+  {"get_contexts", (PyCFunction) domain_get_contexts, METH_NOARGS,
+   "Return current-thread context snapshots for this Domain"},
   {"__enter__", (PyCFunction) domain_enter, METH_NOARGS,
    "Push this domain onto the per-thread scope stack"},
   {"__exit__", (PyCFunction) domain_exit, METH_VARARGS,

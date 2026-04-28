@@ -72,3 +72,11 @@ static int dynnode_traverse_shift(KosDynNode *node, visitproc visit, void *arg) 
   return 0;
 }
 
+
+static int dynnode_to_dict_shift(KosDynNode *node, PyObject *data) {
+
+  (void) node;
+  (void) data;
+  return 0;
+}
+

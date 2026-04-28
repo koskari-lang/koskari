@@ -42,6 +42,51 @@ class TestDomainContextManager(unittest.IsolatedAsyncioTestCase):
         with Domain():
             pass
 
+    def test_domain_current_domain_classmethod(self):
+        """
+        Domain.current_domain reports active scoped Domain or None
+        """
+
+        self.assertIsNone(Domain.current_domain())
+        with Domain() as dom:
+            self.assertIs(Domain.current_domain(), dom)
+        self.assertIsNone(Domain.current_domain())
+
+    def test_domain_get_contexts_returns_list(self):
+        """
+        Domain.get_contexts returns a list for the current TLS thread
+        """
+
+        with Domain() as dom:
+            contexts = dom.get_contexts()
+            self.assertIsInstance(contexts, list)
+
+    def test_domain_get_contexts_shape_when_present(self):
+        """
+        Snapshot entries include baseline keys when contexts are present
+        """
+
+        with Domain() as dom:
+            contexts = dom.get_contexts()
+            for entry in contexts:
+                self.assertIn("schema_version", entry)
+                self.assertIn("context_id", entry)
+                self.assertIn("flags", entry)
+                self.assertIn("suspension_event", entry)
+                self.assertIn("chain_version", entry)
+                self.assertIn("domain", entry)
+                self.assertIn("namespace", entry)
+                self.assertIn("dynnodes", entry)
+
+                self.assertIs(entry["domain"], dom)
+                self.assertIsInstance(entry["dynnodes"], list)
+                for dynnode in entry["dynnodes"]:
+                    self.assertIn("node_id", dynnode)
+                    self.assertIn("kind", dynnode)
+                    self.assertIn("namespace", dynnode)
+                    self.assertIn("stack", dynnode)
+                    self.assertIn("data", dynnode)
+
 
     def test_domain_paramref_store_deref_from_python(self):
         """

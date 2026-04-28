@@ -92,16 +92,6 @@ histograms.
 
 Ref: [api/tracing.md](api/tracing.md).
 
-### Evaluator state introspection API
-
-Design an introspection API that resolves the current domain and context and
-returns a report-style snapshot of evaluator state: transfer/extent chain
-representation, namespace objects as real references, and stack block copies
-materialized as tuples for inspection.
-
-This should make runtime diagnosis significantly easier by exposing what state
-the evaluator is actually holding at a given point.
-
 ---
 
 ## Compiler

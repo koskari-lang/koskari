@@ -110,6 +110,18 @@ static void kos_dynparam_free(KosDynParam *node) {
 }
 
 
+static int dynnode_to_dict_param(KosDynNode *node, PyObject *data) {
+
+  if (snapshot_set_obj(data, "bindings",
+      KosDynParam_BINDINGS((KosDynParam *) node)) < 0)
+    return -1;
+  if (snapshot_set_obj(data, "saved",
+      KosDynParam_SAVED((KosDynParam *) node)) < 0)
+    return -1;
+  return 0;
+}
+
+
 /**
    Apply bindings to KosContext domain; stash prior values in SAVED dict.
 */

@@ -79,6 +79,25 @@ void kos_dynwind_free(KosDynWind *wind) {
 }
 
 
+static int dynnode_to_dict_wind(KosDynNode *node, PyObject *data) {
+
+  if (snapshot_set_int(data, "entered", KosDynWind_ENTERED((KosDynWind *) node)) < 0)
+    return -1;
+  if (snapshot_set_int(data, "phase", (int) KosDynWind_PHASE((KosDynWind *) node)) < 0)
+    return -1;
+  if (snapshot_set_obj(data, "before_thunk",
+      KosDynWind_BEFORE_THUNK((KosDynWind *) node)) < 0)
+    return -1;
+  if (snapshot_set_obj(data, "after_thunk",
+      KosDynWind_AFTER_THUNK((KosDynWind *) node)) < 0)
+    return -1;
+  if (snapshot_set_obj(data, "body_result",
+      KosDynWind_BODY_RESULT((KosDynWind *) node)) < 0)
+    return -1;
+  return 0;
+}
+
+
 /**
    Run before-thunk (enter path); may suspend async. Callers: kos_dyn_wind,
    install wind span.

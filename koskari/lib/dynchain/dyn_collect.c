@@ -60,6 +60,14 @@ static void kos_dyncollect_free(KosDynCollect *col_node) {
 }
 
 
+static int dynnode_to_dict_collect(KosDynNode *node, PyObject *data) {
+
+  (void) node;
+  (void) data;
+  return 0;
+}
+
+
 /**
    Collector namespace unwind is implicit via cache refresh after node removal.
 */

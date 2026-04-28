@@ -92,6 +92,25 @@ void kos_dynframe_free(KosDynFrame *frame) {
 }
 
 
+static int dynnode_to_dict_frame(KosDynNode *node, PyObject *data) {
+
+  if (snapshot_set_uint(data, "pc", KosDynFrame_PC((KosDynFrame *) node)) < 0)
+    return -1;
+  if (snapshot_set_uint(data, "acting_pc",
+                        KosDynFrame_ACTING_PC((KosDynFrame *) node)) < 0)
+    return -1;
+  if (snapshot_set_uint(data, "frame_flags",
+                        KosDynFrame_FLAGS((KosDynFrame *) node)) < 0)
+    return -1;
+  if (snapshot_set_obj(data, "code", (PyObject *) KosDynFrame_CODE((KosDynFrame *) node)) < 0)
+    return -1;
+  if (snapshot_set_int(data, "has_native_handler",
+                       KosDynFrame_NATIVE_HANDLER((KosDynFrame *) node) ? 1 : 0) < 0)
+    return -1;
+  return 0;
+}
+
+
 /**
    Push a new frame with code and ns as DYN_TOP and FRAME_TOP. Callers: eval
    when entering a Python function.

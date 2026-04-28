@@ -49,6 +49,14 @@ static void kos_dynns_free(KosDynNs *ns_node) {
 }
 
 
+static int dynnode_to_dict_ns(KosDynNode *node, PyObject *data) {
+
+  (void) node;
+  (void) data;
+  return 0;
+}
+
+
 /**
    Namespace unwind is implicit via cache refresh after node removal.
 */

@@ -66,6 +66,27 @@ void kos_dyndelim_free(KosDynDelim *delim) {
 }
 
 
+static int dynnode_to_dict_delim(KosDynNode *node, PyObject *data) {
+
+  KosDynDelim *delim = (KosDynDelim *) node;
+  if (snapshot_set_int(data, "mode", (int) KosDynDelim_MODE(delim)) < 0)
+    return -1;
+  if (snapshot_set_uint(data, "pc", KosDynDelim_RETURN_PC(delim)) < 0)
+    return -1;
+  if (snapshot_set_uint(data, "frame_node_id",
+      KosDynDelim_RETURN_FRAME_NODE(delim)
+          ? KosDynNode_NODE_ID(KosDynDelim_RETURN_FRAME_NODE(delim))
+          : 0) < 0)
+    return -1;
+  if (snapshot_set_uint(data, "return_node_id",
+      KosDynDelim_RETURN_NODE(delim)
+          ? KosDynNode_NODE_ID(KosDynDelim_RETURN_NODE(delim))
+          : 0) < 0)
+    return -1;
+  return 0;
+}
+
+
 /**
    Push DELIM marker via kos_dyn_push.
 */

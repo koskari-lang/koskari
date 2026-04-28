@@ -36,6 +36,16 @@ static void kos_dyn_cc_raise_free(KosDynCCRaise *node) {
 }
 
 
+static int dynnode_to_dict_cc_raise(KosDynNode *node, PyObject *data) {
+
+  if (snapshot_set_obj(data, "exc_type", KosDynCCRaise_EXC_TYPE(node)) < 0)
+    return -1;
+  if (snapshot_set_obj(data, "exc_val", KosDynCCRaise_EXC_VAL(node)) < 0)
+    return -1;
+  return 0;
+}
+
+
 /**
    Transfer EXTENT_ACTION target: set PyErr from stored exception; returns -1.
    Callers: kos_dyn_unwind for KOS_DYN_CC_RAISE.

@@ -2101,6 +2101,19 @@ int kos_transferplan_traverse(
    void *arg);
 
 
+/**
+   Snapshot a dynamic chain to a Python list of per-node dicts.
+
+   Each list entry includes generic node fields and a kind-specific
+   ``data`` dict payload.
+
+   :param node: top of chain
+
+   :return: new list object, or NULL on error
+*/
+PyObject *kos_dynchain_snapshot_to_list(KosDynNode *node);
+
+
 /* === Utility macros === */
 
 

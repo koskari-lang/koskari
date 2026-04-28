@@ -73,6 +73,36 @@ void kos_dynforeach_free(KosDynForeach *node) {
 }
 
 
+static int dynnode_to_dict_foreach(KosDynNode *node, PyObject *data) {
+
+  if (snapshot_set_uint(data, "break_pc",
+                        KosDynForeach_BREAK_PC((KosDynForeach *) node)) < 0)
+    return -1;
+  if (snapshot_set_uint(data, "continue_pc",
+                        KosDynForeach_CONTINUE_PC((KosDynForeach *) node)) < 0)
+    return -1;
+  if (snapshot_set_int(data, "enabled",
+                       KosDynForeach_ENABLED((KosDynForeach *) node)) < 0)
+    return -1;
+  if (snapshot_set_obj(data, "result",
+      KosDynForeach_RESULT((KosDynForeach *) node)) < 0)
+    return -1;
+  if (snapshot_set_obj(data, "iter",
+      KosDynForeach_ITER((KosDynForeach *) node)) < 0)
+    return -1;
+  if (snapshot_set_int(data, "exhausted",
+      KosDynForeach_EXHAUSTED((KosDynForeach *) node)) < 0)
+    return -1;
+  if (snapshot_set_uint(data, "iter_next_else_pc",
+      KosDynForeach_ITER_NEXT_ELSE_PC((KosDynForeach *) node)) < 0)
+    return -1;
+  if (snapshot_set_uint(data, "iter_step_phase",
+      KosDynForeach_ITER_STEP_PHASE((KosDynForeach *) node)) < 0)
+    return -1;
+  return 0;
+}
+
+
 /**
    Push FOREACH as DYN_TOP. Callers: opcode PUSH_FOREACH.
 */

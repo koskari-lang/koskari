@@ -57,6 +57,18 @@ void kos_dyntry_free(KosDynTry *node) {
 }
 
 
+static int dynnode_to_dict_try(KosDynNode *node, PyObject *data) {
+
+  if (snapshot_set_uint(data, "handler_pc",
+                        KosDynTry_HANDLER_PC((KosDynTry *) node)) < 0)
+    return -1;
+  if (snapshot_set_int(data, "enabled",
+                       KosDynTry_ENABLED((KosDynTry *) node)) < 0)
+    return -1;
+  return 0;
+}
+
+
 /**
    Push TRY as DYN_TOP without kos_dyn_install. Callers: opcode PUSH_TRY.
 */

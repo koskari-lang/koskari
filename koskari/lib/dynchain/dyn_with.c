@@ -148,6 +148,37 @@ static void kos_dynwith_free(KosDynWith *node) {
 }
 
 
+static int dynnode_to_dict_with(KosDynNode *node, PyObject *data) {
+
+  KosDynWith *with_node = (KosDynWith *) node;
+  if (snapshot_set_obj(data, "mgr", KosDynWith_MGR(with_node)) < 0)
+    return -1;
+  if (snapshot_set_obj(data, "enter", KosDynWith_ENTER(with_node)) < 0)
+    return -1;
+  if (snapshot_set_obj(data, "exit", KosDynWith_EXIT(with_node)) < 0)
+    return -1;
+  if (snapshot_set_obj(data, "name", KosDynWith_NAME(with_node)) < 0)
+    return -1;
+  if (snapshot_set_int(data, "entered", KosDynWith_ENTERED(with_node)) < 0)
+    return -1;
+  if (snapshot_set_int(data, "phase", (int) KosDynWith_PHASE(with_node)) < 0)
+    return -1;
+  if (snapshot_set_int(data, "shot", (int) KosDynWith_SHOT(with_node)) < 0)
+    return -1;
+  if (snapshot_set_uint(data, "resume_pc", KosDynWith_RESUME_PC(with_node)) < 0)
+    return -1;
+  if (snapshot_set_int(data, "normal_exit", KosDynWith_NORMAL_EXIT(with_node)) < 0)
+    return -1;
+  if (snapshot_set_obj(data, "exc_typ", KosDynWith_EXC_TYP(with_node)) < 0)
+    return -1;
+  if (snapshot_set_obj(data, "exc_val", KosDynWith_EXC_VAL(with_node)) < 0)
+    return -1;
+  if (snapshot_set_obj(data, "exc_tb", KosDynWith_EXC_TB(with_node)) < 0)
+    return -1;
+  return 0;
+}
+
+
 /**
    Push WITH as DYN_TOP with ENTERED=1 after sync __enter__.
 */

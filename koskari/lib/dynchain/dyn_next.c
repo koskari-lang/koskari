@@ -250,6 +250,18 @@ KosDynNext *kos_dyn_next_clone(KosDynNext *node) {
 }
 
 
+static int dynnode_to_dict_next(KosDynNode *node, PyObject *data) {
+
+  if (snapshot_set_obj(data, "agen_obj", KosDynNext_AGEN_OBJ(node)) < 0)
+    return -1;
+  if (snapshot_set_obj(data, "default_val", KosDynNext_DEFAULT_VAL(node)) < 0)
+    return -1;
+  if (snapshot_set_int(data, "n", KosDynNext_N(node)) < 0)
+    return -1;
+  return 0;
+}
+
+
 /* === GC traversal === */
 
 

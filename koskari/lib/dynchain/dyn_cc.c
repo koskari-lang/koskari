@@ -84,6 +84,13 @@ void kos_dyn_pop_cc(KosEvalState *es, KosDynCC *cc) {
 }
 
 
+static int dynnode_to_dict_cc(KosDynNode *node, PyObject *data) {
+
+  return snapshot_set_uint(data, "resume_pc",
+                           KosDynCC_RESUME_PC((KosDynCC *) node));
+}
+
+
 /* === GC traversal === */
 
 

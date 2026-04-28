@@ -63,6 +63,24 @@ void kos_dynloop_free(KosDynLoop *node) {
 }
 
 
+static int dynnode_to_dict_loop(KosDynNode *node, PyObject *data) {
+
+  if (snapshot_set_uint(data, "break_pc",
+                        KosDynLoop_BREAK_PC((KosDynLoop *) node)) < 0)
+    return -1;
+  if (snapshot_set_uint(data, "continue_pc",
+                        KosDynLoop_CONTINUE_PC((KosDynLoop *) node)) < 0)
+    return -1;
+  if (snapshot_set_int(data, "enabled",
+                       KosDynLoop_ENABLED((KosDynLoop *) node)) < 0)
+    return -1;
+  if (snapshot_set_obj(data, "result",
+      KosDynLoop_RESULT((KosDynLoop *) node)) < 0)
+    return -1;
+  return 0;
+}
+
+
 /**
    Push LOOP as DYN_TOP. Callers: opcode PUSH_LOOP.
 */

@@ -72,6 +72,33 @@ static void kos_dynyieldfrom_free(KosDynYieldFrom *node) {
 }
 
 
+static int dynnode_to_dict_yield_from(KosDynNode *node, PyObject *data) {
+
+  if (snapshot_set_uint(data, "kind",
+                        KosDynYieldFrom_KIND((KosDynYieldFrom *) node)) < 0)
+    return -1;
+  if (snapshot_set_uint(data, "pending_action",
+      KosDynYieldFrom_PENDING_ACTION((KosDynYieldFrom *) node)) < 0)
+    return -1;
+  if (snapshot_set_uint(data, "phase",
+      KosDynYieldFrom_PHASE((KosDynYieldFrom *) node)) < 0)
+    return -1;
+  if (snapshot_set_obj(data, "delegate",
+      KosDynYieldFrom_DELEGATE((KosDynYieldFrom *) node)) < 0)
+    return -1;
+  if (snapshot_set_obj(data, "pending_arg",
+      KosDynYieldFrom_PENDING_ARG((KosDynYieldFrom *) node)) < 0)
+    return -1;
+  if (snapshot_set_obj(data, "pending_arg_type",
+      KosDynYieldFrom_PENDING_ARG_TYPE((KosDynYieldFrom *) node)) < 0)
+    return -1;
+  if (snapshot_set_obj(data, "inflight",
+      KosDynYieldFrom_INFLIGHT((KosDynYieldFrom *) node)) < 0)
+    return -1;
+  return 0;
+}
+
+
 /**
    Clone delegate and pending state for continuation capture.
 */

@@ -172,6 +172,76 @@ static void kos_dynnode_return_to_freelist(KosDynNode *node) {
 }
 
 
+static int snapshot_set_item(PyObject *dict, const char *key, PyObject *value) {
+
+  if (PyDict_SetItemString(dict, key, value) < 0) {
+    Py_DECREF(value);
+    return -1;
+  }
+  Py_DECREF(value);
+  return 0;
+}
+
+
+static int snapshot_set_uint(PyObject *dict, const char *key, uint32_t value) {
+
+  return snapshot_set_item(dict, key, PyLong_FromUnsignedLong((unsigned long) value));
+}
+
+
+static int snapshot_set_int(PyObject *dict, const char *key, int value) {
+
+  return snapshot_set_item(dict, key, PyLong_FromLong((long) value));
+}
+
+
+static int snapshot_set_size(PyObject *dict, const char *key, size_t value) {
+
+  return snapshot_set_item(dict, key, PyLong_FromSize_t(value));
+}
+
+
+static int snapshot_set_obj(PyObject *dict, const char *key, PyObject *obj) {
+
+  if (! obj) {
+    Py_INCREF(Py_None);
+    return snapshot_set_item(dict, key, Py_None);
+  }
+  Py_INCREF(obj);
+  return snapshot_set_item(dict, key, obj);
+}
+
+
+static PyObject *snapshot_stack_to_list(KosStackBlock *stack) {
+
+  size_t total = 0;
+  for (KosStackBlock *b = stack; b; b = KosStackBlock_PARENT(b))
+    total += KosStackBlock_LEN(b);
+
+  if (total > (size_t) PY_SSIZE_T_MAX) {
+    PyErr_SetString(PyExc_OverflowError,
+                    "stack snapshot too large for Python list");
+    return NULL;
+  }
+
+  PyObject *out = PyList_New((Py_ssize_t) total);
+  if (! out)
+    return NULL;
+
+  Py_ssize_t idx = 0;
+  for (KosStackBlock *b = stack; b; b = KosStackBlock_PARENT(b)) {
+    size_t len = KosStackBlock_LEN(b);
+    for (size_t i = 0; i < len; i++) {
+      PyObject *item = b->objs[i];
+      Py_INCREF(item);
+      PyList_SET_ITEM(out, idx++, item);
+    }
+  }
+
+  return out;
+}
+
+
 #include "dynchain/dyn_frame.c"
 #include "dynchain/dyn_prompt.c"
 #include "dynchain/dyn_delim.c"
@@ -3889,6 +3959,122 @@ int kos_invoke_continuation(
 
   KosEvalState_SyncFromContext(es);
   return 0;
+}
+
+
+static int dynnode_to_dict_payload(KosDynNode *node, PyObject *data) {
+
+  switch (KosDynNode_KIND(node)) {
+    case KOS_DYN_FRAME:
+      return dynnode_to_dict_frame(node, data);
+    case KOS_DYN_PROMPT:
+      return dynnode_to_dict_prompt(node, data);
+    case KOS_DYN_DELIM:
+      return dynnode_to_dict_delim(node, data);
+    case KOS_DYN_WIND:
+      return dynnode_to_dict_wind(node, data);
+    case KOS_DYN_TRY:
+      return dynnode_to_dict_try(node, data);
+    case KOS_DYN_FINALLY:
+      return dynnode_to_dict_finally(node, data);
+    case KOS_DYN_LOOP:
+      return dynnode_to_dict_loop(node, data);
+    case KOS_DYN_FOREACH:
+      return dynnode_to_dict_foreach(node, data);
+    case KOS_DYN_NS:
+      return dynnode_to_dict_ns(node, data);
+    case KOS_DYN_COLLECT:
+      return dynnode_to_dict_collect(node, data);
+    case KOS_DYN_CC:
+      return dynnode_to_dict_cc(node, data);
+    case KOS_DYN_YIELD_FROM:
+      return dynnode_to_dict_yield_from(node, data);
+    case KOS_DYN_PARAM:
+      return dynnode_to_dict_param(node, data);
+    case KOS_DYN_WITH:
+      return dynnode_to_dict_with(node, data);
+    case KOS_DYN_SHIFT:
+      return dynnode_to_dict_shift(node, data);
+    case KOS_DYN_CC_RAISE:
+      return dynnode_to_dict_cc_raise(node, data);
+    case KOS_DYN_GEN:
+      return dynnode_to_dict_gen(node, data);
+    case KOS_DYN_NEXT:
+      return dynnode_to_dict_next(node, data);
+    default:
+      PyErr_Format(PyExc_RuntimeError,
+                   "unknown dynnode kind for snapshot: %u",
+                   (unsigned) KosDynNode_KIND(node));
+      return -1;
+  }
+}
+
+
+static PyObject *dynnode_to_dict_generic(KosDynNode *node) {
+
+  PyObject *out = PyDict_New();
+  if (! out)
+    return NULL;
+
+  if (snapshot_set_uint(out, "node_id", KosDynNode_NODE_ID(node)) < 0
+      || snapshot_set_item(out, "kind",
+          PyUnicode_FromString(kos_dynnode_kind_name(KosDynNode_KIND(node)))) < 0
+      || snapshot_set_obj(out, "namespace", KosDynNode_NS(node)) < 0) {
+    Py_DECREF(out);
+    return NULL;
+  }
+
+  if (KosDynNode_STACK(node)) {
+    PyObject *stack = snapshot_stack_to_list(KosDynNode_STACK(node));
+    if (! stack) {
+      Py_DECREF(out);
+      return NULL;
+    }
+    if (snapshot_set_item(out, "stack", stack) < 0) {
+      Py_DECREF(out);
+      return NULL;
+    }
+  } else if (snapshot_set_obj(out, "stack", NULL) < 0) {
+    Py_DECREF(out);
+    return NULL;
+  }
+
+  PyObject *data = PyDict_New();
+  if (! data) {
+    Py_DECREF(out);
+    return NULL;
+  }
+  if (snapshot_set_item(out, "data", data) < 0) {
+    Py_DECREF(out);
+    return NULL;
+  }
+
+  if (dynnode_to_dict_payload(node, data) < 0) {
+    Py_DECREF(out);
+    return NULL;
+  }
+
+  return out;
+}
+
+
+PyObject *kos_dynchain_snapshot_to_list(KosDynNode *node) {
+
+  PyObject *out = PyList_New(0);
+  if (! out)
+    return NULL;
+
+  for (KosDynNode *walk = node; walk; walk = KosDynNode_PARENT(walk)) {
+    PyObject *entry = dynnode_to_dict_generic(walk);
+    if (! entry || PyList_Append(out, entry) < 0) {
+      Py_XDECREF(entry);
+      Py_DECREF(out);
+      return NULL;
+    }
+    Py_DECREF(entry);
+  }
+
+  return out;
 }
 
 

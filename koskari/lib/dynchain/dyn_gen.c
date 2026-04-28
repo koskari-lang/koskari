@@ -59,6 +59,19 @@ void kos_dyngen_release(KosDynGen *gen) {
 }
 
 
+static int dynnode_to_dict_gen(KosDynNode *node, PyObject *data) {
+
+  if (snapshot_set_obj(data, "owner", KosDynGen_OWNER(node)) < 0)
+    return -1;
+  if (snapshot_set_uint(data, "active_node_id",
+      KosDynGen_ACTIVE(node) ? KosDynNode_NODE_ID(KosDynGen_ACTIVE(node)) : 0) < 0)
+    return -1;
+  if (snapshot_set_size(data, "refcount", (size_t) KosDynGen_REFCOUNT(node)) < 0)
+    return -1;
+  return 0;
+}
+
+
 /**
    Resume generator: graft GEN under ctx, swap in frozen active chain, push
    None. Callers: eval when entering generator body from consumer.
