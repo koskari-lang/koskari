@@ -35,7 +35,7 @@ RUN mkdir -p "$TOX_WORK_DIR"
 WORKDIR /src
 
 ENTRYPOINT ["tox", "-qe"]
-CMD ["py"]
+CMD ["test"]
 
 
 # The end.

@@ -30,6 +30,12 @@ spans a yield runs `after` on yield and `before` on resume).
 
 Ref: [interpreter/extent-wind-unwind.md](interpreter/extent-wind-unwind.md) (wind/unwind semantics).
 
+### DemandGenerator segfault under Python 3.9/3.10
+
+Fix the segfault in
+`tests/lib/test_demand_sync.py::TestDemandGenerator::test_yielding_function_returns_generator`
+when running under Python 3.9 and 3.10.
+
 ---
 
 ## Continuations / transfer plans
@@ -213,6 +219,12 @@ the `__help__` protocol.
 Ref: [api/builtins.md](api/builtins.md) (builtin catalog);
 [api/dunder-adapter.md](api/dunder-adapter.md) (dunder/slot pattern for `__help__`);
 [LAYOUTS.md](LAYOUTS.md) (layout syntax for layout-aware help).
+
+### CLI startup version banner and --version
+
+Add Python version, platform, and Koskari version to the Koskari CLI startup
+banner. Also add a `--version` parameter that prints the same version/platform
+information and exits.
 
 ---
 
