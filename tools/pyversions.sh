@@ -19,7 +19,7 @@ shift 2 2>/dev/null || true
 
 EXTRA_RUN_ARGS=("$@")
 if [[ -z "$EXTRA_RUN_ARGS" ]]; then
-  EXTRA_RUN_ARGS=("py")
+  EXTRA_RUN_ARGS=("test")
 fi
 
 VERSIONS="3.9 3.10 3.11 3.12 3.13 3.14"

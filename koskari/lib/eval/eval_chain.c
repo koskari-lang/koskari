@@ -257,6 +257,8 @@ int KosEvalState_SetFrameCodeAndNamespace(
 
   Py_XDECREF(KosDynFrame_NS(frame));
   KosDynFrame_NS(frame) = ns;
+  Py_XINCREF(code);
+  Py_XDECREF((PyObject *) KosDynFrame_CODE(frame));
   KosDynFrame_CODE(frame) = code;
   KosContext_NAMESPACE(ctx) = ns;
   KosEvalState_SyncFromContext(es);

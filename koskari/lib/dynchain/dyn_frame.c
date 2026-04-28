@@ -3,7 +3,8 @@
 
 
 /**
-   Allocate a FRAME node: code, namespace, stack ownership per caller.
+  Allocate a FRAME node: code, namespace, stack ownership per caller.
+  Frame takes a strong reference to code.
    Callers: internal frame construction, kos_dyn_push_frame.
 */
 KosDynFrame *kos_dynframe_new(
@@ -28,7 +29,8 @@ KosDynFrame *kos_dynframe_new(
   }
 
   kos_dynnode_init(frame, KOS_DYN_FRAME, parent, 0);
-  KosDynFrame_CODE(frame) = code;  /* borrowed */
+  Py_XINCREF(code);
+  KosDynFrame_CODE(frame) = code;  /* owned */
   KosDynFrame_PC(frame) = 0;
   KosDynFrame_ACTING_PC(frame) = 0;
   KosDynFrame_STACK(frame) = stack;  /* ownership transferred */
@@ -60,7 +62,8 @@ KosDynFrame *kos_dynframe_clone(KosDynFrame *frame) {
     return NULL;
   }
   KosDynFrame_STACK(clone) = cst;
-  KosDynFrame_CODE(clone) = KosDynFrame_CODE(frame);  /* borrowed */
+  KosDynFrame_CODE(clone) = KosDynFrame_CODE(frame);  /* owned */
+  Py_XINCREF(KosDynFrame_CODE(clone));
   KosDynFrame_PC(clone) = KosDynFrame_PC(frame);
   KosDynFrame_ACTING_PC(clone) = KosDynFrame_ACTING_PC(frame);
 
@@ -81,8 +84,9 @@ void kos_dynframe_free(KosDynFrame *frame) {
   if (! frame)
     return;
 
+  Py_XDECREF((PyObject *) KosDynFrame_CODE(frame));
+  KosDynFrame_CODE(frame) = NULL;
   Py_CLEAR(KosDynFrame_NS(frame));
-  /* code is borrowed, don't decref */
 
   kos_dynnode_return_to_freelist(frame);
 }
@@ -133,6 +137,7 @@ void kos_dynframe_reset_for_tail(KosDynFrame *frame) {
   Py_XDECREF(KosDynFrame_NS(frame));
   KosDynFrame_NS(frame) = NULL;
 
+  Py_XDECREF((PyObject *) KosDynFrame_CODE(frame));
   KosDynFrame_CODE(frame) = NULL;
   KosDynFrame_PC(frame) = 0;
   KosDynFrame_ACTING_PC(frame) = 0;
@@ -237,6 +242,7 @@ int kos_dyn_detach_top_frame(KosEvalState *es, KosDynFrame **frame_out) {
 */
 static int dynnode_traverse_frame(KosDynNode *node, visitproc visit, void *arg) {
   KosDynFrame *frame = (KosDynFrame *) node;
+  Py_VISIT(KosDynFrame_CODE(frame));
   Py_VISIT(KosDynFrame_NS(frame));
   {
     int tr = KosStackBlock_Traverse(KosDynFrame_STACK(frame), visit, arg);

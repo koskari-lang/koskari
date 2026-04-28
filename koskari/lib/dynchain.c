@@ -3766,16 +3766,19 @@ int kos_invoke_continuation(
 
   /* For multi-shot, clone the continuation */
   KosContinuation *to_use = k;
-  if (KOS_XFER_TRACE)
+  #if KOS_XFER_TRACE
     SAYF("[xfer] kos_invoke_continuation k=%p one_shot=%d captured_chain=%p",
          (void *) k, KosContinuation_ONE_SHOT(k), (void *) KosContinuation_CAPTURED_CHAIN(k));
+  #endif
   if (! KosContinuation_ONE_SHOT(k)) {
     to_use = kos_continuation_clone(k);
-    if (KOS_XFER_TRACE)
+    #if KOS_XFER_TRACE
       SAYF("[xfer] clone -> to_use=%p", (void *) to_use);
+    #endif
     if (! to_use) {
-      if (KOS_XFER_TRACE)
+      #if KOS_XFER_TRACE
         SAY("[xfer] clone failed");
+      #endif
       if (! PyErr_Occurred())
         PyErr_SetString(PyExc_RuntimeError,
                         "continuation clone failed without PyErr");
@@ -3826,22 +3829,25 @@ int kos_invoke_continuation(
   KosTransferPlan *plan = NULL;
   int res;
   if (is_delimited) {
-    if (KOS_XFER_TRACE)
+    #if KOS_XFER_TRACE
       SAYF("[xfer] kos_build_delimited_push_plan (delimited) segment=%p",
            (void *) push_segment);
+    #endif
     res = kos_build_delimited_push_plan(es, push_segment, value, is_throw,
                                         &plan);
   } else {
-    if (KOS_XFER_TRACE)
+    #if KOS_XFER_TRACE
       SAYF("[xfer] kos_build_transfer_plan current=%p target=%p (template)",
            (void *) KosContext_DYN_TOP(ctx), (void *) to_use->captured_chain);
+    #endif
     res = kos_build_transfer_plan(es, to_use->captured_chain,
                                   value, is_throw,
                                   KosContinuation_GRAFT_POINT_ID(to_use),
                                   &plan);
   }
-  if (KOS_XFER_TRACE)
+  #if KOS_XFER_TRACE
     SAYF("[xfer] plan build -> res=%d plan=%p", res, (void *) plan);
+  #endif
   if (res < 0) {
     if (ret_delim)
       kos_dyn_pop_delim(es, ret_delim);
@@ -3859,9 +3865,10 @@ int kos_invoke_continuation(
   /* DeepCopy of template stack for this invoke; released in kos_free_transfer_plan. */
   KosTransferPlan_RESUME_STACK(plan) = to_use->resume_stack
       ? KosStackBlock_DeepCopy(to_use->resume_stack) : NULL;
-  if (KOS_XFER_TRACE)
+  #if KOS_XFER_TRACE
     SAYF("[xfer] plan resume_frame=%p resume_stack=%p",
          (void *) KosTransferPlan_RESUME_FRAME(plan), (void *) KosTransferPlan_RESUME_STACK(plan));
+  #endif
 
   /* Plan replacement: one active plan at a time; discard any existing plan */
   KosEvalState_ArmTransferPlan(es, plan);

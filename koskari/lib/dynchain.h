@@ -208,7 +208,7 @@ struct KosDynNode {
 
   union {
     struct {
-      KosCode *code;
+      KosCode *code;      /* strong reference; NULL only for placeholder frames */
       uint32_t pc;        /* next instruction */
       uint32_t acting_pc; /* instruction currently being executed */
       uint32_t frame_flags;
