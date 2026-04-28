@@ -1,7 +1,8 @@
 FROM python:3.14-alpine as builder
 
 RUN apk add gcc musl-dev python3-dev
-RUN pip install uv
+RUN pip install --root-user-action=ignore --no-cache-dir --disable-pip-version-check \
+    uv
 
 WORKDIR /build
 COPY setup.py setup.cfg pyproject.toml MANIFEST.in \

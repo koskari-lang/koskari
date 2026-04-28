@@ -87,7 +87,6 @@ uninstall:  ## Uninstall package
 	@$(PYTHON) -m pip uninstall -y $(PROJECT) || true
 	@echo "Uninstallation complete"
 
-
 ##@ Development
 
 test: handlers  ## Run tests on current Python version via tox
@@ -159,6 +158,14 @@ test-py313: handlers  ## Run tests in container for Python 3.13
 test-py314: handlers  ## Run tests in container for Python 3.14
 	@$(call checkfor,$(CONTAINER_ENGINE))
 	@tools/pyversions.sh $(CONTAINER_ENGINE) 3.14 $(RUN_ARGS)
+
+
+##@ Runtime Container
+
+build-container:  ## Build koskari runtime container image
+	@echo "Building koskari container image..."
+	@$(CONTAINER_ENGINE) build -t $(PROJECT):$(VERSION) -f Containerfile .
+	@echo "Container image $(PROJECT):$(VERSION) built"
 
 
 ##@ Code Quality
