@@ -169,7 +169,6 @@ static PyObject *get_await_next(PyObject *val) {
    :return: 0 continue, -1 error
 */
 static inline int push_result(KosEvalState *es, PyObject *val) {
-
   if (unlikely(! val))
     return -1;
   return KosEvalState_StackPUSH(es, val);
@@ -303,13 +302,11 @@ static inline int op_push_or_await(
   return -1;
 }
 
-
 #undef OP_TRY_FUSE_POP1_AFTER_PUSH
 
 
 /* Public wrapper for external callers; delegates to static push_or_await. */
 int kos_push_or_await(KosEvalState *es, KosEvent *out_ev, PyObject *val) {
-
   return push_or_await(es, out_ev, val);
 }
 
@@ -619,51 +616,5 @@ static inline KosGetNextResult op_get_next_from_iter(
   return GET_NEXT_ERROR;
 }
 
-/* === KosEvaluatorToken (static implementation) === */
 
-/* === KosEvaluatorToken type === */
-
-static uint64_t token_cookie_counter = 0;
-
-static PyObject *token_repr(PyObject *self) {
-  KosEvaluatorToken *t = (KosEvaluatorToken *) self;
-  return PyUnicode_FromFormat("<KosEvaluatorToken cookie=%llu live_depth=%d>",
-                              (unsigned long long) t->cookie,
-                              t->live_depth);
-}
-
-PyTypeObject KosEvaluatorTokenType = {
-  PyVarObject_HEAD_INIT(NULL, 0)
-  .tp_name = "koskari.lib.EvaluatorToken",
-  .tp_basicsize = sizeof(KosEvaluatorToken),
-  .tp_itemsize = 0,
-  .tp_repr = token_repr,
-  .tp_flags = Py_TPFLAGS_DEFAULT,
-};
-
-
-static KosEvaluatorToken *
-evaluator_token_new(void) {
-
-  KosEvaluatorToken *token = PyObject_New(KosEvaluatorToken,
-                                          &KosEvaluatorTokenType);
-
-  if (! token)
-    return NULL;
-
-  token->cookie = (uint64_t) __sync_add_and_fetch(&token_cookie_counter, 1);
-  token->live_depth = 0;
-  return token;
-}
-
-
-void KosEvaluatorToken_IncrementLiveDepth(KosEvaluatorToken *token) {
-  if (token)
-    token->live_depth++;
-}
-
-
-void KosEvaluatorToken_DecrementLiveDepth(KosEvaluatorToken *token) {
-  if (token && token->live_depth > 0)
-    token->live_depth--;
-}
+// The end.
