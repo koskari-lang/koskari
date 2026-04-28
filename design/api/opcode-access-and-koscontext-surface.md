@@ -5023,9 +5023,9 @@ Opcode handlers are the only scope for Part 1 (when it was current). The API bel
 | `KosContext_SetFast` | **`KosEvalState_SetFast`** | |
 | `KosContext_StackPushRef` / pop / tail / dict / steal / peek / len / drop / duplicate / clear block | **`KosEvalState_Stack*`** family in `eval.h` (`StackPushRef`, `StackPopRef`, `StackPopTail`, `StackSteal_Tail`, `StackPUSH`, `ParentStack*`, …) | All use **`KosContext_BLOCK(ctx)`** internally. |
 | `KosContext_StackPushBlock` / `StackDropBlock` | **No `KosEvalState_*` wrapper** | **`KosStackBlock_PushBlock` / `DropBlock`** still exist in `stack.c`, but opcode paths typically allocate stack segments via **`kos_dyn_push_*`** / region setup, not a standalone context helper. Treat Part 2 wording as **conceptual**. |
-| `KosContext_GetFramePc` (read/write PC) | **`KosEvalState_GetFramePc`**, **`KosEvalState_SetFramePc`**, **`KosEvalState_GetActingPc`**, **`KosEvalState_SetActingPc`** | |
+| `KosContext_GetFramePc` (read/write PC) | **`KosEvalState_PC`**, **`KosEvalState_SET_PC`**, **`KosEvalState_ACTING_PC`** (macros; `acting_pc` set only by instruction fetch; live regs on `KosEvalState` until freeze) | |
 | `KosContext_CurrentNamespace` | **`KosEvalState_CurrentNamespace`** | Also **`KosEvalState_CurrentCode`**. |
-| `KosContext_CallableCall` | **`KosEvalState_Call`**, **`KosEvalState_CallArgs`**, **`KosEvalState_CallNoArgs`** | Underlying Koskari callables use **`KosCallable_Call`** / **`KosCallable_CallArgs`** (`callable.c`) with **`KosContext *`**. |
+| `KosContext_CallableCall` | **`KosEvalState_Call`**, **`KosEvalState_CallArgs`**, **`KosEvalState_CallNoArgs`** | Underlying Koskari callables use **`KosCallable_Call`** / **`KosCallable_CallArgs`** (`callable.c`) with **`KosEvalState *`** (install slots and native handlers take **`es`** first; use **`KosEvalState_CONTEXT(es)`** for heap context). |
 | `KosContext_DynTop` | **`KosContext_DYN_TOP`** macro (+ **`kos_dyn_*`**) | Not a function; **`KosEvalState_RefreshDynCaches`** / **`KosEvalState_InnermostStackOwner`** for cache discipline. |
 | `KosContext_TransferPlan` | **`KosContext_PLAN`**, **`KosContext_PLAN_STACK`**, **`KosContext_FLAGS`** macros | |
 | `KosContext_PendingReturn` | **`KosContext_PENDING_RETURN_*`** macros | |

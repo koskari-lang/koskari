@@ -14,30 +14,24 @@
 */
 
 /**
-   POP_COLLECT: arg unused. Verify dyn_top is KOS_DYN_COLLECT, restore
-   frame ns from saved_ns, pop the node, push the collected namespace
-   onto the value stack.
+   POP_COLLECT: arg unused. Verify dyn_top is KOS_DYN_COLLECT, pop the node,
+   and push the collected namespace onto the value stack.
 */
 
 KOS_OP_HANDLER(POP_COLLECT) {
-  KosContext *ctx = KosEvalState_CONTEXT(es);
   (void) out_ev;
   (void) insn;
 
-  if (unlikely(! KosContext_DYN_TOP(ctx) ||
-               ! KosDynNode_IS_COLLECT(KosContext_DYN_TOP(ctx)))) {
+  KosDynNode *top = KosEvalState_CurrentNode(es);
+  if (unlikely(! top || ! KosDynNode_IS_COLLECT(top))) {
     PyErr_SetString(PyExc_RuntimeError,
                     "POP_COLLECT: top is not a collector scope");
     return KOS_OP_POST_ERR();
   }
 
-  KosDynCollect *col_node = (KosDynCollect *) KosContext_DYN_TOP(ctx);
-  PyObject *prior = KosDynCollect_SAVED_NS(col_node);
-  PyObject *collector = CURRENT_NS(ctx);
-  Py_INCREF(prior);
+  KosDynCollect *col_node = (KosDynCollect *) top;
+  PyObject *collector = KosDynNode_NS(col_node);
   Py_INCREF(collector);
-  Py_DECREF(CURRENT_NS(ctx));
-  CURRENT_NS(ctx) = prior;
 
   kos_dyn_pop_collect(es, col_node);
 

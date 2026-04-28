@@ -50,5 +50,5 @@ KOS_OP_HANDLER(OBJECT_IS_SUBCLASS) {
 
   PyObject *out = (res ? Py_True : Py_False);
   Py_INCREF(out);
-  return kos_op_outcome_from_int_step(push_result(es, out));
+  return kos_op_outcome_PUSH(es, out);
 }

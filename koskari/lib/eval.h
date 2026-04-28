@@ -37,6 +37,7 @@
 #include <string.h>
 
 #include "dynchain.h"
+#include "tracing.h"
 
 
 /* === KosEvaluatorToken === */
@@ -57,7 +58,6 @@ struct KosEvaluatorToken {
 
 extern PyTypeObject KosEvaluatorTokenType;
 
-KosEvaluatorToken *KosEvaluatorToken_New(void);
 void KosEvaluatorToken_IncrementLiveDepth(KosEvaluatorToken *token);
 void KosEvaluatorToken_DecrementLiveDepth(KosEvaluatorToken *token);
 
@@ -178,6 +178,17 @@ typedef enum KosEvalStep {
   KOS_STEP_STOP_EVENT,
   KOS_STEP_FATAL_ERROR,
 } KosEvalStep;
+
+
+/**
+  Result of op_get_next_from_iter and low-level iter helpers.
+*/
+typedef enum KosGetNextResult {
+  GET_NEXT_VALUE,
+  GET_NEXT_EXHAUSTED,
+  GET_NEXT_SUSPEND,
+  GET_NEXT_ERROR
+} KosGetNextResult;
 
 
 /**
@@ -316,7 +327,7 @@ typedef struct KosEvalResult {
   Transfer plan execution is tracked via the plan/plan_stack fields.
 
   Ownership and lifecycle:
-  - A context is created via kos_context_new and freed via kos_context_free.
+  - A context is created via KosContext_New and destroyed via KosContext_Free.
   - The context owns its dynamic chain and associated state.
   - While RUNNING, exactly one Python wrapper (KosPyCoroutine) may own it.
 
@@ -339,6 +350,7 @@ struct KosContext {
   KosDynFrame *frame_top;    /* cached topmost frame (for fast access) */
 
   KosStackBlock **block;     /* non-owning: &innermost dynnode stack; see KosEvalState_RefreshDynCaches */
+  PyObject *namespace;       /* borrowed: active namespace object */
 
   KosDynFrame *globals_frame;     /* cached outermost frame (for op_GLOBALS) */
   uint32_t globals_cache_version; /* chain_version when globals_frame was set */
@@ -384,6 +396,7 @@ struct KosContext {
 #define KosContext_DYN_TOP(c)                (((KosContext *)(c))->dyn_top)
 #define KosContext_FRAME_TOP(c)              (((KosContext *)(c))->frame_top)
 #define KosContext_BLOCK(c)                  (((KosContext *)(c))->block)
+#define KosContext_NAMESPACE(c)              (((KosContext *)(c))->namespace)
 #define KosContext_GLOBALS_FRAME(c)          (((KosContext *)(c))->globals_frame)
 #define KosContext_GLOBALS_CACHE_VERSION(c)  (((KosContext *)(c))->globals_cache_version)
 #define KosContext_TOKEN(c)                  (((KosContext *)(c))->token)
@@ -423,43 +436,299 @@ struct KosContext {
   model. Part 2 of design/api/opcode-access-and-koscontext-surface.md lists
   opcode-level responsibilities consolidated under this API surface.
 
-  Call KosEvalState_Init before use; call KosEvalState_SyncFromContext when
-  ctx->frame_top may have changed without updating this struct.
+  Call KosEvalState_Init before use; both KosEvalState_Init and
+  KosEvalState_SyncFromContext are declared in this header and implemented in
+  eval/eval_state*.c fragments (included into eval.c via eval/eval_state.c).
+  After chain
+  surgery, prefer KosEvalState_PatchDynCaches after a single-node push,
+  KosEvalState_RefreshDynCaches for pops and other edits, and
+  KosEvalState_ApplyDynCaches on the kos_dyn_* commit paths; the full mirror
+  reload KosEvalState_SyncFromContext remains for existing call sites, not for
+  new code.
 
   Execution model (live vs cold storage):
   - KosEvalState is the only supported handle for mutating the dynamic chain
     from opcode handlers, callable helpers, and eval drivers: use
     kos_dyn_*(KosEvalState *, ...) (and related helpers) declared in dynchain.h.
-    Call KosEvalState_SyncFromContext after context mutation when the live
-    eval slice must see updated frame/code caches.
+    Chain changes must go through those commit paths: they flush live PCs to
+    the outgoing frame, mutate ctx, recompute frame_top/block, then
+    KosEvalState_ApplyDynCaches. The RUN hot path and post-Apply paths keep
+    es coherent without ad-hoc resync on every dispatch prologue.
   - KosContext remains the heap-allocated VM state owned by a coroutine,
     async generator, or continuation segment. It is authoritative for dyn_top,
-    frame_top, and related fields; KosEvalState caches frame/code for the hot
-    path and must stay aligned via Init/Sync.
+    frame_top, and block (cold storage). While running, KosEvalState mirrors
+    frame, code, block, and holds the sole live pc and acting_pc registers.
+    Heap KosDynFrame pc slots are updated only at freeze boundaries (e.g.
+  KosEvalState_FlushLiveRegsToFrame before chain surgery or koskari_eval
+  exit). Init loads cold frame values into es; incremental cache updates
+  refresh es when frame_top or block change without clobbering live pc when
+  the code pointer still matches.
+
+  With KOS_TRACE_EVAL_SYNC, call counts and total wall time per sync API are
+  recorded for kos_trace_report / get_trace_report under eval_state_sync.
 */
 
 struct KosEvalState {
   KosContext *ctx;
   KosDynFrame *frame; /* cached top frame; maintained by Init/Sync */
   KosCode *code;      /* cached from frame */
+  KosStackBlock **block; /* mirror of ctx->block; non-owning */
+  PyObject *namespace;   /* mirror of ctx->namespace; borrowed */
+  uint32_t pc;        /* live next-instruction PC (freeze copies to frame) */
+  uint32_t acting_pc; /* live acting PC (freeze copies to frame) */
 };
 
 
 #define KosEvalState_CONTEXT(es) ((es)->ctx)
 #define KosEvalState_FRAME(es) ((es)->frame)
 #define KosEvalState_CODE(es) ((es)->code)
+#define KosEvalState_BLOCK(es) ((es)->block)
+#define KosEvalState_NAMESPACE(es) ((es)->namespace)
+
+/** Live next-instruction PC on es only; use KosEvalState_SET_PC to assign. */
+#define KosEvalState_PC(es) ((es)->pc)
+/** Instruction currently executing (last fetch); live on es only. */
+#define KosEvalState_ACTING_PC(es) ((es)->acting_pc)
+#define KosEvalState_SET_PC(es, v) ((void)((es)->pc = (uint32_t)(v)))
+
+
+/**
+  Operand stack head block for logging; NULL when no stack.
+*/
+#define KosEvalState_StackHead(es) \
+  ((KosEvalState_BLOCK(es) && *(KosEvalState_BLOCK(es))) \
+   ? (*(KosEvalState_BLOCK(es))) \
+   : (KosStackBlock *) NULL)
+
+
+#define KosEvalState_CurrentNode(es) \
+  KosContext_DYN_TOP(KosEvalState_CONTEXT(es))
+
+#define KosEvalState_CurrentCode(es) KosEvalState_CODE(es)
+
+#define KosEvalState_CurrentNamespace(es) KosEvalState_NAMESPACE(es)
+
+#define KosEvalState_StackPushRef(es, val) \
+  KosStackBlock_PushRef(KosEvalState_BLOCK(es), (val))
+
+#define KosEvalState_StackPUSH(es, val) \
+  KosStackBlock_PUSH(KosEvalState_BLOCK(es), (val))
+
+#define KosEvalState_StackPopRef(es) \
+  KosStackBlock_PopRef(KosEvalState_BLOCK(es))
+
+#define KosEvalState_GetFast(es, index) \
+  KosNamespace_FastDeref(KosEvalState_CurrentNamespace(es), (index))
+
+#define KosEvalState_SetFast(es, index, value) \
+  KosNamespace_FastStore(KosEvalState_CurrentNamespace(es), (index), (value))
+
+#define KosEvalState_GetVar(es, key) \
+  KosNamespace_Deref(KosEvalState_CurrentNamespace(es), (key))
+
+#define KosEvalState_StackSteal_Tail(es, s, count) \
+  KosStackSteal_Tail((s), (count), KosEvalState_BLOCK(es))
+
+#define KosEvalState_StackSteal_TailPrepend(es, s, prefix, count) \
+  KosStackSteal_TailPrepend((s), (prefix), (count), KosEvalState_BLOCK(es))
+
+#define KosEvalState_StackPopTail(es, count) \
+  KosStackBlock_PopTail(KosEvalState_BLOCK(es), (count))
+
+#define KosEvalState_StackTailPtr(es, count) \
+  KosStackBlock_TailPtr(*KosEvalState_BLOCK(es), (count))
+
+#define KosEvalState_StackLen(es) \
+  KosStackBlock_LEN(*KosEvalState_BLOCK(es))
+
+#define KosEvalState_StackDrop(es, count) \
+  KosStackBlock_Drop(KosEvalState_BLOCK(es), (count))
+
+#define KosEvalState_StackDrop1(es) \
+  KosStackBlock_Drop1(KosEvalState_BLOCK(es))
+
+#define KosEvalState_StackDropNoErr(es, count) \
+  KosStackBlock_DropNoErr(KosEvalState_BLOCK(es), (count))
+
+#define KosEvalState_StackClearBlock(es) \
+  KosStackBlock_ClearBlock(KosEvalState_BLOCK(es))
+
+#define KosEvalState_StackDuplicate(es, count) \
+  KosStackBlock_Duplicate(KosEvalState_BLOCK(es), (count))
+
+#define KosEvalState_StackPopTailDict(es, count) \
+  KosStackBlock_PopTailDict(KosEvalState_BLOCK(es), (count))
+
+#define KosEvalState_StackPopTailDictNames(es, count) \
+  KosStackBlock_PopTailDictNames(KosEvalState_BLOCK(es), (count))
+
+#define KosEvalState_StackPopTailDictFromNames(es, names) \
+  KosStackBlock_PopTailDictFromNames(KosEvalState_BLOCK(es), (names))
+
+#define KosEvalState_StackPeek(es) \
+  KosStackBlock_Peek(*KosEvalState_BLOCK(es))
+
+#define KosEvalState_StackPeekAt(es, index) \
+  KosStackBlock_PeekAt(*KosEvalState_BLOCK(es), (index))
+
+#define KosEvalState_StackPopTailPtr(es, count, dest) \
+  KosStackBlock_PopTailPtr(KosEvalState_BLOCK(es), (count), (dest))
+
+#define KosEvalState_SetSuspensionEvent(es, ev) \
+  ((void)(KosContext_SUSPENSION_EVENT(KosEvalState_CONTEXT(es)) = (ev)))
+
+#define KosEvalState_ClearSuspensionEvent(es) \
+  ((void)(KosContext_SUSPENSION_EVENT(KosEvalState_CONTEXT(es)) \
+          = KOS_SUSP_NONE))
+
+#define KosEvalState_SuspensionEvent(es) \
+  KosContext_SUSPENSION_EVENT(KosEvalState_CONTEXT(es))
+
+#define KosEvalState_SuspendActivePlan(es) kos_suspend_transfer_plan(es)
+
+#define KosEvalState_ResumeSuspendedPlan(es) kos_resume_transfer_plan(es)
+
+#define KosEvalState_MarkSuspendedNotRunning(es) \
+  do { \
+    KosContext *kos_ctx_mark_sr_ = KosEvalState_CONTEXT(es); \
+    KosContext_FLAGS(kos_ctx_mark_sr_) &= ~KOS_CTX_RUNNING; \
+  } while (0)
+
+#define KosEvalState_MarkDeadAfterYield(es) \
+  do { \
+    KosContext *kos_ctx_mark_dy_ = KosEvalState_CONTEXT(es); \
+    KosContext_FLAGS(kos_ctx_mark_dy_) &= ~KOS_CTX_RUNNING; \
+    KosContext_FLAGS(kos_ctx_mark_dy_) |= KOS_CTX_DEAD; \
+  } while (0)
+
+#define KosEvalState_MarkDeadAfterReturn(es) \
+  do { \
+    KosContext *kos_ctx_mark_dr_ = KosEvalState_CONTEXT(es); \
+    KosContext_FLAGS(kos_ctx_mark_dr_) &= ~KOS_CTX_RUNNING; \
+    KosContext_FLAGS(kos_ctx_mark_dr_) |= KOS_CTX_DEAD; \
+  } while (0)
+
+#define kos_frame_new(code, ns, stack, parent) \
+  kos_dynframe_new((parent), (code), (ns), (stack))
+
+#define kos_frame_clone(frame) kos_dynframe_clone(frame)
+
+#define kos_frame_free(frame) kos_dynframe_free(frame)
 
 
 void KosEvalState_Init(KosEvalState *es, KosContext *ctx);
-void KosEvalState_SyncFromContext(KosEvalState *es);
+
 
 /**
-  Recompute ctx->frame_top and ctx->block from the dynamic chain after
-  dyn_top / chain changes. Does not update es->frame/code; call
-  KosEvalState_SyncFromContext afterward when the live eval slice must see
-  the new caches.
+  Reload es from KosEvalState_CONTEXT(es) when frame_top, block, or code on the
+  heap may differ from the es cache (full mirror reload versus incremental
+  KosEvalState_RefreshDynCaches / KosEvalState_ApplyDynCaches). Implemented in
+  eval/eval_state*.c included into eval.c). Prefer structured cache updates on
+  kos_dyn_* commit paths for new
+  code; this remains for existing call sites until they are rewired.
+*/
+
+void KosEvalState_SyncFromContext(KosEvalState *es);
+
+
+/**
+  Freeze live pc and acting_pc from es onto the current heap frame before the
+  chain or current-frame pointer changes, or before another subsystem reads
+  frame PC slots. No-op when es has no frame.
+*/
+static inline void KosEvalState_FlushLiveRegsToFrame(KosEvalState *es) {
+
+  KosDynFrame *f;
+
+  KOS_TRACE_EVAL_SYNC_BEGIN();
+
+  f = KosEvalState_FRAME(es);
+  if (! f)
+    goto done;
+  KosDynFrame_PC(f) = (es)->pc;
+  KosDynFrame_ACTING_PC(f) = (es)->acting_pc;
+
+done:
+  KOS_TRACE_EVAL_SYNC_END(KOS_TEVS_flush_live_regs);
+}
+
+
+/**
+  After RecomputeFrameTopAndBlock, mirror ctx->frame_top, ctx->block, and
+  ctx->namespace into es. If the frame pointer changed, flush live
+  pc/acting_pc onto the outgoing cached frame, then load code and PCs from
+  the new frame. If only block/namespace changed, update es caches without
+  clobbering pc/acting_pc.
+*/
+void KosEvalState_ApplyDynCaches(KosEvalState *es);
+
+
+/**
+  Recompute ctx->frame_top, ctx->block, and ctx->namespace from the
+  dynamic chain after
+  dyn_top / chain changes, then apply them to es (incremental; avoids a full
+  context-wide mirror reload when frame and PCs are already coherent).
 */
 void KosEvalState_RefreshDynCaches(KosEvalState *es);
+
+
+/**
+  Trusting push-only derived-cache update: caller guarantees new_node is already
+  KosContext_DYN_TOP and that the chain gained exactly this head (no pop or
+  splice). Walk-free. Frame nodes refresh frame_top, block, and namespace from
+  that frame; non-frame nodes optionally refresh namespace and/or block slots
+  when present on the node. Always ends with KosEvalState_ApplyDynCaches.
+*/
+void KosEvalState_PatchDynCaches(KosEvalState *es, KosDynNode *new_node);
+
+
+/**
+  Commit contract for dynchain: do not assign to ctx dyn fields and return
+  to the eval loop without going through a kos_dyn_* path that ends in
+  KosEvalState_PatchDynCaches, KosEvalState_RefreshDynCaches, or
+  KosEvalState_SyncFromContext after failure recovery. Builds with
+  KOS_DEBUG_PATCH_DYN_CACHES compare PatchDynCaches against Refresh for drift.
+*/
+
+
+/**
+  Replace any active transfer plan with plan and set KOS_CTX_IN_TRANSFER.
+  plan must be non-NULL. Frees the previous plan if present.
+*/
+void KosEvalState_ArmTransferPlan(KosEvalState *es, KosTransferPlan *plan);
+
+/**
+  Stage return value for async unwind / parent delivery. to_parent is 0 or 1.
+  Refcount semantics match direct assignments to ctx (no extra INCREF).
+*/
+void KosEvalState_SetPendingReturn(
+    KosEvalState *es,
+    PyObject *val,
+    int to_parent);
+
+/**
+  Target frame for resume after async dynamic-wind pop (KOS_DYN_UNWIND_ASYNC_STARTED).
+*/
+void KosEvalState_SetUnwindTargetFrame(KosEvalState *es, KosDynFrame *frame);
+
+int KosEvalState_SetFrameCodeAndNamespace(
+    KosEvalState *es,
+    KosDynFrame *frame,
+    KosCode *code,
+    PyObject *ns);
+
+KosEvaluatorToken *KosEvalState_Token(const KosEvalState *es);
+
+/**
+  Eval-facing dynamic-chain transition dispatcher; implemented in
+  eval/eval_transition.c included into eval.c. On -1, performs a single
+  KosEvalState_SyncFromContext when es is non-NULL (internal paths do not sync).
+*/
+int KosEvalState_Transition(
+    KosEvalState *es,
+    const KosTransitionReq *req,
+    KosTransitionResult *out,
+    KosEvent *out_ev);
 
 /**
   Innermost dyn node that owns a non-NULL operand stack (from dyn_top toward
@@ -467,56 +736,12 @@ void KosEvalState_RefreshDynCaches(KosEvalState *es);
 */
 KosDynNode *KosEvalState_InnermostStackOwner(KosEvalState *es);
 
-KosCode *KosEvalState_CurrentCode(const KosEvalState *es);
-PyObject *KosEvalState_CurrentNamespace(const KosEvalState *es);
+void KosEvalState_PythonAwaitClearIter(KosEvalState *es);
+PyObject *KosEvalState_PythonAwaitIter(KosEvalState *es);
+void KosEvalState_PythonResumeSet(KosEvalState *es, PyObject *val, uint8_t kind);
 
-uint32_t KosEvalState_GetFramePc(const KosEvalState *es);
-int KosEvalState_SetFramePc(KosEvalState *es, uint32_t pc);
-uint32_t KosEvalState_GetActingPc(const KosEvalState *es);
-int KosEvalState_SetActingPc(KosEvalState *es, uint32_t pc);
-
-PyObject *KosEvalState_GetConstant(const KosEvalState *es, uint32_t index);
-
-int KosEvalState_StackPushRef(KosEvalState *es, PyObject *val);
-PyObject *KosEvalState_StackPopRef(KosEvalState *es);
-
-/**
-  Tail steal into s (stack mutation). Caller must KosStackSteal_Free(s).
-*/
-int KosEvalState_StackSteal_Tail(KosEvalState *es, KosStackSteal *s, size_t count);
-int KosEvalState_StackSteal_TailPrepend(
-    KosEvalState *es,
-    KosStackSteal *s,
-    PyObject *prefix,
-    size_t count);
-
-/**
-  Push stolen reference (KosStackBlock_PUSH semantics). Opcode/dynchain paths
-  should use this instead of KosStackBlock_PUSH on the current operand slot.
-*/
-int KosEvalState_StackPUSH(KosEvalState *es, PyObject *val);
 int KosEvalState_ParentStackPushRef(KosEvalState *es, PyObject *val);
 int KosEvalState_ParentStackPUSH(KosEvalState *es, PyObject *val);
-
-PyObject *KosEvalState_StackPopTail(KosEvalState *es, size_t count);
-PyObject *const *KosEvalState_StackTailPtr(KosEvalState *es, size_t count);
-size_t KosEvalState_StackLen(KosEvalState *es);
-int KosEvalState_StackDrop(KosEvalState *es, size_t count);
-int KosEvalState_StackDrop1(KosEvalState *es);
-void KosEvalState_StackDropNoErr(KosEvalState *es, size_t count);
-int KosEvalState_StackClearBlock(KosEvalState *es);
-int KosEvalState_StackDuplicate(KosEvalState *es, size_t count);
-PyObject *KosEvalState_StackPopTailDict(KosEvalState *es, size_t count);
-PyObject *KosEvalState_StackPopTailDictNames(KosEvalState *es, size_t count);
-PyObject *KosEvalState_StackPopTailDictFromNames(KosEvalState *es, PyObject *names);
-PyObject *KosEvalState_StackPeek(KosEvalState *es);
-PyObject *KosEvalState_StackPeekAt(KosEvalState *es, Py_ssize_t index);
-int KosEvalState_StackPopTailPtr(KosEvalState *es, size_t count, PyObject **dest);
-
-PyObject *KosEvalState_GetFast(const KosEvalState *es, size_t index);
-int KosEvalState_SetFast(KosEvalState *es, size_t index, PyObject *value);
-
-PyObject *KosEvalState_GetVar(const KosEvalState *es, PyObject *key);
 
 
 /**
@@ -524,8 +749,8 @@ PyObject *KosEvalState_GetVar(const KosEvalState *es, PyObject *key);
   Same layout contract as KOS_STACK_BLOCK_POP_ARGS in stack.h.
 */
 #define KOS_EVALSTATE_POP_ARGS(es, agg) \
-  KosEvalState_StackPopTailPtr( \
-      (es), \
+  KosStackBlock_PopTailPtr( \
+      KosEvalState_BLOCK(es), \
       sizeof(agg) / sizeof(PyObject *), \
       (PyObject **)(void *)&(agg))
 
@@ -540,61 +765,35 @@ PyObject *KosEvalState_GetVar(const KosEvalState *es, PyObject *key);
 
   :return: new context, or NULL on error
 */
-KosContext *kos_context_new(KosDynFrame *top);
+KosContext *KosContext_New(KosDynFrame *top);
 
 
 /**
-  Free an execution context and all its resources.
+  Destroy an execution context and release all resources it owns.
 
-  Frees the entire dynamic chain, any active transfer plan, and
-  the hook runner scratch stack.
+  This runs real teardown, not only releasing the struct: freeing the
+  dynamic chain walks every node and runs kind-specific free logic
+  (including Py_DECREF on Python objects held by dyn nodes). That can
+  invoke arbitrary Python code via destructors. It does not start
+  koskari_eval or execute bytecode. Before walking the chain, KosEvalState_Init
+  and KosEvalState_FlushLiveRegsToFrame run so frame PCs reflect the last
+  live eval snapshot.
 
-  :param ctx: context to free (may be NULL)
+  Also frees active and stacked transfer plans, clears await/resume and
+  inject fields, and drops domain and pending return state. The context
+  record is returned to an internal freelist or PyMem_Free.
+
+  :param ctx: context to destroy; NULL is a no-op
 */
-void kos_context_free(KosContext *ctx);
+void KosContext_Free(KosContext *ctx);
 
 
 /* === Frame management === */
 
-
 /**
-  Create a new frame.
-
-  This is a convenience wrapper around kos_dynframe_new.
-
-  :param code: bytecode object (borrowed)
-  :param ns: namespace (reference is stolen)
-  :param stack: operand stack (ownership transferred), or NULL
-  :param parent: parent node in dynamic chain (or NULL)
-
-  :return: new frame, or NULL on error
+  kos_frame_new, kos_frame_clone, and kos_frame_free are macros in this
+  header (wrappers around kos_dynframe_*).
 */
-KosFrame *kos_frame_new(
-    KosCode *code,
-    PyObject *ns,
-    KosStackBlock *stack,
-    KosDynNode *parent);
-
-
-/**
-  Clone a frame for continuation capture.
-
-  Clones the frame's stack using DeepCopy semantics.
-
-  :param frame: frame to clone
-
-  :return: cloned frame, or NULL on error
-*/
-KosFrame *kos_frame_clone(KosFrame *frame);
-
-
-/**
-  Free a frame and its resources.
-
-  :param frame: frame to free (may be NULL)
-*/
-void kos_frame_free(KosFrame *frame);
-
 
 /* === Drive loop === */
 
@@ -649,56 +848,13 @@ PyObject *kos_domain_current(void);
 /* === GC helpers for Python wrappers === */
 
 /**
-  Traverse a KosStackBlock chain for GC.
-
-  This is used by Python wrapper types (KosCoroutine, etc.) to
-  implement tp_traverse. It visits all PyObject* values held in
-  the stack blocks.
-
-  :param block: the head of the block chain
-  :param visit: the visitproc callback
-  :param arg: the opaque arg for visit
-
-  :return: 0 on success, non-zero if visit returns non-zero
-*/
-int kos_stackblock_traverse(
-    KosStackBlock *block,
-    visitproc visit,
-    void *arg);
-
-
-/**
-  Traverse a KosFrame for GC.
-
-  :param frame: frame to traverse
-  :param visit: visitproc callback
-  :param arg: opaque arg for visit
-
-  :return: 0 on success, non-zero if visit returns non-zero
-*/
-int kos_frame_traverse(KosFrame *frame, visitproc visit, void *arg);
-
-
-/**
   Traverse a KosContext for GC.
 
   Visits all Python objects reachable from the context.
 
   :return: 0 on success, non-zero if visit returns non-zero
 */
-int kos_context_traverse(KosContext *ctx, visitproc visit, void *arg);
-
-
-/**
-  Close the delegate of a YIELD_FROM dyn node (on unwind/error).
-  Called from dynchain.c when popping KOS_DYN_YIELD_FROM. Does not free the node.
-*/
-void kos_yieldfrom_close_delegate(KosDynYieldFrom *node);
-
-
-int kos_complete_pending_with_exit(KosContext *ctx);
-int kos_complete_pending_with_exit_semantic(KosContext *ctx);
-void kos_clear_pending_with_exit(KosContext *ctx);
+int KosContext_Traverse(KosContext *ctx, visitproc visit, void *arg);
 
 
 /* === Exception types === */
@@ -715,9 +871,9 @@ extern PyObject *KoskariContinuationError;
    KosEvalState_Call: generic call entry point with vectorcall-style args.
 
    Accepts any PyObject* callable. Performs KosCallable_Check; if true,
-   dispatches to KosCallable_Call after applying frame behavior per
-   wants_frame and tail_call. If false, invokes PyObject_Vectorcall and
-   kos_push_or_await.
+   dispatches to KosCallable_Call with the same es after applying frame
+   behavior per wants_frame and tail_call. If false, invokes
+   PyObject_Vectorcall and KosEvalState_PushOrAwait.
 
    Frame matrix (when KosCallable): wants_frame+tail -> reset; wants_frame+!tail
    -> create; !wants_frame+tail -> drop; !wants_frame+!tail -> no change.
@@ -772,34 +928,36 @@ int KosEvalState_CallNoArgs(
 
 
 /**
-   Replace the current frame with a new one (code, ns). Used for tail calls.
-   Caller owns ns; refcount unchanged on success.
-*/
-int kos_tail_koscall(KosContext *ctx, KosCode *code, PyObject *ns);
-
-
-/**
    Push val onto the current frame stack, or if val is awaitable run one step
    and either push the result or suspend with KOS_EV_AWAIT.
 
-   val is consumed (ownership transferred). Internal helper; stolen refs
-   are acceptable here.
+   Use from code outside opcode dispatch that must not apply the CALL* POP,1
+   peephole. Implementation: koskari/lib/eval/eval_utils.c included into the
+   eval translation unit.
 
-   CALL* opcodes use a separate eval.c entry (op_push_or_await) that may
-   elide push plus a trailing POP,1; this API is unchanged for other callers.
+   CALL* opcodes use a separate static op_push_or_await in the same translation
+   unit, which may elide push plus a trailing POP,1.
+
+   val is consumed (ownership transferred).
 
    :return: 0 continue, 1 stop (AWAIT), -1 error
 */
-int kos_push_or_await(KosEvalState *es, KosEvent *out_ev, PyObject *val);
+int KosEvalState_PushOrAwait(
+    KosEvalState *es, KosEvent *out_ev, PyObject *val);
 
 
 /**
    Move current PyErr into out_ev as KOS_EV_RAISE with injected traceback,
    clear the thread error state, and mark the context dead.  Call only when
    PyErr is set.  Used by dynchain local-exception delivery when unwinding
-   does not find a handler.
+   does not find a handler.  When es is non-NULL, flushes live pc/acting_pc
+   onto the top frame first so traceback and heap introspection see the
+   current instruction.
 */
-void kos_eval_emit_raise_from_pyerr(KosContext *ctx, struct KosEvent *out_ev);
+void kos_eval_emit_raise_from_pyerr(
+    KosContext *ctx,
+    struct KosEvent *out_ev,
+    KosEvalState *es);
 
 
 int koskari_eval_init(PyObject *mod);

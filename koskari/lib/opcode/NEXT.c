@@ -21,7 +21,6 @@
 */
 
 KOS_OP_HANDLER(NEXT) {
-  KosContext *ctx = KosEvalState_CONTEXT(es);
   uint16_t n = KosOp_ARG(insn);
   if (n != 1 && n != 2) {
     PyErr_Format(PyExc_ValueError, "NEXT arg must be 1 or 2, got %u", n);
@@ -91,7 +90,7 @@ KOS_OP_HANDLER(NEXT) {
       Py_XDECREF(default_val);
       return KOS_OP_POST_ERR();
     }
-    if (op_attach_koskari_agen_frame(ctx, agen, iter, default_val) < 0)
+    if (op_attach_koskari_agen_frame(es, agen, iter, default_val) < 0)
       return KOS_OP_POST_ERR();
     Py_DECREF(iter);
     Py_XDECREF(default_val);
@@ -99,7 +98,7 @@ KOS_OP_HANDLER(NEXT) {
   }
 
   PyObject *value = NULL;
-  KosGetNextResult get_res = op_get_next_from_iter(ctx, out_ev, iter, &value);
+  KosGetNextResult get_res = op_get_next_from_iter(es, out_ev, iter, &value);
   switch (get_res) {
     case GET_NEXT_VALUE:
       if (KosEvalState_StackPushRef(es, value) < 0) {

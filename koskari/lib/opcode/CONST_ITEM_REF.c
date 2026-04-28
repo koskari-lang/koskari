@@ -18,8 +18,7 @@
 */
 
 KOS_OP_HANDLER(CONST_ITEM_REF) {
-  KosContext *ctx = KosEvalState_CONTEXT(es);
-  PyObject *key = KosCode_GetConstant((PyObject *) CURRENT_CODE(ctx),
+  PyObject *key = KosCode_GetConstant((PyObject *) KosEvalState_CurrentCode(es),
                                       KosOp_ARG(insn));
   if (! key)
     return KOS_OP_POST_ERR();
@@ -30,5 +29,5 @@ KOS_OP_HANDLER(CONST_ITEM_REF) {
   Py_DECREF(obj);
   if (! ref)
     return KOS_OP_POST_ERR();
-  return kos_op_outcome_from_int_step(push_result(es, ref));
+  return kos_op_outcome_PUSH(es, ref);
 }

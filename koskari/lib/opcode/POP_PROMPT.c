@@ -20,13 +20,12 @@
 */
 
 KOS_OP_HANDLER(POP_PROMPT) {
-  KosContext *ctx = KosEvalState_CONTEXT(es);
   KosDynDelim *ret_delim = kos_find_nearest_delim(es, KOS_DYN_DELIM_MODE_POP_PROMPT);
 
   SAYF("[eval] POP_PROMPT delim=%p dyn_top=%p IS_PROMPT=%d frame=%p stack_len=%zu\n",
-       (void *) ret_delim, (void *) KosContext_DYN_TOP(ctx),
-       (KosContext_DYN_TOP(ctx) && KosDynNode_IS_PROMPT(KosContext_DYN_TOP(ctx))) ? 1 : 0,
-       (void *) CURRENT_FRAME(ctx),
+       (void *) ret_delim, (void *) KosEvalState_CurrentNode(es),
+       (KosEvalState_CurrentNode(es) && KosDynNode_IS_PROMPT(KosEvalState_CurrentNode(es))) ? 1 : 0,
+       (void *) KosEvalState_FRAME(es),
        KosEvalState_StackLen(es));
 
   if (ret_delim) {
@@ -59,14 +58,13 @@ KOS_OP_HANDLER(POP_PROMPT) {
           .target_frame = KosDynDelim_RETURN_FRAME(ret_delim),
         };
       }
-      if (kos_dyn_transition(es, &treq, &tres, out_ev) < 0) {
+      if (KosEvalState_Transition(es, &treq, &tres, out_ev) < 0) {
         Py_DECREF(val);
         return KOS_OP_POST_ERR();
       }
       int unw = tres.raw;
       if (unw == KOS_DYN_UNWIND_ASYNC_STARTED) {
-        KosContext_PENDING_RETURN_VALUE(ctx) = val;
-        KosContext_PENDING_RETURN_TO_PARENT(ctx) = 0;
+        KosEvalState_SetPendingReturn(es, val, 0);
         return KOS_OP_RUN();
       }
       if (unw < 0) {
@@ -74,8 +72,8 @@ KOS_OP_HANDLER(POP_PROMPT) {
         return KOS_OP_POST_ERR();
       }
       SAYF("[eval] POP_PROMPT after unwind: dyn_top=%p kind=%s",
-           (void *) KosContext_DYN_TOP(ctx),
-           KosContext_DYN_TOP(ctx) ? kos_dynnode_kind_name(KosDynNode_KIND(KosContext_DYN_TOP(ctx))) : "NULL");
+           (void *) KosEvalState_CurrentNode(es),
+           KosEvalState_CurrentNode(es) ? kos_dynnode_kind_name(KosDynNode_KIND(KosEvalState_CurrentNode(es))) : "NULL");
       if (kos_dyn_finish_delimited_pop_return(es, ret_delim, val) < 0)
         return KOS_OP_POST_ERR();
       (void) insn;
@@ -84,19 +82,20 @@ KOS_OP_HANDLER(POP_PROMPT) {
 
     KosEvent_KIND(out_ev) = KOS_EV_RETURN;
     KosEvent_PAYLOAD(out_ev) = val;
-    if (KosContext_DYN_TOP(ctx) == (KosDynNode *) ret_delim)
+    if (KosEvalState_CurrentNode(es) == (KosDynNode *) ret_delim)
       kos_dyn_pop_delim(es, ret_delim);
-    KosContext_FLAGS(ctx) &= ~KOS_CTX_RUNNING;
+    KosEvalState_MarkSuspendedNotRunning(es);
     (void) insn;
     return KOS_OP_POST_SUSPEND();
   }
 
-  if (! KosContext_DYN_TOP(ctx) || ! KosDynNode_IS_PROMPT(KosContext_DYN_TOP(ctx))) {
+  KosDynNode *top = KosEvalState_CurrentNode(es);
+  if (! top || ! KosDynNode_IS_PROMPT(top)) {
     PyErr_SetString(PyExc_RuntimeError, "POP_PROMPT: top is not a prompt");
     return KOS_OP_POST_ERR();
   }
   SAYF("[eval] POP_PROMPT (normal): popping prompt, frame=%p stack_len=%zu",
-       (void *) CURRENT_FRAME(ctx),
+       (void *) KosEvalState_FRAME(es),
        KosEvalState_StackLen(es));
 
   PyObject *result = KosEvalState_StackPopRef(es);
@@ -105,13 +104,13 @@ KOS_OP_HANDLER(POP_PROMPT) {
     return KOS_OP_POST_ERR();
   }
 
-  if (kos_dyn_pop_prompt(es, (KosDynPrompt *) KosContext_DYN_TOP(ctx)) < 0) {
+  if (kos_dyn_pop_prompt(es, (KosDynPrompt *) top) < 0) {
     Py_XDECREF(result);
     return KOS_OP_POST_ERR();
   }
 
   SAYF("[eval] POP_PROMPT (normal): after pop, frame=%p stack_len=%zu",
-       (void *) CURRENT_FRAME(ctx),
+       (void *) KosEvalState_FRAME(es),
        KosEvalState_StackLen(es));
 
   if (result) {

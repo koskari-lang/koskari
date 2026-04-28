@@ -38,11 +38,11 @@ static int install_frozen_gen_for_resume(
   if (! eval_ctx || ! agen)
     return 0;
   g = (KosDynGen *) agen->gen;
-  if (! g || ! kos_dyn_gen_frozen_needs_install(eval_ctx, g))
-    return 0;
   {
     KosEvalState es;
     KosEvalState_Init(&es, eval_ctx);
+    if (! g || ! kos_dyn_gen_frozen_needs_install_es(&es, g))
+      return 0;
     return kos_dyn_gen_install(&es, g);
   }
 }
@@ -186,7 +186,7 @@ static void asyncgen_dealloc(PyObject *self) {
   }
 
   if (agen->ctx)
-    kos_context_free(agen->ctx);
+    KosContext_Free(agen->ctx);
 
   Py_XDECREF(agen->code_name);
 
@@ -208,7 +208,7 @@ static int asyncgen_traverse(PyObject *self, visitproc visit, void *arg) {
   }
 
   if (agen->ctx)
-    return kos_context_traverse(agen->ctx, visit, arg);
+    return KosContext_Traverse(agen->ctx, visit, arg);
 
   return 0;
 }
@@ -229,7 +229,7 @@ static int asyncgen_clear(PyObject *self) {
   }
 
   if (agen->ctx) {
-    kos_context_free(agen->ctx);
+    KosContext_Free(agen->ctx);
     agen->ctx = NULL;
   }
 
@@ -301,7 +301,7 @@ PyObject *KosPyAsyncGen_New(KosContext *ctx) {
 
   KosPyAsyncGen *agen = PyObject_GC_New(KosPyAsyncGen, &KosPyAsyncGenType);
   if (! agen) {
-    kos_context_free(ctx);
+    KosContext_Free(ctx);
     return NULL;
   }
 

@@ -231,7 +231,7 @@ To avoid recursive C calls and keep a single state machine:
 
 2. **RETURN (frame has parent, normal call return)**: When the callee’s dynamic parent is not a GEN, the RETURN opcode runs `KOS_TRANS_WALK_RETURN_TO_FRAME` via `kos_dyn_transition`, then `kos_dyn_pop_frame` so the **caller** becomes `frame_top`. It does **not** push onto the parent stack in the opcode handler. Instead it fills `out_ev` with `KOS_EV_RETURN` and the return value (one ref held by `out_ev`) and returns `KOS_OP_POST_PARENT_RETURN()`. The main loop then runs **`eval_parent_return_deliver`**: optional flattened Koskari async-gen iterator delivery (`kos_dyn_try_deliver_iterator_boundary_after_pop`), else native-frame handler or `KosStackBlock_PushRef` onto the parent stack, then **`kos_dynnode_on_control_returned`** (WIND/WITH). The outer `koskari_eval` caller still does not observe a completion event for this path unless the eval loop eventually stops for another reason.
 
-3. **NEXT/ITER_NEXT (Koskari async gen)**: **`NEXT`** pushes a **`KOS_DYN_NEXT`** boundary (`kos_dyn_push_next_for_kos_agen`, …) as needed, then **attaches** the generator’s frame (`op_attach_koskari_agen_frame`). **`ITER_NEXT`** records state on the innermost **`KOS_DYN_FOREACH`** region and uses `op_attach_koskari_agen_frame_for_iter_next`. The gen’s frame runs until it YIELD or RETURN. On YIELD/RETURN, the **frame-has-parent** rule runs: the gen frame is **detached** (without freeing), the value (or exhausted/default) is delivered to the awaiting frame, and the loop continues with the caller as `frame_top`. No recursive `koskari_eval(agen->ctx, ...)`.
+3. **NEXT/ITER_NEXT (Koskari async gen)**: **`NEXT`** pushes a **`KOS_DYN_NEXT`** boundary (`kos_dyn_push_next_for_kos_agen`, …) as needed, then **attaches** the generator’s frame with **`op_attach_koskari_agen_frame(es, …)`** (live **`KosEvalState *es`** from the opcode). **`ITER_NEXT`** records state on the innermost **`KOS_DYN_FOREACH`** region and uses **`op_attach_koskari_agen_frame_for_iter_next(es, …)`**. Each performs its own validation and failure cleanup, then **`kos_attach_agen_gen_flatten(es, agen, gen)`** → **`kos_dyn_gen_install(es, gen)`** so **`KosEvalState_RefreshDynCaches`** updates the same **`es`** the dispatch loop uses. The gen’s frame runs until it YIELD or RETURN. On YIELD/RETURN, the **frame-has-parent** rule runs: the gen frame is **detached** (without freeing), the value (or exhausted/default) is delivered to the awaiting frame, and the loop continues with the caller as `frame_top`. No recursive `koskari_eval(agen->ctx, ...)`.
 
 4. **YIELD (post-opcode path)**: When a **top-level** or otherwise surfaced YIELD produces `KOS_EV_YIELD` in `out_ev` and `eval_phase_post_opcode` runs, **`eval_event_yield`** performs stage A (`eval_yield_handle_walk_and_freeze`: `KOS_TRANS_WALK_HANDLE_YIELD`) and stage B (optional NEXT/FOREACH/YIELD_FROM delivery for flattened Koskari async gens via **`eval_event_yield_deliver_to_boundary`**), or tags suspension for the outer driver. In-loop child-frame YIELD (parent non-NULL) still avoids stopping `koskari_eval` with a public boundary in the same way as before; the exact unwind/freeze steps live in `kos_dyn_transition` / dynchain helpers.
 
@@ -372,8 +372,8 @@ int kos_resume_transfer_plan(KosEvalState *es);
 ### Context and Frame Lifecycle
 
 ```c
-KosContext *kos_context_new(KosDynFrame *top);
-void kos_context_free(KosContext *ctx);
+KosContext *KosContext_New(KosDynFrame *top);
+void KosContext_Free(KosContext *ctx);
 
 /* Frame helpers (wrappers around kos_dynframe_new/clone/free) */
 KosFrame *kos_frame_new(KosCode *code, PyObject *ns,
@@ -415,7 +415,7 @@ lives entirely inside those two dispatchers.
 | 1 | `eval_phase_entry` | Entry/revive normalization; `entry_mode_dispatch` for EXCEPTION/RAISE outcomes |
 | 2 | `eval_phase_transfer` | Transfer-plan drain; terminal RETURN(None) when no frame or hook remains |
 | 3 | `eval_phase_pending_exception` | `PyErr_Occurred()` → **`eval_event_raise`** (→ **`eval_boundary_raise_dispatch`**) at each loop-top iteration |
-| 4 | `KOS_EVAL_PREPARE_NEXT_INSN` | Fetch insn into `*insn`, set `acting_pc`, pre-advance `pc` (assumes valid frame/PC; no checks) |
+| 4 | `KOS_EVAL_PREPARE_NEXT_INSN` | Copy insn into local `KosOp insn`, set `acting_pc`, pre-advance `pc` (assumes valid frame/PC; no checks) |
 | 5 | *(inline)* | Computed-goto / switch opcode dispatch; handlers return **`KosOpOutcome`** (`KosLoopOpMode` + optional post tag) |
 | 6 | `eval_phase_post_opcode` | When mode is `KOS_LOP_POST`, map tag via **`kos_op_post_tag_to_res`** to legacy `op_res` and run post-opcode logic (see below) |
 
@@ -430,7 +430,7 @@ typedef enum KosEvalStep {
 } KosEvalStep;
 ```
 
-Phase 4 sets a local `KosOp *insn` (and frame `acting_pc` / `pc`) for phase 5. Phase 6 (**`eval_phase_post_opcode`**) takes `ctx`, `out_ev`, and mapped `op_res`; it does not receive insn.
+Phase 4 sets a local `KosOp insn` (and frame `acting_pc` / `pc`) for phase 5; opcodes are called with `&insn`. Phase 6 (**`eval_phase_post_opcode`**) takes `ctx`, `out_ev`, and mapped `op_res`; it does not receive insn.
 
 #### Post-opcode staging (`eval_phase_post_opcode`)
 
@@ -463,9 +463,8 @@ int kos_dynnode_traverse(KosDynNode *node, visitproc visit, void *arg);
 int kos_dynchain_traverse(KosDynNode *node, KosDynNode *stop,
         visitproc visit, void *arg);
 int kos_continuation_traverse(KosContinuation *k, visitproc visit, void *arg);
-int kos_stackblock_traverse(KosStackBlock *block, visitproc visit, void *arg);
-int kos_frame_traverse(KosFrame *frame, visitproc visit, void *arg);
-int kos_context_traverse(KosContext *ctx, visitproc visit, void *arg);
+int KosStackBlock_Traverse(KosStackBlock *block, visitproc visit, void *arg);
+int KosContext_Traverse(KosContext *ctx, visitproc visit, void *arg);
 ```
 
 ## Ownership and Invariants

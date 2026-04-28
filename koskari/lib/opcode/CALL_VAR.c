@@ -21,8 +21,7 @@
 */
 
 KOS_OP_HANDLER(CALL_VAR) {
-  KosContext *ctx = KosEvalState_CONTEXT(es);
-  KosCode *code = CURRENT_CODE(ctx);
+  KosCode *code = KosEvalState_CurrentCode(es);
   KosExtra row = KosCode_GetExtra(code, KosOp_ARG(insn));
   uint32_t name_cpool_idx = row.a0;
   unsigned n = row.a1;
@@ -31,7 +30,7 @@ KOS_OP_HANDLER(CALL_VAR) {
   if (! name)
     return KOS_OP_POST_ERR();
 
-  PyObject *callable = frame_ns_deref(ctx, name);
+  PyObject *callable = frame_ns_deref(es, name);
   SAYF("CALL_VAR: callable=%R", callable);
   if (! callable)
     return KOS_OP_POST_ERR();
@@ -47,7 +46,7 @@ KOS_OP_HANDLER(CALL_VAR) {
                             (Py_ssize_t) n, NULL, 0);
     Py_DECREF(callable);
     KosStackSteal_Free(&steal);
-    return kos_op_outcome_from_call_int(ctx, r);
+    return kos_op_outcome_from_call_int(es, r);
 
   } else {
     PyObject *result = NULL;
@@ -67,7 +66,7 @@ KOS_OP_HANDLER(CALL_VAR) {
 
     SAYF("CALL_VAR: result=%R", result);
     Py_DECREF(callable);
-    return result ? kos_op_outcome_from_push_int(op_push_or_await(es, out_ev, result)) : KOS_OP_POST_ERR();
+    return kos_op_outcome_PUSH_OR_AWAIT(es, out_ev, result);
   }
 }
 

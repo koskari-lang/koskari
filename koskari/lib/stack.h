@@ -111,6 +111,25 @@ void KosStackBlock_ReleaseChain(KosStackBlock *block);
 
 
 /**
+   Traverse a KosStackBlock chain for GC.
+
+   Used when traversing owning frames and dynamic-chain nodes for GC,
+   and by Python wrappers implementing tp_traverse.
+   Visits all PyObject pointers stored in each block.
+
+   :param block: head of the chain (may be NULL)
+   :param visit: visitproc from Python GC
+   :param arg: opaque visitor argument
+
+   :return: 0 on success, non-zero if visit returns non-zero
+ */
+int KosStackBlock_Traverse(
+    KosStackBlock *block,
+    visitproc visit,
+    void *arg);
+
+
+/**
    Deep-copy a stack block chain: new blocks, same values (new refs).
    Caller must Release the result. Returns NULL if block is NULL or on error.
  */

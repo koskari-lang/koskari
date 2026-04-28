@@ -20,7 +20,6 @@
   TailPtr + PyObject_Vectorcall + DropNoErr.
 */
 KOS_OP_HANDLER(CALL_NAMES) {
-  KosContext *ctx = KosEvalState_CONTEXT(es);
   unsigned opa = KosOp_ARG(insn);
 
   PyObject *names = KosEvalState_StackPeek(es);
@@ -51,7 +50,7 @@ KOS_OP_HANDLER(CALL_NAMES) {
     int r = KosEvalState_Call(es, out_ev, steal.vals[0],
                             &steal.vals[1], npos, kwnames_arg, 0);
     KosStackSteal_Free(&steal);
-    return kos_op_outcome_from_call_int(ctx, r);
+    return kos_op_outcome_from_call_int(es, r);
   }
 
   PyObject *result = PyObject_Vectorcall(ptr[0], &ptr[1], (size_t) npos,
@@ -60,5 +59,5 @@ KOS_OP_HANDLER(CALL_NAMES) {
     return KOS_OP_POST_ERR();
 
   KosEvalState_StackDropNoErr(es, ntotal);
-  return kos_op_outcome_from_push_int(op_push_or_await(es, out_ev, result));
+  return kos_op_outcome_PUSH_OR_AWAIT(es, out_ev, result);
 }

@@ -18,8 +18,7 @@
 */
 
 KOS_OP_HANDLER(JUMP) {
-  KosContext *ctx = KosEvalState_CONTEXT(es);
-  CURRENT_PC(ctx) = KosOp_ARG(insn);
+  KosEvalState_SET_PC(es, KosOp_ARG(insn));
   (void) out_ev;
   return KOS_OP_RUN();
 }

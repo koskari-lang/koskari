@@ -14,6 +14,7 @@ int kos_dyn_push_next_for_kos_agen(
     KosEvalState *es, PyObject *agen_obj, PyObject *default_val, int n) {
 
   KosContext *ctx = KosEvalState_CONTEXT(es);
+  // CONTEXT: dirty, touches context directly
   KosDynNode *node = kos_dynnode_alloc();
   if (! node) {
     KosEvalState_SyncFromContext(es);
@@ -32,9 +33,10 @@ int kos_dyn_push_next_for_kos_agen(
   }
   KosDynNext_N(node) = n;
 
-  KosContext_DYN_TOP(ctx) = node;
-  KosContext_CHAIN_VERSION(ctx)++;
-  KosEvalState_SyncFromContext(es);
+  if (kos_dyn_push_noinstall(es, node) < 0) {
+    kos_dyn_next_free_payload(node);
+    return -1;
+  }
   return 0;
 }
 
@@ -45,11 +47,12 @@ void kos_dyn_next_abort_after_failed_attach(KosEvalState *es) {
   KosDynNode *top = KosContext_DYN_TOP(ctx);
   if (top && KosDynNode_IS_NEXT(top)) {
     KosDynNode *parent = KosDynNode_PARENT(top);
-    KosContext_DYN_TOP(ctx) = parent;
-    KosContext_CHAIN_VERSION(ctx)++;
+
+    kos_dyn_commit_dyn_top(es, parent);
+    KosDynNode_PARENT(top) = NULL;
     kos_dyn_next_free_payload(top);
-  }
-  KosEvalState_SyncFromContext(es);
+  } else
+    KosEvalState_SyncFromContext(es);
 }
 
 
@@ -70,7 +73,7 @@ KosDynForeach *kos_dyn_find_awaiting_foreach(KosEvalState *es) {
   }
 
   {
-    KosDynFrame *cf = KosContext_FRAME_TOP(ctx);
+    KosDynFrame *cf = KosEvalState_FRAME(es);
     KosDynNode *n;
     if (! cf)
       return NULL;
@@ -104,7 +107,7 @@ KosDynNext *kos_dyn_find_next_above_frame(KosEvalState *es) {
    frame: FRAME -> GEN -> NEXT.
    */
   {
-    KosDynFrame *cf = KosContext_FRAME_TOP(ctx);
+    KosDynFrame *cf = KosEvalState_FRAME(es);
     KosDynNode *n;
     if (! cf)
       return NULL;
@@ -123,8 +126,9 @@ void kos_dyn_unlink_next_node(KosEvalState *es, KosDynNext *next) {
   KosDynNode *node = (KosDynNode *) next;
   KosDynNode *p = KosDynNode_PARENT(node);
 
+  KosEvalState_FlushLiveRegsToFrame(es);
   if (KosContext_DYN_TOP(ctx) == node) {
-    KosContext_DYN_TOP(ctx) = p;
+    kos_dyn_commit_dyn_top(es, p);
   } else {
     KosDynNode *c;
     for (c = KosContext_DYN_TOP(ctx); c; c = KosDynNode_PARENT(c)) {
@@ -133,12 +137,12 @@ void kos_dyn_unlink_next_node(KosEvalState *es, KosDynNext *next) {
         break;
       }
     }
+    KosContext_CHAIN_VERSION(ctx)++;
+    KosEvalState_RefreshDynCaches(es);
   }
+
   KosDynNode_PARENT(node) = NULL;
-  KosContext_CHAIN_VERSION(ctx)++;
-  KosEvalState_RefreshDynCaches(es);
   kos_dyn_next_free_payload(node);
-  KosEvalState_SyncFromContext(es);
 }
 
 
@@ -165,7 +169,6 @@ int kos_dyn_next_deliver_yield(KosEvalState *es, struct KosEvent *out_ev) {
   agen->in_progress = 0;
 
   kos_dyn_unlink_next_node(es, next);
-  KosEvalState_SyncFromContext(es);
   return 0;
 }
 
@@ -207,7 +210,6 @@ int kos_dyn_next_deliver_return(KosEvalState *es, struct KosEvent *out_ev) {
     Py_DECREF(val);
     PyErr_SetNone(PyExc_StopIteration);
     kos_dyn_unlink_next_node(es, next);
-    KosEvalState_SyncFromContext(es);
     return -1;
   } else {
     Py_DECREF(val);
@@ -217,58 +219,6 @@ int kos_dyn_next_deliver_return(KosEvalState *es, struct KosEvent *out_ev) {
   KosEvent_KIND(out_ev) = KOS_EV_NONE;
 
   kos_dyn_unlink_next_node(es, next);
-  KosEvalState_SyncFromContext(es);
-  return 0;
-}
-
-
-int kos_dyn_foreach_deliver_yield_kos_agen(
-    KosEvalState *es, KosDynForeach *fe, struct KosEvent *out_ev) {
-
-  PyObject *payload = KosEvent_PAYLOAD(out_ev);
-  KosPyAsyncGen *agen;
-
-  if (KosEvalState_StackPushRef(es, payload) < 0) {
-    KosEvalState_SyncFromContext(es);
-    return -1;
-  }
-  Py_DECREF(payload);
-  KosEvent_PAYLOAD(out_ev) = NULL;
-  KosEvent_KIND(out_ev) = KOS_EV_NONE;
-
-  KosDynForeach_ITER_STEP_PHASE(fe) = KOS_FOREACH_ITER_STEP_IDLE;
-  agen = (KosPyAsyncGen *) KosDynForeach_ITER(fe);
-  agen->in_progress = 0;
-  KosEvalState_SyncFromContext(es);
-  return 0;
-}
-
-
-int kos_dyn_foreach_deliver_return_kos_agen(
-    KosEvalState *es, KosDynForeach *fe, struct KosEvent *out_ev) {
-
-  KosContext *ctx = KosEvalState_CONTEXT(es);
-  PyObject *val = KosEvent_PAYLOAD(out_ev);
-  KosPyAsyncGen *agen;
-
-  if (kos_dyn_gen_unwind_exhausted(es) < 0) {
-    Py_DECREF(val);
-    KosEvalState_SyncFromContext(es);
-    return -1;
-  }
-
-  agen = (KosPyAsyncGen *) KosDynForeach_ITER(fe);
-  agen->closed = 1;
-  agen->in_progress = 0;
-
-  KosDynForeach_EXHAUSTED(fe) = 1;
-  KosDynFrame_PC(KosContext_FRAME_TOP(ctx)) = KosDynForeach_ITER_NEXT_ELSE_PC(fe);
-  KosDynForeach_ITER_STEP_PHASE(fe) = KOS_FOREACH_ITER_STEP_IDLE;
-
-  Py_DECREF(val);
-  KosEvent_PAYLOAD(out_ev) = NULL;
-  KosEvent_KIND(out_ev) = KOS_EV_NONE;
-  KosEvalState_SyncFromContext(es);
   return 0;
 }
 
@@ -278,87 +228,6 @@ int kos_dyn_need_kos_agen_boundary_deliver(KosEvalState *es) {
   return kos_dyn_find_next_above_frame(es) != NULL
       || kos_dyn_find_awaiting_foreach(es) != NULL
       || kos_dyn_find_yield_from_iter_boundary(es) != NULL;
-}
-
-
-/**
-   Shared path for KOS_EV_RETURN delivery to KOS_DYN_NEXT or awaiting
-   KOS_DYN_FOREACH after a flattened Koskari async generator completes.
-   Expects KosEvent_KIND(out_ev) == KOS_EV_RETURN and payload set.
-
-   :return: same as kos_dyn_next_deliver_return / foreach deliver (0 success,
-      -1 error; next may leave no PyErr for REPROLOGUE)
-*/
-int kos_dyn_deliver_iterator_boundary_return_event(
-    KosEvalState *es, struct KosEvent *out_ev) {
-
-  KosDynNext *next = kos_dyn_find_next_above_frame(es);
-
-  if (next)
-    return kos_dyn_next_deliver_return(es, out_ev);
-  {
-    KosDynForeach *fe = kos_dyn_find_awaiting_foreach(es);
-
-    if (fe)
-      return kos_dyn_foreach_deliver_return_kos_agen(es, fe, out_ev);
-  }
-  {
-    KosDynYieldFrom *yf = kos_dyn_find_yield_from_iter_boundary(es);
-
-    if (yf)
-      return kos_dyn_yield_from_deliver_inner_return(es, yf, out_ev);
-  }
-  PyErr_SetString(PyExc_RuntimeError,
-                  "iterator boundary RETURN without NEXT/FOREACH/YIELD_FROM "
-                  "Koskari agen state");
-  KosEvalState_SyncFromContext(es);
-  return -1;
-}
-
-
-/**
-   After kos_dyn_pop_frame from a callee: if a flattened Koskari async-gen
-   consumer (NEXT or ITER_NEXT) is active, deliver the return value using the
-   same logic as eval dispatch_boundary_event for KOS_EV_RETURN.
-
-   On success or error paths that consume the value, sets *p_val to NULL.
-   On return 1, *p_val is unchanged and the caller must deliver to the parent
-   frame (native handler or stack push).
-
-   :return: 0 if delivery ran (continue eval); -1 if POST_ERR; 1 if no
-      boundary consumer for this return
-*/
-int kos_dyn_try_deliver_iterator_boundary_after_pop(
-    KosEvalState *es, PyObject **p_val, struct KosEvent *out_ev) {
-
-  PyObject *val;
-
-  if (! kos_dyn_need_kos_agen_boundary_deliver(es)) {
-    KosEvalState_SyncFromContext(es);
-    return 1;
-  }
-
-  val = *p_val;
-  KosEvent_KIND(out_ev) = KOS_EV_RETURN;
-  KosEvent_PAYLOAD(out_ev) = val;
-
-  {
-    int dr = kos_dyn_deliver_iterator_boundary_return_event(es, out_ev);
-
-    if (dr < 0) {
-      if (PyErr_Occurred()) {
-        *p_val = NULL;
-        KosEvalState_SyncFromContext(es);
-        return -1;
-      }
-      *p_val = NULL;
-      KosEvalState_SyncFromContext(es);
-      return 0;
-    }
-  }
-  *p_val = NULL;
-  KosEvalState_SyncFromContext(es);
-  return 0;
 }
 
 

@@ -35,5 +35,5 @@ KOS_OP_HANDLER(OBJECT_LT) {
   if (unlikely(! result))
     return KOS_OP_POST_ERR();
 
-  return kos_op_outcome_from_int_step(push_result(es, result));
+  return kos_op_outcome_PUSH(es, result);
 }

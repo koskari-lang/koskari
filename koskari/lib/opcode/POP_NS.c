@@ -14,23 +14,18 @@
 */
 
 /**
-   POP_NS: arg unused. Verify dyn_top is KOS_DYN_NS, restore frame ns from
-   saved_ns, pop the NS node.
+   POP_NS: arg unused. Verify dyn_top is KOS_DYN_NS and pop the NS node.
 */
 
 KOS_OP_HANDLER(POP_NS) {
-  KosContext *ctx = KosEvalState_CONTEXT(es);
-  if (! KosContext_DYN_TOP(ctx) || ! KosDynNode_IS_NS(KosContext_DYN_TOP(ctx))) {
+  KosDynNode *top = KosEvalState_CurrentNode(es);
+
+  if (! top || ! KosDynNode_IS_NS(top)) {
     PyErr_SetString(PyExc_RuntimeError, "POP_NS: top is not a namespace scope");
     return KOS_OP_POST_ERR();
   }
 
-  KosDynNs *ns_node = (KosDynNs *) KosContext_DYN_TOP(ctx);
-  PyObject *prior = KosDynNs_SAVED_NS(ns_node);
-  Py_INCREF(prior);
-  Py_DECREF(CURRENT_NS(ctx));
-  CURRENT_NS(ctx) = prior;
-  kos_dyn_pop_ns(es, ns_node);
+  kos_dyn_pop_ns(es, (KosDynNs *) top);
 
   (void) out_ev;
   (void) insn;

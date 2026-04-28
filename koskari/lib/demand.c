@@ -205,13 +205,13 @@ static int demand_sync_ex(
         goto ret_fail;
       }
       KosDynGen_ACTIVE(gen_node) = (struct KosDynNode *) frame;
-      ctx = kos_context_new(frame);
+      ctx = KosContext_New(frame);
       frame = NULL;
       if (! ctx)
         goto ret_fail;
       agen_obj = KosPyAsyncGen_New(ctx);
       if (! agen_obj) {
-        kos_context_free(ctx);
+        KosContext_Free(ctx);
         goto ret_fail;
       }
       agen = (KosPyAsyncGen *) agen_obj;
@@ -270,7 +270,7 @@ static int demand_sync_ex(
   goto ret_fail;
 
 run_eval:
-  ctx = kos_context_new(frame);
+  ctx = KosContext_New(frame);
   frame = NULL;
   if (! ctx) {
     if (frame)
@@ -286,7 +286,7 @@ run_eval:
 
     for (;;) {
       if (r < 0) {
-        kos_context_free(ctx);
+        KosContext_Free(ctx);
         ctx = NULL;
         goto ret_fail;
       }
@@ -301,7 +301,7 @@ run_eval:
         KosEvent_PAYLOAD(&ev) = NULL;
         PyErr_SetString(PyExc_RuntimeError,
                         "demand_sync: suspend inject cap exceeded");
-        kos_context_free(ctx);
+        KosContext_Free(ctx);
         ctx = NULL;
         goto ret_fail;
       }
@@ -320,14 +320,14 @@ run_eval:
         PyObject *exc_val;
 
         if (! msg) {
-          kos_context_free(ctx);
+          KosContext_Free(ctx);
           ctx = NULL;
           goto ret_fail;
         }
         exc_val = PyObject_CallOneArg(KoskariSyncViolation, msg);
         Py_DECREF(msg);
         if (! exc_val) {
-          kos_context_free(ctx);
+          KosContext_Free(ctx);
           ctx = NULL;
           goto ret_fail;
         }
@@ -339,7 +339,7 @@ run_eval:
     }
   }
 
-  kos_context_free(ctx);
+  KosContext_Free(ctx);
   ctx = NULL;
 
   switch (KosEvent_KIND(&ev)) {
@@ -629,7 +629,7 @@ static void demand_gen_close_ctx(KosDemandGenerator *gen) {
   KosPyAsyncGen *agen = (KosPyAsyncGen *) gen->async_agen;
 
   if (agen->ctx) {
-    kos_context_free(agen->ctx);
+    KosContext_Free(agen->ctx);
     agen->ctx = NULL;
   }
   agen->gen = NULL;
@@ -646,11 +646,11 @@ static int install_frozen_gen_for_resume(
   if (! eval_ctx || ! agen)
     return 0;
   g = (KosDynGen *) agen->gen;
-  if (! g || ! kos_dyn_gen_frozen_needs_install(eval_ctx, g))
-    return 0;
   {
     KosEvalState es;
     KosEvalState_Init(&es, eval_ctx);
+    if (! g || ! kos_dyn_gen_frozen_needs_install_es(&es, g))
+      return 0;
     return kos_dyn_gen_install(&es, g);
   }
 }
@@ -895,7 +895,7 @@ PyObject *KosDemandGenerator_FromAsyncGen(KosPyAsyncGen *agen) {
   }
 
   /* Thin wrapper only: do not install or otherwise mutate the dyn chain here;
-     demand_gen_step installs via kos_dyn_gen_frozen_needs_install when stepping. */
+     demand_gen_step installs via kos_dyn_gen_frozen_needs_install_es when stepping. */
 
   dsg = (KosDemandGenerator *)
       PyObject_GC_New(KosDemandGenerator, &KosDemandGeneratorType);

@@ -142,7 +142,7 @@ The following describes how each Koskari callable type implements the install sl
 
 Apply accepts 1, 2, or 3 arguments: `(fn)`, `(fn, arglist)`, or `(fn, arglist, kwds)`.
 
-- **install (flattening)**: When `fn` is KosFunction or KosExpression and (for Expression) no args and no kwds, delegate to the inner callable's `tp_kos_install`: `KosCallableType_INSTALL(Py_TYPE(fn))(ctx, out_ev, fn, seq_args, kwds)`. The inner install pushes the frame.
+- **install (flattening)**: When `fn` is KosFunction or KosExpression and (for Expression) no args and no kwds, delegate to the inner callable's `tp_kos_install`: `KosCallableType_INSTALL(Py_TYPE(fn))(es, out_ev, fn, seq_args, kwds)`. The inner install pushes the frame.
 - **install (non-flattening)**: Push a new frame. Set `frame->native_handler` to the apply handler. Push `fn`, `seq_args`, and `kwds` (if any) onto the frame stack for the handler. Set `frame->code = NULL`. Return 0. The evaluator runs the native handler, which does `PyObject_Call(fn, args, kwds)` and `push_or_await`.
 - **tail_install**: Same logic; when flattening, delegate to inner `tp_kos_tail_install`; when not, reset the current frame and install the native handler.
 
@@ -219,7 +219,7 @@ Native execution state must be fully represented by the frame (stack, namespace,
 
 ### Suspend and resume (summary)
 
-When a handler causes a suspend: the opcode or native handler sets `out_ev` and returns 1; the evaluator exits. On resumption, the driver calls `koskari_eval`. Phase 1 runs revive (e.g. `revive_await`, `revive_yield`), which pushes the delivered value. If the **top frame** has `native_handler != NULL`, the evaluator invokes it with `(ctx, out_ev, 1, delivered_value)`. The handler interprets `frame->pc` as the resume label. The same mechanism applies for all suspend types and for return from nested calls.
+When a handler causes a suspend: the opcode or native handler sets `out_ev` and returns 1; the evaluator exits. On resumption, the driver calls `koskari_eval`. Phase 1 runs revive (e.g. `revive_await`, `revive_yield`), which pushes the delivered value. If the **top frame** has `native_handler != NULL`, the evaluator invokes it with `(es, out_ev, 1, delivered_value)` where **`es`** is the live eval state. The handler interprets `frame->pc` as the resume label. The same mechanism applies for all suspend types and for return from nested calls.
 
 ---
 
@@ -229,7 +229,7 @@ The native handler is stored on the **frame** (`frame->native_handler`), not as 
 
 **Handler chooses the frame**: Utility callables (apply, map) typically use the **caller's** frame and install the native handler there. JIT or heavy native handlers push their **own** frame and install the handler on it. The evaluator only checks the top frame.
 
-**Summary flow**: Native handler runs (is_resume=0), may push Koskari frames and return 0, or set `frame->pc` to a resume label and return 1 (suspend). On resume or return from nested call, the evaluator invokes the handler with `(ctx, out_ev, 1, delivered_value)`. The handler branches on `frame->pc` to the correct continuation point. The same handler is re-entered many times; `frame->pc` identifies the resume point.
+**Summary flow**: Native handler runs (is_resume=0), may push Koskari frames and return 0, or set `frame->pc` to a resume label and return 1 (suspend). On resume or return from nested call, the evaluator invokes the handler with `(es, out_ev, 1, delivered_value)`. The handler branches on `frame->pc` to the correct continuation point. The same handler is re-entered many times; `frame->pc` identifies the resume point.
 
 ---
 

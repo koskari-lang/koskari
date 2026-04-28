@@ -20,10 +20,9 @@
 */
 
 KOS_OP_HANDLER(FAST_OBJECT_TRUE_DIVIDE) {
-  KosContext *ctx = KosEvalState_CONTEXT(es);
   (void) out_ev;
 
-  PyObject *ns = CURRENT_NS(ctx);
+  PyObject *ns = CURRENT_NS();
   if (unlikely(! ns)) {
     PyErr_SetString(PyExc_RuntimeError,
                     "FAST_OBJECT_TRUE_DIVIDE invoked on NULL namespace");

@@ -18,13 +18,12 @@
 */
 
 KOS_OP_HANDLER(VAR_REF) {
-  KosContext *ctx = KosEvalState_CONTEXT(es);
-  PyObject *name = get_name_from_insn(CURRENT_CODE(ctx), insn);
+  PyObject *name = get_name_from_insn(KosEvalState_CurrentCode(es), insn);
   if (! name)
     return KOS_OP_POST_ERR();
-  PyObject *ref = frame_ns_ref(ctx, name);
+  PyObject *ref = frame_ns_ref(es, name);
   if (! ref)
     return KOS_OP_POST_ERR();
   Py_INCREF(ref);
-  return kos_op_outcome_from_int_step(push_result(es, ref));
+  return kos_op_outcome_PUSH(es, ref);
 }

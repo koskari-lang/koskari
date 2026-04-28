@@ -286,7 +286,7 @@ Leaving any block that introduced PARAM bindings must restore previous bindings.
 ### Step 2 — KosDomain object (done)
 
 - Implemented in `domain.c`, `domain.h`: KosDomain type (PyObject_HEAD + uint64_t version). `ctx->domain` in KosContext.
-- Domain lifecycle: `kos_context_new()` inherits domain from active ctx when `kos_ctx_current() != NULL`; else from `python_domain_stack` when non-empty; else creates fresh KosDomain. GC: `Py_VISIT` in traverse, `Py_XDECREF` in free.
+- Domain lifecycle: `KosContext_New()` inherits domain from active ctx when `kos_ctx_current() != NULL`; else from `python_domain_stack` when non-empty; else creates fresh KosDomain. GC: `Py_VISIT` in traverse, `Py_XDECREF` in free.
 - Domain is a context manager: `__enter__` and `__exit__` call `kos_domain_push_python_scope` and `kos_domain_pop_python_scope`.
 
 ### Step 3 — ParamRef type (done)

@@ -2,6 +2,27 @@
 /* === KosDynYieldFrom implementation === */
 
 
+static PyObject *kos_dynyieldfrom_str_close = NULL;
+static PyObject *kos_dynyieldfrom_str_aclose = NULL;
+
+
+static int kos_dynyieldfrom_strings_init(void) {
+
+  STR_CONST(kos_dynyieldfrom_str_close, "close");
+  STR_CONST(kos_dynyieldfrom_str_aclose, "aclose");
+  if (! kos_dynyieldfrom_str_close || ! kos_dynyieldfrom_str_aclose)
+    return -1;
+  return 0;
+}
+
+
+static void kos_dynyieldfrom_strings_clear(void) {
+
+  Py_CLEAR(kos_dynyieldfrom_str_close);
+  Py_CLEAR(kos_dynyieldfrom_str_aclose);
+}
+
+
 /**
    YIELD_FROM node: delegate iterator, phase state for close/send. Callers:
    kos_dyn_push_yield_from.
@@ -123,7 +144,7 @@ int kos_dyn_yield_from_deliver_inner_yield(
 
   KosContext *ctx = KosEvalState_CONTEXT(es);
   PyObject *payload = KosEvent_PAYLOAD(out_ev);
-  KosDynFrame *frame = KosContext_FRAME_TOP(ctx);
+  KosDynFrame *frame = KosEvalState_FRAME(es);
   PyObject *const *tos;
 
   if (! frame || ! payload) {
@@ -146,7 +167,7 @@ int kos_dyn_yield_from_deliver_inner_yield(
   }
 
   KosDynYieldFrom_PHASE_SET(yf, KOS_YF_PHASE_EXPECT_SEND);
-  KosDynFrame_PC(frame) = KosDynFrame_ACTING_PC(frame);
+  KosEvalState_SET_PC(es, KosEvalState_ACTING_PC(es));
 
   tos = KosEvalState_StackTailPtr(es, 1);
   if (! tos) {
@@ -158,6 +179,7 @@ int kos_dyn_yield_from_deliver_inner_yield(
   KosEvent_PAYLOAD(out_ev) = *tos;
   Py_INCREF(KosEvent_PAYLOAD(out_ev));
 
+  KosEvalState_FlushLiveRegsToFrame(es);
   KosContext_FLAGS(ctx) &= ~KOS_CTX_RUNNING;
   KosContext_FLAGS(ctx) |= KOS_CTX_DEAD;
   KosEvalState_SyncFromContext(es);
@@ -172,7 +194,6 @@ int kos_dyn_yield_from_deliver_inner_yield(
 int kos_dyn_yield_from_deliver_inner_return(
     KosEvalState *es, KosDynYieldFrom *yf, KosEvent *out_ev) {
 
-  KosContext *ctx = KosEvalState_CONTEXT(es);
   PyObject *val = KosEvent_PAYLOAD(out_ev);
   KosDynFrame *df;
   KosCode *code;
@@ -192,20 +213,66 @@ int kos_dyn_yield_from_deliver_inner_return(
     return -1;
   }
 
-  df = KosContext_FRAME_TOP(ctx);
+  df = KosEvalState_FRAME(es);
 
   delegate_agen = (KosPyAsyncGen *) KosDynYieldFrom_DELEGATE(yf);
   if (delegate_agen)
     delegate_agen->in_progress = 0;
 
   code = df ? KosDynFrame_CODE(df) : NULL;
-  if (df && code && KosDynFrame_ACTING_PC(df) + 1u < KosCode_CODE_LEN(code)) {
-    KosDynFrame_PC(df) = KosDynFrame_ACTING_PC(df) + 1u;
-  }
+  if (df && code && KosEvalState_ACTING_PC(es) + 1u < KosCode_CODE_LEN(code))
+    KosEvalState_SET_PC(es, KosEvalState_ACTING_PC(es) + 1u);
 
   kos_dyn_pop_yield_from(es, yf);
   KosEvalState_SyncFromContext(es);
   return 0;
+}
+
+
+void kos_yieldfrom_close_delegate(KosDynYieldFrom *node) {
+
+  if (! node)
+    return;
+
+  PyObject *delegate = KosDynYieldFrom_DELEGATE(node);
+  if (! delegate)
+    return;
+
+  uint8_t kind = KosDynYieldFrom_KIND(node);
+  PyObject *inflight = KosDynYieldFrom_INFLIGHT(node);
+
+  switch (kind) {
+  case KOS_YF_SYNC_ITER:
+    break;
+
+  case KOS_YF_SYNC_GEN: {
+    PyObject *res = PyObject_CallMethodObjArgs(
+        delegate, kos_dynyieldfrom_str_close, NULL);
+    Py_XDECREF(res);
+    PyErr_Clear();
+    break;
+  }
+
+  case KOS_YF_PY_ASYNC_ITER:
+  case KOS_YF_PY_ASYNC_GEN:
+    Py_XDECREF(inflight);
+    KosDynYieldFrom_INFLIGHT(node) = NULL;
+    {
+      PyObject *res = PyObject_CallMethodObjArgs(
+          delegate, kos_dynyieldfrom_str_aclose, NULL);
+      Py_XDECREF(res);
+      PyErr_Clear();
+    }
+    break;
+
+  case KOS_YF_KOS_ASYNC_GEN:
+    if (KosPyAsyncGen_Check(delegate))
+      ((KosPyAsyncGen *) delegate)->closed = 1;
+    break;
+
+  default:
+    break;
+  }
 }
 
 
@@ -215,7 +282,6 @@ int kos_dyn_yield_from_deliver_inner_return(
 void kos_dyn_yieldfrom_unwind(KosEvalState *es, KosDynYieldFrom *node) {
   if (node)
     kos_yieldfrom_close_delegate(node);
-  KosEvalState_SyncFromContext(es);
 }
 
 

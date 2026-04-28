@@ -105,7 +105,6 @@ int kos_dyn_wind_wind(KosEvalState *es, KosDynWind *node) {
    kos_dyn_unwind, uninstall_handler.
 */
 int kos_dyn_wind_unwind(KosEvalState *es, KosDynWind *node) {
-  KosContext *ctx = KosEvalState_CONTEXT(es);
   if (! node || ! KosDynWind_ENTERED(node)) {
     KosEvalState_SyncFromContext(es);
     return 0;
@@ -115,8 +114,9 @@ int kos_dyn_wind_unwind(KosEvalState *es, KosDynWind *node) {
     /* No after-thunk: push stored body result and finish uninstall */
     PyObject *body_result = KosDynWind_BODY_RESULT(node);
     KosDynWind_BODY_RESULT(node) = NULL;
-    if ((KosContext_BLOCK(ctx) && *KosContext_BLOCK(ctx) ? *KosContext_BLOCK(ctx)
-                                                        : NULL)
+    if ((KosEvalState_BLOCK(es) && *KosEvalState_BLOCK(es)
+             ? *KosEvalState_BLOCK(es)
+             : NULL)
         && body_result) {
       if (KosEvalState_StackPushRef(es, body_result) < 0) {
         KosDynWind_BODY_RESULT(node) = body_result;
@@ -153,9 +153,9 @@ int kos_dyn_wind_unwind(KosEvalState *es, KosDynWind *node) {
    Resume after async before/after thunk: advance phase, pop junk, maybe unlink.
 */
 static int kos_dyn_wind_on_control_returned(KosEvalState *es, KosDynWind *wind) {
-  KosContext *ctx = KosEvalState_CONTEXT(es);
-  if (! (KosContext_BLOCK(ctx) && *KosContext_BLOCK(ctx) ? *KosContext_BLOCK(ctx)
-                                                         : NULL)) {
+  if (! (KosEvalState_BLOCK(es) && *KosEvalState_BLOCK(es)
+             ? *KosEvalState_BLOCK(es)
+             : NULL)) {
     KosEvalState_SyncFromContext(es);
     return 0;
   }
@@ -178,22 +178,22 @@ static int kos_dyn_wind_on_control_returned(KosEvalState *es, KosDynWind *wind) 
     KosDynWind_BODY_RESULT(wind) = NULL;
 
     KosDynWind_PHASE(wind) = KOS_WIND_PHASE_POST_AFTER;
-    KosContext_UNWIND_TARGET_FRAME(ctx) = NULL;
-    KosContext_DYN_TOP(ctx) = KosDynNode_PARENT(wind);
-    KosContext_CHAIN_VERSION(ctx)++;
-    KosDynNode_PARENT(wind) = NULL;
-    kos_dynwind_free(wind);
-    KosEvalState_RefreshDynCaches(es);
+    KosEvalState_SetUnwindTargetFrame(es, NULL);
+    {
+      KosDynNode *parent = KosDynNode_PARENT((KosDynNode *) wind);
+
+      kos_dyn_commit_dyn_top(es, parent);
+      KosDynNode_PARENT((KosDynNode *) wind) = NULL;
+      kos_dynwind_free(wind);
+    }
 
     if (body_result) {
       if (KosEvalState_StackPushRef(es, body_result) < 0) {
         Py_DECREF(body_result);
-        KosEvalState_SyncFromContext(es);
         return -1;
       }
       Py_DECREF(body_result);
     }
-    KosEvalState_SyncFromContext(es);
     return 0;
   }
   KosEvalState_SyncFromContext(es);
@@ -216,11 +216,10 @@ KosDynWind *kos_dyn_push_wind(
   if (! wind)
     return NULL;
 
-  KosContext_DYN_TOP(ctx) = (KosDynNode *) wind;
-  KosContext_CHAIN_VERSION(ctx)++;
-  KosEvalState_RefreshDynCaches(es);
-
-  KosEvalState_SyncFromContext(es);
+  if (kos_dyn_push_noinstall(es, (KosDynNode *) wind) < 0) {
+    kos_dynwind_free(wind);
+    return NULL;
+  }
   return wind;
 }
 
@@ -236,13 +235,14 @@ int kos_dyn_pop_wind(KosEvalState *es, KosDynWind *wind) {
     KosEvalState_SyncFromContext(es);
     return -1;
   }
+  {
+    KosDynNode *parent = KosDynNode_PARENT((KosDynNode *) wind);
 
-  KosContext_DYN_TOP(ctx) = KosDynNode_PARENT(wind);
-  KosContext_CHAIN_VERSION(ctx)++;
-  kos_dynwind_free(wind);
-  KosEvalState_RefreshDynCaches(es);
+    kos_dyn_commit_dyn_top(es, parent);
+    KosDynNode_PARENT((KosDynNode *) wind) = NULL;
+    kos_dynwind_free(wind);
+  }
 
-  KosEvalState_SyncFromContext(es);
   return 0;
 }
 

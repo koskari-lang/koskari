@@ -157,14 +157,11 @@ static int yield_from_normalize(
    exception set; does not change phase or PC.
 */
 static int yield_from_emit_yield(
-    KosContext *ctx,
-    KosDynFrame *frame,
+    KosEvalState *es,
     KosDynYieldFrom *yf,
     KosEvent *out_ev) {
 
-  KosEvalState vf_es;
-  KosEvalState_Init(&vf_es, ctx);
-  PyObject *const *tos = KosEvalState_StackTailPtr(&vf_es, 1);
+  PyObject *const *tos = KosEvalState_StackTailPtr(es, 1);
   if (! tos) {
     if (! PyErr_Occurred())
       PyErr_SetString(PyExc_RuntimeError,
@@ -173,16 +170,16 @@ static int yield_from_emit_yield(
   }
 
   KosDynYieldFrom_PHASE_SET(yf, KOS_YF_PHASE_EXPECT_SEND);
-  KosDynFrame_PC(frame) = KosDynFrame_ACTING_PC(frame);
+  KosEvalState_SET_PC(es, KosEvalState_ACTING_PC(es));
   KosEvent_KIND(out_ev) = KOS_EV_YIELD;
   KosEvent_PAYLOAD(out_ev) = *tos;
   Py_INCREF(KosEvent_PAYLOAD(out_ev));
   SAYF("[yf] emit_yield dyn_top=%p frame=%p payload=%p -> KOS_EV_YIELD\n",
-       (void *) KosContext_DYN_TOP(ctx), (void *) frame,
+       (void *) KosEvalState_CurrentNode(es), (void *) KosEvalState_FRAME(es),
        (void *) KosEvent_PAYLOAD(out_ev));
 
-  KosContext_FLAGS(ctx) &= ~KOS_CTX_RUNNING;
-  KosContext_FLAGS(ctx) |= KOS_CTX_DEAD;
+  KosEvalState_FlushLiveRegsToFrame(es);
+  KosEvalState_MarkDeadAfterYield(es);
   return 1;
 }
 
@@ -204,16 +201,14 @@ static void yield_from_discard_stop_iteration_value(void) {
    Exhaustion: discard StopIteration value, pop yield_from, no stack push.
 */
 static int yield_from_drive_sync_iter(
-    KosContext *ctx,
-    KosDynFrame *frame,
+    KosEvalState *es,
     KosDynYieldFrom *yf,
     PyObject *delegate,
     uint8_t action,
     KosEvent *out_ev,
     KosOp *insn) {
 
-  KosEvalState vf_es;
-  KosEvalState_Init(&vf_es, ctx);
+  (void) insn;
 
   if (action != KOS_YF_STEP && action != KOS_YF_SEND) {
     if (action == KOS_YF_CLOSE)
@@ -233,12 +228,12 @@ static int yield_from_drive_sync_iter(
 
   PyObject *n = PyIter_Next(delegate);
   if (n) {
-    if (KosEvalState_StackPushRef(&vf_es, n) < 0) {
+    if (KosEvalState_StackPushRef(es, n) < 0) {
       Py_DECREF(n);
       return -1;
     }
     Py_DECREF(n);
-    return yield_from_emit_yield(ctx, frame, yf, out_ev);
+    return yield_from_emit_yield(es, yf, out_ev);
   }
 
   /* PyIter_Next returns NULL with no exception set on normal exhaustion.
@@ -248,11 +243,11 @@ static int yield_from_drive_sync_iter(
     if (! PyErr_ExceptionMatches(PyExc_StopIteration))
       return -1;
     yield_from_discard_stop_iteration_value();
-    kos_dyn_pop_yield_from(&vf_es, yf);
+    kos_dyn_pop_yield_from(es, yf);
     return 0;
   }
 
-  kos_dyn_pop_yield_from(&vf_es, yf);
+  kos_dyn_pop_yield_from(es, yf);
   return 0;
 }
 
@@ -263,16 +258,14 @@ static int yield_from_drive_sync_iter(
    as a yielded value. Returns 0 continue, 1 event, -1 error.
 */
 static int yield_from_drive_sync_gen(
-    KosContext *ctx,
-    KosDynFrame *frame,
+    KosEvalState *es,
     KosDynYieldFrom *yf,
     PyObject *delegate,
     uint8_t action,
     KosEvent *out_ev,
     KosOp *insn) {
 
-  KosEvalState vf_es;
-  KosEvalState_Init(&vf_es, ctx);
+  (void) insn;
 
   PyObject *send_val = Py_None;
   if (action == KOS_YF_SEND && KosDynYieldFrom_PENDING_ARG(yf))
@@ -287,16 +280,16 @@ static int yield_from_drive_sync_gen(
         KosDynYieldFrom_PENDING_ACTION(yf) = KOS_YF_STEP;
         Py_XDECREF(KosDynYieldFrom_PENDING_ARG(yf));
         KosDynYieldFrom_PENDING_ARG(yf) = NULL;
-        if (KosEvalState_StackPushRef(&vf_es, res) < 0) {
+        if (KosEvalState_StackPushRef(es, res) < 0) {
           Py_DECREF(res);
           return -1;
         }
         Py_DECREF(res);
-        return yield_from_emit_yield(ctx, frame, yf, out_ev);
+        return yield_from_emit_yield(es, yf, out_ev);
       }
     }
     kos_yieldfrom_close_delegate(yf);
-    kos_dyn_pop_yield_from(&vf_es, yf);
+    kos_dyn_pop_yield_from(es, yf);
     return -1;
   }
 
@@ -304,7 +297,7 @@ static int yield_from_drive_sync_gen(
     PyObject *res = PyObject_CallMethodObjArgs(delegate, str_close, NULL);
     Py_XDECREF(res);
     PyErr_Clear();
-    kos_dyn_pop_yield_from(&vf_es, yf);
+    kos_dyn_pop_yield_from(es, yf);
     PyErr_SetNone(PyExc_GeneratorExit);
     return -1;
   }
@@ -314,17 +307,17 @@ static int yield_from_drive_sync_gen(
     if (PyErr_ExceptionMatches(PyExc_StopIteration)) {
       Py_XDECREF(res);
       yield_from_discard_stop_iteration_value();
-      kos_dyn_pop_yield_from(&vf_es, yf);
+      kos_dyn_pop_yield_from(es, yf);
       return 0;
     }
 
     if (res) {
-      if (KosEvalState_StackPushRef(&vf_es, res) < 0) {
+      if (KosEvalState_StackPushRef(es, res) < 0) {
         Py_DECREF(res);
         return -1;
       }
       Py_DECREF(res);
-      return yield_from_emit_yield(ctx, frame, yf, out_ev);
+      return yield_from_emit_yield(es, yf, out_ev);
     }
     return -1;
   }
@@ -337,17 +330,13 @@ static int yield_from_drive_sync_gen(
    or KOS_YF_PY_ASYNC_GEN. Returns 0 continue, 1 event (YIELD/AWAIT), -1 error.
 */
 static int yield_from_drive_py_async(
-    KosContext *ctx,
-    KosDynFrame *frame,
+    KosEvalState *es,
     KosDynYieldFrom *yf,
     PyObject *delegate,
     uint8_t kind,
     uint8_t action,
     KosEvent *out_ev,
     KosOp *insn) {
-
-  KosEvalState vf_es;
-  KosEvalState_Init(&vf_es, ctx);
 
   (void) insn;
 
@@ -366,13 +355,13 @@ static int yield_from_drive_py_async(
       return -1;
     }
 
-    if (KosEvalState_StackPushRef(&vf_es, aw_result) < 0) {
+    if (KosEvalState_StackPushRef(es, aw_result) < 0) {
       Py_DECREF(aw_result);
       return -1;
     }
 
     Py_DECREF(aw_result);
-    return yield_from_emit_yield(ctx, frame, yf, out_ev);
+    return yield_from_emit_yield(es, yf, out_ev);
   }
 
   /* Throw(StopAsyncIteration): delegate was closed with that; discard value. */
@@ -384,7 +373,7 @@ static int yield_from_drive_py_async(
       Py_XDECREF(KosDynYieldFrom_PENDING_ARG(yf));
       KosDynYieldFrom_PENDING_ARG(yf) = NULL;
       KosDynYieldFrom_PENDING_ACTION(yf) = KOS_YF_STEP;
-      kos_dyn_pop_yield_from(&vf_es, yf);
+      kos_dyn_pop_yield_from(es, yf);
       Py_XDECREF(final_val);
       return 0;
     }
@@ -424,7 +413,7 @@ static int yield_from_drive_py_async(
 
   } else if (action == KOS_YF_CLOSE) {
     /* PY_ASYNC_ITER has no aclose; treat as exhausted. */
-    kos_dyn_pop_yield_from(&vf_es, yf);
+    kos_dyn_pop_yield_from(es, yf);
     return 0;
   }
 
@@ -434,7 +423,7 @@ static int yield_from_drive_py_async(
       PyObject *final_val = StopAsyncIteration_VALUE(exc);
       Py_XINCREF(final_val);
       Py_DECREF(exc);
-      kos_dyn_pop_yield_from(&vf_es, yf);
+      kos_dyn_pop_yield_from(es, yf);
       Py_XDECREF(final_val);
       return 0;
     }
@@ -443,16 +432,17 @@ static int yield_from_drive_py_async(
 
   int suspended = 0;
   PyObject *yielded = NULL;
-  PyObject *result = eager_step_awaitable(awaitable, ctx, &suspended, &yielded);
+  PyObject *result = KosEvalState_EagerStepAwaitable(
+      es, awaitable, &suspended, &yielded);
 
   if (suspended && yielded) {
     KosDynYieldFrom_INFLIGHT(yf) = awaitable;
     KosDynYieldFrom_PHASE_SET(yf, KOS_YF_PHASE_EXPECT_AWAIT);
-    KosDynFrame_PC(frame) = KosDynFrame_ACTING_PC(frame);
+    KosEvalState_SET_PC(es, KosEvalState_ACTING_PC(es));
     KosEvent_KIND(out_ev) = KOS_EV_AWAIT;
     KosEvent_PAYLOAD(out_ev) = yielded;
-    KosContext_FLAGS(ctx) &= ~KOS_CTX_RUNNING;
-    KosContext_FLAGS(ctx) |= KOS_CTX_DEAD;
+    KosEvalState_FlushLiveRegsToFrame(es);
+    KosEvalState_MarkDeadAfterYield(es);
     return 1;
   }
 
@@ -461,12 +451,12 @@ static int yield_from_drive_py_async(
     KosDynYieldFrom_PENDING_ACTION(yf) = KOS_YF_STEP;
     Py_XDECREF(KosDynYieldFrom_PENDING_ARG(yf));
     KosDynYieldFrom_PENDING_ARG(yf) = NULL;
-    if (KosEvalState_StackPushRef(&vf_es, result) < 0) {
+    if (KosEvalState_StackPushRef(es, result) < 0) {
       Py_DECREF(result);
       return -1;
     }
     Py_DECREF(result);
-    return yield_from_emit_yield(ctx, frame, yf, out_ev);
+    return yield_from_emit_yield(es, yf, out_ev);
   }
 
   if (PyErr_ExceptionMatches(PyExc_StopAsyncIteration)) {
@@ -474,7 +464,7 @@ static int yield_from_drive_py_async(
     PyObject *final_val = StopAsyncIteration_VALUE(exc);
     Py_XINCREF(final_val);
     Py_DECREF(exc);
-    kos_dyn_pop_yield_from(&vf_es, yf);
+    kos_dyn_pop_yield_from(es, yf);
     Py_XDECREF(final_val);
     return 0;
   }
@@ -488,16 +478,12 @@ static int yield_from_drive_py_async(
    throw(StopAsyncIteration), and stepping.  Returns 0 continue, -1 error.
 */
 static int yield_from_drive_kos_async_gen(
-    KosContext *ctx,
-    KosDynFrame *frame,
+    KosEvalState *es,
     KosDynYieldFrom *yf,
     PyObject *delegate,
     uint8_t action,
     KosEvent *out_ev,
     KosOp *insn) {
-
-  KosEvalState vf_es;
-  KosEvalState_Init(&vf_es, ctx);
 
   KosPyAsyncGen *agen = (KosPyAsyncGen *) delegate;
 
@@ -505,7 +491,6 @@ static int yield_from_drive_kos_async_gen(
   PyObject *yf_throw_exc = NULL;
   PyObject *yf_throw_typ = NULL;
 
-  (void) frame;
   (void) out_ev;
   (void) insn;
 
@@ -527,7 +512,7 @@ static int yield_from_drive_kos_async_gen(
 
   if (action == KOS_YF_CLOSE) {
     agen->closed = 1;
-    kos_dyn_pop_yield_from(&vf_es, yf);
+    kos_dyn_pop_yield_from(es, yf);
     PyErr_SetNone(PyExc_GeneratorExit);
     return -1;
   }
@@ -540,19 +525,19 @@ static int yield_from_drive_kos_async_gen(
       Py_XDECREF(KosDynYieldFrom_PENDING_ARG(yf));
       KosDynYieldFrom_PENDING_ARG(yf) = NULL;
       KosDynYieldFrom_PENDING_ACTION(yf) = KOS_YF_STEP;
-      kos_dyn_pop_yield_from(&vf_es, yf);
+      kos_dyn_pop_yield_from(es, yf);
       Py_XDECREF(final_val);
       return 0;
     }
   }
 
   if (agen->closed) {
-    kos_dyn_pop_yield_from(&vf_es, yf);
+    kos_dyn_pop_yield_from(es, yf);
     return 0;
   }
 
   if (! agen->gen || ! KosDynGen_ACTIVE((KosDynGen *) agen->gen)) {
-    kos_dyn_pop_yield_from(&vf_es, yf);
+    kos_dyn_pop_yield_from(es, yf);
     return 0;
   }
 
@@ -588,7 +573,7 @@ static int yield_from_drive_kos_async_gen(
   if (yf_throw_exc)
     PyErr_SetObject(yf_throw_typ, yf_throw_exc);
 
-  if (op_attach_koskari_agen_frame_for_yield_from(ctx, agen, yf) < 0) {
+  if (op_attach_koskari_agen_frame_for_yield_from(es, agen, yf) < 0) {
     Py_XDECREF(yf_send_val);
     if (yf_throw_typ) {
       Py_DECREF(yf_throw_typ);
@@ -605,14 +590,14 @@ static int yield_from_drive_kos_async_gen(
   }
 
   if (! PyErr_Occurred()) {
-    PyObject *popped = KosEvalState_StackPopRef(&vf_es);
+    PyObject *popped = KosEvalState_StackPopRef(es);
     PyObject *pushv;
 
     if (! popped)
       return -1;
     Py_DECREF(popped);
     pushv = yf_send_val ? yf_send_val : Py_None;
-    if (KosEvalState_StackPushRef(&vf_es, pushv) < 0) {
+    if (KosEvalState_StackPushRef(es, pushv) < 0) {
       Py_XDECREF(yf_send_val);
       return -1;
     }
@@ -638,10 +623,7 @@ static int yield_from_drive_kos_async_gen(
 */
 
 KOS_OP_HANDLER(YIELD_FROM) {
-  KosContext *ctx = KosEvalState_CONTEXT(es);
-
-  KosDynNode *dyn_top = KosContext_DYN_TOP(ctx);
-  KosDynFrame *frame = CURRENT_FRAME(ctx);
+  KosDynNode *dyn_top = KosEvalState_CurrentNode(es);
 
   if (! KosDynNode_IS_YIELD_FROM(dyn_top)) {
     /* 1. First entry: TOS is the yield-from expression result. Pop it,
@@ -666,10 +648,10 @@ KOS_OP_HANDLER(YIELD_FROM) {
 
     Py_DECREF(delegate);
     {
-      KosDynYieldFrom *yf_new = (KosDynYieldFrom *) KosContext_DYN_TOP(ctx);
+      KosDynYieldFrom *yf_new = (KosDynYieldFrom *) KosEvalState_CurrentNode(es);
       KosDynYieldFrom_PENDING_ACTION(yf_new) = KOS_YF_STEP;
       KosDynYieldFrom_PHASE_SET(yf_new, KOS_YF_PHASE_DRIVING);
-      KosDynFrame_PC(CURRENT_FRAME(ctx)) = KosDynFrame_ACTING_PC(CURRENT_FRAME(ctx));
+      KosEvalState_SET_PC(es, KosEvalState_ACTING_PC(es));
     }
     return KOS_OP_RUN();
   }
@@ -680,57 +662,50 @@ KOS_OP_HANDLER(YIELD_FROM) {
 
   /* 2. INJECT_MODE == KOS_INJECT_THROW: consume inject, set PENDING_ACTION=THROW,
      fall through to drive. */
-  if (KosContext_INJECT_MODE(ctx) == KOS_INJECT_THROW) {
-    PyObject *exc = KosContext_INJECT_VALUE(ctx);
-    PyObject *exc_type = KosContext_INJECT_TYPE(ctx);
-    KosContext_INJECT_MODE(ctx) = KOS_INJECT_NONE;
-    KosContext_INJECT_VALUE(ctx) = NULL;
-    KosContext_INJECT_TYPE(ctx) = NULL;
-    Py_XDECREF(KosDynYieldFrom_PENDING_ARG(yf));
-    KosDynYieldFrom_PENDING_ARG(yf) = exc;
-    Py_INCREF(exc);
-    Py_XDECREF(KosDynYieldFrom_PENDING_ARG_TYPE(yf));
-    KosDynYieldFrom_PENDING_ARG_TYPE(yf) = exc_type;
-    if (exc_type)
-      Py_INCREF(exc_type);
-    action = KOS_YF_THROW;
-    KosDynYieldFrom_PENDING_ACTION(yf) = action;
-    KosDynYieldFrom_PHASE_SET(yf, KOS_YF_PHASE_DRIVING);
-  }
+  {
+    PyObject *exc = NULL;
+    PyObject *exc_type = NULL;
 
-  /* 3. PHASE == EXPECT_SEND: pop TOS (send value or stale). If stack had >= 2
-     elements, TOS was send_val and next was stale; else TOS was stale only. */
-  else if (KosDynYieldFrom_PHASE(yf) == KOS_YF_PHASE_EXPECT_SEND) {
-    size_t sz = KosEvalState_StackLen(es);
-    if (sz == 0)
-      return KOS_OP_POST_ERR();
-    PyObject *first = KosEvalState_StackPopRef(es);
-    if (sz >= 2) {
+    if (KosEvalState_TakeInjectThrow(es, &exc_type, &exc)) {
       Py_XDECREF(KosDynYieldFrom_PENDING_ARG(yf));
-      KosDynYieldFrom_PENDING_ARG(yf) = first;
-      Py_XDECREF(KosEvalState_StackPopRef(es));
-    } else {
-      Py_XDECREF(first);
+      KosDynYieldFrom_PENDING_ARG(yf) = exc;
+      Py_INCREF(exc);
+      Py_XDECREF(KosDynYieldFrom_PENDING_ARG_TYPE(yf));
+      KosDynYieldFrom_PENDING_ARG_TYPE(yf) = exc_type;
+      if (exc_type)
+        Py_INCREF(exc_type);
+      action = KOS_YF_THROW;
+      KosDynYieldFrom_PENDING_ACTION(yf) = action;
+      KosDynYieldFrom_PHASE_SET(yf, KOS_YF_PHASE_DRIVING);
+    } else if (KosDynYieldFrom_PHASE(yf) == KOS_YF_PHASE_EXPECT_SEND) {
+      size_t sz = KosEvalState_StackLen(es);
+      if (sz == 0)
+        return KOS_OP_POST_ERR();
+      PyObject *first = KosEvalState_StackPopRef(es);
+      if (sz >= 2) {
+        Py_XDECREF(KosDynYieldFrom_PENDING_ARG(yf));
+        KosDynYieldFrom_PENDING_ARG(yf) = first;
+        Py_XDECREF(KosEvalState_StackPopRef(es));
+      } else {
+        Py_XDECREF(first);
+        Py_XDECREF(KosDynYieldFrom_PENDING_ARG(yf));
+        KosDynYieldFrom_PENDING_ARG(yf) = Py_None;
+        Py_INCREF(Py_None);
+      }
+      action = KOS_YF_SEND;
+      KosDynYieldFrom_PENDING_ACTION(yf) = action;
+      KosDynYieldFrom_PHASE_SET(yf, KOS_YF_PHASE_DRIVING);
+    } else if (KosDynYieldFrom_PHASE(yf) == KOS_YF_PHASE_EXPECT_AWAIT) {
+      PyObject *aw_result = KosEvalState_StackPopRef(es);
+      if (! aw_result)
+        return KOS_OP_POST_ERR();
+      Py_INCREF(aw_result);
       Py_XDECREF(KosDynYieldFrom_PENDING_ARG(yf));
-      KosDynYieldFrom_PENDING_ARG(yf) = Py_None;
-      Py_INCREF(Py_None);
+      KosDynYieldFrom_PENDING_ARG(yf) = aw_result;
+      action = KOS_YF_STEP;
+      KosDynYieldFrom_PENDING_ACTION(yf) = action;
+      KosDynYieldFrom_PHASE_SET(yf, KOS_YF_PHASE_DRIVING);
     }
-    action = KOS_YF_SEND;
-    KosDynYieldFrom_PENDING_ACTION(yf) = action;
-    KosDynYieldFrom_PHASE_SET(yf, KOS_YF_PHASE_DRIVING);
-  }
-
-  /* 4. PHASE == EXPECT_AWAIT: pop TOS (await result). Underrun is an error. */
-  else if (KosDynYieldFrom_PHASE(yf) == KOS_YF_PHASE_EXPECT_AWAIT) {
-    PyObject *aw_result = KosEvalState_StackPopRef(es);
-    if (! aw_result)
-      return KOS_OP_POST_ERR();
-    Py_INCREF(aw_result);
-    Py_XDECREF(KosDynYieldFrom_PENDING_ARG(yf));
-    KosDynYieldFrom_PENDING_ARG(yf) = aw_result;
-    action = KOS_YF_STEP;
-    KosDynYieldFrom_PENDING_ACTION(yf) = action;
-    KosDynYieldFrom_PHASE_SET(yf, KOS_YF_PHASE_DRIVING);
   }
 
   /* 5. Default (DRIVING): use PENDING_ACTION and PENDING_ARG as-is. */
@@ -738,20 +713,18 @@ KOS_OP_HANDLER(YIELD_FROM) {
 
   if (kind == KOS_YF_SYNC_ITER)
     return kos_op_outcome_from_int_step(
-        yield_from_drive_sync_iter(ctx, frame, yf, delegate, action, out_ev,
-                                   insn));
+        yield_from_drive_sync_iter(es, yf, delegate, action, out_ev, insn));
   if (kind == KOS_YF_SYNC_GEN)
     return kos_op_outcome_from_int_step(
-        yield_from_drive_sync_gen(ctx, frame, yf, delegate, action, out_ev,
-                                  insn));
+        yield_from_drive_sync_gen(es, yf, delegate, action, out_ev, insn));
   if (kind == KOS_YF_PY_ASYNC_ITER || kind == KOS_YF_PY_ASYNC_GEN)
     return kos_op_outcome_from_int_step(
-        yield_from_drive_py_async(ctx, frame, yf, delegate, kind, action,
-                                  out_ev, insn));
+        yield_from_drive_py_async(es, yf, delegate, kind, action, out_ev,
+                                  insn));
   if (kind == KOS_YF_KOS_ASYNC_GEN)
     return kos_op_outcome_from_int_step(
-        yield_from_drive_kos_async_gen(ctx, frame, yf, delegate, action,
-                                       out_ev, insn));
+        yield_from_drive_kos_async_gen(es, yf, delegate, action, out_ev,
+                                        insn));
 
   PyErr_SetString(PyExc_RuntimeError, "unexpected delegate kind");
   return KOS_OP_POST_ERR();

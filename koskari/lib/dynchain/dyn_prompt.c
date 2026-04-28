@@ -68,6 +68,7 @@ void kos_dynprompt_free(KosDynPrompt *prompt) {
 KosDynPrompt *kos_dyn_push_prompt(KosEvalState *es, uint32_t prompt_id) {
 
   KosContext *ctx = KosEvalState_CONTEXT(es);
+  // CONTEXT: dirty, touches context directly
   KosDynPrompt *prompt = kos_dynprompt_new(KosContext_DYN_TOP(ctx), prompt_id);
   if (! prompt)
     return NULL;
@@ -77,7 +78,6 @@ KosDynPrompt *kos_dyn_push_prompt(KosEvalState *es, uint32_t prompt_id) {
     return NULL;
   }
 
-  KosEvalState_SyncFromContext(es);
   return prompt;
 }
 
@@ -106,7 +106,7 @@ int kos_dyn_pop_prompt(KosEvalState *es, KosDynPrompt *prompt) {
    GC traverse a KOS_DYN_PROMPT: visit pending shift wrapper if any.
 */
 static int dynnode_traverse_prompt(KosDynNode *node, visitproc visit, void *arg) {
-  int tr = kos_stackblock_traverse(KosDynNode_STACK(node), visit, arg);
+  int tr = KosStackBlock_Traverse(KosDynNode_STACK(node), visit, arg);
   if (tr != 0)
     return tr;
   Py_VISIT(KosDynPrompt_PENDING_SHIFT_WRAPPER((KosDynPrompt *) node));

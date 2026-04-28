@@ -20,7 +20,6 @@
 */
 
 KOS_OP_HANDLER(CHECK_EXCEPTION) {
-  KosContext *ctx = KosEvalState_CONTEXT(es);
   (void) out_ev;
 
   PyObject *match = KosEvalState_StackPopRef(es);
@@ -39,8 +38,9 @@ KOS_OP_HANDLER(CHECK_EXCEPTION) {
   Py_XDECREF(tb);
   Py_DECREF(match);
 
-  if (! ret)
-    CURRENT_PC(ctx) = KosOp_ARG(insn);
+  if (! ret) {
+    KosEvalState_SET_PC(es, KosOp_ARG(insn));
+  }
 
   return KOS_OP_RUN();
 }

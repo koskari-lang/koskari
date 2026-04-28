@@ -24,7 +24,7 @@ KOS_OP_HANDLER(CONS) {
 
   if (count == 0) {
     Py_INCREF(KosNil);
-    return kos_op_outcome_from_int_step(push_result(es, KosNil));
+    return kos_op_outcome_PUSH(es, KosNil);
   }
 
   PyObject *const *ptr = KosEvalState_StackTailPtr(es, count);
@@ -40,5 +40,5 @@ KOS_OP_HANDLER(CONS) {
     return KOS_OP_POST_ERR();
   }
 
-  return kos_op_outcome_from_int_step(push_result(es, result));
+  return kos_op_outcome_PUSH(es, result);
 }

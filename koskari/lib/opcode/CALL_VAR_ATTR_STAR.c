@@ -40,8 +40,7 @@ static int ensure_tuple_var_attr_star(PyObject **val) {
 
 
 KOS_OP_HANDLER(CALL_VAR_ATTR_STAR) {
-  KosContext *ctx = KosEvalState_CONTEXT(es);
-  KosCode *code = CURRENT_CODE(ctx);
+  KosCode *code = KosEvalState_CurrentCode(es);
   KosExtra row = KosCode_GetExtra(code, KosOp_ARG(insn));
   uint32_t name_cpool_idx = row.a0;
   uint32_t attr_cpool_idx = row.a1;
@@ -55,7 +54,7 @@ KOS_OP_HANDLER(CALL_VAR_ATTR_STAR) {
   if (! attr_name)
     return KOS_OP_POST_ERR();
 
-  PyObject *obj = frame_ns_deref(ctx, var_name);
+  PyObject *obj = frame_ns_deref(es, var_name);
   if (! obj)
     return KOS_OP_POST_ERR();
 
@@ -153,7 +152,7 @@ KOS_OP_HANDLER(CALL_VAR_ATTR_STAR) {
   Py_DECREF(resolved);
   Py_DECREF(args_for_call);
   Py_XDECREF(kwd);
-  return kos_op_outcome_from_call_int(ctx, res);
+  return kos_op_outcome_from_call_int(es, res);
 }
 
 

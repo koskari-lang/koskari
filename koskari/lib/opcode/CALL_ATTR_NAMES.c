@@ -21,8 +21,7 @@
    Resolve obj.name, then call like CALL_NAMES.
 */
 KOS_OP_HANDLER(CALL_ATTR_NAMES) {
-  KosContext *ctx = KosEvalState_CONTEXT(es);
-  KosCode *code = CURRENT_CODE(ctx);
+  KosCode *code = KosEvalState_CurrentCode(es);
   KosExtra row = KosCode_GetExtra(code, KosOp_ARG(insn));
   uint32_t attr_cpool_idx = row.a0;
   uint32_t names_cpool_idx = row.a1;
@@ -78,7 +77,7 @@ KOS_OP_HANDLER(CALL_ATTR_NAMES) {
                             names, 0);
     KosStackSteal_Free(&steal);
     Py_DECREF(resolved);
-    return kos_op_outcome_from_call_int(ctx, r);
+    return kos_op_outcome_from_call_int(es, r);
   }
 
   if (send_self == 0) {
@@ -93,5 +92,5 @@ KOS_OP_HANDLER(CALL_ATTR_NAMES) {
     return KOS_OP_POST_ERR();
 
   KosEvalState_StackDropNoErr(es, ntotal);
-  return kos_op_outcome_from_push_int(op_push_or_await(es, out_ev, result));
+  return kos_op_outcome_PUSH_OR_AWAIT(es, out_ev, result);
 }

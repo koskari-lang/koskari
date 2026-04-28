@@ -27,7 +27,9 @@
 
    Compile-flag enabled tracing for Koskari freelists, events, and timing.
    Include this header in .c files that use tracing macros. Not included from
-   lib.h; opt-in per file (same pattern as debug.h).
+   lib.h; opt-in per file (same pattern as debug.h). eval.h includes this
+   header when instrumenting KosEvalState sync entry points with
+   KOS_TRACE_EVAL_SYNC.
 
    Event counters use KosTraceEventId; increment with KOS_TRACE_EVENTS_INC.
 
@@ -78,6 +80,27 @@ typedef enum KosTracePostOpId {
 #define KOS_TRACE_TIMING 0
 #endif
 
+#ifndef KOS_TRACE_EVAL_SYNC
+#define KOS_TRACE_EVAL_SYNC 0
+#endif
+
+#ifndef KOS_DEBUG_PATCH_DYN_CACHES
+#define KOS_DEBUG_PATCH_DYN_CACHES 0
+#endif
+
+
+/* === eval state sync timing ids (KOS_TRACE_EVAL_SYNC; add only at end) === */
+
+typedef enum KosTraceEvalSyncId {
+  KOS_TEVS_init = 0,
+  KOS_TEVS_sync_from_context,
+  KOS_TEVS_flush_live_regs,
+  KOS_TEVS_apply_dyn_caches,
+  KOS_TEVS_refresh_dyn_caches,
+  KOS_TEVS_patch_dyn_caches,
+  KOS_TEVS__COUNT
+} KosTraceEvalSyncId;
+
 
 /* === API (always available) === */
 
@@ -97,6 +120,12 @@ void kos_trace_opcode_record(unsigned op, uint64_t delta_ns);
 void kos_trace_post_op_enter(void);
 void kos_trace_post_op_exit(void);
 void kos_trace_post_op_record(unsigned id, uint64_t delta_ns);
+#endif
+
+
+#if KOS_TRACE_EVAL_SYNC
+uint64_t kos_trace_eval_sync_now(void);
+void kos_trace_eval_sync_record(KosTraceEvalSyncId id, uint64_t delta_ns);
 #endif
 
 
@@ -155,6 +184,20 @@ void kos_trace_fl_return(const char *name, int overrun);
 #define KOS_TRACE_POST_OP_ENTER() ((void)0)
 #define KOS_TRACE_POST_OP_EXIT() ((void)0)
 #define KOS_TRACE_POST_OP_WRAP(name, stmt) do { stmt; } while (0)
+#endif
+
+
+/* === eval state sync (counts + wall time in get_trace_report) === */
+
+#if KOS_TRACE_EVAL_SYNC
+#define KOS_TRACE_EVAL_SYNC_BEGIN() \
+  uint64_t _kos_evs_t0 = kos_trace_eval_sync_now()
+#define KOS_TRACE_EVAL_SYNC_END(id)                                         \
+  kos_trace_eval_sync_record((KosTraceEvalSyncId)(id),                      \
+                             kos_trace_eval_sync_now() - _kos_evs_t0)
+#else
+#define KOS_TRACE_EVAL_SYNC_BEGIN() ((void)0)
+#define KOS_TRACE_EVAL_SYNC_END(id) ((void)0)
 #endif
 
 

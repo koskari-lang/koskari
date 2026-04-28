@@ -47,7 +47,8 @@ class TestTraceReport(unittest.TestCase):
         self.assertIn("freelist", flags)
         self.assertIn("events", flags)
         self.assertIn("timing", flags)
-        for k in ("freelist", "events", "timing"):
+        self.assertIn("eval_state_sync", flags)
+        for k in ("freelist", "events", "timing", "eval_state_sync"):
             self.assertIsInstance(flags[k], bool)
 
     def test_events_section_when_disabled(self):
@@ -102,6 +103,69 @@ class TestTraceReport(unittest.TestCase):
         )
         for key in expected:
             self.assertIn(key, ev, msg="missing counter %r" % (key,))
+
+    def test_eval_state_sync_section_when_disabled(self):
+        """
+        Default builds omit eval_state_sync counts; flags.eval_state_sync is False
+        """
+
+        report = lib.get_trace_report()
+        flags = report["flags"]
+        if not flags.get("eval_state_sync"):
+            self.assertNotIn(
+                "eval_state_sync",
+                report,
+                "eval_state_sync key should be absent when "
+                "KOS_TRACE_EVAL_SYNC is off",
+            )
+
+    def test_eval_state_sync_section_shape_when_enabled(self):
+        """
+        When built with KOS_TRACE_EVAL_SYNC=1, eval_state_sync entries have
+        count and total_ns
+        """
+
+        report = lib.get_trace_report()
+        flags = report["flags"]
+        if not flags.get("eval_state_sync"):
+            self.skipTest(
+                "KOS_TRACE_EVAL_SYNC not enabled; rebuild with "
+                "KOS_TRACE_EVAL_SYNC=1"
+            )
+        self.assertIn("eval_state_sync", report)
+        sec = report["eval_state_sync"]
+        self.assertIsInstance(sec, dict)
+        for name, entry in sec.items():
+            self.assertIsInstance(name, str)
+            self.assertIsInstance(entry, dict)
+            self.assertIn("count", entry)
+            self.assertIn("total_ns", entry)
+            self.assertIsInstance(entry["count"], int)
+            self.assertIsInstance(entry["total_ns"], int)
+            self.assertGreaterEqual(entry["count"], 0)
+            self.assertGreaterEqual(entry["total_ns"], 0)
+
+    def test_expected_eval_state_sync_keys_when_enabled(self):
+        """
+        Documented eval_state_sync metric names appear when tracing is on
+        """
+
+        report = lib.get_trace_report()
+        if not report["flags"].get("eval_state_sync"):
+            self.skipTest(
+                "KOS_TRACE_EVAL_SYNC not enabled; rebuild with "
+                "KOS_TRACE_EVAL_SYNC=1"
+            )
+        sec = report["eval_state_sync"]
+        expected = (
+            "init",
+            "sync_from_context",
+            "flush_live_regs",
+            "apply_dyn_caches",
+            "refresh_dyn_caches",
+        )
+        for key in expected:
+            self.assertIn(key, sec, msg="missing eval_state_sync key %r" % (key,))
 
     def test_opcode_timing_absent_when_disabled(self):
         """
@@ -322,6 +386,23 @@ class TestTraceReport(unittest.TestCase):
         ev = report["events"]
         for val in ev.values():
             self.assertEqual(val, 0)
+
+    def test_clear_trace_counters_resets_eval_state_sync_when_enabled(self):
+        """
+        When KOS_TRACE_EVAL_SYNC=1, clear zeros all eval_state_sync slots
+        """
+
+        if not lib.get_trace_report()["flags"].get("eval_state_sync"):
+            self.skipTest(
+                "KOS_TRACE_EVAL_SYNC not enabled; rebuild with "
+                "KOS_TRACE_EVAL_SYNC=1"
+            )
+        lib.clear_trace_counters()
+        report = lib.get_trace_report()
+        sec = report["eval_state_sync"]
+        for entry in sec.values():
+            self.assertEqual(entry["count"], 0)
+            self.assertEqual(entry["total_ns"], 0)
 
 
 if __name__ == "__main__":

@@ -18,8 +18,7 @@
 */
 
 KOS_OP_HANDLER(ATTR) {
-  KosContext *ctx = KosEvalState_CONTEXT(es);
-  PyObject *name = get_name_from_insn(CURRENT_CODE(ctx), insn);
+  PyObject *name = get_name_from_insn(KosEvalState_CurrentCode(es), insn);
   if (! name)
     return KOS_OP_POST_ERR();
   PyObject *obj = KosEvalState_StackPopRef(es);
@@ -29,5 +28,5 @@ KOS_OP_HANDLER(ATTR) {
   Py_DECREF(obj);
   if (! val)
     return KOS_OP_POST_ERR();
-  return kos_op_outcome_from_int_step(push_result(es, val));
+  return kos_op_outcome_PUSH(es, val);
 }

@@ -79,10 +79,12 @@ void kos_dynforeach_free(KosDynForeach *node) {
 KosDynForeach *kos_dyn_push_foreach(KosEvalState *es, uint32_t break_pc, uint32_t continue_pc) {
   KosContext *ctx = KosEvalState_CONTEXT(es);
   KosDynForeach *node = kos_dynforeach_new(KosContext_DYN_TOP(ctx), break_pc, continue_pc);
-  if (! node) return NULL;
-  KosContext_DYN_TOP(ctx) = (KosDynNode *) node;
-  KosContext_CHAIN_VERSION(ctx)++;
-  KosEvalState_SyncFromContext(es);
+  if (! node)
+    return NULL;
+  if (kos_dyn_push_noinstall(es, (KosDynNode *) node) < 0) {
+    kos_dynforeach_free(node);
+    return NULL;
+  }
   return node;
 }
 
@@ -92,13 +94,71 @@ KosDynForeach *kos_dyn_push_foreach(KosEvalState *es, uint32_t break_pc, uint32_
 */
 void kos_dyn_pop_foreach(KosEvalState *es, KosDynForeach *node) {
   KosContext *ctx = KosEvalState_CONTEXT(es);
-  if (KosContext_DYN_TOP(ctx)==(KosDynNode*)node) {
-    KosContext_DYN_TOP(ctx)=KosDynNode_PARENT(node);
-    KosContext_CHAIN_VERSION(ctx)++;
-    kos_dynforeach_free(node);
-    KosEvalState_RefreshDynCaches(es);
+  if (KosContext_DYN_TOP(ctx) != (KosDynNode *) node) {
+    KosEvalState_SyncFromContext(es);
+    return;
   }
+  {
+    KosDynNode *parent = KosDynNode_PARENT((KosDynNode *) node);
+
+    kos_dyn_commit_dyn_top(es, parent);
+    KosDynNode_PARENT((KosDynNode *) node) = NULL;
+    kos_dynforeach_free(node);
+  }
+}
+
+
+int kos_dyn_foreach_deliver_yield_kos_agen(
+    KosEvalState *es,
+    KosDynForeach *fe,
+    struct KosEvent *out_ev) {
+
+  PyObject *payload = KosEvent_PAYLOAD(out_ev);
+  KosPyAsyncGen *agen;
+
+  if (KosEvalState_StackPushRef(es, payload) < 0) {
+    KosEvalState_SyncFromContext(es);
+    return -1;
+  }
+  Py_DECREF(payload);
+  KosEvent_PAYLOAD(out_ev) = NULL;
+  KosEvent_KIND(out_ev) = KOS_EV_NONE;
+
+  KosDynForeach_ITER_STEP_PHASE(fe) = KOS_FOREACH_ITER_STEP_IDLE;
+  agen = (KosPyAsyncGen *) KosDynForeach_ITER(fe);
+  agen->in_progress = 0;
   KosEvalState_SyncFromContext(es);
+  return 0;
+}
+
+
+int kos_dyn_foreach_deliver_return_kos_agen(
+    KosEvalState *es,
+    KosDynForeach *fe,
+    struct KosEvent *out_ev) {
+
+  PyObject *val = KosEvent_PAYLOAD(out_ev);
+  KosPyAsyncGen *agen;
+
+  if (kos_dyn_gen_unwind_exhausted(es) < 0) {
+    Py_DECREF(val);
+    KosEvalState_SyncFromContext(es);
+    return -1;
+  }
+
+  agen = (KosPyAsyncGen *) KosDynForeach_ITER(fe);
+  agen->closed = 1;
+  agen->in_progress = 0;
+
+  KosDynForeach_EXHAUSTED(fe) = 1;
+  KosEvalState_SET_PC(es, KosDynForeach_ITER_NEXT_ELSE_PC(fe));
+  KosDynForeach_ITER_STEP_PHASE(fe) = KOS_FOREACH_ITER_STEP_IDLE;
+
+  Py_DECREF(val);
+  KosEvent_PAYLOAD(out_ev) = NULL;
+  KosEvent_KIND(out_ev) = KOS_EV_NONE;
+  KosEvalState_SyncFromContext(es);
+  return 0;
 }
 
 
@@ -109,7 +169,7 @@ void kos_dyn_pop_foreach(KosEvalState *es, KosDynForeach *node) {
    GC traverse a KOS_DYN_FOREACH: visit result and iterator refs.
 */
 static int dynnode_traverse_foreach(KosDynNode *node, visitproc visit, void *arg) {
-  int tr = kos_stackblock_traverse(KosDynNode_STACK(node), visit, arg);
+  int tr = KosStackBlock_Traverse(KosDynNode_STACK(node), visit, arg);
   if (tr != 0)
     return tr;
   Py_VISIT(KosDynForeach_RESULT((KosDynForeach *) node));

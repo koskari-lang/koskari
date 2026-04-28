@@ -19,8 +19,7 @@
 */
 
 KOS_OP_HANDLER(CLEAR_LOOP) {
-  KosContext *ctx = KosEvalState_CONTEXT(es);
-  KosDynNode *region = (KosDynNode *) KosContext_DYN_TOP(ctx);
+  KosDynNode *region = KosEvalState_CurrentNode(es);
   if (! region || ! KosDynNode_IS_LOOP(region)) {
     PyErr_SetString(PyExc_RuntimeError,
                     "CLEAR_LOOP: top is not a LOOP region");

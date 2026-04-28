@@ -28,12 +28,15 @@ The table lists **current internal names**, a **suggested public name** for a
 future `koskari` runtime API (native modules, tooling), and **opcodes that call
 the helper** (by `KOS_OP_HANDLER` basename).
 
+**Koskari async gen flattening:** **`op_attach_koskari_agen_frame`**, **`op_attach_koskari_agen_frame_for_iter_next`**, and **`op_attach_koskari_agen_frame_for_yield_from`** each take **`KosEvalState *es`** as the first argument (the same live eval state as the opcode handler). Each validates **`gen`** and performs opcode-specific failure cleanup, then calls **`kos_attach_agen_gen_flatten(es, agen, gen)`**, which clears **`agen->ctx`**’s dyn/frame head and invokes **`kos_dyn_gen_install(es, gen)`** so **`KosEvalState_RefreshDynCaches`** updates **`es`** in place.
+
 | Internal name | Suggested public name | Opcodes using it |
 |---------------|----------------------|------------------|
 | `push_result` | `KosEval_PushResult` (or `KosContext_PushResult`) | ATTR, ATTR_REF, CAPTURE_CC, CAR, CDR, CONS, CONST, CONST_ITEM, CONST_ITEM_REF, DEREF, EXCEPTION, EXCEPTION_MATCH, FAST, FAST_ATTR, FAST_ATTR_REF, FAST_REF, GLOBALS, IMPORT, IMPORT_FROM, IMPORT_REL, ITEM, ITEM_REF, LOCALS, OBJECT_AITER, OBJECT_BIT_INVERT, OBJECT_DIR, OBJECT_DIVMOD, OBJECT_IS_INSTANCE, OBJECT_IS_SUBCLASS, OBJECT_ITER, OBJECT_LEN, OBJECT_MODULO, OBJECT_NOT, OBJECT_POWER, OBJECT_REPR, OBJECT_TRUTH, OBJECT_TYPE, OBJECT_VARS, OBJECT_FORMAT, OBJECT_FORMAT_CONST, PARAM, PAIR_SPLICE, PROPER, PUSH_SHIFT, VAR, VAR_ATTR, VAR_ATTR_REF, VAR_REF |
 | `op_get_next_from_iter` | `KosEval_GetNextFromIter` | ITER_NEXT, NEXT |
 | `op_attach_koskari_agen_frame` | `KosEval_AttachKosAsyncGenForNext` | NEXT |
 | `op_attach_koskari_agen_frame_for_iter_next` | `KosEval_AttachKosAsyncGenForForeach` | ITER_NEXT |
+| `op_attach_koskari_agen_frame_for_yield_from` | `KosEval_AttachKosAsyncGenForYieldFrom` | YIELD_FROM |
 | `get_await_next` | `KosEval_GetAwaitNext` | YIELD_FROM (async path; `NEXT` mentions it in comments only) |
 | `eager_step_awaitable` | `KosEval_EagerStepAwaitable` | YIELD_FROM |
 | `kos_return_delimited` | `KosEval_ReturnDelimited` | RETURN |
@@ -85,7 +88,7 @@ include, so no cross-opcode sharing unless moved to a shared header or `eval.c`)
 | `yield_from_drive_sync_iter` | Drive sync iterator delegate | YIELD_FROM |
 | `yield_from_drive_sync_gen` | Drive `PyGen` delegate | YIELD_FROM |
 | `yield_from_drive_py_async` | Drive `__anext__` / async gen | YIELD_FROM |
-| `yield_from_drive_kos_async_gen` | Drive `KosPyAsyncGen` via nested eval | YIELD_FROM |
+| `yield_from_drive_kos_async_gen` | Drive `KosPyAsyncGen` flattened into the same eval (`op_attach_koskari_agen_frame_for_yield_from`, stack handoff) | YIELD_FROM |
 
 **Suggested public grouping**: `KosYieldFrom_*` (normalize, drive-by-kind, emit
 yield, rollback PC) — aligns with `design/interpreter/iteration-yield-boundaries.md`.

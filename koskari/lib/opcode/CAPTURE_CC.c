@@ -28,5 +28,5 @@ KOS_OP_HANDLER(CAPTURE_CC) {
     kos_continuation_free(k);
     return KOS_OP_POST_ERR();
   }
-  return kos_op_outcome_from_int_step(push_result(es, wrapper));
+  return kos_op_outcome_PUSH(es, wrapper);
 }

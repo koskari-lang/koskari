@@ -78,6 +78,7 @@ KosDynDelim *kos_dyn_push_delim(
     KosDynNode *node) {
 
   KosContext *ctx = KosEvalState_CONTEXT(es);
+  // CONTEXT: dirty, touches context directly
   KosDynDelim *delim = kos_dyndelim_new(KosContext_DYN_TOP(ctx),
                                         mode,
                                         chain,
@@ -92,7 +93,6 @@ KosDynDelim *kos_dyn_push_delim(
     return NULL;
   }
 
-  KosEvalState_SyncFromContext(es);
   return delim;
 }
 
@@ -108,12 +108,13 @@ void kos_dyn_pop_delim(KosEvalState *es, KosDynDelim *delim) {
   }
 
   kos_dyn_uninstall_handler(es, (KosDynNode *) delim, KOS_XFER_EVENT_NONE, NULL);
+  {
+    KosDynNode *parent = KosDynNode_PARENT((KosDynNode *) delim);
 
-  KosContext_DYN_TOP(ctx) = KosDynNode_PARENT(delim);
-  KosContext_CHAIN_VERSION(ctx)++;
-  kos_dyndelim_free(delim);
-  KosEvalState_RefreshDynCaches(es);
-  KosEvalState_SyncFromContext(es);
+    kos_dyn_commit_dyn_top(es, parent);
+    KosDynNode_PARENT((KosDynNode *) delim) = NULL;
+    kos_dyndelim_free(delim);
+  }
 }
 
 

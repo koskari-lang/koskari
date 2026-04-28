@@ -21,8 +21,7 @@
 */
 
 KOS_OP_HANDLER(PUSH_FOREACH) {
-  KosContext *ctx = KosEvalState_CONTEXT(es);
-  uint32_t continue_pc = CURRENT_PC(ctx);  /* already advanced by drive loop */
+  uint32_t continue_pc = KosEvalState_PC(es);  /* next insn; fetch advanced */
 
   /* Pop iterable (TOS) and loop_result from stack */
   PyObject *iterable = KosEvalState_StackPopRef(es);
@@ -38,8 +37,8 @@ KOS_OP_HANDLER(PUSH_FOREACH) {
   }
 
   /* Derive break target from the extent table (pop_pc + 1) */
-  KosCode *code = CURRENT_CODE(ctx);
-  uint32_t pc = CURRENT_ACTING_PC(ctx);
+  KosCode *code = KosEvalState_CurrentCode(es);
+  uint32_t pc = KosEvalState_ACTING_PC(es);
   uint32_t eid = kos_extent_find((PyObject *) code, pc, KOS_EXT_FOREACH);
   if (eid == KOS_EXTENT_NONE) {
     Py_DECREF(loop_result);
@@ -89,7 +88,6 @@ KOS_OP_HANDLER(PUSH_FOREACH) {
   KosDynForeach_RESULT((KosDynForeach *) region) = loop_result;
   KosDynForeach_ITER((KosDynForeach *) region) = iter;
   KosDynForeach_EXHAUSTED((KosDynForeach *) region) = 0;
-  KosEvalState_RefreshDynCaches(es);
 
   (void) out_ev;
   return KOS_OP_RUN();

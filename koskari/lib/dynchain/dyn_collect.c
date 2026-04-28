@@ -6,31 +6,33 @@ static void kos_dyncollect_free(KosDynCollect *col_node);
 
 
 /**
-   COLLECT region: saved ns for restore when collector scope ends.
+   COLLECT region: active collector scope namespace.
 */
-static KosDynCollect *kos_dyncollect_new(KosDynNode *parent, PyObject *saved_ns) {
+static KosDynCollect *kos_dyncollect_new(
+    KosDynNode *parent,
+    PyObject *ns) {
   KosDynCollect *col_node = (KosDynCollect *) kos_dynnode_alloc();
   if (! col_node) {
-    Py_DECREF(saved_ns);
+    Py_DECREF(ns);
     return NULL;
   }
 
   kos_dynnode_init((KosDynNode *) col_node, KOS_DYN_COLLECT, parent, 0);
-  KosDynCollect_SAVED_NS(col_node) = saved_ns;
+  KosDynNode_NS((KosDynNode *) col_node) = ns;
   return col_node;
 }
 
 
 /**
-   Clone saved_ns for continuation capture.
+   Clone node namespace for continuation capture.
 */
 static KosDynCollect *kos_dyncollect_clone(KosDynCollect *col_node) {
   if (! col_node)
     return NULL;
 
-  PyObject *saved = KosDynCollect_SAVED_NS(col_node);
-  Py_INCREF(saved);
-  KosDynCollect *clone = kos_dyncollect_new(NULL, saved);
+  PyObject *ns = KosDynNode_NS((KosDynNode *) col_node);
+  Py_INCREF(ns);
+  KosDynCollect *clone = kos_dyncollect_new(NULL, ns);
   if (! clone)
     return NULL;
   KosDynNode_NODE_ID(clone) = KosDynNode_NODE_ID((KosDynNode *) col_node);
@@ -47,47 +49,43 @@ static KosDynCollect *kos_dyncollect_clone(KosDynCollect *col_node) {
 
 
 /**
-   DECREF saved_ns; return node to freelist.
+   DECREF node namespace; return node to freelist.
 */
 static void kos_dyncollect_free(KosDynCollect *col_node) {
   if (! col_node)
     return;
 
-  Py_DECREF(KosDynCollect_SAVED_NS(col_node));
+  Py_DECREF(KosDynNode_NS((KosDynNode *) col_node));
   kos_dynnode_return_to_freelist((KosDynNode *) col_node);
 }
 
 
 /**
-   Restore frame ns from collector saved_ns on pop (matches kos_dyn_ns_unwind).
+   Collector namespace unwind is implicit via cache refresh after node removal.
 */
 void kos_dyn_collect_unwind(KosEvalState *es, KosDynCollect *node) {
-  KosContext *ctx = KosEvalState_CONTEXT(es);
-  if (! node)
-    return;
-  if (KosContext_FRAME_TOP(ctx)) {
-    PyObject *prior = KosDynCollect_SAVED_NS(node);
-    Py_INCREF(prior);
-    Py_DECREF(KosDynFrame_NS(KosContext_FRAME_TOP(ctx)));
-    KosDynFrame_NS(KosContext_FRAME_TOP(ctx)) = prior;
-  }
-  KosEvalState_SyncFromContext(es);
+  (void) es;
+  (void) node;
 }
 
 
 /**
    Push COLLECT as DYN_TOP. Callers: PUSH_COLLECT.
 */
-KosDynCollect *kos_dyn_push_collect(KosEvalState *es, PyObject *saved_ns) {
+KosDynCollect *kos_dyn_push_collect(
+    KosEvalState *es,
+    PyObject *ns) {
   KosContext *ctx = KosEvalState_CONTEXT(es);
-  KosDynCollect *col_node = kos_dyncollect_new(KosContext_DYN_TOP(ctx), saved_ns);
+  // CONTEXT: dirty, touches context directly
+  KosDynCollect *col_node = kos_dyncollect_new(
+      KosContext_DYN_TOP(ctx), ns);
   if (! col_node)
     return NULL;
 
-  KosContext_DYN_TOP(ctx) = (KosDynNode *) col_node;
-  KosContext_CHAIN_VERSION(ctx)++;
-
-  KosEvalState_SyncFromContext(es);
+  if (kos_dyn_push_noinstall(es, (KosDynNode *) col_node) < 0) {
+    kos_dyncollect_free(col_node);
+    return NULL;
+  }
   return col_node;
 }
 
@@ -102,12 +100,13 @@ void kos_dyn_pop_collect(KosEvalState *es, KosDynCollect *node) {
     KosEvalState_SyncFromContext(es);
     return;
   }
+  {
+    KosDynNode *parent = KosDynNode_PARENT((KosDynNode *) node);
 
-  KosContext_DYN_TOP(ctx) = KosDynNode_PARENT(node);
-  KosContext_CHAIN_VERSION(ctx)++;
-  kos_dyncollect_free(node);
-  KosEvalState_RefreshDynCaches(es);
-  KosEvalState_SyncFromContext(es);
+    kos_dyn_commit_dyn_top(es, parent);
+    KosDynNode_PARENT((KosDynNode *) node) = NULL;
+    kos_dyncollect_free(node);
+  }
 }
 
 
@@ -115,12 +114,12 @@ void kos_dyn_pop_collect(KosEvalState *es, KosDynCollect *node) {
 
 
 /**
-   GC traverse a KOS_DYN_COLLECT: visit saved namespace for the collector.
+   GC traverse a KOS_DYN_COLLECT: visit node-owned namespace for collector.
 */
 static int dynnode_traverse_collect(KosDynNode *node, visitproc visit, void *arg) {
-  int tr = kos_stackblock_traverse(KosDynNode_STACK(node), visit, arg);
+  int tr = KosStackBlock_Traverse(KosDynNode_STACK(node), visit, arg);
   if (tr != 0)
     return tr;
-  Py_VISIT(KosDynCollect_SAVED_NS((KosDynCollect *) node));
+  Py_VISIT(KosDynNode_NS(node));
   return 0;
 }

@@ -23,18 +23,18 @@
 */
 
 KOS_OP_HANDLER(POP_SHIFT) {
-  KosContext *ctx = KosEvalState_CONTEXT(es);
   PyObject *result;
   uint32_t eid;
   uint32_t parent_id;
   KosExtentDesc *shift_extent;
   KosExtentDesc *prompt_extent;
   uint32_t prompt_pop_pc;
-  KosCode *code = CURRENT_CODE(ctx);
+  KosCode *code = KosEvalState_CurrentCode(es);
   KosDynPrompt *prompt = NULL;
   KosTransferPlan *plan = NULL;
 
-  if (! KosContext_DYN_TOP(ctx) || ! KosDynNode_IS_SHIFT(KosContext_DYN_TOP(ctx))) {
+  KosDynNode *top = KosEvalState_CurrentNode(es);
+  if (! top || ! KosDynNode_IS_SHIFT(top)) {
     PyErr_SetString(PyExc_RuntimeError, "POP_SHIFT: top is not a shift node");
     return KOS_OP_POST_ERR();
   }
@@ -42,10 +42,10 @@ KOS_OP_HANDLER(POP_SHIFT) {
   /* PC already advanced: we are post-INSN, so resume will run instruction at
    * prompt_pop_pc+1 (first instr after POP_PROMPT). */
   SAYF("[POP_SHIFT] pre-pop: frame=%p stack=%p len=%zu (pc already advanced to %u)",
-       (void *) CURRENT_FRAME(ctx),
+       (void *) KosEvalState_FRAME(es),
        (void *) KosEvalState_StackHead(es),
        KosEvalState_StackLen(es),
-       (unsigned) CURRENT_PC(ctx));
+       (unsigned) KosEvalState_PC(es));
   result = KosEvalState_StackPopRef(es);
   if (! result) {
     SAY("[eval] POP_SHIFT pop result failed (stack underrun)");
@@ -54,7 +54,7 @@ KOS_OP_HANDLER(POP_SHIFT) {
 
   /* acting_pc is POP_SHIFT; find SHIFT extent by its pop_pc. */
   {
-    uint32_t pop_pc = CURRENT_ACTING_PC(ctx);
+    uint32_t pop_pc = KosEvalState_ACTING_PC(es);
     eid = kos_extent_find_by_pop_pc((PyObject *) code, pop_pc, KOS_EXT_SHIFT);
   }
   if (eid == KOS_EXTENT_NONE) {
@@ -105,10 +105,7 @@ KOS_OP_HANDLER(POP_SHIFT) {
   SAYF("[POP_SHIFT] plan ready: RESUME_PC=%u (first instr after POP_PROMPT)",
        (unsigned) (prompt_pop_pc + 1));
 
-  if (KosContext_PLAN(ctx))
-    kos_free_transfer_plan(KosContext_PLAN(ctx));
-  KosContext_PLAN(ctx) = plan;
-  KosContext_FLAGS(ctx) |= KOS_CTX_IN_TRANSFER;
+  KosEvalState_ArmTransferPlan(es, plan);
   KosTransferPlan_CONTINUATION_REF(plan) = NULL;
 
   return KOS_OP_PROLOGUE();

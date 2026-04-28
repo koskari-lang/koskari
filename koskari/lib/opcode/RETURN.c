@@ -20,17 +20,16 @@
 */
 
 KOS_OP_HANDLER(RETURN) {
-  KosContext *ctx = KosEvalState_CONTEXT(es);
   unsigned opa = KosOp_ARG(insn);
   PyObject *val = NULL;
 
   /* === Phase 1: Pop return value from stack ===
      opa=0 => Py_None, opa=1 => single value, opa=N => tuple of N values */
   SAYF("[RETURN] opa=%u frame=%p stack=%p len=%zu (pc advanced to %u)",
-       opa, (void *) CURRENT_FRAME(ctx),
+       opa, (void *) KosEvalState_FRAME(es),
        (void *) KosEvalState_StackHead(es),
        KosEvalState_StackLen(es),
-       (unsigned) CURRENT_PC(ctx));
+       (unsigned) KosEvalState_PC(es));
 
   if (opa == 0) {
     val = Py_None;
@@ -62,10 +61,11 @@ KOS_OP_HANDLER(RETURN) {
   if (unlikely(ret_delim
                && KosDynDelim_RETURN_CHAIN(ret_delim) != NULL
                && KosDynDelim_RETURN_PC(ret_delim) != (uint32_t) -1)) {
-    int rd = kos_return_delimited(es, ret_delim, val, out_ev);
+    int rd = KosEvalState_KReturnDelimited(es, ret_delim, val, out_ev);
     if (rd < 0)
       return KOS_OP_POST_ERR();
-    return KosContext_PLAN(ctx) ? KOS_OP_PROLOGUE() : KOS_OP_RUN();
+    return KosEvalState_HasActiveTransferPlan(es) ? KOS_OP_PROLOGUE()
+                                                   : KOS_OP_RUN();
   }
 
   /* === Phase 2b: Frame has parent (normal call return) ===
@@ -73,24 +73,23 @@ KOS_OP_HANDLER(RETURN) {
      etc), detach our frame, then deliver the value to the parent.
      Skip when parent is GEN (generator boundary): treat as top-level return. */
   {
-    KosDynNode *parent = KosDynNode_PARENT(CURRENT_FRAME(ctx));
+    KosDynNode *parent = KosDynNode_PARENT(KosEvalState_FRAME(es));
     if (parent != NULL && ! KosDynNode_IS_GEN(parent)) {
 
     /* Walk RETURN to frame (handle phase: FINALLY may consume and run). */
     KosTransitionReq treq = {
       .kind = KOS_TRANS_WALK_RETURN_TO_FRAME,
-      .target_frame = CURRENT_FRAME(ctx),
+      .target_frame = KosEvalState_FRAME(es),
       .payload = val,
     };
     KosTransitionResult tres = {0};
-    if (kos_dyn_transition(es, &treq, &tres, out_ev) < 0) {
+    if (KosEvalState_Transition(es, &treq, &tres, out_ev) < 0) {
       Py_DECREF(val);
       return KOS_OP_POST_ERR();
     }
     int unw = tres.raw;
     if (unw == KOS_DYN_UNWIND_ASYNC_STARTED) {
-      KosContext_PENDING_RETURN_VALUE(ctx) = val;
-      KosContext_PENDING_RETURN_TO_PARENT(ctx) = 1;
+      KosEvalState_SetPendingReturn(es, val, 1);
       return KOS_OP_RUN();
     }
     if (unw == KOS_DYN_UNWIND_FINALLY_TAKING_RETURN) {
@@ -120,18 +119,17 @@ KOS_OP_HANDLER(RETURN) {
   {
     KosTransitionReq treq = {
       .kind = KOS_TRANS_WALK_RETURN_TO_FRAME,
-      .target_frame = CURRENT_FRAME(ctx),
+      .target_frame = KosEvalState_FRAME(es),
       .payload = val,
     };
     KosTransitionResult tres = {0};
-    if (kos_dyn_transition(es, &treq, &tres, out_ev) < 0) {
+    if (KosEvalState_Transition(es, &treq, &tres, out_ev) < 0) {
       Py_DECREF(val);
       return KOS_OP_POST_ERR();
     }
     int unw = tres.raw;
     if (unw == KOS_DYN_UNWIND_ASYNC_STARTED) {
-      KosContext_PENDING_RETURN_VALUE(ctx) = val;
-      KosContext_PENDING_RETURN_TO_PARENT(ctx) = 0;
+      KosEvalState_SetPendingReturn(es, val, 0);
       return KOS_OP_RUN();
     }
     if (unw == KOS_DYN_UNWIND_FINALLY_TAKING_RETURN) {
@@ -147,8 +145,7 @@ KOS_OP_HANDLER(RETURN) {
     SAYF("[eval] RETURN payload: %R\n", val);
     KosEvent_KIND(out_ev) = KOS_EV_RETURN;
     KosEvent_PAYLOAD(out_ev) = val;
-    KosContext_FLAGS(ctx) &= ~KOS_CTX_RUNNING;
-    KosContext_FLAGS(ctx) |= KOS_CTX_DEAD;
+    KosEvalState_MarkDeadAfterReturn(es);
     return KOS_OP_POST_SUSPEND();
   }
 }

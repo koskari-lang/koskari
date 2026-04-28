@@ -31,5 +31,5 @@ KOS_OP_HANDLER(ITEM_REF) {
   Py_DECREF(key);
   if (! ref)
     return KOS_OP_POST_ERR();
-  return kos_op_outcome_from_int_step(push_result(es, ref));
+  return kos_op_outcome_PUSH(es, ref);
 }

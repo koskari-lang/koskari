@@ -20,8 +20,7 @@
 */
 
 KOS_OP_HANDLER(UNPACK_VAR) {
-  KosContext *ctx = KosEvalState_CONTEXT(es);
-  KosCode *code = CURRENT_CODE(ctx);
+  KosCode *code = KosEvalState_CurrentCode(es);
   KosExtra row = KosCode_GetExtra(code, KosOp_ARG(insn));
   uint32_t name0_idx = row.a0;
   uint32_t name1_idx = row.a1;
@@ -53,8 +52,8 @@ KOS_OP_HANDLER(UNPACK_VAR) {
     return KOS_OP_POST_ERR();
   }
 
-  if (frame_ns_store(ctx, name0, PySequence_Fast_GET_ITEM(seq, 0)) ||
-      frame_ns_store(ctx, name1, PySequence_Fast_GET_ITEM(seq, 1))) {
+  if (frame_ns_store(es, name0, PySequence_Fast_GET_ITEM(seq, 0)) ||
+      frame_ns_store(es, name1, PySequence_Fast_GET_ITEM(seq, 1))) {
     Py_DECREF(seq);
     return KOS_OP_POST_ERR();
   }

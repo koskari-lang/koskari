@@ -36,6 +36,9 @@
 #include <stdint.h>
 
 
+struct KosEvent;
+
+
 /* === DynNode kind enum === */
 
 
@@ -201,16 +204,17 @@ struct KosDynNode {
   uint32_t caps;        /* capability bits for generic code (KOS_DYN_CAP_*) */
   uint32_t node_id;     /* stable allocation ID; copied on clone for LCA matching */
   KosStackBlock *stack; /* owned operand-stack extent; NULL if none (inherit ancestor) */
+  PyObject *ns;         /* owned namespace extent; NULL if none (inherit ancestor) */
 
   union {
     struct {
       KosCode *code;
       uint32_t pc;        /* next instruction */
       uint32_t acting_pc; /* instruction currently being executed */
-      PyObject *ns;
       uint32_t frame_flags;
-      /* Native frame evaluator: int (*)(void* ctx, void* out_ev, int is_resume, PyObject* val) */
-      int (*native_handler)(void *, void *, int, PyObject *);
+      /* Native frame evaluator: (es, out_ev, is_resume, val); es is live slice */
+      int (*native_handler)(struct KosEvalState *, struct KosEvent *, int,
+                            PyObject *);
     } frame;
     struct {
       uint32_t prompt_id;
@@ -252,9 +256,6 @@ struct KosDynNode {
       uint32_t iter_next_else_pc;
       uint8_t iter_step_phase;  /* KOS_FOREACH_ITER_STEP_* */
     } foreach;
-    struct {
-      PyObject *saved_ns;
-    } ns;
     struct {
       PyObject *delegate;
       uint8_t kind;
@@ -370,6 +371,15 @@ typedef struct KosTransitionResult {
   KosTransitionStatus status;
   int raw;
 } KosTransitionResult;
+
+
+/**
+   TRY/FINALLY handler walk used by KosEvalState_Transition
+   KOS_TRANS_TRY_LOCAL_RAISE. Implemented in dynchain.c; exposed for linking with
+   eval/eval_transition.c included from eval.c.
+*/
+
+int kos_dyn_try_local_raise_body(KosEvalState *es, struct KosEvent *out_ev);
 
 
 typedef struct KosDynNode KosDynPrompt;
@@ -840,6 +850,20 @@ int kos_dyn_push(KosEvalState *es, KosDynNode *node);
 
 
 /**
+   Like kos_dyn_push but skips kos_dyn_install (e.g. TRY/FINALLY regions).
+*/
+int kos_dyn_push_noinstall(KosEvalState *es, KosDynNode *node);
+
+
+/**
+   Flush live PCs, set dyn_top to new_top, bump chain_version, full
+   RefreshDynCaches walk. Used for pops, splices, and manual rewinds — not for
+   ordinary single-node pushes (those use KosEvalState_PatchDynCaches).
+*/
+void kos_dyn_commit_dyn_top(KosEvalState *es, KosDynNode *new_top);
+
+
+/**
    Pop a node from the context's dynamic chain.  Node must be dyn_top.
    For BARRIER nodes (PROMPT) returns -1.  Otherwise runs the
    type's pop handler (if any) then unlinks and frees.  Returns
@@ -903,7 +927,7 @@ void kos_dynframe_reset_for_tail(KosDynFrame *frame);
 /**
    Create a generator boundary node.  The generator object owns the node;
    the dynchain borrows it during execution.  Caller links the frame under
-   it (frame->parent = gen) before passing the frame to kos_context_new.
+   it (frame->parent = gen) before passing the frame to KosContext_New.
 
    :param owner: owning generator object (borrowed) or NULL
 
@@ -943,7 +967,7 @@ int kos_dyn_gen_install(KosEvalState *es, KosDynGen *gen);
 
    If GEN.active is NULL, returns 0 (already installed or exhausted).
 */
-int kos_dyn_gen_frozen_needs_install(KosContext *eval_ctx, KosDynGen *gen);
+int kos_dyn_gen_frozen_needs_install_es(KosEvalState *es, KosDynGen *gen);
 
 
 /**
@@ -1206,6 +1230,9 @@ int kos_dyn_yield_from_deliver_inner_return(
 int kos_dyn_deliver_iterator_boundary_return_event(
     KosEvalState *es, struct KosEvent *out_ev);
 
+int kos_dyn_deliver_yield_to_iter_boundary(
+    KosEvalState *es, struct KosEvent *out_ev);
+
 int kos_dyn_try_deliver_iterator_boundary_after_pop(
     KosEvalState *es, PyObject **p_val, struct KosEvent *out_ev);
 
@@ -1239,21 +1266,19 @@ int kos_dyn_abort_push_region(KosEvalState *es, KosDynNode *region);
 
 
 /**
-   Push a namespace scope node (for PUSH_NS).  Does not modify frame ns;
-   caller must set frame->ns to the new namespace and later restore from
-   saved_ns on pop.
+   Push a namespace scope node (for PUSH_NS). The node owns its active
+   namespace in the generic node namespace slot.
 
    :param ctx: execution context
-   :param saved_ns: prior frame namespace to restore on POP_NS (new ref)
+   :param ns: active namespace for this NS scope (new ref)
 
    :return: new KosDynNs node, or NULL on error
 */
-KosDynNs *kos_dyn_push_ns(KosEvalState *es, PyObject *saved_ns);
+KosDynNs *kos_dyn_push_ns(KosEvalState *es, PyObject *ns);
 
 
 /**
-   Pop a namespace scope node.  Caller must restore frame->ns from the
-   node's saved_ns before calling this.
+   Pop a namespace scope node.
 
    :param ctx: execution context
    :param node: NS node to pop (must be dyn_top)
@@ -1262,20 +1287,19 @@ void kos_dyn_pop_ns(KosEvalState *es, KosDynNs *node);
 
 
 /**
-   Push a collector scope node (for PUSH_COLLECT).  Caller creates
-   CollectorNamespace and sets frame ns before pushing.
+   Push a collector scope node (for PUSH_COLLECT). The node owns its
+   collector namespace in the generic node namespace slot.
 
    :param ctx: execution context
-   :param saved_ns: enclosing scope to restore on pop (new ref)
+   :param ns: collector namespace active in this scope (new ref)
 
    :return: new KosDynCollect node, or NULL on error
 */
-KosDynCollect *kos_dyn_push_collect(KosEvalState *es, PyObject *saved_ns);
+KosDynCollect *kos_dyn_push_collect(KosEvalState *es, PyObject *ns);
 
 
 /**
-   Pop a collector scope node.  Caller must restore frame->ns and push
-   the collected namespace onto the value stack before calling this.
+   Pop a collector scope node.
 
    :param ctx: execution context
    :param node: COLLECT node to pop (must be dyn_top)
@@ -1425,7 +1449,7 @@ int kos_dyn_with_unwind(KosEvalState *es, KosDynWith *node, struct KosEvent *out
 
 /**
   Pop the top node of the dynamic chain with non-barrier policy.
-  For NS, restores frame_top->ns from the node's saved_ns before popping.
+  Namespace ownership is node-local; popping reveals next owner by chain walk.
 
   :param ctx: execution context
   :param out_ev: event output for suspend (required when WITH may have async exit)
@@ -1526,7 +1550,6 @@ int kos_dynnode_on_control_returned(KosEvalState *es, KosDynNode *node, struct K
 
 KosDynNode *kos_dyn_find_pending_exit(KosDynNode *node);
 int kos_dyn_complete_pending_exit(KosEvalState *es, int do_pop_node);
-void kos_dyn_clear_pending_exit(KosEvalState *es);
 
 /**
    result: ownership is transferred. Caller must not use result after
@@ -1619,6 +1642,16 @@ void kos_dyn_yieldfrom_unwind(KosEvalState *es, KosDynYieldFrom *node);
 
 
 /**
+   Close the delegate of a YIELD_FROM dyn node (on unwind or error).
+   Does not free the node. Callers: kos_dyn_yieldfrom_unwind, opcode
+   YIELD_FROM.
+
+   :param node: YIELD_FROM node, or NULL (no-op)
+*/
+void kos_yieldfrom_close_delegate(KosDynYieldFrom *node);
+
+
+/**
    Find the first TRY or FINALLY region on the dynamic chain that is
    enabled, walking from dyn_top toward root. Used for exception
    handling: when an exception occurs, this returns the region whose
@@ -1662,24 +1695,6 @@ int kos_dyn_transfer_to_loop(KosEvalState *es, KosXferEvent event,
 
 
 /**
-   Dispatch control transfer to existing dynchain helpers.  Thin wrapper;
-   behavior matches the underlying function for each KosTransitionKind.
-
-   :param req: request; must be non-NULL
-   :param out: result; must be non-NULL
-   :param out_ev: passed to helpers that need it
-
-   :return: 0 on success (including FINALLY_TAKING_RETURN and async
-     start), -1 on error (PyErr set)
-*/
-int kos_dyn_transition(
-    KosEvalState *es,
-    const KosTransitionReq *req,
-    KosTransitionResult *out,
-    struct KosEvent *out_ev);
-
-
-/**
    Push a YIELD_FROM delegation node onto the context's dynamic chain.
 
    Does not update frame_top (the frame remains the topmost frame).
@@ -1687,7 +1702,7 @@ int kos_dyn_transition(
 
    :param ctx: execution context
    :param delegate: normalized delegate (new ref; node takes ownership)
-   :param kind: delegate kind (KOS_YF_* from eval.c)
+   :param kind: delegate kind (KOS_YF_SYNC_ITER, … from this header)
 
    :return: new node, or NULL on error
 */
@@ -2119,14 +2134,14 @@ int kos_transferplan_traverse(
 #define KosDynGen_ACTIVE(n)       (((KosDynNode *)(n))->u.gen.active)
 #define KosDynGen_REFCOUNT(n)     (((KosDynNode *)(n))->u.gen.refcount)
 
-#define KosDynCollect_SAVED_NS(n) (((KosDynNode *)(n))->u.ns.saved_ns)
-
 #define KosDynFrame_CODE(f)       (((KosDynNode *)(f))->u.frame.code)
 #define KosDynFrame_PC(f)         (((KosDynNode *)(f))->u.frame.pc)
 #define KosDynFrame_ACTING_PC(f)  (((KosDynNode *)(f))->u.frame.acting_pc)
 #define KosDynNode_STACK(n)       (((KosDynNode *)(n))->stack)
+#define KosDynNode_NS(n)          (((KosDynNode *)(n))->ns)
 #define KosDynFrame_STACK(f)      KosDynNode_STACK((KosDynNode *)(f))
-#define KosDynFrame_NS(f)         (((KosDynNode *)(f))->u.frame.ns)
+#define KosDynFrame_NS(f)         KosDynNode_NS((KosDynNode *)(f))
+
 #define KosDynFrame_FLAGS(f)      (((KosDynNode *)(f))->u.frame.frame_flags)
 #define KosDynFrame_NATIVE_HANDLER(f) (((KosDynNode *)(f))->u.frame.native_handler)
 
@@ -2176,14 +2191,38 @@ int kos_transferplan_traverse(
 #define KosDynNext_DEFAULT_VAL(nd) (((KosDynNode *)(nd))->u.next.default_val)
 #define KosDynNext_N(nd) (((KosDynNode *)(nd))->u.next.n)
 
-#define KosDynNs_SAVED_NS(n)      (((KosDynNode *)(n))->u.ns.saved_ns)
-
 /* KosYfPhase: state machine for stack-based resume inject consumption */
 typedef enum KosYfPhase {
   KOS_YF_PHASE_DRIVING = 0,
   KOS_YF_PHASE_EXPECT_SEND,
   KOS_YF_PHASE_EXPECT_AWAIT,
 } KosYfPhase;
+
+
+/**
+   Yield-from delegate classification. Values stored in KosDynYieldFrom kind.
+   Must stay aligned with yield_from_normalize in opcode/YIELD_FROM.c
+*/
+enum {
+  KOS_YF_SYNC_ITER = 0,
+  KOS_YF_SYNC_GEN = 1,
+  KOS_YF_PY_ASYNC_ITER = 2,
+  KOS_YF_PY_ASYNC_GEN = 3,
+  KOS_YF_KOS_ASYNC_GEN = 4,
+};
+
+
+/**
+   Pending action for yield-from resume inject. Must stay aligned with
+   opcode/YIELD_FROM.c handler
+*/
+enum {
+  KOS_YF_STEP = 0,
+  KOS_YF_SEND = 1,
+  KOS_YF_THROW = 2,
+  KOS_YF_CLOSE = 3,
+};
+
 
 #define KosDynYieldFrom_DELEGATE(n)     (((KosDynNode *)(n))->u.yield_from.delegate)
 #define KosDynYieldFrom_KIND(n)         (((KosDynNode *)(n))->u.yield_from.kind)

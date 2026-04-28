@@ -126,7 +126,7 @@ static int test_eval_object_add_return(void) {
     KosDynFrame *frame = kos_dynframe_new(NULL, (KosCode *) code_obj, ns, NULL);
     TEST_ASSERT_NOT_NULL(frame, "create frame");
 
-    KosContext *ctx = kos_context_new(frame);
+    KosContext *ctx = KosContext_New(frame);
     TEST_ASSERT_NOT_NULL(ctx, "create context");
 
     KosEvent ev = {0};
@@ -140,7 +140,7 @@ static int test_eval_object_add_return(void) {
 
     Py_XDECREF(ev.payload);
     Py_XDECREF(ev.exc_type);
-    kos_context_free(ctx);
+    KosContext_Free(ctx);
     Py_DECREF(code_obj);
 
     return 0;
@@ -171,11 +171,11 @@ static int test_domain_non_null(void) {
     KosDynFrame *frame = kos_dynframe_new(NULL, (KosCode *) code_obj, ns, NULL);
     TEST_ASSERT_NOT_NULL(frame, "create frame");
 
-    KosContext *ctx = kos_context_new(frame);
+    KosContext *ctx = KosContext_New(frame);
     TEST_ASSERT_NOT_NULL(ctx, "create context");
     TEST_ASSERT_NOT_NULL(KosContext_DOMAIN(ctx), "domain is non-null");
 
-    kos_context_free(ctx);
+    KosContext_Free(ctx);
     Py_DECREF(code_obj);
 
     return 0;
@@ -210,8 +210,8 @@ static int test_domain_fresh_when_no_tls(void) {
     TEST_ASSERT_NOT_NULL(frame1, "create frame1");
     TEST_ASSERT_NOT_NULL(frame2, "create frame2");
 
-    KosContext *ctx1 = kos_context_new(frame1);
-    KosContext *ctx2 = kos_context_new(frame2);
+    KosContext *ctx1 = KosContext_New(frame1);
+    KosContext *ctx2 = KosContext_New(frame2);
     TEST_ASSERT_NOT_NULL(ctx1, "create ctx1");
     TEST_ASSERT_NOT_NULL(ctx2, "create ctx2");
     TEST_ASSERT_NOT_NULL(KosContext_DOMAIN(ctx1), "ctx1 domain non-null");
@@ -219,8 +219,8 @@ static int test_domain_fresh_when_no_tls(void) {
     TEST_ASSERT_NOT_SAME(KosContext_DOMAIN(ctx1), KosContext_DOMAIN(ctx2),
                          "contexts without TLS get distinct domains");
 
-    kos_context_free(ctx1);
-    kos_context_free(ctx2);
+    KosContext_Free(ctx1);
+    KosContext_Free(ctx2);
     Py_DECREF(code_obj);
 
     return 0;
@@ -253,7 +253,7 @@ static int test_eval_ctx_current_outside_eval(void) {
     KosDynFrame *frame = kos_dynframe_new(NULL, (KosCode *) code_obj, ns, NULL);
     TEST_ASSERT_NOT_NULL(frame, "create frame");
 
-    KosContext *ctx = kos_context_new(frame);
+    KosContext *ctx = KosContext_New(frame);
     TEST_ASSERT_NOT_NULL(ctx, "create context");
 
     KosEvent ev = {0};
@@ -264,7 +264,7 @@ static int test_eval_ctx_current_outside_eval(void) {
 
     Py_XDECREF(ev.payload);
     Py_XDECREF(ev.exc_type);
-    kos_context_free(ctx);
+    KosContext_Free(ctx);
     Py_DECREF(code_obj);
 
     return 0;
@@ -314,7 +314,7 @@ static int test_eval_try_except_catch(void) {
     KosDynFrame *frame = kos_dynframe_new(NULL, (KosCode *) code_obj, ns, NULL);
     TEST_ASSERT_NOT_NULL(frame, "create frame");
 
-    KosContext *ctx = kos_context_new(frame);
+    KosContext *ctx = KosContext_New(frame);
     TEST_ASSERT_NOT_NULL(ctx, "create context");
 
     KosEvent ev = {0};
@@ -328,7 +328,7 @@ static int test_eval_try_except_catch(void) {
 
     Py_XDECREF(ev.payload);
     Py_XDECREF(ev.exc_type);
-    kos_context_free(ctx);
+    KosContext_Free(ctx);
     Py_DECREF(code_obj);
 
     return 0;
@@ -380,7 +380,7 @@ static int test_eval_try_finally_rerase(void) {
     KosDynFrame *frame = kos_dynframe_new(NULL, (KosCode *) code_obj, ns, NULL);
     TEST_ASSERT_NOT_NULL(frame, "create frame");
 
-    KosContext *ctx = kos_context_new(frame);
+    KosContext *ctx = KosContext_New(frame);
     TEST_ASSERT_NOT_NULL(ctx, "create context");
 
     KosEvent ev = {0};
@@ -393,7 +393,7 @@ static int test_eval_try_finally_rerase(void) {
 
     Py_XDECREF(ev.payload);
     Py_XDECREF(ev.exc_type);
-    kos_context_free(ctx);
+    KosContext_Free(ctx);
     Py_DECREF(code_obj);
 
     return 0;
@@ -468,7 +468,7 @@ static int test_eval_reset_shift_invoke(void) {
         goto cleanup;
     }
 
-    ctx = kos_context_new(frame);
+    ctx = KosContext_New(frame);
     if (! ctx) {
         kos_dynframe_free(frame);
         goto cleanup;
@@ -513,7 +513,7 @@ static int test_eval_reset_shift_invoke(void) {
     Py_XDECREF(ev.exc_type);
     ev.exc_type = NULL;
     if (ctx)
-        kos_context_free(ctx);
+        KosContext_Free(ctx);
     Py_XDECREF(code_obj);
     return result;
 }
@@ -552,7 +552,7 @@ static int test_eval_push_cc_capture_cc_pop_cc_returns_continuation(void) {
     KosDynFrame *frame = kos_dynframe_new(NULL, (KosCode *) code_obj, ns, NULL);
     TEST_ASSERT_NOT_NULL(frame, "create frame");
 
-    KosContext *ctx = kos_context_new(frame);
+    KosContext *ctx = KosContext_New(frame);
     TEST_ASSERT_NOT_NULL(ctx, "create context");
 
     KosEvent ev = {0};
@@ -566,7 +566,7 @@ static int test_eval_push_cc_capture_cc_pop_cc_returns_continuation(void) {
 
     Py_XDECREF(ev.payload);
     Py_XDECREF(ev.exc_type);
-    kos_context_free(ctx);
+    KosContext_Free(ctx);
     Py_DECREF(code_obj);
 
     return 0;
@@ -649,7 +649,7 @@ static int test_eval_call_continuation_underrun(void) {
         goto cleanup;
     }
 
-    ctx = kos_context_new(frame);
+    ctx = KosContext_New(frame);
     if (! ctx) {
         kos_dynframe_free(frame);
         goto cleanup;
@@ -683,7 +683,7 @@ static int test_eval_call_continuation_underrun(void) {
     Py_XDECREF(ev.exc_type);
     ev.exc_type = NULL;
     if (ctx)
-        kos_context_free(ctx);
+        KosContext_Free(ctx);
     Py_XDECREF(code_obj);
     return result;
 }
@@ -719,7 +719,7 @@ static int test_eval_call_wrong_type(void) {
     KosDynFrame *frame = kos_dynframe_new(NULL, (KosCode *) code_obj, ns, NULL);
     TEST_ASSERT_NOT_NULL(frame, "create frame");
 
-    KosContext *ctx = kos_context_new(frame);
+    KosContext *ctx = KosContext_New(frame);
     TEST_ASSERT_NOT_NULL(ctx, "create context");
 
     KosEvent ev = {0};
@@ -735,7 +735,7 @@ static int test_eval_call_wrong_type(void) {
 
     Py_XDECREF(ev.payload);
     Py_XDECREF(ev.exc_type);
-    kos_context_free(ctx);
+    KosContext_Free(ctx);
     Py_DECREF(code_obj);
 
     return 0;
@@ -771,7 +771,7 @@ static int test_eval_object_add_underrun(void) {
     KosDynFrame *frame = kos_dynframe_new(NULL, (KosCode *) code_obj, ns, NULL);
     TEST_ASSERT_NOT_NULL(frame, "create frame");
 
-    KosContext *ctx = kos_context_new(frame);
+    KosContext *ctx = KosContext_New(frame);
     TEST_ASSERT_NOT_NULL(ctx, "create context");
 
     KosEvent ev = {0};
@@ -783,7 +783,7 @@ static int test_eval_object_add_underrun(void) {
 
     Py_XDECREF(ev.payload);
     Py_XDECREF(ev.exc_type);
-    kos_context_free(ctx);
+    KosContext_Free(ctx);
     Py_DECREF(code_obj);
 
     return 0;
@@ -819,7 +819,7 @@ static int test_eval_return_underrun(void) {
     KosDynFrame *frame = kos_dynframe_new(NULL, (KosCode *) code_obj, ns, NULL);
     TEST_ASSERT_NOT_NULL(frame, "create frame");
 
-    KosContext *ctx = kos_context_new(frame);
+    KosContext *ctx = KosContext_New(frame);
     TEST_ASSERT_NOT_NULL(ctx, "create context");
 
     KosEvent ev = {0};
@@ -831,7 +831,7 @@ static int test_eval_return_underrun(void) {
 
     Py_XDECREF(ev.payload);
     Py_XDECREF(ev.exc_type);
-    kos_context_free(ctx);
+    KosContext_Free(ctx);
     Py_DECREF(code_obj);
 
     return 0;
@@ -864,7 +864,7 @@ static int test_eval_dup_underrun(void) {
     KosDynFrame *frame = kos_dynframe_new(NULL, (KosCode *) code_obj, ns, NULL);
     TEST_ASSERT_NOT_NULL(frame, "create frame");
 
-    KosContext *ctx = kos_context_new(frame);
+    KosContext *ctx = KosContext_New(frame);
     TEST_ASSERT_NOT_NULL(ctx, "create context");
 
     KosEvent ev = {0};
@@ -876,7 +876,7 @@ static int test_eval_dup_underrun(void) {
 
     Py_XDECREF(ev.payload);
     Py_XDECREF(ev.exc_type);
-    kos_context_free(ctx);
+    KosContext_Free(ctx);
     Py_DECREF(code_obj);
 
     return 0;
@@ -909,7 +909,7 @@ static int test_eval_call_empty_stack(void) {
     KosDynFrame *frame = kos_dynframe_new(NULL, (KosCode *) code_obj, ns, NULL);
     TEST_ASSERT_NOT_NULL(frame, "create frame");
 
-    KosContext *ctx = kos_context_new(frame);
+    KosContext *ctx = KosContext_New(frame);
     TEST_ASSERT_NOT_NULL(ctx, "create context");
 
     KosEvent ev = {0};
@@ -921,7 +921,7 @@ static int test_eval_call_empty_stack(void) {
 
     Py_XDECREF(ev.payload);
     Py_XDECREF(ev.exc_type);
-    kos_context_free(ctx);
+    KosContext_Free(ctx);
     Py_DECREF(code_obj);
 
     return 0;
@@ -1056,7 +1056,7 @@ static int test_eval_push_collect_pop_collect_build_class_empty(void) {
     KosDynFrame *frame = kos_dynframe_new(NULL, (KosCode *) code_obj, ns, NULL);
     TEST_ASSERT_NOT_NULL(frame, "create frame");
 
-    KosContext *ctx = kos_context_new(frame);
+    KosContext *ctx = KosContext_New(frame);
     TEST_ASSERT_NOT_NULL(ctx, "create context");
 
     KosEvent ev = {0};
@@ -1076,7 +1076,7 @@ static int test_eval_push_collect_pop_collect_build_class_empty(void) {
     Py_DECREF(cname);
     Py_XDECREF(ev.payload);
     Py_XDECREF(ev.exc_type);
-    kos_context_free(ctx);
+    KosContext_Free(ctx);
     Py_DECREF(code_obj);
 
     return 0;
@@ -1111,7 +1111,7 @@ static int test_eval_push_collect_empty_stack_raises(void) {
     KosDynFrame *frame = kos_dynframe_new(NULL, (KosCode *) code_obj, ns, NULL);
     TEST_ASSERT_NOT_NULL(frame, "create frame");
 
-    KosContext *ctx = kos_context_new(frame);
+    KosContext *ctx = KosContext_New(frame);
     TEST_ASSERT_NOT_NULL(ctx, "create context");
 
     KosEvent ev = {0};
@@ -1126,7 +1126,7 @@ static int test_eval_push_collect_empty_stack_raises(void) {
 
     Py_XDECREF(ev.payload);
     Py_XDECREF(ev.exc_type);
-    kos_context_free(ctx);
+    KosContext_Free(ctx);
     Py_DECREF(code_obj);
 
     return 0;
@@ -1217,7 +1217,7 @@ static int test_eval_call_zero_args(void) {
         goto cleanup;
     }
 
-    ctx = kos_context_new(frame);
+    ctx = KosContext_New(frame);
     if (! ctx) {
         kos_dynframe_free(frame);
         goto cleanup;
@@ -1246,7 +1246,7 @@ static int test_eval_call_zero_args(void) {
     Py_XDECREF(ev.exc_type);
     ev.exc_type = NULL;
     if (ctx)
-        kos_context_free(ctx);
+        KosContext_Free(ctx);
     Py_XDECREF(code_obj);
     return result;
 }
@@ -1292,7 +1292,7 @@ static int test_eval_fast_on_dict_ns(void) {
     KosDynFrame *frame = kos_dynframe_new(NULL, (KosCode *) code_obj, ns, NULL);
     TEST_ASSERT_NOT_NULL(frame, "create frame");
 
-    KosContext *ctx = kos_context_new(frame);
+    KosContext *ctx = KosContext_New(frame);
     TEST_ASSERT_NOT_NULL(ctx, "create context");
 
     KosEvent ev = {0};
@@ -1304,7 +1304,7 @@ static int test_eval_fast_on_dict_ns(void) {
 
     Py_XDECREF(ev.payload);
     Py_XDECREF(ev.exc_type);
-    kos_context_free(ctx);
+    KosContext_Free(ctx);
     Py_DECREF(code_obj);
 
     return 0;
@@ -1360,7 +1360,7 @@ static int test_eval_build_function_no_defaults(void) {
     KosDynFrame *frame = kos_dynframe_new(NULL, (KosCode *) code_obj, ns, NULL);
     TEST_ASSERT_NOT_NULL(frame, "create frame");
 
-    KosContext *ctx = kos_context_new(frame);
+    KosContext *ctx = KosContext_New(frame);
     TEST_ASSERT_NOT_NULL(ctx, "create context");
 
     KosEvent ev = {0};
@@ -1374,7 +1374,7 @@ static int test_eval_build_function_no_defaults(void) {
 
     Py_XDECREF(ev.payload);
     Py_XDECREF(ev.exc_type);
-    kos_context_free(ctx);
+    KosContext_Free(ctx);
     Py_DECREF(code_obj);
 
     return 0;
@@ -1432,7 +1432,7 @@ static int make_simple_ctx(
     }
     if (! frame) { Py_DECREF(*code_obj_out); return -1; }
 
-    *ctx_out = kos_context_new(frame);
+    *ctx_out = KosContext_New(frame);
     if (! *ctx_out) { Py_DECREF(*code_obj_out); return -1; }
     return 0;
 }
@@ -1495,7 +1495,7 @@ static int test_eval_yield_empty_resume(void) {
 
     Py_XDECREF(ev.payload);
     Py_XDECREF(ev.exc_type);
-    kos_context_free(ctx);
+    KosContext_Free(ctx);
     Py_DECREF(code_obj);
 
     return 0;
@@ -1550,7 +1550,7 @@ static int test_eval_yield_send_resume(void) {
 
     Py_XDECREF(ev.payload);
     Py_XDECREF(ev.exc_type);
-    kos_context_free(ctx);
+    KosContext_Free(ctx);
     Py_DECREF(code_obj);
 
     return 0;
@@ -1613,7 +1613,7 @@ static int test_eval_await_throw_completes_iterator(void) {
 
     KosDynFrame *frame = kos_dynframe_new(NULL, (KosCode *) code_obj, ns, NULL);
     TEST_ASSERT_NOT_NULL(frame, "frame");
-    KosContext *ctx = kos_context_new(frame);
+    KosContext *ctx = KosContext_New(frame);
     TEST_ASSERT_NOT_NULL(ctx, "context");
 
     KosEvent ev = {0};
@@ -1637,7 +1637,7 @@ static int test_eval_await_throw_completes_iterator(void) {
 
     Py_XDECREF(ev.payload);
     Py_XDECREF(ev.exc_type);
-    kos_context_free(ctx);
+    KosContext_Free(ctx);
     Py_DECREF(code_obj);
     Py_DECREF(pre);
 
@@ -1697,7 +1697,7 @@ static int test_eval_await_throw_reyield(void) {
 
     KosDynFrame *frame = kos_dynframe_new(NULL, (KosCode *) code_obj, ns, NULL);
     TEST_ASSERT_NOT_NULL(frame, "frame");
-    KosContext *ctx = kos_context_new(frame);
+    KosContext *ctx = KosContext_New(frame);
     TEST_ASSERT_NOT_NULL(ctx, "context");
 
     KosEvent ev = {0};
@@ -1721,7 +1721,7 @@ static int test_eval_await_throw_reyield(void) {
 
     Py_XDECREF(ev.payload);
     Py_XDECREF(ev.exc_type);
-    kos_context_free(ctx);
+    KosContext_Free(ctx);
     Py_DECREF(code_obj);
     Py_DECREF(pre);
 
@@ -1779,7 +1779,7 @@ static int test_eval_yield_throw_resume(void) {
 
     Py_XDECREF(ev.payload);
     Py_XDECREF(ev.exc_type);
-    kos_context_free(ctx);
+    KosContext_Free(ctx);
     Py_DECREF(code_obj);
 
     return 0;
@@ -1806,7 +1806,7 @@ static int test_eval_yield_throw_caught(void) {
     /*
       One PUSH_TRY and one POP_TRY (on the normal path).  The handler
       does not POP_TRY — try_local_exception_handler already disabled the
-      region; the context is freed by kos_context_free after RETURN.
+      region; the context is freed by KosContext_Free after RETURN.
     */
     PyObject *instr = PyList_New(11);
     PyList_SET_ITEM(instr, 0, make_instr_int(KOS_OP_PUSH_TRY, 6));
@@ -1858,7 +1858,7 @@ static int test_eval_yield_throw_caught(void) {
 
     Py_XDECREF(ev.payload);
     Py_XDECREF(ev.exc_type);
-    kos_context_free(ctx);
+    KosContext_Free(ctx);
     Py_DECREF(code_obj);
 
     return 0;
@@ -1910,7 +1910,7 @@ static int test_eval_yield_throw_caught(void) {
 //     KosPyAsyncGen *agen = (KosPyAsyncGen *) agen_obj;
 
 //     if (! agen->ctx) {
-//         agen->ctx = kos_context_new(agen->frame);
+//         agen->ctx = KosContext_New(agen->frame);
 //         TEST_ASSERT_NOT_NULL(agen->ctx, "create context");
 //     }
 
@@ -1958,7 +1958,7 @@ static int test_eval_opcode_error_caught_by_try(void) {
     /*
       One PUSH_TRY and one POP_TRY (on the normal path).  The handler
       does not POP_TRY — the region is disabled by try_local_exception_handler;
-      the context is freed by kos_context_free after RETURN.
+      the context is freed by KosContext_Free after RETURN.
     */
     PyObject *instr = PyList_New(9);
     PyList_SET_ITEM(instr, 0, make_instr_int(KOS_OP_PUSH_TRY, 4));
@@ -1991,7 +1991,7 @@ static int test_eval_opcode_error_caught_by_try(void) {
 
     Py_XDECREF(ev.payload);
     Py_XDECREF(ev.exc_type);
-    kos_context_free(ctx);
+    KosContext_Free(ctx);
     Py_DECREF(code_obj);
 
     return 0;

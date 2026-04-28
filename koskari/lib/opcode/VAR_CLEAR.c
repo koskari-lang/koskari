@@ -18,11 +18,10 @@
 */
 
 KOS_OP_HANDLER(VAR_CLEAR) {
-  KosContext *ctx = KosEvalState_CONTEXT(es);
-  PyObject *name = get_name_from_insn(CURRENT_CODE(ctx), insn);
+  PyObject *name = get_name_from_insn(KosEvalState_CurrentCode(es), insn);
   if (! name)
     return KOS_OP_POST_ERR();
-  if (frame_ns_clear(ctx, name) < 0)
+  if (frame_ns_clear(es, name) < 0)
     return KOS_OP_POST_ERR();
   (void) out_ev;
   return KOS_OP_RUN();

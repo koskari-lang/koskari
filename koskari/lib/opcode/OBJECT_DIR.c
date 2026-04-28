@@ -23,5 +23,5 @@ KOS_OP_HANDLER(OBJECT_DIR) {
     Py_DECREF(val);
     if (! res) return KOS_OP_POST_ERR();
     (void) insn;
-    return kos_op_outcome_from_int_step(push_result(es, res));
+    return kos_op_outcome_PUSH(es, res);
 }

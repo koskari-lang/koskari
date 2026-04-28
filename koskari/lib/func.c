@@ -31,9 +31,6 @@
 #include "debug.h"
 
 
-#define CURRENT_FRAME(ctx)  KosContext_FRAME_TOP(ctx)
-
-
 static int kos_expression_wants_frame(PyObject *callable) {
 
   KosCode *code = (KosCode *) KosExpression_CODE(callable);
@@ -158,7 +155,7 @@ static PyMemberDef expression_members[] = {
 
 
 static int kos_install_expression(
-    KosContext *ctx,
+    KosEvalState *es,
     KosEvent *out_ev,
     PyObject *callable,
     PyObject *args_tuple,
@@ -185,21 +182,13 @@ static int kos_install_expression(
     if (! agen)
       return -1;
 
-    {
-      KosEvalState es;
-      KosEvalState_Init(&es, ctx);
-      return KosEvalState_StackPUSH(&es, agen);
-    }
+    return KosEvalState_StackPUSH(es, agen);
   }
 
-  KosDynFrame *frame = CURRENT_FRAME(ctx);
+  KosDynFrame *frame = KosEvalState_FRAME(es);
   PyObject *ns = KosExpression_NS(callable);
   Py_INCREF(ns);
-  Py_XDECREF(KosDynFrame_NS(frame));
-  KosDynFrame_NS(frame) = ns;
-  KosDynFrame_CODE(frame) = code;
-
-  return 0;
+  return KosEvalState_SetFrameCodeAndNamespace(es, frame, code, ns);
 }
 
 
@@ -207,7 +196,7 @@ static int kos_install_expression(
 
 
 static int kos_install_function(
-    KosContext *ctx,
+    KosEvalState *es,
     KosEvent *out_ev,
     PyObject *callable,
     PyObject *args_tuple,
@@ -224,28 +213,23 @@ static int kos_install_function(
     PyObject *agen = KosAsyncGen_NewFromCodeAndNs(code, frame_ns);
     if (! agen)
       return -1;
-    {
-      KosEvalState es;
-      KosEvalState_Init(&es, ctx);
-      if (KosEvalState_StackPushRef(&es, agen) < 0) {
-        Py_DECREF(agen);
-        return -1;
-      }
+    if (KosEvalState_StackPushRef(es, agen) < 0) {
+      Py_DECREF(agen);
+      return -1;
     }
     (void) out_ev;
     return 0;
   }
-  KosDynFrame *frame = CURRENT_FRAME(ctx);
-  Py_XDECREF(KosDynFrame_NS(frame));
-  KosDynFrame_NS(frame) = frame_ns;
-  KosDynFrame_CODE(frame) = code;
+  KosDynFrame *frame = KosEvalState_FRAME(es);
+  if (KosEvalState_SetFrameCodeAndNamespace(es, frame, code, frame_ns) < 0)
+    return -1;
   (void) out_ev;
   return 0;
 }
 
 
 static int kos_vinstall_function(
-    KosContext *ctx,
+    KosEvalState *es,
     KosEvent *out_ev,
     PyObject *callable,
     PyObject *const *args,
@@ -263,21 +247,16 @@ static int kos_vinstall_function(
     PyObject *agen = KosAsyncGen_NewFromCodeAndNs(code, frame_ns);
     if (! agen)
       return -1;
-    {
-      KosEvalState es;
-      KosEvalState_Init(&es, ctx);
-      if (KosEvalState_StackPushRef(&es, agen) < 0) {
-        Py_DECREF(agen);
-        return -1;
-      }
+    if (KosEvalState_StackPushRef(es, agen) < 0) {
+      Py_DECREF(agen);
+      return -1;
     }
     (void) out_ev;
     return 0;
   }
-  KosDynFrame *frame = CURRENT_FRAME(ctx);
-  Py_XDECREF(KosDynFrame_NS(frame));
-  KosDynFrame_NS(frame) = frame_ns;
-  KosDynFrame_CODE(frame) = code;
+  KosDynFrame *frame = KosEvalState_FRAME(es);
+  if (KosEvalState_SetFrameCodeAndNamespace(es, frame, code, frame_ns) < 0)
+    return -1;
   (void) out_ev;
   return 0;
 }
@@ -1037,7 +1016,7 @@ static PyGetSetDef boundmethod_getsets[] = {
 
 
 static int kos_install_boundmethod(
-    KosContext *ctx,
+    KosEvalState *es,
     KosEvent *out_ev,
     PyObject *callable,
     PyObject *args_tuple,
@@ -1057,7 +1036,7 @@ static int kos_install_boundmethod(
     Py_INCREF(item);
     PyTuple_SET_ITEM(bound_args, 1 + i, item);
   }
-  int r = kos_install_function(ctx, out_ev, func, bound_args, kwds_dict,
+  int r = kos_install_function(es, out_ev, func, bound_args, kwds_dict,
                                tail_call);
   Py_DECREF(bound_args);
   return r;
@@ -1065,7 +1044,7 @@ static int kos_install_boundmethod(
 
 
 static int kos_vinstall_boundmethod(
-    KosContext *ctx,
+    KosEvalState *es,
     KosEvent *out_ev,
     PyObject *callable,
     PyObject *const *args,
@@ -1087,7 +1066,7 @@ static int kos_vinstall_boundmethod(
     new_args[1 + i] = args[i];
   for (Py_ssize_t i = 0; i < nkw; i++)
     new_args[1 + nargs + i] = args[nargs + i];
-  int r = kos_vinstall_function(ctx, out_ev, func, new_args, nargs + 1,
+  int r = kos_vinstall_function(es, out_ev, func, new_args, nargs + 1,
                                 kwnames, tail_call);
   PyMem_Del(new_args);
   return r;

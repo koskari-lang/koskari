@@ -21,8 +21,7 @@
    Unbound fn: fn(obj, *args). Bound/other: callable(*args).
 */
 KOS_OP_HANDLER(CALL_VAR_ATTR) {
-  KosContext *ctx = KosEvalState_CONTEXT(es);
-  KosCode *code = CURRENT_CODE(ctx);
+  KosCode *code = KosEvalState_CurrentCode(es);
   KosExtra row = KosCode_GetExtra(code, KosOp_ARG(insn));
   uint32_t name_cpool_idx = row.a0;
   uint32_t attr_cpool_idx = row.a1;
@@ -36,7 +35,7 @@ KOS_OP_HANDLER(CALL_VAR_ATTR) {
   if (! attr_name)
     return KOS_OP_POST_ERR();
 
-  PyObject *obj = frame_ns_deref(ctx, var_name);
+  PyObject *obj = frame_ns_deref(es, var_name);
   if (! obj)
     return KOS_OP_POST_ERR();
 
@@ -82,7 +81,7 @@ KOS_OP_HANDLER(CALL_VAR_ATTR) {
     Py_DECREF(obj);
     KosStackSteal_Free(&steal);
     Py_DECREF(resolved);
-    return kos_op_outcome_from_call_int(ctx, r);
+    return kos_op_outcome_from_call_int(es, r);
   }
 
   PyObject *result;
@@ -104,7 +103,7 @@ KOS_OP_HANDLER(CALL_VAR_ATTR) {
   Py_DECREF(resolved);
   Py_DECREF(obj);
 
-  return result ? kos_op_outcome_from_push_int(op_push_or_await(es, out_ev, result)) : KOS_OP_POST_ERR();
+  return kos_op_outcome_PUSH_OR_AWAIT(es, out_ev, result);
 }
 
 

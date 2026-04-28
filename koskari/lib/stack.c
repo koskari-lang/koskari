@@ -168,6 +168,24 @@ void KosStackBlock_ReleaseChain(KosStackBlock *block) {
 }
 
 
+int KosStackBlock_Traverse(
+    KosStackBlock *b,
+    visitproc visit,
+    void *arg) {
+
+  size_t i;
+
+  while (b) {
+    for (i = KosStackBlock_LEN(b); i--; ) {
+      Py_VISIT(b->objs[i]);
+    }
+    b = KosStackBlock_PARENT(b);
+  }
+
+  return 0;
+}
+
+
 KosStackBlock *KosStackBlock_DeepCopy(KosStackBlock *block) {
   if (! block)
     return NULL;

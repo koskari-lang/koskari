@@ -19,25 +19,32 @@
 */
 
 KOS_OP_HANDLER(JUMP_OR) {
-  KosContext *ctx = KosEvalState_CONTEXT(es);
   PyObject *val = KosEvalState_StackPopRef(es);
-  if (! val)
+  if (unlikely(! val))
     return KOS_OP_POST_ERR();
+
   int res = PyObject_IsTrue(val);
-  if (res < 0) {
+  if (unlikely(res < 0)) {
     Py_DECREF(val);
     return KOS_OP_POST_ERR();
   }
+
   if (res) {
-    if (KosEvalState_StackPushRef(es, val) < 0) {
+    if (unlikely(KosEvalState_StackPushRef(es, val) < 0)) {
       Py_DECREF(val);
       return KOS_OP_POST_ERR();
     }
+
     Py_DECREF(val);
-    CURRENT_PC(ctx) = KosOp_ARG(insn);
+    KosEvalState_SET_PC(es, KosOp_ARG(insn));
+
   } else {
     Py_DECREF(val);
   }
+
   (void) out_ev;
   return KOS_OP_RUN();
 }
+
+
+// The end.

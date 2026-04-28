@@ -21,26 +21,28 @@
 */
 
 KOS_OP_HANDLER(POP_WITH) {
-  KosContext *ctx = KosEvalState_CONTEXT(es);
-
-  SAY("[eval] POP_WITH entry");
-
-  KosDynNode *top = KosContext_DYN_TOP(ctx);
-  if (! top || ! KosDynNode_IS_WITH(top)) {
-    SAY("[eval] POP_WITH top is not a with node");
-    PyErr_SetString(PyExc_RuntimeError, "POP_WITH: top is not a with node");
+  KosDynNode *top = KosEvalState_CurrentNode(es);
+  if (unlikely(! top)) {
+    PyErr_SetString(PyExc_RuntimeError, "POP_WITH: dyn_top is NULL");
     return KOS_OP_POST_ERR();
   }
-  KosDynWith *with_node = (KosDynWith *) top;
 
-  int unw = kos_dyn_with_unwind(es, with_node, out_ev);
+  if (unlikely(! KosDynNode_IS_WITH(top))) {
+    PyErr_Format(
+      PyExc_RuntimeError,
+      "POP_WITH: top is %s (expected WITH), node=%p",
+      kos_dynnode_kind_name(KosDynNode_KIND(top)), (void *) top);
+    return KOS_OP_POST_ERR();
+  }
+
+  /* the unwind will pass the value to the upper stack */
+  int unw = kos_dyn_with_unwind(es, (KosDynWith *) top, out_ev);
 
   /* Async path, need to suspend, we'll resume at this opcode when we
      wake back up. */
   if (unw == KOS_DYN_UNWIND_ASYNC_STARTED) {
-    uint32_t same_pc = CURRENT_ACTING_PC(ctx);
-    CURRENT_PC(ctx) = same_pc;
-    KosDynFrame_ACTING_PC(CURRENT_FRAME(ctx)) = same_pc;
+    uint32_t same_pc = KosEvalState_ACTING_PC(es);
+    KosEvalState_SET_PC(es, same_pc);
     return KOS_OP_POST_SUSPEND();
   }
 
@@ -49,9 +51,8 @@ KOS_OP_HANDLER(POP_WITH) {
     return KOS_OP_POST_ERR();
 
   /* all is well, we've completed the unwind, pop the node and return */
-  kos_dyn_pop_with(es, with_node);
+  kos_dyn_pop_with(es, (KosDynWith *) top);
 
-  SAY("[eval] POP_WITH sync path done -> return 0");
   (void) out_ev;
   (void) insn;
   return KOS_OP_RUN();

@@ -23,6 +23,7 @@
 
 struct KosContext;
 struct KosEvent;
+struct KosEvalState;
 
 
 /**
@@ -30,11 +31,14 @@ struct KosEvent;
    kwds_dict (or args, kwnames for vector) must not be DECREF'd by the
    implementation.
 
+   es must be the same live KosEvalState that KosEvalState_Call* prepared via
+   do_frame_prep. Use KosEvalState_CONTEXT(es) when the heap context is needed.
+
    tail_call: 1 if this is a tail call; 0 otherwise. Most implementations
    ignore this; frame behavior is handled by the caller (KosEvalState_Call*).
 */
 typedef int (*KosInstallFunc)(
-    struct KosContext *ctx,
+    struct KosEvalState *es,
     struct KosEvent *out_ev,
     PyObject *callable,
     PyObject *args_tuple,
@@ -43,7 +47,7 @@ typedef int (*KosInstallFunc)(
 
 
 typedef int (*KosVectorInstallFunc)(
-    struct KosContext *ctx,
+    struct KosEvalState *es,
     struct KosEvent *out_ev,
     PyObject *callable,
     PyObject *const *args,
@@ -93,9 +97,10 @@ extern KosCallableTypeObject KosCallableType;
    install slot. Prefers tp_kos_vinstall when present; otherwise builds
    tuple+dict and uses tp_kos_install.
 
-   callable, args, kwnames are borrowed. Returns 0 continue, 1 suspend, -1 error.
+   es must match the KosEvalState_Call* caller. callable, args, kwnames are
+   borrowed. Returns 0 continue, 1 suspend, -1 error.
 */
-int KosCallable_Call(struct KosContext *ctx, struct KosEvent *out_ev,
+int KosCallable_Call(struct KosEvalState *es, struct KosEvent *out_ev,
     PyObject *callable,
     PyObject *const *args, Py_ssize_t nargs, PyObject *kwnames,
     int tail_call);
@@ -107,9 +112,10 @@ int KosCallable_Call(struct KosContext *ctx, struct KosEvent *out_ev,
    responsible for frame/stack state; this function only dispatches to
    tp_kos_install.
 
-   callable, args_tuple, kwds_dict are borrowed. Returns 0 continue, 1 suspend, -1 error.
+   es must match the KosEvalState_Call* caller. callable, args_tuple, kwds_dict
+   are borrowed. Returns 0 continue, 1 suspend, -1 error.
 */
-int KosCallable_CallArgs(struct KosContext *ctx, struct KosEvent *out_ev,
+int KosCallable_CallArgs(struct KosEvalState *es, struct KosEvent *out_ev,
     PyObject *callable, PyObject *args_tuple, PyObject *kwds_dict,
     int tail_call);
 
@@ -120,9 +126,10 @@ int KosCallable_CallArgs(struct KosContext *ctx, struct KosEvent *out_ev,
    responsible for frame/stack state; this function only dispatches to
    tp_kos_install with NULL args_tuple and NULL kwds_dict.
 
-   callable is borrowed. Returns 0 continue, 1 suspend, -1 error.
+   es must match the KosEvalState_Call* caller. callable is borrowed. Returns 0
+   continue, 1 suspend, -1 error.
 */
-int KosCallable_CallNoArgs(struct KosContext *ctx, struct KosEvent *out_ev,
+int KosCallable_CallNoArgs(struct KosEvalState *es, struct KosEvent *out_ev,
     PyObject *callable, int tail_call);
 
 

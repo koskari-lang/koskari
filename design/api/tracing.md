@@ -249,7 +249,7 @@ Each freelist entry has four counters:
 **Freelist** — files that include `tracing.h` and use `KOS_TRACE_FL_ALLOC` / `KOS_TRACE_FL_RETURN`:
 
 - **dynchain.c** — `kos_dynnode_alloc`, `kos_dynnode_return_to_freelist`; `kos_continuation_create`, `kos_continuation_free_exclude`, `xfer_plan_release_invoke_clone`
-- **eval.c** — `kos_context_new`, `kos_context_free`, and context release on allocation failure
+- **eval.c** — `KosContext_New`, `KosContext_Free`, and context release on allocation failure
 - **stack.c** — `KosStackBlock_New`, `KosStackBlock_NewSized`, `KosStackBlock_Release`, `KosStackBlock_ReleaseChain`
 - **pair.c** — `KosPair_New`, `pair_dealloc`
 

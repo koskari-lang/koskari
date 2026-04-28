@@ -19,17 +19,24 @@
 
 KOS_OP_HANDLER(ITEM) {
   PyObject *key = KosEvalState_StackPopRef(es);
-  if (! key)
+  if (unlikely(! key))
     return KOS_OP_POST_ERR();
+
   PyObject *obj = KosEvalState_StackPopRef(es);
-  if (! obj) {
+  if (unlikely(! obj)) {
     Py_DECREF(key);
     return KOS_OP_POST_ERR();
   }
+
   PyObject *item = PyObject_GetItem(obj, key);
   Py_DECREF(obj);
   Py_DECREF(key);
-  if (! item)
+
+  if (unlikely(! item))
     return KOS_OP_POST_ERR();
-  return kos_op_outcome_from_int_step(push_result(es, item));
+
+  return kos_op_outcome_PUSH(es, item);
 }
+
+
+// The end.

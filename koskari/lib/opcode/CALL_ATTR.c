@@ -20,8 +20,7 @@
    Unbound fn: fn(obj, *args). Bound/other: callable(*args).
 */
 KOS_OP_HANDLER(CALL_ATTR) {
-  KosContext *ctx = KosEvalState_CONTEXT(es);
-  KosCode *code = CURRENT_CODE(ctx);
+  KosCode *code = KosEvalState_CurrentCode(es);
   KosExtra row = KosCode_GetExtra(code, KosOp_ARG(insn));
   uint32_t attr_cpool_idx = row.a0;
   unsigned n = row.a1;
@@ -61,7 +60,7 @@ KOS_OP_HANDLER(CALL_ATTR) {
     int r = KosEvalState_Call(es, out_ev, resolved, args, nargs, NULL, 0);
     KosStackSteal_Free(&steal);
     Py_DECREF(resolved);
-    return kos_op_outcome_from_call_int(ctx, r);
+    return kos_op_outcome_from_call_int(es, r);
   }
 
   if (send_self == 0) {
@@ -73,5 +72,5 @@ KOS_OP_HANDLER(CALL_ATTR) {
   KosEvalState_StackDropNoErr(es, count);
   Py_DECREF(resolved);
 
-  return result ? kos_op_outcome_from_push_int(op_push_or_await(es, out_ev, result)) : KOS_OP_POST_ERR();
+  return kos_op_outcome_PUSH_OR_AWAIT(es, out_ev, result);
 }

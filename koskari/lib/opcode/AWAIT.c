@@ -21,11 +21,10 @@
 */
 
 KOS_OP_HANDLER(AWAIT) {
-  KosContext *ctx = KosEvalState_CONTEXT(es);
   uint32_t arg = KosOp_ARG(insn);
 
   if (arg == 0u) {
-    KosContext_FLAGS(ctx) &= ~KOS_CTX_RUNNING;
+    KosEvalState_MarkSuspendedNotRunning(es);
     KosEvent_KIND(out_ev) = KOS_EV_AWAIT;
     Py_INCREF(Py_None);
     KosEvent_PAYLOAD(out_ev) = Py_None;

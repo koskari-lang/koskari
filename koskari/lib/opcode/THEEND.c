@@ -19,8 +19,6 @@
 */
 
 KOS_OP_HANDLER(THEEND) {
-  KosContext *ctx = KosEvalState_CONTEXT(es);
-  (void) ctx;
   (void) out_ev;
   (void) insn;
   PyErr_SetString(PyExc_RuntimeError, "THEEND has no runtime implementation");
