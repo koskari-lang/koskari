@@ -25,5 +25,5 @@ KOS_OP_HANDLER(VAR_REF) {
   if (! ref)
     return KOS_OP_POST_ERR();
   Py_INCREF(ref);
-  return kos_op_outcome_from_int_step(push_result(es, ref));
+  return kos_op_outcome_PUSH(es, ref);
 }

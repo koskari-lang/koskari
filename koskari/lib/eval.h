@@ -873,7 +873,7 @@ extern PyObject *KoskariContinuationError;
    Accepts any PyObject* callable. Performs KosCallable_Check; if true,
    dispatches to KosCallable_Call with the same es after applying frame
    behavior per wants_frame and tail_call. If false, invokes
-   PyObject_Vectorcall and kos_push_or_await.
+   PyObject_Vectorcall and KosEvalState_PushOrAwait.
 
    Frame matrix (when KosCallable): wants_frame+tail -> reset; wants_frame+!tail
    -> create; !wants_frame+tail -> drop; !wants_frame+!tail -> no change.
@@ -931,17 +931,19 @@ int KosEvalState_CallNoArgs(
    Push val onto the current frame stack, or if val is awaitable run one step
    and either push the result or suspend with KOS_EV_AWAIT.
 
-   val is consumed (ownership transferred). Internal helper; stolen refs
-   are acceptable here.
+   Use from code outside opcode dispatch that must not apply the CALL* POP,1
+   peephole. Implementation: koskari/lib/eval/eval_utils.c included into the
+   eval translation unit.
 
-   CALL* opcodes use a separate entry in eval/eval_state_python_bridge.c
-   (op_push_or_await)
-   that may
-   elide push plus a trailing POP,1; this API is unchanged for other callers.
+   CALL* opcodes use a separate static op_push_or_await in the same translation
+   unit, which may elide push plus a trailing POP,1.
+
+   val is consumed (ownership transferred).
 
    :return: 0 continue, 1 stop (AWAIT), -1 error
 */
-int kos_push_or_await(KosEvalState *es, KosEvent *out_ev, PyObject *val);
+int KosEvalState_PushOrAwait(
+    KosEvalState *es, KosEvent *out_ev, PyObject *val);
 
 
 /**

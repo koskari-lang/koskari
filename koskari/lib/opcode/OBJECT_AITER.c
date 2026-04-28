@@ -34,5 +34,5 @@ KOS_OP_HANDLER(OBJECT_AITER) {
   }
   Py_DECREF(val);
   (void) insn;
-  return kos_op_outcome_from_int_step(push_result(es, res));
+  return kos_op_outcome_PUSH(es, res);
 }

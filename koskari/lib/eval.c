@@ -178,37 +178,6 @@ static inline KosOpOutcome kos_op_outcome_from_call_int(KosEvalState *es, int r)
 }
 
 
-/**
-  Map push_or_await / kos_push_or_await return (0 push, 1 suspend, -1 err).
-*/
-static inline KosOpOutcome kos_op_outcome_from_push_int(int r) {
-
-  if (r < 0)
-    return KOS_OP_POST_ERR();
-  if (r == 1)
-    return KOS_OP_POST_SUSPEND();
-  return KOS_OP_RUN();
-}
-
-
-/**
-  Map legacy opcode-helper int to KosOpOutcome (0 run, 1 suspend, 2 control,
-  -1 err).
-*/
-static inline KosOpOutcome kos_op_outcome_from_int_step(int r) {
-
-  if (r < 0)
-    return KOS_OP_POST_ERR();
-  if (r == 1)
-    return KOS_OP_POST_SUSPEND();
-  if (r == KOS_OP_RES_CONTROL_RETURNED)
-    return KOS_OP_POST_CONTROL();
-  if (r == KOS_OP_RES_PARENT_RETURN_DELIVER)
-    return KOS_OP_POST_PARENT_RETURN();
-  return KOS_OP_RUN();
-}
-
-
 #include "eval/eval_chain.c"
 #include "eval/eval_state.c"
 #include "eval/eval_utils.c"
@@ -1436,7 +1405,7 @@ static int obj_op_reducing(
 
   if (! res)
     return -1;
-  return push_result(es, res);
+  return KosEvalState_StackPUSH(es, res);
 }
 
 
@@ -1455,7 +1424,7 @@ static int obj_op_binary(
   if (! res)
     return -1;
   (void) insn;
-  return push_result(es, res);
+  return KosEvalState_StackPUSH(es, res);
 }
 
 

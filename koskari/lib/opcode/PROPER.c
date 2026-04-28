@@ -42,7 +42,7 @@ KOS_OP_HANDLER(PROPER) {
 
   KosEvalState_StackDropNoErr(es, count + 1);
 
-  return kos_op_outcome_from_int_step(push_result(es, result));
+  return kos_op_outcome_PUSH(es, result);
 }
 
 

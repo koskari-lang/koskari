@@ -82,7 +82,7 @@ KOS_OP_HANDLER(CALL_FAST_NAMES) {
   KosEvalState_StackDropNoErr(es, ntotal);
   Py_DECREF(callable);
 
-  return result ? kos_op_outcome_from_push_int(op_push_or_await(es, out_ev, result)) : KOS_OP_POST_ERR();
+  return kos_op_outcome_PUSH_OR_AWAIT(es, out_ev, result);
 }
 
 

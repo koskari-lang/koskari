@@ -119,5 +119,5 @@ KOS_OP_HANDLER(CALL_FAST_ATTR_NAMES) {
   Py_DECREF(resolved);
   if (! result)
     return KOS_OP_POST_ERR();
-  return kos_op_outcome_from_push_int(op_push_or_await(es, out_ev, result));
+  return kos_op_outcome_PUSH_OR_AWAIT(es, out_ev, result);
 }

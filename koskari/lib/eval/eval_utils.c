@@ -162,28 +162,14 @@ static PyObject *get_await_next(PyObject *val) {
 
 
 /**
-   Push val onto the frame stack. No auto-await; val is used as-is.
-   val is consumed (new reference). Use this for all values that are not
-   the direct result of a call (e.g. CONST, load, getattr, subscript).
-
-   :return: 0 continue, -1 error
-*/
-static inline int push_result(KosEvalState *es, PyObject *val) {
-  if (unlikely(! val))
-    return -1;
-  return KosEvalState_StackPUSH(es, val);
-}
-
-
-/**
    Push val, or if val is awaitable run eager_step and either push the
    result or suspend (KOS_EV_AWAIT). Use only for (1) the result of a
    call (CALL opcode: callable returned a coroutine) and (2) the AWAIT
-   opcode (explicitly awaiting TOS). All other paths must use push_result
+   opcode (explicitly awaiting TOS). All other paths must use KosEvalState_StackPUSH
    so we do not auto-await values that are merely loaded or computed.
 
    CALL* bytecode uses op_push_or_await instead: same logic plus an optional
-   POP,1 peephole so kos_push_or_await and this function stay free of that
+   POP,1 peephole so KosEvalState_PushOrAwait and this function stay free of that
    cost on every non-opcode caller (e.g. defer_drive, KosEvalState_Call).
 
    val is consumed (new reference).
@@ -230,7 +216,11 @@ static int push_or_await_common(
 }
 
 
-static int push_or_await(KosEvalState *es, KosEvent *out_ev, PyObject *val) {
+int KosEvalState_PushOrAwait(
+    KosEvalState *es,
+    KosEvent *out_ev,
+    PyObject *val) {
+
   return push_or_await_common(es, out_ev, val, 0);
 }
 
@@ -241,7 +231,8 @@ static int push_or_await(KosEvalState *es, KosEvent *out_ev, PyObject *val) {
    the value is released and the frame PC is advanced past that POP without a
    stack push. Used only from CALL* handlers where the frame PC is already the
    next instruction index after fetch. Do not use from defer_drive or other
-   paths that pop the stack in C before the next opcode — use push_or_await.
+   paths that pop the stack in C before the next opcode — use
+   KosEvalState_PushOrAwait.
 
    val is consumed (new reference).
 
@@ -305,18 +296,72 @@ static inline int op_push_or_await(
 #undef OP_TRY_FUSE_POP1_AFTER_PUSH
 
 
-/* Public wrapper for external callers; delegates to static push_or_await. */
-int kos_push_or_await(KosEvalState *es, KosEvent *out_ev, PyObject *val) {
-  return push_or_await(es, out_ev, val);
+static inline KosOpOutcome kos_op_outcome_PUSH(
+    KosEvalState *es,
+    PyObject *val) {
+
+  if (unlikely(! val))
+    return KOS_OP_POST_ERR();
+
+  int r = KosEvalState_StackPUSH(es, val);
+  if (likely(r == 0))
+    return KOS_OP_RUN();
+
+  return KOS_OP_POST_ERR();
 }
 
 
-/* === KosEvalState_Call* (frame prep + KosCallable dispatch) === */
+static inline KosOpOutcome kos_op_outcome_PUSH_OR_AWAIT(
+    KosEvalState *es,
+    KosEvent *out_ev,
+    PyObject *val) {
+
+  if (unlikely(! val))
+    return KOS_OP_POST_ERR();
+
+  int r = op_push_or_await(es, out_ev, val);
+  if (likely(r == 0))
+    return KOS_OP_RUN();
+
+  if (r == 1)
+    return KOS_OP_POST_SUSPEND();
+
+  if (r < 0)
+    return KOS_OP_POST_ERR();
+
+  return KOS_OP_RUN();
+}
+
+
+static inline KosOpOutcome kos_op_outcome_from_push_int(int r) {
+  if (r < 0)
+    return KOS_OP_POST_ERR();
+  if (r == 1)
+    return KOS_OP_POST_SUSPEND();
+  return KOS_OP_RUN();
+}
 
 
 /**
-   Prepare frame stack for a KosCallable install per wants_frame / tail_call.
-   Inlines effective wants_frame resolution (hook vs static flag).
+  Map legacy opcode-helper int to KosOpOutcome (0 run, 1 suspend, 2 control,
+  -1 err).
+*/
+static inline KosOpOutcome kos_op_outcome_from_int_step(int r) {
+  if (r < 0)
+    return KOS_OP_POST_ERR();
+  if (r == 1)
+    return KOS_OP_POST_SUSPEND();
+  if (r == KOS_OP_RES_CONTROL_RETURNED)
+    return KOS_OP_POST_CONTROL();
+  if (r == KOS_OP_RES_PARENT_RETURN_DELIVER)
+    return KOS_OP_POST_PARENT_RETURN();
+  return KOS_OP_RUN();
+}
+
+
+/**
+  Prepare frame stack for a KosCallable install per wants_frame / tail_call.
+  Inlines effective wants_frame resolution (hook vs static flag).
 */
 static inline int do_frame_prep(
     KosEvalState *es,
@@ -378,7 +423,7 @@ int KosEvalState_Call(
         : PyObject_Vectorcall(callable, args, (size_t) nargs, kwnames);
     if (! result)
       return -1;
-    int r = kos_push_or_await(es, out_ev, result);
+    int r = push_or_await_common(es, out_ev, result, 0);
     if (r == 0 && tail_call)
       r = KOS_OP_RES_CONTROL_RETURNED;
     return r;
@@ -430,7 +475,7 @@ int KosEvalState_CallArgs(
     if (! result)
       return -1;
 
-    int r = kos_push_or_await(es, out_ev, result);
+    int r = push_or_await_common(es, out_ev, result, 0);
     if (r == 0 && tail_call)
       r = KOS_OP_RES_CONTROL_RETURNED;
 
@@ -465,7 +510,7 @@ int KosEvalState_CallNoArgs(
     PyObject *result = PyObject_CallNoArgs(callable);
     if (! result)
       return -1;
-    int r = kos_push_or_await(es, out_ev, result);
+    int r = push_or_await_common(es, out_ev, result, 0);
     if (r == 0 && tail_call)
       r = KOS_OP_RES_CONTROL_RETURNED;
     return r;

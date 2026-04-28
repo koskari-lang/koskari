@@ -34,8 +34,10 @@ static void constantly_dealloc(PyObject *self) {
 }
 
 
-static PyObject *constantly_call(PyObject *self,
-                                 PyObject *args, PyObject *kwds) {
+static PyObject *constantly_call(
+    PyObject *self,
+    PyObject *args,
+    PyObject *kwds) {
 
   PyObject *value = ((KosConstantly *) self)->value;
   Py_INCREF(value);
@@ -66,27 +68,33 @@ static PyTypeObject KosConstantlyType = {
 /* === KosApply install slots === */
 
 
-static int kos_apply_build_args_tuple(PyObject *arglist, PyObject **out_args) {
+static int kos_apply_build_args_tuple(
+    PyObject *arglist,
+    PyObject **out_args) {
+
   if (! arglist || arglist == Py_None) {
     *out_args = PyTuple_New(0);
+
   } else if (KosPair_Check(arglist)) {
     PyObject *iter = KosPair_Unpack(arglist);
     if (! iter)
       return -1;
+
     *out_args = PySequence_Tuple(iter);
     Py_DECREF(iter);
+
   } else if (PyTuple_Check(arglist)) {
     *out_args = arglist;
     Py_INCREF(*out_args);
+
   } else if (PyList_Check(arglist)) {
     *out_args = PyList_AsTuple(arglist);
+
   } else {
     *out_args = PySequence_Tuple(arglist);
   }
 
-  if (! *out_args)
-    return -1;
-  return 0;
+  return *out_args ? 0 : -1;
 }
 
 
@@ -162,7 +170,7 @@ static int apply_native_handler(
     kos_dynframe_free(detached);
 
   KosEvalState_SyncFromContext(es);
-  return kos_push_or_await(es, out_ev, result);
+  return KosEvalState_PushOrAwait(es, out_ev, result);
 }
 
 

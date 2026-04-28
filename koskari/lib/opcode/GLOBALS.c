@@ -21,5 +21,5 @@
 KOS_OP_HANDLER(GLOBALS) {
   PyObject *ns = KosEvalState_GlobalsNamespace(es);
   Py_INCREF(ns);
-  return kos_op_outcome_from_int_step(push_result(es, ns));
+  return kos_op_outcome_PUSH(es, ns);
 }

@@ -42,5 +42,5 @@ KOS_OP_HANDLER(EXCEPTION_MATCH) {
     res = Py_True;
 
   Py_INCREF(res);
-  return kos_op_outcome_from_int_step(push_result(es, res));
+  return kos_op_outcome_PUSH(es, res);
 }

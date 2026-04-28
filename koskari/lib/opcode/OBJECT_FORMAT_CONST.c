@@ -36,5 +36,5 @@ KOS_OP_HANDLER(OBJECT_FORMAT_CONST) {
   if (! res)
     return KOS_OP_POST_ERR();
 
-  return kos_op_outcome_from_int_step(push_result(es, res));
+  return kos_op_outcome_PUSH(es, res);
 }

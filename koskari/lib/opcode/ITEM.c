@@ -35,7 +35,7 @@ KOS_OP_HANDLER(ITEM) {
   if (unlikely(! item))
     return KOS_OP_POST_ERR();
 
-  return kos_op_outcome_from_int_step(push_result(es, item));
+  return kos_op_outcome_PUSH(es, item);
 }
 
 

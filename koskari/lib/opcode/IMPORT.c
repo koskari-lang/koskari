@@ -42,5 +42,5 @@ KOS_OP_HANDLER(IMPORT) {
   if (! mod)
     return KOS_OP_POST_ERR();
 
-  return kos_op_outcome_from_int_step(push_result(es, mod));
+  return kos_op_outcome_PUSH(es, mod);
 }

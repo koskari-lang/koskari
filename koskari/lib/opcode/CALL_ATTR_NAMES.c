@@ -92,5 +92,5 @@ KOS_OP_HANDLER(CALL_ATTR_NAMES) {
     return KOS_OP_POST_ERR();
 
   KosEvalState_StackDropNoErr(es, ntotal);
-  return kos_op_outcome_from_push_int(op_push_or_await(es, out_ev, result));
+  return kos_op_outcome_PUSH_OR_AWAIT(es, out_ev, result);
 }
