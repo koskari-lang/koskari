@@ -123,6 +123,9 @@ def _build_var_to_fast():
             var_to_fast[OpCode[varname]] = opcode
 
     var_to_fast[OpCode.KOS_OP_UNPACK_VAR] = OpCode.KOS_OP_UNPACK_FAST
+    var_to_fast[OpCode.KOS_OP_SWITCH_EQ_VAR] = OpCode.KOS_OP_SWITCH_EQ_FAST
+    var_to_fast[OpCode.KOS_OP_SWITCH_EQ_VAR_ATTR] = OpCode.KOS_OP_SWITCH_EQ_FAST_ATTR
+
     return var_to_fast
 
 
@@ -473,6 +476,12 @@ _CHECK_SQUASHES = {
     OpCode.KOS_OP_EXCEPTION_MATCH: OpCode.KOS_OP_CHECK_EXCEPTION,
 }
 
+_SWITCH_SQUASHES = {
+    OpCode.KOS_OP_CONST: OpCode.KOS_OP_SWITCH_EQ_CONST,
+    OpCode.KOS_OP_VAR: OpCode.KOS_OP_SWITCH_EQ_VAR,
+    OpCode.KOS_OP_VAR_ATTR: OpCode.KOS_OP_SWITCH_EQ_VAR_ATTR,
+}
+
 
 class Compiler:
 
@@ -799,6 +808,17 @@ class Compiler:
                     # into a single check jump
                     del squished[-1]
                     op = _CHECK_SQUASHES[prior]
+
+            elif op == OpCode.KOS_OP_SWITCH_EQ:
+                prior = squished[-1]
+                if prior[0] in _SWITCH_SQUASHES:
+                    op = _SWITCH_SQUASHES[prior[0]]
+                    pargs = prior[1]
+                    if isinstance(pargs, tuple):
+                        arg = (arg, *pargs[:3])
+                    else:
+                        arg = (arg, pargs, None, None)
+                    del squished[-1]
 
             elif op == OpCode.KOS_OP_LABEL:
                 # omit useless jump when the jump target is the next instruction
