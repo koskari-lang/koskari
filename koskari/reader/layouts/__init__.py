@@ -23,8 +23,9 @@ Layout handlers for reader block syntax (layout decorator and LAYOUTS).
 
 
 from .helpers import LAYOUTS, layout, LayoutHandler
+from .basics import layout_block, layout_begin, layout_call
 from .classes import layout_define_class, layout_class
-from .conditionals import layout_block, layout_begin, layout_if
+from .conditionals import layout_if, layout_switch
 from .define_syntax import (
     layout_define_syntax,
     layout_macro_match,
@@ -45,6 +46,7 @@ __all__ = (
 
     "layout_block",
     "layout_begin",
+    "layout_call",
     "layout_class",
     "layout_define_class",
     "layout_define_syntax",
@@ -56,6 +58,7 @@ __all__ = (
     "layout_special_rules",
     "layout_syntax_match",
     "layout_syntax_rules",
+    "layout_switch",
     "layout_try",
 )
 

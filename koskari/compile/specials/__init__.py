@@ -28,11 +28,11 @@ from .begin import special_begin
 from .bytecode import special_bytecode
 from .call import special_call, special_call_attr
 from .class_ import special_class
-from .conditionals import special_and, special_cond, special_or
+from .conditionals import special_and, special_cond, special_or, special_switch
 from .context import special_dyn_with, special_parameterize, special_with
-from .continuations import (special_await, special_call_cc,
-                            special_capture_cc, special_let_cc, special_reset,
-                            special_return, special_shift)
+from .continuations import (special_await, special_call_cc, special_capture_cc,
+                            special_let_cc, special_reset, special_return,
+                            special_shift)
 from .dyn_wind import special_dyn_wind
 from .exceptions import (special_check_exception, special_clear_exception,
                          special_load_exception, special_raise, special_try)
@@ -63,15 +63,15 @@ from .quasiquote import (special_quasiquote, special_quasiquote_block,
 from .refs import (special_bindq, special_deref, special_ref_attr,
                    special_ref_item, special_refq)
 from .slots import special_attr, special_del_attr, special_set_attr
-from .thunk import special_gensym_thunk
 from .syntax import (special_compile_macro_match, special_compile_macro_rules,
-                     special_compile_special_match, special_compile_special_rules,
-                     special_compile_syntax, special_compile_syntax_match,
+                     special_compile_special_match,
+                     special_compile_special_rules, special_compile_syntax,
+                     special_compile_syntax_match,
                      special_compile_syntax_rules)
+from .thunk import special_gensym_thunk
 from .variables import (special_define, special_define_global,
-                        special_define_values,
-                        special_delq, special_globals, special_locals,
-                        special_setq, special_setq_values)
+                        special_define_values, special_delq, special_globals,
+                        special_locals, special_setq, special_setq_values)
 
 __all__ = (
     "SPECIALS",
@@ -175,6 +175,7 @@ __all__ = (
     "special_setq_values",
     "special_shift",
     "special_str",
+    "special_switch",
     "special_subtract",
     "special_true_divide",
     "special_truth",

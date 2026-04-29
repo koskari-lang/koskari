@@ -77,6 +77,60 @@ def special_cond(compiler, source, tc=False):
     return fragment
 
 
+@special(symbol("compile/switch"))
+def special_switch(compiler, source, tc=False):
+    """
+    Compile (compile/switch VALUE (COMPARE BODY...) (COMPARE BODY...) ... (else: BODY...)).
+    Conditionally executes body depending on a compare expression. Multiple
+    clauses; first compare expression's body is evaluated and returned. No match
+    evaluates as None. The else: keyword always matches.
+    """
+
+    called_by, cl = source
+
+    fragment = compiler.fragment(called_by)
+
+    gen_label = compiler.gen_label
+    done = gen_label()
+    label = gen_label()
+
+    if not cl:
+        raise SpecialError("switch requires a value", source)
+    value, cl = cl
+
+    fragment.merge(compiler.full_compile(value))
+
+    while cl:
+        element, cl = cl
+
+        fragment.position_of(element)
+        fragment.instruction(OpCode.KOS_OP_LABEL, label)
+        label = gen_label()
+
+        test, body = element
+
+        if test is _keyword_else:
+            if cl:
+                raise SpecialError("else: must be last clause", source)
+
+            fragment.instruction(OpCode.KOS_OP_POP, 1)
+            helper_begin(fragment, body, tc)
+            break
+
+        fragment.merge(compiler.full_compile(test))
+        fragment.instruction(OpCode.KOS_OP_SWITCH_EQ, label)
+        helper_begin(fragment, body, tc)
+        fragment.instruction(OpCode.KOS_OP_JUMP, done)
+
+    else:
+        fragment.instruction(OpCode.KOS_OP_LABEL, label)
+        fragment.instruction(OpCode.KOS_OP_POP, 1)
+        fragment.instruction(OpCode.KOS_OP_CONST, None)
+
+    fragment.instruction(OpCode.KOS_OP_LABEL, done)
+    return fragment
+
+
 @special(symbol("compile/and"))
 def special_and(compiler, source, tc=False):
     """

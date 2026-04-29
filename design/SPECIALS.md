@@ -360,6 +360,72 @@ None for the fall-through case.
 **Note:** The higher-level forms `compile/if`, `compile/when`, and
 `compile/unless` are now macros in basics.ki (see [MACROS.md](MACROS.md)).
 
+## compile/switch
+
+**Symbol:** `compile/switch`
+
+**Syntax:** `(compile/switch VALUE [COMPARE BODY...] ... [else: BODY...])`
+
+**Use-case:** Multi-way equality branching against one discriminant value.
+`VALUE` is evaluated once, then each clause compares `COMPARE == VALUE` in
+order. On first match, that clause body is evaluated and returned. If no clause
+matches, `else:` is used when present; otherwise the form yields `None`.
+
+**Behaviour:** Requires at least one argument (`VALUE`). Compiles `VALUE` once
+and keeps it on the stack across case checks. For each non-else clause, compiles
+`COMPARE`, then emits `SWITCH_EQ`:
+
+- match: pops both `COMPARE` and `VALUE`, then runs the clause body
+- no match: pops only `COMPARE`, keeps `VALUE`, jumps to next clause
+
+Clause bodies are compiled via `helper_begin`. The `else:` clause must be last.
+After any successful clause, control jumps to a shared done label. If no clause
+matches and no else is present, the remaining `VALUE` is popped and `None` is
+pushed.
+
+The head may be written as `switch` or `compile/switch`; compiler lookup resolves
+`switch` to `compile/switch`.
+
+**Expected lowered shape from layout/switch:**
+
+```scheme
+(switch VALUE
+  (COND (compile/begin BODY...))
+  (else: (compile/begin BODY...)))
+```
+
+This shape is valid because each clause body is still a list of forms for
+`helper_begin`; when it contains one `compile/begin` form, that form performs
+the sequencing.
+
+**Examples:**
+
+```scheme
+;; Direct s-expression form
+(compile/switch 5
+  [1 "one"]
+  [2 "two"]
+  [5 "five"]
+  [else: "meh"])
+;; -> "five"
+
+;; No match with else
+(compile/switch 5
+  [1 "one"]
+  [2 "two"]
+  [else: "meh"])
+;; -> "meh"
+
+;; No match and no else
+(compile/switch 5
+  [1 "one"]
+  [2 "two"])
+;; -> None
+```
+
+**Tests:** `tests/compile/specials/test_switch.py`,
+`tests/reader/layouts/test_switch_layout.py`
+
 ## compile/and
 
 **Symbol:** `compile/and`

@@ -287,6 +287,77 @@ else:
 **Implementation:** `koskari/reader/layouts/conditionals.layout_if`
 
 
+## layout/switch
+
+**Symbol:** `layout/switch`
+
+**Use-case:** Multi-way equality dispatch in block syntax. Lowers to `switch`
+clause lists consumed by `compile/switch`.
+
+**Behaviour:** Does not accept peers. Header must be exactly
+`switch VALUE:` (one value expression). Inner `case` and `else` blocks are
+left as default block layouts (no dedicated `layout/case` or `layout/else`).
+So children are read first by `layout/block` as:
+
+- `case COND:` -> `(case COND (compile/begin BODY...))`
+- `else:` -> `(else (compile/begin BODY...))`
+
+`layout/switch` validates and rewrites those child forms into:
+
+- case clause: `(COND (compile/begin BODY...))`
+- else clause: `(else: (compile/begin BODY...))`
+
+It then returns:
+
+`(switch VALUE (COND (compile/begin ...)) ... (else: (compile/begin ...)))`
+
+Rules:
+
+- body entries must be `case` or `else` blocks only
+- `case` requires exactly one condition argument
+- `else` takes no arguments
+- only one `else` is allowed
+- `case` cannot appear after `else`
+- empty body is allowed and lowers to `(switch VALUE)`
+
+**Syntax:**
+
+```
+switch VALUE:
+  case COND:
+    BODY
+  case COND2:
+    BODY
+  else:
+    BODY
+```
+
+**Examples:**
+
+```scheme
+switch x:
+  case 1:
+    "one"
+  case 2:
+    "two"
+  else:
+    "meh"
+;; -> (switch x
+;;      (1 (compile/begin "one"))
+;;      (2 (compile/begin "two"))
+;;      (else: (compile/begin "meh")))
+
+switch x:
+  case 1:
+    "one"
+;; -> (switch x (1 (compile/begin "one")))
+```
+
+**Implementation:** `koskari/reader/layouts/conditionals.layout_switch`
+
+**Tests:** `tests/reader/layouts/test_switch_layout.py`
+
+
 ## layout/try
 
 **Symbol:** `layout/try`

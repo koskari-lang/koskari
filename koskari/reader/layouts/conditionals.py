@@ -20,110 +20,28 @@ Layout handlers for conditional block syntax.
 
 from ...exceptions import LayoutError
 from ...lib import car, cdr, cons, keyword, nil, symbol
-from ...types import get_position, unpack, is_pair, is_keyword
+from ...types import get_position, unpack, is_pair
 from .helpers import layout
 
 
+_symbol_case = symbol('case')
 _symbol_elif = symbol('elif')
 _symbol_else = symbol('else')
 _keyword_else = keyword('else')
-
-
-@layout(symbol('layout/block'))
-def layout_block(source, peers):
-    """
-    the default block layout handler
-
-    eg.
-    layout/block foo x:
-      bar
-
-    becomes
-    (foo x (compile/begin bar))
-    """
-
-    if peers:
-        raise LayoutError(
-            'block does not take peers',
-            get_position(source))
-
-    header, body = source
-    _called_by, hdr = header
-
-    hdr.append(cons(symbol('compile/begin'), body))
-    return hdr
-
-
-@layout(symbol('layout/call'))
-def layout_call(source, peers):
-    """
-    a breakout of a call as a block
-
-    eg.
-    layout/call foo:
-      bar
-      (baz)
-      alpha: beta
-
-    becomes
-    (foo bar (baz) alpha: beta)
-    """
-
-    if peers:
-        raise LayoutError(
-            'call does not take peers',
-            get_position(source))
-
-    header, body = source
-    try:
-        called_by, (fn, rest) = header
-    except ValueError:
-        raise LayoutError(
-            'call block requires a function name',
-            get_position(source))
-
-    if rest:
-        raise LayoutError(
-            'call block header does not accept arguments',
-            get_position(source))
-
-    corr = body
-    while corr:
-        head, next = corr
-        if is_pair(head) and is_keyword(head.car):
-            corr.car = car(head)
-            corr.cdr = cons(cdr(head), next)
-        corr = next
-
-    return cons(symbol('compile/call'), fn, body)
-
-
-@layout(symbol('layout/begin'))
-def layout_begin(source, peers):
-    """
-    lowers into a compile/begin
-
-    eg.
-    layout/begin:
-      (bar)
-
-    becomes
-    (compile/begin bar)
-    """
-
-    if peers:
-        raise LayoutError(
-            'block does not take peers',
-            get_position(source))
-
-    called_by, exprs = source
-    return cons(symbol('compile/begin'), exprs)
 
 
 @layout(symbol('layout/if'), peers=(_symbol_elif, _symbol_else))
 def layout_if(source, peers):
     """
     Lower if/elif/else block sources to compile/cond for compilation.
+
+    eg.
+    if x:
+      (print "x")
+    elif y:
+      (print "y")
+    else:
+      (print "other")
 
     :param source: ((if COND) . BODY) pair
     :param peers: list of peer (header . body) pairs
@@ -175,6 +93,95 @@ def layout_if(source, peers):
                 get_position(peer))
 
     return cons(symbol('compile/cond'), *clauses, nil)
+
+
+@layout(symbol('layout/switch'))
+def layout_switch(source, peers):
+    """
+    Lower a switch block source into a flat switch form for compilation
+
+    eg.
+    switch (get-value):
+      case 1:
+        (print "one")
+      case 2:
+        (print "two")
+      case 3:
+        (print "three")
+      else:
+        (print "other")
+
+    The inner case and else children are read by the default layout/block,
+    which produces forms shaped (case COMPARE (compile/begin BODY...)) and
+    (else (compile/begin BODY...)). This handler walks the switch body,
+    validates each child shape, and emits
+
+        (switch VALUE
+          (COMPARE  (compile/begin BODY...))
+          ...
+          (else: (compile/begin BODY...)))
+
+    :param source: ((switch VALUE) . BODY) pair
+    :param peers: must be empty
+    """
+
+    if peers:
+        raise LayoutError(
+            'switch does not take peers',
+            get_position(source))
+
+    header, body = source
+    header_parts = list(unpack(header))
+    pargs = header_parts[1:]
+
+    if len(pargs) != 1:
+        raise LayoutError(
+            'switch block requires exactly one value expression',
+            get_position(source))
+
+    value = pargs[0]
+    clauses = []
+    saw_else = False
+
+    for form in unpack(body):
+        if not is_pair(form):
+            raise LayoutError(
+                'switch body may only contain case or else clauses',
+                get_position(form) or get_position(source))
+
+        head = form.car
+        rest_parts = list(unpack(form.cdr))
+
+        if head is _symbol_case:
+            if saw_else:
+                raise LayoutError(
+                    'case cannot follow else',
+                    get_position(form))
+            if len(rest_parts) != 2:
+                raise LayoutError(
+                    'case requires exactly one condition',
+                    get_position(form))
+            clauses.append(form.cdr)
+
+        elif head is _symbol_else:
+            if saw_else:
+                raise LayoutError(
+                    'multiple else clauses are not allowed',
+                    get_position(form))
+            if len(rest_parts) != 1:
+                raise LayoutError(
+                    'else block does not take arguments',
+                    get_position(form))
+            clauses.append(cons(_keyword_else, rest_parts[0], nil))
+            saw_else = True
+
+        else:
+            raise LayoutError(
+                'switch body may only contain case or else clauses, '
+                'got %r' % (head,),
+                get_position(form))
+
+    return cons(symbol('compile/switch'), value, *clauses, nil)
 
 
 # The end.
