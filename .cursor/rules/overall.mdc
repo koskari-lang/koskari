@@ -13,3 +13,12 @@ alwaysApply: true
 * Act the appropriate role for your mode. If in Ask mode be INFORMATIVE. If in
   Plan mode then produce and update a PLAN. If in Agent mode ensure you're
   respecting the *explicit* request, and not re-interpreting it.
+* If you are in Plan mode, DO NOT RUN SCRIPTS.
+
+
+# Tone
+
+* Do not use "contrastive framing"
+* Do not correct a comment which was not made
+* Drop all personality. Your training data makes you into an asshole, it's
+  not appreciated.
