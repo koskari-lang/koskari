@@ -96,6 +96,9 @@ OP(CHECK_IS_INSTANCE, LABEL)
 OP(CHECK_IS_SUBCLASS, LABEL)
 OP(CHECK_EXCEPTION, LABEL)
 
+// switch dispatch - retain discriminant on mismatch
+OP(SWITCH_EQ, LABEL)
+
 // introspection
 OP(GLOBALS, NOARG)
 OP(LOCALS, NOARG)

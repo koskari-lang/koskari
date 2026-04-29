@@ -201,6 +201,7 @@ When adding or changing an opcode:
 - [7. Iteration](#7-iteration) — ITER_NEXT, NEXT
 - [8. Jumps](#8-jumps) — JUMP, JUMP_FALSE, JUMP_TRUE, JUMP_AND, JUMP_OR
 - [9. Check jumps](#9-check-jumps) — CHECK_EQ, CHECK_GE, CHECK_GT, CHECK_LE, CHECK_LT, CHECK_NE, CHECK_IN, CHECK_NOT_IN, CHECK_IS, CHECK_IS_NOT, CHECK_IS_INSTANCE, CHECK_IS_SUBCLASS, CHECK_EXCEPTION
+- [9.1 Switch dispatch](#91-switch-dispatch) — SWITCH_EQ
 - [10. Introspection](#10-introspection) — GLOBALS, LOCALS, IMPORT, IMPORT_REL, IMPORT_FROM
 - [11. Exception handling](#11-exception-handling) — EXCEPTION, EXCEPTION_CLEAR, EXCEPTION_MATCH
 - [12. Variables by name](#12-variables-by-name) — VAR, VAR_BIND, VAR_CLEAR, VAR_REF, VAR_STORE, VAR_ATTR*
@@ -259,6 +260,7 @@ When adding or changing an opcode:
 | CHECK_IS | LABEL | Jump if left is not right | [§9](#kos_op_check_is) |
 | CHECK_IS_NOT | LABEL | Jump if left is right | [§9](#kos_op_check_is_not) |
 | CHECK_EXCEPTION | LABEL | Jump if exception no match | [§9](#kos_op_check_exception) |
+| SWITCH_EQ | LABEL | Equality dispatch; on match pop both, on mismatch pop key only and jump | [§9.1](#kos_op_switch_eq) |
 | GLOBALS | NOARG | Push globals dict | [§10](#kos_op_globals) |
 | LOCALS | NOARG | Push locals dict | [§10](#kos_op_locals) |
 | IMPORT | CONST | Absolute import; push leaf module | [§10.1](#kos_op_import) |
@@ -1178,6 +1180,59 @@ Check jumps: if the predicate does **not** hold, jump to `arg`. All take LABEL; 
 | 5     | POP             | 1   | 1        | consume exc |
 | 6     | RETURN          | 1   | 1        | handle |
 | 7     | LABEL           | —   | —        | re-raise or next handler |
+
+
+## 9.1 Switch dispatch
+
+Switch dispatch opcodes implement multi-way **equality** branching against a
+single discriminant that lives on the stack across the whole chain. They use
+the **inverse pop pattern** of the check jumps in §9: on mismatch the
+discriminant is *retained* below TOS so the next arm can compare another key
+against it without re-pushing.
+
+See [switch-eq-opcodes.md](switch-eq-opcodes.md) for the broader family
+proposal (compressed forms `SWITCH_EQ_CONST`, `SWITCH_EQ_VAR`, `SWITCH_EQ_FAST`,
+`SWITCH_EQ_VAR_ATTR`, `SWITCH_EQ_FAST_ATTR`) and a `compile/switch` surface
+form. Only the base `SWITCH_EQ` is currently implemented.
+
+### KOS_OP_SWITCH_EQ
+
+- **Style**: LABEL. Arg = target pc (post-compile).
+- **Status**: Implemented.
+- **Stack**: `[..., left, right]` (right = TOS). Always pops `right`. Compares
+  `left == right` with the same equality semantics as
+  [CHECK_EQ](#kos_op_check_eq) (`PyObject_RichCompareBool` with `Py_EQ`).
+  - **Match**: also pop `left` and fall through. Stack after: `[...]`.
+  - **Mismatch**: leave `left` on the stack and jump to `arg`. Stack after:
+    `[..., left]`.
+- **Invariants**: Jump locality for target. The mismatch target must legally
+  observe the discriminant `left` on the stack (i.e. the next arm in the
+  chain, or an else / merge point that drops it).
+- **Compiler form:** Pre-compile arg = string label (next arm or shared else);
+  post-compile arg = pc.
+
+**Example:** Two-arm switch on a discriminant. Pool: 0 = 10, 1 = 1, 2 = 20,
+3 = 2, 4 = 0. The discriminant 10 is evaluated once; first arm tests
+key 1 (mismatch — falls to next arm with discriminant retained), second arm
+tests key 20 (match — both popped, body returns 2). Covered by
+`tests/lib/opcode/test_switch.py`.
+
+| index | opcode    | arg | arg view  | comment |
+|------:|-----------|-----|-----------|---------|
+| 0     | CONST     | 0   | 0 (10)    | stack: [..., disc] |
+| 1     | CONST     | 1   | 1 (1)     | stack: [..., disc, key] |
+| 2     | SWITCH_EQ | 5   | 5 (-> 5)  | mismatch → pc=5, stack: [..., disc] |
+| 3     | CONST     | 3   | 3 (2)     | (skipped on mismatch) match body |
+| 4     | RETURN    | 1   | 1         | (skipped on mismatch) |
+| 5     | LABEL     | —   | —         | next_arm |
+| 6     | CONST     | 2   | 2 (20)    | stack: [..., disc, key2] |
+| 7     | SWITCH_EQ | 10  | 10 (-> 10)| mismatch → pc=10, stack: [..., disc] |
+| 8     | CONST     | 3   | 3 (2)     | match body, stack: [..., 2] |
+| 9     | RETURN    | 1   | 1         | |
+| 10    | LABEL     | —   | —         | else |
+| 11    | POP       | 1   | 1         | drop leftover disc |
+| 12    | CONST     | 4   | 4 (0)     | else result |
+| 13    | RETURN    | 1   | 1         | |
 
 
 ## 10. Introspection

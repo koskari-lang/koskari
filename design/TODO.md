@@ -9,11 +9,13 @@ design docs for detail.
 
 ### Switch / equality dispatch (SWITCH_EQ family)
 
-Proposal: opcodes **SWITCH_EQ** (stack key + discriminant) and compressed
-variants (**SWITCH_EQ_CONST**, **SWITCH_EQ_VAR**, **SWITCH_EQ_FAST**,
-**SWITCH_EQ_VAR_ATTR**, **SWITCH_EQ_FAST_ATTR**) for multi-way equality branching
-without re-pushing the discriminant after each failed arm. Possible compiler
-special **compile/switch** mirroring **compile/cond** syntax.
+Base opcode **SWITCH_EQ** (stack key + retained discriminant) is implemented
+(see [OPCODES.md](OPCODES.md) §9.1). Still to do: compressed variants
+(**SWITCH_EQ_CONST**, **SWITCH_EQ_VAR**, **SWITCH_EQ_FAST**,
+**SWITCH_EQ_VAR_ATTR**, **SWITCH_EQ_FAST_ATTR**) for multi-way equality
+branching that avoids loading the key onto the stack, plus the
+**compile/switch** compiler special (mirroring **compile/cond**) and any
+auto-rewrite from `OBJECT_EQ` chains.
 
 Ref: [switch-eq-opcodes.md](switch-eq-opcodes.md).
 

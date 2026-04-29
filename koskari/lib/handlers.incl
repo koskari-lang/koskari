@@ -38,6 +38,7 @@
 #include "opcode/CHECK_IS_INSTANCE.c"
 #include "opcode/CHECK_IS_SUBCLASS.c"
 #include "opcode/CHECK_EXCEPTION.c"
+#include "opcode/SWITCH_EQ.c"
 #include "opcode/GLOBALS.c"
 #include "opcode/LOCALS.c"
 #include "opcode/IMPORT.c"

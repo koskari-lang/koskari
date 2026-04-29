@@ -1,8 +1,12 @@
 # Switch / equality dispatch opcodes (proposal)
 
-**Status:** Proposal only — not implemented. No entries in `koskari/lib/opcodes.incl`
-or `design/OPCODES.md` yet. When implemented, follow the usual opcode checklist
-in [OPCODES.md](OPCODES.md) §1.10.
+**Status:** Base opcode `SWITCH_EQ` is implemented (entry in
+`koskari/lib/opcodes.incl`, handler in `koskari/lib/opcode/SWITCH_EQ.c`,
+documented in [OPCODES.md](OPCODES.md) §9.1). Compressed forms
+(`SWITCH_EQ_CONST`, `SWITCH_EQ_VAR`, `SWITCH_EQ_FAST`, `SWITCH_EQ_VAR_ATTR`,
+`SWITCH_EQ_FAST_ATTR`) and the `compile/switch` surface form remain
+proposal-only. When implementing those, follow the usual opcode checklist in
+[OPCODES.md](OPCODES.md) §1.10.
 
 ## Motivation
 
@@ -128,11 +132,14 @@ is another option).
 `compile/switch` compares each key to **one** precomputed discriminant by
 equality only.
 
-## Testing (when implemented)
+## Testing
 
-- C evaluator: extend `tests/lib/test_ceval.py` (pattern used for `CHECK_EQ`).
-- Compiler: dedicated tests under `tests/compile/specials/` for emitted opcode
-  shapes and results (match first arm, later arm, else, no else → None).
+- C evaluator: base `SWITCH_EQ` is covered by
+  `tests/lib/opcode/test_switch.py` (match, mismatch retains discriminant,
+  chain to else, jump over tail, equality semantics).
+- Compiler (when `compile/switch` lands): dedicated tests under
+  `tests/compile/specials/` for emitted opcode shapes and results (match
+  first arm, later arm, else, no else → None).
 
 ## References
 

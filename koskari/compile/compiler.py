@@ -735,8 +735,6 @@ class Compiler:
                 raise CompilerError("compile/call not found", source_obj)
 
             expr = cons(symbol('compile/call'), head, tail)
-            if hasattr(source_obj, 'set_position'):
-                expr.set_position(source_obj.get_position())
             return expr
 
         else:
@@ -744,13 +742,9 @@ class Compiler:
 
         if isinstance(head, ByteCodeFragment):
             expr = cons(symbol('compile/call'), head, tail)
-            if hasattr(source_obj, 'set_position'):
-                expr.set_position(source_obj.get_position())
             return expr
 
         expr = cons(head, tail)
-        if hasattr(source_obj, 'set_position'):
-            expr.set_position(source_obj.get_position())
         return expr
 
 
