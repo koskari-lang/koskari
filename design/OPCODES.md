@@ -201,7 +201,7 @@ When adding or changing an opcode:
 - [7. Iteration](#7-iteration) — ITER_NEXT, NEXT
 - [8. Jumps](#8-jumps) — JUMP, JUMP_FALSE, JUMP_TRUE, JUMP_AND, JUMP_OR
 - [9. Check jumps](#9-check-jumps) — CHECK_EQ, CHECK_GE, CHECK_GT, CHECK_LE, CHECK_LT, CHECK_NE, CHECK_IN, CHECK_NOT_IN, CHECK_IS, CHECK_IS_NOT, CHECK_IS_INSTANCE, CHECK_IS_SUBCLASS, CHECK_EXCEPTION
-- [9.1 Switch dispatch](#91-switch-dispatch) — SWITCH_EQ
+- [9.1 Switch dispatch](#91-switch-dispatch) — SWITCH_EQ, SWITCH_EQ_CONST, SWITCH_EQ_VAR, SWITCH_EQ_FAST, SWITCH_EQ_VAR_ATTR, SWITCH_EQ_FAST_ATTR
 - [10. Introspection](#10-introspection) — GLOBALS, LOCALS, IMPORT, IMPORT_REL, IMPORT_FROM
 - [11. Exception handling](#11-exception-handling) — EXCEPTION, EXCEPTION_CLEAR, EXCEPTION_MATCH
 - [12. Variables by name](#12-variables-by-name) — VAR, VAR_BIND, VAR_CLEAR, VAR_REF, VAR_STORE, VAR_ATTR*
@@ -261,6 +261,11 @@ When adding or changing an opcode:
 | CHECK_IS_NOT | LABEL | Jump if left is right | [§9](#kos_op_check_is_not) |
 | CHECK_EXCEPTION | LABEL | Jump if exception no match | [§9](#kos_op_check_exception) |
 | SWITCH_EQ | LABEL | Equality dispatch; on match pop both, on mismatch pop key only and jump | [§9.1](#kos_op_switch_eq) |
+| SWITCH_EQ_CONST | EXTRA | Compare TOS to constant RHS; on mismatch keep TOS and jump | [§9.1](#kos_op_switch_eq_const) |
+| SWITCH_EQ_VAR | EXTRA | Compare TOS to namespace var RHS; on mismatch keep TOS and jump | [§9.1](#kos_op_switch_eq_var) |
+| SWITCH_EQ_FAST | EXTRA | Compare TOS to fast-slot RHS; on mismatch keep TOS and jump | [§9.1](#kos_op_switch_eq_fast) |
+| SWITCH_EQ_VAR_ATTR | EXTRA | Compare TOS to getattr(var, attr); on mismatch keep TOS and jump | [§9.1](#kos_op_switch_eq_var_attr) |
+| SWITCH_EQ_FAST_ATTR | EXTRA | Compare TOS to getattr(fast, attr); on mismatch keep TOS and jump | [§9.1](#kos_op_switch_eq_fast_attr) |
 | GLOBALS | NOARG | Push globals dict | [§10](#kos_op_globals) |
 | LOCALS | NOARG | Push locals dict | [§10](#kos_op_locals) |
 | IMPORT | CONST | Absolute import; push leaf module | [§10.1](#kos_op_import) |
@@ -1190,10 +1195,8 @@ the **inverse pop pattern** of the check jumps in §9: on mismatch the
 discriminant is *retained* below TOS so the next arm can compare another key
 against it without re-pushing.
 
-See [switch-eq-opcodes.md](switch-eq-opcodes.md) for the broader family
-proposal (compressed forms `SWITCH_EQ_CONST`, `SWITCH_EQ_VAR`, `SWITCH_EQ_FAST`,
-`SWITCH_EQ_VAR_ATTR`, `SWITCH_EQ_FAST_ATTR`) and a `compile/switch` surface
-form. Only the base `SWITCH_EQ` is currently implemented.
+See [switch-eq-opcodes.md](switch-eq-opcodes.md) for family rationale and the
+surface `compile/switch` form. The full SWITCH_EQ family is implemented.
 
 ### KOS_OP_SWITCH_EQ
 
@@ -1233,6 +1236,62 @@ tests key 20 (match — both popped, body returns 2). Covered by
 | 11    | POP       | 1   | 1         | drop leftover disc |
 | 12    | CONST     | 4   | 4 (0)     | else result |
 | 13    | RETURN    | 1   | 1         | |
+
+
+### KOS_OP_SWITCH_EQ_CONST
+
+- **Style**: EXTRA. Schema `(LABEL, CONST, NOARG, NOARG)`.
+- **Status**: Implemented.
+- **Stack**: `[..., s]`. Compare `s == cpool[a1]` with `Py_EQ`.
+  - **Match**: drop `s`, fall through.
+  - **Mismatch**: retain `s`, jump to `a0`.
+- **Compiler form:** tuple arg `("label", const_value, 0, 0)` pre-compile;
+  post-compile row stores pc in `a0` and constant index in `a1`.
+- **Implementation**: `koskari/lib/opcode/SWITCH_EQ_CONST.c`
+
+### KOS_OP_SWITCH_EQ_VAR
+
+- **Style**: EXTRA. Schema `(LABEL, VAR, NOARG, NOARG)`.
+- **Status**: Implemented.
+- **Stack**: `[..., s]`. Resolve `rhs = frame_ns_deref(var_name)` from `a1`,
+  then compare `s == rhs` with `Py_EQ`.
+  - **Match**: drop `s`, fall through.
+  - **Mismatch**: retain `s`, jump to `a0`.
+- **Compiler form:** tuple arg `("label", "name", 0, 0)` pre-compile.
+- **Implementation**: `koskari/lib/opcode/SWITCH_EQ_VAR.c`
+
+### KOS_OP_SWITCH_EQ_FAST
+
+- **Style**: EXTRA. Schema `(LABEL, FASTVAR, NOARG, NOARG)`.
+- **Status**: Implemented.
+- **Stack**: `[..., s]`. Resolve `rhs = KosNamespace_FastDeref(ns, a1)`, then
+  compare `s == rhs` with `Py_EQ`.
+  - **Match**: drop `s`, fall through.
+  - **Mismatch**: retain `s`, jump to `a0`.
+- **Compiler form:** tuple arg `("label", slot_index, 0, 0)` pre-compile.
+- **Implementation**: `koskari/lib/opcode/SWITCH_EQ_FAST.c`
+
+### KOS_OP_SWITCH_EQ_VAR_ATTR
+
+- **Style**: EXTRA. Schema `(LABEL, VAR, CONST, NOARG)`.
+- **Status**: Implemented.
+- **Stack**: `[..., s]`. Resolve `obj = frame_ns_deref(var_name)` from `a1`,
+  `rhs = getattr(obj, attr_name)` from `a2`, then compare `s == rhs`.
+  - **Match**: drop `s`, fall through.
+  - **Mismatch**: retain `s`, jump to `a0`.
+- **Compiler form:** tuple arg `("label", "obj_name", "attr_name", 0)` pre-compile.
+- **Implementation**: `koskari/lib/opcode/SWITCH_EQ_VAR_ATTR.c`
+
+### KOS_OP_SWITCH_EQ_FAST_ATTR
+
+- **Style**: EXTRA. Schema `(LABEL, FASTVAR, CONST, NOARG)`.
+- **Status**: Implemented.
+- **Stack**: `[..., s]`. Resolve `obj = KosNamespace_FastDeref(ns, a1)`,
+  `rhs = getattr(obj, attr_name)` from `a2`, then compare `s == rhs`.
+  - **Match**: drop `s`, fall through.
+  - **Mismatch**: retain `s`, jump to `a0`.
+- **Compiler form:** tuple arg `("label", slot_index, "attr_name", 0)` pre-compile.
+- **Implementation**: `koskari/lib/opcode/SWITCH_EQ_FAST_ATTR.c`
 
 
 ## 10. Introspection
