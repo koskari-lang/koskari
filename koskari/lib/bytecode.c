@@ -1027,9 +1027,6 @@ static uint32_t intern_const(CodeCollect *coll, PyObject *value) {
   }
 
   Py_INCREF(value);
-
-  /* TODO: intern constant strings in place. This somehow breaks imports right
-     now, and I have no idea why... */
   if (PyUnicode_CheckExact(value))
     PyUnicode_InternInPlace(&value);
 
