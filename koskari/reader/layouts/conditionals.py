@@ -102,22 +102,22 @@ def layout_switch(source, peers):
 
     eg.
     switch (get-value):
-      case 1:
+      case [1]:
         (print "one")
-      case 2:
+      case [2]:
         (print "two")
-      case 3:
+      case [3 5]:
         (print "three")
       else:
         (print "other")
 
     The inner case and else children are read by the default layout/block,
-    which produces forms shaped (case COMPARE (compile/begin BODY...)) and
+    which produces forms shaped (case COMP (compile/begin BODY...)) and
     (else (compile/begin BODY...)). This handler walks the switch body,
     validates each child shape, and emits
 
         (switch VALUE
-          (COMPARE  (compile/begin BODY...))
+          ([COMP...]  (compile/begin BODY...))
           ...
           (else: (compile/begin BODY...)))
 
@@ -159,7 +159,7 @@ def layout_switch(source, peers):
                     get_position(form))
             if len(rest_parts) != 2:
                 raise LayoutError(
-                    'case requires exactly one condition',
+                    'case requires condition list and body',
                     get_position(form))
             clauses.append(form.cdr)
 

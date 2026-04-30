@@ -24,12 +24,13 @@ BODY...)).
 from unittest import IsolatedAsyncioTestCase
 
 from koskari.exceptions import LayoutError
-from koskari.lib import keyword, symbol
+from koskari.lib import cons, keyword, symbol, nil
 from koskari.compile.helpers import pycons
 
 from .. import parse_layout
 
 import pytest
+
 
 pytestmark = pytest.mark.phase_infra
 
@@ -44,9 +45,9 @@ class TestLayoutSwitch(IsolatedAsyncioTestCase):
     async def test_switch_basic_match(self):
         src = """
         switch x:
-          case 1:
+          case [1]:
             "one"
-          case 2:
+          case [2]:
             "two"
           else:
             "meh"
@@ -54,8 +55,8 @@ class TestLayoutSwitch(IsolatedAsyncioTestCase):
 
         expected = pycons(
             (_symbol_switch, symbol('x'),
-             (1, (_compile_begin, "one")),
-             (2, (_compile_begin, "two")),
+             (cons(1, nil), (_compile_begin, "one")),
+             (cons(2, nil), (_compile_begin, "two")),
              (_keyword_else, (_compile_begin, "meh")))
         )
 
@@ -70,16 +71,16 @@ class TestLayoutSwitch(IsolatedAsyncioTestCase):
     async def test_switch_no_else(self):
         src = """
         switch x:
-          case 1:
+          case [1]:
             "one"
-          case 2:
+          case [2]:
             "two"
         """
 
         expected = pycons(
             (_symbol_switch, symbol('x'),
-             (1, (_compile_begin, "one")),
-             (2, (_compile_begin, "two")))
+             (cons(1, nil), (_compile_begin, "one")),
+             (cons(2, nil), (_compile_begin, "two")))
         )
 
         result = parse_layout(src)
@@ -113,7 +114,7 @@ class TestLayoutSwitch(IsolatedAsyncioTestCase):
     async def test_switch_multi_body(self):
         src = """
         switch x:
-          case 1:
+          case [1]:
             (foo)
             (bar)
           else:
@@ -123,7 +124,7 @@ class TestLayoutSwitch(IsolatedAsyncioTestCase):
 
         expected = pycons(
             (_symbol_switch, symbol('x'),
-             (1, (_compile_begin, (symbol('foo'),), (symbol('bar'),))),
+             (cons(1, nil), (_compile_begin, (symbol('foo'),), (symbol('bar'),))),
              (_keyword_else,
               (_compile_begin, (symbol('baz'),), (symbol('qux'),))))
         )
@@ -141,7 +142,7 @@ class TestLayoutSwitchValidation(IsolatedAsyncioTestCase):
     async def test_switch_missing_value(self):
         src = """
         switch:
-          case 1:
+          case [1]:
             "one"
         """
 
@@ -151,7 +152,7 @@ class TestLayoutSwitchValidation(IsolatedAsyncioTestCase):
     async def test_switch_extra_value(self):
         src = """
         switch x y:
-          case 1:
+          case [1]:
             "one"
         """
 

@@ -304,17 +304,18 @@ So children are read first by `layout/block` as:
 
 `layout/switch` validates and rewrites those child forms into:
 
-- case clause: `(COND (compile/begin BODY...))`
+- case clause: `(COND-LIST (compile/begin BODY...))`
 - else clause: `(else: (compile/begin BODY...))`
 
 It then returns:
 
-`(switch VALUE (COND (compile/begin ...)) ... (else: (compile/begin ...)))`
+`(switch VALUE (COND-LIST (compile/begin ...)) ... (else: (compile/begin ...)))`
 
 Rules:
 
 - body entries must be `case` or `else` blocks only
-- `case` requires exactly one condition argument
+- `case` requires exactly one condition argument and it is passed through
+  as the case's condition list expression
 - `else` takes no arguments
 - only one `else` is allowed
 - `case` cannot appear after `else`
@@ -324,9 +325,9 @@ Rules:
 
 ```
 switch VALUE:
-  case COND:
+  case COND-LIST:
     BODY
-  case COND2:
+  case COND-LIST2:
     BODY
   else:
     BODY
@@ -336,21 +337,21 @@ switch VALUE:
 
 ```scheme
 switch x:
-  case 1:
+  case [1]:
     "one"
-  case 2:
-    "two"
+  case [2 3]:
+    "two-or-three"
   else:
     "meh"
 ;; -> (switch x
-;;      (1 (compile/begin "one"))
-;;      (2 (compile/begin "two"))
+;;      ([1] (compile/begin "one"))
+;;      ([2 3] (compile/begin "two-or-three"))
 ;;      (else: (compile/begin "meh")))
 
 switch x:
-  case 1:
+  case [1]:
     "one"
-;; -> (switch x (1 (compile/begin "one")))
+;; -> (switch x ([1] (compile/begin "one")))
 ```
 
 **Implementation:** `koskari/reader/layouts/conditionals.layout_switch`

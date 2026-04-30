@@ -45,9 +45,9 @@ class TestSwitchSpecial(SpecialsTestCase):
     async def test_switch_first_match(self):
         src_str = """
         (compile/switch 5
-          [1 "one"]
-          [2 "two"]
-          [5 "five"]
+          [[1] "one"]
+          [[2] "two"]
+          [[5] "five"]
           [else: "meh"])
         """
         expr, mod = self.compile_expr(src_str)
@@ -58,8 +58,8 @@ class TestSwitchSpecial(SpecialsTestCase):
     async def test_switch_else_fallthrough(self):
         src_str = """
         (compile/switch 5
-          [1 "one"]
-          [2 "two"]
+          [[1] "one"]
+          [[2] "two"]
           [else: "meh"])
         """
         expr, mod = self.compile_expr(src_str)
@@ -70,8 +70,8 @@ class TestSwitchSpecial(SpecialsTestCase):
     async def test_switch_no_match_returns_none(self):
         src_str = """
         (compile/switch 5
-          [1 "one"]
-          [2 "two"])
+          [[1] "one"]
+          [[2] "two"])
         """
         expr, mod = self.compile_expr(src_str)
         result = await expr()
@@ -87,9 +87,9 @@ class TestSwitchSpecial(SpecialsTestCase):
 
         src_str = """
         (compile/switch (compile/call get_val)
-          [1 "one"]
-          [2 "two"]
-          [3 "three"]
+          [[1] "one"]
+          [[2] "two"]
+          [[3] "three"]
           [else: "meh"])
         """
         expr, mod = self.compile_expr(src_str, get_val=get_val)
@@ -107,8 +107,8 @@ class TestSwitchSpecial(SpecialsTestCase):
 
         src_str = """
         (compile/switch 1
-          [(compile/call side 1) "one"]
-          [(compile/call side 2) "two"]
+          [[(compile/call side 1)] "one"]
+          [[(compile/call side 2)] "two"]
           [else: "meh"])
         """
         expr, mod = self.compile_expr(src_str, side=side)
@@ -123,7 +123,7 @@ class TestSwitchSpecial(SpecialsTestCase):
 
         src_str = """
         (compile/call add
-          (compile/switch 2 [1 "one"] [2 100] [else: 0])
+          (compile/switch 2 [[1] "one"] [[2] 100] [else: 0])
           100)
         """
         expr, mod = self.compile_expr(src_str, add=add)
@@ -140,9 +140,9 @@ class TestSwitchLayoutIntegration(SpecialsTestCase):
     async def test_switch_layout_first_match(self):
         src_str = """
         switch 5:
-          case 1:
+          case [1]:
             "one"
-          case 5:
+          case [5]:
             "five"
           else:
             "meh"
@@ -155,9 +155,9 @@ class TestSwitchLayoutIntegration(SpecialsTestCase):
     async def test_switch_layout_else_fallthrough(self):
         src_str = """
         switch 5:
-          case 1:
+          case [1]:
             "one"
-          case 2:
+          case [2]:
             "two"
           else:
             "meh"
@@ -170,9 +170,9 @@ class TestSwitchLayoutIntegration(SpecialsTestCase):
     async def test_switch_layout_no_match_returns_none(self):
         src_str = """
         switch 5:
-          case 1:
+          case [1]:
             "one"
-          case 2:
+          case [2]:
             "two"
         """
         expr, mod = self.compile_expr(src_str)
@@ -189,11 +189,11 @@ class TestSwitchLayoutIntegration(SpecialsTestCase):
 
         src_str = """
         switch (get_val):
-          case 1:
+          case [1]:
             "one"
-          case 2:
+          case [2]:
             "two"
-          case 3:
+          case [3]:
             "three"
           else:
             "meh"

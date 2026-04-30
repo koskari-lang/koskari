@@ -24,6 +24,7 @@ compile/when, and compile/unless.
 
 
 from ...lib import keyword, OpCode, symbol
+from ...types import is_pair
 from ...exceptions import SpecialError
 from ..helpers import helper_begin, special
 
@@ -104,21 +105,34 @@ def special_switch(compiler, source, tc=False):
         element, cl = cl
 
         fragment.position_of(element)
-        fragment.instruction(OpCode.KOS_OP_LABEL, label)
-        label = gen_label()
-
         test, body = element
 
         if test is _keyword_else:
             if cl:
                 raise SpecialError("else: must be last clause", source)
 
+            fragment.instruction(OpCode.KOS_OP_LABEL, label)
             fragment.instruction(OpCode.KOS_OP_POP, 1)
             helper_begin(fragment, body, tc)
             break
 
-        fragment.merge(compiler.full_compile(test))
-        fragment.instruction(OpCode.KOS_OP_SWITCH_EQ, label)
+        elif not (test and is_pair(test)):
+            raise SpecialError("switch compare must be a list of values",
+                               source)
+
+        body_label = gen_label()
+        while test:
+            fragment.position_of(test)
+            tval, test = test
+
+            fragment.instruction(OpCode.KOS_OP_LABEL, label)
+            label = gen_label()
+
+            fragment.merge(compiler.full_compile(tval))
+            fragment.instruction(OpCode.KOS_OP_SWITCH_EQ, label)
+            fragment.instruction(OpCode.KOS_OP_JUMP, body_label)
+
+        fragment.instruction(OpCode.KOS_OP_LABEL, body_label)
         helper_begin(fragment, body, tc)
         fragment.instruction(OpCode.KOS_OP_JUMP, done)
 
