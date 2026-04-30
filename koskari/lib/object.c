@@ -34,6 +34,260 @@
 
 
 static PyObject *KoskariSyncViolation = NULL;
+static PyObject *CompositeMetaCache = NULL;
+
+static void koskari_fixup_slot_dispatchers(PyTypeObject *type);
+
+
+/* === Composite metaclass cache and class builder === */
+
+
+static PyObject *build_default_namespace(PyObject *namespace) {
+
+  PyObject *ns_dict = PyDict_New();
+  if (! ns_dict)
+    return NULL;
+
+  if (PyDict_Merge(ns_dict, namespace, 1) < 0) {
+    Py_DECREF(ns_dict);
+    return NULL;
+  }
+
+  /* __class__ is filled on the input namespace after the metaclass returns;
+     omit it from the mapping passed to type.__new__. */
+  if (PyDict_DelItemString(ns_dict, "__class__") < 0) {
+    if (! PyErr_ExceptionMatches(PyExc_KeyError)) {
+      Py_DECREF(ns_dict);
+      return NULL;
+    }
+    PyErr_Clear();
+  }
+
+  return ns_dict;
+}
+
+
+static PyObject *resolve_prepare_namespace(
+    PyObject *metaclass,
+    PyObject *name,
+    PyObject *bases) {
+
+  PyObject *prepare = PyObject_GetAttrString(metaclass, "__prepare__");
+  if (! prepare) {
+    if (PyErr_ExceptionMatches(PyExc_AttributeError)) {
+      PyErr_Clear();
+      return PyDict_New();
+    }
+    return NULL;
+  }
+
+  PyObject *prepared = PyObject_CallFunctionObjArgs(prepare, name, bases, NULL);
+  Py_DECREF(prepare);
+  return prepared;
+}
+
+
+static PyObject *build_composite_metaclass(PyObject *incoming_meta) {
+
+  if (! CompositeMetaCache) {
+    CompositeMetaCache = PyDict_New();
+    if (! CompositeMetaCache)
+      return NULL;
+  }
+
+  PyObject *cached = PyDict_GetItemWithError(CompositeMetaCache, incoming_meta);
+  if (cached) {
+    Py_INCREF(cached);
+    return cached;
+  }
+  if (PyErr_Occurred())
+    return NULL;
+
+  PyObject *meta_name = PyObject_GetAttrString(incoming_meta, "__name__");
+  if (! meta_name)
+    return NULL;
+
+  PyObject *combined_name = PyUnicode_FromFormat("KosCombinedMeta_%U", meta_name);
+  Py_DECREF(meta_name);
+  if (! combined_name)
+    return NULL;
+
+  PyObject *combined_bases = PyTuple_Pack(2, incoming_meta, (PyObject *) &KosTypeType);
+  if (! combined_bases) {
+    Py_DECREF(combined_name);
+    return NULL;
+  }
+
+  PyObject *combined_ns = PyDict_New();
+  if (! combined_ns) {
+    Py_DECREF(combined_bases);
+    Py_DECREF(combined_name);
+    return NULL;
+  }
+
+  PyObject *composite = PyObject_CallFunctionObjArgs(
+      (PyObject *) &PyType_Type,
+      combined_name,
+      combined_bases,
+      combined_ns,
+      NULL);
+
+  Py_DECREF(combined_ns);
+  Py_DECREF(combined_bases);
+  Py_DECREF(combined_name);
+  if (! composite)
+    return NULL;
+
+  if (PyDict_SetItem(CompositeMetaCache, incoming_meta, composite) < 0) {
+    Py_DECREF(composite);
+    return NULL;
+  }
+
+  return composite;
+}
+
+
+static PyObject *resolve_metaclass(
+    PyObject *bases,
+    PyObject *metaclass_or_null) {
+
+  if (metaclass_or_null) {
+    Py_INCREF(metaclass_or_null);
+    return metaclass_or_null;
+  }
+
+  if (! PyTuple_Check(bases)) {
+    PyErr_SetString(PyExc_TypeError, "bases must be a tuple");
+    return NULL;
+  }
+
+  if (PyTuple_GET_SIZE(bases) < 1)
+    return kos_get_default_metaclass();
+
+  PyObject *first_base = PyTuple_GET_ITEM(bases, 0);
+  if (! PyType_Check(first_base)) {
+    PyErr_SetString(PyExc_TypeError, "base classes must be types");
+    return NULL;
+  }
+
+  PyObject *incoming_meta = (PyObject *) Py_TYPE(first_base);
+  if (! incoming_meta)
+    return NULL;
+
+  if (incoming_meta == (PyObject *) &PyType_Type)
+    return kos_get_default_metaclass();
+
+  if (PyType_IsSubtype((PyTypeObject *) incoming_meta, &KosTypeType)) {
+    Py_INCREF(incoming_meta);
+    return incoming_meta;
+  }
+
+  return build_composite_metaclass(incoming_meta);
+}
+
+
+PyObject *kos_build_class(
+    PyObject *name,
+    PyObject *bases,
+    PyObject *namespace,
+    PyObject *metaclass_or_null) {
+
+  if (! name || ! PyUnicode_Check(name)) {
+    PyErr_SetString(PyExc_TypeError, "name must be a str");
+    return NULL;
+  }
+
+  PyObject *bases_tuple = bases;
+  if (! PyTuple_CheckExact(bases_tuple)) {
+    bases_tuple = PySequence_Tuple(bases);
+    if (! bases_tuple)
+      return NULL;
+  } else {
+    Py_INCREF(bases_tuple);
+  }
+
+  PyObject *ns_dict = build_default_namespace(namespace);
+  if (! ns_dict) {
+    Py_DECREF(bases_tuple);
+    return NULL;
+  }
+
+  PyObject *metaclass = resolve_metaclass(bases_tuple, metaclass_or_null);
+  if (! metaclass) {
+    Py_DECREF(ns_dict);
+    Py_DECREF(bases_tuple);
+    return NULL;
+  }
+
+  PyObject *prepared_ns = resolve_prepare_namespace(metaclass, name, bases_tuple);
+  if (! prepared_ns) {
+    Py_DECREF(metaclass);
+    Py_DECREF(ns_dict);
+    Py_DECREF(bases_tuple);
+    return NULL;
+  }
+
+  Py_ssize_t pos = 0;
+  PyObject *key = NULL;
+  PyObject *value = NULL;
+  while (PyDict_Next(ns_dict, &pos, &key, &value)) {
+    if (PyObject_SetItem(prepared_ns, key, value) < 0) {
+      Py_DECREF(ns_dict);
+      Py_DECREF(prepared_ns);
+      Py_DECREF(metaclass);
+      Py_DECREF(bases_tuple);
+      return NULL;
+    }
+  }
+  Py_DECREF(ns_dict);
+
+  PyObject *cls = PyObject_CallFunctionObjArgs(
+      metaclass,
+      name,
+      bases_tuple,
+      prepared_ns,
+      NULL);
+
+  if (! cls) {
+    Py_DECREF(prepared_ns);
+    Py_DECREF(metaclass);
+    Py_DECREF(bases_tuple);
+    return NULL;
+  }
+
+  if (PyType_Check(cls)
+      && PyType_IsSubtype((PyTypeObject *) Py_TYPE(cls), &KosTypeType)) {
+    koskari_fixup_slot_dispatchers((PyTypeObject *) cls);
+    PyType_Modified((PyTypeObject *) cls);
+  }
+
+  Py_DECREF(prepared_ns);
+  Py_DECREF(metaclass);
+  Py_DECREF(bases_tuple);
+  return cls;
+}
+
+
+/* === kostype_tp_init === */
+
+
+static int kostype_tp_init(PyObject *self, PyObject *args, PyObject *kwds) {
+
+  /* type_call runs tp_init on the new class after type_new; vectorcall path
+   * does the same. Install demand-aware slots here so we do not rely on
+   * kostype_tp_call being used for KosType(name, bases, namespace). */
+  if (PyType_Check(self)) {
+    koskari_fixup_slot_dispatchers((PyTypeObject *) self);
+    PyType_Modified((PyTypeObject *) self);
+  }
+
+  if (PyType_Type.tp_init)
+    return PyType_Type.tp_init(self, args, kwds);
+
+  (void) args;
+  (void) kwds;
+  return 0;
+}
 
 
 /* === kostype_tp_call === */
@@ -393,28 +647,6 @@ static void koskari_fixup_slot_dispatchers(PyTypeObject *type) {
 }
 
 
-/* === kostype_tp_new === */
-
-
-static PyObject *kostype_tp_new(
-    PyTypeObject *metaclass,
-    PyObject *args,
-    PyObject *kwds) {
-
-  SAYF("kostype_tp_new: metaclass = %R, args = %R, kwds = %R", metaclass, args, kwds);
-  PyObject *cls = PyType_Type.tp_new(metaclass, args, kwds);
-  SAYF("kostype_tp_new: cls = %R", cls);
-  if (! cls)
-    return NULL;
-
-  koskari_fixup_slot_dispatchers((PyTypeObject *) cls);
-  PyType_Modified((PyTypeObject *) cls);
-
-  SAYF("kostype_tp_new -> %R", cls);
-  return cls;
-}
-
-
 /* === kos_get_default_metaclass === */
 
 
@@ -432,12 +664,17 @@ PyTypeObject KosTypeType = {
   PyVarObject_HEAD_INIT(NULL, 0)
   .tp_name = "koskari.lib.KosType",
   .tp_basicsize = sizeof(PyHeapTypeObject),
-  .tp_flags = Py_TPFLAGS_DEFAULT,
+  .tp_flags = Py_TPFLAGS_DEFAULT | Py_TPFLAGS_BASETYPE,
 
   .tp_doc = "Metaclass for Koskari classes. Instances are classes. "
             "Calling C(...) returns the instance directly.",
 
-  .tp_new = kostype_tp_new,
+  /* Leave tp_new NULL: PyType_Ready copies type.__new__ from tp_base so this
+   * matches PyType_Type.tp_new. That satisfies tp_new_wrapper in typeobject.c
+   * when a foreign metaclass super()s through KosType. Slot fixup runs in
+   * kostype_tp_init (after type_new) and kos_build_class. */
+  .tp_new = NULL,
+  .tp_init = kostype_tp_init,
   .tp_call = kostype_tp_call,
   // .tp_dealloc = kostype_tp_dealloc,
   .tp_base = &PyType_Type,
@@ -472,6 +709,7 @@ int koskari_object_init(PyObject *mod) {
 int koskari_object_clear(PyObject *mod) {
 
   Py_CLEAR(KoskariSyncViolation);
+  Py_CLEAR(CompositeMetaCache);
   (void) mod;
   return 0;
 }

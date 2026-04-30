@@ -43,10 +43,20 @@ inside a CollectorNamespace; the class value is produced by BUILD_CLASS
 **BUILD_CLASS**
 
 1. Pop ns (TOS), pop pos (TOS-1). pos = (name, bases) or (name, bases, metaclass).
-2. Parse pos; if metaclass absent, use default KosType.
-3. Materialize ns to plain Python dict (dereference refs for KosNamespace).
-4. Call cls = metaclass(name, bases, cls_dict).
-5. Push cls onto the stack.
+2. Parse pos; optional metaclass may be omitted (derive from first base or default
+   KosType inside `kos_build_class`).
+3. Call `kos_build_class(name, bases, ns, metaclass_or_null)` (materializes
+   namespace, `__prepare__`, merge, composite metaclass when needed, final
+   metaclass call).
+4. Push cls onto the stack.
+
+`koskari.lib.build_class(name, bases, namespace, metaclass=None)` is the same
+`kos_build_class(...)` surface for tests and embedding. After a successful
+metaclass call, `kos_build_class` assigns the new type to the **input**
+`namespace` under `__class__` (the same object `BUILD_CLASS` passes in). The
+`__class__` key is stripped from the merged mapping before that mapping is
+copied into `__prepare__`’s namespace so it is not passed to `type.__new__` as a
+class body entry.
 
 ### 2.2 Stack Layout for Class Creation
 

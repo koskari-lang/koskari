@@ -53,6 +53,58 @@ class TestClassEmpty(SpecialsTestCase):
         self.assertIsInstance(c, result)
 
 
+class TestClassQualname(SpecialsTestCase):
+
+    async def test_class_has_qualname_from_form_name(self):
+        src_str = """
+        (compile/begin
+          (compile/define C (compile/class C () (compile/define x 1)))
+          (compile/attr C __qualname__))
+        """
+        expr, mod = self.compile_expr(src_str)
+        result = await expr()
+        self.assertEqual(result, "C")
+
+    async def test_class_qualname_not_overwritten_if_declared(self):
+        src_str = """
+        (compile/begin
+          (compile/define C
+            (compile/class C ()
+              (compile/define __qualname__ "custom")
+              (compile/define x 1)))
+          (compile/attr C __qualname__))
+        """
+        expr, mod = self.compile_expr(src_str)
+        result = await expr()
+        self.assertEqual(result, "custom")
+
+
+class TestClassModule(SpecialsTestCase):
+
+    async def test_class_has_module_from_compiling_context(self):
+        src_str = """
+        (compile/begin
+          (compile/define C (compile/class C () (compile/define x 1)))
+          (compile/attr C __module__))
+        """
+        expr, mod = self.compile_expr(src_str)
+        result = await expr()
+        self.assertEqual(result, "test")
+
+    async def test_class_module_not_overwritten_if_declared(self):
+        src_str = """
+        (compile/begin
+          (compile/define C
+            (compile/class C ()
+              (compile/define __module__ "custom.mod")
+              (compile/define x 1)))
+          (compile/attr C __module__))
+        """
+        expr, mod = self.compile_expr(src_str)
+        result = await expr()
+        self.assertEqual(result, "custom.mod")
+
+
 class TestClassDocstring(SpecialsTestCase):
 
     async def test_class_has_docstring_from_leading_string(self):
@@ -195,6 +247,8 @@ class TestClassKosCallable(SpecialsTestCase):
         self.assertIsInstance(result, type)
         self.assertIs(type(result), KosType)
         self.assertEqual(result.__name__, "Foo")
+        self.assertEqual(result.__qualname__, "Foo")
+        self.assertEqual(result.__module__, "test")
 
 
     async def test_class_mro_metaclass_is_kostype(self):

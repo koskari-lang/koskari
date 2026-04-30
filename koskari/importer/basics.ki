@@ -384,4 +384,12 @@ define-syntax compile/define-dataclass:
       create-instance-check name
 
 
+define-syntax compile/super:
+  syntax-rules []:
+    match (super):
+      (compile/call super (type self) self)
+    match (super args ...):
+      (compile/call super args ...)
+
+
 ;; The end.

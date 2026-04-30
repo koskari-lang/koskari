@@ -1,0 +1,22 @@
+;; Reproducer: layout define-class with inheritance and (super) __init__ chain.
+
+
+define-class Base []:
+
+    define __init__ [self x]:
+        set! self.x x
+
+
+define-class Child (Base):
+
+    define __init__ [self x y]:
+        (.__init__ (super) x)
+        set! self.y y
+
+
+define verify_super_init []:
+    define c (Child 10 20)
+    (and (equal? c.x 10) (equal? c.y 20))
+
+
+;; The end.

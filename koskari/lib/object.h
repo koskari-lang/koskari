@@ -42,6 +42,21 @@ extern PyTypeObject KosTypeType;
 */
 PyObject *kos_get_default_metaclass(void);
 
+/**
+   Build a class using Koskari metaclass composition semantics.
+
+   :param name: class name (str)
+   :param bases: base classes tuple
+   :param namespace: mapping of class attributes
+   :param metaclass_or_null: explicit metaclass or NULL
+   :return: new class object
+*/
+PyObject *kos_build_class(
+    PyObject *name,
+    PyObject *bases,
+    PyObject *namespace,
+    PyObject *metaclass_or_null);
+
 
 /* === Unit lifecycle === */
 

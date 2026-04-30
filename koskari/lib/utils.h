@@ -127,6 +127,21 @@ PyObject *KosUtils_BuildSet(PyObject *const *args, Py_ssize_t nargs);
 */
 PyObject *KosUtils_BuildDict(PyObject *args, PyObject *kwargs);
 
+/**
+   Build a class using Koskari class-construction semantics.
+
+   :param name: class name
+   :param bases: base classes tuple
+   :param namespace: mapping used as class namespace
+   :param metaclass: explicit metaclass or NULL
+   :return: new class object
+*/
+PyObject *KosUtils_BuildClass(
+    PyObject *name,
+    PyObject *bases,
+    PyObject *namespace,
+    PyObject *metaclass);
+
 
 /* === unit lifecycle === */
 
