@@ -5,41 +5,6 @@ design docs for detail.
 
 ---
 
-## VM / opcodes
-
-### Switch / equality dispatch (SWITCH_EQ family)
-
-Base opcode **SWITCH_EQ** (stack key + retained discriminant) is implemented
-(see [OPCODES.md](OPCODES.md) §9.1). Still to do: compressed variants
-(**SWITCH_EQ_CONST**, **SWITCH_EQ_VAR**, **SWITCH_EQ_FAST**,
-**SWITCH_EQ_VAR_ATTR**, **SWITCH_EQ_FAST_ATTR**) for multi-way equality
-branching that avoids loading the key onto the stack, plus the
-**compile/switch** compiler special (mirroring **compile/cond**) and any
-auto-rewrite from `OBJECT_EQ` chains.
-
-Ref: [switch-eq-opcodes.md](switch-eq-opcodes.md).
-
-## Generator / yield
-
-### Dynamic wind-unwind at yield
-
-**Status:** Proposal Only. Under consideration. May be a bad idea or cause too
-great a performance impact; no implementation planned until resolved.
-
-Decide whether to run dynamic-wind (and param/dyn-with) enter/exit at
-generator install and freeze (so `(dynamic-wind before body after)` that
-spans a yield runs `after` on yield and `before` on resume).
-
-Ref: [interpreter/extent-wind-unwind.md](interpreter/extent-wind-unwind.md) (wind/unwind semantics).
-
-### DemandGenerator segfault under Python 3.9/3.10
-
-Fix the segfault in
-`tests/lib/test_demand_sync.py::TestDemandGenerator::test_yielding_function_returns_generator`
-when running under Python 3.9 and 3.10.
-
----
-
 ## Continuations / transfer plans
 
 ### Interrupted transfer plans
@@ -234,8 +199,6 @@ information and exits.
 
 From [FEATURES.md](FEATURES.md) and related docs:
 
-- JIT integration
-- Additional language features
 - Performance optimizations (general)
 
 ---

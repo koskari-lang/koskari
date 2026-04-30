@@ -1268,7 +1268,7 @@ the **inverse pop pattern** of the check jumps in §9: on mismatch the
 discriminant is *retained* below TOS so the next arm can compare another key
 against it without re-pushing.
 
-See [switch-eq-opcodes.md](switch-eq-opcodes.md) for family rationale and the
+See [archive/switch-eq-opcodes.md](archive/switch-eq-opcodes.md) for family rationale and the
 surface `compile/switch` form. The full SWITCH_EQ family is implemented.
 
 ### KOS_OP_SWITCH_EQ
