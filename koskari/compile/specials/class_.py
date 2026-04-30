@@ -46,6 +46,16 @@ def _extract_metaclass(kwds_seq):
     return None, kwds_seq
 
 
+def _compiling_module_name(compiler):
+    """
+    Return the compiling context's module name for __module__ injection, or
+    None if no non-empty string is available.
+    """
+
+    modname = getattr(compiler.module, "__name__", compiler.name)
+    return str(modname) if modname else None
+
+
 @special(symbol("compile/class"))
 def special_class(compiler, source, tc=False):
     """
@@ -124,6 +134,25 @@ def special_class(compiler, source, tc=False):
             doc_frag.instruction(OpCode.KOS_OP_CONST, doc)
             doc_frag.instruction(OpCode.KOS_OP_VAR_STORE, "__doc__")
             body_frag.merge(doc_frag)
+
+        if "__qualname__" not in body_frag.declares:
+            # CPython-shaped: scope-only name; module path goes in __module__.
+            # Nested Outer.Inner needs a future nesting stack.
+
+            qn_frag = compiler.fragment("__qualname__")
+            qn_frag.declare_var("__qualname__")
+            qn_frag.instruction(OpCode.KOS_OP_CONST, name)
+            qn_frag.instruction(OpCode.KOS_OP_VAR_STORE, "__qualname__")
+            body_frag.merge(qn_frag)
+
+        mod_for_class = _compiling_module_name(compiler)
+        if (mod_for_class is not None
+                and "__module__" not in body_frag.declares):
+            mod_frag = compiler.fragment("__module__")
+            mod_frag.declare_var("__module__")
+            mod_frag.instruction(OpCode.KOS_OP_CONST, mod_for_class)
+            mod_frag.instruction(OpCode.KOS_OP_VAR_STORE, "__module__")
+            body_frag.merge(mod_frag)
 
         binds = body_frag.annotation_bindings
         if binds and "__annotations__" not in body_frag.declares:

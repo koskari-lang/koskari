@@ -1564,10 +1564,19 @@ metaclass). To **bind** the class to a name in the surrounding scope, wrap with
 **Behaviour:** Builds a position tuple `(name, bases)` or
 `(name, bases, metaclass)` with BUILD_ARGS, opens a collector namespace
 (PUSH_COLLECT / POP_COLLECT around the body), compiles **BODY** with
-`helper_begin`, then emits **BUILD_CLASS**. The collect scope uses a stack block
-so body expression results (e.g. `None` from `compile/define`) do not reach
-**BUILD_CLASS**. The class object is left on the stack as the expression result.
-This special does **not** emit `declare_var` or `VAR_STORE` for **NAME**.
+`helper_begin`, then emits **BUILD_CLASS**. Unless the body already declares
+them, the compiler stores **`__qualname__`** as **NAME** (CPython-style,
+scope-only; nested `Outer.Inner` would need a future nesting stack) and
+**`__module__`** from the compiling **`Module.__name__`**, falling back to
+**`compiler.name`**, and skips **`__module__`** injection when no non-empty
+string is found. A
+leading string in **BODY** is stripped as the class
+`__doc__` when `__doc__` is not already declared (same pattern as functions).
+The collect scope uses a stack block so body expression results (e.g. `None`
+from `compile/define`) do not reach **BUILD_CLASS**. The class object is left on
+the stack as the expression result. This special does **not** emit `declare_var`
+or `VAR_STORE` for **NAME** itself (only for injected `__doc__` /
+`__qualname__` / `__module__` when applicable).
 
 **Examples:**
 
