@@ -975,8 +975,19 @@ class Compiler:
 
 
     def complete(self, fragment, mode=None, _validate=True, is_root=False):
+        """
+        Complete a fragment into a Code object.
+
+        :param fragment: the fragment to complete
+        :param mode: the mode to complete in
+        :param _validate: whether to validate the code
+        :param is_root: whether this is the root fragment
+        :return: the completed Code object
+        """
+
         if mode is None:
             mode = self.mode
+
         # Flatten position/label instructions and merge closure/write syms
         # from inner FunctionSpecs into the fragment
         instr = self.compress(fragment.instructions)
@@ -989,6 +1000,7 @@ class Compiler:
         # Lower VAR/request ops to FAST where possible
         instr = self.convert_fast(base_nspec, instr, mode=mode)
 
+        # Generators are not allowed to tail-call
         instr = self.demote_tail_calls_if_yields(instr)
 
         # Resolve filename for Code metadata
@@ -1003,6 +1015,7 @@ class Compiler:
         if fragment.doc is not None:
             code.extras['doc'] = fragment.doc
         pragma.register_code_fragment(code, fragment)
+
         # Recursively validate that all writes are satisfied.
         # Only validate from root complete(); inner complete() calls skip so
         # nested functions get validated with proper ancestor context.
