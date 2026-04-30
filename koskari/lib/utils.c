@@ -502,6 +502,19 @@ PyObject *KosUtils_BuildDict(PyObject *args, PyObject *kwargs) {
 }
 
 
+PyObject *KosUtils_BuildClass(
+    PyObject *name,
+    PyObject *bases,
+    PyObject *namespace,
+    PyObject *metaclass) {
+
+  if (metaclass == Py_None)
+    metaclass = NULL;
+
+  return kos_build_class(name, bases, namespace, metaclass);
+}
+
+
 /* === module method wrappers === */
 
 
@@ -572,6 +585,24 @@ static PyObject *m_build_dict(PyObject *mod,
 }
 
 
+static PyObject *m_build_class(PyObject *mod,
+                               PyObject *args, PyObject *kwds) {
+
+  PyObject *name = NULL;
+  PyObject *bases = NULL;
+  PyObject *namespace = NULL;
+  PyObject *metaclass = Py_None;
+
+  static char *keywords[] = { "name", "bases", "namespace", "metaclass", NULL };
+
+  if (! PyArg_ParseTupleAndKeywords(args, kwds, "OOO|O", keywords,
+                                    &name, &bases, &namespace, &metaclass))
+    return NULL;
+
+  return KosUtils_BuildClass(name, bases, namespace, metaclass);
+}
+
+
 static PyMethodDef utils_methods[] = {
   { "reapply", (PyCFunction) m_reapply, METH_VARARGS | METH_KEYWORDS,
     "reapply(func, data, count) -> result\n"
@@ -605,6 +636,10 @@ static PyMethodDef utils_methods[] = {
   { "build_dict", (PyCFunction) m_build_dict, METH_VARARGS | METH_KEYWORDS,
     "build_dict(*pairs, **kwargs) -> dict\n"
     "Build a dict from (key, value) pairs and keyword arguments." },
+
+  { "build_class", (PyCFunction) m_build_class, METH_VARARGS | METH_KEYWORDS,
+    "build_class(name, bases, namespace, metaclass=None) -> type\n"
+    "Build a class using Koskari class-construction semantics." },
 
   { NULL, },
 };

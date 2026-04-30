@@ -2439,9 +2439,10 @@ Full design: [interpreter/with-dyn-with.md](interpreter/with-dyn-with.md). Summa
 - **Style**: NOARG. Argument unused.
 - **Status**: Implemented.
 - **Stack**: Expects `[..., pos, ns]` with TOS = ns, TOS-1 = pos. Pops ns, pos.
-  pos = (name, bases) or (name, bases, metaclass). Materializes ns to dict
-  (dereferencing refs for KosNamespace), calls metaclass(name, bases, cls_dict),
-  pushes resulting class.
+  pos = (name, bases) or (name, bases, metaclass). Builds the class via
+  `kos_build_class` (namespace materialization, optional explicit metaclass,
+  derived/composite metaclass, `__prepare__`, merge, metaclass call); pushes
+  resulting class.
 - **Compiler form:** Build pos with BUILD_ARGS; use with_collector_namespace for
   PUSH_COLLECT/body/POP_COLLECT; then BUILD_CLASS. See design/api/OBJECT-MODEL.md.
 
