@@ -53,6 +53,16 @@ static PyObject *build_default_namespace(PyObject *namespace) {
     return NULL;
   }
 
+  /* __class__ is filled on the input namespace after the metaclass returns;
+     omit it from the mapping passed to type.__new__. */
+  if (PyDict_DelItemString(ns_dict, "__class__") < 0) {
+    if (! PyErr_ExceptionMatches(PyExc_KeyError)) {
+      Py_DECREF(ns_dict);
+      return NULL;
+    }
+    PyErr_Clear();
+  }
+
   return ns_dict;
 }
 

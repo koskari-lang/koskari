@@ -122,7 +122,6 @@ def special_class(compiler, source, tc=False):
         frag.instruction(OpCode.KOS_OP_BUILD_ARGS, 2)
 
     with frag.collector_namespace(called_by) as body_frag:
-        # TODO: declare __class__
         helper_begin(body_frag, body, tc)
 
         if doc and "__doc__" not in body_frag.declares:
@@ -171,8 +170,6 @@ def special_class(compiler, source, tc=False):
             annos.instruction(OpCode.KOS_OP_VAR_STORE, "__annotations__")
             body_frag.merge(annos)
 
-    # TODO: ensure OP_BUILD_CLASS binds its result to the enveloped
-    # namespace's __class__ slot.
     frag.instruction(OpCode.KOS_OP_BUILD_CLASS, 0)
     return frag
 

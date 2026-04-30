@@ -492,6 +492,54 @@ see [LAYOUTS.md](LAYOUTS.md).
 **Defined in:** `koskari/importer/basics.ki`
 
 
+## compile/super
+
+**Symbol:** `compile/super` (source uses **`(super …)`**)
+
+**Syntax:**
+
+- **`(super)`** — nullary, for instance methods that have **`self`** in scope
+- **`(super ARGS …)`** — passes **`ARGS`** through to the runtime **`super`**
+  callable (e.g. explicit **`(super Class self)`**)
+
+**Use-case:** Call the superclass chain from a method body (typically **`__init__`**)
+without spelling **`compile/call`** and **`super`** by hand. The bootstrap
+environment binds the Python builtin **`super`**
+([`koskari/importer/bootstrap.py`](koskari/importer/bootstrap.py)).
+
+**Behaviour:** Syntax-rules in **`basics.ki`**.
+
+- **`(super)`** expands to **`(compile/call super (type self) self)`**, i.e.
+  **`super(type(self), self)`** at runtime. Using **`(type self)`** avoids relying
+  on a class-body **`__class__`** cell or closure through **`CollectorNamespace`**
+  (see **compile/class** in [SPECIALS.md](SPECIALS.md) and class creation in
+  [OBJECT-MODEL.md](api/OBJECT-MODEL.md)).
+- **`(super ARGS …)`** expands to **`(compile/call super ARGS …)`** (explicit
+  two-argument or other forms supported by Python’s **`super`**).
+
+Typical pattern with attribute call sugar:
+
+```scheme
+(.__init__ (super) x)
+;; → parent __init__ with argument x after expansion
+```
+
+**Examples:**
+
+```scheme
+;; Inside define __init__ [self x y]: forward x to the base, then set y
+(.__init__ (super) x)
+
+;; Explicit class and instance (same as Python super(Base, self))
+(super Base self)
+```
+
+**Defined in:** `koskari/importer/basics.ki`
+
+**Tests:** `tests/reproducers/test_super_init_repro.py` (full stack, layout
+**`define-class`**)
+
+
 ## compile/decorate
 
 **Symbol:** `compile/decorate`

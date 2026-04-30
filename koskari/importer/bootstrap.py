@@ -180,6 +180,7 @@ def make_bootstrap():
     _bind('reversed', reversed)
     _bind('setattr', setattr)
     _bind('sorted', sorted)
+    _bind('super', super)
     _bind('issubclass', issubclass)
     _bind('sum', sum)
     _bind('vars', vars)

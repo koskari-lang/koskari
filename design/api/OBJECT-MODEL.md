@@ -51,7 +51,12 @@ inside a CollectorNamespace; the class value is produced by BUILD_CLASS
 4. Push cls onto the stack.
 
 `koskari.lib.build_class(name, bases, namespace, metaclass=None)` is the same
-`kos_build_class(...)` surface for tests and embedding.
+`kos_build_class(...)` surface for tests and embedding. After a successful
+metaclass call, `kos_build_class` assigns the new type to the **input**
+`namespace` under `__class__` (the same object `BUILD_CLASS` passes in). The
+`__class__` key is stripped from the merged mapping before that mapping is
+copied into `__prepare__`’s namespace so it is not passed to `type.__new__` as a
+class body entry.
 
 ### 2.2 Stack Layout for Class Creation
 
