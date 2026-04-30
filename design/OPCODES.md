@@ -28,9 +28,10 @@ delivery, **`KosOpOutcome`**), [interpreter/with-dyn-with.md](interpreter/with-d
   STORE—do not confuse them), and each opcode's Invariants bullets are the
   **contract**: the evaluator must preserve them; violations are undefined
   behaviour (or asserted in debug builds).
-- **Compiler writers:** Section 1.7 (pre-compile vs post-compile), **Compiler form**
-  lines, and pre-compile list-of-pairs examples. Ensure emitted code satisfies
-  the invariants documented per opcode.
+- **Compiler writers:** Section 1.7 (pre-compile vs post-compile), §1.8
+  (`Compiler.compress` peephole rules), **Compiler form** lines, and pre-compile
+  list-of-pairs examples. Ensure emitted code satisfies the invariants documented
+  per opcode.
 - **Debugging / disassembly:** Disassembly table format (§1.2), arg view
   conventions, and `koskari.dis` for runtime disassembly of KosCode objects.
 
@@ -120,9 +121,14 @@ the implementation and this document.
 
 ### 1.7 Compilation: pre-compile vs post-compile
 
-The compiler emits a **pre-compile** stream of instructions. A **finalize** (or
-"compress") pass then produces the **post-compile** bytecode stored in a
-KosCode. Many opcodes have different argument meaning in each form.
+The compiler emits a **pre-compile** stream of instructions. A **finalize** pass
+then produces the **post-compile** bytecode stored in a KosCode (labels → pcs,
+constant pool, extent and position tables, optional VAR→FAST lowering—see the
+pipeline below). That is **not** the same thing as the Python method
+`Compiler.compress`, which is an earlier **peephole** pass on the instruction
+list; see §1.8. Older text may call finalize “compress” in the abstract; this
+document uses **finalize** for that VM-oriented stage to avoid confusion with
+`compress`. Many opcodes have different argument meaning in each form.
 
 **Pipeline**
 
@@ -160,6 +166,71 @@ Where the pre form differs from the bytecode form, opcode sections below include
 a **Compiler form** line. Disassembly tables are **post-compile** unless marked
 otherwise.
 
+### 1.8 Peephole instruction compression (`Compiler.compress`)
+
+The Koskari Python compiler runs **`Compiler.compress`** on the fragment’s
+instruction list inside **`Compiler.complete`** (before `_cpool_scan_merge`,
+**`convert_fast`**, **`demote_tail_calls_if_yields`**, and construction of the
+**`Code`** object). Implementation:
+[`koskari/compile/compiler.py`](../koskari/compile/compiler.py) (`compress`,
+`_CHECK_SQUASHES`, `_SWITCH_SQUASHES`). Regression tests:
+[`tests/compile/test_compress.py`](../tests/compile/test_compress.py).
+
+**Purpose.** Shorten or simplify the pre-finalize `(opcode, arg)` stream in a
+single forward pass. The pass keeps a short output deque; most rules compare the
+current instruction with the **last** emitted one (`squished[-1]`). The
+implementation seeds the deque with a leading **`KOS_OP_NOOP`** and drops it at
+the end if any real instructions were emitted.
+
+**Non-goals.** `compress` does **not** resolve labels to PCs, build the constant
+pool, derive extent or position tables, lower VAR to FAST (**`convert_fast`**),
+or demote tail calls when yields are present. Those happen later; see §1.7.
+
+**Transformations** (order matches the `for (op, arg) in instr` branch order in
+`compress`):
+
+| Category | Rule |
+|----------|------|
+| Dead stack | **`KOS_OP_CONST`** or **`KOS_OP_DUP`** followed by **`KOS_OP_POP`** with **arg 1** → drop both (omit the POP and remove the prior instruction). |
+| Constant fold | **`KOS_OP_OBJECT_NOT`** with prior **`KOS_OP_CONST`** → replace the pair with a single **`KOS_OP_CONST`** whose value is **`not`** the prior constant (Python `bool` semantics for the folded value). |
+| Constant + `JUMP_TRUE` | Prior **`KOS_OP_CONST`**: if truthy, replace with **`KOS_OP_JUMP`** to the same label; if falsy, drop both (no jump). |
+| Constant + `JUMP_FALSE` | Prior **`KOS_OP_CONST`**: if the constant is falsy, unconditional **`KOS_OP_JUMP`**; if truthy, drop both. |
+| Compare + `JUMP_FALSE` | Prior opcode is in **`_CHECK_SQUASHES`** (see table below): delete the prior instruction and replace **`JUMP_FALSE`** with the mapped single opcode (same jump target **arg**). |
+| `SWITCH_EQ` fusion | Prior opcode in **`_SWITCH_SQUASHES`**: replace **`KOS_OP_SWITCH_EQ`** with the mapped opcode; **arg** becomes **`(switch_label, *pargs[:3])`** if the prior **arg** was a tuple, else **`(switch_label, pargs, None, None)`** ( **`switch_label`** is this instruction’s original **arg**). |
+| `LABEL` vs prior jump | If the **`KOS_OP_LABEL`** name equals the prior instruction’s target: for prior **`KOS_OP_JUMP`**, drop the jump; for prior **`KOS_OP_JUMP_TRUE`** / **`KOS_OP_JUMP_FALSE`**, if the instruction before the jump is **`KOS_OP_CONST`**, drop const and jump; else replace the conditional jump with **`KOS_OP_POP`** **1**. |
+| Implicit `None` | **`KOS_OP_CONST`** **`None`** immediately before **`KOS_OP_RETURN`** / **`KOS_OP_BREAK`** / **`KOS_OP_CONTINUE`** / **`KOS_OP_YIELD`** with **arg 1** → remove the const and set the control opcode’s **arg** to **0**. |
+| `CAR` / `CDR` merge | Two consecutive **same** opcodes **`KOS_OP_CAR`** or **`KOS_OP_CDR`** → one instruction with **args summed**. |
+| Epilogue | If the stream does not end with **`KOS_OP_RETURN`**: if the last op is **`KOS_OP_CONST`** **`None`**, replace it with **`KOS_OP_RETURN`** **0**; otherwise append **`KOS_OP_RETURN`** **1**. |
+
+**`_CHECK_SQUASHES`** (prior opcode → opcode replacing the **`JUMP_FALSE`** pair):
+
+| Prior | Replaced with |
+|-------|----------------|
+| `KOS_OP_OBJECT_GE` | `KOS_OP_CHECK_GE` |
+| `KOS_OP_OBJECT_LE` | `KOS_OP_CHECK_LE` |
+| `KOS_OP_OBJECT_LT` | `KOS_OP_CHECK_LT` |
+| `KOS_OP_OBJECT_GT` | `KOS_OP_CHECK_GT` |
+| `KOS_OP_OBJECT_EQ` | `KOS_OP_CHECK_EQ` |
+| `KOS_OP_OBJECT_NE` | `KOS_OP_CHECK_NE` |
+| `KOS_OP_OBJECT_IN` | `KOS_OP_CHECK_IN` |
+| `KOS_OP_OBJECT_NOT_IN` | `KOS_OP_CHECK_NOT_IN` |
+| `KOS_OP_OBJECT_IS` | `KOS_OP_CHECK_IS` |
+| `KOS_OP_OBJECT_IS_NOT` | `KOS_OP_CHECK_IS_NOT` |
+| `KOS_OP_OBJECT_IS_INSTANCE` | `KOS_OP_CHECK_IS_INSTANCE` |
+| `KOS_OP_OBJECT_IS_SUBCLASS` | `KOS_OP_CHECK_IS_SUBCLASS` |
+| `KOS_OP_OBJECT_NOT` | `KOS_OP_JUMP_TRUE` |
+| `KOS_OP_EXCEPTION_MATCH` | `KOS_OP_CHECK_EXCEPTION` |
+
+**`_SWITCH_SQUASHES`** (prior opcode → fused switch opcode):
+
+| Prior | Replaced with |
+|-------|----------------|
+| `KOS_OP_CONST` | `KOS_OP_SWITCH_EQ_CONST` |
+| `KOS_OP_VAR` | `KOS_OP_SWITCH_EQ_VAR` |
+| `KOS_OP_VAR_ATTR` | `KOS_OP_SWITCH_EQ_VAR_ATTR` |
+
+**Example.** `KOS_OP_OBJECT_EQ`, **`KOS_OP_JUMP_FALSE`** `L` → one **`KOS_OP_CHECK_EQ`** `L` (same label argument as the jump).
+
 ### 1.9 BIND vs STORE: critical distinction
 
 **BIND and STORE are NOT interchangeable. They are fundamentally different operations.**
@@ -189,6 +260,8 @@ When adding or changing an opcode:
    helpful. For stubs, add **Intended** (design) and **Current** (stub/error) if helpful.
 4. **Add or extend tests** that match the documented behaviour; consider adding a
    "Covered by …" line in the doc (e.g. `tests/lib/test_ceval.py`).
+5. If you change **`Compiler.compress`** or its squash maps, update **§1.8** and
+   **`tests/compile/test_compress.py`**.
 
 
 ## 2. Opcode categories (index)
