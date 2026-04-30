@@ -1026,30 +1026,31 @@ static uint32_t intern_const(CodeCollect *coll, PyObject *value) {
     return (uint32_t) -1;
   }
 
-  // Py_INCREF(value);
+  Py_INCREF(value);
 
   /* TODO: intern constant strings in place. This somehow breaks imports right
      now, and I have no idea why... */
-  // if (PyUnicode_CheckExact(value))
-  //   PyUnicode_InternInPlace(&value);
+  if (PyUnicode_CheckExact(value))
+    PyUnicode_InternInPlace(&value);
 
   PyObject *list = coll->cpool_list;
   Py_ssize_t n = PyList_GET_SIZE(list);
 
-  /* Linear scan by identity; do not use dict (1==True, 0==False would merge) */
+  /* Linear scan by identity; do not use dict, hash, or equality
+     (1==True, 0==False would merge those values and many others) */
   for (Py_ssize_t i = 0; i < n; i++) {
     if (PyList_GET_ITEM(list, i) == value) {
-      // Py_DECREF(value);
+      Py_DECREF(value);
       return (uint32_t) i;
     }
   }
 
   if (PyList_Append(list, value) < 0) {
-    // Py_DECREF(value);
+    Py_DECREF(value);
     return (uint32_t) -1;
   }
 
-  // Py_DECREF(value);
+  Py_DECREF(value);
   coll->cpool_len = (uint32_t) (n + 1);
   return (uint32_t) n;
 }
@@ -1583,26 +1584,16 @@ static int code_emit(
 
     /* Resolve arg from collect-phase data: cpool index, label pc, or raw */
     if (style == KOSTYLE_CONST) {
-      Py_ssize_t n = PyList_GET_SIZE(coll->cpool_list);
-      for (Py_ssize_t j = 0; j < n; j++) {
-        if (PyList_GET_ITEM(coll->cpool_list, j) == b) {
-          code[di].arg = (uint16_t) j;
-          break;
-        }
-      }
+      code[di].arg = (uint16_t) intern_const(coll, b);
+
     } else if (style == KOSTYLE_VAR) {
       PyObject *name = PyObject_Str(b);
       if (! name) {
         return -1;
       }
-      Py_ssize_t n = PyList_GET_SIZE(coll->cpool_list);
-      for (Py_ssize_t j = 0; j < n; j++) {
-        if (PyList_GET_ITEM(coll->cpool_list, j) == name) {
-          code[di].arg = (uint16_t) j;
-          break;
-        }
-      }
+      code[di].arg = (uint16_t) intern_const(coll, name);
       Py_DECREF(name);
+
     } else if (style == KOSTYLE_LABEL) {
       /* Look up target pc from labels dict (label_name -> pc) */
       PyObject *dest = PyDict_GetItem(coll->labels, b);
