@@ -1042,14 +1042,21 @@ static uint16_t intern_const(CodeCollect *coll, PyObject *value) {
     }
   }
 
+  if (n > UINT16_MAX) {
+    PyErr_Format(PyExc_OverflowError,
+                 "constant pool exceeds 16-bit limit (%zd entries)", n);
+    Py_DECREF(value);
+    return (uint16_t) -1;
+  }
+
   if (PyList_Append(list, value) < 0) {
     Py_DECREF(value);
     return (uint16_t) -1;
   }
 
   Py_DECREF(value);
-  coll->cpool_len = (uint32_t) (n + 1);
-  return (uint32_t) n;
+  coll->cpool_len = (uint16_t) (n + 1);
+  return (uint16_t) n;
 }
 
 
@@ -1590,15 +1597,23 @@ static int code_emit(
 
     /* Resolve arg from collect-phase data: cpool index, label pc, or raw */
     if (style == KOSTYLE_CONST) {
-      code[di].arg = (uint16_t) intern_const(coll, b);
+      uint16_t idx = intern_const(coll, b);
+      if (idx == (uint16_t) -1) {
+        return -1;
+      }
+      code[di].arg = idx;
 
     } else if (style == KOSTYLE_VAR) {
       PyObject *name = PyObject_Str(b);
       if (! name) {
         return -1;
       }
-      code[di].arg = (uint16_t) intern_const(coll, name);
+      uint16_t idx = intern_const(coll, name);
       Py_DECREF(name);
+      if (idx == (uint16_t) -1) {
+        return -1;
+      }
+      code[di].arg = idx;
 
     } else if (style == KOSTYLE_LABEL) {
       /* Look up target pc from labels dict (label_name -> pc) */
