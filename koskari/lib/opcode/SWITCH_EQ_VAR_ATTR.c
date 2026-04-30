@@ -18,9 +18,8 @@
   row.a0 = target PC, row.a1 = variable name cpool index, row.a2 =
   attribute name cpool index. Stack [..., s] with scrutinee = TOS.
   Resolve obj from frame namespace, then load getattr(obj, attr) and
-  compare to s via Py_EQ. On match drop the discriminant and fall
-  through (depth -1). On mismatch retain the discriminant and jump to
-  row.a0 (depth 0).
+  compare to s via Py_EQ. On match: pop scrutinee and jump to row.a0.
+  On mismatch: fall through with stack unchanged.
 */
 
 KOS_OP_HANDLER(SWITCH_EQ_VAR_ATTR) {
@@ -54,7 +53,6 @@ KOS_OP_HANDLER(SWITCH_EQ_VAR_ATTR) {
 
   if (res) {
     KosEvalState_StackDropNoErr(es, 1);
-  } else {
     KosEvalState_SET_PC(es, row.a0);
   }
 

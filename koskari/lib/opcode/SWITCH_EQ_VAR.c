@@ -17,9 +17,8 @@
   SWITCH_EQ_VAR: arg = extra index. Schema (LABEL, VAR, NOARG, NOARG):
   row.a0 = target PC, row.a1 = constant pool index for the variable
   name. Stack [..., s] with scrutinee = TOS. Resolve var from frame
-  namespace and compare to s via Py_EQ. On match drop the discriminant
-  and fall through (depth -1). On mismatch retain the discriminant and
-  jump to row.a0 (depth 0).
+  namespace and compare to s via Py_EQ. On match: pop scrutinee and
+  jump to row.a0. On mismatch: fall through with stack unchanged.
 */
 
 KOS_OP_HANDLER(SWITCH_EQ_VAR) {
@@ -47,7 +46,6 @@ KOS_OP_HANDLER(SWITCH_EQ_VAR) {
 
   if (res) {
     KosEvalState_StackDropNoErr(es, 1);
-  } else {
     KosEvalState_SET_PC(es, row.a0);
   }
 

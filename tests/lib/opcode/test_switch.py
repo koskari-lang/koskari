@@ -35,51 +35,49 @@ class TestSwitchEqOpcode(CevalTest):
     Tests for SWITCH_EQ.
 
     Stack convention `[..., left, right]` with right = TOS. On match
-    both are popped and execution falls through; on mismatch only the
-    key (right) is popped and execution jumps to the label, leaving
-    the discriminant on the stack for the next arm.
+    both operands are popped and execution jumps to the label. On
+    mismatch only right is popped, leaving the discriminant for the
+    next arm (push a new key only).
     """
 
 
-    async def test_switch_eq_match_falls_through(self):
+    async def test_switch_eq_match_jumps(self):
         """
-        SWITCH_EQ pops both operands and falls through when left == right
+        SWITCH_EQ pops both operands and jumps on match
         """
 
         code, ns = build_expr([
             ["CONST", 10],
             ["CONST", 10],
-            ["SWITCH_EQ", "miss"],
-            ["CONST", 42],
-            ["RETURN", 1],
-            ["LABEL", "miss"],
+            ["SWITCH_EQ", "matched"],
+            ["POP", 1],
             ["CONST", 0],
+            ["RETURN", 1],
+            ["LABEL", "matched"],
+            ["CONST", 42],
             ["RETURN", 1],
         ])
         result = await make_callable(code, ns)()
         self.assertEqual(result, 42)
 
 
-    async def test_switch_eq_mismatch_jumps_and_keeps_disc(self):
+    async def test_switch_eq_mismatch_fallthrough_chain(self):
         """
-        SWITCH_EQ retains the discriminant on the stack on mismatch so
-        the next arm can compare another key against it without reloading
+        SWITCH_EQ drops only the key on mismatch; push the next key and
+        jump when a later arm matches
         """
 
         code, ns = build_expr([
             ["CONST", 10],
             ["CONST", 11],
-            ["SWITCH_EQ", "next_arm"],
+            ["SWITCH_EQ", "body"],
+            ["CONST", 10],
+            ["SWITCH_EQ", "body"],
+            ["POP", 1],
             ["CONST", 1],
             ["RETURN", 1],
-            ["LABEL", "next_arm"],
-            ["CONST", 10],
-            ["SWITCH_EQ", "else"],
+            ["LABEL", "body"],
             ["CONST", 99],
-            ["RETURN", 1],
-            ["LABEL", "else"],
-            ["POP", 1],
-            ["CONST", 0],
             ["RETURN", 1],
         ])
         result = await make_callable(code, ns)()
@@ -88,24 +86,24 @@ class TestSwitchEqOpcode(CevalTest):
 
     async def test_switch_eq_chain_to_else(self):
         """
-        SWITCH_EQ chain falls to else when no arm matches, leaving the
-        retained discriminant for the else block to drop
+        SWITCH_EQ chain reaches else when no arm matches; discriminant
+        remains after the last mismatch
         """
 
         code, ns = build_expr([
             ["CONST", 5],
             ["CONST", 1],
-            ["SWITCH_EQ", "arm2"],
-            ["CONST", 100],
-            ["RETURN", 1],
-            ["LABEL", "arm2"],
+            ["SWITCH_EQ", "arm1_body"],
             ["CONST", 2],
-            ["SWITCH_EQ", "else"],
-            ["CONST", 200],
-            ["RETURN", 1],
-            ["LABEL", "else"],
+            ["SWITCH_EQ", "arm2_body"],
             ["POP", 1],
             ["CONST", 0],
+            ["RETURN", 1],
+            ["LABEL", "arm1_body"],
+            ["CONST", 100],
+            ["RETURN", 1],
+            ["LABEL", "arm2_body"],
+            ["CONST", 200],
             ["RETURN", 1],
         ])
         result = await make_callable(code, ns)()
@@ -114,25 +112,18 @@ class TestSwitchEqOpcode(CevalTest):
 
     async def test_switch_eq_match_first_arm_skips_rest(self):
         """
-        After a matching arm, an explicit JUMP bypasses subsequent arms
-        and a leftover discriminant is not observable in the result
+        First arm match jumps to its body; fallthrough arms are not run
         """
 
         code, ns = build_expr([
             ["CONST", 10],
             ["CONST", 10],
-            ["SWITCH_EQ", "arm2"],
-            ["CONST", 42],
-            ["JUMP", "done"],
-            ["LABEL", "arm2"],
-            ["CONST", 20],
-            ["SWITCH_EQ", "else"],
-            ["CONST", 99],
-            ["JUMP", "done"],
-            ["LABEL", "else"],
+            ["SWITCH_EQ", "first_hit"],
             ["POP", 1],
             ["CONST", 0],
-            ["LABEL", "done"],
+            ["RETURN", 1],
+            ["LABEL", "first_hit"],
+            ["CONST", 42],
             ["RETURN", 1],
         ])
         result = await make_callable(code, ns)()
@@ -147,12 +138,12 @@ class TestSwitchEqOpcode(CevalTest):
         code, ns = build_expr([
             ["CONST", 1],
             ["CONST", True],
-            ["SWITCH_EQ", "miss"],
-            ["CONST", 42],
-            ["RETURN", 1],
-            ["LABEL", "miss"],
+            ["SWITCH_EQ", "hit"],
             ["POP", 1],
             ["CONST", 0],
+            ["RETURN", 1],
+            ["LABEL", "hit"],
+            ["CONST", 42],
             ["RETURN", 1],
         ])
         result = await make_callable(code, ns)()
@@ -167,12 +158,12 @@ class TestSwitchEqOpcode(CevalTest):
         code, ns = build_expr([
             ["CONST", 0],
             ["CONST", 0.0],
-            ["SWITCH_EQ", "miss"],
-            ["CONST", 42],
-            ["RETURN", 1],
-            ["LABEL", "miss"],
+            ["SWITCH_EQ", "hit"],
             ["POP", 1],
             ["CONST", 0],
+            ["RETURN", 1],
+            ["LABEL", "hit"],
+            ["CONST", 42],
             ["RETURN", 1],
         ])
         result = await make_callable(code, ns)()
@@ -185,48 +176,45 @@ class TestSwitchEqConstOpcode(CevalTest):
 
     Stack `[..., s]` with the scrutinee at TOS. EXTRA schema
     (LABEL, CONST, NOARG, NOARG) loads the RHS from the constant pool.
-    Match drops the discriminant; mismatch retains it and jumps to the
-    label slot.
+    Match pops the scrutinee and jumps. Mismatch leaves the stack
+    unchanged.
     """
 
 
-    async def test_switch_eq_const_match_falls_through(self):
+    async def test_switch_eq_const_match_jumps(self):
         """
-        SWITCH_EQ_CONST drops the discriminant on match and falls through
+        SWITCH_EQ_CONST pops scrutinee and jumps on match
         """
 
         code, ns = build_expr([
             ["CONST", 10],
-            ["SWITCH_EQ_CONST", ("miss", 10, 0, 0)],
-            ["CONST", 42],
-            ["RETURN", 1],
-            ["LABEL", "miss"],
+            ["SWITCH_EQ_CONST", ("hit", 10, 0, 0)],
             ["POP", 1],
             ["CONST", 0],
+            ["RETURN", 1],
+            ["LABEL", "hit"],
+            ["CONST", 42],
             ["RETURN", 1],
         ])
         result = await make_callable(code, ns)()
         self.assertEqual(result, 42)
 
 
-    async def test_switch_eq_const_mismatch_jumps_and_keeps_disc(self):
+    async def test_switch_eq_const_mismatch_fallthrough_chain(self):
         """
-        SWITCH_EQ_CONST retains the discriminant on mismatch so the next
-        arm can compare another key against it
+        SWITCH_EQ_CONST leaves scrutinee on mismatch; next compare uses
+        the same TOS without reloading
         """
 
         code, ns = build_expr([
             ["CONST", 10],
-            ["SWITCH_EQ_CONST", ("next_arm", 11, 0, 0)],
+            ["SWITCH_EQ_CONST", ("body", 11, 0, 0)],
+            ["SWITCH_EQ_CONST", ("body", 10, 0, 0)],
+            ["POP", 1],
             ["CONST", 1],
             ["RETURN", 1],
-            ["LABEL", "next_arm"],
-            ["SWITCH_EQ_CONST", ("else", 10, 0, 0)],
+            ["LABEL", "body"],
             ["CONST", 99],
-            ["RETURN", 1],
-            ["LABEL", "else"],
-            ["POP", 1],
-            ["CONST", 0],
             ["RETURN", 1],
         ])
         result = await make_callable(code, ns)()
@@ -240,16 +228,16 @@ class TestSwitchEqConstOpcode(CevalTest):
 
         code, ns = build_expr([
             ["CONST", 5],
-            ["SWITCH_EQ_CONST", ("arm2", 1, 0, 0)],
-            ["CONST", 100],
-            ["RETURN", 1],
-            ["LABEL", "arm2"],
-            ["SWITCH_EQ_CONST", ("else", 2, 0, 0)],
-            ["CONST", 200],
-            ["RETURN", 1],
-            ["LABEL", "else"],
+            ["SWITCH_EQ_CONST", ("arm1_body", 1, 0, 0)],
+            ["SWITCH_EQ_CONST", ("arm2_body", 2, 0, 0)],
             ["POP", 1],
             ["CONST", 0],
+            ["RETURN", 1],
+            ["LABEL", "arm1_body"],
+            ["CONST", 100],
+            ["RETURN", 1],
+            ["LABEL", "arm2_body"],
+            ["CONST", 200],
             ["RETURN", 1],
         ])
         result = await make_callable(code, ns)()
@@ -263,12 +251,12 @@ class TestSwitchEqConstOpcode(CevalTest):
 
         code, ns = build_expr([
             ["CONST", 1],
-            ["SWITCH_EQ_CONST", ("miss", True, 0, 0)],
-            ["CONST", 42],
-            ["RETURN", 1],
-            ["LABEL", "miss"],
+            ["SWITCH_EQ_CONST", ("hit", True, 0, 0)],
             ["POP", 1],
             ["CONST", 0],
+            ["RETURN", 1],
+            ["LABEL", "hit"],
+            ["CONST", 42],
             ["RETURN", 1],
         ])
         result = await make_callable(code, ns)()
@@ -284,42 +272,39 @@ class TestSwitchEqVarOpcode(CevalTest):
     """
 
 
-    async def test_switch_eq_var_match_falls_through(self):
+    async def test_switch_eq_var_match_jumps(self):
         """
-        SWITCH_EQ_VAR drops the discriminant on match and falls through
+        SWITCH_EQ_VAR pops scrutinee and jumps on match
         """
 
         code, ns = build_expr([
             ["CONST", 10],
-            ["SWITCH_EQ_VAR", ("miss", "key", 0, 0)],
-            ["CONST", 42],
-            ["RETURN", 1],
-            ["LABEL", "miss"],
+            ["SWITCH_EQ_VAR", ("hit", "key", 0, 0)],
             ["POP", 1],
             ["CONST", 0],
+            ["RETURN", 1],
+            ["LABEL", "hit"],
+            ["CONST", 42],
             ["RETURN", 1],
         ], values={"key": 10})
         result = await make_callable(code, ns)()
         self.assertEqual(result, 42)
 
 
-    async def test_switch_eq_var_mismatch_jumps_and_keeps_disc(self):
+    async def test_switch_eq_var_mismatch_fallthrough_chain(self):
         """
-        SWITCH_EQ_VAR retains the discriminant on mismatch
+        SWITCH_EQ_VAR leaves scrutinee on mismatch for the next compare
         """
 
         code, ns = build_expr([
             ["CONST", 10],
-            ["SWITCH_EQ_VAR", ("next_arm", "first", 0, 0)],
+            ["SWITCH_EQ_VAR", ("body", "first", 0, 0)],
+            ["SWITCH_EQ_VAR", ("body", "second", 0, 0)],
+            ["POP", 1],
             ["CONST", 1],
             ["RETURN", 1],
-            ["LABEL", "next_arm"],
-            ["SWITCH_EQ_VAR", ("else", "second", 0, 0)],
+            ["LABEL", "body"],
             ["CONST", 99],
-            ["RETURN", 1],
-            ["LABEL", "else"],
-            ["POP", 1],
-            ["CONST", 0],
             ["RETURN", 1],
         ], values={"first": 11, "second": 10})
         result = await make_callable(code, ns)()
@@ -333,16 +318,16 @@ class TestSwitchEqVarOpcode(CevalTest):
 
         code, ns = build_expr([
             ["CONST", 5],
-            ["SWITCH_EQ_VAR", ("arm2", "a", 0, 0)],
-            ["CONST", 100],
-            ["RETURN", 1],
-            ["LABEL", "arm2"],
-            ["SWITCH_EQ_VAR", ("else", "b", 0, 0)],
-            ["CONST", 200],
-            ["RETURN", 1],
-            ["LABEL", "else"],
+            ["SWITCH_EQ_VAR", ("arm1_body", "a", 0, 0)],
+            ["SWITCH_EQ_VAR", ("arm2_body", "b", 0, 0)],
             ["POP", 1],
             ["CONST", 0],
+            ["RETURN", 1],
+            ["LABEL", "arm1_body"],
+            ["CONST", 100],
+            ["RETURN", 1],
+            ["LABEL", "arm2_body"],
+            ["CONST", 200],
             ["RETURN", 1],
         ], values={"a": 1, "b": 2})
         result = await make_callable(code, ns)()
@@ -356,10 +341,10 @@ class TestSwitchEqVarOpcode(CevalTest):
 
         code, ns = build_expr([
             ["CONST", 1],
-            ["SWITCH_EQ_VAR", ("miss", "nonexistent", 0, 0)],
+            ["SWITCH_EQ_VAR", ("hit", "nonexistent", 0, 0)],
             ["CONST", 42],
             ["RETURN", 1],
-            ["LABEL", "miss"],
+            ["LABEL", "hit"],
             ["POP", 1],
             ["CONST", 0],
             ["RETURN", 1],
@@ -378,19 +363,19 @@ class TestSwitchEqFastOpcode(CevalTest):
     """
 
 
-    async def test_switch_eq_fast_match_falls_through(self):
+    async def test_switch_eq_fast_match_jumps(self):
         """
-        SWITCH_EQ_FAST drops the discriminant on match and falls through
+        SWITCH_EQ_FAST pops scrutinee and jumps on match
         """
 
         code = build_code([
             ["CONST", 10],
-            ["SWITCH_EQ_FAST", ("miss", 0, 0, 0)],
-            ["CONST", 42],
-            ["RETURN", 1],
-            ["LABEL", "miss"],
+            ["SWITCH_EQ_FAST", ("hit", 0, 0, 0)],
             ["POP", 1],
             ["CONST", 0],
+            ["RETURN", 1],
+            ["LABEL", "hit"],
+            ["CONST", 42],
             ["RETURN", 1],
         ], local_syms=("key",), name="fn")
         base_ns = build_expr([["CONST", None], ["RETURN", 1]])[1]
@@ -399,23 +384,20 @@ class TestSwitchEqFastOpcode(CevalTest):
         self.assertEqual(result, 42)
 
 
-    async def test_switch_eq_fast_mismatch_jumps_and_keeps_disc(self):
+    async def test_switch_eq_fast_mismatch_fallthrough_chain(self):
         """
-        SWITCH_EQ_FAST retains the discriminant on mismatch and jumps
+        SWITCH_EQ_FAST leaves scrutinee on mismatch for the next compare
         """
 
         code = build_code([
             ["CONST", 10],
-            ["SWITCH_EQ_FAST", ("next_arm", 0, 0, 0)],
+            ["SWITCH_EQ_FAST", ("body", 0, 0, 0)],
+            ["SWITCH_EQ_FAST", ("body", 1, 0, 0)],
+            ["POP", 1],
             ["CONST", 1],
             ["RETURN", 1],
-            ["LABEL", "next_arm"],
-            ["SWITCH_EQ_FAST", ("else", 1, 0, 0)],
+            ["LABEL", "body"],
             ["CONST", 99],
-            ["RETURN", 1],
-            ["LABEL", "else"],
-            ["POP", 1],
-            ["CONST", 0],
             ["RETURN", 1],
         ], local_syms=("first", "second"), name="fn")
         base_ns = build_expr([["CONST", None], ["RETURN", 1]])[1]
@@ -431,16 +413,16 @@ class TestSwitchEqFastOpcode(CevalTest):
 
         code = build_code([
             ["CONST", 5],
-            ["SWITCH_EQ_FAST", ("arm2", 0, 0, 0)],
-            ["CONST", 100],
-            ["RETURN", 1],
-            ["LABEL", "arm2"],
-            ["SWITCH_EQ_FAST", ("else", 1, 0, 0)],
-            ["CONST", 200],
-            ["RETURN", 1],
-            ["LABEL", "else"],
+            ["SWITCH_EQ_FAST", ("arm1_body", 0, 0, 0)],
+            ["SWITCH_EQ_FAST", ("arm2_body", 1, 0, 0)],
             ["POP", 1],
             ["CONST", 0],
+            ["RETURN", 1],
+            ["LABEL", "arm1_body"],
+            ["CONST", 100],
+            ["RETURN", 1],
+            ["LABEL", "arm2_body"],
+            ["CONST", 200],
             ["RETURN", 1],
         ], local_syms=("a", "b"), name="fn")
         base_ns = build_expr([["CONST", None], ["RETURN", 1]])[1]
@@ -456,12 +438,12 @@ class TestSwitchEqFastOpcode(CevalTest):
 
         code = build_code([
             ["CONST", 0],
-            ["SWITCH_EQ_FAST", ("miss", 0, 0, 0)],
-            ["CONST", 42],
-            ["RETURN", 1],
-            ["LABEL", "miss"],
+            ["SWITCH_EQ_FAST", ("hit", 0, 0, 0)],
             ["POP", 1],
             ["CONST", 0],
+            ["RETURN", 1],
+            ["LABEL", "hit"],
+            ["CONST", 42],
             ["RETURN", 1],
         ], local_syms=("key",), name="fn")
         base_ns = build_expr([["CONST", None], ["RETURN", 1]])[1]
@@ -479,30 +461,31 @@ class TestSwitchEqVarAttrOpcode(CevalTest):
     """
 
 
-    async def test_switch_eq_var_attr_match_falls_through(self):
+    async def test_switch_eq_var_attr_match_jumps(self):
         """
-        SWITCH_EQ_VAR_ATTR drops the discriminant on match
+        SWITCH_EQ_VAR_ATTR pops scrutinee and jumps on match
         """
 
         class Box(object):
             value = 10
         code, ns = build_expr([
             ["CONST", 10],
-            ["SWITCH_EQ_VAR_ATTR", ("miss", "obj", "value", 0)],
-            ["CONST", 42],
-            ["RETURN", 1],
-            ["LABEL", "miss"],
+            ["SWITCH_EQ_VAR_ATTR", ("hit", "obj", "value", 0)],
             ["POP", 1],
             ["CONST", 0],
+            ["RETURN", 1],
+            ["LABEL", "hit"],
+            ["CONST", 42],
             ["RETURN", 1],
         ], values={"obj": Box()})
         result = await make_callable(code, ns)()
         self.assertEqual(result, 42)
 
 
-    async def test_switch_eq_var_attr_mismatch_jumps_and_keeps_disc(self):
+    async def test_switch_eq_var_attr_mismatch_fallthrough_chain(self):
         """
-        SWITCH_EQ_VAR_ATTR retains the discriminant on mismatch
+        SWITCH_EQ_VAR_ATTR leaves scrutinee on mismatch for the next
+        compare
         """
 
         class Box(object):
@@ -510,16 +493,13 @@ class TestSwitchEqVarAttrOpcode(CevalTest):
             second = 10
         code, ns = build_expr([
             ["CONST", 10],
-            ["SWITCH_EQ_VAR_ATTR", ("next_arm", "obj", "first", 0)],
+            ["SWITCH_EQ_VAR_ATTR", ("body", "obj", "first", 0)],
+            ["SWITCH_EQ_VAR_ATTR", ("body", "obj", "second", 0)],
+            ["POP", 1],
             ["CONST", 1],
             ["RETURN", 1],
-            ["LABEL", "next_arm"],
-            ["SWITCH_EQ_VAR_ATTR", ("else", "obj", "second", 0)],
+            ["LABEL", "body"],
             ["CONST", 99],
-            ["RETURN", 1],
-            ["LABEL", "else"],
-            ["POP", 1],
-            ["CONST", 0],
             ["RETURN", 1],
         ], values={"obj": Box()})
         result = await make_callable(code, ns)()
@@ -536,16 +516,16 @@ class TestSwitchEqVarAttrOpcode(CevalTest):
             b = 2
         code, ns = build_expr([
             ["CONST", 5],
-            ["SWITCH_EQ_VAR_ATTR", ("arm2", "obj", "a", 0)],
-            ["CONST", 100],
-            ["RETURN", 1],
-            ["LABEL", "arm2"],
-            ["SWITCH_EQ_VAR_ATTR", ("else", "obj", "b", 0)],
-            ["CONST", 200],
-            ["RETURN", 1],
-            ["LABEL", "else"],
+            ["SWITCH_EQ_VAR_ATTR", ("arm1_body", "obj", "a", 0)],
+            ["SWITCH_EQ_VAR_ATTR", ("arm2_body", "obj", "b", 0)],
             ["POP", 1],
             ["CONST", 0],
+            ["RETURN", 1],
+            ["LABEL", "arm1_body"],
+            ["CONST", 100],
+            ["RETURN", 1],
+            ["LABEL", "arm2_body"],
+            ["CONST", 200],
             ["RETURN", 1],
         ], values={"obj": Box()})
         result = await make_callable(code, ns)()
@@ -559,10 +539,10 @@ class TestSwitchEqVarAttrOpcode(CevalTest):
 
         code, ns = build_expr([
             ["CONST", 1],
-            ["SWITCH_EQ_VAR_ATTR", ("miss", "obj", "nonexistent", 0)],
+            ["SWITCH_EQ_VAR_ATTR", ("hit", "obj", "nonexistent", 0)],
             ["CONST", 42],
             ["RETURN", 1],
-            ["LABEL", "miss"],
+            ["LABEL", "hit"],
             ["POP", 1],
             ["CONST", 0],
             ["RETURN", 1],
@@ -582,21 +562,21 @@ class TestSwitchEqFastAttrOpcode(CevalTest):
     """
 
 
-    async def test_switch_eq_fast_attr_match_falls_through(self):
+    async def test_switch_eq_fast_attr_match_jumps(self):
         """
-        SWITCH_EQ_FAST_ATTR drops the discriminant on match
+        SWITCH_EQ_FAST_ATTR pops scrutinee and jumps on match
         """
 
         class Box(object):
             value = 10
         code = build_code([
             ["CONST", 10],
-            ["SWITCH_EQ_FAST_ATTR", ("miss", 0, "value", 0)],
-            ["CONST", 42],
-            ["RETURN", 1],
-            ["LABEL", "miss"],
+            ["SWITCH_EQ_FAST_ATTR", ("hit", 0, "value", 0)],
             ["POP", 1],
             ["CONST", 0],
+            ["RETURN", 1],
+            ["LABEL", "hit"],
+            ["CONST", 42],
             ["RETURN", 1],
         ], local_syms=("obj",), name="fn")
         base_ns = build_expr([["CONST", None], ["RETURN", 1]])[1]
@@ -605,9 +585,10 @@ class TestSwitchEqFastAttrOpcode(CevalTest):
         self.assertEqual(result, 42)
 
 
-    async def test_switch_eq_fast_attr_mismatch_jumps_and_keeps_disc(self):
+    async def test_switch_eq_fast_attr_mismatch_fallthrough_chain(self):
         """
-        SWITCH_EQ_FAST_ATTR retains the discriminant on mismatch
+        SWITCH_EQ_FAST_ATTR leaves scrutinee on mismatch for the next
+        compare
         """
 
         class Box(object):
@@ -615,16 +596,13 @@ class TestSwitchEqFastAttrOpcode(CevalTest):
             second = 10
         code = build_code([
             ["CONST", 10],
-            ["SWITCH_EQ_FAST_ATTR", ("next_arm", 0, "first", 0)],
+            ["SWITCH_EQ_FAST_ATTR", ("body", 0, "first", 0)],
+            ["SWITCH_EQ_FAST_ATTR", ("body", 0, "second", 0)],
+            ["POP", 1],
             ["CONST", 1],
             ["RETURN", 1],
-            ["LABEL", "next_arm"],
-            ["SWITCH_EQ_FAST_ATTR", ("else", 0, "second", 0)],
+            ["LABEL", "body"],
             ["CONST", 99],
-            ["RETURN", 1],
-            ["LABEL", "else"],
-            ["POP", 1],
-            ["CONST", 0],
             ["RETURN", 1],
         ], local_syms=("obj",), name="fn")
         base_ns = build_expr([["CONST", None], ["RETURN", 1]])[1]
@@ -643,16 +621,16 @@ class TestSwitchEqFastAttrOpcode(CevalTest):
             b = 2
         code = build_code([
             ["CONST", 5],
-            ["SWITCH_EQ_FAST_ATTR", ("arm2", 0, "a", 0)],
-            ["CONST", 100],
-            ["RETURN", 1],
-            ["LABEL", "arm2"],
-            ["SWITCH_EQ_FAST_ATTR", ("else", 0, "b", 0)],
-            ["CONST", 200],
-            ["RETURN", 1],
-            ["LABEL", "else"],
+            ["SWITCH_EQ_FAST_ATTR", ("arm1_body", 0, "a", 0)],
+            ["SWITCH_EQ_FAST_ATTR", ("arm2_body", 0, "b", 0)],
             ["POP", 1],
             ["CONST", 0],
+            ["RETURN", 1],
+            ["LABEL", "arm1_body"],
+            ["CONST", 100],
+            ["RETURN", 1],
+            ["LABEL", "arm2_body"],
+            ["CONST", 200],
             ["RETURN", 1],
         ], local_syms=("obj",), name="fn")
         base_ns = build_expr([["CONST", None], ["RETURN", 1]])[1]
@@ -668,10 +646,10 @@ class TestSwitchEqFastAttrOpcode(CevalTest):
 
         code = build_code([
             ["CONST", 1],
-            ["SWITCH_EQ_FAST_ATTR", ("miss", 0, "nonexistent", 0)],
+            ["SWITCH_EQ_FAST_ATTR", ("hit", 0, "nonexistent", 0)],
             ["CONST", 42],
             ["RETURN", 1],
-            ["LABEL", "miss"],
+            ["LABEL", "hit"],
             ["POP", 1],
             ["CONST", 0],
             ["RETURN", 1],

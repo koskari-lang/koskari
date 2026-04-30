@@ -17,9 +17,8 @@
   SWITCH_EQ_FAST: arg = extra index. Schema (LABEL, FASTVAR, NOARG, NOARG):
   row.a0 = target PC, row.a1 = fast slot index. Stack [..., s] with
   scrutinee = TOS. Resolve fast slot in current namespace and compare
-  to s via Py_EQ. On match drop the discriminant and fall through
-  (depth -1). On mismatch retain the discriminant and jump to row.a0
-  (depth 0).
+  to s via Py_EQ. On match: pop scrutinee and jump to row.a0. On
+  mismatch: fall through with stack unchanged.
 */
 
 KOS_OP_HANDLER(SWITCH_EQ_FAST) {
@@ -56,7 +55,6 @@ KOS_OP_HANDLER(SWITCH_EQ_FAST) {
 
   if (res) {
     KosEvalState_StackDropNoErr(es, 1);
-  } else {
     KosEvalState_SET_PC(es, row.a0);
   }
 

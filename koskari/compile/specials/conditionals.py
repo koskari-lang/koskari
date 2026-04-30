@@ -93,7 +93,6 @@ def special_switch(compiler, source, tc=False):
 
     gen_label = compiler.gen_label
     done = gen_label()
-    label = gen_label()
 
     if not cl:
         raise SpecialError("switch requires a value", source)
@@ -101,19 +100,25 @@ def special_switch(compiler, source, tc=False):
 
     fragment.merge(compiler.full_compile(value))
 
+    checks = compiler.fragment("switch-cases")
+    bodies = compiler.fragment("switch-bodies")
+
     while cl:
         element, cl = cl
 
-        fragment.position_of(element)
+        checks.position_of(element)
         test, body = element
 
         if test is _keyword_else:
             if cl:
                 raise SpecialError("else: must be last clause", source)
 
-            fragment.instruction(OpCode.KOS_OP_LABEL, label)
-            fragment.instruction(OpCode.KOS_OP_POP, 1)
-            helper_begin(fragment, body, tc)
+            else_label = gen_label()
+            checks.instruction(OpCode.KOS_OP_JUMP, else_label)
+            bodies.instruction(OpCode.KOS_OP_LABEL, else_label)
+            bodies.instruction(OpCode.KOS_OP_POP, 1)
+            helper_begin(bodies, body, tc)
+            bodies.instruction(OpCode.KOS_OP_JUMP, done)
             break
 
         elif not (test and is_pair(test)):
@@ -122,25 +127,25 @@ def special_switch(compiler, source, tc=False):
 
         body_label = gen_label()
         while test:
-            fragment.position_of(test)
+            checks.position_of(test)
             tval, test = test
 
-            fragment.instruction(OpCode.KOS_OP_LABEL, label)
-            label = gen_label()
+            checks.merge(compiler.full_compile(tval))
+            checks.instruction(OpCode.KOS_OP_SWITCH_EQ, body_label)
 
-            fragment.merge(compiler.full_compile(tval))
-            fragment.instruction(OpCode.KOS_OP_SWITCH_EQ, label)
-            fragment.instruction(OpCode.KOS_OP_JUMP, body_label)
-
-        fragment.instruction(OpCode.KOS_OP_LABEL, body_label)
-        helper_begin(fragment, body, tc)
-        fragment.instruction(OpCode.KOS_OP_JUMP, done)
+        bodies.instruction(OpCode.KOS_OP_LABEL, body_label)
+        helper_begin(bodies, body, tc)
+        bodies.instruction(OpCode.KOS_OP_JUMP, done)
 
     else:
-        fragment.instruction(OpCode.KOS_OP_LABEL, label)
-        fragment.instruction(OpCode.KOS_OP_POP, 1)
-        fragment.instruction(OpCode.KOS_OP_CONST, None)
+        body_label = gen_label()
+        checks.instruction(OpCode.KOS_OP_JUMP, body_label)
+        bodies.instruction(OpCode.KOS_OP_LABEL, body_label)
+        bodies.instruction(OpCode.KOS_OP_POP, 1)
+        bodies.instruction(OpCode.KOS_OP_CONST, None)
 
+    fragment.merge(checks)
+    fragment.merge(bodies)
     fragment.instruction(OpCode.KOS_OP_LABEL, done)
     return fragment
 

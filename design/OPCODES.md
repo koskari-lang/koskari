@@ -333,12 +333,12 @@ When adding or changing an opcode:
 | CHECK_IS | LABEL | Jump if left is not right | [§9](#kos_op_check_is) |
 | CHECK_IS_NOT | LABEL | Jump if left is right | [§9](#kos_op_check_is_not) |
 | CHECK_EXCEPTION | LABEL | Jump if exception no match | [§9](#kos_op_check_exception) |
-| SWITCH_EQ | LABEL | Equality dispatch; on match pop both, on mismatch pop key only and jump | [§9.1](#kos_op_switch_eq) |
-| SWITCH_EQ_CONST | EXTRA | Compare TOS to constant RHS; on mismatch keep TOS and jump | [§9.1](#kos_op_switch_eq_const) |
-| SWITCH_EQ_VAR | EXTRA | Compare TOS to namespace var RHS; on mismatch keep TOS and jump | [§9.1](#kos_op_switch_eq_var) |
-| SWITCH_EQ_FAST | EXTRA | Compare TOS to fast-slot RHS; on mismatch keep TOS and jump | [§9.1](#kos_op_switch_eq_fast) |
-| SWITCH_EQ_VAR_ATTR | EXTRA | Compare TOS to getattr(var, attr); on mismatch keep TOS and jump | [§9.1](#kos_op_switch_eq_var_attr) |
-| SWITCH_EQ_FAST_ATTR | EXTRA | Compare TOS to getattr(fast, attr); on mismatch keep TOS and jump | [§9.1](#kos_op_switch_eq_fast_attr) |
+| SWITCH_EQ | LABEL | Equality dispatch; on match pop both and jump; on mismatch pop key only, fall through | [§9.1](#kos_op_switch_eq) |
+| SWITCH_EQ_CONST | EXTRA | Compare TOS to constant RHS; on match pop TOS and jump; on mismatch fall through | [§9.1](#kos_op_switch_eq_const) |
+| SWITCH_EQ_VAR | EXTRA | Compare TOS to namespace var RHS; on match pop TOS and jump; on mismatch fall through | [§9.1](#kos_op_switch_eq_var) |
+| SWITCH_EQ_FAST | EXTRA | Compare TOS to fast-slot RHS; on match pop TOS and jump; on mismatch fall through | [§9.1](#kos_op_switch_eq_fast) |
+| SWITCH_EQ_VAR_ATTR | EXTRA | Compare TOS to getattr(var, attr); on match pop TOS and jump; on mismatch fall through | [§9.1](#kos_op_switch_eq_var_attr) |
+| SWITCH_EQ_FAST_ATTR | EXTRA | Compare TOS to getattr(fast, attr); on match pop TOS and jump; on mismatch fall through | [§9.1](#kos_op_switch_eq_fast_attr) |
 | GLOBALS | NOARG | Push globals dict | [§10](#kos_op_globals) |
 | LOCALS | NOARG | Push locals dict | [§10](#kos_op_locals) |
 | IMPORT | CONST | Absolute import; push leaf module | [§10.1](#kos_op_import) |
@@ -1262,11 +1262,22 @@ Check jumps: if the predicate does **not** hold, jump to `arg`. All take LABEL; 
 
 ## 9.1 Switch dispatch
 
-Switch dispatch opcodes implement multi-way **equality** branching against a
-single discriminant that lives on the stack across the whole chain. They use
-the **inverse pop pattern** of the check jumps in §9: on mismatch the
-discriminant is *retained* below TOS so the next arm can compare another key
-against it without re-pushing.
+Switch dispatch opcodes implement multi-way **equality** branching. A typical
+**checks** region runs comparisons in order: each comparison **falls through**
+when it does not match so the next check can run without re-pushing the
+scrutinee. A **match** jumps into a shared **body** (or the same body for
+several keys).
+
+**`KOS_OP_SWITCH_EQ`** compares two stack operands, discriminant **`left`**
+below key **`right`** (TOS). On **match**, both are popped and the PC is set
+to **`arg`** (the body). On **mismatch**, only **`right`** is popped; **`left`**
+remains so the following code can push another key and use another
+**`SWITCH_EQ`**.
+
+The **single-slot** variants (**`SWITCH_EQ_CONST`**, **`SWITCH_EQ_VAR`**, …)
+compare the scrutinee **`s`** at TOS to an RHS from the extra row. On
+**match**, **`s`** is popped and the PC jumps to **`a0`**. On **mismatch**,
+the stack is **unchanged** and execution falls through.
 
 See [archive/switch-eq-opcodes.md](archive/switch-eq-opcodes.md) for family rationale and the
 surface `compile/switch` form. The full SWITCH_EQ family is implemented.
@@ -1275,40 +1286,35 @@ surface `compile/switch` form. The full SWITCH_EQ family is implemented.
 
 - **Style**: LABEL. Arg = target pc (post-compile).
 - **Status**: Implemented.
-- **Stack**: `[..., left, right]` (right = TOS). Always pops `right`. Compares
-  `left == right` with the same equality semantics as
-  [CHECK_EQ](#kos_op_check_eq) (`PyObject_RichCompareBool` with `Py_EQ`).
-  - **Match**: also pop `left` and fall through. Stack after: `[...]`.
-  - **Mismatch**: leave `left` on the stack and jump to `arg`. Stack after:
-    `[..., left]`.
-- **Invariants**: Jump locality for target. The mismatch target must legally
-  observe the discriminant `left` on the stack (i.e. the next arm in the
-  chain, or an else / merge point that drops it).
-- **Compiler form:** Pre-compile arg = string label (next arm or shared else);
-  post-compile arg = pc.
+- **Stack**: `[..., left, right]` (right = TOS). Compares `left == right` with
+  the same equality semantics as [CHECK_EQ](#kos_op_check_eq)
+  (`PyObject_RichCompareBool` with `Py_EQ`).
+  - **Match**: pop both operands; `pc = arg`. Stack after: `[...]`.
+  - **Mismatch**: pop `right` only; fall through. Stack after: `[..., left]`.
+- **Invariants**: Jump target is the matching body. After a mismatch, bytecode
+  must leave `left` correct for the next comparison (push a new `right`) or
+  reach cleanup that drops `left`.
+- **Compiler form:** Pre-compile arg = string label (body); post-compile arg =
+  pc.
 
-**Example:** Two-arm switch on a discriminant. Pool: 0 = 10, 1 = 1, 2 = 20,
-3 = 2, 4 = 0. The discriminant 10 is evaluated once; first arm tests
-key 1 (mismatch — falls to next arm with discriminant retained), second arm
-tests key 20 (match — both popped, body returns 2). Covered by
-`tests/lib/opcode/test_switch.py`.
+**Example:** Two-arm chain then else. Pool: 0 = 10, 1 = 1, 2 = 20, 3 = 2, 4 =
+0. Discriminant 10: first key 1 (mismatch — pop key, fall through with `[10]`);
+second key 20 (match — pop both, jump to body); body returns 2. Else drops
+disc and returns 0. Covered by `tests/lib/opcode/test_switch.py`.
 
 | index | opcode    | arg | arg view  | comment |
 |------:|-----------|-----|-----------|---------|
-| 0     | CONST     | 0   | 0 (10)    | stack: [..., disc] |
-| 1     | CONST     | 1   | 1 (1)     | stack: [..., disc, key] |
-| 2     | SWITCH_EQ | 5   | 5 (-> 5)  | mismatch → pc=5, stack: [..., disc] |
-| 3     | CONST     | 3   | 3 (2)     | (skipped on mismatch) match body |
-| 4     | RETURN    | 1   | 1         | (skipped on mismatch) |
-| 5     | LABEL     | —   | —         | next_arm |
-| 6     | CONST     | 2   | 2 (20)    | stack: [..., disc, key2] |
-| 7     | SWITCH_EQ | 10  | 10 (-> 10)| mismatch → pc=10, stack: [..., disc] |
-| 8     | CONST     | 3   | 3 (2)     | match body, stack: [..., 2] |
-| 9     | RETURN    | 1   | 1         | |
-| 10    | LABEL     | —   | —         | else |
-| 11    | POP       | 1   | 1         | drop leftover disc |
-| 12    | CONST     | 4   | 4 (0)     | else result |
-| 13    | RETURN    | 1   | 1         | |
+| 0     | CONST     | 0   | 0 (10)    | stack: [..., 10] |
+| 1     | CONST     | 1   | 1 (1)     | stack: [..., 10, 1] |
+| 2     | SWITCH_EQ | 8   | 8 (-> 8)  | match → pop2, pc=8 (body); mismatch → [..., 10], next insn |
+| 3     | CONST     | 2   | 2 (20)    | stack: [..., 10, 20] |
+| 4     | SWITCH_EQ | 8   | 8 (-> 8)  | match → body; mismatch → [..., 10], next insn |
+| 5     | POP       | 1   | 1         | else: drop discriminant |
+| 6     | CONST     | 4   | 4 (0)     | else result |
+| 7     | RETURN    | 1   | 1         | |
+| 8     | LABEL     | —   | —         | body |
+| 9     | CONST     | 3   | 3 (2)     | stack: [..., 2] |
+| 10    | RETURN    | 1   | 1         | |
 
 
 ### KOS_OP_SWITCH_EQ_CONST
@@ -1316,8 +1322,8 @@ tests key 20 (match — both popped, body returns 2). Covered by
 - **Style**: EXTRA. Schema `(LABEL, CONST, NOARG, NOARG)`.
 - **Status**: Implemented.
 - **Stack**: `[..., s]`. Compare `s == cpool[a1]` with `Py_EQ`.
-  - **Match**: drop `s`, fall through.
-  - **Mismatch**: retain `s`, jump to `a0`.
+  - **Match**: pop `s`; `pc = a0`.
+  - **Mismatch**: fall through; stack unchanged (`s` still TOS).
 - **Compiler form:** tuple arg `("label", const_value, 0, 0)` pre-compile;
   post-compile row stores pc in `a0` and constant index in `a1`.
 - **Implementation**: `koskari/lib/opcode/SWITCH_EQ_CONST.c`
@@ -1328,8 +1334,8 @@ tests key 20 (match — both popped, body returns 2). Covered by
 - **Status**: Implemented.
 - **Stack**: `[..., s]`. Resolve `rhs = frame_ns_deref(var_name)` from `a1`,
   then compare `s == rhs` with `Py_EQ`.
-  - **Match**: drop `s`, fall through.
-  - **Mismatch**: retain `s`, jump to `a0`.
+  - **Match**: pop `s`; `pc = a0`.
+  - **Mismatch**: fall through; stack unchanged.
 - **Compiler form:** tuple arg `("label", "name", 0, 0)` pre-compile.
 - **Implementation**: `koskari/lib/opcode/SWITCH_EQ_VAR.c`
 
@@ -1339,8 +1345,8 @@ tests key 20 (match — both popped, body returns 2). Covered by
 - **Status**: Implemented.
 - **Stack**: `[..., s]`. Resolve `rhs = KosNamespace_FastDeref(ns, a1)`, then
   compare `s == rhs` with `Py_EQ`.
-  - **Match**: drop `s`, fall through.
-  - **Mismatch**: retain `s`, jump to `a0`.
+  - **Match**: pop `s`; `pc = a0`.
+  - **Mismatch**: fall through; stack unchanged.
 - **Compiler form:** tuple arg `("label", slot_index, 0, 0)` pre-compile.
 - **Implementation**: `koskari/lib/opcode/SWITCH_EQ_FAST.c`
 
@@ -1350,8 +1356,8 @@ tests key 20 (match — both popped, body returns 2). Covered by
 - **Status**: Implemented.
 - **Stack**: `[..., s]`. Resolve `obj = frame_ns_deref(var_name)` from `a1`,
   `rhs = getattr(obj, attr_name)` from `a2`, then compare `s == rhs`.
-  - **Match**: drop `s`, fall through.
-  - **Mismatch**: retain `s`, jump to `a0`.
+  - **Match**: pop `s`; `pc = a0`.
+  - **Mismatch**: fall through; stack unchanged.
 - **Compiler form:** tuple arg `("label", "obj_name", "attr_name", 0)` pre-compile.
 - **Implementation**: `koskari/lib/opcode/SWITCH_EQ_VAR_ATTR.c`
 
@@ -1361,8 +1367,8 @@ tests key 20 (match — both popped, body returns 2). Covered by
 - **Status**: Implemented.
 - **Stack**: `[..., s]`. Resolve `obj = KosNamespace_FastDeref(ns, a1)`,
   `rhs = getattr(obj, attr_name)` from `a2`, then compare `s == rhs`.
-  - **Match**: drop `s`, fall through.
-  - **Mismatch**: retain `s`, jump to `a0`.
+  - **Match**: pop `s`; `pc = a0`.
+  - **Mismatch**: fall through; stack unchanged.
 - **Compiler form:** tuple arg `("label", slot_index, "attr_name", 0)` pre-compile.
 - **Implementation**: `koskari/lib/opcode/SWITCH_EQ_FAST_ATTR.c`
 

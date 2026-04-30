@@ -15,9 +15,9 @@
 
 /**
   SWITCH_EQ: arg = target PC. Stack [..., left, right] (right = TOS).
-  Pop right; compare to left with Py_EQ. On match: also drop left and
-  fall through (depth -2). On mismatch: keep left on the stack and
-  jump to arg (depth -1). Inverse pop pattern of CHECK_EQ.
+  Compare left and right with Py_EQ. On match: pop both operands and
+  jump to arg. On mismatch: pop right only and fall through, leaving
+  left on the stack for further compares.
 */
 
 KOS_OP_HANDLER(SWITCH_EQ) {
@@ -31,9 +31,9 @@ KOS_OP_HANDLER(SWITCH_EQ) {
 
   if (res) {
     KosEvalState_StackDropNoErr(es, 2);
+    KosEvalState_SET_PC(es, KosOp_ARG(insn));
   } else {
     KosEvalState_StackDropNoErr(es, 1);
-    KosEvalState_SET_PC(es, KosOp_ARG(insn));
   }
 
   (void) out_ev;

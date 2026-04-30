@@ -17,8 +17,8 @@
   SWITCH_EQ_CONST: arg = extra index. Schema (LABEL, CONST, NOARG, NOARG):
   row.a0 = target PC, row.a1 = constant pool index for RHS. Stack
   [..., s] with scrutinee = TOS. Compare s to constant via Py_EQ. On
-  match drop the discriminant and fall through (depth -1). On mismatch
-  retain the discriminant and jump to row.a0 (depth 0).
+  match: pop scrutinee and jump to row.a0. On mismatch: fall through
+  with stack unchanged.
 */
 
 KOS_OP_HANDLER(SWITCH_EQ_CONST) {
@@ -39,7 +39,6 @@ KOS_OP_HANDLER(SWITCH_EQ_CONST) {
 
   if (res) {
     KosEvalState_StackDropNoErr(es, 1);
-  } else {
     KosEvalState_SET_PC(es, row.a0);
   }
 
