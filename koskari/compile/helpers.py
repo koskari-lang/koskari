@@ -442,7 +442,7 @@ class UsingUnpackMatcher(BindingMatcher):
         return cls(payload[0])
 
     def extract_binder_symbols(self, value):
-        yield from unpack_lhs_bind_symbols(value.lhs, value.source)
+        yield from unpack_lhs_bind_symbols(value.lhs, value.source, flatten=True)
 
     def get_recurse_targets(self, value):
         if isinstance(value, BindingResult) and value.value is not None:
@@ -542,13 +542,14 @@ def helper_using(source):
     return (name, value.source)
 
 
-def unpack_lhs_bind_symbols(lhs, source=None):
+def unpack_lhs_bind_symbols(lhs, source=None, flatten=False):
     """
     Yield each symbol introduced by an unpack LHS (same shapes as
     using_unpack_helper)
 
     :param lhs: bare symbol or proper list pattern with optional *
     :param source: optional form for SpecialError context
+    :param flatten: if True, flatten the list of symbols into a single list
     :yields: each bound symbol in VAR_STORE order
     :raises SpecialError: when lhs is not a valid unpack pattern
     """
@@ -578,10 +579,12 @@ def unpack_lhs_bind_symbols(lhs, source=None):
 
     if not star_idx:
         for elt in items:
-            if not is_symbolish(elt):
+            if flatten and is_pair(elt):
+                yield from unpack_lhs_bind_symbols(elt, source, flatten)
+            elif not is_symbolish(elt):
                 fail('unpack pattern list elements must be symbols')
-        for elt in items:
-            yield elt
+            else:
+                yield elt
         return
 
     si = star_idx[0]
@@ -595,19 +598,23 @@ def unpack_lhs_bind_symbols(lhs, source=None):
     if not is_symbolish(star_name):
         fail('name after * in unpack pattern must be a symbol')
 
-    for elt in prefix + suffix:
-        if not is_symbolish(elt):
-            fail('unpack pattern list elements must be symbols')
-
-    if not prefix and not suffix:
-        yield star_name
-        return
-
     for elt in prefix:
-        yield elt
+        if flatten and is_pair(elt):
+            yield from unpack_lhs_bind_symbols(elt, source, flatten)
+        elif not is_symbolish(elt):
+            fail('unpack pattern list elements must be symbols')
+        else:
+            yield elt
+
     yield star_name
+
     for elt in suffix:
-        yield elt
+        if flatten and is_pair(elt):
+            yield from unpack_lhs_bind_symbols(elt, source, flatten)
+        elif not is_symbolish(elt):
+            fail('unpack pattern list elements must be symbols')
+        else:
+            yield elt
 
 
 def using_unpack_helper(compiler, lhs, source=None, declare=True):
@@ -670,18 +677,22 @@ def using_unpack_helper(compiler, lhs, source=None, declare=True):
     if len(star_idx) > 1:
         fail('at most one * is allowed in an unpack pattern')
 
+    # no star, so we just unpack the items
     if not star_idx:
-        for elt in items:
-            if not is_symbolish(elt):
-                fail('unpack pattern list elements must be symbols')
-        for elt in items:
-            maybe_declare(str(elt))
         n = len(items)
         frag.instruction(OpCode.KOS_OP_UNPACK, n)
         for elt in items:
-            frag.instruction(OpCode.KOS_OP_VAR_STORE, str(elt))
+            if is_pair(elt):
+                frag.merge(using_unpack_helper(compiler, elt, source, declare))
+            elif is_symbolish(elt):
+                elt = str(elt)
+                maybe_declare(elt)
+                frag.instruction(OpCode.KOS_OP_VAR_STORE, elt)
+            else:
+                fail('unpack pattern list elements must be symbols or pairs')
         return frag
 
+    # star, so we'll need to prefix and then star, and then suffix
     si = star_idx[0]
     prefix = items[:si]
     after_star = items[si + 1:]
@@ -692,30 +703,38 @@ def using_unpack_helper(compiler, lhs, source=None, declare=True):
     suffix = after_star[1:]
     if not is_symbolish(star_name):
         fail('name after * in unpack pattern must be a symbol')
-
-    for elt in prefix + suffix:
-        if not is_symbolish(elt):
-            fail('unpack pattern list elements must be symbols')
-
-    star_s = str(star_name)
-    for elt in prefix:
-        maybe_declare(str(elt))
-    maybe_declare(star_s)
-    for elt in suffix:
-        maybe_declare(str(elt))
+    star_name = str(star_name)
 
     if not prefix and not suffix:
-        frag.instruction(OpCode.KOS_OP_VAR_STORE, star_s)
+        maybe_declare(star_name)
+        frag.instruction(OpCode.KOS_OP_VAR_STORE, star_name)
         return frag
 
     left = len(prefix)
     right = len(suffix)
     frag.instruction(OpCode.KOS_OP_UNPACK_STAR, (left, right, 0, 0))
     for elt in prefix:
-        frag.instruction(OpCode.KOS_OP_VAR_STORE, str(elt))
-    frag.instruction(OpCode.KOS_OP_VAR_STORE, star_s)
+        if is_pair(elt):
+            frag.merge(using_unpack_helper(compiler, elt, source, declare))
+        elif is_symbolish(elt):
+            elt = str(elt)
+            maybe_declare(elt)
+            frag.instruction(OpCode.KOS_OP_VAR_STORE, elt)
+        else:
+            fail('unpack pattern list elements must be symbols or pairs')
+
+    maybe_declare(star_name)
+    frag.instruction(OpCode.KOS_OP_VAR_STORE, star_name)
+
     for elt in suffix:
-        frag.instruction(OpCode.KOS_OP_VAR_STORE, str(elt))
+        if is_pair(elt):
+            frag.merge(using_unpack_helper(compiler, elt, source, declare))
+        elif is_symbolish(elt):
+            elt = str(elt)
+            maybe_declare(elt)
+            frag.instruction(OpCode.KOS_OP_VAR_STORE, elt)
+        else:
+            fail('unpack pattern list elements must be symbols or pairs')
 
     return frag
 

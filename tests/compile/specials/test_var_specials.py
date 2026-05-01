@@ -53,6 +53,7 @@ class TestSetqValuesSpecial(SpecialsTestCase):
         result = await expr()
         self.assertEqual(3, result)
 
+
     async def test_setq_values_three_element_pattern(self):
         src_str = """
         (compile/let [[a 0] [b 0] [c 0]]
@@ -66,6 +67,7 @@ class TestSetqValuesSpecial(SpecialsTestCase):
             triple=lambda x, y, z: (x, y, z))
         result = await expr()
         self.assertEqual((1, 2, 3), result)
+
 
     async def test_setq_values_star_element_pattern(self):
         src_str = """
@@ -97,6 +99,7 @@ class TestDefineValuesSpecial(SpecialsTestCase):
         result = await expr()
         self.assertEqual(3, result)
 
+
     async def test_define_values_three_element_pattern(self):
         src_str = """
         (compile/begin
@@ -110,6 +113,35 @@ class TestDefineValuesSpecial(SpecialsTestCase):
         result = await expr()
         self.assertEqual((1, 2, 3), result)
 
+
+    async def test_define_values_nested_front(self):
+        src_str = """
+        (compile/begin
+          (compile/define-values [[a b] c] seq)
+          (compile/call triple a b c))
+        """
+        expr, mod = self.compile_expr(
+            src_str,
+            seq=((1, 2), 3),
+            triple=lambda x, y, z: (x, y, z))
+        result = await expr()
+        self.assertEqual((1, 2, 3), result)
+
+
+    async def test_define_values_nested_back(self):
+        src_str = """
+        (compile/begin
+          (compile/define-values [a [b c]] seq)
+          (compile/call triple a b c))
+        """
+        expr, mod = self.compile_expr(
+            src_str,
+            seq=(1, (2, 3)),
+            triple=lambda x, y, z: (x, y, z))
+        result = await expr()
+        self.assertEqual((1, 2, 3), result)
+
+
     async def test_define_values_star_element_pattern(self):
         src_str = """
         (compile/begin
@@ -122,6 +154,35 @@ class TestDefineValuesSpecial(SpecialsTestCase):
             triple=lambda x, y, z: (x, y, z))
         result = await expr()
         self.assertEqual((1, (2, 3, 4, 5), 6), result)
+
+
+    async def test_define_values_star_nested_front(self):
+        src_str = """
+        (compile/begin
+          (compile/define-values [[a b] *: c] seq)
+          (compile/call triple a b c))
+        """
+        expr, mod = self.compile_expr(
+            src_str,
+            seq=((1, 2), 3, 4, 5, 6),
+            triple=lambda x, y, z: (x, y, z))
+        result = await expr()
+        self.assertEqual((1, 2, (3, 4, 5, 6)), result)
+
+
+    async def test_define_values_star_nested_back(self):
+        src_str = """
+        (compile/begin
+          (compile/define-values [*: a [b c]] seq)
+          (compile/call triple a b c))
+        """
+        expr, mod = self.compile_expr(
+            src_str,
+            seq=(1, 2, 3, 4, (5, 6)),
+            triple=lambda x, y, z: (x, y, z))
+        result = await expr()
+        self.assertEqual(((1, 2, 3, 4), 5, 6), result)
+
 
 class TestDelqSpecial(SpecialsTestCase):
 

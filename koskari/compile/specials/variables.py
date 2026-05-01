@@ -138,7 +138,7 @@ def special_setq_values(compiler, source, tc=False):
         if pattern_mr.source_pos is not None
         else get_position(rest))
 
-    for namesym in unpack_lhs_bind_symbols(lhs, source=rest):
+    for namesym in unpack_lhs_bind_symbols(lhs, source=rest, flatten=True):
         frag.request_for_write(str(namesym), position=pos)
 
     if not is_pair(expr):
