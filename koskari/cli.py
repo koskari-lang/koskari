@@ -404,7 +404,8 @@ async def repl_async(mod, prompter=None, histfile=None, stdin=None, stdout=None,
     """
 
     from koskari.compile import Compiler
-    from koskari.importer.module import init_module
+    from koskari.importer.module import attach_module_load_facets, init_module
+    from koskari.reader import LayoutReader
 
     stdin = stdin or sys.stdin
     stdout = stdout or sys.stdout
@@ -426,6 +427,9 @@ async def repl_async(mod, prompter=None, histfile=None, stdin=None, stdout=None,
         getattr(mod, '__name__', '__main__'),
         mod,
         filename='<stdin>')
+
+    reader = LayoutReader(mod)
+    attach_module_load_facets(mod, compiler, reader)
 
     buffer = ''
     prompt = '>>> '
@@ -541,7 +545,7 @@ async def repl_async(mod, prompter=None, histfile=None, stdin=None, stdout=None,
 # ---------------------------------------------------------------------------
 
 
-async def run_file_async(mod, filename, execute_kio=False):
+async def run_file_async(mod, filename, execute_kio=False, *, interactive=False):
     """
     Load and execute a koskari source file into mod.
 
@@ -551,6 +555,7 @@ async def run_file_async(mod, filename, execute_kio=False):
     :param mod: koskari Module to execute into
     :param filename: path to the .ki source file or .kio when execute_kio
     :param execute_kio: when True, load precompiled .kio bodies
+    :param interactive: passed to load_module_async; retain load facets when True
     """
 
     from koskari.importer.module import (
@@ -563,7 +568,7 @@ async def run_file_async(mod, filename, execute_kio=False):
     if execute_kio:
         await load_module_kio_async(mod)
     else:
-        await load_module_async(mod)
+        await load_module_async(mod, interactive=interactive)
 
 
 # ---------------------------------------------------------------------------
@@ -608,7 +613,11 @@ async def cli_async(options):
     mod = await new_module('__main__')
 
     if filename:
-        await run_file_async(mod, filename, execute_kio=options.execute_kio)
+        await run_file_async(
+            mod,
+            filename,
+            execute_kio=options.execute_kio,
+            interactive=options.interactive)
 
         if not options.interactive:
             return

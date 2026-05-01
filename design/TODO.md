@@ -63,20 +63,6 @@ Ref: [api/tracing.md](api/tracing.md).
 
 ## Compiler
 
-### Bind `__compiler__` and `__reader__` on every module
-
-**Status:** Partial. `Compiler.__init__` stores **`__compiler__`** when the
-namespace slot is empty; **`__reader__`** is not wired the same way in `koskari/`
-today. Design assumes both exist on the module for pragma reload and reader
-facets (`module.__reader__.reload_pragma`, `module.__compiler__.reload_pragma`).
-
-Ensure all module construction paths (bootstrap, importer, tests, REPL) bind
-consistent reader/compiler objects so macros and tooling can rely on them.
-
-Ref: [language/PRAGMA-MODEL.md](language/PRAGMA-MODEL.md);
-[language/layout-syntax.md](language/layout-syntax.md); `koskari/compile/compiler.py`
-(`__compiler__`).
-
 ### Slice atom and slice syntax
 
 Bring over Python-sibilant slicing support in both forms:

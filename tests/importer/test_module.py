@@ -21,11 +21,14 @@ import os
 import tempfile
 import unittest
 
+import pytest
+
+from koskari.compile import Compiler
 from koskari.importer.module import (init_module, load_module_demand,
                                      new_module, new_module_demand)
 from koskari.lib import Module
+from koskari.reader import LayoutReader
 
-import pytest
 
 pytestmark = pytest.mark.phase_importer
 
@@ -111,13 +114,16 @@ class TestNewModuleDemand(unittest.TestCase):
         mod = new_module_demand('mymod')
         self.assertIsInstance(mod, Module)
 
+
     def test_name_stored_in_namespace(self):
         mod = new_module_demand('mymod')
         self.assertEqual('mymod', getattr(mod, '__name__', None))
 
+
     def test_package_stored_when_given(self):
         mod = new_module_demand('mypkg.mymod', package='mypkg')
         self.assertEqual('mypkg', getattr(mod, '__package__', None))
+
 
     def test_builtins_present(self):
         mod = new_module_demand('mymod')
@@ -141,6 +147,42 @@ class TestLoadModuleDemand(unittest.TestCase):
             load_module_demand(mod)
             ns = vars(mod)
             self.assertEqual(99, ns.ref('answer').deref())
+        finally:
+            import shutil
+            shutil.rmtree(tmpdir, ignore_errors=True)
+
+
+    def test_load_module_demand_detaches_facets_by_default(self):
+        tmpdir = tempfile.mkdtemp(prefix='koskari_test_')
+        try:
+            path = os.path.join(tmpdir, 'facet_mod.ki')
+            with open(path, 'w', encoding='utf-8') as fh:
+                fh.write('(define x 1)\n')
+            mod = new_module_demand('facet_mod')
+            init_module(mod, path)
+            load_module_demand(mod)
+            ns = vars(mod)
+            self.assertTrue(ns.ref('__compiler__').empty)
+            self.assertTrue(ns.ref('__reader__').empty)
+        finally:
+            import shutil
+            shutil.rmtree(tmpdir, ignore_errors=True)
+
+
+    def test_load_module_demand_retains_facets_when_interactive(self):
+        tmpdir = tempfile.mkdtemp(prefix='koskari_test_')
+        try:
+            path = os.path.join(tmpdir, 'facet_interactive.ki')
+            with open(path, 'w', encoding='utf-8') as fh:
+                fh.write('(define x 1)\n')
+            mod = new_module_demand('facet_interactive')
+            init_module(mod, path)
+            load_module_demand(mod, interactive=True)
+            ns = vars(mod)
+            self.assertFalse(ns.ref('__compiler__').empty)
+            self.assertFalse(ns.ref('__reader__').empty)
+            self.assertIsInstance(ns.ref('__compiler__').deref(), Compiler)
+            self.assertIsInstance(ns.ref('__reader__').deref(), LayoutReader)
         finally:
             import shutil
             shutil.rmtree(tmpdir, ignore_errors=True)

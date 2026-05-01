@@ -23,7 +23,12 @@ Compile .ki sources into .kio bodies and drive evaluation from loaded .kio.
 
 
 from ..compile.compiler import Compiler, CompilerMode
-from ..importer.module import init_module, new_module_demand
+from ..importer.module import (
+    attach_module_load_facets,
+    detach_module_load_facets,
+    init_module,
+    new_module_demand,
+)
 from ..lib import demand_call
 from ..reader import IndentAwareStream, LayoutReader, READ_EOF, source_open, source_str
 from .codex import KioFile
@@ -41,30 +46,34 @@ def _compile_top_level_to_codes(mod, compiler, source_stream):
 
     ns = vars(mod)
     reader = LayoutReader(mod)
-    stream = IndentAwareStream(
-        source_stream.stream,
-        source_stream.filename,
-        auto_skip_exec=False,
-        line_no=source_stream.lin,
-        col_no=source_stream.col,
-        max_indent=None)
+    attach_module_load_facets(mod, compiler, reader)
+    try:
+        stream = IndentAwareStream(
+            source_stream.stream,
+            source_stream.filename,
+            auto_skip_exec=False,
+            line_no=source_stream.lin,
+            col_no=source_stream.col,
+            max_indent=None)
 
-    bodies = []
-    while True:
-        source_expr = reader.read(stream)
-        if source_expr is READ_EOF:
-            break
+        bodies = []
+        while True:
+            source_expr = reader.read(stream)
+            if source_expr is READ_EOF:
+                break
 
-        fragment = compiler.full_compile(source_expr)
-        code = compiler.complete(
-            fragment, mode=CompilerMode.EXPRESSION, is_root=True)
-        bodies.append(code)
+            fragment = compiler.full_compile(source_expr)
+            code = compiler.complete(
+                fragment, mode=CompilerMode.EXPRESSION, is_root=True)
+            bodies.append(code)
 
-        # we must evaluate the code to ensure future compile-time
-        # artifacts are available
-        demand_call(code.expression(ns))
+            # we must evaluate the code to ensure future compile-time
+            # artifacts are available
+            demand_call(code.expression(ns))
 
-    return bodies
+        return bodies
+    finally:
+        detach_module_load_facets(mod)
 
 
 def compile_ki_file_to_kio(

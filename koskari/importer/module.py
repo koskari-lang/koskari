@@ -43,7 +43,16 @@ from ..lib import Module, ModuleNamespace, demand_call
 from ..reader import READ_EOF, IndentAwareStream, LayoutReader, source_open
 
 
+MODULE_LOAD_FACET_NAMES = (
+    '__compiler__',
+    '__reader__',
+)
+
+
 __all__ = (
+    'MODULE_LOAD_FACET_NAMES',
+    'attach_module_load_facets',
+    'detach_module_load_facets',
     'new_module',
     'init_module',
     'load_module_async',
@@ -139,7 +148,7 @@ def init_module(module, filename, spec=None):
             _ns_store(ns, '__path__', list(spec.submodule_search_locations))
 
 
-async def load_module_async(module):
+async def load_module_async(module, *, interactive=False):
     """
     Execute a koskari module by reading, compiling, and running each
     top-level expression in order.
@@ -149,7 +158,12 @@ async def load_module_async(module):
     expression are visible to all subsequent expressions, supporting
     define, defsyntax, and reader macro registration at module load time.
 
-    :param module: koskari Module instance with __file__ and __stream__ set
+    While loading, ``__compiler__`` and ``__reader__`` are bound on the
+    module.  Unless ``interactive`` is True, they are removed when loading
+    finishes (retain them for ongoing ``__main__``, e.g. CLI ``-i``).
+
+    :param module: koskari Module instance with ``__file__`` set
+    :param interactive: when False, detach load facets after the load loop
     """
 
     filename = getattr(module, '__file__', '<unknown>')
@@ -163,25 +177,30 @@ async def load_module_async(module):
             filename=filename)
 
         reader = LayoutReader(module)
-        stream = IndentAwareStream(
-            source_stream.stream,
-            source_stream.filename,
-            auto_skip_exec=False,
-            line_no=source_stream.lin,
-            col_no=source_stream.col,
-            max_indent=None)
+        attach_module_load_facets(module, compiler, reader)
+        try:
+            stream = IndentAwareStream(
+                source_stream.stream,
+                source_stream.filename,
+                auto_skip_exec=False,
+                line_no=source_stream.lin,
+                col_no=source_stream.col,
+                max_indent=None)
 
-        while True:
-            source_expr = reader.read(stream)
-            if source_expr is READ_EOF:
-                break
+            while True:
+                source_expr = reader.read(stream)
+                if source_expr is READ_EOF:
+                    break
 
-            fragment = compiler.full_compile(source_expr)
-            expr = fragment.as_expression(ns)
-            await expr()
+                fragment = compiler.full_compile(source_expr)
+                expr = fragment.as_expression(ns)
+                await expr()
+        finally:
+            if not interactive:
+                detach_module_load_facets(module)
 
 
-def load_module_demand(module):
+def load_module_demand(module, *, interactive=False):
     """
     Execute a koskari module by reading, compiling, and running each
     top-level expression in order via demand_call.
@@ -190,7 +209,10 @@ def load_module_demand(module):
     demand_call(expr) instead of awaiting a coroutine.  No async
     suspension is allowed.  Used by the loader's exec_module_demand path.
 
+    Load facet teardown matches :func:`load_module_async`.
+
     :param module: koskari Module instance with __file__ set
+    :param interactive: when False, detach load facets after the load loop
     """
 
     filename = getattr(module, '__file__', '<unknown>')
@@ -204,23 +226,28 @@ def load_module_demand(module):
             filename=filename)
 
         reader = LayoutReader(module)
-        stream = IndentAwareStream(
-            source_stream.stream,
-            source_stream.filename,
-            auto_skip_exec=False,
-            line_no=source_stream.lin,
-            col_no=source_stream.col,
-            max_indent=None)
+        attach_module_load_facets(module, compiler, reader)
+        try:
+            stream = IndentAwareStream(
+                source_stream.stream,
+                source_stream.filename,
+                auto_skip_exec=False,
+                line_no=source_stream.lin,
+                col_no=source_stream.col,
+                max_indent=None)
 
-        while True:
-            source_expr = reader.read(stream)
+            while True:
+                source_expr = reader.read(stream)
 
-            if source_expr is READ_EOF:
-                break
+                if source_expr is READ_EOF:
+                    break
 
-            fragment = compiler.full_compile(source_expr)
-            expr = fragment.as_expression(ns)
-            demand_call(expr)
+                fragment = compiler.full_compile(source_expr)
+                expr = fragment.as_expression(ns)
+                demand_call(expr)
+        finally:
+            if not interactive:
+                detach_module_load_facets(module)
 
 
 async def load_module_kio_async(module):
@@ -261,6 +288,56 @@ def load_module_kio_demand(module):
     kio_file = KioFile.read(filename)
     for code in kio_file.codes:
         demand_call(code.expression(ns))
+
+
+# ---------------------------------------------------------------------------
+# Load facets and namespace helpers
+# ---------------------------------------------------------------------------
+
+
+def attach_module_load_facets(module, compiler, reader):
+    """
+    Bind ``__compiler__`` and ``__reader__`` on ``module`` for load time.
+
+    :param module: koskari Module (or object whose ``vars()`` is the ns)
+    :param compiler: Compiler instance for this load
+    :param reader: LayoutReader instance for this load
+    """
+
+    ns = vars(module)
+    _ns_store(ns, '__compiler__', compiler)
+    _ns_store(ns, '__reader__', reader)
+
+
+def detach_module_load_facets(module):
+    """
+    Remove load-time ``__compiler__`` and ``__reader__`` bindings.
+
+    Ignores names listed in :data:`MODULE_LOAD_FACET_NAMES` that are not
+    bound.
+
+    :param module: koskari Module (or object whose ``vars()`` is the ns)
+    """
+
+    ns = vars(module)
+    for name in MODULE_LOAD_FACET_NAMES:
+        _ns_clear(ns, name)
+
+
+def _ns_clear(ns, name):
+    """
+    Clear a binding in a namespace or dict if present.
+
+    :param ns: ModuleNamespace or dict
+    :param name: str name to clear
+    """
+
+    if hasattr(ns, 'store'):
+        r = ns.ref(name)
+        if not r.empty:
+            r.clear()
+    else:
+        ns.pop(name, None)
 
 
 # ---------------------------------------------------------------------------

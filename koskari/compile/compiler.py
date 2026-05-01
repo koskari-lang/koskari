@@ -505,10 +505,6 @@ class Compiler:
 
         ns = vars(module)
 
-        r = ns.ref("__compiler__")
-        if r.empty:
-            r.store(self)
-
         r = ns.ref("__name__")
         if r.empty:
             r.store(name)
