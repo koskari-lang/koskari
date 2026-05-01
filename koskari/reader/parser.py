@@ -928,6 +928,7 @@ class Reader(object):
 
         sm('f', self._read_fstring, False)
         sm('r', self._read_rstring, False)
+        sm('b', self._read_bstring, False)
 
         sm('#', self._read_collection, False)
 
@@ -1249,6 +1250,22 @@ class Reader(object):
             return self._read_default(stream, char)
         else:
             return self._read_string(stream, stream.read(1), False)
+
+
+    def _read_bstring(self, stream, char):
+        """
+        Read a binary string (b"...")
+
+        :param stream: the source stream
+        :param char: the 'b' character
+        :return: tuple of (event, value)
+        """
+
+        if stream.peek(1) != '"':
+            return self._read_default(stream, char)
+        else:
+            event, val = self._read_string(stream, stream.read(1), True)
+            return event, val.encode('ascii')
 
 
     def _read_string(self, stream, char, with_escapes=True):

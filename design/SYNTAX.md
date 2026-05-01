@@ -122,6 +122,7 @@ depth 0 in `LayoutReader` when no block-header colon is found on the line.
 <form-inner>    ::= <atom>
                   | <string>
                   | <raw-string>
+                  | <byte-string>
                   | <format-string>
                   | <list>
                   | <bracket-list>
@@ -138,6 +139,11 @@ depth 0 in `LayoutReader` when no block-header colon is found on the line.
 <raw-string>    ::= 'r"' <raw-body> '"'
                   | 'r"""' <raw-triple-body> '"""'
                   ; raw strings do not process escape sequences
+
+<byte-string>   ::= 'b"' <string-body> '"'
+                  | 'b"""' <triple-body> '"""'
+                  ; same escape rules as <string>; yields a bytes value;
+                  ; non-ASCII characters in the literal are rejected (ASCII only)
 
 <format-string> ::= 'f"' <fstring-body> '"'
                   | 'f"""' <fstring-body> '"""'

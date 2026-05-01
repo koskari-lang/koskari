@@ -22,8 +22,9 @@ Unit tests for koskari.parse
 """
 
 from io import StringIO
-from unittest import IsolatedAsyncioTestCase
+from unittest import IsolatedAsyncioTestCase, TestCase
 
+from koskari.exceptions import ReaderSyntaxError
 from koskari.lib import BaseSourceStream, car, cdr, cons, keyword, nil, symbol
 from koskari.reader import READ_EOF, default_reader, source_str
 
@@ -319,6 +320,40 @@ class TestRawStrings(IsolatedAsyncioTestCase):
         src = r' r"hello\n \tworld" '
         col = parse_source(src)
         self.assertEqual(col, r"hello\n \tworld")
+
+
+class TestByteStrings(TestCase):
+
+    def test_empty_bstring(self):
+        self.assertEqual(parse_source('b""'), b'')
+
+        self.assertEqual(parse_source(' b"" '), b'')
+
+    def test_simple_bstring(self):
+        self.assertEqual(parse_source('b"hello world"'), b'hello world')
+
+    def test_bstring_escapes(self):
+        self.assertEqual(parse_source(r'b"hello\n \tworld"'), b'hello\n \tworld')
+
+    def test_bstring_hex_escape_yields_byte(self):
+        self.assertEqual(parse_source(r'b"\x41"'), b'A')
+
+    def test_bstring_triple_quoted(self):
+        src = r'b"""hello "x" """'
+        self.assertEqual(parse_source(src), b'hello "x" ')
+
+    def test_bstring_in_list(self):
+        col = parse_source('(b"ab" b"cd")')
+        self.assertEqual(car(col), b'ab')
+        self.assertEqual(car(cdr(col)), b'cd')
+        self.assertIs(cdr(cdr(col)), nil)
+
+    def test_bstring_non_ascii_literal_raises(self):
+        with self.assertRaises(ReaderSyntaxError):
+            parse_source('b"café"')
+
+    def test_b_prefix_without_quote_is_not_bstring(self):
+        self.assertEqual(parse_source('bogus'), symbol('bogus'))
 
 
 class TestQuoted(IsolatedAsyncioTestCase):
