@@ -108,9 +108,7 @@ define-class LifeScreen []:
         define render self.renderer
         define screen self.screen
 
-        for-each [item (board.tracked cleanup: True)]:
-            define-values [xy val] item
-            define-values [x y] xy
+        for-each [[[x y] val] (board.tracked cleanup: True)]:
             define-values [cell style] (render val)
             (screen.attrset style)
 
