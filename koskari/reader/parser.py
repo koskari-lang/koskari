@@ -64,6 +64,7 @@ __all__ = (
     "default_reader",
     "READ_EOF",
     "DEFER",
+    "LINE_END",
 )
 
 
@@ -106,6 +107,7 @@ SKIP = keyword("skip")
 CLOSE_PAIR = keyword("close-pair")
 EOF = keyword("eof")
 COLON = keyword("colon")
+LINE_END = keyword("line-end")
 DEFER = keyword("defer")
 ATOM_RESUME = keyword("atom-resume")
 
@@ -926,17 +928,40 @@ class Reader(object):
         raise RuntimeError('macro chain ended without a result')
 
 
-    def _read(self, stream, raw=False):
+    def _skip_horizontal_whitespace(self, stream):
+        """
+        Consume horizontal whitespace only (space and tab)
+
+        :param stream: the source stream
+        :return: the whitespace string consumed
+        """
+
+        consumed = []
+        while True:
+            c = stream.peek(1)
+            if c not in (' ', '\t'):
+                break
+            consumed.append(stream.read(1))
+        return ''.join(consumed)
+
+
+    def _read(self, stream, raw=False, vertical_ws=True):
         """
         Internal read implementation
 
         :param stream: the source stream
         :param raw: if True, return atoms without processing
+        :param vertical_ws: if True (default), skip all whitespace including
+            newlines before each token; if False, skip only horizontal
+            whitespace (layout header tails and logical-line reads)
         :return: tuple of (event, position, value)
         """
 
         while True:
-            stream.skip_whitespace()
+            if vertical_ws:
+                stream.skip_whitespace()
+            else:
+                self._skip_horizontal_whitespace(stream)
 
             position = stream.position()
             c = stream.read()
@@ -1747,8 +1772,12 @@ class LayoutReader(Reader):
     the stream.dedented attribute rather than getattr guards.
 
     Subclasses may override _add_default_layout_macros to register or omit
-    layout-mode-only prefix handlers (_layout_macros), parallel to
-    _add_default_block_macros for block header prefixes (_block_macros).
+    layout-mode-only prefix handlers (_layout_macros). Raw block quote and
+    quasiquote use predicated reader macros on ``'`` and backtick when
+    defaults are enabled.
+
+    Layout header tails use LINE_END and COLON events with horizontal-only
+    whitespace between tokens on a logical line.
     """
 
     def __init__(self, namespace, nodefaults=False,
@@ -1776,13 +1805,11 @@ class LayoutReader(Reader):
 
         self._layout_depth = 0
         self._block_mode = False
-        self._block_macros = {}
         self._layout_macros = {}
         self.layout_enabled = layout_enabled
         self.layout_implicit_calls = layout_implicit_calls
 
         if not nodefaults:
-            self._add_default_block_macros()
             self._add_default_layout_macros()
 
         # this one describes a fundamental behavior of the reader, so it's not
@@ -1826,14 +1853,15 @@ class LayoutReader(Reader):
             layout_implicit_calls=getattr(pragma, 'layout_implicit_calls', None))
 
 
-    def _add_default_block_macros(self):
-        self._block_macros.update({
-            "'": self._read_quote_block,
-            "`": self._read_quasiquote_block,
-        })
-
-
     def _add_default_layout_macros(self):
+        self.set_event_macro(
+            "'", self._layout_quote_block_reader_macro, True,
+            predicate=self._layout_block_quote_predicate)
+
+        self.set_event_macro(
+            "`", self._layout_quasiquote_block_reader_macro, True,
+            predicate=self._layout_block_quote_predicate)
+
         self._layout_macros.update({
             "@": self._read_layout_decorate,
         })
@@ -1888,6 +1916,52 @@ class LayoutReader(Reader):
         """
 
         return COLON, symbol(':')
+
+
+    def _layout_block_quote_predicate(self, stream, c, atom_prefix):
+        """
+        Allow layout raw-block quote and quasiquote when this line has a
+        structural block colon and the head does not open with a delimiter.
+
+        :param stream: source stream positioned after the prefix character
+        :param c: the prefix character
+        :param atom_prefix: atom boundary context; None at dispatch
+        """
+
+        if atom_prefix is not None:
+            return True
+        if not self.layout_enabled or self._layout_depth > 0:
+            return False
+        nxt = stream.peek(1)
+        if not nxt or nxt in '([{':
+            return False
+        return self._structural_colon_before_line_end(stream)
+
+
+    def _layout_quote_block_reader_macro(self, stream, c):
+        """
+        Reader macro for layout raw-block quote.
+
+        :param stream: positioned after ``'``
+        :param c: the quote character
+        """
+
+        _lin, col = stream.position()
+        outer_indent = col - 1
+        return VALUE, self._read_quote_block(stream, outer_indent)
+
+
+    def _layout_quasiquote_block_reader_macro(self, stream, c):
+        """
+        Reader macro for layout raw-block quasiquote.
+
+        :param stream: positioned after the backtick
+        :param c: the backtick character
+        """
+
+        _lin, col = stream.position()
+        outer_indent = col - 1
+        return VALUE, self._read_quasiquote_block(stream, outer_indent)
 
 
     def _is_structural_colon_in_ahead(self, ahead, colon_index):
@@ -1986,18 +2060,18 @@ class LayoutReader(Reader):
         return None
 
 
-    def _has_block_colon_ahead(self, stream):
+    def _structural_colon_before_line_end(self, stream):
         """
-        Probe ahead for a structural header-terminator ':'.
+        True if the current layout line contains a structural header colon.
 
-        Scans a limited window and tracks delimiter depth so ':' within
-        parentheses/brackets/braces does not count.
+        Scans from the stream position only until end of line (or comment
+        start at delimiter depth 0), tracking delimiter depth.
 
         :param stream: the source stream
-        :return: True if a structural block-opener colon exists ahead
+        :return: whether a structural ``:`` exists on this line
         """
 
-        ahead = stream.peek(2048) or ''
+        ahead = stream.peek(8192) or ''
         depth = 0
         for i, ch in enumerate(ahead):
             if depth == 0 and ch in '\n\r;':
@@ -2012,6 +2086,24 @@ class LayoutReader(Reader):
         return False
 
 
+    def _read_header_form(self, stream):
+        """
+        Read one header token or report logical line end.
+
+        The stream must be positioned after vertical whitespace at a token
+        boundary.
+
+        :param stream: the source stream
+        :return: ``(LINE_END, pos, None)`` or the result of ``_read``
+        """
+
+        peek = stream.peek(1)
+        if not peek or peek in '\n\r' or peek == ';':
+            return LINE_END, stream.position(), None
+        with self._header_mode():
+            return super()._read(stream, vertical_ws=False)
+
+
     def _read_header_args(self, stream):
         """
         Read header argument forms until a structural COLON or end-of-line.
@@ -2023,14 +2115,9 @@ class LayoutReader(Reader):
             if stream.dedented:
                 return args, False
 
-            peek = stream.peek(1)
-            if not peek or peek in '\n\r':
+            event, pos, value = self._read_header_form(stream)
+            if event is LINE_END:
                 return args, False
-            if peek == ';':
-                return args, False
-
-            with self._header_mode():
-                event, pos, value = super()._read(stream)
             if event is COLON:
                 return args, True
             if event is EOF:
@@ -2079,20 +2166,6 @@ class LayoutReader(Reader):
         return args
 
 
-    def _skip_horizontal_whitespace(self, stream):
-        """
-        Consume horizontal whitespace only (space and tab)
-        """
-
-        consumed = []
-        while True:
-            c = stream.peek(1)
-            if c not in (' ', '\t'):
-                break
-            consumed.append(stream.read(1))
-        return ''.join(consumed)
-
-
     def _read_line_tail_forms(self, stream):
         """
         Read remaining top-level forms on the current logical line
@@ -2105,7 +2178,7 @@ class LayoutReader(Reader):
             if not c or c in '\n\r;':
                 return forms
 
-            event, pos, value = self._read(stream)
+            event, pos, value = self._read(stream, vertical_ws=False)
             if event is EOF:
                 return forms
             if event is DOT:
@@ -2520,7 +2593,6 @@ class LayoutReader(Reader):
         return self._apply_layout(stream, outer_indent, source)
 
 
-
     def read_form(self, stream):
         """
         Read one layout form: s-expr, prefixed raw block, or normal block
@@ -2533,12 +2605,13 @@ class LayoutReader(Reader):
            always consume the prefix and run the handler (explicit layout
            intent; no lookahead for ``(``, ``[``, or ``{``). No colon
            lookahead. Inner form is one read_form (block or s-expr).
-        3. c in _block_macros -- quote/quasiquote raw block when a structural
-           header colon exists ahead (_has_block_colon_ahead); otherwise fall
-           through to _read.
-        4. Bare atom -- read under header atom rules; if the head commits as
-           a block header, read args until structural `:` or raise on missing
-           terminator.
+        3. Bare atom -- read under header atom rules; if the head commits as
+           a block header (line-bounded structural colon probe), read args
+           until structural COLON or LINE_END; missing colon is an error when
+           committed.
+        4. Quote and quasiquote layout raw blocks are handled by predicated
+           reader macros on ``'`` and backtick (see
+           :meth:`_layout_block_quote_predicate`).
 
         :param stream: source stream positioned at the start of the next form
         :return: (event, position, value)
@@ -2596,19 +2669,6 @@ class LayoutReader(Reader):
                     result.fill_position(position)
                 return VALUE, position, result
 
-            if c in self._block_macros:
-                next_c = stream.peek(2)[1:2]
-                if (next_c and next_c not in '([{'
-                        and self._has_block_colon_ahead(stream)):
-                    stream.read(1)
-                    block_macro = self._block_macros[c]
-                    result = block_macro(stream, outer_indent)
-                    if is_pair(result):
-                        result.fill_position(position)
-                    return VALUE, position, result
-
-                return super()._read(stream)
-
             with self._header_mode():
                 event, pos, form1 = super()._read(stream)
             if event is COLON:
@@ -2621,7 +2681,7 @@ class LayoutReader(Reader):
             header_indent = pos[1]
 
             if (is_symbol(form1) and self._commit_detector.should_commit(stream)
-                    and self._has_block_colon_ahead(stream)):
+                    and self._structural_colon_before_line_end(stream)):
                 args = self.read_header_until_terminator(
                     stream, head_pos=pos, head=form1)
 

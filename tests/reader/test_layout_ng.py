@@ -20,6 +20,7 @@ from unittest import IsolatedAsyncioTestCase
 
 from koskari.exceptions import ReaderSyntaxError
 from koskari.compile.helpers import pycons
+from koskari.reader import LINE_END
 from koskari.reader import source_str
 from koskari.reader import LayoutReader
 from koskari.reader.layouts import LAYOUTS
@@ -377,6 +378,28 @@ class TestLayoutCallSemantics(IsolatedAsyncioTestCase):
     async def test_string_head_line_does_not_become_call(self):
         result = parse_layout_ng('"x" 1')
         self.assertEqual(result, "x")
+
+
+class TestLayoutLineEvents(IsolatedAsyncioTestCase):
+
+    async def test_read_header_form_line_end_at_semicolon(self):
+        builtins = {str(name): value for name, value in LAYOUTS.items()}
+        reader = LayoutReader(builtins)
+        stream = source_str(';; tail', '<unittest>')
+        stream.skip_whitespace()
+        event, _pos, _val = reader._read_header_form(stream)
+        self.assertIs(event, LINE_END)
+
+    async def test_quote_open_paren_uses_reader_quote_not_raw_block(self):
+        builtins = {str(name): value for name, value in LAYOUTS.items()}
+        reader = LayoutReader(builtins)
+        stream = source_str("' (1 2)\n", '<unittest>')
+        result = reader.read(stream)
+        expected = cons(
+            symbol('compile/quote'),
+            cons(1, cons(2, nil)),
+            nil)
+        self.assertEqual(result, expected)
 
 
 class TestLayoutCompatibilityModes(IsolatedAsyncioTestCase):
