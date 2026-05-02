@@ -24,6 +24,8 @@ Koskari s-expression reader and layout block parsing.
 
 from ..exceptions import ReaderSyntaxError, FormatStringSyntaxError
 from .parser import (
+    DEFER,
+    LINE_END,
     SourceStream,
     IndentAwareStream,
     source_open,
@@ -38,6 +40,8 @@ from .parser import (
 
 
 __all__ = (
+    "DEFER",
+    "LINE_END",
     "Atom",
     "ReaderSyntaxError",
     "FormatStringSyntaxError",

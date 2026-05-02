@@ -19,7 +19,7 @@ Layout handlers for basic block syntax.
 
 
 from ...exceptions import LayoutError
-from ...lib import car, cdr, cons, symbol
+from ...lib import car, cdr, cons, nil, symbol
 from ...types import get_position, is_pair, is_keyword
 from .helpers import layout
 
@@ -86,8 +86,13 @@ def layout_call(source, peers):
     while corr:
         head, next = corr
         if is_pair(head) and is_keyword(head.car):
+            tail = cdr(head)
+            if is_pair(tail) and cdr(tail) is nil:
+                val = car(tail)
+            else:
+                val = tail
             corr.car = car(head)
-            corr.cdr = cons(cdr(head), next)
+            corr.cdr = cons(val, next)
         corr = next
 
     return cons(symbol('compile/call'), fn, body)

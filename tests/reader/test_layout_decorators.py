@@ -170,8 +170,8 @@ class TestLayoutDecorateLayoutMacroDisabled(IsolatedAsyncioTestCase):
 
         class LayoutReaderNoAt(LayoutReader):
 
-            def _add_default_layout_macros(self):
-                super()._add_default_layout_macros()
+            def _add_default_macros(self):
+                super()._add_default_macros()
                 del self._layout_macros['@']
 
         builtins = {}

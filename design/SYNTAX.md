@@ -290,7 +290,7 @@ indent column is **strictly greater than** the indent column of the block head.
                 ::= <paren-form>            ; first char in "([{" — plain s-expression
                   | <block-quote-form>      ; "'" followed by a block header and ":"
                   | <quasiquote-block-form> ; "`" followed by a block header and ":"
-                  | <colon-block>           ; bare atom followed by ":"
+                  | <colon-block>           ; header line ending in structural ":"
                   | <form>                  ; fallthrough — any base s-expression form
 
 <paren-form>    ::= <list> | <bracket-list> | <thunk-block>
@@ -299,8 +299,17 @@ indent column is **strictly greater than** the indent column of the block head.
 
 ### Colon block
 
-In block mode `:` is always terminating, so any bare atom followed by `:` on
-the same line begins a block:
+In block mode `:` is always terminating, so a **header line** that ends with a
+structural `:` (after zero or more header forms) begins a block. The first
+form on that line is the **head**; it need not be a symbol.
+
+This mirrors **lists** in the base grammar: several sibling forms in one list are
+read as an implicit **call** shape (the compiler lowers multi-head application
+with `compile/call`). At layout depth 0, a block whose head does **not** name
+a registered layout handler is still a well-formed block: it is passed to the
+default **`layout/block`** handler, which wraps the body in `compile/begin` and
+places it after the head and header arguments—i.e. an implicit **block** shape
+analogous to that implicit **call** shape for lists.
 
 ```bnf
 <colon-block>   ::= <block-header> <hspace>* ":" <hspace>* <comment>? <newline>
@@ -310,9 +319,14 @@ the same line begins a block:
 #### Block header
 
 ```bnf
-<block-header>  ::= <block-atom> <header-arg>*
-                  ; first token is the block head symbol
-                  ; zero or more argument forms follow before the colon
+<block-header>  ::= <header-head> <header-arg>*
+                  ; first form is the block head (any <form> at depth 0)
+                  ; zero or more additional argument forms follow before the colon
+
+<header-head>   ::= <form>
+                  ; typically a symbol naming a layout handler, but may be any
+                  ; form (e.g. a parenthesised callee); resolution uses the head
+                  ; value to select a layout handler, else layout/block
 
 <header-arg>    ::= <form>
                   ; any form legal in base grammar, including multi-line s-exprs
@@ -385,9 +399,10 @@ line is consumed as an additional peer block at the same nesting level.
 
 (`*` = zero or more, `?` = zero or one, `+` = one or more)
 
-### Default block handler
+### Default block handler (`layout/block`)
 
-Any block head not registered as a named layout expands as:
+Any block whose head does not resolve to a **named** layout handler (including
+when the head is a **non-symbol** form) is expanded by **`layout/block`**:
 
 ```
 head arg1 arg2 ... :
@@ -396,6 +411,10 @@ head arg1 arg2 ... :
 ```
 
 becomes `(head arg1 arg2 (compile/begin body-form1 body-form2))`.
+
+So a compound head such as `(callee) arg:` is read like a symbol-headed block:
+the list `(callee)` is the head, `arg` is a header argument, and the indented
+body is wrapped the same way after `layout/block` dispatch.
 
 ### `begin` block
 

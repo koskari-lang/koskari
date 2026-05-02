@@ -92,8 +92,9 @@ class TestParseAll(IsolatedAsyncioTestCase):
 
 
     async def test_parse_all_multiple_forms(self):
-        forms = list(parse_all('(define x 1) (define y 2) x'))
-        self.assertEqual(len(forms), 2)
+        src = '(define x 1)\n(define y 2)\nx'
+        forms = list(parse_all(src))
+        self.assertEqual(len(forms), 3)
         self.assertTrue(is_pair(forms[0]))
         self.assertTrue(is_pair(forms[1]))
 

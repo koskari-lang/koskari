@@ -22,10 +22,14 @@ Layers:
 2. SourceStream(BaseSourceStream) -- error reporting, pushback buffer
 3. IndentAwareStream(SourceStream) -- indent-bounded skip_whitespace, dedented flag
 
-The Reader reads any SourceStream. LayoutReader(Reader) adds layout-block
-syntax and requires an IndentAwareStream for body reads. No reader method
-inspects private attributes of streams it receives; the stream interface is
-uniform and well-defined.
+The Reader reads any SourceStream. LayoutReader subclasses Reader as a
+layout coordinator: it owns structural colon, LINE_END header tails, and
+layout-only prefixes; it holds an inner Reader with full s-expr defaults.
+Bridge macros on the coordinator forward ``( ) [ ] { }`` ``"`` ``;`` ``f``
+``r`` ``b`` ``#`` into the inner reader so delimited reads do not see layout
+rules. LayoutReader requires an IndentAwareStream for body reads. No reader
+method inspects private attributes of streams it receives; the stream
+interface is uniform and well-defined.
 
 :author: Christopher O'Brien <obriencj@preoccupied.net>
 :license: GNU General Public License v3
@@ -41,15 +45,13 @@ from io import StringIO
 from os.path import exists
 from re import UNICODE, VERBOSE
 from re import compile as regex
+from typing import Any, Callable, Protocol, Tuple, runtime_checkable
 
 from ..exceptions import FormatStringSyntaxError, ReaderSyntaxError
 from ..lib import BaseSourceStream, Module, cons, keyword, nil, setcdr, symbol
 from ..types import is_pair, is_symbol, unpack
 from .layouts import LayoutHandler
 
-DEDENT = keyword("dedent")
-
-_layout_block = symbol("layout/block")
 
 __all__ = (
     "ReaderSyntaxError",
@@ -63,6 +65,8 @@ __all__ = (
     "LayoutReader",
     "default_reader",
     "READ_EOF",
+    "DEFER",
+    "LINE_END",
 )
 
 
@@ -79,6 +83,7 @@ class ReadEOFType(object):
 
 READ_EOF = ReadEOFType()
 
+_layout_block = symbol("layout/block")
 
 _symbol__str = symbol("compile/#str")
 _symbol_gensym_thunk = symbol("compile/gensym-thunk")
@@ -105,6 +110,12 @@ SKIP = keyword("skip")
 CLOSE_PAIR = keyword("close-pair")
 EOF = keyword("eof")
 COLON = keyword("colon")
+LINE_END = keyword("line-end")
+DEFER = keyword("defer")
+ATOM_RESUME = keyword("atom-resume")
+DEDENT = keyword("dedent")
+
+_BASE_TERMINATORS = frozenset("\n\r\t ")
 
 _integer_re = regex(r"^-?\d+$").match
 _bin_re = regex(r"^0b[01]+$").match
@@ -674,13 +685,23 @@ class Atom(str):
 # ===========================================================================
 
 
-class Reader(object):
+class Reader:
     """
     S-expression reader with configurable reader macros and atom patterns
 
     The reader parses textual input into Koskari data structures. It
     supports reader macros for special character handling and atom
     patterns for converting atomic tokens into typed values.
+
+    Each character maps to a newest-first stack of
+    ``(macro_fn, terminating, predicate_fn)`` triplets (see
+    :meth:`add_event_macro`); ``predicate_fn`` may be None. Optional predicates
+    gate macro dispatch (early DEFER) and soft atom boundaries for
+    terminating registrations. Event macros may return DEFER so the next
+    handler in ``_event_macro_chain_for`` runs; the leading-character chain
+    ends with ``_read_default``. Use ``terminating_only=True`` dispatch where a
+    terminator boundary consumes the character first (see
+    :meth:`_dispatch_event_macros`).
     """
 
     def __init__(self, nodefaults=False):
@@ -692,8 +713,8 @@ class Reader(object):
 
         self.reader_macros = {}
         self.atom_patterns = []
-        self.terminating = ["\n", "\r", "\t", " "]
-        self._terms = "".join(self.terminating)
+        self.terminating = set(_BASE_TERMINATORS)
+        self._terms = "".join(sorted(self.terminating))
 
         if not nodefaults:
             self._add_default_macros()
@@ -765,27 +786,195 @@ class Reader(object):
             raise reader_stream.error("invalid syntax", pos)
 
 
-    def _read(self, stream, raw=False):
+    def _sync_terms_from_macros(self):
+        """
+        Recompute ``terminating`` and ``_terms`` from stacked macros plus base
+        whitespace terminators.
+        """
+
+        extra = set()
+        for c, pairs in self.reader_macros.items():
+            for _fn, term, _pred in pairs:
+                if term:
+                    extra.add(c)
+        self.terminating = set(_BASE_TERMINATORS) | extra
+        self._terms = "".join(sorted(self.terminating))
+
+
+    def _atom_boundary_split(self, stream, c, atom_prefix):
+        """
+        Whether the atom ends before ``c`` (split) vs folding ``c`` into it.
+
+        Newest-first scan of terminating registrations for ``c``.
+
+        :param stream: the source stream
+        :param c: the boundary character (not consumed)
+        :param atom_prefix: atom text so far if we split before ``c``
+        :return: True to split, False to fold ``c`` into the atom
+        """
+
+        pairs = self.reader_macros.get(c, ())
+        for macro_fn, term, predicate_fn in pairs:
+            if not term:
+                continue
+            if predicate_fn is None:
+                return True
+            if not predicate_fn(stream, c, atom_prefix):
+                return False
+        return True
+
+
+    def _collect_atom_continuation(self, stream, prefix, terminators):
+        """
+        Extend atom text from ``prefix`` using ``terminators`` for
+        ``read_until_chars``, applying predicated boundaries.
+
+        :param stream: the source stream
+        :param prefix: atom text with all characters consumed so far
+        :param terminators: terminator string for ``read_until_chars``
+        :return: completed atom string; boundary char left unconsumed on split
+        """
+
+        while True:
+            suffix = stream.read_until_chars(terminators)
+            atom = prefix + suffix
+            peeked = stream.peek(1)
+            if not peeked:
+                return atom
+            c = peeked[0]
+            if c not in self.terminating:
+                return atom
+            if self._atom_boundary_split(stream, c, atom):
+                return atom
+            stream.read(1)
+            prefix = atom + c
+
+
+    def _event_macro_chain_for(self, c, terminating_only=False):
+        """
+        Handlers tried in order until one does not return DEFER.
+
+        :param c: the single character that was just read from the stream
+        :param terminating_only: if True, only macros registered with
+            terminating=True for ``c``, then :meth:`_terminating_boundary_fallback`;
+            if False, all stacked macros for ``c``, then :meth:`_read_default`.
+        :yields: ``(handler, predicate_fn)`` where handler is
+            ``(stream, c) -> (event, value)`` and optional ``predicate_fn`` is
+            ``(stream, c, atom_prefix) -> bool`` or None for fallbacks
+        """
+
+        pairs = self.reader_macros.get(c, ())
+        if terminating_only:
+            for macro_fn, term, predicate_fn in pairs:
+                if term:
+                    yield macro_fn, predicate_fn
+            yield self._terminating_boundary_fallback, None
+        else:
+            for macro_fn, _term, predicate_fn in pairs:
+                yield macro_fn, predicate_fn
+            yield self._read_default, None
+
+
+    def _event_macro_predicate_allows(self, stream, c, predicate_fn):
+        """
+        Whether dispatch may run ``macro_fn`` for this stack entry.
+
+        :param stream: the source stream
+        :param c: the dispatch character (already consumed)
+        :param predicate_fn: optional ``(stream, c, atom_prefix) -> bool``
+        :return: False means skip this handler (same as DEFER)
+        """
+
+        if predicate_fn is None:
+            return True
+        return bool(predicate_fn(stream, c, None))
+
+
+    def _terminating_boundary_fallback(self, stream, c):
+        """
+        Last resort when every terminating macro DEFERs at an atom boundary.
+
+        Fold ``c`` into the atom and continue scanning.
+
+        :param stream: the source stream
+        :param c: the terminator character (already consumed before dispatch)
+        :return: tuple of (ATOM_RESUME, fragment to append)
+        """
+
+        return ATOM_RESUME, c
+
+
+    def _dispatch_event_macros(self, stream, c, terminating_only=False):
+        """
+        Run :meth:`_event_macro_chain_for` until a non-DEFER result.
+
+        If a stack entry's predicate returns false, that handler is skipped
+        (same as ``(DEFER, None)`` without calling ``macro_fn``).
+
+        If a handler returns (DEFER, repl) with repl not None, ``repl``
+        replaces ``c`` for subsequent handlers in the chain.
+
+        :param terminating_only: forwarded to :meth:`_event_macro_chain_for`
+        """
+
+        for handler, predicate_fn in self._event_macro_chain_for(
+                c, terminating_only):
+            if not self._event_macro_predicate_allows(
+                    stream, c, predicate_fn):
+                continue
+            event, value = handler(stream, c)
+            if event is DEFER:
+                if value is not None:
+                    c = value
+                continue
+            return event, value
+
+        raise RuntimeError('macro chain ended without a result')
+
+
+    def _skip_horizontal_whitespace(self, stream):
+        """
+        Consume horizontal whitespace only (space and tab)
+
+        :param stream: the source stream
+        :return: the whitespace string consumed
+        """
+
+        consumed = []
+        while True:
+            c = stream.peek(1)
+            if c not in (' ', '\t'):
+                break
+            consumed.append(stream.read(1))
+        return ''.join(consumed)
+
+
+    def _read(self, stream, raw=False, vertical_ws=True):
         """
         Internal read implementation
 
         :param stream: the source stream
         :param raw: if True, return atoms without processing
+        :param vertical_ws: if True (default), skip all whitespace including
+            newlines before each token; if False, skip only horizontal
+            whitespace (layout header tails and logical-line reads)
         :return: tuple of (event, position, value)
         """
 
         while True:
-            stream.skip_whitespace()
+            if vertical_ws:
+                stream.skip_whitespace()
+            else:
+                self._skip_horizontal_whitespace(stream)
 
             position = stream.position()
             c = stream.read()
             if not c:
                 return EOF, position, None
 
-            macro = self.reader_macros.get(c, self._read_default)
-
             try:
-                event, value = macro(stream, c)
+                event, value = self._dispatch_event_macros(
+                    stream, c, terminating_only=False)
                 if not raw and event is ATOM:
                     event = VALUE
                     value = self.process_atom(value)
@@ -804,105 +993,145 @@ class Reader(object):
         return event, position, value
 
 
-    def set_event_macro(self, char, macro_fn, terminating=False):
+    def add_event_macro(
+            self, char, macro_fn, terminating=False, predicate=None):
         """
         Add a character event macro to the reader
 
+        Each call **prepends** ``(macro_fn, terminating, predicate)`` to that
+        character's macro stack (newest first).
+
         :param char: the character(s) to trigger on
-        :param macro_fn: function(stream, char) -> (event, value)
+        :param macro_fn: function(stream, char) -> (event, value). The macro
+            may return (DEFER, None) or (DEFER, repl) to decline handling and
+            try the next handler from :meth:`_event_macro_chain_for`; the
+            chain always ends with ``_read_default``. The opening character
+            was already consumed; pass ``c`` through to ``_read_default``. On
+            DEFER, do not advance the stream beyond peek-only inspection.
         :param terminating: if True, this character terminates atoms
+        :param predicate: optional ``(stream, char, atom_prefix) -> bool``.
+            If false before ``macro_fn`` runs at read dispatch, that entry is
+            skipped (early DEFER). For terminating registrations, also
+            participates in atom boundary decisions (see
+            :meth:`_atom_boundary_split`).
         """
 
+        triplet = (macro_fn, terminating, predicate)
         for c in char:
-            self.reader_macros[c] = macro_fn
-            if terminating:
-                self.terminating.append(c)
+            self.reader_macros.setdefault(c, []).insert(0, triplet)
+        self._sync_terms_from_macros()
 
-        if terminating:
-            self._terms = "".join(self.terminating)
+
+    def get_event_macros(self, char):
+        """
+        Return stacked event macros for one character
+
+        :param char: single character to look up
+        :return: list of ``(macro_fn, terminating, predicate_fn)``, newest
+            first; empty if none
+        """
+
+        return list(self.reader_macros.get(char, ()))
 
 
     def get_event_macro(self, char):
         """
-        Get a character event macro from the reader
+        Get the newest character event macro from the reader
 
         :param char: the character to look up
-        :return: tuple of (macro_fn, terminating) or None
+        :return: tuple of (macro_fn, terminating, predicate_fn) or None
         """
 
-        try:
-            return (self.reader_macros[char], char in self.terminating)
-        except KeyError:
+        lst = self.reader_macros.get(char)
+        if not lst:
             return None
+        return lst[0]
 
 
     def clear_event_macro(self, char):
         """
-        Remove a character event macro from the reader
+        Remove all stacked event macros for each character in ``char``
 
-        :param char: the character to remove
+        :param char: the character(s) to clear
         """
 
-        if char in self.reader_macros:
-            self.terminating.remove(char)
-            self._terms = "".join(self.terminating)
-            del self.reader_macros[char]
+        for c in char:
+            self.reader_macros.pop(c, None)
+        self._sync_terms_from_macros()
 
 
     @contextmanager
-    def temporary_event_macro(self, char, macro_fn, terminating=False):
+    def temporary_event_macro(
+            self, char, macro_fn, terminating=False, predicate=None):
         """
         Context manager to temporarily apply a character event macro
 
-        :param char: the character to trigger on
-        :param macro_fn: function(stream, char) -> (event, value)
+        Prepends one ``(macro_fn, terminating, predicate)`` triplet shared
+        across ``char``. On exit, removes **only** that triplet from the head
+        of each affected list when it still matches by identity.
+
+        :param char: the character(s) to trigger on
+        :param macro_fn: function(stream, char) -> (event, value); may return
+            (DEFER, None) like other event macros (see add_event_macro).
         :param terminating: if True, this character terminates atoms
+        :param predicate: optional predicate (see :meth:`add_event_macro`)
         :yields: self
         """
 
-        old = self.get_event_macro(char)
-        self.set_event_macro(char, macro_fn, terminating)
+        triplet = (macro_fn, terminating, predicate)
+        for c in char:
+            self.reader_macros.setdefault(c, []).insert(0, triplet)
+        self._sync_terms_from_macros()
 
         yield self
 
-        if old is None:
-            self.clear_event_macro(char)
-        else:
-            self.set_event_macro(char, *old)
+        for c in char:
+            lst = self.reader_macros.get(c)
+            if lst and lst[0] is triplet:
+                lst.pop(0)
+                if not lst:
+                    del self.reader_macros[c]
+        self._sync_terms_from_macros()
 
 
-    def set_macro_character(self, char, macro_fn, terminating=False):
+    def add_macro_character(
+            self, char, macro_fn, terminating=False, predicate=None):
         """
         Add a reader macro to the parser
 
-        Unlike set_event_macro, this wraps the macro function to always
-        return a VALUE event.
+        Unlike add_event_macro, this wraps the macro function to always
+        return a VALUE event; wrapped macros cannot DEFER.
 
         :param char: the character to trigger on
         :param macro_fn: function(stream, char) -> value
         :param terminating: if True, this character terminates atoms
+        :param predicate: optional predicate (see :meth:`add_event_macro`)
         """
 
         def macro_adapter(stream, char):
             return VALUE, macro_fn(stream, char)
 
-        self.set_event_macro(char, macro_adapter, terminating)
+        self.add_event_macro(char, macro_adapter, terminating,
+                             predicate=predicate)
 
 
-    def temporary_macro_character(self, char, macro_fn, terminating=False):
+    def temporary_macro_character(
+            self, char, macro_fn, terminating=False, predicate=None):
         """
         Context manager to temporarily apply a reader macro
 
         :param char: the character to trigger on
         :param macro_fn: function(stream, char) -> value
         :param terminating: if True, this character terminates atoms
+        :param predicate: optional predicate (see :meth:`add_event_macro`)
         :return: context manager
         """
 
         def macro_adapter(stream, char):
             return VALUE, macro_fn(stream, char)
 
-        return self.temporary_event_macro(char, macro_adapter, terminating)
+        return self.temporary_event_macro(char, macro_adapter, terminating,
+                                          predicate=predicate)
 
 
     def _add_default_macros(self):
@@ -910,7 +1139,7 @@ class Reader(object):
         Add the default reader macros for standard syntax
         """
 
-        sm = self.set_event_macro
+        sm = self.add_event_macro
 
         sm('(', partial(self._read_pair, ')'), True)
         sm(')', self._close_pair, True)
@@ -922,8 +1151,6 @@ class Reader(object):
         sm('}', self._close_pair, True)
 
         sm('"', self._read_string, True)
-        sm("'", self._read_quote, True)
-        sm("`", self._read_quasiquote, True)
         sm(';', self._read_comment, True)
 
         sm('f', self._read_fstring, False)
@@ -931,6 +1158,9 @@ class Reader(object):
         sm('b', self._read_bstring, False)
 
         sm('#', self._read_collection, False)
+
+        sm("'", self._read_quote, True)
+        sm("`", self._read_quasiquote, True)
 
 
     def set_atom_pattern(self, namesym, match_fn, conversion_fn):
@@ -1014,6 +1244,28 @@ class Reader(object):
         ap(symbol("decimal"), _decimal_re, _as_decimal)
 
 
+    def _collect_atom_after_first_char(self, stream, first_c):
+        """
+        Accumulate atom text after the first character has been consumed.
+
+        Terminator characters stop accumulation without consuming the
+        terminator; the next read dispatches it as a leading character so
+        macros such as quasiquote ``,`` remain VALUE-producing reads.
+
+        Soft boundaries use :meth:`_atom_boundary_split` for terminating
+        registrations that supply a predicate.
+
+        Call :meth:`_dispatch_event_macros` with ``terminating_only=True`` only
+        from specialized scanners that consume a boundary character first.
+
+        :param stream: the source stream
+        :param first_c: first character of the atom (already read)
+        :return: completed atom string
+        """
+
+        return self._collect_atom_continuation(stream, first_c, self._terms)
+
+
     def _read_default(self, stream, c):
         """
         Default character macro handler for unrecognized characters
@@ -1025,7 +1277,7 @@ class Reader(object):
         :return: tuple of (event, value)
         """
 
-        atom = c + stream.read_until_chars(self._terms)
+        atom = self._collect_atom_after_first_char(stream, c)
 
         if atom == ".":
             return DOT, None
@@ -1185,7 +1437,7 @@ class Reader(object):
 
         peek = stream.peek(1)
         if peek not in "({[<":
-            return self._read_default(stream, fchar)
+            return DEFER, None
 
         peek = stream.read(1)
         i = "({[".index(peek)
@@ -1216,7 +1468,7 @@ class Reader(object):
         """
 
         if stream.peek(1) != '"':
-            return self._read_default(stream, fchar)
+            return DEFER, None
 
         char = stream.read(1)
         pos = stream.position()
@@ -1247,7 +1499,7 @@ class Reader(object):
         """
 
         if stream.peek(1) != '"':
-            return self._read_default(stream, char)
+            return DEFER, None
         else:
             return self._read_string(stream, stream.read(1), False)
 
@@ -1262,7 +1514,7 @@ class Reader(object):
         """
 
         if stream.peek(1) != '"':
-            return self._read_default(stream, char)
+            return DEFER, None
         else:
             event, val = self._read_string(stream, stream.read(1), True)
             return event, val.encode('ascii')
@@ -1437,70 +1689,6 @@ class Reader(object):
 
 
 # ===========================================================================
-# Layout block header helpers
-# ===========================================================================
-
-
-class HeaderCommitDetector:
-    """
-    Decide whether the current header head should commit to header parsing.
-
-    Commit rule:
-    - After consuming the head atom, if the next non-horizontal-whitespace
-      character is:
-        - `;` (comment start) => do NOT commit
-        - `\\n` or `\\r` or EOF => do NOT commit
-      then commit only if there is any other token character present.
-    """
-
-    def __init__(self, *, hot_peek=2, fallback_peek=2048):
-        self._hot_peek = hot_peek
-        self._fallback_peek = fallback_peek
-
-    def should_commit(self, stream):
-        ahead = stream.peek(self._hot_peek) or ''
-        i = 0
-        while i < len(ahead) and ahead[i] in ' \t':
-            i += 1
-
-        if i >= len(ahead):
-            # Undecidable from the hot peek alone; inspect a larger window.
-            ahead = stream.peek(self._fallback_peek) or ''
-            i = 0
-            while i < len(ahead) and ahead[i] in ' \t':
-                i += 1
-
-            if i >= len(ahead):
-                return False
-            ch = ahead[i]
-        else:
-            ch = ahead[i]
-
-        if ch == ';' or ch in '\n\r':
-            return False
-        return True
-
-
-class LogicalLineScanner:
-    """
-    Minimal logical-line boundary helper for header-mode logic.
-
-    A newline ends the logical line only at delimiter depth 0.
-    """
-
-    def __init__(self, reader):
-        self._reader = reader
-
-    def at_logical_eol(self, stream):
-        if self._reader._layout_depth != 0:
-            return False
-        nxt = stream.peek(1)
-        if not nxt:
-            return True
-        return nxt in '\n\r'
-
-
-# ===========================================================================
 # LayoutReader
 # ===========================================================================
 
@@ -1513,11 +1701,23 @@ class LayoutReader(Reader):
     layout heads via namespace (layout/<head>). Requires a namespace
     for layout resolution, like the compiler.
 
-    Block headers use contextual structural `:` terminators: `:` ends the
-    header only when followed by whitespace and then comment, EOL, or EOF,
-    so keyword atoms like `as:` can appear in header arguments at delimiter
-    depth 0. When a top-level head commits to a block header, a missing
-    structural trailing `:` is a syntax error rather than a silent fallback.
+    **Three default surfaces:** (1) ``self.inner`` is a plain :class:`Reader`
+    with full s-expr defaults—balanced forms and prefix reads there use only
+    inner state. (2) **Bridge** macros on this coordinator forward ``( ) [ ] {
+    }`` ``"`` ``;`` ``f`` ``r`` ``b`` ``#`` into ``inner`` so delimiter and
+    string/comment/prefix parsing matches s-expr mode. (3) **Layout-only**
+    registrations: structural ``:``, ``_layout_macros`` (e.g. ``@``), and
+    stacked ``'`` / backtick (predicated raw block then normal quote).
+
+    Top-level layout reads are **line-oriented**: header-mode values on a
+    logical line are collected until ``LINE_END`` or structural ``COLON``.
+    Empty lines are skipped. Multiple values on one line fold to an implicit
+    ``cons`` chain or raise per :attr:`layout_implicit_calls`. A structural
+    colon ends the block header (``head`` plus ``args``); the body is read
+    until dedent and passed to the layout handler (non-symbol heads use the
+    ``layout/block`` fallback when no named layout matches). Structural ``:``
+    rules still allow keyword atoms such as ``as:`` inside header arguments
+    at delimiter depth 0.
 
     Stream interface contract: LayoutReader expects its stream arguments
     to be SourceStream instances (for pushback support). Body reads always
@@ -1525,24 +1725,33 @@ class LayoutReader(Reader):
     the stream.dedented attribute rather than getattr guards.
 
     Subclasses may override _add_default_layout_macros to register or omit
-    layout-mode-only prefix handlers (_layout_macros), parallel to
-    _add_default_block_macros for block header prefixes (_block_macros).
+    layout-mode-only prefix handlers (_layout_macros). Raw block quote and
+    quasiquote use predicated reader macros on ``'`` and backtick when
+    defaults are enabled.
+
+    Layout header tails use LINE_END and COLON events with horizontal-only
+    whitespace between tokens on a logical line.
     """
 
-    def __init__(self, namespace, nodefaults=False,
-                 layout_enabled=True, layout_implicit_calls=True):
+    def __init__(
+            self,
+            namespace,
+            nodefaults=False,
+            layout_enabled=True,
+            layout_implicit_calls=True):
         """
         Initialize the layout reader
 
         :param namespace: Module, Namespace, or dict for layout lookup
         :param nodefaults: if True, do not add default macros and patterns
-        :param layout_enabled: if False, disable layout/block parsing and
-            parse using base s-expression semantics
-        :param layout_implicit_calls: if True, symbol-headed non-block
-            lines lower to implicit calls
+        :param layout_implicit_calls: if True, multiple values on one layout
+            line fold to an implicit call; if False, more than one value is an
+            error
         """
 
-        super().__init__(nodefaults=nodefaults)
+        super().__init__(nodefaults=True)
+        self._inner = Reader(nodefaults=True)
+
         from ..lib import ModuleNamespace
 
         if isinstance(namespace, Module):
@@ -1552,22 +1761,149 @@ class LayoutReader(Reader):
         else:
             self._ns = namespace
 
-        self._layout_depth = 0
         self._block_mode = False
-        self._block_macros = {}
         self._layout_macros = {}
+
         self.layout_enabled = layout_enabled
         self.layout_implicit_calls = layout_implicit_calls
 
         if not nodefaults:
-            self._add_default_block_macros()
-            self._add_default_layout_macros()
+            self._add_default_macros()
+            self._add_default_atoms()
 
-        # Reader does not install a depth-0 `:` macro; structural `:` is
-        # emitted only while parsing headers (see _header_mode / _read_default).
+        # this one describes a fundamental behavior of the reader, so it's not
+        # a default macro, it's an always macro.
+        self.add_layout_event_macro(
+            ':', self._layout_colon_macro, True,
+            predicate=self._layout_colon_predicate)
+
         self._header_scan = False
-        self._commit_detector = HeaderCommitDetector()
-        self._line_scanner = LogicalLineScanner(self)
+
+
+    @property
+    def inner(self):
+        """
+        The dedicated s-expression reader used inside bridge macros.
+
+        Attach s-expr-only extensions with ``reader.inner.add_event_macro``.
+        """
+
+        return self._inner
+
+
+    def add_event_macro(
+            self,
+            char,
+            macro_fn,
+            terminating = False,
+            predicate = None):
+
+        self.add_layout_event_macro(char, macro_fn, terminating, predicate)
+        self.add_inner_event_macro(char, macro_fn, terminating, predicate)
+
+
+    def add_layout_event_macro(
+            self,
+            char,
+            macro_fn,
+            terminating = False,
+            predicate = None):
+        super().add_event_macro(char, macro_fn, terminating, predicate)
+
+
+    def add_inner_event_macro(
+            self,
+            char,
+            macro_fn,
+            terminating = False,
+            predicate = None):
+        self._inner.add_event_macro(char, macro_fn, terminating, predicate)
+
+
+    def _add_default_macros(self):
+        """
+        Register bridge macros that forward delimiter, string, comment, and
+        prefix reads to :attr:`_inner`.
+        """
+
+        sm = self.add_event_macro
+        inner = self._inner
+
+        sm('(', partial(inner._read_pair, ')'), True)
+        sm(')', inner._close_pair, True)
+
+        sm('[', partial(inner._read_pair, ']'), True)
+        sm(']', inner._close_pair, True)
+
+        sm('{', partial(inner._read_thunk, '}'), True)
+        sm('}', inner._close_pair, True)
+
+        sm('"', inner._read_string, True)
+        sm(';', inner._read_comment, True)
+
+        sm('f', inner._read_fstring, False)
+        sm('r', inner._read_rstring, False)
+        sm('b', inner._read_bstring, False)
+
+        sm('#', inner._read_collection, False)
+
+        self.add_event_macro("'", inner._read_quote, True)
+        self.add_event_macro("`", inner._read_quasiquote, True)
+
+        self.add_layout_event_macro("'",
+            self._layout_quote_block_reader_macro, True,
+            predicate=self._layout_block_quote_predicate)
+        self.add_layout_event_macro("`",
+            self._layout_quasiquote_block_reader_macro, True,
+            predicate=self._layout_block_quote_predicate)
+
+        # self.add_layout_event_macro("@", self._read_layout_decorate, False)
+        self._layout_macros.update({
+            "@": self._read_layout_decorate,
+        })
+
+
+    @contextmanager
+    def temporary_event_macro(
+            self, char, macro_fn, terminating=False, predicate=None):
+        """
+        Context manager to temporarily apply a character event macro
+
+        Prepends one ``(macro_fn, terminating, predicate)`` triplet shared
+        across ``char``. On exit, removes **only** that triplet from the head
+        of each affected list when it still matches by identity.
+
+        :param char: the character(s) to trigger on
+        :param macro_fn: function(stream, char) -> (event, value); may return
+            (DEFER, None) like other event macros (see add_event_macro).
+        :param terminating: if True, this character terminates atoms
+        :param predicate: optional predicate (see :meth:`add_event_macro`)
+        :yields: self
+        """
+
+        triplet = (macro_fn, terminating, predicate)
+        for c in char:
+            self.reader_macros.setdefault(c, []).insert(0, triplet)
+        self._sync_terms_from_macros()
+
+        with self.inner.temporary_event_macro(char, macro_fn, terminating, predicate):
+            yield self
+
+        for c in char:
+            lst = self.reader_macros.get(c)
+            if lst and lst[0] is triplet:
+                lst.pop(0)
+                if not lst:
+                    del self.reader_macros[c]
+        self._sync_terms_from_macros()
+
+
+    def set_atom_pattern(self, namesym, match_fn, conversion_fn):
+        self._inner.set_atom_pattern(namesym, match_fn, conversion_fn)
+
+
+    def process_atom(self, atom):
+        return self._inner.process_atom(atom)
 
 
     def set_layout_modes(self, *, layout_enabled=None, layout_implicit_calls=None):
@@ -1596,27 +1932,14 @@ class LayoutReader(Reader):
             return
 
         self.set_layout_modes(
-            layout_enabled=getattr(pragma, 'layout_enabled', None),
             layout_implicit_calls=getattr(pragma, 'layout_implicit_calls', None))
-
-
-    def _add_default_block_macros(self):
-        self._block_macros.update({
-            "'": self._read_quote_block,
-            "`": self._read_quasiquote_block,
-        })
-
-
-    def _add_default_layout_macros(self):
-        self._layout_macros.update({
-            "@": self._read_layout_decorate,
-        })
 
 
     @contextmanager
     def _header_mode(self):
         """
-        Enable header terminator handling for `:` within atom scans.
+        Enable header-aware ``:`` predicate behavior for atom scans and
+        dispatch.
         """
         old = self._header_scan
         self._header_scan = True
@@ -1626,41 +1949,83 @@ class LayoutReader(Reader):
             self._header_scan = old
 
 
-    def _read_default(self, stream, c):
+    def _layout_colon_predicate(self, stream, c, atom_prefix):
         """
-        Atom scanning override to support maybe-interrupting `:`.
+        Gate ``:`` dispatch and predicated atom boundaries for layout headers.
 
-        In header scan mode at delimiter depth 0:
-        - structural `:` emits COLON and is not part of the atom
-        - non-structural `:` becomes part of the atom (for keyword atoms)
+        When ``atom_prefix`` is None, this is leading-character dispatch.
+        Otherwise it is an atom boundary before an unconsumed ``:``.
+
+        :param stream: the source stream
+        :param c: the ``:`` character
+        :param atom_prefix: atom text before ``c``, or None at dispatch
+        :return: True to run the macro or split the atom before ``:``
         """
-        if self._header_scan and self._layout_depth == 0:
-            if c == ':' and self._is_structural_colon_after_consumed(stream):
-                return COLON, symbol(':')
 
-            terms_with_colon = self._terms + ':'
-            atom_parts = [c]
-            while True:
-                chunk = stream.read_until_chars(terms_with_colon)
-                if chunk:
-                    atom_parts.append(chunk)
+        if not self._header_scan:
+            if atom_prefix is None:
+                return False
+            return True
+        if atom_prefix is None:
+            return self._is_structural_colon_after_consumed(stream)
+        return self._is_structural_colon_at_next(stream)
 
-                if stream.peek(1) != ':':
-                    break
 
-                if self._is_structural_colon_at_next(stream):
-                    break
+    def _layout_colon_macro(self, stream, c):
+        """
+        Emit a structural header COLON.
 
-                # Non-structural ':' becomes part of this atom.
-                stream.read(1)
-                atom_parts.append(':')
+        :meth:`_layout_colon_predicate` ensures this runs only for that case
+        at dispatch time; nested layout and non-header ``:`` skip the macro.
+        """
 
-            atom = ''.join(atom_parts)
-            if atom == '.':
-                return DOT, None
-            return ATOM, atom
+        return COLON, symbol(':')
 
-        return super()._read_default(stream, c)
+
+    def _layout_block_quote_predicate(self, stream, c, atom_prefix):
+        """
+        Allow layout raw-block quote and quasiquote when this line has a
+        structural block colon and the head does not open with a delimiter.
+
+        :param stream: source stream positioned after the prefix character
+        :param c: the prefix character
+        :param atom_prefix: atom boundary context; None at dispatch
+        """
+
+        if atom_prefix is not None:
+            return True
+        if not self.layout_enabled:
+            return False
+        nxt = stream.peek(1)
+        if not nxt or nxt in '([{':
+            return False
+        return self._structural_colon_before_line_end(stream)
+
+
+    def _layout_quote_block_reader_macro(self, stream, c):
+        """
+        Reader macro for layout raw-block quote.
+
+        :param stream: positioned after ``'``
+        :param c: the quote character
+        """
+
+        _lin, col = stream.position()
+        outer_indent = col - 1
+        return VALUE, self._read_quote_block(stream, outer_indent)
+
+
+    def _layout_quasiquote_block_reader_macro(self, stream, c):
+        """
+        Reader macro for layout raw-block quasiquote.
+
+        :param stream: positioned after the backtick
+        :param c: the backtick character
+        """
+
+        _lin, col = stream.position()
+        outer_indent = col - 1
+        return VALUE, self._read_quasiquote_block(stream, outer_indent)
 
 
     def _is_structural_colon_in_ahead(self, ahead, colon_index):
@@ -1759,18 +2124,18 @@ class LayoutReader(Reader):
         return None
 
 
-    def _has_block_colon_ahead(self, stream):
+    def _structural_colon_before_line_end(self, stream):
         """
-        Probe ahead for a structural header-terminator ':'.
+        True if the current layout line contains a structural header colon.
 
-        Scans a limited window and tracks delimiter depth so ':' within
-        parentheses/brackets/braces does not count.
+        Scans from the stream position only until end of line (or comment
+        start at delimiter depth 0), tracking delimiter depth.
 
         :param stream: the source stream
-        :return: True if a structural block-opener colon exists ahead
+        :return: whether a structural ``:`` exists on this line
         """
 
-        ahead = stream.peek(2048) or ''
+        ahead = stream.peek(8192) or ''
         depth = 0
         for i, ch in enumerate(ahead):
             if depth == 0 and ch in '\n\r;':
@@ -1785,6 +2150,24 @@ class LayoutReader(Reader):
         return False
 
 
+    def _read_header_form(self, stream):
+        """
+        Read one header token or report logical line end.
+
+        The stream must be positioned after vertical whitespace at a token
+        boundary.
+
+        :param stream: the source stream
+        :return: ``(LINE_END, pos, None)`` or the result of ``_read``
+        """
+
+        peek = stream.peek(1)
+        if not peek or peek in '\n\r' or peek == ';':
+            return LINE_END, stream.position(), None
+        with self._header_mode():
+            return super()._read(stream, vertical_ws=False)
+
+
     def _read_header_args(self, stream):
         """
         Read header argument forms until a structural COLON or end-of-line.
@@ -1796,14 +2179,9 @@ class LayoutReader(Reader):
             if stream.dedented:
                 return args, False
 
-            peek = stream.peek(1)
-            if not peek or peek in '\n\r':
+            event, pos, value = self._read_header_form(stream)
+            if event is LINE_END:
                 return args, False
-            if peek == ';':
-                return args, False
-
-            with self._header_mode():
-                event, pos, value = super()._read(stream)
             if event is COLON:
                 return args, True
             if event is EOF:
@@ -1839,33 +2217,6 @@ class LayoutReader(Reader):
         return head, args, symbol(':')
 
 
-    def read_header_until_terminator(self, stream, *, head_pos, head):
-        """
-        Read header argument forms until a structural header terminator ':'.
-
-        Assumes the stream is positioned right after the already-consumed
-        header head atom.
-        """
-        args, found_colon = self._read_header_args(stream)
-        if not found_colon:
-            raise stream.error('block header must end with colon', head_pos)
-        return args
-
-
-    def _skip_horizontal_whitespace(self, stream):
-        """
-        Consume horizontal whitespace only (space and tab)
-        """
-
-        consumed = []
-        while True:
-            c = stream.peek(1)
-            if c not in (' ', '\t'):
-                break
-            consumed.append(stream.read(1))
-        return ''.join(consumed)
-
-
     def _read_line_tail_forms(self, stream):
         """
         Read remaining top-level forms on the current logical line
@@ -1878,7 +2229,7 @@ class LayoutReader(Reader):
             if not c or c in '\n\r;':
                 return forms
 
-            event, pos, value = self._read(stream)
+            event, pos, value = self._read(stream, vertical_ws=False)
             if event is EOF:
                 return forms
             if event is DOT:
@@ -1922,6 +2273,7 @@ class LayoutReader(Reader):
                 body.append(form)
         finally:
             stream._max_indent = old_indent
+            stream.dedented = False
 
         return body
 
@@ -2181,6 +2533,7 @@ class LayoutReader(Reader):
         :return: (compile/quasiquote-block (:block: ...)) cons
         """
 
+        inner = self._inner
         with self.temporary_event_macro(",", self._read_unquote, True):
             head, args, _ = self.read_block_header(stream)
             raw = self.read_block(stream, outer_indent, head, args)
@@ -2293,32 +2646,28 @@ class LayoutReader(Reader):
         return self._apply_layout(stream, outer_indent, source)
 
 
-
     def read_form(self, stream):
         """
-        Read one layout form: s-expr, prefixed raw block, or normal block
+        Read one layout form using a line-oriented header-mode loop
 
-        At layout depth > 0 (inside delimiters), delegates to the base _read.
+        When layout is disabled, delegates to :meth:`Reader._read` on
+        :attr:`inner`.
 
-        At depth 0:
-        1. c in '([{' -- parenthesised s-expression, read directly via _read.
-        2. c in _layout_macros -- layout-only prefix (e.g. @ decorator lines);
-           always consume the prefix and run the handler (explicit layout
-           intent; no lookahead for ``(``, ``[``, or ``{``). No colon
-           lookahead. Inner form is one read_form (block or s-expr).
-        3. c in _block_macros -- quote/quasiquote raw block when a structural
-           header colon exists ahead (_has_block_colon_ahead); otherwise fall
-           through to _read.
-        4. Bare atom -- read under header atom rules; if the head commits as
-           a block header, read args until structural `:` or raise on missing
-           terminator.
+        When layout is enabled: ``c`` in ``_layout_macros`` runs the layout-only
+        prefix handler (e.g. ``@``). Otherwise collects header-mode values on
+        the current logical line until ``LINE_END``, ``EOF``, or structural
+        ``COLON`` (horizontal whitespace only between tokens). Empty lines are
+        skipped. At ``LINE_END`` with several values, folds with ``cons`` or
+        errors per :attr:`layout_implicit_calls`. At ``COLON``, reads the block
+        body and applies layout (any head; non-symbols use the ``layout/block``
+        fallback via :meth:`_apply_layout`).
 
         :param stream: source stream positioned at the start of the next form
         :return: (event, position, value)
         """
 
-        if self._layout_depth > 0 or not self.layout_enabled:
-            return self._read(stream)
+        if not self.layout_enabled:
+            return self._inner._read(stream)
 
         while True:
             stream.skip_whitespace()
@@ -2337,27 +2686,9 @@ class LayoutReader(Reader):
                     stream.read(1)
                 continue
 
-            # Tolerate CRLF by consuming a stray leading '\r'.
             if c == '\r':
                 stream.read(1)
                 continue
-
-            if c in '([':
-                event, pos, form1 = self._read(stream)
-                if event is not VALUE:
-                    return event, pos, form1
-                if is_pair(form1):
-                    self._skip_horizontal_whitespace(stream)
-                    nxt = stream.peek(1)
-                    if nxt in '([{':
-                        return VALUE, pos, form1
-                    tail = self._read_line_tail_forms(stream)
-                    if tail:
-                        return VALUE, pos, cons(form1, *tail, nil)
-                return VALUE, pos, form1
-
-            if c == '{':
-                return self._read(stream)
 
             outer_indent = position[1]
 
@@ -2369,57 +2700,57 @@ class LayoutReader(Reader):
                     result.fill_position(position)
                 return VALUE, position, result
 
-            if c in self._block_macros:
-                next_c = stream.peek(2)[1:2]
-                if (next_c and next_c not in '([{'
-                        and self._has_block_colon_ahead(stream)):
-                    stream.read(1)
-                    block_macro = self._block_macros[c]
-                    result = block_macro(stream, outer_indent)
-                    if is_pair(result):
-                        result.fill_position(position)
-                    return VALUE, position, result
+            values = []
+            first_value_pos = None
 
-                return super()._read(stream)
-
-            with self._header_mode():
-                event, pos, form1 = super()._read(stream)
-            if event is COLON:
-                raise stream.error('block header must have a head', pos)
-            if event is EOF:
-                return EOF, pos, None
-            if event is DOT:
-                raise stream.error('invalid syntax', pos)
-
-            header_indent = pos[1]
-
-            if (is_symbol(form1) and self._commit_detector.should_commit(stream)
-                    and self._has_block_colon_ahead(stream)):
-                args = self.read_header_until_terminator(
-                    stream, head_pos=pos, head=form1)
-
-                if self._block_mode:
-                    block = self.read_block(stream, header_indent, form1, args)
-                else:
-                    block = self.read_layout_block(stream, header_indent, form1, args)
-                return VALUE, position, block
-
-            if is_symbol(form1) and self.layout_implicit_calls:
-                tail = self._read_line_tail_forms(stream)
-                if tail:
-                    return VALUE, pos, cons(form1, *tail, nil)
-                return VALUE, pos, form1
-
-            if is_pair(form1):
+            while True:
                 self._skip_horizontal_whitespace(stream)
-                nxt = stream.peek(1)
-                if nxt in '([{':
-                    return VALUE, pos, form1
-                tail = self._read_line_tail_forms(stream)
-                if tail:
-                    return VALUE, pos, cons(form1, *tail, nil)
+                if stream.dedented:
+                    return EOF, stream.position(), None
 
-            return VALUE, pos, form1
+                event, pos, value = self._read_header_form(stream)
+                if event is LINE_END:
+                    if not values:
+                        break
+                    if len(values) == 1:
+                        return VALUE, first_value_pos, values[0]
+                    if self.layout_implicit_calls:
+                        return VALUE, first_value_pos, cons(
+                            values[0], *values[1:], nil)
+                    raise stream.error(
+                        'multiple forms on one layout line', pos)
+                if event is COLON:
+                    if not values:
+                        raise stream.error(
+                            'block header must have a head', pos)
+                    head = values[0]
+                    args = values[1:]
+                    header_indent = first_value_pos[1]
+                    if self._block_mode:
+                        block = self.read_block(
+                            stream, header_indent, head, args)
+                    else:
+                        block = self.read_layout_block(
+                            stream, header_indent, head, args)
+                    return VALUE, position, block
+                if event is EOF:
+                    if not values:
+                        return EOF, pos, None
+                    if len(values) == 1:
+                        return VALUE, first_value_pos, values[0]
+                    if self.layout_implicit_calls:
+                        return VALUE, first_value_pos, cons(
+                            values[0], *values[1:], nil)
+                    raise stream.error(
+                        'multiple forms on one layout line', pos)
+                if event is DOT:
+                    raise stream.error('invalid syntax', pos)
+                if event is not VALUE:
+                    raise stream.error('invalid syntax', pos)
+
+                if first_value_pos is None:
+                    first_value_pos = pos
+                values.append(value)
 
 
     def read(self, reader_stream):
@@ -2451,29 +2782,6 @@ class LayoutReader(Reader):
             return READ_EOF
         else:
             raise reader_stream.error('invalid syntax', pos)
-
-
-    def _read_pair(self, closer, stream, char):
-        """
-        Override to track layout depth for s-expr mode
-
-        Removes ':' from the terminating set while inside a delimiter so that
-        trailing-colon keywords (e.g. as:) can form normally in s-expr mode.
-        Restores it on exit.
-        """
-
-        self._layout_depth += 1
-        colon_was_terminating = ':' in self.terminating
-        if colon_was_terminating:
-            self.terminating.remove(':')
-            self._terms = "".join(self.terminating)
-        try:
-            return super()._read_pair(closer, stream, char)
-        finally:
-            self._layout_depth -= 1
-            if colon_was_terminating:
-                self.terminating.append(':')
-                self._terms = "".join(self.terminating)
 
 
 # ===========================================================================

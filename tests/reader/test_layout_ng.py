@@ -20,6 +20,7 @@ from unittest import IsolatedAsyncioTestCase
 
 from koskari.exceptions import ReaderSyntaxError
 from koskari.compile.helpers import pycons
+from koskari.reader import LINE_END
 from koskari.reader import source_str
 from koskari.reader import LayoutReader
 from koskari.reader.layouts import LAYOUTS
@@ -369,14 +370,74 @@ class TestLayoutCallSemantics(IsolatedAsyncioTestCase):
             cons(cons(symbol('get-callee'), nil), symbol('a'), symbol('b'), nil))
 
 
-    async def test_number_head_line_does_not_become_call(self):
+    async def test_number_head_line_implicit_fold(self):
         result = parse_layout_ng('123 456')
-        self.assertEqual(result, 123)
+        self.assertEqual(result, cons(123, 456, nil))
 
 
-    async def test_string_head_line_does_not_become_call(self):
+    async def test_string_head_line_implicit_fold(self):
         result = parse_layout_ng('"x" 1')
-        self.assertEqual(result, "x")
+        self.assertEqual(result, cons('x', 1, nil))
+
+
+class TestLayoutLineEvents(IsolatedAsyncioTestCase):
+
+    async def test_read_header_form_line_end_at_semicolon(self):
+        builtins = {str(name): value for name, value in LAYOUTS.items()}
+        reader = LayoutReader(builtins)
+        stream = source_str(';; tail', '<unittest>')
+        stream.skip_whitespace()
+        event, _pos, _val = reader._read_header_form(stream)
+        self.assertIs(event, LINE_END)
+
+    async def test_quote_open_paren_uses_reader_quote_not_raw_block(self):
+        builtins = {str(name): value for name, value in LAYOUTS.items()}
+        reader = LayoutReader(builtins)
+        stream = source_str("' (1 2)\n", '<unittest>')
+        result = reader.read(stream)
+        expected = cons(
+            symbol('compile/quote'),
+            cons(1, cons(2, nil)),
+            nil)
+        self.assertEqual(result, expected)
+
+
+class TestLayoutLineOrientedRead(IsolatedAsyncioTestCase):
+
+    async def test_one_line_pair_plus_paren_folds_like_cons_of_parts(self):
+        builtins = {str(name): value for name, value in LAYOUTS.items()}
+        reader = LayoutReader(builtins)
+        src = '(lambda [f] (print f)) (+ 1 10)'
+        combined = reader.read(source_str(src, '<t>'))
+        head = reader.read(source_str('(lambda [f] (print f))', '<t>'))
+        arg = reader.read(source_str('(+ 1 10)', '<t>'))
+        self.assertEqual(combined, cons(head, arg, nil))
+
+    async def test_blank_logical_lines_are_skipped(self):
+        builtins = {str(name): value for name, value in LAYOUTS.items()}
+        reader = LayoutReader(builtins)
+        stream = source_str('\n\nfoo\n', '<t>')
+        self.assertEqual(reader.read(stream), symbol('foo'))
+
+    async def test_implicit_false_errors_on_two_values_one_line(self):
+        builtins = {str(name): value for name, value in LAYOUTS.items()}
+        reader = LayoutReader(builtins, layout_implicit_calls=False)
+        stream = source_str('foo bar', '<t>')
+        with self.assertRaises(ReaderSyntaxError):
+            reader.read(stream)
+
+    async def test_pair_head_block(self):
+        builtins = {str(name): value for name, value in LAYOUTS.items()}
+        reader = LayoutReader(builtins)
+        src = '(foo) a:\n  y\n'
+        result = reader.read(source_str(src, '<t>'))
+        expected = pycons(
+            (cons(symbol('foo'), nil),
+             symbol('a'),
+             (symbol('compile/begin'), symbol('y')),
+             )
+        )
+        self.assertEqual(result, expected)
 
 
 class TestLayoutCompatibilityModes(IsolatedAsyncioTestCase):
