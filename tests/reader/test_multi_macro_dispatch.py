@@ -43,8 +43,8 @@ class TestStackedMacros(IsolatedAsyncioTestCase):
         def inner(stream, c):
             return VALUE, symbol('second')
 
-        reader.set_event_macro('z', inner, False)
-        reader.set_event_macro('z', outer, False)
+        reader.add_event_macro('z', inner, False)
+        reader.add_event_macro('z', outer, False)
 
         stack = reader.get_event_macros('z')
         self.assertEqual(len(stack), 2)
@@ -63,7 +63,7 @@ class TestStackedMacros(IsolatedAsyncioTestCase):
         def temp(stream, c):
             return DEFER, None
 
-        reader.set_event_macro('z', permanent, False)
+        reader.add_event_macro('z', permanent, False)
         with reader.temporary_event_macro('z', temp, False):
             v = reader.read(source_str('zw', '<t>'))
             self.assertEqual(v, symbol('perm'))
@@ -81,7 +81,7 @@ class TestTerminatingOnlyDispatch(IsolatedAsyncioTestCase):
         def term_macro(stream, c):
             return DEFER, None
 
-        reader.set_event_macro(':', term_macro, True)
+        reader.add_event_macro(':', term_macro, True)
         stream = source_str('a:b', '<t>')
         stream.read(1)
         event, value = reader._dispatch_event_macros(

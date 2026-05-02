@@ -48,7 +48,7 @@ class TestDeferReaderMacro(IsolatedAsyncioTestCase):
 
     async def test_defer_falls_through_to_default_atom(self):
         reader = Reader()
-        reader.set_event_macro('z', z_macro)
+        reader.add_event_macro('z', z_macro)
 
         self.assertEqual(
             reader.read(source_str('zap', '<t>')),
@@ -56,7 +56,7 @@ class TestDeferReaderMacro(IsolatedAsyncioTestCase):
 
     async def test_macro_handles_when_predicate_matches(self):
         reader = Reader()
-        reader.set_event_macro('z', z_macro)
+        reader.add_event_macro('z', z_macro)
 
         self.assertEqual(
             reader.read(source_str('z!', '<t>')),

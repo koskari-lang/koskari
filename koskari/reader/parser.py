@@ -45,15 +45,13 @@ from io import StringIO
 from os.path import exists
 from re import UNICODE, VERBOSE
 from re import compile as regex
+from typing import Any, Callable, Protocol, Tuple, runtime_checkable
 
 from ..exceptions import FormatStringSyntaxError, ReaderSyntaxError
 from ..lib import BaseSourceStream, Module, cons, keyword, nil, setcdr, symbol
 from ..types import is_pair, is_symbol, unpack
 from .layouts import LayoutHandler
 
-DEDENT = keyword("dedent")
-
-_layout_block = symbol("layout/block")
 
 __all__ = (
     "ReaderSyntaxError",
@@ -85,6 +83,7 @@ class ReadEOFType(object):
 
 READ_EOF = ReadEOFType()
 
+_layout_block = symbol("layout/block")
 
 _symbol__str = symbol("compile/#str")
 _symbol_gensym_thunk = symbol("compile/gensym-thunk")
@@ -114,6 +113,7 @@ COLON = keyword("colon")
 LINE_END = keyword("line-end")
 DEFER = keyword("defer")
 ATOM_RESUME = keyword("atom-resume")
+DEDENT = keyword("dedent")
 
 _BASE_TERMINATORS = frozenset("\n\r\t ")
 
@@ -685,7 +685,7 @@ class Atom(str):
 # ===========================================================================
 
 
-class Reader(object):
+class Reader:
     """
     S-expression reader with configurable reader macros and atom patterns
 
@@ -695,7 +695,7 @@ class Reader(object):
 
     Each character maps to a newest-first stack of
     ``(macro_fn, terminating, predicate_fn)`` triplets (see
-    :meth:`set_event_macro`); ``predicate_fn`` may be None. Optional predicates
+    :meth:`add_event_macro`); ``predicate_fn`` may be None. Optional predicates
     gate macro dispatch (early DEFER) and soft atom boundaries for
     terminating registrations. Event macros may return DEFER so the next
     handler in ``_event_macro_chain_for`` runs; the leading-character chain
@@ -993,7 +993,7 @@ class Reader(object):
         return event, position, value
 
 
-    def set_event_macro(
+    def add_event_macro(
             self, char, macro_fn, terminating=False, predicate=None):
         """
         Add a character event macro to the reader
@@ -1072,9 +1072,9 @@ class Reader(object):
 
         :param char: the character(s) to trigger on
         :param macro_fn: function(stream, char) -> (event, value); may return
-            (DEFER, None) like other event macros (see set_event_macro).
+            (DEFER, None) like other event macros (see add_event_macro).
         :param terminating: if True, this character terminates atoms
-        :param predicate: optional predicate (see :meth:`set_event_macro`)
+        :param predicate: optional predicate (see :meth:`add_event_macro`)
         :yields: self
         """
 
@@ -1094,24 +1094,24 @@ class Reader(object):
         self._sync_terms_from_macros()
 
 
-    def set_macro_character(
+    def add_macro_character(
             self, char, macro_fn, terminating=False, predicate=None):
         """
         Add a reader macro to the parser
 
-        Unlike set_event_macro, this wraps the macro function to always
+        Unlike add_event_macro, this wraps the macro function to always
         return a VALUE event; wrapped macros cannot DEFER.
 
         :param char: the character to trigger on
         :param macro_fn: function(stream, char) -> value
         :param terminating: if True, this character terminates atoms
-        :param predicate: optional predicate (see :meth:`set_event_macro`)
+        :param predicate: optional predicate (see :meth:`add_event_macro`)
         """
 
         def macro_adapter(stream, char):
             return VALUE, macro_fn(stream, char)
 
-        self.set_event_macro(char, macro_adapter, terminating,
+        self.add_event_macro(char, macro_adapter, terminating,
                              predicate=predicate)
 
 
@@ -1123,7 +1123,7 @@ class Reader(object):
         :param char: the character to trigger on
         :param macro_fn: function(stream, char) -> value
         :param terminating: if True, this character terminates atoms
-        :param predicate: optional predicate (see :meth:`set_event_macro`)
+        :param predicate: optional predicate (see :meth:`add_event_macro`)
         :return: context manager
         """
 
@@ -1139,7 +1139,7 @@ class Reader(object):
         Add the default reader macros for standard syntax
         """
 
-        sm = self.set_event_macro
+        sm = self.add_event_macro
 
         sm('(', partial(self._read_pair, ')'), True)
         sm(')', self._close_pair, True)
@@ -1792,21 +1792,24 @@ class LayoutReader(Reader):
     whitespace between tokens on a logical line.
     """
 
-    def __init__(self, namespace, nodefaults=False,
-                 layout_enabled=True, layout_implicit_calls=True):
+    def __init__(
+            self,
+            namespace,
+            nodefaults=False,
+            layout_enabled=True,
+            layout_implicit_calls=True):
         """
         Initialize the layout reader
 
         :param namespace: Module, Namespace, or dict for layout lookup
         :param nodefaults: if True, do not add default macros and patterns
-        :param layout_enabled: if False, disable layout/block parsing and
-            parse using base s-expression semantics
         :param layout_implicit_calls: if True, symbol-headed non-block
             lines lower to implicit calls
         """
 
-        super(LayoutReader, self).__init__(nodefaults=True)
-        self._inner = Reader(nodefaults=nodefaults)
+        super().__init__(nodefaults=True)
+        self._inner = Reader(nodefaults=True)
+
         from ..lib import ModuleNamespace
 
         if isinstance(namespace, Module):
@@ -1818,20 +1821,17 @@ class LayoutReader(Reader):
 
         self._block_mode = False
         self._layout_macros = {}
+
         self.layout_enabled = layout_enabled
         self.layout_implicit_calls = layout_implicit_calls
 
         if not nodefaults:
+            self._add_default_macros()
             self._add_default_atoms()
-            self._register_bridge_macros()
-            sm = self.set_event_macro
-            sm("'", self._read_quote, True)
-            sm("`", self._read_quasiquote, True)
-            self._add_default_layout_macros()
 
         # this one describes a fundamental behavior of the reader, so it's not
         # a default macro, it's an always macro.
-        self.set_event_macro(
+        self.add_layout_event_macro(
             ':', self._layout_colon_macro, True,
             predicate=self._layout_colon_predicate)
 
@@ -1845,19 +1845,48 @@ class LayoutReader(Reader):
         """
         The dedicated s-expression reader used inside bridge macros.
 
-        Attach s-expr-only extensions with ``reader.inner.set_event_macro``.
+        Attach s-expr-only extensions with ``reader.inner.add_event_macro``.
         """
 
         return self._inner
 
 
-    def _register_bridge_macros(self):
+    def add_event_macro(
+            self,
+            char,
+            macro_fn,
+            terminating = False,
+            predicate = None):
+
+        self.add_layout_event_macro(char, macro_fn, terminating, predicate)
+        self.add_inner_event_macro(char, macro_fn, terminating, predicate)
+
+
+    def add_layout_event_macro(
+            self,
+            char,
+            macro_fn,
+            terminating = False,
+            predicate = None):
+        super().add_event_macro(char, macro_fn, terminating, predicate)
+
+
+    def add_inner_event_macro(
+            self,
+            char,
+            macro_fn,
+            terminating = False,
+            predicate = None):
+        self._inner.add_event_macro(char, macro_fn, terminating, predicate)
+
+
+    def _add_default_macros(self):
         """
         Register bridge macros that forward delimiter, string, comment, and
         prefix reads to :attr:`_inner`.
         """
 
-        sm = self.set_event_macro
+        sm = self.add_event_macro
         inner = self._inner
 
         sm('(', partial(inner._read_pair, ')'), True)
@@ -1878,24 +1907,63 @@ class LayoutReader(Reader):
 
         sm('#', inner._read_collection, False)
 
+        self.add_event_macro("'", inner._read_quote, True)
+        self.add_event_macro("`", inner._read_quasiquote, True)
 
-    def _read_quasiquote(self, stream, char):
+        self.add_layout_event_macro("'",
+            self._layout_quote_block_reader_macro, True,
+            predicate=self._layout_block_quote_predicate)
+        self.add_layout_event_macro("`",
+            self._layout_quasiquote_block_reader_macro, True,
+            predicate=self._layout_block_quote_predicate)
+
+        # self.add_layout_event_macro("@", self._read_layout_decorate, False)
+        self._layout_macros.update({
+            "@": self._read_layout_decorate,
+        })
+
+
+    @contextmanager
+    def temporary_event_macro(
+            self, char, macro_fn, terminating=False, predicate=None):
         """
-        Like :meth:`Reader._read_quasiquote`, but unquote temporaries are
-        installed on both this reader and :attr:`inner` so comma dispatch
-        works inside lists parsed via bridge macros.
+        Context manager to temporarily apply a character event macro
+
+        Prepends one ``(macro_fn, terminating, predicate)`` triplet shared
+        across ``char``. On exit, removes **only** that triplet from the head
+        of each affected list when it still matches by identity.
+
+        :param char: the character(s) to trigger on
+        :param macro_fn: function(stream, char) -> (event, value); may return
+            (DEFER, None) like other event macros (see add_event_macro).
+        :param terminating: if True, this character terminates atoms
+        :param predicate: optional predicate (see :meth:`add_event_macro`)
+        :yields: self
         """
 
-        inner = self._inner
-        with self.temporary_event_macro(",", self._read_unquote, True):
-            with inner.temporary_event_macro(",", inner._read_unquote, True):
-                event, pos, child = self._read(stream)
+        triplet = (macro_fn, terminating, predicate)
+        for c in char:
+            self.reader_macros.setdefault(c, []).insert(0, triplet)
+        self._sync_terms_from_macros()
 
-        if event is not VALUE:
-            msg = "invalid use of %s" % char
-            raise stream.error(msg, pos)
+        with self.inner.temporary_event_macro(char, macro_fn, terminating, predicate):
+            yield self
 
-        return VALUE, cons(_symbol_quasiquote, child, nil)
+        for c in char:
+            lst = self.reader_macros.get(c)
+            if lst and lst[0] is triplet:
+                lst.pop(0)
+                if not lst:
+                    del self.reader_macros[c]
+        self._sync_terms_from_macros()
+
+
+    def set_atom_pattern(self, namesym, match_fn, conversion_fn):
+        self._inner.set_atom_pattern(namesym, match_fn, conversion_fn)
+
+
+    def process_atom(self, atom):
+        return self._inner.process_atom(atom)
 
 
     def set_layout_modes(self, *, layout_enabled=None, layout_implicit_calls=None):
@@ -1924,22 +1992,7 @@ class LayoutReader(Reader):
             return
 
         self.set_layout_modes(
-            layout_enabled=getattr(pragma, 'layout_enabled', None),
             layout_implicit_calls=getattr(pragma, 'layout_implicit_calls', None))
-
-
-    def _add_default_layout_macros(self):
-        self.set_event_macro(
-            "'", self._layout_quote_block_reader_macro, True,
-            predicate=self._layout_block_quote_predicate)
-
-        self.set_event_macro(
-            "`", self._layout_quasiquote_block_reader_macro, True,
-            predicate=self._layout_block_quote_predicate)
-
-        self._layout_macros.update({
-            "@": self._read_layout_decorate,
-        })
 
 
     @contextmanager
@@ -2554,9 +2607,8 @@ class LayoutReader(Reader):
 
         inner = self._inner
         with self.temporary_event_macro(",", self._read_unquote, True):
-            with inner.temporary_event_macro(",", inner._read_unquote, True):
-                head, args, _ = self.read_block_header(stream)
-                raw = self.read_block(stream, outer_indent, head, args)
+            head, args, _ = self.read_block_header(stream)
+            raw = self.read_block(stream, outer_indent, head, args)
         return cons(_symbol_quasiquote_block, raw, nil)
 
 

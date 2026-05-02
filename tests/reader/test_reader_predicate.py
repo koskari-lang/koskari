@@ -43,7 +43,7 @@ class TestPredicatedAtomBoundary(IsolatedAsyncioTestCase):
         def never_split(stream, c, atom_prefix):
             return False
 
-        reader.set_event_macro('|', pipe_macro, True, predicate=never_split)
+        reader.add_event_macro('|', pipe_macro, True, predicate=never_split)
 
         v = reader.read(source_str('a|b', '<t>'))
         self.assertEqual(v, symbol('a|b'))
@@ -57,7 +57,7 @@ class TestPredicatedAtomBoundary(IsolatedAsyncioTestCase):
         def always_split(stream, c, atom_prefix):
             return True
 
-        reader.set_event_macro('|', pipe_macro, True, predicate=always_split)
+        reader.add_event_macro('|', pipe_macro, True, predicate=always_split)
 
         s = source_str('a|b', '<t>')
         self.assertEqual(reader.read(s), symbol('a'))
@@ -76,7 +76,7 @@ class TestPredicateEarlyDefer(IsolatedAsyncioTestCase):
         def z_pred(stream, c, atom_prefix):
             return stream.peek(1) == '!'
 
-        reader.set_event_macro('z', z_macro, False, predicate=z_pred)
+        reader.add_event_macro('z', z_macro, False, predicate=z_pred)
 
         self.assertEqual(
             reader.read(source_str('zap', '<t>')),
@@ -98,8 +98,8 @@ class TestPredicateStackComposition(IsolatedAsyncioTestCase):
         def outer_macro(stream, c):
             return DEFER, None
 
-        reader.set_event_macro('|', inner_macro, True)
-        reader.set_event_macro(
+        reader.add_event_macro('|', inner_macro, True)
+        reader.add_event_macro(
             '|', outer_macro, True, predicate=lambda s, c, a: False)
 
         v = reader.read(source_str('a|b', '<t>'))
@@ -114,8 +114,8 @@ class TestPredicateStackComposition(IsolatedAsyncioTestCase):
         def outer_macro(stream, c):
             return DEFER, None
 
-        reader.set_event_macro('|', inner_macro, True)
-        reader.set_event_macro(
+        reader.add_event_macro('|', inner_macro, True)
+        reader.add_event_macro(
             '|', outer_macro, True, predicate=lambda s, c, a: True)
 
         s = source_str('a|b', '<t>')
