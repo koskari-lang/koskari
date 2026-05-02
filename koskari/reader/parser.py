@@ -63,6 +63,7 @@ __all__ = (
     "LayoutReader",
     "default_reader",
     "READ_EOF",
+    "DEFER",
 )
 
 
@@ -105,6 +106,10 @@ SKIP = keyword("skip")
 CLOSE_PAIR = keyword("close-pair")
 EOF = keyword("eof")
 COLON = keyword("colon")
+DEFER = keyword("defer")
+ATOM_RESUME = keyword("atom-resume")
+
+_BASE_TERMINATORS = frozenset("\n\r\t ")
 
 _integer_re = regex(r"^-?\d+$").match
 _bin_re = regex(r"^0b[01]+$").match
@@ -681,6 +686,13 @@ class Reader(object):
     The reader parses textual input into Koskari data structures. It
     supports reader macros for special character handling and atom
     patterns for converting atomic tokens into typed values.
+
+    Each character maps to a newest-first stack of ``(macro_fn, terminating)``
+    pairs (see :meth:`set_event_macro`). Event macros may return DEFER so the
+    next handler in ``_event_macro_chain_for`` runs; the leading-character
+    chain ends with ``_read_default``. Use ``terminating_only=True`` dispatch
+    where a terminator boundary consumes the character first (see
+    :meth:`_dispatch_event_macros`).
     """
 
     def __init__(self, nodefaults=False):
@@ -692,8 +704,8 @@ class Reader(object):
 
         self.reader_macros = {}
         self.atom_patterns = []
-        self.terminating = ["\n", "\r", "\t", " "]
-        self._terms = "".join(self.terminating)
+        self.terminating = set(_BASE_TERMINATORS)
+        self._terms = "".join(sorted(self.terminating))
 
         if not nodefaults:
             self._add_default_macros()
@@ -765,6 +777,79 @@ class Reader(object):
             raise reader_stream.error("invalid syntax", pos)
 
 
+    def _sync_terms_from_macros(self):
+        """
+        Recompute ``terminating`` and ``_terms`` from stacked macros plus base
+        whitespace terminators.
+        """
+
+        extra = set()
+        for c, pairs in self.reader_macros.items():
+            for _fn, term in pairs:
+                if term:
+                    extra.add(c)
+        self.terminating = set(_BASE_TERMINATORS) | extra
+        self._terms = "".join(sorted(self.terminating))
+
+
+    def _event_macro_chain_for(self, c, terminating_only=False):
+        """
+        Handlers tried in order until one does not return DEFER.
+
+        :param c: the single character that was just read from the stream
+        :param terminating_only: if True, only macros registered with
+            terminating=True for ``c``, then :meth:`_terminating_boundary_fallback`;
+            if False, all stacked macros for ``c``, then :meth:`_read_default`.
+        :yields: callables ``(stream, c) -> (event, value)``
+        """
+
+        pairs = self.reader_macros.get(c, ())
+        if terminating_only:
+            for macro_fn, term in pairs:
+                if term:
+                    yield macro_fn
+            yield self._terminating_boundary_fallback
+        else:
+            for macro_fn, _term in pairs:
+                yield macro_fn
+            yield self._read_default
+
+
+    def _terminating_boundary_fallback(self, stream, c):
+        """
+        Last resort when every terminating macro DEFERs at an atom boundary.
+
+        Fold ``c`` into the atom and continue scanning.
+
+        :param stream: the source stream
+        :param c: the terminator character (already consumed before dispatch)
+        :return: tuple of (ATOM_RESUME, fragment to append)
+        """
+
+        return ATOM_RESUME, c
+
+
+    def _dispatch_event_macros(self, stream, c, terminating_only=False):
+        """
+        Run :meth:`_event_macro_chain_for` until a non-DEFER result.
+
+        If a handler returns (DEFER, repl) with repl not None, ``repl``
+        replaces ``c`` for subsequent handlers in the chain.
+
+        :param terminating_only: forwarded to :meth:`_event_macro_chain_for`
+        """
+
+        for handler in self._event_macro_chain_for(c, terminating_only):
+            event, value = handler(stream, c)
+            if event is DEFER:
+                if value is not None:
+                    c = value
+                continue
+            return event, value
+
+        raise RuntimeError('macro chain ended without a result')
+
+
     def _read(self, stream, raw=False):
         """
         Internal read implementation
@@ -782,10 +867,9 @@ class Reader(object):
             if not c:
                 return EOF, position, None
 
-            macro = self.reader_macros.get(c, self._read_default)
-
             try:
-                event, value = macro(stream, c)
+                event, value = self._dispatch_event_macros(
+                    stream, c, terminating_only=False)
                 if not raw and event is ATOM:
                     event = VALUE
                     value = self.process_atom(value)
@@ -808,45 +892,60 @@ class Reader(object):
         """
         Add a character event macro to the reader
 
+        Each call **prepends** ``(macro_fn, terminating)`` to that character's
+        macro stack (newest first).
+
         :param char: the character(s) to trigger on
-        :param macro_fn: function(stream, char) -> (event, value)
+        :param macro_fn: function(stream, char) -> (event, value). The macro
+            may return (DEFER, None) or (DEFER, repl) to decline handling and
+            try the next handler from :meth:`_event_macro_chain_for`; the
+            chain always ends with ``_read_default``. The opening character
+            was already consumed; pass ``c`` through to ``_read_default``. On
+            DEFER, do not advance the stream beyond peek-only inspection.
         :param terminating: if True, this character terminates atoms
         """
 
+        pair = (macro_fn, terminating)
         for c in char:
-            self.reader_macros[c] = macro_fn
-            if terminating:
-                self.terminating.append(c)
+            self.reader_macros.setdefault(c, []).insert(0, pair)
+        self._sync_terms_from_macros()
 
-        if terminating:
-            self._terms = "".join(self.terminating)
+
+    def get_event_macros(self, char):
+        """
+        Return stacked event macros for one character
+
+        :param char: single character to look up
+        :return: list of ``(macro_fn, terminating)``, newest first; empty if none
+        """
+
+        return list(self.reader_macros.get(char, ()))
 
 
     def get_event_macro(self, char):
         """
-        Get a character event macro from the reader
+        Get the newest character event macro from the reader
 
         :param char: the character to look up
         :return: tuple of (macro_fn, terminating) or None
         """
 
-        try:
-            return (self.reader_macros[char], char in self.terminating)
-        except KeyError:
+        lst = self.reader_macros.get(char)
+        if not lst:
             return None
+        return lst[0]
 
 
     def clear_event_macro(self, char):
         """
-        Remove a character event macro from the reader
+        Remove all stacked event macros for each character in ``char``
 
-        :param char: the character to remove
+        :param char: the character(s) to clear
         """
 
-        if char in self.reader_macros:
-            self.terminating.remove(char)
-            self._terms = "".join(self.terminating)
-            del self.reader_macros[char]
+        for c in char:
+            self.reader_macros.pop(c, None)
+        self._sync_terms_from_macros()
 
 
     @contextmanager
@@ -854,21 +953,31 @@ class Reader(object):
         """
         Context manager to temporarily apply a character event macro
 
-        :param char: the character to trigger on
-        :param macro_fn: function(stream, char) -> (event, value)
+        Prepends one ``(macro_fn, terminating)`` tuple shared across ``char``.
+        On exit, removes **only** that tuple from the head of each affected
+        list when it still matches by identity.
+
+        :param char: the character(s) to trigger on
+        :param macro_fn: function(stream, char) -> (event, value); may return
+            (DEFER, None) like other event macros (see set_event_macro).
         :param terminating: if True, this character terminates atoms
         :yields: self
         """
 
-        old = self.get_event_macro(char)
-        self.set_event_macro(char, macro_fn, terminating)
+        pair = (macro_fn, terminating)
+        for c in char:
+            self.reader_macros.setdefault(c, []).insert(0, pair)
+        self._sync_terms_from_macros()
 
         yield self
 
-        if old is None:
-            self.clear_event_macro(char)
-        else:
-            self.set_event_macro(char, *old)
+        for c in char:
+            lst = self.reader_macros.get(c)
+            if lst and lst[0] is pair:
+                lst.pop(0)
+                if not lst:
+                    del self.reader_macros[c]
+        self._sync_terms_from_macros()
 
 
     def set_macro_character(self, char, macro_fn, terminating=False):
@@ -876,7 +985,7 @@ class Reader(object):
         Add a reader macro to the parser
 
         Unlike set_event_macro, this wraps the macro function to always
-        return a VALUE event.
+        return a VALUE event; wrapped macros cannot DEFER.
 
         :param char: the character to trigger on
         :param macro_fn: function(stream, char) -> value
@@ -1014,6 +1123,25 @@ class Reader(object):
         ap(symbol("decimal"), _decimal_re, _as_decimal)
 
 
+    def _collect_atom_after_first_char(self, stream, first_c):
+        """
+        Accumulate atom text after the first character has been consumed.
+
+        Terminator characters stop accumulation without consuming the
+        terminator; the next read dispatches it as a leading character so
+        macros such as quasiquote ``,`` remain VALUE-producing reads.
+
+        Call :meth:`_dispatch_event_macros` with ``terminating_only=True`` only
+        from specialized scanners that consume a boundary character first.
+
+        :param stream: the source stream
+        :param first_c: first character of the atom (already read)
+        :return: completed atom string
+        """
+
+        return first_c + stream.read_until_chars(self._terms)
+
+
     def _read_default(self, stream, c):
         """
         Default character macro handler for unrecognized characters
@@ -1025,7 +1153,7 @@ class Reader(object):
         :return: tuple of (event, value)
         """
 
-        atom = c + stream.read_until_chars(self._terms)
+        atom = self._collect_atom_after_first_char(stream, c)
 
         if atom == ".":
             return DOT, None
@@ -1185,7 +1313,7 @@ class Reader(object):
 
         peek = stream.peek(1)
         if peek not in "({[<":
-            return self._read_default(stream, fchar)
+            return DEFER, None
 
         peek = stream.read(1)
         i = "({[".index(peek)
@@ -1216,7 +1344,7 @@ class Reader(object):
         """
 
         if stream.peek(1) != '"':
-            return self._read_default(stream, fchar)
+            return DEFER, None
 
         char = stream.read(1)
         pos = stream.position()
@@ -1247,7 +1375,7 @@ class Reader(object):
         """
 
         if stream.peek(1) != '"':
-            return self._read_default(stream, char)
+            return DEFER, None
         else:
             return self._read_string(stream, stream.read(1), False)
 
@@ -1262,7 +1390,7 @@ class Reader(object):
         """
 
         if stream.peek(1) != '"':
-            return self._read_default(stream, char)
+            return DEFER, None
         else:
             event, val = self._read_string(stream, stream.read(1), True)
             return event, val.encode('ascii')
@@ -1563,8 +1691,11 @@ class LayoutReader(Reader):
             self._add_default_block_macros()
             self._add_default_layout_macros()
 
-        # Reader does not install a depth-0 `:` macro; structural `:` is
-        # emitted only while parsing headers (see _header_mode / _read_default).
+        if not nodefaults:
+            self.set_event_macro(':', self._layout_colon_macro, True)
+
+        # Structural `:` in headers also uses _header_mode / _read_default;
+        # stacked ``:`` macros DEFER when nested so normal handlers apply.
         self._header_scan = False
         self._commit_detector = HeaderCommitDetector()
         self._line_scanner = LogicalLineScanner(self)
@@ -1624,6 +1755,18 @@ class LayoutReader(Reader):
             yield
         finally:
             self._header_scan = old
+
+
+    def _layout_colon_macro(self, stream, c):
+        """
+        Layout-aware ``:`` macro: nested layout defers to other ``:`` handlers.
+
+        Structural header ``:`` stays in :meth:`_read_default` until migrated.
+        """
+
+        if self._layout_depth > 0:
+            return DEFER, None
+        return DEFER, None
 
 
     def _read_default(self, stream, c):
@@ -2463,17 +2606,18 @@ class LayoutReader(Reader):
         """
 
         self._layout_depth += 1
+        saved_terminating = self.terminating.copy()
+        saved_terms_str = self._terms
         colon_was_terminating = ':' in self.terminating
         if colon_was_terminating:
-            self.terminating.remove(':')
-            self._terms = "".join(self.terminating)
+            self.terminating.discard(':')
+            self._terms = "".join(sorted(self.terminating))
         try:
             return super()._read_pair(closer, stream, char)
         finally:
             self._layout_depth -= 1
-            if colon_was_terminating:
-                self.terminating.append(':')
-                self._terms = "".join(self.terminating)
+            self.terminating = saved_terminating
+            self._terms = saved_terms_str
 
 
 # ===========================================================================
