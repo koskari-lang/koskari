@@ -1689,69 +1689,6 @@ class Reader:
 
 
 # ===========================================================================
-# Layout block header helpers
-# ===========================================================================
-
-
-class HeaderCommitDetector:
-    """
-    Decide whether the current header head should commit to header parsing.
-
-    Commit rule:
-    - After consuming the head atom, if the next non-horizontal-whitespace
-      character is:
-        - `;` (comment start) => do NOT commit
-        - `\\n` or `\\r` or EOF => do NOT commit
-      then commit only if there is any other token character present.
-    """
-
-    def __init__(self, *, hot_peek=2, fallback_peek=2048):
-        self._hot_peek = hot_peek
-        self._fallback_peek = fallback_peek
-
-    def should_commit(self, stream):
-        ahead = stream.peek(self._hot_peek) or ''
-        i = 0
-        while i < len(ahead) and ahead[i] in ' \t':
-            i += 1
-
-        if i >= len(ahead):
-            # Undecidable from the hot peek alone; inspect a larger window.
-            ahead = stream.peek(self._fallback_peek) or ''
-            i = 0
-            while i < len(ahead) and ahead[i] in ' \t':
-                i += 1
-
-            if i >= len(ahead):
-                return False
-            ch = ahead[i]
-        else:
-            ch = ahead[i]
-
-        if ch == ';' or ch in '\n\r':
-            return False
-        return True
-
-
-class LogicalLineScanner:
-    """
-    Minimal logical-line boundary helper for header-mode logic.
-
-    A newline ends the logical line when the layout coordinator is reading
-    a header; s-expr islands use :meth:`Reader._read` on the inner reader.
-    """
-
-    def __init__(self, reader):
-        self._reader = reader
-
-    def at_logical_eol(self, stream):
-        nxt = stream.peek(1)
-        if not nxt:
-            return True
-        return nxt in '\n\r'
-
-
-# ===========================================================================
 # LayoutReader
 # ===========================================================================
 
@@ -1772,11 +1709,15 @@ class LayoutReader(Reader):
     registrations: structural ``:``, ``_layout_macros`` (e.g. ``@``), and
     stacked ``'`` / backtick (predicated raw block then normal quote).
 
-    Block headers use contextual structural `:` terminators: `:` ends the
-    header only when followed by whitespace and then comment, EOL, or EOF,
-    so keyword atoms like `as:` can appear in header arguments at delimiter
-    depth 0. When a top-level head commits to a block header, a missing
-    structural trailing `:` is a syntax error rather than a silent fallback.
+    Top-level layout reads are **line-oriented**: header-mode values on a
+    logical line are collected until ``LINE_END`` or structural ``COLON``.
+    Empty lines are skipped. Multiple values on one line fold to an implicit
+    ``cons`` chain or raise per :attr:`layout_implicit_calls`. A structural
+    colon ends the block header (``head`` plus ``args``); the body is read
+    until dedent and passed to the layout handler (non-symbol heads use the
+    ``layout/block`` fallback when no named layout matches). Structural ``:``
+    rules still allow keyword atoms such as ``as:`` inside header arguments
+    at delimiter depth 0.
 
     Stream interface contract: LayoutReader expects its stream arguments
     to be SourceStream instances (for pushback support). Body reads always
@@ -1797,17 +1738,15 @@ class LayoutReader(Reader):
             namespace,
             nodefaults=False,
             layout_enabled=True,
-            layout_implicit_calls=True,
-            use_read_form_ng=False):
+            layout_implicit_calls=True):
         """
         Initialize the layout reader
 
         :param namespace: Module, Namespace, or dict for layout lookup
         :param nodefaults: if True, do not add default macros and patterns
-        :param layout_implicit_calls: if True, symbol-headed non-block
-            lines lower to implicit calls
-        :param use_read_form_ng: if True, :meth:`read` uses
-            :meth:`read_form_ng` instead of :meth:`read_form`
+        :param layout_implicit_calls: if True, multiple values on one layout
+            line fold to an implicit call; if False, more than one value is an
+            error
         """
 
         super().__init__(nodefaults=True)
@@ -1827,7 +1766,6 @@ class LayoutReader(Reader):
 
         self.layout_enabled = layout_enabled
         self.layout_implicit_calls = layout_implicit_calls
-        self.use_read_form_ng = bool(use_read_form_ng)
 
         if not nodefaults:
             self._add_default_macros()
@@ -1840,8 +1778,6 @@ class LayoutReader(Reader):
             predicate=self._layout_colon_predicate)
 
         self._header_scan = False
-        self._commit_detector = HeaderCommitDetector()
-        self._line_scanner = LogicalLineScanner(self)
 
 
     @property
@@ -2281,19 +2217,6 @@ class LayoutReader(Reader):
         return head, args, symbol(':')
 
 
-    def read_header_until_terminator(self, stream, *, head_pos, head):
-        """
-        Read header argument forms until a structural header terminator ':'.
-
-        Assumes the stream is positioned right after the already-consumed
-        header head atom.
-        """
-        args, found_colon = self._read_header_args(stream)
-        if not found_colon:
-            raise stream.error('block header must end with colon', head_pos)
-        return args
-
-
     def _read_line_tail_forms(self, stream):
         """
         Read remaining top-level forms on the current logical line
@@ -2344,12 +2267,13 @@ class LayoutReader(Reader):
                     break
                 if not stream.peek(1):
                     break
-                event, pos, form = self._read_layout_form(stream)
+                event, pos, form = self.read_form(stream)
                 if event is EOF:
                     break
                 body.append(form)
         finally:
             stream._max_indent = old_indent
+            stream.dedented = False
 
         return body
 
@@ -2665,7 +2589,7 @@ class LayoutReader(Reader):
 
             stream.read(1)
 
-        event, pos, inner = self._read_layout_form(stream)
+        event, pos, inner = self.read_form(stream)
         if event is not VALUE:
             raise stream.error('invalid syntax after decorators', pos)
 
@@ -2722,30 +2646,21 @@ class LayoutReader(Reader):
         return self._apply_layout(stream, outer_indent, source)
 
 
-    def _read_layout_form(self, stream):
-        """
-        Dispatch to :meth:`read_form_ng` or :meth:`read_form` per
-        :attr:`use_read_form_ng`
-
-        :param stream: the source stream
-        :return: ``(event, position, value)`` from the active reader entrypoint
-        """
-
-        if self.use_read_form_ng:
-            return self.read_form_ng(stream)
-        return self.read_form(stream)
-
-
-    def read_form_ng(self, stream):
+    def read_form(self, stream):
         """
         Read one layout form using a line-oriented header-mode loop
 
-        Collects header-mode values until ``LINE_END``, ``EOF``, or structural
-        ``COLON``. At ``LINE_END`` with no values, skips the empty line and
-        continues. At ``LINE_END`` with several values, folds with ``cons`` or
-        errors per :attr:`layout_implicit_calls`. At ``COLON``, reads the
-        block body and applies layout (any head, including non-symbols, falls
-        back to ``layout/block`` via :meth:`_apply_layout`).
+        When layout is disabled, delegates to :meth:`Reader._read` on
+        :attr:`inner`.
+
+        When layout is enabled: ``c`` in ``_layout_macros`` runs the layout-only
+        prefix handler (e.g. ``@``). Otherwise collects header-mode values on
+        the current logical line until ``LINE_END``, ``EOF``, or structural
+        ``COLON`` (horizontal whitespace only between tokens). Empty lines are
+        skipped. At ``LINE_END`` with several values, folds with ``cons`` or
+        errors per :attr:`layout_implicit_calls`. At ``COLON``, reads the block
+        body and applies layout (any head; non-symbols use the ``layout/block``
+        fallback via :meth:`_apply_layout`).
 
         :param stream: source stream positioned at the start of the next form
         :return: (event, position, value)
@@ -2838,103 +2753,6 @@ class LayoutReader(Reader):
                 values.append(value)
 
 
-    def read_form(self, stream):
-        """
-        Read one layout form: s-expr, prefixed raw block, or normal block
-
-        When layout is disabled, delegates to :meth:`Reader._read` on
-        :attr:`inner`.
-
-        When layout is enabled:
-        *  c in _layout_macros -- layout-only prefix (e.g. @ decorator lines);
-           always consume the prefix and run the handler (explicit layout
-           intent; no lookahead for ``(``, ``[``, or ``{``). No colon
-           lookahead. Inner form is one read_form (block or s-expr).
-        *  Otherwise one :meth:`Reader._read` under header mode (``(`` ``[`` and
-           other prefixes use bridge macros to ``inner``). Then: optional block
-           header for committing symbols; implicit-call line tails for symbols
-           and pairs; predicated ``'`` / backtick raw blocks (see
-           :meth:`_layout_block_quote_predicate`).
-
-        :param stream: source stream positioned at the start of the next form
-        :return: (event, position, value)
-        """
-
-        if not self.layout_enabled:
-            return self._inner._read(stream)
-
-        while True:
-            stream.skip_whitespace()
-            if stream.dedented:
-                return EOF, stream.position(), None
-
-            position = stream.position()
-            c = stream.peek(1)
-            if not c:
-                return EOF, position, None
-
-            if c == ';':
-                stream.read(1)
-                stream.read_until_chars('\n')
-                if stream.peek(1) == '\n':
-                    stream.read(1)
-                continue
-
-            # Tolerate CRLF by consuming a stray leading '\r'.
-            if c == '\r':
-                stream.read(1)
-                continue
-
-            outer_indent = position[1]
-
-            if c in self._layout_macros:
-                stream.read(1)
-                layout_macro = self._layout_macros[c]
-                result = layout_macro(stream, outer_indent)
-                if is_pair(result):
-                    result.fill_position(position)
-                return VALUE, position, result
-
-            with self._header_mode():
-                event, pos, form1 = super()._read(stream)
-            if event is COLON:
-                raise stream.error('block header must have a head', pos)
-            if event is EOF:
-                return EOF, pos, None
-            if event is DOT:
-                raise stream.error('invalid syntax', pos)
-
-            header_indent = pos[1]
-
-            if (is_symbol(form1) and self._commit_detector.should_commit(stream)
-                    and self._structural_colon_before_line_end(stream)):
-                args = self.read_header_until_terminator(
-                    stream, head_pos=pos, head=form1)
-
-                if self._block_mode:
-                    block = self.read_block(stream, header_indent, form1, args)
-                else:
-                    block = self.read_layout_block(stream, header_indent, form1, args)
-                return VALUE, position, block
-
-            if is_symbol(form1) and self.layout_implicit_calls:
-                tail = self._read_line_tail_forms(stream)
-                if tail:
-                    return VALUE, pos, cons(form1, *tail, nil)
-                return VALUE, pos, form1
-
-            if is_pair(form1):
-                self._skip_horizontal_whitespace(stream)
-                nxt = stream.peek(1)
-                if nxt in '([{':
-                    return VALUE, pos, form1
-                tail = self._read_line_tail_forms(stream)
-                if tail:
-                    return VALUE, pos, cons(form1, *tail, nil)
-
-            return VALUE, pos, form1
-
-
     def read(self, reader_stream):
         """
         Read a single layout form from the stream
@@ -2956,7 +2774,7 @@ class LayoutReader(Reader):
                 col_no=reader_stream.col,
                 max_indent=None)
 
-        event, pos, value = self._read_layout_form(reader_stream)
+        event, pos, value = self.read_form(reader_stream)
 
         if event is VALUE:
             return value

@@ -370,14 +370,14 @@ class TestLayoutCallSemantics(IsolatedAsyncioTestCase):
             cons(cons(symbol('get-callee'), nil), symbol('a'), symbol('b'), nil))
 
 
-    async def test_number_head_line_does_not_become_call(self):
+    async def test_number_head_line_implicit_fold(self):
         result = parse_layout_ng('123 456')
-        self.assertEqual(result, 123)
+        self.assertEqual(result, cons(123, 456, nil))
 
 
-    async def test_string_head_line_does_not_become_call(self):
+    async def test_string_head_line_implicit_fold(self):
         result = parse_layout_ng('"x" 1')
-        self.assertEqual(result, "x")
+        self.assertEqual(result, cons('x', 1, nil))
 
 
 class TestLayoutLineEvents(IsolatedAsyncioTestCase):
@@ -402,11 +402,11 @@ class TestLayoutLineEvents(IsolatedAsyncioTestCase):
         self.assertEqual(result, expected)
 
 
-class TestReadFormNg(IsolatedAsyncioTestCase):
+class TestLayoutLineOrientedRead(IsolatedAsyncioTestCase):
 
     async def test_one_line_pair_plus_paren_folds_like_cons_of_parts(self):
         builtins = {str(name): value for name, value in LAYOUTS.items()}
-        reader = LayoutReader(builtins, use_read_form_ng=True)
+        reader = LayoutReader(builtins)
         src = '(lambda [f] (print f)) (+ 1 10)'
         combined = reader.read(source_str(src, '<t>'))
         head = reader.read(source_str('(lambda [f] (print f))', '<t>'))
@@ -415,33 +415,20 @@ class TestReadFormNg(IsolatedAsyncioTestCase):
 
     async def test_blank_logical_lines_are_skipped(self):
         builtins = {str(name): value for name, value in LAYOUTS.items()}
-        reader = LayoutReader(builtins, use_read_form_ng=True)
+        reader = LayoutReader(builtins)
         stream = source_str('\n\nfoo\n', '<t>')
         self.assertEqual(reader.read(stream), symbol('foo'))
 
     async def test_implicit_false_errors_on_two_values_one_line(self):
         builtins = {str(name): value for name, value in LAYOUTS.items()}
-        reader = LayoutReader(
-            builtins, use_read_form_ng=True, layout_implicit_calls=False)
+        reader = LayoutReader(builtins, layout_implicit_calls=False)
         stream = source_str('foo bar', '<t>')
         with self.assertRaises(ReaderSyntaxError):
             reader.read(stream)
 
-    async def test_simple_block_matches_legacy_reader(self):
+    async def test_pair_head_block(self):
         builtins = {str(name): value for name, value in LAYOUTS.items()}
-        src = """
-        foo x:
-          y
-        """
-        legacy = LayoutReader(builtins)
-        ng = LayoutReader(builtins, use_read_form_ng=True)
-        self.assertEqual(
-            legacy.read(source_str(src, '<u>')),
-            ng.read(source_str(src, '<u>')))
-
-    async def test_pair_head_block_ng(self):
-        builtins = {str(name): value for name, value in LAYOUTS.items()}
-        reader = LayoutReader(builtins, use_read_form_ng=True)
+        reader = LayoutReader(builtins)
         src = '(foo) a:\n  y\n'
         result = reader.read(source_str(src, '<t>'))
         expected = pycons(
