@@ -687,11 +687,14 @@ class Reader(object):
     supports reader macros for special character handling and atom
     patterns for converting atomic tokens into typed values.
 
-    Each character maps to a newest-first stack of ``(macro_fn, terminating)``
-    pairs (see :meth:`set_event_macro`). Event macros may return DEFER so the
-    next handler in ``_event_macro_chain_for`` runs; the leading-character
-    chain ends with ``_read_default``. Use ``terminating_only=True`` dispatch
-    where a terminator boundary consumes the character first (see
+    Each character maps to a newest-first stack of
+    ``(macro_fn, terminating, predicate_fn)`` triplets (see
+    :meth:`set_event_macro`); ``predicate_fn`` may be None. Optional predicates
+    gate macro dispatch (early DEFER) and soft atom boundaries for
+    terminating registrations. Event macros may return DEFER so the next
+    handler in ``_event_macro_chain_for`` runs; the leading-character chain
+    ends with ``_read_default``. Use ``terminating_only=True`` dispatch where a
+    terminator boundary consumes the character first (see
     :meth:`_dispatch_event_macros`).
     """
 
@@ -785,11 +788,60 @@ class Reader(object):
 
         extra = set()
         for c, pairs in self.reader_macros.items():
-            for _fn, term in pairs:
+            for _fn, term, _pred in pairs:
                 if term:
                     extra.add(c)
         self.terminating = set(_BASE_TERMINATORS) | extra
         self._terms = "".join(sorted(self.terminating))
+
+
+    def _atom_boundary_split(self, stream, c, atom_prefix):
+        """
+        Whether the atom ends before ``c`` (split) vs folding ``c`` into it.
+
+        Newest-first scan of terminating registrations for ``c``.
+
+        :param stream: the source stream
+        :param c: the boundary character (not consumed)
+        :param atom_prefix: atom text so far if we split before ``c``
+        :return: True to split, False to fold ``c`` into the atom
+        """
+
+        pairs = self.reader_macros.get(c, ())
+        for macro_fn, term, predicate_fn in pairs:
+            if not term:
+                continue
+            if predicate_fn is None:
+                return True
+            if not predicate_fn(stream, c, atom_prefix):
+                return False
+        return True
+
+
+    def _collect_atom_continuation(self, stream, prefix, terminators):
+        """
+        Extend atom text from ``prefix`` using ``terminators`` for
+        ``read_until_chars``, applying predicated boundaries.
+
+        :param stream: the source stream
+        :param prefix: atom text with all characters consumed so far
+        :param terminators: terminator string for ``read_until_chars``
+        :return: completed atom string; boundary char left unconsumed on split
+        """
+
+        while True:
+            suffix = stream.read_until_chars(terminators)
+            atom = prefix + suffix
+            peeked = stream.peek(1)
+            if not peeked:
+                return atom
+            c = peeked[0]
+            if c not in self.terminating:
+                return atom
+            if self._atom_boundary_split(stream, c, atom):
+                return atom
+            stream.read(1)
+            prefix = atom + c
 
 
     def _event_macro_chain_for(self, c, terminating_only=False):
@@ -800,19 +852,36 @@ class Reader(object):
         :param terminating_only: if True, only macros registered with
             terminating=True for ``c``, then :meth:`_terminating_boundary_fallback`;
             if False, all stacked macros for ``c``, then :meth:`_read_default`.
-        :yields: callables ``(stream, c) -> (event, value)``
+        :yields: ``(handler, predicate_fn)`` where handler is
+            ``(stream, c) -> (event, value)`` and optional ``predicate_fn`` is
+            ``(stream, c, atom_prefix) -> bool`` or None for fallbacks
         """
 
         pairs = self.reader_macros.get(c, ())
         if terminating_only:
-            for macro_fn, term in pairs:
+            for macro_fn, term, predicate_fn in pairs:
                 if term:
-                    yield macro_fn
-            yield self._terminating_boundary_fallback
+                    yield macro_fn, predicate_fn
+            yield self._terminating_boundary_fallback, None
         else:
-            for macro_fn, _term in pairs:
-                yield macro_fn
-            yield self._read_default
+            for macro_fn, _term, predicate_fn in pairs:
+                yield macro_fn, predicate_fn
+            yield self._read_default, None
+
+
+    def _event_macro_predicate_allows(self, stream, c, predicate_fn):
+        """
+        Whether dispatch may run ``macro_fn`` for this stack entry.
+
+        :param stream: the source stream
+        :param c: the dispatch character (already consumed)
+        :param predicate_fn: optional ``(stream, c, atom_prefix) -> bool``
+        :return: False means skip this handler (same as DEFER)
+        """
+
+        if predicate_fn is None:
+            return True
+        return bool(predicate_fn(stream, c, None))
 
 
     def _terminating_boundary_fallback(self, stream, c):
@@ -833,13 +902,20 @@ class Reader(object):
         """
         Run :meth:`_event_macro_chain_for` until a non-DEFER result.
 
+        If a stack entry's predicate returns false, that handler is skipped
+        (same as ``(DEFER, None)`` without calling ``macro_fn``).
+
         If a handler returns (DEFER, repl) with repl not None, ``repl``
         replaces ``c`` for subsequent handlers in the chain.
 
         :param terminating_only: forwarded to :meth:`_event_macro_chain_for`
         """
 
-        for handler in self._event_macro_chain_for(c, terminating_only):
+        for handler, predicate_fn in self._event_macro_chain_for(
+                c, terminating_only):
+            if not self._event_macro_predicate_allows(
+                    stream, c, predicate_fn):
+                continue
             event, value = handler(stream, c)
             if event is DEFER:
                 if value is not None:
@@ -888,12 +964,13 @@ class Reader(object):
         return event, position, value
 
 
-    def set_event_macro(self, char, macro_fn, terminating=False):
+    def set_event_macro(
+            self, char, macro_fn, terminating=False, predicate=None):
         """
         Add a character event macro to the reader
 
-        Each call **prepends** ``(macro_fn, terminating)`` to that character's
-        macro stack (newest first).
+        Each call **prepends** ``(macro_fn, terminating, predicate)`` to that
+        character's macro stack (newest first).
 
         :param char: the character(s) to trigger on
         :param macro_fn: function(stream, char) -> (event, value). The macro
@@ -903,11 +980,16 @@ class Reader(object):
             was already consumed; pass ``c`` through to ``_read_default``. On
             DEFER, do not advance the stream beyond peek-only inspection.
         :param terminating: if True, this character terminates atoms
+        :param predicate: optional ``(stream, char, atom_prefix) -> bool``.
+            If false before ``macro_fn`` runs at read dispatch, that entry is
+            skipped (early DEFER). For terminating registrations, also
+            participates in atom boundary decisions (see
+            :meth:`_atom_boundary_split`).
         """
 
-        pair = (macro_fn, terminating)
+        triplet = (macro_fn, terminating, predicate)
         for c in char:
-            self.reader_macros.setdefault(c, []).insert(0, pair)
+            self.reader_macros.setdefault(c, []).insert(0, triplet)
         self._sync_terms_from_macros()
 
 
@@ -916,7 +998,8 @@ class Reader(object):
         Return stacked event macros for one character
 
         :param char: single character to look up
-        :return: list of ``(macro_fn, terminating)``, newest first; empty if none
+        :return: list of ``(macro_fn, terminating, predicate_fn)``, newest
+            first; empty if none
         """
 
         return list(self.reader_macros.get(char, ()))
@@ -927,7 +1010,7 @@ class Reader(object):
         Get the newest character event macro from the reader
 
         :param char: the character to look up
-        :return: tuple of (macro_fn, terminating) or None
+        :return: tuple of (macro_fn, terminating, predicate_fn) or None
         """
 
         lst = self.reader_macros.get(char)
@@ -949,38 +1032,41 @@ class Reader(object):
 
 
     @contextmanager
-    def temporary_event_macro(self, char, macro_fn, terminating=False):
+    def temporary_event_macro(
+            self, char, macro_fn, terminating=False, predicate=None):
         """
         Context manager to temporarily apply a character event macro
 
-        Prepends one ``(macro_fn, terminating)`` tuple shared across ``char``.
-        On exit, removes **only** that tuple from the head of each affected
-        list when it still matches by identity.
+        Prepends one ``(macro_fn, terminating, predicate)`` triplet shared
+        across ``char``. On exit, removes **only** that triplet from the head
+        of each affected list when it still matches by identity.
 
         :param char: the character(s) to trigger on
         :param macro_fn: function(stream, char) -> (event, value); may return
             (DEFER, None) like other event macros (see set_event_macro).
         :param terminating: if True, this character terminates atoms
+        :param predicate: optional predicate (see :meth:`set_event_macro`)
         :yields: self
         """
 
-        pair = (macro_fn, terminating)
+        triplet = (macro_fn, terminating, predicate)
         for c in char:
-            self.reader_macros.setdefault(c, []).insert(0, pair)
+            self.reader_macros.setdefault(c, []).insert(0, triplet)
         self._sync_terms_from_macros()
 
         yield self
 
         for c in char:
             lst = self.reader_macros.get(c)
-            if lst and lst[0] is pair:
+            if lst and lst[0] is triplet:
                 lst.pop(0)
                 if not lst:
                     del self.reader_macros[c]
         self._sync_terms_from_macros()
 
 
-    def set_macro_character(self, char, macro_fn, terminating=False):
+    def set_macro_character(
+            self, char, macro_fn, terminating=False, predicate=None):
         """
         Add a reader macro to the parser
 
@@ -990,28 +1076,33 @@ class Reader(object):
         :param char: the character to trigger on
         :param macro_fn: function(stream, char) -> value
         :param terminating: if True, this character terminates atoms
+        :param predicate: optional predicate (see :meth:`set_event_macro`)
         """
 
         def macro_adapter(stream, char):
             return VALUE, macro_fn(stream, char)
 
-        self.set_event_macro(char, macro_adapter, terminating)
+        self.set_event_macro(char, macro_adapter, terminating,
+                             predicate=predicate)
 
 
-    def temporary_macro_character(self, char, macro_fn, terminating=False):
+    def temporary_macro_character(
+            self, char, macro_fn, terminating=False, predicate=None):
         """
         Context manager to temporarily apply a reader macro
 
         :param char: the character to trigger on
         :param macro_fn: function(stream, char) -> value
         :param terminating: if True, this character terminates atoms
+        :param predicate: optional predicate (see :meth:`set_event_macro`)
         :return: context manager
         """
 
         def macro_adapter(stream, char):
             return VALUE, macro_fn(stream, char)
 
-        return self.temporary_event_macro(char, macro_adapter, terminating)
+        return self.temporary_event_macro(char, macro_adapter, terminating,
+                                          predicate=predicate)
 
 
     def _add_default_macros(self):
@@ -1131,6 +1222,9 @@ class Reader(object):
         terminator; the next read dispatches it as a leading character so
         macros such as quasiquote ``,`` remain VALUE-producing reads.
 
+        Soft boundaries use :meth:`_atom_boundary_split` for terminating
+        registrations that supply a predicate.
+
         Call :meth:`_dispatch_event_macros` with ``terminating_only=True`` only
         from specialized scanners that consume a boundary character first.
 
@@ -1139,7 +1233,7 @@ class Reader(object):
         :return: completed atom string
         """
 
-        return first_c + stream.read_until_chars(self._terms)
+        return self._collect_atom_continuation(stream, first_c, self._terms)
 
 
     def _read_default(self, stream, c):
@@ -1691,11 +1785,12 @@ class LayoutReader(Reader):
             self._add_default_block_macros()
             self._add_default_layout_macros()
 
-        if not nodefaults:
-            self.set_event_macro(':', self._layout_colon_macro, True)
+        # this one describes a fundamental behavior of the reader, so it's not
+        # a default macro, it's an always macro.
+        self.set_event_macro(
+            ':', self._layout_colon_macro, True,
+            predicate=self._layout_colon_predicate)
 
-        # Structural `:` in headers also uses _header_mode / _read_default;
-        # stacked ``:`` macros DEFER when nested so normal handlers apply.
         self._header_scan = False
         self._commit_detector = HeaderCommitDetector()
         self._line_scanner = LogicalLineScanner(self)
@@ -1747,7 +1842,8 @@ class LayoutReader(Reader):
     @contextmanager
     def _header_mode(self):
         """
-        Enable header terminator handling for `:` within atom scans.
+        Enable header-aware ``:`` predicate behavior for atom scans and
+        dispatch.
         """
         old = self._header_scan
         self._header_scan = True
@@ -1757,53 +1853,41 @@ class LayoutReader(Reader):
             self._header_scan = old
 
 
-    def _layout_colon_macro(self, stream, c):
+    def _layout_colon_predicate(self, stream, c, atom_prefix):
         """
-        Layout-aware ``:`` macro: nested layout defers to other ``:`` handlers.
+        Gate ``:`` dispatch and predicated atom boundaries for layout headers.
 
-        Structural header ``:`` stays in :meth:`_read_default` until migrated.
+        When ``atom_prefix`` is None, this is leading-character dispatch.
+        Otherwise it is an atom boundary before an unconsumed ``:``.
+
+        :param stream: the source stream
+        :param c: the ``:`` character
+        :param atom_prefix: atom text before ``c``, or None at dispatch
+        :return: True to run the macro or split the atom before ``:``; when
+            ``_layout_depth`` is greater than zero, always false so ``:`` does
+            not terminate atoms or invoke the layout macro until pairs finish
         """
 
         if self._layout_depth > 0:
-            return DEFER, None
-        return DEFER, None
+            return False
+        if not self._header_scan:
+            if atom_prefix is None:
+                return False
+            return True
+        if atom_prefix is None:
+            return self._is_structural_colon_after_consumed(stream)
+        return self._is_structural_colon_at_next(stream)
 
 
-    def _read_default(self, stream, c):
+    def _layout_colon_macro(self, stream, c):
         """
-        Atom scanning override to support maybe-interrupting `:`.
+        Emit a structural header COLON.
 
-        In header scan mode at delimiter depth 0:
-        - structural `:` emits COLON and is not part of the atom
-        - non-structural `:` becomes part of the atom (for keyword atoms)
+        :meth:`_layout_colon_predicate` ensures this runs only for that case
+        at dispatch time; nested layout and non-header ``:`` skip the macro.
         """
-        if self._header_scan and self._layout_depth == 0:
-            if c == ':' and self._is_structural_colon_after_consumed(stream):
-                return COLON, symbol(':')
 
-            terms_with_colon = self._terms + ':'
-            atom_parts = [c]
-            while True:
-                chunk = stream.read_until_chars(terms_with_colon)
-                if chunk:
-                    atom_parts.append(chunk)
-
-                if stream.peek(1) != ':':
-                    break
-
-                if self._is_structural_colon_at_next(stream):
-                    break
-
-                # Non-structural ':' becomes part of this atom.
-                stream.read(1)
-                atom_parts.append(':')
-
-            atom = ''.join(atom_parts)
-            if atom == '.':
-                return DOT, None
-            return ATOM, atom
-
-        return super()._read_default(stream, c)
+        return COLON, symbol(':')
 
 
     def _is_structural_colon_in_ahead(self, ahead, colon_index):
@@ -2600,24 +2684,16 @@ class LayoutReader(Reader):
         """
         Override to track layout depth for s-expr mode
 
-        Removes ':' from the terminating set while inside a delimiter so that
-        trailing-colon keywords (e.g. as:) can form normally in s-expr mode.
-        Restores it on exit.
+        Depth drives :meth:`_layout_colon_predicate`, which declines ``:`` as
+        a terminator and as a macro trigger until the pair is complete.
         """
 
-        self._layout_depth += 1
-        saved_terminating = self.terminating.copy()
-        saved_terms_str = self._terms
-        colon_was_terminating = ':' in self.terminating
-        if colon_was_terminating:
-            self.terminating.discard(':')
-            self._terms = "".join(sorted(self.terminating))
+        depth = self._layout_depth
+        self._layout_depth = depth + 1
         try:
             return super()._read_pair(closer, stream, char)
         finally:
-            self._layout_depth -= 1
-            self.terminating = saved_terminating
-            self._terms = saved_terms_str
+            self._layout_depth = depth
 
 
 # ===========================================================================

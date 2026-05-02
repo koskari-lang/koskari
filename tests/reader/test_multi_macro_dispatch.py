@@ -48,6 +48,8 @@ class TestStackedMacros(IsolatedAsyncioTestCase):
 
         stack = reader.get_event_macros('z')
         self.assertEqual(len(stack), 2)
+        self.assertEqual(len(stack[0]), 3)
+        self.assertIsNone(stack[0][2])
 
         v = reader.read(source_str('zw', '<t>'))
         self.assertEqual(v, symbol('second'))
@@ -68,6 +70,7 @@ class TestStackedMacros(IsolatedAsyncioTestCase):
         v2 = reader.read(source_str('zw', '<t>'))
         self.assertEqual(v2, symbol('perm'))
         self.assertEqual(len(reader.get_event_macros('z')), 1)
+        self.assertEqual(len(reader.get_event_macros('z')[0]), 3)
 
 
 class TestTerminatingOnlyDispatch(IsolatedAsyncioTestCase):
