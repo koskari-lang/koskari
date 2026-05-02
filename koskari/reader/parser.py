@@ -22,10 +22,14 @@ Layers:
 2. SourceStream(BaseSourceStream) -- error reporting, pushback buffer
 3. IndentAwareStream(SourceStream) -- indent-bounded skip_whitespace, dedented flag
 
-The Reader reads any SourceStream. LayoutReader(Reader) adds layout-block
-syntax and requires an IndentAwareStream for body reads. No reader method
-inspects private attributes of streams it receives; the stream interface is
-uniform and well-defined.
+The Reader reads any SourceStream. LayoutReader subclasses Reader as a
+layout coordinator: it owns structural colon, LINE_END header tails, and
+layout-only prefixes; it holds an inner Reader with full s-expr defaults.
+Bridge macros on the coordinator forward ``( ) [ ] { }`` ``"`` ``;`` ``f``
+``r`` ``b`` ``#`` into the inner reader so delimited reads do not see layout
+rules. LayoutReader requires an IndentAwareStream for body reads. No reader
+method inspects private attributes of streams it receives; the stream
+interface is uniform and well-defined.
 
 :author: Christopher O'Brien <obriencj@preoccupied.net>
 :license: GNU General Public License v3
@@ -1147,8 +1151,6 @@ class Reader(object):
         sm('}', self._close_pair, True)
 
         sm('"', self._read_string, True)
-        sm("'", self._read_quote, True)
-        sm("`", self._read_quasiquote, True)
         sm(';', self._read_comment, True)
 
         sm('f', self._read_fstring, False)
@@ -1156,6 +1158,9 @@ class Reader(object):
         sm('b', self._read_bstring, False)
 
         sm('#', self._read_collection, False)
+
+        sm("'", self._read_quote, True)
+        sm("`", self._read_quasiquote, True)
 
 
     def set_atom_pattern(self, namesym, match_fn, conversion_fn):
@@ -1732,15 +1737,14 @@ class LogicalLineScanner:
     """
     Minimal logical-line boundary helper for header-mode logic.
 
-    A newline ends the logical line only at delimiter depth 0.
+    A newline ends the logical line when the layout coordinator is reading
+    a header; s-expr islands use :meth:`Reader._read` on the inner reader.
     """
 
     def __init__(self, reader):
         self._reader = reader
 
     def at_logical_eol(self, stream):
-        if self._reader._layout_depth != 0:
-            return False
         nxt = stream.peek(1)
         if not nxt:
             return True
@@ -1759,6 +1763,14 @@ class LayoutReader(Reader):
     Subclasses Reader and adds indent-aware block reading. Resolves
     layout heads via namespace (layout/<head>). Requires a namespace
     for layout resolution, like the compiler.
+
+    **Three default surfaces:** (1) ``self.inner`` is a plain :class:`Reader`
+    with full s-expr defaults—balanced forms and prefix reads there use only
+    inner state. (2) **Bridge** macros on this coordinator forward ``( ) [ ] {
+    }`` ``"`` ``;`` ``f`` ``r`` ``b`` ``#`` into ``inner`` so delimiter and
+    string/comment/prefix parsing matches s-expr mode. (3) **Layout-only**
+    registrations: structural ``:``, ``_layout_macros`` (e.g. ``@``), and
+    stacked ``'`` / backtick (predicated raw block then normal quote).
 
     Block headers use contextual structural `:` terminators: `:` ends the
     header only when followed by whitespace and then comment, EOL, or EOF,
@@ -1793,7 +1805,8 @@ class LayoutReader(Reader):
             lines lower to implicit calls
         """
 
-        super().__init__(nodefaults=nodefaults)
+        super(LayoutReader, self).__init__(nodefaults=True)
+        self._inner = Reader(nodefaults=nodefaults)
         from ..lib import ModuleNamespace
 
         if isinstance(namespace, Module):
@@ -1803,13 +1816,17 @@ class LayoutReader(Reader):
         else:
             self._ns = namespace
 
-        self._layout_depth = 0
         self._block_mode = False
         self._layout_macros = {}
         self.layout_enabled = layout_enabled
         self.layout_implicit_calls = layout_implicit_calls
 
         if not nodefaults:
+            self._add_default_atoms()
+            self._register_bridge_macros()
+            sm = self.set_event_macro
+            sm("'", self._read_quote, True)
+            sm("`", self._read_quasiquote, True)
             self._add_default_layout_macros()
 
         # this one describes a fundamental behavior of the reader, so it's not
@@ -1821,6 +1838,64 @@ class LayoutReader(Reader):
         self._header_scan = False
         self._commit_detector = HeaderCommitDetector()
         self._line_scanner = LogicalLineScanner(self)
+
+
+    @property
+    def inner(self):
+        """
+        The dedicated s-expression reader used inside bridge macros.
+
+        Attach s-expr-only extensions with ``reader.inner.set_event_macro``.
+        """
+
+        return self._inner
+
+
+    def _register_bridge_macros(self):
+        """
+        Register bridge macros that forward delimiter, string, comment, and
+        prefix reads to :attr:`_inner`.
+        """
+
+        sm = self.set_event_macro
+        inner = self._inner
+
+        sm('(', partial(inner._read_pair, ')'), True)
+        sm(')', inner._close_pair, True)
+
+        sm('[', partial(inner._read_pair, ']'), True)
+        sm(']', inner._close_pair, True)
+
+        sm('{', partial(inner._read_thunk, '}'), True)
+        sm('}', inner._close_pair, True)
+
+        sm('"', inner._read_string, True)
+        sm(';', inner._read_comment, True)
+
+        sm('f', inner._read_fstring, False)
+        sm('r', inner._read_rstring, False)
+        sm('b', inner._read_bstring, False)
+
+        sm('#', inner._read_collection, False)
+
+
+    def _read_quasiquote(self, stream, char):
+        """
+        Like :meth:`Reader._read_quasiquote`, but unquote temporaries are
+        installed on both this reader and :attr:`inner` so comma dispatch
+        works inside lists parsed via bridge macros.
+        """
+
+        inner = self._inner
+        with self.temporary_event_macro(",", self._read_unquote, True):
+            with inner.temporary_event_macro(",", inner._read_unquote, True):
+                event, pos, child = self._read(stream)
+
+        if event is not VALUE:
+            msg = "invalid use of %s" % char
+            raise stream.error(msg, pos)
+
+        return VALUE, cons(_symbol_quasiquote, child, nil)
 
 
     def set_layout_modes(self, *, layout_enabled=None, layout_implicit_calls=None):
@@ -1891,13 +1966,9 @@ class LayoutReader(Reader):
         :param stream: the source stream
         :param c: the ``:`` character
         :param atom_prefix: atom text before ``c``, or None at dispatch
-        :return: True to run the macro or split the atom before ``:``; when
-            ``_layout_depth`` is greater than zero, always false so ``:`` does
-            not terminate atoms or invoke the layout macro until pairs finish
+        :return: True to run the macro or split the atom before ``:``
         """
 
-        if self._layout_depth > 0:
-            return False
         if not self._header_scan:
             if atom_prefix is None:
                 return False
@@ -1930,7 +2001,7 @@ class LayoutReader(Reader):
 
         if atom_prefix is not None:
             return True
-        if not self.layout_enabled or self._layout_depth > 0:
+        if not self.layout_enabled:
             return False
         nxt = stream.peek(1)
         if not nxt or nxt in '([{':
@@ -2481,9 +2552,11 @@ class LayoutReader(Reader):
         :return: (compile/quasiquote-block (:block: ...)) cons
         """
 
+        inner = self._inner
         with self.temporary_event_macro(",", self._read_unquote, True):
-            head, args, _ = self.read_block_header(stream)
-            raw = self.read_block(stream, outer_indent, head, args)
+            with inner.temporary_event_macro(",", inner._read_unquote, True):
+                head, args, _ = self.read_block_header(stream)
+                raw = self.read_block(stream, outer_indent, head, args)
         return cons(_symbol_quasiquote_block, raw, nil)
 
 
@@ -2597,10 +2670,12 @@ class LayoutReader(Reader):
         """
         Read one layout form: s-expr, prefixed raw block, or normal block
 
-        At layout depth > 0 (inside delimiters), delegates to the base _read.
+        When layout is disabled, delegates to :meth:`Reader._read` on
+        :attr:`inner`.
 
-        At depth 0:
-        1. c in '([{' -- parenthesised s-expression, read directly via _read.
+        When layout is enabled:
+        1. c in '([{' -- parenthesised s-expression, read via _read (bridge
+           macros forward delimited reads to ``inner``).
         2. c in _layout_macros -- layout-only prefix (e.g. @ decorator lines);
            always consume the prefix and run the handler (explicit layout
            intent; no lookahead for ``(``, ``[``, or ``{``). No colon
@@ -2617,8 +2692,8 @@ class LayoutReader(Reader):
         :return: (event, position, value)
         """
 
-        if self._layout_depth > 0 or not self.layout_enabled:
-            return self._read(stream)
+        if not self.layout_enabled:
+            return self._inner._read(stream)
 
         while True:
             stream.skip_whitespace()
@@ -2738,22 +2813,6 @@ class LayoutReader(Reader):
             return READ_EOF
         else:
             raise reader_stream.error('invalid syntax', pos)
-
-
-    def _read_pair(self, closer, stream, char):
-        """
-        Override to track layout depth for s-expr mode
-
-        Depth drives :meth:`_layout_colon_predicate`, which declines ``:`` as
-        a terminator and as a macro trigger until the pair is complete.
-        """
-
-        depth = self._layout_depth
-        self._layout_depth = depth + 1
-        try:
-            return super()._read_pair(closer, stream, char)
-        finally:
-            self._layout_depth = depth
 
 
 # ===========================================================================
