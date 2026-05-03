@@ -181,6 +181,19 @@ information and exits.
 
 ---
 
+## User documentation
+
+### Bootstrap human-facing docs from meta spec
+
+Create a top-level `docs/` tree (or external site) using the information
+architecture, audiences, and maintenance rules in the documentation goals
+meta-document (two on-ramps, shared guide, reference, VM/opcode tier,
+patterns, contributor pages).
+
+Ref: [documentation-goals.md](documentation-goals.md).
+
+---
+
 ## To design (broader)
 
 From [FEATURES.md](FEATURES.md) and related docs:
