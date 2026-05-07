@@ -151,6 +151,14 @@ static int append_check_node(KosMatcherBuilder *b, const KosMatchNode *node) {
                  "use AppendGroup or AppendOneof");
     return -1;
 
+  case KOS_MATCH_NODE_CLASS:
+  case KOS_MATCH_NODE_FIELD:
+    PyErr_Format(PyExc_ValueError,
+                 "AppendNode does not accept CLASS or FIELD kinds; "
+                 "use AppendClass / AppendFieldPositional / "
+                 "AppendFieldKeyword");
+    return -1;
+
   case KOS_MATCH_NODE_REPEAT:
     if (append_check_index(b, node->as.repeat.subnode, "repeat.subnode"))
       return -1;
@@ -417,6 +425,179 @@ int KosMatcherBuilder_AppendOneof(
 }
 
 
+/**
+   Internal: append a FIELD node. Caller has already vetted field_kind
+   and (for keyword) name_const.
+*/
+static int builder_append_field(
+    KosMatcherBuilder *b,
+    uint16_t field_kind,
+    uint32_t subnode,
+    uint32_t name_const) {
+
+  if (subnode != KOS_MATCH_NO_INDEX &&
+      append_check_index(b, subnode, "field.subnode"))
+    return -1;
+
+  if (builder_grow_nodes(b, 1))
+    return -1;
+
+  Py_ssize_t off = b->node_count;
+  KosMatchNode *n = &b->nodes[off];
+  memset(n, 0, sizeof(*n));
+  n->kind = (uint16_t) KOS_MATCH_NODE_FIELD;
+  n->next = KOS_MATCH_NO_INDEX;
+  n->min_width = 0;
+  n->max_width = 0;
+  n->as.field.field_kind = field_kind;
+  n->as.field.reserved = 0;
+  n->as.field.subnode = subnode;
+  n->as.field.name_const = name_const;
+  b->node_count++;
+
+  if (off > (Py_ssize_t) 0x7FFFFFFE) {
+    PyErr_SetString(PyExc_OverflowError, "matcher node space exhausted");
+    return -1;
+  }
+
+  return (int) off;
+}
+
+
+int KosMatcherBuilder_AppendFieldPositional(
+    KosMatcherBuilder *b,
+    uint32_t subnode) {
+
+  if (! b) {
+    PyErr_SetString(PyExc_ValueError,
+                    "AppendFieldPositional requires builder");
+    return -1;
+  }
+
+  return builder_append_field(
+      b, (uint16_t) KOS_MATCH_FIELD_POSITIONAL, subnode,
+      KOS_MATCH_NO_INDEX);
+}
+
+
+int KosMatcherBuilder_AppendFieldKeyword(
+    KosMatcherBuilder *b,
+    uint32_t subnode,
+    uint32_t name_const) {
+
+  if (! b) {
+    PyErr_SetString(PyExc_ValueError,
+                    "AppendFieldKeyword requires builder");
+    return -1;
+  }
+
+  if (name_const == KOS_MATCH_NO_INDEX) {
+    PyErr_SetString(PyExc_ValueError,
+                    "AppendFieldKeyword requires a name_const index");
+    return -1;
+  }
+
+  Py_ssize_t n_consts = PyList_GET_SIZE(b->consts);
+  if ((Py_ssize_t) name_const >= n_consts) {
+    PyErr_Format(PyExc_ValueError,
+                 "AppendFieldKeyword name_const %u out of range "
+                 "(consts size=%zd)",
+                 (unsigned) name_const, n_consts);
+    return -1;
+  }
+
+  return builder_append_field(
+      b, (uint16_t) KOS_MATCH_FIELD_KEYWORD, subnode, name_const);
+}
+
+
+int KosMatcherBuilder_AppendClass(
+    KosMatcherBuilder *b,
+    uint32_t type_extern,
+    const uint32_t *fields,
+    Py_ssize_t count) {
+
+  if (! b) {
+    PyErr_SetString(PyExc_ValueError, "AppendClass requires builder");
+    return -1;
+  }
+
+  if (count < 0) {
+    PyErr_SetString(PyExc_ValueError,
+                    "AppendClass count must be non-negative");
+    return -1;
+  }
+
+  if (count > 0 && ! fields) {
+    PyErr_SetString(PyExc_ValueError,
+                    "AppendClass requires fields pointer");
+    return -1;
+  }
+
+  for (Py_ssize_t i = 0; i < count; i++) {
+    uint32_t fidx = fields[i];
+    if (fidx == KOS_MATCH_NO_INDEX) {
+      PyErr_SetString(PyExc_ValueError,
+                      "AppendClass field index may not be NO_INDEX");
+      return -1;
+    }
+    if ((Py_ssize_t) fidx >= b->node_count) {
+      PyErr_Format(PyExc_ValueError,
+                   "AppendClass forward reference: field=%u "
+                   "(current count=%zd)",
+                   (unsigned) fidx, b->node_count);
+      return -1;
+    }
+    KosMatchNode *fn = &b->nodes[fidx];
+    if (fn->kind != KOS_MATCH_NODE_FIELD) {
+      PyErr_Format(PyExc_ValueError,
+                   "AppendClass child %u is not a FIELD node",
+                   (unsigned) fidx);
+      return -1;
+    }
+    if (fn->next != KOS_MATCH_NO_INDEX) {
+      PyErr_Format(PyExc_ValueError,
+                   "AppendClass child %u already participates in another "
+                   "chain", (unsigned) fidx);
+      return -1;
+    }
+    for (Py_ssize_t j = 0; j < i; j++) {
+      if (fields[j] == fidx) {
+        PyErr_Format(PyExc_ValueError,
+                     "AppendClass repeats field index %u",
+                     (unsigned) fidx);
+        return -1;
+      }
+    }
+  }
+
+  for (Py_ssize_t i = 0; i + 1 < count; i++)
+    b->nodes[fields[i]].next = fields[i + 1];
+
+  if (builder_grow_nodes(b, 1))
+    return -1;
+
+  Py_ssize_t off = b->node_count;
+  KosMatchNode *n = &b->nodes[off];
+  memset(n, 0, sizeof(*n));
+  n->kind = (uint16_t) KOS_MATCH_NODE_CLASS;
+  n->next = KOS_MATCH_NO_INDEX;
+  n->min_width = 0;
+  n->max_width = 0;
+  n->as.class_.type_extern = type_extern;
+  n->as.class_.first_field =
+      (count > 0) ? fields[0] : KOS_MATCH_NO_INDEX;
+  b->node_count++;
+
+  if (off > (Py_ssize_t) 0x7FFFFFFE) {
+    PyErr_SetString(PyExc_OverflowError, "matcher node space exhausted");
+    return -1;
+  }
+
+  return (int) off;
+}
+
+
 int KosMatcherBuilder_SetMeta(KosMatcherBuilder *b, PyObject *meta) {
   if (! b) {
     PyErr_SetString(PyExc_ValueError, "SetMeta requires builder");
@@ -529,6 +710,27 @@ static int compute_one_width(KosMatcher *m, uint32_t idx) {
     n->max_width = 0;
     break;
 
+  case KOS_MATCH_NODE_CLASS:
+    n->min_width = 1;
+    n->max_width = 1;
+    break;
+
+  case KOS_MATCH_NODE_FIELD:
+    /* FIELDs are inert as outer-spine atoms; only meaningful as
+       descendants of a CLASS chain. The structural validator rejects
+       any FIELD reachable as a parent-spine branch node. We still
+       provide a width here so width-compute over the array does not
+       fault: report the inner subnode's width-1 contract. */
+    if (n->as.field.subnode == KOS_MATCH_NO_INDEX) {
+      n->min_width = 1;
+      n->max_width = 1;
+    } else {
+      KosMatchNode *sub = &m->nodes[n->as.field.subnode];
+      n->min_width = sub->min_width;
+      n->max_width = sub->max_width;
+    }
+    break;
+
   default:
     PyErr_Format(PyExc_ValueError,
                  "unknown node kind during width compute: %u",
@@ -609,6 +811,53 @@ static int validate_slot_extern_const_indices(KosMatcher *m) {
                      "REST slot %u out of range (slots size=%zd) "
                      "at node %zd",
                      (unsigned) n->as.rest.slot, n_slots, i);
+        return -1;
+      }
+      break;
+
+    case KOS_MATCH_NODE_CLASS:
+      if ((Py_ssize_t) n->as.class_.type_extern >= n_externs) {
+        PyErr_Format(PyExc_ValueError,
+                     "CLASS type_extern %u out of range "
+                     "(externs size=%zd) at node %zd",
+                     (unsigned) n->as.class_.type_extern, n_externs, i);
+        return -1;
+      }
+      break;
+
+    case KOS_MATCH_NODE_FIELD:
+      switch (n->as.field.field_kind) {
+      case KOS_MATCH_FIELD_POSITIONAL:
+        if (n->as.field.name_const != KOS_MATCH_NO_INDEX) {
+          PyErr_Format(PyExc_ValueError,
+                       "FIELD positional at node %zd must have "
+                       "name_const == NO_INDEX", i);
+          return -1;
+        }
+        break;
+      case KOS_MATCH_FIELD_KEYWORD: {
+        if ((Py_ssize_t) n->as.field.name_const >= n_consts) {
+          PyErr_Format(PyExc_ValueError,
+                       "FIELD keyword name_const %u out of range "
+                       "(consts size=%zd) at node %zd",
+                       (unsigned) n->as.field.name_const, n_consts, i);
+          return -1;
+        }
+        PyObject *cv =
+            PyTuple_GET_ITEM(m->consts, n->as.field.name_const);
+        if (! PyUnicode_Check(cv)) {
+          PyErr_Format(PyExc_TypeError,
+                       "FIELD keyword name_const at node %zd refers to "
+                       "a non-str const (got %.200s)",
+                       i, Py_TYPE(cv)->tp_name);
+          return -1;
+        }
+        break;
+      }
+      default:
+        PyErr_Format(PyExc_ValueError,
+                     "FIELD field_kind %u out of range at node %zd",
+                     (unsigned) n->as.field.field_kind, i);
         return -1;
       }
       break;
@@ -814,7 +1063,8 @@ static int collect_chunks(KosMatcher *m, uint32_t idx, ChunkList *cl) {
 
   switch (n->kind) {
   case KOS_MATCH_NODE_TEST:
-  case KOS_MATCH_NODE_FORM: {
+  case KOS_MATCH_NODE_FORM:
+  case KOS_MATCH_NODE_CLASS: {
     c.min = 1;
     c.max = 1;
     c.is_rest = 0;
@@ -869,6 +1119,12 @@ static int collect_chunks(KosMatcher *m, uint32_t idx, ChunkList *cl) {
     c.max = KOS_MATCH_UNBOUNDED;
     c.is_rest = 1;
     return chunklist_push(cl, c);
+
+  case KOS_MATCH_NODE_FIELD:
+    PyErr_Format(PyExc_ValueError,
+                 "FIELD at node %u may not appear on a spine branch",
+                 (unsigned) idx);
+    return -1;
 
   default:
     PyErr_Format(PyExc_ValueError,
@@ -927,6 +1183,107 @@ static int validate_one_branch(KosMatcher *m, uint32_t idx) {
 }
 
 
+/**
+   Structural validation of CLASS / FIELD nodes:
+
+     - every FIELD is on exactly one CLASS chain
+     - every node on a CLASS chain is a FIELD (the chain itself may
+       only consist of KOS_MATCH_NODE_FIELD nodes)
+     - chain order has all positional FIELDs before any keyword FIELD
+     - each FIELD's subnode (the projection sub-matcher) has
+       min_width == max_width == 1
+*/
+static int validate_class_and_field_structure(KosMatcher *m) {
+  Py_ssize_t total = Py_SIZE(m);
+  if (total == 0)
+    return 0;
+
+  uint8_t *seen = PyMem_Calloc(total, sizeof(uint8_t));
+  if (! seen) {
+    PyErr_NoMemory();
+    return -1;
+  }
+
+  for (Py_ssize_t i = 0; i < total; i++) {
+    KosMatchNode *n = &m->nodes[i];
+    if (n->kind != KOS_MATCH_NODE_CLASS)
+      continue;
+
+    int saw_keyword = 0;
+    for (uint32_t fidx = n->as.class_.first_field;
+         fidx != KOS_MATCH_NO_INDEX;
+         fidx = m->nodes[fidx].next) {
+
+      if ((Py_ssize_t) fidx >= total) {
+        PyErr_Format(PyExc_ValueError,
+                     "CLASS at node %zd has out-of-range field index %u",
+                     i, (unsigned) fidx);
+        PyMem_Free(seen);
+        return -1;
+      }
+
+      KosMatchNode *fn = &m->nodes[fidx];
+      if (fn->kind != KOS_MATCH_NODE_FIELD) {
+        PyErr_Format(PyExc_ValueError,
+                     "CLASS at node %zd references non-FIELD node %u",
+                     i, (unsigned) fidx);
+        PyMem_Free(seen);
+        return -1;
+      }
+
+      if (seen[fidx]) {
+        PyErr_Format(PyExc_ValueError,
+                     "FIELD at node %u participates in more than one "
+                     "CLASS chain", (unsigned) fidx);
+        PyMem_Free(seen);
+        return -1;
+      }
+      seen[fidx] = 1;
+
+      if (fn->as.field.field_kind == KOS_MATCH_FIELD_KEYWORD) {
+        saw_keyword = 1;
+      } else if (fn->as.field.field_kind == KOS_MATCH_FIELD_POSITIONAL) {
+        if (saw_keyword) {
+          PyErr_Format(PyExc_ValueError,
+                       "CLASS at node %zd has positional FIELD %u after "
+                       "a keyword FIELD",
+                       i, (unsigned) fidx);
+          PyMem_Free(seen);
+          return -1;
+        }
+      }
+
+      if (fn->as.field.subnode != KOS_MATCH_NO_INDEX) {
+        KosMatchNode *sub = &m->nodes[fn->as.field.subnode];
+        if (sub->min_width != 1 || sub->max_width != 1) {
+          PyErr_Format(PyExc_ValueError,
+                       "FIELD at node %u subnode must have width "
+                       "exactly 1 (got min=%u max=%u)",
+                       (unsigned) fidx,
+                       (unsigned) sub->min_width,
+                       (unsigned) sub->max_width);
+          PyMem_Free(seen);
+          return -1;
+        }
+      }
+    }
+  }
+
+  for (Py_ssize_t i = 0; i < total; i++) {
+    if (m->nodes[i].kind == KOS_MATCH_NODE_FIELD && ! seen[i]) {
+      PyErr_Format(PyExc_ValueError,
+                   "FIELD at node %zd is not referenced by any CLASS",
+                   i);
+      PyMem_Free(seen);
+      return -1;
+    }
+  }
+
+  PyMem_Free(seen);
+  return 0;
+}
+
+
 static int validate_branches(KosMatcher *m) {
   if (Py_SIZE(m) == 0)
     return 0;
@@ -968,6 +1325,19 @@ static int validate_branches(KosMatcher *m) {
            cidx != KOS_MATCH_NO_INDEX;
            cidx = m->nodes[cidx].next) {
         if (validate_one_branch(m, cidx))
+          return -1;
+      }
+      break;
+
+    case KOS_MATCH_NODE_CLASS:
+      for (uint32_t fidx = n->as.class_.first_field;
+           fidx != KOS_MATCH_NO_INDEX;
+           fidx = m->nodes[fidx].next) {
+        KosMatchNode *fn = &m->nodes[fidx];
+        if (fn->kind != KOS_MATCH_NODE_FIELD)
+          break;
+        if (fn->as.field.subnode != KOS_MATCH_NO_INDEX &&
+            validate_one_branch(m, fn->as.field.subnode))
           return -1;
       }
       break;
@@ -1070,6 +1440,12 @@ PyObject *KosMatcherBuilder_Finalize(
 
   /* Phase B: REPEAT min-width and no-CAPTURE-in-NOT */
   if (validate_repeat_and_not(m)) {
+    Py_DECREF(m);
+    return NULL;
+  }
+
+  /* Phase B: CLASS / FIELD structural rules (depends on widths) */
+  if (validate_class_and_field_structure(m)) {
     Py_DECREF(m);
     return NULL;
   }
@@ -1862,6 +2238,166 @@ static int match_not(
 }
 
 
+/**
+   Run a single FIELD against an instance. value resolution failure
+   (AttributeError) is turned into a soft no-match (return 0); any
+   other exception (or sub-matcher error) propagates as -1.
+
+   match_args is the runtime-resolved __match_args__ tuple, or NULL
+   if the CLASS chain has no positional FIELDs. pos is the running
+   positional counter, advanced when this FIELD is positional.
+*/
+static int match_one_field(
+    MatchEngine *e,
+    KosMatchNode *fn,
+    PyObject *elem,
+    PyObject *match_args,
+    Py_ssize_t *pos) {
+
+  PyObject *attr_name = NULL;
+  if (fn->as.field.field_kind == KOS_MATCH_FIELD_POSITIONAL) {
+    attr_name = PyTuple_GET_ITEM(match_args, *pos);
+    if (! PyUnicode_Check(attr_name)) {
+      PyErr_Format(PyExc_TypeError,
+                   "__match_args__[%zd] must be str (got %.200s)",
+                   *pos, Py_TYPE(attr_name)->tp_name);
+      return -1;
+    }
+    (*pos)++;
+  } else {
+    attr_name = PyTuple_GET_ITEM(e->m->consts, fn->as.field.name_const);
+  }
+
+  PyObject *val = PyObject_GetAttr(elem, attr_name);
+  if (! val) {
+    if (PyErr_ExceptionMatches(PyExc_AttributeError)) {
+      PyErr_Clear();
+      return 0;
+    }
+    return -1;
+  }
+
+  if (fn->as.field.subnode == KOS_MATCH_NO_INDEX) {
+    Py_DECREF(val);
+    return 1;
+  }
+
+  /* The FIELD's sub-matcher is width-1 — synthesize a single-element
+     subject around the projected value rather than treating val itself
+     as a sequence. */
+  PyObject *one = PyTuple_Pack(1, val);
+  Py_DECREF(val);
+  if (! one)
+    return -1;
+
+  KosMatchSubject sub;
+  if (KosMatchSubject_FromPySequence(one, &sub)) {
+    Py_DECREF(one);
+    return -1;
+  }
+  Py_DECREF(one);
+
+  KosMatchSubject *saved = e->subj;
+  e->subj = &sub;
+
+  Py_ssize_t sub_cursor = 0;
+  int r = match_node(e, fn->as.field.subnode, &sub_cursor, 0);
+
+  Py_ssize_t sub_length = sub.vt->length(&sub);
+  e->subj = saved;
+  KosMatchSubject_Release(&sub);
+
+  if (r != 1)
+    return r;
+  if (sub_cursor != sub_length)
+    return 0;
+  return 1;
+}
+
+
+static int match_class(
+    MatchEngine *e,
+    KosMatchNode *n,
+    Py_ssize_t *cursor,
+    uint32_t trailing_min) {
+
+  Py_ssize_t length = e->subj->vt->length(e->subj);
+  if (*cursor + 1 + (Py_ssize_t) trailing_min > length)
+    return 0;
+
+  if (! e->extern_env) {
+    PyErr_SetString(PyExc_RuntimeError,
+                    "CLASS requires an extern environment");
+    return -1;
+  }
+
+  PyObject *elem = e->subj->vt->get(e->subj, *cursor);
+  PyObject *cls = PyTuple_GET_ITEM(e->extern_env, n->as.class_.type_extern);
+
+  int isinst = PyObject_IsInstance(elem, cls);
+  if (isinst < 0)
+    return -1;
+  if (! isinst)
+    return 0;
+
+  Py_ssize_t num_positional = 0;
+  for (uint32_t fidx = n->as.class_.first_field;
+       fidx != KOS_MATCH_NO_INDEX;
+       fidx = e->m->nodes[fidx].next) {
+    KosMatchNode *fn = &e->m->nodes[fidx];
+    if (fn->as.field.field_kind == KOS_MATCH_FIELD_POSITIONAL)
+      num_positional++;
+  }
+
+  PyObject *match_args = NULL;
+  if (num_positional > 0) {
+    match_args = PyObject_GetAttrString(cls, "__match_args__");
+    if (! match_args) {
+      if (PyErr_ExceptionMatches(PyExc_AttributeError))
+        PyErr_Clear();
+      else
+        return -1;
+      PyErr_Format(PyExc_TypeError,
+                   "%R has no __match_args__ but %zd positional field "
+                   "pattern(s) were supplied",
+                   cls, num_positional);
+      return -1;
+    }
+    if (! PyTuple_Check(match_args)) {
+      PyErr_Format(PyExc_TypeError,
+                   "%R.__match_args__ must be a tuple (got %.200s)",
+                   cls, Py_TYPE(match_args)->tp_name);
+      Py_DECREF(match_args);
+      return -1;
+    }
+    if (PyTuple_GET_SIZE(match_args) < num_positional) {
+      PyErr_Format(PyExc_TypeError,
+                   "%R.__match_args__ has %zd entries; cannot satisfy "
+                   "%zd positional field pattern(s)",
+                   cls, PyTuple_GET_SIZE(match_args), num_positional);
+      Py_DECREF(match_args);
+      return -1;
+    }
+  }
+
+  Py_ssize_t pos = 0;
+  for (uint32_t fidx = n->as.class_.first_field;
+       fidx != KOS_MATCH_NO_INDEX;
+       fidx = e->m->nodes[fidx].next) {
+    KosMatchNode *fn = &e->m->nodes[fidx];
+    int r = match_one_field(e, fn, elem, match_args, &pos);
+    if (r != 1) {
+      Py_XDECREF(match_args);
+      return r;
+    }
+  }
+
+  Py_XDECREF(match_args);
+  (*cursor)++;
+  return 1;
+}
+
+
 static int match_node(
     MatchEngine *e,
     uint32_t node_idx,
@@ -1909,6 +2445,15 @@ static int match_node(
 
   case KOS_MATCH_NODE_NOT:
     return match_not(e, n, cursor);
+
+  case KOS_MATCH_NODE_CLASS:
+    return match_class(e, n, cursor, trailing_min);
+
+  case KOS_MATCH_NODE_FIELD:
+    PyErr_Format(PyExc_RuntimeError,
+                 "FIELD node may not be matched directly (must be "
+                 "reached via a CLASS chain)");
+    return -1;
 
   default:
     PyErr_Format(PyExc_RuntimeError,
@@ -2314,6 +2859,92 @@ static int thaw_node(KosMatcherBuilder *b, PyObject *t) {
     if (thaw_parse_index(PyTuple_GET_ITEM(t, 1),
                          &n.as.not_.subnode, "NOT.subnode"))
       return -1;
+
+  } else if (PyUnicode_CompareWithASCIIString(tag, "CLASS") == 0) {
+    if (arity < 2) {
+      PyErr_Format(PyExc_ValueError,
+                   "CLASS node tuple must have at least 2 entries, "
+                   "got %zd", arity);
+      return -1;
+    }
+    uint32_t type_extern;
+    if (thaw_parse_index(PyTuple_GET_ITEM(t, 1), &type_extern,
+                         "CLASS.type_extern"))
+      return -1;
+    Py_ssize_t cnt = arity - 2;
+    uint32_t *fields = NULL;
+    if (cnt > 0) {
+      fields = PyMem_Malloc(cnt * sizeof(uint32_t));
+      if (! fields) {
+        PyErr_NoMemory();
+        return -1;
+      }
+    }
+    for (Py_ssize_t i = 0; i < cnt; i++) {
+      if (thaw_parse_index(PyTuple_GET_ITEM(t, 2 + i), &fields[i],
+                           "CLASS field")) {
+        PyMem_Free(fields);
+        return -1;
+      }
+    }
+    int rc = KosMatcherBuilder_AppendClass(b, type_extern, fields, cnt);
+    PyMem_Free(fields);
+    return (rc < 0) ? -1 : 0;
+
+  } else if (PyUnicode_CompareWithASCIIString(tag, "FIELD_POS") == 0) {
+    if (arity != 2) {
+      PyErr_Format(PyExc_ValueError,
+                   "FIELD_POS node tuple must be 2-tuple, got %zd",
+                   arity);
+      return -1;
+    }
+    uint32_t sub;
+    if (thaw_parse_index(PyTuple_GET_ITEM(t, 1), &sub,
+                         "FIELD_POS.subnode"))
+      return -1;
+    int rc = KosMatcherBuilder_AppendFieldPositional(b, sub);
+    return (rc < 0) ? -1 : 0;
+
+  } else if (PyUnicode_CompareWithASCIIString(tag, "FIELD_KW") == 0) {
+    if (arity != 3) {
+      PyErr_Format(PyExc_ValueError,
+                   "FIELD_KW node tuple must be 3-tuple, got %zd",
+                   arity);
+      return -1;
+    }
+    uint32_t sub;
+    if (thaw_parse_index(PyTuple_GET_ITEM(t, 1), &sub,
+                         "FIELD_KW.subnode"))
+      return -1;
+    PyObject *name = PyTuple_GET_ITEM(t, 2);
+    if (! PyUnicode_Check(name)) {
+      PyErr_Format(PyExc_TypeError,
+                   "FIELD_KW attr name must be str (got %.200s)",
+                   Py_TYPE(name)->tp_name);
+      return -1;
+    }
+    int name_idx = -1;
+    Py_ssize_t n_consts = PyList_GET_SIZE(b->consts);
+    for (Py_ssize_t i = 0; i < n_consts; i++) {
+      PyObject *cv = PyList_GET_ITEM(b->consts, i);
+      if (PyUnicode_Check(cv)) {
+        int eq = PyUnicode_Compare(cv, name);
+        if (eq == 0) {
+          name_idx = (int) i;
+          break;
+        }
+        if (eq == -1 && PyErr_Occurred())
+          return -1;
+      }
+    }
+    if (name_idx < 0) {
+      name_idx = KosMatcherBuilder_AddConst(b, name);
+      if (name_idx < 0)
+        return -1;
+    }
+    int rc = KosMatcherBuilder_AppendFieldKeyword(
+        b, sub, (uint32_t) name_idx);
+    return (rc < 0) ? -1 : 0;
 
   } else {
     PyErr_Format(PyExc_ValueError,

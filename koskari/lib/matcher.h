@@ -35,8 +35,17 @@ typedef enum {
   KOS_MATCH_NODE_OPTIONAL,
   KOS_MATCH_NODE_REST,
   KOS_MATCH_NODE_NOT,
+  KOS_MATCH_NODE_CLASS,
+  KOS_MATCH_NODE_FIELD,
   KOS_MATCH_NODE_KIND_COUNT
 } KosMatchNodeKind;
+
+
+typedef enum {
+  KOS_MATCH_FIELD_POSITIONAL = 0,
+  KOS_MATCH_FIELD_KEYWORD,
+  KOS_MATCH_FIELD_KIND_COUNT
+} KosMatchFieldKind;
 
 
 typedef enum {
@@ -114,10 +123,26 @@ typedef struct {
 
 
 typedef struct {
+  uint32_t type_extern;   /* index into matcher->externs / extern_env */
+  uint32_t first_field;   /* head of FIELD chain; NO_INDEX if empty */
+} KosMatchClass;
+
+
+typedef struct {
+  uint16_t field_kind;    /* KosMatchFieldKind */
+  uint16_t reserved;
+  uint32_t subnode;       /* width-1 sub-matcher for the projected attr */
+  uint32_t name_const;    /* index into matcher->consts for KEYWORD;
+                             KOS_MATCH_NO_INDEX for POSITIONAL */
+} KosMatchField;
+
+
+typedef struct {
   uint16_t kind;
   uint16_t flags;
   uint32_t next;         /* next sibling in GROUP, next branch in ONEOF,
-                            otherwise KOS_MATCH_NO_INDEX */
+                            next FIELD in a CLASS chain, otherwise
+                            KOS_MATCH_NO_INDEX */
   uint32_t min_width;
   uint32_t max_width;
   union {
@@ -130,6 +155,8 @@ typedef struct {
     KosMatchOptional optional;
     KosMatchRest     rest;
     KosMatchNot      not_;
+    KosMatchClass    class_;
+    KosMatchField    field;
   } as;
 } KosMatchNode;
 
@@ -354,6 +381,53 @@ int KosMatcherBuilder_AppendGroup(
 int KosMatcherBuilder_AppendOneof(
     KosMatcherBuilder *builder,
     const uint32_t *branches,
+    Py_ssize_t count);
+
+/**
+   Append a positional FIELD node referencing an existing width-1
+   sub-matcher. Forward references are rejected. The FIELD has no
+   stored attribute name; its position in the parent CLASS's chain
+   determines its index into the runtime-resolved __match_args__.
+
+   Returns the index of the new FIELD node, or -1 on error.
+ */
+int KosMatcherBuilder_AppendFieldPositional(
+    KosMatcherBuilder *builder,
+    uint32_t subnode);
+
+/**
+   Append a keyword FIELD node referencing an existing width-1
+   sub-matcher and an attribute name stored in the matcher's consts
+   pool. The caller is responsible for having already added the
+   attribute name (a Python str) to the const pool via
+   KosMatcherBuilder_AddConst; pass the resulting index as
+   name_const. Range-checks name_const against the current consts
+   list size; type-checks (PyUnicode_Check) of the referenced const
+   value happen at finalize alongside other index validation.
+
+   Returns the index of the new FIELD node, or -1 on error.
+ */
+int KosMatcherBuilder_AppendFieldKeyword(
+    KosMatcherBuilder *builder,
+    uint32_t subnode,
+    uint32_t name_const);
+
+/**
+   Append a CLASS node whose fields are the supplied FIELD-node
+   indices in order. Behaves like KosMatcherBuilder_AppendGroup but
+   stitches a chain through FIELD `next` links: positional FIELDs
+   must precede any keyword FIELDs (validator enforces this at
+   finalize). type_extern is range-checked at finalize against the
+   matcher's extern tuple; each fields[i] must reference a node
+   already appended whose kind is KOS_MATCH_NODE_FIELD with
+   `next == NO_INDEX`, with no duplicates.
+
+   Returns the index of the new CLASS node, or -1 on error.
+ */
+int KosMatcherBuilder_AppendClass(
+    KosMatcherBuilder *builder,
+    uint32_t type_extern,
+    const uint32_t *fields,
     Py_ssize_t count);
 
 /**

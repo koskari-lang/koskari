@@ -229,4 +229,45 @@ class TestMatcherFromTuple(unittest.TestCase):
         self.assertEqual(result.captures["x"], 42)
 
 
+    def test_thaw_class_kw_and_pos_round_trip(self):
+        """
+        Thaw a CLASS / FIELD shape (one positional, one keyword) and
+        execute it against a small inline class instance
+        """
+
+        class Point:
+            __match_args__ = ("x",)
+
+
+        nodes = (
+            ("TEST", "ANY", -1),                # 0
+            ("CAPTURE", 0, 0, 0, -1),           # 1: capture x
+            ("FIELD_POS", 1),                   # 2
+            ("TEST", "ANY", -1),                # 3
+            ("CAPTURE", 1, 3, 0, -1),           # 4: capture y
+            ("FIELD_KW", 4, "y"),               # 5: name will be added
+            ("CLASS", 0, 2, 5),                 # 6
+        )
+        frozen = (
+            "MATCHER", 1,
+            ("x", "y"), ("Point",), (),
+            nodes, 6, {})
+
+        m = thaw(frozen)
+        self.assertIsInstance(m, Matcher)
+        self.assertIn("y", m.consts)
+
+        p = Point()
+        p.x = 10
+        p.y = 20
+        result = m.match((p,), Point=Point)
+        self.assertTrue(result.matched)
+        self.assertEqual(result.captures["x"], 10)
+        self.assertEqual(result.captures["y"], 20)
+
+        not_point = object()
+        result_bad = m.match((not_point,), Point=Point)
+        self.assertFalse(result_bad.matched)
+
+
 # The end.

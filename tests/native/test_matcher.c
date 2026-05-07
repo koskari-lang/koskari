@@ -1986,6 +1986,411 @@ static int test_thaw_full_lambda(void) {
 }
 
 
+/* === Phase 4: CLASS / FIELD tests === */
+
+
+static int append_field_pos(KosMatcherBuilder *b, uint32_t subnode) {
+    return KosMatcherBuilder_AppendFieldPositional(b, subnode);
+}
+
+
+static int append_field_kw(
+    KosMatcherBuilder *b,
+    uint32_t subnode,
+    const char *attr) {
+
+    PyObject *name = PyUnicode_FromString(attr);
+    if (! name)
+        return -1;
+    int cidx = KosMatcherBuilder_AddConst(b, name);
+    Py_DECREF(name);
+    if (cidx < 0)
+        return -1;
+    return KosMatcherBuilder_AppendFieldKeyword(
+        b, subnode, (uint32_t) cidx);
+}
+
+
+static int append_class(
+    KosMatcherBuilder *b,
+    uint32_t type_extern,
+    const uint32_t *fields,
+    uint32_t count) {
+
+    return KosMatcherBuilder_AppendClass(
+        b, type_extern, fields, (Py_ssize_t) count);
+}
+
+
+/**
+   Build a fresh Python class via the runtime metaclass:
+     type(name, (object,), {'__match_args__': match_args} or {})
+   match_args may be NULL, in which case __match_args__ is not set.
+   Returns a new class reference.
+*/
+static PyObject *make_test_class(const char *name, PyObject *match_args) {
+    PyObject *cls_name = PyUnicode_FromString(name);
+    PyObject *bases = PyTuple_Pack(1, (PyObject *) &PyBaseObject_Type);
+    PyObject *attrs = PyDict_New();
+    if (match_args)
+        PyDict_SetItemString(attrs, "__match_args__", match_args);
+
+    PyObject *args = PyTuple_Pack(3, cls_name, bases, attrs);
+    PyObject *cls = PyObject_CallObject(
+        (PyObject *) &PyType_Type, args);
+
+    Py_DECREF(args);
+    Py_DECREF(attrs);
+    Py_DECREF(bases);
+    Py_DECREF(cls_name);
+    return cls;
+}
+
+
+/**
+   Instantiate the supplied class (no __init__ args) and decorate the
+   instance with the given keyword attributes. attrs is a NULL-terminated
+   list of (const char *, PyObject *) pairs (borrowed values).
+*/
+static PyObject *make_test_instance(
+    PyObject *cls,
+    const char **attr_names,
+    PyObject *const *attr_values,
+    Py_ssize_t n) {
+
+    PyObject *inst = PyObject_CallObject(cls, NULL);
+    if (! inst)
+        return NULL;
+    for (Py_ssize_t i = 0; i < n; i++) {
+        if (PyObject_SetAttrString(inst, attr_names[i],
+                                   attr_values[i])) {
+            Py_DECREF(inst);
+            return NULL;
+        }
+    }
+    return inst;
+}
+
+
+static int test_match_class_kw_only(void) {
+    /*
+      CLASS(Foo, FIELD_KW('a', CAPTURE('a', TEST_ANY)),
+                 FIELD_KW('b', CAPTURE('b', TEST_ANY)))
+      against (Foo(a=X, b=Y),). Captures a=X, b=Y.
+    */
+    KosMatcherBuilder *b = KosMatcherBuilder_New();
+    TEST_ASSERT_NOT_NULL(b, "create builder");
+
+    int slot_a = add_str_slot(b, "a");
+    int slot_b = add_str_slot(b, "b");
+    int e_foo = add_str_extern(b, "Foo");
+    TEST_ASSERT(slot_a >= 0 && slot_b >= 0 && e_foo >= 0,
+                "slots/extern added");
+
+    int t1 = append_test_any(b);
+    int cap_a = append_capture(b, (uint32_t) slot_a, (uint32_t) t1);
+    int f_a = append_field_kw(b, (uint32_t) cap_a, "a");
+
+    int t2 = append_test_any(b);
+    int cap_b = append_capture(b, (uint32_t) slot_b, (uint32_t) t2);
+    int f_b = append_field_kw(b, (uint32_t) cap_b, "b");
+    TEST_ASSERT(f_a >= 0 && f_b >= 0, "FIELD_KWs appended");
+
+    uint32_t fields[] = {(uint32_t) f_a, (uint32_t) f_b};
+    int n_cls = append_class(b, (uint32_t) e_foo, fields, 2);
+    TEST_ASSERT(n_cls >= 0, "AppendClass");
+
+    PyObject *m_obj = KosMatcherBuilder_Finalize(b, (uint32_t) n_cls);
+    TEST_ASSERT_NOT_NULL(m_obj, "finalize");
+
+    PyObject *cls = make_test_class("Foo", NULL);
+    TEST_ASSERT_NOT_NULL(cls, "build Foo class");
+
+    PyObject *X = PyLong_FromLong(11);
+    PyObject *Y = PyLong_FromLong(22);
+    const char *names[] = {"a", "b"};
+    PyObject *vals[] = {X, Y};
+    PyObject *inst = make_test_instance(cls, names, vals, 2);
+    TEST_ASSERT_NOT_NULL(inst, "build instance");
+
+    PyObject *seq = PyTuple_Pack(1, inst);
+    PyObject *extern_env = PyTuple_Pack(1, cls);
+    PyObject *r = run_match_pyseq_externs(
+        (KosMatcher *) m_obj, seq, extern_env);
+    TEST_ASSERT_NOT_NULL(r, "match returned");
+    TEST_ASSERT(((KosMatchResult *) r)->matched, "matched");
+
+    PyObject *captures = ((KosMatchResult *) r)->captures;
+    TEST_ASSERT_SAME(PyDict_GetItemString(captures, "a"), X, "a captured");
+    TEST_ASSERT_SAME(PyDict_GetItemString(captures, "b"), Y, "b captured");
+
+    Py_DECREF(r);
+    Py_DECREF(extern_env);
+    Py_DECREF(seq);
+    Py_DECREF(inst);
+    Py_DECREF(Y);
+    Py_DECREF(X);
+    Py_DECREF(cls);
+    Py_DECREF(m_obj);
+    KosMatcherBuilder_Free(b);
+    return 0;
+}
+
+
+static int test_match_class_positional(void) {
+    /*
+      Class Bar with __match_args__ = ("first", "second").
+      CLASS(Bar, FIELD_POS(CAPTURE('first', TEST_ANY)),
+                 FIELD_POS(CAPTURE('second', TEST_ANY))).
+      Subject (Bar(first=A, second=B),).
+    */
+    KosMatcherBuilder *b = KosMatcherBuilder_New();
+    int slot_first = add_str_slot(b, "first");
+    int slot_second = add_str_slot(b, "second");
+    int e_bar = add_str_extern(b, "Bar");
+
+    int t1 = append_test_any(b);
+    int cap1 = append_capture(b, (uint32_t) slot_first, (uint32_t) t1);
+    int f1 = append_field_pos(b, (uint32_t) cap1);
+
+    int t2 = append_test_any(b);
+    int cap2 = append_capture(b, (uint32_t) slot_second, (uint32_t) t2);
+    int f2 = append_field_pos(b, (uint32_t) cap2);
+
+    uint32_t fields[] = {(uint32_t) f1, (uint32_t) f2};
+    int n_cls = append_class(b, (uint32_t) e_bar, fields, 2);
+
+    PyObject *m_obj = KosMatcherBuilder_Finalize(b, (uint32_t) n_cls);
+    TEST_ASSERT_NOT_NULL(m_obj, "finalize");
+
+    PyObject *first_name = PyUnicode_FromString("first");
+    PyObject *second_name = PyUnicode_FromString("second");
+    PyObject *match_args = PyTuple_Pack(2, first_name, second_name);
+    PyObject *cls = make_test_class("Bar", match_args);
+
+    PyObject *A = PyLong_FromLong(101);
+    PyObject *B = PyLong_FromLong(202);
+    const char *names[] = {"first", "second"};
+    PyObject *vals[] = {A, B};
+    PyObject *inst = make_test_instance(cls, names, vals, 2);
+
+    PyObject *seq = PyTuple_Pack(1, inst);
+    PyObject *extern_env = PyTuple_Pack(1, cls);
+    PyObject *r = run_match_pyseq_externs(
+        (KosMatcher *) m_obj, seq, extern_env);
+    TEST_ASSERT_NOT_NULL(r, "match returned");
+    TEST_ASSERT(((KosMatchResult *) r)->matched, "matched");
+
+    PyObject *captures = ((KosMatchResult *) r)->captures;
+    TEST_ASSERT_SAME(PyDict_GetItemString(captures, "first"), A,
+                     "first captured");
+    TEST_ASSERT_SAME(PyDict_GetItemString(captures, "second"), B,
+                     "second captured");
+
+    Py_DECREF(r);
+    Py_DECREF(extern_env);
+    Py_DECREF(seq);
+    Py_DECREF(inst);
+    Py_DECREF(B);
+    Py_DECREF(A);
+    Py_DECREF(cls);
+    Py_DECREF(match_args);
+    Py_DECREF(second_name);
+    Py_DECREF(first_name);
+    Py_DECREF(m_obj);
+    KosMatcherBuilder_Free(b);
+    return 0;
+}
+
+
+static int test_match_class_typeerror_no_match_args(void) {
+    /*
+      Positional FIELDs but the class has no __match_args__ — match
+      must raise TypeError (NULL result, exception set).
+    */
+    KosMatcherBuilder *b = KosMatcherBuilder_New();
+    int slot_first = add_str_slot(b, "first");
+    int e_baz = add_str_extern(b, "Baz");
+
+    int t1 = append_test_any(b);
+    int cap1 = append_capture(b, (uint32_t) slot_first, (uint32_t) t1);
+    int f1 = append_field_pos(b, (uint32_t) cap1);
+    uint32_t fields[] = {(uint32_t) f1};
+    int n_cls = append_class(b, (uint32_t) e_baz, fields, 1);
+
+    PyObject *m_obj = KosMatcherBuilder_Finalize(b, (uint32_t) n_cls);
+    TEST_ASSERT_NOT_NULL(m_obj, "finalize");
+
+    PyObject *cls = make_test_class("Baz", NULL);
+    const char *names[] = {"first"};
+    PyObject *A = PyLong_FromLong(7);
+    PyObject *vals[] = {A};
+    PyObject *inst = make_test_instance(cls, names, vals, 1);
+
+    PyObject *seq = PyTuple_Pack(1, inst);
+    PyObject *extern_env = PyTuple_Pack(1, cls);
+    PyObject *r = run_match_pyseq_externs(
+        (KosMatcher *) m_obj, seq, extern_env);
+    TEST_ASSERT_NULL(r, "match must fail with TypeError");
+    TEST_ASSERT(PyErr_Occurred() != NULL, "exception set");
+    TEST_ASSERT(PyErr_ExceptionMatches(PyExc_TypeError),
+                "TypeError raised");
+    PyErr_Clear();
+
+    Py_DECREF(extern_env);
+    Py_DECREF(seq);
+    Py_DECREF(inst);
+    Py_DECREF(A);
+    Py_DECREF(cls);
+    Py_DECREF(m_obj);
+    KosMatcherBuilder_Free(b);
+    return 0;
+}
+
+
+static int test_match_class_empty_isinstance(void) {
+    /*
+      CLASS(Qux) with no FIELDs. Matches any Qux instance, fails on
+      non-Qux instance.
+    */
+    KosMatcherBuilder *b = KosMatcherBuilder_New();
+    int e_qux = add_str_extern(b, "Qux");
+    int n_cls = append_class(b, (uint32_t) e_qux, NULL, 0);
+
+    PyObject *m_obj = KosMatcherBuilder_Finalize(b, (uint32_t) n_cls);
+    TEST_ASSERT_NOT_NULL(m_obj, "finalize");
+
+    PyObject *cls = make_test_class("Qux", NULL);
+    PyObject *inst = make_test_instance(cls, NULL, NULL, 0);
+    PyObject *seq_ok = PyTuple_Pack(1, inst);
+    PyObject *extern_env = PyTuple_Pack(1, cls);
+
+    PyObject *r1 = run_match_pyseq_externs(
+        (KosMatcher *) m_obj, seq_ok, extern_env);
+    TEST_ASSERT_NOT_NULL(r1, "match returned (Qux)");
+    TEST_ASSERT(((KosMatchResult *) r1)->matched, "matched Qux");
+
+    PyObject *not_qux = PyLong_FromLong(123);
+    PyObject *seq_bad = PyTuple_Pack(1, not_qux);
+    PyObject *r2 = run_match_pyseq_externs(
+        (KosMatcher *) m_obj, seq_bad, extern_env);
+    TEST_ASSERT_NOT_NULL(r2, "match returned (non-Qux)");
+    TEST_ASSERT_EQ(((KosMatchResult *) r2)->matched, 0,
+                   "non-Qux fails");
+
+    Py_DECREF(r1);
+    Py_DECREF(r2);
+    Py_DECREF(extern_env);
+    Py_DECREF(seq_ok);
+    Py_DECREF(seq_bad);
+    Py_DECREF(inst);
+    Py_DECREF(not_qux);
+    Py_DECREF(cls);
+    Py_DECREF(m_obj);
+    KosMatcherBuilder_Free(b);
+    return 0;
+}
+
+
+static int test_validator_field_orphan_rejected(void) {
+    /*
+      Append a FIELD_POS but never reference it from a CLASS.
+      Finalize must reject the orphan.
+    */
+    KosMatcherBuilder *b = KosMatcherBuilder_New();
+
+    int t1 = append_test_any(b);
+    int f1 = append_field_pos(b, (uint32_t) t1);
+    TEST_ASSERT(f1 >= 0, "FIELD_POS appended");
+
+    int t_entry = append_test_any(b);
+
+    PyObject *m = KosMatcherBuilder_Finalize(b, (uint32_t) t_entry);
+    TEST_ASSERT_NULL(m, "finalize must reject orphan FIELD");
+    TEST_ASSERT(PyErr_Occurred() != NULL, "exception set");
+    PyErr_Clear();
+
+    KosMatcherBuilder_Free(b);
+    return 0;
+}
+
+
+static int test_validator_field_subnode_width_rejected(void) {
+    /*
+      FIELD_POS(GROUP(TEST_ANY, TEST_ANY)) — subnode min/max width is
+      2, not 1. Finalize must reject.
+    */
+    KosMatcherBuilder *b = KosMatcherBuilder_New();
+    int e_foo = add_str_extern(b, "Foo");
+
+    int t1 = append_test_any(b);
+    int t2 = append_test_any(b);
+    uint32_t kids[] = {(uint32_t) t1, (uint32_t) t2};
+    int g = append_group(b, kids, 2);
+    int f = append_field_pos(b, (uint32_t) g);
+
+    uint32_t fields[] = {(uint32_t) f};
+    int n_cls = append_class(b, (uint32_t) e_foo, fields, 1);
+
+    PyObject *m = KosMatcherBuilder_Finalize(b, (uint32_t) n_cls);
+    TEST_ASSERT_NULL(m, "finalize must reject FIELD subnode width != 1");
+    TEST_ASSERT(PyErr_Occurred() != NULL, "exception set");
+    PyErr_Clear();
+
+    KosMatcherBuilder_Free(b);
+    return 0;
+}
+
+
+static int test_validator_field_kw_name_const_oob_rejected(void) {
+    /*
+      AppendFieldKeyword with a name_const past the end of the consts
+      list is rejected at append time.
+    */
+    KosMatcherBuilder *b = KosMatcherBuilder_New();
+
+    int t = append_test_any(b);
+    int rc = KosMatcherBuilder_AppendFieldKeyword(
+        b, (uint32_t) t, 99);
+    TEST_ASSERT_EQ(rc, -1, "AppendFieldKeyword OOB rejected");
+    TEST_ASSERT(PyErr_Occurred() != NULL, "exception set");
+    PyErr_Clear();
+
+    KosMatcherBuilder_Free(b);
+    return 0;
+}
+
+
+static int test_validator_field_kw_name_const_not_unicode_rejected(void) {
+    /*
+      FIELD_KW pointing at a const that is not str — AppendFieldKeyword
+      accepts at append (range-only check) but Finalize must reject when
+      it sees a non-PyUnicode value at the slot.
+    */
+    KosMatcherBuilder *b = KosMatcherBuilder_New();
+    int e_foo = add_str_extern(b, "Foo");
+
+    int c_int = add_const_long(b, 42);
+    TEST_ASSERT(c_int >= 0, "add non-str const");
+
+    int t = append_test_any(b);
+    int f = KosMatcherBuilder_AppendFieldKeyword(
+        b, (uint32_t) t, (uint32_t) c_int);
+    TEST_ASSERT(f >= 0, "AppendFieldKeyword (non-unicode const)");
+
+    uint32_t fields[] = {(uint32_t) f};
+    int n_cls = append_class(b, (uint32_t) e_foo, fields, 1);
+
+    PyObject *m = KosMatcherBuilder_Finalize(b, (uint32_t) n_cls);
+    TEST_ASSERT_NULL(m, "finalize must reject non-unicode kw name_const");
+    TEST_ASSERT(PyErr_Occurred() != NULL, "exception set");
+    PyErr_Clear();
+
+    KosMatcherBuilder_Free(b);
+    return 0;
+}
+
+
 /* === suite runner === */
 
 
@@ -2039,6 +2444,17 @@ int run_matcher_tests(void) {
     RUN_TEST(test_thaw_rejects_unknown_node_tag);
     RUN_TEST(test_thaw_rejects_index_oob);
     RUN_TEST(test_thaw_full_lambda);
+
+    BEGIN_TEST_SUITE("matcher_ng (Phase 4: CLASS / FIELD)");
+
+    RUN_TEST(test_match_class_kw_only);
+    RUN_TEST(test_match_class_positional);
+    RUN_TEST(test_match_class_typeerror_no_match_args);
+    RUN_TEST(test_match_class_empty_isinstance);
+    RUN_TEST(test_validator_field_orphan_rejected);
+    RUN_TEST(test_validator_field_subnode_width_rejected);
+    RUN_TEST(test_validator_field_kw_name_const_oob_rejected);
+    RUN_TEST(test_validator_field_kw_name_const_not_unicode_rejected);
 
     return 0;
 }
