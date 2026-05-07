@@ -1329,6 +1329,85 @@ static int test_match_repeat_named_per_iteration_frames(void) {
 }
 
 
+static int test_match_repeat_bindings_shaped_two_slots_per_frame(void) {
+    /*
+      CAPTURE(frames, REPEAT(FORM(GROUP(CAPTURE(name, TEST_ANY),
+                                        CAPTURE(expr, TEST_ANY)))))
+
+      against [(1, 10), (2, 20)] — each tuple is one binding cell; two
+      iterations yield two dict frames (BINDINGS lowering shape).
+    */
+    KosMatcherBuilder *b = KosMatcherBuilder_New();
+    TEST_ASSERT_NOT_NULL(b, "create builder");
+
+    int slot_frames = add_str_slot(b, "frames");
+    int slot_name = add_str_slot(b, "name");
+    int slot_expr = add_str_slot(b, "expr");
+
+    int t_any_a = append_test_any(b);
+    int t_any_b = append_test_any(b);
+    int cap_name = append_capture(b, (uint32_t) slot_name, (uint32_t) t_any_a);
+    int cap_expr = append_capture(b, (uint32_t) slot_expr, (uint32_t) t_any_b);
+    uint32_t inner_kids[] = {(uint32_t) cap_name, (uint32_t) cap_expr};
+    int inner_grp = append_group(b, inner_kids, 2);
+    int inner_form = append_form(b, (uint32_t) inner_grp);
+    int n_rep = append_repeat(b, (uint32_t) inner_form);
+    int cap_frames = append_capture(b, (uint32_t) slot_frames,
+                                    (uint32_t) n_rep);
+
+    PyObject *m_obj = KosMatcherBuilder_Finalize(b, (uint32_t) cap_frames);
+    TEST_ASSERT_NOT_NULL(m_obj, "finalize");
+
+    PyObject *one = PyLong_FromLong(1);
+    PyObject *ten = PyLong_FromLong(10);
+    PyObject *two = PyLong_FromLong(2);
+    PyObject *twenty = PyLong_FromLong(20);
+    PyObject *pair0 = PyTuple_Pack(2, one, ten);
+    PyObject *pair1 = PyTuple_Pack(2, two, twenty);
+    PyObject *seq = PyTuple_Pack(2, pair0, pair1);
+
+    PyObject *r = run_match_pyseq((KosMatcher *) m_obj, seq);
+    TEST_ASSERT_NOT_NULL(r, "match returned");
+    TEST_ASSERT(((KosMatchResult *) r)->matched, "matched");
+
+    PyObject *captures = ((KosMatchResult *) r)->captures;
+    PyObject *frames = PyDict_GetItemString(captures, "frames");
+    TEST_ASSERT_NOT_NULL(frames, "frames present");
+    TEST_ASSERT(PyList_Check(frames), "frames is list");
+    TEST_ASSERT_EQ(PyList_GET_SIZE(frames), 2, "2 iterations");
+
+    PyObject *f0 = PyList_GET_ITEM(frames, 0);
+    TEST_ASSERT(PyDict_Check(f0), "frame0 is dict");
+    PyObject *n0 = PyDict_GetItemString(f0, "name");
+    PyObject *e0 = PyDict_GetItemString(f0, "expr");
+    TEST_ASSERT_SAME(n0, one, "frame0.name == 1");
+    TEST_ASSERT_SAME(e0, ten, "frame0.expr == 10");
+
+    PyObject *f1 = PyList_GET_ITEM(frames, 1);
+    PyObject *n1 = PyDict_GetItemString(f1, "name");
+    PyObject *e1 = PyDict_GetItemString(f1, "expr");
+    TEST_ASSERT_SAME(n1, two, "frame1.name == 2");
+    TEST_ASSERT_SAME(e1, twenty, "frame1.expr == 20");
+
+    PyObject *name_top = PyDict_GetItemString(captures, "name");
+    PyObject *expr_top = PyDict_GetItemString(captures, "expr");
+    TEST_ASSERT_SAME(name_top, KosMatchAbsent, "name top ABSENT");
+    TEST_ASSERT_SAME(expr_top, KosMatchAbsent, "expr top ABSENT");
+
+    Py_DECREF(r);
+    Py_DECREF(seq);
+    Py_DECREF(pair0);
+    Py_DECREF(pair1);
+    Py_DECREF(one);
+    Py_DECREF(ten);
+    Py_DECREF(two);
+    Py_DECREF(twenty);
+    Py_DECREF(m_obj);
+    KosMatcherBuilder_Free(b);
+    return 0;
+}
+
+
 static int test_match_rest_terminal_pysequence(void) {
     /*
       GROUP(TEST_ANY, REST(rest)) against [1, 2, 3, 4].
@@ -2429,6 +2508,7 @@ int run_matcher_tests(void) {
     RUN_TEST(test_match_oneof_falls_through);
     RUN_TEST(test_match_oneof_rollback_clean_frame);
     RUN_TEST(test_match_repeat_named_per_iteration_frames);
+    RUN_TEST(test_match_repeat_bindings_shaped_two_slots_per_frame);
     RUN_TEST(test_match_rest_terminal_pysequence);
     RUN_TEST(test_match_rest_terminal_kospair);
     RUN_TEST(test_match_rest_nonterminal_with_finite_suffix);

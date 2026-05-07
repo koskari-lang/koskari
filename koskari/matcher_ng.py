@@ -18,7 +18,9 @@ matcher_ng
 Python surface for the next-generation native matcher. Provides the thaw
 helper that reconstructs a native Matcher from its frozen tagged-tuple
 representation, plus a small builder API for authoring matcher patterns
-in Python that lower to the same frozen form.
+in Python that lower to the same frozen form. Named repeat captures
+(CAPTURE wrapping REPEAT) produce per-iteration frame dicts; see
+repeat_capture and binding_inner_pattern
 
 :author: Christopher O'Brien <obriencj@preoccupied.net>
 :license: GNU General Public License v3
@@ -59,6 +61,11 @@ __all__ = [
     "LITERAL_KW",
     "LITERAL_SYM",
     "LIST",
+
+    "repeat_capture",
+    "slot_prefix",
+    "binding_inner_pattern",
+    "BINDING_CELL",
 ]
 
 
@@ -92,8 +99,27 @@ class _FreezeCtx(object):
         self.extern_indices = {}
         self.consts = []
         self.nodes = []
-        self.seen_capture_slots = set()
+        self.capture_scope_stack = [set()]
         self.in_class_fields = False
+
+
+    def push_capture_scope(self):
+        """
+        Begin an isolated duplicate-slot scope (used per ONEOF branch)
+        """
+
+        self.capture_scope_stack.append(set())
+
+
+    def pop_capture_scope(self):
+        """
+        End the innermost duplicate-slot scope
+        """
+
+        if len(self.capture_scope_stack) <= 1:
+            raise RuntimeError(
+                "pop_capture_scope underflow (unbalanced ONEOF scope)")
+        self.capture_scope_stack.pop()
 
 
     def intern_slot(self, name):
@@ -152,14 +178,16 @@ class _FreezeCtx(object):
 
     def claim_slot_name(self, name):
         """
-        Reject duplicate slot bindings within a single freeze. Conservative
-        until REPEAT-as-named-loop semantics are wired in
+        Reject duplicate slot bindings within the current capture scope.
+        ONEOF branches use a fresh scope per branch so alternate arms may
+        reuse the same slot names
         """
 
-        if name in self.seen_capture_slots:
+        top = self.capture_scope_stack[-1]
+        if name in top:
             raise ValueError(
                 "duplicate slot name %r in matcher pattern" % (name,))
-        self.seen_capture_slots.add(name)
+        top.add(name)
 
 
 class _Pattern(object):
@@ -519,10 +547,18 @@ class ONEOF(_Pattern):
 
     def _emit(self, ctx):
         """
-        Emit each branch then a ONEOF node listing them in order
+        Emit each branch then a ONEOF node listing them in order. Each
+        branch gets its own capture scope so identical slot names across
+        mutually exclusive arms remain valid
         """
 
-        idxs = [b._emit(ctx) for b in self._branches]
+        idxs = []
+        for b in self._branches:
+            ctx.push_capture_scope()
+            try:
+                idxs.append(b._emit(ctx))
+            finally:
+                ctx.pop_capture_scope()
         return ctx.append_node(("ONEOF",) + tuple(idxs))
 
 
@@ -724,6 +760,137 @@ class FIELD(_Pattern):
         if self._name is None:
             return ctx.append_node(("FIELD_POS", sub_idx))
         return ctx.append_node(("FIELD_KW", sub_idx, self._name))
+
+
+def repeat_capture(slot, inner):
+    """
+    Capture the results of repeating inner across successive subject
+    elements. The native engine stores matched.captures[slot] as a
+    list of dict objects: each dict maps slot names touched during
+    one iteration to their captured values (ABSENT for unset slots).
+    Inner patterns should use CAPTURE nodes for fields to collect per
+    iteration
+
+    :param slot: outer slot receiving the list of frame dicts
+    :param inner: pattern run once per repetition (often FORM around
+        a GROUP of captures)
+    :rtype: CAPTURE
+    """
+
+    _check_str_arg(slot, "repeat_capture slot")
+    _check_pattern_arg(inner, "repeat_capture inner")
+    return CAPTURE(slot, REPEAT(inner))
+
+
+def slot_prefix(pattern, prefix, sep="__"):
+    """
+    Return a copy of pattern with every nested CAPTURE and REST slot
+    renamed to prefix + sep + original, and CAPTURE scope_slot likewise
+    prefixed when present. Use before composing the same binding-shaped
+    subtree multiple times so freeze-time duplicate-slot detection does
+    not fire
+
+    :param pattern: matcher_ng pattern tree
+    :param prefix: non-empty prefix string
+    :param sep: separator between prefix and original slot name
+    :raises TypeError: when pattern is not a matcher_ng pattern
+    :raises ValueError: when prefix is empty
+    """
+
+    _check_pattern_arg(pattern, "slot_prefix pattern")
+    _check_str_arg(prefix, "slot_prefix prefix")
+    return _slot_prefix_copy(pattern, prefix, sep)
+
+
+def _slot_prefix_copy(pattern, prefix, sep):
+    """
+    Recursive implementation for slot_prefix
+    """
+
+    if isinstance(pattern, CAPTURE):
+        new_scope = None
+        if pattern._scope_slot is not None:
+            new_scope = prefix + sep + pattern._scope_slot
+        sub = (_slot_prefix_copy(pattern._sub, prefix, sep)
+               if pattern._sub is not None else None)
+        return CAPTURE(
+            prefix + sep + pattern._slot,
+            sub,
+            hygiene_role=pattern._hygiene_role,
+            scope_slot=new_scope,
+        )
+
+    if isinstance(pattern, FORM):
+        return FORM(_slot_prefix_copy(pattern._sub, prefix, sep))
+
+    if isinstance(pattern, GROUP):
+        return GROUP(*[
+            _slot_prefix_copy(c, prefix, sep) for c in pattern._children])
+
+    if isinstance(pattern, ONEOF):
+        return ONEOF(*[
+            _slot_prefix_copy(b, prefix, sep) for b in pattern._branches])
+
+    if isinstance(pattern, REPEAT):
+        return REPEAT(_slot_prefix_copy(pattern._sub, prefix, sep))
+
+    if isinstance(pattern, OPTIONAL):
+        return OPTIONAL(_slot_prefix_copy(pattern._sub, prefix, sep))
+
+    if isinstance(pattern, NOT):
+        return NOT(_slot_prefix_copy(pattern._sub, prefix, sep))
+
+    if isinstance(pattern, REST):
+        return REST(prefix + sep + pattern._slot)
+
+    if isinstance(pattern, CLASS):
+        new_fields = tuple(
+            FIELD(_slot_prefix_copy(f._sub, prefix, sep), name=f._name)
+            for f in pattern._fields)
+        return CLASS(pattern._extern, *new_fields)
+
+    if isinstance(pattern, FIELD):
+        return FIELD(_slot_prefix_copy(pattern._sub, prefix, sep),
+                     name=pattern._name)
+
+    if isinstance(pattern, (TEST_ANY, LITERAL, TYPE, PREDICATE)):
+        return pattern
+
+    raise TypeError(
+        "slot_prefix: unsupported pattern type %r"
+        % (type(pattern).__name__,))
+
+
+def binding_inner_pattern():
+    """
+    Build the inner shape of a single koskari binding cell as matcher_ng
+    primitives: FORM around ONEOF of (SYM EXPR) or (EXPR as: SYM).
+    Does not wrap an outer CAPTURE; compose with FORM's subject being
+    one binding pair. When embedding multiple binding cells in one
+    matcher, pass the result through slot_prefix with a unique prefix
+    per cell first
+
+    :rtype: FORM
+    """
+
+    return FORM(ONEOF(
+        GROUP(SYMBOL("name"), VALUE("expr")),
+        GROUP(VALUE("expr"), LITERAL_KW("as"), SYMBOL("name")),
+    ))
+
+
+def BINDING_CELL(slot):
+    """
+    One binding-shaped subject element: same as binding_inner_pattern
+    but with captures rewritten to slot + sep + name and slot + sep +
+    expr so multiple cells can coexist in one matcher
+
+    :param slot: logical name prefix for mangled capture slots
+    :rtype: FORM
+    """
+
+    _check_str_arg(slot, "BINDING_CELL slot")
+    return slot_prefix(binding_inner_pattern(), slot)
 
 
 # === Ergonomic shorthands ===
