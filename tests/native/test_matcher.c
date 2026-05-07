@@ -120,19 +120,7 @@ static int append_group(
     const uint32_t *children,
     uint32_t count) {
 
-    int first = (int) KosMatcherBuilder_ChildCount(b);
-    for (uint32_t i = 0; i < count; i++) {
-        int off = KosMatcherBuilder_AppendChildIndex(b, children[i]);
-        if (off < 0)
-            return -1;
-    }
-
-    KosMatchNode n;
-    memset(&n, 0, sizeof(n));
-    n.kind = KOS_MATCH_NODE_GROUP;
-    n.as.group.first_child = (uint32_t) first;
-    n.as.group.child_count = count;
-    return KosMatcherBuilder_AppendNode(b, &n);
+    return KosMatcherBuilder_AppendGroup(b, children, (Py_ssize_t) count);
 }
 
 
@@ -141,19 +129,7 @@ static int append_oneof(
     const uint32_t *children,
     uint32_t count) {
 
-    int first = (int) KosMatcherBuilder_ChildCount(b);
-    for (uint32_t i = 0; i < count; i++) {
-        int off = KosMatcherBuilder_AppendChildIndex(b, children[i]);
-        if (off < 0)
-            return -1;
-    }
-
-    KosMatchNode n;
-    memset(&n, 0, sizeof(n));
-    n.kind = KOS_MATCH_NODE_ONEOF;
-    n.as.oneof.first_child = (uint32_t) first;
-    n.as.oneof.child_count = count;
-    return KosMatcherBuilder_AppendNode(b, &n);
+    return KosMatcherBuilder_AppendOneof(b, children, (Py_ssize_t) count);
 }
 
 
@@ -733,29 +709,77 @@ static int test_matcher_module_exposes_matcher_type(void) {
 
 static int test_matcher_validator_group_child_oob_rejected(void) {
     /*
-      Build a GROUP whose first_child/child_count window extends past
-      the actual child_indices array. Reject at append time.
+      AppendGroup must reject child indices that have not yet been
+      appended (forward references).
     */
     KosMatcherBuilder *b = KosMatcherBuilder_New();
     TEST_ASSERT_NOT_NULL(b, "create builder");
 
     int n_test = append_test_any(b);
-    int off = KosMatcherBuilder_AppendChildIndex(b, (uint32_t) n_test);
-    TEST_ASSERT(off >= 0, "append child index");
+    TEST_ASSERT(n_test >= 0, "append TEST node");
 
-    /* Manually craft a GROUP node with an oversized count */
-    KosMatchNode n;
-    memset(&n, 0, sizeof(n));
-    n.kind = KOS_MATCH_NODE_GROUP;
-    n.as.group.first_child = (uint32_t) off;
-    n.as.group.child_count = 5;  /* only 1 child index appended */
-
-    int idx = KosMatcherBuilder_AppendNode(b, &n);
-    TEST_ASSERT_EQ(idx, -1, "append must reject oversized GROUP range");
+    uint32_t kids[] = { (uint32_t) n_test, 99 };
+    int idx = KosMatcherBuilder_AppendGroup(b, kids, 2);
+    TEST_ASSERT_EQ(idx, -1, "AppendGroup must reject forward ref");
     TEST_ASSERT(PyErr_Occurred() != NULL, "exception is set");
     PyErr_Clear();
 
     KosMatcherBuilder_Free(b);
+    return 0;
+}
+
+
+static int test_matcher_builder_rejects_duplicate_child(void) {
+    /*
+      AppendGroup must reject a child list that names the same node
+      twice; the intrusive next chain cannot represent that.
+    */
+    KosMatcherBuilder *b = KosMatcherBuilder_New();
+    TEST_ASSERT_NOT_NULL(b, "create builder");
+
+    int n_a = append_test_any(b);
+    int n_b = append_test_any(b);
+    TEST_ASSERT(n_a >= 0 && n_b >= 0, "append TEST nodes");
+
+    uint32_t kids[] = { (uint32_t) n_a, (uint32_t) n_b, (uint32_t) n_a };
+    int idx = KosMatcherBuilder_AppendGroup(b, kids, 3);
+    TEST_ASSERT_EQ(idx, -1, "AppendGroup must reject duplicate child");
+    TEST_ASSERT(PyErr_Occurred() != NULL, "exception is set");
+    PyErr_Clear();
+
+    KosMatcherBuilder_Free(b);
+    return 0;
+}
+
+
+static int test_matcher_var_size(void) {
+    /*
+      KosMatcher is variable-sized; ob_size carries node_count and the
+      type advertises tp_itemsize == sizeof(KosMatchNode).
+    */
+    KosMatcherBuilder *b = KosMatcherBuilder_New();
+    TEST_ASSERT_NOT_NULL(b, "create builder");
+
+    int a = append_test_any(b);
+    int t = append_test_any(b);
+    int c = append_test_any(b);
+    TEST_ASSERT(a >= 0 && t >= 0 && c >= 0, "append three TEST nodes");
+
+    uint32_t kids[] = { (uint32_t) a, (uint32_t) t, (uint32_t) c };
+    int g = KosMatcherBuilder_AppendGroup(b, kids, 3);
+    TEST_ASSERT(g >= 0, "AppendGroup");
+
+    PyObject *m = KosMatcherBuilder_Finalize(b, (uint32_t) g);
+    KosMatcherBuilder_Free(b);
+    TEST_ASSERT_NOT_NULL(m, "Finalize");
+
+    TEST_ASSERT_EQ((long) Py_SIZE(m), 4L,
+                   "ob_size matches node_count");
+    TEST_ASSERT_EQ((long) Py_TYPE(m)->tp_itemsize,
+                   (long) sizeof(KosMatchNode),
+                   "tp_itemsize == sizeof(KosMatchNode)");
+
+    Py_DECREF(m);
     return 0;
 }
 
@@ -1719,7 +1743,7 @@ static int test_thaw_minimal(void) {
     TEST_ASSERT(KosMatcher_Check(m), "result is Matcher");
 
     KosMatcher *km = (KosMatcher *) m;
-    TEST_ASSERT_EQ(km->node_count, 1, "1 node");
+    TEST_ASSERT_EQ(Py_SIZE(km), 1, "1 node");
     TEST_ASSERT_EQ(km->nodes[0].kind, KOS_MATCH_NODE_TEST, "TEST kind");
     TEST_ASSERT_EQ(km->nodes[0].as.test.test_kind,
                    KOS_MATCH_TEST_ANY, "ANY test_kind");
@@ -1987,6 +2011,8 @@ int run_matcher_tests(void) {
     RUN_TEST(test_matcher_validator_entry_oob_rejected);
     RUN_TEST(test_matcher_module_exposes_matcher_type);
     RUN_TEST(test_matcher_validator_group_child_oob_rejected);
+    RUN_TEST(test_matcher_builder_rejects_duplicate_child);
+    RUN_TEST(test_matcher_var_size);
     RUN_TEST(test_matcher_validator_lambda_shape_accepted);
 
     BEGIN_TEST_SUITE("matcher_ng (Phase 2: engine)");

@@ -191,6 +191,24 @@ class TestMatcherFromTuple(unittest.TestCase):
             thaw(frozen)
 
 
+    def test_thaw_rejects_duplicate_child_index(self):
+        """
+        A frozen GROUP that names the same child twice is rejected
+        because the intrusive next chain cannot represent it
+        """
+
+        nodes = (
+            ("TEST", "ANY", -1),
+            ("TEST", "ANY", -1),
+            ("GROUP", 0, 1, 0),
+        )
+        frozen = (
+            "MATCHER", 1, (), (), (),
+            nodes, 2, {})
+        with self.assertRaises(ValueError):
+            thaw(frozen)
+
+
     def test_thaw_match_alias_for_group(self):
         """
         'MATCH' is accepted as an alias for 'GROUP' in node tuples

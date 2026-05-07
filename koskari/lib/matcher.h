@@ -84,13 +84,11 @@ typedef struct {
 
 typedef struct {
   uint32_t first_child;
-  uint32_t child_count;
 } KosMatchGroup;
 
 
 typedef struct {
-  uint32_t first_child;
-  uint32_t child_count;
+  uint32_t first_branch;
 } KosMatchOneof;
 
 
@@ -118,6 +116,8 @@ typedef struct {
 typedef struct {
   uint16_t kind;
   uint16_t flags;
+  uint32_t next;         /* next sibling in GROUP, next branch in ONEOF,
+                            otherwise KOS_MATCH_NO_INDEX */
   uint32_t min_width;
   uint32_t max_width;
   union {
@@ -138,20 +138,16 @@ typedef struct {
 
 
 typedef struct KosMatcher {
-  PyObject_HEAD
+  PyObject_VAR_HEAD      /* ob_size carries node_count */
 
   PyObject *slots;       /* tuple[str], capture slot names */
   PyObject *externs;     /* tuple[str], extern parameter names */
   PyObject *consts;      /* tuple[object], literal/sub-matcher consts */
   PyObject *meta;        /* dict, hygiene/provenance metadata */
 
-  KosMatchNode *nodes;
-  Py_ssize_t node_count;
-
-  uint32_t *child_indices;
-  Py_ssize_t child_count;
-
   uint32_t entry;
+
+  KosMatchNode nodes[];  /* trailing flexible array; tp_itemsize */
 } KosMatcher;
 
 
@@ -266,12 +262,14 @@ PyObject *KosMatcher_Match(
 
 /* === C-internal builder ===
    The builder is the canonical low-level construction surface for a
-   KosMatcher in Phase 1. Callers append slots, externs, consts, child
-   indices, and nodes (bottom-up; child references must resolve to lower
-   indices), and then finalize. Finalize runs full validation (widths,
-   slot/extern/const range checks, REPEAT min-width, ≤1 REST per branch,
-   post-REST determinacy, no captures inside NOT) and constructs the
-   immutable KosMatcher.
+   KosMatcher. Callers append slots, externs, consts, and nodes
+   (bottom-up; child references must resolve to lower indices), then
+   finalize. Container kinds (GROUP, ONEOF) are appended through
+   dedicated entry points that take their child/branch indices and
+   stitch them together via the intrusive next links on KosMatchNode.
+   Finalize runs full validation (widths, slot/extern/const range
+   checks, REPEAT min-width, ≤1 REST per branch, post-REST determinacy,
+   no captures inside NOT) and constructs the immutable KosMatcher.
 
    On any error the builder records a Python exception and the call
    returns -1 (or NULL for KosMatcherBuilder_Finalize). The builder
@@ -290,11 +288,6 @@ void KosMatcherBuilder_Free(KosMatcherBuilder *builder);
    Number of nodes appended to the builder so far.
  */
 Py_ssize_t KosMatcherBuilder_NodeCount(KosMatcherBuilder *builder);
-
-/**
-   Number of child indices appended to the builder so far.
- */
-Py_ssize_t KosMatcherBuilder_ChildCount(KosMatcherBuilder *builder);
 
 /**
    Append a capture slot name. Returns the new slot index, or -1 on
@@ -321,24 +314,47 @@ int KosMatcherBuilder_AddConst(
     PyObject *value);
 
 /**
-   Append a child index for use by GROUP/ONEOF first_child/child_count
-   slices. Returns the offset of the appended entry, or -1 on error.
- */
-int KosMatcherBuilder_AppendChildIndex(
-    KosMatcherBuilder *builder,
-    uint32_t child_node_index);
-
-/**
-   Append a node. Caller fills KosMatchNode kind and payload; min_width
-   and max_width are computed by the builder during finalize. The
-   builder rejects appends whose subnode/first_child references the
+   Append a non-container node. Caller fills KosMatchNode kind and
+   payload; min_width, max_width, and next are filled by the builder.
+   The builder rejects appends whose subnode/scope_slot references the
    current count or higher (forward refs).
+
+   Container kinds (GROUP, ONEOF) are not accepted here; use
+   KosMatcherBuilder_AppendGroup / KosMatcherBuilder_AppendOneof
+   instead.
 
    Returns the index of the appended node, or -1 on error.
  */
 int KosMatcherBuilder_AppendNode(
     KosMatcherBuilder *builder,
     const KosMatchNode *node);
+
+/**
+   Append a GROUP node whose children are the supplied node indices in
+   order. The builder stitches the children together via their next
+   fields and sets the GROUP's first_child. Each index must reference a
+   node already appended (forward refs are rejected) and may not appear
+   in another chain (each node may participate in at most one
+   sibling/branch chain).
+
+   Returns the index of the new GROUP node, or -1 on error.
+ */
+int KosMatcherBuilder_AppendGroup(
+    KosMatcherBuilder *builder,
+    const uint32_t *children,
+    Py_ssize_t count);
+
+/**
+   Append a ONEOF node whose branches are the supplied node indices in
+   order. Behaves like KosMatcherBuilder_AppendGroup but the chain
+   indicates branch order rather than sibling sequence.
+
+   Returns the index of the new ONEOF node, or -1 on error.
+ */
+int KosMatcherBuilder_AppendOneof(
+    KosMatcherBuilder *builder,
+    const uint32_t *branches,
+    Py_ssize_t count);
 
 /**
    Set the meta dict. The builder takes a new reference to meta. Pass

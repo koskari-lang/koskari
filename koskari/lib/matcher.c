@@ -38,10 +38,6 @@ struct KosMatcherBuilder {
   Py_ssize_t node_count;
   Py_ssize_t node_capacity;
 
-  uint32_t *child_indices;
-  Py_ssize_t child_count;
-  Py_ssize_t child_capacity;
-
   PyObject *slots;     /* PyListObject during build */
   PyObject *externs;   /* PyListObject during build */
   PyObject *consts;    /* PyListObject during build */
@@ -65,26 +61,6 @@ static int builder_grow_nodes(KosMatcherBuilder *b, Py_ssize_t need) {
 
   b->nodes = nn;
   b->node_capacity = cap;
-  return 0;
-}
-
-
-static int builder_grow_children(KosMatcherBuilder *b, Py_ssize_t need) {
-  if (b->child_count + need <= b->child_capacity)
-    return 0;
-
-  Py_ssize_t cap = b->child_capacity ? b->child_capacity : 8;
-  while (cap < b->child_count + need)
-    cap *= 2;
-
-  uint32_t *nn = PyMem_Realloc(b->child_indices, cap * sizeof(uint32_t));
-  if (! nn) {
-    PyErr_NoMemory();
-    return -1;
-  }
-
-  b->child_indices = nn;
-  b->child_capacity = cap;
   return 0;
 }
 
@@ -168,45 +144,12 @@ static int append_check_node(KosMatcherBuilder *b, const KosMatchNode *node) {
       return -1;
     break;
 
-  case KOS_MATCH_NODE_GROUP: {
-    Py_ssize_t end = (Py_ssize_t) node->as.group.first_child +
-                     (Py_ssize_t) node->as.group.child_count;
-    if (end > b->child_count) {
-      PyErr_Format(PyExc_ValueError,
-                   "group child range out of bounds: "
-                   "first=%u count=%u (have %zd entries)",
-                   (unsigned) node->as.group.first_child,
-                   (unsigned) node->as.group.child_count,
-                   b->child_count);
-      return -1;
-    }
-    for (uint32_t i = 0; i < node->as.group.child_count; i++) {
-      uint32_t cidx = b->child_indices[node->as.group.first_child + i];
-      if (append_check_index(b, cidx, "group.child"))
-        return -1;
-    }
-    break;
-  }
-
-  case KOS_MATCH_NODE_ONEOF: {
-    Py_ssize_t end = (Py_ssize_t) node->as.oneof.first_child +
-                     (Py_ssize_t) node->as.oneof.child_count;
-    if (end > b->child_count) {
-      PyErr_Format(PyExc_ValueError,
-                   "oneof child range out of bounds: "
-                   "first=%u count=%u (have %zd entries)",
-                   (unsigned) node->as.oneof.first_child,
-                   (unsigned) node->as.oneof.child_count,
-                   b->child_count);
-      return -1;
-    }
-    for (uint32_t i = 0; i < node->as.oneof.child_count; i++) {
-      uint32_t cidx = b->child_indices[node->as.oneof.first_child + i];
-      if (append_check_index(b, cidx, "oneof.child"))
-        return -1;
-    }
-    break;
-  }
+  case KOS_MATCH_NODE_GROUP:
+  case KOS_MATCH_NODE_ONEOF:
+    PyErr_Format(PyExc_ValueError,
+                 "AppendNode does not accept container kinds; "
+                 "use AppendGroup or AppendOneof");
+    return -1;
 
   case KOS_MATCH_NODE_REPEAT:
     if (append_check_index(b, node->as.repeat.subnode, "repeat.subnode"))
@@ -251,9 +194,6 @@ KosMatcherBuilder *KosMatcherBuilder_New(void) {
   b->nodes = NULL;
   b->node_count = 0;
   b->node_capacity = 0;
-  b->child_indices = NULL;
-  b->child_count = 0;
-  b->child_capacity = 0;
   b->slots = PyList_New(0);
   b->externs = PyList_New(0);
   b->consts = PyList_New(0);
@@ -273,7 +213,6 @@ void KosMatcherBuilder_Free(KosMatcherBuilder *b) {
     return;
 
   PyMem_Free(b->nodes);
-  PyMem_Free(b->child_indices);
   Py_XDECREF(b->slots);
   Py_XDECREF(b->externs);
   Py_XDECREF(b->consts);
@@ -284,11 +223,6 @@ void KosMatcherBuilder_Free(KosMatcherBuilder *b) {
 
 Py_ssize_t KosMatcherBuilder_NodeCount(KosMatcherBuilder *b) {
   return b ? b->node_count : 0;
-}
-
-
-Py_ssize_t KosMatcherBuilder_ChildCount(KosMatcherBuilder *b) {
-  return b ? b->child_count : 0;
 }
 
 
@@ -346,40 +280,6 @@ int KosMatcherBuilder_AddConst(KosMatcherBuilder *b, PyObject *value) {
 }
 
 
-int KosMatcherBuilder_AppendChildIndex(
-    KosMatcherBuilder *b,
-    uint32_t child_node_index) {
-
-  if (! b) {
-    PyErr_SetString(PyExc_ValueError, "AppendChildIndex requires builder");
-    return -1;
-  }
-
-  if (child_node_index != KOS_MATCH_NO_INDEX &&
-      (Py_ssize_t) child_node_index >= b->node_count) {
-    PyErr_Format(PyExc_ValueError,
-                 "child index forward reference: %u (current count=%zd)",
-                 (unsigned) child_node_index, b->node_count);
-    return -1;
-  }
-
-  if (builder_grow_children(b, 1))
-    return -1;
-
-  Py_ssize_t off = b->child_count;
-  b->child_indices[off] = child_node_index;
-  b->child_count++;
-
-  if (off > (Py_ssize_t) 0x7FFFFFFE) {
-    PyErr_SetString(PyExc_OverflowError,
-                    "matcher child index space exhausted");
-    return -1;
-  }
-
-  return (int) off;
-}
-
-
 int KosMatcherBuilder_AppendNode(
     KosMatcherBuilder *b,
     const KosMatchNode *node) {
@@ -397,7 +297,9 @@ int KosMatcherBuilder_AppendNode(
 
   Py_ssize_t off = b->node_count;
   b->nodes[off] = *node;
-  /* Widths get filled by validator; force defaults for clarity. */
+  /* Widths get filled by validator; next is filled when the node is
+     stitched into a parent container (or remains NO_INDEX if isolated). */
+  b->nodes[off].next = KOS_MATCH_NO_INDEX;
   b->nodes[off].min_width = 0;
   b->nodes[off].max_width = 0;
   b->node_count++;
@@ -408,6 +310,110 @@ int KosMatcherBuilder_AppendNode(
   }
 
   return (int) off;
+}
+
+
+static int builder_append_container(
+    KosMatcherBuilder *b,
+    KosMatchNodeKind kind,
+    const uint32_t *children,
+    Py_ssize_t count,
+    const char *what) {
+
+  if (! b) {
+    PyErr_Format(PyExc_ValueError,
+                 "%s requires builder", what);
+    return -1;
+  }
+
+  if (count < 0) {
+    PyErr_Format(PyExc_ValueError,
+                 "%s count must be non-negative", what);
+    return -1;
+  }
+
+  if (count > 0 && ! children) {
+    PyErr_Format(PyExc_ValueError,
+                 "%s requires children pointer", what);
+    return -1;
+  }
+
+  for (Py_ssize_t i = 0; i < count; i++) {
+    uint32_t cidx = children[i];
+    if (cidx == KOS_MATCH_NO_INDEX) {
+      PyErr_Format(PyExc_ValueError,
+                   "%s child index may not be NO_INDEX", what);
+      return -1;
+    }
+    if ((Py_ssize_t) cidx >= b->node_count) {
+      PyErr_Format(PyExc_ValueError,
+                   "%s forward reference: child=%u (current count=%zd)",
+                   what, (unsigned) cidx, b->node_count);
+      return -1;
+    }
+    if (b->nodes[cidx].next != KOS_MATCH_NO_INDEX) {
+      PyErr_Format(PyExc_ValueError,
+                   "%s child %u already participates in another chain",
+                   what, (unsigned) cidx);
+      return -1;
+    }
+    for (Py_ssize_t j = 0; j < i; j++) {
+      if (children[j] == cidx) {
+        PyErr_Format(PyExc_ValueError,
+                     "%s repeats child index %u", what, (unsigned) cidx);
+        return -1;
+      }
+    }
+  }
+
+  for (Py_ssize_t i = 0; i + 1 < count; i++)
+    b->nodes[children[i]].next = children[i + 1];
+
+  KosMatchNode n;
+  memset(&n, 0, sizeof(n));
+  n.kind = (uint16_t) kind;
+  uint32_t head = (count > 0) ? children[0] : KOS_MATCH_NO_INDEX;
+  if (kind == KOS_MATCH_NODE_GROUP)
+    n.as.group.first_child = head;
+  else
+    n.as.oneof.first_branch = head;
+
+  if (builder_grow_nodes(b, 1))
+    return -1;
+
+  Py_ssize_t off = b->node_count;
+  b->nodes[off] = n;
+  b->nodes[off].next = KOS_MATCH_NO_INDEX;
+  b->nodes[off].min_width = 0;
+  b->nodes[off].max_width = 0;
+  b->node_count++;
+
+  if (off > (Py_ssize_t) 0x7FFFFFFE) {
+    PyErr_SetString(PyExc_OverflowError, "matcher node space exhausted");
+    return -1;
+  }
+
+  return (int) off;
+}
+
+
+int KosMatcherBuilder_AppendGroup(
+    KosMatcherBuilder *b,
+    const uint32_t *children,
+    Py_ssize_t count) {
+
+  return builder_append_container(
+      b, KOS_MATCH_NODE_GROUP, children, count, "AppendGroup");
+}
+
+
+int KosMatcherBuilder_AppendOneof(
+    KosMatcherBuilder *b,
+    const uint32_t *branches,
+    Py_ssize_t count) {
+
+  return builder_append_container(
+      b, KOS_MATCH_NODE_ONEOF, branches, count, "AppendOneof");
 }
 
 
@@ -459,8 +465,9 @@ static int compute_one_width(KosMatcher *m, uint32_t idx) {
   case KOS_MATCH_NODE_GROUP: {
     uint32_t mn = 0, mx = 0;
     int has_unbounded = 0;
-    for (uint32_t i = 0; i < n->as.group.child_count; i++) {
-      uint32_t cidx = m->child_indices[n->as.group.first_child + i];
+    for (uint32_t cidx = n->as.group.first_child;
+         cidx != KOS_MATCH_NO_INDEX;
+         cidx = m->nodes[cidx].next) {
       mn = saturating_add(mn, m->nodes[cidx].min_width);
       if (m->nodes[cidx].max_width == KOS_MATCH_UNBOUNDED)
         has_unbounded = 1;
@@ -475,8 +482,11 @@ static int compute_one_width(KosMatcher *m, uint32_t idx) {
   case KOS_MATCH_NODE_ONEOF: {
     uint32_t mn = KOS_MATCH_UNBOUNDED, mx = 0;
     int has_unbounded = 0;
-    for (uint32_t i = 0; i < n->as.oneof.child_count; i++) {
-      uint32_t cidx = m->child_indices[n->as.oneof.first_child + i];
+    int has_branch = 0;
+    for (uint32_t cidx = n->as.oneof.first_branch;
+         cidx != KOS_MATCH_NO_INDEX;
+         cidx = m->nodes[cidx].next) {
+      has_branch = 1;
       uint32_t cmn = m->nodes[cidx].min_width;
       uint32_t cmx = m->nodes[cidx].max_width;
       if (cmn < mn)
@@ -486,7 +496,7 @@ static int compute_one_width(KosMatcher *m, uint32_t idx) {
       else if (cmx > mx)
         mx = cmx;
     }
-    if (n->as.oneof.child_count == 0) {
+    if (! has_branch) {
       mn = 0;
       mx = 0;
     }
@@ -538,7 +548,7 @@ static int validate_slot_extern_const_indices(KosMatcher *m) {
   Py_ssize_t n_externs = PyTuple_GET_SIZE(m->externs);
   Py_ssize_t n_consts = PyTuple_GET_SIZE(m->consts);
 
-  for (Py_ssize_t i = 0; i < m->node_count; i++) {
+  for (Py_ssize_t i = 0; i < Py_SIZE(m); i++) {
     KosMatchNode *n = &m->nodes[i];
 
     switch (n->kind) {
@@ -633,16 +643,18 @@ static int has_capture_in_subtree(KosMatcher *m, uint32_t idx) {
     return has_capture_in_subtree(m, n->as.form.subnode);
 
   case KOS_MATCH_NODE_GROUP:
-    for (uint32_t i = 0; i < n->as.group.child_count; i++) {
-      uint32_t cidx = m->child_indices[n->as.group.first_child + i];
+    for (uint32_t cidx = n->as.group.first_child;
+         cidx != KOS_MATCH_NO_INDEX;
+         cidx = m->nodes[cidx].next) {
       if (has_capture_in_subtree(m, cidx))
         return 1;
     }
     return 0;
 
   case KOS_MATCH_NODE_ONEOF:
-    for (uint32_t i = 0; i < n->as.oneof.child_count; i++) {
-      uint32_t cidx = m->child_indices[n->as.oneof.first_child + i];
+    for (uint32_t cidx = n->as.oneof.first_branch;
+         cidx != KOS_MATCH_NO_INDEX;
+         cidx = m->nodes[cidx].next) {
       if (has_capture_in_subtree(m, cidx))
         return 1;
     }
@@ -664,7 +676,7 @@ static int has_capture_in_subtree(KosMatcher *m, uint32_t idx) {
 
 
 static int validate_repeat_and_not(KosMatcher *m) {
-  for (Py_ssize_t i = 0; i < m->node_count; i++) {
+  for (Py_ssize_t i = 0; i < Py_SIZE(m); i++) {
     KosMatchNode *n = &m->nodes[i];
 
     if (n->kind == KOS_MATCH_NODE_REPEAT) {
@@ -779,8 +791,9 @@ static int subtree_has_rest(KosMatcher *m, uint32_t idx) {
     return subtree_has_rest(m, n->as.optional.subnode);
 
   case KOS_MATCH_NODE_GROUP:
-    for (uint32_t i = 0; i < n->as.group.child_count; i++) {
-      uint32_t cidx = m->child_indices[n->as.group.first_child + i];
+    for (uint32_t cidx = n->as.group.first_child;
+         cidx != KOS_MATCH_NO_INDEX;
+         cidx = m->nodes[cidx].next) {
       if (subtree_has_rest(m, cidx))
         return 1;
     }
@@ -818,8 +831,9 @@ static int collect_chunks(KosMatcher *m, uint32_t idx, ChunkList *cl) {
     return collect_chunks(m, n->as.capture.subnode, cl);
 
   case KOS_MATCH_NODE_GROUP:
-    for (uint32_t i = 0; i < n->as.group.child_count; i++) {
-      uint32_t cidx = m->child_indices[n->as.group.first_child + i];
+    for (uint32_t cidx = n->as.group.first_child;
+         cidx != KOS_MATCH_NO_INDEX;
+         cidx = m->nodes[cidx].next) {
       if (collect_chunks(m, cidx, cl))
         return -1;
     }
@@ -914,20 +928,20 @@ static int validate_one_branch(KosMatcher *m, uint32_t idx) {
 
 
 static int validate_branches(KosMatcher *m) {
-  if (m->node_count == 0)
+  if (Py_SIZE(m) == 0)
     return 0;
 
-  if ((Py_ssize_t) m->entry >= m->node_count) {
+  if ((Py_ssize_t) m->entry >= Py_SIZE(m)) {
     PyErr_Format(PyExc_ValueError,
                  "matcher entry index %u out of range (node_count=%zd)",
-                 (unsigned) m->entry, m->node_count);
+                 (unsigned) m->entry, Py_SIZE(m));
     return -1;
   }
 
   if (validate_one_branch(m, m->entry))
     return -1;
 
-  for (Py_ssize_t i = 0; i < m->node_count; i++) {
+  for (Py_ssize_t i = 0; i < Py_SIZE(m); i++) {
     KosMatchNode *n = &m->nodes[i];
 
     switch (n->kind) {
@@ -950,8 +964,9 @@ static int validate_branches(KosMatcher *m) {
       break;
 
     case KOS_MATCH_NODE_ONEOF:
-      for (uint32_t j = 0; j < n->as.oneof.child_count; j++) {
-        uint32_t cidx = m->child_indices[n->as.oneof.first_child + j];
+      for (uint32_t cidx = n->as.oneof.first_branch;
+           cidx != KOS_MATCH_NO_INDEX;
+           cidx = m->nodes[cidx].next) {
         if (validate_one_branch(m, cidx))
           return -1;
       }
@@ -1020,7 +1035,8 @@ PyObject *KosMatcherBuilder_Finalize(
     }
   }
 
-  KosMatcher *m = PyObject_New(KosMatcher, &KosMatcherType);
+  KosMatcher *m = PyObject_NewVar(KosMatcher, &KosMatcherType,
+                                  b->node_count);
   if (! m) {
     Py_DECREF(slots_t);
     Py_DECREF(externs_t);
@@ -1033,34 +1049,10 @@ PyObject *KosMatcherBuilder_Finalize(
   m->externs = externs_t;
   m->consts = consts_t;
   m->meta = meta;
-  m->nodes = NULL;
-  m->node_count = 0;
-  m->child_indices = NULL;
-  m->child_count = 0;
   m->entry = entry;
 
-  if (b->node_count) {
-    m->nodes = PyMem_Malloc(b->node_count * sizeof(KosMatchNode));
-    if (! m->nodes) {
-      PyErr_NoMemory();
-      Py_DECREF(m);
-      return NULL;
-    }
+  if (b->node_count > 0)
     memcpy(m->nodes, b->nodes, b->node_count * sizeof(KosMatchNode));
-    m->node_count = b->node_count;
-  }
-
-  if (b->child_count) {
-    m->child_indices = PyMem_Malloc(b->child_count * sizeof(uint32_t));
-    if (! m->child_indices) {
-      PyErr_NoMemory();
-      Py_DECREF(m);
-      return NULL;
-    }
-    memcpy(m->child_indices, b->child_indices,
-           b->child_count * sizeof(uint32_t));
-    m->child_count = b->child_count;
-  }
 
   /* Phase B: range checks for slot/extern/const indices */
   if (validate_slot_extern_const_indices(m)) {
@@ -1069,7 +1061,7 @@ PyObject *KosMatcherBuilder_Finalize(
   }
 
   /* Phase B: bottom-up width compute */
-  for (Py_ssize_t i = 0; i < m->node_count; i++) {
+  for (Py_ssize_t i = 0; i < Py_SIZE(m); i++) {
     if (compute_one_width(m, (uint32_t) i)) {
       Py_DECREF(m);
       return NULL;
@@ -1725,23 +1717,22 @@ static int match_group(
     Py_ssize_t *cursor,
     uint32_t trailing_min) {
 
-  uint32_t cnt = n->as.group.child_count;
-  uint32_t first = n->as.group.first_child;
-
   /* Sum of min_widths of all children — we drain it as we iterate to
      compute each child's trailing. UNBOUNDED min would mean a child
      reserves arbitrary spine; treat as 0 for trailing accounting (the
      validator already enforces post-REST suffixes are deterministic). */
   uint32_t remaining = 0;
-  for (uint32_t i = 0; i < cnt; i++) {
-    uint32_t cidx = e->m->child_indices[first + i];
+  for (uint32_t cidx = n->as.group.first_child;
+       cidx != KOS_MATCH_NO_INDEX;
+       cidx = e->m->nodes[cidx].next) {
     uint32_t cm = e->m->nodes[cidx].min_width;
     if (cm != KOS_MATCH_UNBOUNDED)
       remaining = saturating_add(remaining, cm);
   }
 
-  for (uint32_t i = 0; i < cnt; i++) {
-    uint32_t cidx = e->m->child_indices[first + i];
+  for (uint32_t cidx = n->as.group.first_child;
+       cidx != KOS_MATCH_NO_INDEX;
+       cidx = e->m->nodes[cidx].next) {
     KosMatchNode *child = &e->m->nodes[cidx];
     uint32_t child_min = child->min_width;
     if (child_min == KOS_MATCH_UNBOUNDED)
@@ -1765,11 +1756,9 @@ static int match_oneof(
     Py_ssize_t *cursor,
     uint32_t trailing_min) {
 
-  uint32_t cnt = n->as.oneof.child_count;
-  uint32_t first = n->as.oneof.first_child;
-
-  for (uint32_t i = 0; i < cnt; i++) {
-    uint32_t cidx = e->m->child_indices[first + i];
+  for (uint32_t cidx = n->as.oneof.first_branch;
+       cidx != KOS_MATCH_NO_INDEX;
+       cidx = e->m->nodes[cidx].next) {
     Py_ssize_t snap = engine_snapshot(e);
     Py_ssize_t saved = *cursor;
     int r = match_node(e, cidx, cursor, trailing_min);
@@ -1976,7 +1965,7 @@ PyObject *KosMatcher_Match(
   Py_ssize_t cursor = 0;
   int r = -1;
 
-  if (m->node_count > 0)
+  if (Py_SIZE(m) > 0)
     r = match_node(&engine, m->entry, &cursor, 0);
   else
     r = 1;
@@ -2034,11 +2023,6 @@ PyObject *KosMatcher_Match(
 static void matcher_dealloc(PyObject *self) {
   KosMatcher *m = (KosMatcher *) self;
 
-  PyMem_Free(m->nodes);
-  m->nodes = NULL;
-  PyMem_Free(m->child_indices);
-  m->child_indices = NULL;
-
   Py_CLEAR(m->slots);
   Py_CLEAR(m->externs);
   Py_CLEAR(m->consts);
@@ -2052,7 +2036,7 @@ static PyObject *matcher_repr(PyObject *self) {
   KosMatcher *m = (KosMatcher *) self;
   return PyUnicode_FromFormat(
       "<Matcher nodes=%zd slots=%zd externs=%zd consts=%zd entry=%u>",
-      m->node_count,
+      Py_SIZE(m),
       PyTuple_GET_SIZE(m->slots),
       PyTuple_GET_SIZE(m->externs),
       PyTuple_GET_SIZE(m->consts),
@@ -2264,24 +2248,27 @@ static int thaw_node(KosMatcherBuilder *b, PyObject *t) {
     int is_oneof =
         (PyUnicode_CompareWithASCIIString(tag, "ONEOF") == 0);
     Py_ssize_t cnt = arity - 1;
-    Py_ssize_t first = KosMatcherBuilder_ChildCount(b);
+    uint32_t *children = NULL;
+    if (cnt > 0) {
+      children = PyMem_Malloc(cnt * sizeof(uint32_t));
+      if (! children) {
+        PyErr_NoMemory();
+        return -1;
+      }
+    }
     for (Py_ssize_t i = 0; i < cnt; i++) {
-      uint32_t cidx;
-      if (thaw_parse_index(PyTuple_GET_ITEM(t, 1 + i), &cidx,
-                           is_oneof ? "ONEOF child" : "GROUP child"))
+      if (thaw_parse_index(PyTuple_GET_ITEM(t, 1 + i), &children[i],
+                           is_oneof ? "ONEOF child" : "GROUP child")) {
+        PyMem_Free(children);
         return -1;
-      if (KosMatcherBuilder_AppendChildIndex(b, cidx) < 0)
-        return -1;
+      }
     }
-    if (is_oneof) {
-      n.kind = KOS_MATCH_NODE_ONEOF;
-      n.as.oneof.first_child = (uint32_t) first;
-      n.as.oneof.child_count = (uint32_t) cnt;
-    } else {
-      n.kind = KOS_MATCH_NODE_GROUP;
-      n.as.group.first_child = (uint32_t) first;
-      n.as.group.child_count = (uint32_t) cnt;
-    }
+
+    int rc = is_oneof
+        ? KosMatcherBuilder_AppendOneof(b, children, cnt)
+        : KosMatcherBuilder_AppendGroup(b, children, cnt);
+    PyMem_Free(children);
+    return (rc < 0) ? -1 : 0;
 
   } else if (PyUnicode_CompareWithASCIIString(tag, "REPEAT") == 0) {
     if (arity != 2) {
@@ -2522,7 +2509,7 @@ static PyObject *matcher_get_meta(PyObject *self, void *closure) {
 
 static PyObject *matcher_get_node_count(PyObject *self, void *closure) {
   (void) closure;
-  return PyLong_FromSsize_t(((KosMatcher *) self)->node_count);
+  return PyLong_FromSsize_t(Py_SIZE(self));
 }
 
 
@@ -2552,8 +2539,8 @@ static PyGetSetDef matcher_getset[] = {
 PyTypeObject KosMatcherType = {
   PyVarObject_HEAD_INIT(NULL, 0)
   .tp_name = "koskari.lib.Matcher",
-  .tp_basicsize = sizeof(KosMatcher),
-  .tp_itemsize = 0,
+  .tp_basicsize = offsetof(KosMatcher, nodes),
+  .tp_itemsize = sizeof(KosMatchNode),
   .tp_dealloc = matcher_dealloc,
   .tp_repr = matcher_repr,
   .tp_flags = Py_TPFLAGS_DEFAULT,
