@@ -15,10 +15,10 @@
 """
 matcher_ng
 
-Python surface for the next-generation native matcher (matcher_ng).
-Re-exports the native Matcher and MatchResult types together with the
-ABSENT sentinel and a thaw helper that reconstructs a native Matcher
-from its frozen tagged-tuple representation.
+Python surface for the next-generation native matcher. Provides the thaw
+helper that reconstructs a native Matcher from its frozen tagged-tuple
+representation, plus a small builder API for authoring matcher patterns
+in Python that lower to the same frozen form.
 
 :author: Christopher O'Brien <obriencj@preoccupied.net>
 :license: GNU General Public License v3
@@ -26,10 +26,40 @@ from its frozen tagged-tuple representation.
 """
 
 
-from koskari.lib import ABSENT, Matcher, MatchResult
+from koskari.lib import ABSENT, Matcher, MatchResult, keyword, symbol
 
 
-__all__ = ["ABSENT", "Matcher", "MatchResult", "thaw"]
+__all__ = [
+    "ABSENT",
+    "Matcher",
+    "MatchResult",
+
+    "thaw",
+    "make_matcher",
+
+    "TEST_ANY",
+    "LITERAL",
+    "TYPE",
+    "PREDICATE",
+    "CAPTURE",
+    "FORM",
+    "GROUP",
+    "ONEOF",
+    "REPEAT",
+    "OPTIONAL",
+    "REST",
+    "NOT",
+    "CLASS",
+    "FIELD",
+
+    "BIND",
+    "VALUE",
+    "SYMBOL",
+    "PAIR",
+    "LITERAL_KW",
+    "LITERAL_SYM",
+    "LIST",
+]
 
 
 def thaw(tagged_tuple):
@@ -39,6 +69,744 @@ def thaw(tagged_tuple):
     """
 
     return Matcher.from_tuple(tagged_tuple)
+
+
+# === Builder infrastructure ===
+
+
+class _FreezeCtx(object):
+    """
+    Mutable state shared across a single freeze pass. Holds the four
+    insertion-ordered tables that become the slots, externs, consts, and
+    nodes positions of the frozen 8-tuple, plus bookkeeping used by the
+    eager-validation checks
+    """
+
+
+    def __init__(self):
+        """
+        Construct an empty freeze context
+        """
+
+        self.slot_indices = {}
+        self.extern_indices = {}
+        self.consts = []
+        self.nodes = []
+        self.seen_capture_slots = set()
+        self.in_class_fields = False
+
+
+    def intern_slot(self, name):
+        """
+        Return the slot index for the named slot, allocating one when
+        first seen
+        """
+
+        if name in self.slot_indices:
+            return self.slot_indices[name]
+
+        idx = len(self.slot_indices)
+        self.slot_indices[name] = idx
+        return idx
+
+
+    def intern_extern(self, name):
+        """
+        Return the extern index for the named extern, allocating one when
+        first seen
+        """
+
+        if name in self.extern_indices:
+            return self.extern_indices[name]
+
+        idx = len(self.extern_indices)
+        self.extern_indices[name] = idx
+        return idx
+
+
+    def intern_const(self, value):
+        """
+        Return the const index for the given value, allocating one when
+        no equal-and-same-type entry already exists. Type-aware to
+        preserve distinctions like 0 vs False
+        """
+
+        for i, existing in enumerate(self.consts):
+            if type(existing) is type(value) and existing == value:
+                return i
+
+        idx = len(self.consts)
+        self.consts.append(value)
+        return idx
+
+
+    def append_node(self, node_tuple):
+        """
+        Append a node tuple to the nodes table and return its index
+        """
+
+        idx = len(self.nodes)
+        self.nodes.append(node_tuple)
+        return idx
+
+
+    def claim_slot_name(self, name):
+        """
+        Reject duplicate slot bindings within a single freeze. Conservative
+        until REPEAT-as-named-loop semantics are wired in
+        """
+
+        if name in self.seen_capture_slots:
+            raise ValueError(
+                "duplicate slot name %r in matcher pattern" % (name,))
+        self.seen_capture_slots.add(name)
+
+
+class _Pattern(object):
+    """
+    Base class for matcher_ng pattern builders. Subclasses implement
+    _emit to append their node tuple to a freeze context and return the
+    resulting node index. The freeze, build, and match helpers are the
+    public lowering surface
+    """
+
+
+    def freeze(self, meta=None):
+        """
+        Lower this pattern to a frozen 8-tuple suitable for
+        Matcher.from_tuple
+        """
+
+        ctx = _FreezeCtx()
+        entry = self._emit(ctx)
+
+        if meta is None:
+            meta = {}
+        elif not isinstance(meta, dict):
+            raise TypeError(
+                "meta must be a dict, got %r" % type(meta).__name__)
+
+        return (
+            "MATCHER", 1,
+            tuple(self._slot_names(ctx)),
+            tuple(self._extern_names(ctx)),
+            tuple(ctx.consts),
+            tuple(ctx.nodes),
+            entry,
+            meta,
+        )
+
+
+    def build(self, meta=None):
+        """
+        Lower this pattern and thaw it into a native Matcher
+        """
+
+        return Matcher.from_tuple(self.freeze(meta))
+
+
+    def match(self, subject, **externs):
+        """
+        Convenience: build and match against subject
+        """
+
+        return self.build().match(subject, **externs)
+
+
+    def _emit(self, ctx):
+        """
+        Subclass responsibility: emit nodes for this pattern into the
+        context and return the index of the resulting top node
+        """
+
+        raise NotImplementedError
+
+
+    @staticmethod
+    def _slot_names(ctx):
+        """
+        Return slot names in declaration order
+        """
+
+        return list(ctx.slot_indices.keys())
+
+
+    @staticmethod
+    def _extern_names(ctx):
+        """
+        Return extern names in declaration order
+        """
+
+        return list(ctx.extern_indices.keys())
+
+
+def _check_pattern_arg(arg, what):
+    """
+    Validate that arg is a _Pattern instance and raise a clear TypeError
+    when it is not
+    """
+
+    if not isinstance(arg, _Pattern):
+        raise TypeError(
+            "%s must be a matcher_ng pattern, got %r"
+            % (what, type(arg).__name__))
+
+
+def _check_str_arg(arg, what, *, allow_empty=False):
+    """
+    Validate that arg is a non-empty (by default) str. Raises TypeError
+    for the wrong type and ValueError for the empty-string case
+    """
+
+    if not isinstance(arg, str):
+        raise TypeError(
+            "%s must be a str, got %r" % (what, type(arg).__name__))
+    if not allow_empty and not arg:
+        raise ValueError("%s must be a non-empty str" % (what,))
+
+
+# === Primitive builders ===
+
+
+class TEST_ANY(_Pattern):
+    """
+    Match any single element
+    """
+
+
+    def __init__(self):
+        """
+        TEST_ANY takes no parameters
+        """
+
+        pass
+
+
+    def _emit(self, ctx):
+        """
+        Emit the TEST_ANY node tuple
+        """
+
+        return ctx.append_node(("TEST", "ANY", -1))
+
+
+class LITERAL(_Pattern):
+    """
+    Match a single element equal to the given literal value
+    """
+
+
+    def __init__(self, value):
+        """
+        Capture the literal value to be referenced through the consts
+        table at freeze time
+
+        :param value: any concrete value, must not be a pattern
+        :raises TypeError: when value is itself a _Pattern
+        """
+
+        if isinstance(value, _Pattern):
+            raise TypeError(
+                "LITERAL value must be a concrete value, "
+                "not a pattern: %r" % (type(value).__name__,))
+        self._value = value
+
+
+    def _emit(self, ctx):
+        """
+        Intern the literal in consts and emit a TEST/LITERAL node
+        """
+
+        idx = ctx.intern_const(self._value)
+        return ctx.append_node(("TEST", "LITERAL", idx))
+
+
+class TYPE(_Pattern):
+    """
+    Match a single element which is an instance of the named extern type
+    """
+
+
+    def __init__(self, extern_name):
+        """
+        :param extern_name: the extern binding name supplied at match
+            time, e.g. matcher.match(subj, symbol=symbol)
+        :raises TypeError: when extern_name is not a str
+        :raises ValueError: when extern_name is empty
+        """
+
+        _check_str_arg(extern_name, "TYPE extern name")
+        self._extern = extern_name
+
+
+    def _emit(self, ctx):
+        """
+        Intern the extern and emit a TEST/TYPE node
+        """
+
+        idx = ctx.intern_extern(self._extern)
+        return ctx.append_node(("TEST", "TYPE", idx))
+
+
+class PREDICATE(_Pattern):
+    """
+    Match a single element for which the named extern callable returns
+    a truthy value
+    """
+
+
+    def __init__(self, extern_name):
+        """
+        :param extern_name: the extern binding name supplied at match
+            time
+        :raises TypeError: when extern_name is not a str
+        :raises ValueError: when extern_name is empty
+        """
+
+        _check_str_arg(extern_name, "PREDICATE extern name")
+        self._extern = extern_name
+
+
+    def _emit(self, ctx):
+        """
+        Intern the extern and emit a TEST/PREDICATE node
+        """
+
+        idx = ctx.intern_extern(self._extern)
+        return ctx.append_node(("TEST", "PREDICATE", idx))
+
+
+class CAPTURE(_Pattern):
+    """
+    Bind one matched element (or a sub-pattern result) into a named slot
+    """
+
+
+    def __init__(
+            self,
+            slot,
+            sub=None,
+            *,
+            hygiene_role=0,
+            scope_slot=None):
+        """
+        :param slot: target slot name
+        :param sub: optional sub-pattern; when None the capture takes
+            any single element
+        :param hygiene_role: integer in [0, 0xFFFF]; reserved for the
+            phase 9 hygiene migration
+        :param scope_slot: optional slot name carrying scope metadata;
+            also reserved for phase 9
+        :raises TypeError: when slot is not a str, sub is not a pattern
+            or None, scope_slot is not str or None, or hygiene_role is
+            not an int
+        :raises ValueError: when slot is empty or hygiene_role is out
+            of range
+        """
+
+        _check_str_arg(slot, "CAPTURE slot")
+        if sub is not None:
+            _check_pattern_arg(sub, "CAPTURE sub")
+        if scope_slot is not None:
+            _check_str_arg(scope_slot, "CAPTURE scope_slot")
+        if isinstance(hygiene_role, bool) or not isinstance(hygiene_role, int):
+            raise TypeError(
+                "CAPTURE hygiene_role must be an int, got %r"
+                % type(hygiene_role).__name__)
+        if hygiene_role < 0 or hygiene_role > 0xFFFF:
+            raise ValueError(
+                "CAPTURE hygiene_role out of uint16 range: %d"
+                % (hygiene_role,))
+
+        self._slot = slot
+        self._sub = sub
+        self._hygiene_role = hygiene_role
+        self._scope_slot = scope_slot
+
+
+    def _emit(self, ctx):
+        """
+        Reserve the slot, lower the optional sub-pattern, and emit the
+        CAPTURE node
+        """
+
+        ctx.claim_slot_name(self._slot)
+        slot_idx = ctx.intern_slot(self._slot)
+        if self._sub is None:
+            sub_idx = -1
+        else:
+            sub_idx = self._sub._emit(ctx)
+        if self._scope_slot is None:
+            scope_idx = -1
+        else:
+            scope_idx = ctx.intern_slot(self._scope_slot)
+        return ctx.append_node(
+            ("CAPTURE", slot_idx, sub_idx,
+             self._hygiene_role, scope_idx))
+
+
+class FORM(_Pattern):
+    """
+    Descend into a single source element treated as a pair-tree and
+    apply the inner pattern against its contents
+    """
+
+
+    def __init__(self, sub):
+        """
+        :param sub: pattern applied to the inner sequence
+        :raises TypeError: when sub is not a pattern
+        """
+
+        _check_pattern_arg(sub, "FORM sub")
+        self._sub = sub
+
+
+    def _emit(self, ctx):
+        """
+        Emit the inner pattern then a FORM node referencing it
+        """
+
+        sub_idx = self._sub._emit(ctx)
+        return ctx.append_node(("FORM", sub_idx))
+
+
+class GROUP(_Pattern):
+    """
+    Sequence of patterns matched in order against successive elements
+    """
+
+
+    def __init__(self, *children):
+        """
+        :param children: zero or more patterns
+        :raises TypeError: when any child is not a pattern
+        """
+
+        for c in children:
+            _check_pattern_arg(c, "GROUP child")
+        self._children = children
+
+
+    def _emit(self, ctx):
+        """
+        Emit each child then a GROUP node listing them in order
+        """
+
+        idxs = [c._emit(ctx) for c in self._children]
+        return ctx.append_node(("GROUP",) + tuple(idxs))
+
+
+class ONEOF(_Pattern):
+    """
+    Disjunction: try each branch in order until one matches
+    """
+
+
+    def __init__(self, *branches):
+        """
+        :param branches: one or more patterns
+        :raises TypeError: when any branch is not a pattern
+        :raises ValueError: when called with no branches
+        """
+
+        if not branches:
+            raise ValueError("ONEOF requires at least one branch")
+        for b in branches:
+            _check_pattern_arg(b, "ONEOF branch")
+        self._branches = branches
+
+
+    def _emit(self, ctx):
+        """
+        Emit each branch then a ONEOF node listing them in order
+        """
+
+        idxs = [b._emit(ctx) for b in self._branches]
+        return ctx.append_node(("ONEOF",) + tuple(idxs))
+
+
+class REPEAT(_Pattern):
+    """
+    Greedily match the inner pattern one-or-more times
+    """
+
+
+    def __init__(self, sub):
+        """
+        :param sub: pattern repeated against successive elements
+        :raises TypeError: when sub is not a pattern
+        """
+
+        _check_pattern_arg(sub, "REPEAT sub")
+        self._sub = sub
+
+
+    def _emit(self, ctx):
+        """
+        Emit the inner pattern then a REPEAT node referencing it
+        """
+
+        sub_idx = self._sub._emit(ctx)
+        return ctx.append_node(("REPEAT", sub_idx))
+
+
+class OPTIONAL(_Pattern):
+    """
+    Match the inner pattern at most once. When the inner pattern is
+    absent any captures it would have made resolve to the ABSENT
+    sentinel
+    """
+
+
+    def __init__(self, sub):
+        """
+        :param sub: pattern that may or may not match
+        :raises TypeError: when sub is not a pattern
+        """
+
+        _check_pattern_arg(sub, "OPTIONAL sub")
+        self._sub = sub
+
+
+    def _emit(self, ctx):
+        """
+        Emit the inner pattern then an OPTIONAL node referencing it
+        """
+
+        sub_idx = self._sub._emit(ctx)
+        return ctx.append_node(("OPTIONAL", sub_idx))
+
+
+class REST(_Pattern):
+    """
+    Capture the remainder of the source list into the named slot
+    """
+
+
+    def __init__(self, slot):
+        """
+        :param slot: target slot name
+        :raises TypeError: when slot is not a str
+        :raises ValueError: when slot is empty
+        """
+
+        _check_str_arg(slot, "REST slot")
+        self._slot = slot
+
+
+    def _emit(self, ctx):
+        """
+        Reserve the slot and emit a REST node
+        """
+
+        ctx.claim_slot_name(self._slot)
+        slot_idx = ctx.intern_slot(self._slot)
+        return ctx.append_node(("REST", slot_idx))
+
+
+class NOT(_Pattern):
+    """
+    Negative lookahead: succeed when the inner pattern does not match
+    the current single element. Width 1 with no captures inside
+    """
+
+
+    def __init__(self, sub):
+        """
+        :param sub: pattern whose match would cause NOT to fail
+        :raises TypeError: when sub is not a pattern
+        """
+
+        _check_pattern_arg(sub, "NOT sub")
+        self._sub = sub
+
+
+    def _emit(self, ctx):
+        """
+        Emit the inner pattern then a NOT node referencing it
+        """
+
+        sub_idx = self._sub._emit(ctx)
+        return ctx.append_node(("NOT", sub_idx))
+
+
+class CLASS(_Pattern):
+    """
+    Match a single element which is an instance of the named extern
+    type. Field children project named or positional attributes through
+    sub-patterns
+    """
+
+
+    def __init__(self, type_extern, *fields):
+        """
+        :param type_extern: name of the extern binding for the class
+            type
+        :param fields: zero or more FIELD instances
+        :raises TypeError: when type_extern is not a str or a field is
+            not a FIELD
+        :raises ValueError: when type_extern is empty
+        """
+
+        _check_str_arg(type_extern, "CLASS type_extern")
+        for f in fields:
+            if not isinstance(f, FIELD):
+                raise TypeError(
+                    "CLASS field arguments must be FIELD instances, "
+                    "got %r" % (type(f).__name__,))
+        self._extern = type_extern
+        self._fields = fields
+
+
+    def _emit(self, ctx):
+        """
+        Emit each FIELD child then a CLASS node referencing them.
+        Toggles ctx.in_class_fields so that nested CLASS/FIELD trees
+        validate correctly. The CLASS extern is interned before
+        recursing into fields so that the externs tuple reflects
+        source declaration order
+        """
+
+        ext_idx = ctx.intern_extern(self._extern)
+        prev = ctx.in_class_fields
+        ctx.in_class_fields = True
+        try:
+            field_idxs = [f._emit(ctx) for f in self._fields]
+        finally:
+            ctx.in_class_fields = prev
+        return ctx.append_node(
+            ("CLASS", ext_idx) + tuple(field_idxs))
+
+
+class FIELD(_Pattern):
+    """
+    Project a single attribute of a CLASS instance through an inner
+    pattern. Positional when name is None, keyword otherwise
+    """
+
+
+    def __init__(self, sub, *, name=None):
+        """
+        :param sub: pattern applied to the projected attribute value
+        :param name: optional attribute name; when None the field is
+            positional and resolved via __match_args__
+        :raises TypeError: when sub is not a pattern or name is not a
+            str
+        :raises ValueError: when name is provided but empty
+        """
+
+        _check_pattern_arg(sub, "FIELD sub")
+        if name is not None:
+            _check_str_arg(name, "FIELD name")
+        self._sub = sub
+        self._name = name
+
+
+    def _emit(self, ctx):
+        """
+        Emit a FIELD_POS or FIELD_KW node. Rejects emission outside a
+        CLASS scope. Temporarily clears in_class_fields so that the
+        sub-pattern can host its own CLASS/FIELD nesting
+        """
+
+        if not ctx.in_class_fields:
+            raise ValueError(
+                "FIELD must be a child of CLASS")
+
+        prev = ctx.in_class_fields
+        ctx.in_class_fields = False
+        try:
+            sub_idx = self._sub._emit(ctx)
+        finally:
+            ctx.in_class_fields = prev
+
+        if self._name is None:
+            return ctx.append_node(("FIELD_POS", sub_idx))
+        return ctx.append_node(("FIELD_KW", sub_idx, self._name))
+
+
+# === Ergonomic shorthands ===
+
+
+def BIND(slot):
+    """
+    Capture any single element into the named slot
+    """
+
+    return CAPTURE(slot)
+
+
+def VALUE(slot):
+    """
+    Capture any single element into the named slot. Synonym for BIND;
+    distinguished for forthcoming hygiene-aware lowering in phase 9
+    """
+
+    return CAPTURE(slot)
+
+
+def SYMBOL(slot):
+    """
+    Capture a symbol element into the named slot. Requires the
+    'symbol' extern at match time
+    """
+
+    return CAPTURE(slot, TYPE("symbol"))
+
+
+def PAIR(slot):
+    """
+    Capture a pair element into the named slot. Requires the 'pair'
+    extern at match time
+    """
+
+    return CAPTURE(slot, TYPE("pair"))
+
+
+def LITERAL_KW(s):
+    """
+    Match a keyword equal to keyword(s)
+    """
+
+    return LITERAL(keyword(s))
+
+
+def LITERAL_SYM(s):
+    """
+    Match a symbol equal to symbol(s)
+    """
+
+    return LITERAL(symbol(s))
+
+
+def LIST(*specs, key=None):
+    """
+    Match a single source element which is a list whose contents
+    satisfy the given specs in order. When key is given the matched
+    sub-list is also captured into that slot
+    """
+
+    inner = FORM(GROUP(*specs))
+    if key is None:
+        return inner
+    return CAPTURE(key, inner)
+
+
+def make_matcher(pattern, *, meta=None):
+    """
+    Lower a pattern AST into a native Matcher
+
+    :param pattern: a matcher_ng pattern object
+    :param meta: optional dict of metadata to attach to the matcher
+    :raises TypeError: when pattern is not a matcher_ng pattern
+    """
+
+    if not isinstance(pattern, _Pattern):
+        raise TypeError(
+            "make_matcher requires a matcher_ng pattern, got %r"
+            % (type(pattern).__name__,))
+    return pattern.build(meta=meta)
 
 
 # The end.
