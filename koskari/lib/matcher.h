@@ -165,6 +165,105 @@ extern PyTypeObject KosMatcherType;
   ((obj) && ((obj)->ob_type == &KosMatcherType))
 
 
+/* === MatchResult object === */
+
+
+typedef struct KosMatchResult {
+  PyObject_HEAD
+  PyObject *captures;  /* dict[str, value] */
+  PyObject *meta;      /* dict (copied/shared from matcher) */
+  int matched;
+} KosMatchResult;
+
+
+extern PyTypeObject KosMatchResultType;
+
+
+#define KosMatchResult_Check(obj)                                       \
+  ((obj) && PyType_IsSubtype((obj)->ob_type, &KosMatchResultType))
+
+
+/* === ABSENT sentinel ===
+   Singleton placed in capture dicts for slots that were not produced
+   by the matched ONEOF branch (or by an OPTIONAL that did not fire).
+*/
+
+
+extern PyTypeObject KosMatchAbsentType;
+extern PyObject *KosMatchAbsent;
+
+
+/* === subject adapter === */
+
+
+typedef struct KosMatchSubject KosMatchSubject;
+
+
+typedef struct {
+  Py_ssize_t (*length)(KosMatchSubject *subject);
+  PyObject *(*get)(KosMatchSubject *subject, Py_ssize_t index);
+  PyObject *(*tail)(KosMatchSubject *subject, Py_ssize_t start);
+  PyObject *(*slice)(
+      KosMatchSubject *subject,
+      Py_ssize_t start,
+      Py_ssize_t end);
+  void (*release)(KosMatchSubject *subject);
+} KosMatchSubjectVTable;
+
+
+struct KosMatchSubject {
+  const KosMatchSubjectVTable *vt;
+  PyObject *backing;     /* ref-counted backing object (tuple or pair) */
+  PyObject **kp_cars;    /* KosPair adapter only: borrowed car ptrs */
+  PyObject **kp_tails;   /* KosPair adapter only: each tails[i] is the
+                            pair-or-nil at position i (borrowed) */
+  Py_ssize_t cached_length;
+};
+
+
+/**
+   Initialize a subject from any Python sequence-like object. On
+   success returns 0 and the subject must be released with
+   KosMatchSubject_Release. On failure returns -1 with a Python
+   exception set.
+ */
+int KosMatchSubject_FromPySequence(
+    PyObject *seq,
+    KosMatchSubject *out);
+
+/**
+   Initialize a subject from a KosPair root (or KosNil for the empty
+   subject). Walks the cons spine once at construction time and caches
+   per-position car and pair pointers so length/get/tail are O(1).
+   Returns 0 on success; -1 with a Python exception on failure
+   (improper list, recursive list, etc.).
+ */
+int KosMatchSubject_FromKosPair(
+    PyObject *pair_or_nil,
+    KosMatchSubject *out);
+
+
+void KosMatchSubject_Release(KosMatchSubject *subject);
+
+
+/* === engine entry === */
+
+
+/**
+   Run the matcher against the subject with the supplied extern
+   environment (PyTuple aligned to matcher->externs, or NULL when no
+   externs are required). Returns a new KosMatchResult reference on
+   success. On invalid invocation (missing/misaligned extern tuple, or
+   internal error) returns NULL with a Python exception set. Match
+   failure is not an error: it returns a KosMatchResult with
+   matched=False.
+ */
+PyObject *KosMatcher_Match(
+    KosMatcher *matcher,
+    KosMatchSubject *subject,
+    PyObject *extern_env);
+
+
 /* === C-internal builder ===
    The builder is the canonical low-level construction surface for a
    KosMatcher in Phase 1. Callers append slots, externs, consts, child
