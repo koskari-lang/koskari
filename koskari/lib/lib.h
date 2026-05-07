@@ -53,6 +53,7 @@ struct KosEvent;
 #include "coro.h"
 #include "cont.h"
 #include "iter.h"
+#include "matcher.h"
 #include "namespace.h"
 #include "object.h"
 #include "operator.h"
