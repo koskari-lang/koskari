@@ -29,12 +29,20 @@ repeat_capture and binding_inner_pattern
 
 
 from koskari.lib import ABSENT, Matcher, MatchResult, keyword, symbol
+from koskari.matcher import (
+    BindingResult,
+    BindingsResult,
+    DeclResult,
+    FormalsResult,
+    UsingResult,
+)
 
 
 __all__ = [
     "ABSENT",
     "Matcher",
     "MatchResult",
+    "MatcherProgram",
 
     "thaw",
     "make_matcher",
@@ -66,6 +74,20 @@ __all__ = [
     "slot_prefix",
     "binding_inner_pattern",
     "BINDING_CELL",
+
+    "DEFINE",
+    "DECL",
+    "BINDING",
+    "BINDINGS",
+    "FORMALS",
+    "USING",
+    "BODY",
+
+    "BindingResult",
+    "BindingsResult",
+    "DeclResult",
+    "FormalsResult",
+    "UsingResult",
 ]
 
 
@@ -101,6 +123,93 @@ class _FreezeCtx(object):
         self.nodes = []
         self.capture_scope_stack = [set()]
         self.in_class_fields = False
+        self.post_processors = []
+        self.hygiene_binders = {}
+        self.hygiene_scope_regions = {}
+
+
+    def register_post_processor(self, slot, fn):
+        """
+        Append a slot-targeted post-processor. The wrapper threads
+        registered processors over the captures dict in declaration
+        order at match time
+
+        :param slot: slot name whose value is rewritten by fn
+        :param fn: callable taking the captured value and returning
+            either a replacement value or the _REJECT sentinel
+        """
+
+        self.post_processors.append((slot, fn))
+
+
+    def add_binder(self, slot, kind, scopes, extra=None):
+        """
+        Record a binder hygiene entry for slot. Raises ValueError on
+        duplicate slot binders so authors notice composite collisions
+        eagerly
+
+        :param slot: slot name introduced by the composite
+        :param kind: binder kind ('DEFINE'/'DECL'/'BINDING'/'BINDINGS'
+            /'FORMALS'/'USING')
+        :param scopes: tuple of scope-region slot names
+        :param extra: optional dict of additional fields to merge in
+        """
+
+        if slot in self.hygiene_binders:
+            raise ValueError(
+                "duplicate binder for slot %r in matcher pattern"
+                % (slot,))
+        entry = {"kind": kind, "scopes": tuple(scopes)}
+        if extra:
+            entry.update(extra)
+        self.hygiene_binders[slot] = entry
+
+
+    def add_scope_region(self, slot, kind):
+        """
+        Record a scope-region hygiene entry. Same-kind re-registration
+        is idempotent; different-kind re-registration is a ValueError
+
+        :param slot: slot name carrying scope-region semantics
+        :param kind: 'REST' (or reserved 'EXPR')
+        """
+
+        existing = self.hygiene_scope_regions.get(slot)
+        if existing is not None:
+            if existing.get("kind") != kind:
+                raise ValueError(
+                    "scope region %r already registered as %r,"
+                    " refusing to re-register as %r"
+                    % (slot, existing.get("kind"), kind))
+            return
+        self.hygiene_scope_regions[slot] = {"kind": kind}
+
+
+    def build_hygiene_meta(self):
+        """
+        Assemble the hygiene meta dict from accumulated binders and
+        scope regions. Returns an empty dict when no composite has
+        registered anything. Validates that every binder scope reference
+        resolves to a known scope region, raising ValueError on
+        dangling references
+        """
+
+        if not self.hygiene_binders and not self.hygiene_scope_regions:
+            return {}
+
+        for slot, entry in self.hygiene_binders.items():
+            for ref in entry.get("scopes", ()):
+                if ref not in self.hygiene_scope_regions:
+                    raise ValueError(
+                        "binder slot %r references unknown scope"
+                        " region %r" % (slot, ref))
+
+        return {
+            "hygiene_version": 1,
+            "binders": {k: dict(v) for k, v in self.hygiene_binders.items()},
+            "scope_regions": {
+                k: dict(v) for k, v in self.hygiene_scope_regions.items()},
+        }
 
 
     def push_capture_scope(self):
@@ -202,7 +311,13 @@ class _Pattern(object):
     def freeze(self, meta=None):
         """
         Lower this pattern to a frozen 8-tuple suitable for
-        Matcher.from_tuple
+        Matcher.from_tuple. Hygiene meta accumulated by composite
+        children is merged into the supplied meta dict; collisions
+        raise ValueError so authors do not silently overwrite hygiene
+        information
+
+        :param meta: optional dict of metadata to attach to the frozen
+            tuple
         """
 
         ctx = _FreezeCtx()
@@ -213,6 +328,17 @@ class _Pattern(object):
         elif not isinstance(meta, dict):
             raise TypeError(
                 "meta must be a dict, got %r" % type(meta).__name__)
+
+        hygiene = ctx.build_hygiene_meta()
+        if hygiene:
+            merged = dict(meta)
+            for k, v in hygiene.items():
+                if k in merged and merged[k] != v:
+                    raise ValueError(
+                        "meta key %r conflicts with composite hygiene"
+                        " entry" % (k,))
+                merged[k] = v
+            meta = merged
 
         return (
             "MATCHER", 1,
@@ -227,18 +353,68 @@ class _Pattern(object):
 
     def build(self, meta=None):
         """
-        Lower this pattern and thaw it into a native Matcher
+        Lower this pattern and thaw it into a native Matcher. Returns
+        the raw native Matcher without composite post-processors;
+        callers that want structured composite results should use
+        compile()
         """
 
         return Matcher.from_tuple(self.freeze(meta))
 
 
-    def match(self, subject, **externs):
+    def compile(self, meta=None):
         """
-        Convenience: build and match against subject
+        Lower this pattern and return a MatcherProgram that wraps the
+        native Matcher together with composite post-processors. The
+        returned program forwards slots/externs/consts/meta from the
+        native matcher and threads each post-processor over the
+        captures dict at match time
+
+        :param meta: optional dict of metadata to attach to the frozen
+            tuple
+        :rtype: MatcherProgram
         """
 
-        return self.build().match(subject, **externs)
+        ctx = _FreezeCtx()
+        entry = self._emit(ctx)
+
+        if meta is None:
+            meta = {}
+        elif not isinstance(meta, dict):
+            raise TypeError(
+                "meta must be a dict, got %r" % type(meta).__name__)
+
+        hygiene = ctx.build_hygiene_meta()
+        if hygiene:
+            merged = dict(meta)
+            for k, v in hygiene.items():
+                if k in merged and merged[k] != v:
+                    raise ValueError(
+                        "meta key %r conflicts with composite hygiene"
+                        " entry" % (k,))
+                merged[k] = v
+            meta = merged
+
+        frozen = (
+            "MATCHER", 1,
+            tuple(self._slot_names(ctx)),
+            tuple(self._extern_names(ctx)),
+            tuple(ctx.consts),
+            tuple(ctx.nodes),
+            entry,
+            meta,
+        )
+        native = Matcher.from_tuple(frozen)
+        return MatcherProgram(native, post_processors=tuple(ctx.post_processors))
+
+
+    def match(self, subject, **externs):
+        """
+        Convenience: compile and match against subject. Returns the
+        MatcherProgram result so composite post-processors are applied
+        """
+
+        return self.compile().match(subject, **externs)
 
 
     def _emit(self, ctx):
@@ -962,18 +1138,598 @@ def LIST(*specs, key=None):
 
 def make_matcher(pattern, *, meta=None):
     """
-    Lower a pattern AST into a native Matcher
+    Lower a pattern AST into a MatcherProgram. The program forwards
+    slots, externs, consts, and meta to the underlying native matcher
+    and threads any composite post-processors over its match results.
+    Patterns built from primitives only delegate to the native
+    MatchResult unchanged
 
     :param pattern: a matcher_ng pattern object
     :param meta: optional dict of metadata to attach to the matcher
     :raises TypeError: when pattern is not a matcher_ng pattern
+    :rtype: MatcherProgram
     """
 
     if not isinstance(pattern, _Pattern):
         raise TypeError(
             "make_matcher requires a matcher_ng pattern, got %r"
             % (type(pattern).__name__,))
-    return pattern.build(meta=meta)
+    return pattern.compile(meta=meta)
+
+
+# === Phase 5 composite infrastructure ===
+
+
+class _Reject(object):
+    """
+    Sentinel returned by composite post-processors to convert a raw
+    native match into an overall failed match
+    """
+
+
+    __slots__ = ()
+
+
+    def __repr__(self):
+        return "<matcher_ng._REJECT>"
+
+
+_REJECT = _Reject()
+
+
+class _ProcessedResult(object):
+    """
+    MatcherProgram match result surface. Mirrors the duck-typed shape
+    of the native MatchResult: matched, captures, meta, plus truthiness
+    that follows matched
+    """
+
+
+    __slots__ = ("matched", "captures", "meta")
+
+
+    def __init__(self, matched, captures, meta):
+        """
+        :param matched: bool indicating overall success
+        :param captures: dict of slot name to value (mutable copy from
+            the native captures, with composite replacements applied)
+        :param meta: matcher meta dict (forwarded from the matcher)
+        """
+
+        self.matched = matched
+        self.captures = captures
+        self.meta = meta
+
+
+    def __bool__(self):
+        return bool(self.matched)
+
+
+    def __repr__(self):
+        return ("<MatcherProgramResult matched=%s captures=%d>"
+                % (self.matched, len(self.captures or ())))
+
+
+class MatcherProgram(object):
+    """
+    Wrap a native Matcher with a tuple of (slot, post_processor) pairs.
+    Match results are threaded through the post-processors in
+    declaration order; the first processor returning _REJECT converts
+    the overall match into a failure with empty captures
+    """
+
+
+    def __init__(self, native, post_processors=()):
+        """
+        :param native: native Matcher (typically from Matcher.from_tuple)
+        :param post_processors: iterable of (slot_name, callable) pairs
+        """
+
+        if not isinstance(native, Matcher):
+            raise TypeError(
+                "MatcherProgram native must be a Matcher, got %r"
+                % (type(native).__name__,))
+        self._native = native
+        self._post_processors = tuple(post_processors)
+
+
+    @property
+    def native(self):
+        """
+        The wrapped native Matcher (read-only handle)
+        """
+
+        return self._native
+
+
+    @property
+    def post_processors(self):
+        """
+        Tuple of (slot_name, callable) pairs in registration order
+        """
+
+        return self._post_processors
+
+
+    @property
+    def slots(self):
+        return self._native.slots
+
+
+    @property
+    def externs(self):
+        return self._native.externs
+
+
+    @property
+    def consts(self):
+        return self._native.consts
+
+
+    @property
+    def meta(self):
+        return self._native.meta
+
+
+    def match(self, subject, **externs):
+        """
+        Run the native matcher and apply post-processors in order. With
+        no post-processors registered the raw native MatchResult is
+        returned unchanged. With post-processors the result is wrapped
+        in a duck-typed object exposing matched, captures, and meta.
+        On rejection the result reports matched=False with an empty
+        captures dict and the original meta. Extern bindings not
+        declared by the native matcher are filtered out so callers can
+        pass a uniform set across composite patterns whose primitive
+        expansion may or may not require a given extern
+
+        :param subject: a sequence (tuple/list/pair) to match
+        :param externs: extern bindings forwarded to the native matcher
+        """
+
+        declared = self._native.externs
+        if externs and declared:
+            filtered = {k: v for k, v in externs.items() if k in declared}
+        elif declared:
+            filtered = {}
+        else:
+            filtered = {}
+        raw = self._native.match(subject, **filtered)
+        if not self._post_processors:
+            return raw
+        if not raw.matched:
+            return raw
+
+        captures = dict(raw.captures)
+        for slot, fn in self._post_processors:
+            value = captures.get(slot, ABSENT)
+            new_value = fn(value)
+            if new_value is _REJECT:
+                return _ProcessedResult(False, {}, raw.meta)
+            captures[slot] = new_value
+        return _ProcessedResult(True, captures, raw.meta)
+
+
+# === Phase 5 result-type re-exports and dependency hooks ===
+
+
+def _legacy_helpers():
+    """
+    Return the legacy parse helpers used by composite post-processors,
+    imported lazily to keep matcher_ng importable independently of the
+    compile package
+    """
+
+    from koskari.compile.helpers import (
+        _USING_FORMS,
+        _USING_UNPACK_FORMS,
+        gather_bindings,
+        gather_formals,
+        helper_binding,
+        parse_decl,
+    )
+    from koskari.exceptions import SpecialError
+    from koskari.matcher import match1
+    from koskari.types import get_position, is_pair, is_proper
+    return {
+        "USING_FORMS": _USING_FORMS,
+        "USING_UNPACK_FORMS": _USING_UNPACK_FORMS,
+        "gather_bindings": gather_bindings,
+        "gather_formals": gather_formals,
+        "helper_binding": helper_binding,
+        "parse_decl": parse_decl,
+        "SpecialError": SpecialError,
+        "match1": match1,
+        "get_position": get_position,
+        "is_pair": is_pair,
+        "is_proper": is_proper,
+    }
+
+
+# === Phase 5 composites ===
+
+
+def _normalize_scopes(scope, scopes, what):
+    """
+    Coerce the scope/scopes kwargs into a single tuple of slot names.
+    Accepts None for both, a single str for scope, and a tuple/list of
+    str for scopes. Mixing both raises ValueError
+
+    :param scope: optional single scope-region slot name
+    :param scopes: optional tuple/list of scope-region slot names
+    :param what: caller name used in error messages
+    :raises TypeError: when scope/scopes have wrong types
+    :raises ValueError: when both are supplied or scope is empty
+    """
+
+    if scope is not None and scopes is not None:
+        raise ValueError(
+            "%s accepts scope or scopes, not both" % (what,))
+    if scope is not None:
+        _check_str_arg(scope, "%s scope" % (what,))
+        return (scope,)
+    if scopes is None:
+        return ()
+    if not isinstance(scopes, (tuple, list)):
+        raise TypeError(
+            "%s scopes must be a tuple or list of str, got %r"
+            % (what, type(scopes).__name__))
+    out = []
+    for s in scopes:
+        _check_str_arg(s, "%s scopes entry" % (what,))
+        out.append(s)
+    return tuple(out)
+
+
+class _Composite(_Pattern):
+    """
+    Base class for Phase 5 composite matchers. Subclasses override
+    _expand to return the underlying primitive _Pattern that performs
+    the structural match, and _post_process to convert the captured
+    value into a structured result type. Hygiene meta entries are
+    registered through _register_hygiene
+    """
+
+
+    def _emit(self, ctx):
+        """
+        Emit the expanded primitive pattern and register both the
+        post-processor and hygiene meta entries
+        """
+
+        primitive = self._expand()
+        idx = primitive._emit(ctx)
+        ctx.register_post_processor(self._slot, self._post_process)
+        self._register_hygiene(ctx)
+        return idx
+
+
+    def _expand(self):
+        """
+        Subclass responsibility: return the primitive _Pattern that
+        performs the structural match for this composite
+        """
+
+        raise NotImplementedError
+
+
+    def _post_process(self, value):
+        """
+        Subclass responsibility: convert the captured value into a
+        structured result; return _REJECT to fail the overall match
+        """
+
+        raise NotImplementedError
+
+
+    def _register_hygiene(self, ctx):
+        """
+        Subclass responsibility: register binder and scope-region
+        entries on the freeze context
+        """
+
+        raise NotImplementedError
+
+
+class DEFINE(_Composite):
+    """
+    Capture one element constrained to be a symbol. Used as the
+    introduced-name slot for define-shaped specials
+    """
+
+
+    def __init__(self, slot, *, scope=None, scopes=None):
+        """
+        :param slot: target slot name
+        :param scope: optional scope-region slot name
+        :param scopes: optional tuple of scope-region slot names
+        """
+
+        _check_str_arg(slot, "DEFINE slot")
+        self._slot = slot
+        self._scopes = _normalize_scopes(scope, scopes, "DEFINE")
+
+
+    def _expand(self):
+        return CAPTURE(self._slot, TYPE("symbol"))
+
+
+    def _post_process(self, value):
+        return value
+
+
+    def _register_hygiene(self, ctx):
+        ctx.add_binder(self._slot, "DEFINE", self._scopes)
+
+
+class DECL(_Composite):
+    """
+    Capture one element shaped as a declaration: bare symbol or pair
+    form parsed by parse_decl. The captured value becomes a DeclResult
+    with name and optional type expression
+    """
+
+
+    def __init__(self, slot, *, scope=None, scopes=None):
+        """
+        :param slot: target slot name
+        :param scope: optional scope-region slot name
+        :param scopes: optional tuple of scope-region slot names
+        """
+
+        _check_str_arg(slot, "DECL slot")
+        self._slot = slot
+        self._scopes = _normalize_scopes(scope, scopes, "DECL")
+
+
+    def _expand(self):
+        return CAPTURE(self._slot, TEST_ANY())
+
+
+    def _post_process(self, value):
+        helpers = _legacy_helpers()
+        try:
+            name_sym, type_expr = helpers["parse_decl"](value, source=value)
+        except helpers["SpecialError"]:
+            return _REJECT
+        pos = (helpers["get_position"](value)
+               if helpers["is_pair"](value) else None)
+        return DeclResult(
+            value, pos, name=name_sym, type=type_expr, source_form=value)
+
+
+    def _register_hygiene(self, ctx):
+        ctx.add_binder(self._slot, "DECL", self._scopes)
+
+
+class BINDING(_Composite):
+    """
+    Capture a single binding-shaped cell, (NAME EXPR) or
+    (EXPR as: NAME). The structural match descends into the cell via
+    binding_inner_pattern; post-processing rewrites the captured pair
+    into a BindingResult with name and value extracted via the legacy
+    helper for SpecialError parity
+    """
+
+
+    def __init__(self, slot, *, scope=None, scopes=None):
+        """
+        :param slot: target slot name
+        :param scope: optional scope-region slot name
+        :param scopes: optional tuple of scope-region slot names
+        """
+
+        _check_str_arg(slot, "BINDING slot")
+        self._slot = slot
+        self._scopes = _normalize_scopes(scope, scopes, "BINDING")
+
+
+    def _expand(self):
+        return CAPTURE(self._slot, binding_inner_pattern())
+
+
+    def _post_process(self, value):
+        helpers = _legacy_helpers()
+        try:
+            name, expr = helpers["helper_binding"](value)
+        except helpers["SpecialError"]:
+            return _REJECT
+        pos = (helpers["get_position"](value)
+               if helpers["is_pair"](value) else None)
+        return BindingResult(value, pos, name=name, value=expr)
+
+
+    def _register_hygiene(self, ctx):
+        ctx.add_binder(self._slot, "BINDING", self._scopes)
+
+
+class BINDINGS(_Composite):
+    """
+    Capture a binding-list cell: a single element which is itself a
+    proper list of binding-shaped cells. The structural match wraps a
+    REPEAT of binding_inner_pattern inside FORM; post-processing
+    rewrites the captured list pair into a BindingsResult via the
+    legacy gather_bindings helper
+    """
+
+
+    def __init__(self, slot, *, mode='parallel', scope=None, scopes=None):
+        """
+        :param slot: target slot name
+        :param mode: stored on the binder hygiene entry, currently
+            uninterpreted; legacy callers pass 'parallel' or
+            'sequential'
+        :param scope: optional scope-region slot name
+        :param scopes: optional tuple of scope-region slot names
+        """
+
+        _check_str_arg(slot, "BINDINGS slot")
+        if not isinstance(mode, str):
+            raise TypeError(
+                "BINDINGS mode must be a str, got %r"
+                % (type(mode).__name__,))
+        self._slot = slot
+        self._mode = mode
+        self._scopes = _normalize_scopes(scope, scopes, "BINDINGS")
+
+
+    def _expand(self):
+        nonempty = FORM(REPEAT(binding_inner_pattern()))
+        return CAPTURE(self._slot, ONEOF(LITERAL(_nil_singleton()), nonempty))
+
+
+    def _post_process(self, value):
+        helpers = _legacy_helpers()
+        names, values = helpers["gather_bindings"](value, value)
+        pos = (helpers["get_position"](value)
+               if helpers["is_pair"](value) else None)
+        return BindingsResult(value, pos, names=names, values=values)
+
+
+    def _register_hygiene(self, ctx):
+        ctx.add_binder(
+            self._slot, "BINDINGS", self._scopes,
+            extra={"mode": self._mode})
+
+
+class FORMALS(_Composite):
+    """
+    Capture one element shaped as a formals list (symbol or proper
+    pair) and rewrite into a FormalsResult via the legacy
+    gather_formals helper
+    """
+
+
+    def __init__(self, slot, *, scope=None, scopes=None):
+        """
+        :param slot: target slot name
+        :param scope: optional scope-region slot name
+        :param scopes: optional tuple of scope-region slot names
+        """
+
+        _check_str_arg(slot, "FORMALS slot")
+        self._slot = slot
+        self._scopes = _normalize_scopes(scope, scopes, "FORMALS")
+
+
+    def _expand(self):
+        return CAPTURE(self._slot, TEST_ANY())
+
+
+    def _post_process(self, value):
+        helpers = _legacy_helpers()
+        try:
+            positional, defaults, kwonly, star, starstar, ann = (
+                helpers["gather_formals"](value, source=value))
+        except helpers["SpecialError"]:
+            return _REJECT
+        pos = (helpers["get_position"](value)
+               if helpers["is_pair"](value) else None)
+        return FormalsResult(
+            value, pos,
+            positional=positional, defaults=defaults, kwonly=kwonly,
+            star=star, starstar=starstar, annotations=ann)
+
+
+    def _register_hygiene(self, ctx):
+        ctx.add_binder(self._slot, "FORMALS", self._scopes)
+
+
+class USING(_Composite):
+    """
+    Capture one element shaped as a using-form. Supports the four
+    inner shapes recognised by the legacy USING / USING_UNPACK
+    matchers: (NAME EXPR), (EXPR as: NAME), (EXPR), and
+    ((PATTERN...) EXPR). The captured pair becomes a UsingResult; the
+    unpack form populates lhs while the other shapes set name and
+    leave lhs as None
+    """
+
+
+    def __init__(self, slot, *, scope=None, scopes=None):
+        """
+        :param slot: target slot name
+        :param scope: optional scope-region slot name
+        :param scopes: optional tuple of scope-region slot names
+        """
+
+        _check_str_arg(slot, "USING slot")
+        self._slot = slot
+        self._scopes = _normalize_scopes(scope, scopes, "USING")
+
+
+    def _expand(self):
+        return CAPTURE(self._slot, TEST_ANY())
+
+
+    def _post_process(self, value):
+        helpers = _legacy_helpers()
+        if not helpers["is_pair"](value):
+            return _REJECT
+        if not helpers["is_proper"](value):
+            return _REJECT
+        m = helpers["match1"](value, helpers["USING_UNPACK_FORMS"])
+        if m is not None:
+            lhs_m = m.get("lhs")
+            expr_m = m.get("expr")
+            pos = helpers["get_position"](value)
+            return UsingResult(
+                value, pos, name=None, value=expr_m.source,
+                lhs=lhs_m.source)
+        m = helpers["match1"](value, helpers["USING_FORMS"])
+        if m is not None:
+            name_m = m.get("name")
+            expr_m = m.get("expr")
+            pos = helpers["get_position"](value)
+            name = name_m.source if name_m else None
+            return UsingResult(
+                value, pos, name=name, value=expr_m.source, lhs=None)
+        return _REJECT
+
+
+    def _register_hygiene(self, ctx):
+        ctx.add_binder(self._slot, "USING", self._scopes)
+
+
+class BODY(_Pattern):
+    """
+    Scope-region-aware REST capture. Behaves identically to REST at
+    the engine level but additionally registers the slot as a body
+    scope region in the hygiene meta dict
+    """
+
+
+    def __init__(self, slot):
+        """
+        :param slot: target slot name
+        :raises TypeError: when slot is not a str
+        :raises ValueError: when slot is empty
+        """
+
+        _check_str_arg(slot, "BODY slot")
+        self._slot = slot
+
+
+    def _emit(self, ctx):
+        """
+        Emit the underlying REST node and register the scope region
+        meta entry for slot
+        """
+
+        idx = REST(self._slot)._emit(ctx)
+        ctx.add_scope_region(self._slot, "REST")
+        return idx
+
+
+def _nil_singleton():
+    """
+    Return the koskari nil singleton. Imported lazily to keep the
+    matcher_ng module importable without the koskari.lib nil being
+    pulled into __all__
+    """
+
+    from koskari.lib import nil
+    return nil
 
 
 # The end.
