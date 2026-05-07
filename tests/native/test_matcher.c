@@ -1680,6 +1680,288 @@ static int test_match_lambda_shaped_oneof(void) {
 }
 
 
+/* === Phase 3: thaw tests === */
+
+
+/**
+   Build the thaw entry point lazily by importing the type from the
+   already-registered KosMatcherType. Returns a NEW reference to a
+   bound classmethod ('Matcher.from_tuple') or NULL on error.
+*/
+static PyObject *get_from_tuple_method(void) {
+    PyObject *m = PyObject_GetAttrString(
+        (PyObject *) &KosMatcherType, "from_tuple");
+    return m;
+}
+
+
+static int test_thaw_minimal(void) {
+    /*
+      Frozen schema for a minimal matcher: one TEST_ANY at index 0,
+      entry=0, no slots/externs/consts/meta.
+    */
+    PyObject *empty = PyTuple_New(0);
+    PyObject *meta = PyDict_New();
+    PyObject *test_node = Py_BuildValue("(ssi)", "TEST", "ANY", -1);
+    TEST_ASSERT_NOT_NULL(test_node, "build TEST node");
+
+    PyObject *nodes = PyTuple_Pack(1, test_node);
+    PyObject *frozen = Py_BuildValue("(siOOOOiO)",
+                                     "MATCHER", 1,
+                                     empty, empty, empty, nodes, 0, meta);
+    TEST_ASSERT_NOT_NULL(frozen, "build frozen tuple");
+
+    PyObject *from_tuple = get_from_tuple_method();
+    TEST_ASSERT_NOT_NULL(from_tuple, "fetch from_tuple");
+
+    PyObject *m = PyObject_CallOneArg(from_tuple, frozen);
+    TEST_ASSERT_NOT_NULL(m, "thaw minimal matcher");
+    TEST_ASSERT(KosMatcher_Check(m), "result is Matcher");
+
+    KosMatcher *km = (KosMatcher *) m;
+    TEST_ASSERT_EQ(km->node_count, 1, "1 node");
+    TEST_ASSERT_EQ(km->nodes[0].kind, KOS_MATCH_NODE_TEST, "TEST kind");
+    TEST_ASSERT_EQ(km->nodes[0].as.test.test_kind,
+                   KOS_MATCH_TEST_ANY, "ANY test_kind");
+
+    Py_DECREF(m);
+    Py_DECREF(from_tuple);
+    Py_DECREF(frozen);
+    Py_DECREF(nodes);
+    Py_DECREF(test_node);
+    Py_DECREF(meta);
+    Py_DECREF(empty);
+    return 0;
+}
+
+
+static int test_thaw_rejects_bad_version(void) {
+    /*
+      Reject a frozen tuple whose version != 1.
+    */
+    PyObject *empty = PyTuple_New(0);
+    PyObject *meta = PyDict_New();
+    PyObject *frozen = Py_BuildValue("(siOOOOiO)",
+                                     "MATCHER", 99,
+                                     empty, empty, empty, empty, 0, meta);
+    TEST_ASSERT_NOT_NULL(frozen, "build frozen tuple");
+
+    PyObject *from_tuple = get_from_tuple_method();
+    PyObject *m = PyObject_CallOneArg(from_tuple, frozen);
+    TEST_ASSERT_NULL(m, "thaw must reject bad version");
+    TEST_ASSERT(PyErr_Occurred() != NULL, "exception set");
+    PyErr_Clear();
+
+    Py_DECREF(from_tuple);
+    Py_DECREF(frozen);
+    Py_DECREF(meta);
+    Py_DECREF(empty);
+    return 0;
+}
+
+
+static int test_thaw_rejects_unknown_node_tag(void) {
+    PyObject *empty = PyTuple_New(0);
+    PyObject *meta = PyDict_New();
+    PyObject *bad_node = Py_BuildValue("(si)", "BOGUS", 0);
+    PyObject *nodes = PyTuple_Pack(1, bad_node);
+    PyObject *frozen = Py_BuildValue("(siOOOOiO)",
+                                     "MATCHER", 1,
+                                     empty, empty, empty, nodes, 0, meta);
+
+    PyObject *from_tuple = get_from_tuple_method();
+    PyObject *m = PyObject_CallOneArg(from_tuple, frozen);
+    TEST_ASSERT_NULL(m, "thaw must reject unknown node tag");
+    PyErr_Clear();
+
+    Py_DECREF(from_tuple);
+    Py_DECREF(frozen);
+    Py_DECREF(nodes);
+    Py_DECREF(bad_node);
+    Py_DECREF(meta);
+    Py_DECREF(empty);
+    return 0;
+}
+
+
+static int test_thaw_rejects_index_oob(void) {
+    /*
+      CAPTURE.slot index 5 with 1 slot defined. Validator rejects.
+    */
+    PyObject *empty = PyTuple_New(0);
+    PyObject *meta = PyDict_New();
+
+    PyObject *xname = PyUnicode_FromString("x");
+    PyObject *slots = PyTuple_Pack(1, xname);
+    PyObject *test_node = Py_BuildValue("(ssi)", "TEST", "ANY", -1);
+    /* CAPTURE: kind=CAPTURE, slot=5 (OOB), subnode=0, hr=0, scope=-1 */
+    PyObject *cap_node = Py_BuildValue("(siiii)",
+                                       "CAPTURE", 5, 0, 0, -1);
+    PyObject *nodes = PyTuple_Pack(2, test_node, cap_node);
+
+    PyObject *frozen = Py_BuildValue("(siOOOOiO)",
+                                     "MATCHER", 1,
+                                     slots, empty, empty,
+                                     nodes, 1, meta);
+
+    PyObject *from_tuple = get_from_tuple_method();
+    PyObject *m = PyObject_CallOneArg(from_tuple, frozen);
+    TEST_ASSERT_NULL(m, "thaw must reject OOB slot index");
+    PyErr_Clear();
+
+    Py_DECREF(from_tuple);
+    Py_DECREF(frozen);
+    Py_DECREF(nodes);
+    Py_DECREF(test_node);
+    Py_DECREF(cap_node);
+    Py_DECREF(slots);
+    Py_DECREF(xname);
+    Py_DECREF(meta);
+    Py_DECREF(empty);
+    return 0;
+}
+
+
+static int test_thaw_full_lambda(void) {
+    /*
+      Thaw a six-branch lambda-style matcher and run it. Mirrors
+      test_match_lambda_shaped_oneof but starts from a frozen tuple
+      built in C.
+    */
+    PyObject *meta = PyDict_New();
+    PyObject *empty = PyTuple_New(0);
+
+    /* slots */
+    PyObject *s_name = PyUnicode_FromString("name");
+    PyObject *s_body = PyUnicode_FromString("body");
+    PyObject *slots = PyTuple_Pack(2, s_name, s_body);
+
+    /* externs */
+    PyObject *e_sym = PyUnicode_FromString("symbol");
+    PyObject *externs = PyTuple_Pack(1, e_sym);
+
+    /* consts: "::0".."::5" */
+    PyObject *consts_list = PyList_New(0);
+    for (int i = 0; i < 6; i++) {
+        char buf[8];
+        snprintf(buf, sizeof(buf), "::%d", i);
+        PyObject *s = PyUnicode_FromString(buf);
+        PyList_Append(consts_list, s);
+        Py_DECREF(s);
+    }
+    PyObject *consts = PySequence_Tuple(consts_list);
+    Py_DECREF(consts_list);
+
+    /* Build nodes list bottom-up. Each branch is 6 nodes:
+       TEST_TYPE, CAPTURE, TEST_LITERAL, TEST_ANY, TEST_ANY, REST,
+       then GROUP. ONEOF references the GROUPs by index. */
+    PyObject *nodes_list = PyList_New(0);
+    Py_ssize_t branch_indices[6];
+
+    for (int i = 0; i < 6; i++) {
+        Py_ssize_t base = PyList_GET_SIZE(nodes_list);
+
+        PyObject *t_sym = Py_BuildValue("(ssi)", "TEST", "TYPE", 0);
+        PyObject *cap = Py_BuildValue("(siiii)", "CAPTURE", 0,
+                                      (int)(base + 0), 0, -1);
+        PyObject *t_lit = Py_BuildValue("(ssi)", "TEST", "LITERAL", i);
+        PyObject *t_ret = Py_BuildValue("(ssi)", "TEST", "ANY", -1);
+        PyObject *t_form = Py_BuildValue("(ssi)", "TEST", "ANY", -1);
+        PyObject *rest = Py_BuildValue("(si)", "REST", 1);
+        PyObject *grp = Py_BuildValue(
+            "(siiiii)", "GROUP",
+            (int)(base + 1), (int)(base + 2), (int)(base + 3),
+            (int)(base + 4), (int)(base + 5));
+
+        PyList_Append(nodes_list, t_sym);
+        PyList_Append(nodes_list, cap);
+        PyList_Append(nodes_list, t_lit);
+        PyList_Append(nodes_list, t_ret);
+        PyList_Append(nodes_list, t_form);
+        PyList_Append(nodes_list, rest);
+        PyList_Append(nodes_list, grp);
+        Py_DECREF(t_sym);
+        Py_DECREF(cap);
+        Py_DECREF(t_lit);
+        Py_DECREF(t_ret);
+        Py_DECREF(t_form);
+        Py_DECREF(rest);
+        Py_DECREF(grp);
+
+        branch_indices[i] = base + 6;
+    }
+
+    Py_ssize_t oneof_idx = PyList_GET_SIZE(nodes_list);
+    PyObject *oneof = Py_BuildValue("(siiiiii)", "ONEOF",
+                                    (int) branch_indices[0],
+                                    (int) branch_indices[1],
+                                    (int) branch_indices[2],
+                                    (int) branch_indices[3],
+                                    (int) branch_indices[4],
+                                    (int) branch_indices[5]);
+    PyList_Append(nodes_list, oneof);
+    Py_DECREF(oneof);
+
+    PyObject *nodes = PySequence_Tuple(nodes_list);
+    Py_DECREF(nodes_list);
+
+    PyObject *frozen = Py_BuildValue("(siOOOOiO)",
+                                     "MATCHER", 1,
+                                     slots, externs, consts,
+                                     nodes, (int) oneof_idx, meta);
+
+    PyObject *from_tuple = get_from_tuple_method();
+    PyObject *m_obj = PyObject_CallOneArg(from_tuple, frozen);
+    TEST_ASSERT_NOT_NULL(m_obj, "thaw lambda matcher");
+
+    /* Build a subject matching branch 4. */
+    PyObject *foo_n = PyUnicode_FromString("zoo");
+    PyObject *foo = KosSymbol_FromString(foo_n);
+    Py_DECREF(foo_n);
+    PyObject *disc4 = PyUnicode_FromString("::4");
+    PyObject *retv = PyUnicode_FromString("rt");
+    PyObject *forms = PyUnicode_FromString("fm");
+    PyObject *b1 = PyUnicode_FromString("b1");
+    PyObject *b2 = PyUnicode_FromString("b2");
+    PyObject *seq = PyTuple_Pack(6, foo, disc4, retv, forms, b1, b2);
+    PyObject *extern_env = PyTuple_Pack(1, (PyObject *) &KosSymbolType);
+
+    PyObject *r = run_match_pyseq_externs(
+        (KosMatcher *) m_obj, seq, extern_env);
+    TEST_ASSERT_NOT_NULL(r, "match returned");
+    TEST_ASSERT(((KosMatchResult *) r)->matched, "matched");
+
+    PyObject *captures = ((KosMatchResult *) r)->captures;
+    PyObject *name_v = PyDict_GetItemString(captures, "name");
+    PyObject *body_v = PyDict_GetItemString(captures, "body");
+    TEST_ASSERT_SAME(name_v, foo, "name == zoo");
+    TEST_ASSERT_EQ(PyTuple_GET_SIZE(body_v), 2, "body has 2 items");
+
+    Py_DECREF(r);
+    Py_DECREF(extern_env);
+    Py_DECREF(seq);
+    Py_DECREF(b2);
+    Py_DECREF(b1);
+    Py_DECREF(forms);
+    Py_DECREF(retv);
+    Py_DECREF(disc4);
+    Py_DECREF(foo);
+    Py_DECREF(m_obj);
+    Py_DECREF(from_tuple);
+    Py_DECREF(frozen);
+    Py_DECREF(nodes);
+    Py_DECREF(consts);
+    Py_DECREF(externs);
+    Py_DECREF(e_sym);
+    Py_DECREF(slots);
+    Py_DECREF(s_body);
+    Py_DECREF(s_name);
+    Py_DECREF(empty);
+    Py_DECREF(meta);
+    return 0;
+}
+
+
 /* === suite runner === */
 
 
@@ -1723,6 +2005,14 @@ int run_matcher_tests(void) {
     RUN_TEST(test_match_not_blocks);
     RUN_TEST(test_match_extern_type_test);
     RUN_TEST(test_match_lambda_shaped_oneof);
+
+    BEGIN_TEST_SUITE("matcher_ng (Phase 3: thaw)");
+
+    RUN_TEST(test_thaw_minimal);
+    RUN_TEST(test_thaw_rejects_bad_version);
+    RUN_TEST(test_thaw_rejects_unknown_node_tag);
+    RUN_TEST(test_thaw_rejects_index_oob);
+    RUN_TEST(test_thaw_full_lambda);
 
     return 0;
 }
