@@ -28,7 +28,15 @@ repeat_capture and binding_inner_pattern
 """
 
 
-from koskari.lib import ABSENT, Matcher, MatchResult, keyword, nil, symbol
+from koskari.lib import (
+    ABSENT,
+    Matcher,
+    MatchResult,
+    keyword,
+    nil,
+    pair,
+    symbol,
+)
 
 
 __all__ = [
@@ -38,6 +46,10 @@ __all__ = [
 
     "thaw",
     "make_matcher",
+
+    "Pattern",
+    "Composite",
+    "MatchCompiler",
 
     "TEST_ANY",
     "LITERAL",
@@ -74,6 +86,15 @@ __all__ = [
     "FORMALS",
     "USING",
     "BODY",
+
+    "MATCHER_REGISTRY",
+    "register_matcher",
+    "lookup_matcher",
+    "parse_matcher",
+    "META_PATTERN",
+    "META_MATCHER",
+    "KNOWN_HEADS",
+    "CAPTURE_OPTION_KEYS",
 ]
 
 
@@ -89,9 +110,9 @@ def thaw(tagged_tuple):
 # === Builder infrastructure ===
 
 
-class _FreezeCtx(object):
+class MatchCompiler(object):
     """
-    Mutable state shared across a single freeze pass. Holds the four
+    Freeze-time match compiler state for one lowering pass. Holds the four
     insertion-ordered tables that become the slots, externs, consts, and
     nodes positions of the frozen 8-tuple, plus bookkeeping used by the
     eager-validation checks
@@ -100,7 +121,7 @@ class _FreezeCtx(object):
 
     def __init__(self):
         """
-        Construct an empty freeze context
+        Construct an empty match compiler
         """
 
         self.slot_indices = {}
@@ -270,10 +291,10 @@ class _FreezeCtx(object):
         top.add(name)
 
 
-class _Pattern(object):
+class Pattern(object):
     """
     Base class for matcher_ng pattern builders. Subclasses implement
-    _emit to append their node tuple to a freeze context and return the
+    _emit to append their node tuple to a MatchCompiler and return the
     resulting node index. The freeze, build, and match helpers are the
     public lowering surface
     """
@@ -291,7 +312,7 @@ class _Pattern(object):
             tuple
         """
 
-        ctx = _FreezeCtx()
+        ctx = MatchCompiler()
         entry = self._emit(ctx)
 
         if meta is None:
@@ -373,19 +394,19 @@ class _Pattern(object):
         return list(ctx.extern_indices.keys())
 
 
-def _check_pattern_arg(arg, what):
+def check_pattern_arg(arg, what):
     """
-    Validate that arg is a _Pattern instance and raise a clear TypeError
+    Validate that arg is a Pattern instance and raise a clear TypeError
     when it is not
     """
 
-    if not isinstance(arg, _Pattern):
+    if not isinstance(arg, Pattern):
         raise TypeError(
             "%s must be a matcher_ng pattern, got %r"
             % (what, type(arg).__name__))
 
 
-def _check_str_arg(arg, what, *, allow_empty=False):
+def check_str_arg(arg, what, *, allow_empty=False):
     """
     Validate that arg is a non-empty (by default) str. Raises TypeError
     for the wrong type and ValueError for the empty-string case
@@ -401,7 +422,7 @@ def _check_str_arg(arg, what, *, allow_empty=False):
 # === Primitive builders ===
 
 
-class TEST_ANY(_Pattern):
+class TEST_ANY(Pattern):
     """
     Match any single element
     """
@@ -423,7 +444,7 @@ class TEST_ANY(_Pattern):
         return ctx.append_node(("TEST", "ANY", -1))
 
 
-class LITERAL(_Pattern):
+class LITERAL(Pattern):
     """
     Match a single element equal to the given literal value
     """
@@ -435,10 +456,10 @@ class LITERAL(_Pattern):
         table at freeze time
 
         :param value: any concrete value, must not be a pattern
-        :raises TypeError: when value is itself a _Pattern
+        :raises TypeError: when value is itself a Pattern
         """
 
-        if isinstance(value, _Pattern):
+        if isinstance(value, Pattern):
             raise TypeError(
                 "LITERAL value must be a concrete value, "
                 "not a pattern: %r" % (type(value).__name__,))
@@ -454,7 +475,7 @@ class LITERAL(_Pattern):
         return ctx.append_node(("TEST", "LITERAL", idx))
 
 
-class TYPE(_Pattern):
+class TYPE(Pattern):
     """
     Match a single element which is an instance of the named extern type
     """
@@ -468,7 +489,7 @@ class TYPE(_Pattern):
         :raises ValueError: when extern_name is empty
         """
 
-        _check_str_arg(extern_name, "TYPE extern name")
+        check_str_arg(extern_name, "TYPE extern name")
         self._extern = extern_name
 
 
@@ -481,7 +502,7 @@ class TYPE(_Pattern):
         return ctx.append_node(("TEST", "TYPE", idx))
 
 
-class PREDICATE(_Pattern):
+class PREDICATE(Pattern):
     """
     Match a single element for which the named extern callable returns
     a truthy value
@@ -496,7 +517,7 @@ class PREDICATE(_Pattern):
         :raises ValueError: when extern_name is empty
         """
 
-        _check_str_arg(extern_name, "PREDICATE extern name")
+        check_str_arg(extern_name, "PREDICATE extern name")
         self._extern = extern_name
 
 
@@ -509,7 +530,7 @@ class PREDICATE(_Pattern):
         return ctx.append_node(("TEST", "PREDICATE", idx))
 
 
-class CAPTURE(_Pattern):
+class CAPTURE(Pattern):
     """
     Bind one matched element (or a sub-pattern result) into a named slot
     """
@@ -537,11 +558,11 @@ class CAPTURE(_Pattern):
             of range
         """
 
-        _check_str_arg(slot, "CAPTURE slot")
+        check_str_arg(slot, "CAPTURE slot")
         if sub is not None:
-            _check_pattern_arg(sub, "CAPTURE sub")
+            check_pattern_arg(sub, "CAPTURE sub")
         if scope_slot is not None:
-            _check_str_arg(scope_slot, "CAPTURE scope_slot")
+            check_str_arg(scope_slot, "CAPTURE scope_slot")
         if isinstance(hygiene_role, bool) or not isinstance(hygiene_role, int):
             raise TypeError(
                 "CAPTURE hygiene_role must be an int, got %r"
@@ -578,7 +599,7 @@ class CAPTURE(_Pattern):
              self._hygiene_role, scope_idx))
 
 
-class FORM(_Pattern):
+class FORM(Pattern):
     """
     Descend into a single source element treated as a pair-tree and
     apply the inner pattern against its contents
@@ -591,7 +612,7 @@ class FORM(_Pattern):
         :raises TypeError: when sub is not a pattern
         """
 
-        _check_pattern_arg(sub, "FORM sub")
+        check_pattern_arg(sub, "FORM sub")
         self._sub = sub
 
 
@@ -604,7 +625,7 @@ class FORM(_Pattern):
         return ctx.append_node(("FORM", sub_idx))
 
 
-class GROUP(_Pattern):
+class GROUP(Pattern):
     """
     Sequence of patterns matched in order against successive elements
     """
@@ -617,7 +638,7 @@ class GROUP(_Pattern):
         """
 
         for c in children:
-            _check_pattern_arg(c, "GROUP child")
+            check_pattern_arg(c, "GROUP child")
         self._children = children
 
 
@@ -630,7 +651,7 @@ class GROUP(_Pattern):
         return ctx.append_node(("GROUP",) + tuple(idxs))
 
 
-class ONEOF(_Pattern):
+class ONEOF(Pattern):
     """
     Disjunction: try each branch in order until one matches
     """
@@ -646,7 +667,7 @@ class ONEOF(_Pattern):
         if not branches:
             raise ValueError("ONEOF requires at least one branch")
         for b in branches:
-            _check_pattern_arg(b, "ONEOF branch")
+            check_pattern_arg(b, "ONEOF branch")
         self._branches = branches
 
 
@@ -667,7 +688,7 @@ class ONEOF(_Pattern):
         return ctx.append_node(("ONEOF",) + tuple(idxs))
 
 
-class REPEAT(_Pattern):
+class REPEAT(Pattern):
     """
     Greedily match the inner pattern one-or-more times
     """
@@ -679,7 +700,7 @@ class REPEAT(_Pattern):
         :raises TypeError: when sub is not a pattern
         """
 
-        _check_pattern_arg(sub, "REPEAT sub")
+        check_pattern_arg(sub, "REPEAT sub")
         self._sub = sub
 
 
@@ -692,7 +713,7 @@ class REPEAT(_Pattern):
         return ctx.append_node(("REPEAT", sub_idx))
 
 
-class OPTIONAL(_Pattern):
+class OPTIONAL(Pattern):
     """
     Match the inner pattern at most once. When the inner pattern is
     absent any captures it would have made resolve to the ABSENT
@@ -706,7 +727,7 @@ class OPTIONAL(_Pattern):
         :raises TypeError: when sub is not a pattern
         """
 
-        _check_pattern_arg(sub, "OPTIONAL sub")
+        check_pattern_arg(sub, "OPTIONAL sub")
         self._sub = sub
 
 
@@ -719,7 +740,7 @@ class OPTIONAL(_Pattern):
         return ctx.append_node(("OPTIONAL", sub_idx))
 
 
-class REST(_Pattern):
+class REST(Pattern):
     """
     Capture the remainder of the source list into the named slot
     """
@@ -732,7 +753,7 @@ class REST(_Pattern):
         :raises ValueError: when slot is empty
         """
 
-        _check_str_arg(slot, "REST slot")
+        check_str_arg(slot, "REST slot")
         self._slot = slot
 
 
@@ -746,7 +767,7 @@ class REST(_Pattern):
         return ctx.append_node(("REST", slot_idx))
 
 
-class NOT(_Pattern):
+class NOT(Pattern):
     """
     Negative lookahead: succeed when the inner pattern does not match
     the current single element. Width 1 with no captures inside
@@ -759,7 +780,7 @@ class NOT(_Pattern):
         :raises TypeError: when sub is not a pattern
         """
 
-        _check_pattern_arg(sub, "NOT sub")
+        check_pattern_arg(sub, "NOT sub")
         self._sub = sub
 
 
@@ -772,7 +793,7 @@ class NOT(_Pattern):
         return ctx.append_node(("NOT", sub_idx))
 
 
-class CLASS(_Pattern):
+class CLASS(Pattern):
     """
     Match a single element which is an instance of the named extern
     type. Field children project named or positional attributes through
@@ -790,7 +811,7 @@ class CLASS(_Pattern):
         :raises ValueError: when type_extern is empty
         """
 
-        _check_str_arg(type_extern, "CLASS type_extern")
+        check_str_arg(type_extern, "CLASS type_extern")
         for f in fields:
             if not isinstance(f, FIELD):
                 raise TypeError(
@@ -820,7 +841,7 @@ class CLASS(_Pattern):
             ("CLASS", ext_idx) + tuple(field_idxs))
 
 
-class FIELD(_Pattern):
+class FIELD(Pattern):
     """
     Project a single attribute of a CLASS instance through an inner
     pattern. Positional when name is None, keyword otherwise
@@ -837,9 +858,9 @@ class FIELD(_Pattern):
         :raises ValueError: when name is provided but empty
         """
 
-        _check_pattern_arg(sub, "FIELD sub")
+        check_pattern_arg(sub, "FIELD sub")
         if name is not None:
-            _check_str_arg(name, "FIELD name")
+            check_str_arg(name, "FIELD name")
         self._sub = sub
         self._name = name
 
@@ -882,8 +903,8 @@ def repeat_capture(slot, inner):
     :rtype: CAPTURE
     """
 
-    _check_str_arg(slot, "repeat_capture slot")
-    _check_pattern_arg(inner, "repeat_capture inner")
+    check_str_arg(slot, "repeat_capture slot")
+    check_pattern_arg(inner, "repeat_capture inner")
     return CAPTURE(slot, REPEAT(inner))
 
 
@@ -902,12 +923,12 @@ def slot_prefix(pattern, prefix, sep="__"):
     :raises ValueError: when prefix is empty
     """
 
-    _check_pattern_arg(pattern, "slot_prefix pattern")
-    _check_str_arg(prefix, "slot_prefix prefix")
-    return _slot_prefix_copy(pattern, prefix, sep)
+    check_pattern_arg(pattern, "slot_prefix pattern")
+    check_str_arg(prefix, "slot_prefix prefix")
+    return slot_prefix_copy(pattern, prefix, sep)
 
 
-def _slot_prefix_copy(pattern, prefix, sep):
+def slot_prefix_copy(pattern, prefix, sep):
     """
     Recursive implementation for slot_prefix
     """
@@ -916,7 +937,7 @@ def _slot_prefix_copy(pattern, prefix, sep):
         new_scope = None
         if pattern._scope_slot is not None:
             new_scope = prefix + sep + pattern._scope_slot
-        sub = (_slot_prefix_copy(pattern._sub, prefix, sep)
+        sub = (slot_prefix_copy(pattern._sub, prefix, sep)
                if pattern._sub is not None else None)
         return CAPTURE(
             prefix + sep + pattern._slot,
@@ -926,36 +947,36 @@ def _slot_prefix_copy(pattern, prefix, sep):
         )
 
     if isinstance(pattern, FORM):
-        return FORM(_slot_prefix_copy(pattern._sub, prefix, sep))
+        return FORM(slot_prefix_copy(pattern._sub, prefix, sep))
 
     if isinstance(pattern, GROUP):
         return GROUP(*[
-            _slot_prefix_copy(c, prefix, sep) for c in pattern._children])
+            slot_prefix_copy(c, prefix, sep) for c in pattern._children])
 
     if isinstance(pattern, ONEOF):
         return ONEOF(*[
-            _slot_prefix_copy(b, prefix, sep) for b in pattern._branches])
+            slot_prefix_copy(b, prefix, sep) for b in pattern._branches])
 
     if isinstance(pattern, REPEAT):
-        return REPEAT(_slot_prefix_copy(pattern._sub, prefix, sep))
+        return REPEAT(slot_prefix_copy(pattern._sub, prefix, sep))
 
     if isinstance(pattern, OPTIONAL):
-        return OPTIONAL(_slot_prefix_copy(pattern._sub, prefix, sep))
+        return OPTIONAL(slot_prefix_copy(pattern._sub, prefix, sep))
 
     if isinstance(pattern, NOT):
-        return NOT(_slot_prefix_copy(pattern._sub, prefix, sep))
+        return NOT(slot_prefix_copy(pattern._sub, prefix, sep))
 
     if isinstance(pattern, REST):
         return REST(prefix + sep + pattern._slot)
 
     if isinstance(pattern, CLASS):
         new_fields = tuple(
-            FIELD(_slot_prefix_copy(f._sub, prefix, sep), name=f._name)
+            FIELD(slot_prefix_copy(f._sub, prefix, sep), name=f._name)
             for f in pattern._fields)
         return CLASS(pattern._extern, *new_fields)
 
     if isinstance(pattern, FIELD):
-        return FIELD(_slot_prefix_copy(pattern._sub, prefix, sep),
+        return FIELD(slot_prefix_copy(pattern._sub, prefix, sep),
                      name=pattern._name)
 
     if isinstance(pattern, (TEST_ANY, LITERAL, TYPE, PREDICATE)):
@@ -994,7 +1015,7 @@ def BINDING_CELL(slot):
     :rtype: FORM
     """
 
-    _check_str_arg(slot, "BINDING_CELL slot")
+    check_str_arg(slot, "BINDING_CELL slot")
     return slot_prefix(binding_inner_pattern(), slot)
 
 
@@ -1078,7 +1099,7 @@ def make_matcher(pattern, *, meta=None):
     :rtype: Matcher
     """
 
-    if not isinstance(pattern, _Pattern):
+    if not isinstance(pattern, Pattern):
         raise TypeError(
             "make_matcher requires a matcher_ng pattern, got %r"
             % (type(pattern).__name__,))
@@ -1088,7 +1109,7 @@ def make_matcher(pattern, *, meta=None):
 # === Composite matchers ===
 
 
-def _normalize_scopes(scope, scopes, what):
+def normalize_scopes(scope, scopes, what):
     """
     Coerce the scope/scopes kwargs into a single tuple of slot names.
     Accepts None for both, a single str for scope, and a tuple/list of
@@ -1105,7 +1126,7 @@ def _normalize_scopes(scope, scopes, what):
         raise ValueError(
             "%s accepts scope or scopes, not both" % (what,))
     if scope is not None:
-        _check_str_arg(scope, "%s scope" % (what,))
+        check_str_arg(scope, "%s scope" % (what,))
         return (scope,)
     if scopes is None:
         return ()
@@ -1115,15 +1136,15 @@ def _normalize_scopes(scope, scopes, what):
             % (what, type(scopes).__name__))
     out = []
     for s in scopes:
-        _check_str_arg(s, "%s scopes entry" % (what,))
+        check_str_arg(s, "%s scopes entry" % (what,))
         out.append(s)
     return tuple(out)
 
 
-class _Composite(_Pattern):
+class Composite(Pattern):
     """
     Base class for matcher_ng composite matchers. Subclasses return
-    a tree of primitive _Pattern nodes from _expand; the _emit hook
+    a tree of primitive Pattern nodes from _expand; the _emit hook
     lowers that tree and asks the composite to register freeze-time
     hygiene metadata. Composites contribute no match-time Python
     behaviour: every semantic concern is encoded structurally
@@ -1133,7 +1154,7 @@ class _Composite(_Pattern):
     def _emit(self, ctx):
         """
         Emit the expanded primitive pattern and register hygiene meta
-        entries against the freeze context
+        entries against the match compiler
         """
 
         primitive = self._expand()
@@ -1144,7 +1165,7 @@ class _Composite(_Pattern):
 
     def _expand(self):
         """
-        Subclass responsibility: return the primitive _Pattern tree
+        Subclass responsibility: return the primitive Pattern tree
         that performs the structural match for this composite
         """
 
@@ -1154,13 +1175,13 @@ class _Composite(_Pattern):
     def _register_hygiene(self, ctx):
         """
         Subclass responsibility: register binder and scope-region
-        entries on the freeze context
+        entries on the match compiler
         """
 
         raise NotImplementedError
 
 
-class DEFINE(_Composite):
+class DEFINE(Composite):
     """
     Capture one element constrained to be a symbol. Used as the
     introduced-name slot for define-shaped specials
@@ -1174,9 +1195,9 @@ class DEFINE(_Composite):
         :param scopes: optional tuple of scope-region slot names
         """
 
-        _check_str_arg(slot, "DEFINE slot")
+        check_str_arg(slot, "DEFINE slot")
         self._slot = slot
-        self._scopes = _normalize_scopes(scope, scopes, "DEFINE")
+        self._scopes = normalize_scopes(scope, scopes, "DEFINE")
 
 
     def _expand(self):
@@ -1187,7 +1208,7 @@ class DEFINE(_Composite):
         ctx.add_binder(self._slot, "DEFINE", self._scopes)
 
 
-class DECL(_Composite):
+class DECL(Composite):
     """
     Capture one element shaped as a declaration: a bare symbol, a
     one-element list naming the symbol, the (type as: name) form,
@@ -1207,9 +1228,9 @@ class DECL(_Composite):
         :param scopes: optional tuple of scope-region slot names
         """
 
-        _check_str_arg(slot, "DECL slot")
+        check_str_arg(slot, "DECL slot")
         self._slot = slot
-        self._scopes = _normalize_scopes(scope, scopes, "DECL")
+        self._scopes = normalize_scopes(scope, scopes, "DECL")
 
 
     def _expand(self):
@@ -1228,7 +1249,7 @@ class DECL(_Composite):
         ctx.add_binder(self._slot, "DECL", self._scopes)
 
 
-class BINDING(_Composite):
+class BINDING(Composite):
     """
     Capture a single binding-shaped cell, (NAME EXPR) or
     (EXPR as: NAME). The structural match descends into the cell via
@@ -1246,9 +1267,9 @@ class BINDING(_Composite):
         :param scopes: optional tuple of scope-region slot names
         """
 
-        _check_str_arg(slot, "BINDING slot")
+        check_str_arg(slot, "BINDING slot")
         self._slot = slot
-        self._scopes = _normalize_scopes(scope, scopes, "BINDING")
+        self._scopes = normalize_scopes(scope, scopes, "BINDING")
 
 
     def _expand(self):
@@ -1259,7 +1280,7 @@ class BINDING(_Composite):
         ctx.add_binder(self._slot, "BINDING", self._scopes)
 
 
-class BINDINGS(_Composite):
+class BINDINGS(Composite):
     """
     Capture a binding-list cell: a single element which is either nil
     or a proper list of binding-shaped cells. The nonempty arm uses
@@ -1280,14 +1301,14 @@ class BINDINGS(_Composite):
         :param scopes: optional tuple of scope-region slot names
         """
 
-        _check_str_arg(slot, "BINDINGS slot")
+        check_str_arg(slot, "BINDINGS slot")
         if not isinstance(mode, str):
             raise TypeError(
                 "BINDINGS mode must be a str, got %r"
                 % (type(mode).__name__,))
         self._slot = slot
         self._mode = mode
-        self._scopes = _normalize_scopes(scope, scopes, "BINDINGS")
+        self._scopes = normalize_scopes(scope, scopes, "BINDINGS")
 
 
     def _expand(self):
@@ -1303,7 +1324,7 @@ class BINDINGS(_Composite):
             extra={"mode": self._mode})
 
 
-def _formal_param_pattern():
+def formal_param_pattern():
     """
     Build a one-element matcher that recognises a single formal
     parameter cell. Accepted shapes mirror parse_formal_parameter:
@@ -1327,7 +1348,7 @@ def _formal_param_pattern():
     )
 
 
-def _kwonly_param_pattern():
+def kwonly_param_pattern():
     """
     Build a one-element matcher that recognises a single kw-only
     parameter cell. After the *: marker each kw-only entry is either
@@ -1347,7 +1368,7 @@ def _kwonly_param_pattern():
     )
 
 
-def _default_pair_pattern():
+def default_pair_pattern():
     """
     Build the matcher for one positional-default keyword/value pair
     appearing after the positional run and before *: or **:. The
@@ -1363,7 +1384,7 @@ def _default_pair_pattern():
     )
 
 
-def _formals_inner_pattern():
+def formals_inner_pattern():
     """
     Build the proper-list arm of the FORMALS matcher. The list-shape
     decomposes into five optional phases consumed in order:
@@ -1392,15 +1413,15 @@ def _formals_inner_pattern():
     )
 
     return FORM(GROUP(
-        OPTIONAL(repeat_capture("positionals", _formal_param_pattern())),
-        OPTIONAL(repeat_capture("defaults", _default_pair_pattern())),
+        OPTIONAL(repeat_capture("positionals", formal_param_pattern())),
+        OPTIONAL(repeat_capture("defaults", default_pair_pattern())),
         OPTIONAL(star_segment),
-        OPTIONAL(repeat_capture("kwonly", _kwonly_param_pattern())),
+        OPTIONAL(repeat_capture("kwonly", kwonly_param_pattern())),
         OPTIONAL(starstar_segment),
     ))
 
 
-class FORMALS(_Composite):
+class FORMALS(Composite):
     """
     Capture one element shaped as a formals list and decompose its
     structure into named slots. The composite accepts the
@@ -1429,15 +1450,15 @@ class FORMALS(_Composite):
         :param scopes: optional tuple of scope-region slot names
         """
 
-        _check_str_arg(slot, "FORMALS slot")
+        check_str_arg(slot, "FORMALS slot")
         self._slot = slot
-        self._scopes = _normalize_scopes(scope, scopes, "FORMALS")
+        self._scopes = normalize_scopes(scope, scopes, "FORMALS")
 
 
     def _expand(self):
         return CAPTURE(self._slot, ONEOF(
             TYPE("symbol"),
-            _formals_inner_pattern(),
+            formals_inner_pattern(),
         ))
 
 
@@ -1445,7 +1466,7 @@ class FORMALS(_Composite):
         ctx.add_binder(self._slot, "FORMALS", self._scopes)
 
 
-class USING(_Composite):
+class USING(Composite):
     """
     Capture one element shaped as a using-form. Four inner shapes
     are recognised through an ordered ONEOF; first match wins:
@@ -1467,9 +1488,9 @@ class USING(_Composite):
         :param scopes: optional tuple of scope-region slot names
         """
 
-        _check_str_arg(slot, "USING slot")
+        check_str_arg(slot, "USING slot")
         self._slot = slot
-        self._scopes = _normalize_scopes(scope, scopes, "USING")
+        self._scopes = normalize_scopes(scope, scopes, "USING")
 
 
     def _expand(self):
@@ -1485,7 +1506,7 @@ class USING(_Composite):
         ctx.add_binder(self._slot, "USING", self._scopes)
 
 
-class BODY(_Pattern):
+class BODY(Pattern):
     """
     Scope-region-aware REST capture. Behaves identically to REST at
     the engine level but additionally registers the slot as a body
@@ -1500,7 +1521,7 @@ class BODY(_Pattern):
         :raises ValueError: when slot is empty
         """
 
-        _check_str_arg(slot, "BODY slot")
+        check_str_arg(slot, "BODY slot")
         self._slot = slot
 
 
@@ -1513,6 +1534,616 @@ class BODY(_Pattern):
         idx = REST(self._slot)._emit(ctx)
         ctx.add_scope_region(self._slot, "REST")
         return idx
+
+
+# === Self-describing matcher syntax: registry, meta-matcher, parser ===
+
+
+CAPTURE_OPTION_KEYS = frozenset({"scope", "mode", "role"})
+
+
+MATCHER_REGISTRY = {}
+
+
+def register_matcher(name, factory):
+    """
+    Register a factory for the surface head name. Raises ValueError on
+    collision unless the existing entry is the same callable
+    (idempotent re-registration is permitted)
+
+    :param name: head atom string (the symbol name appearing in
+        surface position, e.g. 'FORM' or 'BINDING')
+    :param factory: callable invoked as factory(head_sym, raw_args)
+        returning a matcher_ng pattern object; raw_args is the
+        koskari pair-list tail of the surface form
+    :raises TypeError: when name is not a str or factory is not
+        callable
+    :raises ValueError: when name is empty or already registered to
+        a different callable
+    """
+
+    if not isinstance(name, str):
+        raise TypeError(
+            "register_matcher name must be a str, got %r"
+            % (type(name).__name__,))
+    if not name:
+        raise ValueError("register_matcher name must be non-empty")
+    if not callable(factory):
+        raise TypeError(
+            "register_matcher factory must be callable, got %r"
+            % (type(factory).__name__,))
+    existing = MATCHER_REGISTRY.get(name)
+    if existing is not None and existing is not factory:
+        raise ValueError(
+            "matcher %r already registered to a different factory"
+            % (name,))
+    MATCHER_REGISTRY[name] = factory
+
+
+def lookup_matcher(name):
+    """
+    Return the registered factory for name, or None when no factory
+    has been registered under that name
+
+    :param name: head atom string
+    :rtype: callable or None
+    """
+
+    return MATCHER_REGISTRY.get(name)
+
+
+KW_DCOLON = keyword("::")
+KW_TYPE = keyword("type")
+KW_VAL = keyword("val")
+KW_SCOPE = keyword("scope")
+KW_MODE = keyword("mode")
+KW_ROLE = keyword("role")
+
+
+CAPTURE_OPTION_KW_TO_NAME = {
+    KW_SCOPE: "scope",
+    KW_MODE: "mode",
+    KW_ROLE: "role",
+}
+
+
+META_PATTERN = ONEOF(
+    FORM(GROUP(
+        LITERAL_SYM("quote"),
+        CAPTURE("quoted_symbol", TYPE("symbol")))),
+    FORM(GROUP(
+        LITERAL_KW("::"),
+        REST("dcolon_args"))),
+    FORM(GROUP(
+        LITERAL_KW("type"),
+        REST("type_args"))),
+    FORM(GROUP(
+        LITERAL_KW("val"),
+        CAPTURE("val_expr"))),
+    FORM(GROUP(
+        LITERAL_SYM("CLASS"),
+        CAPTURE("class_extern", TYPE("symbol")),
+        REST("class_fields"))),
+    FORM(GROUP(
+        CAPTURE("head", TYPE("symbol")),
+        REST("head_args"))),
+    CAPTURE("bare_symbol", TYPE("symbol")),
+    CAPTURE("atom_literal"),
+)
+
+
+META_MATCHER = make_matcher(GROUP(META_PATTERN))
+
+
+def iter_pair_list(p):
+    """
+    Yield successive elements of a koskari proper pair-list; treats
+    nil as the empty list. Raises ValueError when the spine ends in
+    a non-nil non-pair (improper list)
+    """
+
+    cur = p
+    while cur is not nil:
+        try:
+            head, tail = cur
+        except (TypeError, ValueError):
+            raise ValueError(
+                "expected a proper koskari list, found improper tail %r"
+                % (cur,))
+        yield head
+        cur = tail
+
+
+def is_keyword(value):
+    """
+    True when value is a koskari keyword instance
+    """
+
+    return isinstance(value, keyword)
+
+
+def is_symbol(value):
+    """
+    True when value is a koskari symbol instance
+    """
+
+    return isinstance(value, symbol)
+
+
+def parse_matcher(elem):
+    """
+    Lower one matcher-syntax element to a matcher_ng pattern object.
+    Runs META_MATCHER against (elem,), then dispatches on which
+    capture slot is bound. Raises ValueError when elem does not
+    satisfy any known surface form
+
+    :param elem: one koskari source element (atom or pair-tree)
+    :rtype: Pattern
+    """
+
+    if elem is nil:
+        raise ValueError(
+            "nil is not a valid matcher pattern element")
+    result = META_MATCHER.match(
+        (elem,), symbol=symbol, keyword=keyword)
+    if not result.matched:
+        raise ValueError(
+            "not a valid matcher pattern: %r" % (elem,))
+    c = result.captures
+
+    if c["bare_symbol"] is not ABSENT:
+        return CAPTURE(str(c["bare_symbol"]))
+
+    if c["atom_literal"] is not ABSENT:
+        atom = c["atom_literal"]
+        if isinstance(atom, pair):
+            raise ValueError(
+                "improper list is not a valid matcher pattern: %r"
+                % (atom,))
+        return LITERAL(atom)
+
+    if c["quoted_symbol"] is not ABSENT:
+        return LITERAL_SYM(str(c["quoted_symbol"]))
+
+    if c["dcolon_args"] is not ABSENT:
+        return lower_anon_constraint("::", c["dcolon_args"], elem)
+
+    if c["type_args"] is not ABSENT:
+        return lower_anon_constraint("type:", c["type_args"], elem)
+
+    if c["val_expr"] is not ABSENT:
+        return LITERAL(c["val_expr"])
+
+    if c["class_extern"] is not ABSENT:
+        return lower_class(c["class_extern"], c["class_fields"])
+
+    if c["head"] is not ABSENT:
+        head = c["head"]
+        args = c["head_args"]
+        name = str(head)
+        factory = MATCHER_REGISTRY.get(name)
+        if factory is not None:
+            return factory(head, args)
+        return lower_named_capture(head, args)
+
+    raise ValueError(
+        "internal: meta-matcher matched %r with no recognised slot bound"
+        % (elem,))
+
+
+def lower_anon_constraint(tag, args, source):
+    """
+    Lower (:: pat) or (type: pat) or (val: pat) anonymous-constraint
+    forms. For :: and type:, a single symbol payload becomes
+    TYPE(name); a single pair payload recurses via parse_matcher.
+    For val:, the single payload is wrapped in LITERAL verbatim
+    """
+
+    items = list(iter_pair_list(args))
+    if len(items) != 1:
+        raise ValueError(
+            "(%s ...) expects exactly one payload, got %d in %r"
+            % (tag, len(items), source))
+    payload = items[0]
+    if tag == "val:":
+        return LITERAL(payload)
+    if is_symbol(payload):
+        return TYPE(str(payload))
+    return parse_matcher(payload)
+
+
+def lower_class(extern_sym, fields):
+    """
+    Lower (CLASS Sym field-pat...) into CLASS(name, *field-objs).
+    Each field element must lower (via parse_matcher) to a FIELD
+    instance; non-FIELD lowerings are rejected
+    """
+
+    type_name = str(extern_sym)
+    field_objs = []
+    for f in iter_pair_list(fields):
+        lowered = parse_matcher(f)
+        if not isinstance(lowered, FIELD):
+            raise ValueError(
+                "(CLASS %s ...) field elements must lower to FIELD,"
+                " got %r" % (type_name, type(lowered).__name__))
+        field_objs.append(lowered)
+    return CLASS(type_name, *field_objs)
+
+
+def lower_named_capture(name_sym, args):
+    """
+    Lower (NAME args...) where NAME is not a registered head. Walks
+    args, splitting capture options (scope:/mode:/role: keywords)
+    from constraints. Inline ::, type:, and val: markers are
+    recognised inside the args list as constraint shorthand. The
+    returned CAPTURE accepts at most one constraint child; multiple
+    constraints raise ValueError
+    """
+
+    name = str(name_sym)
+    constraints = []
+    options = {}
+    items = list(iter_pair_list(args))
+    i = 0
+    n = len(items)
+    while i < n:
+        elem = items[i]
+        if is_keyword(elem):
+            opt_name = CAPTURE_OPTION_KW_TO_NAME.get(elem)
+            if opt_name is not None:
+                if i + 1 >= n:
+                    raise ValueError(
+                        "(%s ...) capture option %s: missing value"
+                        % (name, opt_name))
+                options[opt_name] = items[i + 1]
+                i += 2
+                continue
+            if elem is KW_DCOLON or elem is KW_TYPE:
+                if i + 1 >= n:
+                    raise ValueError(
+                        "(%s ...) constraint marker missing payload"
+                        % (name,))
+                payload = items[i + 1]
+                if is_symbol(payload):
+                    constraints.append(TYPE(str(payload)))
+                else:
+                    constraints.append(parse_matcher(payload))
+                i += 2
+                continue
+            if elem is KW_VAL:
+                if i + 1 >= n:
+                    raise ValueError(
+                        "(%s ...) val: marker missing payload"
+                        % (name,))
+                constraints.append(LITERAL(items[i + 1]))
+                i += 2
+                continue
+            raise ValueError(
+                "(%s ...) unrecognised keyword %r in capture body"
+                % (name, elem))
+        constraints.append(parse_matcher(elem))
+        i += 1
+
+    if len(constraints) > 1:
+        raise ValueError(
+            "(%s ...) named capture accepts at most one constraint;"
+            " got %d" % (name, len(constraints)))
+    sub = constraints[0] if constraints else None
+
+    kwargs = {}
+    if "scope" in options:
+        scope_val = options["scope"]
+        if is_symbol(scope_val):
+            kwargs["scope_slot"] = str(scope_val)
+        elif isinstance(scope_val, str):
+            kwargs["scope_slot"] = scope_val
+        else:
+            raise ValueError(
+                "(%s ...) scope: option must be a symbol or string,"
+                " got %r" % (name, type(scope_val).__name__))
+    if "role" in options:
+        role_val = options["role"]
+        if isinstance(role_val, bool) or not isinstance(role_val, int):
+            raise ValueError(
+                "(%s ...) role: option must be an int, got %r"
+                % (name, type(role_val).__name__))
+        kwargs["hygiene_role"] = role_val
+    if "mode" in options:
+        raise ValueError(
+            "(%s ...) mode: option only applies to BINDINGS,"
+            " not to a named capture" % (name,))
+
+    return CAPTURE(name, sub, **kwargs)
+
+
+# === Built-in factory helpers ===
+
+
+def expect_arity(name, items, expected):
+    """
+    Assert that items has exactly expected length; raise ValueError
+    on mismatch
+    """
+
+    if len(items) != expected:
+        raise ValueError(
+            "(%s ...) expects %d argument(s), got %d"
+            % (name, expected, len(items)))
+
+
+def coerce_slot(name, value):
+    """
+    Coerce a surface slot-name element to a Python str. Accepts a
+    koskari symbol or a Python str
+    """
+
+    if is_symbol(value):
+        return str(value)
+    if isinstance(value, str):
+        return value
+    raise ValueError(
+        "(%s ...) slot name must be a symbol or string, got %r"
+        % (name, type(value).__name__))
+
+
+def coerce_str_arg(name, value):
+    """
+    Coerce a surface single-string arg (used for TYPE, PREDICATE,
+    LITERAL_KW, LITERAL_SYM) to a Python str. Accepts symbol, str,
+    or a koskari keyword (whose name is used)
+    """
+
+    if is_symbol(value) or is_keyword(value):
+        return str(value)
+    if isinstance(value, str):
+        return value
+    raise ValueError(
+        "(%s ...) argument must be a symbol, keyword, or string,"
+        " got %r" % (name, type(value).__name__))
+
+
+def slot_only_factory(name, ctor):
+    """
+    Build a factory for a slot-only composite: (NAME slot)
+    """
+
+    def factory(head_sym, raw_args):
+        items = list(iter_pair_list(raw_args))
+        expect_arity(name, items, 1)
+        return ctor(coerce_slot(name, items[0]))
+
+    factory.__name__ = "factory_%s" % (name,)
+    return factory
+
+
+def slot_with_options_factory(name, ctor, allowed_options):
+    """
+    Build a factory for a slot-first composite that takes additional
+    keyword/value option pairs after the slot, e.g.
+    (BINDINGS slot mode: parallel)
+    """
+
+    def factory(head_sym, raw_args):
+        items = list(iter_pair_list(raw_args))
+        if not items:
+            raise ValueError(
+                "(%s ...) requires a slot name" % (name,))
+        slot = coerce_slot(name, items[0])
+        opts = {}
+        i = 1
+        n = len(items)
+        while i < n:
+            elem = items[i]
+            if not is_keyword(elem):
+                raise ValueError(
+                    "(%s ...) trailing args must be keyword/value"
+                    " pairs, got %r" % (name, elem))
+            kw_name = str(elem)
+            if kw_name not in allowed_options:
+                raise ValueError(
+                    "(%s ...) unknown option %r"
+                    % (name, elem))
+            if i + 1 >= n:
+                raise ValueError(
+                    "(%s ...) option %r missing value"
+                    % (name, elem))
+            value = items[i + 1]
+            if is_symbol(value):
+                value = str(value)
+            opts[kw_name] = value
+            i += 2
+        return ctor(slot, **opts)
+
+    factory.__name__ = "factory_%s" % (name,)
+    return factory
+
+
+def unary_recursive_factory(name, ctor):
+    """
+    Build a factory for a unary-recursive head, e.g. (NOT pat),
+    (REPEAT pat), (OPTIONAL pat)
+    """
+
+    def factory(head_sym, raw_args):
+        items = list(iter_pair_list(raw_args))
+        expect_arity(name, items, 1)
+        return ctor(parse_matcher(items[0]))
+
+    factory.__name__ = "factory_%s" % (name,)
+    return factory
+
+
+def form_factory(head_sym, raw_args):
+    """
+    Lower (FORM pat) and (FORM pat1 pat2 ...). The single-arg form
+    becomes FORM(parse_matcher(pat)); the multi-arg form implicitly
+    wraps the children in GROUP per the rollup convention
+    """
+
+    items = list(iter_pair_list(raw_args))
+    if not items:
+        raise ValueError("(FORM ...) requires at least one sub-pattern")
+    if len(items) == 1:
+        return FORM(parse_matcher(items[0]))
+    return FORM(GROUP(*[parse_matcher(i) for i in items]))
+
+
+def group_factory(head_sym, raw_args):
+    """
+    Lower (GROUP pat...). Empty GROUP is permitted (matches zero
+    elements)
+    """
+
+    return GROUP(*[parse_matcher(i) for i in iter_pair_list(raw_args)])
+
+
+def oneof_factory(head_sym, raw_args):
+    """
+    Lower (ONEOF pat...). Requires at least one branch (mirrors the
+    ONEOF builder)
+    """
+
+    items = [parse_matcher(i) for i in iter_pair_list(raw_args)]
+    if not items:
+        raise ValueError("(ONEOF ...) requires at least one branch")
+    return ONEOF(*items)
+
+
+def list_factory(head_sym, raw_args):
+    """
+    Lower (LIST pat...). LIST itself wraps in FORM(GROUP(...)) so
+    extra wrapping here is unnecessary
+    """
+
+    return LIST(*[parse_matcher(i) for i in iter_pair_list(raw_args)])
+
+
+def capture_factory(head_sym, raw_args):
+    """
+    Lower explicit (CAPTURE slot args...). Delegates to
+    lower_named_capture so the option/constraint splitting matches
+    the implicit named-capture form
+    """
+
+    items = list(iter_pair_list(raw_args))
+    if not items:
+        raise ValueError("(CAPTURE ...) requires a slot name")
+    slot_sym = items[0]
+    if not is_symbol(slot_sym):
+        raise ValueError(
+            "(CAPTURE ...) slot must be a symbol, got %r"
+            % (type(slot_sym).__name__,))
+    _, tail = raw_args
+    return lower_named_capture(slot_sym, tail)
+
+
+def literal_factory(head_sym, raw_args):
+    """
+    Lower (LITERAL value). The value is taken raw without recursion
+    through parse_matcher (so symbols and lists become themselves,
+    not capture or match patterns)
+    """
+
+    items = list(iter_pair_list(raw_args))
+    expect_arity("LITERAL", items, 1)
+    return LITERAL(items[0])
+
+
+def test_any_factory(head_sym, raw_args):
+    """
+    Lower (TEST_ANY)
+    """
+
+    items = list(iter_pair_list(raw_args))
+    expect_arity("TEST_ANY", items, 0)
+    return TEST_ANY()
+
+
+def str_arg_factory(name, ctor):
+    """
+    Build a factory for a head taking exactly one stringy argument
+    (TYPE, PREDICATE, LITERAL_KW, LITERAL_SYM)
+    """
+
+    def factory(head_sym, raw_args):
+        items = list(iter_pair_list(raw_args))
+        expect_arity(name, items, 1)
+        return ctor(coerce_str_arg(name, items[0]))
+
+    factory.__name__ = "factory_%s" % (name,)
+    return factory
+
+
+def field_factory(head_sym, raw_args):
+    """
+    Lower (FIELD pat) or (FIELD NAME pat). Single-arg form becomes
+    a positional field; two-arg form binds the keyword field name
+    to NAME (which must be a symbol)
+    """
+
+    items = list(iter_pair_list(raw_args))
+    if len(items) == 1:
+        return FIELD(parse_matcher(items[0]))
+    if len(items) == 2:
+        first = items[0]
+        if not is_symbol(first):
+            raise ValueError(
+                "(FIELD NAME pat) NAME must be a symbol, got %r"
+                % (type(first).__name__,))
+        return FIELD(parse_matcher(items[1]), name=str(first))
+    raise ValueError(
+        "(FIELD ...) expects 1 or 2 arguments, got %d" % (len(items),))
+
+
+def register_builtin_matchers():
+    """
+    Seed MATCHER_REGISTRY with factories for every built-in surface
+    head. Idempotent at module load
+    """
+
+    register_matcher("FORM", form_factory)
+    register_matcher("GROUP", group_factory)
+    register_matcher("ONEOF", oneof_factory)
+    register_matcher("LIST", list_factory)
+    register_matcher("NOT", unary_recursive_factory("NOT", NOT))
+    register_matcher("REPEAT", unary_recursive_factory("REPEAT", REPEAT))
+    register_matcher(
+        "OPTIONAL", unary_recursive_factory("OPTIONAL", OPTIONAL))
+
+    register_matcher("CAPTURE", capture_factory)
+    register_matcher("REST", slot_only_factory("REST", REST))
+    register_matcher("BIND", slot_only_factory("BIND", BIND))
+    register_matcher("VALUE", slot_only_factory("VALUE", VALUE))
+    register_matcher("SYMBOL", slot_only_factory("SYMBOL", SYMBOL))
+    register_matcher("PAIR", slot_only_factory("PAIR", PAIR))
+    register_matcher("BODY", slot_only_factory("BODY", BODY))
+
+    register_matcher("DEFINE", slot_only_factory("DEFINE", DEFINE))
+    register_matcher("DECL", slot_only_factory("DECL", DECL))
+    register_matcher("BINDING", slot_only_factory("BINDING", BINDING))
+    register_matcher(
+        "BINDINGS",
+        slot_with_options_factory(
+            "BINDINGS", BINDINGS, frozenset({"mode"})))
+    register_matcher("FORMALS", slot_only_factory("FORMALS", FORMALS))
+    register_matcher("USING", slot_only_factory("USING", USING))
+
+    register_matcher("LITERAL", literal_factory)
+    register_matcher(
+        "LITERAL_KW", str_arg_factory("LITERAL_KW", LITERAL_KW))
+    register_matcher(
+        "LITERAL_SYM", str_arg_factory("LITERAL_SYM", LITERAL_SYM))
+    register_matcher("TYPE", str_arg_factory("TYPE", TYPE))
+    register_matcher("PREDICATE", str_arg_factory("PREDICATE", PREDICATE))
+    register_matcher("TEST_ANY", test_any_factory)
+    register_matcher("FIELD", field_factory)
+
+
+register_builtin_matchers()
+
+
+KNOWN_HEADS = frozenset(MATCHER_REGISTRY)
 
 
 # The end.

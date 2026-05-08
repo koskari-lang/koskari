@@ -32,7 +32,7 @@ document can be read as the as-built design.
   worth shipping a small support layer before composites: the
   builder helpers `repeat_capture`, `slot_prefix`,
   `binding_inner_pattern`, and `BINDING_CELL`, plus a per-`ONEOF`
-  capture-scope stack on `_FreezeCtx` so identical slot names can
+  capture-scope stack on `MatchCompiler` so identical slot names can
   appear in mutually exclusive branches. Tests for these landed in
   `tests/matcher_ng/test_repeat_frames.py` and a native counterpart
   in `tests/native/test_matcher.c`.
@@ -42,7 +42,7 @@ document can be read as the as-built design.
   `koskari.compile.helpers` parsers.** That implementation was
   reverted because it violated the cleanroom goal of the matcher_ng
   branch. The composite layer that landed is composition-only:
-  `_Composite._emit` lowers to primitive nodes and registers
+  `Composite._emit` lowers to primitive nodes and registers
   freeze-time hygiene metadata; no post-match Python callable runs,
   no result wrapper exists, and no legacy parser is imported. The
   per-form result types (`BindingResult`, `BindingsResult`,
@@ -1339,7 +1339,7 @@ binding_inner_pattern()           # FORM(ONEOF(...)) for one cell
 BINDING_CELL(slot)                # slot_prefix(binding_inner_pattern, slot)
 ```
 
-`_FreezeCtx` gained a `capture_scope_stack` so each `ONEOF` branch
+`MatchCompiler` gained a `capture_scope_stack` so each `ONEOF` branch
 is its own slot-uniqueness scope; identical slot names across
 mutually exclusive arms are valid.
 
