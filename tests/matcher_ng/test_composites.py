@@ -12,10 +12,10 @@
 # along with this library; if not, see <http://www.gnu.org/licenses/>.
 
 """
-Tests for matcher_ng phase 5 composite matchers: DEFINE, DECL, BINDING,
-BINDINGS, FORMALS, USING; the BODY scope-region helper; the
-MatcherProgram wrapper; locked hygiene meta wire format; and eager
-validation negatives
+Tests for matcher_ng composite matchers built from primitives only.
+DEFINE, DECL, BINDING, BINDINGS, FORMALS, USING, and BODY lower into
+trees of base nodes and contribute freeze-time hygiene metadata only;
+captures are produced by the native engine and asserted directly
 """
 
 
@@ -23,30 +23,22 @@ import unittest
 
 import pytest
 
-from koskari.exceptions import SpecialError
 from koskari.lib import cons, keyword, nil, symbol
 from koskari.matcher_ng import (
+    ABSENT,
     BINDING,
     BINDINGS,
     BODY,
-    BindingResult,
-    BindingsResult,
     CAPTURE,
     DECL,
     DEFINE,
-    DeclResult,
     FORMALS,
-    FormalsResult,
     GROUP,
     LITERAL,
     Matcher,
-    MatcherProgram,
     MatchResult,
-    TEST_ANY,
     USING,
-    UsingResult,
     make_matcher,
-    thaw,
 )
 
 
@@ -54,22 +46,17 @@ pytestmark = pytest.mark.phase_infra
 
 
 SYMBOL_TYPE = type(symbol("x"))
+KEYWORD_TYPE = type(keyword("x"))
 
 
-def _binding(name, value):
+def _list(*items):
     """
-    Build a koskari pair representing one binding cell (name value)
-    """
-
-    return cons(name, value, nil)
-
-
-def _binding_list(*pairs):
-    """
-    Build a koskari proper list of binding pairs
+    Build a koskari proper list from items
     """
 
-    return cons(*pairs, nil) if pairs else nil
+    if not items:
+        return nil
+    return cons(*items, nil)
 
 
 class TestDEFINE(unittest.TestCase):
@@ -77,54 +64,49 @@ class TestDEFINE(unittest.TestCase):
 
     def test_define_captures_symbol(self):
         """
-        DEFINE("x") captures a single symbol element
+        DEFINE binds the named slot to a single symbol element
         """
 
-        pat = GROUP(DEFINE("x"))
-        prog = pat.compile()
+        pat = GROUP(DEFINE("name"))
+        m = pat.build()
         sa = symbol("foo")
-        result = prog.match((sa,), symbol=SYMBOL_TYPE)
+        result = m.match((sa,), symbol=SYMBOL_TYPE)
         self.assertTrue(result.matched)
-        self.assertIs(result.captures["x"], sa)
+        self.assertIs(result.captures["name"], sa)
 
 
     def test_define_rejects_non_symbol(self):
         """
-        DEFINE rejects non-symbol elements at the engine level
+        DEFINE rejects non-symbol elements at the native engine level
         """
 
-        pat = GROUP(DEFINE("x"))
-        prog = pat.compile()
-        result = prog.match((42,), symbol=SYMBOL_TYPE)
-        self.assertFalse(result.matched)
+        pat = GROUP(DEFINE("name"))
+        m = pat.build()
+        self.assertFalse(m.match((42,), symbol=SYMBOL_TYPE).matched)
 
 
-    def test_define_meta_no_scopes(self):
+    def test_define_returns_native_matcher(self):
         """
-        DEFINE with no scope/scopes records an empty scopes tuple
+        Building a DEFINE-bearing pattern yields a native Matcher
         """
 
-        pat = GROUP(DEFINE("x"))
-        frozen = pat.freeze()
+        m = GROUP(DEFINE("name")).build()
+        self.assertIsInstance(m, Matcher)
+
+
+    def test_define_registers_binder_meta(self):
+        """
+        DEFINE contributes a hygiene binder entry whose kind is
+        'DEFINE' and whose scopes default to ()
+        """
+
+        frozen = GROUP(DEFINE("name")).freeze()
         meta = frozen[7]
-        self.assertEqual(
-            meta["binders"]["x"], {"kind": "DEFINE", "scopes": ()})
         self.assertEqual(meta["hygiene_version"], 1)
-
-
-    def test_define_meta_with_body_scope(self):
-        """
-        DEFINE with scope='body' plus sibling BODY records the binding
-        """
-
-        pat = GROUP(DEFINE("name", scope="body"), BODY("body"))
-        frozen = pat.freeze()
-        meta = frozen[7]
-        self.assertEqual(
-            meta["binders"]["name"],
-            {"kind": "DEFINE", "scopes": ("body",)})
-        self.assertEqual(
-            meta["scope_regions"]["body"], {"kind": "REST"})
+        binders = meta["binders"]
+        self.assertIn("name", binders)
+        self.assertEqual(binders["name"]["kind"], "DEFINE")
+        self.assertEqual(binders["name"]["scopes"], ())
 
 
 class TestDECL(unittest.TestCase):
@@ -132,270 +114,227 @@ class TestDECL(unittest.TestCase):
 
     def test_decl_bare_symbol(self):
         """
-        DECL accepts a bare symbol; .name is the symbol, .type is None
+        DECL accepts a bare symbol element
         """
 
         pat = GROUP(DECL("d"))
-        prog = pat.compile()
+        m = pat.build()
         sa = symbol("foo")
-        result = prog.match((sa,), symbol=SYMBOL_TYPE)
+        result = m.match((sa,), symbol=SYMBOL_TYPE, keyword=KEYWORD_TYPE)
         self.assertTrue(result.matched)
-        d = result.captures["d"]
-        self.assertIsInstance(d, DeclResult)
-        self.assertIs(d.name, sa)
-        self.assertIsNone(d.type)
+        self.assertIs(result.captures["d"], sa)
 
 
-    def test_decl_with_type_via_as(self):
+    def test_decl_one_element_list(self):
         """
-        DECL parses (TYPE as: NAME) form into name and type
+        DECL accepts (name) and binds the inner symbol to 'name'
         """
 
         pat = GROUP(DECL("d"))
-        prog = pat.compile()
+        m = pat.build()
         sa = symbol("foo")
-        st = symbol("int")
-        form = cons(st, keyword("as"), sa, nil)
-        result = prog.match((form,), symbol=SYMBOL_TYPE)
+        subj = (_list(sa),)
+        result = m.match(subj, symbol=SYMBOL_TYPE, keyword=KEYWORD_TYPE)
         self.assertTrue(result.matched)
-        d = result.captures["d"]
-        self.assertIsInstance(d, DeclResult)
-        self.assertIs(d.name, sa)
-        self.assertIs(d.type, st)
+        self.assertEqual(result.captures["d"], _list(sa))
+        self.assertIs(result.captures["name"], sa)
 
 
-    def test_decl_rejects_number(self):
+    def test_decl_as_form(self):
         """
-        DECL post-process returns _REJECT for a number subject
+        DECL accepts (type as: name) and binds 'type' and 'name'
         """
 
         pat = GROUP(DECL("d"))
-        prog = pat.compile()
-        result = prog.match((42,), symbol=SYMBOL_TYPE)
+        m = pat.build()
+        sa = symbol("Foo")
+        sb = symbol("bar")
+        subj = (_list(sa, keyword("as"), sb),)
+        result = m.match(subj, symbol=SYMBOL_TYPE, keyword=KEYWORD_TYPE)
+        self.assertTrue(result.matched)
+        self.assertIs(result.captures["type"], sa)
+        self.assertIs(result.captures["name"], sb)
+
+
+    def test_decl_name_with_keyword_tail(self):
+        """
+        DECL accepts (name kw1 v1 kw2 v2) and exposes the raw tail as
+        decl_tail so downstream consumers walk the keyword pairs
+        """
+
+        pat = GROUP(DECL("d"))
+        m = pat.build()
+        sa = symbol("foo")
+        kt = keyword("type")
+        st = symbol("Bar")
+        tail_form = _list(sa, kt, st)
+        result = m.match(
+            (tail_form,),
+            symbol=SYMBOL_TYPE, keyword=KEYWORD_TYPE)
+        self.assertTrue(result.matched)
+        self.assertIs(result.captures["name"], sa)
+        self.assertEqual(result.captures["decl_tail"], cons(kt, st, nil))
+
+
+    def test_decl_rejects_non_symbol_non_pair(self):
+        """
+        DECL rejects elements that are neither a symbol nor a proper
+        pair such as a literal int
+        """
+
+        pat = GROUP(DECL("d"))
+        m = pat.build()
+        result = m.match((42,), symbol=SYMBOL_TYPE, keyword=KEYWORD_TYPE)
         self.assertFalse(result.matched)
 
 
-    def test_decl_meta_default_scopes(self):
+    def test_decl_registers_binder_meta(self):
         """
-        DECL records its binder entry with empty scopes by default
+        DECL contributes a hygiene binder entry of kind 'DECL'
         """
 
-        pat = GROUP(DECL("d"))
-        frozen = pat.freeze()
-        self.assertEqual(
-            frozen[7]["binders"]["d"],
-            {"kind": "DECL", "scopes": ()})
+        frozen = GROUP(DECL("d")).freeze()
+        binders = frozen[7]["binders"]
+        self.assertEqual(binders["d"]["kind"], "DECL")
 
 
 class TestBINDING(unittest.TestCase):
 
 
-    def test_binding_name_expr(self):
+    def test_binding_name_expr_form(self):
         """
-        BINDING parses (NAME EXPR) into BindingResult.name and .value
+        BINDING captures (name expr) into the named slot and exposes
+        the inner name and expr captures
         """
 
         pat = GROUP(BINDING("b"))
-        prog = pat.compile()
-        sa = symbol("a")
-        cell = _binding(sa, 7)
-        result = prog.match((cell,), symbol=SYMBOL_TYPE)
+        m = pat.build()
+        sa = symbol("foo")
+        subj = (_list(sa, 7),)
+        result = m.match(subj, symbol=SYMBOL_TYPE, keyword=KEYWORD_TYPE)
         self.assertTrue(result.matched)
-        b = result.captures["b"]
-        self.assertIsInstance(b, BindingResult)
-        self.assertIs(b.name, sa)
-        self.assertEqual(b.value, 7)
+        self.assertEqual(result.captures["b"], _list(sa, 7))
+        self.assertIs(result.captures["name"], sa)
+        self.assertEqual(result.captures["expr"], 7)
 
 
-    def test_binding_expr_as_name(self):
+    def test_binding_expr_as_name_form(self):
         """
-        BINDING parses (EXPR as: NAME) shape into .name and .value
+        BINDING captures (expr as: name) and exposes both inner slots
         """
 
         pat = GROUP(BINDING("b"))
-        prog = pat.compile()
-        sa = symbol("a")
-        cell = cons(99, keyword("as"), sa, nil)
-        result = prog.match((cell,), symbol=SYMBOL_TYPE)
+        m = pat.build()
+        sa = symbol("foo")
+        subj = (_list(7, keyword("as"), sa),)
+        result = m.match(subj, symbol=SYMBOL_TYPE, keyword=KEYWORD_TYPE)
         self.assertTrue(result.matched)
-        b = result.captures["b"]
-        self.assertIsInstance(b, BindingResult)
-        self.assertIs(b.name, sa)
-        self.assertEqual(b.value, 99)
+        self.assertEqual(result.captures["expr"], 7)
+        self.assertIs(result.captures["name"], sa)
 
 
-    def test_binding_rejects_malformed(self):
+    def test_binding_rejects_unrecognised_shape(self):
         """
-        BINDING rejects an outright malformed cell at the engine level
+        BINDING rejects forms that match neither inner shape
         """
 
         pat = GROUP(BINDING("b"))
-        prog = pat.compile()
-        result = prog.match((42,), symbol=SYMBOL_TYPE)
+        m = pat.build()
+        sa = symbol("foo")
+        subj = (_list(sa, 1, 2),)
+        result = m.match(subj, symbol=SYMBOL_TYPE, keyword=KEYWORD_TYPE)
         self.assertFalse(result.matched)
 
 
-    def test_binding_meta(self):
+    def test_binding_registers_binder_meta(self):
         """
-        BINDING records its binder entry with empty scopes by default
+        BINDING contributes a hygiene binder entry of kind 'BINDING'
         """
 
-        pat = GROUP(BINDING("b"))
-        frozen = pat.freeze()
-        self.assertEqual(
-            frozen[7]["binders"]["b"],
-            {"kind": "BINDING", "scopes": ()})
+        frozen = GROUP(BINDING("b")).freeze()
+        binders = frozen[7]["binders"]
+        self.assertEqual(binders["b"]["kind"], "BINDING")
 
 
 class TestBINDINGS(unittest.TestCase):
 
 
-    def test_bindings_two_pairs(self):
+    def test_bindings_inline_yields_frame_list(self):
         """
-        BINDINGS folds a list of two binding pairs into parallel
-        names/values lists
+        BINDINGS consumes inline binding cells from the surrounding
+        spine and produces a list of per-cell frame dicts holding
+        name and expr. The remainder of the subject is consumed by
+        the trailing REST capture
         """
 
-        pat = GROUP(BINDINGS("bs"))
-        prog = pat.compile()
+        pat = GROUP(BINDINGS("bs"), CAPTURE("tail"))
+        m = pat.build()
         sa = symbol("a")
         sb = symbol("b")
-        bl = _binding_list(_binding(sa, 1), _binding(sb, 2))
-        result = prog.match((bl,), symbol=SYMBOL_TYPE)
+        subj = (_list(sa, 1), _list(sb, 2), "tail")
+        result = m.match(subj, symbol=SYMBOL_TYPE, keyword=KEYWORD_TYPE)
         self.assertTrue(result.matched)
-        bs = result.captures["bs"]
-        self.assertIsInstance(bs, BindingsResult)
-        self.assertEqual(list(bs.names), [sa, sb])
-        self.assertEqual(list(bs.values), [1, 2])
+        frames = result.captures["bs"]
+        self.assertIsInstance(frames, list)
+        self.assertEqual(len(frames), 2)
+        self.assertIs(frames[0]["name"], sa)
+        self.assertEqual(frames[0]["expr"], 1)
+        self.assertIs(frames[1]["name"], sb)
+        self.assertEqual(frames[1]["expr"], 2)
+        self.assertEqual(result.captures["tail"], "tail")
 
 
-    def test_bindings_empty_nil(self):
+    def test_bindings_empty_marker_nil(self):
         """
-        BINDINGS accepts the empty list nil and yields empty parallel
-        result lists
+        BINDINGS accepts a single nil sentinel element and binds the
+        slot to nil itself
         """
 
-        pat = GROUP(BINDINGS("bs"))
-        prog = pat.compile()
-        result = prog.match((nil,), symbol=SYMBOL_TYPE)
+        pat = GROUP(BINDINGS("bs"), CAPTURE("tail"))
+        m = pat.build()
+        result = m.match(
+            (nil, "tail"), symbol=SYMBOL_TYPE, keyword=KEYWORD_TYPE)
         self.assertTrue(result.matched)
-        bs = result.captures["bs"]
-        self.assertIsInstance(bs, BindingsResult)
-        self.assertEqual(list(bs.names), [])
-        self.assertEqual(list(bs.values), [])
+        self.assertIs(result.captures["bs"], nil)
+        self.assertEqual(result.captures["tail"], "tail")
 
 
-    def test_bindings_duplicate_names_raise(self):
+    def test_bindings_zero_inline_cells(self):
         """
-        Duplicate binding names propagate SpecialError from
-        gather_bindings during post-process
+        BINDINGS adjacent to a non-binding-shaped element consumes
+        zero cells and binds the slot to an empty list
         """
 
-        pat = GROUP(BINDINGS("bs"))
-        prog = pat.compile()
-        sa = symbol("a")
-        bl = _binding_list(_binding(sa, 1), _binding(sa, 2))
-        with self.assertRaises(SpecialError):
-            prog.match((bl,), symbol=SYMBOL_TYPE)
-
-
-    def test_bindings_mode_recorded(self):
-        """
-        BINDINGS records the mode kwarg on its binder hygiene entry
-        """
-
-        pat_p = GROUP(BINDINGS("bs", mode="parallel"))
-        pat_s = GROUP(BINDINGS("bs", mode="sequential"))
-        self.assertEqual(
-            pat_p.freeze()[7]["binders"]["bs"]["mode"], "parallel")
-        self.assertEqual(
-            pat_s.freeze()[7]["binders"]["bs"]["mode"], "sequential")
-
-
-class TestFORMALS(unittest.TestCase):
-
-
-    def test_formals_bare_symbol(self):
-        """
-        FORMALS against a bare symbol yields star=symbol with empty
-        positional/defaults/kwonly
-        """
-
-        pat = GROUP(FORMALS("f"))
-        prog = pat.compile()
-        sr = symbol("rest")
-        result = prog.match((sr,), symbol=SYMBOL_TYPE)
+        pat = GROUP(BINDINGS("bs"), CAPTURE("tail"))
+        m = pat.build()
+        result = m.match(
+            (42,), symbol=SYMBOL_TYPE, keyword=KEYWORD_TYPE)
         self.assertTrue(result.matched)
-        f = result.captures["f"]
-        self.assertIsInstance(f, FormalsResult)
-        self.assertIs(f.star, sr)
-        self.assertEqual(f.positional, [])
+        self.assertEqual(result.captures["bs"], [])
+        self.assertEqual(result.captures["tail"], 42)
 
 
-    def test_formals_three_positional(self):
+    def test_bindings_default_mode_recorded(self):
         """
-        FORMALS against (a b c) yields a three-element positional list
-        """
-
-        pat = GROUP(FORMALS("f"))
-        prog = pat.compile()
-        sa = symbol("a")
-        sb = symbol("b")
-        sc = symbol("c")
-        formals = cons(sa, sb, sc, nil)
-        result = prog.match((formals,), symbol=SYMBOL_TYPE)
-        self.assertTrue(result.matched)
-        f = result.captures["f"]
-        self.assertEqual(list(f.positional), [sa, sb, sc])
-        self.assertIsNone(f.star)
-
-
-    def test_formals_with_star(self):
-        """
-        FORMALS against (a b *: rest) populates star
+        BINDINGS records its default mode of 'parallel' on the binder
+        hygiene entry
         """
 
-        pat = GROUP(FORMALS("f"))
-        prog = pat.compile()
-        sa = symbol("a")
-        sb = symbol("b")
-        sr = symbol("rest")
-        formals = cons(sa, sb, keyword("*"), sr, nil)
-        result = prog.match((formals,), symbol=SYMBOL_TYPE)
-        self.assertTrue(result.matched)
-        f = result.captures["f"]
-        self.assertEqual(list(f.positional), [sa, sb])
-        self.assertIs(f.star, sr)
+        frozen = GROUP(BINDINGS("bs")).freeze()
+        binder = frozen[7]["binders"]["bs"]
+        self.assertEqual(binder["kind"], "BINDINGS")
+        self.assertEqual(binder["mode"], "parallel")
 
 
-    def test_formals_with_starstar(self):
+    def test_bindings_sequential_mode_recorded(self):
         """
-        FORMALS against (a b *: rest **: kw) populates starstar
+        BINDINGS preserves an explicit mode argument on the binder
+        hygiene entry
         """
 
-        pat = GROUP(FORMALS("f"))
-        prog = pat.compile()
-        sa = symbol("a")
-        sb = symbol("b")
-        sr = symbol("rest")
-        skw = symbol("kw")
-        formals = cons(
-            sa, sb, keyword("*"), sr, keyword("**"), skw, nil)
-        result = prog.match((formals,), symbol=SYMBOL_TYPE)
-        self.assertTrue(result.matched)
-        f = result.captures["f"]
-        self.assertIs(f.starstar, skw)
-
-
-    def test_formals_invalid_form(self):
-        """
-        FORMALS reports matched=False for a number subject
-        """
-
-        pat = GROUP(FORMALS("f"))
-        prog = pat.compile()
-        result = prog.match((42,), symbol=SYMBOL_TYPE)
-        self.assertFalse(result.matched)
+        frozen = GROUP(BINDINGS("bs", mode="sequential")).freeze()
+        binder = frozen[7]["binders"]["bs"]
+        self.assertEqual(binder["mode"], "sequential")
 
 
 class TestUSING(unittest.TestCase):
@@ -403,360 +342,666 @@ class TestUSING(unittest.TestCase):
 
     def test_using_name_expr(self):
         """
-        USING against (NAME EXPR) sets .name and .value, lhs is None
+        USING accepts (name expr) and binds name and expr; the
+        unpack-only slot lhs remains ABSENT
         """
 
         pat = GROUP(USING("u"))
-        prog = pat.compile()
-        sa = symbol("a")
-        cell = cons(sa, 7, nil)
-        result = prog.match((cell,), symbol=SYMBOL_TYPE)
+        m = pat.build()
+        sa = symbol("foo")
+        subj = (_list(sa, 7),)
+        result = m.match(
+            subj,
+            symbol=SYMBOL_TYPE, keyword=KEYWORD_TYPE,
+            pair=type(cons(1, nil)))
         self.assertTrue(result.matched)
-        u = result.captures["u"]
-        self.assertIsInstance(u, UsingResult)
-        self.assertIs(u.name, sa)
-        self.assertEqual(u.value, 7)
-        self.assertIsNone(u.lhs)
+        self.assertIs(result.captures["name"], sa)
+        self.assertEqual(result.captures["expr"], 7)
+        self.assertIs(result.captures["lhs"], ABSENT)
 
 
     def test_using_expr_as_name(self):
         """
-        USING against (EXPR as: NAME) sets .name and .value
+        USING accepts (expr as: name) and binds expr and name; lhs
+        remains ABSENT
         """
 
         pat = GROUP(USING("u"))
-        prog = pat.compile()
-        sa = symbol("a")
-        cell = cons(99, keyword("as"), sa, nil)
-        result = prog.match((cell,), symbol=SYMBOL_TYPE)
+        m = pat.build()
+        sa = symbol("foo")
+        subj = (_list(7, keyword("as"), sa),)
+        result = m.match(
+            subj,
+            symbol=SYMBOL_TYPE, keyword=KEYWORD_TYPE,
+            pair=type(cons(1, nil)))
         self.assertTrue(result.matched)
-        u = result.captures["u"]
-        self.assertIs(u.name, sa)
-        self.assertEqual(u.value, 99)
-        self.assertIsNone(u.lhs)
+        self.assertEqual(result.captures["expr"], 7)
+        self.assertIs(result.captures["name"], sa)
+        self.assertIs(result.captures["lhs"], ABSENT)
 
 
-    def test_using_single_expr(self):
+    def test_using_bare_expr(self):
         """
-        USING against (EXPR) sets .value with name and lhs as None
+        USING accepts (expr) and binds expr only
         """
 
         pat = GROUP(USING("u"))
-        prog = pat.compile()
-        cell = cons(42, nil)
-        result = prog.match((cell,), symbol=SYMBOL_TYPE)
+        m = pat.build()
+        subj = (_list(7),)
+        result = m.match(
+            subj,
+            symbol=SYMBOL_TYPE, keyword=KEYWORD_TYPE,
+            pair=type(cons(1, nil)))
         self.assertTrue(result.matched)
-        u = result.captures["u"]
-        self.assertIsNone(u.name)
-        self.assertEqual(u.value, 42)
-        self.assertIsNone(u.lhs)
+        self.assertEqual(result.captures["expr"], 7)
+        self.assertIs(result.captures["name"], ABSENT)
+        self.assertIs(result.captures["lhs"], ABSENT)
 
 
-    def test_using_unpack_lhs(self):
+    def test_using_unpack_form(self):
         """
-        USING against ((a b) EXPR) sets .lhs to the pair pattern,
-        leaves .name as None
+        USING accepts ((pat...) expr) and binds the lhs pair plus expr
         """
 
         pat = GROUP(USING("u"))
-        prog = pat.compile()
+        m = pat.build()
         sa = symbol("a")
         sb = symbol("b")
-        lhs = cons(sa, sb, nil)
-        cell = cons(lhs, 99, nil)
-        result = prog.match((cell,), symbol=SYMBOL_TYPE)
+        lhs = _list(sa, sb)
+        subj = (_list(lhs, 7),)
+        result = m.match(
+            subj,
+            symbol=SYMBOL_TYPE, keyword=KEYWORD_TYPE,
+            pair=type(cons(1, nil)))
         self.assertTrue(result.matched)
-        u = result.captures["u"]
-        self.assertIsNone(u.name)
-        self.assertEqual(u.value, 99)
-        self.assertEqual(u.lhs, lhs)
+        self.assertEqual(result.captures["lhs"], lhs)
+        self.assertEqual(result.captures["expr"], 7)
+        self.assertIs(result.captures["name"], ABSENT)
 
 
     def test_using_rejects_non_pair(self):
         """
-        USING rejects a number subject during post-process
+        USING rejects a non-pair element: the FORM descent fails
         """
 
         pat = GROUP(USING("u"))
-        prog = pat.compile()
-        result = prog.match((42,), symbol=SYMBOL_TYPE)
+        m = pat.build()
+        result = m.match(
+            (42,),
+            symbol=SYMBOL_TYPE, keyword=KEYWORD_TYPE,
+            pair=type(cons(1, nil)))
         self.assertFalse(result.matched)
 
 
-    def test_using_rejects_nil(self):
+    def test_using_registers_binder_meta(self):
         """
-        USING rejects an empty nil subject
-        """
-
-        pat = GROUP(USING("u"))
-        prog = pat.compile()
-        result = prog.match((nil,), symbol=SYMBOL_TYPE)
-        self.assertFalse(result.matched)
-
-
-    def test_using_meta(self):
-        """
-        USING records its binder hygiene entry with empty scopes
+        USING contributes a hygiene binder entry of kind 'USING'
         """
 
-        pat = GROUP(USING("u"))
-        frozen = pat.freeze()
-        self.assertEqual(
-            frozen[7]["binders"]["u"],
-            {"kind": "USING", "scopes": ()})
+        frozen = GROUP(USING("u")).freeze()
+        binders = frozen[7]["binders"]
+        self.assertEqual(binders["u"]["kind"], "USING")
 
 
-    def test_using_with_scope(self):
+class TestFORMALS(unittest.TestCase):
+
+
+    def _externs(self):
         """
-        USING with scope='body' plus a sibling BODY records the link
-        """
-
-        pat = GROUP(USING("u", scope="body"), BODY("body"))
-        frozen = pat.freeze()
-        self.assertEqual(
-            frozen[7]["binders"]["u"]["scopes"], ("body",))
-        self.assertEqual(
-            frozen[7]["scope_regions"]["body"], {"kind": "REST"})
-
-
-class TestComposeAndHygiene(unittest.TestCase):
-
-
-    def test_let_shape(self):
-        """
-        Let-shape pattern composes BINDINGS with BODY scope region
+        Common extern bindings used by FORMALS match calls
         """
 
-        pat = GROUP(BINDINGS("bs", scope="body"), BODY("body"))
-        prog = pat.compile()
+        return {
+            "symbol": SYMBOL_TYPE,
+            "keyword": KEYWORD_TYPE,
+        }
+
+
+    def test_formals_bare_symbol(self):
+        """
+        FORMALS accepts a bare symbol formals shape (the entire formals
+        list is one symbol). Inner phase slots remain ABSENT
+        """
+
+        pat = GROUP(FORMALS("f"))
+        m = pat.build()
+        sa = symbol("rest")
+        result = m.match((sa,), **self._externs())
+        self.assertTrue(result.matched)
+        self.assertIs(result.captures["f"], sa)
+        self.assertIs(result.captures["positionals"], ABSENT)
+        self.assertIs(result.captures["defaults"], ABSENT)
+        self.assertIs(result.captures["star"], ABSENT)
+        self.assertIs(result.captures["kwonly"], ABSENT)
+        self.assertIs(result.captures["starstar"], ABSENT)
+
+
+    def test_formals_empty_list(self):
+        """
+        FORMALS accepts the empty proper list (). All inner REPEAT
+        phases produce empty frame lists; non-REPEAT segments remain
+        ABSENT
+        """
+
+        pat = GROUP(FORMALS("f"))
+        m = pat.build()
+        result = m.match((nil,), **self._externs())
+        self.assertTrue(result.matched)
+        self.assertIs(result.captures["f"], nil)
+        self.assertEqual(result.captures["positionals"], [])
+        self.assertEqual(result.captures["defaults"], [])
+        self.assertEqual(result.captures["kwonly"], [])
+        self.assertIs(result.captures["star"], ABSENT)
+        self.assertIs(result.captures["starstar"], ABSENT)
+
+
+    def test_formals_simple_positionals(self):
+        """
+        FORMALS accepts (a b c) and produces three positional frames
+        each holding 'name'
+        """
+
+        pat = GROUP(FORMALS("f"))
+        m = pat.build()
         sa = symbol("a")
         sb = symbol("b")
-        bl = _binding_list(_binding(sa, 1), _binding(sb, 2))
-        subj = (bl, "body1", "body2")
-        result = prog.match(subj, symbol=SYMBOL_TYPE)
+        sc = symbol("c")
+        formals = _list(sa, sb, sc)
+        result = m.match((formals,), **self._externs())
         self.assertTrue(result.matched)
-        bs = result.captures["bs"]
-        self.assertIsInstance(bs, BindingsResult)
-        self.assertEqual(list(bs.names), [sa, sb])
-        self.assertEqual(list(bs.values), [1, 2])
-        self.assertEqual(result.captures["body"], ("body1", "body2"))
+        self.assertEqual(result.captures["f"], formals)
+        positionals = result.captures["positionals"]
+        self.assertIsInstance(positionals, list)
+        self.assertEqual(len(positionals), 3)
+        self.assertIs(positionals[0]["name"], sa)
+        self.assertIs(positionals[1]["name"], sb)
+        self.assertIs(positionals[2]["name"], sc)
 
 
-    def test_multiple_binders_share_scope(self):
+    def test_formals_single_positional(self):
         """
-        DEFINE plus DECL share a scopes tuple referencing a single
-        sibling BODY region
-        """
-
-        pat = GROUP(
-            DEFINE("name", scopes=("body",)),
-            DECL("decl", scopes=("body",)),
-            BODY("body"))
-        frozen = pat.freeze()
-        self.assertEqual(
-            frozen[7]["binders"]["name"],
-            {"kind": "DEFINE", "scopes": ("body",)})
-        self.assertEqual(
-            frozen[7]["binders"]["decl"],
-            {"kind": "DECL", "scopes": ("body",)})
-
-
-    def test_using_with_body(self):
-        """
-        Composite using-form with body scope produces UsingResult plus
-        body REST captures
+        FORMALS accepts a single-element positional list (self) and
+        produces one positional frame
         """
 
-        pat = GROUP(USING("ctx", scope="body"), BODY("body"))
-        prog = pat.compile()
-        sa = symbol("name")
-        cell = cons(99, keyword("as"), sa, nil)
-        result = prog.match((cell, "x", "y"), symbol=SYMBOL_TYPE)
+        pat = GROUP(FORMALS("f"))
+        m = pat.build()
+        sself = symbol("self")
+        formals = _list(sself)
+        result = m.match((formals,), **self._externs())
         self.assertTrue(result.matched)
-        u = result.captures["ctx"]
-        self.assertIsInstance(u, UsingResult)
-        self.assertIs(u.name, sa)
-        self.assertEqual(u.value, 99)
-        self.assertEqual(result.captures["body"], ("x", "y"))
+        positionals = result.captures["positionals"]
+        self.assertEqual(len(positionals), 1)
+        self.assertIs(positionals[0]["name"], sself)
 
 
-    def test_meta_round_trip_via_thaw(self):
+    def test_formals_positionals_with_one_default(self):
         """
-        thaw of a frozen tuple preserves the hygiene meta dict
-        """
-
-        pat = GROUP(USING("u", scope="body"), BODY("body"))
-        frozen = pat.freeze()
-        m = thaw(frozen)
-        self.assertIsInstance(m, Matcher)
-        self.assertEqual(m.meta, frozen[7])
-
-
-    def test_thaw_skips_post_processors(self):
-        """
-        thaw returns a raw Matcher whose match yields native captures
-        without composite post-processing
+        FORMALS accepts (self threshold: 0.6) -- a typical method
+        shape with one positional and one keyword default
         """
 
-        pat = GROUP(BINDING("b"))
-        frozen = pat.freeze()
-        m = thaw(frozen)
+        pat = GROUP(FORMALS("f"))
+        m = pat.build()
+        sself = symbol("self")
+        kthresh = keyword("threshold")
+        formals = _list(sself, kthresh, 0.6)
+        result = m.match((formals,), **self._externs())
+        self.assertTrue(result.matched)
+        positionals = result.captures["positionals"]
+        self.assertEqual(len(positionals), 1)
+        self.assertIs(positionals[0]["name"], sself)
+        defaults = result.captures["defaults"]
+        self.assertEqual(len(defaults), 1)
+        self.assertIs(defaults[0]["kw"], kthresh)
+        self.assertEqual(defaults[0]["default"], 0.6)
+
+
+    def test_formals_pure_defaults_only(self):
+        """
+        FORMALS accepts (alive: "O" dead: " "), pure keyword/value
+        defaults with no positional preamble
+        """
+
+        pat = GROUP(FORMALS("f"))
+        m = pat.build()
+        kalive = keyword("alive")
+        kdead = keyword("dead")
+        formals = _list(kalive, "O", kdead, " ")
+        result = m.match((formals,), **self._externs())
+        self.assertTrue(result.matched)
+        self.assertEqual(result.captures["positionals"], [])
+        defaults = result.captures["defaults"]
+        self.assertEqual(len(defaults), 2)
+        self.assertIs(defaults[0]["kw"], kalive)
+        self.assertEqual(defaults[0]["default"], "O")
+        self.assertIs(defaults[1]["kw"], kdead)
+        self.assertEqual(defaults[1]["default"], " ")
+
+
+    def test_formals_single_default_only(self):
+        """
+        FORMALS accepts (argv: None), a single keyword/default with
+        no other phases
+        """
+
+        pat = GROUP(FORMALS("f"))
+        m = pat.build()
+        kargv = keyword("argv")
+        formals = _list(kargv, None)
+        result = m.match((formals,), **self._externs())
+        self.assertTrue(result.matched)
+        defaults = result.captures["defaults"]
+        self.assertEqual(len(defaults), 1)
+        self.assertIs(defaults[0]["kw"], kargv)
+        self.assertIsNone(defaults[0]["default"])
+
+
+    def test_formals_only_star(self):
+        """
+        FORMALS accepts (*: rest) with no positional preamble
+        """
+
+        pat = GROUP(FORMALS("f"))
+        m = pat.build()
+        rest = symbol("rest")
+        formals = _list(keyword("*"), rest)
+        result = m.match((formals,), **self._externs())
+        self.assertTrue(result.matched)
+        self.assertEqual(result.captures["positionals"], [])
+        self.assertIs(result.captures["star"], rest)
+        self.assertIs(result.captures["starstar"], ABSENT)
+
+
+    def test_formals_only_starstar(self):
+        """
+        FORMALS accepts (**: kw) with no positional preamble
+        """
+
+        pat = GROUP(FORMALS("f"))
+        m = pat.build()
+        skw = symbol("kw")
+        formals = _list(keyword("**"), skw)
+        result = m.match((formals,), **self._externs())
+        self.assertTrue(result.matched)
+        self.assertEqual(result.captures["positionals"], [])
+        self.assertIs(result.captures["starstar"], skw)
+        self.assertIs(result.captures["star"], ABSENT)
+
+
+    def test_formals_bracket_name_only(self):
+        """
+        FORMALS accepts a bracket positional with just a symbol such
+        as ((x)); the frame holds 'name' and no other inner slots
+        """
+
+        pat = GROUP(FORMALS("f"))
+        m = pat.build()
+        sx = symbol("x")
+        formals = _list(_list(sx))
+        result = m.match((formals,), **self._externs())
+        self.assertTrue(result.matched)
+        positionals = result.captures["positionals"]
+        self.assertEqual(len(positionals), 1)
+        self.assertIs(positionals[0]["name"], sx)
+
+
+    def test_formals_bracket_keyword_attributes(self):
+        """
+        FORMALS accepts a bracket positional with keyword attributes
+        such as ((x :: T)); the frame holds 'name' and an 'attrs'
+        list of keyword/value frames
+        """
+
+        pat = GROUP(FORMALS("f"))
+        m = pat.build()
+        sx = symbol("x")
+        st = symbol("T")
+        formals = _list(_list(sx, keyword("::"), st))
+        result = m.match((formals,), **self._externs())
+        self.assertTrue(result.matched)
+        positionals = result.captures["positionals"]
+        self.assertEqual(len(positionals), 1)
+        self.assertIs(positionals[0]["name"], sx)
+        attrs = positionals[0]["attrs"]
+        self.assertIsInstance(attrs, list)
+        self.assertEqual(len(attrs), 1)
+        self.assertEqual(attrs[0]["attr_val"], st)
+
+
+    def test_formals_rejects_improper_list(self):
+        """
+        FORMALS rejects an improper-list formals shape such as
+        (a b . c); improper formals lists are illegal in koskari
+        """
+
+        pat = GROUP(FORMALS("f"))
+        m = pat.build()
         sa = symbol("a")
-        cell = _binding(sa, 5)
-        raw = m.match((cell,), symbol=SYMBOL_TYPE)
-        self.assertTrue(raw.matched)
-        self.assertIs(raw.captures["b"], cell)
-        self.assertNotIsInstance(raw.captures["b"], BindingResult)
-
-
-class TestEagerValidation(unittest.TestCase):
-
-
-    def test_missing_scope_region_raises(self):
-        """
-        Composite with scope='body' but no BODY('body') in pattern
-        raises ValueError at freeze
-        """
-
-        pat = GROUP(DEFINE("name", scope="body"))
-        with self.assertRaises(ValueError):
-            pat.freeze()
-
-
-    def test_double_body_same_kind_idempotent_via_oneof(self):
-        """
-        Two BODY registrations with the same slot name across mutually
-        exclusive ONEOF branches share the scope-region entry
-        """
-
-        from koskari.matcher_ng import ONEOF
-        pat = ONEOF(
-            GROUP(LITERAL("a"), BODY("body")),
-            GROUP(LITERAL("b"), BODY("body")))
-        frozen = pat.freeze()
-        self.assertEqual(
-            frozen[7]["scope_regions"]["body"], {"kind": "REST"})
-
-
-    def test_duplicate_binder_raises(self):
-        """
-        Two composite binders on the same slot raise ValueError
-        """
-
-        pat = GROUP(DEFINE("x"), DEFINE("x"))
-        with self.assertRaises(ValueError):
-            pat.freeze()
-
-
-    def test_define_slot_must_be_str(self):
-        """
-        DEFINE rejects a non-str slot at construction time
-        """
-
-        with self.assertRaises(TypeError):
-            DEFINE(123)
-
-
-    def test_binding_scope_type_check(self):
-        """
-        BINDING(scope=...) requires a str; BINDING(scopes=...) requires
-        a tuple/list of str
-        """
-
-        with self.assertRaises(TypeError):
-            BINDING("b", scope=123)
-        with self.assertRaises(TypeError):
-            BINDING("b", scopes=("body", 1))
-
-
-    def test_using_typo_scope_raises(self):
-        """
-        USING(scope='bdy') with no matching BODY raises ValueError at
-        freeze
-        """
-
-        pat = GROUP(USING("u", scope="bdy"), BODY("body"))
-        with self.assertRaises(ValueError):
-            pat.freeze()
-
-
-    def test_orphan_body_accepted(self):
-        """
-        BODY without a binder declaring its slot is accepted (Phase 9
-        ignores unused regions)
-        """
-
-        pat = GROUP(DEFINE("x"), BODY("y"))
-        frozen = pat.freeze()
-        self.assertEqual(
-            frozen[7]["scope_regions"]["y"], {"kind": "REST"})
-
-
-class TestMatcherProgram(unittest.TestCase):
-
-
-    def test_program_forwards_native_attrs(self):
-        """
-        MatcherProgram exposes slots, externs, consts, meta from the
-        wrapped native Matcher
-        """
-
-        pat = GROUP(CAPTURE("x", TEST_ANY()))
-        prog = pat.compile()
-        self.assertEqual(prog.slots, ("x",))
-        self.assertEqual(prog.externs, ())
-        self.assertEqual(prog.consts, ())
-        self.assertEqual(prog.meta, {})
-
-
-    def test_program_no_post_processors_returns_raw(self):
-        """
-        Without post-processors, MatcherProgram.match returns the
-        native MatchResult unchanged
-        """
-
-        pat = GROUP(CAPTURE("x", TEST_ANY()))
-        prog = pat.compile()
-        self.assertEqual(prog.post_processors, ())
-        result = prog.match(("foo",))
-        self.assertIsInstance(result, MatchResult)
-
-
-    def test_program_rejection_returns_unmatched(self):
-        """
-        When a composite post-processor returns _REJECT the program
-        reports matched=False with empty captures and original meta
-        """
-
-        pat = GROUP(USING("u"))
-        prog = pat.compile()
-        result = prog.match((nil,), symbol=SYMBOL_TYPE)
+        sb = symbol("b")
+        sc = symbol("c")
+        improper = cons(sa, cons(sb, sc))
+        result = m.match((improper,), **self._externs())
         self.assertFalse(result.matched)
-        self.assertEqual(result.captures, {})
-        self.assertEqual(result.meta, prog.meta)
 
 
-    def test_post_processors_in_declaration_order(self):
+    def test_formals_rejects_non_symbol_non_list(self):
         """
-        Post-processors fire in the order their composites are emitted
-        """
-
-        pat = GROUP(DEFINE("a"), DEFINE("b"))
-        prog = pat.compile()
-        slots = [s for s, _ in prog.post_processors]
-        self.assertEqual(slots, ["a", "b"])
-
-
-    def test_make_matcher_returns_program(self):
-        """
-        make_matcher returns a MatcherProgram instance (Phase 5
-        behavior change) but still exposes native-style attrs
+        FORMALS rejects an element that is neither a symbol nor a
+        proper list, such as a number
         """
 
-        pat = GROUP(CAPTURE("x", TEST_ANY()))
-        prog = make_matcher(pat)
-        self.assertIsInstance(prog, MatcherProgram)
-        self.assertEqual(prog.slots, ("x",))
+        pat = GROUP(FORMALS("f"))
+        m = pat.build()
+        result = m.match((42,), **self._externs())
+        self.assertFalse(result.matched)
+
+
+    def test_formals_star_segment(self):
+        """
+        FORMALS accepts (a *: rest) and binds 'star' to the rest symbol
+        """
+
+        pat = GROUP(FORMALS("f"))
+        m = pat.build()
+        sa = symbol("a")
+        rest = symbol("rest")
+        formals = _list(sa, keyword("*"), rest)
+        result = m.match((formals,), **self._externs())
+        self.assertTrue(result.matched)
+        self.assertEqual(len(result.captures["positionals"]), 1)
+        self.assertIs(result.captures["positionals"][0]["name"], sa)
+        self.assertIs(result.captures["star"], rest)
+        self.assertIs(result.captures["starstar"], ABSENT)
+
+
+    def test_formals_starstar_segment(self):
+        """
+        FORMALS accepts (a **: kw) and binds 'starstar' to the kwargs
+        symbol
+        """
+
+        pat = GROUP(FORMALS("f"))
+        m = pat.build()
+        sa = symbol("a")
+        kw = symbol("kw")
+        formals = _list(sa, keyword("**"), kw)
+        result = m.match((formals,), **self._externs())
+        self.assertTrue(result.matched)
+        self.assertIs(result.captures["starstar"], kw)
+        self.assertIs(result.captures["star"], ABSENT)
+
+
+    def test_formals_default_keyword_value_pairs(self):
+        """
+        FORMALS accepts (a foo: 1 bar: 2) and produces two default
+        frames each holding 'kw' (a keyword) and 'default' (a value)
+        """
+
+        pat = GROUP(FORMALS("f"))
+        m = pat.build()
+        sa = symbol("a")
+        foo = keyword("foo")
+        bar = keyword("bar")
+        formals = _list(sa, foo, 1, bar, 2)
+        result = m.match((formals,), **self._externs())
+        self.assertTrue(result.matched)
+        defaults = result.captures["defaults"]
+        self.assertIsInstance(defaults, list)
+        self.assertEqual(len(defaults), 2)
+        self.assertIs(defaults[0]["kw"], foo)
+        self.assertEqual(defaults[0]["default"], 1)
+        self.assertIs(defaults[1]["kw"], bar)
+        self.assertEqual(defaults[1]["default"], 2)
+
+
+    def test_formals_star_then_kwonly(self):
+        """
+        FORMALS accepts (a *: rest x y: 2 **: kw) and decomposes into
+        positional, star, kw-only, starstar phases
+        """
+
+        pat = GROUP(FORMALS("f"))
+        m = pat.build()
+        sa = symbol("a")
+        rest = symbol("rest")
+        sx = symbol("x")
+        ky = keyword("y")
+        skw = symbol("kw")
+        formals = _list(
+            sa, keyword("*"), rest, sx, ky, 2, keyword("**"), skw)
+        result = m.match((formals,), **self._externs())
+        self.assertTrue(result.matched)
+        self.assertIs(result.captures["star"], rest)
+        kwonly = result.captures["kwonly"]
+        self.assertIsInstance(kwonly, list)
+        self.assertEqual(len(kwonly), 2)
+        self.assertIs(kwonly[0]["name"], sx)
+        self.assertIs(kwonly[1]["kw"], ky)
+        self.assertEqual(kwonly[1]["default"], 2)
+        self.assertIs(result.captures["starstar"], skw)
+
+
+    def test_formals_star_nil_marker(self):
+        """
+        FORMALS accepts (a *: ()) where (the keyword is followed by
+        nil); the star slot binds to nil
+        """
+
+        pat = GROUP(FORMALS("f"))
+        m = pat.build()
+        sa = symbol("a")
+        formals = _list(sa, keyword("*"), nil)
+        result = m.match((formals,), **self._externs())
+        self.assertTrue(result.matched)
+        self.assertIs(result.captures["star"], nil)
+
+
+    def test_formals_bracket_default(self):
+        """
+        FORMALS accepts a bracket positional with default such as
+        (a (b 1)) and the bracket frame holds name and default
+        """
+
+        pat = GROUP(FORMALS("f"))
+        m = pat.build()
+        sa = symbol("a")
+        sb = symbol("b")
+        formals = _list(sa, _list(sb, 1))
+        result = m.match((formals,), **self._externs())
+        self.assertTrue(result.matched)
+        positionals = result.captures["positionals"]
+        self.assertEqual(len(positionals), 2)
+        self.assertIs(positionals[0]["name"], sa)
+        self.assertIs(positionals[1]["name"], sb)
+        self.assertEqual(positionals[1]["default"], 1)
+
+
+    def test_formals_bracket_as_form(self):
+        """
+        FORMALS accepts a bracket positional (T as: name) and the
+        frame holds 'type' and 'name'
+        """
+
+        pat = GROUP(FORMALS("f"))
+        m = pat.build()
+        st = symbol("T")
+        sn = symbol("n")
+        formals = _list(_list(st, keyword("as"), sn))
+        result = m.match((formals,), **self._externs())
+        self.assertTrue(result.matched)
+        positionals = result.captures["positionals"]
+        self.assertEqual(len(positionals), 1)
+        self.assertIs(positionals[0]["type"], st)
+        self.assertIs(positionals[0]["name"], sn)
+
+
+    def test_formals_registers_binder_meta(self):
+        """
+        FORMALS contributes a hygiene binder entry of kind 'FORMALS'
+        """
+
+        frozen = GROUP(FORMALS("f")).freeze()
+        binders = frozen[7]["binders"]
+        self.assertEqual(binders["f"]["kind"], "FORMALS")
+
+
+class TestBODY(unittest.TestCase):
+
+
+    def test_body_captures_rest_like_rest(self):
+        """
+        BODY captures the remainder of the source list into the named
+        slot, identical to REST at the engine level
+        """
+
+        pat = GROUP(CAPTURE("head"), BODY("body"))
+        m = pat.build()
+        result = m.match((1, 2, 3))
+        self.assertTrue(result.matched)
+        self.assertEqual(result.captures["head"], 1)
+        self.assertEqual(result.captures["body"], (2, 3))
+
+
+    def test_body_registers_scope_region(self):
+        """
+        BODY records a scope-region entry under scope_regions
+        """
+
+        pat = GROUP(CAPTURE("head"), BODY("body"))
+        frozen = pat.freeze()
+        regions = frozen[7]["scope_regions"]
+        self.assertIn("body", regions)
+        self.assertEqual(regions["body"]["kind"], "REST")
+
+
+class TestComposition(unittest.TestCase):
+
+
+    def test_define_with_body(self):
+        """
+        A define-shaped pattern composes DEFINE with a BODY scope
+        region
+        """
+
+        pat = GROUP(DEFINE("name"), BODY("body"))
+        m = pat.build()
+        sa = symbol("foo")
+        result = m.match((sa, 1, 2, 3), symbol=SYMBOL_TYPE)
+        self.assertTrue(result.matched)
+        self.assertIs(result.captures["name"], sa)
+        self.assertEqual(result.captures["body"], (1, 2, 3))
+
+
+    def test_define_with_formals_and_body(self):
+        """
+        A define-with-formals pattern composes DEFINE, FORMALS, and
+        BODY into one matcher
+        """
+
+        pat = GROUP(DEFINE("name"), FORMALS("formals"), BODY("body"))
+        m = pat.build()
+        sa = symbol("foo")
+        sx = symbol("x")
+        sy = symbol("y")
+        formals = _list(sx, sy)
+        result = m.match(
+            (sa, formals, "b1", "b2"),
+            symbol=SYMBOL_TYPE, keyword=KEYWORD_TYPE)
+        self.assertTrue(result.matched)
+        self.assertIs(result.captures["name"], sa)
+        self.assertEqual(result.captures["formals"], formals)
+        self.assertEqual(result.captures["body"], ("b1", "b2"))
+        positionals = result.captures["positionals"]
+        self.assertEqual(len(positionals), 2)
+
+
+    def test_let_shaped_pattern_with_bindings_and_body(self):
+        """
+        A let-shaped pattern composes BINDINGS with BODY into one
+        matcher; binding cells are inlined into the spine ahead of
+        the body
+        """
+
+        pat = GROUP(BINDINGS("bs"), BODY("body"))
+        m = pat.build()
+        sa = symbol("a")
+        sb = symbol("b")
+        result = m.match(
+            (_list(sa, 1), _list(sb, 2), "b1", "b2"),
+            symbol=SYMBOL_TYPE, keyword=KEYWORD_TYPE)
+        self.assertTrue(result.matched)
+        frames = result.captures["bs"]
+        self.assertEqual(len(frames), 2)
+        self.assertEqual(result.captures["body"], ("b1", "b2"))
+
+
+class TestHygieneMeta(unittest.TestCase):
+
+
+    def test_hygiene_meta_contains_version_and_sections(self):
+        """
+        Composite-bearing patterns produce hygiene meta entries
+        merged into the frozen meta dict at the top level: a version
+        field plus binders and scope_regions sections
+        """
+
+        pat = GROUP(DEFINE("name"), BODY("body"))
+        frozen = pat.freeze()
+        meta = frozen[7]
+        self.assertEqual(meta["hygiene_version"], 1)
+        self.assertIn("binders", meta)
+        self.assertIn("scope_regions", meta)
+
+
+    def test_user_meta_preserved_alongside_hygiene(self):
+        """
+        User-supplied meta keys survive freeze when no key collides
+        with composite hygiene entries; hygiene fields merge in at
+        the top level
+        """
+
+        pat = GROUP(DEFINE("name"))
+        frozen = pat.freeze(meta={"phase": "test"})
+        self.assertEqual(frozen[7]["phase"], "test")
+        self.assertEqual(frozen[7]["hygiene_version"], 1)
+        self.assertIn("binders", frozen[7])
+
+
+    def test_user_meta_collision_raises(self):
+        """
+        A user meta dict that conflicts with a composite hygiene key
+        raises ValueError at freeze time
+        """
+
+        pat = GROUP(DEFINE("name"))
+        with self.assertRaises(ValueError):
+            pat.freeze(meta={"binders": {"unrelated": True}})
+
+
+class TestMakeMatcher(unittest.TestCase):
+
+
+    def test_make_matcher_returns_native_matcher(self):
+        """
+        make_matcher returns a native Matcher and never a wrapper
+        """
+
+        pat = GROUP(DEFINE("name"))
+        m = make_matcher(pat)
+        self.assertIsInstance(m, Matcher)
+
+
+    def test_make_matcher_returns_native_match_result(self):
+        """
+        make_matcher's matcher returns native MatchResult instances
+        """
+
+        pat = GROUP(DEFINE("name"))
+        m = make_matcher(pat)
+        sa = symbol("foo")
+        result = m.match((sa,), symbol=SYMBOL_TYPE)
+        self.assertIsInstance(result, MatchResult)
 
 
 # The end.
