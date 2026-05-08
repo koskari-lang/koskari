@@ -2,7 +2,7 @@
 
 ## Status
 
-Phases 1 through 5 of the implementation strategy below are landed. The
+Phases 1 through 6 of the implementation strategy below are landed. The
 native engine lives in `koskari/lib/matcher.{c,h}`; the Python builder
 API and the cleanroom composite layer live in `koskari/matcher_ng.py`.
 `matcher_ng` is now stand-alone: its only runtime dependency is
@@ -11,7 +11,13 @@ API and the cleanroom composite layer live in `koskari/matcher_ng.py`.
 no post-match Python transform layer. `Matcher.match` returns the
 native `MatchResult` directly; captures are final.
 
-Phases 6 through 9 are pending. The legacy `koskari/matcher.py` and
+Phase 6 parser/registry surface is landed in `matcher_ng` as
+`META_PATTERN`, `META_MATCHER`, `parse_matcher`,
+`MATCHER_REGISTRY`/`register_matcher`/`lookup_matcher`, and built-in
+head factory registration. Coverage for this surface lives in
+`tests/matcher_ng/test_syntax.py`.
+
+Phases 7 through 9 are pending. The legacy `koskari/matcher.py` and
 `koskari.compile.helpers` parsing helpers remain in place for the
 existing compile path; migration of compile-time dispatch and runtime
 `match/case` to `matcher_ng`, and the removal of the legacy stack, are
@@ -1357,13 +1363,22 @@ deviations" above. The composite shapes are documented in detail
 under "Current Matcher Examples Rewritten" and the deviations
 table above.
 
-### Phase 6 — Matcher syntax parser *(pending)*
+### Phase 6 — Matcher syntax parser *(landed)*
 
-Implement a matcher-syntax parser that uses the existing primitives
-and composites to unpack matcher syntax itself.
+The matcher-syntax parser now ships in `koskari/matcher_ng.py` and uses
+the existing primitives/composites to unpack matcher syntax itself.
+Implemented pieces:
+
+* `META_PATTERN` (shape classifier for one syntax element)
+* `META_MATCHER` (native matcher built from `META_PATTERN`)
+* `parse_matcher(elem)` (walker/lowerer from syntax element to
+  `Pattern`)
+* registry surface: `MATCHER_REGISTRY`, `register_matcher`,
+  `lookup_matcher`, and built-in head factory registration
+* parser test suite: `tests/matcher_ng/test_syntax.py`
 
 The shape and capture contract of that parser are sketched in the
-"Self-Describing Matcher Syntax" section above. Once landed,
+"Self-Describing Matcher Syntax" section above. With this landed,
 source-level matcher authoring becomes:
 
 ```scheme
@@ -1373,9 +1388,9 @@ source-level matcher authoring becomes:
     (FORM (name :: symbol) expr)))
 ```
 
-The matcher language then describes itself: `define-matcher` is a
-special form whose body is parsed by the meta-matcher plus a small
-walker, and the walker emits a frozen tuple.
+The matcher language now describes itself at the parser layer.
+`define-matcher` integration into compile-time dispatch remains a
+Phase 7 task.
 
 ### Phase 7 — Special-form dispatch integration *(pending)*
 
@@ -1446,7 +1461,8 @@ Map existing behavior to new metadata for:
    `name=`. `AttributeError` during attribute extraction folds
    to a no-match.
 6. **Whether shorthand `(Point x: 0 y)` is accepted or only
-   canonical `(CLASS Point x: 0 y)`.** *Open.* Phase 6 concern;
+   canonical `(CLASS Point x: 0 y)`.** *Open.* The landed
+   Phase 6 parser recognises only the canonical `(CLASS ...)` form;
    the meta-matcher sketch in this document recognises only the
    canonical `(CLASS ...)` form.
 7. **Whether source diagnostics use best-failure tracing inside the
