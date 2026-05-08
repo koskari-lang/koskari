@@ -28,6 +28,7 @@ repeat_capture and binding_inner_pattern
 """
 
 
+from koskari.hygiene_ng import Hygiene
 from koskari.lib import (
     ABSENT,
     Matcher,
@@ -43,6 +44,7 @@ __all__ = [
     "ABSENT",
     "Matcher",
     "MatchResult",
+    "Hygiene",
 
     "thaw",
     "make_matcher",
@@ -114,7 +116,7 @@ class MatchCompiler(object):
     """
     Freeze-time match compiler state for one lowering pass. Holds the four
     insertion-ordered tables that become the slots, externs, consts, and
-    nodes positions of the frozen 8-tuple, plus bookkeeping used by the
+    nodes positions of the frozen 7-tuple, plus bookkeeping used by the
     eager-validation checks
     """
 
@@ -177,17 +179,17 @@ class MatchCompiler(object):
         self.hygiene_scope_regions[slot] = {"kind": kind}
 
 
-    def build_hygiene_meta(self):
+    def build_hygiene(self):
         """
-        Assemble the hygiene meta dict from accumulated binders and
-        scope regions. Returns an empty dict when no composite has
+        Assemble the hygiene plan from accumulated binders and scope
+        regions. Returns an empty Hygiene when no composite has
         registered anything. Validates that every binder scope reference
         resolves to a known scope region, raising ValueError on
         dangling references
         """
 
         if not self.hygiene_binders and not self.hygiene_scope_regions:
-            return {}
+            return Hygiene({}, {})
 
         for slot, entry in self.hygiene_binders.items():
             for ref in entry.get("scopes", ()):
@@ -196,12 +198,11 @@ class MatchCompiler(object):
                         "binder slot %r references unknown scope"
                         " region %r" % (slot, ref))
 
-        return {
-            "hygiene_version": 1,
-            "binders": {k: dict(v) for k, v in self.hygiene_binders.items()},
-            "scope_regions": {
-                k: dict(v) for k, v in self.hygiene_scope_regions.items()},
-        }
+        return Hygiene(
+            {k: dict(v) for k, v in self.hygiene_binders.items()},
+            {k: dict(v) for k, v in self.hygiene_scope_regions.items()},
+            1,
+        )
 
 
     def push_capture_scope(self):
@@ -300,61 +301,48 @@ class Pattern(object):
     """
 
 
-    def freeze(self, meta=None):
+    def compile(self):
         """
-        Lower this pattern to a frozen 8-tuple suitable for
-        Matcher.from_tuple. Hygiene meta accumulated by composite
-        children is merged into the supplied meta dict; collisions
-        raise ValueError so authors do not silently overwrite hygiene
-        information
+        Lower this pattern to a frozen 7-tuple plus the compiled Hygiene
+        plan for matcher composites.
 
-        :param meta: optional dict of metadata to attach to the frozen
-            tuple
+        :rtype: tuple of (frozen_tuple, Hygiene)
         """
 
         ctx = MatchCompiler()
         entry = self._emit(ctx)
-
-        if meta is None:
-            meta = {}
-        elif not isinstance(meta, dict):
-            raise TypeError(
-                "meta must be a dict, got %r" % type(meta).__name__)
-
-        hygiene = ctx.build_hygiene_meta()
-        if hygiene:
-            merged = dict(meta)
-            for k, v in hygiene.items():
-                if k in merged and merged[k] != v:
-                    raise ValueError(
-                        "meta key %r conflicts with composite hygiene"
-                        " entry" % (k,))
-                merged[k] = v
-            meta = merged
-
-        return (
+        frozen = (
             "MATCHER", 1,
             tuple(self._slot_names(ctx)),
             tuple(self._extern_names(ctx)),
             tuple(ctx.consts),
             tuple(ctx.nodes),
             entry,
-            meta,
         )
+        return frozen, ctx.build_hygiene()
 
 
-    def build(self, meta=None):
+    def freeze(self):
+        """
+        Lower this pattern to a frozen 7-tuple suitable for
+        Matcher.from_tuple
+        """
+
+        frozen, _hygiene = self.compile()
+        return frozen
+
+
+    def build(self):
         """
         Lower this pattern and thaw it into a native Matcher. Composite
         builders contribute structural primitives plus freeze-time
-        hygiene metadata; match-time behaviour is pure native engine
+        hygiene registration on the Python side only; match-time behaviour
+        is pure native engine
 
-        :param meta: optional dict of metadata to attach to the frozen
-            tuple
         :rtype: Matcher
         """
 
-        return Matcher.from_tuple(self.freeze(meta))
+        return Matcher.from_tuple(self.freeze())
 
 
     def match(self, subject, **externs):
@@ -1086,15 +1074,14 @@ def LIST(*specs, key=None):
     return CAPTURE(key, inner)
 
 
-def make_matcher(pattern, *, meta=None):
+def make_matcher(pattern):
     """
     Lower a pattern AST into a native Matcher. The matcher carries
-    slots, externs, consts, and meta declared by the pattern tree;
+    slots, externs, and consts declared by the pattern tree;
     composite builders contribute structural primitives plus
-    freeze-time hygiene metadata only
+    freeze-time hygiene registration only on the Python Hygiene plan
 
     :param pattern: a matcher_ng pattern object
-    :param meta: optional dict of metadata to attach to the matcher
     :raises TypeError: when pattern is not a matcher_ng pattern
     :rtype: Matcher
     """
@@ -1103,7 +1090,7 @@ def make_matcher(pattern, *, meta=None):
         raise TypeError(
             "make_matcher requires a matcher_ng pattern, got %r"
             % (type(pattern).__name__,))
-    return pattern.build(meta=meta)
+    return pattern.build()
 
 
 # === Composite matchers ===
@@ -1146,15 +1133,15 @@ class Composite(Pattern):
     Base class for matcher_ng composite matchers. Subclasses return
     a tree of primitive Pattern nodes from _expand; the _emit hook
     lowers that tree and asks the composite to register freeze-time
-    hygiene metadata. Composites contribute no match-time Python
+    hygiene registration. Composites contribute no match-time Python
     behaviour: every semantic concern is encoded structurally
     """
 
 
     def _emit(self, ctx):
         """
-        Emit the expanded primitive pattern and register hygiene meta
-        entries against the match compiler
+        Emit the expanded primitive pattern and register hygiene binder
+        and scope-region entries against the match compiler
         """
 
         primitive = self._expand()
@@ -1510,7 +1497,7 @@ class BODY(Pattern):
     """
     Scope-region-aware REST capture. Behaves identically to REST at
     the engine level but additionally registers the slot as a body
-    scope region in the hygiene meta dict
+    scope region in the compiled Hygiene plan
     """
 
 
@@ -1528,7 +1515,7 @@ class BODY(Pattern):
     def _emit(self, ctx):
         """
         Emit the underlying REST node and register the scope region
-        meta entry for slot
+        entry for slot
         """
 
         idx = REST(self._slot)._emit(ctx)

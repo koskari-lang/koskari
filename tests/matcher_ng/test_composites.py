@@ -38,6 +38,7 @@ from koskari.matcher_ng import (
     Matcher,
     MatchResult,
     USING,
+    Hygiene,
     make_matcher,
 )
 
@@ -100,10 +101,9 @@ class TestDEFINE(unittest.TestCase):
         'DEFINE' and whose scopes default to ()
         """
 
-        frozen = GROUP(DEFINE("name")).freeze()
-        meta = frozen[7]
-        self.assertEqual(meta["hygiene_version"], 1)
-        binders = meta["binders"]
+        _frozen, hygiene = GROUP(DEFINE("name")).compile()
+        self.assertEqual(hygiene.version, 1)
+        binders = hygiene.binders
         self.assertIn("name", binders)
         self.assertEqual(binders["name"]["kind"], "DEFINE")
         self.assertEqual(binders["name"]["scopes"], ())
@@ -193,8 +193,8 @@ class TestDECL(unittest.TestCase):
         DECL contributes a hygiene binder entry of kind 'DECL'
         """
 
-        frozen = GROUP(DECL("d")).freeze()
-        binders = frozen[7]["binders"]
+        _frozen, hygiene = GROUP(DECL("d")).compile()
+        binders = hygiene.binders
         self.assertEqual(binders["d"]["kind"], "DECL")
 
 
@@ -251,8 +251,8 @@ class TestBINDING(unittest.TestCase):
         BINDING contributes a hygiene binder entry of kind 'BINDING'
         """
 
-        frozen = GROUP(BINDING("b")).freeze()
-        binders = frozen[7]["binders"]
+        _frozen, hygiene = GROUP(BINDING("b")).compile()
+        binders = hygiene.binders
         self.assertEqual(binders["b"]["kind"], "BINDING")
 
 
@@ -320,8 +320,8 @@ class TestBINDINGS(unittest.TestCase):
         hygiene entry
         """
 
-        frozen = GROUP(BINDINGS("bs")).freeze()
-        binder = frozen[7]["binders"]["bs"]
+        _frozen, hygiene = GROUP(BINDINGS("bs")).compile()
+        binder = hygiene.binders["bs"]
         self.assertEqual(binder["kind"], "BINDINGS")
         self.assertEqual(binder["mode"], "parallel")
 
@@ -332,8 +332,8 @@ class TestBINDINGS(unittest.TestCase):
         hygiene entry
         """
 
-        frozen = GROUP(BINDINGS("bs", mode="sequential")).freeze()
-        binder = frozen[7]["binders"]["bs"]
+        _frozen, hygiene = GROUP(BINDINGS("bs", mode="sequential")).compile()
+        binder = hygiene.binders["bs"]
         self.assertEqual(binder["mode"], "sequential")
 
 
@@ -438,8 +438,8 @@ class TestUSING(unittest.TestCase):
         USING contributes a hygiene binder entry of kind 'USING'
         """
 
-        frozen = GROUP(USING("u")).freeze()
-        binders = frozen[7]["binders"]
+        _frozen, hygiene = GROUP(USING("u")).compile()
+        binders = hygiene.binders
         self.assertEqual(binders["u"]["kind"], "USING")
 
 
@@ -841,8 +841,8 @@ class TestFORMALS(unittest.TestCase):
         FORMALS contributes a hygiene binder entry of kind 'FORMALS'
         """
 
-        frozen = GROUP(FORMALS("f")).freeze()
-        binders = frozen[7]["binders"]
+        _frozen, hygiene = GROUP(FORMALS("f")).compile()
+        binders = hygiene.binders
         self.assertEqual(binders["f"]["kind"], "FORMALS")
 
 
@@ -869,8 +869,8 @@ class TestBODY(unittest.TestCase):
         """
 
         pat = GROUP(CAPTURE("head"), BODY("body"))
-        frozen = pat.freeze()
-        regions = frozen[7]["scope_regions"]
+        _frozen, hygiene = pat.compile()
+        regions = hygiene.scope_regions
         self.assertIn("body", regions)
         self.assertEqual(regions["body"]["kind"], "REST")
 
@@ -936,47 +936,21 @@ class TestComposition(unittest.TestCase):
         self.assertEqual(result.captures["body"], ("b1", "b2"))
 
 
-class TestHygieneMeta(unittest.TestCase):
+class TestHygieneCompile(unittest.TestCase):
 
 
-    def test_hygiene_meta_contains_version_and_sections(self):
+    def test_compile_exposes_version_and_sections(self):
         """
-        Composite-bearing patterns produce hygiene meta entries
-        merged into the frozen meta dict at the top level: a version
+        Composite-bearing patterns produce a Hygiene plan with a version
         field plus binders and scope_regions sections
         """
 
         pat = GROUP(DEFINE("name"), BODY("body"))
-        frozen = pat.freeze()
-        meta = frozen[7]
-        self.assertEqual(meta["hygiene_version"], 1)
-        self.assertIn("binders", meta)
-        self.assertIn("scope_regions", meta)
-
-
-    def test_user_meta_preserved_alongside_hygiene(self):
-        """
-        User-supplied meta keys survive freeze when no key collides
-        with composite hygiene entries; hygiene fields merge in at
-        the top level
-        """
-
-        pat = GROUP(DEFINE("name"))
-        frozen = pat.freeze(meta={"phase": "test"})
-        self.assertEqual(frozen[7]["phase"], "test")
-        self.assertEqual(frozen[7]["hygiene_version"], 1)
-        self.assertIn("binders", frozen[7])
-
-
-    def test_user_meta_collision_raises(self):
-        """
-        A user meta dict that conflicts with a composite hygiene key
-        raises ValueError at freeze time
-        """
-
-        pat = GROUP(DEFINE("name"))
-        with self.assertRaises(ValueError):
-            pat.freeze(meta={"binders": {"unrelated": True}})
+        _frozen, hygiene = pat.compile()
+        self.assertIsInstance(hygiene, Hygiene)
+        self.assertEqual(hygiene.version, 1)
+        self.assertIn("name", hygiene.binders)
+        self.assertIn("body", hygiene.scope_regions)
 
 
 class TestMakeMatcher(unittest.TestCase):

@@ -170,7 +170,6 @@ typedef struct KosMatcher {
   PyObject *slots;       /* tuple[str], capture slot names */
   PyObject *externs;     /* tuple[str], extern parameter names */
   PyObject *consts;      /* tuple[object], literal/sub-matcher consts */
-  PyObject *meta;        /* dict, hygiene/provenance metadata */
 
   uint32_t entry;
 
@@ -194,7 +193,6 @@ extern PyTypeObject KosMatcherType;
 typedef struct KosMatchResult {
   PyObject_HEAD
   PyObject *captures;  /* dict[str, value] */
-  PyObject *meta;      /* dict (copied/shared from matcher) */
   int matched;
 } KosMatchResult;
 
@@ -444,14 +442,6 @@ int KosMatcherBuilder_AppendClass(
     uint32_t type_extern,
     const uint32_t *fields,
     Py_ssize_t count);
-
-/**
-   Set the meta dict. The builder takes a new reference to meta. Pass
-   NULL to clear; finalize defaults a NULL meta to an empty dict.
- */
-int KosMatcherBuilder_SetMeta(
-    KosMatcherBuilder *builder,
-    PyObject *meta);
 
 /**
    Run full validation, build, and return a new KosMatcher (a new

@@ -51,7 +51,7 @@ def _lambda_style_tuple():
         ("REST", 1),
         ("GROUP", 1, 2, 3, 4, 5),
     )
-    return ("MATCHER", 1, slots, externs, consts, nodes, 6, {})
+    return ("MATCHER", 1, slots, externs, consts, nodes, 6)
 
 
 def _two_extern_tuple():
@@ -67,7 +67,6 @@ def _two_extern_tuple():
         (),
         (("TEST", "TYPE", 0),),
         0,
-        {},
     )
 
 
@@ -135,7 +134,6 @@ class TestExternDefaults(unittest.TestCase):
                     (),
                     (("TEST", "TYPE", 0),),
                     0,
-                    {},
                 )
             )
             result = m.match((Point(),))

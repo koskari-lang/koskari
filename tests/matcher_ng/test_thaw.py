@@ -46,7 +46,7 @@ def _make_lambda_matcher_tuple():
         ("REST", 1),                        # 5: REST body
         ("GROUP", 1, 2, 3, 4, 5),           # 6: GROUP entry
     )
-    return ("MATCHER", 1, slots, externs, consts, nodes, 6, {})
+    return ("MATCHER", 1, slots, externs, consts, nodes, 6)
 
 
 class TestMatcherFromTuple(unittest.TestCase):
@@ -86,7 +86,7 @@ class TestMatcherFromTuple(unittest.TestCase):
         frozen = (
             "MATCHER", 1,
             ("a", "b"), (), (),
-            nodes, 4, {})
+            nodes, 4)
         m = thaw(frozen)
         result = m.match([7, 8])
         self.assertTrue(result.matched)
@@ -108,7 +108,7 @@ class TestMatcherFromTuple(unittest.TestCase):
         frozen = (
             "MATCHER", 1,
             ("head", "tail"), (), (),
-            nodes, 3, {})
+            nodes, 3)
         m = thaw(frozen)
         subj = cons(1, cons(2, cons(3, nil)))
         result = m.match(subj)
@@ -137,7 +137,7 @@ class TestMatcherFromTuple(unittest.TestCase):
         frozen = (
             "MATCHER", 1,
             ("xs", "ys"), (), ("X", "Y"),
-            nodes, 6, {})
+            nodes, 6)
         m = thaw(frozen)
 
         r1 = m.match(["X"])
@@ -156,7 +156,7 @@ class TestMatcherFromTuple(unittest.TestCase):
         Thaw rejects frozen tuples whose version is not 1
         """
 
-        frozen = ("MATCHER", 99, (), (), (), (), 0, {})
+        frozen = ("MATCHER", 99, (), (), (), (), 0)
         with self.assertRaises(ValueError):
             thaw(frozen)
 
@@ -174,7 +174,7 @@ class TestMatcherFromTuple(unittest.TestCase):
         frozen = (
             "MATCHER", 1,
             ("x",), (), (),
-            nodes, 1, {})
+            nodes, 1)
         with self.assertRaises(ValueError):
             thaw(frozen)
 
@@ -186,7 +186,7 @@ class TestMatcherFromTuple(unittest.TestCase):
 
         nodes = (("BOGUS", 0),)
         frozen = (
-            "MATCHER", 1, (), (), (), nodes, 0, {})
+            "MATCHER", 1, (), (), (), nodes, 0)
         with self.assertRaises(ValueError):
             thaw(frozen)
 
@@ -204,7 +204,7 @@ class TestMatcherFromTuple(unittest.TestCase):
         )
         frozen = (
             "MATCHER", 1, (), (), (),
-            nodes, 2, {})
+            nodes, 2)
         with self.assertRaises(ValueError):
             thaw(frozen)
 
@@ -222,7 +222,7 @@ class TestMatcherFromTuple(unittest.TestCase):
         frozen = (
             "MATCHER", 1,
             ("x",), (), (),
-            nodes, 2, {})
+            nodes, 2)
         m = thaw(frozen)
         result = m.match([42])
         self.assertTrue(result.matched)
@@ -251,7 +251,7 @@ class TestMatcherFromTuple(unittest.TestCase):
         frozen = (
             "MATCHER", 1,
             ("x", "y"), ("Point",), (),
-            nodes, 6, {})
+            nodes, 6)
 
         m = thaw(frozen)
         self.assertIsInstance(m, Matcher)

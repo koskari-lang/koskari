@@ -703,15 +703,6 @@ class TestEagerValidation(unittest.TestCase):
             make_matcher("not a pattern")
 
 
-    def test_freeze_rejects_non_dict_meta(self):
-        """
-        freeze raises TypeError when meta is not a dict
-        """
-
-        with self.assertRaises(TypeError):
-            TEST_ANY().freeze(meta="not a dict")
-
-
 # === Ergonomic shorthand semantics ===
 
 
@@ -871,16 +862,6 @@ class TestCrossCutting(unittest.TestCase):
         result = m.match([1, 2])
         self.assertTrue(result.matched)
         self.assertEqual(result.captures, {"a": 1, "b": 2})
-
-
-    def test_meta_dict_propagates(self):
-        """
-        A meta dict provided to freeze appears in the frozen tuple
-        """
-
-        meta = {"hygiene": ()}
-        frozen = TEST_ANY().freeze(meta=meta)
-        self.assertEqual(frozen[7], meta)
 
 
 # The end.

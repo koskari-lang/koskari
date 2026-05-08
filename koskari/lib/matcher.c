@@ -41,7 +41,6 @@ struct KosMatcherBuilder {
   PyObject *slots;     /* PyListObject during build */
   PyObject *externs;   /* PyListObject during build */
   PyObject *consts;    /* PyListObject during build */
-  PyObject *meta;      /* PyDictObject or NULL */
 };
 
 
@@ -205,7 +204,6 @@ KosMatcherBuilder *KosMatcherBuilder_New(void) {
   b->slots = PyList_New(0);
   b->externs = PyList_New(0);
   b->consts = PyList_New(0);
-  b->meta = NULL;
 
   if (! b->slots || ! b->externs || ! b->consts) {
     KosMatcherBuilder_Free(b);
@@ -224,7 +222,6 @@ void KosMatcherBuilder_Free(KosMatcherBuilder *b) {
   Py_XDECREF(b->slots);
   Py_XDECREF(b->externs);
   Py_XDECREF(b->consts);
-  Py_XDECREF(b->meta);
   PyMem_Free(b);
 }
 
@@ -595,23 +592,6 @@ int KosMatcherBuilder_AppendClass(
   }
 
   return (int) off;
-}
-
-
-int KosMatcherBuilder_SetMeta(KosMatcherBuilder *b, PyObject *meta) {
-  if (! b) {
-    PyErr_SetString(PyExc_ValueError, "SetMeta requires builder");
-    return -1;
-  }
-
-  if (meta && ! PyDict_Check(meta)) {
-    PyErr_SetString(PyExc_TypeError, "meta must be a dict");
-    return -1;
-  }
-
-  Py_XINCREF(meta);
-  Py_XSETREF(b->meta, meta);
-  return 0;
 }
 
 
@@ -1392,33 +1372,18 @@ PyObject *KosMatcherBuilder_Finalize(
     return NULL;
   }
 
-  PyObject *meta = b->meta;
-  if (meta) {
-    Py_INCREF(meta);
-  } else {
-    meta = PyDict_New();
-    if (! meta) {
-      Py_DECREF(slots_t);
-      Py_DECREF(externs_t);
-      Py_DECREF(consts_t);
-      return NULL;
-    }
-  }
-
   KosMatcher *m = PyObject_NewVar(KosMatcher, &KosMatcherType,
                                   b->node_count);
   if (! m) {
     Py_DECREF(slots_t);
     Py_DECREF(externs_t);
     Py_DECREF(consts_t);
-    Py_DECREF(meta);
     return NULL;
   }
 
   m->slots = slots_t;
   m->externs = externs_t;
   m->consts = consts_t;
-  m->meta = meta;
   m->entry = entry;
 
   if (b->node_count > 0)
@@ -1495,7 +1460,6 @@ PyObject *KosMatchAbsent = NULL;
 static void match_result_dealloc(PyObject *self) {
   KosMatchResult *r = (KosMatchResult *) self;
   Py_CLEAR(r->captures);
-  Py_CLEAR(r->meta);
   Py_TYPE(self)->tp_free(self);
 }
 
@@ -1533,21 +1497,11 @@ static PyObject *match_result_get_captures(PyObject *self, void *closure) {
 }
 
 
-static PyObject *match_result_get_meta(PyObject *self, void *closure) {
-  (void) closure;
-  PyObject *d = ((KosMatchResult *) self)->meta;
-  Py_INCREF(d);
-  return d;
-}
-
-
 static PyGetSetDef match_result_getset[] = {
   { "matched", match_result_get_matched, NULL,
     "True if the matcher matched the subject", NULL },
   { "captures", match_result_get_captures, NULL,
     "dict[str, value] of captured slot values", NULL },
-  { "meta", match_result_get_meta, NULL,
-    "matcher meta dict", NULL },
   { NULL }
 };
 
@@ -1567,16 +1521,13 @@ PyTypeObject KosMatchResultType = {
 
 static PyObject *make_match_result(
     int matched,
-    PyObject *captures,
-    PyObject *meta) {
+    PyObject *captures) {
 
   KosMatchResult *r = PyObject_New(KosMatchResult, &KosMatchResultType);
   if (! r)
     return NULL;
   Py_INCREF(captures);
   r->captures = captures;
-  Py_INCREF(meta);
-  r->meta = meta;
   r->matched = matched;
   return (PyObject *) r;
 }
@@ -2556,7 +2507,7 @@ PyObject *KosMatcher_Match(
     return NULL;
   }
 
-  PyObject *result = make_match_result(matched, captures, m->meta);
+  PyObject *result = make_match_result(matched, captures);
   Py_DECREF(captures);
   return result;
 }
@@ -2571,7 +2522,6 @@ static void matcher_dealloc(PyObject *self) {
   Py_CLEAR(m->slots);
   Py_CLEAR(m->externs);
   Py_CLEAR(m->consts);
-  Py_CLEAR(m->meta);
 
   Py_TYPE(self)->tp_free(self);
 }
@@ -3102,9 +3052,9 @@ static PyObject *thaw_matcher_tuple(PyObject *t) {
     PyErr_SetString(PyExc_TypeError, "frozen matcher must be a tuple");
     return NULL;
   }
-  if (PyTuple_GET_SIZE(t) != 8) {
+  if (PyTuple_GET_SIZE(t) != 7) {
     PyErr_Format(PyExc_ValueError,
-                 "frozen matcher must be 8-tuple, got %zd",
+                 "frozen matcher must be 7-tuple, got %zd",
                  PyTuple_GET_SIZE(t));
     return NULL;
   }
@@ -3134,16 +3084,11 @@ static PyObject *thaw_matcher_tuple(PyObject *t) {
   PyObject *consts = PyTuple_GET_ITEM(t, 4);
   PyObject *nodes = PyTuple_GET_ITEM(t, 5);
   PyObject *entry_obj = PyTuple_GET_ITEM(t, 6);
-  PyObject *meta = PyTuple_GET_ITEM(t, 7);
 
   if (! PyTuple_Check(slots) || ! PyTuple_Check(externs) ||
       ! PyTuple_Check(consts) || ! PyTuple_Check(nodes)) {
     PyErr_SetString(PyExc_TypeError,
                     "slots/externs/consts/nodes must be tuples");
-    return NULL;
-  }
-  if (! PyDict_Check(meta)) {
-    PyErr_SetString(PyExc_TypeError, "meta must be a dict");
     return NULL;
   }
   if (! PyLong_Check(entry_obj)) {
@@ -3179,13 +3124,6 @@ static PyObject *thaw_matcher_tuple(PyObject *t) {
   for (i = 0; i < n; i++) {
     PyObject *value = PyTuple_GET_ITEM(consts, i);
     if (KosMatcherBuilder_AddConst(b, value) < 0) {
-      KosMatcherBuilder_Free(b);
-      return NULL;
-    }
-  }
-
-  if (PyDict_Size(meta) > 0) {
-    if (KosMatcherBuilder_SetMeta(b, meta)) {
       KosMatcherBuilder_Free(b);
       return NULL;
     }
@@ -3244,7 +3182,7 @@ static PyMethodDef matcher_methods[] = {
     "Matcher.from_tuple(tagged_tuple) -> Matcher\n\n"
     "Reconstruct a Matcher from its frozen tagged-tuple "
     "representation: ('MATCHER', 1, slots, externs, consts, nodes, "
-    "entry, meta)" },
+    "entry)" },
   { NULL, NULL, 0, NULL },
 };
 
@@ -3273,14 +3211,6 @@ static PyObject *matcher_get_consts(PyObject *self, void *closure) {
 }
 
 
-static PyObject *matcher_get_meta(PyObject *self, void *closure) {
-  (void) closure;
-  PyObject *d = ((KosMatcher *) self)->meta;
-  Py_INCREF(d);
-  return d;
-}
-
-
 static PyObject *matcher_get_node_count(PyObject *self, void *closure) {
   (void) closure;
   return PyLong_FromSsize_t(Py_SIZE(self));
@@ -3300,8 +3230,6 @@ static PyGetSetDef matcher_getset[] = {
     "Tuple of extern parameter names", NULL },
   { "consts", matcher_get_consts, NULL,
     "Tuple of literal/sub-matcher consts", NULL },
-  { "meta", matcher_get_meta, NULL,
-    "Hygiene/provenance metadata dict", NULL },
   { "node_count", matcher_get_node_count, NULL,
     "Number of nodes in the matcher", NULL },
   { "entry", matcher_get_entry, NULL,

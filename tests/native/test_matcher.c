@@ -1801,17 +1801,16 @@ static PyObject *get_from_tuple_method(void) {
 static int test_thaw_minimal(void) {
     /*
       Frozen schema for a minimal matcher: one TEST_ANY at index 0,
-      entry=0, no slots/externs/consts/meta.
+      entry=0, no slots/externs/consts.
     */
     PyObject *empty = PyTuple_New(0);
-    PyObject *meta = PyDict_New();
     PyObject *test_node = Py_BuildValue("(ssi)", "TEST", "ANY", -1);
     TEST_ASSERT_NOT_NULL(test_node, "build TEST node");
 
     PyObject *nodes = PyTuple_Pack(1, test_node);
-    PyObject *frozen = Py_BuildValue("(siOOOOiO)",
+    PyObject *frozen = Py_BuildValue("(siOOOOi)",
                                      "MATCHER", 1,
-                                     empty, empty, empty, nodes, 0, meta);
+                                     empty, empty, empty, nodes, 0);
     TEST_ASSERT_NOT_NULL(frozen, "build frozen tuple");
 
     PyObject *from_tuple = get_from_tuple_method();
@@ -1832,7 +1831,6 @@ static int test_thaw_minimal(void) {
     Py_DECREF(frozen);
     Py_DECREF(nodes);
     Py_DECREF(test_node);
-    Py_DECREF(meta);
     Py_DECREF(empty);
     return 0;
 }
@@ -1843,10 +1841,9 @@ static int test_thaw_rejects_bad_version(void) {
       Reject a frozen tuple whose version != 1.
     */
     PyObject *empty = PyTuple_New(0);
-    PyObject *meta = PyDict_New();
-    PyObject *frozen = Py_BuildValue("(siOOOOiO)",
+    PyObject *frozen = Py_BuildValue("(siOOOOi)",
                                      "MATCHER", 99,
-                                     empty, empty, empty, empty, 0, meta);
+                                     empty, empty, empty, empty, 0);
     TEST_ASSERT_NOT_NULL(frozen, "build frozen tuple");
 
     PyObject *from_tuple = get_from_tuple_method();
@@ -1857,7 +1854,6 @@ static int test_thaw_rejects_bad_version(void) {
 
     Py_DECREF(from_tuple);
     Py_DECREF(frozen);
-    Py_DECREF(meta);
     Py_DECREF(empty);
     return 0;
 }
@@ -1865,12 +1861,11 @@ static int test_thaw_rejects_bad_version(void) {
 
 static int test_thaw_rejects_unknown_node_tag(void) {
     PyObject *empty = PyTuple_New(0);
-    PyObject *meta = PyDict_New();
     PyObject *bad_node = Py_BuildValue("(si)", "BOGUS", 0);
     PyObject *nodes = PyTuple_Pack(1, bad_node);
-    PyObject *frozen = Py_BuildValue("(siOOOOiO)",
+    PyObject *frozen = Py_BuildValue("(siOOOOi)",
                                      "MATCHER", 1,
-                                     empty, empty, empty, nodes, 0, meta);
+                                     empty, empty, empty, nodes, 0);
 
     PyObject *from_tuple = get_from_tuple_method();
     PyObject *m = PyObject_CallOneArg(from_tuple, frozen);
@@ -1881,7 +1876,6 @@ static int test_thaw_rejects_unknown_node_tag(void) {
     Py_DECREF(frozen);
     Py_DECREF(nodes);
     Py_DECREF(bad_node);
-    Py_DECREF(meta);
     Py_DECREF(empty);
     return 0;
 }
@@ -1892,7 +1886,6 @@ static int test_thaw_rejects_index_oob(void) {
       CAPTURE.slot index 5 with 1 slot defined. Validator rejects.
     */
     PyObject *empty = PyTuple_New(0);
-    PyObject *meta = PyDict_New();
 
     PyObject *xname = PyUnicode_FromString("x");
     PyObject *slots = PyTuple_Pack(1, xname);
@@ -1902,10 +1895,10 @@ static int test_thaw_rejects_index_oob(void) {
                                        "CAPTURE", 5, 0, 0, -1);
     PyObject *nodes = PyTuple_Pack(2, test_node, cap_node);
 
-    PyObject *frozen = Py_BuildValue("(siOOOOiO)",
+    PyObject *frozen = Py_BuildValue("(siOOOOi)",
                                      "MATCHER", 1,
                                      slots, empty, empty,
-                                     nodes, 1, meta);
+                                     nodes, 1);
 
     PyObject *from_tuple = get_from_tuple_method();
     PyObject *m = PyObject_CallOneArg(from_tuple, frozen);
@@ -1919,7 +1912,6 @@ static int test_thaw_rejects_index_oob(void) {
     Py_DECREF(cap_node);
     Py_DECREF(slots);
     Py_DECREF(xname);
-    Py_DECREF(meta);
     Py_DECREF(empty);
     return 0;
 }
@@ -1931,7 +1923,6 @@ static int test_thaw_full_lambda(void) {
       test_match_lambda_shaped_oneof but starts from a frozen tuple
       built in C.
     */
-    PyObject *meta = PyDict_New();
     PyObject *empty = PyTuple_New(0);
 
     /* slots */
@@ -2008,10 +1999,10 @@ static int test_thaw_full_lambda(void) {
     PyObject *nodes = PySequence_Tuple(nodes_list);
     Py_DECREF(nodes_list);
 
-    PyObject *frozen = Py_BuildValue("(siOOOOiO)",
+    PyObject *frozen = Py_BuildValue("(siOOOOi)",
                                      "MATCHER", 1,
                                      slots, externs, consts,
-                                     nodes, (int) oneof_idx, meta);
+                                     nodes, (int) oneof_idx);
 
     PyObject *from_tuple = get_from_tuple_method();
     PyObject *m_obj = PyObject_CallOneArg(from_tuple, frozen);
@@ -2060,7 +2051,6 @@ static int test_thaw_full_lambda(void) {
     Py_DECREF(s_body);
     Py_DECREF(s_name);
     Py_DECREF(empty);
-    Py_DECREF(meta);
     return 0;
 }
 
